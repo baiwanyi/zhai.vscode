@@ -1,0 +1,277 @@
+# 同步微信公众号 (Sync WeChat) — 模块设计文档
+
+**版本**：1.0
+**日期**：2026-09-03
+**状态**：待验证（docs 未覆盖本模块，需先确认公众号接口权限与主体类型）
+**宿主**：VSCode 插件 BaiwanyiONE
+
+> ⚠️ **前置说明**：公众号接口能力与**主体类型**强相关。未认证订阅号通常只能使用**草稿箱**接口，群发（发布）能力需认证。同时接口要求**调用方 IP 在白名单内**，家庭宽带动态 IP 会导致 Token 获取失败。**开发前必须完成权限与 IP 方案验证**，结论回填至第 9 节。
+
+---
+
+## 1. 模块概述
+
+### 1.1 定位
+
+把长篇笔记/作品章节**排版后同步到微信公众号**：以「草稿箱」为主的发布链路，兼顾素材永久化与排版美观。
+
+与「同步微博」的差异：公众号承载**长文 + 完整排版**，需要 HTML 内联样式、永久素材与封面图；微博承载短内容（见 `sync-weibo.md`）。
+
+### 1.2 目标
+
+- **排版即发布**：Markdown → 公众号可直接发布的 HTML（内联样式、代码高亮、引用块美化）
+- **素材不失效**：图片上传为**永久素材**，避免外链被封导致历史文章图片挂掉
+- **过程可回滚**：草稿箱机制天然支持「先草稿、后发布」，失败可重试且不重复建草稿
+
+### 1.3 非目标
+
+- 不做粉丝管理、菜单配置、自动回复等运营功能
+- 不做多公众号矩阵管理（仅支持多账号切换与选择）
+- 不做数据统计分析（仅记录发布历史）
+
+---
+
+## 2. 用户场景
+
+| 编号 | 场景 | 用户旅程 |
+|------|------|----------|
+| US-1 | 长文发布 | 写完 5000 字技术文章 → 命令「发布到公众号」→ 选排版主题 → 预览 → 创建草稿 → 在公众号后台确认群发 |
+| US-2 | 素材永久化 | 文章含 8 张图 → 自动上传为永久素材 → 正文引用平台 URL，本地保留原图 |
+| US-3 | 代码文章 | 代码块自动高亮并内联样式，移动端不溢出 |
+| US-4 | 重复发布防护 | 同一文章二次发布 → 本地记录提示已存在草稿，可选择更新或新建 |
+| US-5 | IP 变更 | 家庭宽带 IP 变化导致 Token 获取失败 → 明确提示「IP 不在白名单」与处理指引 |
+
+---
+
+## 3. 功能清单
+
+| 编号 | 功能点 | 描述 | 优先级 | 状态 |
+|------|--------|------|--------|------|
+| G1 | 凭证配置 | AppID / AppSecret 存 `SecretStorage`，支持多账号 | P0 | 待实现 |
+| G2 | AccessToken 管理 | 集中缓存 + 提前刷新 + 并发去重 | P0 | 待实现 |
+| G3 | Markdown → 公众号 HTML | 走 `markdown-one` 管线，输出语义化 HTML | P0 | 待实现 |
+| G4 | 样式内联 | `juice` 将主题 CSS 内联（公众号不支持 `<style>`） | P0 | 待实现 |
+| G5 | 代码高亮 | shiki 高亮并内联样式 | P1 | 待实现 |
+| G6 | 排版主题 | 多套主题（字号/行距/引用块/标题装饰），可自定义 | P1 | 待实现 |
+| G7 | 图片转永久素材 | 上传 `material/add_material`，回写 URL | P0 | 待实现 |
+| G8 | 封面与摘要 | 指定封面图、填写摘要与作者 | P1 | 待实现 |
+| G9 | 草稿箱创建 | `draft/add` 创建草稿，返回 media_id | P0 | 待实现 |
+| G10 | 群发发布 | `message/mass/sendall`（需认证主体） | P2 | 待验证 |
+| G11 | 预览 | Webview 内按公众号宽度预览最终效果 | P0 | 待实现 |
+| G12 | 发布历史 | 记录 media_id、状态与链接 | P1 | 待实现 |
+| G13 | 重试与幂等 | 指数退避重试；按内容 hash 防重复建草稿 | P1 | 待实现 |
+| G14 | 错误指引 | 针对 IP 白名单、配额、素材超限给出可执行指引 | P1 | 待实现 |
+
+---
+
+## 4. 交互与流程
+
+### 4.1 Token 获取（并发安全）
+
+```
+任意接口调用前需要 access_token
+   │
+   ▼
+查内存缓存（未过期？）→ 命中直接返回
+   │ 未命中
+   ▼
+查 singleflight：是否已有进行中的刷新请求？
+   ├─ 是 → 复用同一个 Promise（避免并发互刷导致 Token 失效）
+   └─ 否 → 发起刷新（加锁）
+          │
+          ▼
+   调用 /cgi-bin/token（超时 10s）
+          ├─ 成功 → 写入缓存（提前 5 分钟过期）+ 记录 expires_at
+          └─ 失败 → 解析 errcode
+                 ├─ 40164（IP 不在白名单）→ 提示具体 IP 与配置指引
+                 ├─ 40001（密钥错误）→ 提示重新配置
+                 └─ 其他 → 指数退避重试（上限 3 次）
+```
+
+### 4.2 发布流程
+
+```
+当前文件
+   │
+   ▼ markdown-one：md → mdast → rehype → HTML
+   ├─ shiki 代码高亮
+   ├─ 图片路径收集（相对路径 → 本地绝对路径）
+   └─ 生成大纲（用于摘要）
+   │
+   ▼ 选主题 → juice 内联样式
+公众号 HTML
+   │
+   ▼ 预览（Webview，模拟 375px 宽度）
+用户确认 → 填写封面/摘要/作者/原创声明
+   │
+   ▼ 幂等校验：contentHash（账号 + 正文 + 主题）
+   ├─ 已有成功草稿 → 提示「更新该草稿 / 新建草稿」
+   └─ 新建
+   │
+   ▼ 图片上传为永久素材（串行 + 进度）
+   │     失败：图片 >10MB 或格式不支持 → 明确提示并跳过/终止
+   │
+   ▼ 替换正文图片 URL 为素材 URL
+   │
+   ▼ draft/add 创建草稿
+   │     失败：指数退避重试（含 Token 失效时自动刷新后重试一次）
+   │
+   ▼ 记录 publish_records（media_id + 状态）
+   │
+   ▼ 可选：认证主体调用群发接口 / 或提示去后台群发
+```
+
+---
+
+## 5. 关键技术选型
+
+| 关注点 | 候选方案 | 结论 | 理由 |
+|--------|----------|------|------|
+| 接口调用 | 内置 `fetch` / `axios` / 官方 SDK | **内置 fetch** | 接口数量少（<10 个），无需额外依赖；统一超时与错误处理 |
+| Token 并发 | 各自刷新 / singleflight | **singleflight（Promise 复用）** | 并发刷新会互相失效，是公众号对接的经典坑 |
+| HTML 生成 | `markdown-one` 管线 | **复用 markdown-one** | 与导出/预览共用一套 AST，避免多套解析 |
+| 样式内联 | `juice` / 手写替换 | **juice** | 公众号不支持 `<style>` 与外链 CSS，必须内联 |
+| 代码高亮 | `shiki` / `highlight.js` | **shiki** | 输出内联样式的 HTML，正合适 |
+| 图片素材 | 永久素材 / 图文内图片（URL 有时效） | **永久素材** | 避免历史文章图片失效；注意每日配额 |
+| 封面图 | 用户指定 / 自动生成 | **两者皆可** | 默认取首图，用户可改 |
+| 凭证存储 | `SecretStorage` | **SecretStorage** | 与 `common.md` 一致 |
+| 重试 | 指数退避 + 抖动 | **指数退避 + 抖动** | 避免固定间隔洪峰；Token 失效单独处理（刷新后重试一次） |
+| 超时 | 分级超时 | **连接 10s / 总体 60s（含素材上传）** | 素材上传较慢，单独放宽但必须有上限 |
+| 幂等 | 内容 hash | **本地记录去重** | 平台无幂等键，草稿重复会污染素材库 |
+
+> **弃用规避**：不使用已废弃的「客服消息」接口做群发；不使用 `request` 等废弃 HTTP 库；素材上传不使用已下线的旧域名。
+
+---
+
+## 6. 数据模型
+
+与微博模块共用 `globalStorage/social.db`（`platform = 'wechat'`），另增素材映射表。
+
+```sql
+-- 复用 social_accounts / publish_records / publish_drafts（见 sync-weibo.md）
+
+-- 素材映射（本地文件 → 平台永久素材）
+CREATE TABLE IF NOT EXISTS wechat_materials (
+    id           TEXT PRIMARY KEY,
+    account_id   TEXT NOT NULL,
+    local_hash   TEXT NOT NULL,        -- 本地图片内容 hash
+    media_id     TEXT NOT NULL,        -- 平台素材 ID
+    url          TEXT NOT NULL,        -- 平台可访问 URL
+    type         TEXT NOT NULL,        -- image|thumb
+    size_bytes   INTEGER NOT NULL DEFAULT 0,
+    created_at   TEXT NOT NULL,
+    UNIQUE(account_id, local_hash, type)
+);
+
+CREATE INDEX IF NOT EXISTS idx_material_hash ON wechat_materials(local_hash);
+
+-- 草稿记录
+CREATE TABLE IF NOT EXISTS wechat_drafts (
+    id          TEXT PRIMARY KEY,
+    account_id  TEXT NOT NULL,
+    file_path   TEXT NOT NULL,
+    media_id    TEXT NOT NULL,
+    title       TEXT NOT NULL,
+    theme       TEXT NOT NULL,
+    digest      TEXT,
+    thumb_media_id TEXT,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_draft_file ON wechat_drafts(account_id, file_path);
+```
+
+**素材复用**：`local_hash` 相同则直接复用已有 `media_id`，避免重复上传消耗配额。
+
+---
+
+## 7. 接口与命令
+
+| Command ID | 标题 | 说明 |
+|------------|------|------|
+| `baiwanyione.wechat.setup` | 配置公众号 | 填写 AppID/AppSecret |
+| `baiwanyione.wechat.publish` | 发布到公众号 | 转换 → 预览 → 建草稿 |
+| `baiwanyione.wechat.preview` | 预览排版效果 | Webview 模拟移动端宽度 |
+| `baiwanyione.wechat.history` | 发布历史 | 草稿/发布记录与链接 |
+| `baiwanyione.wechat.materials` | 素材管理 | 查看已上传素材与复用情况 |
+| `baiwanyione.wechat.retry` | 重试失败任务 | 对失败记录重试 |
+
+**涉及的平台接口**：
+
+| 接口 | 用途 | 权限要求 |
+|------|------|----------|
+| `/cgi-bin/token` | 获取 AccessToken | AppID + AppSecret + IP 白名单 |
+| `/cgi-bin/material/add_material` | 上传永久素材 | 认证与否均可（有配额） |
+| `/cgi-bin/draft/add` | 创建草稿 | 一般可用 |
+| `/cgi-bin/draft/update` | 更新草稿 | 一般可用 |
+| `/cgi-bin/message/mass/sendall` | 群发 | **需认证主体** |
+| `/cgi-bin/freepublish/submit` | 发布（新版接口） | **需认证主体** |
+
+**Webview 方法**：`wechat/preview`、`wechat/publish`（流式进度）、`wechat/drafts`、`wechat/materials`、`wechat/retry`
+
+```typescript
+/** 发布请求 */
+interface WechatPublishRequest {
+    method: 'wechat/publish'
+    payload: {
+        accountId: string
+        filePath: string
+        theme: string
+        title: string
+        digest?: string
+        thumbMediaId?: string
+        sourceUrl?: string
+        needOpenComment?: 0 | 1
+        onlyFansCanComment?: 0 | 1
+        contentHash: string               // 幂等键
+    }
+}
+
+/** 发布结果 */
+interface WechatPublishResult {
+    recordId: string
+    mediaId?: string
+    status: 'draft' | 'published' | 'failed'
+    error?: { code: number; message: string; hint?: string }
+}
+```
+
+---
+
+## 8. 验收标准
+
+| 编号 | 场景 | 指标 |
+|------|------|------|
+| AC-1 | Token 并发 | 10 个并发请求只触发 1 次 Token 刷新 |
+| AC-2 | Token 过期 | 提前 5 分钟刷新，无「已过期」报错 |
+| AC-3 | IP 白名单错误 | 明确提示当前出口 IP 与配置指引，不抛原始错误 |
+| AC-4 | 排版正确 | 预览与公众号实际效果一致（标题/引用/代码块/列表） |
+| AC-5 | 内联样式 | 输出 HTML 中无 `<style>` 标签与 class 依赖 |
+| AC-6 | 素材复用 | 同一图片二次发布不重复上传（命中 `local_hash`） |
+| AC-7 | 图片上传 | 单张 < 10MB 正常；超限明确提示 |
+| AC-8 | 幂等 | 同一内容重复发布产生提示，不产生重复草稿 |
+| AC-9 | 重试 | 网络类失败指数退避重试；Token 失效自动刷新后重试 1 次 |
+| AC-10 | 超时 | 素材上传总体 60s 超时后中断并保留已完成部分状态 |
+| AC-11 | 凭证安全 | AppSecret 仅存 SecretStorage，日志与诊断包脱敏 |
+| AC-12 | 失败不丢数据 | 失败后草稿内容可再次编辑与重发 |
+
+---
+
+## 9. 风险与开放问题
+
+| 风险 | 影响 | 缓解措施 |
+|------|------|----------|
+| **IP 白名单（最高风险）** | Token 获取直接失败 | 明确错误指引；支持用户配置固定出口（如服务器代理）后使用；提供「仅生成 HTML 手动粘贴」降级路径 |
+| **群发接口需认证主体** | 无法一键群发 | 默认只做草稿箱，群发引导到公众号后台；有权限时提供一键发布 |
+| 素材配额有限 | 上传失败 | 本地 hash 复用 + 上传前体积/格式校验 + 配额用量提示 |
+| 排版主题维护成本 | 视觉不一致 | 主题以 CSS 文件维护，支持用户自定义覆盖 |
+| 平台 HTML 标签过滤 | 样式丢失 | 只用白名单标签（section/p/strong/em/blockquote/pre/code/img） |
+| 接口变更 | 功能失效 | 接口调用集中在单一 service 层，便于适配 |
+| 原创声明/留言等规则变动 | 发布失败 | 参数可选化，失败时透传平台原因 |
+
+**开放问题（需确认）**
+
+1. 目标公众号的主体类型与可用接口范围（是否已认证）？
+2. 是否需要支持「仅生成 HTML → 手动粘贴到编辑器」的无接口降级模式？
+3. 是否需要视频/音频素材支持？
+4. 是否需要支持多公众号与内容分发的差异化排版？
