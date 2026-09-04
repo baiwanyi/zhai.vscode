@@ -26,11 +26,11 @@
 | [docs/modules/ai-chat.md](docs/modules/ai-chat.md) | AI Chat：写作 / 对话双模式、diff 逐段接受、`@` 上下文、流式协议 |
 | [docs/modules/notes.md](docs/modules/notes.md) | 笔记：目录笔记本、双向链接、修订快照、模板与网页剪藏 |
 | [docs/modules/press.md](docs/modules/press.md) | 小说写作（Press）：作品-卷-章结构、README/Chapter 目录、扁平设定文档、章节文档体（本章介绍/角色链接/金手指）、AI 副驾、伏笔情节线、导出 |
-| [docs/modules/reading.md](docs/modules/reading.md) | 阅读：TXT 导入去重、编码检测、虚拟滚动、书签与全文搜索 |
+| [docs/modules/reader.md](docs/modules/reader.md) | 阅读：TXT 导入去重、编码检测、虚拟滚动、书签与全文搜索 |
 | [docs/modules/knowledge-base.md](docs/modules/knowledge-base.md) | 知识库：分块索引、混合检索、RAG 问答与溯源、术语表 |
 | [docs/modules/markdown-one.md](docs/modules/markdown-one.md) | Markdown ONE：统一解析管线、格式化、图片本地化与导出 |
 | [docs/modules/weibo.md](docs/modules/weibo.md) | 微博浏览器：基于官方 Open API 的时间线浏览、评论、表情包、AI 编辑分享发布与媒体下载 |
-| [docs/modules/sync-wechat.md](docs/modules/sync-wechat.md) | 同步公众号：Token 并发管理、样式内联、永久素材、草稿发布 |
+| [docs/modules/wechat.md](docs/modules/wechat.md) | 微信公众号：Markdown 写作/排版、草稿箱、素材管理、群发发布与基础运营 |
 
 **历史参考文档（宅桌面时期）**
 
@@ -129,7 +129,7 @@
 
 ### 阅读
 
-> 详细设计：[docs/modules/reading.md](docs/modules/reading.md)
+> 详细设计：[docs/modules/reader.md](docs/modules/reader.md)
 
 - 导入：目录递归扫描 `.txt`、流式 MD5 去重（`file_hash` UNIQUE）、编码自动检测（jschardet + iconv-lite，UTF-8 / GBK / Big5）
 - 阅读：虚拟滚动（>100MB 文件不卡顿）、章节解析（第X章 / Chapter X，支持中文与阿拉伯数字）、进度持久化（行号 + 偏移 + 百分比）
@@ -150,9 +150,9 @@
 - 账号与授权：标准 OAuth2 登录，Token 存 `SecretStorage`，支持多账号切换与过期刷新/撤销
 - 可靠性：失败重试指数退避 + 分桶限流 + 超时；发布与评论均本地去重，避免重复操作
 
-### 同步微信公众号
+### 微信公众号
 
-> 详细设计：[docs/modules/sync-wechat.md](docs/modules/sync-wechat.md)
+> 详细设计：[docs/modules/wechat.md](docs/modules/wechat.md)
 > 本模块能力与公众号主体类型强相关（群发需认证、调用需 IP 白名单），实现前需完成权限验证。
 
 - 草稿箱接口：正文转公众号 HTML（内联样式），支持封面图、摘要、作者、原创声明开关

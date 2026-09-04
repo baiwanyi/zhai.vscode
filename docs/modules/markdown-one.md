@@ -23,7 +23,7 @@
 
 - 不做所见即所得块编辑（沿用 VSCode 原生编辑器）
 - 不提供幻灯片/海报等花哨导出
-- 不内置图床上传（图片本地化到工作区 `assets/`，发布时再按平台上传，见 `sync-wechat.md`）
+- 不内置图床上传（图片本地化到工作区 `assets/`，发布时再按平台上传，见 `wechat.md`）
 
 ---
 
@@ -120,7 +120,7 @@ stringify 写回文件（单次 WorkspaceEdit，可撤销）
 | Mermaid | `mermaid` | **mermaid** | 主流事实标准 |
 | 富文本转 MD | `turndown` + `turndown-plugin-gfm` | **turndown** | 与剪藏方案一致 |
 | 图片处理 | `sharp` / ffmpeg | **sharp** | 图片压缩与格式转换，无需外部进程 |
-| HTML 内联样式 | `juice` / 手写正则 | **juice** | 公众号不支持 `<style>`，必须内联（见 `sync-wechat.md`） |
+| HTML 内联样式 | `juice` / 手写正则 | **juice** | 公众号不支持 `<style>`，必须内联（见 `wechat.md`） |
 | PDF | 系统打印 / `puppeteer-core` | **HTML → 系统打印** | 零重型依赖；若需自动化，`puppeteer-core` **保持沙箱开启** |
 | DOCX | `docx` | **docx** | 纯 JS 生成 |
 
