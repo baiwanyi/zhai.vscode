@@ -25,7 +25,7 @@
 | [docs/modules/common.md](docs/modules/common.md) | 通用：存储架构、增量索引、FTS5 检索、配置与密钥、消息协议 |
 | [docs/modules/ai-chat.md](docs/modules/ai-chat.md) | AI Chat：写作 / 对话双模式、diff 逐段接受、`@` 上下文、流式协议 |
 | [docs/modules/notes.md](docs/modules/notes.md) | 笔记：目录笔记本、双向链接、修订快照、模板与网页剪藏 |
-| [docs/modules/writing.md](docs/modules/writing.md) | 写作：作品-卷-章结构、AI 副驾、角色与设定、伏笔情节线、导出 |
+| [docs/modules/press.md](docs/modules/press.md) | 小说写作（Press）：作品-卷-章结构、README/Chapter 目录、扁平设定文档、章节文档体（本章介绍/角色链接/金手指）、AI 副驾、伏笔情节线、导出 |
 | [docs/modules/reading.md](docs/modules/reading.md) | 阅读：TXT 导入去重、编码检测、虚拟滚动、书签与全文搜索 |
 | [docs/modules/knowledge-base.md](docs/modules/knowledge-base.md) | 知识库：分块索引、混合检索、RAG 问答与溯源、术语表 |
 | [docs/modules/markdown-one.md](docs/modules/markdown-one.md) | Markdown ONE：统一解析管线、格式化、图片本地化与导出 |
@@ -39,7 +39,6 @@
 | [docs/prd.md](docs/prd.md) | 产品需求文档：模块功能、API 总览、数据指标、非功能需求 |
 | [docs/development.md](docs/development.md) | 全栈开发计划书：阶段划分、任务清单、工时估算 |
 | [docs/optimization.md](docs/optimization.md) | 安全 / 稳定性 / 性能优化项（P0~P3） |
-| [docs/modules/press.md](docs/modules/press.md) | 写作模块：编辑器、AI 副驾、角色与设定、大纲与伏笔 |
 | [docs/modules/reader.md](docs/modules/reader.md) | 阅读模块：TXT 导入、编码检测、去重、书架 API |
 | [docs/modules/dashboard.md](docs/modules/dashboard.md) | 仪表盘：统计聚合 API 与快捷方式网格设计 |
 | [docs/modules/extension.md](docs/modules/extension.md) | 浏览器扩展：截图 OCR、选中文本、整页采集 |
@@ -99,7 +98,7 @@
 
 > 详细设计：[docs/modules/notes.md](docs/modules/notes.md)
 
-- 组织：以工作区文件夹作为笔记本的树形结构；标签系统（Frontmatter `tags` 或正文 `#标签`）；笔记置顶
+- 组织：以 `notes/YYYYMM/UUID.md` 为笔记（年月目录 + 32 位十六进制 UUID，设想④）；标签系统（Frontmatter `tags` 或正文 `#标签`）；笔记置顶
 - 编辑：Markdown 所见即所得（复用 VSCode 原生编辑器 + 预览），5 秒防抖自动保存，切换 / 关闭时强制保存
 - 双向链接：`[[笔记标题]]` 输入自动补全，出链 / 入链面板、引用计数、关系图谱可视化
 - 版本历史：本地修订记录，差异对比 + 一键恢复，至少保留 30 个历史版本
@@ -111,11 +110,13 @@
 - 视图：列表 / 看板（按标签列，拖拽移动）/ 日历（按创建更新时间）
 - AI 增强：摘要生成、改写 / 扩写 / 缩写 / 翻译、批量标签建议
 
-### 写作
+### 小说写作（Press）
 
-> 详细设计：[docs/modules/writing.md](docs/modules/writing.md)
+> 详细设计：[docs/modules/press.md](docs/modules/press.md)
 
-- 结构：作品 → 卷 → 章两级树，拖拽排序（跨卷 / 卷内）、分章与合并、状态徽章（草稿 / 待修改 / 待发布 / 已发布）
+- 结构：作品 → 卷 → 章两级树，对应目录 `press/【小说名】/README.md` + `Chapter/01-章节名.md`（分卷 `Chapter/01-卷名/`）；设定以扁平独立文档（角色设定.md / 大纲.md / 设定.md）承载（设想⑤⑥）
+- 章节文档体：每章含本章介绍、出场角色及 `[[角色设定#名]]` 链接、金手指设定（设想⑦）
+- 拖拽排序（跨卷 / 卷内）、分章与合并、状态徽章（草稿 / 待修改 / 待发布 / 已发布）
 - 编辑器：MDX 编辑器，章节元信息（标题 / 状态 / 写作便签 / 关联角色 / 字数目标）、多标签页、专注模式、主题（亮色 / 暗色 / 墨绿 / 暖黄）
 - AI 副驾：续写、润色改写、对话生成、描写展开、大纲生成、智能校对、AI 写评、情感 / 节奏分析、AI 智能起名、自定义指令
 - 角色管理：角色卡（基础信息 / 外貌 / 性格 / 背景 / 能力）、关系图谱、标签分组（主角 / 反派 / 配角 / 龙套）、出场统计

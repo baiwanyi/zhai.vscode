@@ -146,7 +146,7 @@ updated: 2026-09-03T11:20:00+08:00
 tags: [技术, TypeScript]
 summary: AI 生成的一句话摘要（可选）
 pinned: false         # 笔记置顶
-# 写作模块扩展字段（见 writing.md）
+# 写作模块扩展字段（见 press.md）
 status: draft
 characters: [林凡]
 plotLines: [主线]

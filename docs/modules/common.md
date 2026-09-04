@@ -15,7 +15,7 @@
 
 ### 1.2 目标
 
-- **Markdown 是唯一真相源**：正文永远存在于工作区文件中，插件只是读取者与索引者
+- **Markdown 是唯一真相源**：正文永远存在于**可配置的文档保存目录**（见 1.5）下的模块目录中，插件只是读取者与索引者
 - **SQLite 只是影子**：仅存元数据，随时可删库重建，用户无感知
 - **零干扰**：不劫持 VSCode 原生编辑体验（保存、Git diff、多光标、拼写检查全部保留）
 
@@ -23,7 +23,7 @@
 
 - 不做云端账号体系与多端同步（同步交给用户自己的 Git / OneDrive）
 - 不做多人协作与权限管理
-- 不替代 Git 做版本管理（版本能力见 `notes.md` / `writing.md` 的本地快照）
+- 不替代 Git 做版本管理（版本能力见 `notes.md` / `press.md` 的本地快照）
 
 ### 1.4 与其他模块的关系
 
@@ -42,6 +42,12 @@
                     AI Chat（消费检索结果作为上下文）
                     同步微博 / 同步公众号（消费正文做发布）
 ```
+
+### 1.5 存储根与模块目录（对应设想①②③）
+
+- **① 文档保存目录**：插件配置项 `baiwanyione.storage.rootPath` 指向一个根目录，全模块 Markdown 主存储位于其下；用户可 `git init` 跟踪该目录、随时同步到 Git（索引库不进 Git，见 ⑥）。
+- **② 模块目录**：根目录下划分 `notes/`、`press/`、`reader/` 三大模块目录，分别对应笔记 / 小说写作 / 阅读模块（详见各模块文档）。
+- **③ SQLite 索引维度**：索引库（`globalStorage/index.db` 及各模块库）以**文档保存目录相对路径（模块 / 子目录 / 文件名）**为唯一 key，逻辑上「按目录 + 文件名管理」；索引只存元数据，随时可删库重建。
 
 ---
 
@@ -146,7 +152,7 @@ activate()
 
 ## 6. 数据模型
 
-索引库位置：`context.globalStorageUri/index.db`（不参与 Git 同步，不写入工作区）。
+索引库位置：`context.globalStorageUri/index.db`（不参与 Git 同步，不写入工作区）。`path` 字段统一为文档保存目录相对路径，如 `notes/202509/0f1e…md`、`press/斗破苍穹/Chapter/01-觉醒/01-第一章.md`，对应设想③「按目录 + 文件名管理」。
 
 ```sql
 -- 元数据主表：只存元数据，绝不存正文全文
@@ -228,6 +234,7 @@ PRAGMA foreign_keys = ON;
 
 | Key | 类型 | 默认值 | 说明 |
 |-----|------|--------|------|
+| `baiwanyione.storage.rootPath` | string | ``（空=工作区根） | 文档保存目录（设想①）；其下划分 notes/、press/、reader/ 模块目录，可 git 跟踪 |
 | `baiwanyione.index.exclude` | string[] | `["**/node_modules/**", "**/.git/**"]` | 索引排除的 glob |
 | `baiwanyione.index.debounceMs` | number | `500` | 增量索引防抖毫秒数 |
 | `baiwanyione.index.rebuildOnActivate` | boolean | `true` | 激活时自检并按需重建 |
