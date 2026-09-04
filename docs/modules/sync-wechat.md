@@ -15,7 +15,7 @@
 
 把长篇笔记/作品章节**排版后同步到微信公众号**：以「草稿箱」为主的发布链路，兼顾素材永久化与排版美观。
 
-与「同步微博」的差异：公众号承载**长文 + 完整排版**，需要 HTML 内联样式、永久素材与封面图；微博承载短内容（见 `sync-weibo.md`）。
+与「同步微博」的差异：公众号承载**长文 + 完整排版**，需要 HTML 内联样式、永久素材与封面图；微博承载短内容（见 `weibo.md`）。
 
 ### 1.2 目标
 
@@ -148,7 +148,7 @@
 与微博模块共用 `globalStorage/social.db`（`platform = 'wechat'`），另增素材映射表。
 
 ```sql
--- 复用 social_accounts / publish_records / publish_drafts（见 sync-weibo.md）
+-- 复用 social_accounts / publish_records / publish_drafts（见 weibo.md）
 
 -- 素材映射（本地文件 → 平台永久素材）
 CREATE TABLE IF NOT EXISTS wechat_materials (

@@ -12,6 +12,12 @@
 
 ## 文档索引
 
+**排期**
+
+| 文档 | 说明 |
+|------|------|
+| [docs/roadmap.md](docs/roadmap.md) | 开发路线图：阶段划分、依赖顺序、里程碑与工时估算 |
+
 **模块设计文档（插件形态）**
 
 | 文档 | 说明 |
@@ -23,7 +29,7 @@
 | [docs/modules/reading.md](docs/modules/reading.md) | 阅读：TXT 导入去重、编码检测、虚拟滚动、书签与全文搜索 |
 | [docs/modules/knowledge-base.md](docs/modules/knowledge-base.md) | 知识库：分块索引、混合检索、RAG 问答与溯源、术语表 |
 | [docs/modules/markdown-one.md](docs/modules/markdown-one.md) | Markdown ONE：统一解析管线、格式化、图片本地化与导出 |
-| [docs/modules/sync-weibo.md](docs/modules/sync-weibo.md) | 同步微博：OAuth 授权、内容转换、长图、幂等发布与退避重试 |
+| [docs/modules/weibo.md](docs/modules/weibo.md) | 微博浏览器：基于官方 Open API 的时间线浏览、评论、表情包、AI 编辑分享发布与媒体下载 |
 | [docs/modules/sync-wechat.md](docs/modules/sync-wechat.md) | 同步公众号：Token 并发管理、样式内联、永久素材、草稿发布 |
 
 **历史参考文档（宅桌面时期）**
@@ -130,16 +136,18 @@
 - 书签与搜索：书签 CRUD + 侧边栏点击跳转，FTS5 全文搜索 + 关键词高亮定位原文
 - 组织：书架分组（在读 / 收藏 / 完结）、回收站与恢复、阅读偏好持久化
 
-### 同步微博
+### 微博浏览器
 
-> 详细设计：[docs/modules/sync-weibo.md](docs/modules/sync-weibo.md)
-> 本模块依赖微博开放平台接口权限，实现前需完成接口可用性验证。
+> 详细设计：[docs/modules/weibo.md](docs/modules/weibo.md)
+> 基于微博开放平台官方 API（OAuth2）设计，合规可控；点赞/转发/图文发布/分组/上传等官方未开放能力已明确降级，不引入私有 API。
 
-- 一键发布：将笔记 / 章节正文转纯文本，自动处理话题 `#话题#`、@提及、超链接转「网页链接」
-- 字数与图片：超出单条字数限制时自动转长微博图片；图片走官方上传接口，本地附件保留原始文件
-- 账号与授权：OAuth2 凭证存于 `SecretStorage`，支持多账号切换与授权过期重连
-- 草稿与记录：发布前预览、草稿箱、发布历史与回执链接
-- 可靠性：失败重试采用指数退避 + 次数上限；同一笔记重复发布以本地记录去重，避免重复发博
+- 浏览：VSCode 侧边栏内查看首页时间线（`home_timeline`），瀑布流（masonry）流式布局与媒体懒加载
+- 评论：通过官方 `comments/*` 读取与发表评论、回复，乐观更新 + 失败回滚 + 本地幂等去重
+- 表情渲染：通过官方 `emotions` 接口获取并正确渲染微博表情包
+- 发布：笔记/章节一键转微博，发布前可由 AI 润色编辑（diff 对比采纳）；默认走 `statuses/share` 链接分享，获高级权限后升级图文发布
+- 媒体归档：图片/视频经微博官网 ajax 接口取 JSON 解析直链下载（须带 Referer 头），按 `weibo-{uid}-{YYYYMMDDHHmm}-{postId}-{seq}.{ext}` 统一规范命名落盘
+- 账号与授权：标准 OAuth2 登录，Token 存 `SecretStorage`，支持多账号切换与过期刷新/撤销
+- 可靠性：失败重试指数退避 + 分桶限流 + 超时；发布与评论均本地去重，避免重复操作
 
 ### 同步微信公众号
 
