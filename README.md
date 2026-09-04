@@ -39,7 +39,6 @@
 | [docs/prd.md](docs/prd.md) | 产品需求文档：模块功能、API 总览、数据指标、非功能需求 |
 | [docs/development.md](docs/development.md) | 全栈开发计划书：阶段划分、任务清单、工时估算 |
 | [docs/optimization.md](docs/optimization.md) | 安全 / 稳定性 / 性能优化项（P0~P3） |
-| [docs/modules/reader.md](docs/modules/reader.md) | 阅读模块：TXT 导入、编码检测、去重、书架 API |
 | [docs/modules/dashboard.md](docs/modules/dashboard.md) | 仪表盘：统计聚合 API 与快捷方式网格设计 |
 | [docs/modules/extension.md](docs/modules/extension.md) | 浏览器扩展：截图 OCR、选中文本、整页采集 |
 
@@ -130,6 +129,7 @@
 ### 阅读
 
 > 详细设计：[docs/modules/reader.md](docs/modules/reader.md)
+> 本地 TXT 只读阅读器：只读取与记录，不修改、不移动、不重写源文件；元数据存储于 `globalStorage/reader.db`。
 
 - 导入：目录递归扫描 `.txt`、流式 MD5 去重（`file_hash` UNIQUE）、编码自动检测（jschardet + iconv-lite，UTF-8 / GBK / Big5）
 - 阅读：虚拟滚动（>100MB 文件不卡顿）、章节解析（第X章 / Chapter X，支持中文与阿拉伯数字）、进度持久化（行号 + 偏移 + 百分比）
@@ -155,11 +155,11 @@
 > 详细设计：[docs/modules/wechat.md](docs/modules/wechat.md)
 > 本模块能力与公众号主体类型强相关（群发需认证、调用需 IP 白名单），实现前需完成权限验证。
 
-- 草稿箱接口：正文转公众号 HTML（内联样式），支持封面图、摘要、作者、原创声明开关
-- 素材管理：图片上传为永久素材并回写本地，避免外链失效
-- 排版：Markdown → 公众号排版主题（字号 / 行距 / 引用块 / 代码块高亮）
-- 凭证与状态：Access Token 存于 `SecretStorage` 并自动续期；发布前预览；发布记录含状态（草稿 / 已发布 / 失败）
-- 可靠性：遵守公众号接口调用配额，失败指数退避重试，发布操作幂等
+- 写作即排版：Markdown → 公众号 HTML（内联样式、代码高亮、模板/样式中心），支持封面/摘要/作者/原创声明/留言/话题
+- 素材资产化：图片/语音/视频上传为永久素材，分组、搜索、复用，避免外链失效
+- 一键发布：草稿箱 → 群发/发布（`freepublish`）/ 定时群发，支持预览给指定微信号
+- 运营管理：自定义菜单、自动回复、粉丝标签、已发布管理与数据概览（接口可得范围内）
+- 可靠性：Access Token 并发去重存于 `SecretStorage`、IP 白名单可诊断、失败指数退避重试、发布操作幂等
 
 ### 知识库
 
