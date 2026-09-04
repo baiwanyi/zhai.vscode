@@ -3,7 +3,7 @@
 **版本**：2.0
 **日期**：2026-09-04
 **状态**：草案
-**宿主**：VSCode 插件 BaiwanyiONE
+**宿主**：VSCode 插件 Zhai（宅桌面）
 **合并说明**：由 `docs/modules/writing.md`（插件形态）与旧 `docs/modules/press.md`（宅桌面 Web 方案）合并统一为单一小说写作模块；技术形态以插件形态为准（Markdown 主存储 + SQLite 仅缓存索引），旧 Web 方案的 Express/Prisma/localStorage 技术栈不再沿用。
 **存储根**：`{storage.rootPath}/press/`（根目录配置见 `common.md` 第 1 节）
 
@@ -338,20 +338,20 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 | Command ID | 标题 | 说明 |
 |------------|------|------|
-| `baiwanyione.press.newProject` | 新建作品 | 生成 `press/【小说名】/` 骨架（README.md + 大纲.md + 角色设定.md + Chapter/） |
-| `baiwanyione.press.openProject` | 打开作品 | 侧边栏切换到指定作品 |
-| `baiwanyione.press.newChapter` | 新建章节 | 在当前卷末尾追加 `01-章节名.md` |
-| `baiwanyione.press.newVolume` | 新建卷 | 创建 `Chapter/01-卷名/` |
-| `baiwanyione.press.splitChapter` | 分章 | 按光标位置拆分 |
-| `baiwanyione.press.mergeChapters` | 合并章节 | 合并选中多章 |
-| `baiwanyione.press.continue` | AI 续写 | `Alt+Enter` |
-| `baiwanyione.press.openOutline` | 打开大纲 | 三视图切换（大纲.md） |
-| `baiwanyione.press.openCharacters` | 角色管理 | 角色列表与关系图谱（角色设定.md） |
-| `baiwanyione.press.openForeshadowing` | 伏笔看板 | 待回收预警 |
-| `baiwanyione.press.snapshots` | 版本快照 | 列表 / diff / 恢复 |
-| `baiwanyione.press.stats` | 创作统计 | 热力图与日历 |
-| `baiwanyione.press.export` | 导出作品 | 格式与范围选择（按 Chapter/ 顺序） |
-| `baiwanyione.press.pomodoro` | 番茄钟 | 开始 / 暂停 |
+| `zhai.press.newProject` | 新建作品 | 生成 `press/【小说名】/` 骨架（README.md + 大纲.md + 角色设定.md + Chapter/） |
+| `zhai.press.openProject` | 打开作品 | 侧边栏切换到指定作品 |
+| `zhai.press.newChapter` | 新建章节 | 在当前卷末尾追加 `01-章节名.md` |
+| `zhai.press.newVolume` | 新建卷 | 创建 `Chapter/01-卷名/` |
+| `zhai.press.splitChapter` | 分章 | 按光标位置拆分 |
+| `zhai.press.mergeChapters` | 合并章节 | 合并选中多章 |
+| `zhai.press.continue` | AI 续写 | `Alt+Enter` |
+| `zhai.press.openOutline` | 打开大纲 | 三视图切换（大纲.md） |
+| `zhai.press.openCharacters` | 角色管理 | 角色列表与关系图谱（角色设定.md） |
+| `zhai.press.openForeshadowing` | 伏笔看板 | 待回收预警 |
+| `zhai.press.snapshots` | 版本快照 | 列表 / diff / 恢复 |
+| `zhai.press.stats` | 创作统计 | 热力图与日历 |
+| `zhai.press.export` | 导出作品 | 格式与范围选择（按 Chapter/ 顺序） |
+| `zhai.press.pomodoro` | 番茄钟 | 开始 / 暂停 |
 
 **Webview 方法**：`project/list`、`chapter/tree`、`chapter/reorder`、`character/list`、`character/relations`、`setting/list`、`foreshadowing/list`、`outline/get`、`stats/get`、`export/run`
 

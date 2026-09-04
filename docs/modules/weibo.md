@@ -3,7 +3,7 @@
 **版本**：2.0
 **日期**：2026-09-04
 **状态**：待验证（接口能力以微博开放平台官方文档 2025-05-09 版为准，见第 5 节能力对照）
-**宿主**：VSCode 插件 BaiwanyiONE
+**宿主**：VSCode 插件 Zhai（宅桌面）
 **前身**：v1.0「同步微博」——仅承担「写作 → 分发」的发布单向链路
 
 > ⚠️ **架构前置说明（以官方能力为准）**：本模块**授权、浏览、评论、表情以微博开放平台官方 API（`open.weibo.com`，OAuth2）为主干**，合规可控；**媒体详情与直链取用微博官网网页 ajax 接口**（`weibo.com/ajax/statuses/show` 等，与官网同源、已验证可用，非 `open.weibo.com` REST，亦非逆向私有协议），用于解析图片/视频地址并下载。
@@ -89,7 +89,7 @@
 ### 4.1 授权流程（标准 OAuth2）
 
 ```
-命令：Baiwanyione: 微博授权
+命令：Zhai: 微博授权
    │
    ▼ 引导用户在设置填写 AppKey / AppSecret（存 SecretStorage）
    │
@@ -97,7 +97,7 @@
    │
    ▼ 用户确认 → 回调带 code → oauth2/access_token 换取 token（含有效期）
    │
-   ▼ 存入 SecretStorage（key: baiwanyione.weibo.<uid>.token）
+   ▼ 存入 SecretStorage（key: zhai.weibo.<uid>.token）
    │
    ▼ 过期前自动刷新（提前 10 分钟）或提示重新授权；oauth2/revokeoauth2 支持登出撤销
 ```
@@ -390,16 +390,16 @@ CREATE INDEX IF NOT EXISTS idx_saved_note_mid ON weibo_saved_notes(mid);
 
 | Command ID | 标题 | 说明 |
 |------------|------|------|
-| `baiwanyione.weibo.login` | 微博授权 | OAuth2 授权登录 |
-| `baiwanyione.weibo.logout` | 退出账号 | 撤销授权（revokeoauth2） |
-| `baiwanyione.weibo.openBrowser` | 打开微博浏览器 | 加载首页时间线 |
-| `baiwanyione.weibo.switchGroup` | 切换本地分组 | 按标签筛选缓存 |
-| `baiwanyione.weibo.comment` | 评论/回复 | comments/create、comments/reply |
-| `baiwanyione.weibo.publish` | 发布到微博 | AI 编辑 → 预览 → share 发布 |
-| `baiwanyione.weibo.downloadMedia` | 下载媒体 | 批量下载图片/视频并按规范命名 |
-| `baiwanyione.weibo.history` | 发布历史 | 查看记录与回执 |
-| `baiwanyione.weibo.retry` | 重试失败任务 | 对失败发布/评论重试 |
-| `baiwanyione.weibo.saveToNote` | 保存为笔记 | 将当前微博转为 Markdown 笔记存入笔记模块 |
+| `zhai.weibo.login` | 微博授权 | OAuth2 授权登录 |
+| `zhai.weibo.logout` | 退出账号 | 撤销授权（revokeoauth2） |
+| `zhai.weibo.openBrowser` | 打开微博浏览器 | 加载首页时间线 |
+| `zhai.weibo.switchGroup` | 切换本地分组 | 按标签筛选缓存 |
+| `zhai.weibo.comment` | 评论/回复 | comments/create、comments/reply |
+| `zhai.weibo.publish` | 发布到微博 | AI 编辑 → 预览 → share 发布 |
+| `zhai.weibo.downloadMedia` | 下载媒体 | 批量下载图片/视频并按规范命名 |
+| `zhai.weibo.history` | 发布历史 | 查看记录与回执 |
+| `zhai.weibo.retry` | 重试失败任务 | 对失败发布/评论重试 |
+| `zhai.weibo.saveToNote` | 保存为笔记 | 将当前微博转为 Markdown 笔记存入笔记模块 |
 
 **Webview 方法**：`weibo/login`、`weibo/timeline`、`weibo/comments`、`weibo/comment`、`weibo/publish`（流式进度）、`weibo/downloadMedia`、`weibo/stickers`、`weibo/groups`、`weibo/saveToNote`。
 

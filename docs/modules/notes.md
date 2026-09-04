@@ -3,7 +3,7 @@
 **版本**：1.0
 **日期**：2026-09-03
 **状态**：草案
-**宿主**：VSCode 插件 BaiwanyiONE
+**宿主**：VSCode 插件 Zhai（宅桌面）
 
 ---
 
@@ -43,7 +43,7 @@
 
 | 编号 | 场景 | 用户旅程 |
 |------|------|----------|
-| US-1 | 模板速记 | `Baiwanyione: 新建笔记` → 选「会议记录」模板 → 自动在 `notes/2026-09/{uuid}.md` 创建并填充骨架（首行 `# 标题`） |
+| US-1 | 模板速记 | `Zhai: 新建笔记` → 选「会议记录」模板 → 自动在 `notes/2026-09/{uuid}.md` 创建并填充骨架（首行 `# 标题`） |
 | US-2 | 网页剪藏 | 浏览技术文章 → 插件命令「整页采集」→ Readability 提取正文 → 转 Markdown → 存为笔记并附来源 |
 | US-3 | 双链漫游 | 在 A 笔记输入 `[[` → 补全选中 B → 在 B 的反链面板看到 A → 点击跳回 |
 | US-4 | 误删找回 | 删掉一段内容并保存 → 打开版本历史 → 对比差异 → 一键恢复 |
@@ -78,7 +78,7 @@
 ### 4.1 新建笔记（模板）
 
 ```
-命令面板：Baiwanyione: 新建笔记
+命令面板：Zhai: 新建笔记
    │
    ▼
 选择笔记本（目录） → 选择模板（空 / 会议记录 / 读书笔记 / 周报 / 自定义）
@@ -141,7 +141,7 @@ FileSystemWatcher 触发索引（见 common.md 4.1）
 | Frontmatter | `gray-matter` / `js-yaml` 手写 | **gray-matter** | 解析与序列化一体，容错性好 |
 | 双链解析 | 正则扫描 / `remark-wikilink` AST | **正则扫描（增量）** | 只需提取链接与行号，正则最轻；AST 解析留给 Markdown ONE 的导出管线 |
 | 关系图谱 | `cytoscape` / `d3-force` / `sigma` | **cytoscape** | 万级节点性能与交互 API 成熟，布局算法丰富 |
-| 版本快照 | 本地 `.baiwanyione/history`（内容寻址）/ 纯依赖 Git | **本地快照 + Git 可选** | 无 Git 仓库也能恢复；快照按内容 hash 去重节省空间 |
+| 版本快照 | 本地 `.zhai/history`（内容寻址）/ 纯依赖 Git | **本地快照 + Git 可选** | 无 Git 仓库也能恢复；快照按内容 hash 去重节省空间 |
 | 剪藏正文 | `Readability` + `Turndown` / 简易选择器 | **Readability + Turndown** | 与浏览器扩展方案一致（见 `extension.md`），提取质量高 |
 | OCR | `tesseract.js` / 云端 OCR | **tesseract.js（`chi_sim+eng`）** | 完全离线，隐私友好；云端作为可选配置 |
 | 图片落盘 | 剪贴板 PNG → `assets/` + 相对路径 | **相对路径落盘** | 保证工作区可整体迁移，避免绝对路径失效 |
@@ -227,16 +227,16 @@ CREATE TABLE IF NOT EXISTS trash (
 
 | Command ID | 标题 | 说明 |
 |------------|------|------|
-| `baiwanyione.note.new` | 新建笔记 | 选择笔记本与模板后创建 |
-| `baiwanyione.note.newFromTemplate` | 从模板新建 | 直接指定模板 |
-| `baiwanyione.note.insertLink` | 插入双向链接 | 弹出笔记选择器，插入 `[[标题]]` |
-| `baiwanyione.note.showBacklinks` | 显示反向链接 | 侧边栏展示入链列表 |
-| `baiwanyione.note.showGraph` | 打开关系图谱 | Webview 力导向图 |
-| `baiwanyione.note.restoreRevision` | 恢复历史版本 | 选择快照 → diff → 恢复 |
-| `baiwanyione.note.pasteImage` | 粘贴图片 | 剪贴板图片落盘并插入 |
-| `baiwanyione.note.clipWeb` | 剪藏网页 | 粘贴 URL → 抓取正文 → 存为笔记 |
-| `baiwanyione.note.openTrash` | 打开回收站 | 查看与恢复已删除笔记 |
-| `baiwanyione.note.togglePin` | 置顶/取消置顶 | 写入 Frontmatter `pinned` |
+| `zhai.note.new` | 新建笔记 | 选择笔记本与模板后创建 |
+| `zhai.note.newFromTemplate` | 从模板新建 | 直接指定模板 |
+| `zhai.note.insertLink` | 插入双向链接 | 弹出笔记选择器，插入 `[[标题]]` |
+| `zhai.note.showBacklinks` | 显示反向链接 | 侧边栏展示入链列表 |
+| `zhai.note.showGraph` | 打开关系图谱 | Webview 力导向图 |
+| `zhai.note.restoreRevision` | 恢复历史版本 | 选择快照 → diff → 恢复 |
+| `zhai.note.pasteImage` | 粘贴图片 | 剪贴板图片落盘并插入 |
+| `zhai.note.clipWeb` | 剪藏网页 | 粘贴 URL → 抓取正文 → 存为笔记 |
+| `zhai.note.openTrash` | 打开回收站 | 查看与恢复已删除笔记 |
+| `zhai.note.togglePin` | 置顶/取消置顶 | 写入 Frontmatter `pinned` |
 
 **Webview 方法**：`note/list`、`note/tags`、`note/backlinks`、`note/revisions`、`note/restore`、`template/list`、`trash/list`、`trash/restore`
 

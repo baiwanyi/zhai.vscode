@@ -3,7 +3,7 @@
 **版本**：1.0
 **日期**：2026-09-03
 **状态**：草案
-**宿主**：VSCode 插件 BaiwanyiONE
+**宿主**：VSCode 插件 Zhai（宅桌面）
 
 ---
 
@@ -200,12 +200,12 @@ CREATE TABLE IF NOT EXISTS kb_meta (
 
 | Key | 类型 | 默认值 | 说明 |
 |-----|------|--------|------|
-| `baiwanyione.kb.chunkMaxTokens` | number | `512` | 单块最大 token |
-| `baiwanyione.kb.chunkOverlapTokens` | number | `64` | 相邻块重叠 token |
-| `baiwanyione.kb.topK` | number | `5` | 注入 AI 的片段数 |
-| `baiwanyione.kb.vectorEnabled` | boolean | `false` | 是否启用向量检索 |
-| `baiwanyione.kb.embeddingProvider` | string | `local` | `local` / `cloud` |
-| `baiwanyione.kb.exclude` | string[] | `[]` | 不参与索引的 glob |
+| `zhai.kb.chunkMaxTokens` | number | `512` | 单块最大 token |
+| `zhai.kb.chunkOverlapTokens` | number | `64` | 相邻块重叠 token |
+| `zhai.kb.topK` | number | `5` | 注入 AI 的片段数 |
+| `zhai.kb.vectorEnabled` | boolean | `false` | 是否启用向量检索 |
+| `zhai.kb.embeddingProvider` | string | `local` | `local` / `cloud` |
+| `zhai.kb.exclude` | string[] | `[]` | 不参与索引的 glob |
 
 ---
 
@@ -213,11 +213,11 @@ CREATE TABLE IF NOT EXISTS kb_meta (
 
 | Command ID | 标题 | 说明 |
 |------------|------|------|
-| `baiwanyione.kb.rebuild` | 重建知识库索引 | 全量重建，显示进度 |
-| `baiwanyione.kb.search` | 检索知识库 | 打开检索面板 |
-| `baiwanyione.kb.ask` | 基于知识库提问 | 打开问答面板 |
-| `baiwanyione.kb.status` | 索引状态 | 展示覆盖率与构建信息 |
-| `baiwanyione.kb.glossary` | 术语表 | 术语列表与出现位置 |
+| `zhai.kb.rebuild` | 重建知识库索引 | 全量重建，显示进度 |
+| `zhai.kb.search` | 检索知识库 | 打开检索面板 |
+| `zhai.kb.ask` | 基于知识库提问 | 打开问答面板 |
+| `zhai.kb.status` | 索引状态 | 展示覆盖率与构建信息 |
+| `zhai.kb.glossary` | 术语表 | 术语列表与出现位置 |
 
 **Webview 方法**：`kb/search`、`kb/ask`（流式）、`kb/rebuild`（流式进度）、`kb/status`、`glossary/list`、`glossary/mentions`
 

@@ -3,7 +3,7 @@
 **版本**：1.0
 **日期**：2026-09-03
 **状态**：草案
-**宿主**：VSCode 插件 BaiwanyiONE
+**宿主**：VSCode 插件 Zhai（宅桌面）
 **历史参考**：`docs/modules/reader.md`（宅桌面时期方案，本文件为插件形态重构版）
 
 ---
@@ -32,7 +32,7 @@
 
 | 编号 | 场景 | 用户旅程 |
 |------|------|----------|
-| US-1 | 首次导入 | 设置 `baiwanyione.reader.txtDir` → 命令「扫描目录」→ 进度条显示新增/跳过数 → 书架出现书籍列表 |
+| US-1 | 首次导入 | 设置 `zhai.reader.txtDir` → 命令「扫描目录」→ 进度条显示新增/跳过数 → 书架出现书籍列表 |
 | US-2 | 断点续读 | 昨天读到 45% 关掉窗口 → 今天打开同一本 → 自动定位到上次位置 |
 | US-3 | 大书阅读 | 打开 120MB 的 txt → 2s 内进入阅读 → 快速滚动无白屏 |
 | US-4 | 章节跳转 | 打开章节导航 → 点「第 358 章 决战」→ 直接跳到该章首行 |
@@ -72,7 +72,7 @@
 ### 4.1 扫描导入
 
 ```
-命令：Baiwanyione: 扫描阅读目录
+命令：Zhai: 扫描阅读目录
    │
    ▼
 获取并发锁（已在扫描则提示稍后）
@@ -203,11 +203,11 @@ CREATE VIRTUAL TABLE IF NOT EXISTS book_fts USING fts5(
 
 | Key | 类型 | 默认值 | 说明 |
 |-----|------|--------|------|
-| `baiwanyione.reader.txtDir` | string | `""` | TXT 小说根目录（未配置时扫描返回 0，不报错） |
-| `baiwanyione.reader.fontSize` | number | `16` | 正文字号 |
-| `baiwanyione.reader.lineHeight` | number | `1.8` | 行距 |
-| `baiwanyione.reader.theme` | string | `sepia` | `green`/`sepia`/`dark`/`contrast` |
-| `baiwanyione.reader.chapterPattern` | string[] | 见下 | 自定义章节正则数组 |
+| `zhai.reader.txtDir` | string | `""` | TXT 小说根目录（未配置时扫描返回 0，不报错） |
+| `zhai.reader.fontSize` | number | `16` | 正文字号 |
+| `zhai.reader.lineHeight` | number | `1.8` | 行距 |
+| `zhai.reader.theme` | string | `sepia` | `green`/`sepia`/`dark`/`contrast` |
+| `zhai.reader.chapterPattern` | string[] | 见下 | 自定义章节正则数组 |
 
 默认章节正则覆盖：`第[零一二三四五六七八九十百千0-9]+[章节回]`、`Chapter\s*\d+`、`第[0-9]+节`。
 
@@ -217,12 +217,12 @@ CREATE VIRTUAL TABLE IF NOT EXISTS book_fts USING fts5(
 
 | Command ID | 标题 | 说明 |
 |------------|------|------|
-| `baiwanyione.reader.scan` | 扫描阅读目录 | 导入新书，显示进度与结果 |
-| `baiwanyione.reader.openBook` | 打开书籍 | 从书架选择 |
-| `baiwanyione.reader.toggleBookmark` | 切换书签 | 在当前行添加/移除书签 |
-| `baiwanyione.reader.search` | 搜索书籍内容 | FTS5 全文检索 |
-| `baiwanyione.reader.buildIndex` | 建立全文索引 | 对指定书建索引 |
-| `baiwanyione.reader.openTrash` | 阅读回收站 | 恢复已删除书籍记录 |
+| `zhai.reader.scan` | 扫描阅读目录 | 导入新书，显示进度与结果 |
+| `zhai.reader.openBook` | 打开书籍 | 从书架选择 |
+| `zhai.reader.toggleBookmark` | 切换书签 | 在当前行添加/移除书签 |
+| `zhai.reader.search` | 搜索书籍内容 | FTS5 全文检索 |
+| `zhai.reader.buildIndex` | 建立全文索引 | 对指定书建索引 |
+| `zhai.reader.openTrash` | 阅读回收站 | 恢复已删除书籍记录 |
 
 **Webview 方法**：`book/list`、`book/open`、`book/content`（分页取行）、`book/chapters`、`book/progress`（保存进度）、`bookmark/list`、`bookmark/add`、`bookmark/remove`、`search/query`
 

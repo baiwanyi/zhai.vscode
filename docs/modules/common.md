@@ -3,7 +3,7 @@
 **版本**：1.0
 **日期**：2026-09-03
 **状态**：草案
-**宿主**：VSCode 插件 BaiwanyiONE
+**宿主**：VSCode 插件 Zhai（宅桌面）
 
 ---
 
@@ -45,7 +45,7 @@
 
 ### 1.5 存储根与模块目录（对应设想①②③）
 
-- **① 文档保存目录**：插件配置项 `baiwanyione.storage.rootPath` 指向一个根目录，全模块 Markdown 主存储位于其下；用户可 `git init` 跟踪该目录、随时同步到 Git（索引库不进 Git，见 ⑥）。
+- **① 文档保存目录**：插件配置项 `zhai.storage.rootPath` 指向一个根目录，全模块 Markdown 主存储位于其下；用户可 `git init` 跟踪该目录、随时同步到 Git（索引库不进 Git，见 ⑥）。
 - **② 模块目录**：根目录下划分 `notes/`、`press/`、`reader/` 三大模块目录，分别对应笔记 / 小说写作 / 阅读模块（详见各模块文档）。
 - **③ SQLite 索引维度**：索引库（`globalStorage/index.db` 及各模块库）以**文档保存目录相对路径（模块 / 子目录 / 文件名）**为唯一 key，逻辑上「按目录 + 文件名管理」；索引只存元数据，随时可删库重建。
 
@@ -223,27 +223,27 @@ PRAGMA foreign_keys = ON;
 
 | Command ID | 标题 | 说明 |
 |------------|------|------|
-| `baiwanyione.rebuildIndex` | 重建索引 | 全量扫描工作区并重建索引库 |
-| `baiwanyione.openSearch` | 全局搜索 | 打开跨模块搜索面板（默认 `Ctrl+K`） |
-| `baiwanyione.showIndexStatus` | 索引状态 | 显示文件数、索引数、上次构建时间 |
-| `baiwanyione.clearIndex` | 清空索引缓存 | 删除 index.db（安全，可重建） |
-| `baiwanyione.exportDiagnostics` | 导出诊断信息 | 脱敏后导出配置与日志，便于排查 |
-| `baiwanyione.openSettings` | 打开插件设置 | 跳转到 `baiwanyione.*` 配置分组 |
+| `zhai.rebuildIndex` | 重建索引 | 全量扫描工作区并重建索引库 |
+| `zhai.openSearch` | 全局搜索 | 打开跨模块搜索面板（默认 `Ctrl+K`） |
+| `zhai.showIndexStatus` | 索引状态 | 显示文件数、索引数、上次构建时间 |
+| `zhai.clearIndex` | 清空索引缓存 | 删除 index.db（安全，可重建） |
+| `zhai.exportDiagnostics` | 导出诊断信息 | 脱敏后导出配置与日志，便于排查 |
+| `zhai.openSettings` | 打开插件设置 | 跳转到 `zhai.*` 配置分组 |
 
 ### 7.2 配置项
 
 | Key | 类型 | 默认值 | 说明 |
 |-----|------|--------|------|
-| `baiwanyione.storage.rootPath` | string | ``（空=工作区根） | 文档保存目录（设想①）；其下划分 notes/、press/、reader/ 模块目录，可 git 跟踪 |
-| `baiwanyione.index.exclude` | string[] | `["**/node_modules/**", "**/.git/**"]` | 索引排除的 glob |
-| `baiwanyione.index.debounceMs` | number | `500` | 增量索引防抖毫秒数 |
-| `baiwanyione.index.rebuildOnActivate` | boolean | `true` | 激活时自检并按需重建 |
-| `baiwanyione.search.limit` | number | `50` | 全局搜索单模块返回上限 |
-| `baiwanyione.ai.model` | string | `deepseek-chat` | 默认模型 |
-| `baiwanyione.ai.temperature` | number | `0.7` | 默认温度 |
-| `baiwanyione.ai.maxContextTokens` | number | `4000` | 前文注入上限 |
-| `baiwanyione.ai.dailyTokenBudget` | number | `500000` | 每日 Token 预算，超限提示 |
-| `baiwanyione.telemetry.enabled` | boolean | `false` | 遥测开关，默认关闭 |
+| `zhai.storage.rootPath` | string | ``（空=工作区根） | 文档保存目录（设想①）；其下划分 notes/、press/、reader/ 模块目录，可 git 跟踪 |
+| `zhai.index.exclude` | string[] | `["**/node_modules/**", "**/.git/**"]` | 索引排除的 glob |
+| `zhai.index.debounceMs` | number | `500` | 增量索引防抖毫秒数 |
+| `zhai.index.rebuildOnActivate` | boolean | `true` | 激活时自检并按需重建 |
+| `zhai.search.limit` | number | `50` | 全局搜索单模块返回上限 |
+| `zhai.ai.model` | string | `deepseek-chat` | 默认模型 |
+| `zhai.ai.temperature` | number | `0.7` | 默认温度 |
+| `zhai.ai.maxContextTokens` | number | `4000` | 前文注入上限 |
+| `zhai.ai.dailyTokenBudget` | number | `500000` | 每日 Token 预算，超限提示 |
+| `zhai.telemetry.enabled` | boolean | `false` | 遥测开关，默认关闭 |
 
 ### 7.3 Webview 消息协议
 

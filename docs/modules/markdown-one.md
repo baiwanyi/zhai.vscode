@@ -3,7 +3,7 @@
 **版本**：1.0
 **日期**：2026-09-03
 **状态**：草案
-**宿主**：VSCode 插件 BaiwanyiONE
+**宿主**：VSCode 插件 Zhai（宅桌面）
 
 ---
 
@@ -162,15 +162,15 @@ wordGoal: 3000
 
 | Command ID | 标题 | 说明 |
 |------------|------|------|
-| `baiwanyione.md.format` | 格式化文档 | 规范化当前文档 |
-| `baiwanyione.md.formatAll` | 批量格式化 | 对选中目录/多文件执行 |
-| `baiwanyione.md.fixFrontmatter` | 修复 Frontmatter | 校验并补全字段 |
-| `baiwanyione.md.localizeImages` | 图片本地化 | 下载外链图片并重写路径 |
-| `baiwanyione.md.compressImages` | 压缩图片 | 批量压缩 `assets/` |
-| `baiwanyione.md.insertToc` | 插入目录 | 生成或更新 TOC |
-| `baiwanyione.md.pasteAsMarkdown` | 粘贴为 Markdown | 富文本转 MD |
-| `baiwanyione.md.export` | 导出 | 选择格式与范围 |
-| `baiwanyione.md.healthCheck` | 文档体检 | 报告死链/缺失图片/标题跳级 |
+| `zhai.md.format` | 格式化文档 | 规范化当前文档 |
+| `zhai.md.formatAll` | 批量格式化 | 对选中目录/多文件执行 |
+| `zhai.md.fixFrontmatter` | 修复 Frontmatter | 校验并补全字段 |
+| `zhai.md.localizeImages` | 图片本地化 | 下载外链图片并重写路径 |
+| `zhai.md.compressImages` | 压缩图片 | 批量压缩 `assets/` |
+| `zhai.md.insertToc` | 插入目录 | 生成或更新 TOC |
+| `zhai.md.pasteAsMarkdown` | 粘贴为 Markdown | 富文本转 MD |
+| `zhai.md.export` | 导出 | 选择格式与范围 |
+| `zhai.md.healthCheck` | 文档体检 | 报告死链/缺失图片/标题跳级 |
 
 **Webview 方法**：`md/format`、`md/export`（含进度流）、`md/health`
 

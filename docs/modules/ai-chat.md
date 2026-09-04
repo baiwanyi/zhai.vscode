@@ -3,7 +3,7 @@
 **版本**：1.0
 **日期**：2026-09-03
 **状态**：草案
-**宿主**：VSCode 插件 BaiwanyiONE
+**宿主**：VSCode 插件 Zhai（宅桌面）
 
 ---
 
@@ -207,12 +207,12 @@ CREATE INDEX IF NOT EXISTS idx_usage_date ON ai_usage_logs(created_at);
 
 | Command ID | 标题 | 快捷键建议 |
 |------------|------|-----------|
-| `baiwanyione.ai.openChat` | 打开 AI 对话 | `Ctrl+Shift+L` |
-| `baiwanyione.ai.inlineContinue` | 内联续写 | `Alt+Enter`（编辑器内） |
-| `baiwanyione.ai.polish` | 润色选中文本 | `Ctrl+Shift+P` 后搜索 |
-| `baiwanyione.ai.newSession` | 新建会话 | — |
-| `baiwanyione.ai.cancel` | 取消当前生成 | `Esc`（面板聚焦时） |
-| `baiwanyione.ai.usage` | 查看用量统计 | — |
+| `zhai.ai.openChat` | 打开 AI 对话 | `Ctrl+Shift+L` |
+| `zhai.ai.inlineContinue` | 内联续写 | `Alt+Enter`（编辑器内） |
+| `zhai.ai.polish` | 润色选中文本 | `Ctrl+Shift+P` 后搜索 |
+| `zhai.ai.newSession` | 新建会话 | — |
+| `zhai.ai.cancel` | 取消当前生成 | `Esc`（面板聚焦时） |
+| `zhai.ai.usage` | 查看用量统计 | — |
 
 ### 7.2 Webview 消息协议
 

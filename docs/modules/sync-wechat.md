@@ -3,7 +3,7 @@
 **版本**：1.0
 **日期**：2026-09-03
 **状态**：待验证（docs 未覆盖本模块，需先确认公众号接口权限与主体类型）
-**宿主**：VSCode 插件 BaiwanyiONE
+**宿主**：VSCode 插件 Zhai（宅桌面）
 
 > ⚠️ **前置说明**：公众号接口能力与**主体类型**强相关。未认证订阅号通常只能使用**草稿箱**接口，群发（发布）能力需认证。同时接口要求**调用方 IP 在白名单内**，家庭宽带动态 IP 会导致 Token 获取失败。**开发前必须完成权限与 IP 方案验证**，结论回填至第 9 节。
 
@@ -189,12 +189,12 @@ CREATE INDEX IF NOT EXISTS idx_draft_file ON wechat_drafts(account_id, file_path
 
 | Command ID | 标题 | 说明 |
 |------------|------|------|
-| `baiwanyione.wechat.setup` | 配置公众号 | 填写 AppID/AppSecret |
-| `baiwanyione.wechat.publish` | 发布到公众号 | 转换 → 预览 → 建草稿 |
-| `baiwanyione.wechat.preview` | 预览排版效果 | Webview 模拟移动端宽度 |
-| `baiwanyione.wechat.history` | 发布历史 | 草稿/发布记录与链接 |
-| `baiwanyione.wechat.materials` | 素材管理 | 查看已上传素材与复用情况 |
-| `baiwanyione.wechat.retry` | 重试失败任务 | 对失败记录重试 |
+| `zhai.wechat.setup` | 配置公众号 | 填写 AppID/AppSecret |
+| `zhai.wechat.publish` | 发布到公众号 | 转换 → 预览 → 建草稿 |
+| `zhai.wechat.preview` | 预览排版效果 | Webview 模拟移动端宽度 |
+| `zhai.wechat.history` | 发布历史 | 草稿/发布记录与链接 |
+| `zhai.wechat.materials` | 素材管理 | 查看已上传素材与复用情况 |
+| `zhai.wechat.retry` | 重试失败任务 | 对失败记录重试 |
 
 **涉及的平台接口**：
 
