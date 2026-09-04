@@ -34,7 +34,7 @@ export function computeUnifiedDiff(original: string, edited: string): DiffHunk[]
     for (let i = 0; i < max; i++) {
         const o = a[i]
         const e = b[i]
-        if (o === e) {
+        if (o !== undefined && o === e) {
             hunks.push({ type: 'context', content: o, lineNo: i + 1 })
         } else {
             if (o !== undefined) hunks.push({ type: 'remove', content: o })

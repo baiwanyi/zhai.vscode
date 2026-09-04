@@ -1,0 +1,4 @@
+# pnpm 11 起项目级设置统一存放于本文件；allowBuilds 声明允许执行安装脚本的依赖
+allowBuilds:
+    better-sqlite3: true
+    esbuild: true

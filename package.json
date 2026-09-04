@@ -1,0 +1,165 @@
+{
+    "name": "zhai-vscode",
+    "displayName": "Zhai 宅桌面",
+    "description": "面向「写小说 + 写代码」的 VSCode 插件：Markdown 主存储 + SQLite 缓存索引，提供 AI 辅助、全文检索、写作管理与内容发布能力",
+    "version": "0.1.0",
+    "private": true,
+    "license": "MIT",
+    "publisher": "zhai",
+    "engines": {
+        "vscode": "^1.90.0"
+    },
+    "categories": [
+        "Other"
+    ],
+    "main": "./dist/extension.js",
+    "scripts": {
+        "compile": "node esbuild.mjs && pnpm run webview:build",
+        "watch": "node esbuild.mjs --watch",
+        "webview:dev": "vite build --config vite.webview.config.ts --watch",
+        "webview:build": "vite build --config vite.webview.config.ts",
+        "typecheck": "tsc --noEmit",
+        "package": "pnpm run compile && vsce package"
+    },
+    "contributes": {
+        "commands": [
+            {
+                "command": "zhai.rebuildIndex",
+                "title": "重建索引",
+                "category": "Zhai"
+            },
+            {
+                "command": "zhai.openSearch",
+                "title": "全局搜索",
+                "category": "Zhai"
+            },
+            {
+                "command": "zhai.showIndexStatus",
+                "title": "索引状态",
+                "category": "Zhai"
+            },
+            {
+                "command": "zhai.clearIndex",
+                "title": "清空索引缓存",
+                "category": "Zhai"
+            },
+            {
+                "command": "zhai.exportDiagnostics",
+                "title": "导出诊断信息",
+                "category": "Zhai"
+            },
+            {
+                "command": "zhai.openSettings",
+                "title": "打开插件设置",
+                "category": "Zhai"
+            }
+        ],
+        "keybindings": [
+            {
+                "command": "zhai.openSearch",
+                "key": "ctrl+k",
+                "when": "!inputBoxFocus"
+            }
+        ],
+        "configuration": {
+            "title": "Zhai 宅桌面",
+            "properties": {
+                "zhai.storage.rootPath": {
+                    "type": "string",
+                    "default": "",
+                    "markdownDescription": "文档保存目录（空 = 工作区根），其下划分 `notes/`、`press/`、`reader/` 模块目录"
+                },
+                "zhai.index.exclude": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    },
+                    "default": [
+                        "**/node_modules/**",
+                        "**/.git/**"
+                    ],
+                    "description": "索引排除的 glob 规则"
+                },
+                "zhai.index.debounceMs": {
+                    "type": "number",
+                    "default": 500,
+                    "description": "增量索引防抖毫秒数"
+                },
+                "zhai.index.rebuildOnActivate": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "激活时自检文件数与记录数，不一致时自动全量重建"
+                },
+                "zhai.search.limit": {
+                    "type": "number",
+                    "default": 50,
+                    "description": "全局搜索单模块返回上限"
+                },
+                "zhai.ai.model": {
+                    "type": "string",
+                    "enum": [
+                        "deepseek-chat",
+                        "deepseek-reasoner"
+                    ],
+                    "default": "deepseek-chat",
+                    "description": "默认 AI 模型"
+                },
+                "zhai.ai.temperature": {
+                    "type": "number",
+                    "default": 0.7,
+                    "description": "默认温度（0.1 ~ 1.5）"
+                },
+                "zhai.ai.maxContextTokens": {
+                    "type": "number",
+                    "default": 4000,
+                    "description": "前文注入 Token 上限"
+                },
+                "zhai.ai.dailyTokenBudget": {
+                    "type": "number",
+                    "default": 500000,
+                    "description": "每日 Token 预算，达到阈值提示并阻断"
+                },
+                "zhai.telemetry.enabled": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "遥测开关（默认关闭，需显式开启）"
+                }
+            }
+        },
+        "viewsContainers": {
+            "activitybar": [
+                {
+                    "id": "zhai-sidebar",
+                    "title": "Zhai 宅桌面",
+                    "icon": "resources/icon.svg"
+                }
+            ]
+        },
+        "views": {
+            "zhai-sidebar": [
+                {
+                    "type": "webview",
+                    "id": "zhai.searchPanel",
+                    "name": "全局搜索"
+                }
+            ]
+        }
+    },
+    "dependencies": {
+        "better-sqlite3": "^11.10.0"
+    },
+    "devDependencies": {
+        "@tailwindcss/vite": "^4.1.0",
+        "@types/better-sqlite3": "^7.6.13",
+        "@types/react": "^19.1.0",
+        "@types/react-dom": "^19.1.0",
+        "@types/vscode": "^1.90.0",
+        "@vitejs/plugin-react": "^4.5.0",
+        "esbuild": "^0.25.0",
+        "react": "^19.1.0",
+        "react-dom": "^19.1.0",
+        "tailwindcss": "^4.1.0",
+        "typescript": "^5.8.0",
+        "vite": "^6.3.0"
+    }
+}
