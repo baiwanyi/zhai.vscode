@@ -41,7 +41,14 @@ export class IndexService {
     /** 注册增量监听，须在 activate 中调用并纳入 subscriptions */
     public registerWatcher(disposables: vscode.Disposable[]): void {
         const cfg = getZhaiConfig()
-        const pattern = new vscode.RelativePattern(resolveStorageRoot(), '**/*.md')
+        let root: vscode.Uri
+        try {
+            root = resolveStorageRoot()
+        } catch {
+            logger.info('未配置文档保存目录，跳过增量监听注册（打开工作区或配置 zhai.storage.rootPath 后生效）')
+            return
+        }
+        const pattern = new vscode.RelativePattern(root, '**/*.md')
         this.watcher = vscode.workspace.createFileSystemWatcher(pattern)
         disposables.push(
             this.watcher,
@@ -105,7 +112,13 @@ export class IndexService {
     /** 激活自愈：文件数与记录数不一致时触发后台重建（US-5 故障自修场景） */
     public async selfCheck(): Promise<void> {
         const cfg = getZhaiConfig()
-        const root = resolveStorageRoot()
+        let root: vscode.Uri
+        try {
+            root = resolveStorageRoot()
+        } catch {
+            logger.info('未配置文档保存目录，跳过激活自检')
+            return
+        }
         const files = await vscode.workspace.findFiles(
             new vscode.RelativePattern(root, '**/*.md'),
             this.buildExcludeGlob(),

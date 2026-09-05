@@ -30,6 +30,6 @@
         "src/**/*.ts",
         "src/**/*.tsx",
         "esbuild.mjs",
-        "vite.webview.config.ts"
+        "vite.webview.config.mjs"
     ]
 }

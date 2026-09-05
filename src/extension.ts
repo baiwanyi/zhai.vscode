@@ -10,6 +10,7 @@ import { getZhaiConfig } from './modules/common/config'
 import { IndexService } from './modules/common/indexer/indexService'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 import { logger } from './modules/common/logger'
+import { PlaceholderWebviewProvider } from './modules/common/placeholderViewProvider'
 import { SearchPanelViewProvider } from './modules/common/searchPanelProvider'
 import { SecretsService } from './modules/common/secrets'
 import { StatusBarService } from './modules/common/statusBar'
@@ -37,6 +38,10 @@ export function activate(context: vscode.ExtensionContext): void {
     const searchProvider = new SearchPanelViewProvider(context.extensionUri, db, indexService)
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(SearchPanelViewProvider.viewId, searchProvider),
+    )
+
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(PlaceholderWebviewProvider.viewId, new PlaceholderWebviewProvider()),
     )
 
     const statusBar = new StatusBarService(indexService, indexStatusEmitter.event)

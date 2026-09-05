@@ -2,9 +2,10 @@
  * SQLite 连接管理：打开/创建索引库并应用性能 PRAGMA。
  * 约束：索引库仅存元数据、位于 globalStorage（不进 Git）；单写连接 + 进程内互斥由调用方保证。
  */
+import * as fs from 'node:fs'
 import * as path from 'node:path'
-import * as vscode from 'vscode'
 import Database from 'better-sqlite3'
+import * as vscode from 'vscode'
 
 /** 连接初始化 PRAGMA：WAL 提升并发读、NORMAL 平衡 durability 与性能（common.md 第 6 节） */
 const PRAGMAS = [
@@ -21,6 +22,8 @@ const PRAGMAS = [
  */
 export function openIndexDatabase(globalStorageUri: vscode.Uri): Database.Database {
     const dbPath = path.join(globalStorageUri.fsPath, 'index.db')
+    // 首次激活时 globalStorage 目录可能尚未创建，better-sqlite3 要求父目录存在
+    fs.mkdirSync(path.dirname(dbPath), { recursive: true })
     const db = new Database(dbPath)
     for (const pragma of PRAGMAS) {
         db.exec(pragma)
