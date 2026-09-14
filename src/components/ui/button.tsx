@@ -1,7 +1,3 @@
-/**
- * 按钮组件：基于 radix-ui 的 Slot 与 class-variance-authority 维护变体与尺寸的样式组合。
- * asChild 为真时把样式与属性下放到子元素，用于链接等自定义触发器场景。
- */
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'
@@ -28,7 +24,8 @@ const buttonVariants = cva(
                 sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
                 lg: 'h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2',
                 icon: 'size-8',
-                'icon-xs': "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
+                'icon-xs':
+                    "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
                 'icon-sm': 'size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg',
                 'icon-lg': 'size-9',
             },
@@ -49,7 +46,7 @@ function Button({
 }: React.ComponentProps<'button'> &
     VariantProps<typeof buttonVariants> & {
         asChild?: boolean
-    }): React.JSX.Element {
+    }) {
     const Comp = asChild ? Slot.Root : 'button'
 
     return (
