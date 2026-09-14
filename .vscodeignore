@@ -1,9 +1,41 @@
-.vscode/**
+# 打包忽略清单：vsix 只需 dist/ 产物、resources/ 图标与 package.json
+# 源码与文档
 src/**
 docs/**
-node_modules/**
+.codebuddy/**
+.vscode/**
+
+# 根目录依赖：pnpm 的符号链接布局无法被 vsce 的 npm list 检测处理，故打包时用 --no-dependencies。
+# 需要随包分发的原生模块由 scripts/bundle-native.mjs 单独装到 dist/node_modules/ 下，
+# 因此这里只锚定根目录的 node_modules，放行 dist 内的依赖。
+/node_modules/**
+
+# 构建与工具配置（编译期使用，运行时不读）
 esbuild.mjs
-vite.webview.config.ts
+vite.config.mjs
 tsconfig.json
-**/*.map
+eslint.config.mjs
+components.json
+pnpm-lock.yaml
+pnpm-workspace.yaml
+
+# 版本控制与编辑器配置
 .gitignore
+.editorconfig
+.prettierrc*
+.prettierignore
+
+# 开发过程产物
+**/*.log
+**/*.map
+**/*.tsbuildinfo
+
+# npm 在 dist 生成依赖目录时附带的锁文件
+dist/package-lock.json
+**/.package-lock.json
+
+# dist 内的原生模块：运行时只需要 lib/ 与 prebuilds/，源码与构建脚本不随包
+dist/node_modules/**/src/**
+dist/node_modules/**/deps/**
+dist/node_modules/**/*.gyp
+dist/node_modules/**/*.md

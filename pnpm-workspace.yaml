@@ -1,5 +1,12 @@
-# pnpm 11 起项目级设置统一存放于本文件；allowBuilds 声明允许执行安装脚本的依赖
+# pnpm 11 起项目级设置统一存放于本文件（allowBuilds 等；.npmrc 已非首选位置）
+# 注意：本文件中的键名必须是 camelCase，写成 kebab-case（如 node-linker）会被 pnpm 静默忽略
+#
+# allowBuilds：声明允许执行安装脚本的依赖
 allowBuilds:
+    # vsce 打包 / 签名所需的原生绑定，安装时下载预编译二进制
+    '@vscode/vsce-sign': true
     better-sqlite3: true
     esbuild: true
+    # keytar 是已弃用的原生模块（Node 26 下无法编译），且仅用于 vsce 登录态存储，禁用不影响 package
+    keytar: false
     unrs-resolver: true

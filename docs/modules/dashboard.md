@@ -359,11 +359,11 @@ const PRESETS = {
 | 依赖 | 用途 | 安装状态 |
 |------|------|----------|
 | `recharts` | 图表 | ✅ 已安装 |
-| `@tabler/icons-react` | 图标 | ✅ 已安装 |
-| `date-fns` | 日期格式化 | ✅ 已安装 |
+| `lucide-react` | 图标 | ✅ 已安装（本项目统一用 lucide，非 `@tabler/icons-react`） |
 | `sonner` | Toast 通知 | ✅ 已安装 |
-| `react-router-dom` | 快捷操作路由跳转 | ✅ 已安装 |
-| `@tanstack/react-query` | 数据缓存 | ❌ 可选安装（可用 useEffect 替代） |
+| `react-day-picker` | 日期选择（shadcn calendar） | ✅ 已安装 |
+| `react-router-dom` | 快捷操作路由跳转 | ❌ 未安装（侧栏视图由 VSCode 承载，无需前端路由） |
+| `@tanstack/react-query` | 数据缓存 | ❌ 未安装（当前用 `useEffect` + 自建轻量状态，见第 10 节） |
 
 ---
 
