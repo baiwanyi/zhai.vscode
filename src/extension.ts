@@ -1,8 +1,13 @@
 /**
- * 扩展入口：按 common.md 第 4.2 节激活流程装配全部 Common 服务。
- * 流程：日志 → 打开索引库 → schema 校验 → 注册命令/面板/监听 → 自检自愈（后台不阻塞激活）。
+ * 扩展入口：按 common.md 第 4.2 节激活流程装配 Common 与 AI 服务。
+ * 流程：日志 → 打开索引库/AI 库 → schema 校验 → 注册命令/面板/监听 → 自检自愈（后台不阻塞激活）。
  */
 import * as vscode from 'vscode'
+import { AiChatViewProvider } from './modules/ai/aiChatProvider'
+import { AiChatService } from './modules/ai/chatService'
+import { registerAiCommands } from './modules/ai/commands'
+import { openAiDatabase } from './modules/ai/db/connection'
+import { ensureAiSchema } from './modules/ai/db/schema'
 import { registerCommands } from './modules/common/commands'
 import { getZhaiConfig } from './modules/common/config'
 import { DashboardViewProvider } from './modules/common/dashboardProvider'
@@ -10,7 +15,6 @@ import { openIndexDatabase } from './modules/common/db/connection'
 import { ensureSchema } from './modules/common/db/schema'
 import { IndexService } from './modules/common/indexer/indexService'
 import { logger } from './modules/common/logger'
-import { PlaceholderWebviewProvider } from './modules/common/placeholderViewProvider'
 import { SecretsService } from './modules/common/secrets'
 import { StatusBarService } from './modules/common/statusBar'
 import type { IndexStatus } from './modules/common/indexer/indexService'
@@ -40,9 +44,19 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.registerWebviewViewProvider(DashboardViewProvider.viewId, dashboardProvider),
     )
 
-    const placeholderProvider = new PlaceholderWebviewProvider(context.extensionUri)
+    // AI 对话：独立 ai.db 承载会话、消息与用量，避免影响索引库写入
+    const aiDb = openAiDatabase(context.globalStorageUri)
+    context.subscriptions.push({ dispose: () => aiDb.close() })
+    ensureAiSchema(aiDb)
+
+    const aiChatService = new AiChatService(aiDb, secrets)
+    context.subscriptions.push(aiChatService)
+    registerAiCommands(context, aiChatService, secrets)
+
+    const aiChatProvider = new AiChatViewProvider(context.extensionUri, aiChatService)
     context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(PlaceholderWebviewProvider.viewId, placeholderProvider),
+        aiChatProvider,
+        vscode.window.registerWebviewViewProvider(AiChatViewProvider.viewId, aiChatProvider),
     )
 
     const statusBar = new StatusBarService(indexService, indexStatusEmitter.event)

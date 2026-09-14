@@ -229,6 +229,9 @@ PRAGMA foreign_keys = ON;
 | `zhai.clearIndex` | 清空索引缓存 | 删除 index.db（安全，可重建） |
 | `zhai.exportDiagnostics` | 导出诊断信息 | 脱敏后导出配置与日志，便于排查 |
 | `zhai.openSettings` | 打开插件设置 | 跳转到 `zhai.*` 配置分组 |
+| `zhai.openAiChat` | 打开 AI 对话 | 聚焦侧栏 AI 对话视图（默认 `Ctrl+Shift+L`） |
+| `zhai.ai.setApiKey` | 设置 DeepSeek API Key | 输入框写入系统密钥库（SecretStorage），不落配置文件 |
+| `zhai.ai.clearApiKey` | 清除 DeepSeek API Key | 从密钥库删除已保存的 Key |
 
 > `Ctrl+K` 现聚焦仪表盘视图；全局搜索（C7）的检索能力（FTS5 + `zhai.search.limit`）已在索引仓储就绪，搜索面板待实现。
 

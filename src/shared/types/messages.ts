@@ -27,6 +27,13 @@ export interface StreamMessage {
     reqId: string
     delta: string
     done: boolean
+    /** 增量所属通道，缺省为正文；reasoning 为模型思维链 */
+    channel?: 'content' | 'reasoning'
+    /** 结束时（done 为 true）的终态，供前端落定消息状态 */
+    status?: 'completed' | 'failed' | 'cancelled'
+    /** 结束时回传宿主侧完整正文，用于校正前端逐字累积结果 */
+    content?: string
+    error?: string
 }
 
 /** 宿主 → Webview：状态广播（索引就绪、配置变更、窗口聚焦） */

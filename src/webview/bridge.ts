@@ -1,7 +1,8 @@
 /**
- * Webview 消息桥：封装 acquireVsCodeApi 与 reqId 请求-响应匹配。
+ * Webview 消息桥：封装 acquireVsCodeApi、reqId 请求-响应匹配与宿主推送（stream / state）订阅。
  * 约束：acquireVsCodeApi 全局仅可调用一次；响应按 reqId 匹配 resolve，请求侧自带超时。
  */
+import type { StateMessage, StreamMessage } from '@/shared/types/messages'
 
 interface VsCodeApi {
     postMessage(message: unknown): void
@@ -21,13 +22,34 @@ interface PendingEntry {
 const pendingRequests: Map<string, PendingEntry> = new Map()
 const DEFAULT_TIMEOUT_MS = 10_000
 
+/** 宿主推送的订阅者集合：流式增量与状态广播 */
+const streamListeners = new Set<(message: StreamMessage) => void>()
+const stateListeners = new Set<(message: StateMessage) => void>()
+
+interface IncomingMessage {
+    type?: string
+    reqId?: string
+    ok?: boolean
+    payload?: unknown
+    error?: { message?: string }
+    delta?: unknown
+}
+
 window.addEventListener('message', (event: MessageEvent) => {
-    const message = event.data as {
-        type?: string
-        reqId?: string
-        ok?: boolean
-        payload?: unknown
-        error?: { message?: string }
+    const message = event.data as IncomingMessage
+    if (message.type === 'stream' && typeof message.delta === 'string') {
+        const streamMessage = message as unknown as StreamMessage
+        for (const listener of streamListeners) {
+            listener(streamMessage)
+        }
+        return
+    }
+    if (message.type === 'state') {
+        const stateMessage = message as unknown as StateMessage
+        for (const listener of stateListeners) {
+            listener(stateMessage)
+        }
+        return
     }
     if (message.type !== 'response' || typeof message.reqId !== 'string') {
         return
@@ -64,4 +86,20 @@ export function request<T>(method: string, payload?: unknown, timeoutMs = DEFAUL
         pendingRequests.set(reqId, entry)
         api.postMessage({ type: 'request', reqId, method, payload })
     })
+}
+
+/** 订阅宿主流式增量，返回取消订阅函数 */
+export function onStream(listener: (message: StreamMessage) => void): () => void {
+    streamListeners.add(listener)
+    return () => {
+        streamListeners.delete(listener)
+    }
+}
+
+/** 订阅宿主状态广播（如密钥变更、索引进度），返回取消订阅函数 */
+export function onState(listener: (message: StateMessage) => void): () => void {
+    stateListeners.add(listener)
+    return () => {
+        stateListeners.delete(listener)
+    }
 }

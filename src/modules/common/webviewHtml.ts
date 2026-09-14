@@ -1,6 +1,6 @@
 /**
  * Webview HTML 生成：读取 Vite 构建产物并注入 CSP 与资源 URI 重写。
- * 仪表盘与工作区两个 Webview 共用，确保构建产物可被 VS Code Webview 安全加载。
+ * 仪表盘与 AI 对话两个 Webview 共用，确保构建产物可被 VS Code Webview 安全加载。
  */
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'

@@ -57,12 +57,32 @@
                 "command": "zhai.openSettings",
                 "title": "打开插件设置",
                 "category": "Zhai"
+            },
+            {
+                "command": "zhai.openAiChat",
+                "title": "打开 AI 对话",
+                "category": "Zhai"
+            },
+            {
+                "command": "zhai.ai.setApiKey",
+                "title": "设置 DeepSeek API Key",
+                "category": "Zhai"
+            },
+            {
+                "command": "zhai.ai.clearApiKey",
+                "title": "清除 DeepSeek API Key",
+                "category": "Zhai"
             }
         ],
         "keybindings": [
             {
                 "command": "zhai.openDashboard",
                 "key": "ctrl+k",
+                "when": "!inputBoxFocus"
+            },
+            {
+                "command": "zhai.openAiChat",
+                "key": "ctrl+shift+l",
                 "when": "!inputBoxFocus"
             }
         ],
@@ -150,15 +170,16 @@
                 },
                 {
                     "type": "webview",
-                    "id": "zhai.placeholderView",
-                    "name": "工作区",
+                    "id": "zhai.aiChat",
+                    "name": "AI 对话",
                     "icon": "resources/icon.svg"
                 }
             ]
         }
     },
     "dependencies": {
-        "better-sqlite3": "^13.0.3"
+        "better-sqlite3": "^13.0.3",
+        "openai": "^7.15.0"
     },
     "devDependencies": {
         "@base-ui/react": "^1.8.0",

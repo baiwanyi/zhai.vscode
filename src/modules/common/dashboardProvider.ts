@@ -5,15 +5,13 @@
 import * as vscode from 'vscode'
 import { aggregateFileStats, listRecentFiles } from './db/statsRepository'
 import { logger } from './logger'
+import { WEBVIEW_ALLOWED_COMMANDS } from './webviewCommands'
 import { buildWebviewHtml } from './webviewHtml'
 import type { IndexService } from './indexer/indexService'
 import type { DashboardStats } from '../../shared/types/dashboard'
 import type { HostToWebviewMessage } from '../../shared/types/messages'
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
-
-/** 允许 Webview 触发的宿主命令白名单，避免任意命令被执行 */
-const ALLOWED_HOST_COMMANDS = new Set(['zhai.clearIndex', 'zhai.openSettings'])
 
 export class DashboardViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'zhai.dashboard'
@@ -69,7 +67,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             }
             case 'host/command': {
                 const command = typeof payload === 'string' ? payload : ''
-                if (!ALLOWED_HOST_COMMANDS.has(command)) {
+                if (!WEBVIEW_ALLOWED_COMMANDS.has(command)) {
                     throw new Error(`未授权的宿主命令：${command}`)
                 }
                 void vscode.commands.executeCommand(command)

@@ -2,7 +2,7 @@
 
 **版本**：1.0
 **日期**：2026-09-03
-**状态**：草案
+**状态**：对话模式已落地（见第 10 节），写作模式待实现
 **宿主**：VSCode 插件 Zhai（宅桌面）
 
 ---
@@ -53,12 +53,12 @@ AI Chat 是插件的**智能交互中枢**，同时服务于两类需求：
 | A3 | diff 预览与逐段接受 | 按 hunk 接受/拒绝/重新生成，接受后写入文件 | P0 | 待实现 |
 | A4 | 内联续写 | `Alt+Enter` 从光标处续写，流式占位显示 | P0 | 待实现 |
 | A5 | 选中文本快捷操作 | 润色 / 扩写 / 缩写 / 翻译 / 自定义 | P1 | 待实现 |
-| A6 | 对话模式 | 侧边栏多轮问答，历史持久化 | P0 | 待实现 |
-| A7 | 会话管理 | 新建 / 重命名 / 删除 / 关联到具体文件 | P0 | 待实现 |
-| A8 | 消息历史 | 完整保存 user/assistant 消息与状态 | P0 | 待实现 |
-| A9 | SSE 流式输出 | 逐字渲染，首字 < 500ms | P0 | 待实现 |
-| A10 | 思考链展示 | 展示 DeepSeek `reasoning_content`，可折叠 | P1 | 待实现 |
-| A11 | 请求取消 | `AbortController` + `CancellationToken` | P0 | 待实现 |
+| A6 | 对话模式 | 侧边栏多轮问答，历史持久化 | P0 | 已落地 |
+| A7 | 会话管理 | 新建 / 重命名 / 删除 / 关联到具体文件 | P0 | 部分（新建与自动命名） |
+| A8 | 消息历史 | 完整保存 user/assistant 消息与状态 | P0 | 已落地 |
+| A9 | SSE 流式输出 | 逐字渲染，首字 < 500ms | P0 | 已落地 |
+| A10 | 思考链展示 | 展示 DeepSeek `reasoning_content`，可折叠 | P1 | 部分（已回传并落库，折叠 UI 待做） |
+| A11 | 请求取消 | `AbortController` + `CancellationToken` | P0 | 已落地 |
 | A12 | `@` 上下文提及 | `@当前文件` `@选中` `@笔记` `@最近N章` `@角色名` `@图库图片` `@链接` | P0 | 待实现 |
 | A13 | 上下文参数面板 | 前文 500–4000 token、温度 0.1–1.5、maxTokens、模型、设定注入 | P1 | 待实现 |
 | A14 | 用量统计 | 记录 prompt/completion/total tokens 与预估费用，按日/月聚合 | P1 | 待实现 |
@@ -303,3 +303,43 @@ interface AbortRequest {
 1. 是否需要支持自定义 OpenAI 兼容端点（自部署模型）？
 2. 会话是否需要导出为 Markdown 归档到工作区？
 3. 是否提供「AI 改动留痕」（在文件中以注释形式记录 AI 生成段落）？
+
+---
+
+## 10. 首版实现（对话模式，已落地）
+
+侧栏视图 `zhai.aiChat`（AI 对话，`Ctrl+Shift+L` 聚焦，由原「工作区」占位视图改造而来）已落地对话模式最小闭环：会话、消息与用量落在独立的 `globalStorage/ai.db`，与内容索引库分离。
+
+| 功能点 | 落地情况 |
+|--------|----------|
+| A6 对话模式 | 侧栏多轮问答；Enter 发送、Shift + Enter 换行；生成期间可停止 |
+| A8 消息历史 | `messages` 表保存 user/assistant 与终态（completed / failed / cancelled） |
+| A9 SSE 流式输出 | openai SDK（`baseURL: https://api.deepseek.com`）；宿主按 60ms 窗口合并增量后经 `stream` 消息推送 |
+| A11 请求取消 | `AbortController`，`ai/abort` 立即断开连接并把消息落为 `cancelled` |
+| A17 预算护栏 | 按当日 `ai_usage_logs` 累计 token，达 `zhai.ai.dailyTokenBudget` 时拒绝发送并提示 |
+| A7 会话管理 | 已实现「新建会话」与首条消息自动命名；重命名 / 删除 / 关联文件待实现 |
+| A10 思考链 | 已随流式回传并写入 `messages.reasoning`；面板折叠展示待实现 |
+| A12 `@` 上下文 | 待实现（依赖 Notes / KB 检索） |
+| A1~A5 写作模式 | 待实现（diff 逐段接受、内联续写） |
+
+协议（第 7.2 节 compose 全量设计的对话子集，写作模式落地时再扩展）：
+
+| 方法 | 方向 | 说明 |
+|------|------|------|
+| `ai/session` | Webview → 宿主 | 取最近会话与消息；不存在时新建 |
+| `ai/newSession` | Webview → 宿主 | 新建会话 |
+| `ai/runtime` | Webview → 宿主 | 密钥状态（含脱敏 Key）、模型参数与当日用量 |
+| `ai/send` | Webview → 宿主 | 落库用户消息与占位助手消息，随后流式回传正文 |
+| `ai/abort` | Webview → 宿主 | 取消当前生成 |
+| `host/command` | Webview → 宿主 | 白名单命令（`src/modules/common/webviewCommands.ts`），用于设置密钥、打开设置等 |
+| `stream` | 宿主 → Webview | 增量 `{ reqId, delta, channel }`；终态 `{ done: true, status, content, error? }` |
+
+实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`aiChatProvider.ts` 协议路由、`db/` 三表仓储与 DDL）、页面 `src/webview/ai-chat.tsx`。
+
+页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `MessageAvatar/Header/Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `muted`）；输入区为 `Textarea` + `Button`，无 Key 时插入 `Card` 引导项。
+
+与本文档的已知差异（后续补齐）：
+
+- 上下文截断暂以「字符数 ÷ 1.6」粗估，第 5 节所列 tiktoken 方案未接入（AC-4 为降级实现）
+- 用量日志的 `estimated_cost` 暂记 0（未内置 DeepSeek 计费规则），重试指数退避未实现，仅落地 30s 首字超时中断
+- 单次生成上限固定 2048 token（`MAX_COMPLETION_TOKENS`），尚未开放到参数面板（A13）
