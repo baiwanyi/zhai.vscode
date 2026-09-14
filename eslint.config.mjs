@@ -177,18 +177,31 @@ export default defineConfig([
     {
         files: vendoredUi,
         rules: {
+            // 官方组件不标注函数返回类型，强制标注会产生大量与上游源码风格相关的噪音
             '@typescript-eslint/explicit-function-return-type': 'off',
+            // 组件内部存在类型体操与兼容层，这些 any 由上游维护，不在此处收窄
             '@typescript-eslint/no-explicit-any': 'off',
+            // 官方命名自成约定（如 slider 的 _values 下划线前缀），不套用项目命名规范
             '@typescript-eslint/naming-convention': 'off',
-            // 图表等组件由 recharts 返回 any，托管源码不做类型收窄改写
+            // 以下七条为类型感知规则：recharts 等上游 API 返回 any，会沿传播链连环报错；
+            // 托管源码的改动会被 CLI 覆盖，故整体豁免，同规则在项目自有代码中仍然生效
+            // 把 any 赋值给变量或属性
             '@typescript-eslint/no-unsafe-assignment': 'off',
+            // 访问 any 值的成员（如 payload.fill）
             '@typescript-eslint/no-unsafe-member-access': 'off',
+            // 把 any 作为实参传给已声明类型的函数
             '@typescript-eslint/no-unsafe-argument': 'off',
+            // 调用类型为 any 的函数或构造器
             '@typescript-eslint/no-unsafe-call': 'off',
+            // 把 any 作为函数返回值向外传出
             '@typescript-eslint/no-unsafe-return': 'off',
+            // 在模板字符串中插值 string/number 之外的类型
             '@typescript-eslint/restrict-template-expressions': 'off',
+            // 对可能产出 "[object Object]" 的值做隐式字符串化
             '@typescript-eslint/no-base-to-string': 'off',
+            // 导入顺序由 CLI 生成且与项目分组规则不同，强制重排会让组件偏离上游源码
             'import-x/order': 'off',
+            // 组件刻意同时导出组件与常量（如 buttonVariants），属 shadcn 既定写法
             'react-refresh/only-export-components': 'off',
         },
     },
