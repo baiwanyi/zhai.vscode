@@ -1,3 +1,8 @@
+/**
+ * 消息条目：以「头像 + 头部 + 内容 + 页脚」结构呈现单条对话内容。
+ * 复用约定：纯样式与结构组合，类名经 cn 合并主题令牌。
+ * 关键约束：子部件须按 MessageAvatar / MessageHeader / MessageContent / MessageFooter 层级组合，避免打乱对齐规则。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 

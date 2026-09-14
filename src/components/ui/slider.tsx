@@ -1,3 +1,8 @@
+/**
+ * 滑块：在连续或分段区间内取值。
+ * 复用约定：基于 radix-ui 构建，样式经 cn 合并主题令牌。
+ * 关键约束：必须提供可访问名称与取值范围；多值场景使用数组 value 并保证长度与 minStepsBetweenThumbs 匹配。
+ */
 'use client'
 
 import * as React from 'react'

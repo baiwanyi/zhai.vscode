@@ -1,3 +1,8 @@
+/**
+ * 滚动区域：提供统一视觉的滚动容器，替代浏览器原生滚动条。
+ * 复用约定：基于 radix-ui 构建，样式经 cn 合并主题令牌。
+ * 关键约束：横向滚动须显式添加 orientation="horizontal" 的 ScrollBar，否则无法滚动或无法拖拽。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { ScrollArea as ScrollAreaPrimitive } from 'radix-ui'

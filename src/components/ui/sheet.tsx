@@ -1,3 +1,8 @@
+/**
+ * 侧边抽屉：从边缘滑出的浮层，适用于设置、详情与移动端导航。
+ * 复用约定：基于 radix-ui 构建，关闭按钮取自 lucide-react，样式经 cn 合并主题令牌。
+ * 关键约束：必须包含 SheetTitle（可 sr-only）以满足无障碍要求；侧边方向与宽度由调用方显式声明。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { Dialog as SheetPrimitive } from 'radix-ui'

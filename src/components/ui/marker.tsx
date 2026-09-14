@@ -1,3 +1,8 @@
+/**
+ * 标记：用于时间线、分组标题或状态分段的小型标注，可带图标与变体色。
+ * 复用约定：基于 radix-ui 的 Slot 与 cva 变体实现，样式经 cn 合并主题令牌。
+ * 关键约束：图标经 MarkerIcon 传入以复用统一尺寸；变体语义由 markerVariants 定义，禁止覆盖配色。
+ */
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'

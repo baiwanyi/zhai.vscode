@@ -1,3 +1,8 @@
+/**
+ * 可调面板：在容器内划分可拖动调整的分区。
+ * 复用约定：基于 react-resizable-panels 构建，拖拽图标取自 lucide-react，样式经 cn 合并。
+ * 关键约束：Panel 必须置于 PanelGroup 内；尺寸以百分比表达并设置 minSize 防止被拖拽至不可用宽度。
+ */
 'use client'
 
 import { cn } from 'cn'

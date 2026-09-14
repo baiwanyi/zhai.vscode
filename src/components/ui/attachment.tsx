@@ -1,3 +1,8 @@
+/**
+ * 附件条目：展示文件名、类型、体积与操作按钮，用于消息与会话场景的附件呈现。
+ * 复用约定：基于 radix-ui 构建，变体经 cva 定义并复用主题令牌，图标取自 lucide-react。
+ * 关键约束：文件名一律以文本渲染，禁止拼接为 HTML；体积等元信息由调用方传入，组件不做格式化。
+ */
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'

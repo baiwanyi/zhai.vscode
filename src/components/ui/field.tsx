@@ -1,3 +1,8 @@
+/**
+ * 表单字段：为表单控件提供标签、描述、错误提示与布局对齐。
+ * 复用约定：基于 cva 定义变体，样式经 cn 合并主题令牌，配合 react-hook-form 的字段状态使用。
+ * 关键约束：校验态须同时声明 Field 的 data-invalid 与控件的 aria-invalid；禁用态同理使用 data-disabled 与 disabled。
+ */
 'use client'
 
 import { useMemo } from 'react'

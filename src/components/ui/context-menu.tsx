@@ -1,3 +1,8 @@
+/**
+ * 右键菜单：围绕光标位置展开的上下文操作集合。
+ * 复用约定：基于 radix-ui 构建，图标取自 lucide-react，样式经 cn 合并主题令牌。
+ * 关键约束：菜单项须置于 Group 或 Sub 内；危险动作应使用 destructive 变体以区分语义。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { ContextMenu as ContextMenuPrimitive } from 'radix-ui'

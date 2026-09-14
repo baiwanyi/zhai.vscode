@@ -1,3 +1,8 @@
+/**
+ * 命令面板：基于 cmdk 的可检索命令列表，常用于全局搜索与快捷操作。
+ * 复用约定：图标取自 lucide-react，样式经 cn 合并主题令牌。
+ * 关键约束：CommandItem 必须置于 CommandGroup 内；作为浮层使用时须嵌入 Dialog 以获得焦点管理。
+ */
 import * as React from 'react'
 import { Command as CommandPrimitive } from 'cmdk'
 import { cn } from 'cn'

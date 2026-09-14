@@ -1,3 +1,8 @@
+/**
+ * 多行输入：承载长文本录入，如说明、正文与备注。
+ * 复用约定：样式经 cn 合并主题令牌，通常置于 Field 内复用标签与错误提示。
+ * 关键约束：校验态须声明 aria-invalid；自动增高需自行控制行高，避免与滚动区域冲突。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 

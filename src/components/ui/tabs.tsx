@@ -1,3 +1,8 @@
+/**
+ * 标签页：在同一区域切换多个平级视图。
+ * 复用约定：基于 radix-ui 构建，变体经 cva 定义，样式经 cn 合并主题令牌。
+ * 关键约束：TabsTrigger 必须置于 TabsList 内，且每个 Trigger 的 value 都要有对应的 TabsContent 承接。
+ */
 'use client'
 
 import * as React from 'react'

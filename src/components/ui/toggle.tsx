@@ -1,3 +1,8 @@
+/**
+ * 切换按钮：表达可开启或关闭的状态型按钮，如加粗、收藏。
+ * 复用约定：基于 radix-ui 构建，变体经 cva 定义，样式经 cn 合并主题令牌。
+ * 关键约束：状态须通过 pressed 而非仅靠样式表达；需要承载导航时改用 asChild 包裹链接。
+ */
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'

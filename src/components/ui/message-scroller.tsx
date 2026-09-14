@@ -1,3 +1,8 @@
+/**
+ * 消息滚动容器：为对话列表提供自动滚动到底部与滚动锚定能力。
+ * 复用约定：基于 @shadcn/react 的 message-scroller 实现，转纽按钮图标取自 lucide-react。
+ * 关键约束：滚动位置由组件内部托管，调用方不要同时操作容器的 scrollTop，以免锚定失效。
+ */
 import * as React from 'react'
 import {
     MessageScroller as MessageScrollerPrimitive,

@@ -1,3 +1,8 @@
+/**
+ * 空状态：在无数据或筛选无结果时表达状态并提供引导操作。
+ * 复用约定：变体由 cva 定义并复用主题令牌，样式经 cn 合并。
+ * 关键约束：按 EmptyHeader / EmptyTitle / EmptyDescription / EmptyContent 组合使用，禁止另建自定义空态样式。
+ */
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'
 

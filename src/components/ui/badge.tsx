@@ -1,3 +1,8 @@
+/**
+ * 徽标：用于状态、分类与计数的短标签展示。
+ * 复用约定：变体由 cva 定义并复用主题语义色令牌，样式经 cn 合并。
+ * 关键约束：状态含义须通过 variant 表达，禁止使用原始色值（如 text-emerald-600）替代语义令牌。
+ */
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'

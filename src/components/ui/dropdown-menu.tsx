@@ -1,3 +1,8 @@
+/**
+ * 下拉菜单：由触发按钮展开的操作或选项集合。
+ * 复用约定：基于 radix-ui 构建，图标取自 lucide-react，样式经 cn 合并主题令牌。
+ * 关键约束：菜单项须置于 DropdownMenuGroup 内；危险操作使用 destructive 变体，快捷键提示用 DropdownMenuShortcut。
+ */
 'use client'
 
 import * as React from 'react'

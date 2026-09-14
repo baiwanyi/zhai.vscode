@@ -1,3 +1,8 @@
+/**
+ * 进度条：表达确定性任务的完成比例。
+ * 复用约定：基于 radix-ui 构建，样式经 cn 合并主题令牌。
+ * 关键约束：进度值取值 0-100 且必须提供可访问名称（外部标签或 aria-label）；不确定进度应改用 Spinner。
+ */
 'use client'
 
 import * as React from 'react'

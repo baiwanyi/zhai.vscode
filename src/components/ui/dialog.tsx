@@ -1,3 +1,8 @@
+/**
+ * 对话框：承载需要聚焦完成的表单或详情内容，支持遮罩与键盘关闭。
+ * 复用约定：基于 radix-ui 构建，关闭按钮取自 lucide-react，样式经 cn 合并主题令牌。
+ * 关键约束：必须包含 DialogTitle（视觉隐藏时用 sr-only）以满足无障碍要求；浮层层级由 Radix 管理，禁止手写 z-index。
+ */
 'use client'
 
 import * as React from 'react'

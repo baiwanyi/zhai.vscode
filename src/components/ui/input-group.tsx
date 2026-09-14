@@ -1,3 +1,8 @@
+/**
+ * 输入组：在输入框两侧组合前缀、后缀与操作按钮。
+ * 复用约定：基于 cva 定义变体，样式经 cn 合并主题令牌。
+ * 关键约束：输入控件必须使用 InputGroupInput / InputGroupTextarea，禁止直接嵌入裸 Input 或 Textarea 破坏对齐。
+ */
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'

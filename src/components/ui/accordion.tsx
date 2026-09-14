@@ -1,3 +1,8 @@
+/**
+ * 折叠面板：以单项或多项展开的方式收纳内容，适用于设置分组与长表单分节。
+ * 复用约定：基于 radix-ui 构建，展开动效由 tw-animate-css 提供，类名经 cn 合并主题令牌。
+ * 关键约束：AccordionItem 必须包裹 Trigger 与 Content；多项展开需显式设置 type="multiple"。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { Accordion as AccordionPrimitive } from 'radix-ui'

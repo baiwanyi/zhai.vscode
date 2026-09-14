@@ -1,3 +1,8 @@
+/**
+ * 分页：承载页码切换与上下页导航。
+ * 复用约定：图标取自 lucide-react，链接项经 Button 变体注入样式。
+ * 关键约束：当前页须声明 aria-current 以表达状态；跳转链接应经 asChild 承载，禁止在组件内直接发起请求。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 

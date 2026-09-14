@@ -1,3 +1,8 @@
+/**
+ * 按钮组：把多个操作按钮拼合为整体，并统一相邻圆角与间距。
+ * 复用约定：基于 radix-ui 的 Slot 与 cva 变体实现，样式经 cn 合并主题令牌。
+ * 关键约束：子项应为 Button；组内分隔必须使用 ButtonGroupSeparator，禁止手写边框模拟。
+ */
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'
 import { Slot } from 'radix-ui'

@@ -1,3 +1,8 @@
+/**
+ * 导航菜单：顶部横向导航，支持多级内容面板与指示动效。
+ * 复用约定：基于 radix-ui 构建，图标取自 lucide-react，样式经 cva 与 cn 组合主题令牌。
+ * 关键约束：Menu / Trigger / Content 层级须完整，面板内容只能置于 Content 内，避免键盘导航失效。
+ */
 import * as React from 'react'
 import { cva } from 'class-variance-authority'
 import { cn } from 'cn'

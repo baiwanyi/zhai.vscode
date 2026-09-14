@@ -1,3 +1,8 @@
+/**
+ * 问卷：以受控方式收集单选、多选与开放题作答。
+ * 复用约定：基于 @shadcn/react 的 questionnaire 实现，图标取自 lucide-react，样式经 cn 合并主题令牌。
+ * 关键约束：作答值须由调用方受控并自行校验必填项；提交前不得直接落库或上报，需经业务流程确认。
+ */
 'use client'
 
 import * as React from 'react'

@@ -1,3 +1,8 @@
+/**
+ * 抽屉：从屏幕底部滑出的浮层，适配移动端式交互。
+ * 复用约定：基于 vaul 构建，样式经 cn 合并主题令牌。
+ * 关键约束：必须包含 DrawerTitle 以满足无障碍要求；是否启用吸附与手势由调用方按场景配置。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { Drawer as DrawerPrimitive } from 'vaul'

@@ -1,3 +1,8 @@
+/**
+ * 按钮：触发操作的基础控件，提供变体、尺寸与子元素透传能力。
+ * 复用约定：基于 radix-ui 的 Slot 与 cva 变体实现，样式经 cn 合并主题令牌。
+ * 关键约束：图标以 data-icon 标注并交由组件的 CSS 控制尺寸；加载态用 Spinner + disabled 组合表达。
+ */
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'

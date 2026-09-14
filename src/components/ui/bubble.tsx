@@ -1,3 +1,8 @@
+/**
+ * 消息气泡：以气泡形态呈现对话内容，支持分组、内容槽位与表情反馈。
+ * 复用约定：基于 radix-ui 构建，变体经 cva 定义并复用主题令牌。
+ * 关键约束：Bubble 必须置于 BubbleGroup 内以正确计算对齐与间距；气泡方向随容器书写方向变化。
+ */
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'

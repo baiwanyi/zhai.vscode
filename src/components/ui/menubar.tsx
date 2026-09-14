@@ -1,3 +1,8 @@
+/**
+ * 菜单栏：桌面式横向菜单，承载多级下拉操作。
+ * 复用约定：基于 radix-ui 构建，图标取自 lucide-react，样式经 cn 合并主题令牌。
+ * 关键约束：菜单与子菜单层级须完整（Content 内放 Group 与 Item）；快捷键提示使用 MenubarShortcut 以保持对齐。
+ */
 'use client'
 
 import * as React from 'react'

@@ -1,3 +1,8 @@
+/**
+ * 单选组：在一组互斥选项中挑选唯一值。
+ * 复用约定：基于 radix-ui 构建，选项圆点样式与主题令牌经 cn 合并。
+ * 关键约束：每项须有可点击标签；组内互斥与键盘方向键行为由 Radix 保证，不要自行实现选中逻辑。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { RadioGroup as RadioGroupPrimitive } from 'radix-ui'

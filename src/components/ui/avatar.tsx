@@ -1,3 +1,8 @@
+/**
+ * 头像：承载用户或实体的图片标识，并提供文字回退与分组叠加能力。
+ * 复用约定：基于 radix-ui 构建，尺寸统一使用 size-* 工具类，样式经 cn 合并。
+ * 关键约束：必须提供 AvatarFallback，避免图片加载失败时出现空白；等宽高场景禁止写成 w-* h-*。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { Avatar as AvatarPrimitive } from 'radix-ui'

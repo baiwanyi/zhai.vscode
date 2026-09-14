@@ -1,3 +1,8 @@
+/**
+ * 快捷键提示：以键帽样式展示按键或组合键。
+ * 复用约定：纯样式组件，类名经 cn 合并主题令牌。
+ * 关键约束：仅用于展示，不绑定任何键位逻辑；实际快捷键需在命令注册处声明以保持一致。
+ */
 import { cn } from 'cn'
 
 function Kbd({ className, ...props }: React.ComponentProps<'kbd'>) {

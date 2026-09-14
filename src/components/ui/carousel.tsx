@@ -1,3 +1,8 @@
+/**
+ * 轮播：基于 embla-carousel-react 的横向内容切换容器。
+ * 复用约定：样式与箭头图标（lucide-react）经 cn 合并主题令牌；实例能力经 CarouselApi 暴露。
+ * 关键约束：CarouselItem 必须置于 CarouselContent 内；需要自定义滑动响应时通过 opts 与 setApi 传入。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import useEmblaCarousel, { type UseEmblaCarouselType } from 'embla-carousel-react'

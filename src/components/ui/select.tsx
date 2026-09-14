@@ -1,3 +1,8 @@
+/**
+ * 下拉选择：在候选集中选择单值或多值。
+ * 复用约定：基于 radix-ui 构建，图标取自 lucide-react，样式经 cn 合并主题令牌。
+ * 关键约束：SelectItem 必须置于 SelectGroup 内，禁止裸放；选项文本用于回显，需保证唯一且可读。
+ */
 'use client'
 
 import * as React from 'react'

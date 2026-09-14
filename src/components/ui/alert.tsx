@@ -1,3 +1,8 @@
+/**
+ * 提示条：以静态内联方式呈现信息、警告与错误说明，不产生浮层。
+ * 复用约定：变体由 cva 定义并复用主题令牌，图标取自 lucide-react。
+ * 关键约束：仅用于展示，不承载需要点击的操作；状态语义应通过 variant 表达，禁止覆盖配色。
+ */
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'

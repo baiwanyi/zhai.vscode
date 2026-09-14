@@ -1,3 +1,8 @@
+/**
+ * 原生下拉：对原生 select 的样式化封装，保留浏览器原生选择行为。
+ * 复用约定：样式经 cn 合并主题令牌，箭头图标取自 lucide-react。
+ * 关键约束：需要原生表单提交、系统级选择器或大量选项时优先使用本组件；Rich 交互场景改用 Select。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { ChevronDownIcon } from 'lucide-react'

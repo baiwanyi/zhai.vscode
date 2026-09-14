@@ -1,3 +1,8 @@
+/**
+ * 表单标签：为输入控件提供可点击的文本标识。
+ * 复用约定：基于 radix-ui 构建，样式经 cn 合并主题令牌。
+ * 关键约束：htmlFor 必须与控件 id 对应，否则点击标签无法聚焦控件；禁止用普通 span 替代以维持无障碍语义。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { Label as LabelPrimitive } from 'radix-ui'

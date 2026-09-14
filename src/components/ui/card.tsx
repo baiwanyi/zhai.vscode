@@ -1,3 +1,8 @@
+/**
+ * 卡片：内容分组的容器，适合承载表单、详情与列表项。
+ * 复用约定：纯样式组件，类名经 cn 合并并复用主题令牌。
+ * 关键约束：按 CardHeader / CardTitle / CardDescription / CardContent / CardFooter 组合使用，禁止把所有内容塞进 CardContent。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 

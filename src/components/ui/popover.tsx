@@ -1,3 +1,8 @@
+/**
+ * 浮层：以非模态方式承载表单、筛选与说明信息。
+ * 复用约定：基于 radix-ui 构建，样式经 cn 合并主题令牌。
+ * 关键约束：浮层层级由 Radix 管理，禁止手写 z-index；需要标题与描述时使用 PopoverTitle 与 PopoverDescription。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { Popover as PopoverPrimitive } from 'radix-ui'

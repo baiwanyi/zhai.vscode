@@ -1,3 +1,8 @@
+/**
+ * 悬停卡片：鼠标停留时展示的富信息预览浮层。
+ * 复用约定：基于 radix-ui 构建，样式经 cn 合并主题令牌。
+ * 关键约束：仅承载补充信息，禁止放入必须点击才能完成的控件；触屏场景下应提供替代入口。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { HoverCard as HoverCardPrimitive } from 'radix-ui'

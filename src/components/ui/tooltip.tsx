@@ -1,3 +1,8 @@
+/**
+ * 文字提示：悬停或聚焦时补充说明控件含义。
+ * 复用约定：基于 radix-ui 构建，样式经 cn 合并主题令牌。
+ * 关键约束：使用前须有 TooltipProvider 包裹；仅承载短文本，禁止放入需要点击的元素或长表单。
+ */
 'use client'
 
 import * as React from 'react'

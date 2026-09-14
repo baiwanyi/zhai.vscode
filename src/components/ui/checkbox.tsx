@@ -1,3 +1,8 @@
+/**
+ * 复选框：用于多选与布尔确认，支持不确定态。
+ * 复用约定：基于 radix-ui 构建，勾选图标取自 lucide-react，样式经 cn 合并主题令牌。
+ * 关键约束：校验态须在控件上声明 aria-invalid；与文本标签绑定时保证可点击区域覆盖标签。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { Checkbox as CheckboxPrimitive } from 'radix-ui'

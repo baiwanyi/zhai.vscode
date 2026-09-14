@@ -1,3 +1,8 @@
+/**
+ * 列表项：以「媒体 + 内容 + 操作」结构表达可选项，适用于列表与选择器。
+ * 复用约定：基于 radix-ui 的 Slot 与 cva 变体实现，样式经 cn 合并主题令牌。
+ * 关键约束：交互项须置于 ItemGroup 内；跳转场景用 asChild 承载链接以保留语义与键盘行为。
+ */
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'

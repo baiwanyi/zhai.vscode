@@ -1,3 +1,8 @@
+/**
+ * 输入框：单行文本输入控件，覆盖文本、密码与检索等场景。
+ * 复用约定：样式经 cn 合并主题令牌，通常置于 Field 内以复用标签与错误提示。
+ * 关键约束：校验态须声明 aria-invalid；类型相关的输入约束通过原生 type 与 inputMode 表达。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 

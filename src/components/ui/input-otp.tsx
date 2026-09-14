@@ -1,3 +1,8 @@
+/**
+ * 验证码输入：把一次性口令拆分为等宽槽位，支持粘贴与自动聚焦。
+ * 复用约定：基于 input-otp 构建，插入符图标取自 lucide-react，样式经 cn 合并主题令牌。
+ * 关键约束：槽位数量由 maxLength 决定且须与 InputOTPGroup 的子项数量一致；口令值不要写入日志或持久化存储。
+ */
 'use client'
 
 import * as React from 'react'

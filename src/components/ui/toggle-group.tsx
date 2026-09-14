@@ -1,3 +1,8 @@
+/**
+ * 选项组：在 2 到 7 个互斥或可多选的选项间切换。
+ * 复用约定：基于 radix-ui 构建，变体经 cva 定义，样式经 cn 合并主题令牌。
+ * 关键约束：type 决定受控值类型（single 为字符串、multiple 为数组），须与实际状态保持一致。
+ */
 'use client'
 
 import * as React from 'react'

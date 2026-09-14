@@ -1,3 +1,8 @@
+/**
+ * 日历：基于 react-day-picker 的日期选择视图，支持单选、区间与下拉月份切换。
+ * 复用约定：样式经 cn 覆盖主题令牌，图标取自 lucide-react。
+ * 关键约束：受控用法需同时提供 mode、selected 与 onSelect；本地化与周起始日由调用方统一注入。
+ */
 'use client'
 
 import * as React from 'react'

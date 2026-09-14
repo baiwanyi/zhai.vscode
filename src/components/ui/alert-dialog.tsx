@@ -1,3 +1,8 @@
+/**
+ * 确认对话框：用于不可逆或高风险操作的二次确认，不具备点击遮罩关闭的行为。
+ * 复用约定：基于 radix-ui 构建，按钮与销毁态样式复用 destructive 变体与主题令牌。
+ * 关键约束：必须包含 AlertDialogTitle；确认按钮文案须明确动作，禁止使用「确定」等模糊措辞。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 import { AlertDialog as AlertDialogPrimitive } from 'radix-ui'

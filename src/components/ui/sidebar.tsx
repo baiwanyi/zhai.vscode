@@ -1,3 +1,8 @@
+/**
+ * 侧边栏：应用级导航容器，支持折叠、移动端抽屉与键盘快捷键。
+ * 复用约定：基于 radix-ui 的 Slot 与 cva 变体，配合 useIsMobile 断点判断，图标取自 lucide-react。
+ * 关键约束：必须由 SidebarProvider 包裹；宽度与折叠状态由内部 CSS 变量托管，禁止在外部重复控制。
+ */
 import * as React from 'react'
 import { cva, type VariantProps } from 'class-variance-authority'
 import { cn } from 'cn'

@@ -1,3 +1,8 @@
+/**
+ * 表格：以行列结构展示结构化数据。
+ * 复用约定：纯样式组件，类名经 cn 合并主题令牌。
+ * 关键约束：大数据量需配合 ScrollArea 或分页使用；排序与筛选逻辑由调用方实现，组件只负责呈现。
+ */
 import * as React from 'react'
 import { cn } from 'cn'
 
