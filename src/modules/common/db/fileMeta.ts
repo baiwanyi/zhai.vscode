@@ -15,22 +15,28 @@ export interface FileMeta {
 function parseFrontmatterTags(frontmatter: string): string[] {
     const tags: string[] = []
     const lines = frontmatter.split(/\r?\n/)
-    let inTags = false
+    let isParsingTags = false
     for (const line of lines) {
         if (line.startsWith('tags:')) {
             const inline = line.slice('tags:'.length).trim()
             if (inline.startsWith('[') && inline.endsWith(']')) {
-                tags.push(...inline.slice(1, -1).split(',').map((t) => t.trim().replace(/^['"]|['"]$/g, '')).filter((t) => t.length > 0))
+                tags.push(
+                    ...inline
+                        .slice(1, -1)
+                        .split(',')
+                        .map((t) => t.trim().replace(/^['"]|['"]$/g, ''))
+                        .filter((t) => t.length > 0),
+                )
             }
-            inTags = true
+            isParsingTags = true
             continue
         }
-        if (inTags) {
+        if (isParsingTags) {
             const match = /^\s*-\s+(.+)$/.exec(line)
             if (match?.[1] !== undefined) {
                 tags.push(match[1].trim().replace(/^['"]|['"]$/g, ''))
             } else {
-                inTags = false
+                isParsingTags = false
             }
         }
     }
@@ -67,8 +73,7 @@ export function countWords(body: string): number {
     return body
         .replace(/```[\s\S]*?```/g, '')
         .replace(/[#>*`~\-[\]()!|]/g, '')
-        .replace(/\s/g, '')
-        .length
+        .replace(/\s/g, '').length
 }
 
 /** 计算 16 位十六进制内容 hash，用于跳过无实质变更的重写 */

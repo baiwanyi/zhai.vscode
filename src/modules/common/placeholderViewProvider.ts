@@ -3,7 +3,7 @@
  * 复用：基于 VS Code 原生 WebviewViewProvider 接口，仅输出静态占位 HTML，无需后端数据。
  * 注意：设置 CSP 并禁用脚本，内容固定不接收外部消息，符合扩展安全规范。
  */
-import * as vscode from 'vscode'
+import type * as vscode from 'vscode'
 
 export class PlaceholderWebviewProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'zhai.placeholderView'

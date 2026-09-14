@@ -8,18 +8,11 @@ import type { WeiboDetail } from './types'
 
 /** 笔记落盘入口——由集成层传入笔记模块 API 实现 */
 export interface NoteInserter {
-    createFromContent(input: {
-        markdown: string
-        notebook?: string
-        tags?: string[]
-    }): Promise<{ path: string }>
+    createFromContent(input: { markdown: string; notebook?: string; tags?: string[] }): Promise<{ path: string }>
 }
 
 /** 组装微博笔记的 Frontmatter + 正文（与 notes.md 剪藏模板一致） */
-export function buildWeiboNoteMarkdown(
-    detail: WeiboDetail,
-    opts: { includeMedia?: boolean } = {},
-): string {
+export function buildWeiboNoteMarkdown(detail: WeiboDetail, opts: { includeMedia?: boolean } = {}): string {
     const target = resolveTarget(detail)
     const author = target.user?.screen_name ?? '未知作者'
     const uid = target.user?.id ?? 'unknown'
@@ -63,10 +56,7 @@ export function buildWeiboNoteMarkdown(
 }
 
 /** 保存微博为笔记：转 Markdown → 调笔记模块 → 返回笔记路径 */
-export async function saveWeiboToNote(
-    detail: WeiboDetail,
-    notes: NoteInserter,
-): Promise<{ path: string }> {
+export async function saveWeiboToNote(detail: WeiboDetail, notes: NoteInserter): Promise<{ path: string }> {
     const markdown = buildWeiboNoteMarkdown(detail)
     return notes.createFromContent({ markdown, tags: ['微博', 'weibo'] })
 }

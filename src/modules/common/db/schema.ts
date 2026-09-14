@@ -48,7 +48,7 @@ const DDL_STATEMENTS = [
 
 /** 确保 schema 存在并写入/校验 schema_version；返回是否为全新建库 */
 export function ensureSchema(db: Database.Database): boolean {
-    const created = db.pragma('user_version', { simple: true }) === 0
+    const isCreated = db.pragma('user_version', { simple: true }) === 0
     db.transaction(() => {
         for (const ddl of DDL_STATEMENTS) {
             db.exec(ddl)
@@ -56,11 +56,14 @@ export function ensureSchema(db: Database.Database): boolean {
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)
-        if (created) {
-            db.prepare('INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)').run('built_at', new Date().toISOString())
+        if (isCreated) {
+            db.prepare('INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)').run(
+                'built_at',
+                new Date().toISOString(),
+            )
         }
     })()
-    return created
+    return isCreated
 }
 
 /** 清空全部索引数据（保留 schema），供「清空索引缓存」命令使用 */

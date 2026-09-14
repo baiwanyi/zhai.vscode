@@ -5,7 +5,7 @@
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import Database from 'better-sqlite3'
-import * as vscode from 'vscode'
+import type * as vscode from 'vscode'
 
 /** 连接初始化 PRAGMA：WAL 提升并发读、NORMAL 平衡 durability 与性能（common.md 第 6 节） */
 const PRAGMAS = [

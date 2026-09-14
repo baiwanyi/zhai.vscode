@@ -3,17 +3,17 @@
  * 流程：日志 → 打开索引库 → schema 校验 → 注册命令/面板/监听 → 自检自愈（后台不阻塞激活）。
  */
 import * as vscode from 'vscode'
-import { openIndexDatabase } from './modules/common/db/connection'
-import { ensureSchema } from './modules/common/db/schema'
 import { registerCommands } from './modules/common/commands'
 import { getZhaiConfig } from './modules/common/config'
+import { openIndexDatabase } from './modules/common/db/connection'
+import { ensureSchema } from './modules/common/db/schema'
 import { IndexService } from './modules/common/indexer/indexService'
-import type { IndexStatus } from './modules/common/indexer/indexService'
 import { logger } from './modules/common/logger'
 import { PlaceholderWebviewProvider } from './modules/common/placeholderViewProvider'
 import { SearchPanelViewProvider } from './modules/common/searchPanelProvider'
 import { SecretsService } from './modules/common/secrets'
 import { StatusBarService } from './modules/common/statusBar'
+import type { IndexStatus } from './modules/common/indexer/indexService'
 
 export function activate(context: vscode.ExtensionContext): void {
     logger.init(vscode.window.createOutputChannel('Zhai 宅桌面'))

@@ -3,10 +3,10 @@
  * 暗色由 .dark 类驱动，webview 入口依据 data-vscode-theme-kind 决定是否挂载该类。
  * shadcn/tailwind.css 提供基础层样式，tw-animate-css 提供动效能力。
  */
-@import "tailwindcss";
-@import "tw-animate-css";
-@import "shadcn/tailwind.css";
-@import "@fontsource-variable/inter";
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@import '@fontsource-variable/inter';
 
 @custom-variant dark (&:is(.dark *));
 
@@ -133,7 +133,7 @@
         @apply font-sans;
     }
     button:not(:disabled),
-    [role="button"]:not(:disabled) {
+    [role='button']:not(:disabled) {
         cursor: pointer;
     }
 }

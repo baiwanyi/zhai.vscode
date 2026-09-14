@@ -9,7 +9,8 @@ interface VsCodeApi {
 
 declare function acquireVsCodeApi(): VsCodeApi
 
-const api: VsCodeApi = acquireVsCodeApi()
+// 仅在 VSCode Webview 宿主内存在；浏览器预览环境下不存在，降级为 null 使页面可独立渲染
+const api: VsCodeApi | null = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null
 
 interface PendingEntry {
     resolve: (payload: unknown) => void
@@ -21,7 +22,13 @@ const pendingRequests: Map<string, PendingEntry> = new Map()
 const DEFAULT_TIMEOUT_MS = 10_000
 
 window.addEventListener('message', (event: MessageEvent) => {
-    const message = event.data as { type?: string; reqId?: string; ok?: boolean; payload?: unknown; error?: { message?: string } }
+    const message = event.data as {
+        type?: string
+        reqId?: string
+        ok?: boolean
+        payload?: unknown
+        error?: { message?: string }
+    }
     if (message.type !== 'response' || typeof message.reqId !== 'string') {
         return
     }
@@ -42,6 +49,10 @@ window.addEventListener('message', (event: MessageEvent) => {
 export function request<T>(method: string, payload?: unknown, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
     const reqId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     return new Promise<T>((resolve, reject) => {
+        if (!api) {
+            reject(new Error('当前为浏览器预览环境，宿主通信不可用'))
+            return
+        }
         const entry: PendingEntry = {
             resolve: (value) => resolve(value as T),
             reject,

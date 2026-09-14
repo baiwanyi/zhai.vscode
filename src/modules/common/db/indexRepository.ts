@@ -2,8 +2,8 @@
  * 索引仓储：files / files_fts 的参数化读写访问层。
  * 安全约束：全部 SQL 使用预编译参数绑定，禁止字符串拼接；批量写入统一走事务。
  */
-import type Database from 'better-sqlite3'
 import type { FileMeta } from './fileMeta'
+import type Database from 'better-sqlite3'
 
 /** files 表一行元数据 */
 export interface FileRow extends FileMeta {

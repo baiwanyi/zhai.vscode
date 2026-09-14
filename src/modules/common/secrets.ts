@@ -2,7 +2,7 @@
  * 密钥管理：API Key / OAuth Token 统一存 VSCode SecretStorage（系统级加密）。
  * 安全约束：密钥禁止明文写入 settings.json 或仓库，读取方负责前端脱敏展示。
  */
-import * as vscode from 'vscode'
+import type * as vscode from 'vscode'
 
 /** 各密钥在 SecretStorage 中的命名空间键名 */
 const SECRET_KEYS = {

@@ -3,10 +3,10 @@
  * 约束：全部 Disposable 必须挂载到 context.subscriptions，保证停用后资源释放（AC-10）。
  */
 import * as vscode from 'vscode'
-import type Database from 'better-sqlite3'
 import { clearSchemaData } from './db/schema'
-import type { IndexService } from './indexer/indexService'
 import { logger } from './logger'
+import type { IndexService } from './indexer/indexService'
+import type Database from 'better-sqlite3'
 
 export function registerCommands(
     context: vscode.ExtensionContext,

@@ -30,8 +30,7 @@ export function extractMedia(detail: WeiboDetail): WeiboMediaItem[] {
         }
     }
 
-    const video =
-        target.page_info?.media_info?.stream_url ?? target.page_info?.media_info?.mp4_720p_mp4
+    const video = target.page_info?.media_info?.stream_url ?? target.page_info?.media_info?.mp4_720p_mp4
     if (video) items.push({ type: 'video', url: video, seq: seq++, quality: 'hd' })
 
     return items
@@ -42,7 +41,7 @@ export function formatWeiboTimestamp(raw?: string): string {
     if (!raw) return 'unknown'
     const d = new Date(raw)
     if (isNaN(d.getTime())) return 'unknown'
-    const p = (n: number) => n.toString().padStart(2, '0')
+    const p = (n: number): string => n.toString().padStart(2, '0')
     return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}`
 }
 
@@ -59,16 +58,16 @@ export function generateMediaFilename(params: {
     seq: number
     ext: string
     author?: string
-    readable?: boolean
+    isReadable?: boolean
 }): string {
-    const { uid, timestamp, postId, seq, ext, author, readable } = params
+    const { uid, timestamp, postId, seq, ext, author, isReadable } = params
     const base = `weibo-${uid}-${timestamp}-${postId}`
-    const core = readable && author ? `${base}-${sanitizeAuthor(author)}` : base
+    const core = isReadable && author ? `${base}-${sanitizeAuthor(author)}` : base
     return `${core}-${seq.toString().padStart(2, '0')}.${ext}`
 }
 
 /** 组装下载任务（含 Referer 头与超时） */
-export async function buildDownloadTasks(detail: WeiboDetail, readable = false): Promise<DownloadTask[]> {
+export function buildDownloadTasks(detail: WeiboDetail, isReadable = false): DownloadTask[] {
     const target = resolveTarget(detail)
     const timestamp = formatWeiboTimestamp(target.created_at)
     return extractMedia(detail).map((m) => ({
@@ -80,7 +79,7 @@ export async function buildDownloadTasks(detail: WeiboDetail, readable = false):
             seq: m.seq,
             ext: m.type === 'video' ? 'mp4' : 'jpg',
             author: target.user?.screen_name,
-            readable,
+            isReadable,
         }),
         referer: WEIBO_REFERER,
         timeoutMs: 30_000,

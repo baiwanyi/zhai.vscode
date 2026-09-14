@@ -3,11 +3,11 @@
  * 设计源：docs/modules/common.md 第 4.1/4.2 节；mtime 与 hash 双重比对避免无变更重写。
  */
 import * as vscode from 'vscode'
+import type { FileRow } from '../db/indexRepository'
 import type Database from 'better-sqlite3'
 import { getZhaiConfig, resolveStorageRoot } from '../config'
 import { parseFileMeta } from '../db/fileMeta'
 import { countFileRows, deleteFileRow, listIndexedPaths, upsertFileRows } from '../db/indexRepository'
-import type { FileRow } from '../db/indexRepository'
 import { logger } from '../logger'
 
 /** 索引状态快照，供状态栏与 Webview 展示 */
@@ -126,7 +126,8 @@ export class IndexService {
         const indexed = countFileRows(this.db)
         if (files.length === indexed) {
             logger.info(`索引自检通过：${indexed} 个文件`)
-            const builtAt = this.db.prepare('SELECT value FROM meta WHERE key = ?').get('built_at') as { value: string } | undefined
+            const builtAt = this.db.prepare('SELECT value FROM meta WHERE key = ?').get('built_at') as
+                { value: string } | undefined
             this.lastBuiltAt = builtAt?.value ?? null
             return
         }

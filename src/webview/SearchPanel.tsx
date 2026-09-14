@@ -3,22 +3,23 @@
  * 数据流：request('search/query') → 宿主 SQLite 查询 → 响应渲染；结果跳转能力后续接入各模块。
  * 安全约束：宿主 snippet 以【】标注命中，本组件用 React 节点渲染高亮，禁止 dangerouslySetInnerHTML。
  */
-import { useCallback, useEffect, useMemo, useState } from 'react'
+// 检索逻辑尚未启用，相关依赖与数据结构随下方被注释的实现一并保留
+// import { useCallback, useEffect, useMemo, useState } from 'react'
+// import { request } from './bridge'
 import type { JSX } from 'react'
-import { request } from './bridge'
 
-interface SearchHit {
-    path: string
-    title: string
-    tags: string[]
-    snippet: string
-}
+// interface SearchHit {
+//     path: string
+//     title: string
+//     tags: string[]
+//     snippet: string
+// }
 
-interface IndexStatus {
-    indexedCount: number
-    lastBuiltAt: string | null
-    isRebuilding: boolean
-}
+// interface IndexStatus {
+//     indexedCount: number
+//     lastBuiltAt: string | null
+//     isRebuilding: boolean
+// }
 
 /** 按模块目录分组（notes / press / reader / 其他），对应 common.md C7 分组展示要求 */
 // function groupByModule(hits: SearchHit[]): Array<[string, SearchHit[]]> {
@@ -121,5 +122,5 @@ export function SearchPanel(): JSX.Element {
     //     </div>
     // )
 
-    return (<p>此页面功能正在开发中，敬请期待</p>);
+    return <p>此页面功能正在开发中，敬请期待</p>
 }

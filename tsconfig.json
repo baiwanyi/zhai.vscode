@@ -1,25 +1,32 @@
 {
+    // 类型检查专用配置：产物由 esbuild（扩展宿主）与 Vite（webview）生成，tsc 不产出文件。
+    // 取值依据 TypeScript 7 官方 --init 模板与破坏性变更清单：baseUrl、moduleResolution: node/classic、
+    // target: es5 等在 7.0 已移除；module: preserve 隐含 moduleResolution: bundler 与 esModuleInterop。
     "compilerOptions": {
-        "target": "ES2022",
-        "module": "ESNext",
-        "moduleResolution": "Bundler",
+        // 环境与模块
+        "module": "preserve",
+        "target": "esnext",
         "lib": [
-            "ES2022",
+            "ESNext",
             "DOM",
             "DOM.Iterable"
         ],
+        "jsx": "react-jsx",
+        "moduleDetection": "force",
+        "verbatimModuleSyntax": true,
+        "isolatedModules": true,
+        "resolveJsonModule": true,
+        "noEmit": true,
+        "skipLibCheck": true,
+        // 严格度：TS7 推荐项 + 项目既有约束（未启用 noUnusedLocals / noUnusedParameters，
+        // 与 SearchPanel 占位实现中保留的注释代码冲突）
         "strict": true,
         "noUncheckedIndexedAccess": true,
+        "noUncheckedSideEffectImports": true,
         "noImplicitOverride": true,
         "noFallthroughCasesInSwitch": true,
-        "forceConsistentCasingInFileNames": true,
-        "esModuleInterop": true,
-        "skipLibCheck": true,
-        "resolveJsonModule": true,
-        "isolatedModules": true,
-        "verbatimModuleSyntax": true,
-        "noEmit": true,
-        "jsx": "react-jsx",
+        "noImplicitReturns": true,
+        // 路径别名：TS7 已移除 baseUrl，paths 相对本文件所在目录解析
         "paths": {
             "@/*": [
                 "./src/*"

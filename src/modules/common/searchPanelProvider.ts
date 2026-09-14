@@ -5,13 +5,13 @@
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import * as vscode from 'vscode'
+import { getZhaiConfig } from './config'
+import { searchFiles } from './db/indexRepository'
+import { logger } from './logger'
+import type { IndexService } from './indexer/indexService'
+import type { HostToWebviewMessage } from '../../shared/types/messages'
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
-import type { HostToWebviewMessage } from '../../shared/types/messages'
-import type { IndexService } from './indexer/indexService'
-import { searchFiles } from './db/indexRepository'
-import { getZhaiConfig } from './config'
-import { logger } from './logger'
 
 export class SearchPanelViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'zhai.searchPanel'
@@ -28,10 +28,7 @@ export class SearchPanelViewProvider implements vscode.WebviewViewProvider {
             localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
         }
         void this.renderHtml(webviewView)
-        webviewView.webview.onDidReceiveMessage(
-            (message: unknown) => this.handleMessage(webviewView, message),
-            this,
-        )
+        webviewView.webview.onDidReceiveMessage((message: unknown) => this.handleMessage(webviewView, message), this)
     }
 
     private async renderHtml(webviewView: vscode.WebviewView): Promise<void> {

@@ -2,7 +2,7 @@
  * 日志与诊断：基于 OutputChannel 的分级日志，供命令面板查看与诊断导出使用。
  * 约束：日志内容禁止包含 API Key、Token 等敏感字段。
  */
-import * as vscode from 'vscode'
+import type * as vscode from 'vscode'
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 
@@ -28,7 +28,7 @@ class ZhaiLogger {
     }
 
     public error(message: string, error?: unknown): void {
-        const detail = error instanceof Error ? error.stack ?? error.message : ''
+        const detail = error instanceof Error ? (error.stack ?? error.message) : ''
         this.write('error', detail.length > 0 ? `${message}\n${detail}` : message)
     }
 

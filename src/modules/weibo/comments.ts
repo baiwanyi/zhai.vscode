@@ -66,14 +66,19 @@ export async function postComment(params: {
     }
 }
 
+/** 仅接受字符串与数字并转为文本，其余类型返回空串，避免对象被隐式转成 "[object Object]" */
+function toText(value: unknown): string {
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+}
+
 export function normalizeComment(raw: Record<string, unknown>): WeiboComment {
     const user = (raw.user ?? {}) as Record<string, unknown>
     return {
-        id: String(raw.id ?? ''),
-        authorId: String(user.id ?? ''),
-        authorName: String(user.screen_name ?? ''),
-        text: String(raw.text ?? ''),
-        createdAt: String(raw.created_at ?? ''),
+        id: toText(raw.id),
+        authorId: toText(user.id),
+        authorName: toText(user.screen_name),
+        text: toText(raw.text),
+        createdAt: toText(raw.created_at),
     }
 }
 

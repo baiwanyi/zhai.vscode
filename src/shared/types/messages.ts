@@ -43,10 +43,10 @@ export type WebviewToHostMessage = RequestMessage
 /** 判断是否为请求消息（类型收窄辅助） */
 export function isRequestMessage(message: unknown): message is RequestMessage {
     return (
-        typeof message === 'object'
-        && message !== null
-        && (message as { type?: unknown }).type === 'request'
-        && typeof (message as { reqId?: unknown }).reqId === 'string'
-        && typeof (message as { method?: unknown }).method === 'string'
+        typeof message === 'object' &&
+        message !== null &&
+        (message as { type?: unknown }).type === 'request' &&
+        typeof (message as { reqId?: unknown }).reqId === 'string' &&
+        typeof (message as { method?: unknown }).method === 'string'
     )
 }
