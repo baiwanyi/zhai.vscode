@@ -19,15 +19,15 @@
 - Webview Markdown 渲染：用 `react-markdown` + `remark-gfm`（与 `docs/modules/markdown-one.md` 的 unified/remark 选型一致），作为 devDependencies 随 webview 打包；样式通过 `components` 逐标签映射主题令牌类名，**不引入 Tailwind typography 插件**（prose 会与气泡/消息样式互相覆盖）。
 - shadcn 组合规则（skill 强制，禁止自绘 markup）：空态用 `Empty`（+EmptyHeader/EmptyMedia variant="icon"/EmptyTitle/EmptyDescription/EmptyContent）；输入区含按钮用 `InputGroup` + `InputGroupTextarea`/`InputGroupButton`（禁止裸 `Textarea`）；分区用 `Separator`（禁止 `border-t`）；提示用 `Alert`；加载占位用 `Skeleton`；状态用 `Badge`；条件类名走 `cn()`；Button 内图标用 `data-icon` 且不加 `size-*`；`space-y-*` 换成 `flex flex-col gap-*`。AI 对话页的配套组件还有 `message.tsx`、`bubble.tsx`、`marker.tsx`（思考中状态）。
 - Webview 视觉调试方法：浏览器预览下 `request()` 直接 reject（`acquireVsCodeApi` 为 null），页面拿不到真实数据，看不出布局问题。做法是临时新建 `src/webview/_probe.html` + `_probe.tsx`（复用真实组件结构 + 硬编码数据，可并排多个容器宽度），`pnpm run webview:serve` 后用 `agent-browser open/screenshot` 截图核对，验证完删除探针、停掉 5173 监听进程并 `agent-browser close`。
-- Webview：Vite 多入口（`src/webview/index.html` = 仪表盘，`workspace.html` = 工作区）；`bootstrap.tsx` 把 `data-vscode-theme-kind` 同步为 `.dark`；`bridge.ts` 提供 reqId 请求-响应与浏览器降级；宿主统一用 `buildWebviewHtml` 注入 CSP 并重写资源 URI。
-- 安全约束：宿主 SQL 一律预编译参数绑定；Webview 若要触发宿主命令，必须走白名单（见 `dashboardProvider.ts` 的 `ALLOWED_HOST_COMMANDS`）。
+- Webview：Vite 多入口（`src/webview/index.html` = 仪表盘，`aichat.html` = AI 对话）；`bootstrap.tsx` 把 `data-vscode-theme-kind` 同步为 `.dark`；`bridge.ts` 提供 reqId 请求-响应与浏览器降级；宿主统一用 `buildWebviewHtml` 注入 CSP 并重写资源 URI。
+- 安全约束：宿主 SQL 一律预编译参数绑定；Webview 若要触发宿主命令，必须走白名单（见 `webviewCommands.ts` 的 `WEBVIEW_ALLOWED_COMMANDS`）；Webview 不得传文件路径——涉及文件的操作只接受宿主自己生成的 id（引用上下文即按此实现），所有 Webview 入参一律逐字段收窄后再用。
 
 ## 已落地的视图与命令
 - 侧栏容器 `zhai-sidebar`：`zhai.dashboard`（仪表盘，原「全局搜索」，`Ctrl+K` 聚焦）、`zhai.aiChat`（AI 对话，原「工作区」占位，`Ctrl+Shift+L` 聚焦）。
-- 命令：`zhai.rebuildIndex`、`zhai.openDashboard`、`zhai.showIndexStatus`、`zhai.clearIndex`、`zhai.exportDiagnostics`、`zhai.openSettings`、`zhai.openAiChat`、`zhai.ai.setApiKey`、`zhai.ai.clearApiKey`。
-- Webview→宿主协议：`dashboard/stats`、`index/rebuild`、`ai/session|newSession|runtime|send|abort`、`host/command`（白名单见 `src/modules/common/webviewCommands.ts`）；宿主→Webview 推送用 `stream` 与 `state` 消息。
+- 命令：`zhai.rebuildIndex`、`zhai.openDashboard`、`zhai.showIndexStatus`、`zhai.clearIndex`、`zhai.exportDiagnostics`、`zhai.openSettings`、`zhai.openAiChat`、`zhai.ai.addToChat`（编辑器右键「添加到宅对话」）、`zhai.ai.setApiKey`、`zhai.ai.clearApiKey`。
+- Webview→宿主协议：`dashboard/stats`、`index/rebuild`、`ai/session|newSession|runtime|send|abort`、`ai/context|context/remove|context/clear`、`host/command`（白名单见 `src/modules/common/webviewCommands.ts`）；宿主→Webview 推送用 `stream` 与 `state` 消息（`state` 的 `payload.kind` 区分 `runtime` / `context`）。
 - 数据：`globalStorage/index.db`（文件元数据 + FTS5）、`globalStorage/ai.db`（conversations / messages / ai_usage_logs），两库共用 `common/db/openDatabase.ts` 的连接基座。
-- AI 对话：DeepSeek 经 openai SDK（`baseURL: https://api.deepseek.com`）流式，密钥存 SecretStorage（`zhai.deepseek.apiKey`）；对话模式已落地，写作模式（diff 续写）待实现，详见 `docs/modules/ai-chat.md` 第 10 节。
+- AI 对话：DeepSeek 经 openai SDK（`baseURL: https://api.deepseek.com`）流式，密钥存 SecretStorage（`zhai.deepseek.apiKey`）；对话模式与编辑器右键上下文引用已落地，写作模式（diff 续写）与 `@` 提及待实现，详见 `docs/modules/ai-chat.md` 第 10 / 10.1 节。
 - 搜索：FTS5 检索（`searchFiles`）与 `zhai.search.limit` 配置保留，搜索面板待实现（路线图 C7）。
 
 ## 用户偏好
