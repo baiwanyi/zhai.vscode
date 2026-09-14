@@ -1,12 +1,18 @@
 /**
- * AI 对话页：MessageScroller 托管消息流滚动、Message + Bubble 呈现消息，流式正文经宿主 stream 消息增量渲染。
+ * AI 对话页：MessageScroller 托管消息流（自动滚动 + 回到底部按钮），Message + Bubble 呈现消息，
+ * 空态用 Empty、输入区用 InputGroup 组合，与 message-scroller 的官方界面模式一致；流式正文经宿主 stream 消息增量渲染。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机；交互约束：生成期间禁用发送并显示停止按钮。
  */
-import { Bot, Plus, Send, Square, UserRound } from 'lucide-react'
+import { cn } from 'cn'
+import { ArrowUp, Bot, KeyRound, Settings, Sparkles, Square, SquarePen, UserRound } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import Markdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { Bubble, BubbleContent, BubbleGroup } from '@/components/ui/bubble'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group'
+import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
 import { Message, MessageAvatar, MessageContent, MessageFooter, MessageHeader } from '@/components/ui/message'
 import {
     MessageScroller,
@@ -16,11 +22,12 @@ import {
     MessageScrollerProvider,
     MessageScrollerViewport,
 } from '@/components/ui/message-scroller'
+import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
-import { Textarea } from '@/components/ui/textarea'
 import type { AiMessage, AiRuntimeInfo, AiSendResult, AiSessionSnapshot } from '@/shared/types/aiChat'
 import { onState, onStream, request } from './bridge'
 import type { JSX } from 'react'
+import type { Components } from 'react-markdown'
 
 /** 视图阶段：idle 空闲、sending 已提交待首字、streaming 正在逐字生成 */
 type Phase = 'idle' | 'sending' | 'streaming'
@@ -75,12 +82,14 @@ export function AiChat(): JSX.Element {
             if (message.done) {
                 streamingMessageIdRef.current = null
                 setPhase('idle')
-                setSession((previous) => patchMessage(previous, messageId, (item) => ({
-                    ...item,
-                    content: message.content ?? item.content,
-                    status: message.status ?? 'completed',
-                    error: message.error ?? null,
-                })))
+                setSession((previous) =>
+                    patchMessage(previous, messageId, (item) => ({
+                        ...item,
+                        content: message.content ?? item.content,
+                        status: message.status ?? 'completed',
+                        error: message.error ?? null,
+                    })),
+                )
                 if (message.error) {
                     setError(message.error)
                 }
@@ -156,11 +165,12 @@ export function AiChat(): JSX.Element {
     const lastMessageId = messages[messages.length - 1]?.id
     const hasApiKey = runtime?.hasApiKey === true
     const isGenerating = phase === 'streaming'
+    const isEmpty = messages.length === 0
 
     return (
         <div className="flex h-screen flex-col">
-            <header className="flex items-center justify-between gap-2 border-b px-3 py-2">
-                <div className="flex min-w-0 flex-col">
+            <header className="flex items-start justify-between gap-2 px-3 py-2.5">
+                <div className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate text-sm font-medium">{session?.conversation.title ?? 'AI 对话'}</span>
                     <span className="truncate text-xs text-muted-foreground">
                         {runtime
@@ -168,27 +178,31 @@ export function AiChat(): JSX.Element {
                             : '正在读取配置…'}
                     </span>
                 </div>
-                <Button size="icon-sm" variant="ghost" title="新建会话" onClick={() => void startNewSession()}>
-                    <Plus />
+                <Button
+                    size="icon-sm"
+                    variant="secondary"
+                    className="rounded-full"
+                    title="新建会话"
+                    onClick={() => void startNewSession()}
+                >
+                    <SquarePen />
                 </Button>
             </header>
+            <Separator />
 
             <div className="min-h-0 flex-1">
                 <MessageScrollerProvider defaultScrollPosition="end">
                     <MessageScroller>
                         <MessageScrollerViewport aria-label="对话消息">
                             <MessageScrollerContent className="gap-4 p-3">
-                                {runtime && !hasApiKey ? (
-                                    <MessageScrollerItem messageId="api-key-guide">
-                                        <ApiKeyGuide onSetup={() => void runHostCommand('zhai.ai.setApiKey')} />
-                                    </MessageScrollerItem>
-                                ) : null}
-                                {messages.length === 0 ? (
-                                    <MessageScrollerItem messageId="empty-hint">
-                                        <p className="text-sm text-muted-foreground">
-                                            用 Enter 发送消息，Shift + Enter 换行；会话与消息会在窗口重启后恢复。
-                                        </p>
-                                    </MessageScrollerItem>
+                                {isEmpty ? (
+                                    runtime === null ? (
+                                        <LoadingState />
+                                    ) : hasApiKey ? (
+                                        <WelcomeState />
+                                    ) : (
+                                        <ApiKeyState onSetup={() => void runHostCommand('zhai.ai.setApiKey')} />
+                                    )
                                 ) : null}
                                 {messages.map((message) => (
                                     <MessageScrollerItem
@@ -200,12 +214,12 @@ export function AiChat(): JSX.Element {
                                     </MessageScrollerItem>
                                 ))}
                                 {phase === 'sending' ? (
-                                    <MessageScrollerItem messageId="preparing">
-                                        <span className="flex items-center gap-2 text-xs text-muted-foreground">
+                                    <Marker>
+                                        <MarkerIcon>
                                             <Spinner />
-                                            正在准备上下文…
-                                        </span>
-                                    </MessageScrollerItem>
+                                        </MarkerIcon>
+                                        <MarkerContent>正在准备上下文…</MarkerContent>
+                                    </Marker>
                                 ) : null}
                             </MessageScrollerContent>
                         </MessageScrollerViewport>
@@ -214,41 +228,65 @@ export function AiChat(): JSX.Element {
                 </MessageScrollerProvider>
             </div>
 
-            <footer className="flex flex-col gap-2 border-t p-3">
-                {error ? <p className="text-xs text-destructive">{error}</p> : null}
-                <Textarea
-                    value={input}
-                    className="max-h-40 min-h-16"
-                    placeholder={hasApiKey ? '输入消息…' : '请先设置 DeepSeek API Key'}
-                    disabled={!hasApiKey || isGenerating}
-                    onChange={(event) => setInput(event.target.value)}
-                    onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !event.shiftKey) {
-                            event.preventDefault()
-                            void send()
-                        }
-                    }}
-                />
-                <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs text-muted-foreground">
-                        {isGenerating ? '正在生成，可随时停止' : 'Enter 发送 · Shift + Enter 换行'}
-                    </span>
-                    {isGenerating ? (
-                        <Button size="sm" variant="outline" onClick={() => void stop()}>
-                            <Square data-icon="inline-start" />
-                            停止
-                        </Button>
-                    ) : (
-                        <Button
-                            size="sm"
-                            disabled={!hasApiKey || phase !== 'idle' || input.trim().length === 0}
-                            onClick={() => void send()}
+            <Separator />
+            <footer className="flex flex-col gap-2 p-3">
+                <InputGroup>
+                    <InputGroupTextarea
+                        value={input}
+                        className="max-h-40"
+                        placeholder={hasApiKey ? '输入消息…' : '请先设置 DeepSeek API Key'}
+                        disabled={!hasApiKey || isGenerating}
+                        onChange={(event) => setInput(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter' && !event.shiftKey) {
+                                event.preventDefault()
+                                void send()
+                            }
+                        }}
+                    />
+                    <InputGroupAddon align="block-end" className="justify-between">
+                        <InputGroupButton
+                            size="icon-sm"
+                            variant="ghost"
+                            className="rounded-full"
+                            title="插件设置"
+                            onClick={() => void runHostCommand('zhai.openSettings')}
                         >
-                            <Send data-icon="inline-start" />
-                            发送
-                        </Button>
+                            <Settings />
+                        </InputGroupButton>
+                        {isGenerating ? (
+                            <InputGroupButton
+                                size="icon-sm"
+                                variant="outline"
+                                className="rounded-full"
+                                title="停止生成"
+                                onClick={() => void stop()}
+                            >
+                                <Square />
+                            </InputGroupButton>
+                        ) : (
+                            <InputGroupButton
+                                size="icon-sm"
+                                variant="default"
+                                className="rounded-full"
+                                title="发送"
+                                disabled={!hasApiKey || phase !== 'idle' || input.trim().length === 0}
+                                onClick={() => void send()}
+                            >
+                                <ArrowUp />
+                            </InputGroupButton>
+                        )}
+                    </InputGroupAddon>
+                </InputGroup>
+                <p
+                    className={cn(
+                        'text-center text-xs',
+                        error ? 'text-destructive' : 'text-muted-foreground',
                     )}
-                </div>
+                >
+                    {error ??
+                        (isGenerating ? '正在生成，可随时停止' : 'Enter 发送 · Shift + Enter 换行 · Ctrl+Shift+L 聚焦')}
+                </p>
             </footer>
         </div>
     )
@@ -259,16 +297,20 @@ function MessageRow({ message }: { message: AiMessage }): JSX.Element {
     const isUser = message.role === 'user'
     return (
         <Message align={isUser ? 'end' : 'start'}>
-            <MessageAvatar>{isUser ? <UserRound className="size-4" /> : <Bot className="size-4" />}</MessageAvatar>
+            <MessageAvatar className="size-8 self-start group-has-data-[slot=message-footer]/message:translate-y-0">
+                {isUser ? <UserRound className="size-4" /> : <Bot className="size-4" />}
+            </MessageAvatar>
             <MessageContent>
                 <MessageHeader className="gap-1">
                     {isUser ? '你' : '助手'}
                     {message.status === 'failed' ? <span className="text-destructive">· 失败</span> : null}
                     {message.status === 'cancelled' ? <span>· 已停止</span> : null}
                 </MessageHeader>
-                <BubbleGroup>
+                <BubbleGroup className="w-full">
                     <Bubble variant={isUser ? 'default' : 'muted'}>
-                        <BubbleContent className="whitespace-pre-wrap">{renderContent(message)}</BubbleContent>
+                        <BubbleContent className={cn('w-max max-w-full', isUser && 'whitespace-pre-wrap')}>
+                            <MessageBody message={message} />
+                        </BubbleContent>
                     </Bubble>
                 </BubbleGroup>
                 {message.error ? <MessageFooter className="text-destructive">{message.error}</MessageFooter> : null}
@@ -277,30 +319,108 @@ function MessageRow({ message }: { message: AiMessage }): JSX.Element {
     )
 }
 
-/** 无 Key 引导（AC-6）：以卡片替代异常栈，直接给出配置入口 */
-function ApiKeyGuide({ onSetup }: { onSetup: () => void }): JSX.Element {
+/** 欢迎态：无消息时的居中引导（Empty 组件的标准用法） */
+function WelcomeState(): JSX.Element {
     return (
-        <Card size="sm">
-            <CardHeader>
-                <CardTitle>先配置 DeepSeek API Key</CardTitle>
-                <CardDescription>
-                    密钥保存在系统密钥库（SecretStorage），不会写入设置文件与仓库，日志中仅显示末 4 位。
-                </CardDescription>
-            </CardHeader>
-            <CardContent>
-                <Button size="sm" onClick={onSetup}>
-                    设置 API Key
-                </Button>
-            </CardContent>
-        </Card>
+        <Empty>
+            <EmptyHeader>
+                <EmptyMedia variant="icon" className="size-12 rounded-2xl">
+                    <Sparkles className="size-5" />
+                </EmptyMedia>
+                <EmptyTitle>开始新的对话</EmptyTitle>
+                <EmptyDescription>
+                    输入问题后按 Enter 发送，Shift + Enter 换行；会话与消息会在窗口重启后自动恢复。
+                </EmptyDescription>
+            </EmptyHeader>
+        </Empty>
     )
 }
 
-function renderContent(message: AiMessage): JSX.Element | string {
+/** 无 Key 引导（AC-6）：以空态卡片替代异常栈，直接给出配置入口 */
+function ApiKeyState({ onSetup }: { onSetup: () => void }): JSX.Element {
+    return (
+        <Empty>
+            <EmptyHeader>
+                <EmptyMedia variant="icon" className="size-12 rounded-2xl">
+                    <KeyRound className="size-5" />
+                </EmptyMedia>
+                <EmptyTitle>先配置 DeepSeek API Key</EmptyTitle>
+                <EmptyDescription>
+                    密钥保存在系统密钥库（SecretStorage），不会写入设置文件与仓库，日志中仅显示末 4 位。
+                </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+                <Button size="sm" onClick={onSetup}>
+                    <KeyRound data-icon="inline-start" />
+                    设置 API Key
+                </Button>
+            </EmptyContent>
+        </Empty>
+    )
+}
+
+/** 运行时信息加载中的占位空态 */
+function LoadingState(): JSX.Element {
+    return (
+        <Empty>
+            <EmptyHeader>
+                <EmptyMedia variant="icon" className="size-12 rounded-2xl">
+                    <Spinner />
+                </EmptyMedia>
+                <EmptyTitle>正在读取会话</EmptyTitle>
+            </EmptyHeader>
+        </Empty>
+    )
+}
+
+/** 消息正文：用户输入按纯文本保留换行，助手回复走 unified/remark 管线渲染 Markdown（见 markdown-one.md 第 5 节） */
+function MessageBody({ message }: { message: AiMessage }): JSX.Element {
     if (message.content.length > 0) {
-        return message.content
+        return message.role === 'user' ? (
+            <>{message.content}</>
+        ) : (
+            <Markdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
+                {message.content}
+            </Markdown>
+        )
     }
-    return message.status === 'failed' || message.status === 'cancelled' ? '（未产生内容）' : <Spinner />
+    return <>{message.status === 'failed' || message.status === 'cancelled' ? '（未产生内容）' : <Spinner />}</>
+}
+
+/** Markdown 元素到主题类名的映射：不引入 typography 插件，逐标签复用 shadcn 令牌，避免与气泡样式互相覆盖 */
+const MARKDOWN_COMPONENTS: Components = {
+    p: ({ children }) => <p className="mb-2 leading-relaxed last:mb-0">{children}</p>,
+    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
+    em: ({ children }) => <em className="italic">{children}</em>,
+    ul: ({ children }) => <ul className="mb-2 list-disc pl-4 last:mb-0">{children}</ul>,
+    ol: ({ children }) => <ol className="mb-2 list-decimal pl-4 last:mb-0">{children}</ol>,
+    li: ({ children }) => <li className="mb-0.5">{children}</li>,
+    h1: ({ children }) => <h3 className="mb-2 font-heading text-base font-medium">{children}</h3>,
+    h2: ({ children }) => <h4 className="mb-2 font-heading text-sm font-medium">{children}</h4>,
+    h3: ({ children }) => <h5 className="mb-1.5 font-heading text-sm font-medium">{children}</h5>,
+    blockquote: ({ children }) => (
+        <blockquote className="mb-2 border-l-2 border-quote-border bg-quote-background pl-2 text-muted-foreground italic last:mb-0">
+            {children}
+        </blockquote>
+    ),
+    a: ({ children, href }) => (
+        <a className="text-link underline underline-offset-2" href={href}>
+            {children}
+        </a>
+    ),
+    code: ({ children, className }) =>
+        typeof className === 'string' && className.includes('language-') ? (
+            <code className={className}>{children}</code>
+        ) : (
+            <code className="rounded bg-code-background px-1 py-0.5 font-mono text-[0.85em]">{children}</code>
+        ),
+    pre: ({ children }) => (
+        <pre className="mb-2 overflow-x-auto rounded-md bg-code-background p-2 text-xs last:mb-0">{children}</pre>
+    ),
+    hr: () => <hr className="my-2 border-border" />,
+    table: ({ children }) => <table className="mb-2 w-full border-collapse text-xs last:mb-0">{children}</table>,
+    th: ({ children }) => <th className="border border-border px-1.5 py-1 text-left font-medium">{children}</th>,
+    td: ({ children }) => <td className="border border-border px-1.5 py-1">{children}</td>,
 }
 
 /** 就地替换指定消息，保持其余引用不变 */

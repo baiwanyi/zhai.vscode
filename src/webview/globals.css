@@ -2,17 +2,33 @@
  * Webview 样式入口：加载 Tailwind 4 与 shadcn/ui 主题令牌（radix-nova 风格，neutral 基色）。
  * 暗色由 .dark 类驱动，webview 入口依据 data-vscode-theme-kind 决定是否挂载该类。
  * shadcn/tailwind.css 提供基础层样式，tw-animate-css 提供动效能力。
+ * 颜色、字体、滚动条、选中态等视觉细节统一桥接 VSCode 主题，见文件末尾「VSCode 主题桥接」段。
  */
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
-@import '@fontsource-variable/inter';
+
+/* Tailwind 自动源检测以 Vite root（src/webview）为界，而 components / hooks / lib 位于其上层：
+   不显式声明扫描范围，这些目录中的类名不会进入产物，组件会渲染成无样式元素。 */
+@source '..';
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Inter Variable', sans-serif;
+    /* 字体族跟随 VSCode UI 字体，不再内置 Inter 字体文件 */
+    --font-sans: var(--font-ui);
+    /* 代码块字体跟随编辑器字体（pre/code 的 font-mono） */
+    --font-mono: var(--font-code);
+    /* 额外语义令牌：颜色与阴影同样来自 VSCode 变量，值定义在文件末尾的桥接段 */
+    --color-placeholder: var(--placeholder);
+    --color-input-background: var(--input-background);
+    --color-primary-hover: var(--primary-hover);
+    --color-code-background: var(--code-background);
+    --color-quote-background: var(--quote-background);
+    --color-quote-border: var(--quote-border);
+    --color-link: var(--link);
+    --shadow-widget: var(--widget-shadow);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -53,75 +69,6 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
-:root {
-    --background: oklch(1 0 0);
-    --foreground: oklch(0.145 0 0);
-    --card: oklch(1 0 0);
-    --card-foreground: oklch(0.145 0 0);
-    --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.145 0 0);
-    --primary: oklch(0.52 0.105 223.128);
-    --primary-foreground: oklch(0.984 0.019 200.873);
-    --secondary: oklch(0.967 0.001 286.375);
-    --secondary-foreground: oklch(0.21 0.006 285.885);
-    --muted: oklch(0.97 0 0);
-    --muted-foreground: oklch(0.556 0 0);
-    --accent: oklch(0.97 0 0);
-    --accent-foreground: oklch(0.205 0 0);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.922 0 0);
-    --input: oklch(0.922 0 0);
-    --ring: oklch(0.708 0 0);
-    --chart-1: oklch(0.865 0.127 207.078);
-    --chart-2: oklch(0.715 0.143 215.221);
-    --chart-3: oklch(0.609 0.126 221.723);
-    --chart-4: oklch(0.52 0.105 223.128);
-    --chart-5: oklch(0.45 0.085 224.283);
-    --radius: 0.625rem;
-    --sidebar: oklch(0.985 0 0);
-    --sidebar-foreground: oklch(0.145 0 0);
-    --sidebar-primary: oklch(0.609 0.126 221.723);
-    --sidebar-primary-foreground: oklch(0.984 0.019 200.873);
-    --sidebar-accent: oklch(0.97 0 0);
-    --sidebar-accent-foreground: oklch(0.205 0 0);
-    --sidebar-border: oklch(0.922 0 0);
-    --sidebar-ring: oklch(0.708 0 0);
-}
-
-.dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.45 0.085 224.283);
-    --primary-foreground: oklch(0.984 0.019 200.873);
-    --secondary: oklch(0.274 0.006 286.033);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.865 0.127 207.078);
-    --chart-2: oklch(0.715 0.143 215.221);
-    --chart-3: oklch(0.609 0.126 221.723);
-    --chart-4: oklch(0.52 0.105 223.128);
-    --chart-5: oklch(0.45 0.085 224.283);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.715 0.143 215.221);
-    --sidebar-primary-foreground: oklch(0.302 0.056 229.695);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
-}
-
 @layer base {
     * {
         @apply border-border outline-ring/50;
@@ -135,5 +82,127 @@
     button:not(:disabled),
     [role='button']:not(:disabled) {
         cursor: pointer;
+    }
+}
+
+/*
+ * VSCode 主题桥接：以下令牌全部取自 VSCode 注入的 --vscode-* 变量。
+ * 这些变量随主题实时切换，因此亮色 / 暗色 / 高对比主题都能自动适配，无需为每套主题维护色值。
+ * 位置必须在文件末尾：CSS 的 @import 只能位于文件顶部，若把它拆成独立文件引入，
+ * 其规则会排在组件令牌之前而被本文件的默认值反向覆盖。
+ * 括号内为浏览器预览（pnpm run webview:serve，无 --vscode-* 变量）时的回退值，取 VSCode 暗色默认。
+ * 维护提示：shadcn preset（apply / init）会重写本文件，覆盖后需补回这一段。
+ */
+:root,
+.dark {
+    /* ── 颜色 ── */
+    --background: var(--vscode-sideBar-background, #1f1f1f);
+    --foreground: var(--vscode-sideBar-foreground, var(--vscode-foreground, #cccccc));
+    /* 卡片与浮层取「编辑器浮层」背景，比侧栏底色高出一档 */
+    --card: var(--vscode-editorWidget-background, #252526);
+    --card-foreground: var(--vscode-editorWidget-foreground, var(--vscode-foreground, #cccccc));
+    --popover: var(--vscode-editorWidget-background, #252526);
+    --popover-foreground: var(--vscode-editorWidget-foreground, var(--vscode-foreground, #cccccc));
+    /* 主色跟随主题按钮色；主题未定义 button.background 时退回 VSCode 默认蓝 */
+    --primary: var(--vscode-button-background, #0078d4);
+    --primary-foreground: var(--vscode-button-foreground, #ffffff);
+    --primary-hover: var(--vscode-button-hoverBackground, #026ec1);
+    --secondary: var(--vscode-button-secondaryBackground, #3a3d41);
+    --secondary-foreground: var(--vscode-button-secondaryForeground, #ffffff);
+    /* 弱背景（助手气泡、图标块、hover 态）统一取列表 hover 底色，保证「比背景略突出」 */
+    --muted: var(--vscode-list-hoverBackground, rgb(255 255 255 / 8%));
+    --muted-foreground: var(--vscode-descriptionForeground, #9d9d9d);
+    --accent: var(--vscode-list-hoverBackground, rgb(255 255 255 / 8%));
+    --accent-foreground: var(--vscode-list-activeSelectionForeground, var(--vscode-foreground, #cccccc));
+    --destructive: var(--vscode-errorForeground, #f48771);
+    --border: var(--vscode-panel-border, var(--vscode-widget-border, rgb(128 128 128 / 35%)));
+    --input: var(--vscode-input-border, var(--vscode-panel-border, rgb(128 128 128 / 35%)));
+    --input-background: var(--vscode-input-background, #3c3c3c);
+    --placeholder: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground, #9d9d9d));
+    --ring: var(--vscode-focusBorder, #007fd4);
+    /* ── Markdown 片段：与编辑器内的代码块 / 引用块 / 链接观感一致 ── */
+    --code-background: var(--vscode-textCodeBlock-background, rgb(255 255 255 / 6%));
+    --quote-background: var(--vscode-textBlockQuote-background, rgb(255 255 255 / 5%));
+    --quote-border: var(--vscode-textBlockQuote-border, var(--vscode-panel-border, rgb(128 128 128 / 35%)));
+    --link: var(--vscode-textLink-foreground, #4daafc);
+    /* ── 字体与阴影 ── */
+    --font-ui: var(--vscode-font-family, sans-serif);
+    --font-code: var(--vscode-editor-font-family, monospace);
+    --widget-shadow: var(--vscode-widget-shadow, 0 2px 8px rgb(0 0 0 / 36%));
+    /* 图表色直接复用 VSCode 图表配色 */
+    --chart-1: var(--vscode-charts-blue, #4ea1ff);
+    --chart-2: var(--vscode-charts-green, #89d185);
+    --chart-3: var(--vscode-charts-orange, #d18616);
+    --chart-4: var(--vscode-charts-purple, #b180d7);
+    --chart-5: var(--vscode-charts-red, #f14c4c);
+    --sidebar: var(--vscode-sideBar-background, #1f1f1f);
+    --sidebar-foreground: var(--vscode-sideBar-foreground, var(--vscode-foreground, #cccccc));
+    --sidebar-primary: var(--vscode-activityBar-activeBorder, var(--vscode-focusBorder, #007fd4));
+    --sidebar-primary-foreground: var(--vscode-sideBar-foreground, #ffffff);
+    --sidebar-accent: var(--vscode-list-hoverBackground, rgb(255 255 255 / 8%));
+    --sidebar-accent-foreground: var(--vscode-foreground, #cccccc);
+    --sidebar-border: var(--vscode-sideBar-border, var(--vscode-panel-border, rgb(128 128 128 / 35%)));
+    --sidebar-ring: var(--vscode-focusBorder, #007fd4);
+    /* VSCode 无圆角变量，保持 shadcn 默认 */
+    --radius: 0.625rem;
+}
+
+/* 高对比主题：VSCode 规范要求实线边界，否则组件轮廓会「看不见」 */
+body.vscode-high-contrast,
+body.vscode-high-contrast-light {
+    --border: var(--vscode-contrastBorder, currentColor);
+    --input: var(--vscode-contrastBorder, currentColor);
+    --ring: var(--vscode-contrastActiveBorder, var(--vscode-contrastBorder, currentColor));
+}
+
+/*
+ * 滚动条：接管 Chromium 默认样式（message-scroller 模板里的 scrollbar-* 类在本项目并无定义）。
+ * 颜色取自 VSCode 滚动条滑块变量，与编辑区、侧栏的滚动条观感一致。
+ */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+    background-color: var(--vscode-scrollbarSlider-background, rgb(121 121 121 / 40%));
+    background-clip: content-box;
+    border: 2px solid transparent;
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background-color: var(--vscode-scrollbarSlider-hoverBackground, rgb(100 100 100 / 70%));
+}
+
+::-webkit-scrollbar-thumb:active {
+    background-color: var(--vscode-scrollbarSlider-activeBackground, rgb(191 191 191 / 50%));
+}
+
+/* 自动滚动过程中隐藏滑块，避免与「跟随最新消息」的动效互相干扰 */
+[data-autoscrolling]::-webkit-scrollbar-thumb {
+    background-color: transparent;
+}
+
+/* 选中文本：跟随编辑器选中色，复制粘贴时与 VSCode 观感一致 */
+::selection {
+    background-color: var(--vscode-editor-selectionBackground, var(--vscode-list-activeSelectionBackground, #264f78));
+    color: var(--vscode-editor-selectionForeground, var(--vscode-list-activeSelectionForeground, inherit));
+}
+
+/* 尊重系统 / VSCode 的「减少动效」偏好 */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    ::before,
+    ::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
     }
 }
