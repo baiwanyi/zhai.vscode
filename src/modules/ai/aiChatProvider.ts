@@ -84,6 +84,15 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             case 'ai/newSession': {
                 return this.service.createSession()
             }
+            case 'ai/sessions': {
+                return this.service.listSessions()
+            }
+            case 'ai/switchSession': {
+                return this.service.switchSession(readConversationIdPayload(payload, 'ai/switchSession'))
+            }
+            case 'ai/deleteSession': {
+                return { deleted: this.service.deleteSession(readConversationIdPayload(payload, 'ai/deleteSession')) }
+            }
             case 'ai/runtime': {
                 return this.service.getRuntimeInfo()
             }
@@ -141,6 +150,18 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     private post(view: vscode.WebviewView, message: HostToWebviewMessage): void {
         void view.webview.postMessage(message)
     }
+}
+
+/** 校验会话 id 入参：Webview 侧数据不可信，仅接受非空字符串 */
+function readConversationIdPayload(payload: unknown, method: string): string {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error(`${method} 缺少参数`)
+    }
+    const value = payload as { conversationId?: unknown }
+    if (typeof value.conversationId !== 'string' || value.conversationId.length === 0) {
+        throw new Error(`${method} 参数类型不正确`)
+    }
+    return value.conversationId
 }
 
 /** 校验 ai/context/remove 入参：只接受宿主生成的引用 id，不接受路径（防越权读取任意文件） */

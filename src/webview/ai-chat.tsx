@@ -1,21 +1,23 @@
 /**
  * AI 对话页：MessageScroller 托管消息流（自动滚动 + 回到底部按钮），Message + Bubble 呈现消息，
  * 空态用 Empty、输入区用 InputGroup 组合，与 message-scroller 的官方界面模式一致；流式正文经宿主 stream 消息增量渲染。
- * 「添加到宅对话」的待发送上下文以 Attachment 清单呈现在输入区上方，历史消息的引用以 Badge 回显。
+ * 消息样式参考 Copilot / CodeBuddy：无头像与角色标签，用户消息为右对齐气泡，助手回复走 Bubble ghost 变体通栏纯文本。
+ * 「添加到宅对话」的待发送上下文以 Attachment 清单呈现在输入区上方，已发送的引用作为消息内容的一部分随消息展示。
+ * 顶部工具条提供「历史对话」浮层（对齐 Copilot：标题 + 相对时间，hover 显示删除），可切换与删除会话。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机；交互约束：生成期间禁用发送并显示停止按钮。
  */
 import { cn } from 'cn'
 import {
     ArrowUp,
-    Bot,
     FileText,
+    History,
     KeyRound,
     Settings,
     Sparkles,
     Square,
     SquarePen,
     TextSelect,
-    UserRound,
+    Trash2,
     X,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -34,10 +36,19 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Bubble, BubbleContent, BubbleGroup } from '@/components/ui/bubble'
 import { Button } from '@/components/ui/button'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group'
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
-import { Message, MessageAvatar, MessageContent, MessageFooter, MessageHeader } from '@/components/ui/message'
+import { Message, MessageContent, MessageFooter } from '@/components/ui/message'
 import {
     MessageScroller,
     MessageScrollerButton,
@@ -48,7 +59,14 @@ import {
 } from '@/components/ui/message-scroller'
 import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
-import type { AiContextRef, AiMessage, AiRuntimeInfo, AiSendResult, AiSessionSnapshot } from '@/shared/types/aiChat'
+import type {
+    AiContextRef,
+    AiConversationSummary,
+    AiMessage,
+    AiRuntimeInfo,
+    AiSendResult,
+    AiSessionSnapshot,
+} from '@/shared/types/aiChat'
 import { onState, onStream, request } from './bridge'
 import type { JSX } from 'react'
 import type { Components } from 'react-markdown'
@@ -60,6 +78,7 @@ export function AiChat(): JSX.Element {
     const [session, setSession] = useState<AiSessionSnapshot | null>(null)
     const [runtime, setRuntime] = useState<AiRuntimeInfo | null>(null)
     const [contexts, setContexts] = useState<AiContextRef[]>([])
+    const [sessions, setSessions] = useState<AiConversationSummary[]>([])
     const [input, setInput] = useState('')
     const [phase, setPhase] = useState<Phase>('idle')
     const [error, setError] = useState<string | null>(null)
@@ -203,6 +222,61 @@ export function AiChat(): JSX.Element {
         }
     }, [])
 
+    const loadSessions = useCallback(async (): Promise<void> => {
+        try {
+            setSessions(await request<AiConversationSummary[]>('ai/sessions'))
+        } catch (cause) {
+            setError(toErrorText(cause))
+        }
+    }, [])
+
+    /** 切换到历史会话：生成中先停止再切换，避免增量写回已切走的会话；输入框内容保持不动 */
+    const switchSession = useCallback(
+        async (conversationId: string): Promise<void> => {
+            if (session?.conversation.id === conversationId) {
+                return
+            }
+            try {
+                if (phase !== 'idle') {
+                    await request('ai/abort')
+                }
+                const snapshot = await request<AiSessionSnapshot>('ai/switchSession', { conversationId })
+                streamingMessageIdRef.current = null
+                setSession(snapshot)
+                setContexts(snapshot.contexts)
+                setPhase('idle')
+                setError(null)
+                setNotice(null)
+            } catch (cause) {
+                setError(toErrorText(cause))
+            }
+        },
+        [phase, session],
+    )
+
+    /** 删除历史会话：删掉的是当前会话时由宿主切到最近会话（无则新建），随后重新加载快照 */
+    const deleteSession = useCallback(
+        async (conversationId: string): Promise<void> => {
+            const isActive = session?.conversation.id === conversationId
+            try {
+                await request('ai/deleteSession', { conversationId })
+                if (isActive) {
+                    streamingMessageIdRef.current = null
+                    setPhase('idle')
+                    const snapshot = await request<AiSessionSnapshot>('ai/session')
+                    setSession(snapshot)
+                    setContexts(snapshot.contexts)
+                    setError(null)
+                    setNotice(null)
+                }
+                await loadSessions()
+            } catch (cause) {
+                setError(toErrorText(cause))
+            }
+        },
+        [loadSessions, session],
+    )
+
     /** 触发白名单内的宿主命令（设置密钥、打开设置等） */
     const runHostCommand = useCallback(async (command: string): Promise<void> => {
         try {
@@ -249,15 +323,55 @@ export function AiChat(): JSX.Element {
                             : '正在读取配置…'}
                     </span>
                 </div>
-                <Button
-                    size="icon-sm"
-                    variant="secondary"
-                    className="rounded-full"
-                    title="新建会话"
-                    onClick={() => void startNewSession()}
-                >
-                    <SquarePen />
-                </Button>
+                <div className="flex shrink-0 items-center gap-1">
+                    <DropdownMenu
+                        onOpenChange={(isOpen) => {
+                            if (isOpen) {
+                                void loadSessions()
+                            }
+                        }}
+                    >
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                size="icon-sm"
+                                variant="ghost"
+                                className="rounded-full"
+                                title="历史对话"
+                                aria-label="历史对话"
+                            >
+                                <History />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-72">
+                            <DropdownMenuLabel>历史对话</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {sessions.length === 0 ? (
+                                <DropdownMenuItem disabled>暂无历史对话</DropdownMenuItem>
+                            ) : (
+                                <DropdownMenuGroup>
+                                    {sessions.map((item) => (
+                                        <HistoryItem
+                                            key={item.id}
+                                            session={item}
+                                            isActive={item.id === session?.conversation.id}
+                                            onSelect={() => void switchSession(item.id)}
+                                            onDelete={() => void deleteSession(item.id)}
+                                        />
+                                    ))}
+                                </DropdownMenuGroup>
+                            )}
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                    <Button
+                        size="icon-sm"
+                        variant="secondary"
+                        className="rounded-full"
+                        title="新建会话"
+                        onClick={() => void startNewSession()}
+                    >
+                        <SquarePen />
+                    </Button>
+                </div>
             </header>
             <Separator />
 
@@ -404,44 +518,85 @@ function ContextList({ contexts, onRemove, onClear }: ContextListProps): JSX.Ele
     )
 }
 
-/** 单条消息：Message 负责头像/头部/内容布局，Bubble 负责气泡样式，对齐随 Message 的 align 联动 */
+/** 单条消息：引用作为消息内容的一部分置于气泡内（不悬在消息头部）；用户消息为右对齐气泡，助手回复走 Bubble ghost 通栏纯文本 */
 function MessageRow({ message }: { message: AiMessage }): JSX.Element {
     const isUser = message.role === 'user'
+    const isCancelled = message.status === 'cancelled'
     return (
         <Message align={isUser ? 'end' : 'start'}>
-            <MessageAvatar className="size-8 self-start group-has-data-[slot=message-footer]/message:translate-y-0">
-                {isUser ? <UserRound className="size-4" /> : <Bot className="size-4" />}
-            </MessageAvatar>
             <MessageContent>
-                {message.refs.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                        {message.refs.map((ref) => (
-                            <Badge
-                                key={ref.id}
-                                variant="secondary"
-                                className="max-w-full font-normal"
-                                title={ref.displayPath}
-                            >
-                                <span className="min-w-0 truncate">{ref.label}</span>
-                            </Badge>
-                        ))}
-                    </div>
-                ) : null}
-                <MessageHeader className="gap-1">
-                    {isUser ? '你' : '助手'}
-                    {message.status === 'failed' ? <span className="text-destructive">· 失败</span> : null}
-                    {message.status === 'cancelled' ? <span>· 已停止</span> : null}
-                </MessageHeader>
                 <BubbleGroup className="w-full">
-                    <Bubble variant={isUser ? 'default' : 'muted'}>
-                        <BubbleContent className={cn('w-max max-w-full', isUser && 'whitespace-pre-wrap')}>
-                            <MessageBody message={message} />
-                        </BubbleContent>
-                    </Bubble>
+                    {isUser ? (
+                        <Bubble variant="default">
+                            <BubbleContent className="flex w-max max-w-full flex-col gap-1.5 whitespace-pre-wrap">
+                                <MessageRefs refs={message.refs} />
+                                <MessageBody message={message} />
+                            </BubbleContent>
+                        </Bubble>
+                    ) : (
+                        <Bubble variant="ghost" className="w-full">
+                            <BubbleContent>
+                                <MessageBody message={message} />
+                            </BubbleContent>
+                        </Bubble>
+                    )}
                 </BubbleGroup>
                 {message.error ? <MessageFooter className="text-destructive">{message.error}</MessageFooter> : null}
+                {message.error === null && (message.status === 'failed' || isCancelled) ? (
+                    <MessageFooter>{isCancelled ? '已停止生成' : '生成失败'}</MessageFooter>
+                ) : null}
             </MessageContent>
         </Message>
+    )
+}
+
+/** 消息内引用条目：与正文同属一条对话内容，随消息一起展示（无引用时渲染为空） */
+function MessageRefs({ refs }: { refs: AiContextRef[] }): JSX.Element | null {
+    if (refs.length === 0) {
+        return null
+    }
+    return (
+        <div className="flex flex-wrap gap-1">
+            {refs.map((ref) => (
+                <Badge key={ref.id} variant="secondary" className="max-w-full font-normal" title={ref.displayPath}>
+                    <span className="min-w-0 truncate">{ref.label}</span>
+                </Badge>
+            ))}
+        </div>
+    )
+}
+
+interface HistoryItemProps {
+    session: AiConversationSummary
+    isActive: boolean
+    onSelect: () => void
+    onDelete: () => void
+}
+
+/** 历史会话条目（对齐 Copilot）：标题 + 相对时间，hover 时用删除按钮顶替时间位置，避免行宽跳动 */
+function HistoryItem({ session, isActive, onSelect, onDelete }: HistoryItemProps): JSX.Element {
+    return (
+        <DropdownMenuItem onSelect={onSelect} className="group/history gap-2">
+            <span className={cn('min-w-0 flex-1 truncate', isActive && 'font-medium')}>{session.title}</span>
+            <span className="grid shrink-0 place-items-center">
+                <span className="col-start-1 row-start-1 text-xs text-muted-foreground group-hover/history:opacity-0">
+                    {formatRelativeTime(session.updatedAt)}
+                </span>
+                <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="col-start-1 row-start-1 opacity-0 group-hover/history:opacity-100"
+                    title="删除会话"
+                    aria-label="删除会话"
+                    onClick={(event) => {
+                        event.stopPropagation()
+                        onDelete()
+                    }}
+                >
+                    <Trash2 />
+                </Button>
+            </span>
+        </DropdownMenuItem>
     )
 }
 
@@ -563,6 +718,30 @@ function patchMessage(
         ...session,
         messages: session.messages.map((item) => (item.id === messageId ? patch(item) : item)),
     }
+}
+
+/** 相对时间格式化器（原生 Intl，不引日期库） */
+const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
+
+/** 会话时间的展示：7 天内用相对时间，更早回退本地日期 */
+function formatRelativeTime(iso: string): string {
+    const time = new Date(iso).getTime()
+    if (Number.isNaN(time)) {
+        return ''
+    }
+    const minutes = Math.round((time - Date.now()) / 60_000)
+    if (Math.abs(minutes) < 60) {
+        return RELATIVE_TIME_FORMATTER.format(minutes, 'minute')
+    }
+    const hours = Math.round(minutes / 60)
+    if (Math.abs(hours) < 24) {
+        return RELATIVE_TIME_FORMATTER.format(hours, 'hour')
+    }
+    const days = Math.round(hours / 24)
+    if (Math.abs(days) < 7) {
+        return RELATIVE_TIME_FORMATTER.format(days, 'day')
+    }
+    return new Date(iso).toLocaleDateString('zh-CN')
 }
 
 /** token 数量紧凑展示：过千折算 k，过百万折算 M */

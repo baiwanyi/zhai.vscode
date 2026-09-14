@@ -48,6 +48,14 @@ export interface AiConversation {
     updatedAt: string
 }
 
+/** 历史对话列表项：只含会话元信息，不含消息正文（面板历史浮层用） */
+export interface AiConversationSummary {
+    id: string
+    title: string
+    /** 最后活跃时间（ISO），前端展示为相对时间 */
+    updatedAt: string
+}
+
 /** 消息 */
 export interface AiMessage {
     id: string

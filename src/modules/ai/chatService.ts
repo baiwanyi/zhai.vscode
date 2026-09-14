@@ -16,11 +16,13 @@ import {
     toPublicContextRef,
 } from './contextRefs'
 import {
+    deleteConversation,
     getConversation,
     getLatestConversation,
     insertConversation,
     insertMessage,
     insertUsageLog,
+    listConversations,
     listMessages,
     sumTokensSince,
     touchConversation,
@@ -33,6 +35,7 @@ import type { ConversationRow, MessageRow } from './db/chatRepository'
 import type {
     AiContextRef,
     AiConversation,
+    AiConversationSummary,
     AiMessage,
     AiRuntimeInfo,
     AiSendResult,
@@ -49,6 +52,8 @@ import { SecretsService } from '../common/secrets'
 const DEFAULT_TITLE = '新的对话'
 /** 会话标题截断长度 */
 const TITLE_MAX_LENGTH = 20
+/** 历史对话列表返回条数上限，避免一次拉取过多会话 */
+const SESSION_LIST_LIMIT = 50
 /** 单次生成上限，防止费用失控 */
 const MAX_COMPLETION_TOKENS = 2048
 /** 中文场景 1 token ≈ 1.6 字符（设计文档第 5 节的降级方案） */
@@ -134,6 +139,47 @@ export class AiChatService implements vscode.Disposable {
         this.activeConversationId = row.id
         logger.info(`AI 会话已创建：${row.id}`)
         return { conversation: toConversation(row), messages: [], contexts: [] }
+    }
+
+    /** 历史会话列表（按最后活跃时间倒序），供面板历史浮层展示 */
+    public listSessions(): AiConversationSummary[] {
+        return listConversations(this.db, SESSION_LIST_LIMIT).map((row) => ({
+            id: row.id,
+            title: row.title,
+            updatedAt: row.updatedAt,
+        }))
+    }
+
+    /** 切换到指定会话并返回其快照（含待发送上下文）；会话不存在时抛错 */
+    public switchSession(conversationId: string): AiSessionSnapshot {
+        const conversation = getConversation(this.db, conversationId)
+        if (!conversation) {
+            throw new Error('会话不存在或已被删除')
+        }
+        this.activeConversationId = conversation.id
+        return {
+            conversation: toConversation(conversation),
+            messages: listMessages(this.db, conversation.id).map(toMessage),
+            contexts: this.getContexts(conversation.id),
+        }
+    }
+
+    /**
+     * 删除会话及其消息（messages 由外键级联清理），返回是否确实删除。
+     * 删除当前会话时同步中止进行中的生成并清空待发送上下文，避免继续消耗 Token。
+     */
+    public deleteSession(conversationId: string): boolean {
+        if (!getConversation(this.db, conversationId)) {
+            return false
+        }
+        deleteConversation(this.db, conversationId)
+        this.pendingContexts.delete(conversationId)
+        if (this.activeConversationId === conversationId) {
+            this.abort()
+            this.activeConversationId = null
+        }
+        logger.info(`AI 会话已删除：${conversationId}`)
+        return true
     }
 
     /**

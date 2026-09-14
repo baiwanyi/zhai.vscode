@@ -78,6 +78,13 @@ export function getLatestConversation(db: Database.Database): ConversationRow | 
         ConversationRow | undefined
 }
 
+/** 按最后活跃时间倒序列出会话（历史对话浮层用，条数由调用方限制） */
+export function listConversations(db: Database.Database, limit: number): ConversationRow[] {
+    return db
+        .prepare(`SELECT ${CONVERSATION_COLUMNS} FROM conversations ORDER BY updated_at DESC LIMIT ?`)
+        .all(limit) as ConversationRow[]
+}
+
 export function updateConversationTitle(db: Database.Database, id: string, title: string): void {
     db.prepare('UPDATE conversations SET title = ? WHERE id = ?').run(title, id)
 }
