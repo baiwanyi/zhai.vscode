@@ -16,6 +16,8 @@ export interface ZhaiConfig {
     aiTemperature: number
     aiMaxContextTokens: number
     aiDailyTokenBudget: number
+    /** 添加上下文引用后是否自动聚焦 AI 对话面板 */
+    aiAutoFocusOnContext: boolean
     telemetryEnabled: boolean
 }
 
@@ -32,8 +34,9 @@ export function getZhaiConfig(): ZhaiConfig {
         searchLimit: cfg.get<number>('search.limit', 50),
         aiModel: cfg.get<string>('ai.model', 'deepseek-chat'),
         aiTemperature: cfg.get<number>('ai.temperature', 0.7),
-        aiMaxContextTokens: cfg.get<number>('ai.maxContextTokens', 4000),
+        aiMaxContextTokens: cfg.get<number>('ai.maxContextTokens', 8000),
         aiDailyTokenBudget: cfg.get<number>('ai.dailyTokenBudget', 500000),
+        aiAutoFocusOnContext: cfg.get<boolean>('ai.autoFocusOnContext', true),
         telemetryEnabled: cfg.get<boolean>('telemetry.enabled', false),
     }
 }

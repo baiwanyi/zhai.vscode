@@ -1,13 +1,37 @@
 /**
  * AI 对话页：MessageScroller 托管消息流（自动滚动 + 回到底部按钮），Message + Bubble 呈现消息，
  * 空态用 Empty、输入区用 InputGroup 组合，与 message-scroller 的官方界面模式一致；流式正文经宿主 stream 消息增量渲染。
+ * 「添加到宅对话」的待发送上下文以 Attachment 清单呈现在输入区上方，历史消息的引用以 Badge 回显。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机；交互约束：生成期间禁用发送并显示停止按钮。
  */
 import { cn } from 'cn'
-import { ArrowUp, Bot, KeyRound, Settings, Sparkles, Square, SquarePen, UserRound } from 'lucide-react'
+import {
+    ArrowUp,
+    Bot,
+    FileText,
+    KeyRound,
+    Settings,
+    Sparkles,
+    Square,
+    SquarePen,
+    TextSelect,
+    UserRound,
+    X,
+} from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import {
+    Attachment,
+    AttachmentAction,
+    AttachmentActions,
+    AttachmentContent,
+    AttachmentDescription,
+    AttachmentGroup,
+    AttachmentMedia,
+    AttachmentTitle,
+} from '@/components/ui/attachment'
+import { Badge } from '@/components/ui/badge'
 import { Bubble, BubbleContent, BubbleGroup } from '@/components/ui/bubble'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
@@ -24,7 +48,7 @@ import {
 } from '@/components/ui/message-scroller'
 import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
-import type { AiMessage, AiRuntimeInfo, AiSendResult, AiSessionSnapshot } from '@/shared/types/aiChat'
+import type { AiContextRef, AiMessage, AiRuntimeInfo, AiSendResult, AiSessionSnapshot } from '@/shared/types/aiChat'
 import { onState, onStream, request } from './bridge'
 import type { JSX } from 'react'
 import type { Components } from 'react-markdown'
@@ -35,16 +59,28 @@ type Phase = 'idle' | 'sending' | 'streaming'
 export function AiChat(): JSX.Element {
     const [session, setSession] = useState<AiSessionSnapshot | null>(null)
     const [runtime, setRuntime] = useState<AiRuntimeInfo | null>(null)
+    const [contexts, setContexts] = useState<AiContextRef[]>([])
     const [input, setInput] = useState('')
     const [phase, setPhase] = useState<Phase>('idle')
     const [error, setError] = useState<string | null>(null)
+    const [notice, setNotice] = useState<string | null>(null)
     /** 正在流式填充的消息 id，避免每次增量都触发状态结构变更 */
     const streamingMessageIdRef = useRef<string | null>(null)
 
     const loadSession = useCallback(async (): Promise<void> => {
         try {
-            setSession(await request<AiSessionSnapshot>('ai/session'))
+            const snapshot = await request<AiSessionSnapshot>('ai/session')
+            setSession(snapshot)
+            setContexts(snapshot.contexts)
             setError(null)
+        } catch (cause) {
+            setError(toErrorText(cause))
+        }
+    }, [])
+
+    const loadContexts = useCallback(async (): Promise<void> => {
+        try {
+            setContexts(await request<AiContextRef[]>('ai/context'))
         } catch (cause) {
             setError(toErrorText(cause))
         }
@@ -63,14 +99,21 @@ export function AiChat(): JSX.Element {
         void loadRuntime()
     }, [loadSession, loadRuntime])
 
-    // 密钥增删后由宿主广播，前端刷新运行时信息以解除/进入引导态
+    // 密钥增删与上下文变更由宿主广播，按 kind 刷新对应数据
     useEffect(() => {
         return onState((message) => {
-            if (message.channel === 'ai') {
+            if (message.channel !== 'ai') {
+                return
+            }
+            const kind = readAiStateKind(message.payload)
+            if (kind === 'runtime') {
                 void loadRuntime()
             }
+            if (kind === 'context') {
+                void loadContexts()
+            }
         })
-    }, [loadRuntime])
+    }, [loadContexts, loadRuntime])
 
     // 流式增量：按 reqId 找到发起时的助手消息并就地追加
     useEffect(() => {
@@ -111,6 +154,7 @@ export function AiChat(): JSX.Element {
         }
         setPhase('sending')
         setError(null)
+        setNotice(null)
         try {
             const result = await request<AiSendResult>('ai/send', {
                 conversationId: session.conversation.id,
@@ -125,6 +169,11 @@ export function AiChat(): JSX.Element {
                       }
                     : previous,
             )
+            // 引用已随消息提交并落库，待发送清单即时清空
+            setContexts([])
+            if (result.skippedContexts.length > 0) {
+                setNotice(`已跳过失效引用：${result.skippedContexts.join('、')}`)
+            }
             setInput('')
             setPhase('streaming')
         } catch (cause) {
@@ -143,9 +192,12 @@ export function AiChat(): JSX.Element {
 
     const startNewSession = useCallback(async (): Promise<void> => {
         try {
-            setSession(await request<AiSessionSnapshot>('ai/newSession'))
+            const snapshot = await request<AiSessionSnapshot>('ai/newSession')
+            setSession(snapshot)
+            setContexts(snapshot.contexts)
             setInput('')
             setError(null)
+            setNotice(null)
         } catch (cause) {
             setError(toErrorText(cause))
         }
@@ -155,6 +207,25 @@ export function AiChat(): JSX.Element {
     const runHostCommand = useCallback(async (command: string): Promise<void> => {
         try {
             await request('host/command', command)
+        } catch (cause) {
+            setError(toErrorText(cause))
+        }
+    }, [])
+
+    /** 移除单条上下文引用：只回传宿主生成的 id */
+    const removeContext = useCallback(async (id: string): Promise<void> => {
+        try {
+            setContexts(await request<AiContextRef[]>('ai/context/remove', { id }))
+            setNotice(null)
+        } catch (cause) {
+            setError(toErrorText(cause))
+        }
+    }, [])
+
+    const clearContexts = useCallback(async (): Promise<void> => {
+        try {
+            setContexts(await request<AiContextRef[]>('ai/context/clear'))
+            setNotice(null)
         } catch (cause) {
             setError(toErrorText(cause))
         }
@@ -230,6 +301,13 @@ export function AiChat(): JSX.Element {
 
             <Separator />
             <footer className="flex flex-col gap-2 p-3">
+                {contexts.length > 0 ? (
+                    <ContextList
+                        contexts={contexts}
+                        onRemove={(id) => void removeContext(id)}
+                        onClear={() => void clearContexts()}
+                    />
+                ) : null}
                 <InputGroup>
                     <InputGroupTextarea
                         value={input}
@@ -278,16 +356,50 @@ export function AiChat(): JSX.Element {
                         )}
                     </InputGroupAddon>
                 </InputGroup>
-                <p
-                    className={cn(
-                        'text-center text-xs',
-                        error ? 'text-destructive' : 'text-muted-foreground',
-                    )}
-                >
+                <p className={cn('text-center text-xs', error ? 'text-destructive' : 'text-muted-foreground')}>
                     {error ??
+                        notice ??
                         (isGenerating ? '正在生成，可随时停止' : 'Enter 发送 · Shift + Enter 换行 · Ctrl+Shift+L 聚焦')}
                 </p>
             </footer>
+        </div>
+    )
+}
+
+interface ContextListProps {
+    contexts: AiContextRef[]
+    onRemove: (id: string) => void
+    onClear: () => void
+}
+
+/** 待发送上下文清单：Attachment 呈现标签与体积，支持单条移除与一键清空 */
+function ContextList({ contexts, onRemove, onClear }: ContextListProps): JSX.Element {
+    return (
+        <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+                <span className="text-xs text-muted-foreground">上下文 {contexts.length} 项</span>
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onClear}>
+                    清空
+                </Button>
+            </div>
+            <AttachmentGroup>
+                {contexts.map((context) => (
+                    <Attachment key={context.id} size="xs">
+                        <AttachmentMedia>
+                            {context.kind === 'selection' ? <TextSelect /> : <FileText />}
+                        </AttachmentMedia>
+                        <AttachmentContent>
+                            <AttachmentTitle title={context.displayPath}>{context.label}</AttachmentTitle>
+                            <AttachmentDescription>{describeContext(context)}</AttachmentDescription>
+                        </AttachmentContent>
+                        <AttachmentActions>
+                            <AttachmentAction title="移除该引用" onClick={() => onRemove(context.id)}>
+                                <X />
+                            </AttachmentAction>
+                        </AttachmentActions>
+                    </Attachment>
+                ))}
+            </AttachmentGroup>
         </div>
     )
 }
@@ -301,6 +413,20 @@ function MessageRow({ message }: { message: AiMessage }): JSX.Element {
                 {isUser ? <UserRound className="size-4" /> : <Bot className="size-4" />}
             </MessageAvatar>
             <MessageContent>
+                {message.refs.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                        {message.refs.map((ref) => (
+                            <Badge
+                                key={ref.id}
+                                variant="secondary"
+                                className="max-w-full font-normal"
+                                title={ref.displayPath}
+                            >
+                                <span className="min-w-0 truncate">{ref.label}</span>
+                            </Badge>
+                        ))}
+                    </div>
+                ) : null}
                 <MessageHeader className="gap-1">
                     {isUser ? '你' : '助手'}
                     {message.status === 'failed' ? <span className="text-destructive">· 失败</span> : null}
@@ -329,7 +455,8 @@ function WelcomeState(): JSX.Element {
                 </EmptyMedia>
                 <EmptyTitle>开始新的对话</EmptyTitle>
                 <EmptyDescription>
-                    输入问题后按 Enter 发送，Shift + Enter 换行；会话与消息会在窗口重启后自动恢复。
+                    输入问题后按 Enter 发送，Shift + Enter
+                    换行；在编辑器中右键「添加到宅对话」可把文件或选中行加入上下文。
                 </EmptyDescription>
             </EmptyHeader>
         </Empty>
@@ -451,4 +578,19 @@ function formatTokens(value: number): string {
 
 function toErrorText(cause: unknown): string {
     return cause instanceof Error ? cause.message : String(cause)
+}
+
+/** 引用体积描述：过千折算 k，被截断时追加标注 */
+function describeContext(ref: AiContextRef): string {
+    const size = ref.charCount >= 1000 ? `${(ref.charCount / 1000).toFixed(1)}k 字` : `${ref.charCount} 字`
+    return ref.isTruncated ? `${size} · 已截断` : size
+}
+
+/** 收窄宿主 state 广播的载荷：仅识别 ai 通道的两类通知 */
+function readAiStateKind(payload: unknown): 'runtime' | 'context' | null {
+    if (typeof payload !== 'object' || payload === null) {
+        return null
+    }
+    const kind = (payload as { kind?: unknown }).kind
+    return kind === 'runtime' || kind === 'context' ? kind : null
 }

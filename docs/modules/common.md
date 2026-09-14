@@ -230,6 +230,7 @@ PRAGMA foreign_keys = ON;
 | `zhai.exportDiagnostics` | 导出诊断信息 | 脱敏后导出配置与日志，便于排查 |
 | `zhai.openSettings` | 打开插件设置 | 跳转到 `zhai.*` 配置分组 |
 | `zhai.openAiChat` | 打开 AI 对话 | 聚焦侧栏 AI 对话视图（默认 `Ctrl+Shift+L`） |
+| `zhai.ai.addToChat` | 添加到宅对话 | 编辑器右键：选中文本取行范围（`file.md:11-19`），未选则取整篇，作为对话上下文 |
 | `zhai.ai.setApiKey` | 设置 DeepSeek API Key | 输入框写入系统密钥库（SecretStorage），不落配置文件 |
 | `zhai.ai.clearApiKey` | 清除 DeepSeek API Key | 从密钥库删除已保存的 Key |
 
@@ -246,8 +247,9 @@ PRAGMA foreign_keys = ON;
 | `zhai.search.limit` | number | `50` | 全局搜索单模块返回上限 |
 | `zhai.ai.model` | string | `deepseek-chat` | 默认模型 |
 | `zhai.ai.temperature` | number | `0.7` | 默认温度 |
-| `zhai.ai.maxContextTokens` | number | `4000` | 前文注入上限 |
+| `zhai.ai.maxContextTokens` | number | `8000` | 前文与引用上下文注入上限 |
 | `zhai.ai.dailyTokenBudget` | number | `500000` | 每日 Token 预算，超限提示 |
+| `zhai.ai.autoFocusOnContext` | boolean | `true` | 添加对话上下文后自动聚焦 AI 对话面板 |
 | `zhai.telemetry.enabled` | boolean | `false` | 遥测开关，默认关闭 |
 
 ### 7.3 Webview 消息协议

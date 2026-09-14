@@ -24,6 +24,8 @@ export interface MessageRow {
     reasoning: string | null
     status: string
     finishReason: string | null
+    /** 发送时携带的上下文引用（JSON 数组，含绝对路径，仅宿主使用） */
+    refs: string
     error: string | null
     createdAt: string
 }
@@ -56,7 +58,7 @@ const CONVERSATION_COLUMNS = `id, title, mode, file_path AS filePath, model,
     created_at AS createdAt, updated_at AS updatedAt`
 
 const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, reasoning, status,
-    finish_reason AS finishReason, error, created_at AS createdAt`
+    finish_reason AS finishReason, refs, error, created_at AS createdAt`
 
 export function insertConversation(db: Database.Database, row: ConversationRow): void {
     db.prepare(
@@ -67,15 +69,13 @@ export function insertConversation(db: Database.Database, row: ConversationRow):
 
 export function getConversation(db: Database.Database, id: string): ConversationRow | undefined {
     return db.prepare(`SELECT ${CONVERSATION_COLUMNS} FROM conversations WHERE id = ?`).get(id) as
-        | ConversationRow
-        | undefined
+        ConversationRow | undefined
 }
 
 /** 取最近活跃的会话（视图恢复时复用它） */
 export function getLatestConversation(db: Database.Database): ConversationRow | undefined {
-    return db
-        .prepare(`SELECT ${CONVERSATION_COLUMNS} FROM conversations ORDER BY updated_at DESC LIMIT 1`)
-        .get() as ConversationRow | undefined
+    return db.prepare(`SELECT ${CONVERSATION_COLUMNS} FROM conversations ORDER BY updated_at DESC LIMIT 1`).get() as
+        ConversationRow | undefined
 }
 
 export function updateConversationTitle(db: Database.Database, id: string, title: string): void {
@@ -92,8 +92,8 @@ export function deleteConversation(db: Database.Database, id: string): void {
 
 export function insertMessage(db: Database.Database, row: MessageRow): void {
     db.prepare(
-        `INSERT INTO messages (id, conversation_id, role, content, reasoning, status, finish_reason, error, created_at)
-         VALUES (@id, @conversationId, @role, @content, @reasoning, @status, @finishReason, @error, @createdAt)`,
+        `INSERT INTO messages (id, conversation_id, role, content, reasoning, status, finish_reason, refs, error, created_at)
+         VALUES (@id, @conversationId, @role, @content, @reasoning, @status, @finishReason, @refs, @error, @createdAt)`,
     ).run(row)
 }
 

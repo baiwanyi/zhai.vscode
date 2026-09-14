@@ -10,6 +10,30 @@ export type AiConversationMode = 'write' | 'chat'
 /** 消息角色 */
 export type AiMessageRole = 'user' | 'assistant' | 'system'
 
+/** 对话上下文引用类型：file 为整篇文档，selection 为行范围 */
+export type AiContextRefKind = 'file' | 'selection'
+
+/**
+ * 对话上下文引用的展示契约：宿主生成，Webview 只消费。
+ * 约束：不含绝对路径（宿主内部保留），前端删除引用时只回传 id，不得据 label 访问文件。
+ */
+export interface AiContextRef {
+    /** 宿主生成的引用 id */
+    id: string
+    kind: AiContextRefKind
+    /** 展示标签：notes/ch01.md:11-19（整篇为 notes/ch01.md） */
+    label: string
+    /** 展示路径：工作区相对路径；未命名文档为文件名 */
+    displayPath: string
+    /** 行范围（1-based，含首尾）；整篇引用为 null */
+    startLine: number | null
+    endLine: number | null
+    /** 注入前预估字符数 */
+    charCount: number
+    /** 是否因超出单条上限而被截断 */
+    isTruncated: boolean
+}
+
 /** 消息状态：与 ai-chat.md 第 4.2 节对话状态机一致 */
 export type AiMessageStatus = 'pending' | 'streaming' | 'completed' | 'failed' | 'cancelled'
 
@@ -35,6 +59,8 @@ export interface AiMessage {
     status: AiMessageStatus
     finishReason: string | null
     error: string | null
+    /** 该条消息发送时携带的上下文引用（用于历史回显，正文不含引用原文） */
+    refs: AiContextRef[]
     createdAt: string
 }
 
@@ -42,6 +68,8 @@ export interface AiMessage {
 export interface AiSessionSnapshot {
     conversation: AiConversation
     messages: AiMessage[]
+    /** 待发送的上下文引用（「添加到宅对话」的累积结果） */
+    contexts: AiContextRef[]
 }
 
 /** 运行时信息：密钥状态与默认参数，用于页面引导与参数展示 */
@@ -65,4 +93,6 @@ export interface AiSendResult {
     userMessage: AiMessage
     /** 待流式填充的助手消息 */
     assistantMessage: AiMessage
+    /** 发送时读取失败（文件被删/不可读）而跳过的引用标签 */
+    skippedContexts: string[]
 }

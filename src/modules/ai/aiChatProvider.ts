@@ -1,6 +1,8 @@
 /**
  * AI 对话 Webview 面板（宿主侧）：加载 React 构建产物，路由 ai/* 协议到对话服务。
- * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 消息推送，reqId 与发起请求一致。
+ * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
+ * 上下文增删走 ai/context*，state 广播以 payload.kind 区分 runtime / context 供前端定向刷新。
+ * 关键约束：上下文移除只接受宿主生成的引用 id（不接受路径入参），所有 Webview 入参逐字段收窄后再用。
  */
 import * as vscode from 'vscode'
 import type { AiChatService } from './chatService'
@@ -24,6 +26,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         this.disposables.push(
             service.onStream((message) => this.broadcast(message)),
             service.onRuntimeChanged(() => this.broadcastRuntimeChanged()),
+            service.onContextChanged(() => this.broadcastContextChanged()),
         )
     }
 
@@ -33,7 +36,10 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
         }
         void this.renderHtml(webviewView)
-        webviewView.webview.onDidReceiveMessage((message: unknown) => void this.handleMessage(webviewView, message), this)
+        webviewView.webview.onDidReceiveMessage(
+            (message: unknown) => void this.handleMessage(webviewView, message),
+            this,
+        )
         this.views.add(webviewView)
         webviewView.onDidDispose(() => this.views.delete(webviewView), this)
     }
@@ -85,6 +91,16 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 const { conversationId, content } = readSendPayload(payload)
                 return this.service.send(reqId, conversationId, content)
             }
+            case 'ai/context': {
+                return this.service.getContexts()
+            }
+            case 'ai/context/remove': {
+                return this.service.removeContext(readContextIdPayload(payload))
+            }
+            case 'ai/context/clear': {
+                this.service.clearContexts()
+                return []
+            }
             case 'ai/abort': {
                 return { aborted: this.service.abort() }
             }
@@ -115,9 +131,28 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         }
     }
 
+    /** 通知前端重新拉取待发送上下文（编辑器右键添加或面板移除后） */
+    private broadcastContextChanged(): void {
+        for (const view of this.views) {
+            this.post(view, { type: 'state', channel: 'ai', payload: { kind: 'context' } })
+        }
+    }
+
     private post(view: vscode.WebviewView, message: HostToWebviewMessage): void {
         void view.webview.postMessage(message)
     }
+}
+
+/** 校验 ai/context/remove 入参：只接受宿主生成的引用 id，不接受路径（防越权读取任意文件） */
+function readContextIdPayload(payload: unknown): string {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/context/remove 缺少参数')
+    }
+    const value = payload as { id?: unknown }
+    if (typeof value.id !== 'string' || value.id.length === 0) {
+        throw new Error('ai/context/remove 参数类型不正确')
+    }
+    return value.id
 }
 
 /** 校验 ai/send 入参：Webview 侧数据不可信，逐字段收窄后再落库 */

@@ -72,6 +72,11 @@
                 "category": "Zhai"
             },
             {
+                "command": "zhai.ai.addToChat",
+                "title": "添加到宅对话",
+                "category": "Zhai"
+            },
+            {
                 "command": "zhai.ai.setApiKey",
                 "title": "设置 DeepSeek API Key",
                 "category": "Zhai"
@@ -104,6 +109,15 @@
                 "when": "!inputBoxFocus"
             }
         ],
+        "menus": {
+            "editor/context": [
+                {
+                    "command": "zhai.ai.addToChat",
+                    "group": "zhai@1",
+                    "when": "editorTextFocus && !editorReadonly && !inDiffEditor"
+                }
+            ]
+        },
         "configuration": {
             "title": "Zhai 宅桌面",
             "properties": {
@@ -154,13 +168,18 @@
                 },
                 "zhai.ai.maxContextTokens": {
                     "type": "number",
-                    "default": 4000,
-                    "description": "前文注入 Token 上限"
+                    "default": 8000,
+                    "description": "前文与引用上下文注入的 Token 上限"
                 },
                 "zhai.ai.dailyTokenBudget": {
                     "type": "number",
                     "default": 500000,
                     "description": "每日 Token 预算，达到阈值提示并阻断"
+                },
+                "zhai.ai.autoFocusOnContext": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "编辑器右键「添加到宅对话」后自动聚焦 AI 对话面板"
                 },
                 "zhai.telemetry.enabled": {
                     "type": "boolean",

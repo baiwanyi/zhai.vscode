@@ -1,8 +1,8 @@
 # AI Chat — 模块设计文档
 
-**版本**：1.0
-**日期**：2026-09-03
-**状态**：对话模式已落地（见第 10 节），写作模式待实现
+**版本**：1.1
+**日期**：2026-09-14
+**状态**：对话模式与编辑器右键上下文（见第 10.1 节）已落地，写作模式待实现
 **宿主**：VSCode 插件 Zhai（宅桌面）
 
 ---
@@ -59,7 +59,7 @@ AI Chat 是插件的**智能交互中枢**，同时服务于两类需求：
 | A9 | SSE 流式输出 | 逐字渲染，首字 < 500ms | P0 | 已落地 |
 | A10 | 思考链展示 | 展示 DeepSeek `reasoning_content`，可折叠 | P1 | 部分（已回传并落库，折叠 UI 待做） |
 | A11 | 请求取消 | `AbortController` + `CancellationToken` | P0 | 已落地 |
-| A12 | `@` 上下文提及 | `@当前文件` `@选中` `@笔记` `@最近N章` `@角色名` `@图库图片` `@链接` | P0 | 待实现 |
+| A12 | `@` 上下文提及 | `@当前文件` `@选中` `@笔记` `@最近N章` `@角色名` `@图库图片` `@链接` | P0 | 部分（编辑器右键「添加到宅对话」已落地，见 10.1） |
 | A13 | 上下文参数面板 | 前文 500–4000 token、温度 0.1–1.5、maxTokens、模型、设定注入 | P1 | 待实现 |
 | A14 | 用量统计 | 记录 prompt/completion/total tokens 与预估费用，按日/月聚合 | P1 | 待实现 |
 | A15 | 提示词预设 | 音色预设（小说家/诗人/论文）+ 常用指令收藏 | P2 | 待实现 |
@@ -173,7 +173,7 @@ CREATE TABLE IF NOT EXISTS messages (
     reasoning      TEXT,              -- DeepSeek 思维链
     status         TEXT NOT NULL,     -- pending|streaming|completed|failed|cancelled
     finish_reason  TEXT,
-    refs           TEXT NOT NULL DEFAULT '[]',  -- @ 引用列表（JSON）
+    refs           TEXT NOT NULL DEFAULT '[]',  -- 引用上下文（JSON：绝对路径 + 行范围 + 展示标签）
     error          TEXT,
     created_at     TEXT NOT NULL
 );
@@ -208,6 +208,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_date ON ai_usage_logs(created_at);
 | Command ID | 标题 | 快捷键建议 |
 |------------|------|-----------|
 | `zhai.ai.openChat` | 打开 AI 对话 | `Ctrl+Shift+L` |
+| `zhai.ai.addToChat` | 添加到宅对话 | 编辑器右键（选中取行范围，未选则整篇） |
 | `zhai.ai.inlineContinue` | 内联续写 | `Alt+Enter`（编辑器内） |
 | `zhai.ai.polish` | 润色选中文本 | `Ctrl+Shift+P` 后搜索 |
 | `zhai.ai.newSession` | 新建会话 | — |
@@ -284,6 +285,8 @@ interface AbortRequest {
 | AC-8 | 预算护栏 | 达预算上限时阻断并给出当日用量摘要 |
 | AC-9 | 会话持久化 | 重启窗口后会话与消息完整恢复 |
 | AC-10 | 密钥安全 | API Key 仅存 `SecretStorage`，日志与诊断包中脱敏 |
+| AC-11 | 引用上下文 | 选中行添加后标签为 `file.md:11-19`；发送时读取最新内容（含未保存修改），文件失效则跳过并提示 |
+| AC-12 | 引用边界 | 单条超 2 万字按行截断并标注、整篇超限拒绝、超 10 项拒绝；重复添加不产生重复项 |
 
 ---
 
@@ -319,7 +322,7 @@ interface AbortRequest {
 | A17 预算护栏 | 按当日 `ai_usage_logs` 累计 token，达 `zhai.ai.dailyTokenBudget` 时拒绝发送并提示 |
 | A7 会话管理 | 已实现「新建会话」与首条消息自动命名；重命名 / 删除 / 关联文件待实现 |
 | A10 思考链 | 已随流式回传并写入 `messages.reasoning`；面板折叠展示待实现 |
-| A12 `@` 上下文 | 待实现（依赖 Notes / KB 检索） |
+| A12 `@` 上下文 | 编辑器右键「添加到宅对话」已落地（见 10.1）；`@` 输入框提及待实现（依赖 Notes / KB 检索） |
 | A1~A5 写作模式 | 待实现（diff 逐段接受、内联续写） |
 
 协议（第 7.2 节 compose 全量设计的对话子集，写作模式落地时再扩展）：
@@ -331,10 +334,31 @@ interface AbortRequest {
 | `ai/runtime` | Webview → 宿主 | 密钥状态（含脱敏 Key）、模型参数与当日用量 |
 | `ai/send` | Webview → 宿主 | 落库用户消息与占位助手消息，随后流式回传正文 |
 | `ai/abort` | Webview → 宿主 | 取消当前生成 |
+| `ai/context` | Webview → 宿主 | 取当前会话的待发送上下文清单 |
+| `ai/context/remove` | Webview → 宿主 | 按宿主生成的 id 移除一条引用（不接受路径入参） |
+| `ai/context/clear` | Webview → 宿主 | 清空待发送上下文，返回空清单 |
 | `host/command` | Webview → 宿主 | 白名单命令（`src/modules/common/webviewCommands.ts`），用于设置密钥、打开设置等 |
 | `stream` | 宿主 → Webview | 增量 `{ reqId, delta, channel }`；终态 `{ done: true, status, content, error? }` |
+| `state` | 宿主 → Webview | `channel: 'ai'`，`payload.kind` 为 `runtime`（密钥变更）或 `context`（上下文变更） |
 
-实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`aiChatProvider.ts` 协议路由、`db/` 三表仓储与 DDL）、页面 `src/webview/ai-chat.tsx`。
+### 10.1 编辑器右键「添加到宅对话」
+
+命令 `zhai.ai.addToChat`（`editor/context` 菜单，`when = editorTextFocus && !editorReadonly && !inDiffEditor`）：
+
+| 场景 | 标签 | 注入内容 |
+|------|------|----------|
+| 选中若干行 | `notes/ch01.md:11-19` | 选区覆盖的整行范围 |
+| 选中单行 | `notes/ch01.md:11` | 同一行 |
+| 未选中 | `notes/ch01.md` | 整篇 |
+| 多光标多选区 | 每条选区一条引用 | 各行范围，重复项自动去重 |
+
+- **惰性引用**：添加时只记路径与行范围，发送时才读取原文（`workspace.textDocuments` 内存态优先，回退磁盘），未保存修改同样生效（第 9 节「引用内容不过期」的落地）。
+- **可见清单**：输入区上方以 `Attachment` 呈现（单条移除 / 一键清空），历史消息的引用以 `Badge` 回显（`messages.refs`）。
+- **提示**：默认聚焦面板（`zhai.ai.autoFocusOnContext`，关闭时改用信息提示）并给状态栏短提示；重复添加、超限、文件失效均返回明确文案。
+- **边界**：单条上限 20000 字符（选区超出按行截断并标注，整篇超出直接拒绝）、单会话上限 10 项；预算先扣引用与输入，剩余额度再容纳历史，历史中仅最近一条带引用的消息注入原文。
+- **安全**：原文以 `<context path="…" lines="…">` 注入并转义 `</context>`，系统提示声明标签内指令一律不执行；前端只回传宿主生成的 id，删除不接受路径。
+
+实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`contextRefs.ts` 引用生成/读取/渲染、`aiChatProvider.ts` 协议路由、`db/` 三表仓储与 DDL）、页面 `src/webview/ai-chat.tsx`。
 
 页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `MessageAvatar/Header/Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `muted`）；输入区为 `Textarea` + `Button`，无 Key 时插入 `Card` 引导项。
 
@@ -343,3 +367,4 @@ interface AbortRequest {
 - 上下文截断暂以「字符数 ÷ 1.6」粗估，第 5 节所列 tiktoken 方案未接入（AC-4 为降级实现）
 - 用量日志的 `estimated_cost` 暂记 0（未内置 DeepSeek 计费规则），重试指数退避未实现，仅落地 30s 首字超时中断
 - 单次生成上限固定 2048 token（`MAX_COMPLETION_TOKENS`），尚未开放到参数面板（A13）
+- `@` 输入框提及（A12 剩余部分）与写作模式（A1~A5）未实现；待发送上下文为内存态，重启窗口后仅已发送的引用随 `messages.refs` 保留
