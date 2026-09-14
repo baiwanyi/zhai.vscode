@@ -2,9 +2,8 @@
  * 全局搜索 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到索引与检索服务。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应统一回传 reqId 匹配。
  */
-import * as fs from 'node:fs/promises'
-import * as path from 'node:path'
 import * as vscode from 'vscode'
+import { buildWebviewHtml } from './webviewHtml'
 import { getZhaiConfig } from './config'
 import { searchFiles } from './db/indexRepository'
 import { logger } from './logger'
@@ -32,19 +31,8 @@ export class SearchPanelViewProvider implements vscode.WebviewViewProvider {
     }
 
     private async renderHtml(webviewView: vscode.WebviewView): Promise<void> {
-        const distDir = vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')
         try {
-            const template = await fs.readFile(path.join(distDir.fsPath, 'index.html'), 'utf-8')
-            const assetUri = (relative: string): vscode.Uri =>
-                webviewView.webview.asWebviewUri(vscode.Uri.joinPath(distDir, relative))
-            // 注入 CSP 与资源基址，占位符与 vite 构建产物中的相对路径对应
-            const html = template
-                .replace(/(src|href)="\.\/assets\//g, `$1="${assetUri('assets').toString(true)}/`)
-                .replace(
-                    '</head>',
-                    `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webviewView.webview.cspSource}; style-src ${webviewView.webview.cspSource} 'unsafe-inline'; img-src ${webviewView.webview.cspSource} data:; font-src ${webviewView.webview.cspSource};"></head>`,
-                )
-            webviewView.webview.html = html
+            webviewView.webview.html = await buildWebviewHtml(webviewView.webview, this.extensionUri, 'index.html')
         } catch (error) {
             webviewView.webview.html = `<html><body><h3>Zhai</h3><p>Webview 资源缺失，请先执行 pnpm run compile（${String(error)}）</p></body></html>`
             logger.error('Webview 资源加载失败', error)

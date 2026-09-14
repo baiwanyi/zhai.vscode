@@ -25,7 +25,11 @@ export default defineConfig({
         target: 'es2022',
         // VSCode Webview 环境无法使用运行时 import map，保持单文件产物
         rollupOptions: {
-            input: resolve(import.meta.dirname, 'src/webview/index.html'),
+            // 多入口：搜索面板（index.html）与工作区（workspace.html）均由 Vite 构建
+            input: {
+                index: resolve(import.meta.dirname, 'src/webview/index.html'),
+                workspace: resolve(import.meta.dirname, 'src/webview/workspace.html'),
+            },
         },
     },
 })

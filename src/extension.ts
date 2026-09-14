@@ -40,8 +40,9 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.registerWebviewViewProvider(SearchPanelViewProvider.viewId, searchProvider),
     )
 
+    const placeholderProvider = new PlaceholderWebviewProvider(context.extensionUri)
     context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(PlaceholderWebviewProvider.viewId, new PlaceholderWebviewProvider()),
+        vscode.window.registerWebviewViewProvider(PlaceholderWebviewProvider.viewId, placeholderProvider),
     )
 
     const statusBar = new StatusBarService(indexService, indexStatusEmitter.event)
