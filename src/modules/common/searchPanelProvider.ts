@@ -45,7 +45,7 @@ export class SearchPanelViewProvider implements vscode.WebviewViewProvider {
                 .replace(/(src|href)="\.\/assets\//g, `$1="${assetUri('assets').toString(true)}/`)
                 .replace(
                     '</head>',
-                    `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webviewView.webview.cspSource}; style-src ${webviewView.webview.cspSource} 'unsafe-inline'; img-src ${webviewView.webview.cspSource} data:;"></head>`,
+                    `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webviewView.webview.cspSource}; style-src ${webviewView.webview.cspSource} 'unsafe-inline'; img-src ${webviewView.webview.cspSource} data:; font-src ${webviewView.webview.cspSource};"></head>`,
                 )
             webviewView.webview.html = html
         } catch (error) {

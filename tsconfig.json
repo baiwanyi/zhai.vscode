@@ -21,6 +21,9 @@
         "noEmit": true,
         "jsx": "react-jsx",
         "paths": {
+            "@/*": [
+                "./src/*"
+            ],
             "@shared/*": [
                 "./src/shared/*"
             ]
@@ -30,6 +33,6 @@
         "src/**/*.ts",
         "src/**/*.tsx",
         "esbuild.mjs",
-        "vite.webview.config.mjs"
+        "vite.config.mjs"
     ]
 }
