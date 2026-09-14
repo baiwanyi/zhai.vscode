@@ -14,9 +14,11 @@
 - 安全约束：宿主 SQL 一律预编译参数绑定；Webview 若要触发宿主命令，必须走白名单（见 `dashboardProvider.ts` 的 `ALLOWED_HOST_COMMANDS`）。
 
 ## 已落地的视图与命令
-- 侧栏容器 `zhai-sidebar`：`zhai.dashboard`（仪表盘，原「全局搜索」，`Ctrl+K` 聚焦）、`zhai.placeholderView`（工作区）。
-- 命令：`zhai.rebuildIndex`、`zhai.openDashboard`、`zhai.showIndexStatus`、`zhai.clearIndex`、`zhai.exportDiagnostics`、`zhai.openSettings`。
-- Webview→宿主协议：`dashboard/stats`、`index/rebuild`、`host/command`（白名单）。
+- 侧栏容器 `zhai-sidebar`：`zhai.dashboard`（仪表盘，原「全局搜索」，`Ctrl+K` 聚焦）、`zhai.aiChat`（AI 对话，原「工作区」占位，`Ctrl+Shift+L` 聚焦）。
+- 命令：`zhai.rebuildIndex`、`zhai.openDashboard`、`zhai.showIndexStatus`、`zhai.clearIndex`、`zhai.exportDiagnostics`、`zhai.openSettings`、`zhai.openAiChat`、`zhai.ai.setApiKey`、`zhai.ai.clearApiKey`。
+- Webview→宿主协议：`dashboard/stats`、`index/rebuild`、`ai/session|newSession|runtime|send|abort`、`host/command`（白名单见 `src/modules/common/webviewCommands.ts`）；宿主→Webview 推送用 `stream` 与 `state` 消息。
+- 数据：`globalStorage/index.db`（文件元数据 + FTS5）、`globalStorage/ai.db`（conversations / messages / ai_usage_logs），两库共用 `common/db/openDatabase.ts` 的连接基座。
+- AI 对话：DeepSeek 经 openai SDK（`baseURL: https://api.deepseek.com`）流式，密钥存 SecretStorage（`zhai.deepseek.apiKey`）；对话模式已落地，写作模式（diff 续写）待实现，详见 `docs/modules/ai-chat.md` 第 10 节。
 - 搜索：FTS5 检索（`searchFiles`）与 `zhai.search.limit` 配置保留，搜索面板待实现（路线图 C7）。
 
 ## 用户偏好
@@ -24,3 +26,4 @@
 - **不擅自提交**：改动完成后默认保留工作区，由用户决定是否提交。
 - 中文沟通；偏好最小破坏、与既有约定一致的实现；重视文档与注释同步。
 - 环境：Windows + PowerShell；pnpm 12.4.1（旧版写 lockfile 丢 peer 后缀会造成坏链与 TS2307）；耗时命令需重定向到文件，避免长命令超时。
+- 提交信息含中文时**不要用命令行传参**：PowerShell 会按本地代码页解码，参数变乱码并抛 ParserError。做法是先写 UTF-8（无 BOM）消息文件，再 `git commit -F msg.txt`，提交后删除该文件。仓库历史用 conventional commits 中文格式（如 `feat(dashboard): ...`）。
