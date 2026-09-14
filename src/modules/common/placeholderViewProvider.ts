@@ -1,6 +1,6 @@
 /**
  * 工作区 Webview 视图提供器：加载 Vite 构建的 React 产物，渲染工作区面板。
- * 与搜索面板共用 buildWebviewHtml 注入 CSP 与资源 URI 重写，确保由 Vite 构建托管。
+ * 与仪表盘共用 buildWebviewHtml 注入 CSP 与资源 URI 重写，确保由 Vite 构建托管。
  */
 import * as vscode from 'vscode'
 import { buildWebviewHtml } from './webviewHtml'

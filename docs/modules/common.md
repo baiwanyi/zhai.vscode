@@ -224,11 +224,13 @@ PRAGMA foreign_keys = ON;
 | Command ID | 标题 | 说明 |
 |------------|------|------|
 | `zhai.rebuildIndex` | 重建索引 | 全量扫描工作区并重建索引库 |
-| `zhai.openSearch` | 全局搜索 | 打开跨模块搜索面板（默认 `Ctrl+K`） |
+| `zhai.openDashboard` | 打开仪表盘 | 聚焦侧栏仪表盘视图（默认 `Ctrl+K`） |
 | `zhai.showIndexStatus` | 索引状态 | 显示文件数、索引数、上次构建时间 |
 | `zhai.clearIndex` | 清空索引缓存 | 删除 index.db（安全，可重建） |
 | `zhai.exportDiagnostics` | 导出诊断信息 | 脱敏后导出配置与日志，便于排查 |
 | `zhai.openSettings` | 打开插件设置 | 跳转到 `zhai.*` 配置分组 |
+
+> `Ctrl+K` 现聚焦仪表盘视图；全局搜索（C7）的检索能力（FTS5 + `zhai.search.limit`）已在索引仓储就绪，搜索面板待实现。
 
 ### 7.2 配置项
 

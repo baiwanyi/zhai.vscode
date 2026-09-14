@@ -418,3 +418,19 @@ StatCardRow / ActivityFeed 展示
 - **缓存策略**：后端可加 60s 内存缓存（使用 Node.js Map），避免高并发重复计算
 - **定时刷新**：前端每 5 分钟自动 refetch，页面聚焦时立即刷新
 - **快捷方式文件夹**：后续可添加分组功能，支持将多个快捷方式收纳到一个文件夹磁贴中
+
+---
+
+## 13. 插件内 Webview 首版实现（已落地）
+
+侧栏视图 `zhai.dashboard`（`Ctrl+K` 聚焦，由原「全局搜索」视图改造而来）已按本文档设计落地首版：形态适配为 VSCode Webview，数据直接来自本地 SQLite 索引库，不经 HTTP。
+
+| 本文档设计 | 首版实现 |
+|------------|----------|
+| `GET /api/dashboard/stats` | Webview 协议 `dashboard/stats` → `DashboardViewProvider` → `db/statsRepository.ts` 聚合 `files` 表 |
+| StatCardRow | 4 张统计卡：已索引文件 / 字数合计 / 标签数 / 索引状态（含上次构建相对时间） |
+| QuickActions | 重建索引（`index/rebuild` 协议）、清空缓存与插件设置（`host/command` 协议，走命令白名单） |
+| 模块分布 | 按存储根一级目录（`notes/`、`press/`、`reader/`）聚合篇数与字数占比 |
+| ActivityFeed / WidgetTodo / WidgetShortcut | 待实现，`meta` 表可承载快捷方式配置 |
+
+约束：宿主侧只读聚合，不新增数据库表；Webview 仅能触发 `ALLOWED_HOST_COMMANDS` 白名单内的命令；重建期间前端按 1.5s 轮询收敛状态。

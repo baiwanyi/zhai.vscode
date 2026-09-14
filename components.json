@@ -5,7 +5,7 @@
     "tsx": true,
     "tailwind": {
         "config": "",
-        "css": "src/webview/index.css",
+        "css": "src/webview/globals.css",
         "baseColor": "neutral",
         "cssVariables": true,
         "prefix": ""

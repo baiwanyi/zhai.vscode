@@ -5,12 +5,12 @@
 import * as vscode from 'vscode'
 import { registerCommands } from './modules/common/commands'
 import { getZhaiConfig } from './modules/common/config'
+import { DashboardViewProvider } from './modules/common/dashboardProvider'
 import { openIndexDatabase } from './modules/common/db/connection'
 import { ensureSchema } from './modules/common/db/schema'
 import { IndexService } from './modules/common/indexer/indexService'
 import { logger } from './modules/common/logger'
 import { PlaceholderWebviewProvider } from './modules/common/placeholderViewProvider'
-import { SearchPanelViewProvider } from './modules/common/searchPanelProvider'
 import { SecretsService } from './modules/common/secrets'
 import { StatusBarService } from './modules/common/statusBar'
 import type { IndexStatus } from './modules/common/indexer/indexService'
@@ -35,9 +35,9 @@ export function activate(context: vscode.ExtensionContext): void {
     registerCommands(context, db, indexService)
     indexService.registerWatcher(context.subscriptions)
 
-    const searchProvider = new SearchPanelViewProvider(context.extensionUri, db, indexService)
+    const dashboardProvider = new DashboardViewProvider(context.extensionUri, db, indexService)
     context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(SearchPanelViewProvider.viewId, searchProvider),
+        vscode.window.registerWebviewViewProvider(DashboardViewProvider.viewId, dashboardProvider),
     )
 
     const placeholderProvider = new PlaceholderWebviewProvider(context.extensionUri)

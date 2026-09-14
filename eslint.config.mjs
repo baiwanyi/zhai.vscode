@@ -4,13 +4,15 @@
  * sibling → index → type 排列，组内字母升序、组间不留空行、导入块后留空行；格式类规则交由 Prettier。
  * 关键约束：全局禁用 inline 配置（不得用 eslint-disable 规避规则）；`src/components/ui` 与
  * `src/hooks` 属 shadcn/ui 托管源码，仅做语法与安全性检查，避免 CLI 覆盖后约束反复失效。
+ * 取舍说明：eslint-plugin-react 尚未支持 ESLint 10（peer 仅到 ^9.7），故不引入其 JSX 规则；
+ * 组件侧正确性由 react-hooks（hooks 调用约束）与 react-refresh（HMR 边界）两条插件承担。
  */
+import reactX from '@eslint-react/eslint-plugin'
 import js from '@eslint/js'
 import prettier from 'eslint-config-prettier'
 import { createTypeScriptImportResolver } from 'eslint-import-resolver-typescript'
 import { defineConfig, globalIgnores } from 'eslint/config'
 import importX from 'eslint-plugin-import-x'
-import react from 'eslint-plugin-react'
 import reactHooks from 'eslint-plugin-react-hooks'
 import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
@@ -144,20 +146,23 @@ export default defineConfig([
         },
     },
     {
+        // eslint-react：补足 JSX 层面的规则（jsx-key、属性拼写、DOM 注入风险等）；
+        // 关闭与 eslint-plugin-react-hooks 重叠的规则，避免同一问题被双重报告；
+        // 托管源码（shadcn/ui）不套用该插件，与其余豁免策略保持一致
+        files: ['**/*.tsx'],
+        ignores: vendoredUi,
+        extends: [
+            reactX.configs['recommended-type-checked'],
+            reactX.configs['disable-conflict-eslint-plugin-react-hooks'],
+        ],
+    },
+    {
         files: ['**/*.tsx'],
         plugins: {
-            react,
             'react-hooks': reactHooks,
             'react-refresh': reactRefresh,
         },
-        settings: {
-            react: { version: 'detect' },
-        },
         rules: {
-            ...react.configs.flat.recommended.rules,
-            ...react.configs.flat['jsx-runtime'].rules,
-            // props 校验交由 TypeScript 类型系统，无需运行时 propTypes
-            'react/prop-types': 'off',
             // 开发者模式下保持组件模块的 HMR 边界（webview:serve）
             'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
             // react-hooks v7 的预设为 eslintrc 形态，这里按 flat 方式启用经典两条；

@@ -34,8 +34,8 @@
                 "category": "Zhai"
             },
             {
-                "command": "zhai.openSearch",
-                "title": "全局搜索",
+                "command": "zhai.openDashboard",
+                "title": "打开仪表盘",
                 "category": "Zhai"
             },
             {
@@ -61,7 +61,7 @@
         ],
         "keybindings": [
             {
-                "command": "zhai.openSearch",
+                "command": "zhai.openDashboard",
                 "key": "ctrl+k",
                 "when": "!inputBoxFocus"
             }
@@ -144,8 +144,8 @@
             "zhai-sidebar": [
                 {
                     "type": "webview",
-                    "id": "zhai.searchPanel",
-                    "name": "全局搜索",
+                    "id": "zhai.dashboard",
+                    "name": "仪表盘",
                     "icon": "resources/icon.svg"
                 },
                 {
@@ -162,6 +162,7 @@
     },
     "devDependencies": {
         "@base-ui/react": "^1.8.0",
+        "@eslint-react/eslint-plugin": "^5.19.0",
         "@eslint/js": "^10.0.1",
         "@fontsource-variable/inter": "^5.3.0",
         "@shadcn/react": "^0.3.1",
@@ -183,7 +184,6 @@
         "eslint-config-prettier": "^10.1.8",
         "eslint-import-resolver-typescript": "^4.4.5",
         "eslint-plugin-import-x": "^4.17.1",
-        "eslint-plugin-react": "^7.37.5",
         "eslint-plugin-react-hooks": "^7.1.1",
         "eslint-plugin-react-refresh": "^0.5.6",
         "globals": "^17.12.0",

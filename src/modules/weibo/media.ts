@@ -31,7 +31,7 @@ export function extractMedia(detail: WeiboDetail): WeiboMediaItem[] {
     }
 
     const video = target.page_info?.media_info?.stream_url ?? target.page_info?.media_info?.mp4_720p_mp4
-    if (video) items.push({ type: 'video', url: video, seq: seq++, quality: 'hd' })
+    if (video) items.push({ type: 'video', url: video, seq, quality: 'hd' })
 
     return items
 }

@@ -92,7 +92,8 @@ export function searchFiles(db: Database.Database, keyword: string, limit: numbe
     }))
 }
 
-function safeParseTags(raw: string): string[] {
+/** 解析 tags 列中的 JSON 数组，异常数据降级为空数组（统计与检索共用） */
+export function safeParseTags(raw: string): string[] {
     try {
         const parsed: unknown = JSON.parse(raw)
         return Array.isArray(parsed) ? parsed.filter((t): t is string => typeof t === 'string') : []

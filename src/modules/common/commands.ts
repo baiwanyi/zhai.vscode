@@ -21,8 +21,8 @@ export function registerCommands(
         void indexService.fullRebuild()
     })
 
-    register('zhai.openSearch', () => {
-        void vscode.commands.executeCommand('zhai.searchPanel.focus')
+    register('zhai.openDashboard', () => {
+        void vscode.commands.executeCommand('zhai.dashboard.focus')
     })
 
     register('zhai.showIndexStatus', () => {

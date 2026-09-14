@@ -1,19 +1,22 @@
 /**
- * 全局搜索 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到索引与检索服务。
+ * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合与宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应统一回传 reqId 匹配。
  */
 import * as vscode from 'vscode'
-import { buildWebviewHtml } from './webviewHtml'
-import { getZhaiConfig } from './config'
-import { searchFiles } from './db/indexRepository'
+import { aggregateFileStats, listRecentFiles } from './db/statsRepository'
 import { logger } from './logger'
+import { buildWebviewHtml } from './webviewHtml'
 import type { IndexService } from './indexer/indexService'
+import type { DashboardStats } from '../../shared/types/dashboard'
 import type { HostToWebviewMessage } from '../../shared/types/messages'
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
 
-export class SearchPanelViewProvider implements vscode.WebviewViewProvider {
-    public static readonly viewId = 'zhai.searchPanel'
+/** 允许 Webview 触发的宿主命令白名单，避免任意命令被执行 */
+const ALLOWED_HOST_COMMANDS = new Set(['zhai.clearIndex', 'zhai.openSettings'])
+
+export class DashboardViewProvider implements vscode.WebviewViewProvider {
+    public static readonly viewId = 'zhai.dashboard'
 
     public constructor(
         private readonly extensionUri: vscode.Uri,
@@ -57,19 +60,34 @@ export class SearchPanelViewProvider implements vscode.WebviewViewProvider {
 
     private invoke(method: string, payload: unknown): unknown {
         switch (method) {
-            case 'search/query': {
-                const keyword = typeof payload === 'string' ? payload : ''
-                return searchFiles(this.db, keyword, getZhaiConfig().searchLimit)
-            }
-            case 'index/status': {
-                return this.indexService.getStatus()
+            case 'dashboard/stats': {
+                return this.buildStats()
             }
             case 'index/rebuild': {
                 void this.indexService.fullRebuild()
                 return { started: true }
             }
+            case 'host/command': {
+                const command = typeof payload === 'string' ? payload : ''
+                if (!ALLOWED_HOST_COMMANDS.has(command)) {
+                    throw new Error(`未授权的宿主命令：${command}`)
+                }
+                void vscode.commands.executeCommand(command)
+                return { executed: true }
+            }
             default:
                 throw new Error(`未知的协议方法：${method}`)
+        }
+    }
+
+    /** 组装统计快照：文件级聚合来自索引库，构建状态来自索引服务 */
+    private buildStats(): DashboardStats {
+        const status = this.indexService.getStatus()
+        return {
+            ...aggregateFileStats(this.db),
+            recentFiles: listRecentFiles(this.db),
+            lastBuiltAt: status.lastBuiltAt,
+            isRebuilding: status.isRebuilding,
         }
     }
 

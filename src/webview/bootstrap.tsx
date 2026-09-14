@@ -1,6 +1,6 @@
 /**
  * Webview 通用挂载器：把 VS Code 主题同步到 shadcn 的暗色令牌，并挂载 React 根。
- * 各 Webview 入口（搜索面板 / 工作区）共用，避免主题检测逻辑重复。
+ * 各 Webview 入口（仪表盘 / 工作区）共用，避免主题检测逻辑重复。
  */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -25,7 +25,5 @@ export function bootstrap(node: JSX.Element): void {
         attributes: true,
         attributeFilter: ['data-vscode-theme-kind'],
     })
-    createRoot(container).render(
-        <StrictMode>{node}</StrictMode>,
-    )
+    createRoot(container).render(<StrictMode>{node}</StrictMode>)
 }

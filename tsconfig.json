@@ -6,11 +6,7 @@
         // 环境与模块
         "module": "preserve",
         "target": "esnext",
-        "lib": [
-            "ESNext",
-            "DOM",
-            "DOM.Iterable"
-        ],
+        "lib": ["ESNext", "DOM", "DOM.Iterable"],
         "jsx": "react-jsx",
         "moduleDetection": "force",
         "verbatimModuleSyntax": true,
@@ -18,8 +14,8 @@
         "resolveJsonModule": true,
         "noEmit": true,
         "skipLibCheck": true,
-        // 严格度：TS7 推荐项 + 项目既有约束（未启用 noUnusedLocals / noUnusedParameters，
-        // 与 SearchPanel 占位实现中保留的注释代码冲突）
+        // 严格度：TS7 推荐项 + 项目既有约束
+        // 未启用 noUnusedLocals / noUnusedParameters：占位阶段常保留待启用的草稿代码
         "strict": true,
         "noUncheckedIndexedAccess": true,
         "noUncheckedSideEffectImports": true,
@@ -28,18 +24,9 @@
         "noImplicitReturns": true,
         // 路径别名：TS7 已移除 baseUrl，paths 相对本文件所在目录解析
         "paths": {
-            "@/*": [
-                "./src/*"
-            ],
-            "@shared/*": [
-                "./src/shared/*"
-            ]
+            "@/*": ["./src/*"],
+            "@shared/*": ["./src/shared/*"]
         }
     },
-    "include": [
-        "src/**/*.ts",
-        "src/**/*.tsx",
-        "esbuild.mjs",
-        "vite.config.mjs"
-    ]
+    "include": ["src/**/*.ts", "src/**/*.tsx", "esbuild.mjs", "vite.config.mjs"]
 }
