@@ -1,17 +1,29 @@
+// 调试配置：在「运行和调试」面板按 F5 启动扩展宿主（Extension Development Host）
+// 产物约定：宿主由 esbuild 打包到 dist/extension.js，webview 由 Vite 打包到 dist/webview/
+// Webview 是构建产物，改前端代码后需重新构建，并在宿主里重开视图才会加载新产物
 {
-  "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "运行扩展",
-      "type": "extensionHost",
-      "request": "launch",
-      "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}"
-      ],
-      "outFiles": [
-        "${workspaceFolder}/dist/**/*.js"
-      ],
-      "preLaunchTask": "compile"
-    }
-  ]
+    "version": "0.2.0",
+    "configurations": [
+        {
+            // 默认入口：先执行 tasks.json 的 compile（typecheck + esbuild + vite），再启动宿主
+            "name": "运行扩展",
+            "type": "extensionHost",
+            "request": "launch",
+            "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+            "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+            "preLaunchTask": "compile",
+            "sourceMaps": true,
+            "skipFiles": ["<node_internals>/**"]
+        },
+        {
+            // 配合「终端 → 运行任务 → watch:all」使用：跳过预编译，改完宿主代码后按 Ctrl+R 重载宿主即可生效
+            "name": "运行扩展（跳过编译）",
+            "type": "extensionHost",
+            "request": "launch",
+            "args": ["--extensionDevelopmentPath=${workspaceFolder}"],
+            "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+            "sourceMaps": true,
+            "skipFiles": ["<node_internals>/**"]
+        }
+    ]
 }

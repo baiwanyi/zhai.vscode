@@ -1,15 +1,35 @@
+// 任务配置：compile 作为 F5 调试前的预编译任务，watch:all 与 webview 预览用于常驻开发
 {
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "type": "shell",
-      "label": "compile",
-      "command": "pnpm run compile",
-      "group": {
-        "kind": "build",
-        "isDefault": true
-      },
-      "problemMatcher": "$tsc"
-    }
-  ]
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "shell",
+            "label": "compile",
+            "command": "pnpm run compile",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": "$tsc"
+        },
+        {
+            // 常驻：宿主 esbuild watch + webview vite watch + tsc 类型检查
+            // 搭配 launch.json 的「运行扩展（跳过编译）」使用，避免每次 F5 都全量编译
+            "type": "shell",
+            "label": "watch:all",
+            "command": "pnpm run watch:all",
+            "isBackground": true,
+            "problemMatcher": [],
+            "group": "build"
+        },
+        {
+            // 浏览器预览 webview 页面（http://localhost:5173/aichat.html、/index.html），不启动扩展宿主
+            // 注意：浏览器内没有 --vscode-* 变量与宿主通信，仅用于核对样式与布局
+            "type": "shell",
+            "label": "webview 预览",
+            "command": "pnpm run webview:serve",
+            "isBackground": true,
+            "problemMatcher": []
+        }
+    ]
 }
