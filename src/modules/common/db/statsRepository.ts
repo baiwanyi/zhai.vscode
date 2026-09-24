@@ -28,9 +28,7 @@ export interface FileAggregate {
 
 /** 单次扫描 files 表完成全部文件级聚合，避免多次全表查询 */
 export function aggregateFileStats(db: Database.Database): FileAggregate {
-    const rows = db
-        .prepare('SELECT path, word_count AS wordCount, tags FROM files')
-        .all() as FileAggregateRow[]
+    const rows = db.prepare('SELECT path, word_count AS wordCount, tags FROM files').all() as FileAggregateRow[]
     const modules = new Map<string, ModuleStat>()
     const tags = new Set<string>()
     let totalWords = 0
@@ -45,9 +43,7 @@ export function aggregateFileStats(db: Database.Database): FileAggregate {
         stat.wordCount += row.wordCount
         modules.set(name, stat)
     }
-    const moduleStats = [...modules.values()].sort(
-        (a, b) => b.fileCount - a.fileCount || a.name.localeCompare(b.name),
-    )
+    const moduleStats = [...modules.values()].sort((a, b) => b.fileCount - a.fileCount || a.name.localeCompare(b.name))
     return { indexedCount: rows.length, totalWords, tagCount: tags.size, moduleStats }
 }
 

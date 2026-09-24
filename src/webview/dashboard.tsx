@@ -132,7 +132,9 @@ export function Dashboard(): JSX.Element {
                     {stats.moduleStats.length === 0 ? (
                         <Empty text="暂无已索引文件，可先执行「重建索引」" />
                     ) : (
-                        stats.moduleStats.map((item) => <ModuleRow key={item.name} item={item} max={maxWordCount(stats.moduleStats)} />)
+                        stats.moduleStats.map((item) => (
+                            <ModuleRow key={item.name} item={item} max={maxWordCount(stats.moduleStats)} />
+                        ))
                     )}
                 </CardContent>
             </Card>
