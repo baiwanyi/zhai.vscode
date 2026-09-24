@@ -28,5 +28,5 @@
             "@shared/*": ["./src/shared/*"]
         }
     },
-    "include": ["src/**/*.ts", "src/**/*.tsx", "esbuild.mjs", "vite.config.mjs"]
+    "include": ["src/**/*.ts", "src/**/*.tsx", "scripts/*.mjs", "vite.config.mjs", "vitest.config.mts"]
 }

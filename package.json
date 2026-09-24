@@ -32,19 +32,19 @@
     ],
     "main": "./dist/extension.js",
     "scripts": {
-        "compile": "pnpm run typecheck && node esbuild.mjs && pnpm run webview:build",
-        "watch": "node esbuild.mjs --watch",
-        "watch:all": "concurrently -n host,web,ts -c blue,green,yellow \"node esbuild.mjs --watch\" \"vite build --watch\" \"tsc --noEmit --watch\"",
+        "compile": "pnpm run typecheck && node scripts/esbuild.mjs && pnpm run webview:build",
+        "watch": "node scripts/esbuild.mjs --watch",
+        "watch:all": "concurrently -n host,web,ts -c blue,green,yellow \"node scripts/esbuild.mjs --watch\" \"vite build --watch\" \"tsc --noEmit --watch\"",
         "webview:build": "vite build",
-        "webview:dev": "vite build --watch",
         "webview:serve": "vite",
         "typecheck": "tsc --noEmit",
         "test": "vitest run",
         "test:watch": "vitest",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
+        "verify": "pnpm run typecheck && pnpm run lint && pnpm run test && prettier --check src eslint.config.mjs",
         "format:ui": "prettier --write src/components/ui src/hooks",
-        "package": "pnpm run compile && node bundle-native.mjs && vsce package --no-dependencies"
+        "package": "pnpm run compile && node scripts/bundle-native.mjs && vsce package --no-dependencies"
     },
     "contributes": {
         "commands": [

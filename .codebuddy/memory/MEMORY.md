@@ -5,12 +5,13 @@
 - 设计文档在 `docs/`：`docs/modules/common.md`（Common 契约/命令/AC）、`docs/development.md`（四期路线图）、`docs/modules/dashboard.md`（仪表盘设计）。源码注释普遍标注「设计源：docs/...」，改代码须同步文档。
 
 ## 工程约定
-- 代码风格：4 空格缩进、单引号、无分号、中文注释；提交前 `prettier --check src eslint.config.mjs` 应全绿。
+- 代码风格：4 空格缩进、单引号、无分号、中文注释；提交前跑 `pnpm run verify`（= typecheck + `eslint .` + vitest run + `prettier --check src eslint.config.mjs`）应全绿。
+- 校验覆盖范围：`lint` 是 `eslint .`（覆盖全仓，含根目录配置文件），不是 `eslint src`。因此新增任何根目录配置/脚本文件（如 `vitest.config.mts`、`scripts/*.mjs`）都必须同步加进 `tsconfig.json` 的 include，否则类型感知规则会报「was not found by the project service」解析错误——只在 `src` 下新增文件时不会暴露该问题。
 - 构建链路：`pnpm run compile` = typecheck（TS 7）+ esbuild（宿主）+ vite（webview 多入口）。`vite.config.mjs` 文件名不可改（shadcn CLI 以 `vite.config.*` 判定框架，改名会导致其命令不可用）。
 - 打包：`pnpm run package` = compile + `node bundle-native.mjs` + `vsce package --no-dependencies`。**必须带 `--no-dependencies`**——vsce 内部用 `npm list` 检测生产依赖，pnpm 的符号链接布局会让它报一堆 `npm error missing: …` 并中止。运行时依赖中 `openai` 已被 esbuild bundle 进 dist/extension.js，只剩 `better-sqlite3`（原生模块，external）需要随包，由 `bundle-native.mjs` 用 npm 装到 `dist/node_modules/`（Node 从 dist/extension.js 向上即可解析），并校验 `prebuilds/<platform>-<arch>.node` 存在。`bundle-native.mjs` 在 `pnpm run package` 里跑得动，但该命令整体易被判为长任务中断，必要时拆成 `node bundle-native.mjs` + `pnpm exec vsce package --no-dependencies` 两步。实测 vsix 72 文件 / 8.74 MB。
 - 环境操作注意：删除操作（尤其 `Remove-Item` 批量）会触发 safe-delete 保护或审批超时——优先用 delete_file 工具，或不要在命令里混入删除；`pnpm run package` 这类长任务容易被中断，拆步执行。
 - pnpm 环境坑：`pnpm add` 遇到含安装脚本的新包时会往 `pnpm-workspace.yaml` 的 `allowBuilds` 写入 `包名: set this to true or false` 占位行并报 `ERR_PNPM_IGNORED_BUILDS`，必须逐条改成 `true`/`false` 后重跑 `pnpm install`（已登记：better-sqlite3 / esbuild / unrs-resolver / '@vscode/vsce-sign' = true，keytar = false）。
-- 调试与开发流见 `.vscode/`：`launch.json` 提供「运行扩展」（preLaunchTask = compile，会跑 typecheck + esbuild + vite，约 10s）与「运行扩展（跳过编译）」（配合 `pnpm run watch:all` 常驻，改宿主代码后 Ctrl+R 重载）；`tasks.json` 提供 compile / watch:all / webview 预览（浏览器预览没有 `--vscode-*` 变量也没有宿主通信，只用于核对样式）。webview 是构建产物，改前端后需重新构建并在宿主内重开视图。
+- 调试与开发流见 `.vscode/`：`launch.json` 提供「运行扩展」（preLaunchTask = compile，会跑 typecheck + esbuild + vite，约 10s）与「运行扩展（跳过编译）」（配合 `pnpm run watch:all` 常驻，改宿主代码后 Ctrl+R 重载）。另有一键式 `pnpm run dev`（`dev-host.mjs`）：复用 `watch:all` 起三路监听，轮询到 `dist/extension.js`、`dist/webview/index.html`、`dist/webview/aichat.html` 齐备后拉起 VSCode 扩展宿主窗口（`code --extensionDevelopmentPath=<root> --folder-uri=<root>`），Ctrl+C 只结束监听、不影响已开的宿主窗口；`tasks.json` 提供 compile / watch:all / webview 预览（浏览器预览没有 `--vscode-*` 变量也没有宿主通信，只用于核对样式）。webview 是构建产物，改前端后需重新构建并在宿主内重开视图。
 - TS 双版本：`typescript` 别名 → `@typescript/typescript6`（供 typescript-eslint 的 TS 6 API）；`@typescript/native` 别名 → TS 7（提供 `tsc` bin，typecheck 用它）。
 - ESLint 10 扁平配置（`eslint.config.mjs`）：已移除 eslint-plugin-react（不兼容 10），改用 `@eslint-react/eslint-plugin`；`src/components/ui` 与 `src/hooks` 为 shadcn 托管目录、豁免多数规则；`noInlineConfig` 禁止 eslint-disable 注释。
 - shadcn/ui：组件在 `src/components/ui`、hooks 在 `src/hooks`，路径别名 `@/*` → `src/*`；UI 组件内 `cn` 直接 `from 'cn'` 导入（不是 `@/lib/utils`）。
@@ -22,6 +23,8 @@
 - Webview：Vite 多入口（`src/webview/index.html` = 仪表盘，`aichat.html` = AI 对话）；`bootstrap.tsx` 把 `data-vscode-theme-kind` 同步为 `.dark`；`bridge.ts` 提供 reqId 请求-响应与浏览器降级；宿主统一用 `buildWebviewHtml` 注入 CSP 并重写资源 URI。
 - 测试体系：Vitest（脚本 `pnpm run test` / `test:watch`），配置在 `vitest.config.mts`——独立于 `vite.config.mjs`（不引 tailwind / react 插件），alias `@` → src、`vscode` → `src/tests/stubs/vscode.ts`。测试桩按**完整接口**构造、不用类型断言，模块级状态用 `resetWorkspaceState()` 复位（vscode 的 `translate` / `with` 是重载签名，桩须接受联合参数）。测试文件就近放 `src/**/*.test.ts`，同样受 typecheck、eslint（显式返回类型等）与 prettier 约束。
 - 安全约束：宿主 SQL 一律预编译参数绑定；Webview 若要触发宿主命令，必须走白名单（见 `webviewCommands.ts` 的 `WEBVIEW_ALLOWED_COMMANDS`）；Webview 不得传文件路径——涉及文件的操作只接受宿主自己生成的 id（引用上下文即按此实现），所有 Webview 入参一律逐字段收窄后再用。
+
+- 脚本目录约定：构建 / 命令脚本统一放 `scripts/`——`esbuild.mjs`（宿主打包）、`bundle-native.mjs`（原生模块随包）。配置类文件保留在根目录：`vite.config.mjs` 必须在根（shadcn CLI 以它判定框架）、`vitest.config.mts` 与 `eslint.config.mjs` 同样依赖根目录约定。脚本内取项目根须上溯一级（`new URL('..', import.meta.url)` 或 `path.resolve(import.meta.dirname, '..')`），不要依赖 cwd。
 
 ## 已落地的视图与命令
 - 侧栏容器 `zhai-sidebar`：`zhai.dashboard`（仪表盘，原「全局搜索」，`Ctrl+K` 聚焦）、`zhai.aiChat`（AI 对话，原「工作区」占位，`Ctrl+Shift+L` 聚焦）。

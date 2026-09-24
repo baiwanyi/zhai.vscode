@@ -18,7 +18,8 @@ const NATIVE_DEPENDENCIES = {
     'better-sqlite3': '^13.0.3',
 }
 
-const distDir = path.resolve(import.meta.dirname, 'dist')
+// 脚本位于 scripts/，dist 需上溯一级
+const distDir = path.resolve(import.meta.dirname, '..', 'dist')
 mkdirSync(distDir, { recursive: true })
 writeFileSync(
     path.join(distDir, 'package.json'),
