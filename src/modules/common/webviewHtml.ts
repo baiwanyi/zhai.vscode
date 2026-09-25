@@ -14,9 +14,9 @@ export async function buildWebviewHtml(
     const distDir = vscode.Uri.joinPath(extensionUri, 'dist', 'webview')
     const template = await fs.readFile(path.join(distDir.fsPath, htmlFile), 'utf-8')
     const assetBase = webview.asWebviewUri(vscode.Uri.joinPath(distDir, 'assets')).toString(true)
-    // 注入 CSP 与资源基址，占位符与 vite 构建产物中的相对路径对应
+    // 注入 CSP 与资源基址，占位符与 vite 构建产物中的相对路径对应；子目录入口（如 aichat/aichat.html）的资源引用带 ../ 前缀
     return template
-        .replace(/(src|href)="\.\/assets\//g, `$1="${assetBase}/`)
+        .replace(/(src|href)="(?:\.\.?\/)*assets\//g, `$1="${assetBase}/`)
         .replace(
             '</head>',
             `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; font-src ${webview.cspSource};"></head>`,

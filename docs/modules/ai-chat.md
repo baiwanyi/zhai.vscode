@@ -376,7 +376,7 @@ interface AbortRequest {
 
 `messages` 随 `conversations` 由外键级联删除（`PRAGMA foreign_keys = ON`），删除会话即清理其消息。
 
-实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`contextRefs.ts` 引用生成/读取/渲染、`aiChatProvider.ts` 协议路由、`db/` 三表仓储与 DDL）、页面 `src/webview/ai-chat.tsx`。
+实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`contextRefs.ts` 引用生成/读取/渲染、`aiChatProvider.ts` 协议路由、`db/` 三表仓储与 DDL）、页面 `src/webview/aichat/`（`aichat.tsx` 入口、`ai-chat.tsx` 主组件、`message-view.tsx` 消息渲染、`format.ts` 格式化工具）。
 
 页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `MessageAvatar/Header/Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `muted`）；输入区为 `Textarea` + `Button`，无 Key 时插入 `Card` 引导项。
 

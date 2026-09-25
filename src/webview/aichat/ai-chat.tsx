@@ -4,6 +4,7 @@
  * 消息样式参考 Copilot / CodeBuddy：无头像与角色标签，用户消息为右对齐气泡，助手回复走 Bubble ghost 变体通栏纯文本。
  * 「添加到宅对话」的待发送上下文以 Attachment 清单呈现在输入区上方，已发送的引用作为消息内容的一部分随消息展示。
  * 顶部工具条提供「历史对话」浮层（对齐 Copilot：标题 + 相对时间，hover 显示删除），可切换与删除会话。
+ * 消息渲染拆分至同目录 message-view.tsx，格式化工具拆分至 format.ts。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机；交互约束：生成期间禁用发送并显示停止按钮。
  */
 import { cn } from 'cn'
@@ -21,8 +22,6 @@ import {
     X,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Markdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import {
     Attachment,
     AttachmentAction,
@@ -33,8 +32,6 @@ import {
     AttachmentMedia,
     AttachmentTitle,
 } from '@/components/ui/attachment'
-import { Badge } from '@/components/ui/badge'
-import { Bubble, BubbleContent, BubbleGroup } from '@/components/ui/bubble'
 import { Button } from '@/components/ui/button'
 import {
     DropdownMenu,
@@ -48,7 +45,6 @@ import {
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group'
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
-import { Message, MessageContent, MessageFooter } from '@/components/ui/message'
 import {
     MessageScroller,
     MessageScrollerButton,
@@ -67,9 +63,10 @@ import type {
     AiSendResult,
     AiSessionSnapshot,
 } from '@/shared/types/aiChat'
-import { onState, onStream, request } from './bridge'
+import { describeContext, formatRelativeTime, formatTokens, toErrorText } from './format'
+import { MessageRow } from './message-view'
 import type { JSX } from 'react'
-import type { Components } from 'react-markdown'
+import { onState, onStream, request } from '../bridge'
 
 /** 视图阶段：idle 空闲、sending 已提交待首字、streaming 正在逐字生成 */
 type Phase = 'idle' | 'sending' | 'streaming'
@@ -518,54 +515,6 @@ function ContextList({ contexts, onRemove, onClear }: ContextListProps): JSX.Ele
     )
 }
 
-/** 单条消息：引用作为消息内容的一部分置于气泡内（不悬在消息头部）；用户消息为右对齐气泡，助手回复走 Bubble ghost 通栏纯文本 */
-function MessageRow({ message }: { message: AiMessage }): JSX.Element {
-    const isUser = message.role === 'user'
-    const isCancelled = message.status === 'cancelled'
-    return (
-        <Message align={isUser ? 'end' : 'start'}>
-            <MessageContent>
-                <BubbleGroup className="w-full">
-                    {isUser ? (
-                        <Bubble variant="default">
-                            <BubbleContent className="flex w-max max-w-full flex-col gap-1.5 whitespace-pre-wrap">
-                                <MessageRefs refs={message.refs} />
-                                <MessageBody message={message} />
-                            </BubbleContent>
-                        </Bubble>
-                    ) : (
-                        <Bubble variant="ghost" className="w-full">
-                            <BubbleContent>
-                                <MessageBody message={message} />
-                            </BubbleContent>
-                        </Bubble>
-                    )}
-                </BubbleGroup>
-                {message.error ? <MessageFooter className="text-destructive">{message.error}</MessageFooter> : null}
-                {message.error === null && (message.status === 'failed' || isCancelled) ? (
-                    <MessageFooter>{isCancelled ? '已停止生成' : '生成失败'}</MessageFooter>
-                ) : null}
-            </MessageContent>
-        </Message>
-    )
-}
-
-/** 消息内引用条目：与正文同属一条对话内容，随消息一起展示（无引用时渲染为空） */
-function MessageRefs({ refs }: { refs: AiContextRef[] }): JSX.Element | null {
-    if (refs.length === 0) {
-        return null
-    }
-    return (
-        <div className="flex flex-wrap gap-1">
-            {refs.map((ref) => (
-                <Badge key={ref.id} variant="secondary" className="max-w-full font-normal" title={ref.displayPath}>
-                    <span className="min-w-0 truncate">{ref.label}</span>
-                </Badge>
-            ))}
-        </div>
-    )
-}
-
 interface HistoryItemProps {
     session: AiConversationSummary
     isActive: boolean
@@ -655,56 +604,6 @@ function LoadingState(): JSX.Element {
     )
 }
 
-/** 消息正文：用户输入按纯文本保留换行，助手回复走 unified/remark 管线渲染 Markdown（见 markdown-one.md 第 5 节） */
-function MessageBody({ message }: { message: AiMessage }): JSX.Element {
-    if (message.content.length > 0) {
-        return message.role === 'user' ? (
-            <>{message.content}</>
-        ) : (
-            <Markdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-                {message.content}
-            </Markdown>
-        )
-    }
-    return <>{message.status === 'failed' || message.status === 'cancelled' ? '（未产生内容）' : <Spinner />}</>
-}
-
-/** Markdown 元素到主题类名的映射：不引入 typography 插件，逐标签复用 shadcn 令牌，避免与气泡样式互相覆盖 */
-const MARKDOWN_COMPONENTS: Components = {
-    p: ({ children }) => <p className="mb-2 leading-relaxed last:mb-0">{children}</p>,
-    strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
-    em: ({ children }) => <em className="italic">{children}</em>,
-    ul: ({ children }) => <ul className="mb-2 list-disc pl-4 last:mb-0">{children}</ul>,
-    ol: ({ children }) => <ol className="mb-2 list-decimal pl-4 last:mb-0">{children}</ol>,
-    li: ({ children }) => <li className="mb-0.5">{children}</li>,
-    h1: ({ children }) => <h3 className="mb-2 font-heading text-base font-medium">{children}</h3>,
-    h2: ({ children }) => <h4 className="mb-2 font-heading text-sm font-medium">{children}</h4>,
-    h3: ({ children }) => <h5 className="mb-1.5 font-heading text-sm font-medium">{children}</h5>,
-    blockquote: ({ children }) => (
-        <blockquote className="mb-2 border-l-2 border-quote-border bg-quote-background pl-2 text-muted-foreground italic last:mb-0">
-            {children}
-        </blockquote>
-    ),
-    a: ({ children, href }) => (
-        <a className="text-link underline underline-offset-2" href={href}>
-            {children}
-        </a>
-    ),
-    code: ({ children, className }) =>
-        typeof className === 'string' && className.includes('language-') ? (
-            <code className={className}>{children}</code>
-        ) : (
-            <code className="rounded bg-code-background px-1 py-0.5 font-mono text-[0.85em]">{children}</code>
-        ),
-    pre: ({ children }) => (
-        <pre className="mb-2 overflow-x-auto rounded-md bg-code-background p-2 text-xs last:mb-0">{children}</pre>
-    ),
-    hr: () => <hr className="my-2 border-border" />,
-    table: ({ children }) => <table className="mb-2 w-full border-collapse text-xs last:mb-0">{children}</table>,
-    th: ({ children }) => <th className="border border-border px-1.5 py-1 text-left font-medium">{children}</th>,
-    td: ({ children }) => <td className="border border-border px-1.5 py-1">{children}</td>,
-}
-
 /** 就地替换指定消息，保持其余引用不变 */
 function patchMessage(
     session: AiSessionSnapshot | null,
@@ -718,51 +617,6 @@ function patchMessage(
         ...session,
         messages: session.messages.map((item) => (item.id === messageId ? patch(item) : item)),
     }
-}
-
-/** 相对时间格式化器（原生 Intl，不引日期库） */
-const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
-
-/** 会话时间的展示：7 天内用相对时间，更早回退本地日期 */
-function formatRelativeTime(iso: string): string {
-    const time = new Date(iso).getTime()
-    if (Number.isNaN(time)) {
-        return ''
-    }
-    const minutes = Math.round((time - Date.now()) / 60_000)
-    if (Math.abs(minutes) < 60) {
-        return RELATIVE_TIME_FORMATTER.format(minutes, 'minute')
-    }
-    const hours = Math.round(minutes / 60)
-    if (Math.abs(hours) < 24) {
-        return RELATIVE_TIME_FORMATTER.format(hours, 'hour')
-    }
-    const days = Math.round(hours / 24)
-    if (Math.abs(days) < 7) {
-        return RELATIVE_TIME_FORMATTER.format(days, 'day')
-    }
-    return new Date(iso).toLocaleDateString('zh-CN')
-}
-
-/** token 数量紧凑展示：过千折算 k，过百万折算 M */
-function formatTokens(value: number): string {
-    if (value >= 1_000_000) {
-        return `${(value / 1_000_000).toFixed(1)}M`
-    }
-    if (value >= 1_000) {
-        return `${(value / 1_000).toFixed(1)}k`
-    }
-    return String(value)
-}
-
-function toErrorText(cause: unknown): string {
-    return cause instanceof Error ? cause.message : String(cause)
-}
-
-/** 引用体积描述：过千折算 k，被截断时追加标注 */
-function describeContext(ref: AiContextRef): string {
-    const size = ref.charCount >= 1000 ? `${(ref.charCount / 1000).toFixed(1)}k 字` : `${ref.charCount} 字`
-    return ref.isTruncated ? `${size} · 已截断` : size
 }
 
 /** 收窄宿主 state 广播的载荷：仅识别 ai 通道的两类通知 */
