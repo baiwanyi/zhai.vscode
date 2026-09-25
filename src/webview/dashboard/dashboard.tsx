@@ -8,8 +8,8 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import type { DashboardStats, ModuleStat } from '@/shared/types/dashboard'
-import { request } from './bridge'
 import type { JSX } from 'react'
+import { request } from '../bridge'
 
 /** 重建期间轮询间隔，使按钮态与统计随宿主进度收敛 */
 const POLL_INTERVAL_MS = 1500

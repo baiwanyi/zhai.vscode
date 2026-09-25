@@ -33,7 +33,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
 
     private async renderHtml(webviewView: vscode.WebviewView): Promise<void> {
         try {
-            webviewView.webview.html = await buildWebviewHtml(webviewView.webview, this.extensionUri, 'index.html')
+            webviewView.webview.html = await buildWebviewHtml(
+                webviewView.webview,
+                this.extensionUri,
+                'dashboard/index.html',
+            )
         } catch (error) {
             webviewView.webview.html = `<html><body><h3>Zhai</h3><p>Webview 资源缺失，请先执行 pnpm run compile（${String(error)}）</p></body></html>`
             logger.error('Webview 资源加载失败', error)
