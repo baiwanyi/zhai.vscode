@@ -4,34 +4,12 @@
  * 消息样式参考 Copilot / CodeBuddy：无头像与角色标签，用户消息为右对齐气泡，助手回复走 Bubble ghost 变体通栏纯文本。
  * 「添加到宅对话」的待发送上下文以 Attachment 清单呈现在输入区上方，已发送的引用作为消息内容的一部分随消息展示。
  * 顶部工具条提供「历史对话」浮层（对齐 Copilot：标题 + 相对时间，hover 显示删除），可切换与删除会话。
- * 消息渲染拆分至同目录 message-view.tsx，格式化工具拆分至 format.ts。
+ * 消息渲染拆分至同目录 layout/message-view.tsx，格式化工具拆分至 utils.ts，页面结构组件（消息渲染 / 上下文清单 / 历史条目 / 空态）拆分至 layout/。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机；交互约束：生成期间禁用发送并显示停止按钮。
  */
 import { cn } from 'cn'
-import {
-    ArrowUp,
-    FileText,
-    History,
-    KeyRound,
-    Settings,
-    Sparkles,
-    Square,
-    SquarePen,
-    TextSelect,
-    Trash2,
-    X,
-} from 'lucide-react'
+import { ArrowUp, History, Settings, Square, SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import {
-    Attachment,
-    AttachmentAction,
-    AttachmentActions,
-    AttachmentContent,
-    AttachmentDescription,
-    AttachmentGroup,
-    AttachmentMedia,
-    AttachmentTitle,
-} from '@/components/ui/attachment'
 import { Button } from '@/components/ui/button'
 import {
     DropdownMenu,
@@ -42,7 +20,6 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group'
 import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
 import {
@@ -58,13 +35,17 @@ import { Spinner } from '@/components/ui/spinner'
 import type {
     AiContextRef,
     AiConversationSummary,
-    AiMessage,
     AiRuntimeInfo,
     AiSendResult,
     AiSessionSnapshot,
 } from '@/shared/types/aiChat'
-import { describeContext, formatRelativeTime, formatTokens, toErrorText } from './format'
-import { MessageRow } from './message-view'
+import { ApiKeyState } from './layout/ApiKeyState'
+import { ContextList } from './layout/ContextList'
+import { HistoryItem } from './layout/HistoryItem'
+import { LoadingState } from './layout/LoadingState'
+import { MessageRow } from './layout/message-view'
+import { WelcomeState } from './layout/WelcomeState'
+import { formatTokens, patchMessage, readAiStateKind, toErrorText } from './utils'
 import type { JSX } from 'react'
 import { onState, onStream, request } from '../bridge'
 
@@ -475,155 +456,4 @@ export function AiChat(): JSX.Element {
             </footer>
         </div>
     )
-}
-
-interface ContextListProps {
-    contexts: AiContextRef[]
-    onRemove: (id: string) => void
-    onClear: () => void
-}
-
-/** 待发送上下文清单：Attachment 呈现标签与体积，支持单条移除与一键清空 */
-function ContextList({ contexts, onRemove, onClear }: ContextListProps): JSX.Element {
-    return (
-        <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-2">
-                <span className="text-xs text-muted-foreground">上下文 {contexts.length} 项</span>
-                <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={onClear}>
-                    清空
-                </Button>
-            </div>
-            <AttachmentGroup>
-                {contexts.map((context) => (
-                    <Attachment key={context.id} size="xs">
-                        <AttachmentMedia>
-                            {context.kind === 'selection' ? <TextSelect /> : <FileText />}
-                        </AttachmentMedia>
-                        <AttachmentContent>
-                            <AttachmentTitle title={context.displayPath}>{context.label}</AttachmentTitle>
-                            <AttachmentDescription>{describeContext(context)}</AttachmentDescription>
-                        </AttachmentContent>
-                        <AttachmentActions>
-                            <AttachmentAction title="移除该引用" onClick={() => onRemove(context.id)}>
-                                <X />
-                            </AttachmentAction>
-                        </AttachmentActions>
-                    </Attachment>
-                ))}
-            </AttachmentGroup>
-        </div>
-    )
-}
-
-interface HistoryItemProps {
-    session: AiConversationSummary
-    isActive: boolean
-    onSelect: () => void
-    onDelete: () => void
-}
-
-/** 历史会话条目（对齐 Copilot）：标题 + 相对时间，hover 时用删除按钮顶替时间位置，避免行宽跳动 */
-function HistoryItem({ session, isActive, onSelect, onDelete }: HistoryItemProps): JSX.Element {
-    return (
-        <DropdownMenuItem onSelect={onSelect} className="group/history gap-2">
-            <span className={cn('min-w-0 flex-1 truncate', isActive && 'font-medium')}>{session.title}</span>
-            <span className="grid shrink-0 place-items-center">
-                <span className="col-start-1 row-start-1 text-xs text-muted-foreground group-hover/history:opacity-0">
-                    {formatRelativeTime(session.updatedAt)}
-                </span>
-                <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    className="col-start-1 row-start-1 opacity-0 group-hover/history:opacity-100"
-                    title="删除会话"
-                    aria-label="删除会话"
-                    onClick={(event) => {
-                        event.stopPropagation()
-                        onDelete()
-                    }}
-                >
-                    <Trash2 />
-                </Button>
-            </span>
-        </DropdownMenuItem>
-    )
-}
-
-/** 欢迎态：无消息时的居中引导（Empty 组件的标准用法） */
-function WelcomeState(): JSX.Element {
-    return (
-        <Empty>
-            <EmptyHeader>
-                <EmptyMedia variant="icon" className="size-12 rounded-2xl">
-                    <Sparkles className="size-5" />
-                </EmptyMedia>
-                <EmptyTitle>开始新的对话</EmptyTitle>
-                <EmptyDescription>
-                    输入问题后按 Enter 发送，Shift + Enter
-                    换行；在编辑器中右键「添加到宅对话」可把文件或选中行加入上下文。
-                </EmptyDescription>
-            </EmptyHeader>
-        </Empty>
-    )
-}
-
-/** 无 Key 引导（AC-6）：以空态卡片替代异常栈，直接给出配置入口 */
-function ApiKeyState({ onSetup }: { onSetup: () => void }): JSX.Element {
-    return (
-        <Empty>
-            <EmptyHeader>
-                <EmptyMedia variant="icon" className="size-12 rounded-2xl">
-                    <KeyRound className="size-5" />
-                </EmptyMedia>
-                <EmptyTitle>先配置 DeepSeek API Key</EmptyTitle>
-                <EmptyDescription>
-                    密钥保存在系统密钥库（SecretStorage），不会写入设置文件与仓库，日志中仅显示末 4 位。
-                </EmptyDescription>
-            </EmptyHeader>
-            <EmptyContent>
-                <Button size="sm" onClick={onSetup}>
-                    <KeyRound data-icon="inline-start" />
-                    设置 API Key
-                </Button>
-            </EmptyContent>
-        </Empty>
-    )
-}
-
-/** 运行时信息加载中的占位空态 */
-function LoadingState(): JSX.Element {
-    return (
-        <Empty>
-            <EmptyHeader>
-                <EmptyMedia variant="icon" className="size-12 rounded-2xl">
-                    <Spinner />
-                </EmptyMedia>
-                <EmptyTitle>正在读取会话</EmptyTitle>
-            </EmptyHeader>
-        </Empty>
-    )
-}
-
-/** 就地替换指定消息，保持其余引用不变 */
-function patchMessage(
-    session: AiSessionSnapshot | null,
-    messageId: string,
-    patch: (message: AiMessage) => AiMessage,
-): AiSessionSnapshot | null {
-    if (!session) {
-        return session
-    }
-    return {
-        ...session,
-        messages: session.messages.map((item) => (item.id === messageId ? patch(item) : item)),
-    }
-}
-
-/** 收窄宿主 state 广播的载荷：仅识别 ai 通道的两类通知 */
-function readAiStateKind(payload: unknown): 'runtime' | 'context' | null {
-    if (typeof payload !== 'object' || payload === null) {
-        return null
-    }
-    const kind = (payload as { kind?: unknown }).kind
-    return kind === 'runtime' || kind === 'context' ? kind : null
 }
