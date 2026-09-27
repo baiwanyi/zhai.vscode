@@ -39,15 +39,15 @@ import type {
     AiSendResult,
     AiSessionSnapshot,
 } from '@/shared/types/aiChat'
-import { ApiKeyState } from './layout/ApiKeyState'
-import { ContextList } from './layout/ContextList'
-import { HistoryItem } from './layout/HistoryItem'
-import { LoadingState } from './layout/LoadingState'
-import { MessageRow } from './layout/message-view'
-import { WelcomeState } from './layout/WelcomeState'
+import { AiChatApiKeyState } from './layout/AiChatApiKeyState'
+import { AiChatContextList } from './layout/AiChatContextList'
+import { AiChatHistoryItem } from './layout/AiChatHistoryItem'
+import { AiChatLoadingState } from './layout/AiChatLoadingState'
+import { AiChatMessageView } from './layout/AiChatMessageView'
+import { AiChatWelcomeState } from './layout/AiChatWelcomeState'
 import { formatTokens, patchMessage, readAiStateKind, toErrorText } from './utils'
 import type { JSX } from 'react'
-import { onState, onStream, request } from '../bridge'
+import { onState, onStream, request } from '../../bridge'
 
 /** 视图阶段：idle 空闲、sending 已提交待首字、streaming 正在逐字生成 */
 type Phase = 'idle' | 'sending' | 'streaming'
@@ -328,7 +328,7 @@ export function AiChat(): JSX.Element {
                             ) : (
                                 <DropdownMenuGroup>
                                     {sessions.map((item) => (
-                                        <HistoryItem
+                                        <AiChatHistoryItem
                                             key={item.id}
                                             session={item}
                                             isActive={item.id === session?.conversation.id}
@@ -360,11 +360,11 @@ export function AiChat(): JSX.Element {
                             <MessageScrollerContent className="gap-4 p-3">
                                 {isEmpty ? (
                                     runtime === null ? (
-                                        <LoadingState />
+                                        <AiChatLoadingState />
                                     ) : hasApiKey ? (
-                                        <WelcomeState />
+                                        <AiChatWelcomeState />
                                     ) : (
-                                        <ApiKeyState onSetup={() => void runHostCommand('zhai.ai.setApiKey')} />
+                                        <AiChatApiKeyState onSetup={() => void runHostCommand('zhai.ai.setApiKey')} />
                                     )
                                 ) : null}
                                 {messages.map((message) => (
@@ -373,7 +373,7 @@ export function AiChat(): JSX.Element {
                                         messageId={message.id}
                                         scrollAnchor={message.id === lastMessageId}
                                     >
-                                        <MessageRow message={message} />
+                                        <AiChatMessageView message={message} />
                                     </MessageScrollerItem>
                                 ))}
                                 {phase === 'sending' ? (
@@ -394,7 +394,7 @@ export function AiChat(): JSX.Element {
             <Separator />
             <footer className="flex flex-col gap-2 p-3">
                 {contexts.length > 0 ? (
-                    <ContextList
+                    <AiChatContextList
                         contexts={contexts}
                         onRemove={(id) => void removeContext(id)}
                         onClear={() => void clearContexts()}

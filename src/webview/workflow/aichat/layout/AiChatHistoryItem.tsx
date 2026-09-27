@@ -11,7 +11,7 @@ import type { AiConversationSummary } from '@/shared/types/aiChat'
 import type { JSX } from 'react'
 import { formatRelativeTime } from '../utils'
 
-interface HistoryItemProps {
+interface AiChatHistoryItemProps {
     session: AiConversationSummary
     isActive: boolean
     onSelect: () => void
@@ -19,7 +19,7 @@ interface HistoryItemProps {
 }
 
 /** 历史会话条目（对齐 Copilot）：标题 + 相对时间，hover 时用删除按钮顶替时间位置，避免行宽跳动 */
-export function HistoryItem({ session, isActive, onSelect, onDelete }: HistoryItemProps): JSX.Element {
+export function AiChatHistoryItem({ session, isActive, onSelect, onDelete }: AiChatHistoryItemProps): JSX.Element {
     return (
         <DropdownMenuItem onSelect={onSelect} className="group/history gap-2">
             <span className={cn('min-w-0 flex-1 truncate', isActive && 'font-medium')}>{session.title}</span>

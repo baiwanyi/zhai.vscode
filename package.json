@@ -210,7 +210,7 @@
                 {
                     "type": "webview",
                     "id": "zhai.aiChat",
-                    "name": "AI 对话",
+                    "name": "工作流",
                     "icon": "resources/icon.svg"
                 }
             ]

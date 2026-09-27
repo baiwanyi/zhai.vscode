@@ -1,6 +1,6 @@
 /**
  * AI 对话助手回复的 Markdown 元素到主题类名映射：逐标签复用 shadcn 语义令牌渲染正文元素。
- * 与 message-view 的气泡样式解耦，避免引入 typography 插件造成样式互相覆盖（见 markdown-one.md 第 5 节）。
+ * 与 layout/message-view 的气泡样式解耦，避免引入 typography 插件造成样式互相覆盖（见 markdown-one.md 第 5 节）。
  * 关键约束：仅供 react-markdown 的 components 属性消费，键集须覆盖助手回复可能产出的全部 GFM 元素。
  */
 import type { Components } from 'react-markdown'

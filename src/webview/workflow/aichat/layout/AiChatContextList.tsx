@@ -19,14 +19,14 @@ import type { AiContextRef } from '@/shared/types/aiChat'
 import type { JSX } from 'react'
 import { describeContext } from '../utils'
 
-interface ContextListProps {
+interface AiChatContextListProps {
     contexts: AiContextRef[]
     onRemove: (id: string) => void
     onClear: () => void
 }
 
 /** 待发送上下文清单：Attachment 呈现标签与体积，支持单条移除与一键清空 */
-export function ContextList({ contexts, onRemove, onClear }: ContextListProps): JSX.Element {
+export function AiChatContextList({ contexts, onRemove, onClear }: AiChatContextListProps): JSX.Element {
     return (
         <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between gap-2">

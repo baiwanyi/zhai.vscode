@@ -1,8 +1,8 @@
 /**
- * AI 对话消息渲染：MessageRow 按角色分派气泡（用户 default 右对齐、助手 ghost 通栏无气泡），
+ * AI 对话消息渲染：AiChatMessageView 按角色分派气泡（用户 default 右对齐、助手 ghost 通栏无气泡），
  * MessageRefs 呈现消息内引用条目（属消息内容，置于用户气泡内正文之上，不悬在消息头部），
  * MessageBody 按角色渲染正文——用户输入按纯文本保留换行，助手回复走 unified/remark 管线。
- * Markdown 主题映射拆分至上级目录 markdown-components.tsx（不引 typography 插件，避免与气泡样式互相覆盖）。
+ * Markdown 主题映射拆分至上级目录 markdown.tsx（不引 typography 插件，避免与气泡样式互相覆盖）。
  * 关键约束：空内容按状态占位（失败/已停止给文案，其余给加载 Spinner）。
  */
 import Markdown from 'react-markdown'
@@ -13,10 +13,10 @@ import { Message, MessageContent, MessageFooter } from '@/components/ui/message'
 import { Spinner } from '@/components/ui/spinner'
 import type { AiContextRef, AiMessage } from '@/shared/types/aiChat'
 import type { JSX } from 'react'
-import { MARKDOWN_COMPONENTS } from '../markdown-components'
+import { MARKDOWN_COMPONENTS } from '../markdown'
 
 /** 单条消息：引用作为消息内容的一部分置于气泡内（不悬在消息头部）；用户消息为右对齐气泡，助手回复走 Bubble ghost 通栏纯文本 */
-export function MessageRow({ message }: { message: AiMessage }): JSX.Element {
+export function AiChatMessageView({ message }: { message: AiMessage }): JSX.Element {
     const isUser = message.role === 'user'
     const isCancelled = message.status === 'cancelled'
     return (

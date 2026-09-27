@@ -56,7 +56,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             webviewView.webview.html = await buildWebviewHtml(
                 webviewView.webview,
                 this.extensionUri,
-                'aichat/aichat.html',
+                'workflow/index.html',
             )
         } catch (error) {
             webviewView.webview.html = `<html><body><h3>Zhai</h3><p>Webview 资源缺失，请先执行 pnpm run compile（${String(error)}）</p></body></html>`

@@ -7,7 +7,7 @@ import { Spinner } from '@/components/ui/spinner'
 import type { JSX } from 'react'
 
 /** 运行时信息加载中的占位空态 */
-export function LoadingState(): JSX.Element {
+export function AiChatLoadingState(): JSX.Element {
     return (
         <Empty>
             <EmptyHeader>

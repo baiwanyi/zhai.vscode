@@ -8,7 +8,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import type { JSX } from 'react'
 
 /** 无 Key 引导（AC-6）：以空态卡片替代异常栈，直接给出配置入口 */
-export function ApiKeyState({ onSetup }: { onSetup: () => void }): JSX.Element {
+export function AiChatApiKeyState({ onSetup }: { onSetup: () => void }): JSX.Element {
     return (
         <Empty>
             <EmptyHeader>

@@ -25,10 +25,10 @@ export default defineConfig({
         target: 'es2022',
         // VSCode Webview 环境无法使用运行时 import map，保持单文件产物
         rollupOptions: {
-            // 多入口：仪表盘（dashboard/index.html）与 AI 对话（aichat/aichat.html）均由 Vite 构建
+            // 多入口：仪表盘（dashboard/index.html）与工作流 AI 对话（workflow/index.html）均由 Vite 构建
             input: {
                 index: resolve(import.meta.dirname, 'src/webview/dashboard/index.html'),
-                aichat: resolve(import.meta.dirname, 'src/webview/aichat/aichat.html'),
+                workflow: resolve(import.meta.dirname, 'src/webview/workflow/index.html'),
             },
         },
     },

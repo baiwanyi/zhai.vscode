@@ -7,7 +7,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/
 import type { JSX } from 'react'
 
 /** 欢迎态：无消息时的居中引导（Empty 组件的标准用法） */
-export function WelcomeState(): JSX.Element {
+export function AiChatWelcomeState(): JSX.Element {
     return (
         <Empty>
             <EmptyHeader>
