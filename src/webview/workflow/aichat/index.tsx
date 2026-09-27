@@ -4,12 +4,12 @@
  * 消息样式参考 Copilot / CodeBuddy：无头像与角色标签，用户消息为右对齐气泡，助手回复走 Bubble ghost 变体通栏纯文本。
  * 「添加到宅对话」的待发送上下文以 Attachment 清单呈现在输入区上方，已发送的引用作为消息内容的一部分随消息展示。
  * 顶部工具条提供「历史对话」浮层（对齐 Copilot：标题 + 相对时间，hover 显示删除），可切换与删除会话。
- * 消息渲染拆分至同目录 layout/message-view.tsx，格式化工具拆分至 utils.ts，页面结构组件（消息渲染 / 上下文清单 / 历史条目 / 空态）拆分至 layout/。
+ * 会话 / 上下文 / 运行时 / 历史 / 宿主命令操作拆分至 hooks/，消息渲染拆分至 layout/，Markdown 映射与纯函数拆分至同目录模块。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机；交互约束：生成期间禁用发送并显示停止按钮。
  */
 import { cn } from 'cn'
 import { ArrowUp, History, Settings, Square, SquarePen } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import {
     DropdownMenu,
@@ -32,64 +32,38 @@ import {
 } from '@/components/ui/message-scroller'
 import { Separator } from '@/components/ui/separator'
 import { Spinner } from '@/components/ui/spinner'
-import type {
-    AiContextRef,
-    AiConversationSummary,
-    AiRuntimeInfo,
-    AiSendResult,
-    AiSessionSnapshot,
-} from '@/shared/types/aiChat'
+import { useAiChatCommands } from './hooks/useAiChatCommands'
+import { useAiChatContexts } from './hooks/useAiChatContexts'
+import { useAiChatHistory } from './hooks/useAiChatHistory'
+import { useAiChatRuntime } from './hooks/useAiChatRuntime'
+import { useAiChatSession } from './hooks/useAiChatSession'
+import { useAiChatStatus } from './hooks/useAiChatStatus'
 import { AiChatApiKeyState } from './layout/AiChatApiKeyState'
 import { AiChatContextList } from './layout/AiChatContextList'
 import { AiChatHistoryItem } from './layout/AiChatHistoryItem'
 import { AiChatLoadingState } from './layout/AiChatLoadingState'
 import { AiChatMessageView } from './layout/AiChatMessageView'
 import { AiChatWelcomeState } from './layout/AiChatWelcomeState'
-import { formatTokens, patchMessage, readAiStateKind, toErrorText } from './utils'
+import { formatTokens, readAiStateKind } from './utils'
 import type { JSX } from 'react'
-import { onState, onStream, request } from '../../bridge'
-
-/** 视图阶段：idle 空闲、sending 已提交待首字、streaming 正在逐字生成 */
-type Phase = 'idle' | 'sending' | 'streaming'
+import { onState } from '../../bridge'
 
 export function AiChat(): JSX.Element {
-    const [session, setSession] = useState<AiSessionSnapshot | null>(null)
-    const [runtime, setRuntime] = useState<AiRuntimeInfo | null>(null)
-    const [contexts, setContexts] = useState<AiContextRef[]>([])
-    const [sessions, setSessions] = useState<AiConversationSummary[]>([])
-    const [input, setInput] = useState('')
-    const [phase, setPhase] = useState<Phase>('idle')
-    const [error, setError] = useState<string | null>(null)
-    const [notice, setNotice] = useState<string | null>(null)
-    /** 正在流式填充的消息 id，避免每次增量都触发状态结构变更 */
-    const streamingMessageIdRef = useRef<string | null>(null)
-
-    const loadSession = useCallback(async (): Promise<void> => {
-        try {
-            const snapshot = await request<AiSessionSnapshot>('ai/session')
-            setSession(snapshot)
-            setContexts(snapshot.contexts)
-            setError(null)
-        } catch (cause) {
-            setError(toErrorText(cause))
-        }
-    }, [])
-
-    const loadContexts = useCallback(async (): Promise<void> => {
-        try {
-            setContexts(await request<AiContextRef[]>('ai/context'))
-        } catch (cause) {
-            setError(toErrorText(cause))
-        }
-    }, [])
-
-    const loadRuntime = useCallback(async (): Promise<void> => {
-        try {
-            setRuntime(await request<AiRuntimeInfo>('ai/runtime'))
-        } catch (cause) {
-            setError(toErrorText(cause))
-        }
-    }, [])
+    const { error, notice, setError, setNotice } = useAiChatStatus()
+    const { runHostCommand } = useAiChatCommands({ onError: setError })
+    const { contexts, setContexts, loadContexts, removeContext, clearContexts } = useAiChatContexts({
+        onError: setError,
+        onNotice: setNotice,
+    })
+    const { sessions, loadSessions } = useAiChatHistory({ onError: setError })
+    const { runtime, loadRuntime } = useAiChatRuntime({ onError: setError })
+    const { session, phase, input, setInput, loadSession, send, stop, startNewSession, switchSession, deleteSession } =
+        useAiChatSession({
+            onError: setError,
+            onNotice: setNotice,
+            setContexts,
+            refreshSessions: loadSessions,
+        })
 
     useEffect(() => {
         void loadSession()
@@ -111,177 +85,6 @@ export function AiChat(): JSX.Element {
             }
         })
     }, [loadContexts, loadRuntime])
-
-    // 流式增量：按 reqId 找到发起时的助手消息并就地追加
-    useEffect(() => {
-        return onStream((message) => {
-            const messageId = streamingMessageIdRef.current
-            if (!messageId) {
-                return
-            }
-            if (message.done) {
-                streamingMessageIdRef.current = null
-                setPhase('idle')
-                setSession((previous) =>
-                    patchMessage(previous, messageId, (item) => ({
-                        ...item,
-                        content: message.content ?? item.content,
-                        status: message.status ?? 'completed',
-                        error: message.error ?? null,
-                    })),
-                )
-                if (message.error) {
-                    setError(message.error)
-                }
-                return
-            }
-            if (message.delta.length === 0) {
-                return
-            }
-            setSession((previous) =>
-                patchMessage(previous, messageId, (item) => ({ ...item, content: item.content + message.delta })),
-            )
-        })
-    }, [])
-
-    const send = useCallback(async (): Promise<void> => {
-        const content = input.trim()
-        if (content.length === 0 || !session || phase !== 'idle') {
-            return
-        }
-        setPhase('sending')
-        setError(null)
-        setNotice(null)
-        try {
-            const result = await request<AiSendResult>('ai/send', {
-                conversationId: session.conversation.id,
-                content,
-            })
-            streamingMessageIdRef.current = result.assistantMessage.id
-            setSession((previous) =>
-                previous
-                    ? {
-                          ...previous,
-                          messages: [...previous.messages, result.userMessage, result.assistantMessage],
-                      }
-                    : previous,
-            )
-            // 引用已随消息提交并落库，待发送清单即时清空
-            setContexts([])
-            if (result.skippedContexts.length > 0) {
-                setNotice(`已跳过失效引用：${result.skippedContexts.join('、')}`)
-            }
-            setInput('')
-            setPhase('streaming')
-        } catch (cause) {
-            setError(toErrorText(cause))
-            setPhase('idle')
-        }
-    }, [input, phase, session])
-
-    const stop = useCallback(async (): Promise<void> => {
-        try {
-            await request('ai/abort')
-        } catch (cause) {
-            setError(toErrorText(cause))
-        }
-    }, [])
-
-    const startNewSession = useCallback(async (): Promise<void> => {
-        try {
-            const snapshot = await request<AiSessionSnapshot>('ai/newSession')
-            setSession(snapshot)
-            setContexts(snapshot.contexts)
-            setInput('')
-            setError(null)
-            setNotice(null)
-        } catch (cause) {
-            setError(toErrorText(cause))
-        }
-    }, [])
-
-    const loadSessions = useCallback(async (): Promise<void> => {
-        try {
-            setSessions(await request<AiConversationSummary[]>('ai/sessions'))
-        } catch (cause) {
-            setError(toErrorText(cause))
-        }
-    }, [])
-
-    /** 切换到历史会话：生成中先停止再切换，避免增量写回已切走的会话；输入框内容保持不动 */
-    const switchSession = useCallback(
-        async (conversationId: string): Promise<void> => {
-            if (session?.conversation.id === conversationId) {
-                return
-            }
-            try {
-                if (phase !== 'idle') {
-                    await request('ai/abort')
-                }
-                const snapshot = await request<AiSessionSnapshot>('ai/switchSession', { conversationId })
-                streamingMessageIdRef.current = null
-                setSession(snapshot)
-                setContexts(snapshot.contexts)
-                setPhase('idle')
-                setError(null)
-                setNotice(null)
-            } catch (cause) {
-                setError(toErrorText(cause))
-            }
-        },
-        [phase, session],
-    )
-
-    /** 删除历史会话：删掉的是当前会话时由宿主切到最近会话（无则新建），随后重新加载快照 */
-    const deleteSession = useCallback(
-        async (conversationId: string): Promise<void> => {
-            const isActive = session?.conversation.id === conversationId
-            try {
-                await request('ai/deleteSession', { conversationId })
-                if (isActive) {
-                    streamingMessageIdRef.current = null
-                    setPhase('idle')
-                    const snapshot = await request<AiSessionSnapshot>('ai/session')
-                    setSession(snapshot)
-                    setContexts(snapshot.contexts)
-                    setError(null)
-                    setNotice(null)
-                }
-                await loadSessions()
-            } catch (cause) {
-                setError(toErrorText(cause))
-            }
-        },
-        [loadSessions, session],
-    )
-
-    /** 触发白名单内的宿主命令（设置密钥、打开设置等） */
-    const runHostCommand = useCallback(async (command: string): Promise<void> => {
-        try {
-            await request('host/command', command)
-        } catch (cause) {
-            setError(toErrorText(cause))
-        }
-    }, [])
-
-    /** 移除单条上下文引用：只回传宿主生成的 id */
-    const removeContext = useCallback(async (id: string): Promise<void> => {
-        try {
-            setContexts(await request<AiContextRef[]>('ai/context/remove', { id }))
-            setNotice(null)
-        } catch (cause) {
-            setError(toErrorText(cause))
-        }
-    }, [])
-
-    const clearContexts = useCallback(async (): Promise<void> => {
-        try {
-            setContexts(await request<AiContextRef[]>('ai/context/clear'))
-            setNotice(null)
-        } catch (cause) {
-            setError(toErrorText(cause))
-        }
-    }, [])
 
     const messages = session?.messages ?? []
     /** 末条消息作为滚动锚点，流式增长时由 MessageScroller 保持贴底 */
