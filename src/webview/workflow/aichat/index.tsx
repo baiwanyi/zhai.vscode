@@ -89,7 +89,6 @@ export function AiChat(): JSX.Element {
                     onSetupApiKey={() => void runHostCommand('zhai.ai.setApiKey')}
                 />
             </div>
-            <Separator />
             <AiChatComposer
                 contexts={contexts}
                 input={input}

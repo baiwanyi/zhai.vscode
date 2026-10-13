@@ -3,7 +3,7 @@
  * 生成中显示停止按钮，否则显示发送按钮（输入为空或未配置密钥时禁用），左侧为插件设置入口。
  * 交互经回调上抛，本组件不持有会话状态。
  */
-import { ArrowUp, Settings, Square } from 'lucide-react'
+import { SendHorizontal, Settings, Square } from 'lucide-react'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@/components/ui/input-group'
 import type { Phase } from '../hooks/useAiChatSession'
 import type { JSX } from 'react'
@@ -73,7 +73,7 @@ export function AiChatPromptInput({
                         disabled={!hasApiKey || phase !== 'idle' || input.trim().length === 0}
                         onClick={onSend}
                     >
-                        <ArrowUp />
+                        <SendHorizontal className="-rotate-90" />
                     </InputGroupButton>
                 )}
             </InputGroupAddon>

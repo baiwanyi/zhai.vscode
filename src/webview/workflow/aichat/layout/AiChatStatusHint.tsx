@@ -16,7 +16,7 @@ export function AiChatStatusHint({ error, notice, isGenerating }: AiChatStatusHi
         <p className={cn('text-center text-xs', error ? 'text-destructive' : 'text-muted-foreground')}>
             {error ??
                 notice ??
-                (isGenerating ? '正在生成，可随时停止' : 'Enter 发送 · Shift + Enter 换行 · Ctrl+Shift+L 聚焦')}
+                (isGenerating ? '正在生成，可随时停止' : 'Enter 发送 · Shift + Enter 换行 · Ctrl+Shift+L 聚焦123')}
         </p>
     )
 }
