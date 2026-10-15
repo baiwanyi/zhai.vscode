@@ -37,9 +37,9 @@ describe('createNoteDraft', () => {
         expect(createNoteDraft(new Date(2026, 0, 5)).directory).toBe('notes/202601')
     })
 
-    it('不写 Frontmatter title，标题由一级标题提取', () => {
+    it('不写 Frontmatter，标题由一级标题提取', () => {
         const draft = createNoteDraft(new Date(2026, 9, 15, 10, 30))
-        expect(draft.content).not.toContain('title:')
+        expect(draft.content).not.toContain('---')
         const meta = parseFileMeta(draft.content, draft.fileName)
         expect(meta.title).toBe(DEFAULT_NOTE_TITLE)
         expect(meta.tags).toEqual([])
@@ -49,15 +49,17 @@ describe('createNoteDraft', () => {
 })
 
 describe('buildNoteContent', () => {
-    it('含 Frontmatter 区块、一级标题与采集来源', () => {
-        const content = buildNoteContent('会议记录', new Date(2026, 9, 15, 10, 30))
-        expect(content.startsWith('---\n')).toBe(true)
-        expect(content).toContain('source: manual')
-        expect(content).toContain('# 会议记录')
+    it('仅含一级标题，不写 Frontmatter 区块', () => {
+        const content = buildNoteContent('会议记录')
+        expect(content).toBe('# 会议记录\n')
+        expect(content).not.toContain('---')
+        expect(content).not.toContain('source:')
+        expect(content).not.toContain('created:')
     })
 
-    it('以空行结尾，为光标落在标题下方留出位置', () => {
-        const content = buildNoteContent('会议记录', new Date(2026, 9, 15, 10, 30))
-        expect(content.endsWith('# 会议记录\n')).toBe(true)
+    it('以换行结尾，为光标落在标题下方留出位置', () => {
+        const content = buildNoteContent('会议记录')
+        expect(content.split('\n')).toHaveLength(2)
+        expect(content.endsWith('\n')).toBe(true)
     })
 })

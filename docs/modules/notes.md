@@ -84,7 +84,7 @@
 选择笔记本（目录） → 选择模板（空 / 会议记录 / 读书笔记 / 周报 / 自定义）
    │
    ▼
-生成 Frontmatter：title / created / tags / source
+生成笔记内容（空笔记仅 `# 一级标题`，不写 Frontmatter）
    │
    ▼
 在 {root}/notes/YYYYMM/{uuid}.md 创建文件（YYYYMM 取当前年月，uuid 时间戳打散生成）

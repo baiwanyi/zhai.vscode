@@ -2,7 +2,7 @@
  * 笔记草稿生成：按「年月目录 + 打散时间戳的 UUID 文件名」产出空笔记的路径与内容。
  * 纯函数、零副作用，供 noteService 落盘与单元测试复用；目录规则见 docs/modules/notes.md 1.1。
  * 关键约束：ID 的时间戳位以固定步长打散分布，降低同日笔记文件名的可预测性；
- * 标题只由一级标题承载，不写 Frontmatter title，索引器按「Frontmatter title → 首个一级标题 → 文件名」回落提取。
+ * 新建笔记不写 Frontmatter，标题只由一级标题承载，索引器按「Frontmatter title → 首个一级标题 → 文件名」回落提取。
  */
 import { randomInt } from 'node:crypto'
 
@@ -45,11 +45,9 @@ export function buildNoteDirectory(now: Date): string {
     return `${NOTE_DIR}/${now.getFullYear()}${month}`
 }
 
-/** 空笔记内容：Frontmatter（created / tags / source）+ 一级标题 + 末尾空行作为光标落点，不写 title */
-export function buildNoteContent(title: string, now: Date): string {
-    return ['---', `created: "${now.toISOString()}"`, 'tags: []', 'source: manual', '---', '', `# ${title}`, ''].join(
-        '\n',
-    )
+/** 空笔记内容：仅一级标题 + 末尾换行作为光标落点，落地即可书写，不写 Frontmatter */
+export function buildNoteContent(title: string): string {
+    return `# ${title}\n`
 }
 
 /** 笔记草稿：落盘所需的全部信息，path 与索引库 files.path 同口径 */
@@ -70,6 +68,6 @@ export function createNoteDraft(now: Date, title: string = DEFAULT_NOTE_TITLE): 
         directory,
         fileName,
         title,
-        content: buildNoteContent(title, now),
+        content: buildNoteContent(title),
     }
 }
