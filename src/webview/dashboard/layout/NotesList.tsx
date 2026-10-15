@@ -46,14 +46,16 @@ export function NotesList({
     )
 
     return (
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col">
             {pinnedNotes.length > 0 ? (
-                <section className="flex flex-col gap-1">
+                <section className="flex flex-col">
                     <div className="px-2 text-xs text-muted-foreground">置顶</div>
-                    <ItemGroup className="gap-1">{pinnedNotes.map(renderItem)}</ItemGroup>
+                    <ItemGroup>{pinnedNotes.map(renderItem)}</ItemGroup>
                 </section>
             ) : null}
-            <ItemGroup className="gap-1">{unpinnedNotes.map(renderItem)}</ItemGroup>
+            <ItemGroup className="has-data-[size=xs]:gap-0 has-data-[size=sm]:gap-0">
+                {unpinnedNotes.map(renderItem)}
+            </ItemGroup>
         </div>
     )
 }

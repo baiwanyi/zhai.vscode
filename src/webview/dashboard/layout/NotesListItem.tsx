@@ -2,7 +2,8 @@
  * 笔记条目：仅呈现标题，多选态前置复选圈，普通态在悬停或键盘聚焦时露出更多操作。
  * 复用 @/components/ui 的 item、checkbox 与 dropdown-menu，以及 webview 公共的相对时间格式化。
  * 关键约束：更多操作按钮默认隐藏，仅在悬停或焦点进入本条目时显现；
- * 复选圈点击须阻止冒泡以免重复切换；置顶项在菜单中呈现「取消置顶」以反映当前状态。
+ * 复选圈点击须阻止冒泡以免重复切换；置顶项在菜单中呈现「取消置顶」以反映当前状态；
+ * 选中态与悬停态一律以背景块表达，不描边（始终走 default 变体，禁止改用 outline 变体）。
  */
 import { cn } from 'cn'
 import { Ellipsis, Pin, PinOff, Trash2 } from 'lucide-react'
@@ -41,9 +42,8 @@ export function NotesListItem({
 }: NotesListItemProps): JSX.Element {
     return (
         <Item
-            variant={isActive ? 'outline' : 'default'}
             size="sm"
-            className="group/item cursor-pointer rounded-full hover:bg-muted"
+            className={cn('group/item cursor-pointer rounded-full py-1.5 hover:bg-muted', isActive && 'bg-muted')}
             aria-current={isActive ? 'true' : undefined}
             onClick={isSelecting ? onToggleSelected : onSelect}
         >

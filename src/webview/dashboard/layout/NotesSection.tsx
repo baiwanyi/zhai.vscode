@@ -55,7 +55,7 @@ export function NotesSection({
     const selectedCount = selectedPaths.length
 
     return (
-        <Card size="sm">
+        <Card size="sm" className="ring-0">
             <CardHeader>
                 <CardTitle>
                     {isSelecting ? (selectedCount > 0 ? `已选择 ${selectedCount} 个笔记` : '选择笔记') : '笔记列表'}
@@ -71,7 +71,7 @@ export function NotesSection({
                     />
                 </CardAction>
             </CardHeader>
-            <CardContent>
+            <CardContent className="px-0">
                 {hasNotes ? (
                     <NotesList
                         pinnedNotes={pinnedNotes}
