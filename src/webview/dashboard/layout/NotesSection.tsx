@@ -56,7 +56,7 @@ export function NotesSection({
 
     return (
         <Card size="sm" className="ring-0">
-            <CardHeader>
+            <CardHeader className="px-0">
                 <CardTitle>
                     {isSelecting ? (selectedCount > 0 ? `已选择 ${selectedCount} 个笔记` : '选择笔记') : '笔记列表'}
                 </CardTitle>

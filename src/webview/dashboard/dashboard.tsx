@@ -70,7 +70,7 @@ export function Dashboard(): JSX.Element {
 
     return (
         <div className="flex h-screen flex-col" onContextMenu={(event) => event.preventDefault()}>
-            <div className="px-3 pt-3">
+            <div className="p-3">
                 <DashboardTopBar
                     isBusy={pendingAction !== null}
                     isRebuilding={stats?.isRebuilding === true}
