@@ -38,3 +38,9 @@ export interface DashboardStats {
     /** 是否正在重建索引 */
     isRebuilding: boolean
 }
+
+/** 笔记列表的视图密度：舒适模式保留修改时间，紧凑模式仅显示标题 */
+export type NotesViewMode = 'comfortable' | 'compact'
+
+/** 笔记条目可发起的操作（宿主协议接入前仅用于占位提示） */
+export type NoteAction = 'open' | 'delete'
