@@ -175,6 +175,8 @@ export class IndexService {
 
     private enqueueDelete(uri: vscode.Uri): void {
         deleteFileRow(this.db, this.toRelativePath(uri))
+        // 删除不经防抖队列，须立即广播，否则面板列表会残留已删条目
+        this.statusEmitter.fire(this.getStatus())
     }
 
     private scheduleFlush(): void {

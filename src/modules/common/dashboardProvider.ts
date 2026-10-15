@@ -1,10 +1,10 @@
 /**
  * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置与宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传；
- * 活跃笔记另经 state 消息的 note 通道主动广播，供列表回填选中态。
+ * 另经 state 消息主动广播：note 通道给活跃笔记（列表回填选中态），index 通道给索引状态（列表随编辑收敛）。
  * 关键约束：请求处理为异步流程（新建笔记需落盘 + 索引 + 打开，打开与置顶须先经索引库校验路径），
  * 须 await 结果后再回包；命令入口一律经白名单校验，未登记的命令直接拒绝；
- * 活跃编辑器监听须随面板销毁释放，否则重开面板会叠加监听、重复广播。
+ * 活跃编辑器与索引状态监听须随面板销毁释放，否则重开面板会叠加监听、重复广播。
  */
 import * as vscode from 'vscode'
 import {
@@ -18,7 +18,7 @@ import { logger } from './logger'
 import { WEBVIEW_ALLOWED_COMMANDS } from './webviewCommands'
 import { buildWebviewHtml } from './webviewHtml'
 import type { PinStore } from '../note/pinStore'
-import type { IndexService } from './indexer/indexService'
+import type { IndexService, IndexStatus } from './indexer/indexService'
 import type { DashboardStats } from '../../shared/types/dashboard'
 import type { HostToWebviewMessage } from '../../shared/types/messages'
 import type { NoteActiveState, OpenNoteResult, PinNotesResult } from '../../shared/types/note'
@@ -32,12 +32,15 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
 
     /** 活跃编辑器监听：面板销毁时释放，避免重开面板后监听堆积、重复广播 */
     private activeNoteListener: vscode.Disposable | null = null
+    /** 索引状态监听：面板存活期间把索引变更转给 Webview，使列表跟随文件编辑收敛 */
+    private indexStatusListener: vscode.Disposable | null = null
 
     public constructor(
         private readonly extensionUri: vscode.Uri,
         private readonly db: Database.Database,
         private readonly indexService: IndexService,
         private readonly pins: PinStore,
+        private readonly indexStatus: vscode.Event<IndexStatus>,
     ) {}
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -51,7 +54,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             this,
         )
         this.watchActiveNote(webviewView)
-        webviewView.onDidDispose(() => this.stopWatchingActiveNote(), this)
+        this.watchIndexStatus(webviewView)
+        webviewView.onDidDispose(() => {
+            this.stopWatchingActiveNote()
+            this.stopWatchingIndexStatus()
+        }, this)
     }
 
     private async renderHtml(webviewView: vscode.WebviewView): Promise<void> {
@@ -175,6 +182,23 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private stopWatchingActiveNote(): void {
         this.activeNoteListener?.dispose()
         this.activeNoteListener = null
+    }
+
+    /**
+     * 监听索引状态并转发给 Webview：编辑保存笔记后索引会收敛，面板据此刷新列表与标题，避免与磁盘内容脱节。
+     * 关键约束：仅在面板存活期间订阅，销毁时释放，避免面板重开后叠加监听。
+     */
+    private watchIndexStatus(view: vscode.WebviewView): void {
+        this.stopWatchingIndexStatus()
+        this.indexStatusListener = this.indexStatus((status) => {
+            this.post(view, { type: 'state', channel: 'index', payload: status })
+        })
+    }
+
+    /** 释放索引状态监听 */
+    private stopWatchingIndexStatus(): void {
+        this.indexStatusListener?.dispose()
+        this.indexStatusListener = null
     }
 
     /**

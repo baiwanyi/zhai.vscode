@@ -41,7 +41,13 @@ export function activate(context: vscode.ExtensionContext): void {
     indexService.registerWatcher(context.subscriptions)
 
     const pinStore = new PinStore(context.globalState)
-    const dashboardProvider = new DashboardViewProvider(context.extensionUri, db, indexService, pinStore)
+    const dashboardProvider = new DashboardViewProvider(
+        context.extensionUri,
+        db,
+        indexService,
+        pinStore,
+        indexStatusEmitter.event,
+    )
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(DashboardViewProvider.viewId, dashboardProvider),
     )
