@@ -147,6 +147,18 @@ export class IndexService {
         this.statusEmitter.fire(this.getStatus())
     }
 
+    /**
+     * 归一化为存储根口径的相对路径：位于存储根内则剥离前缀，否则原样返回绝对路径。
+     * 索引写入与宿主侧路径比对（如按活跃编辑器回填列表选中态）共用本方法，避免各处各写一份比较逻辑。
+     * 关键约束：比较统一小写，规避 VSCode 的 fsPath 把盘符小写、而配置保留原始大小写导致的误判。
+     */
+    public toRelativePath(uri: vscode.Uri): string {
+        const rootPath = resolveStorageRoot().path
+        return uri.path.toLowerCase().startsWith(`${rootPath.toLowerCase()}/`)
+            ? uri.path.slice(rootPath.length + 1)
+            : uri.path
+    }
+
     public dispose(): void {
         if (this.debounceTimer) {
             clearTimeout(this.debounceTimer)
@@ -213,15 +225,6 @@ export class IndexService {
             hash: meta.hash,
             mtime: new Date(stat.mtime).toISOString(),
         }
-    }
-
-    private toRelativePath(uri: vscode.Uri): string {
-        const rootPath = resolveStorageRoot().path
-        // 大小写容错：文件 Uri 由 root.fsPath 拼接而来（VSCode 的 fsPath 会把盘符小写），而 root.path 保留原始
-        // 大小写，直接比较会误判为「不在存储根内」，进而把绝对路径写进索引，故比较前统一小写
-        return uri.path.toLowerCase().startsWith(`${rootPath.toLowerCase()}/`)
-            ? uri.path.slice(rootPath.length + 1)
-            : uri.path
     }
 
     private baseName(uri: vscode.Uri): string {

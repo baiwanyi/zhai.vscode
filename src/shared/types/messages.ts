@@ -36,10 +36,10 @@ export interface StreamMessage {
     error?: string
 }
 
-/** 宿主 → Webview：状态广播（索引就绪、配置变更、窗口聚焦） */
+/** 宿主 → Webview：状态广播（索引就绪、配置变更、窗口聚焦、活跃笔记切换） */
 export interface StateMessage {
     type: 'state'
-    channel: 'index' | 'config' | 'ai'
+    channel: 'index' | 'config' | 'ai' | 'note'
     payload: unknown
 }
 

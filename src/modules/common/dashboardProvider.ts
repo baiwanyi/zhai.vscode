@@ -1,8 +1,10 @@
 /**
  * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置与宿主命令。
- * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传。
+ * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传；
+ * 活跃笔记另经 state 消息的 note 通道主动广播，供列表回填选中态。
  * 关键约束：请求处理为异步流程（新建笔记需落盘 + 索引 + 打开，打开与置顶须先经索引库校验路径），
- * 须 await 结果后再回包；命令入口一律经白名单校验，未登记的命令直接拒绝。
+ * 须 await 结果后再回包；命令入口一律经白名单校验，未登记的命令直接拒绝；
+ * 活跃编辑器监听须随面板销毁释放，否则重开面板会叠加监听、重复广播。
  */
 import * as vscode from 'vscode'
 import {
@@ -19,7 +21,7 @@ import type { PinStore } from '../note/pinStore'
 import type { IndexService } from './indexer/indexService'
 import type { DashboardStats } from '../../shared/types/dashboard'
 import type { HostToWebviewMessage } from '../../shared/types/messages'
-import type { OpenNoteResult, PinNotesResult } from '../../shared/types/note'
+import type { NoteActiveState, OpenNoteResult, PinNotesResult } from '../../shared/types/note'
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenNoteRequest, isPinNotesRequest } from '../../shared/types/note'
@@ -27,6 +29,9 @@ import { createAndOpenNote, openNoteByPath } from '../note/noteService'
 
 export class DashboardViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'zhai.dashboard'
+
+    /** 活跃编辑器监听：面板销毁时释放，避免重开面板后监听堆积、重复广播 */
+    private activeNoteListener: vscode.Disposable | null = null
 
     public constructor(
         private readonly extensionUri: vscode.Uri,
@@ -45,6 +50,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             (message: unknown) => void this.handleMessage(webviewView, message),
             this,
         )
+        this.watchActiveNote(webviewView)
+        webviewView.onDidDispose(() => this.stopWatchingActiveNote(), this)
     }
 
     private async renderHtml(webviewView: vscode.WebviewView): Promise<void> {
@@ -89,6 +96,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             }
             case 'note/open': {
                 return this.openNote(payload)
+            }
+            case 'note/active': {
+                return Promise.resolve(this.buildActiveNote())
             }
             case 'index/rebuild': {
                 void this.indexService.fullRebuild()
@@ -147,6 +157,38 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         }
         await openNoteByPath(target.path)
         return { opened: true }
+    }
+
+    /**
+     * 监听编辑器焦点变化并广播活跃笔记：列表选中态以编辑器真实焦点为准，而非仅记录最后一次点击，
+     * 使用户关闭当前笔记后能跟随 VSCode 的焦点回退自动切回上一篇。
+     * 关键约束：注册前先释放旧监听，面板销毁时一并清理，避免 WebviewView 重建后重复广播。
+     */
+    private watchActiveNote(view: vscode.WebviewView): void {
+        this.stopWatchingActiveNote()
+        this.activeNoteListener = vscode.window.onDidChangeActiveTextEditor(() => {
+            this.post(view, { type: 'state', channel: 'note', payload: this.buildActiveNote() })
+        })
+    }
+
+    /** 释放活跃编辑器监听 */
+    private stopWatchingActiveNote(): void {
+        this.activeNoteListener?.dispose()
+        this.activeNoteListener = null
+    }
+
+    /**
+     * 组装活跃笔记快照：仅认索引库内已登记的笔记，其余（含焦点不在编辑器上）一律为 null，
+     * 使列表高亮永远收敛到真实存在的条目。
+     */
+    private buildActiveNote(): NoteActiveState {
+        const editor = vscode.window.activeTextEditor
+        if (editor === undefined) {
+            return { activePath: null }
+        }
+        const relativePath = this.indexService.toRelativePath(editor.document.uri)
+        const [known] = listFilesByPaths(this.db, [relativePath])
+        return { activePath: known?.path ?? null }
     }
 
     private post(view: vscode.WebviewView, message: HostToWebviewMessage): void {

@@ -1,8 +1,9 @@
 /**
- * 笔记契约：宿主 note/create、note/pin 与 note/open 请求的出入参结构。
- * 使用方：Webview 仪表盘的「添加」「置顶」「打开」入口，宿主侧笔记服务与仪表盘面板。
+ * 笔记契约：宿主 note/create、note/pin、note/open 请求的出入参结构，以及活跃笔记快照。
+ * 使用方：Webview 仪表盘的「添加」「置顶」「打开」入口与列表选中态，宿主侧笔记服务与仪表盘面板。
  * 约束：path 为相对存储根的路径，与索引库 files.path 同口径；
- * 置顶与打开的请求路径均须由宿主按索引库校验存在性后才可继续处理，避免任意字符串触及文件系统。
+ * 置顶与打开的请求路径均须由宿主按索引库校验存在性后才可继续处理，避免任意字符串触及文件系统；
+ * 活跃笔记快照由宿主权威下发，前端不自造选中态。
  */
 
 /** 新建空笔记的结果 */
@@ -56,4 +57,21 @@ export function isOpenNoteRequest(payload: unknown): payload is OpenNoteRequest 
     }
     const candidate = payload as { path?: unknown }
     return typeof candidate.path === 'string' && candidate.path.length > 0
+}
+
+/**
+ * 活跃笔记快照：宿主随编辑器焦点变化广播，也可按需请求，供列表回填选中态。
+ * 约束：activePath 为相对存储根的路径且须在索引库内，焦点不在笔记上（或落在索引外）时为 null。
+ */
+export interface NoteActiveState {
+    activePath: string | null
+}
+
+/** 判断是否为合法的活跃笔记快照（类型收窄辅助） */
+export function isNoteActiveState(payload: unknown): payload is NoteActiveState {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { activePath?: unknown }
+    return candidate.activePath === null || typeof candidate.activePath === 'string'
 }
