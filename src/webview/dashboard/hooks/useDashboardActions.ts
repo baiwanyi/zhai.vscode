@@ -1,11 +1,12 @@
 /**
- * 仪表盘宿主动作：新建空笔记、索引重建、缓存清理与打开设置，以及尚未接入协议的入口占位反馈。
+ * 仪表盘宿主动作：新建空笔记、批量置顶、索引重建、缓存清理与打开设置，以及尚未接入协议的入口占位反馈。
  * 复用 ../bridge 走宿主协议；错误与提示分列，避免占位说明覆盖真实的失败信息。
- * 关键约束：占位提示定时自动消失，定时器随卸载清理；动作进行中记录 pendingAction 阻止重复提交。
+ * 关键约束：占位提示定时自动消失，定时器随卸载清理；动作进行中记录 pendingAction 阻止重复提交；
+ * 置顶为宿主持久化的偏好，完成后统一刷新统计以让列表顺序收敛。
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { NoteAction } from '@/shared/types/dashboard'
-import type { CreatedNote } from '@/shared/types/note'
+import type { CreatedNote, PinNotesRequest } from '@/shared/types/note'
 import { request } from '../../bridge'
 
 /** 占位提示的保留时长 */
@@ -14,14 +15,17 @@ const NOTICE_TIMEOUT_MS = 4000
 /** 尚未接入宿主协议的入口 */
 export type PendingTarget = 'writing' | 'press'
 
+/** 尚未接入宿主协议的条目操作 */
+export type PendingNoteAction = Extract<NoteAction, 'open' | 'delete'>
+
 /** 各占位入口的提示文案 */
 const PENDING_NOTICE: Record<PendingTarget, string> = {
     writing: '写作管理将在后续版本接入',
     press: '公众号管理将在后续版本接入',
 }
 
-/** 笔记条目操作的提示文案 */
-const NOTE_NOTICE: Record<NoteAction, string> = {
+/** 笔记条目操作的提示文案（仅覆盖未接入协议的动作） */
+const NOTE_NOTICE: Record<PendingNoteAction, string> = {
     open: '打开笔记将在后续版本接入',
     delete: '删除笔记将在后续版本接入',
 }
@@ -31,11 +35,12 @@ export interface DashboardActionsState {
     notice: string | null
     actionError: string | null
     createNote: () => Promise<CreatedNote | null>
+    setPinned: (paths: string[], isPinned: boolean) => Promise<void>
     rebuild: () => Promise<void>
     clearCache: () => Promise<void>
     openSettings: () => Promise<void>
     showPending: (target: PendingTarget) => void
-    showNotePending: (action: NoteAction) => void
+    showNotePending: (action: PendingNoteAction) => void
 }
 
 export function useDashboardActions(onCompleted: () => Promise<void>): DashboardActionsState {
@@ -76,6 +81,14 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         }
     }, [onCompleted])
 
+    const setPinned = useCallback(
+        (paths: string[], isPinned: boolean): Promise<void> => {
+            const payload: PinNotesRequest = { paths, isPinned }
+            return runAction('pin', 'note/pin', payload)
+        },
+        [runAction],
+    )
+
     const rebuild = useCallback((): Promise<void> => runAction('rebuild', 'index/rebuild'), [runAction])
     const clearCache = useCallback(
         (): Promise<void> => runAction('clear', 'host/command', 'zhai.clearIndex'),
@@ -91,7 +104,7 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         setActionError(null)
     }, [])
 
-    const showNotePending = useCallback((action: NoteAction): void => {
+    const showNotePending = useCallback((action: PendingNoteAction): void => {
         setNotice(NOTE_NOTICE[action])
         setActionError(null)
     }, [])
@@ -109,6 +122,7 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         notice,
         actionError,
         createNote,
+        setPinned,
         rebuild,
         clearCache,
         openSettings,

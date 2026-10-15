@@ -1,19 +1,28 @@
 /**
- * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建与宿主命令。
+ * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建、置顶设置与宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传。
- * 关键约束：请求处理为异步流程（新建笔记需落盘 + 索引 + 打开），须 await 结果后再回包；
- * 命令入口一律经白名单校验，未登记的命令直接拒绝。
+ * 关键约束：请求处理为异步流程（新建笔记需落盘 + 索引 + 打开，置顶须先经索引库校验再写宿主偏好），
+ * 须 await 结果后再回包；命令入口一律经白名单校验，未登记的命令直接拒绝。
  */
 import * as vscode from 'vscode'
-import { aggregateFileStats, listRecentFiles } from './db/statsRepository'
+import {
+    aggregateFileStats,
+    listFilesByPaths,
+    listRecentFiles,
+    mergePinnedFiles,
+    RECENT_LIMIT,
+} from './db/statsRepository'
 import { logger } from './logger'
 import { WEBVIEW_ALLOWED_COMMANDS } from './webviewCommands'
 import { buildWebviewHtml } from './webviewHtml'
+import type { PinStore } from '../note/pinStore'
 import type { IndexService } from './indexer/indexService'
 import type { DashboardStats } from '../../shared/types/dashboard'
 import type { HostToWebviewMessage } from '../../shared/types/messages'
+import type { PinNotesResult } from '../../shared/types/note'
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
+import { isPinNotesRequest } from '../../shared/types/note'
 import { createAndOpenNote } from '../note/noteService'
 
 export class DashboardViewProvider implements vscode.WebviewViewProvider {
@@ -23,6 +32,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         private readonly extensionUri: vscode.Uri,
         private readonly db: Database.Database,
         private readonly indexService: IndexService,
+        private readonly pins: PinStore,
     ) {}
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -74,6 +84,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             case 'note/create': {
                 return createAndOpenNote(this.indexService)
             }
+            case 'note/pin': {
+                return this.setPinned(payload)
+            }
             case 'index/rebuild': {
                 void this.indexService.fullRebuild()
                 return Promise.resolve({ started: true })
@@ -91,15 +104,30 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    /** 组装统计快照：文件级聚合来自索引库，构建状态来自索引服务 */
+    /** 组装统计快照：文件级聚合与最近更新来自索引库，置顶顺序来自宿主偏好，构建状态来自索引服务 */
     private buildStats(): DashboardStats {
         const status = this.indexService.getStatus()
+        const pinnedPaths = this.pins.list()
+        // 多取置顶项数量：置顶项可能同时命中最近更新，多取的额度用于抵消这部分重复占位
+        const recent = listRecentFiles(this.db, RECENT_LIMIT + pinnedPaths.length)
         return {
             ...aggregateFileStats(this.db),
-            recentFiles: listRecentFiles(this.db),
+            recentFiles: mergePinnedFiles(listFilesByPaths(this.db, pinnedPaths), recent, RECENT_LIMIT),
             lastBuiltAt: status.lastBuiltAt,
             isRebuilding: status.isRebuilding,
         }
+    }
+
+    /** 批量设置置顶：路径先经索引库校验，仅写入真实存在的笔记，避免失效路径常驻宿主偏好 */
+    private async setPinned(payload: unknown): Promise<PinNotesResult> {
+        if (!isPinNotesRequest(payload)) {
+            throw new Error('note/pin 参数非法：paths 须为字符串数组，isPinned 须为布尔值')
+        }
+        const known = new Set(listFilesByPaths(this.db, payload.paths).map((file) => file.path))
+        const accepted = payload.paths.filter((path) => known.has(path))
+        const pinnedPaths = await this.pins.setPinned(accepted, payload.isPinned)
+        logger.info(`置顶状态更新：${payload.isPinned ? '置顶' : '取消置顶'} ${accepted.length} 项`)
+        return { pinnedPaths }
     }
 
     private post(view: vscode.WebviewView, message: HostToWebviewMessage): void {

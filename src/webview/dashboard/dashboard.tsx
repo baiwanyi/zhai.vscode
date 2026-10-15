@@ -1,7 +1,8 @@
 /**
- * 仪表盘页面：顶部操作区固定，滚动区依次呈现概览槽位、功能入口与笔记列表，底部固定提示行。
+ * 仪表盘页面：顶部操作区固定，滚动区依次呈现概览槽位、功能入口与笔记列表，底部固定多选操作栏与提示行。
  * 数据与动作经 useDashboardStats / useNotesList / useDashboardActions 三层 hook 下发，页面只做组合。
- * 交互约束：重建索引期间由统计 hook 轮询收敛按钮态；新建笔记成功后选中新条目以便在列表中定位。
+ * 交互约束：重建索引期间由统计 hook 轮询收敛按钮态；新建笔记成功后选中新条目以便在列表中定位；
+ * 批量操作栏仅在多选态且有选中项时出现，其按钮语义由选中项的置顶状态决定。
  */
 import { useCallback, useState } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -13,17 +14,20 @@ import { DashboardSlots } from './layout/DashboardSlots'
 import { DashboardStatusHint } from './layout/DashboardStatusHint'
 import { DashboardTopBar } from './layout/DashboardTopBar'
 import { NotesSection } from './layout/NotesSection'
+import { NotesSelectionBar } from './layout/NotesSelectionBar'
 import type { JSX } from 'react'
 
 export function Dashboard(): JSX.Element {
     const { stats, status, error, reload } = useDashboardStats()
     const {
-        notes,
+        pinnedNotes,
+        unpinnedNotes,
         modules,
         activeModules,
         isFiltered,
         isSelecting,
         selectedPaths,
+        isAllSelectedPinned,
         toggleModule,
         resetFilters,
         toggleSelecting,
@@ -34,6 +38,7 @@ export function Dashboard(): JSX.Element {
         notice,
         actionError,
         createNote,
+        setPinned,
         rebuild,
         clearCache,
         openSettings,
@@ -71,7 +76,8 @@ export function Dashboard(): JSX.Element {
                             onOpenPress={() => showPending('press')}
                         />
                         <NotesSection
-                            notes={notes}
+                            pinnedNotes={pinnedNotes}
+                            unpinnedNotes={unpinnedNotes}
                             modules={modules}
                             status={status}
                             error={error}
@@ -84,17 +90,29 @@ export function Dashboard(): JSX.Element {
                                 setActiveId(path)
                                 showNotePending('open')
                             }}
-                            onInvoke={(_path, action) => showNotePending(action)}
+                            onInvoke={(path, action) => {
+                                if (action === 'pin' || action === 'unpin') {
+                                    void setPinned([path], action === 'pin')
+                                    return
+                                }
+                                showNotePending(action)
+                            }}
                             onToggleModule={toggleModule}
                             onResetFilters={resetFilters}
                             onToggleSelecting={toggleSelecting}
                             onToggleSelected={toggleSelected}
-                            onDeleteSelected={() => showNotePending('delete')}
                         />
                     </div>
                 </ScrollArea>
             </div>
-            <div className="pb-3">
+            <div className="mt-2 border-t px-3 pt-2 pb-3">
+                {isSelecting && selectedPaths.length > 0 ? (
+                    <NotesSelectionBar
+                        isAllSelectedPinned={isAllSelectedPinned}
+                        onTogglePin={() => void setPinned(selectedPaths, !isAllSelectedPinned)}
+                        onDelete={() => showNotePending('delete')}
+                    />
+                ) : null}
                 <DashboardStatusHint error={actionError} notice={notice} />
             </div>
         </div>

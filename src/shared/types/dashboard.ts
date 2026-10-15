@@ -1,7 +1,8 @@
 /**
  * 仪表盘数据契约：宿主 dashboard/stats 请求的返回结构。
- * 使用方：Webview 仪表盘（src/webview/dashboard.tsx）与宿主侧 DashboardViewProvider。
- * 约束：字段由宿主聚合后填充，前端只负责展示，不承担解析与拼装。
+ * 使用方：Webview 仪表盘（src/webview/dashboard/dashboard.tsx）与宿主侧 DashboardViewProvider。
+ * 约束：字段由宿主聚合后填充，前端只负责展示，不承担解析与拼装；
+ * 置顶状态来自宿主偏好，列表顺序已由宿主排定（置顶项在前）。
  */
 
 /** 单个模块（存储根下的一级目录）的统计 */
@@ -12,13 +13,15 @@ export interface ModuleStat {
     wordCount: number
 }
 
-/** 最近更新的文件条目 */
+/** 列表中的文件条目 */
 export interface RecentFile {
     path: string
     title: string
     wordCount: number
     /** ISO 8601 时间戳 */
     mtime: string
+    /** 是否被宿主置顶，置顶项在列表中被排至最前 */
+    isPinned: boolean
 }
 
 /** 仪表盘统计快照 */
@@ -31,7 +34,7 @@ export interface DashboardStats {
     tagCount: number
     /** 各模块分布，按文件数倒序 */
     moduleStats: ModuleStat[]
-    /** 最近更新的文件，按 mtime 倒序 */
+    /** 最近更新的文件，按 mtime 倒序且置顶项置前 */
     recentFiles: RecentFile[]
     /** 上次全量构建时间，从未构建为 null */
     lastBuiltAt: string | null
@@ -39,5 +42,5 @@ export interface DashboardStats {
     isRebuilding: boolean
 }
 
-/** 笔记条目可发起的操作（宿主协议接入前仅用于占位提示） */
-export type NoteAction = 'open' | 'delete'
+/** 笔记条目可发起的操作：open 与 delete 的宿主协议尚未接入，pin 与 unpin 已由 note/pin 承接 */
+export type NoteAction = 'open' | 'delete' | 'pin' | 'unpin'

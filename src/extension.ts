@@ -17,6 +17,7 @@ import { IndexService } from './modules/common/indexer/indexService'
 import { logger } from './modules/common/logger'
 import { SecretsService } from './modules/common/secrets'
 import { StatusBarService } from './modules/common/statusBar'
+import { PinStore } from './modules/note/pinStore'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -39,7 +40,8 @@ export function activate(context: vscode.ExtensionContext): void {
     registerCommands(context, db, indexService)
     indexService.registerWatcher(context.subscriptions)
 
-    const dashboardProvider = new DashboardViewProvider(context.extensionUri, db, indexService)
+    const pinStore = new PinStore(context.globalState)
+    const dashboardProvider = new DashboardViewProvider(context.extensionUri, db, indexService, pinStore)
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(DashboardViewProvider.viewId, dashboardProvider),
     )

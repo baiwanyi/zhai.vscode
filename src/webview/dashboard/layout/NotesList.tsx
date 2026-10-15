@@ -1,7 +1,8 @@
 /**
- * 笔记列表：铺排条目集合，普通态的选中高亮由 activeId 决定，多选态改由复选圈表达。
+ * 笔记列表：置顶分组与其余条目分列铺排，普通态选中高亮由 activeId 决定，多选态改由复选圈表达。
  * 组合同目录 NotesListItem 呈现单条；滚动与高度由区块外层承担，本组件不做虚拟化。
- * 关键约束：列表语义由 ItemGroup 提供，禁止改用裸 div 堆叠条目；多选态下不再高亮 activeId。
+ * 关键约束：条目语义由 ItemGroup 提供，禁止改用裸 div 堆叠条目；
+ * 仅存在置顶项时渲染「置顶」分组标题，其余条目保持扁平不设标题；条目顺序一律沿用宿主下发顺序。
  */
 import { ItemGroup } from '@/components/ui/item'
 import type { NoteAction, RecentFile } from '@/shared/types/dashboard'
@@ -9,7 +10,10 @@ import { NotesListItem } from './NotesListItem'
 import type { JSX } from 'react'
 
 interface NotesListProps {
-    notes: RecentFile[]
+    /** 置顶分组，顺序由宿主排定 */
+    pinnedNotes: RecentFile[]
+    /** 置顶之外的其余笔记 */
+    unpinnedNotes: RecentFile[]
     activeId: string | null
     isSelecting: boolean
     selectedPaths: string[]
@@ -19,7 +23,8 @@ interface NotesListProps {
 }
 
 export function NotesList({
-    notes,
+    pinnedNotes,
+    unpinnedNotes,
     activeId,
     isSelecting,
     selectedPaths,
@@ -27,20 +32,28 @@ export function NotesList({
     onInvoke,
     onToggleSelected,
 }: NotesListProps): JSX.Element {
+    const renderItem = (note: RecentFile): JSX.Element => (
+        <NotesListItem
+            key={note.path}
+            note={note}
+            isActive={!isSelecting && note.path === activeId}
+            isSelecting={isSelecting}
+            isSelected={selectedPaths.includes(note.path)}
+            onSelect={() => onSelect(note.path)}
+            onInvoke={(action) => onInvoke(note.path, action)}
+            onToggleSelected={() => onToggleSelected(note.path)}
+        />
+    )
+
     return (
-        <ItemGroup className="gap-1">
-            {notes.map((note) => (
-                <NotesListItem
-                    key={note.path}
-                    note={note}
-                    isActive={!isSelecting && note.path === activeId}
-                    isSelecting={isSelecting}
-                    isSelected={selectedPaths.includes(note.path)}
-                    onSelect={() => onSelect(note.path)}
-                    onInvoke={(action) => onInvoke(note.path, action)}
-                    onToggleSelected={() => onToggleSelected(note.path)}
-                />
-            ))}
-        </ItemGroup>
+        <div className="flex flex-col gap-2">
+            {pinnedNotes.length > 0 ? (
+                <section className="flex flex-col gap-1">
+                    <div className="px-2 text-xs text-muted-foreground">置顶</div>
+                    <ItemGroup className="gap-1">{pinnedNotes.map(renderItem)}</ItemGroup>
+                </section>
+            ) : null}
+            <ItemGroup className="gap-1">{unpinnedNotes.map(renderItem)}</ItemGroup>
+        </div>
     )
 }
