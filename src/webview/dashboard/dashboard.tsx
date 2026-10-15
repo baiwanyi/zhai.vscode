@@ -1,17 +1,19 @@
 /**
- * 仪表盘页面：顶部操作区固定，滚动区依次呈现概览槽位、功能入口与笔记列表，底部固定多选操作栏与提示行。
- * 数据与动作经 useDashboardStats / useNotesList / useDashboardActions 三层 hook 下发，页面只做组合。
- * 交互约束：重建索引期间由统计 hook 轮询收敛按钮态；新建笔记成功后选中新条目以便在列表中定位；
- * 批量操作栏仅在多选态且有选中项时出现，其按钮语义由选中项的置顶状态决定。
+ * 仪表盘页面：顶部操作区固定，滚动区依次呈现概览槽位、功能入口与笔记列表，多选操作栏贴底。
+ * 数据与动作经 useDashboardStats / useNotesList / useDashboardActions 三层 hook 下发，页面只做组合；
+ * 操作结果统一由 useDashboardActions 经 sonner 反馈，页面只负责挂载一次 Toaster。
+ * 交互约束：重建索引期间由统计 hook 轮询收敛按钮态；选中条目即按 path 打开笔记并回填选中态；
+ * 批量操作栏仅在多选态且有选中项时出现，其按钮语义由选中项的置顶状态决定；页面内屏蔽浏览器右键菜单。
  */
 import { useCallback, useState } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
+import { Toaster } from '@/components/ui/sonner'
 import { useDashboardActions } from './hooks/useDashboardActions'
 import { useDashboardStats } from './hooks/useDashboardStats'
 import { useNotesList } from './hooks/useNotesList'
+import { useVscodeTheme } from './hooks/useVscodeTheme'
 import { DashboardEntries } from './layout/DashboardEntries'
 import { DashboardSlots } from './layout/DashboardSlots'
-import { DashboardStatusHint } from './layout/DashboardStatusHint'
 import { DashboardTopBar } from './layout/DashboardTopBar'
 import { NotesSection } from './layout/NotesSection'
 import { NotesSelectionBar } from './layout/NotesSelectionBar'
@@ -35,9 +37,8 @@ export function Dashboard(): JSX.Element {
     } = useNotesList(stats)
     const {
         pendingAction,
-        notice,
-        actionError,
         createNote,
+        openNote,
         setPinned,
         rebuild,
         clearCache,
@@ -46,6 +47,16 @@ export function Dashboard(): JSX.Element {
         showNotePending,
     } = useDashboardActions(reload)
     const [activeId, setActiveId] = useState<string | null>(null)
+    const theme = useVscodeTheme()
+
+    /** 打开笔记：先回填选中态，再交由宿主按索引路径打开编辑器 */
+    const handleOpen = useCallback(
+        (path: string): void => {
+            setActiveId(path)
+            void openNote(path)
+        },
+        [openNote],
+    )
 
     /** 新建空笔记后把返回路径设为选中项 */
     const handleCreate = useCallback(async (): Promise<void> => {
@@ -56,7 +67,7 @@ export function Dashboard(): JSX.Element {
     }, [createNote])
 
     return (
-        <div className="flex h-screen flex-col">
+        <div className="flex h-screen flex-col" onContextMenu={(event) => event.preventDefault()}>
             <div className="px-3 pt-3">
                 <DashboardTopBar
                     isBusy={pendingAction !== null}
@@ -86,11 +97,12 @@ export function Dashboard(): JSX.Element {
                             activeModules={activeModules}
                             isSelecting={isSelecting}
                             selectedPaths={selectedPaths}
-                            onSelect={(path) => {
-                                setActiveId(path)
-                                showNotePending('open')
-                            }}
+                            onSelect={handleOpen}
                             onInvoke={(path, action) => {
+                                if (action === 'open') {
+                                    handleOpen(path)
+                                    return
+                                }
                                 if (action === 'pin' || action === 'unpin') {
                                     void setPinned([path], action === 'pin')
                                     return
@@ -105,16 +117,14 @@ export function Dashboard(): JSX.Element {
                     </div>
                 </ScrollArea>
             </div>
-            <div className="mt-2 border-t px-3 pt-2 pb-3">
-                {isSelecting && selectedPaths.length > 0 ? (
-                    <NotesSelectionBar
-                        isAllSelectedPinned={isAllSelectedPinned}
-                        onTogglePin={() => void setPinned(selectedPaths, !isAllSelectedPinned)}
-                        onDelete={() => showNotePending('delete')}
-                    />
-                ) : null}
-                <DashboardStatusHint error={actionError} notice={notice} />
-            </div>
+            {isSelecting && selectedPaths.length > 0 ? (
+                <NotesSelectionBar
+                    isAllSelectedPinned={isAllSelectedPinned}
+                    onTogglePin={() => void setPinned(selectedPaths, !isAllSelectedPinned)}
+                    onDelete={() => showNotePending('delete')}
+                />
+            ) : null}
+            <Toaster theme={theme} />
         </div>
     )
 }
