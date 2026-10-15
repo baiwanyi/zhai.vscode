@@ -1,13 +1,21 @@
 /**
- * noteService 单元测试：覆盖空笔记落盘位置（含默认存储根回退）、目录创建、写入内容与索引触发。
- * 虚拟磁盘与目录登记由 vscode 测试桩承接，不触达真实文件系统；
+ * noteService 单元测试：覆盖空笔记落盘位置（含默认存储根回退）、目录创建、写入内容与索引触发，
+ * 以及按索引路径打开已有笔记时的路径校验与编辑器调用。
+ * 虚拟磁盘、目录与可打开文档由 vscode 测试桩承接，不触达真实文件系统；
  * 断言路径统一用 node:path 规范化，与实现一样规避分隔符差异。
  */
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { hasDirectory, readFileContent, resetWorkspaceState, setConfigValue } from '@/tests/stubs/vscode'
-import { createNote } from './noteService'
+import {
+    hasDirectory,
+    readFileContent,
+    readOpenedDocumentPaths,
+    registerTextDocument,
+    resetWorkspaceState,
+    setConfigValue,
+} from '@/tests/stubs/vscode'
+import { createNote, openNoteByPath } from './noteService'
 import type { NoteIndexer } from './noteService'
 
 const STORAGE_ROOT = 'd:/vault'
@@ -67,5 +75,40 @@ describe('createNote', () => {
         const { indexer } = createIndexer()
         const created = await createNote(indexer)
         expect(created.uri.fsPath).toBe(path.join(os.homedir(), '.zhai', ...created.path.split('/')))
+    })
+})
+
+describe('openNoteByPath', () => {
+    it('按存储根拼装绝对路径并交由编辑器打开', async () => {
+        const target = path.join(STORAGE_ROOT, 'notes/202610/a.md')
+        registerTextDocument(target, ['# 标题', '', '正文'])
+        await openNoteByPath('notes/202610/a.md')
+        expect(readOpenedDocumentPaths()).toEqual([target])
+    })
+
+    it('拒绝上跳片段，不触达编辑器', async () => {
+        await expect(openNoteByPath('../secret.md')).rejects.toThrow('笔记路径非法')
+        expect(readOpenedDocumentPaths()).toEqual([])
+    })
+
+    it('拒绝含盘符或反斜杠的路径片段', async () => {
+        await expect(openNoteByPath('C:/secret.md')).rejects.toThrow('笔记路径非法')
+        await expect(openNoteByPath('notes\\a.md')).rejects.toThrow('笔记路径非法')
+    })
+
+    it('目标文件缺失时把读取错误上抛', async () => {
+        await expect(openNoteByPath('notes/missing.md')).rejects.toThrow('ENOENT')
+    })
+
+    it('兼容索引库历史记录里的绝对路径形态', async () => {
+        const target = path.join(STORAGE_ROOT, 'notes/202610/a.md')
+        registerTextDocument(target, ['# 标题'])
+        await openNoteByPath('/d:/vault/notes/202610/a.md')
+        expect(readOpenedDocumentPaths()).toEqual([target])
+    })
+
+    it('拒绝存储根之外的绝对路径', async () => {
+        await expect(openNoteByPath('/d:/other/notes/a.md')).rejects.toThrow('不在存储根内')
+        expect(readOpenedDocumentPaths()).toEqual([])
     })
 })

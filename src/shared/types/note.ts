@@ -1,8 +1,8 @@
 /**
- * 笔记契约：宿主 note/create 与 note/pin 请求的出入参结构。
- * 使用方：Webview 仪表盘的「添加」与置顶入口、宿主侧笔记服务与仪表盘面板。
- * 约束：path 为相对存储根的路径，与索引库 files.path 同口径，前端据此定位列表条目；
- * 置顶请求的路径须经宿主按索引库校验存在性后才可写入，避免任意字符串污染宿主状态。
+ * 笔记契约：宿主 note/create、note/pin 与 note/open 请求的出入参结构。
+ * 使用方：Webview 仪表盘的「添加」「置顶」「打开」入口，宿主侧笔记服务与仪表盘面板。
+ * 约束：path 为相对存储根的路径，与索引库 files.path 同口径；
+ * 置顶与打开的请求路径均须由宿主按索引库校验存在性后才可继续处理，避免任意字符串触及文件系统。
  */
 
 /** 新建空笔记的结果 */
@@ -26,6 +26,17 @@ export interface PinNotesResult {
     pinnedPaths: string[]
 }
 
+/** note/open 请求：打开指定笔记 */
+export interface OpenNoteRequest {
+    /** 待打开的笔记路径 */
+    path: string
+}
+
+/** note/open 响应：确认已交由编辑器展示 */
+export interface OpenNoteResult {
+    opened: boolean
+}
+
 /** 判断是否为合法的置顶请求（类型收窄辅助） */
 export function isPinNotesRequest(payload: unknown): payload is PinNotesRequest {
     if (typeof payload !== 'object' || payload === null) {
@@ -36,4 +47,13 @@ export function isPinNotesRequest(payload: unknown): payload is PinNotesRequest 
         return false
     }
     return candidate.paths.every((item: unknown) => typeof item === 'string')
+}
+
+/** 判断是否为合法的打开请求（类型收窄辅助） */
+export function isOpenNoteRequest(payload: unknown): payload is OpenNoteRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { path?: unknown }
+    return typeof candidate.path === 'string' && candidate.path.length > 0
 }

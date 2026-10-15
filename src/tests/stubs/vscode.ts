@@ -14,13 +14,19 @@ const fileContents = new Map<string, string>()
 const directories = new Set<string>()
 /** 配置项：zhai.* 的键值，未配置的键返回调用方给定的默认值 */
 const configValues = new Map<string, unknown>()
+/** 可被 openTextDocument 打开的文档：按 fsPath 登记，未登记则打开失败（模拟文件缺失） */
+const openableDocuments = new Map<string, vscode.TextDocument>()
+/** showTextDocument 的调用记录：按打开顺序保存 fsPath，供用例断言 */
+const openedDocumentPaths: string[] = []
 
-/** 复位全部模块级状态（工作区根、虚拟磁盘、虚拟目录、配置），供 beforeEach 使用 */
+/** 复位全部模块级状态（工作区根、虚拟磁盘、虚拟目录、配置、可打开文档），供 beforeEach 使用 */
 export function resetWorkspaceState(): void {
     workspaceRoot = ''
     fileContents.clear()
     directories.clear()
     configValues.clear()
+    openableDocuments.clear()
+    openedDocumentPaths.length = 0
 }
 
 /** 设置工作区根路径 */
@@ -46,6 +52,16 @@ export function readFileContent(path: string): string | undefined {
 /** 判断虚拟目录是否已被 fs.createDirectory 创建 */
 export function hasDirectory(path: string): boolean {
     return directories.has(path)
+}
+
+/** 登记可被编辑器打开的文档（内容按行传入），供 openTextDocument 解析 */
+export function registerTextDocument(path: string, lines: string[]): void {
+    openableDocuments.set(path, createTextDocument(lines, path))
+}
+
+/** 读取 showTextDocument 打开过的绝对路径序列，供用例断言打开目标 */
+export function readOpenedDocumentPaths(): string[] {
+    return [...openedDocumentPaths]
 }
 
 /** 构造 file 协议的 Uri */
@@ -308,6 +324,10 @@ export const workspace = {
             return Promise.resolve()
         },
     },
+    openTextDocument(uri: vscode.Uri): Promise<vscode.TextDocument> {
+        const document = openableDocuments.get(uri.fsPath)
+        return document === undefined ? Promise.reject(new Error(`ENOENT: ${uri.fsPath}`)) : Promise.resolve(document)
+    },
     asRelativePath(pathOrUri: string | vscode.Uri): string {
         const value = typeof pathOrUri === 'string' ? pathOrUri : pathOrUri.fsPath
         if (workspaceRoot.length > 0 && value.startsWith(workspaceRoot)) {
@@ -327,6 +347,10 @@ export const workspace = {
 
 export const window = {
     activeTextEditor: undefined as vscode.TextEditor | undefined,
+    showTextDocument(document: vscode.TextDocument): Promise<vscode.TextEditor> {
+        openedDocumentPaths.push(document.uri.fsPath)
+        return Promise.resolve(createTextEditor(document))
+    },
     createOutputChannel(name: string): vscode.OutputChannel {
         return {
             name,

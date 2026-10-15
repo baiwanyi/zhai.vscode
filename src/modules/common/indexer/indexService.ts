@@ -216,8 +216,12 @@ export class IndexService {
     }
 
     private toRelativePath(uri: vscode.Uri): string {
-        const root = resolveStorageRoot()
-        return uri.path.startsWith(`${root.path}/`) ? uri.path.slice(root.path.length + 1) : uri.path
+        const rootPath = resolveStorageRoot().path
+        // 大小写容错：文件 Uri 由 root.fsPath 拼接而来（VSCode 的 fsPath 会把盘符小写），而 root.path 保留原始
+        // 大小写，直接比较会误判为「不在存储根内」，进而把绝对路径写进索引，故比较前统一小写
+        return uri.path.toLowerCase().startsWith(`${rootPath.toLowerCase()}/`)
+            ? uri.path.slice(rootPath.length + 1)
+            : uri.path
     }
 
     private baseName(uri: vscode.Uri): string {

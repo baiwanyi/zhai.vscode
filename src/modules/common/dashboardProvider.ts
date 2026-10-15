@@ -1,7 +1,7 @@
 /**
- * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建、置顶设置与宿主命令。
+ * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置与宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传。
- * 关键约束：请求处理为异步流程（新建笔记需落盘 + 索引 + 打开，置顶须先经索引库校验再写宿主偏好），
+ * 关键约束：请求处理为异步流程（新建笔记需落盘 + 索引 + 打开，打开与置顶须先经索引库校验路径），
  * 须 await 结果后再回包；命令入口一律经白名单校验，未登记的命令直接拒绝。
  */
 import * as vscode from 'vscode'
@@ -19,11 +19,11 @@ import type { PinStore } from '../note/pinStore'
 import type { IndexService } from './indexer/indexService'
 import type { DashboardStats } from '../../shared/types/dashboard'
 import type { HostToWebviewMessage } from '../../shared/types/messages'
-import type { PinNotesResult } from '../../shared/types/note'
+import type { OpenNoteResult, PinNotesResult } from '../../shared/types/note'
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
-import { isPinNotesRequest } from '../../shared/types/note'
-import { createAndOpenNote } from '../note/noteService'
+import { isOpenNoteRequest, isPinNotesRequest } from '../../shared/types/note'
+import { createAndOpenNote, openNoteByPath } from '../note/noteService'
 
 export class DashboardViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'zhai.dashboard'
@@ -87,6 +87,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             case 'note/pin': {
                 return this.setPinned(payload)
             }
+            case 'note/open': {
+                return this.openNote(payload)
+            }
             case 'index/rebuild': {
                 void this.indexService.fullRebuild()
                 return Promise.resolve({ started: true })
@@ -128,6 +131,22 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         const pinnedPaths = await this.pins.setPinned(accepted, payload.isPinned)
         logger.info(`置顶状态更新：${payload.isPinned ? '置顶' : '取消置顶'} ${accepted.length} 项`)
         return { pinnedPaths }
+    }
+
+    /**
+     * 打开笔记：以索引库中的相对路径为准，仅接受库内已登记的笔记再交由编辑器展示。
+     * 安全约束：不直接采信前端传入的路径形态，先按索引库回查确认存在，从源头排除目录穿越与任意路径读取。
+     */
+    private async openNote(payload: unknown): Promise<OpenNoteResult> {
+        if (!isOpenNoteRequest(payload)) {
+            throw new Error('note/open 参数非法：path 须为非空字符串')
+        }
+        const [target] = listFilesByPaths(this.db, [payload.path])
+        if (target === undefined) {
+            throw new Error(`笔记不在索引中，无法打开：${payload.path}`)
+        }
+        await openNoteByPath(target.path)
+        return { opened: true }
     }
 
     private post(view: vscode.WebviewView, message: HostToWebviewMessage): void {
