@@ -7,6 +7,7 @@ import { clearSchemaData } from './db/schema'
 import { logger } from './logger'
 import type { IndexService } from './indexer/indexService'
 import type Database from 'better-sqlite3'
+import { createAndOpenNote } from '../note/noteService'
 
 export function registerCommands(
     context: vscode.ExtensionContext,
@@ -16,6 +17,10 @@ export function registerCommands(
     const register = (command: string, handler: () => unknown): void => {
         context.subscriptions.push(vscode.commands.registerCommand(command, handler))
     }
+
+    register('zhai.note.new', () => {
+        void createAndOpenNote(indexService)
+    })
 
     register('zhai.rebuildIndex', () => {
         void indexService.fullRebuild()

@@ -1,21 +1,21 @@
 /**
- * 仪表盘宿主动作：索引重建、缓存清理、打开设置，以及尚未接入协议的入口占位反馈。
- * 复用 ../bridge 走宿主白名单协议；错误与提示分列，避免占位说明覆盖真实失败信息。
+ * 仪表盘宿主动作：新建空笔记、索引重建、缓存清理与打开设置，以及尚未接入协议的入口占位反馈。
+ * 复用 ../bridge 走宿主协议；错误与提示分列，避免占位说明覆盖真实的失败信息。
  * 关键约束：占位提示定时自动消失，定时器随卸载清理；动作进行中记录 pendingAction 阻止重复提交。
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { NoteAction } from '@/shared/types/dashboard'
+import type { CreatedNote } from '@/shared/types/note'
 import { request } from '../../bridge'
 
 /** 占位提示的保留时长 */
 const NOTICE_TIMEOUT_MS = 4000
 
 /** 尚未接入宿主协议的入口 */
-export type PendingTarget = 'add' | 'writing' | 'press'
+export type PendingTarget = 'writing' | 'press'
 
 /** 各占位入口的提示文案 */
 const PENDING_NOTICE: Record<PendingTarget, string> = {
-    add: '新建笔记将在后续版本接入',
     writing: '写作管理将在后续版本接入',
     press: '公众号管理将在后续版本接入',
 }
@@ -30,6 +30,7 @@ export interface DashboardActionsState {
     pendingAction: string | null
     notice: string | null
     actionError: string | null
+    createNote: () => Promise<CreatedNote | null>
     rebuild: () => Promise<void>
     clearCache: () => Promise<void>
     openSettings: () => Promise<void>
@@ -57,6 +58,23 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         },
         [onCompleted],
     )
+
+    /** 新建空笔记：成功后刷新统计并回报提示，返回值供页面选中新条目 */
+    const createNote = useCallback(async (): Promise<CreatedNote | null> => {
+        setPendingAction('create')
+        setActionError(null)
+        try {
+            const created = await request<CreatedNote>('note/create')
+            await onCompleted()
+            setNotice(`已创建笔记：${created.title}`)
+            return created
+        } catch (cause) {
+            setActionError(cause instanceof Error ? cause.message : String(cause))
+            return null
+        } finally {
+            setPendingAction(null)
+        }
+    }, [onCompleted])
 
     const rebuild = useCallback((): Promise<void> => runAction('rebuild', 'index/rebuild'), [runAction])
     const clearCache = useCallback(
@@ -86,5 +104,15 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         return (): void => clearTimeout(timer)
     }, [notice])
 
-    return { pendingAction, notice, actionError, rebuild, clearCache, openSettings, showPending, showNotePending }
+    return {
+        pendingAction,
+        notice,
+        actionError,
+        createNote,
+        rebuild,
+        clearCache,
+        openSettings,
+        showPending,
+        showNotePending,
+    }
 }

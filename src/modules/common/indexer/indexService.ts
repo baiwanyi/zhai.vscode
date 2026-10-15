@@ -137,6 +137,16 @@ export class IndexService {
         }
     }
 
+    /** 立即索引单个文件并广播状态：供主动写入（如新建笔记）后即时收敛列表，跳过防抖队列 */
+    public async indexFile(uri: vscode.Uri): Promise<void> {
+        const row = await this.buildRowFromFile(uri)
+        if (!row) {
+            return
+        }
+        upsertFileRows(this.db, [row])
+        this.statusEmitter.fire(this.getStatus())
+    }
+
     public dispose(): void {
         if (this.debounceTimer) {
             clearTimeout(this.debounceTimer)

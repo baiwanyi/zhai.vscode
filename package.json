@@ -59,6 +59,11 @@
                 "category": "Zhai"
             },
             {
+                "command": "zhai.note.new",
+                "title": "新建笔记",
+                "category": "Zhai"
+            },
+            {
                 "command": "zhai.rebuildIndex",
                 "title": "重建索引",
                 "category": "Zhai"

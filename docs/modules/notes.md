@@ -238,7 +238,7 @@ CREATE TABLE IF NOT EXISTS trash (
 | `zhai.note.openTrash` | 打开回收站 | 查看与恢复已删除笔记 |
 | `zhai.note.togglePin` | 置顶/取消置顶 | 写入 Frontmatter `pinned` |
 
-**Webview 方法**：`note/list`、`note/tags`、`note/backlinks`、`note/revisions`、`note/restore`、`template/list`、`trash/list`、`trash/restore`
+**Webview 方法**：`note/create`（新建空笔记，已实现）、`note/list`、`note/tags`、`note/backlinks`、`note/revisions`、`note/restore`、`template/list`、`trash/list`、`trash/restore`
 
 ---
 

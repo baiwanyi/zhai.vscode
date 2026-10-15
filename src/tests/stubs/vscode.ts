@@ -10,13 +10,16 @@ import type * as vscode from 'vscode'
 let workspaceRoot = ''
 /** 虚拟磁盘内容：fs.readFile 的数据源，未登记的路径读取时抛错（模拟文件失效） */
 const fileContents = new Map<string, string>()
+/** 已创建的虚拟目录：fs.createDirectory 的登记处 */
+const directories = new Set<string>()
 /** 配置项：zhai.* 的键值，未配置的键返回调用方给定的默认值 */
 const configValues = new Map<string, unknown>()
 
-/** 复位全部模块级状态（工作区根、虚拟磁盘、配置），供 beforeEach 使用 */
+/** 复位全部模块级状态（工作区根、虚拟磁盘、虚拟目录、配置），供 beforeEach 使用 */
 export function resetWorkspaceState(): void {
     workspaceRoot = ''
     fileContents.clear()
+    directories.clear()
     configValues.clear()
 }
 
@@ -33,6 +36,16 @@ export function setFileContent(path: string, content: string): void {
 /** 设置 zhai.* 配置项 */
 export function setConfigValue(key: string, value: unknown): void {
     configValues.set(key, value)
+}
+
+/** 读取虚拟磁盘文件内容（未登记返回 undefined），供用例断言写入结果 */
+export function readFileContent(path: string): string | undefined {
+    return fileContents.get(path)
+}
+
+/** 判断虚拟目录是否已被 fs.createDirectory 创建 */
+export function hasDirectory(path: string): boolean {
+    return directories.has(path)
 }
 
 /** 构造 file 协议的 Uri */
@@ -272,12 +285,27 @@ export const Uri: Pick<typeof vscode.Uri, 'file' | 'parse' | 'joinPath' | 'from'
 export const workspace = {
     textDocuments: [] as vscode.TextDocument[],
     fs: {
+        stat(uri: vscode.Uri): Promise<{ type: number; ctime: number; mtime: number; size: number }> {
+            if (!fileContents.has(uri.fsPath)) {
+                return Promise.reject(new Error(`ENOENT: ${uri.fsPath}`))
+            }
+            // 内存态文件统一视为普通文件（FileType.File = 1）
+            return Promise.resolve({ type: 1, ctime: 0, mtime: 0, size: 0 })
+        },
         readFile(uri: vscode.Uri): Promise<Uint8Array> {
             const content = fileContents.get(uri.fsPath)
             if (content === undefined) {
                 return Promise.reject(new Error(`ENOENT: ${uri.fsPath}`))
             }
             return Promise.resolve(new TextEncoder().encode(content))
+        },
+        createDirectory(uri: vscode.Uri): Promise<void> {
+            directories.add(uri.fsPath)
+            return Promise.resolve()
+        },
+        writeFile(uri: vscode.Uri, content: Uint8Array): Promise<void> {
+            fileContents.set(uri.fsPath, new TextDecoder().decode(content))
+            return Promise.resolve()
         },
     },
     asRelativePath(pathOrUri: string | vscode.Uri): string {
