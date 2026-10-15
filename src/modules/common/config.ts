@@ -2,11 +2,16 @@
  * 配置中心：集中读取 zhai.* 配置项，避免各模块散落调用 getConfiguration。
  * 复用 VSCode contributes.configuration 全局/工作区两级机制，路径解析遵循 common.md 第 1.5 节存储根约定。
  */
+import * as os from 'node:os'
+import * as path from 'node:path'
 import * as vscode from 'vscode'
+
+/** 未配置保存目录时使用的用户主目录子目录名 */
+const DEFAULT_STORAGE_DIR = '.zhai'
 
 /** 插件全部配置项的强类型视图 */
 export interface ZhaiConfig {
-    /** 文档保存目录（空 = 工作区根） */
+    /** 文档保存目录（空 = 用户主目录下的 .zhai） */
     rootPath: string
     indexExclude: string[]
     indexDebounceMs: number
@@ -41,15 +46,25 @@ export function getZhaiConfig(): ZhaiConfig {
     }
 }
 
-/** 解析文档保存目录 URI：配置为空时回退到工作区第一个根目录 */
+/**
+ * 规范化用户配置的本地路径：盘符路径统一为反斜杠写法。
+ * 关键约束：Uri.file 仅在第三个字符为反斜杠时才补前导斜杠，正斜杠写法（D:/vault）会产出不带前导
+ * 斜杠的相对路径，被 workspace.fs 以「无法解析具有相对文件路径的文件系统提供程序」拒绝。
+ * 非盘符路径（UNC）保持原样，以免反斜杠化后破坏 authority 解析。
+ */
+function normalizeRootPath(rootPath: string): string {
+    const trimmed = rootPath.trim()
+    return /^[a-zA-Z]:[\\/]/.test(trimmed) ? trimmed.replace(/\//g, '\\') : trimmed
+}
+
+/**
+ * 解析文档保存目录 URI：优先取配置值，未配置时回退到用户主目录下的 .zhai。
+ * 两条分支都产出本地绝对路径后才交给 Uri.file，避免出现 workspace.fs 拒绝的相对路径。
+ */
 export function resolveStorageRoot(): vscode.Uri {
     const { rootPath } = getZhaiConfig()
     if (rootPath.trim().length > 0) {
-        return vscode.Uri.file(rootPath)
+        return vscode.Uri.file(normalizeRootPath(rootPath))
     }
-    const firstFolder = vscode.workspace.workspaceFolders?.[0]
-    if (!firstFolder) {
-        throw new Error('未打开任何工作区，且未配置 zhai.storage.rootPath，无法确定文档保存目录')
-    }
-    return firstFolder.uri
+    return vscode.Uri.file(path.join(os.homedir(), DEFAULT_STORAGE_DIR))
 }

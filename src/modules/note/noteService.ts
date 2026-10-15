@@ -1,9 +1,10 @@
 /**
  * 笔记服务：把空笔记草稿落到存储根、立即纳入索引，并交由编辑器打开。
  * 复用 common 的存储根解析与日志、IndexService 的单文件索引能力；命令面板与 Webview 入口共用同一实现。
- * 关键约束：写入前先判定目标是否存在，同名则重新生成 ID 重试，绝不覆盖既有笔记；
- * 目标路径完全由宿主依据存储根拼装，不接受来自外部的路径参数。
+ * 关键约束：目标 Uri 以存储根 fsPath 显式拼接后交给 Uri.file 构造，不依赖 Uri.joinPath 的平台分支，
+ * 保证交给 workspace.fs 的始终是带 file 协议的绝对路径；写入前先判定存在性，同名重试而非覆盖。
  */
+import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { createNoteDraft } from './noteFactory'
 import type { CreatedNote } from '../../shared/types/note'
@@ -23,6 +24,20 @@ export interface CreatedNoteHandle extends CreatedNote {
     uri: vscode.Uri
 }
 
+/**
+ * 以存储根为基准构造目标 Uri：先确认存储根可解析为本地绝对路径，再交给 path.join + Uri.file 构造。
+ * 关键约束：workspace.fs 只接受带前导斜杠的绝对路径，而 Uri.file 仅在路径为盘符反斜杠写法时才补前导
+ * 斜杠；path.join 在 Windows 下产出反斜杠形式，恰好满足该前提，故不再依赖 Uri.joinPath 的平台分支判断。
+ * 校验前置到存储根，失败时把存储根形态一并带进错误信息，便于定位。
+ */
+function buildNoteUri(root: vscode.Uri, segments: string[]): vscode.Uri {
+    const basePath = root.fsPath
+    if (!path.isAbsolute(basePath)) {
+        throw new Error(`文档保存目录不是绝对本地路径：${basePath}（scheme=${root.scheme} path=${root.path}）`)
+    }
+    return vscode.Uri.file(path.join(basePath, ...segments))
+}
+
 /** 判定目标是否已存在文件：stat 抛错即视为不存在（FileSystem 未提供 exists API） */
 async function isFileExisting(uri: vscode.Uri): Promise<boolean> {
     try {
@@ -36,10 +51,12 @@ async function isFileExisting(uri: vscode.Uri): Promise<boolean> {
 /** 在存储根下创建一篇空笔记并立即索引 */
 export async function createNote(indexer: NoteIndexer): Promise<CreatedNoteHandle> {
     const root = resolveStorageRoot()
+    logger.debug(`笔记存储根解析：scheme=${root.scheme} path=${root.path} fsPath=${root.fsPath}`)
     for (let attempt = 0; attempt < MAX_CREATE_ATTEMPTS; attempt += 1) {
         const draft = createNoteDraft(new Date())
-        const directory = vscode.Uri.joinPath(root, draft.directory)
-        const target = vscode.Uri.joinPath(directory, draft.fileName)
+        const directorySegments = draft.directory.split('/')
+        const directory = buildNoteUri(root, directorySegments)
+        const target = buildNoteUri(root, [...directorySegments, draft.fileName])
         if (await isFileExisting(target)) {
             logger.debug(`笔记文件名冲突，重新生成：${draft.path}`)
             continue

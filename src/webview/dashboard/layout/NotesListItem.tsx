@@ -1,11 +1,12 @@
 /**
- * 笔记条目：标题与修改时间，选中态以描边凸显，紧凑密度下省略时间行。
- * 复用 @/components/ui 的 item 与 dropdown-menu、webview 公共的相对时间格式化。
- * 关键约束：更多操作按钮须阻止冒泡，避免展开菜单时连带触发条目选中。
+ * 笔记条目：仅呈现标题，多选态前置复选圈，普通态在悬停或键盘聚焦时露出更多操作。
+ * 复用 @/components/ui 的 item、checkbox 与 dropdown-menu，以及 webview 公共的相对时间格式化。
+ * 关键约束：更多操作按钮默认隐藏，仅在悬停或焦点进入本条目时显现；复选圈点击须阻止冒泡以免重复切换。
  */
 import { cn } from 'cn'
 import { Ellipsis, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -13,62 +14,77 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item'
+import { Item, ItemActions, ItemContent, ItemTitle } from '@/components/ui/item'
 import type { NoteAction, RecentFile } from '@/shared/types/dashboard'
 import type { JSX } from 'react'
-import { formatRelativeTime } from '../../utils'
 
 interface NotesListItemProps {
     note: RecentFile
     isActive: boolean
-    isCompact: boolean
+    isSelecting: boolean
+    isSelected: boolean
     onSelect: () => void
     onInvoke: (action: NoteAction) => void
+    onToggleSelected: () => void
 }
 
-export function NotesListItem({ note, isActive, isCompact, onSelect, onInvoke }: NotesListItemProps): JSX.Element {
-    const time = formatRelativeTime(note.mtime)
-    const hasTime = !isCompact && time !== ''
-
+export function NotesListItem({
+    note,
+    isActive,
+    isSelecting,
+    isSelected,
+    onSelect,
+    onInvoke,
+    onToggleSelected,
+}: NotesListItemProps): JSX.Element {
     return (
         <Item
             variant={isActive ? 'outline' : 'default'}
-            size={isCompact ? 'xs' : 'sm'}
-            className={cn('cursor-pointer hover:bg-muted', isCompact ? 'rounded-md' : 'rounded-full')}
+            size="sm"
+            className="group/item cursor-pointer rounded-full hover:bg-muted"
             aria-current={isActive ? 'true' : undefined}
-            onClick={onSelect}
+            onClick={isSelecting ? onToggleSelected : onSelect}
         >
+            {isSelecting ? (
+                <Checkbox
+                    checked={isSelected}
+                    className="rounded-full"
+                    aria-label={`选择 ${note.title}`}
+                    onClick={(event) => {
+                        event.stopPropagation()
+                    }}
+                    onCheckedChange={onToggleSelected}
+                />
+            ) : null}
             <ItemContent>
                 <ItemTitle className={cn(isActive && 'font-semibold')}>{note.title}</ItemTitle>
-                {hasTime ? <ItemDescription>{time}</ItemDescription> : null}
             </ItemContent>
-            <ItemActions>
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button
-                            size="icon-xs"
-                            variant="ghost"
-                            className="rounded-full"
-                            title="更多操作"
-                            aria-label={`${note.title} 的更多操作`}
-                            onClick={(event) => {
-                                event.stopPropagation()
-                            }}
-                        >
-                            <Ellipsis />
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
-                        <DropdownMenuGroup>
-                            <DropdownMenuItem onSelect={() => onInvoke('open')}>打开</DropdownMenuItem>
-                            <DropdownMenuItem variant="destructive" onSelect={() => onInvoke('delete')}>
-                                <Trash2 />
-                                删除
-                            </DropdownMenuItem>
-                        </DropdownMenuGroup>
-                    </DropdownMenuContent>
-                </DropdownMenu>
-            </ItemActions>
+            {isSelecting ? null : (
+                <ItemActions className="opacity-0 transition-opacity group-hover/item:opacity-100 focus-within:opacity-100">
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button
+                                size="icon-xs"
+                                variant="ghost"
+                                className="rounded-full"
+                                title="更多操作"
+                                aria-label={`${note.title} 的更多操作`}
+                            >
+                                <Ellipsis />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                            <DropdownMenuGroup>
+                                <DropdownMenuItem onSelect={() => onInvoke('open')}>打开</DropdownMenuItem>
+                                <DropdownMenuItem variant="destructive" onSelect={() => onInvoke('delete')}>
+                                    <Trash2 />
+                                    删除
+                                </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </ItemActions>
+            )}
         </Item>
     )
 }

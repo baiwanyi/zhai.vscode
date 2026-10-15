@@ -1,7 +1,10 @@
 /**
- * noteService 单元测试：覆盖空笔记落盘位置、目录创建、写入内容与索引触发。
- * 虚拟磁盘与目录登记由 vscode 测试桩承接，不触达真实文件系统。
+ * noteService 单元测试：覆盖空笔记落盘位置（含默认存储根回退）、目录创建、写入内容与索引触发。
+ * 虚拟磁盘与目录登记由 vscode 测试桩承接，不触达真实文件系统；
+ * 断言路径统一用 node:path 规范化，与实现一样规避分隔符差异。
  */
+import * as os from 'node:os'
+import * as path from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { hasDirectory, readFileContent, resetWorkspaceState, setConfigValue } from '@/tests/stubs/vscode'
 import { createNote } from './noteService'
@@ -32,21 +35,21 @@ describe('createNote', () => {
         const created = await createNote(indexer)
         const directory = created.path.slice(0, created.path.lastIndexOf('/'))
         expect(created.path).toMatch(/^notes\/\d{6}\/[0-9a-f-]{36}\.md$/)
-        expect(hasDirectory(`${STORAGE_ROOT}/${directory}`)).toBe(true)
-        expect(readFileContent(`${STORAGE_ROOT}/${created.path}`)).toContain('# 未命名笔记')
+        expect(hasDirectory(path.join(STORAGE_ROOT, directory))).toBe(true)
+        expect(readFileContent(path.join(STORAGE_ROOT, created.path))).toContain('# 未命名笔记')
     })
 
     it('落盘后立即索引，索引路径与返回路径一致', async () => {
         const { indexer, indexed } = createIndexer()
         const created = await createNote(indexer)
-        expect(indexed).toEqual([`${STORAGE_ROOT}/${created.path}`])
+        expect(indexed).toEqual([path.join(STORAGE_ROOT, created.path)])
     })
 
     it('返回标题与写入内容一致', async () => {
         const { indexer } = createIndexer()
         const created = await createNote(indexer)
         expect(created.title).toBe('未命名笔记')
-        expect(readFileContent(`${STORAGE_ROOT}/${created.path}`)).toContain(`title: "${created.title}"`)
+        expect(readFileContent(path.join(STORAGE_ROOT, created.path))).toContain(`# ${created.title}`)
     })
 
     it('连续创建互不覆盖且路径不同', async () => {
@@ -54,8 +57,15 @@ describe('createNote', () => {
         const first = await createNote(indexer)
         const second = await createNote(indexer)
         expect(first.path).not.toBe(second.path)
-        expect(readFileContent(`${STORAGE_ROOT}/${first.path}`)).toBeDefined()
-        expect(readFileContent(`${STORAGE_ROOT}/${second.path}`)).toBeDefined()
+        expect(readFileContent(path.join(STORAGE_ROOT, first.path))).toBeDefined()
+        expect(readFileContent(path.join(STORAGE_ROOT, second.path))).toBeDefined()
         expect(indexed).toHaveLength(2)
+    })
+
+    it('未配置保存目录时回退到用户主目录下的 .zhai', async () => {
+        resetWorkspaceState()
+        const { indexer } = createIndexer()
+        const created = await createNote(indexer)
+        expect(created.uri.fsPath).toBe(path.join(os.homedir(), '.zhai', ...created.path.split('/')))
     })
 })

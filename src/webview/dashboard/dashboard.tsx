@@ -17,8 +17,18 @@ import type { JSX } from 'react'
 
 export function Dashboard(): JSX.Element {
     const { stats, status, error, reload } = useDashboardStats()
-    const { notes, modules, viewMode, activeModules, isFiltered, setViewMode, toggleModule, resetFilters } =
-        useNotesList(stats)
+    const {
+        notes,
+        modules,
+        activeModules,
+        isFiltered,
+        isSelecting,
+        selectedPaths,
+        toggleModule,
+        resetFilters,
+        toggleSelecting,
+        toggleSelected,
+    } = useNotesList(stats)
     const {
         pendingAction,
         notice,
@@ -67,16 +77,19 @@ export function Dashboard(): JSX.Element {
                             error={error}
                             isFiltered={isFiltered}
                             activeId={activeId}
-                            viewMode={viewMode}
                             activeModules={activeModules}
+                            isSelecting={isSelecting}
+                            selectedPaths={selectedPaths}
                             onSelect={(path) => {
                                 setActiveId(path)
                                 showNotePending('open')
                             }}
                             onInvoke={(_path, action) => showNotePending(action)}
-                            onViewModeChange={setViewMode}
                             onToggleModule={toggleModule}
                             onResetFilters={resetFilters}
+                            onToggleSelecting={toggleSelecting}
+                            onToggleSelected={toggleSelected}
+                            onDeleteSelected={() => showNotePending('delete')}
                         />
                     </div>
                 </ScrollArea>

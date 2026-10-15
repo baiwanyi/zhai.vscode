@@ -1,6 +1,6 @@
 /**
  * noteFactory 单元测试：覆盖 ID 格式与不可预测性、年月目录规则、空笔记内容与索引解析闭环。
- * 全程使用本地时间构造日期，避免时区差异导致断言漂移；用真实 parseFileMeta 验证内容可被索引。
+ * 全程使用本地时间构造日期，避免时区差异导致断言漂移；用真实 parseFileMeta 验证标题可从一级标题提取。
  */
 import { describe, expect, it } from 'vitest'
 import { buildNoteContent, createNoteDraft, DEFAULT_NOTE_TITLE, generateNoteId } from './noteFactory'
@@ -37,8 +37,9 @@ describe('createNoteDraft', () => {
         expect(createNoteDraft(new Date(2026, 0, 5)).directory).toBe('notes/202601')
     })
 
-    it('内容可被索引解析出标题、空标签与非零字数', () => {
+    it('不写 Frontmatter title，标题由一级标题提取', () => {
         const draft = createNoteDraft(new Date(2026, 9, 15, 10, 30))
+        expect(draft.content).not.toContain('title:')
         const meta = parseFileMeta(draft.content, draft.fileName)
         expect(meta.title).toBe(DEFAULT_NOTE_TITLE)
         expect(meta.tags).toEqual([])
@@ -51,7 +52,6 @@ describe('buildNoteContent', () => {
     it('含 Frontmatter 区块、一级标题与采集来源', () => {
         const content = buildNoteContent('会议记录', new Date(2026, 9, 15, 10, 30))
         expect(content.startsWith('---\n')).toBe(true)
-        expect(content).toContain('title: "会议记录"')
         expect(content).toContain('source: manual')
         expect(content).toContain('# 会议记录')
     })

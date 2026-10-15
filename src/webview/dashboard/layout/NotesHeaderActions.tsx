@@ -1,9 +1,9 @@
 /**
- * 笔记列表标题行操作：视图密度切换与按模块筛选。
- * 复用 @/components/ui 的 toggle-group 与 dropdown-menu；筛选与密度状态经回调上抛。
- * 关键约束：密度为受控单选值，筛选菜单项须置于 DropdownMenuGroup 内。
+ * 笔记列表标题行操作：非多选态提供按模块筛选与进入多选，多选态只提供退出。
+ * 复用 @/components/ui 的 dropdown-menu 与 button；状态经回调上抛，组件自身不持有。
+ * 关键约束：筛选菜单项须置于 DropdownMenuGroup 内；多选态隐藏筛选，避免两个模式的操作相互干扰。
  */
-import { AlignJustify, Funnel, List } from 'lucide-react'
+import { Funnel, ListChecks, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
     DropdownMenu,
@@ -15,50 +15,45 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import type { ModuleStat, NotesViewMode } from '@/shared/types/dashboard'
+import type { ModuleStat } from '@/shared/types/dashboard'
 import type { JSX } from 'react'
 
 interface NotesHeaderActionsProps {
-    viewMode: NotesViewMode
     modules: ModuleStat[]
     activeModules: string[]
-    onViewModeChange: (mode: NotesViewMode) => void
+    isSelecting: boolean
     onToggleModule: (name: string) => void
     onResetFilters: () => void
+    onToggleSelecting: () => void
 }
 
 export function NotesHeaderActions({
-    viewMode,
     modules,
     activeModules,
-    onViewModeChange,
+    isSelecting,
     onToggleModule,
     onResetFilters,
+    onToggleSelecting,
 }: NotesHeaderActionsProps): JSX.Element {
+    if (isSelecting) {
+        return (
+            <Button
+                size="icon-sm"
+                variant="secondary"
+                className="rounded-full"
+                title="退出多选"
+                aria-label="退出多选"
+                onClick={onToggleSelecting}
+            >
+                <X />
+            </Button>
+        )
+    }
+
     const isFiltered = activeModules.length > 0
 
     return (
         <div className="flex items-center gap-1">
-            <ToggleGroup
-                type="single"
-                size="sm"
-                variant="outline"
-                value={viewMode}
-                aria-label="列表密度"
-                onValueChange={(value: string) => {
-                    if (value === 'comfortable' || value === 'compact') {
-                        onViewModeChange(value)
-                    }
-                }}
-            >
-                <ToggleGroupItem value="comfortable" title="舒适模式" aria-label="舒适模式">
-                    <List />
-                </ToggleGroupItem>
-                <ToggleGroupItem value="compact" title="紧凑模式" aria-label="紧凑模式">
-                    <AlignJustify />
-                </ToggleGroupItem>
-            </ToggleGroup>
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Button
@@ -100,6 +95,16 @@ export function NotesHeaderActions({
                     ) : null}
                 </DropdownMenuContent>
             </DropdownMenu>
+            <Button
+                size="icon-sm"
+                variant="ghost"
+                className="rounded-full"
+                title="多选"
+                aria-label="多选"
+                onClick={onToggleSelecting}
+            >
+                <ListChecks />
+            </Button>
         </div>
     )
 }
