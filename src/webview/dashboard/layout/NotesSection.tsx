@@ -56,11 +56,11 @@ export function NotesSection({
 
     return (
         <Card size="sm" className="ring-0">
-            <CardHeader className="px-0">
+            <CardHeader className="px-0 items-center">
                 <CardTitle>
                     {isSelecting ? (selectedCount > 0 ? `已选择 ${selectedCount} 个笔记` : '选择笔记') : '笔记列表'}
                 </CardTitle>
-                <CardAction>
+                <CardAction className="row-span-1">
                     <NotesHeaderActions
                         modules={modules}
                         activeModules={activeModules}
