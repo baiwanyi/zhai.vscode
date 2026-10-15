@@ -1,5 +1,6 @@
 /**
- * 仪表盘页面：顶部操作区固定，滚动区依次呈现概览槽位、功能入口与笔记列表，多选操作栏贴底。
+ * 仪表盘页面：顶部操作区固定，滚动区依次呈现概览槽位、功能入口与笔记列表，多选操作栏贴底；
+ * 滚动区顶部叠一层由背景色到透明的渐变遮罩，使内容逼近固定操作区时淡出，避免硬切。
  * 数据与动作经 useDashboardStats / useNotesList / useDashboardActions 三层 hook 下发，页面只做组合；
  * 操作结果统一由 useDashboardActions 经 sonner 反馈，页面只负责挂载一次 Toaster。
  * 交互约束：重建索引期间由统计 hook 轮询收敛按钮态；选中条目即按 path 打开笔记，
@@ -69,8 +70,8 @@ export function Dashboard(): JSX.Element {
     }, [createNote, setActiveId])
 
     return (
-        <div className="flex h-screen flex-col" onContextMenu={(event) => event.preventDefault()}>
-            <div className="p-3">
+        <div className="flex h-screen flex-col pt-3" onContextMenu={(event) => event.preventDefault()}>
+            <div className="px-3">
                 <DashboardTopBar
                     isBusy={pendingAction !== null}
                     isRebuilding={stats?.isRebuilding === true}
@@ -80,7 +81,7 @@ export function Dashboard(): JSX.Element {
                     onOpenSettings={() => void openSettings()}
                 />
             </div>
-            <div className="min-h-0 flex-1">
+            <div className="relative min-h-0 flex-1 pt-3">
                 <ScrollArea className="h-full">
                     <div className="flex flex-col gap-3 p-3">
                         <DashboardSlots />
@@ -118,6 +119,7 @@ export function Dashboard(): JSX.Element {
                         />
                     </div>
                 </ScrollArea>
+                <div className="pointer-events-none absolute inset-x-0 top-0 h-3 bg-linear-to-b from-background to-transparent" />
             </div>
             {isSelecting && selectedPaths.length > 0 ? (
                 <NotesSelectionBar

@@ -54,6 +54,16 @@ export function NotesHeaderActions({
 
     return (
         <div className="flex items-center gap-1">
+            <Button
+                size="icon-sm"
+                variant="ghost"
+                className="rounded-full"
+                title="多选"
+                aria-label="多选"
+                onClick={onToggleSelecting}
+            >
+                <ListChecks />
+            </Button>
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Button
@@ -95,16 +105,6 @@ export function NotesHeaderActions({
                     ) : null}
                 </DropdownMenuContent>
             </DropdownMenu>
-            <Button
-                size="icon-sm"
-                variant="ghost"
-                className="rounded-full"
-                title="多选"
-                aria-label="多选"
-                onClick={onToggleSelecting}
-            >
-                <ListChecks />
-            </Button>
         </div>
     )
 }

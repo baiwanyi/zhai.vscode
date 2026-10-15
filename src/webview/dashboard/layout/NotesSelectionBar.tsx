@@ -19,8 +19,9 @@ interface NotesSelectionBarProps {
 
 export function NotesSelectionBar({ isAllSelectedPinned, onTogglePin, onDelete }: NotesSelectionBarProps): JSX.Element {
     return (
-        <ButtonGroup className="w-full">
-            <Button size="default" variant="ghost" className="h-9 flex-1 text-sm text-foreground" onClick={onTogglePin}>
+        <ButtonGroup className="relative w-full">
+            <div className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-linear-to-b form-transparent to-background border-b border-muted" />
+            <Button size="default" variant="ghost" className="h-9 flex-1 text-foreground" onClick={onTogglePin}>
                 {isAllSelectedPinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
                 {isAllSelectedPinned ? '取消置顶' : '置顶'}
             </Button>
@@ -28,7 +29,7 @@ export function NotesSelectionBar({ isAllSelectedPinned, onTogglePin, onDelete }
             <Button
                 size="default"
                 variant="ghost"
-                className="h-9 flex-1 text-sm text-destructive hover:text-destructive"
+                className="h-9 flex-1 text-destructive hover:text-destructive"
                 onClick={onDelete}
             >
                 <Trash2 className="size-4" />

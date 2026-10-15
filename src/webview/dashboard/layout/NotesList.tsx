@@ -55,7 +55,7 @@ export function NotesList({
                 <section className="flex flex-col gap-2">
                     <Collapsible defaultOpen>
                         <CollapsibleTrigger className="group/pin flex w-full cursor-pointer items-center gap-1 px-1 outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50">
-                            <span className="text-xs text-muted-foreground">置顶</span>
+                            <span className="text-sm text-muted-foreground">置顶</span>
                             <ChevronDown className="size-4 transition-transform group-data-[state=closed]/pin:-rotate-90" />
                         </CollapsibleTrigger>
                         <CollapsibleContent className="pt-2">
