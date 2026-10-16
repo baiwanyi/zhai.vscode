@@ -31,7 +31,7 @@ export function AiChatHeader({
     onNewSession,
 }: AiChatHeaderProps): JSX.Element {
     return (
-        <header className="flex items-start justify-between gap-2 px-3 py-2.5">
+        <header className="flex items-start justify-between gap-2 mx-3 py-2.5  border-b border-border">
             <AiChatSessionMeta title={title} runtime={runtime} />
             <div className="flex shrink-0 items-center gap-1">
                 <AiChatHistoryMenu

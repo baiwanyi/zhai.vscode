@@ -8,7 +8,6 @@
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机；交互约束：生成期间禁用发送并显示停止按钮。
  */
 import { useEffect } from 'react'
-import { Separator } from '@/components/ui/separator'
 import { useAiChatCommands } from './hooks/useAiChatCommands'
 import { useAiChatContexts } from './hooks/useAiChatContexts'
 import { useAiChatHistory } from './hooks/useAiChatHistory'
@@ -78,7 +77,6 @@ export function AiChat(): JSX.Element {
                 onDeleteSession={(id) => void deleteSession(id)}
                 onNewSession={() => void startNewSession()}
             />
-            <Separator />
             <div className="min-h-0 flex-1">
                 <AiChatMessageList
                     messages={messages}

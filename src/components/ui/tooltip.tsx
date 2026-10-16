@@ -2,6 +2,9 @@
  * 文字提示：悬停或聚焦时补充说明控件含义。
  * 复用约定：基于 radix-ui 构建，样式经 cn 合并主题令牌。
  * 关键约束：使用前须有 TooltipProvider 包裹；仅承载短文本，禁止放入需要点击的元素或长表单。
+ * 维护提示：箭头描边在本文件的 Arrow 类上声明（只画外侧两条边，宽度取 1.5px 以补偿 45° 斜线的抗锯齿变细）；
+ * radix 的 Arrow 外包了一层 span 并按方位旋转，调用处以直接子选择器覆盖箭头不会命中，箭头样式只能改本文件；
+ * CLI 重装会覆盖本文件，覆盖后需补回。
  */
 'use client'
 
@@ -39,7 +42,7 @@ function TooltipContent({
                 {...props}
             >
                 {children}
-                <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px] bg-foreground fill-foreground" />
+                <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%-1px)] rotate-45 rounded-xs border-r-[1.5px] border-b-[1.5px] border-border bg-foreground fill-foreground" />
             </TooltipPrimitive.Content>
         </TooltipPrimitive.Portal>
     )

@@ -37,6 +37,12 @@
     --color-sidebar-primary: var(--sidebar-primary);
     --color-sidebar-foreground: var(--sidebar-foreground);
     --color-sidebar: var(--sidebar);
+    /* 活动栏令牌：右侧分区导航栏按 VSCode 原生活动栏配色，值定义在文件末尾的桥接段 */
+    --color-activity-bar: var(--activity-bar);
+    --color-activity-bar-foreground: var(--activity-bar-foreground);
+    --color-activity-bar-inactive-foreground: var(--activity-bar-inactive-foreground);
+    --color-activity-bar-active-background: var(--activity-bar-active-background);
+    --color-activity-bar-hover: var(--activity-bar-hover);
     --color-chart-5: var(--chart-5);
     --color-chart-4: var(--chart-4);
     --color-chart-3: var(--chart-3);
@@ -128,6 +134,8 @@
     /* ── 字体与阴影 ── */
     --font-ui: var(--vscode-font-family, sans-serif);
     --font-code: var(--vscode-editor-font-family, monospace);
+    /* UI 字号：随 VSCode 界面字号设置变化，浮层类组件（如悬浮提示）用它替代固定档位 */
+    --font-size-ui: var(--vscode-font-size, 13px);
     --widget-shadow: var(--vscode-widget-shadow, 0 2px 8px rgb(0 0 0 / 36%));
     /* 图表色直接复用 VSCode 图表配色 */
     --chart-1: var(--vscode-charts-blue, #4ea1ff);
@@ -143,6 +151,17 @@
     --sidebar-accent-foreground: var(--vscode-foreground, #cccccc);
     --sidebar-border: var(--vscode-sideBar-border, var(--vscode-panel-border, rgb(128 128 128 / 35%)));
     --sidebar-ring: var(--vscode-focusBorder, #007fd4);
+    /* ── 活动栏导航栏：与 VSCode 原生活动栏同源，主题未定义该组变量时退回侧栏与前景色 ── */
+    --activity-bar: var(--vscode-activityBar-background, var(--vscode-sideBar-background, #1f1f1f));
+    --activity-bar-foreground: var(--vscode-activityBar-foreground, var(--vscode-foreground, #cccccc));
+    --activity-bar-inactive-foreground: var(
+        --vscode-activityBar-inactiveForeground,
+        var(--vscode-descriptionForeground, #9d9d9d)
+    );
+    /* 激活底色：主题未定义 activityBar.activeBackground 时退回 VSCode 暗色主题的活动栏激活底色 */
+    --activity-bar-active-background: var(--vscode-activityBar-activeBackground, #2a2d2e);
+    /* 悬停底色：取 VSCode 列表悬停色（活动栏图标悬停同源），回退值为 VSCode 暗色主题默认 #2a2d2e */
+    --activity-bar-hover: var(--vscode-list-hoverBackground, #2a2d2e);
     /* VSCode 无圆角变量，保持 shadcn 默认 */
     --radius: 0.625rem;
 }
