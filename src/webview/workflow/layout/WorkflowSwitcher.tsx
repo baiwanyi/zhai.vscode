@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { WorkflowContextState } from '@/shared/types/workflow'
 import type { JSX } from 'react'
-import { MODULE_WORKFLOW, readModuleLabel } from '../routing'
+import { MODULE_WORKFLOW, readModuleLabel } from '../core/routing'
 
 /** 公众号管理模块键：仅用于区分入口图标 */
 const WECHAT_MODULE_KEY = 'wechat'

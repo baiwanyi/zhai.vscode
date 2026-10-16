@@ -14,9 +14,9 @@ import type {
     WorkflowContextState,
     WorkflowId,
 } from '@/shared/types/workflow'
-import type { WorkflowResolveReason } from '../routing'
+import type { WorkflowResolveReason } from '../core/routing'
 import { onState, request } from '../../bridge'
-import { contextFingerprint, resolveWorkflow } from '../routing'
+import { contextFingerprint, resolveWorkflow } from '../core/routing'
 
 /** 宿主未响应前的默认事实：无场景、无模块、未选定，解析结果落到初始页 */
 const INITIAL_CONTEXT: WorkflowContextState = {

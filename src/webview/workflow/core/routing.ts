@@ -7,10 +7,11 @@
 import { ROOT_MODULE_KEY } from '@/shared/types/workflow'
 import type { WorkflowContextState, WorkflowId, WorkflowSceneKind } from '@/shared/types/workflow'
 
-/** 模块 → 工作流页面：press（写作管理）复用现有 AI 对话页，wechat（公众号管理）暂用占位页 */
+/** 模块 → 工作流页面：已接入模块各用 layout/ 下的专属页面（页面内部再组合 AI 对话等能力），未登记模块回落到占位页 */
 export const MODULE_WORKFLOW: Readonly<Record<string, WorkflowId>> = {
-    press: 'chat',
-    wechat: 'placeholder',
+    press: 'press',
+    wechat: 'wechat',
+    notes: 'note',
 }
 
 /** 模块 → 模块标题：占位页与初始页据此区分模块，未登记的模块回退显示模块键本身 */
@@ -25,9 +26,9 @@ export const MODULE_LABEL: Readonly<Record<string, string>> = {
 /** 初始页标识：未选定模块时的落点，同时是模块选择入口（宿主据此决定是否展示切换浮层） */
 export const HOME_WORKFLOW: WorkflowId = 'home'
 
-/** 场景 → 工作流页面：笔记编辑场景用占位页，无场景（无编辑器）用初始页 */
+/** 场景 → 工作流页面：笔记编辑场景进笔记页，无场景（无编辑器）进初始页 */
 export const SCENE_WORKFLOW: Readonly<Record<WorkflowSceneKind, WorkflowId>> = {
-    editorNote: 'placeholder',
+    editorNote: 'note',
     idle: HOME_WORKFLOW,
 }
 
