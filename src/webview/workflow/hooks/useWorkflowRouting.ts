@@ -1,21 +1,28 @@
 /**
  * 工作流路由事实：初次拉取宿主快照，随后跟随 workflow 通道广播更新，并维护用户手动覆盖。
  * 复用 ../../bridge 的请求与状态订阅，收窄逻辑取自 shared/types/workflow。
- * 关键约束：覆盖与生成它的场景指纹绑定，场景事实任一项变化即自动作废，避免长期压住场景默认；
- * 宿主未就绪（或浏览器预览环境）时保留默认场景，页面照常可用。
+ * 关键约束：覆盖与生成它的场景指纹绑定，场景事实任一项变化即自动作废；
+ * 模块选定与清除的失败向上抛出，由页面就地提示，不在本层吞掉；
+ * 宿主未就绪（或浏览器预览环境）时保留默认事实，页面照常可用。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { isWorkflowContextState, ROOT_MODULE_KEY } from '@/shared/types/workflow'
-import type { WorkflowContextState, WorkflowId } from '@/shared/types/workflow'
+import type {
+    OpenWorkflowRequest,
+    OpenWorkflowResult,
+    ResetWorkflowResult,
+    WorkflowContextState,
+    WorkflowId,
+} from '@/shared/types/workflow'
 import type { WorkflowResolveReason } from '../routing'
 import { onState, request } from '../../bridge'
 import { contextFingerprint, resolveWorkflow } from '../routing'
 
-/** 宿主未响应前的默认事实：无场景，解析结果回落到对话页 */
+/** 宿主未响应前的默认事实：无场景、无模块、未选定，解析结果落到初始页 */
 const INITIAL_CONTEXT: WorkflowContextState = {
     scene: 'idle',
     module: ROOT_MODULE_KEY,
-    requestedModule: null,
+    selectedModule: null,
 }
 
 /** 用户覆盖：连同生成时的场景指纹保存，指纹不匹配即视为过期 */
@@ -29,8 +36,12 @@ export interface WorkflowRoutingState {
     workflowId: WorkflowId
     /** 解析命中来源，供排查与后续轻提示使用 */
     reason: WorkflowResolveReason
-    /** 宿主路由事实是否已就绪：未就绪时宿主层渲染骨架，避免先闪出对话页 */
+    /** 宿主路由事实是否已就绪：未就绪时宿主层渲染骨架，避免先闪出页面 */
     isReady: boolean
+    /** 选定模块：宿主保存后广播新事实，本层只转发请求并向上抛出失败 */
+    openModule: (module: string) => Promise<void>
+    /** 清除模块选定：回到初始页 */
+    resetModule: () => Promise<void>
     setOverride: (workflowId: WorkflowId) => void
 }
 
@@ -48,7 +59,7 @@ export function useWorkflowRouting(): WorkflowRoutingState {
                     setContext(snapshot)
                 }
             } catch {
-                // 宿主未就绪时按默认场景渲染，待广播补齐；此处不打断页面
+                // 宿主未就绪时按默认事实渲染，待广播补齐；此处不打断页面
             } finally {
                 if (!isDisposed) {
                     setIsReady(true)
@@ -78,6 +89,15 @@ export function useWorkflowRouting(): WorkflowRoutingState {
         [fingerprint],
     )
 
+    const openModule = useCallback(async (module: string): Promise<void> => {
+        const payload: OpenWorkflowRequest = { module }
+        await request<OpenWorkflowResult>('workflow/open', payload)
+    }, [])
+
+    const resetModule = useCallback(async (): Promise<void> => {
+        await request<ResetWorkflowResult>('workflow/reset')
+    }, [])
+
     const resolved = useMemo(() => resolveWorkflow({ context, override: activeOverride }), [context, activeOverride])
 
     return {
@@ -85,6 +105,8 @@ export function useWorkflowRouting(): WorkflowRoutingState {
         workflowId: resolved.workflowId,
         reason: resolved.reason,
         isReady,
+        openModule,
+        resetModule,
         setOverride,
     }
 }

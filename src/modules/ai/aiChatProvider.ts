@@ -9,7 +9,9 @@ import * as vscode from 'vscode'
 import type { AiChatService } from './chatService'
 import type { WorkflowRouter } from './workflowRouter'
 import type { HostToWebviewMessage, StreamMessage } from '../../shared/types/messages'
+import type { OpenWorkflowResult, ResetWorkflowResult } from '../../shared/types/workflow'
 import { isRequestMessage } from '../../shared/types/messages'
+import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { logger } from '../common/logger'
 import { WEBVIEW_ALLOWED_COMMANDS } from '../common/webviewCommands'
 import { buildWebviewHtml } from '../common/webviewHtml'
@@ -105,7 +107,13 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 return this.service.getRuntimeInfo()
             }
             case 'workflow/state': {
-                return this.workflowRouter.consumeContext()
+                return this.workflowRouter.getContext()
+            }
+            case 'workflow/open': {
+                return this.openWorkflow(payload)
+            }
+            case 'workflow/reset': {
+                return this.resetWorkflow()
             }
             case 'ai/send': {
                 const { conversationId, content } = readSendPayload(payload)
@@ -158,18 +166,30 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         }
     }
 
-    /**
-     * 广播路由事实（场景切换或入口跳转）。
-     * 关键约束：无视图时不消费意图，留给面板挂载后的首次拉取，避免意图在无人接收时被丢弃。
-     */
+    /** 广播路由事实（场景切换或模块选定变更）：面板据此重新解析并换页 */
     private broadcastWorkflowChanged(): void {
         if (this.views.size === 0) {
             return
         }
-        const context = this.workflowRouter.consumeContext()
+        const context = this.workflowRouter.getContext()
         for (const view of this.views) {
             this.post(view, { type: 'state', channel: 'workflow', payload: context })
         }
+    }
+
+    /** 选定模块：初始页与仪表盘入口共用同一状态，结果由广播下发，本层不判定场景 */
+    private openWorkflow(payload: unknown): OpenWorkflowResult {
+        if (!isOpenWorkflowRequest(payload)) {
+            throw new Error('workflow/open 参数非法：module 须为非空模块键')
+        }
+        this.workflowRouter.selectModule(payload.module)
+        return { opened: true }
+    }
+
+    /** 清除模块选定：面板回到初始页 */
+    private resetWorkflow(): ResetWorkflowResult {
+        this.workflowRouter.clearModule()
+        return { cleared: true }
     }
 
     private post(view: vscode.WebviewView, message: HostToWebviewMessage): void {

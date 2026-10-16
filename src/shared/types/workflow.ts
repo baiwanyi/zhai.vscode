@@ -6,11 +6,11 @@
  * 前端回传的模块标识一律经 isOpenWorkflowRequest 收窄后再用，不得把路径形态字符串透传给宿主命令。
  */
 
-/** 工作流页面标识：chat 为现有 AI 对话页，placeholder 为尚未接入专属页面的场景占位页 */
-export type WorkflowId = 'chat' | 'placeholder'
+/** 工作流页面标识：chat 为 AI 对话页，placeholder 为模块占位页，home 为未选择模块时的初始页 */
+export type WorkflowId = 'chat' | 'placeholder' | 'home'
 
-/** 进入场景：module 为模块入口跳转，editorNote 为聚焦在笔记文档上，idle 为无场景 */
-export type WorkflowSceneKind = 'module' | 'editorNote' | 'idle'
+/** 进入场景：editorNote 为聚焦在笔记文档上，idle 为无编辑器或索引外文档 */
+export type WorkflowSceneKind = 'idle' | 'editorNote'
 
 /** 无一级目录的顶层文件归入的模块键（与宿主侧读法同值） */
 export const ROOT_MODULE_KEY = 'root'
@@ -23,11 +23,11 @@ export interface WorkflowContextState {
     scene: WorkflowSceneKind
     /** 当前模块键：相对存储根的一级目录名，顶层文件为 root */
     module: string
-    /** 模块入口一次性指定的模块，未指定或已被消费为 null */
-    requestedModule: string | null
+    /** 用户选定的模块：由仪表盘入口或初始页设置并在宿主持久保持，未选择为 null */
+    selectedModule: string | null
 }
 
-/** workflow/open 请求：仪表盘入口跳转时携带的模块意图 */
+/** workflow/open 请求：模块入口携带的模块键 */
 export interface OpenWorkflowRequest {
     /** 目标模块键，形如 press / wechat */
     module: string
@@ -38,16 +38,21 @@ export interface OpenWorkflowResult {
     opened: boolean
 }
 
+/** workflow/reset 响应：清除模块选择并回到初始页 */
+export interface ResetWorkflowResult {
+    cleared: boolean
+}
+
 /** 判断是否为合法的路由事实快照（类型收窄辅助） */
 export function isWorkflowContextState(payload: unknown): payload is WorkflowContextState {
     if (typeof payload !== 'object' || payload === null) {
         return false
     }
-    const candidate = payload as { scene?: unknown; module?: unknown; requestedModule?: unknown }
-    const isScene = candidate.scene === 'module' || candidate.scene === 'editorNote' || candidate.scene === 'idle'
+    const candidate = payload as { scene?: unknown; module?: unknown; selectedModule?: unknown }
+    const isScene = candidate.scene === 'idle' || candidate.scene === 'editorNote'
     const isModule = typeof candidate.module === 'string' && candidate.module.length > 0
-    const isRequested = candidate.requestedModule === null || typeof candidate.requestedModule === 'string'
-    return isScene && isModule && isRequested
+    const isSelected = candidate.selectedModule === null || typeof candidate.selectedModule === 'string'
+    return isScene && isModule && isSelected
 }
 
 /**

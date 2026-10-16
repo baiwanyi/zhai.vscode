@@ -1,74 +1,69 @@
 /**
- * 工作流占位页：模块或场景尚未接入专属工作流时的统一落点，避免视图出现空白。
- * 复用 @/components/ui 的 empty / button 组合，文案按模块键与场景分派，不发起任何宿主请求。
- * 关键约束：必须保留「仍然使用 AI 对话」出口，否则笔记编辑场景下用户会被挡在对话能力之外。
+ * 工作流占位页：模块尚未接入专属工作流时的统一落点，标题取模块标题以区分是哪个模块在用占位页。
+ * 复用 @/components/ui 的 empty / button 组合与 routing 的模块标题表，不自行解析路由。
+ * 关键约束：保留「仍然使用 AI 对话」出口，避免笔记编辑场景下用户被挡在对话能力之外；
+ * 「返回模块选择」用于清除宿主持久保存的选定，避免选定模块后无法回到初始页。
  */
-import { MessagesSquare, Pencil } from 'lucide-react'
+import { ArrowLeft, MessagesSquare, Pencil } from 'lucide-react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
 import type { WorkflowContextState, WorkflowId } from '@/shared/types/workflow'
 import type { JSX } from 'react'
+import { readModuleLabel } from '../routing'
 
-/** 公众号管理模块键：占位页据此切换文案与图标 */
+/** 公众号管理模块键：仅用于区分占位页图标 */
 const WECHAT_MODULE_KEY = 'wechat'
 
 interface WorkflowPlaceholderProps {
     context: WorkflowContextState
+    onOpenModule: (module: string) => Promise<void>
+    onResetModule: () => Promise<void>
     onOverride: (workflowId: WorkflowId) => void
 }
 
-interface PlaceholderText {
-    title: string
-    description: string
-}
+export function WorkflowPlaceholder({ context, onResetModule, onOverride }: WorkflowPlaceholderProps): JSX.Element {
+    const [error, setError] = useState<string | null>(null)
+    const label = readModuleLabel(context.module)
+    const description =
+        context.scene === 'editorNote'
+            ? '当前处于笔记编辑场景，该场景的专属工作流尚未接入。'
+            : `${label}的专属工作流尚未接入，当前以占位页承接。`
 
-/** 模块键 → 占位文案；未登记的模块回落到场景文案 */
-const MODULE_TEXT: Readonly<Record<string, PlaceholderText>> = {
-    wechat: {
-        title: '公众号管理',
-        description: '公众号管理的专属工作流尚未接入，当前场景暂以占位页承接。',
-    },
-}
-
-/** 笔记编辑场景文案 */
-const EDITOR_NOTE_TEXT: PlaceholderText = {
-    title: '笔记编辑',
-    description: '笔记编辑场景的专属工作流尚未接入，当前场景暂以占位页承接。',
-}
-
-/** 无匹配时的兜底文案 */
-const FALLBACK_TEXT: PlaceholderText = {
-    title: '工作流待接入',
-    description: '当前场景尚未匹配到专属工作流页面。',
-}
-
-/** 按模块键优先、场景次之的顺序选取文案 */
-function readText(context: WorkflowContextState): PlaceholderText {
-    const byModule = MODULE_TEXT[context.module]
-    if (byModule !== undefined) {
-        return byModule
+    const handleReset = async (): Promise<void> => {
+        setError(null)
+        try {
+            await onResetModule()
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : String(cause))
+        }
     }
-    return context.scene === 'editorNote' ? EDITOR_NOTE_TEXT : FALLBACK_TEXT
-}
 
-export function WorkflowPlaceholder({ context, onOverride }: WorkflowPlaceholderProps): JSX.Element {
-    const text = readText(context)
-    const isWechat = context.module === WECHAT_MODULE_KEY
     return (
         <div className="flex h-screen flex-col justify-center p-4">
             <Empty>
                 <EmptyHeader>
                     <EmptyMedia variant="icon" className="size-12 rounded-2xl">
-                        {isWechat ? <MessagesSquare className="size-5" /> : <Pencil className="size-5" />}
+                        {context.module === WECHAT_MODULE_KEY ? (
+                            <MessagesSquare className="size-5" />
+                        ) : (
+                            <Pencil className="size-5" />
+                        )}
                     </EmptyMedia>
-                    <EmptyTitle>{text.title}</EmptyTitle>
-                    <EmptyDescription>{text.description}</EmptyDescription>
+                    <EmptyTitle>{label}</EmptyTitle>
+                    <EmptyDescription>{description}</EmptyDescription>
+                    <p className="text-muted-foreground text-xs">模块：{context.module}</p>
                 </EmptyHeader>
                 <EmptyContent>
-                    <Button size="sm" variant="outline" onClick={() => onOverride('chat')}>
+                    <Button size="sm" variant="outline" onClick={() => void handleReset()}>
+                        <ArrowLeft data-icon="inline-start" />
+                        返回模块选择
+                    </Button>
+                    <Button size="sm" onClick={() => onOverride('chat')}>
                         <MessagesSquare data-icon="inline-start" />
                         仍然使用 AI 对话
                     </Button>
+                    {error !== null ? <p className="text-destructive text-xs">{error}</p> : null}
                 </EmptyContent>
             </Empty>
         </div>

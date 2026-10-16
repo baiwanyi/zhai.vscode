@@ -25,7 +25,7 @@ export function registerAiCommands(
     // 命令面板调用（无参）只聚焦面板；仪表盘入口跳转携带模块意图，由路由服务按模块类型决定展示页面
     register('zhai.openAiChat', (request?: unknown) => {
         if (isOpenWorkflowRequest(request)) {
-            router.requestModule(request.module)
+            router.selectModule(request.module)
         }
         void vscode.commands.executeCommand('zhai.workflow.focus')
     })
