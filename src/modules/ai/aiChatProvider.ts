@@ -1,11 +1,13 @@
 /**
- * AI 对话 Webview 面板（宿主侧）：加载 React 构建产物，路由 ai/* 协议到对话服务。
+ * AI 对话 Webview 面板（宿主侧）：加载 React 构建产物，路由 ai/* 与 workflow/* 协议到对话服务与工作流路由。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
- * 上下文增删走 ai/context*，state 广播以 payload.kind 区分 runtime / context 供前端定向刷新。
- * 关键约束：上下文移除只接受宿主生成的引用 id（不接受路径入参），所有 Webview 入参逐字段收窄后再用。
+ * 上下文增删走 ai/context*，state 广播以 channel 区分 ai（runtime / context）与 workflow（路由事实）。
+ * 关键约束：上下文移除只接受宿主生成的引用 id（不接受路径入参），所有 Webview 入参逐字段收窄后再用；
+ * 场景判定统一由 WorkflowRouter 产出，本层只做转发，避免两处口径分叉。
  */
 import * as vscode from 'vscode'
 import type { AiChatService } from './chatService'
+import type { WorkflowRouter } from './workflowRouter'
 import type { HostToWebviewMessage, StreamMessage } from '../../shared/types/messages'
 import { isRequestMessage } from '../../shared/types/messages'
 import { logger } from '../common/logger'
@@ -13,7 +15,7 @@ import { WEBVIEW_ALLOWED_COMMANDS } from '../common/webviewCommands'
 import { buildWebviewHtml } from '../common/webviewHtml'
 
 export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
-    public static readonly viewId = 'zhai.aiChat'
+    public static readonly viewId = 'zhai.workflow'
 
     /** 已解析的视图实例，用于推送流式增量与运行时变更 */
     private readonly views = new Set<vscode.WebviewView>()
@@ -22,11 +24,13 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     public constructor(
         private readonly extensionUri: vscode.Uri,
         private readonly service: AiChatService,
+        private readonly workflowRouter: WorkflowRouter,
     ) {
         this.disposables.push(
             service.onStream((message) => this.broadcast(message)),
             service.onRuntimeChanged(() => this.broadcastRuntimeChanged()),
             service.onContextChanged(() => this.broadcastContextChanged()),
+            workflowRouter.onChanged(() => this.broadcastWorkflowChanged()),
         )
     }
 
@@ -59,7 +63,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 'workflow/index.html',
             )
         } catch (error) {
-            webviewView.webview.html = `<html><body><h3>Zhai</h3><p>Webview 资源缺失，请先执行 pnpm run compile（${String(error)}）</p></body></html>`
+            webviewView.webview.html = `<html><body><h3>宅写作</h3><p>Webview 资源缺失，请先执行 pnpm run compile（${String(error)}）</p></body></html>`
             logger.error('Webview 资源加载失败', error)
         }
     }
@@ -99,6 +103,9 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             }
             case 'ai/runtime': {
                 return this.service.getRuntimeInfo()
+            }
+            case 'workflow/state': {
+                return this.workflowRouter.consumeContext()
             }
             case 'ai/send': {
                 const { conversationId, content } = readSendPayload(payload)
@@ -148,6 +155,20 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     private broadcastContextChanged(): void {
         for (const view of this.views) {
             this.post(view, { type: 'state', channel: 'ai', payload: { kind: 'context' } })
+        }
+    }
+
+    /**
+     * 广播路由事实（场景切换或入口跳转）。
+     * 关键约束：无视图时不消费意图，留给面板挂载后的首次拉取，避免意图在无人接收时被丢弃。
+     */
+    private broadcastWorkflowChanged(): void {
+        if (this.views.size === 0) {
+            return
+        }
+        const context = this.workflowRouter.consumeContext()
+        for (const view of this.views) {
+            this.post(view, { type: 'state', channel: 'workflow', payload: context })
         }
     }
 

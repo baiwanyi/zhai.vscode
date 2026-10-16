@@ -1,5 +1,5 @@
 /**
- * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置与宿主命令。
+ * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置、工作流页跳转与宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传；
  * 另经 state 消息主动广播：note 通道给活跃笔记（列表回填选中态），index 通道给索引状态（列表随编辑收敛）。
  * 关键约束：请求处理为异步流程（新建笔记需落盘 + 索引 + 打开，打开与置顶须先经索引库校验路径），
@@ -22,9 +22,11 @@ import type { IndexService, IndexStatus } from './indexer/indexService'
 import type { DashboardStats } from '../../shared/types/dashboard'
 import type { HostToWebviewMessage } from '../../shared/types/messages'
 import type { NoteActiveState, OpenNoteResult, PinNotesResult } from '../../shared/types/note'
+import type { OpenWorkflowResult } from '../../shared/types/workflow'
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenNoteRequest, isPinNotesRequest } from '../../shared/types/note'
+import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { createAndOpenNote, openNoteByPath } from '../note/noteService'
 
 export class DashboardViewProvider implements vscode.WebviewViewProvider {
@@ -69,7 +71,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                 'dashboard/index.html',
             )
         } catch (error) {
-            webviewView.webview.html = `<html><body><h3>Zhai</h3><p>Webview 资源缺失，请先执行 pnpm run compile（${String(error)}）</p></body></html>`
+            webviewView.webview.html = `<html><body><h3>宅写作</h3><p>Webview 资源缺失，请先执行 pnpm run compile（${String(error)}）</p></body></html>`
             logger.error('Webview 资源加载失败', error)
         }
     }
@@ -106,6 +108,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             }
             case 'note/active': {
                 return Promise.resolve(this.buildActiveNote())
+            }
+            case 'workflow/open': {
+                return this.openWorkflow(payload)
             }
             case 'index/rebuild': {
                 void this.indexService.fullRebuild()
@@ -163,6 +168,18 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             throw new Error(`笔记不在索引中，无法打开：${payload.path}`)
         }
         await openNoteByPath(target.path)
+        return { opened: true }
+    }
+
+    /**
+     * 跳转工作流页：模块意图交给宿主命令设置，场景判定统一由 WorkflowRouter 完成，本层只做转发。
+     * 安全约束：模块标识按小写字母数字连字符收窄，从源头排除路径形态字符串流入命令参数。
+     */
+    private async openWorkflow(payload: unknown): Promise<OpenWorkflowResult> {
+        if (!isOpenWorkflowRequest(payload)) {
+            throw new Error('workflow/open 参数非法：module 须为非空模块键')
+        }
+        await vscode.commands.executeCommand('zhai.openAiChat', { module: payload.module })
         return { opened: true }
     }
 

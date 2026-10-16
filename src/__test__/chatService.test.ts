@@ -13,15 +13,15 @@ import {
     resetWorkspaceState,
     setConfigValue,
     setFileContent,
-} from '@/tests/stubs/vscode'
-import { AiChatService } from './chatService'
-import { listMessages } from './db/chatRepository'
-import { openAiDatabase } from './db/connection'
-import { ensureAiSchema } from './db/schema'
-import type { ChatMessage, ChatStreamChunk, ChatStreamRequest } from './client'
-import type { HostContextRef } from './contextRefs'
+} from '@/__test__/stubs/vscode'
+import type { ChatMessage, ChatStreamChunk, ChatStreamRequest } from '../modules/ai/client'
+import type { HostContextRef } from '../modules/ai/contextRefs'
 import type Database from 'better-sqlite3'
-import { SecretsService } from '../common/secrets'
+import { AiChatService } from '../modules/ai/chatService'
+import { listMessages } from '../modules/ai/db/chatRepository'
+import { openAiDatabase } from '../modules/ai/db/connection'
+import { ensureAiSchema } from '../modules/ai/db/schema'
+import { SecretsService } from '../modules/common/secrets'
 
 const FILE_PATH = 'd:/notes/ch01.md'
 const API_KEY_STORAGE_KEY = 'zhai.deepseek.apiKey'
@@ -29,7 +29,7 @@ const API_KEY_STORAGE_KEY = 'zhai.deepseek.apiKey'
 /** 记录每次流式请求的入参（vi.mock 提升到模块顶部，故用 vi.hoisted 持有） */
 const captured = vi.hoisted(() => ({ requests: [] as ChatStreamRequest[] }))
 
-vi.mock('./client', () => ({
+vi.mock('../modules/ai/client', () => ({
     FIRST_TOKEN_TIMEOUT_MS: 30_000,
     streamChat: (request: ChatStreamRequest): AsyncGenerator<ChatStreamChunk> => {
         captured.requests.push(request)

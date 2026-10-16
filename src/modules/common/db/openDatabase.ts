@@ -1,6 +1,6 @@
 /**
  * SQLite 连接基座：统一各库文件（index.db / ai.db）的打开方式与 PRAGMA。
- * 约束：库文件位于 globalStorage（不进 Git），调用方负责生命周期与单写连接。
+ * 约束：库文件位于全局存储下的 zhai.vscode 缓存目录（不进 Git），调用方负责生命周期与单写连接。
  */
 import * as fs from 'node:fs'
 import * as path from 'node:path'
@@ -18,12 +18,12 @@ const PRAGMAS = [
 
 /**
  * 打开（或创建）globalStorage 下的某个 SQLite 库。
- * @param globalStorageUri 插件全局存储目录
+ * @param cacheDirUri 索引缓存目录（全局存储下的 zhai.vscode）
  * @param fileName 库文件名，如 index.db / ai.db
  */
-export function openSqliteDatabase(globalStorageUri: vscode.Uri, fileName: string): Database.Database {
-    const dbPath = path.join(globalStorageUri.fsPath, fileName)
-    // 首次激活时 globalStorage 目录可能尚未创建，better-sqlite3 要求父目录存在
+export function openSqliteDatabase(cacheDirUri: vscode.Uri, fileName: string): Database.Database {
+    const dbPath = path.join(cacheDirUri.fsPath, fileName)
+    // 首次激活时缓存目录可能尚未创建，better-sqlite3 要求父目录存在
     fs.mkdirSync(path.dirname(dbPath), { recursive: true })
     const db = new Database(dbPath)
     for (const pragma of PRAGMAS) {

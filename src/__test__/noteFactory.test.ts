@@ -3,8 +3,8 @@
  * 全程使用本地时间构造日期，避免时区差异导致断言漂移；用真实 parseFileMeta 验证标题可从一级标题提取。
  */
 import { describe, expect, it } from 'vitest'
-import { buildNoteContent, createNoteDraft, DEFAULT_NOTE_TITLE, generateNoteId } from './noteFactory'
-import { parseFileMeta } from '../common/db/fileMeta'
+import { parseFileMeta } from '../modules/common/db/fileMeta'
+import { buildNoteContent, createNoteDraft, DEFAULT_NOTE_TITLE, generateNoteId } from '../modules/note/noteFactory'
 
 describe('generateNoteId', () => {
     it('生成 8-4-4-4-12 分组的十六进制 ID', () => {

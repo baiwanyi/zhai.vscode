@@ -1,12 +1,14 @@
 /**
  * AI 命令注册：面板跳转、DeepSeek 密钥管理与「添加到宅对话」上下文入口（ai-chat.md 第 7.1 节命令清单）。
- * 复用约定：引用生成与预算校验统一委托 modules/ai/contextRefs，命令层只做编辑器取用与用户提示。
+ * 复用约定：引用生成与预算校验统一委托 modules/ai/contextRefs，面板跳转携带的模块意图交由 WorkflowRouter 承接。
  * 约束：全部 Disposable 挂载到 context.subscriptions，保证停用后释放（AC-10）；密钥与引用原文不落日志。
  */
 import * as vscode from 'vscode'
 import { createContextRefs, MAX_CONTEXT_COUNT } from './contextRefs'
 import type { AiChatService } from './chatService'
+import type { WorkflowRouter } from './workflowRouter'
 import type { SecretsService } from '../common/secrets'
+import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { getZhaiConfig } from '../common/config'
 import { logger } from '../common/logger'
 
@@ -14,13 +16,18 @@ export function registerAiCommands(
     context: vscode.ExtensionContext,
     service: AiChatService,
     secrets: SecretsService,
+    router: WorkflowRouter,
 ): void {
-    const register = (command: string, handler: () => unknown): void => {
+    const register = (command: string, handler: (...args: unknown[]) => unknown): void => {
         context.subscriptions.push(vscode.commands.registerCommand(command, handler))
     }
 
-    register('zhai.openAiChat', () => {
-        void vscode.commands.executeCommand('zhai.aiChat.focus')
+    // 命令面板调用（无参）只聚焦面板；仪表盘入口跳转携带模块意图，由路由服务按模块类型决定展示页面
+    register('zhai.openAiChat', (request?: unknown) => {
+        if (isOpenWorkflowRequest(request)) {
+            router.requestModule(request.module)
+        }
+        void vscode.commands.executeCommand('zhai.workflow.focus')
     })
 
     register('zhai.ai.addToChat', () => addEditorContextToChat(service))
@@ -39,7 +46,7 @@ export function registerAiCommands(
         await secrets.set('deepseekApiKey', value.trim())
         logger.info('DeepSeek API Key 已更新')
         service.notifyRuntimeChanged()
-        void vscode.window.showInformationMessage('Zhai：DeepSeek API Key 已保存')
+        void vscode.window.showInformationMessage('宅写作：DeepSeek API Key 已保存')
     })
 
     register('zhai.ai.clearApiKey', async () => {
@@ -54,7 +61,7 @@ export function registerAiCommands(
         await secrets.remove('deepseekApiKey')
         logger.info('DeepSeek API Key 已清除')
         service.notifyRuntimeChanged()
-        void vscode.window.showInformationMessage('Zhai：已清除 DeepSeek API Key')
+        void vscode.window.showInformationMessage('宅写作：已清除 DeepSeek API Key')
     })
 }
 
@@ -65,12 +72,12 @@ export function registerAiCommands(
 async function addEditorContextToChat(service: AiChatService): Promise<void> {
     const editor = vscode.window.activeTextEditor
     if (!editor) {
-        void vscode.window.showWarningMessage('Zhai：请先在编辑器中打开需要引用的文件')
+        void vscode.window.showWarningMessage('宅写作：请先在编辑器中打开需要引用的文件')
         return
     }
     const { refs, rejected } = createContextRefs(editor)
     if (rejected.length > 0) {
-        void vscode.window.showWarningMessage(`Zhai：${rejected.join('；')}`)
+        void vscode.window.showWarningMessage(`宅写作：${rejected.join('；')}`)
         return
     }
     const result = service.addContexts(refs)
@@ -79,7 +86,7 @@ async function addEditorContextToChat(service: AiChatService): Promise<void> {
             result.duplicated > 0
                 ? '该内容已在对话上下文中'
                 : `上下文已达 ${MAX_CONTEXT_COUNT} 项上限，请先在面板中移除`
-        void vscode.window.showInformationMessage(`Zhai：${reason}`)
+        void vscode.window.showInformationMessage(`宅写作：${reason}`)
         return
     }
     const labels = result.added.map((ref) => ref.label).join('、')
@@ -98,9 +105,9 @@ async function addEditorContextToChat(service: AiChatService): Promise<void> {
 /** 添加成功的提示：默认聚焦面板（用户能立刻看到上下文清单）并给状态栏短提示，关闭聚焦时改用信息提示 */
 async function notifyContextAdded(labels: string, suffix: string): Promise<void> {
     if (!getZhaiConfig().aiAutoFocusOnContext) {
-        void vscode.window.showInformationMessage(`Zhai：已添加到宅对话 ${labels}${suffix}`)
+        void vscode.window.showInformationMessage(`宅写作：已添加到宅对话 ${labels}${suffix}`)
         return
     }
-    await vscode.commands.executeCommand('zhai.aiChat.focus')
-    vscode.window.setStatusBarMessage(`Zhai：已添加到宅对话 ${labels}${suffix}`, 2000)
+    await vscode.commands.executeCommand('zhai.workflow.focus')
+    vscode.window.setStatusBarMessage(`宅写作：已添加到宅对话 ${labels}${suffix}`, 2000)
 }

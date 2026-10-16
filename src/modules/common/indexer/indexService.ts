@@ -75,7 +75,7 @@ export class IndexService {
             const rows: FileRow[] = []
             let processed = 0
             await vscode.window.withProgress(
-                { location: vscode.ProgressLocation.Window, title: 'Zhai：重建索引' },
+                { location: vscode.ProgressLocation.Window, title: '宅写作：重建索引' },
                 async (progress) => {
                     for (const file of files) {
                         if (token?.isCancellationRequested) {

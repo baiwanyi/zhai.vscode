@@ -8,8 +8,8 @@ import type * as vscode from 'vscode'
 
 /**
  * 打开（或创建）索引库。
- * @param globalStorageUri 插件全局存储目录，库文件固定为其中的 index.db
+ * @param cacheDirUri 索引缓存目录（全局存储下的 zhai.vscode），库文件固定为其中的 index.db
  */
-export function openIndexDatabase(globalStorageUri: vscode.Uri): Database.Database {
-    return openSqliteDatabase(globalStorageUri, 'index.db')
+export function openIndexDatabase(cacheDirUri: vscode.Uri): Database.Database {
+    return openSqliteDatabase(cacheDirUri, 'index.db')
 }

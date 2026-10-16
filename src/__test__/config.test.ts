@@ -1,13 +1,14 @@
 /**
- * config 单元测试：覆盖存储根解析的两条分支与用户配置写法的容错。
+ * config 单元测试：覆盖存储根解析的容错分支与索引缓存目录的解析规则。
  * 重点验证：盘符正斜杠写法被规范为反斜杠（否则 Uri.file 会产出被 workspace.fs 拒绝的相对路径）；
- * 未配置时回退到用户主目录下的 .zhai，不再依赖工作区是否打开。
+ * 未配置时回退到用户主目录下的 .zhai；缓存目录固定为全局存储目录的兄弟目录 zhai.vscode。
  */
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { resetWorkspaceState, setConfigValue } from '@/tests/stubs/vscode'
-import { resolveStorageRoot } from './config'
+import * as vscode from 'vscode'
+import { resetWorkspaceState, setConfigValue } from '@/__test__/stubs/vscode'
+import { resolveCacheRoot, resolveStorageRoot } from '../modules/common/config'
 
 beforeEach(() => {
     resetWorkspaceState()
@@ -36,5 +37,23 @@ describe('resolveStorageRoot', () => {
 
     it('未配置时回退到用户主目录下的 .zhai', () => {
         expect(resolveStorageRoot().fsPath).toBe(path.join(os.homedir(), '.zhai'))
+    })
+})
+
+describe('resolveCacheRoot', () => {
+    const storeRoot = path.join(os.tmpdir(), 'globalStorage')
+    const globalStorageUri = vscode.Uri.file(path.join(storeRoot, 'zhai.zhai-vscode'))
+
+    it('取全局存储目录的兄弟目录，文件夹名固定为 zhai.vscode', () => {
+        expect(resolveCacheRoot(globalStorageUri).fsPath).toBe(path.join(storeRoot, 'zhai.vscode'))
+    })
+
+    it('目录名不随扩展标识变化', () => {
+        const other = vscode.Uri.file(path.join(storeRoot, 'some.other-extension'))
+        expect(path.basename(resolveCacheRoot(other).fsPath)).toBe('zhai.vscode')
+    })
+
+    it('结果独立于传入的全局存储目录本身', () => {
+        expect(resolveCacheRoot(globalStorageUri).fsPath).not.toBe(globalStorageUri.fsPath)
     })
 })

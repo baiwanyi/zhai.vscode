@@ -3,8 +3,8 @@
  * 用内存 Memento 桩承接 globalState 依赖，断言以 store 返回的列表为准。
  */
 import { describe, expect, it } from 'vitest'
-import { PinStore } from './pinStore'
 import type { Memento } from 'vscode'
+import { PinStore } from '../modules/note/pinStore'
 
 /** 置顶键名：与实现约定一致，供预置已落盘数据使用 */
 const PINNED_KEY = 'zhai.note.pinnedPaths'

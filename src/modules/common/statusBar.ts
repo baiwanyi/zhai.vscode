@@ -15,7 +15,7 @@ export class StatusBarService {
     ) {
         this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
         this.item.command = 'zhai.openDashboard'
-        this.item.name = 'Zhai 索引状态'
+        this.item.name = '宅写作 索引状态'
         this.refresh(indexService.getStatus())
     }
 

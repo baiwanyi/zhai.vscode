@@ -1,6 +1,7 @@
 /**
- * 配置中心：集中读取 zhai.* 配置项，避免各模块散落调用 getConfiguration。
+ * 配置中心：集中读取 zhai.* 配置项与解析存储路径，避免各模块散落调用 getConfiguration。
  * 复用 VSCode contributes.configuration 全局/工作区两级机制，路径解析遵循 common.md 第 1.5 节存储根约定。
+ * 关键约束：文档存储根与索引缓存目录分离——前者是用户资料（Markdown 主存储），后者是可随时重建的 SQLite 缓存。
  */
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -8,6 +9,9 @@ import * as vscode from 'vscode'
 
 /** 未配置保存目录时使用的用户主目录子目录名 */
 const DEFAULT_STORAGE_DIR = '.zhai'
+
+/** 索引缓存目录名：全局存储下的固定文件夹名，库文件（index.db / ai.db）位于其中 */
+const CACHE_DIR_NAME = 'zhai.vscode'
 
 /** 插件全部配置项的强类型视图 */
 export interface ZhaiConfig {
@@ -67,4 +71,13 @@ export function resolveStorageRoot(): vscode.Uri {
         return vscode.Uri.file(normalizeRootPath(rootPath))
     }
     return vscode.Uri.file(path.join(os.homedir(), DEFAULT_STORAGE_DIR))
+}
+
+/**
+ * 解析索引缓存目录 URI：取全局存储目录的兄弟目录，使文件夹名固定为 zhai.vscode。
+ * 关键约束：不直接使用传入的 globalStorageUri 本身（其名由 publisher.name 决定，改扩展标识会连带迁移旧目录），
+ * 目录位于文档存储根之外，删除后索引由自检自愈重建，不影响用户的 Markdown 资料。
+ */
+export function resolveCacheRoot(globalStorageUri: vscode.Uri): vscode.Uri {
+    return vscode.Uri.file(path.join(globalStorageUri.fsPath, '..', CACHE_DIR_NAME))
 }

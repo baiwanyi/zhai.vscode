@@ -11,7 +11,8 @@ import {
     setFileContent,
     setWorkspaceRoot,
     workspace,
-} from '@/tests/stubs/vscode'
+} from '@/__test__/stubs/vscode'
+import type { HostContextRef } from '../modules/ai/contextRefs'
 import {
     buildContextBlock,
     createContextRefs,
@@ -20,8 +21,7 @@ import {
     mergeContextRefs,
     parseStoredContexts,
     readContextContent,
-} from './contextRefs'
-import type { HostContextRef } from './contextRefs'
+} from '../modules/ai/contextRefs'
 
 const WORKSPACE = 'd:/notes'
 const FILE_PATH = 'd:/notes/ch01.md'

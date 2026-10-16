@@ -43,10 +43,10 @@ export function Dashboard(): JSX.Element {
         createNote,
         openNote,
         setPinned,
+        openWorkflow,
         rebuild,
         clearCache,
         openSettings,
-        showPending,
         showNotePending,
     } = useDashboardActions(reload)
     const { activeId, setActiveId } = useActiveNote()
@@ -86,8 +86,8 @@ export function Dashboard(): JSX.Element {
                     <div className="flex flex-col gap-3 p-3">
                         <DashboardSlots />
                         <DashboardEntries
-                            onOpenWriting={() => showPending('writing')}
-                            onOpenPress={() => showPending('press')}
+                            onOpenWriting={() => void openWorkflow('press')}
+                            onOpenPress={() => void openWorkflow('wechat')}
                         />
                         <NotesSection
                             pinnedNotes={pinnedNotes}

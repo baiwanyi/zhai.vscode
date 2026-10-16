@@ -6,7 +6,9 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createUri } from '@/tests/stubs/vscode'
+import { createUri } from '@/__test__/stubs/vscode'
+import type { ConversationRow, MessageRow } from '../modules/ai/db/chatRepository'
+import type Database from 'better-sqlite3'
 import {
     deleteConversation,
     getConversation,
@@ -16,11 +18,9 @@ import {
     listConversations,
     listMessages,
     sumTokensSince,
-} from './chatRepository'
-import { openAiDatabase } from './connection'
-import { ensureAiSchema } from './schema'
-import type { ConversationRow, MessageRow } from './chatRepository'
-import type Database from 'better-sqlite3'
+} from '../modules/ai/db/chatRepository'
+import { openAiDatabase } from '../modules/ai/db/connection'
+import { ensureAiSchema } from '../modules/ai/db/schema'
 
 let db: Database.Database
 let tempDir: string

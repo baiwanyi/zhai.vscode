@@ -8,8 +8,9 @@ import { AiChatService } from './modules/ai/chatService'
 import { registerAiCommands } from './modules/ai/commands'
 import { openAiDatabase } from './modules/ai/db/connection'
 import { ensureAiSchema } from './modules/ai/db/schema'
+import { WorkflowRouter } from './modules/ai/workflowRouter'
 import { registerCommands } from './modules/common/commands'
-import { getZhaiConfig } from './modules/common/config'
+import { getZhaiConfig, resolveCacheRoot } from './modules/common/config'
 import { DashboardViewProvider } from './modules/common/dashboardProvider'
 import { openIndexDatabase } from './modules/common/db/connection'
 import { ensureSchema } from './modules/common/db/schema'
@@ -21,7 +22,7 @@ import { PinStore } from './modules/note/pinStore'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 
 export function activate(context: vscode.ExtensionContext): void {
-    logger.init(vscode.window.createOutputChannel('Zhai 宅桌面'))
+    logger.init(vscode.window.createOutputChannel('宅写作'))
     context.subscriptions.push({ dispose: () => logger.dispose() })
 
     const secrets = new SecretsService(context.secrets)
@@ -30,7 +31,9 @@ export function activate(context: vscode.ExtensionContext): void {
     const indexStatusEmitter = new vscode.EventEmitter<IndexStatus>()
     context.subscriptions.push(indexStatusEmitter)
 
-    const db = openIndexDatabase(context.globalStorageUri)
+    // 索引缓存目录固定为全局存储下的 zhai.vscode，与文档存储根分离
+    const cacheRoot = resolveCacheRoot(context.globalStorageUri)
+    const db = openIndexDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => db.close() })
     ensureSchema(db)
 
@@ -53,15 +56,20 @@ export function activate(context: vscode.ExtensionContext): void {
     )
 
     // AI 对话：独立 ai.db 承载会话、消息与用量，避免影响索引库写入
-    const aiDb = openAiDatabase(context.globalStorageUri)
+    const aiDb = openAiDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => aiDb.close() })
     ensureAiSchema(aiDb)
 
     const aiChatService = new AiChatService(aiDb, secrets)
     context.subscriptions.push(aiChatService)
-    registerAiCommands(context, aiChatService, secrets)
 
-    const aiChatProvider = new AiChatViewProvider(context.extensionUri, aiChatService)
+    // 工作流路由：汇聚活跃编辑器场景与入口跳转意图，供工作流面板按模块类型换页
+    const workflowRouter = new WorkflowRouter(db, indexService)
+    workflowRouter.register(context.subscriptions)
+
+    registerAiCommands(context, aiChatService, secrets, workflowRouter)
+
+    const aiChatProvider = new AiChatViewProvider(context.extensionUri, aiChatService, workflowRouter)
     context.subscriptions.push(
         aiChatProvider,
         vscode.window.registerWebviewViewProvider(AiChatViewProvider.viewId, aiChatProvider),
@@ -74,7 +82,7 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((event) => {
             if (event.affectsConfiguration('zhai.')) {
-                logger.info('Zhai 配置已变更')
+                logger.info('宅写作 配置已变更')
             }
         }),
     )
@@ -84,7 +92,7 @@ export function activate(context: vscode.ExtensionContext): void {
         void indexService.selfCheck().catch((error: unknown) => logger.error('激活自检失败', error))
     }
 
-    logger.info(`Zhai 已激活（workspace: ${context.workspaceState.get('initialized') === true ? '已初始化' : '首次'}）`)
+    logger.info(`宅写作 已激活（workspace: ${context.workspaceState.get('initialized') === true ? '已初始化' : '首次'}）`)
     void context.workspaceState.update('initialized', true)
 }
 

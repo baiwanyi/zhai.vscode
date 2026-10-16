@@ -33,14 +33,14 @@ export function registerCommands(
     register('zhai.showIndexStatus', () => {
         const status = indexService.getStatus()
         void vscode.window.showInformationMessage(
-            `Zhai 索引状态：已索引 ${status.indexedCount} 个文件，上次构建 ${status.lastBuiltAt ?? '从未'}`,
+            `宅写作 索引状态：已索引 ${status.indexedCount} 个文件，上次构建 ${status.lastBuiltAt ?? '从未'}`,
         )
     })
 
     register('zhai.clearIndex', () => {
         clearSchemaData(db)
         logger.info('索引缓存已清空')
-        void vscode.window.showInformationMessage('Zhai：索引缓存已清空，可执行「重建索引」恢复')
+        void vscode.window.showInformationMessage('宅写作：索引缓存已清空，可执行「重建索引」恢复')
     })
 
     register('zhai.exportDiagnostics', () => {

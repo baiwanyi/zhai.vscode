@@ -14,4 +14,5 @@ export const WEBVIEW_ALLOWED_COMMANDS: ReadonlySet<string> = new Set([
     'zhai.ai.clearApiKey',
     // 面板跳转
     'zhai.openDashboard',
+    'zhai.openAiChat',
 ])

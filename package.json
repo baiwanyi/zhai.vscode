@@ -1,6 +1,6 @@
 {
     "name": "zhai-vscode",
-    "displayName": "Zhai 宅桌面",
+    "displayName": "宅写作",
     "description": "面向「写小说 + 写代码」的 VSCode 插件：Markdown 主存储 + SQLite 缓存索引，提供 AI 辅助、全文检索、写作管理与内容发布能力",
     "version": "0.1.0",
     "private": true,
@@ -51,57 +51,57 @@
             {
                 "command": "zhai.openDashboard",
                 "title": "打开仪表盘",
-                "category": "Zhai"
+                "category": "宅写作"
             },
             {
                 "command": "zhai.openAiChat",
                 "title": "打开 AI 对话",
-                "category": "Zhai"
+                "category": "宅写作"
             },
             {
                 "command": "zhai.note.new",
                 "title": "新建笔记",
-                "category": "Zhai"
+                "category": "宅写作"
             },
             {
                 "command": "zhai.rebuildIndex",
                 "title": "重建索引",
-                "category": "Zhai"
+                "category": "宅写作"
             },
             {
                 "command": "zhai.showIndexStatus",
                 "title": "索引状态",
-                "category": "Zhai"
+                "category": "宅写作"
             },
             {
                 "command": "zhai.clearIndex",
                 "title": "清空索引缓存",
-                "category": "Zhai"
+                "category": "宅写作"
             },
             {
                 "command": "zhai.ai.addToChat",
                 "title": "添加到宅对话",
-                "category": "Zhai"
+                "category": "宅写作"
             },
             {
                 "command": "zhai.ai.setApiKey",
                 "title": "设置 DeepSeek API Key",
-                "category": "Zhai"
+                "category": "宅写作"
             },
             {
                 "command": "zhai.ai.clearApiKey",
                 "title": "清除 DeepSeek API Key",
-                "category": "Zhai"
+                "category": "宅写作"
             },
             {
                 "command": "zhai.openSettings",
                 "title": "打开插件设置",
-                "category": "Zhai"
+                "category": "宅写作"
             },
             {
                 "command": "zhai.exportDiagnostics",
                 "title": "导出诊断信息",
-                "category": "Zhai"
+                "category": "宅写作"
             }
         ],
         "keybindings": [
@@ -126,7 +126,7 @@
             ]
         },
         "configuration": {
-            "title": "Zhai 宅桌面",
+            "title": "宅写作",
             "properties": {
                 "zhai.storage.rootPath": {
                     "type": "string",
@@ -199,7 +199,7 @@
             "activitybar": [
                 {
                     "id": "zhai-sidebar",
-                    "title": "Zhai 宅桌面",
+                    "title": "宅写作",
                     "icon": "resources/icon.svg"
                 }
             ]
@@ -214,7 +214,7 @@
                 },
                 {
                     "type": "webview",
-                    "id": "zhai.aiChat",
+                    "id": "zhai.workflow",
                     "name": "工作流",
                     "icon": "resources/icon.svg"
                 }
