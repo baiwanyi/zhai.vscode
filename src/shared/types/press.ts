@@ -1,5 +1,6 @@
 /**
- * 作品契约：仪表盘 /press 页的作品摘要、创建与打开请求结构，以及作品分类枚举。
+ * 作品契约：仪表盘 /press 页的作品摘要、创建、打开、卷重命名/删除与章节删除/移动的请求结构，
+ * 以及作品分类枚举。
  * 使用方：仪表盘 Webview 的作品列表与宿主侧 DashboardViewProvider、modules/press 服务。
  * 复用约定：dirPath 取相对存储根口径（press/{作品名}），与索引库 files.path 同源；作品名即目录名。
  * 关键约束：前端传入的作品名与目录路径均不可信，宿主须先经名称白名单校验或索引库回查后才可触达文件系统；
@@ -122,6 +123,95 @@ export interface CreatedPressVolume {
     chapterPath: string
     /** 首章展示标题 */
     chapterTitle: string
+}
+
+/** press/renameVolume 请求：只改卷目录的可读名，序号前缀由宿主保留 */
+export interface RenamePressVolumeRequest {
+    dirPath: string
+    /** 当前卷目录名（含序号前缀） */
+    volumeDir: string
+    /** 新卷名，不含序号前缀 */
+    name: string
+}
+
+/** press/renameVolume 响应 */
+export interface RenamedPressVolume {
+    /** 重命名后的卷目录名，含原序号前缀 */
+    volumeDir: string
+    /** 卷展示名 */
+    volumeName: string
+}
+
+/** press/deleteVolume 请求：整卷移入回收站 */
+export interface DeletePressVolumeRequest {
+    dirPath: string
+    /** 待删除的卷目录名（含序号前缀） */
+    volumeDir: string
+}
+
+/** press/deleteChapter 请求：单章移入回收站 */
+export interface DeletePressChapterRequest {
+    dirPath: string
+    /** 章节相对路径，须位于 press/{作品名}/Chapter/ 之下 */
+    path: string
+}
+
+/** press/moveChapter 请求：把章节移动到另一卷末尾，序号按目标卷重排 */
+export interface MovePressChapterRequest {
+    dirPath: string
+    /** 待移动章节的相对路径 */
+    path: string
+    /** 目标卷目录名（含序号前缀）；空串表示移到未分卷的 Chapter/ 根目录 */
+    targetVolumeDir: string
+}
+
+/** press/moveChapter 响应：移动后的新路径与落点卷，供前端定位与展开 */
+export interface MovedPressChapter {
+    /** 移动后的相对路径，序号已按目标卷重排 */
+    path: string
+    /** 章节展示名（去序号前缀），用于提示 */
+    title: string
+    /** 落点卷展示名，空串表示未分卷 */
+    volume: string
+}
+
+/** 判断是否为合法的重命名卷请求（类型收窄辅助） */
+export function isRenamePressVolumeRequest(payload: unknown): payload is RenamePressVolumeRequest {
+    if (!isPressDirPath(payload)) {
+        return false
+    }
+    const candidate = payload as { volumeDir?: unknown; name?: unknown }
+    const isValidVolumeDir = typeof candidate.volumeDir === 'string' && candidate.volumeDir.length > 0
+    const isValidName = typeof candidate.name === 'string' && candidate.name.trim().length > 0
+    return isValidVolumeDir && isValidName
+}
+
+/** 判断是否为合法的删除卷请求（类型收窄辅助） */
+export function isDeletePressVolumeRequest(payload: unknown): payload is DeletePressVolumeRequest {
+    if (!isPressDirPath(payload)) {
+        return false
+    }
+    const candidate = payload as { volumeDir?: unknown }
+    return typeof candidate.volumeDir === 'string' && candidate.volumeDir.length > 0
+}
+
+/** 判断是否为合法的删除章节请求（类型收窄辅助） */
+export function isDeletePressChapterRequest(payload: unknown): payload is DeletePressChapterRequest {
+    if (!isPressDirPath(payload)) {
+        return false
+    }
+    const candidate = payload as { path?: unknown }
+    return typeof candidate.path === 'string' && candidate.path.length > 0
+}
+
+/** 判断是否为合法的移动章节请求（类型收窄辅助）：targetVolumeDir 允许空串，表示移入未分卷根目录 */
+export function isMovePressChapterRequest(payload: unknown): payload is MovePressChapterRequest {
+    if (!isPressDirPath(payload)) {
+        return false
+    }
+    const candidate = payload as { path?: unknown; targetVolumeDir?: unknown }
+    const isValidPath = typeof candidate.path === 'string' && candidate.path.length > 0
+    return isValidPath && typeof candidate.targetVolumeDir === 'string'
 }
 
 /** 判断是否为合法的新增章节请求（类型收窄辅助） */

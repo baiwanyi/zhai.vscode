@@ -148,6 +148,34 @@ export class IndexService {
     }
 
     /**
+     * 删除指定相对前缀下的全部索引记录：卷/作品被重命名或删除后由宿主主动收敛，避免列表残留条目。
+     * 关键约束：递归删除目录时 watcher 不保证逐文件回调，故不能依赖删除事件；有变更才广播状态。
+     */
+    public removeFilesUnder(relativePrefix: string): void {
+        const stalePaths = [...listIndexedPaths(this.db).keys()].filter((path) => path.startsWith(relativePrefix))
+        for (const path of stalePaths) {
+            deleteFileRow(this.db, path)
+        }
+        if (stalePaths.length > 0) {
+            logger.debug(`已清理索引记录 ${stalePaths.length} 条：${relativePrefix}`)
+            this.statusEmitter.fire(this.getStatus())
+        }
+    }
+
+    /**
+     * 删除单份文档的索引记录：单章删除或跨卷移动后由宿主主动收敛，避免详情页残留旧路径。
+     * 关键约束：按完整相对路径精确匹配，不做前缀匹配，避免误伤同名前缀的其他文档；无该记录时不广播。
+     */
+    public removeFile(relativePath: string): void {
+        if (!listIndexedPaths(this.db).has(relativePath)) {
+            return
+        }
+        deleteFileRow(this.db, relativePath)
+        logger.debug(`已清理索引记录：${relativePath}`)
+        this.statusEmitter.fire(this.getStatus())
+    }
+
+    /**
      * 归一化为存储根口径的相对路径：位于存储根内则剥离前缀，否则原样返回绝对路径。
      * 索引写入与宿主侧路径比对（如按活跃编辑器回填列表选中态）共用本方法，避免各处各写一份比较逻辑。
      * 关键约束：比较统一小写，规避 VSCode 的 fsPath 把盘符小写、而配置保留原始大小写导致的误判。

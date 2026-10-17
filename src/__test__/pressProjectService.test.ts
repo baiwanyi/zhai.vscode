@@ -1,5 +1,7 @@
 /**
- * projectService / projectFactory 单元测试：覆盖作品名校验、骨架落盘与索引触发、重名拒绝与打开路径校验。
+ * projectService / projectFactory 单元测试：覆盖作品名校验、骨架落盘与索引触发、重名拒绝与打开路径校验，
+ * 卷的重命名（保留序号前缀、同步索引）与删除（移入回收站、按前缀清理索引），
+ * 以及章节的删除（清理单文件索引、拦下脏文档）与跨卷移动（重排序号、冲突递增、递归到未分卷）。
  * 虚拟磁盘、目录与可打开文档由 vscode 测试桩承接，不触达真实文件系统；
  * 路径断言统一用 node:path 规范化，与实现一样规避分隔符差异。
  */
@@ -7,35 +9,58 @@ import * as path from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
     hasDirectory,
+    readDeletedPaths,
     readFileContent,
     readOpenedDocumentPaths,
+    registerDirtyTextDocument,
     registerTextDocument,
     resetWorkspaceState,
     setConfigValue,
+    setDirectory,
     setFileContent,
 } from '@/__test__/stubs/vscode'
 import type { ProjectIndexer } from '../modules/press/projectService'
-import { validateProjectName } from '../modules/press/projectFactory'
+import { buildRenamedVolumeDirName, validateProjectName, validateVolumeName } from '../modules/press/projectFactory'
 import {
     createChapter,
     createProject,
     createVolume,
+    deleteChapter,
+    deleteVolume,
+    moveChapter,
     openChapterByPath,
     openProjectByDir,
+    renameVolume,
 } from '../modules/press/projectService'
 
 const STORAGE_ROOT = 'd:/vault'
 
-/** 构造记录索引调用的替身，返回被索引的绝对路径列表供断言 */
-function createIndexer(): { indexer: ProjectIndexer; indexed: string[] } {
+/**
+ * 构造记录索引调用的替身：indexed 收集被索引的绝对路径，
+ * removed 收集按前缀清理的记录，removedFiles 收集按完整路径清理的记录。
+ */
+function createIndexer(): {
+    indexer: ProjectIndexer
+    indexed: string[]
+    removed: string[]
+    removedFiles: string[]
+} {
     const indexed: string[] = []
+    const removed: string[] = []
+    const removedFiles: string[] = []
     const indexer: ProjectIndexer = {
         indexFile: (uri) => {
             indexed.push(uri.fsPath)
             return Promise.resolve()
         },
+        removeFilesUnder: (relativePrefix) => {
+            removed.push(relativePrefix)
+        },
+        removeFile: (relativePath) => {
+            removedFiles.push(relativePath)
+        },
     }
-    return { indexer, indexed }
+    return { indexer, indexed, removed, removedFiles }
 }
 
 beforeEach(() => {
@@ -296,5 +321,331 @@ describe('openChapterByPath', () => {
         await expect(openChapterByPath('notes/a/Chapter/x.md')).rejects.toThrow('章节路径非法')
         await expect(openChapterByPath('press/../x/Chapter/a.md')).rejects.toThrow('章节路径非法')
         expect(readOpenedDocumentPaths()).toEqual([])
+    })
+})
+
+describe('buildRenamedVolumeDirName', () => {
+    it('保留原有序号前缀，仅替换可读部分', () => {
+        expect(buildRenamedVolumeDirName('01-卷1', '风起长安')).toBe('01-风起长安')
+        expect(buildRenamedVolumeDirName('12_旧名', '新名')).toBe('12-新名')
+    })
+
+    it('原目录无序号前缀时不凭空补前缀', () => {
+        expect(buildRenamedVolumeDirName('卷1', '风起长安')).toBe('风起长安')
+    })
+})
+
+describe('validateVolumeName', () => {
+    it('复用作品名的名称规则，文案为卷名', () => {
+        expect(validateVolumeName('风起长安')).toBeNull()
+        expect(validateVolumeName('')).toBe('卷名不能为空')
+        expect(validateVolumeName('a/b')).toBe('卷名不能包含 \\ / : * ? " < > | 等非法字符')
+        expect(validateVolumeName('CON')).toBe('卷名不能使用系统保留名：CON')
+    })
+})
+
+describe('renameVolume', () => {
+    it('保留序号前缀重命名目录，并按新路径重建索引', async () => {
+        const { indexer, indexed, removed } = createIndexer()
+        const volumePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1')
+        setDirectory(volumePath)
+        setFileContent(path.join(volumePath, '01-初遇.md'), '# 初遇')
+
+        const renamed = await renameVolume(indexer, {
+            dirPath: 'press/剑来',
+            volumeDir: '01-卷1',
+            name: '风起长安',
+            volumeFilePaths: ['press/剑来/Chapter/01-卷1/01-初遇.md'],
+        })
+
+        expect(renamed).toEqual({ volumeDir: '01-风起长安', volumeName: '风起长安' })
+        const renamedPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-风起长安', '01-初遇.md')
+        expect(indexed).toEqual([renamedPath])
+        expect(readFileContent(renamedPath)).toBe('# 初遇')
+        // 先清旧前缀再建新索引，两处顺序即断言顺序
+        expect(removed).toEqual(['press/剑来/Chapter/01-卷1/'])
+    })
+
+    it('原目录无序号前缀时新目录也不带前缀', async () => {
+        const { indexer } = createIndexer()
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '外传'))
+
+        const renamed = await renameVolume(indexer, {
+            dirPath: 'press/剑来',
+            volumeDir: '外传',
+            name: '番外',
+            volumeFilePaths: [],
+        })
+
+        expect(renamed.volumeDir).toBe('番外')
+        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '番外'))).toBe(true)
+    })
+
+    it('新卷名与原卷名一致时直接返回，不移动目录', async () => {
+        const { indexer, removed } = createIndexer()
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1'))
+
+        const renamed = await renameVolume(indexer, {
+            dirPath: 'press/剑来',
+            volumeDir: '01-卷1',
+            name: '卷1',
+            volumeFilePaths: [],
+        })
+
+        expect(renamed.volumeDir).toBe('01-卷1')
+        expect(removed).toEqual([])
+    })
+
+    it('目标卷目录已存在时拒绝，且不改动原目录', async () => {
+        const { indexer, removed } = createIndexer()
+        const volumePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1')
+        setDirectory(volumePath)
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-番外'))
+
+        await expect(
+            renameVolume(indexer, {
+                dirPath: 'press/剑来',
+                volumeDir: '01-卷1',
+                name: '番外',
+                volumeFilePaths: [],
+            }),
+        ).rejects.toThrow('卷已存在：01-番外')
+        expect(hasDirectory(volumePath)).toBe(true)
+        expect(removed).toEqual([])
+    })
+
+    it('卷名非法时拒绝，不触碰文件系统', async () => {
+        const { indexer, indexed } = createIndexer()
+        const volumePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1')
+        setDirectory(volumePath)
+
+        await expect(
+            renameVolume(indexer, { dirPath: 'press/剑来', volumeDir: '01-卷1', name: '../evil', volumeFilePaths: [] }),
+        ).rejects.toThrow('卷名不能包含')
+        expect(hasDirectory(volumePath)).toBe(true)
+        expect(indexed).toEqual([])
+    })
+
+    it('卷不存在时报错', async () => {
+        const { indexer } = createIndexer()
+
+        await expect(
+            renameVolume(indexer, {
+                dirPath: 'press/剑来',
+                volumeDir: '01-卷1',
+                name: '风起长安',
+                volumeFilePaths: [],
+            }),
+        ).rejects.toThrow('卷不存在：01-卷1')
+    })
+})
+
+describe('deleteVolume', () => {
+    it('删除整卷目录并清理该卷的索引记录', async () => {
+        const { indexer, removed } = createIndexer()
+        const volumePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1')
+        setDirectory(volumePath)
+        setFileContent(path.join(volumePath, '01-初遇.md'), '# 初遇')
+
+        await deleteVolume(indexer, { dirPath: 'press/剑来', volumeDir: '01-卷1' })
+
+        expect(hasDirectory(volumePath)).toBe(false)
+        expect(readFileContent(path.join(volumePath, '01-初遇.md'))).toBeUndefined()
+        expect(readDeletedPaths()).toEqual([volumePath])
+        expect(removed).toEqual(['press/剑来/Chapter/01-卷1/'])
+    })
+
+    it('卷不存在时拒绝，不产生删除调用', async () => {
+        const { indexer, removed } = createIndexer()
+
+        await expect(deleteVolume(indexer, { dirPath: 'press/剑来', volumeDir: '02-卷2' })).rejects.toThrow(
+            '卷不存在：02-卷2',
+        )
+        expect(readDeletedPaths()).toEqual([])
+        expect(removed).toEqual([])
+    })
+
+    it('卷目录非法时拒绝，不触达文件系统', async () => {
+        const { indexer } = createIndexer()
+
+        await expect(deleteVolume(indexer, { dirPath: 'press/剑来', volumeDir: '../evil' })).rejects.toThrow(
+            '卷目录非法',
+        )
+        expect(readDeletedPaths()).toEqual([])
+    })
+})
+
+describe('deleteChapter', () => {
+    it('删除分卷章节：文档移入回收站并按完整路径清理索引', async () => {
+        const { indexer, removedFiles } = createIndexer()
+        const chapterPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '01-初遇.md')
+        setFileContent(chapterPath, '# 初遇')
+
+        await deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/Chapter/01-卷1/01-初遇.md' })
+
+        expect(readDeletedPaths()).toEqual([chapterPath])
+        expect(removedFiles).toEqual(['press/剑来/Chapter/01-卷1/01-初遇.md'])
+        expect(readFileContent(chapterPath)).toBeUndefined()
+    })
+
+    it('未分卷散章同样可删', async () => {
+        const { indexer, removedFiles } = createIndexer()
+        const chapterPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-初见.md')
+        setFileContent(chapterPath, '# 初见')
+
+        await deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/Chapter/01-初见.md' })
+
+        expect(readDeletedPaths()).toEqual([chapterPath])
+        expect(removedFiles).toEqual(['press/剑来/Chapter/01-初见.md'])
+    })
+
+    it('章节不存在时报错，不产生删除调用', async () => {
+        const { indexer, removedFiles } = createIndexer()
+
+        await expect(
+            deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/Chapter/01-卷1/01-初遇.md' }),
+        ).rejects.toThrow('章节不存在')
+        expect(readDeletedPaths()).toEqual([])
+        expect(removedFiles).toEqual([])
+    })
+
+    it('拒绝非 Chapter 层级、跨作品与越界路径', async () => {
+        const { indexer } = createIndexer()
+
+        await expect(deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/README.md' })).rejects.toThrow(
+            '章节路径非法',
+        )
+        await expect(
+            deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/雪中/Chapter/01-卷1/01-初遇.md' }),
+        ).rejects.toThrow('章节路径非法')
+        await expect(
+            deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/../x/Chapter/a.md' }),
+        ).rejects.toThrow('章节路径非法')
+        expect(readDeletedPaths()).toEqual([])
+    })
+
+    it('文档有未保存修改时拒绝删除，磁盘文件保留', async () => {
+        const { indexer, removedFiles } = createIndexer()
+        const chapterPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '01-初遇.md')
+        setFileContent(chapterPath, '# 初遇')
+        registerDirtyTextDocument(chapterPath, ['# 初遇（未保存）'])
+
+        await expect(
+            deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/Chapter/01-卷1/01-初遇.md' }),
+        ).rejects.toThrow('章节有未保存的修改')
+        expect(readDeletedPaths()).toEqual([])
+        expect(removedFiles).toEqual([])
+        expect(readFileContent(chapterPath)).toBe('# 初遇')
+    })
+})
+
+describe('moveChapter', () => {
+    it('移动到目标卷末尾：按目标卷重排序号，先清旧记录再索引新路径', async () => {
+        const { indexer, indexed, removedFiles } = createIndexer()
+        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '03-初见.md')
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '02-卷2'))
+        setFileContent(sourcePath, '# 初见')
+
+        const moved = await moveChapter(indexer, {
+            dirPath: 'press/剑来',
+            path: 'press/剑来/Chapter/01-卷1/03-初见.md',
+            targetVolumeDir: '02-卷2',
+            chapterPaths: [
+                'press/剑来/Chapter/01-卷1/03-初见.md',
+                'press/剑来/Chapter/02-卷2/04-远行.md',
+                'press/剑来/Chapter/02-卷2/07-重逢.md',
+            ],
+        })
+
+        const targetPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '02-卷2', '08-初见.md')
+        expect(moved.path).toBe('press/剑来/Chapter/02-卷2/08-初见.md')
+        expect(moved.title).toBe('初见')
+        expect(moved.volume).toBe('卷2')
+        expect(moved.uri.fsPath).toBe(targetPath)
+        expect(readFileContent(targetPath)).toBe('# 初见')
+        expect(readFileContent(sourcePath)).toBeUndefined()
+        expect(removedFiles).toEqual(['press/剑来/Chapter/01-卷1/03-初见.md'])
+        expect(indexed).toEqual([targetPath])
+    })
+
+    it('移动到未分卷根目录时沿用 Chapter/ 下的下一序号', async () => {
+        const { indexer } = createIndexer()
+        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '03-初见.md')
+        setFileContent(sourcePath, '# 初见')
+
+        const moved = await moveChapter(indexer, {
+            dirPath: 'press/剑来',
+            path: 'press/剑来/Chapter/01-卷1/03-初见.md',
+            targetVolumeDir: '',
+            chapterPaths: ['press/剑来/Chapter/01-卷1/03-初见.md', 'press/剑来/Chapter/02-旧章.md'],
+        })
+
+        expect(moved.path).toBe('press/剑来/Chapter/03-初见.md')
+        expect(moved.volume).toBe('')
+    })
+
+    it('目标文件名已存在时递增序号且不覆盖', async () => {
+        const { indexer } = createIndexer()
+        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '03-初见.md')
+        const occupiedPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '02-卷2', '01-初见.md')
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '02-卷2'))
+        setFileContent(sourcePath, '# 初见')
+        setFileContent(occupiedPath, '占位内容')
+
+        const moved = await moveChapter(indexer, {
+            dirPath: 'press/剑来',
+            path: 'press/剑来/Chapter/01-卷1/03-初见.md',
+            targetVolumeDir: '02-卷2',
+            chapterPaths: ['press/剑来/Chapter/01-卷1/03-初见.md'],
+        })
+
+        expect(moved.path).toBe('press/剑来/Chapter/02-卷2/02-初见.md')
+        expect(readFileContent(occupiedPath)).toBe('占位内容')
+    })
+
+    it('目标卷不存在时拒绝，源文件保留', async () => {
+        const { indexer, indexed } = createIndexer()
+        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '03-初见.md')
+        setFileContent(sourcePath, '# 初见')
+
+        await expect(
+            moveChapter(indexer, {
+                dirPath: 'press/剑来',
+                path: 'press/剑来/Chapter/01-卷1/03-初见.md',
+                targetVolumeDir: '09-卷9',
+                chapterPaths: [],
+            }),
+        ).rejects.toThrow('目标卷不存在：09-卷9')
+        expect(readFileContent(sourcePath)).toBe('# 初见')
+        expect(indexed).toEqual([])
+    })
+
+    it('同卷移动时拒绝', async () => {
+        const { indexer, indexed } = createIndexer()
+        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '03-初见.md')
+        setFileContent(sourcePath, '# 初见')
+
+        await expect(
+            moveChapter(indexer, {
+                dirPath: 'press/剑来',
+                path: 'press/剑来/Chapter/01-卷1/03-初见.md',
+                targetVolumeDir: '01-卷1',
+                chapterPaths: [],
+            }),
+        ).rejects.toThrow('章节已在该卷：卷1')
+        expect(indexed).toEqual([])
+    })
+
+    it('章节路径非法时拒绝，不触达文件系统', async () => {
+        const { indexer } = createIndexer()
+
+        await expect(
+            moveChapter(indexer, {
+                dirPath: 'press/剑来',
+                path: 'press/剑来/README.md',
+                targetVolumeDir: '02-卷2',
+                chapterPaths: [],
+            }),
+        ).rejects.toThrow('章节路径非法')
     })
 })

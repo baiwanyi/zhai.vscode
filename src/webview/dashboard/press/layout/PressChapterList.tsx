@@ -1,8 +1,11 @@
 /**
  * 章节目录：按卷分组渲染可折叠的卷区块，并管理各卷的展开状态。
- * 复用 PressVolumeSection 承载折叠、卷内分批与加章入口，@/components/ui/empty 承载空态。
+ * 复用 PressVolumeSection 承载折叠、卷内分批、加章入口与卷级/章节级操作，@/components/ui/empty 承载空态。
  * 关键约束：展开状态以「用户操作后的集合」为准，未操作时按默认集合派生（只展开第一个卷，首屏渲染可控）；
- * 在某卷加章前先展开该卷，保证新章节立即可见；切换作品由父级以 dirPath 作 key 重挂载来重置状态。
+ * 在某卷加章前先展开该卷，保证新章节立即可见；移动章节后由父级以 initialExpandVolumeDir + key 重挂载，
+ * 让落点卷成为新的默认展开项——不在 effect 里同步改 state，避免多余重渲染；
+ * 切换作品由父级以 dirPath 作 key 重挂载来重置状态；卷与章节的操作只向上转发目录名/路径，
+ * 具体交互与请求由页面层承担。
  */
 import { FileText } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
@@ -14,21 +17,46 @@ import type { JSX } from 'react'
 interface PressChapterListProps {
     volumes: PressVolumeGroup[]
     isCreatingChapter: boolean
+    /** 卷级操作进行中：透传给卷区块以禁用入口 */
+    isUpdatingVolume: boolean
+    /** 章节级操作进行中：透传给卷区块以禁用章节入口 */
+    isUpdatingChapter: boolean
+    /** 挂载时默认展开的卷：章节移动后由父级下发落点卷目录名，并配合 key 重挂载生效 */
+    initialExpandVolumeDir?: string
     onOpenChapter: (path: string) => void
     onCreateChapter: (volumeDir: string) => void
+    onRenameVolume: (volumeDir: string) => void
+    onDeleteVolume: (volumeDir: string) => void
+    onMoveChapter: (path: string, targetVolumeDir: string) => void
+    onDeleteChapter: (path: string) => void
 }
 
 export function PressChapterList({
     volumes,
     isCreatingChapter,
+    isUpdatingVolume,
+    isUpdatingChapter,
+    initialExpandVolumeDir,
     onOpenChapter,
     onCreateChapter,
+    onRenameVolume,
+    onDeleteVolume,
+    onMoveChapter,
+    onDeleteChapter,
 }: PressChapterListProps): JSX.Element {
-    // 默认只展开第一个卷：长篇作品首屏最多渲染一批章节，其余按需展开
+    // 默认只展开第一个卷：长篇作品首屏最多渲染一批章节，其余按需展开；
+    // 章节移动后由 initialExpandVolumeDir 指定落点卷优先展开
     const defaultExpanded = useMemo(() => {
+        const next = new Set<string>()
+        if (initialExpandVolumeDir !== undefined) {
+            next.add(initialExpandVolumeDir)
+        }
         const first = volumes[0]
-        return new Set<string>(first === undefined ? [] : [first.dirName])
-    }, [volumes])
+        if (first !== undefined) {
+            next.add(first.dirName)
+        }
+        return next
+    }, [initialExpandVolumeDir, volumes])
     const [userExpanded, setUserExpanded] = useState<ReadonlySet<string> | null>(null)
     const expanded = userExpanded ?? defaultExpanded
 
@@ -84,9 +112,16 @@ export function PressChapterList({
                     isOpen={expanded.has(volume.dirName)}
                     canAppend={volume.dirName.length > 0}
                     isCreatingChapter={isCreatingChapter}
+                    isUpdatingVolume={isUpdatingVolume}
+                    isUpdatingChapter={isUpdatingChapter}
+                    moveTargets={volumes.filter((item) => item.dirName !== volume.dirName)}
                     onOpenChange={handleOpenChange}
                     onOpenChapter={onOpenChapter}
                     onCreateChapter={handleCreateChapter}
+                    onRenameVolume={onRenameVolume}
+                    onDeleteVolume={onDeleteVolume}
+                    onMoveChapter={onMoveChapter}
+                    onDeleteChapter={onDeleteChapter}
                 />
             ))}
         </div>

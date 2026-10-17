@@ -432,6 +432,9 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 |------|------|
 | `press/detail` | 一次返回作品摘要 + 卷分组章节；作品未登记时明确报错，不返回空详情 |
 | `press/createChapter` | 计算落点与序号 → 写入章节骨架 → 索引 → 打开，返回 `path / title / volume` |
+| `press/createVolume` | 卷序号取最大值 + 1 → 建目录 → 写入首章 → 索引 → 打开 |
+| `press/renameVolume` | 保留原序号前缀替换卷名 → 移动目录 → 清理旧前缀索引 → 按新路径重建索引 |
+| `press/deleteVolume` | 整卷目录移入回收站 → 按前缀清理该卷索引记录 |
 | `press/openChapter` | 回查索引库精确命中后打开章节文档，前缀须属于对应作品的 `Chapter/` |
 
 **章节聚合规则**
@@ -463,6 +466,14 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 - 卷序号取现有卷最大序号 + 1，目录名 `{两位序号}-卷{N}`，目录已存在时递增重试
 - 建卷必须同时写入该卷首章 `01-未命名章节.md`：索引库只记录文档，空目录不会出现在详情页，避免「看不见的卷」
 - 首章写盘后立即索引并打开，toast 提示卷名
+
+**卷的重命名与删除（卷头更多操作）**
+
+- 重命名只换可读部分，序号前缀沿用原目录（`01-卷1` → `01-风起长安`）；原目录无前缀时不凭空补前缀，避免造出排序号
+- 新卷名走与作品名同源的名称白名单（`validateVolumeName`）；目标目录已存在即拒绝，绝不合并或覆盖
+- 目录移动后旧路径索引立即失效：先按旧卷前缀清理（`removeFilesUnder`），再按新路径逐份重建，不依赖 watcher 的删除回调
+- 删除整卷移入回收站（环境不支持时退化为永久删除），并按前缀清理该卷索引记录；作品下删空后不自动补卷，下次新增章节回落默认卷1
+- 未分卷组（历史散章）不提供卷级操作入口
 
 **大作品渲染（懒加载 + 折叠）**
 

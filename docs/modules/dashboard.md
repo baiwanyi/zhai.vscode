@@ -461,6 +461,8 @@ StatCardRow / ActivityFeed 展示
 | `press/create` | 校验作品名 → 生成骨架 → 逐文档索引 → 打开 README |
 | `press/createChapter` | 计算落点卷与卷内序号 → 写入章节骨架 → 索引 → 打开 |
 | `press/createVolume` | 新建一卷并写入其首章（空卷不进索引，必须带首章） |
+| `press/renameVolume` | 保留序号前缀重命名卷目录，并按新路径重建该卷索引 |
+| `press/deleteVolume` | 整卷移入回收站并清理该卷索引记录 |
 | `press/open` | 回查索引库后打开作品 README |
 | `press/openChapter` | 回查索引库后打开指定章节文档 |
 

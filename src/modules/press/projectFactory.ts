@@ -60,31 +60,50 @@ function hasControlChar(value: string): boolean {
 }
 
 /**
- * 校验作品名：合法返回 null，非法返回可直接展示给用户的原因。
- * 关键约束：先 trim 再校验；空名、超长、非法字符、控制字符、`.`/`..`、
+ * 名称通用校验：合法返回 null，非法返回可直接展示给用户的原因（label 用于拼装文案）。
+ * 关键约束：调用方须先 trim；空名、超长、非法字符、控制字符、`.`/`..`、
  * 首空格或以空格/点结尾、Windows 保留名（含以扩展名形式出现的变体）一律拒绝。
  */
-export function validateProjectName(name: string): string | null {
+function validateName(name: string, label: string): string | null {
     if (name.length === 0) {
-        return '作品名不能为空'
+        return `${label}不能为空`
     }
     if (name.length > MAX_PROJECT_NAME_LENGTH) {
-        return `作品名不能超过 ${MAX_PROJECT_NAME_LENGTH} 个字符`
+        return `${label}不能超过 ${MAX_PROJECT_NAME_LENGTH} 个字符`
     }
     if (ILLEGAL_NAME_CHARS.some((char) => name.includes(char)) || hasControlChar(name)) {
-        return '作品名不能包含 \\ / : * ? " < > | 等非法字符'
+        return `${label}不能包含 \\ / : * ? " < > | 等非法字符`
     }
     if (name === '.' || name === '..') {
-        return '作品名不能为 . 或 ..'
+        return `${label}不能为 . 或 ..`
     }
     if (name.startsWith(' ') || name.endsWith(' ') || name.endsWith('.')) {
-        return '作品名不能以空格开头，也不能以空格或点结尾'
+        return `${label}不能以空格开头，也不能以空格或点结尾`
     }
     const baseName = (name.split('.')[0] ?? '').toUpperCase()
     if (WINDOWS_RESERVED_NAMES.includes(baseName)) {
-        return `作品名不能使用系统保留名：${name}`
+        return `${label}不能使用系统保留名：${name}`
     }
     return null
+}
+
+/** 校验作品名：同时作为目录名，规则与卷名一致，仅文案不同 */
+export function validateProjectName(name: string): string | null {
+    return validateName(name, '作品名')
+}
+
+/** 校验卷名：只用于卷目录名的可读部分，序号前缀由宿主保留 */
+export function validateVolumeName(name: string): string | null {
+    return validateName(name, '卷名')
+}
+
+/**
+ * 生成重命名后的卷目录名：保留原目录的序号前缀，替换可读部分。
+ * 原目录无序号前缀时新目录也不带前缀，避免凭空造出排序号。
+ */
+export function buildRenamedVolumeDirName(currentDirName: string, name: string): string {
+    const matched = /^(\d+)(?:[-_.、\s])/.exec(currentDirName)
+    return matched?.[1] === undefined ? name : `${matched[1]}-${name}`
 }
 
 /** 本地日期字符串（YYYY-MM-DD），作为 Frontmatter 的创建日期 */
@@ -176,6 +195,14 @@ export function toDisplayName(value: string): string {
 /** 生成章节文件名：{两位序号}-未命名章节.md */
 export function buildChapterFileName(order: number): string {
     return `${String(order).padStart(CHAPTER_ORDER_WIDTH, '0')}-${DEFAULT_CHAPTER_TITLE}.md`
+}
+
+/**
+ * 生成重排序号后的章节文件名：保留可读部分，仅替换序号前缀。
+ * 用途：跨卷移动章节时按目标卷重排，可读名与正文标题都不改动。
+ */
+export function buildOrderedChapterFileName(order: number, displayName: string): string {
+    return `${String(order).padStart(CHAPTER_ORDER_WIDTH, '0')}-${displayName}.md`
 }
 
 /** 生成卷目录名：{两位序号}-卷{N} */

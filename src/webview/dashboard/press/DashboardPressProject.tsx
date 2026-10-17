@@ -1,18 +1,24 @@
 /**
  * 作品详情页（#/press/{作品名}）：页头返回作品列表、作品元信息、新建卷入口与卷分组章节目录。
- * 数据与动作经 hooks/usePressProjectDetail 下发，章节渲染与折叠交给 PressChapterList（卷内按批追加）。
+ * 数据与动作经 hooks/usePressProjectDetail 下发，章节渲染与折叠交给 PressChapterList（卷内按批追加），
+ * 卷的重命名/删除与章节的删除由本页承载弹窗，章节移动成功后展开落点卷，成功后由 hook 重拉详情。
  * 关键约束：详情未就绪时页头用路由中的目录名兜底，避免标题闪烁；「新建卷」仅在数据就绪后可用，
- * 防止向不存在的作品写入；页面内屏蔽浏览器右键菜单，与仪表盘其余页面一致。
+ * 防止向不存在的作品写入；弹窗以被操作的卷重挂载，保证输入框回到当前卷名；页面内屏蔽浏览器右键菜单。
  */
 import { BookPlus } from 'lucide-react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Toaster } from '@/components/ui/sonner'
+import type { PressChapterEntry, PressVolumeGroup } from '@/shared/types/press'
 import { usePressProjectDetail } from './hooks/usePressProjectDetail'
+import { PressChapterDeleteDialog } from './layout/PressChapterDeleteDialog'
 import { PressChapterList } from './layout/PressChapterList'
 import { PressProjectHeader } from './layout/PressProjectHeader'
+import { PressVolumeDeleteDialog } from './layout/PressVolumeDeleteDialog'
+import { PressVolumeRenameDialog } from './layout/PressVolumeRenameDialog'
 import { formatProjectMeta } from './utils'
 import type { JSX } from 'react'
 import { useVscodeTheme } from '../hooks/useVscodeTheme'
@@ -65,15 +71,65 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
         error,
         isCreatingChapter,
         isCreatingVolume,
+        isUpdatingVolume,
+        isUpdatingChapter,
         reload,
         createChapter,
         createVolume,
+        renameVolume,
+        deleteVolume,
+        deleteChapter,
+        moveChapter,
         openChapter,
         openReadme,
     } = usePressProjectDetail(dirPath)
     const theme = useVscodeTheme()
+    const [renameTarget, setRenameTarget] = useState<PressVolumeGroup | null>(null)
+    const [deleteTarget, setDeleteTarget] = useState<PressVolumeGroup | null>(null)
+    const [deleteChapterTarget, setDeleteChapterTarget] = useState<PressChapterEntry | null>(null)
+    const [expandVolumeDir, setExpandVolumeDir] = useState<string | undefined>(undefined)
+    // 章节移动后递增，让章节列表重挂载并把落点卷作为默认展开项
+    const [chapterListKey, setChapterListKey] = useState(0)
     const project = detail?.project
     const fallbackName = dirPath.split('/')[1] ?? '作品'
+
+    const readVolume = (volumeDir: string): PressVolumeGroup | null =>
+        detail?.volumes.find((volume) => volume.dirName === volumeDir) ?? null
+
+    const readChapter = (path: string): PressChapterEntry | null => {
+        for (const volume of detail?.volumes ?? []) {
+            const found = volume.chapters.find((chapter) => chapter.path === path)
+            if (found !== undefined) {
+                return found
+            }
+        }
+        return null
+    }
+
+    const handleConfirmDelete = (volume: PressVolumeGroup): void => {
+        void deleteVolume(volume.dirName).then((isSucceeded) => {
+            if (isSucceeded) {
+                setDeleteTarget(null)
+            }
+        })
+    }
+
+    const handleConfirmDeleteChapter = (chapter: PressChapterEntry): void => {
+        void deleteChapter(chapter.path).then((isSucceeded) => {
+            if (isSucceeded) {
+                setDeleteChapterTarget(null)
+            }
+        })
+    }
+
+    const handleMoveChapter = (path: string, targetVolumeDir: string): void => {
+        void moveChapter(path, targetVolumeDir).then((moved) => {
+            if (moved !== null) {
+                setExpandVolumeDir(targetVolumeDir)
+                setChapterListKey((previous) => previous + 1)
+            }
+        })
+    }
 
     return (
         <div className="flex h-screen flex-col pt-3" onContextMenu={(event) => event.preventDefault()}>
@@ -106,16 +162,65 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                         ) : null}
                         {status === 'ready' ? (
                             <PressChapterList
+                                key={chapterListKey}
                                 volumes={detail?.volumes ?? []}
                                 isCreatingChapter={isCreatingChapter}
+                                isUpdatingVolume={isUpdatingVolume}
+                                isUpdatingChapter={isUpdatingChapter}
+                                initialExpandVolumeDir={expandVolumeDir}
                                 onOpenChapter={(path) => void openChapter(path)}
                                 onCreateChapter={(volumeDir) => void createChapter(volumeDir)}
+                                onRenameVolume={(volumeDir) => setRenameTarget(readVolume(volumeDir))}
+                                onDeleteVolume={(volumeDir) => setDeleteTarget(readVolume(volumeDir))}
+                                onMoveChapter={handleMoveChapter}
+                                onDeleteChapter={(path) => setDeleteChapterTarget(readChapter(path))}
                             />
                         ) : null}
                     </div>
                 </ScrollArea>
                 <div className="pointer-events-none absolute inset-x-0 top-0 h-3 bg-linear-to-b from-background to-transparent" />
             </div>
+            {renameTarget !== null ? (
+                <PressVolumeRenameDialog
+                    key={renameTarget.dirName}
+                    open
+                    initialName={renameTarget.name}
+                    isSubmitting={isUpdatingVolume}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setRenameTarget(null)
+                        }
+                    }}
+                    onSubmit={(name) => renameVolume(renameTarget.dirName, name)}
+                />
+            ) : null}
+            {deleteTarget !== null ? (
+                <PressVolumeDeleteDialog
+                    open
+                    volumeName={deleteTarget.name}
+                    chapterCount={deleteTarget.chapters.length}
+                    isSubmitting={isUpdatingVolume}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setDeleteTarget(null)
+                        }
+                    }}
+                    onConfirm={() => handleConfirmDelete(deleteTarget)}
+                />
+            ) : null}
+            {deleteChapterTarget !== null ? (
+                <PressChapterDeleteDialog
+                    open
+                    chapterTitle={deleteChapterTarget.title}
+                    isSubmitting={isUpdatingChapter}
+                    onOpenChange={(isOpen) => {
+                        if (!isOpen) {
+                            setDeleteChapterTarget(null)
+                        }
+                    }}
+                    onConfirm={() => handleConfirmDeleteChapter(deleteChapterTarget)}
+                />
+            ) : null}
             <Toaster theme={theme} />
         </div>
     )

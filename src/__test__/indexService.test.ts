@@ -43,6 +43,36 @@ describe('IndexService.indexFile', () => {
     })
 })
 
+describe('IndexService.removeFilesUnder', () => {
+    /** 读出全部索引路径（升序），供前缀清理断言 */
+    function readAllPaths(): string[] {
+        const rows = db.prepare('SELECT path FROM files ORDER BY path').all() as Array<{ path: string }>
+        return rows.map((row) => row.path)
+    }
+
+    it('按前缀删除该卷记录，其他卷不受影响', async () => {
+        setFileContent('d:\\vault\\press\\剑来\\Chapter\\01-卷1\\01-初遇.md', '# 初遇\n')
+        setFileContent('d:\\vault\\press\\剑来\\Chapter\\02-卷2\\01-远行.md', '# 远行\n')
+        await service.indexFile(vscode.Uri.file('d:\\vault\\press\\剑来\\Chapter\\01-卷1\\01-初遇.md'))
+        await service.indexFile(vscode.Uri.file('d:\\vault\\press\\剑来\\Chapter\\02-卷2\\01-远行.md'))
+
+        service.removeFilesUnder('press/剑来/Chapter/01-卷1/')
+
+        expect(readAllPaths()).toEqual(['press/剑来/Chapter/02-卷2/01-远行.md'])
+    })
+
+    it('前缀按目录边界匹配，不清除序号相同的兄弟卷', async () => {
+        setFileContent('d:\\vault\\press\\剑来\\Chapter\\01-卷1\\01-初遇.md', '# 初遇\n')
+        setFileContent('d:\\vault\\press\\剑来\\Chapter\\01-卷10\\01-远行.md', '# 远行\n')
+        await service.indexFile(vscode.Uri.file('d:\\vault\\press\\剑来\\Chapter\\01-卷1\\01-初遇.md'))
+        await service.indexFile(vscode.Uri.file('d:\\vault\\press\\剑来\\Chapter\\01-卷10\\01-远行.md'))
+
+        service.removeFilesUnder('press/剑来/Chapter/01-卷1/')
+
+        expect(readAllPaths()).toEqual(['press/剑来/Chapter/01-卷10/01-远行.md'])
+    })
+})
+
 describe('IndexService.toRelativePath', () => {
     it('存储根内剥离前缀，且不受盘符大小写影响', () => {
         expect(service.toRelativePath(vscode.Uri.file('d:\\vault\\notes\\a.md'))).toBe('notes/a.md')

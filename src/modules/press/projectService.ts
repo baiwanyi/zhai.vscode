@@ -1,9 +1,10 @@
 /**
- * 作品服务：把新作品骨架或新章节落到 press/ 目录并纳入索引，或按作品/章节路径打开对应文档。
- * 复用 common/storagePath 的路径构造与片段校验、common/config 的存储根解析、IndexService 的单文件索引能力。
- * 关键约束：落盘前校验作品名、目标目录与文件名存在性，已存在即报错、绝不覆盖；写入后立即索引，
+ * 作品服务：把新作品骨架或新章节落到 press/ 目录并纳入索引，或按作品/章节路径打开对应文档，
+ * 并承担卷的重命名与删除、章节的删除与跨卷移动（保留或重排序号前缀、同步收敛索引）。
+ * 复用 common/storagePath 的路径构造与片段校验、common/config 的存储根解析、IndexService 的单文件索引与前缀清理能力。
+ * 关键约束：落盘前校验作品名、卷名、目标目录与文件名存在性，已存在即报错、绝不覆盖；写入后立即索引，
  * 使列表不等 watcher 防抖即可见；实现路径统一为「press/{作品名}」两段，章节须位于其 Chapter/ 之下，
- * 存在性由调用方按索引库回查。
+ * 存在性由调用方按索引库回查；目录被移动或删除后主动按前缀清理索引，不依赖 watcher 的删除回调。
  */
 import * as vscode from 'vscode'
 import {
@@ -15,12 +16,15 @@ import {
     buildChapterFileName,
     buildChapterSkeleton,
     buildChapterTitle,
+    buildOrderedChapterFileName,
     buildProjectSkeleton,
+    buildRenamedVolumeDirName,
     buildVolumeDirName,
     compareByOrder,
     readOrderPrefix,
     toDisplayName,
     validateProjectName,
+    validateVolumeName,
 } from './projectFactory'
 import type { PressCategory } from '../../shared/types/press'
 import { resolveStorageRoot } from '../common/config'
@@ -30,9 +34,13 @@ import { buildStorageUri, isPathExisting, toSafeSegments, toStorageRelativePath 
 /** 新建章节的序号冲突重试上限 */
 const MAX_CHAPTER_ATTEMPTS = 10
 
-/** 新建作品所需的最小索引能力：仅声明用到的方法，便于解耦与替身注入 */
+/** 作品与卷操作所需的最小索引能力：仅声明用到的方法，便于解耦与替身注入 */
 export interface ProjectIndexer {
     indexFile: (uri: vscode.Uri) => Promise<void>
+    /** 删除指定相对前缀下的索引记录，卷重命名或删除后收敛，避免列表残留 */
+    removeFilesUnder: (relativePrefix: string) => void
+    /** 删除单份文档的索引记录，章节删除或跨卷移动后收敛 */
+    removeFile: (relativePath: string) => void
 }
 
 /** 新建作品入参：分类已由调用方归一化为枚举值 */
@@ -118,6 +126,53 @@ export interface CreatedVolumeHandle {
     uri: vscode.Uri
 }
 
+/** 卷重命名入参：新卷名只替换可读部分，序号前缀由服务按原目录保留 */
+export interface RenameVolumeRequest {
+    dirPath: string
+    /** 当前卷目录名（含序号前缀） */
+    volumeDir: string
+    /** 新卷名，不含序号前缀 */
+    name: string
+    /** 该卷已登记的文档路径，重命名后据此按新路径重建索引 */
+    volumeFilePaths: string[]
+}
+
+/** 卷重命名结果：新卷目录名与展示名，供前端定位该卷 */
+export interface RenamedVolumeHandle {
+    volumeDir: string
+    volumeName: string
+}
+
+/** 卷删除入参：卷目录名（含序号前缀） */
+export interface DeleteVolumeRequest {
+    dirPath: string
+    volumeDir: string
+}
+
+/** 章节删除入参：章节相对路径 */
+export interface DeleteChapterRequest {
+    dirPath: string
+    path: string
+}
+
+/** 章节移动入参：目标卷与作品已登记的章节路径（后者用于按目标卷推导新序号） */
+export interface MoveChapterRequest {
+    dirPath: string
+    path: string
+    /** 目标卷目录名；空串表示移到未分卷的 Chapter/ 根目录 */
+    targetVolumeDir: string
+    /** 该作品已登记的章节路径，用于计算目标任务卷内的下一个序号 */
+    chapterPaths: string[]
+}
+
+/** 章节移动结果：额外携带 Uri 供调用方按需打开，返回给 Webview 时只取可序列化字段 */
+export interface MovedChapterHandle {
+    path: string
+    title: string
+    volume: string
+    uri: vscode.Uri
+}
+
 /** 落点决策：目标卷目录、卷名与该卷内的起始章序号 */
 interface ChapterPlacement {
     volumeDir: string
@@ -195,6 +250,65 @@ function readVolumeDir(volumeDir: string): string {
         throw new Error(`卷目录非法：${volumeDir}`)
     }
     return volumeDir
+}
+
+/**
+ * 校验并切分章节路径：作品须为 press/{作品名} 两段，章节须在其实 Chapter/ 之下
+ * （未分卷为 4 段、分卷为 5 段起，更深层级归入所在卷）。
+ * 安全约束：先归一化再逐段校验，从源头排除上跳、跨作品与跨模块路径。
+ */
+function readChapterSegments(dirPath: string, chapterPath: string): string[] {
+    const projectSegments = readProjectSegments(dirPath)
+    const segments = toSafeSegments(toStorageRelativePath(chapterPath, '章节'), '章节')
+    const isSameProject = projectSegments.every((segment, index) => segments[index] === segment)
+    if (!isSameProject || segments.length < 4 || segments[2] !== PROJECT_CHAPTER_DIR) {
+        throw new Error(`章节路径非法：${chapterPath}`)
+    }
+    return segments
+}
+
+/** 章节所在卷目录名：未分卷散章返回空串，与卷分组的 dirName 口径一致 */
+function readChapterVolumeDir(segments: string[]): string {
+    return segments.length > 4 ? (segments[3] ?? '') : ''
+}
+
+/**
+ * 取指定卷内的下一个可用章序号：空串代表未分卷散章。
+ * 关键约束：只看该卷下的 .md 文档，无序号前缀的文件不参与编号，与新建章节的落点口径保持一致。
+ */
+function resolveNextChapterOrder(dirPath: string, chapterPaths: string[], volumeDir: string): number {
+    const chapterRoot = `${dirPath}/${PROJECT_CHAPTER_DIR}/`
+    let maxOrder = 0
+    for (const path of chapterPaths) {
+        if (!path.startsWith(chapterRoot)) {
+            continue
+        }
+        const segments = path.slice(chapterRoot.length).split('/')
+        const fileName = segments[segments.length - 1]
+        if (fileName === undefined || !fileName.toLowerCase().endsWith('.md')) {
+            continue
+        }
+        const currentVolumeDir = segments.length > 1 ? (segments[0] ?? '') : ''
+        if (currentVolumeDir !== volumeDir) {
+            continue
+        }
+        const order = readOrderPrefix(fileName) ?? 0
+        if (order > maxOrder) {
+            maxOrder = order
+        }
+    }
+    return maxOrder + 1
+}
+
+/**
+ * 阻止删除有未保存修改的文档：磁盘文件被删后编辑器内容仍是脏的，用户一旦保存就会把文件写回，
+ * 造成「已删除却复活」的错觉，因此要求先保存再删。
+ */
+function assertDocumentSaved(uri: vscode.Uri): void {
+    const opened = vscode.workspace.textDocuments.find((document) => document.uri.toString() === uri.toString())
+    if (opened !== undefined && opened.isDirty) {
+        throw new Error(`章节有未保存的修改，请先保存再删除：${opened.uri.fsPath}`)
+    }
 }
 
 /**
@@ -301,6 +415,135 @@ export async function createVolume(
         }
     }
     throw new Error(`新建卷失败：连续 ${MAX_CHAPTER_ATTEMPTS} 次目录名冲突`)
+}
+
+/**
+ * 重命名一卷：只替换卷目录的可读部分，序号前缀沿用原目录，避免打乱卷的先后顺序。
+ * 关键约束：新卷名须通过名称白名单校验；目标目录已存在即拒绝，绝不合并或覆盖已有内容；
+ * 目录移动后旧路径索引立即失效，故先按旧前缀清理、再按新路径逐份索引，使列表不等 watcher 防抖即收敛。
+ */
+export async function renameVolume(
+    indexer: ProjectIndexer,
+    request: RenameVolumeRequest,
+): Promise<RenamedVolumeHandle> {
+    const segments = readProjectSegments(request.dirPath)
+    const currentDir = readVolumeDir(request.volumeDir)
+    const name = request.name.trim()
+    const invalidReason = validateVolumeName(name)
+    if (invalidReason !== null) {
+        throw new Error(invalidReason)
+    }
+    const volumeDir = buildRenamedVolumeDirName(currentDir, name)
+    const volumeName = toDisplayName(volumeDir)
+    // 可读部分未变时目录名不变，视为成功而非报错，便于前端统一按成功处理
+    if (volumeDir === currentDir) {
+        return { volumeDir, volumeName }
+    }
+    const root = resolveStorageRoot()
+    const chapterRoot = [...segments, PROJECT_CHAPTER_DIR]
+    const currentUri = buildStorageUri(root, [...chapterRoot, currentDir])
+    const targetUri = buildStorageUri(root, [...chapterRoot, volumeDir])
+    if (!(await isPathExisting(currentUri))) {
+        throw new Error(`卷不存在：${currentDir}`)
+    }
+    if (await isPathExisting(targetUri)) {
+        throw new Error(`卷已存在：${volumeDir}`)
+    }
+    await vscode.workspace.fs.rename(currentUri, targetUri, { overwrite: false })
+    const currentPrefix = `${[...chapterRoot, currentDir].join('/')}/`
+    // 先清旧路径记录，再按新路径建索引：两步顺序颠倒会让旧记录把新路径的聚合口径带偏
+    indexer.removeFilesUnder(currentPrefix)
+    const targetSegments = [...chapterRoot, volumeDir]
+    for (const path of request.volumeFilePaths) {
+        if (!path.startsWith(currentPrefix)) {
+            continue
+        }
+        const relativeSegments = toSafeSegments(path.slice(currentPrefix.length), '章节')
+        await indexer.indexFile(buildStorageUri(root, [...targetSegments, ...relativeSegments]))
+    }
+    logger.info(`已重命名卷：${currentDir} → ${volumeDir}`)
+    return { volumeDir, volumeName }
+}
+
+/**
+ * 删除一卷：整卷目录移入回收站（环境不支持时退化为永久删除），并同步清理该卷的索引记录。
+ * 关键约束：递归删除目录时 watcher 不保证逐文件回调，必须按前缀主动清理，否则列表会残留已删章节；
+ * 卷目录须为单段且位于 Chapter/ 之下，避免借卷名越出作品目录。
+ */
+export async function deleteVolume(indexer: ProjectIndexer, request: DeleteVolumeRequest): Promise<void> {
+    const segments = readProjectSegments(request.dirPath)
+    const volumeDir = readVolumeDir(request.volumeDir)
+    const root = resolveStorageRoot()
+    const chapterRoot = [...segments, PROJECT_CHAPTER_DIR]
+    const target = buildStorageUri(root, [...chapterRoot, volumeDir])
+    if (!(await isPathExisting(target))) {
+        throw new Error(`卷不存在：${volumeDir}`)
+    }
+    await vscode.workspace.fs.delete(target, { recursive: true, useTrash: true })
+    indexer.removeFilesUnder(`${[...chapterRoot, volumeDir].join('/')}/`)
+    logger.info(`已删除卷：${[...chapterRoot, volumeDir].join('/')}`)
+}
+
+/**
+ * 删除单章：文档移入回收站（环境不支持时退化为永久删除），并同步清理该章的索引记录。
+ * 关键约束：路径须落在该作品的 Chapter/ 之下（未分卷与分卷两种深度都接受），存在性由调用方回查索引库；
+ * 有未保存修改的文档一律拒绝，避免删盘后编辑器内容「复活」文件。
+ */
+export async function deleteChapter(indexer: ProjectIndexer, request: DeleteChapterRequest): Promise<void> {
+    const segments = readChapterSegments(request.dirPath, request.path)
+    const root = resolveStorageRoot()
+    const target = buildStorageUri(root, segments)
+    if (!(await isPathExisting(target))) {
+        throw new Error(`章节不存在：${request.path}`)
+    }
+    assertDocumentSaved(target)
+    await vscode.workspace.fs.delete(target, { recursive: false, useTrash: true })
+    indexer.removeFile(segments.join('/'))
+    logger.info(`已删除章节：${segments.join('/')}`)
+}
+
+/**
+ * 移动单章到另一卷末尾：只重排文件名序号，保留可读名与正文，随后按新路径收敛索引。
+ * 关键约束：目标卷必须已存在（空目录不进索引，自动建卷会造出「看不见的卷」）；同卷移动直接拒绝；
+ * 目标文件名冲突时递增序号重试，绝不覆盖既有章节；先删旧路径记录再索引新路径，避免旧记录带偏聚合口径。
+ */
+export async function moveChapter(indexer: ProjectIndexer, request: MoveChapterRequest): Promise<MovedChapterHandle> {
+    const segments = readChapterSegments(request.dirPath, request.path)
+    const root = resolveStorageRoot()
+    const source = buildStorageUri(root, segments)
+    const fileName = segments[segments.length - 1] ?? ''
+    const currentVolumeDir = readChapterVolumeDir(segments)
+    const targetVolumeDir = request.targetVolumeDir.length > 0 ? readVolumeDir(request.targetVolumeDir) : ''
+    if (targetVolumeDir === currentVolumeDir) {
+        throw new Error(`章节已在该卷：${toDisplayName(currentVolumeDir)}`)
+    }
+    if (!(await isPathExisting(source))) {
+        throw new Error(`章节不存在：${request.path}`)
+    }
+    const chapterRoot = segments.slice(0, 3)
+    const targetDirectorySegments = targetVolumeDir.length > 0 ? [...chapterRoot, targetVolumeDir] : chapterRoot
+    const targetDirectory = buildStorageUri(root, targetDirectorySegments)
+    if (targetVolumeDir.length > 0 && !(await isPathExisting(targetDirectory))) {
+        throw new Error(`目标卷不存在：${targetVolumeDir}`)
+    }
+    const projectDirPath = segments.slice(0, 2).join('/')
+    const startOrder = resolveNextChapterOrder(projectDirPath, request.chapterPaths, targetVolumeDir)
+    const displayName = toDisplayName(fileName)
+    for (let attempt = 0; attempt < MAX_CHAPTER_ATTEMPTS; attempt += 1) {
+        const targetName = buildOrderedChapterFileName(startOrder + attempt, displayName)
+        const target = buildStorageUri(root, [...targetDirectorySegments, targetName])
+        if (await isPathExisting(target)) {
+            logger.debug(`移动目标文件名冲突，尝试下一个序号：${targetName}`)
+            continue
+        }
+        await vscode.workspace.fs.rename(source, target, { overwrite: false })
+        const relativePath = [...targetDirectorySegments, targetName].join('/')
+        indexer.removeFile(segments.join('/'))
+        await indexer.indexFile(target)
+        logger.info(`已移动章节：${segments.join('/')} → ${relativePath}`)
+        return { path: relativePath, title: displayName, volume: toDisplayName(targetVolumeDir), uri: target }
+    }
+    throw new Error(`移动章节失败：连续 ${MAX_CHAPTER_ATTEMPTS} 次序号冲突`)
 }
 
 /**

@@ -1,8 +1,10 @@
 /**
- * 作品详情数据：拉取 press/detail（摘要 + 卷分组章节），并提供新增卷、新增章节、打开章节与打开作品设定的动作。
+ * 作品详情数据：拉取 press/detail（摘要 + 卷分组章节），并提供新增卷、新增章节、卷重命名/删除、
+ * 章节删除/移动、打开章节与打开作品设定的动作。
  * 复用 ../../bridge 的请求与状态订阅、press/utils 的状态与提示口径；索引变更由 index 通道驱动重拉。
- * 关键约束：新增卷与新增章节共用同一组提交态，任一进行中即阻止重复提交；成功后重拉，不等 watcher 防抖；
- * 失败一律提示且不污染已有详情；本地数据只认宿主回包，不在前端拼装章节条目。
+ * 关键约束：新建、卷操作与章节操作共用独立提交态，任一进行中即阻止重复提交；成功后重拉，不等 watcher 防抖；
+ * 失败一律提示且不污染已有详情；本地数据只认宿主回包，不在前端拼装章节条目；卷与章节的破坏性操作
+ * 返回成功与否供弹窗决定是否关闭，移动还回传落点供页面展开目标卷。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
@@ -10,7 +12,9 @@ import type {
     CreatePressChapterRequest,
     CreatedPressChapter,
     CreatedPressVolume,
+    MovedPressChapter,
     PressProjectDetail,
+    RenamedPressVolume,
 } from '@/shared/types/press'
 import type { PressStatus } from '../utils'
 import { onState, request } from '../../../bridge'
@@ -22,9 +26,17 @@ export interface PressProjectDetailState {
     error: string | null
     isCreatingChapter: boolean
     isCreatingVolume: boolean
+    isUpdatingVolume: boolean
+    /** 章节级操作进行中：删除/移动期间禁用章节入口，避免并发改动同一文件 */
+    isUpdatingChapter: boolean
     reload: () => Promise<void>
     createChapter: (volumeDir?: string) => Promise<void>
     createVolume: () => Promise<void>
+    renameVolume: (volumeDir: string, name: string) => Promise<boolean>
+    deleteVolume: (volumeDir: string) => Promise<boolean>
+    deleteChapter: (path: string) => Promise<boolean>
+    /** 移动到目标卷；成功时回传落点，供页面展开目标卷 */
+    moveChapter: (path: string, targetVolumeDir: string) => Promise<MovedPressChapter | null>
     openChapter: (path: string) => Promise<void>
     openReadme: () => Promise<void>
 }
@@ -35,6 +47,8 @@ export function usePressProjectDetail(dirPath: string): PressProjectDetailState 
     const [error, setError] = useState<string | null>(null)
     const [isCreatingChapter, setIsCreatingChapter] = useState(false)
     const [isCreatingVolume, setIsCreatingVolume] = useState(false)
+    const [isUpdatingVolume, setIsUpdatingVolume] = useState(false)
+    const [isUpdatingChapter, setIsUpdatingChapter] = useState(false)
 
     const reload = useCallback(async (): Promise<void> => {
         try {
@@ -93,6 +107,81 @@ export function usePressProjectDetail(dirPath: string): PressProjectDetailState 
         }
     }, [dirPath, reload])
 
+    const renameVolume = useCallback(
+        async (volumeDir: string, name: string): Promise<boolean> => {
+            setIsUpdatingVolume(true)
+            try {
+                // 序号前缀由宿主保留，回包携带重命名后的目录名与展示名，前端不自行拼接
+                const renamed = await request<RenamedPressVolume>('press/renameVolume', { dirPath, volumeDir, name })
+                toast.success(`已重命名为${renamed.volumeName}`)
+                await reload()
+                return true
+            } catch (cause) {
+                toastError(cause)
+                return false
+            } finally {
+                setIsUpdatingVolume(false)
+            }
+        },
+        [dirPath, reload],
+    )
+
+    const deleteVolume = useCallback(
+        async (volumeDir: string): Promise<boolean> => {
+            setIsUpdatingVolume(true)
+            try {
+                await request('press/deleteVolume', { dirPath, volumeDir })
+                toast.success('已删除该卷')
+                await reload()
+                return true
+            } catch (cause) {
+                toastError(cause)
+                return false
+            } finally {
+                setIsUpdatingVolume(false)
+            }
+        },
+        [dirPath, reload],
+    )
+
+    const deleteChapter = useCallback(
+        async (path: string): Promise<boolean> => {
+            setIsUpdatingChapter(true)
+            try {
+                await request('press/deleteChapter', { dirPath, path })
+                toast.success('已删除该章节')
+                await reload()
+                return true
+            } catch (cause) {
+                toastError(cause)
+                return false
+            } finally {
+                setIsUpdatingChapter(false)
+            }
+        },
+        [dirPath, reload],
+    )
+
+    const moveChapter = useCallback(
+        async (path: string, targetVolumeDir: string): Promise<MovedPressChapter | null> => {
+            setIsUpdatingChapter(true)
+            try {
+                // 新路径与落点卷由宿主重排后回传，前端不自行拼装文件名
+                const moved = await request<MovedPressChapter>('press/moveChapter', { dirPath, path, targetVolumeDir })
+                const place = moved.volume.length > 0 ? moved.volume : '未分卷'
+                toast.success(`已移动到${place}：${moved.title}`)
+                await reload()
+                return moved
+            } catch (cause) {
+                toastError(cause)
+                return null
+            } finally {
+                setIsUpdatingChapter(false)
+            }
+        },
+        [dirPath, reload],
+    )
+
     const openChapter = useCallback(async (path: string): Promise<void> => {
         try {
             await request('press/openChapter', { path })
@@ -115,9 +204,15 @@ export function usePressProjectDetail(dirPath: string): PressProjectDetailState 
         error,
         isCreatingChapter,
         isCreatingVolume,
+        isUpdatingVolume,
+        isUpdatingChapter,
         reload,
         createChapter,
         createVolume,
+        renameVolume,
+        deleteVolume,
+        deleteChapter,
+        moveChapter,
         openChapter,
         openReadme,
     }

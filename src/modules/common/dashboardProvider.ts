@@ -1,9 +1,11 @@
 /**
  * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置、
- * 工作流页跳转、写作管理（作品列表、作品详情、新建作品与章节）聚合与创建，以及宿主命令。
+ * 工作流页跳转、写作管理（作品列表、作品详情、新建作品与章节、卷的重命名与删除、章节的删除与跨卷移动）
+ * 聚合与创建，以及宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传；
  * 另经 state 消息主动广播：note 通道给活跃笔记（列表回填选中态），index 通道给索引状态（列表随编辑收敛）。
- * 关键约束：请求处理为异步流程（新建笔记/作品/章节需落盘 + 索引 + 打开，打开与置顶须先经索引库校验路径），
+ * 关键约束：请求处理为异步流程（新建笔记/作品/章节、卷重命名与删除、章节删除与移动需落盘 + 索引 + 打开，
+ * 打开与置顶须先经索引库校验路径），
  * 须 await 结果后再回包；命令入口一律经白名单校验，未登记的命令直接拒绝；
  * 作品协议只做入参收窄与转发，聚合/落盘由 modules/press 承担，打开路径须先按索引库回查；
  * 活跃编辑器与索引状态监听须随面板销毁释放，否则重开面板会叠加监听、重复广播。
@@ -28,8 +30,10 @@ import type {
     CreatePressProjectResult,
     CreatedPressChapter,
     CreatedPressVolume,
+    MovedPressChapter,
     OpenPressProjectResult,
     PressProjectDetail,
+    RenamedPressVolume,
 } from '../../shared/types/press'
 import type { OpenWorkflowResult } from '../../shared/types/workflow'
 import type Database from 'better-sqlite3'
@@ -38,8 +42,12 @@ import { isOpenNoteRequest, isPinNotesRequest } from '../../shared/types/note'
 import {
     isCreatePressChapterRequest,
     isCreatePressProjectRequest,
+    isDeletePressChapterRequest,
+    isDeletePressVolumeRequest,
+    isMovePressChapterRequest,
     isOpenPressChapterRequest,
     isPressDirPath,
+    isRenamePressVolumeRequest,
     readPressCategory,
 } from '../../shared/types/press'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
@@ -49,14 +57,19 @@ import {
     hasProjectFiles,
     listPressProjects,
     listProjectChapterPaths,
+    listVolumeFilePaths,
     readProjectDetail,
 } from '../press/projectRepository'
 import {
     createChapter,
     createProject,
     createVolume,
+    deleteChapter,
+    deleteVolume,
+    moveChapter,
     openChapterByPath,
     openProjectByDir,
+    renameVolume,
 } from '../press/projectService'
 
 export class DashboardViewProvider implements vscode.WebviewViewProvider {
@@ -156,6 +169,18 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             }
             case 'press/createVolume': {
                 return this.createPressVolume(payload)
+            }
+            case 'press/renameVolume': {
+                return this.renamePressVolume(payload)
+            }
+            case 'press/deleteVolume': {
+                return this.deletePressVolume(payload)
+            }
+            case 'press/deleteChapter': {
+                return this.deletePressChapter(payload)
+            }
+            case 'press/moveChapter': {
+                return this.movePressChapter(payload)
             }
             case 'press/open': {
                 return this.openPressProject(payload)
@@ -312,6 +337,83 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             chapterPath: created.chapterPath,
             chapterTitle: created.chapterTitle,
         }
+    }
+
+    /**
+     * 重命名卷：新卷名与序号前缀由 press 服务决定，目录移动后按新路径重建索引。
+     * 关键约束：先回查作品存在，并把该卷已登记的文档一并交给服务，避免重命名后索引缺章；
+     * 卷目录名在服务侧再做单段校验，本层只做非空收窄。
+     */
+    private async renamePressVolume(payload: unknown): Promise<RenamedPressVolume> {
+        if (!isRenamePressVolumeRequest(payload)) {
+            throw new Error('press/renameVolume 参数非法：dirPath、volumeDir 与 name 须为非空字符串')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法重命名卷：${payload.dirPath}`)
+        }
+        const renamed = await renameVolume(this.indexService, {
+            dirPath: payload.dirPath,
+            volumeDir: payload.volumeDir,
+            name: payload.name,
+            volumeFilePaths: listVolumeFilePaths(this.db, payload.dirPath, payload.volumeDir),
+        })
+        logger.info(`卷重命名完成：${payload.volumeDir} → ${renamed.volumeDir}`)
+        return renamed
+    }
+
+    /**
+     * 删除卷：整卷移入回收站并清理该卷的索引记录。
+     * 关键约束：先回查作品存在再触达文件系统；删除不可撤销（回收站可恢复），确认交互由前端承担；
+     * 作品下已无卷时无需补建，下次新增章节会回落到默认卷1。
+     */
+    private async deletePressVolume(payload: unknown): Promise<{ deleted: boolean }> {
+        if (!isDeletePressVolumeRequest(payload)) {
+            throw new Error('press/deleteVolume 参数非法：dirPath 与 volumeDir 须为非空字符串')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法删除卷：${payload.dirPath}`)
+        }
+        await deleteVolume(this.indexService, { dirPath: payload.dirPath, volumeDir: payload.volumeDir })
+        logger.info(`卷删除完成：${payload.dirPath}/${payload.volumeDir}`)
+        return { deleted: true }
+    }
+
+    /**
+     * 删除章节：单章移入回收站并清理索引记录。
+     * 关键约束：先按索引库回查该文档，不采信前端传入的任意路径；存在未保存修改时由服务侧拒绝，
+     * 删除不可撤销（回收站可恢复），确认交互由前端承担。
+     */
+    private async deletePressChapter(payload: unknown): Promise<{ deleted: boolean }> {
+        if (!isDeletePressChapterRequest(payload)) {
+            throw new Error('press/deleteChapter 参数非法：dirPath 与 path 须为非空字符串')
+        }
+        if (!hasProjectFile(this.db, payload.path)) {
+            throw new Error(`章节不在索引中，无法删除：${payload.path}`)
+        }
+        await deleteChapter(this.indexService, { dirPath: payload.dirPath, path: payload.path })
+        logger.info(`章节删除完成：${payload.path}`)
+        return { deleted: true }
+    }
+
+    /**
+     * 移动章节：目标卷与作品已登记的章节路径一并交给服务，由服务按目标卷重排序号。
+     * 关键约束：先回查该文档在索引库中，避免把任意路径挪进作品目录；目标卷须真实存在，服务侧再做单段校验。
+     */
+    private async movePressChapter(payload: unknown): Promise<MovedPressChapter> {
+        if (!isMovePressChapterRequest(payload)) {
+            throw new Error('press/moveChapter 参数非法：dirPath 与 path 须为非空字符串，targetVolumeDir 须为字符串')
+        }
+        if (!hasProjectFile(this.db, payload.path)) {
+            throw new Error(`章节不在索引中，无法移动：${payload.path}`)
+        }
+        const moved = await moveChapter(this.indexService, {
+            dirPath: payload.dirPath,
+            path: payload.path,
+            targetVolumeDir: payload.targetVolumeDir,
+            chapterPaths: listProjectChapterPaths(this.db, payload.dirPath),
+        })
+        logger.info(`章节移动完成：${payload.path} → ${moved.path}`)
+        return { path: moved.path, title: moved.title, volume: moved.volume }
     }
 
     /**

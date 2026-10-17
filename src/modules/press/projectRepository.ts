@@ -182,6 +182,19 @@ export function readProjectDetail(db: Database.Database, dirPath: string): Press
     return { project: aggregateProject(name, rows), volumes: groups }
 }
 
+/** 列出某卷下全部已登记文档路径：卷重命名后据此按新路径重建索引 */
+export function listVolumeFilePaths(db: Database.Database, dirPath: string, volumeDir: string): string[] {
+    const name = readProjectName(dirPath)
+    if (name === null) {
+        return []
+    }
+    const prefix = `${PRESS_MODULE_DIR}/${name}/${PROJECT_CHAPTER_DIR}/${volumeDir}/`
+    const rows = db.prepare('SELECT path FROM files WHERE substr(path, 1, ?) = ?').all(prefix.length, prefix) as Array<{
+        path: string
+    }>
+    return rows.map((row) => row.path)
+}
+
 /** 列出作品已有的章节路径：新建章节时据此计算下一个序号与落点卷 */
 export function listProjectChapterPaths(db: Database.Database, dirPath: string): string[] {
     const name = readProjectName(dirPath)

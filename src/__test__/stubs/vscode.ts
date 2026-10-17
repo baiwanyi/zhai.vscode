@@ -18,6 +18,8 @@ const configValues = new Map<string, unknown>()
 const openableDocuments = new Map<string, vscode.TextDocument>()
 /** showTextDocument 的调用记录：按打开顺序保存 fsPath，供用例断言 */
 const openedDocumentPaths: string[] = []
+/** fs.delete 的调用记录：按删除顺序保存 fsPath，供用例断言删除范围 */
+const deletedPaths: string[] = []
 
 /** 复位全部模块级状态（工作区根、虚拟磁盘、虚拟目录、配置、可打开文档），供 beforeEach 使用 */
 export function resetWorkspaceState(): void {
@@ -27,6 +29,7 @@ export function resetWorkspaceState(): void {
     configValues.clear()
     openableDocuments.clear()
     openedDocumentPaths.length = 0
+    deletedPaths.length = 0
 }
 
 /** 设置工作区根路径 */
@@ -54,14 +57,41 @@ export function hasDirectory(path: string): boolean {
     return directories.has(path)
 }
 
+/** 预置虚拟目录：等价于已执行过 fs.createDirectory，供用例构造既有目录结构 */
+export function setDirectory(path: string): void {
+    directories.add(path)
+}
+
+/** 判断 path 是否等于或位于 dir 之下：兼容 / 与 \ 两种分隔符，且只按分隔符边界比对 */
+function isNestedUnder(path: string, dir: string): boolean {
+    if (path === dir) {
+        return true
+    }
+    return path.startsWith(`${dir}/`) || path.startsWith(`${dir}\\`)
+}
+
 /** 登记可被编辑器打开的文档（内容按行传入），供 openTextDocument 解析 */
 export function registerTextDocument(path: string, lines: string[]): void {
     openableDocuments.set(path, createTextDocument(lines, path))
 }
 
+/**
+ * 登记一份已打开且含未保存修改的文档：写入 workspace.textDocuments，供删除前的脏文档拦截用例构造。
+ * 关键约束：与 openableDocuments 分开登记，仅表示「编辑器里开着且有改动」，不代表磁盘文件存在。
+ */
+export function registerDirtyTextDocument(path: string, lines: string[]): void {
+    const document: vscode.TextDocument = { ...createTextDocument(lines, path), isDirty: true }
+    workspace.textDocuments.push(document)
+}
+
 /** 读取 showTextDocument 打开过的绝对路径序列，供用例断言打开目标 */
 export function readOpenedDocumentPaths(): string[] {
     return [...openedDocumentPaths]
+}
+
+/** 读取 fs.delete 删除过的绝对路径序列，供用例断言删除范围 */
+export function readDeletedPaths(): string[] {
+    return [...deletedPaths]
 }
 
 /** 构造 file 协议的 Uri */
@@ -325,6 +355,56 @@ export const workspace = {
         },
         writeFile(uri: vscode.Uri, content: Uint8Array): Promise<void> {
             fileContents.set(uri.fsPath, new TextDecoder().decode(content))
+            return Promise.resolve()
+        },
+        rename(source: vscode.Uri, target: vscode.Uri, options?: { overwrite?: boolean }): Promise<void> {
+            const sourcePath = source.fsPath
+            const targetPath = target.fsPath
+            if (!directories.has(sourcePath) && !fileContents.has(sourcePath)) {
+                return Promise.reject(new Error(`ENOENT: ${sourcePath}`))
+            }
+            const isOccupied = directories.has(targetPath) || fileContents.has(targetPath)
+            if (isOccupied && options?.overwrite !== true) {
+                return Promise.reject(new Error(`EEXIST: ${targetPath}`))
+            }
+            // 目录重命名须连同其下已登记的文件与子目录一起搬迁，保持虚拟磁盘自洽；
+            // 只按分隔符边界比对，避免 01-卷1 误命中 01-卷10
+            const relocate = (path: string): string => `${targetPath}${path.slice(sourcePath.length)}`
+            for (const [path, content] of [...fileContents]) {
+                if (isNestedUnder(path, sourcePath)) {
+                    fileContents.delete(path)
+                    fileContents.set(relocate(path), content)
+                }
+            }
+            for (const path of [...directories]) {
+                if (isNestedUnder(path, sourcePath)) {
+                    directories.delete(path)
+                    directories.add(relocate(path))
+                }
+            }
+            return Promise.resolve()
+        },
+        delete(uri: vscode.Uri, options?: { recursive?: boolean; useTrash?: boolean }): Promise<void> {
+            const targetPath = uri.fsPath
+            // 自身不算子项：删除文件时不存在「子项」，只有删目录才会因非递归而失败
+            const childPaths = [
+                ...[...fileContents.keys()].filter((path) => path !== targetPath && isNestedUnder(path, targetPath)),
+                ...[...directories].filter((path) => path !== targetPath && isNestedUnder(path, targetPath)),
+            ]
+            const isExisting = directories.has(targetPath) || fileContents.has(targetPath) || childPaths.length > 0
+            if (!isExisting) {
+                return Promise.reject(new Error(`ENOENT: ${targetPath}`))
+            }
+            if (options?.recursive !== true && childPaths.length > 0) {
+                return Promise.reject(new Error(`ENOTEMPTY: ${targetPath}`))
+            }
+            for (const path of childPaths) {
+                fileContents.delete(path)
+                directories.delete(path)
+            }
+            directories.delete(targetPath)
+            fileContents.delete(targetPath)
+            deletedPaths.push(targetPath)
             return Promise.resolve()
         },
     },
