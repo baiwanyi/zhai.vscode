@@ -12,10 +12,11 @@ import {
     registerTextDocument,
     resetWorkspaceState,
     setConfigValue,
+    setFileContent,
 } from '@/__test__/stubs/vscode'
 import type { ProjectIndexer } from '../modules/press/projectService'
 import { validateProjectName } from '../modules/press/projectFactory'
-import { createProject, openProjectByDir } from '../modules/press/projectService'
+import { createChapter, createProject, openChapterByPath, openProjectByDir } from '../modules/press/projectService'
 
 const STORAGE_ROOT = 'd:/vault'
 
@@ -146,6 +147,89 @@ describe('openProjectByDir', () => {
 
     it('README 缺失时把读取错误上抛', async () => {
         await expect(openProjectByDir('press/雪中')).rejects.toThrow('ENOENT')
+        expect(readOpenedDocumentPaths()).toEqual([])
+    })
+})
+
+describe('createChapter', () => {
+    it('无章节时在 Chapter/ 根创建首章并立即索引', async () => {
+        const { indexer, indexed } = createIndexer()
+
+        const created = await createChapter(indexer, { dirPath: 'press/剑来', chapterPaths: [] })
+
+        expect(created.path).toBe('press/剑来/Chapter/01-未命名章节.md')
+        expect(created.title).toBe('01 未命名章节')
+        expect(created.volume).toBe('')
+        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter'))).toBe(true)
+        expect(readFileContent(path.join(STORAGE_ROOT, created.path))).toContain('title: 01 未命名章节')
+        expect(indexed).toEqual([path.join(STORAGE_ROOT, created.path)])
+    })
+
+    it('已有章节时按最大序号顺延', async () => {
+        const { indexer } = createIndexer()
+
+        const created = await createChapter(indexer, {
+            dirPath: 'press/剑来',
+            chapterPaths: ['press/剑来/Chapter/01-初见.md', 'press/剑来/Chapter/07-再会.md'],
+        })
+
+        expect(created.path).toBe('press/剑来/Chapter/08-未命名章节.md')
+        expect(created.title).toBe('08 未命名章节')
+    })
+
+    it('存在分卷时追加到序号最大的卷', async () => {
+        const { indexer } = createIndexer()
+
+        const created = await createChapter(indexer, {
+            dirPath: 'press/剑来',
+            chapterPaths: [
+                'press/剑来/Chapter/09-根目录章节.md',
+                'press/剑来/Chapter/01-第一卷/01-初遇.md',
+                'press/剑来/Chapter/02-第二卷/03-远行.md',
+            ],
+        })
+
+        expect(created.path).toBe('press/剑来/Chapter/02-第二卷/04-未命名章节.md')
+        expect(created.volume).toBe('第二卷')
+    })
+
+    it('目标文件名已存在时递增序号且不覆盖', async () => {
+        const { indexer } = createIndexer()
+        const occupied = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-未命名章节.md')
+        setFileContent(occupied, '既有内容')
+
+        const created = await createChapter(indexer, { dirPath: 'press/剑来', chapterPaths: [] })
+
+        expect(created.path).toBe('press/剑来/Chapter/02-未命名章节.md')
+        expect(readFileContent(occupied)).toBe('既有内容')
+    })
+
+    it('作品目录非法时拒绝落盘', async () => {
+        const { indexer, indexed } = createIndexer()
+
+        await expect(createChapter(indexer, { dirPath: 'notes/剑来', chapterPaths: [] })).rejects.toThrow(
+            '作品路径非法',
+        )
+        await expect(createChapter(indexer, { dirPath: 'press', chapterPaths: [] })).rejects.toThrow('作品路径非法')
+        expect(indexed).toEqual([])
+    })
+})
+
+describe('openChapterByPath', () => {
+    it('打开 Chapter/ 下的章节文档', async () => {
+        const target = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-初见.md')
+        registerTextDocument(target, ['# 初见'])
+
+        await openChapterByPath('press/剑来/Chapter/01-初见.md')
+
+        expect(readOpenedDocumentPaths()).toEqual([target])
+    })
+
+    it('拒绝非 Chapter 层级、其他模块与越界路径', async () => {
+        await expect(openChapterByPath('press/剑来/README.md')).rejects.toThrow('章节路径非法')
+        await expect(openChapterByPath('press/剑来/Chapter')).rejects.toThrow('章节路径非法')
+        await expect(openChapterByPath('notes/a/Chapter/x.md')).rejects.toThrow('章节路径非法')
+        await expect(openChapterByPath('press/../x/Chapter/a.md')).rejects.toThrow('章节路径非法')
         expect(readOpenedDocumentPaths()).toEqual([])
     })
 })

@@ -58,6 +58,59 @@ export interface OpenPressProjectResult {
     opened: boolean
 }
 
+/** 章节条目：Chapter/ 下的一个 Markdown 文档 */
+export interface PressChapterEntry {
+    /** 相对存储根路径，形如 press/剑来/Chapter/01-初见.md */
+    path: string
+    /** 展示标题：文档内标题优先，缺失时用去序号前缀的文件名 */
+    title: string
+    /** 文档字数，取自索引库 */
+    wordCount: number
+    /** 文档最近修改时间（ISO 8601） */
+    mtime: string
+}
+
+/** 卷分组：name 为空串表示未分卷（章节直接位于 Chapter/ 下） */
+export interface PressVolumeGroup {
+    /** 展示名：去掉序号前缀的卷名，未分卷为空串 */
+    name: string
+    /** 原始目录名（含序号前缀），作为稳定 key；未分卷为空串 */
+    dirName: string
+    chapters: PressChapterEntry[]
+}
+
+/** 作品详情：摘要与卷分组章节，一次请求返回详情页所需的全部数据 */
+export interface PressProjectDetail {
+    project: PressProjectSummary
+    volumes: PressVolumeGroup[]
+}
+
+/** press/detail 请求：按作品目录取详情 */
+export interface PressProjectDetailRequest {
+    dirPath: string
+}
+
+/** press/createChapter 请求：在作品末尾追加章节 */
+export interface CreatePressChapterRequest {
+    dirPath: string
+}
+
+/** press/createChapter 响应 */
+export interface CreatedPressChapter {
+    /** 相对存储根的章节路径 */
+    path: string
+    /** 章节展示标题 */
+    title: string
+    /** 落点卷名，空串表示未分卷（落在 Chapter/ 根） */
+    volume: string
+}
+
+/** press/openChapter 请求：打开指定章节文档 */
+export interface OpenPressChapterRequest {
+    /** 相对存储根的章节路径，须已在索引库中登记 */
+    path: string
+}
+
 /** 判断是否为合法的新建作品请求（类型收窄辅助） */
 export function isCreatePressProjectRequest(payload: unknown): payload is CreatePressProjectRequest {
     if (typeof payload !== 'object' || payload === null) {
@@ -69,13 +122,22 @@ export function isCreatePressProjectRequest(payload: unknown): payload is Create
     return isValidName && isValidCategory
 }
 
-/** 判断是否为合法的打开作品请求（类型收窄辅助） */
-export function isOpenPressProjectRequest(payload: unknown): payload is OpenPressProjectRequest {
+/** 判断是否为合法的作品目录入参（类型收窄辅助）：详情、新建章节等协议共用同一形状 */
+export function isPressDirPath(payload: unknown): payload is { dirPath: string } {
     if (typeof payload !== 'object' || payload === null) {
         return false
     }
     const candidate = payload as { dirPath?: unknown }
     return typeof candidate.dirPath === 'string' && candidate.dirPath.length > 0
+}
+
+/** 判断是否为合法的打开章节请求（类型收窄辅助） */
+export function isOpenPressChapterRequest(payload: unknown): payload is OpenPressChapterRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { path?: unknown }
+    return typeof candidate.path === 'string' && candidate.path.length > 0
 }
 
 /** 读取分类取值：只接受枚举内的字符串，其余（含未传）回落为默认分类 */

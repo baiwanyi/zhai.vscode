@@ -1,19 +1,36 @@
 /**
- * 仪表盘路由外壳：按页内路由渲染概览首页或写作管理页，是仪表盘内唯一的页面切换点。
+ * 仪表盘路由外壳：按页内路由渲染概览首页、作品列表或作品详情，是仪表盘内唯一的页面切换点。
  * 复用 hooks/useDashboardRoute 取得路由与导航动作；页面组件只接收导航回调，不自行读写 hash。
- * 关键约束：切换页面时旧页面卸载，重新进入会重新拉取数据，避免跨页面共享过期快照。
+ * 关键约束：详情页以 dirPath 作为 key，切换作品即重挂载，分批渲染计数与滚动位置随之重置；
+ * 切换页面时旧页面卸载，重新进入会重新拉取数据，避免跨页面共享过期快照。
  */
+import { createHomeRoute, createPressProjectRoute, createPressRoute } from './core/routing'
 import { Dashboard } from './dashboard'
 import { useDashboardRoute } from './hooks/useDashboardRoute'
 import { DashboardPress } from './press/DashboardPress'
+import { DashboardPressProject } from './press/DashboardPressProject'
 import type { JSX } from 'react'
 
 export function DashboardScreen(): JSX.Element {
     const { route, navigate } = useDashboardRoute()
 
-    if (route === '/press') {
-        return <DashboardPress onBack={() => navigate('/')} />
+    switch (route.name) {
+        case 'pressProject':
+            return (
+                <DashboardPressProject
+                    key={route.dirPath}
+                    dirPath={route.dirPath}
+                    onBack={() => navigate(createPressRoute())}
+                />
+            )
+        case 'press':
+            return (
+                <DashboardPress
+                    onBack={() => navigate(createHomeRoute())}
+                    onOpenProject={(dirPath) => navigate(createPressProjectRoute(dirPath))}
+                />
+            )
+        default:
+            return <Dashboard onNavigate={navigate} />
     }
-
-    return <Dashboard onNavigate={navigate} />
 }

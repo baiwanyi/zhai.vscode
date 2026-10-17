@@ -11,6 +11,7 @@
 import { useCallback } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Toaster } from '@/components/ui/sonner'
+import { createPressRoute } from './core/routing'
 import { useActiveNote } from './hooks/useActiveNote'
 import { useDashboardActions } from './hooks/useDashboardActions'
 import { useDashboardStats } from './hooks/useDashboardStats'
@@ -93,7 +94,7 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
                     <div className="flex flex-col gap-3 p-3">
                         <DashboardSlots />
                         <DashboardEntries
-                            onOpenWriting={() => onNavigate('/press')}
+                            onOpenWriting={() => onNavigate(createPressRoute())}
                             onOpenPress={() => void openWorkflow('wechat')}
                         />
                         <NotesSection

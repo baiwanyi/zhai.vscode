@@ -12,7 +12,7 @@ import { ItemGroup } from '@/components/ui/item'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { PressProjectSummary } from '@/shared/types/press'
 import { PressProjectCard } from './PressProjectCard'
-import type { PressStatus } from '../hooks/usePressProjects'
+import type { PressStatus } from '../utils'
 import type { JSX } from 'react'
 
 /** 加载态骨架条数：与常见作品数量同量级即可，不做分页占位 */
@@ -22,7 +22,7 @@ interface PressProjectListProps {
     projects: PressProjectSummary[]
     status: PressStatus
     error: string | null
-    onOpen: (dirPath: string) => void
+    onSelect: (dirPath: string) => void
     onAdd: () => void
     onRebuild: () => void
     onRetry: () => void
@@ -32,20 +32,19 @@ export function PressProjectList({
     projects,
     status,
     error,
-    onOpen,
+    onSelect,
     onAdd,
     onRebuild,
     onRetry,
 }: PressProjectListProps): JSX.Element {
     const count = projects.length
+    const countLabel = status === 'ready' && count > 0 ? `${count} 部` : null
 
     return (
         <Card size="sm" className="ring-0">
             <CardHeader className="px-0 items-center">
                 <CardTitle>作品列表</CardTitle>
-                <CardAction className="row-span-1 text-xs text-muted-foreground">
-                    {status === 'ready' && count > 0 ? `${count} 部` : null}
-                </CardAction>
+                <CardAction className="row-span-1 text-xs text-muted-foreground">{countLabel}</CardAction>
             </CardHeader>
             <CardContent className="px-0">
                 {status === 'loading' ? (
@@ -93,9 +92,9 @@ export function PressProjectList({
                     </Empty>
                 ) : null}
                 {status === 'ready' && count > 0 ? (
-                    <ItemGroup className="has-data-[size=xs]:gap-0 has-data-[size=sm]:gap-0">
+                    <ItemGroup className="gap-2">
                         {projects.map((project) => (
-                            <PressProjectCard key={project.dirPath} project={project} onOpen={onOpen} />
+                            <PressProjectCard key={project.dirPath} project={project} onSelect={onSelect} />
                         ))}
                     </ItemGroup>
                 ) : null}

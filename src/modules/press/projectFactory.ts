@@ -1,6 +1,7 @@
 /**
- * 作品骨架生成：作品名校验、目录常量与骨架文档模板的纯函数实现，零副作用便于单测。
- * 骨架对齐 docs/modules/press.md 1.2：README.md + 大纲.md + 角色设定.md + 设定.md + Chapter/。
+ * 作品骨架生成：作品名校验、章节与卷的命名规则、骨架与章节文档模板，纯函数零副作用便于单测。
+ * 骨架对齐 docs/modules/press.md 1.2/1.3：README.md + 大纲.md + 角色设定.md + 设定.md + Chapter/；
+ * 章节文件按「两位序号-标题.md」命名，分卷目录按「两位序号-卷名」命名。
  * 关键约束：作品名同时作为目录名，须满足跨平台约束（非法字符、系统保留名、首尾空格与点）；
  * 本模块只产出相对路径与内容，落盘与索引由 projectService 负责；README 的 Frontmatter title 供索引器取标题。
  */
@@ -124,4 +125,86 @@ export function buildProjectSkeleton(name: string, category: PressCategory, now:
         },
         { relativePath: '设定.md', content: '# 设定\n\n## 世界观\n\n## 地理\n\n## 组织势力\n' },
     ]
+}
+
+/** 章节文件名的序号位数：两位补零，超过 99 自然进位 */
+const CHAPTER_ORDER_WIDTH = 2
+
+/** 新建章节的默认标题 */
+export const DEFAULT_CHAPTER_TITLE = '未命名章节'
+
+/** 序号前缀：01-卷名、01-章节名.md 等，前缀后接分隔符或直接结束 */
+const ORDER_PREFIX_PATTERN = /^(\d+)(?:[-_.、\s]|$)/
+
+/** 参与序号排序的名称：order 为序号前缀，缺失为 null */
+export interface OrderedName {
+    order: number | null
+    name: string
+}
+
+/** 读取名称的序号前缀：无前缀或非数字返回 null，缺失前缀的条目排序时置于有序项之后 */
+export function readOrderPrefix(value: string): number | null {
+    const matched = ORDER_PREFIX_PATTERN.exec(value)
+    if (matched?.[1] === undefined) {
+        return null
+    }
+    const parsed = Number.parseInt(matched[1], 10)
+    return Number.isNaN(parsed) ? null : parsed
+}
+
+/** 按序号前缀升序：有序项在前按数值比较，无序号项在后按名称本地化比较，保证列表稳定 */
+export function compareByOrder(left: OrderedName, right: OrderedName): number {
+    if (left.order !== null && right.order !== null && left.order !== right.order) {
+        return left.order - right.order
+    }
+    if (left.order !== null && right.order === null) {
+        return -1
+    }
+    if (left.order === null && right.order !== null) {
+        return 1
+    }
+    return left.name.localeCompare(right.name, 'zh')
+}
+
+/** 去掉序号前缀与 Markdown 扩展名，得到可直接展示的名称（章节名、卷名共用） */
+export function toDisplayName(value: string): string {
+    const withoutExtension = value.replace(/\.md$/i, '')
+    const stripped = withoutExtension.replace(ORDER_PREFIX_PATTERN, '').trim()
+    return stripped.length > 0 ? stripped : withoutExtension
+}
+
+/** 生成章节文件名：{两位序号}-未命名章节.md */
+export function buildChapterFileName(order: number): string {
+    return `${String(order).padStart(CHAPTER_ORDER_WIDTH, '0')}-${DEFAULT_CHAPTER_TITLE}.md`
+}
+
+/** 生成章节展示标题：{两位序号} 未命名章节 */
+export function buildChapterTitle(order: number): string {
+    return `${String(order).padStart(CHAPTER_ORDER_WIDTH, '0')} ${DEFAULT_CHAPTER_TITLE}`
+}
+
+/** 生成章节文档体：Frontmatter + 本章介绍 / 正文 / 出场角色 / 金手指设定（press.md 1.3） */
+export function buildChapterSkeleton(order: number): string {
+    const title = buildChapterTitle(order)
+    return [
+        '---',
+        `title: ${title}`,
+        'status: draft',
+        'summary:',
+        'characters: []',
+        'goldenFingers: []',
+        'wordGoal: 0',
+        '---',
+        '',
+        `# ${title}`,
+        '',
+        '## 本章介绍',
+        '',
+        '## 正文',
+        '',
+        '## 出场角色',
+        '',
+        '## 金手指设定',
+        '',
+    ].join('\n')
 }

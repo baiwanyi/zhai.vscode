@@ -1,6 +1,6 @@
 /**
- * 作品列表数据：拉取 press/projects 快照，并提供新建、打开与重建索引三个动作。
- * 复用 ../../bridge 的请求与状态订阅、sonner 的提示；外部增删作品目录时由 index 通道驱动重拉。
+ * 作品列表数据：拉取 press/projects 快照，并提供新建作品与重建索引两个动作。
+ * 复用 ../../bridge 的请求与状态订阅、press/utils 的状态与提示口径；外部增删作品目录时由 index 通道驱动重拉。
  * 关键约束：创建进行中置 isCreating 阻止重复提交；失败一律提示且不污染已有列表；
  * 创建成功后立即重拉，不等 watcher 防抖，使新作品即时出现在列表中。
  */
@@ -9,14 +9,12 @@ import { toast } from 'sonner'
 import type {
     CreatePressProjectRequest,
     CreatePressProjectResult,
-    OpenPressProjectResult,
     PressCategory,
     PressProjectSummary,
 } from '@/shared/types/press'
+import type { PressStatus } from '../utils'
 import { onState, request } from '../../../bridge'
-
-/** 列表加载状态：ready 表示已拿到快照，error 表示最近一次拉取失败 */
-export type PressStatus = 'loading' | 'ready' | 'error'
+import { toastError } from '../utils'
 
 export interface PressProjectsState {
     projects: PressProjectSummary[]
@@ -25,13 +23,7 @@ export interface PressProjectsState {
     isCreating: boolean
     reload: () => Promise<void>
     createProject: (name: string, category: PressCategory) => Promise<boolean>
-    openProject: (dirPath: string) => Promise<void>
     rebuildIndex: () => Promise<void>
-}
-
-/** 提示文案统一在数据层发出，页面只负责编排 */
-function toastError(cause: unknown): void {
-    toast.error(cause instanceof Error ? cause.message : String(cause))
 }
 
 export function usePressProjects(): PressProjectsState {
@@ -84,14 +76,6 @@ export function usePressProjects(): PressProjectsState {
         [reload],
     )
 
-    const openProject = useCallback(async (dirPath: string): Promise<void> => {
-        try {
-            await request<OpenPressProjectResult>('press/open', { dirPath })
-        } catch (cause) {
-            toastError(cause)
-        }
-    }, [])
-
     const rebuildIndex = useCallback(async (): Promise<void> => {
         try {
             await request('host/command', 'zhai.rebuildIndex')
@@ -101,5 +85,5 @@ export function usePressProjects(): PressProjectsState {
         }
     }, [])
 
-    return { projects, status, error, isCreating, reload, createProject, openProject, rebuildIndex }
+    return { projects, status, error, isCreating, reload, createProject, rebuildIndex }
 }

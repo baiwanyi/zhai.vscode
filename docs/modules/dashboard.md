@@ -445,6 +445,7 @@ StatCardRow / ActivityFeed 展示
 |------|------|------|
 | `#/` | 概览首页（`Dashboard`） | 默认落点，未登记路径一律回落此处 |
 | `#/press` | 写作管理页（`DashboardPress`） | 作品列表 + 添加作品 |
+| `#/press/{作品名}` | 作品详情页（`DashboardPressProject`） | 作品元信息 + 添加章节 + 章节目录（分批渲染） |
 
 - 路由规则集中在 `src/webview/dashboard/core/routing.ts`（纯函数，可单测），状态由 `hooks/useDashboardRoute` 以 `hashchange` 收敛
 - `dashboardScreen.tsx` 是唯一的页面切换点，页面组件只接收导航回调，不自行改写 hash
@@ -456,7 +457,10 @@ StatCardRow / ActivityFeed 展示
 | 方法 | 说明 |
 |------|------|
 | `press/projects` | 按索引库聚合作品摘要，只读 |
+| `press/detail` | 一次返回作品摘要与卷分组章节，供详情页渲染 |
 | `press/create` | 校验作品名 → 生成骨架 → 逐文档索引 → 打开 README |
+| `press/createChapter` | 计算落点与序号 → 写入章节骨架 → 索引 → 打开 |
 | `press/open` | 回查索引库后打开作品 README |
+| `press/openChapter` | 回查索引库后打开指定章节文档 |
 
 作品侧的实现与规则见 `press.md` 第 10 节；宿主只做入参收窄与转发，聚合与落盘逻辑收敛在 `src/modules/press`。
