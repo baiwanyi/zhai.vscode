@@ -1,9 +1,9 @@
 /**
- * 添加作品弹窗：收集作品名与分类，提交后由页面层调用宿主创建作品。
- * 复用 @/components/ui 的 dialog、field、input、select，选项与分类值取自 shared/types/press，不重复定义。
- * 关键约束：表单重置由页面在每次打开时更换组件 key 完成（重挂载即回到初始值），
- * 本组件不在 effect 中同步写状态；前端只做 trim 与空值判定，完整名称白名单由宿主校验；
- * 提交中禁用全部控件防止重复提交。
+ * 添加作品弹窗：收集作品名与目标读者（男频/女频），提交后由页面层调用宿主创建作品。
+ * 复用 @/components/ui 的 dialog、field、input、toggle-group，选项与取值取自 shared/types/press，不重复定义。
+ * 关键约束：目标读者为必选项，ToggleGroup 再次点击取消选中（空串）时沿用当前值，不回落；
+ * 表单重置由页面在每次打开时更换组件 key 完成（重挂载即回到初始值），本组件不在 effect 中同步写状态；
+ * 前端只做 trim 与空值判定，完整名称白名单由宿主校验；提交中禁用全部控件防止重复提交。
  */
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -17,16 +17,16 @@ import {
 } from '@/components/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { DEFAULT_PRESS_CATEGORY, PRESS_CATEGORIES, readPressCategory } from '@/shared/types/press'
-import type { PressCategory } from '@/shared/types/press'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { DEFAULT_PRESS_AUDIENCE, PRESS_AUDIENCES, readPressAudience } from '@/shared/types/press'
+import type { PressAudience } from '@/shared/types/press'
 import type { JSX } from 'react'
 
 interface PressProjectDialogProps {
     open: boolean
     isSubmitting: boolean
     onOpenChange: (open: boolean) => void
-    onSubmit: (name: string, category: PressCategory) => Promise<boolean>
+    onSubmit: (name: string, audience: PressAudience) => Promise<boolean>
 }
 
 export function PressProjectDialog({
@@ -36,7 +36,7 @@ export function PressProjectDialog({
     onSubmit,
 }: PressProjectDialogProps): JSX.Element {
     const [name, setName] = useState('')
-    const [category, setCategory] = useState<PressCategory>(DEFAULT_PRESS_CATEGORY)
+    const [audience, setAudience] = useState<PressAudience>(DEFAULT_PRESS_AUDIENCE)
     const trimmedName = name.trim()
     const isSubmitDisabled = isSubmitting || trimmedName.length === 0
 
@@ -44,7 +44,7 @@ export function PressProjectDialog({
         if (isSubmitDisabled) {
             return
         }
-        await onSubmit(trimmedName, category)
+        await onSubmit(trimmedName, audience)
     }
 
     return (
@@ -74,23 +74,28 @@ export function PressProjectDialog({
                         />
                     </Field>
                     <Field>
-                        <FieldLabel htmlFor="press-project-category">分类</FieldLabel>
-                        <Select
-                            value={category}
+                        <FieldLabel>目标读者</FieldLabel>
+                        <ToggleGroup
+                            type="single"
+                            variant="outline"
+                            size="lg"
+                            value={audience}
                             disabled={isSubmitting}
-                            onValueChange={(value) => setCategory(readPressCategory(value))}
+                            aria-label="目标读者"
+                            className="w-full"
+                            onValueChange={(value) => {
+                                // single 允许再次点击取消选中；目标读者是必选项，空串时沿用当前值
+                                if (value.length > 0) {
+                                    setAudience(readPressAudience(value))
+                                }
+                            }}
                         >
-                            <SelectTrigger id="press-project-category" className="w-full">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {PRESS_CATEGORIES.map((item) => (
-                                    <SelectItem key={item} value={item}>
-                                        {item}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
+                            {PRESS_AUDIENCES.map((item) => (
+                                <ToggleGroupItem key={item} value={item} className="flex-1">
+                                    {item}
+                                </ToggleGroupItem>
+                            ))}
+                        </ToggleGroup>
                     </Field>
                 </FieldGroup>
                 <DialogFooter>

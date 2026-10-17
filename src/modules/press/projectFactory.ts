@@ -6,7 +6,7 @@
  * 本模块只产出相对路径与内容，落盘与索引由 projectService 负责；README 的 Frontmatter title 供索引器取标题；
  * 新作品自带卷1 与首章，保证详情页一进去就有可写章节，不留空态。
  */
-import type { PressCategory } from '../../shared/types/press'
+import type { PressAudience } from '../../shared/types/press'
 
 /** 作品所属模块的一级目录名，与存储根约定一致 */
 export const PRESS_MODULE_DIR = 'press'
@@ -114,12 +114,12 @@ function toDateString(date: Date): string {
     return `${date.getFullYear()}-${month}-${day}`
 }
 
-/** 作品根文档：Frontmatter 承载分类、状态与目标字数，正文留给用户补背景与风格 */
-function buildReadmeContent(name: string, category: PressCategory, createdAt: string): string {
+/** 作品根文档：Frontmatter 承载目标读者、状态与目标字数，正文留给用户补背景与风格 */
+function buildReadmeContent(name: string, audience: PressAudience, createdAt: string): string {
     return [
         '---',
         `title: ${name}`,
-        `category: ${category}`,
+        `audience: ${audience}`,
         'status: ongoing',
         'wordGoal: 0',
         `createdAt: ${createdAt}`,
@@ -135,9 +135,9 @@ function buildReadmeContent(name: string, category: PressCategory, createdAt: st
 }
 
 /** 生成作品骨架文件清单：顺序固定，README 始终在首位，卷1 首章在末位 */
-export function buildProjectSkeleton(name: string, category: PressCategory, now: Date): ProjectSkeletonFile[] {
+export function buildProjectSkeleton(name: string, audience: PressAudience, now: Date): ProjectSkeletonFile[] {
     return [
-        { relativePath: PROJECT_README_NAME, content: buildReadmeContent(name, category, toDateString(now)) },
+        { relativePath: PROJECT_README_NAME, content: buildReadmeContent(name, audience, toDateString(now)) },
         { relativePath: '大纲.md', content: '# 大纲\n\n## 主线\n\n## 分卷规划\n' },
         {
             relativePath: '角色设定.md',

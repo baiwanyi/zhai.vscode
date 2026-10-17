@@ -48,7 +48,7 @@ import {
     isOpenPressChapterRequest,
     isPressDirPath,
     isRenamePressVolumeRequest,
-    readPressCategory,
+    readPressAudience,
 } from '../../shared/types/press'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { createAndOpenNote, openNoteByPath } from '../note/noteService'
@@ -260,7 +260,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     }
 
     /**
-     * 新建作品：作品名与分类先经收窄（分类非法回落默认值），落盘与索引由 press 服务完成；
+     * 新建作品：作品名与目标读者先经收窄（目标读者非法回落默认值），落盘与索引由 press 服务完成；
      * 创建成功后直接打开 README，让用户立刻补充背景与风格设定。
      * 安全约束：作品名在 press 服务内再做白名单校验，本层不放行任何路径形态字符串。
      */
@@ -270,7 +270,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         }
         const created = await createProject(this.indexService, {
             name: payload.name,
-            category: readPressCategory(payload.category),
+            audience: readPressAudience(payload.audience),
         })
         await openProjectByDir(created.dirPath)
         logger.info(`作品创建完成并打开：${created.dirPath}`)

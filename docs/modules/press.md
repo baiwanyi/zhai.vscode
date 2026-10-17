@@ -38,7 +38,7 @@
 
 - **顺序保证**：卷目录名前缀 `01-`、章文件名前缀 `01-` 数字顺序；程序排序以文件名前缀为准，缺失时回退字典序（容错）。
 - **设定扁平独立（设想⑥）**：角色设定 / 大纲 / 设定等直接放作品目录，不强行子目录（`characters/`、`settings/` 旧方案弃用）；用户可自由增删设定文档，约定常用文件名但不强制。
-- **作品根 README.md（设想⑤）**：承载小说背景、写作风格、分类、状态、目标字数等全局设定；AI 副驾默认注入其作为系统音色与风格约束。
+- **作品根 README.md（设想⑤）**：承载小说背景、写作风格、目标读者（男频/女频）、状态、目标字数等全局设定；AI 副驾默认注入其作为系统音色与风格约束。
 
 ### 1.3 章节文档体（对应设想⑦）
 
@@ -92,7 +92,7 @@ wordGoal: 3000
 
 | 编号 | 场景 | 用户旅程 |
 |------|------|----------|
-| US-1 | 新建作品 | 命令「新建作品」→ 输入名称 / 分类 / 笔名 → 自动生成 `{root}/press/【小说名】/` 骨架（README.md + 大纲.md + 角色设定.md + Chapter/） |
+| US-1 | 新建作品 | 命令「新建作品」→ 输入名称 / 目标读者（男频、女频）/ 笔名 → 自动生成 `{root}/press/【小说名】/` 骨架（README.md + 大纲.md + 角色设定.md + Chapter/） |
 | US-2 | 章节写作 | 章节树点开 `Chapter/01-章节名.md` → 原生编辑器写作 → `Alt+Enter` 让 AI 续写 → 逐段接受 |
 | US-3 | 设定一致性 | 写战斗场景 → 勾选「注入设定」→ AI 自动读取 README.md 与 `设定.md` / `角色设定.md` 相关条目 |
 | US-4 | 分卷组织 | 长篇分卷 → 在 `Chapter/` 下新建 `01-卷名/` → 卷内章节 `01-章节名.md` 归入其下 |
@@ -416,7 +416,7 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 **协议（仪表盘面板宿主）**：`press/projects`（只读聚合）、`press/create`（生成骨架 + 索引 + 打开 README）、`press/open`（打开 README）。
 
-**骨架生成**：`press/{作品名}/` 下写入 `README.md`（Frontmatter 含 title / category / status / wordGoal / createdAt）、`大纲.md`、`角色设定.md`、`设定.md`、`Chapter/01-卷1/01-未命名章节.md`，并创建 `Chapter/` 与 `Chapter/01-卷1/` 目录；每个文档写盘后立即索引，列表不等 watcher 防抖即可见。新作品内容为空时默认就是「卷1 / 01-未命名章节」，详情页一进去即有可写章节。
+**骨架生成**：`press/{作品名}/` 下写入 `README.md`（Frontmatter 含 title / audience / status / wordGoal / createdAt）、`大纲.md`、`角色设定.md`、`设定.md`、`Chapter/01-卷1/01-未命名章节.md`，并创建 `Chapter/` 与 `Chapter/01-卷1/` 目录；每个文档写盘后立即索引，列表不等 watcher 防抖即可见。新作品内容为空时默认就是「卷1 / 01-未命名章节」，详情页一进去即有可写章节。`audience` 取值仅 `男频` / `女频`，由添加作品弹窗的 Toggle Group 选择，缺省或非法值回落为 `男频`；旧作品 README 中的 `category` 字段不再写入，也不影响索引。
 
 **安全约束**：作品名经白名单校验（长度、`\ / : * ? " < > |`、控制字符、`.`/`..`、Windows 保留名、首尾空格与点），目标目录已存在即拒绝；`press/open` 的目录须先在索引库中存在，且严格限定为 `press/{作品名}` 两段。
 

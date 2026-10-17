@@ -95,27 +95,28 @@ export function PressVolumeSection({
             onOpenChange={(open) => onOpenChange(volume.dirName, open)}
             className="flex flex-col gap-1"
         >
-            <div className="flex items-center gap-1">
+            {/* 悬停背景由整行承担：折叠按钮、添加章节与更多操作共享同一块背景，右侧图标不再是独立色块 */}
+            <div className="flex items-center gap-1 rounded-xl p-1 transition-colors hover:bg-muted">
                 <CollapsibleTrigger asChild>
-                    <button
-                        type="button"
-                        className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-1 py-0.5 text-left hover:bg-muted"
-                    >
+                    <button type="button" className="flex min-w-0 flex-1 items-center gap-1 text-left">
                         <ChevronRight
                             className={cn(
                                 'size-3.5 shrink-0 text-muted-foreground transition-transform',
                                 isOpen && 'rotate-90',
                             )}
                         />
-                        <span className="truncate text-xs font-medium">{title}</span>
-                        <span className="shrink-0 text-[11px] text-muted-foreground">{volume.chapters.length} 章</span>
+                        {/* 标题吃满剩余宽度，把章数顶到右侧，与章节行的字数落在同一列 */}
+                        <span className="min-w-0 flex-1 truncate text-xs font-medium">{title}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                            {volume.chapters.length} 章
+                        </span>
                     </button>
                 </CollapsibleTrigger>
                 {canAppend ? (
                     <Button
                         size="icon-xs"
                         variant="ghost"
-                        className="shrink-0 rounded-full"
+                        className="shrink-0 rounded-full hover:bg-transparent"
                         aria-label={`在${title}中添加章节`}
                         title="添加章节"
                         disabled={isCreatingChapter}
@@ -130,7 +131,7 @@ export function PressVolumeSection({
                             <Button
                                 size="icon-xs"
                                 variant="ghost"
-                                className="shrink-0 rounded-full"
+                                className="shrink-0 rounded-full hover:bg-transparent"
                                 aria-label={`${title}的更多操作`}
                                 title="更多操作"
                                 disabled={isUpdatingVolume || isCreatingVolume}
@@ -173,7 +174,7 @@ export function PressVolumeSection({
                             <ItemTitle className="w-full truncate text-xs">{chapter.title}</ItemTitle>
                         </ItemContent>
                         <ItemActions>
-                            <span className="text-[11px] text-muted-foreground">
+                            <span className="text-xs text-muted-foreground">
                                 {formatWordCount(chapter.wordCount)} 字
                             </span>
                             <DropdownMenu>

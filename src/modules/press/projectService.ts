@@ -26,7 +26,7 @@ import {
     validateProjectName,
     validateVolumeName,
 } from './projectFactory'
-import type { PressCategory } from '../../shared/types/press'
+import type { PressAudience } from '../../shared/types/press'
 import { resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
 import { buildStorageUri, isPathExisting, toSafeSegments, toStorageRelativePath } from '../common/storagePath'
@@ -43,10 +43,10 @@ export interface ProjectIndexer {
     removeFile: (relativePath: string) => void
 }
 
-/** 新建作品入参：分类已由调用方归一化为枚举值 */
+/** 新建作品入参：目标读者已由调用方归一化为枚举值 */
 export interface CreateProjectRequest {
     name: string
-    category: PressCategory
+    audience: PressAudience
 }
 
 /** 新建结果：额外携带 README 的 Uri 供调用方直接打开，返回给 Webview 时只取可序列化字段 */
@@ -81,7 +81,7 @@ export async function createProject(
     await vscode.workspace.fs.createDirectory(
         buildStorageUri(root, [PRESS_MODULE_DIR, name, PROJECT_CHAPTER_DIR, DEFAULT_VOLUME_DIR]),
     )
-    for (const file of buildProjectSkeleton(name, request.category, new Date())) {
+    for (const file of buildProjectSkeleton(name, request.audience, new Date())) {
         const target = buildStorageUri(root, [PRESS_MODULE_DIR, name, ...file.relativePath.split('/')])
         await vscode.workspace.fs.writeFile(target, new TextEncoder().encode(file.content))
         await indexer.indexFile(target)

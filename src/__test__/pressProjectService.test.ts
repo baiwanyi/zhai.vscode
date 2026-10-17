@@ -109,7 +109,7 @@ describe('validateProjectName', () => {
 describe('createProject', () => {
     it('生成骨架目录与五份文档（含卷1首章），并逐份纳入索引', async () => {
         const { indexer, indexed } = createIndexer()
-        const created = await createProject(indexer, { name: '剑来', category: '玄幻' })
+        const created = await createProject(indexer, { name: '剑来', audience: '男频' })
 
         expect(created.dirPath).toBe('press/剑来')
         expect(created.title).toBe('剑来')
@@ -118,7 +118,7 @@ describe('createProject', () => {
         expect(hasDirectory(path.join(directory, 'Chapter'))).toBe(true)
         expect(hasDirectory(path.join(directory, 'Chapter', '01-卷1'))).toBe(true)
         expect(readFileContent(path.join(directory, 'README.md'))).toContain('title: 剑来')
-        expect(readFileContent(path.join(directory, 'README.md'))).toContain('category: 玄幻')
+        expect(readFileContent(path.join(directory, 'README.md'))).toContain('audience: 男频')
         expect(readFileContent(path.join(directory, '大纲.md'))).toContain('# 大纲')
         expect(readFileContent(path.join(directory, '角色设定.md'))).toContain('# 角色设定')
         expect(readFileContent(path.join(directory, '设定.md'))).toContain('# 设定')
@@ -135,7 +135,7 @@ describe('createProject', () => {
 
     it('作品名去首尾空格后再落盘', async () => {
         const { indexer } = createIndexer()
-        const created = await createProject(indexer, { name: ' 剑来 ', category: '其他' })
+        const created = await createProject(indexer, { name: ' 剑来 ', audience: '女频' })
 
         expect(created.dirPath).toBe('press/剑来')
         expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来'))).toBe(true)
@@ -143,17 +143,17 @@ describe('createProject', () => {
 
     it('同名作品已存在时拒绝创建且不重复索引', async () => {
         const { indexer, indexed } = createIndexer()
-        await createProject(indexer, { name: '剑来', category: '玄幻' })
+        await createProject(indexer, { name: '剑来', audience: '男频' })
         const countAfterFirst = indexed.length
 
-        await expect(createProject(indexer, { name: '剑来', category: '都市' })).rejects.toThrow('作品已存在：剑来')
+        await expect(createProject(indexer, { name: '剑来', audience: '女频' })).rejects.toThrow('作品已存在：剑来')
         expect(indexed).toHaveLength(countAfterFirst)
     })
 
     it('作品名非法时不触碰文件系统', async () => {
         const { indexer, indexed } = createIndexer()
 
-        await expect(createProject(indexer, { name: '../evil', category: '其他' })).rejects.toThrow('作品名不能包含')
+        await expect(createProject(indexer, { name: '../evil', audience: '男频' })).rejects.toThrow('作品名不能包含')
         expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '..', 'evil'))).toBe(false)
         expect(indexed).toEqual([])
     })

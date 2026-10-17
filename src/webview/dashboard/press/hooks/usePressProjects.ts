@@ -9,7 +9,7 @@ import { toast } from 'sonner'
 import type {
     CreatePressProjectRequest,
     CreatePressProjectResult,
-    PressCategory,
+    PressAudience,
     PressProjectSummary,
 } from '@/shared/types/press'
 import type { PressStatus } from '../utils'
@@ -22,7 +22,7 @@ export interface PressProjectsState {
     error: string | null
     isCreating: boolean
     reload: () => Promise<void>
-    createProject: (name: string, category: PressCategory) => Promise<boolean>
+    createProject: (name: string, audience: PressAudience) => Promise<boolean>
     rebuildIndex: () => Promise<void>
 }
 
@@ -58,9 +58,9 @@ export function usePressProjects(): PressProjectsState {
     }, [reload])
 
     const createProject = useCallback(
-        async (name: string, category: PressCategory): Promise<boolean> => {
+        async (name: string, audience: PressAudience): Promise<boolean> => {
             setIsCreating(true)
-            const payload: CreatePressProjectRequest = { name, category }
+            const payload: CreatePressProjectRequest = { name, audience }
             try {
                 const created = await request<CreatePressProjectResult>('press/create', payload)
                 toast.success(`已创建作品：${created.title}`)

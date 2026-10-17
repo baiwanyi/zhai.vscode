@@ -7,7 +7,7 @@
 import { useCallback, useState } from 'react'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Toaster } from '@/components/ui/sonner'
-import type { PressCategory } from '@/shared/types/press'
+import type { PressAudience } from '@/shared/types/press'
 import { usePressProjects } from './hooks/usePressProjects'
 import { PressProjectDialog } from './layout/PressProjectDialog'
 import { PressProjectList } from './layout/PressProjectList'
@@ -35,8 +35,8 @@ export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): 
     }, [])
 
     const handleCreate = useCallback(
-        async (name: string, category: PressCategory): Promise<boolean> => {
-            const isCreated = await createProject(name, category)
+        async (name: string, audience: PressAudience): Promise<boolean> => {
+            const isCreated = await createProject(name, audience)
             if (isCreated) {
                 setIsDialogOpen(false)
             }
