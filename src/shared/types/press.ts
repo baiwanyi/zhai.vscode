@@ -90,9 +90,11 @@ export interface PressProjectDetailRequest {
     dirPath: string
 }
 
-/** press/createChapter 请求：在作品末尾追加章节 */
+/** press/createChapter 请求：在指定卷（缺省为最后一个卷）追加章节 */
 export interface CreatePressChapterRequest {
     dirPath: string
+    /** 落点卷目录名；缺省时落到序号最大的卷，作品还没有卷时落到默认卷1 */
+    volumeDir?: string
 }
 
 /** press/createChapter 响应 */
@@ -101,8 +103,36 @@ export interface CreatedPressChapter {
     path: string
     /** 章节展示标题 */
     title: string
-    /** 落点卷名，空串表示未分卷（落在 Chapter/ 根） */
+    /** 落点卷名，空串表示未分卷（历史散章） */
     volume: string
+}
+
+/** press/createVolume 请求：新建一卷并写入其首章 */
+export interface CreatePressVolumeRequest {
+    dirPath: string
+}
+
+/** press/createVolume 响应 */
+export interface CreatedPressVolume {
+    /** 新卷目录名，含序号前缀 */
+    volumeDir: string
+    /** 卷展示名，如「卷3」 */
+    volumeName: string
+    /** 首章的相对路径 */
+    chapterPath: string
+    /** 首章展示标题 */
+    chapterTitle: string
+}
+
+/** 判断是否为合法的新增章节请求（类型收窄辅助） */
+export function isCreatePressChapterRequest(payload: unknown): payload is CreatePressChapterRequest {
+    if (!isPressDirPath(payload)) {
+        return false
+    }
+    const candidate = payload as { volumeDir?: unknown }
+    return (
+        candidate.volumeDir === undefined || (typeof candidate.volumeDir === 'string' && candidate.volumeDir.length > 0)
+    )
 }
 
 /** press/openChapter 请求：打开指定章节文档 */

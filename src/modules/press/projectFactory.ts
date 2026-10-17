@@ -178,6 +178,22 @@ export function buildChapterFileName(order: number): string {
     return `${String(order).padStart(CHAPTER_ORDER_WIDTH, '0')}-${DEFAULT_CHAPTER_TITLE}.md`
 }
 
+/** 生成卷目录名：{两位序号}-卷{N} */
+export function buildVolumeDirName(order: number): string {
+    return `${String(order).padStart(CHAPTER_ORDER_WIDTH, '0')}-卷${order}`
+}
+
+/** 生成卷展示名：卷{N} */
+export function buildVolumeTitle(order: number): string {
+    return `卷${order}`
+}
+
+/** 默认卷序号：作品创建时即生成卷1 */
+export const DEFAULT_VOLUME_ORDER = 1
+
+/** 默认卷目录名：作品骨架创建与「无卷时章节落点」共用同一来源 */
+export const DEFAULT_VOLUME_DIR = buildVolumeDirName(DEFAULT_VOLUME_ORDER)
+
 /** 生成章节展示标题：{两位序号} 未命名章节 */
 export function buildChapterTitle(order: number): string {
     return `${String(order).padStart(CHAPTER_ORDER_WIDTH, '0')} ${DEFAULT_CHAPTER_TITLE}`

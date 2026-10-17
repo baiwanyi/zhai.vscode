@@ -16,7 +16,13 @@ import {
 } from '@/__test__/stubs/vscode'
 import type { ProjectIndexer } from '../modules/press/projectService'
 import { validateProjectName } from '../modules/press/projectFactory'
-import { createChapter, createProject, openChapterByPath, openProjectByDir } from '../modules/press/projectService'
+import {
+    createChapter,
+    createProject,
+    createVolume,
+    openChapterByPath,
+    openProjectByDir,
+} from '../modules/press/projectService'
 
 const STORAGE_ROOT = 'd:/vault'
 
@@ -85,6 +91,7 @@ describe('createProject', () => {
         const directory = path.join(STORAGE_ROOT, 'press', '剑来')
         expect(hasDirectory(directory)).toBe(true)
         expect(hasDirectory(path.join(directory, 'Chapter'))).toBe(true)
+        expect(hasDirectory(path.join(directory, 'Chapter', '01-卷1'))).toBe(true)
         expect(readFileContent(path.join(directory, 'README.md'))).toContain('title: 剑来')
         expect(readFileContent(path.join(directory, 'README.md'))).toContain('category: 玄幻')
         expect(readFileContent(path.join(directory, '大纲.md'))).toContain('# 大纲')
@@ -152,56 +159,66 @@ describe('openProjectByDir', () => {
 })
 
 describe('createChapter', () => {
-    it('无章节时在 Chapter/ 根创建首章并立即索引', async () => {
+    it('作品还没有卷时落到默认卷1并立即索引', async () => {
         const { indexer, indexed } = createIndexer()
 
         const created = await createChapter(indexer, { dirPath: 'press/剑来', chapterPaths: [] })
 
-        expect(created.path).toBe('press/剑来/Chapter/01-未命名章节.md')
+        expect(created.path).toBe('press/剑来/Chapter/01-卷1/01-未命名章节.md')
         expect(created.title).toBe('01 未命名章节')
-        expect(created.volume).toBe('')
-        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter'))).toBe(true)
+        expect(created.volume).toBe('卷1')
+        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1'))).toBe(true)
         expect(readFileContent(path.join(STORAGE_ROOT, created.path))).toContain('title: 01 未命名章节')
         expect(indexed).toEqual([path.join(STORAGE_ROOT, created.path)])
     })
 
-    it('已有章节时按最大序号顺延', async () => {
+    it('未指定卷时追加到序号最大的卷，卷内序号顺延', async () => {
         const { indexer } = createIndexer()
 
         const created = await createChapter(indexer, {
             dirPath: 'press/剑来',
-            chapterPaths: ['press/剑来/Chapter/01-初见.md', 'press/剑来/Chapter/07-再会.md'],
-        })
-
-        expect(created.path).toBe('press/剑来/Chapter/08-未命名章节.md')
-        expect(created.title).toBe('08 未命名章节')
-    })
-
-    it('存在分卷时追加到序号最大的卷', async () => {
-        const { indexer } = createIndexer()
-
-        const created = await createChapter(indexer, {
-            dirPath: 'press/剑来',
-            chapterPaths: [
-                'press/剑来/Chapter/09-根目录章节.md',
-                'press/剑来/Chapter/01-第一卷/01-初遇.md',
-                'press/剑来/Chapter/02-第二卷/03-远行.md',
-            ],
+            chapterPaths: ['press/剑来/Chapter/01-第一卷/01-初遇.md', 'press/剑来/Chapter/02-第二卷/03-远行.md'],
         })
 
         expect(created.path).toBe('press/剑来/Chapter/02-第二卷/04-未命名章节.md')
         expect(created.volume).toBe('第二卷')
     })
 
+    it('指定卷时落到该卷，序号按卷内已有章节计算', async () => {
+        const { indexer } = createIndexer()
+
+        const created = await createChapter(indexer, {
+            dirPath: 'press/剑来',
+            chapterPaths: [
+                'press/剑来/Chapter/01-第一卷/01-初遇.md',
+                'press/剑来/Chapter/01-第一卷/05-重逢.md',
+                'press/剑来/Chapter/02-第二卷/09-远行.md',
+            ],
+            volumeDir: '01-第一卷',
+        })
+
+        expect(created.path).toBe('press/剑来/Chapter/01-第一卷/06-未命名章节.md')
+        expect(created.volume).toBe('第一卷')
+    })
+
     it('目标文件名已存在时递增序号且不覆盖', async () => {
         const { indexer } = createIndexer()
-        const occupied = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-未命名章节.md')
+        const occupied = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '01-未命名章节.md')
         setFileContent(occupied, '既有内容')
 
         const created = await createChapter(indexer, { dirPath: 'press/剑来', chapterPaths: [] })
 
-        expect(created.path).toBe('press/剑来/Chapter/02-未命名章节.md')
+        expect(created.path).toBe('press/剑来/Chapter/01-卷1/02-未命名章节.md')
         expect(readFileContent(occupied)).toBe('既有内容')
+    })
+
+    it('卷目录非法时拒绝落盘', async () => {
+        const { indexer, indexed } = createIndexer()
+
+        await expect(
+            createChapter(indexer, { dirPath: 'press/剑来', chapterPaths: [], volumeDir: '../evil' }),
+        ).rejects.toThrow('卷目录非法')
+        expect(indexed).toEqual([])
     })
 
     it('作品目录非法时拒绝落盘', async () => {
@@ -211,6 +228,54 @@ describe('createChapter', () => {
             '作品路径非法',
         )
         await expect(createChapter(indexer, { dirPath: 'press', chapterPaths: [] })).rejects.toThrow('作品路径非法')
+        expect(indexed).toEqual([])
+    })
+})
+
+describe('createVolume', () => {
+    it('作品还没有卷时新建卷1并写入首章', async () => {
+        const { indexer, indexed } = createIndexer()
+
+        const created = await createVolume(indexer, { dirPath: 'press/剑来', chapterPaths: [] })
+
+        expect(created.volumeDir).toBe('01-卷1')
+        expect(created.volumeName).toBe('卷1')
+        expect(created.chapterPath).toBe('press/剑来/Chapter/01-卷1/01-未命名章节.md')
+        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1'))).toBe(true)
+        expect(indexed).toEqual([path.join(STORAGE_ROOT, created.chapterPath)])
+    })
+
+    it('已有卷时按最大卷序号顺延', async () => {
+        const { indexer } = createIndexer()
+
+        const created = await createVolume(indexer, {
+            dirPath: 'press/剑来',
+            chapterPaths: ['press/剑来/Chapter/01-卷1/01-初遇.md', 'press/剑来/Chapter/05-卷5/02-远行.md'],
+        })
+
+        expect(created.volumeDir).toBe('06-卷6')
+        expect(created.volumeName).toBe('卷6')
+    })
+
+    it('同名卷目录已存在时递增序号且不覆盖', async () => {
+        const { indexer } = createIndexer()
+        const occupiedDirectory = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1')
+        const occupiedChapter = path.join(occupiedDirectory, '占位.md')
+        setFileContent(occupiedChapter, '既有内容')
+
+        const created = await createVolume(indexer, {
+            dirPath: 'press/剑来',
+            chapterPaths: ['press/剑来/Chapter/01-卷1/占位.md'],
+        })
+
+        expect(created.volumeDir).toBe('02-卷2')
+        expect(readFileContent(occupiedChapter)).toBe('既有内容')
+    })
+
+    it('作品目录非法时拒绝新建', async () => {
+        const { indexer, indexed } = createIndexer()
+
+        await expect(createVolume(indexer, { dirPath: 'notes/剑来', chapterPaths: [] })).rejects.toThrow('作品路径非法')
         expect(indexed).toEqual([])
     })
 })

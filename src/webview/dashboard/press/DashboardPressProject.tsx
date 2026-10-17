@@ -1,10 +1,10 @@
 /**
- * 作品详情页（#/press/{作品名}）：页头返回作品列表、作品元信息、添加章节入口与章节目录。
- * 数据与动作经 hooks/usePressProjectDetail 下发，章节渲染交给 PressChapterList（内部按批追加）。
- * 关键约束：详情未就绪时页头用路由中的目录名兜底，避免标题闪烁；「添加章节」仅在数据就绪后可用，
+ * 作品详情页（#/press/{作品名}）：页头返回作品列表、作品元信息、新建卷入口与卷分组章节目录。
+ * 数据与动作经 hooks/usePressProjectDetail 下发，章节渲染与折叠交给 PressChapterList（卷内按批追加）。
+ * 关键约束：详情未就绪时页头用路由中的目录名兜底，避免标题闪烁；「新建卷」仅在数据就绪后可用，
  * 防止向不存在的作品写入；页面内屏蔽浏览器右键菜单，与仪表盘其余页面一致。
  */
-import { FilePlus } from 'lucide-react'
+import { BookPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -59,8 +59,18 @@ interface DashboardPressProjectProps {
 }
 
 export function DashboardPressProject({ dirPath, onBack }: DashboardPressProjectProps): JSX.Element {
-    const { detail, status, error, isCreatingChapter, reload, createChapter, openChapter, openReadme } =
-        usePressProjectDetail(dirPath)
+    const {
+        detail,
+        status,
+        error,
+        isCreatingChapter,
+        isCreatingVolume,
+        reload,
+        createChapter,
+        createVolume,
+        openChapter,
+        openReadme,
+    } = usePressProjectDetail(dirPath)
     const theme = useVscodeTheme()
     const project = detail?.project
     const fallbackName = dirPath.split('/')[1] ?? '作品'
@@ -80,11 +90,11 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                     variant="outline"
                     size="lg"
                     className="w-full justify-start rounded-full"
-                    disabled={isCreatingChapter || status !== 'ready'}
-                    onClick={() => void createChapter()}
+                    disabled={isCreatingVolume || status !== 'ready'}
+                    onClick={() => void createVolume()}
                 >
-                    <FilePlus data-icon="inline-start" />
-                    添加章节
+                    <BookPlus data-icon="inline-start" />
+                    新建卷
                 </Button>
             </div>
             <div className="relative min-h-0 flex-1 pt-3">
@@ -97,7 +107,9 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                         {status === 'ready' ? (
                             <PressChapterList
                                 volumes={detail?.volumes ?? []}
+                                isCreatingChapter={isCreatingChapter}
                                 onOpenChapter={(path) => void openChapter(path)}
+                                onCreateChapter={(volumeDir) => void createChapter(volumeDir)}
                             />
                         ) : null}
                     </div>

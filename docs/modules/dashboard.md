@@ -459,7 +459,8 @@ StatCardRow / ActivityFeed 展示
 | `press/projects` | 按索引库聚合作品摘要，只读 |
 | `press/detail` | 一次返回作品摘要与卷分组章节，供详情页渲染 |
 | `press/create` | 校验作品名 → 生成骨架 → 逐文档索引 → 打开 README |
-| `press/createChapter` | 计算落点与序号 → 写入章节骨架 → 索引 → 打开 |
+| `press/createChapter` | 计算落点卷与卷内序号 → 写入章节骨架 → 索引 → 打开 |
+| `press/createVolume` | 新建一卷并写入其首章（空卷不进索引，必须带首章） |
 | `press/open` | 回查索引库后打开作品 README |
 | `press/openChapter` | 回查索引库后打开指定章节文档 |
 

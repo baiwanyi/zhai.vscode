@@ -7,6 +7,8 @@
  */
 import * as vscode from 'vscode'
 import {
+    DEFAULT_VOLUME_DIR,
+    DEFAULT_VOLUME_ORDER,
     PROJECT_CHAPTER_DIR,
     PROJECT_README_NAME,
     PRESS_MODULE_DIR,
@@ -14,6 +16,7 @@ import {
     buildChapterSkeleton,
     buildChapterTitle,
     buildProjectSkeleton,
+    buildVolumeDirName,
     compareByOrder,
     readOrderPrefix,
     toDisplayName,
@@ -66,6 +69,10 @@ export async function createProject(
     }
     await vscode.workspace.fs.createDirectory(directory)
     await vscode.workspace.fs.createDirectory(buildStorageUri(root, [PRESS_MODULE_DIR, name, PROJECT_CHAPTER_DIR]))
+    // 作品天生带一卷：章节一律落在卷下，避免出现根目录散章
+    await vscode.workspace.fs.createDirectory(
+        buildStorageUri(root, [PRESS_MODULE_DIR, name, PROJECT_CHAPTER_DIR, DEFAULT_VOLUME_DIR]),
+    )
     for (const file of buildProjectSkeleton(name, request.category, new Date())) {
         const target = buildStorageUri(root, [PRESS_MODULE_DIR, name, ...file.relativePath.split('/')])
         await vscode.workspace.fs.writeFile(target, new TextEncoder().encode(file.content))
@@ -84,6 +91,8 @@ export interface CreateChapterRequest {
     dirPath: string
     /** 该作品已登记的章节相对路径，用于计算下一个序号与落点卷 */
     chapterPaths: string[]
+    /** 落点卷目录名；缺省时落到序号最大的卷，作品还没有卷时落到默认卷1 */
+    volumeDir?: string
 }
 
 /** 新增章节结果：额外携带 Uri 供调用方打开，返回给 Webview 时只取可序列化字段 */
@@ -94,12 +103,30 @@ export interface CreatedChapterHandle {
     uri: vscode.Uri
 }
 
-/** 落点决策：目标卷目录（null 表示 Chapter/ 根）与此后的起始序号 */
+/** 新建卷入参：章节路径清单用于推导新卷序号 */
+export interface CreateVolumeRequest {
+    dirPath: string
+    chapterPaths: string[]
+}
+
+/** 新建卷结果：卷目录、卷名与该卷首章（首章保证空卷也能进入索引与列表） */
+export interface CreatedVolumeHandle {
+    volumeDir: string
+    volumeName: string
+    chapterPath: string
+    chapterTitle: string
+    uri: vscode.Uri
+}
+
+/** 落点决策：目标卷目录、卷名与该卷内的起始章序号 */
 interface ChapterPlacement {
-    volumeDir: string | null
+    volumeDir: string
     volumeName: string
     startOrder: number
 }
+
+/** 卷目录名 → 该卷已登记章节的最大序号（无序号前缀记为 0） */
+type VolumeMaxOrders = Map<string, number>
 
 /**
  * 校验并切分作品目录：先归一化再校验片段，且必须恰好是 press/{作品名} 两段。
@@ -114,57 +141,74 @@ function readProjectSegments(dirPath: string): string[] {
 }
 
 /**
- * 计算新章节的落点：有分卷时追加到序号最大的卷，否则落在 Chapter/ 根；序号取该落点的最大章节序号 + 1。
- * 关键约束：序号完全依据索引库口径推导，未索引的手工文件不参与编号，冲突由写入前的存在性检查兜底。
+ * 统计每个卷内的最大章序号：只认 Chapter/ 下「卷/章」两段以上的路径，
+ * 根目录散章（历史数据）不参与卷内编号。
  */
-function resolveChapterPlacement(dirPath: string, chapterPaths: string[]): ChapterPlacement {
+function collectVolumeMaxOrders(dirPath: string, chapterPaths: string[]): VolumeMaxOrders {
     const chapterRoot = `${dirPath}/${PROJECT_CHAPTER_DIR}/`
-    const volumeMaxOrders = new Map<string, number>()
-    let rootMaxOrder = 0
+    const volumeMaxOrders: VolumeMaxOrders = new Map()
     for (const path of chapterPaths) {
         if (!path.startsWith(chapterRoot)) {
             continue
         }
         const segments = path.slice(chapterRoot.length).split('/')
-        const fileName = segments[segments.length - 1]
-        if (fileName === undefined || !fileName.toLowerCase().endsWith('.md')) {
+        if (segments.length < 2) {
             continue
         }
-        const order = readOrderPrefix(fileName)
-        if (segments.length === 1) {
-            if (order !== null && order > rootMaxOrder) {
-                rootMaxOrder = order
-            }
+        const fileName = segments[segments.length - 1]
+        if (fileName === undefined || !fileName.toLowerCase().endsWith('.md')) {
             continue
         }
         const volumeDir = segments[0]
         if (volumeDir === undefined || volumeDir.length === 0) {
             continue
         }
-        const current = volumeMaxOrders.get(volumeDir) ?? 0
-        if (order !== null && order > current) {
+        const order = readOrderPrefix(fileName) ?? 0
+        const current = volumeMaxOrders.get(volumeDir)
+        if (current === undefined || order > current) {
             volumeMaxOrders.set(volumeDir, order)
-        } else if (!volumeMaxOrders.has(volumeDir)) {
-            volumeMaxOrders.set(volumeDir, current)
         }
     }
-    if (volumeMaxOrders.size === 0) {
-        return { volumeDir: null, volumeName: '', startOrder: rootMaxOrder + 1 }
-    }
-    const sortedVolumes = [...volumeMaxOrders.keys()].sort((left, right) =>
+    return volumeMaxOrders
+}
+
+/** 取序号最大的卷目录名：作品还没有卷时返回 undefined */
+function pickLastVolume(volumeMaxOrders: VolumeMaxOrders): string | undefined {
+    const sorted = [...volumeMaxOrders.keys()].sort((left, right) =>
         compareByOrder(
             { order: readOrderPrefix(left), name: toDisplayName(left) },
             { order: readOrderPrefix(right), name: toDisplayName(right) },
         ),
     )
-    const targetVolume = sortedVolumes[sortedVolumes.length - 1]
-    if (targetVolume === undefined) {
-        return { volumeDir: null, volumeName: '', startOrder: rootMaxOrder + 1 }
+    return sorted[sorted.length - 1]
+}
+
+/** 卷目录名合法性：单段、非空、不含分隔符与上跳片段 */
+function readVolumeDir(volumeDir: string): string {
+    const isUnsafe =
+        volumeDir.length === 0 ||
+        volumeDir === '.' ||
+        volumeDir === '..' ||
+        volumeDir.includes('/') ||
+        volumeDir.includes('\\')
+    if (isUnsafe) {
+        throw new Error(`卷目录非法：${volumeDir}`)
     }
+    return volumeDir
+}
+
+/**
+ * 计算新章节的落点：显式指定卷则用之；否则取序号最大的卷；作品还没有卷时落到默认卷1。
+ * 关键约束：卷名须为单段且不含上跳片段，避免借卷名越出作品目录；序号取该卷内最大章序号 + 1，
+ * 未索引的手工文件不参与编号，冲突由写入前的存在性检查兜底。
+ */
+function resolveChapterPlacement(dirPath: string, chapterPaths: string[], volumeDir?: string): ChapterPlacement {
+    const volumeMaxOrders = collectVolumeMaxOrders(dirPath, chapterPaths)
+    const target = readVolumeDir(volumeDir ?? pickLastVolume(volumeMaxOrders) ?? DEFAULT_VOLUME_DIR)
     return {
-        volumeDir: targetVolume,
-        volumeName: toDisplayName(targetVolume),
-        startOrder: (volumeMaxOrders.get(targetVolume) ?? 0) + 1,
+        volumeDir: target,
+        volumeName: toDisplayName(target),
+        startOrder: (volumeMaxOrders.get(target) ?? 0) + 1,
     }
 }
 
@@ -193,12 +237,8 @@ export async function createChapter(
     const segments = readProjectSegments(request.dirPath)
     const root = resolveStorageRoot()
     // 用归一化后的段拼装前缀，保证与索引库的相对路径口径一致
-    const placement = resolveChapterPlacement(segments.join('/'), request.chapterPaths)
-    const directorySegments = [
-        ...segments,
-        PROJECT_CHAPTER_DIR,
-        ...(placement.volumeDir === null ? [] : [placement.volumeDir]),
-    ]
+    const placement = resolveChapterPlacement(segments.join('/'), request.chapterPaths, request.volumeDir)
+    const directorySegments = [...segments, PROJECT_CHAPTER_DIR, placement.volumeDir]
     await vscode.workspace.fs.createDirectory(buildStorageUri(root, directorySegments))
     for (let attempt = 0; attempt < MAX_CHAPTER_ATTEMPTS; attempt += 1) {
         const order = placement.startOrder + attempt
@@ -215,6 +255,52 @@ export async function createChapter(
         return { path: relativePath, title: buildChapterTitle(order), volume: placement.volumeName, uri: target }
     }
     throw new Error(`新增章节失败：连续 ${MAX_CHAPTER_ATTEMPTS} 次序号冲突`)
+}
+
+/**
+ * 新建一卷并立即写入该卷首章：卷序号取现有卷最大序号 + 1，目录名形如 03-卷3，首章为卷内 01 章。
+ * 关键约束：索引库只记录文档，空目录不会出现在详情页，因此建卷必须伴随首章，避免产生「看不见的卷」；
+ * 目标卷目录已存在时递增序号重试，绝不写入他人已有目录。
+ */
+export async function createVolume(
+    indexer: ProjectIndexer,
+    request: CreateVolumeRequest,
+): Promise<CreatedVolumeHandle> {
+    const segments = readProjectSegments(request.dirPath)
+    const root = resolveStorageRoot()
+    const volumeMaxOrders = collectVolumeMaxOrders(segments.join('/'), request.chapterPaths)
+    const usedOrders = [...volumeMaxOrders.keys()]
+        .map((volumeDir) => readOrderPrefix(volumeDir))
+        .filter((order): order is number => order !== null)
+    const baseOrder = usedOrders.length === 0 ? DEFAULT_VOLUME_ORDER : Math.max(...usedOrders) + 1
+    for (let attempt = 0; attempt < MAX_CHAPTER_ATTEMPTS; attempt += 1) {
+        const order = baseOrder + attempt
+        const volumeDir = buildVolumeDirName(order)
+        const directorySegments = [...segments, PROJECT_CHAPTER_DIR, volumeDir]
+        const directory = buildStorageUri(root, directorySegments)
+        if (await isPathExisting(directory)) {
+            logger.debug(`卷目录已存在，尝试下一个序号：${volumeDir}`)
+            continue
+        }
+        await vscode.workspace.fs.createDirectory(directory)
+        const chapterName = buildChapterFileName(DEFAULT_VOLUME_ORDER)
+        const target = buildStorageUri(root, [...directorySegments, chapterName])
+        await vscode.workspace.fs.writeFile(
+            target,
+            new TextEncoder().encode(buildChapterSkeleton(DEFAULT_VOLUME_ORDER)),
+        )
+        await indexer.indexFile(target)
+        const chapterPath = [...directorySegments, chapterName].join('/')
+        logger.info(`已新建卷：${volumeDir}（首章 ${chapterPath}）`)
+        return {
+            volumeDir,
+            volumeName: toDisplayName(volumeDir),
+            chapterPath,
+            chapterTitle: buildChapterTitle(DEFAULT_VOLUME_ORDER),
+            uri: target,
+        }
+    }
+    throw new Error(`新建卷失败：连续 ${MAX_CHAPTER_ATTEMPTS} 次目录名冲突`)
 }
 
 /**

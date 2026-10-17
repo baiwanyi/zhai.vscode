@@ -27,6 +27,7 @@ import type { NoteActiveState, OpenNoteResult, PinNotesResult } from '../../shar
 import type {
     CreatePressProjectResult,
     CreatedPressChapter,
+    CreatedPressVolume,
     OpenPressProjectResult,
     PressProjectDetail,
 } from '../../shared/types/press'
@@ -35,6 +36,7 @@ import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenNoteRequest, isPinNotesRequest } from '../../shared/types/note'
 import {
+    isCreatePressChapterRequest,
     isCreatePressProjectRequest,
     isOpenPressChapterRequest,
     isPressDirPath,
@@ -49,7 +51,13 @@ import {
     listProjectChapterPaths,
     readProjectDetail,
 } from '../press/projectRepository'
-import { createChapter, createProject, openChapterByPath, openProjectByDir } from '../press/projectService'
+import {
+    createChapter,
+    createProject,
+    createVolume,
+    openChapterByPath,
+    openProjectByDir,
+} from '../press/projectService'
 
 export class DashboardViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'zhai.dashboard'
@@ -145,6 +153,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             }
             case 'press/createChapter': {
                 return this.createPressChapter(payload)
+            }
+            case 'press/createVolume': {
+                return this.createPressVolume(payload)
             }
             case 'press/open': {
                 return this.openPressProject(payload)
@@ -261,8 +272,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
      * 关键约束：先回查作品存在，避免向不存在的作品目录写入文件；返回落点卷名供前端提示。
      */
     private async createPressChapter(payload: unknown): Promise<CreatedPressChapter> {
-        if (!isPressDirPath(payload)) {
-            throw new Error('press/createChapter 参数非法：dirPath 须为非空字符串')
+        if (!isCreatePressChapterRequest(payload)) {
+            throw new Error('press/createChapter 参数非法：dirPath 须为非空字符串，volumeDir 若传须为非空字符串')
         }
         if (!hasProjectFiles(this.db, payload.dirPath)) {
             throw new Error(`作品不在索引中，无法新增章节：${payload.dirPath}`)
@@ -270,10 +281,37 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         const created = await createChapter(this.indexService, {
             dirPath: payload.dirPath,
             chapterPaths: listProjectChapterPaths(this.db, payload.dirPath),
+            volumeDir: payload.volumeDir,
         })
         await openChapterByPath(created.path)
         logger.info(`章节创建完成并打开：${created.path}`)
         return { path: created.path, title: created.title, volume: created.volume }
+    }
+
+    /**
+     * 新建卷：卷序号与首章由 press 服务生成，创建后打开首章供用户续写。
+     * 关键约束：建卷必然带首章——索引库只记录文档，空卷不会出现在详情页；
+     * 返回卷目录与首章信息，供前端展开该卷并提示落点。
+     */
+    private async createPressVolume(payload: unknown): Promise<CreatedPressVolume> {
+        if (!isPressDirPath(payload)) {
+            throw new Error('press/createVolume 参数非法：dirPath 须为非空字符串')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法新建卷：${payload.dirPath}`)
+        }
+        const created = await createVolume(this.indexService, {
+            dirPath: payload.dirPath,
+            chapterPaths: listProjectChapterPaths(this.db, payload.dirPath),
+        })
+        await openChapterByPath(created.chapterPath)
+        logger.info(`卷创建完成并打开首章：${created.chapterPath}`)
+        return {
+            volumeDir: created.volumeDir,
+            volumeName: created.volumeName,
+            chapterPath: created.chapterPath,
+            chapterTitle: created.chapterTitle,
+        }
     }
 
     /**
