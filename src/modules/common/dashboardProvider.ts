@@ -1,9 +1,11 @@
 /**
- * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置、工作流页跳转与宿主命令。
+ * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置、
+ * 工作流页跳转、写作管理（作品）聚合与创建，以及宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传；
  * 另经 state 消息主动广播：note 通道给活跃笔记（列表回填选中态），index 通道给索引状态（列表随编辑收敛）。
  * 关键约束：请求处理为异步流程（新建笔记需落盘 + 索引 + 打开，打开与置顶须先经索引库校验路径），
  * 须 await 结果后再回包；命令入口一律经白名单校验，未登记的命令直接拒绝；
+ * 作品协议只做入参收窄与转发，聚合/落盘由 modules/press 承担，打开路径须先按索引库回查；
  * 活跃编辑器与索引状态监听须随面板销毁释放，否则重开面板会叠加监听、重复广播。
  */
 import * as vscode from 'vscode'
@@ -22,12 +24,16 @@ import type { IndexService, IndexStatus } from './indexer/indexService'
 import type { DashboardStats } from '../../shared/types/dashboard'
 import type { HostToWebviewMessage } from '../../shared/types/messages'
 import type { NoteActiveState, OpenNoteResult, PinNotesResult } from '../../shared/types/note'
+import type { CreatePressProjectResult, OpenPressProjectResult } from '../../shared/types/press'
 import type { OpenWorkflowResult } from '../../shared/types/workflow'
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenNoteRequest, isPinNotesRequest } from '../../shared/types/note'
+import { isCreatePressProjectRequest, isOpenPressProjectRequest, readPressCategory } from '../../shared/types/press'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { createAndOpenNote, openNoteByPath } from '../note/noteService'
+import { hasProjectFiles, listPressProjects } from '../press/projectRepository'
+import { createProject, openProjectByDir } from '../press/projectService'
 
 export class DashboardViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'zhai.dashboard'
@@ -112,6 +118,15 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             case 'workflow/open': {
                 return this.openWorkflow(payload)
             }
+            case 'press/projects': {
+                return Promise.resolve(listPressProjects(this.db))
+            }
+            case 'press/create': {
+                return this.createPressProject(payload)
+            }
+            case 'press/open': {
+                return this.openPressProject(payload)
+            }
             case 'index/rebuild': {
                 void this.indexService.fullRebuild()
                 return Promise.resolve({ started: true })
@@ -180,6 +195,39 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             throw new Error('workflow/open 参数非法：module 须为非空模块键')
         }
         await vscode.commands.executeCommand('zhai.openAiChat', { module: payload.module })
+        return { opened: true }
+    }
+
+    /**
+     * 新建作品：作品名与分类先经收窄（分类非法回落默认值），落盘与索引由 press 服务完成；
+     * 创建成功后直接打开 README，让用户立刻补充背景与风格设定。
+     * 安全约束：作品名在 press 服务内再做白名单校验，本层不放行任何路径形态字符串。
+     */
+    private async createPressProject(payload: unknown): Promise<CreatePressProjectResult> {
+        if (!isCreatePressProjectRequest(payload)) {
+            throw new Error('press/create 参数非法：name 须为非空字符串')
+        }
+        const created = await createProject(this.indexService, {
+            name: payload.name,
+            category: readPressCategory(payload.category),
+        })
+        await openProjectByDir(created.dirPath)
+        logger.info(`作品创建完成并打开：${created.dirPath}`)
+        return { dirPath: created.dirPath, title: created.title }
+    }
+
+    /**
+     * 打开作品：先按索引库回查该目录下是否登记过文档，仅认可真实存在的作品再交由编辑器展示。
+     * 安全约束：不直接采信前端传入的路径形态，与 note/open 同口径，从源头排除任意目录读取。
+     */
+    private async openPressProject(payload: unknown): Promise<OpenPressProjectResult> {
+        if (!isOpenPressProjectRequest(payload)) {
+            throw new Error('press/open 参数非法：dirPath 须为非空字符串')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法打开：${payload.dirPath}`)
+        }
+        await openProjectByDir(payload.dirPath)
         return { opened: true }
     }
 

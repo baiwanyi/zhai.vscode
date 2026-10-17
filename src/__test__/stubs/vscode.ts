@@ -302,6 +302,10 @@ export const workspace = {
     textDocuments: [] as vscode.TextDocument[],
     fs: {
         stat(uri: vscode.Uri): Promise<{ type: number; ctime: number; mtime: number; size: number }> {
+            // 目录与文件分别按 FileType 语义返回，供「目标是否已存在」的判定覆盖两种形态
+            if (directories.has(uri.fsPath)) {
+                return Promise.resolve({ type: 2, ctime: 0, mtime: 0, size: 0 })
+            }
             if (!fileContents.has(uri.fsPath)) {
                 return Promise.reject(new Error(`ENOENT: ${uri.fsPath}`))
             }

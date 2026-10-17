@@ -434,3 +434,29 @@ StatCardRow / ActivityFeed 展示
 | ActivityFeed / WidgetTodo / WidgetShortcut | 待实现，`meta` 表可承载快捷方式配置 |
 
 约束：宿主侧只读聚合，不新增数据库表；Webview 仅能触发 `ALLOWED_HOST_COMMANDS` 白名单内的命令；重建期间前端按 1.5s 轮询收敛状态。
+
+---
+
+## 14. 页内路由与写作管理入口（已落地）
+
+侧栏视图没有浏览器地址栏，多页面切换以 **hash 承载路径**，不引入前端路由库：
+
+| 路径 | 页面 | 说明 |
+|------|------|------|
+| `#/` | 概览首页（`Dashboard`） | 默认落点，未登记路径一律回落此处 |
+| `#/press` | 写作管理页（`DashboardPress`） | 作品列表 + 添加作品 |
+
+- 路由规则集中在 `src/webview/dashboard/core/routing.ts`（纯函数，可单测），状态由 `hooks/useDashboardRoute` 以 `hashchange` 收敛
+- `dashboardScreen.tsx` 是唯一的页面切换点，页面组件只接收导航回调，不自行改写 hash
+- 「写作管理」入口改为页内导航；「公众号管理」仍经 `workflow/open` 跳转工作流面板
+- 切换页面时旧页面卸载，重新进入重新取数，避免跨页面共享过期快照；面板 Reload 后回到概览首页
+
+**协议扩展**（宿主 `DashboardViewProvider`）：
+
+| 方法 | 说明 |
+|------|------|
+| `press/projects` | 按索引库聚合作品摘要，只读 |
+| `press/create` | 校验作品名 → 生成骨架 → 逐文档索引 → 打开 README |
+| `press/open` | 回查索引库后打开作品 README |
+
+作品侧的实现与规则见 `press.md` 第 10 节；宿主只做入参收窄与转发，聚合与落盘逻辑收敛在 `src/modules/press`。
