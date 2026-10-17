@@ -1,5 +1,5 @@
 /**
- * 卷区块：卷头行承担折叠切换、「在本卷添加章节」与卷级操作（重命名/删除），展开后按批渲染该卷章节，
+ * 卷区块：卷头行承担折叠切换、「在本卷添加章节」与卷级操作（新建卷/重命名/删除），展开后按批渲染该卷章节，
  * 章节行另提供移动与删除入口。
  * 复用 @/components/ui 的 collapsible、dropdown-menu、item 条目与 useProgressiveList 的分批渲染。
  * 关键约束：加章与更多操作按钮位于 CollapsibleTrigger 之外，点击不会连带触发折叠；折叠时不挂滚动观察器，
@@ -7,7 +7,7 @@
  * 但其章节仍可移动到正式卷——章节级入口不受卷级开关限制；章节菜单的点击须阻断冒泡，避免连带打开章节。
  */
 import { cn } from 'cn'
-import { ChevronRight, Ellipsis, MoveRight, Pencil, Plus, Trash2 } from 'lucide-react'
+import { BookPlus, ChevronRight, Ellipsis, MoveRight, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import {
@@ -42,6 +42,8 @@ interface PressVolumeSectionProps {
     /** 是否允许在本卷新增章节：未分卷组为 false */
     canAppend: boolean
     isCreatingChapter: boolean
+    /** 新建卷进行中：与卷级操作共用一个菜单入口的禁用态 */
+    isCreatingVolume: boolean
     /** 卷级操作进行中：重命名/删除期间禁用入口，避免并发改动同一目录 */
     isUpdatingVolume: boolean
     /** 章节级操作进行中：移动/删除期间禁用章节入口 */
@@ -51,6 +53,7 @@ interface PressVolumeSectionProps {
     onOpenChange: (volumeDir: string, isOpen: boolean) => void
     onOpenChapter: (path: string) => void
     onCreateChapter: (volumeDir: string) => void
+    onCreateVolume: () => void
     onRenameVolume: (volumeDir: string) => void
     onDeleteVolume: (volumeDir: string) => void
     onMoveChapter: (path: string, targetVolumeDir: string) => void
@@ -62,12 +65,14 @@ export function PressVolumeSection({
     isOpen,
     canAppend,
     isCreatingChapter,
+    isCreatingVolume,
     isUpdatingVolume,
     isUpdatingChapter,
     moveTargets,
     onOpenChange,
     onOpenChapter,
     onCreateChapter,
+    onCreateVolume,
     onRenameVolume,
     onDeleteVolume,
     onMoveChapter,
@@ -128,13 +133,17 @@ export function PressVolumeSection({
                                 className="shrink-0 rounded-full"
                                 aria-label={`${title}的更多操作`}
                                 title="更多操作"
-                                disabled={isUpdatingVolume}
+                                disabled={isUpdatingVolume || isCreatingVolume}
                             >
                                 <Ellipsis />
                             </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                             <DropdownMenuGroup>
+                                <DropdownMenuItem onSelect={onCreateVolume}>
+                                    <BookPlus />
+                                    新建卷
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onSelect={() => onRenameVolume(volume.dirName)}>
                                     <Pencil />
                                     重命名

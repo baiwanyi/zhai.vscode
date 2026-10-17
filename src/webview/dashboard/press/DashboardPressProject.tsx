@@ -1,11 +1,10 @@
 /**
- * 作品详情页（#/press/{作品名}）：页头返回作品列表、作品元信息、新建卷入口与卷分组章节目录。
+ * 作品详情页（#/press/{作品名}）：页头返回作品列表与作品元信息，主体为卷分组章节目录。
  * 数据与动作经 hooks/usePressProjectDetail 下发，章节渲染与折叠交给 PressChapterList（卷内按批追加），
- * 卷的重命名/删除与章节的删除由本页承载弹窗，章节移动成功后展开落点卷，成功后由 hook 重拉详情。
- * 关键约束：详情未就绪时页头用路由中的目录名兜底，避免标题闪烁；「新建卷」仅在数据就绪后可用，
+ * 卷的新建入口位于卷头菜单，卷的重命名/删除与章节的删除由本页承载弹窗，章节移动成功后展开落点卷。
+ * 关键约束：详情未就绪时页头用路由中的目录名兜底，避免标题闪烁；新建卷需数据就绪后才可用，
  * 防止向不存在的作品写入；弹窗以被操作的卷重挂载，保证输入框回到当前卷名；页面内屏蔽浏览器右键菜单。
  */
-import { BookPlus } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty'
@@ -142,16 +141,6 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                 {project !== undefined ? (
                     <p className="px-1 text-xs text-muted-foreground">{formatProjectMeta(project)}</p>
                 ) : null}
-                <Button
-                    variant="outline"
-                    size="lg"
-                    className="w-full justify-start rounded-full"
-                    disabled={isCreatingVolume || status !== 'ready'}
-                    onClick={() => void createVolume()}
-                >
-                    <BookPlus data-icon="inline-start" />
-                    新建卷
-                </Button>
             </div>
             <div className="relative min-h-0 flex-1 pt-3">
                 <ScrollArea className="h-full">
@@ -165,11 +154,13 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                                 key={chapterListKey}
                                 volumes={detail?.volumes ?? []}
                                 isCreatingChapter={isCreatingChapter}
+                                isCreatingVolume={isCreatingVolume}
                                 isUpdatingVolume={isUpdatingVolume}
                                 isUpdatingChapter={isUpdatingChapter}
                                 initialExpandVolumeDir={expandVolumeDir}
                                 onOpenChapter={(path) => void openChapter(path)}
                                 onCreateChapter={(volumeDir) => void createChapter(volumeDir)}
+                                onCreateVolume={() => void createVolume()}
                                 onRenameVolume={(volumeDir) => setRenameTarget(readVolume(volumeDir))}
                                 onDeleteVolume={(volumeDir) => setDeleteTarget(readVolume(volumeDir))}
                                 onMoveChapter={handleMoveChapter}

@@ -59,7 +59,7 @@ export interface CreatedProjectHandle {
 /**
  * 在 press/ 下新建作品骨架并立即索引。
  * 关键约束：作品名 trim 后再校验；目标目录已存在即拒绝，避免覆盖用户已有内容；
- * Chapter/ 为空目录（无文档时不进索引），作品仍以 README 等骨架文档出现在列表中。
+ * 骨架自带卷1 与首章（作品内容为空时默认就是「卷1 / 01-未命名章节」），目录须先建好再写文件。
  */
 export async function createProject(
     indexer: ProjectIndexer,

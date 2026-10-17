@@ -3,7 +3,8 @@
  * 骨架对齐 docs/modules/press.md 1.2/1.3：README.md + 大纲.md + 角色设定.md + 设定.md + Chapter/；
  * 章节文件按「两位序号-标题.md」命名，分卷目录按「两位序号-卷名」命名。
  * 关键约束：作品名同时作为目录名，须满足跨平台约束（非法字符、系统保留名、首尾空格与点）；
- * 本模块只产出相对路径与内容，落盘与索引由 projectService 负责；README 的 Frontmatter title 供索引器取标题。
+ * 本模块只产出相对路径与内容，落盘与索引由 projectService 负责；README 的 Frontmatter title 供索引器取标题；
+ * 新作品自带卷1 与首章，保证详情页一进去就有可写章节，不留空态。
  */
 import type { PressCategory } from '../../shared/types/press'
 
@@ -133,7 +134,7 @@ function buildReadmeContent(name: string, category: PressCategory, createdAt: st
     ].join('\n')
 }
 
-/** 生成作品骨架文件清单：顺序固定，README 始终在首位 */
+/** 生成作品骨架文件清单：顺序固定，README 始终在首位，卷1 首章在末位 */
 export function buildProjectSkeleton(name: string, category: PressCategory, now: Date): ProjectSkeletonFile[] {
     return [
         { relativePath: PROJECT_README_NAME, content: buildReadmeContent(name, category, toDateString(now)) },
@@ -143,6 +144,10 @@ export function buildProjectSkeleton(name: string, category: PressCategory, now:
             content: '# 角色设定\n\n> 每个角色以一级标题起条，便于以 [[角色设定#角色名]] 引用。\n',
         },
         { relativePath: '设定.md', content: '# 设定\n\n## 世界观\n\n## 地理\n\n## 组织势力\n' },
+        {
+            relativePath: `${PROJECT_CHAPTER_DIR}/${DEFAULT_VOLUME_DIR}/${buildChapterFileName(DEFAULT_VOLUME_ORDER)}`,
+            content: buildChapterSkeleton(DEFAULT_VOLUME_ORDER),
+        },
     ]
 }
 

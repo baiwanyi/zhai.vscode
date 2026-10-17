@@ -416,7 +416,7 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 **协议（仪表盘面板宿主）**：`press/projects`（只读聚合）、`press/create`（生成骨架 + 索引 + 打开 README）、`press/open`（打开 README）。
 
-**骨架生成**：`press/{作品名}/` 下写入 `README.md`（Frontmatter 含 title / category / status / wordGoal / createdAt）、`大纲.md`、`角色设定.md`、`设定.md`，并创建空的 `Chapter/`；每个文档写盘后立即索引，列表不等 watcher 防抖即可见。
+**骨架生成**：`press/{作品名}/` 下写入 `README.md`（Frontmatter 含 title / category / status / wordGoal / createdAt）、`大纲.md`、`角色设定.md`、`设定.md`、`Chapter/01-卷1/01-未命名章节.md`，并创建 `Chapter/` 与 `Chapter/01-卷1/` 目录；每个文档写盘后立即索引，列表不等 watcher 防抖即可见。新作品内容为空时默认就是「卷1 / 01-未命名章节」，详情页一进去即有可写章节。
 
 **安全约束**：作品名经白名单校验（长度、`\ / : * ? " < > |`、控制字符、`.`/`..`、Windows 保留名、首尾空格与点），目标目录已存在即拒绝；`press/open` 的目录须先在索引库中存在，且严格限定为 `press/{作品名}` 两段。
 
@@ -435,6 +435,8 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 | `press/createVolume` | 卷序号取最大值 + 1 → 建目录 → 写入首章 → 索引 → 打开 |
 | `press/renameVolume` | 保留原序号前缀替换卷名 → 移动目录 → 清理旧前缀索引 → 按新路径重建索引 |
 | `press/deleteVolume` | 整卷目录移入回收站 → 按前缀清理该卷索引记录 |
+| `press/deleteChapter` | 单章移入回收站 → 按完整路径清理该章索引；有未保存修改的文档直接拒绝 |
+| `press/moveChapter` | 移动到目标卷末尾 → 重排文件名序号 → 清旧路径索引 → 按新路径索引，返回 `path / title / volume` |
 | `press/openChapter` | 回查索引库精确命中后打开章节文档，前缀须属于对应作品的 `Chapter/` |
 
 **章节聚合规则**
@@ -449,7 +451,7 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 **卷与章节的层级**
 
-- 卷是必备层级：作品骨架创建时即生成 `Chapter/01-卷1/`，章节一律落在卷下，`Chapter/` 根不再作为新建落点
+- 卷是必备层级：作品骨架创建时即生成 `Chapter/01-卷1/` 与首章 `01-未命名章节.md`，章节一律落在卷下，`Chapter/` 根不再作为新建落点
 - 卷目录命名为 `{两位序号}-卷{N}`，展示名去掉序号前缀（`01-卷1` → `卷1`）
 - 历史遗留的 `Chapter/*.md`（未分卷散章）以「未分卷」组只读展示，不提供新增入口
 
@@ -463,6 +465,7 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 **新建卷（`press/createVolume`）**
 
+- 入口位于卷头「更多操作」菜单首项（重命名之前），作品还没有卷时由空态按钮兜底，页头不再常驻「新建卷」按钮
 - 卷序号取现有卷最大序号 + 1，目录名 `{两位序号}-卷{N}`，目录已存在时递增重试
 - 建卷必须同时写入该卷首章 `01-未命名章节.md`：索引库只记录文档，空目录不会出现在详情页，避免「看不见的卷」
 - 首章写盘后立即索引并打开，toast 提示卷名
@@ -474,6 +477,17 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 - 目录移动后旧路径索引立即失效：先按旧卷前缀清理（`removeFilesUnder`），再按新路径逐份重建，不依赖 watcher 的删除回调
 - 删除整卷移入回收站（环境不支持时退化为永久删除），并按前缀清理该卷索引记录；作品下删空后不自动补卷，下次新增章节回落默认卷1
 - 未分卷组（历史散章）不提供卷级操作入口
+
+**章节的删除与移动（章节行更多操作）**
+
+- 删除：单章移入回收站并按完整路径清理索引（`removeFile`，不做前缀匹配，避免误伤同前缀文档）；文档开着且有未保存修改时拒绝，提示先保存，防止删盘后编辑器内容把文件写回
+- 移动：语义为「追加到目标卷末尾」，只替换文件名序号前缀、保留可读名与正文（`Chapter/01-卷1/03-初见.md` → `Chapter/02-卷2/08-初见.md`）
+- 序号：取目标卷内已登记章节的最大序号 + 1，冲突时递增重试（最多 10 次），绝不覆盖既有章节
+- 索引：先清旧路径记录再按新路径索引，顺序颠倒会让旧记录带偏聚合口径
+- 约束：同卷移动直接拒绝；目标卷必须已存在（空目录不进索引，自动建卷会造出「看不见的卷」）；目标卷为空串表示移动到「未分卷」根目录
+- 越界防护：章节路径须归一化后仍位于该作品的 `Chapter/` 之下（未分卷 4 段、分卷 5 段起），宿主侧先回查索引库再触达文件系统
+- 交互：移动成功 toast 提示落点卷，列表以 `key` 重挂载并展开落点卷；删除走二次确认弹窗
+- 未分卷组的章节同样提供移动与删除入口，便于把历史散章收进正式卷
 
 **大作品渲染（懒加载 + 折叠）**
 

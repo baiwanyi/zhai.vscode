@@ -107,7 +107,7 @@ describe('validateProjectName', () => {
 })
 
 describe('createProject', () => {
-    it('生成骨架目录与四份文档，并逐份纳入索引', async () => {
+    it('生成骨架目录与五份文档（含卷1首章），并逐份纳入索引', async () => {
         const { indexer, indexed } = createIndexer()
         const created = await createProject(indexer, { name: '剑来', category: '玄幻' })
 
@@ -122,11 +122,14 @@ describe('createProject', () => {
         expect(readFileContent(path.join(directory, '大纲.md'))).toContain('# 大纲')
         expect(readFileContent(path.join(directory, '角色设定.md'))).toContain('# 角色设定')
         expect(readFileContent(path.join(directory, '设定.md'))).toContain('# 设定')
+        const firstChapter = path.join(directory, 'Chapter', '01-卷1', '01-未命名章节.md')
+        expect(readFileContent(firstChapter)).toContain('title: 01 未命名章节')
         expect(indexed).toEqual([
             path.join(directory, 'README.md'),
             path.join(directory, '大纲.md'),
             path.join(directory, '角色设定.md'),
             path.join(directory, '设定.md'),
+            firstChapter,
         ])
     })
 
