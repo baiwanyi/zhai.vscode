@@ -1,17 +1,18 @@
 /**
- * 取名条件卡片：生成方式 + 分类字段 + 具体要求 + 批量数量，底部为生成 / 取消按钮。
- * 复用约定：卡片复用 ui/card，字段布局复用 ui/field-group + ui/field，生成方式与互斥选项复用 ui/toggle-group，
- * 数量下拉复用 ui/select，生成中状态用 ui/spinner + disabled 组合表达。
- * 关键约束：AI 通道在未配置密钥时禁用；数量只接受宿主下发的候选值；生成中禁止重复提交。
+ * 取名条件卡片：分类字段 + 具体要求，底部一行依次为「生成方式（Switch）| 随机取名 | 数量」。
+ * 复用约定：卡片复用 ui/card，字段布局复用 ui/field-group + ui/field，生成方式复用 ui/switch，
+ * 数量下拉复用 ui/select，生成中状态用 ui/spinner + 按钮兼作取消。
+ * 关键约束：AI 通道在未配置密钥时禁用；数量只接受宿主下发的候选值；生成中点击按钮即取消，不重复提交。
  */
 import { Dices } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Spinner } from '@/components/ui/spinner'
+import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { NamingCatalog, NamingRequest, NamingSurnameKind } from '@/shared/types/naming'
 import { NamingEntityFields } from './NamingEntityFields'
 import { NamingPersonFields } from './NamingPersonFields'
@@ -44,35 +45,9 @@ export function NamingConditionCard({
 }: NamingConditionCardProps): JSX.Element {
     const meta = readCategoryMeta(catalog, request.category)
     return (
-        <Card className="min-w-0 flex-1 gap-3 py-3">
+        <Card className="w-full shrink-0 gap-3 py-3">
             <CardContent className="px-3">
                 <FieldGroup className="gap-3">
-                    <Field>
-                        <FieldLabel>生成方式</FieldLabel>
-                        <ToggleGroup
-                            type="single"
-                            variant="outline"
-                            size="sm"
-                            spacing={0}
-                            value={request.source}
-                            onValueChange={(value) => {
-                                if (value === 'local' || value === 'ai') {
-                                    onChange({ source: value })
-                                }
-                            }}
-                            className="w-full"
-                        >
-                            <ToggleGroupItem value="local" className="flex-1">
-                                本地生成
-                            </ToggleGroupItem>
-                            <ToggleGroupItem value="ai" className="flex-1" disabled={!catalog.aiAvailable}>
-                                AI 生成
-                            </ToggleGroupItem>
-                        </ToggleGroup>
-                        {!catalog.aiAvailable ? (
-                            <FieldDescription>未配置 DeepSeek API Key，AI 生成不可用</FieldDescription>
-                        ) : null}
-                    </Field>
                     {meta?.isPerson ? (
                         <NamingPersonFields
                             catalog={catalog}
@@ -106,6 +81,33 @@ export function NamingConditionCard({
                     </Field>
                 </FieldGroup>
                 <div className="mt-3 flex items-center gap-2">
+                    <div
+                        className="flex shrink-0 items-center gap-1.5"
+                        title={
+                            catalog.aiAvailable
+                                ? '生成方式：开启为 AI 生成，关闭为本地生成'
+                                : '未配置 DeepSeek API Key，AI 生成不可用'
+                        }
+                    >
+                        <Switch
+                            id="naming-source"
+                            checked={request.source === 'ai'}
+                            disabled={!catalog.aiAvailable}
+                            onCheckedChange={(checked) => onChange({ source: checked ? 'ai' : 'local' })}
+                        />
+                        <Label htmlFor="naming-source" className="text-muted-foreground text-xs">
+                            AI 生成
+                        </Label>
+                    </div>
+                    <Button
+                        className="min-w-0 flex-1"
+                        size="sm"
+                        variant={isGenerating ? 'outline' : 'default'}
+                        onClick={isGenerating ? onAbort : onGenerate}
+                    >
+                        {isGenerating ? <Spinner data-icon="inline-start" /> : <Dices data-icon="inline-start" />}
+                        {isGenerating ? '取消' : GENERATE_LABEL}
+                    </Button>
                     <Select
                         value={String(request.count)}
                         onValueChange={(value) => onChange({ count: Number(value) })}
@@ -123,15 +125,6 @@ export function NamingConditionCard({
                             </SelectGroup>
                         </SelectContent>
                     </Select>
-                    <Button className="min-w-0 flex-1" size="sm" onClick={onGenerate} disabled={isGenerating}>
-                        {isGenerating ? <Spinner data-icon="inline-start" /> : <Dices data-icon="inline-start" />}
-                        {isGenerating ? '生成中…' : GENERATE_LABEL}
-                    </Button>
-                    {isGenerating && request.source === 'ai' ? (
-                        <Button variant="outline" size="sm" onClick={onAbort}>
-                            取消
-                        </Button>
-                    ) : null}
                 </div>
             </CardContent>
         </Card>

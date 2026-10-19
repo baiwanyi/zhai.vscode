@@ -16,7 +16,6 @@ import { useActiveNote } from './hooks/useActiveNote'
 import { useDashboardActions } from './hooks/useDashboardActions'
 import { useDashboardStats } from './hooks/useDashboardStats'
 import { useNotesList } from './hooks/useNotesList'
-import { useVscodeTheme } from './hooks/useVscodeTheme'
 import { DashboardEntries } from './layout/DashboardEntries'
 import { DashboardSlots } from './layout/DashboardSlots'
 import { DashboardTopBar } from './layout/DashboardTopBar'
@@ -24,6 +23,7 @@ import { NotesSection } from './layout/NotesSection'
 import { NotesSelectionBar } from './layout/NotesSelectionBar'
 import type { DashboardRoute } from './core/routing'
 import type { JSX } from 'react'
+import { useVscodeTheme } from '../hooks/useVscodeTheme'
 
 interface DashboardProps {
     /** 页内导航：由路由外壳下发，页面不直接改写地址栏 hash */

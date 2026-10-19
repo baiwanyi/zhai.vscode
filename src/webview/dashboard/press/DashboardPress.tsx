@@ -13,7 +13,7 @@ import { PressProjectDialog } from './layout/PressProjectDialog'
 import { PressProjectList } from './layout/PressProjectList'
 import { PressTopBar } from './layout/PressTopBar'
 import type { JSX } from 'react'
-import { useVscodeTheme } from '../hooks/useVscodeTheme'
+import { useVscodeTheme } from '../../hooks/useVscodeTheme'
 
 interface DashboardPressProps {
     /** 返回仪表盘概览：由路由外壳下发，页面不自行改写 hash */

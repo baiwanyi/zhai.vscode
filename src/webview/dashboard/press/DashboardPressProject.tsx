@@ -20,7 +20,7 @@ import { PressVolumeDeleteDialog } from './layout/PressVolumeDeleteDialog'
 import { PressVolumeRenameDialog } from './layout/PressVolumeRenameDialog'
 import { formatProjectMeta } from './utils'
 import type { JSX } from 'react'
-import { useVscodeTheme } from '../hooks/useVscodeTheme'
+import { useVscodeTheme } from '../../hooks/useVscodeTheme'
 
 /** 章节骨架条数：与首屏常见章节数量同量级即可 */
 const CHAPTER_PLACEHOLDERS = [0, 1, 2, 3] as const

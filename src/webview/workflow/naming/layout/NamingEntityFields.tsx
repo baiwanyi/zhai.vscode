@@ -1,13 +1,14 @@
 /**
- * 实体条件区：地点 / 势力 / 招式 / 装备 / 怪物 / 道具的类型选择与后缀输入。
- * 复用约定：类型下拉复用 ui/select（选项来自宿主 catalog），后缀输入复用 ui/input-group（内嵌随机按钮）；
- * 后缀候选由宿主按「分类 × 类型」下发，前端只负责抽样填充。
- * 关键约束：后缀输入只保留汉字并在宿主侧再次收窄，前端限长仅用于输入体验。
+ * 实体条件区：地点 / 势力 / 招式 / 装备 / 怪物 / 道具的位置或类型切换，以及后缀输入。
+ * 复用约定：位置 / 类型复用 ui/toggle-group 的 outline 分段样式（与人物-性别 / 字数同一套尺寸），
+ * 后缀输入复用 ui/input-group（内嵌随机按钮）。
+ * 关键约束：分段控件整行等分（size=sm、spacing=0、w-full）；后缀输入只保留汉字并在宿主侧再次收窄，
+ * 前端限长仅用于输入体验。
  */
 import { Dices } from 'lucide-react'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
 import type { NamingCatalog, NamingRequest } from '@/shared/types/naming'
 import type { JSX } from 'react'
 import { MAX_SUFFIX_LENGTH } from '../constants'
@@ -33,21 +34,26 @@ export function NamingEntityFields({
     return (
         <div className="flex flex-col gap-3">
             <Field>
-                <FieldLabel htmlFor="naming-entity-variant">{meta.variantLabel}</FieldLabel>
-                <Select value={request.variant} onValueChange={(value) => onChange({ variant: value })}>
-                    <SelectTrigger id="naming-entity-variant" className="w-full" size="sm">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectGroup>
-                            {meta.variants.map((variant) => (
-                                <SelectItem key={variant.value} value={variant.value}>
-                                    {variant.label}
-                                </SelectItem>
-                            ))}
-                        </SelectGroup>
-                    </SelectContent>
-                </Select>
+                <FieldLabel>{meta.variantLabel}</FieldLabel>
+                <ToggleGroup
+                    type="single"
+                    variant="outline"
+                    size="sm"
+                    spacing={0}
+                    value={request.variant}
+                    onValueChange={(value) => {
+                        if (value) {
+                            onChange({ variant: value })
+                        }
+                    }}
+                    className="w-full"
+                >
+                    {meta.variants.map((variant) => (
+                        <ToggleGroupItem key={variant.value} value={variant.value} className="flex-1">
+                            {variant.label}
+                        </ToggleGroupItem>
+                    ))}
+                </ToggleGroup>
             </Field>
             <Field>
                 <FieldLabel htmlFor="naming-suffix">后缀</FieldLabel>

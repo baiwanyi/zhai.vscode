@@ -1,36 +1,36 @@
 /**
- * 结果卡片：单个候选名的展示与复制入口，悬停时浮现复制按钮。
- * 复用约定：容器复用 ui/card（sm 尺寸），按钮复用 ui/button 的 icon-xs 变体，图标取自 lucide-react。
- * 关键约束：名字可能较长，用 truncate 保证网格不被撑开，完整内容通过 title 悬浮可见。
+ * 结果卡片：整张卡片即复制按钮，名字居中显示，复制结果统一由 sonner 提示。
+ * 复用约定：卡片复用 ui/button 的 outline 变体，复制走 ../utils 的 copyName（写剪贴板）。
+ * 关键约束：卡片不提供多余提示属性（title 等），复制成功 / 失败均通过 toast 反馈，不在卡片内变化图标。
  */
-import { Copy } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import type { NamingCandidate } from '@/shared/types/naming'
 import type { JSX } from 'react'
+import { copyName } from '../utils'
 
 interface NamingResultCardProps {
     candidate: NamingCandidate
-    onCopy: (name: string) => void
 }
 
-export function NamingResultCard({ candidate, onCopy }: NamingResultCardProps): JSX.Element {
+export function NamingResultCard({ candidate }: NamingResultCardProps): JSX.Element {
+    const handleCopy = async (): Promise<void> => {
+        const isSuccess = await copyName(candidate.name)
+        if (isSuccess) {
+            toast.success(`已复制「${candidate.name}」`)
+            return
+        }
+        toast.error('复制失败，请手动选中后复制')
+    }
+
     return (
-        <Card size="sm" className="group/name gap-0 py-1.5">
-            <CardContent className="flex items-center gap-1 px-2">
-                <span className="min-w-0 flex-1 truncate text-sm" title={candidate.name}>
-                    {candidate.name}
-                </span>
-                <Button
-                    size="icon-xs"
-                    variant="ghost"
-                    className="opacity-0 transition-opacity group-hover/name:opacity-100 focus-visible:opacity-100"
-                    aria-label={`复制 ${candidate.name}`}
-                    onClick={() => onCopy(candidate.name)}
-                >
-                    <Copy data-icon="inline-start" />
-                </Button>
-            </CardContent>
-        </Card>
+        <Button
+            variant="outline"
+            className="h-8 w-full min-w-0 justify-center px-2 font-normal"
+            aria-label={`复制 ${candidate.name}`}
+            onClick={() => void handleCopy()}
+        >
+            <span className="truncate">{candidate.name}</span>
+        </Button>
     )
 }

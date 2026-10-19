@@ -1,6 +1,6 @@
 /**
  * 编辑器主题读取：以根元素的 .dark 类为唯一口径，供需要显式主题入参的组件（如 sonner 的 Toaster）使用。
- * 复用 bootstrap 写入的 .dark 类，避免为 Webview 引入 next-themes 提供者。
+ * 复用约定：dashboard 与 workflow 的 Webview 共用本 hook，沿用 bootstrap 写入的 .dark 类，避免引入 next-themes 提供者。
  * 关键约束：仅观察根元素的 class 变化，判定口径须与 bootstrap 的 DARK_THEME_KINDS 保持一致。
  */
 import { useEffect, useState } from 'react'
