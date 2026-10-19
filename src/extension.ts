@@ -18,6 +18,10 @@ import { IndexService } from './modules/common/indexer/indexService'
 import { logger } from './modules/common/logger'
 import { SecretsService } from './modules/common/secrets'
 import { StatusBarService } from './modules/common/statusBar'
+import { openNamingDatabase } from './modules/naming/db/connection'
+import { ensureNamingSchema } from './modules/naming/db/schema'
+import { NamingRoutes } from './modules/naming/namingRoutes'
+import { NamingService } from './modules/naming/namingService'
 import { PinStore } from './modules/note/pinStore'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 
@@ -69,7 +73,14 @@ export function activate(context: vscode.ExtensionContext): void {
 
     registerAiCommands(context, aiChatService, secrets, workflowRouter)
 
-    const aiChatProvider = new AiChatViewProvider(context.extensionUri, aiChatService, workflowRouter)
+    // 取名：独立 naming.db 承载生成历史与收藏，词素库全部留在宿主侧
+    const namingDb = openNamingDatabase(cacheRoot)
+    context.subscriptions.push({ dispose: () => namingDb.close() })
+    ensureNamingSchema(namingDb)
+    const namingService = new NamingService(namingDb, secrets)
+    const namingRoutes = new NamingRoutes(namingService)
+
+    const aiChatProvider = new AiChatViewProvider(context.extensionUri, aiChatService, workflowRouter, namingRoutes)
     context.subscriptions.push(
         aiChatProvider,
         vscode.window.registerWebviewViewProvider(AiChatViewProvider.viewId, aiChatProvider),

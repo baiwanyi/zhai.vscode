@@ -1,0 +1,66 @@
+/**
+ * AI 取名执行器：调用 DeepSeek 流式接口完成一次性生成，把增量聚合为完整正文后交给提示词层校验。
+ * 复用约定：底层复用 ../ai/client 的 streamChat（OpenAI 兼容协议），密钥与模型由调用方注入；
+ * 取消走 AbortController，外部 signal（naming/abort）与内部超时都会中止请求。
+ * 关键约束：本函数不做结果校验与落库，只负责取回正文与用量；抛出的错误由服务层转为可读提示。
+ */
+import { buildNamingMessages } from './namingPrompt'
+import type { NamingRequest } from '../../../shared/types/naming'
+import type { ChatUsage } from '../../ai/client'
+import { streamChat } from '../../ai/client'
+
+/** 单次生成整体超时：批量 24~48 个名字通常 5~15s，留出充足余量 */
+const AI_REQUEST_TIMEOUT_MS = 60_000
+/** 取名温度：偏高以提高发散度 */
+const AI_TEMPERATURE = 1.1
+/** 单次输出上限：批量 48 个名字约 400 token，留一倍余量 */
+const AI_MAX_TOKENS = 900
+
+export interface AiNameGenerateOptions {
+    apiKey: string
+    model: string
+    request: NamingRequest
+    /** 外部取消信号（naming/abort） */
+    signal?: AbortSignal
+}
+
+export interface AiNameGenerateResult {
+    content: string
+    usage: ChatUsage | null
+}
+
+/** 执行一次 AI 取名请求，返回原始正文与用量 */
+export async function generateNamesWithAi(options: AiNameGenerateOptions): Promise<AiNameGenerateResult> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), AI_REQUEST_TIMEOUT_MS)
+    const forwardAbort = (): void => controller.abort()
+    if (options.signal) {
+        if (options.signal.aborted) {
+            controller.abort()
+        } else {
+            options.signal.addEventListener('abort', forwardAbort, { once: true })
+        }
+    }
+    let content = ''
+    let usage: ChatUsage | null = null
+    try {
+        const stream = streamChat({
+            apiKey: options.apiKey,
+            model: options.model,
+            temperature: AI_TEMPERATURE,
+            maxTokens: AI_MAX_TOKENS,
+            messages: buildNamingMessages(options.request),
+            signal: controller.signal,
+        })
+        for await (const chunk of stream) {
+            content += chunk.content
+            if (chunk.usage) {
+                usage = chunk.usage
+            }
+        }
+        return { content, usage }
+    } finally {
+        clearTimeout(timer)
+        options.signal?.removeEventListener('abort', forwardAbort)
+    }
+}

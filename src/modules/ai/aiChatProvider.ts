@@ -1,10 +1,11 @@
 /**
- * AI 对话 Webview 面板（宿主侧）：加载 React 构建产物，路由 ai/* 与 workflow/* 协议到对话服务与工作流路由。
+ * AI 对话 Webview 面板（宿主侧）：加载 React 构建产物，路由 ai/* 与 workflow/* 协议到对话服务与工作流路由，
+ * 并把 naming/* 前缀委托给取名路由（写作管理页的取名分区复用同一视图）。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
  * 上下文增删走 ai/context*，写回走 ai/writeState / ai/setMode / ai/applyWrite，state 广播以 channel 区分
  * ai（runtime / context / writeTarget）与 workflow（路由事实）。
  * 关键约束：上下文移除与写回只接受宿主生成的 id（不接受路径与范围入参），所有 Webview 入参逐字段收窄后再用；
- * 场景判定统一由 WorkflowRouter 产出，本层只做转发，避免两处口径分叉。
+ * 场景判定统一由 WorkflowRouter 产出，取名协议只做前缀转发，本层不解析取名条件。
  */
 import * as vscode from 'vscode'
 import type { AiChatService } from './chatService'
@@ -12,6 +13,7 @@ import type { WorkflowRouter } from './workflowRouter'
 import type { AiConversationMode } from '../../shared/types/aiChat'
 import type { HostToWebviewMessage, StreamMessage } from '../../shared/types/messages'
 import type { OpenWorkflowResult, ResetWorkflowResult } from '../../shared/types/workflow'
+import type { NamingRoutes } from '../naming/namingRoutes'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { logger } from '../common/logger'
@@ -36,6 +38,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         private readonly extensionUri: vscode.Uri,
         private readonly service: AiChatService,
         private readonly workflowRouter: WorkflowRouter,
+        private readonly naming: NamingRoutes,
     ) {
         this.disposables.push(
             service.onStream((message) => this.broadcast(message)),
@@ -165,6 +168,9 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 return { executed: true }
             }
             default:
+                if (method.startsWith('naming/')) {
+                    return this.naming.handle(method, payload)
+                }
                 throw new Error(`未知的协议方法：${method}`)
         }
     }

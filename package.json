@@ -196,6 +196,11 @@
                     "default": true,
                     "description": "编辑器右键「添加到宅对话」后自动聚焦 AI 对话面板"
                 },
+                "zhai.naming.aiDailyLimit": {
+                    "type": "number",
+                    "default": 20,
+                    "description": "取名 AI 生成的每日次数上限（本地生成不限次数）"
+                },
                 "zhai.telemetry.enabled": {
                     "type": "boolean",
                     "default": false,
