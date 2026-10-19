@@ -1,11 +1,11 @@
 /**
  * AI 对话会话状态机：持有会话快照、视图阶段（idle / sending / streaming）与输入内容，
- * 承载发送 / 停止 / 新建 / 切换 / 删除会话等操作，并订阅宿主 stream 消息按发起时的助手消息 id 就地追加增量。
+ * 承载发送 / 停止 / 模式切换 / 新建 / 切换 / 删除会话等操作，并订阅宿主 stream 消息按发起时的助手消息 id 就地追加增量。
  * 复用 ../utils 的消息替换与错误收窄；上下文清单与历史列表由调用方 hook 持有、经参数注入刷新。
- * 关键约束：切换 / 删除会话前先中止生成，避免增量写回已切走的会话；输入框内容在切换会话时保持不动。
+ * 关键约束：切换 / 删除会话或切换模式前先中止生成，避免增量写回已切走的会话；输入框内容在切换时保持不动。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AiContextRef, AiSendResult, AiSessionSnapshot } from '@/shared/types/aiChat'
+import type { AiContextRef, AiConversationMode, AiSendResult, AiSessionSnapshot } from '@/shared/types/aiChat'
 import { onStream, request } from '../../../bridge'
 import { patchMessage, toErrorText } from '../utils'
 
@@ -29,10 +29,12 @@ export interface AiChatSessionState {
     input: string
     setInput: (input: string) => void
     loadSession: () => Promise<void>
-    send: () => Promise<void>
+    /** applyPolicy 决定本轮结果是否提供写回入口：report 类命令只展示结果 */
+    send: (applyPolicy?: 'replace' | 'report') => Promise<void>
     stop: () => Promise<void>
     startNewSession: () => Promise<void>
     switchSession: (conversationId: string) => Promise<void>
+    switchMode: (mode: AiConversationMode) => Promise<void>
     deleteSession: (conversationId: string) => Promise<void>
 }
 
@@ -91,7 +93,7 @@ export function useAiChatSession({
         })
     }, [onError])
 
-    const send = useCallback(async (): Promise<void> => {
+    const send = useCallback(async (applyPolicy: 'replace' | 'report' = 'replace'): Promise<void> => {
         const content = input.trim()
         if (content.length === 0 || !session || phase !== 'idle') {
             return
@@ -103,6 +105,7 @@ export function useAiChatSession({
             const result = await request<AiSendResult>('ai/send', {
                 conversationId: session.conversation.id,
                 content,
+                applyPolicy,
             })
             streamingMessageIdRef.current = result.assistantMessage.id
             setSession((previous) =>
@@ -146,6 +149,32 @@ export function useAiChatSession({
             onError(toErrorText(cause))
         }
     }, [onError, onNotice, setContexts])
+
+    /** 切换会话模式：生成中先停止，宿主写库后同步本地快照；模式只影响后续发送与结果处置 */
+    const switchMode = useCallback(
+        async (mode: AiConversationMode): Promise<void> => {
+            if (!session || session.conversation.mode === mode) {
+                return
+            }
+            try {
+                if (phase !== 'idle') {
+                    await request('ai/abort')
+                }
+                const result = await request<{ mode: AiConversationMode }>('ai/setMode', { mode })
+                setSession((previous) =>
+                    previous
+                        ? { ...previous, conversation: { ...previous.conversation, mode: result.mode } }
+                        : previous,
+                )
+                setPhase('idle')
+                onError(null)
+                onNotice(null)
+            } catch (cause) {
+                onError(toErrorText(cause))
+            }
+        },
+        [onError, onNotice, phase, session],
+    )
 
     /** 切换到历史会话：生成中先停止再切换，避免增量写回已切走的会话；输入框内容保持不动 */
     const switchSession = useCallback(
@@ -204,6 +233,7 @@ export function useAiChatSession({
         stop,
         startNewSession,
         switchSession,
+        switchMode,
         deleteSession,
     }
 }

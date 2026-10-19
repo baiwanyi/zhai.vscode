@@ -96,7 +96,8 @@
             {
                 "command": "zhai.openSettings",
                 "title": "打开插件设置",
-                "category": "宅写作"
+                "category": "宅写作",
+                "icon": "$(gear)"
             },
             {
                 "command": "zhai.exportDiagnostics",
@@ -122,6 +123,13 @@
                     "command": "zhai.ai.addToChat",
                     "group": "zhai@1",
                     "when": "editorTextFocus && !editorReadonly && !inDiffEditor"
+                }
+            ],
+            "view/title": [
+                {
+                    "command": "zhai.openSettings",
+                    "when": "view == zhai.workflow",
+                    "group": "navigation@1"
                 }
             ]
         },

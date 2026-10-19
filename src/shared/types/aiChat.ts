@@ -80,6 +80,41 @@ export interface AiSessionSnapshot {
     contexts: AiContextRef[]
 }
 
+/** 写回作用域：selection 为编辑器选区，document 为整篇文档 */
+export type AiWriteScope = 'selection' | 'document'
+
+/**
+ * 写回目标快照（下发前端用于提示与发送前置判断）。
+ * 约束：不含绝对路径与原文，宿主内部另存 uri / version / range。
+ */
+export interface AiWriteTarget {
+    scope: AiWriteScope
+    /** 工作区相对路径；未命名文档为文件名 */
+    displayPath: string
+    /** 起止行（1-based，含首尾；整篇为首行到末行） */
+    startLine: number
+    endLine: number
+    charCount: number
+    /** 文档存在未保存修改 */
+    isDirty: boolean
+}
+
+/** 写回状态：实时目标 + 可写回与已写回的消息 id */
+export interface AiWriteState {
+    target: AiWriteTarget | null
+    /** 每条可写回消息对应的快照作用域：整篇时前端在写入前二次确认 */
+    appliableScopes: Record<string, AiWriteScope>
+    appliableMessageIds: string[]
+    appliedMessageIds: string[]
+}
+
+/** 写回结果：reason 为 applied 时表示此前已写过，未重复写入 */
+export interface AiApplyResult {
+    applied: boolean
+    label: string
+    reason?: 'applied'
+}
+
 /** 运行时信息：密钥状态与默认参数，用于页面引导与参数展示 */
 export interface AiRuntimeInfo {
     /** 是否已在系统密钥库中配置 DeepSeek API Key */

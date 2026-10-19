@@ -1,8 +1,8 @@
 # AI Chat — 模块设计文档
 
-**版本**：1.2
-**日期**：2026-09-14
-**状态**：对话模式、编辑器右键上下文（10.1）与会话历史（10.2）已落地，写作模式待实现
+**版本**：1.3
+**日期**：2026-10-19
+**状态**：对话模式、编辑器右键上下文（10.1）、会话历史（10.2）与写作模式写回（10.3）已落地；diff 逐段接受待实现
 **宿主**：VSCode 插件 Zhai（宅桌面）
 
 ---
@@ -48,11 +48,11 @@ AI Chat 是插件的**智能交互中枢**，同时服务于两类需求：
 
 | 编号 | 功能点 | 描述 | 优先级 | 状态 |
 |------|--------|------|--------|------|
-| A1 | 模式切换 | 写作 / 对话双模式，独立面板布局 | P0 | 待实现 |
-| A2 | 写作模式指令 | 输入自然语言指令，直接作用于编辑区内容 | P0 | 待实现 |
-| A3 | diff 预览与逐段接受 | 按 hunk 接受/拒绝/重新生成，接受后写入文件 | P0 | 待实现 |
+| A1 | 模式切换 | 写作 / 对话双模式，底部按钮切换并随会话持久化 | P0 | 已落地（见 10.3） |
+| A2 | 写作模式指令 | 输入自然语言指令，直接作用于编辑区选中内容或整篇 | P0 | 已落地（整段替换，见 10.3） |
+| A3 | diff 预览与逐段接受 | 按 hunk 接受/拒绝/重新生成，接受后写入文件 | P0 | 待实现（当前为整段替换 + Ctrl+Z） |
 | A4 | 内联续写 | `Alt+Enter` 从光标处续写，流式占位显示 | P0 | 待实现 |
-| A5 | 选中文本快捷操作 | 润色 / 扩写 / 缩写 / 翻译 / 自定义 | P1 | 待实现 |
+| A5 | 选中文本快捷操作 | 改写 / 润色 / 找错别字 / 去 AI 味 | P1 | 已落地（命令菜单，见 10.3） |
 | A6 | 对话模式 | 侧边栏多轮问答，历史持久化 | P0 | 已落地 |
 | A7 | 会话管理 | 新建 / 重命名 / 删除 / 关联到具体文件 | P0 | 部分（新建、切换、删除与自动命名已落地，见 10.2） |
 | A8 | 消息历史 | 完整保存 user/assistant 消息与状态 | P0 | 已落地 |
@@ -316,7 +316,7 @@ interface AbortRequest {
 
 | 功能点 | 落地情况 |
 |--------|----------|
-| A6 对话模式 | 侧栏多轮问答；Enter 发送、Shift + Enter 换行；生成期间可停止 |
+| A6 对话模式 | 侧栏多轮问答；Enter 发送、Shift + Enter 换行；生成期间可停止；输入卡片见 10.3 |
 | A8 消息历史 | `messages` 表保存 user/assistant 与终态（completed / failed / cancelled） |
 | A9 SSE 流式输出 | openai SDK（`baseURL: https://api.deepseek.com`）；宿主按 60ms 窗口合并增量后经 `stream` 消息推送 |
 | A11 请求取消 | `AbortController`，`ai/abort` 立即断开连接并把消息落为 `cancelled` |
@@ -324,7 +324,7 @@ interface AbortRequest {
 | A7 会话管理 | 已实现新建、切换、删除与首条消息自动命名（历史浮层见 10.2）；重命名 / 关联文件待实现 |
 | A10 思考链 | 已随流式回传并写入 `messages.reasoning`；面板折叠展示待实现 |
 | A12 `@` 上下文 | 编辑器右键「添加到宅对话」已落地（见 10.1）；`@` 输入框提及待实现（依赖 Notes / KB 检索） |
-| A1~A5 写作模式 | 待实现（diff 逐段接受、内联续写） |
+| A1/A2/A5 写作模式 | 已落地模式切换、四项命令与整段写回（见 10.3）；A3 diff 逐段接受与 A4 内联续写待实现 |
 
 协议（第 7.2 节 compose 全量设计的对话子集，写作模式落地时再扩展）：
 
@@ -341,9 +341,12 @@ interface AbortRequest {
 | `ai/context` | Webview → 宿主 | 取当前会话的待发送上下文清单 |
 | `ai/context/remove` | Webview → 宿主 | 按宿主生成的 id 移除一条引用（不接受路径入参） |
 | `ai/context/clear` | Webview → 宿主 | 清空待发送上下文，返回空清单 |
+| `ai/writeState` | Webview → 宿主 | 实时改写目标、写回作用域、可写回与已写回消息 id |
+| `ai/setMode` | Webview → 宿主 | 切换会话模式（`chat` / `write`），写库后返回 `{ mode }` |
+| `ai/applyWrite` | Webview → 宿主 | 按助手消息 id 写回编辑栏（不接受路径与范围入参），返回 `{ applied, label, reason? }` |
 | `host/command` | Webview → 宿主 | 白名单命令（`src/modules/common/webviewCommands.ts`），用于设置密钥、打开设置等 |
 | `stream` | 宿主 → Webview | 增量 `{ reqId, delta, channel }`；终态 `{ done: true, status, content, error? }` |
-| `state` | 宿主 → Webview | `channel: 'ai'`，`payload.kind` 为 `runtime`（密钥变更）或 `context`（上下文变更） |
+| `state` | 宿主 → Webview | `channel: 'ai'`，`payload.kind` 为 `runtime`（密钥变更）、`context`（上下文变更）或 `writeTarget`（模式切换 / 生成完成 / 写回成功） |
 
 ### 10.1 编辑器右键「添加到宅对话」
 
@@ -376,13 +379,37 @@ interface AbortRequest {
 
 `messages` 随 `conversations` 由外键级联删除（`PRAGMA foreign_keys = ON`），删除会话即清理其消息。
 
+### 10.3 底部输入卡片与写作写回（已落地）
+
+输入区采用三段式卡片（`InputGroup` + 两个 `block` 方向 addon），顶部工具行仅两个按钮，底部操作行左一右三：
+
+| 位置 | 控件 | 交互 |
+|------|------|------|
+| 工具行左 | 命令 (`Command` 图标) | 下拉四项：改写 / 润色 / 找错别字 / 去 AI 味；点击把指令模板填入输入框（已有内容时追加一行），输入为空直接填入 |
+| 工具行右 | 参考 (`BookOpen` 图标) | 下拉四项：古诗词 / 名言名句 / 经典文本 / 历史资料；当前为占位，点击仅提示「即将上线」，不发起任何请求 |
+| 操作行左 | 模式按钮 | 对话 / 写作两态切换，写 `conversations.mode` 持久化；生成中禁用 |
+| 操作行右 | Token 圆环 | 当日已用 / 预算的环形占比（<70% 主色、70~90% 警示、≥90% destructive），点开浮层看已用 / 预算 / 剩余，每日 0 点重置 |
+| 操作行右 | 增强提示词 | 本地规则化补齐「任务 / 要求」三段式，再次点击还原原文，不消耗 Token |
+| 操作行右 | 发送 / 停止 | 生成中替换为停止；写作模式无可改写目标时发送禁用 |
+
+- **命令写回策略**：改写 / 润色 / 去 AI 味为 `replace`，结果提供「应用到编辑栏」；找错别字为 `report`，只输出清单，永不写回。
+- **写作模式**：发送时重新捕获目标（选区优先，无选区取整篇，整篇上限 12000 字符），原文以 `<context>` 结构注入并复用引用去重规则；生成完成后该条助手消息进入可写回集合。
+- **写回**：`ai/applyWrite` 只接受消息 id，宿主用发送时快照的 uri / `document.version` / range 校验后以 `WorkspaceEdit` 替换，写入进入撤销栈（`Ctrl+Z` 可回退）；整篇覆盖前由界面二次确认；重复点击不再写第二次。
+- **状态隔离**：写回快照以助手消息 id 为键（不同轮次互不覆盖），可写回与已写回集合按会话隔离，均存于宿主内存；删除会话时一并清理，窗口重启后不再提供历史消息的写回入口。
+
+### 10.4 设置入口（已迁移）
+
+底部齿轮按钮已移除，插件设置入口改为侧栏视图标题栏图标：`package.json` 的 `menus.view/title` 注册 `zhai.openSettings`（`when = view == zhai.workflow`，`icon = $(gear)`）。无 Key 时仍由对话页空态卡片引导「设置 API Key」。
+
 实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`contextRefs.ts` 引用生成/读取/渲染、`aiChatProvider.ts` 协议路由、`db/` 三表仓储与 DDL）、页面 `src/webview/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具）。
 
-页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `MessageAvatar/Header/Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `muted`）；输入区为 `Textarea` + `Button`，无 Key 时插入 `Card` 引导项。
+页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `ghost`）；输入区为 `InputGroup` 三段式卡片（工具行 / 输入框 / 操作行，见 10.3），无 Key 时插入 `Card` 引导项。业务组件按「一文件一组件」拆分：命令菜单、参考菜单、工具行、模式按钮、Token 圆环、增强按钮、操作行、写回按钮、消息正文与引用条目各自独立文件。
 
 与本文档的已知差异（后续补齐）：
 
 - 上下文截断暂以「字符数 ÷ 1.6」粗估，第 5 节所列 tiktoken 方案未接入（AC-4 为降级实现）
 - 用量日志的 `estimated_cost` 暂记 0（未内置 DeepSeek 计费规则），重试指数退避未实现，仅落地 30s 首字超时中断
 - 单次生成上限固定 2048 token（`MAX_COMPLETION_TOKENS`），尚未开放到参数面板（A13）
-- `@` 输入框提及（A12 剩余部分）与写作模式（A1~A5）未实现；待发送上下文为内存态，重启窗口后仅已发送的引用随 `messages.refs` 保留
+- `@` 输入框提及（A12 剩余部分）未实现；待发送上下文与写回状态均为内存态，重启窗口后仅已发送的引用随 `messages.refs` 保留
+- 写作模式当前为「整段替换 + Ctrl+Z 撤销」，未做 diff 逐段接受（A3）；整篇改写上限 12000 字符，超出只能选中片段
+- 参考资料四项为占位，尚未接入检索与注入；命令的 `applyPolicy` 由前端按命令 id 推断，宿主只做字符串收窄

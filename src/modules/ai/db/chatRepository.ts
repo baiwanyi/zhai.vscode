@@ -89,6 +89,11 @@ export function updateConversationTitle(db: Database.Database, id: string, title
     db.prepare('UPDATE conversations SET title = ? WHERE id = ?').run(title, id)
 }
 
+/** 更新会话模式：对话 / 写作，随会话持久化，重启窗口后恢复 */
+export function updateConversationMode(db: Database.Database, id: string, mode: string): void {
+    db.prepare('UPDATE conversations SET mode = ? WHERE id = ?').run(mode, id)
+}
+
 export function touchConversation(db: Database.Database, id: string, updatedAt: string): void {
     db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(updatedAt, id)
 }

@@ -1,13 +1,15 @@
 /**
  * AI 对话 Webview 面板（宿主侧）：加载 React 构建产物，路由 ai/* 与 workflow/* 协议到对话服务与工作流路由。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
- * 上下文增删走 ai/context*，state 广播以 channel 区分 ai（runtime / context）与 workflow（路由事实）。
- * 关键约束：上下文移除只接受宿主生成的引用 id（不接受路径入参），所有 Webview 入参逐字段收窄后再用；
+ * 上下文增删走 ai/context*，写回走 ai/writeState / ai/setMode / ai/applyWrite，state 广播以 channel 区分
+ * ai（runtime / context / writeTarget）与 workflow（路由事实）。
+ * 关键约束：上下文移除与写回只接受宿主生成的 id（不接受路径与范围入参），所有 Webview 入参逐字段收窄后再用；
  * 场景判定统一由 WorkflowRouter 产出，本层只做转发，避免两处口径分叉。
  */
 import * as vscode from 'vscode'
 import type { AiChatService } from './chatService'
 import type { WorkflowRouter } from './workflowRouter'
+import type { AiConversationMode } from '../../shared/types/aiChat'
 import type { HostToWebviewMessage, StreamMessage } from '../../shared/types/messages'
 import type { OpenWorkflowResult, ResetWorkflowResult } from '../../shared/types/workflow'
 import { isRequestMessage } from '../../shared/types/messages'
@@ -32,6 +34,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             service.onStream((message) => this.broadcast(message)),
             service.onRuntimeChanged(() => this.broadcastRuntimeChanged()),
             service.onContextChanged(() => this.broadcastContextChanged()),
+            service.onWriteStateChanged(() => this.broadcastWriteStateChanged()),
             workflowRouter.onChanged(() => this.broadcastWorkflowChanged()),
         )
     }
@@ -115,9 +118,18 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             case 'workflow/reset': {
                 return this.resetWorkflow()
             }
+            case 'ai/writeState': {
+                return this.service.getWriteState()
+            }
+            case 'ai/setMode': {
+                return { mode: this.service.setMode(readModePayload(payload)) }
+            }
+            case 'ai/applyWrite': {
+                return this.service.applyWrite(readApplyPayload(payload))
+            }
             case 'ai/send': {
-                const { conversationId, content } = readSendPayload(payload)
-                return this.service.send(reqId, conversationId, content)
+                const { conversationId, content, applyPolicy } = readSendPayload(payload)
+                return this.service.send(reqId, conversationId, content, applyPolicy)
             }
             case 'ai/context': {
                 return this.service.getContexts()
@@ -163,6 +175,13 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     private broadcastContextChanged(): void {
         for (const view of this.views) {
             this.post(view, { type: 'state', channel: 'ai', payload: { kind: 'context' } })
+        }
+    }
+
+    /** 通知前端重新拉取写回状态（模式切换、生成完成或写回成功后） */
+    private broadcastWriteStateChanged(): void {
+        for (const view of this.views) {
+            this.post(view, { type: 'state', channel: 'ai', payload: { kind: 'writeTarget' } })
         }
     }
 
@@ -221,14 +240,49 @@ function readContextIdPayload(payload: unknown): string {
     return value.id
 }
 
-/** 校验 ai/send 入参：Webview 侧数据不可信，逐字段收窄后再落库 */
-function readSendPayload(payload: unknown): { conversationId: string; content: string } {
+/**
+ * 校验 ai/send 入参：Webview 侧数据不可信，逐字段收窄后再落库。
+ * applyPolicy 缺省按 replace 处理（写作模式下用户直接输入也允许写回），report 仅由「找错别字」命令传入。
+ */
+function readSendPayload(payload: unknown): {
+    conversationId: string
+    content: string
+    applyPolicy: 'replace' | 'report'
+} {
     if (typeof payload !== 'object' || payload === null) {
         throw new Error('ai/send 缺少参数')
     }
-    const value = payload as { conversationId?: unknown; content?: unknown }
+    const value = payload as { conversationId?: unknown; content?: unknown; applyPolicy?: unknown }
     if (typeof value.conversationId !== 'string' || typeof value.content !== 'string') {
         throw new Error('ai/send 参数类型不正确')
     }
-    return { conversationId: value.conversationId, content: value.content }
+    return {
+        conversationId: value.conversationId,
+        content: value.content,
+        applyPolicy: value.applyPolicy === 'report' ? 'report' : 'replace',
+    }
+}
+
+/** 校验 ai/setMode 入参：只接受两个合法模式值 */
+function readModePayload(payload: unknown): AiConversationMode {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/setMode 缺少参数')
+    }
+    const mode = (payload as { mode?: unknown }).mode
+    if (mode !== 'chat' && mode !== 'write') {
+        throw new Error('ai/setMode 参数类型不正确')
+    }
+    return mode
+}
+
+/** 校验 ai/applyWrite 入参：只接受宿主生成的助手消息 id，不接受路径与范围（防越权写入任意位置） */
+function readApplyPayload(payload: unknown): string {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/applyWrite 缺少参数')
+    }
+    const messageId = (payload as { messageId?: unknown }).messageId
+    if (typeof messageId !== 'string' || messageId.length === 0) {
+        throw new Error('ai/applyWrite 参数类型不正确')
+    }
+    return messageId
 }
