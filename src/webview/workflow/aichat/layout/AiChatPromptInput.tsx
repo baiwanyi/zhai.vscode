@@ -1,19 +1,22 @@
 /**
- * AI 对话输入卡片：顶部工具行（命令 / 参考）、多行输入框、底部操作行三段式。
- * 外层圆角卡片内嵌一块独立底色的输入区（与卡片底色区分），无边框与焦点描边，Enter 发送、Shift+Enter 换行。
- * 关键约束：增强提示词为本地规则化处理并保留还原入口；写作模式缺少可改写目标时禁止发送。
+ * AI 对话输入卡片：顶部工具行（命令 / 参考）、富文本输入区（内联命令与上下文芯片）、底部操作行。
+ * 复用同目录 AiChatRichInput 承载不可编辑芯片与可编辑正文，本层只负责提示文案、禁用态与增强提示词编排。
+ * 关键约束：命令与上下文只以芯片展示、指令模板在发送时拼装；增强提示词仅作用于可见正文并保留还原入口；
+ * 存在命令时允许空输入直接发送，写作模式仍要求编辑器有可改写的目标。
  */
 import { useState } from 'react'
-import { Textarea } from '@/components/ui/textarea'
-import type { AiConversationMode } from '@/shared/types/aiChat'
+import type { AiContextRef, AiConversationMode } from '@/shared/types/aiChat'
 import { AiChatComposerActions } from './AiChatComposerActions'
 import { AiChatComposerToolbar } from './AiChatComposerToolbar'
+import { AiChatRichInput } from './AiChatRichInput'
 import type { AiCommand, AiReferenceSource } from '../constants'
 import type { Phase } from '../hooks/useAiChatSession'
 import type { JSX } from 'react'
 import { enhancePrompt } from '../utils'
 
 interface AiChatPromptInputProps {
+    /** 已添加的上下文引用：以内联芯片呈现在输入区首行 */
+    contexts: AiContextRef[]
     input: string
     setInput: (input: string) => void
     hasApiKey: boolean
@@ -26,7 +29,11 @@ interface AiChatPromptInputProps {
     dailyTokenBudget: number
     /** 写作模式下是否存在可改写的编辑器目标 */
     hasWriteTarget: boolean
+    /** 已选写作命令：非空时输入区首行展示命令芯片 */
+    command: AiCommand | null
     onCommand: (command: AiCommand) => void
+    onClearCommand: () => void
+    onRemoveContext: (id: string) => void
     onReference: (source: AiReferenceSource) => void
     onModeChange: (mode: AiConversationMode) => void
     onSend: () => void
@@ -34,6 +41,7 @@ interface AiChatPromptInputProps {
 }
 
 export function AiChatPromptInput({
+    contexts,
     input,
     setInput,
     hasApiKey,
@@ -44,7 +52,10 @@ export function AiChatPromptInput({
     usedTokens,
     dailyTokenBudget,
     hasWriteTarget,
+    command,
     onCommand,
+    onClearCommand,
+    onRemoveContext,
     onReference,
     onModeChange,
     onSend,
@@ -56,7 +67,17 @@ export function AiChatPromptInput({
     const isApiKeyMissing = isRuntimeReady && !hasApiKey
 
     const canEnhance = input.trim().length > 0
-    const canSend = hasApiKey && phase === 'idle' && input.trim().length > 0 && (mode === 'chat' || hasWriteTarget)
+    /** 已有命令时正文由指令模板提供，因此空输入也可发送 */
+    const hasContent = command !== null || input.trim().length > 0
+    const canSend = hasApiKey && phase === 'idle' && hasContent && (mode === 'chat' || hasWriteTarget)
+
+    let placeholder = '提问或输入指令…'
+    if (command !== null) {
+        placeholder = `可补充「${command.title}」的要求，留空直接发送`
+    }
+    if (isApiKeyMissing) {
+        placeholder = '请先设置 DeepSeek API Key'
+    }
 
     /** 手动输入或修改即退出增强态，避免还原时覆盖用户的新内容 */
     const handleInputChange = (value: string): void => {
@@ -83,22 +104,24 @@ export function AiChatPromptInput({
 
     return (
         <div className="flex flex-col gap-0.5 rounded-2xl bg-composer p-1.5">
-            <AiChatComposerToolbar disabled={isGenerating} onCommand={onCommand} onReference={onReference} />
+            <AiChatComposerToolbar
+                disabled={isGenerating}
+                activeCommandId={command?.id ?? null}
+                onCommand={onCommand}
+                onReference={onReference}
+            />
             <div className="rounded-xl bg-composer-input p-3">
-                <Textarea
+                <AiChatRichInput
                     value={input}
-                    className="max-h-40 min-h-17 p-0 overflow-y-auto resize-none border-0 bg-transparent text-sm shadow-none rounded-none transition-none focus-visible:border-transparent focus-visible:ring-0 disabled:bg-transparent disabled:opacity-100 dark:bg-transparent dark:disabled:bg-transparent"
-                    placeholder={isApiKeyMissing ? '请先设置 DeepSeek API Key' : '提问或输入指令…'}
+                    command={command}
+                    contexts={contexts}
+                    placeholder={placeholder}
                     disabled={isApiKeyMissing || isGenerating}
-                    onChange={(event) => handleInputChange(event.target.value)}
-                    onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !event.shiftKey) {
-                            event.preventDefault()
-                            if (canSend) {
-                                onSend()
-                            }
-                        }
-                    }}
+                    canSend={canSend}
+                    onChange={handleInputChange}
+                    onSend={onSend}
+                    onClearCommand={onClearCommand}
+                    onRemoveContext={onRemoveContext}
                 />
 
                 <AiChatComposerActions

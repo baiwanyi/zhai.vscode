@@ -72,12 +72,21 @@ export interface AiMessage {
     createdAt: string
 }
 
+/** 输入草稿：未发送的正文与已选命令，视图重建后由宿主带回 */
+export interface AiChatDraft {
+    input: string
+    /** 已选写作命令 id；恢复时由前端按命令表收窄 */
+    commandId: string | null
+}
+
 /** 会话快照：视图加载与新建会话时返回 */
 export interface AiSessionSnapshot {
     conversation: AiConversation
     messages: AiMessage[]
     /** 待发送的上下文引用（「添加到宅对话」的累积结果） */
     contexts: AiContextRef[]
+    /** 未发送的输入草稿：侧边栏切换导致视图重建后用于恢复输入框与命令 */
+    draft: AiChatDraft
 }
 
 /** 写回作用域：selection 为编辑器选区，document 为整篇文档 */

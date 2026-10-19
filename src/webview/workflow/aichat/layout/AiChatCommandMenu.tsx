@@ -1,9 +1,9 @@
 /**
- * AI 对话写作命令菜单：顶部工具行左侧的「命令」按钮，展开四项预设指令。
- * 复用 @/components/ui 的 DropdownMenu 与 ../constants 的命令表，图标按命令 id 映射。
- * 关键约束：生成中整组禁用；本组件只上抛命令对象，不持有输入内容与写回策略。
+ * AI 对话写作命令菜单：顶部工具行左侧的「命令」按钮，展开四项预设指令，当前选中项带勾选标记。
+ * 复用 @/components/ui 的 DropdownMenu 与 ../constants 的命令表，图标映射与输入区徽章共用 commandIcons。
+ * 关键约束：生成中整组禁用；本组件只上抛命令对象，不写输入框、不持有写回策略。
  */
-import { Command, PenLine, Sparkles, Type, Wand2 } from 'lucide-react'
+import { Check, Command } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
     DropdownMenu,
@@ -13,25 +13,19 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { COMMAND_ICONS } from './commandIcons'
 import type { AiCommand, AiCommandId } from '../constants'
-import type { LucideIcon } from 'lucide-react'
 import type { JSX } from 'react'
 import { AI_COMMANDS } from '../constants'
 
-/** 命令图标映射：与常量表解耦，避免常量文件依赖 UI 图标库 */
-const COMMAND_ICONS: Record<AiCommandId, LucideIcon> = {
-    rewrite: PenLine,
-    polish: Wand2,
-    typo: Type,
-    deai: Sparkles,
-}
-
 interface AiChatCommandMenuProps {
     disabled: boolean
+    /** 当前已选命令：用于勾选标记，再次点击同一项即取消 */
+    activeId: AiCommandId | null
     onSelect: (command: AiCommand) => void
 }
 
-export function AiChatCommandMenu({ disabled, onSelect }: AiChatCommandMenuProps): JSX.Element {
+export function AiChatCommandMenu({ disabled, activeId, onSelect }: AiChatCommandMenuProps): JSX.Element {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -54,7 +48,8 @@ export function AiChatCommandMenu({ disabled, onSelect }: AiChatCommandMenuProps
                     return (
                         <DropdownMenuItem key={command.id} onSelect={() => onSelect(command)}>
                             <Icon />
-                            {command.title}
+                            <span className="flex-1">{command.title}</span>
+                            {activeId === command.id ? <Check className="text-muted-foreground" /> : null}
                         </DropdownMenuItem>
                     )
                 })}

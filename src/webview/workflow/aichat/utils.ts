@@ -1,11 +1,13 @@
 /**
- * AI 对话展示层纯函数：token 数与引用字数的紧凑折算、未知错误的文本收窄、
- * 会话快照的不可变消息替换、宿主 state 广播载荷的收窄、增强提示词的规则化重写。
+ * AI 对话展示层纯函数：token 数与引用字数的紧凑折算、未知错误的文本收窄、会话快照的不可变消息替换、
+ * 宿主 state 广播载荷的收窄、增强提示词的规则化重写、写作命令模板的发送拼装与回放拆分。
  * 零依赖、无副作用，可被页面主组件与各子组件自由复用；展示规则与 docs/modules/ai-chat.md 第 10 节一致。
  * 关键约束：相对时间格式化已上移至 src/webview/utils.ts 供各 Webview 共用；readAiStateKind 只信任收窄结果；
- * 增强提示词只在本地拼装，不发起模型请求，已增强的输入不重复叠加。
+ * 命令模板只在发送瞬间拼接、在展示时按最长前缀剥离，输入框与消息气泡均不出现 instruction 全文。
  */
 import type { AiContextRef, AiConversationMode, AiMessage, AiSessionSnapshot } from '@/shared/types/aiChat'
+import { AI_COMMAND_PREFIXES } from './constants'
+import type { AiCommand } from './constants'
 
 /** token 数量紧凑展示：过千折算 k，过百万折算 M */
 export function formatTokens(value: number): string {
@@ -26,6 +28,12 @@ export function toErrorText(cause: unknown): string {
 export function describeContext(ref: AiContextRef): string {
     const size = ref.charCount >= 1000 ? `${(ref.charCount / 1000).toFixed(1)}k 字` : `${ref.charCount} 字`
     return ref.isTruncated ? `${size} · 已截断` : size
+}
+
+/** 引用文件名：只取路径末段（兼容正反斜杠），完整路径由调用方放进悬浮提示 */
+export function toContextFileName(ref: AiContextRef): string {
+    const segments = ref.displayPath.split(/[\\/]/).filter((segment) => segment.length > 0)
+    return segments[segments.length - 1] ?? ref.displayPath
 }
 
 /** 就地替换指定消息，保持其余引用不变 */
@@ -81,4 +89,28 @@ export function enhancePrompt(text: string, mode: AiConversationMode): string {
         '2. 保持原有事实与信息，不虚构未提供的内容。',
         '3. 信息不足时先指出缺少什么，再给出可执行的部分。',
     ].join('\n')
+}
+
+/**
+ * 命令发送拼装：指令模板在前、用户补充在后，二者以空行分隔；无补充时只发指令。
+ * 拼装发生在发送瞬间，输入框始终只保存用户可见文本，避免提示词全文占据编辑区。
+ */
+export function composeCommandContent(command: AiCommand, body: string): string {
+    const extra = body.trim()
+    return extra.length > 0 ? `${command.instruction}\n\n${extra}` : command.instruction
+}
+
+/**
+ * 消息回显拆分：按最长指令模板做前缀匹配，命中时返回命令与补充文本。
+ * 历史消息重载后仍能以徽章回显；未命中时原样返回，不改变既有渲染结果。
+ */
+export function splitCommandContent(content: string): { command: AiCommand | null; body: string } {
+    const normalized = content.trim()
+    for (const command of AI_COMMAND_PREFIXES) {
+        if (!normalized.startsWith(command.instruction)) {
+            continue
+        }
+        return { command, body: normalized.slice(command.instruction.length).trim() }
+    }
+    return { command: null, body: content }
 }

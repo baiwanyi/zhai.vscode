@@ -1,10 +1,9 @@
 /**
- * AI 对话底部区域：待发送上下文清单（存在时挂载）+ 输入卡片 + 底部提示行，纵向布局。
- * 组合同目录 AiChatContextList / AiChatPromptInput / AiChatStatusHint，交互全部经回调上抛给页面 hooks。
- * 关键约束：模式、用量与写回目标均由此层透传，输入卡片不直接读取会话状态。
+ * AI 对话底部区域：输入卡片 + 底部提示行，纵向布局；命令与上下文引用统一以芯片呈现在输入区内。
+ * 组合同目录 AiChatPromptInput / AiChatStatusHint，交互全部经回调上抛给页面 hooks。
+ * 关键约束：模式、用量、已选命令、上下文与写回目标均由此层透传，输入卡片不直接读取会话状态。
  */
 import type { AiContextRef, AiConversationMode } from '@/shared/types/aiChat'
-import { AiChatContextList } from './AiChatContextList'
 import { AiChatPromptInput } from './AiChatPromptInput'
 import { AiChatStatusHint } from './AiChatStatusHint'
 import type { AiCommand, AiReferenceSource } from '../constants'
@@ -28,11 +27,13 @@ interface AiChatComposerProps {
     notice: string | null
     /** 模式相关的补充提示，优先级低于错误与操作提示 */
     hint: string | null
+    /** 当前已选写作命令：输入区以徽章展示，指令模板不进入输入框 */
+    command: AiCommand | null
     onSend: () => void
     onStop: () => void
     onRemoveContext: (id: string) => void
-    onClearContexts: () => void
     onCommand: (command: AiCommand) => void
+    onClearCommand: () => void
     onReference: (source: AiReferenceSource) => void
     onModeChange: (mode: AiConversationMode) => void
 }
@@ -52,20 +53,19 @@ export function AiChatComposer({
     error,
     notice,
     hint,
+    command,
     onSend,
     onStop,
     onRemoveContext,
-    onClearContexts,
     onCommand,
+    onClearCommand,
     onReference,
     onModeChange,
 }: AiChatComposerProps): JSX.Element {
     return (
         <footer className="flex flex-col gap-2 px-3">
-            {contexts.length > 0 ? (
-                <AiChatContextList contexts={contexts} onRemove={onRemoveContext} onClear={onClearContexts} />
-            ) : null}
             <AiChatPromptInput
+                contexts={contexts}
                 input={input}
                 setInput={setInput}
                 hasApiKey={hasApiKey}
@@ -76,7 +76,10 @@ export function AiChatComposer({
                 usedTokens={usedTokens}
                 dailyTokenBudget={dailyTokenBudget}
                 hasWriteTarget={hasWriteTarget}
+                command={command}
                 onCommand={onCommand}
+                onClearCommand={onClearCommand}
+                onRemoveContext={onRemoveContext}
                 onReference={onReference}
                 onModeChange={onModeChange}
                 onSend={onSend}

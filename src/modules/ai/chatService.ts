@@ -37,6 +37,7 @@ import type { HostContextRef, ResolvedContextRef } from './contextRefs'
 import type { ConversationRow, MessageRow } from './db/chatRepository'
 import type {
     AiApplyResult,
+    AiChatDraft,
     AiContextRef,
     AiConversation,
     AiConversationMode,
@@ -93,6 +94,8 @@ export class AiChatService implements vscode.Disposable {
     private activeRequest: { reqId: string; controller: AbortController } | null = null
     /** 待发送上下文：按会话隔离，发送成功后清空（内存态，不随窗口重启保留） */
     private readonly pendingContexts = new Map<string, HostContextRef[]>()
+    /** 未发送的输入草稿：按会话隔离，视图重建（侧边栏切换）后由会话快照带回 */
+    private readonly inputDrafts = new Map<string, AiChatDraft>()
     /** 写作模式的写回快照：以助手消息 id 为键，记录文档版本与替换范围（不同轮次互不覆盖） */
     private readonly writeTargets = new Map<string, HostWriteTarget>()
     /** 可写回的助手消息 id：仅 replace 类命令产生，按会话隔离 */
@@ -139,6 +142,20 @@ export class AiChatService implements vscode.Disposable {
         this.runtimeEmitter.fire()
     }
 
+    /** 读取会话草稿：无草稿时返回空内容 */
+    public getDraft(conversationId: string): AiChatDraft {
+        return this.inputDrafts.get(conversationId) ?? { input: '', commandId: null }
+    }
+
+    /** 保存会话草稿：仅内存，避免每次按键写库；正文与命令都为空时清除 */
+    public setDraft(conversationId: string, draft: AiChatDraft): void {
+        if (draft.input.length === 0 && draft.commandId === null) {
+            this.inputDrafts.delete(conversationId)
+            return
+        }
+        this.inputDrafts.set(conversationId, draft)
+    }
+
     /** 取最近会话，不存在则新建（AC-9：重启窗口后会话与消息恢复） */
     public getOrCreateSession(): AiSessionSnapshot {
         const latest = getLatestConversation(this.db)
@@ -150,6 +167,7 @@ export class AiChatService implements vscode.Disposable {
             conversation: toConversation(latest),
             messages: listMessages(this.db, latest.id).map(toMessage),
             contexts: this.getContexts(latest.id),
+            draft: this.getDraft(latest.id),
         }
     }
 
@@ -168,7 +186,7 @@ export class AiChatService implements vscode.Disposable {
         insertConversation(this.db, row)
         this.activeConversationId = row.id
         logger.info(`AI 会话已创建：${row.id}`)
-        return { conversation: toConversation(row), messages: [], contexts: [] }
+        return { conversation: toConversation(row), messages: [], contexts: [], draft: { input: '', commandId: null } }
     }
 
     /** 历史会话列表（按最后活跃时间倒序），供面板历史浮层展示 */
@@ -191,6 +209,7 @@ export class AiChatService implements vscode.Disposable {
             conversation: toConversation(conversation),
             messages: listMessages(this.db, conversation.id).map(toMessage),
             contexts: this.getContexts(conversation.id),
+            draft: this.getDraft(conversation.id),
         }
     }
 
@@ -204,6 +223,7 @@ export class AiChatService implements vscode.Disposable {
         }
         deleteConversation(this.db, conversationId)
         this.pendingContexts.delete(conversationId)
+        this.inputDrafts.delete(conversationId)
         for (const messageId of this.appliableMessages.get(conversationId) ?? []) {
             this.writeTargets.delete(messageId)
         }
@@ -350,12 +370,14 @@ export class AiChatService implements vscode.Disposable {
      * 发送用户消息并启动流式生成。
      * 落库用户消息与占位的助手消息后立即返回，正文经 onStream 增量推送。
      * 写作模式在发送时重新捕获编辑器目标（选区优先），并据 applyPolicy 决定结果是否可写回。
+     * titleHint 为命令名称等展示用短标题，仅用于会话命名，不参与发往模型的内容。
      */
     public async send(
         reqId: string,
         conversationId: string,
         content: string,
         applyPolicy: 'replace' | 'report' = 'replace',
+        titleHint: string | null = null,
     ): Promise<AiSendResult> {
         if (this.activeRequest) {
             throw new Error('已有生成中的回复，请先停止后再发送')
@@ -421,9 +443,9 @@ export class AiChatService implements vscode.Disposable {
             createdAt: new Date().toISOString(),
         }
         insertMessage(this.db, assistantMessage)
-        // 只会话前两条消息时用首条输入命名会话，之后保持稳定
+        // 只会话前两条消息时用首条输入命名会话，之后保持稳定；带命令时优先用命令名，避免标题变成指令模板
         if (listMessages(this.db, conversationId).length <= 2) {
-            updateConversationTitle(this.db, conversationId, summarizeTitle(input))
+            updateConversationTitle(this.db, conversationId, summarizeTitle(titleHint ?? input))
         }
         touchConversation(this.db, conversationId, now)
 
@@ -432,6 +454,8 @@ export class AiChatService implements vscode.Disposable {
             this.pendingContexts.delete(conversationId)
             this.contextEmitter.fire()
         }
+        // 正文已提交，草稿不再需要
+        this.inputDrafts.delete(conversationId)
 
         void this.generate(
             reqId,

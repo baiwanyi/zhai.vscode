@@ -1,13 +1,14 @@
 /**
  * AI 对话页：MessageScroller 托管消息流（自动滚动 + 回到底部按钮），Message + Bubble 呈现消息，
  * 空态用 Empty、输入区用三段式输入卡片（工具行 / 输入框 / 操作行）；流式正文经宿主 stream 增量渲染。
- * 底部卡片承载写作命令、参考资料占位、对话 / 写作模式切换、Token 圆环、增强提示词与发送，
- * 写作模式的结果由消息底部「应用到编辑栏」写回编辑器（宿主校验文档版本）。
+ * 底部卡片承载写作命令（徽章展示，指令模板在发送时拼装）、参考资料占位、对话 / 写作模式切换、
+ * Token 圆环、增强提示词与发送；写作模式的结果由消息底部「应用到编辑栏」写回编辑器（宿主校验文档版本）。
  * 会话 / 上下文 / 运行时 / 历史 / 写回 / 宿主命令操作拆分至 hooks/，页面区块与消息渲染拆分至 layout/。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机与第 10.3 节写回链路。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AiConversationMode } from '@/shared/types/aiChat'
+import type { AiConversationMode, AiSessionSnapshot } from '@/shared/types/aiChat'
+import { AI_COMMAND_MAP, isAiCommandId } from './constants'
 import { useAiChatCommands } from './hooks/useAiChatCommands'
 import { useAiChatContexts } from './hooks/useAiChatContexts'
 import { useAiChatHistory } from './hooks/useAiChatHistory'
@@ -18,16 +19,16 @@ import { useAiChatWriteState } from './hooks/useAiChatWriteState'
 import { AiChatComposer } from './layout/AiChatComposer'
 import { AiChatHeader } from './layout/AiChatHeader'
 import { AiChatMessageList } from './layout/AiChatMessageList'
-import { readAiStateKind } from './utils'
+import { composeCommandContent, readAiStateKind } from './utils'
 import type { AiCommand, AiCommandId, AiReferenceSource } from './constants'
 import type { Phase } from './hooks/useAiChatSession'
 import type { JSX } from 'react'
-import { onState } from '../../bridge'
+import { onState, request } from '../../bridge'
 
 export function AiChat(): JSX.Element {
     const { error, notice, setError, setNotice } = useAiChatStatus()
     const { runHostCommand } = useAiChatCommands({ onError: setError })
-    const { contexts, setContexts, loadContexts, removeContext, clearContexts } = useAiChatContexts({
+    const { contexts, setContexts, loadContexts, removeContext } = useAiChatContexts({
         onError: setError,
         onNotice: setNotice,
     })
@@ -55,16 +56,59 @@ export function AiChat(): JSX.Element {
         setContexts,
         refreshSessions: loadSessions,
     })
-    /** 当前写作命令：决定本轮结果是否提供写回入口（找错别字只报告不写回） */
+    /** 当前写作命令：决定本轮结果是否提供写回入口（校对只报告不写回） */
     const [commandId, setCommandId] = useState<AiCommandId | null>(null)
     /** 阶段回退到 idle 时刷新用量与写回状态，避免首次挂载重复请求 */
     const previousPhaseRef = useRef<Phase>('idle')
+    /** 已套用草稿的会话 id：避免重复套用把用户之后主动取消的命令重新恢复 */
+    const restoredDraftRef = useRef<string | null>(null)
+    /** 命令选择的最新值：草稿套用时判断本地是否已有选择 */
+    const commandIdRef = useRef<AiCommandId | null>(null)
 
-    // 会话就绪后再读取写回状态，保证可写回集合与当前活跃会话一致
     useEffect(() => {
-        void loadSession().then(() => loadWriteState())
+        commandIdRef.current = commandId
+    }, [commandId])
+
+    /** 套用草稿中的命令：同一会话只处理一次，本地已选命令时保留本地选择 */
+    const applyDraftCommand = useCallback((snapshot: AiSessionSnapshot): void => {
+        const conversationId = snapshot.conversation.id
+        if (restoredDraftRef.current === conversationId) {
+            return
+        }
+        restoredDraftRef.current = conversationId
+        if (commandIdRef.current !== null || !isAiCommandId(snapshot.draft.commandId)) {
+            return
+        }
+        commandIdRef.current = snapshot.draft.commandId
+        setCommandId(snapshot.draft.commandId)
+    }, [])
+
+    // 会话就绪后恢复草稿中的命令并读取写回状态，保证可写回集合与当前活跃会话一致
+    useEffect(() => {
+        void loadSession().then((snapshot) => {
+            if (snapshot !== null) {
+                applyDraftCommand(snapshot)
+            }
+            void loadWriteState()
+        })
         void loadRuntime()
-    }, [loadRuntime, loadSession, loadWriteState])
+    }, [applyDraftCommand, loadRuntime, loadSession, loadWriteState])
+
+    /** 当前会话 id：草稿按会话保存，避免写到别的会话 */
+    const activeConversationId = session?.conversation.id ?? null
+
+    // 未发送正文与命令防抖写入宿主草稿：侧边栏切换导致 webview 重建后由会话快照带回
+    useEffect(() => {
+        if (activeConversationId === null) {
+            return
+        }
+        const timer = setTimeout(() => {
+            void request('ai/draft', { conversationId: activeConversationId, input, commandId })
+        }, 300)
+        return (): void => {
+            clearTimeout(timer)
+        }
+    }, [activeConversationId, commandId, input])
 
     // 密钥增删、上下文与写回状态由宿主广播，按 kind 刷新对应数据
     useEffect(() => {
@@ -105,15 +149,18 @@ export function AiChat(): JSX.Element {
         mode === 'write' && writeState !== null && !hasWriteTarget
             ? '请先在编辑器中选中要改写的文本（整篇超过 12000 字时请分段选中）'
             : null
+    /** 已选写作命令：输入区只展示命令名徽章，指令模板在发送时拼装 */
+    const command = commandId === null ? null : AI_COMMAND_MAP[commandId]
 
-    /** 命令点击：输入为空直接填入模板，否则追加一行，避免覆盖用户已写内容 */
-    const handleCommand = useCallback(
-        (command: AiCommand): void => {
-            setCommandId(command.id)
-            setInput(input.trim().length === 0 ? command.instruction : `${input.trimEnd()}\n${command.instruction}`)
-        },
-        [input, setInput],
-    )
+    /** 命令点击：只记录选择（再次点击取消），指令模板不写入输入框 */
+    const handleCommand = useCallback((next: AiCommand): void => {
+        setCommandId((previous) => (previous === next.id ? null : next.id))
+    }, [])
+
+    const handleClearCommand = useCallback((): void => {
+        commandIdRef.current = null
+        setCommandId(null)
+    }, [])
 
     /** 参考资料当前全是占位：只给提示，不发起任何宿主请求 */
     const handleReference = useCallback(
@@ -130,19 +177,38 @@ export function AiChat(): JSX.Element {
         [loadWriteState, switchMode],
     )
 
+    /** 发送：指令模板与用户补充在此拼装，输入区与消息气泡始终只呈现命令名 */
     const handleSend = useCallback((): void => {
-        void send(commandId === 'typo' ? 'report' : 'replace').then(() => setCommandId(null))
-    }, [commandId, send])
+        const content = command === null ? input : composeCommandContent(command, input)
+        void send(content, {
+            applyPolicy: command?.applyPolicy ?? 'replace',
+            titleHint: command?.title,
+        }).then((sent) => {
+            if (sent) {
+                commandIdRef.current = null
+                setCommandId(null)
+            }
+        })
+    }, [command, input, send])
 
     const handleNewSession = useCallback((): void => {
+        commandIdRef.current = null
+        setCommandId(null)
         void startNewSession().then(() => loadWriteState())
     }, [loadWriteState, startNewSession])
 
     const handleSwitchSession = useCallback(
         (id: string): void => {
-            void switchSession(id).then(() => loadWriteState())
+            commandIdRef.current = null
+            setCommandId(null)
+            void switchSession(id).then((snapshot) => {
+                if (snapshot !== null) {
+                    applyDraftCommand(snapshot)
+                }
+                void loadWriteState()
+            })
         },
-        [loadWriteState, switchSession],
+        [applyDraftCommand, loadWriteState, switchSession],
     )
 
     const handleApply = useCallback(
@@ -200,11 +266,12 @@ export function AiChat(): JSX.Element {
                 error={error}
                 notice={notice}
                 hint={hint}
+                command={command}
                 onSend={handleSend}
                 onStop={() => void stop()}
                 onRemoveContext={(id) => void removeContext(id)}
-                onClearContexts={() => void clearContexts()}
                 onCommand={handleCommand}
+                onClearCommand={handleClearCommand}
                 onReference={handleReference}
                 onModeChange={handleModeChange}
             />

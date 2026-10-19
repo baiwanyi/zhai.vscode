@@ -18,6 +18,13 @@ import { logger } from '../common/logger'
 import { WEBVIEW_ALLOWED_COMMANDS } from '../common/webviewCommands'
 import { buildWebviewHtml } from '../common/webviewHtml'
 
+/** ai/send 标题提示的合法长度上限：超出视为异常入参，直接忽略 */
+const MAX_TITLE_HINT_LENGTH = 32
+/** ai/draft 草稿长度上限：输入框正文远小于此值，超出截断避免异常载荷占用内存 */
+const MAX_DRAFT_LENGTH = 20_000
+/** ai/draft 命令 id 长度上限：只存短标识，恢复时由前端按命令表再校验 */
+const MAX_COMMAND_ID_LENGTH = 32
+
 export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     public static readonly viewId = 'zhai.workflow'
 
@@ -128,8 +135,13 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 return this.service.applyWrite(readApplyPayload(payload))
             }
             case 'ai/send': {
-                const { conversationId, content, applyPolicy } = readSendPayload(payload)
-                return this.service.send(reqId, conversationId, content, applyPolicy)
+                const { conversationId, content, applyPolicy, titleHint } = readSendPayload(payload)
+                return this.service.send(reqId, conversationId, content, applyPolicy, titleHint)
+            }
+            case 'ai/draft': {
+                const { conversationId, input, commandId } = readDraftPayload(payload)
+                this.service.setDraft(conversationId, { input, commandId })
+                return {}
             }
             case 'ai/context': {
                 return this.service.getContexts()
@@ -242,24 +254,57 @@ function readContextIdPayload(payload: unknown): string {
 
 /**
  * 校验 ai/send 入参：Webview 侧数据不可信，逐字段收窄后再落库。
- * applyPolicy 缺省按 replace 处理（写作模式下用户直接输入也允许写回），report 仅由「找错别字」命令传入。
+ * applyPolicy 缺省按 replace 处理（写作模式下用户直接输入也允许写回），report 仅由「校对」命令传入。
+ * titleHint 为展示用短标题（命令名称），仅用于会话命名，超长或空值一律忽略。
  */
 function readSendPayload(payload: unknown): {
     conversationId: string
     content: string
     applyPolicy: 'replace' | 'report'
+    titleHint: string | null
 } {
     if (typeof payload !== 'object' || payload === null) {
         throw new Error('ai/send 缺少参数')
     }
-    const value = payload as { conversationId?: unknown; content?: unknown; applyPolicy?: unknown }
+    const value = payload as {
+        conversationId?: unknown
+        content?: unknown
+        applyPolicy?: unknown
+        titleHint?: unknown
+    }
     if (typeof value.conversationId !== 'string' || typeof value.content !== 'string') {
         throw new Error('ai/send 参数类型不正确')
     }
+    const titleHint = typeof value.titleHint === 'string' ? value.titleHint.trim() : ''
     return {
         conversationId: value.conversationId,
         content: value.content,
         applyPolicy: value.applyPolicy === 'report' ? 'report' : 'replace',
+        titleHint: titleHint.length > 0 && titleHint.length <= MAX_TITLE_HINT_LENGTH ? titleHint : null,
+    }
+}
+
+/** 校验 ai/draft 入参：只接受未发送正文与命令 id，超长截断，避免异常载荷占用内存 */
+function readDraftPayload(payload: unknown): {
+    conversationId: string
+    input: string
+    commandId: string | null
+} {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/draft 缺少参数')
+    }
+    const value = payload as { conversationId?: unknown; input?: unknown; commandId?: unknown }
+    if (typeof value.conversationId !== 'string' || typeof value.input !== 'string') {
+        throw new Error('ai/draft 参数类型不正确')
+    }
+    const commandId =
+        typeof value.commandId === 'string' && value.commandId.length > 0 && value.commandId.length <= MAX_COMMAND_ID_LENGTH
+            ? value.commandId
+            : null
+    return {
+        conversationId: value.conversationId,
+        input: value.input.length > MAX_DRAFT_LENGTH ? value.input.slice(0, MAX_DRAFT_LENGTH) : value.input,
+        commandId,
     }
 }
 
