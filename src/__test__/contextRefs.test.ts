@@ -11,7 +11,7 @@ import {
     setFileContent,
     setWorkspaceRoot,
     workspace,
-} from '@/__test__/stubs/vscode'
+} from './stubs/vscode'
 import type { HostContextRef } from '../modules/ai/contextRefs'
 import {
     buildContextBlock,

@@ -6,12 +6,12 @@
  * 定位为单人卡片，字段 id 固定，同时只会挂载一张卡，不存在重复 id。
  */
 import { ArrowLeft } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Textarea } from '@/components/ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Button } from '@components/ui/button'
+import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
+import { Input } from '@components/ui/input'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@components/ui/tabs'
+import { Textarea } from '@components/ui/textarea'
+import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import type { CharacterCard, CharacterRole } from '../types'
 import type { JSX } from 'react'
 import { CHARACTER_ROLE_META } from '../constants'

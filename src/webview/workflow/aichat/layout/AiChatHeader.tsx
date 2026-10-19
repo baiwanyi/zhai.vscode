@@ -3,8 +3,8 @@
  * 组合同目录 AiChatSessionMeta 与 AiChatHistoryMenu，为纯布局容器；交互全部经回调上抛给页面 hooks。
  */
 import { SquarePen } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import type { AiConversationSummary, AiRuntimeInfo } from '@/shared/types/aiChat'
+import { Button } from '@components/ui/button'
+import type { AiConversationSummary, AiRuntimeInfo } from '@shared/types/aiChat'
 import { AiChatHistoryMenu } from './AiChatHistoryMenu'
 import { AiChatSessionMeta } from './AiChatSessionMeta'
 import type { JSX } from 'react'

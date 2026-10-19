@@ -1,14 +1,14 @@
 /**
  * 工作流占位页：模块尚未接入专属工作流时的统一落点，标题取模块标题以区分是哪个模块在用占位页。
- * 复用 @/components/ui 的 empty / button 组合与 routing 的模块标题表，不自行解析路由。
+ * 复用 @components/ui 的 empty / button 组合与 routing 的模块标题表，不自行解析路由。
  * 关键约束：「仍然使用 AI 对话」出口覆盖到写作管理页（当前承接对话能力的模块页），避免用户被挡在对话能力之外；
  * 「返回模块选择」用于清除宿主持久保存的选定，避免选定模块后无法回到初始页。
  */
 import { ArrowLeft, MessagesSquare, Pencil } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import type { WorkflowContextState, WorkflowId } from '@/shared/types/workflow'
+import { Button } from '@components/ui/button'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
+import type { WorkflowContextState, WorkflowId } from '@shared/types/workflow'
 import type { JSX } from 'react'
 import { readModuleLabel } from '../core/routing'
 

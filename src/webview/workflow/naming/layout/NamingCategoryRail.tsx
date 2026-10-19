@@ -4,8 +4,8 @@
  * 关键约束：当前分类以主色块高亮（`data-[state=on]`）；不能再用 TooltipTrigger 包裹分段项——
  * Tooltip 会向子节点注入自身的 `data-state`，覆盖 ToggleGroup 的选中态导致高亮失效。
  */
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import type { NamingCatalog, NamingCategory } from '@/shared/types/naming'
+import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
+import type { NamingCatalog, NamingCategory } from '@shared/types/naming'
 import type { JSX } from 'react'
 import { CATEGORY_ICONS, CATEGORY_RAIL_LABEL, FALLBACK_ICON } from '../constants'
 

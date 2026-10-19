@@ -4,7 +4,7 @@
  * 关键约束：默认条件必须落在宿主归一化允许的枚举内，否则首屏请求会被回落值改写导致表单抖动。
  */
 import { Flag, Gem, Ghost, MapPin, ScrollText, Shield, Swords, UserRound } from 'lucide-react'
-import type { NamingCategory, NamingRequest } from '@/shared/types/naming'
+import type { NamingCategory, NamingRequest } from '@shared/types/naming'
 import type { LucideIcon } from 'lucide-react'
 
 /** 默认取名条件：首屏即人物 · 中国 · 现代 · 男 · 不限字数 */

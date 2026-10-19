@@ -1,13 +1,13 @@
 /**
  * 工作流初始页：未选择任何模块时的落点，提供模块选择入口。
- * 复用 @/components/ui 的 empty / button 组合；入口清单由 routing 的模块映射派生，新增模块无需改动本组件。
+ * 复用 @components/ui 的 empty / button 组合；入口清单由 routing 的模块映射派生，新增模块无需改动本组件。
  * 关键约束：选定动作交由宿主落库并广播（onOpenModule），本组件不自行解析路由；失败仅就地提示，不改变页面状态。
  */
 import { LayoutGrid, MessagesSquare, Pencil } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import type { WorkflowContextState, WorkflowId } from '@/shared/types/workflow'
+import { Button } from '@components/ui/button'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
+import type { WorkflowContextState, WorkflowId } from '@shared/types/workflow'
 import type { JSX } from 'react'
 import { MODULE_WORKFLOW, readModuleLabel } from '../core/routing'
 

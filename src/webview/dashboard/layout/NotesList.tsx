@@ -1,15 +1,15 @@
 /**
  * 笔记列表：置顶分组与其余条目分列铺排，置顶组可折叠；普通态选中高亮由 activeId 决定，多选态改由复选圈表达。
- * 组合同目录 NotesListItem 呈现单条，折叠语义复用 @/components/ui/collapsible；滚动与高度由区块外层承担，本组件不做虚拟化。
+ * 组合同目录 NotesListItem 呈现单条，折叠语义复用 @components/ui/collapsible；滚动与高度由区块外层承担，本组件不做虚拟化。
  * 关键约束：条目语义由 ItemGroup 提供，禁止改用裸 div 堆叠条目；
  * 仅存在置顶项时渲染「置顶」分组标题，其余条目保持扁平不设标题；条目顺序一律沿用宿主下发顺序；
  * 折叠只影响呈现层，不改变选中集合，也不影响置顶数据与批量操作范围。
  */
 import { ChevronDown } from 'lucide-react'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
-import { ItemGroup } from '@/components/ui/item'
-import { Separator } from '@/components/ui/separator'
-import type { NoteAction, RecentFile } from '@/shared/types/dashboard'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
+import { ItemGroup } from '@components/ui/item'
+import { Separator } from '@components/ui/separator'
+import type { NoteAction, RecentFile } from '@shared/types/dashboard'
 import { NotesListItem } from './NotesListItem'
 import type { JSX } from 'react'
 

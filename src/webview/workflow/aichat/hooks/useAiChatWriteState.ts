@@ -4,7 +4,7 @@
  * 关键约束：只回传助手消息 id 执行写回，不接触文件路径与替换范围；同一时刻只允许一个写回请求。
  */
 import { useCallback, useState } from 'react'
-import type { AiApplyResult, AiWriteState } from '@/shared/types/aiChat'
+import type { AiApplyResult, AiWriteState } from '@shared/types/aiChat'
 import { request } from '../../../bridge'
 import { toErrorText } from '../utils'
 

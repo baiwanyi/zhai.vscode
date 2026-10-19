@@ -8,7 +8,7 @@
  * 容器不可设置 overflow: hidden，否则 Tooltip 浮层会被裁切。
  */
 import { Globe, History, Image as ImageIcon, ListTree, MessageCircle, ScrollText, Tag, Users, Wrench } from 'lucide-react'
-import { TooltipProvider } from '@/components/ui/tooltip'
+import { TooltipProvider } from '@components/ui/tooltip'
 import { WorkflowPressNavItem } from './WorkflowPressNavItem'
 import type { JSX, ReactNode } from 'react'
 

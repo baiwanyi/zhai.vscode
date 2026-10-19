@@ -6,9 +6,9 @@
  * 本组件不直接发起生成，只把动作交回页面，保证 AI 调用入口仍集中在会话层。
  */
 import { BookMarked, Globe, PenLine, ScrollText, Users, Wand2 } from 'lucide-react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Item, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item'
+import { Badge } from '@components/ui/badge'
+import { Button } from '@components/ui/button'
+import { Item, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import type { CharacterCard, OutlineChapter, OutlineVolume, ProjectSetting } from '../types'
 import type { JSX } from 'react'
 

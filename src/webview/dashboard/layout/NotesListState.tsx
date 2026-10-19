@@ -1,13 +1,13 @@
 /**
  * 笔记列表状态分派：按加载状态、失败与筛选结果选择骨架屏、错误提示或空态。
- * 复用 @/components/ui 的 skeleton、alert 与 empty；空态文案区分「尚无数据」与「筛选无结果」。
+ * 复用 @components/ui 的 skeleton、alert 与 empty；空态文案区分「尚无数据」与「筛选无结果」。
  * 关键约束：三态互斥，同一次渲染只呈现其中一种，占位样式统一走 Empty。
  */
 import { FileText, TriangleAlert } from 'lucide-react'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Alert, AlertDescription, AlertTitle } from '@components/ui/alert'
+import { Button } from '@components/ui/button'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
+import { Skeleton } from '@components/ui/skeleton'
 import type { StatsStatus } from '../hooks/useDashboardStats'
 import type { JSX } from 'react'
 

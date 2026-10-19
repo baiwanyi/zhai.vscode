@@ -5,8 +5,8 @@
  */
 import { cn } from 'cn'
 import { SendHorizontal, Square } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import type { AiConversationMode } from '@/shared/types/aiChat'
+import { Button } from '@components/ui/button'
+import type { AiConversationMode } from '@shared/types/aiChat'
 import { AiChatEnhanceButton } from './AiChatEnhanceButton'
 import { AiChatModeSwitch } from './AiChatModeSwitch'
 import { AiChatTokenRing } from './AiChatTokenRing'

@@ -6,10 +6,10 @@
  * 前端限长仅用于输入体验。
  */
 import { Dices } from 'lucide-react'
-import { Field, FieldLabel } from '@/components/ui/field'
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import type { NamingCatalog, NamingRequest } from '@/shared/types/naming'
+import { Field, FieldLabel } from '@components/ui/field'
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@components/ui/input-group'
+import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
+import type { NamingCatalog, NamingRequest } from '@shared/types/naming'
 import type { JSX } from 'react'
 import { MAX_SUFFIX_LENGTH } from '../constants'
 import { readCategoryMeta } from '../utils'

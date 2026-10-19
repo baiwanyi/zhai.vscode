@@ -5,11 +5,11 @@
  * 关键约束：数字参数必须自行钳制到合理区间，清空时回退为默认值而不是 0；
  * 缺失一句话梗概时不阻断生成，只用提示条说明「梗概为空会导致章纲雷同」。
  */
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Field, FieldDescription, FieldLabel, FieldTitle } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Alert, AlertDescription } from '@components/ui/alert'
+import { Field, FieldDescription, FieldLabel, FieldTitle } from '@components/ui/field'
+import { Input } from '@components/ui/input'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import type { CharacterCard, ProjectSetting } from '../types'
 import type { OutlineDraftOptions } from '../utils'
 import type { JSX } from 'react'

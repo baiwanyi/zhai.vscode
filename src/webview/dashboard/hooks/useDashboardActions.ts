@@ -1,14 +1,14 @@
 /**
  * 仪表盘宿主动作：新建空笔记、打开笔记、批量置顶、工作流页跳转、索引重建、缓存清理与打开设置。
- * 复用 ../bridge 走宿主协议、@/components/ui/sonner 的 toast 反馈结果，错误经 Error 收窄后提示。
+ * 复用 ../bridge 走宿主协议、@components/ui/sonner 的 toast 反馈结果，错误经 Error 收窄后提示。
  * 关键约束：耗时动作进行中记录 pendingAction 阻止重复提交；打开笔记与工作流跳转不占用该状态，
  * 避免顶栏操作区被整体禁用；提示在本层即时发出，页面不再渲染提示行。
  */
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
-import type { NoteAction } from '@/shared/types/dashboard'
-import type { CreatedNote, OpenNoteRequest, OpenNoteResult, PinNotesRequest } from '@/shared/types/note'
-import type { OpenWorkflowRequest, OpenWorkflowResult } from '@/shared/types/workflow'
+import type { NoteAction } from '@shared/types/dashboard'
+import type { CreatedNote, OpenNoteRequest, OpenNoteResult, PinNotesRequest } from '@shared/types/note'
+import type { OpenWorkflowRequest, OpenWorkflowResult } from '@shared/types/workflow'
 import { request } from '../../bridge'
 
 /** 尚未接入宿主协议的条目操作 */

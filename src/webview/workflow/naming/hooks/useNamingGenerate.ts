@@ -6,7 +6,7 @@
  * 避免异步返回时用户已切换分类导致结果串台。
  */
 import { useCallback, useState } from 'react'
-import type { NamingCandidate, NamingCategory, NamingGenerateResult, NamingRequest } from '@/shared/types/naming'
+import type { NamingCandidate, NamingCategory, NamingGenerateResult, NamingRequest } from '@shared/types/naming'
 import { request } from '../../../bridge'
 import { toErrorText } from '../utils'
 

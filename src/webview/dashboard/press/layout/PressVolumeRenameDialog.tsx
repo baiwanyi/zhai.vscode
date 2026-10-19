@@ -1,11 +1,11 @@
 /**
  * 重命名卷弹窗：只收集卷的可读名，序号前缀由宿主保留，避免用户改动排序号。
- * 复用 @/components/ui 的 dialog、field、input，提交失败时保持打开便于就地修改。
+ * 复用 @components/ui 的 dialog、field、input，提交失败时保持打开便于就地修改。
  * 关键约束：表单初始值来自当前卷名，重置由父级在每次打开时更换组件 key 完成，本组件不在 effect 中同步写状态；
  * 前端只做 trim 与空值判定，完整名称白名单由宿主校验；提交中禁用全部控件防止重复提交。
  */
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@components/ui/button'
 import {
     Dialog,
     DialogContent,
@@ -13,9 +13,9 @@ import {
     DialogFooter,
     DialogHeader,
     DialogTitle,
-} from '@/components/ui/dialog'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
+} from '@components/ui/dialog'
+import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
+import { Input } from '@components/ui/input'
 import type { JSX } from 'react'
 
 interface PressVolumeRenameDialogProps {

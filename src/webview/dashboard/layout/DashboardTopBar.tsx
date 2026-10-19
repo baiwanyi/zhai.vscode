@@ -4,7 +4,7 @@
  * 关键约束：两个控件共用 outline 变体与全圆角，避免同类入口出现两套形态。
  */
 import { Plus } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@components/ui/button'
 import { DashboardQuickMenu } from './DashboardQuickMenu'
 import type { JSX } from 'react'
 

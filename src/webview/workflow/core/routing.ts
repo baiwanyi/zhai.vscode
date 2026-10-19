@@ -4,8 +4,8 @@
  * 关键约束：用户选定的模块优先于场景默认；笔记编辑场景优先于模块兜底；未选择模块且无场景时落到初始页；
  * 用户手动覆盖优先于一切，其有效性由调用方按场景事实是否变化判定。
  */
-import { ROOT_MODULE_KEY } from '@/shared/types/workflow'
-import type { WorkflowContextState, WorkflowId, WorkflowSceneKind } from '@/shared/types/workflow'
+import { ROOT_MODULE_KEY } from '@shared/types/workflow'
+import type { WorkflowContextState, WorkflowId, WorkflowSceneKind } from '@shared/types/workflow'
 
 /** 模块 → 工作流页面：已接入模块各用 layout/ 下的专属页面（页面内部再组合 AI 对话等能力），未登记模块回落到占位页 */
 export const MODULE_WORKFLOW: Readonly<Record<string, WorkflowId>> = {

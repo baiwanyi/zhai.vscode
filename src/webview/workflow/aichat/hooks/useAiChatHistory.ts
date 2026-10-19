@@ -3,7 +3,7 @@
  * 列表仅在浮层打开 / 删除会话后按需刷新，避免展示过期数据；切换会话的写入动作由会话 hook 承担。
  */
 import { useCallback, useState } from 'react'
-import type { AiConversationSummary } from '@/shared/types/aiChat'
+import type { AiConversationSummary } from '@shared/types/aiChat'
 import { request } from '../../../bridge'
 import { toErrorText } from '../utils'
 

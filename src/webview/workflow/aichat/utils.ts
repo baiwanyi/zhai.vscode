@@ -5,7 +5,7 @@
  * 关键约束：相对时间格式化已上移至 src/webview/utils.ts 供各 Webview 共用；readAiStateKind 只信任收窄结果；
  * 命令模板只在发送瞬间拼接、在展示时按最长前缀剥离，输入框与消息气泡均不出现 instruction 全文。
  */
-import type { AiContextRef, AiConversationMode, AiMessage, AiSessionSnapshot } from '@/shared/types/aiChat'
+import type { AiContextRef, AiConversationMode, AiMessage, AiSessionSnapshot } from '@shared/types/aiChat'
 import { AI_COMMAND_PREFIXES } from './constants'
 import type { AiCommand } from './constants'
 

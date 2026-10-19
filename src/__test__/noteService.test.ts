@@ -14,7 +14,7 @@ import {
     registerTextDocument,
     resetWorkspaceState,
     setConfigValue,
-} from '@/__test__/stubs/vscode'
+} from './stubs/vscode'
 import type { NoteIndexer } from '../modules/note/noteService'
 import { createNote, openNoteByPath } from '../modules/note/noteService'
 

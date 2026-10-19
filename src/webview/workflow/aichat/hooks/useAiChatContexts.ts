@@ -4,7 +4,7 @@
  * 关键约束：不持有文件路径等敏感信息，仅透传宿主生成的引用 id。
  */
 import { useCallback, useState } from 'react'
-import type { AiContextRef } from '@/shared/types/aiChat'
+import type { AiContextRef } from '@shared/types/aiChat'
 import { request } from '../../../bridge'
 import { toErrorText } from '../utils'
 

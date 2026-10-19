@@ -1,11 +1,11 @@
 /**
  * AI 对话用户消息首行的引用徽章组：随命令徽章同行排列，由调用方提供布局容器。
- * 复用 @/components/ui 的 Badge 与 ../utils 的文件名折算，纯展示组件。
+ * 复用 @components/ui 的 Badge 与 ../utils 的文件名折算，纯展示组件。
  * 关键约束：徽章只展示文件名（完整路径进悬浮提示），配色随用户气泡前景色，不做独立底色；
  * 与命令徽章统一 align-top，依赖调用方的 20px 行高（leading-5）与徽章高度重合。
  */
-import { Badge } from '@/components/ui/badge'
-import type { AiContextRef } from '@/shared/types/aiChat'
+import { Badge } from '@components/ui/badge'
+import type { AiContextRef } from '@shared/types/aiChat'
 import type { JSX } from 'react'
 import { toContextFileName } from '../utils'
 

@@ -6,14 +6,14 @@
  * 宿主未就绪（或浏览器预览环境）时保留默认事实，页面照常可用。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { isWorkflowContextState, ROOT_MODULE_KEY } from '@/shared/types/workflow'
+import { isWorkflowContextState, ROOT_MODULE_KEY } from '@shared/types/workflow'
 import type {
     OpenWorkflowRequest,
     OpenWorkflowResult,
     ResetWorkflowResult,
     WorkflowContextState,
     WorkflowId,
-} from '@/shared/types/workflow'
+} from '@shared/types/workflow'
 import type { WorkflowResolveReason } from '../core/routing'
 import { onState, request } from '../../bridge'
 import { contextFingerprint, resolveWorkflow } from '../core/routing'

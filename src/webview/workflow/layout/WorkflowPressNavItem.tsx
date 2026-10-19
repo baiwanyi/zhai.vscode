@@ -8,8 +8,8 @@
  * 尺寸与圆角，不改共享组件默认值；占位期不设 disabled，保证 hover 与激活反馈可验证。
  */
 import { cn } from 'cn'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { Button } from '@components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { JSX, ReactNode } from 'react'
 
 interface WorkflowPressNavItemProps {

@@ -5,8 +5,8 @@
  * 关键约束：卷级勾选只批量切换本卷章节，不改变卷本身是否写入；被勾选的章节在写入时才会重新编号，
  * 因此这里的顺序只是展示顺序，不能当作最终序号。
  */
-import { Badge } from '@/components/ui/badge'
-import { Checkbox } from '@/components/ui/checkbox'
+import { Badge } from '@components/ui/badge'
+import { Checkbox } from '@components/ui/checkbox'
 import type { OutlineVolume } from '../types'
 import type { JSX } from 'react'
 import { HOOK_OPTIONS } from '../constants'

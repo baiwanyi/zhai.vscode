@@ -4,7 +4,7 @@
  * 后续接入笔记专属能力时只改本文件，注册表与路由表无需改动。
  * 关键约束：本页不解析路由、不自行发请求；透传的选定与清除动作由占位页按需触发。
  */
-import type { WorkflowContextState, WorkflowId } from '@/shared/types/workflow'
+import type { WorkflowContextState, WorkflowId } from '@shared/types/workflow'
 import { WorkflowPlaceholder } from './WorkflowPlaceholder'
 import type { JSX } from 'react'
 

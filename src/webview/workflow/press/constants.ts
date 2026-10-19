@@ -6,7 +6,7 @@
  */
 import type { Audience, CharacterRole, EndingKind, HookKind, PlanStatus, ProjectSetting } from './types'
 
-/** 徽标语义变体：与 @/components/ui/badge 的 variant 保持一致 */
+/** 徽标语义变体：与 @components/ui/badge 的 variant 保持一致 */
 export type BadgeTone = 'default' | 'secondary' | 'destructive' | 'outline' | 'ghost'
 
 interface OptionMeta<T extends string> {

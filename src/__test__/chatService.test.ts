@@ -13,7 +13,7 @@ import {
     resetWorkspaceState,
     setConfigValue,
     setFileContent,
-} from '@/__test__/stubs/vscode'
+} from './stubs/vscode'
 import type { ChatMessage, ChatStreamChunk, ChatStreamRequest } from '../modules/ai/client'
 import type { HostContextRef } from '../modules/ai/contextRefs'
 import type Database from 'better-sqlite3'

@@ -4,7 +4,7 @@
  * 关键约束：组件卸载后不再回写状态，避免切换分区时的过期 setState。
  */
 import { useEffect, useState } from 'react'
-import type { NamingCatalog } from '@/shared/types/naming'
+import type { NamingCatalog } from '@shared/types/naming'
 import { request } from '../../../bridge'
 import { toErrorText } from '../utils'
 

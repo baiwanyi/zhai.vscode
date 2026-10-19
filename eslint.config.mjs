@@ -3,7 +3,7 @@
  * 复用约定：类型感知检查以 tsconfig.json 为项目源；import 分组按 builtin → external → internal →
  * sibling → index → type 排列，组内字母升序、组间不留空行、导入块后留空行；格式类规则交由 Prettier。
  * 关键约束：全局禁用 inline 配置（不得用 eslint-disable 规避规则）；`src/components/ui` 与
- * `src/hooks` 属 shadcn/ui 托管源码，仅做语法与安全性检查，避免 CLI 覆盖后约束反复失效。
+ * `src/components/hooks` 属 shadcn/ui 托管源码，仅做语法与安全性检查，避免 CLI 覆盖后约束反复失效。
  * 取舍说明：eslint-plugin-react 尚未支持 ESLint 10（peer 仅到 ^9.7），故不引入其 JSX 规则；
  * 组件侧正确性由 react-hooks（hooks 调用约束）与 react-refresh（HMR 边界）两条插件承担。
  */
@@ -19,7 +19,7 @@ import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
 /** shadcn/ui 托管源码：不施加项目自有的命名、类型标注、导入排序与上游 any 收窄约束 */
-const vendoredUi = ['src/components/ui/**/*.tsx', 'src/hooks/**/*.ts']
+const vendoredUi = ['src/components/ui/**/*.tsx', 'src/components/hooks/**/*.ts']
 
 export default defineConfig([
     globalIgnores(['dist/**', 'node_modules/**', 'docs/**']),
@@ -71,13 +71,13 @@ export default defineConfig([
                     groups: [
                         'builtin', // 1. 核心库（node 内置）
                         'external', // 2. 第三方依赖（npm 包）
-                        'internal', // 3. 绝对路径导入（@ 别名）
+                        'internal', // 3. 绝对路径导入（@components 与 @shared 别名）
                         'sibling', // 4. 同级相对路径（./）
                         'index', // 5. 索引文件
                         'type', // 6. 类型导入
                     ],
                     pathGroups: [
-                        { pattern: '@/**', group: 'internal', position: 'before' },
+                        { pattern: '@components/**', group: 'internal', position: 'before' },
                         { pattern: '@shared/**', group: 'internal', position: 'before' },
                         {
                             pattern: '*.{css,scss,sass,less}',

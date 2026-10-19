@@ -1,13 +1,13 @@
 /**
  * AI 对话历史会话条目（对齐 Copilot）：标题 + 相对时间，hover 时用删除按钮顶替时间位置、避免行宽跳动。
- * 复用 @/components/ui 的 dropdown-menu/button 与 webview 公共的相对时间格式化，为纯展示组件。
+ * 复用 @components/ui 的 dropdown-menu/button 与 webview 公共的相对时间格式化，为纯展示组件。
  * 关键约束：删除按钮须 stopPropagation，避免触发条目自身的切换会话回调。
  */
 import { cn } from 'cn'
 import { Trash2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
-import type { AiConversationSummary } from '@/shared/types/aiChat'
+import { Button } from '@components/ui/button'
+import { DropdownMenuItem } from '@components/ui/dropdown-menu'
+import type { AiConversationSummary } from '@shared/types/aiChat'
 import type { JSX } from 'react'
 import { formatRelativeTime } from '../../../utils'
 

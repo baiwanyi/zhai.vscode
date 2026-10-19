@@ -8,7 +8,7 @@
  */
 import { FileText, TextSelect, X } from 'lucide-react'
 import { useCallback, useEffect, useRef } from 'react'
-import type { AiContextRef } from '@/shared/types/aiChat'
+import type { AiContextRef } from '@shared/types/aiChat'
 import { COMMAND_ICONS } from './commandIcons'
 import type { AiCommand } from '../constants'
 import type { ClipboardEvent as ReactClipboardEvent, JSX, KeyboardEvent as ReactKeyboardEvent } from 'react'

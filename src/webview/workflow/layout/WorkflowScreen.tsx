@@ -4,7 +4,7 @@
  * 关键约束：换页只替换渲染的 Page 组件，宿主侧会话（AiChatService）不随换页销毁；
  * 路由事实未就绪时渲染骨架，避免未选定模块时先闪出对话页；模块选定入口仅由初始页与仪表盘提供，页内不叠加切换浮层。
  */
-import { Skeleton } from '@/components/ui/skeleton'
+import { Skeleton } from '@components/ui/skeleton'
 import type { JSX } from 'react'
 import { WORKFLOWS } from '../core/registry'
 import { useWorkflowRouting } from '../hooks/useWorkflowRouting'

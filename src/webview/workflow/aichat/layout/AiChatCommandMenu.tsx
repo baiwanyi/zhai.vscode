@@ -1,10 +1,10 @@
 /**
  * AI 对话写作命令菜单：顶部工具行左侧的「命令」按钮，展开四项预设指令，当前选中项带勾选标记。
- * 复用 @/components/ui 的 DropdownMenu 与 ../constants 的命令表，图标映射与输入区徽章共用 commandIcons。
+ * 复用 @components/ui 的 DropdownMenu 与 ../constants 的命令表，图标映射与输入区徽章共用 commandIcons。
  * 关键约束：生成中整组禁用；本组件只上抛命令对象，不写输入框、不持有写回策略。
  */
 import { Check, Command } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@components/ui/button'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -12,7 +12,7 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+} from '@components/ui/dropdown-menu'
 import { COMMAND_ICONS } from './commandIcons'
 import type { AiCommand, AiCommandId } from '../constants'
 import type { JSX } from 'react'

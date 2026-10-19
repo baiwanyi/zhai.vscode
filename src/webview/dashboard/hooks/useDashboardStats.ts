@@ -5,7 +5,7 @@
  * 状态订阅须在卸载时解除，避免页面重挂载后重复触发刷新。
  */
 import { useCallback, useEffect, useState } from 'react'
-import type { DashboardStats } from '@/shared/types/dashboard'
+import type { DashboardStats } from '@shared/types/dashboard'
 import { onState, request } from '../../bridge'
 
 /** 重建期间轮询间隔，使按钮态与统计随宿主进度收敛 */

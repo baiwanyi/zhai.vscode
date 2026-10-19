@@ -1,12 +1,12 @@
 /**
  * 添加作品弹窗：收集作品名与目标读者（男频/女频），提交后由页面层调用宿主创建作品。
- * 复用 @/components/ui 的 dialog、field、input、toggle-group，选项与取值取自 shared/types/press，不重复定义。
+ * 复用 @components/ui 的 dialog、field、input、toggle-group，选项与取值取自 shared/types/press，不重复定义。
  * 关键约束：目标读者为必选项，ToggleGroup 再次点击取消选中（空串）时沿用当前值，不回落；
  * 表单重置由页面在每次打开时更换组件 key 完成（重挂载即回到初始值），本组件不在 effect 中同步写状态；
  * 前端只做 trim 与空值判定，完整名称白名单由宿主校验；提交中禁用全部控件防止重复提交。
  */
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@components/ui/button'
 import {
     Dialog,
     DialogContent,
@@ -14,12 +14,12 @@ import {
     DialogFooter,
     DialogHeader,
     DialogTitle,
-} from '@/components/ui/dialog'
-import { Field, FieldGroup, FieldLabel } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import { DEFAULT_PRESS_AUDIENCE, PRESS_AUDIENCES, readPressAudience } from '@/shared/types/press'
-import type { PressAudience } from '@/shared/types/press'
+} from '@components/ui/dialog'
+import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
+import { Input } from '@components/ui/input'
+import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
+import type { PressAudience } from '@shared/types/press'
+import { DEFAULT_PRESS_AUDIENCE, PRESS_AUDIENCES, readPressAudience } from '@shared/types/press'
 import type { JSX } from 'react'
 
 interface PressProjectDialogProps {

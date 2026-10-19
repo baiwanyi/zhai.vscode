@@ -4,7 +4,7 @@
  * 关键约束：文件内的行组件为私有实现，仅用于消除两行之间的样式重复。
  */
 import { ChevronRight, MessagesSquare, Pencil } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@components/ui/button'
 import type { JSX } from 'react'
 
 interface DashboardEntriesProps {

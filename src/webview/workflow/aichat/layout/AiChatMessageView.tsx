@@ -3,9 +3,9 @@
  * 正文（含用户消息首行的命令与引用徽章）与写回按钮分别由同目录独立组件渲染，本层只负责结构编排与状态分派。
  * 关键约束：写回按钮仅对可写回的助手消息渲染；错误与停止文案优先于写回入口。
  */
-import { Bubble, BubbleContent, BubbleGroup } from '@/components/ui/bubble'
-import { Message, MessageContent, MessageFooter } from '@/components/ui/message'
-import type { AiMessage, AiWriteScope } from '@/shared/types/aiChat'
+import { Bubble, BubbleContent, BubbleGroup } from '@components/ui/bubble'
+import { Message, MessageContent, MessageFooter } from '@components/ui/message'
+import type { AiMessage, AiWriteScope } from '@shared/types/aiChat'
 import { AiChatApplyButton } from './AiChatApplyButton'
 import { AiChatMessageBody } from './AiChatMessageBody'
 import type { JSX } from 'react'

@@ -5,10 +5,10 @@
  * 关键约束：四组分段控件共用同一套尺寸与间距（size=sm、spacing=0、w-full），保证视觉一致；
  * 点击已选中的分段不改变状态（避免空值回写），取值一律以宿主 catalog 为准。
  */
-import { Field, FieldLabel } from '@/components/ui/field'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import type { NamingCatalog, NamingEra, NamingGender, NamingNameLength, NamingReference, NamingRequest, NamingSurnameKind } from '@/shared/types/naming'
+import { Field, FieldLabel } from '@components/ui/field'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
+import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
+import type { NamingCatalog, NamingEra, NamingGender, NamingNameLength, NamingReference, NamingRequest, NamingSurnameKind } from '@shared/types/naming'
 import { NamingSurnameField } from './NamingSurnameField'
 import type { JSX } from 'react'
 import { readCategoryMeta } from '../utils'

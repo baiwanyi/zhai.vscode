@@ -3,7 +3,7 @@
  * 组合同目录 AiChatPromptInput / AiChatStatusHint，交互全部经回调上抛给页面 hooks。
  * 关键约束：模式、用量、已选命令、上下文与写回目标均由此层透传，输入卡片不直接读取会话状态。
  */
-import type { AiContextRef, AiConversationMode } from '@/shared/types/aiChat'
+import type { AiContextRef, AiConversationMode } from '@shared/types/aiChat'
 import { AiChatPromptInput } from './AiChatPromptInput'
 import { AiChatStatusHint } from './AiChatStatusHint'
 import type { AiCommand, AiReferenceSource } from '../constants'

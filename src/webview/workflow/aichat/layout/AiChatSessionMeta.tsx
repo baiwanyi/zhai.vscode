@@ -2,7 +2,7 @@
  * AI 对话会话元信息：会话标题与运行时用量行（模型、今日 token 用量 / 预算）。
  * 复用 ../utils 的 token 折算；为纯展示组件，无任何回调依赖。
  */
-import type { AiRuntimeInfo } from '@/shared/types/aiChat'
+import type { AiRuntimeInfo } from '@shared/types/aiChat'
 import type { JSX } from 'react'
 import { formatTokens } from '../utils'
 

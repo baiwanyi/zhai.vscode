@@ -1,6 +1,6 @@
 /**
  * 章节目录：按卷分组渲染可折叠的卷区块，并管理各卷的展开状态。
- * 复用 PressVolumeSection 承载折叠、卷内分批、加章入口与卷级/章节级操作，@/components/ui/empty 承载空态。
+ * 复用 PressVolumeSection 承载折叠、卷内分批、加章入口与卷级/章节级操作，@components/ui/empty 承载空态。
  * 关键约束：展开状态以「用户操作后的集合」为准，未操作时按默认集合派生（只展开第一个卷，首屏渲染可控）；
  * 在某卷加章前先展开该卷，保证新章节立即可见；移动章节后由父级以 initialExpandVolumeDir + key 重挂载，
  * 让落点卷成为新的默认展开项——不在 effect 里同步改 state，避免多余重渲染；
@@ -9,9 +9,9 @@
  */
 import { BookPlus, FileText } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import type { PressVolumeGroup } from '@/shared/types/press'
+import { Button } from '@components/ui/button'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
+import type { PressVolumeGroup } from '@shared/types/press'
 import { PressVolumeSection } from './PressVolumeSection'
 import type { JSX } from 'react'
 

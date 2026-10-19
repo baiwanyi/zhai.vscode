@@ -5,7 +5,7 @@
  * 任一侧新增字段都应改这里而不是就地拼接。
  */
 import { toast } from 'sonner'
-import type { PressProjectSummary } from '@/shared/types/press'
+import type { PressProjectSummary } from '@shared/types/press'
 import { formatRelativeTime } from '../../utils'
 import { formatWordCount } from '../utils'
 

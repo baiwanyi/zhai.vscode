@@ -2,7 +2,7 @@
  * Webview 消息桥：封装 acquireVsCodeApi、reqId 请求-响应匹配与宿主推送（stream / state）订阅。
  * 约束：acquireVsCodeApi 全局仅可调用一次；响应按 reqId 匹配 resolve，请求侧自带超时。
  */
-import type { StateMessage, StreamMessage } from '@/shared/types/messages'
+import type { StateMessage, StreamMessage } from '@shared/types/messages'
 
 interface VsCodeApi {
     postMessage(message: unknown): void

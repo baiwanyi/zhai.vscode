@@ -1,20 +1,20 @@
 /**
  * 作品设定页：写作流程的第二步，按「基本信息 / 故事内核 / 世界观 / 金手指 / 写作风格」收集作品级输入。
- * 复用约定：表单控件全部取自 @/components/ui 的 field、input、textarea、select、toggle 与 progress，
+ * 复用约定：表单控件全部取自 @components/ui 的 field、input、textarea、select、toggle 与 progress，
  * 分组卡由 SettingSection 承载，标签型字段由 TagField 承载，完整度与缺项判断来自 ../utils。
  * 关键约束：页面只向上抛出字段补丁，不直接改文件；缺失字段仅以徽标提示、不阻断下一步；
  * 所有输入控件都必须与 label 建立 id 关联，数字输入在清空时回退为 0 而不是 NaN。
  */
 import { ArrowRight, Sparkles } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { Field, FieldDescription, FieldLabel, FieldTitle } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { Progress } from '@/components/ui/progress'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Textarea } from '@/components/ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
+import { Badge } from '@components/ui/badge'
+import { Button } from '@components/ui/button'
+import { Field, FieldDescription, FieldLabel, FieldTitle } from '@components/ui/field'
+import { Input } from '@components/ui/input'
+import { Progress } from '@components/ui/progress'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
+import { Textarea } from '@components/ui/textarea'
+import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import { SettingSection } from './SettingSection'
 import { TagField } from './TagField'
 import type { Audience, EndingKind, ProjectSetting } from '../types'

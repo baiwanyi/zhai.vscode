@@ -5,10 +5,10 @@
  * 关键约束：单姓 / 复姓点击即写入一个随机姓氏（需求约定），输入框仍可手工改写；再次点击同一项不取消选中。
  */
 import { Dices } from 'lucide-react'
-import { Field, FieldLabel } from '@/components/ui/field'
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group'
-import type { NamingSurnameKind } from '@/shared/types/naming'
+import { Field, FieldLabel } from '@components/ui/field'
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@components/ui/input-group'
+import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
+import type { NamingSurnameKind } from '@shared/types/naming'
 import type { JSX } from 'react'
 import { MAX_SURNAME_LENGTH } from '../constants'
 

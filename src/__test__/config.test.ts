@@ -7,7 +7,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import * as vscode from 'vscode'
-import { resetWorkspaceState, setConfigValue } from '@/__test__/stubs/vscode'
+import { resetWorkspaceState, setConfigValue } from './stubs/vscode'
 import { resolveCacheRoot, resolveStorageRoot } from '../modules/common/config'
 
 beforeEach(() => {

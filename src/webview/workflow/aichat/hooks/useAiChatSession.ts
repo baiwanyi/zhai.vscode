@@ -6,7 +6,7 @@
  * 切换 / 删除会话或切换模式前先中止生成，避免增量写回已切走的会话；输入框内容在切换时保持不动。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AiContextRef, AiConversationMode, AiSendResult, AiSessionSnapshot } from '@/shared/types/aiChat'
+import type { AiContextRef, AiConversationMode, AiSendResult, AiSessionSnapshot } from '@shared/types/aiChat'
 import type { AiApplyPolicy } from '../constants'
 import { onStream, request } from '../../../bridge'
 import { patchMessage, toErrorText } from '../utils'

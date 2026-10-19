@@ -7,7 +7,7 @@
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机与第 10.3 节写回链路。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AiConversationMode, AiSessionSnapshot } from '@/shared/types/aiChat'
+import type { AiConversationMode, AiSessionSnapshot } from '@shared/types/aiChat'
 import { AI_COMMAND_MAP, isAiCommandId } from './constants'
 import { useAiChatCommands } from './hooks/useAiChatCommands'
 import { useAiChatContexts } from './hooks/useAiChatContexts'

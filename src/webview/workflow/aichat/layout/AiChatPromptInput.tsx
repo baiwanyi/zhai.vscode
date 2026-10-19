@@ -5,7 +5,7 @@
  * 存在命令时允许空输入直接发送，写作模式仍要求编辑器有可改写的目标。
  */
 import { useState } from 'react'
-import type { AiContextRef, AiConversationMode } from '@/shared/types/aiChat'
+import type { AiContextRef, AiConversationMode } from '@shared/types/aiChat'
 import { AiChatComposerActions } from './AiChatComposerActions'
 import { AiChatComposerToolbar } from './AiChatComposerToolbar'
 import { AiChatRichInput } from './AiChatRichInput'

@@ -6,7 +6,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { createUri } from '@/__test__/stubs/vscode'
+import { createUri } from './stubs/vscode'
 import type { ConversationRow, MessageRow } from '../modules/ai/db/chatRepository'
 import type Database from 'better-sqlite3'
 import {

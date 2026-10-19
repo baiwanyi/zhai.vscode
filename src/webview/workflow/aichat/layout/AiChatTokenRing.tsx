@@ -1,9 +1,9 @@
 /**
  * AI 对话 Token 圆环：以环形进度展示当日已用与预算，点开浮层查看明细。
- * 复用 @/components/ui 的 Button、Popover 与 ../utils 的 token 折算，颜色随占用比例分三档。
+ * 复用 @components/ui 的 Button、Popover 与 ../utils 的 token 折算，颜色随占用比例分三档。
  * 关键约束：预算未配置时展示灰环且不可点；环内数值全部来自宿主下发的运行时信息。
  */
-import { Button } from '@/components/ui/button'
+import { Button } from '@components/ui/button'
 import {
     Popover,
     PopoverContent,
@@ -11,7 +11,7 @@ import {
     PopoverHeader,
     PopoverTitle,
     PopoverTrigger,
-} from '@/components/ui/popover'
+} from '@components/ui/popover'
 import type { JSX } from 'react'
 import { formatTokens } from '../utils'
 

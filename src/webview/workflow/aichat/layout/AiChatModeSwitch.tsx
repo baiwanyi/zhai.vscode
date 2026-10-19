@@ -1,10 +1,10 @@
 /**
  * AI 对话模式切换按钮：底部操作行左侧唯一控件，在对话模式与写作模式之间切换。
- * 复用 @/components/ui 的 DropdownMenu 与 InputGroupButton，当前模式以勾选标记。
+ * 复用 @components/ui 的 DropdownMenu 与 InputGroupButton，当前模式以勾选标记。
  * 关键约束：生成中禁用切换；本组件只上抛目标模式，模式持久化由会话 hook 承担。
  */
 import { Check, ChevronDown, MessageSquare, PenLine } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@components/ui/button'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -12,8 +12,8 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import type { AiConversationMode } from '@/shared/types/aiChat'
+} from '@components/ui/dropdown-menu'
+import type { AiConversationMode } from '@shared/types/aiChat'
 import type { LucideIcon } from 'lucide-react'
 import type { JSX } from 'react'
 

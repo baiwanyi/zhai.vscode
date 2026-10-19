@@ -7,9 +7,9 @@
  */
 import { X } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { Toggle } from '@/components/ui/toggle'
+import { Badge } from '@components/ui/badge'
+import { Input } from '@components/ui/input'
+import { Toggle } from '@components/ui/toggle'
 import type { JSX, KeyboardEvent } from 'react'
 
 interface TagFieldProps {

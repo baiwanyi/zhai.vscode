@@ -5,10 +5,10 @@
  * 关键约束：页面不自带滚动容器（结果区为唯一滚动层）；条件与结果均不落本地存储，历史由宿主 naming.db 持有。
  */
 import { useCallback, useState } from 'react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Skeleton } from '@/components/ui/skeleton'
-import { Toaster } from '@/components/ui/sonner'
-import type { NamingCategory, NamingRequest, NamingSurnameKind } from '@/shared/types/naming'
+import { Alert, AlertDescription } from '@components/ui/alert'
+import { Skeleton } from '@components/ui/skeleton'
+import { Toaster } from '@components/ui/sonner'
+import type { NamingCategory, NamingRequest, NamingSurnameKind } from '@shared/types/naming'
 import { DEFAULT_REQUEST } from './constants'
 import { useNamingCatalog } from './hooks/useNamingCatalog'
 import { useNamingGenerate } from './hooks/useNamingGenerate'

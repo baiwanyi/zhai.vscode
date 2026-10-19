@@ -6,7 +6,7 @@
  * 退出多选模式时一并清空已选集合，避免残留状态影响下次进入。
  */
 import { useCallback, useMemo, useReducer } from 'react'
-import type { DashboardStats, ModuleStat, RecentFile } from '@/shared/types/dashboard'
+import type { DashboardStats, ModuleStat, RecentFile } from '@shared/types/dashboard'
 import { moduleOf } from '../utils'
 
 /** 视图初始值：不筛选、非多选、无选中项 */

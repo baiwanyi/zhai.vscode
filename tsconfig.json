@@ -24,7 +24,7 @@
         "noImplicitReturns": true,
         // 路径别名：TS7 已移除 baseUrl，paths 相对本文件所在目录解析
         "paths": {
-            "@/*": ["./src/*"],
+            "@components/*": ["./src/components/*"],
             "@shared/*": ["./src/shared/*"]
         }
     },

@@ -5,9 +5,9 @@
  * 页面内屏蔽浏览器右键菜单，与仪表盘首页保持一致。
  */
 import { useCallback, useState } from 'react'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Toaster } from '@/components/ui/sonner'
-import type { PressAudience } from '@/shared/types/press'
+import { ScrollArea } from '@components/ui/scroll-area'
+import { Toaster } from '@components/ui/sonner'
+import type { PressAudience } from '@shared/types/press'
 import { usePressProjects } from './hooks/usePressProjects'
 import { PressProjectDialog } from './layout/PressProjectDialog'
 import { PressProjectList } from './layout/PressProjectList'

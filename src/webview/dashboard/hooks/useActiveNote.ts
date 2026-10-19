@@ -5,8 +5,8 @@
  * 非 note 通道或形态非法的载荷一律忽略，不覆盖已有选中态。
  */
 import { useCallback, useEffect, useState } from 'react'
-import type { NoteActiveState } from '@/shared/types/note'
-import { isNoteActiveState } from '@/shared/types/note'
+import type { NoteActiveState } from '@shared/types/note'
+import { isNoteActiveState } from '@shared/types/note'
 import { onState, request } from '../../bridge'
 
 export interface ActiveNoteState {

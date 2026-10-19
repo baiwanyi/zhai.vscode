@@ -9,8 +9,8 @@
  * 批量操作栏仅在多选态且有选中项时出现，其按钮语义由选中项的置顶状态决定；页面内屏蔽浏览器右键菜单。
  */
 import { useCallback } from 'react'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import { Toaster } from '@/components/ui/sonner'
+import { ScrollArea } from '@components/ui/scroll-area'
+import { Toaster } from '@components/ui/sonner'
 import { createPressRoute } from './core/routing'
 import { useActiveNote } from './hooks/useActiveNote'
 import { useDashboardActions } from './hooks/useDashboardActions'

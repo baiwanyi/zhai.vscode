@@ -3,7 +3,7 @@
  * 密钥增删与运行时变更由宿主 state 广播（payload.kind = runtime）通知，由页面订阅后调用 loadRuntime 刷新。
  */
 import { useCallback, useState } from 'react'
-import type { AiRuntimeInfo } from '@/shared/types/aiChat'
+import type { AiRuntimeInfo } from '@shared/types/aiChat'
 import { request } from '../../../bridge'
 import { toErrorText } from '../utils'
 

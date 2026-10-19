@@ -8,8 +8,8 @@
 import { cn } from 'cn'
 import { ArrowLeft, ArrowRight, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
+import { Badge } from '@components/ui/badge'
+import { Button } from '@components/ui/button'
 import {
     Dialog,
     DialogContent,
@@ -17,7 +17,7 @@ import {
     DialogFooter,
     DialogHeader,
     DialogTitle,
-} from '@/components/ui/dialog'
+} from '@components/ui/dialog'
 import { OutlineWizardInput } from './OutlineWizardInput'
 import { OutlineWizardPlan } from './OutlineWizardPlan'
 import type { CharacterCard, OutlineVolume, ProjectSetting, WizardStep } from '../types'

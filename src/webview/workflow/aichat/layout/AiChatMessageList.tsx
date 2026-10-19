@@ -4,7 +4,7 @@
  * 写回状态由页面注入，本层按消息 id 决定是否为该条消息渲染写回入口。
  * 关键约束：末条消息作为滚动锚点，流式增长时保持贴底；本组件不处理消息内容渲染（见 AiChatMessageView）。
  */
-import { Marker, MarkerContent, MarkerIcon } from '@/components/ui/marker'
+import { Marker, MarkerContent, MarkerIcon } from '@components/ui/marker'
 import {
     MessageScroller,
     MessageScrollerButton,
@@ -12,9 +12,9 @@ import {
     MessageScrollerItem,
     MessageScrollerProvider,
     MessageScrollerViewport,
-} from '@/components/ui/message-scroller'
-import { Spinner } from '@/components/ui/spinner'
-import type { AiMessage, AiRuntimeInfo, AiWriteScope } from '@/shared/types/aiChat'
+} from '@components/ui/message-scroller'
+import { Spinner } from '@components/ui/spinner'
+import type { AiMessage, AiRuntimeInfo, AiWriteScope } from '@shared/types/aiChat'
 import { AiChatEmptyState } from './AiChatEmptyState'
 import { AiChatMessageView } from './AiChatMessageView'
 import type { Phase } from '../hooks/useAiChatSession'

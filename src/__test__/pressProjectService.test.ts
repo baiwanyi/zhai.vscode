@@ -18,7 +18,7 @@ import {
     setConfigValue,
     setDirectory,
     setFileContent,
-} from '@/__test__/stubs/vscode'
+} from './stubs/vscode'
 import type { ProjectIndexer } from '../modules/press/projectService'
 import { buildRenamedVolumeDirName, validateProjectName, validateVolumeName } from '../modules/press/projectFactory'
 import {

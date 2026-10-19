@@ -11,7 +11,7 @@ import type {
     CreatePressProjectResult,
     PressAudience,
     PressProjectSummary,
-} from '@/shared/types/press'
+} from '@shared/types/press'
 import type { PressStatus } from '../utils'
 import { onState, request } from '../../../bridge'
 import { toastError } from '../utils'

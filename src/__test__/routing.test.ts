@@ -3,7 +3,7 @@
  * 复用 vitest；用例只依赖纯函数与共享类型，不加载组件，也不触碰宿主环境。
  */
 import { describe, expect, it } from 'vitest'
-import type { WorkflowContextState } from '@/shared/types/workflow'
+import type { WorkflowContextState } from '@shared/types/workflow'
 import { readModuleLabel, resolveWorkflow } from '../webview/workflow/core/routing'
 
 /** 构造路由事实：仅覆盖用例关心的字段 */

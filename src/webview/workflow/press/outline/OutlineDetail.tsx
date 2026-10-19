@@ -6,21 +6,21 @@
  * 状态切到「需复核」时仅提示，不自动改写正文，也不阻止继续编辑。
  */
 import { ArrowLeft, ChevronDown, PenLine, Wand2 } from 'lucide-react'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
+import { Alert, AlertDescription } from '@components/ui/alert'
+import { Button } from '@components/ui/button'
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
     DropdownMenuContent,
     DropdownMenuGroup,
     DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Field, FieldDescription, FieldLabel, FieldTitle } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
-import { Progress } from '@/components/ui/progress'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Slider } from '@/components/ui/slider'
-import { Textarea } from '@/components/ui/textarea'
+} from '@components/ui/dropdown-menu'
+import { Field, FieldDescription, FieldLabel, FieldTitle } from '@components/ui/field'
+import { Input } from '@components/ui/input'
+import { Progress } from '@components/ui/progress'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
+import { Slider } from '@components/ui/slider'
+import { Textarea } from '@components/ui/textarea'
 import { OutlineBeatList } from './OutlineBeatList'
 import type { CharacterCard, OutlineChapter, OutlineVolume, PlanStatus } from '../types'
 import type { JSX } from 'react'

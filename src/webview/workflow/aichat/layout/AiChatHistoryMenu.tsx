@@ -4,7 +4,7 @@
  * 切换 / 删除动作经回调上抛，本组件不持有会话状态。
  */
 import { History } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { Button } from '@components/ui/button'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -13,8 +13,8 @@ import {
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import type { AiConversationSummary } from '@/shared/types/aiChat'
+} from '@components/ui/dropdown-menu'
+import type { AiConversationSummary } from '@shared/types/aiChat'
 import { AiChatHistoryItem } from './AiChatHistoryItem'
 import type { JSX } from 'react'
 

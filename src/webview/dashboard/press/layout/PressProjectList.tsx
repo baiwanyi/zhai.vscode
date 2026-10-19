@@ -1,16 +1,16 @@
 /**
  * 作品列表区块：卡片内组合标题与状态分派，加载中给骨架、无数据给引导、失败给重试。
- * 复用 @/components/ui 的 card、item、empty 与 skeleton，自身不取数、不持有筛选状态。
+ * 复用 @components/ui 的 card、item、empty 与 skeleton，自身不取数、不持有筛选状态。
  * 关键约束：空态同时提供「添加作品」与「重建索引」，后者用于索引缓存被清空后恢复列表；
  * 加载态只渲染骨架不渲染条目，避免列表高度在骨架与数据之间跳动。
  */
 import { BookOpen } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty'
-import { ItemGroup } from '@/components/ui/item'
-import { Skeleton } from '@/components/ui/skeleton'
-import type { PressProjectSummary } from '@/shared/types/press'
+import { Button } from '@components/ui/button'
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@components/ui/card'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
+import { ItemGroup } from '@components/ui/item'
+import { Skeleton } from '@components/ui/skeleton'
+import type { PressProjectSummary } from '@shared/types/press'
 import { PressProjectCard } from './PressProjectCard'
 import type { PressStatus } from '../utils'
 import type { JSX } from 'react'

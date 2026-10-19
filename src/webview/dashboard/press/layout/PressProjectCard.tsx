@@ -1,12 +1,12 @@
 /**
  * 作品条目：一行呈现作品名与章节数、字数、最近更新时间，点击进入作品详情。
- * 复用 @/components/ui/item 的条目语义与 press/utils 的元信息口径；条目自带描边，滚动中可清晰分隔。
+ * 复用 @components/ui/item 的条目语义与 press/utils 的元信息口径；条目自带描边，滚动中可清晰分隔。
  * 关键约束：作品名超长时单行截断；条目不再直接打开 README（该动作下沉到详情页页头），
  * 整行可点且不额外挂操作按钮，避免在窄侧栏里挤压点击区域。
  */
 import { ChevronRight } from 'lucide-react'
-import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@/components/ui/item'
-import type { PressProjectSummary } from '@/shared/types/press'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
+import type { PressProjectSummary } from '@shared/types/press'
 import type { JSX } from 'react'
 import { formatProjectMeta } from '../utils'
 

@@ -4,7 +4,7 @@
  * 注册表只引用模块页面，不直接引用 aichat 目录。
  * 关键约束：新增工作流须同时登记此处与 ./routing 的映射表，否则解析结果无法渲染。
  */
-import type { WorkflowContextState, WorkflowId } from '@/shared/types/workflow'
+import type { WorkflowContextState, WorkflowId } from '@shared/types/workflow'
 import type { JSX } from 'react'
 import { WorkflowHome } from '../layout/WorkflowHome'
 import { WorkflowNote } from '../layout/WorkflowNote'

@@ -1,15 +1,15 @@
 /**
  * 卷区块：卷头行承担折叠切换、「在本卷添加章节」与卷级操作（新建卷/重命名/删除），展开后按批渲染该卷章节，
  * 章节行另提供移动与删除入口。
- * 复用 @/components/ui 的 collapsible、dropdown-menu、item 条目与 useProgressiveList 的分批渲染。
+ * 复用 @components/ui 的 collapsible、dropdown-menu、item 条目与 useProgressiveList 的分批渲染。
  * 关键约束：加章与更多操作按钮位于 CollapsibleTrigger 之外，点击不会连带触发折叠；折叠时不挂滚动观察器，
  * 展开后由 isActive 变化重新建立；未分卷组（历史散章）不提供加章与卷级操作入口，避免继续产生根目录散章，
  * 但其章节仍可移动到正式卷——章节级入口不受卷级开关限制；章节菜单的点击须阻断冒泡，避免连带打开章节。
  */
 import { cn } from 'cn'
 import { BookPlus, ChevronRight, Ellipsis, MoveRight, Pencil, Plus, Trash2 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Button } from '@components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -20,9 +20,9 @@ import {
     DropdownMenuSubContent,
     DropdownMenuSubTrigger,
     DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { Item, ItemActions, ItemContent, ItemTitle } from '@/components/ui/item'
-import type { PressVolumeGroup } from '@/shared/types/press'
+} from '@components/ui/dropdown-menu'
+import { Item, ItemActions, ItemContent, ItemTitle } from '@components/ui/item'
+import type { PressVolumeGroup } from '@shared/types/press'
 import type { JSX, MouseEvent } from 'react'
 import { formatWordCount } from '../../utils'
 import { useProgressiveList } from '../hooks/useProgressiveList'
