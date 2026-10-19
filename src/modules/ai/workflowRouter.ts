@@ -2,7 +2,8 @@
  * 工作流路由事实服务：汇聚「活跃编辑器场景」与「用户选定的模块」，供工作流面板按模块渲染对应页面。
  * 复用 IndexService.toRelativePath 与索引库回查判定文档归属，与仪表盘活跃笔记回填同口径。
  * 关键约束：编辑器监听随扩展停用释放；场景变化经去抖后再广播，避免编辑器焦点抖动导致面板反复换页；
- * 模块选定为持久状态（跨面板重建保留），仅在用户改选或清除时变化，未选定时由面板展示初始页。
+ * 模块选定为持久状态（跨面板重建保留），仅在用户改选或清除时变化，未选定时由面板展示初始页；
+ * 焦点离开文本编辑器（打开设置、切到其它视图）不改变场景事实，沿用上一次的 scene / module。
  */
 import * as vscode from 'vscode'
 import type { WorkflowContextState, WorkflowSceneKind } from '../../shared/types/workflow'
@@ -101,12 +102,18 @@ export class WorkflowRouter implements vscode.Disposable {
         )
     }
 
-    /** 组装路由事实：仅认可索引库内的文档，无编辑器或索引外文件视为无场景 */
+    /** 组装路由事实：仅认可索引库内的文档，索引外文件视为无场景 */
     private buildContext(): WorkflowContextState {
         const selectedModule = this.selectedModule
         const editor = vscode.window.activeTextEditor
         if (editor === undefined) {
-            return { scene: 'idle', module: ROOT_MODULE_KEY, selectedModule }
+            // 焦点不在文本编辑器（打开设置页、切到其它面板）不代表场景改变：
+            // 沿用上一次事实，否则面板会被动跳回初始页
+            return {
+                scene: this.lastContext?.scene ?? 'idle',
+                module: this.lastContext?.module ?? ROOT_MODULE_KEY,
+                selectedModule,
+            }
         }
         const relativePath = this.indexService.toRelativePath(editor.document.uri)
         const [known] = listFilesByPaths(this.db, [relativePath])
