@@ -272,7 +272,7 @@ export function AiChatRichInput({
                 aria-label={placeholder}
                 contentEditable={!disabled}
                 suppressContentEditableWarning
-                className="max-h-40 min-h-17 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-5 outline-none"
+                className="no-scrollbar max-h-40 min-h-17 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-5 outline-none"
                 onInput={emitChange}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}

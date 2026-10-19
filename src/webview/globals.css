@@ -187,7 +187,8 @@ body.vscode-high-contrast-light {
 
 /*
  * 滚动条：接管 Chromium 默认样式（message-scroller 模板里的 scrollbar-* 类在本项目并无定义）。
- * 颜色取自 VSCode 滚动条滑块变量，与编辑区、侧栏的滚动条观感一致。
+ * 颜色取自 VSCode 滚动条滑块变量，与编辑区、侧栏的滚动条观感一致；
+ * 滑块色走 --scrollbar-thumb 变量，容器可按需覆盖（如消息区悬停才浮现）。
  */
 ::-webkit-scrollbar {
     width: 10px;
@@ -199,24 +200,60 @@ body.vscode-high-contrast-light {
     background: transparent;
 }
 
+/* Chromium 默认会绘制上下箭头按钮，VSCode 与 CodeBuddy 的滚动条都没有，统一去掉 */
+::-webkit-scrollbar-button {
+    display: none;
+}
+
 ::-webkit-scrollbar-thumb {
-    background-color: var(--vscode-scrollbarSlider-background, rgb(121 121 121 / 40%));
+    background-color: var(--scrollbar-thumb, var(--vscode-scrollbarSlider-background, rgb(121 121 121 / 40%)));
     background-clip: content-box;
     border: 2px solid transparent;
     border-radius: 10px;
+    transition: background-color 120ms ease-out;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--vscode-scrollbarSlider-hoverBackground, rgb(100 100 100 / 70%));
+    background-color: var(--scrollbar-thumb-hover, var(--vscode-scrollbarSlider-hoverBackground, rgb(100 100 100 / 70%)));
 }
 
 ::-webkit-scrollbar-thumb:active {
-    background-color: var(--vscode-scrollbarSlider-activeBackground, rgb(191 191 191 / 50%));
+    background-color: var(--scrollbar-thumb-active, var(--vscode-scrollbarSlider-activeBackground, rgb(191 191 191 / 50%)));
 }
 
 /* 自动滚动过程中隐藏滑块，避免与「跟随最新消息」的动效互相干扰 */
 [data-autoscrolling]::-webkit-scrollbar-thumb {
     background-color: transparent;
+}
+
+/*
+ * 对话消息区：改用标准滚动条属性。
+ * 新版 Chromium（Electron 30+）在 Windows 上走 Fluent 标准滚动条，会整体忽略 ::-webkit-scrollbar 定制，
+ * 只有 scrollbar-width / scrollbar-color 生效；下面两条即主方案，WebKit 伪元素规则仅对旧引擎兜底。
+ */
+[data-slot='message-scroller-viewport'] {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+}
+
+[data-slot='message-scroller-viewport']:hover {
+    scrollbar-color: var(--vscode-scrollbarSlider-background, rgb(121 121 121 / 40%)) transparent;
+}
+
+/* 旧引擎兜底：不支持 scrollbar-color 的 Chromium 仍走 ::-webkit-scrollbar 定制，同样静默到悬停才显示 */
+[data-slot='message-scroller']::-webkit-scrollbar-thumb,
+[data-slot='message-scroller-viewport']::-webkit-scrollbar-thumb {
+    background-color: transparent;
+}
+
+[data-slot='message-scroller']:hover:not([data-autoscrolling])::-webkit-scrollbar-thumb,
+[data-slot='message-scroller-viewport']:hover:not([data-autoscrolling])::-webkit-scrollbar-thumb {
+    background-color: var(--vscode-scrollbarSlider-background, rgb(121 121 121 / 40%));
+}
+
+[data-slot='message-scroller']:hover:not([data-autoscrolling])::-webkit-scrollbar-thumb:hover,
+[data-slot='message-scroller-viewport']:hover:not([data-autoscrolling])::-webkit-scrollbar-thumb:hover {
+    background-color: var(--vscode-scrollbarSlider-hoverBackground, rgb(100 100 100 / 70%));
 }
 
 /* 选中文本：跟随编辑器选中色，复制粘贴时与 VSCode 观感一致 */
