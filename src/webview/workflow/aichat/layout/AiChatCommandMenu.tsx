@@ -4,6 +4,7 @@
  * 关键约束：生成中整组禁用；本组件只上抛命令对象，不持有输入内容与写回策略。
  */
 import { Command, PenLine, Sparkles, Type, Wand2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -12,7 +13,6 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { InputGroupButton } from '@/components/ui/input-group'
 import type { AiCommand, AiCommandId } from '../constants'
 import type { LucideIcon } from 'lucide-react'
 import type { JSX } from 'react'
@@ -35,16 +35,16 @@ export function AiChatCommandMenu({ disabled, onSelect }: AiChatCommandMenuProps
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <InputGroupButton
+                <Button
                     size="icon-sm"
                     variant="ghost"
-                    className="rounded-full"
+                    className="rounded-full text-muted-foreground"
                     title="写作命令"
                     aria-label="写作命令"
                     disabled={disabled}
                 >
                     <Command />
-                </InputGroupButton>
+                </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-48">
                 <DropdownMenuLabel>写作命令</DropdownMenuLabel>

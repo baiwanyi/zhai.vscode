@@ -1,10 +1,10 @@
 /**
  * AI 对话增强按钮：把输入内容补齐为目标、要求与输出格式的结构化提示词，再次点击还原。
- * 复用 @/components/ui 的 InputGroupButton，状态与文案全部由调用方注入。
+ * 复用 @/components/ui 的 Button，状态与文案全部由调用方注入。
  * 关键约束：仅本地规则化处理，不发起网络请求；还原能力依赖调用方保存的原文。
  */
 import { Sparkles, Undo2 } from 'lucide-react'
-import { InputGroupButton } from '@/components/ui/input-group'
+import { Button } from '@/components/ui/button'
 import type { JSX } from 'react'
 
 interface AiChatEnhanceButtonProps {
@@ -22,16 +22,16 @@ export function AiChatEnhanceButton({
     onUndo,
 }: AiChatEnhanceButtonProps): JSX.Element {
     return (
-        <InputGroupButton
+        <Button
             size="icon-sm"
             variant="ghost"
-            className="rounded-full"
+            className="rounded-lg bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground disabled:opacity-100"
             title={isEnhanced ? '还原提示词' : '增强提示词'}
             aria-label={isEnhanced ? '还原提示词' : '增强提示词'}
             disabled={disabled}
             onClick={isEnhanced ? onUndo : onEnhance}
         >
             {isEnhanced ? <Undo2 /> : <Sparkles />}
-        </InputGroupButton>
+        </Button>
     )
 }

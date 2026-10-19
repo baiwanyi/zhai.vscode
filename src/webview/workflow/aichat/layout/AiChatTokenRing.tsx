@@ -1,9 +1,9 @@
 /**
  * AI 对话 Token 圆环：以环形进度展示当日已用与预算，点开浮层查看明细。
- * 复用 @/components/ui 的 Popover 与 ../utils 的 token 折算，颜色随占用比例分三档。
+ * 复用 @/components/ui 的 Button、Popover 与 ../utils 的 token 折算，颜色随占用比例分三档。
  * 关键约束：预算未配置时展示灰环且不可点；环内数值全部来自宿主下发的运行时信息。
  */
-import { InputGroupButton } from '@/components/ui/input-group'
+import { Button } from '@/components/ui/button'
 import {
     Popover,
     PopoverContent,
@@ -37,10 +37,10 @@ export function AiChatTokenRing({ used, budget }: AiChatTokenRingProps): JSX.Ele
     return (
         <Popover>
             <PopoverTrigger asChild>
-                <InputGroupButton
+                <Button
                     size="icon-sm"
                     variant="ghost"
-                    className="rounded-full"
+                    className="rounded-full text-muted-foreground"
                     title={label}
                     aria-label={label}
                     disabled={!isAvailable}
@@ -66,7 +66,7 @@ export function AiChatTokenRing({ used, budget }: AiChatTokenRingProps): JSX.Ele
                             className={isAvailable ? tone : 'stroke-muted-foreground/30'}
                         />
                     </svg>
-                </InputGroupButton>
+                </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-56">
                 <PopoverHeader>

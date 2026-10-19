@@ -23,6 +23,8 @@
     /* 额外语义令牌：颜色与阴影同样来自 VSCode 变量，值定义在文件末尾的桥接段 */
     --color-placeholder: var(--placeholder);
     --color-input-background: var(--input-background);
+    --color-composer: var(--composer-background);
+    --color-composer-input: var(--composer-input-background);
     --color-primary-hover: var(--primary-hover);
     --color-code-background: var(--code-background);
     --color-quote-background: var(--quote-background);
@@ -124,6 +126,9 @@
     --border: var(--vscode-panel-border, var(--vscode-widget-border, rgb(128 128 128 / 35%)));
     --input: var(--vscode-input-border, var(--vscode-panel-border, rgb(128 128 128 / 35%)));
     --input-background: var(--vscode-input-background, #3c3c3c);
+    /* 输入卡片两层底色：容器 #2c2c2d，内嵌输入区提亮一档，保证两层可辨识 */
+    --composer-background: #2c2c2d;
+    --composer-input-background: #3c3c3c;
     --placeholder: var(--vscode-input-placeholderForeground, var(--vscode-descriptionForeground, #9d9d9d));
     --ring: var(--vscode-focusBorder, #007fd4);
     /* ── Markdown 片段：与编辑器内的代码块 / 引用块 / 链接观感一致 ── */
@@ -164,6 +169,12 @@
     --activity-bar-hover: var(--vscode-list-hoverBackground, #2a2d2e);
     /* VSCode 无圆角变量，保持 shadcn 默认 */
     --radius: 0.625rem;
+}
+
+/* 亮色主题：容器取编辑器浮层浅色、输入区取输入框底色，保持与暗色一致的上下两层层级 */
+body.vscode-light {
+    --composer-background: var(--vscode-editorWidget-background, #f3f3f3);
+    --composer-input-background: var(--vscode-input-background, #ffffff);
 }
 
 /* 高对比主题：VSCode 规范要求实线边界，否则组件轮廓会「看不见」 */

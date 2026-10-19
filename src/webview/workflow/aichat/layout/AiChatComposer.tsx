@@ -16,6 +16,8 @@ interface AiChatComposerProps {
     input: string
     setInput: (input: string) => void
     hasApiKey: boolean
+    /** 运行时信息是否已加载：用于输入框占位文案与禁用态的稳定展示 */
+    isRuntimeReady: boolean
     isGenerating: boolean
     phase: Phase
     mode: AiConversationMode
@@ -40,6 +42,7 @@ export function AiChatComposer({
     input,
     setInput,
     hasApiKey,
+    isRuntimeReady,
     isGenerating,
     phase,
     mode,
@@ -58,7 +61,7 @@ export function AiChatComposer({
     onModeChange,
 }: AiChatComposerProps): JSX.Element {
     return (
-        <footer className="flex flex-col gap-2 p-3">
+        <footer className="flex flex-col gap-2 px-3">
             {contexts.length > 0 ? (
                 <AiChatContextList contexts={contexts} onRemove={onRemoveContext} onClear={onClearContexts} />
             ) : null}
@@ -66,6 +69,7 @@ export function AiChatComposer({
                 input={input}
                 setInput={setInput}
                 hasApiKey={hasApiKey}
+                isRuntimeReady={isRuntimeReady}
                 isGenerating={isGenerating}
                 phase={phase}
                 mode={mode}

@@ -190,6 +190,7 @@ export function AiChat(): JSX.Element {
                 input={input}
                 setInput={setInput}
                 hasApiKey={hasApiKey}
+                isRuntimeReady={runtime !== null}
                 isGenerating={isGenerating}
                 phase={phase}
                 mode={mode}

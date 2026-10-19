@@ -4,6 +4,7 @@
  * 关键约束：生成中禁用切换；本组件只上抛目标模式，模式持久化由会话 hook 承担。
  */
 import { Check, ChevronDown, MessageSquare, PenLine } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -12,7 +13,6 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { InputGroupButton } from '@/components/ui/input-group'
 import type { AiConversationMode } from '@/shared/types/aiChat'
 import type { LucideIcon } from 'lucide-react'
 import type { JSX } from 'react'
@@ -43,10 +43,10 @@ export function AiChatModeSwitch({ mode, disabled, onChange }: AiChatModeSwitchP
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <InputGroupButton
+                <Button
                     size="sm"
-                    variant="ghost"
-                    className="gap-1 rounded-full text-xs text-muted-foreground"
+                    variant="secondary"
+                    className="gap-1 rounded-lg px-2 text-xs font-medium"
                     title="切换对话 / 写作模式"
                     aria-label={`当前${MODE_LABELS[mode]}模式，点击切换`}
                     disabled={disabled}
@@ -54,7 +54,7 @@ export function AiChatModeSwitch({ mode, disabled, onChange }: AiChatModeSwitchP
                     <ModeIcon />
                     {MODE_LABELS[mode]}
                     <ChevronDown className="size-3" />
-                </InputGroupButton>
+                </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-44">
                 <DropdownMenuLabel>对话模式</DropdownMenuLabel>

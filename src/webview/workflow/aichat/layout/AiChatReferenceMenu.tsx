@@ -5,6 +5,7 @@
  */
 import { BookOpen } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -13,7 +14,6 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import { InputGroupButton } from '@/components/ui/input-group'
 import type { AiReferenceSource } from '../constants'
 import type { JSX } from 'react'
 import { AI_REFERENCE_SOURCES } from '../constants'
@@ -27,16 +27,16 @@ export function AiChatReferenceMenu({ disabled, onSelect }: AiChatReferenceMenuP
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <InputGroupButton
+                <Button
                     size="icon-sm"
                     variant="ghost"
-                    className="rounded-full"
+                    className="rounded-full text-muted-foreground"
                     title="参考资料"
                     aria-label="参考资料"
                     disabled={disabled}
                 >
                     <BookOpen />
-                </InputGroupButton>
+                </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
                 <DropdownMenuLabel>参考资料</DropdownMenuLabel>
