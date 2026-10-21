@@ -82,7 +82,6 @@ export function CharacterList({
                         size="sm"
                         role="button"
                         tabIndex={0}
-                        title={`${character.name} · ${roleMeta.label}`}
                         className="cursor-pointer gap-1.5 text-left transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                         onClick={() => onSelect(character.id)}
                         onKeyDown={(event) => {

@@ -1,5 +1,5 @@
 /**
- * 新增人物弹窗：只收拢建卡必需的四项输入，其余字段留到人物卡里继续补。
+ * 新增人物弹窗：只收拢建卡必需的三项输入（姓名、定位、身份），其余字段留到人物卡里继续补。
  * 复用约定：弹层复用 ui/dialog（含 DialogTitle / DialogDescription 的无障碍结构），字段布局复用 ui/field，
  * 定位选择复用 ui/toggle-group，标签文案与顺序取自 constants 的 CHARACTER_ROLE_META。
  * 关键约束：姓名为空时禁用创建按钮、不弹错误提示；组件不持有角色数据副本，提交只回抛初始值；
@@ -32,7 +32,6 @@ interface CharacterCreateDialogProps {
 export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: CharacterCreateDialogProps): JSX.Element {
     const [name, setName] = useState('')
     const [identity, setIdentity] = useState('')
-    const [alias, setAlias] = useState('')
     // 定位默认配角：多数新增是临时出场人物，主角由作者主动改选
     const [role, setRole] = useState<CharacterRole>('supporting')
 
@@ -49,7 +48,7 @@ export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: Charac
         if (!canSubmit) {
             return
         }
-        onCreate({ name: name.trim(), identity: identity.trim(), alias: alias.trim(), role })
+        onCreate({ name: name.trim(), identity: identity.trim(), role })
         onOpenChange(false)
     }
 
@@ -94,16 +93,6 @@ export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: Charac
                             placeholder="如：落魄剑客、商会掌柜"
                             className="h-7 text-xs"
                             onChange={(event) => setIdentity(event.target.value)}
-                        />
-                    </Field>
-                    <Field>
-                        <FieldLabel htmlFor="character-create-alias">别名 / 称号</FieldLabel>
-                        <Input
-                            id="character-create-alias"
-                            value={alias}
-                            placeholder="如：剑痴、三少爷"
-                            className="h-7 text-xs"
-                            onChange={(event) => setAlias(event.target.value)}
                         />
                     </Field>
                 </div>

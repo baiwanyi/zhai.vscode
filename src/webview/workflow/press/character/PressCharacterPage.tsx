@@ -46,7 +46,7 @@ export function PressCharacterPage({
         [setting.era, setting.genres, setting.tone],
     )
 
-    // 过滤只覆盖列表可见性：检索匹配姓名、别名与身份，不搜索人物卡正文，避免常用字命中整份设定
+    // 过滤只覆盖列表可见性：检索匹配姓名、昵称与身份，不搜索人物卡正文，避免常用字命中整份设定
     const visibleCharacters = useMemo(() => {
         const keyword = query.trim().toLowerCase()
         return characters.filter((character) => {
@@ -93,7 +93,7 @@ export function PressCharacterPage({
                             共 {characters.length} 人 · 欲望与弱点决定冲突，大纲排布时会引用
                         </p>
                     </div>
-                    <Button size="sm" className="shrink-0" onClick={() => setIsCreateOpen(true)}>
+                    <Button className="shrink-0" onClick={() => setIsCreateOpen(true)}>
                         <Plus data-icon="inline-start" />
                         新增
                     </Button>
@@ -124,7 +124,7 @@ export function PressCharacterPage({
                         <Input
                             value={query}
                             aria-label="搜索人物"
-                            placeholder="搜索姓名、别名或身份"
+                            placeholder="搜索姓名、昵称或身份"
                             className="h-7 pl-7 text-xs"
                             onChange={(event) => setQuery(event.target.value)}
                         />

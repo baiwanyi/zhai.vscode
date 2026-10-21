@@ -52,16 +52,18 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
     return (
         <div className="flex h-full min-h-0 flex-col">
             <Tabs defaultValue="basic" className="min-h-0 flex-1 gap-0">
-                <div className="shrink-0 overflow-x-auto">
-                    <TabsList variant="line" className="w-max">
+                {/* 标签均分整行宽度：窄面板下不换行、不横向滚动，下划线也不会被滚动容器裁掉 */}
+                <div className="shrink-0">
+                    <TabsList variant="line" className="w-full">
                         <TabsTrigger value="basic">基础</TabsTrigger>
                         <TabsTrigger value="appearance">外貌</TabsTrigger>
-                        <TabsTrigger value="motive">性格与动机</TabsTrigger>
-                        <TabsTrigger value="ability">背景与能力</TabsTrigger>
+                        <TabsTrigger value="motive">动机</TabsTrigger>
+                        <TabsTrigger value="ability">背景</TabsTrigger>
                         <TabsTrigger value="relation">关系</TabsTrigger>
                     </TabsList>
                 </div>
-                <div className="min-h-0 flex-1 overflow-y-auto py-2">
+                {/* 滚动槽常驻：长短标签页切换时内容宽度不跳，避免滚动条反复挤占空间 */}
+                <div className="min-h-0 flex-1 overflow-y-auto py-2 [scrollbar-gutter:stable]">
                     <TabsContent value="basic" className="flex flex-col gap-3">
                         <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
                             <Field>
@@ -74,7 +76,7 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
                                 />
                             </Field>
                             <Field>
-                                <FieldLabel htmlFor="character-alias">别名 / 称号</FieldLabel>
+                                <FieldLabel htmlFor="character-alias">昵称</FieldLabel>
                                 <Input
                                     id="character-alias"
                                     value={character.alias}
