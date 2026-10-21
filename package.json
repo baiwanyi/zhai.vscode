@@ -231,6 +231,11 @@
                     "default": "768x1024",
                     "description": "角色设定图尺寸，格式为 宽x高，需在服务商支持范围内（推荐竖版 768x1024）"
                 },
+                "zhai.image.timeoutSeconds": {
+                    "type": "number",
+                    "default": 300,
+                    "description": "角色设定图单次生成超时（秒）。图像模型出图常需 1~3 分钟，超时可调高"
+                },
                 "zhai.image.dailyLimit": {
                     "type": "number",
                     "default": 20,

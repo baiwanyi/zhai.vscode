@@ -16,6 +16,7 @@ import type { PortraitGenerateRequest, PortraitGenerateResult } from '../../shar
 import type { SecretsService } from '../common/secrets'
 import type Database from 'better-sqlite3'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
+import { logger } from '../common/logger'
 import { buildStorageUri, toSafeSegments } from '../common/storagePath'
 
 /** 角色设定图的二级目录名，下划线前缀避免与作品名冲突，且不参与索引 */
@@ -65,12 +66,15 @@ export class PortraitService {
         this.assertQuota()
         const controller = new AbortController()
         this.activeRequest = controller
+        const startedAt = Date.now()
+        logger.info(`角色卡生成开始：${request.name}（${model} / ${config.imageSize}）`)
         try {
             const result = await generatePortraitWithAi({
                 baseUrl,
                 apiKey,
                 model,
                 size: config.imageSize,
+                timeoutMs: Math.max(config.imageTimeoutSeconds, 30) * 1000,
                 request,
                 signal: controller.signal,
             })
@@ -81,6 +85,7 @@ export class PortraitService {
             const target = buildStorageUri(root, segments)
             await vscode.workspace.fs.writeFile(target, result.bytes)
             consumeToday(this.db, QUOTA_KEYS)
+            logger.info(`角色卡生成完成：耗时 ${Date.now() - startedAt}ms，${result.bytes.byteLength} 字节`)
             return {
                 portrait: {
                     id,
@@ -90,9 +95,8 @@ export class PortraitService {
                 },
             }
         } catch (error) {
-            if (controller.signal.aborted) {
-                throw new Error('角色卡生成已取消或超时，请重试', { cause: error })
-            }
+            // 取消与超时的文案由执行器给出，此处只补日志便于排查服务商耗时
+            logger.error(`角色卡生成失败：耗时 ${Date.now() - startedAt}ms`, error)
             throw error
         } finally {
             this.activeRequest = null

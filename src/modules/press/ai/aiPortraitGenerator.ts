@@ -1,15 +1,14 @@
 /**
  * 角色设定图执行器：按 OpenAI 兼容的 /images/generations 协议请求一张图片并取回字节。
- * 复用约定：端点、模型、尺寸全部来自配置，本函数不读配置也不落盘；提示词由 ./portraitPrompt 提供。
- * 关键约束：接口返回视为不可信——data 数组、b64 与 url 逐字段校验；url 回源下载同样受同一超时约束；
- * 不强制 response_format，b64 与 url 两种返回都要能处理；单张体积设上限，避免异常大图写盘。
+ * 复用约定：端点、模型、尺寸、超时全部来自配置，本函数不读配置也不落盘；提示词由 ./portraitPrompt 提供。
+ * 关键约束：接口返回视为不可信——data / results 两种列表、b64 与 url 两种载荷都要支持；
+ * url 回源下载同样受同一超时约束；超时与用户取消给出不同文案，不把两者混成「已取消」；
+ * 不强制 response_format，也不假设 n 被服务端采纳；单张体积设上限，避免异常大图写盘。
  */
 import { Buffer } from 'node:buffer'
 import { buildPortraitPrompt } from './portraitPrompt'
 import type { PortraitGenerateRequest } from '../../../shared/types/press'
 
-/** 图像生成整体超时：出图通常 10~40s，这里留足余量 */
-const IMAGE_REQUEST_TIMEOUT_MS = 120_000
 /** 单张图片体积上限 */
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024
 /** 响应 MIME 到落盘扩展名的映射 */
@@ -25,6 +24,8 @@ export interface AiPortraitOptions {
     apiKey: string
     model: string
     size: string
+    /** 单次生成整体超时（毫秒），由配置 zhai.image.timeoutSeconds 决定 */
+    timeoutMs: number
     request: PortraitGenerateRequest
     /** 外部取消信号（pressAi/aiPortrait/abort） */
     signal?: AbortSignal
@@ -38,7 +39,11 @@ export interface AiPortraitResult {
 /** 生成一张角色设定图，返回图片字节与扩展名 */
 export async function generatePortraitWithAi(options: AiPortraitOptions): Promise<AiPortraitResult> {
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), IMAGE_REQUEST_TIMEOUT_MS)
+    let isTimedOut = false
+    const timer = setTimeout(() => {
+        isTimedOut = true
+        controller.abort()
+    }, options.timeoutMs)
     const forwardAbort = (): void => controller.abort()
     if (options.signal) {
         if (options.signal.aborted) {
@@ -83,22 +88,49 @@ export async function generatePortraitWithAi(options: AiPortraitOptions): Promis
         assertImageSize(bytes)
         const mime = imageResponse.headers.get('content-type')?.split(';')[0]?.trim() ?? ''
         return { bytes, extension: EXTENSION_BY_MIME[mime] ?? 'png' }
+    } catch (error) {
+        if (isTimedOut) {
+            const seconds = Math.round(options.timeoutMs / 1000)
+            throw new Error(`图像服务响应超时（${seconds} 秒），可在设置中调高 zhai.image.timeoutSeconds 后重试`, {
+                cause: error,
+            })
+        }
+        if (controller.signal.aborted) {
+            throw new Error('角色卡生成已取消', { cause: error })
+        }
+        // Node 自带的连接 / 响应超时（undici）可能与配置超时接近，统一按超时提示
+        const code = readErrorCode(error)
+        if (
+            code === 'UND_ERR_BODY_TIMEOUT' ||
+            code === 'UND_ERR_HEADERS_TIMEOUT' ||
+            code === 'UND_ERR_CONNECT_TIMEOUT'
+        ) {
+            throw new Error('图像服务长时间无响应（连接或响应超时），可稍后重试', { cause: error })
+        }
+        // 我方主动抛出的中文错误直接透传，其余（网络层）补一层可读前缀
+        if (error instanceof Error && error.message.startsWith('图像服务')) {
+            throw error
+        }
+        const detail = error instanceof Error ? error.message : String(error)
+        throw new Error(`图像服务请求失败：${detail}`, { cause: error })
     } finally {
         clearTimeout(timer)
         options.signal?.removeEventListener('abort', forwardAbort)
     }
 }
 
-/** 取响应里的第一张图：b64 与 url 至少有一个可用 */
+/** 取响应里的第一张图：兼容 data[] 与 results[]，b64 与 url 至少有一个可用 */
 function readFirstImage(payload: unknown): { base64: string | null; url: string | null } {
     if (typeof payload !== 'object' || payload === null) {
         throw new Error('图像服务返回格式不支持')
     }
-    const data = (payload as { data?: unknown }).data
-    if (!Array.isArray(data) || data.length === 0) {
-        throw new Error('图像服务未返回图片')
+    const record = payload as { data?: unknown; results?: unknown; status?: unknown }
+    const list = Array.isArray(record.data) ? record.data : Array.isArray(record.results) ? record.results : null
+    if (list === null || list.length === 0) {
+        const status = typeof record.status === 'string' ? record.status : ''
+        throw new Error(status.length > 0 ? `图像任务状态为 ${status}，未返回图片` : '图像服务未返回图片')
     }
-    const first: unknown = data[0]
+    const first: unknown = list[0]
     if (typeof first !== 'object' || first === null) {
         throw new Error('图像服务返回格式不支持')
     }
@@ -108,6 +140,19 @@ function readFirstImage(payload: unknown): { base64: string | null; url: string 
         base64: typeof base64 === 'string' && base64.length > 0 ? base64 : null,
         url: typeof url === 'string' && /^https?:\/\//.test(url) ? url : null,
     }
+}
+
+/** 读取 fetch 底层错误码（undici 把原因放在 cause 上） */
+function readErrorCode(error: unknown): string {
+    if (typeof error !== 'object' || error === null) {
+        return ''
+    }
+    const cause: unknown = (error as { cause?: unknown }).cause
+    if (typeof cause !== 'object' || cause === null) {
+        return ''
+    }
+    const code = (cause as { code?: unknown }).code
+    return typeof code === 'string' ? code : ''
 }
 
 /** 校验图片体积 */

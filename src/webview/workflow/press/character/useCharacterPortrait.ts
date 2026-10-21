@@ -1,7 +1,7 @@
 /**
  * 角色设定图：向宿主提交人物卡与作品氛围快照，取回落盘后的图片信息，并提供删除能力。
- * 复用约定：请求经 webview 公共 bridge；出图耗时 10~40s，前端超时 130s 略大于宿主 120s；
- * 结果里的 url 已由宿主用 asWebviewUri 转换，前端直接放进 img；作品氛围复用外貌生成的 AppearanceContext。
+ * 复用约定：请求经 webview 公共 bridge；出图常需 1~3 分钟，超时由宿主按 zhai.image.timeoutSeconds 裁决，
+ * 前端只做 15 分钟兜底并在失败时主动取消宿主请求；结果里的 url 已由宿主用 asWebviewUri 转换，前端直接放进 img。
  * 关键约束：生成中不接受重复提交；取消走 pressAi/aiPortrait/abort，属尽力而为；
  * 图片文件立即落盘，但人物卡仍在内存，未点保存的「采用」只存在于编辑弹窗草稿中。
  */
@@ -12,8 +12,8 @@ import type { AppearanceContext } from './useCharacterAppearance'
 import { request } from '../../../bridge'
 import { CHARACTER_ROLE_META } from '../constants'
 
-/** 图像通道前端超时：略大于宿主 120s */
-const AI_REQUEST_TIMEOUT_MS = 130_000
+/** 前端只做兜底：真正的超时由宿主按 zhai.image.timeoutSeconds 裁决，这里放宽到 15 分钟 */
+const AI_REQUEST_TIMEOUT_MS = 900_000
 
 export interface CharacterPortraitState {
     isGenerating: boolean
@@ -29,6 +29,14 @@ export function useCharacterPortrait(): CharacterPortraitState {
     const [isGenerating, setIsGenerating] = useState(false)
     const [error, setError] = useState<string | null>(null)
 
+    const abort = useCallback(async (): Promise<void> => {
+        try {
+            await request('pressAi/aiPortrait/abort')
+        } catch {
+            // 取消属于尽力而为：宿主无进行中请求或已结束时忽略错误
+        }
+    }, [])
+
     const generate = useCallback(
         async (character: CharacterCard, context: AppearanceContext): Promise<CharacterPortrait | null> => {
             setIsGenerating(true)
@@ -41,13 +49,15 @@ export function useCharacterPortrait(): CharacterPortraitState {
                 )
                 return result.portrait
             } catch (cause) {
+                // 前端兜底超时后宿主可能仍在生成，主动取消以释放并发锁
+                void abort()
                 setError(cause instanceof Error ? cause.message : String(cause))
                 return null
             } finally {
                 setIsGenerating(false)
             }
         },
-        [],
+        [abort],
     )
 
     const remove = useCallback(async (path: string): Promise<boolean> => {
@@ -57,14 +67,6 @@ export function useCharacterPortrait(): CharacterPortraitState {
         } catch (cause) {
             setError(cause instanceof Error ? cause.message : String(cause))
             return false
-        }
-    }, [])
-
-    const abort = useCallback(async (): Promise<void> => {
-        try {
-            await request('pressAi/aiPortrait/abort')
-        } catch {
-            // 取消属于尽力而为：宿主无进行中请求或已结束时忽略错误
         }
     }, [])
 

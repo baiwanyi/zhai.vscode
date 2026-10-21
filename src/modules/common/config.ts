@@ -37,6 +37,8 @@ export interface ZhaiConfig {
     imageModel: string
     /** 角色设定图尺寸，形如 768x1024 */
     imageSize: string
+    /** 角色设定图单次生成超时（秒）：图像模型出图常需 1~3 分钟 */
+    imageTimeoutSeconds: number
     /** 角色设定图每日生成次数上限 */
     imageDailyLimit: number
     telemetryEnabled: boolean
@@ -63,6 +65,7 @@ export function getZhaiConfig(): ZhaiConfig {
         imageBaseUrl: cfg.get<string>('image.baseUrl', ''),
         imageModel: cfg.get<string>('image.model', ''),
         imageSize: cfg.get<string>('image.size', '768x1024'),
+        imageTimeoutSeconds: cfg.get<number>('image.timeoutSeconds', 300),
         imageDailyLimit: cfg.get<number>('image.dailyLimit', 20),
         telemetryEnabled: cfg.get<boolean>('telemetry.enabled', false),
     }

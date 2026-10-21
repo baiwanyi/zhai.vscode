@@ -84,8 +84,10 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
             <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                     <p className="text-xs font-medium">角色设定图</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                        每次生成一张，采用后存入本地目录，可指定一张作为封面
+                    <p className="text-xs text-muted-foreground">
+                        {isGenerating
+                            ? '生成中，出图通常需要 1~3 分钟，请保持弹窗打开'
+                            : '每次生成一张，采用后存入本地目录，可指定一张作为封面'}
                     </p>
                 </div>
                 {isGenerating ? (
