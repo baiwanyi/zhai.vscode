@@ -1,10 +1,12 @@
 /**
  * 大纲模块视图模型：描述作品设定、人物卡、卷纲与章纲在界面层的形状。
- * 复用约定：仅声明类型，不依赖宿主协议；字段语义与 press 模块的 Markdown 约定一一对应
- * （作品设定 → README.md / 设定.md，人物卡 → 角色设定.md，卷纲与章纲 → 大纲.md）。
+ * 复用约定：仅声明类型，不依赖宿主服务；字段语义与 press 模块的 Markdown 约定一一对应
+ * （作品设定 → README.md / 设定.md，人物卡 → 角色设定.md，卷纲与章纲 → 大纲.md）；
+ * 角色设定图直接复用 shared/types/press 的契约，避免前后端各写一份导致字段分叉。
  * 关键约束：章纲是「计划」，章节文件的摘要才是「事实」，两者不得合并为同一字段，
  * 否则大纲修订后无法区分「打算写」与「已经写」；状态取值须与 constants 中的元数据表保持同步。
  */
+import type { CharacterPortrait } from '@shared/types/press'
 
 /** 章纲状态：待写、在写、已完成、大纲已变更需复核 */
 export type PlanStatus = 'planned' | 'drafting' | 'done' | 'stale'
@@ -75,6 +77,10 @@ export interface CharacterCard {
     ability: string
     arc: string
     relation: string
+    /** 角色设定图：宿主生成并落盘的图片，path 为相对存储根口径，url 仅本次会话有效 */
+    portraits: CharacterPortrait[]
+    /** 角色封面：指向 portraits 中的一项，null 表示未设置 */
+    coverPortraitId: string | null
 }
 
 /** 新建人物卡的初始值：不含 id，id 一律由 utils.createCharacterCard 生成，避免调用方伪造主键 */

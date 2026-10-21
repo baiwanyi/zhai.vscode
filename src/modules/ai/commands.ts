@@ -63,6 +63,36 @@ export function registerAiCommands(
         service.notifyRuntimeChanged()
         void vscode.window.showInformationMessage('宅写作：已清除 DeepSeek API Key')
     })
+
+    register('zhai.image.setApiKey', async () => {
+        const value = await vscode.window.showInputBox({
+            title: '图像服务 API Key',
+            prompt: '用于生成角色设定图，与 DeepSeek 密钥相互独立；仅保存在系统密钥库',
+            placeHolder: 'sk-...',
+            password: true,
+            ignoreFocusOut: true,
+        })
+        if (typeof value !== 'string' || value.trim().length === 0) {
+            return
+        }
+        await secrets.set('imageApiKey', value.trim())
+        logger.info('图像服务 API Key 已更新')
+        void vscode.window.showInformationMessage('宅写作：图像服务 API Key 已保存')
+    })
+
+    register('zhai.image.clearApiKey', async () => {
+        const picked = await vscode.window.showWarningMessage(
+            '确认清除已保存的图像服务 API Key？清除后角色卡生成将不可用。',
+            { modal: true },
+            '清除',
+        )
+        if (picked !== '清除') {
+            return
+        }
+        await secrets.remove('imageApiKey')
+        logger.info('图像服务 API Key 已清除')
+        void vscode.window.showInformationMessage('宅写作：已清除图像服务 API Key')
+    })
 }
 
 /**

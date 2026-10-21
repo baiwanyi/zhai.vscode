@@ -85,6 +85,8 @@ export function createCharacterCard(seed: CharacterSeed = {}): CharacterCard {
         ability: '',
         arc: '',
         relation: '',
+        portraits: [],
+        coverPortraitId: null,
         ...seed,
         id: createId('char'),
     }

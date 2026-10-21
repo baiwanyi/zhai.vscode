@@ -31,6 +31,14 @@ export interface ZhaiConfig {
     namingAiDailyLimit: number
     /** 写作管理 AI 生成每日次数上限（人物外貌等一次性生成） */
     pressAiDailyLimit: number
+    /** 图像服务端点（OpenAI 兼容的 /images/generations 基址，空表示未配置） */
+    imageBaseUrl: string
+    /** 图像模型名，如 gpt-image-1 / Kwai-Kolors/Kolors */
+    imageModel: string
+    /** 角色设定图尺寸，形如 768x1024 */
+    imageSize: string
+    /** 角色设定图每日生成次数上限 */
+    imageDailyLimit: number
     telemetryEnabled: boolean
 }
 
@@ -52,6 +60,10 @@ export function getZhaiConfig(): ZhaiConfig {
         aiAutoFocusOnContext: cfg.get<boolean>('ai.autoFocusOnContext', true),
         namingAiDailyLimit: cfg.get<number>('naming.aiDailyLimit', 20),
         pressAiDailyLimit: cfg.get<number>('press.aiDailyLimit', 20),
+        imageBaseUrl: cfg.get<string>('image.baseUrl', ''),
+        imageModel: cfg.get<string>('image.model', ''),
+        imageSize: cfg.get<string>('image.size', '768x1024'),
+        imageDailyLimit: cfg.get<number>('image.dailyLimit', 20),
         telemetryEnabled: cfg.get<boolean>('telemetry.enabled', false),
     }
 }

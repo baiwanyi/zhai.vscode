@@ -1,15 +1,15 @@
 /**
  * 人物卡片列表：以单列卡片展示人物卡，承担人物页的主体浏览与选择入口。
- * 复用约定：卡片复用 ui/card（标题与描述按 CardHeader/CardContent 组合），定位徽标取 CHARACTER_ROLE_META 的语义变体，
- * 空态复用 ui/empty；筛选与搜索由页面持有，本组件只接收已过滤的列表，不重复做过滤。
+ * 复用约定：卡片复用 ui/card，定位徽标取 CHARACTER_ROLE_META 的语义变体，空态复用 ui/empty；
+ * 封面取人物卡的 coverPortraitId，未设置时显示占位图标；筛选与搜索由页面持有，本组件只接收已过滤的列表。
  * 关键约束：卡片是可聚焦按钮而非占位容器，键盘可逐项进入；排序固定按 CHARACTER_ROLE_ORDER，
- * 不随点击顺序变化，避免切换筛选后卡片位置跳动；卡片只展示摘要，字段编辑一律在编辑弹窗内完成。
+ * 不随点击顺序变化，避免切换筛选后卡片位置跳动；卡片只展示封面与摘要，字段编辑一律在编辑弹窗内完成。
  */
 import { Plus, UserRound } from 'lucide-react'
 import { useMemo } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
+import { Card } from '@components/ui/card'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import type { CharacterCard } from '../types'
 import type { JSX } from 'react'
@@ -76,13 +76,14 @@ export function CharacterList({
             {sortedCharacters.map((character) => {
                 const roleMeta = CHARACTER_ROLE_META[character.role]
                 const summary = character.desire.length > 0 ? character.desire : '欲望未填写'
+                const cover = character.portraits.find((item) => item.id === character.coverPortraitId)
                 return (
                     <Card
                         key={character.id}
                         size="sm"
                         role="button"
                         tabIndex={0}
-                        className="cursor-pointer gap-1.5 text-left transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                        className="cursor-pointer flex-row items-center gap-2.5 p-2 text-left transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                         onClick={() => onSelect(character.id)}
                         onKeyDown={(event) => {
                             if (event.key !== 'Enter' && event.key !== ' ') {
@@ -92,20 +93,31 @@ export function CharacterList({
                             onSelect(character.id)
                         }}
                     >
-                        <CardHeader className="gap-1">
+                        <div className="aspect-3/4 w-12 shrink-0 overflow-hidden rounded-md bg-muted">
+                            {cover !== undefined ? (
+                                <img
+                                    src={cover.url}
+                                    alt={`${character.name} 的角色封面`}
+                                    className="size-full object-cover"
+                                />
+                            ) : (
+                                <div className="flex size-full items-center justify-center">
+                                    <UserRound className="size-4 text-muted-foreground" aria-hidden="true" />
+                                </div>
+                            )}
+                        </div>
+                        <div className="flex min-w-0 flex-1 flex-col gap-1">
                             <div className="flex min-w-0 items-center gap-1.5">
-                                <CardTitle className="min-w-0 truncate text-sm">{character.name}</CardTitle>
+                                <span className="min-w-0 truncate text-sm font-medium">{character.name}</span>
                                 <Badge variant={roleMeta.tone} className="shrink-0">
                                     {roleMeta.label}
                                 </Badge>
                             </div>
-                            <CardDescription className="truncate text-xs">
+                            <p className="truncate text-xs text-muted-foreground">
                                 {character.identity.length > 0 ? character.identity : '未填写身份'}
-                            </CardDescription>
-                        </CardHeader>
-                        <CardContent>
+                            </p>
                             <p className="truncate text-xs text-muted-foreground">{summary}</p>
-                        </CardContent>
+                        </div>
                     </Card>
                 )
             })}

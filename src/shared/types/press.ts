@@ -1,8 +1,8 @@
 /**
  * 作品契约：仪表盘 /press 页的作品摘要、创建、打开、卷重命名/删除与章节删除/移动的请求结构，
- * 目标读者枚举，以及人物外貌生成（pressAi/aiAppearance）的请求与结果。
+ * 目标读者枚举，以及人物外貌生成（pressAi/aiAppearance）与角色设定图（pressAi/generatePortrait）的契约。
  * 使用方：仪表盘 Webview 的作品列表与宿主侧 DashboardViewProvider、modules/press 服务；
- * 外貌生成契约同时被写作管理页的人物弹窗与宿主 PressAiService 使用。
+ * 外貌与角色卡契约同时被写作管理页的人物弹窗、宿主 PressAiService 与 PortraitService 使用。
  * 复用约定：dirPath 取相对存储根口径（press/{作品名}），与索引库 files.path 同源；作品名即目录名。
  * 关键约束：前端传入的作品名与目录路径均不可信，宿主须先经名称白名单校验或索引库回查后才可触达文件系统；
  * 目标读者枚举只此一份，前端选项与落盘 Frontmatter 共用，避免两处口径分叉；
@@ -290,4 +290,42 @@ export interface CharacterAppearanceRequest {
 /** 人物外貌生成结果：单段白描纯文本，可直接写入外貌字段 */
 export interface CharacterAppearanceResult {
     content: string
+}
+
+/** 角色设定图：宿主生成并落盘后回传的图片信息 */
+export interface CharacterPortrait {
+    id: string
+    /** 相对存储根的路径，形如 press/_portraits/{characterId}/{id}.png */
+    path: string
+    /** webview 可访问的完整 URL，仅本次会话有效（由宿主用 asWebviewUri 转换） */
+    url: string
+    createdAt: string
+}
+
+/** 角色设定图生成请求：人物卡与作品氛围的只读快照 */
+export interface PortraitGenerateRequest {
+    /** 人物 id，宿主据此建立图片目录，须为安全的短标识 */
+    characterId: string
+    name: string
+    role: string
+    age: string
+    identity: string
+    appearance: string
+    traits: string[]
+    desire: string
+    weakness: string
+    ability: string
+    era: string
+    genres: string[]
+    tone: string
+}
+
+/** 角色设定图生成结果 */
+export interface PortraitGenerateResult {
+    portrait: CharacterPortrait
+}
+
+/** 角色设定图删除请求：只接受 press/_portraits 下的相对路径 */
+export interface PortraitDeleteRequest {
+    path: string
 }

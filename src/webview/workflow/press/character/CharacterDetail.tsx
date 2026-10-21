@@ -1,9 +1,9 @@
 /**
- * 人物卡编辑器：按「基础 / 外貌 / 性格与动机 / 背景与能力 / 关系」五组编辑单个角色，字段与 角色设定.md 的区块对齐。
- * 复用约定：分组切换复用 ui/tabs（横向可滚动），字段布局复用 ui/field，定位选择复用 ui/toggle-group，
- * 标签型字段（性格）复用设定页的 TagField；外貌由 useCharacterAppearance 经宿主 AI 生成。
+ * 人物卡编辑器：按「基础 / 外貌 / 角色卡 / 动机 / 背景 / 关系」六组编辑单个角色，字段与 角色设定.md 的区块对齐。
+ * 复用约定：分组切换复用 ui/tabs（均分整行、不横向滚动），字段布局复用 ui/field，定位选择复用 ui/toggle-group，
+ * 标签型字段（性格）复用设定页的 TagField；外貌与角色卡分别由 useCharacterAppearance、CharacterPortraitPanel 承担。
  * 关键约束：所有控件只通过补丁回传给调用方（编辑弹窗的草稿），本组件不持有角色数据副本；
- * 外貌生成结果写入字段后仍需用户保存，未保存即关闭弹窗则丢弃；字段 id 固定，同时只会挂载一张卡。
+ * 生成结果写入字段或图库后仍需用户保存，未保存即关闭弹窗则丢弃；字段 id 固定，同时只会挂载一张卡。
  */
 import { Sparkles } from 'lucide-react'
 import { Alert, AlertDescription } from '@components/ui/alert'
@@ -14,6 +14,7 @@ import { Spinner } from '@components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@components/ui/tabs'
 import { Textarea } from '@components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
+import { CharacterPortraitPanel } from './CharacterPortraitPanel'
 import { useCharacterAppearance } from './useCharacterAppearance'
 import type { CharacterCard, CharacterRole } from '../types'
 import type { AppearanceContext } from './useCharacterAppearance'
@@ -52,14 +53,27 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
     return (
         <div className="flex h-full min-h-0 flex-col">
             <Tabs defaultValue="basic" className="min-h-0 flex-1 gap-0">
-                {/* 标签均分整行宽度：窄面板下不换行、不横向滚动，下划线也不会被滚动容器裁掉 */}
+                {/* 标签均分整行宽度：6 个标签在窄面板下不换行、不横向滚动，下划线也不会被滚动容器裁掉 */}
                 <div className="shrink-0">
                     <TabsList variant="line" className="w-full">
-                        <TabsTrigger value="basic">基础</TabsTrigger>
-                        <TabsTrigger value="appearance">外貌</TabsTrigger>
-                        <TabsTrigger value="motive">动机</TabsTrigger>
-                        <TabsTrigger value="ability">背景</TabsTrigger>
-                        <TabsTrigger value="relation">关系</TabsTrigger>
+                        <TabsTrigger value="basic" className="px-1 text-xs">
+                            基础
+                        </TabsTrigger>
+                        <TabsTrigger value="appearance" className="px-1 text-xs">
+                            外貌
+                        </TabsTrigger>
+                        <TabsTrigger value="portrait" className="px-1 text-xs">
+                            角色卡
+                        </TabsTrigger>
+                        <TabsTrigger value="motive" className="px-1 text-xs">
+                            动机
+                        </TabsTrigger>
+                        <TabsTrigger value="ability" className="px-1 text-xs">
+                            背景
+                        </TabsTrigger>
+                        <TabsTrigger value="relation" className="px-1 text-xs">
+                            关系
+                        </TabsTrigger>
                     </TabsList>
                 </div>
                 {/* 滚动槽常驻：长短标签页切换时内容宽度不跳，避免滚动条反复挤占空间 */}
@@ -165,6 +179,10 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
                                 </Alert>
                             ) : null}
                         </Field>
+                    </TabsContent>
+
+                    <TabsContent value="portrait" className="flex flex-col gap-3">
+                        <CharacterPortraitPanel character={character} aiContext={aiContext} onChange={onChange} />
                     </TabsContent>
 
                     <TabsContent value="motive" className="flex flex-col gap-3">

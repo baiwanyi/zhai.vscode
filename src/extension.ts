@@ -24,6 +24,7 @@ import { NamingRoutes } from './modules/naming/namingRoutes'
 import { NamingService } from './modules/naming/namingService'
 import { PinStore } from './modules/note/pinStore'
 import { openPressDatabase } from './modules/press/db/connection'
+import { PortraitService } from './modules/press/portraitService'
 import { PressAiService } from './modules/press/pressAiService'
 import { PressRoutes } from './modules/press/pressRoutes'
 import type { IndexStatus } from './modules/common/indexer/indexService'
@@ -87,7 +88,8 @@ export function activate(context: vscode.ExtensionContext): void {
     const pressDb = openPressDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => pressDb.close() })
     const pressAiService = new PressAiService(pressDb, secrets)
-    const pressRoutes = new PressRoutes(pressAiService)
+    const portraitService = new PortraitService(pressDb, secrets)
+    const pressRoutes = new PressRoutes(pressAiService, portraitService)
 
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,
@@ -118,7 +120,9 @@ export function activate(context: vscode.ExtensionContext): void {
         void indexService.selfCheck().catch((error: unknown) => logger.error('激活自检失败', error))
     }
 
-    logger.info(`宅写作 已激活（workspace: ${context.workspaceState.get('initialized') === true ? '已初始化' : '首次'}）`)
+    logger.info(
+        `宅写作 已激活（workspace: ${context.workspaceState.get('initialized') === true ? '已初始化' : '首次'}）`,
+    )
     void context.workspaceState.update('initialized', true)
 }
 

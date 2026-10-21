@@ -50,6 +50,8 @@ export const SAMPLE_WORKSPACE: OutlineWorkspace = {
             ability: '触碰机械时听见它经历过的关键声响',
             arc: '独行的修补者 → 愿意为他人冒险的组织者',
             relation: '顾青：互相试探的情报交换者；老周：师父；秦九：妹妹失踪的关联人',
+            portraits: [],
+            coverPortraitId: null,
         },
         {
             id: 'char-guqing',
@@ -66,6 +68,8 @@ export const SAMPLE_WORKSPACE: OutlineWorkspace = {
             ability: '无特殊能力，依靠线人网络与信息整合',
             arc: '旁观记录者 → 参与改写结局的人',
             relation: '林岚：情报盟友；秦九：被其以广告合作为由拉拢',
+            portraits: [],
+            coverPortraitId: null,
         },
         {
             id: 'char-laozhou',
@@ -82,6 +86,8 @@ export const SAMPLE_WORKSPACE: OutlineWorkspace = {
             ability: '一眼看出机芯来历与改装痕迹',
             arc: '沉默的知情者 → 关键时刻的证人',
             relation: '林岚：师徒；秦九：曾被威胁签字搬迁',
+            portraits: [],
+            coverPortraitId: null,
         },
         {
             id: 'char-qinjiu',
@@ -98,6 +104,8 @@ export const SAMPLE_WORKSPACE: OutlineWorkspace = {
             ability: '资源调度与政商关系网络',
             arc: '体面的商人 → 撕掉伪装的控制者',
             relation: '林岚：妹妹失踪的关联人；顾青：试图收买',
+            portraits: [],
+            coverPortraitId: null,
         },
     ],
     volumes: [

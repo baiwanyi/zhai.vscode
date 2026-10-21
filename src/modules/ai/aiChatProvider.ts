@@ -17,6 +17,7 @@ import type { NamingRoutes } from '../naming/namingRoutes'
 import type { PressRoutes } from '../press/pressRoutes'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
+import { resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
 import { WEBVIEW_ALLOWED_COMMANDS } from '../common/webviewCommands'
 import { buildWebviewHtml } from '../common/webviewHtml'
@@ -52,9 +53,10 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     }
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
+        // 存储根加入资源白名单：角色设定图落盘后需要经 asWebviewUri 供 img 加载
         webviewView.webview.options = {
             enableScripts: true,
-            localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
+            localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'), resolveStorageRoot()],
         }
         void this.renderHtml(webviewView)
         webviewView.webview.onDidReceiveMessage(
@@ -92,7 +94,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         }
         const { reqId, method, payload } = message
         try {
-            const result = await this.invoke(method, payload, reqId)
+            const result = await this.invoke(method, payload, reqId, view)
             this.post(view, { type: 'response', reqId, ok: true, payload: result })
         } catch (error) {
             const text = error instanceof Error ? error.message : String(error)
@@ -101,7 +103,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         }
     }
 
-    private async invoke(method: string, payload: unknown, reqId: string): Promise<unknown> {
+    private async invoke(method: string, payload: unknown, reqId: string, view: vscode.WebviewView): Promise<unknown> {
         switch (method) {
             case 'ai/session': {
                 return this.service.getOrCreateSession()
@@ -174,7 +176,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                     return this.naming.handle(method, payload)
                 }
                 if (method.startsWith('pressAi/')) {
-                    return this.press.handle(method, payload)
+                    return this.press.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())
                 }
                 throw new Error(`未知的协议方法：${method}`)
         }
@@ -309,7 +311,9 @@ function readDraftPayload(payload: unknown): {
         throw new Error('ai/draft 参数类型不正确')
     }
     const commandId =
-        typeof value.commandId === 'string' && value.commandId.length > 0 && value.commandId.length <= MAX_COMMAND_ID_LENGTH
+        typeof value.commandId === 'string' &&
+        value.commandId.length > 0 &&
+        value.commandId.length <= MAX_COMMAND_ID_LENGTH
             ? value.commandId
             : null
     return {

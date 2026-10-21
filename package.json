@@ -94,6 +94,16 @@
                 "category": "宅写作"
             },
             {
+                "command": "zhai.image.setApiKey",
+                "title": "设置图像服务 API Key",
+                "category": "宅写作"
+            },
+            {
+                "command": "zhai.image.clearApiKey",
+                "title": "清除图像服务 API Key",
+                "category": "宅写作"
+            },
+            {
                 "command": "zhai.openSettings",
                 "title": "打开插件设置",
                 "category": "宅写作",
@@ -205,6 +215,26 @@
                     "type": "number",
                     "default": 20,
                     "description": "写作管理 AI 生成的每日次数上限（人物外貌生成等一次性任务，0 或负数表示不限）"
+                },
+                "zhai.image.baseUrl": {
+                    "type": "string",
+                    "default": "",
+                    "description": "角色设定图服务的 OpenAI 兼容端点基址（如 https://api.siliconflow.cn/v1），留空则角色卡生成不可用"
+                },
+                "zhai.image.model": {
+                    "type": "string",
+                    "default": "",
+                    "description": "角色设定图的模型名，需与服务商一致（如 Kwai-Kolors/Kolors、gpt-image-1）"
+                },
+                "zhai.image.size": {
+                    "type": "string",
+                    "default": "768x1024",
+                    "description": "角色设定图尺寸，格式为 宽x高，需在服务商支持范围内（推荐竖版 768x1024）"
+                },
+                "zhai.image.dailyLimit": {
+                    "type": "number",
+                    "default": 20,
+                    "description": "角色设定图每日生成次数上限（0 或负数表示不限）"
                 },
                 "zhai.telemetry.enabled": {
                     "type": "boolean",
