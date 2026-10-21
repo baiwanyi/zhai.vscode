@@ -52,6 +52,7 @@ export const SAMPLE_WORKSPACE: OutlineWorkspace = {
             relation: '顾青：互相试探的情报交换者；老周：师父；秦九：妹妹失踪的关联人',
             portraits: [],
             coverPortraitId: null,
+            portraitStyle: 'realistic',
         },
         {
             id: 'char-guqing',
@@ -70,6 +71,7 @@ export const SAMPLE_WORKSPACE: OutlineWorkspace = {
             relation: '林岚：情报盟友；秦九：被其以广告合作为由拉拢',
             portraits: [],
             coverPortraitId: null,
+            portraitStyle: 'realistic',
         },
         {
             id: 'char-laozhou',
@@ -88,6 +90,7 @@ export const SAMPLE_WORKSPACE: OutlineWorkspace = {
             relation: '林岚：师徒；秦九：曾被威胁签字搬迁',
             portraits: [],
             coverPortraitId: null,
+            portraitStyle: 'realistic',
         },
         {
             id: 'char-qinjiu',
@@ -106,6 +109,7 @@ export const SAMPLE_WORKSPACE: OutlineWorkspace = {
             relation: '林岚：妹妹失踪的关联人；顾青：试图收买',
             portraits: [],
             coverPortraitId: null,
+            portraitStyle: 'realistic',
         },
     ],
     volumes: [

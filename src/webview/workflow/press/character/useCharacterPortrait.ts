@@ -96,5 +96,6 @@ function buildPayload(character: CharacterCard, context: AppearanceContext): Por
         era: context.era,
         genres: [...context.genres],
         tone: context.tone,
+        style: character.portraitStyle,
     }
 }

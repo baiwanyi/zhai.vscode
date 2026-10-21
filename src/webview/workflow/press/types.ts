@@ -6,7 +6,7 @@
  * 关键约束：章纲是「计划」，章节文件的摘要才是「事实」，两者不得合并为同一字段，
  * 否则大纲修订后无法区分「打算写」与「已经写」；状态取值须与 constants 中的元数据表保持同步。
  */
-import type { CharacterPortrait } from '@shared/types/press'
+import type { CharacterPortrait, PortraitStyle } from '@shared/types/press'
 
 /** 章纲状态：待写、在写、已完成、大纲已变更需复核 */
 export type PlanStatus = 'planned' | 'drafting' | 'done' | 'stale'
@@ -81,6 +81,8 @@ export interface CharacterCard {
     portraits: CharacterPortrait[]
     /** 角色封面：指向 portraits 中的一项，null 表示未设置 */
     coverPortraitId: string | null
+    /** 生成角色卡时使用的画风，随人物卡保存，切换后只影响后续生成 */
+    portraitStyle: PortraitStyle
 }
 
 /** 新建人物卡的初始值：不含 id，id 一律由 utils.createCharacterCard 生成，避免调用方伪造主键 */

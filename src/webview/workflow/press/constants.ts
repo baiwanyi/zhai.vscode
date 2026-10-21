@@ -4,6 +4,7 @@
  * 关键约束：状态与钩子的 key 必须与 types.ts 的联合类型完全一致，新增取值须同时补文案与变体；
  * 张力与步骤的档位顺序参与排序与进度计算，不得随意调整。
  */
+import type { PortraitStyle } from '@shared/types/press'
 import type { Audience, CharacterRole, EndingKind, HookKind, PlanStatus, ProjectSetting } from './types'
 
 /** 徽标语义变体：与 @components/ui/badge 的 variant 保持一致 */
@@ -60,6 +61,16 @@ export const CHARACTER_ROLE_FILTERS: readonly (OptionMeta<CharacterRole | 'all'>
     { value: 'heroine', label: '女主' },
     { value: 'supporting', label: '配角' },
     { value: 'antagonist', label: '反派' },
+]
+
+/** 角色卡画风选项：值必须落在 shared/types/press 的 PORTRAIT_STYLES 内，写风描述由宿主按同一 key 映射 */
+export const PORTRAIT_STYLE_OPTIONS: readonly (OptionMeta<PortraitStyle>)[] = [
+    { value: 'realistic', label: '写实' },
+    { value: 'guofeng', label: '国风' },
+    { value: 'anime', label: '二次元' },
+    { value: 'painterly', label: '厚涂' },
+    { value: 'cinematic', label: '电影感' },
+    { value: 'lineart', label: '线稿' },
 ]
 
 /** 题材预设：点击加入、再点移除，也可输入自定义题材 */

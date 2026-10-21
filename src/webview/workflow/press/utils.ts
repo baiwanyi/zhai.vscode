@@ -5,6 +5,7 @@
  * 关键约束：完整度只统计可判断「是否填写」的字段，缺失不视为错误、仅用于提示；
  * 章节统计以章纲上的目标字数为分母，不使用正文实际字数反推计划。
  */
+import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
 import type {
     CharacterCard,
     CharacterSeed,
@@ -87,6 +88,7 @@ export function createCharacterCard(seed: CharacterSeed = {}): CharacterCard {
         relation: '',
         portraits: [],
         coverPortraitId: null,
+        portraitStyle: DEFAULT_PORTRAIT_STYLE,
         ...seed,
         id: createId('char'),
     }

@@ -12,9 +12,10 @@ import { consumeToday, readUsedToday } from './db/quotaRepository'
 import { readText, readTextList } from './pressAiService'
 import { PRESS_MODULE_DIR } from './projectFactory'
 import type { QuotaKeys } from './db/quotaRepository'
-import type { PortraitGenerateRequest, PortraitGenerateResult } from '../../shared/types/press'
+import type { PortraitGenerateRequest, PortraitGenerateResult, PortraitStyle } from '../../shared/types/press'
 import type { SecretsService } from '../common/secrets'
 import type Database from 'better-sqlite3'
+import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES } from '../../shared/types/press'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
 import { buildStorageUri, toSafeSegments } from '../common/storagePath'
@@ -165,6 +166,7 @@ function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
         era?: unknown
         genres?: unknown
         tone?: unknown
+        style?: unknown
     }
     const characterId = readText(value.characterId, MAX_SHORT_TEXT)
     if (!CHARACTER_ID_PATTERN.test(characterId)) {
@@ -184,11 +186,20 @@ function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
         era: readText(value.era, MAX_SHORT_TEXT),
         genres: readTextList(value.genres, 6, 16),
         tone: readText(value.tone, MAX_SHORT_TEXT),
+        style: readStyle(value.style),
     }
     if (request.name.length === 0) {
         throw new Error('缺少人物姓名，无法生成角色卡')
     }
     return request
+}
+
+/** 读取画风：只接受白名单内的值，其余一律回落默认风格 */
+function readStyle(value: unknown): PortraitStyle {
+    if (typeof value !== 'string') {
+        return DEFAULT_PORTRAIT_STYLE
+    }
+    return PORTRAIT_STYLES.find((item) => item === value) ?? DEFAULT_PORTRAIT_STYLE
 }
 
 /** 读取删除请求里的相对路径 */

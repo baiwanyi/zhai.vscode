@@ -68,8 +68,7 @@ export async function generatePortraitWithAi(options: AiPortraitOptions): Promis
             signal: controller.signal,
         })
         if (!response.ok) {
-            const detail = await response.text()
-            throw new Error(`图像服务返回 ${response.status}：${detail.slice(0, 160) || '无详细信息'}`)
+            throw new Error(describeImageFailure(response.status, await response.text()))
         }
         const image = readFirstImage(await response.json())
         if (image.base64 !== null) {
@@ -139,6 +138,61 @@ function readFirstImage(payload: unknown): { base64: string | null; url: string 
     return {
         base64: typeof base64 === 'string' && base64.length > 0 ? base64 : null,
         url: typeof url === 'string' && /^https?:\/\//.test(url) ? url : null,
+    }
+}
+
+/** 上游过载 / 限流的关键字，命中后统一提示「繁忙」，避免把英文原文抛给用户 */
+const OVERLOAD_HINT =
+    /excessive system load|overloaded|over capacity|too many requests|rate limit|server is busy|temporarily unavailable/i
+
+/** 把非 2xx 响应翻译成可读中文；返回值统一以「图像服务」开头，便于上层原样透传 */
+function describeImageFailure(status: number, body: string): string {
+    const detail = readFailureMessage(body)
+    if (status === 429 || status === 503 || OVERLOAD_HINT.test(detail)) {
+        return '图像服务当前繁忙（服务商负载过高），请稍后重试；连续失败可更换模型或稍等片刻'
+    }
+    if (status === 401 || status === 403) {
+        return `图像服务鉴权失败（${status}），请检查 zhai.image.apiKey 是否正确`
+    }
+    if (status === 404) {
+        return '图像服务未找到对应接口或模型（404），请检查 zhai.image.baseUrl 与 zhai.image.model'
+    }
+    if (status >= 500) {
+        return `图像服务内部错误（${status}），请稍后重试`
+    }
+    if (detail.length > 0) {
+        return `图像服务返回 ${status}：${detail.slice(0, 160)}`
+    }
+    return `图像服务返回 ${status}`
+}
+
+/** 从错误响应体提取可读信息：兼容 {error:{message}}、{error:'...'}、{message}、{detail} 与纯文本 */
+function readFailureMessage(body: string): string {
+    const text = body.trim()
+    if (text.length === 0) {
+        return ''
+    }
+    const payload = parseJsonQuietly(text)
+    if (typeof payload !== 'object' || payload === null) {
+        return text.slice(0, 160)
+    }
+    const record = payload as { error?: unknown; message?: unknown; detail?: unknown }
+    const nested =
+        typeof record.error === 'object' && record.error !== null
+            ? (record.error as { message?: unknown }).message
+            : record.error
+    const candidate = [nested, record.message, record.detail].find(
+        (item) => typeof item === 'string' && item.length > 0,
+    )
+    return typeof candidate === 'string' ? candidate : text.slice(0, 160)
+}
+
+/** 宽松解析 JSON：失败或字面量 null 一律返回 null，交由调用方按纯文本处理 */
+function parseJsonQuietly(text: string): unknown {
+    try {
+        return JSON.parse(text)
+    } catch {
+        return null
     }
 }
 

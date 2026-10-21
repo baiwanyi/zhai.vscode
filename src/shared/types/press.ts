@@ -292,6 +292,22 @@ export interface CharacterAppearanceResult {
     content: string
 }
 
+/** 角色设定图风格：取值参与宿主提示词映射，新增值须同时在前端选项表与宿主 STYLE_HINTS 中登记 */
+export type PortraitStyle = 'realistic' | 'guofeng' | 'anime' | 'painterly' | 'cinematic' | 'lineart'
+
+/** 风格白名单：前端选项与宿主入参校验共用同一份，避免两处口径分叉 */
+export const PORTRAIT_STYLES: readonly PortraitStyle[] = [
+    'realistic',
+    'guofeng',
+    'anime',
+    'painterly',
+    'cinematic',
+    'lineart',
+]
+
+/** 默认风格：写实，对多数题材都是中性选择 */
+export const DEFAULT_PORTRAIT_STYLE: PortraitStyle = 'realistic'
+
 /** 角色设定图：宿主生成并落盘后回传的图片信息 */
 export interface CharacterPortrait {
     id: string
@@ -318,6 +334,8 @@ export interface PortraitGenerateRequest {
     era: string
     genres: string[]
     tone: string
+    /** 画面风格：决定提示词里的画风描述 */
+    style: PortraitStyle
 }
 
 /** 角色设定图生成结果 */
