@@ -1,125 +1,115 @@
 /**
- * 人物列表：按定位排序展示全部人物卡，提供检索与新增入口，是大纲页与人物页共用的选择源。
- * 复用约定：列表项复用 ui/item 与 ui/badge，搜索框复用 ui/input 并接入全局 placeholder 令牌；
- * 选中态取主题的列表选中色（accent），与作品章节树的选中观感保持一致。
- * 关键约束：列表项是可聚焦按钮而非 div，键盘可逐项进入；检索只匹配姓名、别名与身份，
- * 不搜索人物卡正文，避免输入一个常用字就把整份设定命中。
+ * 人物卡片列表：以单列卡片展示人物卡，承担人物页的主体浏览与选择入口。
+ * 复用约定：卡片复用 ui/card（标题与描述按 CardHeader/CardContent 组合），定位徽标取 CHARACTER_ROLE_META 的语义变体，
+ * 空态复用 ui/empty；筛选与搜索由页面持有，本组件只接收已过滤的列表，不重复做过滤。
+ * 关键约束：卡片是可聚焦按钮而非占位容器，键盘可逐项进入；排序固定按 CHARACTER_ROLE_ORDER，
+ * 不随点击顺序变化，避免切换筛选后卡片位置跳动；卡片只展示摘要，字段编辑一律在编辑弹窗内完成。
  */
-import { cn } from 'cn'
-import { Plus, Search, UserRound } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Plus, UserRound } from 'lucide-react'
+import { useMemo } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
-import { Input } from '@components/ui/input'
-import { Item, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
-import type { CharacterCard, CharacterRole } from '../types'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
+import type { CharacterCard } from '../types'
 import type { JSX } from 'react'
-import { CHARACTER_ROLE_META } from '../constants'
-
-/** 列表排序：主角在前、反派在后，与作者翻卡的顺序一致 */
-const ROLE_ORDER: readonly CharacterRole[] = ['protagonist', 'heroine', 'supporting', 'antagonist']
+import { CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
 
 interface CharacterListProps {
+    /** 已按筛选与搜索收敛过的人物卡 */
     characters: CharacterCard[]
-    selectedId: string | null
+    /** 全部人物数，用于区分「一个人都没有」与「没有匹配」 */
+    totalCount: number
+    /** 是否处于筛选或搜索状态，决定空态提供的出口 */
+    hasFilter: boolean
     onSelect: (id: string) => void
     onCreate: () => void
+    onClearFilter: () => void
 }
 
-export function CharacterList({ characters, selectedId, onSelect, onCreate }: CharacterListProps): JSX.Element {
-    const [query, setQuery] = useState('')
+export function CharacterList({
+    characters,
+    totalCount,
+    hasFilter,
+    onSelect,
+    onCreate,
+    onClearFilter,
+}: CharacterListProps): JSX.Element {
+    const sortedCharacters = useMemo(
+        () =>
+            [...characters].sort(
+                (left, right) => CHARACTER_ROLE_ORDER.indexOf(left.role) - CHARACTER_ROLE_ORDER.indexOf(right.role),
+            ),
+        [characters],
+    )
 
-    const visibleCharacters = useMemo(() => {
-        const keyword = query.trim().toLowerCase()
-        const matched =
-            keyword.length === 0
-                ? characters
-                : characters.filter((character) =>
-                      [character.name, character.alias, character.identity].some((field) =>
-                          field.toLowerCase().includes(keyword),
-                      ),
-                  )
-        return [...matched].sort((left, right) => ROLE_ORDER.indexOf(left.role) - ROLE_ORDER.indexOf(right.role))
-    }, [characters, query])
+    if (sortedCharacters.length === 0) {
+        return (
+            <Empty className="border border-dashed border-border py-8">
+                <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                        <UserRound />
+                    </EmptyMedia>
+                    <EmptyTitle>{totalCount === 0 ? '还没有人物' : '没有匹配的人物'}</EmptyTitle>
+                    <EmptyDescription>
+                        {totalCount === 0 ? '先建立主角与对手，大纲才能排布冲突' : '换个关键词，或切回「全部」定位'}
+                    </EmptyDescription>
+                </EmptyHeader>
+                <EmptyContent>
+                    {totalCount === 0 ? (
+                        <Button size="sm" variant="outline" onClick={onCreate}>
+                            <Plus data-icon="inline-start" />
+                            新增人物
+                        </Button>
+                    ) : (
+                        <Button size="sm" variant="ghost" disabled={!hasFilter} onClick={onClearFilter}>
+                            清空筛选
+                        </Button>
+                    )}
+                </EmptyContent>
+            </Empty>
+        )
+    }
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-2">
-            <div className="relative">
-                <Search
-                    className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground"
-                    aria-hidden="true"
-                />
-                <Input
-                    value={query}
-                    aria-label="搜索人物"
-                    placeholder="搜索姓名、别名或身份"
-                    className="h-7 pl-7 text-xs"
-                    onChange={(event) => setQuery(event.target.value)}
-                />
-            </div>
-            <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground tabular-nums">{visibleCharacters.length} 人</span>
-                <Button size="xs" variant="ghost" className="rounded-full" onClick={onCreate}>
-                    <Plus data-icon="inline-start" />
-                    新增人物
-                </Button>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-                {visibleCharacters.length === 0 ? (
-                    <Empty className="border border-dashed border-border py-8">
-                        <EmptyHeader>
-                            <EmptyMedia variant="icon">
-                                <UserRound />
-                            </EmptyMedia>
-                            <EmptyTitle>还没有人物</EmptyTitle>
-                            <EmptyDescription>
-                                {characters.length === 0 ? '先建立主角与对手，大纲才能排布冲突' : '没有匹配的人物'}
-                            </EmptyDescription>
-                        </EmptyHeader>
-                    </Empty>
-                ) : (
-                    <div className="flex flex-col gap-0.5">
-                        {visibleCharacters.map((character) => {
-                            const roleMeta = CHARACTER_ROLE_META[character.role]
-                            const isSelected = character.id === selectedId
-                            return (
-                                <Item
-                                    key={character.id}
-                                    size="xs"
-                                    role="button"
-                                    tabIndex={0}
-                                    aria-pressed={isSelected}
-                                    className={cn(
-                                        'w-full cursor-pointer rounded-lg px-2 py-1.5 text-left hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
-                                        isSelected && 'bg-accent text-accent-foreground',
-                                    )}
-                                    onClick={() => onSelect(character.id)}
-                                    onKeyDown={(event) => {
-                                        if (event.key !== 'Enter' && event.key !== ' ') {
-                                            return
-                                        }
-                                        event.preventDefault()
-                                        onSelect(character.id)
-                                    }}
-                                >
-                                    <ItemContent className="min-w-0">
-                                        <div className="flex min-w-0 items-center gap-1.5">
-                                            <ItemTitle className="min-w-0 truncate text-xs">{character.name}</ItemTitle>
-                                            <Badge variant={roleMeta.tone} className="shrink-0">
-                                                {roleMeta.label}
-                                            </Badge>
-                                        </div>
-                                        <ItemDescription className="truncate text-xs">
-                                            {character.identity.length > 0 ? character.identity : '未填写身份'}
-                                        </ItemDescription>
-                                    </ItemContent>
-                                </Item>
-                            )
-                        })}
-                    </div>
-                )}
-            </div>
+        <div className="flex flex-col gap-2">
+            {sortedCharacters.map((character) => {
+                const roleMeta = CHARACTER_ROLE_META[character.role]
+                const summary = character.desire.length > 0 ? character.desire : '欲望未填写'
+                return (
+                    <Card
+                        key={character.id}
+                        size="sm"
+                        role="button"
+                        tabIndex={0}
+                        title={`${character.name} · ${roleMeta.label}`}
+                        className="cursor-pointer gap-1.5 text-left transition-colors hover:bg-muted/60 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                        onClick={() => onSelect(character.id)}
+                        onKeyDown={(event) => {
+                            if (event.key !== 'Enter' && event.key !== ' ') {
+                                return
+                            }
+                            event.preventDefault()
+                            onSelect(character.id)
+                        }}
+                    >
+                        <CardHeader className="gap-1">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                                <CardTitle className="min-w-0 truncate text-sm">{character.name}</CardTitle>
+                                <Badge variant={roleMeta.tone} className="shrink-0">
+                                    {roleMeta.label}
+                                </Badge>
+                            </div>
+                            <CardDescription className="truncate text-xs">
+                                {character.identity.length > 0 ? character.identity : '未填写身份'}
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                            <p className="truncate text-xs text-muted-foreground">{summary}</p>
+                        </CardContent>
+                    </Card>
+                )
+            })}
         </div>
     )
 }

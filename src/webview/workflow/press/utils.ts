@@ -5,7 +5,16 @@
  * 关键约束：完整度只统计可判断「是否填写」的字段，缺失不视为错误、仅用于提示；
  * 章节统计以章纲上的目标字数为分母，不使用正文实际字数反推计划。
  */
-import type { CharacterCard, HookKind, OutlineBeat, OutlineChapter, OutlineVolume, PlanStatus, ProjectSetting } from './types'
+import type {
+    CharacterCard,
+    CharacterSeed,
+    HookKind,
+    OutlineBeat,
+    OutlineChapter,
+    OutlineVolume,
+    PlanStatus,
+    ProjectSetting,
+} from './types'
 import { formatWordCount } from '../../dashboard/utils'
 
 export { formatWordCount }
@@ -60,15 +69,15 @@ export function createId(prefix: 'vol' | 'ch' | 'beat' | 'char'): string {
     return `${prefix}-${crypto.randomUUID()}`
 }
 
-/** 新建一张空人物卡：定位先落到配角，由作者改选 */
-export function createCharacterCard(): CharacterCard {
+/** 新建一张人物卡：定位默认配角、姓名占位；seed 承接新增弹窗填写的初始值，id 恒由本函数生成 */
+export function createCharacterCard(seed: CharacterSeed = {}): CharacterCard {
     return {
-        id: createId('char'),
         name: '新人物',
         alias: '',
         role: 'supporting',
         age: '',
         identity: '',
+        appearance: '',
         traits: [],
         desire: '',
         weakness: '',
@@ -76,6 +85,8 @@ export function createCharacterCard(): CharacterCard {
         ability: '',
         arc: '',
         relation: '',
+        ...seed,
+        id: createId('char'),
     }
 }
 

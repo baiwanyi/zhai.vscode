@@ -10,7 +10,14 @@
 import { useCallback, useState } from 'react'
 import { WorkflowPressNav } from './WorkflowPressNav'
 import type { WorkflowPressSection } from './WorkflowPressNav'
-import type { CharacterCard, OutlineChapter, OutlineVolume, OutlineWorkspace, ProjectSetting } from '../press/types'
+import type {
+    CharacterCard,
+    CharacterSeed,
+    OutlineChapter,
+    OutlineVolume,
+    OutlineWorkspace,
+    ProjectSetting,
+} from '../press/types'
 import type { JSX } from 'react'
 import { AiChat } from '../aichat'
 import { NamingPage } from '../naming'
@@ -57,9 +64,11 @@ export function WorkflowPress(): JSX.Element {
         }))
     }, [])
 
-    const handleCreateCharacter = useCallback((): void => {
-        const character = createCharacterCard()
+    /** 建卡并返回新卡 id：人物页据此直接下钻到新人物详情 */
+    const handleCreateCharacter = useCallback((seed: CharacterSeed): string => {
+        const character = createCharacterCard(seed)
         setWorkspace((previous) => ({ ...previous, characters: [...previous.characters, character] }))
+        return character.id
     }, [])
 
     const handleUpdateChapter = useCallback((chapterId: string, patch: Partial<OutlineChapter>): void => {
@@ -120,10 +129,9 @@ export function WorkflowPress(): JSX.Element {
             return (
                 <PressCharacterPage
                     characters={workspace.characters}
+                    setting={workspace.setting}
                     onCreateCharacter={handleCreateCharacter}
                     onChangeCharacter={handleUpdateCharacter}
-                    onSelectStep={handleSelectStep}
-                    onNext={() => setActiveSection('outline')}
                 />
             )
         }

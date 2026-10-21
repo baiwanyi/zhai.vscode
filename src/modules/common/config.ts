@@ -29,6 +29,8 @@ export interface ZhaiConfig {
     aiAutoFocusOnContext: boolean
     /** 取名 AI 生成每日次数上限（本地生成不限） */
     namingAiDailyLimit: number
+    /** 写作管理 AI 生成每日次数上限（人物外貌等一次性生成） */
+    pressAiDailyLimit: number
     telemetryEnabled: boolean
 }
 
@@ -49,6 +51,7 @@ export function getZhaiConfig(): ZhaiConfig {
         aiDailyTokenBudget: cfg.get<number>('ai.dailyTokenBudget', 500000),
         aiAutoFocusOnContext: cfg.get<boolean>('ai.autoFocusOnContext', true),
         namingAiDailyLimit: cfg.get<number>('naming.aiDailyLimit', 20),
+        pressAiDailyLimit: cfg.get<number>('press.aiDailyLimit', 20),
         telemetryEnabled: cfg.get<boolean>('telemetry.enabled', false),
     }
 }

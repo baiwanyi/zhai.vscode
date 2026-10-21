@@ -1,109 +1,163 @@
 /**
- * 人物设定页：写作流程的第三步，左列表右人物卡；窄容器下改为「列表 → 详情」的下钻式单栏。
- * 复用约定：列表与卡片分别由 CharacterList、CharacterDetail 承担，本文件只做选中项与补丁回传的编排，
- * 步骤条复用 PressFlowSteps，空态复用 ui/empty，说明文案沿用页面 p-3 + gap-2 的节奏。
- * 关键约束：详情区的显示与否由选中项决定，窄容器选中人物后必须隐藏列表而不是叠加两栏；
- * 选中项失效（人物被删除）时回退到列表，不得渲染空详情。
+ * 人物设定页：写作流程的第三步，用定位筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
+ * 复用约定：列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterDetail 承担、
+ * 新增由 CharacterCreateDialog 承担；本文件只做筛选、搜索、弹窗编排与作品氛围的下传。
+ * 关键约束：新增后直接打开编辑弹窗，因此 onCreateCharacter 必须回传新卡 id；
+ * 编辑弹窗以人物 id 作为 key 重建，关闭即丢弃草稿，页面不保留编辑中间态。
  */
-import { cn } from 'cn'
-import { ArrowRight, UserRound } from 'lucide-react'
-import { useState } from 'react'
-import { Badge } from '@components/ui/badge'
+import { Plus, Search } from 'lucide-react'
+import { useMemo, useState } from 'react'
 import { Button } from '@components/ui/button'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
-import { CharacterDetail } from './CharacterDetail'
+import { Input } from '@components/ui/input'
+import { Separator } from '@components/ui/separator'
+import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
+import { CharacterCreateDialog } from './CharacterCreateDialog'
+import { CharacterEditDialog } from './CharacterEditDialog'
 import { CharacterList } from './CharacterList'
-import type { CharacterCard } from '../types'
+import type { AppearanceContext } from './useCharacterAppearance'
+import type { CharacterCard, CharacterRole, CharacterSeed, ProjectSetting } from '../types'
 import type { JSX } from 'react'
-import { PressFlowSteps } from '../layout/PressFlowSteps'
+import { CHARACTER_ROLE_FILTERS } from '../constants'
 
 interface PressCharacterPageProps {
     characters: CharacterCard[]
-    onCreateCharacter: () => void
+    /** 作品设定：外貌生成需要时代、题材与基调 */
+    setting: ProjectSetting
+    /** 建卡并返回新卡 id，供页面直接打开编辑弹窗 */
+    onCreateCharacter: (seed: CharacterSeed) => string
     onChangeCharacter: (id: string, patch: Partial<CharacterCard>) => void
-    onSelectStep: (step: number) => void
-    onNext: () => void
 }
 
 export function PressCharacterPage({
     characters,
+    setting,
     onCreateCharacter,
     onChangeCharacter,
-    onSelectStep,
-    onNext,
 }: PressCharacterPageProps): JSX.Element {
-    const [selectedId, setSelectedId] = useState<string | null>(null)
-    // 未选中或选中项失效（人物被删除、列表整体替换）时回退到第一位，避免详情区空白
-    const selectedCharacter = characters.find((character) => character.id === selectedId) ?? characters.at(0) ?? null
-    // 下钻状态只看用户是否主动点选过：窄容器下初始必须停在列表，而不是直接进入详情
-    const hasActiveSelection = selectedId !== null
+    const [query, setQuery] = useState('')
+    const [roleFilter, setRoleFilter] = useState<CharacterRole | 'all'>('all')
+    const [editingId, setEditingId] = useState<string | null>(null)
+    const [isCreateOpen, setIsCreateOpen] = useState(false)
 
-    const handleCreate = (): void => {
-        onCreateCharacter()
+    const editingCharacter = characters.find((character) => character.id === editingId) ?? null
+    // 作品氛围只在设定字段变化时重建，避免弹窗内每次输入都触发新对象
+    const aiContext = useMemo<AppearanceContext>(
+        () => ({ era: setting.era, genres: setting.genres, tone: setting.tone }),
+        [setting.era, setting.genres, setting.tone],
+    )
+
+    // 过滤只覆盖列表可见性：检索匹配姓名、别名与身份，不搜索人物卡正文，避免常用字命中整份设定
+    const visibleCharacters = useMemo(() => {
+        const keyword = query.trim().toLowerCase()
+        return characters.filter((character) => {
+            if (roleFilter !== 'all' && character.role !== roleFilter) {
+                return false
+            }
+            if (keyword.length === 0) {
+                return true
+            }
+            return [character.name, character.alias, character.identity].some((field) =>
+                field.toLowerCase().includes(keyword),
+            )
+        })
+    }, [characters, query, roleFilter])
+
+    const hasFilter = query.trim().length > 0 || roleFilter !== 'all'
+
+    const handleFilterChange = (value: string): void => {
+        if (value.length === 0) {
+            return
+        }
+        const next = CHARACTER_ROLE_FILTERS.find((option) => option.value === value)
+        if (next) {
+            setRoleFilter(next.value)
+        }
+    }
+
+    const handleClearFilter = (): void => {
+        setQuery('')
+        setRoleFilter('all')
+    }
+
+    const handleCreate = (seed: CharacterSeed): void => {
+        setEditingId(onCreateCharacter(seed))
     }
 
     return (
         <div className="@container flex h-full min-h-0 flex-col gap-2 p-3">
-            <header className="flex flex-col gap-1.5">
-                <PressFlowSteps current={3} onSelect={onSelectStep} />
+            <header className="flex shrink-0 flex-col gap-2">
                 <div className="flex items-end gap-2">
                     <div className="min-w-0 flex-1">
                         <h2 className="truncate font-heading text-sm font-semibold">人物设定</h2>
-                        <p className="truncate text-xs text-muted-foreground">欲望与弱点决定冲突，大纲排布时会引用</p>
+                        <p className="truncate text-xs text-muted-foreground tabular-nums">
+                            共 {characters.length} 人 · 欲望与弱点决定冲突，大纲排布时会引用
+                        </p>
                     </div>
-                    <Badge variant="outline" className="shrink-0 tabular-nums">
-                        {characters.length} 人
-                    </Badge>
+                    <Button size="sm" className="shrink-0" onClick={() => setIsCreateOpen(true)}>
+                        <Plus data-icon="inline-start" />
+                        新增
+                    </Button>
                 </div>
-            </header>
-            <div className="flex min-h-0 flex-1 gap-2">
-                <aside
-                    className={cn(
-                        'min-h-0 w-full overflow-y-auto @2xl:w-60 @2xl:shrink-0',
-                        hasActiveSelection && 'hidden @2xl:block',
-                    )}
-                >
-                    <CharacterList
-                        characters={characters}
-                        selectedId={selectedCharacter?.id ?? null}
-                        onSelect={setSelectedId}
-                        onCreate={handleCreate}
-                    />
-                </aside>
-                <section
-                    className={cn(
-                        'min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card',
-                        !hasActiveSelection && 'hidden @2xl:block',
-                    )}
-                >
-                    {selectedCharacter ? (
-                        <CharacterDetail
-                            character={selectedCharacter}
-                            onChange={(patch) => onChangeCharacter(selectedCharacter.id, patch)}
-                            onBack={() => setSelectedId(null)}
+                <Separator />
+                <div className="flex flex-wrap items-center gap-2">
+                    <div className="min-w-0 flex-1 overflow-x-auto">
+                        <ToggleGroup
+                            type="single"
+                            size="sm"
+                            variant="outline"
+                            className="w-max"
+                            value={roleFilter}
+                            onValueChange={handleFilterChange}
+                        >
+                            {CHARACTER_ROLE_FILTERS.map((option) => (
+                                <ToggleGroupItem key={option.value} value={option.value}>
+                                    {option.label}
+                                </ToggleGroupItem>
+                            ))}
+                        </ToggleGroup>
+                    </div>
+                    <div className="relative w-full @md:w-56 @md:shrink-0">
+                        <Search
+                            className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                            aria-hidden="true"
                         />
-                    ) : (
-                        <Empty className="h-full">
-                            <EmptyHeader>
-                                <EmptyMedia variant="icon">
-                                    <UserRound />
-                                </EmptyMedia>
-                                <EmptyTitle>选择一个人物</EmptyTitle>
-                                <EmptyDescription>左侧列表点选后可编辑人物卡，或在列表上方新增</EmptyDescription>
-                            </EmptyHeader>
-                        </Empty>
-                    )}
-                </section>
+                        <Input
+                            value={query}
+                            aria-label="搜索人物"
+                            placeholder="搜索姓名、别名或身份"
+                            className="h-7 pl-7 text-xs"
+                            onChange={(event) => setQuery(event.target.value)}
+                        />
+                    </div>
+                </div>
+                <Separator />
+            </header>
+            <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
+                <CharacterList
+                    characters={visibleCharacters}
+                    totalCount={characters.length}
+                    hasFilter={hasFilter}
+                    onSelect={setEditingId}
+                    onCreate={() => setIsCreateOpen(true)}
+                    onClearFilter={handleClearFilter}
+                />
             </div>
-            <footer className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                    至少补齐主角与一名对手，大纲才能排布冲突
-                </span>
-                <Button size="sm" onClick={onNext}>
-                    下一步：生成大纲
-                    <ArrowRight data-icon="inline-end" />
-                </Button>
-            </footer>
+            {/* key 绑定展开状态：每次打开都重建表单，上一次的输入不会带过来 */}
+            <CharacterCreateDialog
+                key={isCreateOpen ? 'create-open' : 'create-closed'}
+                isOpen={isCreateOpen}
+                onOpenChange={setIsCreateOpen}
+                onCreate={handleCreate}
+            />
+            {editingCharacter !== null ? (
+                <CharacterEditDialog
+                    key={editingCharacter.id}
+                    character={editingCharacter}
+                    aiContext={aiContext}
+                    onSave={onChangeCharacter}
+                    onCancel={() => setEditingId(null)}
+                />
+            ) : null}
         </div>
     )
 }

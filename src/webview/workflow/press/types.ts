@@ -66,6 +66,8 @@ export interface CharacterCard {
     role: CharacterRole
     age: string
     identity: string
+    /** 外貌描写：外观与气质的白描，供正文引用，可由 AI 依据其他字段生成 */
+    appearance: string
     traits: string[]
     desire: string
     weakness: string
@@ -74,6 +76,9 @@ export interface CharacterCard {
     arc: string
     relation: string
 }
+
+/** 新建人物卡的初始值：不含 id，id 一律由 utils.createCharacterCard 生成，避免调用方伪造主键 */
+export type CharacterSeed = Partial<Omit<CharacterCard, 'id'>>
 
 /** 作品设定：步骤二的全部表单字段，覆盖 README.md 与 设定.md 的常用区块 */
 export interface ProjectSetting {

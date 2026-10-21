@@ -50,6 +50,18 @@ export const CHARACTER_ROLE_META: Readonly<Record<CharacterRole, { label: string
     antagonist: { label: '反派', tone: 'destructive' },
 }
 
+/** 人物定位顺序：列表排序以主角在前、反派在后，与作者翻卡的顺序一致 */
+export const CHARACTER_ROLE_ORDER: readonly CharacterRole[] = ['protagonist', 'heroine', 'supporting', 'antagonist']
+
+/** 人物筛选项：全部与四种定位，供人物页顶部切换，顺序与 CHARACTER_ROLE_ORDER 一致 */
+export const CHARACTER_ROLE_FILTERS: readonly (OptionMeta<CharacterRole | 'all'>)[] = [
+    { value: 'all', label: '全部' },
+    { value: 'protagonist', label: '主角' },
+    { value: 'heroine', label: '女主' },
+    { value: 'supporting', label: '配角' },
+    { value: 'antagonist', label: '反派' },
+]
+
 /** 题材预设：点击加入、再点移除，也可输入自定义题材 */
 export const GENRE_OPTIONS: readonly string[] = [
     '都市',

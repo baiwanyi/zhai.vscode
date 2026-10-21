@@ -1,6 +1,6 @@
 /**
  * AI 对话 Webview 面板（宿主侧）：加载 React 构建产物，路由 ai/* 与 workflow/* 协议到对话服务与工作流路由，
- * 并把 naming/* 前缀委托给取名路由（写作管理页的取名分区复用同一视图）。
+ * 并把 naming/* 与 pressAi/* 前缀分别委托给取名路由与写作管理 AI 路由（写作管理页的分区复用同一视图）。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
  * 上下文增删走 ai/context*，写回走 ai/writeState / ai/setMode / ai/applyWrite，state 广播以 channel 区分
  * ai（runtime / context / writeTarget）与 workflow（路由事实）。
@@ -14,6 +14,7 @@ import type { AiConversationMode } from '../../shared/types/aiChat'
 import type { HostToWebviewMessage, StreamMessage } from '../../shared/types/messages'
 import type { OpenWorkflowResult, ResetWorkflowResult } from '../../shared/types/workflow'
 import type { NamingRoutes } from '../naming/namingRoutes'
+import type { PressRoutes } from '../press/pressRoutes'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { logger } from '../common/logger'
@@ -39,6 +40,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         private readonly service: AiChatService,
         private readonly workflowRouter: WorkflowRouter,
         private readonly naming: NamingRoutes,
+        private readonly press: PressRoutes,
     ) {
         this.disposables.push(
             service.onStream((message) => this.broadcast(message)),
@@ -170,6 +172,9 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             default:
                 if (method.startsWith('naming/')) {
                     return this.naming.handle(method, payload)
+                }
+                if (method.startsWith('pressAi/')) {
+                    return this.press.handle(method, payload)
                 }
                 throw new Error(`未知的协议方法：${method}`)
         }

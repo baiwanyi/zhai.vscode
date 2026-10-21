@@ -23,6 +23,9 @@ import { ensureNamingSchema } from './modules/naming/db/schema'
 import { NamingRoutes } from './modules/naming/namingRoutes'
 import { NamingService } from './modules/naming/namingService'
 import { PinStore } from './modules/note/pinStore'
+import { openPressDatabase } from './modules/press/db/connection'
+import { PressAiService } from './modules/press/pressAiService'
+import { PressRoutes } from './modules/press/pressRoutes'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -80,7 +83,19 @@ export function activate(context: vscode.ExtensionContext): void {
     const namingService = new NamingService(namingDb, secrets)
     const namingRoutes = new NamingRoutes(namingService)
 
-    const aiChatProvider = new AiChatViewProvider(context.extensionUri, aiChatService, workflowRouter, namingRoutes)
+    // 写作管理：press.db 只承载 AI 配额等轻量状态，人物卡内容仍留在 webview 草稿中
+    const pressDb = openPressDatabase(cacheRoot)
+    context.subscriptions.push({ dispose: () => pressDb.close() })
+    const pressAiService = new PressAiService(pressDb, secrets)
+    const pressRoutes = new PressRoutes(pressAiService)
+
+    const aiChatProvider = new AiChatViewProvider(
+        context.extensionUri,
+        aiChatService,
+        workflowRouter,
+        namingRoutes,
+        pressRoutes,
+    )
     context.subscriptions.push(
         aiChatProvider,
         vscode.window.registerWebviewViewProvider(AiChatViewProvider.viewId, aiChatProvider),
