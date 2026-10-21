@@ -1,5 +1,5 @@
 /**
- * 写作管理页右侧分区导航栏：以纵向图标列承载页内分区入口（章节信息、大纲、角色、设定、取名、生图、
+ * 写作管理页右侧分区导航栏：以纵向图标列承载页内分区入口（设定、角色、大纲、取名、
  * 历史、AI对话、工具），视觉与交互对齐 VSCode 原生「活动栏」（48px 栏宽、24px 图标、
  * 贴内容区一侧的 2px 高亮条、提示悬浮于左侧）。
  * 复用约定：受控组件，激活标识与选中动作由页面传入；配色全部取 globals.css 桥接的活动栏主题令牌，
@@ -7,19 +7,18 @@
  * 关键约束：本期为占位入口，点击只切换高亮、不改变主内容；本组件不解析路由、不发起宿主命令；
  * 容器不可设置 overflow: hidden，否则 Tooltip 浮层会被裁切。
  */
-import { Globe, History, Image as ImageIcon, ListTree, MessageCircle, ScrollText, Tag, Users, Wrench } from 'lucide-react'
+import { Globe, History, ListTree, MessageCircle, Tag, Users, Wrench } from 'lucide-react'
 import { TooltipProvider } from '@components/ui/tooltip'
 import { WorkflowPressNavItem } from './WorkflowPressNavItem'
 import type { JSX, ReactNode } from 'react'
 
-/** 分区标识：与导航项一一对应，页面据此保存当前分区 */
+/** 分区标识：与分区内容一一对应；部分分区（如流程步骤跳转的章节写作）没有独立导航入口 */
 export type WorkflowPressSection =
     | 'chapter'
     | 'outline'
     | 'character'
     | 'setting'
     | 'naming'
-    | 'image'
     | 'history'
     | 'chat'
     | 'tools'
@@ -32,12 +31,10 @@ interface WorkflowPressNavEntry {
 
 /** 主功能分区：与活动栏一致置于栏顶 */
 const PRIMARY_ENTRIES: readonly WorkflowPressNavEntry[] = [
-    { id: 'chapter', label: '章节信息', icon: <ScrollText className="size-6" /> },
-    { id: 'outline', label: '大纲', icon: <ListTree className="size-6" /> },
-    { id: 'character', label: '角色', icon: <Users className="size-6" /> },
     { id: 'setting', label: '设定', icon: <Globe className="size-6" /> },
+    { id: 'character', label: '角色', icon: <Users className="size-6" /> },
+    { id: 'outline', label: '大纲', icon: <ListTree className="size-6" /> },
     { id: 'naming', label: '取名', icon: <Tag className="size-6" /> },
-    { id: 'image', label: '生图', icon: <ImageIcon className="size-6" /> },
     { id: 'history', label: '历史', icon: <History className="size-6" /> },
     { id: 'chat', label: 'AI对话', icon: <MessageCircle className="size-6" /> },
 ]
