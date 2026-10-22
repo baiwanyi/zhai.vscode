@@ -106,7 +106,7 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
             <div className="flex flex-col gap-2">
                 <div className="min-w-0">
                     <p className="text-xs font-medium">角色设定图</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-muted-foreground py-1">
                         {isGenerating
                             ? '生成中，出图通常需要 1~3 分钟，请保持弹窗打开'
                             : '每次生成一张，采用后加入图库；可设封面或删除，文件保存在本地目录'}
@@ -129,7 +129,6 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                     </Select>
                     {isGenerating ? (
                         <Button
-                            size="xs"
                             variant="ghost"
                             className="shrink-0"
                             onClick={() => {
@@ -141,7 +140,6 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                         </Button>
                     ) : (
                         <Button
-                            size="xs"
                             variant="outline"
                             className="shrink-0"
                             onClick={() => {
@@ -164,7 +162,6 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                     />
                     <div className="flex items-center justify-end gap-2">
                         <Button
-                            size="xs"
                             variant="ghost"
                             onClick={() => {
                                 void handleReject()
@@ -172,9 +169,7 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                         >
                             放弃
                         </Button>
-                        <Button size="xs" onClick={handleAdopt}>
-                            采用
-                        </Button>
+                        <Button onClick={handleAdopt}>采用</Button>
                     </div>
                 </div>
             ) : null}
@@ -204,7 +199,7 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                                         <img
                                             src={portrait.url}
                                             alt={`${character.name} 的角色卡`}
-                                            className="aspect-[3/4] w-full object-cover"
+                                            className="aspect-3/4 w-full object-cover"
                                         />
                                         {isCover ? (
                                             <span className="absolute top-1 left-1 rounded bg-background/85 px-1 py-0.5 text-[10px] font-medium">

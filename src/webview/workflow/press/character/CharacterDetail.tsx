@@ -161,7 +161,6 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
                                 <FieldLabel htmlFor="character-appearance">外貌描写</FieldLabel>
                                 {isGenerating ? (
                                     <Button
-                                        size="xs"
                                         variant="ghost"
                                         onClick={() => {
                                             void abort()
@@ -172,7 +171,6 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
                                     </Button>
                                 ) : (
                                     <Button
-                                        size="xs"
                                         variant="outline"
                                         onClick={() => {
                                             void handleGenerateAppearance()

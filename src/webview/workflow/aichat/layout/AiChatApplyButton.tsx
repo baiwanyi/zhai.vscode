@@ -34,7 +34,7 @@ export function AiChatApplyButton({ scope, applied, applying, onApply }: AiChatA
         return (
             <AlertDialog>
                 <AlertDialogTrigger asChild>
-                    <Button size="xs" variant="outline" disabled={isDisabled}>
+                    <Button variant="outline" disabled={isDisabled}>
                         {label}
                     </Button>
                 </AlertDialogTrigger>
@@ -55,7 +55,7 @@ export function AiChatApplyButton({ scope, applied, applying, onApply }: AiChatA
     }
 
     return (
-        <Button size="xs" variant="outline" disabled={isDisabled} onClick={onApply}>
+        <Button variant="outline" disabled={isDisabled} onClick={onApply}>
             {label}
         </Button>
     )

@@ -172,7 +172,6 @@ export function OutlineDetail({
                                 <Button
                                     aria-label="选择出场人物"
                                     variant="outline"
-                                    size="xs"
                                     className="h-7 w-full justify-between px-2 text-xs font-normal"
                                     disabled={characters.length === 0}
                                 >

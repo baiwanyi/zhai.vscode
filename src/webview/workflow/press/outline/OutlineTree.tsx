@@ -174,7 +174,7 @@ export function OutlineTree({
                                 </Collapsible>
                             )
                         })}
-                        <Button variant="ghost" size="xs" className="mt-1 rounded-full" onClick={onCreateVolume}>
+                        <Button variant="ghost" className="mt-1 rounded-full" onClick={onCreateVolume}>
                             <PlusCircle data-icon="inline-start" />
                             新建卷
                         </Button>

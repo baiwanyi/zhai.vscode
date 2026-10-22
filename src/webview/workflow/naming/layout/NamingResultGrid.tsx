@@ -37,7 +37,7 @@ export function NamingResultGrid({ items, error }: NamingResultGridProps): JSX.E
                     {items.length > 0 ? `已生成 ${items.length} 个名字` : '结果'}
                 </p>
                 {items.length > 0 ? (
-                    <Button size="xs" variant="ghost" onClick={() => void handleCopyAll()}>
+                    <Button variant="ghost" onClick={() => void handleCopyAll()}>
                         <Copy data-icon="inline-start" />
                         复制全部
                     </Button>
