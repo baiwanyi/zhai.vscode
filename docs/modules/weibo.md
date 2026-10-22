@@ -785,7 +785,7 @@ async function sha256(input: string): Promise<string> {
 interface AIEditRequest {
     text: string
     instruction: string          // 如「缩写到 140 字」「改写为轻松口语风」
-    model: 'deepseek-chat' | 'deepseek-reasoner'
+    model: 'deepseek-flash' | 'deepseek-v4-pro'
 }
 
 interface AIEditResult {

@@ -205,14 +205,18 @@
                 "zhai.ai.codebuddySite": {
                     "type": "string",
                     "enum": [
-                        "china",
-                        "international"
+                        "cn",
+                        "ai"
+                    ],
+                    "enumItemLabels": [
+                        "中国站",
+                        "国际站"
                     ],
                     "enumDescriptions": [
                         "中国站：授权页在 copilot.tencent.com（默认）",
                         "国际站：授权页在 codebuddy.ai"
                     ],
-                    "default": "china",
+                    "default": "cn",
                     "description": "CodeBuddy 站点：决定授权页域名与调用端点，登录与调用必须使用同一站点，切换后需重新登录"
                 },
                 "zhai.ai.codebuddyModel": {
@@ -223,10 +227,14 @@
                 "zhai.ai.model": {
                     "type": "string",
                     "enum": [
-                        "deepseek-chat",
-                        "deepseek-reasoner"
+                        "deepseek-flash",
+                        "deepseek-v4-pro"
                     ],
-                    "default": "deepseek-chat",
+                    "enumDescriptions": [
+                        "DeepSeek 直连快速档：响应快，适合日常对话与批量生成",
+                        "DeepSeek 直连增强档：推理与长文写作质量更高，速度较慢"
+                    ],
+                    "default": "deepseek-flash",
                     "description": "默认 AI 模型"
                 },
                 "zhai.ai.temperature": {

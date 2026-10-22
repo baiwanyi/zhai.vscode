@@ -245,7 +245,7 @@ PRAGMA foreign_keys = ON;
 | `zhai.index.debounceMs` | number | `500` | 增量索引防抖毫秒数 |
 | `zhai.index.rebuildOnActivate` | boolean | `true` | 激活时自检并按需重建 |
 | `zhai.search.limit` | number | `50` | 全局搜索单模块返回上限 |
-| `zhai.ai.model` | string | `deepseek-chat` | 默认模型 |
+| `zhai.ai.model` | string | `deepseek-flash` | 默认模型（可选 `deepseek-flash` / `deepseek-v4-pro`） |
 | `zhai.ai.temperature` | number | `0.7` | 默认温度 |
 | `zhai.ai.maxContextTokens` | number | `8000` | 前文与引用上下文注入上限 |
 | `zhai.ai.dailyTokenBudget` | number | `500000` | 每日 Token 预算，超限提示 |

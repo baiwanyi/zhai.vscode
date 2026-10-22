@@ -84,7 +84,7 @@ export type DiffDecision = 'accept' | 'reject'
 export interface AIEditRequest {
     text: string
     instruction: string
-    model: 'deepseek-chat' | 'deepseek-reasoner'
+    model: 'deepseek-flash' | 'deepseek-v4-pro'
 }
 
 export interface AIEditResult {

@@ -170,10 +170,10 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 | `zhai.ai.codebuddySite` | SDK `environment` | CLI `methodId` | `CODEBUDDY_INTERNET_ENVIRONMENT` | 授权页域名 |
 |---|---|---|---|---|
-| `china`（默认） | `internal` | `internal` | `internal` | copilot.tencent.com |
-| `international` | `external` | `external` | 不设置 | codebuddy.ai |
+| `cn`（默认，下拉显示「中国站」） | `internal` | `internal` | `internal` | copilot.tencent.com |
+| `ai`（下拉显示「国际站」） | `external` | `external` | 不设置 | codebuddy.ai |
 
-仅开放中国站与国际站，两者的授权页分属不同域名：中国站经 `copilot.tencent.com` 认证，国际站经 `codebuddy.ai` 认证。登录时 `methodId` 与 `environment` 必须同时按站点传入，否则 CLI 会用国际站登录方式发起授权，授权完成后凭证仍落不到所选站点。授权页回调打开前按站点域名校验一次，域名不符时告警但继续打开，避免阻断企业自定义 SSO 场景。配置里的非法取值一律归入中国站。
+仅开放中国站与国际站，两者的授权页分属不同域名：中国站经 `copilot.tencent.com` 认证，国际站经 `codebuddy.ai` 认证。登录时 `methodId` 与 `environment` 必须同时按站点传入，否则 CLI 会用国际站登录方式发起授权，授权完成后凭证仍落不到所选站点。授权页回调打开前按站点域名校验一次，域名不符时告警但继续打开，避免阻断企业自定义 SSO 场景。配置里的非法取值一律归入中国站；历史配置的 `china` / `international` 在读取时归一为 `cn` / `ai`，升级后无需手动改动。
 
 切换站点后必须重新登录，旧站点凭证不会复用；专享版/私有化（需自定义 `endpoint`）不在开放范围内。
 
