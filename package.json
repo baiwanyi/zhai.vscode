@@ -290,7 +290,7 @@
                 "zhai.image.codebuddyImageModel": {
                     "type": "string",
                     "default": "",
-                    "description": "ImageGen 使用的文生图模型 id（如 hunyuan-image-alpha），留空则用 CLI 默认或用户在 /model:text-to-image 中的设置；可用模型以 CLI 的 /model:text-to-image list 为准"
+                    "description": "ImageGen 使用的文生图模型 id（如 hy-image3.5-preview）。留空则沿用 CLI 当前设置（默认取站点配置里的首个文生图模型）；可用清单由服务端产品配置决定，请在 CLI 中执行 /model:text-to-image list 查看，或用「宅写作：选择 CodeBuddy 模型」→「文生图模型（手动填写）」写入。不要填对话模型（deepseek-* 等），否则会报 route config not found"
                 },
                 "zhai.image.baseUrl": {
                     "type": "string",

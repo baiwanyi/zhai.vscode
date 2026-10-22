@@ -210,7 +210,7 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 | 超时 | 直连通道沿用 `zhai.image.timeoutSeconds`（默认 300s）；CodeBuddy 通道独立上限 600s（子进程启动 + 排队） |
 | 产物归一 | `ImageGen` 以 JSON 文本回报 `{ type: 'image_gen_tool_result', images: [{ localPath }] }`，适配层先取结构化字段，再依次尝试 image block / data URL / 绝对路径 / 链接；路径可能不带扩展名，格式一律按文件魔数（PNG/JPEG/WEBP）判定，非图片内容自动跳到下一个候选，统一交给 `portraitService` 落盘 |
 | 画风与尺寸 | 沿用 `PORTRAIT_STYLES` 与 `zhai.image.size`；CodeBuddy 侧的传参方式（自然语言描述 / 工具入参）待实测，未定前双写 |
-| 文生图模型 | `zhai.image.codebuddyImageModel` 经 SDK `extraArgs` 转成 CLI 的 `--text-to-image-model`，留空则用 CLI 默认或用户 `/model:text-to-image` 的设置；`zhai.image.codebuddyModel` 只决定驱动工具调用的对话模型（用「宅写作：选择 CodeBuddy 模型」从账号可用列表中选，手填不存在的 id 会被服务端 400 拒绝），两者不要混用 |
+| 文生图模型 | `zhai.image.codebuddyImageModel` 经 SDK `extraArgs` 转成 CLI 的 `--text-to-image-model`，留空则用 CLI 默认或用户 `/model:text-to-image` 的设置；清单由服务端产品配置决定，SDK 不暴露，插件只能手动填写（命令内「文生图模型（手动填写）」入口，可用 id 以 CLI 的 `/model:text-to-image list` 为准），误填 `deepseek-*` 等对话模型会被忽略。`zhai.image.codebuddyModel` 只决定驱动工具调用的对话模型（用「宅写作：选择 CodeBuddy 模型」从账号可用列表中选，手填不存在的 id 会被服务端 400 拒绝），两者不要混用 |
 | 频率护栏 | `zhai.image.dailyLimit` 按通道分别计数，避免回退后额度翻倍 |
 
 > **落地状态**：`ImageProvider` 契约与 `ImageProviderRouter` 已实现（`src/modules/press/ai/imageProvider.ts`），两个实现分别走 SDK 的 `ImageGen` 与既有 `/images/generations`（`codebuddyImageProvider.ts` / `openaiImageProvider.ts`）。能力探测读 `system.init` 的 `tools` 是否含 `ImageGen`，结果缓存 10 分钟，出图失败时清空缓存重探。回退说明经 `PortraitGenerateResult.notice` 回传，前端展示待补。

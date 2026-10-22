@@ -2,7 +2,8 @@
  * CodeBuddy 图像通道：经 Agent SDK 调用 CLI 内置的 ImageGen 工具出图。
  * 复用约定：提示词与尺寸由调用方给出，本层只负责拼指令、驱动工具、把产物归一为字节；
  * 凭证优先取 SecretStorage 的 CodeBuddy API Key，缺省沿用 CLI 登录态。
- * 关键约束：只放行 ImageGen 且限制单轮；ImageGen 以 JSON 文本回报产物（images[].localPath），
+ * 关键约束：只放行 ImageGen 并限制最大轮次（模型常先输出说明、再调用工具、最后收尾）；
+ * 工具结果一落地即尝试取图，避免收尾轮被轮次上限截断导致整次作废；ImageGen 以 JSON 文本回报产物（images[].localPath），
  * 路径可能不带扩展名，格式一律按文件魔数判定；同时兼容 image block / data URL / 链接等形态，
  * 逐候选校验，全部失败时记录诊断并明确报错，不返回空图。
  */
@@ -22,6 +23,12 @@ import { logger } from '../../common/logger'
 
 /** 单张图片体积上限，与直连通道保持一致 */
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024
+/**
+ * 单次出图允许的最大轮次。
+ * 模型常见的三段式响应是「文字说明 → 调用 ImageGen → 收尾回复」，任何多出来的一次试探
+ * 都会让轮次刚好用尽并抛 Max turns；给足余量比事后判定更可靠。
+ */
+const MAX_TURNS = 5
 /** 单次响应最多尝试的候选数，避免长文本里逐个试错 */
 const MAX_CANDIDATES = 16
 /** 结构化产物字段：ImageGen 用 images[].localPath，其余形态用它兜底 */
@@ -32,6 +39,8 @@ const DATA_URL_PATTERN = /data:image\/[a-z+]+;base64,[A-Za-z0-9+/=]+/gi
 const ABSOLUTE_PATH_PATTERN = /(?:[A-Za-z]:[\\/]|\/)[^\s"'<>(){},;]+/g
 /** 文本中的链接：不限扩展名，下载后同样按内容嗅探 */
 const URL_PATTERN = /(?:https?|file):\/\/[^\s"'<>(){},;]+/g
+/** ImageGen 的完成标记：只在工具明确回报完成时才取图，避免把写到一半的文件当成产物 */
+const IMAGE_DONE_PATTERN = /image_gen_tool_result|"status"\s*:\s*"completed"/i
 
 /** 工具授权：只放行 ImageGen，其余一律拒绝（tools 限制可调用范围，能否执行还需此回调放行） */
 function allowImageGenOnly(toolName: string, input: Record<string, unknown>): Promise<PermissionResult> {
@@ -54,19 +63,49 @@ function buildImageEnv(site: CodebuddySite, apiKey?: string): Record<string, str
 /** 拼出交给模型的出图指令：要求只调用工具并回报路径，避免它继续解释画面 */
 function buildInstruction(options: ImageGenerateOptions): string {
     return [
-        '请使用 ImageGen 工具生成一张图片，不要用文字描述代替出图。',
+        '请立即调用 ImageGen 工具生成一张图片，不要先用文字说明或复述画面，也不要用文字描述代替出图。',
         `画面要求：${options.prompt}`,
         `尺寸：${options.size}`,
         '完成后只回复图片的本地绝对路径或可访问链接，不要附加其他说明。',
     ].join('\n')
 }
 
+/**
+ * 归一用户填写的出图模型：留空或误填对话模型时返回 undefined，交由 CLI 按站点配置选择默认出图模型。
+ * 关键约束：ImageGen 优先使用下发的 --text-to-image-model，误填对话模型会在服务端报
+ * 「Image model [...] route config not found」；对话模型以 deepseek- 前缀或与驱动模型同名判定。
+ */
+function resolveImageModel(value: string, chatModel: string | undefined): string | undefined {
+    const trimmed = value.trim()
+    if (trimmed.length === 0) {
+        return undefined
+    }
+    if (trimmed.startsWith('deepseek-') || (chatModel !== undefined && trimmed === chatModel)) {
+        logger.warn(`CodeBuddy 出图模型「${trimmed}」不是文生图模型，已忽略并交由 CLI 选择默认出图模型`)
+        return undefined
+    }
+    return trimmed
+}
+
+/** 出图模型缺失路由时的可执行指引；未命中该错误时返回 null */
+function describeImageModelRouteError(text: string, imageModel: string | undefined): string | null {
+    if (!/route config not found/i.test(text)) {
+        return null
+    }
+    const label = imageModel !== undefined && imageModel.length > 0 ? `「${imageModel}」` : '当前出图模型'
+    return `出图模型${label}在该站点没有路由配置：请把「CodeBuddy 出图模型」留空（由 CLI 选择默认文生图模型），或填写该站点支持的文生图模型 id`
+}
+
 /** 把 SDK 的原始错误转成可执行提示 */
-function toReadableError(error: unknown, model?: string): Error {
+function toReadableError(error: unknown, model?: string, imageModel?: string): Error {
     const message = error instanceof Error ? error.message : String(error)
     if (/authentication required|please (use|run) \/login/i.test(message)) {
         const site = CODEBUDDY_SITE_LABELS[getZhaiConfig().aiCodebuddySite]
         return new Error(`尚未登录 CodeBuddy（${site}）：请执行「宅写作：登录 CodeBuddy」后重试`, { cause: error })
+    }
+    const routeError = describeImageModelRouteError(message, imageModel)
+    if (routeError !== null) {
+        return new Error(`CodeBuddy 出图失败：${routeError}`, { cause: error })
     }
     if (/service info not found|supported models for your account/i.test(message)) {
         const label = model !== undefined && model.length > 0 ? `「${model}」` : '当前模型'
@@ -250,7 +289,8 @@ export class CodeBuddyImageProvider implements ImageProvider {
             options.signal.addEventListener('abort', forwardAbort, { once: true })
         }
         const model = resolveCodebuddyModel(cfg.imageCodebuddyModel)
-        const imageModel = cfg.imageCodebuddyImageModel.trim()
+        // 出图模型误填对话模型时不下发，交由 CLI 取站点配置里的文生图模型
+        const imageModel = resolveImageModel(cfg.imageCodebuddyImageModel, model)
         const session = query({
             prompt: buildInstruction(options),
             options: {
@@ -258,15 +298,15 @@ export class CodeBuddyImageProvider implements ImageProvider {
                 tools: ['ImageGen'],
                 allowedTools: ['ImageGen'],
                 canUseTool: allowImageGenOnly,
-                // 出图需要两轮：一轮调用工具，一轮收尾；只给一轮会在工具执行后直接报 Max turns
-                maxTurns: 2,
+                // 出图通常需要三轮（说明 / 工具 / 收尾），按 MAX_TURNS 留出试探余量，避免中途被截断
+                maxTurns: MAX_TURNS,
                 permissionMode: 'default',
                 includePartialMessages: false,
                 cwd: tmpdir(),
                 // 驱动模型同样必须落在账号可用列表内，否则 CLI 直接 400
                 model,
                 // 出图模型经 CLI 参数下发，留空则由 CLI 默认或用户 /model:text-to-image 设置决定
-                extraArgs: imageModel.length > 0 ? { 'text-to-image-model': imageModel } : undefined,
+                extraArgs: imageModel !== undefined ? { 'text-to-image-model': imageModel } : undefined,
                 abortController: controller,
                 env: buildImageEnv(cfg.aiCodebuddySite, apiKey),
             },
@@ -286,6 +326,13 @@ export class CodeBuddyImageProvider implements ImageProvider {
                     } else {
                         blocks.push({ type: 'text', text: content })
                     }
+                    // 工具结果一到手就先取图：即使后续收尾轮触发 Max turns，本次也能正常交付
+                    if (IMAGE_DONE_PATTERN.test(collectText(blocks))) {
+                        const artifact = await this.readArtifact(blocks)
+                        if (artifact !== null) {
+                            return artifact
+                        }
+                    }
                     continue
                 }
                 if (message.type === 'result' && message.subtype !== 'success') {
@@ -298,7 +345,8 @@ export class CodeBuddyImageProvider implements ImageProvider {
             if (artifact !== null) {
                 return artifact
             }
-            throw toReadableError(error, cfg.imageCodebuddyModel)
+            logger.warn(`CodeBuddy 出图中断且未取到产物：${summarizeForLog(blocks)}`)
+            throw toReadableError(error, cfg.imageCodebuddyModel, imageModel)
         } finally {
             options.signal.removeEventListener('abort', forwardAbort)
             if (!controller.signal.aborted) {
@@ -306,14 +354,16 @@ export class CodeBuddyImageProvider implements ImageProvider {
             }
         }
         if (failure !== null) {
-            throw new Error(`CodeBuddy 出图失败：${failure}`)
+            throw new Error(`CodeBuddy 出图失败：${describeImageModelRouteError(failure, imageModel) ?? failure}`)
         }
         const artifact = await this.readArtifact(blocks)
         if (artifact === null) {
             logger.warn(`CodeBuddy 出图产物无法解析：${summarizeForLog(blocks)}`)
             const detail = collectText(blocks).replace(DATA_URL_PATTERN, '').replace(/\s+/g, ' ').trim()
             if (detail.length > 0) {
-                throw new Error(`CodeBuddy 出图失败：${detail.slice(0, 200)}`)
+                throw new Error(
+                    `CodeBuddy 出图失败：${describeImageModelRouteError(detail, imageModel) ?? detail.slice(0, 200)}`,
+                )
             }
             throw new Error('CodeBuddy 未返回可识别的图片（已检查本地路径、链接与内联数据），请检查该通道的出图能力或改用直连服务')
         }

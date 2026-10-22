@@ -3,6 +3,7 @@
  * 复用约定：经 SDK createSession 的 getAvailableModels 取列表，站点与凭证沿用 codebuddySite 的映射；
  * 关键约束：拉取需拉起 CLI 子进程（数秒）且要求已登录，失败一律降级为空列表、不阻断激活；
  * 缓存只存在内存（站点或账号变化即失效），由命令的强制刷新或下次激活重建。
+ * 清单只含语言模型，文生图模型由服务端产品配置决定，不予枚举。
  */
 import { tmpdir } from 'node:os'
 import { unstable_v2_createSession } from '@tencent-ai/agent-sdk'
