@@ -1,12 +1,13 @@
 /**
  * CodeBuddy 通道：经 @tencent-ai/agent-sdk 的 query() 驱动随包分发的 CLI 完成一次生成。
  * 复用约定：请求与增量结构由 ../provider 定义；SDK 自带 CLI（cli/bin/codebuddy），无需用户单独安装；
- * 凭证优先取 SecretStorage 中的 CodeBuddy API Key，缺省时沿用 CLI 本地登录态。
+ * 站点经 ./codebuddySite 统一映射，保证与登录命令落在同一站点；凭证优先取 SecretStorage 的 API Key。
  * 关键约束：内置工具一律禁用（tools: []）并限制单轮，避免纯文本生成去读工作区；
- * 会话不做 resume，历史由调用方拼成单轮提示词，保证同一请求行为可预测。
+ * 首轮无会话号时把本地历史拼成单轮提示词，拿到会话号后改为 resume 续接，历史由通道维护。
  */
 import { tmpdir } from 'node:os'
 import { query } from '@tencent-ai/agent-sdk'
+import { buildCodebuddyEnv, CODEBUDDY_SITE_LABELS } from './codebuddySite'
 import type { SecretsService } from '../../common/secrets'
 import type {
     AiChatMessage,
@@ -16,6 +17,7 @@ import type {
     AiStreamChunk,
     AiStreamRequest,
 } from '../provider'
+import { getZhaiConfig } from '../../common/config'
 
 /** 提示词拆分结果：system 内容与单轮输入 */
 interface PreparedPrompt {
@@ -60,7 +62,8 @@ function toCodebuddyModel(model: string): string | undefined {
 function toReadableError(error: unknown): Error {
     const message = error instanceof Error ? error.message : String(error)
     if (/authentication required|please (use|run) \/login/i.test(message)) {
-        return new Error('尚未登录 CodeBuddy：请在命令面板执行「宅写作：登录 CodeBuddy」后重试', { cause: error })
+        const site = CODEBUDDY_SITE_LABELS[getZhaiConfig().aiCodebuddySite]
+        return new Error(`尚未登录 CodeBuddy（${site}）：请执行「宅写作：登录 CodeBuddy」后重试`, { cause: error })
     }
     return error instanceof Error ? error : new Error(message)
 }
@@ -103,7 +106,7 @@ export class CodeBuddyProvider implements AiProvider {
                 model: toCodebuddyModel(request.model),
                 // 工作目录指向临时目录，与用户项目隔离
                 cwd: tmpdir(),
-                env: apiKey ? { CODEBUDDY_API_KEY: apiKey } : undefined,
+                env: buildCodebuddyEnv(getZhaiConfig().aiCodebuddySite, apiKey),
             },
         })
         let hasStreamed = false

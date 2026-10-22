@@ -197,6 +197,21 @@
                     "default": "auto",
                     "description": "AI 通道：面板对话、取名与人物外貌生成统一使用该通道"
                 },
+                "zhai.ai.codebuddySite": {
+                    "type": "string",
+                    "enum": [
+                        "international",
+                        "china",
+                        "ioa"
+                    ],
+                    "enumDescriptions": [
+                        "国际站 codebuddy.ai（默认）",
+                        "中国站 copilot.tencent.com",
+                        "腾讯 iOA 企业版"
+                    ],
+                    "default": "international",
+                    "description": "CodeBuddy 站点：登录与调用必须使用同一站点，切换后需重新登录"
+                },
                 "zhai.ai.model": {
                     "type": "string",
                     "enum": [

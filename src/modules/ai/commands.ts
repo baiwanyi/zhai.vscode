@@ -7,6 +7,7 @@
 import { unstable_v2_authenticate } from '@tencent-ai/agent-sdk'
 import * as vscode from 'vscode'
 import { createContextRefs, MAX_CONTEXT_COUNT } from './contextRefs'
+import { buildCodebuddyEnv, CODEBUDDY_SITE_LABELS, toAuthEnvironment } from './providers/codebuddySite'
 import type { AiChatService } from './chatService'
 import type { WorkflowRouter } from './workflowRouter'
 import type { SecretsService } from '../common/secrets'
@@ -66,23 +67,29 @@ export function registerAiCommands(
         void vscode.window.showInformationMessage('宅写作：已清除 DeepSeek API Key')
     })
 
-    // CodeBuddy 通道：SDK 自带 CLI，用户只需完成一次浏览器登录，凭证由 CLI 配置目录维护
+    // CodeBuddy 通道：SDK 自带 CLI，用户只需完成一次浏览器登录，凭证由 CLI 按站点分别缓存
     register('zhai.ai.loginCodebuddy', async () => {
+        const site = getZhaiConfig().aiCodebuddySite
         await vscode.window.withProgress(
-            { location: vscode.ProgressLocation.Notification, title: 'CodeBuddy 登录', cancellable: false },
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: `CodeBuddy 登录（${CODEBUDDY_SITE_LABELS[site]}）`,
+                cancellable: false,
+            },
             async (progress) => {
                 progress.report({ message: '正在打开浏览器授权页…' })
                 try {
                     const result = await unstable_v2_authenticate({
-                        environment: 'external',
+                        environment: toAuthEnvironment(site),
+                        env: buildCodebuddyEnv(site),
                         onAuthUrl: async (state) => {
                             await vscode.env.openExternal(vscode.Uri.parse(state.authUrl))
                         },
                     })
-                    logger.info(`CodeBuddy 已登录：${result.userinfo.userName}`)
+                    logger.info(`CodeBuddy 已登录（${site}）：${result.userinfo.userName}`)
                     service.notifyRuntimeChanged()
                     void vscode.window.showInformationMessage(
-                        `宅写作：CodeBuddy 已登录（${result.userinfo.userName}）`,
+                        `宅写作：CodeBuddy 已登录（${CODEBUDDY_SITE_LABELS[site]} / ${result.userinfo.userName}）`,
                     )
                 } catch (error) {
                     const message = error instanceof Error ? error.message : String(error)

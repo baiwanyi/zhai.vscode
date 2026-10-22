@@ -166,6 +166,16 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 登录入口：命令 `zhai.ai.loginCodebuddy` 调 SDK 的 `unstable_v2_authenticate` 打开浏览器授权；若企业环境不便走浏览器，可在 SecretStorage 配置 `zhai.codebuddy.apiKey` 并显式选用 `codebuddy` 通道。
 
+**站点区分**：CodeBuddy 按站点独立签发凭证，登录与调用必须落在同一站点，错配会直接表现为「未登录」。站点解析集中在 `src/modules/ai/providers/codebuddySite.ts`，由登录命令、文本通道、图像通道三处共用。
+
+| `zhai.ai.codebuddySite` | SDK `environment` | `CODEBUDDY_INTERNET_ENVIRONMENT` | 对应站点 |
+|---|---|---|---|
+| `international`（默认） | `external` | 不设置 | 国际站 codebuddy.ai |
+| `china` | `internal` | `internal` | 中国站 copilot.tencent.com |
+| `ioa` | `ioa` | `ioa` | 腾讯 iOA 企业版 |
+
+切换站点后必须重新登录，旧站点凭证不会复用；企业专享版（`cloudhosted`）需自定义 `endpoint`，暂未开放配置。
+
 ### 5.3 各入口的会话与工具策略
 
 | 入口 | 会话 | 工具 | 说明 |

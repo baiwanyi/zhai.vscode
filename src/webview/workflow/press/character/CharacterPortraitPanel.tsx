@@ -7,7 +7,7 @@
  * 画风随人物卡保存，切换只影响后续生成，已采用的图片不会重绘。
  */
 import { cn } from 'cn'
-import { ImagePlus, Sparkles, Star, Trash2 } from 'lucide-react'
+import { ImagePlus, Info, Sparkles, Star, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import {
@@ -37,7 +37,7 @@ interface CharacterPortraitPanelProps {
 }
 
 export function CharacterPortraitPanel({ character, aiContext, onChange }: CharacterPortraitPanelProps): JSX.Element {
-    const { isGenerating, error, generate, remove, abort } = useCharacterPortrait()
+    const { isGenerating, error, notice, generate, remove, abort } = useCharacterPortrait()
     /** 已生成但尚未采用的图片 */
     const [pending, setPending] = useState<CharacterPortrait | null>(null)
     /** 正在删除的图片路径，用于禁用重复点击 */
@@ -241,6 +241,13 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                     </div>
                 </div>
             )}
+
+            {notice !== null ? (
+                <Alert>
+                    <Info data-icon="inline-start" />
+                    <AlertDescription>{notice}</AlertDescription>
+                </Alert>
+            ) : null}
 
             {error !== null ? (
                 <Alert variant="destructive">

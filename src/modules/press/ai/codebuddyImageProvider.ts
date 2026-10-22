@@ -12,6 +12,7 @@ import { query } from '@tencent-ai/agent-sdk'
 import type { ImageGenerateOptions, ImageGenerateResult, ImageProvider, ImageProviderId } from './imageProvider'
 import type { SecretsService } from '../../common/secrets'
 import type { ContentBlock } from '@tencent-ai/agent-sdk'
+import { buildCodebuddyEnv, CODEBUDDY_SITE_LABELS } from '../../ai/providers/codebuddySite'
 import { getZhaiConfig } from '../../common/config'
 
 /** 单张图片体积上限，与直连通道保持一致 */
@@ -35,7 +36,8 @@ function buildInstruction(options: ImageGenerateOptions): string {
 function toReadableError(error: unknown): Error {
     const message = error instanceof Error ? error.message : String(error)
     if (/authentication required|please (use|run) \/login/i.test(message)) {
-        return new Error('尚未登录 CodeBuddy：请在命令面板执行「宅写作：登录 CodeBuddy」后重试', { cause: error })
+        const site = CODEBUDDY_SITE_LABELS[getZhaiConfig().aiCodebuddySite]
+        return new Error(`尚未登录 CodeBuddy（${site}）：请执行「宅写作：登录 CodeBuddy」后重试`, { cause: error })
     }
     return error instanceof Error ? error : new Error(message)
 }
@@ -81,6 +83,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
                 includePartialMessages: false,
                 cwd: tmpdir(),
                 abortController: controller,
+                env: buildCodebuddyEnv(getZhaiConfig().aiCodebuddySite),
             },
         })
         try {
@@ -119,7 +122,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
                 cwd: tmpdir(),
                 model: model.length > 0 ? model : undefined,
                 abortController: controller,
-                env: apiKey ? { CODEBUDDY_API_KEY: apiKey } : undefined,
+                env: buildCodebuddyEnv(cfg.aiCodebuddySite, apiKey),
             },
         })
         const blocks: ContentBlock[] = []

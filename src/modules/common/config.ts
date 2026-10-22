@@ -23,6 +23,8 @@ export interface ZhaiConfig {
     searchLimit: number
     /** AI 通道：auto 优先 CodeBuddy（配置了凭证时），否则回落 DeepSeek 直连 */
     aiProvider: 'deepseek' | 'codebuddy' | 'auto'
+    /** CodeBuddy 站点：登录与调用必须一致，切换后需重新登录 */
+    aiCodebuddySite: CodebuddySite
     aiModel: string
     aiTemperature: number
     aiMaxContextTokens: number
@@ -52,6 +54,14 @@ export interface ZhaiConfig {
 
 const SECTION = 'zhai'
 
+/** CodeBuddy 站点：国际站、中国站、腾讯 iOA */
+export type CodebuddySite = 'international' | 'china' | 'ioa'
+
+/** 收窄站点取值：非法值按国际站处理 */
+function readCodebuddySite(value: string): CodebuddySite {
+    return value === 'china' || value === 'ioa' ? value : 'international'
+}
+
 /** 收窄通道取值：非法配置一律按 auto 处理，避免历史配置或手写错值导致激活失败 */
 function readAiProvider(value: string): ZhaiConfig['aiProvider'] {
     return value === 'deepseek' || value === 'codebuddy' ? value : 'auto'
@@ -72,6 +82,7 @@ export function getZhaiConfig(): ZhaiConfig {
         rebuildOnActivate: cfg.get<boolean>('index.rebuildOnActivate', true),
         searchLimit: cfg.get<number>('search.limit', 50),
         aiProvider: readAiProvider(cfg.get<string>('ai.provider', 'auto')),
+        aiCodebuddySite: readCodebuddySite(cfg.get<string>('ai.codebuddySite', 'international')),
         aiModel: cfg.get<string>('ai.model', 'deepseek-chat'),
         aiTemperature: cfg.get<number>('ai.temperature', 0.7),
         aiMaxContextTokens: cfg.get<number>('ai.maxContextTokens', 8000),

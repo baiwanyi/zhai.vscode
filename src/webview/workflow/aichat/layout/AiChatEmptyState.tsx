@@ -27,7 +27,7 @@ export function AiChatEmptyState({
         return <AiChatLoadingState />
     }
     if (runtime.provider === 'codebuddy') {
-        return <AiChatCodebuddyState onLogin={onLoginCodebuddy} />
+        return <AiChatCodebuddyState site={runtime.providerSite} onLogin={onLoginCodebuddy} />
     }
     return hasApiKey ? <AiChatWelcomeState /> : <AiChatApiKeyState onSetup={onSetupApiKey} />
 }

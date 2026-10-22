@@ -131,6 +131,8 @@ export type AiProviderId = 'deepseek' | 'codebuddy'
 export interface AiRuntimeInfo {
     /** 当前生效的通道 */
     provider: AiProviderId
+    /** 通道站点展示名（仅 CodeBuddy 通道有值），用于登录引导说明 */
+    providerSite?: string
     /** 当前通道是否就绪：DeepSeek 检查密钥，CodeBuddy 交由请求阶段判定 */
     hasApiKey: boolean
     /** 脱敏后的 Key（仅末 4 位，CodeBuddy 通道下无意义） */

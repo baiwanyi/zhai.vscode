@@ -33,6 +33,7 @@ import {
     updateConversationTitle,
     updateMessage,
 } from './db/chatRepository'
+import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
 import type { ChatMessage, ChatUsage } from './client'
 import type { HostContextRef, ResolvedContextRef } from './contextRefs'
 import type { ConversationRow, MessageRow } from './db/chatRepository'
@@ -132,6 +133,7 @@ export class AiChatService implements vscode.Disposable {
         const apiKey = await this.secrets.get('deepseekApiKey')
         return {
             provider: this.provider.id,
+            providerSite: this.provider.id === 'codebuddy' ? CODEBUDDY_SITE_LABELS[cfg.aiCodebuddySite] : undefined,
             hasApiKey: status.ready,
             maskedApiKey: SecretsService.mask(apiKey),
             model: cfg.aiModel,
