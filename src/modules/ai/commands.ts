@@ -1,13 +1,13 @@
 /**
- * AI 命令注册：面板跳转、CodeBuddy 登录与模型选择、以及「添加到宅对话」上下文入口。
+ * AI 命令注册：面板跳转、CodeBuddy 登录、以及「添加到宅对话」上下文入口。
  * 设计源：docs/modules/ai-chat.md 第 7.1 节命令清单。
  * 复用约定：引用生成与预算校验统一委托 modules/ai/contextRefs，面板跳转携带的模块意图交由 WorkflowRouter 承接。
  * 约束：全部 Disposable 挂载到 context.subscriptions，保证停用后释放（AC-10）；密钥与引用原文不落日志。
+ * 模型选择不在命令面板，改由 AI 面板输入区的模型菜单（ai/models / ai/selectModel）承接。
  */
 import { unstable_v2_authenticate } from '@tencent-ai/agent-sdk'
 import * as vscode from 'vscode'
 import { createContextRefs, MAX_CONTEXT_COUNT } from './contextRefs'
-import { listCodebuddyModels } from './providers/codebuddyModels'
 import {
     buildCodebuddyEnv,
     CODEBUDDY_SITE_LABELS,
@@ -17,18 +17,13 @@ import {
 } from './providers/codebuddySite'
 import type { AiChatService } from './chatService'
 import type { WorkflowRouter } from './workflowRouter'
-import type { SecretsService } from '../common/secrets'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { getZhaiConfig } from '../common/config'
 import { logger } from '../common/logger'
 
-/** 模型选择列表里「手动输入」项的哨兵值，避免与真实模型 id 冲突 */
-const CUSTOM_MODEL_MARK = '__zhai_custom_model__'
-
 export function registerAiCommands(
     context: vscode.ExtensionContext,
     service: AiChatService,
-    secrets: SecretsService,
     router: WorkflowRouter,
 ): void {
     const register = (command: string, handler: (...args: unknown[]) => unknown): void => {
@@ -88,60 +83,7 @@ export function registerAiCommands(
         )
     })
 
-    // 模型选择：清单在激活时预热过，这里强制刷新一次，保证换站点/换账号后拿到最新列表。
-    // 对话、取名、外貌生成与出图驱动模型共用 ai.codebuddyModel，故无需再选用途。
-    register('zhai.ai.selectCodebuddyModel', async () => {
-        const models = await vscode.window.withProgress(
-            {
-                location: vscode.ProgressLocation.Notification,
-                title: '正在获取 CodeBuddy 可用模型…',
-                cancellable: false,
-            },
-            () => listCodebuddyModels(secrets, true),
-        )
-        if (models.length === 0) {
-            void vscode.window.showWarningMessage(
-                '宅写作：未取到 CodeBuddy 可用模型，请先执行「宅写作：登录 CodeBuddy」',
-            )
-            return
-        }
-        const options = [
-            { label: '使用默认模型', description: '清空该配置，由 CLI 自行决定', modelId: '' },
-            ...models.map((model) => ({ label: model.name, description: model.modelId, modelId: model.modelId })),
-            {
-                label: '手动输入模型 id…',
-                description: '账号可用但不在上表中的模型，直接填写 id',
-                modelId: CUSTOM_MODEL_MARK,
-            },
-        ]
-        const picked = await vscode.window.showQuickPick(options, {
-            title: '选择 CodeBuddy 模型',
-            placeHolder: '列表来自当前账号，也可手动填写自定义模型 id',
-        })
-        if (picked === undefined) {
-            return
-        }
-        let modelId = picked.modelId
-        if (modelId === CUSTOM_MODEL_MARK) {
-            const manual = await vscode.window.showInputBox({
-                title: '输入 CodeBuddy 模型 id',
-                prompt: '填写 CodeBuddy 账号可用的模型 id，留空表示交给 CLI 默认',
-                placeHolder: '例如 deepseek-v4.1-flash',
-                ignoreFocusOut: true,
-            })
-            if (manual === undefined) {
-                return
-            }
-            modelId = manual.trim()
-        }
-        await vscode.workspace
-            .getConfiguration('zhai')
-            .update('ai.codebuddyModel', modelId, vscode.ConfigurationTarget.Global)
-        logger.info(`CodeBuddy 模型已设为 ${modelId.length > 0 ? modelId : '默认'}`)
-        void vscode.window.showInformationMessage(
-            `宅写作：CodeBuddy 模型已设为 ${modelId.length > 0 ? modelId : '默认模型'}`,
-        )
-    })
+    // 模型选择由 AI 面板输入区的模型菜单承接（ai/models + ai/selectModel），此处不再注册命令
 }
 
 /**

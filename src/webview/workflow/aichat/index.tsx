@@ -2,8 +2,9 @@
  * AI 对话页：MessageScroller 托管消息流（自动滚动 + 回到底部按钮），Message + Bubble 呈现消息，
  * 空态用 Empty、输入区用三段式输入卡片（工具行 / 输入框 / 操作行）；流式正文经宿主 stream 增量渲染。
  * 底部卡片承载写作命令（徽章展示，指令模板在发送时拼装）、参考资料占位、对话 / 写作模式切换、
- * Token 圆环、增强提示词与发送；写作模式的结果由消息底部「应用到编辑栏」写回编辑器（宿主校验文档版本）。
- * 会话 / 上下文 / 运行时 / 历史 / 写回 / 宿主命令操作拆分至 hooks/，页面区块与消息渲染拆分至 layout/。
+ * 模型菜单（展开时按需拉取账号可用清单）、Token 圆环、增强提示词与发送；
+ * 写作模式的结果由消息底部「应用到编辑栏」写回编辑器（宿主校验文档版本）。
+ * 会话 / 上下文 / 运行时 / 历史 / 模型 / 写回 / 宿主命令操作拆分至 hooks/，页面区块与消息渲染拆分至 layout/。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机与第 10.3 节写回链路。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -12,6 +13,7 @@ import { AI_COMMAND_MAP, isAiCommandId } from './constants'
 import { useAiChatCommands } from './hooks/useAiChatCommands'
 import { useAiChatContexts } from './hooks/useAiChatContexts'
 import { useAiChatHistory } from './hooks/useAiChatHistory'
+import { useAiChatModels } from './hooks/useAiChatModels'
 import { useAiChatRuntime } from './hooks/useAiChatRuntime'
 import { useAiChatSession } from './hooks/useAiChatSession'
 import { useAiChatStatus } from './hooks/useAiChatStatus'
@@ -33,6 +35,12 @@ export function AiChat(): JSX.Element {
         onNotice: setNotice,
     })
     const { sessions, loadSessions } = useAiChatHistory({ onError: setError })
+    const {
+        choices: modelChoices,
+        isLoading: isLoadingModels,
+        loadModels,
+        selectModel,
+    } = useAiChatModels({ onError: setError })
     const { runtime, loadRuntime } = useAiChatRuntime({ onError: setError })
     const { writeState, applyingMessageId, loadWriteState, applyMessage } = useAiChatWriteState({
         onError: setError,
@@ -151,11 +159,21 @@ export function AiChat(): JSX.Element {
             : null
     /** 已选写作命令：输入区只展示命令名徽章，指令模板在发送时拼装 */
     const command = commandId === null ? null : AI_COMMAND_MAP[commandId]
+    /** 当前模型：菜单展开过时以菜单数据为准，否则用运行时带回的模型 id 兜底 */
+    const currentModel = modelChoices?.current ?? runtime?.model ?? ''
 
     /** 命令点击：只记录选择（再次点击取消），指令模板不写入输入框 */
     const handleCommand = useCallback((next: AiCommand): void => {
         setCommandId((previous) => (previous === next.id ? null : next.id))
     }, [])
+
+    /** 模型选择：写入结果由宿主广播运行时变更，本层只透传点击 */
+    const handleSelectModel = useCallback(
+        (modelId: string, manual: boolean): void => {
+            void selectModel(modelId, manual)
+        },
+        [selectModel],
+    )
 
     const handleClearCommand = useCallback((): void => {
         commandIdRef.current = null
@@ -265,10 +283,15 @@ export function AiChat(): JSX.Element {
                 notice={notice}
                 hint={hint}
                 command={command}
+                model={currentModel}
+                modelChoices={modelChoices}
+                isLoadingModels={isLoadingModels}
                 onSend={handleSend}
                 onStop={() => void stop()}
                 onRemoveContext={(id) => void removeContext(id)}
                 onCommand={handleCommand}
+                onOpenModels={() => void loadModels()}
+                onSelectModel={handleSelectModel}
                 onClearCommand={handleClearCommand}
                 onReference={handleReference}
                 onModeChange={handleModeChange}

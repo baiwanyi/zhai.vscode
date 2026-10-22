@@ -8,7 +8,7 @@
 - **UI**：Tailwind CSS 4 + Shadcn/UI + Lucide Icons
 - **数据库**：SQLite (Drizzle ORM)
 - **宿主**：VSCode Extension API（Webview 侧边栏 + FileSystemWatcher + SecretStorage）
-- **AI**：CodeBuddy 通道（`@tencent-ai/agent-sdk`，流式，模型可通过配置或命令选择/自定义）
+- **AI**：CodeBuddy 通道（`@tencent-ai/agent-sdk`，流式，模型可在 AI 面板模型菜单中选择或自定义）
 
 ## 文档索引
 

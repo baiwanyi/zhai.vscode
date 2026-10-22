@@ -8,11 +8,13 @@
  * 场景判定统一由 WorkflowRouter 产出，取名协议只做前缀转发，本层不解析取名条件。
  */
 import * as vscode from 'vscode'
+import { getSelectedCodebuddyModel, listCodebuddyModels, setSelectedCodebuddyModel } from './providers/codebuddyModels'
 import type { AiChatService } from './chatService'
 import type { WorkflowRouter } from './workflowRouter'
-import type { AiConversationMode } from '../../shared/types/aiChat'
+import type { AiConversationMode, AiModelChoices } from '../../shared/types/aiChat'
 import type { HostToWebviewMessage, StreamMessage } from '../../shared/types/messages'
 import type { OpenWorkflowResult, ResetWorkflowResult } from '../../shared/types/workflow'
+import type { SecretsService } from '../common/secrets'
 import type { NamingRoutes } from '../naming/namingRoutes'
 import type { PressRoutes } from '../press/pressRoutes'
 import { isRequestMessage } from '../../shared/types/messages'
@@ -28,6 +30,8 @@ const MAX_TITLE_HINT_LENGTH = 32
 const MAX_DRAFT_LENGTH = 20_000
 /** ai/draft 命令 id 长度上限：只存短标识，恢复时由前端按命令表再校验 */
 const MAX_COMMAND_ID_LENGTH = 32
+/** 模型 id 长度上限：CLI 模型 id 远短于此值，超出视为异常载荷 */
+const MAX_MODEL_ID_LENGTH = 64
 
 export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     public static readonly viewId = 'zhai.workflow'
@@ -42,6 +46,8 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         private readonly workflowRouter: WorkflowRouter,
         private readonly naming: NamingRoutes,
         private readonly press: PressRoutes,
+        private readonly secrets: SecretsService,
+        private readonly state: vscode.Memento,
     ) {
         this.disposables.push(
             service.onStream((message) => this.broadcast(message)),
@@ -123,6 +129,12 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             case 'ai/runtime': {
                 return this.service.getRuntimeInfo()
             }
+            case 'ai/models': {
+                return this.listModels()
+            }
+            case 'ai/selectModel': {
+                return this.selectModel(payload)
+            }
             case 'workflow/state': {
                 return this.workflowRouter.getContext()
             }
@@ -180,6 +192,37 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 }
                 throw new Error(`未知的协议方法：${method}`)
         }
+    }
+
+    /** 模型清单与当前选择：激活时已后台预热缓存，缓存为空（未登录或预热未完成）时此处现拉一次 */
+    private async listModels(): Promise<AiModelChoices> {
+        const models = await listCodebuddyModels(this.secrets)
+        return { current: getSelectedCodebuddyModel(), options: models }
+    }
+
+    /**
+     * 选择模型：手动输入走宿主输入框（webview 无原生输入框），选完写 globalState 并广播运行时变更。
+     * 关键约束：只接受 modelId 字符串与 manual 标记，写入前截断长度，避免异常载荷进入 globalState。
+     */
+    private async selectModel(payload: unknown): Promise<{ modelId: string; changed: boolean }> {
+        const selection = readModelSelectionPayload(payload)
+        let modelId = selection.modelId
+        if (selection.manual) {
+            const input = await vscode.window.showInputBox({
+                title: '输入 CodeBuddy 模型 id',
+                prompt: '填写账号可用的模型 id，留空表示交给 CLI 默认',
+                placeHolder: '例如 deepseek-v4.1-flash',
+                ignoreFocusOut: true,
+            })
+            if (input === undefined) {
+                return { modelId: getSelectedCodebuddyModel(), changed: false }
+            }
+            modelId = input.trim().slice(0, MAX_MODEL_ID_LENGTH)
+        }
+        await setSelectedCodebuddyModel(this.state, modelId)
+        this.service.notifyRuntimeChanged()
+        logger.info(`CodeBuddy 模型已设为 ${modelId.length > 0 ? modelId : '默认'}`)
+        return { modelId, changed: true }
     }
 
     /** 流式增量广播到全部已打开视图 */
@@ -321,6 +364,19 @@ function readDraftPayload(payload: unknown): {
         input: value.input.length > MAX_DRAFT_LENGTH ? value.input.slice(0, MAX_DRAFT_LENGTH) : value.input,
         commandId,
     }
+}
+
+/** 校验 ai/selectModel 入参：只取字符串 modelId 与布尔 manual，长度超限截断 */
+function readModelSelectionPayload(payload: unknown): { modelId: string; manual: boolean } {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/selectModel 缺少参数')
+    }
+    const { modelId, manual } = payload as { modelId?: unknown; manual?: unknown }
+    if (modelId !== undefined && typeof modelId !== 'string') {
+        throw new Error('ai/selectModel 参数类型不正确')
+    }
+    const value = typeof modelId === 'string' ? modelId.trim().slice(0, MAX_MODEL_ID_LENGTH) : ''
+    return { modelId: value, manual: manual === true }
 }
 
 /** 校验 ai/setMode 入参：只接受两个合法模式值 */

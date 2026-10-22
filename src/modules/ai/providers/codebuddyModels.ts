@@ -1,14 +1,15 @@
 /**
- * CodeBuddy 可用模型清单：拉取当前账号支持的模型并缓存，供模型选择命令与通道校验复用。
+ * CodeBuddy 可用模型清单与当前选择：拉取账号支持的模型并缓存，同时把面板菜单选中的模型持久化到 globalState。
  * 复用约定：经 SDK createSession 的 getAvailableModels 取列表，站点与凭证沿用 codebuddySite 的映射；
- * 关键约束：拉取需拉起 CLI 子进程（数秒）且要求已登录，失败一律降级为空列表、不阻断激活；
- * 缓存只存在内存（站点或账号变化即失效），由命令的强制刷新或下次激活重建。
+ * 关键约束：清单拉取需拉起 CLI 子进程（数秒）且要求已登录，失败一律降级为空列表、不阻断激活；
+ * 选中值以内存副本供各通道同步读取，写入时才落 globalState —— 配置项已移除，面板菜单是唯一入口。
  * 清单只含语言模型，文生图模型由服务端产品配置决定，不予枚举。
  */
 import { tmpdir } from 'node:os'
 import { unstable_v2_createSession } from '@tencent-ai/agent-sdk'
 import { buildCodebuddyEnv } from './codebuddySite'
 import type { SecretsService } from '../../common/secrets'
+import type { Memento } from 'vscode'
 import { getZhaiConfig } from '../../common/config'
 
 /** 单个可选模型 */
@@ -19,8 +20,29 @@ export interface CodebuddyModelOption {
     name: string
 }
 
+/** 模型选择的持久化键 */
+const MODEL_STATE_KEY = 'ai.codebuddyModel'
+
 let cached: CodebuddyModelOption[] = []
 let inflight: Promise<CodebuddyModelOption[]> | null = null
+/** 已选模型的内存副本：各通道同步读取，避免每次穿透 globalState */
+let activeModel = ''
+
+/** 激活时从 globalState 载入已选模型 */
+export function hydrateSelectedModel(state: Memento): void {
+    activeModel = state.get<string>(MODEL_STATE_KEY, '') ?? ''
+}
+
+/** 当前模型 id：空表示交给 CLI 默认模型 */
+export function getSelectedCodebuddyModel(): string {
+    return activeModel
+}
+
+/** 写入选择结果：空字符串表示恢复默认模型 */
+export async function setSelectedCodebuddyModel(state: Memento, modelId: string): Promise<void> {
+    activeModel = modelId.trim()
+    await state.update(MODEL_STATE_KEY, activeModel)
+}
 
 /** 已缓存的模型清单；为空表示尚未拉取成功（未登录或首启未完成） */
 export function getCachedCodebuddyModels(): readonly CodebuddyModelOption[] {

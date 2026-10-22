@@ -232,7 +232,6 @@ PRAGMA foreign_keys = ON;
 | `zhai.openAiChat` | 打开 AI 对话 | 聚焦侧栏 AI 对话视图（默认 `Ctrl+Shift+L`） |
 | `zhai.ai.addToChat` | 添加到宅对话 | 编辑器右键：选中文本取行范围（`file.md:11-19`），未选则取整篇，作为对话上下文 |
 | `zhai.ai.loginCodebuddy` | 登录 CodeBuddy | 打开浏览器授权，凭证按站点缓存在本机 |
-| `zhai.ai.selectCodebuddyModel` | 选择 CodeBuddy 模型 | 拉取账号可用模型，选择或手动填写自定义模型 id |
 
 > `Ctrl+K` 现聚焦仪表盘视图；全局搜索（C7）的检索能力（FTS5 + `zhai.search.limit`）已在索引仓储就绪，搜索面板待实现。
 
@@ -245,11 +244,12 @@ PRAGMA foreign_keys = ON;
 | `zhai.index.debounceMs` | number | `500` | 增量索引防抖毫秒数 |
 | `zhai.index.rebuildOnActivate` | boolean | `true` | 激活时自检并按需重建 |
 | `zhai.search.limit` | number | `50` | 全局搜索单模块返回上限 |
-| `zhai.ai.codebuddyModel` | string | ``（空=CLI 默认） | CodeBuddy 模型 id，对话与出图驱动共用，可填自定义模型 |
 | `zhai.ai.maxContextTokens` | number | `8000` | 前文与引用上下文注入上限 |
 | `zhai.ai.dailyTokenBudget` | number | `500000` | 每日 Token 预算，超限提示 |
 | `zhai.ai.autoFocusOnContext` | boolean | `true` | 添加对话上下文后自动聚焦 AI 对话面板 |
 | `zhai.telemetry.enabled` | boolean | `false` | 遥测开关，默认关闭 |
+
+> CodeBuddy 模型不设配置项：选择入口为 AI 面板输入区的模型菜单，选中值存于 `globalState`（键 `ai.codebuddyModel`，空表示 CLI 默认），对话、取名、外貌生成与出图驱动共用。
 
 ### 7.3 Webview 消息协议
 

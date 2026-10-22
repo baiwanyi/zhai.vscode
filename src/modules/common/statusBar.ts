@@ -1,9 +1,9 @@
 /**
- * 状态栏：展示索引状态与当前 AI 模型，点击跳转仪表盘。
+ * 状态栏：展示索引状态，点击跳转仪表盘。
  * 设计源：docs/modules/common.md C11；仅展示，不做轮询，由索引事件驱动刷新。
+ * 关键约束：模型选择已收敛到 AI 面板菜单，状态栏不再重复展示模型名，也不反向依赖 ai 层。
  */
 import * as vscode from 'vscode'
-import { getZhaiConfig } from './config'
 import type { IndexService, IndexStatus } from './indexer/indexService'
 
 export class StatusBarService {
@@ -26,9 +26,7 @@ export class StatusBarService {
     }
 
     private refresh(status: IndexStatus): void {
-        const model = getZhaiConfig().aiCodebuddyModel
-        const indexText = status.isRebuilding ? '$(sync~spin) 索引重建中' : `$(database) ${status.indexedCount}`
-        this.item.text = `${indexText} · ${model.length > 0 ? model : 'CodeBuddy 默认模型'}`
+        this.item.text = status.isRebuilding ? '$(sync~spin) 索引重建中' : `$(database) ${status.indexedCount}`
         this.item.tooltip = `已索引 ${status.indexedCount} 个文件\n上次构建：${status.lastBuiltAt ?? '从未'}\n点击打开仪表盘`
     }
 

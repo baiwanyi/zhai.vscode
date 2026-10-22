@@ -12,6 +12,7 @@ import type { QuotaKeys } from './db/quotaRepository'
 import type { CharacterAppearanceRequest, CharacterAppearanceResult } from '../../shared/types/press'
 import type { AiProvider } from '../ai/provider'
 import type Database from 'better-sqlite3'
+import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { getZhaiConfig } from '../common/config'
 
 /** 外貌生成的配额键（press.db 的 meta 表） */
@@ -55,7 +56,7 @@ export class PressAiService {
         try {
             const result = await generateAppearanceWithAi({
                 provider: this.provider,
-                model: getZhaiConfig().aiCodebuddyModel,
+                model: getSelectedCodebuddyModel(),
                 request,
                 signal: controller.signal,
             })

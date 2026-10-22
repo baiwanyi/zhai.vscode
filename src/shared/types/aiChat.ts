@@ -142,6 +142,20 @@ export interface AiRuntimeInfo {
     usedTokensToday: number
 }
 
+/** 单个可选模型 */
+export interface AiModelOption {
+    /** CLI 认可的模型 id，可直接交给 --model */
+    modelId: string
+    /** 展示名 */
+    name: string
+}
+
+/** 模型菜单数据：当前选择 + 账号可用清单（current 为空表示使用 CLI 默认模型） */
+export interface AiModelChoices {
+    current: string
+    options: AiModelOption[]
+}
+
 /** ai/send 的返回：流式增量随后经 stream 消息推送 */
 export interface AiSendResult {
     conversationId: string

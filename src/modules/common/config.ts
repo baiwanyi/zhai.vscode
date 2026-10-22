@@ -23,8 +23,6 @@ export interface ZhaiConfig {
     searchLimit: number
     /** CodeBuddy 站点：登录与调用必须一致，切换后需重新登录 */
     aiCodebuddySite: CodebuddySite
-    /** CodeBuddy 对话模型（CLI 认可的模型 id），空表示使用 CLI 默认模型；出图驱动同样复用该模型 */
-    aiCodebuddyModel: string
     aiMaxContextTokens: number
     aiDailyTokenBudget: number
     /** 添加上下文引用后是否自动聚焦 AI 对话面板 */
@@ -67,7 +65,6 @@ export function getZhaiConfig(): ZhaiConfig {
         rebuildOnActivate: cfg.get<boolean>('index.rebuildOnActivate', true),
         searchLimit: cfg.get<number>('search.limit', 50),
         aiCodebuddySite: readCodebuddySite(cfg.get<string>('ai.codebuddySite', 'cn')),
-        aiCodebuddyModel: cfg.get<string>('ai.codebuddyModel', ''),
         aiMaxContextTokens: cfg.get<number>('ai.maxContextTokens', 8000),
         aiDailyTokenBudget: cfg.get<number>('ai.dailyTokenBudget', 500000),
         aiAutoFocusOnContext: cfg.get<boolean>('ai.autoFocusOnContext', true),

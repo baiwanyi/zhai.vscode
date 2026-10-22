@@ -46,6 +46,7 @@ import type {
 } from '../../shared/types/naming'
 import type { AiProvider } from '../ai/provider'
 import type Database from 'better-sqlite3'
+import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { getZhaiConfig } from '../common/config'
 
 /** 历史保留批次上限 */
@@ -126,7 +127,7 @@ export class NamingService {
         try {
             const result = await generateNamesWithAi({
                 provider: this.provider,
-                model: getZhaiConfig().aiCodebuddyModel,
+                model: getSelectedCodebuddyModel(),
                 request,
                 signal: controller.signal,
             })

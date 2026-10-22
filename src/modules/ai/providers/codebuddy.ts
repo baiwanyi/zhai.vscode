@@ -7,7 +7,7 @@
  */
 import { tmpdir } from 'node:os'
 import { query } from '@tencent-ai/agent-sdk'
-import { resolveCodebuddyModel } from './codebuddyModels'
+import { getSelectedCodebuddyModel, resolveCodebuddyModel } from './codebuddyModels'
 import { buildCodebuddyEnv, CODEBUDDY_SITE_LABELS } from './codebuddySite'
 import type { SecretsService } from '../../common/secrets'
 import type {
@@ -107,8 +107,8 @@ export class CodeBuddyProvider implements AiProvider {
                 includePartialMessages: true,
                 systemPrompt,
                 resume: isResume ? request.sessionId : undefined,
-                // 模型来自 CodeBuddy 专用配置 zhai.ai.codebuddyModel，允许填写自定义模型 id
-                model: resolveCodebuddyModel(cfg.aiCodebuddyModel),
+                // 模型来自面板菜单的当前选择（globalState），允许自定义模型 id
+                model: resolveCodebuddyModel(getSelectedCodebuddyModel()),
                 // 工作目录指向临时目录，与用户项目隔离
                 cwd: tmpdir(),
                 env: buildCodebuddyEnv(cfg.aiCodebuddySite, apiKey),
@@ -166,7 +166,7 @@ export class CodeBuddyProvider implements AiProvider {
                 }
             }
         } catch (error) {
-            throw toReadableError(error, cfg.aiCodebuddyModel)
+            throw toReadableError(error, getSelectedCodebuddyModel())
         } finally {
             request.signal.removeEventListener('abort', forwardAbort)
             if (!controller.signal.aborted) {

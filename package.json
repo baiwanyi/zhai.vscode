@@ -89,11 +89,6 @@
                 "category": "宅写作"
             },
             {
-                "command": "zhai.ai.selectCodebuddyModel",
-                "title": "选择 CodeBuddy 模型",
-                "category": "宅写作"
-            },
-            {
                 "command": "zhai.openSettings",
                 "title": "打开插件设置",
                 "category": "宅写作",
@@ -183,11 +178,6 @@
                     ],
                     "default": "cn",
                     "description": "CodeBuddy 站点：决定授权页域名与调用端点，登录与调用必须使用同一站点，切换后需重新登录"
-                },
-                "zhai.ai.codebuddyModel": {
-                    "type": "string",
-                    "default": "",
-                    "description": "CodeBuddy 模型 id（对话、取名、外貌生成与出图驱动共用），留空使用 CLI 默认模型；执行「宅写作：选择 CodeBuddy 模型」可从账号可用列表选择或手动填写自定义模型"
                 },
                 "zhai.ai.maxContextTokens": {
                     "type": "number",

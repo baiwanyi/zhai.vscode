@@ -32,6 +32,7 @@ import {
     updateConversationTitle,
     updateMessage,
 } from './db/chatRepository'
+import { getSelectedCodebuddyModel } from './providers/codebuddyModels'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
 import type { HostContextRef, ResolvedContextRef } from './contextRefs'
 import type { ConversationRow, MessageRow } from './db/chatRepository'
@@ -132,14 +133,14 @@ export class AiChatService implements vscode.Disposable {
             provider: this.provider.id,
             providerSite: CODEBUDDY_SITE_LABELS[cfg.aiCodebuddySite],
             hasApiKey: status.ready,
-            model: cfg.aiCodebuddyModel,
+            model: getSelectedCodebuddyModel(),
             maxContextTokens: cfg.aiMaxContextTokens,
             dailyTokenBudget: cfg.aiDailyTokenBudget,
             usedTokensToday: sumTokensSince(this.db, todayStartIso()),
         }
     }
 
-    /** 通知运行时信息已变更（密钥增删后由命令层调用） */
+    /** 通知运行时信息已变更（登录态或模型选择变化后由命令层与面板调用） */
     public notifyRuntimeChanged(): void {
         this.runtimeEmitter.fire()
     }
@@ -181,7 +182,7 @@ export class AiChatService implements vscode.Disposable {
             title,
             mode: 'chat',
             filePath: null,
-            model: getZhaiConfig().aiCodebuddyModel,
+            model: getSelectedCodebuddyModel(),
             provider: this.provider.id,
             sdkSessionId: null,
             createdAt: now,
@@ -552,7 +553,7 @@ export class AiChatService implements vscode.Disposable {
                 messages = await this.buildChatMessages(conversationId, userMessageId, input, contextBlock)
             }
             const stream = this.provider.stream({
-                model: cfg.aiCodebuddyModel,
+                model: getSelectedCodebuddyModel(),
                 maxTokens: MAX_COMPLETION_TOKENS,
                 messages,
                 signal: controller.signal,
@@ -586,7 +587,14 @@ export class AiChatService implements vscode.Disposable {
             if (answer.length > 0) {
                 this.registerWrittenResult(conversationId, assistantMessageId, writeTarget, applyPolicy)
             }
-            this.recordUsage(conversationId, cfg.aiCodebuddyModel, startedAt, usage, answer, controller.signal.aborted)
+            this.recordUsage(
+                conversationId,
+                getSelectedCodebuddyModel(),
+                startedAt,
+                usage,
+                answer,
+                controller.signal.aborted,
+            )
             this.streamEmitter.fire({
                 type: 'stream',
                 reqId,

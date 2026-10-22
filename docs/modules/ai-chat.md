@@ -133,7 +133,7 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 ### 5.1 模型接入（单通道）
 
-面板对话、编辑器命令、取名与外貌生成共用同一套接入层：`AiProvider` 接口 + 唯一实现 `codebuddy`。业务层只依赖接口，不认具体实现，模型 id 由 `zhai.ai.codebuddyModel` 决定（留空交给 CLI 默认，也可填账号可用的自定义模型）。
+面板对话、编辑器命令、取名与外貌生成共用同一套接入层：`AiProvider` 接口 + 唯一实现 `codebuddy`。业务层只依赖接口，不认具体实现，模型 id 取自 AI 面板输入区的模型菜单并持久化到 `globalState`（留空交给 CLI 默认，也可填账号可用的自定义模型）。
 
 | 关注点 | 候选方案 | 结论 | 理由 |
 |--------|----------|------|------|
@@ -176,7 +176,7 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 切换站点后必须重新登录，旧站点凭证不会复用；专享版/私有化（需自定义 `endpoint`）不在开放范围内。
 
-**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModels()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活），命令 `zhai.ai.selectCodebuddyModel` 打开时强制刷新并写入 `zhai.ai.codebuddyModel` —— 对话、取名、外貌生成与出图驱动共用这一项。清单里的项可直接选，也支持「手动输入模型 id」以使用账号可用的自定义模型。通道下发前经 `resolveCodebuddyModel` 归一：空值交给 CLI 默认，非空一律透传，id 是否有效由服务端裁决。
+**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModels()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活）。选择入口为 AI 面板底部输入卡片的模型菜单（`ai/models` / `ai/selectModel`），选中值写入 `globalState` 的 `ai.codebuddyModel` —— 对话、取名、外貌生成与出图驱动共用这一项。清单里的项可直接选，也支持「手动输入模型 id」以使用账号可用的自定义模型。通道下发前经 `resolveCodebuddyModel` 归一：空值交给 CLI 默认，非空一律透传，id 是否有效由服务端裁决。
 
 **文生图模型**：`ImageGen` 的模型由 CLI 的 `ImageService.resolveModel` 决定，顺序为「会话下发的 `--text-to-image-model` → 环境变量 `CODEBUDDY_TEXT_TO_IMAGE_MODEL` → CLI settings 的 `textToImageModel` → 站点配置中 tags 含 `text-to-image` 的首个模型 → 兜底 `hunyuan-image-v3.0`」。该清单来自服务端产品配置，SDK 的 `getAvailableModels` / `getAvailableModelsRaw` 只返回语言模型（实测 22 个均无 `text-to-image` 标签），且斜杠命令在 headless 会话中不会被执行，故插件不下发 `--text-to-image-model`、也不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，选择会存进 CLI settings 并被 ImageGen 沿用。
 
@@ -398,6 +398,8 @@ interface AbortRequest {
 | `ai/switchSession` | Webview → 宿主 | 切换到指定会话，返回含 `contexts` 的会话快照 |
 | `ai/deleteSession` | Webview → 宿主 | 删除会话及其消息（外键级联），返回 `{ deleted: boolean }` |
 | `ai/runtime` | Webview → 宿主 | 密钥状态（含脱敏 Key）、模型参数与当日用量 |
+| `ai/models` | Webview → 宿主 | 模型菜单数据 `AiModelChoices`（当前模型 id + 账号可用清单）；读激活时预热的缓存，缓存为空才现拉 |
+| `ai/selectModel` | Webview → 宿主 | 选择模型（`modelId` + `manual`）：写入 globalState 并广播 `runtime` 变更；`manual` 时由宿主弹出输入框，空 id 表示默认模型 |
 | `ai/send` | Webview → 宿主 | 落库用户消息与占位助手消息，随后流式回传正文；`titleHint` 为命令名称等展示用短标题，仅用于会话命名 |
 | `ai/draft` | Webview → 宿主 | 保存未发送的输入正文与命令 id（内存、按会话隔离），视图重建后随会话快照的 `draft` 恢复 |
 | `ai/abort` | Webview → 宿主 | 取消当前生成 |
@@ -444,13 +446,14 @@ interface AbortRequest {
 
 ### 10.3 底部输入卡片与写作写回（已落地）
 
-输入区采用三段式卡片（顶部工具行 / 多行输入框 / 底部操作行），顶部工具行仅两个按钮，底部操作行左一右三；已选命令时输入框上方额外显示可取消的命令徽章：
+输入区采用三段式卡片（顶部工具行 / 多行输入框 / 底部操作行），顶部工具行仅两个按钮，底部操作行左二右三；已选命令时输入框上方额外显示可取消的命令徽章：
 
 | 位置 | 控件 | 交互 |
 |------|------|------|
 | 工具行左 | 命令 (`Command` 图标) | 下拉四项：改写 / 润色 / 校对 / 去 AI 味，选中项带勾选；选中后输入区顶部显示命令徽章（可点 × 或再次点击取消），指令模板不进入输入框 |
 | 工具行右 | 参考 (`BookOpen` 图标) | 下拉四项：古诗词 / 名言名句 / 经典文本 / 历史资料；当前为占位，点击仅提示「即将上线」，不发起任何请求 |
 | 操作行左 | 模式按钮 | 对话 / 写作两态切换，写 `conversations.mode` 持久化；生成中禁用 |
+| 操作行左 | 模型菜单 | 按钮展示当前模型名（空选择显示「默认模型」）；展开时经 `ai/models` 取账号可用清单（激活时已预热，缓存为空才现拉），可选默认模型、清单项或「手动输入模型 id…」；选中写入 globalState 并广播 `runtime` 刷新；生成中禁用 |
 | 操作行右 | Token 圆环 | 当日已用 / 预算的环形占比（<70% 主色、70~90% 警示、≥90% destructive），点开浮层看已用 / 预算 / 剩余，每日 0 点重置 |
 | 操作行右 | 增强提示词 | 本地规则化补齐「任务 / 要求」三段式，再次点击还原原文，不消耗 Token |
 | 操作行右 | 发送 / 停止 | 生成中替换为停止；写作模式无可改写目标时发送禁用 |
@@ -471,7 +474,7 @@ interface AbortRequest {
 
 实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`contextRefs.ts` 引用生成/读取/渲染、`aiChatProvider.ts` 协议路由、`db/` 三表仓储与 DDL）、页面 `src/webview/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具）。
 
-页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `ghost`）；输入区为 `InputGroup` 三段式卡片（工具行 / 输入框 / 操作行，见 10.3），无 Key 时插入 `Card` 引导项。业务组件按「一文件一组件」拆分：命令菜单、参考菜单、工具行、模式按钮、Token 圆环、增强按钮、操作行、写回按钮、消息正文与引用条目各自独立文件。
+页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `ghost`）；输入区为 `InputGroup` 三段式卡片（工具行 / 输入框 / 操作行，见 10.3），无 Key 时插入 `Card` 引导项。业务组件按「一文件一组件」拆分：命令菜单、参考菜单、工具行、模式按钮、模型菜单、Token 圆环、增强按钮、操作行、写回按钮、消息正文与引用条目各自独立文件。
 
 与本文档的已知差异（后续补齐）：
 

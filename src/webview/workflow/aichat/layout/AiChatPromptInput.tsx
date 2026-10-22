@@ -5,7 +5,7 @@
  * 存在命令时允许空输入直接发送，写作模式仍要求编辑器有可改写的目标。
  */
 import { useState } from 'react'
-import type { AiContextRef, AiConversationMode } from '@shared/types/aiChat'
+import type { AiContextRef, AiConversationMode, AiModelChoices } from '@shared/types/aiChat'
 import { AiChatComposerActions } from './AiChatComposerActions'
 import { AiChatComposerToolbar } from './AiChatComposerToolbar'
 import { AiChatRichInput } from './AiChatRichInput'
@@ -27,9 +27,16 @@ interface AiChatPromptInputProps {
     dailyTokenBudget: number
     /** 写作模式下是否存在可改写的编辑器目标 */
     hasWriteTarget: boolean
+    /** 当前模型 id，空表示使用 CLI 默认模型 */
+    model: string
+    /** 模型菜单数据：未展开过时为 null */
+    modelChoices: AiModelChoices | null
+    isLoadingModels: boolean
     /** 已选写作命令：非空时输入区首行展示命令芯片 */
     command: AiCommand | null
     onCommand: (command: AiCommand) => void
+    onOpenModels: () => void
+    onSelectModel: (modelId: string, manual: boolean) => void
     onClearCommand: () => void
     onRemoveContext: (id: string) => void
     onReference: (source: AiReferenceSource) => void
@@ -49,8 +56,13 @@ export function AiChatPromptInput({
     usedTokens,
     dailyTokenBudget,
     hasWriteTarget,
+    model,
+    modelChoices,
+    isLoadingModels,
     command,
     onCommand,
+    onOpenModels,
+    onSelectModel,
     onClearCommand,
     onRemoveContext,
     onReference,
@@ -124,7 +136,12 @@ export function AiChatPromptInput({
                     isEnhanced={enhancedFrom !== null}
                     usedTokens={usedTokens}
                     dailyTokenBudget={dailyTokenBudget}
+                    model={model}
+                    modelChoices={modelChoices}
+                    isLoadingModels={isLoadingModels}
                     onModeChange={onModeChange}
+                    onOpenModels={onOpenModels}
+                    onSelectModel={onSelectModel}
                     onEnhance={handleEnhance}
                     onUndoEnhance={handleUndoEnhance}
                     onSend={onSend}

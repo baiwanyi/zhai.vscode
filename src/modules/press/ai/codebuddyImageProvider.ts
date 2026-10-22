@@ -16,7 +16,7 @@ import type { ImageGenerateOptions, ImageGenerateResult, ImageProvider, ImagePro
 import type { CodebuddySite } from '../../common/config'
 import type { SecretsService } from '../../common/secrets'
 import type { ContentBlock, PermissionResult } from '@tencent-ai/agent-sdk'
-import { resolveCodebuddyModel } from '../../ai/providers/codebuddyModels'
+import { getSelectedCodebuddyModel, resolveCodebuddyModel } from '../../ai/providers/codebuddyModels'
 import { buildCodebuddyEnv, CODEBUDDY_SITE_LABELS } from '../../ai/providers/codebuddySite'
 import { getZhaiConfig } from '../../common/config'
 import { logger } from '../../common/logger'
@@ -270,8 +270,8 @@ export class CodeBuddyImageProvider implements ImageProvider {
         } else {
             options.signal.addEventListener('abort', forwardAbort, { once: true })
         }
-        // 出图驱动模型与对话共用 ai.codebuddyModel，避免同一模型在两处配置出现分歧
-        const model = resolveCodebuddyModel(cfg.aiCodebuddyModel)
+        // 出图驱动模型与对话共用面板菜单里的当前选择，避免同一模型出现分歧
+        const model = resolveCodebuddyModel(getSelectedCodebuddyModel())
         const session = query({
             prompt: buildInstruction(options),
             options: {
@@ -325,7 +325,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
                 return artifact
             }
             logger.warn(`CodeBuddy 出图中断且未取到产物：${summarizeForLog(blocks)}`)
-            throw toReadableError(error, cfg.aiCodebuddyModel)
+            throw toReadableError(error, getSelectedCodebuddyModel())
         } finally {
             options.signal.removeEventListener('abort', forwardAbort)
             if (!controller.signal.aborted) {

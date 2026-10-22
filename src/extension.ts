@@ -9,7 +9,7 @@ import { registerAiCommands } from './modules/ai/commands'
 import { openAiDatabase } from './modules/ai/db/connection'
 import { ensureAiSchema } from './modules/ai/db/schema'
 import { createAiProvider } from './modules/ai/providerRegistry'
-import { listCodebuddyModels } from './modules/ai/providers/codebuddyModels'
+import { hydrateSelectedModel, listCodebuddyModels } from './modules/ai/providers/codebuddyModels'
 import { WorkflowRouter } from './modules/ai/workflowRouter'
 import { registerCommands } from './modules/common/commands'
 import { getZhaiConfig, resolveCacheRoot } from './modules/common/config'
@@ -72,6 +72,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // AI 通道全扩展共用一份：唯一实现为 CodeBuddy
     const aiProvider = await createAiProvider(secrets)
+    // 模型选择存在 globalState（配置项已移除，面板菜单是唯一入口），激活时先载入内存副本
+    hydrateSelectedModel(context.globalState)
     const aiChatService = new AiChatService(aiDb, aiProvider)
     context.subscriptions.push(aiChatService)
 
@@ -79,7 +81,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const workflowRouter = new WorkflowRouter(db, indexService)
     workflowRouter.register(context.subscriptions)
 
-    registerAiCommands(context, aiChatService, secrets, workflowRouter)
+    registerAiCommands(context, aiChatService, workflowRouter)
 
     // 取名：独立 naming.db 承载生成历史与收藏，词素库全部留在宿主侧
     const namingDb = openNamingDatabase(cacheRoot)
@@ -102,6 +104,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         workflowRouter,
         namingRoutes,
         pressRoutes,
+        secrets,
+        context.globalState,
     )
     context.subscriptions.push(
         aiChatProvider,

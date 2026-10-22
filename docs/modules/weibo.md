@@ -668,7 +668,7 @@ async function buildDownloadTasks(detail: WeiboDetail, readable = false): Promis
 1. 分享权限（`statuses/share` 第三方分享）是否已申请/可获批？决定默认发布路径是否可用。
 2. 是否申请高级接口（图文/视频发布、上传）？决定 B11/B13 高级路径是否落地。
 3. 媒体下载默认目录与是否默认开启（避免误触大量下载）？
-4. AI 编辑所用模型（复用 CodeBuddy 通道，模型 id 走 `zhai.ai.codebuddyModel`）与默认开关？
+4. AI 编辑所用模型（复用 CodeBuddy 通道，模型 id 走 AI 面板模型菜单的选择）与默认开关？
 5. 本地分组的标签体系是否需要与笔记标签打通？
 6. 多账号浏览是否需要（影响缓存按 uid 隔离复杂度）？
 
