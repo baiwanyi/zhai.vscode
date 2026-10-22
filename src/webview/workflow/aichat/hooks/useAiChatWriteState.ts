@@ -1,17 +1,18 @@
 /**
  * AI 对话写回状态：实时改写目标、可写回与已写回消息，经宿主 ai/writeState 与 ai/applyWrite 往返。
  * 复用约定：写回成功或宿主广播 writeTarget 后重新拉取，避免本地推断与宿主快照不一致。
- * 关键约束：只回传助手消息 id 执行写回，不接触文件路径与替换范围；同一时刻只允许一个写回请求。
+ * 关键约束：只回传助手消息 id 执行写回，不接触文件路径与替换范围；同一时刻只允许一个写回请求；
+ * 写回结果经 sonner 提示，读取写回状态失败仍走页面内提示行。
  */
 import { useCallback, useState } from 'react'
+import { toast } from 'sonner'
 import type { AiApplyResult, AiWriteState } from '@shared/types/aiChat'
 import { request } from '../../../bridge'
 import { toErrorText } from '../utils'
 
-/** 写回 hook 的对外依赖：错误与提示由共享提示 hook 持有 */
+/** 写回 hook 的对外依赖：读取失败经由共享提示 hook 展示 */
 export interface UseAiChatWriteStateOptions {
     onError: (error: string | null) => void
-    onNotice: (notice: string | null) => void
 }
 
 /** 写回状态对外暴露的状态与操作 */
@@ -23,7 +24,7 @@ export interface AiChatWriteStateResult {
     applyMessage: (messageId: string) => Promise<void>
 }
 
-export function useAiChatWriteState({ onError, onNotice }: UseAiChatWriteStateOptions): AiChatWriteStateResult {
+export function useAiChatWriteState({ onError }: UseAiChatWriteStateOptions): AiChatWriteStateResult {
     const [writeState, setWriteState] = useState<AiWriteState | null>(null)
     const [applyingMessageId, setApplyingMessageId] = useState<string | null>(null)
 
@@ -41,20 +42,20 @@ export function useAiChatWriteState({ onError, onNotice }: UseAiChatWriteStateOp
             setApplyingMessageId(messageId)
             try {
                 const result = await request<AiApplyResult>('ai/applyWrite', { messageId })
-                onNotice(
-                    result.reason === 'applied'
-                        ? `该回复已应用过：${result.label}`
-                        : `已写入 ${result.label}，可 Ctrl+Z 撤销`,
-                )
                 onError(null)
+                if (result.reason === 'applied') {
+                    toast.info(`该回复已应用过：${result.label}`)
+                } else {
+                    toast.success(`已写入 ${result.label}，可 Ctrl+Z 撤销`)
+                }
                 setWriteState(await request<AiWriteState>('ai/writeState'))
             } catch (cause) {
-                onError(toErrorText(cause))
+                toast.error(toErrorText(cause))
             } finally {
                 setApplyingMessageId(null)
             }
         },
-        [onError, onNotice],
+        [onError],
     )
 
     return { writeState, applyingMessageId, loadWriteState, applyMessage }

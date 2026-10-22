@@ -1,17 +1,18 @@
 /**
  * 角色卡面板：在编辑弹窗内选画面风格、生成、设封面与删除角色设定图。
  * 复用约定：按钮复用 ui/button，画面风格选择复用 ui/select，加载态复用 ui/spinner / ui/skeleton，
- * 错误走 ui/alert 行内提示，生成、列举与删除由 useCharacterPortrait 承担，人物数据只经 onChange 补丁回传（草稿）。
+ * 生成、列举与删除由 useCharacterPortrait 承担，人物数据只经 onChange 补丁回传（草稿）。
  * 关键约束：磁盘是图片的唯一事实来源——打开面板按人物目录回读，关闭弹窗期间完成的生成也能读到；
  * 生成成功即写入草稿图库（新图置顶并自动设封面），生成期间隐藏生成按钮、网格首位显示同构占位框；
  * 卡片无底栏：设为封面在左上、删除在右下，均随悬停显现并支持键盘聚焦，封面图左上常显「封面」；
- * 悬停时叠 5% 黑遮罩压暗画面（不拦截点击），删除封面时自动回退到图库第一张；
- * 画风随人物卡保存，切换只影响后续生成。
+ * 悬停时叠 5% 黑遮罩压暗画面（不拦截点击）；双击卡片用 Dialog 打开大图，可复制到剪贴板或插入编辑器光标；
+ * 浮层按钮需拦截双击冒泡；无编辑器光标时插入静默忽略；删除封面时自动回退到图库第一张；
+ * 画风随人物卡保存，切换只影响后续生成；生成、复制、插入与删除的结果统一经 sonner 提示。
  */
 import { cn } from 'cn'
-import { Image as ImageIcon, ImagePlus, Sparkles, Trash2 } from 'lucide-react'
+import { Copy, Image as ImageIcon, ImagePlus, Sparkles, TextCursorInput, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { Alert, AlertDescription } from '@components/ui/alert'
+import { toast } from 'sonner'
 import {
     AlertDialog,
     AlertDialogAction,
@@ -23,6 +24,7 @@ import {
     AlertDialogTitle,
 } from '@components/ui/alert-dialog'
 import { Button } from '@components/ui/button'
+import { Dialog, DialogContent, DialogTitle } from '@components/ui/dialog'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
@@ -41,11 +43,13 @@ interface CharacterPortraitPanelProps {
 }
 
 export function CharacterPortraitPanel({ character, aiContext, onChange }: CharacterPortraitPanelProps): JSX.Element {
-    const { isGenerating, error, generate, list, remove } = useCharacterPortrait()
+    const { isGenerating, generate, list, insert, remove } = useCharacterPortrait()
     /** 正在删除的图片路径，用于禁用重复点击 */
     const [busyPath, setBusyPath] = useState<string | null>(null)
     /** 待确认删除的图片：非空时弹出二次确认 */
     const [deleting, setDeleting] = useState<CharacterPortrait | null>(null)
+    /** 大图预览的图片：双击卡片时打开，只读 */
+    const [previewing, setPreviewing] = useState<CharacterPortrait | null>(null)
     /** 已完成回读的人物 id：与当前人物不一致时视为加载中，避免「没有图」闪一下 */
     const [loadedId, setLoadedId] = useState<string | null>(null)
 
@@ -91,6 +95,41 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
             portraits: [portrait, ...character.portraits],
             coverPortraitId: portrait.id,
         })
+        toast.success('角色设定图已生成，保存人物卡后生效')
+    }
+
+    /** 复制图片到系统剪贴板：取 webview 可访问的 URL 转 blob，再写入剪贴板 */
+    const handleCopyImage = async (): Promise<void> => {
+        if (previewing === null) {
+            return
+        }
+        try {
+            const response = await fetch(previewing.url)
+            const blob = await response.blob()
+            await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
+            toast.success('已复制到剪贴板')
+        } catch {
+            toast.error('当前环境不支持复制图片，可改用其他方式保存')
+        }
+    }
+
+    /** 插入到文章：无编辑器光标时按要求静默忽略，其余失败原因给出提示 */
+    const handleInsertImage = async (): Promise<void> => {
+        if (previewing === null) {
+            return
+        }
+        const result = await insert(previewing.path)
+        if (result !== null && result.inserted) {
+            setPreviewing(null)
+            toast.success('已插入到当前文档光标处')
+            return
+        }
+        const reason = result?.reason
+        if (reason === undefined || reason === 'no-editor') {
+            setPreviewing(null)
+            return
+        }
+        toast.error(reason === 'not-markdown' ? '仅在 Markdown 文件中支持插入' : '插入失败，请重试')
     }
 
     const handleDelete = async (portrait: CharacterPortrait): Promise<void> => {
@@ -106,6 +145,7 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
             coverPortraitId:
                 character.coverPortraitId === portrait.id ? (rest[0]?.id ?? null) : character.coverPortraitId,
         })
+        toast.success('角色设定图已删除')
     }
 
     return (
@@ -177,10 +217,12 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                             return (
                                 <div
                                     key={portrait.id}
+                                    title="双击查看大图"
                                     className={cn(
-                                        'group relative overflow-hidden rounded-lg border border-border',
+                                        'group relative cursor-zoom-in overflow-hidden rounded-lg border border-border',
                                         isCover && 'ring-2 ring-ring',
                                     )}
+                                    onDoubleClick={() => setPreviewing(portrait)}
                                 >
                                     <img
                                         src={portrait.url}
@@ -203,6 +245,7 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                                             className="absolute top-1 left-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                             aria-label="设为封面"
                                             onClick={() => onChange({ coverPortraitId: portrait.id })}
+                                            onDoubleClick={(event) => event.stopPropagation()}
                                         >
                                             <ImageIcon />
                                         </Button>
@@ -214,6 +257,7 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                                         aria-label="删除角色卡"
                                         disabled={busyPath === portrait.path}
                                         onClick={() => setDeleting(portrait)}
+                                        onDoubleClick={(event) => event.stopPropagation()}
                                     >
                                         <Trash2 />
                                     </Button>
@@ -223,12 +267,6 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                     </div>
                 </div>
             )}
-
-            {error !== null ? (
-                <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                </Alert>
-            ) : null}
 
             <AlertDialog
                 open={deleting !== null}
@@ -263,6 +301,46 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            {/* 双击卡片看大图：可复制到剪贴板，或插入到编辑器光标处 */}
+            <Dialog
+                open={previewing !== null}
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) {
+                        setPreviewing(null)
+                    }
+                }}
+            >
+                <DialogContent className="max-w-[min(92vw,760px)] gap-0 p-2 sm:max-w-[min(92vw,760px)]">
+                    <DialogTitle className="sr-only">角色设定图预览</DialogTitle>
+                    {previewing !== null ? (
+                        <img
+                            src={previewing.url}
+                            alt={`${character.name} 的角色卡大图`}
+                            className="max-h-[72vh] w-full rounded-lg object-contain"
+                        />
+                    ) : null}
+                    <div className="flex items-center justify-end gap-2 px-1 pt-2">
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                void handleCopyImage()
+                            }}
+                        >
+                            <Copy data-icon="inline-start" />
+                            复制图片
+                        </Button>
+                        <Button
+                            onClick={() => {
+                                void handleInsertImage()
+                            }}
+                        >
+                            <TextCursorInput data-icon="inline-start" />
+                            插入到文章
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     )
 }

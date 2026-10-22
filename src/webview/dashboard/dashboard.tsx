@@ -2,7 +2,7 @@
  * 仪表盘概览页：顶部操作区固定，滚动区依次呈现概览槽位、功能入口与笔记列表，多选操作栏贴底；
  * 滚动区顶部叠一层由背景色到透明的渐变遮罩，使内容逼近固定操作区时淡出，避免硬切。
  * 数据与动作经 useDashboardStats / useNotesList / useDashboardActions 三层 hook 下发，页面只做组合；
- * 操作结果统一由 useDashboardActions 经 sonner 反馈，页面只负责挂载一次 Toaster。
+ * 操作结果统一由 useDashboardActions 经 sonner 反馈，Toaster 由路由外壳 dashboardScreen 统一挂载。
  * 交互约束：写作管理入口改为页内路由跳转（由路由外壳下发的 onNavigate 承担），公众号管理仍走工作流面板；
  * 重建索引期间由统计 hook 轮询收敛按钮态；选中条目即按 path 打开笔记，
  * 当前选中项以宿主广播的活跃编辑器为准（点击时先本地回填，关闭笔记后随焦点回退自动切回上一篇）；
@@ -10,7 +10,6 @@
  */
 import { useCallback } from 'react'
 import { ScrollArea } from '@components/ui/scroll-area'
-import { Toaster } from '@components/ui/sonner'
 import { createPressRoute } from './core/routing'
 import { useActiveNote } from './hooks/useActiveNote'
 import { useDashboardActions } from './hooks/useDashboardActions'
@@ -23,7 +22,6 @@ import { NotesSection } from './layout/NotesSection'
 import { NotesSelectionBar } from './layout/NotesSelectionBar'
 import type { DashboardRoute } from './core/routing'
 import type { JSX } from 'react'
-import { useVscodeTheme } from '../hooks/useVscodeTheme'
 
 interface DashboardProps {
     /** 页内导航：由路由外壳下发，页面不直接改写地址栏 hash */
@@ -58,7 +56,6 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
         showNotePending,
     } = useDashboardActions(reload)
     const { activeId, setActiveId } = useActiveNote()
-    const theme = useVscodeTheme()
 
     /** 打开笔记：先本地回填选中态避免打开瞬间高亮丢失，随后由宿主按索引路径打开并以活跃编辑器收敛 */
     const handleOpen = useCallback(
@@ -136,7 +133,6 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
                     onDelete={() => showNotePending('delete')}
                 />
             ) : null}
-            <Toaster theme={theme} />
         </div>
     )
 }

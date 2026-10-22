@@ -3,11 +3,13 @@
  * 复用约定：弹层复用 ui/dialog，步骤内容分别由 OutlineWizardInput、OutlineWizardPlan 承担，
  * 草案由 utils 的 buildOutlineDraft 按结构模板推导，本文件只负责步骤流转与最终装配。
  * 关键约束：草案只在本次打开期间存在，调用方须把 key 绑定到打开状态以重建组件，
- * 否则上一次的草案会被误写入当前作品；写入前必须按剩余章节重新编号，避免删除中间章后出现序号空洞。
+ * 否则上一次的草案会被误写入当前作品；写入前必须按剩余章节重新编号，避免删除中间章后出现序号空洞；
+ * 写入结果经 sonner 提示，不依赖页面内的其他反馈。
  */
 import { cn } from 'cn'
 import { ArrowLeft, ArrowRight, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
 import {
@@ -65,7 +67,11 @@ export function OutlineWizard({
 
     const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
     const selectedCount = useMemo(
-        () => draft.reduce((count, volume) => count + volume.chapters.filter((chapter) => selectedSet.has(chapter.id)).length, 0),
+        () =>
+            draft.reduce(
+                (count, volume) => count + volume.chapters.filter((chapter) => selectedSet.has(chapter.id)).length,
+                0,
+            ),
         [draft, selectedSet],
     )
 
@@ -110,10 +116,12 @@ export function OutlineWizard({
             }))
             .filter((volume) => volume.chapters.length > 0)
         if (next.length === 0) {
+            toast.error('请至少勾选一个章节后再写入')
             return
         }
         onApply(next)
         onOpenChange(false)
+        toast.success(`已写入 ${next.reduce((count, volume) => count + volume.chapters.length, 0)} 个章节到大纲`)
     }
 
     const stepIndex = WIZARD_STEPS.findIndex((item) => item.id === step)
@@ -123,9 +131,7 @@ export function OutlineWizard({
             <DialogContent className="flex max-h-[calc(100vh-4rem)] flex-col gap-3 sm:max-w-2xl">
                 <DialogHeader>
                     <DialogTitle>生成大纲</DialogTitle>
-                    <DialogDescription>
-                        按结构模板展开卷纲与章纲，逐条确认后写入大纲，草案可继续编辑
-                    </DialogDescription>
+                    <DialogDescription>按结构模板展开卷纲与章纲，逐条确认后写入大纲，草案可继续编辑</DialogDescription>
                 </DialogHeader>
 
                 <ol className="flex items-center gap-1" aria-label="生成步骤">
@@ -171,7 +177,11 @@ export function OutlineWizard({
 
                 <DialogFooter className="items-center gap-2">
                     {step !== 'input' ? (
-                        <Button size="sm" variant="ghost" onClick={() => setStep(step === 'chapter' ? 'volume' : 'input')}>
+                        <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setStep(step === 'chapter' ? 'volume' : 'input')}
+                        >
                             <ArrowLeft data-icon="inline-start" />
                             上一步
                         </Button>

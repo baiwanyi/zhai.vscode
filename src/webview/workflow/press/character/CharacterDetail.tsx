@@ -3,10 +3,11 @@
  * 复用约定：分组切换复用 ui/tabs（均分整行、不横向滚动），字段布局复用 ui/field，角色与性别选择复用 ui/toggle-group，
  * 标签型字段（性格）复用设定页的 TagField；外貌与角色卡分别由 useCharacterAppearance、CharacterPortraitPanel 承担。
  * 关键约束：所有控件只通过补丁回传给调用方（编辑弹窗的草稿），本组件不持有角色数据副本；
- * 生成结果写入字段或图库后仍需用户保存，未保存即关闭弹窗则丢弃；字段 id 固定，同时只会挂载一张卡。
+ * 生成结果写入字段或图库后仍需用户保存，未保存即关闭弹窗则丢弃；字段 id 固定，同时只会挂载一张卡；
+ * 生成结果与失败原因统一经 sonner 提示，页面内不渲染内联错误文本。
  */
 import { Sparkles } from 'lucide-react'
-import { Alert, AlertDescription } from '@components/ui/alert'
+import { toast } from 'sonner'
 import { Button } from '@components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
@@ -30,7 +31,7 @@ interface CharacterDetailProps {
 }
 
 export function CharacterDetail({ character, onChange, aiContext }: CharacterDetailProps): JSX.Element {
-    const { isGenerating, error, generate, abort } = useCharacterAppearance()
+    const { isGenerating, generate, abort } = useCharacterAppearance()
 
     const handleRoleChange = (value: string): void => {
         const next = CHARACTER_ROLE_ORDER.find((role) => role === value)
@@ -51,6 +52,7 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
         const content = await generate(character, aiContext)
         if (content !== null) {
             onChange({ appearance: content })
+            toast.success('外貌描写已生成，保存人物卡后生效')
         }
     }
 
@@ -191,11 +193,6 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
                             <FieldDescription>
                                 写外观与气质，供正文引用；AI 会结合角色、性别、身份、性格与作品时代生成一版草稿
                             </FieldDescription>
-                            {error !== null ? (
-                                <Alert variant="destructive">
-                                    <AlertDescription>{error}</AlertDescription>
-                                </Alert>
-                            ) : null}
                         </Field>
                     </TabsContent>
 

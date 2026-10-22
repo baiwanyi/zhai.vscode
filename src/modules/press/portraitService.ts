@@ -22,6 +22,7 @@ import type {
     CharacterPortrait,
     PortraitGenerateRequest,
     PortraitGenerateResult,
+    PortraitInsertResult,
     PortraitListResult,
     PortraitStyle,
 } from '../../shared/types/press'
@@ -148,6 +149,44 @@ export class PortraitService {
         // 最新在前：新生成的图出现在网格首位，与生成时占位框的位置一致
         portraits.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
         return { portraits }
+    }
+
+    /**
+     * 把图片插入当前编辑器光标处：先复制到文档同级的 assets 目录，再写入 Markdown 图片语法。
+     * 没有活动编辑器时返回 no-editor，由前端静默忽略；只支持已保存的 Markdown 文档，其余情况返回原因。
+     */
+    public async insertIntoEditor(payload: unknown): Promise<PortraitInsertResult> {
+        const path = readPortraitPath(payload)
+        const segments = toSafeSegments(path, '角色卡')
+        const [moduleDir, portraitDir, , fileName] = segments
+        if (segments.length !== 4 || moduleDir !== PRESS_MODULE_DIR || portraitDir !== PORTRAIT_DIR || !fileName) {
+            throw new Error(`角色卡路径非法：${path}`)
+        }
+        const editor = vscode.window.activeTextEditor
+        if (!editor) {
+            return { inserted: false, reason: 'no-editor' }
+        }
+        const document = editor.document
+        if (document.uri.scheme !== 'file') {
+            return { inserted: false, reason: 'unsaved' }
+        }
+        if (document.languageId !== 'markdown') {
+            return { inserted: false, reason: 'not-markdown' }
+        }
+        const source = buildStorageUri(resolveStorageRoot(), segments)
+        const assetDirectory = vscode.Uri.joinPath(document.uri, '..', 'assets')
+        try {
+            await vscode.workspace.fs.createDirectory(assetDirectory)
+            const bytes = await vscode.workspace.fs.readFile(source)
+            await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(assetDirectory, fileName), bytes)
+        } catch (error) {
+            logger.error(`角色卡插入失败：复制到文章目录出错（${path}）`, error)
+            return { inserted: false, reason: 'failed' }
+        }
+        const didInsert = await editor.edit((builder) => {
+            builder.insert(editor.selection.active, `![角色设定图](assets/${fileName})`)
+        })
+        return didInsert ? { inserted: true } : { inserted: false, reason: 'failed' }
     }
 
     /** 取消进行中的生成 */

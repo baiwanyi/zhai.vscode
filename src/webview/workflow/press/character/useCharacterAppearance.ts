@@ -3,12 +3,15 @@
  * 复用约定：请求经 webview 公共 bridge；前端超时略大于宿主侧 60s，保证宿主先给出超时错误；
  * 角色分类与性别使用 CHARACTER_ROLE_META / CHARACTER_GENDER_META 的中文标签，与人物卡展示口径一致。
  * 关键约束：生成中不接受重复提交；取消走 pressAi/aiAppearance/abort，属尽力而为；
- * 结果不直接落库，由调用方写入草稿并由用户点保存，未保存的生成结果只存在于弹窗内。
+ * 结果不直接落库，由调用方写入草稿并由用户点保存，未保存的生成结果只存在于弹窗内；
+ * 失败原因统一经 sonner 提示，不回传错误状态给组件渲染。
  */
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import type { CharacterAppearanceRequest, CharacterAppearanceResult } from '@shared/types/press'
 import type { CharacterCard } from '../types'
 import { request } from '../../../bridge'
+import { toastError } from '../../../utils'
 import { CHARACTER_GENDER_META, CHARACTER_ROLE_META } from '../constants'
 
 /** AI 通道前端超时：略大于宿主 60s，避免前端先于宿主超时 */
@@ -23,20 +26,17 @@ export interface AppearanceContext {
 
 export interface CharacterAppearanceState {
     isGenerating: boolean
-    error: string | null
-    /** 生成成功返回文本，失败返回 null 并在 error 中留下可读原因 */
+    /** 生成成功返回文本，失败返回 null（失败原因已由 sonner 提示） */
     generate: (character: CharacterCard, context: AppearanceContext) => Promise<string | null>
     abort: () => Promise<void>
 }
 
 export function useCharacterAppearance(): CharacterAppearanceState {
     const [isGenerating, setIsGenerating] = useState(false)
-    const [error, setError] = useState<string | null>(null)
 
     const generate = useCallback(
         async (character: CharacterCard, context: AppearanceContext): Promise<string | null> => {
             setIsGenerating(true)
-            setError(null)
             try {
                 const result = await request<CharacterAppearanceResult>(
                     'pressAi/aiAppearance',
@@ -44,12 +44,12 @@ export function useCharacterAppearance(): CharacterAppearanceState {
                     AI_REQUEST_TIMEOUT_MS,
                 )
                 if (result.content.length === 0) {
-                    setError('AI 未返回可用内容，请重试或手动填写')
+                    toast.error('AI 未返回可用内容，请重试或手动填写')
                     return null
                 }
                 return result.content
             } catch (cause) {
-                setError(cause instanceof Error ? cause.message : String(cause))
+                toastError(cause)
                 return null
             } finally {
                 setIsGenerating(false)
@@ -73,7 +73,7 @@ export function useCharacterAppearance(): CharacterAppearanceState {
         }
     }, [abort])
 
-    return { isGenerating, error, generate, abort }
+    return { isGenerating, generate, abort }
 }
 
 /** 请求载荷：只上传已填字段，空值交给宿主兜底；性别必填，直接取中文标签 */

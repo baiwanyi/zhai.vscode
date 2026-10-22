@@ -6,6 +6,7 @@
  * 切换 / 删除会话或切换模式前先中止生成，避免增量写回已切走的会话；输入框内容在切换时保持不动。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import type { AiContextRef, AiConversationMode, AiSendResult, AiSessionSnapshot } from '@shared/types/aiChat'
 import type { AiApplyPolicy } from '../constants'
 import { onStream, request } from '../../../bridge'
@@ -121,44 +122,47 @@ export function useAiChatSession({
         })
     }, [onError])
 
-    const send = useCallback(async (content: string, options: AiSendOptions = {}): Promise<boolean> => {
-        const text = content.trim()
-        if (text.length === 0 || !session || phase !== 'idle') {
-            return false
-        }
-        setPhase('sending')
-        onError(null)
-        onNotice(null)
-        try {
-            const result = await request<AiSendResult>('ai/send', {
-                conversationId: session.conversation.id,
-                content: text,
-                applyPolicy: options.applyPolicy ?? 'replace',
-                titleHint: options.titleHint,
-            })
-            streamingMessageIdRef.current = result.assistantMessage.id
-            setSession((previous) =>
-                previous
-                    ? {
-                          ...previous,
-                          messages: [...previous.messages, result.userMessage, result.assistantMessage],
-                      }
-                    : previous,
-            )
-            // 引用已随消息提交并落库，待发送清单即时清空
-            setContexts([])
-            if (result.skippedContexts.length > 0) {
-                onNotice(`已跳过失效引用：${result.skippedContexts.join('、')}`)
+    const send = useCallback(
+        async (content: string, options: AiSendOptions = {}): Promise<boolean> => {
+            const text = content.trim()
+            if (text.length === 0 || !session || phase !== 'idle') {
+                return false
             }
-            setInput('')
-            setPhase('streaming')
-            return true
-        } catch (cause) {
-            onError(toErrorText(cause))
-            setPhase('idle')
-            return false
-        }
-    }, [onError, onNotice, phase, session, setContexts])
+            setPhase('sending')
+            onError(null)
+            onNotice(null)
+            try {
+                const result = await request<AiSendResult>('ai/send', {
+                    conversationId: session.conversation.id,
+                    content: text,
+                    applyPolicy: options.applyPolicy ?? 'replace',
+                    titleHint: options.titleHint,
+                })
+                streamingMessageIdRef.current = result.assistantMessage.id
+                setSession((previous) =>
+                    previous
+                        ? {
+                              ...previous,
+                              messages: [...previous.messages, result.userMessage, result.assistantMessage],
+                          }
+                        : previous,
+                )
+                // 引用已随消息提交并落库，待发送清单即时清空
+                setContexts([])
+                if (result.skippedContexts.length > 0) {
+                    toast.info(`已跳过失效引用：${result.skippedContexts.join('、')}`)
+                }
+                setInput('')
+                setPhase('streaming')
+                return true
+            } catch (cause) {
+                onError(toErrorText(cause))
+                setPhase('idle')
+                return false
+            }
+        },
+        [onError, onNotice, phase, session, setContexts],
+    )
 
     const stop = useCallback(async (): Promise<void> => {
         try {

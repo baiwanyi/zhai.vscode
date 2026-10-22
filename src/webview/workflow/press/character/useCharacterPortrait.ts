@@ -3,18 +3,21 @@
  * 复用约定：请求经 webview 公共 bridge；出图常需 1~3 分钟，超时由宿主按 zhai.image.timeoutSeconds 裁决，
  * 前端只做 15 分钟兜底并在失败时主动取消宿主请求；结果里的 url 已由宿主用 asWebviewUri 转换，前端直接放进 img。
  * 关键约束：生成中不接受重复提交；磁盘是图片的唯一事实来源，关闭弹窗不取消在途请求，
- * 结果会在下次打开角色卡时由 list 从角色目录读回，因此这里不做卸载取消。
+ * 结果会在下次打开角色卡时由 list 从角色目录读回，因此这里不做卸载取消；
+ * 失败原因统一经 sonner 提示，不回传错误状态给组件渲染。
  */
 import { useCallback, useState } from 'react'
 import type {
     CharacterPortrait,
     PortraitGenerateRequest,
     PortraitGenerateResult,
+    PortraitInsertResult,
     PortraitListResult,
 } from '@shared/types/press'
 import type { CharacterCard } from '../types'
 import type { AppearanceContext } from './useCharacterAppearance'
 import { request } from '../../../bridge'
+import { toastError } from '../../../utils'
 import { CHARACTER_GENDER_META, CHARACTER_ROLE_META } from '../constants'
 
 /** 前端只做兜底：出图内置 10 分钟上限，这里放宽到 15 分钟，避免前端先于宿主判超时 */
@@ -22,11 +25,12 @@ const AI_REQUEST_TIMEOUT_MS = 900_000
 
 export interface CharacterPortraitState {
     isGenerating: boolean
-    error: string | null
-    /** 生成成功返回已落盘的图片信息，失败返回 null 并在 error 中留下可读原因 */
+    /** 生成成功返回已落盘的图片信息，失败返回 null（失败原因已由 sonner 提示） */
     generate: (character: CharacterCard, context: AppearanceContext) => Promise<CharacterPortrait | null>
     /** 扫描角色目录读回已落盘的图片，按生成时间升序；目录不存在返回空数组 */
     list: (characterId: string) => Promise<CharacterPortrait[]>
+    /** 把图片插入当前编辑器光标处；无活动编辑器时返回 reason=no-editor */
+    insert: (path: string) => Promise<PortraitInsertResult | null>
     /** 删除磁盘上的图片，返回是否真的删掉 */
     remove: (path: string) => Promise<boolean>
     abort: () => Promise<void>
@@ -34,7 +38,6 @@ export interface CharacterPortraitState {
 
 export function useCharacterPortrait(): CharacterPortraitState {
     const [isGenerating, setIsGenerating] = useState(false)
-    const [error, setError] = useState<string | null>(null)
 
     const abort = useCallback(async (): Promise<void> => {
         try {
@@ -47,7 +50,6 @@ export function useCharacterPortrait(): CharacterPortraitState {
     const generate = useCallback(
         async (character: CharacterCard, context: AppearanceContext): Promise<CharacterPortrait | null> => {
             setIsGenerating(true)
-            setError(null)
             try {
                 const result = await request<PortraitGenerateResult>(
                     'pressAi/generatePortrait',
@@ -58,7 +60,7 @@ export function useCharacterPortrait(): CharacterPortraitState {
             } catch (cause) {
                 // 前端兜底超时后宿主可能仍在生成，主动取消以释放并发锁
                 void abort()
-                setError(cause instanceof Error ? cause.message : String(cause))
+                toastError(cause)
                 return null
             } finally {
                 setIsGenerating(false)
@@ -72,8 +74,17 @@ export function useCharacterPortrait(): CharacterPortraitState {
             const result = await request<PortraitListResult>('pressAi/listPortraits', { characterId })
             return result.portraits
         } catch (cause) {
-            setError(cause instanceof Error ? cause.message : String(cause))
+            toastError(cause)
             return []
+        }
+    }, [])
+
+    const insert = useCallback(async (path: string): Promise<PortraitInsertResult | null> => {
+        try {
+            return await request<PortraitInsertResult>('pressAi/insertPortrait', { path })
+        } catch (cause) {
+            toastError(cause)
+            return null
         }
     }, [])
 
@@ -82,12 +93,12 @@ export function useCharacterPortrait(): CharacterPortraitState {
             const result = await request<{ removed: boolean }>('pressAi/deletePortrait', { path })
             return result.removed
         } catch (cause) {
-            setError(cause instanceof Error ? cause.message : String(cause))
+            toastError(cause)
             return false
         }
     }, [])
 
-    return { isGenerating, error, generate, list, remove, abort }
+    return { isGenerating, generate, list, insert, remove, abort }
 }
 
 /** 请求载荷：只上传已填字段，空值交给宿主兜底；性别必填，直接取中文标签 */

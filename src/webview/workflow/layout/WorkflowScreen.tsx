@@ -3,15 +3,19 @@
  * 复用 hooks/useWorkflowRouting 取得路由事实与动作，core/registry 提供页面注册表，本层只做页面替换。
  * 关键约束：换页只替换渲染的 Page 组件，宿主侧会话（AiChatService）不随换页销毁；
  * 路由事实未就绪时渲染骨架，避免未选定模块时先闪出对话页；模块选定入口仅由初始页与仪表盘提供，页内不叠加切换浮层。
+ * 全局提示：sonner 的 Toaster 只在本层挂载一次，页面内的操作结果统一用 toast 上报，页面不再自挂。
  */
 import { Skeleton } from '@components/ui/skeleton'
+import { Toaster } from '@components/ui/sonner'
 import type { JSX } from 'react'
+import { useVscodeTheme } from '../../hooks/useVscodeTheme'
 import { WORKFLOWS } from '../core/registry'
 import { useWorkflowRouting } from '../hooks/useWorkflowRouting'
 
 export function WorkflowScreen(): JSX.Element {
     const { context, workflowId, isReady, openModule, resetModule, setOverride } = useWorkflowRouting()
     const { component: Page } = WORKFLOWS[workflowId]
+    const theme = useVscodeTheme()
 
     if (!isReady) {
         return (
@@ -25,6 +29,7 @@ export function WorkflowScreen(): JSX.Element {
     return (
         <div className="h-screen">
             <Page context={context} onOpenModule={openModule} onResetModule={resetModule} onOverride={setOverride} />
+            <Toaster theme={theme} />
         </div>
     )
 }

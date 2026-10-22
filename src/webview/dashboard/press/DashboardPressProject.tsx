@@ -10,7 +10,6 @@ import { Button } from '@components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '@components/ui/empty'
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Skeleton } from '@components/ui/skeleton'
-import { Toaster } from '@components/ui/sonner'
 import type { PressChapterEntry, PressVolumeGroup } from '@shared/types/press'
 import { usePressProjectDetail } from './hooks/usePressProjectDetail'
 import { PressChapterDeleteDialog } from './layout/PressChapterDeleteDialog'
@@ -20,7 +19,6 @@ import { PressVolumeDeleteDialog } from './layout/PressVolumeDeleteDialog'
 import { PressVolumeRenameDialog } from './layout/PressVolumeRenameDialog'
 import { formatProjectMeta } from './utils'
 import type { JSX } from 'react'
-import { useVscodeTheme } from '../../hooks/useVscodeTheme'
 
 /** 章节骨架条数：与首屏常见章节数量同量级即可 */
 const CHAPTER_PLACEHOLDERS = [0, 1, 2, 3] as const
@@ -82,7 +80,6 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
         openChapter,
         openReadme,
     } = usePressProjectDetail(dirPath)
-    const theme = useVscodeTheme()
     const [renameTarget, setRenameTarget] = useState<PressVolumeGroup | null>(null)
     const [deleteTarget, setDeleteTarget] = useState<PressVolumeGroup | null>(null)
     const [deleteChapterTarget, setDeleteChapterTarget] = useState<PressChapterEntry | null>(null)
@@ -212,7 +209,6 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                     onConfirm={() => handleConfirmDeleteChapter(deleteChapterTarget)}
                 />
             ) : null}
-            <Toaster theme={theme} />
         </div>
     )
 }

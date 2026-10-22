@@ -1,8 +1,15 @@
 /**
- * Webview 展示层共享纯函数：统一的相对时间格式化。
- * 被仪表盘与 AI 对话页面同时复用，避免两处各维护一套时间展示规则。
- * 关键约束：无效时间返回空串，由调用方决定「未知 / 从未构建」等业务文案。
+ * Webview 展示层共享纯函数：统一的相对时间格式化与错误提示。
+ * 被仪表盘与工作流页面同时复用，避免两处各维护一套时间展示与错误文案口径。
+ * 关键约束：无效时间返回空串，由调用方决定「未知 / 从未构建」等业务文案；
+ * 操作类错误一律经 toastError 走 sonner 上报，调用方不再自行渲染内联错误文本。
  */
+import { toast } from 'sonner'
+
+/** 统一错误提示：宿主协议错误以 Error 抛出，其余形态兜底转字符串 */
+export function toastError(cause: unknown): void {
+    toast.error(cause instanceof Error ? cause.message : String(cause))
+}
 
 /** 相对时间格式化器（原生 Intl，不引日期库） */
 const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })

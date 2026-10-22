@@ -6,14 +6,12 @@
  */
 import { useCallback, useState } from 'react'
 import { ScrollArea } from '@components/ui/scroll-area'
-import { Toaster } from '@components/ui/sonner'
 import type { PressAudience } from '@shared/types/press'
 import { usePressProjects } from './hooks/usePressProjects'
 import { PressProjectDialog } from './layout/PressProjectDialog'
 import { PressProjectList } from './layout/PressProjectList'
 import { PressTopBar } from './layout/PressTopBar'
 import type { JSX } from 'react'
-import { useVscodeTheme } from '../../hooks/useVscodeTheme'
 
 interface DashboardPressProps {
     /** 返回仪表盘概览：由路由外壳下发，页面不自行改写 hash */
@@ -27,7 +25,6 @@ export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): 
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     /** 弹窗实例序号：每次打开都换 key，重挂载即把表单恢复到初始值，避免 effect 内同步写状态 */
     const [dialogKey, setDialogKey] = useState(0)
-    const theme = useVscodeTheme()
 
     const openDialog = useCallback((): void => {
         setDialogKey((previous) => previous + 1)
@@ -73,7 +70,6 @@ export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): 
                 onOpenChange={setIsDialogOpen}
                 onSubmit={handleCreate}
             />
-            <Toaster theme={theme} />
         </div>
     )
 }

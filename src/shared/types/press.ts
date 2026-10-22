@@ -364,3 +364,15 @@ export interface PortraitListRequest {
 export interface PortraitListResult {
     portraits: CharacterPortrait[]
 }
+
+/** 角色设定图插入请求：把已落盘的图片插入当前编辑器光标处 */
+export interface PortraitInsertRequest {
+    path: string
+}
+
+/** 角色设定图插入结果：inserted 为 false 时由 reason 说明原因 */
+export interface PortraitInsertResult {
+    inserted: boolean
+    /** no-editor：没有活动光标；unsaved：文档未保存；not-markdown：非 Markdown；failed：写入被拒绝 */
+    reason?: 'no-editor' | 'unsaved' | 'not-markdown' | 'failed'
+}

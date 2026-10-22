@@ -8,6 +8,7 @@
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机与第 10.3 节写回链路。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import type { AiConversationMode, AiSessionSnapshot } from '@shared/types/aiChat'
 import { AI_COMMAND_MAP, isAiCommandId } from './constants'
 import { useAiChatCommands } from './hooks/useAiChatCommands'
@@ -42,10 +43,7 @@ export function AiChat(): JSX.Element {
         selectModel,
     } = useAiChatModels({ onError: setError })
     const { runtime, loadRuntime } = useAiChatRuntime({ onError: setError })
-    const { writeState, applyingMessageId, loadWriteState, applyMessage } = useAiChatWriteState({
-        onError: setError,
-        onNotice: setNotice,
-    })
+    const { writeState, applyingMessageId, loadWriteState, applyMessage } = useAiChatWriteState({ onError: setError })
     const {
         session,
         phase,
@@ -183,12 +181,9 @@ export function AiChat(): JSX.Element {
     }, [])
 
     /** 参考资料当前全是占位：只给提示，不发起任何宿主请求 */
-    const handleReference = useCallback(
-        (source: AiReferenceSource): void => {
-            setNotice(`参考资料即将上线：${source.title}`)
-        },
-        [setNotice],
-    )
+    const handleReference = useCallback((source: AiReferenceSource): void => {
+        toast.info(`参考资料即将上线：${source.title}`)
+    }, [])
 
     const handleModeChange = useCallback(
         (next: AiConversationMode): void => {

@@ -1,12 +1,11 @@
 /**
- * 结果区：展示当前分类的一批候选名，含数量摘要、复制全部、错误提示与空态引导。
- * 复用约定：空态复用 ui/empty，错误复用 ui/alert，候选卡片复用同目录 NamingResultCard；
- * 复制反馈统一走 sonner，不在按钮内切换图标或文案。
+ * 结果区：展示当前分类的一批候选名，含数量摘要、复制全部与空态引导。
+ * 复用约定：空态复用 ui/empty，候选卡片复用同目录 NamingResultCard；
+ * 复制与生成失败统一走 sonner，不在按钮内切换图标或文案，也不在结果区渲染内联错误。
  * 关键约束：结果区是页面唯一滚动容器（由父级设置）；列数由 auto-fill 自适应，窄面板两列、拉宽后自动增加。
  */
 import { Copy, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-import { Alert, AlertDescription } from '@components/ui/alert'
 import { Button } from '@components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import type { NamingCandidate } from '@shared/types/naming'
@@ -17,10 +16,9 @@ import { copyName, joinNames } from '../utils'
 
 interface NamingResultGridProps {
     items: NamingCandidate[]
-    error: string | null
 }
 
-export function NamingResultGrid({ items, error }: NamingResultGridProps): JSX.Element {
+export function NamingResultGrid({ items }: NamingResultGridProps): JSX.Element {
     const handleCopyAll = async (): Promise<void> => {
         const isSuccess = await copyName(joinNames(items))
         if (isSuccess) {
@@ -43,11 +41,6 @@ export function NamingResultGrid({ items, error }: NamingResultGridProps): JSX.E
                     </Button>
                 ) : null}
             </div>
-            {error !== null ? (
-                <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                </Alert>
-            ) : null}
             {items.length === 0 ? (
                 <Empty className="min-h-40">
                     <EmptyHeader>

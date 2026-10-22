@@ -7,7 +7,6 @@
 import { useCallback, useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { Skeleton } from '@components/ui/skeleton'
-import { Toaster } from '@components/ui/sonner'
 import type { NamingCategory, NamingRequest, NamingSurnameKind } from '@shared/types/naming'
 import { DEFAULT_REQUEST } from './constants'
 import { useNamingCatalog } from './hooks/useNamingCatalog'
@@ -17,20 +16,11 @@ import { NamingConditionCard } from './layout/NamingConditionCard'
 import { NamingResultGrid } from './layout/NamingResultGrid'
 import { pickRandom, readCategoryMeta, readSuffixSamples, readSurnameSamples } from './utils'
 import type { JSX } from 'react'
-import { useVscodeTheme } from '../../hooks/useVscodeTheme'
 
 export function NamingPage(): JSX.Element {
     const { catalog, error: catalogError, isLoading } = useNamingCatalog()
-    const theme = useVscodeTheme()
     const [request, setRequest] = useState<NamingRequest>(DEFAULT_REQUEST)
-    const {
-        items,
-        isGenerating,
-        error: generateError,
-        generate,
-        abort,
-        hasResult,
-    } = useNamingGenerate(request.category)
+    const { items, isGenerating, generate, abort, hasResult } = useNamingGenerate(request.category)
 
     const handleChange = useCallback((patch: Partial<NamingRequest>): void => {
         setRequest((previous) => ({ ...previous, ...patch }))
@@ -134,9 +124,8 @@ export function NamingPage(): JSX.Element {
                 onAbort={handleAbort}
             />
             <div className="min-h-0 flex-1 overflow-y-auto">
-                <NamingResultGrid items={items} error={generateError} />
+                <NamingResultGrid items={items} />
             </div>
-            <Toaster theme={theme} />
         </div>
     )
 }
