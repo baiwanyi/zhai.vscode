@@ -146,23 +146,25 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 | 鉴权 | 写入 `process.env` / 经 `options.env` 注入 | **SecretsService → `options.env`** | 不污染宿主环境变量，避免凭证泄漏给同进程的其它扩展 |
 | 权限 | `bypassPermissions` / `canUseTool` 回调 | **canUseTool** | 通道具备读写工作区能力，写类工具必须经用户确认 |
 | 首字超时 | 全局统一 / 按通道配置 | **按通道配置** | 子进程启动与鉴权比直连慢，CodeBuddy 通道首字上限放宽到 60s |
-| 版本约束 | 浮动版本 / 精确锁定 | **精确锁定、成对升级** | SDK 处于 Preview 阶段，且 SDK 与 CLI 同日发版，跨代存在协议不兼容风险 |
+| 版本约束 | 浮动版本 / 精确锁定 | **精确锁定** | SDK 处于 Preview 阶段；CLI 随 SDK 一并分发，版本天然一致，锁定 SDK 即可 |
 
-### 5.2 CodeBuddy CLI 的分发
+### 5.2 CLI 分发与登录
 
-SDK 只是 CLI 的编程式外壳，运行时必须能找到 CLI 可执行文件（自动查找，或用 `CODEBUDDY_CODE_PATH` 指定）。
+`@tencent-ai/agent-sdk` 的发布内容含 `cli/` 目录，其 `resolveCLIPath()` 优先取包内 `cli/bin/codebuddy`（其次 `CODEBUDDY_CODE_PATH`、monorepo 开发路径）。**安装 SDK 即自带 CLI，用户无需单独安装**；实测 `query()` 在 4.2 秒内拉起 CLI 并返回 `system.init`。
 
 | 事实 | 数据 |
 |------|------|
-| `@tencent-ai/agent-sdk` | 无 `bin` 字段，**不含 CLI 二进制**；解包约 171 MB / 3454 个文件 |
-| `@tencent-ai/codebuddy-code`（CLI） | 独立 npm 包；解包约 200 MB / 3369 个文件；按平台拆分 `node-pty`、`sandbox-cli` 等原生可选依赖，缺 `win32-arm64` 组合 |
-| 许可证 | CLI 为 `SEE LICENSE IN README.md`（非 SPDX 标准标识），重新分发前须确认授权条款 |
+| SDK 包 | 解包约 171 MB（含 `cli/`、`lib/`）/ 3454 个文件，tarball 约 55 MB |
+| 独立 CLI 包 | `@tencent-ai/codebuddy-code`（约 200 MB）仍可单独装，本插件不使用 |
+| 用户前置 | 仅需一次登录；未登录时 `query()` 抛 `Authentication required` |
 
 | 方案 | 做法 | 结论 |
 |------|------|------|
-| 检测 + 引导 | 不打包 CLI；启动时依次探测 `zhai.ai.codebuddyPath`、`CODEBUDDY_CODE_PATH`、PATH 上的 `codebuddy`，缺失则提示安装并回落 DeepSeek | **采用**：体积零增加，无再分发授权风险 |
-| 捆绑进 vsix | CLI 加入 `dependencies`，去掉 `--no-dependencies`，用 `CODEBUDDY_CODE_PATH` 指向包内入口 | **不采用**：vsix 膨胀至百兆级，与 CLI 自带更新机制冲突，且需再分发授权 |
+| 随插件分发 SDK（含 CLI） | SDK 进 `dependencies`，esbuild 保持 external，vsix 携带 `node_modules` | **采用**：装完插件只需登录；发布脚本须去掉 `--no-dependencies` 并控制包体 |
+| 要求全局安装 CLI | 检测 PATH，缺失时引导安装 | **不采用**：SDK 已自带，额外要求只增加失败点 |
 | 运行时安装 | 首启用 `npm install` 装到 `globalStorage` | **不采用**：静默联网装包，企业环境不可接受 |
+
+登录入口：命令 `zhai.ai.loginCodebuddy` 调 SDK 的 `unstable_v2_authenticate` 打开浏览器授权；若企业环境不便走浏览器，可在 SecretStorage 配置 `zhai.codebuddy.apiKey` 并显式选用 `codebuddy` 通道。
 
 ### 5.3 各入口的会话与工具策略
 

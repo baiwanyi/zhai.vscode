@@ -202,7 +202,7 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 |--------|------|
 | 两个实现 | `codebuddyImageProvider`（SDK `query()` + CLI 内置 `ImageGen` 工具）/ `openaiImageProvider`（直连 OpenAI 兼容 `/images/generations`，即当前实现） |
 | 选择开关 | 新增 `zhai.image.provider`：`auto`（默认，CodeBuddy 优先）/ `codebuddy` / `openai` |
-| 能力探测 | CLI 路径可发现 → `codebuddy --version` ≥ 2.39.0（`ImageGen` 引入版本）→ 一次 `maxTurns: 1` 的空查询读 `system` 消息的 `tools`，确认含 `ImageGen`；结果缓存 10 分钟，配置变更或生图失败时失效 |
+| 能力探测 | 一次 `maxTurns: 1` 的空查询读 `system` 消息的 `tools`，确认含 `ImageGen`；结果缓存 10 分钟，配置变更或生图失败时失效（CLI 随 SDK 分发，版本由 `package.json` 锁定） |
 | 能力缺失回退 | 自动切直连通道，并在面板说明原因 |
 | 生成失败 | **不自动回退**：仅提示失败原因，由用户点「改用直连服务重试」 |
 | 工具权限 | `allowedTools: ['ImageGen']`、`maxTurns: 1`；`canUseTool` 对 `ImageGen` 自动放行（由用户点击触发生成，非模型自主行为） |

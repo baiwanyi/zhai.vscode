@@ -11,7 +11,6 @@ import { consumeToday, readUsedToday } from './db/quotaRepository'
 import type { QuotaKeys } from './db/quotaRepository'
 import type { CharacterAppearanceRequest, CharacterAppearanceResult } from '../../shared/types/press'
 import type { AiProvider } from '../ai/provider'
-import type { SecretsService } from '../common/secrets'
 import type Database from 'better-sqlite3'
 import { getZhaiConfig } from '../common/config'
 
@@ -34,7 +33,6 @@ export class PressAiService {
 
     public constructor(
         private readonly db: Database.Database,
-        private readonly secrets: SecretsService,
         private readonly provider: AiProvider,
     ) {}
 
@@ -47,9 +45,9 @@ export class PressAiService {
             throw new Error('已有生成中的外貌请求，请等待完成或先取消')
         }
         const request = normalizeAppearanceRequest(payload)
-        const apiKey = await this.secrets.get('deepseekApiKey')
-        if (!apiKey) {
-            throw new Error('未配置 DeepSeek API Key，请先在插件设置中配置后重试')
+        const status = await this.provider.checkReady()
+        if (!status.ready) {
+            throw new Error(status.reason ?? 'AI 通道未就绪，请先在插件设置中完成配置')
         }
         this.assertQuota()
         const controller = new AbortController()

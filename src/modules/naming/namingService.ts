@@ -45,7 +45,6 @@ import type {
     NamingRequest,
 } from '../../shared/types/naming'
 import type { AiProvider } from '../ai/provider'
-import type { SecretsService } from '../common/secrets'
 import type Database from 'better-sqlite3'
 import { getZhaiConfig } from '../common/config'
 
@@ -68,13 +67,12 @@ export class NamingService {
 
     public constructor(
         private readonly db: Database.Database,
-        private readonly secrets: SecretsService,
         private readonly provider: AiProvider,
     ) {}
 
     /** 选项摘要：分类、枚举、后缀候选、姓氏抽样与 AI 可用性 */
     public async getCatalog(): Promise<NamingCatalog> {
-        const apiKey = await this.secrets.get('deepseekApiKey')
+        const status = await this.provider.checkReady()
         return {
             categories: NAMING_CATEGORIES.map((item): NamingCategoryMeta => ({
                 value: item.value,
@@ -96,7 +94,7 @@ export class NamingService {
                 single: [...CN_SINGLE_SURNAMES].slice(0, SURNAME_SAMPLE_SIZE),
                 compound: [...CN_COMPOUND_SURNAMES],
             },
-            aiAvailable: typeof apiKey === 'string' && apiKey.length > 0,
+            aiAvailable: status.ready,
         }
     }
 
@@ -118,9 +116,9 @@ export class NamingService {
             throw new Error('已有生成中的 AI 取名请求，请等待完成或先取消')
         }
         const request = normalizeNamingRequest(payload)
-        const apiKey = await this.secrets.get('deepseekApiKey')
-        if (!apiKey) {
-            throw new Error('未配置 DeepSeek API Key，请先在插件设置中配置后重试')
+        const status = await this.provider.checkReady()
+        if (!status.ready) {
+            throw new Error(status.reason ?? 'AI 通道未就绪，请先在插件设置中完成配置')
         }
         this.assertAiQuota()
         const controller = new AbortController()

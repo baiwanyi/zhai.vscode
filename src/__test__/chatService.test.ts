@@ -32,6 +32,7 @@ const captured = { requests: [] as AiStreamRequest[] }
 /** 记录型假通道：替代真实厂商通道，避免测试触网 */
 const fakeProvider: AiProvider = {
     id: 'deepseek',
+    checkReady: () => Promise.resolve({ ready: true }),
     stream: (request: AiStreamRequest): AsyncGenerator<AiStreamChunk> => {
         captured.requests.push(request)
         return (async function* generate(): AsyncGenerator<AiStreamChunk> {

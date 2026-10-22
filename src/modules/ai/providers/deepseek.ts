@@ -5,7 +5,7 @@
  * 关键约束：缺失密钥时抛出与改造前一致的文案，避免上层提示出现差异；本实现不持有跨请求状态。
  */
 import type { SecretsService } from '../../common/secrets'
-import type { AiProvider, AiProviderId, AiStreamChunk, AiStreamRequest } from '../provider'
+import type { AiProvider, AiProviderId, AiProviderStatus, AiStreamChunk, AiStreamRequest } from '../provider'
 import { streamChat } from '../client'
 
 /** 缺失密钥提示：与改造前会话服务、取名、外貌生成的文案保持一致 */
@@ -15,6 +15,11 @@ export class DeepSeekProvider implements AiProvider {
     public readonly id: AiProviderId = 'deepseek'
 
     public constructor(private readonly secrets: SecretsService) {}
+
+    public async checkReady(): Promise<AiProviderStatus> {
+        const apiKey = await this.secrets.get('deepseekApiKey')
+        return apiKey ? { ready: true } : { ready: false, reason: MISSING_KEY_MESSAGE }
+    }
 
     public async *stream(request: AiStreamRequest): AsyncGenerator<AiStreamChunk> {
         const apiKey = await this.secrets.get('deepseekApiKey')

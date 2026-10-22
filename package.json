@@ -94,6 +94,11 @@
                 "category": "宅写作"
             },
             {
+                "command": "zhai.ai.loginCodebuddy",
+                "title": "登录 CodeBuddy",
+                "category": "宅写作"
+            },
+            {
                 "command": "zhai.image.setApiKey",
                 "title": "设置图像服务 API Key",
                 "category": "宅写作"
@@ -176,6 +181,21 @@
                     "type": "number",
                     "default": 50,
                     "description": "全局搜索单模块返回上限"
+                },
+                "zhai.ai.provider": {
+                    "type": "string",
+                    "enum": [
+                        "auto",
+                        "codebuddy",
+                        "deepseek"
+                    ],
+                    "enumDescriptions": [
+                        "配置了 CodeBuddy 凭证时优先使用，否则回落 DeepSeek 直连",
+                        "始终使用 CodeBuddy（需先执行「登录 CodeBuddy」）",
+                        "始终使用 DeepSeek 直连"
+                    ],
+                    "default": "auto",
+                    "description": "AI 通道：面板对话、取名与人物外貌生成统一使用该通道"
                 },
                 "zhai.ai.model": {
                     "type": "string",
@@ -275,6 +295,7 @@
         }
     },
     "dependencies": {
+        "@tencent-ai/agent-sdk": "^0.3.286",
         "better-sqlite3": "^13.0.3",
         "openai": "^7.15.0"
     },

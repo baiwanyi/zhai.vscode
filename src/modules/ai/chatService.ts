@@ -127,9 +127,10 @@ export class AiChatService implements vscode.Disposable {
     /** 运行时信息：密钥状态、模型参数与当日用量 */
     public async getRuntimeInfo(): Promise<AiRuntimeInfo> {
         const cfg = getZhaiConfig()
+        const status = await this.provider.checkReady()
         const apiKey = await this.secrets.get('deepseekApiKey')
         return {
-            hasApiKey: typeof apiKey === 'string' && apiKey.length > 0,
+            hasApiKey: status.ready,
             maskedApiKey: SecretsService.mask(apiKey),
             model: cfg.aiModel,
             temperature: cfg.aiTemperature,
@@ -388,9 +389,9 @@ export class AiChatService implements vscode.Disposable {
         if (input.length === 0) {
             throw new Error('消息内容不能为空')
         }
-        const apiKey = await this.secrets.get('deepseekApiKey')
-        if (!apiKey) {
-            throw new Error('未配置 DeepSeek API Key，请先点击「设置 API Key」')
+        const status = await this.provider.checkReady()
+        if (!status.ready) {
+            throw new Error(status.reason ?? 'AI 通道未就绪，请先在插件设置中完成配置')
         }
         const cfg = getZhaiConfig()
         const usedTokens = sumTokensSince(this.db, todayStartIso())

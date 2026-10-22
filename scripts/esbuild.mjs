@@ -15,7 +15,8 @@ const options = {
     platform: 'node',
     target: 'node18',
     sourcemap: true,
-    external: ['better-sqlite3', 'vscode'],
+    // Agent SDK 会拉起随包分发的 CLI 子进程，且含原生资源，保持 external 由运行时加载
+    external: ['better-sqlite3', 'vscode', '@tencent-ai/agent-sdk'],
     logLevel: 'info',
 }
 

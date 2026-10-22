@@ -8,12 +8,15 @@ importers:
 
   .:
     dependencies:
+      '@tencent-ai/agent-sdk':
+        specifier: ^0.3.286
+        version: 0.3.286(supports-color@10.2.2)(zod@4.6.4)
       better-sqlite3:
         specifier: ^13.0.3
         version: 13.0.3
       openai:
         specifier: ^7.15.0
-        version: 7.15.0(undici@7.29.1)(zod@3.25.76)
+        version: 7.15.0(undici@7.29.1)(zod@4.6.4)
     devDependencies:
       '@base-ui/react':
         specifier: ^1.8.0
@@ -158,6 +161,11 @@ importers:
         version: 5.0.1(@types/node@26.5.1)(vite@8.3.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0))
 
 packages:
+
+  '@agentclientprotocol/sdk@1.7.0':
+    resolution: {integrity: sha512-ZORuxsuEnLjRly7t6Ad7zAsWitjWsyprswyPUHz/yycPb+tTm3DGa8XheaHhRXqX8LS9snuxaYavXSRA50TlHw==}
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
 
   '@azu/format-text@1.0.2':
     resolution: {integrity: sha512-Swi4N7Edy1Eqq82GxgEECXSSLyn6GOb5htRFPzBDdUkECGXtlf12ynO5oJSpWKPwCaUssOu7NfhDcCWpIC6Ywg==}
@@ -1710,6 +1718,11 @@ packages:
     resolution: {integrity: sha512-yYU8cogLeSh/ms2jh8Fj7jaba/EWa7Ja6GoUqYZaraEuCI5YS6ms6ObZgjjedm+jm6XZjdNRWBpPP6Z86oOxcw==}
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
+
+  '@tencent-ai/agent-sdk@0.3.286':
+    resolution: {integrity: sha512-stk+CZNhkhgp/DMLpmLjwElLyWBbWs/9j23vZwXUssyUDZzEWPHhPBr5fg7RWQonMZv/ekR7SaMie3sC4FDKSw==}
+    peerDependencies:
+      zod: ^4.0.0
 
   '@textlint/ast-node-types@15.8.0':
     resolution: {integrity: sha512-5CiH9COYmovWmExQgs7763DzX6Gy9zjkjJ7JxCC95wyTcjwQn/8poNF6fv3qzRlmx8CRRde8DHr9FcgAAiPzgw==}
@@ -4923,6 +4936,10 @@ packages:
   util-deprecate@1.0.2:
     resolution: {integrity: sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw==}
 
+  uuidv7@1.2.1:
+    resolution: {integrity: sha512-4kPkK3/XTQW9Hbm4CaqfICn+kY9LJtDVEOfgsRRra/+n2Ofg4NqzRFceAkxvQ/Ud/6BpHOPzj8cirqM7TzTN5Q==}
+    hasBin: true
+
   validate-npm-package-license@3.0.4:
     resolution: {integrity: sha512-DpKm2Ui/xN7/HQKCtpZxoRWBhZ9Z0kqtygG8XCgNQ8ZlDnxuQmWhj566j8fN4Cu3/JmbhsDo7fcAJq4s9h27Ew==}
 
@@ -5145,6 +5162,10 @@ packages:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
+
+  '@agentclientprotocol/sdk@1.7.0(zod@4.6.4)':
+    dependencies:
+      zod: 4.6.4
 
   '@azu/format-text@1.0.2': {}
 
@@ -5784,6 +5805,28 @@ snapshots:
       raw-body: 3.0.2
       zod: 3.25.76
       zod-to-json-schema: 3.25.2(zod@3.25.76)
+    transitivePeerDependencies:
+      - supports-color
+
+  '@modelcontextprotocol/sdk@1.30.0(supports-color@10.2.2)(zod@4.6.4)':
+    dependencies:
+      '@hono/node-server': 2.1.1(hono@4.13.7)
+      ajv: 8.20.0
+      ajv-formats: 3.0.1(ajv@8.20.0)
+      content-type: 1.0.5
+      cors: 2.8.6
+      cross-spawn: 7.0.6
+      eventsource: 3.0.7
+      eventsource-parser: 3.1.1
+      express: 5.2.1(supports-color@10.2.2)
+      express-rate-limit: 8.7.0(express@5.2.1(supports-color@10.2.2))(supports-color@10.2.2)
+      hono: 4.13.7
+      jose: 6.2.12
+      json-schema-typed: 8.0.2
+      pkce-challenge: 5.0.1
+      raw-body: 3.0.2
+      zod: 4.6.4
+      zod-to-json-schema: 3.25.2(zod@4.6.4)
     transitivePeerDependencies:
       - supports-color
 
@@ -6770,6 +6813,16 @@ snapshots:
       '@tailwindcss/oxide': 4.3.3
       tailwindcss: 4.3.3
       vite: 8.3.0(@types/node@26.5.1)(esbuild@0.28.2)(jiti@2.7.0)
+
+  '@tencent-ai/agent-sdk@0.3.286(supports-color@10.2.2)(zod@4.6.4)':
+    dependencies:
+      '@agentclientprotocol/sdk': 1.7.0(zod@4.6.4)
+      '@modelcontextprotocol/sdk': 1.30.0(supports-color@10.2.2)(zod@4.6.4)
+      uuidv7: 1.2.1
+      zod: 4.6.4
+    transitivePeerDependencies:
+      - '@cfworker/json-schema'
+      - supports-color
 
   '@textlint/ast-node-types@15.8.0': {}
 
@@ -9253,10 +9306,10 @@ snapshots:
       is-docker: 2.2.1
       is-wsl: 2.2.0
 
-  openai@7.15.0(undici@7.29.1)(zod@3.25.76):
+  openai@7.15.0(undici@7.29.1)(zod@4.6.4):
     optionalDependencies:
       undici: 7.29.1
-      zod: 3.25.76
+      zod: 4.6.4
 
   optionator@0.9.4:
     dependencies:
@@ -10294,6 +10347,8 @@ snapshots:
 
   util-deprecate@1.0.2: {}
 
+  uuidv7@1.2.1: {}
+
   validate-npm-package-license@3.0.4:
     dependencies:
       spdx-correct: 3.2.0
@@ -10456,6 +10511,10 @@ snapshots:
   zod-to-json-schema@3.25.2(zod@3.25.76):
     dependencies:
       zod: 3.25.76
+
+  zod-to-json-schema@3.25.2(zod@4.6.4):
+    dependencies:
+      zod: 4.6.4
 
   zod-validation-error@4.0.2(zod@4.6.4):
     dependencies:

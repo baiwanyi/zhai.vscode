@@ -39,8 +39,16 @@ export interface AiStreamRequest {
     signal: AbortSignal
 }
 
+/** 通道就绪状态：未就绪时 reason 为可直接展示给用户的提示 */
+export interface AiProviderStatus {
+    ready: boolean
+    reason?: string
+}
+
 /** 通道实现：每个实例对应一种接入方式，全扩展共用一个实例 */
 export interface AiProvider {
     readonly id: AiProviderId
+    /** 发送前检查凭据或登录态；实现不得在此发起生成请求 */
+    checkReady(): Promise<AiProviderStatus>
     stream(request: AiStreamRequest): AsyncGenerator<AiStreamChunk>
 }

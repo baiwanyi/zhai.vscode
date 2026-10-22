@@ -21,6 +21,8 @@ export interface ZhaiConfig {
     indexDebounceMs: number
     rebuildOnActivate: boolean
     searchLimit: number
+    /** AI 通道：auto 优先 CodeBuddy（配置了凭证时），否则回落 DeepSeek 直连 */
+    aiProvider: 'deepseek' | 'codebuddy' | 'auto'
     aiModel: string
     aiTemperature: number
     aiMaxContextTokens: number
@@ -46,6 +48,11 @@ export interface ZhaiConfig {
 
 const SECTION = 'zhai'
 
+/** 收窄通道取值：非法配置一律按 auto 处理，避免历史配置或手写错值导致激活失败 */
+function readAiProvider(value: string): ZhaiConfig['aiProvider'] {
+    return value === 'deepseek' || value === 'codebuddy' ? value : 'auto'
+}
+
 /** 读取当前生效的插件配置（每次调用即时求值，跟随用户修改） */
 export function getZhaiConfig(): ZhaiConfig {
     const cfg = vscode.workspace.getConfiguration(SECTION)
@@ -55,6 +62,7 @@ export function getZhaiConfig(): ZhaiConfig {
         indexDebounceMs: cfg.get<number>('index.debounceMs', 500),
         rebuildOnActivate: cfg.get<boolean>('index.rebuildOnActivate', true),
         searchLimit: cfg.get<number>('search.limit', 50),
+        aiProvider: readAiProvider(cfg.get<string>('ai.provider', 'auto')),
         aiModel: cfg.get<string>('ai.model', 'deepseek-chat'),
         aiTemperature: cfg.get<number>('ai.temperature', 0.7),
         aiMaxContextTokens: cfg.get<number>('ai.maxContextTokens', 8000),

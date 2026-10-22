@@ -1,8 +1,10 @@
 /**
- * AI 命令注册：面板跳转、DeepSeek 密钥管理与「添加到宅对话」上下文入口（ai-chat.md 第 7.1 节命令清单）。
+ * AI 命令注册：面板跳转、通道凭证管理（DeepSeek 密钥 / CodeBuddy 登录）与「添加到宅对话」上下文入口。
+ * 设计源：docs/modules/ai-chat.md 第 7.1 节命令清单。
  * 复用约定：引用生成与预算校验统一委托 modules/ai/contextRefs，面板跳转携带的模块意图交由 WorkflowRouter 承接。
  * 约束：全部 Disposable 挂载到 context.subscriptions，保证停用后释放（AC-10）；密钥与引用原文不落日志。
  */
+import { unstable_v2_authenticate } from '@tencent-ai/agent-sdk'
 import * as vscode from 'vscode'
 import { createContextRefs, MAX_CONTEXT_COUNT } from './contextRefs'
 import type { AiChatService } from './chatService'
@@ -62,6 +64,33 @@ export function registerAiCommands(
         logger.info('DeepSeek API Key 已清除')
         service.notifyRuntimeChanged()
         void vscode.window.showInformationMessage('宅写作：已清除 DeepSeek API Key')
+    })
+
+    // CodeBuddy 通道：SDK 自带 CLI，用户只需完成一次浏览器登录，凭证由 CLI 配置目录维护
+    register('zhai.ai.loginCodebuddy', async () => {
+        await vscode.window.withProgress(
+            { location: vscode.ProgressLocation.Notification, title: 'CodeBuddy 登录', cancellable: false },
+            async (progress) => {
+                progress.report({ message: '正在打开浏览器授权页…' })
+                try {
+                    const result = await unstable_v2_authenticate({
+                        environment: 'external',
+                        onAuthUrl: async (state) => {
+                            await vscode.env.openExternal(vscode.Uri.parse(state.authUrl))
+                        },
+                    })
+                    logger.info(`CodeBuddy 已登录：${result.userinfo.userName}`)
+                    service.notifyRuntimeChanged()
+                    void vscode.window.showInformationMessage(
+                        `宅写作：CodeBuddy 已登录（${result.userinfo.userName}）`,
+                    )
+                } catch (error) {
+                    const message = error instanceof Error ? error.message : String(error)
+                    logger.error(`CodeBuddy 登录失败：${message}`, error)
+                    void vscode.window.showErrorMessage(`宅写作：CodeBuddy 登录失败，${message}`)
+                }
+            },
+        )
     })
 
     register('zhai.image.setApiKey', async () => {

@@ -7,6 +7,7 @@ import type * as vscode from 'vscode'
 /** 各密钥在 SecretStorage 中的命名空间键名 */
 const SECRET_KEYS = {
     deepseekApiKey: 'zhai.deepseek.apiKey',
+    codebuddyApiKey: 'zhai.codebuddy.apiKey',
     imageApiKey: 'zhai.image.apiKey',
     weiboAccessToken: 'zhai.weibo.accessToken',
     wechatAccessToken: 'zhai.wechat.accessToken',
