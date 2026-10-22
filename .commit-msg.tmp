@@ -1,8 +1,0 @@
-refactor: 模型选择迁入 AI 面板菜单并由全部 AI 功能共用
-
-- 删除 zhai.ai.codebuddyModel 配置项与「选择 CodeBuddy 模型」命令，面板输入区模型菜单成为唯一入口
-- 新增 ai/models、ai/selectModel 协议与 AiModelOption / AiModelChoices 类型，支持清单选择与手动输入自定义模型 id
-- 模型选择持久化由配置项改为 globalState 并维护内存副本，激活时 hydrate
-- 取名、角色外貌生成、出图驱动模型统一读 getSelectedCodebuddyModel()，不再各自读配置
-- 状态栏移除模型名展示，不再反向依赖 ai 层
-- 同步 README 与 docs（ai-chat / common / press / weibo）
