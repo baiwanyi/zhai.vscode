@@ -39,6 +39,10 @@ export interface AiStreamRequest {
     maxTokens: number
     messages: AiChatMessage[]
     signal: AbortSignal
+    /** 续接通道侧会话：传入后只把最后一条用户消息作为本轮输入，历史由通道维护 */
+    sessionId?: string
+    /** 通道建立或续接会话成功时回传会话号，供上层持久化 */
+    onSessionId?: (sessionId: string) => void
 }
 
 /** 通道就绪状态：未就绪时 reason 为可直接展示给用户的提示 */

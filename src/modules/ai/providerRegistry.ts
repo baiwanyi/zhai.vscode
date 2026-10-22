@@ -13,8 +13,9 @@ import { getZhaiConfig } from '../common/config'
 
 /**
  * 创建当前生效的通道。
- * auto 模式只按「是否配置 CodeBuddy 凭证」判断：未配置时保持直连，避免未登录用户被直接阻断；
- * 显式选择 codebuddy 时即使无凭证也交给该通道，由通道在请求阶段给出可读错误。
+ * auto 模式按凭证择一：CodeBuddy 凭证优先，其次 DeepSeek；两侧都未配置时选 CodeBuddy——
+ * 该通道可直接复用 CLI 登录态，而 DeepSeek 缺密钥必然失败，故选它至少存在成功可能。
+ * 显式选择时即使无凭证也交给对应通道，由通道在请求阶段给出可读错误。
  */
 export async function createAiProvider(secrets: SecretsService): Promise<AiProvider> {
     const { aiProvider } = getZhaiConfig()
@@ -25,5 +26,9 @@ export async function createAiProvider(secrets: SecretsService): Promise<AiProvi
         return new CodeBuddyProvider(secrets)
     }
     const codebuddyKey = await secrets.get('codebuddyApiKey')
-    return codebuddyKey ? new CodeBuddyProvider(secrets) : new DeepSeekProvider(secrets)
+    if (codebuddyKey) {
+        return new CodeBuddyProvider(secrets)
+    }
+    const deepseekKey = await secrets.get('deepseekApiKey')
+    return deepseekKey ? new DeepSeekProvider(secrets) : new CodeBuddyProvider(secrets)
 }

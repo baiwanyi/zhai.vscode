@@ -11,6 +11,10 @@ export interface ConversationRow {
     mode: string
     filePath: string | null
     model: string
+    /** 创建会话时使用的 AI 通道，切换通道后旧会话号不再复用 */
+    provider: string
+    /** 通道侧会话号：CodeBuddy 用于 resume 续接，其它通道为 null */
+    sdkSessionId: string | null
     createdAt: string
     updatedAt: string
 }
@@ -54,17 +58,27 @@ export interface UsageLogRow {
     createdAt: string
 }
 
-const CONVERSATION_COLUMNS = `id, title, mode, file_path AS filePath, model,
-    created_at AS createdAt, updated_at AS updatedAt`
+const CONVERSATION_COLUMNS = `id, title, mode, file_path AS filePath, model, provider,
+    sdk_session_id AS sdkSessionId, created_at AS createdAt, updated_at AS updatedAt`
 
 const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, reasoning, status,
     finish_reason AS finishReason, refs, error, created_at AS createdAt`
 
 export function insertConversation(db: Database.Database, row: ConversationRow): void {
     db.prepare(
-        `INSERT INTO conversations (id, title, mode, file_path, model, created_at, updated_at)
-         VALUES (@id, @title, @mode, @filePath, @model, @createdAt, @updatedAt)`,
+        `INSERT INTO conversations (id, title, mode, file_path, model, provider, sdk_session_id, created_at, updated_at)
+         VALUES (@id, @title, @mode, @filePath, @model, @provider, @sdkSessionId, @createdAt, @updatedAt)`,
     ).run(row)
+}
+
+/** 记录通道侧会话号：首轮生成拿到 session_id 后回写，供后续 resume 续接 */
+export function updateConversationSession(
+    db: Database.Database,
+    id: string,
+    provider: string,
+    sdkSessionId: string | null,
+): void {
+    db.prepare('UPDATE conversations SET provider = ?, sdk_session_id = ? WHERE id = ?').run(provider, sdkSessionId, id)
 }
 
 export function getConversation(db: Database.Database, id: string): ConversationRow | undefined {

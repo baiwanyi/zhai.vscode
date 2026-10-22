@@ -5,10 +5,10 @@
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
+import Database from 'better-sqlite3'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createUri } from './stubs/vscode'
 import type { ConversationRow, MessageRow } from '../modules/ai/db/chatRepository'
-import type Database from 'better-sqlite3'
 import {
     deleteConversation,
     getConversation,
@@ -32,6 +32,8 @@ function makeConversation(overrides: Partial<ConversationRow> = {}): Conversatio
         mode: 'chat',
         filePath: null,
         model: 'deepseek-chat',
+        provider: 'deepseek',
+        sdkSessionId: null,
         createdAt: '2026-09-25T10:00:00.000Z',
         updatedAt: '2026-09-25T10:00:00.000Z',
         ...overrides,
@@ -87,6 +89,27 @@ describe('conversations', () => {
     it('列表条数受 limit 限制', () => {
         const rows = listConversations(db, 1)
         expect(rows).toHaveLength(1)
+    })
+
+    it('旧库补齐 provider 与 sdk_session_id 列', () => {
+        const legacy = new Database(':memory:')
+        legacy.exec(`CREATE TABLE conversations (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, mode TEXT NOT NULL, file_path TEXT,
+            model TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        )`)
+        legacy
+            .prepare(
+                `INSERT INTO conversations (id, title, mode, file_path, model, created_at, updated_at)
+                 VALUES ('conv-legacy', '旧会话', 'chat', NULL, 'deepseek-chat', '2026-09-01T00:00:00.000Z',
+                    '2026-09-01T00:00:00.000Z')`,
+            )
+            .run()
+        ensureAiSchema(legacy)
+        const row = legacy
+            .prepare('SELECT provider, sdk_session_id AS sdkSessionId FROM conversations WHERE id = ?')
+            .get('conv-legacy') as { provider: string; sdkSessionId: string | null }
+        expect(row).toEqual({ provider: 'deepseek', sdkSessionId: null })
+        legacy.close()
     })
 })
 

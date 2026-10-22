@@ -24,7 +24,15 @@ interface PreparedPrompt {
 }
 
 /** 把消息数组拆成 system 与单轮提示词：多轮历史拼为对话记录，末条作为本轮输入 */
-function preparePrompt(messages: AiChatMessage[]): PreparedPrompt {
+function preparePrompt(messages: AiChatMessage[], isResume: boolean): PreparedPrompt {
+    const lastUser = [...messages].reverse().find((item) => item.role === 'user')
+    if (!lastUser) {
+        throw new Error('生成请求缺少用户消息')
+    }
+    // 续接会话时历史与系统提示由通道维护，本轮只提交最新一条用户输入
+    if (isResume) {
+        return { systemPrompt: undefined, prompt: lastUser.content }
+    }
     const systemParts = messages.filter((item) => item.role === 'system').map((item) => item.content.trim())
     const dialogue = messages.filter((item) => item.role !== 'system')
     const last = dialogue[dialogue.length - 1]
@@ -71,7 +79,8 @@ export class CodeBuddyProvider implements AiProvider {
     }
 
     public async *stream(request: AiStreamRequest): AsyncGenerator<AiStreamChunk> {
-        const { systemPrompt, prompt } = preparePrompt(request.messages)
+        const isResume = typeof request.sessionId === 'string' && request.sessionId.length > 0
+        const { systemPrompt, prompt } = preparePrompt(request.messages, isResume)
         const apiKey = await this.secrets.get('codebuddyApiKey')
         const controller = new AbortController()
         const forwardAbort = (): void => controller.abort()
@@ -90,6 +99,7 @@ export class CodeBuddyProvider implements AiProvider {
                 permissionMode: 'default',
                 includePartialMessages: true,
                 systemPrompt,
+                resume: isResume ? request.sessionId : undefined,
                 model: toCodebuddyModel(request.model),
                 // 工作目录指向临时目录，与用户项目隔离
                 cwd: tmpdir(),
@@ -100,6 +110,13 @@ export class CodeBuddyProvider implements AiProvider {
         let usage: AiStreamChunk['usage']
         try {
             for await (const message of session) {
+                if (message.type === 'system') {
+                    // init 消息携带会话号：首轮回写，后续轮次据此 resume
+                    if (message.subtype === 'init' && request.onSessionId) {
+                        request.onSessionId(message.session_id)
+                    }
+                    continue
+                }
                 if (message.type === 'stream_event') {
                     const { event } = message
                     if (event.type === 'content_block_delta') {

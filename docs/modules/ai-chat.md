@@ -139,7 +139,7 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 |--------|----------|------|------|
 | 接入方式 | 直连 REST chat 接口 / CodeBuddy Agent SDK / 自行 spawn CLI | **CodeBuddy Agent SDK**（`@tencent-ai/agent-sdk`） | SDK 是 CLI 的官方编程封装，已处理子进程生命周期、消息流分帧、权限回调与中断；自行 spawn 等于重做一遍协议且要跟版本 |
 | 分层 | 各模块直连 / provider 抽象 | **provider 抽象** | 会话服务、取名、外貌三处调用点统一改为注入 provider，避免每接一个通道改三处 |
-| 默认通道 | 仅 DeepSeek / 仅 CodeBuddy | **CodeBuddy 优先，DeepSeek 保留** | 面板与一次性生成走 CodeBuddy 订阅额度与 Agent 能力；无 CLI 或未登录环境回落 DeepSeek |
+| 默认通道 | 仅 DeepSeek / 仅 CodeBuddy | **auto：按凭证择一** | 两侧凭证都有时优先 CodeBuddy；仅 DeepSeek 有凭证时走直连；两侧都未配置时也选 CodeBuddy——它可复用 CLI 登录态，而 DeepSeek 缺密钥必然失败 |
 | 降级策略 | 静默降级 / 显式提示 | **显式提示** | 两侧计费来源不同，静默切换会让用户无法判断消耗归属；自动降级须由设置项显式开启 |
 | 会话归属 | 跨通道共用 / 会话锁定通道 | **会话锁定** | CodeBuddy 用会话 `resume` 续接，DeepSeek 用本地拼历史，中途混用会重复或丢失上下文 |
 | 中断 | `AbortController` / SDK `interrupt()` | **按通道区分** | DeepSeek 断开 HTTP 连接；CodeBuddy 调 SDK 中断接口，并在生成器收尾处兜底 |
@@ -196,13 +196,15 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 ```sql
 CREATE TABLE IF NOT EXISTS conversations (
-    id          TEXT PRIMARY KEY,     -- UUID
-    title       TEXT NOT NULL,
-    mode        TEXT NOT NULL,        -- 'write' | 'chat'
-    file_path   TEXT,                 -- 关联的笔记/章节（可为 NULL）
-    model       TEXT NOT NULL,
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
+    id             TEXT PRIMARY KEY,  -- UUID
+    title          TEXT NOT NULL,
+    mode           TEXT NOT NULL,     -- 'write' | 'chat'
+    file_path      TEXT,              -- 关联的笔记/章节（可为 NULL）
+    model          TEXT NOT NULL,
+    provider       TEXT NOT NULL DEFAULT 'deepseek',  -- 创建时使用的 AI 通道
+    sdk_session_id TEXT,              -- 通道侧会话号，CodeBuddy 通道续接用
+    created_at     TEXT NOT NULL,
+    updated_at     TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_conv_updated ON conversations(updated_at DESC);
@@ -241,6 +243,10 @@ CREATE INDEX IF NOT EXISTS idx_usage_date ON ai_usage_logs(created_at);
 ```
 
 **敏感字段说明**：日志表只存模型与用量，**不存提示词正文**；消息正文随会话存储，用户删除会话时级联清除。
+
+**迁移**：v1 → v2 由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行。`provider` 默认 `deepseek`（老会话一律按直连处理），`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话。
+
+**续接规则**：只有「会话 `provider` 与当前通道一致」且 `sdk_session_id` 非空时才走 `resume`，此时仅提交本轮输入，历史由通道维护；引用原文仍每轮注入（指向的文件可能已改动）。条件任一不满足即回退到完整历史拼接，切换通道不复活旧会话号。
 
 ---
 

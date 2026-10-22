@@ -29,6 +29,7 @@ import {
     sumTokensSince,
     touchConversation,
     updateConversationMode,
+    updateConversationSession,
     updateConversationTitle,
     updateMessage,
 } from './db/chatRepository'
@@ -184,6 +185,8 @@ export class AiChatService implements vscode.Disposable {
             mode: 'chat',
             filePath: null,
             model: getZhaiConfig().aiModel,
+            provider: this.provider.id,
+            sdkSessionId: null,
             createdAt: now,
             updatedAt: now,
         }
@@ -539,13 +542,28 @@ export class AiChatService implements vscode.Disposable {
         }
 
         try {
-            const messages = await this.buildChatMessages(conversationId, userMessageId, input, contextBlock)
+            // 通道与创建会话时一致且已有会话号时走续接，历史交给通道维护
+            const stored = getConversation(this.db, conversationId)
+            const resumeSessionId =
+                stored !== undefined && stored.provider === this.provider.id && stored.sdkSessionId !== null
+                    ? stored.sdkSessionId
+                    : undefined
+            let messages: ChatMessage[]
+            if (resumeSessionId !== undefined) {
+                messages = this.buildResumeMessages(input, contextBlock)
+            } else {
+                messages = await this.buildChatMessages(conversationId, userMessageId, input, contextBlock)
+            }
             const stream = this.provider.stream({
                 model: cfg.aiModel,
                 temperature: cfg.aiTemperature,
                 maxTokens: MAX_COMPLETION_TOKENS,
                 messages,
                 signal: controller.signal,
+                sessionId: resumeSessionId,
+                onSessionId: (sessionId) => {
+                    updateConversationSession(this.db, conversationId, this.provider.id, sessionId)
+                },
             })
             for await (const chunk of stream) {
                 if (isFirstToken && (chunk.content.length > 0 || chunk.reasoning.length > 0)) {
@@ -613,6 +631,15 @@ export class AiChatService implements vscode.Disposable {
                 this.activeRequest = null
             }
         }
+    }
+
+    /**
+     * 续接通道会话时的消息：只提交本轮输入，历史由通道维护。
+     * 引用原文仍需每轮注入——引用指向的文件内容可能在上一轮之后被改动。
+     */
+    private buildResumeMessages(input: string, contextBlock: string): ChatMessage[] {
+        const content = contextBlock.length > 0 ? `${contextBlock}\n\n${input}` : input
+        return [{ role: 'user', content }]
     }
 
     /**

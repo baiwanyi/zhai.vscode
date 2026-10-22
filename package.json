@@ -190,7 +190,7 @@
                         "deepseek"
                     ],
                     "enumDescriptions": [
-                        "配置了 CodeBuddy 凭证时优先使用，否则回落 DeepSeek 直连",
+                        "两侧凭证都有时优先 CodeBuddy；仅 DeepSeek 有凭证时用直连；都未配置时也走 CodeBuddy（复用 CLI 登录态）",
                         "始终使用 CodeBuddy（需先执行「登录 CodeBuddy」）",
                         "始终使用 DeepSeek 直连"
                     ],
