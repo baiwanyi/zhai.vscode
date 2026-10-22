@@ -212,6 +212,8 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 | 文生图模型 | 新增 `zhai.image.codebuddyModel`，对应 CLI 的 `--text-to-image-model` / `textToImageModel` |
 | 频率护栏 | `zhai.image.dailyLimit` 按通道分别计数，避免回退后额度翻倍 |
 
+> **落地状态**：`ImageProvider` 契约与 `ImageProviderRouter` 已实现（`src/modules/press/ai/imageProvider.ts`），两个实现分别走 SDK 的 `ImageGen` 与既有 `/images/generations`（`codebuddyImageProvider.ts` / `openaiImageProvider.ts`）。能力探测读 `system.init` 的 `tools` 是否含 `ImageGen`，结果缓存 10 分钟，出图失败时清空缓存重探。回退说明经 `PortraitGenerateResult.notice` 回传，前端展示待补。
+>
 > **为什么生成失败不自动回退**：出图单次耗时数分钟且按张计费，静默回退会连扣两次、产出两张图；文本通道失败回退成本低，可自动降级，图像通道必须由用户确认。
 >
 > **文本提示词与出图分离**：`portraitPrompt.ts` 仍用本地规则模板拼英文提示词，不引入额外模型调用；若后续启用「AI 生成提示词」，须作为独立开关并提供模板兜底。

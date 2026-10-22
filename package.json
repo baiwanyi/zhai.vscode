@@ -236,6 +236,26 @@
                     "default": 20,
                     "description": "写作管理 AI 生成的每日次数上限（人物外貌生成等一次性任务，0 或负数表示不限）"
                 },
+                "zhai.image.provider": {
+                    "type": "string",
+                    "enum": [
+                        "auto",
+                        "codebuddy",
+                        "openai"
+                    ],
+                    "enumDescriptions": [
+                        "CodeBuddy 具备出图能力时优先使用，否则自动回退直连图像服务",
+                        "始终使用 CodeBuddy（需先登录，且通道支持 ImageGen）",
+                        "始终使用直连图像服务"
+                    ],
+                    "default": "auto",
+                    "description": "角色设定图的图像通道"
+                },
+                "zhai.image.codebuddyModel": {
+                    "type": "string",
+                    "default": "",
+                    "description": "CodeBuddy 出图使用的模型名，留空则使用通道默认模型"
+                },
                 "zhai.image.baseUrl": {
                     "type": "string",
                     "default": "",

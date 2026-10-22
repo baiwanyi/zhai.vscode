@@ -33,6 +33,10 @@ export interface ZhaiConfig {
     namingAiDailyLimit: number
     /** 写作管理 AI 生成每日次数上限（人物外貌等一次性生成） */
     pressAiDailyLimit: number
+    /** 图像通道：auto 时 CodeBuddy 具备出图能力则优先，否则走直连图像服务 */
+    imageProvider: 'codebuddy' | 'openai' | 'auto'
+    /** CodeBuddy 出图模型，空表示使用通道默认模型 */
+    imageCodebuddyModel: string
     /** 图像服务端点（OpenAI 兼容的 /images/generations 基址，空表示未配置） */
     imageBaseUrl: string
     /** 图像模型名，如 gpt-image-1 / Kwai-Kolors/Kolors */
@@ -53,6 +57,11 @@ function readAiProvider(value: string): ZhaiConfig['aiProvider'] {
     return value === 'deepseek' || value === 'codebuddy' ? value : 'auto'
 }
 
+/** 收窄图像通道取值：规则同上 */
+function readImageProvider(value: string): ZhaiConfig['imageProvider'] {
+    return value === 'codebuddy' || value === 'openai' ? value : 'auto'
+}
+
 /** 读取当前生效的插件配置（每次调用即时求值，跟随用户修改） */
 export function getZhaiConfig(): ZhaiConfig {
     const cfg = vscode.workspace.getConfiguration(SECTION)
@@ -70,6 +79,8 @@ export function getZhaiConfig(): ZhaiConfig {
         aiAutoFocusOnContext: cfg.get<boolean>('ai.autoFocusOnContext', true),
         namingAiDailyLimit: cfg.get<number>('naming.aiDailyLimit', 20),
         pressAiDailyLimit: cfg.get<number>('press.aiDailyLimit', 20),
+        imageProvider: readImageProvider(cfg.get<string>('image.provider', 'auto')),
+        imageCodebuddyModel: cfg.get<string>('image.codebuddyModel', ''),
         imageBaseUrl: cfg.get<string>('image.baseUrl', ''),
         imageModel: cfg.get<string>('image.model', ''),
         imageSize: cfg.get<string>('image.size', '768x1024'),

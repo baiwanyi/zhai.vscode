@@ -1,19 +1,19 @@
 /**
- * 角色设定图服务：校验配置、密钥与配额后调用图像接口，按人物建目录落盘，并返回 webview 可用 URL。
- * 复用约定：图像通道复用 ./ai/aiPortraitGenerator，提示词复用 ./ai/portraitPrompt，配额复用 ./db/quotaRepository，
- * 路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入（需要 Webview 实例，服务本身不依赖视图）。
+ * 角色设定图服务：校验配额后经图像通道路由出图，按人物建目录落盘，并返回 webview 可用 URL。
+ * 复用约定：图像通道经 ./ai/imageProvider 的路由选择（CodeBuddy 优先、直连兜底），提示词复用 ./ai/portraitPrompt，
+ * 配额复用 ./db/quotaRepository，路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
  * 关键约束：图片落在 press/_portraits/{characterId}/ 下，人物标识须匹配安全字符集；
  * 删除只接受 press/_portraits 下的四段相对路径，优先走回收站；同一时刻只允许一个生成请求。
  */
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
-import { generatePortraitWithAi } from './ai/aiPortraitGenerator'
+import { buildPortraitPrompt } from './ai/portraitPrompt'
 import { consumeToday, readUsedToday } from './db/quotaRepository'
 import { readText, readTextList } from './pressAiService'
 import { PRESS_MODULE_DIR } from './projectFactory'
+import type { ImageProviderRouter } from './ai/imageProvider'
 import type { QuotaKeys } from './db/quotaRepository'
 import type { PortraitGenerateRequest, PortraitGenerateResult, PortraitStyle } from '../../shared/types/press'
-import type { SecretsService } from '../common/secrets'
 import type Database from 'better-sqlite3'
 import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES } from '../../shared/types/press'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
@@ -39,7 +39,7 @@ export class PortraitService {
 
     public constructor(
         private readonly db: Database.Database,
-        private readonly secrets: SecretsService,
+        private readonly router: ImageProviderRouter,
     ) {}
 
     /**
@@ -55,39 +55,30 @@ export class PortraitService {
         }
         const request = normalizePortraitRequest(payload)
         const config = getZhaiConfig()
-        const baseUrl = config.imageBaseUrl.trim()
-        const model = config.imageModel.trim()
-        if (baseUrl.length === 0 || model.length === 0) {
-            throw new Error('未配置图像服务，请先在设置中填写 zhai.image.baseUrl 与 zhai.image.model')
-        }
-        const apiKey = await this.secrets.get('imageApiKey')
-        if (!apiKey) {
-            throw new Error('未配置图像服务 API Key，请执行「设置图像服务 API Key」命令后重试')
-        }
         this.assertQuota()
         const controller = new AbortController()
         this.activeRequest = controller
         const startedAt = Date.now()
-        logger.info(`角色卡生成开始：${request.name}（${model} / ${config.imageSize}）`)
+        logger.info(`角色卡生成开始：${request.name}（${config.imageSize}）`)
         try {
-            const result = await generatePortraitWithAi({
-                baseUrl,
-                apiKey,
-                model,
+            const route = await this.router.generate({
+                prompt: buildPortraitPrompt(request),
                 size: config.imageSize,
-                timeoutMs: Math.max(config.imageTimeoutSeconds, 30) * 1000,
-                request,
                 signal: controller.signal,
             })
+            logger.info(
+                `角色卡通道：${route.providerId}${route.fallbackReason === undefined ? '' : `（${route.fallbackReason}）`}`,
+            )
             const id = `portrait-${randomUUID()}`
-            const segments = [PRESS_MODULE_DIR, PORTRAIT_DIR, request.characterId, `${id}.${result.extension}`]
+            const extension = route.result.extension
+            const segments = [PRESS_MODULE_DIR, PORTRAIT_DIR, request.characterId, `${id}.${extension}`]
             const root = resolveStorageRoot()
             await vscode.workspace.fs.createDirectory(buildStorageUri(root, segments.slice(0, -1)))
             const target = buildStorageUri(root, segments)
-            await vscode.workspace.fs.writeFile(target, result.bytes)
+            await vscode.workspace.fs.writeFile(target, route.result.bytes)
             consumeToday(this.db, QUOTA_KEYS)
-            logger.info(`角色卡生成完成：耗时 ${Date.now() - startedAt}ms，${result.bytes.byteLength} 字节`)
-            return {
+            logger.info(`角色卡生成完成：耗时 ${Date.now() - startedAt}ms，${route.result.bytes.byteLength} 字节`)
+            const result: PortraitGenerateResult = {
                 portrait: {
                     id,
                     path: segments.join('/'),
@@ -95,6 +86,10 @@ export class PortraitService {
                     createdAt: new Date().toISOString(),
                 },
             }
+            if (route.fallbackReason !== undefined) {
+                result.notice = route.fallbackReason
+            }
+            return result
         } catch (error) {
             // 取消与超时的文案由执行器给出，此处只补日志便于排查服务商耗时
             logger.error(`角色卡生成失败：耗时 ${Date.now() - startedAt}ms`, error)

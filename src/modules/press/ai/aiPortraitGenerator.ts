@@ -1,13 +1,11 @@
 /**
- * 角色设定图执行器：按 OpenAI 兼容的 /images/generations 协议请求一张图片并取回字节。
- * 复用约定：端点、模型、尺寸、超时全部来自配置，本函数不读配置也不落盘；提示词由 ./portraitPrompt 提供。
+ * 直连图像执行器：按 OpenAI 兼容的 /images/generations 协议请求一张图片并取回字节。
+ * 复用约定：端点、模型、尺寸、超时全部由调用方（openaiImageProvider）传入，本函数不读配置也不落盘。
  * 关键约束：接口返回视为不可信——data / results 两种列表、b64 与 url 两种载荷都要支持；
  * url 回源下载同样受同一超时约束；超时与用户取消给出不同文案，不把两者混成「已取消」；
  * 不强制 response_format，也不假设 n 被服务端采纳；单张体积设上限，避免异常大图写盘。
  */
 import { Buffer } from 'node:buffer'
-import { buildPortraitPrompt } from './portraitPrompt'
-import type { PortraitGenerateRequest } from '../../../shared/types/press'
 
 /** 单张图片体积上限 */
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024
@@ -26,7 +24,8 @@ export interface AiPortraitOptions {
     size: string
     /** 单次生成整体超时（毫秒），由配置 zhai.image.timeoutSeconds 决定 */
     timeoutMs: number
-    request: PortraitGenerateRequest
+    /** 已组装好的英文提示词 */
+    prompt: string
     /** 外部取消信号（pressAi/aiPortrait/abort） */
     signal?: AbortSignal
 }
@@ -61,7 +60,7 @@ export async function generatePortraitWithAi(options: AiPortraitOptions): Promis
             },
             body: JSON.stringify({
                 model: options.model,
-                prompt: buildPortraitPrompt(options.request),
+                prompt: options.prompt,
                 n: 1,
                 size: options.size,
             }),

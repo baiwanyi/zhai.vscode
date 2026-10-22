@@ -24,6 +24,7 @@ import { ensureNamingSchema } from './modules/naming/db/schema'
 import { NamingRoutes } from './modules/naming/namingRoutes'
 import { NamingService } from './modules/naming/namingService'
 import { PinStore } from './modules/note/pinStore'
+import { ImageProviderRouter } from './modules/press/ai/imageProvider'
 import { openPressDatabase } from './modules/press/db/connection'
 import { PortraitService } from './modules/press/portraitService'
 import { PressAiService } from './modules/press/pressAiService'
@@ -91,7 +92,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const pressDb = openPressDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => pressDb.close() })
     const pressAiService = new PressAiService(pressDb, aiProvider)
-    const portraitService = new PortraitService(pressDb, secrets)
+    const imageRouter = new ImageProviderRouter(secrets)
+    const portraitService = new PortraitService(pressDb, imageRouter)
     const pressRoutes = new PressRoutes(pressAiService, portraitService)
 
     const aiChatProvider = new AiChatViewProvider(
