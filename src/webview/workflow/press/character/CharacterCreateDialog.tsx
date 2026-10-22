@@ -1,7 +1,7 @@
 /**
- * 新增人物弹窗：只收拢建卡必需的三项输入（姓名、定位、身份），其余字段留到人物卡里继续补。
+ * 新增人物弹窗：只收拢建卡必需的四项输入（姓名、角色、性别、身份），其余字段留到人物卡里继续补。
  * 复用约定：弹层复用 ui/dialog（含 DialogTitle / DialogDescription 的无障碍结构），字段布局复用 ui/field，
- * 定位选择复用 ui/toggle-group，标签文案与顺序取自 constants 的 CHARACTER_ROLE_META。
+ * 角色与性别选择复用 ui/toggle-group，标签文案与顺序取自 constants 的 CHARACTER_ROLE_META / CHARACTER_GENDER_META。
  * 关键约束：姓名为空时禁用创建按钮、不弹错误提示；组件不持有角色数据副本，提交只回抛初始值；
  * 调用方须把 key 绑定到展开状态以重建表单，本组件不写重置副作用，避免上次输入残留到下一次新增。
  */
@@ -18,9 +18,14 @@ import {
 import { Field, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
-import type { CharacterRole, CharacterSeed } from '../types'
+import type { CharacterGender, CharacterRole, CharacterSeed } from '../types'
 import type { JSX } from 'react'
-import { CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
+import {
+    CHARACTER_GENDER_META,
+    CHARACTER_GENDER_ORDER,
+    CHARACTER_ROLE_META,
+    CHARACTER_ROLE_ORDER,
+} from '../constants'
 
 interface CharacterCreateDialogProps {
     isOpen: boolean
@@ -32,8 +37,10 @@ interface CharacterCreateDialogProps {
 export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: CharacterCreateDialogProps): JSX.Element {
     const [name, setName] = useState('')
     const [identity, setIdentity] = useState('')
-    // 定位默认配角：多数新增是临时出场人物，主角由作者主动改选
+    // 角色默认配角：多数新增是临时出场人物，主角由作者主动改选
     const [role, setRole] = useState<CharacterRole>('supporting')
+    // 性别默认未设定：不确定时留空，避免错误性别进入外貌与设定图提示词
+    const [gender, setGender] = useState<CharacterGender>('unspecified')
 
     const canSubmit = name.trim().length > 0
 
@@ -44,11 +51,18 @@ export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: Charac
         }
     }
 
+    const handleGenderChange = (value: string): void => {
+        const next = CHARACTER_GENDER_ORDER.find((item) => item === value)
+        if (next) {
+            setGender(next)
+        }
+    }
+
     const handleSubmit = (): void => {
         if (!canSubmit) {
             return
         }
-        onCreate({ name: name.trim(), identity: identity.trim(), role })
+        onCreate({ name: name.trim(), identity: identity.trim(), role, gender })
         onOpenChange(false)
     }
 
@@ -76,11 +90,21 @@ export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: Charac
                         />
                     </Field>
                     <Field>
-                        <FieldLabel htmlFor="character-create-role">定位</FieldLabel>
+                        <FieldLabel htmlFor="character-create-role">角色</FieldLabel>
                         <ToggleGroup type="single" value={role} className="flex-wrap" onValueChange={handleRoleChange}>
                             {CHARACTER_ROLE_ORDER.map((item) => (
                                 <ToggleGroupItem key={item} value={item} size="sm" variant="outline">
                                     {CHARACTER_ROLE_META[item].label}
+                                </ToggleGroupItem>
+                            ))}
+                        </ToggleGroup>
+                    </Field>
+                    <Field>
+                        <FieldLabel htmlFor="character-create-gender">性别</FieldLabel>
+                        <ToggleGroup type="single" value={gender} className="flex-wrap" onValueChange={handleGenderChange}>
+                            {CHARACTER_GENDER_ORDER.map((item) => (
+                                <ToggleGroupItem key={item} value={item} size="sm" variant="outline">
+                                    {CHARACTER_GENDER_META[item].label}
                                 </ToggleGroupItem>
                             ))}
                         </ToggleGroup>

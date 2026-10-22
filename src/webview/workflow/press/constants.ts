@@ -1,11 +1,11 @@
 /**
- * 大纲模块选项常量：把题材、钩子、状态、人物定位等枚举的展示文案与徽标变体集中在一处。
+ * 大纲模块选项常量：把题材、钩子、状态、角色分类与性别等枚举的展示文案与徽标变体集中在一处。
  * 复用约定：徽标变体只取 badge 组件的语义变体，不写原始色值；页面与卡片均从此表读取，避免各写一套映射。
  * 关键约束：状态与钩子的 key 必须与 types.ts 的联合类型完全一致，新增取值须同时补文案与变体；
  * 张力与步骤的档位顺序参与排序与进度计算，不得随意调整。
  */
 import type { PortraitStyle } from '@shared/types/press'
-import type { Audience, CharacterRole, EndingKind, HookKind, PlanStatus, ProjectSetting } from './types'
+import type { Audience, CharacterGender, CharacterRole, EndingKind, HookKind, PlanStatus, ProjectSetting } from './types'
 
 /** 徽标语义变体：与 @components/ui/badge 的 variant 保持一致 */
 export type BadgeTone = 'default' | 'secondary' | 'destructive' | 'outline' | 'ghost'
@@ -43,25 +43,43 @@ export const HOOK_OPTIONS: readonly OptionMeta<HookKind>[] = [
 /** 张力档位文案：1-5 档，供滑块旁的文字提示 */
 export const TENSION_LABELS: readonly string[] = ['平缓', '铺垫', '推进', '紧张', '高潮']
 
-/** 人物定位：列表分组与人物卡展示共用 */
+/** 角色分类：列表分组与人物卡展示共用 */
 export const CHARACTER_ROLE_META: Readonly<Record<CharacterRole, { label: string; tone: BadgeTone }>> = {
     protagonist: { label: '主角', tone: 'default' },
-    heroine: { label: '女主', tone: 'secondary' },
-    supporting: { label: '配角', tone: 'outline' },
+    supporting: { label: '配角', tone: 'secondary' },
     antagonist: { label: '反派', tone: 'destructive' },
+    neutral: { label: '中立', tone: 'outline' },
+    extra: { label: '龙套', tone: 'ghost' },
 }
 
-/** 人物定位顺序：列表排序以主角在前、反派在后，与作者翻卡的顺序一致 */
-export const CHARACTER_ROLE_ORDER: readonly CharacterRole[] = ['protagonist', 'heroine', 'supporting', 'antagonist']
+/** 角色分类顺序：列表排序以主角在前、龙套在后，与作者翻卡的顺序一致 */
+export const CHARACTER_ROLE_ORDER: readonly CharacterRole[] = [
+    'protagonist',
+    'supporting',
+    'antagonist',
+    'neutral',
+    'extra',
+]
 
-/** 人物筛选项：全部与四种定位，供人物页顶部切换，顺序与 CHARACTER_ROLE_ORDER 一致 */
+/** 角色筛选项：全部与五种分类，供人物页顶部切换，顺序与 CHARACTER_ROLE_ORDER 一致 */
 export const CHARACTER_ROLE_FILTERS: readonly (OptionMeta<CharacterRole | 'all'>)[] = [
     { value: 'all', label: '全部' },
     { value: 'protagonist', label: '主角' },
-    { value: 'heroine', label: '女主' },
     { value: 'supporting', label: '配角' },
     { value: 'antagonist', label: '反派' },
+    { value: 'neutral', label: '中立' },
+    { value: 'extra', label: '龙套' },
 ]
+
+/** 性别标签：新增弹窗、人物卡与列表徽标共用，未设定不参与生成提示词 */
+export const CHARACTER_GENDER_META: Readonly<Record<CharacterGender, { label: string; tone: BadgeTone }>> = {
+    male: { label: '男', tone: 'outline' },
+    female: { label: '女', tone: 'outline' },
+    unspecified: { label: '未设定', tone: 'ghost' },
+}
+
+/** 性别选项顺序：男、女、未设定 */
+export const CHARACTER_GENDER_ORDER: readonly CharacterGender[] = ['male', 'female', 'unspecified']
 
 /** 角色卡画风选项：值必须落在 shared/types/press 的 PORTRAIT_STYLES 内，写风描述由宿主按同一 key 映射 */
 export const PORTRAIT_STYLE_OPTIONS: readonly (OptionMeta<PortraitStyle>)[] = [

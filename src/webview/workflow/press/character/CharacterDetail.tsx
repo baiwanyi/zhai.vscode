@@ -1,6 +1,6 @@
 /**
  * 人物卡编辑器：按「基础 / 外貌 / 角色卡 / 动机 / 背景 / 关系」六组编辑单个角色，字段与 角色设定.md 的区块对齐。
- * 复用约定：分组切换复用 ui/tabs（均分整行、不横向滚动），字段布局复用 ui/field，定位选择复用 ui/toggle-group，
+ * 复用约定：分组切换复用 ui/tabs（均分整行、不横向滚动），字段布局复用 ui/field，角色与性别选择复用 ui/toggle-group，
  * 标签型字段（性格）复用设定页的 TagField；外貌与角色卡分别由 useCharacterAppearance、CharacterPortraitPanel 承担。
  * 关键约束：所有控件只通过补丁回传给调用方（编辑弹窗的草稿），本组件不持有角色数据副本；
  * 生成结果写入字段或图库后仍需用户保存，未保存即关闭弹窗则丢弃；字段 id 固定，同时只会挂载一张卡。
@@ -16,10 +16,10 @@ import { Textarea } from '@components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import { CharacterPortraitPanel } from './CharacterPortraitPanel'
 import { useCharacterAppearance } from './useCharacterAppearance'
-import type { CharacterCard, CharacterRole } from '../types'
+import type { CharacterCard } from '../types'
 import type { AppearanceContext } from './useCharacterAppearance'
 import type { JSX } from 'react'
-import { CHARACTER_ROLE_META } from '../constants'
+import { CHARACTER_GENDER_META, CHARACTER_GENDER_ORDER, CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
 import { TagField } from '../setting/TagField'
 
 interface CharacterDetailProps {
@@ -29,16 +29,20 @@ interface CharacterDetailProps {
     aiContext: AppearanceContext
 }
 
-/** 可选定位：顺序与列表分组一致 */
-const ROLE_OPTIONS: readonly CharacterRole[] = ['protagonist', 'heroine', 'supporting', 'antagonist']
-
 export function CharacterDetail({ character, onChange, aiContext }: CharacterDetailProps): JSX.Element {
     const { isGenerating, error, generate, abort } = useCharacterAppearance()
 
     const handleRoleChange = (value: string): void => {
-        const next = ROLE_OPTIONS.find((role) => role === value)
+        const next = CHARACTER_ROLE_ORDER.find((role) => role === value)
         if (next) {
             onChange({ role: next })
+        }
+    }
+
+    const handleGenderChange = (value: string): void => {
+        const next = CHARACTER_GENDER_ORDER.find((gender) => gender === value)
+        if (next) {
+            onChange({ gender: next })
         }
     }
 
@@ -118,20 +122,36 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
                             </Field>
                         </div>
                         <Field>
-                            <FieldLabel htmlFor="character-role">定位</FieldLabel>
+                            <FieldLabel htmlFor="character-role">角色</FieldLabel>
                             <ToggleGroup
                                 type="single"
                                 value={character.role}
                                 className="flex-wrap"
                                 onValueChange={handleRoleChange}
                             >
-                                {ROLE_OPTIONS.map((role) => (
+                                {CHARACTER_ROLE_ORDER.map((role) => (
                                     <ToggleGroupItem key={role} value={role} size="sm" variant="outline">
                                         {CHARACTER_ROLE_META[role].label}
                                     </ToggleGroupItem>
                                 ))}
                             </ToggleGroup>
-                            <FieldDescription>定位决定大纲排布时该人物承担的功能</FieldDescription>
+                            <FieldDescription>角色分类决定大纲排布时该人物承担的功能</FieldDescription>
+                        </Field>
+                        <Field>
+                            <FieldLabel htmlFor="character-gender">性别</FieldLabel>
+                            <ToggleGroup
+                                type="single"
+                                value={character.gender}
+                                className="flex-wrap"
+                                onValueChange={handleGenderChange}
+                            >
+                                {CHARACTER_GENDER_ORDER.map((gender) => (
+                                    <ToggleGroupItem key={gender} value={gender} size="sm" variant="outline">
+                                        {CHARACTER_GENDER_META[gender].label}
+                                    </ToggleGroupItem>
+                                ))}
+                            </ToggleGroup>
+                            <FieldDescription>用于外貌描写与角色设定图的性别约束，未设定时不作要求</FieldDescription>
                         </Field>
                     </TabsContent>
 
@@ -171,7 +191,7 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
                                 onChange={(event) => onChange({ appearance: event.target.value })}
                             />
                             <FieldDescription>
-                                写外观与气质，供正文引用；AI 会结合定位、身份、性格与作品时代生成一版草稿
+                                写外观与气质，供正文引用；AI 会结合角色、性别、身份、性格与作品时代生成一版草稿
                             </FieldDescription>
                             {error !== null ? (
                                 <Alert variant="destructive">

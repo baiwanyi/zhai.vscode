@@ -14,8 +14,11 @@ export type PlanStatus = 'planned' | 'drafting' | 'done' | 'stale'
 /** 章末钩子类型：悬念、反转、情绪高点、无 */
 export type HookKind = 'suspense' | 'twist' | 'emotion' | 'none'
 
-/** 人物定位：主角、女主、重要配角、反派 */
-export type CharacterRole = 'protagonist' | 'heroine' | 'supporting' | 'antagonist'
+/** 角色分类：主角、配角、反派、中立、龙套 */
+export type CharacterRole = 'protagonist' | 'supporting' | 'antagonist' | 'neutral' | 'extra'
+
+/** 角色性别：男、女、未设定 */
+export type CharacterGender = 'male' | 'female' | 'unspecified'
 
 /** 目标读者：与作品 README 的 audience 字段取值一致 */
 export type Audience = '男频' | '女频'
@@ -66,6 +69,8 @@ export interface CharacterCard {
     name: string
     alias: string
     role: CharacterRole
+    /** 性别标签：未设定时外貌与设定图生成不携带性别约束 */
+    gender: CharacterGender
     age: string
     identity: string
     /** 外貌描写：外观与气质的白描，供正文引用，可由 AI 依据其他字段生成 */

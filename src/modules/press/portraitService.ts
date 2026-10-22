@@ -145,6 +145,7 @@ function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
         characterId?: unknown
         name?: unknown
         role?: unknown
+        gender?: unknown
         age?: unknown
         identity?: unknown
         appearance?: unknown
@@ -165,6 +166,7 @@ function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
         characterId,
         name: readText(value.name, MAX_SHORT_TEXT),
         role: readText(value.role, MAX_SHORT_TEXT),
+        gender: readText(value.gender, MAX_SHORT_TEXT),
         age: readText(value.age, MAX_SHORT_TEXT),
         identity: readText(value.identity, MAX_SHORT_TEXT),
         appearance: readText(value.appearance, MAX_LONG_TEXT),

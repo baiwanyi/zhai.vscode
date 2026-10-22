@@ -1,7 +1,7 @@
 /**
  * 人物外貌生成：把人物卡与作品氛围拼成快照交给宿主 pressAi/aiAppearance，取回单段白描文本。
  * 复用约定：请求经 webview 公共 bridge；前端超时略大于宿主侧 60s，保证宿主先给出超时错误；
- * 角色定位使用 CHARACTER_ROLE_META 的中文标签，与人物卡展示口径一致。
+ * 角色分类与性别使用 CHARACTER_ROLE_META / CHARACTER_GENDER_META 的中文标签，与人物卡展示口径一致。
  * 关键约束：生成中不接受重复提交；取消走 pressAi/aiAppearance/abort，属尽力而为；
  * 结果不直接落库，由调用方写入草稿并由用户点保存，未保存的生成结果只存在于弹窗内。
  */
@@ -9,7 +9,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { CharacterAppearanceRequest, CharacterAppearanceResult } from '@shared/types/press'
 import type { CharacterCard } from '../types'
 import { request } from '../../../bridge'
-import { CHARACTER_ROLE_META } from '../constants'
+import { CHARACTER_GENDER_META, CHARACTER_ROLE_META } from '../constants'
 
 /** AI 通道前端超时：略大于宿主 60s，避免前端先于宿主超时 */
 const AI_REQUEST_TIMEOUT_MS = 70_000
@@ -76,11 +76,12 @@ export function useCharacterAppearance(): CharacterAppearanceState {
     return { isGenerating, error, generate, abort }
 }
 
-/** 请求载荷：只上传已填字段，空值交给宿主兜底 */
+/** 请求载荷：只上传已填字段，空值交给宿主兜底；性别未设定时传空串，由宿主跳过该行 */
 function buildPayload(character: CharacterCard, context: AppearanceContext): CharacterAppearanceRequest {
     return {
         name: character.name,
         role: CHARACTER_ROLE_META[character.role].label,
+        gender: character.gender === 'unspecified' ? '' : CHARACTER_GENDER_META[character.gender].label,
         age: character.age,
         identity: character.identity,
         traits: [...character.traits],

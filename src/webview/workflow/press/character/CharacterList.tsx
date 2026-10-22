@@ -1,6 +1,6 @@
 /**
  * 人物卡片列表：以单列卡片展示人物卡，承担人物页的主体浏览与选择入口。
- * 复用约定：卡片复用 ui/card，定位徽标取 CHARACTER_ROLE_META 的语义变体，空态复用 ui/empty；
+ * 复用约定：卡片复用 ui/card，角色与性别徽标取 CHARACTER_ROLE_META / CHARACTER_GENDER_META 的语义变体，空态复用 ui/empty；
  * 封面取人物卡的 coverPortraitId，未设置时显示占位图标；筛选与搜索由页面持有，本组件只接收已过滤的列表。
  * 关键约束：卡片是可聚焦按钮而非占位容器，键盘可逐项进入；排序固定按 CHARACTER_ROLE_ORDER，
  * 不随点击顺序变化，避免切换筛选后卡片位置跳动；卡片只展示封面与摘要，字段编辑一律在编辑弹窗内完成。
@@ -13,7 +13,7 @@ import { Card } from '@components/ui/card'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import type { CharacterCard } from '../types'
 import type { JSX } from 'react'
-import { CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
+import { CHARACTER_GENDER_META, CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
 
 interface CharacterListProps {
     /** 已按筛选与搜索收敛过的人物卡 */
@@ -52,7 +52,7 @@ export function CharacterList({
                     </EmptyMedia>
                     <EmptyTitle>{totalCount === 0 ? '还没有人物' : '没有匹配的人物'}</EmptyTitle>
                     <EmptyDescription>
-                        {totalCount === 0 ? '先建立主角与对手，大纲才能排布冲突' : '换个关键词，或切回「全部」定位'}
+                        {totalCount === 0 ? '先建立主角与对手，大纲才能排布冲突' : '换个关键词，或切回「全部」分类'}
                     </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
@@ -75,6 +75,7 @@ export function CharacterList({
         <div className="flex flex-col gap-2">
             {sortedCharacters.map((character) => {
                 const roleMeta = CHARACTER_ROLE_META[character.role]
+                const genderMeta = CHARACTER_GENDER_META[character.gender]
                 const summary = character.desire.length > 0 ? character.desire : '欲望未填写'
                 const cover = character.portraits.find((item) => item.id === character.coverPortraitId)
                 return (
@@ -112,6 +113,11 @@ export function CharacterList({
                                 <Badge variant={roleMeta.tone} className="shrink-0">
                                     {roleMeta.label}
                                 </Badge>
+                                {character.gender !== 'unspecified' ? (
+                                    <Badge variant={genderMeta.tone} className="shrink-0">
+                                        {genderMeta.label}
+                                    </Badge>
+                                ) : null}
                             </div>
                             <p className="truncate text-xs text-muted-foreground">
                                 {character.identity.length > 0 ? character.identity : '未填写身份'}

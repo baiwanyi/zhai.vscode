@@ -10,7 +10,7 @@ import type { CharacterPortrait, PortraitGenerateRequest, PortraitGenerateResult
 import type { CharacterCard } from '../types'
 import type { AppearanceContext } from './useCharacterAppearance'
 import { request } from '../../../bridge'
-import { CHARACTER_ROLE_META } from '../constants'
+import { CHARACTER_GENDER_META, CHARACTER_ROLE_META } from '../constants'
 
 /** 前端只做兜底：出图内置 10 分钟上限，这里放宽到 15 分钟，避免前端先于宿主判超时 */
 const AI_REQUEST_TIMEOUT_MS = 900_000
@@ -80,12 +80,13 @@ export function useCharacterPortrait(): CharacterPortraitState {
     return { isGenerating, error, generate, remove, abort }
 }
 
-/** 请求载荷：只上传已填字段，空值交给宿主兜底 */
+/** 请求载荷：只上传已填字段，空值交给宿主兜底；性别未设定时传空串，由宿主跳过该行 */
 function buildPayload(character: CharacterCard, context: AppearanceContext): PortraitGenerateRequest {
     return {
         characterId: character.id,
         name: character.name,
         role: CHARACTER_ROLE_META[character.role].label,
+        gender: character.gender === 'unspecified' ? '' : CHARACTER_GENDER_META[character.gender].label,
         age: character.age,
         identity: character.identity,
         appearance: character.appearance,

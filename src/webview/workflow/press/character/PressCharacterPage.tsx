@@ -1,5 +1,5 @@
 /**
- * 人物设定页：写作流程的第三步，用定位筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
+ * 人物设定页：写作流程的第三步，用角色分类筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
  * 复用约定：列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterDetail 承担、
  * 新增由 CharacterCreateDialog 承担；本文件只做筛选、搜索、弹窗编排与作品氛围的下传。
  * 关键约束：新增后直接打开编辑弹窗，因此 onCreateCharacter 必须回传新卡 id；

@@ -22,7 +22,7 @@ const STYLE_HINTS: Readonly<Record<PortraitStyle, string>> = {
 /** 构造图像生成提示词 */
 export function buildPortraitPrompt(request: PortraitGenerateRequest): string {
     const background = [...request.genres, request.era].filter((item) => item.length > 0).join('、')
-    const basics = [request.age.length > 0 ? `${request.age} 岁` : '', request.identity]
+    const basics = [request.gender, request.age.length > 0 ? `${request.age} 岁` : '', request.identity]
         .filter((item) => item.length > 0)
         .join('，')
     const lines = [

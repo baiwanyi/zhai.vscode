@@ -106,6 +106,7 @@ function normalizeAppearanceRequest(payload: unknown): CharacterAppearanceReques
     const value = payload as {
         name?: unknown
         role?: unknown
+        gender?: unknown
         age?: unknown
         identity?: unknown
         traits?: unknown
@@ -119,6 +120,7 @@ function normalizeAppearanceRequest(payload: unknown): CharacterAppearanceReques
     const request: CharacterAppearanceRequest = {
         name: readText(value.name, MAX_SHORT_TEXT),
         role: readText(value.role, MAX_SHORT_TEXT),
+        gender: readText(value.gender, MAX_SHORT_TEXT),
         age: readText(value.age, MAX_SHORT_TEXT),
         identity: readText(value.identity, MAX_SHORT_TEXT),
         traits: readTextList(value.traits, MAX_TRAIT_COUNT, MAX_TRAIT_LENGTH),

@@ -273,8 +273,10 @@ export function readPressAudience(value: unknown): PressAudience {
 /** 人物外貌生成请求：人物卡字段与作品氛围的只读快照，供 pressAi/aiAppearance 使用 */
 export interface CharacterAppearanceRequest {
     name: string
-    /** 定位中文标签（主角 / 女主 / 配角 / 反派） */
+    /** 角色分类中文标签（主角 / 配角 / 反派 / 中立 / 龙套） */
     role: string
+    /** 性别中文标签（男 / 女），空串表示未设定，提示词跳过该行 */
+    gender: string
     age: string
     identity: string
     traits: string[]
@@ -323,7 +325,10 @@ export interface PortraitGenerateRequest {
     /** 人物 id，宿主据此建立图片目录，须为安全的短标识 */
     characterId: string
     name: string
+    /** 角色分类中文标签（主角 / 配角 / 反派 / 中立 / 龙套） */
     role: string
+    /** 性别中文标签（男 / 女），空串表示未设定，提示词跳过该行 */
+    gender: string
     age: string
     identity: string
     appearance: string

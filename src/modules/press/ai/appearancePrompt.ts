@@ -1,6 +1,6 @@
 /**
  * 人物外貌提示词与结果清洗：构造一次性生成的对话消息，并把模型输出收敛为单段白描正文。
- * 复用约定：消息结构复用 ../../ai/provider 的 AiChatMessage；定位、时代与题材由调用方转成中文字面量后再传入。
+ * 复用约定：消息结构复用 ../../ai/provider 的 AiChatMessage；角色分类、性别、时代与题材由调用方转成中文字面量后再传入。
  * 关键约束：模型输出一律视为不可信——去掉代码围栏、标题符号、列表符号与首尾引号，压缩空行并截断超长内容；
  * 提示词不携带剧情走向与人物关系，避免外貌描写越界替作者决定故事。
  */
@@ -35,7 +35,9 @@ function buildUserPrompt(request: CharacterAppearanceRequest): string {
     if (request.tone.length > 0) {
         lines.push(`文风基调：${request.tone}`)
     }
-    lines.push(`人物：${request.name}（${request.role}）`)
+    // 性别与角色分类合并成一处括注：未设定性别时只保留分类，不写空值
+    const roleLabel = request.gender.length > 0 ? `${request.role}·${request.gender}` : request.role
+    lines.push(`人物：${request.name}（${roleLabel}）`)
     if (request.age.length > 0) {
         lines.push(`年龄：${request.age}`)
     }
