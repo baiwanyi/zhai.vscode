@@ -6,9 +6,12 @@
  * 关键约束：画面描述失败一律回退纯模板，不让文本模型拖垮出图；描述不计配额，限额只针对图片张数；
  * 图片落在 press/_portraits/{characterId}/ 下，人物标识须匹配安全字符集；
  * 目录是图片的唯一事实来源：生成完成即落盘，关闭弹窗不丢结果，列举以磁盘为准；
- * 删除只接受 press/_portraits 下的四段相对路径，优先走回收站；同一时刻只允许一个生成请求。
+ * 删除只接受 press/_portraits 下的四段相对路径，优先走回收站；同一时刻只允许一个生成请求；
+ * 复制与插入同样只接受四段白名单路径，复制经平台命令写入系统剪贴板（webview 内写图片受 CSP 与权限限制）。
  */
+import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
+import { promisify } from 'node:util'
 import * as vscode from 'vscode'
 import { buildPortraitPrompt } from './ai/portraitPrompt'
 import { generateSceneWithAi } from './ai/portraitSceneGenerator'
@@ -20,6 +23,7 @@ import type { ImageProviderRouter } from './ai/imageProvider'
 import type { QuotaKeys } from './db/quotaRepository'
 import type {
     CharacterPortrait,
+    PortraitCopyResult,
     PortraitGenerateRequest,
     PortraitGenerateResult,
     PortraitInsertResult,
@@ -48,6 +52,27 @@ const MAX_SHORT_TEXT = 64
 const MAX_LONG_TEXT = 400
 /** 相对路径长度上限 */
 const MAX_PATH_LENGTH = 256
+/** 剪贴板命令超时：外部进程卡住时不阻塞界面 */
+const CLIPBOARD_TIMEOUT_MS = 8_000
+/** Windows 剪贴板脚本：路径经环境变量传入，避免拼进命令串；SetImage 要求 STA 线程 */
+const WINDOWS_CLIPBOARD_SCRIPT = [
+    'Add-Type -AssemblyName System.Windows.Forms',
+    'Add-Type -AssemblyName System.Drawing',
+    '$image = [System.Drawing.Image]::FromFile($env:ZHAI_CLIPBOARD_IMAGE)',
+    'try { [System.Windows.Forms.Clipboard]::SetImage($image) } finally { $image.Dispose() }',
+].join('; ')
+/** macOS 剪贴板类型码：不在表内的扩展名直接视为不支持 */
+const MACOS_CLIPBOARD_CLASS: Readonly<Record<string, string>> = { png: 'PNGf', jpg: 'JPEG', jpeg: 'JPEG' }
+/** Linux 剪贴板 MIME：xclip 按类型写入，未装 xclip 时回落不支持 */
+const LINUX_CLIPBOARD_MIME: Readonly<Record<string, string>> = {
+    png: 'image/png',
+    jpg: 'image/jpeg',
+    jpeg: 'image/jpeg',
+    gif: 'image/gif',
+    webp: 'image/webp',
+}
+/** 剪贴板命令随包注入的 promise 化执行器 */
+const execFileAsync = promisify(execFile)
 
 export class PortraitService {
     /** 进行中的生成请求：用于 pressAi/aiPortrait/abort 取消 */
@@ -153,7 +178,8 @@ export class PortraitService {
 
     /**
      * 把图片插入当前编辑器光标处：先复制到文档同级的 assets 目录，再写入 Markdown 图片语法。
-     * 没有活动编辑器时返回 no-editor，由前端静默忽略；只支持已保存的 Markdown 文档，其余情况返回原因。
+     * 没有活动编辑器时返回 no-editor，由前端静默忽略；只支持已保存的 Markdown 文档，其余情况返回原因；
+     * 插入成功后再把焦点交回文档并选中刚写入的语法，避免编辑器在后台时看不到结果。
      */
     public async insertIntoEditor(payload: unknown): Promise<PortraitInsertResult> {
         const path = readPortraitPath(payload)
@@ -162,7 +188,7 @@ export class PortraitService {
         if (segments.length !== 4 || moduleDir !== PRESS_MODULE_DIR || portraitDir !== PORTRAIT_DIR || !fileName) {
             throw new Error(`角色卡路径非法：${path}`)
         }
-        const editor = vscode.window.activeTextEditor
+        const editor = resolveInsertTarget()
         if (!editor) {
             return { inserted: false, reason: 'no-editor' }
         }
@@ -183,10 +209,37 @@ export class PortraitService {
             logger.error(`角色卡插入失败：复制到文章目录出错（${path}）`, error)
             return { inserted: false, reason: 'failed' }
         }
+        const snippet = `![角色设定图](assets/${fileName})`
+        const insertAt = editor.selection.active
         const didInsert = await editor.edit((builder) => {
-            builder.insert(editor.selection.active, `![角色设定图](assets/${fileName})`)
+            builder.insert(insertAt, snippet)
         })
-        return didInsert ? { inserted: true } : { inserted: false, reason: 'failed' }
+        if (!didInsert) {
+            return { inserted: false, reason: 'failed' }
+        }
+        const range = new vscode.Range(insertAt, insertAt.translate(0, snippet.length))
+        await vscode.window.showTextDocument(document, { viewColumn: editor.viewColumn, selection: range })
+        return { inserted: true }
+    }
+
+    /**
+     * 把设定图写入系统剪贴板：webview 内写图片受 CSP 与剪贴板权限限制，改由宿主按平台调用原生能力。
+     * 只接受 press/_portraits 下的四段相对路径；平台不支持或依赖缺失时返回原因，由前端提示。
+     */
+    public async copyToClipboard(payload: unknown): Promise<PortraitCopyResult> {
+        const path = readPortraitPath(payload)
+        const segments = toSafeSegments(path, '角色卡')
+        const [moduleDir, portraitDir, , fileName] = segments
+        if (segments.length !== 4 || moduleDir !== PRESS_MODULE_DIR || portraitDir !== PORTRAIT_DIR || !fileName) {
+            throw new Error(`角色卡路径非法：${path}`)
+        }
+        const target = buildStorageUri(resolveStorageRoot(), segments)
+        const extension = fileName.split('.').pop()?.toLowerCase() ?? ''
+        const outcome = await writeImageToClipboard(target.fsPath, extension)
+        if (outcome === 'failed') {
+            logger.error(`角色卡复制失败：写入系统剪贴板出错（${path}）`)
+        }
+        return outcome === 'copied' ? { copied: true } : { copied: false, reason: outcome }
     }
 
     /** 取消进行中的生成 */
@@ -324,6 +377,67 @@ function normalizeCharacterId(payload: unknown, method: string): string {
         throw new Error('人物标识非法，无法定位角色卡目录')
     }
     return characterId
+}
+
+/** 剪贴板写入结果：copied 成功、unsupported 平台或依赖缺失、failed 命令执行失败 */
+type ClipboardOutcome = 'copied' | 'unsupported' | 'failed'
+
+/**
+ * 按平台把图片文件写入系统剪贴板。
+ * 路径只经环境变量或参数数组传递，不拼进命令串，避免路径中的引号造成注入。
+ */
+async function writeImageToClipboard(filePath: string, extension: string): Promise<ClipboardOutcome> {
+    const env = { ...process.env, ZHAI_CLIPBOARD_IMAGE: filePath }
+    if (process.platform === 'win32') {
+        const args = ['-NoProfile', '-NonInteractive', '-STA', '-Command', WINDOWS_CLIPBOARD_SCRIPT]
+        return runClipboardCommand('powershell.exe', args, env, 'failed')
+    }
+    if (process.platform === 'darwin') {
+        const typeClass = MACOS_CLIPBOARD_CLASS[extension]
+        if (!typeClass) {
+            return 'unsupported'
+        }
+        const script = `set the clipboard to (read (POSIX file (system attribute "ZHAI_CLIPBOARD_IMAGE")) as «class ${typeClass}»)`
+        return runClipboardCommand('osascript', ['-e', script], env, 'failed')
+    }
+    if (process.platform === 'linux') {
+        const mime = LINUX_CLIPBOARD_MIME[extension]
+        if (!mime) {
+            return 'unsupported'
+        }
+        const args = ['-selection', 'clipboard', '-t', mime, '-i', filePath]
+        return runClipboardCommand('xclip', args, env, 'unsupported')
+    }
+    return 'unsupported'
+}
+
+/** 执行剪贴板命令：命令缺失按 missing 返回，其余执行失败一律 failed */
+async function runClipboardCommand(
+    command: string,
+    args: string[],
+    env: NodeJS.ProcessEnv,
+    missing: ClipboardOutcome,
+): Promise<ClipboardOutcome> {
+    try {
+        await execFileAsync(command, args, { env, timeout: CLIPBOARD_TIMEOUT_MS, windowsHide: true })
+        return 'copied'
+    } catch (error) {
+        return (error as NodeJS.ErrnoException).code === 'ENOENT' ? missing : 'failed'
+    }
+}
+
+/**
+ * 取插入目标：优先活动编辑器；侧边栏 Webview 聚焦或焦点落在面板时 activeTextEditor 为空，
+ * 退回到最近可见的 Markdown 编辑器，避免插入无反应。
+ */
+function resolveInsertTarget(): vscode.TextEditor | undefined {
+    const active = vscode.window.activeTextEditor
+    if (active) {
+        return active
+    }
+    return [...vscode.window.visibleTextEditors]
+        .reverse()
+        .find((item) => item.document.languageId === 'markdown' && item.document.uri.scheme === 'file')
 }
 
 /** 读取删除请求里的相对路径 */

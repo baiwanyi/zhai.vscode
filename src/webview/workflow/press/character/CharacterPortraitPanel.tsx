@@ -43,7 +43,7 @@ interface CharacterPortraitPanelProps {
 }
 
 export function CharacterPortraitPanel({ character, aiContext, onChange }: CharacterPortraitPanelProps): JSX.Element {
-    const { isGenerating, generate, list, insert, remove } = useCharacterPortrait()
+    const { isGenerating, generate, list, copy, insert, remove } = useCharacterPortrait()
     /** 正在删除的图片路径，用于禁用重复点击 */
     const [busyPath, setBusyPath] = useState<string | null>(null)
     /** 待确认删除的图片：非空时弹出二次确认 */
@@ -98,19 +98,22 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
         toast.success('角色设定图已生成，保存人物卡后生效')
     }
 
-    /** 复制图片到系统剪贴板：取 webview 可访问的 URL 转 blob，再写入剪贴板 */
+    /** 复制图片到系统剪贴板：webview 内写图片受 CSP 与权限限制，交由宿主按平台写入 */
     const handleCopyImage = async (): Promise<void> => {
         if (previewing === null) {
             return
         }
-        try {
-            const response = await fetch(previewing.url)
-            const blob = await response.blob()
-            await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })])
-            toast.success('已复制到剪贴板')
-        } catch {
-            toast.error('当前环境不支持复制图片，可改用其他方式保存')
+        const result = await copy(previewing.path)
+        if (result === null) {
+            return
         }
+        if (result.copied) {
+            toast.success('图片已复制到剪贴板')
+            return
+        }
+        toast.error(
+            result.reason === 'unsupported' ? '当前系统不支持复制图片，可改用文件管理器保存' : '复制失败，请重试',
+        )
     }
 
     /** 插入到文章：无编辑器光标时按要求静默忽略，其余失败原因给出提示 */
@@ -217,7 +220,6 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                             return (
                                 <div
                                     key={portrait.id}
-                                    title="双击查看大图"
                                     className={cn(
                                         'group relative cursor-zoom-in overflow-hidden rounded-lg border border-border',
                                         isCover && 'ring-2 ring-ring',
@@ -320,7 +322,7 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                             className="max-h-[72vh] w-full rounded-lg object-contain"
                         />
                     ) : null}
-                    <div className="flex items-center justify-end gap-2 px-1 pt-2">
+                    <div className="flex items-center justify-center gap-2 p-3">
                         <Button
                             variant="outline"
                             onClick={() => {

@@ -376,3 +376,15 @@ export interface PortraitInsertResult {
     /** no-editor：没有活动光标；unsaved：文档未保存；not-markdown：非 Markdown；failed：写入被拒绝 */
     reason?: 'no-editor' | 'unsaved' | 'not-markdown' | 'failed'
 }
+
+/** 角色设定图复制请求：把已落盘的图片写入系统剪贴板 */
+export interface PortraitCopyRequest {
+    path: string
+}
+
+/** 角色设定图复制结果：copied 为 false 时由 reason 说明原因 */
+export interface PortraitCopyResult {
+    copied: boolean
+    /** unsupported：当前平台无法写入图片剪贴板；failed：写入过程失败 */
+    reason?: 'unsupported' | 'failed'
+}

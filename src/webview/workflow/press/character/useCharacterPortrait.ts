@@ -4,11 +4,13 @@
  * 前端只做 15 分钟兜底并在失败时主动取消宿主请求；结果里的 url 已由宿主用 asWebviewUri 转换，前端直接放进 img。
  * 关键约束：生成中不接受重复提交；磁盘是图片的唯一事实来源，关闭弹窗不取消在途请求，
  * 结果会在下次打开角色卡时由 list 从角色目录读回，因此这里不做卸载取消；
+ * 复制由宿主写系统剪贴板（webview 内写图片受 CSP 与权限限制），本层只接收结果；
  * 失败原因统一经 sonner 提示，不回传错误状态给组件渲染。
  */
 import { useCallback, useState } from 'react'
 import type {
     CharacterPortrait,
+    PortraitCopyResult,
     PortraitGenerateRequest,
     PortraitGenerateResult,
     PortraitInsertResult,
@@ -29,6 +31,8 @@ export interface CharacterPortraitState {
     generate: (character: CharacterCard, context: AppearanceContext) => Promise<CharacterPortrait | null>
     /** 扫描角色目录读回已落盘的图片，按生成时间升序；目录不存在返回空数组 */
     list: (characterId: string) => Promise<CharacterPortrait[]>
+    /** 由宿主把图片写入系统剪贴板；平台不支持时返回 reason=unsupported */
+    copy: (path: string) => Promise<PortraitCopyResult | null>
     /** 把图片插入当前编辑器光标处；无活动编辑器时返回 reason=no-editor */
     insert: (path: string) => Promise<PortraitInsertResult | null>
     /** 删除磁盘上的图片，返回是否真的删掉 */
@@ -79,6 +83,15 @@ export function useCharacterPortrait(): CharacterPortraitState {
         }
     }, [])
 
+    const copy = useCallback(async (path: string): Promise<PortraitCopyResult | null> => {
+        try {
+            return await request<PortraitCopyResult>('pressAi/copyPortrait', { path })
+        } catch (cause) {
+            toastError(cause)
+            return null
+        }
+    }, [])
+
     const insert = useCallback(async (path: string): Promise<PortraitInsertResult | null> => {
         try {
             return await request<PortraitInsertResult>('pressAi/insertPortrait', { path })
@@ -98,7 +111,7 @@ export function useCharacterPortrait(): CharacterPortraitState {
         }
     }, [])
 
-    return { isGenerating, generate, list, insert, remove, abort }
+    return { isGenerating, generate, list, copy, insert, remove, abort }
 }
 
 /** 请求载荷：只上传已填字段，空值交给宿主兜底；性别必填，直接取中文标签 */
