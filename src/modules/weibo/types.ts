@@ -84,7 +84,8 @@ export type DiffDecision = 'accept' | 'reject'
 export interface AIEditRequest {
     text: string
     instruction: string
-    model: 'deepseek-flash' | 'deepseek-v4-pro'
+    /** 模型 id：由调用方按当前 CodeBuddy 通道配置传入 */
+    model: string
 }
 
 export interface AIEditResult {

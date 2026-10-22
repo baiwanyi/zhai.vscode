@@ -84,16 +84,6 @@
                 "category": "宅写作"
             },
             {
-                "command": "zhai.ai.setApiKey",
-                "title": "设置 DeepSeek API Key",
-                "category": "宅写作"
-            },
-            {
-                "command": "zhai.ai.clearApiKey",
-                "title": "清除 DeepSeek API Key",
-                "category": "宅写作"
-            },
-            {
                 "command": "zhai.ai.loginCodebuddy",
                 "title": "登录 CodeBuddy",
                 "category": "宅写作"
@@ -101,16 +91,6 @@
             {
                 "command": "zhai.ai.selectCodebuddyModel",
                 "title": "选择 CodeBuddy 模型",
-                "category": "宅写作"
-            },
-            {
-                "command": "zhai.image.setApiKey",
-                "title": "设置图像服务 API Key",
-                "category": "宅写作"
-            },
-            {
-                "command": "zhai.image.clearApiKey",
-                "title": "清除图像服务 API Key",
                 "category": "宅写作"
             },
             {
@@ -187,21 +167,6 @@
                     "default": 50,
                     "description": "全局搜索单模块返回上限"
                 },
-                "zhai.ai.provider": {
-                    "type": "string",
-                    "enum": [
-                        "auto",
-                        "codebuddy",
-                        "deepseek"
-                    ],
-                    "enumDescriptions": [
-                        "两侧凭证都有时优先 CodeBuddy；仅 DeepSeek 有凭证时用直连；都未配置时也走 CodeBuddy（复用 CLI 登录态）",
-                        "始终使用 CodeBuddy（需先执行「登录 CodeBuddy」）",
-                        "始终使用 DeepSeek 直连"
-                    ],
-                    "default": "auto",
-                    "description": "AI 通道：面板对话、取名与人物外貌生成统一使用该通道"
-                },
                 "zhai.ai.codebuddySite": {
                     "type": "string",
                     "enum": [
@@ -222,20 +187,7 @@
                 "zhai.ai.codebuddyModel": {
                     "type": "string",
                     "default": "",
-                    "description": "CodeBuddy 对话模型 id，留空使用 CLI 默认模型；建议执行「宅写作：选择 CodeBuddy 模型」从账号可用列表中选择"
-                },
-                "zhai.ai.model": {
-                    "type": "string",
-                    "enum": [
-                        "deepseek-flash",
-                        "deepseek-v4-pro"
-                    ],
-                    "enumDescriptions": [
-                        "DeepSeek 直连快速档：响应快，适合日常对话与批量生成",
-                        "DeepSeek 直连增强档：推理与长文写作质量更高，速度较慢"
-                    ],
-                    "default": "deepseek-flash",
-                    "description": "默认 AI 模型"
+                    "description": "CodeBuddy 对话模型 id，留空使用 CLI 默认模型；执行「宅写作：选择 CodeBuddy 模型」可从账号可用列表选择或手动填写自定义模型"
                 },
                 "zhai.ai.temperature": {
                     "type": "number",
@@ -267,45 +219,15 @@
                     "default": 20,
                     "description": "写作管理 AI 生成的每日次数上限（人物外貌生成等一次性任务，0 或负数表示不限）"
                 },
-                "zhai.image.provider": {
-                    "type": "string",
-                    "enum": [
-                        "auto",
-                        "codebuddy",
-                        "openai"
-                    ],
-                    "enumDescriptions": [
-                        "CodeBuddy 具备出图能力时优先使用，否则自动回退直连图像服务",
-                        "始终使用 CodeBuddy（需先登录，且通道支持 ImageGen）",
-                        "始终使用直连图像服务"
-                    ],
-                    "default": "auto",
-                    "description": "角色设定图的图像通道"
-                },
                 "zhai.image.codebuddyModel": {
                     "type": "string",
                     "default": "",
-                    "description": "CodeBuddy 出图时驱动 ImageGen 调用的对话模型，留空则使用通道默认模型；建议执行「宅写作：选择 CodeBuddy 模型」从账号可用列表中选择"
-                },
-                "zhai.image.baseUrl": {
-                    "type": "string",
-                    "default": "",
-                    "description": "角色设定图服务的 OpenAI 兼容端点基址（如 https://api.siliconflow.cn/v1），留空则角色卡生成不可用"
-                },
-                "zhai.image.model": {
-                    "type": "string",
-                    "default": "",
-                    "description": "角色设定图的模型名，需与服务商一致（如 Kwai-Kolors/Kolors、gpt-image-1）"
+                    "description": "CodeBuddy 出图时驱动 ImageGen 调用的对话模型，留空则使用通道默认模型；执行「宅写作：选择 CodeBuddy 模型」可从账号可用列表选择或手动填写自定义模型"
                 },
                 "zhai.image.size": {
                     "type": "string",
                     "default": "768x1024",
-                    "description": "角色设定图尺寸，格式为 宽x高，需在服务商支持范围内（推荐竖版 768x1024）"
-                },
-                "zhai.image.timeoutSeconds": {
-                    "type": "number",
-                    "default": 300,
-                    "description": "角色设定图单次生成超时（秒）。图像模型出图常需 1~3 分钟，超时可调高"
+                    "description": "角色设定图尺寸，格式为 宽x高（推荐竖版 768x1024）"
                 },
                 "zhai.image.dailyLimit": {
                     "type": "number",
@@ -347,8 +269,7 @@
     },
     "dependencies": {
         "@tencent-ai/agent-sdk": "^0.3.286",
-        "better-sqlite3": "^13.0.3",
-        "openai": "^7.15.0"
+        "better-sqlite3": "^13.0.3"
     },
     "devDependencies": {
         "@base-ui/react": "^1.8.0",

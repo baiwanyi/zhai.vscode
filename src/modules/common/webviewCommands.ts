@@ -8,10 +8,8 @@ export const WEBVIEW_ALLOWED_COMMANDS: ReadonlySet<string> = new Set([
     'zhai.clearIndex',
     'zhai.showIndexStatus',
     'zhai.exportDiagnostics',
-    // 设置与密钥
+    // 设置
     'zhai.openSettings',
-    'zhai.ai.setApiKey',
-    'zhai.ai.clearApiKey',
     // 面板跳转
     'zhai.openDashboard',
     'zhai.openAiChat',

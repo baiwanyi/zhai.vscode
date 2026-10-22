@@ -1,5 +1,5 @@
 /**
- * AI 命令注册：面板跳转、通道凭证管理（DeepSeek 密钥 / CodeBuddy 登录）与「添加到宅对话」上下文入口。
+ * AI 命令注册：面板跳转、CodeBuddy 登录与模型选择、以及「添加到宅对话」上下文入口。
  * 设计源：docs/modules/ai-chat.md 第 7.1 节命令清单。
  * 复用约定：引用生成与预算校验统一委托 modules/ai/contextRefs，面板跳转携带的模块意图交由 WorkflowRouter 承接。
  * 约束：全部 Disposable 挂载到 context.subscriptions，保证停用后释放（AC-10）；密钥与引用原文不落日志。
@@ -22,6 +22,9 @@ import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { getZhaiConfig } from '../common/config'
 import { logger } from '../common/logger'
 
+/** 模型选择列表里「手动输入」项的哨兵值，避免与真实模型 id 冲突 */
+const CUSTOM_MODEL_MARK = '__zhai_custom_model__'
+
 export function registerAiCommands(
     context: vscode.ExtensionContext,
     service: AiChatService,
@@ -41,38 +44,6 @@ export function registerAiCommands(
     })
 
     register('zhai.ai.addToChat', () => addEditorContextToChat(service))
-
-    register('zhai.ai.setApiKey', async () => {
-        const value = await vscode.window.showInputBox({
-            title: 'DeepSeek API Key',
-            prompt: '密钥仅保存在系统密钥库（SecretStorage），不写入配置文件',
-            placeHolder: 'sk-...',
-            password: true,
-            ignoreFocusOut: true,
-        })
-        if (typeof value !== 'string' || value.trim().length === 0) {
-            return
-        }
-        await secrets.set('deepseekApiKey', value.trim())
-        logger.info('DeepSeek API Key 已更新')
-        service.notifyRuntimeChanged()
-        void vscode.window.showInformationMessage('宅写作：DeepSeek API Key 已保存')
-    })
-
-    register('zhai.ai.clearApiKey', async () => {
-        const picked = await vscode.window.showWarningMessage(
-            '确认清除已保存的 DeepSeek API Key？',
-            { modal: true },
-            '清除',
-        )
-        if (picked !== '清除') {
-            return
-        }
-        await secrets.remove('deepseekApiKey')
-        logger.info('DeepSeek API Key 已清除')
-        service.notifyRuntimeChanged()
-        void vscode.window.showInformationMessage('宅写作：已清除 DeepSeek API Key')
-    })
 
     // CodeBuddy 通道：SDK 自带 CLI，用户只需完成一次浏览器登录，凭证由 CLI 按站点分别缓存
     register('zhai.ai.loginCodebuddy', async () => {
@@ -152,51 +123,37 @@ export function registerAiCommands(
         const options = [
             { label: '使用默认模型', description: '清空该配置，由 CLI 自行决定', modelId: '' },
             ...models.map((model) => ({ label: model.name, description: model.modelId, modelId: model.modelId })),
+            {
+                label: '手动输入模型 id…',
+                description: '账号可用但不在上表中的模型，直接填写 id',
+                modelId: CUSTOM_MODEL_MARK,
+            },
         ]
         const picked = await vscode.window.showQuickPick(options, {
             title: `选择${target.label}`,
-            placeHolder: '列表来自当前账号，切换站点后需重新获取',
+            placeHolder: '列表来自当前账号，也可手动填写自定义模型 id',
         })
         if (picked === undefined) {
             return
         }
-        await vscode.workspace
-            .getConfiguration('zhai')
-            .update(target.key, picked.modelId, vscode.ConfigurationTarget.Global)
-        logger.info(`CodeBuddy ${target.label}已设为 ${picked.modelId.length > 0 ? picked.modelId : '默认'}`)
+        let modelId = picked.modelId
+        if (modelId === CUSTOM_MODEL_MARK) {
+            const manual = await vscode.window.showInputBox({
+                title: `输入${target.label} id`,
+                prompt: '填写 CodeBuddy 账号可用的模型 id，留空表示交给 CLI 默认',
+                placeHolder: '例如 deepseek-v4.1-flash',
+                ignoreFocusOut: true,
+            })
+            if (manual === undefined) {
+                return
+            }
+            modelId = manual.trim()
+        }
+        await vscode.workspace.getConfiguration('zhai').update(target.key, modelId, vscode.ConfigurationTarget.Global)
+        logger.info(`CodeBuddy ${target.label}已设为 ${modelId.length > 0 ? modelId : '默认'}`)
         void vscode.window.showInformationMessage(
-            `宅写作：${target.label}已设为 ${picked.modelId.length > 0 ? picked.modelId : '默认模型'}`,
+            `宅写作：${target.label}已设为 ${modelId.length > 0 ? modelId : '默认模型'}`,
         )
-    })
-
-    register('zhai.image.setApiKey', async () => {
-        const value = await vscode.window.showInputBox({
-            title: '图像服务 API Key',
-            prompt: '用于生成角色设定图，与 DeepSeek 密钥相互独立；仅保存在系统密钥库',
-            placeHolder: 'sk-...',
-            password: true,
-            ignoreFocusOut: true,
-        })
-        if (typeof value !== 'string' || value.trim().length === 0) {
-            return
-        }
-        await secrets.set('imageApiKey', value.trim())
-        logger.info('图像服务 API Key 已更新')
-        void vscode.window.showInformationMessage('宅写作：图像服务 API Key 已保存')
-    })
-
-    register('zhai.image.clearApiKey', async () => {
-        const picked = await vscode.window.showWarningMessage(
-            '确认清除已保存的图像服务 API Key？清除后角色卡生成将不可用。',
-            { modal: true },
-            '清除',
-        )
-        if (picked !== '清除') {
-            return
-        }
-        await secrets.remove('imageApiKey')
-        logger.info('图像服务 API Key 已清除')
-        void vscode.window.showInformationMessage('宅写作：已清除图像服务 API Key')
     })
 }
 

@@ -62,7 +62,7 @@ export interface AiMessage {
     conversationId: string
     role: AiMessageRole
     content: string
-    /** DeepSeek 思维链，可为空 */
+    /** 思维链，可为空 */
     reasoning: string | null
     status: AiMessageStatus
     finishReason: string | null
@@ -124,19 +124,17 @@ export interface AiApplyResult {
     reason?: 'applied'
 }
 
-/** AI 通道标识：决定页面采用哪种凭证引导（密钥 / 登录） */
-export type AiProviderId = 'deepseek' | 'codebuddy'
+/** AI 通道标识：当前仅 CodeBuddy 一条通道 */
+export type AiProviderId = 'codebuddy'
 
 /** 运行时信息：通道、就绪状态与默认参数，用于页面引导与参数展示 */
 export interface AiRuntimeInfo {
     /** 当前生效的通道 */
     provider: AiProviderId
-    /** 通道站点展示名（仅 CodeBuddy 通道有值），用于登录引导说明 */
+    /** 通道站点展示名，用于登录引导说明 */
     providerSite?: string
-    /** 当前通道是否就绪：DeepSeek 检查密钥，CodeBuddy 交由请求阶段判定 */
+    /** 通道是否就绪（登录态交由请求阶段判定，此值恒为 true） */
     hasApiKey: boolean
-    /** 脱敏后的 Key（仅末 4 位，CodeBuddy 通道下无意义） */
-    maskedApiKey: string
     model: string
     temperature: number
     maxContextTokens: number

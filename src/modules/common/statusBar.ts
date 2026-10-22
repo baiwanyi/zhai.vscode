@@ -26,9 +26,9 @@ export class StatusBarService {
     }
 
     private refresh(status: IndexStatus): void {
-        const model = getZhaiConfig().aiModel
+        const model = getZhaiConfig().aiCodebuddyModel
         const indexText = status.isRebuilding ? '$(sync~spin) 索引重建中' : `$(database) ${status.indexedCount}`
-        this.item.text = `${indexText} · ${model}`
+        this.item.text = `${indexText} · ${model.length > 0 ? model : 'CodeBuddy 默认模型'}`
         this.item.tooltip = `已索引 ${status.indexedCount} 个文件\n上次构建：${status.lastBuiltAt ?? '从未'}\n点击打开仪表盘`
     }
 

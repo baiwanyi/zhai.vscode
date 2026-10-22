@@ -236,7 +236,6 @@ export function AiChat(): JSX.Element {
                     lastMessageId={lastMessageId}
                     phase={phase}
                     runtime={runtime}
-                    hasApiKey={hasApiKey}
                     applyState={
                         writeState
                             ? {
@@ -248,7 +247,6 @@ export function AiChat(): JSX.Element {
                               }
                             : null
                     }
-                    onSetupApiKey={() => void runHostCommand('zhai.ai.setApiKey')}
                     onLoginCodebuddy={() => void runHostCommand('zhai.ai.loginCodebuddy')}
                 />
             </div>
@@ -257,7 +255,6 @@ export function AiChat(): JSX.Element {
                 input={input}
                 setInput={setInput}
                 hasApiKey={hasApiKey}
-                isRuntimeReady={runtime !== null}
                 isGenerating={isGenerating}
                 phase={phase}
                 mode={mode}

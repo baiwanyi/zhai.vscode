@@ -12,14 +12,12 @@ import type { AppearanceContext } from './useCharacterAppearance'
 import { request } from '../../../bridge'
 import { CHARACTER_ROLE_META } from '../constants'
 
-/** 前端只做兜底：真正的超时由宿主按 zhai.image.timeoutSeconds 裁决，这里放宽到 15 分钟 */
+/** 前端只做兜底：出图内置 10 分钟上限，这里放宽到 15 分钟，避免前端先于宿主判超时 */
 const AI_REQUEST_TIMEOUT_MS = 900_000
 
 export interface CharacterPortraitState {
     isGenerating: boolean
     error: string | null
-    /** 通道回退说明：非空表示本次出图未走首选通道，可直接展示 */
-    notice: string | null
     /** 生成成功返回已落盘的图片信息，失败返回 null 并在 error 中留下可读原因 */
     generate: (character: CharacterCard, context: AppearanceContext) => Promise<CharacterPortrait | null>
     /** 删除磁盘上的图片，返回是否真的删掉 */
@@ -30,7 +28,6 @@ export interface CharacterPortraitState {
 export function useCharacterPortrait(): CharacterPortraitState {
     const [isGenerating, setIsGenerating] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const [notice, setNotice] = useState<string | null>(null)
 
     const abort = useCallback(async (): Promise<void> => {
         try {
@@ -44,14 +41,12 @@ export function useCharacterPortrait(): CharacterPortraitState {
         async (character: CharacterCard, context: AppearanceContext): Promise<CharacterPortrait | null> => {
             setIsGenerating(true)
             setError(null)
-            setNotice(null)
             try {
                 const result = await request<PortraitGenerateResult>(
                     'pressAi/generatePortrait',
                     buildPayload(character, context),
                     AI_REQUEST_TIMEOUT_MS,
                 )
-                setNotice(typeof result.notice === 'string' ? result.notice : null)
                 return result.portrait
             } catch (cause) {
                 // 前端兜底超时后宿主可能仍在生成，主动取消以释放并发锁
@@ -82,7 +77,7 @@ export function useCharacterPortrait(): CharacterPortraitState {
         }
     }, [abort])
 
-    return { isGenerating, error, notice, generate, remove, abort }
+    return { isGenerating, error, generate, remove, abort }
 }
 
 /** 请求载荷：只上传已填字段，空值交给宿主兜底 */

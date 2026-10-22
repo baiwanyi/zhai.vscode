@@ -60,16 +60,10 @@ async function fetchModels(secrets: SecretsService): Promise<CodebuddyModelOptio
 }
 
 /**
- * 校验并归一模型名：只有 CLI 认可的模型才下发，否则交回默认模型。
- * 清单尚未拉到时沿用历史规则过滤 DeepSeek 直连模型名，避免把 deepseek-chat 这类名字传给 CLI。
+ * 归一模型名：空表示交给 CLI 默认；非空一律透传，支持填写账号可用的自定义模型 id。
+ * 关键约束：id 是否有效由服务端裁决，失败时通道会转出「模型不可用」的可读提示，故此处不做清单拦截。
  */
 export function resolveCodebuddyModel(model: string): string | undefined {
     const trimmed = model.trim()
-    if (trimmed.length === 0) {
-        return undefined
-    }
-    if (cached.length > 0) {
-        return cached.some((item) => item.modelId === trimmed) ? trimmed : undefined
-    }
-    return trimmed.startsWith('deepseek-') ? undefined : trimmed
+    return trimmed.length === 0 ? undefined : trimmed
 }

@@ -2,7 +2,7 @@
  * 写作管理 AI 服务：校验密钥与每日配额后执行一次性生成，当前承载人物外貌。
  * 复用约定：模型通道经注入的 AI 通道（../ai/provider）驱动 ./ai/aiAppearanceGenerator，提示词与清洗复用 ./ai/appearancePrompt；
  * 配额经 ./db/quotaRepository 落在 press.db 的 meta 表，与角色设定图各用一组键。
- * 关键约束：入参一律先经 normalizeAppearanceRequest 收窄（长度、条数、类型），拒绝异常载荷直连模型；
+ * 关键约束：入参一律先经 normalizeAppearanceRequest 收窄（长度、条数、类型），异常载荷不进入模型调用；
  * 同一时刻只允许一个生成请求，取消由 pressAi/aiAppearance/abort 触发；限额小于等于 0 视为不限制。
  */
 import { generateAppearanceWithAi } from './ai/aiAppearanceGenerator'
@@ -55,7 +55,7 @@ export class PressAiService {
         try {
             const result = await generateAppearanceWithAi({
                 provider: this.provider,
-                model: getZhaiConfig().aiModel,
+                model: getZhaiConfig().aiCodebuddyModel,
                 request,
                 signal: controller.signal,
             })

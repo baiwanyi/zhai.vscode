@@ -107,7 +107,7 @@ export class CodeBuddyProvider implements AiProvider {
                 includePartialMessages: true,
                 systemPrompt,
                 resume: isResume ? request.sessionId : undefined,
-                // 模型来自 CodeBuddy 专用配置：zhai.ai.model 是 DeepSeek 直连的枚举，不能直接透传
+                // 模型来自 CodeBuddy 专用配置 zhai.ai.codebuddyModel，允许填写自定义模型 id
                 model: resolveCodebuddyModel(cfg.aiCodebuddyModel),
                 // 工作目录指向临时目录，与用户项目隔离
                 cwd: tmpdir(),

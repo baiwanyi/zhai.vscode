@@ -1,7 +1,7 @@
 /**
  * AI 通道契约：抽象「把一组消息流式生成为文本」的能力，供会话服务、取名与外貌生成共用。
- * 复用约定：请求与增量类型与既有 DeepSeek 客户端保持结构一致，调用方只依赖本接口，不感知具体厂商；
- * 取消统一走 AbortSignal，由各实现映射到底层中断手段（直连断开连接、Agent 通道调 interrupt）。
+ * 复用约定：请求与增量类型保持稳定结构，调用方只依赖本接口，不感知具体实现；
+ * 取消统一走 AbortSignal，由实现映射到底层中断手段（CodeBuddy 通道调 interrupt）。
  * 关键约束：实现自行从 SecretsService 读取凭证，不经调用方透传；实现不得持有跨请求状态，
  * 并发隔离交给调用方的 AbortController，避免多入口同时生成时互相串流。
  */
@@ -11,7 +11,7 @@ import type { AiProviderId } from '../../shared/types/aiChat'
 /** 通道标识：与 webview 共用的类型来源为 shared/types/aiChat */
 export type { AiProviderId } from '../../shared/types/aiChat'
 
-/** 对话消息：与 OpenAI 协议一致的最小字段集 */
+/** 对话消息：通道之间通用的最小字段集 */
 export interface AiChatMessage {
     role: 'system' | 'user' | 'assistant'
     content: string

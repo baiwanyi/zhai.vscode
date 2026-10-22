@@ -8,7 +8,7 @@
 - **UI**：Tailwind CSS 4 + Shadcn/UI + Lucide Icons
 - **数据库**：SQLite (Drizzle ORM)
 - **宿主**：VSCode Extension API（Webview 侧边栏 + FileSystemWatcher + SecretStorage）
-- **AI**：DeepSeek API（SSE 流式，Chat / R1 模型可切换）
+- **AI**：CodeBuddy 通道（`@tencent-ai/agent-sdk`，流式，模型可通过配置或命令选择/自定义）
 
 ## 文档索引
 
@@ -86,12 +86,12 @@
 - 对话模式：对话结果在侧边栏里显示
     - 会话管理：新建 / 重命名 / 删除，会话可关联到具体笔记或章节
     - SSE 流式输出，首字 < 500ms；`AbortController` 可中途取消
-    - 展示 DeepSeek 思维链（reasoning_content），消息状态 pending → streaming → completed/failed
+    - 展示通道回传的思维链，消息状态 pending → streaming → completed/failed
     - Token 与费用记录，按日 / 月统计，超阈值提醒
 - @添加下文（`@` 上下文提及）
     - 支持 `@当前文件` `@选中内容` `@笔记标题` `@章节` `@最近N章` `@角色名` `@图库图片` `@网页链接`
     - 上下文检索走 SQLite 索引（先按 mtime / 角色提及定位章节，再按需读取对应 `.md` 文件），既省 Token 又保证 AI 不丢前文
-- 上下文参数面板：前文范围 500–4000 token、温度 0.1–1.5、最大生成长度、模型切换（deepseek-flash / deepseek-v4-pro）、设定自动注入开关
+- 上下文参数面板：前文范围 500–4000 token、温度 0.1–1.5、最大生成长度、CodeBuddy 模型切换（含自定义模型 id）、设定自动注入开关
 
 ### 笔记
 

@@ -1,19 +1,13 @@
 /**
  * chatService 单元测试：聚焦发送阶段的上下文注入与预算裁剪——待发送引用是否随消息注入、
  * 失效引用是否跳过、发送后是否清空、引用是否优先于历史保留。
- * 复用约定：AI 通道由记录型假实现替身注入，client 模块仅 mock 首字超时常量；DB 用临时目录真实库；密钥用 SecretStorage 桩。
+ * 复用约定：AI 通道由记录型假实现替身注入；DB 用临时目录真实库。
  */
 import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import {
-    createSecretStorage,
-    createUri,
-    resetWorkspaceState,
-    setConfigValue,
-    setFileContent,
-} from './stubs/vscode'
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { createUri, resetWorkspaceState, setConfigValue, setFileContent } from './stubs/vscode'
 import type { HostContextRef } from '../modules/ai/contextRefs'
 import type { AiChatMessage, AiProvider, AiStreamChunk, AiStreamRequest } from '../modules/ai/provider'
 import type Database from 'better-sqlite3'
@@ -21,17 +15,15 @@ import { AiChatService } from '../modules/ai/chatService'
 import { listMessages } from '../modules/ai/db/chatRepository'
 import { openAiDatabase } from '../modules/ai/db/connection'
 import { ensureAiSchema } from '../modules/ai/db/schema'
-import { SecretsService } from '../modules/common/secrets'
 
 const FILE_PATH = 'd:/notes/ch01.md'
-const API_KEY_STORAGE_KEY = 'zhai.deepseek.apiKey'
 
 /** 记录每次流式请求的入参 */
 const captured = { requests: [] as AiStreamRequest[] }
 
 /** 记录型假通道：替代真实厂商通道，避免测试触网 */
 const fakeProvider: AiProvider = {
-    id: 'deepseek',
+    id: 'codebuddy',
     checkReady: () => Promise.resolve({ ready: true }),
     stream: (request: AiStreamRequest): AsyncGenerator<AiStreamChunk> => {
         captured.requests.push(request)
@@ -42,8 +34,6 @@ const fakeProvider: AiProvider = {
         })()
     },
 }
-
-vi.mock('../modules/ai/client', () => ({ FIRST_TOKEN_TIMEOUT_MS: 30_000 }))
 
 let db: Database.Database
 let service: AiChatService
@@ -100,11 +90,7 @@ beforeAll(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zhai-chat-service-'))
     db = openAiDatabase(createUri(tempDir))
     ensureAiSchema(db)
-    service = new AiChatService(
-        db,
-        new SecretsService(createSecretStorage({ [API_KEY_STORAGE_KEY]: 'sk-test' })),
-        fakeProvider,
-    )
+    service = new AiChatService(db, fakeProvider)
     conversationId = service.getOrCreateSession().conversation.id
 })
 

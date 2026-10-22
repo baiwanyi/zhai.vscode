@@ -37,7 +37,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push({ dispose: () => logger.dispose() })
 
     const secrets = new SecretsService(context.secrets)
-    void logSecretsDigest(secrets)
 
     const indexStatusEmitter = new vscode.EventEmitter<IndexStatus>()
     context.subscriptions.push(indexStatusEmitter)
@@ -71,9 +70,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push({ dispose: () => aiDb.close() })
     ensureAiSchema(aiDb)
 
-    // AI 通道全扩展共用一份，按 zhai.ai.provider 装配
+    // AI 通道全扩展共用一份：唯一实现为 CodeBuddy
     const aiProvider = await createAiProvider(secrets)
-    const aiChatService = new AiChatService(aiDb, secrets, aiProvider)
+    const aiChatService = new AiChatService(aiDb, aiProvider)
     context.subscriptions.push(aiChatService)
 
     // 工作流路由：汇聚活跃编辑器场景与入口跳转意图，供工作流面板按模块类型换页
@@ -135,12 +134,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         `宅写作 已激活（workspace: ${context.workspaceState.get('initialized') === true ? '已初始化' : '首次'}）`,
     )
     void context.workspaceState.update('initialized', true)
-}
-
-/** 输出密钥脱敏摘要（仅校验存在性，不输出明文） */
-async function logSecretsDigest(secrets: SecretsService): Promise<void> {
-    const apiKey = await secrets.get('deepseekApiKey')
-    logger.debug(`DeepSeek API Key：${apiKey ? '已配置' : '未配置'}`)
 }
 
 export function deactivate(): void {

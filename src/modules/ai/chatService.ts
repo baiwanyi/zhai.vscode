@@ -7,7 +7,6 @@
  */
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
-import { FIRST_TOKEN_TIMEOUT_MS } from './client'
 import {
     buildContextBlock,
     describeContextRefs,
@@ -34,10 +33,9 @@ import {
     updateMessage,
 } from './db/chatRepository'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
-import type { ChatMessage, ChatUsage } from './client'
 import type { HostContextRef, ResolvedContextRef } from './contextRefs'
 import type { ConversationRow, MessageRow } from './db/chatRepository'
-import type { AiProvider } from './provider'
+import type { AiChatMessage as ChatMessage, AiProvider, AiUsage as ChatUsage } from './provider'
 import type {
     AiApplyResult,
     AiChatDraft,
@@ -58,7 +56,6 @@ import type { ZhaiConfig } from '../common/config'
 import type Database from 'better-sqlite3'
 import { getZhaiConfig } from '../common/config'
 import { logger } from '../common/logger'
-import { SecretsService } from '../common/secrets'
 
 /** 默认会话标题，首条用户消息会覆盖它 */
 const DEFAULT_TITLE = '新的对话'
@@ -68,6 +65,8 @@ const TITLE_MAX_LENGTH = 20
 const SESSION_LIST_LIMIT = 50
 /** 单次生成上限，防止费用失控 */
 const MAX_COMPLETION_TOKENS = 2048
+/** 首字等待上限：属于会话层策略，与具体通道无关，超时即中断并提示 */
+const FIRST_TOKEN_TIMEOUT_MS = 30_000
 /** 中文场景 1 token ≈ 1.6 字符（设计文档第 5 节的降级方案） */
 const CHARS_PER_TOKEN = 1.6
 /** 流式增量合并窗口，避免高频 postMessage */
@@ -122,21 +121,18 @@ export class AiChatService implements vscode.Disposable {
 
     public constructor(
         private readonly db: Database.Database,
-        private readonly secrets: SecretsService,
         private readonly provider: AiProvider,
     ) {}
 
-    /** 运行时信息：密钥状态、模型参数与当日用量 */
+    /** 运行时信息：通道就绪状态、模型参数与当日用量 */
     public async getRuntimeInfo(): Promise<AiRuntimeInfo> {
         const cfg = getZhaiConfig()
         const status = await this.provider.checkReady()
-        const apiKey = await this.secrets.get('deepseekApiKey')
         return {
             provider: this.provider.id,
-            providerSite: this.provider.id === 'codebuddy' ? CODEBUDDY_SITE_LABELS[cfg.aiCodebuddySite] : undefined,
+            providerSite: CODEBUDDY_SITE_LABELS[cfg.aiCodebuddySite],
             hasApiKey: status.ready,
-            maskedApiKey: SecretsService.mask(apiKey),
-            model: cfg.aiModel,
+            model: cfg.aiCodebuddyModel,
             temperature: cfg.aiTemperature,
             maxContextTokens: cfg.aiMaxContextTokens,
             dailyTokenBudget: cfg.aiDailyTokenBudget,
@@ -186,7 +182,7 @@ export class AiChatService implements vscode.Disposable {
             title,
             mode: 'chat',
             filePath: null,
-            model: getZhaiConfig().aiModel,
+            model: getZhaiConfig().aiCodebuddyModel,
             provider: this.provider.id,
             sdkSessionId: null,
             createdAt: now,
@@ -557,7 +553,7 @@ export class AiChatService implements vscode.Disposable {
                 messages = await this.buildChatMessages(conversationId, userMessageId, input, contextBlock)
             }
             const stream = this.provider.stream({
-                model: cfg.aiModel,
+                model: cfg.aiCodebuddyModel,
                 temperature: cfg.aiTemperature,
                 maxTokens: MAX_COMPLETION_TOKENS,
                 messages,
@@ -592,7 +588,7 @@ export class AiChatService implements vscode.Disposable {
             if (answer.length > 0) {
                 this.registerWrittenResult(conversationId, assistantMessageId, writeTarget, applyPolicy)
             }
-            this.recordUsage(conversationId, cfg.aiModel, startedAt, usage, answer, controller.signal.aborted)
+            this.recordUsage(conversationId, cfg.aiCodebuddyModel, startedAt, usage, answer, controller.signal.aborted)
             this.streamEmitter.fire({
                 type: 'stream',
                 reqId,

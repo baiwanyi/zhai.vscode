@@ -2,7 +2,7 @@
 
 **版本**：1.4
 **日期**：2026-10-22
-**状态**：对话模式、编辑器右键上下文（10.1）、会话历史（10.2）与写作模式写回（10.3）已落地；diff 逐段接受待实现；第 5 节已按双 provider（DeepSeek 直连 + CodeBuddy Agent SDK）更新，代码改造待实施
+**状态**：对话模式、编辑器右键上下文（10.1）、会话历史（10.2）与写作模式写回（10.3）已落地；diff 逐段接受待实现；第 5 节已按 CodeBuddy 单通道更新（直连通道已移除）
 **宿主**：VSCode 插件 Zhai（宅桌面）
 
 ---
@@ -26,7 +26,7 @@ AI Chat 是插件的**智能交互中枢**，同时服务于两类需求：
 
 ### 1.3 非目标
 
-- 不做通用多模型网关：只维护 DeepSeek 直连与 CodeBuddy 两条通道，不提供任意厂商插拔
+- 不做通用多模型网关：只维护 CodeBuddy 一条通道，模型 id 可通过配置或命令填写，但不提供任意厂商插拔
 - 不让 AI 直接写文件：CodeBuddy 通道禁用写类工具，内容写回仍走 `WorkspaceEdit` 并由用户确认
 - 不默认开启联网搜索：CodeBuddy 通道默认只放行只读文件工具，联网类工具需用户显式开启
 
@@ -57,7 +57,7 @@ AI Chat 是插件的**智能交互中枢**，同时服务于两类需求：
 | A7 | 会话管理 | 新建 / 重命名 / 删除 / 关联到具体文件 | P0 | 部分（新建、切换、删除与自动命名已落地，见 10.2） |
 | A8 | 消息历史 | 完整保存 user/assistant 消息与状态 | P0 | 已落地 |
 | A9 | SSE 流式输出 | 逐字渲染，首字 < 500ms | P0 | 已落地 |
-| A10 | 思考链展示 | 展示 DeepSeek `reasoning_content`，可折叠 | P1 | 部分（已回传并落库，折叠 UI 待做） |
+| A10 | 思考链展示 | 展示通道回传的思维链，可折叠 | P1 | 部分（已回传并落库，折叠 UI 待做） |
 | A11 | 请求取消 | `AbortController` + `CancellationToken` | P0 | 已落地 |
 | A12 | `@` 上下文提及 | `@当前文件` `@选中` `@笔记` `@最近N章` `@角色名` `@图库图片` `@链接` | P0 | 部分（编辑器右键「添加到宅对话」已落地，见 10.1） |
 | A13 | 上下文参数面板 | 前文 500–4000 token、温度 0.1–1.5、maxTokens、模型、设定注入 | P1 | 待实现 |
@@ -131,21 +131,20 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 ## 5. 关键技术选型
 
-### 5.1 模型接入（双 provider）
+### 5.1 模型接入（单通道）
 
-面板对话、编辑器命令、取名与外貌生成共用同一套接入层：`AiProvider` 接口 + 两个实现（`deepseek` / `codebuddy`）。业务层只依赖接口，不认具体厂商，切换通道只替换实现。
+面板对话、编辑器命令、取名与外貌生成共用同一套接入层：`AiProvider` 接口 + 唯一实现 `codebuddy`。业务层只依赖接口，不认具体实现，模型 id 由 `zhai.ai.codebuddyModel` 决定（留空交给 CLI 默认，也可填账号可用的自定义模型）。
 
 | 关注点 | 候选方案 | 结论 | 理由 |
 |--------|----------|------|------|
 | 接入方式 | 直连 REST chat 接口 / CodeBuddy Agent SDK / 自行 spawn CLI | **CodeBuddy Agent SDK**（`@tencent-ai/agent-sdk`） | SDK 是 CLI 的官方编程封装，已处理子进程生命周期、消息流分帧、权限回调与中断；自行 spawn 等于重做一遍协议且要跟版本 |
 | 分层 | 各模块直连 / provider 抽象 | **provider 抽象** | 会话服务、取名、外貌三处调用点统一改为注入 provider，避免每接一个通道改三处 |
-| 默认通道 | 仅 DeepSeek / 仅 CodeBuddy | **auto：按凭证择一** | 两侧凭证都有时优先 CodeBuddy；仅 DeepSeek 有凭证时走直连；两侧都未配置时也选 CodeBuddy——它可复用 CLI 登录态，而 DeepSeek 缺密钥必然失败 |
-| 降级策略 | 静默降级 / 显式提示 | **显式提示** | 两侧计费来源不同，静默切换会让用户无法判断消耗归属；自动降级须由设置项显式开启 |
-| 会话归属 | 跨通道共用 / 会话锁定通道 | **会话锁定** | CodeBuddy 用会话 `resume` 续接，DeepSeek 用本地拼历史，中途混用会重复或丢失上下文 |
-| 中断 | `AbortController` / SDK `interrupt()` | **按通道区分** | DeepSeek 断开 HTTP 连接；CodeBuddy 调 SDK 中断接口，并在生成器收尾处兜底 |
+| 通道数量 | 多通道 + 回退 / 单一通道 | **单一通道** | 只保留 CodeBuddy：直连通道需要用户自备密钥与端点，与「装完即用」的产品定位冲突，且两套计费口径并存会让成本归因含糊 |
+| 会话归属 | 跨通道共用 / 会话锁定通道 | **会话锁定** | CodeBuddy 用会话 `resume` 续接；`conversations.provider` 仍保留，用于标识会话所属通道 |
+| 中断 | `AbortController` / SDK `interrupt()` | **SDK `interrupt()`** | 调 SDK 中断接口，并在生成器收尾处兜底 |
 | 鉴权 | 写入 `process.env` / 经 `options.env` 注入 | **SecretsService → `options.env`** | 不污染宿主环境变量，避免凭证泄漏给同进程的其它扩展 |
 | 权限 | `bypassPermissions` / `canUseTool` 回调 | **canUseTool** | 通道具备读写工作区能力，写类工具必须经用户确认 |
-| 首字超时 | 全局统一 / 按通道配置 | **按通道配置** | 子进程启动与鉴权比直连慢，CodeBuddy 通道首字上限放宽到 60s |
+| 首字超时 | 全局统一 / 按通道配置 | **固定 30s** | 子进程启动与鉴权较慢，首字等待上限常量化在会话层，超时即中断并提示 |
 | 版本约束 | 浮动版本 / 精确锁定 | **精确锁定** | SDK 处于 Preview 阶段；CLI 随 SDK 一并分发，版本天然一致，锁定 SDK 即可 |
 
 ### 5.2 CLI 分发与登录
@@ -177,7 +176,7 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 切换站点后必须重新登录，旧站点凭证不会复用；专享版/私有化（需自定义 `endpoint`）不在开放范围内。
 
-**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持列表内的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModels()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活），命令 `zhai.ai.selectCodebuddyModel` 打开时强制刷新并写入 `zhai.ai.codebuddyModel`（对话）或 `zhai.image.codebuddyModel`（出图驱动）。通道下发前经 `resolveCodebuddyModel` 校验：清单为空时退回历史规则（过滤 `deepseek-` 前缀），有清单时不在列表内的值一律交回 CLI 默认模型。`zhai.ai.model` 仍是 DeepSeek 直连的枚举，不参与 CodeBuddy 通道。
+**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModels()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活），命令 `zhai.ai.selectCodebuddyModel` 打开时强制刷新，可写入 `zhai.ai.codebuddyModel`（对话）或 `zhai.image.codebuddyModel`（出图驱动）。清单里的项可直接选，也支持「手动输入模型 id」以使用账号可用的自定义模型。通道下发前经 `resolveCodebuddyModel` 归一：空值交给 CLI 默认，非空一律透传，id 是否有效由服务端裁决。
 
 **文生图模型**：`ImageGen` 的模型由 CLI 的 `ImageService.resolveModel` 决定，顺序为「会话下发的 `--text-to-image-model` → 环境变量 `CODEBUDDY_TEXT_TO_IMAGE_MODEL` → CLI settings 的 `textToImageModel` → 站点配置中 tags 含 `text-to-image` 的首个模型 → 兜底 `hunyuan-image-v3.0`」。该清单来自服务端产品配置，SDK 的 `getAvailableModels` / `getAvailableModelsRaw` 只返回语言模型（实测 22 个均无 `text-to-image` 标签），且斜杠命令在 headless 会话中不会被执行，故插件不下发 `--text-to-image-model`、也不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，选择会存进 CLI settings 并被 ImageGen 沿用。
 
@@ -201,7 +200,7 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 | UI 状态管理 | `useReducer` / `useEffect + useState` | **useReducer** | 流式消息是多步状态机，reducer 更可控且避免竞态 |
 | 数据缓存 | TanStack Query / 自建 | **自建轻量缓存** | AI 流式不适合 Query；仅会话列表等普通数据用 Query |
 
-> **弃用规避**：不使用 openai SDK 中已废弃的 `Configuration` 构造方式（改用 `new OpenAI({ apiKey, baseURL })`）；不使用 `AbortSignal.timeout` 之外的定时器自杀式取消。
+> **弃用规避**：直连通道移除后不再依赖 openai SDK；取消统一走 `AbortController`，不使用一次性自杀定时器。
 
 ---
 
@@ -216,7 +215,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     mode           TEXT NOT NULL,     -- 'write' | 'chat'
     file_path      TEXT,              -- 关联的笔记/章节（可为 NULL）
     model          TEXT NOT NULL,
-    provider       TEXT NOT NULL DEFAULT 'deepseek',  -- 创建时使用的 AI 通道
+    provider       TEXT NOT NULL DEFAULT 'codebuddy', -- 创建时使用的 AI 通道
     sdk_session_id TEXT,              -- 通道侧会话号，CodeBuddy 通道续接用
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL
@@ -230,7 +229,7 @@ CREATE TABLE IF NOT EXISTS messages (
     conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
     role           TEXT NOT NULL,     -- 'user' | 'assistant' | 'system'
     content        TEXT NOT NULL,
-    reasoning      TEXT,              -- DeepSeek 思维链
+    reasoning      TEXT,              -- 思维链
     status         TEXT NOT NULL,     -- pending|streaming|completed|failed|cancelled
     finish_reason  TEXT,
     refs           TEXT NOT NULL DEFAULT '[]',  -- 引用上下文（JSON：绝对路径 + 行范围 + 展示标签）
@@ -259,7 +258,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_date ON ai_usage_logs(created_at);
 
 **敏感字段说明**：日志表只存模型与用量，**不存提示词正文**；消息正文随会话存储，用户删除会话时级联清除。
 
-**迁移**：v1 → v2 由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行。`provider` 默认 `deepseek`（老会话一律按直连处理），`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话。
+**迁移**：v1 → v2 由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行。`provider` 默认 `codebuddy`，`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话。
 
 **续接规则**：只有「会话 `provider` 与当前通道一致」且 `sdk_session_id` 非空时才走 `resume`，此时仅提交本轮输入，历史由通道维护；引用原文仍每轮注入（指向的文件可能已改动）。条件任一不满足即回退到完整历史拼接，切换通道不复活旧会话号。
 
@@ -368,7 +367,7 @@ interface AbortRequest {
 
 **开放问题**
 
-1. 是否需要支持自定义 OpenAI 兼容端点（自部署模型）？
+1. 自定义模型 id 是否需要按站点给出候选提示（清单由服务端下发，插件无法枚举）？
 2. 会话是否需要导出为 Markdown 归档到工作区？
 3. 是否提供「AI 改动留痕」（在文件中以注释形式记录 AI 生成段落）？
 
@@ -382,7 +381,7 @@ interface AbortRequest {
 |--------|----------|
 | A6 对话模式 | 侧栏多轮问答；Enter 发送、Shift + Enter 换行；生成期间可停止；输入卡片见 10.3 |
 | A8 消息历史 | `messages` 表保存 user/assistant 与终态（completed / failed / cancelled） |
-| A9 SSE 流式输出 | openai SDK（`baseURL: https://api.deepseek.com`）；宿主按 60ms 窗口合并增量后经 `stream` 消息推送 |
+| A9 流式输出 | CodeBuddy SDK 的 `includePartialMessages` 增量；宿主按 60ms 窗口合并后经 `stream` 消息推送 |
 | A11 请求取消 | `AbortController`，`ai/abort` 立即断开连接并把消息落为 `cancelled` |
 | A17 预算护栏 | 按当日 `ai_usage_logs` 累计 token，达 `zhai.ai.dailyTokenBudget` 时拒绝发送并提示 |
 | A7 会话管理 | 已实现新建、切换、删除与首条消息自动命名（历史浮层见 10.2）；重命名 / 关联文件待实现 |
@@ -478,7 +477,7 @@ interface AbortRequest {
 与本文档的已知差异（后续补齐）：
 
 - 上下文截断暂以「字符数 ÷ 1.6」粗估，第 5 节所列 tiktoken 方案未接入（AC-4 为降级实现）
-- 用量日志的 `estimated_cost` 暂记 0（未内置 DeepSeek 计费规则），重试指数退避未实现，仅落地 30s 首字超时中断
+- 用量日志的 `estimated_cost` 暂记 0（未内置计费规则），重试指数退避未实现，仅落地 30s 首字超时中断
 - 单次生成上限固定 2048 token（`MAX_COMPLETION_TOKENS`），尚未开放到参数面板（A13）
 - `@` 输入框提及（A12 剩余部分）未实现；待发送上下文与写回状态均为内存态，重启窗口后仅已发送的引用随 `messages.refs` 保留
 - 写作模式当前为「整段替换 + Ctrl+Z 撤销」，未做 diff 逐段接受（A3）；整篇改写上限 12000 字符，超出只能选中片段

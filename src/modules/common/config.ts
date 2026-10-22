@@ -21,13 +21,10 @@ export interface ZhaiConfig {
     indexDebounceMs: number
     rebuildOnActivate: boolean
     searchLimit: number
-    /** AI 通道：auto 优先 CodeBuddy（配置了凭证时），否则回落 DeepSeek 直连 */
-    aiProvider: 'deepseek' | 'codebuddy' | 'auto'
     /** CodeBuddy 站点：登录与调用必须一致，切换后需重新登录 */
     aiCodebuddySite: CodebuddySite
     /** CodeBuddy 对话模型（CLI 认可的模型 id），空表示使用 CLI 默认模型 */
     aiCodebuddyModel: string
-    aiModel: string
     aiTemperature: number
     aiMaxContextTokens: number
     aiDailyTokenBudget: number
@@ -37,18 +34,10 @@ export interface ZhaiConfig {
     namingAiDailyLimit: number
     /** 写作管理 AI 生成每日次数上限（人物外貌等一次性生成） */
     pressAiDailyLimit: number
-    /** 图像通道：auto 时 CodeBuddy 具备出图能力则优先，否则走直连图像服务 */
-    imageProvider: 'codebuddy' | 'openai' | 'auto'
     /** CodeBuddy 出图时驱动工具调用的对话模型，空表示使用通道默认模型 */
     imageCodebuddyModel: string
-    /** 图像服务端点（OpenAI 兼容的 /images/generations 基址，空表示未配置） */
-    imageBaseUrl: string
-    /** 图像模型名，如 gpt-image-1 / Kwai-Kolors/Kolors */
-    imageModel: string
     /** 角色设定图尺寸，形如 768x1024 */
     imageSize: string
-    /** 角色设定图单次生成超时（秒）：图像模型出图常需 1~3 分钟 */
-    imageTimeoutSeconds: number
     /** 角色设定图每日生成次数上限 */
     imageDailyLimit: number
     telemetryEnabled: boolean
@@ -71,16 +60,6 @@ function readCodebuddySite(value: string): CodebuddySite {
     return 'cn'
 }
 
-/** 收窄通道取值：非法配置一律按 auto 处理，避免历史配置或手写错值导致激活失败 */
-function readAiProvider(value: string): ZhaiConfig['aiProvider'] {
-    return value === 'deepseek' || value === 'codebuddy' ? value : 'auto'
-}
-
-/** 收窄图像通道取值：规则同上 */
-function readImageProvider(value: string): ZhaiConfig['imageProvider'] {
-    return value === 'codebuddy' || value === 'openai' ? value : 'auto'
-}
-
 /** 读取当前生效的插件配置（每次调用即时求值，跟随用户修改） */
 export function getZhaiConfig(): ZhaiConfig {
     const cfg = vscode.workspace.getConfiguration(SECTION)
@@ -90,22 +69,16 @@ export function getZhaiConfig(): ZhaiConfig {
         indexDebounceMs: cfg.get<number>('index.debounceMs', 500),
         rebuildOnActivate: cfg.get<boolean>('index.rebuildOnActivate', true),
         searchLimit: cfg.get<number>('search.limit', 50),
-        aiProvider: readAiProvider(cfg.get<string>('ai.provider', 'auto')),
         aiCodebuddySite: readCodebuddySite(cfg.get<string>('ai.codebuddySite', 'cn')),
         aiCodebuddyModel: cfg.get<string>('ai.codebuddyModel', ''),
-        aiModel: cfg.get<string>('ai.model', 'deepseek-flash'),
         aiTemperature: cfg.get<number>('ai.temperature', 0.7),
         aiMaxContextTokens: cfg.get<number>('ai.maxContextTokens', 8000),
         aiDailyTokenBudget: cfg.get<number>('ai.dailyTokenBudget', 500000),
         aiAutoFocusOnContext: cfg.get<boolean>('ai.autoFocusOnContext', true),
         namingAiDailyLimit: cfg.get<number>('naming.aiDailyLimit', 20),
         pressAiDailyLimit: cfg.get<number>('press.aiDailyLimit', 20),
-        imageProvider: readImageProvider(cfg.get<string>('image.provider', 'auto')),
         imageCodebuddyModel: cfg.get<string>('image.codebuddyModel', ''),
-        imageBaseUrl: cfg.get<string>('image.baseUrl', ''),
-        imageModel: cfg.get<string>('image.model', ''),
         imageSize: cfg.get<string>('image.size', '768x1024'),
-        imageTimeoutSeconds: cfg.get<number>('image.timeoutSeconds', 300),
         imageDailyLimit: cfg.get<number>('image.dailyLimit', 20),
         telemetryEnabled: cfg.get<boolean>('telemetry.enabled', false),
     }

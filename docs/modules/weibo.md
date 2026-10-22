@@ -668,7 +668,7 @@ async function buildDownloadTasks(detail: WeiboDetail, readable = false): Promis
 1. 分享权限（`statuses/share` 第三方分享）是否已申请/可获批？决定默认发布路径是否可用。
 2. 是否申请高级接口（图文/视频发布、上传）？决定 B11/B13 高级路径是否落地。
 3. 媒体下载默认目录与是否默认开启（避免误触大量下载）？
-4. AI 编辑所用模型（复用 DeepSeek Chat / R1）与默认开关？
+4. AI 编辑所用模型（复用 CodeBuddy 通道，模型 id 走 `zhai.ai.codebuddyModel`）与默认开关？
 5. 本地分组的标签体系是否需要与笔记标签打通？
 6. 多账号浏览是否需要（影响缓存按 uid 隔离复杂度）？
 
@@ -778,14 +778,14 @@ async function sha256(input: string): Promise<string> {
 
 ### 12.2 AI 编辑与 diff 采纳
 
-> 发布前由 AI 润色（复用 DeepSeek Chat / R1，见开放问题 4）；编辑结果与原文以统一 diff 呈现，用户逐段采纳/拒绝后再发布。
+> 发布前由 AI 润色（复用 CodeBuddy 通道，见开放问题 4）；编辑结果与原文以统一 diff 呈现，用户逐段采纳/拒绝后再发布。
 
 ```typescript
 /** AI 润色请求 */
 interface AIEditRequest {
     text: string
     instruction: string          // 如「缩写到 140 字」「改写为轻松口语风」
-    model: 'deepseek-flash' | 'deepseek-v4-pro'
+    model: string  // 由调用方按 CodeBuddy 通道配置传入
 }
 
 interface AIEditResult {
@@ -836,7 +836,7 @@ function applyDiffDecision(result: AIEditResult, decision: DiffDecision): string
 }
 
 async function callLLM(_req: { model: string; system: string; prompt: string }): Promise<string> {
-    // 接入项目 LLM 客户端（DeepSeek）
+    // 接入项目 CodeBuddy 通道
     return ''
 }
 ```

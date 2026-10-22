@@ -15,10 +15,7 @@ interface AiChatSessionMetaProps {
 export function AiChatSessionMeta({ title, runtime }: AiChatSessionMetaProps): JSX.Element {
     let usageText = '正在读取配置…'
     if (runtime !== null) {
-        usageText =
-            runtime.provider === 'codebuddy'
-                ? `CodeBuddy · 今日 ${formatTokens(runtime.usedTokensToday)} tokens`
-                : `${runtime.model} · 今日 ${formatTokens(runtime.usedTokensToday)} / ${formatTokens(runtime.dailyTokenBudget)} tokens`
+        usageText = `CodeBuddy · 今日 ${formatTokens(runtime.usedTokensToday)} tokens`
     }
     return (
         <div className="flex min-w-0 flex-col gap-0.5">

@@ -1,6 +1,6 @@
 /**
  * AI 润色与 diff 采纳（发布前）。
- * LLM 客户端抽象，实际接入项目 DeepSeek 客户端（见开放问题 4）。
+ * LLM 调用接入项目统一的 CodeBuddy 通道。
  */
 
 import type { AIEditRequest, AIEditResult, DiffDecision, DiffHunk } from './types'

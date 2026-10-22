@@ -20,8 +20,6 @@ interface AiChatPromptInputProps {
     input: string
     setInput: (input: string) => void
     hasApiKey: boolean
-    /** 运行时信息是否已加载：未加载时保持中性占位文案，避免先闪「请设置密钥」 */
-    isRuntimeReady: boolean
     isGenerating: boolean
     phase: Phase
     mode: AiConversationMode
@@ -45,7 +43,6 @@ export function AiChatPromptInput({
     input,
     setInput,
     hasApiKey,
-    isRuntimeReady,
     isGenerating,
     phase,
     mode,
@@ -63,8 +60,6 @@ export function AiChatPromptInput({
 }: AiChatPromptInputProps): JSX.Element {
     /** 增强前的原文：非空表示当前输入处于增强态，可一键还原 */
     const [enhancedFrom, setEnhancedFrom] = useState<string | null>(null)
-    /** 仅当运行时已确认无密钥时才提示设置，加载期间保持中性文案 */
-    const isApiKeyMissing = isRuntimeReady && !hasApiKey
 
     const canEnhance = input.trim().length > 0
     /** 已有命令时正文由指令模板提供，因此空输入也可发送 */
@@ -74,9 +69,6 @@ export function AiChatPromptInput({
     let placeholder = '提问或输入指令…'
     if (command !== null) {
         placeholder = `可补充「${command.title}」的要求，留空直接发送`
-    }
-    if (isApiKeyMissing) {
-        placeholder = '请先在插件设置中完成 AI 通道配置'
     }
 
     /** 手动输入或修改即退出增强态，避免还原时覆盖用户的新内容 */
@@ -116,7 +108,7 @@ export function AiChatPromptInput({
                     command={command}
                     contexts={contexts}
                     placeholder={placeholder}
-                    disabled={isApiKeyMissing || isGenerating}
+                    disabled={isGenerating}
                     canSend={canSend}
                     onChange={handleInputChange}
                     onSend={onSend}

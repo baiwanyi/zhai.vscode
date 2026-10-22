@@ -31,8 +31,8 @@ function makeConversation(overrides: Partial<ConversationRow> = {}): Conversatio
         title: '测试会话',
         mode: 'chat',
         filePath: null,
-        model: 'deepseek-chat',
-        provider: 'deepseek',
+        model: 'codebuddy-default',
+        provider: 'codebuddy',
         sdkSessionId: null,
         createdAt: '2026-09-25T10:00:00.000Z',
         updatedAt: '2026-09-25T10:00:00.000Z',
@@ -100,7 +100,7 @@ describe('conversations', () => {
         legacy
             .prepare(
                 `INSERT INTO conversations (id, title, mode, file_path, model, created_at, updated_at)
-                 VALUES ('conv-legacy', '旧会话', 'chat', NULL, 'deepseek-chat', '2026-09-01T00:00:00.000Z',
+                 VALUES ('conv-legacy', '旧会话', 'chat', NULL, 'codebuddy-default', '2026-09-01T00:00:00.000Z',
                     '2026-09-01T00:00:00.000Z')`,
             )
             .run()
@@ -108,7 +108,7 @@ describe('conversations', () => {
         const row = legacy
             .prepare('SELECT provider, sdk_session_id AS sdkSessionId FROM conversations WHERE id = ?')
             .get('conv-legacy') as { provider: string; sdkSessionId: string | null }
-        expect(row).toEqual({ provider: 'deepseek', sdkSessionId: null })
+        expect(row).toEqual({ provider: 'codebuddy', sdkSessionId: null })
         legacy.close()
     })
 })

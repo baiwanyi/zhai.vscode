@@ -341,8 +341,6 @@ export interface PortraitGenerateRequest {
 /** 角色设定图生成结果 */
 export interface PortraitGenerateResult {
     portrait: CharacterPortrait
-    /** 通道回退说明（如 CodeBuddy 无出图能力而改用直连），可直接展示给用户 */
-    notice?: string
 }
 
 /** 角色设定图删除请求：只接受 press/_portraits 下的相对路径 */

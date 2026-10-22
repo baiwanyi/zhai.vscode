@@ -16,7 +16,7 @@ const DDL_STATEMENTS = [
         mode        TEXT NOT NULL,
         file_path   TEXT,
         model       TEXT NOT NULL,
-        provider    TEXT NOT NULL DEFAULT 'deepseek',
+        provider    TEXT NOT NULL DEFAULT 'codebuddy',
         sdk_session_id TEXT,
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL
@@ -72,7 +72,7 @@ export function ensureAiSchema(db: Database.Database): boolean {
             db.exec(ddl)
         }
         // v2：会话记录所属通道与通道侧会话号，供 CodeBuddy 通道续接
-        ensureColumn(db, 'conversations', 'provider', "provider TEXT NOT NULL DEFAULT 'deepseek'")
+        ensureColumn(db, 'conversations', 'provider', "provider TEXT NOT NULL DEFAULT 'codebuddy'")
         ensureColumn(db, 'conversations', 'sdk_session_id', 'sdk_session_id TEXT')
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',

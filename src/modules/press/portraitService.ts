@@ -1,6 +1,6 @@
 /**
  * 角色设定图服务：校验配额后经图像通道路由出图，按人物建目录落盘，并返回 webview 可用 URL。
- * 复用约定：图像通道经 ./ai/imageProvider 的路由选择（CodeBuddy 优先、直连兜底），提示词复用 ./ai/portraitPrompt，
+ * 复用约定：图像通道经 ./ai/imageProvider 的入口（唯一实现为 CodeBuddy 的 ImageGen），提示词复用 ./ai/portraitPrompt，
  * 配额复用 ./db/quotaRepository，路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
  * 关键约束：图片落在 press/_portraits/{characterId}/ 下，人物标识须匹配安全字符集；
  * 删除只接受 press/_portraits 下的四段相对路径，优先走回收站；同一时刻只允许一个生成请求。
@@ -61,24 +61,22 @@ export class PortraitService {
         const startedAt = Date.now()
         logger.info(`角色卡生成开始：${request.name}（${config.imageSize}）`)
         try {
-            const route = await this.router.generate({
+            const artifact = await this.router.generate({
                 prompt: buildPortraitPrompt(request),
                 size: config.imageSize,
                 signal: controller.signal,
             })
-            logger.info(
-                `角色卡通道：${route.providerId}${route.fallbackReason === undefined ? '' : `（${route.fallbackReason}）`}`,
-            )
+            logger.info('角色卡通道：codebuddy')
             const id = `portrait-${randomUUID()}`
-            const extension = route.result.extension
+            const extension = artifact.extension
             const segments = [PRESS_MODULE_DIR, PORTRAIT_DIR, request.characterId, `${id}.${extension}`]
             const root = resolveStorageRoot()
             await vscode.workspace.fs.createDirectory(buildStorageUri(root, segments.slice(0, -1)))
             const target = buildStorageUri(root, segments)
-            await vscode.workspace.fs.writeFile(target, route.result.bytes)
+            await vscode.workspace.fs.writeFile(target, artifact.bytes)
             consumeToday(this.db, QUOTA_KEYS)
-            logger.info(`角色卡生成完成：耗时 ${Date.now() - startedAt}ms，${route.result.bytes.byteLength} 字节`)
-            const result: PortraitGenerateResult = {
+            logger.info(`角色卡生成完成：耗时 ${Date.now() - startedAt}ms，${artifact.bytes.byteLength} 字节`)
+            return {
                 portrait: {
                     id,
                     path: segments.join('/'),
@@ -86,10 +84,6 @@ export class PortraitService {
                     createdAt: new Date().toISOString(),
                 },
             }
-            if (route.fallbackReason !== undefined) {
-                result.notice = route.fallbackReason
-            }
-            return result
         } catch (error) {
             // 取消与超时的文案由执行器给出，此处只补日志便于排查服务商耗时
             logger.error(`角色卡生成失败：耗时 ${Date.now() - startedAt}ms`, error)

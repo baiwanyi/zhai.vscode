@@ -231,8 +231,8 @@ PRAGMA foreign_keys = ON;
 | `zhai.openSettings` | 打开插件设置 | 跳转到 `zhai.*` 配置分组 |
 | `zhai.openAiChat` | 打开 AI 对话 | 聚焦侧栏 AI 对话视图（默认 `Ctrl+Shift+L`） |
 | `zhai.ai.addToChat` | 添加到宅对话 | 编辑器右键：选中文本取行范围（`file.md:11-19`），未选则取整篇，作为对话上下文 |
-| `zhai.ai.setApiKey` | 设置 DeepSeek API Key | 输入框写入系统密钥库（SecretStorage），不落配置文件 |
-| `zhai.ai.clearApiKey` | 清除 DeepSeek API Key | 从密钥库删除已保存的 Key |
+| `zhai.ai.loginCodebuddy` | 登录 CodeBuddy | 打开浏览器授权，凭证按站点缓存在本机 |
+| `zhai.ai.selectCodebuddyModel` | 选择 CodeBuddy 模型 | 拉取账号可用模型，选择或手动填写自定义模型 id |
 
 > `Ctrl+K` 现聚焦仪表盘视图；全局搜索（C7）的检索能力（FTS5 + `zhai.search.limit`）已在索引仓储就绪，搜索面板待实现。
 
@@ -245,7 +245,8 @@ PRAGMA foreign_keys = ON;
 | `zhai.index.debounceMs` | number | `500` | 增量索引防抖毫秒数 |
 | `zhai.index.rebuildOnActivate` | boolean | `true` | 激活时自检并按需重建 |
 | `zhai.search.limit` | number | `50` | 全局搜索单模块返回上限 |
-| `zhai.ai.model` | string | `deepseek-flash` | 默认模型（可选 `deepseek-flash` / `deepseek-v4-pro`） |
+| `zhai.ai.codebuddyModel` | string | ``（空=CLI 默认） | CodeBuddy 对话模型 id，可填自定义模型 |
+| `zhai.image.codebuddyModel` | string | ``（空=通道默认） | 出图时驱动 `ImageGen` 的对话模型 id |
 | `zhai.ai.temperature` | number | `0.7` | 默认温度 |
 | `zhai.ai.maxContextTokens` | number | `8000` | 前文与引用上下文注入上限 |
 | `zhai.ai.dailyTokenBudget` | number | `500000` | 每日 Token 预算，超限提示 |

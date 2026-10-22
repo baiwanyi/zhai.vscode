@@ -4,7 +4,7 @@
 > **文档版本**：v4.0（VSCode 插件形态）
 > **最后更新**：2026-09-04
 > **关联文档**：[路线图 roadmap.md](./roadmap.md)、[README](../README.md)、`docs/modules/*.md`（11 篇模块设计）
-> **技术栈**：VSCode Extension API + React 19 + TypeScript 7 + Tailwind CSS 4 + shadcn/ui + Lucide Icons + SQLite（better-sqlite3，仅缓存索引）+ DeepSeek（openai SDK 兼容，SSE 流式）
+> **技术栈**：VSCode Extension API + React 19 + TypeScript 7 + Tailwind CSS 4 + shadcn/ui + Lucide Icons + SQLite（better-sqlite3，仅缓存索引）+ CodeBuddy（`@tencent-ai/agent-sdk`，流式增量）
 > **开发模式**：1 人全栈 + AI 辅助编码（Claude / Copilot）
 > **形态基准**：Markdown 主存储（工作区 `.md`，可 Git 跟踪）；SQLite 仅存元数据/索引，可删库重建，不进 Git
 
@@ -46,7 +46,7 @@
 | **EH**（扩展宿主） | VSCode 扩展 API：命令/菜单、`FileSystemWatcher`、`Webview` 注册、`SecretStorage`、剪贴板 | 命令注册、增量监听、密钥、图片粘贴 |
 | **WV**（Webview 前端） | React 面板 UI 与交互：笔记树、AI 面板、Press 树、阅读器、Dashboard | 面板组件、虚拟滚动、diff 视图 |
 | **DB**（索引数据层） | SQLite / better-sqlite3 / FTS5 / 索引流水线 | DDL、分块、BM25、增量、溯源 |
-| **AI**（AI 服务层） | DeepSeek / SSE / diff / `@` 上下文 / 预算护栏 | 流式、续写、用量、护栏 |
+| **AI**（AI 服务层） | CodeBuddy 通道 / 流式 / diff / `@` 上下文 / 预算护栏 | 流式、续写、用量、护栏 |
 
 ### 1.3 四期总览
 
@@ -202,7 +202,7 @@
 
 | 任务 | 内容 | 交付物 |
 |------|------|--------|
-| AI 接入方案 | DeepSeek SSE 流式；密钥 `SecretStorage` | AI 接入设计 |
+| AI 接入方案 | CodeBuddy 通道流式；CLI 登录态 + `SecretStorage` | AI 接入设计 |
 | 写入安全方案 | 全部改动经 `WorkspaceEdit`，进入 Undo 栈 | 写入安全设计 |
 | 预算护栏 | `dailyTokenBudget` 达阈值提示并阻断（必须首批） | 护栏设计 |
 
@@ -568,7 +568,7 @@
 | **WV 任务** | ~10 | ~10 | ~7 | ~10 |
 | **DB 任务** | ~8 | ~2 | ~3 | ~1 |
 | **AI 任务** | ~8 | ~6 | ~0 | ~1 |
-| **外部依赖** | DeepSeek | DeepSeek | 无 | 微博/公众号 Open API |
+| **外部依赖** | CodeBuddy | CodeBuddy | 无 | 微博/公众号 Open API |
 | **AI 辅助人·天** | ~52 | ~26 | ~18 | ~27 |
 | **工期（周）** | 10 周 | 7 周 | 6 周 | 6 周 |
 | **里程碑** | 创作核心闭环 | 长篇创作全链路 | 阅读+搜索联动 | 正式发布 |

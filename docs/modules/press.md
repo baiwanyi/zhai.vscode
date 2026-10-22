@@ -2,7 +2,7 @@
 
 **版本**：2.1
 **日期**：2026-10-22
-**状态**：草案；第 5.1 节新增生图双通道（CodeBuddy `ImageGen` 优先、直连兜底）选型，代码改造待实施
+**状态**：草案；第 5.1 节生图通道已收敛为 CodeBuddy `ImageGen` 单通道并落地
 **宿主**：VSCode 插件 Zhai（宅桌面）
 **合并说明**：由 `docs/modules/writing.md`（插件形态）与旧 `docs/modules/press.md`（宅桌面 Web 方案）合并统一为单一小说写作模块；技术形态以插件形态为准（Markdown 主存储 + SQLite 仅缓存索引），旧 Web 方案的 Express/Prisma/localStorage 技术栈不再沿用。
 **存储根**：`{storage.rootPath}/press/`（根目录配置见 `common.md` 第 1 节）
@@ -190,7 +190,7 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 | 导出 EPUB | `epub-gen` / 手写 OPF | **epub-gen** | 封装完整，支持章节与封面；按 `Chapter/` 顺序拼接 |
 | 导出 PDF | HTML → 打印 / `puppeteer-core` | **HTML → 系统打印** | 避免内联浏览器依赖；若需自动化，puppeteer-core **保持沙箱开启** |
 | 番茄钟 | 定时器 + 状态栏 | **状态栏 + 通知** | 轻量，计时结束自动保存当前章节 |
-| 生图通道 | 直连 OpenAI 兼容端点 / CodeBuddy `ImageGen` | **CodeBuddy 优先，直连兜底** | 走 CodeBuddy 订阅额度；能力缺失时自动回退，运行失败仅提示后由用户决定是否重试 |
+| 生图通道 | 直连 OpenAI 兼容端点 / CodeBuddy `ImageGen` | **仅 CodeBuddy `ImageGen`** | 走 CodeBuddy 订阅额度；直连需自备端点与密钥，与「装完即用」冲突，故不再保留兜底通道 |
 
 > **弃用规避**：不使用 `fs.renameSync` 等同步 API 处理排序重命名（改用 `fs.promises.rename` 并依赖 `onWillRenameFiles` 事件同步链接）；不使用已废弃的 `epub-gen` 回调式旧 API（使用 Promise 版本）。
 
@@ -200,22 +200,22 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 
 | 关注点 | 结论 |
 |--------|------|
-| 两个实现 | `codebuddyImageProvider`（SDK `query()` + CLI 内置 `ImageGen` 工具）/ `openaiImageProvider`（直连 OpenAI 兼容 `/images/generations`，即当前实现） |
-| 选择开关 | 新增 `zhai.image.provider`：`auto`（默认，CodeBuddy 优先）/ `codebuddy` / `openai` |
-| 能力探测 | 一次 `maxTurns: 1` 的空查询读 `system` 消息的 `tools`，确认含 `ImageGen`；结果缓存 10 分钟，配置变更或生图失败时失效（CLI 随 SDK 分发，版本由 `package.json` 锁定） |
-| 能力缺失回退 | 自动切直连通道，并在面板说明原因 |
-| 生成失败 | **不自动回退**：仅提示失败原因，由用户点「改用直连服务重试」 |
-| 工具权限 | `tools: ['ImageGen']` + `allowedTools: ['ImageGen']` 双重限定，`canUseTool` 仅对 `ImageGen` 返回 allow；`maxTurns: 2`（一轮调用工具 + 一轮收尾），工具已出图但收尾轮次失败时在 catch 中兜底交付产物 |
+| 唯一实现 | `codebuddyImageProvider`（SDK `query()` + CLI 内置 `ImageGen` 工具） |
+| 通道开关 | 无。`ImageProviderId` 只剩 `codebuddy`，不再提供通道选择配置 |
+| 能力探测 | 一次 `maxTurns: 1` 的空查询读 `system` 消息的 `tools`，确认含 `ImageGen`；结果缓存 10 分钟，生图失败时失效（CLI 随 SDK 分发，版本由 `package.json` 锁定） |
+| 能力缺失 | 直接报错并提示确认登录态与 CLI 版本，不做静默回退 |
+| 生成失败 | **不自动重试**：仅提示失败原因，由用户决定是否重试 |
+| 工具权限 | `tools: ['ImageGen']` + `allowedTools: ['ImageGen']` 双重限定，`canUseTool` 只对 `ImageGen` 返回 allow 且整次请求最多放行一次（出图按张计费，重入会重复扣费）；`maxTurns: 5`，工具结果落地即取图，收尾轮次失败时在 catch 中兜底交付产物 |
 | 延迟加载 | 图像通道需在子进程环境里设 `CODEBUDDY_DEFER_TOOL_LOADING=false`：CLI 默认把 `ImageGen` 放进延迟加载池，`system.init` 的工具全集里有它、但模型可用工具列表里没有，表现为「能力探测通过却始终不出图」 |
-| 超时 | 直连通道沿用 `zhai.image.timeoutSeconds`（默认 300s）；CodeBuddy 通道独立上限 600s（子进程启动 + 排队） |
+| 超时 | CodeBuddy 通道上限 600s（子进程启动 + 排队），前端兜底 15 分钟 |
 | 产物归一 | `ImageGen` 以 JSON 文本回报 `{ type: 'image_gen_tool_result', images: [{ localPath }] }`，适配层先取结构化字段，再依次尝试 image block / data URL / 绝对路径 / 链接；路径可能不带扩展名，格式一律按文件魔数（PNG/JPEG/WEBP）判定，非图片内容自动跳到下一个候选，统一交给 `portraitService` 落盘 |
 | 画风与尺寸 | 沿用 `PORTRAIT_STYLES` 与 `zhai.image.size`；CodeBuddy 侧的传参方式（自然语言描述 / 工具入参）待实测，未定前双写 |
-| 文生图模型 | 由 CLI 决定，插件不下发 `--text-to-image-model`：清单来自服务端产品配置（SDK 只返回语言模型，无法枚举），故不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，CLI 会把选择存进自身 settings。`zhai.image.codebuddyModel` 只决定驱动工具调用的对话模型（用「宅写作：选择 CodeBuddy 模型」从账号可用列表中选，手填不存在的 id 会被服务端 400 拒绝） |
-| 频率护栏 | `zhai.image.dailyLimit` 按通道分别计数，避免回退后额度翻倍 |
+| 文生图模型 | 由 CLI 决定，插件不下发 `--text-to-image-model`：清单来自服务端产品配置（SDK 只返回语言模型，无法枚举），故不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，CLI 会把选择存进自身 settings。`zhai.image.codebuddyModel` 只决定驱动工具调用的对话模型（用「宅写作：选择 CodeBuddy 模型」从账号可用列表中选或手动填写自定义模型 id） |
+| 频率护栏 | `zhai.image.dailyLimit` 按次计数 |
 
-> **落地状态**：`ImageProvider` 契约与 `ImageProviderRouter` 已实现（`src/modules/press/ai/imageProvider.ts`），两个实现分别走 SDK 的 `ImageGen` 与既有 `/images/generations`（`codebuddyImageProvider.ts` / `openaiImageProvider.ts`）。能力探测读 `system.init` 的 `tools` 是否含 `ImageGen`，结果缓存 10 分钟，出图失败时清空缓存重探。回退说明经 `PortraitGenerateResult.notice` 回传，前端展示待补。
+> **落地状态**：`ImageProvider` 契约与 `ImageProviderRouter` 已实现（`src/modules/press/ai/imageProvider.ts`），唯一实现走 SDK 的 `ImageGen`（`codebuddyImageProvider.ts`）。能力探测读 `system.init` 的 `tools` 是否含 `ImageGen`，结果缓存 10 分钟，出图失败时清空缓存重探。
 >
-> **为什么生成失败不自动回退**：出图单次耗时数分钟且按张计费，静默回退会连扣两次、产出两张图；文本通道失败回退成本低，可自动降级，图像通道必须由用户确认。
+> **为什么生成失败不自动重试**：出图单次耗时数分钟且按张计费，静默重试会连扣两次、产出两张图，必须由用户确认。
 >
 > **文本提示词与出图分离**：`portraitPrompt.ts` 仍用本地规则模板拼英文提示词，不引入额外模型调用；若后续启用「AI 生成提示词」，须作为独立开关并提供模板兜底。
 

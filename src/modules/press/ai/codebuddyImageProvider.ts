@@ -21,7 +21,7 @@ import { buildCodebuddyEnv, CODEBUDDY_SITE_LABELS } from '../../ai/providers/cod
 import { getZhaiConfig } from '../../common/config'
 import { logger } from '../../common/logger'
 
-/** 单张图片体积上限，与直连通道保持一致 */
+/** 单张图片体积上限 */
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024
 /**
  * 单次出图允许的最大轮次。
@@ -97,7 +97,7 @@ function toReadableError(error: unknown, model?: string): Error {
         )
     }
     if (/max turns/i.test(message)) {
-        return new Error('CodeBuddy 出图未完成（工具轮次已用尽），请重试或改用直连服务', { cause: error })
+        return new Error('CodeBuddy 出图未完成（工具轮次已用尽），请重试', { cause: error })
     }
     return error instanceof Error ? error : new Error(message)
 }
@@ -341,7 +341,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
             if (detail.length > 0) {
                 throw new Error(`CodeBuddy 出图失败：${detail.slice(0, 200)}`)
             }
-            throw new Error('CodeBuddy 未返回可识别的图片（已检查本地路径、链接与内联数据），请检查该通道的出图能力或改用直连服务')
+            throw new Error('CodeBuddy 未返回可识别的图片（已检查本地路径、链接与内联数据），请检查登录态与 CLI 版本')
         }
         return artifact
     }

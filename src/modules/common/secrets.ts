@@ -6,9 +6,7 @@ import type * as vscode from 'vscode'
 
 /** 各密钥在 SecretStorage 中的命名空间键名 */
 const SECRET_KEYS = {
-    deepseekApiKey: 'zhai.deepseek.apiKey',
     codebuddyApiKey: 'zhai.codebuddy.apiKey',
-    imageApiKey: 'zhai.image.apiKey',
     weiboAccessToken: 'zhai.weibo.accessToken',
     wechatAccessToken: 'zhai.wechat.accessToken',
 } as const
@@ -32,13 +30,5 @@ export class SecretsService {
     /** 删除密钥 */
     public async remove(key: SecretKey): Promise<void> {
         await this.secrets.delete(SECRET_KEYS[key])
-    }
-
-    /** 脱敏展示：仅保留末 4 位，其余以 • 代替 */
-    public static mask(value: string | undefined): string {
-        if (!value || value.length <= 4) {
-            return '••••••••'
-        }
-        return `••••••••${value.slice(-4)}`
     }
 }

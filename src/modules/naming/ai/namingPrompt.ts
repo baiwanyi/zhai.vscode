@@ -1,12 +1,12 @@
 /**
  * AI 取名提示词与结果校验：构造一次性生成的对话消息，并把模型输出收敛为合法候选名。
- * 复用约定：消息结构复用 ../ai/client 的 ChatMessage；条件文案复用 data/catalog 的分类与选项标签；
+ * 复用约定：消息结构复用 ../ai/provider 的 AiChatMessage；条件文案复用 data/catalog 的分类与选项标签；
  * 解析层兼容 ```json 围栏、裸对象与裸数组三种常见输出形态，失败时正则兜底提取引号字符串。
  * 关键约束：模型输出一律视为不可信——必须再过长度、字符集、后缀、姓氏与去重校验，
  * 不合规项直接丢弃，由调用方决定是否回退本地生成。
  */
 import type { NamingCandidate, NamingRequest } from '../../../shared/types/naming'
-import type { ChatMessage } from '../../ai/client'
+import type { AiChatMessage as ChatMessage } from '../../ai/provider'
 import { readCategoryDefinition } from '../data/catalog'
 
 /** 系统提示：约束输出为纯 JSON，禁止解释与编号 */

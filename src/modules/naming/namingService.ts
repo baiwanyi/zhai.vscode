@@ -126,7 +126,7 @@ export class NamingService {
         try {
             const result = await generateNamesWithAi({
                 provider: this.provider,
-                model: getZhaiConfig().aiModel,
+                model: getZhaiConfig().aiCodebuddyModel,
                 request,
                 signal: controller.signal,
             })
