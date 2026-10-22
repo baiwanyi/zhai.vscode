@@ -124,46 +124,15 @@ export function registerAiCommands(
                 label: '对话模型',
                 description: 'zhai.ai.codebuddyModel：面板对话、取名、人物外貌生成',
                 key: 'ai.codebuddyModel',
-                manual: false,
             },
             {
                 label: '出图驱动模型',
                 description: 'zhai.image.codebuddyModel：驱动 ImageGen 调用的对话模型',
                 key: 'image.codebuddyModel',
-                manual: false,
-            },
-            {
-                label: '文生图模型（手动填写）',
-                description: 'zhai.image.codebuddyImageModel：ImageGen 实际出图模型，清单由服务端决定',
-                key: 'image.codebuddyImageModel',
-                manual: true,
             },
         ]
         const target = await vscode.window.showQuickPick(targets, { title: '选择要设置的 CodeBuddy 模型用途' })
         if (target === undefined) {
-            return
-        }
-        // 文生图模型清单由服务端产品配置决定，SDK 不暴露，只能按 CLI 的清单手动填写
-        if (target.manual) {
-            const current = getZhaiConfig().imageCodebuddyImageModel.trim()
-            const value = await vscode.window.showInputBox({
-                title: `设置${target.label}`,
-                prompt: '留空 = 沿用 CLI 当前设置（默认取站点配置里的首个文生图模型）。可用 id 请在 CLI 中执行 /model:text-to-image list 查看，用 /model:text-to-image <id> 切换',
-                value: current.startsWith('deepseek-') ? '' : current,
-                placeHolder: '例如 hy-image3.5-preview',
-                ignoreFocusOut: true,
-            })
-            if (value === undefined) {
-                return
-            }
-            const picked = value.trim()
-            await vscode.workspace
-                .getConfiguration('zhai')
-                .update(target.key, picked, vscode.ConfigurationTarget.Global)
-            logger.info(`CodeBuddy ${target.label}已设为 ${picked.length > 0 ? picked : '默认'}`)
-            void vscode.window.showInformationMessage(
-                `宅写作：${target.label}已设为 ${picked.length > 0 ? picked : '默认模型'}`,
-            )
             return
         }
         const models = await vscode.window.withProgress(

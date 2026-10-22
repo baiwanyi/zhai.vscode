@@ -285,12 +285,7 @@
                 "zhai.image.codebuddyModel": {
                     "type": "string",
                     "default": "",
-                    "description": "CodeBuddy 出图时驱动工具调用的对话模型，留空则使用通道默认模型；建议执行「宅写作：选择 CodeBuddy 模型」从账号可用列表中选择（不是出图模型，出图模型见 zhai.image.codebuddyImageModel）"
-                },
-                "zhai.image.codebuddyImageModel": {
-                    "type": "string",
-                    "default": "",
-                    "description": "ImageGen 使用的文生图模型 id（如 hy-image3.5-preview）。留空则沿用 CLI 当前设置（默认取站点配置里的首个文生图模型）；可用清单由服务端产品配置决定，请在 CLI 中执行 /model:text-to-image list 查看，或用「宅写作：选择 CodeBuddy 模型」→「文生图模型（手动填写）」写入。不要填对话模型（deepseek-* 等），否则会报 route config not found"
+                    "description": "CodeBuddy 出图时驱动 ImageGen 调用的对话模型，留空则使用通道默认模型；建议执行「宅写作：选择 CodeBuddy 模型」从账号可用列表中选择"
                 },
                 "zhai.image.baseUrl": {
                     "type": "string",

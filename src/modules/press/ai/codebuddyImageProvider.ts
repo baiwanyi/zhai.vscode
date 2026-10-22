@@ -42,12 +42,24 @@ const URL_PATTERN = /(?:https?|file):\/\/[^\s"'<>(){},;]+/g
 /** ImageGen 的完成标记：只在工具明确回报完成时才取图，避免把写到一半的文件当成产物 */
 const IMAGE_DONE_PATTERN = /image_gen_tool_result|"status"\s*:\s*"completed"/i
 
-/** 工具授权：只放行 ImageGen，其余一律拒绝（tools 限制可调用范围，能否执行还需此回调放行） */
-function allowImageGenOnly(toolName: string, input: Record<string, unknown>): Promise<PermissionResult> {
-    if (toolName === 'ImageGen') {
+/**
+ * 工具授权：只放行 ImageGen，其余一律拒绝；整次请求最多放行一次。
+ * 关键约束：出图按张计费，放开轮次后模型可能连续调用 ImageGen，第二次起必须拒绝，否则会重复扣费。
+ */
+function createImageGenGate(): (toolName: string, input: Record<string, unknown>) => Promise<PermissionResult> {
+    let hasGranted = false
+    return (toolName, input) => {
+        if (toolName !== 'ImageGen') {
+            return Promise.resolve({ behavior: 'deny', message: `仅允许 ImageGen，已拒绝 ${toolName}` })
+        }
+        if (hasGranted) {
+            logger.warn('CodeBuddy 模型再次调用 ImageGen，已拒绝以避免重复出图计费')
+            return Promise.resolve({ behavior: 'deny', message: '本次请求已生成过图片，请直接结束，不要重复出图' })
+        }
+        hasGranted = true
+        logger.info('CodeBuddy 已放行 ImageGen（本次请求最多一次）')
         return Promise.resolve({ behavior: 'allow', updatedInput: input })
     }
-    return Promise.resolve({ behavior: 'deny', message: `仅允许 ImageGen，已拒绝 ${toolName}` })
 }
 
 /**
@@ -70,42 +82,12 @@ function buildInstruction(options: ImageGenerateOptions): string {
     ].join('\n')
 }
 
-/**
- * 归一用户填写的出图模型：留空或误填对话模型时返回 undefined，交由 CLI 按站点配置选择默认出图模型。
- * 关键约束：ImageGen 优先使用下发的 --text-to-image-model，误填对话模型会在服务端报
- * 「Image model [...] route config not found」；对话模型以 deepseek- 前缀或与驱动模型同名判定。
- */
-function resolveImageModel(value: string, chatModel: string | undefined): string | undefined {
-    const trimmed = value.trim()
-    if (trimmed.length === 0) {
-        return undefined
-    }
-    if (trimmed.startsWith('deepseek-') || (chatModel !== undefined && trimmed === chatModel)) {
-        logger.warn(`CodeBuddy 出图模型「${trimmed}」不是文生图模型，已忽略并交由 CLI 选择默认出图模型`)
-        return undefined
-    }
-    return trimmed
-}
-
-/** 出图模型缺失路由时的可执行指引；未命中该错误时返回 null */
-function describeImageModelRouteError(text: string, imageModel: string | undefined): string | null {
-    if (!/route config not found/i.test(text)) {
-        return null
-    }
-    const label = imageModel !== undefined && imageModel.length > 0 ? `「${imageModel}」` : '当前出图模型'
-    return `出图模型${label}在该站点没有路由配置：请把「CodeBuddy 出图模型」留空（由 CLI 选择默认文生图模型），或填写该站点支持的文生图模型 id`
-}
-
 /** 把 SDK 的原始错误转成可执行提示 */
-function toReadableError(error: unknown, model?: string, imageModel?: string): Error {
+function toReadableError(error: unknown, model?: string): Error {
     const message = error instanceof Error ? error.message : String(error)
     if (/authentication required|please (use|run) \/login/i.test(message)) {
         const site = CODEBUDDY_SITE_LABELS[getZhaiConfig().aiCodebuddySite]
         return new Error(`尚未登录 CodeBuddy（${site}）：请执行「宅写作：登录 CodeBuddy」后重试`, { cause: error })
-    }
-    const routeError = describeImageModelRouteError(message, imageModel)
-    if (routeError !== null) {
-        return new Error(`CodeBuddy 出图失败：${routeError}`, { cause: error })
     }
     if (/service info not found|supported models for your account/i.test(message)) {
         const label = model !== undefined && model.length > 0 ? `「${model}」` : '当前模型'
@@ -289,15 +271,13 @@ export class CodeBuddyImageProvider implements ImageProvider {
             options.signal.addEventListener('abort', forwardAbort, { once: true })
         }
         const model = resolveCodebuddyModel(cfg.imageCodebuddyModel)
-        // 出图模型误填对话模型时不下发，交由 CLI 取站点配置里的文生图模型
-        const imageModel = resolveImageModel(cfg.imageCodebuddyImageModel, model)
         const session = query({
             prompt: buildInstruction(options),
             options: {
                 // 仅放行出图工具，避免模型顺带读写工作区；allowedTools + canUseTool 双重放行才会真正执行
                 tools: ['ImageGen'],
                 allowedTools: ['ImageGen'],
-                canUseTool: allowImageGenOnly,
+                canUseTool: createImageGenGate(),
                 // 出图通常需要三轮（说明 / 工具 / 收尾），按 MAX_TURNS 留出试探余量，避免中途被截断
                 maxTurns: MAX_TURNS,
                 permissionMode: 'default',
@@ -305,8 +285,6 @@ export class CodeBuddyImageProvider implements ImageProvider {
                 cwd: tmpdir(),
                 // 驱动模型同样必须落在账号可用列表内，否则 CLI 直接 400
                 model,
-                // 出图模型经 CLI 参数下发，留空则由 CLI 默认或用户 /model:text-to-image 设置决定
-                extraArgs: imageModel !== undefined ? { 'text-to-image-model': imageModel } : undefined,
                 abortController: controller,
                 env: buildImageEnv(cfg.aiCodebuddySite, apiKey),
             },
@@ -328,7 +306,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
                     }
                     // 工具结果一到手就先取图：即使后续收尾轮触发 Max turns，本次也能正常交付
                     if (IMAGE_DONE_PATTERN.test(collectText(blocks))) {
-                        const artifact = await this.readArtifact(blocks)
+                        const artifact = await this.readArtifactWithRetry(blocks)
                         if (artifact !== null) {
                             return artifact
                         }
@@ -346,7 +324,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
                 return artifact
             }
             logger.warn(`CodeBuddy 出图中断且未取到产物：${summarizeForLog(blocks)}`)
-            throw toReadableError(error, cfg.imageCodebuddyModel, imageModel)
+            throw toReadableError(error, cfg.imageCodebuddyModel)
         } finally {
             options.signal.removeEventListener('abort', forwardAbort)
             if (!controller.signal.aborted) {
@@ -354,20 +332,37 @@ export class CodeBuddyImageProvider implements ImageProvider {
             }
         }
         if (failure !== null) {
-            throw new Error(`CodeBuddy 出图失败：${describeImageModelRouteError(failure, imageModel) ?? failure}`)
+            throw new Error(`CodeBuddy 出图失败：${failure}`)
         }
         const artifact = await this.readArtifact(blocks)
         if (artifact === null) {
             logger.warn(`CodeBuddy 出图产物无法解析：${summarizeForLog(blocks)}`)
             const detail = collectText(blocks).replace(DATA_URL_PATTERN, '').replace(/\s+/g, ' ').trim()
             if (detail.length > 0) {
-                throw new Error(
-                    `CodeBuddy 出图失败：${describeImageModelRouteError(detail, imageModel) ?? detail.slice(0, 200)}`,
-                )
+                throw new Error(`CodeBuddy 出图失败：${detail.slice(0, 200)}`)
             }
             throw new Error('CodeBuddy 未返回可识别的图片（已检查本地路径、链接与内联数据），请检查该通道的出图能力或改用直连服务')
         }
         return artifact
+    }
+
+    /**
+     * 拿到完成标记后的读取：产物可能仍在落盘，首次读不到不应立刻放行后续轮次。
+     * 最多读 3 次、间隔 300ms，既覆盖写盘抖动，也避免长时间空等。
+     */
+    private async readArtifactWithRetry(blocks: ContentBlock[]): Promise<ImageGenerateResult | null> {
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            const artifact = await this.readArtifact(blocks)
+            if (artifact !== null) {
+                return artifact
+            }
+            if (attempt < 2) {
+                await new Promise<void>((resolve) => {
+                    setTimeout(resolve, 300)
+                })
+            }
+        }
+        return null
     }
 
     /** 先找 image block，再按候选顺序解析文本产物 */

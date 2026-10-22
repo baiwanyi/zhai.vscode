@@ -177,9 +177,9 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 切换站点后必须重新登录，旧站点凭证不会复用；专享版/私有化（需自定义 `endpoint`）不在开放范围内。
 
-**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持列表内的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModels()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活），命令 `zhai.ai.selectCodebuddyModel` 打开时强制刷新并写入 `zhai.ai.codebuddyModel`（对话）、`zhai.image.codebuddyModel`（出图驱动）或 `zhai.image.codebuddyImageModel`（文生图）。通道下发前经 `resolveCodebuddyModel` 校验：清单为空时退回历史规则（过滤 `deepseek-` 前缀），有清单时不在列表内的值一律交回 CLI 默认模型。`zhai.ai.model` 仍是 DeepSeek 直连的枚举，不参与 CodeBuddy 通道。
+**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持列表内的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModels()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活），命令 `zhai.ai.selectCodebuddyModel` 打开时强制刷新并写入 `zhai.ai.codebuddyModel`（对话）或 `zhai.image.codebuddyModel`（出图驱动）。通道下发前经 `resolveCodebuddyModel` 校验：清单为空时退回历史规则（过滤 `deepseek-` 前缀），有清单时不在列表内的值一律交回 CLI 默认模型。`zhai.ai.model` 仍是 DeepSeek 直连的枚举，不参与 CodeBuddy 通道。
 
-**文生图模型**：`ImageGen` 的模型由 CLI 的 `ImageService.resolveModel` 决定，顺序为「会话下发的 `--text-to-image-model` → 环境变量 `CODEBUDDY_TEXT_TO_IMAGE_MODEL` → CLI settings 的 `textToImageModel` → 站点配置中 tags 含 `text-to-image` 的首个模型 → 兜底 `hunyuan-image-v3.0`」。该清单来自服务端产品配置，SDK 的 `getAvailableModels` / `getAvailableModelsRaw` 只返回语言模型（实测 22 个均无 `text-to-image` 标签），且斜杠命令在 headless 会话中不会被执行，故插件不提供清单选择，只能手动填写 `zhai.image.codebuddyImageModel`（命令内「文生图模型（手动填写）」入口），可用 id 以 CLI 交互界面的 `/model:text-to-image list` 为准。配置值以 `deepseek-` 开头或与驱动对话模型同名时判定为误填并忽略（否则服务端报 `Image model [...] route config not found`）。
+**文生图模型**：`ImageGen` 的模型由 CLI 的 `ImageService.resolveModel` 决定，顺序为「会话下发的 `--text-to-image-model` → 环境变量 `CODEBUDDY_TEXT_TO_IMAGE_MODEL` → CLI settings 的 `textToImageModel` → 站点配置中 tags 含 `text-to-image` 的首个模型 → 兜底 `hunyuan-image-v3.0`」。该清单来自服务端产品配置，SDK 的 `getAvailableModels` / `getAvailableModelsRaw` 只返回语言模型（实测 22 个均无 `text-to-image` 标签），且斜杠命令在 headless 会话中不会被执行，故插件不下发 `--text-to-image-model`、也不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，选择会存进 CLI settings 并被 ImageGen 沿用。
 
 ### 5.3 各入口的会话与工具策略
 

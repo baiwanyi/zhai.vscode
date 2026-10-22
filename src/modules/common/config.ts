@@ -41,8 +41,6 @@ export interface ZhaiConfig {
     imageProvider: 'codebuddy' | 'openai' | 'auto'
     /** CodeBuddy 出图时驱动工具调用的对话模型，空表示使用通道默认模型 */
     imageCodebuddyModel: string
-    /** CodeBuddy ImageGen 的文生图模型，空表示使用 CLI 默认或用户设置 */
-    imageCodebuddyImageModel: string
     /** 图像服务端点（OpenAI 兼容的 /images/generations 基址，空表示未配置） */
     imageBaseUrl: string
     /** 图像模型名，如 gpt-image-1 / Kwai-Kolors/Kolors */
@@ -104,7 +102,6 @@ export function getZhaiConfig(): ZhaiConfig {
         pressAiDailyLimit: cfg.get<number>('press.aiDailyLimit', 20),
         imageProvider: readImageProvider(cfg.get<string>('image.provider', 'auto')),
         imageCodebuddyModel: cfg.get<string>('image.codebuddyModel', ''),
-        imageCodebuddyImageModel: cfg.get<string>('image.codebuddyImageModel', ''),
         imageBaseUrl: cfg.get<string>('image.baseUrl', ''),
         imageModel: cfg.get<string>('image.model', ''),
         imageSize: cfg.get<string>('image.size', '768x1024'),
