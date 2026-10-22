@@ -1,7 +1,7 @@
 /**
  * chatService 单元测试：聚焦发送阶段的上下文注入与预算裁剪——待发送引用是否随消息注入、
  * 失效引用是否跳过、发送后是否清空、引用是否优先于历史保留。
- * 复用约定：openai SDK 的 streamChat 由 vi.mock 替换为记录型假流；DB 用临时目录真实库；密钥用 SecretStorage 桩。
+ * 复用约定：AI 通道由记录型假实现替身注入，client 模块仅 mock 首字超时常量；DB 用临时目录真实库；密钥用 SecretStorage 桩。
  */
 import * as fs from 'node:fs'
 import * as os from 'node:os'
@@ -14,8 +14,8 @@ import {
     setConfigValue,
     setFileContent,
 } from './stubs/vscode'
-import type { ChatMessage, ChatStreamChunk, ChatStreamRequest } from '../modules/ai/client'
 import type { HostContextRef } from '../modules/ai/contextRefs'
+import type { AiChatMessage, AiProvider, AiStreamChunk, AiStreamRequest } from '../modules/ai/provider'
 import type Database from 'better-sqlite3'
 import { AiChatService } from '../modules/ai/chatService'
 import { listMessages } from '../modules/ai/db/chatRepository'
@@ -26,20 +26,23 @@ import { SecretsService } from '../modules/common/secrets'
 const FILE_PATH = 'd:/notes/ch01.md'
 const API_KEY_STORAGE_KEY = 'zhai.deepseek.apiKey'
 
-/** 记录每次流式请求的入参（vi.mock 提升到模块顶部，故用 vi.hoisted 持有） */
-const captured = vi.hoisted(() => ({ requests: [] as ChatStreamRequest[] }))
+/** 记录每次流式请求的入参 */
+const captured = { requests: [] as AiStreamRequest[] }
 
-vi.mock('../modules/ai/client', () => ({
-    FIRST_TOKEN_TIMEOUT_MS: 30_000,
-    streamChat: (request: ChatStreamRequest): AsyncGenerator<ChatStreamChunk> => {
+/** 记录型假通道：替代真实厂商通道，避免测试触网 */
+const fakeProvider: AiProvider = {
+    id: 'deepseek',
+    stream: (request: AiStreamRequest): AsyncGenerator<AiStreamChunk> => {
         captured.requests.push(request)
-        return (async function* generate(): AsyncGenerator<ChatStreamChunk> {
+        return (async function* generate(): AsyncGenerator<AiStreamChunk> {
             // 先让出一次微任务，贴近真实流的异步节奏
             await Promise.resolve()
             yield { content: '回答', reasoning: '', usage: undefined }
         })()
     },
-}))
+}
+
+vi.mock('../modules/ai/client', () => ({ FIRST_TOKEN_TIMEOUT_MS: 30_000 }))
 
 let db: Database.Database
 let service: AiChatService
@@ -81,7 +84,7 @@ async function sendAndWait(content: string): Promise<{ skippedContexts: string[]
 }
 
 /** 取最近一次流式请求的消息数组 */
-function latestMessages(): ChatMessage[] {
+function latestMessages(): AiChatMessage[] {
     const request = captured.requests[captured.requests.length - 1]
     return request?.messages ?? []
 }
@@ -96,7 +99,11 @@ beforeAll(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zhai-chat-service-'))
     db = openAiDatabase(createUri(tempDir))
     ensureAiSchema(db)
-    service = new AiChatService(db, new SecretsService(createSecretStorage({ [API_KEY_STORAGE_KEY]: 'sk-test' })))
+    service = new AiChatService(
+        db,
+        new SecretsService(createSecretStorage({ [API_KEY_STORAGE_KEY]: 'sk-test' })),
+        fakeProvider,
+    )
     conversationId = service.getOrCreateSession().conversation.id
 })
 

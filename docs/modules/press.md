@@ -1,8 +1,8 @@
 # Press（小说写作）— 模块设计文档
 
-**版本**：2.0
-**日期**：2026-09-04
-**状态**：草案
+**版本**：2.1
+**日期**：2026-10-22
+**状态**：草案；第 5.1 节新增生图双通道（CodeBuddy `ImageGen` 优先、直连兜底）选型，代码改造待实施
 **宿主**：VSCode 插件 Zhai（宅桌面）
 **合并说明**：由 `docs/modules/writing.md`（插件形态）与旧 `docs/modules/press.md`（宅桌面 Web 方案）合并统一为单一小说写作模块；技术形态以插件形态为准（Markdown 主存储 + SQLite 仅缓存索引），旧 Web 方案的 Express/Prisma/localStorage 技术栈不再沿用。
 **存储根**：`{storage.rootPath}/press/`（根目录配置见 `common.md` 第 1 节）
@@ -190,8 +190,31 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 | 导出 EPUB | `epub-gen` / 手写 OPF | **epub-gen** | 封装完整，支持章节与封面；按 `Chapter/` 顺序拼接 |
 | 导出 PDF | HTML → 打印 / `puppeteer-core` | **HTML → 系统打印** | 避免内联浏览器依赖；若需自动化，puppeteer-core **保持沙箱开启** |
 | 番茄钟 | 定时器 + 状态栏 | **状态栏 + 通知** | 轻量，计时结束自动保存当前章节 |
+| 生图通道 | 直连 OpenAI 兼容端点 / CodeBuddy `ImageGen` | **CodeBuddy 优先，直连兜底** | 走 CodeBuddy 订阅额度；能力缺失时自动回退，运行失败仅提示后由用户决定是否重试 |
 
 > **弃用规避**：不使用 `fs.renameSync` 等同步 API 处理排序重命名（改用 `fs.promises.rename` 并依赖 `onWillRenameFiles` 事件同步链接）；不使用已废弃的 `epub-gen` 回调式旧 API（使用 Promise 版本）。
+
+### 5.1 图像生成通道（角色设定图）
+
+文本类能力走 `AiProvider`（见 `ai-chat.md` 第 5 节），图像类单独走 `ImageProvider`，两者不合并：按张计费与按 token 计费的成本结构、失败模式、配置来源都不同，合并会让额度护栏失效。
+
+| 关注点 | 结论 |
+|--------|------|
+| 两个实现 | `codebuddyImageProvider`（SDK `query()` + CLI 内置 `ImageGen` 工具）/ `openaiImageProvider`（直连 OpenAI 兼容 `/images/generations`，即当前实现） |
+| 选择开关 | 新增 `zhai.image.provider`：`auto`（默认，CodeBuddy 优先）/ `codebuddy` / `openai` |
+| 能力探测 | CLI 路径可发现 → `codebuddy --version` ≥ 2.39.0（`ImageGen` 引入版本）→ 一次 `maxTurns: 1` 的空查询读 `system` 消息的 `tools`，确认含 `ImageGen`；结果缓存 10 分钟，配置变更或生图失败时失效 |
+| 能力缺失回退 | 自动切直连通道，并在面板说明原因 |
+| 生成失败 | **不自动回退**：仅提示失败原因，由用户点「改用直连服务重试」 |
+| 工具权限 | `allowedTools: ['ImageGen']`、`maxTurns: 1`；`canUseTool` 对 `ImageGen` 自动放行（由用户点击触发生成，非模型自主行为） |
+| 超时 | 直连通道沿用 `zhai.image.timeoutSeconds`（默认 300s）；CodeBuddy 通道独立上限 600s（子进程启动 + 排队） |
+| 产物归一 | 适配层依次尝试临时文件路径 → URL 下载 → base64 解码，统一交给 `portraitService` 落盘 |
+| 画风与尺寸 | 沿用 `PORTRAIT_STYLES` 与 `zhai.image.size`；CodeBuddy 侧的传参方式（自然语言描述 / 工具入参）待实测，未定前双写 |
+| 文生图模型 | 新增 `zhai.image.codebuddyModel`，对应 CLI 的 `--text-to-image-model` / `textToImageModel` |
+| 频率护栏 | `zhai.image.dailyLimit` 按通道分别计数，避免回退后额度翻倍 |
+
+> **为什么生成失败不自动回退**：出图单次耗时数分钟且按张计费，静默回退会连扣两次、产出两张图；文本通道失败回退成本低，可自动降级，图像通道必须由用户确认。
+>
+> **文本提示词与出图分离**：`portraitPrompt.ts` 仍用本地规则模板拼英文提示词，不引入额外模型调用；若后续启用「AI 生成提示词」，须作为独立开关并提供模板兜底。
 
 ---
 

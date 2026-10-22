@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
-import { FIRST_TOKEN_TIMEOUT_MS, streamChat } from './client'
+import { FIRST_TOKEN_TIMEOUT_MS } from './client'
 import {
     buildContextBlock,
     describeContextRefs,
@@ -35,6 +35,7 @@ import {
 import type { ChatMessage, ChatUsage } from './client'
 import type { HostContextRef, ResolvedContextRef } from './contextRefs'
 import type { ConversationRow, MessageRow } from './db/chatRepository'
+import type { AiProvider } from './provider'
 import type {
     AiApplyResult,
     AiChatDraft,
@@ -120,6 +121,7 @@ export class AiChatService implements vscode.Disposable {
     public constructor(
         private readonly db: Database.Database,
         private readonly secrets: SecretsService,
+        private readonly provider: AiProvider,
     ) {}
 
     /** 运行时信息：密钥状态、模型参数与当日用量 */
@@ -464,7 +466,6 @@ export class AiChatService implements vscode.Disposable {
             conversationId,
             input,
             contextBlock,
-            apiKey,
             cfg,
             writeTarget,
             applyPolicy,
@@ -502,7 +503,6 @@ export class AiChatService implements vscode.Disposable {
         conversationId: string,
         input: string,
         contextBlock: string,
-        apiKey: string,
         cfg: ZhaiConfig,
         writeTarget: HostWriteTarget | null,
         applyPolicy: 'replace' | 'report',
@@ -538,8 +538,7 @@ export class AiChatService implements vscode.Disposable {
 
         try {
             const messages = await this.buildChatMessages(conversationId, userMessageId, input, contextBlock)
-            const stream = streamChat({
-                apiKey,
+            const stream = this.provider.stream({
                 model: cfg.aiModel,
                 temperature: cfg.aiTemperature,
                 maxTokens: MAX_COMPLETION_TOKENS,

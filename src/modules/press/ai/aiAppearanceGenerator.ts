@@ -1,13 +1,12 @@
 /**
- * 人物外貌生成执行器：调用 DeepSeek 流式接口完成一次性生成，把增量聚合为完整正文。
- * 复用约定：底层复用 ../../ai/client 的 streamChat（OpenAI 兼容协议），密钥与模型由调用方注入；
+ * 人物外貌生成执行器：经 AI 通道完成一次性生成，把增量聚合为完整正文。
+ * 复用约定：通道实例由服务层注入（../../ai/provider），本层不感知具体厂商，也不读取凭证；
  * 取消走 AbortController，外部 signal（press/aiAppearance/abort）与内部超时都会中止请求。
  * 关键约束：本函数不做提示词清洗与落库，只负责取回正文与用量；抛出的错误由服务层转为可读提示。
  */
 import { buildAppearanceMessages } from './appearancePrompt'
 import type { CharacterAppearanceRequest } from '../../../shared/types/press'
-import type { ChatUsage } from '../../ai/client'
-import { streamChat } from '../../ai/client'
+import type { AiUsage, AiProvider } from '../../ai/provider'
 
 /** 单次生成整体超时：一段白描通常 3~8s，留出充足余量 */
 const AI_REQUEST_TIMEOUT_MS = 60_000
@@ -17,7 +16,7 @@ const AI_TEMPERATURE = 0.9
 const AI_MAX_TOKENS = 500
 
 export interface AiAppearanceGenerateOptions {
-    apiKey: string
+    provider: AiProvider
     model: string
     request: CharacterAppearanceRequest
     /** 外部取消信号（press/aiAppearance/abort） */
@@ -26,7 +25,7 @@ export interface AiAppearanceGenerateOptions {
 
 export interface AiAppearanceGenerateResult {
     content: string
-    usage: ChatUsage | null
+    usage: AiUsage | null
 }
 
 /** 执行一次人物外貌生成，返回原始正文与用量 */
@@ -44,10 +43,9 @@ export async function generateAppearanceWithAi(
         }
     }
     let content = ''
-    let usage: ChatUsage | null = null
+    let usage: AiUsage | null = null
     try {
-        const stream = streamChat({
-            apiKey: options.apiKey,
+        const stream = options.provider.stream({
             model: options.model,
             temperature: AI_TEMPERATURE,
             maxTokens: AI_MAX_TOKENS,

@@ -1,13 +1,12 @@
 /**
- * AI 取名执行器：调用 DeepSeek 流式接口完成一次性生成，把增量聚合为完整正文后交给提示词层校验。
- * 复用约定：底层复用 ../ai/client 的 streamChat（OpenAI 兼容协议），密钥与模型由调用方注入；
+ * AI 取名执行器：经 AI 通道完成一次性生成，把增量聚合为完整正文后交给提示词层校验。
+ * 复用约定：通道实例由服务层注入（../../ai/provider），本层不感知具体厂商，也不读取凭证；
  * 取消走 AbortController，外部 signal（naming/abort）与内部超时都会中止请求。
  * 关键约束：本函数不做结果校验与落库，只负责取回正文与用量；抛出的错误由服务层转为可读提示。
  */
 import { buildNamingMessages } from './namingPrompt'
 import type { NamingRequest } from '../../../shared/types/naming'
-import type { ChatUsage } from '../../ai/client'
-import { streamChat } from '../../ai/client'
+import type { AiUsage, AiProvider } from '../../ai/provider'
 
 /** 单次生成整体超时：批量 24~48 个名字通常 5~15s，留出充足余量 */
 const AI_REQUEST_TIMEOUT_MS = 60_000
@@ -17,7 +16,7 @@ const AI_TEMPERATURE = 1.1
 const AI_MAX_TOKENS = 900
 
 export interface AiNameGenerateOptions {
-    apiKey: string
+    provider: AiProvider
     model: string
     request: NamingRequest
     /** 外部取消信号（naming/abort） */
@@ -26,7 +25,7 @@ export interface AiNameGenerateOptions {
 
 export interface AiNameGenerateResult {
     content: string
-    usage: ChatUsage | null
+    usage: AiUsage | null
 }
 
 /** 执行一次 AI 取名请求，返回原始正文与用量 */
@@ -42,10 +41,9 @@ export async function generateNamesWithAi(options: AiNameGenerateOptions): Promi
         }
     }
     let content = ''
-    let usage: ChatUsage | null = null
+    let usage: AiUsage | null = null
     try {
-        const stream = streamChat({
-            apiKey: options.apiKey,
+        const stream = options.provider.stream({
             model: options.model,
             temperature: AI_TEMPERATURE,
             maxTokens: AI_MAX_TOKENS,

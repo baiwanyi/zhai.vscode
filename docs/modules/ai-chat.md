@@ -1,8 +1,8 @@
 # AI Chat — 模块设计文档
 
-**版本**：1.3
-**日期**：2026-10-19
-**状态**：对话模式、编辑器右键上下文（10.1）、会话历史（10.2）与写作模式写回（10.3）已落地；diff 逐段接受待实现
+**版本**：1.4
+**日期**：2026-10-22
+**状态**：对话模式、编辑器右键上下文（10.1）、会话历史（10.2）与写作模式写回（10.3）已落地；diff 逐段接受待实现；第 5 节已按双 provider（DeepSeek 直连 + CodeBuddy Agent SDK）更新，代码改造待实施
 **宿主**：VSCode 插件 Zhai（宅桌面）
 
 ---
@@ -26,9 +26,9 @@ AI Chat 是插件的**智能交互中枢**，同时服务于两类需求：
 
 ### 1.3 非目标
 
-- 不做多模型网关/路由（只接 DeepSeek 及 OpenAI 兼容端点）
-- 不让 AI 自主执行文件写操作（除用户在 diff 视图显式接受外）
-- 不提供联网搜索 Agent（仅使用用户 `@` 显式提供的上下文）
+- 不做通用多模型网关：只维护 DeepSeek 直连与 CodeBuddy 两条通道，不提供任意厂商插拔
+- 不让 AI 直接写文件：CodeBuddy 通道禁用写类工具，内容写回仍走 `WorkspaceEdit` 并由用户确认
+- 不默认开启联网搜索：CodeBuddy 通道默认只放行只读文件工具，联网类工具需用户显式开启
 
 ---
 
@@ -131,10 +131,51 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 ## 5. 关键技术选型
 
+### 5.1 模型接入（双 provider）
+
+面板对话、编辑器命令、取名与外貌生成共用同一套接入层：`AiProvider` 接口 + 两个实现（`deepseek` / `codebuddy`）。业务层只依赖接口，不认具体厂商，切换通道只替换实现。
+
 | 关注点 | 候选方案 | 结论 | 理由 |
 |--------|----------|------|------|
-| SDK | `openai` SDK（配置 DeepSeek `baseURL`） / 原生 `fetch` 手写 SSE | **openai SDK** | 成熟处理流式分帧、重试与错误类型；DeepSeek 兼容 OpenAI 协议 |
-| 流式取消 | `AbortController` / 仅前端忽略 | **AbortController** | 真正中断连接，避免继续计费 |
+| 接入方式 | 直连 REST chat 接口 / CodeBuddy Agent SDK / 自行 spawn CLI | **CodeBuddy Agent SDK**（`@tencent-ai/agent-sdk`） | SDK 是 CLI 的官方编程封装，已处理子进程生命周期、消息流分帧、权限回调与中断；自行 spawn 等于重做一遍协议且要跟版本 |
+| 分层 | 各模块直连 / provider 抽象 | **provider 抽象** | 会话服务、取名、外貌三处调用点统一改为注入 provider，避免每接一个通道改三处 |
+| 默认通道 | 仅 DeepSeek / 仅 CodeBuddy | **CodeBuddy 优先，DeepSeek 保留** | 面板与一次性生成走 CodeBuddy 订阅额度与 Agent 能力；无 CLI 或未登录环境回落 DeepSeek |
+| 降级策略 | 静默降级 / 显式提示 | **显式提示** | 两侧计费来源不同，静默切换会让用户无法判断消耗归属；自动降级须由设置项显式开启 |
+| 会话归属 | 跨通道共用 / 会话锁定通道 | **会话锁定** | CodeBuddy 用会话 `resume` 续接，DeepSeek 用本地拼历史，中途混用会重复或丢失上下文 |
+| 中断 | `AbortController` / SDK `interrupt()` | **按通道区分** | DeepSeek 断开 HTTP 连接；CodeBuddy 调 SDK 中断接口，并在生成器收尾处兜底 |
+| 鉴权 | 写入 `process.env` / 经 `options.env` 注入 | **SecretsService → `options.env`** | 不污染宿主环境变量，避免凭证泄漏给同进程的其它扩展 |
+| 权限 | `bypassPermissions` / `canUseTool` 回调 | **canUseTool** | 通道具备读写工作区能力，写类工具必须经用户确认 |
+| 首字超时 | 全局统一 / 按通道配置 | **按通道配置** | 子进程启动与鉴权比直连慢，CodeBuddy 通道首字上限放宽到 60s |
+| 版本约束 | 浮动版本 / 精确锁定 | **精确锁定、成对升级** | SDK 处于 Preview 阶段，且 SDK 与 CLI 同日发版，跨代存在协议不兼容风险 |
+
+### 5.2 CodeBuddy CLI 的分发
+
+SDK 只是 CLI 的编程式外壳，运行时必须能找到 CLI 可执行文件（自动查找，或用 `CODEBUDDY_CODE_PATH` 指定）。
+
+| 事实 | 数据 |
+|------|------|
+| `@tencent-ai/agent-sdk` | 无 `bin` 字段，**不含 CLI 二进制**；解包约 171 MB / 3454 个文件 |
+| `@tencent-ai/codebuddy-code`（CLI） | 独立 npm 包；解包约 200 MB / 3369 个文件；按平台拆分 `node-pty`、`sandbox-cli` 等原生可选依赖，缺 `win32-arm64` 组合 |
+| 许可证 | CLI 为 `SEE LICENSE IN README.md`（非 SPDX 标准标识），重新分发前须确认授权条款 |
+
+| 方案 | 做法 | 结论 |
+|------|------|------|
+| 检测 + 引导 | 不打包 CLI；启动时依次探测 `zhai.ai.codebuddyPath`、`CODEBUDDY_CODE_PATH`、PATH 上的 `codebuddy`，缺失则提示安装并回落 DeepSeek | **采用**：体积零增加，无再分发授权风险 |
+| 捆绑进 vsix | CLI 加入 `dependencies`，去掉 `--no-dependencies`，用 `CODEBUDDY_CODE_PATH` 指向包内入口 | **不采用**：vsix 膨胀至百兆级，与 CLI 自带更新机制冲突，且需再分发授权 |
+| 运行时安装 | 首启用 `npm install` 装到 `globalStorage` | **不采用**：静默联网装包，企业环境不可接受 |
+
+### 5.3 各入口的会话与工具策略
+
+| 入口 | 会话 | 工具 | 说明 |
+|------|------|------|------|
+| 面板 · 对话模式 | 有状态，`resume` 续接通道会话 | 只读工具在工作目录内自动放行，写类工具确认 | 工作目录取 `zhai.storage.rootPath`，不是 IDE 工作区根 |
+| 面板 · 写作模式 | **无状态单次**，不续接 | 禁用工具，`maxTurns: 1` | 避免上一轮改写语境污染本次；也避免模型只看到截断内容却覆盖全文 |
+| 取名 / 外貌生成 | 无状态单次 | 禁用工具，`maxTurns: 1` | 一次性文本任务不需要 Agent 循环，放开工具会拖慢并引入不可控的读文件行为 |
+
+### 5.4 通用技术选型
+
+| 关注点 | 候选方案 | 结论 | 理由 |
+|--------|----------|------|------|
 | 文件写入 | `WorkspaceEdit` / `fs.writeFile` | **WorkspaceEdit** | 写入进入 VSCode Undo 栈，用户 `Ctrl+Z` 可回退，且能处理并发编辑 |
 | diff 呈现 | Webview 内联 diff / `vscode.diff` 原生对比 | **两者结合** | 常规改稿用内联逐段接受；大范围改写提供「在对比编辑器中查看」 |
 | diff 算法 | `diff`（jsdiff）/ 自研 LCS | **diff** | 支持行级与词级，体积小，维护活跃 |
@@ -143,7 +184,7 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 | UI 状态管理 | `useReducer` / `useEffect + useState` | **useReducer** | 流式消息是多步状态机，reducer 更可控且避免竞态 |
 | 数据缓存 | TanStack Query / 自建 | **自建轻量缓存** | AI 流式不适合 Query；仅会话列表等普通数据用 Query |
 
-> **弃用规避**：不使用 SDK 中已废弃的 `Configuration` 构造方式（改用 `new OpenAI({ apiKey, baseURL })`）；不使用 `AbortSignal.timeout` 之外的定时器自杀式取消。
+> **弃用规避**：不使用 openai SDK 中已废弃的 `Configuration` 构造方式（改用 `new OpenAI({ apiKey, baseURL })`）；不使用 `AbortSignal.timeout` 之外的定时器自杀式取消。
 
 ---
 

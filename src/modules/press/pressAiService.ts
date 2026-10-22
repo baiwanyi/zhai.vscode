@@ -1,6 +1,6 @@
 /**
  * 写作管理 AI 服务：校验密钥与每日配额后执行一次性生成，当前承载人物外貌。
- * 复用约定：模型通道复用 ./ai/aiAppearanceGenerator（底层 streamChat），提示词与清洗复用 ./ai/appearancePrompt；
+ * 复用约定：模型通道经注入的 AI 通道（../ai/provider）驱动 ./ai/aiAppearanceGenerator，提示词与清洗复用 ./ai/appearancePrompt；
  * 配额经 ./db/quotaRepository 落在 press.db 的 meta 表，与角色设定图各用一组键。
  * 关键约束：入参一律先经 normalizeAppearanceRequest 收窄（长度、条数、类型），拒绝异常载荷直连模型；
  * 同一时刻只允许一个生成请求，取消由 pressAi/aiAppearance/abort 触发；限额小于等于 0 视为不限制。
@@ -10,6 +10,7 @@ import { sanitizeAppearance } from './ai/appearancePrompt'
 import { consumeToday, readUsedToday } from './db/quotaRepository'
 import type { QuotaKeys } from './db/quotaRepository'
 import type { CharacterAppearanceRequest, CharacterAppearanceResult } from '../../shared/types/press'
+import type { AiProvider } from '../ai/provider'
 import type { SecretsService } from '../common/secrets'
 import type Database from 'better-sqlite3'
 import { getZhaiConfig } from '../common/config'
@@ -34,6 +35,7 @@ export class PressAiService {
     public constructor(
         private readonly db: Database.Database,
         private readonly secrets: SecretsService,
+        private readonly provider: AiProvider,
     ) {}
 
     /**
@@ -54,7 +56,7 @@ export class PressAiService {
         this.activeRequest = controller
         try {
             const result = await generateAppearanceWithAi({
-                apiKey,
+                provider: this.provider,
                 model: getZhaiConfig().aiModel,
                 request,
                 signal: controller.signal,

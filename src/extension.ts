@@ -8,6 +8,7 @@ import { AiChatService } from './modules/ai/chatService'
 import { registerAiCommands } from './modules/ai/commands'
 import { openAiDatabase } from './modules/ai/db/connection'
 import { ensureAiSchema } from './modules/ai/db/schema'
+import { createAiProvider } from './modules/ai/providerRegistry'
 import { WorkflowRouter } from './modules/ai/workflowRouter'
 import { registerCommands } from './modules/common/commands'
 import { getZhaiConfig, resolveCacheRoot } from './modules/common/config'
@@ -68,7 +69,9 @@ export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push({ dispose: () => aiDb.close() })
     ensureAiSchema(aiDb)
 
-    const aiChatService = new AiChatService(aiDb, secrets)
+    // AI 通道全扩展共用一份，后续接入 CodeBuddy 时在此按配置切换
+    const aiProvider = createAiProvider(secrets)
+    const aiChatService = new AiChatService(aiDb, secrets, aiProvider)
     context.subscriptions.push(aiChatService)
 
     // 工作流路由：汇聚活跃编辑器场景与入口跳转意图，供工作流面板按模块类型换页
@@ -81,13 +84,13 @@ export function activate(context: vscode.ExtensionContext): void {
     const namingDb = openNamingDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => namingDb.close() })
     ensureNamingSchema(namingDb)
-    const namingService = new NamingService(namingDb, secrets)
+    const namingService = new NamingService(namingDb, secrets, aiProvider)
     const namingRoutes = new NamingRoutes(namingService)
 
     // 写作管理：press.db 只承载 AI 配额等轻量状态，人物卡内容仍留在 webview 草稿中
     const pressDb = openPressDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => pressDb.close() })
-    const pressAiService = new PressAiService(pressDb, secrets)
+    const pressAiService = new PressAiService(pressDb, secrets, aiProvider)
     const portraitService = new PortraitService(pressDb, secrets)
     const pressRoutes = new PressRoutes(pressAiService, portraitService)
 

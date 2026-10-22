@@ -1,6 +1,6 @@
 /**
  * 取名服务：组装选项摘要、执行本地 / AI 生成、维护历史批次与收藏，供 naming/* 协议调用。
- * 复用约定：词素表来自 ./data，生成算法来自 ./generator，AI 通道经 ./ai 复用对话客户端；
+ * 复用约定：词素表来自 ./data，生成算法来自 ./generator，AI 通道由扩展入口注入（../ai/provider）；
  * 历史与收藏经 ./db 仓储落 naming.db，AI 每日次数记在 meta 表；生成前读取近期同分类结果作为排除集合。
  * 关键约束：入参一律经 normalizeNamingRequest 收窄；历史只存条件快照与结果数组，不存提示词与密钥；
  * AI 结果必须经 namingPrompt 校验，不合规时整体回退报错；批次总量按 HISTORY_LIMIT 裁剪。
@@ -44,6 +44,7 @@ import type {
     NamingHistoryEntry,
     NamingRequest,
 } from '../../shared/types/naming'
+import type { AiProvider } from '../ai/provider'
 import type { SecretsService } from '../common/secrets'
 import type Database from 'better-sqlite3'
 import { getZhaiConfig } from '../common/config'
@@ -68,6 +69,7 @@ export class NamingService {
     public constructor(
         private readonly db: Database.Database,
         private readonly secrets: SecretsService,
+        private readonly provider: AiProvider,
     ) {}
 
     /** 选项摘要：分类、枚举、后缀候选、姓氏抽样与 AI 可用性 */
@@ -125,7 +127,7 @@ export class NamingService {
         this.activeAiRequest = controller
         try {
             const result = await generateNamesWithAi({
-                apiKey,
+                provider: this.provider,
                 model: getZhaiConfig().aiModel,
                 request,
                 signal: controller.signal,
