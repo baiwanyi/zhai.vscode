@@ -176,7 +176,11 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 切换站点后必须重新登录，旧站点凭证不会复用；专享版/私有化（需自定义 `endpoint`）不在开放范围内。
 
-**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModels()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活）。选择入口为 AI 面板底部输入卡片的模型菜单（`ai/models` / `ai/selectModel`），选中值写入 `globalState` 的 `ai.codebuddyModel` —— 对话、取名、外貌生成与出图驱动共用这一项。清单里的项可直接选，也支持「手动输入模型 id」以使用账号可用的自定义模型。通道下发前经 `resolveCodebuddyModel` 归一：空值交给 CLI 默认，非空一律透传，id 是否有效由服务端裁决。
+**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModelsRaw()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活；完整清单不可用时退回 `getAvailableModels()` 的简化清单）。选择入口为 AI 面板底部输入卡片的模型菜单（`ai/models` / `ai/selectModel`），选中值写入 `globalState` 的 `ai.codebuddyModel` —— 对话、取名、外貌生成与出图驱动共用这一项。清单里的项可直接选，也支持「手动输入模型 id」以使用账号可用的自定义模型。通道下发前经 `resolveCodebuddyModel` 归一：空值交给 CLI 默认，非空一律透传，id 是否有效由服务端裁决。
+
+**额度倍率（成本消耗速率）**：完整模型清单里每个模型带服务端下发的 `credits` 文本，形如 `x0.51 credits`（个别模型为 `x1.62`，自定义模型为 `null`）。`codebuddyModels.ts` 的 `parseCreditRate` 从中取出数值，作为该模型每次调用的额度消耗系数，随 `AiModelOption.creditRate` 下发给菜单，在模型项右侧以 `0.51x` 展示；解析不出数值时记 `null` 表示未知，不得回退为 0（`x0.00` 是合法的零倍率）。该值只是相对倍率，平台未通过 SDK 下发绝对价格或额度余额，因此 `ai_usage_logs.estimated_cost` 仍不填数值。
+
+**菜单分组与 Auto**：列表按来源分为「内置模型」与「自定义模型」两组，内置组首项为 `Auto`，与「空模型 id」一一对应——选中即写入空 id（`resolveCodebuddyModel` 归一为 `undefined`，交给平台自动选择）。分组判定见 `isCustomModel`：id 带 `custom-local:` 前缀、`vendor` 为 `user`、`tags` 含 `custom` 三者任一命中即为自定义（实测这些字段可能单独缺失，只认一个会分组错位）。菜单不提供手动输入入口，模型 id 只能来自清单。
 
 **文生图模型**：`ImageGen` 的模型由 CLI 的 `ImageService.resolveModel` 决定，顺序为「会话下发的 `--text-to-image-model` → 环境变量 `CODEBUDDY_TEXT_TO_IMAGE_MODEL` → CLI settings 的 `textToImageModel` → 站点配置中 tags 含 `text-to-image` 的首个模型 → 兜底 `hunyuan-image-v3.0`」。该清单来自服务端产品配置，SDK 的 `getAvailableModels` / `getAvailableModelsRaw` 只返回语言模型（实测 22 个均无 `text-to-image` 标签），且斜杠命令在 headless 会话中不会被执行，故插件不下发 `--text-to-image-model`、也不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，选择会存进 CLI settings 并被 ImageGen 沿用。
 
@@ -397,9 +401,9 @@ interface AbortRequest {
 | `ai/sessions` | Webview → 宿主 | 历史会话列表（`AiConversationSummary[]`，按最后活跃倒序） |
 | `ai/switchSession` | Webview → 宿主 | 切换到指定会话，返回含 `contexts` 的会话快照 |
 | `ai/deleteSession` | Webview → 宿主 | 删除会话及其消息（外键级联），返回 `{ deleted: boolean }` |
-| `ai/runtime` | Webview → 宿主 | 密钥状态（含脱敏 Key）、模型参数与当日用量 |
-| `ai/models` | Webview → 宿主 | 模型菜单数据 `AiModelChoices`（当前模型 id + 账号可用清单）；读激活时预热的缓存，缓存为空才现拉 |
-| `ai/selectModel` | Webview → 宿主 | 选择模型（`modelId` + `manual`）：写入 globalState 并广播 `runtime` 变更；`manual` 时由宿主弹出输入框，空 id 表示默认模型 |
+| `ai/runtime` | Webview → 宿主 | 密钥状态（含脱敏 Key）、模型参数与当日用量；`model` 为当前模型 id，`modelName` 为按激活时预热清单解析出的展示名（未命中为空串），供面板初始化即显示模型名而不必等待 `ai/models` |
+| `ai/models` | Webview → 宿主 | 模型菜单数据 `AiModelChoices`（当前模型 id + 账号可用清单，每项含 `credits` 原文与解析后的 `creditRate` 额度倍率）；读激活时预热的缓存，缓存为空才现拉 |
+| `ai/selectModel` | Webview → 宿主 | 选择模型（`modelId` + `manual`）：写入 globalState 并广播 `runtime` 变更；空 id 表示 Auto（交给平台自动选择）。`manual` 通道保留但菜单已无对应入口 |
 | `ai/send` | Webview → 宿主 | 落库用户消息与占位助手消息，随后流式回传正文；`titleHint` 为命令名称等展示用短标题，仅用于会话命名 |
 | `ai/draft` | Webview → 宿主 | 保存未发送的输入正文与命令 id（内存、按会话隔离），视图重建后随会话快照的 `draft` 恢复 |
 | `ai/abort` | Webview → 宿主 | 取消当前生成 |
@@ -453,7 +457,7 @@ interface AbortRequest {
 | 工具行左 | 命令 (`Command` 图标) | 下拉四项：改写 / 润色 / 校对 / 去 AI 味，选中项带勾选；选中后输入区顶部显示命令徽章（可点 × 或再次点击取消），指令模板不进入输入框 |
 | 工具行右 | 参考 (`BookOpen` 图标) | 下拉四项：古诗词 / 名言名句 / 经典文本 / 历史资料；当前为占位，点击仅提示「即将上线」，不发起任何请求 |
 | 操作行左 | 模式按钮 | 对话 / 写作两态切换，写 `conversations.mode` 持久化；生成中禁用 |
-| 操作行左 | 模型菜单 | 按钮展示当前模型名（空选择显示「默认模型」）；展开时经 `ai/models` 取账号可用清单（激活时已预热，缓存为空才现拉），可选默认模型、清单项或「手动输入模型 id…」；选中写入 globalState 并广播 `runtime` 刷新；生成中禁用 |
+| 操作行左 | 模型菜单 | 按钮完整展示当前模型名、不截断（空选择显示「Auto」，正文前景色，悬浮提示附带额度倍率）；模型名优先取菜单清单，初始化阶段清单未拉取时用 `ai/runtime` 的 `modelName` 兜底，避免闪出裸 id；展开时经 `ai/models` 取账号可用清单（激活时已预热，缓存为空才现拉）：内置组首项为 `Auto`，其后按「内置模型 / 自定义模型」两组列出，两组均按名称字母序排列，每项右侧依次为勾选与额度倍率 `✓ 0.51x`（倍率未知时只显示勾选）；选中写入 globalState 并广播 `runtime` 刷新；生成中禁用 |
 | 操作行右 | Token 圆环 | 当日已用 / 预算的环形占比（<70% 主色、70~90% 警示、≥90% destructive），点开浮层看已用 / 预算 / 剩余，每日 0 点重置 |
 | 操作行右 | 增强提示词 | 本地规则化补齐「任务 / 要求」三段式，再次点击还原原文，不消耗 Token |
 | 操作行右 | 发送 / 停止 | 生成中替换为停止；写作模式无可改写目标时发送禁用 |

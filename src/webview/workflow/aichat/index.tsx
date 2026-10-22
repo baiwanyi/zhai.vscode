@@ -161,6 +161,8 @@ export function AiChat(): JSX.Element {
     const command = commandId === null ? null : AI_COMMAND_MAP[commandId]
     /** 当前模型：菜单展开过时以菜单数据为准，否则用运行时带回的模型 id 兜底 */
     const currentModel = modelChoices?.current ?? runtime?.model ?? ''
+    /** 当前模型展示名：初始化阶段菜单清单尚未拉取，先用运行时带回的名称，避免闪出模型 id */
+    const currentModelName = runtime?.modelName ?? ''
 
     /** 命令点击：只记录选择（再次点击取消），指令模板不写入输入框 */
     const handleCommand = useCallback((next: AiCommand): void => {
@@ -284,6 +286,7 @@ export function AiChat(): JSX.Element {
                 hint={hint}
                 command={command}
                 model={currentModel}
+                modelName={currentModelName}
                 modelChoices={modelChoices}
                 isLoadingModels={isLoadingModels}
                 onSend={handleSend}

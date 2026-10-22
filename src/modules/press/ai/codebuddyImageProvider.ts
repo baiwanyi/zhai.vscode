@@ -92,7 +92,7 @@ function toReadableError(error: unknown, model?: string): Error {
     if (/service info not found|supported models for your account/i.test(message)) {
         const label = model !== undefined && model.length > 0 ? `「${model}」` : '当前模型'
         return new Error(
-            `CodeBuddy 模型不可用：${label}不在当前账号的可用列表，请执行「宅写作：选择 CodeBuddy 模型」重新选择（或留空使用默认模型）`,
+            `CodeBuddy 模型不可用：${label}不在当前账号的可用列表，请在 AI 面板的模型菜单中重新选择（或打开「自动」）`,
             { cause: error },
         )
     }

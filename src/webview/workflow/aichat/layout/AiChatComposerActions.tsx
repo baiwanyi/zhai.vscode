@@ -23,6 +23,8 @@ interface AiChatComposerActionsProps {
     dailyTokenBudget: number
     /** 当前模型 id，空表示使用 CLI 默认模型 */
     model: string
+    /** 当前模型展示名：清单未拉取时由运行时提供，空串表示未知 */
+    modelName: string
     /** 模型菜单数据：未展开过时为 null */
     modelChoices: AiModelChoices | null
     isLoadingModels: boolean
@@ -44,6 +46,7 @@ export function AiChatComposerActions({
     usedTokens,
     dailyTokenBudget,
     model,
+    modelName,
     modelChoices,
     isLoadingModels,
     onModeChange,
@@ -60,6 +63,7 @@ export function AiChatComposerActions({
                 <AiChatModeSwitch mode={mode} disabled={isGenerating} onChange={onModeChange} />
                 <AiChatModelMenu
                     current={model}
+                    currentName={modelName}
                     choices={modelChoices}
                     isLoading={isLoadingModels}
                     disabled={isGenerating}

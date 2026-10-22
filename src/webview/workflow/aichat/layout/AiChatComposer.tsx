@@ -27,6 +27,8 @@ interface AiChatComposerProps {
     hint: string | null
     /** 当前模型 id，空表示使用 CLI 默认模型 */
     model: string
+    /** 当前模型展示名：清单未拉取时由运行时提供，空串表示未知 */
+    modelName: string
     /** 模型菜单数据：未展开过时为 null */
     modelChoices: AiModelChoices | null
     isLoadingModels: boolean
@@ -58,6 +60,7 @@ export function AiChatComposer({
     notice,
     hint,
     model,
+    modelName,
     modelChoices,
     isLoadingModels,
     command,
@@ -85,6 +88,7 @@ export function AiChatComposer({
                 dailyTokenBudget={dailyTokenBudget}
                 hasWriteTarget={hasWriteTarget}
                 model={model}
+                modelName={modelName}
                 modelChoices={modelChoices}
                 isLoadingModels={isLoadingModels}
                 command={command}

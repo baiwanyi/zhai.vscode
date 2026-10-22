@@ -32,7 +32,7 @@ import {
     updateConversationTitle,
     updateMessage,
 } from './db/chatRepository'
-import { getSelectedCodebuddyModel } from './providers/codebuddyModels'
+import { getCachedCodebuddyModels, getSelectedCodebuddyModel } from './providers/codebuddyModels'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
 import type { HostContextRef, ResolvedContextRef } from './contextRefs'
 import type { ConversationRow, MessageRow } from './db/chatRepository'
@@ -129,11 +129,15 @@ export class AiChatService implements vscode.Disposable {
     public async getRuntimeInfo(): Promise<AiRuntimeInfo> {
         const cfg = getZhaiConfig()
         const status = await this.provider.checkReady()
+        const model = getSelectedCodebuddyModel()
+        // 面板初始化即需要展示模型名：清单尚未在 webview 侧拉取，只能取宿主激活时预热的缓存
+        const modelName = getCachedCodebuddyModels().find((item) => item.modelId === model)?.name ?? ''
         return {
             provider: this.provider.id,
             providerSite: CODEBUDDY_SITE_LABELS[cfg.aiCodebuddySite],
             hasApiKey: status.ready,
-            model: getSelectedCodebuddyModel(),
+            model,
+            modelName,
             maxContextTokens: cfg.aiMaxContextTokens,
             dailyTokenBudget: cfg.aiDailyTokenBudget,
             usedTokensToday: sumTokensSince(this.db, todayStartIso()),

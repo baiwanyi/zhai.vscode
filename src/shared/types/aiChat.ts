@@ -136,6 +136,8 @@ export interface AiRuntimeInfo {
     /** 通道是否就绪（登录态交由请求阶段判定，此值恒为 true） */
     hasApiKey: boolean
     model: string
+    /** 当前模型的展示名：取自激活时预热的清单，未命中或清单为空时为空串（前端退回展示 id） */
+    modelName: string
     maxContextTokens: number
     dailyTokenBudget: number
     /** 当日已消耗 token（预算护栏展示） */
@@ -148,6 +150,12 @@ export interface AiModelOption {
     modelId: string
     /** 展示名 */
     name: string
+    /** 平台下发的额度倍率原文（如 "x0.51 credits"）；自定义模型未上报时为 null */
+    credits: string | null
+    /** 解析后的额度倍率（每次调用消耗的 credits 系数），无法解析时为 null */
+    creditRate: number | null
+    /** 是否为用户自定义模型：菜单据此拆分为「内置模型」「自定义模型」两组 */
+    custom: boolean
 }
 
 /** 模型菜单数据：当前选择 + 账号可用清单（current 为空表示使用 CLI 默认模型） */

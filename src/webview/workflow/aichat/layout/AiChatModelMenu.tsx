@@ -1,10 +1,14 @@
 /**
  * AI 对话模型菜单：底部操作行展示当前模型，展开时才拉取账号可用清单。
- * 复用 @components/ui 的 DropdownMenu，把「默认模型」「清单项」「手动输入」合并为同一菜单。
- * 关键约束：清单拉取需拉起 CLI（数秒），加载中禁止重复选择；手动输入交给宿主输入框，本层只上抛 manual 标记；
- * 顶部展示立即使用运行时带回的模型 id，未匹配到清单项时退回展示 id 本身。
+ * 复用 @components/ui 的 DropdownMenu，把「Auto」「内置模型」「自定义模型」合并为同一菜单。
+ * 关键约束：清单拉取需拉起 CLI（数秒），加载中禁止重复选择；Auto 与「空模型 id」一一对应，
+ * 选中即交给平台自动选择模型；本层不提供手动输入，模型 id 只来自清单。
+ * 清单项右侧展示平台下发的额度倍率（每个模型的成本消耗速率），勾选位于倍率之前，倍率未知时不渲染；
+ * 两组清单均按展示名字母序排列（numeric 比较），Auto 固定在内置组首位；
+ * 触发器完整展示当前模型名、不截断，颜色取正文前景色而不是弱化色；
+ * 清单未拉取或未命中时用运行时带回的 currentName 兜底，避免初始化阶段闪出裸模型 id。
  */
-import { Check, ChevronDown, Cpu, Loader2, Pencil } from 'lucide-react'
+import { Check, ChevronDown, Cpu, Loader2, Sparkles, Wrench } from 'lucide-react'
 import { Button } from '@components/ui/button'
 import {
     DropdownMenu,
@@ -17,13 +21,27 @@ import {
 import type { AiModelChoices, AiModelOption } from '@shared/types/aiChat'
 import type { JSX } from 'react'
 
-/** 空模型 id 表示交给 CLI 选择默认模型 */
-const DEFAULT_MODEL_ID = ''
-const DEFAULT_MODEL_LABEL = '默认模型'
+/** 空模型 id 表示交给平台自动选择模型 */
+const AUTO_MODEL_ID = ''
+const AUTO_MODEL_LABEL = 'Auto'
+
+/** 额度倍率展示文本：未知返回 null，避免把「未知」渲染成零成本 */
+function toRateLabel(rate: number | null): string | null {
+    return rate === null ? null : `${rate.toFixed(2)}x`
+}
+
+/** 按展示名字母序排列：numeric 让 V4.1 排在 V4 之后，避免数字段被逐字符比较 */
+function sortByName(list: AiModelOption[]): AiModelOption[] {
+    return [...list].sort((left, right) =>
+        left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }),
+    )
+}
 
 interface AiChatModelMenuProps {
-    /** 当前模型 id，空表示使用默认模型 */
+    /** 当前模型 id，空表示使用自动模型 */
     current: string
+    /** 当前模型展示名（运行时提供）：清单未拉取或未命中时用于替代裸 id */
+    currentName: string
     /** 菜单数据：未展开过时为 null */
     choices: AiModelChoices | null
     isLoading: boolean
@@ -35,6 +53,7 @@ interface AiChatModelMenuProps {
 
 export function AiChatModelMenu({
     current,
+    currentName,
     choices,
     isLoading,
     disabled,
@@ -42,60 +61,86 @@ export function AiChatModelMenu({
     onSelect,
 }: AiChatModelMenuProps): JSX.Element {
     const options = choices?.options ?? []
+    const builtinOptions = sortByName(options.filter((option) => !option.custom))
+    const customOptions = sortByName(options.filter((option) => option.custom))
     const currentOption = options.find((option) => option.modelId === current)
-    const currentLabel = currentOption?.name ?? (current.length > 0 ? current : DEFAULT_MODEL_LABEL)
+    const isAuto = current === AUTO_MODEL_ID
+    const currentLabel = isAuto
+        ? AUTO_MODEL_LABEL
+        : (currentOption?.name ?? (currentName.length > 0 ? currentName : current))
+    const currentRateLabel = toRateLabel(currentOption?.creditRate ?? null)
 
-    const renderOption = (option: AiModelOption): JSX.Element => (
-        <DropdownMenuItem
-            key={option.modelId}
-            onSelect={() => onSelect(option.modelId, false)}
-            className="flex-col items-start gap-0.5"
-        >
-            <span className="flex w-full items-center justify-between gap-2">
-                <span className="truncate">{option.name}</span>
-                {option.modelId === current ? <Check className="size-3 shrink-0" /> : null}
-            </span>
-            <span className="w-full truncate text-xs text-muted-foreground">{option.modelId}</span>
+    const renderAutoOption = (): JSX.Element => (
+        <DropdownMenuItem onSelect={() => onSelect(AUTO_MODEL_ID, false)} className="gap-2">
+            <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+            <span className="min-w-0 flex-1 truncate">{AUTO_MODEL_LABEL}</span>
+            {isAuto ? <Check className="size-3 shrink-0" /> : null}
         </DropdownMenuItem>
     )
+
+    const renderOption = (option: AiModelOption): JSX.Element => {
+        const rateLabel = toRateLabel(option.creditRate)
+        return (
+            <DropdownMenuItem
+                key={option.modelId}
+                onSelect={() => onSelect(option.modelId, false)}
+                title={`${option.name}（${option.modelId}）`}
+                className="gap-2"
+            >
+                {option.custom ? (
+                    <Wrench className="size-3.5 shrink-0 text-muted-foreground" />
+                ) : (
+                    <Cpu className="size-3.5 shrink-0 text-muted-foreground" />
+                )}
+                <span className="min-w-0 flex-1 truncate">{option.name}</span>
+                <span className="flex shrink-0 items-center gap-1">
+                    {option.modelId === current ? <Check className="size-3 shrink-0" /> : null}
+                    {rateLabel !== null ? (
+                        <span className="text-xs tabular-nums text-muted-foreground">{rateLabel}</span>
+                    ) : null}
+                </span>
+            </DropdownMenuItem>
+        )
+    }
 
     return (
         <DropdownMenu onOpenChange={(open) => (open ? onOpen() : undefined)}>
             <DropdownMenuTrigger asChild>
                 <Button
-                    size="sm"
                     variant="ghost"
-                    className="min-w-0 max-w-32 gap-1 rounded-lg px-1.5 text-xs font-normal text-muted-foreground"
-                    title={`当前模型：${currentLabel}`}
+                    className="shrink-0 gap-1 items-center text-foreground font-normal"
+                    title={
+                        currentRateLabel === null
+                            ? `当前模型：${currentLabel}`
+                            : `当前模型：${currentLabel}（额度 ${currentRateLabel}）`
+                    }
                     aria-label={`当前模型 ${currentLabel}，点击切换`}
                     disabled={disabled}
                 >
                     <Cpu />
-                    <span className="min-w-0 truncate">{currentLabel}</span>
-                    {isLoading ? <Loader2 className="size-3 shrink-0 animate-spin" /> : <ChevronDown className="size-3 shrink-0" />}
+                    <span className="whitespace-nowrap">{currentLabel}</span>
+                    {isLoading ? (
+                        <Loader2 className="size-3 shrink-0 animate-spin" />
+                    ) : (
+                        <ChevronDown className="size-3 shrink-0" />
+                    )}
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-60">
-                <DropdownMenuLabel>模型</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => onSelect(DEFAULT_MODEL_ID, false)}>
-                    <Cpu />
-                    {DEFAULT_MODEL_LABEL}
-                    {current === DEFAULT_MODEL_ID ? <Check className="ml-auto size-3" /> : null}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {options.length > 0 ? (
-                    options.map(renderOption)
+            <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuLabel>内置模型</DropdownMenuLabel>
+                {renderAutoOption()}
+                {builtinOptions.length > 0 ? (
+                    builtinOptions.map(renderOption)
                 ) : (
-                    <DropdownMenuItem disabled>
-                        {isLoading ? '正在读取可用模型…' : '未读取到可用模型，可手动输入'}
-                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled>{isLoading ? '正在读取可用模型…' : '未读取到可用模型'}</DropdownMenuItem>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => onSelect(DEFAULT_MODEL_ID, true)}>
-                    <Pencil />
-                    手动输入模型 id…
-                </DropdownMenuItem>
+                <DropdownMenuLabel>自定义模型</DropdownMenuLabel>
+                {customOptions.length > 0 ? (
+                    customOptions.map(renderOption)
+                ) : (
+                    <DropdownMenuItem disabled>暂无自定义模型</DropdownMenuItem>
+                )}
             </DropdownMenuContent>
         </DropdownMenu>
     )

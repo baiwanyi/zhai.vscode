@@ -1,8 +1,10 @@
 /**
  * CodeBuddy 可用模型清单与当前选择：拉取账号支持的模型并缓存，同时把面板菜单选中的模型持久化到 globalState。
- * 复用约定：经 SDK createSession 的 getAvailableModels 取列表，站点与凭证沿用 codebuddySite 的映射；
+ * 复用约定：经 SDK createSession 的 getAvailableModelsRaw 取完整清单（含额度倍率 credits），
+ * 站点与凭证沿用 codebuddySite 的映射；完整清单不可用时退回 getAvailableModels 的简化清单；
  * 关键约束：清单拉取需拉起 CLI 子进程（数秒）且要求已登录，失败一律降级为空列表、不阻断激活；
- * 选中值以内存副本供各通道同步读取，写入时才落 globalState —— 配置项已移除，面板菜单是唯一入口。
+ * 选中值以内存副本供各通道同步读取，写入时才落 globalState —— 配置项已移除，面板菜单是唯一入口；
+ * 额度倍率为平台下发文本，解析不出数值时记 null 表示未知，不得回退为 0。
  * 清单只含语言模型，文生图模型由服务端产品配置决定，不予枚举。
  */
 import { tmpdir } from 'node:os'
@@ -18,7 +20,16 @@ export interface CodebuddyModelOption {
     modelId: string
     /** 展示名 */
     name: string
+    /** 平台下发的额度倍率原文（如 "x0.51 credits"）；自定义模型未上报时为 null */
+    credits: string | null
+    /** 解析后的额度倍率（每次调用消耗的 credits 系数），无法解析时为 null */
+    creditRate: number | null
+    /** 是否为用户自定义模型：菜单据此拆分为「内置模型」「自定义模型」两组 */
+    custom: boolean
 }
+
+/** 自定义模型 id 前缀：CLI 把用户自建模型统一挂在该前缀下 */
+const CUSTOM_MODEL_PREFIX = 'custom-local:'
 
 /** 模型选择的持久化键 */
 const MODEL_STATE_KEY = 'ai.codebuddyModel'
@@ -71,14 +82,64 @@ async function fetchModels(secrets: SecretsService): Promise<CodebuddyModelOptio
         env: buildCodebuddyEnv(site, apiKey),
     })
     try {
+        // 完整清单才带额度倍率（credits），是「每个模型的成本消耗速率」的唯一来源
+        const raw = await session.getAvailableModelsRaw()
+        if (raw.length > 0) {
+            cached = raw.map((model) => ({
+                modelId: model.id,
+                name: model.name ?? model.id,
+                credits: model.credits ?? null,
+                creditRate: parseCreditRate(model.credits),
+                custom: isCustomModel(model),
+            }))
+            return cached
+        }
+        // 完整清单不可用时退回简化清单：只有 id 与名称，倍率与来源只能按 id 前缀推断
         const models = await session.getAvailableModels()
-        cached = models.map((model) => ({ modelId: model.modelId, name: model.name }))
+        cached = models.map((model) => ({
+            modelId: model.modelId,
+            name: model.name,
+            credits: null,
+            creditRate: null,
+            custom: model.modelId.startsWith(CUSTOM_MODEL_PREFIX),
+        }))
         return cached
     } catch {
         return []
     } finally {
         session.close()
     }
+}
+
+/**
+ * 解析平台下发的额度倍率文本：形如 "x0.51 credits" / "x1.62" / "x0.00 credits"。
+ * 关键约束：格式由服务端决定且并不统一（个别模型缺 credits 后缀、自定义模型为 null），
+ * 取不到数字时一律返回 null 表示未知，不得回退为 0，否则会把免费模型误判成零成本。
+ */
+export function parseCreditRate(credits: string | null | undefined): number | null {
+    if (credits === null || credits === undefined) {
+        return null
+    }
+    const matched = /x\s*([0-9]+(?:\.[0-9]+)?)/i.exec(credits)
+    if (matched === null) {
+        return null
+    }
+    const rate = Number(matched[1])
+    return Number.isFinite(rate) ? rate : null
+}
+
+/**
+ * 判断是否为用户自定义模型：CLI 对自建模型给 vendor=user、tags 含 custom，id 统一带 custom-local: 前缀。
+ * 关键约束：三者任一命中即视为自定义 —— 实测这些字段可能单独缺失，只认一个会让分组错位。
+ */
+export function isCustomModel(model: { id: string; vendor?: string; tags?: string[] }): boolean {
+    if (model.id.startsWith(CUSTOM_MODEL_PREFIX)) {
+        return true
+    }
+    if (model.vendor === 'user') {
+        return true
+    }
+    return model.tags?.includes('custom') ?? false
 }
 
 /**
