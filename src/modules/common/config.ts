@@ -25,6 +25,8 @@ export interface ZhaiConfig {
     aiProvider: 'deepseek' | 'codebuddy' | 'auto'
     /** CodeBuddy 站点：登录与调用必须一致，切换后需重新登录 */
     aiCodebuddySite: CodebuddySite
+    /** CodeBuddy 对话模型（CLI 认可的模型 id），空表示使用 CLI 默认模型 */
+    aiCodebuddyModel: string
     aiModel: string
     aiTemperature: number
     aiMaxContextTokens: number
@@ -37,8 +39,10 @@ export interface ZhaiConfig {
     pressAiDailyLimit: number
     /** 图像通道：auto 时 CodeBuddy 具备出图能力则优先，否则走直连图像服务 */
     imageProvider: 'codebuddy' | 'openai' | 'auto'
-    /** CodeBuddy 出图模型，空表示使用通道默认模型 */
+    /** CodeBuddy 出图时驱动工具调用的对话模型，空表示使用通道默认模型 */
     imageCodebuddyModel: string
+    /** CodeBuddy ImageGen 的文生图模型，空表示使用 CLI 默认或用户设置 */
+    imageCodebuddyImageModel: string
     /** 图像服务端点（OpenAI 兼容的 /images/generations 基址，空表示未配置） */
     imageBaseUrl: string
     /** 图像模型名，如 gpt-image-1 / Kwai-Kolors/Kolors */
@@ -54,12 +58,12 @@ export interface ZhaiConfig {
 
 const SECTION = 'zhai'
 
-/** CodeBuddy 站点：国际站、中国站、腾讯 iOA */
-export type CodebuddySite = 'international' | 'china' | 'ioa'
+/** CodeBuddy 站点：仅开放中国站与国际站 */
+export type CodebuddySite = 'china' | 'international'
 
-/** 收窄站点取值：非法值按国际站处理 */
+/** 收窄站点取值：非法值按中国站处理 */
 function readCodebuddySite(value: string): CodebuddySite {
-    return value === 'china' || value === 'ioa' ? value : 'international'
+    return value === 'international' ? value : 'china'
 }
 
 /** 收窄通道取值：非法配置一律按 auto 处理，避免历史配置或手写错值导致激活失败 */
@@ -82,7 +86,8 @@ export function getZhaiConfig(): ZhaiConfig {
         rebuildOnActivate: cfg.get<boolean>('index.rebuildOnActivate', true),
         searchLimit: cfg.get<number>('search.limit', 50),
         aiProvider: readAiProvider(cfg.get<string>('ai.provider', 'auto')),
-        aiCodebuddySite: readCodebuddySite(cfg.get<string>('ai.codebuddySite', 'international')),
+        aiCodebuddySite: readCodebuddySite(cfg.get<string>('ai.codebuddySite', 'china')),
+        aiCodebuddyModel: cfg.get<string>('ai.codebuddyModel', ''),
         aiModel: cfg.get<string>('ai.model', 'deepseek-chat'),
         aiTemperature: cfg.get<number>('ai.temperature', 0.7),
         aiMaxContextTokens: cfg.get<number>('ai.maxContextTokens', 8000),
@@ -92,6 +97,7 @@ export function getZhaiConfig(): ZhaiConfig {
         pressAiDailyLimit: cfg.get<number>('press.aiDailyLimit', 20),
         imageProvider: readImageProvider(cfg.get<string>('image.provider', 'auto')),
         imageCodebuddyModel: cfg.get<string>('image.codebuddyModel', ''),
+        imageCodebuddyImageModel: cfg.get<string>('image.codebuddyImageModel', ''),
         imageBaseUrl: cfg.get<string>('image.baseUrl', ''),
         imageModel: cfg.get<string>('image.model', ''),
         imageSize: cfg.get<string>('image.size', '768x1024'),

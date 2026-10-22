@@ -9,6 +9,7 @@ import { registerAiCommands } from './modules/ai/commands'
 import { openAiDatabase } from './modules/ai/db/connection'
 import { ensureAiSchema } from './modules/ai/db/schema'
 import { createAiProvider } from './modules/ai/providerRegistry'
+import { listCodebuddyModels } from './modules/ai/providers/codebuddyModels'
 import { WorkflowRouter } from './modules/ai/workflowRouter'
 import { registerCommands } from './modules/common/commands'
 import { getZhaiConfig, resolveCacheRoot } from './modules/common/config'
@@ -124,6 +125,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     if (getZhaiConfig().rebuildOnActivate) {
         void indexService.selfCheck().catch((error: unknown) => logger.error('激活自检失败', error))
     }
+
+    // CodeBuddy 模型清单后台预热（拉起 CLI 约数秒）；未登录时返回空列表，不阻断激活，选择命令里会现拉
+    void listCodebuddyModels(secrets).then((models) => {
+        logger.info(`CodeBuddy 可用模型：${models.length > 0 ? models.map((item) => item.modelId).join(', ') : '未获取到（可能未登录）'}`)
+    })
 
     logger.info(
         `宅写作 已激活（workspace: ${context.workspaceState.get('initialized') === true ? '已初始化' : '首次'}）`,

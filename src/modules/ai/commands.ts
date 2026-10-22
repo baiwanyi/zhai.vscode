@@ -7,7 +7,14 @@
 import { unstable_v2_authenticate } from '@tencent-ai/agent-sdk'
 import * as vscode from 'vscode'
 import { createContextRefs, MAX_CONTEXT_COUNT } from './contextRefs'
-import { buildCodebuddyEnv, CODEBUDDY_SITE_LABELS, toAuthEnvironment } from './providers/codebuddySite'
+import { listCodebuddyModels } from './providers/codebuddyModels'
+import {
+    buildCodebuddyEnv,
+    CODEBUDDY_SITE_LABELS,
+    isSiteAuthUrl,
+    toAuthEnvironment,
+    toAuthMethodId,
+} from './providers/codebuddySite'
 import type { AiChatService } from './chatService'
 import type { WorkflowRouter } from './workflowRouter'
 import type { SecretsService } from '../common/secrets'
@@ -79,10 +86,20 @@ export function registerAiCommands(
             async (progress) => {
                 progress.report({ message: '正在打开浏览器授权页…' })
                 try {
+                    // 站点同时决定认证环境、登录方式与授权页域名：三站点授权页分属不同域名，错配会在错误站点完成授权
                     const result = await unstable_v2_authenticate({
                         environment: toAuthEnvironment(site),
+                        methodId: toAuthMethodId(site),
                         env: buildCodebuddyEnv(site),
                         onAuthUrl: async (state) => {
+                            if (!isSiteAuthUrl(site, state.authUrl)) {
+                                logger.warn(
+                                    `CodeBuddy 授权页域名与所选站点不符（${CODEBUDDY_SITE_LABELS[site]}）：${state.authUrl}`,
+                                )
+                                void vscode.window.showWarningMessage(
+                                    `宅写作：授权页不是${CODEBUDDY_SITE_LABELS[site]}的域名（${state.authUrl}），请检查「宅写作：CodeBuddy 站点」设置`,
+                                )
+                            }
                             await vscode.env.openExternal(vscode.Uri.parse(state.authUrl))
                         },
                     })
@@ -97,6 +114,58 @@ export function registerAiCommands(
                     void vscode.window.showErrorMessage(`宅写作：CodeBuddy 登录失败，${message}`)
                 }
             },
+        )
+    })
+
+    // 模型选择：清单在激活时预热过，这里强制刷新一次，保证换站点/换账号后拿到最新列表
+    register('zhai.ai.selectCodebuddyModel', async () => {
+        const targets = [
+            {
+                label: '对话模型',
+                description: 'zhai.ai.codebuddyModel：面板对话、取名、人物外貌生成',
+                key: 'ai.codebuddyModel',
+            },
+            {
+                label: '出图驱动模型',
+                description: 'zhai.image.codebuddyModel：驱动 ImageGen 调用的模型',
+                key: 'image.codebuddyModel',
+            },
+        ]
+        const target = await vscode.window.showQuickPick(targets, { title: '选择要设置的 CodeBuddy 模型用途' })
+        if (target === undefined) {
+            return
+        }
+        const models = await vscode.window.withProgress(
+            {
+                location: vscode.ProgressLocation.Notification,
+                title: '正在获取 CodeBuddy 可用模型…',
+                cancellable: false,
+            },
+            () => listCodebuddyModels(secrets, true),
+        )
+        if (models.length === 0) {
+            void vscode.window.showWarningMessage(
+                '宅写作：未取到 CodeBuddy 可用模型，请先执行「宅写作：登录 CodeBuddy」',
+            )
+            return
+        }
+        const options = [
+            { label: '使用默认模型', description: '清空该配置，由 CLI 自行决定', modelId: '' },
+            ...models.map((model) => ({ label: model.name, description: model.modelId, modelId: model.modelId })),
+        ]
+        const picked = await vscode.window.showQuickPick(options, {
+            title: `选择${target.label}`,
+            placeHolder: '列表来自当前账号，切换站点后需重新获取',
+        })
+        if (picked === undefined) {
+            return
+        }
+        await vscode.workspace
+            .getConfiguration('zhai')
+            .update(target.key, picked.modelId, vscode.ConfigurationTarget.Global)
+        logger.info(`CodeBuddy ${target.label}已设为 ${picked.modelId.length > 0 ? picked.modelId : '默认'}`)
+        void vscode.window.showInformationMessage(
+            `宅写作：${target.label}已设为 ${picked.modelId.length > 0 ? picked.modelId : '默认模型'}`,
         )
     })
 

@@ -168,13 +168,16 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 **站点区分**：CodeBuddy 按站点独立签发凭证，登录与调用必须落在同一站点，错配会直接表现为「未登录」。站点解析集中在 `src/modules/ai/providers/codebuddySite.ts`，由登录命令、文本通道、图像通道三处共用。
 
-| `zhai.ai.codebuddySite` | SDK `environment` | `CODEBUDDY_INTERNET_ENVIRONMENT` | 对应站点 |
-|---|---|---|---|
-| `international`（默认） | `external` | 不设置 | 国际站 codebuddy.ai |
-| `china` | `internal` | `internal` | 中国站 copilot.tencent.com |
-| `ioa` | `ioa` | `ioa` | 腾讯 iOA 企业版 |
+| `zhai.ai.codebuddySite` | SDK `environment` | CLI `methodId` | `CODEBUDDY_INTERNET_ENVIRONMENT` | 授权页域名 |
+|---|---|---|---|---|
+| `china`（默认） | `internal` | `internal` | `internal` | copilot.tencent.com |
+| `international` | `external` | `external` | 不设置 | codebuddy.ai |
 
-切换站点后必须重新登录，旧站点凭证不会复用；企业专享版（`cloudhosted`）需自定义 `endpoint`，暂未开放配置。
+仅开放中国站与国际站，两者的授权页分属不同域名：中国站经 `copilot.tencent.com` 认证，国际站经 `codebuddy.ai` 认证。登录时 `methodId` 与 `environment` 必须同时按站点传入，否则 CLI 会用国际站登录方式发起授权，授权完成后凭证仍落不到所选站点。授权页回调打开前按站点域名校验一次，域名不符时告警但继续打开，避免阻断企业自定义 SSO 场景。配置里的非法取值一律归入中国站。
+
+切换站点后必须重新登录，旧站点凭证不会复用；专享版/私有化（需自定义 `endpoint`）不在开放范围内。
+
+**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持列表内的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModels()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活），命令 `zhai.ai.selectCodebuddyModel` 打开时强制刷新并写入 `zhai.ai.codebuddyModel`（对话）或 `zhai.image.codebuddyModel`（出图驱动）。通道下发前经 `resolveCodebuddyModel` 校验：清单为空时退回历史规则（过滤 `deepseek-` 前缀），有清单时不在列表内的值一律交回 CLI 默认模型。`zhai.ai.model` 仍是 DeepSeek 直连的枚举，不参与 CodeBuddy 通道。
 
 ### 5.3 各入口的会话与工具策略
 

@@ -7,6 +7,7 @@
  */
 import { tmpdir } from 'node:os'
 import { query } from '@tencent-ai/agent-sdk'
+import { resolveCodebuddyModel } from './codebuddyModels'
 import { buildCodebuddyEnv, CODEBUDDY_SITE_LABELS } from './codebuddySite'
 import type { SecretsService } from '../../common/secrets'
 import type {
@@ -53,17 +54,19 @@ function preparePrompt(messages: AiChatMessage[], isResume: boolean): PreparedPr
     }
 }
 
-/** 判断模型名是否由本通道管理：DeepSeek 专有模型名传给 CLI 会报错，交回 CLI 默认模型 */
-function toCodebuddyModel(model: string): string | undefined {
-    return model.startsWith('deepseek-') ? undefined : model
-}
-
-/** 把 SDK 的原始错误转成可执行提示：未登录是最常见的一类，直接给出下一步动作 */
-function toReadableError(error: unknown): Error {
+/** 把 SDK 的原始错误转成可执行提示：未登录与模型不可用是最常见的两类 */
+function toReadableError(error: unknown, model?: string): Error {
     const message = error instanceof Error ? error.message : String(error)
     if (/authentication required|please (use|run) \/login/i.test(message)) {
         const site = CODEBUDDY_SITE_LABELS[getZhaiConfig().aiCodebuddySite]
         return new Error(`尚未登录 CodeBuddy（${site}）：请执行「宅写作：登录 CodeBuddy」后重试`, { cause: error })
+    }
+    if (/service info not found|supported models for your account/i.test(message)) {
+        const label = model !== undefined && model.length > 0 ? `「${model}」` : '当前模型'
+        return new Error(
+            `CodeBuddy 模型不可用：${label}不在当前账号的可用列表，请执行「宅写作：选择 CodeBuddy 模型」重新选择（或留空使用默认模型）`,
+            { cause: error },
+        )
     }
     return error instanceof Error ? error : new Error(message)
 }
@@ -84,6 +87,7 @@ export class CodeBuddyProvider implements AiProvider {
     public async *stream(request: AiStreamRequest): AsyncGenerator<AiStreamChunk> {
         const isResume = typeof request.sessionId === 'string' && request.sessionId.length > 0
         const { systemPrompt, prompt } = preparePrompt(request.messages, isResume)
+        const cfg = getZhaiConfig()
         const apiKey = await this.secrets.get('codebuddyApiKey')
         const controller = new AbortController()
         const forwardAbort = (): void => controller.abort()
@@ -103,10 +107,11 @@ export class CodeBuddyProvider implements AiProvider {
                 includePartialMessages: true,
                 systemPrompt,
                 resume: isResume ? request.sessionId : undefined,
-                model: toCodebuddyModel(request.model),
+                // 模型来自 CodeBuddy 专用配置：zhai.ai.model 是 DeepSeek 直连的枚举，不能直接透传
+                model: resolveCodebuddyModel(cfg.aiCodebuddyModel),
                 // 工作目录指向临时目录，与用户项目隔离
                 cwd: tmpdir(),
-                env: buildCodebuddyEnv(getZhaiConfig().aiCodebuddySite, apiKey),
+                env: buildCodebuddyEnv(cfg.aiCodebuddySite, apiKey),
             },
         })
         let hasStreamed = false
@@ -161,7 +166,7 @@ export class CodeBuddyProvider implements AiProvider {
                 }
             }
         } catch (error) {
-            throw toReadableError(error)
+            throw toReadableError(error, cfg.aiCodebuddyModel)
         } finally {
             request.signal.removeEventListener('abort', forwardAbort)
             if (!controller.signal.aborted) {
