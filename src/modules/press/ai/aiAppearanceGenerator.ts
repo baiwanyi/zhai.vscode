@@ -10,8 +10,6 @@ import type { AiUsage, AiProvider } from '../../ai/provider'
 
 /** 单次生成整体超时：一段白描通常 3~8s，留出充足余量 */
 const AI_REQUEST_TIMEOUT_MS = 60_000
-/** 描写类任务温度：略高于默认值，保留用词差异 */
-const AI_TEMPERATURE = 0.9
 /** 单次输出上限：200 字约 400 token，留一倍余量 */
 const AI_MAX_TOKENS = 500
 
@@ -47,7 +45,6 @@ export async function generateAppearanceWithAi(
     try {
         const stream = options.provider.stream({
             model: options.model,
-            temperature: AI_TEMPERATURE,
             maxTokens: AI_MAX_TOKENS,
             messages: buildAppearanceMessages(options.request),
             signal: controller.signal,

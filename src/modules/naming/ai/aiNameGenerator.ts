@@ -10,8 +10,6 @@ import type { AiUsage, AiProvider } from '../../ai/provider'
 
 /** 单次生成整体超时：批量 24~48 个名字通常 5~15s，留出充足余量 */
 const AI_REQUEST_TIMEOUT_MS = 60_000
-/** 取名温度：偏高以提高发散度 */
-const AI_TEMPERATURE = 1.1
 /** 单次输出上限：批量 48 个名字约 400 token，留一倍余量 */
 const AI_MAX_TOKENS = 900
 
@@ -45,7 +43,6 @@ export async function generateNamesWithAi(options: AiNameGenerateOptions): Promi
     try {
         const stream = options.provider.stream({
             model: options.model,
-            temperature: AI_TEMPERATURE,
             maxTokens: AI_MAX_TOKENS,
             messages: buildNamingMessages(options.request),
             signal: controller.signal,

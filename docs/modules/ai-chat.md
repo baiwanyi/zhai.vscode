@@ -60,7 +60,7 @@ AI Chat 是插件的**智能交互中枢**，同时服务于两类需求：
 | A10 | 思考链展示 | 展示通道回传的思维链，可折叠 | P1 | 部分（已回传并落库，折叠 UI 待做） |
 | A11 | 请求取消 | `AbortController` + `CancellationToken` | P0 | 已落地 |
 | A12 | `@` 上下文提及 | `@当前文件` `@选中` `@笔记` `@最近N章` `@角色名` `@图库图片` `@链接` | P0 | 部分（编辑器右键「添加到宅对话」已落地，见 10.1） |
-| A13 | 上下文参数面板 | 前文 500–4000 token、温度 0.1–1.5、maxTokens、模型、设定注入 | P1 | 待实现 |
+| A13 | 上下文参数面板 | 前文 500–4000 token、maxTokens、模型、设定注入 | P1 | 待实现 |
 | A14 | 用量统计 | 记录 prompt/completion/total tokens 与预估费用，按日/月聚合 | P1 | 待实现 |
 | A15 | 提示词预设 | 音色预设（小说家/诗人/论文）+ 常用指令收藏 | P2 | 待实现 |
 | A16 | 重试与超时 | 指数退避重试（上限 3 次），30s 无首字自动中断 | P1 | 待实现 |
@@ -176,7 +176,7 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 切换站点后必须重新登录，旧站点凭证不会复用；专享版/私有化（需自定义 `endpoint`）不在开放范围内。
 
-**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModels()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活），命令 `zhai.ai.selectCodebuddyModel` 打开时强制刷新，可写入 `zhai.ai.codebuddyModel`（对话）或 `zhai.image.codebuddyModel`（出图驱动）。清单里的项可直接选，也支持「手动输入模型 id」以使用账号可用的自定义模型。通道下发前经 `resolveCodebuddyModel` 归一：空值交给 CLI 默认，非空一律透传，id 是否有效由服务端裁决。
+**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModels()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活），命令 `zhai.ai.selectCodebuddyModel` 打开时强制刷新并写入 `zhai.ai.codebuddyModel` —— 对话、取名、外貌生成与出图驱动共用这一项。清单里的项可直接选，也支持「手动输入模型 id」以使用账号可用的自定义模型。通道下发前经 `resolveCodebuddyModel` 归一：空值交给 CLI 默认，非空一律透传，id 是否有效由服务端裁决。
 
 **文生图模型**：`ImageGen` 的模型由 CLI 的 `ImageService.resolveModel` 决定，顺序为「会话下发的 `--text-to-image-model` → 环境变量 `CODEBUDDY_TEXT_TO_IMAGE_MODEL` → CLI settings 的 `textToImageModel` → 站点配置中 tags 含 `text-to-image` 的首个模型 → 兜底 `hunyuan-image-v3.0`」。该清单来自服务端产品配置，SDK 的 `getAvailableModels` / `getAvailableModelsRaw` 只返回语言模型（实测 22 个均无 `text-to-image` 标签），且斜杠命令在 headless 会话中不会被执行，故插件不下发 `--text-to-image-model`、也不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，选择会存进 CLI settings 并被 ImageGen 沿用。
 
@@ -292,7 +292,6 @@ interface ComposeRequest {
         selection?: { uri: string; startLine: number; endLine: number }
         params: {
             model: string
-            temperature: number
             maxTokens: number
             contextTokens: number
             injectSettings: boolean

@@ -32,10 +32,9 @@ export interface AiStreamChunk {
     usage?: AiUsage
 }
 
-/** 流式生成请求：温度与长度上限按通道能力可被忽略，但调用方始终传入 */
+/** 流式生成请求：长度上限按通道能力可被忽略，但调用方始终传入 */
 export interface AiStreamRequest {
     model: string
-    temperature: number
     maxTokens: number
     messages: AiChatMessage[]
     signal: AbortSignal

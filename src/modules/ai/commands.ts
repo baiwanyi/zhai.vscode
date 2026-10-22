@@ -88,24 +88,9 @@ export function registerAiCommands(
         )
     })
 
-    // 模型选择：清单在激活时预热过，这里强制刷新一次，保证换站点/换账号后拿到最新列表
+    // 模型选择：清单在激活时预热过，这里强制刷新一次，保证换站点/换账号后拿到最新列表。
+    // 对话、取名、外貌生成与出图驱动模型共用 ai.codebuddyModel，故无需再选用途。
     register('zhai.ai.selectCodebuddyModel', async () => {
-        const targets = [
-            {
-                label: '对话模型',
-                description: 'zhai.ai.codebuddyModel：面板对话、取名、人物外貌生成',
-                key: 'ai.codebuddyModel',
-            },
-            {
-                label: '出图驱动模型',
-                description: 'zhai.image.codebuddyModel：驱动 ImageGen 调用的对话模型',
-                key: 'image.codebuddyModel',
-            },
-        ]
-        const target = await vscode.window.showQuickPick(targets, { title: '选择要设置的 CodeBuddy 模型用途' })
-        if (target === undefined) {
-            return
-        }
         const models = await vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
@@ -130,7 +115,7 @@ export function registerAiCommands(
             },
         ]
         const picked = await vscode.window.showQuickPick(options, {
-            title: `选择${target.label}`,
+            title: '选择 CodeBuddy 模型',
             placeHolder: '列表来自当前账号，也可手动填写自定义模型 id',
         })
         if (picked === undefined) {
@@ -139,7 +124,7 @@ export function registerAiCommands(
         let modelId = picked.modelId
         if (modelId === CUSTOM_MODEL_MARK) {
             const manual = await vscode.window.showInputBox({
-                title: `输入${target.label} id`,
+                title: '输入 CodeBuddy 模型 id',
                 prompt: '填写 CodeBuddy 账号可用的模型 id，留空表示交给 CLI 默认',
                 placeHolder: '例如 deepseek-v4.1-flash',
                 ignoreFocusOut: true,
@@ -149,10 +134,12 @@ export function registerAiCommands(
             }
             modelId = manual.trim()
         }
-        await vscode.workspace.getConfiguration('zhai').update(target.key, modelId, vscode.ConfigurationTarget.Global)
-        logger.info(`CodeBuddy ${target.label}已设为 ${modelId.length > 0 ? modelId : '默认'}`)
+        await vscode.workspace
+            .getConfiguration('zhai')
+            .update('ai.codebuddyModel', modelId, vscode.ConfigurationTarget.Global)
+        logger.info(`CodeBuddy 模型已设为 ${modelId.length > 0 ? modelId : '默认'}`)
         void vscode.window.showInformationMessage(
-            `宅写作：${target.label}已设为 ${modelId.length > 0 ? modelId : '默认模型'}`,
+            `宅写作：CodeBuddy 模型已设为 ${modelId.length > 0 ? modelId : '默认模型'}`,
         )
     })
 }

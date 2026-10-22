@@ -23,9 +23,8 @@ export interface ZhaiConfig {
     searchLimit: number
     /** CodeBuddy 站点：登录与调用必须一致，切换后需重新登录 */
     aiCodebuddySite: CodebuddySite
-    /** CodeBuddy 对话模型（CLI 认可的模型 id），空表示使用 CLI 默认模型 */
+    /** CodeBuddy 对话模型（CLI 认可的模型 id），空表示使用 CLI 默认模型；出图驱动同样复用该模型 */
     aiCodebuddyModel: string
-    aiTemperature: number
     aiMaxContextTokens: number
     aiDailyTokenBudget: number
     /** 添加上下文引用后是否自动聚焦 AI 对话面板 */
@@ -34,8 +33,6 @@ export interface ZhaiConfig {
     namingAiDailyLimit: number
     /** 写作管理 AI 生成每日次数上限（人物外貌等一次性生成） */
     pressAiDailyLimit: number
-    /** CodeBuddy 出图时驱动工具调用的对话模型，空表示使用通道默认模型 */
-    imageCodebuddyModel: string
     /** 角色设定图尺寸，形如 768x1024 */
     imageSize: string
     /** 角色设定图每日生成次数上限 */
@@ -71,13 +68,11 @@ export function getZhaiConfig(): ZhaiConfig {
         searchLimit: cfg.get<number>('search.limit', 50),
         aiCodebuddySite: readCodebuddySite(cfg.get<string>('ai.codebuddySite', 'cn')),
         aiCodebuddyModel: cfg.get<string>('ai.codebuddyModel', ''),
-        aiTemperature: cfg.get<number>('ai.temperature', 0.7),
         aiMaxContextTokens: cfg.get<number>('ai.maxContextTokens', 8000),
         aiDailyTokenBudget: cfg.get<number>('ai.dailyTokenBudget', 500000),
         aiAutoFocusOnContext: cfg.get<boolean>('ai.autoFocusOnContext', true),
         namingAiDailyLimit: cfg.get<number>('naming.aiDailyLimit', 20),
         pressAiDailyLimit: cfg.get<number>('press.aiDailyLimit', 20),
-        imageCodebuddyModel: cfg.get<string>('image.codebuddyModel', ''),
         imageSize: cfg.get<string>('image.size', '768x1024'),
         imageDailyLimit: cfg.get<number>('image.dailyLimit', 20),
         telemetryEnabled: cfg.get<boolean>('telemetry.enabled', false),

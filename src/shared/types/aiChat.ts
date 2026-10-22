@@ -136,7 +136,6 @@ export interface AiRuntimeInfo {
     /** 通道是否就绪（登录态交由请求阶段判定，此值恒为 true） */
     hasApiKey: boolean
     model: string
-    temperature: number
     maxContextTokens: number
     dailyTokenBudget: number
     /** 当日已消耗 token（预算护栏展示） */

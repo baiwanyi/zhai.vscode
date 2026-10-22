@@ -133,7 +133,6 @@ export class AiChatService implements vscode.Disposable {
             providerSite: CODEBUDDY_SITE_LABELS[cfg.aiCodebuddySite],
             hasApiKey: status.ready,
             model: cfg.aiCodebuddyModel,
-            temperature: cfg.aiTemperature,
             maxContextTokens: cfg.aiMaxContextTokens,
             dailyTokenBudget: cfg.aiDailyTokenBudget,
             usedTokensToday: sumTokensSince(this.db, todayStartIso()),
@@ -554,7 +553,6 @@ export class AiChatService implements vscode.Disposable {
             }
             const stream = this.provider.stream({
                 model: cfg.aiCodebuddyModel,
-                temperature: cfg.aiTemperature,
                 maxTokens: MAX_COMPLETION_TOKENS,
                 messages,
                 signal: controller.signal,

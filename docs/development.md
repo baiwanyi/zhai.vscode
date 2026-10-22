@@ -222,7 +222,7 @@
 | WV | A10 思考链展示 | `reasoning_content` 可折叠 | 0.3 | ⬜ |
 | AI | A11 请求取消 | `AbortController` + `CancellationToken` | 0.5 | ⬜ |
 | AI | A12 `@` 上下文提及 | `@当前文件/@选中/@笔记/@最近N章/@角色/@链接`，实时读盘 | 2 | ⬜ |
-| WV | A13 上下文参数面板 | 前文 500–4000 token、温度、maxTokens、模型、设定注入 | 0.5 | ⬜ |
+| WV | A13 上下文参数面板 | 前文 500–4000 token、maxTokens、模型、设定注入 | 0.5 | ⬜ |
 | DB | A14 用量统计 | prompt/completion/total tokens + 预估费用，日/月聚合 | 0.5 | ⬜ |
 | WV | A15 提示词预设 | 音色预设 + 常用指令收藏 | 0.5 | ⬜ |
 | AI | A16 重试与超时 | 指数退避（上限 3）、30s 无首字中断 | 0.5 | ⬜ |

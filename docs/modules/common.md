@@ -245,9 +245,7 @@ PRAGMA foreign_keys = ON;
 | `zhai.index.debounceMs` | number | `500` | 增量索引防抖毫秒数 |
 | `zhai.index.rebuildOnActivate` | boolean | `true` | 激活时自检并按需重建 |
 | `zhai.search.limit` | number | `50` | 全局搜索单模块返回上限 |
-| `zhai.ai.codebuddyModel` | string | ``（空=CLI 默认） | CodeBuddy 对话模型 id，可填自定义模型 |
-| `zhai.image.codebuddyModel` | string | ``（空=通道默认） | 出图时驱动 `ImageGen` 的对话模型 id |
-| `zhai.ai.temperature` | number | `0.7` | 默认温度 |
+| `zhai.ai.codebuddyModel` | string | ``（空=CLI 默认） | CodeBuddy 模型 id，对话与出图驱动共用，可填自定义模型 |
 | `zhai.ai.maxContextTokens` | number | `8000` | 前文与引用上下文注入上限 |
 | `zhai.ai.dailyTokenBudget` | number | `500000` | 每日 Token 预算，超限提示 |
 | `zhai.ai.autoFocusOnContext` | boolean | `true` | 添加对话上下文后自动聚焦 AI 对话面板 |

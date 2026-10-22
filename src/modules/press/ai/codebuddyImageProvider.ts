@@ -270,7 +270,8 @@ export class CodeBuddyImageProvider implements ImageProvider {
         } else {
             options.signal.addEventListener('abort', forwardAbort, { once: true })
         }
-        const model = resolveCodebuddyModel(cfg.imageCodebuddyModel)
+        // 出图驱动模型与对话共用 ai.codebuddyModel，避免同一模型在两处配置出现分歧
+        const model = resolveCodebuddyModel(cfg.aiCodebuddyModel)
         const session = query({
             prompt: buildInstruction(options),
             options: {
@@ -324,7 +325,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
                 return artifact
             }
             logger.warn(`CodeBuddy 出图中断且未取到产物：${summarizeForLog(blocks)}`)
-            throw toReadableError(error, cfg.imageCodebuddyModel)
+            throw toReadableError(error, cfg.aiCodebuddyModel)
         } finally {
             options.signal.removeEventListener('abort', forwardAbort)
             if (!controller.signal.aborted) {
