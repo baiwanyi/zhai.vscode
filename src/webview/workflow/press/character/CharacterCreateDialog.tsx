@@ -20,12 +20,7 @@ import { Input } from '@components/ui/input'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import type { CharacterGender, CharacterRole, CharacterSeed } from '../types'
 import type { JSX } from 'react'
-import {
-    CHARACTER_GENDER_META,
-    CHARACTER_GENDER_ORDER,
-    CHARACTER_ROLE_META,
-    CHARACTER_ROLE_ORDER,
-} from '../constants'
+import { CHARACTER_GENDER_META, CHARACTER_GENDER_ORDER, CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
 
 interface CharacterCreateDialogProps {
     isOpen: boolean
@@ -39,8 +34,8 @@ export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: Charac
     const [identity, setIdentity] = useState('')
     // 角色默认配角：多数新增是临时出场人物，主角由作者主动改选
     const [role, setRole] = useState<CharacterRole>('supporting')
-    // 性别默认未设定：不确定时留空，避免错误性别进入外貌与设定图提示词
-    const [gender, setGender] = useState<CharacterGender>('unspecified')
+    // 性别只有男女两项且必选：默认男，取消选择时保持原值，避免出现空性别
+    const [gender, setGender] = useState<CharacterGender>('male')
 
     const canSubmit = name.trim().length > 0
 
@@ -101,7 +96,12 @@ export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: Charac
                     </Field>
                     <Field>
                         <FieldLabel htmlFor="character-create-gender">性别</FieldLabel>
-                        <ToggleGroup type="single" value={gender} className="flex-wrap" onValueChange={handleGenderChange}>
+                        <ToggleGroup
+                            type="single"
+                            value={gender}
+                            className="flex-wrap"
+                            onValueChange={handleGenderChange}
+                        >
                             {CHARACTER_GENDER_ORDER.map((item) => (
                                 <ToggleGroupItem key={item} value={item} size="sm" variant="outline">
                                     {CHARACTER_GENDER_META[item].label}

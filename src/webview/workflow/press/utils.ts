@@ -70,13 +70,13 @@ export function createId(prefix: 'vol' | 'ch' | 'beat' | 'char'): string {
     return `${prefix}-${crypto.randomUUID()}`
 }
 
-/** 新建一张人物卡：角色默认配角、性别未设定、姓名占位；seed 承接新增弹窗填写的初始值，id 恒由本函数生成 */
+/** 新建一张人物卡：角色默认配角、性别默认男、姓名占位；seed 承接新增弹窗填写的初始值，id 恒由本函数生成 */
 export function createCharacterCard(seed: CharacterSeed = {}): CharacterCard {
     return {
         name: '新人物',
         alias: '',
         role: 'supporting',
-        gender: 'unspecified',
+        gender: 'male',
         age: '',
         identity: '',
         appearance: '',

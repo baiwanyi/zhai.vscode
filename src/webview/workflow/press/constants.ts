@@ -5,7 +5,15 @@
  * 张力与步骤的档位顺序参与排序与进度计算，不得随意调整。
  */
 import type { PortraitStyle } from '@shared/types/press'
-import type { Audience, CharacterGender, CharacterRole, EndingKind, HookKind, PlanStatus, ProjectSetting } from './types'
+import type {
+    Audience,
+    CharacterGender,
+    CharacterRole,
+    EndingKind,
+    HookKind,
+    PlanStatus,
+    ProjectSetting,
+} from './types'
 
 /** 徽标语义变体：与 @components/ui/badge 的 variant 保持一致 */
 export type BadgeTone = 'default' | 'secondary' | 'destructive' | 'outline' | 'ghost'
@@ -24,7 +32,7 @@ export const PLAN_STATUS_META: Readonly<Record<PlanStatus, { label: string; tone
 }
 
 /** 状态筛选：全部与四种状态，供大纲树顶部切换 */
-export const STATUS_FILTERS: readonly (OptionMeta<PlanStatus | 'all'>)[] = [
+export const STATUS_FILTERS: readonly OptionMeta<PlanStatus | 'all'>[] = [
     { value: 'all', label: '全部' },
     { value: 'planned', label: '待写' },
     { value: 'drafting', label: '在写' },
@@ -43,13 +51,16 @@ export const HOOK_OPTIONS: readonly OptionMeta<HookKind>[] = [
 /** 张力档位文案：1-5 档，供滑块旁的文字提示 */
 export const TENSION_LABELS: readonly string[] = ['平缓', '铺垫', '推进', '紧张', '高潮']
 
-/** 角色分类：列表分组与人物卡展示共用 */
-export const CHARACTER_ROLE_META: Readonly<Record<CharacterRole, { label: string; tone: BadgeTone }>> = {
-    protagonist: { label: '主角', tone: 'default' },
-    supporting: { label: '配角', tone: 'secondary' },
-    antagonist: { label: '反派', tone: 'destructive' },
-    neutral: { label: '中立', tone: 'outline' },
-    extra: { label: '龙套', tone: 'ghost' },
+/**
+ * 角色分类：列表分组与人物卡展示共用。
+ * 徽标配色取 VSCode 图表语义色（chart-1~5），每类一色，浅底 + 同色文字；龙套取中性灰，不写原始色值。
+ */
+export const CHARACTER_ROLE_META: Readonly<Record<CharacterRole, { label: string; className: string }>> = {
+    protagonist: { label: '主角', className: 'bg-chart-1/15 text-chart-1' },
+    supporting: { label: '配角', className: 'bg-chart-4/15 text-chart-4' },
+    antagonist: { label: '反派', className: 'bg-chart-5/15 text-chart-5' },
+    neutral: { label: '中立', className: 'bg-chart-2/15 text-chart-2' },
+    extra: { label: '龙套', className: 'bg-muted text-muted-foreground' },
 }
 
 /** 角色分类顺序：列表排序以主角在前、龙套在后，与作者翻卡的顺序一致 */
@@ -62,7 +73,7 @@ export const CHARACTER_ROLE_ORDER: readonly CharacterRole[] = [
 ]
 
 /** 角色筛选项：全部与五种分类，供人物页顶部切换，顺序与 CHARACTER_ROLE_ORDER 一致 */
-export const CHARACTER_ROLE_FILTERS: readonly (OptionMeta<CharacterRole | 'all'>)[] = [
+export const CHARACTER_ROLE_FILTERS: readonly OptionMeta<CharacterRole | 'all'>[] = [
     { value: 'all', label: '全部' },
     { value: 'protagonist', label: '主角' },
     { value: 'supporting', label: '配角' },
@@ -71,18 +82,17 @@ export const CHARACTER_ROLE_FILTERS: readonly (OptionMeta<CharacterRole | 'all'>
     { value: 'extra', label: '龙套' },
 ]
 
-/** 性别标签：新增弹窗、人物卡与列表徽标共用，未设定不参与生成提示词 */
-export const CHARACTER_GENDER_META: Readonly<Record<CharacterGender, { label: string; tone: BadgeTone }>> = {
-    male: { label: '男', tone: 'outline' },
-    female: { label: '女', tone: 'outline' },
-    unspecified: { label: '未设定', tone: 'ghost' },
+/** 性别文案：新增弹窗与人物卡共用，仅男女两项；列表改用图标展示，生成提示词取同一份中文标签 */
+export const CHARACTER_GENDER_META: Readonly<Record<CharacterGender, { label: string }>> = {
+    male: { label: '男' },
+    female: { label: '女' },
 }
 
-/** 性别选项顺序：男、女、未设定 */
-export const CHARACTER_GENDER_ORDER: readonly CharacterGender[] = ['male', 'female', 'unspecified']
+/** 性别选项顺序：男、女，必选其一 */
+export const CHARACTER_GENDER_ORDER: readonly CharacterGender[] = ['male', 'female']
 
 /** 角色卡画风选项：值必须落在 shared/types/press 的 PORTRAIT_STYLES 内，写风描述由宿主按同一 key 映射 */
-export const PORTRAIT_STYLE_OPTIONS: readonly (OptionMeta<PortraitStyle>)[] = [
+export const PORTRAIT_STYLE_OPTIONS: readonly OptionMeta<PortraitStyle>[] = [
     { value: 'realistic', label: '写实' },
     { value: 'guofeng', label: '国风' },
     { value: 'anime', label: '二次元' },

@@ -35,7 +35,7 @@ function buildUserPrompt(request: CharacterAppearanceRequest): string {
     if (request.tone.length > 0) {
         lines.push(`文风基调：${request.tone}`)
     }
-    // 性别与角色分类合并成一处括注：未设定性别时只保留分类，不写空值
+    // 性别与角色分类合并成一处括注：性别缺失（异常入参）时只保留分类，不写空值
     const roleLabel = request.gender.length > 0 ? `${request.role}·${request.gender}` : request.role
     lines.push(`人物：${request.name}（${roleLabel}）`)
     if (request.age.length > 0) {

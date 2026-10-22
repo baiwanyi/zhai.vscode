@@ -151,7 +151,7 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
                                     </ToggleGroupItem>
                                 ))}
                             </ToggleGroup>
-                            <FieldDescription>用于外貌描写与角色设定图的性别约束，未设定时不作要求</FieldDescription>
+                            <FieldDescription>用于外貌描写与角色设定图的性别约束，男女必选其一</FieldDescription>
                         </Field>
                     </TabsContent>
 

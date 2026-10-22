@@ -17,8 +17,8 @@ export type HookKind = 'suspense' | 'twist' | 'emotion' | 'none'
 /** 角色分类：主角、配角、反派、中立、龙套 */
 export type CharacterRole = 'protagonist' | 'supporting' | 'antagonist' | 'neutral' | 'extra'
 
-/** 角色性别：男、女、未设定 */
-export type CharacterGender = 'male' | 'female' | 'unspecified'
+/** 角色性别：男、女，建卡时必选其一，不提供未设定 */
+export type CharacterGender = 'male' | 'female'
 
 /** 目标读者：与作品 README 的 audience 字段取值一致 */
 export type Audience = '男频' | '女频'
@@ -69,7 +69,7 @@ export interface CharacterCard {
     name: string
     alias: string
     role: CharacterRole
-    /** 性别标签：未设定时外貌与设定图生成不携带性别约束 */
+    /** 性别标签：男或女，外貌与设定图生成时作为硬约束 */
     gender: CharacterGender
     age: string
     identity: string

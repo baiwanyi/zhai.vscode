@@ -1,5 +1,5 @@
 /**
- * 人物设定页：写作流程的第三步，用角色分类筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
+ * 人物设定页：写作流程的第三步，用角色下拉筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
  * 复用约定：列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterDetail 承担、
  * 新增由 CharacterCreateDialog 承担；本文件只做筛选、搜索、弹窗编排与作品氛围的下传。
  * 关键约束：新增后直接打开编辑弹窗，因此 onCreateCharacter 必须回传新卡 id；
@@ -9,8 +9,8 @@ import { Plus, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Button } from '@components/ui/button'
 import { Input } from '@components/ui/input'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Separator } from '@components/ui/separator'
-import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import { CharacterCreateDialog } from './CharacterCreateDialog'
 import { CharacterEditDialog } from './CharacterEditDialog'
 import { CharacterList } from './CharacterList'
@@ -100,23 +100,21 @@ export function PressCharacterPage({
                 </div>
                 <Separator />
                 <div className="flex flex-wrap items-center gap-2">
-                    <div className="min-w-0 flex-1 overflow-x-auto">
-                        <ToggleGroup
-                            type="single"
-                            size="sm"
-                            variant="outline"
-                            className="w-max"
-                            value={roleFilter}
-                            onValueChange={handleFilterChange}
-                        >
-                            {CHARACTER_ROLE_FILTERS.map((option) => (
-                                <ToggleGroupItem key={option.value} value={option.value}>
-                                    {option.label}
-                                </ToggleGroupItem>
-                            ))}
-                        </ToggleGroup>
-                    </div>
-                    <div className="relative w-full @md:w-56 @md:shrink-0">
+                    <Select value={roleFilter} onValueChange={handleFilterChange}>
+                        <SelectTrigger size="sm" className="h-7 w-24 text-xs" aria-label="角色筛选">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            <SelectGroup>
+                                {CHARACTER_ROLE_FILTERS.map((option) => (
+                                    <SelectItem key={option.value} value={option.value} className="text-xs">
+                                        {option.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectGroup>
+                        </SelectContent>
+                    </Select>
+                    <div className="relative min-w-0 flex-1">
                         <Search
                             className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground"
                             aria-hidden="true"

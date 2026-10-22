@@ -275,7 +275,7 @@ export interface CharacterAppearanceRequest {
     name: string
     /** 角色分类中文标签（主角 / 配角 / 反派 / 中立 / 龙套） */
     role: string
-    /** 性别中文标签（男 / 女），空串表示未设定，提示词跳过该行 */
+    /** 性别中文标签：男或女，必填 */
     gender: string
     age: string
     identity: string
@@ -327,7 +327,7 @@ export interface PortraitGenerateRequest {
     name: string
     /** 角色分类中文标签（主角 / 配角 / 反派 / 中立 / 龙套） */
     role: string
-    /** 性别中文标签（男 / 女），空串表示未设定，提示词跳过该行 */
+    /** 性别中文标签：男或女，必填 */
     gender: string
     age: string
     identity: string

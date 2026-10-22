@@ -1,11 +1,12 @@
 /**
  * 人物卡片列表：以单列卡片展示人物卡，承担人物页的主体浏览与选择入口。
- * 复用约定：卡片复用 ui/card，角色与性别徽标取 CHARACTER_ROLE_META / CHARACTER_GENDER_META 的语义变体，空态复用 ui/empty；
+ * 复用约定：卡片复用 ui/card，角色徽标取 CHARACTER_ROLE_META 的图表色，性别以 Mars / Venus 图标区分（男蓝女红），空态复用 ui/empty；
  * 封面取人物卡的 coverPortraitId，未设置时显示占位图标；筛选与搜索由页面持有，本组件只接收已过滤的列表。
  * 关键约束：卡片是可聚焦按钮而非占位容器，键盘可逐项进入；排序固定按 CHARACTER_ROLE_ORDER，
  * 不随点击顺序变化，避免切换筛选后卡片位置跳动；卡片只展示封面与摘要，字段编辑一律在编辑弹窗内完成。
  */
-import { Plus, UserRound } from 'lucide-react'
+import { cn } from 'cn'
+import { Mars, Plus, UserRound, Venus } from 'lucide-react'
 import { useMemo } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
@@ -13,7 +14,7 @@ import { Card } from '@components/ui/card'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import type { CharacterCard } from '../types'
 import type { JSX } from 'react'
-import { CHARACTER_GENDER_META, CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
+import { CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
 
 interface CharacterListProps {
     /** 已按筛选与搜索收敛过的人物卡 */
@@ -75,7 +76,6 @@ export function CharacterList({
         <div className="flex flex-col gap-2">
             {sortedCharacters.map((character) => {
                 const roleMeta = CHARACTER_ROLE_META[character.role]
-                const genderMeta = CHARACTER_GENDER_META[character.gender]
                 const summary = character.desire.length > 0 ? character.desire : '欲望未填写'
                 const cover = character.portraits.find((item) => item.id === character.coverPortraitId)
                 return (
@@ -110,14 +110,12 @@ export function CharacterList({
                         <div className="flex min-w-0 flex-1 flex-col gap-1">
                             <div className="flex min-w-0 items-center gap-1.5">
                                 <span className="min-w-0 truncate text-sm font-medium">{character.name}</span>
-                                <Badge variant={roleMeta.tone} className="shrink-0">
-                                    {roleMeta.label}
-                                </Badge>
-                                {character.gender !== 'unspecified' ? (
-                                    <Badge variant={genderMeta.tone} className="shrink-0">
-                                        {genderMeta.label}
-                                    </Badge>
-                                ) : null}
+                                <Badge className={cn('shrink-0', roleMeta.className)}>{roleMeta.label}</Badge>
+                                {character.gender === 'male' ? (
+                                    <Mars className="size-3.5 shrink-0 text-chart-1" role="img" aria-label="男" />
+                                ) : (
+                                    <Venus className="size-3.5 shrink-0 text-chart-5" role="img" aria-label="女" />
+                                )}
                             </div>
                             <p className="truncate text-xs text-muted-foreground">
                                 {character.identity.length > 0 ? character.identity : '未填写身份'}

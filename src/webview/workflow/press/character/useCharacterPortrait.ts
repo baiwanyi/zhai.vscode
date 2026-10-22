@@ -80,13 +80,13 @@ export function useCharacterPortrait(): CharacterPortraitState {
     return { isGenerating, error, generate, remove, abort }
 }
 
-/** 请求载荷：只上传已填字段，空值交给宿主兜底；性别未设定时传空串，由宿主跳过该行 */
+/** 请求载荷：只上传已填字段，空值交给宿主兜底；性别必填，直接取中文标签 */
 function buildPayload(character: CharacterCard, context: AppearanceContext): PortraitGenerateRequest {
     return {
         characterId: character.id,
         name: character.name,
         role: CHARACTER_ROLE_META[character.role].label,
-        gender: character.gender === 'unspecified' ? '' : CHARACTER_GENDER_META[character.gender].label,
+        gender: CHARACTER_GENDER_META[character.gender].label,
         age: character.age,
         identity: character.identity,
         appearance: character.appearance,
