@@ -186,13 +186,29 @@ body.vscode-high-contrast-light {
 }
 
 /*
- * 滚动条：接管 Chromium 默认样式（message-scroller 模板里的 scrollbar-* 类在本项目并无定义）。
- * 颜色取自 VSCode 滚动条滑块变量，与编辑区、侧栏的滚动条观感一致；
+ * 全站滚动条：统一为细窄样式，颜色取自 VSCode 滚动条滑块变量，与编辑区、侧栏观感一致。
+ * 新版 Chromium（Electron 30+）在 Windows 走 Fluent 标准滚动条并忽略 ::-webkit-scrollbar，
+ * 因此标准属性是主方案，下面的 WebKit 伪元素仅对旧引擎兜底。
  * 滑块色走 --scrollbar-thumb 变量，容器可按需覆盖（如消息区悬停才浮现）。
  */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb, var(--vscode-scrollbarSlider-background, rgb(121 121 121 / 40%)))
+        transparent;
+}
+
 ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
+}
+
+/* 按需隐藏滚动条：输入框、侧栏等不需要滚动指示的容器沿用该类名 */
+.no-scrollbar {
+    scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+    display: none;
 }
 
 ::-webkit-scrollbar-track,

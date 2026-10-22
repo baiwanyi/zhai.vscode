@@ -182,6 +182,8 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 **菜单分组与 Auto**：列表按来源分为「内置模型」与「自定义模型」两组，内置组首项为 `Auto`，与「空模型 id」一一对应——选中即写入空 id（`resolveCodebuddyModel` 归一为 `undefined`，交给平台自动选择）。分组判定见 `isCustomModel`：id 带 `custom-local:` 前缀、`vendor` 为 `user`、`tags` 含 `custom` 三者任一命中即为自定义（实测这些字段可能单独缺失，只认一个会分组错位）。菜单不提供手动输入入口，模型 id 只能来自清单。
 
+**模型图标**：平台下发的 `iconUrl` 只有极少数模型有值（实测 22 个仅 2 个），因此图标由 `ModelIcon` 按模型 id 前缀映射本地资源 `resources/models/*.svg`（经 `@resources` 别名与 tsconfig paths 引入）：deepseek / glm / hunyuan / kimi / minimax / mimo / stepfun；自定义模型（`custom-local:*`）与未提供厂商图形的模型（如 space-bunny）统一回退 `codebuddy.svg`（目录里的 `custom.svg` 已不再使用）。所有图标一律用 `<img>` 原样展示、不做着色，颜色完全由 SVG 文件自身决定（`stepfun.svg` 与 `codebuddy.svg` 无 fill，深色主题下呈深色）。清单里的 `vendor` 是内部代号（j/f/e），不能作为厂商依据。
+
 **文生图模型**：`ImageGen` 的模型由 CLI 的 `ImageService.resolveModel` 决定，顺序为「会话下发的 `--text-to-image-model` → 环境变量 `CODEBUDDY_TEXT_TO_IMAGE_MODEL` → CLI settings 的 `textToImageModel` → 站点配置中 tags 含 `text-to-image` 的首个模型 → 兜底 `hunyuan-image-v3.0`」。该清单来自服务端产品配置，SDK 的 `getAvailableModels` / `getAvailableModelsRaw` 只返回语言模型（实测 22 个均无 `text-to-image` 标签），且斜杠命令在 headless 会话中不会被执行，故插件不下发 `--text-to-image-model`、也不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，选择会存进 CLI settings 并被 ImageGen 沿用。
 
 ### 5.3 各入口的会话与工具策略
@@ -457,7 +459,7 @@ interface AbortRequest {
 | 工具行左 | 命令 (`Command` 图标) | 下拉四项：改写 / 润色 / 校对 / 去 AI 味，选中项带勾选；选中后输入区顶部显示命令徽章（可点 × 或再次点击取消），指令模板不进入输入框 |
 | 工具行右 | 参考 (`BookOpen` 图标) | 下拉四项：古诗词 / 名言名句 / 经典文本 / 历史资料；当前为占位，点击仅提示「即将上线」，不发起任何请求 |
 | 操作行左 | 模式按钮 | 对话 / 写作两态切换，写 `conversations.mode` 持久化；生成中禁用 |
-| 操作行左 | 模型菜单 | 按钮完整展示当前模型名、不截断（空选择显示「Auto」，正文前景色，悬浮提示附带额度倍率）；模型名优先取菜单清单，初始化阶段清单未拉取时用 `ai/runtime` 的 `modelName` 兜底，避免闪出裸 id；展开时经 `ai/models` 取账号可用清单（激活时已预热，缓存为空才现拉）：内置组首项为 `Auto`，其后按「内置模型 / 自定义模型」两组列出，两组均按名称字母序排列，每项右侧依次为勾选与额度倍率 `✓ 0.51x`（倍率未知时只显示勾选）；选中写入 globalState 并广播 `runtime` 刷新；生成中禁用 |
+| 操作行左 | 模型菜单 | 按钮完整展示当前模型名、不截断（空选择显示「Auto」，正文前景色）；模型名优先取菜单清单，初始化阶段清单未拉取时用 `ai/runtime` 的 `modelName` 兜底，避免闪出裸 id；展开时经 `ai/models` 取账号可用清单（激活时已预热，缓存为空才现拉）：菜单最高 `18rem`，模型较多时在菜单内层滚动（外层不滚动，避免毛玻璃底色随内容滚出可视区而出现下半截发透；滚动条为全站统一的细窄样式）；内置组首项为 `Auto`，其后按「内置模型 / 自定义模型」两组列出，两组均按名称字母序排列，每项左侧为本地厂商图标（未提供图标的厂商回退 CodeBuddy 标志），右侧依次为勾选与额度倍率 `✓ 0.51x`（倍率未知时只显示勾选）；选中写入 globalState 并广播 `runtime` 刷新；生成中禁用 |
 | 操作行右 | Token 圆环 | 当日已用 / 预算的环形占比（<70% 主色、70~90% 警示、≥90% destructive），点开浮层看已用 / 预算 / 剩余，每日 0 点重置 |
 | 操作行右 | 增强提示词 | 本地规则化补齐「任务 / 要求」三段式，再次点击还原原文，不消耗 Token |
 | 操作行右 | 发送 / 停止 | 生成中替换为停止；写作模式无可改写目标时发送禁用 |

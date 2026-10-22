@@ -13,10 +13,11 @@ export default defineConfig({
     root: 'src/webview',
     base: './',
     plugins: [react(), tailwindcss()],
-    // 别名只暴露 components 与 shared 两个边界，与 tsconfig 的 @components/*、@shared/* 保持一致
+    // 别名只暴露 components、resources 与 shared 三个边界，与 tsconfig 的 @components/*、@resources/*、@shared/* 保持一致
     resolve: {
         alias: {
             '@components': resolve(import.meta.dirname, 'src/components'),
+            '@resources': resolve(import.meta.dirname, 'resources'),
             '@shared': resolve(import.meta.dirname, 'src/shared'),
         },
     },

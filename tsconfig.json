@@ -25,6 +25,7 @@
         // 路径别名：TS7 已移除 baseUrl，paths 相对本文件所在目录解析
         "paths": {
             "@components/*": ["./src/components/*"],
+            "@resources/*": ["./resources/*"],
             "@shared/*": ["./src/shared/*"]
         }
     },

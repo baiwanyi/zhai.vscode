@@ -1,6 +1,7 @@
 /**
  * AI 对话模型菜单：底部操作行展示当前模型，展开时才拉取账号可用清单。
- * 复用 @components/ui 的 DropdownMenu，把「Auto」「内置模型」「自定义模型」合并为同一菜单。
+ * 复用 @components/ui 的 DropdownMenu，把「Auto」「内置模型」「自定义模型」合并为同一菜单；
+ * 每项左侧图标由 ./ModelIcon 按模型 id 前缀提供（品牌 SVG，缺失时回退品牌色首字母胶囊）。
  * 关键约束：清单拉取需拉起 CLI（数秒），加载中禁止重复选择；Auto 与「空模型 id」一一对应，
  * 选中即交给平台自动选择模型；本层不提供手动输入，模型 id 只来自清单。
  * 清单项右侧展示平台下发的额度倍率（每个模型的成本消耗速率），勾选位于倍率之前，倍率未知时不渲染；
@@ -8,7 +9,7 @@
  * 触发器完整展示当前模型名、不截断，颜色取正文前景色而不是弱化色；
  * 清单未拉取或未命中时用运行时带回的 currentName 兜底，避免初始化阶段闪出裸模型 id。
  */
-import { Check, ChevronDown, Cpu, Loader2, Sparkles, Wrench } from 'lucide-react'
+import { Check, ChevronDown, Loader2, Sparkles } from 'lucide-react'
 import { Button } from '@components/ui/button'
 import {
     DropdownMenu,
@@ -19,6 +20,7 @@ import {
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
 import type { AiModelChoices, AiModelOption } from '@shared/types/aiChat'
+import { ModelIcon } from './ModelIcon'
 import type { JSX } from 'react'
 
 /** 空模型 id 表示交给平台自动选择模型 */
@@ -68,7 +70,6 @@ export function AiChatModelMenu({
     const currentLabel = isAuto
         ? AUTO_MODEL_LABEL
         : (currentOption?.name ?? (currentName.length > 0 ? currentName : current))
-    const currentRateLabel = toRateLabel(currentOption?.creditRate ?? null)
 
     const renderAutoOption = (): JSX.Element => (
         <DropdownMenuItem onSelect={() => onSelect(AUTO_MODEL_ID, false)} className="gap-2">
@@ -81,17 +82,8 @@ export function AiChatModelMenu({
     const renderOption = (option: AiModelOption): JSX.Element => {
         const rateLabel = toRateLabel(option.creditRate)
         return (
-            <DropdownMenuItem
-                key={option.modelId}
-                onSelect={() => onSelect(option.modelId, false)}
-                title={`${option.name}（${option.modelId}）`}
-                className="gap-2"
-            >
-                {option.custom ? (
-                    <Wrench className="size-3.5 shrink-0 text-muted-foreground" />
-                ) : (
-                    <Cpu className="size-3.5 shrink-0 text-muted-foreground" />
-                )}
+            <DropdownMenuItem key={option.modelId} onSelect={() => onSelect(option.modelId, false)} className="gap-2">
+                <ModelIcon modelId={option.modelId} name={option.name} />
                 <span className="min-w-0 flex-1 truncate">{option.name}</span>
                 <span className="flex shrink-0 items-center gap-1">
                     {option.modelId === current ? <Check className="size-3 shrink-0" /> : null}
@@ -109,15 +101,14 @@ export function AiChatModelMenu({
                 <Button
                     variant="ghost"
                     className="shrink-0 gap-1 items-center text-foreground font-normal"
-                    title={
-                        currentRateLabel === null
-                            ? `当前模型：${currentLabel}`
-                            : `当前模型：${currentLabel}（额度 ${currentRateLabel}）`
-                    }
                     aria-label={`当前模型 ${currentLabel}，点击切换`}
                     disabled={disabled}
                 >
-                    <Cpu />
+                    {isAuto ? (
+                        <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+                    ) : (
+                        <ModelIcon modelId={current} name={currentLabel} />
+                    )}
                     <span className="whitespace-nowrap">{currentLabel}</span>
                     {isLoading ? (
                         <Loader2 className="size-3 shrink-0 animate-spin" />
@@ -126,21 +117,28 @@ export function AiChatModelMenu({
                     )}
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
-                <DropdownMenuLabel>内置模型</DropdownMenuLabel>
-                {renderAutoOption()}
-                {builtinOptions.length > 0 ? (
-                    builtinOptions.map(renderOption)
-                ) : (
-                    <DropdownMenuItem disabled>{isLoading ? '正在读取可用模型…' : '未读取到可用模型'}</DropdownMenuItem>
-                )}
-                <DropdownMenuSeparator />
-                <DropdownMenuLabel>自定义模型</DropdownMenuLabel>
-                {customOptions.length > 0 ? (
-                    customOptions.map(renderOption)
-                ) : (
-                    <DropdownMenuItem disabled>暂无自定义模型</DropdownMenuItem>
-                )}
+            <DropdownMenuContent align="start" className="min-w-64">
+                {/* 滚动交给内层：外层不滚动，毛玻璃底色与描边才不会随内容滚出可视区（否则下半截发透）；
+                    overflow-x-hidden 必需——分隔线带 -mx-1，会超出内层宽度 8px，而 overflow-y-auto 会把
+                    水平方向一并变成 auto，不裁剪就会出现水平滚动条 */}
+                <div className="max-h-72 overflow-x-hidden overflow-y-auto">
+                    <DropdownMenuLabel>内置模型</DropdownMenuLabel>
+                    {renderAutoOption()}
+                    {builtinOptions.length > 0 ? (
+                        builtinOptions.map(renderOption)
+                    ) : (
+                        <DropdownMenuItem disabled>
+                            {isLoading ? '正在读取可用模型…' : '未读取到可用模型'}
+                        </DropdownMenuItem>
+                    )}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>自定义模型</DropdownMenuLabel>
+                    {customOptions.length > 0 ? (
+                        customOptions.map(renderOption)
+                    ) : (
+                        <DropdownMenuItem disabled>暂无自定义模型</DropdownMenuItem>
+                    )}
+                </div>
             </DropdownMenuContent>
         </DropdownMenu>
     )
