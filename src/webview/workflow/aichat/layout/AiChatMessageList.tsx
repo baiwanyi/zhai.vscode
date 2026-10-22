@@ -38,6 +38,7 @@ interface AiChatMessageListProps {
     hasApiKey: boolean
     applyState: AiChatListApplyState | null
     onSetupApiKey: () => void
+    onLoginCodebuddy: () => void
 }
 
 export function AiChatMessageList({
@@ -48,6 +49,7 @@ export function AiChatMessageList({
     hasApiKey,
     applyState,
     onSetupApiKey,
+    onLoginCodebuddy,
 }: AiChatMessageListProps): JSX.Element {
     return (
         <MessageScrollerProvider defaultScrollPosition="end">
@@ -55,7 +57,12 @@ export function AiChatMessageList({
                 <MessageScrollerViewport aria-label="对话消息">
                     <MessageScrollerContent className="gap-4 p-3">
                         {messages.length === 0 ? (
-                            <AiChatEmptyState runtime={runtime} hasApiKey={hasApiKey} onSetupApiKey={onSetupApiKey} />
+                            <AiChatEmptyState
+                                runtime={runtime}
+                                hasApiKey={hasApiKey}
+                                onSetupApiKey={onSetupApiKey}
+                                onLoginCodebuddy={onLoginCodebuddy}
+                            />
                         ) : null}
                         {messages.map((message) => (
                             <MessageScrollerItem

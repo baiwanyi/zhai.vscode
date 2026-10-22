@@ -124,11 +124,16 @@ export interface AiApplyResult {
     reason?: 'applied'
 }
 
-/** 运行时信息：密钥状态与默认参数，用于页面引导与参数展示 */
+/** AI 通道标识：决定页面采用哪种凭证引导（密钥 / 登录） */
+export type AiProviderId = 'deepseek' | 'codebuddy'
+
+/** 运行时信息：通道、就绪状态与默认参数，用于页面引导与参数展示 */
 export interface AiRuntimeInfo {
-    /** 是否已在系统密钥库中配置 DeepSeek API Key */
+    /** 当前生效的通道 */
+    provider: AiProviderId
+    /** 当前通道是否就绪：DeepSeek 检查密钥，CodeBuddy 交由请求阶段判定 */
     hasApiKey: boolean
-    /** 脱敏后的 Key（仅末 4 位） */
+    /** 脱敏后的 Key（仅末 4 位，CodeBuddy 通道下无意义） */
     maskedApiKey: string
     model: string
     temperature: number

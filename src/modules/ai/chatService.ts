@@ -130,6 +130,7 @@ export class AiChatService implements vscode.Disposable {
         const status = await this.provider.checkReady()
         const apiKey = await this.secrets.get('deepseekApiKey')
         return {
+            provider: this.provider.id,
             hasApiKey: status.ready,
             maskedApiKey: SecretsService.mask(apiKey),
             model: cfg.aiModel,

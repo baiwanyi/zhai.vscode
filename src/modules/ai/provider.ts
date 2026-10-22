@@ -6,8 +6,10 @@
  * 并发隔离交给调用方的 AbortController，避免多入口同时生成时互相串流。
  */
 
-/** 通道标识：配置项 zhai.ai.provider 的取值来源 */
-export type AiProviderId = 'deepseek' | 'codebuddy'
+import type { AiProviderId } from '../../shared/types/aiChat'
+
+/** 通道标识：与 webview 共用的类型来源为 shared/types/aiChat */
+export type { AiProviderId } from '../../shared/types/aiChat'
 
 /** 对话消息：与 OpenAI 协议一致的最小字段集 */
 export interface AiChatMessage {

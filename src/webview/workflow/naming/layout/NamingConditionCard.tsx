@@ -86,7 +86,7 @@ export function NamingConditionCard({
                         title={
                             catalog.aiAvailable
                                 ? '生成方式：开启为 AI 生成，关闭为本地生成'
-                                : '未配置 DeepSeek API Key，AI 生成不可用'
+                                : 'AI 通道未就绪，AI 生成不可用'
                         }
                     >
                         <Switch

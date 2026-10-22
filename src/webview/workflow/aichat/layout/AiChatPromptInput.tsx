@@ -76,7 +76,7 @@ export function AiChatPromptInput({
         placeholder = `可补充「${command.title}」的要求，留空直接发送`
     }
     if (isApiKeyMissing) {
-        placeholder = '请先设置 DeepSeek API Key'
+        placeholder = '请先在插件设置中完成 AI 通道配置'
     }
 
     /** 手动输入或修改即退出增强态，避免还原时覆盖用户的新内容 */

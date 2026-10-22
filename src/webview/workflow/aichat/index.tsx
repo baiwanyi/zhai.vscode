@@ -249,6 +249,7 @@ export function AiChat(): JSX.Element {
                             : null
                     }
                     onSetupApiKey={() => void runHostCommand('zhai.ai.setApiKey')}
+                    onLoginCodebuddy={() => void runHostCommand('zhai.ai.loginCodebuddy')}
                 />
             </div>
             <AiChatComposer
