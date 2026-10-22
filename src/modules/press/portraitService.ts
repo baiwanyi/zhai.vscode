@@ -3,6 +3,7 @@
  * 复用约定：图像通道经 ./ai/imageProvider 的入口（唯一实现为 CodeBuddy 的 ImageGen），提示词复用 ./ai/portraitPrompt，
  * 配额复用 ./db/quotaRepository，路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
  * 关键约束：图片落在 press/_portraits/{characterId}/ 下，人物标识须匹配安全字符集；
+ * 目录是图片的唯一事实来源：生成完成即落盘，关闭弹窗不丢结果，列举以磁盘为准；
  * 删除只接受 press/_portraits 下的四段相对路径，优先走回收站；同一时刻只允许一个生成请求。
  */
 import { randomUUID } from 'node:crypto'
@@ -13,7 +14,13 @@ import { readText, readTextList } from './pressAiService'
 import { PRESS_MODULE_DIR } from './projectFactory'
 import type { ImageProviderRouter } from './ai/imageProvider'
 import type { QuotaKeys } from './db/quotaRepository'
-import type { PortraitGenerateRequest, PortraitGenerateResult, PortraitStyle } from '../../shared/types/press'
+import type {
+    CharacterPortrait,
+    PortraitGenerateRequest,
+    PortraitGenerateResult,
+    PortraitListResult,
+    PortraitStyle,
+} from '../../shared/types/press'
 import type Database from 'better-sqlite3'
 import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES } from '../../shared/types/press'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
@@ -26,6 +33,8 @@ const PORTRAIT_DIR = '_portraits'
 const QUOTA_KEYS: QuotaKeys = { dateKey: 'press_image_date', countKey: 'press_image_count' }
 /** 人物标识白名单：只允许字母、数字、下划线与短横线，避免路径穿越 */
 const CHARACTER_ID_PATTERN = /^[A-Za-z0-9_-]{4,64}$/
+/** 目录扫描只认图片文件，其余（缩略图缓存、说明文件等）一律忽略 */
+const PORTRAIT_FILE_PATTERN = /\.(png|jpe?g|webp|gif)$/i
 /** 短字段长度上限 */
 const MAX_SHORT_TEXT = 64
 /** 长字段长度上限 */
@@ -93,6 +102,44 @@ export class PortraitService {
         }
     }
 
+    /**
+     * 列举某个角色目录下的全部设定图：目录不存在视为空，按文件修改时间升序返回。
+     * 磁盘是唯一事实来源，因此关闭弹窗期间完成的生成同样能被读回。
+     * @param toWebviewUri 把磁盘 Uri 转成 webview 可访问 URL 的转换器
+     */
+    public async list(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<PortraitListResult> {
+        const characterId = normalizeCharacterId(payload, 'pressAi/listPortraits')
+        const root = resolveStorageRoot()
+        const dirSegments = [PRESS_MODULE_DIR, PORTRAIT_DIR, characterId]
+        let entries: [string, vscode.FileType][]
+        try {
+            entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
+        } catch {
+            // 角色还没生成过图片，目录尚不存在
+            return { portraits: [] }
+        }
+        const names = entries
+            .filter(([name, type]) => type === vscode.FileType.File && PORTRAIT_FILE_PATTERN.test(name))
+            .map(([name]) => name)
+        const portraits: CharacterPortrait[] = []
+        for (const name of names) {
+            const uri = buildStorageUri(root, [...dirSegments, name])
+            try {
+                const stat = await vscode.workspace.fs.stat(uri)
+                portraits.push({
+                    id: name.replace(/\.[^.]+$/, ''),
+                    path: [...dirSegments, name].join('/'),
+                    url: toWebviewUri(uri),
+                    createdAt: new Date(stat.mtime).toISOString(),
+                })
+            } catch {
+                // 并发删除时文件可能已消失，跳过而不是让整次扫描失败
+            }
+        }
+        portraits.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+        return { portraits }
+    }
+
     /** 取消进行中的生成 */
     public abort(): { aborted: boolean } {
         if (!this.activeRequest) {
@@ -138,9 +185,7 @@ export class PortraitService {
 
 /** 入参收窄：人物标识走白名单，其余字段逐个截断，姓名为空直接拒绝 */
 function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
-    if (typeof payload !== 'object' || payload === null) {
-        throw new Error('pressAi/generatePortrait 缺少参数')
-    }
+    const characterId = normalizeCharacterId(payload, 'pressAi/generatePortrait')
     const value = payload as {
         characterId?: unknown
         name?: unknown
@@ -157,10 +202,6 @@ function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
         genres?: unknown
         tone?: unknown
         style?: unknown
-    }
-    const characterId = readText(value.characterId, MAX_SHORT_TEXT)
-    if (!CHARACTER_ID_PATTERN.test(characterId)) {
-        throw new Error('人物标识非法，无法建立角色卡目录')
     }
     const request: PortraitGenerateRequest = {
         characterId,
@@ -191,6 +232,18 @@ function readStyle(value: unknown): PortraitStyle {
         return DEFAULT_PORTRAIT_STYLE
     }
     return PORTRAIT_STYLES.find((item) => item === value) ?? DEFAULT_PORTRAIT_STYLE
+}
+
+/** 读取人物标识：只接受安全字符集，避免拼出越界目录；缺失或非法一律拒绝 */
+function normalizeCharacterId(payload: unknown, method: string): string {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error(`${method} 缺少参数`)
+    }
+    const characterId = readText((payload as { characterId?: unknown }).characterId, MAX_SHORT_TEXT)
+    if (!CHARACTER_ID_PATTERN.test(characterId)) {
+        throw new Error('人物标识非法，无法定位角色卡目录')
+    }
+    return characterId
 }
 
 /** 读取删除请求里的相对路径 */

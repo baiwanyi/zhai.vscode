@@ -130,7 +130,8 @@ export function PressCharacterPage({
                 </div>
                 <Separator />
             </header>
-            <div className="min-h-0 flex-1 overflow-y-auto pr-0.5">
+            {/* 左右留 2px：滚动容器 overflow-y-auto 同时裁横向溢出，卡片聚焦环不能被切掉 */}
+            <div className="min-h-0 flex-1 overflow-y-auto px-0.5">
                 <CharacterList
                     characters={visibleCharacters}
                     totalCount={characters.length}

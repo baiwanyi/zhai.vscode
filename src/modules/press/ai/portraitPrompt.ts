@@ -1,22 +1,36 @@
 /**
  * 角色设定图提示词：把人物卡与作品氛围拼成图像模型可用的自然语言描述。
- * 复用约定：风格、构图与禁止项集中在此一份，不散落到服务层；尺寸与模型交给配置，提示词只管画什么。
- * 关键约束：外貌字段优先，缺失时退回身份与性格；不写入剧情与台词，避免模型画出叙事场景；
- * 提示词按服务商上限截断，超长时保留前段（人物特征在前，氛围在后）。
+ * 复用约定：插画基底、画风提示与禁止项集中在此一份，不散落到服务层；尺寸与模型交给配置，提示词只管画什么。
+ * 关键约束：按番茄小说「一键生图」的章节配图观感收口（叙事场景 + 氛围光影，画风交给 STYLE_HINTS），
+ * 不按封面或纯立绘方向写；外貌字段优先，缺失时退回身份与性格；不写入剧情与台词，
+ * 提示词按服务商上限截断且保留前段（人物特征在前，场景氛围在后）。
  */
 import type { PortraitGenerateRequest, PortraitStyle } from '../../../shared/types/press'
 
 /** 提示词长度上限：多数服务商限制 1000 字符以内，中文按 600 字控制 */
 const MAX_PROMPT_LENGTH = 600
 
-/** 画风描述：key 与 shared/types/press 的 PORTRAIT_STYLES 一一对应，新增风格须在此登记 */
+/**
+ * 统一插画基底：只约束构图、光影与画面质感，不锁定画风，具体画法交给 STYLE_HINTS。
+ * 对齐番茄小说「一键生图」的章节配图观感：人物为主体，场景承载身份信息。
+ */
+const ILLUSTRATION_STYLE_BASE =
+    '竖版小说配图，单个人物位于画面中央偏前，半身至膝上入镜，姿态与视线带出情节感，' +
+    '身后是与其身份相称的完整场景，前后景层次分明、中景景深，侧上方柔和体积光，色彩通透干净'
+
+/**
+ * 画面风格描述：key 与 shared/types/press 的 PORTRAIT_STYLES 一一对应，新增风格须在此登记。
+ * 文案对齐番茄小说 AI 生图的风格分类，用画面要素而不是风格名描述，模型才画得准。
+ */
 const STYLE_HINTS: Readonly<Record<PortraitStyle, string>> = {
-    realistic: '写实摄影风格，真实皮肤质感与自然光',
-    guofeng: '东方工笔与水墨融合，淡雅配色与留白',
-    anime: '日系动画赛璐璐上色，干净线条与明快配色',
-    painterly: '数字厚涂，明显笔触与丰富色彩层次',
-    cinematic: '电影级布光与调色，轮廓光与浅景深',
-    lineart: '黑白线稿，排线塑形且不上色',
+    auto: '按题材与世界观自动匹配画风：古风玄幻走东方古风原画，现代都市走半写实插画，整体保持统一',
+    anime: '日系动画赛璐璐上色，干净线稿与明快高饱和配色',
+    guofeng: '东方古风，工笔重彩与水墨晕染结合，衣袂层叠、纹样考究，淡雅配色与氤氲氛围',
+    realistic: '写实向插画，真实皮肤与布料纹理，五官比例真实，自然光影',
+    cinematic: '电影感，电影级布光与调色，强轮廓光与空气感，胶片颗粒',
+    photo: '摄影质感，单反人像质感，皮肤细节真实，浅景深背景虚化，环境光自然',
+    pixel: '8-bit 像素画风，低分辨率色块与复古游戏画面，锐利像素边缘',
+    gameart: '游戏角色原画级厚涂，装备与材质细节，概念设计光影与轮廓高光',
 }
 
 /** 构造图像生成提示词 */
@@ -26,7 +40,7 @@ export function buildPortraitPrompt(request: PortraitGenerateRequest): string {
         .filter((item) => item.length > 0)
         .join('，')
     const lines = [
-        `${STYLE_HINTS[request.style]}的人物设定图，竖版构图，半身肖像，纯净单色背景，细节清晰。`,
+        `${ILLUSTRATION_STYLE_BASE}。画风：${STYLE_HINTS[request.style]}。`,
         `角色：${request.name}（${request.role}）`,
     ]
     if (basics.length > 0) {
@@ -47,6 +61,9 @@ export function buildPortraitPrompt(request: PortraitGenerateRequest): string {
     if (request.tone.length > 0) {
         lines.push(`整体氛围：${request.tone}`)
     }
-    lines.push('要求：画面只出现一个人物，五官、发型与服饰符合设定，不要文字、水印、多人或分解图。')
+    lines.push(
+        '要求：画面只出现一个人物，按身份与世界观补全所处场景、光线与随身物件，让画面像小说配图而不是封面海报；' +
+            '不要文字、水印、logo、边框、多余人物或分解图。',
+    )
     return lines.join('\n').slice(0, MAX_PROMPT_LENGTH)
 }

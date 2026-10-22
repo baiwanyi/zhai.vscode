@@ -1,6 +1,6 @@
 /**
  * 作品契约：仪表盘 /press 页的作品摘要、创建、打开、卷重命名/删除与章节删除/移动的请求结构，
- * 目标读者枚举，以及人物外貌生成（pressAi/aiAppearance）与角色设定图（pressAi/generatePortrait）的契约。
+ * 目标读者枚举，以及人物外貌生成（pressAi/aiAppearance）与角色设定图（pressAi/generatePortrait、listPortraits、deletePortrait）的契约。
  * 使用方：仪表盘 Webview 的作品列表与宿主侧 DashboardViewProvider、modules/press 服务；
  * 外貌与角色卡契约同时被写作管理页的人物弹窗、宿主 PressAiService 与 PortraitService 使用。
  * 复用约定：dirPath 取相对存储根口径（press/{作品名}），与索引库 files.path 同源；作品名即目录名。
@@ -294,21 +294,23 @@ export interface CharacterAppearanceResult {
     content: string
 }
 
-/** 角色设定图风格：取值参与宿主提示词映射，新增值须同时在前端选项表与宿主 STYLE_HINTS 中登记 */
-export type PortraitStyle = 'realistic' | 'guofeng' | 'anime' | 'painterly' | 'cinematic' | 'lineart'
+/** 画面风格：对齐番茄小说 AI 生图的风格分类，取值参与宿主提示词映射，新增值须同时在前端选项表与宿主 STYLE_HINTS 中登记 */
+export type PortraitStyle = 'auto' | 'anime' | 'guofeng' | 'realistic' | 'cinematic' | 'photo' | 'pixel' | 'gameart'
 
 /** 风格白名单：前端选项与宿主入参校验共用同一份，避免两处口径分叉 */
 export const PORTRAIT_STYLES: readonly PortraitStyle[] = [
-    'realistic',
-    'guofeng',
+    'auto',
     'anime',
-    'painterly',
+    'guofeng',
+    'realistic',
     'cinematic',
-    'lineart',
+    'photo',
+    'pixel',
+    'gameart',
 ]
 
-/** 默认风格：写实，对多数题材都是中性选择 */
-export const DEFAULT_PORTRAIT_STYLE: PortraitStyle = 'realistic'
+/** 默认风格：智能匹配，由宿主按题材与世界观选择具体画风 */
+export const DEFAULT_PORTRAIT_STYLE: PortraitStyle = 'auto'
 
 /** 角色设定图：宿主生成并落盘后回传的图片信息 */
 export interface CharacterPortrait {
@@ -351,4 +353,14 @@ export interface PortraitGenerateResult {
 /** 角色设定图删除请求：只接受 press/_portraits 下的相对路径 */
 export interface PortraitDeleteRequest {
     path: string
+}
+
+/** 角色设定图列举请求：打开角色卡时按人物目录回读已落盘的图片 */
+export interface PortraitListRequest {
+    characterId: string
+}
+
+/** 角色设定图列举结果：按生成时间升序，最早的排在前面 */
+export interface PortraitListResult {
+    portraits: CharacterPortrait[]
 }

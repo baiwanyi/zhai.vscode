@@ -86,7 +86,7 @@ export interface CharacterCard {
     portraits: CharacterPortrait[]
     /** 角色封面：指向 portraits 中的一项，null 表示未设置 */
     coverPortraitId: string | null
-    /** 生成角色卡时使用的画风，随人物卡保存，切换后只影响后续生成 */
+    /** 生成角色卡时使用的画面风格，随人物卡保存，切换后只影响后续生成 */
     portraitStyle: PortraitStyle
 }
 

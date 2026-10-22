@@ -6,6 +6,7 @@
  * 章节统计以章纲上的目标字数为分母，不使用正文实际字数反推计划。
  */
 import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
+import type { CharacterPortrait } from '@shared/types/press'
 import type {
     CharacterCard,
     CharacterSeed,
@@ -68,6 +69,18 @@ export function isSettingFieldMissing(setting: ProjectSetting, key: keyof Projec
 /** 生成节点 id：卷、章、节拍、人物共用，前缀用于排查来源 */
 export function createId(prefix: 'vol' | 'ch' | 'beat' | 'char'): string {
     return `${prefix}-${crypto.randomUUID()}`
+}
+
+/**
+ * 合并角色图：磁盘扫描结果作为顺序基准，本地草稿里磁盘尚未扫到的（刚生成还没回读）追加到末尾。
+ * 按 id 去重，反复打开角色卡不会出现重复项。
+ */
+export function mergePortraits(
+    listed: readonly CharacterPortrait[],
+    local: readonly CharacterPortrait[],
+): CharacterPortrait[] {
+    const seen = new Set(listed.map((item) => item.id))
+    return [...listed, ...local.filter((item) => !seen.has(item.id))]
 }
 
 /** 新建一张人物卡：角色默认配角、性别默认男、姓名占位；seed 承接新增弹窗填写的初始值，id 恒由本函数生成 */
@@ -255,7 +268,9 @@ export function buildOutlineDraft(
                 status: 'planned',
                 beats: [
                     createBeat(`${heroName}因「${phase}」被卷入新的阻碍`),
-                    createBeat(isClimax ? `阶段高潮：与${antagonist?.name ?? '对手'}正面相撞` : '推进过程中暴露一条新线索'),
+                    createBeat(
+                        isClimax ? `阶段高潮：与${antagonist?.name ?? '对手'}正面相撞` : '推进过程中暴露一条新线索',
+                    ),
                 ],
                 characterIds: [protagonist?.id, isClimax ? antagonist?.id : undefined].filter(
                     (id): id is string => typeof id === 'string',

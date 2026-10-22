@@ -91,14 +91,19 @@ export const CHARACTER_GENDER_META: Readonly<Record<CharacterGender, { label: st
 /** 性别选项顺序：男、女，必选其一 */
 export const CHARACTER_GENDER_ORDER: readonly CharacterGender[] = ['male', 'female']
 
-/** 角色卡画风选项：值必须落在 shared/types/press 的 PORTRAIT_STYLES 内，写风描述由宿主按同一 key 映射 */
+/**
+ * 角色卡画面风格选项：与番茄小说 AI 生图的「画面风格」分类对齐，
+ * 值必须落在 shared/types/press 的 PORTRAIT_STYLES 内，提示词由宿主按同一 key 映射。
+ */
 export const PORTRAIT_STYLE_OPTIONS: readonly OptionMeta<PortraitStyle>[] = [
+    { value: 'auto', label: '智能匹配' },
+    { value: 'anime', label: '日漫' },
+    { value: 'guofeng', label: '古风' },
     { value: 'realistic', label: '写实' },
-    { value: 'guofeng', label: '国风' },
-    { value: 'anime', label: '二次元' },
-    { value: 'painterly', label: '厚涂' },
-    { value: 'cinematic', label: '电影感' },
-    { value: 'lineart', label: '线稿' },
+    { value: 'cinematic', label: '电影' },
+    { value: 'photo', label: '摄影' },
+    { value: 'pixel', label: '像素风' },
+    { value: 'gameart', label: '游戏原画' },
 ]
 
 /** 题材预设：点击加入、再点移除，也可输入自定义题材 */

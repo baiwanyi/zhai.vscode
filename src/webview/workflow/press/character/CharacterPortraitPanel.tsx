@@ -1,14 +1,14 @@
 /**
- * 角色卡面板：在编辑弹窗内选画风、生成、采用、设封面与删除角色设定图。
- * 复用约定：按钮与下拉复用 ui 基础组件，错误走 ui/alert 行内提示，生成与删除由 useCharacterPortrait 承担，
- * 人物数据只经 onChange 补丁回传（草稿），面板不持有角色副本。
- * 关键约束：每次只保留一张「待采用」预览，重新生成或放弃时会先删掉上一张未采用的图片，避免磁盘残留；
- * 采用后才进入图库；删除封面时自动回退到图库第一张，图库为空则清空封面；
- * 画风随人物卡保存，切换只影响后续生成，已采用的图片不会重绘。
+ * 角色卡面板：在编辑弹窗内选画面风格、生成、设封面与删除角色设定图。
+ * 复用约定：按钮复用 ui/button，画面风格选择复用 ui/select，加载态复用 ui/spinner / ui/skeleton，
+ * 错误走 ui/alert 行内提示，生成、列举与删除由 useCharacterPortrait 承担，人物数据只经 onChange 补丁回传（草稿）。
+ * 关键约束：磁盘是图片的唯一事实来源——打开面板按人物目录回读，关闭弹窗期间完成的生成也能读到；
+ * 生成成功即写入草稿图库（首张自动设封面），生成期间隐藏生成按钮、网格尾部显示同构占位框；
+ * 删除封面时自动回退到图库第一张，图库为空则清空封面；画风随人物卡保存，切换只影响后续生成。
  */
 import { cn } from 'cn'
 import { ImagePlus, Sparkles, Star, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import {
     AlertDialog,
@@ -22,6 +22,7 @@ import {
 } from '@components/ui/alert-dialog'
 import { Button } from '@components/ui/button'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
+import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
 import type { CharacterPortrait } from '@shared/types/press'
 import { useCharacterPortrait } from './useCharacterPortrait'
@@ -29,6 +30,7 @@ import type { AppearanceContext } from './useCharacterAppearance'
 import type { CharacterCard } from '../types'
 import type { JSX } from 'react'
 import { PORTRAIT_STYLE_OPTIONS } from '../constants'
+import { mergePortraits } from '../utils'
 
 interface CharacterPortraitPanelProps {
     character: CharacterCard
@@ -37,13 +39,38 @@ interface CharacterPortraitPanelProps {
 }
 
 export function CharacterPortraitPanel({ character, aiContext, onChange }: CharacterPortraitPanelProps): JSX.Element {
-    const { isGenerating, error, generate, remove, abort } = useCharacterPortrait()
-    /** 已生成但尚未采用的图片 */
-    const [pending, setPending] = useState<CharacterPortrait | null>(null)
+    const { isGenerating, error, generate, list, remove } = useCharacterPortrait()
     /** 正在删除的图片路径，用于禁用重复点击 */
     const [busyPath, setBusyPath] = useState<string | null>(null)
     /** 待确认删除的图片：非空时弹出二次确认 */
     const [deleting, setDeleting] = useState<CharacterPortrait | null>(null)
+    /** 已完成回读的人物 id：与当前人物不一致时视为加载中，避免「没有图」闪一下 */
+    const [loadedId, setLoadedId] = useState<string | null>(null)
+
+    // 回读结果返回时人物卡可能已被本次编辑改动，用 ref 取最新值，避免 effect 依赖草稿导致反复扫盘
+    const latestRef = useRef({ character, onChange })
+    latestRef.current = { character, onChange }
+
+    // 磁盘是唯一事实来源：每次打开面板（或切换人物）都按角色目录回读，关闭弹窗期间完成的生成同样可见
+    useEffect(() => {
+        let cancelled = false
+        void list(character.id).then((items) => {
+            if (cancelled) {
+                return
+            }
+            const current = latestRef.current.character
+            const portraits = mergePortraits(items, current.portraits)
+            const hasCover = portraits.some((item) => item.id === current.coverPortraitId)
+            latestRef.current.onChange({
+                portraits,
+                coverPortraitId: hasCover ? current.coverPortraitId : (portraits[0]?.id ?? null),
+            })
+            setLoadedId(character.id)
+        })
+        return (): void => {
+            cancelled = true
+        }
+    }, [character.id, list])
 
     const handleStyleChange = (value: string): void => {
         const next = PORTRAIT_STYLE_OPTIONS.find((option) => option.value === value)
@@ -52,38 +79,16 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
         }
     }
 
+    /** 生成成功即写入草稿：新图排在网格末尾，首张自动成为封面，用户不满意再删除 */
     const handleGenerate = async (): Promise<void> => {
-        // 重新生成前先清掉上一张未采用的图，避免文件越堆越多
-        if (pending !== null) {
-            const previous = pending
-            setPending(null)
-            void remove(previous.path)
-        }
         const portrait = await generate(character, aiContext)
-        if (portrait !== null) {
-            setPending(portrait)
-        }
-    }
-
-    const handleReject = async (): Promise<void> => {
-        if (pending === null) {
-            return
-        }
-        const target = pending
-        setPending(null)
-        await remove(target.path)
-    }
-
-    const handleAdopt = (): void => {
-        if (pending === null) {
+        if (portrait === null) {
             return
         }
         onChange({
-            portraits: [...character.portraits, pending],
-            // 第一张采用即成为封面，后续由用户手动切换
-            coverPortraitId: character.coverPortraitId ?? pending.id,
+            portraits: [...character.portraits, portrait],
+            coverPortraitId: character.coverPortraitId ?? portrait.id,
         })
-        setPending(null)
     }
 
     const handleDelete = async (portrait: CharacterPortrait): Promise<void> => {
@@ -108,13 +113,13 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                     <p className="text-xs font-medium">角色设定图</p>
                     <p className="text-xs text-muted-foreground py-1">
                         {isGenerating
-                            ? '生成中，出图通常需要 1~3 分钟，请保持弹窗打开'
-                            : '每次生成一张，采用后加入图库；可设封面或删除，文件保存在本地目录'}
+                            ? '生成中，出图通常需要 1~3 分钟；关闭弹窗也会继续，结果下次打开自动读取'
+                            : '图片自动保存到角色目录，关闭弹窗不丢结果；可设封面或删除'}
                     </p>
                 </div>
                 <div className="flex items-center justify-between gap-2">
                     <Select value={character.portraitStyle} disabled={isGenerating} onValueChange={handleStyleChange}>
-                        <SelectTrigger size="sm" className="h-7 w-24 text-xs" aria-label="角色卡画风">
+                        <SelectTrigger size="sm" className="h-7 w-24 text-xs" aria-label="角色卡画面风格">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -127,18 +132,8 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                             </SelectGroup>
                         </SelectContent>
                     </Select>
-                    {isGenerating ? (
-                        <Button
-                            variant="ghost"
-                            className="shrink-0"
-                            onClick={() => {
-                                void abort()
-                            }}
-                        >
-                            <Spinner data-icon="inline-start" />
-                            取消
-                        </Button>
-                    ) : (
+                    {/* 生成期间隐藏生成按钮，避免重复提交；宿主侧无法真正中断出图，故不提供取消 */}
+                    {isGenerating ? null : (
                         <Button
                             variant="outline"
                             className="shrink-0"
@@ -147,34 +142,13 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                             }}
                         >
                             <Sparkles data-icon="inline-start" />
-                            {pending === null ? '生成' : '重新生成'}
+                            生成
                         </Button>
                     )}
                 </div>
             </div>
 
-            {pending !== null ? (
-                <div className="flex flex-col gap-2 rounded-xl border border-border bg-muted/30 p-2">
-                    <img
-                        src={pending.url}
-                        alt="角色卡预览"
-                        className="mx-auto max-h-64 w-auto rounded-lg object-contain"
-                    />
-                    <div className="flex items-center justify-end gap-2">
-                        <Button
-                            variant="ghost"
-                            onClick={() => {
-                                void handleReject()
-                            }}
-                        >
-                            放弃
-                        </Button>
-                        <Button onClick={handleAdopt}>采用</Button>
-                    </div>
-                </div>
-            ) : null}
-
-            {character.portraits.length === 0 && pending === null ? (
+            {loadedId !== character.id ? null : character.portraits.length === 0 && !isGenerating ? (
                 <div className="flex flex-col items-center gap-1 rounded-xl border border-dashed border-border py-6 text-center">
                     <ImagePlus className="size-5 text-muted-foreground" aria-hidden="true" />
                     <p className="text-xs text-muted-foreground">还没有角色卡，生成前建议先补全外貌与身份</p>
@@ -182,9 +156,10 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
             ) : (
                 <div className="flex flex-col gap-1.5">
                     {character.portraits.length > 0 ? (
-                        <p className="text-xs text-muted-foreground">已采用 {character.portraits.length} 张</p>
+                        <p className="text-xs text-muted-foreground">已生成 {character.portraits.length} 张</p>
                     ) : null}
-                    <div className="grid grid-cols-3 gap-2">
+                    {/* 外留 2px：封面用外描边包住整张卡片（含操作栏），靠 padding 避免被滚动容器横向裁掉 */}
+                    <div className="grid grid-cols-3 gap-2 p-0.5">
                         {character.portraits.map((portrait) => {
                             const isCover = portrait.id === character.coverPortraitId
                             return (
@@ -233,6 +208,22 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                                 </div>
                             )
                         })}
+                        {/* 占位与真实卡片同构：3:4 图片区 + 底部操作栏，空列表时比例也不会走样 */}
+                        {isGenerating ? (
+                            <div className="overflow-hidden rounded-lg border border-border">
+                                <div className="relative">
+                                    <Skeleton className="aspect-3/4 w-full rounded-none" />
+                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">
+                                        <Spinner />
+                                        <span className="text-[10px]">生成中</span>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-center gap-1 border-t border-border p-1">
+                                    <Skeleton className="size-6" />
+                                    <Skeleton className="size-6" />
+                                </div>
+                            </div>
+                        ) : null}
                     </div>
                 </div>
             )}

@@ -1,12 +1,17 @@
 /**
- * 角色设定图：向宿主提交人物卡与作品氛围快照，取回落盘后的图片信息，并提供删除能力。
+ * 角色设定图：向宿主提交人物卡与作品氛围快照，取回落盘后的图片信息，并提供列举与删除能力。
  * 复用约定：请求经 webview 公共 bridge；出图常需 1~3 分钟，超时由宿主按 zhai.image.timeoutSeconds 裁决，
  * 前端只做 15 分钟兜底并在失败时主动取消宿主请求；结果里的 url 已由宿主用 asWebviewUri 转换，前端直接放进 img。
- * 关键约束：生成中不接受重复提交；取消走 pressAi/aiPortrait/abort，属尽力而为；
- * 图片文件立即落盘，但人物卡仍在内存，未点保存的「采用」只存在于编辑弹窗草稿中。
+ * 关键约束：生成中不接受重复提交；磁盘是图片的唯一事实来源，关闭弹窗不取消在途请求，
+ * 结果会在下次打开角色卡时由 list 从角色目录读回，因此这里不做卸载取消。
  */
-import { useCallback, useEffect, useState } from 'react'
-import type { CharacterPortrait, PortraitGenerateRequest, PortraitGenerateResult } from '@shared/types/press'
+import { useCallback, useState } from 'react'
+import type {
+    CharacterPortrait,
+    PortraitGenerateRequest,
+    PortraitGenerateResult,
+    PortraitListResult,
+} from '@shared/types/press'
 import type { CharacterCard } from '../types'
 import type { AppearanceContext } from './useCharacterAppearance'
 import { request } from '../../../bridge'
@@ -20,6 +25,8 @@ export interface CharacterPortraitState {
     error: string | null
     /** 生成成功返回已落盘的图片信息，失败返回 null 并在 error 中留下可读原因 */
     generate: (character: CharacterCard, context: AppearanceContext) => Promise<CharacterPortrait | null>
+    /** 扫描角色目录读回已落盘的图片，按生成时间升序；目录不存在返回空数组 */
+    list: (characterId: string) => Promise<CharacterPortrait[]>
     /** 删除磁盘上的图片，返回是否真的删掉 */
     remove: (path: string) => Promise<boolean>
     abort: () => Promise<void>
@@ -60,6 +67,16 @@ export function useCharacterPortrait(): CharacterPortraitState {
         [abort],
     )
 
+    const list = useCallback(async (characterId: string): Promise<CharacterPortrait[]> => {
+        try {
+            const result = await request<PortraitListResult>('pressAi/listPortraits', { characterId })
+            return result.portraits
+        } catch (cause) {
+            setError(cause instanceof Error ? cause.message : String(cause))
+            return []
+        }
+    }, [])
+
     const remove = useCallback(async (path: string): Promise<boolean> => {
         try {
             const result = await request<{ removed: boolean }>('pressAi/deletePortrait', { path })
@@ -70,14 +87,7 @@ export function useCharacterPortrait(): CharacterPortraitState {
         }
     }, [])
 
-    // 卸载（关闭弹窗）时取消在途请求，避免结果无人接收却仍占用配额
-    useEffect(() => {
-        return (): void => {
-            void abort()
-        }
-    }, [abort])
-
-    return { isGenerating, error, generate, remove, abort }
+    return { isGenerating, error, generate, list, remove, abort }
 }
 
 /** 请求载荷：只上传已填字段，空值交给宿主兜底；性别必填，直接取中文标签 */

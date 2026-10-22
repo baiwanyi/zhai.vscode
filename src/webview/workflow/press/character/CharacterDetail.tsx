@@ -80,8 +80,8 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
                         </TabsTrigger>
                     </TabsList>
                 </div>
-                {/* 滚动槽常驻：长短标签页切换时内容宽度不跳，避免滚动条反复挤占空间 */}
-                <div className="min-h-0 flex-1 overflow-y-auto py-2 [scrollbar-gutter:stable]">
+                {/* 滚动槽常驻：长短标签页切换时内容宽度不跳，避免滚动条反复挤占空间；左右留 2px 防止聚焦环被横向裁切 */}
+                <div className="min-h-0 flex-1 overflow-y-auto px-0.5 py-2 [scrollbar-gutter:stable]">
                     <TabsContent value="basic" className="flex flex-col gap-3">
                         <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
                             <Field>
