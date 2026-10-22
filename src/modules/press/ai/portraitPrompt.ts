@@ -2,8 +2,8 @@
  * 角色设定图提示词：把人物卡与作品氛围拼成图像模型可用的自然语言描述。
  * 复用约定：插画基底、画风提示与禁止项集中在此一份，不散落到服务层；尺寸与模型交给配置，提示词只管画什么。
  * 关键约束：按番茄小说「一键生图」的章节配图观感收口（叙事场景 + 氛围光影，画风交给 STYLE_HINTS），
- * 不按封面或纯立绘方向写；外貌字段优先，缺失时退回身份与性格；不写入剧情与台词，
- * 提示词按服务商上限截断且保留前段（人物特征在前，场景氛围在后）。
+ * 支持两段式——scene 由文本模型先写画面，缺省时回退到纯字段模板，保证文本模型失败也能出图；
+ * 不按封面或纯立绘方向写；提示词按服务商上限截断且保留前段（人物特征在前，场景氛围在后）。
  */
 import type { PortraitGenerateRequest, PortraitStyle } from '../../../shared/types/press'
 
@@ -26,21 +26,26 @@ const STYLE_HINTS: Readonly<Record<PortraitStyle, string>> = {
     auto: '按题材与世界观自动匹配画风：古风玄幻走东方古风原画，现代都市走半写实插画，整体保持统一',
     anime: '日系动画赛璐璐上色，干净线稿与明快高饱和配色',
     guofeng: '东方古风，工笔重彩与水墨晕染结合，衣袂层叠、纹样考究，淡雅配色与氤氲氛围',
-    realistic: '写实向插画，真实皮肤与布料纹理，五官比例真实，自然光影',
+    realistic: '写实摄影风格，真实皮肤与布料纹理，五官比例真实，自然光影',
     cinematic: '电影感，电影级布光与调色，强轮廓光与空气感，胶片颗粒',
     photo: '摄影质感，单反人像质感，皮肤细节真实，浅景深背景虚化，环境光自然',
     pixel: '8-bit 像素画风，低分辨率色块与复古游戏画面，锐利像素边缘',
     gameart: '游戏角色原画级厚涂，装备与材质细节，概念设计光影与轮廓高光',
 }
 
-/** 构造图像生成提示词 */
-export function buildPortraitPrompt(request: PortraitGenerateRequest): string {
+/**
+ * 构造图像生成提示词
+ * @param scene 文本模型先写好的画面描述；缺省或为空时只用人物字段，保证失败也能出图
+ */
+export function buildPortraitPrompt(request: PortraitGenerateRequest, scene?: string): string {
     const background = [...request.genres, request.era].filter((item) => item.length > 0).join('、')
     const basics = [request.gender, request.age.length > 0 ? `${request.age} 岁` : '', request.identity]
         .filter((item) => item.length > 0)
         .join('，')
+    // 画面描述在基底之后、画风之前：先定「画什么」，再定「怎么画」
+    const sceneLine = scene !== undefined && scene.length > 0 ? `画面：${scene}。` : ''
     const lines = [
-        `${ILLUSTRATION_STYLE_BASE}。画风：${STYLE_HINTS[request.style]}。`,
+        `${ILLUSTRATION_STYLE_BASE}。${sceneLine}画风：${STYLE_HINTS[request.style]}。`,
         `角色：${request.name}（${request.role}）`,
     ]
     if (basics.length > 0) {

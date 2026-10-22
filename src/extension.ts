@@ -95,7 +95,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push({ dispose: () => pressDb.close() })
     const pressAiService = new PressAiService(pressDb, aiProvider)
     const imageRouter = new ImageProviderRouter(secrets)
-    const portraitService = new PortraitService(pressDb, imageRouter)
+    const portraitService = new PortraitService(pressDb, aiProvider, imageRouter)
     const pressRoutes = new PressRoutes(pressAiService, portraitService)
 
     const aiChatProvider = new AiChatViewProvider(
@@ -131,7 +131,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     // CodeBuddy 模型清单后台预热（拉起 CLI 约数秒）；未登录时返回空列表，不阻断激活，选择命令里会现拉
     void listCodebuddyModels(secrets).then((models) => {
-        logger.info(`CodeBuddy 可用模型：${models.length > 0 ? models.map((item) => item.modelId).join(', ') : '未获取到（可能未登录）'}`)
+        logger.info(
+            `CodeBuddy 可用模型：${models.length > 0 ? models.map((item) => item.modelId).join(', ') : '未获取到（可能未登录）'}`,
+        )
     })
 
     logger.info(

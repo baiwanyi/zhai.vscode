@@ -1,14 +1,18 @@
 /**
- * 角色设定图服务：校验配额后经图像通道路由出图，按人物建目录落盘，并返回 webview 可用 URL。
- * 复用约定：图像通道经 ./ai/imageProvider 的入口（唯一实现为 CodeBuddy 的 ImageGen），提示词复用 ./ai/portraitPrompt，
- * 配额复用 ./db/quotaRepository，路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
- * 关键约束：图片落在 press/_portraits/{characterId}/ 下，人物标识须匹配安全字符集；
+ * 角色设定图服务：先用文本模型写画面描述，再经图像通道路由出图，按人物建目录落盘并返回 webview 可用 URL。
+ * 复用约定：文本描述经 ./ai/portraitSceneGenerator（通道由注入的 AiProvider 提供），出图经 ./ai/imageProvider 的入口
+ * （唯一实现为 CodeBuddy 的 ImageGen），提示词复用 ./ai/portraitPrompt，配额复用 ./db/quotaRepository，
+ * 路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
+ * 关键约束：画面描述失败一律回退纯模板，不让文本模型拖垮出图；描述不计配额，限额只针对图片张数；
+ * 图片落在 press/_portraits/{characterId}/ 下，人物标识须匹配安全字符集；
  * 目录是图片的唯一事实来源：生成完成即落盘，关闭弹窗不丢结果，列举以磁盘为准；
  * 删除只接受 press/_portraits 下的四段相对路径，优先走回收站；同一时刻只允许一个生成请求。
  */
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
 import { buildPortraitPrompt } from './ai/portraitPrompt'
+import { generateSceneWithAi } from './ai/portraitSceneGenerator'
+import { sanitizeScene } from './ai/portraitScenePrompt'
 import { consumeToday, readUsedToday } from './db/quotaRepository'
 import { readText, readTextList } from './pressAiService'
 import { PRESS_MODULE_DIR } from './projectFactory'
@@ -21,8 +25,10 @@ import type {
     PortraitListResult,
     PortraitStyle,
 } from '../../shared/types/press'
+import type { AiProvider } from '../ai/provider'
 import type Database from 'better-sqlite3'
 import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES } from '../../shared/types/press'
+import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
 import { buildStorageUri, toSafeSegments } from '../common/storagePath'
@@ -48,6 +54,7 @@ export class PortraitService {
 
     public constructor(
         private readonly db: Database.Database,
+        private readonly provider: AiProvider,
         private readonly router: ImageProviderRouter,
     ) {}
 
@@ -70,12 +77,14 @@ export class PortraitService {
         const startedAt = Date.now()
         logger.info(`角色卡生成开始：${request.name}（${config.imageSize}）`)
         try {
+            // 两段式：先让文本模型写画面，再出图；描述失败时 buildPortraitPrompt 自动退回纯字段模板
+            const scene = await this.describeScene(request, controller.signal)
             const artifact = await this.router.generate({
-                prompt: buildPortraitPrompt(request),
+                prompt: buildPortraitPrompt(request, scene),
                 size: config.imageSize,
                 signal: controller.signal,
             })
-            logger.info('角色卡通道：codebuddy')
+            logger.info(`角色卡通道：codebuddy（${scene === undefined ? '模板提示词' : 'AI 画面描述'}）`)
             const id = `portrait-${randomUUID()}`
             const extension = artifact.extension
             const segments = [PRESS_MODULE_DIR, PORTRAIT_DIR, request.characterId, `${id}.${extension}`]
@@ -103,7 +112,7 @@ export class PortraitService {
     }
 
     /**
-     * 列举某个角色目录下的全部设定图：目录不存在视为空，按文件修改时间升序返回。
+     * 列举某个角色目录下的全部设定图：目录不存在视为空，按文件修改时间降序返回（最新在前）。
      * 磁盘是唯一事实来源，因此关闭弹窗期间完成的生成同样能被读回。
      * @param toWebviewUri 把磁盘 Uri 转成 webview 可访问 URL 的转换器
      */
@@ -136,7 +145,8 @@ export class PortraitService {
                 // 并发删除时文件可能已消失，跳过而不是让整次扫描失败
             }
         }
-        portraits.sort((left, right) => left.createdAt.localeCompare(right.createdAt))
+        // 最新在前：新生成的图出现在网格首位，与生成时占位框的位置一致
+        portraits.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
         return { portraits }
     }
 
@@ -167,6 +177,37 @@ export class PortraitService {
             } catch {
                 return { removed: false }
             }
+        }
+    }
+
+    /**
+     * 先让文本模型写画面描述：通道未就绪、超时、输出为空或调用失败都回退纯模板，保证出图不被拖垮。
+     * 这一步不计配额——成本最终落在出图上，限额仍以图片张数为准。
+     */
+    private async describeScene(request: PortraitGenerateRequest, signal: AbortSignal): Promise<string | undefined> {
+        try {
+            const status = await this.provider.checkReady()
+            if (!status.ready) {
+                logger.info(`角色卡画面描述跳过：${status.reason ?? 'AI 通道未就绪'}`)
+                return undefined
+            }
+            const startedAt = Date.now()
+            const content = await generateSceneWithAi({
+                provider: this.provider,
+                model: getSelectedCodebuddyModel(),
+                request,
+                signal,
+            })
+            const scene = sanitizeScene(content)
+            if (scene.length === 0) {
+                logger.info('角色卡画面描述为空，回退模板提示词')
+                return undefined
+            }
+            logger.info(`角色卡画面描述（${Date.now() - startedAt}ms）：${scene}`)
+            return scene
+        } catch (error) {
+            logger.error('角色卡画面描述失败，回退模板提示词', error)
+            return undefined
         }
     }
 

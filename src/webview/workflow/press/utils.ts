@@ -72,7 +72,7 @@ export function createId(prefix: 'vol' | 'ch' | 'beat' | 'char'): string {
 }
 
 /**
- * 合并角色图：磁盘扫描结果作为顺序基准，本地草稿里磁盘尚未扫到的（刚生成还没回读）追加到末尾。
+ * 合并角色图：两侧均为最新在前，本地草稿里磁盘尚未扫到的（刚生成还没回读）排在最前。
  * 按 id 去重，反复打开角色卡不会出现重复项。
  */
 export function mergePortraits(
@@ -80,7 +80,7 @@ export function mergePortraits(
     local: readonly CharacterPortrait[],
 ): CharacterPortrait[] {
     const seen = new Set(listed.map((item) => item.id))
-    return [...listed, ...local.filter((item) => !seen.has(item.id))]
+    return [...local.filter((item) => !seen.has(item.id)), ...listed]
 }
 
 /** 新建一张人物卡：角色默认配角、性别默认男、姓名占位；seed 承接新增弹窗填写的初始值，id 恒由本函数生成 */

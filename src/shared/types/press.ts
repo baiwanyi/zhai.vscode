@@ -360,7 +360,7 @@ export interface PortraitListRequest {
     characterId: string
 }
 
-/** 角色设定图列举结果：按生成时间升序，最早的排在前面 */
+/** 角色设定图列举结果：按生成时间降序，最新的排在前面 */
 export interface PortraitListResult {
     portraits: CharacterPortrait[]
 }

@@ -3,11 +3,13 @@
  * 复用约定：按钮复用 ui/button，画面风格选择复用 ui/select，加载态复用 ui/spinner / ui/skeleton，
  * 错误走 ui/alert 行内提示，生成、列举与删除由 useCharacterPortrait 承担，人物数据只经 onChange 补丁回传（草稿）。
  * 关键约束：磁盘是图片的唯一事实来源——打开面板按人物目录回读，关闭弹窗期间完成的生成也能读到；
- * 生成成功即写入草稿图库（首张自动设封面），生成期间隐藏生成按钮、网格尾部显示同构占位框；
- * 删除封面时自动回退到图库第一张，图库为空则清空封面；画风随人物卡保存，切换只影响后续生成。
+ * 生成成功即写入草稿图库（新图置顶并自动设封面），生成期间隐藏生成按钮、网格首位显示同构占位框；
+ * 卡片无底栏：设为封面在左上、删除在右下，均随悬停显现并支持键盘聚焦，封面图左上常显「封面」；
+ * 悬停时叠 5% 黑遮罩压暗画面（不拦截点击），删除封面时自动回退到图库第一张；
+ * 画风随人物卡保存，切换只影响后续生成。
  */
 import { cn } from 'cn'
-import { ImagePlus, Sparkles, Star, Trash2 } from 'lucide-react'
+import { Image as ImageIcon, ImagePlus, Sparkles, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import {
@@ -79,15 +81,15 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
         }
     }
 
-    /** 生成成功即写入草稿：新图排在网格末尾，首张自动成为封面，用户不满意再删除 */
+    /** 生成成功即写入草稿：新图排在最前（占位框所在格）并直接成为封面，用户不满意再删除 */
     const handleGenerate = async (): Promise<void> => {
         const portrait = await generate(character, aiContext)
         if (portrait === null) {
             return
         }
         onChange({
-            portraits: [...character.portraits, portrait],
-            coverPortraitId: character.coverPortraitId ?? portrait.id,
+            portraits: [portrait, ...character.portraits],
+            coverPortraitId: portrait.id,
         })
     }
 
@@ -160,70 +162,64 @@ export function CharacterPortraitPanel({ character, aiContext, onChange }: Chara
                     ) : null}
                     {/* 外留 2px：封面用外描边包住整张卡片（含操作栏），靠 padding 避免被滚动容器横向裁掉 */}
                     <div className="grid grid-cols-3 gap-2 p-0.5">
+                        {/* 占位插在首位：与真实卡片同为 3:4，出图后就落在这一格 */}
+                        {isGenerating ? (
+                            <div className="relative overflow-hidden rounded-lg border border-border">
+                                <Skeleton className="aspect-3/4 w-full rounded-none" />
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">
+                                    <Spinner />
+                                    <span className="text-[10px]">生成中</span>
+                                </div>
+                            </div>
+                        ) : null}
                         {character.portraits.map((portrait) => {
                             const isCover = portrait.id === character.coverPortraitId
                             return (
                                 <div
                                     key={portrait.id}
                                     className={cn(
-                                        'overflow-hidden rounded-lg border border-border',
+                                        'group relative overflow-hidden rounded-lg border border-border',
                                         isCover && 'ring-2 ring-ring',
                                     )}
                                 >
-                                    <div className="relative">
-                                        <img
-                                            src={portrait.url}
-                                            alt={`${character.name} 的角色卡`}
-                                            className="aspect-3/4 w-full object-cover"
-                                        />
-                                        {isCover ? (
-                                            <span className="absolute top-1 left-1 rounded bg-background/85 px-1 py-0.5 text-[10px] font-medium">
-                                                封面
-                                            </span>
-                                        ) : null}
-                                    </div>
-                                    {/* 操作常显：不依赖 hover，键盘与触屏同样可用 */}
-                                    <div className="flex items-center justify-center gap-1 border-t border-border p-1">
+                                    <img
+                                        src={portrait.url}
+                                        alt={`${character.name} 的角色卡`}
+                                        className="aspect-3/4 w-full object-cover"
+                                    />
+                                    {/* 悬停压暗 5%：只做视觉提示，不拦截点击；键盘聚焦时同样显现操作 */}
+                                    <div
+                                        className="pointer-events-none absolute inset-0 bg-black/5 opacity-0 transition-opacity group-hover:opacity-100"
+                                        aria-hidden="true"
+                                    />
+                                    {isCover ? (
+                                        <span className="absolute top-1 left-1 rounded bg-background/85 px-1 py-0.5 text-[10px] font-medium">
+                                            封面
+                                        </span>
+                                    ) : (
                                         <Button
-                                            size="icon-xs"
+                                            size="icon"
                                             variant="ghost"
+                                            className="absolute top-1 left-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                             aria-label="设为封面"
-                                            title="设为封面"
-                                            disabled={isCover}
                                             onClick={() => onChange({ coverPortraitId: portrait.id })}
                                         >
-                                            <Star className={isCover ? 'fill-current' : undefined} />
+                                            <ImageIcon />
                                         </Button>
-                                        <Button
-                                            size="icon-xs"
-                                            variant="ghost"
-                                            aria-label="删除角色卡"
-                                            title="删除"
-                                            disabled={busyPath === portrait.path}
-                                            onClick={() => setDeleting(portrait)}
-                                        >
-                                            <Trash2 />
-                                        </Button>
-                                    </div>
+                                    )}
+                                    <Button
+                                        size="icon"
+                                        variant="destructive"
+                                        className="absolute top-1 right-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                        aria-label="删除角色卡"
+                                        disabled={busyPath === portrait.path}
+                                        onClick={() => setDeleting(portrait)}
+                                    >
+                                        <Trash2 />
+                                    </Button>
                                 </div>
                             )
                         })}
-                        {/* 占位与真实卡片同构：3:4 图片区 + 底部操作栏，空列表时比例也不会走样 */}
-                        {isGenerating ? (
-                            <div className="overflow-hidden rounded-lg border border-border">
-                                <div className="relative">
-                                    <Skeleton className="aspect-3/4 w-full rounded-none" />
-                                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">
-                                        <Spinner />
-                                        <span className="text-[10px]">生成中</span>
-                                    </div>
-                                </div>
-                                <div className="flex items-center justify-center gap-1 border-t border-border p-1">
-                                    <Skeleton className="size-6" />
-                                    <Skeleton className="size-6" />
-                                </div>
-                            </div>
-                        ) : null}
                     </div>
                 </div>
             )}
