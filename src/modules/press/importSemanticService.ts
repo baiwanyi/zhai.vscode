@@ -1,5 +1,5 @@
 /**
- * 导入语义归纳：按「章节摘要 → 卷纲 → 角色卡 → 作品设定」的顺序分批调用 AI，产物平铺在作品的 _import/ 下；
+ * 导入语义归纳：按「章节摘要 → 卷纲 → 角色卡 → 作品设定」的顺序分批调用 AI，产物平铺在作品的 Materials/ 下；
  * 另可只跑单个阶段（提取人物卡 / 重建大纲 / 归纳设定），把既有或新生成的产物解析成草案回传。
  * 复用约定：素材与文件名由 importAnalysis 产出，模型选择取 ai/providers 的当前选择，
  * 配额按天记在 press.db 的 meta 表（独立键，不与外貌生成互相挤占），取消走 AbortSignal。
@@ -11,7 +11,12 @@
 
 import * as vscode from 'vscode'
 import { consumeToday, readUsedToday } from './db/quotaRepository'
-import { MATERIAL_FILE_NAMES, analyzeProject, isLikelyPersonName } from './importAnalysis'
+import {
+    MATERIAL_FILE_NAMES,
+    analyzeProject,
+    isLikelyPersonName,
+    migrateLegacyMaterialDirectory,
+} from './importAnalysis'
 import type { AiChatMessage, AiProvider, AiUsage } from '../ai/provider'
 import type { QuotaKeys } from './db/quotaRepository'
 import type {
@@ -24,7 +29,7 @@ import type {
     PressSemanticStage,
 } from '../../shared/types/press'
 import type Database from 'better-sqlite3'
-import { PRESS_IMPORT_DIR } from '../../shared/types/press'
+import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR } from '../../shared/types/press'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
@@ -196,6 +201,21 @@ async function readTextFile(uri: vscode.Uri): Promise<string> {
 /** 写入文本文件 */
 async function writeTextFile(uri: vscode.Uri, content: string): Promise<void> {
     await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(content))
+}
+
+/**
+ * 读取素材产物：新目录读不到时回退旧版的 `_import/`。
+ * 关键约束：旧目录迁移失败（被占用、权限不足）时，已生成的 AI 初稿仍要能复用，
+ * 否则一次迁移失败就会让用户白白重跑耗配额的角色卡与卷纲；
+ * 回退只发生在新路径读空时，迁移成功后旧路径不存在，多一次 stat 级的失败读取，可忽略。
+ */
+async function readMaterialText(dirPath: string, relativePath: string): Promise<string> {
+    const content = await readTextFile(resolveMaterialFile(dirPath, relativePath))
+    if (content.length > 0) {
+        return content
+    }
+    const legacyPath = `${LEGACY_PRESS_IMPORT_DIR}/${relativePath.slice(PRESS_IMPORT_DIR.length + 1)}`
+    return readTextFile(resolveMaterialFile(dirPath, legacyPath))
 }
 
 /** 解析章节素材：跳过表头与列数不足的行，序号非正整数一律丢弃 */
@@ -889,6 +909,8 @@ export class ImportSemanticService {
         if (!ready.ready) {
             throw new SemanticError('not-ready', ready.reason ?? 'AI 通道未就绪，请先登录或检查配置')
         }
+        // 旧作品的素材仍在 _import 下：先迁移再读，否则会被当成「没有素材」直接报错
+        await migrateLegacyMaterialDirectory(dirPath)
         const headsUri = resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.heads)
         const heads = parseHeads(await readTextFile(headsUri))
         if (heads.length === 0) {
@@ -1000,6 +1022,8 @@ export class ImportSemanticService {
         if (this.controller !== null) {
             throw new SemanticError('internal', '已有归纳任务在进行中，请等待完成或取消')
         }
+        // 先迁移旧目录：产物在 _import 里时不能被判成「没有角色卡」而重跑耗配额
+        await migrateLegacyMaterialDirectory(dirPath)
         const ready = await this.provider.checkReady()
         if (!ready.ready) {
             throw new SemanticError('not-ready', ready.reason ?? 'AI 通道未就绪，请先登录或检查配置')
@@ -1030,7 +1054,7 @@ export class ImportSemanticService {
                 emit('running', state.message, state.done, state.total)
             })
             const characters = parseCharacterDrafts(
-                await readTextFile(resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${CHARACTERS_FILE}`)),
+                await readMaterialText(dirPath, `${PRESS_IMPORT_DIR}/${CHARACTERS_FILE}`),
             )
             // 没有候选时区分「正文是乱码」与「确实没有人名」：前者只能重新导入，重试多少次都一样
             const isGarbled =
@@ -1052,6 +1076,7 @@ export class ImportSemanticService {
      * 章节仍照常返回，保证未做 AI 归纳时「提取大纲」同样可用。
      */
     public async extractOutline(dirPath: string): Promise<{ volumes: PressExtractedVolume[]; message: string }> {
+        await migrateLegacyMaterialDirectory(dirPath)
         const indexUri = resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.index)
         if ((await readTextFile(indexUri)).trim().length === 0) {
             await analyzeProject(dirPath)
@@ -1067,7 +1092,7 @@ export class ImportSemanticService {
         )
         const volumeMeta = new Map(
             splitLevelSections(
-                await readTextFile(resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${VOLUMES_FILE}`)),
+                await readMaterialText(dirPath, `${PRESS_IMPORT_DIR}/${VOLUMES_FILE}`),
                 3,
             ).map((section) => {
                 const values = readDashedValues(section.content)
@@ -1128,6 +1153,7 @@ export class ImportSemanticService {
      * 线索由本地素材带出、不依赖模型输出，便于用户对照核实。
      */
     public async extractSetting(dirPath: string): Promise<{ setting: PressExtractedSetting | null; message: string }> {
+        await migrateLegacyMaterialDirectory(dirPath)
         const goldenUri = resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.goldenFinger)
         const worldUri = resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.worldClues)
         const isMaterialMissing =
@@ -1140,8 +1166,7 @@ export class ImportSemanticService {
             parseGoldenClues(await readTextFile(goldenUri)),
             parseGoldenClues(await readTextFile(worldUri)),
         )
-        const settingUri = resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${SETTING_FILE}`)
-        const cachedContent = await readTextFile(settingUri)
+        const cachedContent = await readMaterialText(dirPath, `${PRESS_IMPORT_DIR}/${SETTING_FILE}`)
         // 旧版设定产物没有世界观总述：视为未完成，交给 runSetting 重跑一次再返回
         const cached = isProductUpToDate(cachedContent, ['- 世界观总述：'])
             ? parseSettingDraft(cachedContent, clues)
@@ -1166,7 +1191,10 @@ export class ImportSemanticService {
             await this.runSetting(dirPath, controller.signal, () => {
                 // 单次提取不需要细粒度进度，前端只用返回结果
             })
-            const setting = parseSettingDraft(await readTextFile(settingUri), clues)
+            const setting = parseSettingDraft(
+                await readMaterialText(dirPath, `${PRESS_IMPORT_DIR}/${SETTING_FILE}`),
+                clues,
+            )
             if (setting === null) {
                 return { setting: null, message: '模型没有返回可用的设定字段，请重试' }
             }
@@ -1252,7 +1280,8 @@ export class ImportSemanticService {
     ): Promise<StageResult> {
         const settingUri = resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${SETTING_FILE}`)
         await vscode.workspace.fs.createDirectory(resolveMaterialFile(dirPath, PRESS_IMPORT_DIR))
-        if (isProductUpToDate(await readTextFile(settingUri), ['- 世界观总述：'])) {
+        const cachedContent = await readMaterialText(dirPath, `${PRESS_IMPORT_DIR}/${SETTING_FILE}`)
+        if (isProductUpToDate(cachedContent, ['- 世界观总述：'])) {
             onState({ done: 0, total: 0, message: '设定草案已存在，跳过' })
             return { generated: 0, done: 0, total: 0, skipped: true }
         }
@@ -1397,7 +1426,7 @@ export class ImportSemanticService {
     ): Promise<StageResult> {
         const volumesUri = resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${VOLUMES_FILE}`)
         await vscode.workspace.fs.createDirectory(resolveMaterialFile(dirPath, PRESS_IMPORT_DIR))
-        const existing = await readTextFile(volumesUri)
+        const existing = await readMaterialText(dirPath, `${PRESS_IMPORT_DIR}/${VOLUMES_FILE}`)
         if (isProductUpToDate(existing, ['- 情节脉络：'])) {
             onState({ done: 0, total: 0, message: '卷纲已存在，跳过' })
             return { generated: 0, done: 0, total: 0, skipped: true }
@@ -1481,7 +1510,7 @@ export class ImportSemanticService {
     ): Promise<StageResult> {
         const charactersUri = resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${CHARACTERS_FILE}`)
         await vscode.workspace.fs.createDirectory(resolveMaterialFile(dirPath, PRESS_IMPORT_DIR))
-        const existing = await readTextFile(charactersUri)
+        const existing = await readMaterialText(dirPath, `${PRESS_IMPORT_DIR}/${CHARACTERS_FILE}`)
         // 键名齐备还不够：旧产物可能全是「时候」「东西」这类噪声条目，过滤后一条不剩时必须重跑；
         // 身高与体型是后加的字段，旧产物里没有它们就永远补不进已有的人物卡，故一并纳入齐备判定，触发一次重跑
         const isUpToDate =

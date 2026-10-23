@@ -50,7 +50,7 @@ const SECTION_ORDER: readonly SectionKey[] = ['basic', 'story', 'world', 'power'
 
 interface PressSettingPageProps {
     setting: ProjectSetting
-    /** 当前作品目录：提取从该作品的 _import 素材读起 */
+    /** 当前作品目录：提取从该作品的 Materials 素材读起 */
     dirPath: string
     onChange: (patch: Partial<ProjectSetting>) => void
     onSelectStep: (step: number) => void

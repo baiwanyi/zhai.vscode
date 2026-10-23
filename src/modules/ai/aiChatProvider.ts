@@ -42,7 +42,7 @@ const MAX_SCOPE_LENGTH = 160
 
 /**
  * 写作管理工作台可用的作品协议：读取、打开、人物卡与大纲提取，与仪表盘的作品写操作分开登记。
- * 两种提取都只读已落盘的 _import 素材（缺失时先补跑本地抽取），不修改正文、人物文档与大纲文档。
+ * 两种提取都只读已落盘的 Materials 素材（缺失时先补跑本地抽取），不修改正文、人物文档与大纲文档。
  */
 const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set([
     'press/workspace',

@@ -598,7 +598,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     }
 
     /**
-     * 抽取作品素材：扫描章节文档，在 _import/ 下重写章节清单、三段摘录、人名候选与出场原文、
+     * 抽取作品素材：扫描章节文档，在 Materials/ 下重写章节清单、三段摘录、人名候选与出场原文、
      * 金手指候选章与世界构建候选章。
      * 关键约束：纯本地统计、不调用模型，因此不占 AI 配额，也不依赖登录态；
      * 作品目录先按索引库回查，不采信前端路径；抽取为覆盖写入，重复执行得到最新结果。

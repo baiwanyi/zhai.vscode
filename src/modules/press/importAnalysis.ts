@@ -1,16 +1,17 @@
 /**
- * 导入素材抽取：扫描已落盘的章节文档，产出供 AI 归纳使用的中间素材，平铺在作品的 _import/ 下。
+ * 导入素材抽取：扫描已落盘的章节文档，产出供 AI 归纳使用的中间素材，平铺在作品的 Materials/ 下。
  * 素材分四类：章节清单与三段摘录（首/中/尾，供章节摘要）、人名候选与出场原文摘录（供角色卡）、
  * 金手指候选章与世界构建候选章（供设定归纳）。
  * 复用约定：Frontmatter 切分与标题读取取自 common/db/fileMeta，字数口径与索引库一致；
  * 路径构造复用 common/storagePath，素材目录名取自 shared/types/press 的 PRESS_IMPORT_DIR。
  * 关键约束：本模块只做统计与摘录，不做语义判断——角色名与设定线索都只是「候选」，是否成立由 AI 裁决；
  * 正文只在角色证据里以片段形式落盘，不整章复制，避免素材目录膨胀；
- * 摘录必须覆盖章节中段，只取首尾会让「中间发生了什么」在归纳阶段彻底丢失。
+ * 摘录必须覆盖章节中段，只取首尾会让「中间发生了什么」在归纳阶段彻底丢失；
+ * 素材目录更名后旧作品仍是 `_import`，抽取前须先迁移，否则历史素材会被当成不存在而重跑一遍。
  */
 
 import * as vscode from 'vscode'
-import { PRESS_IMPORT_DIR } from '../../shared/types/press'
+import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR } from '../../shared/types/press'
 import { resolveStorageRoot } from '../common/config'
 import { countWords, parseTitle, splitFrontmatter } from '../common/db/fileMeta'
 import { logger } from '../common/logger'
@@ -22,7 +23,7 @@ const DIGEST_LENGTH = 400
 /** 中段摘录的取样位置：取正文正中，避开已被首尾覆盖的区间 */
 const MIDDLE_RATIO = 0.5
 
-/** 素材文件名：全部平铺在 _import/ 下，不使用子目录 */
+/** 素材文件名：全部平铺在 Materials/ 下，不使用子目录 */
 const INDEX_FILE = 'chapter-index.tsv'
 const HEADS_FILE = 'chapter-heads.tsv'
 const CANDIDATES_FILE = 'characters-candidates.tsv'
@@ -645,12 +646,40 @@ async function writeMaterial(target: vscode.Uri, content: string): Promise<void>
 }
 
 /**
+ * 迁移旧版素材目录：把作品下的 `_import` 整体重命名为 Materials。
+ * 关键约束：只在新目录不存在、旧目录存在时动盘——新目录已存在说明此前迁移过或已重跑过素材，
+ * 此时不碰旧目录，避免覆盖已有素材；重命名失败只记日志、不抛错，
+ * 读取端会回退旧目录，抽取与归纳仍可继续进行。
+ * @param dirPath 作品目录，形如 press/{作品名}
+ */
+export async function migrateLegacyMaterialDirectory(dirPath: string): Promise<void> {
+    const root = resolveStorageRoot()
+    const segments = dirPath.split('/').filter((segment) => segment.length > 0)
+    const target = buildStorageUri(root, [...segments, PRESS_IMPORT_DIR])
+    if (await isPathExisting(target)) {
+        return
+    }
+    const legacy = buildStorageUri(root, [...segments, LEGACY_PRESS_IMPORT_DIR])
+    if (!(await isPathExisting(legacy))) {
+        return
+    }
+    try {
+        await vscode.workspace.fs.rename(legacy, target, { overwrite: false })
+        logger.info(`素材目录已迁移：${dirPath}（${LEGACY_PRESS_IMPORT_DIR} → ${PRESS_IMPORT_DIR}）`)
+    } catch (cause) {
+        const detail = cause instanceof Error ? cause.message : String(cause)
+        logger.warn(`素材目录迁移失败，继续读取旧目录：${dirPath}，原因：${detail}`)
+    }
+}
+
+/**
  * 抽取作品的导入素材：章节清单、三段摘录、人名候选与出场原文、金手指候选章、世界构建候选章。
- * 关键约束：素材全部写在 `_import/` 下并覆盖写入（重跑得到最新结果），
- * 该目录已被索引排除，不会污染作品字数。
+ * 关键约束：素材全部写在 `Materials/` 下并覆盖写入（重跑得到最新结果），
+ * 该目录已被索引排除，不会污染作品字数；旧目录在抽取前先迁移，历史素材不重跑。
  * @param dirPath 作品目录，形如 press/{作品名}
  */
 export async function analyzeProject(dirPath: string): Promise<AnalysisResult> {
+    await migrateLegacyMaterialDirectory(dirPath)
     const root = resolveStorageRoot()
     const segments = dirPath.split('/').filter((segment) => segment.length > 0)
     const chapters = await collectChapters(root, segments)

@@ -26,7 +26,7 @@ import { summarizeWorkspace } from '../utils'
 
 interface PressOutlinePageProps {
     workspace: OutlineWorkspace
-    /** 当前作品目录：提取大纲读取该作品的 _import 素材 */
+    /** 当前作品目录：提取大纲读取该作品的 Materials 素材 */
     dirPath: string
     defaultChapterWordGoal: number
     onSelectStep: (step: number) => void

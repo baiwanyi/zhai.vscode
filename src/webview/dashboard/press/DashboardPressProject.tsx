@@ -161,7 +161,7 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                 <Button
                     variant="outline"
                     className="w-full justify-center"
-                    title="扫描章节生成 _import/ 素材（章节清单、人名候选、金手指候选），本地统计、不调用模型"
+                    title="扫描章节生成 Materials/ 素材（章节清单、人名候选、金手指候选），本地统计、不调用模型"
                     disabled={isAnalyzing || status !== 'ready'}
                     onClick={() => void analyze()}
                 >

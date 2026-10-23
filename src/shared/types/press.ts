@@ -25,10 +25,17 @@ export type PressAudience = (typeof PRESS_AUDIENCES)[number]
 export const DEFAULT_PRESS_AUDIENCE: PressAudience = '男频'
 
 /**
- * 作品内的导入工作目录名：素材抽取与 AI 初稿的暂存处，平铺在该目录下。
- * 关键约束：不属于作品内容，索引与字数统计必须排除，否则作品字数会虚高。
+ * 作品内的素材目录名：章节清单与摘录、人名候选，以及 AI 初稿（摘要 / 卷纲 / 角色卡 / 设定）都平铺在这里。
+ * 关键约束：不属于作品内容，索引与字数统计必须排除，否则作品字数会虚高；
+ * 目录名按「素材库」命名，不沿用表示一次性导入动作的旧名。
  */
-export const PRESS_IMPORT_DIR = '_import'
+export const PRESS_IMPORT_DIR = 'Materials'
+
+/**
+ * 旧版素材目录名：早期版本用 `_import`。读取素材时须回退兼容，写入前须整体迁移到 PRESS_IMPORT_DIR；
+ * 索引排除同时保留它，迁移失败的旧目录同样不能污染字数统计。
+ */
+export const LEGACY_PRESS_IMPORT_DIR = '_import'
 
 /** 作品摘要：宿主按索引库聚合，一部作品对应 press/ 下的一个目录 */
 export interface PressProjectSummary {
