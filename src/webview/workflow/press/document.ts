@@ -6,7 +6,7 @@
  * 章纲的 summary 表示计划、wordCount 表示已写事实，两者不互相推导；未识别的名称不进入 characterIds，
  * 避免正文引用到不存在的人物卡。
  */
-import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
+import { DEFAULT_PORTRAIT_STYLE, isPressCharacterId } from '@shared/types/press'
 import type {
     Audience,
     CharacterCard,
@@ -107,6 +107,12 @@ const MAX_TENSION = 5
 
 /** 兜底文本长度上限：区块段落作为字段兜底时只留一句概述，避免把整篇设定塞进表单 */
 const FALLBACK_TEXT_LIMIT = 200
+
+/** 人物标识长度上限：与宿主角色卡目录校验（4-64 位）保持一致 */
+const MAX_CHARACTER_ID_LENGTH = 64
+
+/** 兜底人物标识：名称无法转换成合法标识时使用，保证卡片仍能落盘 */
+const FALLBACK_CHARACTER_ID = 'char-card'
 
 /** 分离 Frontmatter 与正文：未闭合或缺失时整体按正文处理 */
 function splitFrontmatter(text: string): { frontmatter: string; body: string } {
@@ -322,37 +328,70 @@ function parseSetting(readme: string, settingDoc: string, outlineDoc: string, fa
     }
 }
 
-/** 解析人物卡：每个「# 角色名」一块，块内键值行按字段映射，缺省值取类型默认 */
+/**
+ * 由角色名生成人物标识：ASCII 名称直接小写沿用，非 ASCII 字符转码点十六进制，
+ * 既保证同名角色每次解析得到同一标识（角色卡目录不会漂移），也保证落在宿主白名单内。
+ */
+function buildCharacterId(name: string): string {
+    const slug = Array.from(name)
+        .map((char) => (/[A-Za-z0-9]/u.test(char) ? char.toLowerCase() : `-${(char.codePointAt(0) ?? 0).toString(16)}`))
+        .join('')
+        .replace(/-{2,}/gu, '-')
+        .replace(/^-+|-+$/gu, '')
+    const candidate = `char-${slug.length > 0 ? slug : 'card'}`.slice(0, MAX_CHARACTER_ID_LENGTH)
+    return isPressCharacterId(candidate) ? candidate : FALLBACK_CHARACTER_ID
+}
+
+/**
+ * 解析人物卡：每个「# 角色名」一块，块内键值行按字段映射，缺省值取类型默认。
+ * 关键约束：`- id：` 只有本身符合宿主白名单才沿用（否则生成设定图会被拒绝），
+ * 同名角色按出现顺序追加序号，避免角色卡目录互相覆盖。
+ */
 function parseCharacters(text: string): CharacterCard[] {
-    return splitSections(text, 1)
-        .filter((section) => section.title !== '角色设定' && section.title !== '角色索引')
-        .map((section) => {
-            const values = readKeyValues(section.content)
-            const name = values.get('姓名') ?? section.title
-            const roleLabel = readLabel(values.get('分类'), 'supporting')
-            const genderLabel = readLabel(values.get('性别'), 'male')
-            return {
-                id: values.get('id') ?? `char-${name}`,
-                name,
-                alias: values.get('别名') ?? '',
-                role: ROLE_LABELS[roleLabel] ?? 'supporting',
-                gender: GENDER_LABELS[genderLabel] ?? 'male',
-                age: values.get('年龄') ?? '',
-                identity: values.get('身份') ?? '',
-                appearance: values.get('外貌') ?? '',
-                traits: toList(values.get('特质') ?? values.get('性格')),
-                desire: values.get('欲望') ?? '',
-                weakness: values.get('弱点') ?? '',
-                catchphrase: values.get('口头禅') ?? '',
-                ability: values.get('能力') ?? '',
-                arc: values.get('弧线') ?? '',
-                relation: values.get('关系') ?? '',
-                portraits: [],
-                coverPortraitId: null,
-                portraitStyle: DEFAULT_PORTRAIT_STYLE,
-            }
+    const cards: CharacterCard[] = []
+    const usedIds = new Set<string>()
+    for (const section of splitSections(text, 1)) {
+        if (section.title === '角色设定' || section.title === '角色索引') {
+            continue
+        }
+        const values = readKeyValues(section.content)
+        const name = values.get('姓名') ?? section.title
+        if (name.length === 0) {
+            continue
+        }
+        const rawId = values.get('id')
+        const baseId = rawId !== undefined && isPressCharacterId(rawId) ? rawId : buildCharacterId(name)
+        let id = baseId
+        let index = 2
+        while (usedIds.has(id)) {
+            id = `${baseId}-${String(index)}`
+            index += 1
+        }
+        usedIds.add(id)
+        const roleLabel = readLabel(values.get('分类'), 'supporting')
+        const genderLabel = readLabel(values.get('性别'), 'male')
+        cards.push({
+            id,
+            name,
+            alias: values.get('别名') ?? '',
+            role: ROLE_LABELS[roleLabel] ?? 'supporting',
+            gender: GENDER_LABELS[genderLabel] ?? 'male',
+            age: values.get('年龄') ?? '',
+            identity: values.get('身份') ?? '',
+            appearance: values.get('外貌') ?? '',
+            traits: toList(values.get('特质') ?? values.get('性格')),
+            desire: values.get('欲望') ?? '',
+            weakness: values.get('弱点') ?? '',
+            catchphrase: values.get('口头禅') ?? '',
+            ability: values.get('能力') ?? '',
+            arc: values.get('弧线') ?? '',
+            relation: values.get('关系') ?? '',
+            portraits: [],
+            coverPortraitId: null,
+            portraitStyle: DEFAULT_PORTRAIT_STYLE,
         })
-        .filter((card) => card.name.length > 0)
+    }
+    return cards
 }
 
 /** 解析单章：标题、键值行与节拍共同决定章纲字段，缺失项按默认值补齐 */

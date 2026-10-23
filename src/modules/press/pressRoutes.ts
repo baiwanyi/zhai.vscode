@@ -12,6 +12,7 @@ import { readProjectWorkspace } from './projectWorkspace'
 import type { PortraitService } from './portraitService'
 import type { PressAiService } from './pressAiService'
 import type { OpenPressProjectResult, PressWorkspaceResult } from '../../shared/types/press'
+import type { WorkflowRouter } from '../ai/workflowRouter'
 import type Database from 'better-sqlite3'
 import type * as vscode from 'vscode'
 import { isPressDirPath, isPressWorkspaceRequest } from '../../shared/types/press'
@@ -21,6 +22,7 @@ export class PressRoutes {
         private readonly service: PressAiService,
         private readonly portraits: PortraitService,
         private readonly db: Database.Database,
+        private readonly workflowRouter: WorkflowRouter,
     ) {}
 
     /**
@@ -75,7 +77,7 @@ export class PressRoutes {
     }
 
     /**
-     * 打开作品：先按索引库回查该目录下是否登记过文档，再交由编辑器展示 README。
+     * 打开作品：先按索引库回查该目录下是否登记过文档，再交由编辑器展示 README，并同步工作台的作品选定。
      * 安全约束：不直接采信前端传入的路径形态，未登记的作品一律拒绝，与仪表盘 press/open 同口径。
      */
     private async openProject(payload: unknown): Promise<OpenPressProjectResult> {
@@ -86,6 +88,7 @@ export class PressRoutes {
             throw new Error(`作品不在索引中，无法打开：${payload.dirPath}`)
         }
         await openProjectByDir(payload.dirPath)
+        this.workflowRouter.selectProject(payload.dirPath)
         return { opened: true }
     }
 }

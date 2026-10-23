@@ -149,6 +149,11 @@ export interface DeleteVolumeRequest {
     volumeDir: string
 }
 
+/** 整部作品删除入参：作品目录 */
+export interface DeleteProjectRequest {
+    dirPath: string
+}
+
 /** 章节删除入参：章节相对路径 */
 export interface DeleteChapterRequest {
     dirPath: string
@@ -482,6 +487,36 @@ export async function deleteVolume(indexer: ProjectIndexer, request: DeleteVolum
     await vscode.workspace.fs.delete(target, { recursive: true, useTrash: true })
     indexer.removeFilesUnder(`${[...chapterRoot, volumeDir].join('/')}/`)
     logger.info(`已删除卷：${[...chapterRoot, volumeDir].join('/')}`)
+}
+
+/** 拒绝删除含未保存修改的作品：删盘后编辑器再保存会把文件写回来，索引与磁盘会长期不一致 */
+function assertNoDirtyDocument(projectUri: vscode.Uri): void {
+    const prefix = projectUri.path.endsWith('/') ? projectUri.path : `${projectUri.path}/`
+    const dirty = vscode.workspace.textDocuments.find(
+        (document) => document.isDirty && document.uri.path.startsWith(prefix),
+    )
+    if (dirty !== undefined) {
+        throw new Error(`作品内有未保存的修改，请先保存再删除：${dirty.uri.path}`)
+    }
+}
+
+/**
+ * 删除整部作品：作品目录（README、设定、角色设定、大纲与全部章节）递归移入回收站，
+ * 环境不支持回收站时由编辑器退化为永久删除，随后按前缀清理该作品的索引记录。
+ * 关键约束：目录须为 press/{作品名} 两段，避免借作品名删到模块根或别的作品；
+ * 先拒绝有未保存修改的文档；递归删除不保证逐文件回调，必须主动清理索引，否则作品列表会残留。
+ */
+export async function deleteProject(indexer: ProjectIndexer, request: DeleteProjectRequest): Promise<void> {
+    const segments = readProjectSegments(request.dirPath)
+    const root = resolveStorageRoot()
+    const target = buildStorageUri(root, segments)
+    if (!(await isPathExisting(target))) {
+        throw new Error(`作品不存在：${request.dirPath}`)
+    }
+    assertNoDirtyDocument(target)
+    await vscode.workspace.fs.delete(target, { recursive: true, useTrash: true })
+    indexer.removeFilesUnder(`${segments.join('/')}/`)
+    logger.info(`已删除作品：${segments.join('/')}`)
 }
 
 /**

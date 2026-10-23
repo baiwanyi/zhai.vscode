@@ -1,7 +1,7 @@
 /**
  * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置、
- * 工作流页跳转、写作管理（作品列表、作品详情、新建作品与章节、卷的重命名与删除、章节的删除与跨卷移动）
- * 聚合与创建，以及宿主命令。
+ * 工作流页跳转、写作管理（作品列表、作品详情、新建作品与章节、卷的重命名与删除、章节的删除与跨卷移动、
+ * 整部作品删除）聚合与创建，以及宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传；
  * 另经 state 消息主动广播：note 通道给活跃笔记（列表回填选中态），index 通道给索引状态（列表随编辑收敛）。
  * 关键约束：请求处理为异步流程（新建笔记/作品/章节、卷重命名与删除、章节删除与移动需落盘 + 索引 + 打开，
@@ -21,6 +21,7 @@ import {
 import { logger } from './logger'
 import { WEBVIEW_ALLOWED_COMMANDS } from './webviewCommands'
 import { buildWebviewHtml } from './webviewHtml'
+import type { WorkflowRouter } from '../ai/workflowRouter'
 import type { PinStore } from '../note/pinStore'
 import type { IndexService, IndexStatus } from './indexer/indexService'
 import type { DashboardStats } from '../../shared/types/dashboard'
@@ -43,6 +44,7 @@ import {
     isCreatePressChapterRequest,
     isCreatePressProjectRequest,
     isDeletePressChapterRequest,
+    isDeletePressProjectRequest,
     isDeletePressVolumeRequest,
     isMovePressChapterRequest,
     isOpenPressChapterRequest,
@@ -65,6 +67,7 @@ import {
     createProject,
     createVolume,
     deleteChapter,
+    deleteProject,
     deleteVolume,
     moveChapter,
     openChapterByPath,
@@ -86,6 +89,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         private readonly indexService: IndexService,
         private readonly pins: PinStore,
         private readonly indexStatus: vscode.Event<IndexStatus>,
+        private readonly workflowRouter: WorkflowRouter,
     ) {}
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -182,6 +186,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             case 'press/moveChapter': {
                 return this.movePressChapter(payload)
             }
+            case 'press/deleteProject': {
+                return this.deletePressProject(payload)
+            }
             case 'press/open': {
                 return this.openPressProject(payload)
             }
@@ -273,6 +280,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             audience: readPressAudience(payload.audience),
         })
         await openProjectByDir(created.dirPath)
+        this.workflowRouter.selectProject(created.dirPath)
         logger.info(`作品创建完成并打开：${created.dirPath}`)
         return { dirPath: created.dirPath, title: created.title }
     }
@@ -433,6 +441,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
 
     /**
      * 打开作品：先按索引库回查该目录下是否登记过文档，仅认可真实存在的作品再交由编辑器展示。
+     * 打开后同步工作台的作品选定，使侧栏写作页立即切到该作品（不依赖编辑器焦点是否已落到作品文档）。
      * 安全约束：不直接采信前端传入的路径形态，与 note/open 同口径，从源头排除任意目录读取。
      */
     private async openPressProject(payload: unknown): Promise<OpenPressProjectResult> {
@@ -443,7 +452,26 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             throw new Error(`作品不在索引中，无法打开：${payload.dirPath}`)
         }
         await openProjectByDir(payload.dirPath)
+        this.workflowRouter.selectProject(payload.dirPath)
         return { opened: true }
+    }
+
+    /**
+     * 删除作品：整部作品移入回收站并清理索引，确认交互由前端承担。
+     * 关键约束：先按索引库回查目录下是否登记过文档，不采信前端路径；删除成功后清空工作台的当前作品，
+     * 避免侧栏写作页停留在已删除的作品上。
+     */
+    private async deletePressProject(payload: unknown): Promise<{ deleted: boolean }> {
+        if (!isDeletePressProjectRequest(payload)) {
+            throw new Error('press/deleteProject 参数非法：dirPath 须为非空字符串')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法删除：${payload.dirPath}`)
+        }
+        await deleteProject(this.indexService, { dirPath: payload.dirPath })
+        this.workflowRouter.clearProject()
+        logger.info(`作品删除完成：${payload.dirPath}`)
+        return { deleted: true }
     }
 
     /**

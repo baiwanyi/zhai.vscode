@@ -389,7 +389,7 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 | `press/workspace` | `{ dirPath?: string }` | `{ project, projects }` | 读取 `README.md`、`设定.md`、`角色设定.md`、`大纲.md` 原文并附带作品清单；`dirPath` 缺省或四份文档全空时 `project` 为 `null` |
 | `press/open` | `{ dirPath }` | `{ opened }` | 打开作品 README；沿用仪表盘口径，先按索引库回查作品 |
 
-- `projectDir` 由 `WorkflowRouter` 从活跃文档路径推导（`press/{作品名}/...` 至少三段），索引尚未收录时同样识别，新建作品打开后工作台可立即载入。
+- `projectDir` 取自活跃文档路径（`press/{作品名}/...` 至少三段），或由仪表盘/工作台的 `press/open` 调用 `WorkflowRouter.selectProject` 显式写入；索引尚未收录时同样识别，新建作品打开后工作台可立即载入。打开/删除作品都会广播路由事实，侧栏写作页据此切换作品并保留当前分区（例如停留在大纲页切换到另一作品仍是该作品的大纲）。
 - 解析在 Webview 侧完成（`src/webview/workflow/press/document.ts`）：作品设定优先取 README 与 `设定.md` 的「`- 键：值`」行，
   角色按「`# 角色名`」切块，大纲按「卷 → 章 → 键值行」切块；键值缺失时回落到区块段落，解析失败只让对应字段为空。
 - 工作台对作品只读：页面内的编辑仍是内存草稿，暂不写回 Markdown。
@@ -477,6 +477,7 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 | `press/deleteChapter` | 单章移入回收站 → 按完整路径清理该章索引；有未保存修改的文档直接拒绝 |
 | `press/moveChapter` | 移动到目标卷末尾 → 重排文件名序号 → 清旧路径索引 → 按新路径索引，返回 `path / title / volume` |
 | `press/openChapter` | 回查索引库精确命中后打开章节文档，前缀须属于对应作品的 `Chapter/` |
+| `press/deleteProject` | 回查作品在索引中 → 拒绝含未保存修改的作品 → 整部作品目录移入回收站 → 按前缀清理索引 → 清空路由事实中的当前作品 |
 
 **章节聚合规则**
 

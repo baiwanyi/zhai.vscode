@@ -54,12 +54,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     indexService.registerWatcher(context.subscriptions)
 
     const pinStore = new PinStore(context.globalState)
+    // 工作流路由：汇聚活跃编辑器场景、选定模块与当前作品，供工作流面板按模块类型换页；
+    // 仪表盘打开/删除作品时会同步作品选定，故先于仪表盘创建
+    const workflowRouter = new WorkflowRouter(db, indexService)
+    workflowRouter.register(context.subscriptions)
     const dashboardProvider = new DashboardViewProvider(
         context.extensionUri,
         db,
         indexService,
         pinStore,
         indexStatusEmitter.event,
+        workflowRouter,
     )
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(DashboardViewProvider.viewId, dashboardProvider),
@@ -77,10 +82,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const aiChatService = new AiChatService(aiDb, aiProvider)
     context.subscriptions.push(aiChatService)
 
-    // 工作流路由：汇聚活跃编辑器场景与入口跳转意图，供工作流面板按模块类型换页
-    const workflowRouter = new WorkflowRouter(db, indexService)
-    workflowRouter.register(context.subscriptions)
-
     registerAiCommands(context, aiChatService, workflowRouter)
 
     // 取名：独立 naming.db 承载生成历史与收藏，词素库全部留在宿主侧
@@ -96,8 +97,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const pressAiService = new PressAiService(pressDb, aiProvider)
     const imageRouter = new ImageProviderRouter(secrets)
     const portraitService = new PortraitService(pressDb, aiProvider, imageRouter)
-    // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown
-    const pressRoutes = new PressRoutes(pressAiService, portraitService, db)
+    // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown；打开作品时同步路由事实
+    const pressRoutes = new PressRoutes(pressAiService, portraitService, db, workflowRouter)
 
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,

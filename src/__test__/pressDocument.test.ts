@@ -64,6 +64,7 @@ const CHARACTERS = `# 角色设定
 
 # 林岚
 
+- id：char-林岚
 - 别名：七号
 - 分类：protagonist（主角）｜性别：male（男）｜年龄：27
 - 身份：旧城修表匠
@@ -138,7 +139,7 @@ describe('parseProjectWorkspace', () => {
         )
         expect(parsed.characters).toHaveLength(2)
         const [first, second] = parsed.characters
-        expect(first?.id).toBe('char-林岚')
+        expect(first?.id).toBe('char-6797-5c9a')
         expect(first?.name).toBe('林岚')
         expect(first?.alias).toBe('七号')
         expect(first?.role).toBe('protagonist')
@@ -148,6 +149,29 @@ describe('parseProjectWorkspace', () => {
         expect(first?.catchphrase).toBe('表不会骗人，人会。')
         expect(second?.role).toBe('supporting')
         expect(second?.gender).toBe('female')
+    })
+
+    it('人物标识以宿主白名单为准：非法标识重生成，同名自动加序号', () => {
+        const characters = `# 角色设定
+
+# 林岚
+
+- id：char-linlan
+- 分类：主角
+
+# 林岚
+
+- id：char-linlan
+- 分类：配角
+
+# 顾青
+
+- id：char-顾青
+- 分类：配角
+`
+        const parsed = parseProjectWorkspace({ readme: '', setting: '', characters, outline: '' }, '未命名')
+        expect(parsed.characters.map((card) => card.id)).toEqual(['char-linlan', 'char-linlan-2', 'char-987e-9752'])
+        expect(parsed.characters.every((card) => /^[A-Za-z0-9_-]{4,64}$/.test(card.id))).toBe(true)
     })
 
     it('按卷与章还原章纲，字数、钩子与节拍各归其位', () => {
@@ -172,10 +196,10 @@ describe('parseProjectWorkspace', () => {
         expect(first?.tension).toBe(2)
         expect(first?.location).toBe('城南修表铺')
         expect(first?.beats.map((beat) => beat.isDone)).toEqual([true, true, false])
-        expect(first?.characterIds).toEqual(['char-林岚'])
+        expect(first?.characterIds).toEqual(['char-6797-5c9a'])
         expect(second?.order).toBe(2)
         expect(second?.status).toBe('planned')
-        expect(second?.characterIds).toEqual(['char-顾青'])
+        expect(second?.characterIds).toEqual(['char-987e-9752'])
     })
 
     it('无卷标题时把章节收进默认卷，空文档不抛错', () => {

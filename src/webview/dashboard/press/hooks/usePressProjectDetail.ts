@@ -1,6 +1,6 @@
 /**
  * 作品详情数据：拉取 press/detail（摘要 + 卷分组章节），并提供新增卷、新增章节、卷重命名/删除、
- * 章节删除/移动、打开章节与打开作品设定的动作。
+ * 章节删除/移动、整部作品删除、打开章节与打开作品设定的动作。
  * 复用 ../../bridge 的请求与状态订阅、press/utils 的状态与提示口径；索引变更由 index 通道驱动重拉。
  * 关键约束：新建、卷操作与章节操作共用独立提交态，任一进行中即阻止重复提交；成功后重拉，不等 watcher 防抖；
  * 失败一律提示且不污染已有详情；本地数据只认宿主回包，不在前端拼装章节条目；卷与章节的破坏性操作
@@ -29,12 +29,16 @@ export interface PressProjectDetailState {
     isUpdatingVolume: boolean
     /** 章节级操作进行中：删除/移动期间禁用章节入口，避免并发改动同一文件 */
     isUpdatingChapter: boolean
+    /** 整部作品删除进行中：期间禁用页头删除入口，避免重复提交 */
+    isDeletingProject: boolean
     reload: () => Promise<void>
     createChapter: (volumeDir?: string) => Promise<void>
     createVolume: () => Promise<void>
     renameVolume: (volumeDir: string, name: string) => Promise<boolean>
     deleteVolume: (volumeDir: string) => Promise<boolean>
     deleteChapter: (path: string) => Promise<boolean>
+    /** 删除整部作品：成功后调用方负责跳转作品列表，本层不重拉已删除的详情 */
+    deleteProject: () => Promise<boolean>
     /** 移动到目标卷；成功时回传落点，供页面展开目标卷 */
     moveChapter: (path: string, targetVolumeDir: string) => Promise<MovedPressChapter | null>
     openChapter: (path: string) => Promise<void>
@@ -49,6 +53,7 @@ export function usePressProjectDetail(dirPath: string): PressProjectDetailState 
     const [isCreatingVolume, setIsCreatingVolume] = useState(false)
     const [isUpdatingVolume, setIsUpdatingVolume] = useState(false)
     const [isUpdatingChapter, setIsUpdatingChapter] = useState(false)
+    const [isDeletingProject, setIsDeletingProject] = useState(false)
 
     const reload = useCallback(async (): Promise<void> => {
         try {
@@ -182,6 +187,21 @@ export function usePressProjectDetail(dirPath: string): PressProjectDetailState 
         [dirPath, reload],
     )
 
+    /** 删除整部作品：成功后不重拉详情（作品已不存在），由页面跳回作品列表 */
+    const deleteProject = useCallback(async (): Promise<boolean> => {
+        setIsDeletingProject(true)
+        try {
+            await request('press/deleteProject', { dirPath })
+            toast.success('作品已删除，可在系统回收站恢复')
+            return true
+        } catch (cause) {
+            toastError(cause)
+            return false
+        } finally {
+            setIsDeletingProject(false)
+        }
+    }, [dirPath])
+
     const openChapter = useCallback(async (path: string): Promise<void> => {
         try {
             await request('press/openChapter', { path })
@@ -206,12 +226,14 @@ export function usePressProjectDetail(dirPath: string): PressProjectDetailState 
         isCreatingVolume,
         isUpdatingVolume,
         isUpdatingChapter,
+        isDeletingProject,
         reload,
         createChapter,
         createVolume,
         renameVolume,
         deleteVolume,
         deleteChapter,
+        deleteProject,
         moveChapter,
         openChapter,
         openReadme,

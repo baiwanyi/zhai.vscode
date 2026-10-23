@@ -1,10 +1,12 @@
 /**
- * 作品详情页（#/press/{作品名}）：页头返回作品列表与作品元信息，主体为卷分组章节目录。
+ * 作品详情页（#/press/{作品名}）：页头返回作品列表与作品元信息，其下为删除作品入口，主体为卷分组章节目录。
  * 数据与动作经 hooks/usePressProjectDetail 下发，章节渲染与折叠交给 PressChapterList（卷内按批追加），
- * 卷的新建入口位于卷头菜单，卷的重命名/删除与章节的删除由本页承载弹窗，章节移动成功后展开落点卷。
- * 关键约束：详情未就绪时页头用路由中的目录名兜底，避免标题闪烁；新建卷需数据就绪后才可用，
- * 防止向不存在的作品写入；弹窗以被操作的卷重挂载，保证输入框回到当前卷名；页面内屏蔽浏览器右键菜单。
+ * 卷的新建入口位于卷头菜单，卷的重命名/删除、章节删除与整部作品删除由本页承载弹窗，章节移动成功后展开落点卷。
+ * 关键约束：详情未就绪时页头用路由中的目录名兜底，避免标题闪烁；新建卷与删除作品需数据就绪后才可用，
+ * 防止向不存在的作品写入或误删；弹窗以被操作的卷重挂载，保证输入框回到当前卷名；
+ * 删除作品成功后由本页跳回作品列表，提示统一经 sonner 给出；页面内屏蔽浏览器右键菜单。
  */
+import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '@components/ui/empty'
@@ -14,6 +16,7 @@ import type { PressChapterEntry, PressVolumeGroup } from '@shared/types/press'
 import { usePressProjectDetail } from './hooks/usePressProjectDetail'
 import { PressChapterDeleteDialog } from './layout/PressChapterDeleteDialog'
 import { PressChapterList } from './layout/PressChapterList'
+import { PressProjectDeleteDialog } from './layout/PressProjectDeleteDialog'
 import { PressProjectHeader } from './layout/PressProjectHeader'
 import { PressVolumeDeleteDialog } from './layout/PressVolumeDeleteDialog'
 import { PressVolumeRenameDialog } from './layout/PressVolumeRenameDialog'
@@ -70,12 +73,14 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
         isCreatingVolume,
         isUpdatingVolume,
         isUpdatingChapter,
+        isDeletingProject,
         reload,
         createChapter,
         createVolume,
         renameVolume,
         deleteVolume,
         deleteChapter,
+        deleteProject,
         moveChapter,
         openChapter,
         openReadme,
@@ -83,6 +88,7 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
     const [renameTarget, setRenameTarget] = useState<PressVolumeGroup | null>(null)
     const [deleteTarget, setDeleteTarget] = useState<PressVolumeGroup | null>(null)
     const [deleteChapterTarget, setDeleteChapterTarget] = useState<PressChapterEntry | null>(null)
+    const [isDeleteProjectOpen, setIsDeleteProjectOpen] = useState(false)
     const [expandVolumeDir, setExpandVolumeDir] = useState<string | undefined>(undefined)
     // 章节移动后递增，让章节列表重挂载并把落点卷作为默认展开项
     const [chapterListKey, setChapterListKey] = useState(0)
@@ -118,6 +124,16 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
         })
     }
 
+    /** 删除整部作品：成功后关闭弹窗并跳回作品列表，结果提示由数据层经 sonner 给出 */
+    const handleConfirmDeleteProject = (): void => {
+        void deleteProject().then((isSucceeded) => {
+            if (isSucceeded) {
+                setIsDeleteProjectOpen(false)
+                onBack()
+            }
+        })
+    }
+
     const handleMoveChapter = (path: string, targetVolumeDir: string): void => {
         void moveChapter(path, targetVolumeDir).then((moved) => {
             if (moved !== null) {
@@ -138,6 +154,16 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                 {project !== undefined ? (
                     <p className="px-1 text-xs text-muted-foreground">{formatProjectMeta(project)}</p>
                 ) : null}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-center text-destructive hover:text-destructive"
+                    disabled={isDeletingProject}
+                    onClick={() => setIsDeleteProjectOpen(true)}
+                >
+                    <Trash2 data-icon="inline-start" />
+                    删除作品
+                </Button>
             </div>
             <div className="relative min-h-0 flex-1 pt-3">
                 <ScrollArea className="h-full">
@@ -207,6 +233,21 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                         }
                     }}
                     onConfirm={() => handleConfirmDeleteChapter(deleteChapterTarget)}
+                />
+            ) : null}
+            {isDeleteProjectOpen ? (
+                <PressProjectDeleteDialog
+                    open
+                    projectName={project?.name ?? fallbackName}
+                    volumeCount={detail?.volumes.length ?? 0}
+                    chapterCount={(detail?.volumes ?? []).reduce((sum, volume) => sum + volume.chapters.length, 0)}
+                    isSubmitting={isDeletingProject}
+                    onOpenChange={(isOpen) => {
+                        if (!isOpen) {
+                            setIsDeleteProjectOpen(false)
+                        }
+                    }}
+                    onConfirm={handleConfirmDeleteProject}
                 />
             ) : null}
         </div>

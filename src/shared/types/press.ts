@@ -189,6 +189,20 @@ export interface DeletePressVolumeRequest {
     volumeDir: string
 }
 
+/** press/deleteProject 请求：整部作品（目录、文档与全部章节）移入回收站 */
+export interface DeletePressProjectRequest {
+    dirPath: string
+}
+
+/** 判断是否为删除作品的请求（类型收窄辅助）：dirPath 须为非空字符串，形态由服务侧再校验 */
+export function isDeletePressProjectRequest(payload: unknown): payload is DeletePressProjectRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const dirPath = (payload as { dirPath?: unknown }).dirPath
+    return typeof dirPath === 'string' && dirPath.length > 0
+}
+
 /** press/deleteChapter 请求：单章移入回收站 */
 export interface DeletePressChapterRequest {
     dirPath: string
@@ -349,6 +363,17 @@ export const PORTRAIT_STYLES: readonly PortraitStyle[] = [
 
 /** 默认风格：智能匹配，由宿主按题材与世界观选择具体画风 */
 export const DEFAULT_PORTRAIT_STYLE: PortraitStyle = 'auto'
+
+/** 人物标识白名单：角色卡目录名只允许字母、数字、下划线与短横线，长度 4-64，避免路径穿越 */
+const PRESS_CHARACTER_ID_PATTERN = /^[A-Za-z0-9_-]{4,64}$/
+
+/**
+ * 判断人物标识能否用于角色卡目录：宿主校验与 Webview 文档解析共用同一口径，
+ * 解析作品文档时必须先过这一关，否则含中文等字符的标识会在生成设定图时被宿主拒绝。
+ */
+export function isPressCharacterId(value: unknown): value is string {
+    return typeof value === 'string' && PRESS_CHARACTER_ID_PATTERN.test(value)
+}
 
 /** 角色设定图：宿主生成并落盘后回传的图片信息 */
 export interface CharacterPortrait {

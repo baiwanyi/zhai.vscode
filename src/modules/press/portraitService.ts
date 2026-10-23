@@ -32,7 +32,7 @@ import type {
 } from '../../shared/types/press'
 import type { AiProvider } from '../ai/provider'
 import type Database from 'better-sqlite3'
-import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES } from '../../shared/types/press'
+import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId } from '../../shared/types/press'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
@@ -42,8 +42,6 @@ import { buildStorageUri, toSafeSegments } from '../common/storagePath'
 const PORTRAIT_DIR = '_portraits'
 /** 角色设定图的配额键（press.db 的 meta 表） */
 const QUOTA_KEYS: QuotaKeys = { dateKey: 'press_image_date', countKey: 'press_image_count' }
-/** 人物标识白名单：只允许字母、数字、下划线与短横线，避免路径穿越 */
-const CHARACTER_ID_PATTERN = /^[A-Za-z0-9_-]{4,64}$/
 /** 目录扫描只认图片文件，其余（缩略图缓存、说明文件等）一律忽略 */
 const PORTRAIT_FILE_PATTERN = /\.(png|jpe?g|webp|gif)$/i
 /** 短字段长度上限 */
@@ -373,7 +371,7 @@ function normalizeCharacterId(payload: unknown, method: string): string {
         throw new Error(`${method} 缺少参数`)
     }
     const characterId = readText((payload as { characterId?: unknown }).characterId, MAX_SHORT_TEXT)
-    if (!CHARACTER_ID_PATTERN.test(characterId)) {
+    if (!isPressCharacterId(characterId)) {
         throw new Error('人物标识非法，无法定位角色卡目录')
     }
     return characterId
