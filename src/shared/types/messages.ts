@@ -47,12 +47,14 @@ export interface ToastPayload {
 
 /**
  * 宿主 → Webview：状态广播（索引就绪、配置变更、窗口聚焦、活跃笔记切换、工作流场景切换、
- * 作品导入进度、操作反馈）。press-import 通道承载导入任务的进度与终态，载荷形如 PressImportProgress；
+ * 作品导入进度、语义归纳进度、操作反馈）。
+ * press-import 通道承载导入任务的进度与终态，载荷形如 PressImportProgress；
+ * press-semantic 通道承载 AI 语义归纳的进度与终态，载荷形如 PressSemanticProgress；
  * toast 通道承载宿主的操作反馈，载荷形如 ToastPayload。
  */
 export interface StateMessage {
     type: 'state'
-    channel: 'index' | 'config' | 'ai' | 'note' | 'workflow' | 'press-import' | 'toast'
+    channel: 'index' | 'config' | 'ai' | 'note' | 'workflow' | 'press-import' | 'press-semantic' | 'toast'
     payload: unknown
 }
 

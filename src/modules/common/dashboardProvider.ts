@@ -37,9 +37,12 @@ import type {
     PressImportProgress,
     PressImportStartResult,
     PressProjectDetail,
+    PressSemanticProgress,
+    PressSemanticStartResult,
     RenamedPressVolume,
 } from '../../shared/types/press'
 import type { OpenWorkflowResult } from '../../shared/types/workflow'
+import type { ImportSemanticService} from '../press/importSemanticService';
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenNoteRequest, isPinNotesRequest } from '../../shared/types/note'
@@ -53,11 +56,13 @@ import {
     isOpenPressChapterRequest,
     isPressDirPath,
     isPressImportStartRequest,
+    isPressSemanticStartRequest,
     isRenamePressVolumeRequest,
     readPressAudience,
 } from '../../shared/types/press'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { createAndOpenNote, openNoteByPath } from '../note/noteService'
+import { SemanticError } from '../press/importSemanticService'
 import { ImportError, PressImportService } from '../press/importService'
 import {
     hasProjectFile,
@@ -89,6 +94,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private indexStatusListener: vscode.Disposable | null = null
     /** 作品导入服务：持有待导入文件 token 与进行中的任务，长任务进度经 state 通道广播 */
     private readonly importService: PressImportService
+    /** 语义归纳服务：AI 通道晚于仪表盘创建，故用后置注入；未注入时相关请求直接拒绝 */
+    private semanticService: ImportSemanticService | null = null
 
     public constructor(
         private readonly extensionUri: vscode.Uri,
@@ -99,6 +106,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         private readonly workflowRouter: WorkflowRouter,
     ) {
         this.importService = new PressImportService(indexService)
+    }
+
+    /** 注入语义归纳服务：由扩展入口在 AI 通道就绪后调用 */
+    public attachSemanticService(service: ImportSemanticService): void {
+        this.semanticService = service
     }
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -143,8 +155,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             this.post(view, { type: 'response', reqId, ok: true, payload: result })
         } catch (error) {
             const text = error instanceof Error ? error.message : String(error)
-            // 导入类错误带业务原因码，前端据此分发提示文案；其余仍以协议方法名兜底
-            const code = error instanceof ImportError ? error.code : method
+            // 导入与归纳类错误带业务原因码，前端据此分发提示文案；其余仍以协议方法名兜底
+            const code =
+                error instanceof ImportError || error instanceof SemanticError ? error.code : method
             logger.error(`Webview 请求处理失败：${method}`, error)
             this.post(view, { type: 'response', reqId, ok: false, error: { code, message: text } })
         }
@@ -214,6 +227,12 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             }
             case 'press/import/cancel': {
                 return Promise.resolve(this.cancelPressImport(payload))
+            }
+            case 'press/semantic/start': {
+                return this.startPressSemantic(view, payload)
+            }
+            case 'press/semantic/cancel': {
+                return Promise.resolve(this.cancelPressSemantic(payload))
             }
             case 'index/rebuild': {
                 void this.indexService.fullRebuild()
@@ -521,6 +540,73 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             throw new Error('press/import/cancel 参数非法：jobId 须为非空字符串')
         }
         return this.importService.cancel(jobId)
+    }
+
+    /**
+     * 启动语义归纳：立即回传 jobId，进度与终态经 press-semantic 通道广播。
+     * 关键约束：归纳要遍历全部章节并逐批调用模型，属长任务，不能占用请求超时；
+     * 服务未注入（AI 通道未就绪）时直接拒绝，避免前端拿到永远不会有下文的 jobId。
+     */
+    private startPressSemantic(
+        view: vscode.WebviewView,
+        payload: unknown,
+    ): Promise<PressSemanticStartResult> {
+        if (!isPressSemanticStartRequest(payload)) {
+            throw new Error('press/semantic/start 参数非法：dirPath 须为 press/ 下的相对路径')
+        }
+        const service = this.semanticService
+        if (service === null) {
+            throw new Error('AI 通道尚未就绪，无法执行语义归纳')
+        }
+        const jobId = `semantic-${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`
+        const emit = (progress: PressSemanticProgress): void => {
+            this.post(view, { type: 'state', channel: 'press-semantic', payload: progress })
+        }
+        void service
+            .start(jobId, payload.dirPath, emit)
+            .then((outcome) => {
+                emit({
+                    jobId,
+                    stage: 'summary',
+                    status: outcome.status,
+                    done: outcome.done,
+                    total: outcome.total,
+                    generated: outcome.generated,
+                    dirPath: outcome.dirPath,
+                    ...(outcome.code === undefined ? {} : { code: outcome.code }),
+                    message: outcome.message,
+                })
+            })
+            .catch((error: unknown) => {
+                const message = error instanceof Error ? error.message : String(error)
+                logger.error(`语义归纳异常：${jobId}`, error)
+                emit({
+                    jobId,
+                    stage: 'summary',
+                    status: 'failed',
+                    done: 0,
+                    total: 0,
+                    generated: 0,
+                    dirPath: payload.dirPath,
+                    code: error instanceof SemanticError ? error.code : 'internal',
+                    message,
+                })
+            })
+        return Promise.resolve({ jobId })
+    }
+
+    /** 取消语义归纳：按 jobId 匹配，避免旧任务的取消请求误停当前任务 */
+    private cancelPressSemantic(payload: unknown): { cancelled: boolean } {
+        const jobId =
+            typeof payload === 'object' && payload !== null ? (payload as { jobId?: unknown }).jobId : undefined
+        if (typeof jobId !== 'string' || jobId.length === 0) {
+            throw new Error('press/semantic/cancel 参数非法：jobId 须为非空字符串')
+        }
+        const service = this.semanticService
+        if (service === null) {
+            return { cancelled: false }
+        }
+        return service.cancel(jobId)
     }
 
     /**

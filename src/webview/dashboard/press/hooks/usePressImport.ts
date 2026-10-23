@@ -80,11 +80,22 @@ export interface PressImportState {
     dismiss: () => void
 }
 
-export function usePressImport(): PressImportState {
+export interface PressImportOptions {
+    /** 导入成功后的回调：页面据此决定是否继续触发语义归纳 */
+    onCompleted?: (dirPath: string) => void
+}
+
+export function usePressImport(options: PressImportOptions = {}): PressImportState {
     const [candidate, setCandidate] = useState<PressImportCandidate | null>(null)
     const [isImporting, setIsImporting] = useState(false)
     /** 当前任务的 jobId：用于过滤旧任务的迟到进度 */
     const jobIdRef = useRef('')
+    /** 完成回调走 ref：避免回调身份变化导致整个订阅重挂 */
+    const completedRef = useRef(options.onCompleted)
+
+    useEffect(() => {
+        completedRef.current = options.onCompleted
+    }, [options.onCompleted])
 
     useEffect(() => {
         return onState((message) => {
@@ -104,6 +115,7 @@ export function usePressImport(): PressImportState {
             if (progress.status === 'completed') {
                 setCandidate(null)
                 toast.success(progress.message, { id: IMPORT_TOAST_ID })
+                completedRef.current?.(progress.dirPath)
                 return
             }
             if (progress.status === 'cancelled') {

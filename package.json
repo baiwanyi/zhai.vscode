@@ -204,6 +204,12 @@
                     "default": 20,
                     "description": "写作管理 AI 生成的每日次数上限（人物外貌生成等一次性任务，0 或负数表示不限）"
                 },
+                "zhai.press.importAiDailyLimit": {
+                    "type": "number",
+                    "default": 0,
+                    "minimum": 0,
+                    "description": "导入后 AI 语义归纳（章节摘要等批量任务）的每日调用次数上限，0 表示不限。与「写作管理 AI 生成次数」分开计数，避免批量归纳挤占日常生成额度"
+                },
                 "zhai.image.size": {
                     "type": "string",
                     "default": "768x1024",

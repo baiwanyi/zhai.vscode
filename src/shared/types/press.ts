@@ -552,6 +552,62 @@ export interface PressImportProgress {
     message: string
 }
 
+/**
+ * 语义归纳阶段：按依赖顺序推进，摘要先于卷纲，卷纲先于角色与设定。
+ * 当前仅实现 summary，其余阶段留作扩展，避免一次引入过多未验证的调用。
+ */
+export type PressSemanticStage = 'summary'
+
+/** 语义归纳失败原因码：前端按码分发文案 */
+export type PressSemanticErrorCode =
+    | 'aborted'
+    | 'not-ready'
+    | 'no-material'
+    | 'no-chapters'
+    | 'quota-exceeded'
+    | 'internal'
+
+/** press/semantic/start 请求：dirPath 取相对存储根口径，宿主须回查作品真实性 */
+export interface PressSemanticStartRequest {
+    dirPath: string
+    /** 指定阶段，缺省为 summary */
+    stage?: PressSemanticStage
+}
+
+/** press/semantic/start 响应：任务立即返回，进度与终态经 press-semantic 通道广播 */
+export interface PressSemanticStartResult {
+    jobId: string
+}
+
+/** 语义归纳进度与终态：载荷挂在 state 消息的 press-semantic 通道上 */
+export interface PressSemanticProgress {
+    jobId: string
+    stage: PressSemanticStage
+    status: 'running' | 'completed' | 'failed' | 'cancelled'
+    /** 已生成摘要的章节数（含此前已存在的） */
+    done: number
+    /** 章节总数 */
+    total: number
+    /** 本轮新生成的摘要数 */
+    generated: number
+    dirPath: string
+    /** 终态为 failed 时的原因码 */
+    code?: PressSemanticErrorCode
+    message: string
+}
+
+/** 判断是否为合法的语义归纳请求：dirPath 须为 press/ 下的相对路径 */
+export function isPressSemanticStartRequest(payload: unknown): payload is PressSemanticStartRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { dirPath?: unknown; stage?: unknown }
+    if (!isPressDirPath(candidate.dirPath)) {
+        return false
+    }
+    return candidate.stage === undefined || candidate.stage === 'summary'
+}
+
 /** 判断是否为合法的导入启动请求（类型收窄辅助）：token 与作品名均须非空，目标读者可缺省 */
 export function isPressImportStartRequest(payload: unknown): payload is PressImportStartRequest {
     if (typeof payload !== 'object' || payload === null) {

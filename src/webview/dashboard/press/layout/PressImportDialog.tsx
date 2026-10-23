@@ -7,6 +7,7 @@
  */
 import { useState } from 'react'
 import { Button } from '@components/ui/button'
+import { Checkbox } from '@components/ui/checkbox'
 import {
     Dialog,
     DialogContent,
@@ -34,6 +35,9 @@ const ENCODING_LABELS: Readonly<Record<PressImportCandidate['encoding'], string>
 interface PressImportDialogProps {
     candidate: PressImportCandidate | null
     isImporting: boolean
+    /** 导入完成后是否继续生成章节摘要 */
+    shouldSummarize: boolean
+    onSummaryChange: (value: boolean) => void
     onOpenChange: (open: boolean) => void
     onSubmit: (name: string, audience: PressAudience) => Promise<boolean>
 }
@@ -41,6 +45,8 @@ interface PressImportDialogProps {
 export function PressImportDialog({
     candidate,
     isImporting,
+    shouldSummarize,
+    onSummaryChange,
     onOpenChange,
     onSubmit,
 }: PressImportDialogProps): JSX.Element | null {
@@ -150,6 +156,17 @@ export function PressImportDialog({
                         </ToggleGroup>
                     </Field>
                 </FieldGroup>
+                <div className="flex items-start gap-2">
+                    <Checkbox
+                        id="press-import-summary"
+                        checked={shouldSummarize}
+                        disabled={isImporting}
+                        onCheckedChange={(checked) => onSummaryChange(checked === true)}
+                    />
+                    <label htmlFor="press-import-summary" className="text-muted-foreground text-xs leading-5">
+                        导入后分批生成章节摘要（消耗 AI 调用次数；失败不影响已导入的正文）
+                    </label>
+                </div>
                 <DialogFooter>
                     <Button variant="outline" disabled={isImporting} onClick={() => onOpenChange(false)}>
                         取消

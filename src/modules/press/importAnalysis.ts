@@ -362,4 +362,6 @@ export const MATERIAL_FILE_NAMES = {
     heads: `${PRESS_IMPORT_DIR}/${HEADS_FILE}`,
     candidates: `${PRESS_IMPORT_DIR}/${CANDIDATES_FILE}`,
     goldenFinger: `${PRESS_IMPORT_DIR}/${GOLDEN_FINGER_FILE}`,
+    /** AI 产出的章节摘要：序号 / 摘要 / 钩子 / 张力，由语义归纳阶段写入 */
+    summaries: `${PRESS_IMPORT_DIR}/summaries.tsv`,
 } as const

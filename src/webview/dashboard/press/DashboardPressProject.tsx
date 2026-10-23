@@ -6,7 +6,7 @@
  * 防止向不存在的作品写入或误删；弹窗以被操作的卷重挂载，保证输入框回到当前卷名；
  * 删除作品成功后由本页跳回作品列表，提示统一经 sonner 给出；页面内屏蔽浏览器右键菜单。
  */
-import { Trash2 } from 'lucide-react'
+import { Sparkles, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Button } from '@components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '@components/ui/empty'
@@ -14,6 +14,7 @@ import { ScrollArea } from '@components/ui/scroll-area'
 import { Skeleton } from '@components/ui/skeleton'
 import type { PressChapterEntry, PressVolumeGroup } from '@shared/types/press'
 import { usePressProjectDetail } from './hooks/usePressProjectDetail'
+import { usePressSemantic } from './hooks/usePressSemantic'
 import { PressChapterDeleteDialog } from './layout/PressChapterDeleteDialog'
 import { PressChapterList } from './layout/PressChapterList'
 import { PressProjectDeleteDialog } from './layout/PressProjectDeleteDialog'
@@ -85,6 +86,7 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
         openChapter,
         openReadme,
     } = usePressProjectDetail(dirPath)
+    const { isRunning: isSemanticRunning, start: startSemantic } = usePressSemantic(dirPath)
     const [renameTarget, setRenameTarget] = useState<PressVolumeGroup | null>(null)
     const [deleteTarget, setDeleteTarget] = useState<PressVolumeGroup | null>(null)
     const [deleteChapterTarget, setDeleteChapterTarget] = useState<PressChapterEntry | null>(null)
@@ -154,6 +156,16 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                 {project !== undefined ? (
                     <p className="px-1 text-xs text-muted-foreground">{formatProjectMeta(project)}</p>
                 ) : null}
+                <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-center"
+                    disabled={isSemanticRunning || status !== 'ready'}
+                    onClick={() => void startSemantic()}
+                >
+                    <Sparkles data-icon="inline-start" />
+                    {isSemanticRunning ? '正在生成摘要…' : '生成章节摘要'}
+                </Button>
                 <Button
                     variant="outline"
                     size="sm"
