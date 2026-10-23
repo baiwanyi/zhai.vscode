@@ -75,22 +75,22 @@ describe('listRecentFiles', () => {
 describe('笔记目录过滤', () => {
     it('listFilesByPaths 不返回 press 下的文件', () => {
         insertFile('notes/a.md', 1)
-        insertFile('press/某作品/Chapter/01.md', 5)
-        expect(listFilesByPaths(db, ['press/某作品/Chapter/01.md'])).toEqual([])
-        expect(listFilesByPaths(db, ['notes/a.md', 'press/某作品/Chapter/01.md']).map((row) => row.path)).toEqual([
+        insertFile('press/某作品/Chapters/01.md', 5)
+        expect(listFilesByPaths(db, ['press/某作品/Chapters/01.md'])).toEqual([])
+        expect(listFilesByPaths(db, ['notes/a.md', 'press/某作品/Chapters/01.md']).map((row) => row.path)).toEqual([
             'notes/a.md',
         ])
     })
 
     it('listRecentFiles 跳过 press 下的文件，即使其 mtime 更新', () => {
         insertFile('notes/a.md', 1)
-        insertFile('press/某作品/Chapter/01.md', 9)
+        insertFile('press/某作品/Chapters/01.md', 9)
         expect(listRecentFiles(db).map((row) => row.path)).toEqual(['notes/a.md'])
     })
 
     it('模块分布只统计 notes，全库计数与字数仍按整表', () => {
         insertFile('notes/a.md', 1)
-        insertFile('press/某作品/Chapter/01.md', 2)
+        insertFile('press/某作品/Chapters/01.md', 2)
         const stats = aggregateFileStats(db)
         expect(stats.moduleStats.map((item) => item.name)).toEqual(['notes'])
         expect(stats.indexedCount).toBe(2)

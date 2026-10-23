@@ -28,7 +28,7 @@
     ├── 角色设定.md                     ← 角色设定（扁平独立文档，设想⑥）
     ├── 大纲.md                         ← 大纲（扁平独立文档，设想⑥）
     ├── 设定.md                         ← 世界观 / 地理 / 组织等（可拆多文档，设想⑥）
-    └── Chapter/                        ← 章节目录（设想⑤）
+    └── Chapters/                        ← 章节目录（设想⑤）
         ├── 01-章节名.md                ← 第一章 章节名
         ├── 02-章节名.md
         └── 01-卷名/                    ← 分卷（设想⑤）
@@ -92,12 +92,12 @@ wordGoal: 3000
 
 | 编号 | 场景 | 用户旅程 |
 |------|------|----------|
-| US-1 | 新建作品 | 命令「新建作品」→ 输入名称 / 目标读者（男频、女频）/ 笔名 → 自动生成 `{root}/press/【小说名】/` 骨架（README.md + 大纲.md + 角色设定.md + Chapter/） |
-| US-2 | 章节写作 | 章节树点开 `Chapter/01-章节名.md` → 原生编辑器写作 → `Alt+Enter` 让 AI 续写 → 逐段接受 |
+| US-1 | 新建作品 | 命令「新建作品」→ 输入名称 / 目标读者（男频、女频）/ 笔名 → 自动生成 `{root}/press/【小说名】/` 骨架（README.md + 大纲.md + 角色设定.md + Chapters/） |
+| US-2 | 章节写作 | 章节树点开 `Chapters/01-章节名.md` → 原生编辑器写作 → `Alt+Enter` 让 AI 续写 → 逐段接受 |
 | US-3 | 设定一致性 | 写战斗场景 → 勾选「注入设定」→ AI 自动读取 README.md 与 `设定.md` / `角色设定.md` 相关条目 |
-| US-4 | 分卷组织 | 长篇分卷 → 在 `Chapter/` 下新建 `01-卷名/` → 卷内章节 `01-章节名.md` 归入其下 |
+| US-4 | 分卷组织 | 长篇分卷 → 在 `Chapters/` 下新建 `01-卷名/` → 卷内章节 `01-章节名.md` 归入其下 |
 | US-5 | 伏笔回收 | 第 30 章埋下伏笔 → 伏笔面板标记「预期第 60 章回收」→ 到第 60 章时状态栏提醒 |
-| US-6 | 完本导出 | 完本后导出 → 选择 EPUB → 生成整部电子书（按 `Chapter/` 顺序拼接） |
+| US-6 | 完本导出 | 完本后导出 → 选择 EPUB → 生成整部电子书（按 `Chapters/` 顺序拼接） |
 
 ---
 
@@ -128,7 +128,7 @@ wordGoal: 3000
 | W21 | 番茄钟 | 25 分钟写作 + 5 分钟休息，可自定义时长 | P2 | 待实现 |
 | W22 | 导入导出 | 导入 md / docx / txt；导出 md / docx / EPUB / PDF，支持单章 / 多章 / 整部 | P1 | 待实现 |
 | W23 | 章节文档体规范 | 每章含本章介绍 / 出场角色链接 / 金手指设定（设想⑦），Frontmatter + 区块模板 | P0 | 待实现 |
-| W24 | 分卷目录 | `Chapter/01-卷名/` 下嵌套 `01-章节名.md`（设想⑤），导出按卷-章顺序拼接 | P0 | 待实现 |
+| W24 | 分卷目录 | `Chapters/01-卷名/` 下嵌套 `01-章节名.md`（设想⑤），导出按卷-章顺序拼接 | P0 | 待实现 |
 | W25 | 设定扁平文档 | 角色设定.md / 大纲.md / 设定.md 等独立文档（设想⑥），不强制子目录；支持自由增删 | P0 | 待实现 |
 | W26 | 作品背景文档 | 每部作品 README.md 承载背景 / 写作风格 / 状态（设想⑤），作为 AI 风格注入源 | P0 | 待实现 |
 
@@ -141,7 +141,7 @@ wordGoal: 3000
 ```
 新建作品 → 完善 README.md 背景 → 设定角色/世界观 → 规划大纲 → 分章写作 → 修改润色 → 完本导出
    │           │                  │                │           │           │          │
-   └─ press/小说名/  └─ README.md  └─ 角色设定.md    └─ 大纲.md  └─ Chapter/ └─ AI 校对 └─ 导出
+   └─ press/小说名/  └─ README.md  └─ 角色设定.md    └─ 大纲.md  └─ Chapters/ └─ AI 校对 └─ 导出
 ```
 
 ### 4.2 AI 续写时序
@@ -187,7 +187,7 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 | 图表 | `recharts` / `echarts` | **recharts** | React 友好，体积适中，覆盖热力图 / 折线 / 柱状 |
 | 状态管理 | Zustand / Context | **Zustand** | 面板状态多（树 / 大纲 / 伏笔 / 统计），Zustand 订阅粒度细 |
 | 导出 docx | `docx` 库 | **docx** | 纯 JS，无需外部依赖 |
-| 导出 EPUB | `epub-gen` / 手写 OPF | **epub-gen** | 封装完整，支持章节与封面；按 `Chapter/` 顺序拼接 |
+| 导出 EPUB | `epub-gen` / 手写 OPF | **epub-gen** | 封装完整，支持章节与封面；按 `Chapters/` 顺序拼接 |
 | 导出 PDF | HTML → 打印 / `puppeteer-core` | **HTML → 系统打印** | 避免内联浏览器依赖；若需自动化，puppeteer-core **保持沙箱开启** |
 | 番茄钟 | 定时器 + 状态栏 | **状态栏 + 通知** | 轻量，计时结束自动保存当前章节 |
 | 生图通道 | 直连 OpenAI 兼容端点 / CodeBuddy `ImageGen` | **仅 CodeBuddy `ImageGen`** | 走 CodeBuddy 订阅额度；直连需自备端点与密钥，与「装完即用」冲突，故不再保留兜底通道 |
@@ -246,8 +246,8 @@ CREATE TABLE IF NOT EXISTS projects (
 CREATE TABLE IF NOT EXISTS chapters (
     id          TEXT PRIMARY KEY,
     project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-    volume      TEXT NOT NULL DEFAULT '',     -- 卷名（空串=未分卷），对应 Chapter/01-卷名/
-    file_path   TEXT NOT NULL UNIQUE,         -- press/【小说名】/Chapter/01-章节名.md
+    volume      TEXT NOT NULL DEFAULT '',     -- 卷名（空串=未分卷），对应 Chapters/01-卷名/
+    file_path   TEXT NOT NULL UNIQUE,         -- press/【小说名】/Chapters/01-章节名.md
     title       TEXT NOT NULL,
     order_no    INTEGER NOT NULL,             -- 取自文件名前缀
     status      TEXT NOT NULL DEFAULT 'draft',
@@ -365,10 +365,10 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 | Command ID | 标题 | 说明 |
 |------------|------|------|
-| `zhai.press.newProject` | 新建作品 | 生成 `press/【小说名】/` 骨架（README.md + 大纲.md + 角色设定.md + Chapter/） |
+| `zhai.press.newProject` | 新建作品 | 生成 `press/【小说名】/` 骨架（README.md + 大纲.md + 角色设定.md + Chapters/） |
 | `zhai.press.openProject` | 打开作品 | 侧边栏切换到指定作品 |
 | `zhai.press.newChapter` | 新建章节 | 在当前卷末尾追加 `01-章节名.md` |
-| `zhai.press.newVolume` | 新建卷 | 创建 `Chapter/01-卷名/` |
+| `zhai.press.newVolume` | 新建卷 | 创建 `Chapters/01-卷名/` |
 | `zhai.press.splitChapter` | 分章 | 按光标位置拆分 |
 | `zhai.press.mergeChapters` | 合并章节 | 合并选中多章 |
 | `zhai.press.continue` | AI 续写 | `Alt+Enter` |
@@ -377,7 +377,7 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 | `zhai.press.openForeshadowing` | 伏笔看板 | 待回收预警 |
 | `zhai.press.snapshots` | 版本快照 | 列表 / diff / 恢复 |
 | `zhai.press.stats` | 创作统计 | 热力图与日历 |
-| `zhai.press.export` | 导出作品 | 格式与范围选择（按 Chapter/ 顺序） |
+| `zhai.press.export` | 导出作品 | 格式与范围选择（按 Chapters/ 顺序） |
 | `zhai.press.pomodoro` | 番茄钟 | 开始 / 暂停 |
 
 **Webview 方法**：`project/list`、`chapter/tree`、`chapter/reorder`、`character/list`、`character/relations`、`setting/list`、`foreshadowing/list`、`outline/get`、`stats/get`、`export/run`
@@ -401,7 +401,7 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 | 编号 | 场景 | 指标 |
 |------|------|------|
-| AC-1 | 新建作品 | 骨架生成 < 500ms，目录结构符合设想⑤（README.md + Chapter/ + 设定文档） |
+| AC-1 | 新建作品 | 骨架生成 < 500ms，目录结构符合设想⑤（README.md + Chapters/ + 设定文档） |
 | AC-2 | 章节树 | 500 章作品树渲染 < 1s，分卷嵌套正确，拖拽排序落盘正确 |
 | AC-3 | AI 续写 | 首字 < 500ms；上下文取前文 + README.md/设定 + 角色设定不超 token 上限 |
 | AC-4 | 设定一致性 | 勾选注入后，AI 输出人设 / 地名与设定库一致（抽检 ≥ 90%） |
@@ -451,14 +451,14 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 | 字段 | 规则 |
 |------|------|
 | 作品范围 | `press/{作品名}/` 下至少三段的索引记录，`press/*.md` 散落文档不计入 |
-| 章节数 | 第三段为 `Chapter` 的文档数，兼容分卷（`Chapter/01-卷名/*.md`） |
+| 章节数 | 第三段为 `Chapters` 的文档数，兼容旧名 `Chapter`，兼容分卷（`Chapters/01-卷名/*.md`） |
 | 字数 | 作品目录下全部文档字数合计 |
 | 最近更新 | 目录内文档的最大 mtime |
 | 顺序 | mtime 倒序，同时间按作品名本地化排序 |
 
 **协议（仪表盘面板宿主）**：`press/projects`（只读聚合）、`press/create`（生成骨架 + 索引 + 打开 README）、`press/open`（打开 README）。
 
-**骨架生成**：`press/{作品名}/` 下写入 `README.md`（Frontmatter 含 title / audience / status / wordGoal / createdAt）、`大纲.md`、`角色设定.md`、`设定.md`、`Chapter/01-卷1/01-未命名章节.md`，并创建 `Chapter/` 与 `Chapter/01-卷1/` 目录；每个文档写盘后立即索引，列表不等 watcher 防抖即可见。新作品内容为空时默认就是「卷1 / 01-未命名章节」，详情页一进去即有可写章节。`audience` 取值仅 `男频` / `女频`，由添加作品弹窗的 Toggle Group 选择，缺省或非法值回落为 `男频`；旧作品 README 中的 `category` 字段不再写入，也不影响索引。
+**骨架生成**：`press/{作品名}/` 下写入 `README.md`（Frontmatter 含 title / audience / status / wordGoal / createdAt）、`大纲.md`、`角色设定.md`、`设定.md`、`Chapters/01-卷1/01-未命名章节.md`，并创建 `Chapters/` 与 `Chapters/01-卷1/` 目录；每个文档写盘后立即索引，列表不等 watcher 防抖即可见。新作品内容为空时默认就是「卷1 / 01-未命名章节」，详情页一进去即有可写章节。`audience` 取值仅 `男频` / `女频`，由添加作品弹窗的 Toggle Group 选择，缺省或非法值回落为 `男频`；旧作品 README 中的 `category` 字段不再写入，也不影响索引。
 
 **安全约束**：作品名经白名单校验（长度、`\ / : * ? " < > |`、控制字符、`.`/`..`、Windows 保留名、首尾空格与点），目标目录已存在即拒绝；`press/open` 的目录须先在索引库中存在，且严格限定为 `press/{作品名}` 两段。
 
@@ -479,24 +479,25 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 | `press/deleteVolume` | 整卷目录移入回收站 → 按前缀清理该卷索引记录 |
 | `press/deleteChapter` | 单章移入回收站 → 按完整路径清理该章索引；有未保存修改的文档直接拒绝 |
 | `press/moveChapter` | 移动到目标卷末尾 → 重排文件名序号 → 清旧路径索引 → 按新路径索引，返回 `path / title / volume` |
-| `press/openChapter` | 回查索引库精确命中后打开章节文档，前缀须属于对应作品的 `Chapter/` |
+| `press/openChapter` | 回查索引库精确命中后打开章节文档，前缀须属于对应作品的 `Chapters/` |
 | `press/deleteProject` | 回查作品在索引中 → 拒绝含未保存修改的作品 → 整部作品目录移入回收站（不可用时降级永久删除） → 按前缀清理索引 → 清空路由事实中的当前作品，回包带 `permanent` 供前端提示能否从回收站恢复 |
 
 **章节聚合规则**
 
 | 项 | 规则 |
 |----|------|
-| 章节判定 | 路径第三段为 `Chapter`，未分卷为 `Chapter/{文件}`，分卷为 `Chapter/{卷目录}/{文件}` |
+| 章节判定 | 路径第三段为 `Chapters`（旧作品为 `Chapter`，读取与索引两种都认），未分卷为 `Chapters/{文件}`，分卷为 `Chapters/{卷目录}/{文件}` |
 | 分组 | 按卷目录分组，未分卷归入空名卷组并固定排在最前 |
 | 排序 | 序号前缀（`/^(\d+)(?:[-_.、\s]|$)/`）升序；无前缀项排在有序项之后，按名称本地化排序 |
 | 标题 | 优先用索引库 `title`；文档无标题（`title` 等于文件名）时用去序号前缀与 `.md` 的文件名兜底 |
-| 深层目录 | `Chapter/{卷}/{子目录}/{文件}` 归入该卷，不再向下建树 |
+| 深层目录 | `Chapters/{卷}/{子目录}/{文件}` 归入该卷，不再向下建树 |
 
 **卷与章节的层级**
 
-- 卷是必备层级：作品骨架创建时即生成 `Chapter/01-卷1/` 与首章 `01-未命名章节.md`，章节一律落在卷下，`Chapter/` 根不再作为新建落点
+- 卷是必备层级：作品骨架创建时即生成 `Chapters/01-卷1/` 与首章 `01-未命名章节.md`，章节一律落在卷下，`Chapters/` 根不再作为新建落点
 - 卷目录命名为 `{两位序号}-卷{N}`，展示名去掉序号前缀（`01-卷1` → `卷1`）
-- 历史遗留的 `Chapter/*.md`（未分卷散章）以「未分卷」组只读展示，不提供新增入口
+- 目录更名：新版章节目录为 `Chapters/`，旧作品仍是 `Chapter/`；打开作品、抽取素材、新建/移动/删除章节与导入前都会整体重命名迁移，读取与索引同时接受两种目录名
+- 历史遗留的 `Chapters/*.md`（未分卷散章）以「未分卷」组只读展示，不提供新增入口
 
 **添加章节（卷头 `+`）**
 
@@ -525,11 +526,11 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 **章节的删除与移动（章节行更多操作）**
 
 - 删除：单章移入回收站并按完整路径清理索引（`removeFile`，不做前缀匹配，避免误伤同前缀文档）；文档开着且有未保存修改时拒绝，提示先保存，防止删盘后编辑器内容把文件写回
-- 移动：语义为「追加到目标卷末尾」，只替换文件名序号前缀、保留可读名与正文（`Chapter/01-卷1/03-初见.md` → `Chapter/02-卷2/08-初见.md`）
+- 移动：语义为「追加到目标卷末尾」，只替换文件名序号前缀、保留可读名与正文（`Chapters/01-卷1/03-初见.md` → `Chapters/02-卷2/08-初见.md`）
 - 序号：取目标卷内已登记章节的最大序号 + 1，冲突时递增重试（最多 10 次），绝不覆盖既有章节
 - 索引：先清旧路径记录再按新路径索引，顺序颠倒会让旧记录带偏聚合口径
 - 约束：同卷移动直接拒绝；目标卷必须已存在（空目录不进索引，自动建卷会造出「看不见的卷」）；目标卷为空串表示移动到「未分卷」根目录
-- 越界防护：章节路径须归一化后仍位于该作品的 `Chapter/` 之下（未分卷 4 段、分卷 5 段起），宿主侧先回查索引库再触达文件系统
+- 越界防护：章节路径须归一化后仍位于该作品的 `Chapters/` 之下（未分卷 4 段、分卷 5 段起），宿主侧先回查索引库再触达文件系统
 - 交互：移动成功 toast 提示落点卷，列表以 `key` 重挂载并展开落点卷；删除走二次确认弹窗
 - 未分卷组的章节同样提供移动与删除入口，便于把历史散章收进正式卷
 

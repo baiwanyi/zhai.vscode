@@ -44,7 +44,7 @@ function stripControlChars(value: string): string {
 export interface ParsedChapter {
     /** 全局序号，从 1 开始，决定文件名前缀与排序 */
     order: number
-    /** 卷目录名（含两位序号前缀）；空串表示未分卷，直接落在 Chapter/ 下 */
+    /** 卷目录名（含两位序号前缀）；空串表示未分卷，直接落在 Chapters/ 下 */
     volumeDir: string
     /** 章节标题：保留原文写法，用于 Frontmatter 与一级标题 */
     title: string

@@ -2,10 +2,12 @@
  * 作品工作台文档读取：按作品目录读取 README.md、设定.md、角色设定.md、大纲.md 原文，供写作管理页解析成视图模型。
  * 复用 common/config 的存储根解析与 common/storagePath 的路径构造、片段校验；本模块只读，不写盘也不触碰索引。
  * 关键约束：dirPath 必须是 press/{作品名} 两段，不接受章节等更深路径与上跳片段；
- * 文件缺失、目录为空或读取失败一律按空串返回，保证单个文件异常不会让整页打不开，格式兼容由 Webview 解析层承担。
+ * 文件缺失、目录为空或读取失败一律按空串返回，保证单个文件异常不会让整页打不开，格式兼容由 Webview 解析层承担；
+ * 读取前先迁移旧章节目录（`Chapter` → `Chapters`），工作台是用户最常进入的入口，在此收敛最省事。
  */
 import * as vscode from 'vscode'
 import { PROJECT_README_NAME, PRESS_MODULE_DIR } from './projectFactory'
+import { migrateLegacyChapterDirectory } from './projectService'
 import type { PressWorkspaceDocument, PressWorkspaceFiles } from '../../shared/types/press'
 import { resolveStorageRoot } from '../common/config'
 import { buildStorageUri, toSafeSegments } from '../common/storagePath'
@@ -40,6 +42,7 @@ export async function readProjectWorkspace(dirPath: string): Promise<PressWorksp
     if (segments.length !== PROJECT_DIR_DEPTH || segments[0] !== PRESS_MODULE_DIR) {
         throw new Error(`作品目录非法：${dirPath}`)
     }
+    await migrateLegacyChapterDirectory(dirPath)
     const name = segments[1] ?? ''
     const root = resolveStorageRoot()
     const toUri = (key: keyof PressWorkspaceFiles): vscode.Uri =>

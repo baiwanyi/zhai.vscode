@@ -51,25 +51,25 @@ describe('IndexService.removeFilesUnder', () => {
     }
 
     it('按前缀删除该卷记录，其他卷不受影响', async () => {
-        setFileContent('d:\\vault\\press\\剑来\\Chapter\\01-卷1\\01-初遇.md', '# 初遇\n')
-        setFileContent('d:\\vault\\press\\剑来\\Chapter\\02-卷2\\01-远行.md', '# 远行\n')
-        await service.indexFile(vscode.Uri.file('d:\\vault\\press\\剑来\\Chapter\\01-卷1\\01-初遇.md'))
-        await service.indexFile(vscode.Uri.file('d:\\vault\\press\\剑来\\Chapter\\02-卷2\\01-远行.md'))
+        setFileContent('d:\\vault\\press\\剑来\\Chapters\\01-卷1\\01-初遇.md', '# 初遇\n')
+        setFileContent('d:\\vault\\press\\剑来\\Chapters\\02-卷2\\01-远行.md', '# 远行\n')
+        await service.indexFile(vscode.Uri.file('d:\\vault\\press\\剑来\\Chapters\\01-卷1\\01-初遇.md'))
+        await service.indexFile(vscode.Uri.file('d:\\vault\\press\\剑来\\Chapters\\02-卷2\\01-远行.md'))
 
-        service.removeFilesUnder('press/剑来/Chapter/01-卷1/')
+        service.removeFilesUnder('press/剑来/Chapters/01-卷1/')
 
-        expect(readAllPaths()).toEqual(['press/剑来/Chapter/02-卷2/01-远行.md'])
+        expect(readAllPaths()).toEqual(['press/剑来/Chapters/02-卷2/01-远行.md'])
     })
 
     it('前缀按目录边界匹配，不清除序号相同的兄弟卷', async () => {
-        setFileContent('d:\\vault\\press\\剑来\\Chapter\\01-卷1\\01-初遇.md', '# 初遇\n')
-        setFileContent('d:\\vault\\press\\剑来\\Chapter\\01-卷10\\01-远行.md', '# 远行\n')
-        await service.indexFile(vscode.Uri.file('d:\\vault\\press\\剑来\\Chapter\\01-卷1\\01-初遇.md'))
-        await service.indexFile(vscode.Uri.file('d:\\vault\\press\\剑来\\Chapter\\01-卷10\\01-远行.md'))
+        setFileContent('d:\\vault\\press\\剑来\\Chapters\\01-卷1\\01-初遇.md', '# 初遇\n')
+        setFileContent('d:\\vault\\press\\剑来\\Chapters\\01-卷10\\01-远行.md', '# 远行\n')
+        await service.indexFile(vscode.Uri.file('d:\\vault\\press\\剑来\\Chapters\\01-卷1\\01-初遇.md'))
+        await service.indexFile(vscode.Uri.file('d:\\vault\\press\\剑来\\Chapters\\01-卷10\\01-远行.md'))
 
-        service.removeFilesUnder('press/剑来/Chapter/01-卷1/')
+        service.removeFilesUnder('press/剑来/Chapters/01-卷1/')
 
-        expect(readAllPaths()).toEqual(['press/剑来/Chapter/01-卷10/01-远行.md'])
+        expect(readAllPaths()).toEqual(['press/剑来/Chapters/01-卷10/01-远行.md'])
     })
 })
 

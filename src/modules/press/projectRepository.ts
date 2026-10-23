@@ -2,11 +2,11 @@
  * 作品聚合仓储：按索引库 files 表前缀扫描，归并出作品摘要、卷分组章节与章节路径清单（目录即作品）。
  * 安全约束：SQL 全参数化，模块前缀与作品前缀均以绑定参数传入，不拼接任何字面量；只读，不写库。
  * 关键约束：作品须位于 press/{作品名}/ 之下（至少三段路径），press/ 顶层散落的 md 不构成作品；
- * 章节以第三段是否为 Chapter 判定，兼容分卷（Chapter/01-卷名/*.md）；章节与卷按序号前缀排序，
- * 缺失前缀的条目排在有序项之后；文档无标题时用去序号前缀的文件名兜底展示。
+ * 章节以第三段是否为章节目录判定（新名 Chapters 与旧名 Chapter 都认），兼容分卷（Chapters/01-卷名/*.md）；
+ * 章节与卷按序号前缀排序，缺失前缀的条目排在有序项之后；文档无标题时用去序号前缀的文件名兜底展示。
  */
 import {
-    PROJECT_CHAPTER_DIR,
+    CHAPTER_DIR_NAMES,
     PROJECT_README_NAME,
     PRESS_MODULE_DIR,
     compareByOrder,
@@ -24,8 +24,13 @@ import type Database from 'better-sqlite3'
 /** 聚合所需的最小列投影 */
 const PROJECT_FILE_COLUMNS = 'path, title, word_count AS wordCount, mtime'
 
-/** 章节路径的最小段数：press/{作品}/Chapter/{文件} */
+/** 章节路径的最小段数：press/{作品}/Chapters/{文件} */
 const CHAPTER_PATH_DEPTH = 4
+
+/** 判断路径第三段是否为章节目录：新旧两种写法都认，旧作品迁移前仍能正常分组 */
+function isChapterSegment(segment: string | undefined): boolean {
+    return segment !== undefined && CHAPTER_DIR_NAMES.includes(segment)
+}
 
 interface ProjectFileRow {
     path: string
@@ -50,6 +55,14 @@ function listPrefixFiles(db: Database.Database, prefix: string): ProjectFileRow[
     return db
         .prepare(`SELECT ${PROJECT_FILE_COLUMNS} FROM files WHERE substr(path, 1, ?) = ?`)
         .all(prefix.length, prefix) as ProjectFileRow[]
+}
+
+/** 按前缀读取文件路径：章节与卷清单共用，前缀同样走绑定参数 */
+function listPathsByPrefix(db: Database.Database, prefix: string): string[] {
+    const rows = db.prepare('SELECT path FROM files WHERE substr(path, 1, ?) = ?').all(prefix.length, prefix) as Array<{
+        path: string
+    }>
+    return rows.map((row) => row.path)
 }
 
 /** 取路径的文件名部分 */
@@ -85,7 +98,7 @@ function aggregateProject(name: string, rows: ProjectFileRow[]): PressProjectSum
         if (segments.length === 3 && segments[2] === PROJECT_README_NAME) {
             hasReadme = true
         }
-        if (segments[2] === PROJECT_CHAPTER_DIR) {
+        if (isChapterSegment(segments[2])) {
             chapterCount += 1
         }
     }
@@ -134,7 +147,7 @@ export function readProjectDetail(db: Database.Database, dirPath: string): Press
     const volumes = new Map<string, ChapterNode[]>()
     for (const row of rows) {
         const segments = row.path.split('/')
-        if (segments.length < CHAPTER_PATH_DEPTH || segments[2] !== PROJECT_CHAPTER_DIR) {
+        if (segments.length < CHAPTER_PATH_DEPTH || !isChapterSegment(segments[2])) {
             continue
         }
         const fileName = readFileName(row.path)
@@ -188,11 +201,10 @@ export function listVolumeFilePaths(db: Database.Database, dirPath: string, volu
     if (name === null) {
         return []
     }
-    const prefix = `${PRESS_MODULE_DIR}/${name}/${PROJECT_CHAPTER_DIR}/${volumeDir}/`
-    const rows = db.prepare('SELECT path FROM files WHERE substr(path, 1, ?) = ?').all(prefix.length, prefix) as Array<{
-        path: string
-    }>
-    return rows.map((row) => row.path)
+    // 新旧目录名各查一次：旧作品迁移前卷仍在 Chapter 下，只查新名会读不到卷内文件
+    return CHAPTER_DIR_NAMES.flatMap((chapterDir) =>
+        listPathsByPrefix(db, `${PRESS_MODULE_DIR}/${name}/${chapterDir}/${volumeDir}/`),
+    )
 }
 
 /** 列出作品已有的章节路径：新建章节时据此计算下一个序号与落点卷 */
@@ -201,11 +213,9 @@ export function listProjectChapterPaths(db: Database.Database, dirPath: string):
     if (name === null) {
         return []
     }
-    const prefix = `${PRESS_MODULE_DIR}/${name}/${PROJECT_CHAPTER_DIR}/`
-    const rows = db.prepare('SELECT path FROM files WHERE substr(path, 1, ?) = ?').all(prefix.length, prefix) as Array<{
-        path: string
-    }>
-    return rows.map((row) => row.path)
+    return CHAPTER_DIR_NAMES.flatMap((chapterDir) =>
+        listPathsByPrefix(db, `${PRESS_MODULE_DIR}/${name}/${chapterDir}/`),
+    )
 }
 
 /**

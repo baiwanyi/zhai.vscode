@@ -31,6 +31,7 @@ import {
     deleteProject,
     deleteVolume,
     moveChapter,
+    migrateLegacyChapterDirectory,
     openChapterByPath,
     openProjectByDir,
     renameVolume,
@@ -118,21 +119,21 @@ describe('createProject', () => {
         expect(created.title).toBe('剑来')
         const directory = path.join(STORAGE_ROOT, 'press', '剑来')
         expect(hasDirectory(directory)).toBe(true)
-        expect(hasDirectory(path.join(directory, 'Chapter'))).toBe(true)
-        expect(hasDirectory(path.join(directory, 'Chapter', '01-卷1'))).toBe(true)
+        expect(hasDirectory(path.join(directory, 'Chapters'))).toBe(true)
+        expect(hasDirectory(path.join(directory, 'Chapters', '01-卷1'))).toBe(true)
         expect(readFileContent(path.join(directory, 'README.md'))).toContain('title: 剑来')
         expect(readFileContent(path.join(directory, 'README.md'))).toContain('audience: 男频')
         expect(readFileContent(path.join(directory, '大纲.md'))).toContain('# 大纲')
         expect(readFileContent(path.join(directory, '角色设定.md'))).toContain('# 角色设定')
         expect(readFileContent(path.join(directory, '设定.md'))).toContain('# 设定')
-        const firstChapter = path.join(directory, 'Chapter', '01-卷1', '01-未命名章节.md')
-        expect(readFileContent(firstChapter)).toContain('title: 01 未命名章节')
+        const firstChapters = path.join(directory, 'Chapters', '01-卷1', '01-未命名章节.md')
+        expect(readFileContent(firstChapters)).toContain('title: 01 未命名章节')
         expect(indexed).toEqual([
             path.join(directory, 'README.md'),
             path.join(directory, '大纲.md'),
             path.join(directory, '角色设定.md'),
             path.join(directory, '设定.md'),
-            firstChapter,
+            firstChapters,
         ])
     })
 
@@ -175,7 +176,7 @@ describe('openProjectByDir', () => {
     it('拒绝非 press 模块或层级不符的目录', async () => {
         await expect(openProjectByDir('press')).rejects.toThrow('作品路径非法：press')
         await expect(openProjectByDir('notes/a')).rejects.toThrow('作品路径非法：notes/a')
-        await expect(openProjectByDir('press/剑来/Chapter')).rejects.toThrow('作品路径非法：press/剑来/Chapter')
+        await expect(openProjectByDir('press/剑来/Chapters')).rejects.toThrow('作品路径非法：press/剑来/Chapters')
     })
 
     it('拒绝上跳片段，不触达编辑器', async () => {
@@ -195,10 +196,10 @@ describe('createChapter', () => {
 
         const created = await createChapter(indexer, { dirPath: 'press/剑来', chapterPaths: [] })
 
-        expect(created.path).toBe('press/剑来/Chapter/01-卷1/01-未命名章节.md')
+        expect(created.path).toBe('press/剑来/Chapters/01-卷1/01-未命名章节.md')
         expect(created.title).toBe('01 未命名章节')
         expect(created.volume).toBe('卷1')
-        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1'))).toBe(true)
+        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1'))).toBe(true)
         expect(readFileContent(path.join(STORAGE_ROOT, created.path))).toContain('title: 01 未命名章节')
         expect(indexed).toEqual([path.join(STORAGE_ROOT, created.path)])
     })
@@ -208,10 +209,10 @@ describe('createChapter', () => {
 
         const created = await createChapter(indexer, {
             dirPath: 'press/剑来',
-            chapterPaths: ['press/剑来/Chapter/01-第一卷/01-初遇.md', 'press/剑来/Chapter/02-第二卷/03-远行.md'],
+            chapterPaths: ['press/剑来/Chapters/01-第一卷/01-初遇.md', 'press/剑来/Chapters/02-第二卷/03-远行.md'],
         })
 
-        expect(created.path).toBe('press/剑来/Chapter/02-第二卷/04-未命名章节.md')
+        expect(created.path).toBe('press/剑来/Chapters/02-第二卷/04-未命名章节.md')
         expect(created.volume).toBe('第二卷')
     })
 
@@ -221,25 +222,25 @@ describe('createChapter', () => {
         const created = await createChapter(indexer, {
             dirPath: 'press/剑来',
             chapterPaths: [
-                'press/剑来/Chapter/01-第一卷/01-初遇.md',
-                'press/剑来/Chapter/01-第一卷/05-重逢.md',
-                'press/剑来/Chapter/02-第二卷/09-远行.md',
+                'press/剑来/Chapters/01-第一卷/01-初遇.md',
+                'press/剑来/Chapters/01-第一卷/05-重逢.md',
+                'press/剑来/Chapters/02-第二卷/09-远行.md',
             ],
             volumeDir: '01-第一卷',
         })
 
-        expect(created.path).toBe('press/剑来/Chapter/01-第一卷/06-未命名章节.md')
+        expect(created.path).toBe('press/剑来/Chapters/01-第一卷/06-未命名章节.md')
         expect(created.volume).toBe('第一卷')
     })
 
     it('目标文件名已存在时递增序号且不覆盖', async () => {
         const { indexer } = createIndexer()
-        const occupied = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '01-未命名章节.md')
+        const occupied = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1', '01-未命名章节.md')
         setFileContent(occupied, '既有内容')
 
         const created = await createChapter(indexer, { dirPath: 'press/剑来', chapterPaths: [] })
 
-        expect(created.path).toBe('press/剑来/Chapter/01-卷1/02-未命名章节.md')
+        expect(created.path).toBe('press/剑来/Chapters/01-卷1/02-未命名章节.md')
         expect(readFileContent(occupied)).toBe('既有内容')
     })
 
@@ -271,8 +272,8 @@ describe('createVolume', () => {
 
         expect(created.volumeDir).toBe('01-卷1')
         expect(created.volumeName).toBe('卷1')
-        expect(created.chapterPath).toBe('press/剑来/Chapter/01-卷1/01-未命名章节.md')
-        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1'))).toBe(true)
+        expect(created.chapterPath).toBe('press/剑来/Chapters/01-卷1/01-未命名章节.md')
+        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1'))).toBe(true)
         expect(indexed).toEqual([path.join(STORAGE_ROOT, created.chapterPath)])
     })
 
@@ -281,7 +282,7 @@ describe('createVolume', () => {
 
         const created = await createVolume(indexer, {
             dirPath: 'press/剑来',
-            chapterPaths: ['press/剑来/Chapter/01-卷1/01-初遇.md', 'press/剑来/Chapter/05-卷5/02-远行.md'],
+            chapterPaths: ['press/剑来/Chapters/01-卷1/01-初遇.md', 'press/剑来/Chapters/05-卷5/02-远行.md'],
         })
 
         expect(created.volumeDir).toBe('06-卷6')
@@ -290,17 +291,17 @@ describe('createVolume', () => {
 
     it('同名卷目录已存在时递增序号且不覆盖', async () => {
         const { indexer } = createIndexer()
-        const occupiedDirectory = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1')
-        const occupiedChapter = path.join(occupiedDirectory, '占位.md')
-        setFileContent(occupiedChapter, '既有内容')
+        const occupiedDirectory = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1')
+        const occupiedChapters = path.join(occupiedDirectory, '占位.md')
+        setFileContent(occupiedChapters, '既有内容')
 
         const created = await createVolume(indexer, {
             dirPath: 'press/剑来',
-            chapterPaths: ['press/剑来/Chapter/01-卷1/占位.md'],
+            chapterPaths: ['press/剑来/Chapters/01-卷1/占位.md'],
         })
 
         expect(created.volumeDir).toBe('02-卷2')
-        expect(readFileContent(occupiedChapter)).toBe('既有内容')
+        expect(readFileContent(occupiedChapters)).toBe('既有内容')
     })
 
     it('作品目录非法时拒绝新建', async () => {
@@ -312,20 +313,20 @@ describe('createVolume', () => {
 })
 
 describe('openChapterByPath', () => {
-    it('打开 Chapter/ 下的章节文档', async () => {
-        const target = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-初见.md')
+    it('打开 Chapters/ 下的章节文档', async () => {
+        const target = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-初见.md')
         registerTextDocument(target, ['# 初见'])
 
-        await openChapterByPath('press/剑来/Chapter/01-初见.md')
+        await openChapterByPath('press/剑来/Chapters/01-初见.md')
 
         expect(readOpenedDocumentPaths()).toEqual([target])
     })
 
-    it('拒绝非 Chapter 层级、其他模块与越界路径', async () => {
+    it('拒绝非 Chapters 层级、其他模块与越界路径', async () => {
         await expect(openChapterByPath('press/剑来/README.md')).rejects.toThrow('章节路径非法')
-        await expect(openChapterByPath('press/剑来/Chapter')).rejects.toThrow('章节路径非法')
-        await expect(openChapterByPath('notes/a/Chapter/x.md')).rejects.toThrow('章节路径非法')
-        await expect(openChapterByPath('press/../x/Chapter/a.md')).rejects.toThrow('章节路径非法')
+        await expect(openChapterByPath('press/剑来/Chapters')).rejects.toThrow('章节路径非法')
+        await expect(openChapterByPath('notes/a/Chapters/x.md')).rejects.toThrow('章节路径非法')
+        await expect(openChapterByPath('press/../x/Chapters/a.md')).rejects.toThrow('章节路径非法')
         expect(readOpenedDocumentPaths()).toEqual([])
     })
 })
@@ -353,7 +354,7 @@ describe('validateVolumeName', () => {
 describe('renameVolume', () => {
     it('保留序号前缀重命名目录，并按新路径重建索引', async () => {
         const { indexer, indexed, removed } = createIndexer()
-        const volumePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1')
+        const volumePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1')
         setDirectory(volumePath)
         setFileContent(path.join(volumePath, '01-初遇.md'), '# 初遇')
 
@@ -361,20 +362,20 @@ describe('renameVolume', () => {
             dirPath: 'press/剑来',
             volumeDir: '01-卷1',
             name: '风起长安',
-            volumeFilePaths: ['press/剑来/Chapter/01-卷1/01-初遇.md'],
+            volumeFilePaths: ['press/剑来/Chapters/01-卷1/01-初遇.md'],
         })
 
         expect(renamed).toEqual({ volumeDir: '01-风起长安', volumeName: '风起长安' })
-        const renamedPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-风起长安', '01-初遇.md')
+        const renamedPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-风起长安', '01-初遇.md')
         expect(indexed).toEqual([renamedPath])
         expect(readFileContent(renamedPath)).toBe('# 初遇')
         // 先清旧前缀再建新索引，两处顺序即断言顺序
-        expect(removed).toEqual(['press/剑来/Chapter/01-卷1/'])
+        expect(removed).toEqual(['press/剑来/Chapters/01-卷1/'])
     })
 
     it('原目录无序号前缀时新目录也不带前缀', async () => {
         const { indexer } = createIndexer()
-        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '外传'))
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '外传'))
 
         const renamed = await renameVolume(indexer, {
             dirPath: 'press/剑来',
@@ -384,12 +385,12 @@ describe('renameVolume', () => {
         })
 
         expect(renamed.volumeDir).toBe('番外')
-        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '番外'))).toBe(true)
+        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '番外'))).toBe(true)
     })
 
     it('新卷名与原卷名一致时直接返回，不移动目录', async () => {
         const { indexer, removed } = createIndexer()
-        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1'))
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1'))
 
         const renamed = await renameVolume(indexer, {
             dirPath: 'press/剑来',
@@ -404,9 +405,9 @@ describe('renameVolume', () => {
 
     it('目标卷目录已存在时拒绝，且不改动原目录', async () => {
         const { indexer, removed } = createIndexer()
-        const volumePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1')
+        const volumePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1')
         setDirectory(volumePath)
-        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-番外'))
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-番外'))
 
         await expect(
             renameVolume(indexer, {
@@ -422,7 +423,7 @@ describe('renameVolume', () => {
 
     it('卷名非法时拒绝，不触碰文件系统', async () => {
         const { indexer, indexed } = createIndexer()
-        const volumePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1')
+        const volumePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1')
         setDirectory(volumePath)
 
         await expect(
@@ -449,7 +450,7 @@ describe('renameVolume', () => {
 describe('deleteVolume', () => {
     it('删除整卷目录并清理该卷的索引记录', async () => {
         const { indexer, removed } = createIndexer()
-        const volumePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1')
+        const volumePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1')
         setDirectory(volumePath)
         setFileContent(path.join(volumePath, '01-初遇.md'), '# 初遇')
 
@@ -458,7 +459,7 @@ describe('deleteVolume', () => {
         expect(hasDirectory(volumePath)).toBe(false)
         expect(readFileContent(path.join(volumePath, '01-初遇.md'))).toBeUndefined()
         expect(readDeletedPaths()).toEqual([volumePath])
-        expect(removed).toEqual(['press/剑来/Chapter/01-卷1/'])
+        expect(removed).toEqual(['press/剑来/Chapters/01-卷1/'])
     })
 
     it('卷不存在时拒绝，不产生删除调用', async () => {
@@ -487,14 +488,14 @@ describe('deleteProject', () => {
         const projectPath = path.join(STORAGE_ROOT, 'press', '娱乐春秋')
         setDirectory(projectPath)
         setFileContent(path.join(projectPath, 'README.md'), '# 娱乐春秋')
-        setFileContent(path.join(projectPath, 'Chapter', '01-卷1', '01-初遇.md'), '# 初遇')
+        setFileContent(path.join(projectPath, 'Chapters', '01-卷1', '01-初遇.md'), '# 初遇')
 
         const outcome = await deleteProject(indexer, { dirPath: 'press/娱乐春秋' })
 
         expect(outcome).toBe('trash')
         expect(readDeletedPaths()).toEqual([projectPath])
         expect(readFileContent(path.join(projectPath, 'README.md'))).toBeUndefined()
-        expect(readFileContent(path.join(projectPath, 'Chapter', '01-卷1', '01-初遇.md'))).toBeUndefined()
+        expect(readFileContent(path.join(projectPath, 'Chapters', '01-卷1', '01-初遇.md'))).toBeUndefined()
         expect(removed).toEqual(['press/娱乐春秋/'])
     })
 
@@ -525,60 +526,60 @@ describe('deleteProject', () => {
 describe('deleteChapter', () => {
     it('删除分卷章节：文档移入回收站并按完整路径清理索引', async () => {
         const { indexer, removedFiles } = createIndexer()
-        const chapterPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '01-初遇.md')
+        const chapterPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1', '01-初遇.md')
         setFileContent(chapterPath, '# 初遇')
 
-        await deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/Chapter/01-卷1/01-初遇.md' })
+        await deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/Chapters/01-卷1/01-初遇.md' })
 
         expect(readDeletedPaths()).toEqual([chapterPath])
-        expect(removedFiles).toEqual(['press/剑来/Chapter/01-卷1/01-初遇.md'])
+        expect(removedFiles).toEqual(['press/剑来/Chapters/01-卷1/01-初遇.md'])
         expect(readFileContent(chapterPath)).toBeUndefined()
     })
 
     it('未分卷散章同样可删', async () => {
         const { indexer, removedFiles } = createIndexer()
-        const chapterPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-初见.md')
+        const chapterPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-初见.md')
         setFileContent(chapterPath, '# 初见')
 
-        await deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/Chapter/01-初见.md' })
+        await deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/Chapters/01-初见.md' })
 
         expect(readDeletedPaths()).toEqual([chapterPath])
-        expect(removedFiles).toEqual(['press/剑来/Chapter/01-初见.md'])
+        expect(removedFiles).toEqual(['press/剑来/Chapters/01-初见.md'])
     })
 
     it('章节不存在时报错，不产生删除调用', async () => {
         const { indexer, removedFiles } = createIndexer()
 
         await expect(
-            deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/Chapter/01-卷1/01-初遇.md' }),
+            deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/Chapters/01-卷1/01-初遇.md' }),
         ).rejects.toThrow('章节不存在')
         expect(readDeletedPaths()).toEqual([])
         expect(removedFiles).toEqual([])
     })
 
-    it('拒绝非 Chapter 层级、跨作品与越界路径', async () => {
+    it('拒绝非 Chapters 层级、跨作品与越界路径', async () => {
         const { indexer } = createIndexer()
 
         await expect(deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/README.md' })).rejects.toThrow(
             '章节路径非法',
         )
         await expect(
-            deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/雪中/Chapter/01-卷1/01-初遇.md' }),
+            deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/雪中/Chapters/01-卷1/01-初遇.md' }),
         ).rejects.toThrow('章节路径非法')
         await expect(
-            deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/../x/Chapter/a.md' }),
+            deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/../x/Chapters/a.md' }),
         ).rejects.toThrow('章节路径非法')
         expect(readDeletedPaths()).toEqual([])
     })
 
     it('文档有未保存修改时拒绝删除，磁盘文件保留', async () => {
         const { indexer, removedFiles } = createIndexer()
-        const chapterPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '01-初遇.md')
+        const chapterPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1', '01-初遇.md')
         setFileContent(chapterPath, '# 初遇')
         registerDirtyTextDocument(chapterPath, ['# 初遇（未保存）'])
 
         await expect(
-            deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/Chapter/01-卷1/01-初遇.md' }),
+            deleteChapter(indexer, { dirPath: 'press/剑来', path: 'press/剑来/Chapters/01-卷1/01-初遇.md' }),
         ).rejects.toThrow('章节有未保存的修改')
         expect(readDeletedPaths()).toEqual([])
         expect(removedFiles).toEqual([])
@@ -589,76 +590,76 @@ describe('deleteChapter', () => {
 describe('moveChapter', () => {
     it('移动到目标卷末尾：按目标卷重排序号，先清旧记录再索引新路径', async () => {
         const { indexer, indexed, removedFiles } = createIndexer()
-        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '03-初见.md')
-        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '02-卷2'))
+        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1', '03-初见.md')
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '02-卷2'))
         setFileContent(sourcePath, '# 初见')
 
         const moved = await moveChapter(indexer, {
             dirPath: 'press/剑来',
-            path: 'press/剑来/Chapter/01-卷1/03-初见.md',
+            path: 'press/剑来/Chapters/01-卷1/03-初见.md',
             targetVolumeDir: '02-卷2',
             chapterPaths: [
-                'press/剑来/Chapter/01-卷1/03-初见.md',
-                'press/剑来/Chapter/02-卷2/04-远行.md',
-                'press/剑来/Chapter/02-卷2/07-重逢.md',
+                'press/剑来/Chapters/01-卷1/03-初见.md',
+                'press/剑来/Chapters/02-卷2/04-远行.md',
+                'press/剑来/Chapters/02-卷2/07-重逢.md',
             ],
         })
 
-        const targetPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '02-卷2', '08-初见.md')
-        expect(moved.path).toBe('press/剑来/Chapter/02-卷2/08-初见.md')
+        const targetPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '02-卷2', '08-初见.md')
+        expect(moved.path).toBe('press/剑来/Chapters/02-卷2/08-初见.md')
         expect(moved.title).toBe('初见')
         expect(moved.volume).toBe('卷2')
         expect(moved.uri.fsPath).toBe(targetPath)
         expect(readFileContent(targetPath)).toBe('# 初见')
         expect(readFileContent(sourcePath)).toBeUndefined()
-        expect(removedFiles).toEqual(['press/剑来/Chapter/01-卷1/03-初见.md'])
+        expect(removedFiles).toEqual(['press/剑来/Chapters/01-卷1/03-初见.md'])
         expect(indexed).toEqual([targetPath])
     })
 
-    it('移动到未分卷根目录时沿用 Chapter/ 下的下一序号', async () => {
+    it('移动到未分卷根目录时沿用 Chapters/ 下的下一序号', async () => {
         const { indexer } = createIndexer()
-        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '03-初见.md')
+        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1', '03-初见.md')
         setFileContent(sourcePath, '# 初见')
 
         const moved = await moveChapter(indexer, {
             dirPath: 'press/剑来',
-            path: 'press/剑来/Chapter/01-卷1/03-初见.md',
+            path: 'press/剑来/Chapters/01-卷1/03-初见.md',
             targetVolumeDir: '',
-            chapterPaths: ['press/剑来/Chapter/01-卷1/03-初见.md', 'press/剑来/Chapter/02-旧章.md'],
+            chapterPaths: ['press/剑来/Chapters/01-卷1/03-初见.md', 'press/剑来/Chapters/02-旧章.md'],
         })
 
-        expect(moved.path).toBe('press/剑来/Chapter/03-初见.md')
+        expect(moved.path).toBe('press/剑来/Chapters/03-初见.md')
         expect(moved.volume).toBe('')
     })
 
     it('目标文件名已存在时递增序号且不覆盖', async () => {
         const { indexer } = createIndexer()
-        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '03-初见.md')
-        const occupiedPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '02-卷2', '01-初见.md')
-        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '02-卷2'))
+        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1', '03-初见.md')
+        const occupiedPath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '02-卷2', '01-初见.md')
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '02-卷2'))
         setFileContent(sourcePath, '# 初见')
         setFileContent(occupiedPath, '占位内容')
 
         const moved = await moveChapter(indexer, {
             dirPath: 'press/剑来',
-            path: 'press/剑来/Chapter/01-卷1/03-初见.md',
+            path: 'press/剑来/Chapters/01-卷1/03-初见.md',
             targetVolumeDir: '02-卷2',
-            chapterPaths: ['press/剑来/Chapter/01-卷1/03-初见.md'],
+            chapterPaths: ['press/剑来/Chapters/01-卷1/03-初见.md'],
         })
 
-        expect(moved.path).toBe('press/剑来/Chapter/02-卷2/02-初见.md')
+        expect(moved.path).toBe('press/剑来/Chapters/02-卷2/02-初见.md')
         expect(readFileContent(occupiedPath)).toBe('占位内容')
     })
 
     it('目标卷不存在时拒绝，源文件保留', async () => {
         const { indexer, indexed } = createIndexer()
-        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '03-初见.md')
+        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1', '03-初见.md')
         setFileContent(sourcePath, '# 初见')
 
         await expect(
             moveChapter(indexer, {
                 dirPath: 'press/剑来',
-                path: 'press/剑来/Chapter/01-卷1/03-初见.md',
+                path: 'press/剑来/Chapters/01-卷1/03-初见.md',
                 targetVolumeDir: '09-卷9',
                 chapterPaths: [],
             }),
@@ -669,13 +670,13 @@ describe('moveChapter', () => {
 
     it('同卷移动时拒绝', async () => {
         const { indexer, indexed } = createIndexer()
-        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '03-初见.md')
+        const sourcePath = path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1', '03-初见.md')
         setFileContent(sourcePath, '# 初见')
 
         await expect(
             moveChapter(indexer, {
                 dirPath: 'press/剑来',
-                path: 'press/剑来/Chapter/01-卷1/03-初见.md',
+                path: 'press/剑来/Chapters/01-卷1/03-初见.md',
                 targetVolumeDir: '01-卷1',
                 chapterPaths: [],
             }),
@@ -694,5 +695,34 @@ describe('moveChapter', () => {
                 chapterPaths: [],
             }),
         ).rejects.toThrow('章节路径非法')
+    })
+})
+
+describe('migrateLegacyChapterDirectory', () => {
+    it('旧作品只有 Chapter 时整体迁移到 Chapters，文件随目录搬走', async () => {
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter'))
+        setFileContent(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '01-初见.md'), '# 初见')
+
+        await migrateLegacyChapterDirectory('press/剑来')
+
+        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters'))).toBe(true)
+        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter'))).toBe(false)
+        expect(readFileContent(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1', '01-初见.md'))).toBe(
+            '# 初见',
+        )
+    })
+
+    it('新目录已存在时不动旧目录，避免覆盖已有章节', async () => {
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter'))
+        setFileContent(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter', '01-卷1', '01-初见.md'), '旧内容')
+        setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters'))
+        setFileContent(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1', '01-初见.md'), '新内容')
+
+        await migrateLegacyChapterDirectory('press/剑来')
+
+        expect(hasDirectory(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapter'))).toBe(true)
+        expect(readFileContent(path.join(STORAGE_ROOT, 'press', '剑来', 'Chapters', '01-卷1', '01-初见.md'))).toBe(
+            '新内容',
+        )
     })
 })

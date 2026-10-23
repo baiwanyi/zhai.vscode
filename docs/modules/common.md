@@ -152,7 +152,7 @@ activate()
 
 ## 6. 数据模型
 
-索引库位置：`context.globalStorageUri/index.db`（不参与 Git 同步，不写入工作区）。`path` 字段统一为文档保存目录相对路径，如 `notes/202509/0f1e…md`、`press/斗破苍穹/Chapter/01-觉醒/01-第一章.md`，对应设想③「按目录 + 文件名管理」。
+索引库位置：`context.globalStorageUri/index.db`（不参与 Git 同步，不写入工作区）。`path` 字段统一为文档保存目录相对路径，如 `notes/202509/0f1e…md`、`press/斗破苍穹/Chapters/01-觉醒/01-第一章.md`，对应设想③「按目录 + 文件名管理」。
 
 ```sql
 -- 元数据主表：只存元数据，绝不存正文全文

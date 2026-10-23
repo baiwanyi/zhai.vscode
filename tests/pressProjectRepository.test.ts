@@ -37,7 +37,7 @@ describe('listPressProjects', () => {
     it('同一作品下的文档归并为一条摘要，字数合计且取最新修改时间', () => {
         insertFile('press/剑来/README.md', 1)
         insertFile('press/剑来/大纲.md', 3)
-        insertFile('press/剑来/Chapter/01-初见.md', 5)
+        insertFile('press/剑来/Chapters/01-初见.md', 5)
 
         const projects = listPressProjects(db)
 
@@ -53,9 +53,9 @@ describe('listPressProjects', () => {
     })
 
     it('分卷目录下的章节同样计入章节数', () => {
-        insertFile('press/剑来/Chapter/01-第一卷/01-初见.md', 1)
-        insertFile('press/剑来/Chapter/01-第一卷/02-再会.md', 2)
-        insertFile('press/剑来/Chapter/02-外篇.md', 3)
+        insertFile('press/剑来/Chapters/01-第一卷/01-初见.md', 1)
+        insertFile('press/剑来/Chapters/01-第一卷/02-再会.md', 2)
+        insertFile('press/剑来/Chapters/02-外篇.md', 3)
 
         const [project] = listPressProjects(db)
 
@@ -63,7 +63,7 @@ describe('listPressProjects', () => {
     })
 
     it('仅作品根的 README.md 视为作品说明，子目录中的同名文件不计', () => {
-        insertFile('press/剑来/Chapter/README.md', 1)
+        insertFile('press/剑来/Chapters/README.md', 1)
 
         const [project] = listPressProjects(db)
 
@@ -115,11 +115,11 @@ describe('hasProjectFiles', () => {
 
 describe('readProjectDetail', () => {
     it('未分卷章节归入空卷组并排在最前，卷内按序号升序', () => {
-        insertFile('press/剑来/Chapter/02-外篇.md', 2)
-        insertFile('press/剑来/Chapter/01-初见.md', 1)
-        insertFile('press/剑来/Chapter/01-第一卷/02-重逢.md', 3)
-        insertFile('press/剑来/Chapter/01-第一卷/01-初遇.md', 5)
-        insertFile('press/剑来/Chapter/02-第二卷/01-远行.md', 4)
+        insertFile('press/剑来/Chapters/02-外篇.md', 2)
+        insertFile('press/剑来/Chapters/01-初见.md', 1)
+        insertFile('press/剑来/Chapters/01-第一卷/02-重逢.md', 3)
+        insertFile('press/剑来/Chapters/01-第一卷/01-初遇.md', 5)
+        insertFile('press/剑来/Chapters/02-第二卷/01-远行.md', 4)
 
         const detail = readProjectDetail(db, 'press/剑来')
 
@@ -132,8 +132,8 @@ describe('readProjectDetail', () => {
     })
 
     it('无序号前缀的章节排在有序项之后', () => {
-        insertFile('press/剑来/Chapter/序章.md', 1)
-        insertFile('press/剑来/Chapter/01-初见.md', 2)
+        insertFile('press/剑来/Chapters/序章.md', 1)
+        insertFile('press/剑来/Chapters/01-初见.md', 2)
 
         const chapters = readProjectDetail(db, 'press/剑来')?.volumes[0]?.chapters ?? []
 
@@ -141,8 +141,8 @@ describe('readProjectDetail', () => {
     })
 
     it('文档无标题时用去序号前缀的文件名兜底', () => {
-        insertFile('press/剑来/Chapter/01-初见.md', 1, '01-初见.md')
-        insertFile('press/剑来/Chapter/02-再会.md', 2, '第二章 再会')
+        insertFile('press/剑来/Chapters/01-初见.md', 1, '01-初见.md')
+        insertFile('press/剑来/Chapters/02-再会.md', 2, '第二章 再会')
 
         const chapters = readProjectDetail(db, 'press/剑来')?.volumes[0]?.chapters ?? []
 
@@ -160,15 +160,15 @@ describe('readProjectDetail', () => {
 })
 
 describe('listProjectChapterPaths', () => {
-    it('只返回 Chapter/ 下已登记的章节路径', () => {
+    it('只返回 Chapters/ 下已登记的章节路径', () => {
         insertFile('press/剑来/README.md', 1)
         insertFile('press/剑来/大纲.md', 2)
-        insertFile('press/剑来/Chapter/01-初见.md', 3)
-        insertFile('press/剑来/Chapter/01-第一卷/01-初遇.md', 4)
+        insertFile('press/剑来/Chapters/01-初见.md', 3)
+        insertFile('press/剑来/Chapters/01-第一卷/01-初遇.md', 4)
 
         const paths = listProjectChapterPaths(db, 'press/剑来').sort()
 
-        expect(paths).toEqual(['press/剑来/Chapter/01-初见.md', 'press/剑来/Chapter/01-第一卷/01-初遇.md'])
+        expect(paths).toEqual(['press/剑来/Chapters/01-初见.md', 'press/剑来/Chapters/01-第一卷/01-初遇.md'])
     })
 
     it('目录非法时返回空清单', () => {
@@ -179,10 +179,30 @@ describe('listProjectChapterPaths', () => {
 
 describe('hasProjectFile', () => {
     it('仅精确命中已登记路径', () => {
-        insertFile('press/剑来/Chapter/01-初见.md', 1)
+        insertFile('press/剑来/Chapters/01-初见.md', 1)
 
-        expect(hasProjectFile(db, 'press/剑来/Chapter/01-初见.md')).toBe(true)
-        expect(hasProjectFile(db, 'press/剑来/Chapter/01-初见')).toBe(false)
+        expect(hasProjectFile(db, 'press/剑来/Chapters/01-初见.md')).toBe(true)
+        expect(hasProjectFile(db, 'press/剑来/Chapters/01-初见')).toBe(false)
         expect(hasProjectFile(db, 'press/剑来/Chapter')).toBe(false)
+    })
+})
+
+describe('旧版章节目录兼容', () => {
+    it('Chapter 下的文档仍计入章节数，并出现在章节清单里', () => {
+        insertFile('press/剑来/README.md', 1)
+        insertFile('press/剑来/Chapter/01-初见.md', 3)
+
+        const projects = listPressProjects(db)
+
+        expect(projects[0]?.chapterCount).toBe(1)
+        expect(listProjectChapterPaths(db, 'press/剑来')).toEqual(['press/剑来/Chapter/01-初见.md'])
+    })
+
+    it('新旧目录并存时两份都计入，迁移过程中不会暂时丢章节', () => {
+        insertFile('press/剑来/Chapter/01-初见.md', 1)
+        insertFile('press/剑来/Chapters/02-远行.md', 3)
+
+        expect(listProjectChapterPaths(db, 'press/剑来')).toHaveLength(2)
+        expect(readProjectDetail(db, 'press/剑来')?.project.chapterCount).toBe(2)
     })
 })

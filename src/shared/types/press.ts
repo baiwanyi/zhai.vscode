@@ -80,9 +80,9 @@ export interface OpenPressProjectResult {
     opened: boolean
 }
 
-/** 章节条目：Chapter/ 下的一个 Markdown 文档 */
+/** 章节条目：Chapters/ 下的一个 Markdown 文档 */
 export interface PressChapterEntry {
-    /** 相对存储根路径，形如 press/剑来/Chapter/01-初见.md */
+    /** 相对存储根路径，形如 press/剑来/Chapters/01-初见.md */
     path: string
     /** 展示标题：文档内标题优先，缺失时用去序号前缀的文件名 */
     title: string
@@ -92,7 +92,7 @@ export interface PressChapterEntry {
     mtime: string
 }
 
-/** 卷分组：name 为空串表示未分卷（章节直接位于 Chapter/ 下） */
+/** 卷分组：name 为空串表示未分卷（章节直接位于 Chapters/ 下） */
 export interface PressVolumeGroup {
     /** 展示名：去掉序号前缀的卷名，未分卷为空串 */
     name: string
@@ -231,7 +231,7 @@ export function isDeletePressProjectRequest(payload: unknown): payload is Delete
 /** press/deleteChapter 请求：单章移入回收站 */
 export interface DeletePressChapterRequest {
     dirPath: string
-    /** 章节相对路径，须位于 press/{作品名}/Chapter/ 之下 */
+    /** 章节相对路径，须位于 press/{作品名}/Chapters/ 之下 */
     path: string
 }
 
@@ -240,7 +240,7 @@ export interface MovePressChapterRequest {
     dirPath: string
     /** 待移动章节的相对路径 */
     path: string
-    /** 目标卷目录名（含序号前缀）；空串表示移到未分卷的 Chapter/ 根目录 */
+    /** 目标卷目录名（含序号前缀）；空串表示移到未分卷的 Chapters/ 根目录 */
     targetVolumeDir: string
 }
 
@@ -568,7 +568,7 @@ export interface PressImportCandidate {
     encoding: PressImportEncoding
     /** 识别到的章节数 */
     chapterCount: number
-    /** 识别到的卷数：0 表示原文未分卷，章节平铺在 Chapter/ 下 */
+    /** 识别到的卷数：0 表示原文未分卷，章节平铺在 Chapters/ 下 */
     volumeCount: number
     /** 正文字符数（与索引库口径一致：去 Markdown 标记与空白） */
     charCount: number

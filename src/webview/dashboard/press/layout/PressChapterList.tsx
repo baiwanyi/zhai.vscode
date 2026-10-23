@@ -102,7 +102,7 @@ export function PressChapterList({
                     </EmptyMedia>
                     <EmptyTitle>还没有章节</EmptyTitle>
                     <EmptyDescription>
-                        点击「新建卷」创建第一卷并写入首章，或在 Chapter/ 对应卷目录下新建文档后保存。
+                        点击「新建卷」创建第一卷并写入首章，或在 Chapters/ 对应卷目录下新建文档后保存。
                     </EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>

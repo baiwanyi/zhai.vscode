@@ -1,6 +1,6 @@
 /**
  * 作品骨架生成：作品名校验、章节与卷的命名规则、骨架与章节文档模板，纯函数零副作用便于单测。
- * 骨架对齐 docs/modules/press.md 1.2/1.3：README.md + 大纲.md + 角色设定.md + 设定.md + Chapter/；
+ * 骨架对齐 docs/modules/press.md 1.2/1.3：README.md + 大纲.md + 角色设定.md + 设定.md + Chapters/；
  * 章节文件按「两位序号-标题.md」命名，分卷目录按「两位序号-卷名」命名。
  * 关键约束：作品名同时作为目录名，须满足跨平台约束（非法字符、系统保留名、首尾空格与点）；
  * 本模块只产出相对路径与内容，落盘与索引由 projectService 负责；README 的 Frontmatter title 供索引器取标题；
@@ -14,8 +14,14 @@ export const PRESS_MODULE_DIR = 'press'
 /** 作品根文档名：作品被打开时的落点，同时承载背景与风格设定 */
 export const PROJECT_README_NAME = 'README.md'
 
-/** 章节目录名：其下的文档计入章节数 */
-export const PROJECT_CHAPTER_DIR = 'Chapter'
+/** 章节目录名：其下的文档计入章节数，新建作品与新增章节统一写在这里 */
+export const PROJECT_CHAPTER_DIR = 'Chapters'
+
+/** 旧版章节目录名：早期版本用 `Chapter`，读取须兼容、写入前先整体迁移 */
+export const LEGACY_PROJECT_CHAPTER_DIR = 'Chapter'
+
+/** 章节目录的两种写法：路径第三段命中任一即视为章节，兼容尚未迁移的旧作品 */
+export const CHAPTER_DIR_NAMES: readonly string[] = [PROJECT_CHAPTER_DIR, LEGACY_PROJECT_CHAPTER_DIR]
 
 /** 作品名字符数上限：兼顾侧栏展示与文件系统路径长度 */
 export const MAX_PROJECT_NAME_LENGTH = 60

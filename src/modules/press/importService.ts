@@ -19,6 +19,7 @@ import {
     buildProjectDocuments,
     validateProjectName,
 } from './projectFactory'
+import { migrateLegacyChapterDirectory } from './projectService'
 import type { AnalysisResult } from './importAnalysis'
 import type { ParsedNovel } from './importParser'
 import type { ProjectIndexer } from './projectService'
@@ -354,6 +355,8 @@ export class PressImportService {
         baseProgress: PressImportProgress
     }): Promise<ImportOutcome> {
         const { jobId, dirPath, name, audience, parsed, controller, onProgress } = job
+        // 导进已有作品时先迁移旧章节目录，否则会在 Chapter 旁边再建一棵 Chapters 树
+        await migrateLegacyChapterDirectory(dirPath)
         const root = resolveStorageRoot()
         const segments = job.dirPath.split('/')
         await vscode.workspace.fs.createDirectory(buildStorageUri(root, segments))

@@ -3,14 +3,17 @@
  * 并承担卷的重命名与删除、章节的删除与跨卷移动（保留或重排序号前缀、同步收敛索引）。
  * 复用 common/storagePath 的路径构造与片段校验、common/config 的存储根解析、IndexService 的单文件索引与前缀清理能力。
  * 关键约束：落盘前校验作品名、卷名、目标目录与文件名存在性，已存在即报错、绝不覆盖；写入后立即索引，
- * 使列表不等 watcher 防抖即可见；实现路径统一为「press/{作品名}」两段，章节须位于其 Chapter/ 之下，
+ * 使列表不等 watcher 防抖即可见；实现路径统一为「press/{作品名}」两段，章节须位于其 Chapters/ 之下，
  * 存在性由调用方按索引库回查；目录被移动或删除后主动按前缀清理索引，不依赖 watcher 的删除回调；
- * 删除统一走 common/storagePath 的 deleteResource（回收站优先，不可用时降级永久删除），本层不再直连 fs。
+ * 删除统一走 common/storagePath 的 deleteResource（回收站优先，不可用时降级永久删除），本层不再直连 fs；
+ * 旧作品的章节目录仍是 `Chapter`，任何写盘入口都先迁移，读取与校验则同时接受新旧两种目录名。
  */
 import * as vscode from 'vscode'
 import {
+    CHAPTER_DIR_NAMES,
     DEFAULT_VOLUME_DIR,
     DEFAULT_VOLUME_ORDER,
+    LEGACY_PROJECT_CHAPTER_DIR,
     PROJECT_CHAPTER_DIR,
     PROJECT_README_NAME,
     PRESS_MODULE_DIR,
@@ -172,7 +175,7 @@ export interface DeleteChapterRequest {
 export interface MoveChapterRequest {
     dirPath: string
     path: string
-    /** 目标卷目录名；空串表示移到未分卷的 Chapter/ 根目录 */
+    /** 目标卷目录名；空串表示移到未分卷的 Chapters/ 根目录 */
     targetVolumeDir: string
     /** 该作品已登记的章节路径，用于计算目标任务卷内的下一个序号 */
     chapterPaths: string[]
@@ -210,17 +213,55 @@ export function readProjectSegments(dirPath: string): string[] {
 }
 
 /**
- * 统计每个卷内的最大章序号：只认 Chapter/ 下「卷/章」两段以上的路径，
+ * 迁移旧版章节目录：把作品下的 `Chapter` 整体重命名为 Chapters。
+ * 关键约束：只在新目录不存在、旧目录存在时动盘——新目录已存在说明此前迁移过，不碰旧目录；
+ * 重命名失败只记日志、不抛错，读取与索引仍兼容旧目录，用户可重试；
+ * 迁移后索引里的旧路径由 watcher 的删除回调自然清理，本函数不直接改索引库。
+ * @param dirPath 作品目录，形如 press/{作品名}
+ */
+export async function migrateLegacyChapterDirectory(dirPath: string): Promise<void> {
+    const segments = readProjectSegments(dirPath)
+    const root = resolveStorageRoot()
+    const target = buildStorageUri(root, [...segments, PROJECT_CHAPTER_DIR])
+    if (await isPathExisting(target)) {
+        return
+    }
+    const legacy = buildStorageUri(root, [...segments, LEGACY_PROJECT_CHAPTER_DIR])
+    if (!(await isPathExisting(legacy))) {
+        return
+    }
+    try {
+        await vscode.workspace.fs.rename(legacy, target, { overwrite: false })
+        logger.info(`章节目录已迁移：${dirPath}（${LEGACY_PROJECT_CHAPTER_DIR} → ${PROJECT_CHAPTER_DIR}）`)
+    } catch (cause) {
+        const detail = cause instanceof Error ? cause.message : String(cause)
+        logger.warn(`章节目录迁移失败，继续读取旧目录：${dirPath}，原因：${detail}`)
+    }
+}
+
+/** 章节路径相对作品目录的部分：新旧章节目录名都认，迁移前旧作品仍能正确取到卷与章 */
+function readChapterRelativePath(dirPath: string, path: string): string | null {
+    for (const chapterDirName of CHAPTER_DIR_NAMES) {
+        const prefix = `${dirPath}/${chapterDirName}/`
+        if (path.startsWith(prefix)) {
+            return path.slice(prefix.length)
+        }
+    }
+    return null
+}
+
+/**
+ * 统计每个卷内的最大章序号：只认 Chapters/ 下「卷/章」两段以上的路径，
  * 根目录散章（历史数据）不参与卷内编号。
  */
 function collectVolumeMaxOrders(dirPath: string, chapterPaths: string[]): VolumeMaxOrders {
-    const chapterRoot = `${dirPath}/${PROJECT_CHAPTER_DIR}/`
     const volumeMaxOrders: VolumeMaxOrders = new Map()
     for (const path of chapterPaths) {
-        if (!path.startsWith(chapterRoot)) {
+        const relativePath = readChapterRelativePath(dirPath, path)
+        if (relativePath === null) {
             continue
         }
-        const segments = path.slice(chapterRoot.length).split('/')
+        const segments = relativePath.split('/')
         if (segments.length < 2) {
             continue
         }
@@ -267,7 +308,7 @@ function readVolumeDir(volumeDir: string): string {
 }
 
 /**
- * 校验并切分章节路径：作品须为 press/{作品名} 两段，章节须在其实 Chapter/ 之下
+ * 校验并切分章节路径：作品须为 press/{作品名} 两段，章节须在其实 Chapters/ 之下
  * （未分卷为 4 段、分卷为 5 段起，更深层级归入所在卷）。
  * 安全约束：先归一化再逐段校验，从源头排除上跳、跨作品与跨模块路径。
  */
@@ -275,7 +316,9 @@ function readChapterSegments(dirPath: string, chapterPath: string): string[] {
     const projectSegments = readProjectSegments(dirPath)
     const segments = toSafeSegments(toStorageRelativePath(chapterPath, '章节'), '章节')
     const isSameProject = projectSegments.every((segment, index) => segments[index] === segment)
-    if (!isSameProject || segments.length < 4 || segments[2] !== PROJECT_CHAPTER_DIR) {
+    const chapterDirName = segments[2]
+    const isChapterPath = chapterDirName !== undefined && CHAPTER_DIR_NAMES.includes(chapterDirName)
+    if (!isSameProject || segments.length < 4 || !isChapterPath) {
         throw new Error(`章节路径非法：${chapterPath}`)
     }
     return segments
@@ -291,13 +334,13 @@ function readChapterVolumeDir(segments: string[]): string {
  * 关键约束：只看该卷下的 .md 文档，无序号前缀的文件不参与编号，与新建章节的落点口径保持一致。
  */
 function resolveNextChapterOrder(dirPath: string, chapterPaths: string[], volumeDir: string): number {
-    const chapterRoot = `${dirPath}/${PROJECT_CHAPTER_DIR}/`
     let maxOrder = 0
     for (const path of chapterPaths) {
-        if (!path.startsWith(chapterRoot)) {
+        const relativePath = readChapterRelativePath(dirPath, path)
+        if (relativePath === null) {
             continue
         }
-        const segments = path.slice(chapterRoot.length).split('/')
+        const segments = relativePath.split('/')
         const fileName = segments[segments.length - 1]
         if (fileName === undefined || !fileName.toLowerCase().endsWith('.md')) {
             continue
@@ -345,6 +388,8 @@ function resolveChapterPlacement(dirPath: string, chapterPaths: string[], volume
  * 安全约束：入参须为 press/{作品名} 两段，存在性由调用方按索引库回查。
  */
 export async function openProjectByDir(dirPath: string): Promise<void> {
+    // 打开即迁移旧章节目录：此后所有入口都按新目录读写，不会再出现两套目录并存
+    await migrateLegacyChapterDirectory(dirPath)
     const root = resolveStorageRoot()
     const segments = readProjectSegments(dirPath)
     const readme = buildStorageUri(root, [...segments, PROJECT_README_NAME])
@@ -363,6 +408,8 @@ export async function createChapter(
     request: CreateChapterRequest,
 ): Promise<CreatedChapterHandle> {
     const segments = readProjectSegments(request.dirPath)
+    // 写盘前先迁移：旧目录还在时直接写新目录会留下两份章节树
+    await migrateLegacyChapterDirectory(request.dirPath)
     const root = resolveStorageRoot()
     // 用归一化后的段拼装前缀，保证与索引库的相对路径口径一致
     const placement = resolveChapterPlacement(segments.join('/'), request.chapterPaths, request.volumeDir)
@@ -395,6 +442,7 @@ export async function createVolume(
     request: CreateVolumeRequest,
 ): Promise<CreatedVolumeHandle> {
     const segments = readProjectSegments(request.dirPath)
+    await migrateLegacyChapterDirectory(request.dirPath)
     const root = resolveStorageRoot()
     const volumeMaxOrders = collectVolumeMaxOrders(segments.join('/'), request.chapterPaths)
     const usedOrders = [...volumeMaxOrders.keys()]
@@ -441,6 +489,7 @@ export async function renameVolume(
     request: RenameVolumeRequest,
 ): Promise<RenamedVolumeHandle> {
     const segments = readProjectSegments(request.dirPath)
+    await migrateLegacyChapterDirectory(request.dirPath)
     const currentDir = readVolumeDir(request.volumeDir)
     const name = request.name.trim()
     const invalidReason = validateVolumeName(name)
@@ -482,10 +531,11 @@ export async function renameVolume(
 /**
  * 删除一卷：整卷目录移入回收站（环境不支持时降级为永久删除，见 deleteResource），并同步清理该卷的索引记录。
  * 关键约束：递归删除目录时 watcher 不保证逐文件回调，必须按前缀主动清理，否则列表会残留已删章节；
- * 卷目录须为单段且位于 Chapter/ 之下，避免借卷名越出作品目录。
+ * 卷目录须为单段且位于 Chapters/ 之下，避免借卷名越出作品目录。
  */
 export async function deleteVolume(indexer: ProjectIndexer, request: DeleteVolumeRequest): Promise<void> {
     const segments = readProjectSegments(request.dirPath)
+    await migrateLegacyChapterDirectory(request.dirPath)
     const volumeDir = readVolumeDir(request.volumeDir)
     const root = resolveStorageRoot()
     const chapterRoot = [...segments, PROJECT_CHAPTER_DIR]
@@ -532,7 +582,7 @@ export async function deleteProject(indexer: ProjectIndexer, request: DeleteProj
 
 /**
  * 删除单章：文档移入回收站（环境不支持时降级为永久删除，见 deleteResource），并同步清理该章的索引记录。
- * 关键约束：路径须落在该作品的 Chapter/ 之下（未分卷与分卷两种深度都接受），存在性由调用方回查索引库；
+ * 关键约束：路径须落在该作品的 Chapters/ 之下（未分卷与分卷两种深度都接受），存在性由调用方回查索引库；
  * 有未保存修改的文档一律拒绝，避免删盘后编辑器内容「复活」文件。
  */
 export async function deleteChapter(indexer: ProjectIndexer, request: DeleteChapterRequest): Promise<void> {
@@ -594,13 +644,15 @@ export async function moveChapter(indexer: ProjectIndexer, request: MoveChapterR
 
 /**
  * 打开指定章节文档：交由编辑器以独立标签展示，不移动光标。
- * 安全约束：入参先归一化与片段校验，且必须位于 press/{作品名}/Chapter/ 之下（未分卷 4 段、分卷 5 段起），
- * 存在性由调用方回查索引库。
+ * 安全约束：入参先归一化与片段校验，且必须位于 press/{作品名}/Chapters/ 之下（未分卷 4 段、分卷 5 段起），
+ * 旧作品的 Chapters/ 路径一并接受，避免迁移未完成时打不开已索引的章节；存在性由调用方回查索引库。
  */
 export async function openChapterByPath(indexPath: string): Promise<void> {
     const root = resolveStorageRoot()
     const segments = toSafeSegments(toStorageRelativePath(indexPath, '章节'), '章节')
-    if (segments.length < 4 || segments[0] !== PRESS_MODULE_DIR || segments[2] !== PROJECT_CHAPTER_DIR) {
+    const chapterDirName = segments[2]
+    const isChapterPath = chapterDirName !== undefined && CHAPTER_DIR_NAMES.includes(chapterDirName)
+    if (segments.length < 4 || segments[0] !== PRESS_MODULE_DIR || !isChapterPath) {
         throw new Error(`章节路径非法：${indexPath}`)
     }
     const uri = buildStorageUri(root, segments)

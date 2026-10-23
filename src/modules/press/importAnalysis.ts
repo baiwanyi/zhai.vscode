@@ -11,6 +11,8 @@
  */
 
 import * as vscode from 'vscode'
+import { CHAPTER_DIR_NAMES } from './projectFactory'
+import { migrateLegacyChapterDirectory } from './projectService'
 import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR } from '../../shared/types/press'
 import { resolveStorageRoot } from '../common/config'
 import { countWords, parseTitle, splitFrontmatter } from '../common/db/fileMeta'
@@ -478,12 +480,16 @@ async function readChapter(item: PendingChapter, order: number): Promise<Chapter
 }
 
 /**
- * 收集 Chapter 下的章节文档：只认一层卷目录，与目录视图的层级约定一致。
+ * 收集单个章节目录下的文档：只认一层卷目录，与目录视图的层级约定一致。
  * 排序规则：未分卷章节排在最前，其余按卷目录名、卷内文件名升序——
  * 与 projectRepository 的分组展示顺序同源，保证素材序号与界面一致。
  */
-async function collectChapters(root: vscode.Uri, segments: string[]): Promise<ChapterDigest[]> {
-    const chapterRoot = buildStorageUri(root, [...segments, 'Chapter'])
+async function collectChapterEntries(
+    root: vscode.Uri,
+    segments: string[],
+    chapterDirName: string,
+): Promise<PendingChapter[]> {
+    const chapterRoot = buildStorageUri(root, [...segments, chapterDirName])
     if (!(await isPathExisting(chapterRoot))) {
         return []
     }
@@ -502,14 +508,14 @@ async function collectChapters(root: vscode.Uri, segments: string[]): Promise<Ch
             continue
         }
         pending.push({
-            uri: buildStorageUri(root, [...segments, 'Chapter', fileName]),
-            relativePath: [...segments, 'Chapter', fileName].join('/'),
+            uri: buildStorageUri(root, [...segments, chapterDirName, fileName]),
+            relativePath: [...segments, chapterDirName, fileName].join('/'),
             volumeDir: '',
         })
     }
     for (const directoryName of directories) {
         const volumeEntries = await vscode.workspace.fs.readDirectory(
-            buildStorageUri(root, [...segments, 'Chapter', directoryName]),
+            buildStorageUri(root, [...segments, chapterDirName, directoryName]),
         )
         const volumeFiles = volumeEntries
             .filter(([, type]) => type === vscode.FileType.File)
@@ -520,11 +526,23 @@ async function collectChapters(root: vscode.Uri, segments: string[]): Promise<Ch
                 continue
             }
             pending.push({
-                uri: buildStorageUri(root, [...segments, 'Chapter', directoryName, fileName]),
-                relativePath: [...segments, 'Chapter', directoryName, fileName].join('/'),
+                uri: buildStorageUri(root, [...segments, chapterDirName, directoryName, fileName]),
+                relativePath: [...segments, chapterDirName, directoryName, fileName].join('/'),
                 volumeDir: directoryName,
             })
         }
+    }
+    return pending
+}
+
+/**
+ * 收集作品下的章节文档：新旧章节目录名都扫一遍，迁移前后的作品都能抽到素材。
+ * 关键约束：两个目录同时存在时按目录名顺序合并，章节序号以合并后的实际顺序编排。
+ */
+async function collectChapters(root: vscode.Uri, segments: string[]): Promise<ChapterDigest[]> {
+    const pending: PendingChapter[] = []
+    for (const chapterDirName of CHAPTER_DIR_NAMES) {
+        pending.push(...(await collectChapterEntries(root, segments, chapterDirName)))
     }
     const chapters: ChapterDigest[] = []
     for (const item of pending) {
@@ -680,6 +698,8 @@ export async function migrateLegacyMaterialDirectory(dirPath: string): Promise<v
  */
 export async function analyzeProject(dirPath: string): Promise<AnalysisResult> {
     await migrateLegacyMaterialDirectory(dirPath)
+    // 扫描前先迁移章节目录：素材里的相对路径必须是新目录，否则写完素材旧目录仍在
+    await migrateLegacyChapterDirectory(dirPath)
     const root = resolveStorageRoot()
     const segments = dirPath.split('/').filter((segment) => segment.length > 0)
     const chapters = await collectChapters(root, segments)
