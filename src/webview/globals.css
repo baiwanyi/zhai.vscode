@@ -278,6 +278,28 @@ body.vscode-high-contrast-light {
     color: var(--vscode-editor-selectionForeground, var(--vscode-list-activeSelectionForeground, inherit));
 }
 
+/*
+ * sonner loading 图标定位覆盖：sonner 用 `.sonner-loader` 绝对定位 + translate(-50%, -50%) 居中，
+ * 百分比平移按元素自身尺寸折算，图标尺寸一旦带小数（rem 缩放、webview 缩放）就落在半像素边界上，
+ * 旋转时每帧重新采样，视觉上就是绕偏心点画圈。
+ * 这里改为在 16px 图标槽内走静态 flex 布局，位置交给布局引擎对齐整数像素，只保留淡出时的缩放。
+ * 本段处于 @layer 之外，选择器特异性也高于 sonner 运行时注入的 .sonner-loader 规则。
+ */
+[data-sonner-toast] [data-icon] > .sonner-loader {
+    position: static;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    transform: none;
+}
+
+[data-sonner-toast] [data-icon] > .sonner-loader[data-visible='false'] {
+    opacity: 0;
+    transform: scale(0.8);
+}
+
 /* 尊重系统 / VSCode 的「减少动效」偏好 */
 @media (prefers-reduced-motion: reduce) {
     *,
