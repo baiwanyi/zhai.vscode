@@ -5,6 +5,7 @@
 import * as vscode from 'vscode'
 import type { FileRow } from '../db/indexRepository'
 import type Database from 'better-sqlite3'
+import { PRESS_IMPORT_DIR } from '../../../shared/types/press'
 import { getZhaiConfig, resolveStorageRoot } from '../config'
 import { parseFileMeta } from '../db/fileMeta'
 import { countFileRows, deleteFileRow, listIndexedPaths, upsertFileRows } from '../db/indexRepository'
@@ -197,6 +198,10 @@ export class IndexService {
     }
 
     private enqueue(uri: vscode.Uri): void {
+        // 导入工作目录只存素材与 AI 初稿，不属于作品内容，watcher 触发时直接丢弃
+        if (uri.path.includes(`/${PRESS_IMPORT_DIR}/`)) {
+            return
+        }
         this.pendingUris.add(uri.toString())
         this.scheduleFlush()
     }
@@ -261,7 +266,12 @@ export class IndexService {
         return uri.path.split('/').pop() ?? uri.path
     }
 
+    /**
+     * 排除规则：用户配置项 + 固定的导入工作目录。
+     * 关键约束：`_import` 下存放素材与 AI 初稿，若计入索引会使作品字数虚高，故无条件排除。
+     */
     private buildExcludeGlob(): vscode.GlobPattern {
-        return `{${getZhaiConfig().indexExclude.join(',')}}`
+        const patterns = [...getZhaiConfig().indexExclude, `**/${PRESS_IMPORT_DIR}/**`]
+        return `{${patterns.join(',')}}`
     }
 }

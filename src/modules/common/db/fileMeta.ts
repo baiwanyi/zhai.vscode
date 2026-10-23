@@ -43,8 +43,8 @@ function parseFrontmatterTags(frontmatter: string): string[] {
     return tags
 }
 
-/** 解析 Frontmatter 区块，返回区块内容与是否闭合 */
-function splitFrontmatter(content: string): { frontmatter: string; body: string } {
+/** 解析 Frontmatter 区块，返回区块内容与是否闭合；导入素材抽取复用同一口径 */
+export function splitFrontmatter(content: string): { frontmatter: string; body: string } {
     if (!content.startsWith('---')) {
         return { frontmatter: '', body: content }
     }

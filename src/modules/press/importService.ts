@@ -10,6 +10,7 @@
 import { lstat, readFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as vscode from 'vscode'
+import { analyzeProject } from './importAnalysis'
 import { parseNovel, sanitizeSegment } from './importParser'
 import {
     PROJECT_CHAPTER_DIR,
@@ -18,6 +19,7 @@ import {
     buildProjectDocuments,
     validateProjectName,
 } from './projectFactory'
+import type { AnalysisResult } from './importAnalysis'
 import type { ParsedNovel } from './importParser'
 import type { ProjectIndexer } from './projectService'
 import type {
@@ -428,7 +430,27 @@ export class PressImportService {
             emit(false)
         }
         emit(true)
+        // 素材抽取失败不阻断导入：正文已落盘，素材可随时通过详情页重跑
+        let analysis: AnalysisResult | null = null
+        if (failedChapters === 0) {
+            onProgress({
+                jobId,
+                status: 'running',
+                done,
+                total,
+                writtenChars,
+                failedChapters,
+                dirPath,
+                message: '正在抽取导入素材…',
+            })
+            try {
+                analysis = await analyzeProject(dirPath)
+            } catch (error) {
+                logger.error(`导入素材抽取失败：${dirPath}`, error)
+            }
+        }
         const isPartiallyFailed = failedChapters > 0
+        const materialNote = analysis === null ? '' : `，识别候选角色 ${String(analysis.characterCount)} 个`
         return {
             status: isPartiallyFailed ? 'failed' : 'completed',
             done,
@@ -439,7 +461,7 @@ export class PressImportService {
             code: isPartiallyFailed ? 'partially-failed' : undefined,
             message: isPartiallyFailed
                 ? `已导入 ${String(done - failedChapters)} 章，${String(failedChapters)} 章写入失败`
-                : `已导入《${name}》共 ${String(total)} 章 ${String(writtenChars)} 字`,
+                : `已导入《${name}》共 ${String(total)} 章 ${String(writtenChars)} 字${materialNote}`,
         }
     }
 }
