@@ -154,12 +154,15 @@ export function NamingPage(): JSX.Element {
                 <div className="flex shrink-0 items-center gap-1.5">
                     <Tooltip>
                         <TooltipTrigger asChild>
-                            <Switch
-                                id="naming-source"
-                                checked={request.source === 'ai'}
-                                disabled={!catalog.aiAvailable}
-                                onCheckedChange={(checked) => handleChange({ source: checked ? 'ai' : 'local' })}
-                            />
+                            {/* Trigger 的 data-state 会覆盖 Switch 自身的 checked / unchecked 状态，故用 span 承接 */}
+                            <span className="inline-flex">
+                                <Switch
+                                    id="naming-source"
+                                    checked={request.source === 'ai'}
+                                    disabled={!catalog.aiAvailable}
+                                    onCheckedChange={(checked) => handleChange({ source: checked ? 'ai' : 'local' })}
+                                />
+                            </span>
                         </TooltipTrigger>
                         <TooltipContent>
                             {catalog.aiAvailable
