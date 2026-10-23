@@ -104,6 +104,9 @@ export function createCharacterCard(seed: CharacterSeed = {}): CharacterCard {
         role: 'supporting',
         gender: 'male',
         age: '',
+        height: '',
+        // 体型只有五档预设，默认取中间档：既不让新卡带一个偏颇的身形，也省掉一次必填
+        bodyType: 'average',
         identity: '',
         appearance: '',
         traits: [],

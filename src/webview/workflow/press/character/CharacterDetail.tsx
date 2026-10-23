@@ -1,9 +1,11 @@
 /**
  * 人物卡编辑器：按「基础 / 外貌 / 角色卡 / 动机 / 背景 / 关系」六组编辑单个角色，字段与 角色设定.md 的区块对齐。
- * 复用约定：分组切换复用 ui/tabs（均分整行、不横向滚动），字段布局复用 ui/field，角色与性别选择复用 ui/toggle-group，
+ * 复用约定：分组切换复用 ui/tabs（均分整行、不横向滚动），字段布局复用 ui/field，角色、体型与性别选择复用 ui/toggle-group，
  * 标签型字段（性格）复用设定页的 TagField；外貌与角色卡分别由 useCharacterAppearance、CharacterPortraitPanel 承担。
  * 关键约束：所有控件只通过补丁回传给调用方（编辑弹窗的草稿），本组件不持有角色数据副本；
  * 生成结果写入字段或图库后仍需用户保存，未保存即关闭弹窗则丢弃；字段 id 固定，同时只会挂载一张卡；
+ * 基础信息固定两列排版（姓名/昵称、年龄/身高各一行），身份与动机三项用多行输入——这些字段常常不止一句话；
+ * 单行输入统一 32px 高、上下各 6px 内边距，与 Select 触发器等控件对齐；
  * 生成结果与失败原因统一经 sonner 提示，页面内不渲染内联错误文本。
  */
 import { Sparkles } from 'lucide-react'
@@ -20,7 +22,14 @@ import { useCharacterAppearance } from './useCharacterAppearance'
 import type { CharacterCard } from '../types'
 import type { AppearanceContext } from './useCharacterAppearance'
 import type { JSX } from 'react'
-import { CHARACTER_GENDER_META, CHARACTER_GENDER_ORDER, CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
+import {
+    CHARACTER_BODY_TYPE_META,
+    CHARACTER_BODY_TYPE_ORDER,
+    CHARACTER_GENDER_META,
+    CHARACTER_GENDER_ORDER,
+    CHARACTER_ROLE_META,
+    CHARACTER_ROLE_ORDER,
+} from '../constants'
 import { TagField } from '../setting/TagField'
 
 interface CharacterDetailProps {
@@ -46,6 +55,14 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
         const next = CHARACTER_GENDER_ORDER.find((gender) => gender === value)
         if (next) {
             onChange({ gender: next })
+        }
+    }
+
+    /** 体型是必选档位：取消选择时保持原值，避免出现空体型 */
+    const handleBodyTypeChange = (value: string): void => {
+        const next = CHARACTER_BODY_TYPE_ORDER.find((bodyType) => bodyType === value)
+        if (next) {
+            onChange({ bodyType: next })
         }
     }
 
@@ -87,13 +104,14 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                 {/* 滚动槽常驻：长短标签页切换时内容宽度不跳，避免滚动条反复挤占空间；左右留 2px 防止聚焦环被横向裁切 */}
                 <div className="min-h-0 flex-1 overflow-y-auto px-0.5 py-2 [scrollbar-gutter:stable]">
                     <TabsContent value="basic" className="flex flex-col gap-3">
-                        <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
+                        {/* 两列固定：姓名/昵称、年龄/身高各占一行，窄面板下也不折行 */}
+                        <div className="grid grid-cols-2 gap-3">
                             <Field>
                                 <FieldLabel htmlFor="character-name">姓名</FieldLabel>
                                 <Input
                                     id="character-name"
                                     value={character.name}
-                                    className="h-7"
+                                    className="h-8 px-3 py-1.5"
                                     onChange={(event) => onChange({ name: event.target.value })}
                                 />
                             </Field>
@@ -102,7 +120,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 <Input
                                     id="character-alias"
                                     value={character.alias}
-                                    className="h-7"
+                                    className="h-8 px-3 py-1.5"
                                     onChange={(event) => onChange({ alias: event.target.value })}
                                 />
                             </Field>
@@ -111,20 +129,32 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 <Input
                                     id="character-age"
                                     value={character.age}
-                                    className="h-7"
+                                    className="h-8 px-3 py-1.5"
                                     onChange={(event) => onChange({ age: event.target.value })}
                                 />
                             </Field>
                             <Field>
-                                <FieldLabel htmlFor="character-identity">身份</FieldLabel>
+                                <FieldLabel htmlFor="character-height">身高</FieldLabel>
                                 <Input
-                                    id="character-identity"
-                                    value={character.identity}
-                                    className="h-7"
-                                    onChange={(event) => onChange({ identity: event.target.value })}
+                                    id="character-height"
+                                    value={character.height}
+                                    placeholder="如：一米七八"
+                                    className="h-8 px-3 py-1.5"
+                                    onChange={(event) => onChange({ height: event.target.value })}
                                 />
                             </Field>
                         </div>
+                        <Field>
+                            <FieldLabel htmlFor="character-identity">身份</FieldLabel>
+                            <Textarea
+                                id="character-identity"
+                                value={character.identity}
+                                placeholder="如：星月宗外门弟子，兼商会账房"
+                                className="min-h-16"
+                                onChange={(event) => onChange({ identity: event.target.value })}
+                            />
+                            <FieldDescription>门派、职位与出身可以一起写，续写时按这段确定说话分寸</FieldDescription>
+                        </Field>
                         <Field>
                             <FieldLabel htmlFor="character-role">角色</FieldLabel>
                             <ToggleGroup
@@ -140,6 +170,22 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 ))}
                             </ToggleGroup>
                             <FieldDescription>角色分类决定大纲排布时该人物承担的功能</FieldDescription>
+                        </Field>
+                        <Field>
+                            <FieldLabel htmlFor="character-body-type">体型</FieldLabel>
+                            <ToggleGroup
+                                type="single"
+                                value={character.bodyType}
+                                className="flex-wrap"
+                                onValueChange={handleBodyTypeChange}
+                            >
+                                {CHARACTER_BODY_TYPE_ORDER.map((bodyType) => (
+                                    <ToggleGroupItem key={bodyType} value={bodyType} size="sm" variant="outline">
+                                        {CHARACTER_BODY_TYPE_META[bodyType].label}
+                                    </ToggleGroupItem>
+                                ))}
+                            </ToggleGroup>
+                            <FieldDescription>与身高一起约束外貌描写和角色设定图的身形比例</FieldDescription>
                         </Field>
                         <Field>
                             <FieldLabel htmlFor="character-gender">性别</FieldLabel>
@@ -221,29 +267,32 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                         </Field>
                         <Field>
                             <FieldLabel htmlFor="character-desire">核心欲望</FieldLabel>
-                            <Input
+                            <Textarea
                                 id="character-desire"
                                 value={character.desire}
-                                className="h-7"
+                                placeholder="推进这个人物的那个念头"
+                                className="min-h-16"
                                 onChange={(event) => onChange({ desire: event.target.value })}
                             />
                             <FieldDescription>推动这个人物做所有决定的那个念头</FieldDescription>
                         </Field>
                         <Field>
                             <FieldLabel htmlFor="character-weakness">致命弱点</FieldLabel>
-                            <Input
+                            <Textarea
                                 id="character-weakness"
                                 value={character.weakness}
-                                className="h-7"
+                                placeholder="能被对手利用、也能推动转变的软肋"
+                                className="min-h-16"
                                 onChange={(event) => onChange({ weakness: event.target.value })}
                             />
                         </Field>
                         <Field>
                             <FieldLabel htmlFor="character-catchphrase">口头禅</FieldLabel>
-                            <Input
+                            <Textarea
                                 id="character-catchphrase"
                                 value={character.catchphrase}
-                                className="h-7"
+                                placeholder="出场时反复出现的那句话"
+                                className="min-h-16"
                                 onChange={(event) => onChange({ catchphrase: event.target.value })}
                             />
                         </Field>

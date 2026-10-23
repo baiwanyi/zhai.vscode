@@ -1,24 +1,26 @@
 /**
  * 人物设定页：写作流程的第三步，用角色下拉筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
  * 复用约定：列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterDetail 承担、
- * 新增由 CharacterCreateDialog 承担、提取由 useCharacterExtract 发起；本文件只做筛选、搜索、
- * 提取与弹窗编排，以及作品氛围、作品目录的下传。
+ * 新增由 CharacterCreateDialog 承担、提取由 useCharacterExtract 发起、封面画廊由 useCharacterPortrait 读取；
+ * 本文件只做筛选、搜索、提取、封面回读与弹窗编排，以及作品氛围、作品目录的下传。
  * 关键约束：新增后直接打开编辑弹窗，因此 onCreateCharacter 必须回传新卡 id；
  * 编辑弹窗以人物 id 作为 key 重建，关闭即丢弃草稿，页面不保留编辑中间态；
- * 提取得到的是草案，合并与重名跳过由父级完成，页面只负责提示实际新增数量。
+ * 提取得到的是草案，合并与重名跳过由父级完成，页面只负责提示实际新增数量；
+ * 画廊只在「作品目录、角色数、封面 id 组合」变化时重读——保存封面后卡片立刻显示新图，日常输入不会反复扫盘。
  */
 import { Plus, Search, Sparkles } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@components/ui/button'
 import { Input } from '@components/ui/input'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Separator } from '@components/ui/separator'
-import type { PressExtractedCharacter } from '@shared/types/press'
+import type { PortraitGalleryItem, PressExtractedCharacter } from '@shared/types/press'
 import { CharacterCreateDialog } from './CharacterCreateDialog'
 import { CharacterEditDialog } from './CharacterEditDialog'
 import { CharacterList } from './CharacterList'
 import { useCharacterExtract } from './useCharacterExtract'
+import { useCharacterPortrait } from './useCharacterPortrait'
 import type { AppearanceContext } from './useCharacterAppearance'
 import type { CharacterCard, CharacterRole, CharacterSeed, ProjectSetting } from '../types'
 import type { JSX } from 'react'
@@ -33,6 +35,8 @@ interface PressCharacterPageProps {
     /** 建卡并返回新卡 id，供页面直接打开编辑弹窗 */
     onCreateCharacter: (seed: CharacterSeed) => string
     onChangeCharacter: (id: string, patch: Partial<CharacterCard>) => void
+    /** 删除人物并清理章纲中的出场引用 */
+    onDeleteCharacter: (id: string) => void
     /** 合并提取出的人物卡并返回实际新增人数，重名与空名由父级跳过 */
     onExtractCharacters: (drafts: PressExtractedCharacter[]) => number
 }
@@ -43,13 +47,46 @@ export function PressCharacterPage({
     dirPath,
     onCreateCharacter,
     onChangeCharacter,
+    onDeleteCharacter,
     onExtractCharacters,
 }: PressCharacterPageProps): JSX.Element {
     const [query, setQuery] = useState('')
     const [roleFilter, setRoleFilter] = useState<CharacterRole | 'all'>('all')
     const [editingId, setEditingId] = useState<string | null>(null)
     const [isCreateOpen, setIsCreateOpen] = useState(false)
+    const [galleries, setGalleries] = useState<Record<string, PortraitGalleryItem[]>>({})
     const { isExtracting, extract } = useCharacterExtract(dirPath)
+    const { listGallery } = useCharacterPortrait(dirPath)
+
+    /**
+     * 画廊刷新信号：只把「角色集合 + 各自封面」压成字符串作为依赖。
+     * 直接依赖 characters 数组会让每次输入都重读磁盘，压成字符串后只有封面或人数变化才触发。
+     */
+    const galleryKey = useMemo(
+        () => `${characters.length}|${characters.map((item) => `${item.id}:${item.coverPortraitId ?? ''}`).join(',')}`,
+        [characters],
+    )
+
+    useEffect(() => {
+        let cancelled = false
+        void listGallery().then((items) => {
+            if (!cancelled) {
+                setGalleries(items)
+            }
+        })
+        return (): void => {
+            cancelled = true
+        }
+    }, [galleryKey, listGallery])
+
+    /** 删除后关闭可能停留的编辑弹窗，避免弹窗继续编辑一张已不存在的卡 */
+    const handleDeleteCharacter = useCallback(
+        (id: string): void => {
+            setEditingId((previous) => (previous === id ? null : previous))
+            onDeleteCharacter(id)
+        },
+        [onDeleteCharacter],
+    )
 
     const editingCharacter = characters.find((character) => character.id === editingId) ?? null
     // 作品氛围只在设定字段变化时重建，避免弹窗内每次输入都触发新对象
@@ -144,7 +181,7 @@ export function PressCharacterPage({
                 <Separator />
                 <div className="flex flex-wrap items-center gap-2">
                     <Select value={roleFilter} onValueChange={handleFilterChange}>
-                        <SelectTrigger size="sm" className="h-7 w-24" aria-label="角色筛选">
+                        <SelectTrigger size="sm" className="h-8 w-24" aria-label="角色筛选">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -159,14 +196,14 @@ export function PressCharacterPage({
                     </Select>
                     <div className="relative min-w-0 flex-1">
                         <Search
-                            className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground"
+                            className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
                             aria-hidden="true"
                         />
                         <Input
                             value={query}
                             aria-label="搜索人物"
                             placeholder="搜索姓名、昵称或身份"
-                            className="h-7 pl-7"
+                            className="h-8 pr-3 pl-8 py-1.5"
                             onChange={(event) => setQuery(event.target.value)}
                         />
                     </div>
@@ -179,9 +216,11 @@ export function PressCharacterPage({
                     characters={visibleCharacters}
                     totalCount={characters.length}
                     hasFilter={hasFilter}
+                    galleries={galleries}
                     onSelect={setEditingId}
                     onCreate={() => setIsCreateOpen(true)}
                     onClearFilter={handleClearFilter}
+                    onDelete={handleDeleteCharacter}
                 />
             </div>
             {/* key 绑定展开状态：每次打开都重建表单，上一次的输入不会带过来 */}

@@ -25,6 +25,8 @@ import type { QuotaKeys } from './db/quotaRepository'
 import type {
     CharacterPortrait,
     PortraitCopyResult,
+    PortraitGalleryItem,
+    PortraitGalleryResult,
     PortraitGenerateRequest,
     PortraitGenerateResult,
     PortraitInsertResult,
@@ -151,14 +153,57 @@ export class PortraitService {
      */
     public async list(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<PortraitListResult> {
         const { dirPath, characterId } = normalizePortraitListRequest(payload)
-        const root = resolveStorageRoot()
         const dirSegments = [...readProjectSegments(dirPath), PORTRAIT_DIR, characterId]
+        return { portraits: await this.readPortraits(dirSegments, toWebviewUri) }
+    }
+
+    /**
+     * 一次性列举作品下全部角色的设定图，供人物列表批量显示封面。
+     * 关键约束：只认符合安全标识的人物目录，工作目录里手工放入的其它子目录不参与；
+     * 每个角色仍复用同一套扫描实现，图片顺序与编辑弹窗里的图库完全一致。
+     */
+    public async listGallery(
+        payload: unknown,
+        toWebviewUri: (uri: vscode.Uri) => string,
+    ): Promise<PortraitGalleryResult> {
+        const dirPath = readProjectDirPath(payload, 'pressAi/listPortraitGallery')
+        const portraitRootSegments = [...readProjectSegments(dirPath), PORTRAIT_DIR]
+        let entries: [string, vscode.FileType][]
+        try {
+            entries = await vscode.workspace.fs.readDirectory(buildStorageUri(resolveStorageRoot(), portraitRootSegments))
+        } catch {
+            // 整个作品还没生成过任何设定图
+            return { galleries: {} }
+        }
+        const galleries: Record<string, PortraitGalleryItem[]> = {}
+        for (const [characterId, type] of entries) {
+            if (type !== vscode.FileType.Directory || !isPressCharacterId(characterId)) {
+                continue
+            }
+            const portraits = await this.readPortraits([...portraitRootSegments, characterId], toWebviewUri)
+            if (portraits.length === 0) {
+                continue
+            }
+            galleries[characterId] = portraits.map((portrait) => ({ id: portrait.id, url: portrait.url }))
+        }
+        return { galleries }
+    }
+
+    /**
+     * 扫描单个角色目录：目录不存在返回空数组，读取失败的文件跳过。
+     * 关键约束：不抛错——并发删除或权限问题只影响单张图，不能让整次列举失败。
+     */
+    private async readPortraits(
+        dirSegments: string[],
+        toWebviewUri: (uri: vscode.Uri) => string,
+    ): Promise<CharacterPortrait[]> {
+        const root = resolveStorageRoot()
         let entries: [string, vscode.FileType][]
         try {
             entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
         } catch {
             // 角色还没生成过图片，目录尚不存在
-            return { portraits: [] }
+            return []
         }
         const names = entries
             .filter(([name, type]) => type === vscode.FileType.File && PORTRAIT_FILE_PATTERN.test(name))
@@ -180,7 +225,7 @@ export class PortraitService {
         }
         // 最新在前：新生成的图出现在网格首位，与生成时占位框的位置一致
         portraits.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-        return { portraits }
+        return portraits
     }
 
     /**

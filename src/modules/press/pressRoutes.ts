@@ -69,6 +69,8 @@ export class PressRoutes {
                 return this.portraits.generate(payload, toWebviewUri)
             case 'pressAi/listPortraits':
                 return this.portraits.list(payload, toWebviewUri)
+            case 'pressAi/listPortraitGallery':
+                return this.portraits.listGallery(payload, toWebviewUri)
             case 'pressAi/copyPortrait':
                 return this.portraits.copyToClipboard(payload)
             case 'pressAi/insertPortrait':

@@ -5,7 +5,6 @@
  * 世界观、地理、核心概念、人物背景、卷级情节脉络与关键转折同样纳入往返，导入产出的字段不能写进文档就读不回来。
  */
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
 import type { CharacterCard, OutlineVolume, ProjectSetting } from '../src/webview/workflow/press/types'
 import { parseProjectWorkspace } from '../src/webview/workflow/press/document'
 import {
@@ -48,6 +47,8 @@ const CHARACTERS: CharacterCard[] = [
         role: 'protagonist',
         gender: 'male',
         age: '二十',
+        height: '一米七八',
+        bodyType: 'athletic',
         identity: '星月宗弟子',
         appearance: '清瘦，常带笑意',
         traits: ['隐忍', '护短'],
@@ -59,8 +60,8 @@ const CHARACTERS: CharacterCard[] = [
         arc: '从棋子到棋手',
         relation: '夏侯荻的师弟',
         portraits: [],
-        coverPortraitId: null,
-        portraitStyle: DEFAULT_PORTRAIT_STYLE,
+        coverPortraitId: 'portrait-test-1',
+        portraitStyle: 'guofeng',
     },
 ]
 
@@ -155,9 +156,15 @@ describe('草稿回写往返', () => {
             alias: '薛掌门',
             role: 'protagonist',
             gender: 'male',
+            age: '二十',
+            height: '一米七八',
+            bodyType: 'athletic',
             traits: ['隐忍', '护短'],
             background: '穿越前是娱乐公司策划，落地即被当作异端追杀。',
             catchphrase: '我来试试',
+            // 封面与画风必须能往返：只存 id，图片本体在 _portraits 下
+            portraitStyle: 'guofeng',
+            coverPortraitId: 'portrait-test-1',
         })
 
         expect(parsed.volumes).toHaveLength(1)

@@ -210,6 +210,28 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
         [updateWorkspace],
     )
 
+    /** 删除人物：同步清理章纲里的出场引用，避免回写后大纲指向一张不存在的人物卡 */
+    const handleDeleteCharacter = useCallback(
+        (characterId: string): void => {
+            updateWorkspace((previous) => ({
+                ...previous,
+                characters: previous.characters.filter((character) => character.id !== characterId),
+                volumes: previous.volumes.map((volume) => ({
+                    ...volume,
+                    chapters: volume.chapters.map((chapter) =>
+                        chapter.characterIds.includes(characterId)
+                            ? {
+                                  ...chapter,
+                                  characterIds: chapter.characterIds.filter((id) => id !== characterId),
+                              }
+                            : chapter,
+                    ),
+                })),
+            }))
+        },
+        [updateWorkspace],
+    )
+
     /** 建卡并返回新卡 id：人物页据此直接下钻到新人物详情 */
     const handleCreateCharacter = useCallback(
         (seed: CharacterSeed): string => {
@@ -393,6 +415,7 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                     dirPath={workspaceDir}
                     onCreateCharacter={handleCreateCharacter}
                     onChangeCharacter={handleUpdateCharacter}
+                    onDeleteCharacter={handleDeleteCharacter}
                     onExtractCharacters={(drafts) => handleExtractCharacters(workspace.characters, drafts)}
                 />
             )

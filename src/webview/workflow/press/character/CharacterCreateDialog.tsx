@@ -75,7 +75,7 @@ export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: Charac
                             id="character-create-name"
                             value={name}
                             placeholder="必填，建卡后可继续修改"
-                            className="h-7"
+                            className="h-8 px-3 py-1.5"
                             onChange={(event) => setName(event.target.value)}
                             onKeyDown={(event) => {
                                 if (event.key === 'Enter') {
@@ -115,7 +115,7 @@ export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: Charac
                             id="character-create-identity"
                             value={identity}
                             placeholder="如：落魄剑客、商会掌柜"
-                            className="h-7"
+                            className="h-8 px-3 py-1.5"
                             onChange={(event) => setIdentity(event.target.value)}
                         />
                     </Field>

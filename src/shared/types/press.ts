@@ -451,6 +451,23 @@ export interface PortraitListResult {
     portraits: CharacterPortrait[]
 }
 
+/**
+ * 画廊项：列表卡片只需要「哪张图、能显示」，不带相对路径与生成时间，
+ * 避免几十个角色一次列举时把无关字段全塞进 webview。
+ */
+export interface PortraitGalleryItem {
+    id: string
+    url: string
+}
+
+/**
+ * 作品全部角色的设定图画廊：键为人物 id，值为该角色目录下的图片（最新在前）。
+ * 列表页一次请求即可让所有卡片显示封面，不必为每个人物单独发起列举。
+ */
+export interface PortraitGalleryResult {
+    galleries: Record<string, PortraitGalleryItem[]>
+}
+
 /** 角色设定图插入请求：把已落盘的图片插入当前编辑器光标处 */
 export interface PortraitInsertRequest {
     path: string

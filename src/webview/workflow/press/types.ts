@@ -20,6 +20,9 @@ export type CharacterRole = 'protagonist' | 'supporting' | 'antagonist' | 'neutr
 /** 角色性别：男、女，建卡时必选其一，不提供未设定 */
 export type CharacterGender = 'male' | 'female'
 
+/** 角色体型：五档预设，用于外貌描写与设定图的比例约束；与分类一样以选项形式填写 */
+export type CharacterBodyType = 'slim' | 'average' | 'athletic' | 'burly' | 'plump'
+
 /** 目标读者：与作品 README 的 audience 字段取值一致 */
 export type Audience = '男频' | '女频'
 
@@ -76,6 +79,10 @@ export interface CharacterCard {
     /** 性别标签：男或女，外貌与设定图生成时作为硬约束 */
     gender: CharacterGender
     age: string
+    /** 身高：自由文本（如「一米七八」「178cm」），与年龄同排填写 */
+    height: string
+    /** 体型：预设档位之一，不明时取「匀称」 */
+    bodyType: CharacterBodyType
     identity: string
     /** 外貌描写：外观与气质的白描，供正文引用，可由 AI 依据其他字段生成 */
     appearance: string
@@ -90,7 +97,10 @@ export interface CharacterCard {
     relation: string
     /** 角色设定图：宿主生成并落盘的图片，path 为相对存储根口径，url 仅本次会话有效 */
     portraits: CharacterPortrait[]
-    /** 角色封面：指向 portraits 中的一项，null 表示未设置 */
+    /**
+     * 角色封面：指向 portraits 中的一项，null 表示未设置。
+     * 该字段会随人物卡写入角色设定.md——图片本身在磁盘，文档只记引用，重新打开作品后才能还原封面。
+     */
     coverPortraitId: string | null
     /** 生成角色卡时使用的画面风格，随人物卡保存，切换后只影响后续生成 */
     portraitStyle: PortraitStyle

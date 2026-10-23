@@ -171,7 +171,7 @@ export function CharacterPortraitPanel({
                 </div>
                 <div className="flex items-center justify-between gap-2">
                     <Select value={character.portraitStyle} disabled={isGenerating} onValueChange={handleStyleChange}>
-                        <SelectTrigger size="sm" className="h-7 w-24" aria-label="角色卡画面风格">
+                        <SelectTrigger size="sm" className="h-8 w-24" aria-label="角色卡画面风格">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>

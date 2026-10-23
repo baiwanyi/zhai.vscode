@@ -6,9 +6,11 @@
  * 章纲的 summary 表示计划、wordCount 表示已写事实，两者不互相推导；未识别的名称不进入 characterIds，
  * 避免正文引用到不存在的人物卡。
  */
-import { DEFAULT_PORTRAIT_STYLE, isPressCharacterId } from '@shared/types/press'
+import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId } from '@shared/types/press'
+import type { PortraitStyle } from '@shared/types/press'
 import type {
     Audience,
+    CharacterBodyType,
     CharacterCard,
     CharacterGender,
     CharacterRole,
@@ -256,6 +258,56 @@ function readSectionText(
     return text.length > limit ? `${text.slice(0, limit)}…` : text
 }
 
+/**
+ * 体型标签到枚举：文档里存中文标签，手写时也可能出现「偏瘦」「微胖」这类近义写法，
+ * 一并收进来做归一；都认不出时按「匀称」处理，避免人物卡因为一个词变成未定义。
+ */
+const BODY_TYPE_LABELS: Readonly<Record<string, CharacterBodyType>> = {
+    slim: 'slim',
+    纤细: 'slim',
+    偏瘦: 'slim',
+    瘦削: 'slim',
+    average: 'average',
+    匀称: 'average',
+    中等: 'average',
+    正常: 'average',
+    athletic: 'athletic',
+    健壮: 'athletic',
+    健硕: 'athletic',
+    强壮: 'athletic',
+    burly: 'burly',
+    魁梧: 'burly',
+    壮硕: 'burly',
+    plump: 'plump',
+    圆润: 'plump',
+    丰腴: 'plump',
+    微胖: 'plump',
+}
+
+/** 读取体型：未填写或写法未收录都回落「匀称」 */
+function toBodyType(value: string | undefined): CharacterBodyType {
+    return BODY_TYPE_LABELS[readLabel(value, 'average')] ?? 'average'
+}
+
+/** 画风中文标签反查：文档是给人读的，用户手改成「古风」时也要能认出来 */
+const PORTRAIT_STYLE_LABELS: Readonly<Record<string, PortraitStyle>> = {
+    智能匹配: 'auto',
+    日漫: 'anime',
+    古风: 'guofeng',
+    写实: 'realistic',
+    电影: 'cinematic',
+    摄影: 'photo',
+    像素风: 'pixel',
+    游戏原画: 'gameart',
+}
+
+/** 读取画风：先认白名单 key，再认中文标签，其余回落默认风格 */
+function toPortraitStyle(value: string | undefined): PortraitStyle {
+    const label = value?.trim() ?? ''
+    const fromKey = PORTRAIT_STYLES.find((item) => item === label)
+    return fromKey ?? PORTRAIT_STYLE_LABELS[label] ?? DEFAULT_PORTRAIT_STYLE
+}
+
 /** 读取中英混写标签的首段标识：如「protagonist（主角）」取 protagonist */
 function readLabel(value: string | undefined, fallback: string): string {
     if (value === undefined) {
@@ -385,6 +437,7 @@ function parseCharacters(text: string): CharacterCard[] {
         usedIds.add(id)
         const roleLabel = readLabel(values.get('分类'), 'supporting')
         const genderLabel = readLabel(values.get('性别'), 'male')
+        const coverId = values.get('封面') ?? ''
         cards.push({
             id,
             name,
@@ -392,6 +445,8 @@ function parseCharacters(text: string): CharacterCard[] {
             role: ROLE_LABELS[roleLabel] ?? 'supporting',
             gender: GENDER_LABELS[genderLabel] ?? 'male',
             age: values.get('年龄') ?? '',
+            height: values.get('身高') ?? '',
+            bodyType: toBodyType(values.get('体型')),
             identity: values.get('身份') ?? '',
             appearance: values.get('外貌') ?? '',
             traits: toList(values.get('特质') ?? values.get('性格')),
@@ -403,8 +458,9 @@ function parseCharacters(text: string): CharacterCard[] {
             arc: values.get('弧线') ?? '',
             relation: values.get('关系') ?? '',
             portraits: [],
-            coverPortraitId: null,
-            portraitStyle: DEFAULT_PORTRAIT_STYLE,
+            // 封面只存图片 id：图片本体在 _portraits 下，URL 由宿主按会话签发，不能写进文档
+            coverPortraitId: coverId.length > 0 && isPressCharacterId(coverId) ? coverId : null,
+            portraitStyle: toPortraitStyle(values.get('画风')),
         })
     }
     return cards

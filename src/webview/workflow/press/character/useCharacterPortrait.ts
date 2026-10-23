@@ -1,10 +1,11 @@
 /**
- * 角色设定图：向宿主提交人物卡与作品氛围快照，取回落盘后的图片信息，并提供列举与删除能力。
+ * 角色设定图：向宿主提交人物卡与作品氛围快照，取回落盘后的图片信息，并提供列举、画廊与删除能力。
  * 复用约定：请求经 webview 公共 bridge；出图常需 1~3 分钟，超时由宿主按 zhai.image.timeoutSeconds 裁决，
  * 前端只做 15 分钟兜底并在失败时主动取消宿主请求；结果里的 url 已由宿主用 asWebviewUri 转换，前端直接放进 img。
  * 关键约束：图片落在当前作品的 _portraits 目录下，因此所有请求都带作品目录，切换作品后不会串图；
  * 生成中不接受重复提交；磁盘是图片的唯一事实来源，关闭弹窗不取消在途请求，
  * 结果会在下次打开角色卡时由 list 从角色目录读回，因此这里不做卸载取消；
+ * listGallery 一次读回全部角色的图片，供列表卡片显示封面——不要为每张卡单独调用 list，那是 N 次扫盘；
  * 复制由宿主写系统剪贴板（webview 内写图片受 CSP 与权限限制），本层只接收结果；
  * 失败原因统一经 sonner 提示，不回传错误状态给组件渲染。
  */
@@ -12,6 +13,8 @@ import { useCallback, useState } from 'react'
 import type {
     CharacterPortrait,
     PortraitCopyResult,
+    PortraitGalleryItem,
+    PortraitGalleryResult,
     PortraitGenerateRequest,
     PortraitGenerateResult,
     PortraitInsertResult,
@@ -32,6 +35,8 @@ export interface CharacterPortraitState {
     generate: (character: CharacterCard, context: AppearanceContext) => Promise<CharacterPortrait | null>
     /** 扫描角色目录读回已落盘的图片，按生成时间升序；目录不存在返回空数组 */
     list: (characterId: string) => Promise<CharacterPortrait[]>
+    /** 一次读回作品下全部角色的图片，键为人物 id：供列表卡片批量显示封面 */
+    listGallery: () => Promise<Record<string, PortraitGalleryItem[]>>
     /** 由宿主把图片写入系统剪贴板；平台不支持时返回 reason=unsupported */
     copy: (path: string) => Promise<PortraitCopyResult | null>
     /** 把图片插入当前编辑器光标处；无活动编辑器时返回 reason=no-editor */
@@ -88,6 +93,17 @@ export function useCharacterPortrait(dirPath: string): CharacterPortraitState {
         [dirPath],
     )
 
+    const listGallery = useCallback(async (): Promise<Record<string, PortraitGalleryItem[]>> => {
+        try {
+            const result = await request<PortraitGalleryResult>('pressAi/listPortraitGallery', { dirPath })
+            return result.galleries
+        } catch (cause) {
+            // 列表封面属于增强信息：读取失败只提示，不影响卡片本身
+            toastError(cause)
+            return {}
+        }
+    }, [dirPath])
+
     const copy = useCallback(async (path: string): Promise<PortraitCopyResult | null> => {
         try {
             return await request<PortraitCopyResult>('pressAi/copyPortrait', { path })
@@ -116,7 +132,7 @@ export function useCharacterPortrait(dirPath: string): CharacterPortraitState {
         }
     }, [])
 
-    return { isGenerating, generate, list, copy, insert, remove, abort }
+    return { isGenerating, generate, list, listGallery, copy, insert, remove, abort }
 }
 
 /** 请求载荷：作品目录决定落盘位置，其余只上传已填字段；性别必填，直接取中文标签 */

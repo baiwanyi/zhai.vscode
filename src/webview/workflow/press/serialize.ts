@@ -6,7 +6,13 @@
  * 键名一旦改动就必须同步改 document.ts 的读取键，否则回写后页面内容会凭空丢失。
  */
 import type { PressApplyMeta } from '@shared/types/press'
-import { CHARACTER_GENDER_META, CHARACTER_ROLE_META, HOOK_OPTIONS, PLAN_STATUS_META } from './constants'
+import {
+    CHARACTER_BODY_TYPE_META,
+    CHARACTER_GENDER_META,
+    CHARACTER_ROLE_META,
+    HOOK_OPTIONS,
+    PLAN_STATUS_META,
+} from './constants'
 import type { CharacterCard, OutlineChapter, OutlineVolume, ProjectSetting } from './types'
 
 /** 设定段落的键值行：顺序固定，便于人工阅读与 diff */
@@ -48,7 +54,11 @@ export function serializeReadmeMeta(setting: ProjectSetting): PressApplyMeta {
     }
 }
 
-/** 单个角色块：一级标题起条，键名与 parseCharacters 一一对应 */
+/**
+ * 单个角色块：一级标题起条，键名与 parseCharacters 一一对应。
+ * 关键约束：封面与画风必须随块落盘——图片本体在 _portraits 下，文档只记引用；
+ * 不写这两行，重新打开作品后封面选择会丢失，列表与角色卡页都回到「未生成」状态。
+ */
 function buildCharacterBlock(character: CharacterCard): string {
     return [
         `# ${character.name}`,
@@ -58,6 +68,8 @@ function buildCharacterBlock(character: CharacterCard): string {
         `- 分类：${CHARACTER_ROLE_META[character.role].label}`,
         `- 性别：${CHARACTER_GENDER_META[character.gender].label}`,
         `- 年龄：${character.age}`,
+        `- 身高：${character.height}`,
+        `- 体型：${CHARACTER_BODY_TYPE_META[character.bodyType].label}`,
         `- 身份：${character.identity}`,
         `- 外貌：${character.appearance}`,
         `- 特质：${character.traits.join('、')}`,
@@ -68,6 +80,8 @@ function buildCharacterBlock(character: CharacterCard): string {
         `- 能力：${character.ability}`,
         `- 弧线：${character.arc}`,
         `- 关系：${character.relation}`,
+        `- 画风：${character.portraitStyle}`,
+        `- 封面：${character.coverPortraitId ?? ''}`,
     ].join('\n')
 }
 

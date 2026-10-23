@@ -7,6 +7,7 @@
 import type { PortraitStyle } from '@shared/types/press'
 import type {
     Audience,
+    CharacterBodyType,
     CharacterGender,
     CharacterRole,
     EndingKind,
@@ -90,6 +91,27 @@ export const CHARACTER_GENDER_META: Readonly<Record<CharacterGender, { label: st
 
 /** 性别选项顺序：男、女，必选其一 */
 export const CHARACTER_GENDER_ORDER: readonly CharacterGender[] = ['male', 'female']
+
+/**
+ * 体型文案与顺序：与角色分类一样以预设选项填写，避免「微胖 / 偏瘦」这类自由表述无法比较。
+ * 五档覆盖网文常见人物形态，写作时按档位决定动作描写与服装描写。
+ */
+export const CHARACTER_BODY_TYPE_META: Readonly<Record<CharacterBodyType, { label: string }>> = {
+    slim: { label: '纤细' },
+    average: { label: '匀称' },
+    athletic: { label: '健壮' },
+    burly: { label: '魁梧' },
+    plump: { label: '圆润' },
+}
+
+/** 体型选项顺序：由瘦到壮，与表单从左到右的阅读顺序一致 */
+export const CHARACTER_BODY_TYPE_ORDER: readonly CharacterBodyType[] = [
+    'slim',
+    'average',
+    'athletic',
+    'burly',
+    'plump',
+]
 
 /**
  * 角色卡画面风格选项：与番茄小说 AI 生图的「画面风格」分类对齐，
