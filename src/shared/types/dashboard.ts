@@ -32,9 +32,9 @@ export interface DashboardStats {
     totalWords: number
     /** 去重后的标签数 */
     tagCount: number
-    /** 各模块分布，按文件数倒序 */
+    /** 笔记目录（notes/）下的模块分布，按文件数倒序；press 等其它模块不计入 */
     moduleStats: ModuleStat[]
-    /** 最近更新的文件，按 mtime 倒序且置顶项置前 */
+    /** 最近更新的笔记（只含 notes/ 目录），按 mtime 倒序且置顶项置前 */
     recentFiles: RecentFile[]
     /** 上次全量构建时间，从未构建为 null */
     lastBuiltAt: string | null
