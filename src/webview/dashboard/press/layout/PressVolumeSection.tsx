@@ -170,10 +170,13 @@ export function PressVolumeSection({
                         aria-label={`打开章节 ${chapter.title}`}
                         onClick={() => onOpenChapter(chapter.path)}
                     >
-                        <ItemContent>
-                            <ItemTitle className="w-full truncate text-xs">{chapter.title}</ItemTitle>
+                        {/* min-w-0 让内容列可收缩；标题必须回到块级布局，flex 容器上 text-overflow 不生效（只会硬切） */}
+                        <ItemContent className="min-w-0">
+                            <ItemTitle className="line-clamp-none block w-full truncate text-xs">
+                                {chapter.title}
+                            </ItemTitle>
                         </ItemContent>
-                        <ItemActions>
+                        <ItemActions className="shrink-0">
                             <span className="text-xs text-muted-foreground">
                                 {formatWordCount(chapter.wordCount)} 字
                             </span>
