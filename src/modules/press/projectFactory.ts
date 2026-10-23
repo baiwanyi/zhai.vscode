@@ -115,7 +115,7 @@ function toDateString(date: Date): string {
 }
 
 /** 作品根文档：Frontmatter 承载目标读者、状态与目标字数，正文留给用户补背景与风格 */
-function buildReadmeContent(name: string, audience: PressAudience, createdAt: string): string {
+export function buildReadmeContent(name: string, audience: PressAudience, createdAt: string): string {
     return [
         '---',
         `title: ${name}`,
@@ -134,8 +134,11 @@ function buildReadmeContent(name: string, audience: PressAudience, createdAt: st
     ].join('\n')
 }
 
-/** 生成作品骨架文件清单：顺序固定，README 始终在首位，卷1 首章在末位 */
-export function buildProjectSkeleton(name: string, audience: PressAudience, now: Date): ProjectSkeletonFile[] {
+/**
+ * 生成四份作品级文档：README、大纲、角色设定、设定。
+ * 新建作品与导入作品共用同一份内容来源，避免两处模板分叉；不含任何章节文件。
+ */
+export function buildProjectDocuments(name: string, audience: PressAudience, now: Date): ProjectSkeletonFile[] {
     return [
         { relativePath: PROJECT_README_NAME, content: buildReadmeContent(name, audience, toDateString(now)) },
         { relativePath: '大纲.md', content: '# 大纲\n\n## 主线\n\n## 分卷规划\n' },
@@ -144,6 +147,13 @@ export function buildProjectSkeleton(name: string, audience: PressAudience, now:
             content: '# 角色设定\n\n> 每个角色以一级标题起条，便于以 [[角色设定#角色名]] 引用。\n',
         },
         { relativePath: '设定.md', content: '# 设定\n\n## 世界观\n\n## 地理\n\n## 组织势力\n' },
+    ]
+}
+
+/** 生成作品骨架文件清单：顺序固定，README 始终在首位，卷1 首章在末位 */
+export function buildProjectSkeleton(name: string, audience: PressAudience, now: Date): ProjectSkeletonFile[] {
+    return [
+        ...buildProjectDocuments(name, audience, now),
         {
             relativePath: `${PROJECT_CHAPTER_DIR}/${DEFAULT_VOLUME_DIR}/${buildChapterFileName(DEFAULT_VOLUME_ORDER)}`,
             content: buildChapterSkeleton(DEFAULT_VOLUME_ORDER),
@@ -231,9 +241,12 @@ export function buildChapterTitle(order: number): string {
     return `${String(order).padStart(CHAPTER_ORDER_WIDTH, '0')} ${DEFAULT_CHAPTER_TITLE}`
 }
 
-/** 生成章节文档体：Frontmatter + 本章介绍 / 正文 / 出场角色 / 金手指设定（press.md 1.3） */
-export function buildChapterSkeleton(order: number): string {
-    const title = buildChapterTitle(order)
+/**
+ * 生成章节文档体：Frontmatter + 本章介绍 / 正文 / 出场角色 / 金手指设定（press.md 1.3）。
+ * 导入作品与新建章节共用同一套模板，正文由调用方给出，避免两份 Frontmatter 生成逻辑分叉；
+ * body 为空时不留多余空行，保证与骨架输出逐字节一致。
+ */
+export function buildChapterDocument(title: string, body: string): string {
     return [
         '---',
         `title: ${title}`,
@@ -250,9 +263,15 @@ export function buildChapterSkeleton(order: number): string {
         '',
         '## 正文',
         '',
+        ...(body.length > 0 ? [body, ''] : []),
         '## 出场角色',
         '',
         '## 金手指设定',
         '',
     ].join('\n')
+}
+
+/** 生成空章节骨架：标题按两位序号命名，正文留白 */
+export function buildChapterSkeleton(order: number): string {
+    return buildChapterDocument(buildChapterTitle(order), '')
 }

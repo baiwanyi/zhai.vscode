@@ -1,13 +1,17 @@
 /**
- * 写作管理页（#/press）：页头返回入口 + 作品列表 + 添加作品弹窗，是仪表盘内的作品管理落点。
- * 数据与动作经 hooks/usePressProjects 下发，页面只做编排；操作结果由数据层经 sonner 反馈。
+ * 写作管理页（#/press）：页头返回入口 + 作品列表 + 添加作品弹窗 + TXT 导入确认弹窗，是仪表盘内的作品管理落点。
+ * 数据与动作经 hooks/usePressProjects 与 hooks/usePressImport 下发，页面只做编排；
+ * 操作结果由两个数据层经 sonner 反馈，导入进度按固定 toast id 原地更新。
  * 关键约束：点击作品交由路由外壳跳详情页（本页不直接打开 README）；创建成功即关闭弹窗；
+ * 导入确认弹窗以 token 作 key，切换候选文件即重挂载，表单回到该文件的建议值；
  * 页面内屏蔽浏览器右键菜单，与仪表盘首页保持一致。
  */
 import { useCallback, useState } from 'react'
 import { ScrollArea } from '@components/ui/scroll-area'
 import type { PressAudience } from '@shared/types/press'
+import { usePressImport } from './hooks/usePressImport'
 import { usePressProjects } from './hooks/usePressProjects'
+import { PressImportDialog } from './layout/PressImportDialog'
 import { PressProjectDialog } from './layout/PressProjectDialog'
 import { PressProjectList } from './layout/PressProjectList'
 import { PressTopBar } from './layout/PressTopBar'
@@ -22,6 +26,7 @@ interface DashboardPressProps {
 
 export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): JSX.Element {
     const { projects, status, error, isCreating, reload, createProject, rebuildIndex } = usePressProjects()
+    const { candidate, isImporting, pick, start, dismiss } = usePressImport()
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     /** 弹窗实例序号：每次打开都换 key，重挂载即把表单恢复到初始值，避免 effect 内同步写状态 */
     const [dialogKey, setDialogKey] = useState(0)
@@ -42,10 +47,30 @@ export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): 
         [createProject],
     )
 
+    const handleImport = useCallback(
+        async (name: string, audience: PressAudience): Promise<boolean> => start(name, audience),
+        [start],
+    )
+
+    const handleImportOpenChange = useCallback(
+        (open: boolean): void => {
+            if (!open) {
+                dismiss()
+            }
+        },
+        [dismiss],
+    )
+
     return (
         <div className="flex h-screen flex-col pt-3" onContextMenu={(event) => event.preventDefault()}>
             <div className="px-3">
-                <PressTopBar isCreating={isCreating} onBack={onBack} onAdd={openDialog} />
+                <PressTopBar
+                    isCreating={isCreating}
+                    isImporting={isImporting}
+                    onBack={onBack}
+                    onAdd={openDialog}
+                    onImport={() => void pick()}
+                />
             </div>
             <div className="relative min-h-0 flex-1 pt-3">
                 <ScrollArea className="h-full">
@@ -69,6 +94,13 @@ export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): 
                 isSubmitting={isCreating}
                 onOpenChange={setIsDialogOpen}
                 onSubmit={handleCreate}
+            />
+            <PressImportDialog
+                key={candidate?.token ?? 'idle'}
+                candidate={candidate}
+                isImporting={isImporting}
+                onOpenChange={handleImportOpenChange}
+                onSubmit={handleImport}
             />
         </div>
     )

@@ -1,10 +1,12 @@
 /**
  * 作品契约：仪表盘 /press 页的作品摘要、创建、打开、卷重命名/删除与章节删除/移动的请求结构，
- * 目标读者枚举，以及人物外貌生成（pressAi/aiAppearance）与角色设定图（pressAi/generatePortrait、listPortraits、deletePortrait）的契约。
+ * TXT 作品导入的候选、启动与进度结构，目标读者枚举，
+ * 以及人物外貌生成（pressAi/aiAppearance）与角色设定图（pressAi/generatePortrait、listPortraits、deletePortrait）的契约。
  * 使用方：仪表盘 Webview 的作品列表与宿主侧 DashboardViewProvider、modules/press 服务；
  * 外貌与角色卡契约同时被写作管理页的人物弹窗、宿主 PressAiService 与 PortraitService 使用。
  * 复用约定：dirPath 取相对存储根口径（press/{作品名}），与索引库 files.path 同源；作品名即目录名。
  * 关键约束：前端传入的作品名与目录路径均不可信，宿主须先经名称白名单校验或索引库回查后才可触达文件系统；
+ * 导入的源文件路径由宿主签发 token 保存，前端只回传 token，杜绝 Webview 伪造路径读取任意文件；
  * 目标读者枚举只此一份，前端选项与落盘 Frontmatter 共用，避免两处口径分叉；
  * 外貌生成入参同样不可信，宿主须重新裁剪长度后才会进入提示词。
  */
@@ -455,4 +457,103 @@ export interface PortraitCopyResult {
     copied: boolean
     /** unsupported：当前平台无法写入图片剪贴板；failed：写入过程失败 */
     reason?: 'unsupported' | 'failed'
+}
+
+/** 文本文件编码：导入前先探测，写入统一转为 UTF-8 且不带 BOM */
+export type PressImportEncoding = 'utf-8' | 'utf-8-bom' | 'gb18030' | 'utf-16le'
+
+/**
+ * 导入失败原因码：前端按码分发提示文案，不解析宿主返回的字符串。
+ * 取消不算失败，由 aborted 单列，前端静默处理。
+ */
+export type PressImportErrorCode =
+    | 'aborted'
+    | 'not-file'
+    | 'bad-extension'
+    | 'too-large'
+    | 'empty'
+    | 'binary'
+    | 'bad-encoding'
+    | 'no-chapter'
+    | 'single-chapter'
+    | 'bad-project-name'
+    | 'project-exists'
+    | 'write-failed'
+    | 'partially-failed'
+    | 'internal'
+
+/**
+ * press/import/pick 结果：用户取消时宿主返回 null。
+ * 源文件绝对路径不下发前端，改为宿主签发的一次性 token，避免 Webview 伪造路径读取任意文件。
+ */
+export interface PressImportCandidate {
+    /** 宿主签发的导入票据，press/import/start 原样回传，宿主据此取回源文件路径 */
+    token: string
+    /** 源文件名（含扩展名），仅用于展示 */
+    fileName: string
+    /** 建议作品名：已按作品名白名单清洗，用户可在确认弹窗内修改 */
+    suggestedName: string
+    /** 文件字节数 */
+    byteSize: number
+    /** 探测到的编码 */
+    encoding: PressImportEncoding
+    /** 识别到的章节数 */
+    chapterCount: number
+    /** 识别到的卷数：0 表示原文未分卷，章节平铺在 Chapter/ 下 */
+    volumeCount: number
+    /** 正文字符数（与索引库口径一致：去 Markdown 标记与空白） */
+    charCount: number
+    /** 首章标题，用于确认解析结果是否符合预期 */
+    firstChapterTitle: string
+    /** 末章标题 */
+    lastChapterTitle: string
+    /** 解析告警：前导内容丢弃、疑似重复章节等，逐条展示给用户 */
+    warnings: string[]
+}
+
+/** press/import/start 请求：token 换源路径，作品名与目标读者由用户在确认弹窗内确定 */
+export interface PressImportStartRequest {
+    token: string
+    name: string
+    audience?: string
+}
+
+/** press/import/start 响应：任务立即返回，进度与终态经 press-import 通道广播 */
+export interface PressImportStartResult {
+    jobId: string
+}
+
+/** 导入任务状态：running 期间按节流推送，completed / failed / cancelled 为终态 */
+export type PressImportStatus = 'running' | 'completed' | 'failed' | 'cancelled'
+
+/** 导入进度与终态：载荷挂在 state 消息的 press-import 通道上 */
+export interface PressImportProgress {
+    jobId: string
+    status: PressImportStatus
+    /** 已处理章节数 */
+    done: number
+    /** 总章节数 */
+    total: number
+    /** 已写入的正文字符数 */
+    writtenChars: number
+    /** 写入失败的章节数，终态时用于提示部分失败 */
+    failedChapters: number
+    /** 终态时的作品目录，形如 press/{作品名} */
+    dirPath: string
+    /** 终态为 failed 时的原因码 */
+    code?: PressImportErrorCode
+    /** 面向用户的提示文案，running 期间为阶段描述 */
+    message: string
+}
+
+/** 判断是否为合法的导入启动请求（类型收窄辅助）：token 与作品名均须非空，目标读者可缺省 */
+export function isPressImportStartRequest(payload: unknown): payload is PressImportStartRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { token?: unknown; name?: unknown; audience?: unknown }
+    const isValidToken = typeof candidate.token === 'string' && candidate.token.length > 0
+    const isValidName = typeof candidate.name === 'string' && candidate.name.trim().length > 0
+    const isValidAudience = candidate.audience === undefined || typeof candidate.audience === 'string'
+    return isValidToken && isValidName && isValidAudience
 }

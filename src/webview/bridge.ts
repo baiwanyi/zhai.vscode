@@ -19,6 +19,20 @@ interface PendingEntry {
     timer: ReturnType<typeof setTimeout>
 }
 
+/**
+ * 宿主返回的业务错误：保留原因码，供调用方按码分发提示文案。
+ * 仍继承 Error，既有 toastError 之类的兜底展示无需改动。
+ */
+export class HostRequestError extends Error {
+    public constructor(
+        public readonly code: string,
+        message: string,
+    ) {
+        super(message)
+        this.name = 'HostRequestError'
+    }
+}
+
 const pendingRequests: Map<string, PendingEntry> = new Map()
 const DEFAULT_TIMEOUT_MS = 10_000
 
@@ -31,7 +45,7 @@ interface IncomingMessage {
     reqId?: string
     ok?: boolean
     payload?: unknown
-    error?: { message?: string }
+    error?: { code?: string; message?: string }
     delta?: unknown
 }
 
@@ -61,7 +75,8 @@ window.addEventListener('message', (event: MessageEvent) => {
     clearTimeout(entry.timer)
     pendingRequests.delete(message.reqId)
     if (message.ok === false) {
-        entry.reject(new Error(message.error?.message ?? '宿主返回未知错误'))
+        const code = message.error?.code ?? 'unknown'
+        entry.reject(new HostRequestError(code, message.error?.message ?? '宿主返回未知错误'))
         return
     }
     entry.resolve(message.payload)

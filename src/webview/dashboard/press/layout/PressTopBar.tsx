@@ -1,19 +1,23 @@
 /**
- * 写作管理页头：左侧返回仪表盘概览，下方为全宽「添加作品」入口。
- * 复用 @components/ui/button 与 lucide 图标；按钮形态与仪表盘顶部操作区保持一致的全宽胶囊。
- * 关键约束：返回是全宽按钮之外唯一的导航入口，不与页面内其他动作重叠；创建进行中禁用添加入口。
+ * 写作管理页头：左侧返回仪表盘概览，下方为并排的「添加作品」与「导入」入口。
+ * 复用 @components/ui/button 与 lucide 图标；两个入口共用全宽胶囊形态，视觉上属于同一组操作。
+ * 关键约束：返回是全宽按钮之外唯一的导航入口，不与页面内其他动作重叠；
+ * 新建与导入互斥，任一进行中同时禁用两个入口，避免并发写同一个作品目录。
  */
-import { ArrowLeft, Plus } from 'lucide-react'
+import { ArrowLeft, FileUp, Plus } from 'lucide-react'
 import { Button } from '@components/ui/button'
 import type { JSX } from 'react'
 
 interface PressTopBarProps {
     isCreating: boolean
+    isImporting: boolean
     onBack: () => void
     onAdd: () => void
+    onImport: () => void
 }
 
-export function PressTopBar({ isCreating, onBack, onAdd }: PressTopBarProps): JSX.Element {
+export function PressTopBar({ isCreating, isImporting, onBack, onAdd, onImport }: PressTopBarProps): JSX.Element {
+    const isBusy = isCreating || isImporting
     return (
         <div className="flex flex-col gap-2">
             <div className="flex items-center gap-1">
@@ -28,16 +32,28 @@ export function PressTopBar({ isCreating, onBack, onAdd }: PressTopBarProps): JS
                 </Button>
                 <span className="font-heading text-sm font-semibold">写作管理</span>
             </div>
-            <Button
-                variant="outline"
-                size="lg"
-                className="w-full justify-start rounded-full"
-                disabled={isCreating}
-                onClick={onAdd}
-            >
-                <Plus data-icon="inline-start" />
-                添加作品
-            </Button>
+            <div className="flex gap-2">
+                <Button
+                    variant="outline"
+                    size="lg"
+                    className="flex-1 justify-start rounded-full"
+                    disabled={isBusy}
+                    onClick={onAdd}
+                >
+                    <Plus data-icon="inline-start" />
+                    添加作品
+                </Button>
+                <Button
+                    variant="outline"
+                    size="lg"
+                    className="flex-1 justify-start rounded-full"
+                    disabled={isBusy}
+                    onClick={onImport}
+                >
+                    <FileUp data-icon="inline-start" />
+                    导入
+                </Button>
+            </div>
         </div>
     )
 }

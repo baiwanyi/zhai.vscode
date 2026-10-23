@@ -33,6 +33,9 @@ import type {
     CreatedPressVolume,
     MovedPressChapter,
     OpenPressProjectResult,
+    PressImportCandidate,
+    PressImportProgress,
+    PressImportStartResult,
     PressProjectDetail,
     RenamedPressVolume,
 } from '../../shared/types/press'
@@ -49,11 +52,13 @@ import {
     isMovePressChapterRequest,
     isOpenPressChapterRequest,
     isPressDirPath,
+    isPressImportStartRequest,
     isRenamePressVolumeRequest,
     readPressAudience,
 } from '../../shared/types/press'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { createAndOpenNote, openNoteByPath } from '../note/noteService'
+import { ImportError, PressImportService } from '../press/importService'
 import {
     hasProjectFile,
     hasProjectFiles,
@@ -82,6 +87,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private activeNoteListener: vscode.Disposable | null = null
     /** 索引状态监听：面板存活期间把索引变更转给 Webview，使列表跟随文件编辑收敛 */
     private indexStatusListener: vscode.Disposable | null = null
+    /** 作品导入服务：持有待导入文件 token 与进行中的任务，长任务进度经 state 通道广播 */
+    private readonly importService: PressImportService
 
     public constructor(
         private readonly extensionUri: vscode.Uri,
@@ -90,7 +97,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         private readonly pins: PinStore,
         private readonly indexStatus: vscode.Event<IndexStatus>,
         private readonly workflowRouter: WorkflowRouter,
-    ) {}
+    ) {
+        this.importService = new PressImportService(indexService)
+    }
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
         webviewView.webview.options = {
@@ -130,16 +139,18 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         }
         const { reqId, method, payload } = message
         try {
-            const result = await this.invoke(method, payload)
+            const result = await this.invoke(view, method, payload)
             this.post(view, { type: 'response', reqId, ok: true, payload: result })
         } catch (error) {
             const text = error instanceof Error ? error.message : String(error)
+            // 导入类错误带业务原因码，前端据此分发提示文案；其余仍以协议方法名兜底
+            const code = error instanceof ImportError ? error.code : method
             logger.error(`Webview 请求处理失败：${method}`, error)
-            this.post(view, { type: 'response', reqId, ok: false, error: { code: method, message: text } })
+            this.post(view, { type: 'response', reqId, ok: false, error: { code, message: text } })
         }
     }
 
-    private invoke(method: string, payload: unknown): Promise<unknown> {
+    private invoke(view: vscode.WebviewView, method: string, payload: unknown): Promise<unknown> {
         switch (method) {
             case 'dashboard/stats': {
                 return Promise.resolve(this.buildStats())
@@ -194,6 +205,15 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             }
             case 'press/openChapter': {
                 return this.openPressChapter(payload)
+            }
+            case 'press/import/pick': {
+                return this.pickPressImport()
+            }
+            case 'press/import/start': {
+                return this.startPressImport(view, payload)
+            }
+            case 'press/import/cancel': {
+                return Promise.resolve(this.cancelPressImport(payload))
             }
             case 'index/rebuild': {
                 void this.indexService.fullRebuild()
@@ -437,6 +457,70 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         }
         await openChapterByPath(payload.path)
         return { opened: true }
+    }
+
+    /**
+     * 选择导入文件：宿主弹原生文件选择框并完成安全校验与试解析，用户取消时返回 null。
+     * 安全约束：源文件绝对路径不下发前端，改由导入服务签发 token，启动时凭 token 换回路径。
+     */
+    private async pickPressImport(): Promise<PressImportCandidate | null> {
+        return this.importService.pick()
+    }
+
+    /**
+     * 启动导入：立即回传 jobId，进度与终态经 press-import 通道广播。
+     * 关键约束：不 await 任务本体，避免大文件解析撑爆请求超时；
+     * 导入失败时把业务原因码一并广播，前端据此分发提示文案。
+     */
+    private startPressImport(view: vscode.WebviewView, payload: unknown): Promise<PressImportStartResult> {
+        if (!isPressImportStartRequest(payload)) {
+            throw new Error('press/import/start 参数非法：token 与作品名须为非空字符串')
+        }
+        const jobId = `job-${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`
+        const emit = (progress: PressImportProgress): void => {
+            this.post(view, { type: 'state', channel: 'press-import', payload: progress })
+        }
+        void this.importService
+            .start(jobId, payload.token, payload.name, readPressAudience(payload.audience), emit)
+            .then((outcome) => {
+                emit({
+                    jobId,
+                    status: outcome.status,
+                    done: outcome.done,
+                    total: outcome.total,
+                    writtenChars: outcome.writtenChars,
+                    failedChapters: outcome.failedChapters,
+                    dirPath: outcome.dirPath,
+                    ...(outcome.code === undefined ? {} : { code: outcome.code }),
+                    message: outcome.message,
+                })
+            })
+            .catch((error: unknown) => {
+                const message = error instanceof Error ? error.message : String(error)
+                logger.error(`导入任务异常：${jobId}`, error)
+                emit({
+                    jobId,
+                    status: 'failed',
+                    done: 0,
+                    total: 0,
+                    writtenChars: 0,
+                    failedChapters: 0,
+                    dirPath: '',
+                    code: error instanceof ImportError ? error.code : 'internal',
+                    message,
+                })
+            })
+        return Promise.resolve({ jobId })
+    }
+
+    /** 取消导入：按 jobId 匹配，避免上一次任务的取消请求误停当前任务 */
+    private cancelPressImport(payload: unknown): { cancelled: boolean } {
+        const jobId =
+            typeof payload === 'object' && payload !== null ? (payload as { jobId?: unknown }).jobId : undefined
+        if (typeof jobId !== 'string' || jobId.length === 0) {
+            throw new Error('press/import/cancel 参数非法：jobId 须为非空字符串')
+        }
+        return this.importService.cancel(jobId)
     }
 
     /**
