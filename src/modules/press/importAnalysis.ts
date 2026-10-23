@@ -422,11 +422,15 @@ function toTsvField(value: string): string {
     return value.replace(/[\t\r\n]+/gu, ' ').trim()
 }
 
-/** 从章节文档中截出正文：优先取 `## 正文` 到下一个二级标题之间的内容 */
+/**
+ * 从章节文档中截出正文：Frontmatter 之后即正文，正文之外的元信息不再占段落。
+ * 关键约束：旧版四区块文档（`## 正文` 到下一个二级标题）仍须正确抽取，
+ * 因此先探测区块标记，命中则按区块截取，未命中才视为纯正文。
+ */
 function extractBody(body: string): string {
     const start = body.indexOf('## 正文')
     if (start < 0) {
-        // 没有四区块结构时退化为去掉首个一级标题后的全文
+        // 纯正文：仍兼容首行残留一级标题的手写文档
         return body.replace(/^#\s+.+$/mu, '').trim()
     }
     const rest = body.slice(start + '## 正文'.length)

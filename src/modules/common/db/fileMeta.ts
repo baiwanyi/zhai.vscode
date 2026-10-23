@@ -55,11 +55,30 @@ export function splitFrontmatter(content: string): { frontmatter: string; body: 
     return { frontmatter: content.slice(4, end), body: content.slice(end + 4) }
 }
 
-/** 提取标题：Frontmatter title 优先，其次首个 `# ` 行，兜底文件名由调用方补 */
+/** 还原 Frontmatter 标量的包裹引号与转义，与章节文档序列化规则镜像 */
+function unwrapFrontmatterScalar(value: string): string {
+    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+        return value
+            .slice(1, -1)
+            .replace(/\\(["\\])/gu, '$1')
+            .replace(/\\n/gu, '\n')
+    }
+    if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
+        return value.slice(1, -1).replace(/''/gu, "'")
+    }
+    return value
+}
+
+/**
+ * 提取标题：Frontmatter title 优先，其次首个 `# ` 行，兜底文件名由调用方补。
+ * 关键约束：冒号后只吃行内空白（`[ \t]`），否则空 title 会把下一行当标题；
+ * 章节列表标题因此直接来自 Frontmatter title，正文不必再写一级标题。
+ */
 export function parseTitle(body: string, frontmatter: string): string {
-    const titleMatch = /^title:\s*(.+)$/m.exec(frontmatter)
-    if (titleMatch?.[1] !== undefined) {
-        return titleMatch[1].trim().replace(/^['"]|['"]$/g, '')
+    const titleMatch = /^title:[ \t]*(.*)$/m.exec(frontmatter)
+    const declared = titleMatch?.[1] === undefined ? '' : unwrapFrontmatterScalar(titleMatch[1].trim())
+    if (declared.length > 0) {
+        return declared
     }
     const heading = /^#\s+(.+)$/m.exec(body)
     if (heading?.[1] !== undefined) {

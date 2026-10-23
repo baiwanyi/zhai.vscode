@@ -84,7 +84,7 @@ export interface OpenPressProjectResult {
 export interface PressChapterEntry {
     /** 相对存储根路径，形如 press/剑来/Chapters/01-初见.md */
     path: string
-    /** 展示标题：文档内标题优先，缺失时用去序号前缀的文件名 */
+    /** 展示标题：直接取 Frontmatter title，缺失时用去序号前缀的文件名 */
     title: string
     /** 文档字数，取自索引库 */
     wordCount: number

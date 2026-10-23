@@ -3,7 +3,8 @@
  * 骨架对齐 docs/modules/press.md 1.2/1.3：README.md + 大纲.md + 角色设定.md + 设定.md + Chapters/；
  * 章节文件按「两位序号-标题.md」命名，分卷目录按「两位序号-卷名」命名。
  * 关键约束：作品名同时作为目录名，须满足跨平台约束（非法字符、系统保留名、首尾空格与点）；
- * 本模块只产出相对路径与内容，落盘与索引由 projectService 负责；README 的 Frontmatter title 供索引器取标题；
+ * 本模块只产出相对路径与内容，落盘与索引由 projectService 负责；README 与章节的 Frontmatter title 供索引器取标题；
+ * 章节文档除正文外的信息（本章介绍 / 出场角色 / 金手指设定 / 字数目标）全部落在 Frontmatter，正文区只写小说文本；
  * 新作品自带卷1 与首章，保证详情页一进去就有可写章节，不留空态。
  */
 import type { PressAudience } from '../../shared/types/press'
@@ -247,34 +248,101 @@ export function buildChapterTitle(order: number): string {
     return `${String(order).padStart(CHAPTER_ORDER_WIDTH, '0')} ${DEFAULT_CHAPTER_TITLE}`
 }
 
+/** 章节状态：与 README 状态口径一致，正文之外的元信息统一落在 Frontmatter */
+export type ChapterStatus = 'draft' | 'revising' | 'pending' | 'published'
+
 /**
- * 生成章节文档体：Frontmatter + 本章介绍 / 正文 / 出场角色 / 金手指设定（press.md 1.3）。
- * 导入作品与新建章节共用同一套模板，正文由调用方给出，避免两份 Frontmatter 生成逻辑分叉；
- * body 为空时不留多余空行，保证与骨架输出逐字节一致。
+ * 章节 Frontmatter：标题、本章介绍、出场角色与金手指设定全部随 Frontmatter 落盘，
+ * 正文区只保留小说文本，导出与 AI 取文无需再剥段落标题。
  */
-export function buildChapterDocument(title: string, body: string): string {
-    return [
+export interface ChapterFrontmatter {
+    /** 章节标题：作品管理章节列表直接读取该字段展示 */
+    title: string
+    status: ChapterStatus
+    /** 本章介绍 / 章纲梗概 */
+    summary: string
+    /** 出场角色名：与 角色设定.md 的 `# 锚点` 同名 */
+    characters: string[]
+    /** 金手指设定名 */
+    goldenFingers: string[]
+    /** 计划字数 */
+    wordGoal: number
+}
+
+/** 新建章节的默认 Frontmatter：除标题外一律留空，不伪造简介与设定 */
+export function buildChapterFrontmatter(title: string): ChapterFrontmatter {
+    return { title, status: 'draft', summary: '', characters: [], goldenFingers: [], wordGoal: 0 }
+}
+
+/** 裸写会被 YAML 解析成结构符号的起始字符 */
+const FRONTMATTER_UNSAFE_START_PATTERN = /^[\s>|*&!%@`#,[\]{}?:'"-]/u
+
+/** 无引号时会破坏结构的行内片段：`a: b` 会被当映射键，` #` 会开启注释 */
+const FRONTMATTER_UNSAFE_INLINE_PATTERN = /:(?:\s|$)|\s#/u
+
+/** 会被 YAML 解析成非字符串的纯量 */
+const FRONTMATTER_NON_STRING_PATTERN = /^(?:-?\d+(?:\.\d+)?|true|false|null|~)$/iu
+
+/**
+ * Frontmatter 标量序列化：可读性优先，普通文本裸写；
+ * 含 YAML 结构字符、换行或会被解析成数字 / 布尔的文本时用双引号包裹并转义。
+ * 关键约束：转义后由 fileMeta.parseTitle 反向还原，保证「写入 → 列表展示」闭环。
+ */
+function formatFrontmatterScalar(value: string, inFlow: boolean): string {
+    const shouldQuote =
+        FRONTMATTER_UNSAFE_START_PATTERN.test(value) ||
+        FRONTMATTER_UNSAFE_INLINE_PATTERN.test(value) ||
+        FRONTMATTER_NON_STRING_PATTERN.test(value) ||
+        /[\r\n]/u.test(value) ||
+        (inFlow && /[,[\]{}]/u.test(value))
+    if (!shouldQuote) {
+        return value
+    }
+    return `"${value.replace(/\\/gu, '\\\\').replace(/"/gu, '\\"').replace(/\r?\n/gu, '\\n')}"`
+}
+
+/** 键值行：值为空时不留尾随空格，保证骨架输出稳定 */
+function formatFrontmatterLine(key: string, value: string): string {
+    return value.length > 0 ? `${key}: ${value}` : `${key}:`
+}
+
+/** 内联数组：空数组写 `[]`，元素按标量规则转义，含逗号等流式符号时加引号避免被拆项 */
+function formatFrontmatterList(values: readonly string[]): string {
+    const items = values
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+        .map((value) => formatFrontmatterScalar(value, true))
+    return items.length === 0 ? '[]' : `[${items.join(', ')}]`
+}
+
+/**
+ * 生成章节文档：Frontmatter 承载标题、状态、本章介绍、出场角色、金手指与字数目标，
+ * 正文区只写小说文本（press.md 1.3）。
+ * 关键约束：导入作品与新建章节共用同一套模板，避免两份 Frontmatter 逻辑分叉；
+ * 正文结尾统一收敛为一个换行，空正文不留多余空行。
+ */
+export function buildChapterDocument(
+    title: string,
+    body: string,
+    overrides: Partial<Omit<ChapterFrontmatter, 'title'>> = {},
+): string {
+    const frontmatter: ChapterFrontmatter = { ...buildChapterFrontmatter(title), ...overrides }
+    const lines = [
         '---',
-        `title: ${title}`,
-        'status: draft',
-        'summary:',
-        'characters: []',
-        'goldenFingers: []',
-        'wordGoal: 0',
+        formatFrontmatterLine('title', formatFrontmatterScalar(frontmatter.title, false)),
+        `status: ${frontmatter.status}`,
+        formatFrontmatterLine('summary', formatFrontmatterScalar(frontmatter.summary, false)),
+        `characters: ${formatFrontmatterList(frontmatter.characters)}`,
+        `goldenFingers: ${formatFrontmatterList(frontmatter.goldenFingers)}`,
+        `wordGoal: ${String(frontmatter.wordGoal)}`,
         '---',
         '',
-        `# ${title}`,
-        '',
-        '## 本章介绍',
-        '',
-        '## 正文',
-        '',
-        ...(body.length > 0 ? [body, ''] : []),
-        '## 出场角色',
-        '',
-        '## 金手指设定',
-        '',
-    ].join('\n')
+    ]
+    const trimmedBody = body.replace(/\s+$/u, '')
+    if (trimmedBody.length > 0) {
+        lines.push(trimmedBody, '')
+    }
+    return lines.join('\n')
 }
 
 /** 生成空章节骨架：标题按两位序号命名，正文留白 */

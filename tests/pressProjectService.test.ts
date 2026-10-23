@@ -2,7 +2,8 @@
  * projectService / projectFactory 单元测试：覆盖作品名校验、骨架落盘与索引触发、重名拒绝与打开路径校验，
  * 卷的重命名（保留序号前缀、同步索引）与删除（移入回收站、按前缀清理索引），
  * 整部作品的删除（回收站优先、回收站不可用时降级永久删除并回传结果），
- * 以及章节的删除（清理单文件索引、拦下脏文档）与跨卷移动（重排序号、冲突递增、递归到未分卷）。
+ * 章节的删除（清理单文件索引、拦下脏文档）与跨卷移动（重排序号、冲突递增、递归到未分卷），
+ * 以及章节文档模板（Frontmatter 承载全部元信息、正文区只写正文）与 Frontmatter 标题回读。
  * 虚拟磁盘、目录与可打开文档由 vscode 测试桩承接，回收站可用性由桩注入，不触达真实文件系统；
  * 路径断言统一用 node:path 规范化，与实现一样规避分隔符差异。
  */
@@ -22,7 +23,14 @@ import {
     setTrashAvailable,
 } from './stubs/vscode'
 import type { ProjectIndexer } from '../src/modules/press/projectService'
-import { buildRenamedVolumeDirName, validateProjectName, validateVolumeName } from '../src/modules/press/projectFactory'
+import { parseFileMeta, splitFrontmatter } from '../src/modules/common/db/fileMeta'
+import {
+    buildChapterDocument,
+    buildChapterSkeleton,
+    buildRenamedVolumeDirName,
+    validateProjectName,
+    validateVolumeName,
+} from '../src/modules/press/projectFactory'
 import {
     createChapter,
     createProject,
@@ -328,6 +336,51 @@ describe('openChapterByPath', () => {
         await expect(openChapterByPath('notes/a/Chapters/x.md')).rejects.toThrow('章节路径非法')
         await expect(openChapterByPath('press/../x/Chapters/a.md')).rejects.toThrow('章节路径非法')
         expect(readOpenedDocumentPaths()).toEqual([])
+    })
+})
+
+describe('buildChapterDocument', () => {
+    it('除正文外的信息全部落在 Frontmatter，正文区不再有标题区块', () => {
+        const document = buildChapterSkeleton(1)
+        const { frontmatter, body } = splitFrontmatter(document)
+
+        expect(frontmatter).toContain('title: 01 未命名章节')
+        expect(frontmatter).toContain('status: draft')
+        expect(frontmatter).toContain('summary:')
+        expect(frontmatter).toContain('characters: []')
+        expect(frontmatter).toContain('goldenFingers: []')
+        expect(frontmatter).toContain('wordGoal: 0')
+        expect(body.trim()).toBe('')
+        expect(document).not.toContain('# 01 未命名章节')
+        expect(document).not.toContain('## 本章介绍')
+        expect(document).not.toContain('## 正文')
+        expect(document).not.toContain('## 出场角色')
+        expect(document).not.toContain('## 金手指设定')
+    })
+
+    it('本章介绍 / 出场角色 / 金手指写入 Frontmatter，正文保持纯小说文本', () => {
+        const document = buildChapterDocument('第1章 开端', '他推门而入。\n\n天很黑。', {
+            status: 'published',
+            summary: '主角初到异世',
+            characters: ['陆远', '李广汉'],
+            goldenFingers: ['洞察之眼'],
+            wordGoal: 4000,
+        })
+        const { frontmatter, body } = splitFrontmatter(document)
+
+        expect(frontmatter).toContain('status: published')
+        expect(frontmatter).toContain('summary: 主角初到异世')
+        expect(frontmatter).toContain('characters: [陆远, 李广汉]')
+        expect(frontmatter).toContain('goldenFingers: [洞察之眼]')
+        expect(frontmatter).toContain('wordGoal: 4000')
+        expect(body.trim()).toBe('他推门而入。\n\n天很黑。')
+    })
+
+    it('标题含 YAML 特殊字符时加引号，索引仍按原样取到 Frontmatter title', () => {
+        const document = buildChapterDocument('第1章 开端: 倍率 #2', '正文。')
+
+        expect(document).toContain('title: "第1章 开端: 倍率 #2"')
+        expect(parseFileMeta(document, '01-开端.md').title).toBe('第1章 开端: 倍率 #2')
     })
 })
 
