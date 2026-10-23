@@ -9,6 +9,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import type {
+    CoverDeleteRequest,
     CoverDeleteResult,
     CoverGenerateRequest,
     CoverGenerateResult,
@@ -133,20 +134,25 @@ export function useSettingCover(dirPath: string): SettingCoverState {
         [dirPath],
     )
 
-    const remove = useCallback(async (path: string): Promise<boolean> => {
-        try {
-            const result = await request<CoverDeleteResult>('pressAi/deleteCover', { path })
-            if (!result.removed) {
+    const remove = useCallback(
+        async (path: string): Promise<boolean> => {
+            try {
+                // 宿主需要作品目录做归属校验：只有该作品 Cover 下的路径才允许删除
+                const payload: CoverDeleteRequest = { dirPath, path }
+                const result = await request<CoverDeleteResult>('pressAi/deleteCover', payload)
+                if (!result.removed) {
+                    return false
+                }
+                setCovers((previous) => previous.filter((item) => item.path !== path))
+                setSelectedId(result.selectedId)
+                return true
+            } catch (cause) {
+                toastError(cause)
                 return false
             }
-            setCovers((previous) => previous.filter((item) => item.path !== path))
-            setSelectedId(result.selectedId)
-            return true
-        } catch (cause) {
-            toastError(cause)
-            return false
-        }
-    }, [])
+        },
+        [dirPath],
+    )
 
     return { covers, selectedId, isLoading, isGenerating, generate, save, select, remove }
 }

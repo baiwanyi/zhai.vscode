@@ -581,6 +581,14 @@ export interface CoverSelectRequest {
     path: string
 }
 
+/** 删除封面请求：作品目录用于校验路径归属，path 为 listCover 返回的相对路径 */
+export interface CoverDeleteRequest {
+    /** 作品目录（press/{作品名}） */
+    dirPath: string
+    /** 相对存储根的封面路径 */
+    path: string
+}
+
 /** 设为封面结果 */
 export interface CoverSelectResult {
     selectedId: string

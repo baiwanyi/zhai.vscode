@@ -126,9 +126,10 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     }
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
+        // 存储根加入资源白名单：作品封面落盘后需要经 asWebviewUri 供列表缩略图加载
         webviewView.webview.options = {
             enableScripts: true,
-            localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview')],
+            localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'), resolveStorageRoot()],
         }
         void this.renderHtml(webviewView)
         webviewView.webview.onDidReceiveMessage(
