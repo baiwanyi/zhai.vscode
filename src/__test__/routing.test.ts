@@ -8,7 +8,7 @@ import { readModuleLabel, resolveWorkflow } from '../webview/workflow/core/routi
 
 /** 构造路由事实：仅覆盖用例关心的字段 */
 function buildContext(patch: Partial<WorkflowContextState>): WorkflowContextState {
-    return { scene: 'idle', module: 'root', selectedModule: null, ...patch }
+    return { scene: 'idle', module: 'root', selectedModule: null, projectDir: null, ...patch }
 }
 
 describe('resolveWorkflow', () => {

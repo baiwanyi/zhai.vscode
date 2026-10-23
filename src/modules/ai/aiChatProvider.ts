@@ -1,11 +1,12 @@
 /**
  * AI 对话 Webview 面板（宿主侧）：加载 React 构建产物，路由 ai/* 与 workflow/* 协议到对话服务与工作流路由，
- * 并把 naming/* 与 pressAi/* 前缀分别委托给取名路由与写作管理 AI 路由（写作管理页的分区复用同一视图）。
+ * 并把 naming/* 与写作管理协议（pressAi/* 生成类、press/workspace 与 press/open 作品类）委托给各自路由。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
  * 上下文增删走 ai/context*，写回走 ai/writeState / ai/setMode / ai/applyWrite，state 广播以 channel 区分
- * ai（runtime / context / writeTarget）与 workflow（路由事实）。
+ * ai（runtime / context / writeTarget）与 workflow（路由事实，含当前作品目录）。
  * 关键约束：上下文移除与写回只接受宿主生成的 id（不接受路径与范围入参），所有 Webview 入参逐字段收窄后再用；
- * 场景判定统一由 WorkflowRouter 产出，取名协议只做前缀转发，本层不解析取名条件。
+ * 场景判定统一由 WorkflowRouter 产出，取名协议只做前缀转发，本层不解析取名条件；
+ * 作品协议只放行工作台需要的读取与打开，仪表盘的作品写操作不得经此入口触达。
  */
 import * as vscode from 'vscode'
 import { getSelectedCodebuddyModel, listCodebuddyModels, setSelectedCodebuddyModel } from './providers/codebuddyModels'
@@ -32,6 +33,9 @@ const MAX_DRAFT_LENGTH = 20_000
 const MAX_COMMAND_ID_LENGTH = 32
 /** 模型 id 长度上限：CLI 模型 id 远短于此值，超出视为异常载荷 */
 const MAX_MODEL_ID_LENGTH = 64
+
+/** 写作管理工作台可用的作品协议：只读与打开，与仪表盘的作品写操作分开登记 */
+const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set(['press/workspace', 'press/open'])
 
 export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     public static readonly viewId = 'zhai.workflow'
@@ -187,7 +191,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 if (method.startsWith('naming/')) {
                     return this.naming.handle(method, payload)
                 }
-                if (method.startsWith('pressAi/')) {
+                if (method.startsWith('pressAi/') || PRESS_WORKSPACE_METHODS.has(method)) {
                     return this.press.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())
                 }
                 throw new Error(`未知的协议方法：${method}`)

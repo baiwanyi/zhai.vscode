@@ -93,6 +93,44 @@ export interface PressProjectDetailRequest {
     dirPath: string
 }
 
+/** press/workspace 请求：按作品目录读取设定、角色、大纲与 README 原文；dirPath 缺省时只返回作品列表 */
+export interface PressWorkspaceRequest {
+    dirPath?: string
+}
+
+/** 工作台文档原文：文件缺失时为空串，格式解析交给 Webview 的视图模型层 */
+export interface PressWorkspaceFiles {
+    readme: string
+    setting: string
+    characters: string
+    outline: string
+}
+
+/** 工作台文档：一部作品的原始 Markdown 快照，name 取目录名 */
+export interface PressWorkspaceDocument {
+    dirPath: string
+    name: string
+    files: PressWorkspaceFiles
+}
+
+/** press/workspace 响应：未选择作品时 project 为 null，仍返回作品列表供初始页选择 */
+export interface PressWorkspaceResult {
+    project: PressWorkspaceDocument | null
+    projects: PressProjectSummary[]
+}
+
+/** 判断是否为合法的工作台读取请求（类型收窄辅助）：dirPath 可缺省，缺省即只取列表 */
+export function isPressWorkspaceRequest(payload: unknown): payload is PressWorkspaceRequest {
+    if (payload === undefined) {
+        return true
+    }
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const dirPath = (payload as { dirPath?: unknown }).dirPath
+    return dirPath === undefined || (typeof dirPath === 'string' && dirPath.length > 0)
+}
+
 /** press/createChapter 请求：在指定卷（缺省为最后一个卷）追加章节 */
 export interface CreatePressChapterRequest {
     dirPath: string

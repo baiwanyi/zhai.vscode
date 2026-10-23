@@ -381,6 +381,19 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 **Webview 方法**：`project/list`、`chapter/tree`、`chapter/reorder`、`character/list`、`character/relations`、`setting/list`、`foreshadowing/list`、`outline/get`、`stats/get`、`export/run`
 
+**写作管理工作台（已落地）**：侧栏工作流面板按路由事实里的 `projectDir`（`press/{作品名}`）载入作品，
+未打开作品时展示初始页并列出索引库中的作品入口。
+
+| 方法 | 入参 | 出参 | 说明 |
+|------|------|------|------|
+| `press/workspace` | `{ dirPath?: string }` | `{ project, projects }` | 读取 `README.md`、`设定.md`、`角色设定.md`、`大纲.md` 原文并附带作品清单；`dirPath` 缺省或四份文档全空时 `project` 为 `null` |
+| `press/open` | `{ dirPath }` | `{ opened }` | 打开作品 README；沿用仪表盘口径，先按索引库回查作品 |
+
+- `projectDir` 由 `WorkflowRouter` 从活跃文档路径推导（`press/{作品名}/...` 至少三段），索引尚未收录时同样识别，新建作品打开后工作台可立即载入。
+- 解析在 Webview 侧完成（`src/webview/workflow/press/document.ts`）：作品设定优先取 README 与 `设定.md` 的「`- 键：值`」行，
+  角色按「`# 角色名`」切块，大纲按「卷 → 章 → 键值行」切块；键值缺失时回落到区块段落，解析失败只让对应字段为空。
+- 工作台对作品只读：页面内的编辑仍是内存草稿，暂不写回 Markdown。
+
 ---
 
 ## 8. 验收标准

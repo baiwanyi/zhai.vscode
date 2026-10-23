@@ -1,9 +1,10 @@
 /**
- * 工作流路由事实服务：汇聚「活跃编辑器场景」与「用户选定的模块」，供工作流面板按模块渲染对应页面。
+ * 工作流路由事实服务：汇聚「活跃编辑器场景」「用户选定的模块」与「当前作品」，供工作流面板按模块渲染对应页面。
  * 复用 IndexService.toRelativePath 与索引库回查判定文档归属，与仪表盘活跃笔记回填同口径。
  * 关键约束：编辑器监听随扩展停用释放；场景变化经去抖后再广播，避免编辑器焦点抖动导致面板反复换页；
  * 模块选定为持久状态（跨面板重建保留），仅在用户改选或清除时变化，未选定时由面板展示初始页；
- * 焦点离开文本编辑器（打开设置、切到其它视图）不改变场景事实，沿用上一次的 scene / module。
+ * 作品目录只从 press/{作品名}/... 的文档路径推导，索引尚未收录时仍按路径识别，避免新建作品打不开工作台；
+ * 焦点离开文本编辑器（打开设置、切到其它视图）不改变场景事实，沿用上一次的 scene / module / projectDir。
  */
 import * as vscode from 'vscode'
 import type { WorkflowContextState, WorkflowSceneKind } from '../../shared/types/workflow'
@@ -11,9 +12,13 @@ import type { IndexService } from '../common/indexer/indexService'
 import type Database from 'better-sqlite3'
 import { NOTES_MODULE_KEY, ROOT_MODULE_KEY } from '../../shared/types/workflow'
 import { listFilesByPaths } from '../common/db/statsRepository'
+import { PRESS_MODULE_DIR } from '../press/projectFactory'
 
 /** 场景变化去抖时长（毫秒）：短于该值的编辑器焦点切换不触发换页 */
 const SCENE_DEBOUNCE_MS = 800
+
+/** 作品文档的最小段数：press/{作品名}/{文档} */
+const PRESS_PROJECT_DEPTH = 3
 
 export class WorkflowRouter implements vscode.Disposable {
     private readonly emitter = new vscode.EventEmitter<void>()
@@ -98,11 +103,12 @@ export class WorkflowRouter implements vscode.Disposable {
             last !== null &&
             last.scene === context.scene &&
             last.module === context.module &&
-            last.selectedModule === context.selectedModule
+            last.selectedModule === context.selectedModule &&
+            last.projectDir === context.projectDir
         )
     }
 
-    /** 组装路由事实：仅认可索引库内的文档，索引外文件视为无场景 */
+    /** 组装路由事实：仅认可索引库内的文档，索引外文件视为无场景；作品目录按路径推导 */
     private buildContext(): WorkflowContextState {
         const selectedModule = this.selectedModule
         const editor = vscode.window.activeTextEditor
@@ -113,16 +119,25 @@ export class WorkflowRouter implements vscode.Disposable {
                 scene: this.lastContext?.scene ?? 'idle',
                 module: this.lastContext?.module ?? ROOT_MODULE_KEY,
                 selectedModule,
+                projectDir: this.lastContext?.projectDir ?? null,
             }
         }
         const relativePath = this.indexService.toRelativePath(editor.document.uri)
         const [known] = listFilesByPaths(this.db, [relativePath])
         if (known === undefined) {
-            return { scene: 'idle', module: ROOT_MODULE_KEY, selectedModule }
+            // 索引尚未收录（如刚创建的作品）：仍按路径识别作品，让写作管理页能立即载入，
+            // 否则面板要等下一次索引广播才有内容
+            const projectDir = readProjectDir(relativePath)
+            return {
+                scene: 'idle',
+                module: projectDir === null ? ROOT_MODULE_KEY : PRESS_MODULE_DIR,
+                selectedModule,
+                projectDir,
+            }
         }
         const moduleKey = readModuleKey(known.path)
         const scene: WorkflowSceneKind = moduleKey === NOTES_MODULE_KEY ? 'editorNote' : 'idle'
-        return { scene, module: moduleKey, selectedModule }
+        return { scene, module: moduleKey, selectedModule, projectDir: readProjectDir(known.path) }
     }
 }
 
@@ -130,4 +145,17 @@ export class WorkflowRouter implements vscode.Disposable {
 function readModuleKey(relativePath: string): string {
     const separator = relativePath.indexOf('/')
     return separator > 0 ? relativePath.slice(0, separator) : ROOT_MODULE_KEY
+}
+
+/** 从文档相对路径推导作品目录：仅认 press/{作品名}/... 至少三段，其余一律视为未打开作品 */
+function readProjectDir(relativePath: string): string | null {
+    const segments = relativePath.split('/')
+    const [moduleKey, projectName] = segments
+    if (segments.length < PRESS_PROJECT_DEPTH || moduleKey !== PRESS_MODULE_DIR) {
+        return null
+    }
+    if (projectName === undefined || projectName.length === 0) {
+        return null
+    }
+    return `${PRESS_MODULE_DIR}/${projectName}`
 }

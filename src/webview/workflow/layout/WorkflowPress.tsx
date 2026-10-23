@@ -1,15 +1,22 @@
 /**
  * 写作管理工作流页：写作管理模块的专属落点，模块切换时由注册表直接渲染本文件。
- * 复用约定：分区内容按 activeSection 切换——设定、人物、大纲分别渲染 ../press 的三个页面，
- * AI 对话渲染 ../aichat 的 AiChat，取名渲染 ../naming 的 NamingPage；右侧分区入口由同目录
- * WorkflowPressNav 承载，页面之间共享同一份作品草稿（workspace），避免切分区丢编辑。
- * 关键约束：本页不自行发起路由请求，分区高亮仅为页内局部状态（不写入宿主路由）；
- * 作品草稿只在本页内存中存在，宿主协议接通后由 大纲.md / 角色设定.md 的解析结果替换；
- * 换页时本页卸载重建，草稿随之重置，对话数据与取名历史仍由宿主侧服务持有。
+ * 复用约定：作品数据来自宿主读取的 设定.md / 角色设定.md / 大纲.md，经 press/document 解析成 OutlineWorkspace；
+ * 分区内容按 activeSection 切换——设定、人物、大纲分别渲染 ../press 的三个页面，AI 对话渲染 ../aichat 的 AiChat，
+ * 取名渲染 ../naming 的 NamingPage；右侧分区入口由同目录 WorkflowPressNav 承载，分区之间共享同一份草稿。
+ * 关键约束：本页不自行发起路由请求，作品定位只认宿主下发的 projectDir；未打开作品时渲染初始页（作品清单入口），
+ * 不在页面内伪造示例数据；页面内的编辑仍是内存草稿，换作品或换页即重新按文档解析结果重建。
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import { Skeleton } from '@components/ui/skeleton'
+import type {
+    OpenPressProjectResult,
+    PressProjectSummary,
+    PressWorkspaceRequest,
+    PressWorkspaceResult,
+} from '@shared/types/press'
 import { WorkflowPressNav } from './WorkflowPressNav'
 import type { WorkflowPressSection } from './WorkflowPressNav'
+import type { WorkflowRenderProps } from '../core/registry'
 import type {
     CharacterCard,
     CharacterSeed,
@@ -19,10 +26,12 @@ import type {
     ProjectSetting,
 } from '../press/types'
 import type { JSX } from 'react'
+import { request } from '../../bridge'
+import { toastError } from '../../utils'
 import { AiChat } from '../aichat'
 import { NamingPage } from '../naming'
-import { PressCharacterPage, PressOutlinePage, PressSettingPage } from '../press'
-import { SAMPLE_WORKSPACE } from '../press/sample'
+import { PressCharacterPage, PressOutlinePage, PressSettingPage, PressWorkspaceStart } from '../press'
+import { parseProjectWorkspace } from '../press/document'
 import { createChapter, createCharacterCard, createVolume } from '../press/utils'
 
 /** 默认分区：页面主体即 AI 对话，默认高亮与当前可见内容一致 */
@@ -43,78 +52,162 @@ const STEP_SECTIONS: Readonly<Record<number, WorkflowPressSection>> = {
 /** 卷名归一：追加生成结果时去掉原有的「第N卷」前缀，避免与既有卷序号冲突 */
 const VOLUME_PREFIX_PATTERN = /^第\d+卷\s*/
 
-export function WorkflowPress(): JSX.Element {
+/** 加载状态：作品文档读取中、未打开作品（展示初始页）、已就绪（渲染工作区） */
+type WorkspaceStatus = 'loading' | 'empty' | 'ready'
+
+interface WorkspaceLoadState {
+    status: WorkspaceStatus
+    workspace: OutlineWorkspace | null
+    /** 索引库聚合出的作品清单：初始页据此给出可选入口 */
+    projects: PressProjectSummary[]
+}
+
+/** 初始状态按读取中处理，避免先闪一帧空态再跳内容 */
+const INITIAL_LOAD_STATE: WorkspaceLoadState = { status: 'loading', workspace: null, projects: [] }
+
+export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
+    const projectDir = context.projectDir
     const [activeSection, setActiveSection] = useState<WorkflowPressSection>(DEFAULT_SECTION)
-    const [workspace, setWorkspace] = useState<OutlineWorkspace>(SAMPLE_WORKSPACE)
+    const [loadState, setLoadState] = useState<WorkspaceLoadState>(INITIAL_LOAD_STATE)
+
+    useEffect(() => {
+        let isCancelled = false
+        const load = async (): Promise<void> => {
+            setLoadState(INITIAL_LOAD_STATE)
+            try {
+                const payload: PressWorkspaceRequest = projectDir === null ? {} : { dirPath: projectDir }
+                const result = await request<PressWorkspaceResult>('press/workspace', payload)
+                if (isCancelled) {
+                    return
+                }
+                if (result.project === null) {
+                    setLoadState({ status: 'empty', workspace: null, projects: result.projects })
+                    return
+                }
+                const parsed = parseProjectWorkspace(result.project.files, result.project.name)
+                setLoadState({ status: 'ready', workspace: parsed, projects: result.projects })
+            } catch (cause) {
+                if (isCancelled) {
+                    return
+                }
+                toastError(cause)
+                setLoadState({ status: 'empty', workspace: null, projects: [] })
+            }
+        }
+        void load()
+        return (): void => {
+            isCancelled = true
+        }
+    }, [projectDir])
+
+    /** 打开作品：宿主打开 README 并广播新的 projectDir，本页随之重新解析文档 */
+    const handleOpenProject = useCallback((dirPath: string): void => {
+        const open = async (): Promise<void> => {
+            try {
+                await request<OpenPressProjectResult>('press/open', { dirPath })
+            } catch (cause) {
+                toastError(cause)
+            }
+        }
+        void open()
+    }, [])
+
+    /** 草稿更新：只在已载入作品时生效，未载入时忽略，避免出现无归属的编辑 */
+    const updateWorkspace = useCallback((recipe: (previous: OutlineWorkspace) => OutlineWorkspace): void => {
+        setLoadState((previous) =>
+            previous.workspace === null ? previous : { ...previous, workspace: recipe(previous.workspace) },
+        )
+    }, [])
 
     const handleSelectStep = useCallback((step: number): void => {
         setActiveSection(STEP_SECTIONS[step] ?? 'chapter')
     }, [])
 
-    const handleUpdateSetting = useCallback((patch: Partial<ProjectSetting>): void => {
-        setWorkspace((previous) => ({ ...previous, setting: { ...previous.setting, ...patch } }))
-    }, [])
+    const handleUpdateSetting = useCallback(
+        (patch: Partial<ProjectSetting>): void => {
+            updateWorkspace((previous) => ({ ...previous, setting: { ...previous.setting, ...patch } }))
+        },
+        [updateWorkspace],
+    )
 
-    const handleUpdateCharacter = useCallback((characterId: string, patch: Partial<CharacterCard>): void => {
-        setWorkspace((previous) => ({
-            ...previous,
-            characters: previous.characters.map((character) =>
-                character.id === characterId ? { ...character, ...patch } : character,
-            ),
-        }))
-    }, [])
+    const handleUpdateCharacter = useCallback(
+        (characterId: string, patch: Partial<CharacterCard>): void => {
+            updateWorkspace((previous) => ({
+                ...previous,
+                characters: previous.characters.map((character) =>
+                    character.id === characterId ? { ...character, ...patch } : character,
+                ),
+            }))
+        },
+        [updateWorkspace],
+    )
 
     /** 建卡并返回新卡 id：人物页据此直接下钻到新人物详情 */
-    const handleCreateCharacter = useCallback((seed: CharacterSeed): string => {
-        const character = createCharacterCard(seed)
-        setWorkspace((previous) => ({ ...previous, characters: [...previous.characters, character] }))
-        return character.id
-    }, [])
+    const handleCreateCharacter = useCallback(
+        (seed: CharacterSeed): string => {
+            const character = createCharacterCard(seed)
+            updateWorkspace((previous) => ({ ...previous, characters: [...previous.characters, character] }))
+            return character.id
+        },
+        [updateWorkspace],
+    )
 
-    const handleUpdateChapter = useCallback((chapterId: string, patch: Partial<OutlineChapter>): void => {
-        setWorkspace((previous) => ({
-            ...previous,
-            volumes: previous.volumes.map((volume) => ({
-                ...volume,
-                chapters: volume.chapters.map((chapter) =>
-                    chapter.id === chapterId ? { ...chapter, ...patch } : chapter,
-                ),
-            })),
-        }))
-    }, [])
+    const handleUpdateChapter = useCallback(
+        (chapterId: string, patch: Partial<OutlineChapter>): void => {
+            updateWorkspace((previous) => ({
+                ...previous,
+                volumes: previous.volumes.map((volume) => ({
+                    ...volume,
+                    chapters: volume.chapters.map((chapter) =>
+                        chapter.id === chapterId ? { ...chapter, ...patch } : chapter,
+                    ),
+                })),
+            }))
+        },
+        [updateWorkspace],
+    )
 
     const handleCreateVolume = useCallback((): void => {
-        setWorkspace((previous) => ({
+        updateWorkspace((previous) => ({
             ...previous,
             volumes: [...previous.volumes, createVolume(previous.volumes.length + 1, DEFAULT_CHAPTER_WORD_GOAL)],
         }))
-    }, [])
+    }, [updateWorkspace])
 
-    const handleCreateChapter = useCallback((volumeId: string): void => {
-        setWorkspace((previous) => ({
-            ...previous,
-            volumes: previous.volumes.map((volume) => {
-                if (volume.id !== volumeId) {
-                    return volume
-                }
-                const nextOrder = volume.chapters.reduce((max, chapter) => Math.max(max, chapter.order), 0) + 1
-                return { ...volume, chapters: [...volume.chapters, createChapter(nextOrder, DEFAULT_CHAPTER_WORD_GOAL)] }
-            }),
-        }))
-    }, [])
-
-    const handleApplyOutline = useCallback((volumes: OutlineVolume[]): void => {
-        setWorkspace((previous) => {
-            const offset = previous.volumes.length
-            const appended = volumes.map((volume, index) => ({
-                ...volume,
-                name: `第${offset + index + 1}卷 ${volume.name.replace(VOLUME_PREFIX_PATTERN, '') || '新卷'}`,
+    const handleCreateChapter = useCallback(
+        (volumeId: string): void => {
+            updateWorkspace((previous) => ({
+                ...previous,
+                volumes: previous.volumes.map((volume) => {
+                    if (volume.id !== volumeId) {
+                        return volume
+                    }
+                    const nextOrder = volume.chapters.reduce((max, chapter) => Math.max(max, chapter.order), 0) + 1
+                    return {
+                        ...volume,
+                        chapters: [...volume.chapters, createChapter(nextOrder, DEFAULT_CHAPTER_WORD_GOAL)],
+                    }
+                }),
             }))
-            return { ...previous, volumes: [...previous.volumes, ...appended] }
-        })
-    }, [])
+        },
+        [updateWorkspace],
+    )
 
-    const renderSection = (): JSX.Element => {
+    const handleApplyOutline = useCallback(
+        (volumes: OutlineVolume[]): void => {
+            updateWorkspace((previous) => {
+                const offset = previous.volumes.length
+                const appended = volumes.map((volume, index) => ({
+                    ...volume,
+                    name: `第${offset + index + 1}卷 ${volume.name.replace(VOLUME_PREFIX_PATTERN, '') || '新卷'}`,
+                }))
+                return { ...previous, volumes: [...previous.volumes, ...appended] }
+            })
+        },
+        [updateWorkspace],
+    )
+
+    const renderSection = (workspace: OutlineWorkspace): JSX.Element => {
         if (activeSection === 'setting') {
             return (
                 <PressSettingPage
@@ -155,9 +248,24 @@ export function WorkflowPress(): JSX.Element {
         return <AiChat />
     }
 
+    if (loadState.status === 'loading') {
+        return (
+            <div className="flex h-screen flex-col gap-2 p-4">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-28 w-full" />
+                <Skeleton className="h-28 w-full" />
+            </div>
+        )
+    }
+
+    const workspace = loadState.workspace
+    if (workspace === null) {
+        return <PressWorkspaceStart projects={loadState.projects} onOpenProject={handleOpenProject} />
+    }
+
     return (
         <div className="flex h-screen min-h-0">
-            <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{renderSection()}</div>
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{renderSection(workspace)}</div>
             <WorkflowPressNav activeSection={activeSection} onSelect={setActiveSection} />
         </div>
     )

@@ -90,13 +90,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const namingService = new NamingService(namingDb, aiProvider)
     const namingRoutes = new NamingRoutes(namingService)
 
-    // 写作管理：press.db 只承载 AI 配额等轻量状态，人物卡内容仍留在 webview 草稿中
+    // 写作管理：press.db 只承载 AI 配额等轻量状态，作品文档与人物卡仍以 Markdown 为准
     const pressDb = openPressDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => pressDb.close() })
     const pressAiService = new PressAiService(pressDb, aiProvider)
     const imageRouter = new ImageProviderRouter(secrets)
     const portraitService = new PortraitService(pressDb, aiProvider, imageRouter)
-    const pressRoutes = new PressRoutes(pressAiService, portraitService)
+    // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown
+    const pressRoutes = new PressRoutes(pressAiService, portraitService, db)
 
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,

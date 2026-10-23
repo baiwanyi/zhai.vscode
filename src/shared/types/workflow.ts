@@ -1,7 +1,8 @@
 /**
  * 工作流路由契约：宿主下发的场景事实（workflow/* 协议）与工作流页面标识。
  * 使用方：Webview 工作流页（src/webview/workflow/）与宿主侧 WorkflowRouter / AiChatViewProvider / DashboardViewProvider。
- * 复用约定：模块键取相对存储根的一级目录名，与索引库 files.path 及展示层 moduleOf 同口径。
+ * 复用约定：模块键取相对存储根的一级目录名，与索引库 files.path 及展示层 moduleOf 同口径；
+ * projectDir 取 press/{作品名} 两段，仅由宿主从活跃文档路径推导，前端据此请求作品文档，不自行拼接路径。
  * 关键约束：字段由宿主归一化后填充，前端只负责解析与渲染，不自行读取配置或访问文件系统；
  * 前端回传的模块标识一律经 isOpenWorkflowRequest 收窄后再用，不得把路径形态字符串透传给宿主命令。
  */
@@ -25,6 +26,8 @@ export interface WorkflowContextState {
     module: string
     /** 用户选定的模块：由仪表盘入口或初始页设置并在宿主持久保持，未选择为 null */
     selectedModule: string | null
+    /** 当前打开的作品目录（相对存储根，形如 press/{作品名}），未打开作品为 null */
+    projectDir: string | null
 }
 
 /** workflow/open 请求：模块入口携带的模块键 */
@@ -48,11 +51,12 @@ export function isWorkflowContextState(payload: unknown): payload is WorkflowCon
     if (typeof payload !== 'object' || payload === null) {
         return false
     }
-    const candidate = payload as { scene?: unknown; module?: unknown; selectedModule?: unknown }
+    const candidate = payload as { scene?: unknown; module?: unknown; selectedModule?: unknown; projectDir?: unknown }
     const isScene = candidate.scene === 'idle' || candidate.scene === 'editorNote'
     const isModule = typeof candidate.module === 'string' && candidate.module.length > 0
     const isSelected = candidate.selectedModule === null || typeof candidate.selectedModule === 'string'
-    return isScene && isModule && isSelected
+    const isProject = candidate.projectDir === null || typeof candidate.projectDir === 'string'
+    return isScene && isModule && isSelected && isProject
 }
 
 /**
