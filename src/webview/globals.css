@@ -8,9 +8,10 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
-/* Tailwind 自动源检测以 Vite root（src/webview）为界，而 components / hooks / lib 位于其上层：
-   不显式声明扫描范围，这些目录中的类名不会进入产物，组件会渲染成无样式元素。 */
+/* Tailwind 自动源检测以 Vite root（src/webview）为界，而业务源码位于其上层、shadcn 组件位于
+   resources/shadcn：不显式声明扫描范围，这些目录中的类名不会进入产物，组件会渲染成无样式元素。 */
 @source '..';
+@source '../../resources/shadcn';
 
 @custom-variant dark (&:is(.dark *));
 

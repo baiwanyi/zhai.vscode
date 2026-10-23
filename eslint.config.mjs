@@ -2,8 +2,8 @@
  * ESLint 扁平配置：同时覆盖扩展宿主（Node 环境）与 Webview（React + DOM 环境）两类源码。
  * 复用约定：类型感知检查以 tsconfig.json 为项目源；import 分组按 builtin → external → internal →
  * sibling → index → type 排列，组内字母升序、组间不留空行、导入块后留空行；格式类规则交由 Prettier。
- * 关键约束：全局禁用 inline 配置（不得用 eslint-disable 规避规则）；`src/components/ui` 与
- * `src/components/hooks` 属 shadcn/ui 托管源码，仅做语法与安全性检查，避免 CLI 覆盖后约束反复失效。
+ * 关键约束：全局禁用 inline 配置（不得用 eslint-disable 规避规则）；`resources/shadcn` 整目录属
+ * shadcn/ui 托管源码，仅做语法与安全性检查，避免 CLI 覆盖后约束反复失效。
  * 取舍说明：eslint-plugin-react 尚未支持 ESLint 10（peer 仅到 ^9.7），故不引入其 JSX 规则；
  * 组件侧正确性由 react-hooks（hooks 调用约束）与 react-refresh（HMR 边界）两条插件承担。
  */
@@ -18,8 +18,8 @@ import reactRefresh from 'eslint-plugin-react-refresh'
 import globals from 'globals'
 import tseslint from 'typescript-eslint'
 
-/** shadcn/ui 托管源码：不施加项目自有的命名、类型标注、导入排序与上游 any 收窄约束 */
-const vendoredUi = ['src/components/ui/**/*.tsx', 'src/components/hooks/**/*.ts']
+/** shadcn/ui 托管源码：整目录由 CLI 管理，不施加项目自有的命名、类型标注、导入排序与上游 any 收窄约束 */
+const vendoredUi = ['resources/shadcn/**/*.ts', 'resources/shadcn/**/*.tsx']
 
 export default defineConfig([
     globalIgnores(['dist/**', 'node_modules/**', 'docs/**']),
@@ -204,6 +204,8 @@ export default defineConfig([
             '@typescript-eslint/restrict-template-expressions': 'off',
             // 对可能产出 "[object Object]" 的值做隐式字符串化
             '@typescript-eslint/no-base-to-string': 'off',
+            // 上游保留的冗余类型断言（如 chart 的 as string），改动会被 CLI 覆盖
+            '@typescript-eslint/no-unnecessary-type-assertion': 'off',
             // 导入顺序由 CLI 生成且与项目分组规则不同，强制重排会让组件偏离上游源码
             'import-x/order': 'off',
             // 组件刻意同时导出组件与常量（如 buttonVariants），属 shadcn 既定写法

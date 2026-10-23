@@ -16,7 +16,7 @@ export default defineConfig({
     // 别名只暴露 components、resources 与 shared 三个边界，与 tsconfig 的 @components/*、@resources/*、@shared/* 保持一致
     resolve: {
         alias: {
-            '@components': resolve(import.meta.dirname, 'src/components'),
+            '@components': resolve(import.meta.dirname, 'resources/shadcn'),
             '@resources': resolve(import.meta.dirname, 'resources'),
             '@shared': resolve(import.meta.dirname, 'src/shared'),
         },

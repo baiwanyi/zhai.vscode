@@ -4,3 +4,4 @@ docs
 .shadcn-probe
 pnpm-lock.yaml
 *.md
+resources/shadcn

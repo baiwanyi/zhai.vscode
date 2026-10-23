@@ -24,10 +24,11 @@
         "noImplicitReturns": true,
         // 路径别名：TS7 已移除 baseUrl，paths 相对本文件所在目录解析
         "paths": {
-            "@components/*": ["./src/components/*"],
+            "@components/*": ["./resources/shadcn/*"],
             "@resources/*": ["./resources/*"],
             "@shared/*": ["./src/shared/*"]
         }
     },
-    "include": ["src/**/*.ts", "src/**/*.tsx", "scripts/*.mjs", "vite.config.mjs", "vitest.config.mts"]
+    // resources/shadcn 是 @components 别名的落点，须纳入检查范围，否则组件源码不参与类型校验
+    "include": ["src/**/*.ts", "src/**/*.tsx", "resources/**/*.ts", "resources/**/*.tsx", "scripts/*.mjs", "vite.config.mjs", "vitest.config.mts"]
 }

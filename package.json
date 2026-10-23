@@ -43,7 +43,7 @@
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
         "verify": "pnpm run typecheck && pnpm run lint && pnpm run test && prettier --check src eslint.config.mjs",
-        "format:ui": "prettier --write src/components/ui src/components/hooks",
+        "format:ui": "prettier --write resources/shadcn/ui resources/shadcn/hooks",
         "package": "pnpm run compile && node scripts/bundle-native.mjs && vsce package --no-dependencies"
     },
     "contributes": {
