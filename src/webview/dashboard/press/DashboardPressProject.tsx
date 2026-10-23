@@ -1,9 +1,11 @@
 /**
- * 作品详情页（#/press/{作品名}）：页头返回作品列表与作品元信息，其下为删除作品入口，主体为卷分组章节目录。
+ * 作品详情页（#/press/{作品名}）：页头返回作品列表与作品元信息，其下为素材抽取与删除作品入口，
+ * 主体为卷分组章节目录。
  * 数据与动作经 hooks/usePressProjectDetail 下发，章节渲染与折叠交给 PressChapterList（卷内按批追加），
  * 卷的新建入口位于卷头菜单，卷的重命名/删除、章节删除与整部作品删除由本页承载弹窗，章节移动成功后展开落点卷。
- * 关键约束：详情未就绪时页头用路由中的目录名兜底，避免标题闪烁；新建卷与删除作品需数据就绪后才可用，
+ * 关键约束：详情未就绪时页头用路由中的目录名兜底，避免标题闪烁；新建卷、素材抽取与删除作品需数据就绪后才可用，
  * 防止向不存在的作品写入或误删；弹窗以被操作的卷重挂载，保证输入框回到当前卷名；
+ * 素材抽取只做本地统计，AI 生成（卷纲、人物卡）由写作工作台的各页面分别触发；
  * 删除作品成功后由本页跳回作品列表，提示统一经 sonner 给出；页面内屏蔽浏览器右键菜单。
  */
 import { Sparkles, Trash2 } from 'lucide-react'
@@ -13,8 +15,8 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Skeleton } from '@components/ui/skeleton'
 import type { PressChapterEntry, PressVolumeGroup } from '@shared/types/press'
+import { usePressAnalyze } from './hooks/usePressAnalyze'
 import { usePressProjectDetail } from './hooks/usePressProjectDetail'
-import { usePressSemantic } from './hooks/usePressSemantic'
 import { PressChapterDeleteDialog } from './layout/PressChapterDeleteDialog'
 import { PressChapterList } from './layout/PressChapterList'
 import { PressProjectDeleteDialog } from './layout/PressProjectDeleteDialog'
@@ -86,7 +88,7 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
         openChapter,
         openReadme,
     } = usePressProjectDetail(dirPath)
-    const { isRunning: isSemanticRunning, start: startSemantic } = usePressSemantic(dirPath)
+    const { isAnalyzing, analyze } = usePressAnalyze(dirPath)
     const [renameTarget, setRenameTarget] = useState<PressVolumeGroup | null>(null)
     const [deleteTarget, setDeleteTarget] = useState<PressVolumeGroup | null>(null)
     const [deleteChapterTarget, setDeleteChapterTarget] = useState<PressChapterEntry | null>(null)
@@ -160,12 +162,12 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                     variant="outline"
                     size="sm"
                     className="w-full justify-center"
-                    title="依次生成章节摘要、卷纲与角色卡，产物写入 _import/，不修改正文"
-                    disabled={isSemanticRunning || status !== 'ready'}
-                    onClick={() => void startSemantic()}
+                    title="扫描章节生成 _import/ 素材（章节清单、人名候选、金手指候选），本地统计、不调用模型"
+                    disabled={isAnalyzing || status !== 'ready'}
+                    onClick={() => void analyze()}
                 >
                     <Sparkles data-icon="inline-start" />
-                    {isSemanticRunning ? '正在归纳…' : 'AI 归纳设定'}
+                    {isAnalyzing ? '正在抽取…' : '素材抽取'}
                 </Button>
                 <Button
                     variant="outline"

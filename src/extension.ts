@@ -107,9 +107,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const imageRouter = new ImageProviderRouter(secrets)
     const portraitService = new PortraitService(pressDb, aiProvider, imageRouter)
     // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown；打开作品时同步路由事实
-    const pressRoutes = new PressRoutes(pressAiService, portraitService, db, workflowRouter)
-    // 语义归纳依赖 AI 通道，晚于仪表盘创建，故回填给已注册的仪表盘实例
-    dashboardProvider.attachSemanticService(new ImportSemanticService(pressDb, aiProvider))
+    // 语义归纳依赖 AI 通道，晚于仪表盘创建，故回填给已注册的仪表盘实例；
+    // 工作台的人物卡提取复用同一实例，单任务锁与配额口径因此保持一致
+    const semanticService = new ImportSemanticService(pressDb, aiProvider)
+    const pressRoutes = new PressRoutes(pressAiService, portraitService, db, workflowRouter, semanticService)
+    dashboardProvider.attachSemanticService(semanticService)
 
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,

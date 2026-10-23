@@ -3,10 +3,12 @@
  * 复用约定：表单控件全部取自 @components/ui 的 field、input、textarea、select、toggle 与 progress，
  * 分组卡由 SettingSection 承载，标签型字段由 TagField 承载，完整度与缺项判断来自 ../utils。
  * 关键约束：页面只向上抛出字段补丁，不直接改文件；缺失字段仅以徽标提示、不阻断下一步；
+ * 「提取」只把素材归纳结果交给父级合并，是否覆盖已填内容由父级决定；
  * 所有输入控件都必须与 label 建立 id 关联，数字输入在清空时回退为 0 而不是 NaN。
  */
 import { ArrowRight, Sparkles } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
 import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
 import { Field, FieldDescription, FieldLabel, FieldTitle } from '@components/ui/field'
@@ -15,8 +17,10 @@ import { Progress } from '@components/ui/progress'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Textarea } from '@components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
+import type { PressExtractedSetting } from '@shared/types/press'
 import { SettingSection } from './SettingSection'
 import { TagField } from './TagField'
+import { useSettingExtract } from './useSettingExtract'
 import type { Audience, EndingKind, ProjectSetting } from '../types'
 import type { JSX } from 'react'
 import {
@@ -46,14 +50,46 @@ const SECTION_ORDER: readonly SectionKey[] = ['basic', 'story', 'world', 'power'
 
 interface PressSettingPageProps {
     setting: ProjectSetting
+    /** 当前作品目录：提取从该作品的 _import 素材读起 */
+    dirPath: string
     onChange: (patch: Partial<ProjectSetting>) => void
     onSelectStep: (step: number) => void
     onNext: () => void
+    /** 合并提取出的设定草案，返回实际填入的字段数（只填空字段） */
+    onExtractSetting: (draft: PressExtractedSetting) => number
 }
 
-export function PressSettingPage({ setting, onChange, onSelectStep, onNext }: PressSettingPageProps): JSX.Element {
+export function PressSettingPage({
+    setting,
+    dirPath,
+    onChange,
+    onSelectStep,
+    onNext,
+    onExtractSetting,
+}: PressSettingPageProps): JSX.Element {
     const [openSections, setOpenSections] = useState<SectionKey[]>(['basic', 'story'])
+    const { isExtracting, extract } = useSettingExtract(dirPath)
     const completeness = computeSettingCompleteness(setting)
+
+    const handleExtract = (): void => {
+        const run = async (): Promise<void> => {
+            const result = await extract()
+            if (result === null) {
+                return
+            }
+            if (result.setting === null) {
+                toast.info(result.message)
+                return
+            }
+            const filled = onExtractSetting(result.setting)
+            if (filled === 0) {
+                toast.info('提取到的字段都已填写，未改动现有内容')
+                return
+            }
+            toast.success(`已填入 ${String(filled)} 个空字段，共 ${String(result.setting.clues.length)} 条金手指线索供核对`)
+        }
+        void run()
+    }
 
     const isSectionIncomplete = (key: SectionKey): boolean =>
         SECTION_FIELDS[key].some((field) => isSettingFieldMissing(setting, field))
@@ -387,6 +423,16 @@ export function PressSettingPage({ setting, onChange, onSelectStep, onNext }: Pr
                 <Button variant="ghost" size="sm" onClick={handleRevealMissing}>
                     <Sparkles />
                     补齐缺失项
+                </Button>
+                <Button
+                    variant="outline"
+                    size="sm"
+                    title="按金手指候选章的摘录与摘要归纳设定（调用 AI），只填空字段"
+                    disabled={isExtracting}
+                    onClick={handleExtract}
+                >
+                    <Sparkles />
+                    {isExtracting ? '提取中' : '提取'}
                 </Button>
                 <span className="flex-1" />
                 <Button size="sm" onClick={onNext}>

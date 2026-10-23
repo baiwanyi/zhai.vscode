@@ -39,8 +39,11 @@ const SURNAMES = new Set(
 /** 姓氏后紧跟的动作词：用于区分「人名」与「同为首字的普通词」 */
 const ACTION_SUFFIX = '道说问答笑怒喝叹想吼叫骂哼哭嚷'
 
-/** 候选字数长度：从长到短尝试，避免三字名被切成两字 */
-const NAME_LENGTHS: readonly number[] = [4, 3, 2]
+/**
+ * 候选字数长度：从短到长尝试。先认两字名，再退让三字与四字，
+ * 否则「薛牧笑道」会被切成「薛牧笑」、三字名也会被切走首字，产生大量「人名 + 动作字」的假候选。
+ */
+const NAME_LENGTHS: readonly number[] = [2, 3, 4]
 
 /** 汉字候选校验 */
 const HAN_NAME = /^[\u4e00-\u9fa5]{2,4}$/u
@@ -190,14 +193,21 @@ async function collectChapters(root: vscode.Uri, segments: string[]): Promise<Ch
 
 /** 统计人名候选：姓氏开头且紧跟动作词，才有资格进入候选表 */
 function collectNameHits(text: string, counter: Map<string, number>, perChapter: Map<string, number>): void {
-    for (let index = 0; index < text.length; index += 1) {
+    let index = 0
+    while (index < text.length) {
         const first = text[index]
         if (first === undefined || !SURNAMES.has(first)) {
+            index += 1
             continue
         }
+        let matched = 0
         for (const size of NAME_LENGTHS) {
             const candidate = text.slice(index, index + size)
             if (!HAN_NAME.test(candidate)) {
+                continue
+            }
+            // 叠字几乎都是「冷冷笑道」这类状态词，不可能是人名
+            if (size === 2 && candidate[0] === candidate[1]) {
                 continue
             }
             const next = text[index + size]
@@ -206,8 +216,11 @@ function collectNameHits(text: string, counter: Map<string, number>, perChapter:
             }
             counter.set(candidate, (counter.get(candidate) ?? 0) + 1)
             perChapter.set(candidate, (perChapter.get(candidate) ?? 0) + 1)
+            matched = size
             break
         }
+        // 命中后跳过整个名字，否则「薛牧笑道」会在下一个字上再命中「牧笑」这类尾巴
+        index += matched > 0 ? matched : 1
     }
 }
 

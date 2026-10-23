@@ -6,8 +6,14 @@
  * 章节统计以章纲上的目标字数为分母，不使用正文实际字数反推计划。
  */
 import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
-import type { CharacterPortrait, PressExtractedCharacter } from '@shared/types/press'
-import { CHARACTER_GENDER_META, CHARACTER_GENDER_ORDER, CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from './constants'
+import type { CharacterPortrait, PressExtractedCharacter, PressExtractedVolume } from '@shared/types/press'
+import {
+    CHARACTER_GENDER_META,
+    CHARACTER_GENDER_ORDER,
+    CHARACTER_ROLE_META,
+    CHARACTER_ROLE_ORDER,
+    HOOK_OPTIONS,
+} from './constants'
 import type {
     CharacterCard,
     CharacterSeed,
@@ -151,6 +157,35 @@ export function createChapter(order: number, wordGoal: number): OutlineChapter {
         hook: 'suspense',
         tension: 3,
     }
+}
+
+/**
+ * 由大纲草案重建大纲树：卷名与章序沿用素材口径，id、状态、节拍等展示字段在此补齐。
+ * 关键约束：钩子标签按「包含」匹配——素材侧写「情绪」，表单值为「情绪高点」，等值比较会全部回落为无；
+ * 张力越界时夹到 1–5；章标题缺失时回退到默认命名，避免出现空行。
+ */
+export function createOutlineFromDraft(drafts: PressExtractedVolume[], chapterWordGoal: number): OutlineVolume[] {
+    return drafts.map((draft, volumeIndex) => ({
+        id: createId('vol'),
+        name: draft.name.length > 0 ? draft.name : `第${volumeIndex + 1}卷`,
+        goal: draft.goal,
+        conflict: draft.conflict,
+        chapters: draft.chapters.map((chapter) => {
+            const base = createChapter(chapter.order, chapterWordGoal)
+            const matched =
+                chapter.hook.length > 0
+                    ? HOOK_OPTIONS.find((option) => option.label.startsWith(chapter.hook))
+                    : undefined
+            return {
+                ...base,
+                title: chapter.title.length > 0 ? chapter.title : base.title,
+                summary: chapter.summary,
+                wordCount: chapter.wordCount,
+                hook: matched?.value ?? 'none',
+                tension: Math.min(5, Math.max(1, chapter.tension)),
+            }
+        }),
+    }))
 }
 
 /** 新建一卷空卷纲，卷名默认按序号命名 */

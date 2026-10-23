@@ -1,6 +1,7 @@
 /**
  * AI 对话 Webview 面板（宿主侧）：加载 React 构建产物，路由 ai/* 与 workflow/* 协议到对话服务与工作流路由，
- * 并把 naming/* 与写作管理协议（pressAi/* 生成类、press/workspace 与 press/open 作品类）委托给各自路由。
+ * 并把 naming/* 与写作管理协议（pressAi/* 生成类、press/workspace 与 press/open 作品类、
+ * press/extract/characters 人物卡提取、press/extract/outline 大纲提取）委托给各自路由。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
  * 上下文增删走 ai/context*，写回走 ai/writeState / ai/setMode / ai/applyWrite，state 广播以 channel 区分
  * ai（runtime / context / writeTarget）与 workflow（路由事实，含当前作品目录）。
@@ -39,8 +40,20 @@ const MAX_MODEL_ID_LENGTH = 64
 /** 会话作用域长度上限：作品目录形如 press/{作品名}，远短于此值，超出视为异常载荷 */
 const MAX_SCOPE_LENGTH = 160
 
-/** 写作管理工作台可用的作品协议：只读与打开，与仪表盘的作品写操作分开登记 */
-const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set(['press/workspace', 'press/open'])
+/**
+ * 写作管理工作台可用的作品协议：读取、打开、人物卡与大纲提取，与仪表盘的作品写操作分开登记。
+ * 两种提取都只读已落盘的 _import 素材（缺失时先补跑本地抽取），不修改正文、人物文档与大纲文档。
+ */
+const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set([
+    'press/workspace',
+    'press/open',
+    'press/extract/characters',
+    'press/extract/outline',
+    'press/extract/setting',
+    'press/apply',
+    'press/semantic/run',
+    'press/semantic/cancel',
+])
 
 export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     public static readonly viewId = 'zhai.workflow'
@@ -203,7 +216,12 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                     return this.naming.handle(method, payload)
                 }
                 if (method.startsWith('pressAi/') || PRESS_WORKSPACE_METHODS.has(method)) {
-                    return this.press.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())
+                    return this.press.handle(
+                        method,
+                        payload,
+                        (uri) => view.webview.asWebviewUri(uri).toString(),
+                        (progress) => this.post(view, { type: 'state', channel: 'press-semantic', payload: progress }),
+                    )
                 }
                 throw new Error(`未知的协议方法：${method}`)
         }

@@ -5,13 +5,18 @@
  * 并下传当前作品目录作为会话作用域（每个作品各有一份对话记录），取名渲染 ../naming 的 NamingPage；
  * 右侧分区入口由同目录 WorkflowPressNav 承载，分区之间共享同一份草稿。
  * 关键约束：本页不自行发起路由请求，作品定位只认宿主下发的 projectDir；未打开作品时渲染初始页（作品清单入口），
- * 不在页面内伪造示例数据；页面内的编辑仍是内存草稿，换作品或换页即重新按文档解析结果重建。
+ * 不在页面内伪造示例数据；页面内的编辑仍是内存草稿，换作品或换页即重新按文档解析结果重建，
+ * 需要落到文档时由右栏「保存到作品」把草稿序列化成段落交给宿主合并，未保存的改动仍会随换页丢失。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { Skeleton } from '@components/ui/skeleton'
 import type {
     OpenPressProjectResult,
+    PressApplyResult,
     PressExtractedCharacter,
+    PressExtractedSetting,
+    PressExtractedVolume,
     PressProjectSummary,
     PressWorkspaceRequest,
     PressWorkspaceResult,
@@ -34,7 +39,19 @@ import { AiChat } from '../aichat'
 import { NamingPage } from '../naming'
 import { PressCharacterPage, PressOutlinePage, PressSettingPage, PressWorkspaceStart } from '../press'
 import { parseProjectWorkspace } from '../press/document'
-import { createChapter, createCharacterCard, createCharacterFromDraft, createVolume } from '../press/utils'
+import {
+    serializeCharacterBlocks,
+    serializeOutlineSection,
+    serializeReadmeMeta,
+    serializeSettingSection,
+} from '../press/serialize'
+import {
+    createChapter,
+    createCharacterCard,
+    createCharacterFromDraft,
+    createOutlineFromDraft,
+    createVolume,
+} from '../press/utils'
 
 /** 默认分区：页面主体即 AI 对话，默认高亮与当前可见内容一致 */
 const DEFAULT_SECTION: WorkflowPressSection = 'chat'
@@ -78,6 +95,9 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
     const projectDir = context.projectDir
     const [activeSection, setActiveSection] = useState<WorkflowPressSection>(DEFAULT_SECTION)
     const [loadState, setLoadState] = useState<WorkspaceLoadState>(INITIAL_LOAD_STATE)
+    const [isSaving, setIsSaving] = useState(false)
+    /** 进行中标记：右栏动作项没有禁用态，靠 ref 拦住连点 */
+    const isSavingRef = useRef(false)
 
     useEffect(() => {
         let isCancelled = false
@@ -113,6 +133,40 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
             isCancelled = true
         }
     }, [projectDir])
+
+    /**
+     * 回写作品文档：把当前草稿序列化成段落，交给宿主合并进 README、设定、角色设定与大纲。
+     * 关键约束：序列化只产出段落片段，用户手写的其它段落由宿主保留；编辑本身仍是内存草稿，不回写就会随换页丢失。
+     */
+    const handleSave = useCallback((current: OutlineWorkspace, currentDir: string): void => {
+        const run = async (): Promise<void> => {
+            if (currentDir.length === 0 || isSavingRef.current) {
+                return
+            }
+            isSavingRef.current = true
+            setIsSaving(true)
+            try {
+                const result = await request<PressApplyResult>('press/apply', {
+                    dirPath: currentDir,
+                    readme: serializeReadmeMeta(current.setting),
+                    setting: serializeSettingSection(current.setting),
+                    characters: serializeCharacterBlocks(current.characters),
+                    outline: serializeOutlineSection(current.volumes, current.characters),
+                })
+                if (result.written.length === 0) {
+                    toast.error('没有写入任何文档，请检查日志')
+                    return
+                }
+                toast.success(`已回写 ${result.written.join('、')}`)
+            } catch (cause) {
+                toastError(cause)
+            } finally {
+                isSavingRef.current = false
+                setIsSaving(false)
+            }
+        }
+        void run()
+    }, [])
 
     /** 打开作品：宿主打开 README 并广播新的 projectDir，本页随之重新解析文档 */
     const handleOpenProject = useCallback((dirPath: string): void => {
@@ -247,14 +301,77 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
         [updateWorkspace],
     )
 
+    /** 用素材重建大纲树：整体覆盖既有草稿，返回重建的章节数供页面提示 */
+    const handleExtractOutline = useCallback(
+        (drafts: PressExtractedVolume[]): number => {
+            const volumes = createOutlineFromDraft(drafts, DEFAULT_CHAPTER_WORD_GOAL)
+            const chapterCount = volumes.reduce((total, volume) => total + volume.chapters.length, 0)
+            updateWorkspace((previous) => ({ ...previous, volumes }))
+            return chapterCount
+        },
+        [updateWorkspace],
+    )
+
+    /** 合并设定草案：只填空字段，已有内容一律不动，返回实际填入的字段数 */
+    const handleExtractSetting = useCallback(
+        (current: ProjectSetting, draft: PressExtractedSetting): number => {
+            const patch: Partial<ProjectSetting> = {}
+            if (current.logline.length === 0 && draft.logline.length > 0) {
+                patch.logline = draft.logline
+            }
+            if (current.conflict.length === 0 && draft.conflict.length > 0) {
+                patch.conflict = draft.conflict
+            }
+            if (current.era.length === 0 && draft.era.length > 0) {
+                patch.era = draft.era
+            }
+            if (current.factions.length === 0 && draft.factions.length > 0) {
+                patch.factions = draft.factions
+            }
+            if (current.powerSystem.length === 0 && draft.powerSystem.length > 0) {
+                patch.powerSystem = draft.powerSystem
+            }
+            if (current.taboo.length === 0 && draft.taboo.length > 0) {
+                patch.taboo = draft.taboo
+            }
+            if (current.goldenFingerType.length === 0 && draft.goldenFingerType.length > 0) {
+                patch.goldenFingerType = draft.goldenFingerType
+            }
+            if (current.goldenFingerAbility.length === 0 && draft.goldenFingerAbility.length > 0) {
+                patch.goldenFingerAbility = draft.goldenFingerAbility
+            }
+            if (current.goldenFingerCost.length === 0 && draft.goldenFingerCost.length > 0) {
+                patch.goldenFingerCost = draft.goldenFingerCost
+            }
+            if (current.perspective.length === 0 && draft.perspective.length > 0) {
+                patch.perspective = draft.perspective
+            }
+            if (current.tone.length === 0 && draft.tone.length > 0) {
+                patch.tone = draft.tone
+            }
+            const genres = [...new Set([...current.genres, ...draft.genres])]
+            if (genres.length > current.genres.length) {
+                patch.genres = genres
+            }
+            const filled = Object.keys(patch).length
+            if (filled > 0) {
+                updateWorkspace((previous) => ({ ...previous, setting: { ...previous.setting, ...patch } }))
+            }
+            return filled
+        },
+        [updateWorkspace],
+    )
+
     const renderSection = (workspace: OutlineWorkspace, workspaceDir: string): JSX.Element => {
         if (activeSection === 'setting') {
             return (
                 <PressSettingPage
                     setting={workspace.setting}
+                    dirPath={workspaceDir}
                     onChange={handleUpdateSetting}
                     onSelectStep={handleSelectStep}
                     onNext={() => setActiveSection('character')}
+                    onExtractSetting={(draft) => handleExtractSetting(workspace.setting, draft)}
                 />
             )
         }
@@ -274,12 +391,14 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
             return (
                 <PressOutlinePage
                     workspace={workspace}
+                    dirPath={workspaceDir}
                     defaultChapterWordGoal={DEFAULT_CHAPTER_WORD_GOAL}
                     onSelectStep={handleSelectStep}
                     onUpdateChapter={handleUpdateChapter}
                     onCreateVolume={handleCreateVolume}
                     onCreateChapter={handleCreateChapter}
                     onApplyOutline={handleApplyOutline}
+                    onExtractOutline={handleExtractOutline}
                     onOpenChat={() => setActiveSection('chat')}
                 />
             )
@@ -311,7 +430,12 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
     return (
         <div className="flex h-screen min-h-0">
             <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{renderSection(workspace, workspaceDir)}</div>
-            <WorkflowPressNav activeSection={activeSection} onSelect={setActiveSection} />
+            <WorkflowPressNav
+                activeSection={activeSection}
+                onSelect={setActiveSection}
+                isSaving={isSaving}
+                onSave={() => handleSave(workspace, workspaceDir)}
+            />
         </div>
     )
 }

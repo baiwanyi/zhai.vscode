@@ -10,11 +10,14 @@
 
 import * as vscode from 'vscode'
 import { consumeToday, readUsedToday } from './db/quotaRepository'
-import { MATERIAL_FILE_NAMES } from './importAnalysis'
+import { MATERIAL_FILE_NAMES, analyzeProject } from './importAnalysis'
 import type { AiChatMessage, AiProvider, AiUsage } from '../ai/provider'
 import type { QuotaKeys } from './db/quotaRepository'
 import type {
+    PressExtractedChapter,
     PressExtractedCharacter,
+    PressExtractedSetting,
+    PressExtractedVolume,
     PressSemanticErrorCode,
     PressSemanticProgress,
     PressSemanticStage,
@@ -78,9 +81,13 @@ const SUMMARIES_HEADER = '序号\t摘要\t钩子\t张力'
 const INDEX_HEADER = '序号\t卷\t标题\t字数\t路径'
 const CANDIDATES_HEADER = '候选名\t出现次数\t首次章\t末次章\t高频共现\t高频章'
 
-/** 卷纲与角色卡的产物文件名 */
+/** 卷纲、角色卡与设定草案的产物文件名 */
 const VOLUMES_FILE = 'volumes.md'
 const CHARACTERS_FILE = 'characters.md'
+const SETTING_FILE = 'setting.md'
+
+/** 设定提取取材的候选章上限：金手指候选很多，只取前若干章足以判断设定 */
+const SETTING_CLUE_LIMIT = 20
 
 /** 章节素材行 */
 interface HeadRow {
@@ -279,12 +286,19 @@ function parseCandidates(content: string): CandidateRow[] {
     return rows
 }
 
-/** 拆出二级标题区块：`## 角色名` 到下一个同级标题之间为一块，首个标题之前的内容忽略 */
-function splitCharacterSections(content: string): { title: string; content: string }[] {
+/** 区块标题正则：二级用于角色卡，三级用于卷纲 */
+const SECTION_PATTERNS: Readonly<Record<2 | 3, RegExp>> = {
+    2: /^##\s+(.+)$/u,
+    3: /^###\s+(.+)$/u,
+}
+
+/** 拆出指定级别的标题区块：到下一个同级标题之间为一块，首个标题之前的内容忽略 */
+function splitLevelSections(content: string, level: 2 | 3): { title: string; content: string }[] {
+    const pattern = SECTION_PATTERNS[level]
     const sections: { title: string; content: string }[] = []
     let current: { title: string; lines: string[] } | null = null
     for (const line of content.split(/\r?\n/u)) {
-        const heading = /^##\s+(.+)$/u.exec(line)
+        const heading = pattern.exec(line)
         if (heading?.[1] !== undefined) {
             if (current !== null) {
                 sections.push({ title: current.title, content: current.lines.join('\n') })
@@ -336,7 +350,7 @@ function toTraitLabels(value: string): string[] {
  */
 export function parseCharacterDrafts(content: string): PressExtractedCharacter[] {
     const drafts: PressExtractedCharacter[] = []
-    for (const section of splitCharacterSections(content)) {
+    for (const section of splitLevelSections(content, 2)) {
         const values = readDashedValues(section.content)
         const name = (values.get('姓名') ?? section.title).trim()
         if (name.length === 0) {
@@ -361,12 +375,89 @@ export function parseCharacterDrafts(content: string): PressExtractedCharacter[]
     return drafts
 }
 
+/** 常见高频虚词：正常中文正文必然大量出现，命中率极低说明正文已被解码成乱码 */
+const COMMON_HAN_CHARS = '的一是不了在人有我他这个们中来上大为和地到以说时要就出会可也你对生能而子那得于着下'
+
+/** 判断素材是否像乱码：取首段样例，高频虚词占比低于 1% 视为正文不可读 */
+function looksGarbled(text: string): boolean {
+    const sample = text.slice(0, 2000)
+    if (sample.length === 0) {
+        return false
+    }
+    let hits = 0
+    for (const char of sample) {
+        if (COMMON_HAN_CHARS.includes(char)) {
+            hits += 1
+        }
+    }
+    return hits / sample.length < 0.01
+}
+
 /** 提取终态文案：区分复用既有产物与本轮新生成，没有结果时给出下一步建议 */
-function buildExtractMessage(result: StageResult, count: number): string {
+function buildExtractMessage(result: StageResult, count: number, isGarbled: boolean): string {
     if (count === 0) {
-        return result.skipped ? '未识别到角色候选：请先导入作品或重新执行素材抽取' : '本次没有生成可用的人物卡，请重试'
+        if (isGarbled) {
+            return '素材正文读不出正常中文（疑似编码异常），请重新导入该作品的原始 TXT'
+        }
+        return result.skipped ? '素材里没有识别到人名候选，可手工新增人物' : '本次没有生成可用的人物卡，请重试'
     }
     return result.skipped ? `已复用既有产物，读取 ${String(count)} 个人物` : `已提取 ${String(count)} 个人物`
+}
+
+/** 金手指候选线索：命中的章、标题与关键词 */
+interface GoldenClue {
+    order: number
+    title: string
+    words: string
+}
+
+/** 解析金手指候选表：`- 第 N 章 标题：分类:词、分类:词` */
+function parseGoldenClues(text: string): GoldenClue[] {
+    const clues: GoldenClue[] = []
+    for (const line of text.split(/\r?\n/u)) {
+        const matched = /^\s*-\s*第\s*(\d+)\s*章\s*(.*?)[：:]\s*(.+)$/u.exec(line)
+        if (matched === null) {
+            continue
+        }
+        const order = Number(matched[1])
+        if (!Number.isInteger(order) || order <= 0) {
+            continue
+        }
+        clues.push({ order, title: (matched[2] ?? '').trim(), words: (matched[3] ?? '').trim() })
+    }
+    return clues
+}
+
+/**
+ * 解析设定草案：键值行按字段映射，题材沿用标签切分口径。
+ * 关键约束：没有任何实质字段时返回 null，视为「产物不可用」，调用方据此重新生成；
+ * 线索始终取自本地素材，避免模型转述走样。
+ */
+function parseSettingDraft(text: string, clues: GoldenClue[]): PressExtractedSetting | null {
+    const values = readDashedValues(text)
+    const read = (key: string): string => values.get(key) ?? ''
+    const setting: PressExtractedSetting = {
+        logline: read('一句话简介'),
+        conflict: read('核心冲突'),
+        era: read('时代'),
+        factions: read('势力'),
+        powerSystem: read('力量体系'),
+        taboo: read('禁忌'),
+        goldenFingerType: read('金手指类型'),
+        goldenFingerAbility: read('金手指能力'),
+        goldenFingerCost: read('金手指代价'),
+        perspective: read('视角'),
+        tone: read('语调'),
+        genres: toTraitLabels(read('题材')),
+        clues: clues.map((clue) => `第 ${String(clue.order)} 章 ${clue.title}：${clue.words}`),
+    }
+    const hasContent =
+        setting.logline.length > 0 ||
+        setting.era.length > 0 ||
+        setting.factions.length > 0 ||
+        setting.powerSystem.length > 0 ||
+        setting.goldenFingerType.length > 0
+    return hasContent ? setting : null
 }
 
 /** 摘要序列化：首行表头，其余按序号升序 */
@@ -546,14 +637,30 @@ export class ImportSemanticService {
     ) {}
 
     /**
-     * 启动语义归纳：依次执行摘要、卷纲、角色卡三个阶段，已完成阶段直接跳过。
+     * 校验 AI 通道与单任务锁：供阶段性任务的「快速失败」使用，避免长任务中才发现不可用。
+     * 关键约束：只做检查、不占锁，真正启动时 start 会再校验一次。
+     */
+    public async assertReady(): Promise<void> {
+        if (this.controller !== null) {
+            throw new SemanticError('internal', '已有归纳任务在进行中，请等待完成或取消')
+        }
+        const ready = await this.provider.checkReady()
+        if (!ready.ready) {
+            throw new SemanticError('not-ready', ready.reason ?? 'AI 通道未就绪，请先登录或检查配置')
+        }
+    }
+
+    /**
+     * 启动语义归纳：按给定阶段顺序执行，已完成阶段直接跳过。
      * @param jobId 由调用方生成并立即回传前端，用于过滤进度与取消
      * @param dirPath 作品目录，形如 press/{作品名}
+     * @param stages 本次要跑的阶段，缺省为「摘要 → 卷纲 → 角色卡」全部
      */
     public async start(
         jobId: string,
         dirPath: string,
         onProgress: (progress: PressSemanticProgress) => void,
+        stages: readonly PressSemanticStage[] = STAGE_ORDER,
     ): Promise<SemanticOutcome> {
         if (this.controller !== null) {
             throw new SemanticError('internal', '已有归纳任务在进行中，请等待完成或取消')
@@ -570,26 +677,31 @@ export class ImportSemanticService {
         const controller = new AbortController()
         this.controller = controller
         this.activeJobId = jobId
-        let stage: PressSemanticStage = 'summary'
+        let stage: PressSemanticStage = stages[0] ?? 'summary'
         let done = 0
         let total = heads.length
         let generated = 0
-        const emit = (status: PressSemanticProgress['status'], message: string): void => {
-            onProgress({ jobId, stage, status, done, total, generated, dirPath, message })
+        const emit = (status: PressSemanticProgress['status'], message: string, code?: PressSemanticErrorCode): void => {
+            onProgress({
+                jobId,
+                stage,
+                status,
+                done,
+                total,
+                generated,
+                dirPath,
+                ...(code === undefined ? {} : { code }),
+                message,
+            })
         }
         try {
             const results: StageResult[] = []
-            for (const current of STAGE_ORDER) {
+            for (const current of stages) {
                 if (controller.signal.aborted) {
                     logger.info(`语义归纳已取消：${dirPath}，停在 ${STAGE_LABELS[current]}`)
-                    return {
-                        status: 'cancelled',
-                        done,
-                        total,
-                        generated,
-                        dirPath,
-                        message: `已取消，已完成 ${String(results.length)} 个阶段`,
-                    }
+                    const message = `已取消，已完成 ${String(results.length)} 个阶段`
+                    emit('cancelled', message)
+                    return { status: 'cancelled', done, total, generated, dirPath, message }
                 }
                 stage = current
                 const result = await this.runStage(dirPath, current, heads, controller.signal, (state) => {
@@ -616,6 +728,7 @@ export class ImportSemanticService {
                 // 配额用尽属于「暂停」而非「出错」：保留已完成进度，用户调大限额或次日续跑
                 if (error.code === 'quota-exceeded') {
                     logger.info(`语义归纳暂停：${dirPath}，已完成 ${String(done)}/${String(total)}`)
+                    emit('failed', error.message, 'quota-exceeded')
                     return {
                         status: 'failed',
                         done,
@@ -630,14 +743,17 @@ export class ImportSemanticService {
             }
             const message = error instanceof Error ? error.message : String(error)
             logger.error(`语义归纳失败：${dirPath}`, error)
+            const isAborted = controller.signal.aborted
+            const summary = isAborted ? '已取消' : `语义归纳中断：${message}`
+            emit(isAborted ? 'cancelled' : 'failed', summary, isAborted ? 'aborted' : 'internal')
             return {
-                status: 'failed',
+                status: isAborted ? 'cancelled' : 'failed',
                 done,
                 total,
                 generated,
                 dirPath,
-                code: controller.signal.aborted ? 'aborted' : 'internal',
-                message: controller.signal.aborted ? '已取消' : `语义归纳中断：${message}`,
+                code: isAborted ? 'aborted' : 'internal',
+                message: summary,
             }
         } finally {
             this.controller = null
@@ -671,19 +787,186 @@ export class ImportSemanticService {
             onProgress({ jobId, stage: 'characters', status, done, total, generated: 0, dirPath, message })
         }
         try {
+            // 素材由导入流程产出，失败只记日志；这里补抽一次本地统计，用户不必为「素材缺失」另找入口
+            const candidatesUri = resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.candidates)
+            if ((await readTextFile(candidatesUri)).trim().length === 0) {
+                emit('running', '正在抽取章节素材…', 0, 0)
+                try {
+                    await analyzeProject(dirPath)
+                } catch (error) {
+                    logger.error(`素材抽取失败：${dirPath}`, error)
+                }
+            }
             const result = await this.runCharacters(dirPath, controller.signal, (state) => {
                 emit('running', state.message, state.done, state.total)
             })
             const characters = parseCharacterDrafts(
                 await readTextFile(resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${CHARACTERS_FILE}`)),
             )
-            const message = buildExtractMessage(result, characters.length)
+            // 没有候选时区分「正文是乱码」与「确实没有人名」：前者只能重新导入，重试多少次都一样
+            const isGarbled =
+                characters.length === 0 &&
+                looksGarbled(await readTextFile(resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.heads)))
+            const message = buildExtractMessage(result, characters.length, isGarbled)
             emit('completed', message, result.done, result.total)
             return { characters, message }
         } finally {
             this.controller = null
             this.activeJobId = ''
         }
+    }
+
+    /**
+     * 用已落盘的导入素材重建大纲树：卷名与章序取自章节清单，梗概与钩子取自章节摘要，
+     * 卷目标与冲突取自 AI 卷纲产物（尚未生成时留空）。
+     * 关键约束：素材缺失时先补跑本地抽取；本方法不调用模型，摘要或卷纲缺失只让对应字段为空，
+     * 章节仍照常返回，保证未做 AI 归纳时「提取大纲」同样可用。
+     */
+    public async extractOutline(dirPath: string): Promise<{ volumes: PressExtractedVolume[]; message: string }> {
+        const indexUri = resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.index)
+        if ((await readTextFile(indexUri)).trim().length === 0) {
+            await analyzeProject(dirPath)
+        }
+        const indexRows = parseIndex(await readTextFile(indexUri))
+        if (indexRows.length === 0) {
+            return { volumes: [], message: '没有扫描到章节：请确认作品目录下存在章节文档' }
+        }
+        const summaries = new Map(
+            parseSummaries(await readTextFile(resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.summaries))).map((row) => [
+                row.order,
+                row,
+            ]),
+        )
+        const volumeMeta = new Map(
+            splitLevelSections(
+                await readTextFile(resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${VOLUMES_FILE}`)),
+                3,
+            ).map((section) => {
+                const values = readDashedValues(section.content)
+                return [section.title, { goal: values.get('卷目标') ?? '', conflict: values.get('卷冲突') ?? '' }] as const
+            }),
+        )
+        const groups = new Map<string, PressExtractedChapter[]>()
+        for (const row of indexRows) {
+            const summary = summaries.get(row.order)
+            const chapter: PressExtractedChapter = {
+                order: row.order,
+                title: row.title,
+                summary: summary?.summary ?? '',
+                hook: summary?.hook ?? '无',
+                tension: summary?.tension ?? 3,
+                wordCount: row.charCount,
+            }
+            const bucket = groups.get(row.volumeDir)
+            if (bucket === undefined) {
+                groups.set(row.volumeDir, [chapter])
+            } else {
+                bucket.push(chapter)
+            }
+        }
+        const volumes: PressExtractedVolume[] = []
+        for (const [volumeDir, chapters] of groups) {
+            const meta = volumeMeta.get(volumeDir)
+            volumes.push({
+                name: volumeDir.length > 0 ? volumeDir : '未分卷',
+                goal: meta?.goal ?? '',
+                conflict: meta?.conflict ?? '',
+                chapters,
+            })
+        }
+        const message =
+            summaries.size === 0
+                ? `已按素材重建 ${String(volumes.length)} 卷 ${String(indexRows.length)} 章（尚无章节摘要，梗概待补）`
+                : `已按素材重建 ${String(volumes.length)} 卷 ${String(indexRows.length)} 章`
+        return { volumes, message }
+    }
+
+    /**
+     * 提取作品设定与金手指线索：读金手指候选章的首尾摘录与章节摘要，让模型归纳设定字段。
+     * 关键约束：产物已存在时直接复用，重复提取不消耗配额；与其它归纳共用单任务锁与每日配额；
+     * 线索由本地素材带出、不依赖模型输出，便于用户对照核实。
+     */
+    public async extractSetting(dirPath: string): Promise<{ setting: PressExtractedSetting | null; message: string }> {
+        const goldenUri = resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.goldenFinger)
+        if ((await readTextFile(goldenUri)).trim().length === 0) {
+            await analyzeProject(dirPath)
+        }
+        const clues = parseGoldenClues(await readTextFile(goldenUri))
+        const settingUri = resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${SETTING_FILE}`)
+        const cached = parseSettingDraft(await readTextFile(settingUri), clues)
+        if (cached !== null) {
+            return { setting: cached, message: '已复用既有设定草案' }
+        }
+        if (clues.length === 0) {
+            return { setting: null, message: '素材里没有金手指候选章：请先抽取素材，或确认正文含题材关键词' }
+        }
+        if (this.controller !== null) {
+            throw new SemanticError('internal', '已有归纳任务在进行中，请等待完成或取消')
+        }
+        const ready = await this.provider.checkReady()
+        if (!ready.ready) {
+            throw new SemanticError('not-ready', ready.reason ?? 'AI 通道未就绪，请先登录或检查配置')
+        }
+        this.assertQuota()
+        const controller = new AbortController()
+        this.controller = controller
+        try {
+            const messages = await this.buildSettingMessages(dirPath, clues)
+            const content = await this.generate(messages, controller.signal)
+            const setting = parseSettingDraft(content, clues)
+            if (setting === null) {
+                return { setting: null, message: '模型没有返回可用的设定字段，请重试' }
+            }
+            await writeTextFile(settingUri, `${content.trim()}\n`)
+            consumeToday(this.db, QUOTA_KEYS)
+            logger.info(`设定提取完成：${dirPath}`)
+            return { setting, message: `已提取设定与 ${String(clues.length)} 条金手指线索` }
+        } finally {
+            this.controller = null
+        }
+    }
+
+    /** 构建设定提取提示词：金手指候选章的首尾摘录加摘要，一次调用即可覆盖 */
+    private async buildSettingMessages(dirPath: string, clues: GoldenClue[]): Promise<AiChatMessage[]> {
+        const heads = new Map(
+            parseHeads(await readTextFile(resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.heads))).map((row) => [
+                row.order,
+                row,
+            ]),
+        )
+        const summaries = new Map(
+            parseSummaries(await readTextFile(resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.summaries))).map((row) => [
+                row.order,
+                row,
+            ]),
+        )
+        const blocks = clues.slice(0, SETTING_CLUE_LIMIT).map((clue) => {
+            const head = heads.get(clue.order)
+            const summary = summaries.get(clue.order)?.summary ?? ''
+            const excerpt = head === undefined ? '' : `首段：${head.head}\n末段：${head.tail}`
+            const preview = summary.length > 0 ? `梗概：${summary}\n` : ''
+            return `### 第 ${String(clue.order)} 章 ${clue.title}\n命中词：${clue.words}\n${preview}${excerpt}`
+        })
+        return [
+            {
+                role: 'system',
+                content:
+                    '你是资深小说策划。只输出「- 键：值」形式的纯文本，每行一个字段，不做解释、不加 Markdown 代码块。信息不足的字段留空，不要编造。',
+            },
+            {
+                role: 'user',
+                content: [
+                    '下面是一部长篇作品的「金手指候选章」素材：命中关键词的章节、该章梗概与首尾摘录。',
+                    '请据此归纳作品的世界观与写作设定，严格按以下键名逐行输出：',
+                    '- 一句话简介：', '- 核心冲突：', '- 时代：', '- 势力：', '- 力量体系：',
+                    '- 禁忌：', '- 金手指类型：', '- 金手指能力：', '- 金手指代价：', '- 视角：', '- 语调：', '- 题材：',
+                    '其中「题材」用顿号分隔 1-3 个标签；「视角」只写第一人称、第三人称限知、第三人称全知之一；',
+                    '「语调」用一个词概括（如轻松、热血、压抑）。只依据素材推断，素材没体现的就留空。',
+                    '',
+                    ...blocks,
+                ].join('\n'),
+            },
+        ]
     }
 
     /** 取消进行中的归纳：在下一个批次边界生效 */
