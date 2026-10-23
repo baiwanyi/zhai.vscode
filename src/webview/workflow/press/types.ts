@@ -20,8 +20,22 @@ export type CharacterRole = 'protagonist' | 'supporting' | 'antagonist' | 'neutr
 /** 角色性别：男、女，建卡时必选其一，不提供未设定 */
 export type CharacterGender = 'male' | 'female'
 
-/** 角色体型：五档预设，用于外貌描写与设定图的比例约束；与分类一样以选项形式填写 */
-export type CharacterBodyType = 'slim' | 'average' | 'athletic' | 'burly' | 'plump'
+/**
+ * 角色体型：十档预设，用于外貌描写与设定图的比例约束；与分类一样以选项形式填写。
+ * 取值覆盖身高与胖瘦两个维度（娇小/清瘦/纤细/修长/匀称/健壮/魁梧/圆润/丰腴/肥胖），
+ * 顺序即表单顺序，不得随意调整——它是作者按身形找档位的唯一线索。
+ */
+export type CharacterBodyType =
+    | 'petite'
+    | 'lean'
+    | 'slim'
+    | 'tall'
+    | 'average'
+    | 'athletic'
+    | 'burly'
+    | 'round'
+    | 'plump'
+    | 'heavy'
 
 /** 目标读者：与作品 README 的 audience 字段取值一致 */
 export type Audience = '男频' | '女频'

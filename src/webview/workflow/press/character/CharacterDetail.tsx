@@ -111,7 +111,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 <Input
                                     id="character-name"
                                     value={character.name}
-                                    className="h-8 px-3 py-1.5"
+                                    className="h-8 px-3 py-1 leading-5"
                                     onChange={(event) => onChange({ name: event.target.value })}
                                 />
                             </Field>
@@ -120,7 +120,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 <Input
                                     id="character-alias"
                                     value={character.alias}
-                                    className="h-8 px-3 py-1.5"
+                                    className="h-8 px-3 py-1 leading-5"
                                     onChange={(event) => onChange({ alias: event.target.value })}
                                 />
                             </Field>
@@ -129,7 +129,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 <Input
                                     id="character-age"
                                     value={character.age}
-                                    className="h-8 px-3 py-1.5"
+                                    className="h-8 px-3 py-1 leading-5"
                                     onChange={(event) => onChange({ age: event.target.value })}
                                 />
                             </Field>
@@ -139,7 +139,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                     id="character-height"
                                     value={character.height}
                                     placeholder="如：一米七八"
-                                    className="h-8 px-3 py-1.5"
+                                    className="h-8 px-3 py-1 leading-5"
                                     onChange={(event) => onChange({ height: event.target.value })}
                                 />
                             </Field>

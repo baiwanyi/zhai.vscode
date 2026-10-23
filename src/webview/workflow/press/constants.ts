@@ -94,23 +94,33 @@ export const CHARACTER_GENDER_ORDER: readonly CharacterGender[] = ['male', 'fema
 
 /**
  * 体型文案与顺序：与角色分类一样以预设选项填写，避免「微胖 / 偏瘦」这类自由表述无法比较。
- * 五档覆盖网文常见人物形态，写作时按档位决定动作描写与服装描写。
+ * 十档同时覆盖身高（娇小 → 修长）与胖瘦（清瘦 → 肥胖），写作时按档位决定动作与服装描写。
  */
 export const CHARACTER_BODY_TYPE_META: Readonly<Record<CharacterBodyType, { label: string }>> = {
+    petite: { label: '娇小' },
+    lean: { label: '清瘦' },
     slim: { label: '纤细' },
+    tall: { label: '修长' },
     average: { label: '匀称' },
     athletic: { label: '健壮' },
     burly: { label: '魁梧' },
-    plump: { label: '圆润' },
+    round: { label: '圆润' },
+    plump: { label: '丰腴' },
+    heavy: { label: '肥胖' },
 }
 
-/** 体型选项顺序：由瘦到壮，与表单从左到右的阅读顺序一致 */
+/** 体型选项顺序：按「娇小 → 丰腴」由轻到重的阅读顺序排列 */
 export const CHARACTER_BODY_TYPE_ORDER: readonly CharacterBodyType[] = [
+    'petite',
+    'lean',
     'slim',
+    'tall',
     'average',
     'athletic',
     'burly',
+    'round',
     'plump',
+    'heavy',
 ]
 
 /**

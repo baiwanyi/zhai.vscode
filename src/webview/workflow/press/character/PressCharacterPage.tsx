@@ -203,7 +203,7 @@ export function PressCharacterPage({
                             value={query}
                             aria-label="搜索人物"
                             placeholder="搜索姓名、昵称或身份"
-                            className="h-8 pr-3 pl-8 py-1.5"
+                            className="h-8 pr-3 pl-8 py-1 leading-5"
                             onChange={(event) => setQuery(event.target.value)}
                         />
                     </div>

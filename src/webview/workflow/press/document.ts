@@ -263,10 +263,19 @@ function readSectionText(
  * 一并收进来做归一；都认不出时按「匀称」处理，避免人物卡因为一个词变成未定义。
  */
 const BODY_TYPE_LABELS: Readonly<Record<string, CharacterBodyType>> = {
+    petite: 'petite',
+    娇小: 'petite',
+    小巧: 'petite',
+    lean: 'lean',
+    清瘦: 'lean',
+    偏瘦: 'lean',
+    瘦削: 'lean',
     slim: 'slim',
     纤细: 'slim',
-    偏瘦: 'slim',
-    瘦削: 'slim',
+    苗条: 'slim',
+    tall: 'tall',
+    修长: 'tall',
+    高挑: 'tall',
     average: 'average',
     匀称: 'average',
     中等: 'average',
@@ -278,10 +287,15 @@ const BODY_TYPE_LABELS: Readonly<Record<string, CharacterBodyType>> = {
     burly: 'burly',
     魁梧: 'burly',
     壮硕: 'burly',
+    round: 'round',
+    圆润: 'round',
+    丰满: 'round',
     plump: 'plump',
-    圆润: 'plump',
     丰腴: 'plump',
     微胖: 'plump',
+    heavy: 'heavy',
+    肥胖: 'heavy',
+    臃肿: 'heavy',
 }
 
 /** 读取体型：未填写或写法未收录都回落「匀称」 */
