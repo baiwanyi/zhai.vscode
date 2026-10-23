@@ -1,7 +1,7 @@
 # 通用 (Common) — 模块设计文档
 
-**版本**：1.0
-**日期**：2026-09-03
+**版本**：1.1
+**日期**：2026-10-23
 **状态**：草案
 **宿主**：VSCode 插件 Zhai（宅桌面）
 
@@ -279,13 +279,15 @@ interface StreamMessage {
     done: boolean
 }
 
-/** 宿主 → Webview：状态广播（索引就绪、配置变更、窗口聚焦） */
+/** 宿主 → Webview：状态广播（索引就绪、配置变更、窗口聚焦、操作反馈） */
 interface StateMessage {
     type: 'state'
-    channel: 'index' | 'config' | 'ai'
+    channel: 'index' | 'config' | 'ai' | 'toast'
     payload: unknown
 }
 ```
+
+**操作反馈**：宿主侧的操作结果（登录结果、索引状态、添加到宅对话等）统一经 `ToastService` 走 `toast` 通道下发，由 Webview 用 sonner 呈现，`payload` 形如 `{ level: 'info' | 'success' | 'warning' | 'error', message: string }`。没有任何 Webview 打开时（如从命令面板触发）自动回退 VS Code 原生通知，避免反馈静默丢失；页面内不再自行渲染操作结果文本。
 
 ---
 

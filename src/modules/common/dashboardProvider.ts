@@ -24,8 +24,9 @@ import { buildWebviewHtml } from './webviewHtml'
 import type { WorkflowRouter } from '../ai/workflowRouter'
 import type { PinStore } from '../note/pinStore'
 import type { IndexService, IndexStatus } from './indexer/indexService'
+import type { ToastService } from './toastService'
 import type { DashboardStats } from '../../shared/types/dashboard'
-import type { HostToWebviewMessage } from '../../shared/types/messages'
+import type { HostToWebviewMessage, ToastPayload } from '../../shared/types/messages'
 import type { NoteActiveState, OpenNoteResult, PinNotesResult } from '../../shared/types/note'
 import type {
     CreatePressProjectResult,
@@ -89,6 +90,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private indexStatusListener: vscode.Disposable | null = null
     /** 作品导入服务：持有待导入文件 token 与进行中的任务，长任务进度经 state 通道广播 */
     private readonly importService: PressImportService
+    /** 已挂载的视图：宿主操作反馈按视图广播给前端 sonner */
+    private readonly views = new Set<vscode.WebviewView>()
 
     public constructor(
         private readonly extensionUri: vscode.Uri,
@@ -97,8 +100,10 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         private readonly pins: PinStore,
         private readonly indexStatus: vscode.Event<IndexStatus>,
         private readonly workflowRouter: WorkflowRouter,
+        private readonly toast: ToastService,
     ) {
         this.importService = new PressImportService(indexService)
+        this.toast.onToast((payload) => this.broadcastToast(payload))
     }
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -113,10 +118,21 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         )
         this.watchActiveNote(webviewView)
         this.watchIndexStatus(webviewView)
+        this.views.add(webviewView)
+        this.toast.attach()
         webviewView.onDidDispose(() => {
             this.stopWatchingActiveNote()
             this.stopWatchingIndexStatus()
+            this.views.delete(webviewView)
+            this.toast.detach()
         }, this)
+    }
+
+    /** 广播操作反馈：前端用 sonner 统一呈现，替代 VS Code 原生通知 */
+    private broadcastToast(payload: ToastPayload): void {
+        for (const view of this.views) {
+            this.post(view, { type: 'state', channel: 'toast', payload })
+        }
     }
 
     private async renderHtml(webviewView: vscode.WebviewView): Promise<void> {

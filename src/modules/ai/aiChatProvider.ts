@@ -14,9 +14,10 @@ import { getSelectedCodebuddyModel, listCodebuddyModels, setSelectedCodebuddyMod
 import type { AiChatService } from './chatService'
 import type { WorkflowRouter } from './workflowRouter'
 import type { AiConversationMode, AiModelChoices } from '../../shared/types/aiChat'
-import type { HostToWebviewMessage, StreamMessage } from '../../shared/types/messages'
+import type { HostToWebviewMessage, StreamMessage, ToastPayload } from '../../shared/types/messages'
 import type { OpenWorkflowResult, ResetWorkflowResult } from '../../shared/types/workflow'
 import type { SecretsService } from '../common/secrets'
+import type { ToastService } from '../common/toastService'
 import type { NamingRoutes } from '../naming/namingRoutes'
 import type { PressRoutes } from '../press/pressRoutes'
 import { isRequestMessage } from '../../shared/types/messages'
@@ -56,6 +57,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         private readonly press: PressRoutes,
         private readonly secrets: SecretsService,
         private readonly state: vscode.Memento,
+        private readonly toast: ToastService,
     ) {
         this.disposables.push(
             service.onStream((message) => this.broadcast(message)),
@@ -63,6 +65,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             service.onContextChanged(() => this.broadcastContextChanged()),
             service.onWriteStateChanged(() => this.broadcastWriteStateChanged()),
             workflowRouter.onChanged(() => this.broadcastWorkflowChanged()),
+            toast.onToast((payload) => this.broadcastToast(payload)),
         )
     }
 
@@ -78,7 +81,11 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             this,
         )
         this.views.add(webviewView)
-        webviewView.onDidDispose(() => this.views.delete(webviewView), this)
+        this.toast.attach()
+        webviewView.onDidDispose(() => {
+            this.views.delete(webviewView)
+            this.toast.detach()
+        }, this)
     }
 
     public dispose(): void {
@@ -258,6 +265,13 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     private broadcastWriteStateChanged(): void {
         for (const view of this.views) {
             this.post(view, { type: 'state', channel: 'ai', payload: { kind: 'writeTarget' } })
+        }
+    }
+
+    /** 广播操作反馈：前端用 sonner 统一呈现，替代面板内的内联错误文本 */
+    private broadcastToast(payload: ToastPayload): void {
+        for (const view of this.views) {
+            this.post(view, { type: 'state', channel: 'toast', payload })
         }
     }
 

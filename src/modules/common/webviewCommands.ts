@@ -13,4 +13,6 @@ export const WEBVIEW_ALLOWED_COMMANDS: ReadonlySet<string> = new Set([
     // 面板跳转
     'zhai.openDashboard',
     'zhai.openAiChat',
+    // AI 对话：未登录时面板内的「登录」按钮经 host/command 触发浏览器授权
+    'zhai.ai.loginCodebuddy',
 ])

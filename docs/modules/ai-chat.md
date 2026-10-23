@@ -1,6 +1,6 @@
 # AI Chat — 模块设计文档
 
-**版本**：1.5
+**版本**：1.6
 **日期**：2026-10-23
 **状态**：对话模式、编辑器右键上下文（10.1）、会话历史（10.2，已按作品隔离）与写作模式写回（10.3）已落地；diff 逐段接受待实现；第 5 节已按 CodeBuddy 单通道更新（直连通道已移除）
 **宿主**：VSCode 插件 Zhai（宅桌面）
@@ -419,9 +419,9 @@ interface AbortRequest {
 | `ai/writeState` | Webview → 宿主 | 实时改写目标、写回作用域、可写回与已写回消息 id |
 | `ai/setMode` | Webview → 宿主 | 切换会话模式（`chat` / `write`），写库后返回 `{ mode }` |
 | `ai/applyWrite` | Webview → 宿主 | 按助手消息 id 写回编辑栏（不接受路径与范围入参），返回 `{ applied, label, reason? }` |
-| `host/command` | Webview → 宿主 | 白名单命令（`src/modules/common/webviewCommands.ts`），用于设置密钥、打开设置等 |
+| `host/command` | Webview → 宿主 | 白名单命令（`src/modules/common/webviewCommands.ts`），用于 CodeBuddy 登录（`zhai.ai.loginCodebuddy`）、打开设置等；未登记的命令一律拒绝 |
 | `stream` | 宿主 → Webview | 增量 `{ reqId, delta, channel }`；终态 `{ done: true, status, content, error? }` |
-| `state` | 宿主 → Webview | `channel: 'ai'`，`payload.kind` 为 `runtime`（密钥变更）、`context`（上下文变更）或 `writeTarget`（模式切换 / 生成完成 / 写回成功） |
+| `state` | 宿主 → Webview | `channel: 'ai'`，`payload.kind` 为 `runtime`（密钥变更）、`context`（上下文变更）或 `writeTarget`（模式切换 / 生成完成 / 写回成功）；`channel: 'toast'` 承载宿主操作反馈，`payload` 形如 `{ level, message }` |
 
 ### 10.1 编辑器右键「添加到宅对话」
 
@@ -437,7 +437,7 @@ interface AbortRequest {
 - **惰性引用**：添加时只记路径与行范围，发送时才读取原文（`workspace.textDocuments` 内存态优先，回退磁盘），未保存修改同样生效（第 9 节「引用内容不过期」的落地）。
 - **可见清单**：待发送引用以不可编辑芯片形式内联在输入区首行（文件 / 选区图标 + 标签 + 字数，单条移除）；已发送的引用作为**消息内容的一部分**随该条用户消息显示（`messages.refs`），不单独置于消息头部或会话头部。
 - **消息样式**：参考 Copilot / CodeBuddy——不带头像与角色标签；用户消息为右对齐气泡（引用条目在气泡内正文之上），助手回复走 `Bubble variant="ghost"` 通栏纯文本（无气泡）。
-- **提示**：默认聚焦面板（`zhai.ai.autoFocusOnContext`，关闭时改用信息提示）并给状态栏短提示；重复添加、超限、文件失效均返回明确文案。
+- **提示**：操作结果统一经 sonner 弹出（宿主侧 `ToastService` → `state` 的 `toast` 通道，无 Webview 时回退 VS Code 原生提示）；默认聚焦面板（`zhai.ai.autoFocusOnContext`），重复添加、超限、文件失效均返回明确文案。
 - **边界**：单条上限 20000 字符（选区超出按行截断并标注，整篇超出直接拒绝）、单会话上限 10 项；预算先扣引用与输入，剩余额度再容纳历史，历史中仅最近一条带引用的消息注入原文。
 - **安全**：原文以 `<context path="…" lines="…">` 注入并转义 `</context>`，系统提示声明标签内指令一律不执行；前端只回传宿主生成的 id，删除不接受路径。
 

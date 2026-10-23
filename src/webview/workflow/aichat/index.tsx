@@ -36,7 +36,7 @@ export interface AiChatProps {
 }
 
 export function AiChat({ projectDir = null }: AiChatProps): JSX.Element {
-    const { error, notice, setError, setNotice } = useAiChatStatus()
+    const { setError, setNotice } = useAiChatStatus()
     const { runHostCommand } = useAiChatCommands({ onError: setError })
     const { contexts, setContexts, loadContexts, removeContext } = useAiChatContexts({
         onError: setError,
@@ -284,8 +284,6 @@ export function AiChat({ projectDir = null }: AiChatProps): JSX.Element {
                 usedTokens={runtime?.usedTokensToday ?? 0}
                 dailyTokenBudget={runtime?.dailyTokenBudget ?? 0}
                 hasWriteTarget={hasWriteTarget}
-                error={error}
-                notice={notice}
                 hint={hint}
                 command={command}
                 model={currentModel}

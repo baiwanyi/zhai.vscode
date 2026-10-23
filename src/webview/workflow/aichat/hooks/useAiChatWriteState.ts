@@ -2,7 +2,7 @@
  * AI 对话写回状态：实时改写目标、可写回与已写回消息，经宿主 ai/writeState 与 ai/applyWrite 往返。
  * 复用约定：写回成功或宿主广播 writeTarget 后重新拉取，避免本地推断与宿主快照不一致。
  * 关键约束：只回传助手消息 id 执行写回，不接触文件路径与替换范围；同一时刻只允许一个写回请求；
- * 写回结果经 sonner 提示，读取写回状态失败仍走页面内提示行。
+ * 写回结果与读取失败均经 sonner 提示，面板内不再内联渲染错误文本。
  */
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
@@ -10,7 +10,7 @@ import type { AiApplyResult, AiWriteState } from '@shared/types/aiChat'
 import { request } from '../../../bridge'
 import { toErrorText } from '../utils'
 
-/** 写回 hook 的对外依赖：读取失败经由共享提示 hook 展示 */
+/** 写回 hook 的对外依赖：读取失败经由共享提示 hook 经 sonner 上报 */
 export interface UseAiChatWriteStateOptions {
     onError: (error: string | null) => void
 }

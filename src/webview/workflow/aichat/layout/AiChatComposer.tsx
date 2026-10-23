@@ -21,9 +21,7 @@ interface AiChatComposerProps {
     usedTokens: number
     dailyTokenBudget: number
     hasWriteTarget: boolean
-    error: string | null
-    notice: string | null
-    /** 模式相关的补充提示，优先级低于错误与操作提示 */
+    /** 模式相关的补充提示：错误与操作结果已改由 sonner 弹出 */
     hint: string | null
     /** 当前模型 id，空表示使用 CLI 默认模型 */
     model: string
@@ -56,8 +54,6 @@ export function AiChatComposer({
     usedTokens,
     dailyTokenBudget,
     hasWriteTarget,
-    error,
-    notice,
     hint,
     model,
     modelName,
@@ -102,7 +98,7 @@ export function AiChatComposer({
                 onSend={onSend}
                 onStop={onStop}
             />
-            <AiChatStatusHint error={error} notice={notice} hint={hint} isGenerating={isGenerating} />
+            <AiChatStatusHint hint={hint} isGenerating={isGenerating} />
         </footer>
     )
 }

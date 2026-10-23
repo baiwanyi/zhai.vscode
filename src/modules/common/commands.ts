@@ -1,11 +1,13 @@
 /**
  * 命令注册：zhai.* 命令面板与菜单入口（common.md 第 7.1 节命令清单）。
+ * 复用约定：操作反馈统一经 ToastService 走 Webview 的 sonner，无视图时自动回退原生提示。
  * 约束：全部 Disposable 必须挂载到 context.subscriptions，保证停用后资源释放（AC-10）。
  */
 import * as vscode from 'vscode'
 import { clearSchemaData } from './db/schema'
 import { logger } from './logger'
 import type { IndexService } from './indexer/indexService'
+import type { ToastService } from './toastService'
 import type Database from 'better-sqlite3'
 import { createAndOpenNote } from '../note/noteService'
 
@@ -13,6 +15,7 @@ export function registerCommands(
     context: vscode.ExtensionContext,
     db: Database.Database,
     indexService: IndexService,
+    toast: ToastService,
 ): void {
     const register = (command: string, handler: () => unknown): void => {
         context.subscriptions.push(vscode.commands.registerCommand(command, handler))
@@ -32,7 +35,8 @@ export function registerCommands(
 
     register('zhai.showIndexStatus', () => {
         const status = indexService.getStatus()
-        void vscode.window.showInformationMessage(
+        toast.notifyOrShow(
+            'info',
             `宅写作 索引状态：已索引 ${status.indexedCount} 个文件，上次构建 ${status.lastBuiltAt ?? '从未'}`,
         )
     })
@@ -40,7 +44,7 @@ export function registerCommands(
     register('zhai.clearIndex', () => {
         clearSchemaData(db)
         logger.info('索引缓存已清空')
-        void vscode.window.showInformationMessage('宅写作：索引缓存已清空，可执行「重建索引」恢复')
+        toast.notifyOrShow('info', '宅写作：索引缓存已清空，可执行「重建索引」恢复')
     })
 
     register('zhai.exportDiagnostics', () => {

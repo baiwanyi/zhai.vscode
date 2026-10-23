@@ -20,6 +20,7 @@ import { IndexService } from './modules/common/indexer/indexService'
 import { logger } from './modules/common/logger'
 import { SecretsService } from './modules/common/secrets'
 import { StatusBarService } from './modules/common/statusBar'
+import { ToastService } from './modules/common/toastService'
 import { openNamingDatabase } from './modules/naming/db/connection'
 import { ensureNamingSchema } from './modules/naming/db/schema'
 import { NamingRoutes } from './modules/naming/namingRoutes'
@@ -50,7 +51,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const indexService = new IndexService(db, indexStatusEmitter)
     context.subscriptions.push({ dispose: () => indexService.dispose() })
 
-    registerCommands(context, db, indexService)
+    // 操作反馈出口：命令层把执行结果推给已打开的 Webview，由前端 sonner 统一呈现
+    const toastService = new ToastService()
+    context.subscriptions.push(toastService)
+
+    registerCommands(context, db, indexService, toastService)
     indexService.registerWatcher(context.subscriptions)
 
     const pinStore = new PinStore(context.globalState)
@@ -65,6 +70,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         pinStore,
         indexStatusEmitter.event,
         workflowRouter,
+        toastService,
     )
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(DashboardViewProvider.viewId, dashboardProvider),
@@ -82,7 +88,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const aiChatService = new AiChatService(aiDb, aiProvider)
     context.subscriptions.push(aiChatService)
 
-    registerAiCommands(context, aiChatService, workflowRouter)
+    registerAiCommands(context, aiChatService, workflowRouter, toastService)
 
     // 取名：独立 naming.db 承载生成历史与收藏，词素库全部留在宿主侧
     const namingDb = openNamingDatabase(cacheRoot)
@@ -108,6 +114,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         pressRoutes,
         secrets,
         context.globalState,
+        toastService,
     )
     context.subscriptions.push(
         aiChatProvider,

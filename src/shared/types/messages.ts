@@ -36,14 +36,36 @@ export interface StreamMessage {
     error?: string
 }
 
+/** 操作反馈级别：与 sonner 的四个入口一一对应 */
+export type ToastLevel = 'info' | 'success' | 'warning' | 'error'
+
+/** 宿主 → Webview 的操作反馈载荷：由前端统一用 sonner 呈现 */
+export interface ToastPayload {
+    level: ToastLevel
+    message: string
+}
+
 /**
  * 宿主 → Webview：状态广播（索引就绪、配置变更、窗口聚焦、活跃笔记切换、工作流场景切换、
- * 作品导入进度）。press-import 通道承载导入任务的进度与终态，载荷形如 PressImportProgress。
+ * 作品导入进度、操作反馈）。press-import 通道承载导入任务的进度与终态，载荷形如 PressImportProgress；
+ * toast 通道承载宿主的操作反馈，载荷形如 ToastPayload。
  */
 export interface StateMessage {
     type: 'state'
-    channel: 'index' | 'config' | 'ai' | 'note' | 'workflow' | 'press-import'
+    channel: 'index' | 'config' | 'ai' | 'note' | 'workflow' | 'press-import' | 'toast'
     payload: unknown
+}
+
+/** 收窄 toast 广播载荷：Webview 侧收到的数据不可信，级别与文案逐字段校验后再展示 */
+export function isToastPayload(payload: unknown): payload is ToastPayload {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const { level, message } = payload as { level?: unknown; message?: unknown }
+    if (typeof message !== 'string' || message.length === 0) {
+        return false
+    }
+    return level === 'info' || level === 'success' || level === 'warning' || level === 'error'
 }
 
 export type HostToWebviewMessage = ResponseMessage | StreamMessage | StateMessage
