@@ -1,6 +1,7 @@
 /**
- * AI 使用量页展示格式化：时间、积分、tokens、请求 id 与耗时。
- * 复用约定：纯函数、不依赖宿主，便于单测；无效时间返回空串，与 webview 共享的时间展示口径一致。
+ * AI 使用量页展示格式化：时间、积分、tokens、请求 id、耗时与提示词复制。
+ * 复用约定：格式化均为纯函数、不依赖宿主，便于单测；无效时间返回空串，与 webview 共享的时间展示口径一致；
+ * 复制类操作直接写系统剪贴板，失败返回 false 交调用方提示，不在此抛错。
  * 关键约束：积分未知（null）一律显示破折号，不得回退成 0.00，否则会把未知成本显示成零消耗；
  * 请求 id 在表格中只截短展示，完整值通过 title 与弹窗标题给出。
  */
@@ -58,4 +59,14 @@ export function readModuleLabel(module: AiUsageModule): string {
 /** 错误文案：宿主协议错误以 Error 抛出，其余形态兜底转字符串 */
 export function toErrorText(cause: unknown): string {
     return cause instanceof Error ? cause.message : String(cause)
+}
+
+/** 复制提示词：写系统剪贴板，失败返回 false 由调用方提示，与取名页的复制保持同一模式 */
+export async function copyPrompt(content: string): Promise<boolean> {
+    try {
+        await navigator.clipboard.writeText(content)
+        return true
+    } catch {
+        return false
+    }
 }
