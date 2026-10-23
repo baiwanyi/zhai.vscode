@@ -112,8 +112,16 @@ export function NamingPage(): JSX.Element {
     }
 
     return (
-        <div className="@container flex h-full min-h-0 flex-col gap-2 p-3">
+        <div className="@container flex h-full min-h-0 flex-col gap-3 p-3">
+            <header className="flex flex-col shrink-0 gap-2">
+                <h2 className="truncate font-heading text-lg">取名</h2>
+                <p className="min-w-0 flex-1 text-muted-foreground text-xs">
+                    选定分类并设置风格、时代与字数后随机取名，一次生成一批候选；满意的直接复制。
+                </p>
+            </header>
+
             <NamingCategoryRail catalog={catalog} activeCategory={request.category} onSelect={handleCategoryChange} />
+
             <NamingConditionCard
                 catalog={catalog}
                 request={request}
@@ -125,6 +133,7 @@ export function NamingPage(): JSX.Element {
                 onGenerate={handleGenerate}
                 onAbort={handleAbort}
             />
+
             <ScrollArea className="min-h-0 flex-1">
                 <NamingResultGrid items={items} />
             </ScrollArea>

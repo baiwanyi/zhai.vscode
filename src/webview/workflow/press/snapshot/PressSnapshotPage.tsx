@@ -25,7 +25,7 @@ export function PressSnapshotPage({ dirPath }: PressSnapshotPageProps): JSX.Elem
             <header className="flex flex-col shrink-0 gap-2">
                 <h2 className="truncate font-heading text-lg">快照</h2>
                 <p className="min-w-0 flex-1 text-muted-foreground text-xs">
-                    作品信息、设定、角色与大纲有改动时自动留一版；恢复前会自动把当前内容也留一版。
+                    设定、大纲等文档与章节正文改动时自动留一版，恢复前也会先留一版，误操作随时可退回。
                 </p>
                 <SnapshotSectionRail activeSection={section} onSelect={setSection} />
             </header>
