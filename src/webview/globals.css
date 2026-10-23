@@ -19,18 +19,11 @@
     --font-heading: var(--font-sans);
     /* 字体族跟随 VSCode UI 字体，不再内置 Inter 字体文件 */
     --font-sans: var(--font-ui);
-    /* 全站字号唯一来源：所有 text-* 档位一律映射到 VSCode 界面字号，
-       源码里也不再写字号类；这里是护栏，避免后续新增类名把字号又拆成不同档位 */
-    --text-xs: var(--font-size-ui);
-    --text-sm: var(--font-size-ui);
-    --text-base: var(--font-size-ui);
-    --text-lg: var(--font-size-ui);
-    --text-xl: var(--font-size-ui);
-    --text-2xl: var(--font-size-ui);
-    --text-3xl: var(--font-size-ui);
-    --text-4xl: var(--font-size-ui);
     /* 代码块字体跟随编辑器字体（pre/code 的 font-mono） */
     --font-mono: var(--font-code);
+    /* text-base 档位对齐 VSCode 界面字号：取 --font-size-ui（随 VSCode 界面字号设置变化），
+       不再沿用 Tailwind 默认的 1rem；行高仍用默认令牌，避免与组件自带 leading-* 叠加冲突 */
+    --text-base: var(--font-size-ui);
     /* 额外语义令牌：颜色与阴影同样来自 VSCode 变量，值定义在文件末尾的桥接段 */
     --color-placeholder: var(--placeholder);
     --color-input-background: var(--input-background);
@@ -92,11 +85,10 @@
     * {
         @apply border-border outline-ring/50;
     }
-    /* 字号只在这里落一次：全站文本继承 VSCode 界面字号。
-       html 保持 16px 不动，rem 仍按 4px 网格换算布局尺寸，不随用户字号设置缩放。 */
+    /* 基础字号只在这里落一次：全站文本默认继承 VSCode 界面字号；组件自带的 text-* 档位保持各自比例，
+       业务代码不再单独写字号类。html 保持 16px 不动，rem 仍按 4px 网格换算布局尺寸。 */
     body {
         @apply bg-background text-foreground;
-        font-size: var(--font-size-ui);
     }
     html {
         @apply font-sans;
