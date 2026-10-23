@@ -422,6 +422,8 @@ function isEmptyDraft(draft: PressExtractedCharacter): boolean {
     const textFields = [
         draft.alias,
         draft.age,
+        draft.height,
+        draft.bodyType,
         draft.identity,
         draft.appearance,
         draft.background,
@@ -459,6 +461,8 @@ export function parseCharacterDrafts(content: string): PressExtractedCharacter[]
             role: values.get('分类') ?? '',
             gender: values.get('性别') ?? '',
             age: values.get('年龄') ?? '',
+            height: values.get('身高') ?? values.get('身量') ?? '',
+            bodyType: values.get('体型') ?? values.get('身材') ?? '',
             identity: values.get('身份') ?? '',
             appearance: values.get('外貌') ?? '',
             traits: toTraitLabels(values.get('特质') ?? values.get('性格') ?? ''),
@@ -809,6 +813,8 @@ function buildCharacterMessages(
                 '- 分类：主角 / 配角 / 反派 / 中立 / 龙套 之一',
                 '- 性别：男 / 女 / 未知',
                 '- 年龄：原文写明的岁数或可直接判断的阶段（如「约二十」），没有依据就留空',
+                '- 身高：原文写明的身高或可直接判断的高矮（如「一米七八」），没有依据就留空',
+                '- 体型：娇小 / 清瘦 / 纤细 / 修长 / 匀称 / 健壮 / 魁梧 / 圆润 / 丰腴 / 肥胖 之一，没有依据就留空',
                 '- 身份：门派、职位、出身等身份标签',
                 '- 外貌：体态、五官、衣着与标志性特征的白描，只写原文出现过的',
                 '- 特质：性格特征，用顿号分隔，3 到 6 个',
@@ -824,7 +830,7 @@ function buildCharacterMessages(
                 '1. 候选名来自分词统计，可能根本不是人名（例如「时候」「东西」「能量」「闻言」「解释」这类普通词）。',
                 '   只有能在原文摘录或摘要里确认它指代某个具体人物时，才输出该角色；无法确认的一个都不要输出。',
                 '2. 只依据给出的摘要、原文摘录与统计，不要引入素材里没有的情节或外貌描写。',
-                '3. 年龄、外貌、背景、口头禅这四项以原文摘录为准，原文没写就留空，不要猜测、不要编造。',
+                '3. 年龄、身高、体型、外貌、背景、口头禅这几项以原文摘录为准，原文没写就留空，不要猜测、不要编造。',
                 '4. 关系必须写清对方是谁、是什么关系，不要只写「与主角关系密切」这类空话。',
                 '5. 不要写「原文无对应人物」这类说明性条目——判断不是人物就直接不输出，不要为它占一段。',
                 '6. 不要输出总述、总结或角色之外的文字。',
@@ -1476,9 +1482,11 @@ export class ImportSemanticService {
         const charactersUri = resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${CHARACTERS_FILE}`)
         await vscode.workspace.fs.createDirectory(resolveMaterialFile(dirPath, PRESS_IMPORT_DIR))
         const existing = await readTextFile(charactersUri)
-        // 键名齐备还不够：旧产物可能全是「时候」「东西」这类噪声条目，过滤后一条不剩时必须重跑
+        // 键名齐备还不够：旧产物可能全是「时候」「东西」这类噪声条目，过滤后一条不剩时必须重跑；
+        // 身高与体型是后加的字段，旧产物里没有它们就永远补不进已有的人物卡，故一并纳入齐备判定，触发一次重跑
         const isUpToDate =
-            isProductUpToDate(existing, ['- 外貌：', '- 背景：']) && parseCharacterDrafts(existing).length > 0
+            isProductUpToDate(existing, ['- 外貌：', '- 背景：', '- 身高：', '- 体型：']) &&
+            parseCharacterDrafts(existing).length > 0
         if (isUpToDate) {
             onState({ done: 0, total: 0, message: '角色卡已存在，跳过' })
             return { generated: 0, done: 0, total: 0, skipped: true }

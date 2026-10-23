@@ -49,9 +49,9 @@ import {
 import {
     createChapter,
     createCharacterCard,
-    createCharacterFromDraft,
     createOutlineFromDraft,
     createVolume,
+    mergeCharacterDrafts,
 } from '../press/utils'
 
 /** 默认分区：页面主体即 AI 对话，默认高亮与当前可见内容一致 */
@@ -325,29 +325,32 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
         [flush, updateWorkspace],
     )
 
-    /** 合并提取出的人物卡：按姓名去重后追加，返回实际新增人数供人物页提示 */
+    /**
+     * 合并提取出的人物卡：同名人物按空字段补全（不覆盖作者已写内容），未匹配的按草案新建。
+     * 关键约束：提取期间列表可能已被编辑，故按写入前的最新草稿再合并一次；
+     * 没有任何实际变化时不写盘，避免一次「提取」把没动过的角色设定重写一遍。
+     */
     const handleExtractCharacters = useCallback(
-        (existing: CharacterCard[], drafts: PressExtractedCharacter[]): number => {
-            const names = new Set(existing.map((character) => character.name))
-            const additions: CharacterCard[] = []
-            for (const draft of drafts) {
-                if (draft.name.length === 0 || names.has(draft.name)) {
-                    continue
-                }
-                names.add(draft.name)
-                additions.push(createCharacterFromDraft(draft))
+        (
+            existing: CharacterCard[],
+            drafts: PressExtractedCharacter[],
+        ): { created: number; updated: number } => {
+            const planned = mergeCharacterDrafts(existing, drafts)
+            if (planned.created === 0 && planned.updated === 0) {
+                return { created: 0, updated: 0 }
             }
-            if (additions.length === 0) {
-                return 0
-            }
-            // 提取期间列表可能已被编辑，合并时按最新草稿再去重一次
+            let merged = planned
             updateWorkspace((previous) => {
-                const usedNames = new Set(previous.characters.map((character) => character.name))
-                const fresh = additions.filter((character) => !usedNames.has(character.name))
-                return fresh.length === 0 ? previous : { ...previous, characters: [...previous.characters, ...fresh] }
+                merged = mergeCharacterDrafts(previous.characters, drafts)
+                return merged.created === 0 && merged.updated === 0
+                    ? previous
+                    : { ...previous, characters: merged.characters }
             })
+            if (merged.created === 0 && merged.updated === 0) {
+                return { created: 0, updated: 0 }
+            }
             flush(new Set<PersistScope>(['characters']))
-            return additions.length
+            return { created: merged.created, updated: merged.updated }
         },
         [flush, updateWorkspace],
     )

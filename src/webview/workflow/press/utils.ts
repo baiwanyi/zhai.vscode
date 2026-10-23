@@ -1,13 +1,16 @@
 /**
- * 大纲模块纯函数：设定完整度、章节统计、节点构造与字数格式化，供页面与卡片共用。
+ * 大纲与人物卡纯函数：设定完整度、章节统计、节点构造、字数格式化，以及提取草案的建卡与字段补全。
  * 复用约定：字数口径复用仪表盘的 formatWordCount，不另写一套；节点 id 统一由 createId 生成，
- * 保证新增卷、章、节拍在树中可直接作为 key 与选中标识。
+ * 保证新增卷、章、节拍在树中可直接作为 key 与选中标识；草案的中文标签按 constants 的元数据表归一。
  * 关键约束：完整度只统计可判断「是否填写」的字段，缺失不视为错误、仅用于提示；
- * 章节统计以章纲上的目标字数为分母，不使用正文实际字数反推计划。
+ * 章节统计以章纲上的目标字数为分母，不使用正文实际字数反推计划；
+ * 补全已有角色只填空白字段、不覆盖作者已写内容，没有实际变化时必须返回原对象，避免无谓写盘。
  */
 import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
 import type { CharacterPortrait, PressExtractedCharacter, PressExtractedVolume } from '@shared/types/press'
 import {
+    CHARACTER_BODY_TYPE_META,
+    CHARACTER_BODY_TYPE_ORDER,
     CHARACTER_GENDER_META,
     CHARACTER_GENDER_ORDER,
     CHARACTER_ROLE_META,
@@ -15,6 +18,7 @@ import {
     HOOK_OPTIONS,
 } from './constants'
 import type {
+    CharacterBodyType,
     CharacterCard,
     CharacterSeed,
     HookKind,
@@ -138,10 +142,19 @@ export function createCharacterCard(seed: CharacterSeed = {}): CharacterCard {
     }
 }
 
+/** 体型中文标签反查：草案存的是给作者看的标签，未收录的写法视为模型没给出可用档位 */
+function toBodyTypeFromDraft(label: string): CharacterBodyType | null {
+    const trimmed = label.trim()
+    if (trimmed.length === 0) {
+        return null
+    }
+    return CHARACTER_BODY_TYPE_ORDER.find((value) => CHARACTER_BODY_TYPE_META[value].label === trimmed) ?? null
+}
+
 /**
- * 由提取草案建卡：把中文标签归一到角色分类与性别枚举，
- * 未识别的分类回落为配角、性别回落为男，与作品文档解析的容错口径一致。
- * 别名、年龄、外貌、背景、口头禅逐项透传——这些字段是导入区别于「只拿到一个名字」的关键。
+ * 由提取草案建卡：把中文标签归一到角色分类、性别与体型枚举，
+ * 未识别的分类回落为配角、性别回落为男、体型回落为匀称，与作品文档解析的容错口径一致。
+ * 别名、年龄、身高、体型、外貌、背景、口头禅逐项透传——这些字段是导入区别于「只拿到一个名字」的关键。
  */
 export function createCharacterFromDraft(draft: PressExtractedCharacter): CharacterCard {
     const role = CHARACTER_ROLE_ORDER.find((value) => CHARACTER_ROLE_META[value].label === draft.role) ?? 'supporting'
@@ -152,6 +165,8 @@ export function createCharacterFromDraft(draft: PressExtractedCharacter): Charac
         role,
         gender,
         age: draft.age,
+        height: draft.height,
+        bodyType: toBodyTypeFromDraft(draft.bodyType) ?? 'average',
         identity: draft.identity,
         appearance: draft.appearance,
         traits: draft.traits,
@@ -163,6 +178,124 @@ export function createCharacterFromDraft(draft: PressExtractedCharacter): Charac
         arc: draft.arc,
         relation: draft.relation,
     })
+}
+
+/** 人物卡上可由草案补全的单值字段：键名与草案一致，逐项比较即可，不另写一份映射 */
+const DRAFT_TEXT_KEYS = [
+    'alias',
+    'age',
+    'height',
+    'identity',
+    'appearance',
+    'background',
+    'desire',
+    'weakness',
+    'catchphrase',
+    'ability',
+    'arc',
+    'relation',
+] as const
+
+/** 取「现有为空则用草案」的文本值：已有内容一律不覆盖，草案也没给时保持原样 */
+function pickDraftText(current: string, incoming: string): string {
+    return current.trim().length > 0 ? current : incoming.trim()
+}
+
+/** 判断补全是否真的改动了字段：只比较可能被写入的键，封面、设定图等原样带过的字段不参与 */
+function hasCharacterChange(before: CharacterCard, after: CharacterCard): boolean {
+    if (before.id !== after.id || before.traits !== after.traits || before.bodyType !== after.bodyType) {
+        return true
+    }
+    return DRAFT_TEXT_KEYS.some((key) => before[key] !== after[key])
+}
+
+/**
+ * 用提取草案补全一张已有的人物卡：只补空字段，不覆盖作者已写的内容。
+ * 关键约束：分类与性别不参与合并——两者有默认档（配角 / 男），无法区分「作者明确选的」与「建卡默认」，
+ * 而它们直接决定出场统计分组与设定图约束，改错的代价高于补全收益；体型同理，只把默认档「匀称」视作未表态，
+ * 草案给出别的档位才写入，档位相同则视为无事发生；
+ * id 为空说明这张卡不是按人物标识规范建出来的，补一个 8 位标识，否则角色卡目录与设定图文件名都会落空。
+ * 返回 null 表示没有任何字段需要更新，调用方据此跳过写盘。
+ */
+export function mergeCharacterDraft(character: CharacterCard, draft: PressExtractedCharacter): CharacterCard | null {
+    const draftBodyType = toBodyTypeFromDraft(draft.bodyType)
+    const next: CharacterCard = {
+        ...character,
+        id: character.id.trim().length > 0 ? character.id : createId('char'),
+        alias: pickDraftText(character.alias, draft.alias),
+        age: pickDraftText(character.age, draft.age),
+        height: pickDraftText(character.height, draft.height),
+        identity: pickDraftText(character.identity, draft.identity),
+        appearance: pickDraftText(character.appearance, draft.appearance),
+        background: pickDraftText(character.background, draft.background),
+        desire: pickDraftText(character.desire, draft.desire),
+        weakness: pickDraftText(character.weakness, draft.weakness),
+        catchphrase: pickDraftText(character.catchphrase, draft.catchphrase),
+        ability: pickDraftText(character.ability, draft.ability),
+        arc: pickDraftText(character.arc, draft.arc),
+        relation: pickDraftText(character.relation, draft.relation),
+        traits:
+            character.traits.length > 0 || draft.traits.length === 0 ? character.traits : draft.traits,
+        bodyType:
+            character.bodyType === 'average' && draftBodyType !== null && draftBodyType !== 'average'
+                ? draftBodyType
+                : character.bodyType,
+    }
+    return hasCharacterChange(character, next) ? next : null
+}
+
+/** 合并结果：characters 为合并后的完整列表，created 与 updated 供调用方决定提示文案 */
+export interface CharacterMergeResult {
+    characters: CharacterCard[]
+    /** 本次新建的人物数 */
+    created: number
+    /** 本次被草案补全过字段的人物数 */
+    updated: number
+}
+
+/**
+ * 合并提取草案：同名人物按字段补全，未匹配的按草案新建。
+ * 关键约束：逐条处理而不是先筛重名再建卡——同名草案第二次会落到补全分支，
+ * 既不会重复建卡，也能把先出现那条缺的字段补上；
+ * 匹配只认姓名，别名不参与，避免「娘子」这类称呼把两个人并成一张卡。
+ */
+export function mergeCharacterDrafts(
+    existing: readonly CharacterCard[],
+    drafts: readonly PressExtractedCharacter[],
+): CharacterMergeResult {
+    const characters = [...existing]
+    const indexByName = new Map<string, number>()
+    characters.forEach((character, index) => {
+        if (!indexByName.has(character.name)) {
+            indexByName.set(character.name, index)
+        }
+    })
+    let created = 0
+    let updated = 0
+    for (const draft of drafts) {
+        const name = draft.name.trim()
+        if (name.length === 0) {
+            continue
+        }
+        const index = indexByName.get(name)
+        if (index === undefined) {
+            indexByName.set(name, characters.length)
+            characters.push(createCharacterFromDraft(draft))
+            created += 1
+            continue
+        }
+        const current = characters[index]
+        if (current === undefined) {
+            continue
+        }
+        const merged = mergeCharacterDraft(current, draft)
+        if (merged === null) {
+            continue
+        }
+        characters[index] = merged
+        updated += 1
+    }
+    return { characters, created, updated }
 }
 
 /** 新建一条空节拍，默认未兑现 */

@@ -5,7 +5,7 @@
  * 本文件只做筛选、搜索、提取、封面回读与弹窗编排，以及作品氛围、作品目录的下传。
  * 关键约束：新增后直接打开编辑弹窗，因此 onCreateCharacter 必须回传新卡 id；
  * 编辑弹窗以人物 id 作为 key 重建，关闭即丢弃草稿，页面不保留编辑中间态；
- * 提取得到的是草案，合并与重名跳过由父级完成，页面只负责提示实际新增数量；
+ * 提取得到的是草案，建卡与同名补全由父级完成，页面只负责刷新列表；
  * 画廊只在「作品目录、角色数、封面 id 组合」变化时重读——保存封面后卡片立刻显示新图，日常输入不会反复扫盘。
  */
 import { Plus, Search, Sparkles } from 'lucide-react'
@@ -36,8 +36,8 @@ interface PressCharacterPageProps {
     onChangeCharacter: (id: string, patch: Partial<CharacterCard>) => void
     /** 删除人物并清理章纲中的出场引用 */
     onDeleteCharacter: (id: string) => void
-    /** 合并提取出的人物卡并返回实际新增人数，重名与空名由父级跳过 */
-    onExtractCharacters: (drafts: PressExtractedCharacter[]) => number
+    /** 合并提取出的人物卡并返回新建与补全人数；重名人物只补空字段、空名由父级跳过 */
+    onExtractCharacters: (drafts: PressExtractedCharacter[]) => { created: number; updated: number }
 }
 
 export function PressCharacterPage({

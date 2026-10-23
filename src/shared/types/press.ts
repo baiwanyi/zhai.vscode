@@ -675,6 +675,10 @@ export interface PressExtractedCharacter {
     gender: string
     /** 年龄：原文给出的岁数或可直接判断的阶段，如「二十许」「约三十」 */
     age: string
+    /** 身高：原文写明的身形数据或可直接判断的高矮，如「一米七八」，原文未写时留空 */
+    height: string
+    /** 体型中文标签：娇小 / 清瘦 / 纤细 / 修长 / 匀称 / 健壮 / 魁梧 / 圆润 / 丰腴 / 肥胖，未判断时留空 */
+    bodyType: string
     identity: string
     /** 外貌：体态、五官、衣着、标志性特征的白描，原文未描写时留空 */
     appearance: string
