@@ -3,13 +3,13 @@
  * 复用约定：分页、计数与汇总复用 usageRepository 的同一 WHERE 口径；模块键与范围枚举来自 shared/types/aiUsage，
  * 记录行在此归一成下发契约，前端不再二次解析；过期提示词在列表请求时顺带清理。
  * 关键约束：积分只认 CodeBuddy 会话记录里的真实值（CliUsageIndex），本地缺失时留空显示破折号，不做任何估算；
- * 回填只在本地为空的行上执行，已对账的值不覆盖；入参一律在本层收窄（模块白名单、范围枚举、页码夹紧、
+ * 对账以 CLI 记录为准，已回填但偏小的值同样修正（工具调用积分可能晚落盘）；入参一律在本层收窄（模块白名单、范围枚举、页码夹紧、
  * 请求 id 长度与字符），不接受任意时间字符串；提示词只按请求 id 单条读取，缺失时返回 found=false 而不是抛错。
  */
 import {
     countUsageLogs,
     getPrompt,
-    listUnresolvedUsage,
+    listUsageForCreditSync,
     listUsageLogs,
     prunePrompts,
     sumUsageLogs,
@@ -39,6 +39,8 @@ const PROMPT_RETENTION_DAYS = 30
 const MAX_REQUEST_ID_LENGTH = 64
 /** 一天的毫秒数 */
 const DAY_MS = 24 * 60 * 60 * 1000
+/** 积分比较容差：CLI 侧积分为逐条累加的浮点，与库内值比较时避免因尾差反复重写 */
+const CREDIT_EPSILON = 1e-9
 
 export class AiUsageService {
     public constructor(
@@ -80,13 +82,20 @@ export class AiUsageService {
         } else {
             this.cliUsage.ensureFresh()
         }
-        const pending = listUnresolvedUsage(this.db)
+        const pending = listUsageForCreditSync(this.db)
         if (pending.length === 0) {
             return
         }
         const updates = pending.flatMap((row) => {
             const credit = this.cliUsage.readCredit(row.requestId)
-            return credit === null ? [] : [{ id: row.id, credits: credit }]
+            if (credit === null) {
+                return []
+            }
+            // 与库内一致则跳过，避免每次翻页都整批重写；积分为逐条累加，比较时留浮点容差
+            if (row.credits !== null && Math.abs(row.credits - credit) < CREDIT_EPSILON) {
+                return []
+            }
+            return [{ id: row.id, credits: credit }]
         })
         updateUsageCredits(this.db, updates)
     }
@@ -148,6 +157,7 @@ function toModule(value: string): AiUsageModule {
         case 'appearance':
         case 'semantic':
         case 'scene':
+        case 'image':
             return value
         default:
             return 'chat'

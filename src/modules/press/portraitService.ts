@@ -127,10 +127,20 @@ export class PortraitService {
             this.lastVariation = variation
             // 两段式：先让文本模型按这组变化写画面，再出图；文本通道不可用时用同一组变化拼模板
             const scene = await this.describeScene(request, variation, controller.signal)
+            const prompt = buildPortraitPrompt(request, scene.text)
             const artifact = await this.router.generate({
-                prompt: buildPortraitPrompt(request, scene.text),
+                prompt,
                 size: config.imageSize,
                 signal: controller.signal,
+            })
+            // 出图按张计费：图像消耗单独成行，积分与其他入口一样按请求 id 从 CLI 会话记录回填
+            this.usageRecorder.record({
+                module: 'image',
+                model: getSelectedCodebuddyModel(),
+                usage: artifact.usage ?? null,
+                meta: artifact.meta ?? null,
+                prompt,
+                startedAt: artifact.startedAt ?? startedAt,
             })
             logger.info(`角色卡通道：codebuddy（${scene.fromAi ? 'AI 画面描述' : '模板变化描述'}）：${scene.text}`)
             const id = `${PORTRAIT_FILE_PREFIX}-${request.characterId}-${formatPortraitStamp(new Date())}`

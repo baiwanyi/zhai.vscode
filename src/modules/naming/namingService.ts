@@ -151,6 +151,7 @@ export class NamingService {
                 module: 'naming',
                 model: getSelectedCodebuddyModel(),
                 usage: result.usage,
+                meta: result.meta,
                 prompt: summarizeMessages(buildNamingMessages(request)),
             })
             return { items, source: 'ai' }

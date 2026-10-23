@@ -85,32 +85,35 @@ export function insertUsageLog(db: Database.Database, row: UsageLogInput): void 
     ).run(row)
 }
 
-/** 待回填积分的行：本地积分仍为空且有请求 id，说明尚未与 CLI 记录对账 */
-export interface UnresolvedUsageRow {
+/** 参与对账的行：本地已有值与请求 id，供与 CLI 记录比对后修正 */
+export interface CreditSyncRow {
     id: string
     requestId: string
+    /** 本地已缓存的积分，null 表示尚未对账 */
+    credits: number | null
 }
 
 /**
- * 列出待回填积分的行：积分结论以 CodeBuddy 会话记录为准，本地只做缓存。
- * 只取最近 500 条，避免历史不可对账的行（旧版本地 UUID 请求 id）长期占据扫描窗口。
+ * 列出参与对账的行：积分结论以 CodeBuddy 会话记录为准，本地只做缓存。
+ * 只取最近 500 条，避免历史不可对账的行（旧版本地 UUID 请求 id）长期占据扫描窗口；
+ * 已回填的行同样返回——CLI 侧积分是逐条累加的，工具调用晚落盘时首次只能拿到部分值，需要允许后续修正。
  */
-export function listUnresolvedUsage(db: Database.Database): UnresolvedUsageRow[] {
+export function listUsageForCreditSync(db: Database.Database): CreditSyncRow[] {
     return db
         .prepare(
-            `SELECT id, request_id AS requestId FROM ai_usage_logs
-              WHERE credits IS NULL AND request_id IS NOT NULL
+            `SELECT id, request_id AS requestId, credits FROM ai_usage_logs
+              WHERE request_id IS NOT NULL
               ORDER BY created_at DESC LIMIT 500`,
         )
-        .all() as UnresolvedUsageRow[]
+        .all() as CreditSyncRow[]
 }
 
-/** 回填真实积分：只写仍为空的行，已对账的记录不覆盖，返回实际更新条数 */
+/** 写入真实积分：以 CLI 记录为准，已对账但偏小的值一并修正，返回实际更新条数 */
 export function updateUsageCredits(db: Database.Database, updates: Array<{ id: string; credits: number }>): number {
     if (updates.length === 0) {
         return 0
     }
-    const statement = db.prepare('UPDATE ai_usage_logs SET credits = @credits WHERE id = @id AND credits IS NULL')
+    const statement = db.prepare('UPDATE ai_usage_logs SET credits = @credits WHERE id = @id')
     let changed = 0
     db.transaction((rows: Array<{ id: string; credits: number }>) => {
         for (const row of rows) {

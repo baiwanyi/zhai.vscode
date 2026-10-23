@@ -6,6 +6,7 @@
  * 避免表格闪空；只有手动刷新带 force 跳过节流，页面可见时的 30 秒静默同步走普通查询。
  */
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import type { AiUsageListResult, AiUsageModule, AiUsageRange } from '@shared/types/aiUsage'
 import { request } from '../../../bridge'
 import { POLL_INTERVAL_MS } from '../constants'
@@ -51,6 +52,10 @@ export function useAiUsage(
                 if (!cancelled) {
                     setResult(payload)
                     setError(null)
+                    // 只有手动刷新才提示：轮询与翻页静默完成，不打扰阅读
+                    if (requestState.force) {
+                        toast.success('用量已刷新')
+                    }
                 }
             } catch (cause) {
                 if (!cancelled) {

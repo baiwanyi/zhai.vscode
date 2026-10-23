@@ -72,6 +72,7 @@ export class PressAiService {
                 module: 'appearance',
                 model: getSelectedCodebuddyModel(),
                 usage: result.usage,
+                meta: result.meta,
                 prompt: summarizeMessages(buildAppearanceMessages(request)),
             })
             return { content }

@@ -157,6 +157,40 @@ describe('aiUsageService', () => {
         expect(result.summary.credits).toBeCloseTo(1.75)
     })
 
+    it('已回填的积分按 CLI 记录修正，工具调用晚落盘时不会停在部分值', () => {
+        const projectDir = path.join(cliRoot, 'partial')
+        fs.mkdirSync(projectDir, { recursive: true })
+        const file = path.join(projectDir, 's1.jsonl')
+        fs.writeFileSync(
+            file,
+            JSON.stringify({
+                type: 'message',
+                role: 'assistant',
+                providerData: { conversationRequestId: 'req-partial', rawUsage: { credit: 0.5 } },
+            }),
+            'utf8',
+        )
+        seedUsage('u1', 'image', new Date().toISOString(), 'req-partial', null)
+
+        const first = service.list({ module: null, range: 'all', page: 1, pageSize: 20 })
+        expect(first.items[0]?.module).toBe('image')
+        expect(first.items[0]?.credits).toBeCloseTo(0.5)
+
+        // 出图工具积分晚落盘：库里已回填的 0.5 必须被修正为累计值，而不是永久停在部分值
+        fs.appendFileSync(
+            file,
+            `\n${JSON.stringify({
+                type: 'function_call_result',
+                providerData: { conversationRequestId: 'req-partial', toolResult: { rawResponse: { credit: 5.3 } } },
+            })}`,
+            'utf8',
+        )
+
+        const updated = service.list({ module: null, range: 'all', page: 1, pageSize: 20, force: true })
+        expect(updated.items[0]?.credits).toBeCloseTo(5.8)
+        expect(updated.summary.credits).toBeCloseTo(5.8)
+    })
+
     it('force 跳过节流，能立即读到新写入的 CLI 记录', () => {
         seedUsage('u1', 'chat', new Date().toISOString(), 'req-force', null)
         const first = service.list({ module: null, range: 'all', page: 1, pageSize: 20 })

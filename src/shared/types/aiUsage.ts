@@ -6,8 +6,8 @@
  * 时间范围以枚举下发，由宿主换算成起止时间，前端不得传任意时间字符串。
  */
 
-/** 用量来源模块：对话 / 取名 / 外貌 / 语义归纳 / 画面描述 */
-export type AiUsageModule = 'chat' | 'naming' | 'appearance' | 'semantic' | 'scene'
+/** 用量来源模块：对话 / 取名 / 外貌 / 语义归纳 / 画面描述 / 出图 */
+export type AiUsageModule = 'chat' | 'naming' | 'appearance' | 'semantic' | 'scene' | 'image'
 
 /** 时间筛选：今日、近 7 天、近 30 天、全部 */
 export type AiUsageRange = 'today' | '7d' | '30d' | 'all'
@@ -22,6 +22,7 @@ export const AI_USAGE_MODULE_LABELS: Readonly<Record<AiUsageModule, string>> = {
     appearance: '外貌生成',
     semantic: '语义归纳',
     scene: '画面描述',
+    image: 'AI出图',
 }
 
 /** 时间范围展示名 */
@@ -34,7 +35,14 @@ export const AI_USAGE_RANGE_LABELS: Readonly<Record<AiUsageRange, string>> = {
 
 /** 判断是否为合法模块键：协议入参来自 Webview，须逐值收窄 */
 export function isAiUsageModule(value: unknown): value is AiUsageModule {
-    return value === 'chat' || value === 'naming' || value === 'appearance' || value === 'semantic' || value === 'scene'
+    return (
+        value === 'chat' ||
+        value === 'naming' ||
+        value === 'appearance' ||
+        value === 'semantic' ||
+        value === 'scene' ||
+        value === 'image'
+    )
 }
 
 /** 判断是否为合法时间范围 */

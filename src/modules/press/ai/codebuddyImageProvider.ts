@@ -1,6 +1,7 @@
 /**
  * CodeBuddy 图像通道：经 Agent SDK 调用 CLI 内置的 ImageGen 工具出图。
- * 复用约定：提示词与尺寸由调用方给出，本层只负责拼指令、驱动工具、把产物归一为字节；
+ * 复用约定：提示词与尺寸由调用方给出，本层只负责拼指令、驱动工具、把产物归一为字节，
+ * 并把本轮用量与请求标识随产物回传（记账由调用方完成，本层不写库）；
  * 凭证优先取 SecretStorage 的 CodeBuddy API Key，缺省沿用 CLI 登录态。
  * 关键约束：只放行 ImageGen 并限制最大轮次（模型常先输出说明、再调用工具、最后收尾）；
  * 工具结果一落地即尝试取图，避免收尾轮被轮次上限截断导致整次作废；ImageGen 以 JSON 文本回报产物（images[].localPath），
@@ -13,6 +14,7 @@ import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { query } from '@tencent-ai/agent-sdk'
 import type { ImageGenerateOptions, ImageGenerateResult, ImageProvider, ImageProviderId } from './imageProvider'
+import type { AiUsage } from '../../ai/provider'
 import type { CodebuddySite } from '../../common/config'
 import type { SecretsService } from '../../common/secrets'
 import type { ContentBlock, PermissionResult } from '@tencent-ai/agent-sdk'
@@ -292,8 +294,34 @@ export class CodeBuddyImageProvider implements ImageProvider {
         })
         const blocks: ContentBlock[] = []
         let failure: string | null = null
+        const startedAt = Date.now()
+        /** 轮次标识与用量：图像工具按张计费，随产物回传，由服务层记账后按 requestId 回填 */
+        let requestId: string | null = null
+        let messageId: string | null = null
+        let usage: AiUsage | null = null
+        let costUsd = 0
+        let durationMs = 0
+        let durationApiMs = 0
+        let cacheReadTokens = 0
+        let cacheCreationTokens = 0
+        /** 给产物附上本次请求的用量与标识：提前取图与正常收尾走同一出口，避免两条分支口径不一 */
+        const settle = (artifact: ImageGenerateResult): ImageGenerateResult => ({
+            ...artifact,
+            usage,
+            meta: {
+                requestId,
+                messageId,
+                costUsd,
+                durationMs: durationMs > 0 ? durationMs : Date.now() - startedAt,
+                durationApiMs,
+                cacheReadTokens,
+                cacheCreationTokens,
+            },
+            startedAt,
+        })
         try {
             for await (const message of session) {
+                requestId = message._requestId ?? requestId
                 if (message.type === 'assistant') {
                     blocks.push(...message.message.content)
                     continue
@@ -309,20 +337,34 @@ export class CodeBuddyImageProvider implements ImageProvider {
                     if (IMAGE_DONE_PATTERN.test(collectText(blocks))) {
                         const artifact = await this.readArtifactWithRetry(blocks)
                         if (artifact !== null) {
-                            return artifact
+                            return settle(artifact)
                         }
                     }
                     continue
                 }
-                if (message.type === 'result' && message.subtype !== 'success') {
-                    failure = message.errors?.join('；') ?? message.subtype
+                if (message.type === 'result') {
+                    messageId = message._messageId ?? message.uuid
+                    usage = {
+                        promptTokens: message.usage.input_tokens,
+                        completionTokens: message.usage.output_tokens,
+                        reasoningTokens: 0,
+                        totalTokens: message.usage.input_tokens + message.usage.output_tokens,
+                    }
+                    costUsd = message.total_cost_usd
+                    durationMs = message.duration_ms
+                    durationApiMs = message.duration_api_ms
+                    cacheReadTokens = message.usage.cache_read_input_tokens ?? 0
+                    cacheCreationTokens = message.usage.cache_creation_input_tokens ?? 0
+                    if (message.subtype !== 'success') {
+                        failure = message.errors?.join('；') ?? message.subtype
+                    }
                 }
             }
         } catch (error) {
             // 工具已出图、仅收尾轮次失败时，优先交出已拿到的产物
             const artifact = await this.readArtifact(blocks)
             if (artifact !== null) {
-                return artifact
+                return settle(artifact)
             }
             logger.warn(`CodeBuddy 出图中断且未取到产物：${summarizeForLog(blocks)}`)
             throw toReadableError(error, getSelectedCodebuddyModel())
@@ -344,7 +386,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
             }
             throw new Error('CodeBuddy 未返回可识别的图片（已检查本地路径、链接与内联数据），请检查登录态与 CLI 版本')
         }
-        return artifact
+        return settle(artifact)
     }
 
     /**

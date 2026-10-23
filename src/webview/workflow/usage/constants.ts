@@ -26,6 +26,7 @@ export const MODULE_OPTIONS: readonly UsageModuleOption[] = [
     { value: 'appearance', label: AI_USAGE_MODULE_LABELS.appearance },
     { value: 'semantic', label: AI_USAGE_MODULE_LABELS.semantic },
     { value: 'scene', label: AI_USAGE_MODULE_LABELS.scene },
+    { value: 'image', label: AI_USAGE_MODULE_LABELS.image },
 ]
 
 /** 时间下拉：默认近 7 天，避免首次进入就拉全量 */

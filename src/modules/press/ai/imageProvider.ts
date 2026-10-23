@@ -6,6 +6,7 @@
  * 因为出图按张计费，静默重试会连扣两次。
  */
 import { CodeBuddyImageProvider } from './codebuddyImageProvider'
+import type { AiUsage, AiUsageMeta } from '../../ai/provider'
 import type { SecretsService } from '../../common/secrets'
 
 /** 图像通道标识 */
@@ -24,6 +25,14 @@ export interface ImageGenerateOptions {
 export interface ImageGenerateResult {
     bytes: Uint8Array
     extension: 'png' | 'jpg' | 'webp'
+    /**
+     * 本次出图的用量与请求标识：出图按张计费，图像工具的积分与文本消耗一并回传，
+     * 由服务层写用量行并按 requestId 从 CLI 会话记录回填；通道未能回传时为 null。
+     */
+    usage?: AiUsage | null
+    meta?: AiUsageMeta | null
+    /** 请求开始时间戳：供服务层在通道未回传耗时时兜底 */
+    startedAt?: number
 }
 
 /** 图像通道实现 */
