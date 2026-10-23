@@ -220,6 +220,45 @@ describe('aiUsageService', () => {
         expect(service.list({ module: 'chat', range: 'all', page: 1, pageSize: 20 }).total).toBe(0)
     })
 
+    it('本地没有记账行时，出图轮次按工具结果归到 AI出图', () => {
+        const projectDir = path.join(cliRoot, 'image')
+        fs.mkdirSync(projectDir, { recursive: true })
+        const timestamp = Date.now()
+        fs.writeFileSync(
+            path.join(projectDir, 's1.jsonl'),
+            [
+                JSON.stringify({
+                    type: 'function_call',
+                    timestamp,
+                    providerData: {
+                        conversationRequestId: 'req-img',
+                        model: 'deepseek-v4.1-flash',
+                        rawUsage: { prompt_tokens: 100, completion_tokens: 20, total_tokens: 120, credit: 0.08 },
+                    },
+                }),
+                JSON.stringify({
+                    type: 'function_call_result',
+                    timestamp,
+                    providerData: {
+                        conversationRequestId: 'req-img',
+                        toolResult: {
+                            title: 'Image generated successfully',
+                            rawResponse: { type: 'image_gen_tool_result', status: 'success', images: [], credit: 5.74 },
+                        },
+                    },
+                }),
+            ].join('\n'),
+            'utf8',
+        )
+
+        const result = service.list({ module: null, range: 'all', page: 1, pageSize: 20 })
+        expect(result.items[0]?.module).toBe('image')
+        expect(result.items[0]?.credits).toBeCloseTo(5.82)
+        expect(service.list({ module: 'image', range: 'all', page: 1, pageSize: 20 }).total).toBe(1)
+        // 出图轮次不再落到未归属
+        expect(service.list({ module: 'external', range: 'all', page: 1, pageSize: 20 }).total).toBe(0)
+    })
+
     it('已回填的积分按 CLI 记录修正，工具调用晚落盘时不会停在部分值', () => {
         const projectDir = path.join(cliRoot, 'partial')
         fs.mkdirSync(projectDir, { recursive: true })
@@ -282,6 +321,45 @@ describe('aiUsageService', () => {
 
         const forced = service.list({ module: null, range: 'all', page: 1, pageSize: 20, force: true })
         expect(forced.items[0]?.credits).toBeCloseTo(0.4)
+    })
+
+    it('本地没有提示词时回落到 CLI 会话记录', () => {
+        const projectDir = path.join(cliRoot, 'fallback')
+        fs.mkdirSync(projectDir, { recursive: true })
+        fs.writeFileSync(
+            path.join(projectDir, 's1.jsonl'),
+            JSON.stringify({
+                type: 'message',
+                role: 'user',
+                timestamp: Date.now(),
+                providerData: { conversationRequestId: 'req-user' },
+                content: [{ type: 'input_text', text: '帮我写一段开篇' }],
+            }),
+            'utf8',
+        )
+        fs.writeFileSync(
+            path.join(projectDir, 's2.jsonl'),
+            JSON.stringify({
+                type: 'function_call_result',
+                timestamp: Date.now(),
+                providerData: {
+                    conversationRequestId: 'req-img2',
+                    toolResult: {
+                        title: 'Image generated',
+                        rawResponse: { type: 'image_gen_tool_result', prompt: 'a girl with bow', credit: 5 },
+                    },
+                },
+            }),
+            'utf8',
+        )
+
+        // 先触发索引刷新，readPrompt 本身不再单独读盘
+        service.list({ module: null, range: 'all', page: 1, pageSize: 20, force: true })
+
+        expect(service.readPrompt('req-user').content).toContain('帮我写一段开篇')
+        // 出图轮次取图像提示词，而不是驱动模型的消息正文
+        expect(service.readPrompt('req-img2').content).toBe('a girl with bow')
+        expect(service.readPrompt('req-none').found).toBe(false)
     })
 
     it('非法请求 id 直接拒绝', () => {

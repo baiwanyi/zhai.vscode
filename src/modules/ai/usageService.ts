@@ -4,7 +4,8 @@
  * 本地行按请求 id 关联，关联不上的标为 external；过期提示词在列表请求时顺带清理。
  * 关键约束：明细与汇总都按 CLI 记录的积分计，本地缺失时留空显示破折号，不做任何估算；
  * 对账以 CLI 记录为准，已回填但偏小的值同样修正（工具调用积分可能晚落盘）；入参一律在本层收窄（模块白名单、
- * 范围枚举、页码夹紧、请求 id 长度与字符），不接受任意时间字符串；提示词只按请求 id 单条读取。
+ * 范围枚举、页码夹紧、请求 id 长度与字符），不接受任意时间字符串；提示词只按请求 id 单条读取，
+ * 本地未留存时回落到 CLI 会话记录（出图轮次取图像提示词，其余取用户消息原文）。
  */
 import {
     getPrompt,
@@ -129,16 +130,21 @@ export class AiUsageService {
         updateUsageCredits(this.db, updates)
     }
 
-    /** 按请求 id 取提示词：历史记录可能未留存，缺失时 found=false */
+    /** 按请求 id 取提示词：优先本地留存，缺失时回落到 CLI 会话记录；都取不到时 found=false */
     public readPrompt(requestId: string): AiUsagePromptResult {
         if (!isValidRequestId(requestId)) {
             throw new Error('ai/usage/prompt 参数类型不正确')
         }
         const row = getPrompt(this.db, requestId)
-        if (row === undefined) {
-            return { requestId, content: '', isTruncated: false, found: false }
+        if (row !== undefined) {
+            return { requestId, content: row.content, isTruncated: row.isTruncated, found: true }
         }
-        return { requestId, content: row.content, isTruncated: row.isTruncated, found: true }
+        // 记账功能上线前或未接记账的轮次，正文只存在于 CLI 记录里
+        const fallback = this.cliUsage.readPrompt(requestId)
+        if (fallback !== null) {
+            return { requestId, content: fallback.content, isTruncated: fallback.isTruncated, found: true }
+        }
+        return { requestId, content: '', isTruncated: false, found: false }
     }
 
     /** 清理保留期外的提示词：只在列表请求时触发，避免常驻定时器 */
@@ -196,13 +202,21 @@ function toItem(row: UsageLogRecord): AiUsageItem {
     }
 }
 
-/** CLI 条目转下发契约：匹配到本地行时取模块与耗时，未匹配标为 external */
+/** 模块判定：本地行优先；本地没有行时按该轮是否出图归类，其余视为未归属 */
+function readEntryModule(entry: CliUsageEntry, row: UsageLogRecord | undefined): AiUsageModule {
+    if (row !== undefined) {
+        return toModule(row.module)
+    }
+    return entry.isImageGeneration ? 'image' : 'external'
+}
+
+/** CLI 条目转下发契约：匹配到本地行时取模块与耗时，未匹配按出图标记归类 */
 function toCliItem(entry: CliUsageEntry, row: UsageLogRecord | undefined): AiUsageItem {
     return {
         id: entry.requestId,
         requestId: entry.requestId,
         createdAt: entry.createdAt,
-        module: row === undefined ? 'external' : toModule(row.module),
+        module: readEntryModule(entry, row),
         model: entry.model.length > 0 ? entry.model : (row?.model ?? ''),
         credits: entry.credit,
         costUsd: row?.costUsd ?? 0,

@@ -18,6 +18,8 @@ const REFRESH_INTERVAL_MS = 5_000
 const MAX_DEPTH = 3
 /** 秒级时间戳上界：小于该值的数字按秒换算，避免把十位秒数当毫秒解析成 1970 年 */
 const SECOND_TIMESTAMP_LIMIT = 1e12
+/** 提示词回显上限：与记账侧 PROMPT_MAX_LENGTH 保持一致，超出部分标记截断 */
+const PROMPT_MAX_LENGTH = 20_000
 
 /** 一轮请求在 CLI 记录里的汇总：用量页直接以它作为明细行 */
 export interface CliUsageEntry {
@@ -31,6 +33,19 @@ export interface CliUsageEntry {
     promptTokens: number
     completionTokens: number
     totalTokens: number
+    /**
+     * 该轮是否调用了出图工具：按工具结果类型判定，与本地有没有记账行无关。
+     * 历史出图（记账功能上线前）只能靠它归到「AI出图」，否则会被当成未归属。
+     */
+    isImageGeneration: boolean
+    /** 该轮所属会话文件：取提示词时按需读取，不在索引里常驻正文 */
+    sessionFile: string
+}
+
+/** 从会话记录里取回的一轮提示词 */
+export interface CliPromptInfo {
+    content: string
+    isTruncated: boolean
 }
 
 /** 单条记录解析出的用量：timestamp 为 null 表示该行未带时间 */
@@ -43,6 +58,7 @@ interface ParsedUsage {
     promptTokens: number
     completionTokens: number
     totalTokens: number
+    isImageGeneration: boolean
 }
 
 export class CliUsageIndex {
@@ -82,6 +98,83 @@ export class CliUsageIndex {
         }
         return this.entries.get(requestId)?.credit ?? null
     }
+
+    /**
+     * 按请求 id 取回该轮提示词：出图轮次优先取图像提示词，其余取用户消息原文。
+     * 只在打开弹窗时读文件，正文不常驻内存；取不到时返回 null 由调用方显示缺失态。
+     */
+    public readPrompt(requestId: string): CliPromptInfo | null {
+        const entry = this.entries.get(requestId)
+        if (entry === undefined) {
+            return null
+        }
+        let content: string
+        try {
+            content = fs.readFileSync(entry.sessionFile, 'utf8')
+        } catch {
+            return null
+        }
+        let userText: string | null = null
+        for (const line of content.split('\n')) {
+            const trimmed = line.trim()
+            if (trimmed.length === 0 || !trimmed.includes(requestId)) {
+                continue
+            }
+            let record: unknown
+            try {
+                record = JSON.parse(trimmed)
+            } catch {
+                continue
+            }
+            if (!isRecord(record)) {
+                continue
+            }
+            const providerData = isRecord(record.providerData) ? record.providerData : null
+            if (providerData === null || readString(providerData.conversationRequestId) !== requestId) {
+                continue
+            }
+            const toolResult = isRecord(providerData.toolResult) ? providerData.toolResult : null
+            const toolResponse = toolResult !== null && isRecord(toolResult.rawResponse) ? toolResult.rawResponse : null
+            const imagePrompt = toolResponse === null ? null : readString(toolResponse.prompt)
+            if (imagePrompt !== null) {
+                return toPromptInfo(imagePrompt)
+            }
+            if (userText === null && readString(record.role) === 'user') {
+                userText = readMessageText(record.content)
+            }
+        }
+        return userText === null ? null : toPromptInfo(userText)
+    }
+}
+
+/** 统一截断：与记账侧保持同一上限与截断标记 */
+function toPromptInfo(text: string): CliPromptInfo {
+    return {
+        content: text.slice(0, PROMPT_MAX_LENGTH),
+        isTruncated: text.length > PROMPT_MAX_LENGTH,
+    }
+}
+
+/** 从消息内容块里拼出可读正文：只取文本块，忽略工具与推理块 */
+function readMessageText(content: unknown): string | null {
+    if (!Array.isArray(content)) {
+        return null
+    }
+    const parts: string[] = []
+    for (const block of content) {
+        if (!isRecord(block)) {
+            continue
+        }
+        const type = readString(block.type)
+        if (type !== 'input_text' && type !== 'text') {
+            continue
+        }
+        const text = readString(block.text)
+        if (text !== null) {
+            parts.push(text)
+        }
+    }
+    return parts.length === 0 ? null : parts.join('\n')
 }
 
 /** 递归列出会话记录文件：读不到的目录直接跳过，不影响其它项目 */
@@ -139,7 +232,7 @@ function collectFile(file: string, target: Map<string, CliUsageEntry>): void {
         if (parsed === null) {
             continue
         }
-        mergeUsage(target, parsed, fallbackTime)
+        mergeUsage(target, parsed, fallbackTime, file)
     }
 }
 
@@ -173,6 +266,8 @@ function readRecordUsage(record: unknown): ParsedUsage | null {
         promptTokens: rawUsage === null ? 0 : (readNumber(rawUsage.prompt_tokens) ?? 0),
         completionTokens: rawUsage === null ? 0 : (readNumber(rawUsage.completion_tokens) ?? 0),
         totalTokens: rawUsage === null ? 0 : (readNumber(rawUsage.total_tokens) ?? 0),
+        // 出图工具的结果自带 image_gen_tool_result 类型；图像模型名不在落盘记录里，只能确认「这轮是出图」
+        isImageGeneration: toolResponse !== null && readString(toolResponse.type) === 'image_gen_tool_result',
     }
 }
 
@@ -188,7 +283,12 @@ function addCredit(left: number | null, right: number | null): number | null {
 }
 
 /** 合并同一轮的多条记录：积分与 tokens 累加，时间取最早的一条 */
-function mergeUsage(target: Map<string, CliUsageEntry>, parsed: ParsedUsage, fallbackTime: string): void {
+function mergeUsage(
+    target: Map<string, CliUsageEntry>,
+    parsed: ParsedUsage,
+    fallbackTime: string,
+    sessionFile: string,
+): void {
     const previous = target.get(parsed.requestId)
     if (previous === undefined) {
         target.set(parsed.requestId, {
@@ -199,6 +299,8 @@ function mergeUsage(target: Map<string, CliUsageEntry>, parsed: ParsedUsage, fal
             promptTokens: parsed.promptTokens,
             completionTokens: parsed.completionTokens,
             totalTokens: parsed.totalTokens,
+            isImageGeneration: parsed.isImageGeneration,
+            sessionFile,
         })
         return
     }
@@ -209,6 +311,7 @@ function mergeUsage(target: Map<string, CliUsageEntry>, parsed: ParsedUsage, fal
     if (parsed.model.length > 0) {
         previous.model = parsed.model
     }
+    previous.isImageGeneration = previous.isImageGeneration || parsed.isImageGeneration
     if (parsed.timestamp !== null && parsed.timestamp < previous.createdAt) {
         previous.createdAt = parsed.timestamp
     }
