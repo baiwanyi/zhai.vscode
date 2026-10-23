@@ -2,9 +2,11 @@
  * 场景描述执行器：经 AI 通道完成一次性生成，把增量聚合为整段画面描述。
  * 复用约定：通道实例由服务层注入（../../ai/provider），本层不感知厂商、不读取凭证；
  * 取消走 AbortController，内部超时与外部 signal 都会中止请求。
- * 关键约束：本层不做清洗、不落库、不计配额；任何异常都向调用方抛出，由服务层决定是否回退到纯模板。
+ * 关键约束：本层不做清洗、不落库、不计配额；任何异常都向调用方抛出，由服务层决定是否回退到纯模板；
+ * 每次调用都必须带上本次变化方向，同一人物重复出图时这是避免画面雷同的唯一输入差异。
  */
 import { buildSceneMessages } from './portraitScenePrompt'
+import type { PortraitVariation } from './portraitVariation'
 import type { PortraitGenerateRequest } from '../../../shared/types/press'
 import type { AiProvider } from '../../ai/provider'
 
@@ -17,6 +19,8 @@ export interface SceneGenerateOptions {
     provider: AiProvider
     model: string
     request: PortraitGenerateRequest
+    /** 本次变化方向：动作、地点、光线与姿态，每次生成都重新挑 */
+    variation: PortraitVariation
     /** 外部取消信号（随出图请求一起中止） */
     signal?: AbortSignal
 }
@@ -38,7 +42,7 @@ export async function generateSceneWithAi(options: SceneGenerateOptions): Promis
         const stream = options.provider.stream({
             model: options.model,
             maxTokens: AI_MAX_TOKENS,
-            messages: buildSceneMessages(options.request),
+            messages: buildSceneMessages(options.request, options.variation),
             signal: controller.signal,
         })
         for await (const chunk of stream) {

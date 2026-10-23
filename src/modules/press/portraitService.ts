@@ -3,7 +3,8 @@
  * 复用约定：文本描述经 ./ai/portraitSceneGenerator（通道由注入的 AiProvider 提供），出图经 ./ai/imageProvider 的入口
  * （唯一实现为 CodeBuddy 的 ImageGen），提示词复用 ./ai/portraitPrompt，配额复用 ./db/quotaRepository，
  * 路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
- * 关键约束：画面描述失败一律回退纯模板，不让文本模型拖垮出图；描述不计配额，限额只针对图片张数；
+ * 关键约束：每次出图都重新挑一组画面变化（动作/地点/光线/姿态），文本通道失败时用同一组变化拼模板，
+ * 保证同一角色反复出图也不撞画面；描述不计配额，限额只针对图片张数；
  * 图片平铺在 press/{作品名}/Portraits/ 下，文件名为 portrait-{8位角色标识}-{年月日时分秒}.扩展名，
  * 角色归属由文件名里的角色段解析（不再按角色分子目录），跟随作品目录（删除作品即一并清理）；
  * 目录是图片的唯一事实来源：生成完成即落盘，关闭弹窗不丢结果，列举以磁盘为准；
@@ -16,11 +17,13 @@ import * as vscode from 'vscode'
 import { buildPortraitPrompt } from './ai/portraitPrompt'
 import { generateSceneWithAi } from './ai/portraitSceneGenerator'
 import { sanitizeScene } from './ai/portraitScenePrompt'
+import { formatVariation, pickVariation } from './ai/portraitVariation'
 import { consumeToday, readUsedToday } from './db/quotaRepository'
 import { readText, readTextList } from './pressAiService'
 import { PRESS_MODULE_DIR } from './projectFactory'
 import { readProjectSegments } from './projectService'
 import type { ImageProviderRouter } from './ai/imageProvider'
+import type { PortraitVariation } from './ai/portraitVariation'
 import type { QuotaKeys } from './db/quotaRepository'
 import type {
     CharacterPortrait,
@@ -88,6 +91,8 @@ const execFileAsync = promisify(execFile)
 export class PortraitService {
     /** 进行中的生成请求：用于 pressAi/aiPortrait/abort 取消 */
     private activeRequest: AbortController | null = null
+    /** 上一张用过的画面变化：只在本进程内记忆，用来保证连续两次不撞在同一个动作上 */
+    private lastVariation: PortraitVariation | null = null
 
     public constructor(
         private readonly db: Database.Database,
@@ -114,14 +119,17 @@ export class PortraitService {
         const startedAt = Date.now()
         logger.info(`角色卡生成开始：${request.name}（${config.imageSize}）`)
         try {
-            // 两段式：先让文本模型写画面，再出图；描述失败时 buildPortraitPrompt 自动退回纯字段模板
-            const scene = await this.describeScene(request, controller.signal)
+            // 每次生成都重新挑一组画面变化：人物卡不变时，这是让画面与动作不重复的唯一差异
+            const variation = pickVariation(this.lastVariation)
+            this.lastVariation = variation
+            // 两段式：先让文本模型按这组变化写画面，再出图；文本通道不可用时用同一组变化拼模板
+            const scene = await this.describeScene(request, variation, controller.signal)
             const artifact = await this.router.generate({
-                prompt: buildPortraitPrompt(request, scene),
+                prompt: buildPortraitPrompt(request, scene.text),
                 size: config.imageSize,
                 signal: controller.signal,
             })
-            logger.info(`角色卡通道：codebuddy（${scene === undefined ? '模板提示词' : 'AI 画面描述'}）`)
+            logger.info(`角色卡通道：codebuddy（${scene.fromAi ? 'AI 画面描述' : '模板变化描述'}）：${scene.text}`)
             const id = `${PORTRAIT_FILE_PREFIX}-${request.characterId}-${formatPortraitStamp(new Date())}`
             const extension = artifact.extension
             // 平铺落到当前作品目录的 Portraits 下，作品删除时随目录一并清理
@@ -367,33 +375,40 @@ export class PortraitService {
     }
 
     /**
-     * 先让文本模型写画面描述：通道未就绪、超时、输出为空或调用失败都回退纯模板，保证出图不被拖垮。
+     * 先让文本模型按本次变化写画面描述：未就绪、超时、输出为空或调用失败都回退到模板变化描述，
+     * 保证出图不被拖垮；两条路径共用同一组变化，因此「文本通道失败后每张图都一样」不会再发生。
      * 这一步不计配额——成本最终落在出图上，限额仍以图片张数为准。
      */
-    private async describeScene(request: PortraitGenerateRequest, signal: AbortSignal): Promise<string | undefined> {
+    private async describeScene(
+        request: PortraitGenerateRequest,
+        variation: PortraitVariation,
+        signal: AbortSignal,
+    ): Promise<{ text: string; fromAi: boolean }> {
+        const fallback = formatVariation(variation)
         try {
             const status = await this.provider.checkReady()
             if (!status.ready) {
-                logger.info(`角色卡画面描述跳过：${status.reason ?? 'AI 通道未就绪'}`)
-                return undefined
+                logger.info(`角色卡画面描述跳过：${status.reason ?? 'AI 通道未就绪'}；改用模板变化：${fallback}`)
+                return { text: fallback, fromAi: false }
             }
             const startedAt = Date.now()
             const content = await generateSceneWithAi({
                 provider: this.provider,
                 model: getSelectedCodebuddyModel(),
                 request,
+                variation,
                 signal,
             })
             const scene = sanitizeScene(content)
             if (scene.length === 0) {
-                logger.info('角色卡画面描述为空，回退模板提示词')
-                return undefined
+                logger.info(`角色卡画面描述为空，回退模板变化：${fallback}`)
+                return { text: fallback, fromAi: false }
             }
             logger.info(`角色卡画面描述（${Date.now() - startedAt}ms）：${scene}`)
-            return scene
+            return { text: scene, fromAi: true }
         } catch (error) {
-            logger.error('角色卡画面描述失败，回退模板提示词', error)
-            return undefined
+            logger.error('角色卡画面描述失败，回退模板变化', error)
+            return { text: fallback, fromAi: false }
         }
     }
 
