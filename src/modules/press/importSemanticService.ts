@@ -895,6 +895,8 @@ export class ImportSemanticService {
 
     /**
      * 启动语义归纳：按给定阶段顺序执行，已完成阶段直接跳过。
+     * 导入流程不再自动调用本方法：导入只写正文，归纳由用户在设定页 / 大纲页按需触发
+     * （对应 extractSetting / extractOutline / extractCharacters）。
      * @param jobId 由调用方生成并立即回传前端，用于过滤进度与取消
      * @param dirPath 作品目录，形如 press/{作品名}
      * @param stages 本次要跑的阶段，缺省为「摘要 → 卷纲 → 角色卡」全部

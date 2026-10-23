@@ -54,8 +54,6 @@ const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set([
     'press/extract/outline',
     'press/extract/setting',
     'press/apply',
-    'press/semantic/run',
-    'press/semantic/cancel',
 ])
 
 export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {

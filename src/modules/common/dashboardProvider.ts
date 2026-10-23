@@ -39,8 +39,6 @@ import type {
     PressImportProgress,
     PressImportStartResult,
     PressProjectDetail,
-    PressSemanticProgress,
-    PressSemanticRunResult,
     RenamedPressVolume,
 } from '../../shared/types/press'
 import type { OpenWorkflowResult } from '../../shared/types/workflow'
@@ -59,8 +57,6 @@ import {
     isPressAnalyzeRequest,
     isPressDirPath,
     isPressImportStartRequest,
-    isPressSemanticCancelRequest,
-    isPressSemanticRunRequest,
     isRenamePressVolumeRequest,
     readPressAudience,
 } from '../../shared/types/press'
@@ -231,12 +227,6 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             }
             case 'press/import/cancel': {
                 return Promise.resolve(this.cancelPressImport(payload))
-            }
-            case 'press/semantic/run': {
-                return this.runPressSemantic(view, payload)
-            }
-            case 'press/semantic/cancel': {
-                return Promise.resolve(this.cancelPressSemantic(payload))
             }
             case 'press/analyze': {
                 return this.analyzePressMaterial(payload)
@@ -547,54 +537,6 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             throw new Error('press/import/cancel 参数非法：jobId 须为非空字符串')
         }
         return this.importService.cancel(jobId)
-    }
-
-    /**
-     * 启动阶段性归纳：立即回传 jobId，进度与终态经 press-semantic 通道广播。
-     * 关键约束：归纳要遍历章节并逐批调用模型，属长任务，不能占用请求超时，故只 await 前置校验；
-     * 服务未注入（AI 通道未就绪）时直接拒绝，避免前端拿到永远不会有下文的 jobId；
-     * 终态由服务在阶段结束或取消时自行广播，本层只兜底未预期的异常。
-     */
-    private runPressSemantic(view: vscode.WebviewView, payload: unknown): Promise<PressSemanticRunResult> {
-        if (!isPressSemanticRunRequest(payload)) {
-            throw new Error('press/semantic/run 参数非法：dirPath 或 stages 不合法')
-        }
-        const service = this.semanticService
-        if (service === null) {
-            throw new Error('AI 通道尚未就绪，无法执行语义归纳')
-        }
-        const jobId = `semantic-${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`
-        const emit = (progress: PressSemanticProgress): void => {
-            this.post(view, { type: 'state', channel: 'press-semantic', payload: progress })
-        }
-        void service.start(jobId, payload.dirPath, emit, payload.stages).catch((error: unknown) => {
-            const message = error instanceof Error ? error.message : String(error)
-            logger.error(`语义归纳异常：${jobId}`, error)
-            emit({
-                jobId,
-                stage: payload.stages?.[0] ?? 'summary',
-                status: 'failed',
-                done: 0,
-                total: 0,
-                generated: 0,
-                dirPath: payload.dirPath,
-                code: error instanceof SemanticError ? error.code : 'internal',
-                message,
-            })
-        })
-        return Promise.resolve({ jobId })
-    }
-
-    /** 取消语义归纳：按 jobId 匹配，避免旧任务的取消请求误停当前任务 */
-    private cancelPressSemantic(payload: unknown): { cancelled: boolean } {
-        if (!isPressSemanticCancelRequest(payload)) {
-            throw new Error('press/semantic/cancel 参数非法：jobId 须为非空字符串')
-        }
-        const service = this.semanticService
-        if (service === null) {
-            return { cancelled: false }
-        }
-        return service.cancel(payload.jobId)
     }
 
     /**

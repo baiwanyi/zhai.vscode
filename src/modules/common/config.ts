@@ -31,7 +31,7 @@ export interface ZhaiConfig {
     namingAiDailyLimit: number
     /** 写作管理 AI 生成每日次数上限（人物外貌等一次性生成） */
     pressAiDailyLimit: number
-    /** 导入后语义归纳每日调用次数上限，0 表示不限制；与 pressAiDailyLimit 分开计数 */
+    /** 语义归纳每日调用次数上限（人物卡、设定、大纲等按需提取同样计入），0 表示不限制；与 pressAiDailyLimit 分开计数 */
     pressImportAiDailyLimit: number
     /** 角色设定图尺寸，形如 768x1024 */
     imageSize: string

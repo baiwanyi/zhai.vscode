@@ -22,7 +22,6 @@ import type {
     PressExtractOutlineResult,
     PressExtractSettingResult,
     PressSemanticProgress,
-    PressSemanticRunResult,
     PressWorkspaceResult,
 } from '../../shared/types/press'
 import type { WorkflowRouter } from '../ai/workflowRouter'
@@ -34,8 +33,6 @@ import {
     isPressExtractCharactersRequest,
     isPressExtractOutlineRequest,
     isPressExtractSettingRequest,
-    isPressSemanticCancelRequest,
-    isPressSemanticRunRequest,
     isPressWorkspaceRequest,
 } from '../../shared/types/press'
 import { logger } from '../common/logger'
@@ -91,54 +88,9 @@ export class PressRoutes {
                 return this.extractSetting(payload)
             case 'press/apply':
                 return this.applyWorkspace(payload)
-            case 'press/semantic/run':
-                return this.runSemantic(payload, postProgress)
-            case 'press/semantic/cancel':
-                return this.cancelSemantic(payload)
             default:
                 throw new Error(`未知的写作管理协议方法：${method}`)
         }
-    }
-
-    /**
-     * 启动阶段性 AI 归纳：立即返回 jobId，进度经 press-semantic 通道推给当前面板。
-     * 关键约束：任务本身不等待（长任务），但前置检查必须等待，
-     * 这样「AI 未就绪」「已有任务在跑」能同步报给前端，而不是等到超时。
-     */
-    private async runSemantic(
-        payload: unknown,
-        postProgress: (progress: PressSemanticProgress) => void,
-    ): Promise<PressSemanticRunResult> {
-        if (!isPressSemanticRunRequest(payload)) {
-            throw new Error('press/semantic/run 参数非法：dirPath 或 stages 不合法')
-        }
-        if (!hasProjectFiles(this.db, payload.dirPath)) {
-            throw new Error(`作品不在索引中，无法归纳：${payload.dirPath}`)
-        }
-        await this.semantic.assertReady()
-        const jobId = `workflow-${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`
-        void this.semantic.start(jobId, payload.dirPath, postProgress, payload.stages).catch((error: unknown) => {
-            logger.error(`工作台归纳失败：${payload.dirPath}`, error)
-            postProgress({
-                jobId,
-                stage: payload.stages?.[0] ?? 'summary',
-                status: 'failed',
-                done: 0,
-                total: 0,
-                generated: 0,
-                dirPath: payload.dirPath,
-                message: error instanceof Error ? error.message : String(error),
-            })
-        })
-        return { jobId }
-    }
-
-    /** 取消归纳：交给语义归纳服务在批次边界生效 */
-    private cancelSemantic(payload: unknown): Promise<{ cancelled: boolean }> {
-        if (!isPressSemanticCancelRequest(payload)) {
-            throw new Error('press/semantic/cancel 参数非法：jobId 须为非空字符串')
-        }
-        return Promise.resolve(this.semantic.cancel(payload.jobId))
     }
 
     /**

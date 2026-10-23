@@ -1,13 +1,15 @@
 /**
  * 导入确认弹窗：展示预检结果（编码、章节数、卷数、字数、首末章标题）并允许修正作品名与目标读者。
- * 复用 @components/ui 的 dialog、field、input、toggle-group，目标读者取值取自 shared/types/press；
+ * 复用 @components/ui 的 dialog、field、input、alert、toggle-group，目标读者取值取自 shared/types/press；
  * 字数展示复用 dashboard 的 formatWordCount，与作品列表口径一致。
  * 关键约束：作品名以宿主建议值为初值，用户可改；预检告警逐条列出，让用户在落盘前决定是否继续；
+ * 导入只负责写入正文，不触发 AI 归纳（归纳改由作品设定页 / 大纲页手动发起）；
  * 导入进行中禁用全部控件并拒绝关闭，避免任务在无提示的情况下继续写盘。
  */
+import { TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
+import { Alert, AlertDescription, AlertTitle } from '@components/ui/alert'
 import { Button } from '@components/ui/button'
-import { Checkbox } from '@components/ui/checkbox'
 import {
     Dialog,
     DialogContent,
@@ -35,9 +37,6 @@ const ENCODING_LABELS: Readonly<Record<PressImportCandidate['encoding'], string>
 interface PressImportDialogProps {
     candidate: PressImportCandidate | null
     isImporting: boolean
-    /** 导入完成后是否继续跑 AI 归纳（章节摘要 → 卷纲 → 角色卡 → 作品设定） */
-    shouldSummarize: boolean
-    onSummaryChange: (value: boolean) => void
     onOpenChange: (open: boolean) => void
     onSubmit: (name: string, audience: PressAudience) => Promise<boolean>
 }
@@ -45,8 +44,6 @@ interface PressImportDialogProps {
 export function PressImportDialog({
     candidate,
     isImporting,
-    shouldSummarize,
-    onSummaryChange,
     onOpenChange,
     onSubmit,
 }: PressImportDialogProps): JSX.Element | null {
@@ -109,11 +106,17 @@ export function PressImportDialog({
                     </div>
                 </dl>
                 {candidate.warnings.length > 0 ? (
-                    <ul className="text-muted-foreground flex list-disc flex-col gap-1 pl-4">
-                        {candidate.warnings.map((warning) => (
-                            <li key={warning}>{warning}</li>
-                        ))}
-                    </ul>
+                    <Alert>
+                        <TriangleAlert />
+                        <AlertTitle>预检提醒</AlertTitle>
+                        <AlertDescription>
+                            <ul className="flex list-disc flex-col gap-1 pl-4">
+                                {candidate.warnings.map((warning) => (
+                                    <li key={warning}>{warning}</li>
+                                ))}
+                            </ul>
+                        </AlertDescription>
+                    </Alert>
                 ) : null}
                 <FieldGroup>
                     <Field>
@@ -156,17 +159,6 @@ export function PressImportDialog({
                         </ToggleGroup>
                     </Field>
                 </FieldGroup>
-                <div className="flex items-start gap-2">
-                    <Checkbox
-                        id="press-import-summary"
-                        checked={shouldSummarize}
-                        disabled={isImporting}
-                        onCheckedChange={(checked) => onSummaryChange(checked === true)}
-                    />
-                    <label htmlFor="press-import-summary" className="text-muted-foreground leading-5">
-                        导入后分批归纳章节摘要、卷纲、角色卡与作品设定（消耗 AI 调用次数；失败不影响已导入的正文）
-                    </label>
-                </div>
                 <DialogFooter>
                     <Button variant="outline" disabled={isImporting} onClick={() => onOpenChange(false)}>
                         取消

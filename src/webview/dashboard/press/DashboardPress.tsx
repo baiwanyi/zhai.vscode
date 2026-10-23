@@ -3,6 +3,7 @@
  * 数据与动作经 hooks/usePressProjects 与 hooks/usePressImport 下发，页面只做编排；
  * 操作结果由两个数据层经 sonner 反馈，导入进度按固定 toast id 原地更新。
  * 关键约束：点击作品交由路由外壳跳详情页（本页不直接打开 README）；创建成功即关闭弹窗；
+ * 导入只写入正文，不在此触发 AI 归纳（归纳由作品设定页与大纲页手动发起）；
  * 导入确认弹窗以 token 作 key，切换候选文件即重挂载，表单回到该文件的建议值；
  * 页面内屏蔽浏览器右键菜单，与仪表盘首页保持一致。
  */
@@ -11,7 +12,6 @@ import { ScrollArea } from '@components/ui/scroll-area'
 import type { PressAudience } from '@shared/types/press'
 import { usePressImport } from './hooks/usePressImport'
 import { usePressProjects } from './hooks/usePressProjects'
-import { usePressSemantic } from './hooks/usePressSemantic'
 import { PressImportDialog } from './layout/PressImportDialog'
 import { PressProjectDialog } from './layout/PressProjectDialog'
 import { PressProjectList } from './layout/PressProjectList'
@@ -27,18 +27,7 @@ interface DashboardPressProps {
 
 export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): JSX.Element {
     const { projects, status, error, isCreating, reload, createProject, rebuildIndex } = usePressProjects()
-    const { start: startSemantic } = usePressSemantic('')
-    /** 导入确认弹窗里的「导入后做 AI 归纳」开关：状态放在页面层，避免 hook 之间互相依赖 */
-    const [shouldSummarize, setShouldSummarize] = useState(false)
-    const handleImportCompleted = useCallback(
-        (dirPath: string): void => {
-            if (shouldSummarize) {
-                void startSemantic(dirPath)
-            }
-        },
-        [shouldSummarize, startSemantic],
-    )
-    const { candidate, isImporting, pick, start, dismiss } = usePressImport({ onCompleted: handleImportCompleted })
+    const { candidate, isImporting, pick, start, dismiss } = usePressImport()
     const [isDialogOpen, setIsDialogOpen] = useState(false)
     /** 弹窗实例序号：每次打开都换 key，重挂载即把表单恢复到初始值，避免 effect 内同步写状态 */
     const [dialogKey, setDialogKey] = useState(0)
@@ -111,8 +100,6 @@ export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): 
                 key={candidate?.token ?? 'idle'}
                 candidate={candidate}
                 isImporting={isImporting}
-                shouldSummarize={shouldSummarize}
-                onSummaryChange={setShouldSummarize}
                 onOpenChange={handleImportOpenChange}
                 onSubmit={handleImport}
             />
