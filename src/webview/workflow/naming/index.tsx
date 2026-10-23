@@ -112,7 +112,7 @@ export function NamingPage(): JSX.Element {
     }
 
     return (
-        <div className="flex h-full flex-col gap-2 p-3">
+        <div className="@container flex h-full min-h-0 flex-col gap-2 p-3">
             <NamingCategoryRail catalog={catalog} activeCategory={request.category} onSelect={handleCategoryChange} />
             <NamingConditionCard
                 catalog={catalog}

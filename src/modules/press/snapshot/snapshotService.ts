@@ -1,24 +1,40 @@
 /**
- * 快照服务：承接设定、角色、大纲变更后的自动留版、手动留版、整版或单份恢复与过期清理。
- * 复用约定：正文读写全部委托 snapshotStore，作品文档按 projectWorkspace 的口径成组读取；
+ * 快照服务：承接设定、角色、大纲变更后的自动留版、手动留版、整版或单份恢复与过期清理，
+ * 以及章节正文的按章时间线（保存后自动留版、AI 写回前强制留底、单章恢复）。
+ * 复用约定：正文读写全部委托 snapshotStore 与 chapterSnapshotStore，作品文档按 projectWorkspace 的口径成组读取；
  * 恢复后由调用方注入的索引刷新器重建字数与标签，避免面板显示旧值。
- * 关键约束：自动快照按作品做「间隔节流」而非防抖——定时器只在距上一版满间隔时触发一次，
+ * 关键约束：自动快照按作品或按章做「间隔节流」而非防抖——定时器只在距上一版满间隔时触发一次，
  * 后续变更只覆盖待写内容、不续期，保证连续写作时既限频又不丢最后一版；
- * 内容哈希与最新一版完全相同时直接跳过，不产生空版；恢复前一律先给当前内容留一版，防止恢复不可逆。
+ * 内容哈希与最新一版完全相同时直接跳过，不产生空版；恢复前一律先给当前内容留一版，防止恢复不可逆；
+ * 章节恢复前必须确认该章没有未保存的编辑器修改，否则写盘会被编辑器回写覆盖。
  */
 import * as vscode from 'vscode'
 import {
+    deleteChapterVersion,
+    listChapterSummaries,
+    listChapterVersions,
+    pruneChapterVersions,
+    readChapterVersion,
+    toChapterEntry,
+    writeChapterSnapshot,
+} from './chapterSnapshotStore'
+import {
     SNAPSHOT_FILE_KEYS,
     deleteSnapshotDir,
+    hashText,
     hashWorkspaceFiles,
     listStoredSnapshots,
     readSnapshotFiles,
+    readTextFile,
     resolveProjectName,
     toSnapshotEntry,
     writeSnapshot,
 } from './snapshotStore'
 import type { StoredSnapshot } from './snapshotStore'
 import type {
+    ChapterSnapshotEntry,
+    ChapterSnapshotReason,
+    ChapterSnapshotSummary,
     PressSnapshotEntry,
     PressSnapshotFileKey,
     PressSnapshotTrigger,
@@ -26,8 +42,8 @@ import type {
 } from '../../../shared/types/press'
 import { getZhaiConfig, resolveStorageRoot } from '../../common/config'
 import { logger } from '../../common/logger'
-import { buildStorageUri } from '../../common/storagePath'
-import { PROJECT_README_NAME, PRESS_MODULE_DIR } from '../projectFactory'
+import { buildStorageUri, toSafeSegments } from '../../common/storagePath'
+import { PROJECT_CHAPTER_DIR, PROJECT_README_NAME, PRESS_MODULE_DIR } from '../projectFactory'
 import { readProjectWorkspace } from '../projectWorkspace'
 
 /** 自动快照保留版数：超出后按「每日首版」继续保留 */
@@ -73,6 +89,21 @@ interface ProjectSnapshotState {
     chain: Promise<void>
 }
 
+/** 单章正文的节流状态：与结构化文档分开维护，键为作品目录与章节路径的组合 */
+interface ChapterState {
+    timer: NodeJS.Timeout | null
+    latest: { content: string; reason: ChapterSnapshotReason; label: string } | null
+    lastCreatedAt: number
+    lastHash: string | null
+    loaded: boolean
+    chain: Promise<void>
+}
+
+/** 一次保存命中的快照目标：结构化文档或章节正文 */
+type SavedScope =
+    | { kind: 'workspace'; dirPath: string; trigger: PressSnapshotTrigger }
+    | { kind: 'chapter'; dirPath: string; chapterPath: string }
+
 /** 比较两组哈希是否完全相同：顺序固定为四份文档，逐键比对即可 */
 function isSameHashes(
     left: Record<PressSnapshotFileKey, string>,
@@ -93,6 +124,9 @@ function toCauseMessage(cause: unknown): string {
 
 export class PressSnapshotService {
     private readonly states = new Map<string, ProjectSnapshotState>()
+
+    /** 章节正文的节流状态：键为 `${dirPath}::${chapterPath}`，一章一条独立时间线 */
+    private readonly chapterStates = new Map<string, ChapterState>()
 
     public constructor(private readonly indexer?: SnapshotIndexRefresher) {}
 
@@ -122,6 +156,14 @@ export class PressSnapshotService {
             return
         }
         try {
+            if (scope.kind === 'chapter') {
+                const content = await readTextFile(uri)
+                if (content === null) {
+                    return
+                }
+                await this.recordChapter(scope.dirPath, scope.chapterPath, content, 'auto')
+                return
+            }
             const document = await readProjectWorkspace(scope.dirPath)
             await this.record(scope.dirPath, document.files, [scope.trigger])
         } catch (error) {
@@ -209,6 +251,230 @@ export class PressSnapshotService {
         return deleteSnapshotDir(dirPath, snapshotId)
     }
 
+    /** 列出有快照的章节：按最近留版时间倒序，供界面左侧选择 */
+    public async listChapters(dirPath: string): Promise<ChapterSnapshotSummary[]> {
+        return listChapterSummaries(dirPath)
+    }
+
+    /** 列出某章的版本时间线：按创建时间倒序 */
+    public async listChapterVersions(dirPath: string, chapterPath: string): Promise<ChapterSnapshotEntry[]> {
+        const versions = await listChapterVersions(dirPath, chapterPath)
+        return versions.map(toChapterEntry)
+    }
+
+    /** 手动给某章留一版：不受间隔限制，正文取磁盘当前内容 */
+    public async captureChapter(
+        dirPath: string,
+        chapterPath: string,
+        label?: string,
+    ): Promise<ChapterSnapshotEntry> {
+        const uri = this.chapterUri(chapterPath)
+        const content = await readTextFile(uri)
+        if (content === null) {
+            throw new Error(`章节文件不存在：${chapterPath}`)
+        }
+        const version = await writeChapterSnapshot({
+            dirPath,
+            chapterPath,
+            content,
+            reason: 'manual',
+            label: normalizeLabel(label),
+        })
+        this.syncChapterState(this.chapterKey(dirPath, chapterPath), version.hash, version.createdAt)
+        return toChapterEntry(version)
+    }
+
+    /**
+     * 恢复单章：覆盖前先给当前内容留一版，内容与所选版本一致时直接返回 false。
+     * 关键约束：该章在编辑器中有未保存修改时必须拒绝——此时写盘会被编辑器回写覆盖，恢复等于无效。
+     */
+    public async restoreChapter(dirPath: string, chapterPath: string, snapshotId: string): Promise<boolean> {
+        const versions = await listChapterVersions(dirPath, chapterPath)
+        const target = versions.find((item) => item.id === snapshotId)
+        if (target === undefined) {
+            throw new Error(`章节快照不存在或已清理：${snapshotId}`)
+        }
+        const uri = this.chapterUri(chapterPath)
+        const current = await readTextFile(uri)
+        if (current !== null && hashText(current) === target.hash) {
+            return false
+        }
+        const isDirty = vscode.workspace.textDocuments.some(
+            (document) => document.uri.fsPath === uri.fsPath && document.isDirty,
+        )
+        if (isDirty) {
+            throw new Error('该章在编辑器中有未保存的修改，请先保存或撤销后再恢复')
+        }
+        if (current !== null) {
+            await writeChapterSnapshot({ dirPath, chapterPath, content: current, reason: 'restore' })
+        }
+        const content = await readChapterVersion(dirPath, chapterPath, snapshotId)
+        await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(content))
+        this.syncChapterState(this.chapterKey(dirPath, chapterPath), target.hash, new Date().toISOString())
+        try {
+            await this.indexer?.indexFile(uri)
+        } catch (error) {
+            logger.warn(`章节恢复后索引重建失败：${uri.fsPath}（${toCauseMessage(error)}）`)
+        }
+        logger.info(`章节快照已恢复：${chapterPath}/${snapshotId}`)
+        return true
+    }
+
+    /** 删除章节某一版：只影响该版本 */
+    public async removeChapterVersion(
+        dirPath: string,
+        chapterPath: string,
+        snapshotId: string,
+    ): Promise<boolean> {
+        return deleteChapterVersion(dirPath, chapterPath, snapshotId)
+    }
+
+    /**
+     * AI 写回前强制留底：不受间隔限制，只对 Chapters 下的文档生效。
+     * 关键约束：内容由调用方从编辑器取写回前的全文，与撤销栈对齐；异常必须吞掉，不能阻断写回本身。
+     */
+    public async captureChapterBeforeWrite(uri: vscode.Uri, content: string): Promise<void> {
+        const scope = this.resolveSavedScope(uri)
+        if (scope === null || scope.kind !== 'chapter') {
+            return
+        }
+        try {
+            await this.recordChapter(scope.dirPath, scope.chapterPath, content, 'ai-write')
+        } catch (error) {
+            logger.warn(`AI 写回前的章节留底失败：${uri.fsPath}（${toCauseMessage(error)}）`)
+        }
+    }
+
+    /** 章节文件的绝对 Uri：路径逐段校验后拼接，不接受前端原样字符串 */
+    private chapterUri(chapterPath: string): vscode.Uri {
+        return buildStorageUri(resolveStorageRoot(), toSafeSegments(chapterPath, '章节'))
+    }
+
+    /** 章节节流状态的键：作品目录与章节路径的组合，避免跨作品串版本 */
+    private chapterKey(dirPath: string, chapterPath: string): string {
+        return `${dirPath}::${chapterPath}`
+    }
+
+    /** 取或建单章节流状态 */
+    private chapterStateOf(key: string): ChapterState {
+        const existing = this.chapterStates.get(key)
+        if (existing !== undefined) {
+            return existing
+        }
+        const created: ChapterState = {
+            timer: null,
+            latest: null,
+            lastCreatedAt: 0,
+            lastHash: null,
+            loaded: false,
+            chain: Promise.resolve(),
+        }
+        this.chapterStates.set(key, created)
+        return created
+    }
+
+    /** 用刚写入的一版刷新章节缓存 */
+    private syncChapterState(key: string, hash: string, createdAt: string): void {
+        const state = this.chapterStateOf(key)
+        const timestamp = Date.parse(createdAt)
+        state.lastCreatedAt = Number.isFinite(timestamp) ? timestamp : Date.now()
+        state.lastHash = hash
+        state.loaded = true
+    }
+
+    /** 首次访问时载入该章最新一版：没有历史时留空，让第一次变更立即产生基线 */
+    private async ensureChapterLoaded(
+        dirPath: string,
+        chapterPath: string,
+        state: ChapterState,
+    ): Promise<void> {
+        if (state.loaded) {
+            return
+        }
+        state.loaded = true
+        try {
+            const versions = await listChapterVersions(dirPath, chapterPath)
+            const newest = versions[0]
+            if (newest !== undefined) {
+                this.syncChapterState(this.chapterKey(dirPath, chapterPath), newest.hash, newest.createdAt)
+            }
+        } catch (error) {
+            logger.warn(`章节时间线读取失败，按无历史处理：${chapterPath}（${toCauseMessage(error)}）`)
+        }
+    }
+
+    /**
+     * 章节统一记录入口：判重 → 强制来源立即写 → 其余按间隔排队。
+     * 关键约束：排队时定时器只在首次设置，后续变更不续期（throttle 语义）；AI 写回不吃节流。
+     */
+    private async recordChapter(
+        dirPath: string,
+        chapterPath: string,
+        content: string,
+        reason: ChapterSnapshotReason,
+        label?: string,
+    ): Promise<void> {
+        const isForced = reason === 'ai-write'
+        if (!getZhaiConfig().pressSnapshotEnabled && !isForced) {
+            return
+        }
+        const key = this.chapterKey(dirPath, chapterPath)
+        const state = this.chapterStateOf(key)
+        await this.enqueue(state, async () => {
+            await this.ensureChapterLoaded(dirPath, chapterPath, state)
+            const hash = hashText(content)
+            if (state.lastHash === hash) {
+                return
+            }
+            state.latest = { content, reason, label: normalizeLabel(label) }
+            if (isForced) {
+                await this.flushChapter(dirPath, chapterPath, state)
+                return
+            }
+            const intervalMs = getZhaiConfig().pressSnapshotChapterIntervalSeconds * 1000
+            const wait = intervalMs - (Date.now() - state.lastCreatedAt)
+            if (wait <= 0) {
+                await this.flushChapter(dirPath, chapterPath, state)
+                return
+            }
+            if (state.timer === null) {
+                state.timer = setTimeout(() => {
+                    state.timer = null
+                    void this.enqueue(state, async () => {
+                        await this.flushChapter(dirPath, chapterPath, state)
+                    })
+                }, wait)
+                state.timer.unref()
+            }
+        })
+    }
+
+    /** 把章节待写内容落成一版：内容与最新一版相同时静默跳过 */
+    private async flushChapter(dirPath: string, chapterPath: string, state: ChapterState): Promise<void> {
+        const pending = state.latest
+        if (pending === null) {
+            return
+        }
+        state.latest = null
+        const hash = hashText(pending.content)
+        if (state.lastHash === hash) {
+            return
+        }
+        try {
+            const version = await writeChapterSnapshot({
+                dirPath,
+                chapterPath,
+                content: pending.content,
+                reason: pending.reason,
+                label: pending.label,
+            })
+            this.syncChapterState(this.chapterKey(dirPath, chapterPath), version.hash, version.createdAt)
+            await pruneChapterVersions(dirPath, chapterPath)
+        } catch (error) {
+            logger.warn(`章节快照写入失败：${chapterPath}（${toCauseMessage(error)}）`)
+        }
+    }
+
     /** 卸载：清掉未到期的定时器，并把待写内容立即落盘，避免关窗丢最后一版 */
     public dispose(): void {
         for (const [dirPath, state] of this.states) {
@@ -230,6 +496,30 @@ export class PressSnapshotService {
             }
         }
         this.states.clear()
+        for (const [key, state] of this.chapterStates) {
+            if (state.timer !== null) {
+                clearTimeout(state.timer)
+                state.timer = null
+            }
+            const pending = state.latest
+            if (pending === null) {
+                continue
+            }
+            state.latest = null
+            const separator = key.indexOf('::')
+            const dirPath = key.slice(0, separator)
+            const chapterPath = key.slice(separator + 2)
+            void writeChapterSnapshot({
+                dirPath,
+                chapterPath,
+                content: pending.content,
+                reason: pending.reason,
+                label: pending.label,
+            }).catch((error: unknown) => {
+                logger.warn(`退出前的章节快照落盘失败：${chapterPath}（${toCauseMessage(error)}）`)
+            })
+        }
+        this.chapterStates.clear()
     }
 
     /** 取或建某作品的节流状态：首次访问时把最新一版的时间与哈希载入内存 */
@@ -344,7 +634,7 @@ export class PressSnapshotService {
     }
 
     /** 串行执行：同一作品的多次记录按到达顺序写盘，避免并发建目录 */
-    private enqueue(state: ProjectSnapshotState, task: () => Promise<void>): Promise<void> {
+    private enqueue(state: { chain: Promise<void> }, task: () => Promise<void>): Promise<void> {
         state.chain = state.chain.then(task).catch((error: unknown) => {
             logger.warn(`快照任务执行失败：${toCauseMessage(error)}`)
         })
@@ -379,23 +669,40 @@ export class PressSnapshotService {
         }
     }
 
-    /** 把一次保存的文件 Uri 换算成作品目录与触发范围：非作品文档返回 null */
-    private resolveSavedScope(uri: vscode.Uri): { dirPath: string; trigger: PressSnapshotTrigger } | null {
+    /**
+     * 把一次保存的文件 Uri 换算成快照目标：结构化文档给出触发范围，Chapters 下的正文给出章节路径。
+     * 关键约束：只认存储根内的 press/ 目录，其它路径一律返回 null，避免把任意保存事件卷进快照。
+     */
+    private resolveSavedScope(uri: vscode.Uri): SavedScope | null {
         const rootPath = resolveStorageRoot().path
         if (!uri.path.toLowerCase().startsWith(`${rootPath.toLowerCase()}/`)) {
             return null
         }
         const relative = uri.path.slice(rootPath.length + 1)
         const segments = relative.split('/')
-        if (segments.length !== 3 || (segments[0] ?? '').toLowerCase() !== PRESS_MODULE_DIR) {
+        if ((segments[0] ?? '').toLowerCase() !== PRESS_MODULE_DIR) {
             return null
         }
-        const fileName = (segments[2] ?? '').toLowerCase()
-        const key = FILE_NAME_TO_KEY.get(fileName)
+        const projectName = segments[1] ?? ''
+        if (projectName.length === 0) {
+            return null
+        }
+        const dirPath = `${PRESS_MODULE_DIR}/${projectName}`
+        // 章节正文：press/{作品}/Chapters/... ，无卷目录时四段（含文件名）、有卷目录时五段
+        if ((segments[2] ?? '') === PROJECT_CHAPTER_DIR) {
+            if (segments.length < 4) {
+                return null
+            }
+            return { kind: 'chapter', dirPath, chapterPath: relative }
+        }
+        if (segments.length !== 3) {
+            return null
+        }
+        const key = FILE_NAME_TO_KEY.get((segments[2] ?? '').toLowerCase())
         if (key === undefined) {
             return null
         }
         const trigger: PressSnapshotTrigger = key === 'readme' || key === 'setting' ? 'setting' : key
-        return { dirPath: `${PRESS_MODULE_DIR}/${segments[1] ?? ''}`, trigger }
+        return { kind: 'workspace', dirPath, trigger }
     }
 }

@@ -91,13 +91,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const usageRecorder = new UsageRecorder(aiDb)
     const usageService = new AiUsageService(aiDb, new CliUsageIndex())
 
+    // 作品快照：设定、角色、大纲与章节正文在内容变更时按间隔自动留版，正文落在作品的 Snapshots 目录；
+    // 先于 AI 对话创建，供写回前强制留底；恢复后由索引服务重建字数，两条通道共用同一套去重与节流
+    const snapshotService = new PressSnapshotService(indexService)
+    context.subscriptions.push(snapshotService)
+    registerPressSnapshotWatcher(snapshotService, context.subscriptions)
+
     // AI 通道全扩展共用一份：唯一实现为 CodeBuddy
     const aiProvider = await createAiProvider(secrets)
     // 模型选择存在 globalState（配置项已移除，面板菜单是唯一入口），激活时先载入内存副本
     hydrateSelectedModel(context.globalState)
     // 站点登录态同样存 globalState：面板据此决定展示登录引导还是正常空态
     initCodebuddyLogin(context.globalState)
-    const aiChatService = new AiChatService(aiDb, aiProvider, usageRecorder)
+    // 写回前留底：把编辑器里的写回前全文交给快照服务，AI 改坏了可以回到动手前的状态
+    const aiChatService = new AiChatService(aiDb, aiProvider, usageRecorder, {
+        captureBeforeWrite: (uri, content): Promise<void> => snapshotService.captureChapterBeforeWrite(uri, content),
+    })
     context.subscriptions.push(aiChatService)
 
     registerAiCommands(context, aiChatService, workflowRouter, toastService)
@@ -119,11 +128,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // 语义归纳依赖 AI 通道，晚于仪表盘创建，故回填给已注册的仪表盘实例；
     // 工作台的人物卡提取复用同一实例，单任务锁与配额口径因此保持一致
     const semanticService = new ImportSemanticService(pressDb, aiProvider, usageRecorder)
-    // 作品快照：设定、角色、大纲变更时按间隔自动留版，正文落在作品的 Snapshots 目录；
-    // 恢复后由索引服务重建字数，两条通道（工作台回写、编辑器保存）共用同一套去重与节流
-    const snapshotService = new PressSnapshotService(indexService)
-    context.subscriptions.push(snapshotService)
-    registerPressSnapshotWatcher(snapshotService, context.subscriptions)
     const pressRoutes = new PressRoutes(
         pressAiService,
         portraitService,

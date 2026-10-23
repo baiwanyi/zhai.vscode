@@ -1092,3 +1092,141 @@ export function isPressSnapshotFileKey(value: unknown): value is PressSnapshotFi
     return value === 'readme' || value === 'setting' || value === 'characters' || value === 'outline'
 }
 
+/**
+ * 正文快照来源：auto 为保存后自动留版，ai-write 为 AI 写回前强制留底，
+ * manual 为用户手动创建，restore 为恢复前留底。
+ */
+export type ChapterSnapshotReason = 'auto' | 'ai-write' | 'manual' | 'restore'
+
+/** 单章某一版：只含元信息，正文按需读取 */
+export interface ChapterSnapshotEntry {
+    id: string
+    /** 章节相对存储根的路径，记录留版当时的取值，便于章重命名后排查 */
+    chapterPath: string
+    title: string
+    createdAt: string
+    reason: ChapterSnapshotReason
+    /** 手动留版的备注，自动留版为空串 */
+    label: string
+    sizeBytes: number
+}
+
+/** 章节清单项：只列有快照的章，供界面左侧选择 */
+export interface ChapterSnapshotSummary {
+    chapterPath: string
+    title: string
+    /** 卷目录名（章直接位于 Chapters 下时为空串），用于分组 */
+    volume: string
+    versionCount: number
+    latestAt: string
+}
+
+/** press/snapshot/chapter/list 请求 */
+export interface ChapterSnapshotListRequest {
+    dirPath: string
+}
+
+/** press/snapshot/chapter/list 响应：按最近留版时间倒序 */
+export interface ChapterSnapshotListResult {
+    chapters: ChapterSnapshotSummary[]
+}
+
+/** press/snapshot/chapter/versions 请求 */
+export interface ChapterSnapshotVersionsRequest {
+    dirPath: string
+    chapterPath: string
+}
+
+/** press/snapshot/chapter/versions 响应：按创建时间倒序 */
+export interface ChapterSnapshotVersionsResult {
+    versions: ChapterSnapshotEntry[]
+}
+
+/** press/snapshot/chapter/capture 请求：手动给某章留一版 */
+export interface ChapterSnapshotCaptureRequest {
+    dirPath: string
+    chapterPath: string
+    label?: string
+}
+
+/** press/snapshot/chapter/capture 响应 */
+export interface ChapterSnapshotCaptureResult {
+    snapshot: ChapterSnapshotEntry
+}
+
+/** press/snapshot/chapter/restore 请求 */
+export interface ChapterSnapshotRestoreRequest {
+    dirPath: string
+    chapterPath: string
+    snapshotId: string
+}
+
+/** press/snapshot/chapter/restore 响应：false 表示内容与所选版本一致，未写盘 */
+export interface ChapterSnapshotRestoreResult {
+    restored: boolean
+}
+
+/** press/snapshot/chapter/delete 请求 */
+export interface ChapterSnapshotDeleteRequest {
+    dirPath: string
+    chapterPath: string
+    snapshotId: string
+}
+
+/** press/snapshot/chapter/delete 响应 */
+export interface ChapterSnapshotDeleteResult {
+    deleted: boolean
+}
+
+/**
+ * 判断章节路径是否具备基本形态：相对路径、Markdown 结尾、不含上跳与盘符。
+ * 关键约束：本函数只做格式初筛，是否真属于该作品的 Chapters 目录由宿主结合片段校验判定。
+ */
+function isChapterPathShape(value: unknown): value is string {
+    if (typeof value !== 'string' || value.length === 0 || value.length > 512) {
+        return false
+    }
+    if (value.includes('..') || value.includes(':')) {
+        return false
+    }
+    if (value.startsWith('/') || value.startsWith('\\')) {
+        return false
+    }
+    return value.toLowerCase().endsWith('.md')
+}
+
+/** 判断是否为合法的章节快照清单请求（类型收窄辅助） */
+export function isChapterSnapshotListRequest(payload: unknown): payload is ChapterSnapshotListRequest {
+    return isPressDirPath(payload)
+}
+
+/** 判断是否为合法的章节版本列表请求（类型收窄辅助） */
+export function isChapterSnapshotVersionsRequest(payload: unknown): payload is ChapterSnapshotVersionsRequest {
+    if (!isPressDirPath(payload)) {
+        return false
+    }
+    return isChapterPathShape((payload as { chapterPath?: unknown }).chapterPath)
+}
+
+/** 判断是否为合法的章节手动留版请求（类型收窄辅助） */
+export function isChapterSnapshotCaptureRequest(payload: unknown): payload is ChapterSnapshotCaptureRequest {
+    if (!isChapterSnapshotVersionsRequest(payload)) {
+        return false
+    }
+    const label = (payload as { label?: unknown }).label
+    return label === undefined || typeof label === 'string'
+}
+
+/** 判断是否为合法的章节恢复请求（类型收窄辅助） */
+export function isChapterSnapshotRestoreRequest(payload: unknown): payload is ChapterSnapshotRestoreRequest {
+    if (!isChapterSnapshotVersionsRequest(payload)) {
+        return false
+    }
+    return isPressSnapshotId((payload as { snapshotId?: unknown }).snapshotId)
+}
+
+/** 判断是否为合法的章节快照删除请求（类型收窄辅助） */
+export function isChapterSnapshotDeleteRequest(payload: unknown): payload is ChapterSnapshotDeleteRequest {
+    return isChapterSnapshotRestoreRequest(payload)
+}
+

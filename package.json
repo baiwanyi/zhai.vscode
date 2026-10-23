@@ -222,6 +222,13 @@
                     "maximum": 3600,
                     "description": "自动快照的最小间隔秒数：同一作品两次自动快照之间至少间隔这么久，连续写作只保留最终结果"
                 },
+                "zhai.press.snapshot.chapterIntervalSeconds": {
+                    "type": "number",
+                    "default": 300,
+                    "minimum": 30,
+                    "maximum": 3600,
+                    "description": "章节正文自动快照的最小间隔秒数：按章独立计数，AI 写回前的留底不受此限制"
+                },
                 "zhai.image.size": {
                     "type": "string",
                     "default": "768x1024",

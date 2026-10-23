@@ -7,7 +7,7 @@
  * 关键约束：分区项点击只切换高亮，本组件不承载保存动作——编辑已即时落盘；
  * 本组件不解析路由、不发起宿主命令；容器不可设置 overflow: hidden，否则 Tooltip 浮层会被裁切。
  */
-import { Archive, Bot, Globe, ListTree, MessageCircle, Tag, Users } from 'lucide-react'
+import { Archive, Bot, Globe, ListTree, MessageCircle, Users, WandSparkles } from 'lucide-react'
 import { TooltipProvider } from '@components/ui/tooltip'
 import { WorkflowPressNavItem } from './WorkflowPressNavItem'
 import type { JSX, ReactNode } from 'react'
@@ -28,7 +28,7 @@ const PRIMARY_ENTRIES: readonly WorkflowPressNavEntry[] = [
     { id: 'setting', label: '设定', icon: <Globe className="size-6" /> },
     { id: 'character', label: '角色', icon: <Users className="size-6" /> },
     { id: 'outline', label: '大纲', icon: <ListTree className="size-6" /> },
-    { id: 'naming', label: '取名', icon: <Tag className="size-6" /> },
+    { id: 'naming', label: '取名', icon: <WandSparkles className="size-6" /> },
 ]
 
 /** 辅助功能分区：置于栏底，与主功能区间留白分隔，对齐活动栏的底部入口分布 */

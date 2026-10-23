@@ -37,6 +37,8 @@ export interface ZhaiConfig {
     pressSnapshotEnabled: boolean
     /** 自动快照的最小间隔秒数：同一作品两次自动快照之间的最短时间 */
     pressSnapshotIntervalSeconds: number
+    /** 章节正文自动快照的最小间隔秒数：按章独立计数，正文写作频率远高于改设定 */
+    pressSnapshotChapterIntervalSeconds: number
     /** 角色设定图尺寸，形如 768x1024 */
     imageSize: string
     /** 角色设定图每日生成次数上限 */
@@ -55,12 +57,41 @@ const MIN_SNAPSHOT_INTERVAL_SECONDS = 5
 /** 自动快照间隔上限：一小时一版已是兜底语义，再大等于关闭 */
 const MAX_SNAPSHOT_INTERVAL_SECONDS = 3600
 
+/** 章节自动快照默认间隔秒数：正文写作频率高，比结构化文档宽松得多 */
+const DEFAULT_CHAPTER_SNAPSHOT_INTERVAL_SECONDS = 300
+
+/** 章节自动快照间隔下限：低于此值时一章内会堆出上百版 */
+const MIN_CHAPTER_SNAPSHOT_INTERVAL_SECONDS = 30
+
+/** 章节自动快照间隔上限：一小时一版已是兜底语义，再大等于关闭 */
+const MAX_CHAPTER_SNAPSHOT_INTERVAL_SECONDS = 3600
+
+/** 收敛数值配置：非法值回落默认，越界值夹到上下限内 */
+function readBoundedSeconds(value: number, fallback: number, min: number, max: number): number {
+    if (!Number.isFinite(value)) {
+        return fallback
+    }
+    return Math.min(Math.max(Math.floor(value), min), max)
+}
+
 /** 收敛自动快照间隔：非法值回落默认，越界值夹到上下限内 */
 function readSnapshotInterval(value: number): number {
-    if (!Number.isFinite(value)) {
-        return DEFAULT_SNAPSHOT_INTERVAL_SECONDS
-    }
-    return Math.min(Math.max(Math.floor(value), MIN_SNAPSHOT_INTERVAL_SECONDS), MAX_SNAPSHOT_INTERVAL_SECONDS)
+    return readBoundedSeconds(
+        value,
+        DEFAULT_SNAPSHOT_INTERVAL_SECONDS,
+        MIN_SNAPSHOT_INTERVAL_SECONDS,
+        MAX_SNAPSHOT_INTERVAL_SECONDS,
+    )
+}
+
+/** 收敛章节自动快照间隔：与结构化文档分开取值，互不影响 */
+function readChapterSnapshotInterval(value: number): number {
+    return readBoundedSeconds(
+        value,
+        DEFAULT_CHAPTER_SNAPSHOT_INTERVAL_SECONDS,
+        MIN_CHAPTER_SNAPSHOT_INTERVAL_SECONDS,
+        MAX_CHAPTER_SNAPSHOT_INTERVAL_SECONDS,
+    )
 }
 
 /** CodeBuddy 站点：仅开放中国站（cn）与国际站（ai） */
@@ -96,6 +127,9 @@ export function getZhaiConfig(): ZhaiConfig {
         pressImportAiDailyLimit: cfg.get<number>('press.importAiDailyLimit', 0),
         pressSnapshotEnabled: cfg.get<boolean>('press.snapshot.enabled', true),
         pressSnapshotIntervalSeconds: readSnapshotInterval(cfg.get<number>('press.snapshot.intervalSeconds', 60)),
+        pressSnapshotChapterIntervalSeconds: readChapterSnapshotInterval(
+            cfg.get<number>('press.snapshot.chapterIntervalSeconds', 300),
+        ),
         imageSize: cfg.get<string>('image.size', '768x1024'),
         imageDailyLimit: cfg.get<number>('image.dailyLimit', 20),
         telemetryEnabled: cfg.get<boolean>('telemetry.enabled', false),

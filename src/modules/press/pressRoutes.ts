@@ -18,6 +18,11 @@ import type { PortraitService } from './portraitService'
 import type { PressAiService } from './pressAiService'
 import type { PressSnapshotService } from './snapshot/snapshotService'
 import type {
+    ChapterSnapshotCaptureResult,
+    ChapterSnapshotDeleteResult,
+    ChapterSnapshotListResult,
+    ChapterSnapshotRestoreResult,
+    ChapterSnapshotVersionsResult,
     OpenPressProjectResult,
     PressApplyResult,
     PressExtractCharactersResult,
@@ -34,6 +39,11 @@ import type { WorkflowRouter } from '../ai/workflowRouter'
 import type Database from 'better-sqlite3'
 import type * as vscode from 'vscode'
 import {
+    isChapterSnapshotCaptureRequest,
+    isChapterSnapshotDeleteRequest,
+    isChapterSnapshotListRequest,
+    isChapterSnapshotRestoreRequest,
+    isChapterSnapshotVersionsRequest,
     isPressApplyRequest,
     isPressDirPath,
     isPressExtractCharactersRequest,
@@ -107,6 +117,16 @@ export class PressRoutes {
                 return this.restoreSnapshot(payload)
             case 'press/snapshot/delete':
                 return this.deleteSnapshot(payload)
+            case 'press/snapshot/chapter/list':
+                return this.listChapterSnapshots(payload)
+            case 'press/snapshot/chapter/versions':
+                return this.listChapterSnapshotVersions(payload)
+            case 'press/snapshot/chapter/capture':
+                return this.captureChapterSnapshot(payload)
+            case 'press/snapshot/chapter/restore':
+                return this.restoreChapterSnapshot(payload)
+            case 'press/snapshot/chapter/delete':
+                return this.deleteChapterSnapshot(payload)
             default:
                 throw new Error(`未知的写作管理协议方法：${method}`)
         }
@@ -272,5 +292,69 @@ export class PressRoutes {
             throw new Error(`作品不在索引中，无法删除快照：${payload.dirPath}`)
         }
         return { deleted: await this.snapshot.remove(payload.dirPath, payload.snapshotId) }
+    }
+
+    /** 列出有快照的章节：只返回元信息，正文按需读取 */
+    private async listChapterSnapshots(payload: unknown): Promise<ChapterSnapshotListResult> {
+        if (!isChapterSnapshotListRequest(payload)) {
+            throw new Error('press/snapshot/chapter/list 参数非法：dirPath 须为非空字符串')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法列出章节快照：${payload.dirPath}`)
+        }
+        return { chapters: await this.snapshot.listChapters(payload.dirPath) }
+    }
+
+    /** 列出某章的版本时间线：章节路径的合法性由服务层的片段校验兜底 */
+    private async listChapterSnapshotVersions(payload: unknown): Promise<ChapterSnapshotVersionsResult> {
+        if (!isChapterSnapshotVersionsRequest(payload)) {
+            throw new Error('press/snapshot/chapter/versions 参数非法：作品目录或章节路径不合法')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法列出章节快照：${payload.dirPath}`)
+        }
+        return { versions: await this.snapshot.listChapterVersions(payload.dirPath, payload.chapterPath) }
+    }
+
+    /** 手动给某章留一版：正文取磁盘当前内容，备注可选 */
+    private async captureChapterSnapshot(payload: unknown): Promise<ChapterSnapshotCaptureResult> {
+        if (!isChapterSnapshotCaptureRequest(payload)) {
+            throw new Error('press/snapshot/chapter/capture 参数非法：作品目录或章节路径不合法')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法创建章节快照：${payload.dirPath}`)
+        }
+        const snapshot = await this.snapshot.captureChapter(payload.dirPath, payload.chapterPath, payload.label)
+        return { snapshot }
+    }
+
+    /** 恢复单章：编辑器内有未保存修改时由服务层拒绝，避免写盘被编辑器回写覆盖 */
+    private async restoreChapterSnapshot(payload: unknown): Promise<ChapterSnapshotRestoreResult> {
+        if (!isChapterSnapshotRestoreRequest(payload)) {
+            throw new Error('press/snapshot/chapter/restore 参数非法：作品目录、章节路径或快照标识不合法')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法恢复章节快照：${payload.dirPath}`)
+        }
+        return {
+            restored: await this.snapshot.restoreChapter(payload.dirPath, payload.chapterPath, payload.snapshotId),
+        }
+    }
+
+    /** 删除章节某一版：只删该版本文件，作品文档与其它版本不受影响 */
+    private async deleteChapterSnapshot(payload: unknown): Promise<ChapterSnapshotDeleteResult> {
+        if (!isChapterSnapshotDeleteRequest(payload)) {
+            throw new Error('press/snapshot/chapter/delete 参数非法：作品目录、章节路径或快照标识不合法')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法删除章节快照：${payload.dirPath}`)
+        }
+        return {
+            deleted: await this.snapshot.removeChapterVersion(
+                payload.dirPath,
+                payload.chapterPath,
+                payload.snapshotId,
+            ),
+        }
     }
 }

@@ -541,19 +541,25 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 为**设定、角色、大纲**这条创作主链提供本地时间线，弥补 Git 只能回退到提交点的缺口：作者连续写作数小时不会提交，而 AI 改稿后最需要的正是「回到 AI 动手前那一刻」。
 
-边界：不替代 Git（不做分支、合并、远程）；不纳入章节正文（章节数量多、变更频率高，由 Git 与编辑器撤销栈承担）；不纳入附件二进制。
+边界：不替代 Git（不做分支、合并、远程）；不纳入附件二进制；章节正文按「一章一条时间线」收录（见 11.10），不做整部作品的整版副本。
 
 ### 11.2 存储结构
 
 ```
 {root}/press/{作品名}/Snapshots/
-├── .gitignore                         ← 内容 `*`，首次留版时写入
-└── 20261024-153012-a1b2c3/            ← 一版一目录：本地时间 14 位 + 6 位随机十六进制
-    ├── meta.json
-    ├── README.md
-    ├── 设定.md
-    ├── 角色设定.md
-    └── 大纲.md
+├── .gitignore                         ← 内容 `*`，首次留版时写入，覆盖整棵子树
+├── 20261024-153012-a1b2c3/            ← 结构化文档：一版一目录（本地时间 14 位 + 6 位随机十六进制）
+│   ├── meta.json
+│   ├── README.md
+│   ├── 设定.md
+│   ├── 角色设定.md
+│   └── 大纲.md
+└── Chapters/                          ← 章节正文：按章一目录，见 11.10
+    └── 02-卷二/
+        └── 08-初见/
+            ├── 20261024-160530-9f8e7d.md
+            ├── 20261024-160530-9f8e7d.json
+            └── …
 ```
 
 `meta.json`：
@@ -578,6 +584,8 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 | 编辑器内直接改并保存 | `onDidSaveTextDocument`，仅识别 `press/{作品名}/` 下那四份文档 | `auto` |
 | 面板「立即快照」 | `press/snapshot/create` | `manual` |
 | 恢复动作内部 | 覆盖前先给当前内容留一版 | `restore` |
+| 章节保存（自动） | `onDidSaveTextDocument`，命中 `press/{作品}/Chapters/**/*.md` | `auto` |
+| 章节 AI 写回前 | `chatService.applyWrite` 在 `applyEdit` 之前取编辑器全文 | `ai-write` |
 
 `workspace.fs` 写入不产生保存事件，两条通道不会互相触发。
 
@@ -621,4 +629,48 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 - 版本间 diff 对比（当前以时间线与整版恢复为主，未提供 diff 视图）
 - 单份恢复的界面入口
-- 章节正文快照（按第 11.1 节的边界，暂由 Git 承担）
+- 跨章节的整部作品时间点对齐（当前按章独立，不支持「一键回到三天前的整部作品」）
+
+### 11.10 章节正文快照
+
+**粒度**：一章一条独立时间线，只存被改动的那一章，绝不做整部作品的整版副本——500 章 × 每版数 MB 会让快照本身变成写盘灾难。
+
+**存储**：`Snapshots/Chapters/{卷?}/{章名}/{id}.md` 与同名 `{id}.json`。正文与元信息成对存放，单版损坏不影响同章其它版本；章目录下不再嵌套版本子目录，避免一章堆出几十层目录。
+
+| 元信息字段 | 说明 |
+|------|------|
+| `chapterPath` | 留版当时相对存储根的章节路径，章重命名后仍可追溯 |
+| `title` | 章名（取文件名去扩展名） |
+| `createdAt` | ISO 时间，列表排序依据 |
+| `reason` | `auto` / `ai-write` / `manual` / `restore` |
+| `label` | 手动留版的备注 |
+| `sizeBytes` / `hash` | 体积与内容哈希，哈希用于去重与恢复前比对 |
+
+**触发与限频**：
+
+| 来源 | 条件 | 是否受节流 |
+|------|------|-----------|
+| 编辑器保存 | 命中 `Chapters/**/*.md` | 是（`zhai.press.snapshot.chapterIntervalSeconds`，默认 300） |
+| AI 写回前 | `applyEdit` 之前取编辑器全文 | 否，强制留底 |
+| 手动 | 面板「立即快照」 | 否 |
+| 恢复前 | 覆盖前先存当前正文 | 否 |
+
+去重按单章内容哈希：与最新一版相同直接跳过。节流语义与结构化文档一致——throttle，定时器不续期，末版必留。
+
+**AI 写回留底**：`chatService.applyWrite` 在 `vscode.workspace.applyEdit` 之前调用注入的钩子，内容取 `document.getText()`，即写回前的编辑器状态，与撤销栈完全对齐，且不受文件是否已保存影响。钩子异常只记日志，绝不阻断写回。
+
+**恢复**：只覆盖该章正文，随后重建该章索引。两道前置：
+
+1. 内容与所选版本完全一致时直接返回 `false`，不写盘也不留版；
+2. 该章在编辑器中处于 dirty 状态时拒绝恢复——此时写盘会被编辑器回写覆盖，恢复等于无效。
+
+**清理**：每章近 10 版 + 每日首版保留 14 天；超过 20 版时从最旧的 `auto` 删起；`manual` 与 `restore` 不参与自动清理。单章正文超过 2 MB 时跳过自动留版，只允许手动。
+
+**协议**：`press/snapshot/chapter/{list|versions|capture|restore|delete}`，五个方法均需登记 `PRESS_WORKSPACE_METHODS`；路由层按索引库回查作品真实性，章节归属由宿主的片段校验确认。
+
+**界面**：快照页顶部两个标签页——「设定与大纲」为结构化文档整版快照，「章节正文」为左侧章节清单（按卷分组、显示版本数）+ 右侧单章时间线。
+
+**已知取舍**：
+
+- 章重命名后旧快照目录成为孤儿，由 14 天与硬上限回收，不做自动迁移
+- 不支持跨章「回到三天前的整部作品」，各章时间线彼此独立

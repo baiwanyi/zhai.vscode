@@ -4,10 +4,10 @@
  * 来源与变动文档的中文标签集中在本文件，页面只负责编排与确认。
  * 关键约束：删除按钮带可访问名称且不触发条目本身的点击；恢复按钮在写操作进行中一并禁用，避免重复提交。
  */
-import { RotateCcw, Trash2 } from 'lucide-react'
+import { InboxIcon, RotateCcw, Trash2 } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
-import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
+import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { PressSnapshotEntry, PressSnapshotFileKey, PressSnapshotReason } from '@shared/types/press'
 import type { JSX } from 'react'
 
@@ -58,11 +58,21 @@ interface SnapshotListItemProps {
 }
 
 export function SnapshotListItem({ snapshot, isBusy, onRestore, onDelete }: SnapshotListItemProps): JSX.Element {
-    const changed = snapshot.changed.length === 0 ? '内容未变' : snapshot.changed.map((key) => FILE_LABELS[key]).join('、')
-    const trigger = snapshot.trigger.length === 0 ? '手动留版' : `改写 ${snapshot.trigger.map((key) => FILE_LABELS[key]).join('、')}`
-    const detail = snapshot.label.length > 0 ? `${snapshot.label} · ${formatSize(snapshot.sizeBytes)}` : `${trigger} · ${formatSize(snapshot.sizeBytes)}`
+    const changed =
+        snapshot.changed.length === 0 ? '内容未变' : snapshot.changed.map((key) => FILE_LABELS[key]).join('、')
+    const trigger =
+        snapshot.trigger.length === 0
+            ? '手动留版'
+            : `改写 ${snapshot.trigger.map((key) => FILE_LABELS[key]).join('、')}`
+    const detail =
+        snapshot.label.length > 0
+            ? `${snapshot.label} · ${formatSize(snapshot.sizeBytes)}`
+            : `${trigger} · ${formatSize(snapshot.sizeBytes)}`
     return (
-        <Item size="sm">
+        <Item variant="outline">
+            <ItemMedia variant="icon">
+                <InboxIcon />
+            </ItemMedia>
             <ItemContent>
                 <ItemTitle>
                     <span className="tabular-nums">{formatSnapshotTime(snapshot.createdAt)}</span>
@@ -72,13 +82,12 @@ export function SnapshotListItem({ snapshot, isBusy, onRestore, onDelete }: Snap
                 <ItemDescription className="text-xs">{detail}</ItemDescription>
             </ItemContent>
             <ItemActions>
-                <Button size="sm" variant="outline" disabled={isBusy} onClick={() => onRestore(snapshot)}>
+                <Button size="icon" variant="outline" disabled={isBusy} onClick={() => onRestore(snapshot)}>
                     <RotateCcw />
-                    恢复
                 </Button>
                 <Button
                     size="icon"
-                    variant="ghost"
+                    variant="destructive"
                     disabled={isBusy}
                     aria-label={`删除 ${formatSnapshotTime(snapshot.createdAt)} 的快照`}
                     onClick={() => onDelete(snapshot)}

@@ -79,18 +79,14 @@ export function resolveProjectName(dirPath: string): string {
     return segments[1] ?? ''
 }
 
-/** 拼装快照相关 Uri：标识为空串时即 Snapshots 目录本身 */
-function snapshotUri(dirPath: string, snapshotId?: string): vscode.Uri {
+/** 拼装快照相关 Uri：标识为空串时即 Snapshots 目录本身，章节时间线也从这里分叉 */
+export function snapshotUri(dirPath: string, ...segments: string[]): vscode.Uri {
     const name = resolveProjectName(dirPath)
-    const segments = [PRESS_MODULE_DIR, name, PRESS_SNAPSHOT_DIR]
-    if (snapshotId !== undefined) {
-        segments.push(snapshotId)
-    }
-    return buildStorageUri(resolveStorageRoot(), segments)
+    return buildStorageUri(resolveStorageRoot(), [PRESS_MODULE_DIR, name, PRESS_SNAPSHOT_DIR, ...segments])
 }
 
-/** 计算单份文档的 SHA-256：内容寻址的比较基准，同内容即视为未变更 */
-function hashText(content: string): string {
+/** 计算文本的 SHA-256：内容寻址的比较基准，同内容即视为未变更 */
+export function hashText(content: string): string {
     return createHash('sha256').update(content, 'utf8').digest('hex')
 }
 
@@ -105,7 +101,7 @@ export function hashWorkspaceFiles(files: PressWorkspaceFiles): Record<PressSnap
 }
 
 /** 生成快照标识：本地时间 14 位 + 6 位随机十六进制，同秒多次创建也不会撞名 */
-function createSnapshotId(now: Date): string {
+export function createSnapshotId(now: Date): string {
     const pad = (value: number): string => String(value).padStart(2, '0')
     const stamp = [
         String(now.getFullYear()),
@@ -120,7 +116,7 @@ function createSnapshotId(now: Date): string {
 }
 
 /** 读文本文件：不存在或解码失败返回 null，由调用方决定是跳过还是按空处理 */
-async function readTextFile(uri: vscode.Uri): Promise<string | null> {
+export async function readTextFile(uri: vscode.Uri): Promise<string | null> {
     try {
         const content = await vscode.workspace.fs.readFile(uri)
         return new TextDecoder('utf-8').decode(content)
@@ -130,7 +126,7 @@ async function readTextFile(uri: vscode.Uri): Promise<string | null> {
 }
 
 /** 写文本文件：统一 UTF-8，覆盖语义由调用方保证 */
-async function writeTextFile(uri: vscode.Uri, content: string): Promise<void> {
+export async function writeTextFile(uri: vscode.Uri, content: string): Promise<void> {
     await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(content))
 }
 
@@ -179,7 +175,7 @@ function isTrigger(value: unknown): value is PressSnapshotTrigger {
 }
 
 /** 首次写入时补一份 .gitignore：存储根落在代码仓库时，快照不应进入版本库 */
-async function ensureGitignore(dirPath: string): Promise<void> {
+export async function ensureGitignore(dirPath: string): Promise<void> {
     const uri = vscode.Uri.joinPath(snapshotUri(dirPath), '.gitignore')
     if (await isPathExisting(uri)) {
         return

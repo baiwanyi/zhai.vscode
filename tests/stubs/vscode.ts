@@ -370,11 +370,17 @@ export const workspace = {
             return Promise.resolve(new TextEncoder().encode(content))
         },
         createDirectory(uri: vscode.Uri): Promise<void> {
-            // 与真实 fs 一致：上级目录也一并登记，用例不必先手工铺满父目录
-            directories.add(uri.fsPath)
-            const separatorIndex = Math.max(uri.fsPath.lastIndexOf('/'), uri.fsPath.lastIndexOf('\\'))
-            if (separatorIndex > 0) {
-                directories.add(uri.fsPath.slice(0, separatorIndex))
+            // 与真实 fs 一致：连同所有缺失的上级目录一起登记，用例不必先手工铺满父目录
+            let cursor = uri.fsPath.length
+            while (cursor > 0) {
+                const current = uri.fsPath.slice(0, cursor)
+                directories.add(current)
+                const separatorIndex = Math.max(current.lastIndexOf('/'), current.lastIndexOf('\\'))
+                // 到盘符或根即停止，避免把 `d:` 之类当成目录登记
+                if (separatorIndex <= 2) {
+                    break
+                }
+                cursor = separatorIndex
             }
             return Promise.resolve()
         },

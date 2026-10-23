@@ -44,8 +44,11 @@ const MAX_MODEL_ID_LENGTH = 64
 const MAX_SCOPE_LENGTH = 160
 
 /**
- * 写作管理工作台可用的作品协议：读取、打开、人物卡与大纲提取，与仪表盘的作品写操作分开登记。
- * 两种提取都只读已落盘的 Materials 素材（缺失时先补跑本地抽取），不修改正文、人物文档与大纲文档。
+ * 写作管理工作台可用的作品协议：读取、打开、人物卡与大纲提取、文档回写与作品快照，
+ * 与仪表盘的作品写操作（press/create、press/delete* 等）分开登记。
+ * 两种提取都只读已落盘的 Materials 素材（缺失时先补跑本地抽取），不修改正文、人物文档与大纲文档；
+ * 四个快照方法只在 Snapshots 目录下读写，恢复时按四份文档整版或指定覆盖。
+ * 关键约束：新增 press/* 路由必须同步登记本白名单，否则请求在分发层即被拒绝。
  */
 const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set([
     'press/workspace',
@@ -54,6 +57,15 @@ const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set([
     'press/extract/outline',
     'press/extract/setting',
     'press/apply',
+    'press/snapshot/list',
+    'press/snapshot/create',
+    'press/snapshot/restore',
+    'press/snapshot/delete',
+    'press/snapshot/chapter/list',
+    'press/snapshot/chapter/versions',
+    'press/snapshot/chapter/capture',
+    'press/snapshot/chapter/restore',
+    'press/snapshot/chapter/delete',
 ])
 
 export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
