@@ -3,7 +3,13 @@
  * 复用约定：只做展示层的数据整理，不复制宿主词库；抽样基于宿主下发的后缀 / 姓氏样本。
  * 关键约束：所有查表函数在缺失数据时返回空值而非抛错，避免分类扩展期界面崩溃。
  */
-import type { NamingCandidate, NamingCatalog, NamingCategory, NamingCategoryMeta, NamingSurnameKind } from '@shared/types/naming'
+import type {
+    NamingCandidate,
+    NamingCatalog,
+    NamingCategory,
+    NamingCategoryMeta,
+    NamingSurnameKind,
+} from '@shared/types/naming'
 
 /** 数组等概率抽样；空数组返回 null */
 export function pickRandom<T>(items: readonly T[]): T | null {
@@ -19,7 +25,11 @@ export function readCategoryMeta(catalog: NamingCatalog, category: NamingCategor
 }
 
 /** 取后缀候选：键为 `${category}:${variant}` */
-export function readSuffixSamples(catalog: NamingCatalog, category: NamingCategory, variant: string): readonly string[] {
+export function readSuffixSamples(
+    catalog: NamingCatalog,
+    category: NamingCategory,
+    variant: string,
+): readonly string[] {
     return catalog.suffixSamples[`${category}:${variant}`] ?? []
 }
 

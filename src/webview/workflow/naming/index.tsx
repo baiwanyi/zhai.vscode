@@ -1,27 +1,35 @@
 /**
- * 取名页：纵向三段——顶部分类栏、条件卡片、底部结果区，承接写作管理页的取名分区。
+ * 取名页：纵向三段——顶部分类栏、条件字段区、底部操作区，承接写作管理页的取名分区。
  * 复用约定：条件收集、生成请求与结果渲染分别由 layout/ 与 hooks/ 承担，本文件只做状态编排；
- * 结果按分类缓存在 useNamingGenerate 内，切换分类时已有结果直接回显，未生成过的分类自动随机生成一批。
- * 关键约束：页面不自带滚动容器（结果区为唯一滚动层，复用 ui/scroll-area）；条件与结果均不落本地存储，
- * 历史由宿主 naming.db 持有。
+ * 结果按分类缓存在 useNamingGenerate 内，生成后由 NamingResultDialog 弹层展示，
+ * 关闭后经底部「查看结果」再次打开，未生成过的分类自动随机生成一批。
+ * 关键约束：生成方式开关、生成 / 取消按钮与结果弹层入口都收敛在底部操作区，条件与结果均不落本地存储，
+ * 历史由宿主 naming.db 持有；无缓存结果的分类「查看结果」按钮禁用。
  */
+import { Dices, Eye } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
+import { Button } from '@components/ui/button'
+import { Label } from '@components/ui/label'
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Skeleton } from '@components/ui/skeleton'
+import { Spinner } from '@components/ui/spinner'
+import { Switch } from '@components/ui/switch'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { NamingCategory, NamingRequest, NamingSurnameKind } from '@shared/types/naming'
-import { DEFAULT_REQUEST } from './constants'
+import { DEFAULT_REQUEST, GENERATE_LABEL, VIEW_RESULT_LABEL } from './constants'
 import { useNamingCatalog } from './hooks/useNamingCatalog'
 import { useNamingGenerate } from './hooks/useNamingGenerate'
 import { NamingCategoryRail } from './layout/NamingCategoryRail'
-import { NamingConditionCard } from './layout/NamingConditionCard'
-import { NamingResultGrid } from './layout/NamingResultGrid'
+import { NamingConditionFields } from './layout/NamingConditionFields'
+import { NamingResultDialog } from './layout/NamingResultDialog'
 import { pickRandom, readCategoryMeta, readSuffixSamples, readSurnameSamples } from './utils'
 import type { JSX } from 'react'
 
 export function NamingPage(): JSX.Element {
     const { catalog, error: catalogError, isLoading } = useNamingCatalog()
     const [request, setRequest] = useState<NamingRequest>(DEFAULT_REQUEST)
+    const [isResultOpen, setIsResultOpen] = useState(false)
     const { items, isGenerating, generate, abort, hasResult } = useNamingGenerate(request.category)
 
     const handleChange = useCallback((patch: Partial<NamingRequest>): void => {
@@ -83,13 +91,20 @@ export function NamingPage(): JSX.Element {
         }
     }, [catalog, request.category, request.variant])
 
+    /** 主动取名：先打开结果弹窗（生成中显示等待态），再提交请求，返回后结果直接落到弹窗里 */
     const handleGenerate = useCallback((): void => {
+        setIsResultOpen(true)
         void generate(request)
     }, [generate, request])
 
     const handleAbort = useCallback((): void => {
         void abort()
     }, [abort])
+
+    /** 查看结果：仅读缓存，不触发生成；无缓存时按钮已禁用 */
+    const handleViewResult = useCallback((): void => {
+        setIsResultOpen(true)
+    }, [])
 
     if (isLoading) {
         return (
@@ -114,29 +129,70 @@ export function NamingPage(): JSX.Element {
     return (
         <div className="@container flex h-full min-h-0 flex-col gap-3 p-3">
             <header className="flex flex-col shrink-0 gap-2">
-                <h2 className="truncate font-heading text-lg">取名</h2>
+                <h1 className="truncate font-heading text-lg">取名</h1>
                 <p className="min-w-0 flex-1 text-muted-foreground text-xs">
-                    选定分类并设置风格、时代与字数后随机取名，一次生成一批候选；满意的直接复制。
+                    选定分类并设置风格、时代与字数后随机取名，结果在弹窗中展示；关闭后可随时「查看结果」，满意的直接复制。
                 </p>
             </header>
 
             <NamingCategoryRail catalog={catalog} activeCategory={request.category} onSelect={handleCategoryChange} />
 
-            <NamingConditionCard
-                catalog={catalog}
-                request={request}
-                isGenerating={isGenerating}
-                onChange={handleChange}
-                onSurnameKindChange={handleSurnameKindChange}
-                onRandomSurname={handleRandomSurname}
-                onRandomSuffix={handleRandomSuffix}
-                onGenerate={handleGenerate}
-                onAbort={handleAbort}
-            />
-
             <ScrollArea className="min-h-0 flex-1">
-                <NamingResultGrid items={items} />
+                <div className="p-0.5">
+                    <NamingConditionFields
+                        catalog={catalog}
+                        request={request}
+                        onChange={handleChange}
+                        onSurnameKindChange={handleSurnameKindChange}
+                        onRandomSurname={handleRandomSurname}
+                        onRandomSuffix={handleRandomSuffix}
+                    />
+                </div>
             </ScrollArea>
+
+            <footer className="relative flex shrink-0 items-center justify-between gap-1.5 pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent">
+                <div className="flex shrink-0 items-center gap-1.5">
+                    <Tooltip>
+                        <TooltipTrigger asChild>
+                            <Switch
+                                id="naming-source"
+                                checked={request.source === 'ai'}
+                                disabled={!catalog.aiAvailable}
+                                onCheckedChange={(checked) => handleChange({ source: checked ? 'ai' : 'local' })}
+                            />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                            {catalog.aiAvailable
+                                ? '生成方式：开启为 AI 生成，关闭为本地生成'
+                                : 'AI 通道未就绪，AI 生成不可用'}
+                        </TooltipContent>
+                    </Tooltip>
+                    <Label htmlFor="naming-source" className="text-muted-foreground">
+                        AI 生成
+                    </Label>
+                </div>
+                <div className="flex gap-1">
+                    <Button variant="outline" disabled={!hasResult(request.category)} onClick={handleViewResult}>
+                        <Eye data-icon="inline-start" />
+                        {VIEW_RESULT_LABEL}
+                    </Button>
+                    <Button
+                        variant={isGenerating ? 'outline' : 'default'}
+                        onClick={isGenerating ? handleAbort : handleGenerate}
+                    >
+                        {isGenerating ? <Spinner data-icon="inline-start" /> : <Dices data-icon="inline-start" />}
+                        {isGenerating ? '取消' : GENERATE_LABEL}
+                    </Button>
+                </div>
+            </footer>
+
+            <NamingResultDialog
+                open={isResultOpen}
+                categoryLabel={readCategoryMeta(catalog, request.category)?.label ?? '取名'}
+                items={items}
+                isGenerating={isGenerating}
+                onOpenChange={setIsResultOpen}
+            />
         </div>
     )
 }

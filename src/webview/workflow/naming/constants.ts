@@ -40,10 +40,13 @@ export const CATEGORY_RAIL_LABEL = '取名分类'
 /** 结果区空态文案 */
 export const EMPTY_TITLE = '还没有生成名字'
 
-export const EMPTY_DESCRIPTION = '设置左侧条件后点击「随机取名」，结果会显示在这里。'
+export const EMPTY_DESCRIPTION = '设置条件后点击「随机取名」，结果会在弹窗中展示。'
 
 /** 生成按钮文案 */
 export const GENERATE_LABEL = '随机取名'
+
+/** 查看结果按钮文案：无缓存结果时按钮禁用 */
+export const VIEW_RESULT_LABEL = '查看结果'
 
 /** 具体要求长度上限（与宿主归一化一致） */
 export const MAX_REQUIREMENT_LENGTH = 150

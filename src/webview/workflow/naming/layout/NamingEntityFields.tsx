@@ -6,7 +6,7 @@
  * 前端限长仅用于输入体验。
  */
 import { Dices } from 'lucide-react'
-import { Field, FieldLabel } from '@components/ui/field'
+import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@components/ui/input-group'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import type { NamingCatalog, NamingRequest } from '@shared/types/naming'
@@ -32,7 +32,7 @@ export function NamingEntityFields({
         return null
     }
     return (
-        <div className="flex flex-col gap-3">
+        <FieldGroup className="gap-3">
             <Field>
                 <FieldLabel>{meta.variantLabel}</FieldLabel>
                 <ToggleGroup
@@ -71,6 +71,6 @@ export function NamingEntityFields({
                     </InputGroupAddon>
                 </InputGroup>
             </Field>
-        </div>
+        </FieldGroup>
     )
 }
