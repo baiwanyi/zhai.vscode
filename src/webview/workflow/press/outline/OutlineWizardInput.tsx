@@ -52,26 +52,26 @@ export function OutlineWizardInput({
                 <FieldTitle>已就绪的设定</FieldTitle>
                 <div className="grid grid-cols-1 gap-1.5 @md:grid-cols-2">
                     <div className="rounded-lg border border-border bg-muted/30 px-2 py-1.5">
-                        <p className="text-xs text-muted-foreground">题材 / 受众</p>
-                        <p className="truncate text-xs">
+                        <p className="text-muted-foreground">题材 / 受众</p>
+                        <p className="truncate">
                             {setting.genres.length > 0 ? setting.genres.join('、') : '未填写'} · {setting.audience}
                         </p>
                     </div>
                     <div className="rounded-lg border border-border bg-muted/30 px-2 py-1.5">
-                        <p className="text-xs text-muted-foreground">预计篇幅</p>
-                        <p className="truncate text-xs tabular-nums">{formatWordCount(setting.wordGoal)} 字</p>
+                        <p className="text-muted-foreground">预计篇幅</p>
+                        <p className="truncate tabular-nums">{formatWordCount(setting.wordGoal)} 字</p>
                     </div>
                     <div className="rounded-lg border border-border bg-muted/30 px-2 py-1.5">
-                        <p className="text-xs text-muted-foreground">主角</p>
-                        <p className="truncate text-xs">{protagonist?.name ?? '尚未创建主角'}</p>
+                        <p className="text-muted-foreground">主角</p>
+                        <p className="truncate">{protagonist?.name ?? '尚未创建主角'}</p>
                     </div>
                     <div className="rounded-lg border border-border bg-muted/30 px-2 py-1.5">
-                        <p className="text-xs text-muted-foreground">金手指</p>
-                        <p className="truncate text-xs">{setting.goldenFingerType || '未填写'}</p>
+                        <p className="text-muted-foreground">金手指</p>
+                        <p className="truncate">{setting.goldenFingerType || '未填写'}</p>
                     </div>
                     <div className="rounded-lg border border-border bg-muted/30 px-2 py-1.5 @md:col-span-2">
-                        <p className="text-xs text-muted-foreground">一句话梗概</p>
-                        <p className="line-clamp-2 text-xs">{setting.logline.length > 0 ? setting.logline : '未填写'}</p>
+                        <p className="text-muted-foreground">一句话梗概</p>
+                        <p className="line-clamp-2">{setting.logline.length > 0 ? setting.logline : '未填写'}</p>
                     </div>
                 </div>
                 {setting.logline.trim().length === 0 ? (
@@ -92,7 +92,7 @@ export function OutlineWizardInput({
                             min={LIMITS.volumeCount.min}
                             max={LIMITS.volumeCount.max}
                             value={options.volumeCount}
-                            className="h-7 text-xs tabular-nums"
+                            className="h-7 tabular-nums"
                             onChange={(event) =>
                                 onChangeOptions({
                                     volumeCount: clamp(
@@ -113,7 +113,7 @@ export function OutlineWizardInput({
                             min={LIMITS.chaptersPerVolume.min}
                             max={LIMITS.chaptersPerVolume.max}
                             value={options.chaptersPerVolume}
-                            className="h-7 text-xs tabular-nums"
+                            className="h-7 tabular-nums"
                             onChange={(event) =>
                                 onChangeOptions({
                                     chaptersPerVolume: clamp(
@@ -135,7 +135,7 @@ export function OutlineWizardInput({
                             max={LIMITS.chapterWordGoal.max}
                             step={500}
                             value={options.chapterWordGoal}
-                            className="h-7 text-xs tabular-nums"
+                            className="h-7 tabular-nums"
                             onChange={(event) =>
                                 onChangeOptions({
                                     chapterWordGoal: clamp(
@@ -159,7 +159,7 @@ export function OutlineWizardInput({
                             }
                         }}
                     >
-                        <SelectTrigger id="wizard-structure" className="h-7 w-full text-xs">
+                        <SelectTrigger id="wizard-structure" className="h-7 w-full">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>

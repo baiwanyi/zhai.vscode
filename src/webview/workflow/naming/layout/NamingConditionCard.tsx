@@ -95,7 +95,7 @@ export function NamingConditionCard({
                             disabled={!catalog.aiAvailable}
                             onCheckedChange={(checked) => onChange({ source: checked ? 'ai' : 'local' })}
                         />
-                        <Label htmlFor="naming-source" className="text-muted-foreground text-xs">
+                        <Label htmlFor="naming-source" className="text-muted-foreground">
                             AI 生成
                         </Label>
                     </div>
@@ -108,10 +108,7 @@ export function NamingConditionCard({
                         {isGenerating ? <Spinner data-icon="inline-start" /> : <Dices data-icon="inline-start" />}
                         {isGenerating ? '取消' : GENERATE_LABEL}
                     </Button>
-                    <Select
-                        value={String(request.count)}
-                        onValueChange={(value) => onChange({ count: Number(value) })}
-                    >
+                    <Select value={String(request.count)} onValueChange={(value) => onChange({ count: Number(value) })}>
                         <SelectTrigger className="w-20 shrink-0" size="sm" aria-label="生成数量">
                             <SelectValue />
                         </SelectTrigger>

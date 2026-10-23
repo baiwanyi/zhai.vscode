@@ -43,7 +43,7 @@ export function WorkflowPlaceholder({ context, onResetModule, onOverride }: Work
                     </EmptyMedia>
                     <EmptyTitle>{label}</EmptyTitle>
                     <EmptyDescription>{label}的专属工作流尚未接入，当前以占位页承接。</EmptyDescription>
-                    <p className="text-muted-foreground text-xs">模块：{context.module}</p>
+                    <p className="text-muted-foreground">模块：{context.module}</p>
                 </EmptyHeader>
                 <EmptyContent>
                     <Button size="sm" variant="outline" onClick={() => void handleReset()}>

@@ -156,7 +156,7 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                     onOpenReadme={() => void openReadme()}
                 />
                 {project !== undefined ? (
-                    <p className="px-1 text-xs text-muted-foreground">{formatProjectMeta(project)}</p>
+                    <p className="px-1 text-muted-foreground">{formatProjectMeta(project)}</p>
                 ) : null}
                 <Button
                     variant="outline"

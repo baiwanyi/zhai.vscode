@@ -106,10 +106,8 @@ export function PressVolumeSection({
                             )}
                         />
                         {/* 标题吃满剩余宽度，把章数顶到右侧，与章节行的字数落在同一列 */}
-                        <span className="min-w-0 flex-1 truncate text-xs font-medium">{title}</span>
-                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                            {volume.chapters.length} 章
-                        </span>
+                        <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
+                        <span className="shrink-0 text-muted-foreground tabular-nums">{volume.chapters.length} 章</span>
                     </button>
                 </CollapsibleTrigger>
                 {canAppend ? (
@@ -172,14 +170,10 @@ export function PressVolumeSection({
                     >
                         {/* min-w-0 让内容列可收缩；标题必须回到块级布局，flex 容器上 text-overflow 不生效（只会硬切） */}
                         <ItemContent className="min-w-0">
-                            <ItemTitle className="line-clamp-none block w-full truncate text-xs">
-                                {chapter.title}
-                            </ItemTitle>
+                            <ItemTitle className="line-clamp-none block w-full truncate">{chapter.title}</ItemTitle>
                         </ItemContent>
                         <ItemActions className="shrink-0">
-                            <span className="text-xs text-muted-foreground">
-                                {formatWordCount(chapter.wordCount)} 字
-                            </span>
+                            <span className="text-muted-foreground">{formatWordCount(chapter.wordCount)} 字</span>
                             <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                     <Button

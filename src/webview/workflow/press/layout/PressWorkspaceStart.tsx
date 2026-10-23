@@ -33,7 +33,7 @@ export function PressWorkspaceStart({ projects, onOpenProject }: PressWorkspaceS
                 </EmptyHeader>
                 <EmptyContent>
                     {projects.length === 0 ? (
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-muted-foreground">
                             还没有作品。先在仪表盘的写作管理里新建一部作品，再回到这里打开。
                         </p>
                     ) : (
@@ -50,7 +50,7 @@ export function PressWorkspaceStart({ projects, onOpenProject }: PressWorkspaceS
                                 >
                                     <FolderOpen data-icon="inline-start" />
                                     <span className="truncate">{project.name}</span>
-                                    <span className="ml-auto shrink-0 text-xs text-muted-foreground tabular-nums">
+                                    <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
                                         {formatWordCount(project.wordCount)}
                                     </span>
                                 </Button>

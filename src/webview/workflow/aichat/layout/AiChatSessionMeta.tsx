@@ -19,8 +19,8 @@ export function AiChatSessionMeta({ title, runtime }: AiChatSessionMetaProps): J
     }
     return (
         <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="truncate text-sm font-medium">{title}</span>
-            <span className="truncate text-xs text-muted-foreground">{usageText}</span>
+            <span className="truncate font-medium">{title}</span>
+            <span className="truncate text-muted-foreground">{usageText}</span>
         </div>
     )
 }

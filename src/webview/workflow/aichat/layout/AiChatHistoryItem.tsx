@@ -24,7 +24,7 @@ export function AiChatHistoryItem({ session, isActive, onSelect, onDelete }: AiC
         <DropdownMenuItem onSelect={onSelect} className="group/history gap-2">
             <span className={cn('min-w-0 flex-1 truncate', isActive && 'font-medium')}>{session.title}</span>
             <span className="grid shrink-0 place-items-center">
-                <span className="col-start-1 row-start-1 text-xs text-muted-foreground group-hover/history:opacity-0">
+                <span className="col-start-1 row-start-1 text-muted-foreground group-hover/history:opacity-0">
                     {formatRelativeTime(session.updatedAt)}
                 </span>
                 <Button

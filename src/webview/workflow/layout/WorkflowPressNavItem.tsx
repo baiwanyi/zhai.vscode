@@ -38,7 +38,7 @@ export function WorkflowPressNavItem({ label, icon, isActive, onSelect }: Workfl
             </TooltipTrigger>
             <TooltipContent
                 side="left"
-                className="[--background:var(--popover-foreground)] [--foreground:var(--popover)] text-(length:--font-size-ui) border border-border"
+                className="[--background:var(--popover-foreground)] [--foreground:var(--popover)] border border-border"
             >
                 {label}
             </TooltipContent>

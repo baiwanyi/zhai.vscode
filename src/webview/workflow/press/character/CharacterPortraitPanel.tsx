@@ -162,8 +162,8 @@ export function CharacterPortraitPanel({
         <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-2">
                 <div className="min-w-0">
-                    <p className="text-xs font-medium">角色设定图</p>
-                    <p className="text-xs text-muted-foreground py-1">
+                    <p className="font-medium">角色设定图</p>
+                    <p className="text-muted-foreground py-1">
                         {isGenerating
                             ? '生成中，出图通常需要 1~3 分钟；关闭弹窗也会继续，结果下次打开自动读取'
                             : '图片自动保存到角色目录，关闭弹窗不丢结果；可设封面或删除'}
@@ -171,13 +171,13 @@ export function CharacterPortraitPanel({
                 </div>
                 <div className="flex items-center justify-between gap-2">
                     <Select value={character.portraitStyle} disabled={isGenerating} onValueChange={handleStyleChange}>
-                        <SelectTrigger size="sm" className="h-7 w-24 text-xs" aria-label="角色卡画面风格">
+                        <SelectTrigger size="sm" className="h-7 w-24" aria-label="角色卡画面风格">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectGroup>
                                 {PORTRAIT_STYLE_OPTIONS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value} className="text-xs">
+                                    <SelectItem key={option.value} value={option.value}>
                                         {option.label}
                                     </SelectItem>
                                 ))}
@@ -203,12 +203,12 @@ export function CharacterPortraitPanel({
             {loadedId !== character.id ? null : character.portraits.length === 0 && !isGenerating ? (
                 <div className="flex flex-col items-center gap-1 rounded-xl border border-dashed border-border py-6 text-center">
                     <ImagePlus className="size-5 text-muted-foreground" aria-hidden="true" />
-                    <p className="text-xs text-muted-foreground">还没有角色卡，生成前建议先补全外貌与身份</p>
+                    <p className="text-muted-foreground">还没有角色卡，生成前建议先补全外貌与身份</p>
                 </div>
             ) : (
                 <div className="flex flex-col gap-1.5">
                     {character.portraits.length > 0 ? (
-                        <p className="text-xs text-muted-foreground">已生成 {character.portraits.length} 张</p>
+                        <p className="text-muted-foreground">已生成 {character.portraits.length} 张</p>
                     ) : null}
                     {/* 外留 2px：封面用外描边包住整张卡片（含操作栏），靠 padding 避免被滚动容器横向裁掉 */}
                     <div className="grid grid-cols-3 gap-2 p-0.5">
@@ -218,7 +218,7 @@ export function CharacterPortraitPanel({
                                 <Skeleton className="aspect-3/4 w-full rounded-none" />
                                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">
                                     <Spinner />
-                                    <span className="text-[10px]">生成中</span>
+                                    <span>生成中</span>
                                 </div>
                             </div>
                         ) : null}
@@ -244,7 +244,7 @@ export function CharacterPortraitPanel({
                                         aria-hidden="true"
                                     />
                                     {isCover ? (
-                                        <span className="absolute top-1 left-1 rounded bg-background/85 px-1 py-0.5 text-[10px] font-medium">
+                                        <span className="absolute top-1 left-1 rounded bg-background/85 px-1 py-0.5 font-medium">
                                             封面
                                         </span>
                                     ) : (

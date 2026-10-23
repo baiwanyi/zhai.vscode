@@ -109,7 +109,7 @@ export function CharacterList({
                         </div>
                         <div className="flex min-w-0 flex-1 flex-col gap-1">
                             <div className="flex min-w-0 items-center gap-1.5">
-                                <span className="min-w-0 truncate text-sm font-medium">{character.name}</span>
+                                <span className="min-w-0 truncate font-medium">{character.name}</span>
                                 <Badge className={cn('shrink-0', roleMeta.className)}>{roleMeta.label}</Badge>
                                 {character.gender === 'male' ? (
                                     <Mars className="size-3.5 shrink-0 text-chart-1" role="img" aria-label="男" />
@@ -117,10 +117,10 @@ export function CharacterList({
                                     <Venus className="size-3.5 shrink-0 text-chart-5" role="img" aria-label="女" />
                                 )}
                             </div>
-                            <p className="truncate text-xs text-muted-foreground">
+                            <p className="truncate text-muted-foreground">
                                 {character.identity.length > 0 ? character.identity : '未填写身份'}
                             </p>
-                            <p className="truncate text-xs text-muted-foreground">{summary}</p>
+                            <p className="truncate text-muted-foreground">{summary}</p>
                         </div>
                     </Card>
                 )

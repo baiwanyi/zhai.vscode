@@ -55,7 +55,7 @@ export function AiChatReferenceMenu({ disabled, onSelect }: AiChatReferenceMenuP
                                 </Badge>
                             )}
                         </span>
-                        <span className="w-full truncate text-xs text-muted-foreground">{source.description}</span>
+                        <span className="w-full truncate text-muted-foreground">{source.description}</span>
                     </DropdownMenuItem>
                 ))}
             </DropdownMenuContent>

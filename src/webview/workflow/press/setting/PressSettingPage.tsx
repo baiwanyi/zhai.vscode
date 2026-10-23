@@ -86,7 +86,9 @@ export function PressSettingPage({
                 toast.info('提取到的字段都已填写，未改动现有内容')
                 return
             }
-            toast.success(`已填入 ${String(filled)} 个空字段，共 ${String(result.setting.clues.length)} 条金手指线索供核对`)
+            toast.success(
+                `已填入 ${String(filled)} 个空字段，共 ${String(result.setting.clues.length)} 条金手指线索供核对`,
+            )
         }
         void run()
     }
@@ -137,10 +139,8 @@ export function PressSettingPage({
                 <PressFlowSteps current={2} onSelect={onSelectStep} />
                 <div className="flex items-end gap-2">
                     <div className="min-w-0 flex-1">
-                        <h2 className="truncate font-heading text-sm font-semibold">作品设定</h2>
-                        <p className="truncate text-xs text-muted-foreground">
-                            题材、梗概与金手指决定后续大纲的生成质量
-                        </p>
+                        <h2 className="truncate font-heading font-semibold">作品设定</h2>
+                        <p className="truncate text-muted-foreground">题材、梗概与金手指决定后续大纲的生成质量</p>
                     </div>
                     <Badge variant="outline" className="shrink-0 tabular-nums">
                         完整度 {completeness}%
@@ -162,7 +162,7 @@ export function PressSettingPage({
                             <Input
                                 id="setting-title"
                                 value={setting.title}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ title: event.target.value })}
                             />
                             <FieldDescription>与作品目录名保持一致，重命名需在文件系统完成</FieldDescription>
@@ -172,7 +172,7 @@ export function PressSettingPage({
                             <Input
                                 id="setting-pen-name"
                                 value={setting.penName}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ penName: event.target.value })}
                             />
                         </Field>
@@ -184,14 +184,14 @@ export function PressSettingPage({
                                 min={0}
                                 step={10000}
                                 value={setting.wordGoal > 0 ? setting.wordGoal : ''}
-                                className="h-7 text-xs tabular-nums"
+                                className="h-7 tabular-nums"
                                 onChange={(event) => handleWordGoalChange(event.target.value)}
                             />
                         </Field>
                         <Field>
                             <FieldLabel htmlFor="setting-audience">目标读者</FieldLabel>
                             <Select value={setting.audience} onValueChange={handleAudienceChange}>
-                                <SelectTrigger id="setting-audience" className="h-7 w-full text-xs">
+                                <SelectTrigger id="setting-audience" className="h-7 w-full">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -231,11 +231,13 @@ export function PressSettingPage({
                             id="setting-logline"
                             value={setting.logline}
                             placeholder="谁，在什么处境下，要做什么，代价是什么"
-                            className="min-h-16 text-xs"
+                            className="min-h-16"
                             maxLength={120}
                             onChange={(event) => onChange({ logline: event.target.value })}
                         />
-                        <FieldDescription className="tabular-nums">还可输入 {120 - setting.logline.length} 字</FieldDescription>
+                        <FieldDescription className="tabular-nums">
+                            还可输入 {120 - setting.logline.length} 字
+                        </FieldDescription>
                     </Field>
                     <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
                         <Field>
@@ -243,14 +245,14 @@ export function PressSettingPage({
                             <Input
                                 id="setting-conflict"
                                 value={setting.conflict}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ conflict: event.target.value })}
                             />
                         </Field>
                         <Field>
                             <FieldLabel htmlFor="setting-ending">结局倾向</FieldLabel>
                             <Select value={setting.ending} onValueChange={handleEndingChange}>
-                                <SelectTrigger id="setting-ending" className="h-7 w-full text-xs">
+                                <SelectTrigger id="setting-ending" className="h-7 w-full">
                                     <SelectValue />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -280,7 +282,7 @@ export function PressSettingPage({
                             <Input
                                 id="setting-era"
                                 value={setting.era}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ era: event.target.value })}
                             />
                         </Field>
@@ -289,7 +291,7 @@ export function PressSettingPage({
                             <Input
                                 id="setting-factions"
                                 value={setting.factions}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ factions: event.target.value })}
                             />
                         </Field>
@@ -298,7 +300,7 @@ export function PressSettingPage({
                             <Input
                                 id="setting-power-system"
                                 value={setting.powerSystem}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ powerSystem: event.target.value })}
                             />
                         </Field>
@@ -307,7 +309,7 @@ export function PressSettingPage({
                             <Input
                                 id="setting-taboo"
                                 value={setting.taboo}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ taboo: event.target.value })}
                             />
                         </Field>
@@ -328,7 +330,7 @@ export function PressSettingPage({
                                 id="setting-golden-type"
                                 value={setting.goldenFingerType}
                                 list="golden-finger-types"
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ goldenFingerType: event.target.value })}
                             />
                             <datalist id="golden-finger-types">
@@ -342,7 +344,7 @@ export function PressSettingPage({
                             <Input
                                 id="setting-golden-ability"
                                 value={setting.goldenFingerAbility}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ goldenFingerAbility: event.target.value })}
                             />
                         </Field>
@@ -351,7 +353,7 @@ export function PressSettingPage({
                             <Input
                                 id="setting-golden-cost"
                                 value={setting.goldenFingerCost}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ goldenFingerCost: event.target.value })}
                             />
                             <FieldDescription>没有代价的金手指会削弱冲突，建议至少写一条限制</FieldDescription>
@@ -392,7 +394,7 @@ export function PressSettingPage({
                             <Input
                                 id="setting-tone"
                                 value={setting.tone}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ tone: event.target.value })}
                             />
                         </Field>
@@ -401,7 +403,7 @@ export function PressSettingPage({
                             <Input
                                 id="setting-references"
                                 value={setting.references}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ references: event.target.value })}
                             />
                         </Field>

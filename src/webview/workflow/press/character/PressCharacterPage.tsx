@@ -120,8 +120,8 @@ export function PressCharacterPage({
             <header className="flex shrink-0 flex-col gap-2">
                 <div className="flex items-end gap-2">
                     <div className="min-w-0 flex-1">
-                        <h2 className="truncate font-heading text-sm font-semibold">人物设定</h2>
-                        <p className="truncate text-xs text-muted-foreground tabular-nums">
+                        <h2 className="truncate font-heading font-semibold">人物设定</h2>
+                        <p className="truncate text-muted-foreground tabular-nums">
                             共 {characters.length} 人 · 欲望与弱点决定冲突，大纲排布时会引用
                         </p>
                     </div>
@@ -139,13 +139,13 @@ export function PressCharacterPage({
                 <Separator />
                 <div className="flex flex-wrap items-center gap-2">
                     <Select value={roleFilter} onValueChange={handleFilterChange}>
-                        <SelectTrigger size="sm" className="h-7 w-24 text-xs" aria-label="角色筛选">
+                        <SelectTrigger size="sm" className="h-7 w-24" aria-label="角色筛选">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                             <SelectGroup>
                                 {CHARACTER_ROLE_FILTERS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value} className="text-xs">
+                                    <SelectItem key={option.value} value={option.value}>
                                         {option.label}
                                     </SelectItem>
                                 ))}
@@ -161,7 +161,7 @@ export function PressCharacterPage({
                             value={query}
                             aria-label="搜索人物"
                             placeholder="搜索姓名、昵称或身份"
-                            className="h-7 pl-7 text-xs"
+                            className="h-7 pl-7"
                             onChange={(event) => setQuery(event.target.value)}
                         />
                     </div>

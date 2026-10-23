@@ -36,7 +36,7 @@ export function NamingCategoryRail({ catalog, activeCategory, onSelect }: Naming
                         key={category.value}
                         value={category.value}
                         aria-label={category.label}
-                        className="h-8 gap-1 px-2 text-muted-foreground text-xs transition-colors hover:text-foreground data-[state=on]:bg-primary data-[state=on]:font-medium data-[state=on]:text-primary-foreground"
+                        className="h-8 gap-1 px-2 text-muted-foreground transition-colors hover:text-foreground data-[state=on]:bg-primary data-[state=on]:font-medium data-[state=on]:text-primary-foreground"
                     >
                         <Icon className="size-4" />
                         {category.label}

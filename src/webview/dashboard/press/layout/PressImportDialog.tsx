@@ -82,34 +82,34 @@ export function PressImportDialog({
                         文件已通过安全检查，确认后将按作品结构写入 press/ 目录，正文原样保留。
                     </DialogDescription>
                 </DialogHeader>
-                <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
                     <div className="col-span-2 flex flex-col gap-0.5">
-                        <dt className="text-muted-foreground text-xs">文件</dt>
+                        <dt className="text-muted-foreground">文件</dt>
                         <dd className="truncate">{candidate.fileName}</dd>
                     </div>
                     <div className="flex flex-col gap-0.5">
-                        <dt className="text-muted-foreground text-xs">编码</dt>
+                        <dt className="text-muted-foreground">编码</dt>
                         <dd>{ENCODING_LABELS[candidate.encoding]}</dd>
                     </div>
                     <div className="flex flex-col gap-0.5">
-                        <dt className="text-muted-foreground text-xs">章节</dt>
+                        <dt className="text-muted-foreground">章节</dt>
                         <dd>{`${String(candidate.chapterCount)} 章 · ${volumeLabel}`}</dd>
                     </div>
                     <div className="flex flex-col gap-0.5">
-                        <dt className="text-muted-foreground text-xs">字数</dt>
+                        <dt className="text-muted-foreground">字数</dt>
                         <dd>{formatWordCount(candidate.charCount)}</dd>
                     </div>
                     <div className="flex flex-col gap-0.5">
-                        <dt className="text-muted-foreground text-xs">首章</dt>
+                        <dt className="text-muted-foreground">首章</dt>
                         <dd className="truncate">{candidate.firstChapterTitle}</dd>
                     </div>
                     <div className="col-span-2 flex flex-col gap-0.5">
-                        <dt className="text-muted-foreground text-xs">末章</dt>
+                        <dt className="text-muted-foreground">末章</dt>
                         <dd className="truncate">{candidate.lastChapterTitle}</dd>
                     </div>
                 </dl>
                 {candidate.warnings.length > 0 ? (
-                    <ul className="text-muted-foreground flex list-disc flex-col gap-1 pl-4 text-xs">
+                    <ul className="text-muted-foreground flex list-disc flex-col gap-1 pl-4">
                         {candidate.warnings.map((warning) => (
                             <li key={warning}>{warning}</li>
                         ))}
@@ -163,7 +163,7 @@ export function PressImportDialog({
                         disabled={isImporting}
                         onCheckedChange={(checked) => onSummaryChange(checked === true)}
                     />
-                    <label htmlFor="press-import-summary" className="text-muted-foreground text-xs leading-5">
+                    <label htmlFor="press-import-summary" className="text-muted-foreground leading-5">
                         导入后分批生成章节摘要（消耗 AI 调用次数；失败不影响已导入的正文）
                     </label>
                 </div>

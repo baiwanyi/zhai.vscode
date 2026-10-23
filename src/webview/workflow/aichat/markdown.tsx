@@ -13,9 +13,9 @@ export const MARKDOWN_COMPONENTS: Components = {
     ul: ({ children }) => <ul className="mb-2 list-disc pl-4 last:mb-0">{children}</ul>,
     ol: ({ children }) => <ol className="mb-2 list-decimal pl-4 last:mb-0">{children}</ol>,
     li: ({ children }) => <li className="mb-0.5">{children}</li>,
-    h1: ({ children }) => <h3 className="mb-2 font-heading text-base font-medium">{children}</h3>,
-    h2: ({ children }) => <h4 className="mb-2 font-heading text-sm font-medium">{children}</h4>,
-    h3: ({ children }) => <h5 className="mb-1.5 font-heading text-sm font-medium">{children}</h5>,
+    h1: ({ children }) => <h3 className="mb-2 font-heading font-medium">{children}</h3>,
+    h2: ({ children }) => <h4 className="mb-2 font-heading font-medium">{children}</h4>,
+    h3: ({ children }) => <h5 className="mb-1.5 font-heading font-medium">{children}</h5>,
     blockquote: ({ children }) => (
         <blockquote className="mb-2 border-l-2 border-quote-border bg-quote-background pl-2 text-muted-foreground italic last:mb-0">
             {children}
@@ -30,13 +30,13 @@ export const MARKDOWN_COMPONENTS: Components = {
         typeof className === 'string' && className.includes('language-') ? (
             <code className={className}>{children}</code>
         ) : (
-            <code className="rounded bg-code-background px-1 py-0.5 font-mono text-[0.85em]">{children}</code>
+            <code className="rounded bg-code-background px-1 py-0.5 font-mono">{children}</code>
         ),
     pre: ({ children }) => (
-        <pre className="mb-2 overflow-x-auto rounded-md bg-code-background p-2 text-xs last:mb-0">{children}</pre>
+        <pre className="mb-2 overflow-x-auto rounded-md bg-code-background p-2 last:mb-0">{children}</pre>
     ),
     hr: () => <hr className="my-2 border-border" />,
-    table: ({ children }) => <table className="mb-2 w-full border-collapse text-xs last:mb-0">{children}</table>,
+    table: ({ children }) => <table className="mb-2 w-full border-collapse last:mb-0">{children}</table>,
     th: ({ children }) => <th className="border border-border px-1.5 py-1 text-left font-medium">{children}</th>,
     td: ({ children }) => <td className="border border-border px-1.5 py-1">{children}</td>,
 }

@@ -88,7 +88,7 @@ export function AiChatModelMenu({
                 <span className="flex shrink-0 items-center gap-1">
                     {option.modelId === current ? <Check className="size-3 shrink-0" /> : null}
                     {rateLabel !== null ? (
-                        <span className="text-xs tabular-nums text-muted-foreground">{rateLabel}</span>
+                        <span className="tabular-nums text-muted-foreground">{rateLabel}</span>
                     ) : null}
                 </span>
             </DropdownMenuItem>

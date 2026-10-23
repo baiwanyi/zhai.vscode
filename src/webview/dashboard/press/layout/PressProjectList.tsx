@@ -44,7 +44,7 @@ export function PressProjectList({
         <Card size="sm" className="ring-0">
             <CardHeader className="px-0 items-center">
                 <CardTitle>作品列表</CardTitle>
-                <CardAction className="row-span-1 text-xs text-muted-foreground">{countLabel}</CardAction>
+                <CardAction className="row-span-1 text-muted-foreground">{countLabel}</CardAction>
             </CardHeader>
             <CardContent className="px-0">
                 {status === 'loading' ? (

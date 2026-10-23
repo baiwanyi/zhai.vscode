@@ -26,7 +26,7 @@ export function PressProjectCard({ project, onSelect }: PressProjectCardProps): 
         >
             <ItemContent>
                 <ItemTitle className="w-full truncate">{project.name}</ItemTitle>
-                <ItemDescription className="text-xs">{formatProjectMeta(project)}</ItemDescription>
+                <ItemDescription>{formatProjectMeta(project)}</ItemDescription>
             </ItemContent>
             <ItemActions>
                 <ChevronRight className="size-4 text-muted-foreground" />

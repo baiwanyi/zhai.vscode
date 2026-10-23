@@ -20,7 +20,7 @@ export function PressProjectHeader({ title, onBack, onOpenReadme }: PressProject
             <Button size="icon-sm" variant="ghost" className="rounded-full" aria-label="返回作品列表" onClick={onBack}>
                 <ArrowLeft />
             </Button>
-            <span className="min-w-0 flex-1 truncate font-heading text-sm font-semibold">{title}</span>
+            <span className="min-w-0 flex-1 truncate font-heading font-semibold">{title}</span>
             <Button
                 size="icon-sm"
                 variant="ghost"

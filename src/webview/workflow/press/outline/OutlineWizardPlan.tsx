@@ -33,18 +33,21 @@ export function OutlineWizardPlan({
                 {draft.map((volume) => {
                     const summary = summarizeVolume(volume)
                     return (
-                        <div key={volume.id} className="flex flex-col gap-1 rounded-xl border border-border bg-card p-2.5">
+                        <div
+                            key={volume.id}
+                            className="flex flex-col gap-1 rounded-xl border border-border bg-card p-2.5"
+                        >
                             <div className="flex items-center gap-2">
-                                <span className="min-w-0 flex-1 truncate text-xs font-medium">{volume.name}</span>
+                                <span className="min-w-0 flex-1 truncate font-medium">{volume.name}</span>
                                 <Badge variant="outline" className="shrink-0 tabular-nums">
                                     {summary.total} 章
                                 </Badge>
-                                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                                <span className="shrink-0 text-muted-foreground tabular-nums">
                                     约 {formatWordCount(summary.wordGoal)} 字
                                 </span>
                             </div>
-                            <p className="line-clamp-2 text-xs text-muted-foreground">阶段目标：{volume.goal}</p>
-                            <p className="line-clamp-1 text-xs text-muted-foreground">核心冲突：{volume.conflict}</p>
+                            <p className="line-clamp-2 text-muted-foreground">阶段目标：{volume.goal}</p>
+                            <p className="line-clamp-1 text-muted-foreground">核心冲突：{volume.conflict}</p>
                         </div>
                     )
                 })}
@@ -66,14 +69,15 @@ export function OutlineWizardPlan({
                                 aria-label={`全选${volume.name}的章节`}
                                 onCheckedChange={() => onToggleVolume(volume.id)}
                             />
-                            <span className="min-w-0 flex-1 truncate text-xs font-medium">{volume.name}</span>
-                            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                            <span className="min-w-0 flex-1 truncate font-medium">{volume.name}</span>
+                            <span className="shrink-0 text-muted-foreground tabular-nums">
                                 {selectedCount}/{volume.chapters.length}
                             </span>
                         </div>
                         <div className="flex flex-col gap-0.5">
                             {volume.chapters.map((chapter) => {
-                                const hookLabel = HOOK_OPTIONS.find((option) => option.value === chapter.hook)?.label ?? ''
+                                const hookLabel =
+                                    HOOK_OPTIONS.find((option) => option.value === chapter.hook)?.label ?? ''
                                 return (
                                     <div
                                         key={chapter.id}
@@ -87,14 +91,14 @@ export function OutlineWizardPlan({
                                         />
                                         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                                             <div className="flex items-center gap-1.5">
-                                                <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                                                <span className="min-w-0 flex-1 truncate font-medium">
                                                     {chapter.title}
                                                 </span>
-                                                <span className="shrink-0 text-[10px] text-muted-foreground tabular-nums">
+                                                <span className="shrink-0 text-muted-foreground tabular-nums">
                                                     张力 {chapter.tension} · {hookLabel}
                                                 </span>
                                             </div>
-                                            <p className="line-clamp-2 text-xs text-muted-foreground">{chapter.summary}</p>
+                                            <p className="line-clamp-2 text-muted-foreground">{chapter.summary}</p>
                                         </div>
                                     </div>
                                 )

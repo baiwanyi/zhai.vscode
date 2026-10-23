@@ -98,12 +98,12 @@ export function OutlineDetail({
                 >
                     <ArrowLeft />
                 </Button>
-                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">{volume.name}</span>
-                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                <span className="min-w-0 flex-1 truncate text-muted-foreground">{volume.name}</span>
+                <span className="shrink-0 text-muted-foreground tabular-nums">
                     {chapter.order}/{volume.chapters.length}
                 </span>
                 <Select value={chapter.status} onValueChange={handleStatusChange}>
-                    <SelectTrigger size="sm" aria-label="章纲状态" className="h-6 w-auto text-xs">
+                    <SelectTrigger size="sm" aria-label="章纲状态" className="h-6 w-auto">
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -135,7 +135,7 @@ export function OutlineDetail({
                         id="outline-chapter-title"
                         value={chapter.title}
                         placeholder="第N章 章名"
-                        className="h-8 border-transparent bg-transparent px-0 font-heading text-sm font-semibold shadow-none focus-visible:border-input focus-visible:px-2"
+                        className="h-8 border-transparent bg-transparent px-0 font-heading font-semibold shadow-none focus-visible:border-input focus-visible:px-2"
                         onChange={(event) => onChange({ title: event.target.value })}
                     />
                 </Field>
@@ -146,7 +146,7 @@ export function OutlineDetail({
                         id="outline-chapter-summary"
                         value={chapter.summary}
                         placeholder="这一章打算写什么：目标、阻碍、结果、留下的钩子"
-                        className="min-h-16 text-xs"
+                        className="min-h-16"
                         maxLength={200}
                         onChange={(event) => onChange({ summary: event.target.value })}
                     />
@@ -172,7 +172,7 @@ export function OutlineDetail({
                                 <Button
                                     aria-label="选择出场人物"
                                     variant="outline"
-                                    className="h-7 w-full justify-between px-2 text-xs font-normal"
+                                    className="h-7 w-full justify-between px-2 font-normal"
                                     disabled={characters.length === 0}
                                 >
                                     <span className="min-w-0 truncate">
@@ -206,14 +206,14 @@ export function OutlineDetail({
                             id="outline-chapter-location"
                             value={chapter.location}
                             placeholder="本章主要发生地"
-                            className="h-7 text-xs"
+                            className="h-7"
                             onChange={(event) => onChange({ location: event.target.value })}
                         />
                     </Field>
                     <Field>
                         <FieldLabel htmlFor="outline-chapter-hook">章末钩子</FieldLabel>
                         <Select value={chapter.hook} onValueChange={handleHookChange}>
-                            <SelectTrigger id="outline-chapter-hook" className="h-7 w-full text-xs">
+                            <SelectTrigger id="outline-chapter-hook" className="h-7 w-full">
                                 <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -235,7 +235,7 @@ export function OutlineDetail({
                             min={0}
                             step={500}
                             value={chapter.wordGoal > 0 ? chapter.wordGoal : ''}
-                            className="h-7 text-xs tabular-nums"
+                            className="h-7 tabular-nums"
                             onChange={(event) => handleWordGoalChange(event.target.value)}
                         />
                     </Field>
@@ -258,14 +258,14 @@ export function OutlineDetail({
                                 }
                             }}
                         />
-                        <span className="w-12 shrink-0 text-right text-xs text-muted-foreground">
+                        <span className="w-12 shrink-0 text-right text-muted-foreground">
                             {chapter.tension} {tensionLabel}
                         </span>
                     </div>
                 </Field>
 
                 <div className="flex flex-col gap-1">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <div className="flex items-center justify-between text-muted-foreground">
                         <span>正文进度</span>
                         <span className="tabular-nums">
                             {formatWordCount(chapter.wordCount)} / {formatWordCount(chapter.wordGoal)} 字
@@ -276,19 +276,23 @@ export function OutlineDetail({
 
                 <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-muted/30 p-2">
                     <div className="flex gap-1.5">
-                        <span className="shrink-0 text-xs text-muted-foreground">本卷目标</span>
-                        <span className="line-clamp-2 min-w-0 flex-1 text-xs">{volume.goal.length > 0 ? volume.goal : '未填写'}</span>
+                        <span className="shrink-0 text-muted-foreground">本卷目标</span>
+                        <span className="line-clamp-2 min-w-0 flex-1">
+                            {volume.goal.length > 0 ? volume.goal : '未填写'}
+                        </span>
                     </div>
                     <div className="flex gap-1.5">
-                        <span className="shrink-0 text-xs text-muted-foreground">前情</span>
-                        <span className="line-clamp-2 min-w-0 flex-1 text-xs">
+                        <span className="shrink-0 text-muted-foreground">前情</span>
+                        <span className="line-clamp-2 min-w-0 flex-1">
                             {prevChapter && prevChapter.summary.length > 0 ? prevChapter.summary : '本章是卷首，无前情'}
                         </span>
                     </div>
                     <div className="flex gap-1.5">
-                        <span className="shrink-0 text-xs text-muted-foreground">接下来</span>
-                        <span className="line-clamp-2 min-w-0 flex-1 text-xs">
-                            {nextChapters.length > 0 ? nextChapters.map((item) => item.title).join(' / ') : '本卷最后一章'}
+                        <span className="shrink-0 text-muted-foreground">接下来</span>
+                        <span className="line-clamp-2 min-w-0 flex-1">
+                            {nextChapters.length > 0
+                                ? nextChapters.map((item) => item.title).join(' / ')
+                                : '本卷最后一章'}
                         </span>
                     </div>
                 </div>

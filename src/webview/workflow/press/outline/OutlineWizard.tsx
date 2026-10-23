@@ -140,11 +140,11 @@ export function OutlineWizard({
                         const isDone = index < stepIndex
                         return (
                             <li key={item.id} className="flex items-center gap-1">
-                                {index > 0 ? <span className="text-xs text-muted-foreground">/</span> : null}
+                                {index > 0 ? <span className="text-muted-foreground">/</span> : null}
                                 <span
                                     aria-current={isActive ? 'step' : undefined}
                                     className={cn(
-                                        'rounded-full px-2 py-0.5 text-xs',
+                                        'rounded-full px-2 py-0.5',
                                         isActive && 'bg-muted font-medium text-foreground',
                                         !isActive && (isDone ? 'text-foreground' : 'text-muted-foreground'),
                                     )}
@@ -211,7 +211,7 @@ export function OutlineWizard({
                     ) : null}
                 </DialogFooter>
                 {step === 'chapter' && existingChapterCount > 0 ? (
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-muted-foreground">
                         当前作品已有 {existingChapterCount} 章，写入将作为新卷追加，不会覆盖既有章节。
                     </p>
                 ) : null}

@@ -31,8 +31,7 @@ export function AiChatTokenRing({ used, budget }: AiChatTokenRingProps): JSX.Ele
     const label = isAvailable
         ? `今日已用 ${formatTokens(used)}，预算 ${formatTokens(budget)} tokens`
         : '未设置每日 Token 预算'
-    const tone =
-        ratio >= 0.9 ? 'stroke-destructive' : ratio >= 0.7 ? 'stroke-amber-500' : 'stroke-primary'
+    const tone = ratio >= 0.9 ? 'stroke-destructive' : ratio >= 0.7 ? 'stroke-amber-500' : 'stroke-primary'
 
     return (
         <Popover>
@@ -73,7 +72,7 @@ export function AiChatTokenRing({ used, budget }: AiChatTokenRingProps): JSX.Ele
                     <PopoverTitle>今日 Token 用量</PopoverTitle>
                 </PopoverHeader>
                 {isAvailable ? (
-                    <div className="flex flex-col gap-1 text-xs">
+                    <div className="flex flex-col gap-1">
                         <span className="flex justify-between gap-2">
                             <span className="text-muted-foreground">已用</span>
                             <span>{formatTokens(used)}</span>

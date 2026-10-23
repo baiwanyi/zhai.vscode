@@ -18,6 +18,16 @@
     --font-heading: var(--font-sans);
     /* 字体族跟随 VSCode UI 字体，不再内置 Inter 字体文件 */
     --font-sans: var(--font-ui);
+    /* 全站字号唯一来源：所有 text-* 档位一律映射到 VSCode 界面字号，
+       源码里也不再写字号类；这里是护栏，避免后续新增类名把字号又拆成不同档位 */
+    --text-xs: var(--font-size-ui);
+    --text-sm: var(--font-size-ui);
+    --text-base: var(--font-size-ui);
+    --text-lg: var(--font-size-ui);
+    --text-xl: var(--font-size-ui);
+    --text-2xl: var(--font-size-ui);
+    --text-3xl: var(--font-size-ui);
+    --text-4xl: var(--font-size-ui);
     /* 代码块字体跟随编辑器字体（pre/code 的 font-mono） */
     --font-mono: var(--font-code);
     /* 额外语义令牌：颜色与阴影同样来自 VSCode 变量，值定义在文件末尾的桥接段 */
@@ -81,8 +91,11 @@
     * {
         @apply border-border outline-ring/50;
     }
+    /* 字号只在这里落一次：全站文本继承 VSCode 界面字号。
+       html 保持 16px 不动，rem 仍按 4px 网格换算布局尺寸，不随用户字号设置缩放。 */
     body {
         @apply bg-background text-foreground;
+        font-size: var(--font-size-ui);
     }
     html {
         @apply font-sans;
@@ -139,7 +152,7 @@
     /* ── 字体与阴影 ── */
     --font-ui: var(--vscode-font-family, sans-serif);
     --font-code: var(--vscode-editor-font-family, monospace);
-    /* UI 字号：随 VSCode 界面字号设置变化，浮层类组件（如悬浮提示）用它替代固定档位 */
+    /* UI 字号：全站唯一字号来源，随 VSCode 界面字号设置变化；源码不应再出现任何字号覆盖 */
     --font-size-ui: var(--vscode-font-size, 13px);
     --widget-shadow: var(--vscode-widget-shadow, 0 2px 8px rgb(0 0 0 / 36%));
     /* 图表色直接复用 VSCode 图表配色 */
@@ -230,11 +243,17 @@ body.vscode-high-contrast-light {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background-color: var(--scrollbar-thumb-hover, var(--vscode-scrollbarSlider-hoverBackground, rgb(100 100 100 / 70%)));
+    background-color: var(
+        --scrollbar-thumb-hover,
+        var(--vscode-scrollbarSlider-hoverBackground, rgb(100 100 100 / 70%))
+    );
 }
 
 ::-webkit-scrollbar-thumb:active {
-    background-color: var(--scrollbar-thumb-active, var(--vscode-scrollbarSlider-activeBackground, rgb(191 191 191 / 50%)));
+    background-color: var(
+        --scrollbar-thumb-active,
+        var(--vscode-scrollbarSlider-activeBackground, rgb(191 191 191 / 50%))
+    );
 }
 
 /* 自动滚动过程中隐藏滑块，避免与「跟随最新消息」的动效互相干扰 */
@@ -279,11 +298,12 @@ body.vscode-high-contrast-light {
 }
 
 /*
- * sonner loading 图标定位覆盖：sonner 用 `.sonner-loader` 绝对定位 + translate(-50%, -50%) 居中，
- * 百分比平移按元素自身尺寸折算，图标尺寸一旦带小数（rem 缩放、webview 缩放）就落在半像素边界上，
- * 旋转时每帧重新采样，视觉上就是绕偏心点画圈。
- * 这里改为在 16px 图标槽内走静态 flex 布局，位置交给布局引擎对齐整数像素，只保留淡出时的缩放。
- * 本段处于 @layer 之外，选择器特异性也高于 sonner 运行时注入的 .sonner-loader 规则。
+ * sonner loading 图标定位与旋转中心覆盖：sonner 用 `.sonner-loader` 绝对定位 + translate(-50%, -50%)
+ * 居中，百分比平移按元素自身尺寸折算；`[data-icon] svg` 又带 margin-left: -1px 的光学补偿。
+ * 两者叠加使图标落在半像素边界，且旋转直接挂在 svg 上时轴心按 view-box 解析，容易与几何中心错开，
+ * 视觉上就是绕偏心点画圈。这里改为：loader 在 16px 图标槽内静态 flex 居中并锁死整数像素尺寸，
+ * 旋转由这层 HTML 盒承担（轴心即盒中心），svg 清掉 margin、铺满槽位且不参与动画，只保留淡出缩放。
+ * 本段处于 @layer 之外，选择器特异性高于 sonner 运行时注入的规则与 Tailwind 的 animate-spin。
  */
 [data-sonner-toast] [data-icon] > .sonner-loader {
     position: static;
@@ -293,11 +313,32 @@ body.vscode-high-contrast-light {
     width: 16px;
     height: 16px;
     transform: none;
+    animation: sonner-toast-loader-spin 1s linear infinite;
+}
+
+[data-sonner-toast][data-styled] [data-icon] > .sonner-loader > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    transform-origin: center;
+    animation: none;
 }
 
 [data-sonner-toast] [data-icon] > .sonner-loader[data-visible='false'] {
     opacity: 0;
+    animation-play-state: paused;
+}
+
+[data-sonner-toast] [data-icon] > .sonner-loader[data-visible='false'] > svg {
     transform: scale(0.8);
+    transition: transform 200ms;
+}
+
+@keyframes sonner-toast-loader-spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 /* 尊重系统 / VSCode 的「减少动效」偏好 */

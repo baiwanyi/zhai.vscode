@@ -58,10 +58,7 @@ export function PressOutlinePage({
     const { isExtracting, extract } = useOutlineExtract(dirPath)
 
     const entries = useMemo(
-        () =>
-            workspace.volumes.flatMap((volume) =>
-                volume.chapters.map((chapter) => ({ volume, chapter })),
-            ),
+        () => workspace.volumes.flatMap((volume) => volume.chapters.map((chapter) => ({ volume, chapter }))),
         [workspace.volumes],
     )
     const selectedEntry = entries.find((entry) => entry.chapter.id === selectedChapterId) ?? entries.at(0) ?? null
@@ -107,8 +104,8 @@ export function PressOutlinePage({
                 <PressFlowSteps current={4} onSelect={onSelectStep} />
                 <div className="flex flex-wrap items-end gap-2">
                     <div className="min-w-0 flex-1">
-                        <h2 className="truncate font-heading text-sm font-semibold">大纲</h2>
-                        <p className="truncate text-xs text-muted-foreground tabular-nums">
+                        <h2 className="truncate font-heading font-semibold">大纲</h2>
+                        <p className="truncate text-muted-foreground tabular-nums">
                             {workspace.volumes.length} 卷 · {summary.chapters} 章 · 已完成 {summary.done} 章
                         </p>
                     </div>
@@ -131,7 +128,7 @@ export function PressOutlinePage({
                 </div>
                 <div className="flex items-center gap-2">
                     <Progress value={donePercent} className="h-1 flex-1" aria-label={`章节完成度 ${donePercent}%`} />
-                    <span className="shrink-0 text-xs text-muted-foreground tabular-nums">{donePercent}%</span>
+                    <span className="shrink-0 text-muted-foreground tabular-nums">{donePercent}%</span>
                 </div>
             </header>
 

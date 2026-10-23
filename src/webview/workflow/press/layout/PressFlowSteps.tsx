@@ -34,14 +34,16 @@ export function PressFlowSteps({ current, onSelect }: PressFlowStepsProps): JSX.
                                 type="button"
                                 aria-current={isCurrent ? 'step' : undefined}
                                 className={cn(
-                                    'flex items-center gap-1 rounded-full px-1.5 py-0.5 text-xs transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
-                                    isCurrent ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted',
+                                    'flex items-center gap-1 rounded-full px-1.5 py-0.5 transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
+                                    isCurrent
+                                        ? 'bg-muted font-medium text-foreground'
+                                        : 'text-muted-foreground hover:bg-muted',
                                 )}
                                 onClick={() => onSelect(step.id)}
                             >
                                 <span
                                     className={cn(
-                                        'flex size-4 shrink-0 items-center justify-center rounded-full border text-[10px] tabular-nums',
+                                        'flex size-4 shrink-0 items-center justify-center rounded-full border tabular-nums',
                                         isDone && 'border-transparent bg-primary text-primary-foreground',
                                         isCurrent && !isDone && 'border-primary text-primary',
                                         !isDone && !isCurrent && 'border-border',

@@ -12,7 +12,7 @@ interface AiChatStatusHintProps {
 
 export function AiChatStatusHint({ hint, isGenerating }: AiChatStatusHintProps): JSX.Element {
     return (
-        <p className="text-center text-xs text-muted-foreground">
+        <p className="text-center text-muted-foreground">
             {hint ?? (isGenerating ? '正在生成，可随时停止' : 'Enter 发送 · Shift + Enter 换行 · Ctrl+Shift+L 聚焦')}
         </p>
     )

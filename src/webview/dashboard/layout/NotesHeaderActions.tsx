@@ -90,7 +90,7 @@ export function NotesHeaderActions({
                                     onCheckedChange={() => onToggleModule(item.name)}
                                 >
                                     {item.name}
-                                    <span className="ml-auto text-xs text-muted-foreground">{item.fileCount}</span>
+                                    <span className="ml-auto text-muted-foreground">{item.fileCount}</span>
                                 </DropdownMenuCheckboxItem>
                             ))}
                         </DropdownMenuGroup>

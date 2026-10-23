@@ -38,16 +38,19 @@ export function SettingSection({
                     className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
                 >
                     <ChevronRight
-                        className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform', isOpen && 'rotate-90')}
+                        className={cn(
+                            'size-3.5 shrink-0 text-muted-foreground transition-transform',
+                            isOpen && 'rotate-90',
+                        )}
                         aria-hidden="true"
                     />
-                    <span className="shrink-0 text-xs font-medium">{title}</span>
+                    <span className="shrink-0 font-medium">{title}</span>
                     {isIncomplete ? (
                         <Badge variant="outline" className="shrink-0 text-muted-foreground">
                             待补充
                         </Badge>
                     ) : null}
-                    <span className="min-w-0 flex-1 truncate text-right text-xs text-muted-foreground">{description}</span>
+                    <span className="min-w-0 flex-1 truncate text-right text-muted-foreground">{description}</span>
                 </button>
             </CollapsibleTrigger>
             <CollapsibleContent>

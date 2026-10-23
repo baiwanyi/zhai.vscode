@@ -31,30 +31,32 @@ export function OutlineAiPanel({
 }: OutlineAiPanelProps): JSX.Element {
     const selectedCharacters = characters.filter((character) => chapter.characterIds.includes(character.id))
     const characterLabel =
-        selectedCharacters.length > 0 ? selectedCharacters.map((character) => character.name).join('、') : '未指定出场人物'
+        selectedCharacters.length > 0
+            ? selectedCharacters.map((character) => character.name).join('、')
+            : '未指定出场人物'
     const settingLabel = `${setting.genres.join(' / ') || '未填题材'} · ${setting.tone || '未填风格'}`
 
     return (
         <div className="flex h-full min-h-0 flex-col border-l border-border">
             <header className="flex shrink-0 items-center gap-2 border-b border-border px-3 py-2">
-                <span className="text-xs font-medium">AI 副驾</span>
+                <span className="font-medium">AI 副驾</span>
                 <Badge variant="outline">章节生成</Badge>
             </header>
             <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-3 py-2">
                 <div className="flex flex-col gap-1">
-                    <span className="text-xs text-muted-foreground">本次引用</span>
+                    <span className="text-muted-foreground">本次引用</span>
                     <Item size="xs" variant="muted" className="gap-2">
                         <BookMarked className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <ItemContent className="min-w-0">
-                            <ItemTitle className="text-xs">卷纲</ItemTitle>
-                            <ItemDescription className="truncate text-xs">{volume.name}</ItemDescription>
+                            <ItemTitle>卷纲</ItemTitle>
+                            <ItemDescription className="truncate">{volume.name}</ItemDescription>
                         </ItemContent>
                     </Item>
                     <Item size="xs" variant="muted" className="gap-2">
                         <ScrollText className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <ItemContent className="min-w-0">
-                            <ItemTitle className="text-xs">章纲</ItemTitle>
-                            <ItemDescription className="truncate text-xs">
+                            <ItemTitle>章纲</ItemTitle>
+                            <ItemDescription className="truncate">
                                 {chapter.title} · {chapter.beats.length} 条节拍
                             </ItemDescription>
                         </ItemContent>
@@ -62,20 +64,21 @@ export function OutlineAiPanel({
                     <Item size="xs" variant="muted" className="gap-2">
                         <Users className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <ItemContent className="min-w-0">
-                            <ItemTitle className="text-xs">人物</ItemTitle>
-                            <ItemDescription className="truncate text-xs">{characterLabel}</ItemDescription>
+                            <ItemTitle>人物</ItemTitle>
+                            <ItemDescription className="truncate">{characterLabel}</ItemDescription>
                         </ItemContent>
                     </Item>
                     <Item size="xs" variant="muted" className="gap-2">
                         <Globe className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
                         <ItemContent className="min-w-0">
-                            <ItemTitle className="text-xs">设定</ItemTitle>
-                            <ItemDescription className="truncate text-xs">{settingLabel}</ItemDescription>
+                            <ItemTitle>设定</ItemTitle>
+                            <ItemDescription className="truncate">{settingLabel}</ItemDescription>
                         </ItemContent>
                     </Item>
                 </div>
-                <p className="text-xs leading-relaxed text-muted-foreground">
-                    生成时按「作品设定 → 本卷目标 → 本章节拍 → 出场人物 → 上一章结尾」的顺序注入，改动以 diff 呈现，可撤销。
+                <p className="leading-relaxed text-muted-foreground">
+                    生成时按「作品设定 → 本卷目标 → 本章节拍 → 出场人物 → 上一章结尾」的顺序注入，改动以 diff
+                    呈现，可撤销。
                 </p>
                 <div className="flex flex-col gap-1">
                     <Button size="sm" className="justify-start" onClick={onOpenChat}>

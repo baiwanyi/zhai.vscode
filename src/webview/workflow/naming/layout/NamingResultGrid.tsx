@@ -31,9 +31,7 @@ export function NamingResultGrid({ items }: NamingResultGridProps): JSX.Element 
     return (
         <div className="flex h-full flex-col gap-2">
             <div className="flex min-h-6 items-center justify-between gap-2">
-                <p className="text-muted-foreground text-xs">
-                    {items.length > 0 ? `已生成 ${items.length} 个名字` : '结果'}
-                </p>
+                <p className="text-muted-foreground">{items.length > 0 ? `已生成 ${items.length} 个名字` : '结果'}</p>
                 {items.length > 0 ? (
                     <Button variant="ghost" onClick={() => void handleCopyAll()}>
                         <Copy data-icon="inline-start" />

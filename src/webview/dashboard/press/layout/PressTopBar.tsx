@@ -30,7 +30,7 @@ export function PressTopBar({ isCreating, isImporting, onBack, onAdd, onImport }
                 >
                     <ArrowLeft />
                 </Button>
-                <span className="font-heading text-sm font-semibold">写作管理</span>
+                <span className="font-heading font-semibold">写作管理</span>
             </div>
             <div className="flex gap-2">
                 <Button

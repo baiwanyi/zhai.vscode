@@ -72,7 +72,7 @@ export function OutlineBeatList({ beats, onChange, onAdd }: OutlineBeatListProps
                         aria-label={`第 ${index + 1} 条节拍`}
                         placeholder="谁、在哪、做了什么、留下什么"
                         className={cn(
-                            'h-8 flex-1 border-transparent bg-transparent px-1 text-xs shadow-none focus-visible:border-input',
+                            'h-8 flex-1 border-transparent bg-transparent px-1 shadow-none focus-visible:border-input',
                             beat.isDone && 'text-muted-foreground line-through',
                         )}
                         onChange={(event) => handleTextChange(beat.id, event.target.value)}

@@ -107,7 +107,7 @@ export function TagField({
                 aria-label={isFull ? `已达 ${max} 项上限` : placeholder}
                 placeholder={isFull ? `已达 ${max} 项上限` : placeholder}
                 disabled={isFull}
-                className="h-7 text-xs"
+                className="h-7"
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={handleKeyDown}
             />

@@ -125,7 +125,9 @@ function insertPlainText(host: HTMLElement, text: string): void {
     const range = selection.getRangeAt(0)
     const anchor = range.startContainer
     const isInsideChip =
-        anchor instanceof HTMLElement ? anchor.closest('[data-chip]') !== null : anchor.parentElement?.closest('[data-chip]') !== null
+        anchor instanceof HTMLElement
+            ? anchor.closest('[data-chip]') !== null
+            : anchor.parentElement?.closest('[data-chip]') !== null
     if (!host.contains(anchor) || isInsideChip === true) {
         host.focus()
         moveCaretToEnd(host)
@@ -272,7 +274,7 @@ export function AiChatRichInput({
                 aria-label={placeholder}
                 contentEditable={!disabled}
                 suppressContentEditableWarning
-                className="no-scrollbar max-h-40 min-h-17 overflow-y-auto whitespace-pre-wrap break-words text-sm leading-5 outline-none"
+                className="no-scrollbar max-h-40 min-h-17 overflow-y-auto whitespace-pre-wrap break-words leading-5 outline-none"
                 onInput={emitChange}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
@@ -288,9 +290,11 @@ export function AiChatRichInput({
                     <span
                         data-chip="command"
                         contentEditable={false}
-                        className="mr-0.5 inline-flex h-5 max-w-40 items-center gap-1 rounded-md bg-white/10 px-1.5 align-top text-xs text-foreground"
+                        className="mr-0.5 inline-flex h-5 max-w-40 items-center gap-1 rounded-md bg-white/10 px-1.5 align-top text-foreground"
                     >
-                        {CommandIcon === null ? null : <CommandIcon className="size-3 shrink-0 text-muted-foreground" />}
+                        {CommandIcon === null ? null : (
+                            <CommandIcon className="size-3 shrink-0 text-muted-foreground" />
+                        )}
                         <span className="min-w-0 truncate">{command.title}</span>
                         <button
                             type="button"
@@ -313,7 +317,7 @@ export function AiChatRichInput({
                         data-chip="context"
                         data-chip-id={context.id}
                         contentEditable={false}
-                        className="mr-1 inline-flex h-5 max-w-56 items-center gap-1 rounded-md bg-white/10 px-1.5 align-top text-xs text-foreground"
+                        className="mr-1 inline-flex h-5 max-w-56 items-center gap-1 rounded-md bg-white/10 px-1.5 align-top text-foreground"
                         title={context.displayPath}
                     >
                         {context.kind === 'selection' ? (
@@ -340,7 +344,7 @@ export function AiChatRichInput({
                 ))}
             </div>
             {isPlaceholderVisible ? (
-                <span className="pointer-events-none absolute top-0 left-0 text-sm text-muted-foreground">{placeholder}</span>
+                <span className="pointer-events-none absolute top-0 left-0 text-muted-foreground">{placeholder}</span>
             ) : null}
         </div>
     )

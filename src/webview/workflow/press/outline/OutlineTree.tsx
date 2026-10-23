@@ -52,7 +52,13 @@ export function OutlineTree({
     return (
         <div className="flex h-full min-h-0 flex-col gap-2">
             <div className="shrink-0 overflow-x-auto">
-                <ToggleGroup type="single" size="sm" variant="outline" value={statusFilter} onValueChange={handleFilterChange}>
+                <ToggleGroup
+                    type="single"
+                    size="sm"
+                    variant="outline"
+                    value={statusFilter}
+                    onValueChange={handleFilterChange}
+                >
                     {STATUS_FILTERS.map((option) => (
                         <ToggleGroupItem key={option.value} value={option.value}>
                             {option.label}
@@ -105,18 +111,18 @@ export function OutlineTree({
                                                     )}
                                                     aria-hidden="true"
                                                 />
-                                                <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                                                <span className="min-w-0 flex-1 truncate font-medium">
                                                     {volume.name}
                                                 </span>
                                                 {summary.stale > 0 ? (
                                                     <span
-                                                        className="shrink-0 text-[10px] text-destructive tabular-nums"
+                                                        className="shrink-0 text-destructive tabular-nums"
                                                         title={`${summary.stale} 章需复核`}
                                                     >
                                                         {summary.stale} 待复核
                                                     </span>
                                                 ) : null}
-                                                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                                                <span className="shrink-0 text-muted-foreground tabular-nums">
                                                     {summary.done}/{summary.total}
                                                 </span>
                                             </button>
@@ -134,7 +140,7 @@ export function OutlineTree({
                                     </div>
                                     <CollapsibleContent className="flex flex-col gap-0.5 pl-3">
                                         {visibleChapters.length === 0 ? (
-                                            <p className="px-2 py-1 text-xs text-muted-foreground">
+                                            <p className="px-2 py-1 text-muted-foreground">
                                                 {volume.chapters.length === 0 ? '本卷还没有章节' : '没有符合筛选的章节'}
                                             </p>
                                         ) : (
@@ -157,14 +163,16 @@ export function OutlineTree({
                                                             className={cn('size-1.5 shrink-0 rounded-full', meta.dot)}
                                                             aria-hidden="true"
                                                         />
-                                                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                                                        <span className="shrink-0 text-muted-foreground tabular-nums">
                                                             {chapter.order}
                                                         </span>
-                                                        <span className="min-w-0 flex-1 truncate text-xs">
+                                                        <span className="min-w-0 flex-1 truncate">
                                                             {chapterTitleLabel(chapter)}
                                                         </span>
-                                                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                                                            {chapter.wordCount > 0 ? formatWordCount(chapter.wordCount) : '—'}
+                                                        <span className="shrink-0 text-muted-foreground tabular-nums">
+                                                            {chapter.wordCount > 0
+                                                                ? formatWordCount(chapter.wordCount)
+                                                                : '—'}
                                                         </span>
                                                     </button>
                                                 )

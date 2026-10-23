@@ -64,22 +64,22 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                 {/* 标签均分整行宽度：6 个标签在窄面板下不换行、不横向滚动，下划线也不会被滚动容器裁掉 */}
                 <div className="shrink-0">
                     <TabsList variant="line" className="w-full">
-                        <TabsTrigger value="basic" className="px-1 text-xs">
+                        <TabsTrigger value="basic" className="px-1">
                             基础
                         </TabsTrigger>
-                        <TabsTrigger value="appearance" className="px-1 text-xs">
+                        <TabsTrigger value="appearance" className="px-1">
                             外貌
                         </TabsTrigger>
-                        <TabsTrigger value="portrait" className="px-1 text-xs">
+                        <TabsTrigger value="portrait" className="px-1">
                             角色卡
                         </TabsTrigger>
-                        <TabsTrigger value="motive" className="px-1 text-xs">
+                        <TabsTrigger value="motive" className="px-1">
                             动机
                         </TabsTrigger>
-                        <TabsTrigger value="ability" className="px-1 text-xs">
+                        <TabsTrigger value="ability" className="px-1">
                             背景
                         </TabsTrigger>
-                        <TabsTrigger value="relation" className="px-1 text-xs">
+                        <TabsTrigger value="relation" className="px-1">
                             关系
                         </TabsTrigger>
                     </TabsList>
@@ -93,7 +93,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 <Input
                                     id="character-name"
                                     value={character.name}
-                                    className="h-7 text-xs"
+                                    className="h-7"
                                     onChange={(event) => onChange({ name: event.target.value })}
                                 />
                             </Field>
@@ -102,7 +102,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 <Input
                                     id="character-alias"
                                     value={character.alias}
-                                    className="h-7 text-xs"
+                                    className="h-7"
                                     onChange={(event) => onChange({ alias: event.target.value })}
                                 />
                             </Field>
@@ -111,7 +111,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 <Input
                                     id="character-age"
                                     value={character.age}
-                                    className="h-7 text-xs"
+                                    className="h-7"
                                     onChange={(event) => onChange({ age: event.target.value })}
                                 />
                             </Field>
@@ -120,7 +120,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 <Input
                                     id="character-identity"
                                     value={character.identity}
-                                    className="h-7 text-xs"
+                                    className="h-7"
                                     onChange={(event) => onChange({ identity: event.target.value })}
                                 />
                             </Field>
@@ -189,7 +189,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 id="character-appearance"
                                 value={character.appearance}
                                 placeholder="如：瘦高，袖口永远卷到小臂；指节有薄茧，左眉一道旧疤"
-                                className="min-h-40 text-xs"
+                                className="min-h-40"
                                 onChange={(event) => onChange({ appearance: event.target.value })}
                             />
                             <FieldDescription>
@@ -224,7 +224,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                             <Input
                                 id="character-desire"
                                 value={character.desire}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ desire: event.target.value })}
                             />
                             <FieldDescription>推动这个人物做所有决定的那个念头</FieldDescription>
@@ -234,7 +234,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                             <Input
                                 id="character-weakness"
                                 value={character.weakness}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ weakness: event.target.value })}
                             />
                         </Field>
@@ -243,7 +243,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                             <Input
                                 id="character-catchphrase"
                                 value={character.catchphrase}
-                                className="h-7 text-xs"
+                                className="h-7"
                                 onChange={(event) => onChange({ catchphrase: event.target.value })}
                             />
                         </Field>
@@ -255,7 +255,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                             <Textarea
                                 id="character-ability"
                                 value={character.ability}
-                                className="min-h-16 text-xs"
+                                className="min-h-16"
                                 onChange={(event) => onChange({ ability: event.target.value })}
                             />
                         </Field>
@@ -265,7 +265,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 id="character-arc"
                                 value={character.arc}
                                 placeholder="从什么状态，走到什么状态"
-                                className="min-h-16 text-xs"
+                                className="min-h-16"
                                 onChange={(event) => onChange({ arc: event.target.value })}
                             />
                         </Field>
@@ -278,7 +278,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 id="character-relation"
                                 value={character.relation}
                                 placeholder="与其他人物、组织的关系与张力"
-                                className="min-h-24 text-xs"
+                                className="min-h-24"
                                 onChange={(event) => onChange({ relation: event.target.value })}
                             />
                             <FieldDescription>关系图谱在后续版本提供，这里先以文字记录</FieldDescription>
