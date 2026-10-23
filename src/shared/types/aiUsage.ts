@@ -6,8 +6,11 @@
  * 时间范围以枚举下发，由宿主换算成起止时间，前端不得传任意时间字符串。
  */
 
-/** 用量来源模块：对话 / 取名 / 外貌 / 语义归纳 / 画面描述 / 出图 */
-export type AiUsageModule = 'chat' | 'naming' | 'appearance' | 'semantic' | 'scene' | 'image'
+/**
+ * 用量来源模块：对话 / 取名 / 外貌 / 语义归纳 / 画面描述 / 出图。
+ * external 表示 CLI 记录里存在、但本地没有对应记账行的轮次（例如记账功能上线前的历史或在其它工具中发起）。
+ */
+export type AiUsageModule = 'chat' | 'naming' | 'appearance' | 'semantic' | 'scene' | 'image' | 'external'
 
 /** 时间筛选：今日、近 7 天、近 30 天、全部 */
 export type AiUsageRange = 'today' | '7d' | '30d' | 'all'
@@ -23,6 +26,7 @@ export const AI_USAGE_MODULE_LABELS: Readonly<Record<AiUsageModule, string>> = {
     semantic: '语义归纳',
     scene: '画面描述',
     image: 'AI出图',
+    external: '未归属',
 }
 
 /** 时间范围展示名 */
@@ -41,7 +45,8 @@ export function isAiUsageModule(value: unknown): value is AiUsageModule {
         value === 'appearance' ||
         value === 'semantic' ||
         value === 'scene' ||
-        value === 'image'
+        value === 'image' ||
+        value === 'external'
     )
 }
 
@@ -82,6 +87,17 @@ export interface AiUsageSummary {
     tokens: number
 }
 
+/**
+ * 周期积分概览：固定区间，只跟随模块筛选、不随列表的时间范围变化，供页头「今日 / 本月」使用。
+ * 区间内没有任何已对账记录时为 null，前端显示破折号而不是 0。
+ */
+export interface AiUsagePeriods {
+    /** 今日 0 点起累计 */
+    today: number | null
+    /** 本月 1 日 0 点起累计 */
+    month: number | null
+}
+
 /** 列表查询：模块为 null 表示不筛选 */
 export interface AiUsageQuery {
     module: AiUsageModule | null
@@ -99,6 +115,8 @@ export interface AiUsageListResult {
     page: number
     pageSize: number
     summary: AiUsageSummary
+    /** 今日与本月积分概览：只跟随模块筛选，与列表时间范围无关 */
+    periods: AiUsagePeriods
 }
 
 /** 提示词查询结果：found 为 false 表示该请求未记录或已过期清理 */

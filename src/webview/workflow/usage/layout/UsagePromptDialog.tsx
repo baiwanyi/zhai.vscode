@@ -66,7 +66,11 @@ export function UsagePromptDialog({ item, prompt, error, onClose }: UsagePromptD
                         正在读取提示词…
                     </div>
                 ) : isMissing ? (
-                    <p className="text-muted-foreground">该请求没有留存提示词（历史记录或已过期清理）。</p>
+                    <p className="text-muted-foreground">
+                        {item.module === 'external'
+                            ? '该轮不是由本扩展发起，没有提示词记录。'
+                            : '该请求没有留存提示词（历史记录或已过期清理）。'}
+                    </p>
                 ) : (
                     <>
                         {prompt.isTruncated && <p className="text-muted-foreground">内容过长，仅保留前 20000 字符。</p>}

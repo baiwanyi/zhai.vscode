@@ -1,30 +1,30 @@
 /**
- * AI 用量查询：「AI 使用量」页的宿主侧实现，负责时间范围换算、分页夹紧、汇总、积分回填与提示词按需读取。
- * 复用约定：分页、计数与汇总复用 usageRepository 的同一 WHERE 口径；模块键与范围枚举来自 shared/types/aiUsage，
- * 记录行在此归一成下发契约，前端不再二次解析；过期提示词在列表请求时顺带清理。
- * 关键约束：积分只认 CodeBuddy 会话记录里的真实值（CliUsageIndex），本地缺失时留空显示破折号，不做任何估算；
- * 对账以 CLI 记录为准，已回填但偏小的值同样修正（工具调用积分可能晚落盘）；入参一律在本层收窄（模块白名单、范围枚举、页码夹紧、
- * 请求 id 长度与字符），不接受任意时间字符串；提示词只按请求 id 单条读取，缺失时返回 found=false 而不是抛错。
+ * AI 用量查询：「AI 使用量」页的宿主侧实现，以 CodeBuddy 会话记录为明细主数据源，本地记账行只补模块与提示词归属。
+ * 复用约定：一轮一行由 CliUsageIndex 汇总，模块键与范围枚举来自 shared/types/aiUsage，记录在此归一成下发契约；
+ * 本地行按请求 id 关联，关联不上的标为 external；过期提示词在列表请求时顺带清理。
+ * 关键约束：明细与汇总都按 CLI 记录的积分计，本地缺失时留空显示破折号，不做任何估算；
+ * 对账以 CLI 记录为准，已回填但偏小的值同样修正（工具调用积分可能晚落盘）；入参一律在本层收窄（模块白名单、
+ * 范围枚举、页码夹紧、请求 id 长度与字符），不接受任意时间字符串；提示词只按请求 id 单条读取。
  */
 import {
-    countUsageLogs,
     getPrompt,
+    listAllUsageLogs,
     listUsageForCreditSync,
-    listUsageLogs,
     prunePrompts,
-    sumUsageLogs,
     updateUsageCredits,
 } from './db/usageRepository'
-import type { CliUsageIndex } from './cliUsageIndex'
+import type { CliUsageEntry, CliUsageIndex } from './cliUsageIndex'
 import type { UsageLogRecord } from './db/usageRepository'
 import type {
     AiUsageItem,
     AiUsageListResult,
     AiUsageModule,
+    AiUsagePeriods,
     AiUsagePromptResult,
     AiUsageQuery,
     AiUsageRange,
     AiUsageStatus,
+    AiUsageSummary,
 } from '../../shared/types/aiUsage'
 import type Database from 'better-sqlite3'
 
@@ -41,6 +41,8 @@ const MAX_REQUEST_ID_LENGTH = 64
 const DAY_MS = 24 * 60 * 60 * 1000
 /** 积分比较容差：CLI 侧积分为逐条累加的浮点，与库内值比较时避免因尾差反复重写 */
 const CREDIT_EPSILON = 1e-9
+/** 参与关联的本地行上限：表随记账持续增长，只读最近若干条即可覆盖 CLI 记录的同期范围 */
+const LOCAL_ROW_LIMIT = 2000
 
 export class AiUsageService {
     public constructor(
@@ -48,28 +50,55 @@ export class AiUsageService {
         private readonly cliUsage: CliUsageIndex,
     ) {}
 
-    /** 查询一页用量：先按 CLI 记录回填积分，再做筛选、分页与汇总 */
+    /** 查询一页用量：以 CLI 记录为明细主数据源，先回填本地积分，再筛选、分页与汇总 */
     public list(query: AiUsageQuery): AiUsageListResult {
         this.pruneExpiredPrompts()
         this.syncCreditsFromCli(query.force === true)
         const pageSize = clamp(Math.trunc(query.pageSize) || DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE)
         const page = clamp(Math.trunc(query.page) || 1, 1, MAX_PAGE)
-        const filter = { module: query.module, since: readSince(query.range) }
-        const total = countUsageLogs(this.db, filter)
-        const summaryRow = sumUsageLogs(this.db, filter)
-        const rows = listUsageLogs(this.db, { ...filter, limit: pageSize, offset: (page - 1) * pageSize })
+        // 周期概览只跟随模块筛选，因此先按模块收窄，再按时间范围收窄列表与汇总
+        const entries = this.collectEntries()
+        const byModule = query.module === null ? entries : entries.filter((item) => item.module === query.module)
+        const since = readSince(query.range)
+        const filtered = since === null ? byModule : byModule.filter((item) => item.createdAt >= since)
+        filtered.sort((left, right) => (left.createdAt < right.createdAt ? 1 : -1))
+        const offset = (page - 1) * pageSize
         return {
-            items: rows.map(toItem),
-            total,
+            items: filtered.slice(offset, offset + pageSize),
+            total: filtered.length,
             page,
             pageSize,
-            summary: {
-                requests: summaryRow.requests,
-                credits: summaryRow.credits,
-                costUsd: summaryRow.costUsd,
-                tokens: summaryRow.tokens,
-            },
+            summary: summarizeUsage(filtered),
+            periods: readPeriods(byModule),
         }
+    }
+
+    /**
+     * 汇总明细行：CLI 记录一轮一行，本地行按请求 id 提供模块、耗时与服务端成本。
+     * 本地有请求 id 但 CLI 记录已清理的轮次仍然保留，积分留空显示破折号，避免记录凭空消失；
+     * 本地没有请求 id 的行无法对账，其消耗已包含在对应的 CLI 条目里，不重复计入。
+     */
+    private collectEntries(): AiUsageItem[] {
+        const byRequestId = new Map<string, UsageLogRecord>()
+        for (const row of listAllUsageLogs(this.db, LOCAL_ROW_LIMIT)) {
+            if (row.requestId !== null) {
+                byRequestId.set(row.requestId, row)
+            }
+        }
+        const items: AiUsageItem[] = []
+        const matched = new Set<string>()
+        for (const entry of this.cliUsage.listEntries()) {
+            const row = byRequestId.get(entry.requestId)
+            matched.add(entry.requestId)
+            items.push(toCliItem(entry, row))
+        }
+        for (const [requestId, row] of byRequestId) {
+            if (!matched.has(requestId)) {
+                // CLI 记录已清理时用本地缓存值兜底，缓存的积分同样为空则显示破折号
+                items.push(toItem(row))
+            }
+        }
+        return items
     }
 
     /**
@@ -123,13 +152,30 @@ function readSince(range: AiUsageRange): string | null {
     if (range === 'all') {
         return null
     }
-    const now = new Date()
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    const starts = readPeriodStarts()
     if (range === 'today') {
-        return startOfToday.toISOString()
+        return starts.today.toISOString()
     }
     const days = range === '7d' ? 7 : 30
-    return new Date(startOfToday.getTime() - (days - 1) * DAY_MS).toISOString()
+    return new Date(starts.today.getTime() - (days - 1) * DAY_MS).toISOString()
+}
+
+/** 周期概览：今日与本月累计只按模块筛选，不受列表时间范围影响 */
+function readPeriods(items: AiUsageItem[]): AiUsagePeriods {
+    const starts = readPeriodStarts()
+    return {
+        today: sumCredits(items.filter((item) => item.createdAt >= starts.today.toISOString())),
+        month: sumCredits(items.filter((item) => item.createdAt >= starts.month.toISOString())),
+    }
+}
+
+/** 周期起点：今日 0 点与本月 1 日 0 点，均按本地时间计算 */
+function readPeriodStarts(): { today: Date; month: Date } {
+    const now = new Date()
+    return {
+        today: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+        month: new Date(now.getFullYear(), now.getMonth(), 1),
+    }
 }
 
 /** 行转下发契约：模块与状态按白名单收窄，历史行统一归到对话模块 */
@@ -148,6 +194,43 @@ function toItem(row: UsageLogRecord): AiUsageItem {
         durationMs: row.latencyMs,
         status: toStatus(row.status),
     }
+}
+
+/** CLI 条目转下发契约：匹配到本地行时取模块与耗时，未匹配标为 external */
+function toCliItem(entry: CliUsageEntry, row: UsageLogRecord | undefined): AiUsageItem {
+    return {
+        id: entry.requestId,
+        requestId: entry.requestId,
+        createdAt: entry.createdAt,
+        module: row === undefined ? 'external' : toModule(row.module),
+        model: entry.model.length > 0 ? entry.model : (row?.model ?? ''),
+        credits: entry.credit,
+        costUsd: row?.costUsd ?? 0,
+        promptTokens: entry.promptTokens,
+        completionTokens: entry.completionTokens,
+        totalTokens: entry.totalTokens,
+        durationMs: row?.latencyMs ?? 0,
+        status: row === undefined ? 'completed' : toStatus(row.status),
+    }
+}
+
+/** 汇总：requests 计全部行，credits 只累加已知值，全未知时返回 null */
+function summarizeUsage(items: AiUsageItem[]): AiUsageSummary {
+    return {
+        requests: items.length,
+        credits: sumCredits(items),
+        costUsd: items.reduce((total, item) => total + item.costUsd, 0),
+        tokens: items.reduce((total, item) => total + item.totalTokens, 0),
+    }
+}
+
+/** 积分合计：没有任何已知积分时返回 null，避免把未知显示成 0 */
+function sumCredits(items: AiUsageItem[]): number | null {
+    const known = items.filter((item) => item.credits !== null)
+    if (known.length === 0) {
+        return null
+    }
+    return known.reduce((total, item) => total + (item.credits ?? 0), 0)
 }
 
 /** 模块归一：旧库的 ai-chat 等取值统一视为对话 */

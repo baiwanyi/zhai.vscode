@@ -133,6 +133,16 @@ export function listUsageLogs(db: Database.Database, filter: UsageLogFilter): Us
         .all(filter) as UsageLogRecord[]
 }
 
+/**
+ * 列出用量行：用量页以 CLI 记录为主数据源，本地行只用于补模块、耗时与提示词归属。
+ * 上限由调用方给定，避免历史行无限增长后把整表读进内存。
+ */
+export function listAllUsageLogs(db: Database.Database, limit: number): UsageLogRecord[] {
+    return db
+        .prepare(`SELECT ${USAGE_COLUMNS} FROM ai_usage_logs ORDER BY created_at DESC LIMIT @limit`)
+        .all({ limit }) as UsageLogRecord[]
+}
+
 /** 统计满足筛选条件的总条数（分页用） */
 export function countUsageLogs(db: Database.Database, filter: Omit<UsageLogFilter, 'limit' | 'offset'>): number {
     const row = db.prepare(`SELECT COUNT(*) AS total FROM ai_usage_logs ${USAGE_WHERE}`).get(filter) as

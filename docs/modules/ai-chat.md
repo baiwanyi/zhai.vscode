@@ -505,14 +505,14 @@ interface AbortRequest {
 
 实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/webview/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
 
-用量页（工作流栏底「AI使用量」，别名 `usage`）为全局统计，不随作品作用域隔离：顶部显示筛选范围内的请求数、积分与 tokens 汇总，中部表格列为「时间 / 积分消耗 / 模型 / 请求 / 模块」，请求列显示短 id、点击弹窗按需拉取该轮提示词并展示模型、tokens 与耗时；模块筛选含对话、取名、外貌、语义归纳、画面描述、出图，时间筛选为今天 / 近 7 天 / 近 30 天 / 全部，分页在宿主侧完成。积分取自 CodeBuddy 会话记录（按请求 id 回填，含工具调用消耗），未同步的请求显示破折号而不是 0；已回填的值以 CLI 记录为准，工具调用积分晚落盘时会在下次同步被修正。表头提供刷新按钮（`force` 强制重扫），页面可见时每 30 秒静默同步一次，标签页隐藏时不发请求。
+用量页（工作流栏底「AI使用量」，别名 `usage`）为全局统计，不随作品作用域隔离：顶部显示筛选范围内的请求数、积分与 tokens 汇总，并向排显示「今日积分」「本月积分」两张卡片（固定区间，只跟随模块筛选、不随时间范围变化，宿主按本地 0 点与当月 1 日 0 点换算），中部表格列为「时间 / 积分消耗 / 模型 / 请求 / 模块」，请求列显示短 id、点击弹窗按需拉取该轮提示词并展示模型、tokens 与耗时；模块筛选含对话、取名、外貌、语义归纳、画面描述、出图、未归属，时间筛选为今天 / 近 7 天 / 近 30 天 / 全部，分页在宿主侧完成。明细以本机 CodeBuddy 会话记录为主数据源：一轮一行，积分、tokens 与模型直接取 CLI 记录（`providerData.conversationRequestId` 聚合，同一轮的多条记录累加）；能按请求 id 关联到本地记账行的补上模块、耗时与提示词，关联不上的标为「未归属」并说明该轮非本扩展发起；本地有请求 id 但 CLI 记录已清理的轮次仍保留，积分沿用本地缓存。整轮未上报 credit 时显示破折号而不是 0。表头提供刷新按钮（`force` 强制重扫），页面可见时每 30 秒静默同步一次，标签页隐藏时不发请求。
 
 页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `ghost`）；输入区为 `InputGroup` 三段式卡片（工具行 / 输入框 / 操作行，见 10.3），无 Key 时插入 `Card` 引导项。业务组件按「一文件一组件」拆分：命令菜单、参考菜单、工具行、模式按钮、模型菜单、Token 圆环、增强按钮、操作行、写回按钮、消息正文与引用条目各自独立文件。
 
 与本文档的已知差异（后续补齐）：
 
 - 上下文截断暂以「字符数 ÷ 1.6」粗估，第 5 节所列 tiktoken 方案未接入（AC-4 为降级实现）
-- 积分只能从 CLI 会话记录回填：SDK 不透传 credit、`total_cost_usd` 在 CLI 内恒为 0；历史记录（本地 UUID 请求 id）无法与 CLI 对上，显示破折号；重试指数退避未实现，仅落地 30s 首字超时中断
+- 积分只能取自 CLI 会话记录：SDK 不透传 credit、`total_cost_usd` 在 CLI 内恒为 0；明细以本机 CLI 记录为准，账号在其它设备或网页端的消耗不在此列；重试指数退避未实现，仅落地 30s 首字超时中断
 - 单次生成上限固定 2048 token（`MAX_COMPLETION_TOKENS`），尚未开放到参数面板（A13）
 - `@` 输入框提及（A12 剩余部分）未实现；待发送上下文与写回状态均为内存态，重启窗口后仅已发送的引用随 `messages.refs` 保留
 - 写作模式当前为「整段替换 + Ctrl+Z 撤销」，未做 diff 逐段接受（A3）；整篇改写上限 12000 字符，超出只能选中片段

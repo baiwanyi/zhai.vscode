@@ -112,6 +112,30 @@ describe('aiUsageService', () => {
         expect(result.summary.tokens).toBe(40)
     })
 
+    it('页头的今日与本月积分跟随模块筛选，不受列表时间范围影响', () => {
+        const now = new Date()
+        const lastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 15).toISOString()
+        seedUsage('u1', 'image', now.toISOString(), 'req-1', 1)
+        seedUsage('u2', 'chat', now.toISOString(), 'req-2', 4)
+        seedUsage('u3', 'image', lastMonth, 'req-3', 10)
+
+        const todayOnly = service.list({ module: null, range: 'today', page: 1, pageSize: 20 })
+        expect(todayOnly.summary.credits).toBeCloseTo(5)
+        expect(todayOnly.periods.today).toBeCloseTo(5)
+        expect(todayOnly.periods.month).toBeCloseTo(5)
+
+        // 时间范围切到全部只影响汇总与列表，两个周期卡片仍是今日 / 本月口径
+        const allRange = service.list({ module: null, range: 'all', page: 1, pageSize: 20 })
+        expect(allRange.summary.credits).toBeCloseTo(15)
+        expect(allRange.periods.today).toBeCloseTo(5)
+        expect(allRange.periods.month).toBeCloseTo(5)
+
+        // 模块筛选对周期卡片同样生效
+        const imageOnly = service.list({ module: 'image', range: 'all', page: 1, pageSize: 20 })
+        expect(imageOnly.periods.today).toBeCloseTo(1)
+        expect(imageOnly.periods.month).toBeCloseTo(1)
+    })
+
     it('提示词缺失时返回 found=false，存在时按请求 id 取回', () => {
         upsertPrompt(db, {
             requestId: 'req-1',
@@ -151,10 +175,49 @@ describe('aiUsageService', () => {
         seedUsage('u2', 'chat', new Date().toISOString(), 'req-missing', null)
 
         const result = service.list({ module: null, range: 'all', page: 1, pageSize: 20 })
-        const byId = new Map(result.items.map((item) => [item.id, item]))
-        expect(byId.get('u1')?.credits).toBeCloseTo(1.75)
-        expect(byId.get('u2')?.credits).toBeNull()
+        const byRequestId = new Map(result.items.map((item) => [item.requestId, item]))
+        expect(byRequestId.get('req-cli')?.credits).toBeCloseTo(1.75)
+        expect(byRequestId.get('req-missing')?.credits).toBeNull()
         expect(result.summary.credits).toBeCloseTo(1.75)
+    })
+
+    it('CLI 记录中本地没有对应行的轮次标为未归属', () => {
+        const projectDir = path.join(cliRoot, 'external')
+        fs.mkdirSync(projectDir, { recursive: true })
+        const timestamp = Date.now()
+        fs.writeFileSync(
+            path.join(projectDir, 's1.jsonl'),
+            [
+                JSON.stringify({
+                    type: 'message',
+                    timestamp,
+                    providerData: {
+                        conversationRequestId: 'req-ext',
+                        model: 'deepseek-chat',
+                        rawUsage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15, credit: 2.5 },
+                    },
+                }),
+                JSON.stringify({
+                    type: 'function_call_result',
+                    timestamp,
+                    providerData: { conversationRequestId: 'req-ext', toolResult: { rawResponse: { credit: 3.5 } } },
+                }),
+            ].join('\n'),
+            'utf8',
+        )
+
+        const result = service.list({ module: null, range: 'all', page: 1, pageSize: 20 })
+        expect(result.total).toBe(1)
+        expect(result.items[0]?.module).toBe('external')
+        expect(result.items[0]?.requestId).toBe('req-ext')
+        expect(result.items[0]?.model).toBe('deepseek-chat')
+        expect(result.items[0]?.totalTokens).toBe(15)
+        // 消息积分与工具积分累加，时间取记录里的毫秒时间戳
+        expect(result.items[0]?.credits).toBeCloseTo(6)
+        expect(result.periods.today).toBeCloseTo(6)
+
+        expect(service.list({ module: 'external', range: 'all', page: 1, pageSize: 20 }).total).toBe(1)
+        expect(service.list({ module: 'chat', range: 'all', page: 1, pageSize: 20 }).total).toBe(0)
     })
 
     it('已回填的积分按 CLI 记录修正，工具调用晚落盘时不会停在部分值', () => {
@@ -189,6 +252,11 @@ describe('aiUsageService', () => {
         const updated = service.list({ module: null, range: 'all', page: 1, pageSize: 20, force: true })
         expect(updated.items[0]?.credits).toBeCloseTo(5.8)
         expect(updated.summary.credits).toBeCloseTo(5.8)
+        // 本地缓存的积分同样被修正，CLI 记录被清理后才不会退回到部分值
+        const cached = db.prepare("SELECT credits FROM ai_usage_logs WHERE id = 'u1'").get() as {
+            credits: number | null
+        }
+        expect(cached.credits).toBeCloseTo(5.8)
     })
 
     it('force 跳过节流，能立即读到新写入的 CLI 记录', () => {
