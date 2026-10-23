@@ -1,6 +1,6 @@
 /**
  * AI 用量契约：宿主 ai/usage 协议的筛选、列表与提示词查询结构，以及模块标识与展示文案的共用映射。
- * 复用约定：字段由宿主归一化后填充（积分按模型额度倍率估算，未知一律为 null），前端只负责展示与格式化；
+ * 复用约定：字段由宿主归一化后填充（积分取自 CodeBuddy 会话记录，未对账一律为 null），前端只负责展示与格式化；
  * 模块键是宿主记账与前端筛选的唯一口径，标签表放在此处避免两侧各写一份导致筛选项与数据对不上。
  * 关键约束：提示词只经 ai/usage/prompt 按请求 id 单独拉取，列表结果不携带正文；
  * 时间范围以枚举下发，由宿主换算成起止时间，前端不得传任意时间字符串。
@@ -53,7 +53,7 @@ export interface AiUsageItem {
     module: AiUsageModule
     /** 模型 id；空串表示交给 CLI 的默认模型 */
     model: string
-    /** 估算积分（tokens × 额度倍率）；倍率未知或模型为 Auto 时为 null */
+    /** 真实积分（CodeBuddy 会话记录中的消息积分与工具积分之和）；尚未对账时为 null */
     credits: number | null
     /** 服务端计价（美元），0 为有效值 */
     costUsd: number
@@ -68,7 +68,7 @@ export interface AiUsageItem {
 /** 汇总：与当前筛选条件一致的总量，供表头展示 */
 export interface AiUsageSummary {
     requests: number
-    /** 积分合计；全部记录倍率未知时为 null */
+    /** 积分合计；范围内没有任何已对账记录时为 null */
     credits: number | null
     costUsd: number
     tokens: number
@@ -80,6 +80,8 @@ export interface AiUsageQuery {
     range: AiUsageRange
     page: number
     pageSize: number
+    /** 为 true 时跳过索引节流，立即重扫 CodeBuddy 会话记录（表头刷新按钮使用） */
+    force?: boolean
 }
 
 /** 列表结果：分页在宿主侧完成，total 为满足筛选条件的总条数 */

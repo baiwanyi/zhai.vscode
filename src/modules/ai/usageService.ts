@@ -49,7 +49,7 @@ export class AiUsageService {
     /** 查询一页用量：先按 CLI 记录回填积分，再做筛选、分页与汇总 */
     public list(query: AiUsageQuery): AiUsageListResult {
         this.pruneExpiredPrompts()
-        this.syncCreditsFromCli()
+        this.syncCreditsFromCli(query.force === true)
         const pageSize = clamp(Math.trunc(query.pageSize) || DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE)
         const page = clamp(Math.trunc(query.page) || 1, 1, MAX_PAGE)
         const filter = { module: query.module, since: readSince(query.range) }
@@ -70,9 +70,16 @@ export class AiUsageService {
         }
     }
 
-    /** 用 CLI 会话记录回填缺失积分：索引带节流，翻页与切筛选不会反复读盘 */
-    private syncCreditsFromCli(): void {
-        this.cliUsage.ensureFresh()
+    /**
+     * 用 CLI 会话记录回填缺失积分：普通查询走 5 秒节流，翻页与切筛选不会反复读盘；
+     * force 为 true 时（表头刷新按钮）跳过节流立即重扫。
+     */
+    private syncCreditsFromCli(force: boolean): void {
+        if (force) {
+            this.cliUsage.refresh()
+        } else {
+            this.cliUsage.ensureFresh()
+        }
         const pending = listUnresolvedUsage(this.db)
         if (pending.length === 0) {
             return

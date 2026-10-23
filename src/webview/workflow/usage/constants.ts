@@ -45,5 +45,8 @@ export const DEFAULT_RANGE: AiUsageRange = '7d'
 /** 页大小：列表默认 20 条，避免一次渲染过多行 */
 export const DEFAULT_PAGE_SIZE = 20
 
+/** 静默同步间隔：页面可见时每 30 秒补一次 CLI 积分，离开页面不产生请求 */
+export const POLL_INTERVAL_MS = 30_000
+
 /** 模块展示名：表格与弹窗共用 */
 export const MODULE_LABELS = AI_USAGE_MODULE_LABELS

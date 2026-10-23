@@ -438,7 +438,7 @@ interface AbortRequest {
 | `ai/writeState` | Webview → 宿主 | 实时改写目标、写回作用域、可写回与已写回消息 id |
 | `ai/setMode` | Webview → 宿主 | 切换会话模式（`chat` / `write`），写库后返回 `{ mode }` |
 | `ai/applyWrite` | Webview → 宿主 | 按助手消息 id 写回编辑栏（不接受路径与范围入参），返回 `{ applied, label, reason? }` |
-| `ai/usage` | Webview → 宿主 | 用量列表 `{ items, total, page, pageSize, summary }`：`module` 走白名单（缺省不筛选）、`range` 为 `today/7d/30d/all` 枚举并由宿主换算起止时间、页码与页大小在宿主夹紧（≤500 页 / ≤50 条），分页与汇总都在库侧完成 |
+| `ai/usage` | Webview → 宿主 | 用量列表 `{ items, total, page, pageSize, summary }`：`module` 走白名单（缺省不筛选）、`range` 为 `today/7d/30d/all` 枚举并由宿主换算起止时间、页码与页大小在宿主夹紧（≤500 页 / ≤50 条），分页与汇总都在库侧完成；`force: true` 跳过 5 秒索引节流并立即重扫 CLI 记录（表头刷新按钮），非布尔 true 一律按普通查询处理 |
 | `ai/usage/prompt` | Webview → 宿主 | 按请求 id 取提示词 `{ requestId, content, isTruncated, found }`；未留存时 `found=false`，id 长度与字符集校验失败直接拒绝 |
 | `host/command` | Webview → 宿主 | 白名单命令（`src/modules/common/webviewCommands.ts`），用于 CodeBuddy 登录（`zhai.ai.loginCodebuddy`）、打开设置等；未登记的命令一律拒绝 |
 | `stream` | 宿主 → Webview | 增量 `{ reqId, delta, channel }`；终态 `{ done: true, status, content, error? }` |
@@ -505,7 +505,7 @@ interface AbortRequest {
 
 实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/webview/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
 
-用量页（工作流栏底「AI使用量」，别名 `usage`）为全局统计，不随作品作用域隔离：顶部显示筛选范围内的请求数、积分与 tokens 汇总，中部表格列为「时间 / 积分消耗 / 模型 / 请求 / 模块」，请求列显示短 id、点击弹窗按需拉取该轮提示词并展示模型、tokens 与耗时；模块筛选含对话、取名、外貌、语义归纳、画面描述，时间筛选为今天 / 近 7 天 / 近 30 天 / 全部，分页在宿主侧完成。积分取自 CodeBuddy 会话记录（按请求 id 回填，含工具调用消耗），未同步的请求显示破折号而不是 0。
+用量页（工作流栏底「AI使用量」，别名 `usage`）为全局统计，不随作品作用域隔离：顶部显示筛选范围内的请求数、积分与 tokens 汇总，中部表格列为「时间 / 积分消耗 / 模型 / 请求 / 模块」，请求列显示短 id、点击弹窗按需拉取该轮提示词并展示模型、tokens 与耗时；模块筛选含对话、取名、外貌、语义归纳、画面描述，时间筛选为今天 / 近 7 天 / 近 30 天 / 全部，分页在宿主侧完成。积分取自 CodeBuddy 会话记录（按请求 id 回填，含工具调用消耗），未同步的请求显示破折号而不是 0。表头提供刷新按钮（`force` 强制重扫），页面可见时每 30 秒静默同步一次，标签页隐藏时不发请求。
 
 页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `ghost`）；输入区为 `InputGroup` 三段式卡片（工具行 / 输入框 / 操作行，见 10.3），无 Key 时插入 `Card` 引导项。业务组件按「一文件一组件」拆分：命令菜单、参考菜单、工具行、模式按钮、模型菜单、Token 圆环、增强按钮、操作行、写回按钮、消息正文与引用条目各自独立文件。
 

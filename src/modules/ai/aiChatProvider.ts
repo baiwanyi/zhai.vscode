@@ -482,7 +482,13 @@ function readUsageQueryPayload(payload: unknown): AiUsageQuery {
     if (typeof payload !== 'object') {
         throw new Error('ai/usage 参数类型不正确')
     }
-    const value = payload as { module?: unknown; range?: unknown; page?: unknown; pageSize?: unknown }
+    const value = payload as {
+        module?: unknown
+        range?: unknown
+        page?: unknown
+        pageSize?: unknown
+        force?: unknown
+    }
     const rawModule = value.module
     if (rawModule !== undefined && rawModule !== null && !isAiUsageModule(rawModule)) {
         throw new Error('ai/usage 模块参数不合法')
@@ -496,6 +502,8 @@ function readUsageQueryPayload(payload: unknown): AiUsageQuery {
         range: rawRange === undefined ? fallback.range : rawRange,
         page: readPositiveInt(value.page, fallback.page),
         pageSize: readPositiveInt(value.pageSize, fallback.pageSize),
+        // 只接受布尔 true：其余形态一律视为普通查询，避免前端误传字符串触发全量重扫
+        force: value.force === true,
     }
 }
 

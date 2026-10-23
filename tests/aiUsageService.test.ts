@@ -157,6 +157,31 @@ describe('aiUsageService', () => {
         expect(result.summary.credits).toBeCloseTo(1.75)
     })
 
+    it('force 跳过节流，能立即读到新写入的 CLI 记录', () => {
+        seedUsage('u1', 'chat', new Date().toISOString(), 'req-force', null)
+        const first = service.list({ module: null, range: 'all', page: 1, pageSize: 20 })
+        expect(first.items[0]?.credits).toBeNull()
+
+        const projectDir = path.join(cliRoot, 'force')
+        fs.mkdirSync(projectDir, { recursive: true })
+        fs.writeFileSync(
+            path.join(projectDir, 's1.jsonl'),
+            JSON.stringify({
+                type: 'message',
+                role: 'assistant',
+                providerData: { conversationRequestId: 'req-force', rawUsage: { credit: 0.4 } },
+            }),
+            'utf8',
+        )
+
+        // 5 秒节流内普通查询不会重扫，积分仍为空
+        const throttled = service.list({ module: null, range: 'all', page: 1, pageSize: 20 })
+        expect(throttled.items[0]?.credits).toBeNull()
+
+        const forced = service.list({ module: null, range: 'all', page: 1, pageSize: 20, force: true })
+        expect(forced.items[0]?.credits).toBeCloseTo(0.4)
+    })
+
     it('非法请求 id 直接拒绝', () => {
         expect(() => service.readPrompt('has space')).toThrow()
         expect(() => service.readPrompt('a'.repeat(65))).toThrow()
