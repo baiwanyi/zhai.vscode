@@ -25,6 +25,7 @@ import {
     ContextMenuTrigger,
 } from '@components/ui/context-menu'
 import { Item, ItemActions, ItemContent, ItemTitle } from '@components/ui/item'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { PressVolumeGroup } from '@shared/types/press'
 import type { JSX } from 'react'
 import { formatWordCount } from '../../utils'
@@ -110,16 +111,21 @@ export function PressVolumeSection({
                 </Button>
             </CollapsibleTrigger>
             {canAppend ? (
-                <Button
-                    variant="ghost"
-                    className="size-7 p-0 shrink-0 rounded-full hover:bg-transparent"
-                    aria-label={`在${title}中添加章节`}
-                    title="添加章节"
-                    disabled={isCreatingChapter}
-                    onClick={() => onCreateChapter(volume.dirName)}
-                >
-                    <Plus />
-                </Button>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="shrink-0 rounded-full hover:bg-transparent"
+                            aria-label={`在${title}中添加章节`}
+                            disabled={isCreatingChapter}
+                            onClick={() => onCreateChapter(volume.dirName)}
+                        >
+                            <Plus />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>添加章节</TooltipContent>
+                </Tooltip>
             ) : null}
         </div>
     )

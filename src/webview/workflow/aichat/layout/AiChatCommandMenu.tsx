@@ -31,7 +31,8 @@ export function AiChatCommandMenu({ disabled, activeId, onSelect }: AiChatComman
             <DropdownMenuTrigger asChild>
                 <Button
                     variant="ghost"
-                    className="size-7 p-0 rounded-full text-muted-foreground"
+                    size="icon"
+                    className="rounded-full text-muted-foreground"
                     title="写作命令"
                     aria-label="写作命令"
                     disabled={disabled}

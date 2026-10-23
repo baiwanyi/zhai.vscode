@@ -2,12 +2,13 @@
  * AI 使用量页：标题与汇总、筛选栏、用量表格与分页，点击请求 id 打开提示词弹窗。
  * 复用约定：列表经 useAiUsage 向宿主取（分页与汇总都在宿主侧完成），提示词经 useUsagePrompt 按需拉取；
  * 表格、筛选、分页与弹窗各自独立成组件，本文件只做状态编排与筛选/翻页的联动复位。
- * 关键约束：筛选变化必须把页码复位到 1，否则会停留在超出新结果集的页码上；
+ * 关键约束：结果区滚动复用 ui/scroll-area，与仪表盘保持同一种滚动实现；筛选变化必须把页码复位到 1，否则会停留在超出新结果集的页码上；
  * 弹窗关闭即清空当前请求，避免下次打开时闪现上一条提示词；刷新期间保留上一份表格避免闪空；
  * 刷新按钮带 force 强制重扫，页面停留时的 30 秒静默同步由 hook 负责。
  */
 import { useCallback, useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
+import { ScrollArea } from '@components/ui/scroll-area'
 import { Skeleton } from '@components/ui/skeleton'
 import type { AiUsageItem, AiUsageModule, AiUsageRange } from '@shared/types/aiUsage'
 import { DEFAULT_PAGE_SIZE, DEFAULT_RANGE } from './constants'
@@ -68,18 +69,20 @@ export function AiUsagePage(): JSX.Element {
                 </Alert>
             )}
 
-            <div className="min-h-0 flex-1 overflow-y-auto p-0.5">
-                {isLoading && result === null ? (
-                    <div className="flex flex-col gap-2 p-3">
-                        <Skeleton className="h-8 w-full" />
-                        <Skeleton className="h-8 w-full" />
-                        <Skeleton className="h-8 w-full" />
-                        <Skeleton className="h-8 w-full" />
-                    </div>
-                ) : (
-                    <UsageTable items={result?.items ?? []} onOpenRequest={handleOpenRequest} />
-                )}
-            </div>
+            <ScrollArea className="min-h-0 flex-1">
+                <div className="p-0.5">
+                    {isLoading && result === null ? (
+                        <div className="flex flex-col gap-2 p-3">
+                            <Skeleton className="h-8 w-full" />
+                            <Skeleton className="h-8 w-full" />
+                            <Skeleton className="h-8 w-full" />
+                            <Skeleton className="h-8 w-full" />
+                        </div>
+                    ) : (
+                        <UsageTable items={result?.items ?? []} onOpenRequest={handleOpenRequest} />
+                    )}
+                </div>
+            </ScrollArea>
 
             <footer className="relative flex shrink-0 items-center justify-center gap-1.5 pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent">
                 <UsagePagination

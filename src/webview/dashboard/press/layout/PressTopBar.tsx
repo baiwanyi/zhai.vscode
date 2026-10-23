@@ -1,11 +1,13 @@
 /**
  * 写作管理页头：左侧返回仪表盘概览，下方为并排的「添加作品」与「导入」入口。
- * 复用 @components/ui/button 与 lucide 图标；两个入口共用全宽胶囊形态，视觉上属于同一组操作。
+ * 复用 @components/ui/button 与 lucide 图标；返回入口复用 button 的 icon-sm 尺寸，悬浮说明复用 ui/tooltip；
+ * 两个入口共用全宽胶囊形态，视觉上属于同一组操作。
  * 关键约束：返回是全宽按钮之外唯一的导航入口，不与页面内其他动作重叠；
  * 新建与导入互斥，任一进行中同时禁用两个入口，避免并发写同一个作品目录。
  */
 import { ArrowLeft, FileUp, Plus } from 'lucide-react'
 import { Button } from '@components/ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { JSX } from 'react'
 
 interface PressTopBarProps {
@@ -21,14 +23,20 @@ export function PressTopBar({ isCreating, isImporting, onBack, onAdd, onImport }
     return (
         <div className="flex flex-col gap-2">
             <div className="flex items-center gap-1">
-                <Button
-                    variant="ghost"
-                    className="size-7 p-0 rounded-full"
-                    aria-label="返回仪表盘"
-                    onClick={onBack}
-                >
-                    <ArrowLeft />
-                </Button>
+                <Tooltip>
+                    <TooltipTrigger asChild>
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            className="rounded-full"
+                            aria-label="返回仪表盘"
+                            onClick={onBack}
+                        >
+                            <ArrowLeft />
+                        </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>返回仪表盘</TooltipContent>
+                </Tooltip>
                 <span className="font-heading font-semibold">写作管理</span>
             </div>
             <div className="flex gap-2">

@@ -9,7 +9,7 @@
  * 触发器完整展示当前模型名、不截断，颜色取正文前景色而不是弱化色；
  * 清单未拉取或未命中时用运行时带回的 currentName 兜底，避免初始化阶段闪出裸模型 id。
  */
-import { Check, ChevronDown, Loader2, Sparkles } from 'lucide-react'
+import { Check, ChevronDown, Sparkles } from 'lucide-react'
 import { Button } from '@components/ui/button'
 import {
     DropdownMenu,
@@ -19,6 +19,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
+import { Spinner } from '@components/ui/spinner'
 import type { AiModelChoices, AiModelOption } from '@shared/types/aiChat'
 import { ModelIcon } from './ModelIcon'
 import type { JSX } from 'react'
@@ -111,7 +112,7 @@ export function AiChatModelMenu({
                     )}
                     <span className="whitespace-nowrap">{currentLabel}</span>
                     {isLoading ? (
-                        <Loader2 className="size-3 shrink-0 animate-spin" />
+                        <Spinner className="size-3 shrink-0" aria-label="正在读取可用模型" />
                     ) : (
                         <ChevronDown className="size-3 shrink-0" />
                     )}

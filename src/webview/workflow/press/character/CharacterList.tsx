@@ -24,6 +24,7 @@ import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
 import { Card } from '@components/ui/card'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { PortraitGalleryItem } from '@shared/types/press'
 import type { CharacterCard } from '../types'
 import type { JSX } from 'react'
@@ -182,15 +183,20 @@ export function CharacterList({
                                     <p className="truncate text-muted-foreground">{summary}</p>
                                 </div>
                             </Card>
-                            <Button
-                                variant="ghost"
-                                className="absolute top-1 right-1 size-7 p-0 text-muted-foreground opacity-70 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
-                                aria-label={`删除人物 ${character.name}`}
-                                title="删除人物"
-                                onClick={() => setDeletingId(character.id)}
-                            >
-                                <Trash2 className="size-3.5" />
-                            </Button>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="absolute top-1 right-1 text-muted-foreground opacity-70 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                                        aria-label={`删除人物 ${character.name}`}
+                                        onClick={() => setDeletingId(character.id)}
+                                    >
+                                        <Trash2 className="size-3.5" />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>删除人物</TooltipContent>
+                            </Tooltip>
                         </div>
                     )
                 })}
@@ -207,8 +213,7 @@ export function CharacterList({
                     <AlertDialogHeader>
                         <AlertDialogTitle className="text-lg">删除「{deleting?.name ?? ''}」？</AlertDialogTitle>
                         <AlertDialogDescription>
-                            人物卡会立即从角色设定.md
-                            中移除，章纲里的出场引用一并清理，已生成的角色设定图移入回收站。
+                            人物卡会立即从角色设定.md 中移除，章纲里的出场引用一并清理，已生成的角色设定图移入回收站。
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>

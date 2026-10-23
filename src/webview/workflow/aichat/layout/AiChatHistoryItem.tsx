@@ -29,7 +29,8 @@ export function AiChatHistoryItem({ session, isActive, onSelect, onDelete }: AiC
                 </span>
                 <Button
                     variant="ghost"
-                    className="size-7 p-0 col-start-1 row-start-1 opacity-0 group-hover/history:opacity-100"
+                    size="icon"
+                    className="col-start-1 row-start-1 opacity-0 group-hover/history:opacity-100"
                     title="删除会话"
                     aria-label="删除会话"
                     onClick={(event) => {

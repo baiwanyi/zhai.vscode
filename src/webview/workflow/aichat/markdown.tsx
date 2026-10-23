@@ -3,6 +3,7 @@
  * 与 layout/message-view 的气泡样式解耦，避免引入 typography 插件造成样式互相覆盖（见 markdown-one.md 第 5 节）。
  * 关键约束：仅供 react-markdown 的 components 属性消费，键集须覆盖助手回复可能产出的全部 GFM 元素。
  */
+import { Separator } from '@components/ui/separator'
 import type { Components } from 'react-markdown'
 
 /** Markdown 元素到主题类名的映射：不引入 typography 插件，逐标签复用 shadcn 令牌，避免与气泡样式互相覆盖 */
@@ -35,7 +36,7 @@ export const MARKDOWN_COMPONENTS: Components = {
     pre: ({ children }) => (
         <pre className="mb-2 overflow-x-auto rounded-md bg-code-background p-2 last:mb-0">{children}</pre>
     ),
-    hr: () => <hr className="my-2 border-border" />,
+    hr: () => <Separator className="my-2" />,
     table: ({ children }) => <table className="mb-2 w-full border-collapse last:mb-0">{children}</table>,
     th: ({ children }) => <th className="border border-border px-1.5 py-1 text-left font-medium">{children}</th>,
     td: ({ children }) => <td className="border border-border px-1.5 py-1">{children}</td>,

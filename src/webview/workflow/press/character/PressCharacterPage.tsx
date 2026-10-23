@@ -2,6 +2,7 @@
  * 人物设定页：写作流程的第三步，用角色下拉筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
  * 复用约定：列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterDetail 承担、
  * 新增由 CharacterCreateDialog 承担、提取由 useCharacterExtract 发起、封面画廊由 useCharacterPortrait 读取；
+ * 搜索框复用 ui/input-group（前置图标交给 InputGroupAddon），不再手写绝对定位与左内边距；
  * 本文件只做筛选、搜索、提取、封面回读与弹窗编排，以及作品氛围、作品目录的下传。
  * 关键约束：新增后直接打开编辑弹窗，因此 onCreateCharacter 必须回传新卡 id；
  * 编辑弹窗以人物 id 作为 key 重建，关闭即丢弃草稿，页面不保留编辑中间态；
@@ -11,7 +12,7 @@
 import { Plus, Search, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Button } from '@components/ui/button'
-import { Input } from '@components/ui/input'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@components/ui/input-group'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Spinner } from '@components/ui/spinner'
 import type { PortraitGalleryItem, PressExtractedCharacter } from '@shared/types/press'
@@ -169,19 +170,17 @@ export function PressCharacterPage({
                             </SelectGroup>
                         </SelectContent>
                     </Select>
-                    <div className="relative min-w-0 flex-1">
-                        <Search
-                            className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground"
-                            aria-hidden="true"
-                        />
-                        <Input
+                    <InputGroup className="min-w-0 flex-1">
+                        <InputGroupAddon>
+                            <Search />
+                        </InputGroupAddon>
+                        <InputGroupInput
                             value={query}
                             aria-label="搜索人物"
                             placeholder="搜索姓名、昵称或身份"
-                            className="h-8 pr-3 pl-8 py-1 leading-5"
                             onChange={(event) => setQuery(event.target.value)}
                         />
-                    </div>
+                    </InputGroup>
                 </div>
             </header>
 

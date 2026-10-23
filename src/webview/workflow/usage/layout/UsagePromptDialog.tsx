@@ -1,6 +1,7 @@
 /**
  * 提示词弹窗：展示某条请求实际提交给模型的内容，以及该请求的模型、模块、tokens 与耗时。
- * 复用约定：弹层复用 ui/dialog（含无障碍标题与描述），错误用 alert 呈现，加载用 spinner；
+ * 复用约定：弹层复用 ui/dialog（含无障碍标题与描述），错误用 alert 呈现，加载用 spinner，
+ * 提示词分区复用 ui/card（CardHeader/CardTitle/CardAction + CardContent）；
  * 提示词正文整包来自宿主，本组件不做任何拼接或富文本渲染；复制走 ../utils 的 copyPrompt，结果用 sonner 提示。
  * 关键约束：以返回结果的 requestId 与当前请求比对判断是否就绪，切换请求时不会闪出上一条内容；
  * 未留存提示词（历史数据或已过期清理）显示空态文案而不是报错；正文只按纯文本展示，不解析 Markdown。
@@ -9,6 +10,7 @@ import { Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { Button } from '@components/ui/button'
+import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@components/ui/card'
 import {
     Dialog,
     DialogContent,
@@ -90,18 +92,27 @@ export function UsagePromptDialog({ item, prompt, error, onClose }: UsagePromptD
                             : '该请求没有留存提示词（历史记录或已过期清理）。'}
                     </p>
                 ) : (
-                    <div className="flex flex-col min-h-0 gap-1 rounded-xl bg-composer-input/50 p-3">
-                        <div className="flex items-center justify-between">
-                            <span className="font-medium pl-3">提示词</span>
-                            <Button size="icon" variant="ghost" onClick={() => void handleCopy()}>
-                                <Copy className="size-4" />
-                            </Button>
-                        </div>
-                        <div className="min-h-0 flex-1 overflow-y-auto p-3 whitespace-pre-wrap wrap-break-word">
+                    <Card size="sm" className="min-h-0 flex-1 gap-1 bg-composer-input/50">
+                        <CardHeader>
+                            <CardTitle>提示词</CardTitle>
+                            <CardAction>
+                                <Button
+                                    size="icon"
+                                    variant="ghost"
+                                    aria-label="复制提示词"
+                                    onClick={() => void handleCopy()}
+                                >
+                                    <Copy className="size-4" />
+                                </Button>
+                            </CardAction>
+                        </CardHeader>
+                        <CardContent className="min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap wrap-break-word">
                             {prompt.content}
-                        </div>
-                        {prompt.isTruncated && <p className="text-muted-foreground">内容过长，仅保留前 20000 字符。</p>}
-                    </div>
+                        </CardContent>
+                        {prompt.isTruncated ? (
+                            <p className="px-(--card-spacing) text-muted-foreground">内容过长，仅保留前 20000 字符。</p>
+                        ) : null}
+                    </Card>
                 )}
                 <DialogFooter>
                     <Button variant="outline" onClick={onClose}>

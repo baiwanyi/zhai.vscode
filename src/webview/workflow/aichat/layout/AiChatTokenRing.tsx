@@ -38,7 +38,8 @@ export function AiChatTokenRing({ used, budget }: AiChatTokenRingProps): JSX.Ele
             <PopoverTrigger asChild>
                 <Button
                     variant="ghost"
-                    className="size-7 p-0 rounded-full text-muted-foreground"
+                    size="icon"
+                    className="rounded-full text-muted-foreground"
                     title={label}
                     aria-label={label}
                     disabled={!isAvailable}

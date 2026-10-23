@@ -1,16 +1,19 @@
 /**
  * 大纲树：左侧的卷-章两级导航，承担章节选择、状态筛选与卷内新增章节。
- * 复用约定：折叠沿用 ui/collapsible，筛选复用 ui/toggle-group，状态点取 PLAN_STATUS_META 的语义底色，
- * 章节行复用与作品章节树一致的圆角与悬停底色；统计口径来自 utils 的 summarizeVolume。
+ * 复用约定：折叠沿用 ui/collapsible，筛选复用 ui/toggle-group，卷标题与章节行复用 ui/button 的 ghost 变体，
+ * 状态点取 PLAN_STATUS_META 的语义底色，待复核计数复用 ui/badge 的 destructive 变体；
+ * 统计口径来自 utils 的 summarizeVolume。
  * 关键约束：章节行只显示「序号 + 标题 + 已写字数」，不展示梗概，避免窄栏里出现多行文本撑高列表；
  * 状态不能只靠圆点表达，行上必须以 aria-label 带上状态文案。
  */
 import { cn } from 'cn'
 import { ChevronRight, Plus, PlusCircle, ScrollText } from 'lucide-react'
+import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { OutlineVolume, PlanStatus } from '../types'
 import type { JSX } from 'react'
 import { PLAN_STATUS_META, STATUS_FILTERS } from '../constants'
@@ -52,12 +55,7 @@ export function OutlineTree({
     return (
         <div className="flex h-full min-h-0 flex-col gap-2">
             <div className="shrink-0 overflow-x-auto">
-                <ToggleGroup
-                    type="single"
-                    variant="outline"
-                    value={statusFilter}
-                    onValueChange={handleFilterChange}
-                >
+                <ToggleGroup type="single" variant="outline" value={statusFilter} onValueChange={handleFilterChange}>
                     {STATUS_FILTERS.map((option) => (
                         <ToggleGroupItem key={option.value} value={option.value}>
                             {option.label}
@@ -96,11 +94,12 @@ export function OutlineTree({
                                     onOpenChange={() => onToggleVolume(volume.id)}
                                     className="flex flex-col gap-0.5"
                                 >
-                                    <div className="flex items-center gap-0.5 rounded-lg px-1 py-1 transition-colors hover:bg-muted">
+                                    <div className="flex items-center gap-0.5">
                                         <CollapsibleTrigger asChild>
-                                            <button
+                                            <Button
                                                 type="button"
-                                                className="flex min-w-0 flex-1 items-center gap-1 text-left focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+                                                variant="ghost"
+                                                className="h-auto min-w-0 flex-1 justify-start gap-1 px-1 py-1 text-left"
                                                 aria-expanded={isOpen}
                                             >
                                                 <ChevronRight
@@ -110,31 +109,35 @@ export function OutlineTree({
                                                     )}
                                                     aria-hidden="true"
                                                 />
-                                                <span className="min-w-0 flex-1 truncate font-medium">
-                                                    {volume.name}
-                                                </span>
+                                                <span className="min-w-0 flex-1 truncate">{volume.name}</span>
                                                 {summary.stale > 0 ? (
-                                                    <span
-                                                        className="shrink-0 text-destructive tabular-nums"
+                                                    <Badge
+                                                        variant="destructive"
+                                                        className="shrink-0 tabular-nums"
                                                         title={`${summary.stale} 章需复核`}
                                                     >
                                                         {summary.stale} 待复核
-                                                    </span>
+                                                    </Badge>
                                                 ) : null}
                                                 <span className="shrink-0 text-muted-foreground tabular-nums">
                                                     {summary.done}/{summary.total}
                                                 </span>
-                                            </button>
+                                            </Button>
                                         </CollapsibleTrigger>
-                                        <Button
-                                            variant="ghost"
-                                            className="size-7 p-0 shrink-0 rounded-full"
-                                            aria-label={`在${volume.name}中添加章节`}
-                                            title="添加章节"
-                                            onClick={() => onCreateChapter(volume.id)}
-                                        >
-                                            <Plus />
-                                        </Button>
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="shrink-0 rounded-full"
+                                                    aria-label={`在${volume.name}中添加章节`}
+                                                    onClick={() => onCreateChapter(volume.id)}
+                                                >
+                                                    <Plus />
+                                                </Button>
+                                            </TooltipTrigger>
+                                            <TooltipContent>添加章节</TooltipContent>
+                                        </Tooltip>
                                     </div>
                                     <CollapsibleContent className="flex flex-col gap-0.5 pl-3">
                                         {visibleChapters.length === 0 ? (
@@ -146,13 +149,14 @@ export function OutlineTree({
                                                 const meta = PLAN_STATUS_META[chapter.status]
                                                 const isSelected = chapter.id === selectedChapterId
                                                 return (
-                                                    <button
+                                                    <Button
                                                         key={chapter.id}
                                                         type="button"
+                                                        variant="ghost"
                                                         aria-current={isSelected ? 'true' : undefined}
                                                         aria-label={`${chapterTitleLabel(chapter)}，${meta.label}`}
                                                         className={cn(
-                                                            'flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-left transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
+                                                            'h-auto w-full justify-start gap-1.5 rounded-lg px-2 py-1 font-normal',
                                                             isSelected && 'bg-accent text-accent-foreground',
                                                         )}
                                                         onClick={() => onSelectChapter(chapter.id)}
@@ -172,7 +176,7 @@ export function OutlineTree({
                                                                 ? formatWordCount(chapter.wordCount)
                                                                 : '—'}
                                                         </span>
-                                                    </button>
+                                                    </Button>
                                                 )
                                             })
                                         )}

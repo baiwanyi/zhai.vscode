@@ -2,10 +2,12 @@
  * 取名页：纵向三段——顶部分类栏、条件卡片、底部结果区，承接写作管理页的取名分区。
  * 复用约定：条件收集、生成请求与结果渲染分别由 layout/ 与 hooks/ 承担，本文件只做状态编排；
  * 结果按分类缓存在 useNamingGenerate 内，切换分类时已有结果直接回显，未生成过的分类自动随机生成一批。
- * 关键约束：页面不自带滚动容器（结果区为唯一滚动层）；条件与结果均不落本地存储，历史由宿主 naming.db 持有。
+ * 关键约束：页面不自带滚动容器（结果区为唯一滚动层，复用 ui/scroll-area）；条件与结果均不落本地存储，
+ * 历史由宿主 naming.db 持有。
  */
 import { useCallback, useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
+import { ScrollArea } from '@components/ui/scroll-area'
 import { Skeleton } from '@components/ui/skeleton'
 import type { NamingCategory, NamingRequest, NamingSurnameKind } from '@shared/types/naming'
 import { DEFAULT_REQUEST } from './constants'
@@ -123,9 +125,9 @@ export function NamingPage(): JSX.Element {
                 onGenerate={handleGenerate}
                 onAbort={handleAbort}
             />
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <ScrollArea className="min-h-0 flex-1">
                 <NamingResultGrid items={items} />
-            </div>
+            </ScrollArea>
         </div>
     )
 }

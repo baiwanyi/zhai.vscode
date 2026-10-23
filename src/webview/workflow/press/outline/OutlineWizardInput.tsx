@@ -1,13 +1,14 @@
 /**
  * 生成大纲向导第一步：确认已就绪的设定摘要，并收窄卷数、章数与节奏等生成参数。
- * 复用约定：摘要卡与参数行都复用 ui/field 与语义令牌；节奏用 ui/toggle-group 单选，
- * 结构模板用 ui/select，数字参数用 ui/input 的紧凑尺寸，与作品设定页的录入手感一致。
+ * 复用约定：摘要项复用 ui/item（标签用 ItemDescription、值用 ItemTitle），参数行复用 ui/field 与语义令牌；
+ * 节奏用 ui/toggle-group 单选，结构模板用 ui/select，数字参数用 ui/input 的紧凑尺寸。
  * 关键约束：数字参数必须自行钳制到合理区间，清空时回退为默认值而不是 0；
  * 缺失一句话梗概时不阻断生成，只用提示条说明「梗概为空会导致章纲雷同」。
  */
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { Field, FieldDescription, FieldLabel, FieldTitle } from '@components/ui/field'
 import { Input } from '@components/ui/input'
+import { Item, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import type { CharacterCard, ProjectSetting } from '../types'
@@ -51,28 +52,42 @@ export function OutlineWizardInput({
             <div className="flex flex-col gap-1.5">
                 <FieldTitle>已就绪的设定</FieldTitle>
                 <div className="grid grid-cols-1 gap-1.5 @md:grid-cols-2">
-                    <div className="rounded-lg border border-border bg-muted/30 px-2 py-1.5">
-                        <p className="text-muted-foreground">题材 / 受众</p>
-                        <p className="truncate">
-                            {setting.genres.length > 0 ? setting.genres.join('、') : '未填写'} · {setting.audience}
-                        </p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-muted/30 px-2 py-1.5">
-                        <p className="text-muted-foreground">预计篇幅</p>
-                        <p className="truncate tabular-nums">{formatWordCount(setting.wordGoal)} 字</p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-muted/30 px-2 py-1.5">
-                        <p className="text-muted-foreground">主角</p>
-                        <p className="truncate">{protagonist?.name ?? '尚未创建主角'}</p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-muted/30 px-2 py-1.5">
-                        <p className="text-muted-foreground">金手指</p>
-                        <p className="truncate">{setting.goldenFingerType || '未填写'}</p>
-                    </div>
-                    <div className="rounded-lg border border-border bg-muted/30 px-2 py-1.5 @md:col-span-2">
-                        <p className="text-muted-foreground">一句话梗概</p>
-                        <p className="line-clamp-2">{setting.logline.length > 0 ? setting.logline : '未填写'}</p>
-                    </div>
+                    <Item size="xs" variant="outline" className="flex-col items-start gap-0 bg-muted/30">
+                        <ItemContent className="gap-0.5">
+                            <ItemDescription>题材 / 受众</ItemDescription>
+                            <ItemTitle className="max-w-full">
+                                {setting.genres.length > 0 ? setting.genres.join('、') : '未填写'} · {setting.audience}
+                            </ItemTitle>
+                        </ItemContent>
+                    </Item>
+                    <Item size="xs" variant="outline" className="flex-col items-start gap-0 bg-muted/30">
+                        <ItemContent className="gap-0.5">
+                            <ItemDescription>预计篇幅</ItemDescription>
+                            <ItemTitle className="max-w-full tabular-nums">
+                                {formatWordCount(setting.wordGoal)} 字
+                            </ItemTitle>
+                        </ItemContent>
+                    </Item>
+                    <Item size="xs" variant="outline" className="flex-col items-start gap-0 bg-muted/30">
+                        <ItemContent className="gap-0.5">
+                            <ItemDescription>主角</ItemDescription>
+                            <ItemTitle className="max-w-full">{protagonist?.name ?? '尚未创建主角'}</ItemTitle>
+                        </ItemContent>
+                    </Item>
+                    <Item size="xs" variant="outline" className="flex-col items-start gap-0 bg-muted/30">
+                        <ItemContent className="gap-0.5">
+                            <ItemDescription>金手指</ItemDescription>
+                            <ItemTitle className="max-w-full">{setting.goldenFingerType || '未填写'}</ItemTitle>
+                        </ItemContent>
+                    </Item>
+                    <Item size="xs" variant="outline" className="flex-col items-start gap-0 bg-muted/30 @md:col-span-2">
+                        <ItemContent className="gap-0.5">
+                            <ItemDescription>一句话梗概</ItemDescription>
+                            <ItemTitle className="max-w-full">
+                                {setting.logline.length > 0 ? setting.logline : '未填写'}
+                            </ItemTitle>
+                        </ItemContent>
+                    </Item>
                 </div>
                 {setting.logline.trim().length === 0 ? (
                     <Alert>

@@ -29,7 +29,8 @@ export function AiChatReferenceMenu({ disabled, onSelect }: AiChatReferenceMenuP
             <DropdownMenuTrigger asChild>
                 <Button
                     variant="ghost"
-                    className="size-7 p-0 rounded-full text-muted-foreground"
+                    size="icon"
+                    className="rounded-full text-muted-foreground"
                     title="参考资料"
                     aria-label="参考资料"
                     disabled={disabled}

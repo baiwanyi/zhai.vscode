@@ -8,6 +8,7 @@
 import { ArrowLeft, ChevronDown, PenLine, Wand2 } from 'lucide-react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { Button } from '@components/ui/button'
+import { Card, CardContent } from '@components/ui/card'
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -91,7 +92,8 @@ export function OutlineDetail({
             <header className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5">
                 <Button
                     variant="ghost"
-                    className="size-7 p-0 rounded-full @2xl:hidden"
+                    size="icon"
+                    className="rounded-full @2xl:hidden"
                     aria-label="返回大纲树"
                     onClick={onBack}
                 >
@@ -273,41 +275,45 @@ export function OutlineDetail({
                     <Progress value={progress} aria-label={`正文进度 ${progress}%`} />
                 </div>
 
-                <div className="flex flex-col gap-1.5 rounded-lg border border-border bg-muted/30 p-2">
-                    <div className="flex gap-1.5">
-                        <span className="shrink-0 text-muted-foreground">本卷目标</span>
-                        <span className="line-clamp-2 min-w-0 flex-1">
-                            {volume.goal.length > 0 ? volume.goal : '未填写'}
-                        </span>
-                    </div>
-                    {/* 情节脉络与关键转折来自导入归纳的卷纲：没有内容时不占位，避免每章重复三行「未填写」 */}
-                    {volume.plotline.length > 0 ? (
+                <Card size="sm" className="gap-0 bg-muted/30">
+                    <CardContent className="flex flex-col gap-1.5">
                         <div className="flex gap-1.5">
-                            <span className="shrink-0 text-muted-foreground">情节脉络</span>
-                            <span className="line-clamp-3 min-w-0 flex-1">{volume.plotline}</span>
+                            <span className="shrink-0 text-muted-foreground">本卷目标</span>
+                            <span className="line-clamp-2 min-w-0 flex-1">
+                                {volume.goal.length > 0 ? volume.goal : '未填写'}
+                            </span>
                         </div>
-                    ) : null}
-                    {volume.turningPoints.length > 0 ? (
+                        {/* 情节脉络与关键转折来自导入归纳的卷纲：没有内容时不占位，避免每章重复三行「未填写」 */}
+                        {volume.plotline.length > 0 ? (
+                            <div className="flex gap-1.5">
+                                <span className="shrink-0 text-muted-foreground">情节脉络</span>
+                                <span className="line-clamp-3 min-w-0 flex-1">{volume.plotline}</span>
+                            </div>
+                        ) : null}
+                        {volume.turningPoints.length > 0 ? (
+                            <div className="flex gap-1.5">
+                                <span className="shrink-0 text-muted-foreground">关键转折</span>
+                                <span className="line-clamp-2 min-w-0 flex-1">{volume.turningPoints.join('；')}</span>
+                            </div>
+                        ) : null}
                         <div className="flex gap-1.5">
-                            <span className="shrink-0 text-muted-foreground">关键转折</span>
-                            <span className="line-clamp-2 min-w-0 flex-1">{volume.turningPoints.join('；')}</span>
+                            <span className="shrink-0 text-muted-foreground">前情</span>
+                            <span className="line-clamp-2 min-w-0 flex-1">
+                                {prevChapter && prevChapter.summary.length > 0
+                                    ? prevChapter.summary
+                                    : '本章是卷首，无前情'}
+                            </span>
                         </div>
-                    ) : null}
-                    <div className="flex gap-1.5">
-                        <span className="shrink-0 text-muted-foreground">前情</span>
-                        <span className="line-clamp-2 min-w-0 flex-1">
-                            {prevChapter && prevChapter.summary.length > 0 ? prevChapter.summary : '本章是卷首，无前情'}
-                        </span>
-                    </div>
-                    <div className="flex gap-1.5">
-                        <span className="shrink-0 text-muted-foreground">接下来</span>
-                        <span className="line-clamp-2 min-w-0 flex-1">
-                            {nextChapters.length > 0
-                                ? nextChapters.map((item) => item.title).join(' / ')
-                                : '本卷最后一章'}
-                        </span>
-                    </div>
-                </div>
+                        <div className="flex gap-1.5">
+                            <span className="shrink-0 text-muted-foreground">接下来</span>
+                            <span className="line-clamp-2 min-w-0 flex-1">
+                                {nextChapters.length > 0
+                                    ? nextChapters.map((item) => item.title).join(' / ')
+                                    : '本卷最后一章'}
+                            </span>
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
             <footer className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2">

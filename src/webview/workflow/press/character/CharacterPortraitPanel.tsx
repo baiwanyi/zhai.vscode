@@ -1,6 +1,7 @@
 /**
  * 角色卡面板：在编辑弹窗内选画面风格、生成、设封面与删除角色设定图。
  * 复用约定：按钮复用 ui/button，画面风格选择复用 ui/select，加载态复用 ui/spinner / ui/skeleton，
+ * 无图空态复用 ui/empty，封面标记复用 ui/badge 的 secondary 变体；
  * 生成、列举与删除由 useCharacterPortrait 承担，人物数据只经 onChange 补丁回传（草稿）。
  * 关键约束：磁盘是图片的唯一事实来源——打开面板按人物目录回读，关闭弹窗期间完成的生成也能读到；
  * 生成成功即写入草稿图库（新图置顶并自动设封面），生成期间隐藏生成按钮、网格首位显示同构占位框；
@@ -23,8 +24,10 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@components/ui/alert-dialog'
+import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@components/ui/dialog'
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
@@ -209,10 +212,15 @@ export function CharacterPortraitPanel({
             </div>
 
             {loadedId !== character.id ? null : character.portraits.length === 0 && !isGenerating ? (
-                <div className="flex flex-col items-center gap-1 rounded-xl border border-dashed border-border py-6 text-center">
-                    <ImagePlus className="size-5 text-muted-foreground" aria-hidden="true" />
-                    <p className="text-muted-foreground">还没有角色卡，生成前建议先补全外貌与身份</p>
-                </div>
+                <Empty className="border py-4">
+                    <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                            <ImagePlus />
+                        </EmptyMedia>
+                        <EmptyTitle>还没有角色卡</EmptyTitle>
+                        <EmptyDescription>生成前建议先补全外貌与身份。</EmptyDescription>
+                    </EmptyHeader>
+                </Empty>
             ) : (
                 <div className="flex flex-col gap-1.5">
                     {character.portraits.length > 0 ? (
@@ -252,13 +260,14 @@ export function CharacterPortraitPanel({
                                         aria-hidden="true"
                                     />
                                     {isCover ? (
-                                        <span className="absolute top-1 left-1 rounded bg-background/85 px-1 py-0.5 font-medium">
+                                        <Badge variant="secondary" className="absolute top-1 left-1">
                                             封面
-                                        </span>
+                                        </Badge>
                                     ) : (
                                         <Button
                                             variant="ghost"
-                                            className="absolute top-1 left-1 size-7 p-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                            size="icon"
+                                            className="absolute top-1 left-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                             aria-label="设为封面"
                                             onClick={() => onChange({ coverPortraitId: portrait.id })}
                                             onDoubleClick={(event) => event.stopPropagation()}
@@ -268,7 +277,8 @@ export function CharacterPortraitPanel({
                                     )}
                                     <Button
                                         variant="destructive"
-                                        className="absolute top-1 right-1 size-7 p-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                        size="icon"
+                                        className="absolute top-1 right-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                         aria-label="删除角色卡"
                                         disabled={busyPath === portrait.path}
                                         onClick={() => setDeleting(portrait)}

@@ -1,6 +1,8 @@
 /**
  * 笔记列表标题行操作：非多选态提供按模块筛选与进入多选，多选态只提供退出。
- * 复用 @components/ui 的 dropdown-menu 与 button；状态经回调上抛，组件自身不持有。
+ * 复用 @components/ui 的 dropdown-menu 与 button；独立图标按钮复用 button 的 icon-sm 尺寸并用 ui/tooltip 说明，
+ * 作为菜单触发器的按钮保留原生 title（不与 Radix Trigger 嵌套，避免浮层与菜单状态互相干扰）。
+ * 状态经回调上抛，组件自身不持有。
  * 关键约束：筛选菜单项须置于 DropdownMenuGroup 内；多选态隐藏筛选，避免两个模式的操作相互干扰。
  */
 import { Funnel, ListChecks, X } from 'lucide-react'
@@ -15,6 +17,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { ModuleStat } from '@shared/types/dashboard'
 import type { JSX } from 'react'
 
@@ -37,15 +40,20 @@ export function NotesHeaderActions({
 }: NotesHeaderActionsProps): JSX.Element {
     if (isSelecting) {
         return (
-            <Button
-                variant="secondary"
-                className="size-7 p-0 rounded-full"
-                title="退出多选"
-                aria-label="退出多选"
-                onClick={onToggleSelecting}
-            >
-                <X />
-            </Button>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant="secondary"
+                        size="icon"
+                        className="rounded-full"
+                        aria-label="退出多选"
+                        onClick={onToggleSelecting}
+                    >
+                        <X />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>退出多选</TooltipContent>
+            </Tooltip>
         )
     }
 
@@ -53,20 +61,26 @@ export function NotesHeaderActions({
 
     return (
         <div className="flex items-center gap-1">
-            <Button
-                variant="ghost"
-                className="size-7 p-0 rounded-full"
-                title="多选"
-                aria-label="多选"
-                onClick={onToggleSelecting}
-            >
-                <ListChecks />
-            </Button>
+            <Tooltip>
+                <TooltipTrigger asChild>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-full"
+                        aria-label="多选"
+                        onClick={onToggleSelecting}
+                    >
+                        <ListChecks />
+                    </Button>
+                </TooltipTrigger>
+                <TooltipContent>多选</TooltipContent>
+            </Tooltip>
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Button
                         variant={isFiltered ? 'secondary' : 'ghost'}
-                        className="size-7 p-0 rounded-full"
+                        size="icon"
+                        className="rounded-full"
                         title="筛选笔记"
                         aria-label="筛选笔记"
                     >

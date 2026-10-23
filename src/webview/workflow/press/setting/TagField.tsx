@@ -1,13 +1,14 @@
 /**
  * 标签字段：以「预设开关 + 自定义标签」两段式收集题材、禁写项这类可多值字段。
- * 复用约定：预设项用 ui/toggle 的 aria-pressed 表达选中态，自定义项用 ui/badge 承载并内嵌移除按钮，
- * 输入框复用 ui/input 并接入全局 placeholder 令牌，不新增色值与间距体系。
+ * 复用约定：预设项用 ui/toggle 的 aria-pressed 表达选中态，自定义项用 ui/badge 承载并内嵌 ui/button
+ * 的 ghost/icon-xs 移除按钮，输入框复用 ui/input 并接入全局 placeholder 令牌，不新增色值与间距体系。
  * 关键约束：回车提交须跳过中文输入法的组合态，否则选词回车会被误判为添加；
  * 达到上限时静默忽略新值并在输入框上给出提示文案，不弹窗打断填写。
  */
 import { X } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@components/ui/badge'
+import { Button } from '@components/ui/button'
 import { Input } from '@components/ui/input'
 import { Toggle } from '@components/ui/toggle'
 import type { JSX, KeyboardEvent } from 'react'
@@ -88,14 +89,16 @@ export function TagField({
                     {customTags.map((tag) => (
                         <Badge key={tag} variant="secondary" className="gap-1 pr-1">
                             {tag}
-                            <button
+                            <Button
                                 type="button"
-                                className="rounded-full p-0.5 hover:bg-foreground/10 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+                                variant="ghost"
+                                size="icon-xs"
+                                className="size-4 shrink-0"
                                 aria-label={`移除 ${tag}`}
                                 onClick={() => handleRemove(tag)}
                             >
                                 <X className="size-3" aria-hidden="true" />
-                            </button>
+                            </Button>
                         </Badge>
                     ))}
                 </div>

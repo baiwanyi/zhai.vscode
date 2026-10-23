@@ -1,6 +1,7 @@
 /**
  * AI 对话富文本输入区：命令与上下文芯片以内联节点嵌在正文流中，文本紧贴芯片且换行回到行首。
- * 复用同目录 commandIcons 的命令图标、../utils 的 describeContext / toContextFileName。
+ * 复用同目录 commandIcons 的命令图标、../utils 的 describeContext / toContextFileName；
+ * 芯片复用 ui/badge（secondary 变体），芯片内的移除入口复用 ui/button 的 ghost/icon-xs 尺寸。
  * 关键约束：芯片 `contentEditable=false` 且不计入文本值，指令模板由页面在发送时拼装；
  * 外部改值（增强 / 还原 / 清空）会重写文本节点，用户输入不重写以避免光标跳动；
  * 命令芯片后保留一个空格文本节点作为光标占位（全空白不计入正文，外部空值不覆盖该占位）；
@@ -8,6 +9,8 @@
  */
 import { FileText, TextSelect, X } from 'lucide-react'
 import { useCallback, useEffect, useRef } from 'react'
+import { Badge } from '@components/ui/badge'
+import { Button } from '@components/ui/button'
 import type { AiContextRef } from '@shared/types/aiChat'
 import { COMMAND_ICONS } from './commandIcons'
 import type { AiCommand } from '../constants'
@@ -287,18 +290,21 @@ export function AiChatRichInput({
                 }}
             >
                 {command === null ? null : (
-                    <span
+                    <Badge
+                        variant="secondary"
                         data-chip="command"
                         contentEditable={false}
-                        className="mr-0.5 inline-flex h-5 max-w-40 items-center gap-1 rounded-md bg-white/10 px-1.5 align-top text-foreground"
+                        className="mr-0.5 h-5 max-w-40 align-top"
                     >
                         {CommandIcon === null ? null : (
                             <CommandIcon className="size-3 shrink-0 text-muted-foreground" />
                         )}
                         <span className="min-w-0 truncate">{command.title}</span>
-                        <button
+                        <Button
                             type="button"
-                            className="flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                            variant="ghost"
+                            size="icon-xs"
+                            className="size-4 shrink-0 text-muted-foreground"
                             title="取消命令"
                             aria-label="取消命令"
                             disabled={disabled}
@@ -308,16 +314,17 @@ export function AiChatRichInput({
                             }}
                         >
                             <X className="size-3" />
-                        </button>
-                    </span>
+                        </Button>
+                    </Badge>
                 )}
                 {contexts.map((context) => (
-                    <span
+                    <Badge
                         key={context.id}
+                        variant="secondary"
                         data-chip="context"
                         data-chip-id={context.id}
                         contentEditable={false}
-                        className="mr-1 inline-flex h-5 max-w-56 items-center gap-1 rounded-md bg-white/10 px-1.5 align-top text-foreground"
+                        className="mr-1 h-5 max-w-56 align-top"
                         title={context.displayPath}
                     >
                         {context.kind === 'selection' ? (
@@ -327,9 +334,11 @@ export function AiChatRichInput({
                         )}
                         <span className="min-w-0 truncate">{toContextFileName(context)}</span>
                         <span className="shrink-0 text-muted-foreground">{describeContext(context)}</span>
-                        <button
+                        <Button
                             type="button"
-                            className="flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                            variant="ghost"
+                            size="icon-xs"
+                            className="size-4 shrink-0 text-muted-foreground"
                             title="移除该引用"
                             aria-label="移除该引用"
                             disabled={disabled}
@@ -339,8 +348,8 @@ export function AiChatRichInput({
                             }}
                         >
                             <X className="size-3" />
-                        </button>
-                    </span>
+                        </Button>
+                    </Badge>
                 ))}
             </div>
             {isPlaceholderVisible ? (

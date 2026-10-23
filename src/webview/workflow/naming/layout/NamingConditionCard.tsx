@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Spinner } from '@components/ui/spinner'
 import { Switch } from '@components/ui/switch'
 import { Textarea } from '@components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { NamingCatalog, NamingRequest, NamingSurnameKind } from '@shared/types/naming'
 import { NamingEntityFields } from './NamingEntityFields'
 import { NamingPersonFields } from './NamingPersonFields'
@@ -81,20 +82,22 @@ export function NamingConditionCard({
                     </Field>
                 </FieldGroup>
                 <div className="mt-3 flex items-center gap-2">
-                    <div
-                        className="flex shrink-0 items-center gap-1.5"
-                        title={
-                            catalog.aiAvailable
-                                ? '生成方式：开启为 AI 生成，关闭为本地生成'
-                                : 'AI 通道未就绪，AI 生成不可用'
-                        }
-                    >
-                        <Switch
-                            id="naming-source"
-                            checked={request.source === 'ai'}
-                            disabled={!catalog.aiAvailable}
-                            onCheckedChange={(checked) => onChange({ source: checked ? 'ai' : 'local' })}
-                        />
+                    <div className="flex shrink-0 items-center gap-1.5">
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <Switch
+                                    id="naming-source"
+                                    checked={request.source === 'ai'}
+                                    disabled={!catalog.aiAvailable}
+                                    onCheckedChange={(checked) => onChange({ source: checked ? 'ai' : 'local' })}
+                                />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                                {catalog.aiAvailable
+                                    ? '生成方式：开启为 AI 生成，关闭为本地生成'
+                                    : 'AI 通道未就绪，AI 生成不可用'}
+                            </TooltipContent>
+                        </Tooltip>
                         <Label htmlFor="naming-source" className="text-muted-foreground">
                             AI 生成
                         </Label>
