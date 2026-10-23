@@ -8,7 +8,7 @@
  * 删除按钮放在卡片外层容器而非卡片内部，避免点击删除时触发卡片的选中事件。
  */
 import { cn } from 'cn'
-import { Mars, Plus, Trash2, UserRound, Venus } from 'lucide-react'
+import { Mars, Plus, Sparkles, Trash2, UserRound, Venus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import {
     AlertDialog,
@@ -40,6 +40,8 @@ interface CharacterListProps {
     galleries: Readonly<Record<string, PortraitGalleryItem[]>>
     onSelect: (id: string) => void
     onCreate: () => void
+    /** 空态下的第二个入口：从导入素材里提取人物卡，与页脚「提取」是同一动作 */
+    onExtract: () => void
     onClearFilter: () => void
     /** 删除人物：由调用方同步清理章纲里的出场引用 */
     onDelete: (id: string) => void
@@ -70,6 +72,7 @@ export function CharacterList({
     galleries,
     onSelect,
     onCreate,
+    onExtract,
     onClearFilter,
     onDelete,
 }: CharacterListProps): JSX.Element {
@@ -98,10 +101,16 @@ export function CharacterList({
                 </EmptyHeader>
                 <EmptyContent>
                     {totalCount === 0 ? (
-                        <Button variant="outline" onClick={onCreate}>
-                            <Plus data-icon="inline-start" />
-                            新增人物
-                        </Button>
+                        <div className="flex flex-wrap items-center justify-center gap-2">
+                            <Button variant="outline" onClick={onCreate}>
+                                <Plus data-icon="inline-start" />
+                                新增人物
+                            </Button>
+                            <Button variant="outline" onClick={onExtract}>
+                                <Sparkles data-icon="inline-start" />
+                                提取人物
+                            </Button>
+                        </div>
                     ) : (
                         <Button variant="ghost" disabled={!hasFilter} onClick={onClearFilter}>
                             清空筛选

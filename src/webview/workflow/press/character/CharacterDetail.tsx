@@ -10,9 +10,9 @@
  */
 import { Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@components/ui/input-group'
 import { Spinner } from '@components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@components/ui/tabs'
 import { Textarea } from '@components/ui/textarea'
@@ -42,7 +42,7 @@ interface CharacterDetailProps {
 }
 
 export function CharacterDetail({ character, onChange, aiContext, dirPath }: CharacterDetailProps): JSX.Element {
-    const { isGenerating, generate, abort } = useCharacterAppearance()
+    const { isGenerating, generate } = useCharacterAppearance()
 
     const handleRoleChange = (value: string): void => {
         const next = CHARACTER_ROLE_ORDER.find((role) => role === value)
@@ -192,38 +192,29 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
 
                     <TabsContent value="appearance" className="flex flex-col gap-3">
                         <Field>
-                            <div className="flex items-center justify-between gap-2">
-                                <FieldLabel htmlFor="character-appearance">外貌描写</FieldLabel>
-                                {isGenerating ? (
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() => {
-                                            void abort()
-                                        }}
-                                    >
-                                        <Spinner data-icon="inline-start" />
-                                        取消
-                                    </Button>
-                                ) : (
-                                    <Button
-                                        variant="outline"
+                            <FieldLabel htmlFor="character-appearance">外貌描写</FieldLabel>
+                            <InputGroup>
+                                <InputGroupTextarea
+                                    id="character-appearance"
+                                    value={character.appearance}
+                                    placeholder="如：瘦高，袖口永远卷到小臂；指节有薄茧，左眉一道旧疤"
+                                    className="min-h-40"
+                                    onChange={(event) => onChange({ appearance: event.target.value })}
+                                />
+                                <InputGroupAddon align="block-end">
+                                    <InputGroupButton
+                                        size="icon-xs"
+                                        className="ml-auto"
                                         disabled={isGenerating}
                                         onClick={() => {
                                             void handleGenerateAppearance()
                                         }}
                                     >
-                                        <Sparkles data-icon="inline-start" />
-                                        AI 生成
-                                    </Button>
-                                )}
-                            </div>
-                            <Textarea
-                                id="character-appearance"
-                                value={character.appearance}
-                                placeholder="如：瘦高，袖口永远卷到小臂；指节有薄茧，左眉一道旧疤"
-                                className="min-h-40"
-                                onChange={(event) => onChange({ appearance: event.target.value })}
-                            />
+                                        {isGenerating ? <Spinner /> : <Sparkles />}
+                                        <span className="sr-only">AI 生成</span>
+                                    </InputGroupButton>
+                                </InputGroupAddon>
+                            </InputGroup>
                             <FieldDescription>
                                 写外观与气质，供正文引用；AI 会结合角色、性别、身份、性格与作品时代生成一版草稿
                             </FieldDescription>

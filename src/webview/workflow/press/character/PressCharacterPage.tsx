@@ -10,10 +10,10 @@
  */
 import { Plus, Search, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { toast } from 'sonner'
 import { Button } from '@components/ui/button'
 import { Input } from '@components/ui/input'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
+import { Spinner } from '@components/ui/spinner'
 import type { PortraitGalleryItem, PressExtractedCharacter } from '@shared/types/press'
 import { CharacterCreateDialog } from './CharacterCreateDialog'
 import { CharacterEditDialog } from './CharacterEditDialog'
@@ -54,7 +54,7 @@ export function PressCharacterPage({
     const [editingId, setEditingId] = useState<string | null>(null)
     const [isCreateOpen, setIsCreateOpen] = useState(false)
     const [galleries, setGalleries] = useState<Record<string, PortraitGalleryItem[]>>({})
-    const { isExtracting, extract } = useCharacterExtract(dirPath)
+    const { isExtracting, progress, extract } = useCharacterExtract(dirPath)
     const { listGallery } = useCharacterPortrait(dirPath)
 
     /**
@@ -131,22 +131,15 @@ export function PressCharacterPage({
         setEditingId(onCreateCharacter(seed))
     }
 
+    /** 提取人物：进度与结果只在列表区呈现，不再弹 sonner 提示 */
     const handleExtract = (): void => {
         const run = async (): Promise<void> => {
             const result = await extract()
-            if (result === null) {
+            if (result === null || result.characters.length === 0) {
                 return
             }
-            if (result.characters.length === 0) {
-                toast.info(result.message)
-                return
-            }
-            const added = onExtractCharacters(result.characters)
-            if (added === 0) {
-                toast.info('提取到的人物都已在列表中，未新增')
-                return
-            }
-            toast.success(`已提取 ${String(added)} 个人物，年龄、外貌、背景与关系已按原文填入，请核对后保存`)
+            // 合并进草稿即写盘，列表刷新本身就是完成反馈
+            onExtractCharacters(result.characters)
         }
         void run()
     }
@@ -193,16 +186,25 @@ export function PressCharacterPage({
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto p-0.5">
-                <CharacterList
-                    characters={visibleCharacters}
-                    totalCount={characters.length}
-                    hasFilter={hasFilter}
-                    galleries={galleries}
-                    onSelect={setEditingId}
-                    onCreate={() => setIsCreateOpen(true)}
-                    onClearFilter={handleClearFilter}
-                    onDelete={handleDeleteCharacter}
-                />
+                {isExtracting ? (
+                    // 提取期间整块替换为加载态：进度文案由宿主逐批回传，形如「角色卡 3/5」
+                    <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
+                        <Spinner className="size-6" />
+                        <p className="tabular-nums">{progress?.message ?? '正在提取人物卡…'}</p>
+                    </div>
+                ) : (
+                    <CharacterList
+                        characters={visibleCharacters}
+                        totalCount={characters.length}
+                        hasFilter={hasFilter}
+                        galleries={galleries}
+                        onSelect={setEditingId}
+                        onCreate={() => setIsCreateOpen(true)}
+                        onExtract={handleExtract}
+                        onClearFilter={handleClearFilter}
+                        onDelete={handleDeleteCharacter}
+                    />
+                )}
             </div>
 
             <footer className="relative flex shrink-0 items-center justify-end gap-1.5 pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent">
@@ -210,7 +212,7 @@ export function PressCharacterPage({
                     <Sparkles data-icon="inline-start" />
                     {isExtracting ? '提取中' : '提取'}
                 </Button>
-                <Button onClick={() => setIsCreateOpen(true)}>
+                <Button disabled={isExtracting} onClick={() => setIsCreateOpen(true)}>
                     <Plus data-icon="inline-start" />
                     新增
                 </Button>

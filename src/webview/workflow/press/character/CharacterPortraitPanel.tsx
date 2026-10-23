@@ -142,19 +142,27 @@ export function CharacterPortraitPanel({
         toast.error(reason === 'not-markdown' ? '仅在 Markdown 文件中支持插入' : '插入失败，请重试')
     }
 
+    /**
+     * 删除图片后按磁盘重建图库：文件可能已在别处被删掉，只做本地过滤会把失效项留在列表里（表现为破图）。
+     * 因此无论删除是否成功，都以 list 的回读结果为准；封面指向被删图时顺延到重建后的第一张。
+     */
     const handleDelete = async (portrait: CharacterPortrait): Promise<void> => {
         setBusyPath(portrait.path)
         const isRemoved = await remove(portrait.path)
+        const items = await list(character.id)
         setBusyPath(null)
+        // list 读取失败会返回空数组，与「目录确实空了」无法区分，故本地还有其它图时按读取失败处理，避免误清图库
+        const rest = character.portraits.filter((item) => item.path !== portrait.path)
+        const portraits = items.length === 0 && rest.length > 0 ? rest : items
+        const hasCover = portraits.some((item) => item.id === character.coverPortraitId)
+        onChange({
+            portraits,
+            coverPortraitId: hasCover ? character.coverPortraitId : (portraits[0]?.id ?? null),
+        })
         if (!isRemoved) {
+            toast.error('图片已不在磁盘上，图库已按当前目录重建')
             return
         }
-        const rest = character.portraits.filter((item) => item.id !== portrait.id)
-        onChange({
-            portraits: rest,
-            coverPortraitId:
-                character.coverPortraitId === portrait.id ? (rest[0]?.id ?? null) : character.coverPortraitId,
-        })
         toast.success('角色设定图已删除')
     }
 

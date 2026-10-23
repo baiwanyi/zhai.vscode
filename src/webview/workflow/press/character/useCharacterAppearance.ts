@@ -2,7 +2,7 @@
  * 人物外貌生成：把人物卡与作品氛围拼成快照交给宿主 pressAi/aiAppearance，取回单段白描文本。
  * 复用约定：请求经 webview 公共 bridge；前端超时略大于宿主侧 60s，保证宿主先给出超时错误；
  * 角色分类与性别使用 CHARACTER_ROLE_META / CHARACTER_GENDER_META 的中文标签，与人物卡展示口径一致。
- * 关键约束：生成中不接受重复提交；取消走 pressAi/aiAppearance/abort，属尽力而为；
+ * 关键约束：生成中不接受重复提交；页面不提供手动取消，只在卸载时走 pressAi/aiAppearance/abort 尽力收口；
  * 结果不直接落库，由调用方写入草稿并由用户点保存，未保存的生成结果只存在于弹窗内；
  * 失败原因统一经 sonner 提示，不回传错误状态给组件渲染。
  */
