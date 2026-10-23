@@ -134,7 +134,7 @@
                 "zhai.storage.rootPath": {
                     "type": "string",
                     "default": "",
-                    "markdownDescription": "文档保存目录（空 = 工作区根），其下划分 `notes/`、`press/`、`reader/` 模块目录"
+                    "markdownDescription": "文档保存目录（留空 = 用户主目录下的 `.zhai`），其下划分 `notes/`、`press/`、`reader/` 模块目录。须填写本地绝对路径，盘符写法 `D:\\路径` 或 `D:/路径` 均可"
                 },
                 "zhai.index.exclude": {
                     "type": "array",

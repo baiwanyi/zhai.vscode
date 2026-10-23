@@ -8,6 +8,7 @@
  */
 
 import { lstat, readFile } from 'node:fs/promises'
+import * as os from 'node:os'
 import * as vscode from 'vscode'
 import { parseNovel, sanitizeSegment } from './importParser'
 import {
@@ -163,15 +164,25 @@ export class PressImportService {
      * 选择文件并完成安全校验与试解析：返回候选信息供用户确认，用户取消时返回 null。
      * 安全约束：只接受常规文件（拒绝目录与符号链接），扩展名限 .txt，大小不超过上限，
      * 内容须为可解码的纯文本，否则按原因码拒绝。
+     * 关键约束：必须显式给 defaultUri——不传时宿主按工作区根推断初始目录，
+     * 工作区为盘符路径时会被当作 URI 解析（scheme 变成盘符），抛「文件系统提供程序不可用」。
      */
     public async pick(): Promise<PressImportCandidate | null> {
-        const selected = await vscode.window.showOpenDialog({
-            canSelectFiles: true,
-            canSelectFolders: false,
-            canSelectMany: false,
-            openLabel: '导入',
-            filters: { 文本文件: ['txt'] },
-        })
+        let selected: vscode.Uri[] | undefined
+        try {
+            selected = await vscode.window.showOpenDialog({
+                canSelectFiles: true,
+                canSelectFolders: false,
+                canSelectMany: false,
+                openLabel: '导入',
+                filters: { 文本文件: ['txt'] },
+                defaultUri: vscode.Uri.file(os.homedir()),
+            })
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            logger.error('打开导入文件选择框失败', error)
+            throw new ImportError('internal', `无法打开文件选择框：${message}`)
+        }
         const uri = selected?.[0]
         if (uri === undefined) {
             return null

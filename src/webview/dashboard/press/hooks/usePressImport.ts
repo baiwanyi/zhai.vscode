@@ -46,9 +46,12 @@ function isImportErrorCode(value: string): value is PressImportErrorCode {
     return Object.prototype.hasOwnProperty.call(IMPORT_ERROR_MESSAGES, value)
 }
 
-/** 把宿主错误转成用户文案：已知原因码用本模块文案，其余沿用宿主描述 */
+/**
+ * 把宿主错误转成用户文案：已知原因码用本模块的可执行文案，其余沿用宿主描述。
+ * internal 例外——该码对应未预期异常，宿主的 message 往往才是唯一线索，不能被通用文案盖掉。
+ */
 function toImportErrorMessage(cause: unknown): string {
-    if (cause instanceof HostRequestError && isImportErrorCode(cause.code)) {
+    if (cause instanceof HostRequestError && isImportErrorCode(cause.code) && cause.code !== 'internal') {
         return IMPORT_ERROR_MESSAGES[cause.code]
     }
     return cause instanceof Error ? cause.message : String(cause)
