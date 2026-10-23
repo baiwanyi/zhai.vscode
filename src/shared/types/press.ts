@@ -57,6 +57,8 @@ export interface PressProjectSummary {
     wordCount: number
     /** 作品目录内最新的文档修改时间（ISO 8601） */
     mtime: string
+    /** 已选定封面的 webview 可用 URL：未设封面或文件已被删除时不返回 */
+    coverUrl?: string
 }
 
 /** press/create 请求：新建作品并生成骨架 */
@@ -532,6 +534,81 @@ export interface PortraitCopyResult {
     copied: boolean
     /** unsupported：当前平台无法写入图片剪贴板；failed：写入过程失败 */
     reason?: 'unsupported' | 'failed'
+}
+
+/** 作品封面：宿主生成并落盘后回传的图片信息 */
+export interface PressCover {
+    id: string
+    /** 相对存储根的路径，形如 press/{作品名}/Cover/cover-{时间戳}.png */
+    path: string
+    /** webview 可访问的完整 URL，仅本次会话有效（由宿主用 asWebviewUri 转换） */
+    url: string
+    createdAt: string
+}
+
+/** 封面生成请求：作品设定的只读快照，宿主据此拼封面提示词 */
+export interface CoverGenerateRequest {
+    /** 作品目录（press/{作品名}）：封面落在该作品的 Cover 下，删除作品即一并清理 */
+    dirPath: string
+    title: string
+    genres: string[]
+    /** 一句话梗概：决定画面的核心意象 */
+    logline: string
+    worldview: string
+    /** 语感 / 氛围：决定色调与光影 */
+    tone: string
+    perspective: string
+    /** 画面风格：决定提示词里的画风描述 */
+    style: PortraitStyle
+}
+
+/** 封面生成结果 */
+export interface CoverGenerateResult {
+    cover: PressCover
+}
+
+/** 封面列举结果：按生成时间降序，最新的排在前面；selectedId 为当前选中的封面 */
+export interface CoverListResult {
+    covers: PressCover[]
+    selectedId: string | null
+}
+
+/** 设为封面请求：只接受该作品 Cover 目录下已存在的封面路径 */
+export interface CoverSelectRequest {
+    /** 作品目录（press/{作品名}） */
+    dirPath: string
+    /** 相对存储根的封面路径，由 listCover 返回 */
+    path: string
+}
+
+/** 设为封面结果 */
+export interface CoverSelectResult {
+    selectedId: string
+}
+
+/**
+ * 保存合成封面请求：底图与书名排版在前端画布合成，宿主只负责落盘。
+ * 关键约束：dataUrl 必须是 PNG data URL，宿主按体积上限拒绝异常负载。
+ */
+export interface CoverSaveRequest {
+    /** 作品目录（press/{作品名}） */
+    dirPath: string
+    /** 合成结果：data:image/png;base64,... */
+    dataUrl: string
+}
+
+/** 删除封面结果：删除的是当前封面时，selectedId 为回退后的封面（没有则为 null） */
+export interface CoverDeleteResult {
+    removed: boolean
+    selectedId: string | null
+}
+
+/** 封面标识规则：cover-{14 位时间戳}，文件名去掉扩展名后与之一一对应 */
+const PRESS_COVER_ID_PATTERN = /^cover-\d{14}$/
+
+/** 判断封面标识是否合法：删除与列举时用它过滤目录里的其它图片 */
+export function isPressCoverId(value: unknown): value is string {
+    return typeof value === 'string' && PRESS_COVER_ID_PATTERN.test(value)
 }
 
 /** 文本文件编码：导入前先探测，写入统一转为 UTF-8 且不带 BOM */

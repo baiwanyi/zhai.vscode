@@ -534,9 +534,10 @@ function normalizeCharacterId(payload: unknown, method: string): string {
 
 /**
  * 读取作品目录：要求 press/{作品名} 两段，返回归一化后的相对路径。
- * 安全约束：越出 press 模块、含上跳或段数不符的路径一律拒绝，角色卡目录只能落在作品目录下。
+ * 安全约束：越出 press 模块、含上跳或段数不符的路径一律拒绝，角色卡与封面目录只能落在作品目录下。
+ * 供封面服务共用同一套校验，避免两处各写一份路径白名单。
  */
-function readProjectDirPath(payload: unknown, method: string): string {
+export function readProjectDirPath(payload: unknown, method: string): string {
     if (typeof payload !== 'object' || payload === null) {
         throw new Error(`${method} 缺少参数`)
     }

@@ -33,7 +33,7 @@ const ILLUSTRATION_STYLE_BASE =
  * 画面风格描述：key 与 shared/types/press 的 PORTRAIT_STYLES 一一对应，新增风格须在此登记。
  * 文案对齐番茄小说 AI 生图的风格分类，用画面要素而不是风格名描述，模型才画得准。
  */
-const STYLE_HINTS: Readonly<Record<PortraitStyle, string>> = {
+export const STYLE_HINTS: Readonly<Record<PortraitStyle, string>> = {
     auto: '按题材与世界观自动匹配画风并锁定统一基调：古风玄幻走东方幻想厚涂或工笔重彩，衣料可见织绣层次与云雾介质；现代都市走高规格商业立绘或半写实插画，人物比例唯美，保留真实织物的高光反射但皮肤呈现完美的CG质感；悬疑罪案走冷硬电影写实，以低饱和基底与单一硬光源建立压迫感。全组保持同一镜头语言、同一材质精度与同一颗粒基准，不混入廉价CG感或影楼滤镜',
 
     anime: '日系TV动画赛璐璐上色，干净闭合线稿与硬边描线，平涂固有色，阴影为明确硬边、少渐变，高饱和但色相分层清楚；面部保留动画式概括，服装褶皱用利落锐角阴影切分，背景可简化但透视准确；整体避免厚涂混入、避免塑料高光，保留原画级线条稳定性',

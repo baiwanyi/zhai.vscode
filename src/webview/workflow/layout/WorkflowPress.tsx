@@ -501,8 +501,6 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                     setting={workspace.setting}
                     dirPath={workspaceDir}
                     onChange={handleUpdateSetting}
-                    onSelectStep={handleSelectStep}
-                    onNext={() => setActiveSection('character')}
                     onExtractSetting={(draft) => handleExtractSetting(workspace.setting, draft)}
                 />
             )

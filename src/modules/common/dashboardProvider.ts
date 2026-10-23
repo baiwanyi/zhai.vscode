@@ -11,6 +11,7 @@
  * 活跃编辑器与索引状态监听须随面板销毁释放，否则重开面板会叠加监听、重复广播。
  */
 import * as vscode from 'vscode'
+import { resolveStorageRoot } from './config'
 import {
     aggregateFileStats,
     listFilesByPaths,
@@ -19,6 +20,7 @@ import {
     RECENT_LIMIT,
 } from './db/statsRepository'
 import { logger } from './logger'
+import { buildStorageUri } from './storagePath'
 import { WEBVIEW_ALLOWED_COMMANDS } from './webviewCommands'
 import { buildWebviewHtml } from './webviewHtml'
 import type { WorkflowRouter } from '../ai/workflowRouter'
@@ -39,9 +41,11 @@ import type {
     PressImportProgress,
     PressImportStartResult,
     PressProjectDetail,
+    PressProjectSummary,
     RenamedPressVolume,
 } from '../../shared/types/press'
 import type { OpenWorkflowResult } from '../../shared/types/workflow'
+import type { PressCoverStore } from '../press/db/coverRepository'
 import type { ImportSemanticService } from '../press/importSemanticService'
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
@@ -97,6 +101,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private readonly importService: PressImportService
     /** 语义归纳服务：AI 通道晚于仪表盘创建，故用后置注入；未注入时相关请求直接拒绝 */
     private semanticService: ImportSemanticService | null = null
+    /** 封面选择仓储：press.db 晚于仪表盘打开，故用后置注入；未注入时列表不带封面 */
+    private coverStore: PressCoverStore | null = null
 
     public constructor(
         private readonly extensionUri: vscode.Uri,
@@ -112,6 +118,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     /** 注入语义归纳服务：由扩展入口在 AI 通道就绪后调用 */
     public attachSemanticService(service: ImportSemanticService): void {
         this.semanticService = service
+    }
+
+    /** 注入封面选择仓储：由扩展入口在 press.db 打开后调用，作品列表据此显示封面 */
+    public attachPressCoverStore(store: PressCoverStore): void {
+        this.coverStore = store
     }
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -184,7 +195,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                 return this.openWorkflow(payload)
             }
             case 'press/projects': {
-                return Promise.resolve(listPressProjects(this.db))
+                return this.readPressProjects(view)
             }
             case 'press/detail': {
                 return this.readPressDetail(payload)
@@ -319,6 +330,34 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         this.workflowRouter.selectProject(created.dirPath)
         logger.info(`作品创建完成并打开：${created.dirPath}`)
         return { dirPath: created.dirPath, title: created.title }
+    }
+
+    /**
+     * 作品列表：索引库聚合出摘要后，按封面仓储记录补上 webview 可用的封面 URL。
+     * 关键约束：封面文件可能已被手工删除，stat 失败时只返回无封面摘要，不产生破图；
+     * 未注入封面仓储（AI 通道初始化前的早期请求）时退回纯索引结果。
+     */
+    private async readPressProjects(view: vscode.WebviewView): Promise<PressProjectSummary[]> {
+        const projects = listPressProjects(this.db)
+        const store = this.coverStore
+        if (store === null) {
+            return projects
+        }
+        return Promise.all(
+            projects.map(async (project) => {
+                const coverPath = store.read(project.dirPath)
+                if (coverPath === null) {
+                    return project
+                }
+                const uri = buildStorageUri(resolveStorageRoot(), coverPath.split('/'))
+                try {
+                    await vscode.workspace.fs.stat(uri)
+                } catch {
+                    return project
+                }
+                return { ...project, coverUrl: view.webview.asWebviewUri(uri).toString() }
+            }),
+        )
     }
 
     /**

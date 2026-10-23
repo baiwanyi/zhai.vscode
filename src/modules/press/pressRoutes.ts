@@ -13,6 +13,7 @@ import { hasProjectFiles, listPressProjects } from './projectRepository'
 import { openProjectByDir } from './projectService'
 import { readProjectWorkspace } from './projectWorkspace'
 import { applyProjectWorkspace } from './workspaceWriter'
+import type { PressCoverService } from './coverService'
 import type { ImportSemanticService } from './importSemanticService'
 import type { PortraitService } from './portraitService'
 import type { PressAiService } from './pressAiService'
@@ -61,6 +62,7 @@ export class PressRoutes {
     public constructor(
         private readonly service: PressAiService,
         private readonly portraits: PortraitService,
+        private readonly covers: PressCoverService,
         private readonly db: Database.Database,
         private readonly workflowRouter: WorkflowRouter,
         private readonly semantic: ImportSemanticService,
@@ -97,6 +99,16 @@ export class PressRoutes {
                 return this.portraits.remove(payload)
             case 'pressAi/aiPortrait/abort':
                 return this.portraits.abort()
+            case 'pressAi/generateCover':
+                return this.covers.generate(payload, toWebviewUri)
+            case 'pressAi/listCover':
+                return this.covers.list(payload, toWebviewUri)
+            case 'pressAi/selectCover':
+                return this.covers.select(payload)
+            case 'pressAi/saveCover':
+                return this.covers.save(payload, toWebviewUri)
+            case 'pressAi/deleteCover':
+                return this.covers.remove(payload)
             case 'press/workspace':
                 return this.readWorkspace(payload)
             case 'press/open':

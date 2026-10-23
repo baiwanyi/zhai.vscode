@@ -1,8 +1,8 @@
 /**
- * 大纲与人物卡纯函数：设定完整度、章节统计、节点构造、字数格式化，以及提取草案的建卡与字段补全。
+ * 大纲与人物卡纯函数：字段缺失判断、章节统计、节点构造、字数格式化，以及提取草案的建卡与字段补全。
  * 复用约定：字数口径复用仪表盘的 formatWordCount，不另写一套；节点 id 统一由 createId 生成，
  * 保证新增卷、章、节拍在树中可直接作为 key 与选中标识；草案的中文标签按 constants 的元数据表归一。
- * 关键约束：完整度只统计可判断「是否填写」的字段，缺失不视为错误、仅用于提示；
+ * 关键约束：缺失判断只区分「是否填写」，缺失不视为错误、仅用于提示；
  * 章节统计以章纲上的目标字数为分母，不使用正文实际字数反推计划；
  * 补全已有角色只填空白字段、不覆盖作者已写内容，没有实际变化时必须返回原对象，避免无谓写盘。
  */
@@ -32,35 +32,6 @@ import { formatWordCount } from '../../dashboard/utils'
 
 export { formatWordCount }
 
-/**
- * 计入完整度的字段：覆盖作品设定页五个分组的主要输入项。
- * 世界观总述、地理与核心概念是导入作品的主要产出，必须计入，否则「填完了一整份设定」仍显示不完整。
- */
-const COMPLETENESS_KEYS: readonly (keyof ProjectSetting)[] = [
-    'title',
-    'penName',
-    'genres',
-    'audience',
-    'wordGoal',
-    'logline',
-    'conflict',
-    'ending',
-    'worldview',
-    'geography',
-    'era',
-    'factions',
-    'powerSystem',
-    'concepts',
-    'taboo',
-    'goldenFingerType',
-    'goldenFingerAbility',
-    'goldenFingerCost',
-    'perspective',
-    'tone',
-    'references',
-    'banned',
-]
-
 /** 判断单个字段是否已填写：字符串去空白、数组看长度、数字需大于零 */
 function isFilled(value: ProjectSetting[keyof ProjectSetting]): boolean {
     if (Array.isArray(value)) {
@@ -72,13 +43,7 @@ function isFilled(value: ProjectSetting[keyof ProjectSetting]): boolean {
     return value.trim().length > 0
 }
 
-/** 设定完整度：已填字段占比，取整到百分比 */
-export function computeSettingCompleteness(setting: ProjectSetting): number {
-    const filled = COMPLETENESS_KEYS.filter((key) => isFilled(setting[key])).length
-    return Math.round((filled / COMPLETENESS_KEYS.length) * 100)
-}
-
-/** 判断指定字段是否缺失，供分组标题与向导输入确认使用 */
+/** 判断指定字段是否缺失，供分组切换的缺项提示与向导输入确认使用 */
 export function isSettingFieldMissing(setting: ProjectSetting, key: keyof ProjectSetting): boolean {
     return !isFilled(setting[key])
 }
