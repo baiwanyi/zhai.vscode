@@ -7,7 +7,12 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import type { PressSemanticErrorCode, PressSemanticProgress, PressSemanticStartResult } from '@shared/types/press'
+import type {
+    PressSemanticErrorCode,
+    PressSemanticProgress,
+    PressSemanticRunResult,
+    PressSemanticStage,
+} from '@shared/types/press'
 import { HostRequestError, onState, request } from '../../../bridge'
 
 /** 进度提示的固定 toast id：同一任务的进度与终态始终更新同一条提示 */
@@ -48,10 +53,11 @@ function isProgressPayload(value: unknown): value is PressSemanticProgress {
 export interface PressSemanticState {
     isRunning: boolean
     /**
-     * 启动摘要归纳：同一时刻只允许一个任务。
-     * 传 targetDirPath 时忽略构造入参——导入流程要在列表页对刚建好的作品直接续跑。
+     * 启动阶段性归纳：同一时刻只允许一个任务。
+     * 传 targetDirPath 时忽略构造入参——导入流程要在列表页对刚建好的作品直接续跑；
+     * 不传 stages 时由宿主按「摘要 → 卷纲 → 角色卡」全部执行。
      */
-    start: (targetDirPath?: string) => Promise<void>
+    start: (targetDirPath?: string, stages?: PressSemanticStage[]) => Promise<void>
     /** 取消进行中的归纳：宿主在下一个批次边界停下 */
     cancel: () => Promise<void>
 }
@@ -89,17 +95,18 @@ export function usePressSemantic(dirPath: string): PressSemanticState {
     }, [])
 
     const start = useCallback(
-        async (targetDirPath?: string): Promise<void> => {
+        async (targetDirPath?: string, stages?: PressSemanticStage[]): Promise<void> => {
             if (isRunning) {
                 return
             }
             setIsRunning(true)
-            toast.loading('正在准备归纳…', { id: SEMANTIC_TOAST_ID, duration: Infinity })
+            toast.loading('正在准备归纳…', { id: SEMANTIC_TOAST_ID })
             try {
                 const resolved = targetDirPath !== undefined && targetDirPath.length > 0 ? targetDirPath : dirPath
-                const started = await request<PressSemanticStartResult>('press/semantic/start', {
-                    dirPath: resolved,
-                })
+                // 空数组会被宿主判为非法，缺省时省掉字段即表示全阶段
+                const requested =
+                    stages !== undefined && stages.length > 0 ? { dirPath: resolved, stages } : { dirPath: resolved }
+                const started = await request<PressSemanticRunResult>('press/semantic/run', requested)
                 jobIdRef.current = started.jobId
             } catch (cause) {
                 setIsRunning(false)

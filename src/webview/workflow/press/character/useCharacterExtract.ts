@@ -58,7 +58,7 @@ export function useCharacterExtract(dirPath: string): CharacterExtractState {
             if (message.payload.dirPath !== dirPath || message.payload.status !== 'running') {
                 return
             }
-            toast.loading(message.payload.message, { id: EXTRACT_TOAST_ID, duration: Infinity })
+            toast.loading(message.payload.message, { id: EXTRACT_TOAST_ID })
         })
     }, [dirPath])
 
@@ -68,7 +68,7 @@ export function useCharacterExtract(dirPath: string): CharacterExtractState {
         }
         isExtractingRef.current = true
         setIsExtracting(true)
-        toast.loading('正在提取人物卡…', { id: EXTRACT_TOAST_ID, duration: Infinity })
+        toast.loading('正在提取人物卡…', { id: EXTRACT_TOAST_ID })
         try {
             const result = await request<PressExtractCharactersResult>(
                 'press/extract/characters',

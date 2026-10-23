@@ -141,7 +141,7 @@ export function usePressImport(options: PressImportOptions = {}): PressImportSta
                 return false
             }
             setIsImporting(true)
-            toast.loading('正在准备导入…', { id: IMPORT_TOAST_ID, duration: Infinity })
+            toast.loading('正在准备导入…', { id: IMPORT_TOAST_ID })
             try {
                 const started = await request<PressImportStartResult>('press/import/start', {
                     token: candidate.token,
