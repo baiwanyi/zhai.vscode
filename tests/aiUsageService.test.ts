@@ -8,6 +8,7 @@ import * as path from 'node:path'
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createUri } from './stubs/vscode'
 import type Database from 'better-sqlite3'
+import { CliUsageIndex } from '../src/modules/ai/cliUsageIndex'
 import { openAiDatabase } from '../src/modules/ai/db/connection'
 import { ensureAiSchema } from '../src/modules/ai/db/schema'
 import { insertUsageLog, upsertPrompt } from '../src/modules/ai/db/usageRepository'
@@ -18,9 +19,16 @@ const DAY_MS = 24 * 60 * 60 * 1000
 let db: Database.Database
 let service: AiUsageService
 let tempDir: string
+let cliRoot: string
 
-/** 造一条用量：模块、时间与请求 id 由用例决定 */
-function seedUsage(id: string, module: string, createdAt: string, requestId: string): void {
+/** 造一条用量：模块、时间与请求 id 由用例决定，积分默认为待回填的空值 */
+function seedUsage(
+    id: string,
+    module: string,
+    createdAt: string,
+    requestId: string,
+    credits: number | null = 0.5,
+): void {
     insertUsageLog(db, {
         id,
         conversationId: null,
@@ -32,7 +40,7 @@ function seedUsage(id: string, module: string, createdAt: string, requestId: str
         completionTokens: 10,
         reasoningTokens: 0,
         totalTokens: 20,
-        credits: 0.5,
+        credits,
         costUsd: 0,
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
@@ -44,14 +52,21 @@ function seedUsage(id: string, module: string, createdAt: string, requestId: str
 
 beforeAll(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zhai-ai-usage-'))
+    cliRoot = path.join(tempDir, 'cli-projects')
+    fs.mkdirSync(cliRoot, { recursive: true })
     db = openAiDatabase(createUri(tempDir))
     ensureAiSchema(db)
-    service = new AiUsageService(db)
+    service = new AiUsageService(db, new CliUsageIndex(cliRoot))
 })
 
 beforeEach(() => {
     db.prepare('DELETE FROM ai_usage_logs').run()
     db.prepare('DELETE FROM ai_prompts').run()
+    // 每条用例换新索引：绕开 5s 节流，保证新写入的 CLI 记录能被读到
+    for (const name of fs.readdirSync(cliRoot)) {
+        fs.rmSync(path.join(cliRoot, name), { recursive: true, force: true })
+    }
+    service = new AiUsageService(db, new CliUsageIndex(cliRoot))
 })
 
 afterAll(() => {
@@ -112,6 +127,34 @@ describe('aiUsageService', () => {
             found: true,
         })
         expect(service.readPrompt('req-missing').found).toBe(false)
+    })
+
+    it('积分从 CLI 会话记录回填，缺失的保持未知', () => {
+        const projectDir = path.join(cliRoot, 'demo')
+        fs.mkdirSync(projectDir, { recursive: true })
+        fs.writeFileSync(
+            path.join(projectDir, 's1.jsonl'),
+            [
+                JSON.stringify({
+                    type: 'message',
+                    role: 'assistant',
+                    providerData: { conversationRequestId: 'req-cli', rawUsage: { total_tokens: 20, credit: 1.5 } },
+                }),
+                JSON.stringify({
+                    type: 'function_call_result',
+                    providerData: { conversationRequestId: 'req-cli', toolResult: { rawResponse: { credit: 0.25 } } },
+                }),
+            ].join('\n'),
+            'utf8',
+        )
+        seedUsage('u1', 'chat', new Date().toISOString(), 'req-cli', null)
+        seedUsage('u2', 'chat', new Date().toISOString(), 'req-missing', null)
+
+        const result = service.list({ module: null, range: 'all', page: 1, pageSize: 20 })
+        const byId = new Map(result.items.map((item) => [item.id, item]))
+        expect(byId.get('u1')?.credits).toBeCloseTo(1.75)
+        expect(byId.get('u2')?.credits).toBeNull()
+        expect(result.summary.credits).toBeCloseTo(1.75)
     })
 
     it('非法请求 id 直接拒绝', () => {

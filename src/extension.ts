@@ -5,6 +5,7 @@
 import * as vscode from 'vscode'
 import { AiChatViewProvider } from './modules/ai/aiChatProvider'
 import { AiChatService } from './modules/ai/chatService'
+import { CliUsageIndex } from './modules/ai/cliUsageIndex'
 import { registerAiCommands } from './modules/ai/commands'
 import { openAiDatabase } from './modules/ai/db/connection'
 import { ensureAiSchema } from './modules/ai/db/schema'
@@ -83,9 +84,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const aiDb = openAiDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => aiDb.close() })
     ensureAiSchema(aiDb)
-    // 用量记账与查询共用 ai.db：记账注入各 AI 入口（对话、取名、外貌、语义、画面），查询供「AI 使用量」页
+    // 用量记账与查询共用 ai.db：记账注入各 AI 入口（对话、取名、外貌、语义、画面），查询供「AI 使用量」页；
+    // 积分不落本地估算，由索引从 CodeBuddy 会话记录按请求 id 回填
     const usageRecorder = new UsageRecorder(aiDb)
-    const usageService = new AiUsageService(aiDb)
+    const usageService = new AiUsageService(aiDb, new CliUsageIndex())
 
     // AI 通道全扩展共用一份：唯一实现为 CodeBuddy
     const aiProvider = await createAiProvider(secrets)

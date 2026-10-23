@@ -1,11 +1,21 @@
 /**
- * AI 用量查询：「AI 使用量」页的宿主侧实现，负责时间范围换算、分页夹紧、汇总与提示词按需读取。
+ * AI 用量查询：「AI 使用量」页的宿主侧实现，负责时间范围换算、分页夹紧、汇总、积分回填与提示词按需读取。
  * 复用约定：分页、计数与汇总复用 usageRepository 的同一 WHERE 口径；模块键与范围枚举来自 shared/types/aiUsage，
  * 记录行在此归一成下发契约，前端不再二次解析；过期提示词在列表请求时顺带清理。
- * 关键约束：入参一律在本层收窄（模块白名单、范围枚举、页码夹紧、请求 id 长度与字符），不接受任意时间字符串；
- * 提示词只按请求 id 单条读取，缺失时返回 found=false 而不是抛错。
+ * 关键约束：积分只认 CodeBuddy 会话记录里的真实值（CliUsageIndex），本地缺失时留空显示破折号，不做任何估算；
+ * 回填只在本地为空的行上执行，已对账的值不覆盖；入参一律在本层收窄（模块白名单、范围枚举、页码夹紧、
+ * 请求 id 长度与字符），不接受任意时间字符串；提示词只按请求 id 单条读取，缺失时返回 found=false 而不是抛错。
  */
-import { countUsageLogs, getPrompt, listUsageLogs, prunePrompts, sumUsageLogs } from './db/usageRepository'
+import {
+    countUsageLogs,
+    getPrompt,
+    listUnresolvedUsage,
+    listUsageLogs,
+    prunePrompts,
+    sumUsageLogs,
+    updateUsageCredits,
+} from './db/usageRepository'
+import type { CliUsageIndex } from './cliUsageIndex'
 import type { UsageLogRecord } from './db/usageRepository'
 import type {
     AiUsageItem,
@@ -31,11 +41,15 @@ const MAX_REQUEST_ID_LENGTH = 64
 const DAY_MS = 24 * 60 * 60 * 1000
 
 export class AiUsageService {
-    public constructor(private readonly db: Database.Database) {}
+    public constructor(
+        private readonly db: Database.Database,
+        private readonly cliUsage: CliUsageIndex,
+    ) {}
 
-    /** 查询一页用量：筛选与分页都在库侧完成 */
+    /** 查询一页用量：先按 CLI 记录回填积分，再做筛选、分页与汇总 */
     public list(query: AiUsageQuery): AiUsageListResult {
         this.pruneExpiredPrompts()
+        this.syncCreditsFromCli()
         const pageSize = clamp(Math.trunc(query.pageSize) || DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE)
         const page = clamp(Math.trunc(query.page) || 1, 1, MAX_PAGE)
         const filter = { module: query.module, since: readSince(query.range) }
@@ -54,6 +68,20 @@ export class AiUsageService {
                 tokens: summaryRow.tokens,
             },
         }
+    }
+
+    /** 用 CLI 会话记录回填缺失积分：索引带节流，翻页与切筛选不会反复读盘 */
+    private syncCreditsFromCli(): void {
+        this.cliUsage.ensureFresh()
+        const pending = listUnresolvedUsage(this.db)
+        if (pending.length === 0) {
+            return
+        }
+        const updates = pending.flatMap((row) => {
+            const credit = this.cliUsage.readCredit(row.requestId)
+            return credit === null ? [] : [{ id: row.id, credits: credit }]
+        })
+        updateUsageCredits(this.db, updates)
     }
 
     /** 按请求 id 取提示词：历史记录可能未留存，缺失时 found=false */

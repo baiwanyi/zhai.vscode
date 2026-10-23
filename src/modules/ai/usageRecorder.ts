@@ -1,13 +1,12 @@
 /**
- * 用量记账：把各 AI 入口的 tokens、成本、请求标识与提示词统一写入用量库，供「AI 使用量」页展示。
- * 复用约定：模块键取自 shared/types/aiUsage；积分按 codebuddyModels 缓存清单里的额度倍率估算，
- * 倍率解析与模型清单同源，不在此处另建映射；提示词由调用方传消息数组，拼接成可读文本后截断入库。
- * 关键约束：记账是旁路，任何写库异常只记日志、不得中断生成；倍率未知（含 Auto 模型）时写 NULL 而非 0；
- * 提示词按 PROMPT_MAX_LENGTH 截断并标记，保留期清理由用量服务负责。
+ * 用量记账：把各 AI 入口的 tokens、请求标识与提示词写入用量库，供「AI 使用量」页展示。
+ * 复用约定：模块键取自 shared/types/aiUsage；提示词由调用方传消息数组，拼接成可读文本后截断入库。
+ * 关键约束：记账是旁路，任何写库异常只记日志、不得中断生成；积分一律留空，
+ * 由用量查询从 CodeBuddy 会话记录按请求 id 回填（`rawUsage.credit` 与工具调用 credit 之和），
+ * 此处不得按倍率估算；提示词按 PROMPT_MAX_LENGTH 截断并标记，保留期清理由用量服务负责。
  */
 import { randomUUID } from 'node:crypto'
 import { insertUsageLog, upsertPrompt } from './db/usageRepository'
-import { readCreditRate } from './providers/codebuddyModels'
 import type { AiChatMessage, AiUsage, AiUsageMeta } from './provider'
 import type { AiUsageModule, AiUsageStatus } from '../../shared/types/aiUsage'
 import type Database from 'better-sqlite3'
@@ -15,8 +14,6 @@ import { logger } from '../common/logger'
 
 /** 提示词入库上限：单轮消息含引用原文时可能较长，超出部分不再保留 */
 const PROMPT_MAX_LENGTH = 20_000
-/** 积分计算口径：每千 token 乘以模型额度倍率 */
-const CREDIT_UNIT_TOKENS = 1000
 
 /** 记账入参：usage 与 meta 由通道流末块回传，缺失时按 0 兜底但不伪造成本 */
 export interface UsageRecordInput {
@@ -57,7 +54,7 @@ export class UsageRecorder {
                 completionTokens: usage?.completionTokens ?? 0,
                 reasoningTokens: usage?.reasoningTokens ?? 0,
                 totalTokens,
-                credits: usage === null ? null : estimateCredits(input.model, totalTokens),
+                credits: null,
                 costUsd: meta?.costUsd ?? 0,
                 cacheReadTokens: meta?.cacheReadTokens ?? 0,
                 cacheCreationTokens: meta?.cacheCreationTokens ?? 0,
@@ -89,13 +86,4 @@ const ROLE_LABELS: Readonly<Record<AiChatMessage['role'], string>> = {
 /** 把消息数组拼成可读提示词：保留角色标签，便于在弹窗里区分系统提示与本轮输入 */
 export function summarizeMessages(messages: AiChatMessage[]): string {
     return messages.map((item) => `【${ROLE_LABELS[item.role]}】\n${item.content}`).join('\n\n')
-}
-
-/** 积分估算：倍率未知时返回 null，不得回退为 0 */
-function estimateCredits(model: string, totalTokens: number): number | null {
-    const rate = readCreditRate(model)
-    if (rate === null) {
-        return null
-    }
-    return Math.round((totalTokens / CREDIT_UNIT_TOKENS) * rate * 100) / 100
 }

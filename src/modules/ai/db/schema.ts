@@ -5,11 +5,12 @@
  * 复用约定：activate 期调用一次，建表与补列都走 IF NOT EXISTS / PRAGMA 判断，可重复执行。
  * 关键约束：会话记录所属 AI 通道与通道侧会话号，通道切换后不得复用旧会话号；
  * 会话按作用域（作品目录）隔离，project_dir 为 NULL 表示不属于任何作品的通用对话；
+ * 积分只认 CodeBuddy 会话记录里的真实值，v5 起清空按倍率估算的历史值（估算口径已证实偏差约 20 倍）；
  * 补列的标识符均为本文件内的常量，不接受外部输入，避免拼接注入。
  */
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = '4'
+const SCHEMA_VERSION = '5'
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS conversations (
@@ -66,6 +67,16 @@ const DDL_STATEMENTS = [
     )`,
 ] as const
 
+/** 读取已写入的 schema 版本：旧库没有该行时按 0 处理，用于判断是否需要执行数据修订 */
+function readSchemaVersion(db: Database.Database): number {
+    const row = db.prepare("SELECT value FROM meta WHERE key = 'schema_version'").get() as { value: string } | undefined
+    if (row === undefined) {
+        return 0
+    }
+    const version = Number(row.value)
+    return Number.isFinite(version) ? version : 0
+}
+
 /** 旧库补列：SQLite 的 ADD COLUMN 没有 IF NOT EXISTS，只能先查 PRAGMA 再执行 */
 function ensureColumn(db: Database.Database, table: string, name: string, definition: string): void {
     const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
@@ -99,6 +110,10 @@ export function ensureAiSchema(db: Database.Database): boolean {
         ensureColumn(db, 'ai_usage_logs', 'status', "status TEXT NOT NULL DEFAULT 'completed'")
         // 依赖新列的索引必须放在补列之后，否则旧库建索引会因缺列失败
         db.exec('CREATE INDEX IF NOT EXISTS idx_usage_module_date ON ai_usage_logs(module, created_at DESC)')
+        // v5：积分改由 CodeBuddy 会话记录回填，清空按倍率估算的历史值
+        if (readSchemaVersion(db) < 5) {
+            db.exec('UPDATE ai_usage_logs SET credits = NULL')
+        }
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)

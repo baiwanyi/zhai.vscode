@@ -180,7 +180,7 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 **模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModelsRaw()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活；完整清单不可用时退回 `getAvailableModels()` 的简化清单）。选择入口为 AI 面板底部输入卡片的模型菜单（`ai/models` / `ai/selectModel`），选中值写入 `globalState` 的 `ai.codebuddyModel` —— 对话、取名、外貌生成与出图驱动共用这一项。清单里的项可直接选，也支持「手动输入模型 id」以使用账号可用的自定义模型。通道下发前经 `resolveCodebuddyModel` 归一：空值交给 CLI 默认，非空一律透传，id 是否有效由服务端裁决。
 
-**额度倍率（成本消耗速率）**：完整模型清单里每个模型带服务端下发的 `credits` 文本，形如 `x0.51 credits`（个别模型为 `x1.62`，自定义模型为 `null`）。`codebuddyModels.ts` 的 `parseCreditRate` 从中取出数值，作为该模型每次调用的额度消耗系数，随 `AiModelOption.creditRate` 下发给菜单，在模型项右侧以 `0.51x` 展示；解析不出数值时记 `null` 表示未知，不得回退为 0（`x0.00` 是合法的零倍率）。该值只是相对倍率，平台不下发额度余额；绝对成本改用 SDK `result` 消息的 `total_cost_usd`（订阅账号常见为 0，0 是有效值），落库到 `ai_usage_logs.cost_usd`。界面「积分消耗」按 `total_tokens / 1000 × creditRate` 估算并保留两位小数，倍率未知（Auto 空 id 或自定义模型）时记 `NULL`、展示为破折号，不参与汇总且不得回退为 0。
+**积分口径（成本消耗）**：模型清单里每个模型带的 `credits` 文本（形如 `x0.51 credits`）只是相对倍率，仅用于菜单右侧展示，不参与计费。真实积分取自 CodeBuddy CLI 落盘的会话记录（`~/.codebuddy/projects/<压缩工作目录>/<sessionId>.jsonl`）：把每条记录 `providerData.rawUsage.credit` 与该轮工具调用的 `providerData.toolResult.rawResponse.credit` 按 `conversationRequestId` 累加，即为该轮实际消耗。请求 id 与 SDK 的 `_requestId` 同源，可直接与用量表逐条对账；SDK 不透传 credit，`result.total_cost_usd` 在 CLI 内恒为 0，故成本列不再作为计费依据。记录缺失（未落盘、未完轮次，或旧版本地 UUID 请求 id）时积分记 `NULL`，界面显示破折号，不做任何估算。实测同一请求的倍率估算值约为真实值的 20 倍，估算口径已废弃。
 
 **菜单分组与 Auto**：列表按来源分为「内置模型」与「自定义模型」两组，内置组首项为 `Auto`，与「空模型 id」一一对应——选中即写入空 id（`resolveCodebuddyModel` 归一为 `undefined`，交给平台自动选择）。分组判定见 `isCustomModel`：id 带 `custom-local:` 前缀、`vendor` 为 `user`、`tags` 含 `custom` 三者任一命中即为自定义（实测这些字段可能单独缺失，只认一个会分组错位）。菜单不提供手动输入入口，模型 id 只能来自清单。
 
@@ -261,7 +261,7 @@ CREATE TABLE IF NOT EXISTS ai_usage_logs (
     completion_tokens     INTEGER NOT NULL DEFAULT 0,
     reasoning_tokens      INTEGER NOT NULL DEFAULT 0,
     total_tokens          INTEGER NOT NULL DEFAULT 0,
-    credits               REAL,            -- 估算积分，未知为 NULL
+    credits               REAL,            -- 真实积分，由 CLI 会话记录按请求 id 回填，未对账为 NULL
     cost_usd              REAL    NOT NULL DEFAULT 0,
     cache_read_tokens     INTEGER NOT NULL DEFAULT 0,
     cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
@@ -285,7 +285,7 @@ CREATE INDEX IF NOT EXISTS idx_prompt_date ON ai_prompts(created_at);
 
 **敏感字段说明**：用量表只存模型、模块、成本与请求标识；提示词正文单独存 `ai_prompts`，仅在用户点开某条请求时按 id 单条读取，列表查询不触碰该表。正文入库截断至 20000 字符并标记 `is_truncated`，保留 30 天，打开用量页时顺带清理；消息正文随会话存储，用户删除会话时级联清除。
 
-**迁移**：按版本由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行（v2 补 `provider` / `sdk_session_id`，v3 补 `project_dir`，v4 补用量表的 `module` / `request_id` / `sdk_message_id` / `cost_usd` / `credits` / 缓存 tokens / `status` 并新建 `ai_prompts`）。`provider` 默认 `codebuddy`，`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话；`project_dir` 为 NULL 表示该会话不属于任何作品（历史会话不做回填）；`module` 默认 `chat`，旧值 `ai-chat` 等在读取时归一为 `chat`，不做回填。依赖新列的索引必须写在补列之后，否则旧库建索引会因缺列失败。
+**迁移**：按版本由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行（v2 补 `provider` / `sdk_session_id`，v3 补 `project_dir`，v4 补用量表的 `module` / `request_id` / `sdk_message_id` / `cost_usd` / `credits` / 缓存 tokens / `status` 并新建 `ai_prompts`，v5 清空按倍率估算的 `credits` 并改由 CLI 记录回填）。`provider` 默认 `codebuddy`，`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话；`project_dir` 为 NULL 表示该会话不属于任何作品（历史会话不做回填）；`module` 默认 `chat`，旧值 `ai-chat` 等在读取时归一为 `chat`，不做回填。依赖新列的索引必须写在补列之后，否则旧库建索引会因缺列失败。
 
 **会话作用域**：每个作品（`press/{作品名}`）各有一份对话记录——取最近会话、新建会话、历史列表都按 `project_dir` 过滤（比较用 `IS ?` 以覆盖 NULL），因此切换作品即切换对话上下文，互不串历史。作品页（`WorkflowPress`）把当前作品目录作为作用域下传给 `AiChat`，通用场景不带作用域即取 `project_dir IS NULL` 的那份对话。
 
@@ -503,16 +503,16 @@ interface AbortRequest {
 
 底部齿轮按钮已移除，插件设置入口改为侧栏视图标题栏图标：`package.json` 的 `menus.view/title` 注册 `zhai.openSettings`（`when = view == zhai.workflow`，`icon = $(gear)`）。无 Key 时仍由对话页空态卡片引导「设置 API Key」。
 
-实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/webview/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
+实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/webview/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
 
-用量页（工作流栏底「AI使用量」，别名 `usage`）为全局统计，不随作品作用域隔离：顶部显示筛选范围内的请求数、积分与 tokens 汇总，中部表格列为「时间 / 积分消耗 / 模型 / 请求 / 模块」，请求列显示短 id、点击弹窗按需拉取该轮提示词并展示模型、tokens 与耗时；模块筛选含对话、取名、外貌、语义归纳、画面描述，时间筛选为今天 / 近 7 天 / 近 30 天 / 全部，分页在宿主侧完成。
+用量页（工作流栏底「AI使用量」，别名 `usage`）为全局统计，不随作品作用域隔离：顶部显示筛选范围内的请求数、积分与 tokens 汇总，中部表格列为「时间 / 积分消耗 / 模型 / 请求 / 模块」，请求列显示短 id、点击弹窗按需拉取该轮提示词并展示模型、tokens 与耗时；模块筛选含对话、取名、外貌、语义归纳、画面描述，时间筛选为今天 / 近 7 天 / 近 30 天 / 全部，分页在宿主侧完成。积分取自 CodeBuddy 会话记录（按请求 id 回填，含工具调用消耗），未同步的请求显示破折号而不是 0。
 
 页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `ghost`）；输入区为 `InputGroup` 三段式卡片（工具行 / 输入框 / 操作行，见 10.3），无 Key 时插入 `Card` 引导项。业务组件按「一文件一组件」拆分：命令菜单、参考菜单、工具行、模式按钮、模型菜单、Token 圆环、增强按钮、操作行、写回按钮、消息正文与引用条目各自独立文件。
 
 与本文档的已知差异（后续补齐）：
 
 - 上下文截断暂以「字符数 ÷ 1.6」粗估，第 5 节所列 tiktoken 方案未接入（AC-4 为降级实现）
-- 用量成本已改用 SDK `total_cost_usd` 与额度倍率估算，但订阅账号该字段常为 0，界面以积分列为主；重试指数退避未实现，仅落地 30s 首字超时中断
+- 积分只能从 CLI 会话记录回填：SDK 不透传 credit、`total_cost_usd` 在 CLI 内恒为 0；历史记录（本地 UUID 请求 id）无法与 CLI 对上，显示破折号；重试指数退避未实现，仅落地 30s 首字超时中断
 - 单次生成上限固定 2048 token（`MAX_COMPLETION_TOKENS`），尚未开放到参数面板（A13）
 - `@` 输入框提及（A12 剩余部分）未实现；待发送上下文与写回状态均为内存态，重启窗口后仅已发送的引用随 `messages.refs` 保留
 - 写作模式当前为「整段替换 + Ctrl+Z 撤销」，未做 diff 逐段接受（A3）；整篇改写上限 12000 字符，超出只能选中片段

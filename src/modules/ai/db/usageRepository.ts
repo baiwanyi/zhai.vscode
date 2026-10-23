@@ -85,6 +85,41 @@ export function insertUsageLog(db: Database.Database, row: UsageLogInput): void 
     ).run(row)
 }
 
+/** 待回填积分的行：本地积分仍为空且有请求 id，说明尚未与 CLI 记录对账 */
+export interface UnresolvedUsageRow {
+    id: string
+    requestId: string
+}
+
+/**
+ * 列出待回填积分的行：积分结论以 CodeBuddy 会话记录为准，本地只做缓存。
+ * 只取最近 500 条，避免历史不可对账的行（旧版本地 UUID 请求 id）长期占据扫描窗口。
+ */
+export function listUnresolvedUsage(db: Database.Database): UnresolvedUsageRow[] {
+    return db
+        .prepare(
+            `SELECT id, request_id AS requestId FROM ai_usage_logs
+              WHERE credits IS NULL AND request_id IS NOT NULL
+              ORDER BY created_at DESC LIMIT 500`,
+        )
+        .all() as UnresolvedUsageRow[]
+}
+
+/** 回填真实积分：只写仍为空的行，已对账的记录不覆盖，返回实际更新条数 */
+export function updateUsageCredits(db: Database.Database, updates: Array<{ id: string; credits: number }>): number {
+    if (updates.length === 0) {
+        return 0
+    }
+    const statement = db.prepare('UPDATE ai_usage_logs SET credits = @credits WHERE id = @id AND credits IS NULL')
+    let changed = 0
+    db.transaction((rows: Array<{ id: string; credits: number }>) => {
+        for (const row of rows) {
+            changed += statement.run(row).changes
+        }
+    })(updates)
+    return changed
+}
+
 /** 查询一页用量：按时间倒序，limit/offset 由调用方夹紧 */
 export function listUsageLogs(db: Database.Database, filter: UsageLogFilter): UsageLogRecord[] {
     return db
