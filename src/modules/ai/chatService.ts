@@ -23,7 +23,6 @@ import {
     getLatestConversation,
     insertConversation,
     insertMessage,
-    insertUsageLog,
     listConversations,
     listMessages,
     sumTokensSince,
@@ -36,9 +35,11 @@ import {
 import { readCodebuddyLogin, rememberCodebuddyLogin } from './providers/codebuddyLogin'
 import { getCachedCodebuddyModels, getSelectedCodebuddyModel } from './providers/codebuddyModels'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
+import { summarizeMessages } from './usageRecorder'
 import type { HostContextRef, ResolvedContextRef } from './contextRefs'
 import type { ConversationRow, MessageRow } from './db/chatRepository'
-import type { AiChatMessage as ChatMessage, AiProvider, AiUsage as ChatUsage } from './provider'
+import type { AiChatMessage as ChatMessage, AiProvider, AiUsage as ChatUsage, AiUsageMeta } from './provider'
+import type { UsageRecorder } from './usageRecorder'
 import type {
     AiApplyResult,
     AiChatDraft,
@@ -127,6 +128,7 @@ export class AiChatService implements vscode.Disposable {
     public constructor(
         private readonly db: Database.Database,
         private readonly provider: AiProvider,
+        private readonly usageRecorder: UsageRecorder,
     ) {}
 
     /** 运行时信息：通道就绪状态、模型参数与当日用量 */
@@ -366,7 +368,12 @@ export class AiChatService implements vscode.Disposable {
             return { applied: true, label, reason: 'applied' }
         }
         const message = listMessages(this.db, conversationId).find((row) => row.id === messageId)
-        if (!message || message.role !== 'assistant' || message.status !== 'completed' || message.content.length === 0) {
+        if (
+            !message ||
+            message.role !== 'assistant' ||
+            message.status !== 'completed' ||
+            message.content.length === 0
+        ) {
             throw new Error('该回复没有可写回的内容')
         }
         const document = await this.findWritableDocument(target.uri)
@@ -537,6 +544,8 @@ export class AiChatService implements vscode.Disposable {
         let pending = ''
         let lastEmitAt = 0
         let usage: ChatUsage | null = null
+        /** 通道回传的请求标识与成本：流末块携带，用量记账与请求 id 展示都依赖它 */
+        let usageMeta: AiUsageMeta | null = null
         let isFirstToken = true
         let isTimedOut = false
         const firstTokenTimer = setTimeout(() => {
@@ -571,6 +580,8 @@ export class AiChatService implements vscode.Disposable {
             } else {
                 messages = await this.buildChatMessages(conversationId, userMessageId, input, contextBlock)
             }
+            // 本轮实际提交的内容含引用原文，先取快照供记账复用，避免流式结束后消息数组被裁剪
+            const promptText = summarizeMessages(messages)
             const stream = this.provider.stream({
                 model: getSelectedCodebuddyModel(),
                 maxTokens: MAX_COMPLETION_TOKENS,
@@ -593,6 +604,9 @@ export class AiChatService implements vscode.Disposable {
                 if (chunk.usage) {
                     usage = chunk.usage
                 }
+                if (chunk.meta) {
+                    usageMeta = chunk.meta
+                }
             }
             clearTimeout(firstTokenTimer)
             flush(true)
@@ -608,14 +622,16 @@ export class AiChatService implements vscode.Disposable {
                 // 生成完整走通即证明当前站点登录可用：即便用户在 CLI 侧登录，也不必再看登录引导
                 rememberCodebuddyLogin(cfg.aiCodebuddySite, null)
             }
-            this.recordUsage(
+            this.usageRecorder.record({
+                module: 'chat',
+                model: getSelectedCodebuddyModel(),
+                usage: usage ?? estimateUsageFromAnswer(answer),
+                meta: usageMeta,
                 conversationId,
-                getSelectedCodebuddyModel(),
+                prompt: promptText,
                 startedAt,
-                usage,
-                answer,
-                controller.signal.aborted,
-            )
+                status: controller.signal.aborted ? 'cancelled' : 'completed',
+            })
             this.streamEmitter.fire({
                 type: 'stream',
                 reqId,
@@ -818,34 +834,15 @@ export class AiChatService implements vscode.Disposable {
     private ensureActiveConversationId(): string {
         return this.activeConversationId ?? this.getOrCreateSession(this.activeProjectDir).conversation.id
     }
+}
 
-    /** 记录用量：服务端未返回时按字符数粗估兜底（日志表不存提示词正文） */
-    private recordUsage(
-        conversationId: string,
-        model: string,
-        startedAt: number,
-        usage: ChatUsage | null,
-        answer: string,
-        isCancelled: boolean,
-    ): void {
-        const completionTokens = usage?.completionTokens ?? Math.ceil(answer.length / CHARS_PER_TOKEN)
-        insertUsageLog(this.db, {
-            id: randomUUID(),
-            conversationId,
-            project: 'ai-chat',
-            model,
-            promptTokens: usage?.promptTokens ?? 0,
-            completionTokens,
-            reasoningTokens: usage?.reasoningTokens ?? 0,
-            totalTokens: usage?.totalTokens ?? completionTokens,
-            estimatedCost: 0,
-            latencyMs: Date.now() - startedAt,
-            createdAt: new Date().toISOString(),
-        })
-        if (isCancelled) {
-            logger.info('AI 生成被取消，已按已产生内容记录用量')
-        }
-    }
+/**
+ * 服务端未回传用量时的降级估算：只按回复字符数折算完成 token。
+ * 关键约束：prompt 侧无可靠依据，记 0 而不是凭历史长度猜一个数，避免把估算当成真实成本。
+ */
+function estimateUsageFromAnswer(answer: string): ChatUsage {
+    const completionTokens = Math.ceil(answer.length / CHARS_PER_TOKEN)
+    return { promptTokens: 0, completionTokens, reasoningTokens: 0, totalTokens: completionTokens }
 }
 
 /** 当日 0 点（本地时区）的 ISO 时间戳 */

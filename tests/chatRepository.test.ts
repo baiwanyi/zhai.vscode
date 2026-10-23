@@ -15,13 +15,21 @@ import {
     getLatestConversation,
     insertConversation,
     insertMessage,
-    insertUsageLog,
     listConversations,
     listMessages,
     sumTokensSince,
 } from '../src/modules/ai/db/chatRepository'
 import { openAiDatabase } from '../src/modules/ai/db/connection'
 import { ensureAiSchema } from '../src/modules/ai/db/schema'
+import {
+    countUsageLogs,
+    getPrompt,
+    insertUsageLog,
+    listUsageLogs,
+    prunePrompts,
+    sumUsageLogs,
+    upsertPrompt,
+} from '../src/modules/ai/db/usageRepository'
 
 let db: Database.Database
 let tempDir: string
@@ -191,30 +199,71 @@ describe('usage logs', () => {
         insertUsageLog(db, {
             id: 'u1',
             conversationId: 'conv-read',
-            project: 'ai-chat',
+            module: 'chat',
             model: 'deepseek-chat',
+            requestId: 'req-u1',
+            sdkMessageId: null,
             promptTokens: 10,
             completionTokens: 20,
             reasoningTokens: 0,
             totalTokens: 30,
-            estimatedCost: 0,
+            credits: 0.02,
+            costUsd: 0.001,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
             latencyMs: 100,
+            status: 'completed',
             createdAt: '2026-09-25T00:00:00.000Z',
         })
         insertUsageLog(db, {
             id: 'u2',
             conversationId: null,
-            project: 'ai-chat',
+            module: 'naming',
             model: 'deepseek-chat',
+            requestId: 'req-u2',
+            sdkMessageId: null,
             promptTokens: 5,
             completionTokens: 5,
             reasoningTokens: 0,
             totalTokens: 10,
-            estimatedCost: 0,
+            credits: null,
+            costUsd: 0,
+            cacheReadTokens: 0,
+            cacheCreationTokens: 0,
             latencyMs: 50,
+            status: 'completed',
             createdAt: '2026-09-26T00:00:00.000Z',
         })
         expect(sumTokensSince(db, '2026-09-25T00:00:00.000Z')).toBe(40)
         expect(sumTokensSince(db, '2026-09-26T00:00:00.000Z')).toBe(10)
+    })
+
+    it('按模块筛选并在库侧分页', () => {
+        const naming = listUsageLogs(db, { module: 'naming', since: null, limit: 10, offset: 0 })
+        expect(naming.map((row) => row.id)).toEqual(['u2'])
+        expect(countUsageLogs(db, { module: null, since: null })).toBe(2)
+        expect(countUsageLogs(db, { module: 'chat', since: null })).toBe(1)
+        const secondPage = listUsageLogs(db, { module: null, since: null, limit: 1, offset: 1 })
+        expect(secondPage.map((row) => row.id)).toEqual(['u1'])
+    })
+
+    it('汇总忽略未知积分而不是按 0 计入', () => {
+        const summary = sumUsageLogs(db, { module: null, since: null })
+        expect(summary.requests).toBe(2)
+        expect(summary.credits).toBeCloseTo(0.02)
+        expect(summary.tokens).toBe(40)
+    })
+
+    it('提示词按请求 id 往返并能按时间清理', () => {
+        upsertPrompt(db, {
+            requestId: 'req-u1',
+            content: '【user】你好',
+            isTruncated: false,
+            createdAt: '2026-09-25T00:00:00.000Z',
+        })
+        expect(getPrompt(db, 'req-u1')?.content).toBe('【user】你好')
+        expect(getPrompt(db, 'req-missing')).toBeUndefined()
+        expect(prunePrompts(db, '2026-09-26T00:00:00.000Z')).toBe(1)
+        expect(getPrompt(db, 'req-u1')).toBeUndefined()
     })
 })

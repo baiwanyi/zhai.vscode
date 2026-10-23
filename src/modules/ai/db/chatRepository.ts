@@ -1,8 +1,9 @@
 /**
- * AI 会话仓储：conversations / messages / ai_usage_logs 三表的参数化读写。
+ * AI 会话仓储：conversations / messages 两表的参数化读写，以及用量表的预算汇总。
  * 安全约束：全部 SQL 使用预编译参数绑定，禁止字符串拼接；批量写入统一走事务。
  * 作用域约定：会话按 project_dir 隔离，取最近会话与历史列表都必须带作用域，避免跨作品串历史；
  * 作用域比较统一用 `IS ?`（NULL 安全），作品对话与非作品通用对话各成一份。
+ * 关键约束：用量写入与分页查询在 usageRepository，本文件只保留预算护栏需要的累计 token 统计。
  */
 import type Database from 'better-sqlite3'
 
@@ -47,21 +48,6 @@ export interface MessagePatch {
     error: string | null
 }
 
-/** ai_usage_logs 表一行 */
-export interface UsageLogRow {
-    id: string
-    conversationId: string | null
-    project: string
-    model: string
-    promptTokens: number
-    completionTokens: number
-    reasoningTokens: number
-    totalTokens: number
-    estimatedCost: number
-    latencyMs: number
-    createdAt: string
-}
-
 const CONVERSATION_COLUMNS = `id, title, mode, file_path AS filePath, project_dir AS projectDir, model, provider,
     sdk_session_id AS sdkSessionId, created_at AS createdAt, updated_at AS updatedAt`
 
@@ -102,11 +88,7 @@ export function getLatestConversation(db: Database.Database, projectDir: string 
 }
 
 /** 按最后活跃时间倒序列出指定作用域的会话（历史对话浮层用，条数由调用方限制） */
-export function listConversations(
-    db: Database.Database,
-    limit: number,
-    projectDir: string | null,
-): ConversationRow[] {
+export function listConversations(db: Database.Database, limit: number, projectDir: string | null): ConversationRow[] {
     return db
         .prepare(
             `SELECT ${CONVERSATION_COLUMNS} FROM conversations
@@ -153,15 +135,6 @@ export function listMessages(db: Database.Database, conversationId: string): Mes
     return db
         .prepare(`SELECT ${MESSAGE_COLUMNS} FROM messages WHERE conversation_id = ? ORDER BY created_at ASC`)
         .all(conversationId) as MessageRow[]
-}
-
-export function insertUsageLog(db: Database.Database, row: UsageLogRow): void {
-    db.prepare(
-        `INSERT INTO ai_usage_logs (id, conversation_id, project, model, prompt_tokens, completion_tokens,
-            reasoning_tokens, total_tokens, estimated_cost, latency_ms, created_at)
-         VALUES (@id, @conversationId, @project, @model, @promptTokens, @completionTokens,
-            @reasoningTokens, @totalTokens, @estimatedCost, @latencyMs, @createdAt)`,
-    ).run(row)
 }
 
 /** 统计某个时间点之后的累计 token 用量（预算护栏，A17） */

@@ -25,11 +25,31 @@ export interface AiUsage {
     totalTokens: number
 }
 
-/** 流式增量：正文与思维链分通道，用量仅在流末块携带 */
+/**
+ * 请求标识与计费元数据：由通道从 SDK 的 result 消息解析，仅在流末块携带。
+ * 关键约束：SDK 的 requestId / messageId 属实验性字段，缺失时为 null；costUsd 为 0 是有效值（订阅账号），
+ * 不得当作「未知」，未知一律走 credits 为 null 的表达。
+ */
+export interface AiUsageMeta {
+    /** 通道侧逻辑轮次标识 */
+    requestId: string | null
+    /** 通道侧单次生成标识 */
+    messageId: string | null
+    /** 服务端计价（美元） */
+    costUsd: number
+    /** 总耗时与模型侧耗时（毫秒） */
+    durationMs: number
+    durationApiMs: number
+    cacheReadTokens: number
+    cacheCreationTokens: number
+}
+
+/** 流式增量：正文与思维链分通道，用量与元数据仅在流末块携带 */
 export interface AiStreamChunk {
     content: string
     reasoning: string
     usage?: AiUsage
+    meta?: AiUsageMeta
 }
 
 /** 流式生成请求：长度上限按通道能力可被忽略，但调用方始终传入 */

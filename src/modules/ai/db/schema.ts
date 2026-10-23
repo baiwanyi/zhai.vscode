@@ -1,6 +1,7 @@
 /**
- * AI 库 DDL：conversations（会话）/ messages（消息）/ ai_usage_logs（用量）三表与索引。
- * 设计源：docs/modules/ai-chat.md 第 6 节；日志表只存模型与用量，不存提示词正文。
+ * AI 库 DDL：conversations（会话）/ messages（消息）/ ai_usage_logs（用量）/ ai_prompts（提示词）四表与索引。
+ * 设计源：docs/modules/ai-chat.md 第 6 节；用量表存模型、模块、成本与请求标识，提示词另表按请求 id 存放，
+ * 便于列表查询不触碰正文，也便于按保留期整表清理。
  * 复用约定：activate 期调用一次，建表与补列都走 IF NOT EXISTS / PRAGMA 判断，可重复执行。
  * 关键约束：会话记录所属 AI 通道与通道侧会话号，通道切换后不得复用旧会话号；
  * 会话按作用域（作品目录）隔离，project_dir 为 NULL 表示不属于任何作品的通用对话；
@@ -8,7 +9,7 @@
  */
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = '3'
+const SCHEMA_VERSION = '4'
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS conversations (
@@ -52,6 +53,13 @@ const DDL_STATEMENTS = [
         created_at        TEXT NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS idx_usage_date ON ai_usage_logs(created_at)`,
+    `CREATE TABLE IF NOT EXISTS ai_prompts (
+        request_id    TEXT PRIMARY KEY,
+        content       TEXT NOT NULL,
+        is_truncated  INTEGER NOT NULL DEFAULT 0,
+        created_at    TEXT NOT NULL
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_prompt_date ON ai_prompts(created_at)`,
     `CREATE TABLE IF NOT EXISTS meta (
         key   TEXT PRIMARY KEY,
         value TEXT NOT NULL
@@ -80,6 +88,17 @@ export function ensureAiSchema(db: Database.Database): boolean {
         // 依赖该列的索引必须放在补列之后，否则旧库建索引会因缺列失败
         ensureColumn(db, 'conversations', 'project_dir', 'project_dir TEXT')
         db.exec('CREATE INDEX IF NOT EXISTS idx_conv_project ON conversations(project_dir, updated_at DESC)')
+        // v4：用量表补模块、请求标识与成本口径；历史行按 'chat' 归一，不回填其余字段
+        ensureColumn(db, 'ai_usage_logs', 'module', "module TEXT NOT NULL DEFAULT 'chat'")
+        ensureColumn(db, 'ai_usage_logs', 'request_id', 'request_id TEXT')
+        ensureColumn(db, 'ai_usage_logs', 'sdk_message_id', 'sdk_message_id TEXT')
+        ensureColumn(db, 'ai_usage_logs', 'cost_usd', 'cost_usd REAL NOT NULL DEFAULT 0')
+        ensureColumn(db, 'ai_usage_logs', 'credits', 'credits REAL')
+        ensureColumn(db, 'ai_usage_logs', 'cache_read_tokens', 'cache_read_tokens INTEGER NOT NULL DEFAULT 0')
+        ensureColumn(db, 'ai_usage_logs', 'cache_creation_tokens', 'cache_creation_tokens INTEGER NOT NULL DEFAULT 0')
+        ensureColumn(db, 'ai_usage_logs', 'status', "status TEXT NOT NULL DEFAULT 'completed'")
+        // 依赖新列的索引必须放在补列之后，否则旧库建索引会因缺列失败
+        db.exec('CREATE INDEX IF NOT EXISTS idx_usage_module_date ON ai_usage_logs(module, created_at DESC)')
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)

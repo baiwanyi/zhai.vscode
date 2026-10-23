@@ -15,6 +15,8 @@ import { AiChatService } from '../src/modules/ai/chatService'
 import { listMessages } from '../src/modules/ai/db/chatRepository'
 import { openAiDatabase } from '../src/modules/ai/db/connection'
 import { ensureAiSchema } from '../src/modules/ai/db/schema'
+import { getPrompt, listUsageLogs } from '../src/modules/ai/db/usageRepository'
+import { UsageRecorder } from '../src/modules/ai/usageRecorder'
 
 const FILE_PATH = 'd:/notes/ch01.md'
 
@@ -90,7 +92,7 @@ beforeAll(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zhai-chat-service-'))
     db = openAiDatabase(createUri(tempDir))
     ensureAiSchema(db)
-    service = new AiChatService(db, fakeProvider)
+    service = new AiChatService(db, fakeProvider, new UsageRecorder(db))
     conversationId = service.getOrCreateSession().conversation.id
 })
 
@@ -104,6 +106,9 @@ beforeEach(() => {
     resetWorkspaceState()
     captured.requests.length = 0
     service.clearContexts()
+    // 用量与提示词按用例清空，避免前一条用例的记账干扰条数断言
+    db.prepare('DELETE FROM ai_usage_logs').run()
+    db.prepare('DELETE FROM ai_prompts').run()
 })
 
 describe('发送阶段的上下文注入', () => {
@@ -141,6 +146,16 @@ describe('发送阶段的上下文注入', () => {
         const rows = listMessages(db, conversationId)
         const userRow = rows.filter((row) => row.role === 'user').at(-1)
         expect(userRow?.refs).toContain('ch01.md:2-3')
+    })
+
+    it('发送后写入一条对话用量与对应提示词', async () => {
+        await sendAndWait('记账检查')
+
+        const rows = listUsageLogs(db, { module: 'chat', since: null, limit: 10, offset: 0 })
+        expect(rows).toHaveLength(1)
+        expect(rows[0]?.status).toBe('completed')
+        const logId = rows[0]?.id ?? ''
+        expect(getPrompt(db, logId)?.content).toContain('记账检查')
     })
 
     it('预算不足时保留引用、裁剪历史', async () => {

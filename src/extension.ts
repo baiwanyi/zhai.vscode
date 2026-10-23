@@ -11,6 +11,8 @@ import { ensureAiSchema } from './modules/ai/db/schema'
 import { createAiProvider } from './modules/ai/providerRegistry'
 import { initCodebuddyLogin } from './modules/ai/providers/codebuddyLogin'
 import { hydrateSelectedModel, listCodebuddyModels } from './modules/ai/providers/codebuddyModels'
+import { UsageRecorder } from './modules/ai/usageRecorder'
+import { AiUsageService } from './modules/ai/usageService'
 import { WorkflowRouter } from './modules/ai/workflowRouter'
 import { registerCommands } from './modules/common/commands'
 import { getZhaiConfig, resolveCacheRoot } from './modules/common/config'
@@ -81,6 +83,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const aiDb = openAiDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => aiDb.close() })
     ensureAiSchema(aiDb)
+    // 用量记账与查询共用 ai.db：记账注入各 AI 入口（对话、取名、外貌、语义、画面），查询供「AI 使用量」页
+    const usageRecorder = new UsageRecorder(aiDb)
+    const usageService = new AiUsageService(aiDb)
 
     // AI 通道全扩展共用一份：唯一实现为 CodeBuddy
     const aiProvider = await createAiProvider(secrets)
@@ -88,7 +93,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     hydrateSelectedModel(context.globalState)
     // 站点登录态同样存 globalState：面板据此决定展示登录引导还是正常空态
     initCodebuddyLogin(context.globalState)
-    const aiChatService = new AiChatService(aiDb, aiProvider)
+    const aiChatService = new AiChatService(aiDb, aiProvider, usageRecorder)
     context.subscriptions.push(aiChatService)
 
     registerAiCommands(context, aiChatService, workflowRouter, toastService)
@@ -97,25 +102,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const namingDb = openNamingDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => namingDb.close() })
     ensureNamingSchema(namingDb)
-    const namingService = new NamingService(namingDb, aiProvider)
+    const namingService = new NamingService(namingDb, aiProvider, usageRecorder)
     const namingRoutes = new NamingRoutes(namingService)
 
     // 写作管理：press.db 只承载 AI 配额等轻量状态，作品文档与人物卡仍以 Markdown 为准
     const pressDb = openPressDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => pressDb.close() })
-    const pressAiService = new PressAiService(pressDb, aiProvider)
+    const pressAiService = new PressAiService(pressDb, aiProvider, usageRecorder)
     const imageRouter = new ImageProviderRouter(secrets)
-    const portraitService = new PortraitService(pressDb, aiProvider, imageRouter)
+    const portraitService = new PortraitService(pressDb, aiProvider, imageRouter, usageRecorder)
     // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown；打开作品时同步路由事实
     // 语义归纳依赖 AI 通道，晚于仪表盘创建，故回填给已注册的仪表盘实例；
     // 工作台的人物卡提取复用同一实例，单任务锁与配额口径因此保持一致
-    const semanticService = new ImportSemanticService(pressDb, aiProvider)
+    const semanticService = new ImportSemanticService(pressDb, aiProvider, usageRecorder)
     const pressRoutes = new PressRoutes(pressAiService, portraitService, db, workflowRouter, semanticService)
     dashboardProvider.attachSemanticService(semanticService)
 
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,
         aiChatService,
+        usageService,
         workflowRouter,
         namingRoutes,
         pressRoutes,

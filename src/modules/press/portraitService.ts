@@ -16,7 +16,7 @@ import { promisify } from 'node:util'
 import * as vscode from 'vscode'
 import { buildPortraitPrompt } from './ai/portraitPrompt'
 import { generateSceneWithAi } from './ai/portraitSceneGenerator'
-import { sanitizeScene } from './ai/portraitScenePrompt'
+import { buildSceneMessages, sanitizeScene } from './ai/portraitScenePrompt'
 import { formatVariation, pickVariation } from './ai/portraitVariation'
 import { consumeToday, readUsedToday } from './db/quotaRepository'
 import { readText, readTextList } from './pressAiService'
@@ -37,6 +37,7 @@ import type {
     PortraitStyle,
 } from '../../shared/types/press'
 import type { AiProvider } from '../ai/provider'
+import type { UsageRecorder } from '../ai/usageRecorder'
 import type Database from 'better-sqlite3'
 import {
     DEFAULT_PORTRAIT_STYLE,
@@ -46,6 +47,7 @@ import {
     parsePortraitCharacterId,
 } from '../../shared/types/press'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
+import { summarizeMessages } from '../ai/usageRecorder'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
 import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
@@ -98,6 +100,7 @@ export class PortraitService {
         private readonly db: Database.Database,
         private readonly provider: AiProvider,
         private readonly router: ImageProviderRouter,
+        private readonly usageRecorder: UsageRecorder,
     ) {}
 
     /**
@@ -392,18 +395,26 @@ export class PortraitService {
                 return { text: fallback, fromAi: false }
             }
             const startedAt = Date.now()
-            const content = await generateSceneWithAi({
+            const result = await generateSceneWithAi({
                 provider: this.provider,
                 model: getSelectedCodebuddyModel(),
                 request,
                 variation,
                 signal,
             })
-            const scene = sanitizeScene(content)
+            const scene = sanitizeScene(result.content)
             if (scene.length === 0) {
                 logger.info(`角色卡画面描述为空，回退模板变化：${fallback}`)
                 return { text: fallback, fromAi: false }
             }
+            this.usageRecorder.record({
+                module: 'scene',
+                model: getSelectedCodebuddyModel(),
+                usage: result.usage,
+                meta: result.meta,
+                prompt: summarizeMessages(buildSceneMessages(request, variation)),
+                startedAt,
+            })
             logger.info(`角色卡画面描述（${Date.now() - startedAt}ms）：${scene}`)
             return { text: scene, fromAi: true }
         } catch (error) {

@@ -17,8 +17,6 @@ import {
     isLikelyPersonName,
     migrateLegacyMaterialDirectory,
 } from './importAnalysis'
-import type { AiChatMessage, AiProvider, AiUsage } from '../ai/provider'
-import type { QuotaKeys } from './db/quotaRepository'
 import type {
     PressExtractedChapter,
     PressExtractedCharacter,
@@ -28,9 +26,13 @@ import type {
     PressSemanticProgress,
     PressSemanticStage,
 } from '../../shared/types/press'
+import type { AiChatMessage, AiProvider, AiUsage, AiUsageMeta } from '../ai/provider'
+import type { UsageRecorder } from '../ai/usageRecorder'
+import type { QuotaKeys } from './db/quotaRepository'
 import type Database from 'better-sqlite3'
 import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR } from '../../shared/types/press'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
+import { summarizeMessages } from '../ai/usageRecorder'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
 import { buildStorageUri } from '../common/storagePath'
@@ -874,6 +876,7 @@ export class ImportSemanticService {
     public constructor(
         private readonly db: Database.Database,
         private readonly provider: AiProvider,
+        private readonly usageRecorder: UsageRecorder,
     ) {}
 
     /**
@@ -1091,21 +1094,20 @@ export class ImportSemanticService {
             ),
         )
         const volumeMeta = new Map(
-            splitLevelSections(
-                await readMaterialText(dirPath, `${PRESS_IMPORT_DIR}/${VOLUMES_FILE}`),
-                3,
-            ).map((section) => {
-                const values = readDashedValues(section.content)
-                return [
-                    section.title,
-                    {
-                        goal: values.get('卷目标') ?? '',
-                        conflict: values.get('卷冲突') ?? '',
-                        plotline: values.get('情节脉络') ?? '',
-                        turningPoints: splitLabels(values.get('关键转折') ?? '', SUMMARY_BEAT_LIMIT),
-                    },
-                ] as const
-            }),
+            splitLevelSections(await readMaterialText(dirPath, `${PRESS_IMPORT_DIR}/${VOLUMES_FILE}`), 3).map(
+                (section) => {
+                    const values = readDashedValues(section.content)
+                    return [
+                        section.title,
+                        {
+                            goal: values.get('卷目标') ?? '',
+                            conflict: values.get('卷冲突') ?? '',
+                            plotline: values.get('情节脉络') ?? '',
+                            turningPoints: splitLabels(values.get('关键转折') ?? '', SUMMARY_BEAT_LIMIT),
+                        },
+                    ] as const
+                },
+            ),
         )
         const groups = new Map<string, PressExtractedChapter[]>()
         for (const row of indexRows) {
@@ -1635,6 +1637,7 @@ export class ImportSemanticService {
         signal.addEventListener('abort', forwardAbort)
         let content = ''
         let usage: AiUsage | null = null
+        let usageMeta: AiUsageMeta | null = null
         try {
             const stream = this.provider.stream({
                 model: getSelectedCodebuddyModel(),
@@ -1647,10 +1650,21 @@ export class ImportSemanticService {
                 if (chunk.usage) {
                     usage = chunk.usage
                 }
+                if (chunk.meta) {
+                    usageMeta = chunk.meta
+                }
             }
             if (usage !== null) {
                 logger.info(`归纳批次用量：${String(usage.totalTokens)} tokens`)
             }
+            // 每批一次记账：批量任务的成本按批可见，便于判断是摘要还是角色卡在吃积分
+            this.usageRecorder.record({
+                module: 'semantic',
+                model: getSelectedCodebuddyModel(),
+                usage,
+                meta: usageMeta,
+                prompt: summarizeMessages(messages),
+            })
             return content
         } finally {
             clearTimeout(timer)

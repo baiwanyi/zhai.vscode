@@ -129,13 +129,13 @@ export const CHARACTER_BODY_TYPE_ORDER: readonly CharacterBodyType[] = [
  */
 export const PORTRAIT_STYLE_OPTIONS: readonly OptionMeta<PortraitStyle>[] = [
     { value: 'auto', label: '智能匹配' },
-    { value: 'anime', label: '日漫' },
-    { value: 'guofeng', label: '古风' },
-    { value: 'realistic', label: '写实' },
-    { value: 'cinematic', label: '电影' },
-    { value: 'photo', label: '摄影' },
-    { value: 'pixel', label: '像素风' },
-    { value: 'gameart', label: '游戏原画' },
+    { value: 'anime', label: '日系动漫' },
+    { value: 'guofeng', label: '东方古风' },
+    { value: 'realistic', label: '纪实写实' },
+    { value: 'cinematic', label: '电影剧照' },
+    { value: 'photo', label: '唯美写真' },
+    { value: 'pixel', label: '像素复古' },
+    { value: 'gameart', label: '游戏立绘' },
 ]
 
 /** 题材预设：点击加入、再点移除，也可输入自定义题材 */

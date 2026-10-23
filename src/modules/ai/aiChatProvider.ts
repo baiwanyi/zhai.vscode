@@ -13,14 +13,17 @@
 import * as vscode from 'vscode'
 import { getSelectedCodebuddyModel, listCodebuddyModels, setSelectedCodebuddyModel } from './providers/codebuddyModels'
 import type { AiChatService } from './chatService'
+import type { AiUsageService } from './usageService'
 import type { WorkflowRouter } from './workflowRouter'
 import type { AiConversationMode, AiModelChoices } from '../../shared/types/aiChat'
+import type { AiUsageQuery } from '../../shared/types/aiUsage'
 import type { HostToWebviewMessage, StreamMessage, ToastPayload } from '../../shared/types/messages'
 import type { OpenWorkflowResult, ResetWorkflowResult } from '../../shared/types/workflow'
 import type { SecretsService } from '../common/secrets'
 import type { ToastService } from '../common/toastService'
 import type { NamingRoutes } from '../naming/namingRoutes'
 import type { PressRoutes } from '../press/pressRoutes'
+import { isAiUsageModule, isAiUsageRange } from '../../shared/types/aiUsage'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { resolveStorageRoot } from '../common/config'
@@ -65,6 +68,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     public constructor(
         private readonly extensionUri: vscode.Uri,
         private readonly service: AiChatService,
+        private readonly usageService: AiUsageService,
         private readonly workflowRouter: WorkflowRouter,
         private readonly naming: NamingRoutes,
         private readonly press: PressRoutes,
@@ -156,6 +160,12 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             }
             case 'ai/runtime': {
                 return this.service.getRuntimeInfo()
+            }
+            case 'ai/usage': {
+                return this.usageService.list(readUsageQueryPayload(payload))
+            }
+            case 'ai/usage/prompt': {
+                return this.usageService.readPrompt(readUsagePromptPayload(payload))
             }
             case 'ai/models': {
                 return this.listModels()
@@ -457,6 +467,53 @@ function readModePayload(payload: unknown): AiConversationMode {
         throw new Error('ai/setMode 参数类型不正确')
     }
     return mode
+}
+
+/**
+ * 校验 ai/usage 入参：模块与时间范围走白名单，页码与页大小只接受有限正整数。
+ * 关键约束：缺省即「不筛模块 + 近 7 天 + 第一页」；时间范围以枚举下发，由宿主换算成起止时间，
+ * 不接受任意时间字符串，避免时区与构造注入问题。
+ */
+function readUsageQueryPayload(payload: unknown): AiUsageQuery {
+    const fallback: AiUsageQuery = { module: null, range: '7d', page: 1, pageSize: 20 }
+    if (payload === undefined || payload === null) {
+        return fallback
+    }
+    if (typeof payload !== 'object') {
+        throw new Error('ai/usage 参数类型不正确')
+    }
+    const value = payload as { module?: unknown; range?: unknown; page?: unknown; pageSize?: unknown }
+    const rawModule = value.module
+    if (rawModule !== undefined && rawModule !== null && !isAiUsageModule(rawModule)) {
+        throw new Error('ai/usage 模块参数不合法')
+    }
+    const rawRange = value.range
+    if (rawRange !== undefined && !isAiUsageRange(rawRange)) {
+        throw new Error('ai/usage 时间范围不合法')
+    }
+    return {
+        module: rawModule === undefined || rawModule === null ? null : rawModule,
+        range: rawRange === undefined ? fallback.range : rawRange,
+        page: readPositiveInt(value.page, fallback.page),
+        pageSize: readPositiveInt(value.pageSize, fallback.pageSize),
+    }
+}
+
+/** 校验 ai/usage/prompt 入参：只接受非空请求 id，长度与字符集由用量服务再校验一次 */
+function readUsagePromptPayload(payload: unknown): string {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/usage/prompt 缺少参数')
+    }
+    const requestId = (payload as { requestId?: unknown }).requestId
+    if (typeof requestId !== 'string' || requestId.length === 0) {
+        throw new Error('ai/usage/prompt 参数类型不正确')
+    }
+    return requestId
+}
+
+/** 读取有限正整数：非法值回落默认值，避免 NaN 进入偏移量计算 */
+function readPositiveInt(value: unknown, fallback: number): number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 1 ? Math.trunc(value) : fallback
 }
 
 /** 校验 ai/applyWrite 入参：只接受宿主生成的助手消息 id，不接受路径与范围（防越权写入任意位置） */

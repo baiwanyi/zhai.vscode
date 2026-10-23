@@ -7,7 +7,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import { generateNamesWithAi } from './ai/aiNameGenerator'
-import { parseNamingResponse } from './ai/namingPrompt'
+import { buildNamingMessages, parseNamingResponse } from './ai/namingPrompt'
 import {
     ERA_OPTIONS,
     GENDER_OPTIONS,
@@ -45,8 +45,10 @@ import type {
     NamingRequest,
 } from '../../shared/types/naming'
 import type { AiProvider } from '../ai/provider'
+import type { UsageRecorder } from '../ai/usageRecorder'
 import type Database from 'better-sqlite3'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
+import { summarizeMessages } from '../ai/usageRecorder'
 import { getZhaiConfig } from '../common/config'
 
 /** 历史保留批次上限 */
@@ -69,6 +71,7 @@ export class NamingService {
     public constructor(
         private readonly db: Database.Database,
         private readonly provider: AiProvider,
+        private readonly usageRecorder: UsageRecorder,
     ) {}
 
     /** 选项摘要：分类、枚举、后缀候选、姓氏抽样与 AI 可用性 */
@@ -104,7 +107,10 @@ export class NamingService {
         const request = normalizeNamingRequest(payload)
         const exclude = this.readRecentNames(request.category)
         const items = generateNames({ request, exclude })
-        this.record({ ...request, source: 'local' }, items.map((item) => item.name))
+        this.record(
+            { ...request, source: 'local' },
+            items.map((item) => item.name),
+        )
         return { items, source: 'local' }
     }
 
@@ -135,8 +141,18 @@ export class NamingService {
             if (items.length === 0) {
                 throw new Error('AI 未返回合规的名字，请调整条件后重试或改用本地生成')
             }
-            this.record({ ...request, source: 'ai' }, items.map((item) => item.name))
+            this.record(
+                { ...request, source: 'ai' },
+                items.map((item) => item.name),
+            )
             this.consumeAiQuota()
+            // 用量记账：提示词与生成器实际提交的内容同源，回看时无需再次拼装
+            this.usageRecorder.record({
+                module: 'naming',
+                model: getSelectedCodebuddyModel(),
+                usage: result.usage,
+                prompt: summarizeMessages(buildNamingMessages(request)),
+            })
             return { items, source: 'ai' }
         } catch (error) {
             if (controller.signal.aborted) {
@@ -169,7 +185,11 @@ export class NamingService {
     }
 
     /** 切换收藏状态 */
-    public toggleFavorite(name: string, category: NamingCategory, createdAt: string = new Date().toISOString()): { favorited: boolean } {
+    public toggleFavorite(
+        name: string,
+        category: NamingCategory,
+        createdAt: string = new Date().toISOString(),
+    ): { favorited: boolean } {
         if (isFavorite(this.db, name, category)) {
             deleteFavorite(this.db, name, category)
             return { favorited: false }

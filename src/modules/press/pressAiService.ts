@@ -6,13 +6,15 @@
  * 同一时刻只允许一个生成请求，取消由 pressAi/aiAppearance/abort 触发；限额小于等于 0 视为不限制。
  */
 import { generateAppearanceWithAi } from './ai/aiAppearanceGenerator'
-import { sanitizeAppearance } from './ai/appearancePrompt'
+import { buildAppearanceMessages, sanitizeAppearance } from './ai/appearancePrompt'
 import { consumeToday, readUsedToday } from './db/quotaRepository'
 import type { QuotaKeys } from './db/quotaRepository'
 import type { CharacterAppearanceRequest, CharacterAppearanceResult } from '../../shared/types/press'
 import type { AiProvider } from '../ai/provider'
+import type { UsageRecorder } from '../ai/usageRecorder'
 import type Database from 'better-sqlite3'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
+import { summarizeMessages } from '../ai/usageRecorder'
 import { getZhaiConfig } from '../common/config'
 
 /** 外貌生成的配额键（press.db 的 meta 表） */
@@ -35,6 +37,7 @@ export class PressAiService {
     public constructor(
         private readonly db: Database.Database,
         private readonly provider: AiProvider,
+        private readonly usageRecorder: UsageRecorder,
     ) {}
 
     /**
@@ -65,6 +68,12 @@ export class PressAiService {
                 throw new Error('AI 未返回可用的外貌描写，请重试或手动填写')
             }
             consumeToday(this.db, QUOTA_KEYS)
+            this.usageRecorder.record({
+                module: 'appearance',
+                model: getSelectedCodebuddyModel(),
+                usage: result.usage,
+                prompt: summarizeMessages(buildAppearanceMessages(request)),
+            })
             return { content }
         } catch (error) {
             if (controller.signal.aborted) {

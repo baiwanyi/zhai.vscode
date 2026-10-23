@@ -17,6 +17,7 @@ import type {
     AiProviderStatus,
     AiStreamChunk,
     AiStreamRequest,
+    AiUsageMeta,
 } from '../provider'
 import { getZhaiConfig } from '../../common/config'
 
@@ -116,8 +117,11 @@ export class CodeBuddyProvider implements AiProvider {
         })
         let hasStreamed = false
         let usage: AiStreamChunk['usage']
+        /** 逻辑轮次标识：SDK 在每条消息上回传，任一条拿到即可，供用量日志与 CLI 侧对账 */
+        let requestId: string | null = null
         try {
             for await (const message of session) {
+                requestId = message._requestId ?? requestId
                 if (message.type === 'system') {
                     // init 消息携带会话号：首轮回写，后续轮次据此 resume
                     if (message.subtype === 'init' && request.onSessionId) {
@@ -162,7 +166,16 @@ export class CodeBuddyProvider implements AiProvider {
                         reasoningTokens: 0,
                         totalTokens: message.usage.input_tokens + message.usage.output_tokens,
                     }
-                    yield { content: '', reasoning: '', usage }
+                    const meta: AiUsageMeta = {
+                        requestId,
+                        messageId: message._messageId ?? message.uuid,
+                        costUsd: message.total_cost_usd,
+                        durationMs: message.duration_ms,
+                        durationApiMs: message.duration_api_ms,
+                        cacheReadTokens: message.usage.cache_read_input_tokens ?? 0,
+                        cacheCreationTokens: message.usage.cache_creation_input_tokens ?? 0,
+                    }
+                    yield { content: '', reasoning: '', usage, meta }
                 }
             }
         } catch (error) {

@@ -2,7 +2,8 @@
  * 写作管理工作流页：写作管理模块的专属落点，模块切换时由注册表直接渲染本文件。
  * 复用约定：作品数据来自宿主读取的 设定.md / 角色设定.md / 大纲.md，经 press/document 解析成 OutlineWorkspace；
  * 分区内容按 activeSection 切换——设定、人物、大纲分别渲染 ../press 的三个页面，AI 对话渲染 ../aichat 的 AiChat
- * 并下传当前作品目录作为会话作用域（每个作品各有一份对话记录），取名渲染 ../naming 的 NamingPage；
+ * 并下传当前作品目录作为会话作用域（每个作品各有一份对话记录），取名渲染 ../naming 的 NamingPage，
+ * AI 使用量渲染 ../usage 的 AiUsagePage（全局统计，不按作品隔离）；
  * 右侧分区入口由同目录 WorkflowPressNav 承载，分区之间共享同一份草稿。
  * 关键约束：本页不自行发起路由请求，作品定位只认宿主下发的 projectDir；未打开作品时渲染初始页（作品清单入口），
  * 不在页面内伪造示例数据；编辑即时落盘——字段输入在防抖窗口后写盘，新增、删除、弹窗保存等结构性操作立即写，
@@ -53,6 +54,7 @@ import {
     createVolume,
     mergeCharacterDrafts,
 } from '../press/utils'
+import { AiUsagePage } from '../usage'
 
 /** 默认分区：页面主体即 AI 对话，默认高亮与当前可见内容一致 */
 const DEFAULT_SECTION: WorkflowPressSection = 'chat'
@@ -331,10 +333,7 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
      * 没有任何实际变化时不写盘，避免一次「提取」把没动过的角色设定重写一遍。
      */
     const handleExtractCharacters = useCallback(
-        (
-            existing: CharacterCard[],
-            drafts: PressExtractedCharacter[],
-        ): { created: number; updated: number } => {
+        (existing: CharacterCard[], drafts: PressExtractedCharacter[]): { created: number; updated: number } => {
             const planned = mergeCharacterDrafts(existing, drafts)
             if (planned.created === 0 && planned.updated === 0) {
                 return { created: 0, updated: 0 }
@@ -532,6 +531,10 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
         }
         if (activeSection === 'naming') {
             return <NamingPage />
+        }
+        // 用量是全局统计，不随作品目录隔离：跨作品的消耗在同一张表里汇总
+        if (activeSection === 'usage') {
+            return <AiUsagePage />
         }
         // 对话按作品隔离：当前作品目录即会话作用域，切作品即换用该作品自己的对话记录；
         // key 跟随作品目录，切作品时重建对话页，命令选择与未发送正文不会带进新作品

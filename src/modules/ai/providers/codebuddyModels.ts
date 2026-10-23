@@ -60,6 +60,16 @@ export function getCachedCodebuddyModels(): readonly CodebuddyModelOption[] {
     return cached
 }
 
+/**
+ * 按模型 id 取额度倍率：用于用量记账估算积分。
+ * 关键约束：清单未命中（未登录、Auto 空 id、自定义模型未上报倍率）一律返回 null 表示未知，
+ * 不得回退为 0，否则会把未知成本显示成零消耗。
+ */
+export function readCreditRate(modelId: string): number | null {
+    const matched = cached.find((item) => item.modelId === modelId.trim())
+    return matched?.creditRate ?? null
+}
+
 /** 拉取账号可用模型；force 为 true 时忽略内存缓存 */
 export function listCodebuddyModels(secrets: SecretsService, force = false): Promise<CodebuddyModelOption[]> {
     if (!force && cached.length > 0) {
