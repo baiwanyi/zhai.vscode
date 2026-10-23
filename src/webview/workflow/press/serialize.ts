@@ -56,7 +56,7 @@ export function serializeReadmeMeta(setting: ProjectSetting): PressApplyMeta {
 
 /**
  * 单个角色块：一级标题起条，键名与 parseCharacters 一一对应。
- * 关键约束：封面与画风必须随块落盘——图片本体在 _portraits 下，文档只记引用；
+ * 关键约束：封面与画风必须随块落盘——图片本体在 Portraits 下，文档只记引用；
  * 不写这两行，重新打开作品后封面选择会丢失，列表与角色卡页都回到「未生成」状态。
  */
 function buildCharacterBlock(character: CharacterCard): string {

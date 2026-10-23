@@ -23,9 +23,8 @@ export function AiChatEnhanceButton({
 }: AiChatEnhanceButtonProps): JSX.Element {
     return (
         <Button
-            size="icon-sm"
             variant="ghost"
-            className="rounded-lg bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground disabled:opacity-100"
+            className="size-7 p-0 rounded-lg bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground disabled:opacity-100"
             title={isEnhanced ? '还原提示词' : '增强提示词'}
             aria-label={isEnhanced ? '还原提示词' : '增强提示词'}
             disabled={disabled}

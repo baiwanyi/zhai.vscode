@@ -38,9 +38,8 @@ export function NotesHeaderActions({
     if (isSelecting) {
         return (
             <Button
-                size="icon-sm"
                 variant="secondary"
-                className="rounded-full"
+                className="size-7 p-0 rounded-full"
                 title="退出多选"
                 aria-label="退出多选"
                 onClick={onToggleSelecting}
@@ -55,9 +54,8 @@ export function NotesHeaderActions({
     return (
         <div className="flex items-center gap-1">
             <Button
-                size="icon-sm"
                 variant="ghost"
-                className="rounded-full"
+                className="size-7 p-0 rounded-full"
                 title="多选"
                 aria-label="多选"
                 onClick={onToggleSelecting}
@@ -67,9 +65,8 @@ export function NotesHeaderActions({
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                     <Button
-                        size="icon-sm"
                         variant={isFiltered ? 'secondary' : 'ghost'}
-                        className="rounded-full"
+                        className="size-7 p-0 rounded-full"
                         title="筛选笔记"
                         aria-label="筛选笔记"
                     >

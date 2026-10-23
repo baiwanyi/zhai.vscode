@@ -81,9 +81,8 @@ export function AiChatComposerActions({
                 />
                 {isGenerating ? (
                     <Button
-                        size="icon-sm"
                         variant="ghost"
-                        className="rounded-lg text-muted-foreground"
+                        className="size-7 p-0 rounded-lg text-muted-foreground"
                         title="停止生成"
                         aria-label="停止生成"
                         onClick={onStop}
@@ -92,10 +91,9 @@ export function AiChatComposerActions({
                     </Button>
                 ) : (
                     <Button
-                        size="icon-sm"
                         variant="ghost"
                         className={cn(
-                            'rounded-lg',
+                            'size-7 p-0 rounded-lg',
                             canSend
                                 ? 'bg-primary text-primary-foreground hover:bg-primary/90'
                                 : 'bg-white/5 text-muted-foreground disabled:opacity-100',

@@ -42,7 +42,6 @@ export function PressWorkspaceStart({ projects, onOpenProject }: PressWorkspaceS
                                 <Button
                                     key={project.dirPath}
                                     variant="outline"
-                                    size="sm"
                                     className="justify-start"
                                     onClick={() => {
                                         onOpenProject(project.dirPath)

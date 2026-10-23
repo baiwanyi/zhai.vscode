@@ -79,8 +79,21 @@ export function isSettingFieldMissing(setting: ProjectSetting, key: keyof Projec
     return !isFilled(setting[key])
 }
 
-/** 生成节点 id：卷、章、节拍、人物共用，前缀用于排查来源 */
+/**
+ * 生成人物标识：8 位随机数字，与宿主的人物标识规范一致，也直接作为设定图文件名里的角色段。
+ * 用 crypto 采样而非 Math.random，避免同一次解析里连续生成时出现可预期的重复。
+ */
+function createCharacterId(): string {
+    const buffer = new Uint32Array(1)
+    crypto.getRandomValues(buffer)
+    return String(10_000_000 + ((buffer[0] ?? 0) % 90_000_000))
+}
+
+/** 生成节点 id：卷、章、节拍、人物共用；人物用 8 位数字，其余带前缀便于排查来源 */
 export function createId(prefix: 'vol' | 'ch' | 'beat' | 'char'): string {
+    if (prefix === 'char') {
+        return createCharacterId()
+    }
     return `${prefix}-${crypto.randomUUID()}`
 }
 

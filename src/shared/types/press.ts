@@ -382,21 +382,42 @@ export const PORTRAIT_STYLES: readonly PortraitStyle[] = [
 /** 默认风格：智能匹配，由宿主按题材与世界观选择具体画风 */
 export const DEFAULT_PORTRAIT_STYLE: PortraitStyle = 'auto'
 
-/** 人物标识白名单：角色卡目录名只允许字母、数字、下划线与短横线，长度 4-64，避免路径穿越 */
-const PRESS_CHARACTER_ID_PATTERN = /^[A-Za-z0-9_-]{4,64}$/
+/** 人物标识白名单：8 位随机数字，同时作为设定图文件名里的角色段，天然不含路径分隔符 */
+const PRESS_CHARACTER_ID_PATTERN = /^\d{8}$/
 
 /**
- * 判断人物标识能否用于角色卡目录：宿主校验与 Webview 文档解析共用同一口径，
- * 解析作品文档时必须先过这一关，否则含中文等字符的标识会在生成设定图时被宿主拒绝。
+ * 判断人物标识能否用于角色卡目录与文件名：宿主校验与 Webview 文档解析共用同一口径，
+ * 解析作品文档时必须先过这一关，否则非法标识会在生成设定图时被宿主拒绝。
  */
 export function isPressCharacterId(value: unknown): value is string {
     return typeof value === 'string' && PRESS_CHARACTER_ID_PATTERN.test(value)
 }
 
+/**
+ * 纯布尔判断：给已经确定是字符串的场景使用。
+ * 类型谓词在「已收窄为 string」的变量上取否定分支会把类型推成 never，这类场景要避开守卫。
+ */
+export function matchesCharacterId(value: string): boolean {
+    return PRESS_CHARACTER_ID_PATTERN.test(value)
+}
+
+/** 设定图标识：portrait-{8位角色标识}-{14位年月日时分秒}，去掉扩展名即图片 id */
+const PRESS_PORTRAIT_ID_PATTERN = /^portrait-(\d{8})-\d{14}$/
+
+/** 判断图片 id 是否合法：封面引用从文档读回时用它校验，避免把任意文本当成图片引用 */
+export function isPressPortraitId(value: unknown): value is string {
+    return typeof value === 'string' && PRESS_PORTRAIT_ID_PATTERN.test(value)
+}
+
+/** 从图片 id 解析所属角色标识：扁平目录不再按角色分子目录，分组全靠文件名里的角色段 */
+export function parsePortraitCharacterId(portraitId: string): string | null {
+    return PRESS_PORTRAIT_ID_PATTERN.exec(portraitId)?.[1] ?? null
+}
+
 /** 角色设定图：宿主生成并落盘后回传的图片信息 */
 export interface CharacterPortrait {
     id: string
-    /** 相对存储根的路径，形如 press/{作品名}/_portraits/{characterId}/{id}.png */
+    /** 相对存储根的路径，形如 press/{作品名}/Portraits/portrait-{角色标识}-{时间戳}.png */
     path: string
     /** webview 可访问的完整 URL，仅本次会话有效（由宿主用 asWebviewUri 转换） */
     url: string
@@ -405,7 +426,7 @@ export interface CharacterPortrait {
 
 /** 角色设定图生成请求：人物卡与作品氛围的只读快照 */
 export interface PortraitGenerateRequest {
-    /** 作品目录（press/{作品名}）：角色卡落在该作品的 _portraits 下，删除作品即一并清理 */
+    /** 作品目录（press/{作品名}）：角色卡落在该作品的 Portraits 下，删除作品即一并清理 */
     dirPath: string
     /** 人物 id，宿主据此建立图片目录，须为安全的短标识 */
     characterId: string
@@ -415,12 +436,20 @@ export interface PortraitGenerateRequest {
     /** 性别中文标签：男或女，必填 */
     gender: string
     age: string
+    /** 身高：自由文本，直接进提示词约束身形比例 */
+    height: string
+    /** 体型：中文档位标签（匀称 / 削瘦 等），与身高共同约束身形 */
+    bodyType: string
     identity: string
     appearance: string
     traits: string[]
     desire: string
     weakness: string
     ability: string
+    /** 背景故事：出身与关键经历，让服饰、随身物件与场景符合人物来历 */
+    background: string
+    /** 人物关系：只作为场景语境的参照，画面仍只画一个人 */
+    relation: string
     era: string
     genres: string[]
     tone: string
@@ -433,7 +462,7 @@ export interface PortraitGenerateResult {
     portrait: CharacterPortrait
 }
 
-/** 角色设定图删除请求：只接受 press/{作品名}/_portraits 下的相对路径 */
+/** 角色设定图删除请求：只接受 press/{作品名}/Portraits 下的相对路径 */
 export interface PortraitDeleteRequest {
     path: string
 }
@@ -796,61 +825,50 @@ export interface PressApplyMeta {
 /**
  * press/apply 请求：把工作台草稿对应的段落回写进作品文档。
  * 字段是「段落片段」而不是整篇文档，落点与保留策略由宿主决定，避免覆盖用户手写内容。
+ * 除 dirPath 外全部可选：即时保存只会带上本次变更的那一份，未带的文件保持原样。
  */
 export interface PressApplyRequest {
     /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
     dirPath: string
-    readme: PressApplyMeta
+    readme?: PressApplyMeta
     /** 设定.md 中「提取设定」段落的正文 */
-    setting: string
+    setting?: string
     /** 角色块：name 用作匹配键，text 是含「# 名称」标题行的完整块 */
-    characters: { name: string; text: string }[]
+    characters?: { name: string; text: string }[]
     /** 大纲.md 中「分卷规划」段落的正文 */
-    outline: string
+    outline?: string
+    /** 需从 角色设定.md 移除的角色块：按一级标题名匹配，与 characters 同时生效 */
+    deletedCharacterNames?: string[]
+    /** 需一并清理设定图的角色标识：扁平目录按文件名中的角色段过滤 */
+    deletedCharacterIds?: string[]
 }
 
 /** 单份文档的写入上限：正常作品远低于该值，超出视为异常请求 */
 const MAX_APPLY_FIELD_LENGTH = 2_000_000
 
-/** 判断是否为合法的回写请求：逐字段校验类型与规模，角色块缺文本时整条拒绝 */
-export function isPressApplyRequest(payload: unknown): payload is PressApplyRequest {
-    if (!isPressDirPath(payload)) {
+/** 角色块与删除名单的条目上限：正常作品远低于该值，超出视为异常请求 */
+const MAX_APPLY_CHARACTERS = 5000
+
+/** 校验单个角色块：标题非空、正文不超过单份文档上限 */
+function isApplyCharacterBlock(item: unknown): boolean {
+    if (typeof item !== 'object' || item === null) {
         return false
     }
-    const candidate = payload as {
-        readme?: unknown
-        setting?: unknown
-        characters?: unknown
-        outline?: unknown
-    }
-    if (typeof candidate.setting !== 'string' || candidate.setting.length > MAX_APPLY_FIELD_LENGTH) {
+    const block = item as { name?: unknown; text?: unknown }
+    return (
+        typeof block.name === 'string' &&
+        block.name.length > 0 &&
+        typeof block.text === 'string' &&
+        block.text.length <= MAX_APPLY_FIELD_LENGTH
+    )
+}
+
+/** 校验 README 元信息：标题与读者允许为空，但类型与字数目标必须合法 */
+function isApplyMeta(value: unknown): value is PressApplyMeta {
+    if (typeof value !== 'object' || value === null) {
         return false
     }
-    if (typeof candidate.outline !== 'string' || candidate.outline.length > MAX_APPLY_FIELD_LENGTH) {
-        return false
-    }
-    if (!Array.isArray(candidate.characters) || candidate.characters.length > 5000) {
-        return false
-    }
-    const hasValidCharacters = candidate.characters.every((item: unknown) => {
-        if (typeof item !== 'object' || item === null) {
-            return false
-        }
-        const block = item as { name?: unknown; text?: unknown }
-        return (
-            typeof block.name === 'string' &&
-            block.name.length > 0 &&
-            typeof block.text === 'string' &&
-            block.text.length <= MAX_APPLY_FIELD_LENGTH
-        )
-    })
-    if (!hasValidCharacters) {
-        return false
-    }
-    if (typeof candidate.readme !== 'object' || candidate.readme === null) {
-        return false
-    }
-    const meta = candidate.readme as { title?: unknown; audience?: unknown; genres?: unknown; wordGoal?: unknown }
+    const meta = value as { title?: unknown; audience?: unknown; genres?: unknown; wordGoal?: unknown }
     return (
         typeof meta.title === 'string' &&
         typeof meta.audience === 'string' &&
@@ -860,6 +878,76 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
         Number.isFinite(meta.wordGoal) &&
         meta.wordGoal >= 0
     )
+}
+
+/**
+ * 判断是否为合法的回写请求：逐字段校验类型与规模，未提供的字段不参与校验。
+ * 关键约束：至少要带一份内容或一条删除名单，否则空请求会把四份文档无意义地重写一遍。
+ */
+export function isPressApplyRequest(payload: unknown): payload is PressApplyRequest {
+    if (!isPressDirPath(payload)) {
+        return false
+    }
+    const candidate = payload as {
+        readme?: unknown
+        setting?: unknown
+        characters?: unknown
+        outline?: unknown
+        deletedCharacterNames?: unknown
+        deletedCharacterIds?: unknown
+    }
+    const hasContent =
+        candidate.readme !== undefined ||
+        candidate.setting !== undefined ||
+        candidate.characters !== undefined ||
+        candidate.outline !== undefined ||
+        candidate.deletedCharacterNames !== undefined ||
+        candidate.deletedCharacterIds !== undefined
+    if (!hasContent) {
+        return false
+    }
+    if (candidate.readme !== undefined && !isApplyMeta(candidate.readme)) {
+        return false
+    }
+    if (
+        candidate.setting !== undefined &&
+        (typeof candidate.setting !== 'string' || candidate.setting.length > MAX_APPLY_FIELD_LENGTH)
+    ) {
+        return false
+    }
+    if (
+        candidate.outline !== undefined &&
+        (typeof candidate.outline !== 'string' || candidate.outline.length > MAX_APPLY_FIELD_LENGTH)
+    ) {
+        return false
+    }
+    if (candidate.characters !== undefined) {
+        if (!Array.isArray(candidate.characters) || candidate.characters.length > MAX_APPLY_CHARACTERS) {
+            return false
+        }
+        if (!candidate.characters.every(isApplyCharacterBlock)) {
+            return false
+        }
+    }
+    if (candidate.deletedCharacterNames !== undefined) {
+        const names = candidate.deletedCharacterNames
+        if (!Array.isArray(names) || names.length > MAX_APPLY_CHARACTERS) {
+            return false
+        }
+        if (!names.every((name: unknown) => typeof name === 'string' && name.length > 0)) {
+            return false
+        }
+    }
+    if (candidate.deletedCharacterIds !== undefined) {
+        const ids = candidate.deletedCharacterIds
+        if (!Array.isArray(ids) || ids.length > MAX_APPLY_CHARACTERS) {
+            return false
+        }
+        if (!ids.every((id: unknown) => isPressCharacterId(id))) {
+            return false
+        }
+    }
+    return true
 }
 
 /** press/apply 响应：written 为实际写入的文件名，便于前端提示写了哪些文档 */

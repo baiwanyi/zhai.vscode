@@ -54,9 +54,8 @@ export function OutlineBeatList({ beats, onChange, onAdd }: OutlineBeatListProps
                     className="group flex items-center gap-0.5 rounded-lg px-0.5 hover:bg-muted/50 focus-within:bg-muted/50"
                 >
                     <Button
-                        size="icon-xs"
                         variant="ghost"
-                        className="shrink-0 rounded-full"
+                        className="size-7 p-0 shrink-0 rounded-full"
                         aria-label={beat.isDone ? `取消兑现第 ${index + 1} 条节拍` : `标记第 ${index + 1} 条节拍已兑现`}
                         aria-pressed={beat.isDone}
                         onClick={() => handleToggle(beat.id)}
@@ -79,9 +78,8 @@ export function OutlineBeatList({ beats, onChange, onAdd }: OutlineBeatListProps
                     />
                     <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
                         <Button
-                            size="icon-xs"
                             variant="ghost"
-                            className="rounded-full"
+                            className="size-7 p-0 rounded-full"
                             aria-label={`上移第 ${index + 1} 条节拍`}
                             disabled={index === 0}
                             onClick={() => handleMoveUp(index)}
@@ -89,9 +87,8 @@ export function OutlineBeatList({ beats, onChange, onAdd }: OutlineBeatListProps
                             <MoveUp />
                         </Button>
                         <Button
-                            size="icon-xs"
                             variant="ghost"
-                            className="rounded-full"
+                            className="size-7 p-0 rounded-full"
                             aria-label={`删除第 ${index + 1} 条节拍`}
                             onClick={() => handleRemove(beat.id)}
                         >

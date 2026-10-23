@@ -22,9 +22,8 @@ export function PressTopBar({ isCreating, isImporting, onBack, onAdd, onImport }
         <div className="flex flex-col gap-2">
             <div className="flex items-center gap-1">
                 <Button
-                    size="icon-sm"
                     variant="ghost"
-                    className="rounded-full"
+                    className="size-7 p-0 rounded-full"
                     aria-label="返回仪表盘"
                     onClick={onBack}
                 >
@@ -35,7 +34,6 @@ export function PressTopBar({ isCreating, isImporting, onBack, onAdd, onImport }
             <div className="flex gap-2">
                 <Button
                     variant="outline"
-                    size="lg"
                     className="flex-1 justify-start rounded-full"
                     disabled={isBusy}
                     onClick={onAdd}
@@ -45,7 +43,6 @@ export function PressTopBar({ isCreating, isImporting, onBack, onAdd, onImport }
                 </Button>
                 <Button
                     variant="outline"
-                    size="lg"
                     className="flex-1 justify-start rounded-full"
                     disabled={isBusy}
                     onClick={onImport}

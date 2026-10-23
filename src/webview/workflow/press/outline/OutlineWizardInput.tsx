@@ -178,7 +178,6 @@ export function OutlineWizardInput({
                     <FieldLabel htmlFor="wizard-pacing">节奏偏好</FieldLabel>
                     <ToggleGroup
                         type="single"
-                        size="sm"
                         variant="outline"
                         value={options.pacing}
                         className="flex-wrap"

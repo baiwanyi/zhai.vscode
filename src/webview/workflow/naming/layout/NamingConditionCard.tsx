@@ -101,7 +101,6 @@ export function NamingConditionCard({
                     </div>
                     <Button
                         className="min-w-0 flex-1"
-                        size="sm"
                         variant={isGenerating ? 'outline' : 'default'}
                         onClick={isGenerating ? onAbort : onGenerate}
                     >
@@ -109,7 +108,7 @@ export function NamingConditionCard({
                         {isGenerating ? '取消' : GENERATE_LABEL}
                     </Button>
                     <Select value={String(request.count)} onValueChange={(value) => onChange({ count: Number(value) })}>
-                        <SelectTrigger className="w-20 shrink-0" size="sm" aria-label="生成数量">
+                        <SelectTrigger className="w-20 shrink-0" aria-label="生成数量">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>

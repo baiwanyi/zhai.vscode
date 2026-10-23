@@ -29,7 +29,7 @@ interface EntryRowProps {
 
 function EntryRow({ icon, title, onSelect }: EntryRowProps): JSX.Element {
     return (
-        <Button variant="outline" size="lg" className="w-full justify-between rounded-full" onClick={onSelect}>
+        <Button variant="outline" className="w-full justify-between rounded-full" onClick={onSelect}>
             <span className="flex items-center gap-2">
                 {icon}
                 {title}

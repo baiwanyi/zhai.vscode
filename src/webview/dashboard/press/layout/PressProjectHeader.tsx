@@ -17,14 +17,13 @@ interface PressProjectHeaderProps {
 export function PressProjectHeader({ title, onBack, onOpenReadme }: PressProjectHeaderProps): JSX.Element {
     return (
         <div className="flex items-center gap-1">
-            <Button size="icon-sm" variant="ghost" className="rounded-full" aria-label="返回作品列表" onClick={onBack}>
+            <Button variant="ghost" className="size-7 p-0 rounded-full" aria-label="返回作品列表" onClick={onBack}>
                 <ArrowLeft />
             </Button>
             <span className="min-w-0 flex-1 truncate font-heading font-semibold">{title}</span>
             <Button
-                size="icon-sm"
                 variant="ghost"
-                className="rounded-full"
+                className="size-7 p-0 rounded-full"
                 aria-label="打开作品设定"
                 title="打开作品设定"
                 onClick={onOpenReadme}

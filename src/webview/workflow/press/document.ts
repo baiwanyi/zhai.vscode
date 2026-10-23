@@ -6,7 +6,12 @@
  * 章纲的 summary 表示计划、wordCount 表示已写事实，两者不互相推导；未识别的名称不进入 characterIds，
  * 避免正文引用到不存在的人物卡。
  */
-import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId } from '@shared/types/press'
+import {
+    DEFAULT_PORTRAIT_STYLE,
+    PORTRAIT_STYLES,
+    isPressCharacterId,
+    isPressPortraitId,
+} from '@shared/types/press'
 import type { PortraitStyle } from '@shared/types/press'
 import type {
     Audience,
@@ -112,12 +117,6 @@ const FALLBACK_TEXT_LIMIT = 200
 
 /** 长文本字段的长度上限：世界观总述与情节脉络本身就是多句描述，沿用概述长度会被截断成半句 */
 const LONG_TEXT_LIMIT = 600
-
-/** 人物标识长度上限：与宿主角色卡目录校验（4-64 位）保持一致 */
-const MAX_CHARACTER_ID_LENGTH = 64
-
-/** 兜底人物标识：名称无法转换成合法标识时使用，保证卡片仍能落盘 */
-const FALLBACK_CHARACTER_ID = 'char-card'
 
 /** 分离 Frontmatter 与正文：未闭合或缺失时整体按正文处理 */
 function splitFrontmatter(text: string): { frontmatter: string; body: string } {
@@ -410,17 +409,16 @@ function parseSetting(readme: string, settingDoc: string, outlineDoc: string, fa
 }
 
 /**
- * 由角色名生成人物标识：ASCII 名称直接小写沿用，非 ASCII 字符转码点十六进制，
- * 既保证同名角色每次解析得到同一标识（角色卡目录不会漂移），也保证落在宿主白名单内。
+ * 由角色名生成人物标识：对名称做确定性散列并映射到 8 位数字区间。
+ * 关键约束：同一姓名每次解析必须得到同一标识（角色卡文件名不会漂移），且取值落在宿主白名单内；
+ * 旧文档里的 char- 前缀标识不再识别，缺少合法标识时按姓名散列取号。
  */
 function buildCharacterId(name: string): string {
-    const slug = Array.from(name)
-        .map((char) => (/[A-Za-z0-9]/u.test(char) ? char.toLowerCase() : `-${(char.codePointAt(0) ?? 0).toString(16)}`))
-        .join('')
-        .replace(/-{2,}/gu, '-')
-        .replace(/^-+|-+$/gu, '')
-    const candidate = `char-${slug.length > 0 ? slug : 'card'}`.slice(0, MAX_CHARACTER_ID_LENGTH)
-    return isPressCharacterId(candidate) ? candidate : FALLBACK_CHARACTER_ID
+    let hash = 0
+    for (const char of name) {
+        hash = (hash * 31 + (char.codePointAt(0) ?? 0)) % 90_000_000
+    }
+    return String(10_000_000 + hash)
 }
 
 /**
@@ -443,10 +441,11 @@ function parseCharacters(text: string): CharacterCard[] {
         const rawId = values.get('id')
         const baseId = rawId !== undefined && isPressCharacterId(rawId) ? rawId : buildCharacterId(name)
         let id = baseId
-        let index = 2
-        while (usedIds.has(id)) {
-            id = `${baseId}-${String(index)}`
-            index += 1
+        let salt = 1
+        while (usedIds.has(id) && salt <= 100) {
+            // 重名角色换个散列盐重新取号，保持 8 位数字形态——拼后缀会破坏标识规范
+            id = buildCharacterId(`${name}#${String(salt)}`)
+            salt += 1
         }
         usedIds.add(id)
         const roleLabel = readLabel(values.get('分类'), 'supporting')
@@ -472,8 +471,8 @@ function parseCharacters(text: string): CharacterCard[] {
             arc: values.get('弧线') ?? '',
             relation: values.get('关系') ?? '',
             portraits: [],
-            // 封面只存图片 id：图片本体在 _portraits 下，URL 由宿主按会话签发，不能写进文档
-            coverPortraitId: coverId.length > 0 && isPressCharacterId(coverId) ? coverId : null,
+            // 封面只存图片 id：图片本体在 Portraits 下，URL 由宿主按会话签发，不能写进文档
+            coverPortraitId: coverId.length > 0 && isPressPortraitId(coverId) ? coverId : null,
             portraitStyle: toPortraitStyle(values.get('画风')),
         })
     }

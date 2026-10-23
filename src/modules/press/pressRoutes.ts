@@ -142,7 +142,8 @@ export class PressRoutes {
     }
 
     /**
-     * 回写作品文档：把草稿段落合并进 README、设定、角色设定与大纲。
+     * 回写作品文档：把草稿段落合并进 README、设定、角色设定与大纲，只写请求里带上的那几份。
+     * 删除名单里的角色同时清理其设定图；图片清理失败只记日志，不让已完成的文档回写回滚。
      * 安全约束：入参逐字段校验类型与规模，路径由回写模块统一校验，不采信前端拼出的绝对路径。
      */
     private async applyWorkspace(payload: unknown): Promise<PressApplyResult> {
@@ -152,7 +153,15 @@ export class PressRoutes {
         if (!hasProjectFiles(this.db, payload.dirPath)) {
             throw new Error(`作品不在索引中，无法回写：${payload.dirPath}`)
         }
-        return applyProjectWorkspace(payload)
+        const result = await applyProjectWorkspace(payload)
+        for (const characterId of payload.deletedCharacterIds ?? []) {
+            try {
+                await this.portraits.removeByCharacterId(payload.dirPath, characterId)
+            } catch (error) {
+                logger.error(`角色设定图清理失败：${payload.dirPath}/${characterId}`, error)
+            }
+        }
+        return result
     }
 
     /**

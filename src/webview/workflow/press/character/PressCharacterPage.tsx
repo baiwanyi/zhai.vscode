@@ -14,7 +14,6 @@ import { toast } from 'sonner'
 import { Button } from '@components/ui/button'
 import { Input } from '@components/ui/input'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
-import { Separator } from '@components/ui/separator'
 import type { PortraitGalleryItem, PressExtractedCharacter } from '@shared/types/press'
 import { CharacterCreateDialog } from './CharacterCreateDialog'
 import { CharacterEditDialog } from './CharacterEditDialog'
@@ -30,7 +29,7 @@ interface PressCharacterPageProps {
     characters: CharacterCard[]
     /** 作品设定：外貌生成需要时代、题材与基调 */
     setting: ProjectSetting
-    /** 当前作品目录：角色卡图片落在该作品的 _portraits 下 */
+    /** 当前作品目录：角色卡图片落在该作品的 Portraits 下 */
     dirPath: string
     /** 建卡并返回新卡 id，供页面直接打开编辑弹窗 */
     onCreateCharacter: (seed: CharacterSeed) => string
@@ -155,33 +154,16 @@ export function PressCharacterPage({
     return (
         <div className="@container flex h-full min-h-0 flex-col gap-2 p-3">
             <header className="flex shrink-0 flex-col gap-2">
-                <div className="flex items-end gap-2">
-                    <div className="min-w-0 flex-1">
-                        <h2 className="truncate font-heading font-semibold">人物设定</h2>
-                        <p className="truncate text-muted-foreground tabular-nums">
-                            共 {characters.length} 人 · 欲望与弱点决定冲突，大纲排布时会引用
-                        </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-1.5">
-                        <Button
-                            variant="outline"
-                            title="按出场统计、章节摘要与出场原文归纳人物卡（调用 AI），重名人物自动跳过"
-                            disabled={isExtracting}
-                            onClick={handleExtract}
-                        >
-                            <Sparkles data-icon="inline-start" />
-                            {isExtracting ? '提取中' : '提取'}
-                        </Button>
-                        <Button onClick={() => setIsCreateOpen(true)}>
-                            <Plus data-icon="inline-start" />
-                            新增
-                        </Button>
-                    </div>
+                <div className="min-w-0 flex-1">
+                    <h1 className="truncate font-heading text-lg mb-2">{setting.title}</h1>
+                    <h2 className="truncate font-semibold">人物设定</h2>
+                    <p className="truncate text-muted-foreground tabular-nums">
+                        共 {characters.length} 人 · 欲望与弱点决定冲突，大纲排布时会引用
+                    </p>
                 </div>
-                <Separator />
                 <div className="flex flex-wrap items-center gap-2">
                     <Select value={roleFilter} onValueChange={handleFilterChange}>
-                        <SelectTrigger size="sm" className="h-8 w-24" aria-label="角色筛选">
+                        <SelectTrigger className="h-8 w-24" aria-label="角色筛选">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -208,10 +190,9 @@ export function PressCharacterPage({
                         />
                     </div>
                 </div>
-                <Separator />
             </header>
-            {/* 左右留 2px：滚动容器 overflow-y-auto 同时裁横向溢出，卡片聚焦环不能被切掉 */}
-            <div className="min-h-0 flex-1 overflow-y-auto px-0.5">
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-0.5">
                 <CharacterList
                     characters={visibleCharacters}
                     totalCount={characters.length}
@@ -223,6 +204,18 @@ export function PressCharacterPage({
                     onDelete={handleDeleteCharacter}
                 />
             </div>
+
+            <footer className="relative flex shrink-0 items-center justify-end gap-1.5 pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent">
+                <Button variant="outline" disabled={isExtracting} onClick={handleExtract}>
+                    <Sparkles data-icon="inline-start" />
+                    {isExtracting ? '提取中' : '提取'}
+                </Button>
+                <Button onClick={() => setIsCreateOpen(true)}>
+                    <Plus data-icon="inline-start" />
+                    新增
+                </Button>
+            </footer>
+
             {/* key 绑定展开状态：每次打开都重建表单，上一次的输入不会带过来 */}
             <CharacterCreateDialog
                 key={isCreateOpen ? 'create-open' : 'create-closed'}

@@ -44,6 +44,12 @@ function buildUserPrompt(request: PortraitGenerateRequest): string {
     if (request.age.length > 0) {
         lines.push(`年龄：${request.age}`)
     }
+    if (request.height.length > 0) {
+        lines.push(`身高：${request.height}`)
+    }
+    if (request.bodyType.length > 0) {
+        lines.push(`体型：${request.bodyType}`)
+    }
     if (request.identity.length > 0) {
         lines.push(`身份：${request.identity}`)
     }
@@ -61,6 +67,12 @@ function buildUserPrompt(request: PortraitGenerateRequest): string {
     }
     if (request.ability.length > 0) {
         lines.push(`能力：${request.ability}`)
+    }
+    if (request.background.length > 0) {
+        lines.push(`背景：${request.background}`)
+    }
+    if (request.relation.length > 0) {
+        lines.push(`人物关系：${request.relation}`)
     }
     lines.push('请写出这一刻的画面：地点、正在做的事、光线，一句到底。')
     return lines.join('\n')

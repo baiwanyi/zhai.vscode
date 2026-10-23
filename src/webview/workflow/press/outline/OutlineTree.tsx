@@ -54,7 +54,6 @@ export function OutlineTree({
             <div className="shrink-0 overflow-x-auto">
                 <ToggleGroup
                     type="single"
-                    size="sm"
                     variant="outline"
                     value={statusFilter}
                     onValueChange={handleFilterChange}
@@ -77,7 +76,7 @@ export function OutlineTree({
                             <EmptyDescription>生成一份卷纲，或手动新建第一卷</EmptyDescription>
                         </EmptyHeader>
                         <EmptyContent>
-                            <Button size="sm" variant="outline" onClick={onCreateVolume}>
+                            <Button variant="outline" onClick={onCreateVolume}>
                                 <Plus data-icon="inline-start" />
                                 新建第一卷
                             </Button>
@@ -128,9 +127,8 @@ export function OutlineTree({
                                             </button>
                                         </CollapsibleTrigger>
                                         <Button
-                                            size="icon-xs"
                                             variant="ghost"
-                                            className="shrink-0 rounded-full"
+                                            className="size-7 p-0 shrink-0 rounded-full"
                                             aria-label={`在${volume.name}中添加章节`}
                                             title="添加章节"
                                             onClick={() => onCreateChapter(volume.id)}

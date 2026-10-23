@@ -39,7 +39,6 @@ export function NamingPersonFields({
                 <ToggleGroup
                     type="single"
                     variant="outline"
-                    size="sm"
                     spacing={0}
                     value={request.variant}
                     onValueChange={(value) => {
@@ -61,7 +60,6 @@ export function NamingPersonFields({
                 <ToggleGroup
                     type="single"
                     variant="outline"
-                    size="sm"
                     spacing={0}
                     value={request.era}
                     onValueChange={(value) => {
@@ -84,7 +82,7 @@ export function NamingPersonFields({
                     value={request.reference}
                     onValueChange={(value) => onChange({ reference: value as NamingReference })}
                 >
-                    <SelectTrigger id="naming-person-reference" className="w-full" size="sm">
+                    <SelectTrigger id="naming-person-reference" className="w-full">
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -103,7 +101,6 @@ export function NamingPersonFields({
                 <ToggleGroup
                     type="single"
                     variant="outline"
-                    size="sm"
                     spacing={0}
                     value={request.gender}
                     onValueChange={(value) => {
@@ -125,7 +122,6 @@ export function NamingPersonFields({
                 <ToggleGroup
                     type="single"
                     variant="outline"
-                    size="sm"
                     spacing={0}
                     value={request.length}
                     onValueChange={(value) => {

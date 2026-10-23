@@ -41,7 +41,7 @@ const SETTING: ProjectSetting = {
 
 const CHARACTERS: CharacterCard[] = [
     {
-        id: 'char-xue-mu',
+        id: '12345678',
         name: '薛牧',
         alias: '薛掌门',
         role: 'protagonist',
@@ -60,7 +60,7 @@ const CHARACTERS: CharacterCard[] = [
         arc: '从棋子到棋手',
         relation: '夏侯荻的师弟',
         portraits: [],
-        coverPortraitId: 'portrait-test-1',
+        coverPortraitId: 'portrait-12345678-20261001120000',
         portraitStyle: 'guofeng',
     },
 ]
@@ -84,7 +84,7 @@ const VOLUMES: OutlineVolume[] = [
                     { id: 'beat-1', text: '落鼎', isDone: false },
                     { id: 'beat-2', text: '遇见夏侯荻', isDone: true },
                 ],
-                characterIds: ['char-xue-mu'],
+                characterIds: ['12345678'],
                 location: '星月宗',
                 wordGoal: 2500,
                 wordCount: 0,
@@ -151,7 +151,7 @@ describe('草稿回写往返', () => {
 
         expect(parsed.characters).toHaveLength(1)
         expect(parsed.characters[0]).toMatchObject({
-            id: 'char-xue-mu',
+            id: '12345678',
             name: '薛牧',
             alias: '薛掌门',
             role: 'protagonist',
@@ -162,9 +162,9 @@ describe('草稿回写往返', () => {
             traits: ['隐忍', '护短'],
             background: '穿越前是娱乐公司策划，落地即被当作异端追杀。',
             catchphrase: '我来试试',
-            // 封面与画风必须能往返：只存 id，图片本体在 _portraits 下
+            // 封面与画风必须能往返：只存 id，图片本体在 Portraits 下
             portraitStyle: 'guofeng',
-            coverPortraitId: 'portrait-test-1',
+            coverPortraitId: 'portrait-12345678-20261001120000',
         })
 
         expect(parsed.volumes).toHaveLength(1)
@@ -186,7 +186,7 @@ describe('草稿回写往返', () => {
             wordGoal: 2500,
             wordCount: 0,
             location: '星月宗',
-            characterIds: ['char-xue-mu'],
+            characterIds: ['12345678'],
         })
         expect(parsed.volumes[0]?.chapters[0]?.beats.map((beat) => beat.text)).toEqual(['落鼎', '遇见夏侯荻'])
         expect(parsed.volumes[0]?.chapters[0]?.beats[1]?.isDone).toBe(true)

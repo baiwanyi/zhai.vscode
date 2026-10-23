@@ -11,7 +11,7 @@
 
 import * as vscode from 'vscode'
 import { consumeToday, readUsedToday } from './db/quotaRepository'
-import { MATERIAL_FILE_NAMES, analyzeProject } from './importAnalysis'
+import { MATERIAL_FILE_NAMES, analyzeProject, isLikelyPersonName } from './importAnalysis'
 import type { AiChatMessage, AiProvider, AiUsage } from '../ai/provider'
 import type { QuotaKeys } from './db/quotaRepository'
 import type {
@@ -386,19 +386,74 @@ function toTraitLabels(value: string): string[] {
 }
 
 /**
+ * 模型在条目里自认「不是人物」的措辞：一旦出现说明模型只是在复述候选噪声，
+ * 这类块必须丢弃——它们正是「时候」「东西」被写成角色卡的形态。
+ */
+const NEGATIVE_CHARACTER_HINTS: readonly string[] = [
+    '原文无对应人物',
+    '无对应人物',
+    '没有对应人物',
+    '不是一个人物',
+    '并非一个人物',
+    '并不是人物',
+    '并非人物',
+    '不是人物',
+    '并非人名',
+    '不是人名',
+    '并非角色',
+    '仅是普通词',
+    '只是普通词',
+    '不是具体人物',
+    '并非具体人物',
+    '普通词汇',
+]
+
+/** 判断一段角色块是否在自述「这不是人物」 */
+function isRejectedDraft(content: string): boolean {
+    return NEGATIVE_CHARACTER_HINTS.some((hint) => content.includes(hint))
+}
+
+/**
+ * 判断一份人物卡是否完全没有内容：除姓名、分类与性别外没有任何可用的描述信息。
+ * 关键约束：这类条目要么来自分词噪声，要么是模型对素材的敷衍填充，留进工作台只会制造垃圾卡片；
+ * 真正的次要角色至少会有一条身份、特质、能力或关系，因此不会命中。
+ */
+function isEmptyDraft(draft: PressExtractedCharacter): boolean {
+    const textFields = [
+        draft.alias,
+        draft.age,
+        draft.identity,
+        draft.appearance,
+        draft.background,
+        draft.desire,
+        draft.weakness,
+        draft.catchphrase,
+        draft.ability,
+        draft.arc,
+        draft.relation,
+    ]
+    return draft.traits.length === 0 && textFields.every((value) => value.trim().length === 0)
+}
+
+/**
  * 解析角色卡产物：每块以「## 姓名」开头，字段按「键：值」读取，缺字段留空。
  * 关键约束：产物来自模型输出，字段可能缺失或改名，解析只让对应字段为空而不抛错；
- * 无姓名的块直接丢弃，避免把说明段落当成人物。导出仅供单测直接覆盖解析口径。
+ * 无姓名的块、自认「不是人物」的块、非人名候选与全空条目全部丢弃——
+ * 这是角色准确性的最后一道防线，素材层过滤得再严也无法阻止模型自行发挥。
+ * 导出仅供单测直接覆盖解析口径。
  */
 export function parseCharacterDrafts(content: string): PressExtractedCharacter[] {
     const drafts: PressExtractedCharacter[] = []
     for (const section of splitLevelSections(content, 2)) {
-        const values = readDashedValues(section.content)
-        const name = (values.get('姓名') ?? section.title).trim()
-        if (name.length === 0) {
+        if (isRejectedDraft(section.content)) {
             continue
         }
-        drafts.push({
+        const values = readDashedValues(section.content)
+        const name = (values.get('姓名') ?? section.title).trim()
+        if (name.length === 0 || !isLikelyPersonName(name)) {
+            continue
+        }
+        const draft: PressExtractedCharacter = {
             name,
             alias: values.get('别名') ?? values.get('昵称') ?? '',
             role: values.get('分类') ?? '',
@@ -414,12 +469,41 @@ export function parseCharacterDrafts(content: string): PressExtractedCharacter[]
             ability: values.get('能力') ?? '',
             arc: values.get('弧线') ?? '',
             relation: values.get('关系') ?? '',
-        })
+        }
+        if (isEmptyDraft(draft)) {
+            continue
+        }
+        drafts.push(draft)
         if (drafts.length >= CHARACTER_LIMIT) {
             break
         }
     }
     return drafts
+}
+
+/**
+ * 清洗模型输出的角色块：逐块过滤后再落盘，让 characters.md 本身不含噪声条目。
+ * 关键约束：只保留「有姓名、非非人名、且至少有一个描述字段」的块；前言、总结与被否定的块一并丢弃，
+ * 这样即使模型又把「时候」写成一段带解释的条目，产物文件也不会被污染。
+ */
+function filterCharacterOutput(content: string): string {
+    const blocks: string[] = []
+    for (const section of splitLevelSections(content, 2)) {
+        if (isRejectedDraft(section.content)) {
+            continue
+        }
+        const values = readDashedValues(section.content)
+        const name = (values.get('姓名') ?? section.title).trim()
+        if (name.length === 0 || !isLikelyPersonName(name)) {
+            continue
+        }
+        const block = `## ${section.title}\n${section.content.trim()}`
+        if (parseCharacterDrafts(block).length === 0) {
+            continue
+        }
+        blocks.push(block)
+    }
+    return blocks.join('\n\n')
 }
 
 /** 常见高频虚词：正常中文正文必然大量出现，命中率极低说明正文已被解码成乱码 */
@@ -512,14 +596,10 @@ async function resolveSettingClues(
         }
     }
     if (merged.size > 0) {
-        return [...merged.values()]
-            .sort((left, right) => left.order - right.order)
-            .slice(0, SETTING_CLUE_LIMIT)
+        return [...merged.values()].sort((left, right) => left.order - right.order).slice(0, SETTING_CLUE_LIMIT)
     }
     const heads = parseHeads(await readTextFile(resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.heads)))
-    return heads
-        .slice(0, SETTING_CLUE_LIMIT)
-        .map((row) => ({ order: row.order, title: row.title, words: '代表章节' }))
+    return heads.slice(0, SETTING_CLUE_LIMIT).map((row) => ({ order: row.order, title: row.title, words: '代表章节' }))
 }
 
 /**
@@ -568,14 +648,9 @@ function serializeSummaries(rows: SummaryRow[]): string {
     for (const row of sorted) {
         const summary = row.summary.replace(/[\t\r\n]+/gu, ' ').trim()
         lines.push(
-            [
-                String(row.order),
-                summary,
-                row.hook,
-                String(row.tension),
-                row.beats.join('；'),
-                row.cast.join('、'),
-            ].join('\t'),
+            [String(row.order), summary, row.hook, String(row.tension), row.beats.join('；'), row.cast.join('、')].join(
+                '\t',
+            ),
         )
     }
     return `${lines.join('\n')}\n`
@@ -705,8 +780,7 @@ function buildCharacterMessages(
     const blocks = items.map(({ candidate, references, evidence }) => {
         const referenceText =
             references.length > 0 ? references.map((item) => `- ${item}`).join('\n') : '- （缺少可用摘要）'
-        const evidenceText =
-            evidence.length > 0 ? evidence.map((item) => `- ${item}`).join('\n') : '- （缺少原文摘录）'
+        const evidenceText = evidence.length > 0 ? evidence.map((item) => `- ${item}`).join('\n') : '- （缺少原文摘录）'
         return [
             `角色：${candidate.name}`,
             `出场次数：${String(candidate.count)}`,
@@ -747,10 +821,13 @@ function buildCharacterMessages(
                 '- 关系：按「角色名（关系）：一句话说明」书写，多条用分号分隔，只写素材里出现过的人物',
                 '',
                 '要求：',
-                '1. 只依据给出的摘要、原文摘录与统计，不要引入素材里没有的情节或外貌描写。',
-                '2. 年龄、外貌、背景、口头禅这四项以原文摘录为准，原文没写就留空，不要猜测、不要编造。',
-                '3. 关系必须写清对方是谁、是什么关系，不要只写「与主角关系密切」这类空话。',
-                '4. 不要输出总述、总结或角色之外的文字。',
+                '1. 候选名来自分词统计，可能根本不是人名（例如「时候」「东西」「能量」「闻言」「解释」这类普通词）。',
+                '   只有能在原文摘录或摘要里确认它指代某个具体人物时，才输出该角色；无法确认的一个都不要输出。',
+                '2. 只依据给出的摘要、原文摘录与统计，不要引入素材里没有的情节或外貌描写。',
+                '3. 年龄、外貌、背景、口头禅这四项以原文摘录为准，原文没写就留空，不要猜测、不要编造。',
+                '4. 关系必须写清对方是谁、是什么关系，不要只写「与主角关系密切」这类空话。',
+                '5. 不要写「原文无对应人物」这类说明性条目——判断不是人物就直接不输出，不要为它占一段。',
+                '6. 不要输出总述、总结或角色之外的文字。',
                 '',
                 '角色素材：',
                 blocks.join('\n\n'),
@@ -818,7 +895,11 @@ export class ImportSemanticService {
         let done = 0
         let total = heads.length
         let generated = 0
-        const emit = (status: PressSemanticProgress['status'], message: string, code?: PressSemanticErrorCode): void => {
+        const emit = (
+            status: PressSemanticProgress['status'],
+            message: string,
+            code?: PressSemanticErrorCode,
+        ): void => {
             onProgress({
                 jobId,
                 stage,
@@ -974,10 +1055,9 @@ export class ImportSemanticService {
             return { volumes: [], message: '没有扫描到章节：请确认作品目录下存在章节文档' }
         }
         const summaries = new Map(
-            parseSummaries(await readTextFile(resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.summaries))).map((row) => [
-                row.order,
-                row,
-            ]),
+            parseSummaries(await readTextFile(resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.summaries))).map(
+                (row) => [row.order, row],
+            ),
         )
         const volumeMeta = new Map(
             splitLevelSections(
@@ -1045,8 +1125,7 @@ export class ImportSemanticService {
         const goldenUri = resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.goldenFinger)
         const worldUri = resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.worldClues)
         const isMaterialMissing =
-            (await readTextFile(goldenUri)).trim().length === 0 &&
-            (await readTextFile(worldUri)).trim().length === 0
+            (await readTextFile(goldenUri)).trim().length === 0 && (await readTextFile(worldUri)).trim().length === 0
         if (isMaterialMissing) {
             await analyzeProject(dirPath)
         }
@@ -1104,10 +1183,9 @@ export class ImportSemanticService {
             ]),
         )
         const summaries = new Map(
-            parseSummaries(await readTextFile(resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.summaries))).map((row) => [
-                row.order,
-                row,
-            ]),
+            parseSummaries(await readTextFile(resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.summaries))).map(
+                (row) => [row.order, row],
+            ),
         )
         const blocks = clues.slice(0, SETTING_CLUE_LIMIT).map((clue) => {
             const head = heads.get(clue.order)
@@ -1142,7 +1220,9 @@ export class ImportSemanticService {
                     '- 力量体系：等级、进阶路径与运作规则，写清「怎么变强、上限在哪」',
                     '- 核心概念：作品独有的名词与设定（如灵气、序列、异火），每个词后跟一句解释，用分号分隔',
                     '- 禁忌：世界规则中的禁区或代价',
-                    '- 金手指类型：', '- 金手指能力：', '- 金手指代价：',
+                    '- 金手指类型：',
+                    '- 金手指能力：',
+                    '- 金手指代价：',
                     '- 视角：第一人称 / 第三人称限知 / 第三人称全知，三选一',
                     '- 语调：用一个词概括（如轻松、热血、压抑）',
                     '- 题材：用顿号分隔 1-3 个标签',
@@ -1396,13 +1476,19 @@ export class ImportSemanticService {
         const charactersUri = resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${CHARACTERS_FILE}`)
         await vscode.workspace.fs.createDirectory(resolveMaterialFile(dirPath, PRESS_IMPORT_DIR))
         const existing = await readTextFile(charactersUri)
-        if (isProductUpToDate(existing, ['- 外貌：', '- 背景：'])) {
+        // 键名齐备还不够：旧产物可能全是「时候」「东西」这类噪声条目，过滤后一条不剩时必须重跑
+        const isUpToDate =
+            isProductUpToDate(existing, ['- 外貌：', '- 背景：']) && parseCharacterDrafts(existing).length > 0
+        if (isUpToDate) {
             onState({ done: 0, total: 0, message: '角色卡已存在，跳过' })
             return { generated: 0, done: 0, total: 0, skipped: true }
         }
+        // 旧素材的候选表里积着「时候」「东西」这类噪声：读入后再过一道人名过滤，
+        // 否则它们会占掉 CHARACTER_LIMIT 的额度，把真正的次要角色挤出归纳范围
         const candidates = parseCandidates(
             await readTextFile(resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.candidates)),
         )
+            .filter((candidate) => isLikelyPersonName(candidate.name))
             .sort((left, right) => right.count - left.count)
             .slice(0, CHARACTER_LIMIT)
         if (candidates.length === 0) {
@@ -1469,10 +1555,11 @@ export class ImportSemanticService {
                 evidence: collectCharacterEvidence(candidate),
             }))
             const content = await this.generate(buildCharacterMessages(items), signal)
-            const cleaned = content.replace(/^```[a-z]*$/giu, '').trim()
+            const cleaned = filterCharacterOutput(content.replace(/^```[a-z]*$/giu, '').trim())
             if (cleaned.length > 0) {
                 sections.push(cleaned, '')
-                generated += cleaned.split(/^##\s+/mu).length - 1
+                // 计数按可用卡片算：模型自造的噪声块已被清洗掉，不该算进「已生成 N 项」
+                generated += parseCharacterDrafts(cleaned).length
             }
             consumeToday(this.db, QUOTA_KEYS)
             onState({

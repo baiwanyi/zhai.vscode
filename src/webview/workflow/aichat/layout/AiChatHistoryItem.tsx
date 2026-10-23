@@ -28,9 +28,8 @@ export function AiChatHistoryItem({ session, isActive, onSelect, onDelete }: AiC
                     {formatRelativeTime(session.updatedAt)}
                 </span>
                 <Button
-                    size="icon-xs"
                     variant="ghost"
-                    className="col-start-1 row-start-1 opacity-0 group-hover/history:opacity-100"
+                    className="size-7 p-0 col-start-1 row-start-1 opacity-0 group-hover/history:opacity-100"
                     title="删除会话"
                     aria-label="删除会话"
                     onClick={(event) => {

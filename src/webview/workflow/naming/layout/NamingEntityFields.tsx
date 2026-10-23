@@ -38,7 +38,6 @@ export function NamingEntityFields({
                 <ToggleGroup
                     type="single"
                     variant="outline"
-                    size="sm"
                     spacing={0}
                     value={request.variant}
                     onValueChange={(value) => {

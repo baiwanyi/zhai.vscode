@@ -5,14 +5,15 @@
  * 并下传当前作品目录作为会话作用域（每个作品各有一份对话记录），取名渲染 ../naming 的 NamingPage；
  * 右侧分区入口由同目录 WorkflowPressNav 承载，分区之间共享同一份草稿。
  * 关键约束：本页不自行发起路由请求，作品定位只认宿主下发的 projectDir；未打开作品时渲染初始页（作品清单入口），
- * 不在页面内伪造示例数据；页面内的编辑仍是内存草稿，换作品或换页即重新按文档解析结果重建，
- * 需要落到文档时由右栏「保存到作品」把草稿序列化成段落交给宿主合并，未保存的改动仍会随换页丢失。
+ * 不在页面内伪造示例数据；编辑即时落盘——字段输入在防抖窗口后写盘，新增、删除、弹窗保存等结构性操作立即写，
+ * 每次只把本次变更的那一份文档交给宿主合并，未涉及的文档保持原样。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Skeleton } from '@components/ui/skeleton'
 import type {
     OpenPressProjectResult,
+    PressApplyRequest,
     PressApplyResult,
     PressExtractedCharacter,
     PressExtractedSetting,
@@ -71,6 +72,12 @@ const STEP_SECTIONS: Readonly<Record<number, WorkflowPressSection>> = {
 /** 卷名归一：追加生成结果时去掉原有的「第N卷」前缀，避免与既有卷序号冲突 */
 const VOLUME_PREFIX_PATTERN = /^第\d+卷\s*/
 
+/** 即时保存的防抖时长：字段输入停止后写盘，结构性操作不走防抖 */
+const SAVE_DEBOUNCE_MS = 600
+
+/** 可独立写盘的文档范围：设定连带 README 元信息，角色与大纲各自成一份 */
+type PersistScope = 'setting' | 'characters' | 'outline'
+
 /** 加载状态：作品文档读取中、未打开作品（展示初始页）、已就绪（渲染工作区） */
 type WorkspaceStatus = 'loading' | 'empty' | 'ready'
 
@@ -95,11 +102,34 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
     const projectDir = context.projectDir
     const [activeSection, setActiveSection] = useState<WorkflowPressSection>(DEFAULT_SECTION)
     const [loadState, setLoadState] = useState<WorkspaceLoadState>(INITIAL_LOAD_STATE)
-    const [isSaving, setIsSaving] = useState(false)
-    /** 进行中标记：右栏动作项没有禁用态，靠 ref 拦住连点 */
-    const isSavingRef = useRef(false)
+    /** 草稿与作品目录快照：写盘时取最新值，避免闭包里拿到旧 state */
+    const workspaceRef = useRef<OutlineWorkspace | null>(null)
+    const dirRef = useRef('')
+    /** 防抖窗口内累积的待写范围：同一窗口的多次输入合并成一次请求 */
+    const pendingScopesRef = useRef<Set<PersistScope>>(new Set())
+    const debounceRef = useRef<number | null>(null)
+    /** 写盘串行队列：防抖写入与立即写入排队执行，避免并发覆盖同一份文档 */
+    const queueRef = useRef<Promise<void>>(Promise.resolve())
+
+    // 卸载时丢弃未到期的防抖任务：定时器属于已消失的页面，回调再跑只会写脏数据
+    useEffect(
+        () => (): void => {
+            if (debounceRef.current !== null) {
+                window.clearTimeout(debounceRef.current)
+                debounceRef.current = null
+            }
+            pendingScopesRef.current = new Set()
+        },
+        [],
+    )
 
     useEffect(() => {
+        // 切作品先清掉未到期的防抖任务：它属于上一个作品的草稿，不能写进新作品
+        if (debounceRef.current !== null) {
+            window.clearTimeout(debounceRef.current)
+            debounceRef.current = null
+        }
+        pendingScopesRef.current = new Set()
         let isCancelled = false
         const load = async (): Promise<void> => {
             setLoadState(INITIAL_LOAD_STATE)
@@ -114,6 +144,8 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                     return
                 }
                 const parsed = parseProjectWorkspace(result.project.files, result.project.name)
+                workspaceRef.current = parsed
+                dirRef.current = result.project.dirPath
                 setLoadState({
                     status: 'ready',
                     projectDir: result.project.dirPath,
@@ -125,6 +157,8 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                     return
                 }
                 toastError(cause)
+                workspaceRef.current = null
+                dirRef.current = ''
                 setLoadState({ status: 'empty', projectDir: null, workspace: null, projects: [] })
             }
         }
@@ -135,38 +169,67 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
     }, [projectDir])
 
     /**
-     * 回写作品文档：把当前草稿序列化成段落，交给宿主合并进 README、设定、角色设定与大纲。
-     * 关键约束：序列化只产出段落片段，用户手写的其它段落由宿主保留；编辑本身仍是内存草稿，不回写就会随换页丢失。
+     * 立即写盘：把指定范围的最新草稿序列化成段落交给宿主合并，未带上的文档保持原样。
+     * 关键约束：写入排在队列尾部串行执行，避免防抖写入与结构性操作并发覆盖同一份文档；
+     * 删除角色时随请求带上要移除的角色块与设定图，宿主据此删块并清理图片。
      */
-    const handleSave = useCallback((current: OutlineWorkspace, currentDir: string): void => {
-        const run = async (): Promise<void> => {
-            if (currentDir.length === 0 || isSavingRef.current) {
+    const flush = useCallback(
+        (
+            scopes: Set<PersistScope>,
+            options: { deleted?: { name: string; id: string }; successMessage?: string } = {},
+        ): void => {
+            const current = workspaceRef.current
+            const dirPath = dirRef.current
+            if (current === null || dirPath.length === 0) {
                 return
             }
-            isSavingRef.current = true
-            setIsSaving(true)
-            try {
-                const result = await request<PressApplyResult>('press/apply', {
-                    dirPath: currentDir,
-                    readme: serializeReadmeMeta(current.setting),
-                    setting: serializeSettingSection(current.setting),
-                    characters: serializeCharacterBlocks(current.characters),
-                    outline: serializeOutlineSection(current.volumes, current.characters),
-                })
-                if (result.written.length === 0) {
-                    toast.error('没有写入任何文档，请检查日志')
-                    return
-                }
-                toast.success(`已回写 ${result.written.join('、')}`)
-            } catch (cause) {
-                toastError(cause)
-            } finally {
-                isSavingRef.current = false
-                setIsSaving(false)
+            const deleted = options.deleted ?? null
+            const payload: PressApplyRequest = { dirPath }
+            if (scopes.has('setting')) {
+                // README 的标题、读者、题材、字数目标与设定段落同源，一起写才不会出现两份口径
+                payload.readme = serializeReadmeMeta(current.setting)
+                payload.setting = serializeSettingSection(current.setting)
             }
-        }
-        void run()
-    }, [])
+            if (scopes.has('characters')) {
+                payload.characters = serializeCharacterBlocks(current.characters)
+            }
+            if (scopes.has('outline')) {
+                payload.outline = serializeOutlineSection(current.volumes, current.characters)
+            }
+            if (deleted !== null) {
+                payload.deletedCharacterNames = [deleted.name]
+                payload.deletedCharacterIds = [deleted.id]
+            }
+            queueRef.current = queueRef.current.then(async () => {
+                try {
+                    await request<PressApplyResult>('press/apply', payload)
+                    if (options.successMessage !== undefined) {
+                        toast.success(options.successMessage)
+                    }
+                } catch (cause) {
+                    toastError(cause)
+                }
+            })
+        },
+        [],
+    )
+
+    /** 防抖写盘：字段级输入只在停顿后写一次，连续输入不会产生大量请求 */
+    const scheduleFlush = useCallback(
+        (scope: PersistScope): void => {
+            pendingScopesRef.current.add(scope)
+            if (debounceRef.current !== null) {
+                window.clearTimeout(debounceRef.current)
+            }
+            debounceRef.current = window.setTimeout(() => {
+                debounceRef.current = null
+                const scopes = pendingScopesRef.current
+                pendingScopesRef.current = new Set()
+                flush(scopes)
+            }, SAVE_DEBOUNCE_MS)
+        },
+        [flush],
+    )
 
     /** 打开作品：宿主打开 README 并广播新的 projectDir，本页随之重新解析文档 */
     const handleOpenProject = useCallback((dirPath: string): void => {
@@ -180,24 +243,34 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
         void open()
     }, [])
 
-    /** 草稿更新：只在已载入作品时生效，未载入时忽略，避免出现无归属的编辑 */
+    /**
+     * 草稿更新：只在已载入作品时生效，未载入时忽略，避免出现无归属的编辑。
+     * 关键约束：先更新 ref 再 setState——紧随其后的写盘逻辑读 ref，才能拿到本次变更后的草稿。
+     */
     const updateWorkspace = useCallback((recipe: (previous: OutlineWorkspace) => OutlineWorkspace): void => {
-        setLoadState((previous) =>
-            previous.workspace === null ? previous : { ...previous, workspace: recipe(previous.workspace) },
-        )
+        const previous = workspaceRef.current
+        if (previous === null) {
+            return
+        }
+        const next = recipe(previous)
+        workspaceRef.current = next
+        setLoadState((state) => (state.workspace === null ? state : { ...state, workspace: next }))
     }, [])
 
     const handleSelectStep = useCallback((step: number): void => {
         setActiveSection(STEP_SECTIONS[step] ?? 'chapter')
     }, [])
 
+    /** 设定字段改动：输入频繁，走防抖写盘，停顿后统一落一次 */
     const handleUpdateSetting = useCallback(
         (patch: Partial<ProjectSetting>): void => {
             updateWorkspace((previous) => ({ ...previous, setting: { ...previous.setting, ...patch } }))
+            scheduleFlush('setting')
         },
-        [updateWorkspace],
+        [scheduleFlush, updateWorkspace],
     )
 
+    /** 人物卡保存：编辑弹窗点保存即写盘，不再依赖手动回写 */
     const handleUpdateCharacter = useCallback(
         (characterId: string, patch: Partial<CharacterCard>): void => {
             updateWorkspace((previous) => ({
@@ -206,13 +279,18 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                     character.id === characterId ? { ...character, ...patch } : character,
                 ),
             }))
+            const name = workspaceRef.current?.characters.find((character) => character.id === characterId)?.name
+            flush(new Set<PersistScope>(['characters']), {
+                successMessage: name === undefined ? '已保存人物卡' : `已保存「${name}」`,
+            })
         },
-        [updateWorkspace],
+        [flush, updateWorkspace],
     )
 
-    /** 删除人物：同步清理章纲里的出场引用，避免回写后大纲指向一张不存在的人物卡 */
+    /** 删除人物：同步清理章纲里的出场引用，并立即写盘——角色块从其文档移除、设定图一并清理 */
     const handleDeleteCharacter = useCallback(
         (characterId: string): void => {
+            const target = workspaceRef.current?.characters.find((character) => character.id === characterId) ?? null
             updateWorkspace((previous) => ({
                 ...previous,
                 characters: previous.characters.filter((character) => character.id !== characterId),
@@ -228,18 +306,23 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                     ),
                 })),
             }))
+            flush(new Set<PersistScope>(['characters', 'outline']), {
+                deleted: target === null ? undefined : { name: target.name, id: target.id },
+                successMessage: target === null ? '已删除人物' : `已删除「${target.name}」`,
+            })
         },
-        [updateWorkspace],
+        [flush, updateWorkspace],
     )
 
-    /** 建卡并返回新卡 id：人物页据此直接下钻到新人物详情 */
+    /** 建卡并返回新卡 id：人物页据此直接下钻到新人物详情，新卡立即写盘 */
     const handleCreateCharacter = useCallback(
         (seed: CharacterSeed): string => {
             const character = createCharacterCard(seed)
             updateWorkspace((previous) => ({ ...previous, characters: [...previous.characters, character] }))
+            flush(new Set<PersistScope>(['characters']), { successMessage: '已新建人物，后续改动自动保存' })
             return character.id
         },
-        [updateWorkspace],
+        [flush, updateWorkspace],
     )
 
     /** 合并提取出的人物卡：按姓名去重后追加，返回实际新增人数供人物页提示 */
@@ -263,11 +346,13 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                 const fresh = additions.filter((character) => !usedNames.has(character.name))
                 return fresh.length === 0 ? previous : { ...previous, characters: [...previous.characters, ...fresh] }
             })
+            flush(new Set<PersistScope>(['characters']))
             return additions.length
         },
-        [updateWorkspace],
+        [flush, updateWorkspace],
     )
 
+    /** 章纲字段改动：含标题输入，走防抖写盘 */
     const handleUpdateChapter = useCallback(
         (chapterId: string, patch: Partial<OutlineChapter>): void => {
             updateWorkspace((previous) => ({
@@ -279,8 +364,9 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                     ),
                 })),
             }))
+            scheduleFlush('outline')
         },
-        [updateWorkspace],
+        [scheduleFlush, updateWorkspace],
     )
 
     const handleCreateVolume = useCallback((): void => {
@@ -288,7 +374,8 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
             ...previous,
             volumes: [...previous.volumes, createVolume(previous.volumes.length + 1, DEFAULT_CHAPTER_WORD_GOAL)],
         }))
-    }, [updateWorkspace])
+        flush(new Set<PersistScope>(['outline']))
+    }, [flush, updateWorkspace])
 
     const handleCreateChapter = useCallback(
         (volumeId: string): void => {
@@ -305,8 +392,9 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                     }
                 }),
             }))
+            flush(new Set<PersistScope>(['outline']))
         },
-        [updateWorkspace],
+        [flush, updateWorkspace],
     )
 
     const handleApplyOutline = useCallback(
@@ -319,8 +407,9 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                 }))
                 return { ...previous, volumes: [...previous.volumes, ...appended] }
             })
+            flush(new Set<PersistScope>(['outline']))
         },
-        [updateWorkspace],
+        [flush, updateWorkspace],
     )
 
     /** 用素材重建大纲树：整体覆盖既有草稿，返回重建的章节数供页面提示 */
@@ -330,9 +419,10 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
             const volumes = createOutlineFromDraft(drafts, DEFAULT_CHAPTER_WORD_GOAL, characters)
             const chapterCount = volumes.reduce((total, volume) => total + volume.chapters.length, 0)
             updateWorkspace((previous) => ({ ...previous, volumes }))
+            flush(new Set<PersistScope>(['outline']))
             return chapterCount
         },
-        [updateWorkspace],
+        [flush, updateWorkspace],
     )
 
     /** 合并设定草案：只填空字段，已有内容一律不动，返回实际填入的字段数 */
@@ -388,10 +478,11 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
             const filled = Object.keys(patch).length
             if (filled > 0) {
                 updateWorkspace((previous) => ({ ...previous, setting: { ...previous.setting, ...patch } }))
+                scheduleFlush('setting')
             }
             return filled
         },
-        [updateWorkspace],
+        [scheduleFlush, updateWorkspace],
     )
 
     const renderSection = (workspace: OutlineWorkspace, workspaceDir: string): JSX.Element => {
@@ -463,12 +554,7 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
     return (
         <div className="flex h-screen min-h-0">
             <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{renderSection(workspace, workspaceDir)}</div>
-            <WorkflowPressNav
-                activeSection={activeSection}
-                onSelect={setActiveSection}
-                isSaving={isSaving}
-                onSave={() => handleSave(workspace, workspaceDir)}
-            />
+            <WorkflowPressNav activeSection={activeSection} onSelect={setActiveSection} />
         </div>
     )
 }

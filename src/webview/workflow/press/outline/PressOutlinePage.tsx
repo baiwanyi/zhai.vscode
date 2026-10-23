@@ -112,7 +112,6 @@ export function PressOutlinePage({
                     <div className="flex shrink-0 items-center gap-1.5">
                         <Button
                             variant="outline"
-                            size="sm"
                             title="按已抽取的素材重建卷与章，含情节脉络、关键转折、章纲节拍与出场人物（不调用模型），会覆盖当前大纲草稿"
                             disabled={isExtracting}
                             onClick={handleExtract}
@@ -120,7 +119,7 @@ export function PressOutlinePage({
                             <Sparkles />
                             {isExtracting ? '提取中' : '提取'}
                         </Button>
-                        <Button size="sm" onClick={() => setIsWizardOpen(true)}>
+                        <Button onClick={() => setIsWizardOpen(true)}>
                             <Wand2 />
                             生成大纲
                         </Button>

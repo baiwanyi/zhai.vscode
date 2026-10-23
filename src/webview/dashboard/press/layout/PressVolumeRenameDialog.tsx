@@ -52,7 +52,7 @@ export function PressVolumeRenameDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>重命名卷</DialogTitle>
+                    <DialogTitle className="text-lg">重命名卷</DialogTitle>
                     <DialogDescription>仅修改卷名，卷的序号前缀与其中章节保持不变。</DialogDescription>
                 </DialogHeader>
                 <FieldGroup>

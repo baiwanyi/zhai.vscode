@@ -52,7 +52,7 @@ export function NotesListState({ status, error, isFiltered, onResetFilters }: No
             </EmptyHeader>
             {isFiltered ? (
                 <EmptyContent>
-                    <Button size="sm" variant="outline" onClick={onResetFilters}>
+                    <Button variant="outline" onClick={onResetFilters}>
                         清除筛选
                     </Button>
                 </EmptyContent>

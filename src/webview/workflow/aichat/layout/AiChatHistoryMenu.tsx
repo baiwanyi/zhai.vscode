@@ -42,7 +42,7 @@ export function AiChatHistoryMenu({
             }}
         >
             <DropdownMenuTrigger asChild>
-                <Button size="icon-sm" variant="ghost" className="rounded-full" title="历史对话" aria-label="历史对话">
+                <Button variant="ghost" className="size-7 p-0 rounded-full" title="历史对话" aria-label="历史对话">
                     <History />
                 </Button>
             </DropdownMenuTrigger>

@@ -27,7 +27,7 @@ export function DashboardTopBar({
 }: DashboardTopBarProps): JSX.Element {
     return (
         <div className="flex items-center gap-2">
-            <Button variant="outline" size="lg" className="flex-1 justify-start rounded-full" onClick={onAdd}>
+            <Button variant="outline" className="flex-1 justify-start rounded-full" onClick={onAdd}>
                 <Plus data-icon="inline-start" />
                 添加
             </Button>

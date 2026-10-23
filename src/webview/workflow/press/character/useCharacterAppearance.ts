@@ -6,7 +6,7 @@
  * 结果不直接落库，由调用方写入草稿并由用户点保存，未保存的生成结果只存在于弹窗内；
  * 失败原因统一经 sonner 提示，不回传错误状态给组件渲染。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { CharacterAppearanceRequest, CharacterAppearanceResult } from '@shared/types/press'
 import type { CharacterCard } from '../types'
@@ -33,9 +33,15 @@ export interface CharacterAppearanceState {
 
 export function useCharacterAppearance(): CharacterAppearanceState {
     const [isGenerating, setIsGenerating] = useState(false)
+    /** 同步标记：setState 生效前的连点会被这里拦住，保证「生成中不接受重复提交」真正成立 */
+    const generatingRef = useRef(false)
 
     const generate = useCallback(
         async (character: CharacterCard, context: AppearanceContext): Promise<string | null> => {
+            if (generatingRef.current) {
+                return null
+            }
+            generatingRef.current = true
             setIsGenerating(true)
             try {
                 const result = await request<CharacterAppearanceResult>(
@@ -52,6 +58,7 @@ export function useCharacterAppearance(): CharacterAppearanceState {
                 toastError(cause)
                 return null
             } finally {
+                generatingRef.current = false
                 setIsGenerating(false)
             }
         },

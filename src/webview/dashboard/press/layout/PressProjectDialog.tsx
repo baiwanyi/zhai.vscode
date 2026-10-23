@@ -51,7 +51,7 @@ export function PressProjectDialog({
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>添加作品</DialogTitle>
+                    <DialogTitle className="text-lg">添加作品</DialogTitle>
                     <DialogDescription>
                         将在 press/ 下生成作品目录，并附带背景、大纲、角色设定与设定文档。
                     </DialogDescription>

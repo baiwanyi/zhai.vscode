@@ -3,7 +3,7 @@
  * 复用约定：卡片复用 ui/card，删除确认复用 ui/alert-dialog，角色徽标取 CHARACTER_ROLE_META 的图表色，
  * 性别以 Mars / Venus 图标区分（男蓝女红），空态复用 ui/empty。
  * 关键约束：封面优先取磁盘画廊（宿主一次回读的全部角色图片），按 coverPortraitId 命中，未命中用最新一张，
- * 再退回到草稿里已加载的 portraits——文档只存封面 id，图片本体在 _portraits 下，不读磁盘就没有封面；
+ * 再退回到草稿里已加载的 portraits——文档只存封面 id，图片本体在 Portraits 下，不读磁盘就没有封面；
  * 卡片是可聚焦按钮而非占位容器，键盘可逐项进入；排序固定按 CHARACTER_ROLE_ORDER，不随点击顺序变化；
  * 删除按钮放在卡片外层容器而非卡片内部，避免点击删除时触发卡片的选中事件。
  */
@@ -98,12 +98,12 @@ export function CharacterList({
                 </EmptyHeader>
                 <EmptyContent>
                     {totalCount === 0 ? (
-                        <Button size="sm" variant="outline" onClick={onCreate}>
+                        <Button variant="outline" onClick={onCreate}>
                             <Plus data-icon="inline-start" />
                             新增人物
                         </Button>
                     ) : (
-                        <Button size="sm" variant="ghost" disabled={!hasFilter} onClick={onClearFilter}>
+                        <Button variant="ghost" disabled={!hasFilter} onClick={onClearFilter}>
                             清空筛选
                         </Button>
                     )}
@@ -174,9 +174,8 @@ export function CharacterList({
                                 </div>
                             </Card>
                             <Button
-                                size="icon"
                                 variant="ghost"
-                                className="absolute top-1 right-1 size-6 text-muted-foreground opacity-70 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                                className="absolute top-1 right-1 size-7 p-0 text-muted-foreground opacity-70 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
                                 aria-label={`删除人物 ${character.name}`}
                                 title="删除人物"
                                 onClick={() => setDeletingId(character.id)}
@@ -197,16 +196,15 @@ export function CharacterList({
             >
                 <AlertDialogContent size="sm">
                     <AlertDialogHeader>
-                        <AlertDialogTitle>删除「{deleting?.name ?? ''}」？</AlertDialogTitle>
+                        <AlertDialogTitle className="text-lg">删除「{deleting?.name ?? ''}」？</AlertDialogTitle>
                         <AlertDialogDescription>
-                            人物卡会从角色设定.md
-                            中移除，章纲里的出场引用一并清理；已生成的角色设定图文件仍保留在作品目录。
+                            人物卡会立即从角色设定.md
+                            中移除，章纲里的出场引用一并清理，已生成的角色设定图移入回收站。
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel size="sm">取消</AlertDialogCancel>
+                        <AlertDialogCancel>取消</AlertDialogCancel>
                         <AlertDialogAction
-                            size="sm"
                             variant="destructive"
                             onClick={() => {
                                 const target = deletingId

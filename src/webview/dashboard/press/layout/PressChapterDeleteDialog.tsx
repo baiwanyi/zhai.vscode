@@ -35,7 +35,7 @@ export function PressChapterDeleteDialog({
         <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>删除「{chapterTitle}」？</AlertDialogTitle>
+                    <AlertDialogTitle className="text-lg">删除「{chapterTitle}」？</AlertDialogTitle>
                     <AlertDialogDescription>该章节文档将被移入回收站，可从系统回收站恢复。</AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>

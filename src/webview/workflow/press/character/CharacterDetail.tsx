@@ -77,32 +77,17 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
 
     return (
         <div className="flex h-full min-h-0 flex-col">
-            <Tabs defaultValue="basic" className="min-h-0 flex-1 gap-0">
-                {/* 标签均分整行宽度：6 个标签在窄面板下不换行、不横向滚动，下划线也不会被滚动容器裁掉 */}
-                <div className="shrink-0">
-                    <TabsList variant="line" className="w-full">
-                        <TabsTrigger value="basic" className="px-1">
-                            基础
-                        </TabsTrigger>
-                        <TabsTrigger value="appearance" className="px-1">
-                            外貌
-                        </TabsTrigger>
-                        <TabsTrigger value="portrait" className="px-1">
-                            角色卡
-                        </TabsTrigger>
-                        <TabsTrigger value="motive" className="px-1">
-                            动机
-                        </TabsTrigger>
-                        <TabsTrigger value="ability" className="px-1">
-                            背景
-                        </TabsTrigger>
-                        <TabsTrigger value="relation" className="px-1">
-                            关系
-                        </TabsTrigger>
-                    </TabsList>
-                </div>
+            <Tabs defaultValue="basic" className="min-h-0 flex-1">
+                <TabsList className="w-full">
+                    <TabsTrigger value="basic">基础</TabsTrigger>
+                    <TabsTrigger value="appearance">外貌</TabsTrigger>
+                    <TabsTrigger value="portrait">角色卡</TabsTrigger>
+                    <TabsTrigger value="motive">动机</TabsTrigger>
+                    <TabsTrigger value="ability">背景</TabsTrigger>
+                    <TabsTrigger value="relation">关系</TabsTrigger>
+                </TabsList>
                 {/* 滚动槽常驻：长短标签页切换时内容宽度不跳，避免滚动条反复挤占空间；左右留 2px 防止聚焦环被横向裁切 */}
-                <div className="min-h-0 flex-1 overflow-y-auto px-0.5 py-2 [scrollbar-gutter:stable]">
+                <div className="min-h-0 flex-1 overflow-y-auto px-0.5 py-2 scrollbar-gutter-stable">
                     <TabsContent value="basic" className="flex flex-col gap-3">
                         {/* 两列固定：姓名/昵称、年龄/身高各占一行，窄面板下也不折行 */}
                         <div className="grid grid-cols-2 gap-3">
@@ -164,7 +149,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 onValueChange={handleRoleChange}
                             >
                                 {CHARACTER_ROLE_ORDER.map((role) => (
-                                    <ToggleGroupItem key={role} value={role} size="sm" variant="outline">
+                                    <ToggleGroupItem key={role} value={role} variant="outline">
                                         {CHARACTER_ROLE_META[role].label}
                                     </ToggleGroupItem>
                                 ))}
@@ -180,7 +165,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 onValueChange={handleBodyTypeChange}
                             >
                                 {CHARACTER_BODY_TYPE_ORDER.map((bodyType) => (
-                                    <ToggleGroupItem key={bodyType} value={bodyType} size="sm" variant="outline">
+                                    <ToggleGroupItem key={bodyType} value={bodyType} variant="outline">
                                         {CHARACTER_BODY_TYPE_META[bodyType].label}
                                     </ToggleGroupItem>
                                 ))}
@@ -196,7 +181,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 onValueChange={handleGenderChange}
                             >
                                 {CHARACTER_GENDER_ORDER.map((gender) => (
-                                    <ToggleGroupItem key={gender} value={gender} size="sm" variant="outline">
+                                    <ToggleGroupItem key={gender} value={gender} variant="outline">
                                         {CHARACTER_GENDER_META[gender].label}
                                     </ToggleGroupItem>
                                 ))}
@@ -222,6 +207,7 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                                 ) : (
                                     <Button
                                         variant="outline"
+                                        disabled={isGenerating}
                                         onClick={() => {
                                             void handleGenerateAppearance()
                                         }}

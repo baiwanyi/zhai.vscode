@@ -65,7 +65,7 @@ export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: Charac
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-md">
                 <DialogHeader>
-                    <DialogTitle>新增人物</DialogTitle>
+                    <DialogTitle className="text-lg">新增人物</DialogTitle>
                     <DialogDescription>先建卡再细化，欲望、弱点与关系在人物卡里继续补充</DialogDescription>
                 </DialogHeader>
                 <div className="flex flex-col gap-3">
@@ -88,7 +88,7 @@ export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: Charac
                         <FieldLabel htmlFor="character-create-role">角色</FieldLabel>
                         <ToggleGroup type="single" value={role} className="flex-wrap" onValueChange={handleRoleChange}>
                             {CHARACTER_ROLE_ORDER.map((item) => (
-                                <ToggleGroupItem key={item} value={item} size="sm" variant="outline">
+                                <ToggleGroupItem key={item} value={item} variant="outline">
                                     {CHARACTER_ROLE_META[item].label}
                                 </ToggleGroupItem>
                             ))}
@@ -103,7 +103,7 @@ export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: Charac
                             onValueChange={handleGenderChange}
                         >
                             {CHARACTER_GENDER_ORDER.map((item) => (
-                                <ToggleGroupItem key={item} value={item} size="sm" variant="outline">
+                                <ToggleGroupItem key={item} value={item} variant="outline">
                                     {CHARACTER_GENDER_META[item].label}
                                 </ToggleGroupItem>
                             ))}
@@ -121,10 +121,10 @@ export function CharacterCreateDialog({ isOpen, onOpenChange, onCreate }: Charac
                     </Field>
                 </div>
                 <DialogFooter>
-                    <Button size="sm" variant="outline" onClick={() => onOpenChange(false)}>
+                    <Button variant="outline" onClick={() => onOpenChange(false)}>
                         取消
                     </Button>
-                    <Button size="sm" disabled={!canSubmit} onClick={handleSubmit}>
+                    <Button disabled={!canSubmit} onClick={handleSubmit}>
                         创建
                     </Button>
                 </DialogFooter>

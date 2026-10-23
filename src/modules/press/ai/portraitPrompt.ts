@@ -3,12 +3,20 @@
  * 复用约定：插画基底、画风提示与禁止项集中在此一份，不散落到服务层；尺寸与模型交给配置，提示词只管画什么。
  * 关键约束：按番茄小说「一键生图」的章节配图观感收口（叙事场景 + 氛围光影，画风交给 STYLE_HINTS），
  * 支持两段式——scene 由文本模型先写画面，缺省时回退到纯字段模板，保证文本模型失败也能出图；
- * 不按封面或纯立绘方向写；提示词按服务商上限截断且保留前段（人物特征在前，场景氛围在后）。
+ * 不按封面或纯立绘方向写；提示词上限 900 字，超长时先裁主体、再拼画面要求——宁可少写背景，也不能丢掉约束。
  */
 import type { PortraitGenerateRequest, PortraitStyle } from '../../../shared/types/press'
 
-/** 提示词长度上限：多数服务商限制 1000 字符以内，中文按 600 字控制 */
-const MAX_PROMPT_LENGTH = 600
+/** 提示词长度上限：多数服务商限制 1000 字符以内，中文按 900 字控制 */
+const MAX_PROMPT_LENGTH = 900
+
+/** 叙述类字段（动机、背景、关系）的单段上限：整段搬进提示词会挤掉画面要求 */
+const MAX_NARRATIVE_LENGTH = 100
+
+/** 长文本裁剪：超长时截断并留省略号，保留可读的前半段 */
+function clip(text: string, limit: number): string {
+    return text.length > limit ? `${text.slice(0, limit)}…` : text
+}
 
 /**
  * 统一插画基底：只约束构图、光影与画面质感，不锁定画风，具体画法交给 STYLE_HINTS。
@@ -39,7 +47,14 @@ const STYLE_HINTS: Readonly<Record<PortraitStyle, string>> = {
  */
 export function buildPortraitPrompt(request: PortraitGenerateRequest, scene?: string): string {
     const background = [...request.genres, request.era].filter((item) => item.length > 0).join('、')
-    const basics = [request.gender, request.age.length > 0 ? `${request.age} 岁` : '', request.identity]
+    // 性别、年龄、身高、体型、身份共同决定身形比例与身份气质，缺项直接跳过
+    const basics = [
+        request.gender,
+        request.age.length > 0 ? `${request.age} 岁` : '',
+        request.height,
+        request.bodyType,
+        request.identity,
+    ]
         .filter((item) => item.length > 0)
         .join('，')
     // 画面描述在基底之后、画风之前：先定「画什么」，再定「怎么画」
@@ -60,15 +75,27 @@ export function buildPortraitPrompt(request: PortraitGenerateRequest, scene?: st
     if (request.ability.length > 0) {
         lines.push(`能力或随身物件：${request.ability}`)
     }
+    if (request.desire.length > 0 || request.weakness.length > 0) {
+        const motive = [request.desire, request.weakness].filter((item) => item.length > 0).join('；')
+        lines.push(`动机：${clip(motive, MAX_NARRATIVE_LENGTH)}`)
+    }
+    if (request.background.length > 0) {
+        lines.push(`背景：${clip(request.background, MAX_NARRATIVE_LENGTH)}`)
+    }
+    if (request.relation.length > 0) {
+        // 关系只作为神态与场景语境的参照，画面仍只画一个人，由末尾要求兜底
+        lines.push(`人际关系：${clip(request.relation, MAX_NARRATIVE_LENGTH)}`)
+    }
     if (background.length > 0) {
         lines.push(`世界观：${background}`)
     }
     if (request.tone.length > 0) {
         lines.push(`整体氛围：${request.tone}`)
     }
-    lines.push(
+    const requirement =
         '要求：画面只出现一个人物，按身份与世界观补全所处场景、光线与随身物件，让画面像小说配图而不是封面海报；' +
-            '不要文字、水印、logo、边框、多余人物或分解图。',
-    )
-    return lines.join('\n').slice(0, MAX_PROMPT_LENGTH)
+        '不要文字、水印、logo、边框、多余人物或分解图。'
+    // 先给「要求」留足额度再裁主体：画面约束比背景细节更重要，不能被截掉
+    const body = lines.join('\n')
+    return `${body.slice(0, Math.max(0, MAX_PROMPT_LENGTH - requirement.length - 1))}\n${requirement}`
 }

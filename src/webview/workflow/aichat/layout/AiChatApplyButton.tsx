@@ -40,7 +40,7 @@ export function AiChatApplyButton({ scope, applied, applying, onApply }: AiChatA
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                     <AlertDialogHeader>
-                        <AlertDialogTitle>覆盖整篇文档？</AlertDialogTitle>
+                        <AlertDialogTitle className="text-lg">覆盖整篇文档？</AlertDialogTitle>
                         <AlertDialogDescription>
                             将用生成结果替换整篇内容，写入后可在编辑器中按 Ctrl+Z 撤销。
                         </AlertDialogDescription>

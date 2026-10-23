@@ -30,9 +30,12 @@ export function AiChatCodebuddyState({ site, loggedIn, userName, onLogin }: AiCh
                     <EmptyMedia variant="icon" className="size-12 rounded-2xl">
                         <Sparkles className="size-5" />
                     </EmptyMedia>
-                    <EmptyTitle>已登录 CodeBuddy（{userName === null ? siteLabel : `${siteLabel} / ${userName}`}）</EmptyTitle>
+                    <EmptyTitle>
+                        已登录 CodeBuddy（{userName === null ? siteLabel : `${siteLabel} / ${userName}`}）
+                    </EmptyTitle>
                     <EmptyDescription>
-                        对话、取名与人物外貌生成走 CodeBuddy 额度，直接在下方输入即可开始；切换站点（zhai.ai.codebuddySite）后需重新登录。
+                        对话、取名与人物外貌生成走 CodeBuddy
+                        额度，直接在下方输入即可开始；切换站点（zhai.ai.codebuddySite）后需重新登录。
                     </EmptyDescription>
                 </EmptyHeader>
             </Empty>
@@ -51,7 +54,7 @@ export function AiChatCodebuddyState({ site, loggedIn, userName, onLogin }: AiCh
                 </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
-                <Button size="sm" onClick={onLogin}>
+                <Button onClick={onLogin}>
                     <LogIn data-icon="inline-start" />
                     登录 {siteLabel}
                 </Button>

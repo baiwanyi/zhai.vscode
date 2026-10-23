@@ -4,13 +4,13 @@
  * （唯一实现为 CodeBuddy 的 ImageGen），提示词复用 ./ai/portraitPrompt，配额复用 ./db/quotaRepository，
  * 路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
  * 关键约束：画面描述失败一律回退纯模板，不让文本模型拖垮出图；描述不计配额，限额只针对图片张数；
- * 图片落在 press/{作品名}/_portraits/{characterId}/ 下，跟随作品目录（删除作品即一并清理），人物标识须匹配安全字符集；
+ * 图片平铺在 press/{作品名}/Portraits/ 下，文件名为 portrait-{8位角色标识}-{年月日时分秒}.扩展名，
+ * 角色归属由文件名里的角色段解析（不再按角色分子目录），跟随作品目录（删除作品即一并清理）；
  * 目录是图片的唯一事实来源：生成完成即落盘，关闭弹窗不丢结果，列举以磁盘为准；
- * 删除只接受 press/{作品名}/_portraits 下的五段相对路径，优先走回收站；同一时刻只允许一个生成请求；
- * 复制与插入同样只接受五段白名单路径，复制经平台命令写入系统剪贴板（webview 内写图片受 CSP 与权限限制）。
+ * 删除、复制与插入只接受 press/{作品名}/Portraits 下的四段白名单路径，删除优先走回收站；
+ * 复制经平台命令写入系统剪贴板（webview 内写图片受 CSP 与权限限制）；同一时刻只允许一个生成请求。
  */
 import { execFile } from 'node:child_process'
-import { randomUUID } from 'node:crypto'
 import { promisify } from 'node:util'
 import * as vscode from 'vscode'
 import { buildPortraitPrompt } from './ai/portraitPrompt'
@@ -35,16 +35,24 @@ import type {
 } from '../../shared/types/press'
 import type { AiProvider } from '../ai/provider'
 import type Database from 'better-sqlite3'
-import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId } from '../../shared/types/press'
+import {
+    DEFAULT_PORTRAIT_STYLE,
+    PORTRAIT_STYLES,
+    isPressCharacterId,
+    isPressPortraitId,
+    parsePortraitCharacterId,
+} from '../../shared/types/press'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
 import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
 
-/** 角色设定图目录名：位于作品目录之下（press/{作品名}/_portraits），下划线前缀便于与章节区分 */
-const PORTRAIT_DIR = '_portraits'
-/** 角色卡相对路径的段数：press/{作品名}/_portraits/{characterId}/{文件名} */
-const PORTRAIT_SEGMENT_COUNT = 5
+/** 角色设定图目录名：位于作品目录之下（press/{作品名}/Portraits），与章节文档区分 */
+const PORTRAIT_DIR = 'Portraits'
+/** 角色卡相对路径的段数：press/{作品名}/Portraits/{文件名} */
+const PORTRAIT_SEGMENT_COUNT = 4
+/** 设定图文件名前缀：后接角色标识与时间戳，扁平目录靠它识别归属 */
+const PORTRAIT_FILE_PREFIX = 'portrait'
 /** 角色设定图的配额键（press.db 的 meta 表） */
 const QUOTA_KEYS: QuotaKeys = { dateKey: 'press_image_date', countKey: 'press_image_count' }
 /** 目录扫描只认图片文件，其余（缩略图缓存、说明文件等）一律忽略 */
@@ -114,15 +122,10 @@ export class PortraitService {
                 signal: controller.signal,
             })
             logger.info(`角色卡通道：codebuddy（${scene === undefined ? '模板提示词' : 'AI 画面描述'}）`)
-            const id = `portrait-${randomUUID()}`
+            const id = `${PORTRAIT_FILE_PREFIX}-${request.characterId}-${formatPortraitStamp(new Date())}`
             const extension = artifact.extension
-            // 落盘到当前作品目录下，作品删除时随目录一并清理
-            const segments = [
-                ...readProjectSegments(request.dirPath),
-                PORTRAIT_DIR,
-                request.characterId,
-                `${id}.${extension}`,
-            ]
+            // 平铺落到当前作品目录的 Portraits 下，作品删除时随目录一并清理
+            const segments = [...readProjectSegments(request.dirPath), PORTRAIT_DIR, `${id}.${extension}`]
             const root = resolveStorageRoot()
             await vscode.workspace.fs.createDirectory(buildStorageUri(root, segments.slice(0, -1)))
             const target = buildStorageUri(root, segments)
@@ -153,14 +156,15 @@ export class PortraitService {
      */
     public async list(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<PortraitListResult> {
         const { dirPath, characterId } = normalizePortraitListRequest(payload)
-        const dirSegments = [...readProjectSegments(dirPath), PORTRAIT_DIR, characterId]
-        return { portraits: await this.readPortraits(dirSegments, toWebviewUri) }
+        const dirSegments = [...readProjectSegments(dirPath), PORTRAIT_DIR]
+        const portraits = await this.readPortraits(dirSegments, toWebviewUri)
+        return { portraits: portraits.filter((portrait) => parsePortraitCharacterId(portrait.id) === characterId) }
     }
 
     /**
      * 一次性列举作品下全部角色的设定图，供人物列表批量显示封面。
-     * 关键约束：只认符合安全标识的人物目录，工作目录里手工放入的其它子目录不参与；
-     * 每个角色仍复用同一套扫描实现，图片顺序与编辑弹窗里的图库完全一致。
+     * 关键约束：图片平铺在 Portraits 下，角色归属由文件名里的角色段解析；
+     * 不符合命名规则的其它图片不参与分组，顺序与编辑弹窗里的图库完全一致。
      */
     public async listGallery(
         payload: unknown,
@@ -168,30 +172,23 @@ export class PortraitService {
     ): Promise<PortraitGalleryResult> {
         const dirPath = readProjectDirPath(payload, 'pressAi/listPortraitGallery')
         const portraitRootSegments = [...readProjectSegments(dirPath), PORTRAIT_DIR]
-        let entries: [string, vscode.FileType][]
-        try {
-            entries = await vscode.workspace.fs.readDirectory(buildStorageUri(resolveStorageRoot(), portraitRootSegments))
-        } catch {
-            // 整个作品还没生成过任何设定图
-            return { galleries: {} }
-        }
         const galleries: Record<string, PortraitGalleryItem[]> = {}
-        for (const [characterId, type] of entries) {
-            if (type !== vscode.FileType.Directory || !isPressCharacterId(characterId)) {
+        for (const portrait of await this.readPortraits(portraitRootSegments, toWebviewUri)) {
+            const characterId = parsePortraitCharacterId(portrait.id)
+            if (characterId === null) {
                 continue
             }
-            const portraits = await this.readPortraits([...portraitRootSegments, characterId], toWebviewUri)
-            if (portraits.length === 0) {
-                continue
-            }
-            galleries[characterId] = portraits.map((portrait) => ({ id: portrait.id, url: portrait.url }))
+            const list = galleries[characterId] ?? []
+            list.push({ id: portrait.id, url: portrait.url })
+            galleries[characterId] = list
         }
         return { galleries }
     }
 
     /**
-     * 扫描单个角色目录：目录不存在返回空数组，读取失败的文件跳过。
-     * 关键约束：不抛错——并发删除或权限问题只影响单张图，不能让整次列举失败。
+     * 扫描设定图目录：目录不存在返回空数组，读取失败的文件跳过。
+     * 关键约束：不抛错——并发删除或权限问题只影响单张图，不能让整次列举失败；
+     * 图片 id 取文件名去掉扩展名，角色归属由调用方按其中的角色段解析。
      */
     private async readPortraits(
         dirSegments: string[],
@@ -236,13 +233,12 @@ export class PortraitService {
     public async insertIntoEditor(payload: unknown): Promise<PortraitInsertResult> {
         const path = readPortraitPath(payload)
         const segments = toSafeSegments(path, '角色卡')
-        const [moduleDir, projectName, portraitDir, characterId, fileName] = segments
+        const [moduleDir, projectName, portraitDir, fileName] = segments
         if (
             segments.length !== PORTRAIT_SEGMENT_COUNT ||
             moduleDir !== PRESS_MODULE_DIR ||
             portraitDir !== PORTRAIT_DIR ||
             !projectName ||
-            !characterId ||
             !fileName
         ) {
             throw new Error(`角色卡路径非法：${path}`)
@@ -283,18 +279,17 @@ export class PortraitService {
 
     /**
      * 把设定图写入系统剪贴板：webview 内写图片受 CSP 与剪贴板权限限制，改由宿主按平台调用原生能力。
-     * 只接受 press/{作品名}/_portraits 下的五段相对路径；平台不支持或依赖缺失时返回原因，由前端提示。
+     * 只接受 press/{作品名}/Portraits 下的四段相对路径；平台不支持或依赖缺失时返回原因，由前端提示。
      */
     public async copyToClipboard(payload: unknown): Promise<PortraitCopyResult> {
         const path = readPortraitPath(payload)
         const segments = toSafeSegments(path, '角色卡')
-        const [moduleDir, projectName, portraitDir, characterId, fileName] = segments
+        const [moduleDir, projectName, portraitDir, fileName] = segments
         if (
             segments.length !== PORTRAIT_SEGMENT_COUNT ||
             moduleDir !== PRESS_MODULE_DIR ||
             portraitDir !== PORTRAIT_DIR ||
             !projectName ||
-            !characterId ||
             !fileName
         ) {
             throw new Error(`角色卡路径非法：${path}`)
@@ -321,12 +316,13 @@ export class PortraitService {
     public async remove(payload: unknown): Promise<{ removed: boolean }> {
         const path = readPortraitPath(payload)
         const segments = toSafeSegments(path, '角色卡')
+        const fileName = segments[3] ?? ''
         if (
             segments.length !== PORTRAIT_SEGMENT_COUNT ||
             segments[0] !== PRESS_MODULE_DIR ||
             segments[2] !== PORTRAIT_DIR ||
             !segments[1] ||
-            !segments[3]
+            !isPressPortraitId(fileName.replace(/\.[^.]+$/u, ''))
         ) {
             throw new Error(`角色卡路径非法：${path}`)
         }
@@ -337,6 +333,37 @@ export class PortraitService {
         } catch {
             return { removed: false }
         }
+    }
+
+    /**
+     * 清理某个角色的全部设定图：删除角色时随角色块一并清理，避免留下无人引用的图片。
+     * 关键约束：只删文件名角色段匹配且符合命名规范的文件，手工放入的其它图片不受影响。
+     */
+    public async removeByCharacterId(dirPath: string, characterId: string): Promise<{ removed: number }> {
+        const dirSegments = [...readProjectSegments(dirPath), PORTRAIT_DIR]
+        const root = resolveStorageRoot()
+        let entries: [string, vscode.FileType][]
+        try {
+            entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
+        } catch {
+            return { removed: 0 }
+        }
+        let removed = 0
+        for (const [name, type] of entries) {
+            if (type !== vscode.FileType.File) {
+                continue
+            }
+            if (parsePortraitCharacterId(name.replace(/\.[^.]+$/u, '')) !== characterId) {
+                continue
+            }
+            try {
+                await deleteResource(buildStorageUri(root, [...dirSegments, name]), false)
+                removed += 1
+            } catch (error) {
+                logger.error(`角色设定图清理失败：${name}`, error)
+            }
+        }
+        return { removed }
     }
 
     /**
@@ -393,12 +420,16 @@ function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
         role?: unknown
         gender?: unknown
         age?: unknown
+        height?: unknown
+        bodyType?: unknown
         identity?: unknown
         appearance?: unknown
         traits?: unknown
         desire?: unknown
         weakness?: unknown
         ability?: unknown
+        background?: unknown
+        relation?: unknown
         era?: unknown
         genres?: unknown
         tone?: unknown
@@ -411,12 +442,16 @@ function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
         role: readText(value.role, MAX_SHORT_TEXT),
         gender: readText(value.gender, MAX_SHORT_TEXT),
         age: readText(value.age, MAX_SHORT_TEXT),
+        height: readText(value.height, MAX_SHORT_TEXT),
+        bodyType: readText(value.bodyType, MAX_SHORT_TEXT),
         identity: readText(value.identity, MAX_SHORT_TEXT),
         appearance: readText(value.appearance, MAX_LONG_TEXT),
         traits: readTextList(value.traits, 8, 16),
         desire: readText(value.desire, MAX_LONG_TEXT),
         weakness: readText(value.weakness, MAX_LONG_TEXT),
         ability: readText(value.ability, MAX_LONG_TEXT),
+        background: readText(value.background, MAX_LONG_TEXT),
+        relation: readText(value.relation, MAX_LONG_TEXT),
         era: readText(value.era, MAX_SHORT_TEXT),
         genres: readTextList(value.genres, 6, 16),
         tone: readText(value.tone, MAX_SHORT_TEXT),
@@ -426,6 +461,19 @@ function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
         throw new Error('缺少人物姓名，无法生成角色卡')
     }
     return request
+}
+
+/** 文件名时间戳：本地时间 YYYYMMDDHHmmss，与图片命名规范一致，按文件名即可排序 */
+function formatPortraitStamp(date: Date): string {
+    const pad = (value: number): string => String(value).padStart(2, '0')
+    return [
+        String(date.getFullYear()),
+        pad(date.getMonth() + 1),
+        pad(date.getDate()),
+        pad(date.getHours()),
+        pad(date.getMinutes()),
+        pad(date.getSeconds()),
+    ].join('')
 }
 
 /** 读取画风：只接受白名单内的值，其余一律回落默认风格 */

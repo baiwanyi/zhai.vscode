@@ -291,41 +291,45 @@ body.vscode-high-contrast-light {
 }
 
 /*
- * sonner loading 图标定位与旋转中心覆盖：sonner 用 `.sonner-loader` 绝对定位 + translate(-50%, -50%)
+ * sonner loading 图标定位与旋转中心覆盖：sonner 将 `.sonner-loader` 绝对定位 + translate(-50%, -50%)
  * 居中，百分比平移按元素自身尺寸折算；`[data-icon] svg` 又带 margin-left: -1px 的光学补偿。
- * 两者叠加使图标落在半像素边界，且旋转直接挂在 svg 上时轴心按 view-box 解析，容易与几何中心错开，
- * 视觉上就是绕偏心点画圈。这里改为：loader 在 16px 图标槽内静态 flex 居中并锁死整数像素尺寸，
- * 旋转由这层 HTML 盒承担（轴心即盒中心），svg 清掉 margin、铺满槽位且不参与动画，只保留淡出缩放。
- * 本段处于 @layer 之外，选择器特异性高于 sonner 运行时注入的规则与 Tailwind 的 animate-spin。
+ * 两者叠加使图标落在半像素边界，旋转轴心一旦按外层盒解析就与 svg 内容几何中心错开，
+ * 视觉上就是绕偏心点画圈。这里改为：loader 盒在 16px 图标槽内静态 flex 居中并锁死整数像素尺寸、
+ * 自身不参与动画；旋转仍由 svg 承担，并以 transform-box: fill-box 把轴心锁定在 svg 内容
+ * 包围盒的中心，与 svg 的位置、margin、像素取整彻底解耦。本段处于 @layer 之外，选择器
+ * 特异性高于 sonner 运行时注入的规则与 Tailwind 的 animate-spin。
  */
 [data-sonner-toast] [data-icon] > .sonner-loader {
     position: static;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
     width: 16px;
     height: 16px;
     transform: none;
-    animation: sonner-toast-loader-spin 1s linear infinite;
-}
-
-[data-sonner-toast][data-styled] [data-icon] > .sonner-loader > svg {
-    display: block;
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    transform-origin: center;
+    transition: none;
     animation: none;
 }
 
 [data-sonner-toast] [data-icon] > .sonner-loader[data-visible='false'] {
     opacity: 0;
-    animation-play-state: paused;
+}
+
+[data-sonner-toast] [data-icon] > .sonner-loader > svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: sonner-toast-loader-spin 1s linear infinite;
 }
 
 [data-sonner-toast] [data-icon] > .sonner-loader[data-visible='false'] > svg {
     transform: scale(0.8);
     transition: transform 200ms;
+    animation: none;
 }
 
 @keyframes sonner-toast-loader-spin {

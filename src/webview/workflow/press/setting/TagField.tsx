@@ -74,7 +74,6 @@ export function TagField({
                 {options.map((option) => (
                     <Toggle
                         key={option}
-                        size="sm"
                         variant="outline"
                         pressed={value.includes(option)}
                         disabled={!value.includes(option) && isFull}

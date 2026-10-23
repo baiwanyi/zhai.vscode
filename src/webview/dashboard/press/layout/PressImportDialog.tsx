@@ -77,7 +77,7 @@ export function PressImportDialog({
         <Dialog open onOpenChange={handleOpenChange}>
             <DialogContent>
                 <DialogHeader>
-                    <DialogTitle>导入作品</DialogTitle>
+                    <DialogTitle className="text-lg">导入作品</DialogTitle>
                     <DialogDescription>
                         文件已通过安全检查，确认后将按作品结构写入 press/ 目录，正文原样保留。
                     </DialogDescription>

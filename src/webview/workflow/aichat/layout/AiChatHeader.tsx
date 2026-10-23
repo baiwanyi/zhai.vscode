@@ -42,9 +42,8 @@ export function AiChatHeader({
                     onDelete={onDeleteSession}
                 />
                 <Button
-                    size="icon-sm"
                     variant="secondary"
-                    className="rounded-full"
+                    className="size-7 p-0 rounded-full"
                     title="新建会话"
                     onClick={onNewSession}
                 >

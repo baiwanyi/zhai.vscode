@@ -130,7 +130,7 @@ export function OutlineWizard({
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
             <DialogContent className="flex max-h-[calc(100vh-4rem)] flex-col gap-3 sm:max-w-2xl">
                 <DialogHeader>
-                    <DialogTitle>生成大纲</DialogTitle>
+                    <DialogTitle className="text-lg">生成大纲</DialogTitle>
                     <DialogDescription>按结构模板展开卷纲与章纲，逐条确认后写入大纲，草案可继续编辑</DialogDescription>
                 </DialogHeader>
 
@@ -177,24 +177,20 @@ export function OutlineWizard({
 
                 <DialogFooter className="items-center gap-2">
                     {step !== 'input' ? (
-                        <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setStep(step === 'chapter' ? 'volume' : 'input')}
-                        >
+                        <Button variant="ghost" onClick={() => setStep(step === 'chapter' ? 'volume' : 'input')}>
                             <ArrowLeft data-icon="inline-start" />
                             上一步
                         </Button>
                     ) : null}
                     <span className="flex-1" />
                     {step === 'input' ? (
-                        <Button size="sm" onClick={handleBuild}>
+                        <Button onClick={handleBuild}>
                             <Plus data-icon="inline-start" />
                             生成卷纲
                         </Button>
                     ) : null}
                     {step === 'volume' ? (
-                        <Button size="sm" onClick={() => setStep('chapter')}>
+                        <Button onClick={() => setStep('chapter')}>
                             下一步：勾选章纲
                             <ArrowRight data-icon="inline-end" />
                         </Button>
@@ -204,7 +200,7 @@ export function OutlineWizard({
                             <Badge variant="outline" className="tabular-nums">
                                 已选 {selectedCount} 章
                             </Badge>
-                            <Button size="sm" disabled={selectedCount === 0} onClick={handleApply}>
+                            <Button disabled={selectedCount === 0} onClick={handleApply}>
                                 写入大纲
                             </Button>
                         </div>

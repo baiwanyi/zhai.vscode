@@ -160,7 +160,6 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                 ) : null}
                 <Button
                     variant="outline"
-                    size="sm"
                     className="w-full justify-center"
                     title="扫描章节生成 _import/ 素材（章节清单、人名候选、金手指候选），本地统计、不调用模型"
                     disabled={isAnalyzing || status !== 'ready'}
@@ -171,7 +170,6 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                 </Button>
                 <Button
                     variant="outline"
-                    size="sm"
                     className="w-full justify-center text-destructive hover:text-destructive"
                     disabled={isDeletingProject}
                     onClick={() => setIsDeleteProjectOpen(true)}

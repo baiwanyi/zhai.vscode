@@ -86,9 +86,7 @@ export function PressSettingPage({
                 toast.info('提取到的字段都已填写，未改动现有内容')
                 return
             }
-            toast.success(
-                `已填入 ${String(filled)} 个空字段，共 ${String(result.setting.clues.length)} 章线索供核对`,
-            )
+            toast.success(`已填入 ${String(filled)} 个空字段，共 ${String(result.setting.clues.length)} 章线索供核对`)
         }
         void run()
     }
@@ -286,7 +284,9 @@ export function PressSettingPage({
                                 className="min-h-24"
                                 onChange={(event) => onChange({ worldview: event.target.value })}
                             />
-                            <FieldDescription>导入作品时会依据设定候选章归纳这一段，续写时的风格注入首先读它</FieldDescription>
+                            <FieldDescription>
+                                导入作品时会依据设定候选章归纳这一段，续写时的风格注入首先读它
+                            </FieldDescription>
                         </Field>
                         <Field>
                             <FieldLabel htmlFor="setting-geography">地理格局</FieldLabel>
@@ -415,7 +415,7 @@ export function PressSettingPage({
                                 }}
                             >
                                 {PERSPECTIVE_OPTIONS.map((option) => (
-                                    <ToggleGroupItem key={option} value={option} size="sm" variant="outline">
+                                    <ToggleGroupItem key={option} value={option} variant="outline">
                                         {option}
                                     </ToggleGroupItem>
                                 ))}
@@ -454,13 +454,12 @@ export function PressSettingPage({
                 </SettingSection>
             </div>
             <footer className="flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={handleRevealMissing}>
+                <Button variant="ghost" onClick={handleRevealMissing}>
                     <Sparkles />
                     补齐缺失项
                 </Button>
                 <Button
                     variant="outline"
-                    size="sm"
                     title="按设定候选章（世界构建与金手指关键词命中章）的摘录与摘要归纳世界观、规则与核心概念（调用 AI），只填空字段"
                     disabled={isExtracting}
                     onClick={handleExtract}
@@ -469,7 +468,7 @@ export function PressSettingPage({
                     {isExtracting ? '提取中' : '提取'}
                 </Button>
                 <span className="flex-1" />
-                <Button size="sm" onClick={onNext}>
+                <Button onClick={onNext}>
                     下一步：设定人物
                     <ArrowRight data-icon="inline-end" />
                 </Button>

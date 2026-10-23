@@ -33,13 +33,6 @@ const WORLD_CLUES_FILE = 'world-clues.md'
 /** 人名候选的出现次数下限：低于该值视为偶然出现的词组 */
 const MIN_NAME_HITS = 3
 
-/**
- * 弱信号门槛：姓氏 + 停顿标点的切法误判率高于「姓氏 + 动作词」，
- * 靠出现次数与跨章分布兜住——只在多章反复出现的名字才值得进候选。
- */
-const MIN_WEAK_HITS = 8
-const MIN_WEAK_CHAPTERS = 2
-
 /** 人名候选上限：角色卡只取前 30 个，多留一批供人工挑选与证据摘录 */
 const MAX_CANDIDATES = 40
 
@@ -64,31 +57,204 @@ const SURNAMES = new Set(
     '赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜谢邹喻柏窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵汪祁毛禹狄米贝明臧计伏成戴谈宋茅庞熊纪舒屈项祝董梁杜阮蓝闵席季麻强贾路娄危江童颜郭梅盛林刁钟徐邱骆高夏蔡田樊胡凌霍虞万支柯管卢莫经房裘缪干解应宗丁宣邓郁单杭洪包诸左石崔吉龚程邢裴陆荣翁荀羊惠甄曲家封芮储靳松井段富巫乌焦巴弓牧隗山谷车侯全班秋仲伊宫宁仇栾暴甘厉戎祖武符刘景詹束龙叶幸司韶郜黎薄印宿白怀蒲邰从鄂索咸籍赖卓蔺屠蒙池乔阴胥能苍双闻莘党翟谭贡劳姬申扶堵冉宰郦雍桑桂濮牛寿通边扈燕冀浦尚农温别庄晏柴瞿阎充慕连茹习宦艾鱼容向古易慎戈廖庾终暨居衡步都耿满弘匡国文寇广禄阙东欧殳沃利蔚越隆师巩聂晁融冷訾辛阚简饶空曾沙养鞠须丰巢关蒯相查后荆红游竺权盖益桓',
 )
 
-/** 姓氏后紧跟的动作词：用于区分「人名」与「同为首字的普通词」 */
-const ACTION_SUFFIX = '道说问答笑怒喝叹想吼叫骂哼哭嚷'
+/**
+ * 姓氏后紧跟的动作词：只有「候选名 + 人物动作」才算人名证据。
+ * 关键约束：这里只收「需要人做主语」的动词（说、笑、点头、皱眉……），
+ * 不收「爆、涌、散、亮」这类无主语也能成立的词——后者会把「能量」「金光」误判成人名。
+ * 早期版本还接受「候选名 + 标点」，那条规则会产出「时候」「东西」「闻言」「解释」这类高频假角色，已移除。
+ */
+const ACTION_SUFFIX =
+    '道说问答笑怒喝叹想吼叫骂哼哭嚷看点皱冷沉抬转开抱拱摆停站坐走跑冲扑低伸收抓握愣怔僵盯望瞧听念叨咳嗯唉嘶哂讥嘲瞪瞥瞄咽喝呸噢哦嘿嗨喂嗯嚎嚷'
 
 /**
- * 弱信号的可接受后继：人名后紧跟这些字符说明名字到此结束。
- * 用模板字符串而非单引号：字符串里必须包含中文引号，单引号包裹会被 ASCII 引号截断。
+ * 非人名词表：由姓氏字眼开头、但实际是普通词或身份通称的组合。
+ * 关键词表永远不全，它是候选筛选的第一道过滤，模型侧提示词与解析层各自还有一道。
  */
-const NAME_BOUNDARIES = `，。！？；：、…—“”‘’（）《》〈〉「」『』 \t`
-
-/**
- * 弱信号的停用词：由姓氏字眼开头的常见词组，靠词表直接排除，
- * 否则「王朝」「长老」会被当成高频人名。宁可漏掉个别真名，也不让名单被词组淹没。
- */
-const NAME_STOP_WORDS = new Set([
-    '王朝',
-    '王都',
-    '王家',
-    '王府',
-    '王爷',
-    '李府',
-    '张家',
+const NON_PERSON_WORDS = new Set([
+    // 时间、方位、抽象名词（最容易被「姓氏 + 标点」误判的高频词）
+    '时候',
+    '时间',
+    '时刻',
+    '时辰',
+    '时机',
+    '时常',
+    '时人',
+    '东西',
+    '东西方',
+    '地方',
+    '方向',
+    '方式',
+    '方面',
+    '方位',
+    '方案',
+    // 高频连词与方位短语：它们后面常跟动作词（「于是笑道」「向前走去」「马上走了」），
+    // 不列出来就会稳定产出假角色——命中次数远超阈值，光靠次数筛不掉
+    '于是',
+    '于此',
+    '当然',
+    '何况',
+    '何处',
+    '何时',
+    '何人',
+    '何故',
+    '何必',
+    '莫非',
+    '向前',
+    '向后',
+    '向外',
+    '向内',
+    '向上',
+    '向下',
+    '马上',
+    '关心',
+    '关于',
+    '陆续',
+    '马车',
+    '景象',
+    '荀子',
+    '过程',
+    '结果',
+    '关系',
+    '身份',
+    '声音',
+    '声明',
+    '名声',
+    '脸色',
+    '眼神',
+    '心情',
+    '念头',
+    '力量',
+    '气息',
+    '修为',
+    '境界',
+    '位置',
+    '距离',
+    '速度',
+    '温度',
+    '光芒',
+    '震动',
+    '变化',
+    '感觉',
+    '想法',
+    '问题',
+    '答案',
+    '情况',
+    '事情',
+    '消息',
+    '名字',
+    '能量',
+    '能力',
+    '闻言',
+    '解释',
+    '通红',
+    '通体',
+    '通常',
+    '通明',
+    '周身',
+    '周天',
+    '周围',
+    '周围人',
+    '方向感',
+    '余地',
+    '余波',
+    '当下',
+    '当时',
+    '当日',
+    '当年',
+    '常人',
+    '常理',
+    '白日',
+    '白衣',
+    '白发',
+    '石壁',
+    '石阶',
+    '石室',
+    '毛发',
+    '民间',
+    '民众',
+    '水汽',
+    '水火',
+    '木门',
+    '山峰',
+    '山谷',
+    '田中',
+    '田间',
+    '文风',
+    '文化',
+    '文中',
+    '武功',
+    '武力',
+    '武器',
+    '甘愿',
+    '甘心',
+    '生死',
+    '生气',
+    '生机',
+    '宁死',
+    '宁静',
+    '史书',
+    '史上',
+    '叶子',
+    '叶片',
+    '龙套',
+    '龙王',
+    '左右',
+    '左臂',
+    '右手',
+    '左手',
+    '右臂',
+    '关中',
+    '关闭',
+    '关爱',
+    '祖国',
+    '祖师',
+    '祖先',
+    '祖宗',
+    '包内',
+    '包袱',
+    '包裹',
+    '程门',
+    '程度',
+    '程序',
+    '陆路',
+    '陆军',
+    '陆地',
+    '翁婿',
+    '曲子',
+    '曲调',
+    '封号',
+    '封印',
+    '段落',
+    '段落感',
+    '车窗',
+    '车轮',
+    '车门',
+    '秋季',
+    '秋风',
+    '秋色',
+    '伊人',
+    '宫门',
+    '宫殿',
+    '宁可',
+    '宁愿',
+    '祖传',
+    '祖上',
+    '武学',
+    '符纸',
     '刘家',
-    '陈家',
-    '林家',
-    '赵家',
+    '景致',
+    '景色',
+    '龙脉',
+    '龙族',
+    '叶家',
+    '华丽',
+    '华服',
+    '金家',
+    '金色',
+    '金黄',
+    '钱包',
+    '钱袋',
+    // 身份通称与人群集合：不是具体角色
     '少年',
     '老者',
     '男子',
@@ -140,6 +306,16 @@ const NAME_STOP_WORDS = new Set([
     '大殿',
     '书房',
     '卧房',
+    '王朝',
+    '王都',
+    '王家',
+    '王府',
+    '王爷',
+    '李府',
+    '张家',
+    '陈家',
+    '林家',
+    '赵家',
     '江家',
     '郭家',
     '黄家',
@@ -154,11 +330,17 @@ const NAME_STOP_WORDS = new Set([
  */
 const NAME_LENGTHS: readonly number[] = [2, 3, 4]
 
-/** 弱信号的长度：只认两三字名，四字名在停顿标点前的误判率过高 */
-const WEAK_NAME_LENGTHS: readonly number[] = [2, 3]
-
 /** 汉字候选校验 */
 const HAN_NAME = /^[\u4e00-\u9fa5]{2,4}$/u
+
+/**
+ * 判断一个候选是否可能是人名：汉字 2–4 字且不在非人名词表内。
+ * 关键约束：这是候选筛选与产物解析共用的口径——素材层用它过滤候选，
+ * 归纳产物解析时用同一函数兜住模型自造的条目，两处不能各写一份。
+ */
+export function isLikelyPersonName(name: string): boolean {
+    return HAN_NAME.test(name) && !NON_PERSON_WORDS.has(name)
+}
 
 /** 金手指关键词表：按题材归类，只用于定位「作者的设定最可能在哪几章交代」 */
 const GOLDEN_FINGER_HINTS: readonly { category: string; words: readonly string[] }[] = [
@@ -208,11 +390,12 @@ interface PendingChapter {
     volumeDir: string
 }
 
-/** 人名的强弱信号计数：强信号按姓氏 + 动作词命中，弱信号按姓氏 + 停顿标点命中 */
+/**
+ * 人名证据计数：hits 为「候选名 + 人物动作」的命中次数，chapters 记录出现过的章。
+ * 没有「只靠标点也算一次」的弱信号——那条规则正是「时候」「东西」混进角色卡的来源。
+ */
 interface NameSignal {
-    strong: number
-    weak: number
-    /** 出现过的章节序号：弱信号靠跨章分布过滤词组 */
+    hits: number
     chapters: Set<number>
 }
 
@@ -350,20 +533,13 @@ async function collectChapters(root: vscode.Uri, segments: string[]): Promise<Ch
 }
 
 /**
- * 统计单章里的人名候选：强信号（姓氏 + 动作词）与弱信号（姓氏 + 停顿标点）分别计数。
- * 关键约束：命中后必须跳过整个名字，否则「薛牧笑道」会在下一个字上再命中「牧笑」这类尾巴。
+ * 统计单章里的人名候选：只认「姓氏开头 + 紧跟人物动作词」的位置，返回候选名到命中次数。
+ * 关键约束：命中后必须跳过整个名字，否则「薛牧笑道」会在下一个字上再命中「牧笑」这类尾巴；
+ * 非人名词表在此处不判定——同一章里「时候」可能以多种形态出现，过滤留到全局候选筛选，
+ * 那里才能用「总次数 + 是否在词表」一起判断。
  */
-function collectNameHits(text: string): Map<string, NameSignal> {
-    const hits = new Map<string, NameSignal>()
-    const record = (name: string, isStrong: boolean): void => {
-        const current = hits.get(name) ?? { strong: 0, weak: 0, chapters: new Set<number>() }
-        if (isStrong) {
-            current.strong += 1
-        } else {
-            current.weak += 1
-        }
-        hits.set(name, current)
-    }
+function collectNameHits(text: string): Map<string, number> {
+    const hits = new Map<string, number>()
     let index = 0
     while (index < text.length) {
         const first = text[index]
@@ -385,40 +561,14 @@ function collectNameHits(text: string): Map<string, NameSignal> {
             if (next === undefined || !ACTION_SUFFIX.includes(next)) {
                 continue
             }
-            record(candidate, true)
+            hits.set(candidate, (hits.get(candidate) ?? 0) + 1)
             matched = size
             break
-        }
-        if (matched === 0) {
-            for (const size of WEAK_NAME_LENGTHS) {
-                const candidate = text.slice(index, index + size)
-                if (!HAN_NAME.test(candidate)) {
-                    continue
-                }
-                if (candidate[0] === candidate[1] || NAME_STOP_WORDS.has(candidate)) {
-                    continue
-                }
-                const next = text[index + size]
-                if (next !== undefined && !NAME_BOUNDARIES.includes(next)) {
-                    continue
-                }
-                record(candidate, false)
-                matched = size
-                break
-            }
         }
         // 命中后跳过整个名字，否则「薛牧笑道」会在下一个字上再命中「牧笑」这类尾巴
         index += matched > 0 ? matched : 1
     }
     return hits
-}
-
-/** 判断候选是否达到入选门槛：强信号看绝对次数，弱信号看次数与跨章分布 */
-function isCandidate(signal: NameSignal): boolean {
-    if (signal.strong >= MIN_NAME_HITS) {
-        return true
-    }
-    return signal.strong + signal.weak >= MIN_WEAK_HITS && signal.chapters.size >= MIN_WEAK_CHAPTERS
 }
 
 /** 统计关键词命中：返回该章命中的类别与词，用于定位设定登场章 */
@@ -515,19 +665,18 @@ export async function analyzeProject(dirPath: string): Promise<AnalysisResult> {
     const chaptersByOrder = new Map(chapters.map((chapter) => [chapter.order, chapter]))
     for (const chapter of chapters) {
         const perChapter = collectNameHits(chapter.body)
-        for (const [name, signal] of perChapter) {
-            const current = nameSignals.get(name) ?? { strong: 0, weak: 0, chapters: new Set<number>() }
-            current.strong += signal.strong
-            current.weak += signal.weak
+        for (const [name, count] of perChapter) {
+            const current = nameSignals.get(name) ?? { hits: 0, chapters: new Set<number>() }
+            current.hits += count
             current.chapters.add(chapter.order)
             nameSignals.set(name, current)
-            const hits = chapterHits.get(name) ?? new Map<number, number>()
-            hits.set(chapter.order, signal.strong + signal.weak)
-            chapterHits.set(name, hits)
+            const bucket = chapterHits.get(name) ?? new Map<number, number>()
+            bucket.set(chapter.order, count)
+            chapterHits.set(name, bucket)
         }
         // 同章高频候选两两计数，作为人物关系强度的近似
         const topNames = [...perChapter.entries()]
-            .sort((left, right) => right[1].strong + right[1].weak - (left[1].strong + left[1].weak))
+            .sort((left, right) => right[1] - left[1])
             .slice(0, CO_OCCURRENCE_TOP)
             .map(([name]) => name)
         for (const from of topNames) {
@@ -549,9 +698,10 @@ export async function analyzeProject(dirPath: string): Promise<AnalysisResult> {
             worldClueRows.push({ order: chapter.order, title: chapter.title, hits: worldHits })
         }
     }
+    // 候选筛选同时看「命中次数」与「是否在非人名词表」：只靠次数会让「时候」这类高频词长期霸榜
     const candidates = [...nameSignals.entries()]
-        .filter(([, signal]) => isCandidate(signal))
-        .map(([name, signal]) => ({ name, count: signal.strong + signal.weak, signal }))
+        .filter(([name, signal]) => signal.hits >= MIN_NAME_HITS && isLikelyPersonName(name))
+        .map(([name, signal]) => ({ name, count: signal.hits, signal }))
         .sort((left, right) => right.count - left.count)
         .slice(0, MAX_CANDIDATES)
     const indexLines = ['序号\t卷\t标题\t字数\t路径']

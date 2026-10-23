@@ -85,12 +85,48 @@ function replaceLevelTwoSection(text: string, title: string, body: string, fallb
     return normalizeBlankLines(merged.join('\n')).trimEnd() + '\n'
 }
 
+/** 定位一级标题块的结束行：下一个一级标题即终点，找不到则到文件末尾 */
+function findBlockEnd(lines: readonly string[], headingIndex: number): number {
+    for (let cursor = headingIndex + 1; cursor < lines.length; cursor += 1) {
+        if (/^#\s+/u.test(lines[cursor] ?? '')) {
+            return cursor
+        }
+    }
+    return lines.length
+}
+
+/**
+ * 移除角色块：删除角色时按一级标题整块移除，其余角色与文件头保持原样。
+ * 关键约束：只删标题完全一致且有对应角色块的段，标题不存在时跳过，避免误删相邻内容。
+ */
+function removeCharacterBlocks(current: string, names: readonly string[]): string {
+    if (names.length === 0) {
+        return current
+    }
+    let lines = current.split(/\r?\n/u)
+    for (const name of names) {
+        const heading = `# ${name}`
+        const index = lines.findIndex((line) => line.trim() === heading)
+        if (index === -1) {
+            continue
+        }
+        lines = [...lines.slice(0, index), ...lines.slice(findBlockEnd(lines, index))]
+    }
+    return lines.join('\n')
+}
+
 /**
  * 合并角色块：按一级标题匹配，同名整块替换，其余追加到文件末尾。
- * 关键约束：文件头提示（「# 角色设定」与其说明）不是角色块，匹配时按完整标题行精确比较。
+ * 关键约束：文件头提示（「# 角色设定」与其说明）不是角色块，匹配时按完整标题行精确比较；
+ * 删除先于合并执行，因此「改名的角色」等价于删旧块 + 写新块。
  */
-function mergeCharacterBlocks(current: string, blocks: PressApplyRequest['characters']): string {
-    let lines = (current.trim().length > 0 ? current : '# 角色设定\n').split(/\r?\n/u)
+function mergeCharacterBlocks(
+    current: string,
+    blocks: NonNullable<PressApplyRequest['characters']>,
+    deletedNames: readonly string[],
+): string {
+    const base = removeCharacterBlocks(current, deletedNames)
+    let lines = (base.trim().length > 0 ? base : '# 角色设定\n').split(/\r?\n/u)
     for (const block of blocks) {
         const heading = `# ${block.name}`
         const index = lines.findIndex((line) => line.trim() === heading)
@@ -98,41 +134,46 @@ function mergeCharacterBlocks(current: string, blocks: PressApplyRequest['charac
             lines = [...lines, '', ...block.text.split('\n')]
             continue
         }
-        let end = lines.length
-        for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
-            if (/^#\s+/u.test(lines[cursor] ?? '')) {
-                end = cursor
-                break
-            }
-        }
-        lines = [...lines.slice(0, index), ...block.text.split('\n'), '', ...lines.slice(end)]
+        lines = [...lines.slice(0, index), ...block.text.split('\n'), '', ...lines.slice(findBlockEnd(lines, index))]
     }
     return normalizeBlankLines(lines.join('\n')).trimEnd() + '\n'
 }
 
 /**
- * 回写作品文档：四份文件各自合并后写入，逐份兜住异常并返回实际写入的清单。
+ * 回写作品文档：只写请求里带上的那几份，逐份兜住异常并返回实际写入的清单。
+ * 即时保存每次只带一份段落，未带的文件保持原样；删除名单与角色块在同一次写入里生效。
  * 安全约束：作品目录由 readProjectWorkspace 统一校验（press/ 下两段、拒绝上跳），写入路径不复用前端数据。
  */
 export async function applyProjectWorkspace(payload: PressApplyRequest): Promise<{ written: string[] }> {
     const document = await readProjectWorkspace(payload.dirPath)
     const root = resolveStorageRoot()
     const toUri = (fileName: string): vscode.Uri => buildStorageUri(root, [PRESS_MODULE_DIR, document.name, fileName])
-    const nextFiles: { fileName: string; content: string }[] = [
-        { fileName: WORKSPACE_FILE_NAMES.readme, content: mergeReadmeFrontmatter(document.files.readme, payload.readme) },
-        {
+    const nextFiles: { fileName: string; content: string }[] = []
+    if (payload.readme !== undefined) {
+        nextFiles.push({
+            fileName: WORKSPACE_FILE_NAMES.readme,
+            content: mergeReadmeFrontmatter(document.files.readme, payload.readme),
+        })
+    }
+    if (payload.setting !== undefined) {
+        nextFiles.push({
             fileName: WORKSPACE_FILE_NAMES.setting,
             content: replaceLevelTwoSection(document.files.setting, SETTING_SECTION_TITLE, payload.setting, '# 设定'),
-        },
-        {
+        })
+    }
+    const deletedNames = payload.deletedCharacterNames ?? []
+    if (payload.characters !== undefined || deletedNames.length > 0) {
+        nextFiles.push({
             fileName: WORKSPACE_FILE_NAMES.characters,
-            content: mergeCharacterBlocks(document.files.characters, payload.characters),
-        },
-        {
+            content: mergeCharacterBlocks(document.files.characters, payload.characters ?? [], deletedNames),
+        })
+    }
+    if (payload.outline !== undefined) {
+        nextFiles.push({
             fileName: WORKSPACE_FILE_NAMES.outline,
             content: replaceLevelTwoSection(document.files.outline, OUTLINE_SECTION_TITLE, payload.outline, '# 大纲'),
-        },
-    ]
+        })
+    }
     const written: string[] = []
     for (const file of nextFiles) {
         try {
@@ -145,3 +186,4 @@ export async function applyProjectWorkspace(payload: PressApplyRequest): Promise
     logger.info(`作品文档回写完成：${payload.dirPath}，写入 ${written.join('、')}`)
     return { written }
 }
+

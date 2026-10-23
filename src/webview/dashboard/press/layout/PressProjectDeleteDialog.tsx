@@ -42,7 +42,7 @@ export function PressProjectDeleteDialog({
         <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>删除《{projectName}》？</AlertDialogTitle>
+                    <AlertDialogTitle className="text-lg">删除《{projectName}》？</AlertDialogTitle>
                     <AlertDialogDescription>
                         整部作品（含设定、人物、大纲与 {volumeCount} 卷 {chapterCount} 章）将被移入回收站，
                         可从系统回收站恢复。删除后侧栏写作页会回到作品列表。

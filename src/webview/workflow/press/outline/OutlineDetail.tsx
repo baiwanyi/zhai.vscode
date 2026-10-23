@@ -90,9 +90,8 @@ export function OutlineDetail({
         <div className="flex h-full min-h-0 flex-col">
             <header className="flex shrink-0 items-center gap-1 border-b border-border px-2 py-1.5">
                 <Button
-                    size="icon-xs"
                     variant="ghost"
-                    className="rounded-full @2xl:hidden"
+                    className="size-7 p-0 rounded-full @2xl:hidden"
                     aria-label="返回大纲树"
                     onClick={onBack}
                 >
@@ -103,7 +102,7 @@ export function OutlineDetail({
                     {chapter.order}/{volume.chapters.length}
                 </span>
                 <Select value={chapter.status} onValueChange={handleStatusChange}>
-                    <SelectTrigger size="sm" aria-label="章纲状态" className="h-6 w-auto">
+                    <SelectTrigger aria-label="章纲状态" className="h-6 w-auto">
                         <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -312,12 +311,12 @@ export function OutlineDetail({
             </div>
 
             <footer className="flex shrink-0 items-center gap-2 border-t border-border px-3 py-2">
-                <Button size="sm" variant="ghost" onClick={onOpenWizard}>
+                <Button variant="ghost" onClick={onOpenWizard}>
                     <Wand2 />
                     重写本章纲
                 </Button>
                 <span className="flex-1" />
-                <Button size="sm" onClick={onOpenChat}>
+                <Button onClick={onOpenChat}>
                     <PenLine />
                     生成本章正文
                 </Button>

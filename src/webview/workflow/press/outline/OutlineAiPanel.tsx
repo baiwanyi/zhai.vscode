@@ -81,15 +81,15 @@ export function OutlineAiPanel({
                     呈现，可撤销。
                 </p>
                 <div className="flex flex-col gap-1">
-                    <Button size="sm" className="justify-start" onClick={onOpenChat}>
+                    <Button className="justify-start" onClick={onOpenChat}>
                         <PenLine />
                         生成本章正文
                     </Button>
-                    <Button size="sm" variant="outline" className="justify-start" onClick={onOpenChat}>
+                    <Button variant="outline" className="justify-start" onClick={onOpenChat}>
                         <ScrollText />
                         按大纲续写
                     </Button>
-                    <Button size="sm" variant="ghost" className="justify-start" onClick={onOpenWizard}>
+                    <Button variant="ghost" className="justify-start" onClick={onOpenWizard}>
                         <Wand2 />
                         重写本章纲
                     </Button>

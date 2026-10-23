@@ -56,7 +56,7 @@ describe('parseCharacterDrafts', () => {
     })
 
     it('旧版产物缺少细节字段时一律留空，不让解析失败', () => {
-        const content = ['## 苏晚', '- 姓名：苏晚', '- 分类：配角', '- 性别：女'].join('\n')
+        const content = ['## 苏晚', '- 姓名：苏晚', '- 分类：配角', '- 性别：女', '- 身份：星月宗弟子'].join('\n')
 
         const drafts = parseCharacterDrafts(content)
 
@@ -69,6 +69,38 @@ describe('parseCharacterDrafts', () => {
             background: '',
             catchphrase: '',
         })
+    })
+
+    it('丢弃分词噪声、自认非人物与全空条目', () => {
+        const content = [
+            '## 时候',
+            '- 分类：龙套',
+            '- 性别：男',
+            '## 东西',
+            '- 分类：龙套',
+            '- 身份：原文无对应人物，该名称只出现在「什么东西」等普通语句中',
+            '## 能量',
+            '- 分类：中立',
+            '- 身份：',
+            '- 欲望：',
+            '## 林尘',
+            '- 分类：主角',
+            '- 身份：外门弟子',
+        ].join('\n')
+
+        const drafts = parseCharacterDrafts(content)
+
+        expect(drafts.map((draft) => draft.name)).toEqual(['林尘'])
+    })
+
+    it('模型自述不是人物的块即使姓名像真名也丢弃', () => {
+        const content = [
+            '## 向陈轩',
+            '- 分类：龙套',
+            '- 身份：这个角色名在原文中并不是一个人物，而是「看向陈轩」的切分错误',
+        ].join('\n')
+
+        expect(parseCharacterDrafts(content)).toHaveLength(0)
     })
 
     it('容忍省略列表符号的键值行，并把超量特质截断到上限', () => {
@@ -90,7 +122,13 @@ describe('parseCharacterDrafts', () => {
     })
 
     it('无姓名的块回落为标题，重复键以首次出现为准', () => {
-        const content = ['## 李四', '- 分类：反派', '- 姓名：李四', '- 姓名：别名李四'].join('\n')
+        const content = [
+            '## 李四',
+            '- 分类：反派',
+            '- 姓名：李四',
+            '- 姓名：别名李四',
+            '- 关系：与林尘有杀父之仇',
+        ].join('\n')
 
         const drafts = parseCharacterDrafts(content)
 

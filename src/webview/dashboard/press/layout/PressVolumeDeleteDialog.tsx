@@ -38,7 +38,7 @@ export function PressVolumeDeleteDialog({
         <AlertDialog open={open} onOpenChange={onOpenChange}>
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>删除{volumeName}？</AlertDialogTitle>
+                    <AlertDialogTitle className="text-lg">删除{volumeName}？</AlertDialogTitle>
                     <AlertDialogDescription>
                         该卷及其下 {chapterCount} 章将被移入回收站，可从系统回收站恢复。
                     </AlertDialogDescription>

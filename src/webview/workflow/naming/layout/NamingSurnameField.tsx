@@ -49,7 +49,6 @@ export function NamingSurnameField({
                 <ToggleGroup
                     type="single"
                     variant="outline"
-                    size="sm"
                     spacing={0}
                     value={surnameKind}
                     onValueChange={(value) => {

@@ -24,7 +24,7 @@ import {
     AlertDialogTitle,
 } from '@components/ui/alert-dialog'
 import { Button } from '@components/ui/button'
-import { Dialog, DialogContent, DialogTitle } from '@components/ui/dialog'
+import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@components/ui/dialog'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
@@ -39,7 +39,7 @@ import { mergePortraits } from '../utils'
 interface CharacterPortraitPanelProps {
     character: CharacterCard
     aiContext: AppearanceContext
-    /** 当前作品目录：角色卡读写限定在该作品的 _portraits 下 */
+    /** 当前作品目录：角色卡读写限定在该作品的 Portraits 下 */
     dirPath: string
     onChange: (patch: Partial<CharacterCard>) => void
 }
@@ -171,7 +171,7 @@ export function CharacterPortraitPanel({
                 </div>
                 <div className="flex items-center justify-between gap-2">
                     <Select value={character.portraitStyle} disabled={isGenerating} onValueChange={handleStyleChange}>
-                        <SelectTrigger size="sm" className="h-8 w-24" aria-label="角色卡画面风格">
+                        <SelectTrigger className="h-8 w-24" aria-label="角色卡画面风格">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -249,9 +249,8 @@ export function CharacterPortraitPanel({
                                         </span>
                                     ) : (
                                         <Button
-                                            size="icon"
                                             variant="ghost"
-                                            className="absolute top-1 left-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                            className="absolute top-1 left-1 size-7 p-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                             aria-label="设为封面"
                                             onClick={() => onChange({ coverPortraitId: portrait.id })}
                                             onDoubleClick={(event) => event.stopPropagation()}
@@ -260,9 +259,8 @@ export function CharacterPortraitPanel({
                                         </Button>
                                     )}
                                     <Button
-                                        size="icon"
                                         variant="destructive"
-                                        className="absolute top-1 right-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                                        className="absolute top-1 right-1 size-7 p-0 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                                         aria-label="删除角色卡"
                                         disabled={busyPath === portrait.path}
                                         onClick={() => setDeleting(portrait)}
@@ -287,15 +285,14 @@ export function CharacterPortraitPanel({
             >
                 <AlertDialogContent size="sm">
                     <AlertDialogHeader>
-                        <AlertDialogTitle>删除这张角色卡？</AlertDialogTitle>
+                        <AlertDialogTitle className="text-lg">删除这张角色卡？</AlertDialogTitle>
                         <AlertDialogDescription>
                             文件会移入系统回收站；若它是封面，封面将自动回退到图库中的第一张。
                         </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
-                        <AlertDialogCancel size="sm">取消</AlertDialogCancel>
+                        <AlertDialogCancel>取消</AlertDialogCancel>
                         <AlertDialogAction
-                            size="sm"
                             variant="destructive"
                             onClick={() => {
                                 const target = deleting
@@ -320,16 +317,18 @@ export function CharacterPortraitPanel({
                     }
                 }}
             >
-                <DialogContent className="max-w-[min(92vw,760px)] gap-0 p-2 sm:max-w-[min(92vw,760px)]">
-                    <DialogTitle className="sr-only">角色设定图预览</DialogTitle>
-                    {previewing !== null ? (
-                        <img
-                            src={previewing.url}
-                            alt={`${character.name} 的角色卡大图`}
-                            className="max-h-[72vh] w-full rounded-lg object-contain"
-                        />
-                    ) : null}
-                    <div className="flex items-center justify-center gap-2 p-3">
+                <DialogContent>
+                    <DialogTitle className="text-lg">角色设定图预览</DialogTitle>
+                    <div className="p-3">
+                        {previewing !== null ? (
+                            <img
+                                src={previewing.url}
+                                alt={`${character.name} 的角色卡大图`}
+                                className="max-h-[72vh] w-full rounded-lg object-contain"
+                            />
+                        ) : null}
+                    </div>
+                    <DialogFooter>
                         <Button
                             variant="outline"
                             onClick={() => {
@@ -347,7 +346,7 @@ export function CharacterPortraitPanel({
                             <TextCursorInput data-icon="inline-start" />
                             插入到文章
                         </Button>
-                    </div>
+                    </DialogFooter>
                 </DialogContent>
             </Dialog>
         </div>

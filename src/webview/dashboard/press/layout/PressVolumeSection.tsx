@@ -111,9 +111,8 @@ export function PressVolumeSection({
             </CollapsibleTrigger>
             {canAppend ? (
                 <Button
-                    size="icon-xs"
                     variant="ghost"
-                    className="shrink-0 rounded-full hover:bg-transparent"
+                    className="size-7 p-0 shrink-0 rounded-full hover:bg-transparent"
                     aria-label={`在${title}中添加章节`}
                     title="添加章节"
                     disabled={isCreatingChapter}
@@ -226,7 +225,7 @@ export function PressVolumeSection({
                 ))}
                 <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
                 {hasMore ? (
-                    <Button variant="ghost" size="sm" className="rounded-full" onClick={loadMore}>
+                    <Button variant="ghost" className="rounded-full" onClick={loadMore}>
                         加载更多（剩余 {volume.chapters.length - visibleCount} 章）
                     </Button>
                 ) : null}

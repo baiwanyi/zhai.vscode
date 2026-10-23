@@ -9,17 +9,21 @@ import { sanitizeScene } from '../src/modules/press/ai/portraitScenePrompt'
 function createRequest(overrides: Partial<PortraitGenerateRequest> = {}): PortraitGenerateRequest {
     return {
         dirPath: 'press/城南旧事',
-        characterId: 'char-test',
+        characterId: '12345678',
         name: '林岚',
         role: '主角',
         gender: '男',
         age: '27',
+        height: '一米八五',
+        bodyType: '健壮',
         identity: '边关校尉',
         appearance: '身形高大，左眉有旧疤',
         traits: ['沉着', '隐忍'],
         desire: '查清父亲死因',
         weakness: '不擅言辞',
         ability: '一手快刀',
+        background: '军户出身，十六岁替父从军',
+        relation: '与副将赵四有旧怨',
         era: '架空古代',
         genres: ['武侠'],
         tone: '冷峻',
@@ -57,8 +61,17 @@ describe('buildPortraitPrompt', () => {
         expect(prompt).toContain('角色：林岚（主角）')
     })
 
-    it('提示词截断到 600 字以内', () => {
+    it('提示词截断到 900 字以内且保留画面要求', () => {
         const prompt = buildPortraitPrompt(createRequest({ appearance: '长'.repeat(800) }), '长'.repeat(120))
-        expect(prompt.length).toBeLessThanOrEqual(600)
+        expect(prompt.length).toBeLessThanOrEqual(900)
+        expect(prompt).toContain('要求：画面只出现一个人物')
+    })
+
+    it('基础信息含身高体型，并带上动机、背景与关系', () => {
+        const prompt = buildPortraitPrompt(createRequest())
+        expect(prompt).toContain('基本信息：男，27 岁，一米八五，健壮，边关校尉')
+        expect(prompt).toContain('动机：查清父亲死因；不擅言辞')
+        expect(prompt).toContain('背景：军户出身，十六岁替父从军')
+        expect(prompt).toContain('人际关系：与副将赵四有旧怨')
     })
 })
