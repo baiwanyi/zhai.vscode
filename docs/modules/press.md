@@ -480,7 +480,7 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 | `press/deleteChapter` | 单章移入回收站 → 按完整路径清理该章索引；有未保存修改的文档直接拒绝 |
 | `press/moveChapter` | 移动到目标卷末尾 → 重排文件名序号 → 清旧路径索引 → 按新路径索引，返回 `path / title / volume` |
 | `press/openChapter` | 回查索引库精确命中后打开章节文档，前缀须属于对应作品的 `Chapter/` |
-| `press/deleteProject` | 回查作品在索引中 → 拒绝含未保存修改的作品 → 整部作品目录移入回收站 → 按前缀清理索引 → 清空路由事实中的当前作品 |
+| `press/deleteProject` | 回查作品在索引中 → 拒绝含未保存修改的作品 → 整部作品目录移入回收站（不可用时降级永久删除） → 按前缀清理索引 → 清空路由事实中的当前作品，回包带 `permanent` 供前端提示能否从回收站恢复 |
 
 **章节聚合规则**
 
@@ -518,7 +518,8 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 - 重命名只换可读部分，序号前缀沿用原目录（`01-卷1` → `01-风起长安`）；原目录无前缀时不凭空补前缀，避免造出排序号
 - 新卷名走与作品名同源的名称白名单（`validateVolumeName`）；目标目录已存在即拒绝，绝不合并或覆盖
 - 目录移动后旧路径索引立即失效：先按旧卷前缀清理（`removeFilesUnder`），再按新路径逐份重建，不依赖 watcher 的删除回调
-- 删除整卷移入回收站（环境不支持时退化为永久删除），并按前缀清理该卷索引记录；作品下删空后不自动补卷，下次新增章节回落默认卷1
+- 删除整卷移入回收站（回收站不可用时降级永久删除），并按前缀清理该卷索引记录；作品下删空后不自动补卷，下次新增章节回落默认卷1
+- 卷、章节、作品的删除统一走 `common/storagePath` 的 `deleteResource`：`useTrash` 失败即重试永久删除，两次都失败时抛出的错误同时带上回收站与直接删除两条原因，便于定位（Windows 回收站被禁用/容量不足、目标被占用都会让 `useTrash` 单独失败）
 - 未分卷组（历史散章）不提供卷级操作入口
 
 **章节的删除与移动（章节行更多操作）**

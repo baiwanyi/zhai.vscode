@@ -37,7 +37,7 @@ import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId } from '../
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
-import { buildStorageUri, toSafeSegments } from '../common/storagePath'
+import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
 
 /** 角色设定图目录名：位于作品目录之下（press/{作品名}/_portraits），下划线前缀便于与章节区分 */
 const PORTRAIT_DIR = '_portraits'
@@ -287,15 +287,10 @@ export class PortraitService {
         }
         const target = buildStorageUri(resolveStorageRoot(), segments)
         try {
-            await vscode.workspace.fs.delete(target, { useTrash: true })
+            await deleteResource(target, false)
             return { removed: true }
         } catch {
-            try {
-                await vscode.workspace.fs.delete(target, { useTrash: false })
-                return { removed: true }
-            } catch {
-                return { removed: false }
-            }
+            return { removed: false }
         }
     }
 

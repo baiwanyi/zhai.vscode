@@ -12,6 +12,7 @@ import type {
     CreatePressChapterRequest,
     CreatedPressChapter,
     CreatedPressVolume,
+    DeletePressProjectResult,
     MovedPressChapter,
     PressProjectDetail,
     RenamedPressVolume,
@@ -191,8 +192,13 @@ export function usePressProjectDetail(dirPath: string): PressProjectDetailState 
     const deleteProject = useCallback(async (): Promise<boolean> => {
         setIsDeletingProject(true)
         try {
-            await request('press/deleteProject', { dirPath })
-            toast.success('作品已删除，可在系统回收站恢复')
+            const deleted = await request<DeletePressProjectResult>('press/deleteProject', { dirPath })
+            // 回收站不可用时宿主会降级为永久删除，此时不能再承诺「可从回收站恢复」
+            toast.success(
+                deleted.permanent
+                    ? '作品已删除（系统回收站不可用，已永久删除，无法恢复）'
+                    : '作品已删除，可在系统回收站恢复',
+            )
             return true
         } catch (cause) {
             toastError(cause)

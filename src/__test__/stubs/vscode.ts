@@ -20,6 +20,8 @@ const openableDocuments = new Map<string, vscode.TextDocument>()
 const openedDocumentPaths: string[] = []
 /** fs.delete 的调用记录：按删除顺序保存 fsPath，供用例断言删除范围 */
 const deletedPaths: string[] = []
+/** 系统回收站可用性：置为 false 时 useTrash 删除一律失败，供用例覆盖「降级永久删除」的路径 */
+let isTrashAvailable = true
 
 /** 复位全部模块级状态（工作区根、虚拟磁盘、虚拟目录、配置、可打开文档），供 beforeEach 使用 */
 export function resetWorkspaceState(): void {
@@ -30,6 +32,15 @@ export function resetWorkspaceState(): void {
     openableDocuments.clear()
     openedDocumentPaths.length = 0
     deletedPaths.length = 0
+    isTrashAvailable = true
+}
+
+/**
+ * 设置系统回收站是否可用：Windows 上回收站被禁用、容量不足或目标卷不支持回收站时，
+ * workspace.fs.delete 的 useTrash 会以「未能将…移动到回收站」失败，用例据此构造降级场景。
+ */
+export function setTrashAvailable(available: boolean): void {
+    isTrashAvailable = available
 }
 
 /** 设置工作区根路径 */
@@ -386,6 +397,10 @@ export const workspace = {
         },
         delete(uri: vscode.Uri, options?: { recursive?: boolean; useTrash?: boolean }): Promise<void> {
             const targetPath = uri.fsPath
+            // 回收站不可用时按真实行为直接失败，且不产生任何删除副作用
+            if (options?.useTrash === true && !isTrashAvailable) {
+                return Promise.reject(new Error('Failed to perform delete operation'))
+            }
             // 自身不算子项：删除文件时不存在「子项」，只有删目录才会因非递归而失败
             const childPaths = [
                 ...[...fileContents.keys()].filter((path) => path !== targetPath && isNestedUnder(path, targetPath)),

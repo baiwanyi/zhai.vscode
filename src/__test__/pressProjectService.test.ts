@@ -1,8 +1,9 @@
 /**
  * projectService / projectFactory 单元测试：覆盖作品名校验、骨架落盘与索引触发、重名拒绝与打开路径校验，
  * 卷的重命名（保留序号前缀、同步索引）与删除（移入回收站、按前缀清理索引），
+ * 整部作品的删除（回收站优先、回收站不可用时降级永久删除并回传结果），
  * 以及章节的删除（清理单文件索引、拦下脏文档）与跨卷移动（重排序号、冲突递增、递归到未分卷）。
- * 虚拟磁盘、目录与可打开文档由 vscode 测试桩承接，不触达真实文件系统；
+ * 虚拟磁盘、目录与可打开文档由 vscode 测试桩承接，回收站可用性由桩注入，不触达真实文件系统；
  * 路径断言统一用 node:path 规范化，与实现一样规避分隔符差异。
  */
 import * as path from 'node:path'
@@ -18,6 +19,7 @@ import {
     setConfigValue,
     setDirectory,
     setFileContent,
+    setTrashAvailable,
 } from './stubs/vscode'
 import type { ProjectIndexer } from '../modules/press/projectService'
 import { buildRenamedVolumeDirName, validateProjectName, validateVolumeName } from '../modules/press/projectFactory'
@@ -26,6 +28,7 @@ import {
     createProject,
     createVolume,
     deleteChapter,
+    deleteProject,
     deleteVolume,
     moveChapter,
     openChapterByPath,
@@ -475,6 +478,47 @@ describe('deleteVolume', () => {
             '卷目录非法',
         )
         expect(readDeletedPaths()).toEqual([])
+    })
+})
+
+describe('deleteProject', () => {
+    it('删除整部作品：目录与章节一并移入回收站，并按前缀清理索引', async () => {
+        const { indexer, removed } = createIndexer()
+        const projectPath = path.join(STORAGE_ROOT, 'press', '娱乐春秋')
+        setDirectory(projectPath)
+        setFileContent(path.join(projectPath, 'README.md'), '# 娱乐春秋')
+        setFileContent(path.join(projectPath, 'Chapter', '01-卷1', '01-初遇.md'), '# 初遇')
+
+        const outcome = await deleteProject(indexer, { dirPath: 'press/娱乐春秋' })
+
+        expect(outcome).toBe('trash')
+        expect(readDeletedPaths()).toEqual([projectPath])
+        expect(readFileContent(path.join(projectPath, 'README.md'))).toBeUndefined()
+        expect(readFileContent(path.join(projectPath, 'Chapter', '01-卷1', '01-初遇.md'))).toBeUndefined()
+        expect(removed).toEqual(['press/娱乐春秋/'])
+    })
+
+    it('回收站不可用时降级永久删除，仍清理索引并回传 permanent', async () => {
+        const { indexer, removed } = createIndexer()
+        const projectPath = path.join(STORAGE_ROOT, 'press', '娱乐春秋')
+        setDirectory(projectPath)
+        setFileContent(path.join(projectPath, 'README.md'), '# 娱乐春秋')
+        setTrashAvailable(false)
+
+        const outcome = await deleteProject(indexer, { dirPath: 'press/娱乐春秋' })
+
+        expect(outcome).toBe('permanent')
+        expect(readDeletedPaths()).toEqual([projectPath])
+        expect(readFileContent(path.join(projectPath, 'README.md'))).toBeUndefined()
+        expect(removed).toEqual(['press/娱乐春秋/'])
+    })
+
+    it('作品不存在时报错，不产生删除调用', async () => {
+        const { indexer, removed } = createIndexer()
+
+        await expect(deleteProject(indexer, { dirPath: 'press/娱乐春秋' })).rejects.toThrow('作品不存在')
+        expect(readDeletedPaths()).toEqual([])
+        expect(removed).toEqual([])
     })
 })
 

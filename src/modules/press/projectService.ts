@@ -4,7 +4,8 @@
  * 复用 common/storagePath 的路径构造与片段校验、common/config 的存储根解析、IndexService 的单文件索引与前缀清理能力。
  * 关键约束：落盘前校验作品名、卷名、目标目录与文件名存在性，已存在即报错、绝不覆盖；写入后立即索引，
  * 使列表不等 watcher 防抖即可见；实现路径统一为「press/{作品名}」两段，章节须位于其 Chapter/ 之下，
- * 存在性由调用方按索引库回查；目录被移动或删除后主动按前缀清理索引，不依赖 watcher 的删除回调。
+ * 存在性由调用方按索引库回查；目录被移动或删除后主动按前缀清理索引，不依赖 watcher 的删除回调；
+ * 删除统一走 common/storagePath 的 deleteResource（回收站优先，不可用时降级永久删除），本层不再直连 fs。
  */
 import * as vscode from 'vscode'
 import {
@@ -27,9 +28,16 @@ import {
     validateVolumeName,
 } from './projectFactory'
 import type { PressAudience } from '../../shared/types/press'
+import type { DeleteOutcome } from '../common/storagePath'
 import { resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
-import { buildStorageUri, isPathExisting, toSafeSegments, toStorageRelativePath } from '../common/storagePath'
+import {
+    buildStorageUri,
+    deleteResource,
+    isPathExisting,
+    toSafeSegments,
+    toStorageRelativePath,
+} from '../common/storagePath'
 
 /** 新建章节的序号冲突重试上限 */
 const MAX_CHAPTER_ATTEMPTS = 10
@@ -472,7 +480,7 @@ export async function renameVolume(
 }
 
 /**
- * 删除一卷：整卷目录移入回收站（环境不支持时退化为永久删除），并同步清理该卷的索引记录。
+ * 删除一卷：整卷目录移入回收站（环境不支持时降级为永久删除，见 deleteResource），并同步清理该卷的索引记录。
  * 关键约束：递归删除目录时 watcher 不保证逐文件回调，必须按前缀主动清理，否则列表会残留已删章节；
  * 卷目录须为单段且位于 Chapter/ 之下，避免借卷名越出作品目录。
  */
@@ -485,7 +493,7 @@ export async function deleteVolume(indexer: ProjectIndexer, request: DeleteVolum
     if (!(await isPathExisting(target))) {
         throw new Error(`卷不存在：${volumeDir}`)
     }
-    await vscode.workspace.fs.delete(target, { recursive: true, useTrash: true })
+    await deleteResource(target, true)
     indexer.removeFilesUnder(`${[...chapterRoot, volumeDir].join('/')}/`)
     logger.info(`已删除卷：${[...chapterRoot, volumeDir].join('/')}`)
 }
@@ -503,11 +511,12 @@ function assertNoDirtyDocument(projectUri: vscode.Uri): void {
 
 /**
  * 删除整部作品：作品目录（README、设定、角色设定、大纲与全部章节）递归移入回收站，
- * 环境不支持回收站时由编辑器退化为永久删除，随后按前缀清理该作品的索引记录。
+ * 回收站不可用时降级为永久删除（见 deleteResource），随后按前缀清理该作品的索引记录。
  * 关键约束：目录须为 press/{作品名} 两段，避免借作品名删到模块根或别的作品；
- * 先拒绝有未保存修改的文档；递归删除不保证逐文件回调，必须主动清理索引，否则作品列表会残留。
+ * 先拒绝有未保存修改的文档；递归删除不保证逐文件回调，必须主动清理索引，否则作品列表会残留；
+ * 返回值须透传给前端，降级成功时不得再提示「可在回收站恢复」。
  */
-export async function deleteProject(indexer: ProjectIndexer, request: DeleteProjectRequest): Promise<void> {
+export async function deleteProject(indexer: ProjectIndexer, request: DeleteProjectRequest): Promise<DeleteOutcome> {
     const segments = readProjectSegments(request.dirPath)
     const root = resolveStorageRoot()
     const target = buildStorageUri(root, segments)
@@ -515,13 +524,14 @@ export async function deleteProject(indexer: ProjectIndexer, request: DeleteProj
         throw new Error(`作品不存在：${request.dirPath}`)
     }
     assertNoDirtyDocument(target)
-    await vscode.workspace.fs.delete(target, { recursive: true, useTrash: true })
+    const outcome = await deleteResource(target, true)
     indexer.removeFilesUnder(`${segments.join('/')}/`)
-    logger.info(`已删除作品：${segments.join('/')}`)
+    logger.info(`已删除作品：${segments.join('/')}（${outcome === 'trash' ? '回收站' : '永久删除'}）`)
+    return outcome
 }
 
 /**
- * 删除单章：文档移入回收站（环境不支持时退化为永久删除），并同步清理该章的索引记录。
+ * 删除单章：文档移入回收站（环境不支持时降级为永久删除，见 deleteResource），并同步清理该章的索引记录。
  * 关键约束：路径须落在该作品的 Chapter/ 之下（未分卷与分卷两种深度都接受），存在性由调用方回查索引库；
  * 有未保存修改的文档一律拒绝，避免删盘后编辑器内容「复活」文件。
  */
@@ -533,7 +543,7 @@ export async function deleteChapter(indexer: ProjectIndexer, request: DeleteChap
         throw new Error(`章节不存在：${request.path}`)
     }
     assertDocumentSaved(target)
-    await vscode.workspace.fs.delete(target, { recursive: false, useTrash: true })
+    await deleteResource(target, false)
     indexer.removeFile(segments.join('/'))
     logger.info(`已删除章节：${segments.join('/')}`)
 }

@@ -1,7 +1,7 @@
 /**
  * 作品契约：仪表盘 /press 页的作品摘要、创建、打开、卷重命名/删除与章节删除/移动的请求结构，
  * TXT 作品导入的候选、启动与进度结构，语义归纳与从导入素材提取人物卡（press/extract/characters）的结构，
- * 目标读者枚举，
+ * 导入素材抽取（press/analyze）的统计结构，目标读者枚举，
  * 以及人物外貌生成（pressAi/aiAppearance）与角色设定图（pressAi/generatePortrait、listPortraits、deletePortrait）的契约。
  * 使用方：仪表盘 Webview 的作品列表与宿主侧 DashboardViewProvider、modules/press 服务；
  * 外貌与角色卡契约同时被写作管理页的人物弹窗、宿主 PressAiService 与 PortraitService 使用。
@@ -201,6 +201,12 @@ export interface DeletePressVolumeRequest {
 /** press/deleteProject 请求：整部作品（目录、文档与全部章节）移入回收站 */
 export interface DeletePressProjectRequest {
     dirPath: string
+}
+
+/** press/deleteProject 响应：permanent 为 true 表示回收站不可用、已永久删除，前端提示不得再提「可恢复」 */
+export interface DeletePressProjectResult {
+    deleted: boolean
+    permanent: boolean
 }
 
 /** 判断是否为删除作品的请求（类型收窄辅助）：dirPath 须为非空字符串，形态由服务侧再校验 */
@@ -563,18 +569,6 @@ export type PressSemanticStage = 'summary' | 'volumes' | 'characters'
 export type PressSemanticErrorCode =
     'aborted' | 'not-ready' | 'no-material' | 'no-chapters' | 'quota-exceeded' | 'internal'
 
-/** press/semantic/start 请求：dirPath 取相对存储根口径，宿主须回查作品真实性 */
-export interface PressSemanticStartRequest {
-    dirPath: string
-    /** 指定阶段，缺省为 summary */
-    stage?: PressSemanticStage
-}
-
-/** press/semantic/start 响应：任务立即返回，进度与终态经 press-semantic 通道广播 */
-export interface PressSemanticStartResult {
-    jobId: string
-}
-
 /** 语义归纳进度与终态：载荷挂在 state 消息的 press-semantic 通道上 */
 export interface PressSemanticProgress {
     jobId: string
@@ -587,24 +581,9 @@ export interface PressSemanticProgress {
     /** 本轮新生成的摘要数 */
     generated: number
     dirPath: string
-    /** 终态为 failed 时的原因码 */
+    /** 终态失败或取消时的原因码，运行中缺省 */
     code?: PressSemanticErrorCode
     message: string
-}
-
-/** 判断是否为合法的语义归纳请求：dirPath 须为 press/ 下的相对路径 */
-export function isPressSemanticStartRequest(payload: unknown): payload is PressSemanticStartRequest {
-    if (typeof payload !== 'object' || payload === null) {
-        return false
-    }
-    const candidate = payload as { dirPath?: unknown; stage?: unknown }
-    if (!isPressDirPath(candidate.dirPath)) {
-        return false
-    }
-    if (candidate.stage === undefined) {
-        return true
-    }
-    return candidate.stage === 'summary' || candidate.stage === 'volumes' || candidate.stage === 'characters'
 }
 
 /** 判断是否为合法的导入启动请求（类型收窄辅助）：token 与作品名均须非空，目标读者可缺省 */
@@ -655,4 +634,228 @@ export interface PressExtractedCharacter {
 export interface PressExtractCharactersResult {
     characters: PressExtractedCharacter[]
     message: string
+}
+
+/** press/analyze 请求：重新抽取作品的导入素材，只做本地统计、不调用模型，因此不占配额 */
+export interface PressAnalyzeRequest {
+    dirPath: string
+}
+
+/** 判断是否为合法的素材抽取请求（类型收窄辅助）：入参与作品目录请求同形 */
+export function isPressAnalyzeRequest(payload: unknown): payload is PressAnalyzeRequest {
+    return isPressDirPath(payload)
+}
+
+/** press/analyze 响应：素材抽取的统计结果，供界面说明「抽到了什么」 */
+export interface PressAnalyzeResult {
+    /** 扫描到的章节数 */
+    chapterCount: number
+    /** 识别到的人名候选数 */
+    characterCount: number
+    /** 命中金手指关键词的章数 */
+    goldenFingerHits: number
+}
+
+/** press/extract/outline 请求：用已落盘的导入素材重建大纲树 */
+export interface PressExtractOutlineRequest {
+    /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
+    dirPath: string
+}
+
+/** 判断是否为合法的大纲提取请求（类型收窄辅助）：入参与作品目录请求同形 */
+export function isPressExtractOutlineRequest(payload: unknown): payload is PressExtractOutlineRequest {
+    return isPressDirPath(payload)
+}
+
+/** 提取出的章纲草案：字段保持素材原始口径，id、状态与节拍由 Webview 补齐 */
+export interface PressExtractedChapter {
+    /** 卷内序号，取自章节清单 */
+    order: number
+    title: string
+    /** 计划梗概：来自章节摘要，素材未生成摘要时为空串 */
+    summary: string
+    /** 章末钩子中文标签：悬念 / 反转 / 情绪 / 无 */
+    hook: string
+    /** 张力 1-5 */
+    tension: number
+    /** 已写正文字数，取自章节清单 */
+    wordCount: number
+}
+
+/** 提取出的卷纲草案：chapters 为空数组表示该卷在素材里没有章节 */
+export interface PressExtractedVolume {
+    name: string
+    goal: string
+    conflict: string
+    chapters: PressExtractedChapter[]
+}
+
+/** press/extract/outline 响应：volumes 为空时 message 说明原因，前端可直接展示 */
+export interface PressExtractOutlineResult {
+    volumes: PressExtractedVolume[]
+    message: string
+}
+
+/** press/extract/setting 请求：从导入素材提取作品设定与金手指线索 */
+export interface PressExtractSettingRequest {
+    /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
+    dirPath: string
+}
+
+/** 判断是否为合法的设定提取请求（类型收窄辅助）：入参与作品目录请求同形 */
+export function isPressExtractSettingRequest(payload: unknown): payload is PressExtractSettingRequest {
+    return isPressDirPath(payload)
+}
+
+/**
+ * 提取出的设定草案：字段与作品设定的可提取项一一对应。
+ * 关键约束：只提交模型给出的文本，枚举归一（读者、结局等）与合并冲突由 Webview 处理。
+ */
+export interface PressExtractedSetting {
+    logline: string
+    conflict: string
+    era: string
+    factions: string
+    powerSystem: string
+    taboo: string
+    goldenFingerType: string
+    goldenFingerAbility: string
+    goldenFingerCost: string
+    perspective: string
+    tone: string
+    /** 题材标签，来自模型判断，前端与现有题材取并集 */
+    genres: string[]
+    /** 金手指候选章线索：命中的章与关键词，仅供核对，不参与合并 */
+    clues: string[]
+}
+
+/** press/extract/setting 响应：setting 为 null 时 message 说明原因，前端可直接展示 */
+export interface PressExtractSettingResult {
+    setting: PressExtractedSetting | null
+    message: string
+}
+
+/** README Frontmatter 的可回填字段：其余字段（状态、创建时间）由宿主保留原值 */
+export interface PressApplyMeta {
+    title: string
+    audience: string
+    genres: string[]
+    wordGoal: number
+}
+
+/**
+ * press/apply 请求：把工作台草稿对应的段落回写进作品文档。
+ * 字段是「段落片段」而不是整篇文档，落点与保留策略由宿主决定，避免覆盖用户手写内容。
+ */
+export interface PressApplyRequest {
+    /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
+    dirPath: string
+    readme: PressApplyMeta
+    /** 设定.md 中「提取设定」段落的正文 */
+    setting: string
+    /** 角色块：name 用作匹配键，text 是含「# 名称」标题行的完整块 */
+    characters: { name: string; text: string }[]
+    /** 大纲.md 中「分卷规划」段落的正文 */
+    outline: string
+}
+
+/** 单份文档的写入上限：正常作品远低于该值，超出视为异常请求 */
+const MAX_APPLY_FIELD_LENGTH = 2_000_000
+
+/** 判断是否为合法的回写请求：逐字段校验类型与规模，角色块缺文本时整条拒绝 */
+export function isPressApplyRequest(payload: unknown): payload is PressApplyRequest {
+    if (!isPressDirPath(payload)) {
+        return false
+    }
+    const candidate = payload as {
+        readme?: unknown
+        setting?: unknown
+        characters?: unknown
+        outline?: unknown
+    }
+    if (typeof candidate.setting !== 'string' || candidate.setting.length > MAX_APPLY_FIELD_LENGTH) {
+        return false
+    }
+    if (typeof candidate.outline !== 'string' || candidate.outline.length > MAX_APPLY_FIELD_LENGTH) {
+        return false
+    }
+    if (!Array.isArray(candidate.characters) || candidate.characters.length > 5000) {
+        return false
+    }
+    const hasValidCharacters = candidate.characters.every((item: unknown) => {
+        if (typeof item !== 'object' || item === null) {
+            return false
+        }
+        const block = item as { name?: unknown; text?: unknown }
+        return (
+            typeof block.name === 'string' &&
+            block.name.length > 0 &&
+            typeof block.text === 'string' &&
+            block.text.length <= MAX_APPLY_FIELD_LENGTH
+        )
+    })
+    if (!hasValidCharacters) {
+        return false
+    }
+    if (typeof candidate.readme !== 'object' || candidate.readme === null) {
+        return false
+    }
+    const meta = candidate.readme as { title?: unknown; audience?: unknown; genres?: unknown; wordGoal?: unknown }
+    return (
+        typeof meta.title === 'string' &&
+        typeof meta.audience === 'string' &&
+        Array.isArray(meta.genres) &&
+        meta.genres.every((genre: unknown) => typeof genre === 'string') &&
+        typeof meta.wordGoal === 'number' &&
+        Number.isFinite(meta.wordGoal) &&
+        meta.wordGoal >= 0
+    )
+}
+
+/** press/apply 响应：written 为实际写入的文件名，便于前端提示写了哪些文档 */
+export interface PressApplyResult {
+    written: string[]
+}
+
+/** press/semantic/run 请求：只跑指定阶段的 AI 归纳，缺省按摘要 → 卷纲 → 角色卡全部执行 */
+export interface PressSemanticRunRequest {
+    /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
+    dirPath: string
+    stages?: PressSemanticStage[]
+}
+
+/** 判断是否为合法的阶段性归纳请求：阶段取值必须在白名单内，重复项交由服务按传入顺序执行 */
+export function isPressSemanticRunRequest(payload: unknown): payload is PressSemanticRunRequest {
+    if (!isPressDirPath(payload)) {
+        return false
+    }
+    const candidate = payload as { stages?: unknown }
+    if (candidate.stages === undefined) {
+        return true
+    }
+    if (!Array.isArray(candidate.stages) || candidate.stages.length === 0) {
+        return false
+    }
+    return candidate.stages.every(
+        (stage: unknown) => stage === 'summary' || stage === 'volumes' || stage === 'characters',
+    )
+}
+
+/** press/semantic/run 响应：jobId 用于匹配后续 press-semantic 进度与取消 */
+export interface PressSemanticRunResult {
+    jobId: string
+}
+
+/** press/semantic/cancel 请求：取消指定归纳任务，在批次边界生效 */
+export interface PressSemanticCancelRequest {
+    jobId: string
+}
+
+/** 判断是否为合法的取消请求：jobId 须为非空字符串 */
+export function isPressSemanticCancelRequest(payload: unknown): payload is PressSemanticCancelRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { jobId?: unknown }
+    return typeof candidate.jobId === 'string' && candidate.jobId.length > 0
 }
