@@ -57,7 +57,10 @@ export function NotesList({
                 <section className="flex flex-col gap-2">
                     <Collapsible defaultOpen>
                         <CollapsibleTrigger asChild>
-                            <Button variant="ghost" className="group/pin h-auto w-full justify-start gap-1 px-1">
+                            <Button
+                                variant="ghost"
+                                className="group/pin w-full justify-start gap-1 aria-expanded:bg-transparent rounded-full"
+                            >
                                 <span className="text-muted-foreground">置顶</span>
                                 <ChevronDown className="size-4 transition-transform group-data-[state=closed]/pin:-rotate-90" />
                             </Button>
@@ -68,7 +71,7 @@ export function NotesList({
                             </ItemGroup>
                         </CollapsibleContent>
                     </Collapsible>
-                    <Separator />
+                    <Separator className="bg-muted" />
                 </section>
             ) : null}
             <ItemGroup className="has-data-[size=xs]:gap-0 has-data-[size=sm]:gap-0">

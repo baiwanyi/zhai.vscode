@@ -21,7 +21,7 @@ export function NotesSelectionBar({ isAllSelectedPinned, onTogglePin, onDelete }
     return (
         <ButtonGroup className="relative w-full">
             <div className="pointer-events-none absolute inset-x-0 -top-6 h-6 bg-linear-to-b form-transparent to-background border-b border-muted" />
-            <Button size="default" variant="ghost" className="h-9 flex-1 text-foreground" onClick={onTogglePin}>
+            <Button variant="ghost" className="flex-1 text-foreground" onClick={onTogglePin}>
                 {isAllSelectedPinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
                 {isAllSelectedPinned ? '取消置顶' : '置顶'}
             </Button>
