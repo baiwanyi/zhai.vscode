@@ -108,6 +108,9 @@ const MAX_TENSION = 5
 /** 兜底文本长度上限：区块段落作为字段兜底时只留一句概述，避免把整篇设定塞进表单 */
 const FALLBACK_TEXT_LIMIT = 200
 
+/** 长文本字段的长度上限：世界观总述与情节脉络本身就是多句描述，沿用概述长度会被截断成半句 */
+const LONG_TEXT_LIMIT = 600
+
 /** 人物标识长度上限：与宿主角色卡目录校验（4-64 位）保持一致 */
 const MAX_CHARACTER_ID_LENGTH = 64
 
@@ -229,8 +232,13 @@ function readFirstParagraph(text: string): string {
 /**
  * 区块文本合并：用于「组织势力」「写作约束」这类自由书写区块。
  * 优先取自然段落；只有列表项时（如逐条列势力）退化为列表文本，避免整段丢失。
+ * limit 供世界观总述这类多句字段放宽截断长度。
  */
-function readSectionText(sections: DocumentSection[], titles: readonly string[]): string {
+function readSectionText(
+    sections: DocumentSection[],
+    titles: readonly string[],
+    limit = FALLBACK_TEXT_LIMIT,
+): string {
     const target = sections.find((section) => titles.some((title) => section.title.includes(title)))
     if (target === undefined) {
         return ''
@@ -245,7 +253,7 @@ function readSectionText(sections: DocumentSection[], titles: readonly string[])
                   .filter((line) => line.length > 0 && !line.startsWith('#') && !line.startsWith('>'))
                   .map((line) => line.replace(/^[-*]\s+/u, ''))
                   .join('；')
-    return text.length > FALLBACK_TEXT_LIMIT ? `${text.slice(0, FALLBACK_TEXT_LIMIT)}…` : text
+    return text.length > limit ? `${text.slice(0, limit)}…` : text
 }
 
 /** 读取中英混写标签的首段标识：如「protagonist（主角）」取 protagonist */
@@ -314,9 +322,16 @@ function parseSetting(readme: string, settingDoc: string, outlineDoc: string, fa
         logline: readValue(['一句话简介', '简介', '梗概']) ?? synopsisParagraphs[0] ?? readFirstParagraph(outlineMain?.content ?? ''),
         conflict: readValue(['核心冲突', '冲突']) ?? synopsisParagraphs[1] ?? '',
         ending: ENDING_LABELS.find((item) => endingText.includes(item)) ?? '开放',
-        era: readValue(['时代', '年代']) ?? readSectionText(sections, ['世界观']),
+        // 世界观总述与力量体系都曾回落到「## 世界观」段落：两者取同一段会让字段互相覆盖，
+        // 现在各认专属键名与专属段落，段落缺失才退化为空，由作者或提取环节补齐
+        worldview:
+            readValue(['世界观总述', '世界设定', '世界观']) ?? readSectionText(sections, ['世界观'], LONG_TEXT_LIMIT),
+        geography: readValue(['地理', '地域', '地理格局']) ?? readSectionText(sections, ['地理', '地域']),
+        era: readValue(['时代', '年代']) ?? '',
         factions: readValue(['势力', '组织势力']) ?? readSectionText(sections, ['组织势力']),
-        powerSystem: readValue(['力量体系', '修炼体系']) ?? readSectionText(sections, ['世界观', '修炼体系']),
+        powerSystem: readValue(['力量体系', '修炼体系']) ?? readSectionText(sections, ['修炼体系']),
+        concepts:
+            readValue(['核心概念', '独有名词', '概念']) ?? readSectionText(sections, ['核心概念'], LONG_TEXT_LIMIT),
         taboo: readValue(['禁忌']) ?? readSectionText(sections, ['写作约束']),
         goldenFingerType: readValue(['金手指类型', '类型']) ?? '',
         goldenFingerAbility: readValue(['金手指能力', '能力']) ?? '',
@@ -380,6 +395,7 @@ function parseCharacters(text: string): CharacterCard[] {
             identity: values.get('身份') ?? '',
             appearance: values.get('外貌') ?? '',
             traits: toList(values.get('特质') ?? values.get('性格')),
+            background: values.get('背景') ?? values.get('背景故事') ?? '',
             desire: values.get('欲望') ?? '',
             weakness: values.get('弱点') ?? '',
             catchphrase: values.get('口头禅') ?? '',
@@ -458,7 +474,7 @@ function parseVolumes(text: string, characterIds: Map<string, string>): OutlineV
         const chapters = parseVolumeChapters(text, 1, characterIds)
         return chapters.length === 0
             ? []
-            : [{ id: 'vol-1', name: '第1卷', goal: '', conflict: '', chapters }]
+            : [{ id: 'vol-1', name: '第1卷', goal: '', conflict: '', plotline: '', turningPoints: [], chapters }]
     }
     return volumeSections.map((section, index) => {
         const order = toNumber(/第\s*(\d+)\s*卷/u.exec(section.title)?.[1]) ?? index + 1
@@ -468,6 +484,8 @@ function parseVolumes(text: string, characterIds: Map<string, string>): OutlineV
             name: section.title.trim(),
             goal: values.get('卷目标') ?? values.get('目标') ?? '',
             conflict: values.get('卷冲突') ?? values.get('冲突') ?? '',
+            plotline: values.get('情节脉络') ?? values.get('情节线') ?? '',
+            turningPoints: toList(values.get('关键转折') ?? values.get('转折')),
             chapters: parseVolumeChapters(section.content, order, characterIds),
         }
     })

@@ -1,14 +1,17 @@
 /**
  * 作品契约：仪表盘 /press 页的作品摘要、创建、打开、卷重命名/删除与章节删除/移动的请求结构，
- * TXT 作品导入的候选、启动与进度结构，语义归纳与从导入素材提取人物卡（press/extract/characters）的结构，
+ * TXT 作品导入的候选、启动与进度结构，语义归纳与按工作台入口分别提取设定 / 大纲 / 人物卡的结构，
  * 导入素材抽取（press/analyze）的统计结构，目标读者枚举，
  * 以及人物外貌生成（pressAi/aiAppearance）与角色设定图（pressAi/generatePortrait、listPortraits、deletePortrait）的契约。
+ * 提取类草案统一按「世界构建 / 情节脉络 / 人物全貌」三个维度铺字段：设定含世界观、地理、势力、规则体系与核心概念；
+ * 大纲含卷目标、情节脉络、关键转折与逐章节拍、出场人物；人物卡含别名、年龄、外貌、背景与关系明细。
  * 使用方：仪表盘 Webview 的作品列表与宿主侧 DashboardViewProvider、modules/press 服务；
  * 外貌与角色卡契约同时被写作管理页的人物弹窗、宿主 PressAiService 与 PortraitService 使用。
  * 复用约定：dirPath 取相对存储根口径（press/{作品名}），与索引库 files.path 同源；作品名即目录名。
  * 关键约束：前端传入的作品名与目录路径均不可信，宿主须先经名称白名单校验或索引库回查后才可触达文件系统；
  * 导入的源文件路径由宿主签发 token 保存，前端只回传 token，杜绝 Webview 伪造路径读取任意文件；
  * 目标读者枚举只此一份，前端选项与落盘 Frontmatter 共用，避免两处口径分叉；
+ * 草案字段只承载模型输出，枚举归一与「只填空字段」的合并策略由 Webview 决定，宿主不感知界面枚举；
  * 外貌生成入参同样不可信，宿主须重新裁剪长度后才会进入提示词。
  */
 
@@ -562,8 +565,9 @@ export interface PressImportProgress {
 /**
  * 语义归纳阶段：按依赖顺序推进，摘要先于卷纲与角色，卷纲与角色先于设定。
  * 每个阶段的产出都是独立文件，已存在即跳过，因此可以中断后逐阶段续跑。
+ * 设定排在最后：它要引用章节摘要与卷纲，且是四个阶段里最不需要逐章重复计算的一步。
  */
-export type PressSemanticStage = 'summary' | 'volumes' | 'characters'
+export type PressSemanticStage = 'summary' | 'volumes' | 'characters' | 'setting'
 
 /** 语义归纳失败原因码：前端按码分发文案 */
 export type PressSemanticErrorCode =
@@ -612,21 +616,33 @@ export function isPressExtractCharactersRequest(payload: unknown): payload is Pr
 /**
  * 提取出的人物卡草案：字段保持模型输出的中文标签与纯文本，
  * 角色分类与性别的枚举归一由 Webview 承担，宿主不感知前端枚举。
+ * 字段覆盖「基础面貌 / 身份出身 / 性格动机 / 背景经历 / 人物关系」五个维度，
+ * 原文没有的依据一律留空——空字段可由作者补，错字段会污染整条设定链。
  */
 export interface PressExtractedCharacter {
     name: string
+    /** 别名、道号、绰号，原文未出现时为空串 */
+    alias: string
     /** 角色分类中文标签：主角 / 配角 / 反派 / 中立 / 龙套，空串表示模型未判断 */
     role: string
     /** 性别中文标签：男 / 女 / 未知 */
     gender: string
+    /** 年龄：原文给出的岁数或可直接判断的阶段，如「二十许」「约三十」 */
+    age: string
     identity: string
+    /** 外貌：体态、五官、衣着、标志性特征的白描，原文未描写时留空 */
+    appearance: string
     /** 性格特征，已按顿号等分隔切成标签 */
     traits: string[]
+    /** 背景故事：出身、关键经历与性格成因，原文未交代时留空 */
+    background: string
     desire: string
     weakness: string
+    /** 口头禅或标志性台词，原文未出现时留空 */
+    catchphrase: string
     ability: string
     arc: string
-    /** 与他人关系，原文整段，不切分 */
+    /** 与他人关系，按「角色名（关系）：说明」逐条书写，原文整段不切分 */
     relation: string
 }
 
@@ -654,6 +670,8 @@ export interface PressAnalyzeResult {
     characterCount: number
     /** 命中金手指关键词的章数 */
     goldenFingerHits: number
+    /** 命中世界构建关键词的章数：与金手指分开计数，设定提取两类素材都用 */
+    settingClueCount: number
 }
 
 /** press/extract/outline 请求：用已落盘的导入素材重建大纲树 */
@@ -680,6 +698,10 @@ export interface PressExtractedChapter {
     tension: number
     /** 已写正文字数，取自章节清单 */
     wordCount: number
+    /** 本章关键节点与转折，来自章节摘要，直接作为章纲节拍的初始内容 */
+    beats: string[]
+    /** 本章出场人物名，Webview 按名称匹配人物卡后回填 characterIds */
+    characters: string[]
 }
 
 /** 提取出的卷纲草案：chapters 为空数组表示该卷在素材里没有章节 */
@@ -687,6 +709,10 @@ export interface PressExtractedVolume {
     name: string
     goal: string
     conflict: string
+    /** 情节脉络：本卷主线推进的连贯描述，素材未生成卷纲时为空串 */
+    plotline: string
+    /** 关键转折：本卷的转折点，逐条列出 */
+    turningPoints: string[]
     chapters: PressExtractedChapter[]
 }
 
@@ -709,14 +735,21 @@ export function isPressExtractSettingRequest(payload: unknown): payload is Press
 
 /**
  * 提取出的设定草案：字段与作品设定的可提取项一一对应。
- * 关键约束：只提交模型给出的文本，枚举归一（读者、结局等）与合并冲突由 Webview 处理。
+ * 关键约束：只提交模型给出的文本，枚举归一（读者、结局等）与合并冲突由 Webview 处理；
+ * 世界观总述、地理与核心概念是「世界构建」的三根支柱，缺了它们后续续写只能靠章节片段猜设定。
  */
 export interface PressExtractedSetting {
     logline: string
     conflict: string
+    /** 世界观总述：世界形态、历史沿革、种族与文明结构 */
+    worldview: string
+    /** 主要地域、场景与空间格局 */
+    geography: string
     era: string
     factions: string
     powerSystem: string
+    /** 核心概念：作品独有的名词及其含义（灵气、序列、异火等） */
+    concepts: string
     taboo: string
     goldenFingerType: string
     goldenFingerAbility: string
@@ -725,7 +758,7 @@ export interface PressExtractedSetting {
     tone: string
     /** 题材标签，来自模型判断，前端与现有题材取并集 */
     genres: string[]
-    /** 金手指候选章线索：命中的章与关键词，仅供核对，不参与合并 */
+    /** 设定候选章线索：命中的章与关键词，仅供核对，不参与合并 */
     clues: string[]
 }
 
@@ -837,7 +870,8 @@ export function isPressSemanticRunRequest(payload: unknown): payload is PressSem
         return false
     }
     return candidate.stages.every(
-        (stage: unknown) => stage === 'summary' || stage === 'volumes' || stage === 'characters',
+        (stage: unknown) =>
+            stage === 'summary' || stage === 'volumes' || stage === 'characters' || stage === 'setting',
     )
 }
 

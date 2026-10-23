@@ -1,6 +1,7 @@
 /**
  * 角色卡产物解析：覆盖模型输出的常见形态——标准列表字段、省略 `-` 前缀的键值行、
- * 顿号与逗号混合分隔的特质、超量标签截断，以及重复键与无姓名块的处理。
+ * 顿号与逗号混合分隔的特质、超量标签截断，以及重复键与无姓名块的处理；
+ * 同时校验别名、年龄、外貌、背景与口头禅这些「原文才有的细节」不会在解析层丢失。
  * 复用约定：直接调用宿主解析函数，不启动任务、不读写文件；模型输出一律视为不可信输入。
  * 关键约束：解析不得抛错，字段缺失只留空；首个二级标题之前的说明行不进入任何人物卡。
  */
@@ -8,23 +9,28 @@ import { describe, expect, it } from 'vitest'
 import { parseCharacterDrafts } from '../src/modules/press/importSemanticService'
 
 describe('parseCharacterDrafts', () => {
-    it('按二级标题与键值行解析人物卡', () => {
+    it('按二级标题与键值行解析人物卡，并保留原文细节字段', () => {
         const content = [
             '# 角色卡',
             '',
-            '> 由 AI 依据出场统计与章节摘要生成，未经原著核对。',
+            '> 由 AI 依据出场统计、章节摘要与出场原文生成，未经原著核对。',
             '',
             '## 林尘',
             '- 姓名：林尘',
+            '- 别名：小林',
             '- 分类：主角',
             '- 性别：男',
+            '- 年龄：二十',
             '- 身份：外门弟子',
+            '- 外貌：瘦高，左眉一道旧疤',
             '- 特质：隐忍、护短',
+            '- 背景：自幼被逐出家门，靠打杂入宗',
             '- 欲望：为父报仇',
             '- 弱点：',
+            '- 口头禅：再等等',
             '- 能力：剑意',
             '- 弧线：从隐忍到张扬',
-            '- 关系：苏晚的师弟',
+            '- 关系：苏晚（师姐）：引他入门；李四（宿敌）：夺他名额',
         ].join('\n')
 
         const drafts = parseCharacterDrafts(content)
@@ -32,15 +38,36 @@ describe('parseCharacterDrafts', () => {
         expect(drafts).toHaveLength(1)
         expect(drafts[0]).toMatchObject({
             name: '林尘',
+            alias: '小林',
             role: '主角',
             gender: '男',
+            age: '二十',
             identity: '外门弟子',
+            appearance: '瘦高，左眉一道旧疤',
             traits: ['隐忍', '护短'],
+            background: '自幼被逐出家门，靠打杂入宗',
             desire: '为父报仇',
             weakness: '',
+            catchphrase: '再等等',
             ability: '剑意',
             arc: '从隐忍到张扬',
-            relation: '苏晚的师弟',
+            relation: '苏晚（师姐）：引他入门；李四（宿敌）：夺他名额',
+        })
+    })
+
+    it('旧版产物缺少细节字段时一律留空，不让解析失败', () => {
+        const content = ['## 苏晚', '- 姓名：苏晚', '- 分类：配角', '- 性别：女'].join('\n')
+
+        const drafts = parseCharacterDrafts(content)
+
+        expect(drafts).toHaveLength(1)
+        expect(drafts[0]).toMatchObject({
+            name: '苏晚',
+            alias: '',
+            age: '',
+            appearance: '',
+            background: '',
+            catchphrase: '',
         })
     })
 

@@ -41,7 +41,7 @@ type SectionKey = 'basic' | 'story' | 'world' | 'power' | 'style'
 const SECTION_FIELDS: Readonly<Record<SectionKey, readonly (keyof ProjectSetting)[]>> = {
     basic: ['title', 'penName', 'audience', 'wordGoal', 'genres'],
     story: ['logline', 'conflict', 'ending'],
-    world: ['era', 'factions', 'powerSystem', 'taboo'],
+    world: ['worldview', 'geography', 'era', 'factions', 'powerSystem', 'concepts', 'taboo'],
     power: ['goldenFingerType', 'goldenFingerAbility', 'goldenFingerCost'],
     style: ['perspective', 'tone', 'references', 'banned'],
 }
@@ -87,7 +87,7 @@ export function PressSettingPage({
                 return
             }
             toast.success(
-                `已填入 ${String(filled)} 个空字段，共 ${String(result.setting.clues.length)} 条金手指线索供核对`,
+                `已填入 ${String(filled)} 个空字段，共 ${String(result.setting.clues.length)} 章线索供核对`,
             )
         }
         void run()
@@ -271,12 +271,33 @@ export function PressSettingPage({
 
                 <SettingSection
                     title="世界观"
-                    description="时代、势力与规则"
+                    description="世界形态、地理、势力与规则体系"
                     isIncomplete={isSectionIncomplete('world')}
                     isOpen={openSections.includes('world')}
                     onOpenChange={(isOpen) => handleOpenChange('world', isOpen)}
                 >
                     <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
+                        <Field className="@md:col-span-2">
+                            <FieldLabel htmlFor="setting-worldview">世界观总述</FieldLabel>
+                            <Textarea
+                                id="setting-worldview"
+                                value={setting.worldview}
+                                placeholder="世界的形态、历史沿革、种族与文明结构"
+                                className="min-h-24"
+                                onChange={(event) => onChange({ worldview: event.target.value })}
+                            />
+                            <FieldDescription>导入作品时会依据设定候选章归纳这一段，续写时的风格注入首先读它</FieldDescription>
+                        </Field>
+                        <Field>
+                            <FieldLabel htmlFor="setting-geography">地理格局</FieldLabel>
+                            <Input
+                                id="setting-geography"
+                                value={setting.geography}
+                                placeholder="主要地域、场景与空间关系"
+                                className="h-7"
+                                onChange={(event) => onChange({ geography: event.target.value })}
+                            />
+                        </Field>
                         <Field>
                             <FieldLabel htmlFor="setting-era">时代舞台</FieldLabel>
                             <Input
@@ -304,7 +325,18 @@ export function PressSettingPage({
                                 onChange={(event) => onChange({ powerSystem: event.target.value })}
                             />
                         </Field>
-                        <Field>
+                        <Field className="@md:col-span-2">
+                            <FieldLabel htmlFor="setting-concepts">核心概念</FieldLabel>
+                            <Textarea
+                                id="setting-concepts"
+                                value={setting.concepts}
+                                placeholder="作品独有的名词与规则，如「灵气：天地间的能量，可被修士吸纳」"
+                                className="min-h-20"
+                                onChange={(event) => onChange({ concepts: event.target.value })}
+                            />
+                            <FieldDescription>独有名词是续写时不跑偏的关键，多个概念用分号分隔</FieldDescription>
+                        </Field>
+                        <Field className="@md:col-span-2">
                             <FieldLabel htmlFor="setting-taboo">禁忌设定</FieldLabel>
                             <Input
                                 id="setting-taboo"
@@ -429,7 +461,7 @@ export function PressSettingPage({
                 <Button
                     variant="outline"
                     size="sm"
-                    title="按金手指候选章的摘录与摘要归纳设定（调用 AI），只填空字段"
+                    title="按设定候选章（世界构建与金手指关键词命中章）的摘录与摘要归纳世界观、规则与核心概念（调用 AI），只填空字段"
                     disabled={isExtracting}
                     onClick={handleExtract}
                 >

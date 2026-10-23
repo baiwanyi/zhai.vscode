@@ -30,7 +30,7 @@ export function usePressAnalyze(dirPath: string): PressAnalyzeState {
         try {
             const result = await request<PressAnalyzeResult>('press/analyze', { dirPath }, ANALYZE_TIMEOUT_MS)
             toast.success(
-                `素材已更新：${String(result.chapterCount)} 章 · 人名候选 ${String(result.characterCount)} 个 · 金手指候选 ${String(result.goldenFingerHits)} 章`,
+                `素材已更新：${String(result.chapterCount)} 章 · 候选角色 ${String(result.characterCount)} 个 · 金手指线索 ${String(result.goldenFingerHits)} 章 · 设定线索 ${String(result.settingClueCount)} 章`,
                 { id: ANALYZE_TOAST_ID },
             )
             return result

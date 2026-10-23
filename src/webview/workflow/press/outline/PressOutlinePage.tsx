@@ -113,7 +113,7 @@ export function PressOutlinePage({
                         <Button
                             variant="outline"
                             size="sm"
-                            title="按已抽取的素材重建卷与章（不调用模型），会覆盖当前大纲草稿"
+                            title="按已抽取的素材重建卷与章，含情节脉络、关键转折、章纲节拍与出场人物（不调用模型），会覆盖当前大纲草稿"
                             disabled={isExtracting}
                             onClick={handleExtract}
                         >

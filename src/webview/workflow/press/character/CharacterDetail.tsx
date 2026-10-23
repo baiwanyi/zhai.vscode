@@ -251,6 +251,17 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
 
                     <TabsContent value="ability" className="flex flex-col gap-3">
                         <Field>
+                            <FieldLabel htmlFor="character-background">背景故事</FieldLabel>
+                            <Textarea
+                                id="character-background"
+                                value={character.background}
+                                placeholder="出身、关键经历与性格成因"
+                                className="min-h-24"
+                                onChange={(event) => onChange({ background: event.target.value })}
+                            />
+                            <FieldDescription>导入作品时由出场原文归纳，续写时用来把握人物的行事逻辑</FieldDescription>
+                        </Field>
+                        <Field>
                             <FieldLabel htmlFor="character-ability">能力 / 资源</FieldLabel>
                             <Textarea
                                 id="character-ability"

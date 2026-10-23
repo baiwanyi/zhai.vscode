@@ -281,6 +281,19 @@ export function OutlineDetail({
                             {volume.goal.length > 0 ? volume.goal : '未填写'}
                         </span>
                     </div>
+                    {/* 情节脉络与关键转折来自导入归纳的卷纲：没有内容时不占位，避免每章重复三行「未填写」 */}
+                    {volume.plotline.length > 0 ? (
+                        <div className="flex gap-1.5">
+                            <span className="shrink-0 text-muted-foreground">情节脉络</span>
+                            <span className="line-clamp-3 min-w-0 flex-1">{volume.plotline}</span>
+                        </div>
+                    ) : null}
+                    {volume.turningPoints.length > 0 ? (
+                        <div className="flex gap-1.5">
+                            <span className="shrink-0 text-muted-foreground">关键转折</span>
+                            <span className="line-clamp-2 min-w-0 flex-1">{volume.turningPoints.join('；')}</span>
+                        </div>
+                    ) : null}
                     <div className="flex gap-1.5">
                         <span className="shrink-0 text-muted-foreground">前情</span>
                         <span className="line-clamp-2 min-w-0 flex-1">

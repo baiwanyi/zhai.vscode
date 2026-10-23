@@ -450,7 +450,10 @@ export class PressImportService {
             }
         }
         const isPartiallyFailed = failedChapters > 0
-        const materialNote = analysis === null ? '' : `，识别候选角色 ${String(analysis.characterCount)} 个`
+        const materialNote =
+            analysis === null
+                ? ''
+                : `，识别候选角色 ${String(analysis.characterCount)} 个、设定候选章 ${String(analysis.settingClueCount)} 章`
         return {
             status: isPartiallyFailed ? 'failed' : 'completed',
             done,

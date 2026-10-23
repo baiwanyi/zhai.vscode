@@ -54,12 +54,16 @@ export interface OutlineChapter {
     tension: number
 }
 
-/** 卷纲：一部作品下的一卷，含阶段目标与冲突描述 */
+/** 卷纲：一部作品下的一卷，含阶段目标、冲突、情节脉络与关键转折 */
 export interface OutlineVolume {
     id: string
     name: string
     goal: string
     conflict: string
+    /** 情节脉络：本卷主线如何推进，从开卷到收束的连贯描述 */
+    plotline: string
+    /** 关键转折：本卷剧情走向真正改变的地方，逐条记录 */
+    turningPoints: string[]
     chapters: OutlineChapter[]
 }
 
@@ -76,6 +80,8 @@ export interface CharacterCard {
     /** 外貌描写：外观与气质的白描，供正文引用，可由 AI 依据其他字段生成 */
     appearance: string
     traits: string[]
+    /** 背景故事：出身、关键经历与性格成因，导入时从原文摘录归纳 */
+    background: string
     desire: string
     weakness: string
     catchphrase: string
@@ -103,9 +109,15 @@ export interface ProjectSetting {
     logline: string
     conflict: string
     ending: EndingKind
+    /** 世界观总述：世界形态、历史沿革、种族与文明结构 */
+    worldview: string
+    /** 地理：主要地域、场景与空间格局 */
+    geography: string
     era: string
     factions: string
     powerSystem: string
+    /** 核心概念：作品独有的名词与规则（灵气、序列、异火等） */
+    concepts: string
     taboo: string
     goldenFingerType: string
     goldenFingerAbility: string

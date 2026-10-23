@@ -35,7 +35,7 @@ const ENCODING_LABELS: Readonly<Record<PressImportCandidate['encoding'], string>
 interface PressImportDialogProps {
     candidate: PressImportCandidate | null
     isImporting: boolean
-    /** 导入完成后是否继续生成章节摘要 */
+    /** 导入完成后是否继续跑 AI 归纳（章节摘要 → 卷纲 → 角色卡 → 作品设定） */
     shouldSummarize: boolean
     onSummaryChange: (value: boolean) => void
     onOpenChange: (open: boolean) => void
@@ -164,7 +164,7 @@ export function PressImportDialog({
                         onCheckedChange={(checked) => onSummaryChange(checked === true)}
                     />
                     <label htmlFor="press-import-summary" className="text-muted-foreground leading-5">
-                        导入后分批生成章节摘要（消耗 AI 调用次数；失败不影响已导入的正文）
+                        导入后分批归纳章节摘要、卷纲、角色卡与作品设定（消耗 AI 调用次数；失败不影响已导入的正文）
                     </label>
                 </div>
                 <DialogFooter>

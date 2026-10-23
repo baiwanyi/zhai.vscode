@@ -28,7 +28,10 @@ import { formatWordCount } from '../../dashboard/utils'
 
 export { formatWordCount }
 
-/** 计入完整度的字段：覆盖作品设定页五个分组的主要输入项 */
+/**
+ * 计入完整度的字段：覆盖作品设定页五个分组的主要输入项。
+ * 世界观总述、地理与核心概念是导入作品的主要产出，必须计入，否则「填完了一整份设定」仍显示不完整。
+ */
 const COMPLETENESS_KEYS: readonly (keyof ProjectSetting)[] = [
     'title',
     'penName',
@@ -38,9 +41,12 @@ const COMPLETENESS_KEYS: readonly (keyof ProjectSetting)[] = [
     'logline',
     'conflict',
     'ending',
+    'worldview',
+    'geography',
     'era',
     'factions',
     'powerSystem',
+    'concepts',
     'taboo',
     'goldenFingerType',
     'goldenFingerAbility',
@@ -101,6 +107,7 @@ export function createCharacterCard(seed: CharacterSeed = {}): CharacterCard {
         identity: '',
         appearance: '',
         traits: [],
+        background: '',
         desire: '',
         weakness: '',
         catchphrase: '',
@@ -118,18 +125,24 @@ export function createCharacterCard(seed: CharacterSeed = {}): CharacterCard {
 /**
  * 由提取草案建卡：把中文标签归一到角色分类与性别枚举，
  * 未识别的分类回落为配角、性别回落为男，与作品文档解析的容错口径一致。
+ * 别名、年龄、外貌、背景、口头禅逐项透传——这些字段是导入区别于「只拿到一个名字」的关键。
  */
 export function createCharacterFromDraft(draft: PressExtractedCharacter): CharacterCard {
     const role = CHARACTER_ROLE_ORDER.find((value) => CHARACTER_ROLE_META[value].label === draft.role) ?? 'supporting'
     const gender = CHARACTER_GENDER_ORDER.find((value) => CHARACTER_GENDER_META[value].label === draft.gender) ?? 'male'
     return createCharacterCard({
         name: draft.name,
+        alias: draft.alias,
         role,
         gender,
+        age: draft.age,
         identity: draft.identity,
+        appearance: draft.appearance,
         traits: draft.traits,
+        background: draft.background,
         desire: draft.desire,
         weakness: draft.weakness,
+        catchphrase: draft.catchphrase,
         ability: draft.ability,
         arc: draft.arc,
         relation: draft.relation,
@@ -159,28 +172,57 @@ export function createChapter(order: number, wordGoal: number): OutlineChapter {
     }
 }
 
+/** 角色名与别名到 id 的映射：章纲里的出场人物按名称回填成 characterIds */
+function buildCharacterIndex(characters: readonly CharacterCard[]): Map<string, string> {
+    const index = new Map<string, string>()
+    for (const character of characters) {
+        index.set(character.name, character.id)
+        if (character.alias.length > 0) {
+            index.set(character.alias, character.id)
+        }
+    }
+    return index
+}
+
 /**
  * 由大纲草案重建大纲树：卷名与章序沿用素材口径，id、状态、节拍等展示字段在此补齐。
  * 关键约束：钩子标签按「包含」匹配——素材侧写「情绪」，表单值为「情绪高点」，等值比较会全部回落为无；
- * 张力越界时夹到 1–5；章标题缺失时回退到默认命名，避免出现空行。
+ * 张力越界时夹到 1–5；章标题缺失时回退到默认命名，避免出现空行；
+ * 关键节点直接落成节拍、出场人物按名称回填成 id，重建后的大纲可以直接接着写，不需要人工重抄一遍。
  */
-export function createOutlineFromDraft(drafts: PressExtractedVolume[], chapterWordGoal: number): OutlineVolume[] {
+export function createOutlineFromDraft(
+    drafts: PressExtractedVolume[],
+    chapterWordGoal: number,
+    characters: readonly CharacterCard[] = [],
+): OutlineVolume[] {
+    const characterIndex = buildCharacterIndex(characters)
     return drafts.map((draft, volumeIndex) => ({
         id: createId('vol'),
         name: draft.name.length > 0 ? draft.name : `第${volumeIndex + 1}卷`,
         goal: draft.goal,
         conflict: draft.conflict,
+        plotline: draft.plotline,
+        turningPoints: [...draft.turningPoints],
         chapters: draft.chapters.map((chapter) => {
             const base = createChapter(chapter.order, chapterWordGoal)
             const matched =
                 chapter.hook.length > 0
                     ? HOOK_OPTIONS.find((option) => option.label.startsWith(chapter.hook))
                     : undefined
+            const beats = chapter.beats
+                .map((text) => text.trim())
+                .filter((text) => text.length > 0)
+                .map((text) => createBeat(text))
+            const characterIds = chapter.characters
+                .map((name) => characterIndex.get(name.trim()))
+                .filter((id): id is string => id !== undefined)
             return {
                 ...base,
                 title: chapter.title.length > 0 ? chapter.title : base.title,
                 summary: chapter.summary,
                 wordCount: chapter.wordCount,
+                beats: beats.length > 0 ? beats : base.beats,
+                characterIds: [...new Set(characterIds)],
                 hook: matched?.value ?? 'none',
                 tension: Math.min(5, Math.max(1, chapter.tension)),
             }
@@ -195,6 +237,8 @@ export function createVolume(order: number, chapterWordGoal: number): OutlineVol
         name: `第${order}卷 未命名`,
         goal: '',
         conflict: '',
+        plotline: '',
+        turningPoints: [],
         chapters: [createChapter(1, chapterWordGoal)],
     }
 }
@@ -345,6 +389,9 @@ export function buildOutlineDraft(
             name: `第${volumeIndex + 1}卷 ${stage}`,
             goal: `${stage}阶段：${shortLogline}`,
             conflict: setting.conflict.length > 0 ? setting.conflict : '围绕核心冲突升级对抗',
+            // 结构推导只给可编辑的占位描述，不伪造具体情节：真正的脉络由写作者或导入归纳填入
+            plotline: `本卷按「${phases.join(' → ')}」推进：${shortLogline}，在阶段高潮处收束并留下悬念。`,
+            turningPoints: [`${stage}阶段高潮：与${antagonist?.name ?? '对手'}正面相撞`],
             chapters,
         }
     })

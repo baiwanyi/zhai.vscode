@@ -28,7 +28,7 @@ interface DashboardPressProps {
 export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): JSX.Element {
     const { projects, status, error, isCreating, reload, createProject, rebuildIndex } = usePressProjects()
     const { start: startSemantic } = usePressSemantic('')
-    /** 导入确认弹窗里的「导入后生成摘要」开关：状态放在页面层，避免 hook 之间互相依赖 */
+    /** 导入确认弹窗里的「导入后做 AI 归纳」开关：状态放在页面层，避免 hook 之间互相依赖 */
     const [shouldSummarize, setShouldSummarize] = useState(false)
     const handleImportCompleted = useCallback(
         (dirPath: string): void => {

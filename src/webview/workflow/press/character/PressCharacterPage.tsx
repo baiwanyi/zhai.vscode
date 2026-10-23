@@ -110,7 +110,7 @@ export function PressCharacterPage({
                 toast.info('提取到的人物都已在列表中，未新增')
                 return
             }
-            toast.success(`已提取 ${String(added)} 个人物，记得补充外貌与关系`)
+            toast.success(`已提取 ${String(added)} 个人物，年龄、外貌、背景与关系已按原文填入，请核对后保存`)
         }
         void run()
     }
@@ -126,7 +126,12 @@ export function PressCharacterPage({
                         </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
-                        <Button variant="outline" disabled={isExtracting} onClick={handleExtract}>
+                        <Button
+                            variant="outline"
+                            title="按出场统计、章节摘要与出场原文归纳人物卡（调用 AI），重名人物自动跳过"
+                            disabled={isExtracting}
+                            onClick={handleExtract}
+                        >
                             <Sparkles data-icon="inline-start" />
                             {isExtracting ? '提取中' : '提取'}
                         </Button>

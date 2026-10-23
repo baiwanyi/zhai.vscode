@@ -16,9 +16,12 @@ function buildSettingLines(setting: ProjectSetting): string[] {
         `- 一句话简介：${setting.logline}`,
         `- 核心冲突：${setting.conflict}`,
         `- 结局：${setting.ending}`,
+        `- 世界观总述：${setting.worldview}`,
+        `- 地理：${setting.geography}`,
         `- 时代：${setting.era}`,
         `- 势力：${setting.factions}`,
         `- 力量体系：${setting.powerSystem}`,
+        `- 核心概念：${setting.concepts}`,
         `- 禁忌：${setting.taboo}`,
         `- 金手指类型：${setting.goldenFingerType}`,
         `- 金手指能力：${setting.goldenFingerAbility}`,
@@ -58,6 +61,7 @@ function buildCharacterBlock(character: CharacterCard): string {
         `- 身份：${character.identity}`,
         `- 外貌：${character.appearance}`,
         `- 特质：${character.traits.join('、')}`,
+        `- 背景：${character.background}`,
         `- 欲望：${character.desire}`,
         `- 弱点：${character.weakness}`,
         `- 口头禅：${character.catchphrase}`,
@@ -104,7 +108,13 @@ function buildChapterBlock(chapter: OutlineChapter, nameById: ReadonlyMap<string
 
 /** 单卷：三/四级标题层级与 parseVolumes 的读取顺序一致 */
 function buildVolumeBlock(volume: OutlineVolume, nameById: ReadonlyMap<string, string>): string {
-    const lines = [`### ${volume.name}`, `- 卷目标：${volume.goal}`, `- 卷冲突：${volume.conflict}`]
+    const lines = [
+        `### ${volume.name}`,
+        `- 卷目标：${volume.goal}`,
+        `- 卷冲突：${volume.conflict}`,
+        `- 情节脉络：${volume.plotline}`,
+        `- 关键转折：${volume.turningPoints.join('；')}`,
+    ]
     if (volume.chapters.length > 0) {
         lines.push('', volume.chapters.map((chapter) => buildChapterBlock(chapter, nameById)).join('\n\n'))
     }

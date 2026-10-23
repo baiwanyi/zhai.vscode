@@ -303,8 +303,9 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
 
     /** 用素材重建大纲树：整体覆盖既有草稿，返回重建的章节数供页面提示 */
     const handleExtractOutline = useCallback(
-        (drafts: PressExtractedVolume[]): number => {
-            const volumes = createOutlineFromDraft(drafts, DEFAULT_CHAPTER_WORD_GOAL)
+        (characters: CharacterCard[], drafts: PressExtractedVolume[]): number => {
+            // 出场人物靠名称匹配人物卡：先拿到当前草稿的人物，重建后的章纲才能直接带出 characterIds
+            const volumes = createOutlineFromDraft(drafts, DEFAULT_CHAPTER_WORD_GOAL, characters)
             const chapterCount = volumes.reduce((total, volume) => total + volume.chapters.length, 0)
             updateWorkspace((previous) => ({ ...previous, volumes }))
             return chapterCount
@@ -322,6 +323,12 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
             if (current.conflict.length === 0 && draft.conflict.length > 0) {
                 patch.conflict = draft.conflict
             }
+            if (current.worldview.length === 0 && draft.worldview.length > 0) {
+                patch.worldview = draft.worldview
+            }
+            if (current.geography.length === 0 && draft.geography.length > 0) {
+                patch.geography = draft.geography
+            }
             if (current.era.length === 0 && draft.era.length > 0) {
                 patch.era = draft.era
             }
@@ -330,6 +337,9 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
             }
             if (current.powerSystem.length === 0 && draft.powerSystem.length > 0) {
                 patch.powerSystem = draft.powerSystem
+            }
+            if (current.concepts.length === 0 && draft.concepts.length > 0) {
+                patch.concepts = draft.concepts
             }
             if (current.taboo.length === 0 && draft.taboo.length > 0) {
                 patch.taboo = draft.taboo
@@ -398,7 +408,7 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                     onCreateVolume={handleCreateVolume}
                     onCreateChapter={handleCreateChapter}
                     onApplyOutline={handleApplyOutline}
-                    onExtractOutline={handleExtractOutline}
+                    onExtractOutline={(drafts) => handleExtractOutline(workspace.characters, drafts)}
                     onOpenChat={() => setActiveSection('chat')}
                 />
             )
