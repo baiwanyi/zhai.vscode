@@ -7,7 +7,13 @@
 import * as vscode from 'vscode'
 import { PROJECT_README_NAME, PRESS_MODULE_DIR } from './projectFactory'
 import { readProjectWorkspace } from './projectWorkspace'
-import type { PressApplyMeta, PressApplyRequest } from '../../shared/types/press'
+import type {
+    PressApplyMeta,
+    PressApplyRequest,
+    PressSnapshotFileKey,
+    PressSnapshotTrigger,
+    PressWorkspaceFiles,
+} from '../../shared/types/press'
 import { resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
 import { buildStorageUri } from '../common/storagePath'
@@ -139,24 +145,50 @@ function mergeCharacterBlocks(
     return normalizeBlankLines(lines.join('\n')).trimEnd() + '\n'
 }
 
+/** 回写完成后的通知载荷：携带写盘后的四份文档全文与本次变更分区，供快照层直接留版 */
+export interface WorkspaceWriteOutcome {
+    dirPath: string
+    files: PressWorkspaceFiles
+    trigger: PressSnapshotTrigger[]
+}
+
+/** 回写钩子：快照记录失败不得影响已完成的文档回写，异常在本模块内兜住 */
+export interface WorkspaceWriteHooks {
+    onWritten?: (outcome: WorkspaceWriteOutcome) => Promise<void>
+}
+
+/** 待写条目：保留文档键，写盘成功后据此拼出「变更后的完整四份文档」 */
+interface PendingFile {
+    key: PressSnapshotFileKey
+    fileName: string
+    content: string
+}
+
 /**
  * 回写作品文档：只写请求里带上的那几份，逐份兜住异常并返回实际写入的清单。
  * 即时保存每次只带一份段落，未带的文件保持原样；删除名单与角色块在同一次写入里生效。
  * 安全约束：作品目录由 readProjectWorkspace 统一校验（press/ 下两段、拒绝上跳），写入路径不复用前端数据。
+ * 关键约束：钩子只在确有文件写入成功时触发，且只把写入成功的段落计入快照内容——
+ * 某份文档写失败时磁盘仍是旧内容，快照若按新内容存档会造出一版并不存在的历史。
  */
-export async function applyProjectWorkspace(payload: PressApplyRequest): Promise<{ written: string[] }> {
+export async function applyProjectWorkspace(
+    payload: PressApplyRequest,
+    hooks: WorkspaceWriteHooks = {},
+): Promise<{ written: string[] }> {
     const document = await readProjectWorkspace(payload.dirPath)
     const root = resolveStorageRoot()
     const toUri = (fileName: string): vscode.Uri => buildStorageUri(root, [PRESS_MODULE_DIR, document.name, fileName])
-    const nextFiles: { fileName: string; content: string }[] = []
+    const nextFiles: PendingFile[] = []
     if (payload.readme !== undefined) {
         nextFiles.push({
+            key: 'readme',
             fileName: WORKSPACE_FILE_NAMES.readme,
             content: mergeReadmeFrontmatter(document.files.readme, payload.readme),
         })
     }
     if (payload.setting !== undefined) {
         nextFiles.push({
+            key: 'setting',
             fileName: WORKSPACE_FILE_NAMES.setting,
             content: replaceLevelTwoSection(document.files.setting, SETTING_SECTION_TITLE, payload.setting, '# 设定'),
         })
@@ -164,12 +196,14 @@ export async function applyProjectWorkspace(payload: PressApplyRequest): Promise
     const deletedNames = payload.deletedCharacterNames ?? []
     if (payload.characters !== undefined || deletedNames.length > 0) {
         nextFiles.push({
+            key: 'characters',
             fileName: WORKSPACE_FILE_NAMES.characters,
             content: mergeCharacterBlocks(document.files.characters, payload.characters ?? [], deletedNames),
         })
     }
     if (payload.outline !== undefined) {
         nextFiles.push({
+            key: 'outline',
             fileName: WORKSPACE_FILE_NAMES.outline,
             content: replaceLevelTwoSection(document.files.outline, OUTLINE_SECTION_TITLE, payload.outline, '# 大纲'),
         })
@@ -184,6 +218,23 @@ export async function applyProjectWorkspace(payload: PressApplyRequest): Promise
         }
     }
     logger.info(`作品文档回写完成：${payload.dirPath}，写入 ${written.join('、')}`)
+    if (hooks.onWritten !== undefined && written.length > 0) {
+        const files: PressWorkspaceFiles = { ...document.files }
+        const trigger = new Set<PressSnapshotTrigger>()
+        for (const file of nextFiles) {
+            if (!written.includes(file.fileName)) {
+                continue
+            }
+            files[file.key] = file.content
+            trigger.add(file.key === 'readme' ? 'setting' : file.key)
+        }
+        try {
+            await hooks.onWritten({ dirPath: payload.dirPath, files, trigger: [...trigger] })
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            logger.warn(`作品文档快照记录失败（不影响本次回写）：${payload.dirPath}（${message}）`)
+        }
+    }
     return { written }
 }
 

@@ -1,13 +1,13 @@
 /**
  * 索引服务：FileSystemWatcher 增量监听 + 防抖队列批处理 + 全量重建与激活自检。
  * 设计源：docs/modules/common.md 第 4.1/4.2 节；mtime 与 hash 双重比对避免无变更重写。
- * 复用约定：素材目录名取自 shared/types/press，新名与旧版 `_import` 共用同一份排除规则。
- * 关键约束：watcher 入队与全量扫描都必须排除素材目录，否则 AI 初稿会混进作品字数。
+ * 复用约定：素材目录名与作品快照目录名取自 shared/types/press，统一走同一份排除规则。
+ * 关键约束：watcher 入队与全量扫描都必须排除素材目录与快照目录，否则 AI 初稿与历史副本会混进作品字数。
  */
 import * as vscode from 'vscode'
 import type { FileRow } from '../db/indexRepository'
 import type Database from 'better-sqlite3'
-import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR } from '../../../shared/types/press'
+import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR, PRESS_SNAPSHOT_DIR } from '../../../shared/types/press'
 import { getZhaiConfig, resolveStorageRoot } from '../config'
 import { parseFileMeta } from '../db/fileMeta'
 import { countFileRows, deleteFileRow, listIndexedPaths, upsertFileRows } from '../db/indexRepository'
@@ -15,6 +15,12 @@ import { logger } from '../logger'
 
 /** 素材目录的两种写法：新名与旧版 `_import`，旧目录在迁移完成前仍可能存在于磁盘上 */
 const MATERIAL_DIR_NAMES: readonly string[] = [PRESS_IMPORT_DIR, LEGACY_PRESS_IMPORT_DIR]
+
+/**
+ * 不参与索引的目录：素材目录之外还有作品快照目录。
+ * 关键约束：快照下是四份文档的历史副本，计入索引会让作品字数与侧边栏列表虚高，故与素材同样无条件排除。
+ */
+const EXCLUDED_DIR_NAMES: readonly string[] = [...MATERIAL_DIR_NAMES, PRESS_SNAPSHOT_DIR]
 
 /** 索引状态快照，供状态栏与 Webview 展示 */
 export interface IndexStatus {
@@ -203,8 +209,8 @@ export class IndexService {
     }
 
     private enqueue(uri: vscode.Uri): void {
-        // 素材目录只存素材与 AI 初稿，不属于作品内容，watcher 触发时直接丢弃
-        if (MATERIAL_DIR_NAMES.some((name) => uri.path.includes(`/${name}/`))) {
+        // 素材目录存素材与 AI 初稿、快照目录存历史副本，都不属于作品正文，watcher 触发时直接丢弃
+        if (EXCLUDED_DIR_NAMES.some((name) => uri.path.includes(`/${name}/`))) {
             return
         }
         this.pendingUris.add(uri.toString())
@@ -272,13 +278,13 @@ export class IndexService {
     }
 
     /**
-     * 排除规则：用户配置项 + 固定的素材目录。
-     * 关键约束：素材目录下存放素材与 AI 初稿，若计入索引会使作品字数虚高，故无条件排除；
+     * 排除规则：用户配置项 + 固定的素材目录与快照目录。
+     * 关键约束：素材目录下存放素材与 AI 初稿、快照目录下存放历史副本，若计入索引会使作品字数虚高，故无条件排除；
      * 旧版 `_import` 一并排除——迁移失败或用户手工保留的旧目录同样不能污染字数统计。
      */
     private buildExcludeGlob(): vscode.GlobPattern {
-        const materialGlobs = MATERIAL_DIR_NAMES.map((name) => `**/${name}/**`)
-        const patterns = [...getZhaiConfig().indexExclude, ...materialGlobs]
+        const excludedGlobs = EXCLUDED_DIR_NAMES.map((name) => `**/${name}/**`)
+        const patterns = [...getZhaiConfig().indexExclude, ...excludedGlobs]
         return `{${patterns.join(',')}}`
     }
 }

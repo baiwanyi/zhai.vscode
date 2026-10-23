@@ -1,12 +1,13 @@
 /**
  * 写作管理协议路由：把 pressAi/* 消息分发到人物外貌与角色设定图两个服务，
  * 并承接工作台的作品读取、打开与人物卡提取（press/workspace、press/open、press/extract/characters），
- * 入参收窄由本层与 shared 类型完成。
+ * 以及作品快照的列举、手动留版、恢复与删除（press/snapshot/*），入参收窄由本层与 shared 类型完成。
  * 复用约定：由 AiChatViewProvider 按前缀统一委托，本类只做方法到服务的映射；
  * 作品列表取索引库聚合结果，文档原文由 projectWorkspace 读取，打开动作与仪表盘 press/open 同口径，
  * 人物卡提取复用语义归纳服务，与仪表盘共用同一实例（单任务锁与配额口径一致）。
  * 关键约束：pressAi/* 与仪表盘的作品写操作（press/create、press/delete* 等）刻意分开，工作台只读作品、不改作品；
- * 前端传入的 dirPath 不可信，打开与提取前必须按索引库回查，读取前由 projectWorkspace 做片段与层级校验。
+ * 前端传入的 dirPath 不可信，打开、提取与快照操作前都必须按索引库回查，读取前由 projectWorkspace 做片段与层级校验；
+ * 快照写入挂在回写钩子上而不是重复读盘，回写失败时不会凭空产生一版历史。
  */
 import { hasProjectFiles, listPressProjects } from './projectRepository'
 import { openProjectByDir } from './projectService'
@@ -15,6 +16,7 @@ import { applyProjectWorkspace } from './workspaceWriter'
 import type { ImportSemanticService } from './importSemanticService'
 import type { PortraitService } from './portraitService'
 import type { PressAiService } from './pressAiService'
+import type { PressSnapshotService } from './snapshot/snapshotService'
 import type {
     OpenPressProjectResult,
     PressApplyResult,
@@ -22,6 +24,10 @@ import type {
     PressExtractOutlineResult,
     PressExtractSettingResult,
     PressSemanticProgress,
+    PressSnapshotCreateResult,
+    PressSnapshotDeleteResult,
+    PressSnapshotListResult,
+    PressSnapshotRestoreResult,
     PressWorkspaceResult,
 } from '../../shared/types/press'
 import type { WorkflowRouter } from '../ai/workflowRouter'
@@ -33,6 +39,10 @@ import {
     isPressExtractCharactersRequest,
     isPressExtractOutlineRequest,
     isPressExtractSettingRequest,
+    isPressSnapshotCreateRequest,
+    isPressSnapshotDeleteRequest,
+    isPressSnapshotListRequest,
+    isPressSnapshotRestoreRequest,
     isPressWorkspaceRequest,
 } from '../../shared/types/press'
 import { logger } from '../common/logger'
@@ -44,6 +54,7 @@ export class PressRoutes {
         private readonly db: Database.Database,
         private readonly workflowRouter: WorkflowRouter,
         private readonly semantic: ImportSemanticService,
+        private readonly snapshot: PressSnapshotService,
     ) {}
 
     /**
@@ -88,6 +99,14 @@ export class PressRoutes {
                 return this.extractSetting(payload)
             case 'press/apply':
                 return this.applyWorkspace(payload)
+            case 'press/snapshot/list':
+                return this.listSnapshots(payload)
+            case 'press/snapshot/create':
+                return this.createSnapshot(payload)
+            case 'press/snapshot/restore':
+                return this.restoreSnapshot(payload)
+            case 'press/snapshot/delete':
+                return this.deleteSnapshot(payload)
             default:
                 throw new Error(`未知的写作管理协议方法：${method}`)
         }
@@ -105,7 +124,10 @@ export class PressRoutes {
         if (!hasProjectFiles(this.db, payload.dirPath)) {
             throw new Error(`作品不在索引中，无法回写：${payload.dirPath}`)
         }
-        const result = await applyProjectWorkspace(payload)
+        const result = await applyProjectWorkspace(payload, {
+            onWritten: (outcome) =>
+                this.snapshot.recordWorkspaceWrite(outcome.dirPath, outcome.files, outcome.trigger),
+        })
         for (const characterId of payload.deletedCharacterIds ?? []) {
             try {
                 await this.portraits.removeByCharacterId(payload.dirPath, characterId)
@@ -196,5 +218,59 @@ export class PressRoutes {
         await openProjectByDir(payload.dirPath)
         this.workflowRouter.selectProject(payload.dirPath)
         return { opened: true }
+    }
+
+    /**
+     * 列出作品快照时间线：按创建时间倒序，只含元信息。
+     * 安全约束：作品目录先按索引库回查，不采信前端路径。
+     */
+    private async listSnapshots(payload: unknown): Promise<PressSnapshotListResult> {
+        if (!isPressSnapshotListRequest(payload)) {
+            throw new Error('press/snapshot/list 参数非法：dirPath 须为非空字符串')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法列出快照：${payload.dirPath}`)
+        }
+        return { snapshots: await this.snapshot.list(payload.dirPath) }
+    }
+
+    /**
+     * 手动留一版：不受自动快照间隔限制，备注原样落 meta。
+     * 安全约束：作品目录先按索引库回查。
+     */
+    private async createSnapshot(payload: unknown): Promise<PressSnapshotCreateResult> {
+        if (!isPressSnapshotCreateRequest(payload)) {
+            throw new Error('press/snapshot/create 参数非法：dirPath 须为非空字符串')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法创建快照：${payload.dirPath}`)
+        }
+        return { snapshot: await this.snapshot.create(payload.dirPath, payload.label) }
+    }
+
+    /**
+     * 恢复指定版本：files 缺省为整版恢复，恢复前由服务自动留底。
+     * 安全约束：快照标识由类型守卫校验为固定格式，路径一律由宿主从存储根拼装。
+     */
+    private async restoreSnapshot(payload: unknown): Promise<PressSnapshotRestoreResult> {
+        if (!isPressSnapshotRestoreRequest(payload)) {
+            throw new Error('press/snapshot/restore 参数非法：作品目录或快照标识不合法')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法恢复快照：${payload.dirPath}`)
+        }
+        const restored = await this.snapshot.restore(payload.dirPath, payload.snapshotId, payload.files)
+        return { restored }
+    }
+
+    /** 删除一版快照：只删该目录，索引与作品文档不受影响 */
+    private async deleteSnapshot(payload: unknown): Promise<PressSnapshotDeleteResult> {
+        if (!isPressSnapshotDeleteRequest(payload)) {
+            throw new Error('press/snapshot/delete 参数非法：作品目录或快照标识不合法')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法删除快照：${payload.dirPath}`)
+        }
+        return { deleted: await this.snapshot.remove(payload.dirPath, payload.snapshotId) }
     }
 }

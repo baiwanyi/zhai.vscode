@@ -1,8 +1,9 @@
 /**
  * 写作管理工作流页：写作管理模块的专属落点，模块切换时由注册表直接渲染本文件。
  * 复用约定：作品数据来自宿主读取的 设定.md / 角色设定.md / 大纲.md，经 press/document 解析成 OutlineWorkspace；
- * 分区内容按 activeSection 切换——设定、人物、大纲分别渲染 ../press 的三个页面，AI 对话渲染 ../aichat 的 AiChat
- * 并下传当前作品目录作为会话作用域（每个作品各有一份对话记录），取名渲染 ../naming 的 NamingPage，
+ * 分区内容按 activeSection 切换——设定、人物、大纲分别渲染 ../press 的三个页面，快照渲染 ../press 的
+ * PressSnapshotPage（按作品隔离）、AI 对话渲染 ../aichat 的 AiChat 并下传当前作品目录作为会话作用域
+ * （每个作品各有一份对话记录），取名渲染 ../naming 的 NamingPage，
  * AI 使用量渲染 ../usage 的 AiUsagePage（全局统计，不按作品隔离）；
  * 右侧分区入口由同目录 WorkflowPressNav 承载，分区之间共享同一份草稿。
  * 关键约束：本页不自行发起路由请求，作品定位只认宿主下发的 projectDir；未打开作品时渲染初始页（作品清单入口），
@@ -39,7 +40,13 @@ import { request } from '../../bridge'
 import { toastError } from '../../utils'
 import { AiChat } from '../aichat'
 import { NamingPage } from '../naming'
-import { PressCharacterPage, PressOutlinePage, PressSettingPage, PressWorkspaceStart } from '../press'
+import {
+    PressCharacterPage,
+    PressOutlinePage,
+    PressSettingPage,
+    PressSnapshotPage,
+    PressWorkspaceStart,
+} from '../press'
 import { parseProjectWorkspace } from '../press/document'
 import {
     serializeCharacterBlocks,
@@ -531,6 +538,10 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
         }
         if (activeSection === 'naming') {
             return <NamingPage />
+        }
+        // 快照按作品隔离：与文档同目录，切作品即换用该作品自己的时间线
+        if (activeSection === 'snapshot') {
+            return <PressSnapshotPage dirPath={workspaceDir} />
         }
         // 用量是全局统计，不随作品目录隔离：跨作品的消耗在同一张表里汇总
         if (activeSection === 'usage') {

@@ -33,6 +33,10 @@ export interface ZhaiConfig {
     pressAiDailyLimit: number
     /** 语义归纳每日调用次数上限（人物卡、设定、大纲等按需提取同样计入），0 表示不限制；与 pressAiDailyLimit 分开计数 */
     pressImportAiDailyLimit: number
+    /** 是否在设定、角色、大纲内容变更时自动保存作品快照 */
+    pressSnapshotEnabled: boolean
+    /** 自动快照的最小间隔秒数：同一作品两次自动快照之间的最短时间 */
+    pressSnapshotIntervalSeconds: number
     /** 角色设定图尺寸，形如 768x1024 */
     imageSize: string
     /** 角色设定图每日生成次数上限 */
@@ -41,6 +45,23 @@ export interface ZhaiConfig {
 }
 
 const SECTION = 'zhai'
+
+/** 自动快照默认间隔秒数：与产品侧约定的 60s 一致 */
+const DEFAULT_SNAPSHOT_INTERVAL_SECONDS = 60
+
+/** 自动快照间隔下限：低于此值时快照本身就变成高频写盘，失去节流意义 */
+const MIN_SNAPSHOT_INTERVAL_SECONDS = 5
+
+/** 自动快照间隔上限：一小时一版已是兜底语义，再大等于关闭 */
+const MAX_SNAPSHOT_INTERVAL_SECONDS = 3600
+
+/** 收敛自动快照间隔：非法值回落默认，越界值夹到上下限内 */
+function readSnapshotInterval(value: number): number {
+    if (!Number.isFinite(value)) {
+        return DEFAULT_SNAPSHOT_INTERVAL_SECONDS
+    }
+    return Math.min(Math.max(Math.floor(value), MIN_SNAPSHOT_INTERVAL_SECONDS), MAX_SNAPSHOT_INTERVAL_SECONDS)
+}
 
 /** CodeBuddy 站点：仅开放中国站（cn）与国际站（ai） */
 export type CodebuddySite = 'cn' | 'ai'
@@ -73,6 +94,8 @@ export function getZhaiConfig(): ZhaiConfig {
         namingAiDailyLimit: cfg.get<number>('naming.aiDailyLimit', 20),
         pressAiDailyLimit: cfg.get<number>('press.aiDailyLimit', 20),
         pressImportAiDailyLimit: cfg.get<number>('press.importAiDailyLimit', 0),
+        pressSnapshotEnabled: cfg.get<boolean>('press.snapshot.enabled', true),
+        pressSnapshotIntervalSeconds: readSnapshotInterval(cfg.get<number>('press.snapshot.intervalSeconds', 60)),
         imageSize: cfg.get<string>('image.size', '768x1024'),
         imageDailyLimit: cfg.get<number>('image.dailyLimit', 20),
         telemetryEnabled: cfg.get<boolean>('telemetry.enabled', false),

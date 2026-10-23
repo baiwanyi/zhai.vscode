@@ -4,6 +4,7 @@
  * 关键约束：桩对象按完整接口构造，不用类型断言绕过检查；workspace / 配置 / 密钥为模块级可变状态，
  * 用例须在 beforeEach 调用 resetWorkspaceState 复位，避免用例间互相污染。
  */
+import * as path from 'node:path'
 import type * as vscode from 'vscode'
 
 /** 工作区根：asRelativePath 依此裁剪出相对路径 */
@@ -324,6 +325,13 @@ export class EventEmitter<T> {
     }
 }
 
+/** 文件类型枚举：取值与 vscode.FileType 一致，供 readDirectory 的调用方按目录/文件分流 */
+export const FileType = {
+    File: 1,
+    Directory: 2,
+    SymbolicLink: 64,
+}
+
 export const Uri: Pick<typeof vscode.Uri, 'file' | 'parse' | 'joinPath' | 'from'> = {
     file(path: string): vscode.Uri {
         return createUri(path)
@@ -332,7 +340,8 @@ export const Uri: Pick<typeof vscode.Uri, 'file' | 'parse' | 'joinPath' | 'from'
         return createUri(value.replace(/^file:\/\//, ''))
     },
     joinPath(base: vscode.Uri, ...pathSegments: string[]): vscode.Uri {
-        return createUri([base.fsPath, ...pathSegments].join('/'))
+        // 与真实 Uri.joinPath 一致：沿基路径的分隔符风格拼接，Windows 下产出反斜杠路径
+        return createUri(path.join(base.fsPath, ...pathSegments))
     },
     from(components: { scheme?: string; path?: string }): vscode.Uri {
         return createUri(components.path ?? '', components.scheme ?? 'file')
@@ -361,8 +370,41 @@ export const workspace = {
             return Promise.resolve(new TextEncoder().encode(content))
         },
         createDirectory(uri: vscode.Uri): Promise<void> {
+            // 与真实 fs 一致：上级目录也一并登记，用例不必先手工铺满父目录
             directories.add(uri.fsPath)
+            const separatorIndex = Math.max(uri.fsPath.lastIndexOf('/'), uri.fsPath.lastIndexOf('\\'))
+            if (separatorIndex > 0) {
+                directories.add(uri.fsPath.slice(0, separatorIndex))
+            }
             return Promise.resolve()
+        },
+        readDirectory(uri: vscode.Uri): Promise<[string, number][]> {
+            const targetPath = uri.fsPath
+            if (!directories.has(targetPath)) {
+                return Promise.reject(new Error(`ENOENT: ${targetPath}`))
+            }
+            // 只回报直接子项：目录优先于同名文件，与真实 fs 的命名冲突处理保持一致
+            const entries = new Map<string, number>()
+            const record = (candidate: string, type: number): void => {
+                if (!isNestedUnder(candidate, targetPath)) {
+                    return
+                }
+                const rest = candidate.slice(targetPath.length + 1)
+                const [head] = rest.split(/[\\/]/u)
+                if (head === undefined || head.length === 0) {
+                    return
+                }
+                if (type === FileType.Directory || !entries.has(head)) {
+                    entries.set(head, type)
+                }
+            }
+            for (const path of directories) {
+                record(path, FileType.Directory)
+            }
+            for (const path of fileContents.keys()) {
+                record(path, FileType.File)
+            }
+            return Promise.resolve([...entries])
         },
         writeFile(uri: vscode.Uri, content: Uint8Array): Promise<void> {
             fileContents.set(uri.fsPath, new TextDecoder().decode(content))

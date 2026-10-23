@@ -36,6 +36,8 @@ import { ImportSemanticService } from './modules/press/importSemanticService'
 import { PortraitService } from './modules/press/portraitService'
 import { PressAiService } from './modules/press/pressAiService'
 import { PressRoutes } from './modules/press/pressRoutes'
+import { PressSnapshotService } from './modules/press/snapshot/snapshotService'
+import { registerPressSnapshotWatcher } from './modules/press/snapshot/snapshotWatcher'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -117,7 +119,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // 语义归纳依赖 AI 通道，晚于仪表盘创建，故回填给已注册的仪表盘实例；
     // 工作台的人物卡提取复用同一实例，单任务锁与配额口径因此保持一致
     const semanticService = new ImportSemanticService(pressDb, aiProvider, usageRecorder)
-    const pressRoutes = new PressRoutes(pressAiService, portraitService, db, workflowRouter, semanticService)
+    // 作品快照：设定、角色、大纲变更时按间隔自动留版，正文落在作品的 Snapshots 目录；
+    // 恢复后由索引服务重建字数，两条通道（工作台回写、编辑器保存）共用同一套去重与节流
+    const snapshotService = new PressSnapshotService(indexService)
+    context.subscriptions.push(snapshotService)
+    registerPressSnapshotWatcher(snapshotService, context.subscriptions)
+    const pressRoutes = new PressRoutes(
+        pressAiService,
+        portraitService,
+        db,
+        workflowRouter,
+        semanticService,
+        snapshotService,
+    )
     dashboardProvider.attachSemanticService(semanticService)
 
     const aiChatProvider = new AiChatViewProvider(

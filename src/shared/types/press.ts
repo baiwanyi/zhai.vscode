@@ -37,6 +37,12 @@ export const PRESS_IMPORT_DIR = 'Materials'
  */
 export const LEGACY_PRESS_IMPORT_DIR = '_import'
 
+/**
+ * 作品快照目录名：位于 `press/{作品名}/` 下，每个子目录是一版完整的设定、角色、大纲与 README 副本。
+ * 关键约束：与素材目录一样必须排除出索引——快照内的 Markdown 是历史副本而非作品正文，计入会让字数虚高。
+ */
+export const PRESS_SNAPSHOT_DIR = 'Snapshots'
+
 /** 作品摘要：宿主按索引库聚合，一部作品对应 press/ 下的一个目录 */
 export interface PressProjectSummary {
     /** 目录名即作品名 */
@@ -964,5 +970,125 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
 /** press/apply 响应：written 为实际写入的文件名，便于前端提示写了哪些文档 */
 export interface PressApplyResult {
     written: string[]
+}
+
+/**
+ * 快照收录的文档键：与 PressWorkspaceFiles 同键。
+ * README 一并纳入——书名、题材、目标字数同属「设定」语义，割裂会让「只改书名不产生快照」难以解释。
+ */
+export type PressSnapshotFileKey = keyof PressWorkspaceFiles
+
+/** 快照触发范围：README 随设定一起写入，故不作为独立触发项，只用于标注本次是哪个分区改动 */
+export type PressSnapshotTrigger = Exclude<PressSnapshotFileKey, 'readme'>
+
+/** 快照来源：auto 为内容变更自动保存，manual 为用户手动创建，restore 为恢复前留底 */
+export type PressSnapshotReason = 'auto' | 'manual' | 'restore'
+
+/** 快照条目：列表只下发元信息，正文本地按需读取，避免一次列出几十版就搬运整部作品 */
+export interface PressSnapshotEntry {
+    /** 目录名即标识，形如 20261024-153012-a1b2c3 */
+    id: string
+    createdAt: string
+    reason: PressSnapshotReason
+    trigger: PressSnapshotTrigger[]
+    /** 手动快照的备注，自动快照为空串 */
+    label: string
+    /** 与上一版相比内容变化的文档；首版为收录的全部文档 */
+    changed: PressSnapshotFileKey[]
+    sizeBytes: number
+}
+
+/** press/snapshot/list 请求 */
+export interface PressSnapshotListRequest {
+    dirPath: string
+}
+
+/** press/snapshot/list 响应：按创建时间倒序 */
+export interface PressSnapshotListResult {
+    snapshots: PressSnapshotEntry[]
+}
+
+/** press/snapshot/create 请求：手动留一版，label 为备注 */
+export interface PressSnapshotCreateRequest {
+    dirPath: string
+    label?: string
+}
+
+/** press/snapshot/create 响应 */
+export interface PressSnapshotCreateResult {
+    snapshot: PressSnapshotEntry
+}
+
+/** press/snapshot/restore 请求：files 缺省表示整版恢复，指定则只覆盖这几份文档 */
+export interface PressSnapshotRestoreRequest {
+    dirPath: string
+    snapshotId: string
+    files?: PressSnapshotFileKey[]
+}
+
+/** press/snapshot/restore 响应：实际写回的文档 */
+export interface PressSnapshotRestoreResult {
+    restored: PressSnapshotFileKey[]
+}
+
+/** press/snapshot/delete 请求：只删这一版，不影响其它版本 */
+export interface PressSnapshotDeleteRequest {
+    dirPath: string
+    snapshotId: string
+}
+
+/** press/snapshot/delete 响应 */
+export interface PressSnapshotDeleteResult {
+    deleted: boolean
+}
+
+/** 快照标识：14 位年月日时分秒 + 6 位随机十六进制，同时作为目录名，天然不含路径分隔符 */
+const PRESS_SNAPSHOT_ID_PATTERN = /^\d{8}-\d{6}-[0-9a-f]{6}$/
+
+/** 判断快照标识是否合法：恢复与删除前必须先过这一关，避免拼出越界路径 */
+export function isPressSnapshotId(value: unknown): value is string {
+    return typeof value === 'string' && PRESS_SNAPSHOT_ID_PATTERN.test(value)
+}
+
+/** 判断是否为合法的快照列举请求（类型收窄辅助）：与作品目录请求同形 */
+export function isPressSnapshotListRequest(payload: unknown): payload is PressSnapshotListRequest {
+    return isPressDirPath(payload)
+}
+
+/** 判断是否为合法的手动快照请求（类型收窄辅助）：备注可选，超长备注由宿主截断而非拒绝 */
+export function isPressSnapshotCreateRequest(payload: unknown): payload is PressSnapshotCreateRequest {
+    if (!isPressDirPath(payload)) {
+        return false
+    }
+    const label = (payload as { label?: unknown }).label
+    return label === undefined || typeof label === 'string'
+}
+
+/** 判断是否为合法的恢复请求（类型收窄辅助）：files 可选，出现时必须全部是收录键 */
+export function isPressSnapshotRestoreRequest(payload: unknown): payload is PressSnapshotRestoreRequest {
+    if (!isPressDirPath(payload)) {
+        return false
+    }
+    const candidate = payload as { snapshotId?: unknown; files?: unknown }
+    if (!isPressSnapshotId(candidate.snapshotId)) {
+        return false
+    }
+    if (candidate.files === undefined) {
+        return true
+    }
+    return Array.isArray(candidate.files) && candidate.files.every(isPressSnapshotFileKey)
+}
+
+/** 判断是否为合法的删除快照请求（类型收窄辅助） */
+export function isPressSnapshotDeleteRequest(payload: unknown): payload is PressSnapshotDeleteRequest {
+    if (!isPressDirPath(payload)) {
+        return false
+    }
+    return isPressSnapshotId((payload as { snapshotId?: unknown }).snapshotId)
+}
+
+/** 判断是否为快照收录键：白名单收窄，避免前端传入任意字段名被当成文件名拼进路径 */
+export function isPressSnapshotFileKey(value: unknown): value is PressSnapshotFileKey {
+    return value === 'readme' || value === 'setting' || value === 'characters' || value === 'outline'
 }
 

@@ -6,4 +6,5 @@
 export { PressCharacterPage } from './character/PressCharacterPage'
 export { PressOutlinePage } from './outline/PressOutlinePage'
 export { PressSettingPage } from './setting/PressSettingPage'
+export { PressSnapshotPage } from './snapshot/PressSnapshotPage'
 export { PressWorkspaceStart } from './layout/PressWorkspaceStart'
