@@ -1,9 +1,11 @@
 /**
- * 用量分页：上一页 / 下一页与「第 N / M 页、共 X 条」，分页本身由宿主完成。
+ * 用量分页：上一页 / 下一页图标与「第 N / M 页、共 X 条」，分页本身由宿主完成。
  * 复用约定：外层结构复用 @components/ui/pagination，页码计算只依赖当前页、页大小与总数。
  * 关键约束：首页与末页的翻页入口用不可点样式而不是 disabled 属性（链接语义需保留可访问名）；
+ * 翻页按钮只放图标，可访问名由 aria-label 提供，图标自身 aria-hidden 避免重复朗读；
  * 总数为 0 时仍显示「第 1 / 1 页」，避免出现 0 页的空白状态。
  */
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { Pagination, PaginationContent, PaginationItem, PaginationLink } from '@components/ui/pagination'
 import type { JSX, MouseEvent } from 'react'
 
@@ -33,17 +35,16 @@ export function UsagePagination({ page, pageSize, total, onChangePage }: UsagePa
     }
 
     return (
-        <Pagination className="justify-between">
+        <Pagination className="justify-between w-auto">
             <PaginationContent>
                 <PaginationItem>
                     <PaginationLink
-                        size="default"
                         aria-label="上一页"
                         aria-disabled={isFirstPage}
                         className={isFirstPage ? 'pointer-events-none opacity-50' : undefined}
                         onClick={goToPrev}
                     >
-                        上一页
+                        <ChevronLeft className="size-4" aria-hidden="true" />
                     </PaginationLink>
                 </PaginationItem>
                 <PaginationItem>
@@ -53,13 +54,12 @@ export function UsagePagination({ page, pageSize, total, onChangePage }: UsagePa
                 </PaginationItem>
                 <PaginationItem>
                     <PaginationLink
-                        size="default"
                         aria-label="下一页"
                         aria-disabled={isLastPage}
                         className={isLastPage ? 'pointer-events-none opacity-50' : undefined}
                         onClick={goToNext}
                     >
-                        下一页
+                        <ChevronRight className="size-4" aria-hidden="true" />
                     </PaginationLink>
                 </PaginationItem>
             </PaginationContent>

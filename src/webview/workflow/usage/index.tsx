@@ -47,20 +47,28 @@ export function AiUsagePage(): JSX.Element {
     }, [])
 
     return (
-        <div className="flex h-full flex-col gap-3 p-3">
-            <UsageHeader summary={result?.summary ?? null} isLoading={isLoading} onRefresh={refresh} />
+        <div className="@container flex h-full min-h-0 flex-col gap-2 p-3">
+            <UsageHeader
+                summary={result?.summary ?? null}
+                periods={result?.periods ?? null}
+                isLoading={isLoading}
+                onRefresh={refresh}
+            />
+
             <UsageFilterBar
                 module={module}
                 range={range}
                 onChangeModule={handleChangeModule}
                 onChangeRange={handleChangeRange}
             />
+
             {error !== null && (
                 <Alert variant="destructive">
                     <AlertDescription>{error}</AlertDescription>
                 </Alert>
             )}
-            <div className="min-h-0 flex-1 overflow-auto rounded-md border">
+
+            <div className="min-h-0 flex-1 overflow-y-auto p-0.5">
                 {isLoading && result === null ? (
                     <div className="flex flex-col gap-2 p-3">
                         <Skeleton className="h-8 w-full" />
@@ -72,12 +80,15 @@ export function AiUsagePage(): JSX.Element {
                     <UsageTable items={result?.items ?? []} onOpenRequest={handleOpenRequest} />
                 )}
             </div>
-            <UsagePagination
-                page={result?.page ?? page}
-                pageSize={result?.pageSize ?? DEFAULT_PAGE_SIZE}
-                total={result?.total ?? 0}
-                onChangePage={setPage}
-            />
+
+            <footer className="relative flex shrink-0 items-center justify-center gap-1.5 pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent">
+                <UsagePagination
+                    page={result?.page ?? page}
+                    pageSize={result?.pageSize ?? DEFAULT_PAGE_SIZE}
+                    total={result?.total ?? 0}
+                    onChangePage={setPage}
+                />
+            </footer>
             {activeItem !== null && (
                 <UsagePromptDialog item={activeItem} prompt={prompt} error={promptError} onClose={handleClosePrompt} />
             )}

@@ -31,9 +31,9 @@ export function UsageFilterBar({ module, range, onChangeModule, onChangeRange }:
     }
 
     return (
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center min-w-0 gap-2">
             <Select value={module ?? ALL_MODULES_VALUE} onValueChange={handleModuleChange}>
-                <SelectTrigger size="sm" aria-label="模块筛选">
+                <SelectTrigger aria-label="模块筛选">
                     <SelectValue placeholder="模块筛选" />
                 </SelectTrigger>
                 <SelectContent>
@@ -48,7 +48,7 @@ export function UsageFilterBar({ module, range, onChangeModule, onChangeRange }:
                 </SelectContent>
             </Select>
             <Select value={range} onValueChange={handleRangeChange}>
-                <SelectTrigger size="sm" aria-label="时间筛选">
+                <SelectTrigger aria-label="时间筛选">
                     <SelectValue placeholder="时间筛选" />
                 </SelectTrigger>
                 <SelectContent>
