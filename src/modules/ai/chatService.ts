@@ -33,6 +33,7 @@ import {
     updateConversationTitle,
     updateMessage,
 } from './db/chatRepository'
+import { readCodebuddyLogin, rememberCodebuddyLogin } from './providers/codebuddyLogin'
 import { getCachedCodebuddyModels, getSelectedCodebuddyModel } from './providers/codebuddyModels'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
 import type { HostContextRef, ResolvedContextRef } from './contextRefs'
@@ -135,10 +136,14 @@ export class AiChatService implements vscode.Disposable {
         const model = getSelectedCodebuddyModel()
         // 面板初始化即需要展示模型名：清单尚未在 webview 侧拉取，只能取宿主激活时预热的缓存
         const modelName = getCachedCodebuddyModels().find((item) => item.modelId === model)?.name ?? ''
+        // 登录态按站点记忆：CodeBuddy 的凭证由 CLI 维护，无法零成本探测，故以「登录成功 / 生成走通」为准
+        const login = readCodebuddyLogin(cfg.aiCodebuddySite)
         return {
             provider: this.provider.id,
             providerSite: CODEBUDDY_SITE_LABELS[cfg.aiCodebuddySite],
             hasApiKey: status.ready,
+            loggedIn: login.loggedIn,
+            loggedInUser: login.userName,
             model,
             modelName,
             maxContextTokens: cfg.aiMaxContextTokens,
@@ -600,6 +605,8 @@ export class AiChatService implements vscode.Disposable {
             })
             if (answer.length > 0) {
                 this.registerWrittenResult(conversationId, assistantMessageId, writeTarget, applyPolicy)
+                // 生成完整走通即证明当前站点登录可用：即便用户在 CLI 侧登录，也不必再看登录引导
+                rememberCodebuddyLogin(cfg.aiCodebuddySite, null)
             }
             this.recordUsage(
                 conversationId,

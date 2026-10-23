@@ -1,6 +1,6 @@
 # AI Chat — 模块设计文档
 
-**版本**：1.6
+**版本**：1.7
 **日期**：2026-10-23
 **状态**：对话模式、编辑器右键上下文（10.1）、会话历史（10.2，已按作品隔离）与写作模式写回（10.3）已落地；diff 逐段接受待实现；第 5 节已按 CodeBuddy 单通道更新（直连通道已移除）
 **宿主**：VSCode 插件 Zhai（宅桌面）
@@ -175,6 +175,8 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 仅开放中国站与国际站，两者的授权页分属不同域名：中国站经 `copilot.tencent.com` 认证，国际站经 `codebuddy.ai` 认证。登录时 `methodId` 与 `environment` 必须同时按站点传入，否则 CLI 会用国际站登录方式发起授权，授权完成后凭证仍落不到所选站点。授权页回调打开前按站点域名校验一次，域名不符时告警但继续打开，避免阻断企业自定义 SSO 场景。配置里的非法取值一律归入中国站；历史配置的 `china` / `international` 在读取时归一为 `cn` / `ai`，升级后无需手动改动。
 
 切换站点后必须重新登录，旧站点凭证不会复用；专享版/私有化（需自定义 `endpoint`）不在开放范围内。
+
+**登录态记忆**：SDK 只提供 `authenticate` / `logout`，没有查询登录态的接口，且凭证由 CLI 维护，宿主无法零成本探测。因此面板空态是否展示登录引导，以 `globalState` 的站点级标记为准（`ai.codebuddyAuthed.{站点}` / `ai.codebuddyUser.{站点}`，见 `providers/codebuddyLogin.ts`）：`zhai.ai.loginCodebuddy` 登录成功后写入账号名，任意一次生成完整走通也会补记一次（覆盖「只在 CLI 侧登录过」的情形）。标记为真时，空态改为「已登录 CodeBuddy（站点 / 账号）」说明且不再展示登录按钮；站点之间标记互不共享，切换站点后需重新登录。升级前已登录的用户首次仍会看到引导，点一次登录或成功发出一条消息后即转为已登录。
 
 **模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModelsRaw()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活；完整清单不可用时退回 `getAvailableModels()` 的简化清单）。选择入口为 AI 面板底部输入卡片的模型菜单（`ai/models` / `ai/selectModel`），选中值写入 `globalState` 的 `ai.codebuddyModel` —— 对话、取名、外貌生成与出图驱动共用这一项。清单里的项可直接选，也支持「手动输入模型 id」以使用账号可用的自定义模型。通道下发前经 `resolveCodebuddyModel` 归一：空值交给 CLI 默认，非空一律透传，id 是否有效由服务端裁决。
 
@@ -437,7 +439,7 @@ interface AbortRequest {
 - **惰性引用**：添加时只记路径与行范围，发送时才读取原文（`workspace.textDocuments` 内存态优先，回退磁盘），未保存修改同样生效（第 9 节「引用内容不过期」的落地）。
 - **可见清单**：待发送引用以不可编辑芯片形式内联在输入区首行（文件 / 选区图标 + 标签 + 字数，单条移除）；已发送的引用作为**消息内容的一部分**随该条用户消息显示（`messages.refs`），不单独置于消息头部或会话头部。
 - **消息样式**：参考 Copilot / CodeBuddy——不带头像与角色标签；用户消息为右对齐气泡（引用条目在气泡内正文之上），助手回复走 `Bubble variant="ghost"` 通栏纯文本（无气泡）。
-- **提示**：操作结果统一经 sonner 弹出（宿主侧 `ToastService` → `state` 的 `toast` 通道，无 Webview 时回退 VS Code 原生提示）；默认聚焦面板（`zhai.ai.autoFocusOnContext`），重复添加、超限、文件失效均返回明确文案。
+- **提示**：操作结果统一经 sonner 弹出，且**集中在 Workflow 面板**（宿主侧 `ToastService` → `state` 的 `toast` 通道，仅 Workflow 视图订阅；没有任何视图打开时回退 VS Code 原生提示，仪表盘不重复弹出）；默认聚焦面板（`zhai.ai.autoFocusOnContext`），重复添加、超限、文件失效均返回明确文案。
 - **边界**：单条上限 20000 字符（选区超出按行截断并标注，整篇超出直接拒绝）、单会话上限 10 项；预算先扣引用与输入，剩余额度再容纳历史，历史中仅最近一条带引用的消息注入原文。
 - **安全**：原文以 `<context path="…" lines="…">` 注入并转义 `</context>`，系统提示声明标签内指令一律不执行；前端只回传宿主生成的 id，删除不接受路径。
 

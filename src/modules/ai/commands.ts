@@ -9,6 +9,7 @@
 import { unstable_v2_authenticate } from '@tencent-ai/agent-sdk'
 import * as vscode from 'vscode'
 import { createContextRefs, MAX_CONTEXT_COUNT } from './contextRefs'
+import { rememberCodebuddyLogin } from './providers/codebuddyLogin'
 import {
     buildCodebuddyEnv,
     CODEBUDDY_SITE_LABELS,
@@ -74,6 +75,8 @@ export function registerAiCommands(
                         },
                     })
                     logger.info(`CodeBuddy 已登录（${site}）：${result.userinfo.userName}`)
+                    // 记住站点登录态：面板据此收起登录引导，重启窗口后仍然有效
+                    rememberCodebuddyLogin(site, result.userinfo.userName)
                     service.notifyRuntimeChanged()
                     toast.notifyOrShow(
                         'success',

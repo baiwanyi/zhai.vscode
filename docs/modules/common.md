@@ -287,7 +287,7 @@ interface StateMessage {
 }
 ```
 
-**操作反馈**：宿主侧的操作结果（登录结果、索引状态、添加到宅对话等）统一经 `ToastService` 走 `toast` 通道下发，由 Webview 用 sonner 呈现，`payload` 形如 `{ level: 'info' | 'success' | 'warning' | 'error', message: string }`。没有任何 Webview 打开时（如从命令面板触发）自动回退 VS Code 原生通知，避免反馈静默丢失；页面内不再自行渲染操作结果文本。
+**操作反馈**：宿主侧的操作结果（登录结果、索引状态、添加到宅对话等）统一经 `ToastService` 走 `toast` 通道下发，由 Webview 用 sonner 呈现，`payload` 形如 `{ level: 'info' | 'success' | 'warning' | 'error', message: string }`。该通道**只由 Workflow 面板订阅并展示**（仪表盘的 sonner 只承载本面板页面内的操作结果），避免同一条提示在两个面板各弹一次；Workflow 面板未打开时自动回退 VS Code 原生通知，避免反馈静默丢失；页面内不再自行渲染操作结果文本。
 
 ---
 

@@ -1,7 +1,8 @@
 /**
- * 宿主操作反馈出口：把命令执行结果推给已打开的 Webview，由前端统一用 sonner 呈现。
+ * 宿主操作反馈出口：把命令执行结果推给 Workflow 面板，由前端统一用 sonner 呈现。
  * 复用约定：命令层经 notify 上报，返回 false 时由调用方回退到 VS Code 原生提示，避免反馈静默丢失。
- * 关键约束：视图计数只由各 Webview Provider 在 resolve / dispose 时维护，命令层不接触视图实例；
+ * 关键约束：反馈集中在 Workflow 面板显示（仪表盘不订阅该通道，避免同一提示在两个面板各弹一次）；
+ * 视图计数只由 AiChatViewProvider 在 resolve / dispose 时维护，命令层不接触视图实例；
  * 载荷只有级别与文案，不收路径与对象，防止前端拿到可执行内容。
  */
 import * as vscode from 'vscode'

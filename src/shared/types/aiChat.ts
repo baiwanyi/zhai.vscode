@@ -135,6 +135,10 @@ export interface AiRuntimeInfo {
     providerSite?: string
     /** 通道是否就绪（登录态交由请求阶段判定，此值恒为 true） */
     hasApiKey: boolean
+    /** 当前站点是否已确认完成登录（本插件内登录成功，或生成请求已走通一次） */
+    loggedIn: boolean
+    /** 已登录账号名；确认可用但未拿到账号名时为 null */
+    loggedInUser: string | null
     model: string
     /** 当前模型的展示名：取自激活时预热的清单，未命中或清单为空时为空串（前端退回展示 id） */
     modelName: string

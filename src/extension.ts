@@ -9,6 +9,7 @@ import { registerAiCommands } from './modules/ai/commands'
 import { openAiDatabase } from './modules/ai/db/connection'
 import { ensureAiSchema } from './modules/ai/db/schema'
 import { createAiProvider } from './modules/ai/providerRegistry'
+import { initCodebuddyLogin } from './modules/ai/providers/codebuddyLogin'
 import { hydrateSelectedModel, listCodebuddyModels } from './modules/ai/providers/codebuddyModels'
 import { WorkflowRouter } from './modules/ai/workflowRouter'
 import { registerCommands } from './modules/common/commands'
@@ -70,7 +71,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         pinStore,
         indexStatusEmitter.event,
         workflowRouter,
-        toastService,
     )
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(DashboardViewProvider.viewId, dashboardProvider),
@@ -85,6 +85,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const aiProvider = await createAiProvider(secrets)
     // 模型选择存在 globalState（配置项已移除，面板菜单是唯一入口），激活时先载入内存副本
     hydrateSelectedModel(context.globalState)
+    // 站点登录态同样存 globalState：面板据此决定展示登录引导还是正常空态
+    initCodebuddyLogin(context.globalState)
     const aiChatService = new AiChatService(aiDb, aiProvider)
     context.subscriptions.push(aiChatService)
 
