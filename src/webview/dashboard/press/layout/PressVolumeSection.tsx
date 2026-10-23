@@ -1,29 +1,32 @@
 /**
- * 卷区块：卷头行承担折叠切换、「在本卷添加章节」与卷级操作（新建卷/重命名/删除），展开后按批渲染该卷章节，
- * 章节行另提供移动与删除入口。
- * 复用 @components/ui 的 collapsible、dropdown-menu、item 条目与 useProgressiveList 的分批渲染。
- * 关键约束：加章与更多操作按钮位于 CollapsibleTrigger 之外，点击不会连带触发折叠；折叠时不挂滚动观察器，
+ * 卷区块：卷头行承担折叠切换、「在本卷添加章节」，展开后按批渲染该卷章节。
+ * 卷级操作（新建卷/重命名/删除）收在卷头行右键菜单，章节级操作（打开/移动到卷/删除）收在章节行右键菜单，
+ * 行内不再放操作按钮，章节行只保留字数信息，左键点击与右键「打开」是同一入口的两条路径。
+ * 复用 @components/ui 的 collapsible、context-menu（卷级与章节级操作）、item 条目与 useProgressiveList 的分批渲染。
+ * 关键约束：加章按钮位于 CollapsibleTrigger 之外，点击不会连带触发折叠；折叠时不挂滚动观察器，
  * 展开后由 isActive 变化重新建立；未分卷组（历史散章）不提供加章与卷级操作入口，避免继续产生根目录散章，
- * 但其章节仍可移动到正式卷——章节级入口不受卷级开关限制；章节菜单的点击须阻断冒泡，避免连带打开章节。
+ * 故卷头行仅在 canAppend 时才挂右键菜单，但其章节仍可移动到正式卷——章节级入口不受卷级开关限制；
+ * 右键菜单由 Radix 接管 contextmenu 事件并阻止浏览器默认菜单，右键不触发行的 onClick，
+ * 故打开卷菜单不会连带折叠或打开章节；菜单项点击渲染在 portal 中，也不会回落到行上。
  */
 import { cn } from 'cn'
-import { BookPlus, ChevronRight, Ellipsis, MoveRight, Pencil, Plus, Trash2 } from 'lucide-react'
+import { BookPlus, ChevronRight, FileText, MoveRight, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuGroup,
-    DropdownMenuItem,
-    DropdownMenuSeparator,
-    DropdownMenuSub,
-    DropdownMenuSubContent,
-    DropdownMenuSubTrigger,
-    DropdownMenuTrigger,
-} from '@components/ui/dropdown-menu'
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuGroup,
+    ContextMenuItem,
+    ContextMenuSeparator,
+    ContextMenuSub,
+    ContextMenuSubContent,
+    ContextMenuSubTrigger,
+    ContextMenuTrigger,
+} from '@components/ui/context-menu'
 import { Item, ItemActions, ItemContent, ItemTitle } from '@components/ui/item'
 import type { PressVolumeGroup } from '@shared/types/press'
-import type { JSX, MouseEvent } from 'react'
+import type { JSX } from 'react'
 import { formatWordCount } from '../../utils'
 import { useProgressiveList } from '../hooks/useProgressiveList'
 
@@ -84,10 +87,43 @@ export function PressVolumeSection({
     const visibleChapters = volume.chapters.slice(0, visibleCount)
     const title = volume.name.length > 0 ? volume.name : UNSORTED_VOLUME_TITLE
 
-    // 章节行的菜单挂在可点击条目内部，须阻断冒泡，否则点菜单会连带打开章节
-    const handleActionClick = (event: MouseEvent): void => {
-        event.stopPropagation()
-    }
+    // 悬停背景由整行承担；整行同时是右键目标，未分卷组不挂菜单（先构造行本身，再由 canAppend 决定是否包裹）
+    const volumeHeader = (
+        <div className="flex items-center gap-1 rounded-xl p-1 transition-colors data-[state=open]:bg-muted hover:bg-muted">
+            <CollapsibleTrigger asChild>
+                {/* 按钮只承担整行的排布与点击：悬停底色由行本身给出，故清掉 ghost 变体的悬停/展开底色与内边距 */}
+                <Button
+                    variant="ghost"
+                    className="h-auto pl-0 min-w-0 flex-1 shrink justify-start gap-1  hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent"
+                >
+                    <ChevronRight
+                        className={cn(
+                            'size-3.5 shrink-0 text-muted-foreground transition-transform',
+                            isOpen && 'rotate-90',
+                        )}
+                    />
+                    {/* 标题吃满剩余宽度，把章数顶到右侧，与章节行的字数落在同一列 */}
+                    <span className="min-w-0 truncate">{title}</span>
+                    <span className="text-xs shrink-0 text-muted-foreground tabular-nums">
+                        {volume.chapters.length} 章
+                    </span>
+                </Button>
+            </CollapsibleTrigger>
+            {canAppend ? (
+                <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="shrink-0 rounded-full hover:bg-transparent"
+                    aria-label={`在${title}中添加章节`}
+                    title="添加章节"
+                    disabled={isCreatingChapter}
+                    onClick={() => onCreateChapter(volume.dirName)}
+                >
+                    <Plus />
+                </Button>
+            ) : null}
+        </div>
+    )
 
     return (
         <Collapsible
@@ -95,133 +131,98 @@ export function PressVolumeSection({
             onOpenChange={(open) => onOpenChange(volume.dirName, open)}
             className="flex flex-col gap-1"
         >
-            {/* 悬停背景由整行承担：折叠按钮、添加章节与更多操作共享同一块背景，右侧图标不再是独立色块 */}
-            <div className="flex items-center gap-1 rounded-xl p-1 transition-colors hover:bg-muted">
-                <CollapsibleTrigger asChild>
-                    <button type="button" className="flex min-w-0 flex-1 items-center gap-1 text-left">
-                        <ChevronRight
-                            className={cn(
-                                'size-3.5 shrink-0 text-muted-foreground transition-transform',
-                                isOpen && 'rotate-90',
-                            )}
-                        />
-                        {/* 标题吃满剩余宽度，把章数顶到右侧，与章节行的字数落在同一列 */}
-                        <span className="min-w-0 flex-1 truncate font-medium">{title}</span>
-                        <span className="shrink-0 text-muted-foreground tabular-nums">{volume.chapters.length} 章</span>
-                    </button>
-                </CollapsibleTrigger>
-                {canAppend ? (
-                    <Button
-                        size="icon-xs"
-                        variant="ghost"
-                        className="shrink-0 rounded-full hover:bg-transparent"
-                        aria-label={`在${title}中添加章节`}
-                        title="添加章节"
-                        disabled={isCreatingChapter}
-                        onClick={() => onCreateChapter(volume.dirName)}
-                    >
-                        <Plus />
-                    </Button>
-                ) : null}
-                {canAppend ? (
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button
-                                size="icon-xs"
-                                variant="ghost"
-                                className="shrink-0 rounded-full hover:bg-transparent"
-                                aria-label={`${title}的更多操作`}
-                                title="更多操作"
+            {canAppend ? (
+                <ContextMenu>
+                    <ContextMenuTrigger asChild>{volumeHeader}</ContextMenuTrigger>
+                    <ContextMenuContent>
+                        <ContextMenuGroup>
+                            <ContextMenuItem disabled={isUpdatingVolume || isCreatingVolume} onSelect={onCreateVolume}>
+                                <BookPlus />
+                                新建卷
+                            </ContextMenuItem>
+                            <ContextMenuItem
                                 disabled={isUpdatingVolume || isCreatingVolume}
+                                onSelect={() => onRenameVolume(volume.dirName)}
                             >
-                                <Ellipsis />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                            <DropdownMenuGroup>
-                                <DropdownMenuItem onSelect={onCreateVolume}>
-                                    <BookPlus />
-                                    新建卷
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onSelect={() => onRenameVolume(volume.dirName)}>
-                                    <Pencil />
-                                    重命名
-                                </DropdownMenuItem>
-                            </DropdownMenuGroup>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuGroup>
-                                <DropdownMenuItem variant="destructive" onSelect={() => onDeleteVolume(volume.dirName)}>
+                                <Pencil />
+                                重命名
+                            </ContextMenuItem>
+                        </ContextMenuGroup>
+                        <ContextMenuSeparator />
+                        <ContextMenuGroup>
+                            <ContextMenuItem
+                                variant="destructive"
+                                disabled={isUpdatingVolume || isCreatingVolume}
+                                onSelect={() => onDeleteVolume(volume.dirName)}
+                            >
+                                <Trash2 />
+                                删除
+                            </ContextMenuItem>
+                        </ContextMenuGroup>
+                    </ContextMenuContent>
+                </ContextMenu>
+            ) : (
+                volumeHeader
+            )}
+            <CollapsibleContent className="flex flex-col gap-0.5 ml-3">
+                {visibleChapters.map((chapter) => (
+                    <ContextMenu key={chapter.path}>
+                        <ContextMenuTrigger asChild>
+                            <Item
+                                size="xs"
+                                className="cursor-pointer rounded-lg px-2 py-1 data-[state=open]:bg-muted hover:bg-muted"
+                                aria-label={`打开章节 ${chapter.title}`}
+                                onClick={() => onOpenChapter(chapter.path)}
+                            >
+                                {/* min-w-0 让内容列可收缩；标题必须回到块级布局，flex 容器上 text-overflow 不生效（只会硬切） */}
+                                <ItemContent className="min-w-0">
+                                    <ItemTitle className="line-clamp-none block w-full truncate">
+                                        {chapter.title}
+                                    </ItemTitle>
+                                </ItemContent>
+                                <ItemActions className="shrink-0">
+                                    <span className="text-xs text-muted-foreground">
+                                        {formatWordCount(chapter.wordCount)} 字
+                                    </span>
+                                </ItemActions>
+                            </Item>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                            <ContextMenuGroup>
+                                <ContextMenuItem onSelect={() => onOpenChapter(chapter.path)}>
+                                    <FileText />
+                                    打开
+                                </ContextMenuItem>
+                                <ContextMenuSub>
+                                    <ContextMenuSubTrigger disabled={isUpdatingChapter || moveTargets.length === 0}>
+                                        <MoveRight />
+                                        移动到卷
+                                    </ContextMenuSubTrigger>
+                                    <ContextMenuSubContent>
+                                        {moveTargets.map((target) => (
+                                            <ContextMenuItem
+                                                key={target.dirName}
+                                                onSelect={() => onMoveChapter(chapter.path, target.dirName)}
+                                            >
+                                                {target.name.length > 0 ? target.name : UNSORTED_VOLUME_TITLE}
+                                            </ContextMenuItem>
+                                        ))}
+                                    </ContextMenuSubContent>
+                                </ContextMenuSub>
+                            </ContextMenuGroup>
+                            <ContextMenuSeparator />
+                            <ContextMenuGroup>
+                                <ContextMenuItem
+                                    variant="destructive"
+                                    disabled={isUpdatingChapter}
+                                    onSelect={() => onDeleteChapter(chapter.path)}
+                                >
                                     <Trash2 />
                                     删除
-                                </DropdownMenuItem>
-                            </DropdownMenuGroup>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                ) : null}
-            </div>
-            <CollapsibleContent className="flex flex-col gap-0.5">
-                {visibleChapters.map((chapter) => (
-                    <Item
-                        key={chapter.path}
-                        size="xs"
-                        className="cursor-pointer rounded-lg px-2 py-1 hover:bg-muted"
-                        aria-label={`打开章节 ${chapter.title}`}
-                        onClick={() => onOpenChapter(chapter.path)}
-                    >
-                        {/* min-w-0 让内容列可收缩；标题必须回到块级布局，flex 容器上 text-overflow 不生效（只会硬切） */}
-                        <ItemContent className="min-w-0">
-                            <ItemTitle className="line-clamp-none block w-full truncate">{chapter.title}</ItemTitle>
-                        </ItemContent>
-                        <ItemActions className="shrink-0">
-                            <span className="text-muted-foreground">{formatWordCount(chapter.wordCount)} 字</span>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button
-                                        size="icon-xs"
-                                        variant="ghost"
-                                        className="shrink-0 rounded-full"
-                                        aria-label={`${chapter.title}的更多操作`}
-                                        title="章节操作"
-                                        disabled={isUpdatingChapter}
-                                        onClick={handleActionClick}
-                                    >
-                                        <Ellipsis />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuGroup>
-                                        <DropdownMenuSub>
-                                            <DropdownMenuSubTrigger disabled={moveTargets.length === 0}>
-                                                <MoveRight />
-                                                移动到卷
-                                            </DropdownMenuSubTrigger>
-                                            <DropdownMenuSubContent>
-                                                {moveTargets.map((target) => (
-                                                    <DropdownMenuItem
-                                                        key={target.dirName}
-                                                        onSelect={() => onMoveChapter(chapter.path, target.dirName)}
-                                                    >
-                                                        {target.name.length > 0 ? target.name : UNSORTED_VOLUME_TITLE}
-                                                    </DropdownMenuItem>
-                                                ))}
-                                            </DropdownMenuSubContent>
-                                        </DropdownMenuSub>
-                                    </DropdownMenuGroup>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuGroup>
-                                        <DropdownMenuItem
-                                            variant="destructive"
-                                            onSelect={() => onDeleteChapter(chapter.path)}
-                                        >
-                                            <Trash2 />
-                                            删除
-                                        </DropdownMenuItem>
-                                    </DropdownMenuGroup>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                            <ChevronRight className="size-3.5 text-muted-foreground" />
-                        </ItemActions>
-                    </Item>
+                                </ContextMenuItem>
+                            </ContextMenuGroup>
+                        </ContextMenuContent>
+                    </ContextMenu>
                 ))}
                 <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
                 {hasMore ? (

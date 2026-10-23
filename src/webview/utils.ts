@@ -14,13 +14,30 @@ export function toastError(cause: unknown): void {
 /** 相对时间格式化器（原生 Intl，不引日期库） */
 const RELATIVE_TIME_FORMATTER = new Intl.RelativeTimeFormat('zh-CN', { numeric: 'auto' })
 
-/** 时间展示：7 天内用相对时间，更早回退本地日期；无效时间返回空串 */
+/** 一分钟内视为「刚刚」的秒级阈值 */
+const JUST_NOW_SECONDS = 10
+
+/** 超出相对时间范围时的月日回退：同年省略年份，跨年带上年份 */
+function formatMonthDay(date: Date): string {
+    const monthDay = `${date.getMonth() + 1}月${date.getDate()}日`
+    const year = date.getFullYear()
+    return year === new Date().getFullYear() ? monthDay : `${year}年${monthDay}`
+}
+
+/**
+ * 时间展示：一分钟内精确到秒（10 秒内为「刚刚」），7 天内用相对时间，
+ * 更早回退月日（如「9月18日」，跨年带年份）；无效时间返回空串
+ */
 export function formatRelativeTime(iso: string): string {
     const time = new Date(iso).getTime()
     if (Number.isNaN(time)) {
         return ''
     }
-    const minutes = Math.round((time - Date.now()) / 60_000)
+    const seconds = Math.round((time - Date.now()) / 1000)
+    if (Math.abs(seconds) < 60) {
+        return Math.abs(seconds) < JUST_NOW_SECONDS ? '刚刚' : RELATIVE_TIME_FORMATTER.format(seconds, 'second')
+    }
+    const minutes = Math.round(seconds / 60)
     if (Math.abs(minutes) < 60) {
         return RELATIVE_TIME_FORMATTER.format(minutes, 'minute')
     }
@@ -32,5 +49,5 @@ export function formatRelativeTime(iso: string): string {
     if (Math.abs(days) < 7) {
         return RELATIVE_TIME_FORMATTER.format(days, 'day')
     }
-    return new Date(iso).toLocaleDateString('zh-CN')
+    return formatMonthDay(new Date(iso))
 }
