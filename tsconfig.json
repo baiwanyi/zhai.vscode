@@ -29,6 +29,7 @@
             "@shared/*": ["./src/shared/*"]
         }
     },
-    // resources/shadcn 是 @components 别名的落点，须纳入检查范围，否则组件源码不参与类型校验
-    "include": ["src/**/*.ts", "src/**/*.tsx", "resources/**/*.ts", "resources/**/*.tsx", "scripts/*.mjs", "vite.config.mjs", "vitest.config.mts"]
+    // resources/shadcn 是 @components 别名的落点，须纳入检查范围，否则组件源码不参与类型校验；
+    // tests 是单测目录（不在 src 下），须单独纳入，否则测试文件不参与类型检查
+    "include": ["src/**/*.ts", "src/**/*.tsx", "tests/**/*.ts", "resources/**/*.ts", "resources/**/*.tsx", "scripts/*.mjs", "vite.config.mjs", "vitest.config.mts"]
 }

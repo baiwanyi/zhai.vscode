@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { Memento } from 'vscode'
-import { PinStore } from '../modules/note/pinStore'
+import { PinStore } from '../src/modules/note/pinStore'
 
 /** 置顶键名：与实现约定一致，供预置已落盘数据使用 */
 const PINNED_KEY = 'zhai.note.pinnedPaths'

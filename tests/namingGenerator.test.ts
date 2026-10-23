@@ -3,9 +3,9 @@
  * 以及指定后缀、跨批次去重、种子复现与入参归一化等关键约束。
  */
 import { describe, expect, it } from 'vitest'
-import type { NamingRequest } from '../shared/types/naming'
-import { generateNames } from '../modules/naming/generator'
-import { normalizeNamingRequest } from '../modules/naming/request'
+import type { NamingRequest } from '../src/shared/types/naming'
+import { generateNames } from '../src/modules/naming/generator'
+import { normalizeNamingRequest } from '../src/modules/naming/request'
 
 function createRequest(overrides: Partial<NamingRequest> = {}): NamingRequest {
     return {

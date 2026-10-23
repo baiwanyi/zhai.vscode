@@ -21,8 +21,8 @@ import {
     setFileContent,
     setTrashAvailable,
 } from './stubs/vscode'
-import type { ProjectIndexer } from '../modules/press/projectService'
-import { buildRenamedVolumeDirName, validateProjectName, validateVolumeName } from '../modules/press/projectFactory'
+import type { ProjectIndexer } from '../src/modules/press/projectService'
+import { buildRenamedVolumeDirName, validateProjectName, validateVolumeName } from '../src/modules/press/projectFactory'
 import {
     createChapter,
     createProject,
@@ -34,7 +34,7 @@ import {
     openChapterByPath,
     openProjectByDir,
     renameVolume,
-} from '../modules/press/projectService'
+} from '../src/modules/press/projectService'
 
 const STORAGE_ROOT = 'd:/vault'
 

@@ -3,8 +3,8 @@
  * 复用 countWords 的真实口径做字数断言，避免测试自造一套统计规则掩盖偏差。
  */
 import { describe, expect, it } from 'vitest'
-import { countWords } from '../modules/common/db/fileMeta'
-import { parseNovel, sanitizeSegment } from '../modules/press/importParser'
+import { countWords } from '../src/modules/common/db/fileMeta'
+import { parseNovel, sanitizeSegment } from '../src/modules/press/importParser'
 
 describe('parseNovel', () => {
     it('按章节标记切分并保留正文段落', () => {

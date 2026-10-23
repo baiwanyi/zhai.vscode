@@ -4,15 +4,15 @@
  */
 import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
-import type { RecentFileRow } from '../modules/common/db/statsRepository'
-import { ensureSchema } from '../modules/common/db/schema'
+import type { RecentFileRow } from '../src/modules/common/db/statsRepository'
+import { ensureSchema } from '../src/modules/common/db/schema'
 import {
     aggregateFileStats,
     listFilesByPaths,
     listRecentFiles,
     mergePinnedFiles,
     RECENT_LIMIT,
-} from '../modules/common/db/statsRepository'
+} from '../src/modules/common/db/statsRepository'
 
 let db: Database.Database
 

@@ -7,9 +7,9 @@ import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
 import * as vscode from 'vscode'
 import { resetWorkspaceState, setConfigValue, setFileContent } from './stubs/vscode'
-import type { IndexStatus } from '../modules/common/indexer/indexService'
-import { ensureSchema } from '../modules/common/db/schema'
-import { IndexService } from '../modules/common/indexer/indexService'
+import type { IndexStatus } from '../src/modules/common/indexer/indexService'
+import { ensureSchema } from '../src/modules/common/db/schema'
+import { IndexService } from '../src/modules/common/indexer/indexService'
 
 const STORAGE_ROOT = 'D:\\vault'
 

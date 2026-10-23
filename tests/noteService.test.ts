@@ -15,8 +15,8 @@ import {
     resetWorkspaceState,
     setConfigValue,
 } from './stubs/vscode'
-import type { NoteIndexer } from '../modules/note/noteService'
-import { createNote, openNoteByPath } from '../modules/note/noteService'
+import type { NoteIndexer } from '../src/modules/note/noteService'
+import { createNote, openNoteByPath } from '../src/modules/note/noteService'
 
 const STORAGE_ROOT = 'd:/vault'
 

@@ -6,7 +6,7 @@
  * 菜单分组的正确性依赖该判定。
  */
 import { describe, expect, it } from 'vitest'
-import { isCustomModel, parseCreditRate } from '../modules/ai/providers/codebuddyModels'
+import { isCustomModel, parseCreditRate } from '../src/modules/ai/providers/codebuddyModels'
 
 describe('parseCreditRate', () => {
     it('带 credits 后缀的倍率取出数值', () => {

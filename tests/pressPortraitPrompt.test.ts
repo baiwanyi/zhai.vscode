@@ -2,9 +2,9 @@
  * 角色配图提示词测试：覆盖画面描述的清洗（前缀、引号、换行、超长）与两段式拼接（有描述 / 回退模板）。
  */
 import { describe, expect, it } from 'vitest'
-import type { PortraitGenerateRequest } from '../shared/types/press'
-import { buildPortraitPrompt } from '../modules/press/ai/portraitPrompt'
-import { sanitizeScene } from '../modules/press/ai/portraitScenePrompt'
+import type { PortraitGenerateRequest } from '../src/shared/types/press'
+import { buildPortraitPrompt } from '../src/modules/press/ai/portraitPrompt'
+import { sanitizeScene } from '../src/modules/press/ai/portraitScenePrompt'
 
 function createRequest(overrides: Partial<PortraitGenerateRequest> = {}): PortraitGenerateRequest {
     return {

@@ -4,14 +4,14 @@
  */
 import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { ensureSchema } from '../modules/common/db/schema'
+import { ensureSchema } from '../src/modules/common/db/schema'
 import {
     hasProjectFile,
     hasProjectFiles,
     listPressProjects,
     listProjectChapterPaths,
     readProjectDetail,
-} from '../modules/press/projectRepository'
+} from '../src/modules/press/projectRepository'
 
 let db: Database.Database
 

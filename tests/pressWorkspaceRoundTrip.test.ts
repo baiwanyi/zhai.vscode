@@ -5,14 +5,14 @@
  */
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
-import type { CharacterCard, OutlineVolume, ProjectSetting } from '../webview/workflow/press/types'
-import { parseProjectWorkspace } from '../webview/workflow/press/document'
+import type { CharacterCard, OutlineVolume, ProjectSetting } from '../src/webview/workflow/press/types'
+import { parseProjectWorkspace } from '../src/webview/workflow/press/document'
 import {
     serializeCharacterBlocks,
     serializeOutlineSection,
     serializeReadmeMeta,
     serializeSettingSection,
-} from '../webview/workflow/press/serialize'
+} from '../src/webview/workflow/press/serialize'
 
 const SETTING: ProjectSetting = {
     title: '娱乐春秋',

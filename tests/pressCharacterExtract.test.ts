@@ -5,7 +5,7 @@
  * 关键约束：解析不得抛错，字段缺失只留空；首个二级标题之前的说明行不进入任何人物卡。
  */
 import { describe, expect, it } from 'vitest'
-import { parseCharacterDrafts } from '../modules/press/importSemanticService'
+import { parseCharacterDrafts } from '../src/modules/press/importSemanticService'
 
 describe('parseCharacterDrafts', () => {
     it('按二级标题与键值行解析人物卡', () => {

@@ -4,7 +4,7 @@
  * 关键约束：断言覆盖字段映射与容错两条线——键值行优先于区块段落，空文档与缺卷标题都不得抛错。
  */
 import { describe, expect, it } from 'vitest'
-import { parseProjectWorkspace } from '../webview/workflow/press/document'
+import { parseProjectWorkspace } from '../src/webview/workflow/press/document'
 
 const README = `---
 title: 城南旧事

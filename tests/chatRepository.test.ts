@@ -8,7 +8,7 @@ import * as path from 'node:path'
 import Database from 'better-sqlite3'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createUri } from './stubs/vscode'
-import type { ConversationRow, MessageRow } from '../modules/ai/db/chatRepository'
+import type { ConversationRow, MessageRow } from '../src/modules/ai/db/chatRepository'
 import {
     deleteConversation,
     getConversation,
@@ -19,9 +19,9 @@ import {
     listConversations,
     listMessages,
     sumTokensSince,
-} from '../modules/ai/db/chatRepository'
-import { openAiDatabase } from '../modules/ai/db/connection'
-import { ensureAiSchema } from '../modules/ai/db/schema'
+} from '../src/modules/ai/db/chatRepository'
+import { openAiDatabase } from '../src/modules/ai/db/connection'
+import { ensureAiSchema } from '../src/modules/ai/db/schema'
 
 let db: Database.Database
 let tempDir: string
@@ -114,11 +114,19 @@ describe('conversations', () => {
     it('取最近会话按作用域过滤', () => {
         insertConversation(
             db,
-            makeConversation({ id: 'conv-scope-old', projectDir: 'press/latest', updatedAt: '2026-09-10T00:00:00.000Z' }),
+            makeConversation({
+                id: 'conv-scope-old',
+                projectDir: 'press/latest',
+                updatedAt: '2026-09-10T00:00:00.000Z',
+            }),
         )
         insertConversation(
             db,
-            makeConversation({ id: 'conv-scope-new', projectDir: 'press/latest', updatedAt: '2026-09-11T00:00:00.000Z' }),
+            makeConversation({
+                id: 'conv-scope-new',
+                projectDir: 'press/latest',
+                updatedAt: '2026-09-11T00:00:00.000Z',
+            }),
         )
         expect(getLatestConversation(db, 'press/latest')?.id).toBe('conv-scope-new')
         expect(getLatestConversation(db, 'press/empty')).toBeUndefined()
