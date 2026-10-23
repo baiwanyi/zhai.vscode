@@ -33,6 +33,7 @@ import type {
     CreatedPressVolume,
     MovedPressChapter,
     OpenPressProjectResult,
+    PressExtractCharactersResult,
     PressImportCandidate,
     PressImportProgress,
     PressImportStartResult,
@@ -42,7 +43,7 @@ import type {
     RenamedPressVolume,
 } from '../../shared/types/press'
 import type { OpenWorkflowResult } from '../../shared/types/workflow'
-import type { ImportSemanticService} from '../press/importSemanticService';
+import type { ImportSemanticService } from '../press/importSemanticService'
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenNoteRequest, isPinNotesRequest } from '../../shared/types/note'
@@ -55,6 +56,7 @@ import {
     isMovePressChapterRequest,
     isOpenPressChapterRequest,
     isPressDirPath,
+    isPressExtractCharactersRequest,
     isPressImportStartRequest,
     isPressSemanticStartRequest,
     isRenamePressVolumeRequest,
@@ -156,8 +158,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         } catch (error) {
             const text = error instanceof Error ? error.message : String(error)
             // 导入与归纳类错误带业务原因码，前端据此分发提示文案；其余仍以协议方法名兜底
-            const code =
-                error instanceof ImportError || error instanceof SemanticError ? error.code : method
+            const code = error instanceof ImportError || error instanceof SemanticError ? error.code : method
             logger.error(`Webview 请求处理失败：${method}`, error)
             this.post(view, { type: 'response', reqId, ok: false, error: { code, message: text } })
         }
@@ -233,6 +234,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             }
             case 'press/semantic/cancel': {
                 return Promise.resolve(this.cancelPressSemantic(payload))
+            }
+            case 'press/extract/characters': {
+                return this.extractPressCharacters(view, payload)
             }
             case 'index/rebuild': {
                 void this.indexService.fullRebuild()
@@ -547,10 +551,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
      * 关键约束：归纳要遍历全部章节并逐批调用模型，属长任务，不能占用请求超时；
      * 服务未注入（AI 通道未就绪）时直接拒绝，避免前端拿到永远不会有下文的 jobId。
      */
-    private startPressSemantic(
-        view: vscode.WebviewView,
-        payload: unknown,
-    ): Promise<PressSemanticStartResult> {
+    private startPressSemantic(view: vscode.WebviewView, payload: unknown): Promise<PressSemanticStartResult> {
         if (!isPressSemanticStartRequest(payload)) {
             throw new Error('press/semantic/start 参数非法：dirPath 须为 press/ 下的相对路径')
         }
@@ -607,6 +608,32 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             return { cancelled: false }
         }
         return service.cancel(jobId)
+    }
+
+    /**
+     * 从导入素材提取人物卡：只跑角色卡阶段，进度经 press-semantic 通道广播，终态随响应回传草案。
+     * 关键约束：作品目录先按索引库回查，不采信前端路径；提取是逐批调用模型的长任务，
+     * 响应到终态才返回，前端须自行放宽请求超时。
+     */
+    private async extractPressCharacters(
+        view: vscode.WebviewView,
+        payload: unknown,
+    ): Promise<PressExtractCharactersResult> {
+        if (!isPressExtractCharactersRequest(payload)) {
+            throw new Error('press/extract/characters 参数非法：dirPath 须为非空字符串')
+        }
+        const service = this.semanticService
+        if (service === null) {
+            throw new Error('AI 通道尚未就绪，无法提取人物卡')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法提取人物卡：${payload.dirPath}`)
+        }
+        const jobId = `extract-${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`
+        const emit = (progress: PressSemanticProgress): void => {
+            this.post(view, { type: 'state', channel: 'press-semantic', payload: progress })
+        }
+        return service.extractCharacters(jobId, payload.dirPath, emit)
     }
 
     /**

@@ -160,11 +160,12 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                     variant="outline"
                     size="sm"
                     className="w-full justify-center"
+                    title="依次生成章节摘要、卷纲与角色卡，产物写入 _import/，不修改正文"
                     disabled={isSemanticRunning || status !== 'ready'}
                     onClick={() => void startSemantic()}
                 >
                     <Sparkles data-icon="inline-start" />
-                    {isSemanticRunning ? '正在生成摘要…' : '生成章节摘要'}
+                    {isSemanticRunning ? '正在归纳…' : 'AI 归纳设定'}
                 </Button>
                 <Button
                     variant="outline"

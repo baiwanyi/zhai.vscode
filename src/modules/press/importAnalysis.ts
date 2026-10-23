@@ -245,15 +245,20 @@ export async function analyzeProject(dirPath: string): Promise<AnalysisResult> {
     const firstOrder = new Map<string, number>()
     const lastOrder = new Map<string, number>()
     const coOccurrence = new Map<string, Map<string, number>>()
+    /** 每个候选在各章的出现次数：用于给角色卡挑选最有代表性的章节 */
+    const chapterHits = new Map<string, Map<number, number>>()
     const goldenFingerRows: { order: number; title: string; hits: string[] }[] = []
     for (const chapter of chapters) {
         const perChapter = new Map<string, number>()
         collectNameHits(chapter.body, nameCounter, perChapter)
-        for (const name of perChapter.keys()) {
+        for (const [name, times] of perChapter) {
             if (!firstOrder.has(name)) {
                 firstOrder.set(name, chapter.order)
             }
             lastOrder.set(name, chapter.order)
+            const hits = chapterHits.get(name) ?? new Map<number, number>()
+            hits.set(chapter.order, times)
+            chapterHits.set(name, hits)
         }
         // 同章高频候选两两计数，作为人物关系强度的近似
         const topNames = [...perChapter.entries()]
@@ -296,13 +301,18 @@ export async function analyzeProject(dirPath: string): Promise<AnalysisResult> {
     const candidates = [...nameCounter.entries()]
         .filter(([, count]) => count >= MIN_NAME_HITS)
         .sort((left, right) => right[1] - left[1])
-    const candidateLines = ['候选名\t出现次数\t首次章\t末次章\t高频共现']
+    const candidateLines = ['候选名\t出现次数\t首次章\t末次章\t高频共现\t高频章']
     for (const [name, count] of candidates) {
         const partners = [...(coOccurrence.get(name)?.entries() ?? [])]
             .sort((left, right) => right[1] - left[1])
             .slice(0, 3)
             .map(([partner, times]) => `${partner}(${String(times)})`)
             .join(' ')
+        const topChapters = [...(chapterHits.get(name)?.entries() ?? [])]
+            .sort((left, right) => right[1] - left[1])
+            .slice(0, 3)
+            .map(([order]) => String(order))
+            .join(',')
         candidateLines.push(
             [
                 name,
@@ -310,6 +320,7 @@ export async function analyzeProject(dirPath: string): Promise<AnalysisResult> {
                 String(firstOrder.get(name) ?? ''),
                 String(lastOrder.get(name) ?? ''),
                 toTsvField(partners),
+                topChapters,
             ].join('\t'),
         )
     }

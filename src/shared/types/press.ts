@@ -1,6 +1,7 @@
 /**
  * 作品契约：仪表盘 /press 页的作品摘要、创建、打开、卷重命名/删除与章节删除/移动的请求结构，
- * TXT 作品导入的候选、启动与进度结构，目标读者枚举，
+ * TXT 作品导入的候选、启动与进度结构，语义归纳与从导入素材提取人物卡（press/extract/characters）的结构，
+ * 目标读者枚举，
  * 以及人物外貌生成（pressAi/aiAppearance）与角色设定图（pressAi/generatePortrait、listPortraits、deletePortrait）的契约。
  * 使用方：仪表盘 Webview 的作品列表与宿主侧 DashboardViewProvider、modules/press 服务；
  * 外貌与角色卡契约同时被写作管理页的人物弹窗、宿主 PressAiService 与 PortraitService 使用。
@@ -553,19 +554,14 @@ export interface PressImportProgress {
 }
 
 /**
- * 语义归纳阶段：按依赖顺序推进，摘要先于卷纲，卷纲先于角色与设定。
- * 当前仅实现 summary，其余阶段留作扩展，避免一次引入过多未验证的调用。
+ * 语义归纳阶段：按依赖顺序推进，摘要先于卷纲与角色，卷纲与角色先于设定。
+ * 每个阶段的产出都是独立文件，已存在即跳过，因此可以中断后逐阶段续跑。
  */
-export type PressSemanticStage = 'summary'
+export type PressSemanticStage = 'summary' | 'volumes' | 'characters'
 
 /** 语义归纳失败原因码：前端按码分发文案 */
 export type PressSemanticErrorCode =
-    | 'aborted'
-    | 'not-ready'
-    | 'no-material'
-    | 'no-chapters'
-    | 'quota-exceeded'
-    | 'internal'
+    'aborted' | 'not-ready' | 'no-material' | 'no-chapters' | 'quota-exceeded' | 'internal'
 
 /** press/semantic/start 请求：dirPath 取相对存储根口径，宿主须回查作品真实性 */
 export interface PressSemanticStartRequest {
@@ -605,7 +601,10 @@ export function isPressSemanticStartRequest(payload: unknown): payload is PressS
     if (!isPressDirPath(candidate.dirPath)) {
         return false
     }
-    return candidate.stage === undefined || candidate.stage === 'summary'
+    if (candidate.stage === undefined) {
+        return true
+    }
+    return candidate.stage === 'summary' || candidate.stage === 'volumes' || candidate.stage === 'characters'
 }
 
 /** 判断是否为合法的导入启动请求（类型收窄辅助）：token 与作品名均须非空，目标读者可缺省 */
@@ -618,4 +617,42 @@ export function isPressImportStartRequest(payload: unknown): payload is PressImp
     const isValidName = typeof candidate.name === 'string' && candidate.name.trim().length > 0
     const isValidAudience = candidate.audience === undefined || typeof candidate.audience === 'string'
     return isValidToken && isValidName && isValidAudience
+}
+
+/** press/extract/characters 请求：从作品的导入素材中提取人物卡，素材由导入流程产出 */
+export interface PressExtractCharactersRequest {
+    /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
+    dirPath: string
+}
+
+/** 判断是否为合法的提取人物卡请求（类型收窄辅助）：入参与作品目录请求同形 */
+export function isPressExtractCharactersRequest(payload: unknown): payload is PressExtractCharactersRequest {
+    return isPressDirPath(payload)
+}
+
+/**
+ * 提取出的人物卡草案：字段保持模型输出的中文标签与纯文本，
+ * 角色分类与性别的枚举归一由 Webview 承担，宿主不感知前端枚举。
+ */
+export interface PressExtractedCharacter {
+    name: string
+    /** 角色分类中文标签：主角 / 配角 / 反派 / 中立 / 龙套，空串表示模型未判断 */
+    role: string
+    /** 性别中文标签：男 / 女 / 未知 */
+    gender: string
+    identity: string
+    /** 性格特征，已按顿号等分隔切成标签 */
+    traits: string[]
+    desire: string
+    weakness: string
+    ability: string
+    arc: string
+    /** 与他人关系，原文整段，不切分 */
+    relation: string
+}
+
+/** press/extract/characters 响应：characters 为空时 message 说明原因，前端可直接展示 */
+export interface PressExtractCharactersResult {
+    characters: PressExtractedCharacter[]
+    message: string
 }

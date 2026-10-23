@@ -6,7 +6,8 @@
  * 章节统计以章纲上的目标字数为分母，不使用正文实际字数反推计划。
  */
 import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
-import type { CharacterPortrait } from '@shared/types/press'
+import type { CharacterPortrait, PressExtractedCharacter } from '@shared/types/press'
+import { CHARACTER_GENDER_META, CHARACTER_GENDER_ORDER, CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from './constants'
 import type {
     CharacterCard,
     CharacterSeed,
@@ -106,6 +107,27 @@ export function createCharacterCard(seed: CharacterSeed = {}): CharacterCard {
         ...seed,
         id: createId('char'),
     }
+}
+
+/**
+ * 由提取草案建卡：把中文标签归一到角色分类与性别枚举，
+ * 未识别的分类回落为配角、性别回落为男，与作品文档解析的容错口径一致。
+ */
+export function createCharacterFromDraft(draft: PressExtractedCharacter): CharacterCard {
+    const role = CHARACTER_ROLE_ORDER.find((value) => CHARACTER_ROLE_META[value].label === draft.role) ?? 'supporting'
+    const gender = CHARACTER_GENDER_ORDER.find((value) => CHARACTER_GENDER_META[value].label === draft.gender) ?? 'male'
+    return createCharacterCard({
+        name: draft.name,
+        role,
+        gender,
+        identity: draft.identity,
+        traits: draft.traits,
+        desire: draft.desire,
+        weakness: draft.weakness,
+        ability: draft.ability,
+        arc: draft.arc,
+        relation: draft.relation,
+    })
 }
 
 /** 新建一条空节拍，默认未兑现 */

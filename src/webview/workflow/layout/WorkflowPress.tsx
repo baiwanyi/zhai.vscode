@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
 import type {
     OpenPressProjectResult,
+    PressExtractedCharacter,
     PressProjectSummary,
     PressWorkspaceRequest,
     PressWorkspaceResult,
@@ -33,7 +34,7 @@ import { AiChat } from '../aichat'
 import { NamingPage } from '../naming'
 import { PressCharacterPage, PressOutlinePage, PressSettingPage, PressWorkspaceStart } from '../press'
 import { parseProjectWorkspace } from '../press/document'
-import { createChapter, createCharacterCard, createVolume } from '../press/utils'
+import { createChapter, createCharacterCard, createCharacterFromDraft, createVolume } from '../press/utils'
 
 /** 默认分区：页面主体即 AI 对话，默认高亮与当前可见内容一致 */
 const DEFAULT_SECTION: WorkflowPressSection = 'chat'
@@ -165,6 +166,32 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
         [updateWorkspace],
     )
 
+    /** 合并提取出的人物卡：按姓名去重后追加，返回实际新增人数供人物页提示 */
+    const handleExtractCharacters = useCallback(
+        (existing: CharacterCard[], drafts: PressExtractedCharacter[]): number => {
+            const names = new Set(existing.map((character) => character.name))
+            const additions: CharacterCard[] = []
+            for (const draft of drafts) {
+                if (draft.name.length === 0 || names.has(draft.name)) {
+                    continue
+                }
+                names.add(draft.name)
+                additions.push(createCharacterFromDraft(draft))
+            }
+            if (additions.length === 0) {
+                return 0
+            }
+            // 提取期间列表可能已被编辑，合并时按最新草稿再去重一次
+            updateWorkspace((previous) => {
+                const usedNames = new Set(previous.characters.map((character) => character.name))
+                const fresh = additions.filter((character) => !usedNames.has(character.name))
+                return fresh.length === 0 ? previous : { ...previous, characters: [...previous.characters, ...fresh] }
+            })
+            return additions.length
+        },
+        [updateWorkspace],
+    )
+
     const handleUpdateChapter = useCallback(
         (chapterId: string, patch: Partial<OutlineChapter>): void => {
             updateWorkspace((previous) => ({
@@ -239,6 +266,7 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                     dirPath={workspaceDir}
                     onCreateCharacter={handleCreateCharacter}
                     onChangeCharacter={handleUpdateCharacter}
+                    onExtractCharacters={(drafts) => handleExtractCharacters(workspace.characters, drafts)}
                 />
             )
         }
