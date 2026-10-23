@@ -39,11 +39,18 @@ import { mergePortraits } from '../utils'
 interface CharacterPortraitPanelProps {
     character: CharacterCard
     aiContext: AppearanceContext
+    /** 当前作品目录：角色卡读写限定在该作品的 _portraits 下 */
+    dirPath: string
     onChange: (patch: Partial<CharacterCard>) => void
 }
 
-export function CharacterPortraitPanel({ character, aiContext, onChange }: CharacterPortraitPanelProps): JSX.Element {
-    const { isGenerating, generate, list, copy, insert, remove } = useCharacterPortrait()
+export function CharacterPortraitPanel({
+    character,
+    aiContext,
+    dirPath,
+    onChange,
+}: CharacterPortraitPanelProps): JSX.Element {
+    const { isGenerating, generate, list, copy, insert, remove } = useCharacterPortrait(dirPath)
     /** 正在删除的图片路径，用于禁用重复点击 */
     const [busyPath, setBusyPath] = useState<string | null>(null)
     /** 待确认删除的图片：非空时弹出二次确认 */

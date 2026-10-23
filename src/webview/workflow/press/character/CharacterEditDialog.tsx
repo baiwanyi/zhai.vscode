@@ -24,11 +24,19 @@ import type { JSX } from 'react'
 interface CharacterEditDialogProps {
     character: CharacterCard
     aiContext: AppearanceContext
+    /** 当前作品目录：角色卡落在该作品目录下 */
+    dirPath: string
     onSave: (id: string, patch: Partial<CharacterCard>) => void
     onCancel: () => void
 }
 
-export function CharacterEditDialog({ character, aiContext, onSave, onCancel }: CharacterEditDialogProps): JSX.Element {
+export function CharacterEditDialog({
+    character,
+    aiContext,
+    dirPath,
+    onSave,
+    onCancel,
+}: CharacterEditDialogProps): JSX.Element {
     const [draft, setDraft] = useState<CharacterCard>(character)
 
     const handleSave = (): void => {
@@ -56,6 +64,7 @@ export function CharacterEditDialog({ character, aiContext, onSave, onCancel }: 
                     <CharacterDetail
                         character={draft}
                         aiContext={aiContext}
+                        dirPath={dirPath}
                         onChange={(patch) => setDraft((previous) => ({ ...previous, ...patch }))}
                     />
                 </div>

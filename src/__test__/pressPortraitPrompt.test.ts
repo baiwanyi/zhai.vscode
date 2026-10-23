@@ -8,6 +8,7 @@ import { sanitizeScene } from '../modules/press/ai/portraitScenePrompt'
 
 function createRequest(overrides: Partial<PortraitGenerateRequest> = {}): PortraitGenerateRequest {
     return {
+        dirPath: 'press/城南旧事',
         characterId: 'char-test',
         name: '林岚',
         role: '主角',

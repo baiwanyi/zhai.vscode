@@ -3,7 +3,8 @@
  * 设计源：docs/modules/ai-chat.md 第 4.2 节状态机；落地 A6 对话、A8 消息历史、A9 流式、A11 取消、
  * A1/A2 写作模式（本期以「整段替换」实现写回，diff 逐段接受待后续补齐）。
  * 约束：上下文按字符数粗估截断（AC-4 的降级实现），预算护栏达上限时拒绝发送（A17）；
- * 写回只接受消息 id，文档版本与快照不一致时拒绝，写入经 WorkspaceEdit 进入撤销栈。
+ * 写回只接受消息 id，文档版本与快照不一致时拒绝，写入经 WorkspaceEdit 进入撤销栈；
+ * 会话按作用域（作品目录）隔离，取最近会话 / 新建 / 历史列表均须带作用域，跨作品不共用对话记录。
  */
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
@@ -107,6 +108,8 @@ export class AiChatService implements vscode.Disposable {
     private readonly appliedMessages = new Map<string, Set<string>>()
     /** 当前活跃会话 id，供上下文协议定位待发送列表 */
     private activeConversationId: string | null = null
+    /** 当前面板作用域（作品目录）：编辑器右键添加等无作用域入参的操作沿用该值，null 表示通用对话 */
+    private activeProjectDir: string | null = null
 
     /** 流式增量事件：由 Provider 订阅并转发到 Webview */
     public readonly onStream: vscode.Event<StreamMessage> = this.streamEmitter.event
@@ -163,11 +166,16 @@ export class AiChatService implements vscode.Disposable {
         this.inputDrafts.set(conversationId, draft)
     }
 
-    /** 取最近会话，不存在则新建（AC-9：重启窗口后会话与消息恢复） */
-    public getOrCreateSession(): AiSessionSnapshot {
-        const latest = getLatestConversation(this.db)
+    /**
+     * 取指定作用域的最近会话，不存在则新建（AC-9：重启窗口后会话与消息恢复）。
+     * 作用域为作品目录（如 press/{作品名}），null 表示不属于任何作品的通用对话；
+     * 调用即视为当前面板作用域，后续「添加到宅对话」等无作用域入参的操作沿用最近一次值。
+     */
+    public getOrCreateSession(projectDir: string | null = null): AiSessionSnapshot {
+        this.activeProjectDir = projectDir
+        const latest = getLatestConversation(this.db, projectDir)
         if (!latest) {
-            return this.createSession()
+            return this.createSession(projectDir)
         }
         this.activeConversationId = latest.id
         return {
@@ -178,14 +186,15 @@ export class AiChatService implements vscode.Disposable {
         }
     }
 
-    /** 新建会话 */
-    public createSession(title: string = DEFAULT_TITLE): AiSessionSnapshot {
+    /** 在指定作用域下新建会话；作用域随会话落库，历史列表据此过滤 */
+    public createSession(projectDir: string | null = null, title: string = DEFAULT_TITLE): AiSessionSnapshot {
         const now = new Date().toISOString()
         const row: ConversationRow = {
             id: randomUUID(),
             title,
             mode: 'chat',
             filePath: null,
+            projectDir,
             model: getSelectedCodebuddyModel(),
             provider: this.provider.id,
             sdkSessionId: null,
@@ -194,13 +203,14 @@ export class AiChatService implements vscode.Disposable {
         }
         insertConversation(this.db, row)
         this.activeConversationId = row.id
+        this.activeProjectDir = projectDir
         logger.info(`AI 会话已创建：${row.id}`)
         return { conversation: toConversation(row), messages: [], contexts: [], draft: { input: '', commandId: null } }
     }
 
-    /** 历史会话列表（按最后活跃时间倒序），供面板历史浮层展示 */
-    public listSessions(): AiConversationSummary[] {
-        return listConversations(this.db, SESSION_LIST_LIMIT).map((row) => ({
+    /** 指定作用域的历史会话列表（按最后活跃时间倒序），供面板历史浮层展示 */
+    public listSessions(projectDir: string | null = null): AiConversationSummary[] {
+        return listConversations(this.db, SESSION_LIST_LIMIT, projectDir).map((row) => ({
             id: row.id,
             title: row.title,
             updatedAt: row.updatedAt,
@@ -797,9 +807,9 @@ export class AiChatService implements vscode.Disposable {
         }
     }
 
-    /** 会话 id 兜底：编辑器右键添加时面板可能尚未打开，此时按「取最近会话或新建」处理 */
+    /** 会话 id 兜底：编辑器右键添加时面板可能尚未打开，此时按当前作用域「取最近会话或新建」处理 */
     private ensureActiveConversationId(): string {
-        return this.activeConversationId ?? this.getOrCreateSession().conversation.id
+        return this.activeConversationId ?? this.getOrCreateSession(this.activeProjectDir).conversation.id
     }
 
     /** 记录用量：服务端未返回时按字符数粗估兜底（日志表不存提示词正文） */

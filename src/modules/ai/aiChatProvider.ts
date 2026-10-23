@@ -5,6 +5,7 @@
  * 上下文增删走 ai/context*，写回走 ai/writeState / ai/setMode / ai/applyWrite，state 广播以 channel 区分
  * ai（runtime / context / writeTarget）与 workflow（路由事实，含当前作品目录）。
  * 关键约束：上下文移除与写回只接受宿主生成的 id（不接受路径与范围入参），所有 Webview 入参逐字段收窄后再用；
+ * 会话协议可带 projectDir 作用域（作品目录），缺省即通用对话，作用域只用于过滤查询、不参与路径拼接；
  * 场景判定统一由 WorkflowRouter 产出，取名协议只做前缀转发，本层不解析取名条件；
  * 作品协议只放行工作台需要的读取与打开，仪表盘的作品写操作不得经此入口触达。
  */
@@ -22,6 +23,7 @@ import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
+import { toSafeSegments } from '../common/storagePath'
 import { WEBVIEW_ALLOWED_COMMANDS } from '../common/webviewCommands'
 import { buildWebviewHtml } from '../common/webviewHtml'
 
@@ -33,6 +35,8 @@ const MAX_DRAFT_LENGTH = 20_000
 const MAX_COMMAND_ID_LENGTH = 32
 /** 模型 id 长度上限：CLI 模型 id 远短于此值，超出视为异常载荷 */
 const MAX_MODEL_ID_LENGTH = 64
+/** 会话作用域长度上限：作品目录形如 press/{作品名}，远短于此值，超出视为异常载荷 */
+const MAX_SCOPE_LENGTH = 160
 
 /** 写作管理工作台可用的作品协议：只读与打开，与仪表盘的作品写操作分开登记 */
 const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set(['press/workspace', 'press/open'])
@@ -116,13 +120,13 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     private async invoke(method: string, payload: unknown, reqId: string, view: vscode.WebviewView): Promise<unknown> {
         switch (method) {
             case 'ai/session': {
-                return this.service.getOrCreateSession()
+                return this.service.getOrCreateSession(readScopePayload(payload, 'ai/session'))
             }
             case 'ai/newSession': {
-                return this.service.createSession()
+                return this.service.createSession(readScopePayload(payload, 'ai/newSession'))
             }
             case 'ai/sessions': {
-                return this.service.listSessions()
+                return this.service.listSessions(readScopePayload(payload, 'ai/sessions'))
             }
             case 'ai/switchSession': {
                 return this.service.switchSession(readConversationIdPayload(payload, 'ai/switchSession'))
@@ -286,6 +290,34 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     private post(view: vscode.WebviewView, message: HostToWebviewMessage): void {
         void view.webview.postMessage(message)
     }
+}
+
+/**
+ * 校验会话作用域入参（可选）：缺省或空串表示通用对话，不属于任何作品。
+ * 关键约束：作用域只作查询过滤条件，仍按路径片段规则拒绝上跳、盘符与反斜杠，长度超限视为异常载荷。
+ */
+function readScopePayload(payload: unknown, method: string): string | null {
+    if (payload === undefined || payload === null) {
+        return null
+    }
+    if (typeof payload !== 'object') {
+        throw new Error(`${method} 参数类型不正确`)
+    }
+    const raw = (payload as { projectDir?: unknown }).projectDir
+    if (raw === undefined || raw === null) {
+        return null
+    }
+    if (typeof raw !== 'string') {
+        throw new Error(`${method} 参数类型不正确`)
+    }
+    const value = raw.trim()
+    if (value.length === 0) {
+        return null
+    }
+    if (value.length > MAX_SCOPE_LENGTH) {
+        throw new Error(`${method} 作用域过长`)
+    }
+    return toSafeSegments(value, '对话作用域').join('/')
 }
 
 /** 校验会话 id 入参：Webview 侧数据不可信，仅接受非空字符串 */

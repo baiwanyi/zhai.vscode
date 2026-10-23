@@ -1,6 +1,8 @@
 /**
  * AI 会话仓储：conversations / messages / ai_usage_logs 三表的参数化读写。
  * 安全约束：全部 SQL 使用预编译参数绑定，禁止字符串拼接；批量写入统一走事务。
+ * 作用域约定：会话按 project_dir 隔离，取最近会话与历史列表都必须带作用域，避免跨作品串历史；
+ * 作用域比较统一用 `IS ?`（NULL 安全），作品对话与非作品通用对话各成一份。
  */
 import type Database from 'better-sqlite3'
 
@@ -10,6 +12,8 @@ export interface ConversationRow {
     title: string
     mode: string
     filePath: string | null
+    /** 会话所属作用域（作品目录，形如 press/{作品名}）；NULL 表示不属于任何作品的通用对话 */
+    projectDir: string | null
     model: string
     /** 创建会话时使用的 AI 通道，切换通道后旧会话号不再复用 */
     provider: string
@@ -58,7 +62,7 @@ export interface UsageLogRow {
     createdAt: string
 }
 
-const CONVERSATION_COLUMNS = `id, title, mode, file_path AS filePath, model, provider,
+const CONVERSATION_COLUMNS = `id, title, mode, file_path AS filePath, project_dir AS projectDir, model, provider,
     sdk_session_id AS sdkSessionId, created_at AS createdAt, updated_at AS updatedAt`
 
 const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, reasoning, status,
@@ -66,8 +70,9 @@ const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, r
 
 export function insertConversation(db: Database.Database, row: ConversationRow): void {
     db.prepare(
-        `INSERT INTO conversations (id, title, mode, file_path, model, provider, sdk_session_id, created_at, updated_at)
-         VALUES (@id, @title, @mode, @filePath, @model, @provider, @sdkSessionId, @createdAt, @updatedAt)`,
+        `INSERT INTO conversations (id, title, mode, file_path, project_dir, model, provider, sdk_session_id,
+            created_at, updated_at)
+         VALUES (@id, @title, @mode, @filePath, @projectDir, @model, @provider, @sdkSessionId, @createdAt, @updatedAt)`,
     ).run(row)
 }
 
@@ -86,17 +91,28 @@ export function getConversation(db: Database.Database, id: string): Conversation
         ConversationRow | undefined
 }
 
-/** 取最近活跃的会话（视图恢复时复用它） */
-export function getLatestConversation(db: Database.Database): ConversationRow | undefined {
-    return db.prepare(`SELECT ${CONVERSATION_COLUMNS} FROM conversations ORDER BY updated_at DESC LIMIT 1`).get() as
-        ConversationRow | undefined
+/** 取指定作用域最近活跃的会话（视图恢复时复用它）；作用域为 null 时取通用对话 */
+export function getLatestConversation(db: Database.Database, projectDir: string | null): ConversationRow | undefined {
+    return db
+        .prepare(
+            `SELECT ${CONVERSATION_COLUMNS} FROM conversations
+              WHERE project_dir IS ? ORDER BY updated_at DESC LIMIT 1`,
+        )
+        .get(projectDir) as ConversationRow | undefined
 }
 
-/** 按最后活跃时间倒序列出会话（历史对话浮层用，条数由调用方限制） */
-export function listConversations(db: Database.Database, limit: number): ConversationRow[] {
+/** 按最后活跃时间倒序列出指定作用域的会话（历史对话浮层用，条数由调用方限制） */
+export function listConversations(
+    db: Database.Database,
+    limit: number,
+    projectDir: string | null,
+): ConversationRow[] {
     return db
-        .prepare(`SELECT ${CONVERSATION_COLUMNS} FROM conversations ORDER BY updated_at DESC LIMIT ?`)
-        .all(limit) as ConversationRow[]
+        .prepare(
+            `SELECT ${CONVERSATION_COLUMNS} FROM conversations
+              WHERE project_dir IS ? ORDER BY updated_at DESC LIMIT ?`,
+        )
+        .all(projectDir, limit) as ConversationRow[]
 }
 
 export function updateConversationTitle(db: Database.Database, id: string, title: string): void {

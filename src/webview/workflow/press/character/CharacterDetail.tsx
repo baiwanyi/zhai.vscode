@@ -28,9 +28,11 @@ interface CharacterDetailProps {
     onChange: (patch: Partial<CharacterCard>) => void
     /** 作品层氛围：供外貌生成约束时代与题材 */
     aiContext: AppearanceContext
+    /** 当前作品目录：角色卡落在该作品目录下 */
+    dirPath: string
 }
 
-export function CharacterDetail({ character, onChange, aiContext }: CharacterDetailProps): JSX.Element {
+export function CharacterDetail({ character, onChange, aiContext, dirPath }: CharacterDetailProps): JSX.Element {
     const { isGenerating, generate, abort } = useCharacterAppearance()
 
     const handleRoleChange = (value: string): void => {
@@ -197,7 +199,12 @@ export function CharacterDetail({ character, onChange, aiContext }: CharacterDet
                     </TabsContent>
 
                     <TabsContent value="portrait" className="flex flex-col gap-3">
-                        <CharacterPortraitPanel character={character} aiContext={aiContext} onChange={onChange} />
+                        <CharacterPortraitPanel
+                            character={character}
+                            aiContext={aiContext}
+                            dirPath={dirPath}
+                            onChange={onChange}
+                        />
                     </TabsContent>
 
                     <TabsContent value="motive" className="flex flex-col gap-3">

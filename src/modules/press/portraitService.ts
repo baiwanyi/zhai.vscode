@@ -4,10 +4,10 @@
  * （唯一实现为 CodeBuddy 的 ImageGen），提示词复用 ./ai/portraitPrompt，配额复用 ./db/quotaRepository，
  * 路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
  * 关键约束：画面描述失败一律回退纯模板，不让文本模型拖垮出图；描述不计配额，限额只针对图片张数；
- * 图片落在 press/_portraits/{characterId}/ 下，人物标识须匹配安全字符集；
+ * 图片落在 press/{作品名}/_portraits/{characterId}/ 下，跟随作品目录（删除作品即一并清理），人物标识须匹配安全字符集；
  * 目录是图片的唯一事实来源：生成完成即落盘，关闭弹窗不丢结果，列举以磁盘为准；
- * 删除只接受 press/_portraits 下的四段相对路径，优先走回收站；同一时刻只允许一个生成请求；
- * 复制与插入同样只接受四段白名单路径，复制经平台命令写入系统剪贴板（webview 内写图片受 CSP 与权限限制）。
+ * 删除只接受 press/{作品名}/_portraits 下的五段相对路径，优先走回收站；同一时刻只允许一个生成请求；
+ * 复制与插入同样只接受五段白名单路径，复制经平台命令写入系统剪贴板（webview 内写图片受 CSP 与权限限制）。
  */
 import { execFile } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
@@ -19,6 +19,7 @@ import { sanitizeScene } from './ai/portraitScenePrompt'
 import { consumeToday, readUsedToday } from './db/quotaRepository'
 import { readText, readTextList } from './pressAiService'
 import { PRESS_MODULE_DIR } from './projectFactory'
+import { readProjectSegments } from './projectService'
 import type { ImageProviderRouter } from './ai/imageProvider'
 import type { QuotaKeys } from './db/quotaRepository'
 import type {
@@ -38,8 +39,10 @@ import { getZhaiConfig, resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
 import { buildStorageUri, toSafeSegments } from '../common/storagePath'
 
-/** 角色设定图的二级目录名，下划线前缀避免与作品名冲突，且不参与索引 */
+/** 角色设定图目录名：位于作品目录之下（press/{作品名}/_portraits），下划线前缀便于与章节区分 */
 const PORTRAIT_DIR = '_portraits'
+/** 角色卡相对路径的段数：press/{作品名}/_portraits/{characterId}/{文件名} */
+const PORTRAIT_SEGMENT_COUNT = 5
 /** 角色设定图的配额键（press.db 的 meta 表） */
 const QUOTA_KEYS: QuotaKeys = { dateKey: 'press_image_date', countKey: 'press_image_count' }
 /** 目录扫描只认图片文件，其余（缩略图缓存、说明文件等）一律忽略 */
@@ -48,8 +51,8 @@ const PORTRAIT_FILE_PATTERN = /\.(png|jpe?g|webp|gif)$/i
 const MAX_SHORT_TEXT = 64
 /** 长字段长度上限 */
 const MAX_LONG_TEXT = 400
-/** 相对路径长度上限 */
-const MAX_PATH_LENGTH = 256
+/** 相对路径长度上限：作品名与人物标识相叠加高，留出余量 */
+const MAX_PATH_LENGTH = 320
 /** 剪贴板命令超时：外部进程卡住时不阻塞界面 */
 const CLIPBOARD_TIMEOUT_MS = 8_000
 /** Windows 剪贴板脚本：路径经环境变量传入，避免拼进命令串；SetImage 要求 STA 线程 */
@@ -111,7 +114,13 @@ export class PortraitService {
             logger.info(`角色卡通道：codebuddy（${scene === undefined ? '模板提示词' : 'AI 画面描述'}）`)
             const id = `portrait-${randomUUID()}`
             const extension = artifact.extension
-            const segments = [PRESS_MODULE_DIR, PORTRAIT_DIR, request.characterId, `${id}.${extension}`]
+            // 落盘到当前作品目录下，作品删除时随目录一并清理
+            const segments = [
+                ...readProjectSegments(request.dirPath),
+                PORTRAIT_DIR,
+                request.characterId,
+                `${id}.${extension}`,
+            ]
             const root = resolveStorageRoot()
             await vscode.workspace.fs.createDirectory(buildStorageUri(root, segments.slice(0, -1)))
             const target = buildStorageUri(root, segments)
@@ -141,9 +150,9 @@ export class PortraitService {
      * @param toWebviewUri 把磁盘 Uri 转成 webview 可访问 URL 的转换器
      */
     public async list(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<PortraitListResult> {
-        const characterId = normalizeCharacterId(payload, 'pressAi/listPortraits')
+        const { dirPath, characterId } = normalizePortraitListRequest(payload)
         const root = resolveStorageRoot()
-        const dirSegments = [PRESS_MODULE_DIR, PORTRAIT_DIR, characterId]
+        const dirSegments = [...readProjectSegments(dirPath), PORTRAIT_DIR, characterId]
         let entries: [string, vscode.FileType][]
         try {
             entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
@@ -182,8 +191,15 @@ export class PortraitService {
     public async insertIntoEditor(payload: unknown): Promise<PortraitInsertResult> {
         const path = readPortraitPath(payload)
         const segments = toSafeSegments(path, '角色卡')
-        const [moduleDir, portraitDir, , fileName] = segments
-        if (segments.length !== 4 || moduleDir !== PRESS_MODULE_DIR || portraitDir !== PORTRAIT_DIR || !fileName) {
+        const [moduleDir, projectName, portraitDir, characterId, fileName] = segments
+        if (
+            segments.length !== PORTRAIT_SEGMENT_COUNT ||
+            moduleDir !== PRESS_MODULE_DIR ||
+            portraitDir !== PORTRAIT_DIR ||
+            !projectName ||
+            !characterId ||
+            !fileName
+        ) {
             throw new Error(`角色卡路径非法：${path}`)
         }
         const editor = resolveInsertTarget()
@@ -222,13 +238,20 @@ export class PortraitService {
 
     /**
      * 把设定图写入系统剪贴板：webview 内写图片受 CSP 与剪贴板权限限制，改由宿主按平台调用原生能力。
-     * 只接受 press/_portraits 下的四段相对路径；平台不支持或依赖缺失时返回原因，由前端提示。
+     * 只接受 press/{作品名}/_portraits 下的五段相对路径；平台不支持或依赖缺失时返回原因，由前端提示。
      */
     public async copyToClipboard(payload: unknown): Promise<PortraitCopyResult> {
         const path = readPortraitPath(payload)
         const segments = toSafeSegments(path, '角色卡')
-        const [moduleDir, portraitDir, , fileName] = segments
-        if (segments.length !== 4 || moduleDir !== PRESS_MODULE_DIR || portraitDir !== PORTRAIT_DIR || !fileName) {
+        const [moduleDir, projectName, portraitDir, characterId, fileName] = segments
+        if (
+            segments.length !== PORTRAIT_SEGMENT_COUNT ||
+            moduleDir !== PRESS_MODULE_DIR ||
+            portraitDir !== PORTRAIT_DIR ||
+            !projectName ||
+            !characterId ||
+            !fileName
+        ) {
             throw new Error(`角色卡路径非法：${path}`)
         }
         const target = buildStorageUri(resolveStorageRoot(), segments)
@@ -253,7 +276,13 @@ export class PortraitService {
     public async remove(payload: unknown): Promise<{ removed: boolean }> {
         const path = readPortraitPath(payload)
         const segments = toSafeSegments(path, '角色卡')
-        if (segments.length !== 4 || segments[0] !== PRESS_MODULE_DIR || segments[1] !== PORTRAIT_DIR) {
+        if (
+            segments.length !== PORTRAIT_SEGMENT_COUNT ||
+            segments[0] !== PRESS_MODULE_DIR ||
+            segments[2] !== PORTRAIT_DIR ||
+            !segments[1] ||
+            !segments[3]
+        ) {
             throw new Error(`角色卡路径非法：${path}`)
         }
         const target = buildStorageUri(resolveStorageRoot(), segments)
@@ -314,9 +343,10 @@ export class PortraitService {
     }
 }
 
-/** 入参收窄：人物标识走白名单，其余字段逐个截断，姓名为空直接拒绝 */
+/** 入参收窄：作品目录与人物标识走各自白名单，其余字段逐个截断，姓名为空直接拒绝 */
 function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
     const characterId = normalizeCharacterId(payload, 'pressAi/generatePortrait')
+    const dirPath = readProjectDirPath(payload, 'pressAi/generatePortrait')
     const value = payload as {
         characterId?: unknown
         name?: unknown
@@ -335,6 +365,7 @@ function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
         style?: unknown
     }
     const request: PortraitGenerateRequest = {
+        dirPath,
         characterId,
         name: readText(value.name, MAX_SHORT_TEXT),
         role: readText(value.role, MAX_SHORT_TEXT),
@@ -375,6 +406,29 @@ function normalizeCharacterId(payload: unknown, method: string): string {
         throw new Error('人物标识非法，无法定位角色卡目录')
     }
     return characterId
+}
+
+/**
+ * 读取作品目录：要求 press/{作品名} 两段，返回归一化后的相对路径。
+ * 安全约束：越出 press 模块、含上跳或段数不符的路径一律拒绝，角色卡目录只能落在作品目录下。
+ */
+function readProjectDirPath(payload: unknown, method: string): string {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error(`${method} 缺少参数`)
+    }
+    const dirPath = readText((payload as { dirPath?: unknown }).dirPath, MAX_PATH_LENGTH)
+    if (dirPath.length === 0) {
+        throw new Error(`${method} 缺少作品目录`)
+    }
+    return readProjectSegments(dirPath).join('/')
+}
+
+/** 列举入参：作品目录与人物标识共同定位角色卡目录，缺失任一项都直接拒绝 */
+function normalizePortraitListRequest(payload: unknown): { dirPath: string; characterId: string } {
+    return {
+        dirPath: readProjectDirPath(payload, 'pressAi/listPortraits'),
+        characterId: normalizeCharacterId(payload, 'pressAi/listPortraits'),
+    }
 }
 
 /** 剪贴板写入结果：copied 成功、unsupported 平台或依赖缺失、failed 命令执行失败 */

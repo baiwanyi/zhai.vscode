@@ -1,8 +1,9 @@
 /**
  * 写作管理工作流页：写作管理模块的专属落点，模块切换时由注册表直接渲染本文件。
  * 复用约定：作品数据来自宿主读取的 设定.md / 角色设定.md / 大纲.md，经 press/document 解析成 OutlineWorkspace；
- * 分区内容按 activeSection 切换——设定、人物、大纲分别渲染 ../press 的三个页面，AI 对话渲染 ../aichat 的 AiChat，
- * 取名渲染 ../naming 的 NamingPage；右侧分区入口由同目录 WorkflowPressNav 承载，分区之间共享同一份草稿。
+ * 分区内容按 activeSection 切换——设定、人物、大纲分别渲染 ../press 的三个页面，AI 对话渲染 ../aichat 的 AiChat
+ * 并下传当前作品目录作为会话作用域（每个作品各有一份对话记录），取名渲染 ../naming 的 NamingPage；
+ * 右侧分区入口由同目录 WorkflowPressNav 承载，分区之间共享同一份草稿。
  * 关键约束：本页不自行发起路由请求，作品定位只认宿主下发的 projectDir；未打开作品时渲染初始页（作品清单入口），
  * 不在页面内伪造示例数据；页面内的编辑仍是内存草稿，换作品或换页即重新按文档解析结果重建。
  */
@@ -57,13 +58,20 @@ type WorkspaceStatus = 'loading' | 'empty' | 'ready'
 
 interface WorkspaceLoadState {
     status: WorkspaceStatus
+    /** 已载入作品的目录：角色卡读写按它定位，未载入为 null */
+    projectDir: string | null
     workspace: OutlineWorkspace | null
     /** 索引库聚合出的作品清单：初始页据此给出可选入口 */
     projects: PressProjectSummary[]
 }
 
 /** 初始状态按读取中处理，避免先闪一帧空态再跳内容 */
-const INITIAL_LOAD_STATE: WorkspaceLoadState = { status: 'loading', workspace: null, projects: [] }
+const INITIAL_LOAD_STATE: WorkspaceLoadState = {
+    status: 'loading',
+    projectDir: null,
+    workspace: null,
+    projects: [],
+}
 
 export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
     const projectDir = context.projectDir
@@ -81,17 +89,22 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                     return
                 }
                 if (result.project === null) {
-                    setLoadState({ status: 'empty', workspace: null, projects: result.projects })
+                    setLoadState({ status: 'empty', projectDir: null, workspace: null, projects: result.projects })
                     return
                 }
                 const parsed = parseProjectWorkspace(result.project.files, result.project.name)
-                setLoadState({ status: 'ready', workspace: parsed, projects: result.projects })
+                setLoadState({
+                    status: 'ready',
+                    projectDir: result.project.dirPath,
+                    workspace: parsed,
+                    projects: result.projects,
+                })
             } catch (cause) {
                 if (isCancelled) {
                     return
                 }
                 toastError(cause)
-                setLoadState({ status: 'empty', workspace: null, projects: [] })
+                setLoadState({ status: 'empty', projectDir: null, workspace: null, projects: [] })
             }
         }
         void load()
@@ -207,7 +220,7 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
         [updateWorkspace],
     )
 
-    const renderSection = (workspace: OutlineWorkspace): JSX.Element => {
+    const renderSection = (workspace: OutlineWorkspace, workspaceDir: string): JSX.Element => {
         if (activeSection === 'setting') {
             return (
                 <PressSettingPage
@@ -223,6 +236,7 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
                 <PressCharacterPage
                     characters={workspace.characters}
                     setting={workspace.setting}
+                    dirPath={workspaceDir}
                     onCreateCharacter={handleCreateCharacter}
                     onChangeCharacter={handleUpdateCharacter}
                 />
@@ -245,7 +259,9 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
         if (activeSection === 'naming') {
             return <NamingPage />
         }
-        return <AiChat />
+        // 对话按作品隔离：当前作品目录即会话作用域，切作品即换用该作品自己的对话记录；
+        // key 跟随作品目录，切作品时重建对话页，命令选择与未发送正文不会带进新作品
+        return <AiChat key={workspaceDir} projectDir={workspaceDir} />
     }
 
     if (loadState.status === 'loading') {
@@ -262,10 +278,11 @@ export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
     if (workspace === null) {
         return <PressWorkspaceStart projects={loadState.projects} onOpenProject={handleOpenProject} />
     }
+    const workspaceDir = loadState.projectDir ?? ''
 
     return (
         <div className="flex h-screen min-h-0">
-            <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{renderSection(workspace)}</div>
+            <div className="min-h-0 min-w-0 flex-1 overflow-hidden">{renderSection(workspace, workspaceDir)}</div>
             <WorkflowPressNav activeSection={activeSection} onSelect={setActiveSection} />
         </div>
     )

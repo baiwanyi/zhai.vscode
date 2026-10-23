@@ -378,7 +378,7 @@ export function isPressCharacterId(value: unknown): value is string {
 /** 角色设定图：宿主生成并落盘后回传的图片信息 */
 export interface CharacterPortrait {
     id: string
-    /** 相对存储根的路径，形如 press/_portraits/{characterId}/{id}.png */
+    /** 相对存储根的路径，形如 press/{作品名}/_portraits/{characterId}/{id}.png */
     path: string
     /** webview 可访问的完整 URL，仅本次会话有效（由宿主用 asWebviewUri 转换） */
     url: string
@@ -387,6 +387,8 @@ export interface CharacterPortrait {
 
 /** 角色设定图生成请求：人物卡与作品氛围的只读快照 */
 export interface PortraitGenerateRequest {
+    /** 作品目录（press/{作品名}）：角色卡落在该作品的 _portraits 下，删除作品即一并清理 */
+    dirPath: string
     /** 人物 id，宿主据此建立图片目录，须为安全的短标识 */
     characterId: string
     name: string
@@ -413,13 +415,16 @@ export interface PortraitGenerateResult {
     portrait: CharacterPortrait
 }
 
-/** 角色设定图删除请求：只接受 press/_portraits 下的相对路径 */
+/** 角色设定图删除请求：只接受 press/{作品名}/_portraits 下的相对路径 */
 export interface PortraitDeleteRequest {
     path: string
 }
 
-/** 角色设定图列举请求：打开角色卡时按人物目录回读已落盘的图片 */
+/** 角色设定图列举请求：打开角色卡时按「作品目录 + 人物目录」回读已落盘的图片 */
 export interface PortraitListRequest {
+    /** 作品目录（press/{作品名}） */
+    dirPath: string
+    /** 人物 id，与作品目录共同定位角色卡目录 */
     characterId: string
 }
 

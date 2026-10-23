@@ -3,7 +3,8 @@
  * 承载发送 / 停止 / 模式切换 / 新建 / 切换 / 删除会话等操作，并订阅宿主 stream 消息按发起时的助手消息 id 就地追加增量。
  * 复用 ../utils 的消息替换与错误收窄；上下文清单与历史列表由调用方 hook 持有、经参数注入刷新。
  * 关键约束：发送正文由调用方拼装后传入（写作命令模板不进入输入框），本 hook 只负责提交与清空输入；
- * 切换 / 删除会话或切换模式前先中止生成，避免增量写回已切走的会话；输入框内容在切换时保持不动。
+ * 切换 / 删除会话或切换模式前先中止生成，避免增量写回已切走的会话；输入框内容在切换时保持不动；
+ * 会话作用域由调用方以 projectDir 注入，快照加载 / 新建 / 删除后重载都必须带同一作用域，跨作品不共用对话。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -23,6 +24,8 @@ export interface UseAiChatSessionOptions {
     setContexts: (contexts: AiContextRef[]) => void
     /** 删除会话后刷新历史列表 */
     refreshSessions: () => Promise<void>
+    /** 会话作用域（作品目录）：同一作品共用一份对话记录，null 表示不属于任何作品的通用对话 */
+    projectDir: string | null
 }
 
 /** 发送选项：applyPolicy 决定本轮结果是否提供写回入口，titleHint 为命令名称等展示用短标题 */
@@ -54,6 +57,7 @@ export function useAiChatSession({
     onNotice,
     setContexts,
     refreshSessions,
+    projectDir,
 }: UseAiChatSessionOptions): AiChatSessionState {
     const [session, setSession] = useState<AiSessionSnapshot | null>(null)
     const [phase, setPhase] = useState<Phase>('idle')
@@ -78,7 +82,7 @@ export function useAiChatSession({
 
     const loadSession = useCallback(async (): Promise<AiSessionSnapshot | null> => {
         try {
-            const snapshot = await request<AiSessionSnapshot>('ai/session')
+            const snapshot = await request<AiSessionSnapshot>('ai/session', { projectDir })
             setSession(snapshot)
             setContexts(snapshot.contexts)
             restoreDraft(snapshot.draft.input)
@@ -88,7 +92,7 @@ export function useAiChatSession({
             onError(toErrorText(cause))
             return null
         }
-    }, [onError, restoreDraft, setContexts])
+    }, [onError, projectDir, restoreDraft, setContexts])
 
     // 流式增量：按 reqId 找到发起时的助手消息并就地追加
     useEffect(() => {
@@ -174,7 +178,7 @@ export function useAiChatSession({
 
     const startNewSession = useCallback(async (): Promise<void> => {
         try {
-            const snapshot = await request<AiSessionSnapshot>('ai/newSession')
+            const snapshot = await request<AiSessionSnapshot>('ai/newSession', { projectDir })
             setSession(snapshot)
             setContexts(snapshot.contexts)
             setInput('')
@@ -183,7 +187,7 @@ export function useAiChatSession({
         } catch (cause) {
             onError(toErrorText(cause))
         }
-    }, [onError, onNotice, setContexts])
+    }, [onError, onNotice, projectDir, setContexts])
 
     /** 切换会话模式：生成中先停止，宿主写库后同步本地快照；模式只影响后续发送与结果处置 */
     const switchMode = useCallback(
@@ -247,7 +251,7 @@ export function useAiChatSession({
                 if (isActive) {
                     streamingMessageIdRef.current = null
                     setPhase('idle')
-                    const snapshot = await request<AiSessionSnapshot>('ai/session')
+                    const snapshot = await request<AiSessionSnapshot>('ai/session', { projectDir })
                     setSession(snapshot)
                     setContexts(snapshot.contexts)
                     onError(null)
@@ -258,7 +262,7 @@ export function useAiChatSession({
                 onError(toErrorText(cause))
             }
         },
-        [onError, onNotice, refreshSessions, session, setContexts],
+        [onError, onNotice, projectDir, refreshSessions, session, setContexts],
     )
 
     return {

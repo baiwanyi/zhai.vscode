@@ -209,6 +209,7 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 | 延迟加载 | 图像通道需在子进程环境里设 `CODEBUDDY_DEFER_TOOL_LOADING=false`：CLI 默认把 `ImageGen` 放进延迟加载池，`system.init` 的工具全集里有它、但模型可用工具列表里没有，表现为「能力探测通过却始终不出图」 |
 | 超时 | CodeBuddy 通道上限 600s（子进程启动 + 排队），前端兜底 15 分钟 |
 | 产物归一 | `ImageGen` 以 JSON 文本回报 `{ type: 'image_gen_tool_result', images: [{ localPath }] }`，适配层先取结构化字段，再依次尝试 image block / data URL / 绝对路径 / 链接；路径可能不带扩展名，格式一律按文件魔数（PNG/JPEG/WEBP）判定，非图片内容自动跳到下一个候选，统一交给 `portraitService` 落盘 |
+| 落盘位置 | `press/{作品名}/_portraits/{characterId}/{id}.{ext}`：角色卡跟随作品目录，删除作品即随目录一并清理；旧版全局 `press/_portraits/` 不再读取 |
 | 画风与尺寸 | 沿用 `PORTRAIT_STYLES` 与 `zhai.image.size`；CodeBuddy 侧的传参方式（自然语言描述 / 工具入参）待实测，未定前双写 |
 | 文生图模型 | 由 CLI 决定，插件不下发 `--text-to-image-model`：清单来自服务端产品配置（SDK 只返回语言模型，无法枚举），故不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，CLI 会把选择存进自身 settings。驱动工具调用的对话模型复用 AI 面板模型菜单的选择（存 `globalState` 的 `ai.codebuddyModel`，可从账号可用列表选择或手动填写自定义模型 id） |
 | 频率护栏 | `zhai.image.dailyLimit` 按次计数 |
@@ -442,6 +443,8 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 |------|------|----------|
 | 仪表盘「写作管理」 | 仪表盘页内路由 `#/press` | 作品列表 + 添加作品 |
 | 工作流初始页选「写作管理」 | 工作流 press 页 | AI 对话 + 分区导航（未改动） |
+
+**AI 对话归属**：press 页的 AI 对话按作品隔离——当前作品目录（`press/{作品名}`）作为会话作用域下传给 `AiChat`，取最近会话、新建会话与历史列表都只在该作品范围内进行，切换作品即换用该作品自己的对话记录。未打开作品或从占位页承接的对话不带作用域，走通用对话。会话正文仍存全局 `ai.db` 的 `conversations` / `messages`，由 `project_dir` 记录归属作品（见 `ai-chat.md` 第 6 节）。
 
 **数据来源**：本期不新建 `press.db`，作品摘要直接由索引库 `files` 表聚合（目录即作品），与「Markdown 主存储 + SQLite 仅缓存」原则一致。
 

@@ -1,8 +1,8 @@
 # AI Chat — 模块设计文档
 
-**版本**：1.4
-**日期**：2026-10-22
-**状态**：对话模式、编辑器右键上下文（10.1）、会话历史（10.2）与写作模式写回（10.3）已落地；diff 逐段接受待实现；第 5 节已按 CodeBuddy 单通道更新（直连通道已移除）
+**版本**：1.5
+**日期**：2026-10-23
+**状态**：对话模式、编辑器右键上下文（10.1）、会话历史（10.2，已按作品隔离）与写作模式写回（10.3）已落地；diff 逐段接受待实现；第 5 节已按 CodeBuddy 单通道更新（直连通道已移除）
 **宿主**：VSCode 插件 Zhai（宅桌面）
 
 ---
@@ -220,6 +220,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     title          TEXT NOT NULL,
     mode           TEXT NOT NULL,     -- 'write' | 'chat'
     file_path      TEXT,              -- 关联的笔记/章节（可为 NULL）
+    project_dir    TEXT,              -- 会话作用域（作品目录，如 press/某作品）；NULL 表示通用对话
     model          TEXT NOT NULL,
     provider       TEXT NOT NULL DEFAULT 'codebuddy', -- 创建时使用的 AI 通道
     sdk_session_id TEXT,              -- 通道侧会话号，CodeBuddy 通道续接用
@@ -229,6 +230,7 @@ CREATE TABLE IF NOT EXISTS conversations (
 
 CREATE INDEX IF NOT EXISTS idx_conv_updated ON conversations(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_conv_file ON conversations(file_path);
+CREATE INDEX IF NOT EXISTS idx_conv_project ON conversations(project_dir, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS messages (
     id             TEXT PRIMARY KEY,
@@ -264,7 +266,9 @@ CREATE INDEX IF NOT EXISTS idx_usage_date ON ai_usage_logs(created_at);
 
 **敏感字段说明**：日志表只存模型与用量，**不存提示词正文**；消息正文随会话存储，用户删除会话时级联清除。
 
-**迁移**：v1 → v2 由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行。`provider` 默认 `codebuddy`，`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话。
+**迁移**：按版本由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行（v2 补 `provider` / `sdk_session_id`，v3 补 `project_dir`）。`provider` 默认 `codebuddy`，`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话；`project_dir` 为 NULL 表示该会话不属于任何作品（历史会话不做回填）。依赖新列的索引必须写在补列之后，否则旧库建索引会因缺列失败。
+
+**会话作用域**：每个作品（`press/{作品名}`）各有一份对话记录——取最近会话、新建会话、历史列表都按 `project_dir` 过滤（比较用 `IS ?` 以覆盖 NULL），因此切换作品即切换对话上下文，互不串历史。作品页（`WorkflowPress`）把当前作品目录作为作用域下传给 `AiChat`，通用场景不带作用域即取 `project_dir IS NULL` 的那份对话。
 
 **续接规则**：只有「会话 `provider` 与当前通道一致」且 `sdk_session_id` 非空时才走 `resume`，此时仅提交本轮输入，历史由通道维护；引用原文仍每轮注入（指向的文件可能已改动）。条件任一不满足即回退到完整历史拼接，切换通道不复活旧会话号。
 
@@ -398,9 +402,9 @@ interface AbortRequest {
 
 | 方法 | 方向 | 说明 |
 |------|------|------|
-| `ai/session` | Webview → 宿主 | 取最近会话与消息；不存在时新建 |
-| `ai/newSession` | Webview → 宿主 | 新建会话 |
-| `ai/sessions` | Webview → 宿主 | 历史会话列表（`AiConversationSummary[]`，按最后活跃倒序） |
+| `ai/session` | Webview → 宿主 | 取指定作用域最近会话与消息；不存在时新建。`projectDir` 可选，缺省即通用对话 |
+| `ai/newSession` | Webview → 宿主 | 在指定作用域下新建会话（`projectDir` 可选） |
+| `ai/sessions` | Webview → 宿主 | 指定作用域的历史会话列表（`AiConversationSummary[]`，按最后活跃倒序；`projectDir` 可选） |
 | `ai/switchSession` | Webview → 宿主 | 切换到指定会话，返回含 `contexts` 的会话快照 |
 | `ai/deleteSession` | Webview → 宿主 | 删除会话及其消息（外键级联），返回 `{ deleted: boolean }` |
 | `ai/runtime` | Webview → 宿主 | 密钥状态（含脱敏 Key）、模型参数与当日用量；`model` 为当前模型 id，`modelName` 为按激活时预热清单解析出的展示名（未命中为空串），供面板初始化即显示模型名而不必等待 `ai/models` |

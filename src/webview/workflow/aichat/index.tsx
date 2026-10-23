@@ -6,6 +6,7 @@
  * 写作模式的结果由消息底部「应用到编辑栏」写回编辑器（宿主校验文档版本）。
  * 会话 / 上下文 / 运行时 / 历史 / 模型 / 写回 / 宿主命令操作拆分至 hooks/，页面区块与消息渲染拆分至 layout/。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机与第 10.3 节写回链路。
+ * 关键约束：会话按 projectDir 作用域隔离，作品页传入当前作品目录即换用该作品的对话记录，缺省为通用对话。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -28,14 +29,20 @@ import type { Phase } from './hooks/useAiChatSession'
 import type { JSX } from 'react'
 import { onState, request } from '../../bridge'
 
-export function AiChat(): JSX.Element {
+/** 对话页对外入参：只有会话作用域一项，其余状态全部由页面内部 hooks 持有 */
+export interface AiChatProps {
+    /** 会话作用域（作品目录）：同一作品共用一份对话记录，缺省或 null 表示不属于任何作品的通用对话 */
+    projectDir?: string | null
+}
+
+export function AiChat({ projectDir = null }: AiChatProps): JSX.Element {
     const { error, notice, setError, setNotice } = useAiChatStatus()
     const { runHostCommand } = useAiChatCommands({ onError: setError })
     const { contexts, setContexts, loadContexts, removeContext } = useAiChatContexts({
         onError: setError,
         onNotice: setNotice,
     })
-    const { sessions, loadSessions } = useAiChatHistory({ onError: setError })
+    const { sessions, loadSessions } = useAiChatHistory({ onError: setError, projectDir })
     const {
         choices: modelChoices,
         isLoading: isLoadingModels,
@@ -61,6 +68,7 @@ export function AiChat(): JSX.Element {
         onNotice: setNotice,
         setContexts,
         refreshSessions: loadSessions,
+        projectDir,
     })
     /** 当前写作命令：决定本轮结果是否提供写回入口（校对只报告不写回） */
     const [commandId, setCommandId] = useState<AiCommandId | null>(null)

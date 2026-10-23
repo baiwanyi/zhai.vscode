@@ -3,11 +3,12 @@
  * 设计源：docs/modules/ai-chat.md 第 6 节；日志表只存模型与用量，不存提示词正文。
  * 复用约定：activate 期调用一次，建表与补列都走 IF NOT EXISTS / PRAGMA 判断，可重复执行。
  * 关键约束：会话记录所属 AI 通道与通道侧会话号，通道切换后不得复用旧会话号；
+ * 会话按作用域（作品目录）隔离，project_dir 为 NULL 表示不属于任何作品的通用对话；
  * 补列的标识符均为本文件内的常量，不接受外部输入，避免拼接注入。
  */
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = '2'
+const SCHEMA_VERSION = '3'
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS conversations (
@@ -15,6 +16,7 @@ const DDL_STATEMENTS = [
         title       TEXT NOT NULL,
         mode        TEXT NOT NULL,
         file_path   TEXT,
+        project_dir TEXT,
         model       TEXT NOT NULL,
         provider    TEXT NOT NULL DEFAULT 'codebuddy',
         sdk_session_id TEXT,
@@ -74,6 +76,10 @@ export function ensureAiSchema(db: Database.Database): boolean {
         // v2：会话记录所属通道与通道侧会话号，供 CodeBuddy 通道续接
         ensureColumn(db, 'conversations', 'provider', "provider TEXT NOT NULL DEFAULT 'codebuddy'")
         ensureColumn(db, 'conversations', 'sdk_session_id', 'sdk_session_id TEXT')
+        // v3：会话所属作用域（作品目录），历史会话保持 NULL 即通用对话，不做回填；
+        // 依赖该列的索引必须放在补列之后，否则旧库建索引会因缺列失败
+        ensureColumn(db, 'conversations', 'project_dir', 'project_dir TEXT')
+        db.exec('CREATE INDEX IF NOT EXISTS idx_conv_project ON conversations(project_dir, updated_at DESC)')
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)

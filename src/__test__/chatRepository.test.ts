@@ -1,6 +1,6 @@
 /**
  * chatRepository 单元测试：以临时目录上的真实 SQLite 库验证会话与消息的读写、refs 列往返、
- * 级联删除与用量统计（与生产同基座 openAiDatabase，含 foreign_keys 开启）。
+ * 会话按作用域隔离、级联删除与用量统计（与生产同基座 openAiDatabase，含 foreign_keys 开启）。
  */
 import * as fs from 'node:fs'
 import * as os from 'node:os'
@@ -12,6 +12,7 @@ import type { ConversationRow, MessageRow } from '../modules/ai/db/chatRepositor
 import {
     deleteConversation,
     getConversation,
+    getLatestConversation,
     insertConversation,
     insertMessage,
     insertUsageLog,
@@ -31,6 +32,7 @@ function makeConversation(overrides: Partial<ConversationRow> = {}): Conversatio
         title: '测试会话',
         mode: 'chat',
         filePath: null,
+        projectDir: null,
         model: 'codebuddy-default',
         provider: 'codebuddy',
         sdkSessionId: null,
@@ -79,7 +81,7 @@ describe('conversations', () => {
     it('列表按最后活跃时间倒序', () => {
         insertConversation(db, makeConversation({ id: 'conv-old', updatedAt: '2026-09-01T00:00:00.000Z' }))
         insertConversation(db, makeConversation({ id: 'conv-new', updatedAt: '2026-09-20T00:00:00.000Z' }))
-        const rows = listConversations(db, 50)
+        const rows = listConversations(db, 50, null)
         const indexOfNew = rows.findIndex((row) => row.id === 'conv-new')
         const indexOfOld = rows.findIndex((row) => row.id === 'conv-old')
         expect(indexOfNew).toBeGreaterThanOrEqual(0)
@@ -87,8 +89,39 @@ describe('conversations', () => {
     })
 
     it('列表条数受 limit 限制', () => {
-        const rows = listConversations(db, 1)
+        const rows = listConversations(db, 1, null)
         expect(rows).toHaveLength(1)
+    })
+
+    it('历史列表只含同作用域的会话', () => {
+        insertConversation(
+            db,
+            makeConversation({ id: 'conv-scope-a', projectDir: 'press/A', updatedAt: '2026-09-22T00:00:00.000Z' }),
+        )
+        insertConversation(
+            db,
+            makeConversation({ id: 'conv-scope-b', projectDir: 'press/B', updatedAt: '2026-09-23T00:00:00.000Z' }),
+        )
+        const scopedIds = listConversations(db, 50, 'press/A').map((row) => row.id)
+        expect(scopedIds).toContain('conv-scope-a')
+        expect(scopedIds).not.toContain('conv-scope-b')
+        expect(scopedIds).not.toContain('conv-new')
+        const generalIds = listConversations(db, 50, null).map((row) => row.id)
+        expect(generalIds).toContain('conv-new')
+        expect(generalIds).not.toContain('conv-scope-a')
+    })
+
+    it('取最近会话按作用域过滤', () => {
+        insertConversation(
+            db,
+            makeConversation({ id: 'conv-scope-old', projectDir: 'press/latest', updatedAt: '2026-09-10T00:00:00.000Z' }),
+        )
+        insertConversation(
+            db,
+            makeConversation({ id: 'conv-scope-new', projectDir: 'press/latest', updatedAt: '2026-09-11T00:00:00.000Z' }),
+        )
+        expect(getLatestConversation(db, 'press/latest')?.id).toBe('conv-scope-new')
+        expect(getLatestConversation(db, 'press/empty')).toBeUndefined()
     })
 
     it('旧库补齐 provider 与 sdk_session_id 列', () => {

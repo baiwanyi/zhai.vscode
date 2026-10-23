@@ -1,7 +1,7 @@
 /**
  * 人物设定页：写作流程的第三步，用角色下拉筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
  * 复用约定：列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterDetail 承担、
- * 新增由 CharacterCreateDialog 承担；本文件只做筛选、搜索、弹窗编排与作品氛围的下传。
+ * 新增由 CharacterCreateDialog 承担；本文件只做筛选、搜索、弹窗编排与作品氛围、作品目录的下传。
  * 关键约束：新增后直接打开编辑弹窗，因此 onCreateCharacter 必须回传新卡 id；
  * 编辑弹窗以人物 id 作为 key 重建，关闭即丢弃草稿，页面不保留编辑中间态。
  */
@@ -23,6 +23,8 @@ interface PressCharacterPageProps {
     characters: CharacterCard[]
     /** 作品设定：外貌生成需要时代、题材与基调 */
     setting: ProjectSetting
+    /** 当前作品目录：角色卡图片落在该作品的 _portraits 下 */
+    dirPath: string
     /** 建卡并返回新卡 id，供页面直接打开编辑弹窗 */
     onCreateCharacter: (seed: CharacterSeed) => string
     onChangeCharacter: (id: string, patch: Partial<CharacterCard>) => void
@@ -31,6 +33,7 @@ interface PressCharacterPageProps {
 export function PressCharacterPage({
     characters,
     setting,
+    dirPath,
     onCreateCharacter,
     onChangeCharacter,
 }: PressCharacterPageProps): JSX.Element {
@@ -153,6 +156,7 @@ export function PressCharacterPage({
                     key={editingCharacter.id}
                     character={editingCharacter}
                     aiContext={aiContext}
+                    dirPath={dirPath}
                     onSave={onChangeCharacter}
                     onCancel={() => setEditingId(null)}
                 />
