@@ -43,6 +43,14 @@ export interface ZhaiConfig {
     imageSize: string
     /** 角色设定图每日生成次数上限 */
     imageDailyLimit: number
+    /** 校对正文长度上限：超出后截断，只检查前 maxChars 个字符 */
+    proofreadMaxChars: number
+    /** AI 校对每日次数上限（0 或负数表示不限） */
+    proofreadAiDailyLimit: number
+    /** AI 校对单批字符数：过小会切出大量批次，过大则单次响应变慢 */
+    proofreadBatchChars: number
+    /** AI 特征检测（朱雀）每日次数上限（0 或负数表示不限） */
+    proofreadZhuqueDailyLimit: number
     telemetryEnabled: boolean
 }
 
@@ -66,12 +74,17 @@ const MIN_CHAPTER_SNAPSHOT_INTERVAL_SECONDS = 30
 /** 章节自动快照间隔上限：一小时一版已是兜底语义，再大等于关闭 */
 const MAX_CHAPTER_SNAPSHOT_INTERVAL_SECONDS = 3600
 
-/** 收敛数值配置：非法值回落默认，越界值夹到上下限内 */
-function readBoundedSeconds(value: number, fallback: number, min: number, max: number): number {
+/** 收敛整数配置：非法值回落默认，越界值夹到上下限内 */
+function readBoundedInt(value: number, fallback: number, min: number, max: number): number {
     if (!Number.isFinite(value)) {
         return fallback
     }
     return Math.min(Math.max(Math.floor(value), min), max)
+}
+
+/** 收敛秒数配置：与整数口径一致，单独命名以标明入参语义 */
+function readBoundedSeconds(value: number, fallback: number, min: number, max: number): number {
+    return readBoundedInt(value, fallback, min, max)
 }
 
 /** 收敛自动快照间隔：非法值回落默认，越界值夹到上下限内 */
@@ -132,6 +145,10 @@ export function getZhaiConfig(): ZhaiConfig {
         ),
         imageSize: cfg.get<string>('image.size', '768x1024'),
         imageDailyLimit: cfg.get<number>('image.dailyLimit', 20),
+        proofreadMaxChars: readBoundedInt(cfg.get<number>('proofread.maxChars', 20000), 20000, 1000, 200000),
+        proofreadAiDailyLimit: readBoundedInt(cfg.get<number>('proofread.aiDailyLimit', 30), 30, 0, 1000),
+        proofreadBatchChars: readBoundedInt(cfg.get<number>('proofread.batchChars', 1200), 1200, 400, 4000),
+        proofreadZhuqueDailyLimit: readBoundedInt(cfg.get<number>('proofread.zhuqueDailyLimit', 10), 10, 0, 500),
         telemetryEnabled: cfg.get<boolean>('telemetry.enabled', false),
     }
 }

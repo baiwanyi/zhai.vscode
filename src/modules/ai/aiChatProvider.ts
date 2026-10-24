@@ -1,6 +1,6 @@
 /**
  * AI 对话 Webview 面板（宿主侧）：加载 React 构建产物，路由 ai/* 与 workflow/* 协议到对话服务与工作流路由，
- * 并把 naming/* 与写作管理协议（pressAi/* 生成类、press/workspace 与 press/open 作品类、
+ * 并把 naming/*、校对协议（proofread/*）与写作管理协议（pressAi/* 生成类、press/workspace 与 press/open 作品类、
  * press/extract/characters 人物卡提取、press/extract/outline 大纲提取）委托给各自路由。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
  * 上下文增删走 ai/context*，写回走 ai/writeState / ai/setMode / ai/applyWrite，state 广播以 channel 区分
@@ -23,6 +23,7 @@ import type { SecretsService } from '../common/secrets'
 import type { ToastService } from '../common/toastService'
 import type { NamingRoutes } from '../naming/namingRoutes'
 import type { PressRoutes } from '../press/pressRoutes'
+import type { ProofreadRoutes } from '../proofread/proofreadRoutes'
 import { isAiUsageModule, isAiUsageRange } from '../../shared/types/aiUsage'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
@@ -82,6 +83,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         private readonly workflowRouter: WorkflowRouter,
         private readonly naming: NamingRoutes,
         private readonly press: PressRoutes,
+        private readonly proofread: ProofreadRoutes,
         private readonly secrets: SecretsService,
         private readonly state: vscode.Memento,
         private readonly toast: ToastService,
@@ -232,6 +234,15 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 return { executed: true }
             }
             default:
+                if (method.startsWith('proofread/')) {
+                    return this.proofread.handle(method, payload, (completed, total) =>
+                        this.post(view, {
+                            type: 'state',
+                            channel: 'proofread',
+                            payload: { kind: 'progress', batch: completed, total },
+                        }),
+                    )
+                }
                 if (method.startsWith('naming/')) {
                     return this.naming.handle(method, payload)
                 }

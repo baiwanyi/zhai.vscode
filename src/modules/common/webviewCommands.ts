@@ -15,4 +15,6 @@ export const WEBVIEW_ALLOWED_COMMANDS: ReadonlySet<string> = new Set([
     'zhai.openAiChat',
     // AI 对话：未登录时面板内的「登录」按钮经 host/command 触发浏览器授权
     'zhai.ai.loginCodebuddy',
+    // 校对：AI 特征检测未配置密钥时，页面内按钮弹出宿主输入框
+    'zhai.proofread.setZhuqueKey',
 ])

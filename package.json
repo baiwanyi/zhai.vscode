@@ -94,6 +94,11 @@
                 "icon": "$(gear)"
             },
             {
+                "command": "zhai.proofread.setZhuqueKey",
+                "title": "配置朱雀 API Key",
+                "category": "宅写作"
+            },
+            {
                 "command": "zhai.exportDiagnostics",
                 "title": "查看日志",
                 "category": "宅写作"
@@ -284,8 +289,42 @@
                 }
             },
             {
-                "title": "宅写作：隐私与遥测",
+                "title": "宅写作：校对",
                 "order": 5,
+                "properties": {
+                    "zhai.proofread.maxChars": {
+                        "type": "number",
+                        "default": 20000,
+                        "minimum": 1000,
+                        "maximum": 200000,
+                        "description": "单次校对的正文长度上限（字符）：超出后只检查前若干字符，避免超长文档拖慢面板"
+                    },
+                    "zhai.proofread.aiDailyLimit": {
+                        "type": "number",
+                        "default": 30,
+                        "minimum": 0,
+                        "maximum": 1000,
+                        "description": "AI 校对每日次数上限（0 或负数表示不限）：每校对一次计一次，与出图、取名分开计数"
+                    },
+                    "zhai.proofread.batchChars": {
+                        "type": "number",
+                        "default": 1200,
+                        "minimum": 400,
+                        "maximum": 4000,
+                        "description": "AI 校对单批字符数：数值越小批次越多、越容易看到进度，数值越大单批响应越慢"
+                    },
+                    "zhai.proofread.zhuqueDailyLimit": {
+                        "type": "number",
+                        "default": 10,
+                        "minimum": 0,
+                        "maximum": 500,
+                        "description": "AI 特征检测（朱雀）每日次数上限（0 或负数表示不限）：正文会上传至腾讯云检测服务"
+                    }
+                }
+            },
+            {
+                "title": "宅写作：隐私与遥测",
+                "order": 6,
                 "properties": {
                     "zhai.telemetry.enabled": {
                         "type": "boolean",

@@ -50,11 +50,12 @@ export interface ToastPayload {
  * 作品导入进度、语义归纳进度、操作反馈）。
  * press-import 通道承载导入任务的进度与终态，载荷形如 PressImportProgress；
  * press-semantic 通道承载 AI 语义归纳的进度与终态，载荷形如 PressSemanticProgress；
+ * proofread 通道承载 AI 校对的分批进度，载荷形如 ProofreadAiProgress；
  * toast 通道承载宿主的操作反馈，载荷形如 ToastPayload。
  */
 export interface StateMessage {
     type: 'state'
-    channel: 'index' | 'config' | 'ai' | 'note' | 'workflow' | 'press-import' | 'press-semantic' | 'toast'
+    channel: 'index' | 'config' | 'ai' | 'note' | 'workflow' | 'press-import' | 'press-semantic' | 'proofread' | 'toast'
     payload: unknown
 }
 
@@ -159,6 +160,21 @@ export type HostMethodName =
     | 'pressAi/listPortraits'
     | 'pressAi/saveCover'
     | 'pressAi/selectCover'
+    | 'proofread/ai'
+    | 'proofread/ai/abort'
+    | 'proofread/aiDetect'
+    | 'proofread/aiDetect/cache'
+    | 'proofread/aiDetect/consent'
+    | 'proofread/aiDetect/state'
+    | 'proofread/apply'
+    | 'proofread/cache'
+    | 'proofread/lexicon'
+    | 'proofread/lexicon/open'
+    | 'proofread/lexicon/read'
+    | 'proofread/lexicon/save'
+    | 'proofread/local'
+    | 'proofread/reveal'
+    | 'proofread/target'
     | 'workflow/open'
     | 'workflow/reset'
     | 'workflow/state'
@@ -173,6 +189,7 @@ function isStateChannel(value: unknown): value is StateMessage['channel'] {
         value === 'workflow' ||
         value === 'press-import' ||
         value === 'press-semantic' ||
+        value === 'proofread' ||
         value === 'toast'
     )
 }

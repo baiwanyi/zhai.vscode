@@ -40,6 +40,9 @@ import { PressAiService } from './modules/press/pressAiService'
 import { PressRoutes } from './modules/press/pressRoutes'
 import { PressSnapshotService } from './modules/press/snapshot/snapshotService'
 import { registerPressSnapshotWatcher } from './modules/press/snapshot/snapshotWatcher'
+import { registerProofreadCommands } from './modules/proofread/commands'
+import { ProofreadRoutes } from './modules/proofread/proofreadRoutes'
+import { ProofreadService } from './modules/proofread/proofreadService'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -144,6 +147,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         snapshotService,
     )
 
+    // 校对：本地规则检查与写回都基于编辑器内存态，写回前与 AI 写回共用同一份快照留底；
+    // AI 通道与用量记账复用对话侧实例，每日次数记在 press.db 的 meta 表，与出图、取名分账
+    const proofreadService = new ProofreadService({
+        provider: aiProvider,
+        usageRecorder,
+        db: pressDb,
+        secrets,
+        state: context.globalState,
+        beforeWrite: (uri, content): Promise<void> => snapshotService.captureChapterBeforeWrite(uri, content),
+    })
+    const proofreadRoutes = new ProofreadRoutes(proofreadService)
+    registerProofreadCommands(context, secrets, toastService)
+
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,
         aiChatService,
@@ -151,6 +167,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         workflowRouter,
         namingRoutes,
         pressRoutes,
+        proofreadRoutes,
         secrets,
         context.globalState,
         toastService,

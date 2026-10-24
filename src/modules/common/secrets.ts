@@ -9,6 +9,7 @@ const SECRET_KEYS = {
     codebuddyApiKey: 'zhai.codebuddy.apiKey',
     weiboAccessToken: 'zhai.weibo.accessToken',
     wechatAccessToken: 'zhai.wechat.accessToken',
+    zhuqueApiKey: 'zhai.zhuque.apiKey',
 } as const
 
 export type SecretKey = keyof typeof SECRET_KEYS
