@@ -201,3 +201,6 @@ export const REQUIRED_SETTING_KEYS: readonly (keyof ProjectSetting)[] = [
     'goldenFingerAbility',
     'conflict',
 ]
+
+/** 新建卷、新建章时的默认单章目标字数，与网文常规更新量一致 */
+export const DEFAULT_CHAPTER_WORD_GOAL = 2500

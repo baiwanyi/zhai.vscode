@@ -1,11 +1,16 @@
 /**
  * Webview 消息桥：封装 acquireVsCodeApi、reqId 请求-响应匹配与宿主推送（stream / state）订阅。
+ * 复用约定：方法名统一取 @shared/types/messages 的 HostMethodName，入站消息一律经类型守卫收窄，
+ * 不再对 event.data 做双重断言；错误统一包成 HostRequestError 保留原因码。
  * 约束：acquireVsCodeApi 全局仅可调用一次；响应按 reqId 匹配 resolve，请求侧自带超时。
+ * 关键约束：浏览器预览环境没有宿主，request 直接拒绝而不是静默挂起；未知通道与畸形消息一律丢弃，
+ * 避免订阅者按不可信数据分支。
  */
-import type { StateMessage, StreamMessage } from '@shared/types/messages'
+import { isResponseMessage, isStateMessage, isStreamMessage } from '@shared/types/messages'
+import type { HostMethodName, RequestMessage, StateMessage, StreamMessage } from '@shared/types/messages'
 
 interface VsCodeApi {
-    postMessage(message: unknown): void
+    postMessage(message: RequestMessage): void
 }
 
 declare function acquireVsCodeApi(): VsCodeApi
@@ -40,32 +45,21 @@ const DEFAULT_TIMEOUT_MS = 10_000
 const streamListeners = new Set<(message: StreamMessage) => void>()
 const stateListeners = new Set<(message: StateMessage) => void>()
 
-interface IncomingMessage {
-    type?: string
-    reqId?: string
-    ok?: boolean
-    payload?: unknown
-    error?: { code?: string; message?: string }
-    delta?: unknown
-}
-
 window.addEventListener('message', (event: MessageEvent) => {
-    const message = event.data as IncomingMessage
-    if (message.type === 'stream' && typeof message.delta === 'string') {
-        const streamMessage = message as unknown as StreamMessage
+    const message: unknown = event.data
+    if (isStreamMessage(message)) {
         for (const listener of streamListeners) {
-            listener(streamMessage)
+            listener(message)
         }
         return
     }
-    if (message.type === 'state') {
-        const stateMessage = message as unknown as StateMessage
+    if (isStateMessage(message)) {
         for (const listener of stateListeners) {
-            listener(stateMessage)
+            listener(message)
         }
         return
     }
-    if (message.type !== 'response' || typeof message.reqId !== 'string') {
+    if (!isResponseMessage(message)) {
         return
     }
     const entry = pendingRequests.get(message.reqId)
@@ -74,7 +68,7 @@ window.addEventListener('message', (event: MessageEvent) => {
     }
     clearTimeout(entry.timer)
     pendingRequests.delete(message.reqId)
-    if (message.ok === false) {
+    if (!message.ok) {
         const code = message.error?.code ?? 'unknown'
         entry.reject(new HostRequestError(code, message.error?.message ?? '宿主返回未知错误'))
         return
@@ -82,8 +76,15 @@ window.addEventListener('message', (event: MessageEvent) => {
     entry.resolve(message.payload)
 })
 
-/** 向宿主发送请求并等待响应，超时自动拒绝避免永久挂起 */
-export function request<T>(method: string, payload?: unknown, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<T> {
+/**
+ * 向宿主发送请求并等待响应，超时自动拒绝避免永久挂起。
+ * 方法名受 HostMethodName 约束（编译期防拼写错误），返回值类型由调用方用泛型标注。
+ */
+export function request<T = unknown>(
+    method: HostMethodName,
+    payload?: unknown,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<T> {
     const reqId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     return new Promise<T>((resolve, reject) => {
         if (!api) {

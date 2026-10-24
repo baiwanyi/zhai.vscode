@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { PressExtractCharactersResult } from '@shared/types/press'
 import { onState, request } from '../../../bridge'
+import { toErrorText } from '../../../utils'
 
 /** 请求超时：角色卡每批 4 人、单批最长 120s，按上限留足余量 */
 const EXTRACT_TIMEOUT_MS = 600_000
@@ -94,7 +95,7 @@ export function useCharacterExtract(dirPath: string): CharacterExtractState {
             )
         } catch (cause) {
             // 失败没有界面承载点，仍用 sonner 给出原因
-            toast.error(cause instanceof Error ? cause.message : String(cause))
+            toast.error(toErrorText(cause))
             return null
         } finally {
             isExtractingRef.current = false

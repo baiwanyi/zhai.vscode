@@ -8,6 +8,7 @@ import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { PressExtractOutlineResult } from '@shared/types/press'
 import { request } from '../../../bridge'
+import { toErrorText } from '../../../utils'
 
 /** 过程提示的固定 toast id：同一轮提取始终更新同一条提示 */
 const EXTRACT_TOAST_ID = 'press-outline-extract'
@@ -42,7 +43,7 @@ export function useOutlineExtract(dirPath: string): OutlineExtractState {
             toast.dismiss(EXTRACT_TOAST_ID)
             return result
         } catch (cause) {
-            toast.error(cause instanceof Error ? cause.message : String(cause), { id: EXTRACT_TOAST_ID })
+            toast.error(toErrorText(cause), { id: EXTRACT_TOAST_ID })
             return null
         } finally {
             isExtractingRef.current = false

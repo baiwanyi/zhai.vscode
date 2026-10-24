@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { DashboardStats } from '@shared/types/dashboard'
 import { onState, request } from '../../bridge'
+import { toErrorText } from '../../utils'
 
 /** 重建期间轮询间隔，使按钮态与统计随宿主进度收敛 */
 const POLL_INTERVAL_MS = 1500
@@ -34,7 +35,7 @@ export function useDashboardStats(): DashboardStatsState {
             setError(null)
         } catch (cause) {
             setStatus('error')
-            setError(cause instanceof Error ? cause.message : String(cause))
+            setError(toErrorText(cause))
         }
     }, [])
 

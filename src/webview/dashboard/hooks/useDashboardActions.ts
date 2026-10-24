@@ -7,9 +7,11 @@
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import type { NoteAction } from '@shared/types/dashboard'
+import type { HostMethodName } from '@shared/types/messages'
 import type { CreatedNote, OpenNoteRequest, OpenNoteResult, PinNotesRequest } from '@shared/types/note'
 import type { OpenWorkflowRequest, OpenWorkflowResult } from '@shared/types/workflow'
 import { request } from '../../bridge'
+import { toErrorText } from '../../utils'
 
 /** 尚未接入宿主协议的条目操作 */
 export type PendingNoteAction = Extract<NoteAction, 'delete'>
@@ -35,13 +37,13 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
     const [pendingAction, setPendingAction] = useState<string | null>(null)
 
     const runAction = useCallback(
-        async (action: string, method: string, payload?: unknown): Promise<void> => {
+        async (action: string, method: HostMethodName, payload?: unknown): Promise<void> => {
             setPendingAction(action)
             try {
                 await request(method, payload)
                 await onCompleted()
             } catch (cause) {
-                toast.error(cause instanceof Error ? cause.message : String(cause))
+                toast.error(toErrorText(cause))
             } finally {
                 setPendingAction(null)
             }
@@ -58,7 +60,7 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
             toast.success(`已创建笔记：${created.title}`)
             return created
         } catch (cause) {
-            toast.error(cause instanceof Error ? cause.message : String(cause))
+            toast.error(toErrorText(cause))
             return null
         } finally {
             setPendingAction(null)
@@ -71,7 +73,7 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         try {
             await request<OpenNoteResult>('note/open', payload)
         } catch (cause) {
-            toast.error(cause instanceof Error ? cause.message : String(cause))
+            toast.error(toErrorText(cause))
         }
     }, [])
 
@@ -84,7 +86,7 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         try {
             await request<OpenWorkflowResult>('workflow/open', payload)
         } catch (cause) {
-            toast.error(cause instanceof Error ? cause.message : String(cause))
+            toast.error(toErrorText(cause))
         }
     }, [])
 

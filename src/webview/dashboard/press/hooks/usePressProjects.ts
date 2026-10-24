@@ -14,7 +14,7 @@ import type {
 } from '@shared/types/press'
 import type { PressStatus } from '../utils'
 import { onState, request } from '../../../bridge'
-import { toastError } from '../../../utils'
+import { toErrorText, toastError  } from '../../../utils'
 
 export interface PressProjectsState {
     projects: PressProjectSummary[]
@@ -40,7 +40,7 @@ export function usePressProjects(): PressProjectsState {
             setError(null)
         } catch (cause) {
             setStatus('error')
-            setError(cause instanceof Error ? cause.message : String(cause))
+            setError(toErrorText(cause))
         }
     }, [])
 

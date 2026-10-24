@@ -74,6 +74,143 @@ export type HostToWebviewMessage = ResponseMessage | StreamMessage | StateMessag
 
 export type WebviewToHostMessage = RequestMessage
 
+/**
+ * Webview → 宿主的请求方法名：与扩展侧 handler 注册表一一对应。
+ * 收窄成字面量联合后，拼错方法名在编译期就会失败，而不是等到运行时收到「未知方法」。
+ * 新增方法时两侧同时维护（本表 + src/modules 的注册表），不放宽为 string。
+ */
+export type HostMethodName =
+    | 'ai/abort'
+    | 'ai/applyWrite'
+    | 'ai/context'
+    | 'ai/context/clear'
+    | 'ai/context/remove'
+    | 'ai/deleteSession'
+    | 'ai/draft'
+    | 'ai/models'
+    | 'ai/newSession'
+    | 'ai/runtime'
+    | 'ai/selectModel'
+    | 'ai/send'
+    | 'ai/session'
+    | 'ai/sessions'
+    | 'ai/setMode'
+    | 'ai/switchSession'
+    | 'ai/usage'
+    | 'ai/usage/prompt'
+    | 'ai/writeState'
+    | 'dashboard/stats'
+    | 'host/command'
+    | 'index/rebuild'
+    | 'naming/abort'
+    | 'naming/aiGenerate'
+    | 'naming/catalog'
+    | 'naming/favorite/toggle'
+    | 'naming/favorites'
+    | 'naming/generate'
+    | 'naming/history'
+    | 'naming/history/clear'
+    | 'note/active'
+    | 'note/create'
+    | 'note/open'
+    | 'note/pin'
+    | 'press/analyze'
+    | 'press/apply'
+    | 'press/create'
+    | 'press/createChapter'
+    | 'press/createVolume'
+    | 'press/deleteChapter'
+    | 'press/deleteProject'
+    | 'press/deleteVolume'
+    | 'press/detail'
+    | 'press/extract/characters'
+    | 'press/extract/outline'
+    | 'press/extract/setting'
+    | 'press/import/cancel'
+    | 'press/import/pick'
+    | 'press/import/start'
+    | 'press/moveChapter'
+    | 'press/open'
+    | 'press/openChapter'
+    | 'press/projects'
+    | 'press/renameVolume'
+    | 'press/snapshot/chapter/capture'
+    | 'press/snapshot/chapter/delete'
+    | 'press/snapshot/chapter/list'
+    | 'press/snapshot/chapter/restore'
+    | 'press/snapshot/chapter/versions'
+    | 'press/snapshot/create'
+    | 'press/snapshot/delete'
+    | 'press/snapshot/list'
+    | 'press/snapshot/restore'
+    | 'press/workspace'
+    | 'pressAi/aiAppearance'
+    | 'pressAi/aiAppearance/abort'
+    | 'pressAi/aiPortrait/abort'
+    | 'pressAi/copyPortrait'
+    | 'pressAi/deleteCover'
+    | 'pressAi/deletePortrait'
+    | 'pressAi/generateCover'
+    | 'pressAi/generatePortrait'
+    | 'pressAi/insertPortrait'
+    | 'pressAi/listCover'
+    | 'pressAi/listPortraitGallery'
+    | 'pressAi/listPortraits'
+    | 'pressAi/saveCover'
+    | 'pressAi/selectCover'
+    | 'workflow/open'
+    | 'workflow/reset'
+    | 'workflow/state'
+
+/** 状态广播通道白名单：未知通道直接丢弃，避免订阅者按不可信的 channel 分支 */
+function isStateChannel(value: unknown): value is StateMessage['channel'] {
+    return (
+        value === 'index' ||
+        value === 'config' ||
+        value === 'ai' ||
+        value === 'note' ||
+        value === 'workflow' ||
+        value === 'press-import' ||
+        value === 'press-semantic' ||
+        value === 'toast'
+    )
+}
+
+/**
+ * 收窄流式增量：Webview 收到的数据不可信，逐字段校验后才交给订阅者。
+ * delta 为空串是合法的（如仅 reasoning 增量），故只校验类型不校验长度。
+ */
+export function isStreamMessage(input: unknown): input is StreamMessage {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const { type, reqId, delta, done } = input as {
+        type?: unknown
+        reqId?: unknown
+        delta?: unknown
+        done?: unknown
+    }
+    return type === 'stream' && typeof reqId === 'string' && typeof delta === 'string' && typeof done === 'boolean'
+}
+
+/** 收窄状态广播：channel 必须在白名单内，payload 的具体形状由各通道自行再校验 */
+export function isStateMessage(input: unknown): input is StateMessage {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const { type, channel } = input as { type?: unknown; channel?: unknown }
+    return type === 'state' && isStateChannel(channel)
+}
+
+/** 收窄请求响应：ok 必须显式为布尔，缺失时视为畸形消息直接丢弃 */
+export function isResponseMessage(input: unknown): input is ResponseMessage {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const { type, reqId, ok } = input as { type?: unknown; reqId?: unknown; ok?: unknown }
+    return type === 'response' && typeof reqId === 'string' && typeof ok === 'boolean'
+}
+
 /** 判断是否为请求消息（类型收窄辅助） */
 export function isRequestMessage(message: unknown): message is RequestMessage {
     return (

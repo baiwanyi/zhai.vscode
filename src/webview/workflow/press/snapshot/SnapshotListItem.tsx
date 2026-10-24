@@ -9,6 +9,7 @@ import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { PressSnapshotEntry, PressSnapshotFileKey, PressSnapshotReason } from '@shared/types/press'
+import { formatSize, formatSnapshotTime } from './snapshotFormat'
 import type { JSX } from 'react'
 
 /** 来源中文标签：手动与恢复前留底要和自动快照区分开，避免用户误删人工留的版本 */
@@ -24,29 +25,6 @@ const FILE_LABELS: Readonly<Record<PressSnapshotFileKey, string>> = {
     setting: '设定',
     characters: '角色',
     outline: '大纲',
-}
-
-/** 补零：时间与体积都需要两位对齐 */
-function pad(value: number): string {
-    return String(value).padStart(2, '0')
-}
-
-/** 格式化创建时间：本地时间到分钟，跨年份不影响可读性 */
-function formatSnapshotTime(value: string): string {
-    const date = new Date(value)
-    if (Number.isNaN(date.getTime())) {
-        return value
-    }
-    const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
-    return `${day} ${pad(date.getHours())}:${pad(date.getMinutes())}`
-}
-
-/** 格式化体积：不足 1KB 显示字节，其余保留一位小数 */
-function formatSize(bytes: number): string {
-    if (bytes < 1024) {
-        return `${bytes} B`
-    }
-    return `${(bytes / 1024).toFixed(1)} KB`
 }
 
 interface SnapshotListItemProps {

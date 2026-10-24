@@ -1,41 +1,29 @@
 /**
- * AI 使用量页展示格式化：时间、积分、tokens、请求 id、耗时与提示词复制。
- * 复用约定：格式化均为纯函数、不依赖宿主，便于单测；无效时间返回空串，与 webview 共享的时间展示口径一致；
- * 复制类操作直接写系统剪贴板，失败返回 false 交调用方提示，不在此抛错。
+ * AI 使用量页展示格式化：积分、请求 id、耗时与模块标签。
+ * 复用约定：时间与 token 折算、错误文案、剪贴板写入统一来自 @webview/utils，
+ * 本文件只保留账单页特有的格式化，并用别名转发，调用点无需改动。
  * 关键约束：积分未知（null）一律显示破折号，不得回退成 0.00，否则会把未知成本显示成零消耗；
  * 请求 id 在表格中只截短展示，完整值通过 title 与弹窗标题给出。
  */
 import { AI_USAGE_MODULE_LABELS } from '@shared/types/aiUsage'
 import type { AiUsageModule } from '@shared/types/aiUsage'
 
+// 时间与 token 折算、错误文案、剪贴板写入已上移到 @webview/utils；此处转发保持账单页调用点不变
+export {
+    copyToClipboard as copyPrompt,
+    formatDateTime as formatUsageTime,
+    formatTokens,
+    toErrorText,
+} from '@webview/utils'
+
 /** 请求 id 在表格中的展示长度 */
 const SHORT_ID_LENGTH = 8
-/** 千 token 的换算基数 */
-const TOKEN_UNIT = 1000
 /** 毫秒与秒的换算基数 */
 const MS_UNIT = 1000
-
-/** 时间展示：本地 `YYYY-MM-DD HH:mm`，便于与用量账单逐条对账 */
-export function formatUsageTime(iso: string): string {
-    const time = new Date(iso)
-    if (Number.isNaN(time.getTime())) {
-        return ''
-    }
-    const pad = (value: number): string => String(value).padStart(2, '0')
-    return `${String(time.getFullYear())}-${pad(time.getMonth() + 1)}-${pad(time.getDate())} ${pad(time.getHours())}:${pad(time.getMinutes())}`
-}
 
 /** 积分展示：未知返回破折号，已知保留两位小数 */
 export function formatCredits(credits: number | null): string {
     return credits === null ? '—' : credits.toFixed(2)
-}
-
-/** token 展示：过千折算为 k，保留一位小数 */
-export function formatTokens(tokens: number): string {
-    if (tokens < TOKEN_UNIT) {
-        return String(tokens)
-    }
-    return `${(tokens / TOKEN_UNIT).toFixed(1)}k`
 }
 
 /** 耗时展示：不足一秒用毫秒，否则折算为秒 */
@@ -54,19 +42,4 @@ export function shortRequestId(requestId: string): string {
 /** 模块标签：未登记的键回落到对话，与宿主归一规则一致 */
 export function readModuleLabel(module: AiUsageModule): string {
     return AI_USAGE_MODULE_LABELS[module]
-}
-
-/** 错误文案：宿主协议错误以 Error 抛出，其余形态兜底转字符串 */
-export function toErrorText(cause: unknown): string {
-    return cause instanceof Error ? cause.message : String(cause)
-}
-
-/** 复制提示词：写系统剪贴板，失败返回 false 由调用方提示，与取名页的复制保持同一模式 */
-export async function copyPrompt(content: string): Promise<boolean> {
-    try {
-        await navigator.clipboard.writeText(content)
-        return true
-    } catch {
-        return false
-    }
 }

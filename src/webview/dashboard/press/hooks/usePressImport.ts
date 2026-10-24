@@ -15,7 +15,7 @@ import type {
     PressImportStartResult,
 } from '@shared/types/press'
 import { HostRequestError, onState, request } from '../../../bridge'
-import { toastError } from '../../../utils'
+import { toErrorText, toastError } from '../../../utils'
 
 /** 进度提示的固定 toast id：同一任务的进度与终态始终更新同一条提示 */
 const IMPORT_TOAST_ID = 'press-import'
@@ -54,7 +54,7 @@ function toImportErrorMessage(cause: unknown): string {
     if (cause instanceof HostRequestError && isImportErrorCode(cause.code) && cause.code !== 'internal') {
         return IMPORT_ERROR_MESSAGES[cause.code]
     }
-    return cause instanceof Error ? cause.message : String(cause)
+    return toErrorText(cause)
 }
 
 /** 判断是否为导入进度载荷（类型收窄辅助）：只校验分派所需的最小字段 */

@@ -8,6 +8,7 @@ import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import type { PressAnalyzeResult } from '@shared/types/press'
 import { request } from '../../../bridge'
+import { toErrorText } from '../../../utils'
 
 /** 过程提示的固定 toast id：同一轮抽取始终更新同一条提示 */
 const ANALYZE_TOAST_ID = 'press-analyze'
@@ -35,7 +36,7 @@ export function usePressAnalyze(dirPath: string): PressAnalyzeState {
             )
             return result
         } catch (cause) {
-            toast.error(cause instanceof Error ? cause.message : String(cause), { id: ANALYZE_TOAST_ID })
+            toast.error(toErrorText(cause), { id: ANALYZE_TOAST_ID })
             return null
         } finally {
             setIsAnalyzing(false)

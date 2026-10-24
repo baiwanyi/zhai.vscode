@@ -6,23 +6,12 @@
  * 命令模板只在发送瞬间拼接、在展示时按最长前缀剥离，输入框与消息气泡均不出现 instruction 全文。
  */
 import type { AiContextRef, AiConversationMode, AiMessage, AiSessionSnapshot } from '@shared/types/aiChat'
+import { formatTokens, toErrorText } from '@webview/utils'
 import { AI_COMMAND_PREFIXES } from './constants'
 import type { AiCommand } from './constants'
 
-/** token 数量紧凑展示：过千折算 k，过百万折算 M */
-export function formatTokens(value: number): string {
-    if (value >= 1_000_000) {
-        return `${(value / 1_000_000).toFixed(1)}M`
-    }
-    if (value >= 1_000) {
-        return `${(value / 1_000).toFixed(1)}k`
-    }
-    return String(value)
-}
-
-export function toErrorText(cause: unknown): string {
-    return cause instanceof Error ? cause.message : String(cause)
-}
+// token 折算与错误文案已上移到 @webview/utils，实现只保留一份；此处转发是为了不改动各调用点的导入路径
+export { formatTokens, toErrorText }
 
 /** 引用体积描述：过千折算 k，被截断时追加标注 */
 export function describeContext(ref: AiContextRef): string {

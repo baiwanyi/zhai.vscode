@@ -38,20 +38,8 @@ export function readSurnameSamples(catalog: NamingCatalog, kind: NamingSurnameKi
     return kind === 'compound' ? catalog.surnameSamples.compound : catalog.surnameSamples.single
 }
 
-/** 错误文案归一化 */
-export function toErrorText(cause: unknown): string {
-    return cause instanceof Error ? cause.message : String(cause)
-}
-
-/** 复制名字：写剪贴板，失败返回 false 由调用方提示 */
-export async function copyName(name: string): Promise<boolean> {
-    try {
-        await navigator.clipboard.writeText(name)
-        return true
-    } catch {
-        return false
-    }
-}
+// 错误文案与剪贴板写入已上移到 @webview/utils，实现只保留一份；此处转发是为了不改动调用点的导入路径
+export { copyToClipboard as copyName, toErrorText } from '@webview/utils'
 
 /** 结果名字列表转纯文本（供整批复制） */
 export function joinNames(items: readonly NamingCandidate[]): string {
