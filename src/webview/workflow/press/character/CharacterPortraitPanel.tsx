@@ -191,7 +191,7 @@ export function CharacterPortraitPanel({
                                 void handleGenerate()
                             }}
                         >
-                            <Sparkles data-icon="inline-start" />
+                            <Sparkles />
                             生成
                         </Button>
                     )}
@@ -273,7 +273,7 @@ export function CharacterPortraitPanel({
                                 void handleCopyImage()
                             }}
                         >
-                            <Copy data-icon="inline-start" />
+                            <Copy />
                             复制图片
                         </Button>
                         <Button
@@ -281,7 +281,7 @@ export function CharacterPortraitPanel({
                                 void handleInsertImage()
                             }}
                         >
-                            <TextCursorInput data-icon="inline-start" />
+                            <TextCursorInput />
                             插入到文章
                         </Button>
                     </DialogFooter>

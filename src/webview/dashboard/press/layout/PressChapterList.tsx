@@ -105,7 +105,7 @@ export function PressChapterList({
                         disabled={isCreatingVolume}
                         onClick={onCreateVolume}
                     >
-                        <BookPlus data-icon="inline-start" />
+                        <BookPlus />
                         新建卷
                     </Button>
                 </EmptyContent>

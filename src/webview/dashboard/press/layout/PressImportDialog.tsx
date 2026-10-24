@@ -1,6 +1,6 @@
 /**
  * 导入确认弹窗：展示预检结果（编码、章节数、卷数、字数、首末章标题）并允许修正作品名与目标读者。
- * 复用 @components/ui 的 dialog、field、input、alert、toggle-group，目标读者取值取自 shared/types/press；
+ * 复用 @components/ui 的 dialog、field、textarea、alert、toggle-group，目标读者取值取自 shared/types/press；
  * 字数展示复用 dashboard 的 formatWordCount，与作品列表口径一致。
  * 关键约束：作品名以宿主建议值为初值，用户可改；预检告警逐条列出，让用户在落盘前决定是否继续；
  * 导入只负责写入正文，不触发 AI 归纳（归纳改由作品设定页 / 大纲页手动发起）；
@@ -18,7 +18,7 @@ import {
     DialogTitle,
 } from '@components/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
-import { Input } from '@components/ui/input'
+import { Textarea } from '@components/ui/textarea'
 import type { PressAudience, PressImportCandidate } from '@shared/types/press'
 import { DEFAULT_PRESS_AUDIENCE, PRESS_AUDIENCES, readPressAudience } from '@shared/types/press'
 import { Button } from '@webview/components/Button'
@@ -55,7 +55,8 @@ export function PressImportDialog({
     if (candidate === null) {
         return null
     }
-    const trimmedName = name.trim()
+    // 作品名按单行语义提交：textarea 里的换行与连续空白折叠成一个空格，避免带进目录名
+    const trimmedName = name.replace(/\s+/g, ' ').trim()
     const isSubmitDisabled = isImporting || trimmedName.length === 0
     const volumeLabel = candidate.volumeCount > 0 ? `${String(candidate.volumeCount)} 卷` : '未分卷'
 
@@ -79,7 +80,7 @@ export function PressImportDialog({
                 <DialogHeader>
                     <DialogTitle className="text-lg">导入作品</DialogTitle>
                     <DialogDescription>
-                        文件已通过安全检查，确认后将按作品结构写入 press/ 目录，正文原样保留。
+                        文件已通过安全检查，确认后将按作品结构写入作品目录，正文原样保留。
                     </DialogDescription>
                 </DialogHeader>
                 <dl className="grid grid-cols-2 gap-x-3 gap-y-2">
@@ -109,7 +110,7 @@ export function PressImportDialog({
                     </div>
                 </dl>
                 {candidate.warnings.length > 0 ? (
-                    <Alert>
+                    <Alert variant="destructive">
                         <TriangleAlert />
                         <AlertTitle>预检提醒</AlertTitle>
                         <AlertDescription>
@@ -124,14 +125,17 @@ export function PressImportDialog({
                 <FieldGroup>
                     <Field>
                         <FieldLabel htmlFor="press-import-name">作品名</FieldLabel>
-                        <Input
+                        <Textarea
                             id="press-import-name"
                             value={name}
+                            rows={2}
                             maxLength={60}
                             disabled={isImporting}
                             onChange={(event) => setName(event.target.value)}
                             onKeyDown={(event) => {
-                                if (event.key === 'Enter') {
+                                // Enter 提交由弹窗接管，避免换行混入作品名；输入法组合中的 Enter 交给输入法处理
+                                if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                                    event.preventDefault()
                                     void handleSubmit()
                                 }
                             }}

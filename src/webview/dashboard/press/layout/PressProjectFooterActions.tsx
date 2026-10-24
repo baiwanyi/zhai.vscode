@@ -48,6 +48,7 @@ export function PressProjectFooterActions({
         <div className="flex flex-1 items-center justify-between">
             <Button
                 size="icon"
+                variant="outline"
                 tooltip="添加章节"
                 aria-label="添加章节"
                 disabled={isCreatingChapter}

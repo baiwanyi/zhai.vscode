@@ -51,7 +51,7 @@ export function PressProjectList({
         return (
             <StateEmpty
                 title="还没有作品"
-                description="作品以 press/ 下的子目录组织，新建后会自动生成背景、大纲与角色设定骨架文档。"
+                description="作品目录下以子目录组织，新建后会自动生成背景、大纲与角色设定骨架文档。"
                 icon={BookOpen}
             >
                 <Button disabled={isAddDisabled} onClick={onAdd}>

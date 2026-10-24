@@ -61,10 +61,12 @@ describe('buildPortraitPrompt', () => {
         expect(prompt).toContain('角色：林岚（主角）')
     })
 
-    it('提示词截断到 900 字以内且保留画面要求', () => {
+    it('提示词截断到 900 字以内且保留画面约束', () => {
         const prompt = buildPortraitPrompt(createRequest({ appearance: '长'.repeat(800) }), '长'.repeat(120))
         expect(prompt.length).toBeLessThanOrEqual(900)
-        expect(prompt).toContain('要求：画面只出现一个人物')
+        expect(prompt).toContain('【画面约束】')
+        expect(prompt).toContain('聚焦单一核心人物')
+        expect(prompt).toContain('【负面屏蔽】')
     })
 
     it('基础信息含身高体型，并带上动机、背景与关系', () => {

@@ -74,8 +74,8 @@ export function DashboardFooterActions({
 }: DashboardFooterActionsProps): JSX.Element {
     return (
         <div className="flex flex-1 items-center justify-between">
-            <Button size="icon" tooltip="添加笔记" onClick={onAdd}>
-                <Plus className="size-4" />
+            <Button size="icon" variant="outline" disabled={isBusy} tooltip="添加笔记" onClick={onAdd}>
+                <Plus />
             </Button>
             <MoreMenu
                 isBusy={isBusy}

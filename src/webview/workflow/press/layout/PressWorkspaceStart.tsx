@@ -47,7 +47,7 @@ export function PressWorkspaceStart({ projects, onOpenProject }: PressWorkspaceS
                                         onOpenProject(project.dirPath)
                                     }}
                                 >
-                                    <FolderOpen data-icon="inline-start" />
+                                    <FolderOpen />
                                     <span className="truncate">{project.name}</span>
                                     <span className="ml-auto shrink-0 text-muted-foreground tabular-nums">
                                         {formatWordCount(project.wordCount)}

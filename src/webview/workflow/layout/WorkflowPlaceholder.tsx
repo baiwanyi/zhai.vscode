@@ -47,11 +47,11 @@ export function WorkflowPlaceholder({ context, onResetModule, onOverride }: Work
                 </EmptyHeader>
                 <EmptyContent>
                     <Button variant="outline" onClick={() => void handleReset()}>
-                        <ArrowLeft data-icon="inline-start" />
+                        <ArrowLeft />
                         返回模块选择
                     </Button>
                     <Button onClick={() => onOverride(CHAT_FALLBACK_WORKFLOW)}>
-                        <MessagesSquare data-icon="inline-start" />
+                        <MessagesSquare />
                         仍然使用 AI 对话
                     </Button>
                 </EmptyContent>

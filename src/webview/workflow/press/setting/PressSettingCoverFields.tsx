@@ -155,7 +155,7 @@ export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps
                         void handleGenerate()
                     }}
                 >
-                    <Sparkles data-icon="inline-start" />
+                    <Sparkles />
                     {isGenerating ? '生成中' : covers.length === 0 ? '生成封面' : '重新生成'}
                 </Button>
             </div>
@@ -236,7 +236,7 @@ export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps
                             void handleCompose()
                         }}
                     >
-                        <Type data-icon="inline-start" />
+                        <Type />
                         {isComposing ? '合成中' : '套用书名'}
                     </Button>
                 </div>

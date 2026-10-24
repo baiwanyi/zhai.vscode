@@ -178,14 +178,14 @@ export function OutlineWizard({
                 <DialogFooter className="items-center gap-2">
                     {step !== 'input' ? (
                         <Button variant="ghost" onClick={() => setStep(step === 'chapter' ? 'volume' : 'input')}>
-                            <ArrowLeft data-icon="inline-start" />
+                            <ArrowLeft />
                             上一步
                         </Button>
                     ) : null}
                     <span className="flex-1" />
                     {step === 'input' ? (
                         <Button onClick={handleBuild}>
-                            <Plus data-icon="inline-start" />
+                            <Plus />
                             生成卷纲
                         </Button>
                     ) : null}

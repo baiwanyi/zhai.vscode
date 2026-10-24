@@ -42,7 +42,7 @@ export function AiChatCodebuddyState({ site, loggedIn, userName, onLogin }: AiCh
             description="对话、取名与人物外貌生成走 CodeBuddy 额度。首次使用需完成一次浏览器登录，凭据按站点保存在本机，切换站点（zhai.ai.codebuddySite）后需重新登录。"
         >
             <Button onClick={onLogin}>
-                <LogIn data-icon="inline-start" />
+                <LogIn />
                 登录 {siteLabel}
             </Button>
         </StateEmpty>

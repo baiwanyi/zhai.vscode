@@ -216,11 +216,11 @@ export function PressCharacterPage({
                 </AppContent>
                 <AppFooter>
                     <Button variant="outline" disabled={isExtracting} onClick={handleExtract}>
-                        <Sparkles data-icon="inline-start" />
+                        <Sparkles />
                         {isExtracting ? '提取中' : '提取'}
                     </Button>
                     <Button disabled={isExtracting} onClick={() => setIsCreateOpen(true)}>
-                        <Plus data-icon="inline-start" />
+                        <Plus />
                         新增
                     </Button>
                 </AppFooter>

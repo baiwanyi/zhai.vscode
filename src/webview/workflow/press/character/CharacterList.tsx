@@ -95,11 +95,11 @@ export function CharacterList({
                     {totalCount === 0 ? (
                         <div className="flex flex-wrap items-center justify-center gap-2">
                             <Button variant="outline" onClick={onCreate}>
-                                <Plus data-icon="inline-start" />
+                                <Plus />
                                 新增人物
                             </Button>
                             <Button variant="outline" onClick={onExtract}>
-                                <Sparkles data-icon="inline-start" />
+                                <Sparkles />
                                 提取人物
                             </Button>
                         </div>

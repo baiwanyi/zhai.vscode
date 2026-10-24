@@ -49,7 +49,7 @@ export function NamingSurnameField({
                     />
                     <InputGroupAddon align="inline-end">
                         <InputGroupButton size="icon-xs" aria-label="随机姓氏" onClick={onRandomSurname}>
-                            <Dices data-icon="inline-start" />
+                            <Dices />
                         </InputGroupButton>
                     </InputGroupAddon>
                 </InputGroup>

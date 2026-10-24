@@ -47,11 +47,7 @@ export function WorkflowHome({ onOpenModule }: WorkflowHomeProps): JSX.Element {
                 <EmptyContent>
                     {MODULE_ENTRIES.map((module) => (
                         <Button key={module} variant="outline" onClick={() => void handleOpen(module)}>
-                            {module === WECHAT_MODULE_KEY ? (
-                                <MessagesSquare data-icon="inline-start" />
-                            ) : (
-                                <Pencil data-icon="inline-start" />
-                            )}
+                            {module === WECHAT_MODULE_KEY ? <MessagesSquare /> : <Pencil />}
                             {readModuleLabel(module)}
                         </Button>
                     ))}

@@ -83,7 +83,7 @@
 
 @layer base {
     * {
-        @apply border-border outline-ring/50;
+        @apply border-border outline-ring/50 font-light;
     }
     /* 基础字号只在这里落一次：全站文本默认继承 VSCode 界面字号；业务与组件代码均可按需使用
        text-* 档位表达层级（弹窗标题等），无需再为字号另设变量。html 保持 16px 不动，rem 仍按 4px 网格换算布局尺寸。 */

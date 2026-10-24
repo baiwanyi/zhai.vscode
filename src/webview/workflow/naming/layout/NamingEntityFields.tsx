@@ -54,7 +54,7 @@ export function NamingEntityFields({
                     />
                     <InputGroupAddon align="inline-end">
                         <InputGroupButton size="icon-xs" aria-label="随机后缀" onClick={onRandomSuffix}>
-                            <Dices data-icon="inline-start" />
+                            <Dices />
                         </InputGroupButton>
                     </InputGroupAddon>
                 </InputGroup>

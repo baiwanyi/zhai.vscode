@@ -75,7 +75,7 @@ export function OutlineTree({
                         </EmptyHeader>
                         <EmptyContent>
                             <Button variant="outline" onClick={onCreateVolume}>
-                                <Plus data-icon="inline-start" />
+                                <Plus />
                                 新建第一卷
                             </Button>
                         </EmptyContent>
@@ -179,7 +179,7 @@ export function OutlineTree({
                             )
                         })}
                         <Button variant="ghost" className="mt-1 rounded-full" onClick={onCreateVolume}>
-                            <PlusCircle data-icon="inline-start" />
+                            <PlusCircle />
                             新建卷
                         </Button>
                     </div>

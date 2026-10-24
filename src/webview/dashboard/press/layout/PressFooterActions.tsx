@@ -16,11 +16,11 @@ interface PressFooterActionsProps {
 export function PressFooterActions({ isBusy, onAdd, onImport }: PressFooterActionsProps): JSX.Element {
     return (
         <div className="flex flex-1 items-center justify-between">
-            <Button size="icon" disabled={isBusy} onClick={onAdd} tooltip="添加作品">
-                <Plus data-icon="inline-start" />
+            <Button size="icon" variant="outline" disabled={isBusy} onClick={onAdd} tooltip="添加作品">
+                <Plus />
             </Button>
             <Button variant="outline" disabled={isBusy} onClick={onImport}>
-                <FileUp data-icon="inline-start" />
+                <FileUp />
                 导入
             </Button>
         </div>

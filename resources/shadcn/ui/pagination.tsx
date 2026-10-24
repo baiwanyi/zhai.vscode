@@ -73,7 +73,7 @@ function PaginationPrevious({
       className={cn("pl-1.5!", className)}
       {...props}
     >
-      <ChevronLeftIcon data-icon="inline-start" />
+      <ChevronLeftIcon />
       <span className="hidden sm:block">{text}</span>
     </PaginationLink>
   )

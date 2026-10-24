@@ -101,7 +101,7 @@ export function OutlineBeatList({ beats, onChange, onAdd }: OutlineBeatListProps
                 </div>
             ))}
             <Button variant="ghost" className="mt-1 w-fit rounded-full" onClick={onAdd}>
-                <Plus data-icon="inline-start" />
+                <Plus />
                 添加节拍
             </Button>
         </div>

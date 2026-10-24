@@ -203,14 +203,14 @@ export function NamingPage(): JSX.Element {
                     }
                 >
                     <Button variant="outline" disabled={!hasResult(request.category)} onClick={handleViewResult}>
-                        <Eye data-icon="inline-start" />
+                        <Eye />
                         {VIEW_RESULT_LABEL}
                     </Button>
                     <Button
                         variant={isGenerating ? 'outline' : 'default'}
                         onClick={isGenerating ? handleAbort : handleGenerate}
                     >
-                        {isGenerating ? <Spinner data-icon="inline-start" /> : <Dices data-icon="inline-start" />}
+                        {isGenerating ? <Spinner /> : <Dices />}
                         {isGenerating ? '取消' : GENERATE_LABEL}
                     </Button>
                 </AppFooter>
