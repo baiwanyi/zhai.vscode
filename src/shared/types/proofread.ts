@@ -56,7 +56,10 @@ export interface ProofreadTarget {
     offsetBase: number
     /** 文档版本号：编辑器每次改动自增，用于判断 AI 结果与当前正文是否错位 */
     version: number
-    /** 文档最近修改时间（ISO 8601），仅用于展示与排查 */
+    /**
+     * 缓存签名：已保存文档为磁盘修改时间（ISO 8601），脏文档为正文摘要（digest:…）。
+     * 关键约束：同一份正文每次读取必须得到同一值，脏文档不得填当前时间，否则缓存永远判不中。
+     */
     mtime: string
     /** 是否因超长被截断（截断后只检查前 maxChars 个字符） */
     truncated: boolean

@@ -1,6 +1,6 @@
 /**
  * 取名页：以 app-page 骨架承载「标题区 + 条件字段区 + 底部操作区」，承接写作管理页的取名分区。
- * 复用约定：外壳取 components/AppPage（分类栏进 AppAction、生成方式开关进 AppFooter 的 start、条件区走 isScrollable），
+ * 复用约定：外壳取 components/AppPage（分类栏进 AppAction、生成方式开关进 AppFooter 左端、条件区走 isScrollable），
  * 条件收集与结果渲染由 layout/ 与 hooks/ 承担，本文件只做状态编排；
  * 结果按分类缓存在 useNamingGenerate 内，生成后由 NamingResultDialog 弹层展示，
  * 关闭后经底部「查看结果」再次打开，未生成过的分类自动随机生成一批。
@@ -10,11 +10,8 @@
 import { Dices, Eye } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
-import { Label } from '@components/ui/label'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
-import { Switch } from '@components/ui/switch'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { NamingCategory, NamingRequest, NamingSurnameKind } from '@shared/types/naming'
 import {
     AppAction,
@@ -26,6 +23,7 @@ import {
     AppTitle,
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
+import { Switch } from '@webview/components/Switch'
 import { DEFAULT_REQUEST, GENERATE_LABEL, PAGE_DESCRIPTION, PAGE_TITLE, VIEW_RESULT_LABEL } from './constants'
 import { useNamingCatalog } from './hooks/useNamingCatalog'
 import { useNamingGenerate } from './hooks/useNamingGenerate'
@@ -173,46 +171,32 @@ export function NamingPage(): JSX.Element {
                         onRandomSuffix={handleRandomSuffix}
                     />
                 </AppContent>
-                <AppFooter
-                    start={
-                        <>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    {/* Trigger 的 data-state 会覆盖 Switch 自身的 checked / unchecked 状态，故用 span 承接 */}
-                                    <span className="inline-flex">
-                                        <Switch
-                                            id="naming-source"
-                                            checked={request.source === 'ai'}
-                                            disabled={!catalog.aiAvailable}
-                                            onCheckedChange={(checked) =>
-                                                handleChange({ source: checked ? 'ai' : 'local' })
-                                            }
-                                        />
-                                    </span>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                    {catalog.aiAvailable
-                                        ? '生成方式：开启为 AI 生成，关闭为本地生成'
-                                        : 'AI 通道未就绪，AI 生成不可用'}
-                                </TooltipContent>
-                            </Tooltip>
-                            <Label htmlFor="naming-source" className="text-muted-foreground">
-                                AI 生成
-                            </Label>
-                        </>
-                    }
-                >
-                    <Button variant="outline" disabled={!hasResult(request.category)} onClick={handleViewResult}>
-                        <Eye />
-                        {VIEW_RESULT_LABEL}
-                    </Button>
-                    <Button
-                        variant={isGenerating ? 'outline' : 'default'}
-                        onClick={isGenerating ? handleAbort : handleGenerate}
-                    >
-                        {isGenerating ? <Spinner /> : <Dices />}
-                        {isGenerating ? '取消' : GENERATE_LABEL}
-                    </Button>
+                <AppFooter className="justify-between">
+                    <Switch
+                        id="naming-source"
+                        label="AI 生成"
+                        checked={request.source === 'ai'}
+                        disabled={!catalog.aiAvailable}
+                        tooltip={
+                            catalog.aiAvailable
+                                ? '生成方式：开启为 AI 生成，关闭为本地生成'
+                                : 'AI 通道未就绪，AI 生成不可用'
+                        }
+                        onCheckedChange={(checked) => handleChange({ source: checked ? 'ai' : 'local' })}
+                    />
+                    <div className="flex items-center gap-1.5">
+                        <Button variant="outline" disabled={!hasResult(request.category)} onClick={handleViewResult}>
+                            <Eye />
+                            {VIEW_RESULT_LABEL}
+                        </Button>
+                        <Button
+                            variant={isGenerating ? 'outline' : 'default'}
+                            onClick={isGenerating ? handleAbort : handleGenerate}
+                        >
+                            {isGenerating ? <Spinner /> : <Dices />}
+                            {isGenerating ? '取消' : GENERATE_LABEL}
+                        </Button>
+                    </div>
                 </AppFooter>
             </AppPage>
             <NamingResultDialog

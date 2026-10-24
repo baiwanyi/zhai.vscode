@@ -3,8 +3,10 @@
  * 复用 common/config 的存储根与 common/storagePath 的相对路径归一化、片段校验，前端不参与路径拼装。
  * 关键约束：只接受 file scheme 且位于存储根内的文档，越界路径直接拒绝；
  * 正文取自编辑器内存态（含未保存修改），offsetBase 记录正文在文档全文中的起点，
- * 前端据此把 issue 偏移换算为编辑器偏移，避免整篇与选区两种模式各写一套定位逻辑。
+ * 前端据此把 issue 偏移换算为编辑器偏移，避免整篇与选区两种模式各写一套定位逻辑；
+ * mtime 是缓存签名而非展示时间：已保存文档取磁盘时间，脏文档取正文摘要，保证同一正文每次都得到同一签名。
  */
+import { createHash } from 'node:crypto'
 import * as vscode from 'vscode'
 import type { ProofreadTarget } from '../../../shared/types/proofread'
 import { resolveStorageRoot } from '../../common/config'
@@ -67,16 +69,24 @@ function readRelativePath(document: vscode.TextDocument): string {
     return relativePath
 }
 
-/** 读取文档修改时间：脏文档按当前时间，避免显示上一次保存的时间误导用户 */
-async function readMtime(document: vscode.TextDocument): Promise<string> {
+/** 正文摘要：只取截断后的检查正文，长度与成本都可控，内容不变则摘要稳定 */
+function toContentSignature(text: string): string {
+    return `digest:${createHash('sha1').update(text).digest('hex').slice(0, 16)}`
+}
+
+/**
+ * 读取缓存签名：已保存文档取磁盘修改时间，脏文档取正文摘要。
+ * 关键约束：脏文档不能取「当前时间」——每次读取都会得到新值，缓存签名永远对不上，结果等于从不保存。
+ */
+async function readSignature(document: vscode.TextDocument, text: string): Promise<string> {
     if (document.isDirty) {
-        return new Date().toISOString()
+        return toContentSignature(text)
     }
     try {
         const stat = await vscode.workspace.fs.stat(document.uri)
         return new Date(stat.mtime).toISOString()
     } catch {
-        return new Date().toISOString()
+        return toContentSignature(text)
     }
 }
 
@@ -102,7 +112,7 @@ export async function readProofreadTarget(options: ReadTargetOptions): Promise<P
         wordCount: text.replace(/\s/gu, '').length,
         offsetBase,
         version: document.version,
-        mtime: await readMtime(document),
+        mtime: await readSignature(document, text),
         truncated: isTruncated,
     }
 }

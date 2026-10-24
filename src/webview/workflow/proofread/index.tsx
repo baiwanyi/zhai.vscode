@@ -8,9 +8,6 @@
 import { SpellCheck } from 'lucide-react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { Badge } from '@components/ui/badge'
-import { Label } from '@components/ui/label'
-import { Switch } from '@components/ui/switch'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import {
     AppAction,
     AppContent,
@@ -22,18 +19,7 @@ import {
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
-import {
-    AI_DISCLAIMER,
-    AI_TOGGLE_LABEL,
-    DISCLAIMER,
-    EMPTY_DESCRIPTION,
-    EMPTY_TITLE,
-    PAGE_DESCRIPTION_EMPTY,
-    PAGE_DESCRIPTION_READY,
-    PAGE_TITLE,
-    RERUN_LABEL,
-    RUN_LABEL,
-} from './constants'
+import { Switch } from '@webview/components/Switch'
 import { useProofreadAiDetect } from './hooks/useProofreadAiDetect'
 import { useProofreadLexicon } from './hooks/useProofreadLexicon'
 import { useProofreadRun } from './hooks/useProofreadRun'
@@ -51,8 +37,12 @@ export function ProofreadPage(): JSX.Element {
     return (
         <AppPage>
             <AppHeader>
-                <AppTitle>{PAGE_TITLE}</AppTitle>
-                <AppDescription>{target === null ? PAGE_DESCRIPTION_EMPTY : PAGE_DESCRIPTION_READY}</AppDescription>
+                <AppTitle>校对</AppTitle>
+                <AppDescription>
+                    {target === null
+                        ? '在编辑器中打开要校对的章节，回到本页即可开始'
+                        : '检查错别字、标点与自定义词库命中，可逐条定位并一键写回'}
+                </AppDescription>
                 {target === null ? null : (
                     <AppAction>
                         <Badge variant="outline" className="max-w-full truncate">
@@ -74,11 +64,11 @@ export function ProofreadPage(): JSX.Element {
                     )}
                     {target === null ? (
                         state.status === 'loading' || state.status === 'running' ? (
-                            <StateEmpty title={EMPTY_TITLE} isLoading loadingLabel="正在读取校对目标…" />
+                            <StateEmpty title="尚未读取到校对目标" isLoading loadingLabel="正在读取校对目标…" />
                         ) : (
                             <StateEmpty
-                                title={EMPTY_TITLE}
-                                description={EMPTY_DESCRIPTION}
+                                title="尚未读取到校对目标"
+                                description="校对以当前编辑器中的文档为准，请先打开章节或笔记文档"
                                 icon={SpellCheck}
                                 iconClassName="size-12 rounded-2xl"
                             >
@@ -117,52 +107,42 @@ export function ProofreadPage(): JSX.Element {
                         </>
                     )}
                     {state.aiStage === 'done' ? (
-                        <AppDescription className="text-center">{AI_DISCLAIMER}</AppDescription>
+                        <AppDescription className="text-center">
+                            AI 结果由模型判断，请逐条人工确认后再修改
+                        </AppDescription>
                     ) : null}
-                    <AppDescription className="text-center">{DISCLAIMER}</AppDescription>
+                    <AppDescription className="text-center">智能识别，可能出现误差，仅供参考</AppDescription>
                 </div>
             </AppContent>
-            <AppFooter
-                start={
-                    <>
-                        <Tooltip>
-                            <TooltipTrigger asChild>
-                                {/* Trigger 的 data-state 会覆盖 Switch 自身的选中态，故用 span 承接 */}
-                                <span className="inline-flex">
-                                    <Switch
-                                        id="proofread-ai"
-                                        checked={state.isAiEnabled}
-                                        onCheckedChange={state.setIsAiEnabled}
-                                    />
-                                </span>
-                            </TooltipTrigger>
-                            <TooltipContent>关闭后只跑本地规则，不再调用 AI</TooltipContent>
-                        </Tooltip>
-                        <Label htmlFor="proofread-ai" className="text-muted-foreground">
-                            {AI_TOGGLE_LABEL}
-                        </Label>
-                    </>
-                }
-            >
-                <Button
-                    variant="outline"
-                    disabled={state.fixableCount === 0}
-                    isLoading={state.isApplying}
-                    onClick={() => void state.applyFixable()}
-                >
-                    应用 {state.fixableCount} 处修复
-                </Button>
-                <Button
-                    isLoading={state.isRunning}
-                    tooltip={
-                        state.isAiEnabled
-                            ? '执行本地规则与 AI 语义检查，AI 部分会消耗每日额度'
-                            : '执行本地规则检查，AI 检查已关闭'
-                    }
-                    onClick={() => void state.run()}
-                >
-                    {state.hasResult ? RERUN_LABEL : RUN_LABEL}
-                </Button>
+            <AppFooter className="justify-between">
+                <Switch
+                    id="proofread-ai"
+                    label="AI 检查"
+                    checked={state.isAiEnabled}
+                    tooltip="关闭后只跑本地规则，不再调用 AI"
+                    onCheckedChange={state.setIsAiEnabled}
+                />
+                <div className="flex items-center gap-1.5">
+                    <Button
+                        variant="outline"
+                        disabled={state.fixableCount === 0}
+                        isLoading={state.isApplying}
+                        onClick={() => void state.applyFixable()}
+                    >
+                        应用 {state.fixableCount} 处修复
+                    </Button>
+                    <Button
+                        isLoading={state.isRunning}
+                        tooltip={
+                            state.isAiEnabled
+                                ? '执行本地规则与 AI 语义检查，AI 部分会消耗每日额度'
+                                : '执行本地规则检查，AI 检查已关闭'
+                        }
+                        onClick={() => void state.run()}
+                    >
+                        {state.hasResult ? '重新校对' : '开始校对'}
+                    </Button>
+                </div>
             </AppFooter>
 
             <ProofreadLexiconDialog
