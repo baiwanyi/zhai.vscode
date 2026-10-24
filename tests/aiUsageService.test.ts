@@ -79,14 +79,34 @@ describe('aiUsageService', () => {
         seedUsage('u1', 'chat', new Date().toISOString(), 'req-1')
         seedUsage('u2', 'naming', new Date().toISOString(), 'req-2')
         seedUsage('u3', 'ai-chat', new Date().toISOString(), 'req-3')
+        seedUsage('u4', 'proofread', new Date().toISOString(), 'req-4')
 
         const all = service.list({ module: null, range: 'all', page: 1, pageSize: 20 })
-        expect(all.total).toBe(3)
+        expect(all.total).toBe(4)
         expect(all.items.filter((item) => item.module === 'chat')).toHaveLength(2)
 
         const naming = service.list({ module: 'naming', range: 'all', page: 1, pageSize: 20 })
         expect(naming.total).toBe(1)
         expect(naming.items[0]?.requestId).toBe('req-2')
+
+        // 校对记账行必须留在「AI校对」，不能被当成未知模块归一成对话
+        const proofread = service.list({ module: 'proofread', range: 'all', page: 1, pageSize: 20 })
+        expect(proofread.total).toBe(1)
+        expect(proofread.items[0]?.requestId).toBe('req-4')
+    })
+
+    it('积分消耗为 0 的轮次不进列表，未对账的留空仍保留', () => {
+        seedUsage('u1', 'chat', new Date().toISOString(), 'req-zero', 0)
+        seedUsage('u2', 'chat', new Date().toISOString(), 'req-unknown', null)
+        seedUsage('u3', 'chat', new Date().toISOString(), 'req-paid', 0.5)
+
+        const result = service.list({ module: null, range: 'all', page: 1, pageSize: 20 })
+        expect(result.total).toBe(2)
+        expect(result.items.map((item) => item.requestId)).not.toContain('req-zero')
+        expect(result.items.map((item) => item.requestId)).toContain('req-unknown')
+        // 条数与汇总跟随过滤后的明细，未知积分不参与求和
+        expect(result.summary.requests).toBe(2)
+        expect(result.summary.credits).toBeCloseTo(0.5)
     })
 
     it('时间范围只返回范围内的记录', () => {

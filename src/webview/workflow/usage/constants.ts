@@ -27,6 +27,7 @@ export const MODULE_OPTIONS: readonly UsageModuleOption[] = [
     { value: 'semantic', label: AI_USAGE_MODULE_LABELS.semantic },
     { value: 'scene', label: AI_USAGE_MODULE_LABELS.scene },
     { value: 'image', label: AI_USAGE_MODULE_LABELS.image },
+    { value: 'proofread', label: AI_USAGE_MODULE_LABELS.proofread },
     { value: 'external', label: AI_USAGE_MODULE_LABELS.external },
 ]
 

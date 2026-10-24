@@ -3,6 +3,7 @@
  * 复用约定：一轮一行由 CliUsageIndex 汇总，模块键与范围枚举来自 shared/types/aiUsage，记录在此归一成下发契约；
  * 本地行按请求 id 关联，关联不上的标为 external；过期提示词在列表请求时顺带清理。
  * 关键约束：明细与汇总都按 CLI 记录的积分计，本地缺失时留空显示破折号，不做任何估算；
+ * 积分消耗为 0 的轮次直接剔除，不占列表位置也不计入条数（未知积分保留，二者口径不同）；
  * 对账以 CLI 记录为准，已回填但偏小的值同样修正（工具调用积分可能晚落盘）；入参一律在本层收窄（模块白名单、
  * 范围枚举、页码夹紧、请求 id 长度与字符），不接受任意时间字符串；提示词只按请求 id 单条读取，
  * 本地未留存时回落到 CLI 会话记录（出图轮次取图像提示词，其余取用户消息原文）。
@@ -28,6 +29,7 @@ import type {
     AiUsageSummary,
 } from '../../shared/types/aiUsage'
 import type Database from 'better-sqlite3'
+import { isAiUsageModule } from '../../shared/types/aiUsage'
 
 /** 默认与最大页大小：列表行数有限，超出上限直接夹紧而不是报错 */
 const DEFAULT_PAGE_SIZE = 20
@@ -57,8 +59,10 @@ export class AiUsageService {
         this.syncCreditsFromCli(query.force === true)
         const pageSize = clamp(Math.trunc(query.pageSize) || DEFAULT_PAGE_SIZE, 1, MAX_PAGE_SIZE)
         const page = clamp(Math.trunc(query.page) || 1, 1, MAX_PAGE)
+        // 积分消耗为 0 的轮次不进列表（纯工具调用、未计费的重试等），避免把无消耗的行混进「积分消耗」视图；
+        // credits 为 null 表示尚未对账，属于未知而非 0，仍保留并显示破折号
+        const entries = this.collectEntries().filter((item) => item.credits !== 0)
         // 周期概览只跟随模块筛选，因此先按模块收窄，再按时间范围收窄列表与汇总
-        const entries = this.collectEntries()
         const byModule = query.module === null ? entries : entries.filter((item) => item.module === query.module)
         const since = readSince(query.range)
         const filtered = since === null ? byModule : byModule.filter((item) => item.createdAt >= since)
@@ -247,18 +251,12 @@ function sumCredits(items: AiUsageItem[]): number | null {
     return known.reduce((total, item) => total + (item.credits ?? 0), 0)
 }
 
-/** 模块归一：旧库的 ai-chat 等取值统一视为对话 */
+/**
+ * 模块归一：合法模块键原样保留，旧库的 ai-chat 等取值统一视为对话。
+ * 关键约束：判定直接复用共享类型守卫，不再另写白名单——否则新增模块（如 proofread）会被静默归到对话。
+ */
 function toModule(value: string): AiUsageModule {
-    switch (value) {
-        case 'naming':
-        case 'appearance':
-        case 'semantic':
-        case 'scene':
-        case 'image':
-            return value
-        default:
-            return 'chat'
-    }
+    return isAiUsageModule(value) ? value : 'chat'
 }
 
 function toStatus(value: string): AiUsageStatus {
