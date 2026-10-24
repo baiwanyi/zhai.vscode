@@ -43,7 +43,8 @@ export function DashboardScreen(): JSX.Element {
 
     return (
         <>
-            {renderPage()}
+            {/* 页面骨架按 h-full 撑满，这里给出视口高度基准（与 WorkflowScreen 同形），避免页面高度塌陷 */}
+            <div className="flex h-screen min-h-0 flex-col">{renderPage()}</div>
             <Toaster theme={theme} />
         </>
     )

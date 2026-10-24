@@ -129,6 +129,7 @@ export type HostMethodName =
     | 'press/import/cancel'
     | 'press/import/pick'
     | 'press/import/start'
+    | 'press/mergeChapterSummary'
     | 'press/moveChapter'
     | 'press/open'
     | 'press/openChapter'

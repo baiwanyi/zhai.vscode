@@ -822,6 +822,29 @@ export interface PressAnalyzeResult {
     settingClueCount: number
 }
 
+/** press/mergeChapterSummary 请求：把素材里的章节摘要回填到章节 Frontmatter */
+export interface MergeChapterSummaryRequest {
+    /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
+    dirPath: string
+}
+
+/** 判断是否为合法的摘要回填请求（类型收窄辅助）：入参与作品目录请求同形 */
+export function isMergeChapterSummaryRequest(payload: unknown): payload is MergeChapterSummaryRequest {
+    return isPressDirPath(payload)
+}
+
+/** press/mergeChapterSummary 响应：逐章回填的统计，供界面说明「改了什么」 */
+export interface MergeChapterSummaryResult {
+    /** 成功写入摘要的章节数 */
+    updated: number
+    /** 有摘要但被跳过的章节数：已有摘要、缺少 Frontmatter 或文件正在编辑 */
+    skipped: number
+    /** 读写失败的章节数：单章失败不影响其余章节 */
+    failed: number
+    /** 面向用户的一句话结论 */
+    message: string
+}
+
 /** press/extract/outline 请求：用已落盘的导入素材重建大纲树 */
 export interface PressExtractOutlineRequest {
     /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
@@ -1314,4 +1337,3 @@ export function isChapterSnapshotRestoreRequest(payload: unknown): payload is Ch
 export function isChapterSnapshotDeleteRequest(payload: unknown): payload is ChapterSnapshotDeleteRequest {
     return isChapterSnapshotRestoreRequest(payload)
 }
-

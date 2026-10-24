@@ -1,23 +1,32 @@
 /**
- * 取名页：纵向三段——顶部分类栏、条件字段区、底部操作区，承接写作管理页的取名分区。
- * 复用约定：条件收集、生成请求与结果渲染分别由 layout/ 与 hooks/ 承担，本文件只做状态编排；
+ * 取名页：以 app-page 骨架承载「标题区 + 条件字段区 + 底部操作区」，承接写作管理页的取名分区。
+ * 复用约定：外壳取 components/AppPage（分类栏进 AppAction、生成方式开关进 AppFooter 的 start、条件区走 isScrollable），
+ * 条件收集与结果渲染由 layout/ 与 hooks/ 承担，本文件只做状态编排；
  * 结果按分类缓存在 useNamingGenerate 内，生成后由 NamingResultDialog 弹层展示，
  * 关闭后经底部「查看结果」再次打开，未生成过的分类自动随机生成一批。
  * 关键约束：生成方式开关、生成 / 取消按钮与结果弹层入口都收敛在底部操作区，条件与结果均不落本地存储，
- * 历史由宿主 naming.db 持有；无缓存结果的分类「查看结果」按钮禁用。
+ * 历史由宿主 naming.db 持有；无缓存结果的分类「查看结果」按钮禁用；加载态与失败态复用同一标题区文案。
  */
 import { Dices, Eye } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { Label } from '@components/ui/label'
-import { ScrollArea } from '@components/ui/scroll-area'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
 import { Switch } from '@components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { NamingCategory, NamingRequest, NamingSurnameKind } from '@shared/types/naming'
+import {
+    AppAction,
+    AppContent,
+    AppDescription,
+    AppFooter,
+    AppHeader,
+    AppPage,
+    AppTitle,
+} from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
-import { DEFAULT_REQUEST, GENERATE_LABEL, VIEW_RESULT_LABEL } from './constants'
+import { DEFAULT_REQUEST, GENERATE_LABEL, PAGE_DESCRIPTION, PAGE_TITLE, VIEW_RESULT_LABEL } from './constants'
 import { useNamingCatalog } from './hooks/useNamingCatalog'
 import { useNamingGenerate } from './hooks/useNamingGenerate'
 import { NamingCategoryRail } from './layout/NamingCategoryRail'
@@ -108,37 +117,53 @@ export function NamingPage(): JSX.Element {
 
     if (isLoading) {
         return (
-            <div className="flex h-full flex-col gap-2 p-3">
-                <Skeleton className="h-10 w-full" />
-                <Skeleton className="h-64 w-full" />
-                <Skeleton className="min-h-0 flex-1" />
-            </div>
+            <AppPage>
+                <AppHeader>
+                    <AppTitle>{PAGE_TITLE}</AppTitle>
+                    <AppDescription>{PAGE_DESCRIPTION}</AppDescription>
+                </AppHeader>
+                <AppContent>
+                    <div className="flex h-full flex-col gap-2">
+                        <Skeleton className="h-10 w-full" />
+                        <Skeleton className="h-64 w-full" />
+                        <Skeleton className="min-h-0 flex-1" />
+                    </div>
+                </AppContent>
+            </AppPage>
         )
     }
 
     if (!catalog) {
         return (
-            <div className="flex h-full flex-col gap-2 p-3">
-                <Alert variant="destructive">
-                    <AlertDescription>{catalogError ?? '取名选项加载失败，请重新打开面板'}</AlertDescription>
-                </Alert>
-            </div>
+            <AppPage>
+                <AppHeader>
+                    <AppTitle>{PAGE_TITLE}</AppTitle>
+                    <AppDescription>{PAGE_DESCRIPTION}</AppDescription>
+                </AppHeader>
+                <AppContent>
+                    <Alert variant="destructive">
+                        <AlertDescription>{catalogError ?? '取名选项加载失败，请重新打开面板'}</AlertDescription>
+                    </Alert>
+                </AppContent>
+            </AppPage>
         )
     }
 
     return (
-        <div className="@container flex h-full min-h-0 flex-col gap-3 p-3">
-            <header className="flex flex-col shrink-0 gap-2">
-                <h1 className="truncate font-heading text-lg">取名</h1>
-                <p className="min-w-0 flex-1 text-muted-foreground text-xs">
-                    选定分类并设置风格、时代与字数后随机取名，结果在弹窗中展示；关闭后可随时「查看结果」，满意的直接复制。
-                </p>
-            </header>
-
-            <NamingCategoryRail catalog={catalog} activeCategory={request.category} onSelect={handleCategoryChange} />
-
-            <ScrollArea className="min-h-0 flex-1">
-                <div className="p-0.5">
+        <>
+            <AppPage>
+                <AppHeader>
+                    <AppTitle>{PAGE_TITLE}</AppTitle>
+                    <AppDescription>{PAGE_DESCRIPTION}</AppDescription>
+                    <AppAction>
+                        <NamingCategoryRail
+                            catalog={catalog}
+                            activeCategory={request.category}
+                            onSelect={handleCategoryChange}
+                        />
+                    </AppAction>
+                </AppHeader>
+                <AppContent isScrollable>
                     <NamingConditionFields
                         catalog={catalog}
                         request={request}
@@ -147,34 +172,36 @@ export function NamingPage(): JSX.Element {
                         onRandomSurname={handleRandomSurname}
                         onRandomSuffix={handleRandomSuffix}
                     />
-                </div>
-            </ScrollArea>
-
-            <footer className="relative flex shrink-0 items-center justify-between gap-1.5 pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent">
-                <div className="flex shrink-0 items-center gap-1.5">
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            {/* Trigger 的 data-state 会覆盖 Switch 自身的 checked / unchecked 状态，故用 span 承接 */}
-                            <span className="inline-flex">
-                                <Switch
-                                    id="naming-source"
-                                    checked={request.source === 'ai'}
-                                    disabled={!catalog.aiAvailable}
-                                    onCheckedChange={(checked) => handleChange({ source: checked ? 'ai' : 'local' })}
-                                />
-                            </span>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                            {catalog.aiAvailable
-                                ? '生成方式：开启为 AI 生成，关闭为本地生成'
-                                : 'AI 通道未就绪，AI 生成不可用'}
-                        </TooltipContent>
-                    </Tooltip>
-                    <Label htmlFor="naming-source" className="text-muted-foreground">
-                        AI 生成
-                    </Label>
-                </div>
-                <div className="flex gap-1">
+                </AppContent>
+                <AppFooter
+                    start={
+                        <>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    {/* Trigger 的 data-state 会覆盖 Switch 自身的 checked / unchecked 状态，故用 span 承接 */}
+                                    <span className="inline-flex">
+                                        <Switch
+                                            id="naming-source"
+                                            checked={request.source === 'ai'}
+                                            disabled={!catalog.aiAvailable}
+                                            onCheckedChange={(checked) =>
+                                                handleChange({ source: checked ? 'ai' : 'local' })
+                                            }
+                                        />
+                                    </span>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                    {catalog.aiAvailable
+                                        ? '生成方式：开启为 AI 生成，关闭为本地生成'
+                                        : 'AI 通道未就绪，AI 生成不可用'}
+                                </TooltipContent>
+                            </Tooltip>
+                            <Label htmlFor="naming-source" className="text-muted-foreground">
+                                AI 生成
+                            </Label>
+                        </>
+                    }
+                >
                     <Button variant="outline" disabled={!hasResult(request.category)} onClick={handleViewResult}>
                         <Eye data-icon="inline-start" />
                         {VIEW_RESULT_LABEL}
@@ -186,9 +213,8 @@ export function NamingPage(): JSX.Element {
                         {isGenerating ? <Spinner data-icon="inline-start" /> : <Dices data-icon="inline-start" />}
                         {isGenerating ? '取消' : GENERATE_LABEL}
                     </Button>
-                </div>
-            </footer>
-
+                </AppFooter>
+            </AppPage>
             <NamingResultDialog
                 open={isResultOpen}
                 categoryLabel={readCategoryMeta(catalog, request.category)?.label ?? '取名'}
@@ -196,6 +222,6 @@ export function NamingPage(): JSX.Element {
                 isGenerating={isGenerating}
                 onOpenChange={setIsResultOpen}
             />
-        </div>
+        </>
     )
 }

@@ -1,6 +1,7 @@
 /**
- * 仪表盘概览页：顶部操作区固定，滚动区依次呈现概览槽位、功能入口与笔记列表，多选操作栏贴底；
- * 滚动区顶部叠一层由背景色到透明的渐变遮罩，使内容逼近固定操作区时淡出，避免硬切。
+ * 仪表盘概览页：以 AppPage 骨架承载「入口区 + 笔记滚动区 + 贴底操作栏」三段。
+ * 复用约定：外壳取 components/AppPage（入口区走 AppHeader、概览与列表走 AppContent 滚动、底部操作栏与多选栏走 AppFooter），
+ * 底栏上方的渐变遮罩由 AppFooter 统一提供，页面不再自行声明。
  * 数据与动作经 useDashboardStats / useNotesList / useDashboardActions 三层 hook 下发，页面只做组合；
  * 操作结果统一由 useDashboardActions 经 sonner 反馈，Toaster 由路由外壳 dashboardScreen 统一挂载。
  * 交互约束：写作管理入口改为页内路由跳转（由路由外壳下发的 onNavigate 承担），公众号管理仍走工作流面板；
@@ -9,15 +10,15 @@
  * 批量操作栏仅在多选态且有选中项时出现，其按钮语义由选中项的置顶状态决定；页面内屏蔽浏览器右键菜单。
  */
 import { useCallback } from 'react'
-import { ScrollArea } from '@components/ui/scroll-area'
+import { AppContent, AppFooter, AppHeader, AppPage } from '@webview/components/AppPage'
 import { createPressRoute } from './core/routing'
 import { useActiveNote } from './hooks/useActiveNote'
 import { useDashboardActions } from './hooks/useDashboardActions'
 import { useDashboardStats } from './hooks/useDashboardStats'
 import { useNotesList } from './hooks/useNotesList'
 import { DashboardEntries } from './layout/DashboardEntries'
+import { DashboardFooterActions } from './layout/DashboardFooterActions'
 import { DashboardSlots } from './layout/DashboardSlots'
-import { DashboardTopBar } from './layout/DashboardTopBar'
 import { NotesSection } from './layout/NotesSection'
 import { NotesSelectionBar } from './layout/NotesSelectionBar'
 import type { DashboardRoute } from './core/routing'
@@ -33,13 +34,10 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
     const {
         pinnedNotes,
         unpinnedNotes,
-        modules,
-        activeModules,
         isFiltered,
         isSelecting,
         selectedPaths,
         isAllSelectedPinned,
-        toggleModule,
         resetFilters,
         toggleSelecting,
         toggleSelected,
@@ -75,65 +73,61 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
     }, [createNote, setActiveId])
 
     return (
-        <div className="@container flex h-screen min-h-0 flex-col" onContextMenu={(event) => event.preventDefault()}>
-            <header className="p-3">
-                <DashboardTopBar
-                    isBusy={pendingAction !== null}
-                    isRebuilding={stats?.isRebuilding === true}
-                    onAdd={() => void handleCreate()}
-                    onRebuild={() => void rebuild()}
-                    onClearCache={() => void clearCache()}
-                    onOpenSettings={() => void openSettings()}
+        <AppPage onContextMenu={(event) => event.preventDefault()}>
+            <AppHeader>
+                <DashboardEntries
+                    onOpenWriting={() => onNavigate(createPressRoute())}
+                    onOpenPress={() => void openWorkflow('wechat')}
                 />
-            </header>
+            </AppHeader>
 
-            <ScrollArea className="min-h-0 flex-1 px-3">
-                <div className="flex flex-col gap-3 p-0.5">
-                    <DashboardSlots />
-                    <DashboardEntries
-                        onOpenWriting={() => onNavigate(createPressRoute())}
-                        onOpenPress={() => void openWorkflow('wechat')}
-                    />
-                    <NotesSection
-                        pinnedNotes={pinnedNotes}
-                        unpinnedNotes={unpinnedNotes}
-                        modules={modules}
-                        status={status}
-                        error={error}
-                        isFiltered={isFiltered}
-                        activeId={activeId}
-                        activeModules={activeModules}
-                        isSelecting={isSelecting}
-                        selectedPaths={selectedPaths}
-                        onSelect={handleOpen}
-                        onInvoke={(path, action) => {
-                            if (action === 'open') {
-                                handleOpen(path)
-                                return
-                            }
-                            if (action === 'pin' || action === 'unpin') {
-                                void setPinned([path], action === 'pin')
-                                return
-                            }
-                            showNotePending(action)
-                        }}
-                        onToggleModule={toggleModule}
-                        onResetFilters={resetFilters}
-                        onToggleSelecting={toggleSelecting}
-                        onToggleSelected={toggleSelected}
-                    />
-                </div>
-            </ScrollArea>
+            <AppContent isScrollable className="gap-3">
+                <DashboardSlots />
+                <NotesSection
+                    pinnedNotes={pinnedNotes}
+                    unpinnedNotes={unpinnedNotes}
+                    status={status}
+                    error={error}
+                    isFiltered={isFiltered}
+                    activeId={activeId}
+                    isSelecting={isSelecting}
+                    selectedPaths={selectedPaths}
+                    onSelect={handleOpen}
+                    onInvoke={(path, action) => {
+                        if (action === 'open') {
+                            handleOpen(path)
+                            return
+                        }
+                        if (action === 'pin' || action === 'unpin') {
+                            void setPinned([path], action === 'pin')
+                            return
+                        }
+                        showNotePending(action)
+                    }}
+                    onResetFilters={resetFilters}
+                    onToggleSelecting={toggleSelecting}
+                    onToggleSelected={toggleSelected}
+                />
+            </AppContent>
 
-            <footer className="relative flex shrink-0 items-center justify-end gap-1.5 pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent">
+            <AppFooter>
                 {isSelecting && selectedPaths.length > 0 ? (
                     <NotesSelectionBar
                         isAllSelectedPinned={isAllSelectedPinned}
                         onTogglePin={() => void setPinned(selectedPaths, !isAllSelectedPinned)}
                         onDelete={() => showNotePending('delete')}
                     />
-                ) : null}
-            </footer>
-        </div>
+                ) : (
+                    <DashboardFooterActions
+                        isBusy={pendingAction !== null}
+                        isRebuilding={stats?.isRebuilding === true}
+                        onAdd={() => void handleCreate()}
+                        onRebuild={() => void rebuild()}
+                        onClearCache={() => void clearCache()}
+                        onOpenSettings={() => void openSettings()}
+                    />
+                )}
+            </AppFooter>
+        </AppPage>
     )
 }

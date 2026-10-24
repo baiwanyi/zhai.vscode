@@ -8,11 +8,9 @@ import type { JSX } from 'react'
 
 export function DashboardSlots(): JSX.Element {
     return (
-        <div className="@container">
-            <div className="grid gap-2 @sm:grid-cols-2">
-                <DashboardSlotPlaceholder title="写作趋势" text="图表接入后展示字数与篇数变化" />
-                <DashboardSlotPlaceholder title="模块分布" text="图表接入后展示各模块内容占比" />
-            </div>
+        <div className="grid gap-2 @sm:grid-cols-2 pb-0.5">
+            <DashboardSlotPlaceholder title="写作趋势" text="图表接入后展示字数与篇数变化" />
+            <DashboardSlotPlaceholder title="模块分布" text="图表接入后展示各模块内容占比" />
         </div>
     )
 }

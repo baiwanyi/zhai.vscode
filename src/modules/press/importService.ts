@@ -3,14 +3,14 @@
  * 复用约定：骨架与章节模板取自 projectFactory，分章与清洗委托 importParser，
  * 路径构造与存在性判定复用 common/storagePath，索引走 ProjectIndexer 抽象；
  * 源文件绝对路径不下发 Webview，改由本服务签发 token 暂存，杜绝前端伪造路径读取任意文件。
- * 关键约束：落盘一律不覆盖已存在文件（重跑只补缺失章节），单章失败不中断整批，
+ * 关键约束：只写正文与索引，素材抽取改由详情页手动触发，导入过程不额外扫描章节；
+ * 落盘一律不覆盖已存在文件（重跑只补缺失章节），单章失败不中断整批，
  * 取消在章节边界生效且已写章节保留；目标为 50 MB 以内纯文本，读取上限即内存上限。
  */
 
 import { lstat, readFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as vscode from 'vscode'
-import { analyzeProject } from './importAnalysis'
 import { parseNovel, sanitizeSegment } from './importParser'
 import {
     PROJECT_CHAPTER_DIR,
@@ -20,7 +20,6 @@ import {
     validateProjectName,
 } from './projectFactory'
 import { migrateLegacyChapterDirectory } from './projectService'
-import type { AnalysisResult } from './importAnalysis'
 import type { ParsedNovel } from './importParser'
 import type { ProjectIndexer } from './projectService'
 import type {
@@ -326,17 +325,15 @@ export class PressImportService {
     /** 解析结果兜底校验：无章节或疑似单章全文时按原因码拒绝，避免写出不可用的作品 */
     private assertParsed(parsed: ParsedNovel): void {
         if (parsed.chapters.length === 0) {
-            throw new ImportError(
-                'no-chapter',
-                '未识别到章节标题，请确认正文使用「第N章」等标记后重试',
-            )
+            throw new ImportError('no-chapter', '未识别到章节标题，请确认正文使用「第N章」等标记后重试')
         }
         const onlyChapter = parsed.chapters[0]
-        if (parsed.chapters.length === 1 && onlyChapter !== undefined && onlyChapter.charCount > SINGLE_CHAPTER_CHAR_LIMIT) {
-            throw new ImportError(
-                'single-chapter',
-                '全文被识别为单章，章节标记可能不规范，请检查后重试',
-            )
+        if (
+            parsed.chapters.length === 1 &&
+            onlyChapter !== undefined &&
+            onlyChapter.charCount > SINGLE_CHAPTER_CHAR_LIMIT
+        ) {
+            throw new ImportError('single-chapter', '全文被识别为单章，章节标记可能不规范，请检查后重试')
         }
     }
 
@@ -433,30 +430,7 @@ export class PressImportService {
             emit(false)
         }
         emit(true)
-        // 素材抽取失败不阻断导入：正文已落盘，素材可随时通过详情页重跑
-        let analysis: AnalysisResult | null = null
-        if (failedChapters === 0) {
-            onProgress({
-                jobId,
-                status: 'running',
-                done,
-                total,
-                writtenChars,
-                failedChapters,
-                dirPath,
-                message: '正在抽取导入素材…',
-            })
-            try {
-                analysis = await analyzeProject(dirPath)
-            } catch (error) {
-                logger.error(`导入素材抽取失败：${dirPath}`, error)
-            }
-        }
         const isPartiallyFailed = failedChapters > 0
-        const materialNote =
-            analysis === null
-                ? ''
-                : `，识别候选角色 ${String(analysis.characterCount)} 个、设定候选章 ${String(analysis.settingClueCount)} 章`
         return {
             status: isPartiallyFailed ? 'failed' : 'completed',
             done,
@@ -467,7 +441,7 @@ export class PressImportService {
             code: isPartiallyFailed ? 'partially-failed' : undefined,
             message: isPartiallyFailed
                 ? `已导入 ${String(done - failedChapters)} 章，${String(failedChapters)} 章写入失败`
-                : `已导入《${name}》共 ${String(total)} 章 ${String(writtenChars)} 字${materialNote}`,
+                : `已导入《${name}》共 ${String(total)} 章 ${String(writtenChars)} 字`,
         }
     }
 }

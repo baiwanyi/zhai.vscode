@@ -1,8 +1,9 @@
 /**
  * 人物设定页：写作流程的第三步，用角色下拉筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
- * 复用约定：列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterDetail 承担、
+ * 复用约定：外壳取 components/AppPage（作品名走 AppDescription 眉标、筛选行进 AppAction、列表走 AppContent 滚动），
+ * 列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterDetail 承担、
  * 新增由 CharacterCreateDialog 承担、提取由 useCharacterExtract 发起、封面画廊由 useCharacterPortrait 读取；
- * 搜索框复用 ui/input-group（前置图标交给 InputGroupAddon），不再手写绝对定位与左内边距；
+ * 搜索框复用 ui/input-group（前置图标交给 InputGroupAddon），提取中的等待态复用 components/StateEmpty；
  * 本文件只做筛选、搜索、提取、封面回读与弹窗编排，以及作品氛围、作品目录的下传。
  * 关键约束：新增后直接打开编辑弹窗，因此 onCreateCharacter 必须回传新卡 id；
  * 编辑弹窗以人物 id 作为 key 重建，关闭即丢弃草稿，页面不保留编辑中间态；
@@ -13,9 +14,18 @@ import { Plus, Search, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@components/ui/input-group'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
-import { Spinner } from '@components/ui/spinner'
 import type { PortraitGalleryItem, PressExtractedCharacter } from '@shared/types/press'
+import {
+    AppAction,
+    AppContent,
+    AppDescription,
+    AppFooter,
+    AppHeader,
+    AppPage,
+    AppTitle,
+} from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import { CharacterCreateDialog } from './CharacterCreateDialog'
 import { CharacterEditDialog } from './CharacterEditDialog'
 import { CharacterList } from './CharacterList'
@@ -146,76 +156,75 @@ export function PressCharacterPage({
     }
 
     return (
-        <div className="@container flex h-full min-h-0 flex-col gap-2 p-3">
-            <header className="flex shrink-0 flex-col gap-2">
-                <div className="min-w-0 flex-1">
-                    <h1 className="truncate font-heading text-lg mb-2">{setting.title}</h1>
-                    <h2 className="truncate font-semibold">人物设定</h2>
-                    <p className="truncate text-muted-foreground tabular-nums">
-                        共 {characters.length} 人 · 欲望与弱点决定冲突，大纲排布时会引用
-                    </p>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                    <Select value={roleFilter} onValueChange={handleFilterChange}>
-                        <SelectTrigger className="h-8 w-24" aria-label="角色筛选">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectGroup>
-                                {CHARACTER_ROLE_FILTERS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                        {option.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectGroup>
-                        </SelectContent>
-                    </Select>
-                    <InputGroup className="min-w-0 flex-1">
-                        <InputGroupAddon>
-                            <Search />
-                        </InputGroupAddon>
-                        <InputGroupInput
-                            value={query}
-                            aria-label="搜索人物"
-                            placeholder="搜索姓名、昵称或身份"
-                            onChange={(event) => setQuery(event.target.value)}
+        <>
+            <AppPage>
+                <AppHeader>
+                    {/* 眉标：作品名与说明同用弱化小字，避免与页面标题争夺主视觉 */}
+                    <AppDescription>{setting.title}</AppDescription>
+                    <AppTitle>人物设定</AppTitle>
+                    <AppDescription>共 {characters.length} 人 · 欲望与弱点决定冲突，大纲排布时会引用</AppDescription>
+                    <AppAction>
+                        <Select value={roleFilter} onValueChange={handleFilterChange}>
+                            <SelectTrigger className="h-8 w-24" aria-label="角色筛选">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectGroup>
+                                    {CHARACTER_ROLE_FILTERS.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectGroup>
+                            </SelectContent>
+                        </Select>
+                        <InputGroup className="min-w-0 flex-1">
+                            <InputGroupAddon>
+                                <Search />
+                            </InputGroupAddon>
+                            <InputGroupInput
+                                value={query}
+                                aria-label="搜索人物"
+                                placeholder="搜索姓名、昵称或身份"
+                                onChange={(event) => setQuery(event.target.value)}
+                            />
+                        </InputGroup>
+                    </AppAction>
+                </AppHeader>
+                <AppContent isScrollable>
+                    {isExtracting ? (
+                        // 提取期间整块替换为加载态：进度文案由宿主逐批回传，形如「角色卡 3/5」
+                        <StateEmpty
+                            title="正在提取人物卡"
+                            isLoading
+                            loadingLabel={progress?.message ?? '正在提取人物卡…'}
+                            className="flex-1 justify-center"
                         />
-                    </InputGroup>
-                </div>
-            </header>
-
-            <div className="min-h-0 flex-1 overflow-y-auto p-0.5">
-                {isExtracting ? (
-                    // 提取期间整块替换为加载态：进度文案由宿主逐批回传，形如「角色卡 3/5」
-                    <div className="flex h-full flex-col items-center justify-center gap-3 text-muted-foreground">
-                        <Spinner className="size-6" />
-                        <p className="tabular-nums">{progress?.message ?? '正在提取人物卡…'}</p>
-                    </div>
-                ) : (
-                    <CharacterList
-                        characters={visibleCharacters}
-                        totalCount={characters.length}
-                        hasFilter={hasFilter}
-                        galleries={galleries}
-                        onSelect={setEditingId}
-                        onCreate={() => setIsCreateOpen(true)}
-                        onExtract={handleExtract}
-                        onClearFilter={handleClearFilter}
-                        onDelete={handleDeleteCharacter}
-                    />
-                )}
-            </div>
-
-            <footer className="relative flex shrink-0 items-center justify-end gap-1.5 pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent">
-                <Button variant="outline" disabled={isExtracting} onClick={handleExtract}>
-                    <Sparkles data-icon="inline-start" />
-                    {isExtracting ? '提取中' : '提取'}
-                </Button>
-                <Button disabled={isExtracting} onClick={() => setIsCreateOpen(true)}>
-                    <Plus data-icon="inline-start" />
-                    新增
-                </Button>
-            </footer>
+                    ) : (
+                        <CharacterList
+                            characters={visibleCharacters}
+                            totalCount={characters.length}
+                            hasFilter={hasFilter}
+                            galleries={galleries}
+                            onSelect={setEditingId}
+                            onCreate={() => setIsCreateOpen(true)}
+                            onExtract={handleExtract}
+                            onClearFilter={handleClearFilter}
+                            onDelete={handleDeleteCharacter}
+                        />
+                    )}
+                </AppContent>
+                <AppFooter>
+                    <Button variant="outline" disabled={isExtracting} onClick={handleExtract}>
+                        <Sparkles data-icon="inline-start" />
+                        {isExtracting ? '提取中' : '提取'}
+                    </Button>
+                    <Button disabled={isExtracting} onClick={() => setIsCreateOpen(true)}>
+                        <Plus data-icon="inline-start" />
+                        新增
+                    </Button>
+                </AppFooter>
+            </AppPage>
 
             {/* key 绑定展开状态：每次打开都重建表单，上一次的输入不会带过来 */}
             <CharacterCreateDialog
@@ -234,6 +243,6 @@ export function PressCharacterPage({
                     onCancel={() => setEditingId(null)}
                 />
             ) : null}
-        </div>
+        </>
     )
 }

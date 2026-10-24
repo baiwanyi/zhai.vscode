@@ -5,7 +5,7 @@
  * 多选态的批量操作栏由页面底部承担，本区块不承载任何操作按钮。
  */
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@components/ui/card'
-import type { ModuleStat, NoteAction, RecentFile } from '@shared/types/dashboard'
+import type { NoteAction, RecentFile } from '@shared/types/dashboard'
 import { NotesHeaderActions } from './NotesHeaderActions'
 import { NotesList } from './NotesList'
 import { NotesListState } from './NotesListState'
@@ -17,17 +17,14 @@ interface NotesSectionProps {
     pinnedNotes: RecentFile[]
     /** 置顶之外的其余笔记 */
     unpinnedNotes: RecentFile[]
-    modules: ModuleStat[]
     status: StatsStatus
     error: string | null
     isFiltered: boolean
     activeId: string | null
-    activeModules: string[]
     isSelecting: boolean
     selectedPaths: string[]
     onSelect: (path: string) => void
     onInvoke: (path: string, action: NoteAction) => void
-    onToggleModule: (name: string) => void
     onResetFilters: () => void
     onToggleSelecting: () => void
     onToggleSelected: (path: string) => void
@@ -36,17 +33,14 @@ interface NotesSectionProps {
 export function NotesSection({
     pinnedNotes,
     unpinnedNotes,
-    modules,
     status,
     error,
     isFiltered,
     activeId,
-    activeModules,
     isSelecting,
     selectedPaths,
     onSelect,
     onInvoke,
-    onToggleModule,
     onResetFilters,
     onToggleSelecting,
     onToggleSelected,
@@ -61,14 +55,7 @@ export function NotesSection({
                     {isSelecting ? (selectedCount > 0 ? `已选择 ${selectedCount} 个笔记` : '选择笔记') : '笔记列表'}
                 </CardTitle>
                 <CardAction className="row-span-1">
-                    <NotesHeaderActions
-                        modules={modules}
-                        activeModules={activeModules}
-                        isSelecting={isSelecting}
-                        onToggleModule={onToggleModule}
-                        onResetFilters={onResetFilters}
-                        onToggleSelecting={onToggleSelecting}
-                    />
+                    <NotesHeaderActions isSelecting={isSelecting} onToggleSelecting={onToggleSelecting} />
                 </CardAction>
             </CardHeader>
             <CardContent className="px-0">

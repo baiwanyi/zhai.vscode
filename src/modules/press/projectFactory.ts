@@ -286,9 +286,10 @@ const FRONTMATTER_NON_STRING_PATTERN = /^(?:-?\d+(?:\.\d+)?|true|false|null|~)$/
 /**
  * Frontmatter 标量序列化：可读性优先，普通文本裸写；
  * 含 YAML 结构字符、换行或会被解析成数字 / 布尔的文本时用双引号包裹并转义。
- * 关键约束：转义后由 fileMeta.parseTitle 反向还原，保证「写入 → 列表展示」闭环。
+ * 关键约束：转义后由 fileMeta.parseTitle 反向还原，保证「写入 → 列表展示」闭环；
+ * 章节元信息的增量回填（chapterSummaryMerge）复用本函数，避免出现两套引号口径。
  */
-function formatFrontmatterScalar(value: string, inFlow: boolean): string {
+export function formatFrontmatterScalar(value: string, inFlow: boolean): string {
     const shouldQuote =
         FRONTMATTER_UNSAFE_START_PATTERN.test(value) ||
         FRONTMATTER_UNSAFE_INLINE_PATTERN.test(value) ||

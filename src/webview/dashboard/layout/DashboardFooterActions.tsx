@@ -1,9 +1,9 @@
 /**
- * 顶部更多操作浮层：以省略号按钮展开索引重建、缓存清理与插件设置。
- * 复用 @components/ui 的 dropdown-menu 与 spinner；动作经回调上抛，自身不持有状态。
- * 关键约束：菜单项须置于 DropdownMenuGroup 内，破坏性操作单独分组并使用 destructive 变体。
+ * 仪表盘底部操作栏：置于 AppPage 的 AppFooter，左端「添加」按钮与右端「更多操作」浮层分列两侧。
+ * 浮层以本文件内的组件函数承载索引重建、缓存清理与插件设置入口，交互全部经回调上抛给页面。
+ * 关键约束：浮层菜单项须置于 DropdownMenuGroup 内，破坏性操作单独分组并使用 destructive 变体。
  */
-import { Ellipsis, RefreshCw, Settings, Trash2 } from 'lucide-react'
+import { Ellipsis, Plus, RefreshCw, Settings, Trash2 } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -16,7 +16,16 @@ import { Spinner } from '@components/ui/spinner'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 
-interface DashboardQuickMenuProps {
+interface DashboardFooterActionsProps {
+    isBusy: boolean
+    isRebuilding: boolean
+    onAdd: () => void
+    onRebuild: () => void
+    onClearCache: () => void
+    onOpenSettings: () => void
+}
+
+interface MoreMenuProps {
     isBusy: boolean
     isRebuilding: boolean
     onRebuild: () => void
@@ -24,24 +33,11 @@ interface DashboardQuickMenuProps {
     onOpenSettings: () => void
 }
 
-export function DashboardQuickMenu({
-    isBusy,
-    isRebuilding,
-    onRebuild,
-    onClearCache,
-    onOpenSettings,
-}: DashboardQuickMenuProps): JSX.Element {
+function MoreMenu({ isBusy, isRebuilding, onRebuild, onClearCache, onOpenSettings }: MoreMenuProps): JSX.Element {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button
-                    variant="outline"
-                    size="icon"
-                    className="rounded-full"
-                    disabled={isBusy}
-                    tooltip="更多操作"
-                    aria-label="更多操作"
-                >
+                <Button variant="ghost" size="icon" disabled={isBusy} tooltip="更多操作" aria-label="更多操作">
                     <Ellipsis />
                 </Button>
             </DropdownMenuTrigger>
@@ -65,5 +61,29 @@ export function DashboardQuickMenu({
                 </DropdownMenuGroup>
             </DropdownMenuContent>
         </DropdownMenu>
+    )
+}
+
+export function DashboardFooterActions({
+    isBusy,
+    isRebuilding,
+    onAdd,
+    onRebuild,
+    onClearCache,
+    onOpenSettings,
+}: DashboardFooterActionsProps): JSX.Element {
+    return (
+        <div className="flex flex-1 items-center justify-between">
+            <Button size="icon" tooltip="添加笔记" onClick={onAdd}>
+                <Plus className="size-4" />
+            </Button>
+            <MoreMenu
+                isBusy={isBusy}
+                isRebuilding={isRebuilding}
+                onRebuild={onRebuild}
+                onClearCache={onClearCache}
+                onOpenSettings={onOpenSettings}
+            />
+        </div>
     )
 }

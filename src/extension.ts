@@ -131,8 +131,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // 作品封面与角色卡共用同一图像通道与每日额度，单独挂服务以便提示词与落盘目录互不干扰
     const coverService = new PressCoverService(pressDb, imageRouter, usageRecorder)
     // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown；打开作品时同步路由事实
-    // 语义归纳依赖 AI 通道，晚于仪表盘创建，故回填给已注册的仪表盘实例；
-    // 工作台的人物卡提取复用同一实例，单任务锁与配额口径因此保持一致
+    // 语义归纳依赖 AI 通道，晚于仪表盘创建；人物卡、大纲与设定的按需提取共用同一实例，
+    // 单任务锁与配额口径因此保持一致
     const semanticService = new ImportSemanticService(pressDb, aiProvider, usageRecorder)
     const pressRoutes = new PressRoutes(
         pressAiService,
@@ -143,7 +143,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         semanticService,
         snapshotService,
     )
-    dashboardProvider.attachSemanticService(semanticService)
 
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,

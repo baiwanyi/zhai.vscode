@@ -1,8 +1,8 @@
 /**
  * 作品详情数据：拉取 press/detail（摘要 + 卷分组章节），并提供新增卷、新增章节、卷重命名/删除、
- * 章节删除/移动、整部作品删除、打开章节与打开作品设定的动作。
+ * 章节删除/移动、摘要回填、整部作品删除、打开章节与打开作品设定的动作。
  * 复用 @shared/utils/bridge 的请求与状态订阅、press/utils 的状态与提示口径；索引变更由 index 通道驱动重拉。
- * 关键约束：新建、卷操作与章节操作共用独立提交态，任一进行中即阻止重复提交；成功后重拉，不等 watcher 防抖；
+ * 关键约束：新建、卷操作、章节操作与摘要回填共用独立提交态，任一进行中即阻止重复提交；成功后重拉，不等 watcher 防抖；
  * 失败一律提示且不污染已有详情；本地数据只认宿主回包，不在前端拼装章节条目；卷与章节的破坏性操作
  * 返回成功与否供弹窗决定是否关闭，移动还回传落点供页面展开目标卷。
  */
@@ -13,6 +13,7 @@ import type {
     CreatedPressChapter,
     CreatedPressVolume,
     DeletePressProjectResult,
+    MergeChapterSummaryResult,
     MovedPressChapter,
     PressProjectDetail,
     RenamedPressVolume,
@@ -32,9 +33,13 @@ export interface PressProjectDetailState {
     isUpdatingChapter: boolean
     /** 整部作品删除进行中：期间禁用页头删除入口，避免重复提交 */
     isDeletingProject: boolean
+    /** 摘要回填进行中：期间禁用回填入口，避免重复写同一批章节 */
+    isMergingSummary: boolean
     reload: () => Promise<void>
     createChapter: (volumeDir?: string) => Promise<void>
     createVolume: () => Promise<void>
+    /** 把归纳产物里的章节摘要回填到章节 Frontmatter：宿主只补空、不覆盖 */
+    mergeChapterSummary: () => Promise<void>
     renameVolume: (volumeDir: string, name: string) => Promise<boolean>
     deleteVolume: (volumeDir: string) => Promise<boolean>
     deleteChapter: (path: string) => Promise<boolean>
@@ -55,6 +60,7 @@ export function usePressProjectDetail(dirPath: string): PressProjectDetailState 
     const [isUpdatingVolume, setIsUpdatingVolume] = useState(false)
     const [isUpdatingChapter, setIsUpdatingChapter] = useState(false)
     const [isDeletingProject, setIsDeletingProject] = useState(false)
+    const [isMergingSummary, setIsMergingSummary] = useState(false)
 
     const reload = useCallback(async (): Promise<void> => {
         try {
@@ -188,6 +194,27 @@ export function usePressProjectDetail(dirPath: string): PressProjectDetailState 
         [dirPath, reload],
     )
 
+    /**
+     * 回填章节摘要：把归纳产物里的摘要写进章节 Frontmatter 的 summary。
+     * 关键约束：改动统计与结论由宿主回包给出，前端只按有无改动切换提示级别，不自行推断结果。
+     */
+    const mergeChapterSummary = useCallback(async (): Promise<void> => {
+        setIsMergingSummary(true)
+        try {
+            const result = await request<MergeChapterSummaryResult>('press/mergeChapterSummary', { dirPath })
+            if (result.updated === 0) {
+                toast.info(result.message)
+            } else {
+                toast.success(result.message)
+            }
+            await reload()
+        } catch (cause) {
+            toastError(cause)
+        } finally {
+            setIsMergingSummary(false)
+        }
+    }, [dirPath, reload])
+
     /** 删除整部作品：成功后不重拉详情（作品已不存在），由页面跳回作品列表 */
     const deleteProject = useCallback(async (): Promise<boolean> => {
         setIsDeletingProject(true)
@@ -233,9 +260,11 @@ export function usePressProjectDetail(dirPath: string): PressProjectDetailState 
         isUpdatingVolume,
         isUpdatingChapter,
         isDeletingProject,
+        isMergingSummary,
         reload,
         createChapter,
         createVolume,
+        mergeChapterSummary,
         renameVolume,
         deleteVolume,
         deleteChapter,

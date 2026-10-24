@@ -1,6 +1,7 @@
 /**
  * 作品设定页：写作流程的第二步，按「基本信息 / 故事内核 / 世界观 / 金手指 / 写作风格 / 封面」收集作品级输入。
- * 复用约定：分组切换由 PressSettingRail（ui/toggle-group）承载，文案与缺项字段表来自 ./sections，
+ * 复用约定：外壳取 components/AppPage（作品名走 AppDescription 眉标、分组栏进 AppAction、字段区走 AppContent 滚动），
+ * 分组切换由 PressSettingRail（ui/toggle-group）承载，文案与缺项字段表来自 ./sections，
  * 各分组字段拆在 PressSetting*Fields 中，缺项判断来自 ../utils；封面分组自带 AI 出图能力。
  * 关键约束：页面只向上抛出字段补丁，不直接改文件；同一时刻只渲染一个分组，缺项判断覆盖全部分组；
  * 「AI 补齐设定」把素材归纳结果交给父级合并（只填空字段），提取不到时切到第一个缺项分组、不代替作者填写。
@@ -9,6 +10,15 @@ import { Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import type { PressExtractedSetting } from '@shared/types/press'
+import {
+    AppAction,
+    AppContent,
+    AppDescription,
+    AppFooter,
+    AppHeader,
+    AppPage,
+    AppTitle,
+} from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { PressSettingBasicFields } from './PressSettingBasicFields'
 import { PressSettingCoverFields } from './PressSettingCoverFields'
@@ -89,20 +99,20 @@ export function PressSettingPage({ setting, dirPath, onChange, onExtractSetting 
     }
 
     return (
-        <div className="@container flex h-full min-h-0 flex-col gap-2 p-3">
-            <header className="flex shrink-0 flex-col gap-2">
-                <h1 className="truncate font-heading text-lg mb-2">{setting.title}</h1>
-                <h2 className="truncate font-semibold">作品设定</h2>
-                <p className="truncate text-muted-foreground">设定越具体，大纲与续写越不容易跑偏</p>
-            </header>
-
-            <PressSettingRail activeSection={activeSection} onSelect={setActiveSection} />
-
-            <div className="min-h-0 flex-1 overflow-y-auto p-0.5">
+        <AppPage>
+            <AppHeader>
+                {/* 眉标：作品名与说明同用弱化小字，避免与页面标题争夺主视觉 */}
+                <AppDescription>{setting.title}</AppDescription>
+                <AppTitle>作品设定</AppTitle>
+                <AppDescription>设定越具体，大纲与续写越不容易跑偏</AppDescription>
+                <AppAction>
+                    <PressSettingRail activeSection={activeSection} onSelect={setActiveSection} />
+                </AppAction>
+            </AppHeader>
+            <AppContent isScrollable>
                 <Fields setting={setting} dirPath={dirPath} onChange={onChange} />
-            </div>
-
-            <footer className="relative flex shrink-0 items-center justify-end gap-1.5 pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent">
+            </AppContent>
+            <AppFooter>
                 <Button
                     variant="outline"
                     title="按设定候选章的摘录与摘要归纳世界观、规则与核心概念（调用 AI），只填空字段；提取不到时切到缺项分组"
@@ -112,7 +122,7 @@ export function PressSettingPage({ setting, dirPath, onChange, onExtractSetting 
                     <Sparkles />
                     {isExtracting ? '提取中' : 'AI 补齐设定'}
                 </Button>
-            </footer>
-        </div>
+            </AppFooter>
+        </AppPage>
     )
 }

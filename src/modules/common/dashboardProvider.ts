@@ -34,6 +34,7 @@ import type {
     CreatedPressChapter,
     CreatedPressVolume,
     DeletePressProjectResult,
+    MergeChapterSummaryResult,
     MovedPressChapter,
     OpenPressProjectResult,
     PressAnalyzeResult,
@@ -46,7 +47,6 @@ import type {
 } from '../../shared/types/press'
 import type { OpenWorkflowResult } from '../../shared/types/workflow'
 import type { PressCoverStore } from '../press/db/coverRepository'
-import type { ImportSemanticService } from '../press/importSemanticService'
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenNoteRequest, isPinNotesRequest } from '../../shared/types/note'
@@ -56,6 +56,7 @@ import {
     isDeletePressChapterRequest,
     isDeletePressProjectRequest,
     isDeletePressVolumeRequest,
+    isMergeChapterSummaryRequest,
     isMovePressChapterRequest,
     isOpenPressChapterRequest,
     isPressAnalyzeRequest,
@@ -66,8 +67,8 @@ import {
 } from '../../shared/types/press'
 import { isOpenWorkflowRequest } from '../../shared/types/workflow'
 import { createAndOpenNote, openNoteByPath } from '../note/noteService'
+import { mergeChapterSummaries } from '../press/chapterSummaryMerge'
 import { analyzeProject } from '../press/importAnalysis'
-import { SemanticError } from '../press/importSemanticService'
 import { ImportError, PressImportService } from '../press/importService'
 import {
     hasProjectFile,
@@ -99,8 +100,6 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private indexStatusListener: vscode.Disposable | null = null
     /** 作品导入服务：持有待导入文件 token 与进行中的任务，长任务进度经 state 通道广播 */
     private readonly importService: PressImportService
-    /** 语义归纳服务：AI 通道晚于仪表盘创建，故用后置注入；未注入时相关请求直接拒绝 */
-    private semanticService: ImportSemanticService | null = null
     /** 封面选择仓储：press.db 晚于仪表盘打开，故用后置注入；未注入时列表不带封面 */
     private coverStore: PressCoverStore | null = null
 
@@ -113,11 +112,6 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         private readonly workflowRouter: WorkflowRouter,
     ) {
         this.importService = new PressImportService(indexService)
-    }
-
-    /** 注入语义归纳服务：由扩展入口在 AI 通道就绪后调用 */
-    public attachSemanticService(service: ImportSemanticService): void {
-        this.semanticService = service
     }
 
     /** 注入封面选择仓储：由扩展入口在 press.db 打开后调用，作品列表据此显示封面 */
@@ -168,8 +162,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             this.post(view, { type: 'response', reqId, ok: true, payload: result })
         } catch (error) {
             const text = error instanceof Error ? error.message : String(error)
-            // 导入与归纳类错误带业务原因码，前端据此分发提示文案；其余仍以协议方法名兜底
-            const code = error instanceof ImportError || error instanceof SemanticError ? error.code : method
+            // 导入类错误带业务原因码，前端据此分发提示文案；其余仍以协议方法名兜底
+            const code = error instanceof ImportError ? error.code : method
             logger.error(`Webview 请求处理失败：${method}`, error)
             this.post(view, { type: 'response', reqId, ok: false, error: { code, message: text } })
         }
@@ -242,6 +236,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             }
             case 'press/analyze': {
                 return this.analyzePressMaterial(payload)
+            }
+            case 'press/mergeChapterSummary': {
+                return this.mergePressChapterSummary(payload)
             }
             case 'index/rebuild': {
                 void this.indexService.fullRebuild()
@@ -599,6 +596,27 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             goldenFingerHits: result.goldenFingerHits,
             settingClueCount: result.settingClueCount,
         }
+    }
+
+    /**
+     * 回填章节摘要：把 Materials/summaries.tsv 的摘要按 index.tsv 的路径写回章节 Frontmatter 的 summary。
+     * 关键约束：只补空不覆盖——章节已有摘要时跳过，因此不需要写入前留版；
+     * 章节路径取自索引库，不采信前端；单章失败只计数不中断，仅在没有可回填摘要时以结论文案说明。
+     */
+    private async mergePressChapterSummary(payload: unknown): Promise<MergeChapterSummaryResult> {
+        if (!isMergeChapterSummaryRequest(payload)) {
+            throw new Error('press/mergeChapterSummary 参数非法：dirPath 须为非空字符串')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法回填摘要：${payload.dirPath}`)
+        }
+        const result = await mergeChapterSummaries({
+            dirPath: payload.dirPath,
+            chapterPaths: listProjectChapterPaths(this.db, payload.dirPath),
+            indexer: this.indexService,
+        })
+        logger.info(`章节摘要回填完成：${payload.dirPath}，${result.message}`)
+        return result
     }
 
     /**

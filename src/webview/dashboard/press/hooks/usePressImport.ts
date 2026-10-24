@@ -3,6 +3,7 @@
  * 复用约定：请求与状态订阅走 @shared/utils/bridge，错误提示统一经 sonner；
  * 进度与终态共用同一个 toast id，避免逐章弹出多条提示把面板刷满。
  * 关键约束：宿主下发的业务原因码经 HostRequestError 传递，文案映射集中在本模块，页面不解析字符串；
+ * 选文件期间置 isPicking，页面据此阻断其它写操作入口，避免候选确认与新建弹窗叠加；
  * 导入期间页面保持可交互，取消只请求宿主在章节边界停下，已写章节不回滚。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -69,6 +70,8 @@ function isProgressPayload(value: unknown): value is PressImportProgress {
 export interface PressImportState {
     /** 已通过安全校验与试解析、等待用户确认的候选文件 */
     candidate: PressImportCandidate | null
+    /** 正在等待用户选择文件：期间占住弹窗位，页面应禁用其它写操作入口 */
+    isPicking: boolean
     isImporting: boolean
     /** 选文件并预检：用户取消或校验失败时保持候选为空 */
     pick: () => Promise<void>
@@ -82,6 +85,7 @@ export interface PressImportState {
 
 export function usePressImport(): PressImportState {
     const [candidate, setCandidate] = useState<PressImportCandidate | null>(null)
+    const [isPicking, setIsPicking] = useState(false)
     const [isImporting, setIsImporting] = useState(false)
     /** 当前任务的 jobId：用于过滤旧任务的迟到进度 */
     const jobIdRef = useRef('')
@@ -115,11 +119,14 @@ export function usePressImport(): PressImportState {
     }, [])
 
     const pick = useCallback(async (): Promise<void> => {
+        setIsPicking(true)
         try {
             const next = await request<PressImportCandidate | null>('press/import/pick', undefined, PICK_TIMEOUT_MS)
             setCandidate(next)
         } catch (cause) {
             toast.error(toImportErrorMessage(cause))
+        } finally {
+            setIsPicking(false)
         }
     }, [])
 
@@ -163,5 +170,5 @@ export function usePressImport(): PressImportState {
         setCandidate(null)
     }, [])
 
-    return { candidate, isImporting, pick, start, cancel, dismiss }
+    return { candidate, isPicking, isImporting, pick, start, cancel, dismiss }
 }

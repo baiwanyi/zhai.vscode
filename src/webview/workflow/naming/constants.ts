@@ -37,6 +37,12 @@ export const CATEGORY_ICONS: Readonly<Record<NamingCategory, LucideIcon>> = {
 /** 分类栏无障碍标题 */
 export const CATEGORY_RAIL_LABEL = '取名分类'
 
+/** 页面标题与说明：加载态、失败态与正常态共用同一份标题区文案 */
+export const PAGE_TITLE = '取名'
+
+export const PAGE_DESCRIPTION =
+    '选定分类并设置风格、时代与字数后随机取名，结果在弹窗中展示；关闭后可随时「查看结果」，满意的直接复制。'
+
 /** 结果区空态文案 */
 export const EMPTY_TITLE = '还没有生成名字'
 

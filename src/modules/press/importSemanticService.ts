@@ -1,11 +1,10 @@
 /**
- * 导入语义归纳：按「章节摘要 → 卷纲 → 角色卡 → 作品设定」的顺序分批调用 AI，产物平铺在作品的 Materials/ 下；
- * 另可只跑单个阶段（提取人物卡 / 重建大纲 / 归纳设定），把既有或新生成的产物解析成草案回传。
+ * 导入语义归纳：按需只跑单个阶段（提取人物卡 / 重建大纲 / 归纳设定），把既有或新生成的产物解析成草案回传。
  * 复用约定：素材与文件名由 importAnalysis 产出，模型选择取 ai/providers 的当前选择，
- * 配额按天记在 press.db 的 meta 表（独立键，不与外貌生成互相挤占），取消走 AbortSignal。
- * 关键约束：各阶段只产出数据文件，不修改章节文档——回填 Frontmatter 属于合并阶段，可反复重跑；
- * 阶段间以产物文件是否存在判断是否跳过，阶段内以已处理序号断点续传；
- * 提示词一律要求「信息不足就留空」，宁可缺字段也不接受编造；
+ * 配额按天记在 press.db 的 meta 表（独立键，不与外貌生成互相挤占）。
+ * 关键约束：由用户在工作台按需触发，导入流程不调用本服务；
+ * 各阶段只产出数据文件，不修改章节文档——回填 Frontmatter 属于合并阶段，可反复重跑；
+ * 批次内以已处理序号续跑，提示词一律要求「信息不足就留空」，宁可缺字段也不接受编造；
  * 归纳输入必须带原文片段（章节中段摘录、角色出场原文），只给摘要会让产出退化成二次概括。
  */
 
@@ -24,7 +23,6 @@ import type {
     PressExtractedVolume,
     PressSemanticErrorCode,
     PressSemanticProgress,
-    PressSemanticStage,
 } from '../../shared/types/press'
 import type { AiChatMessage, AiProvider, AiUsage, AiUsageMeta } from '../ai/provider'
 import type { UsageRecorder } from '../ai/usageRecorder'
@@ -36,12 +34,6 @@ import { summarizeMessages } from '../ai/usageRecorder'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
 import { buildStorageUri } from '../common/storagePath'
-
-/** 摘要批次：6 章约 7200 字摘录，输出 6 行多列 TSV；批次调小是为了给「关键节点」与「出场」留够输出长度 */
-const SUMMARY_BATCH_SIZE = 6
-
-/** 卷纲批次：每组最多章节数，超过则按段切分，避免单次输入过长 */
-const VOLUME_GROUP_SIZE = 40
 
 /** 角色卡批次：每次处理几个角色，信息密度足够又不至于互相干扰 */
 const CHARACTER_BATCH_SIZE = 3
@@ -64,9 +56,6 @@ const MAX_TOKENS = 4000
 /** 单批超时：模型排队时不宜无限等待，超时按失败处理并由用户重跑 */
 const BATCH_TIMEOUT_MS = 150_000
 
-/** 摘要长度上限：超出部分截断，防止模型输出整段评论 */
-const SUMMARY_MAX_LENGTH = 140
-
 /** 单章关键节点上限：与章纲节拍的可读性平衡，超过会被前端截断 */
 const SUMMARY_BEAT_LIMIT = 4
 
@@ -75,17 +64,6 @@ const SUMMARY_CAST_LIMIT = 6
 
 /** 钩子类型白名单：与大纲章节字段的取值保持一致 */
 const HOOKS = ['悬念', '反转', '情绪', '无'] as const
-
-/** 阶段执行顺序：后者依赖前者的产物 */
-const STAGE_ORDER: readonly PressSemanticStage[] = ['summary', 'volumes', 'characters', 'setting']
-
-/** 阶段中文名：用于进度提示 */
-const STAGE_LABELS: Readonly<Record<PressSemanticStage, string>> = {
-    summary: '章节摘要',
-    volumes: '卷纲',
-    characters: '角色卡',
-    setting: '作品设定',
-}
 
 /** 配额键：与外貌生成分开计数，批量任务不挤占日常额度 */
 const QUOTA_KEYS: QuotaKeys = {
@@ -159,17 +137,6 @@ interface StageResult {
     total: number
     /** 产物已存在或无待处理项时为 true，不计入「本轮生成」 */
     skipped: boolean
-}
-
-/** 语义归纳的最终结果 */
-export interface SemanticOutcome {
-    status: 'completed' | 'failed' | 'cancelled'
-    done: number
-    total: number
-    generated: number
-    dirPath: string
-    code?: PressSemanticErrorCode
-    message: string
 }
 
 /** 语义归纳失败：携带原因码，由上层转成前端可读文案 */
@@ -667,134 +634,6 @@ function parseSettingDraft(text: string, clues: GoldenClue[]): PressExtractedSet
     return hasContent ? setting : null
 }
 
-/** 摘要序列化：首行表头，其余按序号升序 */
-function serializeSummaries(rows: SummaryRow[]): string {
-    const lines = [SUMMARIES_HEADER]
-    const sorted = [...rows].sort((left, right) => left.order - right.order)
-    for (const row of sorted) {
-        const summary = row.summary.replace(/[\t\r\n]+/gu, ' ').trim()
-        lines.push(
-            [String(row.order), summary, row.hook, String(row.tension), row.beats.join('；'), row.cast.join('、')].join(
-                '\t',
-            ),
-        )
-    }
-    return `${lines.join('\n')}\n`
-}
-
-/** 构建摘要提示词：素材给三段原位摘录，输出带关键节点与出场人物 */
-function buildSummaryMessages(rows: HeadRow[]): AiChatMessage[] {
-    const blocks = rows.map((row) => {
-        const tail = row.tail.length > 0 ? row.tail : '（本章较短，末段与首段重合）'
-        const middle = row.middle.length > 0 ? row.middle : '（本章较短，中段与首尾重合）'
-        return `### ${String(row.order)} ${row.title}\n首段：${row.head}\n中段：${middle}\n末段：${tail}`
-    })
-    return [
-        {
-            role: 'system',
-            content: '你是小说编辑，只输出制表符分隔的纯文本，不做解释、不加 Markdown 代码块。',
-        },
-        {
-            role: 'user',
-            content: [
-                '下面给出若干章节的标题与首段、中段、末段摘录，请为每一章写一条完整的章节记录。',
-                '',
-                '要求：',
-                '1. 梗概不超过 120 字，按时间顺序写清「谁做了什么、结果如何」，覆盖本章主要事件，不评价、不剧透后文。',
-                '2. 判断章末钩子：悬念 / 反转 / 情绪 / 无，四选一。',
-                '3. 张力取 1 到 5 的整数，5 表示冲突最激烈。',
-                '4. 关键节点：本章的转折或关键推进，2 到 4 条，每条不超过 20 字，用分号（；）分隔。',
-                '5. 出场人物：本章有台词或明确行动的人物名，用顿号分隔，最多 6 个，只写名字不写身份。',
-                '6. 严格每行六列，用制表符分隔：序号、梗概、钩子、张力、关键节点、出场。',
-                '7. 不要表头，不要额外说明，不要代码块围栏。',
-                '8. 给出的每一个序号都必须有一行输出。',
-                '',
-                '章节素材：',
-                blocks.join('\n\n'),
-            ].join('\n'),
-        },
-    ]
-}
-
-/** 解析摘要输出：只接受序号在请求范围内、列数与取值合法的行 */
-function parseSummaryOutput(content: string, allowed: Set<number>): { rows: SummaryRow[]; dropped: number } {
-    const rows: SummaryRow[] = []
-    let dropped = 0
-    const seen = new Set<number>()
-    for (const rawLine of content.split(/\r?\n/u)) {
-        const line = rawLine.replace(/^```[a-z]*$/iu, '').trim()
-        if (line.length === 0) {
-            continue
-        }
-        const columns = line.split('\t')
-        const order = Number(columns[0])
-        const isValid =
-            columns.length >= 4 &&
-            Number.isInteger(order) &&
-            allowed.has(order) &&
-            !seen.has(order) &&
-            (HOOKS as readonly string[]).includes(columns[2] ?? '')
-        if (!isValid) {
-            dropped += 1
-            continue
-        }
-        const tension = Number(columns[3])
-        seen.add(order)
-        rows.push({
-            order,
-            summary: (columns[1] ?? '').trim().slice(0, SUMMARY_MAX_LENGTH),
-            hook: columns[2] ?? '无',
-            tension: Number.isFinite(tension) ? Math.min(5, Math.max(1, Math.round(tension))) : 3,
-            beats: splitLabels(columns[4] ?? '', SUMMARY_BEAT_LIMIT),
-            cast: splitLabels(columns[5] ?? '', SUMMARY_CAST_LIMIT),
-        })
-    }
-    return { rows, dropped }
-}
-
-/** 构建卷纲提示词：输入是逐章摘要（含关键节点），要求输出固定字段的 Markdown 片段 */
-function buildVolumeMessages(
-    groupLabel: string,
-    rangeText: string,
-    rows: { title: string; summary: string; beats: string[] }[],
-): AiChatMessage[] {
-    const lines = rows.map((row, index) => {
-        const beats = row.beats.length > 0 ? `（关键节点：${row.beats.join('；')}）` : ''
-        return `${String(index + 1)}. ${row.title}：${row.summary}${beats}`
-    })
-    return [
-        {
-            role: 'system',
-            content: '你是小说编辑，只输出结构化 Markdown 片段，不做解释、不加代码块围栏。',
-        },
-        {
-            role: 'user',
-            content: [
-                `下面是${groupLabel}（章节 ${rangeText}）的逐章摘要，请据此写出这一段的卷纲。`,
-                '',
-                '输出格式（严格照抄字段名，每字段一行，不要额外内容）：',
-                `### ${groupLabel}`,
-                `- 章节范围：${rangeText}`,
-                '- 卷目标：一句话概括本段主角要达成什么',
-                '- 卷冲突：一句话概括本段的核心对抗',
-                '- 情节脉络：本段主线如何推进，2 到 4 句，写清起因、升级与收束',
-                '- 关键转折：本段最重要的转折，2 到 4 条，用分号分隔',
-                '- 主要事件：三条，用分号分隔',
-                '- 卷末钩子：一句话',
-                '',
-                '要求：',
-                '1. 只依据给出的摘要与关键节点，不要引入摘要里没有的人物或事件。',
-                '2. 情节脉络要能串起逐章顺序，关键转折必须是本段剧情走向真正改变的地方。',
-                '3. 摘要信息不足以支撑某一字段时，该字段留空，不要编造。',
-                '4. 不要输出标题层级之外的分隔线或总结。',
-                '',
-                '逐章摘要：',
-                lines.join('\n'),
-            ].join('\n'),
-        },
-    ]
-}
-
 /**
  * 构建角色卡提示词：输入是候选角色的出场统计、相关章节摘要与出场原文摘录。
  * 关键约束：年龄、外貌、口头禅只能来自原文摘录，摘要里通常没有这些细节；
@@ -865,13 +704,12 @@ function buildCharacterMessages(
 }
 
 /**
- * 导入语义归纳服务：一次只允许一个任务，按阶段顺序推进。
- * 关键约束：取消在批次边界生效，已完成阶段的产物保留；
+ * 导入语义归纳服务：角色卡与设定各自按需执行，一次只允许一个任务。
+ * 关键约束：任务一旦启动只能等待完成，已完成批次的产物保留；
  * 配额用尽时以 quota-exceeded 终止并保留进度，调大限额或次日续跑即可。
  */
 export class ImportSemanticService {
-    private controller: AbortController | null = null
-    private activeJobId = ''
+    private isRunning = false
 
     public constructor(
         private readonly db: Database.Database,
@@ -884,139 +722,20 @@ export class ImportSemanticService {
      * 关键约束：只做检查、不占锁，真正启动时 start 会再校验一次。
      */
     public async assertReady(): Promise<void> {
-        if (this.controller !== null) {
-            throw new SemanticError('internal', '已有归纳任务在进行中，请等待完成或取消')
+        if (this.isRunning) {
+            throw new SemanticError('internal', '已有归纳任务在进行中，请等待完成')
         }
         const ready = await this.provider.checkReady()
         if (!ready.ready) {
             throw new SemanticError('not-ready', ready.reason ?? 'AI 通道未就绪，请先登录或检查配置')
-        }
-    }
-
-    /**
-     * 启动语义归纳：按给定阶段顺序执行，已完成阶段直接跳过。
-     * 导入流程不再自动调用本方法：导入只写正文，归纳由用户在设定页 / 大纲页按需触发
-     * （对应 extractSetting / extractOutline / extractCharacters）。
-     * @param jobId 由调用方生成并立即回传前端，用于过滤进度与取消
-     * @param dirPath 作品目录，形如 press/{作品名}
-     * @param stages 本次要跑的阶段，缺省为「摘要 → 卷纲 → 角色卡」全部
-     */
-    public async start(
-        jobId: string,
-        dirPath: string,
-        onProgress: (progress: PressSemanticProgress) => void,
-        stages: readonly PressSemanticStage[] = STAGE_ORDER,
-    ): Promise<SemanticOutcome> {
-        if (this.controller !== null) {
-            throw new SemanticError('internal', '已有归纳任务在进行中，请等待完成或取消')
-        }
-        const ready = await this.provider.checkReady()
-        if (!ready.ready) {
-            throw new SemanticError('not-ready', ready.reason ?? 'AI 通道未就绪，请先登录或检查配置')
-        }
-        // 旧作品的素材仍在 _import 下：先迁移再读，否则会被当成「没有素材」直接报错
-        await migrateLegacyMaterialDirectory(dirPath)
-        const headsUri = resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.heads)
-        const heads = parseHeads(await readTextFile(headsUri))
-        if (heads.length === 0) {
-            throw new SemanticError('no-material', '未找到章节素材，请先重新执行导入或素材抽取')
-        }
-        const controller = new AbortController()
-        this.controller = controller
-        this.activeJobId = jobId
-        let stage: PressSemanticStage = stages[0] ?? 'summary'
-        let done = 0
-        let total = heads.length
-        let generated = 0
-        const emit = (
-            status: PressSemanticProgress['status'],
-            message: string,
-            code?: PressSemanticErrorCode,
-        ): void => {
-            onProgress({
-                jobId,
-                stage,
-                status,
-                done,
-                total,
-                generated,
-                dirPath,
-                ...(code === undefined ? {} : { code }),
-                message,
-            })
-        }
-        try {
-            const results: StageResult[] = []
-            for (const current of stages) {
-                if (controller.signal.aborted) {
-                    logger.info(`语义归纳已取消：${dirPath}，停在 ${STAGE_LABELS[current]}`)
-                    const message = `已取消，已完成 ${String(results.length)} 个阶段`
-                    emit('cancelled', message)
-                    return { status: 'cancelled', done, total, generated, dirPath, message }
-                }
-                stage = current
-                const result = await this.runStage(dirPath, current, heads, controller.signal, (state) => {
-                    done = state.done
-                    total = state.total
-                    emit('running', state.message)
-                })
-                generated += result.generated
-                done = result.done
-                total = result.total
-                results.push(result)
-            }
-            emit('completed', this.buildSummaryMessage(results, stages))
-            return {
-                status: 'completed',
-                done,
-                total,
-                generated,
-                dirPath,
-                message: this.buildSummaryMessage(results, stages),
-            }
-        } catch (error) {
-            if (error instanceof SemanticError) {
-                // 配额用尽属于「暂停」而非「出错」：保留已完成进度，用户调大限额或次日续跑
-                if (error.code === 'quota-exceeded') {
-                    logger.info(`语义归纳暂停：${dirPath}，已完成 ${String(done)}/${String(total)}`)
-                    emit('failed', error.message, 'quota-exceeded')
-                    return {
-                        status: 'failed',
-                        done,
-                        total,
-                        generated,
-                        dirPath,
-                        code: 'quota-exceeded',
-                        message: error.message,
-                    }
-                }
-                throw error
-            }
-            const message = error instanceof Error ? error.message : String(error)
-            logger.error(`语义归纳失败：${dirPath}`, error)
-            const isAborted = controller.signal.aborted
-            const summary = isAborted ? '已取消' : `语义归纳中断：${message}`
-            emit(isAborted ? 'cancelled' : 'failed', summary, isAborted ? 'aborted' : 'internal')
-            return {
-                status: isAborted ? 'cancelled' : 'failed',
-                done,
-                total,
-                generated,
-                dirPath,
-                code: isAborted ? 'aborted' : 'internal',
-                message: summary,
-            }
-        } finally {
-            this.controller = null
-            this.activeJobId = ''
         }
     }
 
     /**
      * 提取人物卡：只跑角色卡阶段，并把产物解析成草案回传给调用方。
-     * @param jobId 由调用方生成，用于进度广播与取消匹配
+     * @param jobId 由调用方生成，用于进度广播
      * @param dirPath 作品目录，形如 press/{作品名}
-     * 关键约束：产物已存在时直接复用，重复提取不消耗配额；与整篇归纳共用同一把单任务锁，
+     * 关键约束：产物已存在时直接复用，重复提取不消耗配额；与设定提取共用同一把单任务锁，
      * 同一时刻只能有一个归纳或提取任务在进行。
      */
     public async extractCharacters(
@@ -1024,8 +743,8 @@ export class ImportSemanticService {
         dirPath: string,
         onProgress: (progress: PressSemanticProgress) => void,
     ): Promise<{ characters: PressExtractedCharacter[]; message: string }> {
-        if (this.controller !== null) {
-            throw new SemanticError('internal', '已有归纳任务在进行中，请等待完成或取消')
+        if (this.isRunning) {
+            throw new SemanticError('internal', '已有归纳任务在进行中，请等待完成')
         }
         // 先迁移旧目录：产物在 _import 里时不能被判成「没有角色卡」而重跑耗配额
         await migrateLegacyMaterialDirectory(dirPath)
@@ -1033,9 +752,7 @@ export class ImportSemanticService {
         if (!ready.ready) {
             throw new SemanticError('not-ready', ready.reason ?? 'AI 通道未就绪，请先登录或检查配置')
         }
-        const controller = new AbortController()
-        this.controller = controller
-        this.activeJobId = jobId
+        this.isRunning = true
         const emit = (status: PressSemanticProgress['status'], message: string, done: number, total: number): void => {
             onProgress({ jobId, stage: 'characters', status, done, total, generated: 0, dirPath, message })
         }
@@ -1055,7 +772,7 @@ export class ImportSemanticService {
                     logger.error(`素材抽取失败：${dirPath}`, error)
                 }
             }
-            const result = await this.runCharacters(dirPath, controller.signal, (state) => {
+            const result = await this.runCharacters(dirPath, (state) => {
                 emit('running', state.message, state.done, state.total)
             })
             const characters = parseCharacterDrafts(
@@ -1069,8 +786,7 @@ export class ImportSemanticService {
             emit('completed', message, result.done, result.total)
             return { characters, message }
         } finally {
-            this.controller = null
-            this.activeJobId = ''
+            this.isRunning = false
         }
     }
 
@@ -1181,18 +897,17 @@ export class ImportSemanticService {
         if (clues.length === 0) {
             return { setting: null, message: '作品里没有可用章节：请先完成导入或素材抽取' }
         }
-        if (this.controller !== null) {
-            throw new SemanticError('internal', '已有归纳任务在进行中，请等待完成或取消')
+        if (this.isRunning) {
+            throw new SemanticError('internal', '已有归纳任务在进行中，请等待完成')
         }
         const ready = await this.provider.checkReady()
         if (!ready.ready) {
             throw new SemanticError('not-ready', ready.reason ?? 'AI 通道未就绪，请先登录或检查配置')
         }
         this.assertQuota()
-        const controller = new AbortController()
-        this.controller = controller
+        this.isRunning = true
         try {
-            await this.runSetting(dirPath, controller.signal, () => {
+            await this.runSetting(dirPath, () => {
                 // 单次提取不需要细粒度进度，前端只用返回结果
             })
             const setting = parseSettingDraft(
@@ -1205,7 +920,7 @@ export class ImportSemanticService {
             logger.info(`设定提取完成：${dirPath}`)
             return { setting, message: `已提取设定与 ${String(clues.length)} 章线索供核对` }
         } finally {
-            this.controller = null
+            this.isRunning = false
         }
     }
 
@@ -1273,13 +988,12 @@ export class ImportSemanticService {
     }
 
     /**
-     * 阶段四：归纳作品设定，写出 setting.md。
+     * 归纳作品设定，写出 setting.md。
      * 关键约束：产物已存在即跳过，重复跑不消耗配额；模型未给出任何可用字段时不落盘，
      * 留待用户重试，避免用空文件把阶段标记成「已完成」。
      */
     private async runSetting(
         dirPath: string,
-        signal: AbortSignal,
         onState: (state: { done: number; total: number; message: string }) => void,
     ): Promise<StageResult> {
         const settingUri = resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${SETTING_FILE}`)
@@ -1298,12 +1012,9 @@ export class ImportSemanticService {
             onState({ done: 0, total: 0, message: '缺少可用章节，跳过设定' })
             return { generated: 0, done: 0, total: 0, skipped: true }
         }
-        if (signal.aborted) {
-            return { generated: 0, done: 0, total: 0, skipped: true }
-        }
         this.assertQuota()
         const messages = await this.buildSettingMessages(dirPath, clues)
-        const content = await this.generate(messages, signal)
+        const content = await this.generate(messages)
         if (parseSettingDraft(content, clues) === null) {
             onState({ done: 0, total: 0, message: '模型没有返回可用的设定字段' })
             return { generated: 0, done: 0, total: 0, skipped: true }
@@ -1314,202 +1025,9 @@ export class ImportSemanticService {
         return { generated: 1, done: 1, total: 1, skipped: false }
     }
 
-    /** 取消进行中的归纳：在下一个批次边界生效 */
-    public cancel(jobId: string): { cancelled: boolean } {
-        if (this.controller === null || this.activeJobId !== jobId) {
-            return { cancelled: false }
-        }
-        this.controller.abort()
-        return { cancelled: true }
-    }
-
-    /**
-     * 阶段汇总文案：只列出本轮真正生成内容的阶段。
-     * 关键约束：results 与 stages 一一对应，不能按 STAGE_ORDER 取下标——
-     * 只跑部分阶段时下标会错位，把角色卡的结果说成章节摘要。
-     */
-    private buildSummaryMessage(results: readonly StageResult[], stages: readonly PressSemanticStage[]): string {
-        const generatedParts: string[] = []
-        for (const [index, result] of results.entries()) {
-            const stage = stages[index]
-            if (stage === undefined || result.skipped || result.generated === 0) {
-                continue
-            }
-            generatedParts.push(`${STAGE_LABELS[stage]} ${String(result.generated)} 项`)
-        }
-        if (generatedParts.length === 0) {
-            return '全部阶段均已完成，无需重新生成'
-        }
-        return `已生成 ${generatedParts.join('、')}`
-    }
-
-    /** 按阶段分派 */
-    private async runStage(
-        dirPath: string,
-        stage: PressSemanticStage,
-        heads: HeadRow[],
-        signal: AbortSignal,
-        onState: (state: { done: number; total: number; message: string }) => void,
-    ): Promise<StageResult> {
-        if (stage === 'summary') {
-            return this.runSummary(dirPath, heads, signal, onState)
-        }
-        if (stage === 'volumes') {
-            return this.runVolumes(dirPath, signal, onState)
-        }
-        if (stage === 'setting') {
-            return this.runSetting(dirPath, signal, onState)
-        }
-        return this.runCharacters(dirPath, signal, onState)
-    }
-
-    /**
-     * 阶段一：逐批生成章节摘要，写入 summaries.tsv。
-     * 关键约束：待处理的范围除「还没有摘要的章」外，还包括「有摘要但缺关键节点」的章——
-     * 旧版摘要只有四列，不补跑的话升级后的大纲永远拿不到节拍与出场人物。
-     * 结果按序号覆盖合并，重跑同一章不会在文件里留下两行。
-     */
-    private async runSummary(
-        dirPath: string,
-        heads: HeadRow[],
-        signal: AbortSignal,
-        onState: (state: { done: number; total: number; message: string }) => void,
-    ): Promise<StageResult> {
-        const summariesUri = resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.summaries)
-        const existingByOrder = new Map(
-            parseSummaries(await readTextFile(summariesUri)).map((row) => [row.order, row] as const),
-        )
-        const pending = heads.filter((row) => {
-            const existing = existingByOrder.get(row.order)
-            return existing === undefined || existing.beats.length === 0
-        })
-        const total = heads.length
-        const baseDone = total - pending.length
-        let done = baseDone
-        let generated = 0
-        if (pending.length === 0) {
-            onState({ done, total, message: '章节摘要已全部存在，跳过' })
-            return { generated: 0, done, total, skipped: true }
-        }
-        for (let index = 0; index < pending.length; index += SUMMARY_BATCH_SIZE) {
-            if (signal.aborted) {
-                break
-            }
-            this.assertQuota()
-            const batch = pending.slice(index, index + SUMMARY_BATCH_SIZE)
-            const allowed = new Set(batch.map((row) => row.order))
-            const content = await this.generate(buildSummaryMessages(batch), signal)
-            const parsed = parseSummaryOutput(content, allowed)
-            if (parsed.rows.length === 0) {
-                throw new SemanticError('internal', '模型未返回可解析的摘要，请重试')
-            }
-            if (parsed.dropped > 0) {
-                logger.warn(`摘要批次有 ${String(parsed.dropped)} 行被丢弃：${dirPath}`)
-            }
-            for (const row of parsed.rows) {
-                existingByOrder.set(row.order, row)
-            }
-            await writeTextFile(summariesUri, serializeSummaries([...existingByOrder.values()]))
-            consumeToday(this.db, QUOTA_KEYS)
-            generated += parsed.rows.length
-            done = Math.min(total, baseDone + generated)
-            onState({
-                done,
-                total,
-                message: `章节摘要 ${String(done)}/${String(total)} · ${String(Math.floor((done / total) * 100))}%`,
-            })
-        }
-        return { generated, done, total, skipped: false }
-    }
-
-    /** 阶段二：按卷或按段聚合摘要，写出卷纲 */
-    private async runVolumes(
-        dirPath: string,
-        signal: AbortSignal,
-        onState: (state: { done: number; total: number; message: string }) => void,
-    ): Promise<StageResult> {
-        const volumesUri = resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${VOLUMES_FILE}`)
-        await vscode.workspace.fs.createDirectory(resolveMaterialFile(dirPath, PRESS_IMPORT_DIR))
-        const existing = await readMaterialText(dirPath, `${PRESS_IMPORT_DIR}/${VOLUMES_FILE}`)
-        if (isProductUpToDate(existing, ['- 情节脉络：'])) {
-            onState({ done: 0, total: 0, message: '卷纲已存在，跳过' })
-            return { generated: 0, done: 0, total: 0, skipped: true }
-        }
-        const indexRows = parseIndex(await readTextFile(resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.index)))
-        const summaries = new Map(
-            parseSummaries(await readTextFile(resolveMaterialFile(dirPath, MATERIAL_FILE_NAMES.summaries))).map(
-                (row) => [row.order, row] as const,
-            ),
-        )
-        if (indexRows.length === 0 || summaries.size === 0) {
-            onState({ done: 0, total: 0, message: '缺少章节清单或摘要，跳过卷纲' })
-            return { generated: 0, done: 0, total: 0, skipped: true }
-        }
-        // 按卷分组；未分卷的章节落到同一组，超长时再按固定章数切段
-        const groups = new Map<string, { order: number; title: string; summary: string; beats: string[] }[]>()
-        for (const row of indexRows) {
-            const summary = summaries.get(row.order)
-            if (summary === undefined || summary.summary.length === 0) {
-                continue
-            }
-            const label = row.volumeDir.length > 0 ? row.volumeDir : '未分卷'
-            const bucket = groups.get(label) ?? []
-            bucket.push({ order: row.order, title: row.title, summary: summary.summary, beats: summary.beats })
-            groups.set(label, bucket)
-        }
-        const sections: string[] = [
-            '# 卷纲',
-            '',
-            '> 由 AI 依据逐章摘要与关键节点归纳，未经原著核对。信息不足的字段留空。',
-            '',
-        ]
-        const tasks: { label: string; range: string; rows: { title: string; summary: string; beats: string[] }[] }[] =
-            []
-        for (const [label, rows] of groups) {
-            const chunks = Math.ceil(rows.length / VOLUME_GROUP_SIZE)
-            for (let index = 0; index < chunks; index += 1) {
-                const slice = rows.slice(index * VOLUME_GROUP_SIZE, (index + 1) * VOLUME_GROUP_SIZE)
-                const first = slice[0]
-                const last = slice[slice.length - 1]
-                if (first === undefined || last === undefined) {
-                    continue
-                }
-                const suffix = chunks > 1 ? `（${String(index + 1)}/${String(chunks)}）` : ''
-                tasks.push({
-                    label: `${label}${suffix}`,
-                    range: `${String(first.order)}–${String(last.order)}`,
-                    rows: slice,
-                })
-            }
-        }
-        let generated = 0
-        for (const [index, task] of tasks.entries()) {
-            if (signal.aborted) {
-                break
-            }
-            this.assertQuota()
-            const content = await this.generate(buildVolumeMessages(task.label, task.range, task.rows), signal)
-            const cleaned = content.replace(/^```[a-z]*$/giu, '').trim()
-            if (cleaned.length === 0) {
-                continue
-            }
-            sections.push(cleaned, '')
-            consumeToday(this.db, QUOTA_KEYS)
-            generated += 1
-            onState({
-                done: index + 1,
-                total: tasks.length,
-                message: `卷纲 ${String(index + 1)}/${String(tasks.length)} · ${task.label}`,
-            })
-        }
-        await writeTextFile(volumesUri, `${sections.join('\n')}\n`)
-        return { generated, done: tasks.length, total: tasks.length, skipped: false }
-    }
-
-    /** 阶段三：按候选表逐批生成角色卡，写出 characters.md */
+    /** 按候选表逐批生成角色卡，写出 characters.md */
     private async runCharacters(
         dirPath: string,
-        signal: AbortSignal,
         onState: (state: { done: number; total: number; message: string }) => void,
     ): Promise<StageResult> {
         const charactersUri = resolveMaterialFile(dirPath, `${PRESS_IMPORT_DIR}/${CHARACTERS_FILE}`)
@@ -1586,16 +1104,13 @@ export class ImportSemanticService {
         }
         let generated = 0
         for (const [index, batch] of batches.entries()) {
-            if (signal.aborted) {
-                break
-            }
             this.assertQuota()
             const items = batch.map((candidate) => ({
                 candidate,
                 references: collectReferences(candidate),
                 evidence: collectCharacterEvidence(candidate),
             }))
-            const content = await this.generate(buildCharacterMessages(items), signal)
+            const content = await this.generate(buildCharacterMessages(items))
             const cleaned = filterCharacterOutput(content.replace(/^```[a-z]*$/giu, '').trim())
             if (cleaned.length > 0) {
                 sections.push(cleaned, '')
@@ -1629,14 +1144,12 @@ export class ImportSemanticService {
     }
 
     /**
-     * 生成单批内容：累积流式增量，超时与外部取消都通过同一 AbortController 生效。
+     * 生成单批内容：累积流式增量，超时通过 AbortController 生效。
      * 关键约束：provider 不得持有跨请求状态，并发隔离由本方法的 controller 负责。
      */
-    private async generate(messages: AiChatMessage[], signal: AbortSignal): Promise<string> {
+    private async generate(messages: AiChatMessage[]): Promise<string> {
         const controller = new AbortController()
         const timer = setTimeout(() => controller.abort(), BATCH_TIMEOUT_MS)
-        const forwardAbort = (): void => controller.abort()
-        signal.addEventListener('abort', forwardAbort)
         let content = ''
         let usage: AiUsage | null = null
         let usageMeta: AiUsageMeta | null = null
@@ -1670,7 +1183,6 @@ export class ImportSemanticService {
             return content
         } finally {
             clearTimeout(timer)
-            signal.removeEventListener('abort', forwardAbort)
         }
     }
 }
