@@ -5,7 +5,7 @@
  * 关键约束：作品名同时作为目录名，须满足跨平台约束（非法字符、系统保留名、首尾空格与点）；
  * 本模块只产出相对路径与内容，落盘与索引由 projectService 负责；README 与章节的 Frontmatter title 供索引器取标题；
  * 章节文档除正文外的信息（本章介绍 / 出场角色 / 金手指设定 / 字数目标）全部落在 Frontmatter，正文区只写小说文本；
- * 新作品自带卷1 与首章，保证详情页一进去就有可写章节，不留空态。
+ * 新作品自带默认卷与首章，保证详情页一进去就有可写章节，不留空态。
  */
 import type { PressAudience } from '../../shared/types/press'
 
@@ -157,7 +157,7 @@ export function buildProjectDocuments(name: string, audience: PressAudience, now
     ]
 }
 
-/** 生成作品骨架文件清单：顺序固定，README 始终在首位，卷1 首章在末位 */
+/** 生成作品骨架文件清单：顺序固定，README 始终在首位，默认卷首章在末位 */
 export function buildProjectSkeleton(name: string, audience: PressAudience, now: Date): ProjectSkeletonFile[] {
     return [
         ...buildProjectDocuments(name, audience, now),
@@ -227,17 +227,35 @@ export function buildOrderedChapterFileName(order: number, displayName: string):
     return `${String(order).padStart(CHAPTER_ORDER_WIDTH, '0')}-${displayName}.md`
 }
 
-/** 生成卷目录名：{两位序号}-卷{N} */
-export function buildVolumeDirName(order: number): string {
-    return `${String(order).padStart(CHAPTER_ORDER_WIDTH, '0')}-卷${order}`
+/** 自动创建卷的默认名称：作品骨架、无卷兜底与手动新建卷共用同一来源 */
+export const DEFAULT_VOLUME_NAME = '默认卷'
+
+/** 默认卷名冲突时的最大后缀尝试次数 */
+const MAX_VOLUME_NAME_SUFFIX = 99
+
+/** 生成卷目录名：{两位序号}-{卷名} */
+export function buildVolumeDirName(order: number, name: string = DEFAULT_VOLUME_NAME): string {
+    return `${String(order).padStart(CHAPTER_ORDER_WIDTH, '0')}-${name}`
 }
 
-/** 生成卷展示名：卷{N} */
-export function buildVolumeTitle(order: number): string {
-    return `卷${order}`
+/**
+ * 生成默认卷名：优先「默认卷」，与现有卷名冲突时依次尝试「默认卷 2」「默认卷 3」……
+ * @param existingNames 作品下已有卷的展示名集合
+ */
+export function buildDefaultVolumeName(existingNames: ReadonlySet<string>): string {
+    if (!existingNames.has(DEFAULT_VOLUME_NAME)) {
+        return DEFAULT_VOLUME_NAME
+    }
+    for (let suffix = 2; suffix <= MAX_VOLUME_NAME_SUFFIX; suffix += 1) {
+        const candidate = `${DEFAULT_VOLUME_NAME} ${suffix}`
+        if (!existingNames.has(candidate)) {
+            return candidate
+        }
+    }
+    throw new Error(`卷名冲突过多：${DEFAULT_VOLUME_NAME} 已排到 ${MAX_VOLUME_NAME_SUFFIX}`)
 }
 
-/** 默认卷序号：作品创建时即生成卷1 */
+/** 默认卷序号：作品创建时即生成第一卷 */
 export const DEFAULT_VOLUME_ORDER = 1
 
 /** 默认卷目录名：作品骨架创建与「无卷时章节落点」共用同一来源 */

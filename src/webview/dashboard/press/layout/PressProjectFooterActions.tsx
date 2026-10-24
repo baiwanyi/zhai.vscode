@@ -1,9 +1,9 @@
 /**
  * 作品详情页底部操作栏：左端「添加章节」直达按钮，右端省略号浮层承载素材抽取、摘要回填与删除作品。
  * 复用 @components/ui 的 dropdown-menu、spinner 与 @webview/components/Button；动作经回调上抛，自身不持有状态。
- * 关键约束：添加章节写入的卷由页面按「当前展开的卷」决定，本组件只负责触发；
+ * 关键约束：添加章节的落点由页面决定（展开卷 → 该卷，否则最后一个卷，无卷时自动建默认卷），本组件只负责触发；
  * 菜单项须置于 DropdownMenuGroup 内，破坏性动作单独分组并使用 destructive 变体；
- * 没有卷时禁用添加章节，详情未就绪时禁用素材抽取与摘要回填，抽取、回填与删除各自按自身进行中态禁用，互不阻塞。
+ * 详情未就绪时禁用素材抽取与摘要回填，抽取、回填与删除各自按自身进行中态禁用，互不阻塞。
  */
 import { Ellipsis, Plus, ScrollText, Sparkles, Trash2 } from 'lucide-react'
 import {
@@ -27,8 +27,6 @@ interface PressProjectFooterActionsProps {
     isDeletingProject: boolean
     /** 详情数据是否就绪：未就绪时禁用素材抽取与摘要回填 */
     isReady: boolean
-    /** 是否存在可写入的卷：无卷时禁用添加章节 */
-    canAddChapter: boolean
     onAddChapter: () => void
     onAnalyze: () => void
     onMergeSummary: () => void
@@ -41,7 +39,6 @@ export function PressProjectFooterActions({
     isCreatingChapter,
     isDeletingProject,
     isReady,
-    canAddChapter,
     onAddChapter,
     onAnalyze,
     onMergeSummary,
@@ -53,7 +50,7 @@ export function PressProjectFooterActions({
                 size="icon"
                 tooltip="添加章节"
                 aria-label="添加章节"
-                disabled={!canAddChapter || isCreatingChapter}
+                disabled={isCreatingChapter}
                 onClick={onAddChapter}
             >
                 <Plus />

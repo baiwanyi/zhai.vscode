@@ -109,8 +109,6 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
     const volumes = useMemo(() => detail?.volumes ?? EMPTY_VOLUMES, [detail])
     /** 实际展开的卷：未操作时默认第一个卷，既保证首屏有内容，也让添加章节有明确落点 */
     const expandedVolumeDir = openVolumeDir === undefined ? (volumes[0]?.dirName ?? null) : openVolumeDir
-    /** 可作为加章落点的卷：未分卷组（空目录名）不可追加，与卷头加章入口的 canAppend 口径一致 */
-    const appendableVolumes = useMemo(() => volumes.filter((volume) => volume.dirName.length > 0), [volumes])
     const project = detail?.project
     const fallbackName = dirPath.split('/')[1] ?? '作品'
     const projectName = project?.name ?? fallbackName
@@ -201,14 +199,18 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
         [moveChapter],
     )
 
-    /** 添加章节：写入当前展开的卷；收起或当前卷不可追加时回落到第一个可分卷的卷 */
+    /**
+     * 添加章节：展开的卷可追加时写入该卷；
+     * 全部收起（或展开的是未分卷组）时不指定卷，由数据层落到序号最大的卷，作品还没有卷时自动创建默认卷。
+     */
     const handleAddChapter = useCallback((): void => {
         const isOpenAppendable = expandedVolumeDir !== null && expandedVolumeDir.length > 0
-        const targetVolumeDir = isOpenAppendable ? expandedVolumeDir : appendableVolumes[0]?.dirName
-        if (targetVolumeDir !== undefined) {
-            void createChapter(targetVolumeDir)
+        if (isOpenAppendable) {
+            void createChapter(expandedVolumeDir)
+            return
         }
-    }, [appendableVolumes, createChapter, expandedVolumeDir])
+        void createChapter()
+    }, [createChapter, expandedVolumeDir])
 
     return (
         <>
@@ -257,7 +259,6 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                         isCreatingChapter={isCreatingChapter}
                         isDeletingProject={isDeletingProject}
                         isReady={status === 'ready'}
-                        canAddChapter={appendableVolumes.length > 0}
                         onAddChapter={handleAddChapter}
                         onAnalyze={() => void analyze()}
                         onMergeSummary={() => void mergeChapterSummary()}

@@ -445,7 +445,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     /**
      * 删除卷：整卷移入回收站并清理该卷的索引记录。
      * 关键约束：先回查作品存在再触达文件系统；删除不可撤销（回收站可恢复），确认交互由前端承担；
-     * 作品下已无卷时无需补建，下次新增章节会回落到默认卷1。
+     * 作品下已无卷时无需补建，下次新增章节会回落到自动创建的默认卷。
      */
     private async deletePressVolume(payload: unknown): Promise<{ deleted: boolean }> {
         if (!isDeletePressVolumeRequest(payload)) {

@@ -161,7 +161,7 @@ export function isPressWorkspaceRequest(payload: unknown): payload is PressWorks
 /** press/createChapter 请求：在指定卷（缺省为最后一个卷）追加章节 */
 export interface CreatePressChapterRequest {
     dirPath: string
-    /** 落点卷目录名；缺省时落到序号最大的卷，作品还没有卷时落到默认卷1 */
+    /** 落点卷目录名；缺省时落到序号最大的卷，作品还没有卷时落到自动创建的默认卷 */
     volumeDir?: string
 }
 

@@ -20,6 +20,7 @@ import {
     buildChapterFileName,
     buildChapterSkeleton,
     buildChapterTitle,
+    buildDefaultVolumeName,
     buildOrderedChapterFileName,
     buildProjectSkeleton,
     buildRenamedVolumeDirName,
@@ -70,7 +71,7 @@ export interface CreatedProjectHandle {
 /**
  * 在 press/ 下新建作品骨架并立即索引。
  * 关键约束：作品名 trim 后再校验；目标目录已存在即拒绝，避免覆盖用户已有内容；
- * 骨架自带卷1 与首章（作品内容为空时默认就是「卷1 / 01-未命名章节」），目录须先建好再写文件。
+ * 骨架自带默认卷与首章（作品内容为空时默认就是「默认卷 / 01-未命名章节」），目录须先建好再写文件。
  */
 export async function createProject(
     indexer: ProjectIndexer,
@@ -110,7 +111,7 @@ export interface CreateChapterRequest {
     dirPath: string
     /** 该作品已登记的章节相对路径，用于计算下一个序号与落点卷 */
     chapterPaths: string[]
-    /** 落点卷目录名；缺省时落到序号最大的卷，作品还没有卷时落到默认卷1 */
+    /** 落点卷目录名；缺省时落到序号最大的卷，作品还没有卷时落到自动创建的默认卷 */
     volumeDir?: string
 }
 
@@ -369,7 +370,7 @@ function assertDocumentSaved(uri: vscode.Uri): void {
 }
 
 /**
- * 计算新章节的落点：显式指定卷则用之；否则取序号最大的卷；作品还没有卷时落到默认卷1。
+ * 计算新章节的落点：显式指定卷则用之；否则取序号最大的卷；作品还没有卷时落到自动创建的默认卷。
  * 关键约束：卷名须为单段且不含上跳片段，避免借卷名越出作品目录；序号取该卷内最大章序号 + 1，
  * 未索引的手工文件不参与编号，冲突由写入前的存在性检查兜底。
  */
@@ -433,7 +434,7 @@ export async function createChapter(
 }
 
 /**
- * 新建一卷并立即写入该卷首章：卷序号取现有卷最大序号 + 1，目录名形如 03-卷3，首章为卷内 01 章。
+ * 新建一卷并立即写入该卷首章：卷序号取现有卷最大序号 + 1，卷名默认「默认卷」，重名时递增为「默认卷 2」「默认卷 3」。
  * 关键约束：索引库只记录文档，空目录不会出现在详情页，因此建卷必须伴随首章，避免产生「看不见的卷」；
  * 目标卷目录已存在时递增序号重试，绝不写入他人已有目录。
  */
@@ -445,13 +446,16 @@ export async function createVolume(
     await migrateLegacyChapterDirectory(request.dirPath)
     const root = resolveStorageRoot()
     const volumeMaxOrders = collectVolumeMaxOrders(segments.join('/'), request.chapterPaths)
-    const usedOrders = [...volumeMaxOrders.keys()]
+    const existingVolumeDirs = [...volumeMaxOrders.keys()]
+    const usedOrders = existingVolumeDirs
         .map((volumeDir) => readOrderPrefix(volumeDir))
         .filter((order): order is number => order !== null)
     const baseOrder = usedOrders.length === 0 ? DEFAULT_VOLUME_ORDER : Math.max(...usedOrders) + 1
+    const existingNames = new Set(existingVolumeDirs.map((volumeDir) => toDisplayName(volumeDir)))
+    const volumeName = buildDefaultVolumeName(existingNames)
     for (let attempt = 0; attempt < MAX_CHAPTER_ATTEMPTS; attempt += 1) {
         const order = baseOrder + attempt
-        const volumeDir = buildVolumeDirName(order)
+        const volumeDir = buildVolumeDirName(order, volumeName)
         const directorySegments = [...segments, PROJECT_CHAPTER_DIR, volumeDir]
         const directory = buildStorageUri(root, directorySegments)
         if (await isPathExisting(directory)) {
