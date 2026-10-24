@@ -7,9 +7,9 @@ import * as path from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { readFileContent, resetWorkspaceState, setConfigValue, setFileContent } from './stubs/vscode'
 import type { PressWorkspaceFiles } from '../src/shared/types/press'
+import { PROJECT_README_NAME } from '../src/modules/press/projectFactory'
 import { PressSnapshotService } from '../src/modules/press/snapshot/snapshotService'
 import { listStoredSnapshots } from '../src/modules/press/snapshot/snapshotStore'
-import { PROJECT_README_NAME } from '../src/modules/press/projectFactory'
 
 const STORAGE_ROOT = 'd:/vault'
 const PROJECT_DIR = 'press/剑来'
@@ -98,7 +98,7 @@ describe('恢复', () => {
     it('整版覆盖四份文档，并给恢复前的内容留一版', async () => {
         const indexed: string[] = []
         const service = new PressSnapshotService({
-            indexFile: (uri) => {
+            indexFile: (uri): Promise<void> => {
                 indexed.push(uri.fsPath)
                 return Promise.resolve()
             },
