@@ -5,10 +5,10 @@
  * 失败经 sonner 提示，不在页面内渲染内联错误文本，也不改变页面状态。
  */
 import { LayoutGrid, MessagesSquare, Pencil } from 'lucide-react'
-import { Button } from '@components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import type { WorkflowContextState, WorkflowId } from '@shared/types/workflow'
 import { toastError } from '@shared/utils/error'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 import { MODULE_WORKFLOW, readModuleLabel } from '../core/routing'
 

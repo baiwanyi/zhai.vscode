@@ -7,11 +7,11 @@
  * 折叠只影响呈现层，不改变选中集合，也不影响置顶数据与批量操作范围。
  */
 import { ChevronDown } from 'lucide-react'
-import { Button } from '@components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import { ItemGroup } from '@components/ui/item'
 import { Separator } from '@components/ui/separator'
 import type { NoteAction, RecentFile } from '@shared/types/dashboard'
+import { Button } from '@webview/components/Button'
 import { NotesListItem } from './NotesListItem'
 import type { JSX } from 'react'
 

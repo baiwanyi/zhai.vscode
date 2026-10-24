@@ -10,8 +10,8 @@
 import { FileText, TextSelect, X } from 'lucide-react'
 import { useCallback, useEffect, useRef } from 'react'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@components/ui/button'
 import type { AiContextRef } from '@shared/types/aiChat'
+import { Button } from '@webview/components/Button'
 import { COMMAND_ICONS } from './commandIcons'
 import type { AiCommand } from '../constants'
 import type { ClipboardEvent as ReactClipboardEvent, JSX, KeyboardEvent as ReactKeyboardEvent } from 'react'
@@ -301,7 +301,6 @@ export function AiChatRichInput({
                         )}
                         <span className="min-w-0 truncate">{command.title}</span>
                         <Button
-                            type="button"
                             variant="ghost"
                             size="icon-xs"
                             className="size-4 shrink-0 text-muted-foreground"
@@ -335,7 +334,6 @@ export function AiChatRichInput({
                         <span className="min-w-0 truncate">{toContextFileName(context)}</span>
                         <span className="shrink-0 text-muted-foreground">{describeContext(context)}</span>
                         <Button
-                            type="button"
                             variant="ghost"
                             size="icon-xs"
                             className="size-4 shrink-0 text-muted-foreground"

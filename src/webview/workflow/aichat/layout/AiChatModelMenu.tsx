@@ -10,7 +10,6 @@
  * 清单未拉取或未命中时用运行时带回的 currentName 兜底，避免初始化阶段闪出裸模型 id。
  */
 import { Check, ChevronDown, Sparkles } from 'lucide-react'
-import { Button } from '@components/ui/button'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -21,6 +20,7 @@ import {
 } from '@components/ui/dropdown-menu'
 import { Spinner } from '@components/ui/spinner'
 import type { AiModelChoices, AiModelOption } from '@shared/types/aiChat'
+import { Button } from '@webview/components/Button'
 import { ModelIcon } from './ModelIcon'
 import type { JSX } from 'react'
 

@@ -5,9 +5,16 @@
  * 关键约束：本组件不持有字段状态、也不决定成功后是否关闭——调用方在 onSubmit 里完成提交并自行关闭；
  * 字段的 trim 与空值判定交给 useTrimmedInput，不要把校验散落进本组件。
  */
-import { Button } from '@components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@components/ui/dialog'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@components/ui/dialog'
 import { FieldGroup } from '@components/ui/field'
+import { Button } from '@webview/components/Button'
 import type { JSX, ReactNode } from 'react'
 
 export interface FormDialogProps {

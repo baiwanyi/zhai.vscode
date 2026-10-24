@@ -6,11 +6,11 @@
  * 加载态只渲染骨架不渲染条目，避免列表高度在骨架与数据之间跳动。
  */
 import { BookOpen } from 'lucide-react'
-import { Button } from '@components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@components/ui/card'
 import { ItemGroup } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
 import type { PressProjectSummary } from '@shared/types/press'
+import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { PressProjectCard } from './PressProjectCard'
 import type { PressStatus } from '../utils'

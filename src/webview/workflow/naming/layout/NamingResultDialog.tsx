@@ -7,7 +7,6 @@
  */
 import { Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@components/ui/button'
 import {
     Dialog,
     DialogContent,
@@ -20,6 +19,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@c
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Spinner } from '@components/ui/spinner'
 import type { NamingCandidate } from '@shared/types/naming'
+import { Button } from '@webview/components/Button'
 import { NamingResultCard } from './NamingResultCard'
 import type { JSX } from 'react'
 import { EMPTY_DESCRIPTION, EMPTY_TITLE } from '../constants'

@@ -6,9 +6,9 @@
  */
 import { InboxIcon, RotateCcw, Trash2 } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@components/ui/button'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { PressSnapshotEntry, PressSnapshotFileKey, PressSnapshotReason } from '@shared/types/press'
+import { Button } from '@webview/components/Button'
 import { formatSize, formatSnapshotTime } from './snapshotFormat'
 import type { JSX } from 'react'
 

@@ -7,7 +7,6 @@
  * 整窗不随内容高度跳动，也不出现外层滚动。
  */
 import { useState } from 'react'
-import { Button } from '@components/ui/button'
 import {
     Dialog,
     DialogContent,
@@ -16,6 +15,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@components/ui/dialog'
+import { Button } from '@webview/components/Button'
 import { CharacterDetail } from './CharacterDetail'
 import type { AppearanceContext } from './useCharacterAppearance'
 import type { CharacterCard } from '../types'

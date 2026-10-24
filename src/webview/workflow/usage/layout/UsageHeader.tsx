@@ -7,9 +7,9 @@
  * 刷新按钮在请求进行中禁用并转圈，避免连点触发多次全量重扫。
  */
 import { RefreshCw } from 'lucide-react'
-import { Button } from '@components/ui/button'
 import { Spinner } from '@components/ui/spinner'
 import type { AiUsagePeriods, AiUsageSummary } from '@shared/types/aiUsage'
+import { Button } from '@webview/components/Button'
 import { UsagePeriodCard } from './UsagePeriodCard'
 import type { JSX } from 'react'
 import { formatCredits, formatTokens } from '../utils'
@@ -42,7 +42,11 @@ export function UsageHeader({ summary, periods, isLoading, onRefresh }: UsageHea
                     disabled={isLoading}
                     onClick={onRefresh}
                 >
-                    {isLoading ? <Spinner className="size-4" aria-label="正在刷新用量" /> : <RefreshCw className="size-4" />}
+                    {isLoading ? (
+                        <Spinner className="size-4" aria-label="正在刷新用量" />
+                    ) : (
+                        <RefreshCw className="size-4" />
+                    )}
                 </Button>
             </div>
             <div className="grid max-w-md grid-cols-2 gap-2">

@@ -11,7 +11,6 @@
  */
 import { cn } from 'cn'
 import { BookPlus, ChevronRight, FileText, MoveRight, Pencil, Plus, Trash2 } from 'lucide-react'
-import { Button } from '@components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import {
     ContextMenu,
@@ -25,8 +24,8 @@ import {
     ContextMenuTrigger,
 } from '@components/ui/context-menu'
 import { Item, ItemActions, ItemContent, ItemTitle } from '@components/ui/item'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { PressVolumeGroup } from '@shared/types/press'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 import { formatWordCount } from '../../utils'
 import { useProgressiveList } from '../hooks/useProgressiveList'
@@ -111,21 +110,17 @@ export function PressVolumeSection({
                 </Button>
             </CollapsibleTrigger>
             {canAppend ? (
-                <Tooltip>
-                    <TooltipTrigger asChild>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            className="shrink-0 rounded-full hover:bg-transparent"
-                            aria-label={`在${title}中添加章节`}
-                            disabled={isCreatingChapter}
-                            onClick={() => onCreateChapter(volume.dirName)}
-                        >
-                            <Plus />
-                        </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>添加章节</TooltipContent>
-                </Tooltip>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    className="shrink-0 rounded-full hover:bg-transparent"
+                    aria-label={`在${title}中添加章节`}
+                    tooltip="添加章节"
+                    disabled={isCreatingChapter}
+                    onClick={() => onCreateChapter(volume.dirName)}
+                >
+                    <Plus />
+                </Button>
             ) : null}
         </div>
     )

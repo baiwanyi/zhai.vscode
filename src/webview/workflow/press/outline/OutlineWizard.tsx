@@ -11,7 +11,6 @@ import { ArrowLeft, ArrowRight, Plus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@components/ui/button'
 import {
     Dialog,
     DialogContent,
@@ -20,6 +19,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@components/ui/dialog'
+import { Button } from '@webview/components/Button'
 import { OutlineWizardInput } from './OutlineWizardInput'
 import { OutlineWizardPlan } from './OutlineWizardPlan'
 import type { CharacterCard, OutlineVolume, ProjectSetting, WizardStep } from '../types'

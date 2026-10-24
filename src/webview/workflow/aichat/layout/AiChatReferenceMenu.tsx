@@ -5,7 +5,6 @@
  */
 import { BookOpen } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@components/ui/button'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -14,6 +13,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
+import { Button } from '@webview/components/Button'
 import type { AiReferenceSource } from '../constants'
 import type { JSX } from 'react'
 import { AI_REFERENCE_SOURCES } from '../constants'

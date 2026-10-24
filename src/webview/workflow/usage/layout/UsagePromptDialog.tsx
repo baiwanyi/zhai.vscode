@@ -9,7 +9,6 @@
 import { Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@components/ui/alert'
-import { Button } from '@components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@components/ui/card'
 import {
     Dialog,
@@ -21,6 +20,7 @@ import {
 } from '@components/ui/dialog'
 import { Spinner } from '@components/ui/spinner'
 import type { AiUsageItem, AiUsagePromptResult } from '@shared/types/aiUsage'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 import { copyPrompt, formatCredits, formatDuration, formatTokens, formatUsageTime, readModuleLabel } from '../utils'
 

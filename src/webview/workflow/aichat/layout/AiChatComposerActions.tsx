@@ -5,9 +5,8 @@
  */
 import { cn } from 'cn'
 import { SendHorizontal, Square } from 'lucide-react'
-import { Button } from '@components/ui/button'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { AiConversationMode, AiModelChoices } from '@shared/types/aiChat'
+import { Button } from '@webview/components/Button'
 import { AiChatEnhanceButton } from './AiChatEnhanceButton'
 import { AiChatModelMenu } from './AiChatModelMenu'
 import { AiChatModeSwitch } from './AiChatModeSwitch'
@@ -81,41 +80,33 @@ export function AiChatComposerActions({
                     onUndo={onUndoEnhance}
                 />
                 {isGenerating ? (
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="rounded-lg text-muted-foreground"
-                                aria-label="停止生成"
-                                onClick={onStop}
-                            >
-                                <Square />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>停止生成</TooltipContent>
-                    </Tooltip>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-lg text-muted-foreground"
+                        aria-label="停止生成"
+                        tooltip="停止生成"
+                        onClick={onStop}
+                    >
+                        <Square />
+                    </Button>
                 ) : (
-                    <Tooltip>
-                        <TooltipTrigger asChild>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className={cn(
-                                    'rounded-lg',
-                                    canSend
-                                        ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                                        : 'bg-white/5 text-muted-foreground disabled:opacity-100',
-                                )}
-                                aria-label="发送"
-                                disabled={!canSend}
-                                onClick={onSend}
-                            >
-                                <SendHorizontal className="-rotate-90" />
-                            </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>发送</TooltipContent>
-                    </Tooltip>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className={cn(
+                            'rounded-lg',
+                            canSend
+                                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                                : 'bg-white/5 text-muted-foreground disabled:opacity-100',
+                        )}
+                        aria-label="发送"
+                        tooltip="发送"
+                        disabled={!canSend}
+                        onClick={onSend}
+                    >
+                        <SendHorizontal className="-rotate-90" />
+                    </Button>
                 )}
             </div>
         </div>

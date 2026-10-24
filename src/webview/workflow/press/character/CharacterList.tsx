@@ -11,11 +11,10 @@ import { cn } from 'cn'
 import { Mars, Plus, Sparkles, Trash2, UserRound, Venus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@components/ui/button'
 import { Card } from '@components/ui/card'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { PortraitGalleryItem } from '@shared/types/press'
+import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import type { CharacterCard } from '../types'
 import type { JSX } from 'react'
@@ -174,20 +173,16 @@ export function CharacterList({
                                     <p className="truncate text-muted-foreground">{summary}</p>
                                 </div>
                             </Card>
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="absolute top-1 right-1 text-muted-foreground opacity-70 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
-                                        aria-label={`删除人物 ${character.name}`}
-                                        onClick={() => setDeletingId(character.id)}
-                                    >
-                                        <Trash2 className="size-3.5" />
-                                    </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>删除人物</TooltipContent>
-                            </Tooltip>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="absolute top-1 right-1 text-muted-foreground opacity-70 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                                aria-label={`删除人物 ${character.name}`}
+                                tooltip="删除人物"
+                                onClick={() => setDeletingId(character.id)}
+                            >
+                                <Trash2 className="size-3.5" />
+                            </Button>
                         </div>
                     )
                 })}

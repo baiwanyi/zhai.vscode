@@ -7,7 +7,6 @@
  */
 import { ArrowLeft, ChevronDown, PenLine, Wand2 } from 'lucide-react'
 import { Alert, AlertDescription } from '@components/ui/alert'
-import { Button } from '@components/ui/button'
 import { Card, CardContent } from '@components/ui/card'
 import {
     DropdownMenu,
@@ -22,6 +21,7 @@ import { Progress } from '@components/ui/progress'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Slider } from '@components/ui/slider'
 import { Textarea } from '@components/ui/textarea'
+import { Button } from '@webview/components/Button'
 import { OutlineBeatList } from './OutlineBeatList'
 import type { CharacterCard, OutlineChapter, OutlineVolume, PlanStatus } from '../types'
 import type { JSX } from 'react'

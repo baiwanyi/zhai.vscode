@@ -9,10 +9,10 @@
 import { cn } from 'cn'
 import { Image as ImageIcon, ImagePlus, Trash2 } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 
 /** 图库条目的最小契约：调用方的领域对象多出的字段不影响使用 */

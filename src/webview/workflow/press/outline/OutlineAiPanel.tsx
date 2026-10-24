@@ -7,8 +7,8 @@
  */
 import { BookMarked, Globe, PenLine, ScrollText, Users, Wand2 } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@components/ui/button'
 import { Item, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
+import { Button } from '@webview/components/Button'
 import type { CharacterCard, OutlineChapter, OutlineVolume, ProjectSetting } from '../types'
 import type { JSX } from 'react'
 

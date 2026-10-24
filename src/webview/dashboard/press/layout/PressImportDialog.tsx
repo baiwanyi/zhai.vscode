@@ -9,7 +9,6 @@
 import { TriangleAlert } from 'lucide-react'
 import { useState } from 'react'
 import { Alert, AlertDescription, AlertTitle } from '@components/ui/alert'
-import { Button } from '@components/ui/button'
 import {
     Dialog,
     DialogContent,
@@ -22,6 +21,7 @@ import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import type { PressAudience, PressImportCandidate } from '@shared/types/press'
 import { DEFAULT_PRESS_AUDIENCE, PRESS_AUDIENCES, readPressAudience } from '@shared/types/press'
+import { Button } from '@webview/components/Button'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { JSX } from 'react'
 import { formatWordCount } from '../../utils'

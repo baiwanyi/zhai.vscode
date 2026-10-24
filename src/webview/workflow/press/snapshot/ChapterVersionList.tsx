@@ -6,9 +6,9 @@
  */
 import { Camera, RotateCcw, Trash2 } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@components/ui/button'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { ChapterSnapshotEntry } from '@shared/types/press'
+import { Button } from '@webview/components/Button'
 import { CHAPTER_REASON_LABELS, formatSize, formatSnapshotTime } from './snapshotFormat'
 import type { JSX } from 'react'
 

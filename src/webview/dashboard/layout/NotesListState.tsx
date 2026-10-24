@@ -5,8 +5,8 @@
  */
 import { FileText, TriangleAlert } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@components/ui/alert'
-import { Button } from '@components/ui/button'
 import { Skeleton } from '@components/ui/skeleton'
+import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import type { StatsStatus } from '../hooks/useDashboardStats'
 import type { JSX } from 'react'

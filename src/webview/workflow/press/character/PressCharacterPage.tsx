@@ -11,11 +11,11 @@
  */
 import { Plus, Search, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Button } from '@components/ui/button'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@components/ui/input-group'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Spinner } from '@components/ui/spinner'
 import type { PortraitGalleryItem, PressExtractedCharacter } from '@shared/types/press'
+import { Button } from '@webview/components/Button'
 import { CharacterCreateDialog } from './CharacterCreateDialog'
 import { CharacterEditDialog } from './CharacterEditDialog'
 import { CharacterList } from './CharacterList'

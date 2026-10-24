@@ -6,9 +6,9 @@
  */
 import { cn } from 'cn'
 import { Check, ChevronDown, Info, MessageSquare, PenLine } from 'lucide-react'
-import { Button } from '@components/ui/button'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@components/ui/dropdown-menu'
 import type { AiConversationMode } from '@shared/types/aiChat'
+import { Button } from '@webview/components/Button'
 import type { LucideIcon } from 'lucide-react'
 import type { JSX } from 'react'
 

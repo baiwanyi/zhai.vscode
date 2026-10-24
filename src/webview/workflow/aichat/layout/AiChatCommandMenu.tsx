@@ -4,7 +4,6 @@
  * 关键约束：生成中整组禁用；本组件只上抛命令对象，不写输入框、不持有写回策略。
  */
 import { Check, Command } from 'lucide-react'
-import { Button } from '@components/ui/button'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -13,6 +12,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
+import { Button } from '@webview/components/Button'
 import { COMMAND_ICONS } from './commandIcons'
 import type { AiCommand, AiCommandId } from '../constants'
 import type { JSX } from 'react'

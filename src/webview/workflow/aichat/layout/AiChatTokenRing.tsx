@@ -3,7 +3,6 @@
  * 复用 @components/ui 的 Button、Popover 与 ../utils 的 token 折算，颜色随占用比例分三档。
  * 关键约束：预算未配置时展示灰环且不可点；环内数值全部来自宿主下发的运行时信息。
  */
-import { Button } from '@components/ui/button'
 import {
     Popover,
     PopoverContent,
@@ -12,6 +11,7 @@ import {
     PopoverTitle,
     PopoverTrigger,
 } from '@components/ui/popover'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 import { formatTokens } from '../utils'
 

@@ -9,10 +9,9 @@
 import { cn } from 'cn'
 import { ChevronRight, Plus, PlusCircle, ScrollText } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
+import { Button } from '@webview/components/Button'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { OutlineVolume, PlanStatus } from '../types'
 import type { JSX } from 'react'
@@ -98,7 +97,6 @@ export function OutlineTree({
                                     <div className="flex items-center gap-0.5">
                                         <CollapsibleTrigger asChild>
                                             <Button
-                                                type="button"
                                                 variant="ghost"
                                                 className="h-auto min-w-0 flex-1 justify-start gap-1 px-1 py-1 text-left"
                                                 aria-expanded={isOpen}
@@ -125,20 +123,16 @@ export function OutlineTree({
                                                 </span>
                                             </Button>
                                         </CollapsibleTrigger>
-                                        <Tooltip>
-                                            <TooltipTrigger asChild>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="icon"
-                                                    className="shrink-0 rounded-full"
-                                                    aria-label={`在${volume.name}中添加章节`}
-                                                    onClick={() => onCreateChapter(volume.id)}
-                                                >
-                                                    <Plus />
-                                                </Button>
-                                            </TooltipTrigger>
-                                            <TooltipContent>添加章节</TooltipContent>
-                                        </Tooltip>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="shrink-0 rounded-full"
+                                            aria-label={`在${volume.name}中添加章节`}
+                                            tooltip="添加章节"
+                                            onClick={() => onCreateChapter(volume.id)}
+                                        >
+                                            <Plus />
+                                        </Button>
                                     </div>
                                     <CollapsibleContent className="flex flex-col gap-0.5 pl-3">
                                         {visibleChapters.length === 0 ? (
@@ -152,7 +146,6 @@ export function OutlineTree({
                                                 return (
                                                     <Button
                                                         key={chapter.id}
-                                                        type="button"
                                                         variant="ghost"
                                                         aria-current={isSelected ? 'true' : undefined}
                                                         aria-label={`${chapterTitleLabel(chapter)}，${meta.label}`}

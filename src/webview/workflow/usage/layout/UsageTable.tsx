@@ -7,11 +7,10 @@
  */
 import { FileText } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@components/ui/table'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { AiUsageItem } from '@shared/types/aiUsage'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 import { formatCredits, formatUsageTime, readModuleLabel, shortRequestId } from '../utils'
 
@@ -58,19 +57,15 @@ export function UsageTable({ items, onOpenRequest }: UsageTableProps): JSX.Eleme
                             <TableCell className="text-right tabular-nums">{formatCredits(item.credits)}</TableCell>
                             <TableCell>{item.model.length > 0 ? item.model : 'Auto'}</TableCell>
                             <TableCell>
-                                <Tooltip>
-                                    <TooltipTrigger asChild>
-                                        <Button
-                                            variant="link"
-                                            className="h-auto p-0 font-mono"
-                                            aria-label={`查看请求 ${item.requestId} 的提示词`}
-                                            onClick={() => onOpenRequest(item)}
-                                        >
-                                            {shortRequestId(item.requestId)}
-                                        </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>{item.requestId}</TooltipContent>
-                                </Tooltip>
+                                <Button
+                                    variant="link"
+                                    className="h-auto p-0 font-mono"
+                                    aria-label={`查看请求 ${item.requestId} 的提示词`}
+                                    tooltip={item.requestId}
+                                    onClick={() => onOpenRequest(item)}
+                                >
+                                    {shortRequestId(item.requestId)}
+                                </Button>
                             </TableCell>
                             <TableCell>
                                 <Badge variant="secondary">{readModuleLabel(item.module)}</Badge>

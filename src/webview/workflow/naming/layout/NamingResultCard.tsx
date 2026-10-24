@@ -4,8 +4,8 @@
  * 关键约束：卡片不提供多余提示属性（title 等），复制成功 / 失败均通过 toast 反馈，不在卡片内变化图标。
  */
 import { toast } from 'sonner'
-import { Button } from '@components/ui/button'
 import type { NamingCandidate } from '@shared/types/naming'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 import { copyName } from '../utils'
 

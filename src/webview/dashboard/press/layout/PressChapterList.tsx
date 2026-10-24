@@ -9,9 +9,9 @@
  */
 import { BookPlus, FileText } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
-import { Button } from '@components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import type { PressVolumeGroup } from '@shared/types/press'
+import { Button } from '@webview/components/Button'
 import { PressVolumeSection } from './PressVolumeSection'
 import type { JSX } from 'react'
 

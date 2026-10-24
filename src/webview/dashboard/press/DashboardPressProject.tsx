@@ -10,11 +10,11 @@
  */
 import { Sparkles, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from '@components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyTitle } from '@components/ui/empty'
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Skeleton } from '@components/ui/skeleton'
 import type { PressChapterEntry, PressVolumeGroup } from '@shared/types/press'
+import { Button } from '@webview/components/Button'
 import { usePressAnalyze } from './hooks/usePressAnalyze'
 import { usePressProjectDetail } from './hooks/usePressProjectDetail'
 import { PressChapterDeleteDialog } from './layout/PressChapterDeleteDialog'

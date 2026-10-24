@@ -7,9 +7,9 @@
  */
 import { BookOpen, Camera, ChevronLeft } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from '@components/ui/button'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import type { ChapterSnapshotEntry } from '@shared/types/press'
+import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { ChapterList } from './ChapterList'

@@ -4,7 +4,6 @@
  * 关键约束：菜单项须置于 DropdownMenuGroup 内，破坏性操作单独分组并使用 destructive 变体。
  */
 import { Ellipsis, RefreshCw, Settings, Trash2 } from 'lucide-react'
-import { Button } from '@components/ui/button'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -14,6 +13,7 @@ import {
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
 import { Spinner } from '@components/ui/spinner'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 
 interface DashboardQuickMenuProps {

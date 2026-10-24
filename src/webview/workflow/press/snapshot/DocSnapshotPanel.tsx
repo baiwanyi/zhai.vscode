@@ -8,10 +8,10 @@
  */
 import { Camera } from 'lucide-react'
 import { useState } from 'react'
-import { Button } from '@components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@components/ui/card'
 import { ItemGroup } from '@components/ui/item'
 import type { PressSnapshotEntry } from '@shared/types/press'
+import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { usePressSnapshots } from './hooks/usePressSnapshots'

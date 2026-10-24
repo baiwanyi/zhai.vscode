@@ -5,9 +5,9 @@
  * 失败提示由调用方经 sonner 处理，本页只负责展示与回传选择。
  */
 import { BookOpen, FolderOpen } from 'lucide-react'
-import { Button } from '@components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import type { PressProjectSummary } from '@shared/types/press'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 import { formatWordCount } from '../utils'
 

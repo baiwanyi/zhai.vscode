@@ -14,8 +14,8 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from '@components/ui/alert-dialog'
-import { Button } from '@components/ui/button'
 import type { AiWriteScope } from '@shared/types/aiChat'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 
 interface AiChatApplyButtonProps {

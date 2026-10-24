@@ -9,7 +9,7 @@
 import { cn } from 'cn'
 import { Check, ChevronRight } from 'lucide-react'
 import { Fragment } from 'react'
-import { Button } from '@components/ui/button'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 import { FLOW_STEPS } from '../constants'
 
@@ -33,7 +33,6 @@ export function PressFlowSteps({ current, onSelect }: PressFlowStepsProps): JSX.
                         ) : null}
                         <li className="shrink-0">
                             <Button
-                                type="button"
                                 variant="ghost"
                                 aria-current={isCurrent ? 'step' : undefined}
                                 className={cn(

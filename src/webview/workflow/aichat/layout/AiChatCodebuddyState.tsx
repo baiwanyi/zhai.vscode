@@ -7,7 +7,7 @@
  * 站点由宿主经运行时信息下发，切换站点需重新登录，故文案必须点名站点。
  */
 import { LogIn, Sparkles } from 'lucide-react'
-import { Button } from '@components/ui/button'
+import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
 

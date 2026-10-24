@@ -6,8 +6,8 @@
  * 组内分隔须用 ButtonGroupSeparator，禁止手写边框模拟；两个按钮等分底栏宽度（flex-1）。
  */
 import { Pin, PinOff, Trash2 } from 'lucide-react'
-import { Button } from '@components/ui/button'
 import { ButtonGroup, ButtonGroupSeparator } from '@components/ui/button-group'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 
 interface NotesSelectionBarProps {

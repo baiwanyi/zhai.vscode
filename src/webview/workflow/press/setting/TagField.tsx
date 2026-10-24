@@ -8,9 +8,9 @@
 import { X } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@components/ui/button'
 import { Input } from '@components/ui/input'
 import { Toggle } from '@components/ui/toggle'
+import { Button } from '@webview/components/Button'
 import type { JSX, KeyboardEvent } from 'react'
 
 interface TagFieldProps {
@@ -90,7 +90,6 @@ export function TagField({
                         <Badge key={tag} variant="secondary" className="gap-1 pr-1">
                             {tag}
                             <Button
-                                type="button"
                                 variant="ghost"
                                 size="icon-xs"
                                 className="size-4 shrink-0"
