@@ -1,7 +1,8 @@
 /**
  * 写作页分区路由：按导航选中项渲染对应页面，所有分区共享同一份草稿与作品目录。
- * 复用约定：设定 / 人物 / 大纲 / 快照复用本模块页面组件，取名、AI 用量与对话分别复用
- * naming、usage、aichat 的页面组件；本文件只做「分区 → 页面 + 回调」的映射，不持有任何状态。
+ * 复用约定：设定 / 人物 / 大纲 / 快照复用本模块页面组件，取名、校对、AI 用量与对话分别复用
+ * naming、proofread、usage、aichat 的页面组件；生图页尚未接入，暂时复用取名页；
+ * 本文件只做「分区 → 页面 + 回调」的映射，不持有任何状态。
  * 关键约束：对话与快照按作品目录隔离（dirPath 既是作用域也是对话页 key，切作品即重建），
  * 用量是跨作品的全局统计不隔离；回调统一来自 usePressMutations，路由层不自行读写草稿。
  */
@@ -11,6 +12,7 @@ import type { OutlineWorkspace } from '../types'
 import type { JSX } from 'react'
 import { AiChat } from '../../aichat'
 import { NamingPage } from '../../naming'
+import { ProofreadPage } from '../../proofread'
 import { AiUsagePage } from '../../usage'
 import { PressCharacterPage } from '../character/PressCharacterPage'
 import { DEFAULT_CHAPTER_WORD_GOAL } from '../constants'
@@ -79,6 +81,14 @@ export function PressSectionRouter({
     }
     if (section === 'naming') {
         return <NamingPage />
+    }
+    // 生图页尚未接入：暂复用取名页，避免入口点击后落到对话分区
+    if (section === 'image') {
+        return <NamingPage />
+    }
+    // 校对以编辑器中的当前文档为目标，切作品即重建，避免上一个作品的问题列表残留
+    if (section === 'proofread') {
+        return <ProofreadPage key={dirPath} />
     }
     // 快照按作品隔离：与文档同目录，切作品即换用该作品自己的时间线
     if (section === 'snapshot') {
