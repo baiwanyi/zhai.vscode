@@ -13,6 +13,7 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@c
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
 import { Button } from '@webview/components/Button'
+import { Image } from '@webview/components/Image'
 import type { JSX } from 'react'
 
 /** 图库条目的最小契约：调用方的领域对象多出的字段不影响使用 */
@@ -131,10 +132,11 @@ export function CoverGallery({
                                       }
                             }
                         >
-                            <img
+                            <Image
                                 src={item.url}
                                 alt={`${altPrefix} ${item.id}`}
-                                className={cn(aspectClass, 'w-full object-cover')}
+                                aspect={variant === 'book' ? '2/3' : '3/4'}
+                                size="sm"
                             />
                             {/* 悬停压暗 5%：只做视觉提示，不拦截点击；键盘聚焦时同样显现操作 */}
                             <div

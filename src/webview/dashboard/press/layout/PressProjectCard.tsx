@@ -5,9 +5,10 @@
  * 条目默认 flex-wrap，窄侧栏遇到长标题会把封面挤到单独一行，故显式 flex-nowrap 并让内容区 min-w-0 可收缩、
  * 操作区 shrink-0 不参与压缩；条目不再直接打开 README（该动作下沉到详情页页头），整行可点且不额外挂操作按钮。
  */
-import { ChevronRight, ImageIcon } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { PressProjectSummary } from '@shared/types/press'
+import { Image } from '@webview/components/Image'
 import type { JSX } from 'react'
 import { formatProjectMeta } from '../utils'
 
@@ -25,12 +26,8 @@ export function PressProjectCard({ project, onSelect }: PressProjectCardProps): 
             aria-label={`查看作品 ${project.name}`}
             onClick={() => onSelect(project.dirPath)}
         >
-            <ItemMedia variant="image" className="rounded-full">
-                {project.coverUrl === undefined ? (
-                    <ImageIcon className="size-4 text-muted-foreground" />
-                ) : (
-                    <img src={project.coverUrl} alt={`${project.name} 的封面`} className="size-full object-cover" />
-                )}
+            <ItemMedia variant="image">
+                <Image src={project.coverUrl} alt={`${project.name} 的封面`} size="full" />
             </ItemMedia>
             <ItemContent className="min-w-0">
                 <ItemTitle className="w-full truncate">{project.name}</ItemTitle>

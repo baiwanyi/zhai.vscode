@@ -3,6 +3,7 @@
  * 复用约定：variant / size / asChild 原样透传底层 Button，图标与文案由调用方经 children 给出；
  * 传 tooltip 时用受控 Tooltip 包裹，指针进入或键盘聚焦即开、离开或失焦即关，不走 Radix 的延时策略；
  * tooltipSide 仅在提示需要避开所在容器时使用（如活动栏竖排导航用 left），默认由 Radix 自动定位；
+ * 气泡固定暗底亮字（不随明暗主题翻转），通过局部重写前景/背景变量实现，箭头随之同色，见 TOOLTIP_CLASS。
  * 交互上统一取消按下位移：底层 cva 的 active 位移用同修饰符的 translate-y-0 覆盖，点击时位置保持稳定。
  * 关键约束：disabled 与指针处理器必须在解构中取出后显式声明，否则会被 {...rest} 覆盖，
  * 造成加载态失效或 tooltip 卡在打开态；asChild 依赖唯一子元素，加载态只置
@@ -27,6 +28,13 @@ interface ButtonProps extends ComponentProps<'button'>, VariantProps<typeof butt
     isLoading?: boolean
     children?: ReactNode
 }
+
+/**
+ * 提示气泡统一暗底亮字：直接重写局部前景/背景变量，气泡背景取暗色、文字取亮色。
+ * 底层的箭头是独立 svg（bg-foreground / fill-foreground），继承同一组变量后自动同色，
+ * 不必对箭头写子选择器，也不会因特异性差异漏掉箭头。
+ */
+const TOOLTIP_CLASS = '[--foreground:#1E1E1E] [--background:var(--background)]'
 
 function Button({
     className,
@@ -110,7 +118,11 @@ function Button({
         return (
             <Tooltip open={isTooltipOpen} onOpenChange={setIsTooltipOpen}>
                 <TooltipTrigger asChild>{button}</TooltipTrigger>
-                <TooltipContent side={tooltipSide}>{tooltip}</TooltipContent>
+                {/* 提示统一暗底亮字：shadcn 默认取 foreground 作底，暗色主题下会翻成浅底；
+                    箭头颜色写死在 ui/tooltip 内，只能用子选择器跟随同色 */}
+                <TooltipContent side={tooltipSide} className={TOOLTIP_CLASS}>
+                    {tooltip}
+                </TooltipContent>
             </Tooltip>
         )
     }

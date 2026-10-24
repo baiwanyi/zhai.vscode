@@ -18,6 +18,7 @@ import type { CharacterPortrait } from '@shared/types/press'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { CoverGallery } from '@webview/components/CoverGallery'
+import { Image } from '@webview/components/Image'
 import { useCharacterPortrait } from './useCharacterPortrait'
 import type { AppearanceContext } from './useCharacterAppearance'
 import type { CharacterCard } from '../types'
@@ -257,13 +258,13 @@ export function CharacterPortraitPanel({
                 <DialogContent>
                     <DialogTitle className="text-lg">角色设定图预览</DialogTitle>
                     <div className="p-3">
-                        {previewing !== null ? (
-                            <img
-                                src={previewing.url}
-                                alt={`${character.name} 的角色卡大图`}
-                                className="max-h-[72vh] w-full rounded-lg object-contain"
-                            />
-                        ) : null}
+                        <Image
+                            src={(previewing !== null && previewing?.url) || ''}
+                            alt={`${character.name} 的角色卡大图`}
+                            aspect="9/16"
+                            size="lg"
+                            className="min-h-40 max-h-[72vh]"
+                        />
                     </div>
                     <DialogFooter>
                         <Button

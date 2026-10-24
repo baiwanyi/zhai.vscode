@@ -1,10 +1,11 @@
 /**
  * 模型图标：按模型 id 前缀映射 resources/models 下的本地厂商图标，未命中统一回退 codebuddy.svg。
  * 复用约定：图标经 @resources 别名引入，由 Vite 打包为资源 URL（小文件内联为 data URI），
- * 一律用 <img> 原样展示，不做着色 —— 颜色完全由 SVG 文件自身决定。
+ * 展示走 @webview/components/Image，不做着色 —— 颜色完全由 SVG 文件自身决定。
  * 关键约束：映射依据是模型 id 前缀，清单里的 vendor 是内部代号（j/f/e），不能作为厂商依据；
  * 自定义模型（custom-local:*）不匹配任何厂商前缀，与未知模型一样落到 codebuddy.svg 兜底。
  */
+import { Image } from '@webview/components/Image'
 import codebuddyIcon from '@resources/models/codebuddy.svg'
 import deepseekIcon from '@resources/models/deepseek.svg'
 import glmIcon from '@resources/models/glm.svg'
@@ -45,5 +46,6 @@ interface ModelIconProps {
 export function ModelIcon({ modelId, name }: ModelIconProps): JSX.Element {
     const label = name.length > 0 ? name : modelId
     const matched = ICONS.find((item) => item.prefixes.some((prefix) => modelId.startsWith(prefix))) ?? FALLBACK_ICON
-    return <img src={matched.icon} alt={label} className="size-3.5 shrink-0" />
+    // 厂商图标并非等比（deepseek 1391×1024、minimax 1169×1024），须 contain，否则 14×14 的 cover 会裁掉左右
+    return <Image src={matched.icon} alt={label} className="size-3.5 shrink-0 object-contain" />
 }

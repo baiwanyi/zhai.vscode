@@ -16,6 +16,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import type { PortraitGalleryItem } from '@shared/types/press'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
+import { Image } from '@webview/components/Image'
 import type { CharacterCard } from '../types'
 import type { JSX } from 'react'
 import { CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
@@ -136,19 +137,16 @@ export function CharacterList({
                                     onSelect(character.id)
                                 }}
                             >
-                                <div className="aspect-3/4 w-12 shrink-0 overflow-hidden rounded-md bg-muted">
-                                    {coverUrl !== null ? (
-                                        <img
-                                            src={coverUrl}
-                                            alt={`${character.name} 的角色封面`}
-                                            className="size-full object-cover"
-                                        />
-                                    ) : (
-                                        <div className="flex size-full items-center justify-center">
-                                            <UserRound className="size-4 text-muted-foreground" aria-hidden="true" />
-                                        </div>
-                                    )}
+                                {/* 宽度必须先定死：Image 自带 size-full，flex 行内没有外层宽度会与文字区争空间 */}
+                                <div className="w-12 shrink-0">
+                                    <Image
+                                        src={coverUrl || ''}
+                                        alt={`${character.name} 的角色封面`}
+                                        aspect="3/4"
+                                        size="sm"
+                                    />
                                 </div>
+
                                 <div className="flex min-w-0 flex-1 flex-col gap-1">
                                     <div className="flex min-w-0 items-center gap-1.5">
                                         <span className="min-w-0 truncate font-medium">{character.name}</span>

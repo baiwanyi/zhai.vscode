@@ -75,8 +75,8 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
     }, [createNote, setActiveId])
 
     return (
-        <div className="flex h-screen flex-col pt-3" onContextMenu={(event) => event.preventDefault()}>
-            <div className="px-3">
+        <div className="@container flex h-screen min-h-0 flex-col" onContextMenu={(event) => event.preventDefault()}>
+            <header className="p-3">
                 <DashboardTopBar
                     isBusy={pendingAction !== null}
                     isRebuilding={stats?.isRebuilding === true}
@@ -85,54 +85,55 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
                     onClearCache={() => void clearCache()}
                     onOpenSettings={() => void openSettings()}
                 />
-            </div>
-            <div className="relative min-h-0 flex-1 pt-3">
-                <ScrollArea className="h-full">
-                    <div className="flex flex-col gap-3 p-3">
-                        <DashboardSlots />
-                        <DashboardEntries
-                            onOpenWriting={() => onNavigate(createPressRoute())}
-                            onOpenPress={() => void openWorkflow('wechat')}
-                        />
-                        <NotesSection
-                            pinnedNotes={pinnedNotes}
-                            unpinnedNotes={unpinnedNotes}
-                            modules={modules}
-                            status={status}
-                            error={error}
-                            isFiltered={isFiltered}
-                            activeId={activeId}
-                            activeModules={activeModules}
-                            isSelecting={isSelecting}
-                            selectedPaths={selectedPaths}
-                            onSelect={handleOpen}
-                            onInvoke={(path, action) => {
-                                if (action === 'open') {
-                                    handleOpen(path)
-                                    return
-                                }
-                                if (action === 'pin' || action === 'unpin') {
-                                    void setPinned([path], action === 'pin')
-                                    return
-                                }
-                                showNotePending(action)
-                            }}
-                            onToggleModule={toggleModule}
-                            onResetFilters={resetFilters}
-                            onToggleSelecting={toggleSelecting}
-                            onToggleSelected={toggleSelected}
-                        />
-                    </div>
-                </ScrollArea>
-                <div className="pointer-events-none absolute inset-x-0 top-0 h-3 bg-linear-to-b from-background to-transparent" />
-            </div>
-            {isSelecting && selectedPaths.length > 0 ? (
-                <NotesSelectionBar
-                    isAllSelectedPinned={isAllSelectedPinned}
-                    onTogglePin={() => void setPinned(selectedPaths, !isAllSelectedPinned)}
-                    onDelete={() => showNotePending('delete')}
-                />
-            ) : null}
+            </header>
+
+            <ScrollArea className="min-h-0 flex-1 px-3">
+                <div className="flex flex-col gap-3 p-0.5">
+                    <DashboardSlots />
+                    <DashboardEntries
+                        onOpenWriting={() => onNavigate(createPressRoute())}
+                        onOpenPress={() => void openWorkflow('wechat')}
+                    />
+                    <NotesSection
+                        pinnedNotes={pinnedNotes}
+                        unpinnedNotes={unpinnedNotes}
+                        modules={modules}
+                        status={status}
+                        error={error}
+                        isFiltered={isFiltered}
+                        activeId={activeId}
+                        activeModules={activeModules}
+                        isSelecting={isSelecting}
+                        selectedPaths={selectedPaths}
+                        onSelect={handleOpen}
+                        onInvoke={(path, action) => {
+                            if (action === 'open') {
+                                handleOpen(path)
+                                return
+                            }
+                            if (action === 'pin' || action === 'unpin') {
+                                void setPinned([path], action === 'pin')
+                                return
+                            }
+                            showNotePending(action)
+                        }}
+                        onToggleModule={toggleModule}
+                        onResetFilters={resetFilters}
+                        onToggleSelecting={toggleSelecting}
+                        onToggleSelected={toggleSelected}
+                    />
+                </div>
+            </ScrollArea>
+
+            <footer className="relative flex shrink-0 items-center justify-end gap-1.5 pt-2 before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent">
+                {isSelecting && selectedPaths.length > 0 ? (
+                    <NotesSelectionBar
+                        isAllSelectedPinned={isAllSelectedPinned}
+                        onTogglePin={() => void setPinned(selectedPaths, !isAllSelectedPinned)}
+                        onDelete={() => showNotePending('delete')}
+                    />
+                ) : null}
+            </footer>
         </div>
     )
 }

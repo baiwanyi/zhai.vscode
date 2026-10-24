@@ -72,7 +72,7 @@ export function NotesHeaderActions({
                         variant={isFiltered ? 'secondary' : 'ghost'}
                         size="icon"
                         className="rounded-full"
-                        title="筛选笔记"
+                        tooltip="筛选笔记"
                         aria-label="筛选笔记"
                     >
                         <Funnel />

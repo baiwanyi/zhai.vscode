@@ -34,7 +34,14 @@ export function DashboardQuickMenu({
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="rounded-full" disabled={isBusy} aria-label="更多操作">
+                <Button
+                    variant="outline"
+                    size="icon"
+                    className="rounded-full"
+                    disabled={isBusy}
+                    tooltip="更多操作"
+                    aria-label="更多操作"
+                >
                     <Ellipsis />
                 </Button>
             </DropdownMenuTrigger>
