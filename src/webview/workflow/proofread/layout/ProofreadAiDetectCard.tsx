@@ -42,6 +42,25 @@ const DETECT_LOW_HUMAN_THRESHOLD = 0.35
 const LOW_HUMAN_ALERT_CLASS =
     'border-amber-500/40 bg-amber-500/10 *:data-[slot=alert-description]:text-amber-700 dark:*:data-[slot=alert-description]:text-amber-300'
 
+/** 未配置密钥时的引导：说明密钥来源与保存位置 */
+const NO_KEY_HINT = '需要 EdgeOne Makers 的 API Key（控制台 Makers - Models - API Key 创建），密钥仅保存在本机。'
+
+/** 待检测时的说明：只承诺检测能力，不预告任何结论 */
+const IDLE_HINT = '检测后展示三类内容占比，以及最值得复核的可疑段落'
+
+/** 失败态兜底文案：错误详情由 Hook 透传，为空时才用 */
+const ERROR_FALLBACK = '检测失败，请稍后重试'
+
+/** 检测入口文案：失败重试与首次检测共用一个口径 */
+const DETECT_ACTION_LABEL = '开始检测'
+
+/** 结论条文案：人工占比达标与否只影响措辞，不给任何改写建议 */
+const LOW_HUMAN_HINT = '人工创作特征较弱，建议回看表达习惯后再决定是否调整'
+const HIGH_HUMAN_HINT = '人工创作特征占比较高，整体更接近人工写作'
+
+/** 可疑段落列表的标题 */
+const SEGMENT_LIST_TITLE = '最值得复核的段落'
+
 /** 环形图按需加载：recharts 只在真正出结果后才进入运行时 */
 const ProofreadDetectChart = lazy(() =>
     import('./ProofreadDetectChart').then((module) => ({ default: module.ProofreadDetectChart })),
@@ -94,6 +113,65 @@ function readStatus(stage: ProofreadDetectStage, state: ProofreadAiDetectState |
     return { label: '待检测', className: 'bg-muted text-muted-foreground' }
 }
 
+/** 结论条口径：文案与强调样式由同一判断给出 */
+interface HumanVerdict {
+    hint: string
+    /** 只在低人工占比时强调；达标时不覆盖 Alert 的任何样式 */
+    className?: string
+}
+
+/** 按人工占比取结论条：同一个阈值判断不再在 JSX 里对文案与配色各写一遍 */
+function readHumanVerdict(humanRatio: number): HumanVerdict {
+    if (humanRatio < DETECT_LOW_HUMAN_THRESHOLD) {
+        return { hint: LOW_HUMAN_HINT, className: LOW_HUMAN_ALERT_CLASS }
+    }
+    return { hint: HIGH_HUMAN_HINT }
+}
+
+interface DetectPromptProps {
+    hint: string
+    actionLabel: string
+    onAction: () => void
+}
+
+/** 引导态：未配置密钥与待检测同构，都是一行说明 + 主按钮，出口由 actionLabel 表达 */
+function DetectPrompt({ hint, actionLabel, onAction }: DetectPromptProps): JSX.Element {
+    return (
+        <div className="flex flex-col gap-2">
+            <p className="text-xs text-muted-foreground">{hint}</p>
+            <Button onClick={onAction}>{actionLabel}</Button>
+        </div>
+    )
+}
+
+/** 检测中骨架：按结果区真实结构摆放，等待期间卡片高度不塌陷 */
+function DetectSkeleton(): JSX.Element {
+    return (
+        <div className="flex flex-col gap-3">
+            <Skeleton className="h-11 w-full" />
+            <div className="flex items-center">
+                {/* 左列写死 128px：内部按钮占位用 w-full，列宽若依赖内容会形成百分比循环 */}
+                <div className="flex w-2/3 shrink-0 flex-col items-center gap-3">
+                    <Skeleton className="size-32 rounded-full" />
+                    <Skeleton className="h-8 w-20" />
+                </div>
+                <div className="flex min-w-0 flex-1 flex-col gap-2">
+                    <Skeleton className="h-3.5 w-full" />
+                    <Skeleton className="h-3.5 w-full" />
+                    <Skeleton className="h-3.5 w-full" />
+                    <Skeleton className="mt-1 h-3 w-2/3" />
+                    <Skeleton className="h-3 w-full" />
+                </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+                <Skeleton className="h-3 w-24" />
+                <Skeleton className="h-11 w-full" />
+                <Skeleton className="h-11 w-full" />
+            </div>
+        </div>
+    )
+}
+
 interface DetectSegmentListProps {
     segments: readonly ProofreadDetectSegment[]
     onRevealSegment: (segment: ProofreadDetectSegment) => void
@@ -103,7 +181,7 @@ interface DetectSegmentListProps {
 function DetectSegmentList({ segments, onRevealSegment }: DetectSegmentListProps): JSX.Element {
     return (
         <div className="flex flex-col gap-1.5">
-            <p className="text-xs text-muted-foreground">最值得复核的段落</p>
+            <p className="text-xs text-muted-foreground">{SEGMENT_LIST_TITLE}</p>
             {segments.map((segment) => (
                 <Item key={`${String(segment.start)}-${String(segment.end)}`} variant="muted" size="sm">
                     <ItemContent>
@@ -139,15 +217,11 @@ interface DetectResultProps {
 
 /** 检测结果：结论条 → 占比图（扣减回执与免责语随图呈现）→ 可疑段落，顺序即阅读顺序 */
 function DetectResult({ result, onDetect, onRevealSegment }: DetectResultProps): JSX.Element {
-    const isLowHuman = result.humanRatio < DETECT_LOW_HUMAN_THRESHOLD
+    const verdict = readHumanVerdict(result.humanRatio)
     return (
         <div className="flex flex-col gap-3">
-            <Alert className={isLowHuman ? LOW_HUMAN_ALERT_CLASS : undefined}>
-                <AlertDescription>
-                    {isLowHuman
-                        ? '人工创作特征较弱，建议回看表达习惯后再决定是否调整'
-                        : '人工创作特征占比较高，整体更接近人工写作'}
-                </AlertDescription>
+            <Alert className={verdict.className}>
+                <AlertDescription>{verdict.hint}</AlertDescription>
             </Alert>
 
             <Suspense
@@ -185,60 +259,32 @@ export function ProofreadAiDetectCard({
     /** 内容区按状态单分支渲染：无密钥优先于阶段，其余阶段各占一支，兜底即待检测 */
     function renderBody(): JSX.Element {
         if (!hasKey) {
-            return (
-                <div className="flex flex-col gap-2">
-                    <p className="text-xs text-muted-foreground">
-                        需要 EdgeOne Makers 的 API Key（控制台 Makers - Models - API Key 创建），密钥仅保存在本机。
-                    </p>
-                    <Button onClick={onConfigureKey}>配置密钥</Button>
-                </div>
-            )
+            return <DetectPrompt hint={NO_KEY_HINT} actionLabel="配置密钥" onAction={onConfigureKey} />
         }
         if (stage === 'running') {
-            // 骨架按结果区的真实结构摆放：结论条 → 左环形图 + 重新检测 / 右图例与回执 → 可疑段落
-            return (
-                <div className="flex flex-col gap-3">
-                    <Skeleton className="h-11 w-full" />
-                    <div className="flex items-center">
-                        <div className="flex w-2/3 shrink-0 flex-col items-center gap-3">
-                            <Skeleton className="size-32 rounded-full" />
-                            <Skeleton className="h-8 w-20" />
-                        </div>
-                        <div className="flex min-w-0 flex-1 flex-col gap-2">
-                            <Skeleton className="h-3.5 w-full" />
-                            <Skeleton className="h-3.5 w-full" />
-                            <Skeleton className="h-3.5 w-full" />
-                            <Skeleton className="mt-1 h-3 w-2/3" />
-                            <Skeleton className="h-3 w-full" />
-                        </div>
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                        <Skeleton className="h-3 w-24" />
-                        <Skeleton className="h-11 w-full" />
-                        <Skeleton className="h-11 w-full" />
-                    </div>
-                </div>
-            )
+            return <DetectSkeleton />
         }
         if (stage === 'error') {
             return (
                 <>
                     <Alert variant="destructive">
-                        <AlertDescription>{error ?? '检测失败，请稍后重试'}</AlertDescription>
+                        <AlertDescription>{error ?? ERROR_FALLBACK}</AlertDescription>
                     </Alert>
-                    <Button onClick={onDetect}>开始检测</Button>
+                    <Button onClick={onDetect}>{DETECT_ACTION_LABEL}</Button>
                 </>
             )
         }
         if (stage === 'done' && result !== null) {
             return <DetectResult result={result} onDetect={onDetect} onRevealSegment={onRevealSegment} />
         }
-        return (
-            <div className="flex flex-col gap-2">
-                <p className="text-xs text-muted-foreground">检测后展示三类内容占比，以及最值得复核的可疑段落</p>
-                <Button onClick={onDetect}>开始检测</Button>
-            </div>
-        )
+        return <DetectPrompt hint={IDLE_HINT} actionLabel={DETECT_ACTION_LABEL} onAction={onDetect} />
+    }
+
+    /** 上传同意弹窗只由检测流程打开：这里仅处理关闭，避免关闭动画期间状态来回切换 */
+    function handleConsentOpenChange(isOpen: boolean): void {
+        if (!isOpen) {
+            onCloseConsent()
+        }
     }
 
     return (
@@ -257,14 +303,7 @@ export function ProofreadAiDetectCard({
                 </CardAction>
             </CardHeader>
             <CardContent className="flex min-w-0 flex-col gap-3">{renderBody()}</CardContent>
-            <Dialog
-                open={isConsentOpen}
-                onOpenChange={(open) => {
-                    if (!open) {
-                        onCloseConsent()
-                    }
-                }}
-            >
+            <Dialog open={isConsentOpen} onOpenChange={handleConsentOpenChange}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>确认将正文上传至第三方</DialogTitle>
