@@ -336,14 +336,14 @@
         ]
     },
     "dependencies": {
-        "@tencent-ai/agent-sdk": "^0.3.287",
+        "@tencent-ai/agent-sdk": "^0.3.288",
         "better-sqlite3": "^13.0.3",
         "date-fns": "^4.4.0",
         "shiki": "^4.5.0"
     },
     "devDependencies": {
         "@base-ui/react": "^1.9.0",
-        "@eslint-react/eslint-plugin": "^5.28.4",
+        "@eslint-react/eslint-plugin": "^5.28.8",
         "@eslint/js": "^10.0.1",
         "@shadcn/react": "^0.3.1",
         "@tailwindcss/vite": "^4.3.3",
