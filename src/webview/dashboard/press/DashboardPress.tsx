@@ -98,6 +98,7 @@ export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): 
             />
             <PressImportDialog
                 key={candidate?.token ?? 'idle'}
+                open={candidate !== null}
                 candidate={candidate}
                 isImporting={isImporting}
                 onOpenChange={handleImportOpenChange}

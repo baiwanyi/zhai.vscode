@@ -1,7 +1,8 @@
 /**
  * 设定与大纲快照面板：按时间倒序列出四份结构化文档的历次留版，支持手动留版、整版恢复与删除单版。
- * 复用约定：取数与动作由 usePressSnapshots 承担，单条渲染由 SnapshotListItem 承担，空态由 SnapshotEmpty 承担；
- * 恢复与删除的确认框、创建备注对话框分别由 SnapshotConfirmDialog 与 SnapshotCreateDialog 承担，本组件只做编排与文案。
+ * 复用约定：取数与动作由 usePressSnapshots 承担，单条渲染由 SnapshotListItem 承担，空态由业务公共层的
+ * StateEmpty 承担；
+ * 恢复与删除的确认框取业务公共层的 ConfirmDialog，创建备注对话框由 SnapshotCreateDialog 承担，本组件只做编排与文案。
  * 关键约束：恢复会整版覆盖四份文档且不动章节正文，删除只影响该版本，两处文案必须写清边界；
  * 写操作进行中禁用入口，防止同一动作被连点提交两次。
  */
@@ -11,10 +12,10 @@ import { Button } from '@components/ui/button'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@components/ui/card'
 import { ItemGroup } from '@components/ui/item'
 import type { PressSnapshotEntry } from '@shared/types/press'
+import { ConfirmDialog } from '@webview/components/ConfirmDialog'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import { usePressSnapshots } from './hooks/usePressSnapshots'
-import { SnapshotConfirmDialog } from './SnapshotConfirmDialog'
 import { SnapshotCreateDialog } from './SnapshotCreateDialog'
-import { SnapshotEmpty } from './SnapshotEmpty'
 import { SnapshotListItem } from './SnapshotListItem'
 import type { JSX } from 'react'
 
@@ -43,10 +44,11 @@ export function DocSnapshotPanel({ dirPath }: DocSnapshotPanelProps): JSX.Elemen
                 </CardHeader>
                 <CardContent className="min-h-0 flex-1 overflow-y-auto">
                     {snapshots.length === 0 ? (
-                        <SnapshotEmpty
+                        <StateEmpty
                             isLoading={isLoading}
                             title="还没有快照"
                             description="设定、角色或大纲内容有改动时会自动留一版；也可以点上方「立即快照」手动留一版。"
+                            className="h-full border border-dashed border-border"
                         />
                     ) : (
                         <ItemGroup>
@@ -64,11 +66,12 @@ export function DocSnapshotPanel({ dirPath }: DocSnapshotPanelProps): JSX.Elemen
                 </CardContent>
             </Card>
 
-            <SnapshotConfirmDialog
+            <ConfirmDialog
                 open={pendingRestore !== null}
                 title="恢复到这一版？"
                 description="作品信息、设定、角色与大纲会整版覆盖为所选快照的内容，章节正文不受影响。恢复前会先自动留一版当前内容，误操作也能回退。"
                 confirmLabel="恢复"
+                size="sm"
                 onOpenChange={(isOpen) => {
                     if (!isOpen) {
                         setPendingRestore(null)
@@ -83,11 +86,12 @@ export function DocSnapshotPanel({ dirPath }: DocSnapshotPanelProps): JSX.Elemen
                 }}
             />
 
-            <SnapshotConfirmDialog
+            <ConfirmDialog
                 open={pendingDelete !== null}
                 title="删除这一版快照？"
                 description="只删除所选版本，不影响作品文档与其它快照；删除后不可找回。"
                 confirmLabel="删除"
+                size="sm"
                 isDestructive
                 onOpenChange={(isOpen) => {
                     if (!isOpen) {

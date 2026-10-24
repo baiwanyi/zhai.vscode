@@ -79,6 +79,7 @@ export default defineConfig([
                     pathGroups: [
                         { pattern: '@components/**', group: 'internal', position: 'before' },
                         { pattern: '@shared/**', group: 'internal', position: 'before' },
+                        { pattern: '@webview/**', group: 'internal', position: 'before' },
                         {
                             pattern: '*.{css,scss,sass,less}',
                             patternOptions: { matchBase: true },

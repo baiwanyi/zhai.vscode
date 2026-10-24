@@ -1,11 +1,13 @@
 /**
  * 取名分类栏：顶部横向的图标 + 文字标签，切换人物 / 地点 / 势力 / 招式 / 装备 / 怪物 / 道具。
- * 复用约定：图标取自 lucide-react，切换复用 ui/toggle-group（单选横向）；选项自带文字，不再叠加 Tooltip。
- * 关键约束：当前分类以主色块高亮（`data-[state=on]`）；不能再用 TooltipTrigger 包裹分段项——
- * Tooltip 会向子节点注入自身的 `data-state`，覆盖 ToggleGroup 的选中态导致高亮失效。
+ * 复用约定：切换结构取业务公共层的 SegmentedRail（pill 形态），分类清单来自宿主下发的 catalog，
+ * 图标取 constants 的 CATEGORY_ICONS，缺项回落到 FALLBACK_ICON。
+ * 关键约束：分段项不得用 TooltipTrigger 包裹——Tooltip 注入的 data-state 会覆盖选中态导致高亮失效；
+ * catalog 未就绪时不渲染本栏，由页面保证，本组件不做空态分支。
  */
-import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import type { NamingCatalog, NamingCategory } from '@shared/types/naming'
+import { SegmentedRail } from '@webview/components/SegmentedRail'
+import type { SegmentedRailItem } from '@webview/components/SegmentedRail'
 import type { JSX } from 'react'
 import { CATEGORY_ICONS, CATEGORY_RAIL_LABEL, FALLBACK_ICON } from '../constants'
 
@@ -16,33 +18,11 @@ interface NamingCategoryRailProps {
 }
 
 export function NamingCategoryRail({ catalog, activeCategory, onSelect }: NamingCategoryRailProps): JSX.Element {
-    return (
-        <ToggleGroup
-            type="single"
-            spacing={1}
-            value={activeCategory}
-            onValueChange={(value) => {
-                if (value) {
-                    onSelect(value as NamingCategory)
-                }
-            }}
-            aria-label={CATEGORY_RAIL_LABEL}
-            className="w-full flex-wrap rounded-lg bg-muted p-1"
-        >
-            {catalog.categories.map((category) => {
-                const Icon = CATEGORY_ICONS[category.value] ?? FALLBACK_ICON
-                return (
-                    <ToggleGroupItem
-                        key={category.value}
-                        value={category.value}
-                        aria-label={category.label}
-                        className="h-8 gap-1 px-2 text-muted-foreground transition-colors hover:text-foreground data-[state=on]:bg-primary data-[state=on]:font-medium data-[state=on]:text-primary-foreground"
-                    >
-                        <Icon className="size-4" />
-                        {category.label}
-                    </ToggleGroupItem>
-                )
-            })}
-        </ToggleGroup>
-    )
+    const items: readonly SegmentedRailItem<NamingCategory>[] = catalog.categories.map((category) => ({
+        value: category.value,
+        label: category.label,
+        icon: CATEGORY_ICONS[category.value] ?? FALLBACK_ICON,
+    }))
+
+    return <SegmentedRail items={items} value={activeCategory} onChange={onSelect} ariaLabel={CATEGORY_RAIL_LABEL} />
 }

@@ -10,7 +10,7 @@ import { Field, FieldDescription, FieldLabel, FieldTitle } from '@components/ui/
 import { Input } from '@components/ui/input'
 import { Item, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
-import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
+import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { CharacterCard, ProjectSetting } from '../types'
 import type { OutlineDraftOptions } from '../utils'
 import type { JSX } from 'react'
@@ -191,24 +191,18 @@ export function OutlineWizardInput({
                 </Field>
                 <Field>
                     <FieldLabel htmlFor="wizard-pacing">节奏偏好</FieldLabel>
-                    <ToggleGroup
-                        type="single"
-                        variant="outline"
+                    <SegmentedRail
+                        items={PACING_OPTIONS}
                         value={options.pacing}
-                        className="flex-wrap"
-                        onValueChange={(value) => {
-                            const next = PACING_OPTIONS.find((option) => option.value === value)
+                        onChange={(pacing) => {
+                            const next = PACING_OPTIONS.find((option) => option.value === pacing)
                             if (next) {
                                 onChangeOptions({ pacing: next.value })
                             }
                         }}
-                    >
-                        {PACING_OPTIONS.map((option) => (
-                            <ToggleGroupItem key={option.value} value={option.value}>
-                                {option.label}
-                            </ToggleGroupItem>
-                        ))}
-                    </ToggleGroup>
+                        ariaLabel="节奏偏好"
+                        variant="chip"
+                    />
                     <FieldDescription className="tabular-nums">
                         将展开 {options.volumeCount} 卷、共 {totalChapters} 章，约{' '}
                         {formatWordCount(totalChapters * options.chapterWordGoal)} 字

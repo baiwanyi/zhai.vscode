@@ -1,36 +1,22 @@
 /**
  * 封面字段组：按作品设定用 AI 生成竖版封面，以图库形式展示并支持设为封面、书名合成、删除与重新生成。
  * 复用约定：画风选项复用 constants 的 PORTRAIT_STYLE_OPTIONS，书名排版选项与画布合成来自 ./coverCompose；
- * 控件取自 @components/ui 的 select、button、input、field、skeleton、spinner、badge 与 empty；
- * 生成、回读、保存、设为封面与删除由 useSettingCover 承担。
+ * 控件取自 @components/ui 的 select、button、input 与 field，图库宫格、空态与生成中占位由业务公共层的
+ * CoverGallery 承担；生成、回读、保存、设为封面与删除由 useSettingCover 承担。
  * 关键约束：画风与排版只影响本次产物、不写回作品设定；磁盘是唯一事实来源，切回本分组即按目录回读；
  * 生成期间禁用操作并显示同构占位框，避免连点重复扣费；书名合成在本地画布完成、不消耗出图次数，
- * 结果另存为新封面并自动选中，不满意可直接删除；删除当前封面由宿主回退到剩余最新一张；
- * 卡片无底栏：设为封面在左上、删除在右上，随悬停显现并支持键盘聚焦，选中图左上常显「封面」。
+ * 结果另存为新封面并自动选中，不满意可直接删除；删除当前封面由宿主回退到剩余最新一张。
  */
-import { cn } from 'cn'
-import { Image as ImageIcon, ImagePlus, Sparkles, Trash2, Type } from 'lucide-react'
+import { Sparkles, Type } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from '@components/ui/alert-dialog'
-import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Field, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
-import { Skeleton } from '@components/ui/skeleton'
-import { Spinner } from '@components/ui/spinner'
 import type { PressCover, PortraitStyle } from '@shared/types/press'
+import { ConfirmDialog } from '@webview/components/ConfirmDialog'
+import { CoverGallery } from '@webview/components/CoverGallery'
 import { COVER_FONT_OPTIONS, COVER_POSITION_OPTIONS, COVER_TONE_OPTIONS, composeCover } from './coverCompose'
 import { useSettingCover } from './useSettingCover'
 import type { CoverTitlePosition, CoverTitleTone } from './coverCompose'
@@ -259,124 +245,52 @@ export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps
                 </p>
             </div>
 
-            {isLoading ? (
-                <div className="grid grid-cols-3 gap-2 p-0.5">
-                    <Skeleton className="aspect-2/3 w-full rounded-lg" />
-                </div>
-            ) : covers.length === 0 && !isGenerating ? (
-                <Empty className="border py-4">
-                    <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                            <ImagePlus />
-                        </EmptyMedia>
-                        <EmptyTitle>还没有封面</EmptyTitle>
-                        <EmptyDescription>建议先补全题材、梗概与世界观，出图会更贴合故事。</EmptyDescription>
-                    </EmptyHeader>
-                </Empty>
-            ) : (
-                <div className="flex flex-col gap-1.5">
-                    {covers.length > 0 ? <p className="text-muted-foreground">已生成 {covers.length} 张</p> : null}
-                    {/* 外留 2px：选中态用外描边包住整张卡片，靠 padding 避免被滚动容器横向裁掉 */}
-                    <div className="grid grid-cols-3 gap-2 p-0.5">
-                        {/* 占位插在首位：与真实卡片同为 2:3，出图后就落在这一格 */}
-                        {isGenerating ? (
-                            <div className="relative overflow-hidden rounded-lg border border-border">
-                                <Skeleton className="aspect-2/3 w-full rounded-none" />
-                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">
-                                    <Spinner />
-                                    <span>生成中</span>
-                                </div>
-                            </div>
-                        ) : null}
-                        {covers.map((cover) => {
-                            const isSelected = cover.id === selectedId
-                            return (
-                                <div
-                                    key={cover.id}
-                                    className={cn(
-                                        'group relative overflow-hidden rounded-lg border border-border',
-                                        isSelected && 'ring-2 ring-ring',
-                                    )}
-                                >
-                                    <img
-                                        src={cover.url}
-                                        alt={`${setting.title} 的封面 ${cover.id}`}
-                                        className="aspect-2/3 w-full object-cover"
-                                    />
-                                    {/* 悬停压暗 5%：只做视觉提示，不拦截点击；键盘聚焦时同样显现操作 */}
-                                    <div
-                                        className="pointer-events-none absolute inset-0 bg-black/5 opacity-0 transition-opacity group-hover:opacity-100"
-                                        aria-hidden="true"
-                                    />
-                                    {isSelected ? (
-                                        <Badge variant="secondary" className="absolute top-1 left-1">
-                                            封面
-                                        </Badge>
-                                    ) : (
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-1 left-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                                            aria-label="设为封面"
-                                            disabled={isBusy}
-                                            onClick={() => {
-                                                void handleSelect(cover)
-                                            }}
-                                        >
-                                            <ImageIcon />
-                                        </Button>
-                                    )}
-                                    <Button
-                                        variant="destructive"
-                                        size="icon"
-                                        className="absolute top-1 right-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                                        aria-label="删除封面"
-                                        disabled={isBusy}
-                                        onClick={() => {
-                                            setDeleting(cover)
-                                        }}
-                                    >
-                                        <Trash2 />
-                                    </Button>
-                                </div>
-                            )
-                        })}
-                    </div>
-                </div>
-            )}
+            <CoverGallery
+                items={covers}
+                coverId={selectedId}
+                variant="book"
+                isLoading={isLoading}
+                isGenerating={isGenerating}
+                isBusy={isBusy}
+                emptyTitle="还没有封面"
+                emptyDescription="建议先补全题材、梗概与世界观，出图会更贴合故事。"
+                altPrefix={`《${setting.title}》的封面`}
+                deleteLabel="删除封面"
+                countLabel={(count) => `已生成 ${count} 张`}
+                onSetCover={(item) => {
+                    const target = covers.find((cover) => cover.id === item.id)
+                    if (target !== undefined) {
+                        void handleSelect(target)
+                    }
+                }}
+                onDelete={(item) => {
+                    const target = covers.find((cover) => cover.id === item.id)
+                    if (target !== undefined) {
+                        setDeleting(target)
+                    }
+                }}
+            />
 
-            <AlertDialog
+            <ConfirmDialog
                 open={deleting !== null}
+                title="删除这张封面？"
+                description="文件会移入系统回收站；若它是作品封面，封面将自动回退到图库中的第一张。"
+                confirmLabel="删除封面"
+                isDestructive
+                size="sm"
                 onOpenChange={(isOpen) => {
                     if (!isOpen) {
                         setDeleting(null)
                     }
                 }}
-            >
-                <AlertDialogContent size="sm">
-                    <AlertDialogHeader>
-                        <AlertDialogTitle className="text-lg">删除这张封面？</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            文件会移入系统回收站；若它是作品封面，封面将自动回退到图库中的第一张。
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>取消</AlertDialogCancel>
-                        <AlertDialogAction
-                            variant="destructive"
-                            onClick={() => {
-                                const target = deleting
-                                setDeleting(null)
-                                if (target !== null) {
-                                    void handleDelete(target)
-                                }
-                            }}
-                        >
-                            删除封面
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+                onConfirm={() => {
+                    const target = deleting
+                    setDeleting(null)
+                    if (target !== null) {
+                        void handleDelete(target)
+                    }
+                }}
+            />
         </div>
     )
 }

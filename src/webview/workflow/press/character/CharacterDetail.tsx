@@ -16,7 +16,7 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } fro
 import { Spinner } from '@components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@components/ui/tabs'
 import { Textarea } from '@components/ui/textarea'
-import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
+import { SegmentedRail } from '@webview/components/SegmentedRail'
 import { CharacterPortraitPanel } from './CharacterPortraitPanel'
 import { useCharacterAppearance } from './useCharacterAppearance'
 import type { CharacterCard } from '../types'
@@ -142,50 +142,44 @@ export function CharacterDetail({ character, onChange, aiContext, dirPath }: Cha
                         </Field>
                         <Field>
                             <FieldLabel htmlFor="character-role">角色</FieldLabel>
-                            <ToggleGroup
-                                type="single"
+                            <SegmentedRail
+                                items={CHARACTER_ROLE_ORDER.map((role) => ({
+                                    value: role,
+                                    label: CHARACTER_ROLE_META[role].label,
+                                }))}
                                 value={character.role}
-                                className="flex-wrap"
-                                onValueChange={handleRoleChange}
-                            >
-                                {CHARACTER_ROLE_ORDER.map((role) => (
-                                    <ToggleGroupItem key={role} value={role} variant="outline">
-                                        {CHARACTER_ROLE_META[role].label}
-                                    </ToggleGroupItem>
-                                ))}
-                            </ToggleGroup>
+                                onChange={handleRoleChange}
+                                ariaLabel="角色"
+                                variant="chip"
+                            />
                             <FieldDescription>角色分类决定大纲排布时该人物承担的功能</FieldDescription>
                         </Field>
                         <Field>
                             <FieldLabel htmlFor="character-body-type">体型</FieldLabel>
-                            <ToggleGroup
-                                type="single"
+                            <SegmentedRail
+                                items={CHARACTER_BODY_TYPE_ORDER.map((bodyType) => ({
+                                    value: bodyType,
+                                    label: CHARACTER_BODY_TYPE_META[bodyType].label,
+                                }))}
                                 value={character.bodyType}
-                                className="flex-wrap"
-                                onValueChange={handleBodyTypeChange}
-                            >
-                                {CHARACTER_BODY_TYPE_ORDER.map((bodyType) => (
-                                    <ToggleGroupItem key={bodyType} value={bodyType} variant="outline">
-                                        {CHARACTER_BODY_TYPE_META[bodyType].label}
-                                    </ToggleGroupItem>
-                                ))}
-                            </ToggleGroup>
+                                onChange={handleBodyTypeChange}
+                                ariaLabel="体型"
+                                variant="chip"
+                            />
                             <FieldDescription>与身高一起约束外貌描写和角色设定图的身形比例</FieldDescription>
                         </Field>
                         <Field>
                             <FieldLabel htmlFor="character-gender">性别</FieldLabel>
-                            <ToggleGroup
-                                type="single"
+                            <SegmentedRail
+                                items={CHARACTER_GENDER_ORDER.map((gender) => ({
+                                    value: gender,
+                                    label: CHARACTER_GENDER_META[gender].label,
+                                }))}
                                 value={character.gender}
-                                className="flex-wrap"
-                                onValueChange={handleGenderChange}
-                            >
-                                {CHARACTER_GENDER_ORDER.map((gender) => (
-                                    <ToggleGroupItem key={gender} value={gender} variant="outline">
-                                        {CHARACTER_GENDER_META[gender].label}
-                                    </ToggleGroupItem>
-                                ))}
-                            </ToggleGroup>
+                                onChange={handleGenderChange}
+                                ariaLabel="性别"
+                                variant="chip"
+                            />
                             <FieldDescription>用于外貌描写与角色设定图的性别约束，男女必选其一</FieldDescription>
                         </Field>
                     </TabsContent>

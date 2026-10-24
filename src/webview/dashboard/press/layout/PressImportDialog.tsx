@@ -20,9 +20,9 @@ import {
 } from '@components/ui/dialog'
 import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
-import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import type { PressAudience, PressImportCandidate } from '@shared/types/press'
 import { DEFAULT_PRESS_AUDIENCE, PRESS_AUDIENCES, readPressAudience } from '@shared/types/press'
+import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { JSX } from 'react'
 import { formatWordCount } from '../../utils'
 
@@ -35,6 +35,8 @@ const ENCODING_LABELS: Readonly<Record<PressImportCandidate['encoding'], string>
 }
 
 interface PressImportDialogProps {
+    /** 可见性与其他弹窗保持同一契约：由父级传入 open + onOpenChange，不靠 open 字面量硬编码 */
+    open: boolean
     candidate: PressImportCandidate | null
     isImporting: boolean
     onOpenChange: (open: boolean) => void
@@ -42,6 +44,7 @@ interface PressImportDialogProps {
 }
 
 export function PressImportDialog({
+    open,
     candidate,
     isImporting,
     onOpenChange,
@@ -71,7 +74,7 @@ export function PressImportDialog({
     }
 
     return (
-        <Dialog open onOpenChange={handleOpenChange}>
+        <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogContent>
                 <DialogHeader>
                     <DialogTitle className="text-lg">导入作品</DialogTitle>
@@ -136,27 +139,15 @@ export function PressImportDialog({
                     </Field>
                     <Field>
                         <FieldLabel>目标读者</FieldLabel>
-                        <ToggleGroup
-                            type="single"
+                        <SegmentedRail
+                            items={PRESS_AUDIENCES.map((item) => ({ value: item, label: item }))}
+                            value={audience}
+                            onChange={(value) => setAudience(readPressAudience(value))}
+                            ariaLabel="目标读者"
                             variant="outline"
                             size="lg"
-                            value={audience}
-                            disabled={isImporting}
-                            aria-label="目标读者"
-                            className="w-full"
-                            onValueChange={(value) => {
-                                // single 允许再次点击取消选中；目标读者是必选项，空串时沿用当前值
-                                if (value.length > 0) {
-                                    setAudience(readPressAudience(value))
-                                }
-                            }}
-                        >
-                            {PRESS_AUDIENCES.map((item) => (
-                                <ToggleGroupItem key={item} value={item} className="flex-1">
-                                    {item}
-                                </ToggleGroupItem>
-                            ))}
-                        </ToggleGroup>
+                            isDisabled={isImporting}
+                        />
                     </Field>
                 </FieldGroup>
                 <DialogFooter>

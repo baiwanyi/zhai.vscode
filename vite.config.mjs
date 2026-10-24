@@ -13,12 +13,14 @@ export default defineConfig({
     root: 'src/webview',
     base: './',
     plugins: [react(), tailwindcss()],
-    // 别名只暴露 components、resources 与 shared 三个边界，与 tsconfig 的 @components/*、@resources/*、@shared/* 保持一致
+    // 别名只暴露四个边界：@components 为 shadcn 托管源码、@webview 为业务公共层、
+    // @resources 与 @shared 为静态资源与跨进程共享类型；与 tsconfig 的 paths 逐项保持一致
     resolve: {
         alias: {
             '@components': resolve(import.meta.dirname, 'resources/shadcn'),
             '@resources': resolve(import.meta.dirname, 'resources'),
             '@shared': resolve(import.meta.dirname, 'src/shared'),
+            '@webview': resolve(import.meta.dirname, 'src/webview'),
         },
     },
     build: {

@@ -1,15 +1,14 @@
 /**
  * 快照创建对话框：备注输入 + 保存，结构化文档与章节正文共用。
- * 复用约定：容器取 @components/ui 的 dialog，字段用 field + input；
- * 备注状态内聚在组件内，提交时回传去除首尾空白后的值，空串按「不填备注」处理。
+ * 复用约定：骨架取业务公共层的 FormDialog，备注状态与 trim 取 useTrimmedInput；
+ * 提交时回传去除首尾空白后的值，空串按「不填备注」处理。
  * 关键约束：调用方必须传不同的 idPrefix，避免两个面板同时挂载时 label 的 htmlFor 撞车；
  * 关闭对话框即清空备注，防止上次残留的文本被误当成新备注提交。
  */
-import { useState } from 'react'
-import { Button } from '@components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@components/ui/dialog'
 import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
+import { FormDialog } from '@webview/components/FormDialog'
+import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { JSX } from 'react'
 
 interface SnapshotCreateDialogProps {
@@ -33,47 +32,42 @@ export function SnapshotCreateDialog({
     onOpenChange,
     onSubmit,
 }: SnapshotCreateDialogProps): JSX.Element {
-    const [label, setLabel] = useState('')
+    const label = useTrimmedInput()
     const inputId = `${idPrefix}-label`
 
     const handleOpenChange = (isOpen: boolean): void => {
         if (!isOpen) {
-            setLabel('')
+            label.reset()
         }
         onOpenChange(isOpen)
     }
 
     const handleSubmit = (): void => {
-        const value = label.trim()
-        setLabel('')
+        const value = label.trimmedValue
+        label.reset()
         onSubmit(value.length > 0 ? value : undefined)
     }
 
     return (
-        <Dialog open={open} onOpenChange={handleOpenChange}>
-            <DialogContent>
-                <DialogHeader>
-                    <DialogTitle className="text-lg">{title}</DialogTitle>
-                    <DialogDescription>{description}</DialogDescription>
-                </DialogHeader>
-                <Field>
-                    <FieldLabel htmlFor={inputId}>备注（可选）</FieldLabel>
-                    <Input
-                        id={inputId}
-                        value={label}
-                        maxLength={60}
-                        placeholder={placeholder}
-                        onChange={(event) => setLabel(event.target.value)}
-                    />
-                    <FieldDescription>留空表示只记时间，不影响快照内容。</FieldDescription>
-                </Field>
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => handleOpenChange(false)}>
-                        取消
-                    </Button>
-                    <Button onClick={handleSubmit}>保存快照</Button>
-                </DialogFooter>
-            </DialogContent>
-        </Dialog>
+        <FormDialog
+            open={open}
+            title={title}
+            description={description}
+            submitLabel="保存快照"
+            onOpenChange={handleOpenChange}
+            onSubmit={handleSubmit}
+        >
+            <Field>
+                <FieldLabel htmlFor={inputId}>备注（可选）</FieldLabel>
+                <Input
+                    id={inputId}
+                    value={label.value}
+                    maxLength={60}
+                    placeholder={placeholder}
+                    onChange={(event) => label.setValue(event.target.value)}
+                />
+                <FieldDescription>留空表示只记时间，不影响快照内容。</FieldDescription>
+            </Field>
+        </FormDialog>
     )
 }

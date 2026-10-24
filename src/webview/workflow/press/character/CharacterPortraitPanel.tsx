@@ -1,37 +1,23 @@
 /**
  * 角色卡面板：在编辑弹窗内选画面风格、生成、设封面与删除角色设定图。
- * 复用约定：按钮复用 ui/button，画面风格选择复用 ui/select，加载态复用 ui/spinner / ui/skeleton，
- * 无图空态复用 ui/empty，封面标记复用 ui/badge 的 secondary 变体；
- * 生成、列举与删除由 useCharacterPortrait 承担，人物数据只经 onChange 补丁回传（草稿）。
+ * 复用约定：按钮复用 ui/button，画面风格选择复用 ui/select，图库宫格、空态与生成中占位统一由
+ * 业务公共层的 CoverGallery 承担；生成、列举与删除由 useCharacterPortrait 承担，
+ * 人物数据只经 onChange 补丁回传（草稿）。
  * 关键约束：磁盘是图片的唯一事实来源——打开面板按人物目录回读，关闭弹窗期间完成的生成也能读到；
  * 生成成功即写入草稿图库（新图置顶并自动设封面），生成期间隐藏生成按钮、网格首位显示同构占位框；
- * 卡片无底栏：设为封面在左上、删除在右下，均随悬停显现并支持键盘聚焦，封面图左上常显「封面」；
- * 悬停时叠 5% 黑遮罩压暗画面（不拦截点击）；双击卡片用 Dialog 打开大图，可复制到剪贴板或插入编辑器光标；
- * 浮层按钮需拦截双击冒泡；无编辑器光标时插入静默忽略；删除封面时自动回退到图库第一张；
- * 画风随人物卡保存，切换只影响后续生成；生成、复制、插入与删除的结果统一经 sonner 提示。
+ * 双击卡片用 Dialog 打开大图，可复制到剪贴板或插入编辑器光标；无编辑器光标时插入静默忽略；
+ * 删除封面时自动回退到图库第一张；画风随人物卡保存，切换只影响后续生成；
+ * 生成、复制、插入与删除的结果统一经 sonner 提示。
  */
-import { cn } from 'cn'
-import { Copy, Image as ImageIcon, ImagePlus, Sparkles, TextCursorInput, Trash2 } from 'lucide-react'
+import { Copy, Sparkles, TextCursorInput } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from '@components/ui/alert-dialog'
-import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
 import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@components/ui/dialog'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
-import { Skeleton } from '@components/ui/skeleton'
-import { Spinner } from '@components/ui/spinner'
 import type { CharacterPortrait } from '@shared/types/press'
+import { ConfirmDialog } from '@webview/components/ConfirmDialog'
+import { CoverGallery } from '@webview/components/CoverGallery'
 import { useCharacterPortrait } from './useCharacterPortrait'
 import type { AppearanceContext } from './useCharacterAppearance'
 import type { CharacterCard } from '../types'
@@ -211,120 +197,53 @@ export function CharacterPortraitPanel({
                 </div>
             </div>
 
-            {loadedId !== character.id ? null : character.portraits.length === 0 && !isGenerating ? (
-                <Empty className="border py-4">
-                    <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                            <ImagePlus />
-                        </EmptyMedia>
-                        <EmptyTitle>还没有角色卡</EmptyTitle>
-                        <EmptyDescription>生成前建议先补全外貌与身份。</EmptyDescription>
-                    </EmptyHeader>
-                </Empty>
-            ) : (
-                <div className="flex flex-col gap-1.5">
-                    {character.portraits.length > 0 ? (
-                        <p className="text-muted-foreground">已生成 {character.portraits.length} 张</p>
-                    ) : null}
-                    {/* 外留 2px：封面用外描边包住整张卡片（含操作栏），靠 padding 避免被滚动容器横向裁掉 */}
-                    <div className="grid grid-cols-3 gap-2 p-0.5">
-                        {/* 占位插在首位：与真实卡片同为 3:4，出图后就落在这一格 */}
-                        {isGenerating ? (
-                            <div className="relative overflow-hidden rounded-lg border border-border">
-                                <Skeleton className="aspect-3/4 w-full rounded-none" />
-                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-muted-foreground">
-                                    <Spinner />
-                                    <span>生成中</span>
-                                </div>
-                            </div>
-                        ) : null}
-                        {character.portraits.map((portrait) => {
-                            const isCover = portrait.id === character.coverPortraitId
-                            return (
-                                <div
-                                    key={portrait.id}
-                                    className={cn(
-                                        'group relative cursor-zoom-in overflow-hidden rounded-lg border border-border',
-                                        isCover && 'ring-2 ring-ring',
-                                    )}
-                                    onDoubleClick={() => setPreviewing(portrait)}
-                                >
-                                    <img
-                                        src={portrait.url}
-                                        alt={`${character.name} 的角色卡`}
-                                        className="aspect-3/4 w-full object-cover"
-                                    />
-                                    {/* 悬停压暗 5%：只做视觉提示，不拦截点击；键盘聚焦时同样显现操作 */}
-                                    <div
-                                        className="pointer-events-none absolute inset-0 bg-black/5 opacity-0 transition-opacity group-hover:opacity-100"
-                                        aria-hidden="true"
-                                    />
-                                    {isCover ? (
-                                        <Badge variant="secondary" className="absolute top-1 left-1">
-                                            封面
-                                        </Badge>
-                                    ) : (
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="absolute top-1 left-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                                            aria-label="设为封面"
-                                            onClick={() => onChange({ coverPortraitId: portrait.id })}
-                                            onDoubleClick={(event) => event.stopPropagation()}
-                                        >
-                                            <ImageIcon />
-                                        </Button>
-                                    )}
-                                    <Button
-                                        variant="destructive"
-                                        size="icon"
-                                        className="absolute top-1 right-1 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                                        aria-label="删除角色卡"
-                                        disabled={busyPath === portrait.path}
-                                        onClick={() => setDeleting(portrait)}
-                                        onDoubleClick={(event) => event.stopPropagation()}
-                                    >
-                                        <Trash2 />
-                                    </Button>
-                                </div>
-                            )
-                        })}
-                    </div>
-                </div>
-            )}
+            <CoverGallery
+                items={character.portraits}
+                coverId={character.coverPortraitId}
+                variant="portrait"
+                isLoading={loadedId !== character.id}
+                isGenerating={isGenerating}
+                busyPath={busyPath}
+                emptyTitle="还没有角色卡"
+                emptyDescription="生成前建议先补全外貌与身份。"
+                altPrefix={`${character.name} 的角色卡`}
+                deleteLabel="删除角色卡"
+                countLabel={(count) => `已生成 ${count} 张`}
+                onSetCover={(item) => onChange({ coverPortraitId: item.id })}
+                onDelete={(item) => {
+                    const target = character.portraits.find((portrait) => portrait.id === item.id)
+                    if (target !== undefined) {
+                        setDeleting(target)
+                    }
+                }}
+                onPreview={(item) => {
+                    const target = character.portraits.find((portrait) => portrait.id === item.id)
+                    if (target !== undefined) {
+                        setPreviewing(target)
+                    }
+                }}
+            />
 
-            <AlertDialog
+            <ConfirmDialog
                 open={deleting !== null}
+                title="删除这张角色卡？"
+                description="文件会移入系统回收站；若它是封面，封面将自动回退到图库中的第一张。"
+                confirmLabel="删除角色卡"
+                isDestructive
+                size="sm"
                 onOpenChange={(isOpen) => {
                     if (!isOpen) {
                         setDeleting(null)
                     }
                 }}
-            >
-                <AlertDialogContent size="sm">
-                    <AlertDialogHeader>
-                        <AlertDialogTitle className="text-lg">删除这张角色卡？</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            文件会移入系统回收站；若它是封面，封面将自动回退到图库中的第一张。
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>取消</AlertDialogCancel>
-                        <AlertDialogAction
-                            variant="destructive"
-                            onClick={() => {
-                                const target = deleting
-                                setDeleting(null)
-                                if (target !== null) {
-                                    void handleDelete(target)
-                                }
-                            }}
-                        >
-                            删除角色卡
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+                onConfirm={() => {
+                    const target = deleting
+                    setDeleting(null)
+                    if (target !== null) {
+                        void handleDelete(target)
+                    }
+                }}
+            />
 
             {/* 双击卡片看大图：可复制到剪贴板，或插入到编辑器光标处 */}
             <Dialog

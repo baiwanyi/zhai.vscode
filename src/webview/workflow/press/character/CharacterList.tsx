@@ -10,22 +10,13 @@
 import { cn } from 'cn'
 import { Mars, Plus, Sparkles, Trash2, UserRound, Venus } from 'lucide-react'
 import { useMemo, useState } from 'react'
-import {
-    AlertDialog,
-    AlertDialogAction,
-    AlertDialogCancel,
-    AlertDialogContent,
-    AlertDialogDescription,
-    AlertDialogFooter,
-    AlertDialogHeader,
-    AlertDialogTitle,
-} from '@components/ui/alert-dialog'
 import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
 import { Card } from '@components/ui/card'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { PortraitGalleryItem } from '@shared/types/press'
+import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import type { CharacterCard } from '../types'
 import type { JSX } from 'react'
 import { CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
@@ -201,38 +192,26 @@ export function CharacterList({
                     )
                 })}
             </div>
-            <AlertDialog
+            <ConfirmDialog
                 open={deleting !== null}
+                title={`删除「${deleting?.name ?? ''}」？`}
+                description="人物卡会立即从角色设定.md 中移除，章纲里的出场引用一并清理，已生成的角色设定图移入回收站。"
+                confirmLabel="删除人物"
+                isDestructive
+                size="sm"
                 onOpenChange={(isOpen) => {
                     if (!isOpen) {
                         setDeletingId(null)
                     }
                 }}
-            >
-                <AlertDialogContent size="sm">
-                    <AlertDialogHeader>
-                        <AlertDialogTitle className="text-lg">删除「{deleting?.name ?? ''}」？</AlertDialogTitle>
-                        <AlertDialogDescription>
-                            人物卡会立即从角色设定.md 中移除，章纲里的出场引用一并清理，已生成的角色设定图移入回收站。
-                        </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                        <AlertDialogCancel>取消</AlertDialogCancel>
-                        <AlertDialogAction
-                            variant="destructive"
-                            onClick={() => {
-                                const target = deletingId
-                                setDeletingId(null)
-                                if (target !== null) {
-                                    onDelete(target)
-                                }
-                            }}
-                        >
-                            删除人物
-                        </AlertDialogAction>
-                    </AlertDialogFooter>
-                </AlertDialogContent>
-            </AlertDialog>
+                onConfirm={() => {
+                    const target = deletingId
+                    setDeletingId(null)
+                    if (target !== null) {
+                        onDelete(target)
+                    }
+                }}
+            />
         </>
     )
 }

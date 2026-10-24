@@ -12,8 +12,8 @@ import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
-import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
+import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { OutlineVolume, PlanStatus } from '../types'
 import type { JSX } from 'react'
 import { PLAN_STATUS_META, STATUS_FILTERS } from '../constants'
@@ -55,13 +55,14 @@ export function OutlineTree({
     return (
         <div className="flex h-full min-h-0 flex-col gap-2">
             <div className="shrink-0 overflow-x-auto">
-                <ToggleGroup type="single" variant="outline" value={statusFilter} onValueChange={handleFilterChange}>
-                    {STATUS_FILTERS.map((option) => (
-                        <ToggleGroupItem key={option.value} value={option.value}>
-                            {option.label}
-                        </ToggleGroupItem>
-                    ))}
-                </ToggleGroup>
+                <SegmentedRail
+                    items={STATUS_FILTERS}
+                    value={statusFilter}
+                    onChange={handleFilterChange}
+                    ariaLabel="状态筛选"
+                    variant="chip"
+                    isWrapped={false}
+                />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
                 {volumes.length === 0 ? (

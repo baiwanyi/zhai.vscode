@@ -1,13 +1,12 @@
 /**
  * 人物条件区：地域、时代、参考典籍、性别、字数与姓氏六个维度，纵向排列在条件字段区内。
- * 复用约定：地域、时代、性别、字数统一复用 ui/toggle-group 的 outline 分段样式（互斥单选、整行等分），
+ * 复用约定：地域、时代、性别、字数统一由业务公共层的 SegmentedRail（outline 形态）承载，
  * 参考典籍复用 ui/select，姓氏行复用同目录 NamingSurnameField。
- * 关键约束：四组分段控件共用同一套尺寸与间距（size=sm、spacing=0、w-full），保证视觉一致；
- * 点击已选中的分段不改变状态（避免空值回写），取值一律以宿主 catalog 为准。
+ * 关键约束：四组分段控件共用同一套尺寸与间距，改样式只改 SegmentedRail；点击已选中的分段不改变状态
+ * （避免空值回写），取值一律以宿主 catalog 为准。
  */
 import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
-import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import type {
     NamingCatalog,
     NamingEra,
@@ -17,6 +16,7 @@ import type {
     NamingRequest,
     NamingSurnameKind,
 } from '@shared/types/naming'
+import { SegmentedRail } from '@webview/components/SegmentedRail'
 import { NamingSurnameField } from './NamingSurnameField'
 import type { JSX } from 'react'
 import { readCategoryMeta } from '../utils'
@@ -44,45 +44,23 @@ export function NamingPersonFields({
         <FieldGroup className="gap-3">
             <Field>
                 <FieldLabel>{meta.variantLabel}</FieldLabel>
-                <ToggleGroup
-                    type="single"
-                    variant="outline"
-                    spacing={0}
+                <SegmentedRail
+                    items={meta.variants}
                     value={request.variant}
-                    onValueChange={(value) => {
-                        if (value) {
-                            onChange({ variant: value })
-                        }
-                    }}
-                    className="w-full"
-                >
-                    {meta.variants.map((variant) => (
-                        <ToggleGroupItem key={variant.value} value={variant.value} className="flex-1">
-                            {variant.label}
-                        </ToggleGroupItem>
-                    ))}
-                </ToggleGroup>
+                    onChange={(variant) => onChange({ variant })}
+                    ariaLabel={meta.variantLabel}
+                    variant="outline"
+                />
             </Field>
             <Field>
                 <FieldLabel>时代</FieldLabel>
-                <ToggleGroup
-                    type="single"
-                    variant="outline"
-                    spacing={0}
+                <SegmentedRail
+                    items={catalog.eras}
                     value={request.era}
-                    onValueChange={(value) => {
-                        if (value) {
-                            onChange({ era: value as NamingEra })
-                        }
-                    }}
-                    className="w-full"
-                >
-                    {catalog.eras.map((option) => (
-                        <ToggleGroupItem key={option.value} value={option.value} className="flex-1">
-                            {option.label}
-                        </ToggleGroupItem>
-                    ))}
-                </ToggleGroup>
+                    onChange={(era) => onChange({ era: era as NamingEra })}
+                    ariaLabel="时代"
+                    variant="outline"
+                />
             </Field>
             <Field>
                 <FieldLabel htmlFor="naming-person-reference">参考</FieldLabel>
@@ -106,45 +84,23 @@ export function NamingPersonFields({
             </Field>
             <Field>
                 <FieldLabel>性别</FieldLabel>
-                <ToggleGroup
-                    type="single"
-                    variant="outline"
-                    spacing={0}
+                <SegmentedRail
+                    items={catalog.genders}
                     value={request.gender}
-                    onValueChange={(value) => {
-                        if (value) {
-                            onChange({ gender: value as NamingGender })
-                        }
-                    }}
-                    className="w-full"
-                >
-                    {catalog.genders.map((option) => (
-                        <ToggleGroupItem key={option.value} value={option.value} className="flex-1">
-                            {option.label}
-                        </ToggleGroupItem>
-                    ))}
-                </ToggleGroup>
+                    onChange={(gender) => onChange({ gender: gender as NamingGender })}
+                    ariaLabel="性别"
+                    variant="outline"
+                />
             </Field>
             <Field>
                 <FieldLabel>字数（不含姓氏）</FieldLabel>
-                <ToggleGroup
-                    type="single"
-                    variant="outline"
-                    spacing={0}
+                <SegmentedRail
+                    items={catalog.lengths}
                     value={request.length}
-                    onValueChange={(value) => {
-                        if (value) {
-                            onChange({ length: value as NamingNameLength })
-                        }
-                    }}
-                    className="w-full"
-                >
-                    {catalog.lengths.map((option) => (
-                        <ToggleGroupItem key={option.value} value={option.value} className="flex-1">
-                            {option.label}
-                        </ToggleGroupItem>
-                    ))}
-                </ToggleGroup>
+                    onChange={(length) => onChange({ length: length as NamingNameLength })}
+                    ariaLabel="字数"
+                    variant="outline"
+                />
             </Field>
             <NamingSurnameField
                 surname={request.surname}

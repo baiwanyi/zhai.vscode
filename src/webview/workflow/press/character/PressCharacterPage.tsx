@@ -220,7 +220,7 @@ export function PressCharacterPage({
             {/* key 绑定展开状态：每次打开都重建表单，上一次的输入不会带过来 */}
             <CharacterCreateDialog
                 key={isCreateOpen ? 'create-open' : 'create-closed'}
-                isOpen={isCreateOpen}
+                open={isCreateOpen}
                 onOpenChange={setIsCreateOpen}
                 onCreate={handleCreate}
             />

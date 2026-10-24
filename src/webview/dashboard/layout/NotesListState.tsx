@@ -6,8 +6,8 @@
 import { FileText, TriangleAlert } from 'lucide-react'
 import { Alert, AlertDescription, AlertTitle } from '@components/ui/alert'
 import { Button } from '@components/ui/button'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Skeleton } from '@components/ui/skeleton'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import type { StatsStatus } from '../hooks/useDashboardStats'
 import type { JSX } from 'react'
 
@@ -40,23 +40,19 @@ export function NotesListState({ status, error, isFiltered, onResetFilters }: No
     }
 
     return (
-        <Empty className="border px-3 py-4">
-            <EmptyHeader>
-                <EmptyMedia variant="icon">
-                    <FileText />
-                </EmptyMedia>
-                <EmptyTitle>{isFiltered ? '筛选无结果' : '暂无笔记'}</EmptyTitle>
-                <EmptyDescription>
-                    {isFiltered ? '当前筛选条件下没有笔记，可清除筛选后查看全部。' : '点击上方「添加」创建第一篇笔记。'}
-                </EmptyDescription>
-            </EmptyHeader>
+        <StateEmpty
+            title={isFiltered ? '筛选无结果' : '暂无笔记'}
+            description={
+                isFiltered ? '当前筛选条件下没有笔记，可清除筛选后查看全部。' : '点击上方「添加」创建第一篇笔记。'
+            }
+            icon={FileText}
+            className="border px-3 py-4"
+        >
             {isFiltered ? (
-                <EmptyContent>
-                    <Button variant="outline" onClick={onResetFilters}>
-                        清除筛选
-                    </Button>
-                </EmptyContent>
+                <Button variant="outline" onClick={onResetFilters}>
+                    清除筛选
+                </Button>
             ) : null}
-        </Empty>
+        </StateEmpty>
     )
 }
