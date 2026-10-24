@@ -11,6 +11,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { AiConversationMode, AiSessionSnapshot } from '@shared/types/aiChat'
+import { onState, request } from '@shared/utils/bridge'
 import { AI_COMMAND_MAP, isAiCommandId } from './constants'
 import { useAiChatCommands } from './hooks/useAiChatCommands'
 import { useAiChatContexts } from './hooks/useAiChatContexts'
@@ -27,7 +28,6 @@ import { composeCommandContent, readAiStateKind } from './utils'
 import type { AiCommand, AiCommandId, AiReferenceSource } from './constants'
 import type { Phase } from './hooks/useAiChatSession'
 import type { JSX } from 'react'
-import { onState, request } from '../../bridge'
 
 /** 对话页对外入参：只有会话作用域一项，其余状态全部由页面内部 hooks 持有 */
 export interface AiChatProps {

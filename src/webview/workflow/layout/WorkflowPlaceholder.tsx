@@ -9,8 +9,8 @@ import { ArrowLeft, MessagesSquare, Pencil } from 'lucide-react'
 import { Button } from '@components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import type { WorkflowContextState, WorkflowId } from '@shared/types/workflow'
+import { toastError } from '@shared/utils/error'
 import type { JSX } from 'react'
-import { toastError } from '../../utils'
 import { readModuleLabel } from '../core/routing'
 
 /** 对话承接页：占位页的「仍然使用 AI 对话」出口落到该页，其内部组合了 AiChat */

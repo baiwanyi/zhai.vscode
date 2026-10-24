@@ -1,14 +1,14 @@
 /**
  * 素材抽取：请宿主扫描作品章节，重写 Materials/ 下的章节清单、首尾摘录、人名候选与金手指候选章。
- * 复用约定：请求经 webview 公共 bridge，提示统一经 sonner，过程与结果共用同一条 toast id。
+ * 复用约定：请求经 @shared/utils/bridge，提示统一经 sonner，过程与结果共用同一条 toast id。
  * 关键约束：抽取是本地统计、不调用模型，所以没有进度广播、也不依赖 AI 登录态；
  * 覆盖写入是预期行为，重复抽取得到最新结果。
  */
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import type { PressAnalyzeResult } from '@shared/types/press'
-import { request } from '../../../bridge'
-import { toErrorText } from '../../../utils'
+import { request } from '@shared/utils/bridge'
+import { toErrorText } from '@shared/utils/error'
 
 /** 过程提示的固定 toast id：同一轮抽取始终更新同一条提示 */
 const ANALYZE_TOAST_ID = 'press-analyze'

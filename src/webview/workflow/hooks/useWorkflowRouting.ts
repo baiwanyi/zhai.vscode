@@ -1,6 +1,6 @@
 /**
  * 工作流路由事实：初次拉取宿主快照，随后跟随 workflow 通道广播更新，并维护用户手动覆盖。
- * 复用 ../../bridge 的请求与状态订阅，收窄逻辑取自 shared/types/workflow。
+ * 复用 @shared/utils/bridge 的请求与状态订阅，收窄逻辑取自 shared/types/workflow。
  * 关键约束：覆盖与生成它的场景指纹绑定，场景事实任一项变化即自动作废；
  * 模块选定与清除的失败向上抛出，由页面就地提示，不在本层吞掉；
  * 宿主未就绪（或浏览器预览环境）时保留默认事实，页面照常可用。
@@ -14,8 +14,8 @@ import type {
     WorkflowContextState,
     WorkflowId,
 } from '@shared/types/workflow'
+import { onState, request } from '@shared/utils/bridge'
 import type { WorkflowResolveReason } from '../core/routing'
-import { onState, request } from '../../bridge'
 import { contextFingerprint, resolveWorkflow } from '../core/routing'
 
 /** 宿主未响应前的默认事实：无场景、无模块、未选定且未打开作品，解析结果落到初始页 */

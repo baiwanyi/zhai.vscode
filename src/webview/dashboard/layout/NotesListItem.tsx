@@ -18,8 +18,8 @@ import {
 } from '@components/ui/context-menu'
 import { Item, ItemActions, ItemContent, ItemTitle } from '@components/ui/item'
 import type { NoteAction, RecentFile } from '@shared/types/dashboard'
+import { formatRelativeTime } from '@shared/utils/format'
 import type { JSX } from 'react'
-import { formatRelativeTime } from '../../utils'
 
 interface NotesListItemProps {
     note: RecentFile

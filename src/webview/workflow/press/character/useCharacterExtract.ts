@@ -1,6 +1,6 @@
 /**
  * 人物卡提取：请宿主从当前作品的导入素材里生成人物卡草案，进度经 press-semantic 通道回传。
- * 复用约定：请求与状态订阅走 webview 公共 bridge，进度只在本层转成状态供页面渲染，提示只用 sonner 报错；
+ * 复用约定：请求与状态订阅走 @shared/utils/bridge，进度只在本层转成状态供页面渲染，提示只用 sonner 报错；
  * 分类与性别的枚举归一不在本模块，由页面侧按 constants 的中文标签转换。
  * 关键约束：提取是逐批调用模型的长任务，请求超时须按批数放宽；
  * 返回的只是草案，是否合并进人物列表由调用方决定，本模块不写草稿也不落盘；
@@ -9,8 +9,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { PressExtractCharactersResult } from '@shared/types/press'
-import { onState, request } from '../../../bridge'
-import { toErrorText } from '../../../utils'
+import { onState, request } from '@shared/utils/bridge'
+import { toErrorText } from '@shared/utils/error'
 
 /** 请求超时：角色卡每批 4 人、单批最长 120s，按上限留足余量 */
 const EXTRACT_TIMEOUT_MS = 600_000

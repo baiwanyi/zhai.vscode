@@ -9,8 +9,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { AiContextRef, AiConversationMode, AiSendResult, AiSessionSnapshot } from '@shared/types/aiChat'
+import { onStream, request } from '@shared/utils/bridge'
 import type { AiApplyPolicy } from '../constants'
-import { onStream, request } from '../../../bridge'
 import { patchMessage, toErrorText } from '../utils'
 
 /** 视图阶段：idle 空闲、sending 已提交待首字、streaming 正在逐字生成 */

@@ -1,6 +1,6 @@
 /**
  * 用量列表数据源：模块、时间范围或页码变化时向宿主请求 ai/usage，返回列表、汇总、加载态与手动刷新。
- * 复用约定：请求经 webview 公共 bridge，错误文案由 ../utils 的 toErrorText 统一转换；
+ * 复用约定：请求经 @shared/utils/bridge，错误文案由 ../utils 的 toErrorText 统一转换；
  * 分页与汇总都在宿主侧完成，前端直接用返回结果，不再二次计算。
  * 关键约束：只认最后一次请求（清理标记比对），快速切换筛选时旧响应不会写回；刷新期间保留上一份结果，
  * 避免表格闪空；只有手动刷新带 force 跳过节流，页面可见时的 30 秒静默同步走普通查询。
@@ -8,7 +8,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import type { AiUsageListResult, AiUsageModule, AiUsageRange } from '@shared/types/aiUsage'
-import { request } from '../../../bridge'
+import { request } from '@shared/utils/bridge'
 import { POLL_INTERVAL_MS } from '../constants'
 import { toErrorText } from '../utils'
 

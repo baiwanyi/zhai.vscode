@@ -1,6 +1,6 @@
 /**
  * 作品封面：向宿主提交作品设定快照生成竖版封面，并提供回读、设为封面与删除能力。
- * 复用约定：请求经 webview 公共 bridge；出图常需 1~3 分钟，前端只做 15 分钟兜底；
+ * 复用约定：请求经 @shared/utils/bridge；出图常需 1~3 分钟，前端只做 15 分钟兜底；
  * 结果里的 url 已由宿主用 asWebviewUri 转换，前端直接放进 img。
  * 关键约束：封面落在当前作品的 Cover 目录下，所有请求都带作品目录，切换作品不会串图；
  * 生成中不接受重复提交；磁盘是唯一事实来源，切换分组或重开面板都按目录回读；
@@ -19,8 +19,8 @@ import type {
     CoverSelectResult,
     PressCover,
 } from '@shared/types/press'
-import { request } from '../../../bridge'
-import { toastError } from '../../../utils'
+import { request } from '@shared/utils/bridge'
+import { toastError } from '@shared/utils/error'
 
 /** 前端只做兜底：出图内置 10 分钟上限，这里放宽到 15 分钟，避免前端先于宿主判超时 */
 const AI_REQUEST_TIMEOUT_MS = 900_000

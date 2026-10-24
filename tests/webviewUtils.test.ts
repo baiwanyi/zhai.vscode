@@ -1,13 +1,15 @@
 /**
- * Webview 共享纯函数单测：覆盖时间格式化、token 折算、错误文案收窄与剪贴板写入四项能力。
+ * 共享层纯函数单测：覆盖时间格式化、token 折算、错误文案收窄与剪贴板写入四项能力。
  * 重点验证：时间解析失败返回空串（回退文案由调用方决定，快照层再回退原值）、token 的两级折算单位、
  * Error 与非 Error 的错误文案收窄，以及剪贴板不可用时返回 false 而不是抛错。
  * 约束：只测不依赖 React 的纯函数；组件交互需要 jsdom 与 testing-library，另行决策后再补。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { copyToClipboard, formatDateTime, formatRelativeTime, formatTokens, toErrorText } from '../src/webview/utils'
+import { copyToClipboard } from '@shared/utils/clipboard'
+import { toErrorText } from '@shared/utils/error'
+import { formatDateTime, formatRelativeTime, formatTokens } from '@shared/utils/format'
 
-// utils 顶层引入了 sonner（依赖 React 与浏览器环境），node 环境下用空实现替换，只保留被测纯函数
+// error 模块顶层引入了 sonner（依赖 React 与浏览器环境），node 环境下用空实现替换，只保留被测纯函数
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
 
 afterEach(() => {

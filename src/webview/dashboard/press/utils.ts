@@ -5,7 +5,7 @@
  * 任一侧新增字段都应改这里而不是就地拼接；错误提示统一取 webview 公共 utils 的 toastError。
  */
 import type { PressProjectSummary } from '@shared/types/press'
-import { formatRelativeTime } from '../../utils'
+import { formatRelativeTime } from '@shared/utils/format'
 import { formatWordCount } from '../utils'
 
 /** 数据加载状态：ready 表示已拿到快照，error 表示最近一次拉取失败 */

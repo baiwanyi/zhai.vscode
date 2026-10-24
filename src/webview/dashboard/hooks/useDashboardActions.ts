@@ -1,6 +1,6 @@
 /**
  * 仪表盘宿主动作：新建空笔记、打开笔记、批量置顶、工作流页跳转、索引重建、缓存清理与打开设置。
- * 复用 ../bridge 走宿主协议、@components/ui/sonner 的 toast 反馈结果，错误经 Error 收窄后提示。
+ * 复用 @shared/utils/bridge 走宿主协议、@shared/utils/error 的 toastError 反馈结果，错误经 Error 收窄后提示。
  * 关键约束：耗时动作进行中记录 pendingAction 阻止重复提交；打开笔记与工作流跳转不占用该状态，
  * 避免顶栏操作区被整体禁用；提示在本层即时发出，页面不再渲染提示行。
  */
@@ -10,8 +10,8 @@ import type { NoteAction } from '@shared/types/dashboard'
 import type { HostMethodName } from '@shared/types/messages'
 import type { CreatedNote, OpenNoteRequest, OpenNoteResult, PinNotesRequest } from '@shared/types/note'
 import type { OpenWorkflowRequest, OpenWorkflowResult } from '@shared/types/workflow'
-import { request } from '../../bridge'
-import { toErrorText } from '../../utils'
+import { request } from '@shared/utils/bridge'
+import { toErrorText } from '@shared/utils/error'
 
 /** 尚未接入宿主协议的条目操作 */
 export type PendingNoteAction = Extract<NoteAction, 'delete'>

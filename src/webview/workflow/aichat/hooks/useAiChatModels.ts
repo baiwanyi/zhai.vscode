@@ -6,7 +6,7 @@
  */
 import { useCallback, useRef, useState } from 'react'
 import type { AiModelChoices } from '@shared/types/aiChat'
-import { request } from '../../../bridge'
+import { request } from '@shared/utils/bridge'
 import { toErrorText } from '../utils'
 
 /** 模型清单请求的超时上限：拉起 CLI 比普通请求慢，默认 10 秒不够 */

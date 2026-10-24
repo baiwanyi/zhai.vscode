@@ -1,6 +1,6 @@
 /**
  * 快照页取数与动作：列举作品快照时间线，并提供手动留版、恢复与删除三个写操作。
- * 复用约定：请求统一走 webview bridge 的 request，错误提示走 utils.toastError；
+ * 复用约定：请求统一走 @shared/utils/bridge 的 request，错误提示走 @shared/utils/error 的 toastError；
  * 每个写操作完成后重新拉取列表，由宿主回传的时间线作为唯一事实来源，避免前端拼装出与磁盘不符的条目。
  * 关键约束：恢复与删除的二次确认由页面承担，本 hook 只负责执行；切换作品时丢弃在途响应，防止串到新作品。
  */
@@ -14,8 +14,8 @@ import type {
     PressSnapshotListResult,
     PressSnapshotRestoreResult,
 } from '@shared/types/press'
-import { request } from '../../../../bridge'
-import { toastError } from '../../../../utils'
+import { request } from '@shared/utils/bridge'
+import { toastError } from '@shared/utils/error'
 
 /** 快照页所需的全部状态与动作 */
 export interface PressSnapshotsState {
@@ -91,9 +91,7 @@ export function usePressSnapshots(dirPath: string): PressSnapshotsState {
                     files,
                 })
                 await refresh()
-                toast.success(
-                    result.restored.length === 0 ? '当前内容与所选版本一致，无需恢复' : '已恢复到所选版本',
-                )
+                toast.success(result.restored.length === 0 ? '当前内容与所选版本一致，无需恢复' : '已恢复到所选版本')
             } catch (cause) {
                 toastError(cause)
             } finally {

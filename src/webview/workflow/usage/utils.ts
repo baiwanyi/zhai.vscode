@@ -1,6 +1,6 @@
 /**
  * AI 使用量页展示格式化：积分、请求 id、耗时与模块标签。
- * 复用约定：时间与 token 折算、错误文案、剪贴板写入统一来自 @webview/utils，
+ * 复用约定：时间与 token 折算、错误文案、剪贴板写入统一来自 @shared/utils 的 format / error / clipboard，
  * 本文件只保留账单页特有的格式化，并用别名转发，调用点无需改动。
  * 关键约束：积分未知（null）一律显示破折号，不得回退成 0.00，否则会把未知成本显示成零消耗；
  * 请求 id 在表格中只截短展示，完整值通过 title 与弹窗标题给出。
@@ -8,13 +8,10 @@
 import { AI_USAGE_MODULE_LABELS } from '@shared/types/aiUsage'
 import type { AiUsageModule } from '@shared/types/aiUsage'
 
-// 时间与 token 折算、错误文案、剪贴板写入已上移到 @webview/utils；此处转发保持账单页调用点不变
-export {
-    copyToClipboard as copyPrompt,
-    formatDateTime as formatUsageTime,
-    formatTokens,
-    toErrorText,
-} from '@webview/utils'
+// 时间与 token 折算、错误文案、剪贴板写入已上移到 @shared/utils 的 format / error / clipboard；此处转发保持账单页调用点不变
+export { copyToClipboard as copyPrompt } from '@shared/utils/clipboard'
+export { toErrorText } from '@shared/utils/error'
+export { formatDateTime as formatUsageTime, formatTokens } from '@shared/utils/format'
 
 /** 请求 id 在表格中的展示长度 */
 const SHORT_ID_LENGTH = 8

@@ -8,8 +8,8 @@ import { LayoutGrid, MessagesSquare, Pencil } from 'lucide-react'
 import { Button } from '@components/ui/button'
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import type { WorkflowContextState, WorkflowId } from '@shared/types/workflow'
+import { toastError } from '@shared/utils/error'
 import type { JSX } from 'react'
-import { toastError } from '../../utils'
 import { MODULE_WORKFLOW, readModuleLabel } from '../core/routing'
 
 /** 公众号管理模块键：仅用于区分入口图标 */

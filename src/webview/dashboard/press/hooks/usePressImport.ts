@@ -1,6 +1,6 @@
 /**
  * 作品导入动作：选文件、安全校验与试解析、确认弹窗、后台导入，进度经 press-import 通道回传。
- * 复用约定：请求与状态订阅走 ../../../bridge，错误提示统一经 sonner；
+ * 复用约定：请求与状态订阅走 @shared/utils/bridge，错误提示统一经 sonner；
  * 进度与终态共用同一个 toast id，避免逐章弹出多条提示把面板刷满。
  * 关键约束：宿主下发的业务原因码经 HostRequestError 传递，文案映射集中在本模块，页面不解析字符串；
  * 导入期间页面保持可交互，取消只请求宿主在章节边界停下，已写章节不回滚。
@@ -14,8 +14,8 @@ import type {
     PressImportProgress,
     PressImportStartResult,
 } from '@shared/types/press'
-import { HostRequestError, onState, request } from '../../../bridge'
-import { toErrorText, toastError } from '../../../utils'
+import { HostRequestError, onState, request } from '@shared/utils/bridge'
+import { toErrorText, toastError } from '@shared/utils/error'
 
 /** 进度提示的固定 toast id：同一任务的进度与终态始终更新同一条提示 */
 const IMPORT_TOAST_ID = 'press-import'

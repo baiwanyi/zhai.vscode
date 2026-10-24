@@ -1,13 +1,13 @@
 /**
  * 仪表盘统计加载：拉取 dashboard/stats 快照并暴露加载状态，重建期间轮询直至宿主收敛。
- * 复用 ../bridge 的请求与状态订阅：宿主经 index 通道推送索引变更时立即重拉，使列表跟随文件编辑。
+ * 复用 @shared/utils/bridge 的请求与状态订阅：宿主经 index 通道推送索引变更时立即重拉，使列表跟随文件编辑。
  * 关键约束：轮询仅在 isRebuilding 为真时存在，卸载或收敛后立即清理解除定时器；
  * 状态订阅须在卸载时解除，避免页面重挂载后重复触发刷新。
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { DashboardStats } from '@shared/types/dashboard'
-import { onState, request } from '../../bridge'
-import { toErrorText } from '../../utils'
+import { onState, request } from '@shared/utils/bridge'
+import { toErrorText } from '@shared/utils/error'
 
 /** 重建期间轮询间隔，使按钮态与统计随宿主进度收敛 */
 const POLL_INTERVAL_MS = 1500

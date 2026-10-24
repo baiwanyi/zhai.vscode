@@ -1,6 +1,6 @@
 /**
  * 作品列表数据：拉取 press/projects 快照，并提供新建作品与重建索引两个动作。
- * 复用 ../../bridge 的请求与状态订阅、press/utils 的状态与提示口径；外部增删作品目录时由 index 通道驱动重拉。
+ * 复用 @shared/utils/bridge 的请求与状态订阅、press/utils 的状态与提示口径；外部增删作品目录时由 index 通道驱动重拉。
  * 关键约束：创建进行中置 isCreating 阻止重复提交；失败一律提示且不污染已有列表；
  * 创建成功后立即重拉，不等 watcher 防抖，使新作品即时出现在列表中。
  */
@@ -12,9 +12,9 @@ import type {
     PressAudience,
     PressProjectSummary,
 } from '@shared/types/press'
+import { onState, request } from '@shared/utils/bridge'
+import { toErrorText, toastError } from '@shared/utils/error'
 import type { PressStatus } from '../utils'
-import { onState, request } from '../../../bridge'
-import { toErrorText, toastError  } from '../../../utils'
 
 export interface PressProjectsState {
     projects: PressProjectSummary[]

@@ -8,8 +8,8 @@ import { Trash2 } from 'lucide-react'
 import { Button } from '@components/ui/button'
 import { DropdownMenuItem } from '@components/ui/dropdown-menu'
 import type { AiConversationSummary } from '@shared/types/aiChat'
+import { formatRelativeTime } from '@shared/utils/format'
 import type { JSX } from 'react'
-import { formatRelativeTime } from '../../../utils'
 
 interface AiChatHistoryItemProps {
     session: AiConversationSummary

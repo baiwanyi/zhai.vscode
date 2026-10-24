@@ -1,11 +1,11 @@
 /**
  * 取名选项摘要：挂载时向宿主请求 naming/catalog，取得分类、枚举、后缀候选与姓氏样本。
- * 复用约定：请求经 webview 公共 bridge，错误统一转文案交由页面展示；只加载一次。
+ * 复用约定：请求经 @shared/utils/bridge，错误统一转文案交由页面展示；只加载一次。
  * 关键约束：组件卸载后不再回写状态，避免切换分区时的过期 setState。
  */
 import { useEffect, useState } from 'react'
 import type { NamingCatalog } from '@shared/types/naming'
-import { request } from '../../../bridge'
+import { request } from '@shared/utils/bridge'
 import { toErrorText } from '../utils'
 
 /** 选项摘要 hook 的对外状态 */

@@ -38,8 +38,9 @@ export function readSurnameSamples(catalog: NamingCatalog, kind: NamingSurnameKi
     return kind === 'compound' ? catalog.surnameSamples.compound : catalog.surnameSamples.single
 }
 
-// 错误文案与剪贴板写入已上移到 @webview/utils，实现只保留一份；此处转发是为了不改动调用点的导入路径
-export { copyToClipboard as copyName, toErrorText } from '@webview/utils'
+// 错误文案与剪贴板写入已上移到 @shared/utils 的 error 与 clipboard，实现只保留一份；此处转发是为了不改动调用点的导入路径
+export { copyToClipboard as copyName } from '@shared/utils/clipboard'
+export { toErrorText } from '@shared/utils/error'
 
 /** 结果名字列表转纯文本（供整批复制） */
 export function joinNames(items: readonly NamingCandidate[]): string {

@@ -7,7 +7,7 @@
 import { useEffect } from 'react'
 import { toast } from 'sonner'
 import { isToastPayload } from '@shared/types/messages'
-import { onState } from '../bridge'
+import { onState } from '@shared/utils/bridge'
 
 export function useHostToast(): void {
     useEffect(

@@ -2,15 +2,16 @@
  * AI 对话展示层纯函数：token 数与引用字数的紧凑折算、未知错误的文本收窄、会话快照的不可变消息替换、
  * 宿主 state 广播载荷的收窄、增强提示词的规则化重写、写作命令模板的发送拼装与回放拆分。
  * 零依赖、无副作用，可被页面主组件与各子组件自由复用；展示规则与 docs/modules/ai-chat.md 第 10 节一致。
- * 关键约束：相对时间格式化已上移至 src/webview/utils.ts 供各 Webview 共用；readAiStateKind 只信任收窄结果；
+ * 关键约束：相对时间格式化已上移至 @shared/utils/format 供各 Webview 共用；readAiStateKind 只信任收窄结果；
  * 命令模板只在发送瞬间拼接、在展示时按最长前缀剥离，输入框与消息气泡均不出现 instruction 全文。
  */
 import type { AiContextRef, AiConversationMode, AiMessage, AiSessionSnapshot } from '@shared/types/aiChat'
-import { formatTokens, toErrorText } from '@webview/utils'
+import { toErrorText } from '@shared/utils/error'
+import { formatTokens } from '@shared/utils/format'
 import { AI_COMMAND_PREFIXES } from './constants'
 import type { AiCommand } from './constants'
 
-// token 折算与错误文案已上移到 @webview/utils，实现只保留一份；此处转发是为了不改动各调用点的导入路径
+// token 折算与错误文案已上移到 @shared/utils 的 format 与 error，实现只保留一份；此处转发是为了不改动各调用点的导入路径
 export { formatTokens, toErrorText }
 
 /** 引用体积描述：过千折算 k，被截断时追加标注 */

@@ -4,7 +4,7 @@
  */
 import { useCallback, useState } from 'react'
 import type { AiRuntimeInfo } from '@shared/types/aiChat'
-import { request } from '../../../bridge'
+import { request } from '@shared/utils/bridge'
 import { toErrorText } from '../utils'
 
 /** 运行时 hook 的对外依赖：错误由共享提示 hook 持有 */

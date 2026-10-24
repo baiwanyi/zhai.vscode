@@ -1,7 +1,7 @@
 /**
  * 写作工作区装配：按作品目录读取宿主文档、解析成草稿，并负责草稿的即时落盘。
  * 复用约定：文档解析交给 ../document 的 parseProjectWorkspace，序列化交给 ../serialize，
- * 请求统一走 @webview/bridge（方法名受 HostMethodName 约束），错误经 ../utils 的 toastError 提示。
+ * 请求统一走 @shared/utils/bridge（方法名受 HostMethodName 约束），错误经 @shared/utils/error 的 toastError 提示。
  * 关键约束：草稿同时存在于 ref 与 state 两份——写盘与合并读 ref（最新值），渲染读 state；
  * 写盘串行排队，防抖窗口内同范围的多次输入合并成一次请求；切换作品与卸载都要清掉未到期的防抖任务，
  * 否则上一个作品的草稿会被写进新作品。
@@ -15,8 +15,8 @@ import type {
     PressWorkspaceRequest,
     PressWorkspaceResult,
 } from '@shared/types/press'
-import { request } from '@webview/bridge'
-import { toastError } from '@webview/utils'
+import { request } from '@shared/utils/bridge'
+import { toastError } from '@shared/utils/error'
 import type { OutlineWorkspace } from '../types'
 import { parseProjectWorkspace } from '../document'
 import {

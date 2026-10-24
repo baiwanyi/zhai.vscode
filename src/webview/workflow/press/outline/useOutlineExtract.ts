@@ -1,14 +1,14 @@
 /**
  * 大纲提取：请宿主用已落盘的导入素材重建卷与章（卷名、章序、梗概、钩子、张力）。
- * 复用约定：请求经 webview 公共 bridge，提示统一经 sonner；返回草案，转换成大纲树由 utils 负责。
+ * 复用约定：请求经 @shared/utils/bridge，提示统一经 sonner；返回草案，转换成大纲树由 utils 负责。
  * 关键约束：提取不调用模型，因此没有进度广播、也不依赖 AI 登录态；素材为空时由宿主先补跑本地抽取，
  * 所以首次提取可能多花数秒，超时须按全部章节放宽。
  */
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { PressExtractOutlineResult } from '@shared/types/press'
-import { request } from '../../../bridge'
-import { toErrorText } from '../../../utils'
+import { request } from '@shared/utils/bridge'
+import { toErrorText } from '@shared/utils/error'
 
 /** 过程提示的固定 toast id：同一轮提取始终更新同一条提示 */
 const EXTRACT_TOAST_ID = 'press-outline-extract'

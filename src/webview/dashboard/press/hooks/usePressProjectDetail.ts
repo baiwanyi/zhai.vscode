@@ -1,7 +1,7 @@
 /**
  * 作品详情数据：拉取 press/detail（摘要 + 卷分组章节），并提供新增卷、新增章节、卷重命名/删除、
  * 章节删除/移动、整部作品删除、打开章节与打开作品设定的动作。
- * 复用 ../../bridge 的请求与状态订阅、press/utils 的状态与提示口径；索引变更由 index 通道驱动重拉。
+ * 复用 @shared/utils/bridge 的请求与状态订阅、press/utils 的状态与提示口径；索引变更由 index 通道驱动重拉。
  * 关键约束：新建、卷操作与章节操作共用独立提交态，任一进行中即阻止重复提交；成功后重拉，不等 watcher 防抖；
  * 失败一律提示且不污染已有详情；本地数据只认宿主回包，不在前端拼装章节条目；卷与章节的破坏性操作
  * 返回成功与否供弹窗决定是否关闭，移动还回传落点供页面展开目标卷。
@@ -17,9 +17,9 @@ import type {
     PressProjectDetail,
     RenamedPressVolume,
 } from '@shared/types/press'
+import { onState, request } from '@shared/utils/bridge'
+import { toErrorText, toastError } from '@shared/utils/error'
 import type { PressStatus } from '../utils'
-import { onState, request } from '../../../bridge'
-import { toErrorText, toastError } from '../../../utils'
 
 export interface PressProjectDetailState {
     detail: PressProjectDetail | null

@@ -1,15 +1,15 @@
 /**
  * 取名生成：按通道向宿主提交条件——本地走 naming/generate（毫秒级），AI 走 naming/aiGenerate（长超时），
  * 结果按分类缓存，切换分类时可复现之前生成的内容。
- * 复用约定：请求经 webview 公共 bridge；AI 通道的超时略大于宿主侧 60s，保证宿主先给出超时错误。
+ * 复用约定：请求经 @shared/utils/bridge；AI 通道的超时略大于宿主侧 60s，保证宿主先给出超时错误。
  * 关键约束：生成中不接受重复提交；AI 通道支持取消（naming/abort）；结果按 payload.category 落缓存，
  * 避免异步返回时用户已切换分类导致结果串台；失败原因统一经 sonner 提示，不回传错误状态给组件渲染。
  */
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import type { NamingCandidate, NamingCategory, NamingGenerateResult, NamingRequest } from '@shared/types/naming'
-import { request } from '../../../bridge'
-import { toastError } from '../../../utils'
+import { request } from '@shared/utils/bridge'
+import { toastError } from '@shared/utils/error'
 
 /** AI 通道前端超时：略大于宿主 60s，避免前端先于宿主超时 */
 const AI_REQUEST_TIMEOUT_MS = 70_000

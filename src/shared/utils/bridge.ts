@@ -1,9 +1,9 @@
 /**
- * Webview 消息桥：封装 acquireVsCodeApi、reqId 请求-响应匹配与宿主推送（stream / state）订阅。
+ * 宿主消息桥：封装 acquireVsCodeApi、reqId 请求-响应匹配与宿主推送（stream / state）订阅。
  * 复用约定：方法名统一取 @shared/types/messages 的 HostMethodName，入站消息一律经类型守卫收窄，
- * 不再对 event.data 做双重断言；错误统一包成 HostRequestError 保留原因码。
- * 约束：acquireVsCodeApi 全局仅可调用一次；响应按 reqId 匹配 resolve，请求侧自带超时。
- * 关键约束：浏览器预览环境没有宿主，request 直接拒绝而不是静默挂起；未知通道与畸形消息一律丢弃，
+ * 不对 event.data 做双重断言；错误统一包成 HostRequestError 保留原因码。
+ * 关键约束：acquireVsCodeApi 全局仅可调用一次；响应按 reqId 匹配 resolve，请求侧自带超时；
+ * 浏览器预览环境没有宿主，request 直接拒绝而不是静默挂起；未知通道与畸形消息一律丢弃，
  * 避免订阅者按不可信数据分支。
  */
 import { isResponseMessage, isStateMessage, isStreamMessage } from '@shared/types/messages'

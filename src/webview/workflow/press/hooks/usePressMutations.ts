@@ -1,7 +1,7 @@
 /**
  * 作品草稿的全部结构性变更：设定 / 人物 / 大纲的字段更新、增删、提取合并与打开作品。
  * 复用约定：草稿读取与写盘由 usePressWorkspace 提供（updateWorkspace 改草稿、flush 立即写、scheduleFlush 防抖写），
- * 新建卷章与合并草案复用 ../utils 的工厂函数，作品打开走 @webview/bridge 的 press/open。
+ * 新建卷章与合并草案复用 ../utils 的工厂函数，作品打开走 @shared/utils/bridge 的 press/open。
  * 关键约束：所有读取「当前草稿」的地方一律走 getWorkspace()，不能用渲染期快照——提取类操作可能在
  * 异步返回后执行，闭包里的旧数组会把用户刚编辑的内容覆盖掉；结构性操作立即写盘，字段级输入才走防抖。
  */
@@ -12,8 +12,8 @@ import type {
     PressExtractedSetting,
     PressExtractedVolume,
 } from '@shared/types/press'
-import { request } from '@webview/bridge'
-import { toastError } from '@webview/utils'
+import { request } from '@shared/utils/bridge'
+import { toastError } from '@shared/utils/error'
 import type {
     CharacterCard,
     CharacterSeed,
@@ -24,7 +24,13 @@ import type {
 } from '../types'
 import type { FlushOptions, PersistScope } from './usePressWorkspace'
 import { DEFAULT_CHAPTER_WORD_GOAL } from '../constants'
-import { createChapter, createCharacterCard, createOutlineFromDraft, createVolume, mergeCharacterDrafts } from '../utils'
+import {
+    createChapter,
+    createCharacterCard,
+    createOutlineFromDraft,
+    createVolume,
+    mergeCharacterDrafts,
+} from '../utils'
 
 /** 卷名归一：追加生成结果时去掉原有的「第N卷」前缀，避免与既有卷序号冲突 */
 const VOLUME_PREFIX_PATTERN = /^第\d+卷\s*/
@@ -53,7 +59,12 @@ interface MutationsDeps {
     scheduleFlush: (scope: PersistScope) => void
 }
 
-export function usePressMutations({ getWorkspace, updateWorkspace, flush, scheduleFlush }: MutationsDeps): PressMutations {
+export function usePressMutations({
+    getWorkspace,
+    updateWorkspace,
+    flush,
+    scheduleFlush,
+}: MutationsDeps): PressMutations {
     /** 打开作品：宿主打开 README 并广播新的 projectDir，页面随之重新解析文档 */
     const openProject = useCallback((dirPath: string): void => {
         const open = async (): Promise<void> => {

@@ -7,7 +7,7 @@
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import type { AiApplyResult, AiWriteState } from '@shared/types/aiChat'
-import { request } from '../../../bridge'
+import { request } from '@shared/utils/bridge'
 import { toErrorText } from '../utils'
 
 /** 写回 hook 的对外依赖：读取失败经由共享提示 hook 经 sonner 上报 */

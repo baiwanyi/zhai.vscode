@@ -5,7 +5,7 @@
  */
 import { useCallback, useState } from 'react'
 import type { AiContextRef } from '@shared/types/aiChat'
-import { request } from '../../../bridge'
+import { request } from '@shared/utils/bridge'
 import { toErrorText } from '../utils'
 
 /** 上下文 hook 的对外依赖：错误与提示由共享提示 hook 持有 */

@@ -1,6 +1,6 @@
 /**
  * 章节快照取数与动作：列出有历史的章节、加载选中章节的版本时间线，并提供手动留版、恢复与删除。
- * 复用约定：请求统一走 webview bridge 的 request，错误提示走 utils.toastError；
+ * 复用约定：请求统一走 @shared/utils/bridge 的 request，错误提示走 @shared/utils/error 的 toastError；
  * 每次写操作后同时刷新章节清单与当前章时间线，界面始终以宿主返回为唯一事实来源。
  * 关键约束：切换作品或章节时丢弃在途响应，防止旧章节的版本串到新选择上。
  */
@@ -15,8 +15,8 @@ import type {
     ChapterSnapshotSummary,
     ChapterSnapshotVersionsResult,
 } from '@shared/types/press'
-import { request } from '../../../../bridge'
-import { toastError } from '../../../../utils'
+import { request } from '@shared/utils/bridge'
+import { toastError } from '@shared/utils/error'
 
 /** 章节快照页所需的全部状态与动作 */
 export interface ChapterSnapshotsState {

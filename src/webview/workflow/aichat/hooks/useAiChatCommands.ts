@@ -3,7 +3,7 @@
  * 命令白名单见 src/modules/common/webviewCommands.ts；本 hook 只透传命令名，不承载任何业务状态。
  */
 import { useCallback } from 'react'
-import { request } from '../../../bridge'
+import { request } from '@shared/utils/bridge'
 import { toErrorText } from '../utils'
 
 /** 宿主命令 hook 的对外依赖：错误由共享提示 hook 持有 */

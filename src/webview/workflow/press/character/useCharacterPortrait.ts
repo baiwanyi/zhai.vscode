@@ -1,6 +1,6 @@
 /**
  * 角色设定图：向宿主提交人物卡与作品氛围快照，取回落盘后的图片信息，并提供列举、画廊与删除能力。
- * 复用约定：请求经 webview 公共 bridge；出图常需 1~3 分钟，超时由宿主按 zhai.image.timeoutSeconds 裁决，
+ * 复用约定：请求经 @shared/utils/bridge；出图常需 1~3 分钟，超时由宿主按 zhai.image.timeoutSeconds 裁决，
  * 前端只做 15 分钟兜底并在失败时主动取消宿主请求；结果里的 url 已由宿主用 asWebviewUri 转换，前端直接放进 img。
  * 关键约束：图片落在当前作品的 Portraits 目录下，因此所有请求都带作品目录，切换作品后不会串图；
  * 生成中不接受重复提交；磁盘是图片的唯一事实来源，关闭弹窗不取消在途请求，
@@ -20,10 +20,10 @@ import type {
     PortraitInsertResult,
     PortraitListResult,
 } from '@shared/types/press'
+import { request } from '@shared/utils/bridge'
+import { toastError } from '@shared/utils/error'
 import type { CharacterCard } from '../types'
 import type { AppearanceContext } from './useCharacterAppearance'
-import { request } from '../../../bridge'
-import { toastError } from '../../../utils'
 import { CHARACTER_BODY_TYPE_META, CHARACTER_GENDER_META, CHARACTER_ROLE_META } from '../constants'
 
 /** 前端只做兜底：出图内置 10 分钟上限，这里放宽到 15 分钟，避免前端先于宿主判超时 */

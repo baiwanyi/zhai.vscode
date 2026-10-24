@@ -1,20 +1,10 @@
 /**
- * Webview 展示层共享纯函数：统一的相对时间格式化与错误提示。
- * 被仪表盘与工作流页面同时复用，避免两处各维护一套时间展示与错误文案口径。
- * 关键约束：无效时间返回空串，由调用方决定「未知 / 从未构建」等业务文案；
- * 操作类错误一律经 toastError 走 sonner 上报，调用方不再自行渲染内联错误文本。
+ * 展示层时间与数值格式化：本地年月日时分、相对时间与 token 紧凑折算。
+ * 复用约定：均为无副作用的纯函数，仪表盘、用量账单与对话页共用同一展示口径；
+ * 相对时间基于原生 Intl，不引入日期库。
+ * 关键约束：无效时间一律返回空串，由调用方决定「未知 / 从未构建」等业务文案；
+ * token 折算统一保留一位小数，避免各页精度不一致。
  */
-import { toast } from 'sonner'
-
-/** 错误文案归一：宿主协议错误以 Error 抛出，其余形态兜底转字符串 */
-export function toErrorText(cause: unknown): string {
-    return cause instanceof Error ? cause.message : String(cause)
-}
-
-/** 统一错误提示：文案口径与 toErrorText 一致，避免内联三元在各页面散落 */
-export function toastError(cause: unknown): void {
-    toast.error(toErrorText(cause))
-}
 
 /** 补零：时间格式化用，两位对齐 */
 function pad2(value: number): string {
@@ -43,16 +33,6 @@ export function formatTokens(value: number): string {
         return `${(value / 1_000).toFixed(1)}k`
     }
     return String(value)
-}
-
-/** 写系统剪贴板：失败返回 false 交调用方提示；取名复制与提示词复制共用 */
-export async function copyToClipboard(content: string): Promise<boolean> {
-    try {
-        await navigator.clipboard.writeText(content)
-        return true
-    } catch {
-        return false
-    }
 }
 
 /** 相对时间格式化器（原生 Intl，不引日期库） */
