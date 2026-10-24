@@ -2,14 +2,13 @@
  * 校对页：以 app-page 骨架承载「目标信息 + 四类检查卡 + 免责提示」，承接写作管理页的校对分区。
  * 复用约定：外壳取 @webview/components/AppPage，检查卡与条目由 layout/ 承担，状态编排在 hooks/；
  * 目标以当前编辑器文档为准，页面不选章节也不读文件，打开作品只影响页面的重建时机（路由层按作品 key）。
- * 关键约束：本地检查先出结果、AI 检查随后补检，AI 失败只影响病句与风险段落两张卡；
- * 没有可校对目标时展示引导空态而不是报错；AI 阶段可取消，取消后保留已出的本地结果。
+ * 关键约束：始终检查整篇正文；本地检查先出结果、AI 检查随后补检，AI 失败只影响病句与风险段落两张卡；
+ * 没有可校对目标时展示引导空态而不是报错；检查进行中只给加载态、不提供取消入口。
  */
 import { SpellCheck } from 'lucide-react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { Badge } from '@components/ui/badge'
 import { Label } from '@components/ui/label'
-import { Spinner } from '@components/ui/spinner'
 import { Switch } from '@components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import {
@@ -24,9 +23,6 @@ import {
 import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import {
-    ABORT_LABEL,
-    ABORTING_LABEL,
-    AI_DISABLED_LABEL,
     AI_DISCLAIMER,
     AI_TOGGLE_LABEL,
     DISCLAIMER,
@@ -37,7 +33,6 @@ import {
     PAGE_TITLE,
     RERUN_LABEL,
     RUN_LABEL,
-    SELECTION_LABEL,
 } from './constants'
 import { useProofreadAiDetect } from './hooks/useProofreadAiDetect'
 import { useProofreadLexicon } from './hooks/useProofreadLexicon'
@@ -52,7 +47,6 @@ export function ProofreadPage(): JSX.Element {
     const lexicon = useProofreadLexicon()
     const detect = useProofreadAiDetect()
     const target = state.target
-    const isAiRunning = state.aiStage === 'running'
 
     return (
         <AppPage>
@@ -136,25 +130,17 @@ export function ProofreadPage(): JSX.Element {
                                 {/* Trigger 的 data-state 会覆盖 Switch 自身的选中态，故用 span 承接 */}
                                 <span className="inline-flex">
                                     <Switch
-                                        id="proofread-selection"
-                                        checked={state.shouldUseSelection}
-                                        onCheckedChange={state.setShouldUseSelection}
+                                        id="proofread-ai"
+                                        checked={state.isAiEnabled}
+                                        onCheckedChange={state.setIsAiEnabled}
                                     />
                                 </span>
                             </TooltipTrigger>
-                            <TooltipContent>开启后只检查编辑器中的选中文本</TooltipContent>
+                            <TooltipContent>关闭后只跑本地规则，不再调用 AI</TooltipContent>
                         </Tooltip>
-                        <Label htmlFor="proofread-selection" className="text-muted-foreground">
-                            {SELECTION_LABEL}
+                        <Label htmlFor="proofread-ai" className="text-muted-foreground">
+                            {AI_TOGGLE_LABEL}
                         </Label>
-                        <Button
-                            size="xs"
-                            variant={state.isAiEnabled ? 'secondary' : 'ghost'}
-                            tooltip={state.isAiEnabled ? '点击关闭 AI 语义检查，只跑本地规则' : '点击开启 AI 语义检查'}
-                            onClick={() => state.setIsAiEnabled(!state.isAiEnabled)}
-                        >
-                            {state.isAiEnabled ? AI_TOGGLE_LABEL : AI_DISABLED_LABEL}
-                        </Button>
                     </>
                 }
             >
@@ -166,25 +152,19 @@ export function ProofreadPage(): JSX.Element {
                 >
                     应用 {state.fixableCount} 处修复
                 </Button>
-                {isAiRunning ? (
-                    <Button variant="outline" disabled={state.isAborting} onClick={() => void state.abort()}>
-                        {state.isAborting ? <Spinner /> : null}
-                        {state.isAborting ? ABORTING_LABEL : ABORT_LABEL}
-                    </Button>
-                ) : (
-                    <Button
-                        isLoading={state.status === 'running'}
-                        tooltip={
-                            state.isAiEnabled
-                                ? '执行本地规则与 AI 语义检查，AI 部分会消耗每日额度'
-                                : '执行本地规则检查，AI 检查已关闭'
-                        }
-                        onClick={() => void state.run()}
-                    >
-                        {state.hasResult ? RERUN_LABEL : RUN_LABEL}
-                    </Button>
-                )}
+                <Button
+                    isLoading={state.isRunning}
+                    tooltip={
+                        state.isAiEnabled
+                            ? '执行本地规则与 AI 语义检查，AI 部分会消耗每日额度'
+                            : '执行本地规则检查，AI 检查已关闭'
+                    }
+                    onClick={() => void state.run()}
+                >
+                    {state.hasResult ? RERUN_LABEL : RUN_LABEL}
+                </Button>
             </AppFooter>
+
             <ProofreadLexiconDialog
                 key={lexicon.sessionKey}
                 open={lexicon.isOpen}

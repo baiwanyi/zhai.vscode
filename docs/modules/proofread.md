@@ -43,7 +43,7 @@
 - `ProofreadTarget`：`kind / path / title / text / wordCount / offsetBase / mtime / truncated`
 - `ProofreadLexicon`：`version / entries / ignores`
 
-**偏移口径**：所有 `start` / `end` 均以 `target.text` 为基准。整篇检查时 `text` 已剔除 Frontmatter，`offsetBase` 记录正文在文档全文中的起点；选区检查时 `offsetBase` 为选区起点。定位与写回时编辑器偏移 = `offsetBase + issue.start`，两种模式共用一套换算。
+**偏移口径**：所有 `start` / `end` 均以 `target.text` 为基准。整篇检查时 `text` 已剔除 Frontmatter，`offsetBase` 记录正文在文档全文中的起点；选区检查时 `offsetBase` 为选区起点。定位与写回时编辑器偏移 = `offsetBase + issue.start`，两种模式共用一套换算。当前页面固定整篇检查，选区能力只在宿主侧保留（`readTarget(useSelection)`），便于后续入口复用。
 
 **严重度与可写回**：`low` 为确定性替换（错别字、标点、重复字、词库 `replace`），可一键写回；`medium`（词库 `flag`、相邻短语重复）与 `high`（风险段落）只提示。
 
@@ -175,11 +175,11 @@ src/modules/proofread/
 - `layout/ProofreadAiDetectCard.tsx`：AI 特征检测卡（未配置密钥 / 待检测 / 检测中 / 失败 / 已完成五态 + 上传同意弹窗）。
 - `layout/ProofreadDetectChart.tsx`：环形图与图例，动态加载。
 - `layout/ProofreadLexiconDialog.tsx`：词库编辑弹窗（词条增删改 + 忽略词），草稿在挂载时初始化，由 `sessionKey` 控制重建。
-- `hooks/useProofreadRun.ts`：本地规则与 AI 两阶段编排、忽略集合、进度订阅、单条与批量写回、定位与取消。
+- `hooks/useProofreadRun.ts`：本地规则与 AI 两阶段编排、忽略集合、进度订阅、单条与批量写回、定位（不含取消，页面侧不提供取消入口）。
 - `hooks/useProofreadAiDetect.ts`：检测状态、同意流程、密钥配置入口与额度刷新。
 - `hooks/useProofreadLexicon.ts`：词库状态摘要、完整词库按需读取、保存与打开文件。
 
-**AI 触发时机**：进入页面、切换「仅检查选区」与写回后都只跑本地规则（`run('local')`，毫秒级、不消耗额度）；AI 语义与风险段落检查只由底部「开始校对」显式触发（`run()` 即 `full`），开关关闭时该按钮同样只跑本地。打开页面、编辑正文都不应产生模型调用。
+**AI 触发时机**：进入页面、切换底部「AI 检查」开关与写回后都只跑本地规则（`run('local')`，毫秒级、不消耗额度）；AI 语义与风险段落检查只由底部「开始校对」显式触发（`run()` 即 `full`），开关关闭时该按钮同样只跑本地。打开页面、编辑正文都不应产生模型调用。
 
 **时长预算**：AI 检查按批串行，单批超时 45s，整体预算 240s（`runAiProofread` 的 `budgetMs`）。预算不足 8s 时不再开新批，剩余批次计入 `skippedBatches`，已得结果照常返回；前端 `proofread/ai` 的等待上限 300s 必须大于该预算，否则会出现宿主仍在跑、前端先超时丢结果。批次未覆盖（失败 + 跳过）时，界面不得给出「未发现问题」的结论，改为提示「N 批未完成，结果可能不完整」。
 
@@ -189,7 +189,7 @@ src/modules/proofread/
 
 状态口径：本地类别显示「检测中 / 发现 N 处 / 未发现问题 / 未检测」；AI 类别区分「AI 检查中（带批次）/ 检查失败 / 未执行（等待点击开始校对或 AI 已关）/ 发现 N 处 / 未发现问题」，失败与未执行不得显示成通过结论。
 
-**进行中与取消**：AI 逐批检查期间，病句与风险段落两张卡的徽标内带加载动画，无批次进度时显示「AI 检查中」、有进度时显示「AI 1/3」；底部「取消检查」发出后立即转为「正在取消…」加载态并禁用，直到 AI 阶段真正收尾（`isAborting` 由 `run` 的 AI 阶段 `finally` 复位，取消请求另带 10s 超时兜底）。
+**进行中与不可取消**：AI 逐批检查期间，病句与风险段落两张卡的徽标内带加载动画，无批次进度时显示「AI 检查中」、有进度时显示「AI 1/3」；底部主按钮只显示加载动画、不显示文案且禁用（`Button` 的 `isLoading` 已同时承担替换内容、禁用与丢弃点击），页面不提供取消入口。AI 阶段的上限由宿主的批次预算（240s）保证，前端等待上限 300s 仅作兜底。
 
 ## 10. 配置
 

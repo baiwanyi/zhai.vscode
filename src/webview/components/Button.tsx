@@ -7,7 +7,9 @@
  * 交互上统一取消按下位移：底层 cva 的 active 位移用同修饰符的 translate-y-0 覆盖，点击时位置保持稳定。
  * 关键约束：disabled 与指针处理器必须在解构中取出后显式声明，否则会被 {...rest} 覆盖，
  * 造成加载态失效或 tooltip 卡在打开态；asChild 依赖唯一子元素，加载态只置
- * aria-busy 而不替换 children，避免 Slot 契约被破坏；禁用中的按钮不派发指针事件，tooltip 不会弹出。
+ * aria-busy 而不替换 children，避免 Slot 契约被破坏；禁用中的按钮不派发指针事件，tooltip 不会弹出；
+ * 加载态必须保留原 children 的占位宽度并用绝对定位覆盖 Spinner，否则按钮会随文本消失而塌缩，
+ * 两侧对齐的工具栏（如页脚）会跟着重排，点一下就抖。
  */
 'use client'
 
@@ -92,8 +94,19 @@ function Button({
         [isLoading, onClick],
     )
 
-    // asChild 由 Slot 渲染唯一子元素，加载态替换 children 会破坏该契约，故只在普通按钮下换 Spinner
-    const content = isLoading && !asChild ? <Spinner /> : children
+    // asChild 由 Slot 渲染唯一子元素，加载态替换 children 会破坏该契约，故只在普通按钮下换 Spinner；
+    // 原 children 以 invisible 保留，撑住按钮原宽度，避免加载态按钮塌缩引起工具栏重排
+    const content =
+        isLoading && !asChild ? (
+            <>
+                <span className="invisible">{children}</span>
+                <span className="absolute inset-0 flex items-center justify-center">
+                    <Spinner />
+                </span>
+            </>
+        ) : (
+            children
+        )
 
     const button = (
         <ShadcnButton
@@ -101,7 +114,7 @@ function Button({
             variant={variant}
             size={size}
             asChild={asChild}
-            className={cn('active:not-aria-[haspopup]:translate-y-0', className)}
+            className={cn('relative active:not-aria-[haspopup]:translate-y-0', className)}
             onClick={handleClick}
             onFocus={handleFocus}
             onBlur={handleBlur}

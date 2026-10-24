@@ -80,9 +80,6 @@ export const PAGE_DESCRIPTION_EMPTY = '在编辑器中打开要校对的章节�
 export const RUN_LABEL = '开始校对'
 export const RERUN_LABEL = '重新校对'
 
-/** 「仅检查选区」开关文案 */
-export const SELECTION_LABEL = '仅检查选区'
-
 /** 底部免责提示：与参考界面口径一致 */
 export const DISCLAIMER = '智能识别，可能出现误差，仅供参考'
 
@@ -98,16 +95,10 @@ export const PROOFREAD_AI_CATEGORIES: readonly ProofreadCategory[] = ['sentence'
 
 /** AI 检查开关文案 */
 export const AI_TOGGLE_LABEL = 'AI 检查'
-export const AI_DISABLED_LABEL = 'AI 已关'
 
 /** AI 类别未执行时的提示：开关开着也只跑本地规则，AI 检查要等用户点「开始校对」 */
 export const AI_IDLE_HINT = '点击「开始校对」后才会执行 AI 语义检查'
 export const AI_OFF_HINT = '已关闭 AI 检查，仅展示本地规则结果'
-
-/** 取消按钮文案 */
-export const ABORT_LABEL = '取消检查'
-/** 取消请求已发出、等待 AI 阶段收尾时的按钮文案 */
-export const ABORTING_LABEL = '正在取消…'
 
 /** AI 段落级结果的补充提示 */
 export const AI_DISCLAIMER = 'AI 结果由模型判断，请逐条人工确认后再修改'

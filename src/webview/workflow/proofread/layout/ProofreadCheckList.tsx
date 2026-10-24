@@ -173,14 +173,14 @@ export function ProofreadCheckList({
                             <CardDescription>{meta.description}</CardDescription>
                             <CardAction className="flex items-center gap-1">
                                 <Badge variant="outline" className={state.className}>
-                                    {state.isBusy === true ? <Spinner /> : null}
                                     {state.label}
+                                    {state.isBusy === true && <Spinner />}
                                 </Badge>
-                                {meta.id === 'custom' ? (
-                                    <Button size="xs" variant="ghost" onClick={onOpenLexicon}>
+                                {meta.id === 'custom' && (
+                                    <Button variant="outline" onClick={onOpenLexicon}>
                                         设置词库
                                     </Button>
-                                ) : null}
+                                )}
                             </CardAction>
                         </CardHeader>
                         {items.length > 0 ? (
@@ -196,9 +196,10 @@ export function ProofreadCheckList({
                                 ))}
                             </CardContent>
                         ) : null}
-                        {items.length === 0 && state.hint.length > 0 ? (
+                        {/* 无条目时始终占位：提示文案一行与两行不应改变卡片高度，否则四张卡片叠加会带动整页跳动 */}
+                        {items.length === 0 ? (
                             <CardContent>
-                                <p className="text-xs text-muted-foreground">{state.hint}</p>
+                                <p className="line-clamp-2 min-h-8 text-xs text-muted-foreground">{state.hint}</p>
                             </CardContent>
                         ) : null}
                     </Card>
