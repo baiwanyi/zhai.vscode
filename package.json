@@ -11,39 +11,38 @@
         "url": "https://github.com/baiwanyi/zhai.vscode.git"
     },
     "homepage": "https://github.com/baiwanyi/zhai.vscode#readme",
-    "bugs": {
-        "url": "https://github.com/baiwanyi/zhai.vscode/issues"
-    },
+    "categories": [
+        "Other"
+    ],
     "keywords": [
         "markdown",
         "notes",
         "writing",
         "novel",
         "ai",
-        "deepseek",
+        "codebuddy",
         "sqlite",
         "full-text-search"
     ],
-    "engines": {
-        "vscode": "^1.137.0"
-    },
-    "categories": [
-        "Other"
-    ],
     "main": "./dist/extension.js",
+    "engines": {
+        "vscode": "^1.140.0"
+    },
+    "capabilities": {
+        "untrustedWorkspaces": {
+            "supported": false,
+            "description": "需要读写本地 Markdown 资料、打开 SQLite 索引库并拉起 AI CLI 子进程，受限模式下无法工作"
+        },
+        "virtualWorkspaces": false
+    },
     "scripts": {
-        "compile": "pnpm run typecheck && node scripts/esbuild.mjs && pnpm run webview:build",
-        "watch": "node scripts/esbuild.mjs --watch",
-        "watch:all": "concurrently -n host,web,ts -c blue,green,yellow \"node scripts/esbuild.mjs --watch\" \"vite build --watch\" \"tsc --noEmit --watch\"",
-        "webview:build": "vite build",
-        "webview:serve": "vite",
+        "compile": "pnpm run typecheck && node scripts/esbuild.mjs && vite build",
+        "watch": "concurrently -n ts,host,web -c yellow,blue,green \"tsc --noEmit --watch\" \"node scripts/esbuild.mjs --watch\" \"vite build --watch\"",
         "typecheck": "tsc --noEmit",
         "test": "vitest run",
-        "test:watch": "vitest",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
-        "verify": "pnpm run typecheck && pnpm run lint && pnpm run test && prettier --check src tests eslint.config.mjs",
-        "format:ui": "prettier --write resources/shadcn/ui resources/shadcn/hooks",
+        "verify": "pnpm run typecheck && pnpm run lint && pnpm run test && prettier --check src tests package.json eslint.config.mjs",
         "package": "pnpm run compile && node scripts/bundle-native.mjs && vsce package --no-dependencies"
     },
     "contributes": {
@@ -96,20 +95,8 @@
             },
             {
                 "command": "zhai.exportDiagnostics",
-                "title": "导出诊断信息",
+                "title": "查看日志",
                 "category": "宅写作"
-            }
-        ],
-        "keybindings": [
-            {
-                "command": "zhai.openDashboard",
-                "key": "ctrl+k",
-                "when": "!inputBoxFocus"
-            },
-            {
-                "command": "zhai.openAiChat",
-                "key": "ctrl+shift+l",
-                "when": "!inputBoxFocus"
             }
         ],
         "menus": {
@@ -127,124 +114,6 @@
                     "group": "navigation@1"
                 }
             ]
-        },
-        "configuration": {
-            "title": "宅写作",
-            "properties": {
-                "zhai.storage.rootPath": {
-                    "type": "string",
-                    "default": "",
-                    "markdownDescription": "文档保存目录（留空 = 用户主目录下的 `.zhai`），其下划分 `notes/`、`press/`、`reader/` 模块目录。须填写本地绝对路径，盘符写法 `D:\\路径` 或 `D:/路径` 均可"
-                },
-                "zhai.index.exclude": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    },
-                    "default": [
-                        "**/node_modules/**",
-                        "**/.git/**"
-                    ],
-                    "description": "索引排除的 glob 规则"
-                },
-                "zhai.index.debounceMs": {
-                    "type": "number",
-                    "default": 500,
-                    "description": "增量索引防抖毫秒数"
-                },
-                "zhai.index.rebuildOnActivate": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "激活时自检文件数与记录数，不一致时自动全量重建"
-                },
-                "zhai.search.limit": {
-                    "type": "number",
-                    "default": 50,
-                    "description": "全局搜索单模块返回上限"
-                },
-                "zhai.ai.codebuddySite": {
-                    "type": "string",
-                    "enum": [
-                        "cn",
-                        "ai"
-                    ],
-                    "enumItemLabels": [
-                        "中国站",
-                        "国际站"
-                    ],
-                    "enumDescriptions": [
-                        "中国站：授权页在 copilot.tencent.com（默认）",
-                        "国际站：授权页在 codebuddy.ai"
-                    ],
-                    "default": "cn",
-                    "description": "CodeBuddy 站点：决定授权页域名与调用端点，登录与调用必须使用同一站点，切换后需重新登录"
-                },
-                "zhai.ai.maxContextTokens": {
-                    "type": "number",
-                    "default": 8000,
-                    "description": "前文与引用上下文注入的 Token 上限"
-                },
-                "zhai.ai.dailyTokenBudget": {
-                    "type": "number",
-                    "default": 500000,
-                    "description": "每日 Token 预算，达到阈值提示并阻断"
-                },
-                "zhai.ai.autoFocusOnContext": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "编辑器右键「添加到宅对话」后自动聚焦 AI 对话面板"
-                },
-                "zhai.naming.aiDailyLimit": {
-                    "type": "number",
-                    "default": 20,
-                    "description": "取名 AI 生成的每日次数上限（本地生成不限次数）"
-                },
-                "zhai.press.aiDailyLimit": {
-                    "type": "number",
-                    "default": 20,
-                    "description": "写作管理 AI 生成的每日次数上限（人物外貌生成等一次性任务，0 或负数表示不限）"
-                },
-                "zhai.press.importAiDailyLimit": {
-                    "type": "number",
-                    "default": 0,
-                    "minimum": 0,
-                    "description": "AI 语义归纳（人物卡、设定与大纲提取等按需任务）的每日调用次数上限，0 表示不限。与「写作管理 AI 生成次数」分开计数，避免归纳挤占日常生成额度"
-                },
-                "zhai.press.snapshot.enabled": {
-                    "type": "boolean",
-                    "default": true,
-                    "description": "设定、角色、大纲内容变更时自动保存作品快照（存放在作品的 Snapshots 目录）"
-                },
-                "zhai.press.snapshot.intervalSeconds": {
-                    "type": "number",
-                    "default": 60,
-                    "minimum": 5,
-                    "maximum": 3600,
-                    "description": "自动快照的最小间隔秒数：同一作品两次自动快照之间至少间隔这么久，连续写作只保留最终结果"
-                },
-                "zhai.press.snapshot.chapterIntervalSeconds": {
-                    "type": "number",
-                    "default": 300,
-                    "minimum": 30,
-                    "maximum": 3600,
-                    "description": "章节正文自动快照的最小间隔秒数：按章独立计数，AI 写回前的留底不受此限制"
-                },
-                "zhai.image.size": {
-                    "type": "string",
-                    "default": "768x1024",
-                    "description": "角色设定图尺寸，格式为 宽x高（推荐竖版 768x1024）"
-                },
-                "zhai.image.dailyLimit": {
-                    "type": "number",
-                    "default": 20,
-                    "description": "角色设定图每日生成次数上限（0 或负数表示不限）"
-                },
-                "zhai.telemetry.enabled": {
-                    "type": "boolean",
-                    "default": false,
-                    "description": "遥测开关（默认关闭，需显式开启）"
-                }
-            }
         },
         "viewsContainers": {
             "activitybar": [
@@ -270,7 +139,162 @@
                     "icon": "resources/icon.svg"
                 }
             ]
-        }
+        },
+        "configuration": [
+            {
+                "title": "宅写作：存储与索引",
+                "order": 1,
+                "properties": {
+                    "zhai.storage.rootPath": {
+                        "type": "string",
+                        "default": "",
+                        "scope": "machine-overridable",
+                        "markdownDescription": "文档保存目录（留空则使用用户主目录下的 `.zhai`），其下划分 `notes/`、`press/`、`reader/` 模块目录。须填写本地绝对路径，盘符写法 `D:\\路径` 或 `D:/路径` 均可"
+                    },
+                    "zhai.index.exclude": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "default": [
+                            "**/node_modules/**",
+                            "**/.git/**"
+                        ],
+                        "description": "索引时排除的 glob 规则"
+                    },
+                    "zhai.index.debounceMs": {
+                        "type": "number",
+                        "default": 500,
+                        "minimum": 0,
+                        "maximum": 10000,
+                        "description": "增量索引的防抖毫秒数"
+                    },
+                    "zhai.index.rebuildOnActivate": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "激活时自检文件数与记录数，不一致时自动全量重建"
+                    },
+                    "zhai.search.limit": {
+                        "type": "number",
+                        "default": 50,
+                        "minimum": 1,
+                        "maximum": 500,
+                        "description": "全局搜索单模块的返回上限"
+                    }
+                }
+            },
+            {
+                "title": "宅写作：AI 助手",
+                "order": 2,
+                "properties": {
+                    "zhai.ai.codebuddySite": {
+                        "type": "string",
+                        "enum": [
+                            "cn",
+                            "ai"
+                        ],
+                        "enumItemLabels": [
+                            "中国站",
+                            "国际站"
+                        ],
+                        "enumDescriptions": [
+                            "中国站：授权页在 copilot.tencent.com（默认）",
+                            "国际站：授权页在 codebuddy.ai"
+                        ],
+                        "default": "cn",
+                        "description": "CodeBuddy 站点：决定授权页域名与调用端点。登录与调用必须使用同一站点，切换后需重新登录"
+                    },
+                    "zhai.ai.maxContextTokens": {
+                        "type": "number",
+                        "default": 8000,
+                        "minimum": 1000,
+                        "maximum": 200000,
+                        "description": "前文与引用上下文注入的 Token 上限"
+                    },
+                    "zhai.ai.dailyTokenBudget": {
+                        "type": "number",
+                        "default": 500000,
+                        "minimum": 0,
+                        "description": "每日 Token 预算，达到阈值后提示并阻断调用"
+                    },
+                    "zhai.ai.autoFocusOnContext": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "编辑器右键「添加到宅对话」后自动聚焦 AI 对话面板"
+                    }
+                }
+            },
+            {
+                "title": "宅写作：写作管理",
+                "order": 3,
+                "properties": {
+                    "zhai.naming.aiDailyLimit": {
+                        "type": "number",
+                        "default": 20,
+                        "description": "取名 AI 生成的每日次数上限（本地生成不限次数）"
+                    },
+                    "zhai.press.aiDailyLimit": {
+                        "type": "number",
+                        "default": 20,
+                        "description": "写作管理 AI 生成的每日次数上限（人物外貌生成等一次性任务，0 或负数表示不限）"
+                    },
+                    "zhai.press.importAiDailyLimit": {
+                        "type": "number",
+                        "default": 0,
+                        "minimum": 0,
+                        "description": "AI 语义归纳（人物卡、设定与大纲提取等按需任务）的每日调用次数上限，0 表示不限。与「写作管理 AI 生成次数」分开计数，避免归纳挤占日常生成额度"
+                    },
+                    "zhai.press.snapshot.enabled": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "设定、角色、大纲内容变更时自动保存作品快照（存放在作品的 Snapshots 目录）"
+                    },
+                    "zhai.press.snapshot.intervalSeconds": {
+                        "type": "number",
+                        "default": 60,
+                        "minimum": 5,
+                        "maximum": 3600,
+                        "description": "自动快照的最小间隔秒数：同一作品两次自动快照之间至少间隔这么久，连续写作只保留最终结果"
+                    },
+                    "zhai.press.snapshot.chapterIntervalSeconds": {
+                        "type": "number",
+                        "default": 300,
+                        "minimum": 30,
+                        "maximum": 3600,
+                        "description": "章节正文自动快照的最小间隔秒数：按章独立计数，AI 写回前的留底不受此限制"
+                    }
+                }
+            },
+            {
+                "title": "宅写作：图像生成",
+                "order": 4,
+                "properties": {
+                    "zhai.image.size": {
+                        "type": "string",
+                        "default": "768x1024",
+                        "pattern": "^\\d+x\\d+$",
+                        "patternErrorMessage": "格式须为「宽x高」的纯数字，例如 768x1024",
+                        "description": "角色设定图尺寸，格式为「宽x高」（推荐竖版 768x1024）"
+                    },
+                    "zhai.image.dailyLimit": {
+                        "type": "number",
+                        "default": 20,
+                        "description": "角色设定图每日生成次数上限（0 或负数表示不限）"
+                    }
+                }
+            },
+            {
+                "title": "宅写作：隐私与遥测",
+                "order": 5,
+                "properties": {
+                    "zhai.telemetry.enabled": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "遥测开关（默认关闭，需显式开启）"
+                    }
+                }
+            }
+        ]
     },
     "dependencies": {
         "@tencent-ai/agent-sdk": "^0.3.287",

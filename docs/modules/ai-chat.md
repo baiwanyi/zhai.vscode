@@ -299,7 +299,7 @@ CREATE INDEX IF NOT EXISTS idx_prompt_date ON ai_prompts(created_at);
 
 | Command ID | 标题 | 快捷键建议 |
 |------------|------|-----------|
-| `zhai.ai.openChat` | 打开 AI 对话 | `Ctrl+Shift+L` |
+| `zhai.openAiChat` | 打开 AI 对话 | 不预置，按需自行绑定 |
 | `zhai.ai.addToChat` | 添加到宅对话 | 编辑器右键（选中取行范围，未选则整篇） |
 | `zhai.ai.inlineContinue` | 内联续写 | `Alt+Enter`（编辑器内） |
 | `zhai.ai.polish` | 润色选中文本 | `Ctrl+Shift+P` 后搜索 |
@@ -403,7 +403,7 @@ interface AbortRequest {
 
 ## 10. 首版实现（对话模式，已落地）
 
-侧栏视图 `zhai.aiChat`（AI 对话，`Ctrl+Shift+L` 聚焦，由原「工作区」占位视图改造而来）已落地对话模式最小闭环：会话、消息与用量落在独立的 `globalStorage/ai.db`，与内容索引库分离。
+侧栏视图 `zhai.aiChat`（AI 对话，由原「工作区」占位视图改造而来）已落地对话模式最小闭环：会话、消息与用量落在独立的 `globalStorage/ai.db`，与内容索引库分离。
 
 | 功能点 | 落地情况 |
 |--------|----------|

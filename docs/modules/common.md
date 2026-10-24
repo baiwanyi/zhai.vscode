@@ -224,16 +224,16 @@ PRAGMA foreign_keys = ON;
 | Command ID | 标题 | 说明 |
 |------------|------|------|
 | `zhai.rebuildIndex` | 重建索引 | 全量扫描工作区并重建索引库 |
-| `zhai.openDashboard` | 打开仪表盘 | 聚焦侧栏仪表盘视图（默认 `Ctrl+K`） |
+| `zhai.openDashboard` | 打开仪表盘 | 聚焦侧栏仪表盘视图 |
 | `zhai.showIndexStatus` | 索引状态 | 显示文件数、索引数、上次构建时间 |
 | `zhai.clearIndex` | 清空索引缓存 | 删除 index.db（安全，可重建） |
-| `zhai.exportDiagnostics` | 导出诊断信息 | 脱敏后导出配置与日志，便于排查 |
+| `zhai.exportDiagnostics` | 查看日志 | 打开输出面板查看运行日志，便于排查 |
 | `zhai.openSettings` | 打开插件设置 | 跳转到 `zhai.*` 配置分组 |
-| `zhai.openAiChat` | 打开 AI 对话 | 聚焦侧栏 AI 对话视图（默认 `Ctrl+Shift+L`） |
+| `zhai.openAiChat` | 打开 AI 对话 | 聚焦侧栏 AI 对话视图 |
 | `zhai.ai.addToChat` | 添加到宅对话 | 编辑器右键：选中文本取行范围（`file.md:11-19`），未选则取整篇，作为对话上下文 |
 | `zhai.ai.loginCodebuddy` | 登录 CodeBuddy | 打开浏览器授权，凭证按站点缓存在本机 |
 
-> `Ctrl+K` 现聚焦仪表盘视图；全局搜索（C7）的检索能力（FTS5 + `zhai.search.limit`）已在索引仓储就绪，搜索面板待实现。
+> 命令不预置快捷键，需要时在「键盘快捷方式」中自行绑定；`Ctrl+K` 留给全局搜索（C7），其检索能力（FTS5 + `zhai.search.limit`）已在索引仓储就绪，搜索面板待实现。
 
 ### 7.2 配置项
 

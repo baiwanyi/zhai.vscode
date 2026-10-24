@@ -24,8 +24,7 @@ export const AI_COMMAND_MAP: Record<AiCommandId, AiCommand> = {
     rewrite: {
         id: 'rewrite',
         title: '改写',
-        instruction:
-            '请改写下面这段内容，保持原意与信息量，调整行文结构与表达方式，使叙述更连贯。只输出改写后的正文。',
+        instruction: '请改写下面这段内容，保持原意与信息量，调整行文结构与表达方式，使叙述更连贯。只输出改写后的正文。',
         applyPolicy: 'replace',
     },
     polish: {

@@ -1,17 +1,23 @@
-# 打包忽略清单：vsix 只需 dist/ 产物、resources/ 图标与 package.json
-# 源码与文档
+# 打包忽略清单：vsix 只需 dist/ 产物、resources/icon.svg 与清单类文件
+# 源码、测试与开发脚本（编译期使用，运行时不读）
 src/**
+tests/**
+scripts/**
 docs/**
 .codebuddy/**
 .vscode/**
+vitest.config.mts
+
+# 静态资源源码：shadcn 组件与模型图标均经 Vite 打包进 dist/webview，随包只需 icon.svg
+resources/shadcn/**
+resources/models/**
 
 # 根目录依赖：pnpm 的符号链接布局无法被 vsce 的 npm list 检测处理，故打包时用 --no-dependencies。
-# 需要随包分发的原生模块由 scripts/bundle-native.mjs 单独装到 dist/node_modules/ 下，
+# 需要随包分发的运行时依赖由 scripts/bundle-native.mjs 单独装到 dist/node_modules/ 下，
 # 因此这里只锚定根目录的 node_modules，放行 dist 内的依赖。
 /node_modules/**
 
 # 构建与工具配置（编译期使用，运行时不读）
-esbuild.mjs
 vite.config.mjs
 tsconfig.json
 eslint.config.mjs
@@ -26,6 +32,7 @@ pnpm-workspace.yaml
 .prettierignore
 
 # 开发过程产物
+*.vsix
 **/*.log
 **/*.map
 **/*.tsbuildinfo

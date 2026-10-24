@@ -16,7 +16,7 @@
             "skipFiles": ["<node_internals>/**"]
         },
         {
-            // 配合「终端 → 运行任务 → watch:all」使用：跳过预编译，改完宿主代码后按 Ctrl+R 重载宿主即可生效
+            // 配合「终端 → 运行任务 → watch」使用：跳过预编译，改完宿主或前端代码后按 Ctrl+R 重载宿主即可生效
             "name": "运行扩展（跳过编译）",
             "type": "extensionHost",
             "request": "launch",

@@ -164,7 +164,7 @@ export default defineConfig([
             'react-refresh': reactRefresh,
         },
         rules: {
-            // 开发者模式下保持组件模块的 HMR 边界（webview:serve）
+            // 开发者模式下保持组件模块的 HMR 边界
             'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
             // react-hooks v7 的预设为 eslintrc 形态，这里按 flat 方式启用经典两条；
             // 其余规则属 React Compiler 语义（如 preserve-manual-memoization），项目未启用编译器故关闭

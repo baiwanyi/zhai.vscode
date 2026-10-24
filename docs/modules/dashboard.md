@@ -423,7 +423,7 @@ StatCardRow / ActivityFeed 展示
 
 ## 13. 插件内 Webview 首版实现（已落地）
 
-侧栏视图 `zhai.dashboard`（`Ctrl+K` 聚焦，由原「全局搜索」视图改造而来）已按本文档设计落地首版：形态适配为 VSCode Webview，数据直接来自本地 SQLite 索引库，不经 HTTP。
+侧栏视图 `zhai.dashboard`（由原「全局搜索」视图改造而来）已按本文档设计落地首版：形态适配为 VSCode Webview，数据直接来自本地 SQLite 索引库，不经 HTTP。
 
 | 本文档设计 | 首版实现 |
 |------------|----------|
