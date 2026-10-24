@@ -240,6 +240,8 @@ function parseAiResult(value: unknown): ProofreadAiResult | null {
         mtime,
         batches: isNonNegativeInt(row.batches) ? row.batches : 0,
         failedBatches: isNonNegativeInt(row.failedBatches) ? row.failedBatches : 0,
+        // 旧缓存没有该字段，按 0 处理（当时不存在预算跳过）
+        skippedBatches: isNonNegativeInt(row.skippedBatches) ? row.skippedBatches : 0,
         usageTokens: isNonNegativeInt(row.usageTokens) ? row.usageTokens : 0,
     }
 }

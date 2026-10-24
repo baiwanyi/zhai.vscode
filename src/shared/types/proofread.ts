@@ -153,9 +153,11 @@ export interface ProofreadAiResult {
     /** 检查时的文档版本号：与本地结果的 target.version 不一致即视为已过期 */
     version: number
     mtime: string
-    /** 实际提交的批次数与失败批次数：失败批次不影响其余批次的结果 */
+    /** 总批次数与失败批次数：失败批次不影响其余批次的结果 */
     batches: number
     failedBatches: number
+    /** 整体预算耗尽而未提交的批次数：与失败区分，界面提示结果不完整 */
+    skippedBatches: number
     usageTokens: number
 }
 

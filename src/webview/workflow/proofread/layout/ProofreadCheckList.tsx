@@ -31,6 +31,8 @@ interface ProofreadCheckListProps {
     aiError: string | null
     /** AI 开关：关闭后 AI 类别只显示「未执行」，与「等待点击开始校对」区分开 */
     isAiEnabled: boolean
+    /** 未覆盖的批次数（失败 + 超时跳过）：不为 0 时不得给出「未发现问题」的结论 */
+    uncoveredBatches: number
     onApply: (issue: ProofreadIssue) => void
     onReveal: (issue: ProofreadIssue) => void
     onIgnore: (issue: ProofreadIssue) => void
@@ -69,6 +71,7 @@ function readAiState(
     aiProgress: ProofreadProgress | null,
     aiError: string | null,
     isAiEnabled: boolean,
+    uncoveredBatches: number,
 ): CategoryState {
     if (aiStage === 'running') {
         return {
@@ -98,7 +101,12 @@ function readAiState(
     if (count > 0) {
         return { label: `发现 ${String(count)} 处`, className: meta.toneClass, hint: '' }
     }
-    return { label: '未发现问题', className: 'text-muted-foreground', hint: meta.emptyText }
+    // 有批次没跑完就不能给出「未发现问题」的结论，改为提示覆盖不完整
+    return {
+        label: '未发现问题',
+        className: 'text-muted-foreground',
+        hint: uncoveredBatches > 0 ? `${String(uncoveredBatches)} 批未完成，结果可能不完整` : meta.emptyText,
+    }
 }
 
 /** 按类别归属选择状态口径 */
@@ -110,12 +118,13 @@ function readCategoryState(
     aiProgress: ProofreadProgress | null,
     aiError: string | null,
     isAiEnabled: boolean,
+    uncoveredBatches: number,
 ): CategoryState {
     if (!meta.available) {
         return { label: UNAVAILABLE_LABEL, className: 'text-muted-foreground', hint: '' }
     }
     if (PROOFREAD_AI_CATEGORIES.includes(meta.id)) {
-        return readAiState(meta, count, status, aiStage, aiProgress, aiError, isAiEnabled)
+        return readAiState(meta, count, status, aiStage, aiProgress, aiError, isAiEnabled, uncoveredBatches)
     }
     return readLocalState(meta, count, status)
 }
@@ -127,6 +136,7 @@ export function ProofreadCheckList({
     aiProgress,
     aiError,
     isAiEnabled,
+    uncoveredBatches,
     onApply,
     onReveal,
     onIgnore,
@@ -136,7 +146,16 @@ export function ProofreadCheckList({
         <div className="flex flex-col gap-2">
             {PROOFREAD_CATEGORY_LIST.map((meta) => {
                 const items = issues.filter((issue) => issue.category === meta.id)
-                const state = readCategoryState(meta, items.length, status, aiStage, aiProgress, aiError, isAiEnabled)
+                const state = readCategoryState(
+                    meta,
+                    items.length,
+                    status,
+                    aiStage,
+                    aiProgress,
+                    aiError,
+                    isAiEnabled,
+                    uncoveredBatches,
+                )
                 return (
                     <Card key={meta.id} size="sm">
                         <CardHeader>

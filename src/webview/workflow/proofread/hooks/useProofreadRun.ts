@@ -32,8 +32,11 @@ export type ProofreadAiStage = 'idle' | 'running' | 'done' | 'error'
 /** 运行方式：local 只跑本地规则，full 额外串行跑 AI 语义与风险段落检查 */
 export type ProofreadRunMode = 'local' | 'full'
 
-/** AI 检查的整体等待上限：分批串行，长篇章需要更长时间 */
-const AI_TIMEOUT_MS = 180_000
+/**
+ * AI 请求的整体等待上限：必须大于宿主侧的批次预算（240s），
+ * 否则会出现宿主仍在跑、前端已按超时丢弃结果的情况。
+ */
+const AI_TIMEOUT_MS = 300_000
 
 /** 取消请求的等待上限：宿主无响应时不能把按钮永久钉在加载态 */
 const ABORT_TIMEOUT_MS = 10_000
@@ -53,6 +56,8 @@ export interface ProofreadRunState {
     aiProgress: ProofreadProgress | null
     aiIssueCount: number
     failedBatches: number
+    /** 超出宿主时长预算而未执行的批次数 */
+    skippedBatches: number
     aiError: string | null
     /** 被忽略词放过的命中数 */
     suppressed: number
@@ -118,6 +123,7 @@ export function useProofreadRun(): ProofreadRunState {
     const [aiProgress, setAiProgress] = useState<ProofreadProgress | null>(null)
     const [aiError, setAiError] = useState<string | null>(null)
     const [failedBatches, setFailedBatches] = useState(0)
+    const [skippedBatches, setSkippedBatches] = useState(0)
     const [suppressed, setSuppressed] = useState(0)
     const [elapsedMs, setElapsedMs] = useState(0)
     const [errorText, setErrorText] = useState<string | null>(null)
@@ -160,6 +166,7 @@ export function useProofreadRun(): ProofreadRunState {
         setAiIssues(cache.ai?.issues ?? [])
         setAiStage(cache.ai === null ? 'idle' : 'done')
         setFailedBatches(cache.ai?.failedBatches ?? 0)
+        setSkippedBatches(cache.ai?.skippedBatches ?? 0)
         setAiProgress(null)
         setAiError(null)
         setErrorText(null)
@@ -181,6 +188,7 @@ export function useProofreadRun(): ProofreadRunState {
             setAiError(null)
             setAiIssues([])
             setFailedBatches(0)
+            setSkippedBatches(0)
             let result: ProofreadRunResult | null
             try {
                 result = await request<ProofreadRunResult | null>('proofread/local', {
@@ -227,9 +235,17 @@ export function useProofreadRun(): ProofreadRunState {
                 }
                 setAiIssues(aiResult.issues)
                 setFailedBatches(aiResult.failedBatches)
+                setSkippedBatches(aiResult.skippedBatches)
                 setAiStage('done')
-                if (aiResult.failedBatches > 0) {
-                    toast.warning(`AI 检查有 ${String(aiResult.failedBatches)} 批未完成，结果可能不完整`)
+                if (aiResult.failedBatches > 0 || aiResult.skippedBatches > 0) {
+                    const parts: string[] = []
+                    if (aiResult.failedBatches > 0) {
+                        parts.push(`失败 ${String(aiResult.failedBatches)} 批`)
+                    }
+                    if (aiResult.skippedBatches > 0) {
+                        parts.push(`超时跳过 ${String(aiResult.skippedBatches)} 批`)
+                    }
+                    toast.warning(`AI 检查未覆盖全部批次（${parts.join('，')}），结果可能不完整`)
                 }
             } catch (cause) {
                 if (abortedRef.current) {
@@ -402,6 +418,7 @@ export function useProofreadRun(): ProofreadRunState {
         aiProgress,
         aiIssueCount: aiIssues.length,
         failedBatches,
+        skippedBatches,
         aiError,
         suppressed,
         elapsedMs,

@@ -102,6 +102,7 @@ export function ProofreadPage(): JSX.Element {
                                 aiProgress={state.aiProgress}
                                 aiError={state.aiError}
                                 isAiEnabled={state.isAiEnabled}
+                                uncoveredBatches={state.failedBatches + state.skippedBatches}
                                 onApply={(issue) => void state.applyOne(issue)}
                                 onReveal={(issue) => void state.reveal(issue)}
                                 onIgnore={state.ignore}

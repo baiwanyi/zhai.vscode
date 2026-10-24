@@ -87,6 +87,7 @@ function createCache(target: ProofreadTarget): ProofreadCache {
             mtime: target.mtime,
             batches: 2,
             failedBatches: 0,
+            skippedBatches: 0,
             usageTokens: 30,
         },
     }

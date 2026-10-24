@@ -171,6 +171,7 @@ export class ProofreadService {
                 mtime: target.mtime,
                 batches: outcome.batches,
                 failedBatches: outcome.failedBatches,
+                skippedBatches: outcome.skippedBatches,
                 usageTokens: outcome.usage?.totalTokens ?? 0,
             }
             await this.attachAiToCache(target, result)

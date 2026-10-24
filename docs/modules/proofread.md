@@ -181,6 +181,8 @@ src/modules/proofread/
 
 **AI 触发时机**：进入页面、切换「仅检查选区」与写回后都只跑本地规则（`run('local')`，毫秒级、不消耗额度）；AI 语义与风险段落检查只由底部「开始校对」显式触发（`run()` 即 `full`），开关关闭时该按钮同样只跑本地。打开页面、编辑正文都不应产生模型调用。
 
+**时长预算**：AI 检查按批串行，单批超时 45s，整体预算 240s（`runAiProofread` 的 `budgetMs`）。预算不足 8s 时不再开新批，剩余批次计入 `skippedBatches`，已得结果照常返回；前端 `proofread/ai` 的等待上限 300s 必须大于该预算，否则会出现宿主仍在跑、前端先超时丢结果。批次未覆盖（失败 + 跳过）时，界面不得给出「未发现问题」的结论，改为提示「N 批未完成，结果可能不完整」。
+
 **结果缓存**：宿主 `src/modules/proofread/cache/resultCache.ts` 把最近一次校对结果与检测结果分别写入 globalState（键 `proofread.resultCache` / `proofread.detectCache`）。打开页面先取 `proofread/cache`，命中即直接还原（不重跑本地、不发 AI）；未命中或正文已变才跑本地。缓存签名由 `path / kind / offsetBase / mtime / 正文字符数` 组成，任一项变化即视为过期，宁可重跑也不能把旧偏移标到新正文上；缓存读入逐字段收窄，结构不符整份作废。还原出的 target 不含正文，写回与定位仍由宿主回查文档。有结果（还原或跑过完整校对）时底部按钮文案为「重新校对」。
 
 接口：`proofread/cache`（校对结果）、`proofread/aiDetect/cache`（检测结果），两者都按当前编辑器正文签名校验，未命中返回 `null`。
