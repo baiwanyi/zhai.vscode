@@ -137,7 +137,7 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `ImageGenPage.tsx` | 状态编排：筛选、计数、详情面板、单张/批量删除、设封面、复制、插入、旧目录迁移 |
+| `ImageGenPage.tsx` | 状态编排：筛选、计数、分批渲染、详情面板、单张/批量删除、设封面、复制、插入、旧目录迁移 |
 | `ImageGenGrid.tsx` | 等宽卡片网格：3:4 裁切、封面徽标、悬停复制/插入/删除、多选勾选、点击打开详情 |
 | `ImageComposer.tsx` | 输入卡片：命令动作与画风芯片内联、比例、增强提示词、封面模式、发送 / 取消生成 |
 | `ImagePromptPopover.tsx` | 提示词词库（人物 / 场景 / 光影 / 镜头），点击插入光标 |
@@ -154,6 +154,9 @@
 - 筛选全部在内存中完成，不重复请求宿主；计数里「全部」取列表长度，「作品封面」由 `coverSelectedId` 推导，其余取宿主 `counts`。
 - 详情面板用 `@components/ui/sheet`，点缩略图打开；设封面后重新列举，面板停留在当前图片；删除当前图片时面板自动关闭。
 - 多选模式：点卡片切换勾选而不打开详情，悬停操作隐藏；批量删除需二次确认，逐张串行提交后只列举一次。
+- 分批渲染：网格一次挂载 60 张（`GRID_PAGE_SIZE`），筛选条件变化自动回到首批，底部「加载更多」按批追加；全选只覆盖已渲染的图片，未加载的图不会被批量删除带走。
+- 选择生命周期：选中集合与筛选签名绑定，换类别/角色/关键词即派生为空集；批量删除只作用于当前筛选结果，删除期间按钮显示「正在删除 n / 总数」并禁止重复触发。
+- 详情参数：按字段存在性分段渲染——无侧车时显示「没有出图参数」空态，提示词为空则隐藏复制按钮，`enhancedFrom` 存在时以折叠区展示增强前原文。
 - 参数读取完成前不挂载 composer，用等高骨架占位，避免默认值覆盖用户已保存的比例与画风。
 - 生成中发送按钮切换为「取消生成」，取消后立即复位界面，不等宿主回包；迟到的回包按请求代号丢弃。
 
@@ -190,8 +193,10 @@
 | 网格能力 | 已支持多选批量删除与悬停复制/插入/删除 |
 | 批量删除原子性 | 逐张串行提交，非事务：中途失败会提示并按已成功的部分刷新，不做回滚 |
 | 图片扩展名口径 | 图库、角色卡、封面画廊统一认 `png` / `jpe?g` / `webp` / `gif`，由 `imageDirScan.ts` 单点维护 |
-| 图库规模 | `listImageLibrary` 全量返回、网格全量渲染，无分页与虚拟滚动；封面画廊另有限量（60 张 + `total`） |
-| 详情降级 | 无侧车（旧图）时整块参数区隐藏，`ratio` / `style` 也无从展示；`enhancedFrom` 已读回但前端暂未展示 |
+| 图库规模 | `listImageLibrary` 全量返回，前端按 60 张一批挂载（无虚拟滚动）；封面画廊在宿主侧截断到 60 张并回传 `total` |
+| 详情降级 | 无侧车（旧图或手工图）时显示空态说明，不隐藏整块区域；`enhancedFrom` 以折叠区展示 |
+| 迁移后空目录 | 只搬文件不改名，`Cover/`、`Portraits/` 目录本身保留（搬空后为空目录） |
+| 跨页面刷新 | 设定页画廊删除 `Images` 来源的图后，生图页不会自动刷新，需切页或重新列举 |
 
 ---
 
@@ -217,5 +222,5 @@
 
 - `pnpm exec tsc --noEmit`
 - `pnpm exec eslint src/modules/imagegen src/webview/workflow/imagegen`
-- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts`
+- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryMigrate.test.ts tests/imageLibraryService.test.ts tests/coverCandidates.test.ts tests/coverService.test.ts`
 - 手测清单：列举三目录、按类别/角色/关键词筛选、设为封面、删除当前封面后的回退、详情面板复制与插入、生成中取消、切换作品后参数是否沿用、多选批量删除与角色封面回退、旧目录迁移（含同名跳过）、芯片内联输入与退格删除。

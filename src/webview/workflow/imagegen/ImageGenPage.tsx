@@ -7,12 +7,17 @@
  * 删除落盘侧进回收站，本节只刷新列表，不做乐观删除；批量删除后按剩余列表修正角色封面指针，
  * 最后只列举一次；设封面后重新列举，面板仍停在该图片上；
  * 旧目录（Cover / Portraits）仍可列举，残留时提供一次性迁移入口，只搬文件不改名；
- * 作品参数读完前不挂载 composer，避免用默认值覆盖用户已保存的比例与画风。
+ * 作品参数读完前不挂载 composer，避免用默认值覆盖用户已保存的比例与画风；
+ * 网格按固定步长分批挂载，筛选条件变化即回到首批；全选只覆盖已渲染的图片，
+ * 避免把未加载的图连带删掉；选中集合与筛选签名绑定，换筛选即失效；
+ * 批量删除只作用于当前筛选结果并显示逐张进度，期间禁止重复触发；
+ * 详情缺侧车时给出空态说明，有增强前原文时折叠展示。
  */
-import { Copy, ImageIcon, TextCursorInput, Trash2 } from 'lucide-react'
+import { ChevronRight, Copy, ImageIcon, TextCursorInput, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@components/ui/button'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Input } from '@components/ui/input'
 import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@components/ui/sheet'
@@ -53,6 +58,21 @@ const KIND_LABELS: Readonly<Record<PressImageKind, string>> = {
 /** 旧目录：仍有文件残留时，筛选条下方出现一次性迁移入口 */
 const LEGACY_DIR_NAMES: ReadonlyArray<string> = ['Cover', 'Portraits']
 
+/** 空选中集合：筛选切换后的派生值复用它，避免每次渲染新建对象 */
+const EMPTY_SELECTION: ReadonlySet<string> = new Set()
+
+/** 网格分批挂载的步长：一次只进一屏出头的卡片，避免上百张图同时进 DOM */
+const GRID_PAGE_SIZE = 60
+
+/**
+ * 图片是否落在旧目录：path 形如 press/{作品名}/{目录}/{文件名}，
+ * 目录取第三段而不是前缀——前缀比对会因作品段在前而恒为 false。
+ */
+function isLegacyImagePath(path: string): boolean {
+    const dirName = path.split('/')[2]
+    return dirName !== undefined && LEGACY_DIR_NAMES.includes(dirName)
+}
+
 interface ImageGenPageProps {
     /** 当前作品目录：既是数据作用域，也是切换作品时的重建依据 */
     dirPath: string
@@ -88,16 +108,22 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
     const detail = useImageDetail(dirPath, selected === null ? null : selected.path)
     /** 多选模式：点击卡片切换选中，不打开详情 */
     const [isSelecting, setIsSelecting] = useState(false)
-    const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string>>(() => new Set())
+    /**
+     * 选中集合与产生它的筛选签名绑定：换筛选后派生为空集，不必在每处筛选回调里手动清空，
+     * 也就不会出现「已选 N 张」与实际可见图片对不上的情况。
+     */
+    const [selection, setSelection] = useState<{ signature: string; paths: ReadonlySet<string> }>({
+        signature: '',
+        paths: EMPTY_SELECTION,
+    })
+    /** 批量删除进度：非空表示正在删除，同时用于禁用重复触发 */
+    const [removing, setRemoving] = useState<{ done: number; total: number } | null>(null)
     /** 批量删除的二次确认：与单张删除不同，一次删多张更需要拦一下 */
     const [isConfirmingBatch, setIsConfirmingBatch] = useState(false)
     const [isConfirmingMigrate, setIsConfirmingMigrate] = useState(false)
 
     /** 旧目录里还剩多少张：迁移搬完后归零，提示条随之消失 */
-    const legacyCount = useMemo(
-        () => images.filter((image) => LEGACY_DIR_NAMES.some((dirName) => image.path.startsWith(`${dirName}/`))).length,
-        [images],
-    )
+    const legacyCount = useMemo(() => images.filter((image) => isLegacyImagePath(image.path)).length, [images])
 
     const characterNames = useMemo(
         () => new Map(characters.map((character) => [character.id, character.name])),
@@ -123,6 +149,44 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
             return name.toLowerCase().includes(text) || image.id.toLowerCase().includes(text)
         })
     }, [images, kind, characterId, keyword, coverSelectedId, characterNames])
+
+    /**
+     * 分批渲染：用筛选签名比对而不是在每处 onChange 里重置，筛选一变即自然回到首批。
+     * 已显示数量随签名保存，切回同一筛选时不必重新点击「加载更多」之外的额外状态。
+     */
+    const [paging, setPaging] = useState({ signature: '', count: GRID_PAGE_SIZE })
+    const filterSignature = `${kind}|${characterId}|${keyword.trim().toLowerCase()}`
+    const visibleCount = paging.signature === filterSignature ? paging.count : GRID_PAGE_SIZE
+    const visibleImages = useMemo(() => filtered.slice(0, visibleCount), [filtered, visibleCount])
+
+    /** 当前生效的选中集合：签名与当前筛选不一致即视为空，避免残留上一组筛选的勾选 */
+    const selectedPaths = selection.signature === filterSignature ? selection.paths : EMPTY_SELECTION
+
+    /** 写入选中集合时一并记下当前筛选签名，供上面的派生判断使用 */
+    const updateSelection = (next: ReadonlySet<string>): void => {
+        setSelection({ signature: filterSignature, paths: next })
+    }
+
+    /** 参数区是否有可展示内容：侧车可能只落了部分字段，任一非空即展示 */
+    const hasDetail =
+        detail !== null &&
+        (detail.prompt !== null || detail.ratio !== null || detail.style !== null || detail.enhancedFrom !== null)
+
+    /** 参数行：比例与画风缺失时整行不渲染，不留下空白分隔符 */
+    const detailMeta =
+        detail === null
+            ? ''
+            : [
+                  detail.ratio === null ? null : `比例 ${detail.ratio}`,
+                  detail.style === null ? null : `画风 ${styleLabelOf(detail.style)}`,
+              ]
+                  .filter((part) => part !== null)
+                  .join(' · ')
+
+    /** 追加一批：记下当前筛选签名，筛选未变时在累计数量上继续加 */
+    const handleLoadMore = (): void => {
+        setPaging({ signature: filterSignature, count: visibleCount + GRID_PAGE_SIZE })
+    }
 
     /** 筛选条计数：全部与作品封面由列表推导，其余取宿主返回的分项数 */
     const countOf = (filter: KindFilter): number => {
@@ -158,55 +222,67 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
     /** 进入或退出多选：两个方向都清空已选，避免下次进入时残留上次的勾选 */
     const handleToggleSelecting = (): void => {
         setIsSelecting((current) => !current)
-        setSelectedPaths(new Set())
+        updateSelection(EMPTY_SELECTION)
     }
 
     const toggleSelectImage = (image: PressImageItem): void => {
-        setSelectedPaths((current) => {
-            const next = new Set(current)
-            if (next.has(image.path)) {
-                next.delete(image.path)
-            } else {
-                next.add(image.path)
-            }
-            return next
-        })
+        const next = new Set(selectedPaths)
+        if (next.has(image.path)) {
+            next.delete(image.path)
+        } else {
+            next.add(image.path)
+        }
+        updateSelection(next)
     }
 
-    /** 全选只在当前筛选结果内生效；已全选时再点即清空 */
+    /** 全选只覆盖已渲染的图片：未加载的图不在视野里，不该被批量删除带走 */
     const handleSelectAll = (): void => {
-        setSelectedPaths((current) =>
-            current.size === filtered.length ? new Set() : new Set(filtered.map((image) => image.path)),
+        updateSelection(
+            selectedPaths.size === visibleImages.length
+                ? EMPTY_SELECTION
+                : new Set(visibleImages.map((image) => image.path)),
         )
     }
 
     /**
      * 批量删除：逐张提交后按剩余列表修正角色封面指针。
      * 关键约束：只有「被删的正是该角色当前封面」才改指针，且回退值取剩余列表里该角色最新一张，
-     * 不直接采用宿主单张回执的 nextPortraitId——同批里它可能指向马上要被删掉的图。
+     * 不直接采用宿主单张回执的 nextPortraitId——同批里它可能指向马上要被删掉的图；
+     * 提交期间置 removing 防重入，并逐张回推进度，避免长批次看起来像卡死。
      */
     const handleDeleteSelected = async (): Promise<void> => {
-        const targets = images.filter((image) => selectedPaths.has(image.path))
+        if (removing !== null) {
+            return
+        }
+        // 只删当前筛选结果内的勾选：勾选可能发生在更早的筛选下，不应波及此刻不可见的图
+        const targets = filtered.filter((image) => selectedPaths.has(image.path))
         if (targets.length === 0) {
             return
         }
-        const { removals, images: remaining } = await removeImages(targets)
-        const removed = removals.filter((item) => item.result.removed).map((item) => item.image)
-        if (selected !== null && removed.some((image) => image.path === selected.path)) {
-            setSelected(null)
-        }
-        setIsSelecting(false)
-        setSelectedPaths(new Set())
-        const characterIds = new Set(
-            removed.flatMap((image) => (image.characterId === null ? [] : [image.characterId])),
-        )
-        for (const targetId of characterIds) {
-            const target = characters.find((character) => character.id === targetId)
-            if (target === undefined || !removed.some((image) => image.id === target.coverPortraitId)) {
-                continue
+        setRemoving({ done: 0, total: targets.length })
+        try {
+            const { removals, images: remaining } = await removeImages(targets, (done, total) => {
+                setRemoving({ done, total })
+            })
+            const removed = removals.filter((item) => item.result.removed).map((item) => item.image)
+            if (selected !== null && removed.some((image) => image.path === selected.path)) {
+                setSelected(null)
             }
-            const nextPortrait = remaining.find((image) => image.characterId === targetId) ?? null
-            onChangeCharacter(targetId, { coverPortraitId: nextPortrait === null ? null : nextPortrait.id })
+            setIsSelecting(false)
+            updateSelection(EMPTY_SELECTION)
+            const characterIds = new Set(
+                removed.flatMap((image) => (image.characterId === null ? [] : [image.characterId])),
+            )
+            for (const targetId of characterIds) {
+                const target = characters.find((character) => character.id === targetId)
+                if (target === undefined || !removed.some((image) => image.id === target.coverPortraitId)) {
+                    continue
+                }
+                const nextPortrait = remaining.find((image) => image.characterId === targetId) ?? null
+                onChangeCharacter(targetId, { coverPortraitId: nextPortrait === null ? null : nextPortrait.id })
+            }
+        } finally {
+            setRemoving(null)
         }
     }
 
@@ -368,21 +444,23 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                         type="button"
                         size="sm"
                         variant="ghost"
-                        disabled={filtered.length === 0}
+                        disabled={visibleImages.length === 0}
                         onClick={handleSelectAll}
                     >
-                        {selectedPaths.size === filtered.length && filtered.length > 0 ? '取消全选' : '全选当前结果'}
+                        {selectedPaths.size === visibleImages.length && visibleImages.length > 0
+                            ? '取消全选'
+                            : '全选已显示'}
                     </Button>
                     <Button
                         type="button"
                         size="sm"
                         variant="ghost"
                         className="text-destructive hover:text-destructive ml-auto"
-                        disabled={selectedPaths.size === 0}
+                        disabled={selectedPaths.size === 0 || removing !== null}
                         onClick={() => setIsConfirmingBatch(true)}
                     >
                         <Trash2 />
-                        删除选中
+                        {removing === null ? '删除选中' : `正在删除 ${removing.done} / ${removing.total}`}
                     </Button>
                 </div>
             ) : null}
@@ -413,18 +491,27 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                         </EmptyHeader>
                     </Empty>
                 ) : (
-                    <ImageGenGrid
-                        images={filtered}
-                        coverSelectedId={coverSelectedId}
-                        characterNames={characterNames}
-                        isSelecting={isSelecting}
-                        selectedPaths={selectedPaths}
-                        onToggleSelect={toggleSelectImage}
-                        onDelete={(image) => void handleDelete(image)}
-                        onCopy={(image) => void handleCopyImage(image)}
-                        onInsert={(image) => void handleInsertImage(image)}
-                        onSelect={setSelected}
-                    />
+                    <>
+                        <ImageGenGrid
+                            images={visibleImages}
+                            coverSelectedId={coverSelectedId}
+                            characterNames={characterNames}
+                            isSelecting={isSelecting}
+                            selectedPaths={selectedPaths}
+                            onToggleSelect={toggleSelectImage}
+                            onDelete={(image) => void handleDelete(image)}
+                            onCopy={(image) => void handleCopyImage(image)}
+                            onInsert={(image) => void handleInsertImage(image)}
+                            onSelect={setSelected}
+                        />
+                        {visibleImages.length < filtered.length ? (
+                            <div className="flex justify-center px-4 pb-4">
+                                <Button type="button" size="sm" variant="outline" onClick={handleLoadMore}>
+                                    加载更多（{visibleImages.length} / {filtered.length}）
+                                </Button>
+                            </div>
+                        ) : null}
+                    </>
                 )}
             </div>
 
@@ -490,37 +577,65 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                                     className="max-h-[60vh] w-full object-contain"
                                 />
                                 <p className="mt-2 break-all text-xs text-muted-foreground">{selected.path}</p>
-                                {detail === null || detail.prompt === null ? null : (
+                                {detail === null ? null : hasDetail ? (
                                     <div className="mt-3 flex flex-col gap-1.5">
                                         <div className="flex items-center gap-1">
                                             <p className="text-xs font-medium">出图参数</p>
-                                            <Button
-                                                type="button"
-                                                size="xs"
-                                                variant="ghost"
-                                                className="ml-auto"
-                                                onClick={() => {
-                                                    if (detail.prompt !== null) {
-                                                        void handleCopyPrompt(detail.prompt)
-                                                    }
-                                                }}
-                                            >
-                                                <Copy />
-                                                复制提示词
-                                            </Button>
+                                            {detail.prompt === null ? null : (
+                                                <Button
+                                                    type="button"
+                                                    size="xs"
+                                                    variant="ghost"
+                                                    className="ml-auto"
+                                                    onClick={() => {
+                                                        if (detail.prompt !== null) {
+                                                            void handleCopyPrompt(detail.prompt)
+                                                        }
+                                                    }}
+                                                >
+                                                    <Copy />
+                                                    复制提示词
+                                                </Button>
+                                            )}
                                         </div>
-                                        <p className="bg-muted/40 max-h-40 overflow-y-auto rounded-md p-2 text-xs leading-5 whitespace-pre-wrap break-all">
-                                            {detail.prompt}
-                                        </p>
-                                        <p className="text-muted-foreground text-xs">
-                                            {[
-                                                detail.ratio === null ? null : `比例 ${detail.ratio}`,
-                                                detail.style === null ? null : `画风 ${styleLabelOf(detail.style)}`,
-                                            ]
-                                                .filter((part) => part !== null)
-                                                .join(' · ')}
-                                        </p>
+                                        {detail.prompt === null ? null : (
+                                            <p className="bg-muted/40 max-h-40 overflow-y-auto rounded-md p-2 text-xs leading-5 whitespace-pre-wrap break-all">
+                                                {detail.prompt}
+                                            </p>
+                                        )}
+                                        {detailMeta.length === 0 ? null : (
+                                            <p className="text-muted-foreground text-xs">{detailMeta}</p>
+                                        )}
+                                        {detail.enhancedFrom === null ? null : (
+                                            <Collapsible>
+                                                <CollapsibleTrigger asChild>
+                                                    <Button
+                                                        type="button"
+                                                        size="xs"
+                                                        variant="ghost"
+                                                        className="group self-start px-0"
+                                                    >
+                                                        <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />
+                                                        增强前原文
+                                                    </Button>
+                                                </CollapsibleTrigger>
+                                                <CollapsibleContent>
+                                                    <p className="bg-muted/40 mt-1 max-h-32 overflow-y-auto rounded-md p-2 text-xs leading-5 whitespace-pre-wrap break-all">
+                                                        {detail.enhancedFrom}
+                                                    </p>
+                                                </CollapsibleContent>
+                                            </Collapsible>
+                                        )}
                                     </div>
+                                ) : (
+                                    <Empty className="mt-3 flex-none border-0 p-3">
+                                        <EmptyHeader>
+                                            <EmptyTitle className="text-xs">没有出图参数</EmptyTitle>
+                                            <EmptyDescription className="text-xs">
+                                                这张图没有同名侧车记录，可能是旧目录里的图或手工放入的文件
+                                            </EmptyDescription>
+                                        </EmptyHeader>
+                                    </Empty>
                                 )}
                             </div>
                             <SheetFooter>

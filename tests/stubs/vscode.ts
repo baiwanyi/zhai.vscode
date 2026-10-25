@@ -11,6 +11,8 @@ import type * as vscode from 'vscode'
 let workspaceRoot = ''
 /** 虚拟磁盘内容：fs.readFile 的数据源，未登记的路径读取时抛错（模拟文件失效） */
 const fileContents = new Map<string, string>()
+/** 文件修改时间：未登记的路径按 0 返回，供依赖 mtime 排序的用例显式指定先后 */
+const fileMtimes = new Map<string, number>()
 /** 已创建的虚拟目录：fs.createDirectory 的登记处 */
 const directories = new Set<string>()
 /** 配置项：zhai.* 的键值，未配置的键返回调用方给定的默认值 */
@@ -28,6 +30,7 @@ let isTrashAvailable = true
 export function resetWorkspaceState(): void {
     workspaceRoot = ''
     fileContents.clear()
+    fileMtimes.clear()
     directories.clear()
     configValues.clear()
     openableDocuments.clear()
@@ -52,6 +55,11 @@ export function setWorkspaceRoot(root: string): void {
 /** 登记虚拟磁盘文件内容 */
 export function setFileContent(path: string, content: string): void {
     fileContents.set(path, content)
+}
+
+/** 指定文件修改时间（毫秒）：依赖 mtime 排序的用例用它构造先后顺序，未指定时统一为 0 */
+export function setFileMtime(path: string, mtime: number): void {
+    fileMtimes.set(path, mtime)
 }
 
 /** 设置 zhai.* 配置项 */
@@ -359,8 +367,8 @@ export const workspace = {
             if (!fileContents.has(uri.fsPath)) {
                 return Promise.reject(new Error(`ENOENT: ${uri.fsPath}`))
             }
-            // 内存态文件统一视为普通文件（FileType.File = 1）
-            return Promise.resolve({ type: 1, ctime: 0, mtime: 0, size: 0 })
+            // 内存态文件统一视为普通文件（FileType.File = 1）；mtime 未指定时为 0
+            return Promise.resolve({ type: 1, ctime: 0, mtime: fileMtimes.get(uri.fsPath) ?? 0, size: 0 })
         },
         readFile(uri: vscode.Uri): Promise<Uint8Array> {
             const content = fileContents.get(uri.fsPath)

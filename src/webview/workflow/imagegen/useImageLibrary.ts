@@ -36,6 +36,9 @@ export interface ImageBatchRemoval {
     images: PressImageItem[]
 }
 
+/** 批量删除进度回调：done 为已完成张数，total 为本批总数 */
+export type ImageRemovalProgress = (done: number, total: number) => void
+
 interface UseImageLibraryResult {
     images: PressImageItem[]
     coverSelectedId: string | null
@@ -43,7 +46,7 @@ interface UseImageLibraryResult {
     isLoading: boolean
     reload: () => Promise<void>
     removeImage: (image: PressImageItem) => Promise<ImageDeleteResult | null>
-    removeImages: (images: PressImageItem[]) => Promise<ImageBatchRemoval>
+    removeImages: (images: PressImageItem[], onProgress?: ImageRemovalProgress) => Promise<ImageBatchRemoval>
     migrate: () => Promise<ImageMigrateResult | null>
 }
 
@@ -85,8 +88,9 @@ export function useImageLibrary(dirPath: string): UseImageLibraryResult {
     )
 
     const removeImages = useCallback(
-        async (targets: PressImageItem[]): Promise<ImageBatchRemoval> => {
+        async (targets: PressImageItem[], onProgress?: ImageRemovalProgress): Promise<ImageBatchRemoval> => {
             const removals: ImageRemoval[] = []
+            let done = 0
             for (const image of targets) {
                 try {
                     const result = await request<ImageDeleteResult>('pressAi/deleteImage', {
@@ -98,6 +102,8 @@ export function useImageLibrary(dirPath: string): UseImageLibraryResult {
                     // 单张失败不中断整批：其余图片照常删除，失败原因逐条提示
                     toastError(cause)
                 }
+                done += 1
+                onProgress?.(done, targets.length)
             }
             let images: PressImageItem[] = []
             try {
