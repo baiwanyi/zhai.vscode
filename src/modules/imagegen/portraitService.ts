@@ -47,10 +47,9 @@ import { summarizeMessages } from '../ai/usageRecorder'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
 import { consumeToday, readUsedToday } from '../common/db/quotaRepository'
 import { logger } from '../common/logger'
+import { PRESS_MODULE_DIR, readProjectSegments } from '../common/projectPath'
 import { readText, readTextList } from '../common/readInput'
 import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
-import { PRESS_MODULE_DIR } from '../press/projectFactory'
-import { readProjectSegments } from '../press/projectService'
 
 /** 角色卡相对路径的段数：press/{作品名}/Portraits/{文件名} */
 const PORTRAIT_SEGMENT_COUNT = 4

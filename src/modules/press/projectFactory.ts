@@ -9,9 +9,6 @@
  */
 import type { PressAudience } from '../../shared/types/press'
 
-/** 作品所属模块的一级目录名，与存储根约定一致 */
-export const PRESS_MODULE_DIR = 'press'
-
 /** 作品根文档名：作品被打开时的落点，同时承载背景与风格设定 */
 export const PROJECT_README_NAME = 'README.md'
 

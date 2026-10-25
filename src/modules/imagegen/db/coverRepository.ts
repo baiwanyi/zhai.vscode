@@ -6,7 +6,7 @@
  */
 import type Database from 'better-sqlite3'
 import { isPressCoverId } from '../../../shared/types/press'
-import { PRESS_MODULE_DIR } from '../../press/projectFactory'
+import { PRESS_MODULE_DIR } from '../../common/projectPath'
 import { COVER_DIR } from '../constants'
 
 /** 键前缀：后接作品相对路径 press/{作品名} */

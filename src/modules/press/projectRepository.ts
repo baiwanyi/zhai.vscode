@@ -9,7 +9,6 @@
 import {
     CHAPTER_DIR_NAMES,
     PROJECT_README_NAME,
-    PRESS_MODULE_DIR,
     compareByOrder,
     readOrderPrefix,
     toDisplayName,
@@ -21,6 +20,7 @@ import type {
     PressVolumeGroup,
 } from '../../shared/types/press'
 import type Database from 'better-sqlite3'
+import { PRESS_MODULE_DIR } from '../common/projectPath'
 
 /** 聚合所需的最小列投影 */
 const PROJECT_FILE_COLUMNS = 'path, title, word_count AS wordCount, mtime'

@@ -13,7 +13,7 @@ import type { IndexService } from '../common/indexer/indexService'
 import type Database from 'better-sqlite3'
 import { NOTES_MODULE_KEY, ROOT_MODULE_KEY } from '../../shared/types/workflow'
 import { listFilesByPaths } from '../common/db/statsRepository'
-import { PRESS_MODULE_DIR } from '../press/projectFactory'
+import { PRESS_MODULE_DIR } from '../common/projectPath'
 
 /** 场景变化去抖时长（毫秒）：短于该值的编辑器焦点切换不触发换页 */
 const SCENE_DEBOUNCE_MS = 800

@@ -18,8 +18,9 @@ import {
 } from './snapshotStore'
 import type { ChapterSnapshotEntry, ChapterSnapshotReason, ChapterSnapshotSummary } from '../../../shared/types/press'
 import { logger } from '../../common/logger'
+import { PRESS_MODULE_DIR } from '../../common/projectPath'
 import { isPathExisting, toSafeSegments } from '../../common/storagePath'
-import { PROJECT_CHAPTER_DIR, PRESS_MODULE_DIR } from '../projectFactory'
+import { PROJECT_CHAPTER_DIR } from '../projectFactory'
 
 /** 章节时间线根目录名：与结构化文档的整版快照目录并列 */
 export const CHAPTER_SNAPSHOT_DIR = PROJECT_CHAPTER_DIR

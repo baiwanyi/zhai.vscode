@@ -28,9 +28,9 @@ import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
 import { consumeToday, readUsedToday } from '../common/db/quotaRepository'
 import { logger } from '../common/logger'
+import { readProjectSegments } from '../common/projectPath'
 import { readText, readTextList } from '../common/readInput'
 import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
-import { readProjectSegments } from '../press/projectService'
 
 /** 目录扫描只认图片文件，其余一律忽略 */
 const COVER_FILE_PATTERN = /\.(png|jpe?g|webp)$/i

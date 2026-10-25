@@ -42,8 +42,9 @@ import type {
 } from '../../../shared/types/press'
 import { getZhaiConfig, resolveStorageRoot } from '../../common/config'
 import { logger } from '../../common/logger'
+import { PRESS_MODULE_DIR } from '../../common/projectPath'
 import { buildStorageUri, toSafeSegments } from '../../common/storagePath'
-import { PROJECT_CHAPTER_DIR, PROJECT_README_NAME, PRESS_MODULE_DIR } from '../projectFactory'
+import { PROJECT_CHAPTER_DIR, PROJECT_README_NAME } from '../projectFactory'
 import { readProjectWorkspace } from '../projectWorkspace'
 
 /** 自动快照保留版数：超出后按「每日首版」继续保留 */

@@ -5,7 +5,7 @@
  * 角色块按一级标题匹配；用户手写的其它段落原样保留，单份文件写入失败不影响其余文件。
  */
 import * as vscode from 'vscode'
-import { PROJECT_README_NAME, PRESS_MODULE_DIR } from './projectFactory'
+import { PROJECT_README_NAME } from './projectFactory'
 import { readProjectWorkspace } from './projectWorkspace'
 import type {
     PressApplyMeta,
@@ -16,6 +16,7 @@ import type {
 } from '../../shared/types/press'
 import { resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
+import { PRESS_MODULE_DIR } from '../common/projectPath'
 import { buildStorageUri } from '../common/storagePath'
 
 /** 设定与大纲的回写落点：标题固定，解析端按全文件键值读取，位置不敏感 */
@@ -237,4 +238,3 @@ export async function applyProjectWorkspace(
     }
     return { written }
 }
-

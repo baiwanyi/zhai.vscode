@@ -14,7 +14,6 @@ import * as vscode from 'vscode'
 import { parseNovel, sanitizeSegment } from './importParser'
 import {
     PROJECT_CHAPTER_DIR,
-    PRESS_MODULE_DIR,
     buildChapterDocument,
     buildProjectDocuments,
     validateProjectName,
@@ -32,6 +31,7 @@ import type {
 import type { Buffer } from 'node:buffer'
 import { resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
+import { PRESS_MODULE_DIR } from '../common/projectPath'
 import { buildStorageUri, isPathExisting } from '../common/storagePath'
 
 /** 导入文件大小上限：约 50 MB，相当于一千六百万字，足以覆盖任何单本小说且不至于读入内存过大 */

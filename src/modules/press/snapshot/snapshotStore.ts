@@ -19,8 +19,9 @@ import type {
 import { PRESS_SNAPSHOT_DIR, isPressSnapshotId } from '../../../shared/types/press'
 import { resolveStorageRoot } from '../../common/config'
 import { logger } from '../../common/logger'
+import { PRESS_MODULE_DIR } from '../../common/projectPath'
 import { buildStorageUri, isPathExisting, toSafeSegments } from '../../common/storagePath'
-import { PROJECT_README_NAME, PRESS_MODULE_DIR } from '../projectFactory'
+import { PROJECT_README_NAME } from '../projectFactory'
 
 /** 快照收录的文档键：顺序固定，写入与读取共用，避免各处顺序不一致导致对照错位 */
 export const SNAPSHOT_FILE_KEYS: readonly PressSnapshotFileKey[] = ['readme', 'setting', 'characters', 'outline']
