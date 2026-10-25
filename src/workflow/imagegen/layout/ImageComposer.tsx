@@ -8,10 +8,12 @@
  * 封面画风与普通出图分开存：切换模式时芯片换用对应一侧，改动按当前模式写回各自配置；
  * 比例与画风改动只经 onSettingsChange 上报；出图前端兜底 15 分钟，超时或失败即 abort 释放并发锁；
  * 生成中发送按钮切换为「取消生成」，取消后立即复位；取消后迟到的落盘不改写界面，只经 onLateGenerated 让页面静默补图；
- * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
+ * 发送即清空输入框与角色类芯片（画风留下），草稿存 ref，失败或取消时仅在用户没有新输入的情况下回填；
+ * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化；
+ * 生成态经 onGeneratingChange 上报页面，供列表首位挂骨架，卸载时补发一次结束避免占位卡死。
  */
 import { Sparkles, UserRound } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Skeleton } from '@components/ui/skeleton'
 import type { ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
@@ -134,6 +136,11 @@ interface ImageComposerProps {
     onGenerated: (result: ImageGenerateResult) => void
     /** 迟到落盘的回调：请求已取消或被取代但宿主仍出了图，页面只静默刷新列表，不认领封面等副作用 */
     onLateGenerated: () => void
+    /**
+     * 生成中状态上报：页面据此在列表首位挂骨架占位。
+     * 成功、失败、取消、超时都会经过 setIsGenerating(false)，卸载时再补发一次，页面不会停在占位上。
+     */
+    onGeneratingChange?: (isGenerating: boolean) => void
     /** 作品参数是否已读到：false 时只渲染同高占位，读完才挂载正文 */
     isLoaded: boolean
 }
@@ -161,6 +168,7 @@ export function ImageComposer({
     onSettingsChange,
     onGenerated,
     onLateGenerated,
+    onGeneratingChange,
 }: ImageComposerProps): JSX.Element {
     if (!isLoaded) {
         return (
@@ -182,6 +190,7 @@ export function ImageComposer({
             onSettingsChange={onSettingsChange}
             onGenerated={onGenerated}
             onLateGenerated={onLateGenerated}
+            onGeneratingChange={onGeneratingChange}
         />
     )
 }
@@ -198,6 +207,7 @@ function ComposerBody({
     onSettingsChange,
     onGenerated,
     onLateGenerated,
+    onGeneratingChange,
 }: ComposerBodyProps): JSX.Element {
     const [text, setText] = useState('')
     /** 封面模式：生成结果落统一图库并自动设为作品封面，与角色图互斥 */
@@ -214,6 +224,35 @@ function ComposerBody({
     ])
 
     const richInputRef = useRef<RichChipInputHandle | null>(null)
+
+    /** 上报生成态：成功、失败、取消、超时都会经过 setIsGenerating，页面据此挂载/回收列表骨架 */
+    useEffect(() => {
+        onGeneratingChange?.(isGenerating)
+    }, [isGenerating, onGeneratingChange])
+
+    /** 卸载（切换作品或参数重载）时补发一次结束，否则页面会停在「生成中」的骨架上 */
+    useEffect(() => {
+        return (): void => {
+            onGeneratingChange?.(false)
+        }
+    }, [onGeneratingChange])
+
+    /**
+     * 已发出但还没有结果的草稿：发送时输入框立刻清空，失败或取消再还回去。
+     * 既让「已经发出去」有即时反馈，也不至于把刚写好的提示词弄丢。
+     */
+    const lastDraftRef = useRef<{ text: string; chips: PromptChip[] } | null>(null)
+
+    /** 把草稿还给用户：只在没有新输入时回填，不覆盖等待期间重新写下的内容 */
+    const restoreDraft = (): void => {
+        const draft = lastDraftRef.current
+        lastDraftRef.current = null
+        if (draft === null) {
+            return
+        }
+        setText((current) => (current.trim().length > 0 ? current : draft.text))
+        setChips((current) => (current.some((chip) => chip.kind !== 'style') ? current : draft.chips))
+    }
 
     const activeCharacter = useMemo(
         () => characters.find((character) => character.id === activeCharacterId) ?? null,
@@ -285,12 +324,12 @@ function ComposerBody({
 
     /**
      * 把词条插入光标处：保留已有内容，插入后光标停在片段末尾，便于连续点击累加。
-     * 词条是英文标签，直接跟在中文字句后会粘成一串，因此按正文末尾补一次分隔符；
-     * 末尾已是标点或空白时不重复补，连续点选即可自然拼成 `a, b, c`。
+     * 词条统一前置逗号，连点几次即可自然拼成 `a, b, c`；正文为空时首个词条也带逗号，
+     * 保证规则可预测。末尾已是标点或空白时不再重复补，避免出现 `a,, b` 这类双分隔符。
      */
     const insertPrompt = (fragment: string): void => {
         const current = text.trimEnd()
-        const isSeparatorNeeded = current.length > 0 && !/[,\s。，、;；:：]$/u.test(current)
+        const isSeparatorNeeded = !/[,\s。，、;；:：]$/u.test(current)
         richInputRef.current?.insertText(isSeparatorNeeded ? `, ${fragment}` : fragment)
     }
 
@@ -362,6 +401,11 @@ function ComposerBody({
         const token = generationRef.current + 1
         generationRef.current = token
         setIsGenerating(true)
+        // 发送即清空：生成期间输入框不该还停着上一轮的提示词，否则看起来像没发出去；
+        // 草稿存在 ref 里，失败或取消时再还回去
+        lastDraftRef.current = { text, chips }
+        setText('')
+        setChips((current) => current.filter((chip) => chip.kind === 'style'))
         try {
             const result = await request<ImageGenerateResult>(
                 'pressAi/generateImage',
@@ -382,9 +426,8 @@ function ComposerBody({
                 onLateGenerated()
                 return
             }
+            lastDraftRef.current = null
             onGenerated(result)
-            setText('')
-            setChips((current) => current.filter((chip) => chip.kind === 'style'))
             // 封面是一次性动作：成功即退出封面模式，回到普通出图
             if (isCoverMode) {
                 setIsCoverMode(false)
@@ -396,6 +439,7 @@ function ComposerBody({
             }
             // 超时或失败后宿主可能仍在出图，主动取消以释放并发锁
             void abortGeneration()
+            restoreDraft()
             toastError(cause)
         } finally {
             if (generationRef.current === token) {
@@ -408,6 +452,8 @@ function ComposerBody({
     const handleAbort = async (): Promise<void> => {
         generationRef.current += 1
         setIsGenerating(false)
+        // 主动取消多半是想改两句再重发，草稿直接还回去，省得重打一遍
+        restoreDraft()
         await abortGeneration()
     }
 

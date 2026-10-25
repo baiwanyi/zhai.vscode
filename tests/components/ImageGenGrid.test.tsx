@@ -11,6 +11,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PressImageItem } from '@shared/types/imagegen'
 import { ImageGenGrid } from '@webview/workflow/imagegen/layout/ImageGenGrid'
+import type { RenderResult } from '@testing-library/react'
 
 afterEach(cleanup)
 
@@ -39,6 +40,7 @@ const EMPTY_SELECTION: ReadonlySet<string> = new Set()
 
 interface RenderOptions {
     images?: PressImageItem[]
+    pendingCount?: number
     coverSelectedId?: string | null
     isSelecting?: boolean
     selectedPaths?: ReadonlySet<string>
@@ -51,11 +53,12 @@ interface RenderOptions {
     }
 }
 
-function renderGrid(options: RenderOptions = {}): void {
+function renderGrid(options: RenderOptions = {}): RenderResult {
     const handlers = options.handlers ?? {}
-    render(
+    return render(
         <ImageGenGrid
             images={options.images ?? [PORTRAIT, PHOTO]}
+            pendingCount={options.pendingCount ?? 0}
             coverSelectedId={options.coverSelectedId ?? null}
             characterNames={CHARACTER_NAMES}
             isSelecting={options.isSelecting ?? false}
@@ -90,6 +93,24 @@ describe('ImageGenGrid', () => {
         renderGrid()
 
         expect(screen.queryByText('封面')).toBeNull()
+    })
+
+    it('有在途出图时在网格首位渲染骨架占位，已有图片仍在其后', () => {
+        const { container } = renderGrid({ pendingCount: 1 })
+
+        const grid = container.firstElementChild
+        const pendingCard = grid?.firstElementChild
+        expect(pendingCard?.querySelector('[data-slot="skeleton"]')).not.toBeNull()
+        // 占位正中的转圈：说明「在等」，而不是一块不会动的灰
+        expect(pendingCard?.querySelector('[data-slot="spinner"]')).not.toBeNull()
+        expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(1)
+        expect(screen.getByAltText(CHARACTER_NAME)).toBeDefined()
+    })
+
+    it('没有在途出图时不渲染骨架占位', () => {
+        const { container } = renderGrid()
+
+        expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(0)
     })
 
     it('点击卡片回传对应条目以打开详情', async () => {

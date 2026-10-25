@@ -5,7 +5,8 @@
  * 关键约束：文件名按新规范生成——角色图 portrait-{14 位时间戳}-{8 位角色标识}，
  * 其余 photo-{14 位时间戳}-{8 位随机串}；同秒同角色冲突时时间戳逐秒递增而非覆盖；
  * 作品级 promptSuffix / negative 在出图前叠加，读取失败回落默认且不阻断出图；
- * 每次成功出图落一份同名 sidecar；单一任务锁防重复扣费，取消走 abort。
+ * 每次成功出图落一份同名 sidecar；单一任务锁防重复扣费，取消走 abort——
+ * 产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额、不写封面。
  */
 import * as vscode from 'vscode'
 import type { AiProvider } from '@modules/ai/provider'
@@ -132,6 +133,13 @@ export class ImageGenerateService {
                 size: IMAGE_RATIO_SIZE[request.ratio],
                 signal: controller.signal,
             })
+            // 产物到手后再确认一次取消：落盘、扣配额、写封面都是不可撤回的副作用，
+            // 用户点过停止就不该发生，否则会出现「界面已复位、图却凭空多出来」的情况。
+            // provider 内部通常已因 abort 抛错，这一条兜住「刚好在回包前后点停止」的竞态。
+            if (controller.signal.aborted) {
+                logger.info(`出图取消：产物已丢弃，耗时 ${Date.now() - startedAt}ms`)
+                throw new Error('出图已取消')
+            }
             this.usageRecorder.record({
                 module: 'image',
                 model: getSelectedCodebuddyModel(),

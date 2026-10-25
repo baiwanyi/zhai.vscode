@@ -2,7 +2,9 @@
  * 生图页网格：以等宽卡片展示图片缩略图、封面徽标与悬停操作（复制、插入、删除）。
  * 复用约定：卡片与徽标一律取 @components/ui，不手写容器；图片统一按 3:4 裁切，
  * 混合比例不会撑乱栅格，原始比例留待详情面板展示。
- * 关键约束：操作按钮只在悬停或聚焦时出现，避免网格噪点；多选模式下点击卡片是切换选中而不是打开详情，
+ * 关键约束：在途出图时在首位渲染与卡片同比例（3:4）的骨架占位，正中压一个转圈表示还在等，
+ * 出图后由真实图片顶替，列宽不跳动；
+ * 操作按钮只在悬停或聚焦时出现，避免网格噪点；多选模式下点击卡片是切换选中而不是打开详情，
  * 且隐藏悬停操作，避免与勾选冲突；封面徽标由调用方传入的 selectedId 比较得出，本组件不判断业务语义；
  * 卡片可聚焦，回车/空格触发与点击相同的动作，内部操作按钮的键盘事件不被外层拦截。
  */
@@ -10,6 +12,8 @@ import { cn } from 'cn'
 import { Check, Copy, TextCursorInput, Trash2 } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
 import { Card } from '@components/ui/card'
+import { Skeleton } from '@components/ui/skeleton'
+import { Spinner } from '@components/ui/spinner'
 import type { PressImageItem } from '@shared/types/imagegen'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
@@ -19,6 +23,11 @@ const ACTION_CLASS = 'bg-background/80'
 
 interface ImageGenGridProps {
     images: PressImageItem[]
+    /**
+     * 生成中的占位卡数量：0 表示没有在途请求。
+     * 占位卡排在真实图片之前，用与卡片一致的 3:4 比例，出图后由真实图片顶替，网格列宽不跳动。
+     */
+    pendingCount: number
     /** 作品封面当前指向的图片 id */
     coverSelectedId: string | null
     /** 角色 id → 名称：用于卡片角标，缺失时不显示 */
@@ -37,6 +46,7 @@ interface ImageGenGridProps {
 
 export function ImageGenGrid({
     images,
+    pendingCount,
     coverSelectedId,
     characterNames,
     isSelecting,
@@ -49,6 +59,13 @@ export function ImageGenGrid({
 }: ImageGenGridProps): JSX.Element {
     return (
         <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-4">
+            {Array.from({ length: pendingCount }, (_, index) => (
+                <Card key={`pending-${String(index)}`} aria-hidden className="relative overflow-hidden p-0">
+                    <Skeleton className="aspect-3/4 w-full rounded-none" />
+                    {/* 转圈压在骨架正中心：纯视觉提示，语义已由外层占位卡承担 */}
+                    <Spinner aria-hidden className="absolute inset-0 m-auto size-6 text-muted-foreground" />
+                </Card>
+            ))}
             {images.map((image) => {
                 const characterName = image.characterId === null ? null : characterNames.get(image.characterId)
                 const isChecked = selectedPaths.has(image.path)

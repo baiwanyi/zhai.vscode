@@ -52,7 +52,7 @@ export function ImageComposerActions({
             <ImageComposerRatioSwitch ratio={ratio} disabled={isGenerating} onChange={onRatioChange} />
             <div className="flex items-center gap-0.5">
                 <EnhanceButton
-                    disabled={!canEnhance}
+                    disabled={!canEnhance || isGenerating}
                     isEnhanced={isEnhanced}
                     isBusy={isEnhancing}
                     onEnhance={onEnhance}

@@ -10,6 +10,7 @@
  * 「作品封面」是筛选维度而非图片类别，由 coverSelectedId 与图片 id 比较得出；
  * 删除落盘侧进回收站，本节只刷新列表，批量删除后按剩余列表修正角色封面指针；
  * 参数读完前 composer 只渲染同高骨架，出图成功只在该角色尚无封面时认领，取消后迟到的落盘只静默刷新列表；
+ * 出图期间与回包后的刷新窗口内，列表首位都保留骨架占位，成功后静默刷新，占位直接由新图顶替；
  * 全选只覆盖已渲染图片；选中集合与分批上限都与筛选签名绑定，换筛选即自然复位。
  */
 import { useMemo, useState } from 'react'
@@ -81,6 +82,16 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
     const [selected, setSelected] = useState<PressImageItem | null>(null)
     /** 多选模式：点击卡片切换选中，不打开详情 */
     const [isSelecting, setIsSelecting] = useState(false)
+    /**
+     * 有在途出图请求：列表首位挂一张骨架占位，出图成功后由 reload 回来的真实图片顶替。
+     * 状态由 composer 上报，失败与取消同样会回收，不会把占位留在列表里。
+     */
+    const [isGenerating, setIsGenerating] = useState(false)
+    /**
+     * 出图已回但列表还没刷回来：占位继续挂着，让「骨架 → 新图」只替换一次。
+     * 配合静默刷新，中间不会闪一下「正在读取图片」的整块加载态。
+     */
+    const [isRefreshingResult, setIsRefreshingResult] = useState(false)
     /**
      * 选中集合与产生它的筛选签名绑定：换筛选后派生为空集，不必在每处筛选回调里手动清空，
      * 也就不会出现「已选 N 张」与实际可见图片对不上的情况。
@@ -229,7 +240,11 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
      * 只有顶栏选中了角色、且该角色尚无封面时才认领，已有封面不被新图顶掉，避免覆盖用户手动选定的那张。
      */
     const handleGenerated = (result: ImageGenerateResult): void => {
-        void reload()
+        // 静默刷新：不切 isLoading，占位由 isRefreshingResult 延续到新图入列，视线里只发生一次替换
+        setIsRefreshingResult(true)
+        void reload({ silent: true }).finally(() => {
+            setIsRefreshingResult(false)
+        })
         if (activeCharacterId === null) {
             return
         }
@@ -312,6 +327,7 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                 <AppContent isScrollable>
                     <ImageGenGallery
                         isLoading={isLoading}
+                        isPending={isGenerating || isRefreshingResult}
                         isLibraryEmpty={isLibraryEmpty}
                         filteredTotal={filtered.length}
                         visibleImages={visibleImages}
@@ -341,6 +357,7 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                         onSettingsChange={handleSettingsChange}
                         onGenerated={handleGenerated}
                         onLateGenerated={handleLateGenerated}
+                        onGeneratingChange={setIsGenerating}
                     />
                 </AppFooter>
             </AppPage>

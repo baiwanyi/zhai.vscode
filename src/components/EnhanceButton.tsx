@@ -38,7 +38,7 @@ export function EnhanceButton({
             variant="ghost"
             size="icon"
             className={cn(
-                'bg-white/5 text-muted-foreground hover:bg-white/10 hover:text-foreground disabled:opacity-100',
+                'bg-white/5 text-muted-foreground hover:bg-white/8 hover:text-foreground dark:hover:bg-white/8 dark:hover:text-foreground disabled:opacity-100',
                 className,
             )}
             aria-label={label}

@@ -1,5 +1,6 @@
 /**
  * 生图页画廊区：在 AppContent 内呈现读取中的加载态、两种空态、图片网格与「加载更多」入口。
+ * 有在途结果时网格首位挂一张骨架占位，出图后由真实图片顶替，是全页唯一的「生成中」视觉反馈。
  * 复用约定：空态取 @webview/components/StateEmpty，网格取本目录 ImageGenGrid，
  * 加载更多按钮取 @webview/components/Button，图片类型取 @shared/types/imagegen。
  * 关键约束：本组件不产生包裹节点（返回 Fragment），空态因此仍是 AppContent 的直接弹性子元素，
@@ -22,6 +23,12 @@ const LOADING_LABEL = '正在读取图片'
 interface ImageGenGalleryProps {
     /** 列表读取中：优先于空态展示，避免先闪一下「还没有图片」 */
     isLoading: boolean
+    /**
+     * 有在途结果：出图请求进行中，或请求已完成但列表还没刷回来。
+     * 期间列表首位挂一张骨架占位，出图后由真实图片顶替；库里一张图都没有时也走网格，
+     * 否则用户点完生成看到的仍是空态，像没点上。
+     */
+    isPending: boolean
     /** 库里一张图都没有：仅用于区分两种空态文案，与当前筛选无关 */
     isLibraryEmpty: boolean
     /** 当前筛选结果张数：为 0 时走空态，否则作为加载更多的分母 */
@@ -48,6 +55,7 @@ interface ImageGenGalleryProps {
 
 export function ImageGenGallery({
     isLoading,
+    isPending,
     isLibraryEmpty,
     filteredTotal,
     visibleImages,
@@ -66,7 +74,8 @@ export function ImageGenGallery({
         return <StateEmpty title={LOADING_LABEL} isLoading loadingLabel={LOADING_LABEL} className={FILL_SLOT_CLASS} />
     }
 
-    if (filteredTotal === 0) {
+    // 有在途结果时即使筛选结果为 0 也走网格：占位卡本身就说明了「有一张在路上」
+    if (filteredTotal === 0 && !isPending) {
         return (
             <StateEmpty
                 title={isLibraryEmpty ? '还没有图片' : '没有符合条件的图片'}
@@ -88,6 +97,7 @@ export function ImageGenGallery({
         <>
             <ImageGenGrid
                 images={visibleImages}
+                pendingCount={isPending ? 1 : 0}
                 coverSelectedId={coverSelectedId}
                 characterNames={characterNames}
                 isSelecting={isSelecting}

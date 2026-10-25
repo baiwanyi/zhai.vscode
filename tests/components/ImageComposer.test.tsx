@@ -263,6 +263,7 @@ describe('ImageComposer', () => {
         const user = userEvent.setup()
         const onGenerated = vi.fn()
         const onLateGenerated = vi.fn()
+        const onGeneratingChange = vi.fn()
         let resolveGenerate: (result: ImageGenerateResult) => void = () => {}
         requestMock.mockImplementation((method: string) => {
             if (method === 'pressAi/generateImage') {
@@ -272,15 +273,21 @@ describe('ImageComposer', () => {
             }
             return Promise.resolve({ aborted: true })
         })
-        renderComposer({ onGenerated, onLateGenerated })
+        renderComposer({ onGenerated, onLateGenerated, onGeneratingChange })
 
         await user.type(inputBox(), '雨夜长街')
         await user.click(screen.getByRole('button', { name: '发送' }))
         expect(screen.getByRole('button', { name: '取消生成' })).toBeDefined()
+        // 发送即清空：不能等出图回包才清，否则生成期间看着像没发出去
+        expect(inputBox().value).toBe('')
+        // 页面靠这个标记在列表首位挂骨架占位
+        expect(onGeneratingChange).toHaveBeenLastCalledWith(true)
 
         await user.click(screen.getByRole('button', { name: '取消生成' }))
         expect(requestMock).toHaveBeenCalledWith('pressAi/generateImage/abort')
         expect(screen.getByRole('button', { name: '发送' })).toBeDefined()
+        // 取消是同步复位：占位必须立刻收起，不能等宿主回包
+        expect(onGeneratingChange).toHaveBeenLastCalledWith(false)
 
         act(() => {
             resolveGenerate(GENERATED)

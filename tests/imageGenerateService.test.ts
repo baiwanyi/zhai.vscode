@@ -31,8 +31,10 @@ let service: ImageGenerateService
 let calls: { prompt: string; size: string }[]
 /** 置位后下一次通道调用抛错，用于失败回滚用例 */
 let shouldFail: boolean
-/** 非空时通道调用挂起，用于单任务锁用例 */
+/** 非空时通道调用挂起，用于单任务锁与取消用例 */
 let hold: Promise<void> | null
+/** 释放 hold 的钩子：取消用例需要在请求仍挂起时中断，再放行产物观察是否落盘 */
+let releaseHold: (() => void) | null
 
 /** 文本通道：出图测试不触达，调用即报错以暴露误用 */
 const provider: AiProvider = {
@@ -81,6 +83,7 @@ beforeEach(() => {
     calls = []
     shouldFail = false
     hold = null
+    releaseHold = null
     service = new ImageGenerateService(db, generator, new UsageRecorder(db), store, provider, settings)
 })
 
@@ -197,5 +200,20 @@ describe('失败与并发', () => {
 
     it('无在途请求时 cancel 返回未取消', () => {
         expect(service.abort()).toEqual({ aborted: false })
+    })
+
+    it('取消后产物到达也不落盘、不扣配额、不写封面', async () => {
+        hold = new Promise<void>((resolve) => {
+            releaseHold = resolve
+        })
+        const pending = service.generate(payload({ kind: 'cover' }), toUri)
+        expect(service.abort()).toEqual({ aborted: true })
+
+        // 放行通道：产物照常返回，但请求已被取消，副作用一律不该发生
+        releaseHold?.()
+        await expect(pending).rejects.toThrow('出图已取消')
+
+        expect(readUsedToday(db, IMAGE_QUOTA_KEYS)).toBe(0)
+        expect(store.read(DIR_PATH)).toBeNull()
     })
 })

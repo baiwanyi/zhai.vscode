@@ -37,7 +37,7 @@ export function SendButton({
             <Button
                 variant="ghost"
                 size="icon"
-                className="rounded-lg text-muted-foreground"
+                className="bg-white/5 text-white hover:bg-white/8  dark:hover:bg-white/8"
                 aria-label={stopLabel}
                 tooltip={stopLabel}
                 onClick={onStop}
@@ -52,9 +52,8 @@ export function SendButton({
             variant="ghost"
             size="icon"
             className={cn(
-                'rounded-lg',
                 canSend
-                    ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                    ? 'bg-primary text-primary-foreground hover:bg-primary/90 dark:hover:bg-primary/90'
                     : 'bg-white/5 text-muted-foreground disabled:opacity-100',
             )}
             aria-label={sendLabel}

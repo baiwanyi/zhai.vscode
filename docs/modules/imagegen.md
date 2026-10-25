@@ -91,7 +91,7 @@
 | 方法 | 说明 |
 | --- | --- |
 | `pressAi/generateImage` | 入参 `prompt` / `kind` / `characterId` / `ratio` / `style` / `enhancedFrom`；落 `Images/`，`kind=cover` 时自动设封面 |
-| `pressAi/generateImage/abort` | 取消在途请求，返回 `{ aborted }`；单任务锁保证不会并发出图 |
+| `pressAi/generateImage/abort` | 取消在途请求，返回 `{ aborted }`；单任务锁保证不会并发出图。中断信号经 provider 传到 SDK 会话，真正中止本地出图；产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额、不写封面，因此「停止」之后不会凭空多出一张图 |
 | `pressAi/enhanceImagePrompt` | 文本模型改写输入框正文，30 秒上限，不落盘、不计图片配额 |
 
 ### 3.3 作品参数
@@ -109,7 +109,7 @@
 | --- | --- | --- | --- |
 | `pressAi/getPromptImageBase` | — | `PromptImageBase` | 图库目录取 `{存储根}/prompt/images`，全局共享、与作品无关；目录里没有图片时 `baseUrl` 为 `null`，前端整体隐藏缩略图；`dirPath` 始终回传，空态据此提示用户把图片放在哪里 |
 
-词条数据只存图片文件名，前端用 `baseUrl + '/' + preview` 拼地址。目录内的文件由用户自行下载放入，扩展不打包、不下载任何图片。目录为空与目录缺失走同一条判空逻辑（复用 `imageDirScan` 的 `listImageFiles`），不逐个文件试加载。宿主侧实现见 `modules/imagegen/promptImageService.ts`，另有命令 `zhai.prompt.openImageDir` 供空态按钮打开该目录。
+词条数据只存图片文件名，前端用 `baseUrl + '/' + preview` 拼地址。`preview` 是本地真实文件名：图库里的文件按 `{标题}_{哈希}.webp` 命名，哈希即 `sha1(https://img.aishort.top/imgprompt/{原始文件名})` 的前 10 位，因此生成数据时传 `--images <图库目录>` 就能按哈希精确反查，不依赖标题拼写。目录内的文件由用户自行下载放入，扩展不打包、不下载任何图片。目录为空与目录缺失走同一条判空逻辑（复用 `imageDirScan` 的 `listImageFiles`），不逐个文件试加载。宿主侧实现见 `modules/imagegen/promptImageService.ts`，另有命令 `zhai.prompt.openImageDir` 供空态按钮打开该目录。
 
 ### 3.5 封面面板（设定页）
 
@@ -168,7 +168,7 @@
 | `@webview/components/richText.ts` | 可编辑区 DOM 工具：读写纯文本、光标定位、芯片识别与插入，与 aichat 共用 |
 | `usePromptImages.ts` | 取提示词预览图基址（面板打开时请求一次），失败按「没有图」处理，不弹错误 |
 | `prompt/promptLibrary.ts` | 词库适配层：读 `prompt/data/promptTags.json`，导出三级清单与查询函数，运行时剥离权重写法 |
-| `prompt/data/promptTags.json` | 词库数据（约 490 KB），由 `scripts/build-prompt-tags.mjs` 从上游分片生成，不手改 |
+| `prompt/data/promptTags.json` | 词库数据（约 530 KB），由 `scripts/build-prompt-tags.mjs` 从上游分片生成，不手改 |
 
 ### 5.1 页面交互约束
 
@@ -183,8 +183,12 @@
 - 详情参数：按字段存在性分段渲染——无侧车时显示「没有出图参数」空态，提示词为空则隐藏复制按钮，`enhancedFrom` 存在时以折叠区展示增强前原文。
 - 参数读取完成前不挂载 composer，用等高骨架占位，避免默认值覆盖用户已保存的比例与画风。
 - 生成中发送按钮切换为「取消生成」，取消后立即复位界面，不等宿主回包；迟到的回包不写回界面（不认领封面、不清空输入），但会静默刷新列表，把宿主已经落盘的图补上——用户不必切页才发现新图。
+- 出图占位：`isGenerating` 由 composer 经 `onGeneratingChange` 上报，页面在网格首位渲染一张与卡片同比例（3:4）的骨架卡；成功后用静默刷新（`reload({ silent: true })`）拉回列表，占位由 `isRefreshingResult` 一直挂到新图入列，视线里只发生「骨架 → 新图」一次替换，中间不闪整块加载态。失败、取消、超时都会回收占位，composer 卸载时补发一次 `false`，不会卡在「生成中」。
+- 点「停止」是同步复位：`setIsGenerating(false)` 先于取消请求发出，占位当帧收起，不等宿主回包；随后宿主侧中断请求，已取消的产物不会再落盘（见 3.2）。
+- 发送即清空：点击发送的同时清掉输入框与角色类芯片（画风芯片保留），生成期间输入框不会停着上一轮的提示词；草稿存在 `lastDraftRef`，请求失败或用户取消时再回填，且仅在用户没有重新输入的情况下回填，不覆盖等待期间写下的新内容。
 - 提示词面板：一级分类与二级分类都是必选单选，重复点击当前项被忽略；切换一级分类后二级分类按「当前值不在新分组内即回落到首项」派生，不额外维护状态；关键词非空时词条区跨分组平铺命中项，最多渲染 120 条并提示细化；插入只传词条文本，与正文之间的分隔符由输入卡片按末尾字符补齐（末尾已是标点或空白则不加），因此连续点选自然拼成 `a, b, c`。
-- 提示词缩略图：`pressAi/getPromptImageBase` 在面板每次打开时请求一次，`baseUrl` 为 `null` 时整块缩略图不渲染、网格由两列改三列，并在底部提示图库目录与「打开目录」按钮；单张图缺失只影响该条，由 `@webview/components/Image` 的占位兜住。
+- 提示词缩略图：`pressAi/getPromptImageBase` 在面板每次打开时请求一次，`baseUrl` 为 `null` 时整块缩略图不渲染并改用更密的列宽，底部提示图库目录与「打开目录」按钮；单张图缺失只影响该条，由 `@webview/components/Image` 的占位兜住。
+- 词条预览：有图的词条悬停 250ms 弹出 `@components/ui/hover-card` 大图（3:4，宽 10rem）与中文名、英文提示词；缺图条目只保留原生 `title`，不挂浮层。
 
 ### 5.2 超时口径
 
