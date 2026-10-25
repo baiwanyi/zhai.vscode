@@ -9,7 +9,7 @@
 import * as vscode from 'vscode'
 import { buildCoverPrompt } from './ai/coverPrompt'
 import { COVER_DIR, IMAGE_QUOTA_KEYS } from './constants'
-import { PressCoverStore, isProjectCoverPath } from './db/coverRepository'
+import { PressCoverStore, isProjectImagePath } from './db/coverRepository'
 import { readProjectDirPath } from './portraitService'
 import type { ImageProviderRouter } from './ai/imageProvider'
 import type {
@@ -171,7 +171,7 @@ export class PressCoverService {
     public async select(payload: unknown): Promise<CoverSelectResult> {
         const dirPath = readProjectDirPath(payload, 'pressAi/selectCover')
         const path = readCoverPath(payload, 'pressAi/selectCover')
-        if (!isProjectCoverPath(dirPath, path)) {
+        if (!isProjectImagePath(dirPath, path)) {
             throw new Error(`封面路径非法：${path}`)
         }
         const target = buildStorageUri(resolveStorageRoot(), path.split('/'))
@@ -191,7 +191,7 @@ export class PressCoverService {
     public async remove(payload: unknown): Promise<CoverDeleteResult> {
         const dirPath = readProjectDirPath(payload, 'pressAi/deleteCover')
         const path = readCoverPath(payload, 'pressAi/deleteCover')
-        if (!isProjectCoverPath(dirPath, path)) {
+        if (!isProjectImagePath(dirPath, path)) {
             throw new Error(`封面路径非法：${path}`)
         }
         const selected = this.store.read(dirPath)

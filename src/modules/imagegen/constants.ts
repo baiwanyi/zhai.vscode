@@ -7,11 +7,17 @@
  */
 import type { QuotaKeys } from '../common/db/quotaRepository'
 
-/** 作品封面落盘目录：位于作品目录之下（press/{作品名}/Cover） */
+/** 统一图片目录：新生成的封面、角色图与普通图片都落在这里（press/{作品名}/Images） */
+export const IMAGES_DIR = 'Images'
+
+/** 旧版封面目录：仅读取兼容与迁移期使用，不再写入新图 */
 export const COVER_DIR = 'Cover'
 
-/** 角色设定图落盘目录：位于作品目录之下（press/{作品名}/Portraits） */
+/** 旧版角色图目录：仅读取兼容与迁移期使用，不再写入新图 */
 export const PORTRAIT_DIR = 'Portraits'
+
+/** 图片目录扫描顺序：统一目录在前，旧目录兜底，保证新旧图片在同一列表里可见 */
+export const IMAGE_DIR_NAMES: readonly string[] = [IMAGES_DIR, COVER_DIR, PORTRAIT_DIR]
 
 /** 图像配额键：封面与角色卡共用同一每日额度 */
 export const IMAGE_QUOTA_KEYS: QuotaKeys = { dateKey: 'press_image_date', countKey: 'press_image_count' }

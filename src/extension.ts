@@ -28,6 +28,7 @@ import { ToastService } from './modules/common/toastService'
 import { ImageProviderRouter } from './modules/imagegen/ai/imageProvider'
 import { PressCoverService } from './modules/imagegen/coverService'
 import { PressCoverStore } from './modules/imagegen/db/coverRepository'
+import { ImageLibraryService } from './modules/imagegen/imageLibraryService'
 import { PortraitService } from './modules/imagegen/portraitService'
 import { openNamingDatabase } from './modules/naming/db/connection'
 import { ensureNamingSchema } from './modules/naming/db/schema'
@@ -127,12 +128,15 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const pressDb = openPressDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => pressDb.close() })
     // 封面选择记录与工作台共用 press.db：仪表盘作品列表据此显示封面（早于此处创建的仪表盘后置注入）
-    dashboardProvider.attachPressCoverStore(new PressCoverStore(pressDb))
+    const pressCoverStore = new PressCoverStore(pressDb)
+    dashboardProvider.attachPressCoverStore(pressCoverStore)
     const pressAiService = new PressAiService(pressDb, aiProvider, usageRecorder)
     const imageRouter = new ImageProviderRouter(secrets)
     const portraitService = new PortraitService(pressDb, aiProvider, imageRouter, usageRecorder)
     // 作品封面与角色卡共用同一图像通道与每日额度，单独挂服务以便提示词与落盘目录互不干扰
     const coverService = new PressCoverService(pressDb, imageRouter, usageRecorder)
+    // 图片库与上面两个服务共用同一份封面指针：列举、删除与设封面走统一入口，避免指针逻辑分叉
+    const imageLibraryService = new ImageLibraryService(pressCoverStore)
     // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown；打开作品时同步路由事实
     // 语义归纳依赖 AI 通道，晚于仪表盘创建；人物卡、大纲与设定的按需提取共用同一实例，
     // 单任务锁与配额口径因此保持一致
@@ -145,6 +149,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         workflowRouter,
         semanticService,
         snapshotService,
+        imageLibraryService,
     )
 
     // 校对：本地规则检查与写回都基于编辑器内存态，写回前与 AI 写回共用同一份快照留底；
