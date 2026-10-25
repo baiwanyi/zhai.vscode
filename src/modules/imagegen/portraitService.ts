@@ -22,6 +22,7 @@ import { buildSceneMessages, sanitizeScene } from './ai/portraitScenePrompt'
 import { formatVariation, pickVariation } from './ai/portraitVariation'
 import { IMAGE_DIR_NAMES, IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
 import { listImageFiles } from './imageDirScan'
+import { nextImageId } from './imageNaming'
 import { deleteSidecarOf, writeSidecarOf } from './imageSidecar'
 import type { ImageGenerator } from './ai/imageProvider'
 import type { PortraitVariation } from './ai/portraitVariation'
@@ -39,7 +40,7 @@ import type {
 import type { AiProvider } from '../ai/provider'
 import type { UsageRecorder } from '../ai/usageRecorder'
 import type Database from 'better-sqlite3'
-import { formatPortraitId, parseImageCharacterId } from '../../shared/types/imagegen'
+import { parseImageCharacterId } from '../../shared/types/imagegen'
 import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId } from '../../shared/types/press'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { summarizeMessages } from '../ai/usageRecorder'
@@ -134,15 +135,15 @@ export class PortraitService {
             })
             logger.info(`角色卡通道：codebuddy（${scene.fromAi ? 'AI 画面描述' : '模板变化描述'}）：${scene.text}`)
             const createdAt = new Date().toISOString()
-            // 命名与生图页统一：portrait-{14 位时间戳}-{8 位角色标识}，不再并存两套规则
-            const id = formatPortraitId(formatPortraitStamp(new Date()), request.characterId)
-            const extension = artifact.extension
             // 新图统一落 Images，旧 Portraits 目录只作只读兼容，不再写入；作品删除时随目录一并清理
             const dirSegments = [...readProjectSegments(request.dirPath), IMAGES_DIR]
-            const segments = [...dirSegments, `${id}.${extension}`]
+            const extension = artifact.extension
             const root = resolveStorageRoot()
             const dirUri = buildStorageUri(root, dirSegments)
             await vscode.workspace.fs.createDirectory(dirUri)
+            // 命名与生图页共用同一入口：同秒同角色重复出图时顺延时间戳，不覆盖前一张
+            const id = await nextImageId(dirUri, 'portrait', request.characterId, extension)
+            const segments = [...dirSegments, `${id}.${extension}`]
             const target = buildStorageUri(root, segments)
             await vscode.workspace.fs.writeFile(target, artifact.bytes)
             // 与生图页共用侧车：ratio 记像素尺寸，画风与角色标识一并留档，统一图库详情才能看到参数
@@ -502,19 +503,6 @@ function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
         throw new Error('缺少人物姓名，无法生成角色卡')
     }
     return request
-}
-
-/** 文件名时间戳：本地时间 YYYYMMDDHHmmss，与图片命名规范一致，按文件名即可排序 */
-function formatPortraitStamp(date: Date): string {
-    const pad = (value: number): string => String(value).padStart(2, '0')
-    return [
-        String(date.getFullYear()),
-        pad(date.getMonth() + 1),
-        pad(date.getDate()),
-        pad(date.getHours()),
-        pad(date.getMinutes()),
-        pad(date.getSeconds()),
-    ].join('')
 }
 
 /** 读取画风：只接受白名单内的值，其余一律回落默认风格 */

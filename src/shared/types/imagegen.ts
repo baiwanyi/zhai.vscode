@@ -133,11 +133,13 @@ export interface ImageGenerateRequest {
     enhancedFrom?: string
 }
 
-/** 生成结果：新图是否自动成为作品封面 / 角色封面由 kind 与 characterId 决定 */
+/**
+ * 生成结果：新图是否自动成为作品封面由 kind 决定（cover 自动设为封面）。
+ * 角色封面不在此回传——前端在生成回执后按「该角色尚无封面」自行写回人物卡，避免两套写回口径。
+ */
 export interface ImageGenerateResult {
     image: PressImageItem
     coverSelectedId: string | null
-    characterCoverId: string | null
 }
 
 /** 生成参数：作品级可覆盖项，配额与超时不在此列 */

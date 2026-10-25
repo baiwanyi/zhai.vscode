@@ -11,6 +11,7 @@ import * as vscode from 'vscode'
 import { COVER_DIR, IMAGES_DIR } from './constants'
 import { PressCoverStore, isProjectImagePath } from './db/coverRepository'
 import { listImageFiles } from './imageDirScan'
+import { nextImageId } from './imageNaming'
 import { deleteSidecarOf } from './imageSidecar'
 import { readProjectDirPath } from './portraitService'
 import type {
@@ -80,8 +81,10 @@ export class PressCoverService {
         }
         const root = resolveStorageRoot()
         const dirSegments = [...readProjectSegments(dirPath), COVER_DIR]
-        await vscode.workspace.fs.createDirectory(buildStorageUri(root, dirSegments))
-        const id = await nextCoverId(root, dirSegments, SAVED_COVER_EXTENSION)
+        const dirUri = buildStorageUri(root, dirSegments)
+        await vscode.workspace.fs.createDirectory(dirUri)
+        // 命名与另两条通道共用入口：同秒连续保存时顺延时间戳，不覆盖已有封面
+        const id = await nextImageId(dirUri, 'cover', null, SAVED_COVER_EXTENSION)
         const segments = [...dirSegments, `${id}.${SAVED_COVER_EXTENSION}`]
         const target = buildStorageUri(root, segments)
         await vscode.workspace.fs.writeFile(target, bytes)
@@ -192,19 +195,6 @@ function readCoverId(coverPath: string): string {
     return fileName.replace(/\.[^.]+$/u, '')
 }
 
-/** 文件名时间戳：本地时间 YYYYMMDDHHmmss，与封面命名规范一致，按文件名即可排序 */
-function formatCoverStamp(date: Date): string {
-    const pad = (value: number): string => String(value).padStart(2, '0')
-    return [
-        String(date.getFullYear()),
-        pad(date.getMonth() + 1),
-        pad(date.getDate()),
-        pad(date.getHours()),
-        pad(date.getMinutes()),
-        pad(date.getSeconds()),
-    ].join('')
-}
-
 /** 读取合成结果：只接受 PNG data URL，并按体积上限拒绝异常负载 */
 function readCoverDataUrl(payload: unknown): string {
     if (typeof payload !== 'object' || payload === null) {
@@ -218,21 +208,4 @@ function readCoverDataUrl(payload: unknown): string {
         throw new Error('封面图片过大，请降低分辨率后重试')
     }
     return dataUrl
-}
-
-/**
- * 生成不与磁盘冲突的封面标识：同一秒内连续保存时按秒顺延，
- * 避免覆盖已有封面（生成与合成保存共用同一命名规则）。
- */
-async function nextCoverId(root: vscode.Uri, dirSegments: string[], extension: string): Promise<string> {
-    const base = Date.now()
-    for (let offset = 0; offset < 10; offset += 1) {
-        const id = `cover-${formatCoverStamp(new Date(base + offset * 1000))}`
-        try {
-            await vscode.workspace.fs.stat(buildStorageUri(root, [...dirSegments, `${id}.${extension}`]))
-        } catch {
-            return id
-        }
-    }
-    throw new Error('同名封面过多，请稍后重试')
 }

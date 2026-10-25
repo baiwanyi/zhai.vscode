@@ -2,7 +2,7 @@
 
 **版本**：1.0
 **日期**：2026-10-25
-**状态**：图库管理、统一出图、作品级参数、封面入口收敛、旧目录迁移、芯片内联、批量删除均已落地
+**状态**：图库管理、统一出图、作品级参数、封面入口收敛、旧目录迁移、芯片内联、批量删除、角色卡通道对齐、命名冲突统一均已落地
 **宿主**：VSCode 插件 Zhai（宅桌面）
 **存储根**：`{storage.rootPath}/press/{作品名}/`（根目录配置见 `common.md` 第 1 节）
 
@@ -30,13 +30,13 @@
 
 ```
 {root}/press/【小说名】/
-├── Images/                  ← 统一图库：新图一律写这里
-├── Cover/                   ← 历史封面：只读兼容，不再写入新文件
+├── Images/                  ← 统一图库：生图（含封面模式）与角色卡都写这里
+├── Cover/                   ← 仅设定页「套用书名」合成封面写入，历史封面只读兼容
 ├── Portraits/               ← 历史角色图：只读兼容，不再写入新文件
 └── .zhai/image.json         ← 作品级生图参数（隐藏目录，不进作品索引）
 ```
 
-`IMAGE_DIR_NAMES`（`src/modules/imagegen/constants.ts`）是三个目录的白名单：列举、复制、插入、删除、级联清理都按它遍历，因此旧目录里的图仍可正常管理，只是不再产生新文件。
+`IMAGE_DIR_NAMES`（`src/modules/imagegen/constants.ts`）是三个目录的白名单：列举、复制、插入、删除、级联清理都按它遍历，因此旧目录里的图仍可正常管理。
 
 旧目录仍有残留时，生图页会在筛选条下方给出一次性迁移入口（`pressAi/migrateImageDirs`）：只搬运文件、不改文件名，目标已存在同名文件时跳过并保留两份，迁移后同步改写作品封面指针的目录前缀。
 
@@ -45,11 +45,16 @@
 | 类型 | 规则 | 示例 |
 | --- | --- | --- |
 | 角色图 | `portrait-{14 位时间戳}-{8 位角色标识}` | `portrait-20261025143000-10428736` |
-| 普通图 / 封面 | `photo-{14 位时间戳}-{8 位随机串}` | `photo-20261025143000-aB3xK9Qz` |
+| 普通图 / 生图封面 | `photo-{14 位时间戳}-{8 位随机串}` | `photo-20261025143000-aB3xK9Qz` |
+| 合成封面（设定页） | `cover-{14 位时间戳}` | `cover-20261025143000` |
 | 旧角色图（只读） | `portrait-{8 位角色标识}-{14 位时间戳}` | `portrait-10428736-20261025143000` |
 | 旧封面（只读） | `cover-{14 位时间戳}` | `cover-20261025143000` |
 
 解析集中在 `src/shared/types/imagegen.ts`：`parseImageKind` / `parseImageCharacterId` / `isPressImageId`。新旧规则必须并存且互不误判。
+
+### 2.4 命名冲突
+
+三条写入通道（生图页、角色卡、设定页合成封面）共用 `src/modules/imagegen/imageNaming.ts` 的 `nextImageId`：落盘前按秒顺延探测同名文件，找到空位才返回标识，**永不覆盖已有文件**；顺延 60 秒仍冲突即报错，而不是随机改名造出无法解析的文件名。角色卡此前缺少这层保护，同秒同角色重复出图会覆盖前一张，现已统一。
 
 ### 2.3 侧车元数据
 
@@ -117,7 +122,8 @@
 | `imageLibraryService.ts` | 三目录合并列举、删除（带回退值计算，侧车同步清理）、设封面、旧目录迁移、详情读侧车 |
 | `imageGenerateService.ts` | 统一出图：参数校验、配额、单任务锁、落盘、侧车、用量记账 |
 | `imageDirScan.ts` | 图片目录扫描唯一入口：目录缺失视为空、只收普通文件、扩展名口径（png/jpe?g/webp/gif） |
-| `imageSidecar.ts` | 侧车路径推导与随图删除/迁移，尽力而为、不抛错 |
+| `imageNaming.ts` | 图片命名唯一入口：三类标识格式、同秒冲突按秒顺延、永不覆盖 |
+| `imageSidecar.ts` | 侧车路径推导、随图删除/迁移与写入，尽力而为、不抛错 |
 | `promptCompose.ts` | 提示词拼装纯函数：正文 → 作品补充 → 负向约束 → 画风描述 |
 | `imageSettingsService.ts` | 作品级参数读写（`.zhai/image.json`），只存与默认不同的键 |
 | `coverService.ts` | 设定页封面画廊：候选合并 `Cover/cover-*` 与 `Images/photo-*`，负责合成保存、选择、删除，不调用图像通道 |
@@ -146,7 +152,7 @@
 | `ImageComposer.tsx` | 输入卡片：命令动作与画风芯片内联、比例、增强提示词、封面模式、发送 / 取消生成 |
 | `ImagePromptPopover.tsx` | 提示词词库（人物 / 场景 / 光影 / 镜头），点击插入光标 |
 | `useImageLibrary.ts` | 列举、单张删除、批量删除（含最新列表回传）、旧目录迁移 |
-| `useImageDetail.ts` | 详情面板按路径读取侧车；结果与来源路径绑定，迟到的回包不串图 |
+| `useImageDetail.ts` | 详情面板按路径读取侧车；迟到回包按来源路径**丢弃**（不是覆盖后再过滤），切图不会把新图详情清空 |
 | `useImageSettings.ts` | 作品级参数读写，`isLoaded` 之前不得据此保存 |
 | `imageStyle.ts` | 画风取值与中文标签，composer 芯片与详情面板共用 |
 | `@webview/components/RichChipInput.tsx` | 通用芯片输入区：芯片内联进正文流，Enter 发送、组词期间不拦截，命令式 `insertText` |
@@ -227,5 +233,5 @@
 
 - `pnpm exec tsc --noEmit`
 - `pnpm exec eslint src/modules/imagegen src/webview/workflow/imagegen`
-- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryMigrate.test.ts tests/imageLibraryService.test.ts tests/coverCandidates.test.ts tests/coverService.test.ts tests/imageSettingsService.test.ts tests/imageGenerateService.test.ts`
+- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryMigrate.test.ts tests/imageLibraryService.test.ts tests/coverCandidates.test.ts tests/coverService.test.ts tests/imageSettingsService.test.ts tests/imageGenerateService.test.ts tests/imageNaming.test.ts tests/useImageLibrary.test.tsx tests/useImageDetail.test.tsx`
 - 手测清单：列举三目录、按类别/角色/关键词筛选与「清空筛选」、设为封面、删除当前封面后的回退、详情面板复制与插入（含无侧车空态与骨架过渡）、生成中取消、切换作品后参数是否沿用、多选批量删除（含进度文案与角色封面回退）、旧目录迁移（含同名跳过与搬空后目录删除）、芯片内联输入与退格删除、键盘 Tab 聚焦卡片后回车打开详情。

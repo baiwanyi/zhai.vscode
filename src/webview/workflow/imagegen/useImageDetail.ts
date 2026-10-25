@@ -6,7 +6,7 @@
  * 迟到的回包不会被当成当前图片的详情；不做本地缓存，重复打开同一张图会重新读取；
  * isLoading 只在当前图片尚无结果时为 true，读取失败同样落到结果态（detail 为 null），不会永远转圈。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ImageDetailResult } from '@shared/types/imagegen'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
@@ -20,14 +20,23 @@ export interface ImageDetailState {
 export function useImageDetail(dirPath: string, path: string | null): ImageDetailState {
     /** 结果与来源路径一起保存：展示前先比对路径，避免切图时串味 */
     const [loaded, setLoaded] = useState<{ path: string; detail: ImageDetailResult | null } | null>(null)
+    /** 当前路径的最新值：回包回来时用它判断是否已经切走 */
+    const latestPath = useRef<string | null>(null)
 
     const load = useCallback(
         async (target: string): Promise<void> => {
             try {
                 const detail = await request<ImageDetailResult>('pressAi/getImageDetail', { dirPath, path: target })
+                // 迟到回包直接丢弃而不是覆盖：否则会把新图的详情清空，面板退回骨架或空态
+                if (latestPath.current !== target) {
+                    return
+                }
                 setLoaded({ path: target, detail })
             } catch (cause) {
                 // 失败也落到结果态：面板显示空态说明，而不是一直停在骨架屏
+                if (latestPath.current !== target) {
+                    return
+                }
                 setLoaded({ path: target, detail: null })
                 toastError(cause)
             }
@@ -36,6 +45,7 @@ export function useImageDetail(dirPath: string, path: string | null): ImageDetai
     )
 
     useEffect(() => {
+        latestPath.current = path
         if (path === null) {
             return
         }

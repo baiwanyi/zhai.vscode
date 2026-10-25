@@ -277,8 +277,11 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
             if (selected !== null && removed.some((image) => image.path === selected.path)) {
                 setSelected(null)
             }
-            setIsSelecting(false)
-            updateSelection(EMPTY_SELECTION)
+            // 请求级失败（removals 为空）时保留多选与勾选，用户可直接重试
+            if (removals.length > 0) {
+                setIsSelecting(false)
+                updateSelection(EMPTY_SELECTION)
+            }
             const characterIds = new Set(
                 removed.flatMap((image) => (image.characterId === null ? [] : [image.characterId])),
             )

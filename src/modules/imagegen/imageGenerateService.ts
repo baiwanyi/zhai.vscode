@@ -9,6 +9,7 @@
  */
 import * as vscode from 'vscode'
 import { IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
+import { nextImageId } from './imageNaming'
 import { writeSidecarOf } from './imageSidecar'
 import { readProjectDirPath } from './portraitService'
 import { composeImagePrompt } from './promptCompose'
@@ -21,7 +22,6 @@ import type Database from 'better-sqlite3'
 import {
     DEFAULT_IMAGE_SETTINGS,
     IMAGE_RATIO_SIZE,
-    isPressImageId,
     type ImageGenerateKind,
     type ImageGenerateResult,
     type ImageSettings,
@@ -39,12 +39,6 @@ import { buildStorageUri } from '../common/storagePath'
 const MAX_PROMPT_LENGTH = 4000
 /** 角色标识：与人物卡一致的 8 位数字 */
 const CHARACTER_ID_PATTERN = /^\d{8}$/u
-/** 随机段字母表 */
-const RANDOM_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
-/** 随机段长度 */
-const RANDOM_LENGTH = 8
-/** 同秒冲突时的最大顺延次数 */
-const MAX_TIMESTAMP_SHIFT = 60
 /** 提示词增强的超时：文本改写足够快，超过即视为失败并由前端保留原文 */
 const ENHANCE_TIMEOUT_MS = 30_000
 /** 增强输出的 token 上限 */
@@ -59,63 +53,6 @@ interface NormalizedImageRequest {
     ratio: '1:1' | '3:4' | '4:3' | '16:9' | '9:16'
     style: PortraitStyle
     enhancedFrom: string | null
-}
-
-/** 本地时间戳：YYYYMMDDHHmmss，按文件名即可排序 */
-function formatStamp(date: Date): string {
-    const pad = (value: number): string => String(value).padStart(2, '0')
-    return [
-        String(date.getFullYear()),
-        pad(date.getMonth() + 1),
-        pad(date.getDate()),
-        pad(date.getHours()),
-        pad(date.getMinutes()),
-        pad(date.getSeconds()),
-    ].join('')
-}
-
-/** 8 位字母数字随机串：仅用于普通图片的文件名去重 */
-function randomSuffix(): string {
-    let result = ''
-    for (let index = 0; index < RANDOM_LENGTH; index += 1) {
-        result += RANDOM_ALPHABET[Math.floor(Math.random() * RANDOM_ALPHABET.length)] ?? '0'
-    }
-    return result
-}
-
-/** 判断文件是否已存在：用于同秒冲突时顺延时间戳 */
-async function isFileExisting(uri: vscode.Uri): Promise<boolean> {
-    try {
-        await vscode.workspace.fs.stat(uri)
-        return true
-    } catch {
-        return false
-    }
-}
-
-/**
- * 生成不冲突的图片标识：角色图按「时间戳 + 角色标识」顺延秒数，普通图按随机串重试。
- * 关键约束：永不覆盖已有文件，冲突时换名而不是改写旧图。
- */
-async function nextImageId(
-    root: vscode.Uri,
-    dirSegments: string[],
-    kind: ImageGenerateKind,
-    characterId: string | null,
-    extension: string,
-): Promise<string> {
-    const base = new Date()
-    for (let shift = 0; shift < MAX_TIMESTAMP_SHIFT; shift += 1) {
-        const stamp = formatStamp(new Date(base.getTime() + shift * 1000))
-        const id = kind === 'portrait' ? `portrait-${stamp}-${characterId ?? ''}` : `photo-${stamp}-${randomSuffix()}`
-        if (!isPressImageId(id)) {
-            continue
-        }
-        if (!(await isFileExisting(buildStorageUri(root, [...dirSegments, `${id}.${extension}`])))) {
-            return id
-        }
-    }
-    throw new Error('图片命名冲突过多，请稍后重试')
 }
 
 /** 入参收窄：目录、提示词、类别、角色、比例与画风全部在这一层校验 */
@@ -205,12 +142,13 @@ export class ImageGenerateService {
             })
             const root = resolveStorageRoot()
             const dirSegments = [...readProjectSegments(request.dirPath), IMAGES_DIR]
-            await vscode.workspace.fs.createDirectory(buildStorageUri(root, dirSegments))
-            const id = await nextImageId(root, dirSegments, request.kind, request.characterId, artifact.extension)
+            const dirUri = buildStorageUri(root, dirSegments)
+            await vscode.workspace.fs.createDirectory(dirUri)
+            const id = await nextImageId(dirUri, request.kind, request.characterId, artifact.extension)
             const segments = [...dirSegments, `${id}.${artifact.extension}`]
             await vscode.workspace.fs.writeFile(buildStorageUri(root, segments), artifact.bytes)
             const createdAt = new Date().toISOString()
-            await writeSidecarOf(buildStorageUri(root, dirSegments), id, {
+            await writeSidecarOf(dirUri, id, {
                 prompt: request.prompt,
                 ratio: request.ratio,
                 style: request.style,
@@ -235,7 +173,6 @@ export class ImageGenerateService {
                     characterId: request.characterId,
                 },
                 coverSelectedId,
-                characterCoverId: null,
             }
         } catch (error) {
             logger.error(`出图失败：耗时 ${Date.now() - startedAt}ms`, error)
