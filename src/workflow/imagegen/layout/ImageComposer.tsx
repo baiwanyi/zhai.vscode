@@ -1,7 +1,8 @@
 /**
- * 生图输入卡片：命令动作、画风与角色以芯片内联在正文流中，底部选择比例并发送。
+ * 生图输入卡片：命令动作、画风与角色以芯片内联在正文流中；画风由弹出面板点选，底部经比例菜单选尺寸后发送。
  * 复用约定：外壳沿用 aichat 的 composer 两层底色（bg-composer / bg-composer-input），芯片输入区取
- * @webview/components/RichChipInput（与 aichat 共用 richText 的 DOM 工具），按钮取 @webview/components/Button。
+ * @webview/components/RichChipInput（与 aichat 共用 richText 的 DOM 工具），按钮取 @webview/components/Button，
+ * 工具栏取本目录 ImageComposerToolbar（内含画面风格单选卡），底部操作行取本目录 ImageComposerActions。
  * 关键约束：芯片只承载「引用意图」，正文在发送瞬间拼装——角色段取人物卡的姓名、性别年龄、身份与外貌；
  * 画风由宿主按 style 注入（与 portraitPrompt 的 STYLE_HINTS 同源），封面模式忽略角色段且 kind 固定 cover；
  * 封面画风与普通出图分开存：切换模式时芯片换用对应一侧，改动按当前模式写回各自配置；
@@ -9,17 +10,17 @@
  * 生成中发送按钮切换为「取消生成」，取消后立即复位；取消后迟到的落盘不改写界面，只经 onLateGenerated 让页面静默补图；
  * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
  */
-import { Send, Sparkles, UserRound, X } from 'lucide-react'
+import { Sparkles, UserRound } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Skeleton } from '@components/ui/skeleton'
-import { IMAGE_RATIOS, type ImageGenerateResult, type ImageRatio } from '@shared/types/imagegen'
+import type { ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
-import { Button } from '@webview/components/Button'
 import { RichChipInput, type RichChipInputHandle } from '@webview/components/RichChipInput'
-import { ImagePromptPopover } from './ImagePromptPopover'
+import { ImageComposerActions } from './ImageComposerActions'
+import { ImageComposerToolbar } from './ImageComposerToolbar'
 import type { JSX } from 'react'
 import { STYLE_OPTIONS, styleLabelOf } from '../prompt/imageStyle'
 
@@ -53,9 +54,6 @@ interface PromptChip {
     value: string
     label: string
 }
-
-/** 比例展示文案 */
-const RATIO_LABELS: ReadonlyArray<ImageRatio> = IMAGE_RATIOS
 
 /** 出图兜底超时：宿主内置 10 分钟上限，前端放宽到 15 分钟，避免前端先于宿主判超时 */
 const GENERATE_TIMEOUT_MS = 900_000
@@ -205,7 +203,6 @@ function ComposerBody({
     /** 封面模式：生成结果落统一图库并自动设为作品封面，与角色图互斥 */
     const [isCoverMode, setIsCoverMode] = useState(false)
     const [ratio, setRatio] = useState<ImageRatio>(defaultRatio)
-    const [isStyleOpen, setIsStyleOpen] = useState(false)
     const [isGenerating, setIsGenerating] = useState(false)
     const [isEnhancing, setIsEnhancing] = useState(false)
     /** 出图请求代号：取消或重新发送时自增，旧请求迟到的回包按代号丢弃 */
@@ -226,6 +223,9 @@ function ComposerBody({
     const styleChip = chips.find((chip) => chip.kind === 'style') ?? null
     const settingChip = chips.find((chip) => chip.kind === 'setting') ?? null
     const characterChip = chips.find((chip) => chip.kind === 'character') ?? null
+
+    /** 当前生效画风：芯片值是 string，按白名单收窄回 PortraitStyle，白名单外的旧值回落作品默认 */
+    const activeStyle = STYLE_OPTIONS.find((option) => option.value === styleChip?.value)?.value ?? defaultStyle
 
     const toggleSetting = (): void => {
         setChips((current) =>
@@ -269,7 +269,6 @@ function ComposerBody({
 
     const pickStyle = (value: PortraitStyle, label: string): void => {
         setChips((current) => [...current.filter((chip) => chip.kind !== 'style'), { kind: 'style', value, label }])
-        setIsStyleOpen(false)
         onSettingsChange(isCoverMode ? { coverStyle: value } : { portraitStyle: value })
     }
 
@@ -419,68 +418,20 @@ function ComposerBody({
     }))
 
     return (
-        <div className="w-full rounded-2xl bg-composer p-1.5">
-            <div className="mb-1 flex items-center gap-1">
-                <Button size="sm" variant={settingChip === null ? 'ghost' : 'secondary'} onClick={toggleSetting}>
-                    <Sparkles />
-                    命令动作
-                </Button>
-                <Button
-                    size="sm"
-                    variant={isStyleOpen ? 'secondary' : 'ghost'}
-                    onClick={() => setIsStyleOpen((open) => !open)}
-                >
-                    画面风格
-                </Button>
-                <Button
-                    size="sm"
-                    variant={characterChip === null ? 'ghost' : 'secondary'}
-                    disabled={activeCharacter === null || isCoverMode}
-                    title={
-                        isCoverMode
-                            ? '封面不绑定角色，先关闭作品封面模式'
-                            : activeCharacter === null
-                              ? '先在筛选条选择人物'
-                              : undefined
-                    }
-                    onClick={toggleCharacter}
-                >
-                    <UserRound />
-                    角色设定
-                </Button>
-                <Button
-                    size="sm"
-                    variant={isCoverMode ? 'secondary' : 'ghost'}
-                    disabled={isGenerating}
-                    title="生成结果会落进图库并自动设为作品封面"
-                    onClick={toggleCoverMode}
-                >
-                    作品封面
-                </Button>
-                <ImagePromptPopover
-                    trigger={
-                        <Button size="sm" variant="ghost">
-                            提示词
-                        </Button>
-                    }
-                    onInsert={insertPrompt}
-                />
-            </div>
-
-            {isStyleOpen ? (
-                <div className="mb-1 flex flex-wrap gap-1 px-1">
-                    {STYLE_OPTIONS.map((option) => (
-                        <Button
-                            key={option.value}
-                            size="xs"
-                            variant={styleChip?.value === option.value ? 'secondary' : 'ghost'}
-                            onClick={() => pickStyle(option.value, option.label)}
-                        >
-                            {option.label}
-                        </Button>
-                    ))}
-                </div>
-            ) : null}
+        <div className="flex flex-col gap-0.5 rounded-2xl bg-composer p-1.5">
+            <ImageComposerToolbar
+                isSettingActive={settingChip !== null}
+                isCharacterActive={characterChip !== null}
+                style={activeStyle}
+                isCoverMode={isCoverMode}
+                isGenerating={isGenerating}
+                canPickCharacter={activeCharacter !== null && !isCoverMode}
+                onToggleSetting={toggleSetting}
+                onStyleChange={pickStyle}
+                onToggleCharacter={toggleCharacter}
+                onToggleCoverMode={toggleCoverMode}
+                onInsertPrompt={insertPrompt}
+            />
 
             <div className="rounded-xl bg-composer-input p-3">
                 <RichChipInput
@@ -496,44 +447,26 @@ function ComposerBody({
                     }}
                     onRemoveChip={removeChip}
                 />
-                <div className="mt-2 flex items-center gap-1">
-                    {RATIO_LABELS.map((item) => (
-                        <Button
-                            key={item}
-                            size="xs"
-                            variant={ratio === item ? 'secondary' : 'ghost'}
-                            onClick={() => handleRatioChange(item)}
-                        >
-                            {item}
-                        </Button>
-                    ))}
-                    <Button
-                        size="sm"
-                        variant="ghost"
-                        className="ml-auto"
-                        disabled={isEnhancing || isGenerating || text.trim().length === 0}
-                        onClick={() => {
-                            if (enhancedFrom === null) {
-                                void handleEnhance()
-                                return
-                            }
-                            handleRestore()
-                        }}
-                    >
-                        {isEnhancing ? '增强中…' : enhancedFrom === null ? '增强提示词' : '还原'}
-                    </Button>
-                    {isGenerating ? (
-                        <Button size="sm" variant="outline" onClick={() => void handleAbort()}>
-                            <X />
-                            取消生成
-                        </Button>
-                    ) : (
-                        <Button size="sm" disabled={buildPrompt().length === 0} onClick={() => void handleSend()}>
-                            <Send />
-                            {isCoverMode ? '生成封面' : '发送'}
-                        </Button>
-                    )}
-                </div>
+                <ImageComposerActions
+                    ratio={ratio}
+                    isCoverMode={isCoverMode}
+                    isGenerating={isGenerating}
+                    isEnhancing={isEnhancing}
+                    isEnhanced={enhancedFrom !== null}
+                    canEnhance={!isEnhancing && !isGenerating && text.trim().length > 0}
+                    canSend={buildPrompt().length > 0}
+                    onRatioChange={handleRatioChange}
+                    onEnhance={() => {
+                        void handleEnhance()
+                    }}
+                    onRestore={handleRestore}
+                    onSend={() => {
+                        void handleSend()
+                    }}
+                    onAbort={() => {
+                        void handleAbort()
+                    }}
+                />
             </div>
         </div>
     )

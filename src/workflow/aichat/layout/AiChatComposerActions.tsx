@@ -3,11 +3,9 @@
  * 采用普通行容器组合四个独立子组件，本层只做布局与禁用态分发。
  * 关键约束：生成中除圆环可查看外全部禁用，发送位替换为停止按钮；本层不持有任何会话状态。
  */
-import { cn } from 'cn'
-import { SendHorizontal, Square } from 'lucide-react'
 import type { AiConversationMode, AiModelChoices } from '@shared/types/aiChat'
-import { Button } from '@webview/components/Button'
-import { AiChatEnhanceButton } from './AiChatEnhanceButton'
+import { EnhanceButton } from '@webview/components/EnhanceButton'
+import { SendButton } from '@webview/components/SendButton'
 import { AiChatModelMenu } from './AiChatModelMenu'
 import { AiChatModeSwitch } from './AiChatModeSwitch'
 import { AiChatTokenRing } from './AiChatTokenRing'
@@ -73,41 +71,13 @@ export function AiChatComposerActions({
             </div>
             <div className="flex items-center gap-0.5">
                 <AiChatTokenRing used={usedTokens} budget={dailyTokenBudget} />
-                <AiChatEnhanceButton
+                <EnhanceButton
                     disabled={isGenerating || !canEnhance}
                     isEnhanced={isEnhanced}
                     onEnhance={onEnhance}
                     onUndo={onUndoEnhance}
                 />
-                {isGenerating ? (
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="rounded-lg text-muted-foreground"
-                        aria-label="停止生成"
-                        tooltip="停止生成"
-                        onClick={onStop}
-                    >
-                        <Square />
-                    </Button>
-                ) : (
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className={cn(
-                            'rounded-lg',
-                            canSend
-                                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
-                                : 'bg-white/5 text-muted-foreground disabled:opacity-100',
-                        )}
-                        aria-label="发送"
-                        tooltip="发送"
-                        disabled={!canSend}
-                        onClick={onSend}
-                    >
-                        <SendHorizontal className="-rotate-90" />
-                    </Button>
-                )}
+                <SendButton isGenerating={isGenerating} canSend={canSend} onSend={onSend} onStop={onStop} />
             </div>
         </div>
     )

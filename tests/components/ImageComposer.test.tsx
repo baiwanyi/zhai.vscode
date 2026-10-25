@@ -9,6 +9,7 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@components/ui/tooltip'
 import type { ImageGenerateResult } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
 import { ImageComposer } from '@webview/workflow/imagegen/layout/ImageComposer'
@@ -111,7 +112,12 @@ function renderComposer(overrides: Partial<ComposerProps> = {}): ComposerProps {
         isLoaded: true,
         ...overrides,
     }
-    render(<ImageComposer {...props} />)
+    // 增强按钮带 tooltip：与 bootstrap 的挂载方式一致，外包 TooltipProvider
+    render(
+        <TooltipProvider>
+            <ImageComposer {...props} />
+        </TooltipProvider>,
+    )
     return props
 }
 
@@ -119,7 +125,24 @@ function inputBox(): HTMLTextAreaElement {
     return screen.getByLabelText<HTMLTextAreaElement>(PLACEHOLDER)
 }
 
+/** 菜单浮层依赖 ResizeObserver 量取尺寸：jsdom 未实现，补空桩避免渲染中断 */
+class ResizeObserverStub {
+    observe = (): void => undefined
+    unobserve = (): void => undefined
+    disconnect = (): void => undefined
+}
+
+/** Radix 菜单展开依赖指针捕获与 scrollIntoView，jsdom 下补空实现才能在用例里点开比例菜单 */
+function stubDropdownDom(): void {
+    Element.prototype.scrollIntoView = (): void => undefined
+    Element.prototype.hasPointerCapture = (): boolean => false
+    Element.prototype.setPointerCapture = (): void => undefined
+    Element.prototype.releasePointerCapture = (): void => undefined
+}
+
 beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    stubDropdownDom()
     requestMock.mockReset()
     toastErrorMock.mockReset()
     toastSuccessMock.mockReset()
@@ -292,7 +315,9 @@ describe('ImageComposer', () => {
         const onSettingsChange = vi.fn()
         renderComposer({ onSettingsChange })
 
-        await user.click(screen.getByRole('button', { name: '1:1' }))
+        // 比例收进菜单：先开触发器，再点目标档位
+        await user.click(screen.getByRole('button', { name: '当前比例 3:4，点击切换' }))
+        await user.click(screen.getByRole('menuitem', { name: '1:1' }))
 
         expect(onSettingsChange).toHaveBeenCalledWith({ defaultRatio: '1:1' })
     })
@@ -302,13 +327,14 @@ describe('ImageComposer', () => {
         const onSettingsChange = vi.fn()
         renderComposer({ onSettingsChange })
 
+        // 画风收进单选卡面板：先开面板，再点目标画风的单选卡
         await user.click(screen.getByRole('button', { name: '画面风格' }))
-        await user.click(screen.getByRole('button', { name: '古风' }))
+        await user.click(screen.getByRole('radio', { name: '古风' }))
         expect(onSettingsChange).toHaveBeenCalledWith({ portraitStyle: 'guofeng' satisfies PortraitStyle })
 
         await user.click(screen.getByRole('button', { name: '作品封面' }))
         await user.click(screen.getByRole('button', { name: '画面风格' }))
-        await user.click(screen.getByRole('button', { name: '写实' }))
+        await user.click(screen.getByRole('radio', { name: '写实' }))
         expect(onSettingsChange).toHaveBeenLastCalledWith({ coverStyle: 'realistic' satisfies PortraitStyle })
     })
 
@@ -325,7 +351,7 @@ describe('ImageComposer', () => {
         await user.click(screen.getByRole('button', { name: '增强提示词' }))
 
         expect(inputBox().value).toBe('雨夜长街，湿石板反光')
-        await user.click(screen.getByRole('button', { name: '还原' }))
+        await user.click(screen.getByRole('button', { name: '还原提示词' }))
         expect(inputBox().value).toBe('雨夜长街')
     })
 })
