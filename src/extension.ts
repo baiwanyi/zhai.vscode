@@ -139,16 +139,17 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const coverService = new PressCoverService(pressDb, imageRouter, usageRecorder)
     // 图片库与上面两个服务共用同一份封面指针：列举、删除与设封面走统一入口，避免指针逻辑分叉
     const imageLibraryService = new ImageLibraryService(pressCoverStore)
-    // 统一出图入口：新图落 Images 目录，与旧入口共用同一图像通道与每日额度
+    // 图片参数：按作品覆盖，落 press/{作品名}/.zhai/image.json，配额与超时不在此管辖
+    const imageSettingsService = new ImageSettingsService()
+    // 统一出图入口：新图落 Images 目录，出图前叠加作品级补充与负向约束，与旧入口共用同一通道与每日额度
     const imageGenerateService = new ImageGenerateService(
         pressDb,
         imageRouter,
         usageRecorder,
         pressCoverStore,
         aiProvider,
+        imageSettingsService,
     )
-    // 图片参数：按作品覆盖，落 press/{作品名}/.zhai/image.json，配额与超时不在此管辖
-    const imageSettingsService = new ImageSettingsService()
     // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown；打开作品时同步路由事实
     // 语义归纳依赖 AI 通道，晚于仪表盘创建；人物卡、大纲与设定的按需提取共用同一实例，
     // 单任务锁与配额口径因此保持一致

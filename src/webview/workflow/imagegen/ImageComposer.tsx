@@ -4,7 +4,10 @@
  * 徽标取 @components/ui/badge，按钮取 @components/ui/button，不手写卡片容器。
  * 关键约束：徽标只承载「引用意图」，其正文内容在发送瞬间拼装——设定与角色快照在此展开，
  * 画风描述由宿主按 style 字段注入（与 portraitPrompt 的 STYLE_HINTS 同一来源）；
- * 未选人物时不允许挂角色徽标，也不允许发送角色图；生成期间禁用发送，避免连点重复扣费。
+ * 未选人物时不允许挂角色徽标，也不允许发送角色图；
+ * 比例与画风的改动只经 onSettingsChange 上报，本组件不直接读写作品配置；
+ * 出图常需 1~3 分钟，前端超时必须长于宿主上限（15 分钟），超时或失败后主动 abort 释放宿主并发锁；
+ * 生成中发送按钮切换为「取消生成」，取消后立即恢复可编辑，不等宿主回包。
  */
 import { Send, Sparkles, UserRound, X } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
@@ -55,6 +58,12 @@ const STYLE_OPTIONS: ReadonlyArray<{ value: PortraitStyle; label: string }> = [
 /** 比例展示文案 */
 const RATIO_LABELS: ReadonlyArray<ImageRatio> = IMAGE_RATIOS
 
+/** 出图兜底超时：宿主内置 10 分钟上限，前端放宽到 15 分钟，避免前端先于宿主判超时 */
+const GENERATE_TIMEOUT_MS = 900_000
+
+/** 增强兜底超时：宿主 30 秒上限，前端留一倍余量 */
+const ENHANCE_TIMEOUT_MS = 60_000
+
 /** 把作品设定展开为一段提示词：只输出有值的字段 */
 function formatSetting(setting: PromptSettingSnapshot): string {
     const lines: string[] = []
@@ -85,8 +94,11 @@ interface ImageComposerProps {
     setting: PromptSettingSnapshot
     /** 顶栏选中的角色：既是生成目标，也是角色徽标的来源 */
     activeCharacterId: string | null
+    /** 初始比例与画风：来自作品级配置，缺省项由页面回落到默认值 */
     defaultRatio: ImageRatio
     defaultStyle: PortraitStyle
+    /** 比例与画风改动：由页面写入作品配置，本组件只负责上报 */
+    onSettingsChange: (patch: { defaultRatio?: ImageRatio; portraitStyle?: PortraitStyle }) => void
     /** 生成成功后的回调：由页面负责插入列表并刷新 */
     onGenerated: (result: ImageGenerateResult) => void
 }
@@ -98,6 +110,7 @@ export function ImageComposer({
     activeCharacterId,
     defaultRatio,
     defaultStyle,
+    onSettingsChange,
     onGenerated,
 }: ImageComposerProps): JSX.Element {
     const [text, setText] = useState('')
@@ -105,6 +118,8 @@ export function ImageComposer({
     const [isStyleOpen, setIsStyleOpen] = useState(false)
     const [isGenerating, setIsGenerating] = useState(false)
     const [isEnhancing, setIsEnhancing] = useState(false)
+    /** 出图请求代号：取消或重新发送时自增，旧请求迟到的回包按代号丢弃 */
+    const generationRef = useRef(0)
     /** 增强前的原文：非空即处于增强态，点按钮可还原 */
     const [enhancedFrom, setEnhancedFrom] = useState<string | null>(null)
     const [chips, setChips] = useState<PromptChip[]>([
@@ -148,6 +163,13 @@ export function ImageComposer({
     const pickStyle = (value: PortraitStyle, label: string): void => {
         setChips((current) => [...current.filter((chip) => chip.kind !== 'style'), { kind: 'style', value, label }])
         setIsStyleOpen(false)
+        onSettingsChange({ portraitStyle: value })
+    }
+
+    /** 切换比例并记住：作品级配置随作品走，下次打开沿用 */
+    const handleRatioChange = (value: ImageRatio): void => {
+        setRatio(value)
+        onSettingsChange({ defaultRatio: value })
     }
 
     const removeChip = (kind: PromptChip['kind']): void => {
@@ -180,10 +202,11 @@ export function ImageComposer({
         }
         setIsEnhancing(true)
         try {
-            const result = await request<{ text: string }>('pressAi/enhanceImagePrompt', {
-                dirPath,
-                text: source,
-            })
+            const result = await request<{ text: string }>(
+                'pressAi/enhanceImagePrompt',
+                { dirPath, text: source },
+                ENHANCE_TIMEOUT_MS,
+            )
             setEnhancedFrom(source)
             setText(result.text)
         } catch (cause) {
@@ -221,30 +244,63 @@ export function ImageComposer({
         return sections.join('\n\n')
     }
 
+    /** 取消宿主的在途出图：尽力而为，宿主无进行中请求时忽略错误 */
+    const abortGeneration = async (): Promise<void> => {
+        try {
+            await request('pressAi/generateImage/abort')
+        } catch {
+            // 取消失败不影响前端复位：下一次发送会由宿主返回「已有生成中」提示
+        }
+    }
+
     const handleSend = async (): Promise<void> => {
         const prompt = buildPrompt()
         if (prompt.length === 0) {
             return
         }
+        const token = generationRef.current + 1
+        generationRef.current = token
         setIsGenerating(true)
         try {
-            const result = await request<ImageGenerateResult>('pressAi/generateImage', {
-                dirPath,
-                prompt,
-                kind: activeCharacter === null ? 'photo' : 'portrait',
-                characterId: activeCharacter === null ? null : activeCharacter.id,
-                ratio,
-                style: styleChip?.value ?? defaultStyle,
-                enhancedFrom: enhancedFrom ?? undefined,
-            })
+            const result = await request<ImageGenerateResult>(
+                'pressAi/generateImage',
+                {
+                    dirPath,
+                    prompt,
+                    kind: activeCharacter === null ? 'photo' : 'portrait',
+                    characterId: activeCharacter === null ? null : activeCharacter.id,
+                    ratio,
+                    style: styleChip?.value ?? defaultStyle,
+                    enhancedFrom: enhancedFrom ?? undefined,
+                },
+                GENERATE_TIMEOUT_MS,
+            )
+            // 已取消或被新请求取代：结果照常落盘，由下次列表刷新带出，这里不再写回界面
+            if (generationRef.current !== token) {
+                return
+            }
             onGenerated(result)
             setText('')
             setChips((current) => current.filter((chip) => chip.kind === 'style'))
         } catch (cause) {
+            if (generationRef.current !== token) {
+                return
+            }
+            // 超时或失败后宿主可能仍在出图，主动取消以释放并发锁
+            void abortGeneration()
             toastError(cause)
         } finally {
-            setIsGenerating(false)
+            if (generationRef.current === token) {
+                setIsGenerating(false)
+            }
         }
+    }
+
+    /** 取消生成：立即复位按钮，不等宿主回包，避免模型慢时界面卡在「生成中」 */
+    const handleAbort = async (): Promise<void> => {
+        generationRef.current += 1
+        setIsGenerating(false)
+        await abortGeneration()
     }
 
     return (
@@ -338,7 +394,7 @@ export function ImageComposer({
                                 type="button"
                                 size="xs"
                                 variant={ratio === item ? 'secondary' : 'ghost'}
-                                onClick={() => setRatio(item)}
+                                onClick={() => handleRatioChange(item)}
                             >
                                 {item}
                             </Button>
@@ -359,15 +415,22 @@ export function ImageComposer({
                         >
                             {isEnhancing ? '增强中…' : enhancedFrom === null ? '增强提示词' : '还原'}
                         </Button>
-                        <Button
-                            type="button"
-                            size="sm"
-                            disabled={isGenerating || buildPrompt().length === 0}
-                            onClick={() => void handleSend()}
-                        >
-                            <Send />
-                            {isGenerating ? '生成中…' : '发送'}
-                        </Button>
+                        {isGenerating ? (
+                            <Button type="button" size="sm" variant="outline" onClick={() => void handleAbort()}>
+                                <X />
+                                取消生成
+                            </Button>
+                        ) : (
+                            <Button
+                                type="button"
+                                size="sm"
+                                disabled={buildPrompt().length === 0}
+                                onClick={() => void handleSend()}
+                            >
+                                <Send />
+                                发送
+                            </Button>
+                        )}
                     </div>
                 </div>
             </div>

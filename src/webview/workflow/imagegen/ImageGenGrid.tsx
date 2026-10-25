@@ -19,15 +19,27 @@ interface ImageGenGridProps {
     /** 角色 id → 名称：用于卡片角标，缺失时不显示 */
     characterNames: ReadonlyMap<string, string>
     onDelete: (image: PressImageItem) => void
+    /** 点击卡片查看详情：由页面决定详情的呈现形式 */
+    onSelect: (image: PressImageItem) => void
 }
 
-export function ImageGenGrid({ images, coverSelectedId, characterNames, onDelete }: ImageGenGridProps): JSX.Element {
+export function ImageGenGrid({
+    images,
+    coverSelectedId,
+    characterNames,
+    onDelete,
+    onSelect,
+}: ImageGenGridProps): JSX.Element {
     return (
         <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-4">
             {images.map((image) => {
                 const characterName = image.characterId === null ? null : characterNames.get(image.characterId)
                 return (
-                    <Card key={image.path} className="group relative overflow-hidden p-0">
+                    <Card
+                        key={image.path}
+                        className="group relative cursor-pointer overflow-hidden p-0"
+                        onClick={() => onSelect(image)}
+                    >
                         <img
                             src={image.url}
                             alt={characterName ?? image.id}
@@ -50,7 +62,10 @@ export function ImageGenGrid({ images, coverSelectedId, characterNames, onDelete
                             size="icon-sm"
                             aria-label="删除图片"
                             className="absolute top-1 right-1 bg-background/80 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
-                            onClick={() => onDelete(image)}
+                            onClick={(event) => {
+                                event.stopPropagation()
+                                onDelete(image)
+                            }}
                         >
                             <Trash2 className="size-4" />
                         </Button>

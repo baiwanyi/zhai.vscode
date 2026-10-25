@@ -1,26 +1,29 @@
 /**
  * 按提示词出图服务：接收前端拼装好的提示词与比例，经图像通道路由出图，落到作品统一目录 Images。
- * 复用约定：通道入口复用 ./ai/imageProvider，配额读写经 ../common/db/quotaRepository 并与旧入口共用同一额度，
- * 作品目录归一复用 ../common/projectPath，路径拼接一律经 ../common/storagePath。
+ * 复用约定：通道入口复用 ./ai/imageProvider，作品级参数经 ./imageSettingsService，
+ * 配额读写经 ../common/db/quotaRepository 并与旧入口共用同一额度，路径拼接一律经 ../common/storagePath。
  * 关键约束：文件名按新规范生成——角色图 portrait-{14 位时间戳}-{8 位角色标识}，
  * 其余 photo-{14 位时间戳}-{8 位随机串}；同秒同角色冲突时时间戳逐秒递增而非覆盖；
- * 每次成功出图落一份同名 sidecar（提示词与参数快照），供详情展示、复现与搜索；
- * 单一任务锁保证连点不会重复扣费，取消由 pressAi/generateImage/abort 触发。
+ * 作品级 promptSuffix / negative 在出图前叠加，读取失败回落默认且不阻断出图；
+ * 每次成功出图落一份同名 sidecar；单一任务锁防重复扣费，取消走 abort。
  */
 import * as vscode from 'vscode'
-import { STYLE_HINTS } from './ai/portraitPrompt'
 import { IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
 import { readProjectDirPath } from './portraitService'
+import { composeImagePrompt } from './promptCompose'
 import type { ImageProviderRouter } from './ai/imageProvider'
 import type { PressCoverStore } from './db/coverRepository'
+import type { ImageSettingsService } from './imageSettingsService'
 import type { AiProvider } from '../ai/provider'
 import type { UsageRecorder } from '../ai/usageRecorder'
 import type Database from 'better-sqlite3'
 import {
+    DEFAULT_IMAGE_SETTINGS,
     IMAGE_RATIO_SIZE,
     isPressImageId,
     type ImageGenerateKind,
     type ImageGenerateResult,
+    type ImageSettings,
 } from '../../shared/types/imagegen'
 import { PORTRAIT_STYLES, type PortraitStyle } from '../../shared/types/press'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
@@ -167,6 +170,7 @@ export class ImageGenerateService {
         private readonly usageRecorder: UsageRecorder,
         private readonly store: PressCoverStore,
         private readonly provider: AiProvider,
+        private readonly settings: ImageSettingsService,
     ) {}
 
     /**
@@ -184,8 +188,9 @@ export class ImageGenerateService {
         const startedAt = Date.now()
         logger.info(`出图开始：${request.dirPath}（${request.ratio}，${request.kind}）`)
         try {
+            const settings = await this.readSettings(request.dirPath)
             const artifact = await this.router.generate({
-                prompt: [request.prompt, STYLE_HINTS[request.style]].filter((part) => part.length > 0).join('\n\n'),
+                prompt: composeImagePrompt(request.prompt, settings, request.style),
                 size: IMAGE_RATIO_SIZE[request.ratio],
                 signal: controller.signal,
             })
@@ -317,6 +322,17 @@ export class ImageGenerateService {
             await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(dirUri, `${id}.json`), content)
         } catch {
             logger.warn(`侧车元数据写入失败：${id}`)
+        }
+    }
+
+    /** 读取作品级参数：失败回落默认值，参数问题不应阻断出图 */
+    private async readSettings(dirPath: string): Promise<ImageSettings> {
+        try {
+            const result = await this.settings.get({ dirPath })
+            return result.settings
+        } catch {
+            logger.warn(`作品生图参数读取失败，已回落默认值：${dirPath}`)
+            return DEFAULT_IMAGE_SETTINGS
         }
     }
 
