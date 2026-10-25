@@ -1,14 +1,17 @@
 /**
- * 作品封面服务：管理历史封面的合成保存、选择与删除，文件落 press/{作品名}/Cover。
+ * 作品封面服务：管理封面画廊的候选图——合成保存、选择与删除。
  * 复用约定：目录名取自 ./constants，封面指针走 ./db/coverRepository，作品目录归一复用 ./portraitService 的校验，
  * 路径一律经 common/storagePath，URL 转换由调用方注入。
  * 关键约束：AI 出图已统一到 pressAi/generateImage 的 cover 模式，本服务不再调用图像通道、不计出图额度；
- * 文件名为 cover-{年月日时分秒}.扩展名，按秒避让不覆盖已有封面；列举以磁盘为准；
- * 删除只接受该作品目录下的白名单路径，删掉当前封面时回退到剩余最新一张。
+ * 画廊候选两处：合成封面落 Cover/cover-{年月日时分秒}，生图页产物取 Images 下的 photo-*（角色图不进画廊）；
+ * 列举以磁盘为准、按修改时间降序截断到上限并回传总数；删除只接受该作品目录下的白名单路径，
+ * 删掉当前封面时回退到剩余最新一张；Images 来源的候选带同名侧车，删除时一并清理。
  */
 import * as vscode from 'vscode'
-import { COVER_DIR } from './constants'
+import { COVER_DIR, IMAGES_DIR } from './constants'
 import { PressCoverStore, isProjectImagePath } from './db/coverRepository'
+import { listImageFiles } from './imageDirScan'
+import { deleteSidecarOf } from './imageSidecar'
 import { readProjectDirPath } from './portraitService'
 import type {
     CoverDeleteResult,
@@ -18,6 +21,7 @@ import type {
     PressCover,
 } from '../../shared/types/press'
 import type Database from 'better-sqlite3'
+import { parseImageKind } from '../../shared/types/imagegen'
 import { isPressCoverId } from '../../shared/types/press'
 import { resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
@@ -25,8 +29,10 @@ import { readProjectSegments } from '../common/projectPath'
 import { readText } from '../common/readInput'
 import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
 
-/** 目录扫描只认图片文件，其余一律忽略 */
-const COVER_FILE_PATTERN = /\.(png|jpe?g|webp)$/i
+/** 画廊候选目录：合成封面在 Cover，生图页产物在 Images */
+const CANDIDATE_DIR_NAMES: ReadonlyArray<string> = [COVER_DIR, IMAGES_DIR]
+/** 候选上限：图库图可能很多，画廊只取最新一批，避免一次性渲染上百张 */
+const MAX_COVER_CANDIDATES = 60
 /** 相对路径长度上限：作品名叠加目录名后仍留出余量 */
 const MAX_PATH_LENGTH = 320
 /** 合成封面的 data URL 前缀：只接受 PNG，避免二次压缩损失文字边缘 */
@@ -45,15 +51,17 @@ export class PressCoverService {
     }
 
     /**
-     * 列举某个作品目录下已落盘的封面：目录不存在视为空，按修改时间降序返回（最新在前）。
+     * 列举画廊候选：合成封面与生图页产物合并，按修改时间降序返回（最新在前）。
      * 磁盘是唯一事实来源，因此关闭面板期间完成的生成同样能被读回。
      */
     public async list(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<CoverListResult> {
         const dirPath = readProjectDirPath(payload, 'pressAi/listCover')
         const selected = this.store.read(dirPath)
+        const candidates = await this.readCandidates(readProjectSegments(dirPath), toWebviewUri)
         return {
-            covers: await this.readCovers(readProjectSegments(dirPath), toWebviewUri),
+            covers: candidates.slice(0, MAX_COVER_CANDIDATES),
             selectedId: selected === null ? null : readCoverId(selected),
+            total: candidates.length,
         }
     }
 
@@ -87,7 +95,7 @@ export class PressCoverService {
 
     /**
      * 设为作品封面：先校验路径归属与文件存在，再写入 press.db。
-     * 关键约束：只接受该作品 Cover 目录下的封面，前端传来的任意路径不得写库。
+     * 关键约束：只接受该作品图片目录（Cover / Images 等白名单）下的文件，前端传来的任意路径不得写库。
      */
     public async select(payload: unknown): Promise<CoverSelectResult> {
         const dirPath = readProjectDirPath(payload, 'pressAi/selectCover')
@@ -122,50 +130,39 @@ export class PressCoverService {
         } catch {
             return { removed: false, selectedId: selected === null ? null : readCoverId(selected) }
         }
+        // Images 来源的候选带侧车，随图删除；合成的 cover-* 没有侧车，跳过即可
+        await deleteSidecarOf(target)
         if (selected !== path) {
             return { removed: true, selectedId: selected === null ? null : readCoverId(selected) }
         }
         // 删掉的是当前封面：按磁盘重新挑一张（回退只关心路径，URL 交给下次列举）
-        const rest = await this.readCovers(readProjectSegments(dirPath), () => '')
+        const rest = await this.readCandidates(readProjectSegments(dirPath), () => '')
         const next = rest[0]?.path ?? null
         this.store.write(dirPath, next)
         return { removed: true, selectedId: next === null ? null : readCoverId(next) }
     }
 
     /**
-     * 扫描封面目录：目录不存在返回空数组，读取失败的文件跳过。
-     * 关键约束：不抛错——并发删除或权限问题只影响单张图，不能让整次列举失败；
-     * 只有符合 cover-{时间戳} 命名的文件才参与列举，手工放入的其它图片不受影响。
+     * 扫描画廊候选：Cover 与 Images 两个目录合并，按修改时间降序。
+     * 关键约束：不抛错——目录不存在或单张读取失败只影响自身，不能让整次列举失败；
+     * 只认 cover-{时间戳} 与 photo-{…} 两类命名，角色图与手工放入的其它图片不进画廊。
      */
-    private async readCovers(
+    private async readCandidates(
         projectSegments: string[],
         toWebviewUri: (uri: vscode.Uri) => string,
     ): Promise<PressCover[]> {
-        const dirSegments = [...projectSegments, COVER_DIR]
-        const root = resolveStorageRoot()
-        let entries: [string, vscode.FileType][]
-        try {
-            entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
-        } catch {
-            // 还没生成过封面，目录尚不存在
-            return []
-        }
         const covers: PressCover[] = []
-        for (const [name, type] of entries) {
-            if (type !== vscode.FileType.File || !COVER_FILE_PATTERN.test(name)) {
+        for (const file of await listImageFiles(projectSegments, CANDIDATE_DIR_NAMES)) {
+            const id = file.name.replace(/\.[^.]+$/, '')
+            if (!isPressCoverId(id) && parseImageKind(id) !== 'photo') {
                 continue
             }
-            const id = name.replace(/\.[^.]+$/, '')
-            if (!isPressCoverId(id)) {
-                continue
-            }
-            const uri = buildStorageUri(root, [...dirSegments, name])
             try {
-                const stat = await vscode.workspace.fs.stat(uri)
+                const stat = await vscode.workspace.fs.stat(file.uri)
                 covers.push({
                     id,
-                    path: [...dirSegments, name].join('/'),
-                    url: toWebviewUri(uri),
+                    path: file.segments.join('/'),
+                    url: toWebviewUri(file.uri),
                     createdAt: new Date(stat.mtime).toISOString(),
                 })
             } catch {

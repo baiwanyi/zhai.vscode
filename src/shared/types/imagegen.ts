@@ -72,6 +72,19 @@ export interface ImageDeleteRequest {
 }
 
 /**
+ * 图片详情：读取同名侧车（出图参数快照）。
+ * 旧图没有侧车、文件损坏或字段类型不符时对应项为 null，界面据此隐藏参数区。
+ */
+export interface ImageDetailResult {
+    prompt: string | null
+    ratio: string | null
+    style: string | null
+    characterId: string | null
+    enhancedFrom: string | null
+    createdAt: string | null
+}
+
+/**
  * 删除图片结果：前端据此一次性修好两处指针，不再二次请求。
  * characterId 非空且 nextPortraitId 变化时，调用方需把该角色的封面指针改为 nextPortraitId。
  */

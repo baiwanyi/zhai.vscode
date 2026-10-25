@@ -1,10 +1,11 @@
 /**
- * 封面字段组：展示作品的历史封面，支持设为当前封面、书名合成与删除。
+ * 封面字段组：展示可用的封面候选，支持设为当前封面、书名合成与删除。
  * 复用约定：书名排版选项与画布合成来自 ./coverCompose，控件取自 @components/ui 的 select、button、input 与 field，
  * 图库宫格与空态由业务公共层的 CoverGallery 承担，回读、保存、设为封面与删除由 useSettingCover 承担。
- * 关键约束：AI 出图统一在「生图」页的封面模式完成，本组不再调用图像通道，只做展示与本地合成；
- * 磁盘是唯一事实来源，切回本分组即按目录回读；书名合成在本地画布完成、不消耗出图次数，
- * 结果另存为新封面并自动选中；删除当前封面由宿主回退到剩余最新一张。
+ * 关键约束：AI 出图统一在「生图」页的封面模式完成，本组只做展示与本地合成；
+ * 候选是 Cover 下的合成封面 + Images 下的 photo-*（角色图不进画廊），由宿主列出，本组不自行拼目录；
+ * 磁盘是唯一事实来源；书名合成在本地画布完成、不消耗出图次数，结果另存为新封面并自动选中；
+ * 删除当前封面由宿主回退到剩余最新一张。
  */
 import { Type } from 'lucide-react'
 import { useState } from 'react'
@@ -23,7 +24,7 @@ import type { SettingFieldsProps } from './sections'
 import type { JSX } from 'react'
 
 export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps): JSX.Element {
-    const { covers, selectedId, isLoading, save, select, remove } = useSettingCover(dirPath)
+    const { covers, selectedId, isLoading, total, save, select, remove } = useSettingCover(dirPath)
     const [deleting, setDeleting] = useState<PressCover | null>(null)
     /** 书名与笔名留空时回落到作品名与笔名，避免初始值与后续修改脱节 */
     const [titleText, setTitleText] = useState('')
@@ -187,7 +188,7 @@ export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps
                     </Button>
                 </div>
                 <p className="text-muted-foreground">
-                    在选中的封面上叠加书名另存一张，不消耗出图次数；不满意可直接删除这张再调。
+                    在选中的图上叠加书名另存一张，不消耗出图次数；候选包括图库里的普通图与历史合成封面。
                 </p>
             </div>
 
@@ -197,11 +198,13 @@ export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps
                 variant="book"
                 isLoading={isLoading}
                 isBusy={isBusy}
-                emptyTitle="还没有封面"
-                emptyDescription="在「生图」页打开封面模式生成；先补全题材与世界观，出图会更贴合故事。"
+                emptyTitle="还没有可用的封面"
+                emptyDescription="图库里的普通图都可以当封面，在「生图」页生成后这里会自动列出；先补全题材与世界观，出图会更贴合故事。"
                 altPrefix={`《${setting.title}》的封面`}
-                deleteLabel="删除封面"
-                countLabel={(count) => `已生成 ${count} 张`}
+                deleteLabel="删除这张图"
+                countLabel={(count) =>
+                    total > count ? `共 ${total} 张可选，仅显示最新 ${count} 张` : `共 ${count} 张可选`
+                }
                 onSetCover={(item) => {
                     const target = covers.find((cover) => cover.id === item.id)
                     if (target !== undefined) {
@@ -218,9 +221,9 @@ export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps
 
             <ConfirmDialog
                 open={deleting !== null}
-                title="删除这张封面？"
-                description="文件会移入系统回收站；若它是作品封面，封面将自动回退到图库中的第一张。"
-                confirmLabel="删除封面"
+                title="删除这张图？"
+                description="文件会移入系统回收站；若它是作品封面，封面将自动回退到剩余最新一张；图库来源的图会同时从图库移除。"
+                confirmLabel="删除"
                 isDestructive
                 size="sm"
                 onOpenChange={(isOpen) => {

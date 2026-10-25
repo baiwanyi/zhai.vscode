@@ -27,6 +27,8 @@ export interface SettingCoverState {
     selectedId: string | null
     /** 首次回读是否仍在进行：用于区分「还没有封面」与「正在读取」 */
     isLoading: boolean
+    /** 命中总数：可能大于 covers.length（宿主按上限截断），用于提示「仅显示最新 N 张」 */
+    total: number
     /** 保存前端合成好的封面（书名排版），成功返回落盘结果并成为封面 */
     save: (dataUrl: string) => Promise<PressCover | null>
     /** 把指定封面设为作品封面，返回是否成功 */
@@ -40,6 +42,7 @@ export function useSettingCover(dirPath: string): SettingCoverState {
     const [covers, setCovers] = useState<PressCover[]>([])
     const [selectedId, setSelectedId] = useState<string | null>(null)
     const [isLoading, setIsLoading] = useState(true)
+    const [total, setTotal] = useState(0)
 
     // 磁盘是唯一事实来源：作品切换后重新按目录回读，关闭面板期间完成的生成同样可见
     useEffect(() => {
@@ -51,6 +54,7 @@ export function useSettingCover(dirPath: string): SettingCoverState {
                 if (!cancelled) {
                     setCovers(result.covers)
                     setSelectedId(result.selectedId)
+                    setTotal(result.total)
                 }
             } catch (cause) {
                 if (!cancelled) {
@@ -75,6 +79,7 @@ export function useSettingCover(dirPath: string): SettingCoverState {
                 const result = await request<CoverGenerateResult>('pressAi/saveCover', payload)
                 setCovers((previous) => [result.cover, ...previous])
                 setSelectedId(result.cover.id)
+                setTotal((previous) => previous + 1)
                 return result.cover
             } catch (cause) {
                 toastError(cause)
@@ -110,6 +115,7 @@ export function useSettingCover(dirPath: string): SettingCoverState {
                 }
                 setCovers((previous) => previous.filter((item) => item.path !== path))
                 setSelectedId(result.selectedId)
+                setTotal((previous) => Math.max(0, previous - 1))
                 return true
             } catch (cause) {
                 toastError(cause)
@@ -119,5 +125,5 @@ export function useSettingCover(dirPath: string): SettingCoverState {
         [dirPath],
     )
 
-    return { covers, selectedId, isLoading, save, select, remove }
+    return { covers, selectedId, isLoading, total, save, select, remove }
 }

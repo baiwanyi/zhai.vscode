@@ -19,7 +19,7 @@
 | 模块 | 边界 |
 | --- | --- |
 | press | 生图依赖作品目录（`press/{作品名}`）作为作用域；角色封面指针写在人物卡 Markdown 里，由前端在生成/删除后经 `updateCharacter` 写回 |
-| press 设定页 | 保留「封面画廊」的历史封面管理（`listCover` / `saveCover` / `selectCover` / `deleteCover`）：套用书名、另选、删除；AI 生成本身在生图页，见第 8 节 |
+| press 设定页 | 保留「封面画廊」（`listCover` / `saveCover` / `selectCover` / `deleteCover`）：候选为合成封面与图库 `photo-*`，可套用书名、另选、删除；AI 生成本身在生图页，见第 8 节 |
 | ai | 图像通道（`ImageProviderRouter`）与用量记账（`UsageRecorder`）由 ai 提供，生图只消费 |
 
 ---
@@ -55,6 +55,12 @@
 
 每张新图旁落一份同名 `{id}.json`，字段为 `prompt` / `ratio` / `style` / `characterId` / `enhancedFrom` / `createdAt`，用于复现参数与后续搜索。写入失败只记 warn，不影响出图。
 
+侧车是可选附属物，读写两侧都不假设它存在：
+
+- 读取：`pressAi/getImageDetail` 在侧车缺失或 JSON 不合法时，各字段返回 `null`，详情面板隐藏参数区，旧图仍可正常浏览。
+- 删除：图库删图、角色卡删图、封面画廊删图都会顺带删同名侧车（不进回收站）；侧车本不存在时静默跳过。
+- 迁移：`pressAi/migrateImageDirs` 搬图时同步搬走侧车，目标已有同名侧车则不覆盖，避免迁移后图片丢参数、旧目录留孤儿 JSON。
+
 ---
 
 ## 3. 协议
@@ -66,6 +72,7 @@
 | 方法 | 入参 | 返回 | 说明 |
 | --- | --- | --- | --- |
 | `pressAi/listImageLibrary` | `dirPath` | `ImageLibraryResult` | 合并三目录扫描，按时间降序；`counts` 给出各分类数量 |
+| `pressAi/getImageDetail` | `dirPath`、`path` | `ImageDetailResult` | 读同名侧车；侧车缺失或字段不合法时各字段为 `null`，不抛错 |
 | `pressAi/deleteImage` | `dirPath`、`path` | `ImageDeleteResult` | 进回收站；一次算好作品封面回退值与角色封面回退值 |
 | `pressAi/migrateImageDirs` | `dirPath` | `ImageMigrateResult` | 把 `Cover` / `Portraits` 的图片搬进 `Images`，只搬不改名，同名跳过 |
 | `pressAi/setImageCover` | `dirPath`、`path` | `ImageSetCoverResult` | 校验归属、文件存在与标准命名 |
@@ -91,7 +98,7 @@
 
 ### 3.4 封面面板（设定页）
 
-`pressAi/listCover`、`pressAi/saveCover`、`pressAi/selectCover`、`pressAi/deleteCover`，见第 8 节。AI 生成已并入 `pressAi/generateImage` 的 `kind=cover`。
+`pressAi/listCover`、`pressAi/saveCover`、`pressAi/selectCover`、`pressAi/deleteCover`，见第 8 节。候选合并 `Cover/cover-*` 与 `Images/photo-*`，按修改时间降序后最多返回 60 张（`MAX_COVER_CANDIDATES`），同时回传 `total` 命中总数，前端据此提示「仅显示最新 N 张」；AI 生成已并入 `pressAi/generateImage` 的 `kind=cover`。
 
 ### 3.5 角色卡（保留）
 
@@ -103,11 +110,13 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `imageLibraryService.ts` | 三目录合并列举、删除（带回退值计算）、设封面 |
+| `imageLibraryService.ts` | 三目录合并列举、删除（带回退值计算，侧车同步清理）、设封面、旧目录迁移、详情读侧车 |
 | `imageGenerateService.ts` | 统一出图：参数校验、配额、单任务锁、落盘、侧车、用量记账 |
+| `imageDirScan.ts` | 图片目录扫描唯一入口：目录缺失视为空、只收普通文件、扩展名口径（png/jpe?g/webp/gif） |
+| `imageSidecar.ts` | 侧车路径推导与随图删除/迁移，尽力而为、不抛错 |
 | `promptCompose.ts` | 提示词拼装纯函数：正文 → 作品补充 → 负向约束 → 画风描述 |
 | `imageSettingsService.ts` | 作品级参数读写（`.zhai/image.json`），只存与默认不同的键 |
-| `coverService.ts` | 设定页封面画廊：合成保存（`Cover/` + `cover-*`）、选择、删除，不再调用图像通道 |
+| `coverService.ts` | 设定页封面画廊：候选合并 `Cover/cover-*` 与 `Images/photo-*`，负责合成保存、选择、删除，不调用图像通道 |
 | `portraitService.ts` | 角色图列举/复制/插入/删除与角色级联清理 |
 | `db/coverRepository.ts` | 封面指针（`press.db`）；`isProjectImagePath` 判断归属 |
 
@@ -133,7 +142,9 @@
 | `ImageComposer.tsx` | 输入卡片：命令动作与画风芯片内联、比例、增强提示词、封面模式、发送 / 取消生成 |
 | `ImagePromptPopover.tsx` | 提示词词库（人物 / 场景 / 光影 / 镜头），点击插入光标 |
 | `useImageLibrary.ts` | 列举、单张删除、批量删除（含最新列表回传）、旧目录迁移 |
+| `useImageDetail.ts` | 详情面板按路径读取侧车；结果与来源路径绑定，迟到的回包不串图 |
 | `useImageSettings.ts` | 作品级参数读写，`isLoaded` 之前不得据此保存 |
+| `imageStyle.ts` | 画风取值与中文标签，composer 芯片与详情面板共用 |
 | `@webview/components/RichChipInput.tsx` | 通用芯片输入区：芯片内联进正文流，Enter 发送、组词期间不拦截，命令式 `insertText` |
 | `@webview/components/richText.ts` | 可编辑区 DOM 工具：读写纯文本、光标定位、芯片识别与插入，与 aichat 共用 |
 | `promptLibrary.ts` | 词库数据 |
@@ -178,6 +189,9 @@
 | 角色快照 | 已注入姓名、性别年龄、身份与外貌；更细的字段（体型、背景）仍留在人物卡内 |
 | 网格能力 | 已支持多选批量删除与悬停复制/插入/删除 |
 | 批量删除原子性 | 逐张串行提交，非事务：中途失败会提示并按已成功的部分刷新，不做回滚 |
+| 图片扩展名口径 | 图库、角色卡、封面画廊统一认 `png` / `jpe?g` / `webp` / `gif`，由 `imageDirScan.ts` 单点维护 |
+| 图库规模 | `listImageLibrary` 全量返回、网格全量渲染，无分页与虚拟滚动；封面画廊另有限量（60 张 + `total`） |
+| 详情降级 | 无侧车（旧图）时整块参数区隐藏，`ratio` / `style` 也无从展示；`enhancedFrom` 已读回但前端暂未展示 |
 
 ---
 
@@ -189,11 +203,11 @@
 
 | 能力 | 协议 | 说明 |
 | --- | --- | --- |
-| 展示历史封面 | `pressAi/listCover` | 扫描 `Cover/`，只认 `cover-*` 命名 |
+| 展示候选封面 | `pressAi/listCover` | 合并 `Cover/cover-*` 与 `Images/photo-*`，按修改时间降序，最多返回 60 张并回传 `total` |
 | 套用书名 | `pressAi/saveCover` | 前端画布合成 PNG 后上传，落 `Cover/` 并自动设为封面，不消耗出图次数 |
 | 另选 / 删除 | `pressAi/selectCover`、`pressAi/deleteCover` | 删除当前封面时回退到剩余最新一张 |
 
-因此存在两类封面文件：生图页生成的 `Images/photo-*`，与设定页合成的 `Cover/cover-*`。统一图库按 `IMAGE_DIR_NAMES` 都能列举到，但设定页画廊只显示后者（目录与命名过滤所致）；迁移旧封面时两者一并处理。
+因此存在两类封面文件：生图页生成的 `Images/photo-*`，与设定页合成的 `Cover/cover-*`。画廊把两类合并展示（`Cover/cover-*` + `Images/photo-*`），但**角色图（`portrait-*`）不进画廊**，避免把角色卡当封面误删；在画廊里删除 `Images` 来源的图，等同于从统一图库删除该图（进回收站，封面指针按剩余最新一张回退）。
 
 `pressAi/generateCover` 与 `ai/coverPrompt.ts` 已随入口迁移一并删除；`zhai.image.size` 现在只作用于角色卡出图（`pressAi/generatePortrait`），不再影响封面比例——封面比例取 composer 当前选择。
 

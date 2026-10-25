@@ -553,8 +553,11 @@ export interface CoverGenerateResult {
 
 /** 封面列举结果：按生成时间降序，最新的排在前面；selectedId 为当前选中的封面 */
 export interface CoverListResult {
+    /** 候选封面：已按修改时间降序截断到上限 */
     covers: PressCover[]
     selectedId: string | null
+    /** 命中总数：可能大于 covers.length，界面据此提示「仅显示最新 N 张」 */
+    total: number
 }
 
 /** 设为封面请求：只接受该作品 Cover 目录下已存在的封面路径 */

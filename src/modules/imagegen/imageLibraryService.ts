@@ -1,9 +1,10 @@
 /**
  * 图片库服务：按作品把统一目录 Images（兼容旧 Cover / Portraits）中的图片聚合为一份可管理列表，
- * 提供列举、删除、设为作品封面与旧目录迁移四项能力，是图片总览页与角色卡页共用的唯一数据入口。
+ * 提供列举、删除、设为作品封面、旧目录迁移与侧车读取五项能力，是图片总览页与角色卡页共用的唯一数据入口。
  * 复用约定：目录名取自 ./constants，路径归属校验复用 ./db/coverRepository 的 isProjectImagePath，
  * 封面指针沿用 PressCoverStore（press.db 的 meta 表），作品目录归一复用 ../common/projectPath。
  * 关键约束：磁盘是唯一事实来源，任何写操作后都按目录重扫，不维护内存缓存；
+ * 侧车 {id}.json 跟随图片：删除时一并清理、迁移时一并搬走，元数据失败不阻断图片操作；
  * 删除时一次性算出作品封面回退值与角色封面回退值，避免前端二次推断后出现两套口径；
  * 手工放入的孤儿图可列举、可删除，但文件名不合法时不允许设为封面；
  * 旧目录迁移只搬文件、不改名，并同步改写作品封面指针的目录前缀。
@@ -11,6 +12,8 @@
 import * as vscode from 'vscode'
 import { IMAGES_DIR, IMAGE_DIR_NAMES } from './constants'
 import { isProjectImagePath, readImageIdFromPath } from './db/coverRepository'
+import { listImageFiles } from './imageDirScan'
+import { deleteSidecarOf, moveSidecarOf } from './imageSidecar'
 import { readProjectDirPath } from './portraitService'
 import type { PressCoverStore } from './db/coverRepository'
 import {
@@ -19,6 +22,7 @@ import {
     parseImageKind,
     type ImageDeleteRequest,
     type ImageDeleteResult,
+    type ImageDetailResult,
     type ImageLibraryResult,
     type ImageMigrateResult,
     type ImageSetCoverResult,
@@ -30,8 +34,6 @@ import { logger } from '../common/logger'
 import { readProjectSegments } from '../common/projectPath'
 import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
 
-/** 列举只认图片文件，其余一律忽略 */
-const IMAGE_FILE_PATTERN = /\.(png|jpe?g|webp)$/i
 /** 文件名去掉扩展名 */
 const EXTENSION_PATTERN = /\.[^.]+$/u
 /** 图片标识中的 14 位时间戳：新命名在第 2 段，旧命名在末段 */
@@ -73,6 +75,11 @@ function readImagePath(payload: unknown, method: string): string {
         throw new Error(`${method} 缺少图片路径`)
     }
     return value
+}
+
+/** 侧车字段读取：只接受非空字符串，数字、对象与 null 一律视为缺失 */
+function readMetaText(value: unknown): string | null {
+    return typeof value === 'string' && value.length > 0 ? value : null
 }
 
 export class ImageLibraryService {
@@ -118,6 +125,8 @@ export class ImageLibraryService {
             logger.warn(`图片删除失败：${path}`)
             return { removed: false, coverSelectedId: currentCoverId, characterId, nextPortraitId: null }
         }
+        // 侧车与图片同生共死：图片进回收站后元数据已无意义，直接清掉，失败不影响删除结果
+        await deleteSidecarOf(target)
         const rest = await this.scan(readProjectSegments(dirPath), () => '')
         let coverSelectedId = currentCoverId
         if (selected === path) {
@@ -164,43 +173,28 @@ export class ImageLibraryService {
         const projectSegments = readProjectSegments(dirPath)
         const root = resolveStorageRoot()
         const imagesSegments = [...projectSegments, IMAGES_DIR]
+        const legacyDirNames = IMAGE_DIR_NAMES.filter((dirName) => dirName !== IMAGES_DIR)
         let moved = 0
         let skipped = 0
-        for (const dirName of IMAGE_DIR_NAMES) {
-            if (dirName === IMAGES_DIR) {
-                continue
-            }
-            const dirSegments = [...projectSegments, dirName]
-            let entries: [string, vscode.FileType][]
+        for (const file of await listImageFiles(projectSegments, legacyDirNames)) {
+            const target = buildStorageUri(root, [...imagesSegments, file.name])
             try {
-                entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
-            } catch {
-                // 旧目录不存在：无需迁移
+                await vscode.workspace.fs.stat(target)
+                // 目标已有同名文件：保留两侧，避免覆盖任一版本
+                skipped += 1
                 continue
+            } catch {
+                // 目标不存在，继续迁移
             }
-            for (const [name, type] of entries) {
-                if (type !== vscode.FileType.File || !IMAGE_FILE_PATTERN.test(name)) {
-                    continue
-                }
-                const target = buildStorageUri(root, [...imagesSegments, name])
-                try {
-                    await vscode.workspace.fs.stat(target)
-                    // 目标已有同名文件：保留两侧，避免覆盖任一版本
-                    skipped += 1
-                    continue
-                } catch {
-                    // 目标不存在，继续迁移
-                }
-                try {
-                    await vscode.workspace.fs.createDirectory(buildStorageUri(root, imagesSegments))
-                    await vscode.workspace.fs.rename(buildStorageUri(root, [...dirSegments, name]), target, {
-                        overwrite: false,
-                    })
-                    moved += 1
-                } catch {
-                    logger.warn(`旧目录图片迁移失败：${dirName}/${name}`)
-                    skipped += 1
-                }
+            try {
+                await vscode.workspace.fs.createDirectory(buildStorageUri(root, imagesSegments))
+                await vscode.workspace.fs.rename(file.uri, target, { overwrite: false })
+                // 侧车跟着图片走，否则迁移后的图在详情面板里丢参数，旧目录还会残留孤儿 JSON
+                await moveSidecarOf(file.uri, target)
+                moved += 1
+            } catch {
+                logger.warn(`旧目录图片迁移失败：${file.segments.join('/')}`)
+                skipped += 1
             }
         }
         const selected = this.store.read(dirPath)
@@ -211,6 +205,54 @@ export class ImageLibraryService {
         }
         logger.info(`旧目录迁移完成：移动 ${moved} 张，跳过 ${skipped} 张，封面指针改写 ${hasLegacyCover}`)
         return { moved, skipped, coverUpdated: hasLegacyCover }
+    }
+
+    /**
+     * 读取图片的出图参数快照（同名侧车）：旧图没有侧车时各项返回 null，不报错。
+     * 关键约束：路径需通过作品归属校验；侧车内容按未知输入处理，字段类型不符即丢弃；
+     * 只读侧车、不校验图片是否存在——图片刚被删时详情面板也应拿到可读的降级结果。
+     */
+    public async readDetail(payload: unknown): Promise<ImageDetailResult> {
+        const dirPath = readProjectDirPath(payload, 'pressAi/getImageDetail')
+        const path = readImagePath(payload, 'pressAi/getImageDetail')
+        if (!isProjectImagePath(dirPath, path)) {
+            throw new Error(`图片路径非法：${path}`)
+        }
+        const id = readImageIdFromPath(path)
+        const segments = toSafeSegments(path, '图片')
+        const target = buildStorageUri(resolveStorageRoot(), [...segments.slice(0, -1), `${id}.json`])
+        const empty: ImageDetailResult = {
+            prompt: null,
+            ratio: null,
+            style: null,
+            characterId: null,
+            enhancedFrom: null,
+            createdAt: null,
+        }
+        let raw: string
+        try {
+            const bytes = await vscode.workspace.fs.readFile(target)
+            raw = Buffer.from(bytes).toString('utf8')
+        } catch {
+            // 旧图没有侧车：按无参数处理，详情面板隐藏参数区
+            return empty
+        }
+        let parsed: unknown
+        try {
+            parsed = JSON.parse(raw)
+        } catch {
+            logger.warn(`图片侧车不是合法 JSON：${id}`)
+            return empty
+        }
+        const record = (typeof parsed === 'object' && parsed !== null ? parsed : {}) as Record<string, unknown>
+        return {
+            prompt: readMetaText(record.prompt),
+            ratio: readMetaText(record.ratio),
+            style: readMetaText(record.style),
+            characterId: readMetaText(record.characterId),
+            enhancedFrom: readMetaText(record.enhancedFrom),
+            createdAt: readMetaText(record.createdAt),
+        }
     }
 
     /** 在已列举结果中取某角色最新一张图：列表已按时间降序，首个命中即最新 */
@@ -227,33 +269,17 @@ export class ImageLibraryService {
         projectSegments: string[],
         toWebviewUri: (uri: vscode.Uri) => string,
     ): Promise<PressImageItem[]> {
-        const root = resolveStorageRoot()
         const images: PressImageItem[] = []
-        for (const dirName of IMAGE_DIR_NAMES) {
-            const dirSegments = [...projectSegments, dirName]
-            let entries: [string, vscode.FileType][]
-            try {
-                entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
-            } catch {
-                // 该目录尚未创建，或旧目录迁移后已清空
-                continue
-            }
-            for (const [name, type] of entries) {
-                if (type !== vscode.FileType.File || !IMAGE_FILE_PATTERN.test(name)) {
-                    continue
-                }
-                const id = name.replace(EXTENSION_PATTERN, '')
-                const segments = [...dirSegments, name]
-                const uri = buildStorageUri(root, segments)
-                images.push({
-                    id,
-                    kind: isPressImageId(id) ? parseImageKind(id) : 'orphan',
-                    path: segments.join('/'),
-                    url: toWebviewUri(uri),
-                    createdAt: await this.readCreatedAt(uri, id),
-                    characterId: parseImageCharacterId(id),
-                })
-            }
+        for (const file of await listImageFiles(projectSegments, IMAGE_DIR_NAMES)) {
+            const id = file.name.replace(EXTENSION_PATTERN, '')
+            images.push({
+                id,
+                kind: isPressImageId(id) ? parseImageKind(id) : 'orphan',
+                path: file.segments.join('/'),
+                url: toWebviewUri(file.uri),
+                createdAt: await this.readCreatedAt(file.uri, id),
+                characterId: parseImageCharacterId(id),
+            })
         }
         images.sort((left, right) => {
             const byTime = right.createdAt.localeCompare(left.createdAt)

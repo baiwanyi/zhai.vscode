@@ -24,11 +24,12 @@ import { toastError } from '@shared/utils/error'
 import { formatDateTime } from '@shared/utils/format'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { Image } from '@webview/components/Image'
-import { ImageComposer } from './ImageComposer'
+import { ImageComposer, type PromptSettingSnapshot } from './ImageComposer'
 import { ImageGenGrid } from './ImageGenGrid'
+import { styleLabelOf } from './imageStyle'
+import { useImageDetail } from './useImageDetail'
 import { useImageLibrary } from './useImageLibrary'
 import { useImageSettings } from './useImageSettings'
-import type { PromptSettingSnapshot } from './ImageComposer'
 import type { JSX } from 'react'
 
 /** 类型筛选：封面是「当前选中」维度，与图片自身的类别并列展示 */
@@ -83,6 +84,8 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
     const [keyword, setKeyword] = useState('')
     /** 详情面板当前查看的图片：null 表示未打开 */
     const [selected, setSelected] = useState<PressImageItem | null>(null)
+    /** 详情侧车：只在面板打开时读取，切换图片自动重取 */
+    const detail = useImageDetail(dirPath, selected === null ? null : selected.path)
     /** 多选模式：点击卡片切换选中，不打开详情 */
     const [isSelecting, setIsSelecting] = useState(false)
     const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string>>(() => new Set())
@@ -239,6 +242,16 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
             )
         } catch (cause) {
             toastError(cause)
+        }
+    }
+
+    /** 复制提示词：侧车原文写入系统剪贴板，webview 需在点击事件内调用 */
+    const handleCopyPrompt = async (prompt: string): Promise<void> => {
+        try {
+            await navigator.clipboard.writeText(prompt)
+            toast.success('提示词已复制')
+        } catch {
+            toast.error('复制失败，请手动选中文本')
         }
     }
 
@@ -423,6 +436,7 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                     activeCharacterId={characterId === 'all' ? null : characterId}
                     defaultRatio={settings.defaultRatio}
                     defaultStyle={settings.portraitStyle}
+                    coverStyle={settings.coverStyle}
                     onSettingsChange={(patch) => {
                         void saveSettings(patch)
                     }}
@@ -476,6 +490,38 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                                     className="max-h-[60vh] w-full object-contain"
                                 />
                                 <p className="mt-2 break-all text-xs text-muted-foreground">{selected.path}</p>
+                                {detail === null || detail.prompt === null ? null : (
+                                    <div className="mt-3 flex flex-col gap-1.5">
+                                        <div className="flex items-center gap-1">
+                                            <p className="text-xs font-medium">出图参数</p>
+                                            <Button
+                                                type="button"
+                                                size="xs"
+                                                variant="ghost"
+                                                className="ml-auto"
+                                                onClick={() => {
+                                                    if (detail.prompt !== null) {
+                                                        void handleCopyPrompt(detail.prompt)
+                                                    }
+                                                }}
+                                            >
+                                                <Copy />
+                                                复制提示词
+                                            </Button>
+                                        </div>
+                                        <p className="bg-muted/40 max-h-40 overflow-y-auto rounded-md p-2 text-xs leading-5 whitespace-pre-wrap break-all">
+                                            {detail.prompt}
+                                        </p>
+                                        <p className="text-muted-foreground text-xs">
+                                            {[
+                                                detail.ratio === null ? null : `比例 ${detail.ratio}`,
+                                                detail.style === null ? null : `画风 ${styleLabelOf(detail.style)}`,
+                                            ]
+                                                .filter((part) => part !== null)
+                                                .join(' · ')}
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                             <SheetFooter>
                                 <Button

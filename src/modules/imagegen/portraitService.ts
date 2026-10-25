@@ -8,7 +8,8 @@
  * 图片平铺在 press/{作品名}/Portraits/ 下，文件名为 portrait-{8位角色标识}-{年月日时分秒}.扩展名，
  * 角色归属由文件名里的角色段解析（不再按角色分子目录），跟随作品目录（删除作品即一并清理）；
  * 目录是图片的唯一事实来源：生成完成即落盘，关闭弹窗不丢结果，列举以磁盘为准；
- * 删除、复制与插入只接受 press/{作品名}/Portraits 下的四段白名单路径，删除优先走回收站；
+ * 删除、复制与插入只接受 press/{作品名}/{Images|Cover|Portraits} 下的四段白名单路径，删除优先走回收站，
+ * 并顺带清掉同名侧车；
  * 复制经平台命令写入系统剪贴板（webview 内写图片受 CSP 与权限限制）；同一时刻只允许一个生成请求。
  */
 import { execFile } from 'node:child_process'
@@ -19,6 +20,8 @@ import { generateSceneWithAi } from './ai/portraitSceneGenerator'
 import { buildSceneMessages, sanitizeScene } from './ai/portraitScenePrompt'
 import { formatVariation, pickVariation } from './ai/portraitVariation'
 import { IMAGE_DIR_NAMES, IMAGE_QUOTA_KEYS, PORTRAIT_DIR } from './constants'
+import { listImageFiles } from './imageDirScan'
+import { deleteSidecarOf } from './imageSidecar'
 import type { ImageProviderRouter } from './ai/imageProvider'
 import type { PortraitVariation } from './ai/portraitVariation'
 import type {
@@ -50,8 +53,6 @@ import { buildStorageUri, deleteResource, toSafeSegments } from '../common/stora
 const PORTRAIT_SEGMENT_COUNT = 4
 /** 设定图文件名前缀：后接角色标识与时间戳，扁平目录靠它识别归属 */
 const PORTRAIT_FILE_PREFIX = 'portrait'
-/** 目录扫描只认图片文件，其余（缩略图缓存、说明文件等）一律忽略 */
-const PORTRAIT_FILE_PATTERN = /\.(png|jpe?g|webp|gif)$/i
 /** 短字段长度上限 */
 const MAX_SHORT_TEXT = 64
 /** 长字段长度上限 */
@@ -203,39 +204,24 @@ export class PortraitService {
         projectSegments: string[],
         toWebviewUri: (uri: vscode.Uri) => string,
     ): Promise<CharacterPortrait[]> {
-        const root = resolveStorageRoot()
         const portraits: CharacterPortrait[] = []
         // 统一目录 Images 与两个旧目录一并扫描，新图与历史图出现在同一个列表里
-        for (const dirName of IMAGE_DIR_NAMES) {
-            const dirSegments = [...projectSegments, dirName]
-            let entries: [string, vscode.FileType][]
-            try {
-                entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
-            } catch {
-                // 该目录尚未创建，或旧目录迁移后已清空
+        for (const file of await listImageFiles(projectSegments, IMAGE_DIR_NAMES)) {
+            const id = file.name.replace(/\.[^.]+$/u, '')
+            // 只收角色图：普通图片与手工图不属于任何角色
+            if (parseImageCharacterId(id) === null) {
                 continue
             }
-            for (const [name, type] of entries) {
-                if (type !== vscode.FileType.File || !PORTRAIT_FILE_PATTERN.test(name)) {
-                    continue
-                }
-                const id = name.replace(/\.[^.]+$/u, '')
-                // 只收角色图：普通图片与手工图不属于任何角色
-                if (parseImageCharacterId(id) === null) {
-                    continue
-                }
-                const uri = buildStorageUri(root, [...dirSegments, name])
-                try {
-                    const stat = await vscode.workspace.fs.stat(uri)
-                    portraits.push({
-                        id,
-                        path: [...dirSegments, name].join('/'),
-                        url: toWebviewUri(uri),
-                        createdAt: new Date(stat.mtime).toISOString(),
-                    })
-                } catch {
-                    // 并发删除时文件可能已消失，跳过而不是让整次扫描失败
-                }
+            try {
+                const stat = await vscode.workspace.fs.stat(file.uri)
+                portraits.push({
+                    id,
+                    path: file.segments.join('/'),
+                    url: toWebviewUri(file.uri),
+                    createdAt: new Date(stat.mtime).toISOString(),
+                })
+            } catch {
+                // 并发删除时文件可能已消失，跳过而不是让整次扫描失败
             }
         }
         // 最新在前：新生成的图出现在网格首位，与生成时占位框的位置一致
@@ -350,10 +336,12 @@ export class PortraitService {
         const target = buildStorageUri(resolveStorageRoot(), segments)
         try {
             await deleteResource(target, false)
-            return { removed: true }
         } catch {
             return { removed: false }
         }
+        // 图片删掉后侧车已无处可依，一并清理；失败只记日志，不影响删除结果
+        await deleteSidecarOf(target)
+        return { removed: true }
     }
 
     /**
@@ -365,6 +353,7 @@ export class PortraitService {
         const root = resolveStorageRoot()
         let removed = 0
         // 三个图片目录都要清理：新图落在 Images，历史图还在 Cover / Portraits
+        // 这里刻意不过滤扩展名：同名的出图参数侧车（.json）也要随图片一并清掉，故不走图片列举入口
         for (const dirName of IMAGE_DIR_NAMES) {
             const dirSegments = [...projectSegments, dirName]
             let entries: [string, vscode.FileType][]

@@ -4,6 +4,7 @@
  * @webview/components/RichChipInput（与 aichat 共用 richText 的 DOM 工具），按钮取 @components/ui/button。
  * 关键约束：芯片只承载「引用意图」，正文在发送瞬间拼装——角色段取人物卡的姓名、性别年龄、身份与外貌；
  * 画风由宿主按 style 注入（与 portraitPrompt 的 STYLE_HINTS 同源），封面模式忽略角色段且 kind 固定 cover；
+ * 封面画风与普通出图分开存：切换模式时芯片换用对应一侧，改动按当前模式写回各自配置；
  * 比例与画风改动只经 onSettingsChange 上报；出图前端兜底 15 分钟，超时或失败即 abort 释放并发锁；
  * 生成中发送按钮切换为「取消生成」，取消后立即复位，不等宿主回包。
  */
@@ -17,6 +18,7 @@ import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import { RichChipInput, type RichChipInputHandle } from '@webview/components/RichChipInput'
 import { ImagePromptPopover } from './ImagePromptPopover'
+import { STYLE_OPTIONS, styleLabelOf } from './imageStyle'
 import type { JSX } from 'react'
 
 /** 作品设定快照：只取与画面相关的字段，缺省项不参与拼装 */
@@ -49,18 +51,6 @@ interface PromptChip {
     value: string
     label: string
 }
-
-/** 画风选项：value 与 portraitPrompt 的 STYLE_HINTS 键一一对应 */
-const STYLE_OPTIONS: ReadonlyArray<{ value: PortraitStyle; label: string }> = [
-    { value: 'auto', label: '自动' },
-    { value: 'guofeng', label: '古风' },
-    { value: 'anime', label: '日漫' },
-    { value: 'realistic', label: '写实' },
-    { value: 'photo', label: '人像' },
-    { value: 'cinematic', label: '电影' },
-    { value: 'gameart', label: '立绘' },
-    { value: 'pixel', label: '像素' },
-]
 
 /** 比例展示文案 */
 const RATIO_LABELS: ReadonlyArray<ImageRatio> = IMAGE_RATIOS
@@ -130,9 +120,16 @@ interface ImageComposerProps {
     activeCharacterId: string | null
     /** 初始比例与画风：来自作品级配置，缺省项由页面回落到默认值 */
     defaultRatio: ImageRatio
+    /** 普通/角色图默认画风 */
     defaultStyle: PortraitStyle
+    /** 封面画风：与普通出图各记一套，切换封面模式时自动换用 */
+    coverStyle: PortraitStyle
     /** 比例与画风改动：由页面写入作品配置，本组件只负责上报 */
-    onSettingsChange: (patch: { defaultRatio?: ImageRatio; portraitStyle?: PortraitStyle }) => void
+    onSettingsChange: (patch: {
+        defaultRatio?: ImageRatio
+        portraitStyle?: PortraitStyle
+        coverStyle?: PortraitStyle
+    }) => void
     /** 生成成功后的回调：由页面负责插入列表并刷新 */
     onGenerated: (result: ImageGenerateResult) => void
 }
@@ -144,6 +141,7 @@ export function ImageComposer({
     activeCharacterId,
     defaultRatio,
     defaultStyle,
+    coverStyle,
     onSettingsChange,
     onGenerated,
 }: ImageComposerProps): JSX.Element {
@@ -158,12 +156,8 @@ export function ImageComposer({
     const generationRef = useRef(0)
     /** 增强前的原文：非空即处于增强态，点按钮可还原 */
     const [enhancedFrom, setEnhancedFrom] = useState<string | null>(null)
-    const [chips, setChips] = useState<PromptChip[]>([
-        {
-            kind: 'style',
-            value: defaultStyle,
-            label: STYLE_OPTIONS.find((item) => item.value === defaultStyle)?.label ?? '自动',
-        },
+    const [chips, setChips] = useState<PromptChip[]>(() => [
+        { kind: 'style', value: defaultStyle, label: styleLabelOf(defaultStyle) },
     ])
 
     const richInputRef = useRef<RichChipInputHandle | null>(null)
@@ -196,20 +190,31 @@ export function ImageComposer({
         )
     }
 
-    /** 封面模式：开启时自动挂上作品设定徽标，避免空提示词无法发送；与角色图互斥 */
+    /**
+     * 封面模式：与角色图互斥；切换时把画风芯片换成对应一侧的作品配置（封面画风与普通出图分开记），
+     * 进入时顺带挂上作品设定，避免空提示词无法发送。
+     */
     const toggleCoverMode = (): void => {
         const willEnable = !isCoverMode
         setIsCoverMode(willEnable)
-        if (!willEnable || chips.some((chip) => chip.kind === 'setting')) {
-            return
-        }
-        setChips([...chips, { kind: 'setting', value: 'setting', label: '作品设定' }])
+        const activeStyle = willEnable ? coverStyle : defaultStyle
+        setChips((current) => {
+            const rest = current.filter((chip) => chip.kind !== 'style')
+            const withStyle: PromptChip[] = [
+                ...rest,
+                { kind: 'style', value: activeStyle, label: styleLabelOf(activeStyle) },
+            ]
+            if (!willEnable || withStyle.some((chip) => chip.kind === 'setting')) {
+                return withStyle
+            }
+            return [...withStyle, { kind: 'setting', value: 'setting', label: '作品设定' }]
+        })
     }
 
     const pickStyle = (value: PortraitStyle, label: string): void => {
         setChips((current) => [...current.filter((chip) => chip.kind !== 'style'), { kind: 'style', value, label }])
         setIsStyleOpen(false)
-        onSettingsChange({ portraitStyle: value })
+        onSettingsChange(isCoverMode ? { coverStyle: value } : { portraitStyle: value })
     }
 
     /** 切换比例并记住：作品级配置随作品走，下次打开沿用 */

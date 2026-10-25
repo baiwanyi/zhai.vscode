@@ -115,6 +115,8 @@ export class PressRoutes {
                 return this.covers.remove(payload)
             case 'pressAi/listImageLibrary':
                 return this.imageLibrary.list(payload, toWebviewUri)
+            case 'pressAi/getImageDetail':
+                return this.imageLibrary.readDetail(payload)
             case 'pressAi/migrateImageDirs':
                 return this.imageLibrary.migrate(payload)
             case 'pressAi/generateImage':
