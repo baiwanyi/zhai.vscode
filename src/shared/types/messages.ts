@@ -163,6 +163,7 @@ export type HostMethodName =
     | 'pressAi/listImageLibrary'
     | 'pressAi/listPortraitGallery'
     | 'pressAi/listPortraits'
+    | 'pressAi/migrateImageDirs'
     | 'pressAi/saveCover'
     | 'pressAi/saveImageSettings'
     | 'pressAi/selectCover'

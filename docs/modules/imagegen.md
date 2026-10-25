@@ -2,7 +2,7 @@
 
 **版本**：1.0
 **日期**：2026-10-25
-**状态**：图库管理、统一出图、作品级参数、封面入口收敛已落地；旧封面目录迁移待做
+**状态**：图库管理、统一出图、作品级参数、封面入口收敛、旧目录迁移、芯片内联、批量删除均已落地
 **宿主**：VSCode 插件 Zhai（宅桌面）
 **存储根**：`{storage.rootPath}/press/{作品名}/`（根目录配置见 `common.md` 第 1 节）
 
@@ -38,6 +38,8 @@
 
 `IMAGE_DIR_NAMES`（`src/modules/imagegen/constants.ts`）是三个目录的白名单：列举、复制、插入、删除、级联清理都按它遍历，因此旧目录里的图仍可正常管理，只是不再产生新文件。
 
+旧目录仍有残留时，生图页会在筛选条下方给出一次性迁移入口（`pressAi/migrateImageDirs`）：只搬运文件、不改文件名，目标已存在同名文件时跳过并保留两份，迁移后同步改写作品封面指针的目录前缀。
+
 ### 2.2 图片标识
 
 | 类型 | 规则 | 示例 |
@@ -65,6 +67,7 @@
 | --- | --- | --- | --- |
 | `pressAi/listImageLibrary` | `dirPath` | `ImageLibraryResult` | 合并三目录扫描，按时间降序；`counts` 给出各分类数量 |
 | `pressAi/deleteImage` | `dirPath`、`path` | `ImageDeleteResult` | 进回收站；一次算好作品封面回退值与角色封面回退值 |
+| `pressAi/migrateImageDirs` | `dirPath` | `ImageMigrateResult` | 把 `Cover` / `Portraits` 的图片搬进 `Images`，只搬不改名，同名跳过 |
 | `pressAi/setImageCover` | `dirPath`、`path` | `ImageSetCoverResult` | 校验归属、文件存在与标准命名 |
 | `pressAi/copyPortrait` | `path` | `PortraitCopyResult` | 宿主写系统剪贴板（webview 受 CSP 限制） |
 | `pressAi/insertPortrait` | `path` | `PortraitInsertResult` | 插入光标处；`no-editor` 视为静默忽略 |
@@ -125,18 +128,21 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `ImageGenPage.tsx` | 状态编排：筛选（类别 / 角色 / 关键词）、详情面板、删除、设封面、复制、插入、计数 |
-| `ImageGenGrid.tsx` | 等宽卡片网格：3:4 裁切、封面徽标、悬停删除、点击打开详情 |
-| `ImageComposer.tsx` | 输入卡片：命令动作与画风徽标、比例、增强提示词、发送 / 取消生成 |
+| `ImageGenPage.tsx` | 状态编排：筛选、计数、详情面板、单张/批量删除、设封面、复制、插入、旧目录迁移 |
+| `ImageGenGrid.tsx` | 等宽卡片网格：3:4 裁切、封面徽标、悬停复制/插入/删除、多选勾选、点击打开详情 |
+| `ImageComposer.tsx` | 输入卡片：命令动作与画风芯片内联、比例、增强提示词、封面模式、发送 / 取消生成 |
 | `ImagePromptPopover.tsx` | 提示词词库（人物 / 场景 / 光影 / 镜头），点击插入光标 |
-| `useImageLibrary.ts` | 列举、删除、刷新 |
+| `useImageLibrary.ts` | 列举、单张删除、批量删除（含最新列表回传）、旧目录迁移 |
 | `useImageSettings.ts` | 作品级参数读写，`isLoaded` 之前不得据此保存 |
+| `@webview/components/RichChipInput.tsx` | 通用芯片输入区：芯片内联进正文流，Enter 发送、组词期间不拦截，命令式 `insertText` |
+| `@webview/components/richText.ts` | 可编辑区 DOM 工具：读写纯文本、光标定位、芯片识别与插入，与 aichat 共用 |
 | `promptLibrary.ts` | 词库数据 |
 
 ### 5.1 页面交互约束
 
 - 筛选全部在内存中完成，不重复请求宿主；计数里「全部」取列表长度，「作品封面」由 `coverSelectedId` 推导，其余取宿主 `counts`。
 - 详情面板用 `@components/ui/sheet`，点缩略图打开；设封面后重新列举，面板停留在当前图片；删除当前图片时面板自动关闭。
+- 多选模式：点卡片切换勾选而不打开详情，悬停操作隐藏；批量删除需二次确认，逐张串行提交后只列举一次。
 - 参数读取完成前不挂载 composer，用等高骨架占位，避免默认值覆盖用户已保存的比例与画风。
 - 生成中发送按钮切换为「取消生成」，取消后立即复位界面，不等宿主回包；迟到的回包按请求代号丢弃。
 
@@ -157,21 +163,21 @@
 1. **磁盘是唯一事实来源**：任何写操作后重新列举，不做乐观删除或乐观新增。
 2. **作品归属必须校验**：删除与设封面只接受 `press/{作品名}` 下、目录在白名单内的路径；设封面还要求标准命名。
 3. **封面不是类别**：`PressImageKind` 只有 `portrait` / `photo` / `orphan`，「是否为封面」由 `coverSelectedId === id` 判断。
-4. **角色封面指针由前端写回**：宿主只回传 `characterId` 与 `nextPortraitId`，前端在「被删图正是该角色当前封面」时才写回，避免覆盖用户新选择。
+4. **角色封面指针由前端写回**：宿主只回传 `characterId` 与 `nextPortraitId`，前端在「被删图正是该角色当前封面」时才写回，避免覆盖用户新选择；批量删除时回退值改取「删除后剩余列表中该角色最新一张」，不采用单张回执里的 `nextPortraitId`（同批中可能指向即将被删的图）。
 5. **配额与超时是全局护栏**：`zhai.image.dailyLimit` 不接受作品级覆盖；参数文件只管风格与默认值。
 6. **参数只存差异**：`image.json` 中值为空集合时不写字段，`null` 表示取消覆盖。
 
 ---
 
-## 7. 已知边界与后续
+## 7. 已知边界
 
-| 项 | 现状 | 后续 |
-| --- | --- | --- |
-| 封面目录 | 新封面由生图页的封面模式生成，落 `Images/` 并自动设为封面；`Cover/` 只保留历史封面与合成封面 | 一次性迁移旧封面进 `Images/` 并改写指针 |
-| 旧目录迁移 | `Cover/` 与 `Portraits/` 只读兼容 | 一次性搬迁进 `Images/` 并改写指针 |
-| 提示词 chip | textarea + 顶部 chip 行 | 与 aichat 一致的内联 chip（需抽 `richInput` 光标逻辑） |
-| 角色快照 | `PromptCharacterSnapshot` 只有 id 与 name | 注入外貌、身份等字段（需前端传更多或宿主提供上下文接口） |
-| 网格能力 | 单张删除、详情面板复制/插入 | 多选批量删除、悬停快捷操作 |
+| 项 | 现状 |
+| --- | --- |
+| 旧目录迁移 | 已提供一次性入口（`pressAi/migrateImageDirs`）：只搬不改名，同名跳过；角色封面存 id 不受影响，作品封面指针同步改写 |
+| 提示词芯片 | 已内联：`RichChipInput` 与 aichat 共用 `richText` 的 DOM 工具，芯片可退格删除 |
+| 角色快照 | 已注入姓名、性别年龄、身份与外貌；更细的字段（体型、背景）仍留在人物卡内 |
+| 网格能力 | 已支持多选批量删除与悬停复制/插入/删除 |
+| 批量删除原子性 | 逐张串行提交，非事务：中途失败会提示并按已成功的部分刷新，不做回滚 |
 
 ---
 
@@ -198,4 +204,4 @@
 - `pnpm exec tsc --noEmit`
 - `pnpm exec eslint src/modules/imagegen src/webview/workflow/imagegen`
 - `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts`
-- 手测清单：列举三目录、按类别/角色/关键词筛选、设为封面、删除当前封面后的回退、详情面板复制与插入、生成中取消、切换作品后参数是否沿用。
+- 手测清单：列举三目录、按类别/角色/关键词筛选、设为封面、删除当前封面后的回退、详情面板复制与插入、生成中取消、切换作品后参数是否沿用、多选批量删除与角色封面回退、旧目录迁移（含同名跳过）、芯片内联输入与退格删除。

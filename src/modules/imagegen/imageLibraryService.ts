@@ -1,14 +1,15 @@
 /**
  * 图片库服务：按作品把统一目录 Images（兼容旧 Cover / Portraits）中的图片聚合为一份可管理列表，
- * 提供列举、删除与设为作品封面三项能力，是图片总览页与角色卡页共用的唯一数据入口。
+ * 提供列举、删除、设为作品封面与旧目录迁移四项能力，是图片总览页与角色卡页共用的唯一数据入口。
  * 复用约定：目录名取自 ./constants，路径归属校验复用 ./db/coverRepository 的 isProjectImagePath，
  * 封面指针沿用 PressCoverStore（press.db 的 meta 表），作品目录归一复用 ../common/projectPath。
  * 关键约束：磁盘是唯一事实来源，任何写操作后都按目录重扫，不维护内存缓存；
  * 删除时一次性算出作品封面回退值与角色封面回退值，避免前端二次推断后出现两套口径；
- * 手工放入的孤儿图可列举、可删除，但文件名不合法时不允许设为封面。
+ * 手工放入的孤儿图可列举、可删除，但文件名不合法时不允许设为封面；
+ * 旧目录迁移只搬文件、不改名，并同步改写作品封面指针的目录前缀。
  */
 import * as vscode from 'vscode'
-import { IMAGE_DIR_NAMES } from './constants'
+import { IMAGES_DIR, IMAGE_DIR_NAMES } from './constants'
 import { isProjectImagePath, readImageIdFromPath } from './db/coverRepository'
 import { readProjectDirPath } from './portraitService'
 import type { PressCoverStore } from './db/coverRepository'
@@ -19,6 +20,7 @@ import {
     type ImageDeleteRequest,
     type ImageDeleteResult,
     type ImageLibraryResult,
+    type ImageMigrateResult,
     type ImageSetCoverResult,
     type PressImageItem,
     type PressImageKind,
@@ -148,6 +150,67 @@ export class ImageLibraryService {
         this.store.write(dirPath, path)
         logger.info(`作品封面已更新：${path}`)
         return { coverSelectedId: id }
+    }
+
+    /**
+     * 把旧目录（Cover / Portraits）里的图片搬进统一目录 Images。
+     * 关键约束：不改文件名——图片标识即指针取值，改名会让作品封面与角色封面同时失效；
+     * 目标已存在同名文件时跳过而不覆盖，两边都保留，交给用户取舍；
+     * 迁移后只改写作品封面指针的目录前缀（角色封面存的是图片 id，不受目录影响）；
+     * 全程逐文件容错：单张失败计入 skipped，不影响其余文件。
+     */
+    public async migrate(payload: unknown): Promise<ImageMigrateResult> {
+        const dirPath = readProjectDirPath(payload, 'pressAi/migrateImageDirs')
+        const projectSegments = readProjectSegments(dirPath)
+        const root = resolveStorageRoot()
+        const imagesSegments = [...projectSegments, IMAGES_DIR]
+        let moved = 0
+        let skipped = 0
+        for (const dirName of IMAGE_DIR_NAMES) {
+            if (dirName === IMAGES_DIR) {
+                continue
+            }
+            const dirSegments = [...projectSegments, dirName]
+            let entries: [string, vscode.FileType][]
+            try {
+                entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
+            } catch {
+                // 旧目录不存在：无需迁移
+                continue
+            }
+            for (const [name, type] of entries) {
+                if (type !== vscode.FileType.File || !IMAGE_FILE_PATTERN.test(name)) {
+                    continue
+                }
+                const target = buildStorageUri(root, [...imagesSegments, name])
+                try {
+                    await vscode.workspace.fs.stat(target)
+                    // 目标已有同名文件：保留两侧，避免覆盖任一版本
+                    skipped += 1
+                    continue
+                } catch {
+                    // 目标不存在，继续迁移
+                }
+                try {
+                    await vscode.workspace.fs.createDirectory(buildStorageUri(root, imagesSegments))
+                    await vscode.workspace.fs.rename(buildStorageUri(root, [...dirSegments, name]), target, {
+                        overwrite: false,
+                    })
+                    moved += 1
+                } catch {
+                    logger.warn(`旧目录图片迁移失败：${dirName}/${name}`)
+                    skipped += 1
+                }
+            }
+        }
+        const selected = this.store.read(dirPath)
+        const hasLegacyCover = selected !== null && !selected.startsWith(`${IMAGES_DIR}/`)
+        if (hasLegacyCover) {
+            const fileName = selected.slice(selected.lastIndexOf('/') + 1)
+            this.store.write(dirPath, `${IMAGES_DIR}/${fileName}`)
+        }
+        logger.info(`旧目录迁移完成：移动 ${moved} 张，跳过 ${skipped} 张，封面指针改写 ${hasLegacyCover}`)
+        return { moved, skipped, coverUpdated: hasLegacyCover }
     }
 
     /** 在已列举结果中取某角色最新一张图：列表已按时间降序，首个命中即最新 */

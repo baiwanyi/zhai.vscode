@@ -1,24 +1,21 @@
 /**
- * 生图输入卡片：命令动作与画面风格以徽标形式进入输入区，底部选择比例并发送。
- * 复用约定：外壳沿用 aichat 的 composer 两层底色（bg-composer / bg-composer-input），
- * 徽标取 @components/ui/badge，按钮取 @components/ui/button，不手写卡片容器。
- * 关键约束：徽标只承载「引用意图」，其正文内容在发送瞬间拼装——设定与角色快照在此展开，
- * 画风描述由宿主按 style 字段注入（与 portraitPrompt 的 STYLE_HINTS 同一来源）；
- * 未选人物时不允许挂角色徽标，也不允许发送角色图；
- * 封面模式与角色图互斥：开启后忽略角色徽标、kind 固定为 cover，成功后自动退出并提示；
- * 比例与画风的改动只经 onSettingsChange 上报，本组件不直接读写作品配置；
- * 出图常需 1~3 分钟，前端超时必须长于宿主上限（15 分钟），超时或失败后主动 abort 释放宿主并发锁；
- * 生成中发送按钮切换为「取消生成」，取消后立即恢复可编辑，不等宿主回包。
+ * 生图输入卡片：命令动作、画风与角色以芯片内联在正文流中，底部选择比例并发送。
+ * 复用约定：外壳沿用 aichat 的 composer 两层底色（bg-composer / bg-composer-input），芯片输入区取
+ * @webview/components/RichChipInput（与 aichat 共用 richText 的 DOM 工具），按钮取 @components/ui/button。
+ * 关键约束：芯片只承载「引用意图」，正文在发送瞬间拼装——角色段取人物卡的姓名、性别年龄、身份与外貌；
+ * 画风由宿主按 style 注入（与 portraitPrompt 的 STYLE_HINTS 同源），封面模式忽略角色段且 kind 固定 cover；
+ * 比例与画风改动只经 onSettingsChange 上报；出图前端兜底 15 分钟，超时或失败即 abort 释放并发锁；
+ * 生成中发送按钮切换为「取消生成」，取消后立即复位，不等宿主回包。
  */
 import { Send, Sparkles, UserRound, X } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
 import { IMAGE_RATIOS, type ImageGenerateResult, type ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { RichChipInput, type RichChipInputHandle } from '@webview/components/RichChipInput'
 import { ImagePromptPopover } from './ImagePromptPopover'
 import type { JSX } from 'react'
 
@@ -32,10 +29,18 @@ export interface PromptSettingSnapshot {
     perspective?: string
 }
 
-/** 角色快照：当前只注入姓名，更丰富的字段待宿主提供上下文接口后补齐 */
+/** 角色快照：姓名、性别年龄、身份与外貌，字段缺失时只拼姓名 */
 export interface PromptCharacterSnapshot {
     id: string
     name: string
+    /** 外貌白描：角色图的主体描述，缺失时只拼姓名 */
+    appearance?: string
+    /** 身份 / 职业：补足画面语义 */
+    identity?: string
+    /** 性别：人像的硬约束，只在 male / female 时拼入 */
+    gender?: 'male' | 'female'
+    /** 年龄：自由文本，缺失或「未知」时不拼 */
+    age?: string
 }
 
 /** 徽标：setting 指作品设定，character 指某个人物，style 指当前画风 */
@@ -65,6 +70,33 @@ const GENERATE_TIMEOUT_MS = 900_000
 
 /** 增强兜底超时：宿主 30 秒上限，前端留一倍余量 */
 const ENHANCE_TIMEOUT_MS = 60_000
+
+/** 性别文案：只在已知时拼入，避免把「未知」写成外貌 */
+const GENDER_LABELS: Readonly<Record<'male' | 'female', string>> = {
+    male: '男性',
+    female: '女性',
+}
+
+/**
+ * 角色段：姓名 + 性别年龄 + 身份 + 外貌，空项跳过。
+ * 关键约束：每项独立成行，便于模型区分「外形硬约束」与「气质描述」；字段全部取自人物卡，此处不做推断。
+ */
+function composeCharacterSection(character: PromptCharacterSnapshot): string {
+    const lines = [`角色：${character.name}`]
+    const profile = [character.gender === undefined ? '' : GENDER_LABELS[character.gender], character.age ?? ''].filter(
+        (part) => part.length > 0,
+    )
+    if (profile.length > 0) {
+        lines.push(`外形：${profile.join('，')}`)
+    }
+    if (character.identity !== undefined && character.identity.length > 0) {
+        lines.push(`身份：${character.identity}`)
+    }
+    if (character.appearance !== undefined && character.appearance.length > 0) {
+        lines.push(`外貌：${character.appearance}`)
+    }
+    return lines.join('\n')
+}
 
 /** 把作品设定展开为一段提示词：只输出有值的字段 */
 function formatSetting(setting: PromptSettingSnapshot): string {
@@ -134,7 +166,7 @@ export function ImageComposer({
         },
     ])
 
-    const textAreaRef = useRef<HTMLTextAreaElement | null>(null)
+    const richInputRef = useRef<RichChipInputHandle | null>(null)
 
     const activeCharacter = useMemo(
         () => characters.find((character) => character.id === activeCharacterId) ?? null,
@@ -186,26 +218,14 @@ export function ImageComposer({
         onSettingsChange({ defaultRatio: value })
     }
 
-    const removeChip = (kind: PromptChip['kind']): void => {
-        setChips((current) => current.filter((chip) => chip.kind !== kind))
+    /** 芯片 id 即 kind：芯片集合按 kind 唯一 */
+    const removeChip = (id: string): void => {
+        setChips((current) => current.filter((chip) => chip.kind !== id))
     }
 
-    /** 把词条插入光标处：保留已有内容，插入后把光标移到片段末尾，便于连续点击累加 */
+    /** 把词条插入光标处：保留已有内容，插入后光标停在片段末尾，便于连续点击累加 */
     const insertPrompt = (fragment: string): void => {
-        const area = textAreaRef.current
-        if (area === null) {
-            setText((current) => (current.length === 0 ? fragment : `${current} ${fragment}`))
-            return
-        }
-        const start = area.selectionStart
-        const end = area.selectionEnd
-        const next = `${text.slice(0, start)}${fragment}${text.slice(end)}`
-        setText(next)
-        requestAnimationFrame(() => {
-            const position = start + fragment.length
-            area.focus()
-            area.setSelectionRange(position, position)
-        })
+        richInputRef.current?.insertText(fragment)
     }
 
     /** 增强提示词：只改写输入框正文，chip 与设定留在发送时拼装，避免模型复述设定原文 */
@@ -247,7 +267,7 @@ export function ImageComposer({
         if (!isCoverMode && characterChip !== null) {
             const character = characters.find((item) => item.id === characterChip.value)
             if (character !== undefined) {
-                sections.push(`角色：${character.name}`)
+                sections.push(composeCharacterSection(character))
             }
         }
         if (settingChip !== null) {
@@ -322,6 +342,18 @@ export function ImageComposer({
         setIsGenerating(false)
         await abortGeneration()
     }
+
+    /** 芯片渲染项：id 取 kind（同一 kind 只允许一枚），图标按类型区分 */
+    const richChips = chips.map((chip) => ({
+        id: chip.kind,
+        label: chip.label,
+        icon:
+            chip.kind === 'character' ? (
+                <UserRound className="size-3 shrink-0 text-muted-foreground" />
+            ) : chip.kind === 'setting' ? (
+                <Sparkles className="size-3 shrink-0 text-muted-foreground" />
+            ) : undefined,
+    }))
 
     return (
         <div className="p-2">
@@ -398,30 +430,18 @@ export function ImageComposer({
                 ) : null}
 
                 <div className="rounded-xl bg-composer-input p-3">
-                    {chips.length > 0 ? (
-                        <div className="mb-2 flex flex-wrap gap-1.5">
-                            {chips.map((chip) => (
-                                <Badge key={`${chip.kind}-${chip.value}`} variant="secondary" className="gap-1 pr-1">
-                                    {chip.label}
-                                    <button
-                                        type="button"
-                                        aria-label={`移除${chip.label}`}
-                                        className="rounded-sm opacity-60 hover:opacity-100"
-                                        onClick={() => removeChip(chip.kind)}
-                                    >
-                                        <X className="size-3" />
-                                    </button>
-                                </Badge>
-                            ))}
-                        </div>
-                    ) : null}
-                    <textarea
-                        ref={textAreaRef}
+                    <RichChipInput
+                        ref={richInputRef}
                         value={text}
-                        onChange={(event) => setText(event.target.value)}
-                        rows={3}
+                        chips={richChips}
                         placeholder="描述画面：人物、动作、场景、光线与氛围…"
-                        className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                        canSend={buildPrompt().length > 0}
+                        className="max-h-40 min-h-17 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word text-sm leading-5 outline-none"
+                        onChange={setText}
+                        onSend={() => {
+                            void handleSend()
+                        }}
+                        onRemoveChip={removeChip}
                     />
                     <div className="mt-2 flex items-center gap-1">
                         {RATIO_LABELS.map((item) => (

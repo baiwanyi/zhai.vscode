@@ -4,7 +4,9 @@
  * 详情面板取 @components/ui/sheet，复制/插入复用 pressAi/copyPortrait、pressAi/insertPortrait。
  * 关键约束：筛选在内存中完成，计数里「全部」与「作品封面」由列表推导，其余取宿主分项数；
  * 「作品封面」是筛选维度而非图片类别——由 coverSelectedId 与图片 id 比较得出；
- * 删除落盘侧进回收站，本节只刷新列表，不做乐观删除；设封面后重新列举，面板仍停在该图片上；
+ * 删除落盘侧进回收站，本节只刷新列表，不做乐观删除；批量删除后按剩余列表修正角色封面指针，
+ * 最后只列举一次；设封面后重新列举，面板仍停在该图片上；
+ * 旧目录（Cover / Portraits）仍可列举，残留时提供一次性迁移入口，只搬文件不改名；
  * 作品参数读完前不挂载 composer，避免用默认值覆盖用户已保存的比例与画风。
  */
 import { Copy, ImageIcon, TextCursorInput, Trash2 } from 'lucide-react'
@@ -20,6 +22,7 @@ import type { PortraitCopyResult, PortraitInsertResult } from '@shared/types/pre
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import { formatDateTime } from '@shared/utils/format'
+import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { Image } from '@webview/components/Image'
 import { ImageComposer } from './ImageComposer'
 import { ImageGenGrid } from './ImageGenGrid'
@@ -46,11 +49,25 @@ const KIND_LABELS: Readonly<Record<PressImageKind, string>> = {
     orphan: '未归类',
 }
 
+/** 旧目录：仍有文件残留时，筛选条下方出现一次性迁移入口 */
+const LEGACY_DIR_NAMES: ReadonlyArray<string> = ['Cover', 'Portraits']
+
 interface ImageGenPageProps {
     /** 当前作品目录：既是数据作用域，也是切换作品时的重建依据 */
     dirPath: string
-    /** 角色清单：用于人物筛选、卡片角标与封面指针修复 */
-    characters: ReadonlyArray<{ id: string; name: string; coverPortraitId: string | null }>
+    /**
+     * 角色清单：用于人物筛选、卡片角标、封面指针修复与提示词里的角色段。
+     * 只取人物卡里与出图相关的几项，不整体透传，避免页面耦合人物卡的全部字段。
+     */
+    characters: ReadonlyArray<{
+        id: string
+        name: string
+        coverPortraitId: string | null
+        appearance?: string
+        identity?: string
+        gender?: 'male' | 'female'
+        age?: string
+    }>
     /** 作品设定快照：命令动作选中「作品设定」时展开进提示词 */
     setting: PromptSettingSnapshot
     /** 写回人物卡封面指针：删除与生成后同步，保证角色卡页与本页一致 */
@@ -58,13 +75,26 @@ interface ImageGenPageProps {
 }
 
 export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }: ImageGenPageProps): JSX.Element {
-    const { images, coverSelectedId, counts, isLoading, removeImage, reload } = useImageLibrary(dirPath)
+    const { images, coverSelectedId, counts, isLoading, removeImage, removeImages, migrate, reload } =
+        useImageLibrary(dirPath)
     const { settings, isLoaded: isSettingsLoaded, save: saveSettings } = useImageSettings(dirPath)
     const [kind, setKind] = useState<KindFilter>('all')
     const [characterId, setCharacterId] = useState('all')
     const [keyword, setKeyword] = useState('')
     /** 详情面板当前查看的图片：null 表示未打开 */
     const [selected, setSelected] = useState<PressImageItem | null>(null)
+    /** 多选模式：点击卡片切换选中，不打开详情 */
+    const [isSelecting, setIsSelecting] = useState(false)
+    const [selectedPaths, setSelectedPaths] = useState<ReadonlySet<string>>(() => new Set())
+    /** 批量删除的二次确认：与单张删除不同，一次删多张更需要拦一下 */
+    const [isConfirmingBatch, setIsConfirmingBatch] = useState(false)
+    const [isConfirmingMigrate, setIsConfirmingMigrate] = useState(false)
+
+    /** 旧目录里还剩多少张：迁移搬完后归零，提示条随之消失 */
+    const legacyCount = useMemo(
+        () => images.filter((image) => LEGACY_DIR_NAMES.some((dirName) => image.path.startsWith(`${dirName}/`))).length,
+        [images],
+    )
 
     const characterNames = useMemo(
         () => new Map(characters.map((character) => [character.id, character.name])),
@@ -120,6 +150,70 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
             return
         }
         onChangeCharacter(result.characterId, { coverPortraitId: result.nextPortraitId })
+    }
+
+    /** 进入或退出多选：两个方向都清空已选，避免下次进入时残留上次的勾选 */
+    const handleToggleSelecting = (): void => {
+        setIsSelecting((current) => !current)
+        setSelectedPaths(new Set())
+    }
+
+    const toggleSelectImage = (image: PressImageItem): void => {
+        setSelectedPaths((current) => {
+            const next = new Set(current)
+            if (next.has(image.path)) {
+                next.delete(image.path)
+            } else {
+                next.add(image.path)
+            }
+            return next
+        })
+    }
+
+    /** 全选只在当前筛选结果内生效；已全选时再点即清空 */
+    const handleSelectAll = (): void => {
+        setSelectedPaths((current) =>
+            current.size === filtered.length ? new Set() : new Set(filtered.map((image) => image.path)),
+        )
+    }
+
+    /**
+     * 批量删除：逐张提交后按剩余列表修正角色封面指针。
+     * 关键约束：只有「被删的正是该角色当前封面」才改指针，且回退值取剩余列表里该角色最新一张，
+     * 不直接采用宿主单张回执的 nextPortraitId——同批里它可能指向马上要被删掉的图。
+     */
+    const handleDeleteSelected = async (): Promise<void> => {
+        const targets = images.filter((image) => selectedPaths.has(image.path))
+        if (targets.length === 0) {
+            return
+        }
+        const { removals, images: remaining } = await removeImages(targets)
+        const removed = removals.filter((item) => item.result.removed).map((item) => item.image)
+        if (selected !== null && removed.some((image) => image.path === selected.path)) {
+            setSelected(null)
+        }
+        setIsSelecting(false)
+        setSelectedPaths(new Set())
+        const characterIds = new Set(
+            removed.flatMap((image) => (image.characterId === null ? [] : [image.characterId])),
+        )
+        for (const targetId of characterIds) {
+            const target = characters.find((character) => character.id === targetId)
+            if (target === undefined || !removed.some((image) => image.id === target.coverPortraitId)) {
+                continue
+            }
+            const nextPortrait = remaining.find((image) => image.characterId === targetId) ?? null
+            onChangeCharacter(targetId, { coverPortraitId: nextPortrait === null ? null : nextPortrait.id })
+        }
+    }
+
+    /** 迁移旧目录：只搬文件不改名，搬完刷新列表，旧目录清空后提示条自然消失 */
+    const handleMigrate = async (): Promise<void> => {
+        const result = await migrate()
+        if (result === null) {
+            return
+        }
+        toast.success(`已迁移 ${result.moved} 张${result.skipped > 0 ? `，跳过 ${result.skipped} 张` : ''}`)
     }
 
     /** 设为作品封面：任意图片都可以，宿主只校验归属与文件存在 */
@@ -227,7 +321,58 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                     placeholder="搜索角色或文件名"
                     className="ml-auto h-7 w-44"
                 />
+                <Button
+                    type="button"
+                    size="sm"
+                    variant={isSelecting ? 'secondary' : 'ghost'}
+                    onClick={handleToggleSelecting}
+                >
+                    {isSelecting ? '退出选择' : '选择'}
+                </Button>
             </div>
+
+            {legacyCount > 0 ? (
+                <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-1.5">
+                    <span className="text-muted-foreground text-xs">
+                        有 {legacyCount} 张图仍在旧目录 Cover / Portraits 下
+                    </span>
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="ml-auto"
+                        onClick={() => setIsConfirmingMigrate(true)}
+                    >
+                        迁移到 Images
+                    </Button>
+                </div>
+            ) : null}
+
+            {isSelecting ? (
+                <div className="flex items-center gap-1.5 border-b px-4 py-1.5">
+                    <span className="text-muted-foreground text-xs tabular-nums">已选 {selectedPaths.size} 张</span>
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={filtered.length === 0}
+                        onClick={handleSelectAll}
+                    >
+                        {selectedPaths.size === filtered.length && filtered.length > 0 ? '取消全选' : '全选当前结果'}
+                    </Button>
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="text-destructive hover:text-destructive ml-auto"
+                        disabled={selectedPaths.size === 0}
+                        onClick={() => setIsConfirmingBatch(true)}
+                    >
+                        <Trash2 />
+                        删除选中
+                    </Button>
+                </div>
+            ) : null}
 
             <div className="min-h-0 flex-1 overflow-y-auto">
                 {isLoading ? (
@@ -259,7 +404,12 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                         images={filtered}
                         coverSelectedId={coverSelectedId}
                         characterNames={characterNames}
+                        isSelecting={isSelecting}
+                        selectedPaths={selectedPaths}
+                        onToggleSelect={toggleSelectImage}
                         onDelete={(image) => void handleDelete(image)}
+                        onCopy={(image) => void handleCopyImage(image)}
+                        onInsert={(image) => void handleInsertImage(image)}
                         onSelect={setSelected}
                     />
                 )}
@@ -377,6 +527,41 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                     )}
                 </SheetContent>
             </Sheet>
+
+            <ConfirmDialog
+                open={isConfirmingBatch}
+                title={`删除选中的 ${selectedPaths.size} 张图片？`}
+                description="文件会移入系统回收站；若其中包含角色封面，该角色的封面会更新为剩余最新一张。"
+                confirmLabel="删除选中"
+                isDestructive
+                size="sm"
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) {
+                        setIsConfirmingBatch(false)
+                    }
+                }}
+                onConfirm={() => {
+                    setIsConfirmingBatch(false)
+                    void handleDeleteSelected()
+                }}
+            />
+
+            <ConfirmDialog
+                open={isConfirmingMigrate}
+                title={`把 ${legacyCount} 张图片迁移到 Images？`}
+                description="只移动文件、不改文件名：作品封面会自动指向新位置，角色封面记录的是图片 id，不受目录影响；目标目录已有同名文件时跳过并保留两份。"
+                confirmLabel="开始迁移"
+                size="sm"
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) {
+                        setIsConfirmingMigrate(false)
+                    }
+                }}
+                onConfirm={() => {
+                    setIsConfirmingMigrate(false)
+                    void handleMigrate()
+                }}
+            />
         </div>
     )
 }
