@@ -7,7 +7,7 @@
  * 侧车 {id}.json 跟随图片：删除时一并清理、迁移时一并搬走，元数据失败不阻断图片操作；
  * 删除时一次性算出作品封面回退值与角色封面回退值，避免前端二次推断后出现两套口径；
  * 手工放入的孤儿图可列举、可删除，但文件名不合法时不允许设为封面；
- * 旧目录迁移只搬文件、不改名，并同步改写作品封面指针的目录前缀。
+ * 旧目录迁移只搬文件、不改名，同步改写作品封面指针的目录前缀，并在搬空后删除旧目录。
  */
 import * as vscode from 'vscode'
 import { IMAGES_DIR, IMAGE_DIR_NAMES } from './constants'
@@ -206,8 +206,36 @@ export class ImageLibraryService {
             const fileName = selected.slice(selected.lastIndexOf('/') + 1)
             this.store.write(dirPath, `${imagesPrefix}/${fileName}`)
         }
+        // 收尾：搬空且不含其它文件的旧目录一并删除，避免作品下残留空的 Cover / Portraits
+        for (const dirName of legacyDirNames) {
+            await this.removeDirIfEmpty(buildStorageUri(root, [...projectSegments, dirName]))
+        }
         logger.info(`旧目录迁移完成：移动 ${moved} 张，跳过 ${skipped} 张，封面指针改写 ${hasLegacyCover}`)
         return { moved, skipped, coverUpdated: hasLegacyCover }
+    }
+
+    /**
+     * 删除已搬空的旧目录：仍有残留（非图片文件）时保持原状，交给用户自行处理。
+     * 关键约束：目录不存在是常态（从未使用过旧目录），静默返回；删除失败只记日志，不影响迁移结果。
+     */
+    private async removeDirIfEmpty(dirUri: vscode.Uri): Promise<void> {
+        let entries: [string, vscode.FileType][]
+        try {
+            entries = await vscode.workspace.fs.readDirectory(dirUri)
+        } catch {
+            // 旧目录本来就不存在
+            return
+        }
+        if (entries.length > 0) {
+            return
+        }
+        try {
+            await vscode.workspace.fs.delete(dirUri, { recursive: false, useTrash: false })
+            logger.info(`旧目录已搬空并删除：${dirUri.fsPath}`)
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error)
+            logger.warn(`旧目录删除失败：${dirUri.fsPath}（${reason}）`)
+        }
     }
 
     /**

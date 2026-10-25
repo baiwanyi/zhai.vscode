@@ -6,7 +6,14 @@
 import * as path from 'node:path'
 import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { readFileContent, resetWorkspaceState, setConfigValue, setDirectory, setFileContent } from './stubs/vscode'
+import {
+    hasDirectory,
+    readFileContent,
+    resetWorkspaceState,
+    setConfigValue,
+    setDirectory,
+    setFileContent,
+} from './stubs/vscode'
 import { ensureSchema } from '../src/modules/common/db/schema'
 import { PressCoverStore } from '../src/modules/imagegen/db/coverRepository'
 import { ImageLibraryService } from '../src/modules/imagegen/imageLibraryService'
@@ -96,5 +103,23 @@ describe('migrate', () => {
         const result = await service.migrate({ dirPath: DIR_PATH })
 
         expect(result).toEqual({ moved: 0, skipped: 0, coverUpdated: false })
+    })
+
+    it('旧目录搬空后一并删除，不留空目录', async () => {
+        addImageWithSidecar('Cover', COVER_IMAGE)
+
+        await service.migrate({ dirPath: DIR_PATH })
+
+        expect(hasDirectory(dirFsPath('Cover'))).toBe(false)
+    })
+
+    it('旧目录仍有非图片文件时保留目录', async () => {
+        addImageWithSidecar('Cover', COVER_IMAGE)
+        setFileContent(path.join(dirFsPath('Cover'), 'note.txt'), 'x')
+
+        await service.migrate({ dirPath: DIR_PATH })
+
+        expect(hasDirectory(dirFsPath('Cover'))).toBe(true)
+        expect(readFileContent(path.join(dirFsPath('Cover'), 'note.txt'))).toBe('x')
     })
 })

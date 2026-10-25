@@ -74,7 +74,7 @@
 | `pressAi/listImageLibrary` | `dirPath` | `ImageLibraryResult` | 合并三目录扫描，按时间降序；`counts` 给出各分类数量 |
 | `pressAi/getImageDetail` | `dirPath`、`path` | `ImageDetailResult` | 读同名侧车；侧车缺失或字段不合法时各字段为 `null`，不抛错 |
 | `pressAi/deleteImage` | `dirPath`、`path` | `ImageDeleteResult` | 进回收站；一次算好作品封面回退值与角色封面回退值 |
-| `pressAi/migrateImageDirs` | `dirPath` | `ImageMigrateResult` | 把 `Cover` / `Portraits` 的图片搬进 `Images`，只搬不改名，同名跳过 |
+| `pressAi/migrateImageDirs` | `dirPath` | `ImageMigrateResult` | 把 `Cover` / `Portraits` 的图片搬进 `Images`，只搬不改名，同名跳过；搬空后删除旧目录 |
 | `pressAi/setImageCover` | `dirPath`、`path` | `ImageSetCoverResult` | 校验归属、文件存在与标准命名 |
 | `pressAi/copyPortrait` | `path` | `PortraitCopyResult` | 宿主写系统剪贴板（webview 受 CSP 限制） |
 | `pressAi/insertPortrait` | `path` | `PortraitInsertResult` | 插入光标处；`no-editor` 视为静默忽略 |
@@ -156,6 +156,7 @@
 - 多选模式：点卡片切换勾选而不打开详情，悬停操作隐藏；批量删除需二次确认，逐张串行提交后只列举一次。
 - 分批渲染：网格一次挂载 60 张（`GRID_PAGE_SIZE`），筛选条件变化自动回到首批，底部「加载更多」按批追加；全选只覆盖已渲染的图片，未加载的图不会被批量删除带走。
 - 选择生命周期：选中集合与筛选签名绑定，换类别/角色/关键词即派生为空集；批量删除只作用于当前筛选结果，删除期间按钮显示「正在删除 n / 总数」并禁止重复触发。
+- 页面切换即重挂载：`PressSectionRouter` 按分区条件渲染（离开即卸载），生图页与设定页封面组都靠挂载 effect 重新读盘，因此跨页面改动无需额外刷新信号。
 - 详情参数：按字段存在性分段渲染——无侧车时显示「没有出图参数」空态，提示词为空则隐藏复制按钮，`enhancedFrom` 存在时以折叠区展示增强前原文。
 - 参数读取完成前不挂载 composer，用等高骨架占位，避免默认值覆盖用户已保存的比例与画风。
 - 生成中发送按钮切换为「取消生成」，取消后立即复位界面，不等宿主回包；迟到的回包按请求代号丢弃。
@@ -194,9 +195,8 @@
 | 批量删除原子性 | 逐张串行提交，非事务：中途失败会提示并按已成功的部分刷新，不做回滚 |
 | 图片扩展名口径 | 图库、角色卡、封面画廊统一认 `png` / `jpe?g` / `webp` / `gif`，由 `imageDirScan.ts` 单点维护 |
 | 图库规模 | `listImageLibrary` 全量返回，前端按 60 张一批挂载（无虚拟滚动）；封面画廊在宿主侧截断到 60 张并回传 `total` |
-| 详情降级 | 无侧车（旧图或手工图）时显示空态说明，不隐藏整块区域；`enhancedFrom` 以折叠区展示 |
-| 迁移后空目录 | 只搬文件不改名，`Cover/`、`Portraits/` 目录本身保留（搬空后为空目录） |
-| 跨页面刷新 | 设定页画廊删除 `Images` 来源的图后，生图页不会自动刷新，需切页或重新列举 |
+| 详情降级 | 读取侧车期间显示骨架占位；无侧车（旧图或手工图）时显示空态说明；`enhancedFrom` 以折叠区展示 |
+| 旧目录清理 | 迁移后若 `Cover` / `Portraits` 已搬空且无其它文件，目录一并删除；有残留文件时保留 |
 
 ---
 

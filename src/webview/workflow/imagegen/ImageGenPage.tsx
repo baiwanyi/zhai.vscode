@@ -104,8 +104,8 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
     const [keyword, setKeyword] = useState('')
     /** 详情面板当前查看的图片：null 表示未打开 */
     const [selected, setSelected] = useState<PressImageItem | null>(null)
-    /** 详情侧车：只在面板打开时读取，切换图片自动重取 */
-    const detail = useImageDetail(dirPath, selected === null ? null : selected.path)
+    /** 详情侧车：只在面板打开时读取，切换图片自动重取；isLoading 用于占位，避免参数区闪空白 */
+    const { detail, isLoading: isDetailLoading } = useImageDetail(dirPath, selected === null ? null : selected.path)
     /** 多选模式：点击卡片切换选中，不打开详情 */
     const [isSelecting, setIsSelecting] = useState(false)
     /**
@@ -577,7 +577,13 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                                     className="max-h-[60vh] w-full object-contain"
                                 />
                                 <p className="mt-2 break-all text-xs text-muted-foreground">{selected.path}</p>
-                                {detail === null ? null : hasDetail ? (
+                                {isDetailLoading ? (
+                                    <div className="mt-3 flex flex-col gap-1.5">
+                                        <Skeleton className="h-4 w-16" />
+                                        <Skeleton className="h-16 w-full" />
+                                        <Skeleton className="h-3 w-24" />
+                                    </div>
+                                ) : hasDetail ? (
                                     <div className="mt-3 flex flex-col gap-1.5">
                                         <div className="flex items-center gap-1">
                                             <p className="text-xs font-medium">出图参数</p>
