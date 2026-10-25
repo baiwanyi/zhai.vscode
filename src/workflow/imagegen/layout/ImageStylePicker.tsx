@@ -54,17 +54,11 @@ export function ImageStylePicker({ value, disabled, onChange }: ImageStylePicker
     return (
         <Popover open={isOpen} onOpenChange={setIsOpen}>
             <PopoverTrigger asChild>
-                <Button
-                    size="icon"
-                    variant={isOpen ? 'secondary' : 'ghost'}
-                    aria-label="画面风格"
-                    tooltip="画面风格"
-                    disabled={disabled}
-                >
+                <Button size="icon" variant="ghost" aria-label="画面风格" tooltip="画面风格" disabled={disabled}>
                     <Palette />
                 </Button>
             </PopoverTrigger>
-            <PopoverContent align="start" className="w-72">
+            <PopoverContent align="start">
                 <PopoverHeader>
                     <PopoverTitle>画面风格</PopoverTitle>
                 </PopoverHeader>

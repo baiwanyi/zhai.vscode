@@ -1,6 +1,6 @@
 /**
  * 生图输入卡片的工具栏：命令动作、画面风格、角色设定、作品封面与提示词入口。
- * 复用约定：画面风格取本目录 ImageStylePicker，提示词取本目录 ImagePromptPopover，
+ * 复用约定：画面风格取本目录 ImageStylePicker，提示词取本目录 ImagePromptPicker，
  * 按钮取 @webview/components/Button（尺寸 sm，激活态切 secondary 底色）。
  * 关键约束：本组件不持有状态，各开关的激活与否由输入卡片按芯片与模式算好传入；
  * 命令动作在生成中仍可切换（只影响下一次请求），其余开关生成中禁用；
@@ -9,7 +9,7 @@
 import { Sparkles, UserRound } from 'lucide-react'
 import type { PortraitStyle } from '@shared/types/press'
 import { Button } from '@webview/components/Button'
-import { ImagePromptPopover } from './ImagePromptPopover'
+import { ImagePromptPicker } from './ImagePromptPicker'
 import { ImageStylePicker } from './ImageStylePicker'
 import type { JSX } from 'react'
 
@@ -79,14 +79,7 @@ export function ImageComposerToolbar({
             >
                 作品封面
             </Button>
-            <ImagePromptPopover
-                trigger={
-                    <Button size="sm" variant="ghost">
-                        提示词
-                    </Button>
-                }
-                onInsert={onInsertPrompt}
-            />
+            <ImagePromptPicker onInsert={onInsertPrompt} />
         </div>
     )
 }
