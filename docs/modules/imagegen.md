@@ -20,7 +20,7 @@
 | --- | --- |
 | press | 生图依赖作品目录（`press/{作品名}`）作为作用域；角色封面指针写在人物卡 Markdown 里，由前端在生成/删除后经 `updateCharacter` 写回 |
 | press 设定页 | 保留「封面画廊」（`listCover` / `saveCover` / `selectCover` / `deleteCover`）：候选为合成封面与图库 `photo-*`，可套用书名、另选、删除；AI 生成本身在生图页，见第 8 节 |
-| ai | 图像通道（`ImageProviderRouter`）与用量记账（`UsageRecorder`）由 ai 提供，生图只消费 |
+| ai | 图像通道与用量记账由 ai 提供，生图只消费；服务层依赖的是 `ImageGenerator` 最小接口（`ImageProviderRouter` 是其唯一实现），测试可注入替身而无需拉起 CLI |
 
 ---
 
@@ -227,5 +227,5 @@
 
 - `pnpm exec tsc --noEmit`
 - `pnpm exec eslint src/modules/imagegen src/webview/workflow/imagegen`
-- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryMigrate.test.ts tests/imageLibraryService.test.ts tests/coverCandidates.test.ts tests/coverService.test.ts tests/imageSettingsService.test.ts`
+- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryMigrate.test.ts tests/imageLibraryService.test.ts tests/coverCandidates.test.ts tests/coverService.test.ts tests/imageSettingsService.test.ts tests/imageGenerateService.test.ts`
 - 手测清单：列举三目录、按类别/角色/关键词筛选与「清空筛选」、设为封面、删除当前封面后的回退、详情面板复制与插入（含无侧车空态与骨架过渡）、生成中取消、切换作品后参数是否沿用、多选批量删除（含进度文案与角色封面回退）、旧目录迁移（含同名跳过与搬空后目录删除）、芯片内联输入与退格删除、键盘 Tab 聚焦卡片后回车打开详情。

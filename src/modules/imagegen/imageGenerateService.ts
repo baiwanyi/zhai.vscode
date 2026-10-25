@@ -12,7 +12,7 @@ import { IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
 import { writeSidecarOf } from './imageSidecar'
 import { readProjectDirPath } from './portraitService'
 import { composeImagePrompt } from './promptCompose'
-import type { ImageProviderRouter } from './ai/imageProvider'
+import type { ImageGenerator } from './ai/imageProvider'
 import type { PressCoverStore } from './db/coverRepository'
 import type { ImageSettingsService } from './imageSettingsService'
 import type { AiProvider } from '../ai/provider'
@@ -167,7 +167,7 @@ export class ImageGenerateService {
 
     public constructor(
         private readonly db: Database.Database,
-        private readonly router: ImageProviderRouter,
+        private readonly router: ImageGenerator,
         private readonly usageRecorder: UsageRecorder,
         private readonly store: PressCoverStore,
         private readonly provider: AiProvider,

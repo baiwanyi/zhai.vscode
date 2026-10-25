@@ -23,7 +23,7 @@ import { formatVariation, pickVariation } from './ai/portraitVariation'
 import { IMAGE_DIR_NAMES, IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
 import { listImageFiles } from './imageDirScan'
 import { deleteSidecarOf, writeSidecarOf } from './imageSidecar'
-import type { ImageProviderRouter } from './ai/imageProvider'
+import type { ImageGenerator } from './ai/imageProvider'
 import type { PortraitVariation } from './ai/portraitVariation'
 import type {
     CharacterPortrait,
@@ -89,7 +89,7 @@ export class PortraitService {
     public constructor(
         private readonly db: Database.Database,
         private readonly provider: AiProvider,
-        private readonly router: ImageProviderRouter,
+        private readonly router: ImageGenerator,
         private readonly usageRecorder: UsageRecorder,
     ) {}
 

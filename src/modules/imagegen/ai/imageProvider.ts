@@ -35,6 +35,14 @@ export interface ImageGenerateResult {
     startedAt?: number
 }
 
+/**
+ * 出图入口的最小契约：上层服务只依赖这一层，通道实现与测试替身都可以注入。
+ * 关键约束：不得在此层做重试——出图按张计费，重复调用即重复扣费。
+ */
+export interface ImageGenerator {
+    generate(options: ImageGenerateOptions): Promise<ImageGenerateResult>
+}
+
 /** 图像通道实现 */
 export interface ImageProvider {
     readonly id: ImageProviderId
@@ -47,7 +55,7 @@ export interface ImageProvider {
 const PROBE_TTL_MS = 10 * 60 * 1000
 
 /** 图像通道入口：先探测能力再生成，失败后清缓存供下次重探 */
-export class ImageProviderRouter {
+export class ImageProviderRouter implements ImageGenerator {
     private readonly provider: ImageProvider
     private availability: { isAvailable: boolean; checkedAt: number } | null = null
 
