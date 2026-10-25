@@ -12,8 +12,10 @@ import { Button } from '@components/ui/button'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Input } from '@components/ui/input'
 import type { PressImageItem, PressImageKind } from '@shared/types/imagegen'
+import { ImageComposer } from './ImageComposer'
 import { ImageGenGrid } from './ImageGenGrid'
 import { useImageLibrary } from './useImageLibrary'
+import type { PromptSettingSnapshot } from './ImageComposer'
 import type { JSX } from 'react'
 
 /** 类型筛选：封面是「当前选中」维度，与图片自身的类别并列展示 */
@@ -30,12 +32,16 @@ const KIND_FILTERS: ReadonlyArray<{ value: KindFilter; label: string }> = [
 interface ImageGenPageProps {
     /** 当前作品目录：既是数据作用域，也是切换作品时的重建依据 */
     dirPath: string
-    /** 角色清单：用于人物筛选与卡片角标 */
-    characters: ReadonlyArray<{ id: string; name: string }>
+    /** 角色清单：用于人物筛选、卡片角标与封面指针修复 */
+    characters: ReadonlyArray<{ id: string; name: string; coverPortraitId: string | null }>
+    /** 作品设定快照：命令动作选中「作品设定」时展开进提示词 */
+    setting: PromptSettingSnapshot
+    /** 写回人物卡封面指针：删除与生成后同步，保证角色卡页与本页一致 */
+    onChangeCharacter: (characterId: string, patch: { coverPortraitId: string | null }) => void
 }
 
-export function ImageGenPage({ dirPath, characters }: ImageGenPageProps): JSX.Element {
-    const { images, coverSelectedId, isLoading, removeImage } = useImageLibrary(dirPath)
+export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }: ImageGenPageProps): JSX.Element {
+    const { images, coverSelectedId, isLoading, removeImage, reload } = useImageLibrary(dirPath)
     const [kind, setKind] = useState<KindFilter>('all')
     const [characterId, setCharacterId] = useState('all')
     const [keyword, setKeyword] = useState('')
@@ -65,8 +71,20 @@ export function ImageGenPage({ dirPath, characters }: ImageGenPageProps): JSX.El
         })
     }, [images, kind, characterId, keyword, coverSelectedId, characterNames])
 
-    const handleDelete = (image: PressImageItem): void => {
-        void removeImage(image)
+    /**
+     * 删除图片并同步角色封面：宿主已算好回退值，此处只在「被删图正是该角色当前封面」时写回，
+     * 避免把已经被用户改过的封面又覆盖回去。
+     */
+    const handleDelete = async (image: PressImageItem): Promise<void> => {
+        const result = await removeImage(image)
+        if (result === null || !result.removed || result.characterId === null) {
+            return
+        }
+        const target = characters.find((character) => character.id === result.characterId)
+        if (target === undefined || target.coverPortraitId !== image.id) {
+            return
+        }
+        onChangeCharacter(result.characterId, { coverPortraitId: result.nextPortraitId })
     }
 
     return (
@@ -142,10 +160,31 @@ export function ImageGenPage({ dirPath, characters }: ImageGenPageProps): JSX.El
                         images={filtered}
                         coverSelectedId={coverSelectedId}
                         characterNames={characterNames}
-                        onDelete={handleDelete}
+                        onDelete={(image) => void handleDelete(image)}
                     />
                 )}
             </div>
+
+            <ImageComposer
+                dirPath={dirPath}
+                characters={characters}
+                setting={setting}
+                activeCharacterId={characterId === 'all' ? null : characterId}
+                defaultRatio="3:4"
+                defaultStyle="auto"
+                onGenerated={(result) => {
+                    void reload()
+                    if (characterId === 'all') {
+                        return
+                    }
+                    // 该角色还没有封面时才自动认领，已有封面不被新图顶掉
+                    const target = characters.find((character) => character.id === characterId)
+                    if (target === undefined || target.coverPortraitId !== null) {
+                        return
+                    }
+                    onChangeCharacter(characterId, { coverPortraitId: result.image.id })
+                }}
+            />
         </div>
     )
 }

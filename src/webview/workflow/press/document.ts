@@ -6,12 +6,8 @@
  * 章纲的 summary 表示计划、wordCount 表示已写事实，两者不互相推导；未识别的名称不进入 characterIds，
  * 避免正文引用到不存在的人物卡。
  */
-import {
-    DEFAULT_PORTRAIT_STYLE,
-    PORTRAIT_STYLES,
-    isPressCharacterId,
-    isPressPortraitId,
-} from '@shared/types/press'
+import { parseImageKind } from '@shared/types/imagegen'
+import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId } from '@shared/types/press'
 import type { PortraitStyle } from '@shared/types/press'
 import type {
     Audience,
@@ -472,7 +468,8 @@ function parseCharacters(text: string): CharacterCard[] {
             relation: values.get('关系') ?? '',
             portraits: [],
             // 封面只存图片 id：图片本体在 Portraits 下，URL 由宿主按会话签发，不能写进文档
-            coverPortraitId: coverId.length > 0 && isPressPortraitId(coverId) ? coverId : null,
+            // 封面只认角色图标识：新旧两种 portrait 命名都合法，photo 与手工图一律清空
+            coverPortraitId: parseImageKind(coverId) === 'portrait' ? coverId : null,
             portraitStyle: toPortraitStyle(values.get('画风')),
         })
     }

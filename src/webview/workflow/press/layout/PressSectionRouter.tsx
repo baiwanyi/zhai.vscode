@@ -85,7 +85,15 @@ export function PressSectionRouter({
     }
     // 生图按作品隔离：图片目录与参数文件都在作品目录下，切作品即重建，筛选与搜索不串味
     if (section === 'image') {
-        return <ImageGenPage key={dirPath} dirPath={dirPath} characters={workspace.characters} />
+        return (
+            <ImageGenPage
+                key={dirPath}
+                dirPath={dirPath}
+                characters={workspace.characters}
+                setting={workspace.setting}
+                onChangeCharacter={mutations.updateCharacter}
+            />
+        )
     }
     // 校对以编辑器中的当前文档为目标，切作品即重建，避免上一个作品的问题列表残留
     if (section === 'proofread') {

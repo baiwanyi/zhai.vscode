@@ -8,6 +8,7 @@
  * 单一任务锁保证连点不会重复扣费，取消由 pressAi/generateImage/abort 触发。
  */
 import * as vscode from 'vscode'
+import { STYLE_HINTS } from './ai/portraitPrompt'
 import { IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
 import { readProjectDirPath } from './portraitService'
 import type { ImageProviderRouter } from './ai/imageProvider'
@@ -178,7 +179,7 @@ export class ImageGenerateService {
         logger.info(`出图开始：${request.dirPath}（${request.ratio}，${request.kind}）`)
         try {
             const artifact = await this.router.generate({
-                prompt: request.prompt,
+                prompt: [request.prompt, STYLE_HINTS[request.style]].filter((part) => part.length > 0).join('\n\n'),
                 size: IMAGE_RATIO_SIZE[request.ratio],
                 signal: controller.signal,
             })
