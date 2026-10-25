@@ -2,7 +2,7 @@
 /**
  * ImageGenPage 交互用例：覆盖加载与空态、类别/封面/关键词筛选、清空筛选、多选与批量删除。
  * 复用约定：列表、参数与详情三个 hook 以替身接管，断言落在「页面怎么算、怎么调用」上；
- * Sheet 与 ConfirmDialog 用轻量替身，避免把 radix 的 portal 行为混进业务断言。
+ * Dialog 与 ConfirmDialog 用轻量替身，避免把 radix 的 portal 行为混进业务断言。
  * 关键约束：关键词只比对角色名与图片文件名；选中集合与筛选签名绑定；
  * 全选只覆盖已渲染的图片——这三条是筛选/多选逻辑最易回退的地方。
  */
@@ -36,25 +36,25 @@ vi.mock('@webview/components/Image', () => {
     return { Image }
 })
 
-/** 抽屉替身：只要 open 为真就渲染子节点，不引入 radix 的 portal 与焦点管理 */
-vi.mock('@components/ui/sheet', () => {
+/** 弹窗替身：只要 open 为真就渲染子节点，不引入 radix 的 portal 与焦点管理 */
+vi.mock('@components/ui/dialog', () => {
     interface SlotProps {
         children: ReactNode
     }
 
-    const Sheet = ({ open, children }: { open: boolean; children: ReactNode }): JSX.Element | null =>
+    const Dialog = ({ open, children }: { open: boolean; children: ReactNode }): JSX.Element | null =>
         open ? (
             <div role="dialog" aria-label="图片详情">
                 {children}
             </div>
         ) : null
-    const SheetContent = ({ children }: SlotProps): JSX.Element => <div>{children}</div>
-    const SheetHeader = ({ children }: SlotProps): JSX.Element => <div>{children}</div>
-    const SheetTitle = ({ children }: SlotProps): JSX.Element => <h2>{children}</h2>
-    const SheetDescription = ({ children }: SlotProps): JSX.Element => <p>{children}</p>
-    const SheetFooter = ({ children }: SlotProps): JSX.Element => <div>{children}</div>
+    const DialogContent = ({ children }: SlotProps): JSX.Element => <div>{children}</div>
+    const DialogHeader = ({ children }: SlotProps): JSX.Element => <div>{children}</div>
+    const DialogTitle = ({ children }: SlotProps): JSX.Element => <h2>{children}</h2>
+    const DialogDescription = ({ children }: SlotProps): JSX.Element => <p>{children}</p>
+    const DialogFooter = ({ children }: SlotProps): JSX.Element => <div>{children}</div>
 
-    return { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter }
+    return { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter }
 })
 
 /** 确认弹窗替身：保留标题与确认按钮语义，跳过 alert-dialog 的动画与遮罩 */
@@ -143,7 +143,15 @@ function filterButton(label: string): HTMLElement {
     return screen.getByRole('button', { name: new RegExp(`^${label}`) })
 }
 
+/** ScrollArea 依赖 ResizeObserver 量取视口：jsdom 未实现，补空桩避免骨架渲染中断 */
+class ResizeObserverStub {
+    observe = (): void => undefined
+    unobserve = (): void => undefined
+    disconnect = (): void => undefined
+}
+
 beforeEach(() => {
+    vi.stubGlobal('ResizeObserver', ResizeObserverStub)
     requestMock.mockReset()
     requestMock.mockResolvedValue({ copied: true, inserted: true, ok: true })
     libraryMock.mockReset()

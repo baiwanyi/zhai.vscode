@@ -366,138 +366,136 @@ export function ImageComposer({
     }))
 
     return (
-        <div className="p-2">
-            <div className="rounded-2xl bg-composer p-1.5">
-                <div className="mb-1 flex items-center gap-1">
-                    <Button
-                        type="button"
-                        size="sm"
-                        variant={settingChip === null ? 'ghost' : 'secondary'}
-                        onClick={toggleSetting}
-                    >
-                        <Sparkles />
-                        命令动作
-                    </Button>
-                    <Button
-                        type="button"
-                        size="sm"
-                        variant={isStyleOpen ? 'secondary' : 'ghost'}
-                        onClick={() => setIsStyleOpen((open) => !open)}
-                    >
-                        画面风格
-                    </Button>
-                    <Button
-                        type="button"
-                        size="sm"
-                        variant={characterChip === null ? 'ghost' : 'secondary'}
-                        disabled={activeCharacter === null || isCoverMode}
-                        title={
-                            isCoverMode
-                                ? '封面不绑定角色，先关闭作品封面模式'
-                                : activeCharacter === null
-                                  ? '先在筛选条选择人物'
-                                  : undefined
-                        }
-                        onClick={toggleCharacter}
-                    >
-                        <UserRound />
-                        角色设定
-                    </Button>
-                    <Button
-                        type="button"
-                        size="sm"
-                        variant={isCoverMode ? 'secondary' : 'ghost'}
-                        disabled={isGenerating}
-                        title="生成结果会落进图库并自动设为作品封面"
-                        onClick={toggleCoverMode}
-                    >
-                        作品封面
-                    </Button>
-                    <ImagePromptPopover
-                        trigger={
-                            <Button type="button" size="sm" variant="ghost">
-                                提示词
-                            </Button>
-                        }
-                        onInsert={insertPrompt}
-                    />
+        <div className="rounded-2xl bg-composer p-1.5">
+            <div className="mb-1 flex items-center gap-1">
+                <Button
+                    type="button"
+                    size="sm"
+                    variant={settingChip === null ? 'ghost' : 'secondary'}
+                    onClick={toggleSetting}
+                >
+                    <Sparkles />
+                    命令动作
+                </Button>
+                <Button
+                    type="button"
+                    size="sm"
+                    variant={isStyleOpen ? 'secondary' : 'ghost'}
+                    onClick={() => setIsStyleOpen((open) => !open)}
+                >
+                    画面风格
+                </Button>
+                <Button
+                    type="button"
+                    size="sm"
+                    variant={characterChip === null ? 'ghost' : 'secondary'}
+                    disabled={activeCharacter === null || isCoverMode}
+                    title={
+                        isCoverMode
+                            ? '封面不绑定角色，先关闭作品封面模式'
+                            : activeCharacter === null
+                              ? '先在筛选条选择人物'
+                              : undefined
+                    }
+                    onClick={toggleCharacter}
+                >
+                    <UserRound />
+                    角色设定
+                </Button>
+                <Button
+                    type="button"
+                    size="sm"
+                    variant={isCoverMode ? 'secondary' : 'ghost'}
+                    disabled={isGenerating}
+                    title="生成结果会落进图库并自动设为作品封面"
+                    onClick={toggleCoverMode}
+                >
+                    作品封面
+                </Button>
+                <ImagePromptPopover
+                    trigger={
+                        <Button type="button" size="sm" variant="ghost">
+                            提示词
+                        </Button>
+                    }
+                    onInsert={insertPrompt}
+                />
+            </div>
+
+            {isStyleOpen ? (
+                <div className="mb-1 flex flex-wrap gap-1 px-1">
+                    {STYLE_OPTIONS.map((option) => (
+                        <Button
+                            key={option.value}
+                            type="button"
+                            size="xs"
+                            variant={styleChip?.value === option.value ? 'secondary' : 'ghost'}
+                            onClick={() => pickStyle(option.value, option.label)}
+                        >
+                            {option.label}
+                        </Button>
+                    ))}
                 </div>
+            ) : null}
 
-                {isStyleOpen ? (
-                    <div className="mb-1 flex flex-wrap gap-1 px-1">
-                        {STYLE_OPTIONS.map((option) => (
-                            <Button
-                                key={option.value}
-                                type="button"
-                                size="xs"
-                                variant={styleChip?.value === option.value ? 'secondary' : 'ghost'}
-                                onClick={() => pickStyle(option.value, option.label)}
-                            >
-                                {option.label}
-                            </Button>
-                        ))}
-                    </div>
-                ) : null}
-
-                <div className="rounded-xl bg-composer-input p-3">
-                    <RichChipInput
-                        ref={richInputRef}
-                        value={text}
-                        chips={richChips}
-                        placeholder="描述画面：人物、动作、场景、光线与氛围…"
-                        canSend={buildPrompt().length > 0}
-                        className="max-h-40 min-h-17 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word text-sm leading-5 outline-none"
-                        onChange={setText}
-                        onSend={() => {
-                            void handleSend()
+            <div className="rounded-xl bg-composer-input p-3">
+                <RichChipInput
+                    ref={richInputRef}
+                    value={text}
+                    chips={richChips}
+                    placeholder="描述画面：人物、动作、场景、光线与氛围…"
+                    canSend={buildPrompt().length > 0}
+                    className="max-h-40 min-h-17 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word text-sm leading-5 outline-none"
+                    onChange={setText}
+                    onSend={() => {
+                        void handleSend()
+                    }}
+                    onRemoveChip={removeChip}
+                />
+                <div className="mt-2 flex items-center gap-1">
+                    {RATIO_LABELS.map((item) => (
+                        <Button
+                            key={item}
+                            type="button"
+                            size="xs"
+                            variant={ratio === item ? 'secondary' : 'ghost'}
+                            onClick={() => handleRatioChange(item)}
+                        >
+                            {item}
+                        </Button>
+                    ))}
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        className="ml-auto"
+                        disabled={isEnhancing || isGenerating || text.trim().length === 0}
+                        onClick={() => {
+                            if (enhancedFrom === null) {
+                                void handleEnhance()
+                                return
+                            }
+                            handleRestore()
                         }}
-                        onRemoveChip={removeChip}
-                    />
-                    <div className="mt-2 flex items-center gap-1">
-                        {RATIO_LABELS.map((item) => (
-                            <Button
-                                key={item}
-                                type="button"
-                                size="xs"
-                                variant={ratio === item ? 'secondary' : 'ghost'}
-                                onClick={() => handleRatioChange(item)}
-                            >
-                                {item}
-                            </Button>
-                        ))}
+                    >
+                        {isEnhancing ? '增强中…' : enhancedFrom === null ? '增强提示词' : '还原'}
+                    </Button>
+                    {isGenerating ? (
+                        <Button type="button" size="sm" variant="outline" onClick={() => void handleAbort()}>
+                            <X />
+                            取消生成
+                        </Button>
+                    ) : (
                         <Button
                             type="button"
                             size="sm"
-                            variant="ghost"
-                            className="ml-auto"
-                            disabled={isEnhancing || isGenerating || text.trim().length === 0}
-                            onClick={() => {
-                                if (enhancedFrom === null) {
-                                    void handleEnhance()
-                                    return
-                                }
-                                handleRestore()
-                            }}
+                            disabled={buildPrompt().length === 0}
+                            onClick={() => void handleSend()}
                         >
-                            {isEnhancing ? '增强中…' : enhancedFrom === null ? '增强提示词' : '还原'}
+                            <Send />
+                            {isCoverMode ? '生成封面' : '发送'}
                         </Button>
-                        {isGenerating ? (
-                            <Button type="button" size="sm" variant="outline" onClick={() => void handleAbort()}>
-                                <X />
-                                取消生成
-                            </Button>
-                        ) : (
-                            <Button
-                                type="button"
-                                size="sm"
-                                disabled={buildPrompt().length === 0}
-                                onClick={() => void handleSend()}
-                            >
-                                <Send />
-                                {isCoverMode ? '生成封面' : '发送'}
-                            </Button>
-                        )}
-                    </div>
+                    )}
                 </div>
             </div>
         </div>

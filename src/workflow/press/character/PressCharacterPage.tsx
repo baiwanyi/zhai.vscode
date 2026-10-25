@@ -1,6 +1,6 @@
 /**
  * 人物设定页：写作流程的第三步，用角色下拉筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
- * 复用约定：外壳取 components/AppPage（作品名走 AppDescription 眉标、筛选行进 AppAction、列表走 AppContent 滚动），
+ * 复用约定：外壳取 components/AppPage（作品名走 AppDescription 眉标、筛选行进 AppMenu、列表走 AppContent 滚动），
  * 列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterDetail 承担、
  * 新增由 CharacterCreateDialog 承担、提取由 useCharacterExtract 发起、封面画廊由 useCharacterPortrait 读取；
  * 搜索框复用 ui/input-group（前置图标交给 InputGroupAddon），提取中的等待态复用 components/StateEmpty；
@@ -16,11 +16,11 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from '@components/ui/inp
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import type { PortraitGalleryItem, PressExtractedCharacter } from '@shared/types/press'
 import {
-    AppAction,
     AppContent,
     AppDescription,
     AppFooter,
     AppHeader,
+    AppMenu,
     AppPage,
     AppTitle,
 } from '@webview/components/AppPage'
@@ -163,7 +163,7 @@ export function PressCharacterPage({
                     <AppDescription>{setting.title}</AppDescription>
                     <AppTitle>人物设定</AppTitle>
                     <AppDescription>共 {characters.length} 人 · 欲望与弱点决定冲突，大纲排布时会引用</AppDescription>
-                    <AppAction>
+                    <AppMenu>
                         <Select value={roleFilter} onValueChange={handleFilterChange}>
                             <SelectTrigger className="h-8 w-24" aria-label="角色筛选">
                                 <SelectValue />
@@ -189,7 +189,7 @@ export function PressCharacterPage({
                                 onChange={(event) => setQuery(event.target.value)}
                             />
                         </InputGroup>
-                    </AppAction>
+                    </AppMenu>
                 </AppHeader>
                 <AppContent isScrollable>
                     {isExtracting ? (

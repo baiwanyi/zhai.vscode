@@ -100,6 +100,7 @@ export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): 
         <>
             <AppPage onContextMenu={(event) => event.preventDefault()}>
                 <AppHeader>
+                    <AppTitle>作品列表</AppTitle>
                     <AppAction>
                         <Button
                             variant="secondary"
@@ -111,7 +112,6 @@ export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): 
                             <ChevronLeft />
                         </Button>
                     </AppAction>
-                    <AppTitle>作品列表</AppTitle>
                     {projectCount > 0 && <AppDescription>{`${String(projectCount)} 部`}</AppDescription>}
                 </AppHeader>
                 <AppContent isScrollable>

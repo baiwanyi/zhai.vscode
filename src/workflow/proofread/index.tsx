@@ -10,11 +10,11 @@ import { Alert, AlertDescription } from '@components/ui/alert'
 import { Badge } from '@components/ui/badge'
 import type { ProofreadTarget } from '@shared/types/proofread'
 import {
-    AppAction,
     AppContent,
     AppDescription,
     AppFooter,
     AppHeader,
+    AppMenu,
     AppPage,
     AppTitle,
 } from '@webview/components/AppPage'
@@ -50,7 +50,7 @@ interface TargetBadgesProps {
 /** 目标信息：标题与字数常驻，选区 / 截断两种口径按需追加 */
 function TargetBadges({ target, lexiconLabel }: TargetBadgesProps): JSX.Element {
     return (
-        <AppAction>
+        <AppMenu>
             <Badge variant="outline" className="max-w-full truncate">
                 {target.title}
             </Badge>
@@ -58,7 +58,7 @@ function TargetBadges({ target, lexiconLabel }: TargetBadgesProps): JSX.Element 
             {target.kind === 'selection' && <Badge variant="secondary">选区</Badge>}
             {target.truncated && <Badge variant="destructive">正文过长已截断</Badge>}
             <span className="text-xs text-muted-foreground">{lexiconLabel}</span>
-        </AppAction>
+        </AppMenu>
     )
 }
 

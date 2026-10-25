@@ -7,7 +7,7 @@
  * 主体滚动由面板自身承担，故 AppContent 不传 isScrollable，避免外层再套一层滚动容器。
  */
 import { useState } from 'react'
-import { AppAction, AppContent, AppDescription, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
+import { AppContent, AppDescription, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'
 import { ChapterSnapshotPanel } from './ChapterSnapshotPanel'
 import { DocSnapshotPanel } from './DocSnapshotPanel'
 import { SnapshotSectionRail } from './SnapshotSectionRail'
@@ -29,9 +29,9 @@ export function PressSnapshotPage({ dirPath }: PressSnapshotPageProps): JSX.Elem
                 <AppDescription>
                     设定、大纲等文档与章节正文改动时自动留一版，恢复前也会先留一版，误操作随时可退回。
                 </AppDescription>
-                <AppAction>
+                <AppMenu>
                     <SnapshotSectionRail activeSection={section} onSelect={setSection} />
-                </AppAction>
+                </AppMenu>
             </AppHeader>
             <AppContent>
                 {section === 'doc' ? (

@@ -216,6 +216,7 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
         <>
             <AppPage onContextMenu={(event) => event.preventDefault()}>
                 <AppHeader>
+                    <AppTitle>{projectName}</AppTitle>
                     <AppAction>
                         <Button
                             variant="secondary"
@@ -227,7 +228,6 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
                             <ChevronLeft />
                         </Button>
                     </AppAction>
-                    <AppTitle>{projectName}</AppTitle>
                     {project !== undefined && <AppDescription>{formatProjectMeta(project)}</AppDescription>}
                 </AppHeader>
                 <AppContent isScrollable>

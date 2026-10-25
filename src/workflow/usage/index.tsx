@@ -1,6 +1,6 @@
 /**
  * AI 使用量页：以 AppPage 骨架承载「标题区（汇总 + 筛选 + 刷新）、用量表格、分页」，点击请求 id 打开提示词弹窗。
- * 复用约定：外壳取 components/AppPage（汇总走 AppHeader、筛选与刷新进 AppAction、表格走 AppContent 滚动、分页进 AppFooter）；
+ * 复用约定：外壳取 components/AppPage（刷新按钮进标题行 AppAction、汇总与筛选各占一行、表格走 AppContent 滚动、分页进 AppFooter）；
  * 列表经 useAiUsage 向宿主取（分页与汇总都在宿主侧完成），提示词经 useUsagePrompt 按需拉取；
  * 表格、筛选、分页与弹窗各自独立成组件，本文件只做状态编排与筛选/翻页的联动复位。
  * 关键约束：筛选变化必须把页码复位到 1，否则会停留在超出新结果集的页码上；
@@ -13,7 +13,7 @@ import { Alert, AlertDescription } from '@components/ui/alert'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
 import type { AiUsageItem, AiUsageModule, AiUsageRange } from '@shared/types/aiUsage'
-import { AppAction, AppContent, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
+import { AppAction, AppContent, AppFooter, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { DEFAULT_PAGE_SIZE, DEFAULT_RANGE } from './constants'
 import { useAiUsage } from './hooks/useAiUsage'
@@ -56,18 +56,10 @@ export function AiUsagePage(): JSX.Element {
             <AppPage>
                 <AppHeader>
                     <AppTitle>AI 使用量</AppTitle>
-                    <UsageHeader summary={result?.summary ?? null} periods={result?.periods ?? null} />
                     <AppAction>
-                        <UsageFilterBar
-                            module={module}
-                            range={range}
-                            onChangeModule={handleChangeModule}
-                            onChangeRange={handleChangeRange}
-                        />
                         <Button
                             variant="ghost"
                             size="icon"
-                            className="ml-auto"
                             aria-label="刷新用量"
                             disabled={isLoading}
                             onClick={refresh}
@@ -79,8 +71,17 @@ export function AiUsagePage(): JSX.Element {
                             )}
                         </Button>
                     </AppAction>
+                    <UsageHeader summary={result?.summary ?? null} periods={result?.periods ?? null} />
+                    <AppMenu>
+                        <UsageFilterBar
+                            module={module}
+                            range={range}
+                            onChangeModule={handleChangeModule}
+                            onChangeRange={handleChangeRange}
+                        />
+                    </AppMenu>
                     {error !== null && (
-                        <Alert variant="destructive">
+                        <Alert variant="destructive" className="col-span-full">
                             <AlertDescription>{error}</AlertDescription>
                         </Alert>
                     )}

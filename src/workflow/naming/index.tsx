@@ -1,6 +1,6 @@
 /**
  * 取名页：以 app-page 骨架承载「标题区 + 条件字段区 + 底部操作区」，承接写作管理页的取名分区。
- * 复用约定：外壳取 components/AppPage（分类栏进 AppAction、生成方式开关进 AppFooter 左端、条件区走 isScrollable），
+ * 复用约定：外壳取 components/AppPage（分类栏进 AppMenu、生成方式开关进 AppFooter 左端、条件区走 isScrollable），
  * 条件收集与结果渲染由 layout/ 与 hooks/ 承担，本文件只做状态编排；
  * 结果按分类缓存在 useNamingGenerate 内，生成后由 NamingResultDialog 弹层展示，
  * 关闭后经底部「查看结果」再次打开，未生成过的分类自动随机生成一批。
@@ -14,11 +14,11 @@ import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
 import type { NamingCategory, NamingRequest, NamingSurnameKind } from '@shared/types/naming'
 import {
-    AppAction,
     AppContent,
     AppDescription,
     AppFooter,
     AppHeader,
+    AppMenu,
     AppPage,
     AppTitle,
 } from '@webview/components/AppPage'
@@ -153,13 +153,13 @@ export function NamingPage(): JSX.Element {
                 <AppHeader>
                     <AppTitle>{PAGE_TITLE}</AppTitle>
                     <AppDescription>{PAGE_DESCRIPTION}</AppDescription>
-                    <AppAction>
+                    <AppMenu>
                         <NamingCategoryRail
                             catalog={catalog}
                             activeCategory={request.category}
                             onSelect={handleCategoryChange}
                         />
-                    </AppAction>
+                    </AppMenu>
                 </AppHeader>
                 <AppContent isScrollable>
                     <NamingConditionFields

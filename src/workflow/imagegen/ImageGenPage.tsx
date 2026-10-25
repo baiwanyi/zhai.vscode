@@ -1,38 +1,40 @@
 /**
- * 生图页：以筛选条 + 图片网格管理当前作品的封面、角色图与普通图片。
- * 复用约定：列表经 useImageLibrary、参数经 useImageSettings，网格由 ImageGenGrid 渲染，
- * 详情面板取 @components/ui/sheet，复制/插入复用 pressAi/copyPortrait、pressAi/insertPortrait。
+ * 生图页：以 app-page 骨架承载「标题与筛选区 + 图片网格 + 底部出图输入区」。
+ * 复用约定：外壳取 @webview/components/AppPage（类型筛选、角色选择与搜索各占一行 AppMenu，
+ * 网格走 AppContent 滚动，composer 落 AppFooter），列表经 useImageLibrary、参数经 useImageSettings，
+ * 网格由 ImageGenGrid 渲染，空态取 components/StateEmpty，单图详情交由 ImageDetailDialog，
+ * 复制/插入复用 pressAi/copyPortrait、pressAi/insertPortrait。
  * 关键约束：筛选在内存中完成，计数里「全部」与「作品封面」由列表推导，其余取宿主分项数；
- * 「作品封面」是筛选维度而非图片类别——由 coverSelectedId 与图片 id 比较得出；
- * 删除落盘侧进回收站，本节只刷新列表，不做乐观删除；批量删除后按剩余列表修正角色封面指针，
- * 最后只列举一次；设封面后重新列举，面板仍停在该图片上；
- * 旧目录（Cover / Portraits）只作只读兼容，新图一律落在 Images，页面不做目录搬移；
- * 作品参数读完前不挂载 composer，避免用默认值覆盖用户已保存的比例与画风；
- * 网格按固定步长分批挂载，筛选条件变化即回到首批；全选只覆盖已渲染的图片，
- * 避免把未加载的图连带删掉；选中集合与筛选签名绑定，换筛选即失效；
- * 批量删除只作用于当前筛选结果并显示逐张进度，期间禁止重复触发；
- * 详情缺侧车时给出空态说明，有增强前原文时折叠展示。
+ * 「作品封面」是筛选维度而非图片类别，由 coverSelectedId 与图片 id 比较得出；
+ * 删除落盘侧进回收站，本节只刷新列表，批量删除后按剩余列表修正角色封面指针；
+ * 参数读完前不挂载 composer；网格分批挂载且全选只覆盖已渲染图片；选中集合与筛选签名绑定。
  */
-import { ChevronRight, Copy, ImageIcon, TextCursorInput, Trash2 } from 'lucide-react'
+import { ImageIcon, Search, Trash2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@components/ui/button'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
-import { Input } from '@components/ui/input'
-import { Sheet, SheetContent, SheetDescription, SheetFooter, SheetHeader, SheetTitle } from '@components/ui/sheet'
+import { InputGroup, InputGroupAddon, InputGroupInput } from '@components/ui/input-group'
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Skeleton } from '@components/ui/skeleton'
 import type { ImageSetCoverResult, PressImageItem, PressImageKind } from '@shared/types/imagegen'
 import type { PortraitCopyResult, PortraitInsertResult } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
-import { formatDateTime } from '@shared/utils/format'
+import {
+    AppAction,
+    AppContent,
+    AppDescription,
+    AppFooter,
+    AppHeader,
+    AppMenu,
+    AppPage,
+    AppTitle,
+} from '@webview/components/AppPage'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
-import { Image } from '@webview/components/Image'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import { ImageComposer, type PromptSettingSnapshot } from './ImageComposer'
+import { ImageDetailDialog } from './ImageDetailDialog'
 import { ImageGenGrid } from './ImageGenGrid'
-import { styleLabelOf } from './imageStyle'
-import { useImageDetail } from './useImageDetail'
 import { useImageLibrary } from './useImageLibrary'
 import { useImageSettings } from './useImageSettings'
 import type { JSX } from 'react'
@@ -47,13 +49,6 @@ const KIND_FILTERS: ReadonlyArray<{ value: KindFilter; label: string }> = [
     { value: 'photo', label: '普通图' },
     { value: 'orphan', label: '未归类' },
 ]
-
-/** 详情面板里的类别文案：与筛选条共用同一套中文名，避免两处口径不一致 */
-const KIND_LABELS: Readonly<Record<PressImageKind, string>> = {
-    portrait: '角色图',
-    photo: '普通图',
-    orphan: '未归类',
-}
 
 /** 空选中集合：筛选切换后的派生值复用它，避免每次渲染新建对象 */
 const EMPTY_SELECTION: ReadonlySet<string> = new Set()
@@ -89,10 +84,8 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
     const [kind, setKind] = useState<KindFilter>('all')
     const [characterId, setCharacterId] = useState('all')
     const [keyword, setKeyword] = useState('')
-    /** 详情面板当前查看的图片：null 表示未打开 */
+    /** 详情弹窗当前查看的图片：null 表示未打开 */
     const [selected, setSelected] = useState<PressImageItem | null>(null)
-    /** 详情侧车：只在面板打开时读取，切换图片自动重取；isLoading 用于占位，避免参数区闪空白 */
-    const { detail, isLoading: isDetailLoading } = useImageDetail(dirPath, selected === null ? null : selected.path)
     /** 多选模式：点击卡片切换选中，不打开详情 */
     const [isSelecting, setIsSelecting] = useState(false)
     /**
@@ -149,23 +142,6 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
     const updateSelection = (next: ReadonlySet<string>): void => {
         setSelection({ signature: filterSignature, paths: next })
     }
-
-    /** 参数区是否有可展示内容：侧车可能只落了部分字段，任一非空即展示 */
-    const hasDetail =
-        detail !== null &&
-        (detail.prompt !== null || detail.ratio !== null || detail.style !== null || detail.enhancedFrom !== null)
-
-    /** 参数行：比例与画风缺失时整行不渲染，不留下空白分隔符 */
-    const detailMeta =
-        detail === null
-            ? ''
-            : [
-                  // 生图页写比例（3:4），角色卡写像素尺寸（768x1024），按值形态给对应文案
-                  detail.ratio === null ? null : `${detail.ratio.includes('x') ? '尺寸' : '比例'} ${detail.ratio}`,
-                  detail.style === null ? null : `画风 ${styleLabelOf(detail.style)}`,
-              ]
-                  .filter((part) => part !== null)
-                  .join(' · ')
 
     /** 追加一批：记下当前筛选签名，筛选未变时在累计数量上继续加 */
     const handleLoadMore = (): void => {
@@ -307,16 +283,6 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
         }
     }
 
-    /** 复制提示词：侧车原文写入系统剪贴板，webview 需在点击事件内调用 */
-    const handleCopyPrompt = async (prompt: string): Promise<void> => {
-        try {
-            await navigator.clipboard.writeText(prompt)
-            toast.success('提示词已复制')
-        } catch {
-            toast.error('复制失败，请手动选中文本')
-        }
-    }
-
     /** 插入到 Markdown 光标处：无活动光标时按要求静默忽略，其余失败原因给出提示 */
     const handleInsertImage = async (image: PressImageItem): Promise<void> => {
         try {
@@ -341,341 +307,227 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
         }
     }
 
-    /** 详情副标题：类别、所属角色与生成时间，缺失项直接省略，避免出现空分隔符 */
-    const describeImage = (image: PressImageItem): string => {
-        const parts = [KIND_LABELS[image.kind]]
-        if (image.characterId !== null) {
-            parts.push(characterNames.get(image.characterId) ?? image.characterId)
-        }
-        const created = formatDateTime(image.createdAt)
-        if (created.length > 0) {
-            parts.push(created)
-        }
-        return parts.join(' · ')
-    }
+    /** 标题区统计：张数与封面状态一句说清，不占用独立区块 */
+    const summary =
+        images.length === 0
+            ? '用下方提示词生成第一张，或切到「作品封面」模式生成作品门面'
+            : `共 ${String(images.length)} 张 · 点缩略图查看详情与出图参数`
+
+    /** 全选按钮文案：已选与已渲染张数相等时改为取消 */
+    const isAllVisibleSelected = visibleImages.length > 0 && selectedPaths.size === visibleImages.length
 
     return (
-        <div className="flex h-full min-h-0 flex-col">
-            <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2">
-                {KIND_FILTERS.map((filter) => (
-                    <Button
-                        key={filter.value}
-                        type="button"
-                        size="sm"
-                        variant={kind === filter.value ? 'secondary' : 'ghost'}
-                        onClick={() => setKind(filter.value)}
-                    >
-                        {filter.label}
-                        <span className="ml-1 text-xs opacity-60 tabular-nums">{countOf(filter.value)}</span>
-                    </Button>
-                ))}
-                <div className="ml-2 flex items-center gap-1.5 overflow-x-auto">
-                    <Button
-                        type="button"
-                        size="sm"
-                        variant={characterId === 'all' ? 'secondary' : 'ghost'}
-                        onClick={() => setCharacterId('all')}
-                    >
-                        全部角色
-                    </Button>
-                    {characters.map((character) => (
+        <>
+            <AppPage>
+                <AppHeader>
+                    {/* 眉标：作品名与说明同用弱化小字，避免与页面标题争夺主视觉 */}
+                    {setting.title === undefined || setting.title.length === 0 ? null : (
+                        <AppDescription>{setting.title}</AppDescription>
+                    )}
+                    <AppTitle>生图</AppTitle>
+                    <AppAction>
                         <Button
-                            key={character.id}
                             type="button"
                             size="sm"
-                            variant={characterId === character.id ? 'secondary' : 'ghost'}
-                            onClick={() => setCharacterId(character.id)}
+                            variant={isSelecting ? 'secondary' : 'ghost'}
+                            onClick={handleToggleSelecting}
                         >
-                            {character.name}
+                            {isSelecting ? '退出选择' : '选择'}
                         </Button>
-                    ))}
-                </div>
-                <Input
-                    value={keyword}
-                    onChange={(event) => setKeyword(event.target.value)}
-                    placeholder="搜索角色或文件名"
-                    className="ml-auto h-7 w-44"
-                />
-                {hasActiveFilter ? (
-                    <Button type="button" size="sm" variant="ghost" onClick={handleClearFilters}>
-                        清空筛选
-                    </Button>
-                ) : null}
-                <Button
-                    type="button"
-                    size="sm"
-                    variant={isSelecting ? 'secondary' : 'ghost'}
-                    onClick={handleToggleSelecting}
-                >
-                    {isSelecting ? '退出选择' : '选择'}
-                </Button>
-            </div>
-
-            {isSelecting ? (
-                <div className="flex items-center gap-1.5 border-b px-4 py-1.5">
-                    <span className="text-muted-foreground text-xs tabular-nums">已选 {selectedPaths.size} 张</span>
-                    <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        disabled={visibleImages.length === 0}
-                        onClick={handleSelectAll}
-                    >
-                        {selectedPaths.size === visibleImages.length && visibleImages.length > 0
-                            ? '取消全选'
-                            : '全选已显示'}
-                    </Button>
-                    <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="text-destructive hover:text-destructive ml-auto"
-                        disabled={selectedPaths.size === 0 || removingTotal !== null}
-                        onClick={() => setIsConfirmingBatch(true)}
-                    >
-                        <Trash2 />
-                        {removingTotal === null ? '删除选中' : `正在删除 ${removingTotal} 张`}
-                    </Button>
-                </div>
-            ) : null}
-
-            <div className="min-h-0 flex-1 overflow-y-auto">
-                {isLoading ? (
-                    <Empty>
-                        <EmptyHeader>
-                            <EmptyMedia variant="icon">
-                                <ImageIcon />
-                            </EmptyMedia>
-                            <EmptyTitle>正在读取图片</EmptyTitle>
-                            <EmptyDescription>首次打开需要扫描作品目录，稍候即可</EmptyDescription>
-                        </EmptyHeader>
-                    </Empty>
-                ) : filtered.length === 0 ? (
-                    <Empty>
-                        <EmptyHeader>
-                            <EmptyMedia variant="icon">
-                                <ImageIcon />
-                            </EmptyMedia>
-                            <EmptyTitle>{images.length === 0 ? '还没有图片' : '没有符合条件的图片'}</EmptyTitle>
-                            <EmptyDescription>
-                                {images.length === 0
-                                    ? '在下方输入提示词生成第一张，或打开「作品封面」模式生成作品门面'
-                                    : '换个筛选条件或清空搜索词再试'}
-                            </EmptyDescription>
-                        </EmptyHeader>
-                    </Empty>
-                ) : (
-                    <>
-                        <ImageGenGrid
-                            images={visibleImages}
-                            coverSelectedId={coverSelectedId}
-                            characterNames={characterNames}
-                            isSelecting={isSelecting}
-                            selectedPaths={selectedPaths}
-                            onToggleSelect={toggleSelectImage}
-                            onDelete={(image) => void handleDelete(image)}
-                            onCopy={(image) => void handleCopyImage(image)}
-                            onInsert={(image) => void handleInsertImage(image)}
-                            onSelect={setSelected}
-                        />
-                        {visibleImages.length < filtered.length ? (
-                            <div className="flex justify-center px-4 pb-4">
-                                <Button type="button" size="sm" variant="outline" onClick={handleLoadMore}>
-                                    加载更多（{visibleImages.length} / {filtered.length}）
-                                </Button>
-                            </div>
+                    </AppAction>
+                    <AppDescription>{summary}</AppDescription>
+                    <AppMenu>
+                        {KIND_FILTERS.map((filter) => (
+                            <Button
+                                key={filter.value}
+                                type="button"
+                                size="sm"
+                                variant={kind === filter.value ? 'secondary' : 'ghost'}
+                                onClick={() => setKind(filter.value)}
+                            >
+                                {filter.label}
+                                <span className="ml-1 text-xs tabular-nums opacity-60">{countOf(filter.value)}</span>
+                            </Button>
+                        ))}
+                    </AppMenu>
+                    <AppMenu>
+                        <Select
+                            value={characterId}
+                            onValueChange={(value) => {
+                                setCharacterId(value)
+                            }}
+                        >
+                            <SelectTrigger className="h-8 w-28 shrink-0" aria-label="按角色筛选">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectGroup>
+                                    <SelectItem value="all">全部角色</SelectItem>
+                                    {characters.map((character) => (
+                                        <SelectItem key={character.id} value={character.id}>
+                                            {character.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectGroup>
+                            </SelectContent>
+                        </Select>
+                        <InputGroup className="min-w-0 flex-1">
+                            <InputGroupAddon>
+                                <Search />
+                            </InputGroupAddon>
+                            <InputGroupInput
+                                value={keyword}
+                                aria-label="搜索图片"
+                                placeholder="搜索角色或文件名"
+                                onChange={(event) => setKeyword(event.target.value)}
+                            />
+                        </InputGroup>
+                        {hasActiveFilter ? (
+                            <Button type="button" size="sm" variant="ghost" onClick={handleClearFilters}>
+                                清空筛选
+                            </Button>
                         ) : null}
-                    </>
-                )}
-            </div>
+                    </AppMenu>
+                    {/* 多选操作行只在选择模式出现：常态不占位，避免标题区长期多一行空气 */}
+                    {isSelecting ? (
+                        <AppMenu>
+                            <span className="text-muted-foreground text-xs tabular-nums">
+                                已选 {selectedPaths.size} 张
+                            </span>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                disabled={visibleImages.length === 0}
+                                onClick={handleSelectAll}
+                            >
+                                {isAllVisibleSelected ? '取消全选' : '全选已显示'}
+                            </Button>
+                            <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive ml-auto"
+                                disabled={selectedPaths.size === 0 || removingTotal !== null}
+                                onClick={() => setIsConfirmingBatch(true)}
+                            >
+                                <Trash2 />
+                                {removingTotal === null ? '删除选中' : `正在删除 ${String(removingTotal)} 张`}
+                            </Button>
+                        </AppMenu>
+                    ) : null}
+                </AppHeader>
+                <AppContent isScrollable>
+                    {isLoading ? (
+                        <StateEmpty
+                            title="正在读取图片"
+                            isLoading
+                            loadingLabel="正在读取图片"
+                            className="flex-1 justify-center"
+                        />
+                    ) : filtered.length === 0 ? (
+                        <StateEmpty
+                            title={images.length === 0 ? '还没有图片' : '没有符合条件的图片'}
+                            description={
+                                images.length === 0
+                                    ? '在下方输入提示词生成第一张，或打开「作品封面」模式生成作品门面'
+                                    : '换个筛选条件或清空搜索词再试'
+                            }
+                            icon={ImageIcon}
+                            className="flex-1 justify-center"
+                        />
+                    ) : (
+                        <>
+                            <ImageGenGrid
+                                images={visibleImages}
+                                coverSelectedId={coverSelectedId}
+                                characterNames={characterNames}
+                                isSelecting={isSelecting}
+                                selectedPaths={selectedPaths}
+                                onToggleSelect={toggleSelectImage}
+                                onDelete={(image) => void handleDelete(image)}
+                                onCopy={(image) => void handleCopyImage(image)}
+                                onInsert={(image) => void handleInsertImage(image)}
+                                onSelect={setSelected}
+                            />
+                            {visibleImages.length < filtered.length ? (
+                                <div className="flex justify-center px-4 pb-4">
+                                    <Button type="button" size="sm" variant="outline" onClick={handleLoadMore}>
+                                        加载更多（{visibleImages.length} / {filtered.length}）
+                                    </Button>
+                                </div>
+                            ) : null}
+                        </>
+                    )}
+                </AppContent>
+                {/* 出图输入区常驻底部：竖排撑满宽度，自身的内边距与骨架留白一致，不叠加横向间隙 */}
+                <AppFooter className="flex-col items-stretch gap-0 pt-0">
+                    {isSettingsLoaded ? (
+                        <ImageComposer
+                            dirPath={dirPath}
+                            characters={characters}
+                            setting={setting}
+                            activeCharacterId={characterId === 'all' ? null : characterId}
+                            defaultRatio={settings.defaultRatio}
+                            defaultStyle={settings.portraitStyle}
+                            coverStyle={settings.coverStyle}
+                            onSettingsChange={(patch) => {
+                                void saveSettings(patch)
+                            }}
+                            onGenerated={(result) => {
+                                void reload()
+                                if (characterId === 'all') {
+                                    return
+                                }
+                                // 该角色还没有封面时才自动认领，已有封面不被新图顶掉
+                                const target = characters.find((character) => character.id === characterId)
+                                if (target === undefined || target.coverPortraitId !== null) {
+                                    return
+                                }
+                                onChangeCharacter(characterId, { coverPortraitId: result.image.id })
+                            }}
+                            // 取消后迟到的落盘：只补列表，不认领封面，也不打断用户当前的筛选与选择
+                            onLateGenerated={() => {
+                                void reload({ silent: true })
+                            }}
+                        />
+                    ) : (
+                        // 参数未读完：占位与 composer 同高，避免底部输入区闪一下再长出来
+                        <div className="p-2">
+                            <Skeleton className="h-32 w-full rounded-2xl" />
+                        </div>
+                    )}
+                </AppFooter>
+            </AppPage>
 
-            {isSettingsLoaded ? (
-                <ImageComposer
-                    dirPath={dirPath}
-                    characters={characters}
-                    setting={setting}
-                    activeCharacterId={characterId === 'all' ? null : characterId}
-                    defaultRatio={settings.defaultRatio}
-                    defaultStyle={settings.portraitStyle}
-                    coverStyle={settings.coverStyle}
-                    onSettingsChange={(patch) => {
-                        void saveSettings(patch)
-                    }}
-                    onGenerated={(result) => {
-                        void reload()
-                        if (characterId === 'all') {
-                            return
-                        }
-                        // 该角色还没有封面时才自动认领，已有封面不被新图顶掉
-                        const target = characters.find((character) => character.id === characterId)
-                        if (target === undefined || target.coverPortraitId !== null) {
-                            return
-                        }
-                        onChangeCharacter(characterId, { coverPortraitId: result.image.id })
-                    }}
-                    // 取消后迟到的落盘：只补列表，不认领封面，也不打断用户当前的筛选与选择
-                    onLateGenerated={() => {
-                        void reload({ silent: true })
-                    }}
-                />
-            ) : (
-                // 参数未读完：占位与 composer 同高，避免底部输入区闪一下再长出来
-                <div className="p-2">
-                    <Skeleton className="h-32 w-full rounded-2xl" />
-                </div>
-            )}
-
-            {/* 详情面板：点缩略图打开，按原始比例看大图，并在同一处设为作品封面 */}
-            <Sheet
-                open={selected !== null}
+            {/* 单图详情：点缩略图打开，按原始比例看大图，并在同一处设为作品封面 */}
+            <ImageDetailDialog
+                image={selected}
+                dirPath={dirPath}
+                coverSelectedId={coverSelectedId}
+                characterNames={characterNames}
                 onOpenChange={(isOpen) => {
                     if (!isOpen) {
                         setSelected(null)
                     }
                 }}
-            >
-                <SheetContent side="right" className="gap-3">
-                    {selected === null ? null : (
-                        <>
-                            <SheetHeader className="pr-10">
-                                <SheetTitle>图片详情</SheetTitle>
-                                <SheetDescription>{describeImage(selected)}</SheetDescription>
-                            </SheetHeader>
-                            <div className="min-h-0 flex-1 overflow-y-auto px-4">
-                                <Image
-                                    src={selected.url}
-                                    alt={
-                                        selected.characterId === null
-                                            ? selected.id
-                                            : (characterNames.get(selected.characterId) ?? selected.id)
-                                    }
-                                    aspect="auto"
-                                    size="lg"
-                                    loading="eager"
-                                    className="max-h-[60vh] w-full object-contain"
-                                />
-                                <p className="mt-2 break-all text-xs text-muted-foreground">{selected.path}</p>
-                                {isDetailLoading ? (
-                                    <div className="mt-3 flex flex-col gap-1.5">
-                                        <Skeleton className="h-4 w-16" />
-                                        <Skeleton className="h-16 w-full" />
-                                        <Skeleton className="h-3 w-24" />
-                                    </div>
-                                ) : hasDetail ? (
-                                    <div className="mt-3 flex flex-col gap-1.5">
-                                        <div className="flex items-center gap-1">
-                                            <p className="text-xs font-medium">出图参数</p>
-                                            {detail.prompt === null ? null : (
-                                                <Button
-                                                    type="button"
-                                                    size="xs"
-                                                    variant="ghost"
-                                                    className="ml-auto"
-                                                    onClick={() => {
-                                                        if (detail.prompt !== null) {
-                                                            void handleCopyPrompt(detail.prompt)
-                                                        }
-                                                    }}
-                                                >
-                                                    <Copy />
-                                                    复制提示词
-                                                </Button>
-                                            )}
-                                        </div>
-                                        {detail.prompt === null ? null : (
-                                            <p className="bg-muted/40 max-h-40 overflow-y-auto rounded-md p-2 text-xs leading-5 whitespace-pre-wrap break-all">
-                                                {detail.prompt}
-                                            </p>
-                                        )}
-                                        {detailMeta.length === 0 ? null : (
-                                            <p className="text-muted-foreground text-xs">{detailMeta}</p>
-                                        )}
-                                        {detail.enhancedFrom === null ? null : (
-                                            <Collapsible>
-                                                <CollapsibleTrigger asChild>
-                                                    <Button
-                                                        type="button"
-                                                        size="xs"
-                                                        variant="ghost"
-                                                        className="group self-start px-0"
-                                                    >
-                                                        <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />
-                                                        增强前原文
-                                                    </Button>
-                                                </CollapsibleTrigger>
-                                                <CollapsibleContent>
-                                                    <p className="bg-muted/40 mt-1 max-h-32 overflow-y-auto rounded-md p-2 text-xs leading-5 whitespace-pre-wrap break-all">
-                                                        {detail.enhancedFrom}
-                                                    </p>
-                                                </CollapsibleContent>
-                                            </Collapsible>
-                                        )}
-                                    </div>
-                                ) : (
-                                    <Empty className="mt-3 flex-none border-0 p-3">
-                                        <EmptyHeader>
-                                            <EmptyTitle className="text-xs">没有出图参数</EmptyTitle>
-                                            <EmptyDescription className="text-xs">
-                                                这张图没有同名侧车记录，可能是旧目录里的图或手工放入的文件
-                                            </EmptyDescription>
-                                        </EmptyHeader>
-                                    </Empty>
-                                )}
-                            </div>
-                            <SheetFooter>
-                                <Button
-                                    type="button"
-                                    disabled={selected.id === coverSelectedId}
-                                    onClick={() => {
-                                        void handleSetCover(selected)
-                                    }}
-                                >
-                                    {selected.id === coverSelectedId ? '已是作品封面' : '设为作品封面'}
-                                </Button>
-                                <div className="flex gap-2">
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        className="flex-1"
-                                        onClick={() => {
-                                            void handleCopyImage(selected)
-                                        }}
-                                    >
-                                        <Copy />
-                                        复制图片
-                                    </Button>
-                                    <Button
-                                        type="button"
-                                        variant="outline"
-                                        className="flex-1"
-                                        onClick={() => {
-                                            void handleInsertImage(selected)
-                                        }}
-                                    >
-                                        <TextCursorInput />
-                                        插入到文章
-                                    </Button>
-                                </div>
-                                <Button
-                                    type="button"
-                                    variant="ghost"
-                                    className="text-destructive hover:text-destructive"
-                                    onClick={() => {
-                                        void handleDelete(selected)
-                                    }}
-                                >
-                                    <Trash2 />
-                                    删除这张图片
-                                </Button>
-                            </SheetFooter>
-                        </>
-                    )}
-                </SheetContent>
-            </Sheet>
+                onSetCover={(image) => {
+                    void handleSetCover(image)
+                }}
+                onCopyImage={(image) => {
+                    void handleCopyImage(image)
+                }}
+                onInsertImage={(image) => {
+                    void handleInsertImage(image)
+                }}
+                onDelete={(image) => {
+                    void handleDelete(image)
+                }}
+            />
 
             <ConfirmDialog
                 open={isConfirmingBatch}
-                title={`删除选中的 ${selectedPaths.size} 张图片？`}
+                title={`删除选中的 ${String(selectedPaths.size)} 张图片？`}
                 description="文件会移入系统回收站；若其中包含角色封面，该角色的封面会更新为剩余最新一张。"
                 confirmLabel="删除选中"
                 isDestructive
@@ -690,6 +542,6 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                     void handleDeleteSelected()
                 }}
             />
-        </div>
+        </>
     )
 }
