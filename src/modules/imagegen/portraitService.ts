@@ -18,7 +18,7 @@ import { buildPortraitPrompt } from './ai/portraitPrompt'
 import { generateSceneWithAi } from './ai/portraitSceneGenerator'
 import { buildSceneMessages, sanitizeScene } from './ai/portraitScenePrompt'
 import { formatVariation, pickVariation } from './ai/portraitVariation'
-import { IMAGE_QUOTA_KEYS, PORTRAIT_DIR } from './constants'
+import { IMAGE_DIR_NAMES, IMAGE_QUOTA_KEYS, PORTRAIT_DIR } from './constants'
 import type { ImageProviderRouter } from './ai/imageProvider'
 import type { PortraitVariation } from './ai/portraitVariation'
 import type {
@@ -35,13 +35,8 @@ import type {
 import type { AiProvider } from '../ai/provider'
 import type { UsageRecorder } from '../ai/usageRecorder'
 import type Database from 'better-sqlite3'
-import {
-    DEFAULT_PORTRAIT_STYLE,
-    PORTRAIT_STYLES,
-    isPressCharacterId,
-    isPressPortraitId,
-    parsePortraitCharacterId,
-} from '../../shared/types/press'
+import { parseImageCharacterId } from '../../shared/types/imagegen'
+import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId } from '../../shared/types/press'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { summarizeMessages } from '../ai/usageRecorder'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
@@ -172,9 +167,8 @@ export class PortraitService {
      */
     public async list(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<PortraitListResult> {
         const { dirPath, characterId } = normalizePortraitListRequest(payload)
-        const dirSegments = [...readProjectSegments(dirPath), PORTRAIT_DIR]
-        const portraits = await this.readPortraits(dirSegments, toWebviewUri)
-        return { portraits: portraits.filter((portrait) => parsePortraitCharacterId(portrait.id) === characterId) }
+        const portraits = await this.readPortraits(readProjectSegments(dirPath), toWebviewUri)
+        return { portraits: portraits.filter((portrait) => parseImageCharacterId(portrait.id) === characterId) }
     }
 
     /**
@@ -187,10 +181,9 @@ export class PortraitService {
         toWebviewUri: (uri: vscode.Uri) => string,
     ): Promise<PortraitGalleryResult> {
         const dirPath = readProjectDirPath(payload, 'pressAi/listPortraitGallery')
-        const portraitRootSegments = [...readProjectSegments(dirPath), PORTRAIT_DIR]
         const galleries: Record<string, PortraitGalleryItem[]> = {}
-        for (const portrait of await this.readPortraits(portraitRootSegments, toWebviewUri)) {
-            const characterId = parsePortraitCharacterId(portrait.id)
+        for (const portrait of await this.readPortraits(readProjectSegments(dirPath), toWebviewUri)) {
+            const characterId = parseImageCharacterId(portrait.id)
             if (characterId === null) {
                 continue
             }
@@ -207,33 +200,42 @@ export class PortraitService {
      * 图片 id 取文件名去掉扩展名，角色归属由调用方按其中的角色段解析。
      */
     private async readPortraits(
-        dirSegments: string[],
+        projectSegments: string[],
         toWebviewUri: (uri: vscode.Uri) => string,
     ): Promise<CharacterPortrait[]> {
         const root = resolveStorageRoot()
-        let entries: [string, vscode.FileType][]
-        try {
-            entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
-        } catch {
-            // 角色还没生成过图片，目录尚不存在
-            return []
-        }
-        const names = entries
-            .filter(([name, type]) => type === vscode.FileType.File && PORTRAIT_FILE_PATTERN.test(name))
-            .map(([name]) => name)
         const portraits: CharacterPortrait[] = []
-        for (const name of names) {
-            const uri = buildStorageUri(root, [...dirSegments, name])
+        // 统一目录 Images 与两个旧目录一并扫描，新图与历史图出现在同一个列表里
+        for (const dirName of IMAGE_DIR_NAMES) {
+            const dirSegments = [...projectSegments, dirName]
+            let entries: [string, vscode.FileType][]
             try {
-                const stat = await vscode.workspace.fs.stat(uri)
-                portraits.push({
-                    id: name.replace(/\.[^.]+$/, ''),
-                    path: [...dirSegments, name].join('/'),
-                    url: toWebviewUri(uri),
-                    createdAt: new Date(stat.mtime).toISOString(),
-                })
+                entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
             } catch {
-                // 并发删除时文件可能已消失，跳过而不是让整次扫描失败
+                // 该目录尚未创建，或旧目录迁移后已清空
+                continue
+            }
+            for (const [name, type] of entries) {
+                if (type !== vscode.FileType.File || !PORTRAIT_FILE_PATTERN.test(name)) {
+                    continue
+                }
+                const id = name.replace(/\.[^.]+$/u, '')
+                // 只收角色图：普通图片与手工图不属于任何角色
+                if (parseImageCharacterId(id) === null) {
+                    continue
+                }
+                const uri = buildStorageUri(root, [...dirSegments, name])
+                try {
+                    const stat = await vscode.workspace.fs.stat(uri)
+                    portraits.push({
+                        id,
+                        path: [...dirSegments, name].join('/'),
+                        url: toWebviewUri(uri),
+                        createdAt: new Date(stat.mtime).toISOString(),
+                    })
+                } catch {
+                    // 并发删除时文件可能已消失，跳过而不是让整次扫描失败
+                }
             }
         }
         // 最新在前：新生成的图出现在网格首位，与生成时占位框的位置一致
@@ -253,7 +255,8 @@ export class PortraitService {
         if (
             segments.length !== PORTRAIT_SEGMENT_COUNT ||
             moduleDir !== PRESS_MODULE_DIR ||
-            portraitDir !== PORTRAIT_DIR ||
+            portraitDir === undefined ||
+            !IMAGE_DIR_NAMES.includes(portraitDir) ||
             !projectName ||
             !fileName
         ) {
@@ -304,7 +307,8 @@ export class PortraitService {
         if (
             segments.length !== PORTRAIT_SEGMENT_COUNT ||
             moduleDir !== PRESS_MODULE_DIR ||
-            portraitDir !== PORTRAIT_DIR ||
+            portraitDir === undefined ||
+            !IMAGE_DIR_NAMES.includes(portraitDir) ||
             !projectName ||
             !fileName
         ) {
@@ -336,9 +340,10 @@ export class PortraitService {
         if (
             segments.length !== PORTRAIT_SEGMENT_COUNT ||
             segments[0] !== PRESS_MODULE_DIR ||
-            segments[2] !== PORTRAIT_DIR ||
+            segments[2] === undefined ||
+            !IMAGE_DIR_NAMES.includes(segments[2]) ||
             !segments[1] ||
-            !isPressPortraitId(fileName.replace(/\.[^.]+$/u, ''))
+            parseImageCharacterId(fileName.replace(/\.[^.]+$/u, '')) === null
         ) {
             throw new Error(`角色卡路径非法：${path}`)
         }
@@ -356,27 +361,31 @@ export class PortraitService {
      * 关键约束：只删文件名角色段匹配且符合命名规范的文件，手工放入的其它图片不受影响。
      */
     public async removeByCharacterId(dirPath: string, characterId: string): Promise<{ removed: number }> {
-        const dirSegments = [...readProjectSegments(dirPath), PORTRAIT_DIR]
+        const projectSegments = readProjectSegments(dirPath)
         const root = resolveStorageRoot()
-        let entries: [string, vscode.FileType][]
-        try {
-            entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
-        } catch {
-            return { removed: 0 }
-        }
         let removed = 0
-        for (const [name, type] of entries) {
-            if (type !== vscode.FileType.File) {
-                continue
-            }
-            if (parsePortraitCharacterId(name.replace(/\.[^.]+$/u, '')) !== characterId) {
-                continue
-            }
+        // 三个图片目录都要清理：新图落在 Images，历史图还在 Cover / Portraits
+        for (const dirName of IMAGE_DIR_NAMES) {
+            const dirSegments = [...projectSegments, dirName]
+            let entries: [string, vscode.FileType][]
             try {
-                await deleteResource(buildStorageUri(root, [...dirSegments, name]), false)
-                removed += 1
-            } catch (error) {
-                logger.error(`角色设定图清理失败：${name}`, error)
+                entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
+            } catch {
+                continue
+            }
+            for (const [name, type] of entries) {
+                if (type !== vscode.FileType.File) {
+                    continue
+                }
+                if (parseImageCharacterId(name.replace(/\.[^.]+$/u, '')) !== characterId) {
+                    continue
+                }
+                try {
+                    await deleteResource(buildStorageUri(root, [...dirSegments, name]), false)
+                    removed += 1
+                } catch (error) {
+                    logger.error(`角色图清理失败：${name}`, error)
+                }
             }
         }
         return { removed }

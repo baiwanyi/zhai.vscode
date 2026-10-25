@@ -104,6 +104,9 @@ export function ImageComposer({
     const [ratio, setRatio] = useState<ImageRatio>(defaultRatio)
     const [isStyleOpen, setIsStyleOpen] = useState(false)
     const [isGenerating, setIsGenerating] = useState(false)
+    const [isEnhancing, setIsEnhancing] = useState(false)
+    /** 增强前的原文：非空即处于增强态，点按钮可还原 */
+    const [enhancedFrom, setEnhancedFrom] = useState<string | null>(null)
     const [chips, setChips] = useState<PromptChip[]>([
         {
             kind: 'style',
@@ -169,6 +172,35 @@ export function ImageComposer({
         })
     }
 
+    /** 增强提示词：只改写输入框正文，chip 与设定留在发送时拼装，避免模型复述设定原文 */
+    const handleEnhance = async (): Promise<void> => {
+        const source = text.trim()
+        if (source.length === 0) {
+            return
+        }
+        setIsEnhancing(true)
+        try {
+            const result = await request<{ text: string }>('pressAi/enhanceImagePrompt', {
+                dirPath,
+                text: source,
+            })
+            setEnhancedFrom(source)
+            setText(result.text)
+        } catch (cause) {
+            toastError(cause)
+        } finally {
+            setIsEnhancing(false)
+        }
+    }
+
+    const handleRestore = (): void => {
+        if (enhancedFrom === null) {
+            return
+        }
+        setText(enhancedFrom)
+        setEnhancedFrom(null)
+    }
+
     const buildPrompt = (): string => {
         const sections: string[] = []
         if (text.trim().length > 0) {
@@ -203,6 +235,7 @@ export function ImageComposer({
                 characterId: activeCharacter === null ? null : activeCharacter.id,
                 ratio,
                 style: styleChip?.value ?? defaultStyle,
+                enhancedFrom: enhancedFrom ?? undefined,
             })
             onGenerated(result)
             setText('')
@@ -313,7 +346,22 @@ export function ImageComposer({
                         <Button
                             type="button"
                             size="sm"
+                            variant="ghost"
                             className="ml-auto"
+                            disabled={isEnhancing || isGenerating || text.trim().length === 0}
+                            onClick={() => {
+                                if (enhancedFrom === null) {
+                                    void handleEnhance()
+                                    return
+                                }
+                                handleRestore()
+                            }}
+                        >
+                            {isEnhancing ? '增强中…' : enhancedFrom === null ? '增强提示词' : '还原'}
+                        </Button>
+                        <Button
+                            type="button"
+                            size="sm"
                             disabled={isGenerating || buildPrompt().length === 0}
                             onClick={() => void handleSend()}
                         >

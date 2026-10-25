@@ -153,6 +153,7 @@ export type HostMethodName =
     | 'pressAi/deleteCover'
     | 'pressAi/deleteImage'
     | 'pressAi/deletePortrait'
+    | 'pressAi/enhanceImagePrompt'
     | 'pressAi/generateCover'
     | 'pressAi/generateImage'
     | 'pressAi/generateImage/abort'

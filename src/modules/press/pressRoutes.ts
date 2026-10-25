@@ -121,6 +121,8 @@ export class PressRoutes {
                 return this.imageGenerate.generate(payload, toWebviewUri)
             case 'pressAi/generateImage/abort':
                 return this.imageGenerate.abort()
+            case 'pressAi/enhanceImagePrompt':
+                return this.imageGenerate.enhance(payload)
             case 'pressAi/getImageSettings':
                 return this.imageSettings.get(payload)
             case 'pressAi/saveImageSettings':

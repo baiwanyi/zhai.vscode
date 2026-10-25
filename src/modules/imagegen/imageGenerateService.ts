@@ -13,6 +13,7 @@ import { IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
 import { readProjectDirPath } from './portraitService'
 import type { ImageProviderRouter } from './ai/imageProvider'
 import type { PressCoverStore } from './db/coverRepository'
+import type { AiProvider } from '../ai/provider'
 import type { UsageRecorder } from '../ai/usageRecorder'
 import type Database from 'better-sqlite3'
 import {
@@ -40,6 +41,10 @@ const RANDOM_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 const RANDOM_LENGTH = 8
 /** 同秒冲突时的最大顺延次数 */
 const MAX_TIMESTAMP_SHIFT = 60
+/** 提示词增强的超时：文本改写足够快，超过即视为失败并由前端保留原文 */
+const ENHANCE_TIMEOUT_MS = 30_000
+/** 增强输出的 token 上限 */
+const ENHANCE_MAX_TOKENS = 800
 
 /** 出图入参：只保留落盘与通道需要的字段 */
 interface NormalizedImageRequest {
@@ -161,6 +166,7 @@ export class ImageGenerateService {
         private readonly router: ImageProviderRouter,
         private readonly usageRecorder: UsageRecorder,
         private readonly store: PressCoverStore,
+        private readonly provider: AiProvider,
     ) {}
 
     /**
@@ -240,6 +246,57 @@ export class ImageGenerateService {
         }
         this.activeRequest.abort()
         return { aborted: true }
+    }
+
+    /**
+     * 增强提示词：用文本模型把用户输入改写成更具体的画面描述，不落盘、不计图片配额。
+     * 关键约束：只接收输入框正文，不读作品设定——设定由前端在发送时另行拼装，避免模型复述设定原文；
+     * 失败或超时向调用方抛出，由前端保留原文并提示，不静默替换用户输入。
+     */
+    public async enhance(payload: unknown): Promise<{ text: string }> {
+        const record = payload as { text?: unknown } | null
+        const source = readText(record?.text, MAX_PROMPT_LENGTH)
+        if (source.length === 0) {
+            throw new Error('请先输入提示词')
+        }
+        const controller = new AbortController()
+        const timer = setTimeout(() => controller.abort(), ENHANCE_TIMEOUT_MS)
+        const startedAt = Date.now()
+        let content = ''
+        try {
+            const stream = this.provider.stream({
+                model: getSelectedCodebuddyModel(),
+                maxTokens: ENHANCE_MAX_TOKENS,
+                messages: [
+                    {
+                        role: 'system',
+                        content:
+                            '你是图像提示词编辑。把用户输入改写成更具体的画面描述：补足人物姿态、服装材质、场景层次、光线方向与镜头距离；保持原意与语言，不要添加解释、标题或列表，只输出一段连续的描述。',
+                    },
+                    { role: 'user', content: source },
+                ],
+                signal: controller.signal,
+            })
+            for await (const chunk of stream) {
+                content += chunk.content
+            }
+        } finally {
+            clearTimeout(timer)
+        }
+        const enhanced = content.trim()
+        if (enhanced.length === 0) {
+            throw new Error('增强失败：模型没有返回内容')
+        }
+        this.usageRecorder.record({
+            module: 'image',
+            model: getSelectedCodebuddyModel(),
+            usage: null,
+            meta: null,
+            prompt: source,
+            startedAt,
+        })
+        logger.info(`提示词增强完成：耗时 ${Date.now() - startedAt}ms`)
+        return { text: enhanced.slice(0, MAX_PROMPT_LENGTH) }
     }
 
     /** 写侧车元数据：失败不影响主流程，仅导致该图失去提示词快照 */
