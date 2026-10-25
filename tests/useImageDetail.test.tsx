@@ -9,7 +9,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ImageDetailResult } from '@shared/types/imagegen'
-import { useImageDetail } from '@webview/workflow/imagegen/useImageDetail'
+import { useImageDetail } from '@webview/workflow/imagegen/hooks/useImageDetail'
 
 const { requestMock, toastErrorMock } = vi.hoisted(() => ({ requestMock: vi.fn(), toastErrorMock: vi.fn() }))
 

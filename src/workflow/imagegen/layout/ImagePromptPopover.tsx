@@ -1,14 +1,14 @@
 /**
  * 提示词面板：左侧分类、右侧词条按钮网格，点击词条把文本插入输入框光标处。
- * 复用约定：Popover 取 @components/ui/popover，按钮与滚动区取 @components/ui/button、scroll-area；
- * 分类与词条清单来自同目录 promptLibrary，本组件只负责选择与回调。
+ * 复用约定：Popover 取 @components/ui/popover，按钮与滚动区取 @webview/components/Button、scroll-area；
+ * 分类与词条清单来自 prompt/ 下的 promptLibrary，本组件只负责选择与回调。
  * 关键约束：插入不替换已有内容、不去重，允许连续点击累加；面板自身不持有输入框状态。
  */
 import { useState } from 'react'
-import { Button } from '@components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@components/ui/popover'
-import { PROMPT_CATEGORIES, PROMPT_ITEMS } from './promptLibrary'
+import { Button } from '@webview/components/Button'
 import type { JSX, ReactNode } from 'react'
+import { PROMPT_CATEGORIES, PROMPT_ITEMS } from '../prompt/promptLibrary'
 
 interface ImagePromptPopoverProps {
     /** 触发按钮：由调用方决定外观，保持工具栏风格统一 */
@@ -24,8 +24,8 @@ export function ImagePromptPopover({ trigger, onInsert }: ImagePromptPopoverProp
     return (
         <Popover>
             <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-            <PopoverContent align="start" className="w-[520px] p-0">
-                <div className="flex max-h-[320px]">
+            <PopoverContent align="start" className="w-130 p-0">
+                <div className="flex max-h-80">
                     <div className="w-32 shrink-0 border-r p-1.5">
                         {PROMPT_CATEGORIES.map((category) => {
                             const Icon = category.icon
@@ -33,7 +33,6 @@ export function ImagePromptPopover({ trigger, onInsert }: ImagePromptPopoverProp
                             return (
                                 <Button
                                     key={category.id}
-                                    type="button"
                                     size="sm"
                                     variant="ghost"
                                     className={`mb-0.5 w-full justify-start ${isActive ? 'bg-muted text-foreground' : 'text-muted-foreground'}`}
@@ -49,7 +48,6 @@ export function ImagePromptPopover({ trigger, onInsert }: ImagePromptPopoverProp
                         {items.map((item) => (
                             <Button
                                 key={item.id}
-                                type="button"
                                 size="sm"
                                 variant="outline"
                                 className="h-7 justify-start overflow-hidden text-xs"

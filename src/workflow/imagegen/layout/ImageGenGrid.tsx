@@ -9,9 +9,9 @@
 import { cn } from 'cn'
 import { Check, Copy, TextCursorInput, Trash2 } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@components/ui/button'
 import { Card } from '@components/ui/card'
 import type { PressImageItem } from '@shared/types/imagegen'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 
 /** 悬停操作按钮的公共样式：半透明底避免压住缩略图 */
@@ -113,7 +113,6 @@ export function ImageGenGrid({
                         ) : (
                             <div className="absolute top-1 right-1 flex gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
                                 <Button
-                                    type="button"
                                     variant="ghost"
                                     size="icon-sm"
                                     aria-label="复制图片"
@@ -126,7 +125,6 @@ export function ImageGenGrid({
                                     <Copy className="size-4" />
                                 </Button>
                                 <Button
-                                    type="button"
                                     variant="ghost"
                                     size="icon-sm"
                                     aria-label="插入到文章"
@@ -139,7 +137,6 @@ export function ImageGenGrid({
                                     <TextCursorInput className="size-4" />
                                 </Button>
                                 <Button
-                                    type="button"
                                     variant="ghost"
                                     size="icon-sm"
                                     aria-label="删除图片"

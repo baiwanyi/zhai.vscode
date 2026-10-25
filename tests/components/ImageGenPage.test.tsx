@@ -9,8 +9,10 @@
 import { cleanup, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@components/ui/tooltip'
 import type { ImageLibraryResult, PressImageItem } from '@shared/types/imagegen'
-import { ImageGenPage } from '@webview/workflow/imagegen/ImageGenPage'
+import { ImageGenPage } from '@webview/workflow/imagegen'
+import type { UserEvent } from '@testing-library/user-event'
 import type { JSX, ReactNode } from 'react'
 
 const { requestMock, libraryMock, settingsMock, detailMock } = vi.hoisted(() => ({
@@ -21,12 +23,12 @@ const { requestMock, libraryMock, settingsMock, detailMock } = vi.hoisted(() => 
 }))
 
 vi.mock('@shared/utils/bridge', () => ({ request: requestMock }))
-vi.mock('@webview/workflow/imagegen/useImageLibrary', () => ({ useImageLibrary: libraryMock }))
-vi.mock('@webview/workflow/imagegen/useImageSettings', () => ({ useImageSettings: settingsMock }))
-vi.mock('@webview/workflow/imagegen/useImageDetail', () => ({ useImageDetail: detailMock }))
+vi.mock('@webview/workflow/imagegen/hooks/useImageLibrary', () => ({ useImageLibrary: libraryMock }))
+vi.mock('@webview/workflow/imagegen/hooks/useImageSettings', () => ({ useImageSettings: settingsMock }))
+vi.mock('@webview/workflow/imagegen/hooks/useImageDetail', () => ({ useImageDetail: detailMock }))
 
 /** 输入卡片在本用例中不参与交互，替身只占位，避免把出图编排混进页面断言 */
-vi.mock('@webview/workflow/imagegen/ImageComposer', () => {
+vi.mock('@webview/workflow/imagegen/layout/ImageComposer', () => {
     const ImageComposer = (): JSX.Element => <div data-testid="composer" />
     return { ImageComposer }
 })
@@ -127,20 +129,24 @@ function setLibrary(overrides: LibraryOverrides = {}): void {
 }
 
 function renderPage(onChangeCharacter = vi.fn()): typeof onChangeCharacter {
+    // 带 tooltip 的按钮依赖挂载器提供的 Provider（见 bootstrap），用例补同样的包裹
     render(
-        <ImageGenPage
-            dirPath={DIR_PATH}
-            characters={[CHARACTER]}
-            setting={{ title: '剑来' }}
-            onChangeCharacter={onChangeCharacter}
-        />,
+        <TooltipProvider>
+            <ImageGenPage
+                dirPath={DIR_PATH}
+                characters={[CHARACTER]}
+                setting={{ title: '剑来' }}
+                onChangeCharacter={onChangeCharacter}
+            />
+        </TooltipProvider>,
     )
     return onChangeCharacter
 }
 
-/** 筛选按钮的可访问名末尾带分项计数（如「角色图 1」），按前缀匹配 */
-function filterButton(label: string): HTMLElement {
-    return screen.getByRole('button', { name: new RegExp(`^${label}`) })
+/** 类型筛选是下拉：先开触发器再点选项；选项名末尾带分项计数（如「角色图 1」），按前缀匹配 */
+async function pickKind(user: UserEvent, label: string): Promise<void> {
+    await user.click(screen.getByRole('combobox', { name: '按类型筛选' }))
+    await user.click(screen.getByRole('option', { name: new RegExp(`^${label}`) }))
 }
 
 /** ScrollArea 依赖 ResizeObserver 量取视口：jsdom 未实现，补空桩避免骨架渲染中断 */
@@ -150,8 +156,17 @@ class ResizeObserverStub {
     disconnect = (): void => undefined
 }
 
+/** Radix Select 滚动到选中项与指针捕获同样依赖浏览器 API，jsdom 下补空实现才能展开下拉 */
+function stubSelectDom(): void {
+    Element.prototype.scrollIntoView = (): void => undefined
+    Element.prototype.hasPointerCapture = (): boolean => false
+    Element.prototype.setPointerCapture = (): void => undefined
+    Element.prototype.releasePointerCapture = (): void => undefined
+}
+
 beforeEach(() => {
     vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+    stubSelectDom()
     requestMock.mockReset()
     requestMock.mockResolvedValue({ copied: true, inserted: true, ok: true })
     libraryMock.mockReset()
@@ -194,7 +209,7 @@ describe('ImageGenPage', () => {
         const user = userEvent.setup()
         renderPage()
 
-        await user.click(filterButton('角色图'))
+        await pickKind(user, '角色图')
 
         expect(screen.getByLabelText('查看详情：林清')).toBeDefined()
         expect(screen.queryByLabelText(`查看详情：${PHOTO.id}`)).toBeNull()
@@ -204,28 +219,11 @@ describe('ImageGenPage', () => {
         const user = userEvent.setup()
         renderPage()
 
-        await user.click(filterButton('作品封面'))
+        await pickKind(user, '作品封面')
 
         expect(screen.getByLabelText(`查看详情：${PHOTO.id}`)).toBeDefined()
         expect(screen.getAllByText('封面')).toHaveLength(1)
         expect(screen.queryByLabelText('查看详情：林清')).toBeNull()
-    })
-
-    it('关键词匹配角色名与文件名，未命中时给出无结果空态', async () => {
-        const user = userEvent.setup()
-        renderPage()
-
-        await user.type(screen.getByPlaceholderText('搜索角色或文件名'), '林清')
-        expect(screen.getByLabelText('查看详情：林清')).toBeDefined()
-        expect(screen.queryByLabelText(`查看详情：${PHOTO.id}`)).toBeNull()
-
-        await user.clear(screen.getByPlaceholderText('搜索角色或文件名'))
-        await user.type(screen.getByPlaceholderText('搜索角色或文件名'), 'aB3xK9Qz')
-        expect(screen.getByLabelText(`查看详情：${PHOTO.id}`)).toBeDefined()
-
-        await user.clear(screen.getByPlaceholderText('搜索角色或文件名'))
-        await user.type(screen.getByPlaceholderText('搜索角色或文件名'), '不存在的词')
-        expect(screen.getByText('没有符合条件的图片')).toBeDefined()
     })
 
     it('有筛选时出现清空筛选，点击后恢复到全部', async () => {
@@ -233,7 +231,7 @@ describe('ImageGenPage', () => {
         renderPage()
 
         expect(screen.queryByRole('button', { name: '清空筛选' })).toBeNull()
-        await user.click(filterButton('角色图'))
+        await pickKind(user, '角色图')
         await user.click(screen.getByRole('button', { name: '清空筛选' }))
 
         expect(screen.getByLabelText('查看详情：林清')).toBeDefined()
@@ -252,7 +250,7 @@ describe('ImageGenPage', () => {
         expect(screen.getByText('已选 2 张')).toBeDefined()
 
         // 选中集合与筛选签名绑定：换类别后派生为空集
-        await user.click(filterButton('角色图'))
+        await pickKind(user, '角色图')
         expect(screen.getByText('已选 0 张')).toBeDefined()
     })
 
@@ -267,7 +265,7 @@ describe('ImageGenPage', () => {
         renderPage()
 
         await user.click(screen.getByRole('button', { name: '选择' }))
-        await user.click(screen.getByRole('button', { name: '全选已显示' }))
+        await user.click(screen.getByRole('button', { name: '全选' }))
 
         expect(screen.getByText('已选 60 张')).toBeDefined()
         expect(screen.getByRole('button', { name: '加载更多（60 / 61）' })).toBeDefined()

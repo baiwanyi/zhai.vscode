@@ -102,7 +102,7 @@ function AppFooter({ className, children, ...props }: ComponentProps<'footer'>):
     return (
         <footer
             data-slot="app-footer"
-            className={cn('relative flex shrink-0 items-center justify-end gap-1.5 pt-2', FOOTER_MASK_CLASS, className)}
+            className={cn('relative flex shrink-0 items-center justify-end gap-1.5', FOOTER_MASK_CLASS, className)}
             {...props}
         >
             {children}

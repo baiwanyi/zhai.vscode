@@ -10,7 +10,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { PressImageItem } from '@shared/types/imagegen'
-import { ImageGenGrid } from '@webview/workflow/imagegen/ImageGenGrid'
+import { ImageGenGrid } from '@webview/workflow/imagegen/layout/ImageGenGrid'
 
 afterEach(cleanup)
 

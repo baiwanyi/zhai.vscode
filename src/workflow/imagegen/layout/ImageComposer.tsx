@@ -1,25 +1,27 @@
 /**
  * 生图输入卡片：命令动作、画风与角色以芯片内联在正文流中，底部选择比例并发送。
  * 复用约定：外壳沿用 aichat 的 composer 两层底色（bg-composer / bg-composer-input），芯片输入区取
- * @webview/components/RichChipInput（与 aichat 共用 richText 的 DOM 工具），按钮取 @components/ui/button。
+ * @webview/components/RichChipInput（与 aichat 共用 richText 的 DOM 工具），按钮取 @webview/components/Button。
  * 关键约束：芯片只承载「引用意图」，正文在发送瞬间拼装——角色段取人物卡的姓名、性别年龄、身份与外貌；
  * 画风由宿主按 style 注入（与 portraitPrompt 的 STYLE_HINTS 同源），封面模式忽略角色段且 kind 固定 cover；
  * 封面画风与普通出图分开存：切换模式时芯片换用对应一侧，改动按当前模式写回各自配置；
  * 比例与画风改动只经 onSettingsChange 上报；出图前端兜底 15 分钟，超时或失败即 abort 释放并发锁；
- * 生成中发送按钮切换为「取消生成」，取消后立即复位；取消后迟到的落盘不改写界面，只经 onLateGenerated 让页面静默补图。
+ * 生成中发送按钮切换为「取消生成」，取消后立即复位；取消后迟到的落盘不改写界面，只经 onLateGenerated 让页面静默补图；
+ * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
  */
 import { Send, Sparkles, UserRound, X } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Button } from '@components/ui/button'
+import { Skeleton } from '@components/ui/skeleton'
 import { IMAGE_RATIOS, type ImageGenerateResult, type ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { Button } from '@webview/components/Button'
 import { RichChipInput, type RichChipInputHandle } from '@webview/components/RichChipInput'
 import { ImagePromptPopover } from './ImagePromptPopover'
-import { STYLE_OPTIONS, styleLabelOf } from './imageStyle'
 import type { JSX } from 'react'
+import { STYLE_OPTIONS, styleLabelOf } from '../prompt/imageStyle'
 
 /** 作品设定快照：只取与画面相关的字段，缺省项不参与拼装 */
 export interface PromptSettingSnapshot {
@@ -134,9 +136,23 @@ interface ImageComposerProps {
     onGenerated: (result: ImageGenerateResult) => void
     /** 迟到落盘的回调：请求已取消或被取代但宿主仍出了图，页面只静默刷新列表，不认领封面等副作用 */
     onLateGenerated: () => void
+    /** 作品参数是否已读到：false 时只渲染同高占位，读完才挂载正文 */
+    isLoaded: boolean
 }
 
+/** 正文入参：正文只在参数读完后挂载，自身不需要感知加载状态 */
+type ComposerBodyProps = Omit<ImageComposerProps, 'isLoaded'>
+
+/** 占位高度：与正文卡片一致，读完前后底部输入区不发生高度跳动 */
+const PLACEHOLDER_CLASS = 'h-32 w-full rounded-2xl'
+
+/**
+ * 生图输入卡片入口：作品参数未读完时只渲染同高占位，读完才挂载正文。
+ * 关键约束：正文中的比例、画风等 state 以 props 初值初始化，必须等真实参数到位再挂载，
+ * 否则会先按默认值落一份状态，读完也不会被 props 改写，界面与实际配置就此不一致。
+ */
 export function ImageComposer({
+    isLoaded,
     dirPath,
     characters,
     setting,
@@ -148,6 +164,43 @@ export function ImageComposer({
     onGenerated,
     onLateGenerated,
 }: ImageComposerProps): JSX.Element {
+    if (!isLoaded) {
+        return (
+            <div className="p-2">
+                <Skeleton className={PLACEHOLDER_CLASS} />
+            </div>
+        )
+    }
+
+    return (
+        <ComposerBody
+            dirPath={dirPath}
+            characters={characters}
+            setting={setting}
+            activeCharacterId={activeCharacterId}
+            defaultRatio={defaultRatio}
+            defaultStyle={defaultStyle}
+            coverStyle={coverStyle}
+            onSettingsChange={onSettingsChange}
+            onGenerated={onGenerated}
+            onLateGenerated={onLateGenerated}
+        />
+    )
+}
+
+/** 正文卡片：参数就绪后挂载，持有输入文本、芯片与出图请求等会话内状态 */
+function ComposerBody({
+    dirPath,
+    characters,
+    setting,
+    activeCharacterId,
+    defaultRatio,
+    defaultStyle,
+    coverStyle,
+    onSettingsChange,
+    onGenerated,
+    onLateGenerated,
+}: ComposerBodyProps): JSX.Element {
     const [text, setText] = useState('')
     /** 封面模式：生成结果落统一图库并自动设为作品封面，与角色图互斥 */
     const [isCoverMode, setIsCoverMode] = useState(false)
@@ -366,19 +419,13 @@ export function ImageComposer({
     }))
 
     return (
-        <div className="rounded-2xl bg-composer p-1.5">
+        <div className="w-full rounded-2xl bg-composer p-1.5">
             <div className="mb-1 flex items-center gap-1">
-                <Button
-                    type="button"
-                    size="sm"
-                    variant={settingChip === null ? 'ghost' : 'secondary'}
-                    onClick={toggleSetting}
-                >
+                <Button size="sm" variant={settingChip === null ? 'ghost' : 'secondary'} onClick={toggleSetting}>
                     <Sparkles />
                     命令动作
                 </Button>
                 <Button
-                    type="button"
                     size="sm"
                     variant={isStyleOpen ? 'secondary' : 'ghost'}
                     onClick={() => setIsStyleOpen((open) => !open)}
@@ -386,7 +433,6 @@ export function ImageComposer({
                     画面风格
                 </Button>
                 <Button
-                    type="button"
                     size="sm"
                     variant={characterChip === null ? 'ghost' : 'secondary'}
                     disabled={activeCharacter === null || isCoverMode}
@@ -403,7 +449,6 @@ export function ImageComposer({
                     角色设定
                 </Button>
                 <Button
-                    type="button"
                     size="sm"
                     variant={isCoverMode ? 'secondary' : 'ghost'}
                     disabled={isGenerating}
@@ -414,7 +459,7 @@ export function ImageComposer({
                 </Button>
                 <ImagePromptPopover
                     trigger={
-                        <Button type="button" size="sm" variant="ghost">
+                        <Button size="sm" variant="ghost">
                             提示词
                         </Button>
                     }
@@ -427,7 +472,6 @@ export function ImageComposer({
                     {STYLE_OPTIONS.map((option) => (
                         <Button
                             key={option.value}
-                            type="button"
                             size="xs"
                             variant={styleChip?.value === option.value ? 'secondary' : 'ghost'}
                             onClick={() => pickStyle(option.value, option.label)}
@@ -456,7 +500,6 @@ export function ImageComposer({
                     {RATIO_LABELS.map((item) => (
                         <Button
                             key={item}
-                            type="button"
                             size="xs"
                             variant={ratio === item ? 'secondary' : 'ghost'}
                             onClick={() => handleRatioChange(item)}
@@ -465,7 +508,6 @@ export function ImageComposer({
                         </Button>
                     ))}
                     <Button
-                        type="button"
                         size="sm"
                         variant="ghost"
                         className="ml-auto"
@@ -481,17 +523,12 @@ export function ImageComposer({
                         {isEnhancing ? '增强中…' : enhancedFrom === null ? '增强提示词' : '还原'}
                     </Button>
                     {isGenerating ? (
-                        <Button type="button" size="sm" variant="outline" onClick={() => void handleAbort()}>
+                        <Button size="sm" variant="outline" onClick={() => void handleAbort()}>
                             <X />
                             取消生成
                         </Button>
                     ) : (
-                        <Button
-                            type="button"
-                            size="sm"
-                            disabled={buildPrompt().length === 0}
-                            onClick={() => void handleSend()}
-                        >
+                        <Button size="sm" disabled={buildPrompt().length === 0} onClick={() => void handleSend()}>
                             <Send />
                             {isCoverMode ? '生成封面' : '发送'}
                         </Button>

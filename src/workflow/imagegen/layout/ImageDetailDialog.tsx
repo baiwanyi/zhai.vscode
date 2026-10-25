@@ -8,7 +8,6 @@
  */
 import { ChevronRight, Copy, TextCursorInput, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import {
     Dialog,
@@ -22,10 +21,11 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@components/ui
 import { Skeleton } from '@components/ui/skeleton'
 import type { PressImageItem, PressImageKind } from '@shared/types/imagegen'
 import { formatDateTime } from '@shared/utils/format'
+import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
-import { styleLabelOf } from './imageStyle'
-import { useImageDetail } from './useImageDetail'
 import type { JSX } from 'react'
+import { useImageDetail } from '../hooks/useImageDetail'
+import { styleLabelOf } from '../prompt/imageStyle'
 
 /** 详情面板里的类别文案：与筛选条共用同一套中文名，避免两处口径不一致 */
 const KIND_LABELS: Readonly<Record<PressImageKind, string>> = {
@@ -140,7 +140,6 @@ export function ImageDetailDialog({
                                         <p className="text-xs font-medium">出图参数</p>
                                         {detail.prompt === null ? null : (
                                             <Button
-                                                type="button"
                                                 size="xs"
                                                 variant="ghost"
                                                 className="ml-auto"
@@ -166,12 +165,7 @@ export function ImageDetailDialog({
                                     {detail.enhancedFrom === null ? null : (
                                         <Collapsible>
                                             <CollapsibleTrigger asChild>
-                                                <Button
-                                                    type="button"
-                                                    size="xs"
-                                                    variant="ghost"
-                                                    className="group self-start px-0"
-                                                >
+                                                <Button size="xs" variant="ghost" className="group self-start px-0">
                                                     <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />
                                                     增强前原文
                                                 </Button>
@@ -197,7 +191,6 @@ export function ImageDetailDialog({
                         </div>
                         <DialogFooter className="flex-wrap items-center gap-2 sm:justify-between">
                             <Button
-                                type="button"
                                 variant="ghost"
                                 className="text-destructive hover:text-destructive"
                                 onClick={() => onDelete(image)}
@@ -206,19 +199,15 @@ export function ImageDetailDialog({
                                 删除这张图片
                             </Button>
                             <div className="flex flex-wrap items-center justify-end gap-2">
-                                <Button type="button" variant="outline" onClick={() => onCopyImage(image)}>
+                                <Button variant="outline" onClick={() => onCopyImage(image)}>
                                     <Copy />
                                     复制图片
                                 </Button>
-                                <Button type="button" variant="outline" onClick={() => onInsertImage(image)}>
+                                <Button variant="outline" onClick={() => onInsertImage(image)}>
                                     <TextCursorInput />
                                     插入到文章
                                 </Button>
-                                <Button
-                                    type="button"
-                                    disabled={image.id === coverSelectedId}
-                                    onClick={() => onSetCover(image)}
-                                >
+                                <Button disabled={image.id === coverSelectedId} onClick={() => onSetCover(image)}>
                                     {image.id === coverSelectedId ? '已是作品封面' : '设为作品封面'}
                                 </Button>
                             </div>

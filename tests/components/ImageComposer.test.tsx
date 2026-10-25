@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * ImageComposer 交互用例：覆盖发送编排、角色/设定芯片、封面模式、取消与迟到回包、增强还原。
+ * ImageComposer 交互用例：覆盖参数未读完的占位、发送编排、角色/设定芯片、封面模式、取消与迟到回包、增强还原。
  * 复用约定：渲染查询走 @testing-library/react，输入与点击用 user-event；输入区与词库弹层以轻量替身接管，
  * 断言落在「发什么请求、回调收到什么」上，正文拼装规则由纯函数承担。
  * 关键约束：取消后迟到的成功回包必须走 onLateGenerated 而不是 onGenerated——否则会替用户认领封面、
@@ -11,8 +11,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ImageGenerateResult } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
-import { ImageComposer } from '@webview/workflow/imagegen/ImageComposer'
-import type { PromptCharacterSnapshot } from '@webview/workflow/imagegen/ImageComposer'
+import { ImageComposer } from '@webview/workflow/imagegen/layout/ImageComposer'
+import type { PromptCharacterSnapshot } from '@webview/workflow/imagegen/layout/ImageComposer'
 import type { JSX } from 'react'
 
 const { requestMock, toastErrorMock, toastSuccessMock } = vi.hoisted(() => ({
@@ -108,6 +108,7 @@ function renderComposer(overrides: Partial<ComposerProps> = {}): ComposerProps {
         onSettingsChange: vi.fn(),
         onGenerated: vi.fn(),
         onLateGenerated: vi.fn(),
+        isLoaded: true,
         ...overrides,
     }
     render(<ImageComposer {...props} />)
@@ -131,6 +132,13 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('ImageComposer', () => {
+    it('参数未读完只渲染占位，不挂载正文控件', () => {
+        renderComposer({ isLoaded: false })
+
+        expect(screen.queryByLabelText(PLACEHOLDER)).toBeNull()
+        expect(screen.queryByRole('button', { name: '发送' })).toBeNull()
+    })
+
     it('正文为空时发送按钮禁用', () => {
         renderComposer()
 
