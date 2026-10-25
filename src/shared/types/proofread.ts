@@ -1,6 +1,6 @@
 /**
  * 校对契约：写作管理页「校对」分区的检查目标、问题条目、词库与写回请求结构。
- * 使用方：Webview 校对页（src/webview/workflow/proofread/）与宿主 ProofreadRoutes / ProofreadService。
+ * 使用方：Webview 校对页（src/workflow/proofread/）与宿主 ProofreadRoutes / ProofreadService。
  * 复用约定：偏移一律以 target.text 为基准（UTF-16 字符下标），定位到编辑器时由宿主叠加 offsetBase；
  * 类别、严重度与来源在这里收敛成字面量联合，前端配色与宿主规则共用同一份取值。
  * 关键约束：replacement 仅有确定性替换（错别字、标点、自定义词库）才非空，语义类问题只提示不替换；

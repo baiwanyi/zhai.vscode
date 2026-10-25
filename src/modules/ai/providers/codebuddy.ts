@@ -7,9 +7,10 @@
  */
 import { tmpdir } from 'node:os'
 import { query } from '@tencent-ai/agent-sdk'
+import { getZhaiConfig } from '@modules/common/config'
+import type { SecretsService } from '@modules/common/secrets'
 import { getSelectedCodebuddyModel, resolveCodebuddyModel } from './codebuddyModels'
 import { buildCodebuddyEnv, CODEBUDDY_SITE_LABELS } from './codebuddySite'
-import type { SecretsService } from '../../common/secrets'
 import type {
     AiChatMessage,
     AiProvider,
@@ -19,7 +20,6 @@ import type {
     AiStreamRequest,
     AiUsageMeta,
 } from '../provider'
-import { getZhaiConfig } from '../../common/config'
 
 /** 提示词拆分结果：system 内容与单轮输入 */
 interface PreparedPrompt {

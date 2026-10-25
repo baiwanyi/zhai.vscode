@@ -9,6 +9,19 @@
  * 章节恢复前必须确认该章没有未保存的编辑器修改，否则写盘会被编辑器回写覆盖。
  */
 import * as vscode from 'vscode'
+import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
+import type {
+    ChapterSnapshotEntry,
+    ChapterSnapshotReason,
+    ChapterSnapshotSummary,
+    PressSnapshotEntry,
+    PressSnapshotFileKey,
+    PressSnapshotTrigger,
+    PressWorkspaceFiles,
+} from '@shared/types/press'
 import {
     deleteChapterVersion,
     listChapterSummaries,
@@ -31,19 +44,6 @@ import {
     writeSnapshot,
 } from './snapshotStore'
 import type { StoredSnapshot } from './snapshotStore'
-import type {
-    ChapterSnapshotEntry,
-    ChapterSnapshotReason,
-    ChapterSnapshotSummary,
-    PressSnapshotEntry,
-    PressSnapshotFileKey,
-    PressSnapshotTrigger,
-    PressWorkspaceFiles,
-} from '../../../shared/types/press'
-import { getZhaiConfig, resolveStorageRoot } from '../../common/config'
-import { logger } from '../../common/logger'
-import { PRESS_MODULE_DIR } from '../../common/projectPath'
-import { buildStorageUri, toSafeSegments } from '../../common/storagePath'
 import { PROJECT_CHAPTER_DIR, PROJECT_README_NAME } from '../projectFactory'
 import { readProjectWorkspace } from '../projectWorkspace'
 

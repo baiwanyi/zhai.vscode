@@ -5,14 +5,14 @@
  * 世界观、地理、核心概念、人物背景、卷级情节脉络与关键转折同样纳入往返，导入产出的字段不能写进文档就读不回来。
  */
 import { describe, expect, it } from 'vitest'
-import type { CharacterCard, OutlineVolume, ProjectSetting } from '../src/webview/workflow/press/types'
-import { parseProjectWorkspace } from '../src/webview/workflow/press/document'
+import type { CharacterCard, OutlineVolume, ProjectSetting } from '../src/workflow/press/types'
+import { parseProjectWorkspace } from '../src/workflow/press/document'
 import {
     serializeCharacterBlocks,
     serializeOutlineSection,
     serializeReadmeMeta,
     serializeSettingSection,
-} from '../src/webview/workflow/press/serialize'
+} from '../src/workflow/press/serialize'
 
 const SETTING: ProjectSetting = {
     title: '娱乐春秋',

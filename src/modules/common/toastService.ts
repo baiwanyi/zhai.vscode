@@ -6,7 +6,7 @@
  * 载荷只有级别与文案，不收路径与对象，防止前端拿到可执行内容。
  */
 import * as vscode from 'vscode'
-import type { ToastLevel, ToastPayload } from '../../shared/types/messages'
+import type { ToastLevel, ToastPayload } from '@shared/types/messages'
 
 export class ToastService implements vscode.Disposable {
     private readonly emitter = new vscode.EventEmitter<ToastPayload>()

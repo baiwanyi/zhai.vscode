@@ -7,14 +7,14 @@
  * 编辑器里存在未保存修改的章节直接跳过，避免随后的保存把回填结果盖回去。
  */
 import * as vscode from 'vscode'
+import { resolveStorageRoot } from '@modules/common/config'
+import { splitFrontmatter } from '@modules/common/db/fileMeta'
+import { logger } from '@modules/common/logger'
+import { buildStorageUri } from '@modules/common/storagePath'
+import type { MergeChapterSummaryResult } from '@shared/types/press'
 import { MATERIAL_FILE_NAMES } from './importAnalysis'
 import { formatFrontmatterScalar } from './projectFactory'
 import type { ProjectIndexer } from './projectService'
-import type { MergeChapterSummaryResult } from '../../shared/types/press'
-import { resolveStorageRoot } from '../common/config'
-import { splitFrontmatter } from '../common/db/fileMeta'
-import { logger } from '../common/logger'
-import { buildStorageUri } from '../common/storagePath'
 
 /** 章节 Frontmatter 的摘要行：只认行首 summary，避免误改正文里的同名文字 */
 const SUMMARY_LINE_PATTERN = /^summary:[ \t]*(.*)$/u

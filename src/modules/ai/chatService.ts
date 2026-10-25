@@ -8,6 +8,25 @@
  */
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
+import type { ZhaiConfig } from '@modules/common/config'
+import { getZhaiConfig } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
+import type {
+    AiApplyResult,
+    AiChatDraft,
+    AiContextRef,
+    AiConversation,
+    AiConversationMode,
+    AiConversationSummary,
+    AiMessage,
+    AiRuntimeInfo,
+    AiSendResult,
+    AiSessionSnapshot,
+    AiWriteScope,
+    AiWriteState,
+    AiWriteTarget,
+} from '@shared/types/aiChat'
+import type { StreamMessage } from '@shared/types/messages'
 import {
     buildContextBlock,
     describeContextRefs,
@@ -40,26 +59,7 @@ import type { HostContextRef, ResolvedContextRef } from './contextRefs'
 import type { ConversationRow, MessageRow } from './db/chatRepository'
 import type { AiChatMessage as ChatMessage, AiProvider, AiUsage as ChatUsage, AiUsageMeta } from './provider'
 import type { UsageRecorder } from './usageRecorder'
-import type {
-    AiApplyResult,
-    AiChatDraft,
-    AiContextRef,
-    AiConversation,
-    AiConversationMode,
-    AiConversationSummary,
-    AiMessage,
-    AiRuntimeInfo,
-    AiSendResult,
-    AiSessionSnapshot,
-    AiWriteScope,
-    AiWriteState,
-    AiWriteTarget,
-} from '../../shared/types/aiChat'
-import type { StreamMessage } from '../../shared/types/messages'
-import type { ZhaiConfig } from '../common/config'
 import type Database from 'better-sqlite3'
-import { getZhaiConfig } from '../common/config'
-import { logger } from '../common/logger'
 
 /** 默认会话标题，首条用户消息会覆盖它 */
 const DEFAULT_TITLE = '新的对话'

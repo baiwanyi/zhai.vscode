@@ -1,5 +1,6 @@
 /**
- * Webview 样式入口：加载 Tailwind 4 与 shadcn/ui 主题令牌（radix-nova 风格，neutral 基色）。
+ * Webview 样式入口：加载 Tailwind 4 与 shadcn/ui 主题令牌（radix-nova 风格，neutral 基色），
+ * 位于 src 根，由 dashboard 与 workflow 两个 HTML 入口共同引用。
  * 暗色由 .dark 类驱动，webview 入口依据 data-vscode-theme-kind 决定是否挂载该类。
  * shadcn/tailwind.css 提供基础层样式，tw-animate-css 提供动效能力。
  * 颜色、字体、滚动条、选中态等视觉细节统一桥接 VSCode 主题，见文件末尾「VSCode 主题桥接」段。
@@ -8,10 +9,10 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
-/* Tailwind 自动源检测以 Vite root（src/webview）为界，而业务源码位于其上层、shadcn 组件位于
-   resources/shadcn：不显式声明扫描范围，这些目录中的类名不会进入产物，组件会渲染成无样式元素。 */
-@source '..';
-@source '../../resources/shadcn';
+/* Tailwind 自动源检测以 Vite root（src）为界，业务源码已在其下，这里显式声明把扫描范围固定为 src 全目录；
+   shadcn 组件位于 resources/shadcn，须额外声明，否则其类名不会进入产物，组件会渲染成无样式元素。 */
+@source '.';
+@source '../resources/shadcn';
 
 @custom-variant dark (&:is(.dark *));
 

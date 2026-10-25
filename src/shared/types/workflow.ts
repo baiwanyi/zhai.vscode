@@ -1,6 +1,6 @@
 /**
  * 工作流路由契约：宿主下发的场景事实（workflow/* 协议）与工作流页面标识。
- * 使用方：Webview 工作流页（src/webview/workflow/）与宿主侧 WorkflowRouter / AiChatViewProvider / DashboardViewProvider。
+ * 使用方：Webview 工作流页（src/workflow/）与宿主侧 WorkflowRouter / AiChatViewProvider / DashboardViewProvider。
  * 复用约定：模块键取相对存储根的一级目录名，与索引库 files.path 及展示层 moduleOf 同口径；
  * projectDir 取 press/{作品名} 两段，仅由宿主从活跃文档路径推导，前端据此请求作品文档，不自行拼接路径。
  * 关键约束：字段由宿主归一化后填充，前端只负责解析与渲染，不自行读取配置或访问文件系统；

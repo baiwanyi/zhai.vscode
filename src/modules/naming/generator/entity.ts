@@ -4,9 +4,9 @@
  * 权重抽样复用 ./random 的 pickWeightedIndex，两段式组合由分类规则 ENTITY_RULES 限定。
  * 关键约束：两段词素不重复；整体长度受分类 maxLength 约束，超出时自动降为一段词素。
  */
+import type { NamingCandidate, NamingRequest } from '@shared/types/naming'
 import { pickWeightedIndex } from './random'
 import type { RandomSource } from './random'
-import type { NamingCandidate, NamingRequest } from '../../../shared/types/naming'
 import type { NamingCorePool } from '../data/cores'
 import { ENTITY_RULES } from '../data/catalog'
 import { ENTITY_CORES } from '../data/cores'

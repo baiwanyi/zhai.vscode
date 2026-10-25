@@ -8,9 +8,9 @@
  */
 import { createHash } from 'node:crypto'
 import * as vscode from 'vscode'
-import type { ProofreadTarget } from '../../../shared/types/proofread'
-import { resolveStorageRoot } from '../../common/config'
-import { buildStorageUri, toSafeSegments, toStorageRelativePath } from '../../common/storagePath'
+import { resolveStorageRoot } from '@modules/common/config'
+import { buildStorageUri, toSafeSegments, toStorageRelativePath } from '@modules/common/storagePath'
+import type { ProofreadTarget } from '@shared/types/proofread'
 
 /** 读取目标的可选项 */
 export interface ReadTargetOptions {

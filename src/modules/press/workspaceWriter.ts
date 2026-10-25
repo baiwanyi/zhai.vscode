@@ -5,19 +5,19 @@
  * 角色块按一级标题匹配；用户手写的其它段落原样保留，单份文件写入失败不影响其余文件。
  */
 import * as vscode from 'vscode'
-import { PROJECT_README_NAME } from './projectFactory'
-import { readProjectWorkspace } from './projectWorkspace'
+import { resolveStorageRoot } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import { buildStorageUri } from '@modules/common/storagePath'
 import type {
     PressApplyMeta,
     PressApplyRequest,
     PressSnapshotFileKey,
     PressSnapshotTrigger,
     PressWorkspaceFiles,
-} from '../../shared/types/press'
-import { resolveStorageRoot } from '../common/config'
-import { logger } from '../common/logger'
-import { PRESS_MODULE_DIR } from '../common/projectPath'
-import { buildStorageUri } from '../common/storagePath'
+} from '@shared/types/press'
+import { PROJECT_README_NAME } from './projectFactory'
+import { readProjectWorkspace } from './projectWorkspace'
 
 /** 设定与大纲的回写落点：标题固定，解析端按全文件键值读取，位置不敏感 */
 const SETTING_SECTION_TITLE = '提取设定'

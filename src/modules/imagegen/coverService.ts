@@ -8,27 +8,27 @@
  * 删掉当前封面时回退到剩余最新一张；Images 来源的候选带同名侧车，删除时一并清理。
  */
 import * as vscode from 'vscode'
-import { COVER_DIR, IMAGES_DIR } from './constants'
-import { PressCoverStore, isProjectImagePath } from './db/coverRepository'
-import { listImageFiles } from './imageDirScan'
-import { nextImageId } from './imageNaming'
-import { deleteSidecarOf } from './imageSidecar'
-import { readProjectDirPath } from './portraitService'
+import { resolveStorageRoot } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
+import { readProjectSegments } from '@modules/common/projectPath'
+import { readText } from '@modules/common/readInput'
+import { buildStorageUri, deleteResource, toSafeSegments } from '@modules/common/storagePath'
+import { parseImageKind } from '@shared/types/imagegen'
 import type {
     CoverDeleteResult,
     CoverGenerateResult,
     CoverListResult,
     CoverSelectResult,
     PressCover,
-} from '../../shared/types/press'
+} from '@shared/types/press'
+import { isPressCoverId } from '@shared/types/press'
+import { COVER_DIR, IMAGES_DIR } from './constants'
+import { PressCoverStore, isProjectImagePath } from './db/coverRepository'
+import { listImageFiles } from './imageDirScan'
+import { nextImageId } from './imageNaming'
+import { deleteSidecarOf } from './imageSidecar'
+import { readProjectDirPath } from './portraitService'
 import type Database from 'better-sqlite3'
-import { parseImageKind } from '../../shared/types/imagegen'
-import { isPressCoverId } from '../../shared/types/press'
-import { resolveStorageRoot } from '../common/config'
-import { logger } from '../common/logger'
-import { readProjectSegments } from '../common/projectPath'
-import { readText } from '../common/readInput'
-import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
 
 /** 画廊候选目录：合成封面在 Cover，生图页产物在 Images */
 const CANDIDATE_DIR_NAMES: ReadonlyArray<string> = [COVER_DIR, IMAGES_DIR]

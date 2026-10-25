@@ -4,7 +4,6 @@
  * 路径校验放宽到「目录对即可」后，仍需拦住跨作品、跨目录与段数异常。
  */
 import { describe, expect, it } from 'vitest'
-import { isProjectImagePath } from '../src/modules/imagegen/db/coverRepository'
 import {
     formatPhotoId,
     formatPortraitId,
@@ -12,7 +11,8 @@ import {
     isPressImageId,
     parseImageCharacterId,
     parseImageKind,
-} from '../src/shared/types/imagegen'
+} from '@shared/types/imagegen'
+import { isProjectImagePath } from '../src/modules/imagegen/db/coverRepository'
 
 describe('图片标识解析', () => {
     it('新角色图：时间戳在前、角色标识在后', () => {

@@ -5,9 +5,9 @@
  * 关键约束：watcher 入队与全量扫描都必须排除素材目录与快照目录，否则 AI 初稿与历史副本会混进作品字数。
  */
 import * as vscode from 'vscode'
+import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR, PRESS_SNAPSHOT_DIR } from '@shared/types/press'
 import type { FileRow } from '../db/indexRepository'
 import type Database from 'better-sqlite3'
-import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR, PRESS_SNAPSHOT_DIR } from '../../../shared/types/press'
 import { getZhaiConfig, resolveStorageRoot } from '../config'
 import { parseFileMeta } from '../db/fileMeta'
 import { countFileRows, deleteFileRow, listIndexedPaths, upsertFileRows } from '../db/indexRepository'

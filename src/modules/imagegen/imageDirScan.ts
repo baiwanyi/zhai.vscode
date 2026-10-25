@@ -7,8 +7,8 @@
  * 图片扩展名在此统一口径，图库、角色卡与封面画廊不再各自维护一份正则。
  */
 import * as vscode from 'vscode'
-import { resolveStorageRoot } from '../common/config'
-import { buildStorageUri } from '../common/storagePath'
+import { resolveStorageRoot } from '@modules/common/config'
+import { buildStorageUri } from '@modules/common/storagePath'
 
 /** 图片扩展名：图库、角色卡与封面画廊共用的唯一口径 */
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|webp|gif)$/i

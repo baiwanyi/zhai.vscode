@@ -4,12 +4,12 @@
  * 约束：全部 Disposable 必须挂载到 context.subscriptions，保证停用后资源释放（AC-10）。
  */
 import * as vscode from 'vscode'
+import { createAndOpenNote } from '@modules/note/noteService'
 import { clearSchemaData } from './db/schema'
 import { logger } from './logger'
 import type { IndexService } from './indexer/indexService'
 import type { ToastService } from './toastService'
 import type Database from 'better-sqlite3'
-import { createAndOpenNote } from '../note/noteService'
 
 export function registerCommands(
     context: vscode.ExtensionContext,

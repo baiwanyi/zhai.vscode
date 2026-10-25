@@ -4,13 +4,8 @@
  * 关键约束：结构任一处非法都必须整份作废，避免半份缓存把旧偏移交给界面。
  */
 import { describe, expect, it } from 'vitest'
+import type { ProofreadAiDetectResult, ProofreadCache, ProofreadIssue, ProofreadTarget } from '@shared/types/proofread'
 import type { CacheState } from '../src/modules/proofread/cache/resultCache'
-import type {
-    ProofreadAiDetectResult,
-    ProofreadCache,
-    ProofreadIssue,
-    ProofreadTarget,
-} from '../src/shared/types/proofread'
 import {
     isSameTarget,
     readDetectCache,

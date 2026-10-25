@@ -7,13 +7,13 @@
  * 宿主侧命令结果统一在 Workflow 面板呈现（见 AiChatViewProvider），本层不订阅 toast 广播，避免同一提示弹两次。
  */
 import { Toaster } from '@components/ui/sonner'
+import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
 import { createHomeRoute, createPressProjectRoute, createPressRoute } from './core/routing'
 import { Dashboard } from './dashboard'
 import { useDashboardRoute } from './hooks/useDashboardRoute'
 import { DashboardPress } from './press/DashboardPress'
 import { DashboardPressProject } from './press/DashboardPressProject'
 import type { JSX } from 'react'
-import { useVscodeTheme } from '../hooks/useVscodeTheme'
 
 export function DashboardScreen(): JSX.Element {
     const { route, navigate } = useDashboardRoute()

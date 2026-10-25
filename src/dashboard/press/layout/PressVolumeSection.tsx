@@ -26,8 +26,8 @@ import {
 import { Item, ItemActions, ItemContent, ItemTitle } from '@components/ui/item'
 import type { PressVolumeGroup } from '@shared/types/press'
 import { Button } from '@webview/components/Button'
+import { formatWordCount } from '@webview/dashboard/utils'
 import type { JSX } from 'react'
-import { formatWordCount } from '../../utils'
 import { useProgressiveList } from '../hooks/useProgressiveList'
 
 /** 未分卷组的展示名：历史散章没有卷目录 */

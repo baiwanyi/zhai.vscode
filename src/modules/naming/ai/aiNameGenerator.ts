@@ -4,9 +4,9 @@
  * 取消走 AbortController，外部 signal（naming/abort）与内部超时都会中止请求。
  * 关键约束：本函数不做结果校验与落库，只负责取回正文、用量与请求标识；抛出的错误由服务层转为可读提示。
  */
+import type { AiProvider, AiUsage, AiUsageMeta } from '@modules/ai/provider'
+import type { NamingRequest } from '@shared/types/naming'
 import { buildNamingMessages } from './namingPrompt'
-import type { NamingRequest } from '../../../shared/types/naming'
-import type { AiProvider, AiUsage, AiUsageMeta } from '../../ai/provider'
 
 /** 单次生成整体超时：批量 24~48 个名字通常 5~15s，留出充足余量 */
 const AI_REQUEST_TIMEOUT_MS = 60_000

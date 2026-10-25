@@ -4,7 +4,7 @@
  * 关键约束：flag 模式不产出 replacement，避免把主观用词偏好写成自动替换；
  * 错词在文中多次出现时逐处命中，用 indexOf 递增保证不漏。
  */
-import type { ProofreadLexiconEntry } from '../../../../shared/types/proofread'
+import type { ProofreadLexiconEntry } from '@shared/types/proofread'
 import type { LocalHit } from '../localTypes'
 
 /** 自定义词库检查 */

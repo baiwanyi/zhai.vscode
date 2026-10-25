@@ -71,13 +71,14 @@ export default defineConfig([
                     groups: [
                         'builtin', // 1. 核心库（node 内置）
                         'external', // 2. 第三方依赖（npm 包）
-                        'internal', // 3. 绝对路径导入（@components 与 @shared 别名）
+                        'internal', // 3. 绝对路径导入（@components / @modules / @shared / @webview 别名）
                         'sibling', // 4. 同级相对路径（./）
                         'index', // 5. 索引文件
                         'type', // 6. 类型导入
                     ],
                     pathGroups: [
                         { pattern: '@components/**', group: 'internal', position: 'before' },
+                        { pattern: '@modules/**', group: 'internal', position: 'before' },
                         { pattern: '@shared/**', group: 'internal', position: 'before' },
                         { pattern: '@webview/**', group: 'internal', position: 'before' },
                         {

@@ -8,9 +8,9 @@
  */
 import { Skeleton } from '@components/ui/skeleton'
 import { Toaster } from '@components/ui/sonner'
+import { useHostToast } from '@webview/hooks/useHostToast'
+import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
 import type { JSX } from 'react'
-import { useHostToast } from '../../hooks/useHostToast'
-import { useVscodeTheme } from '../../hooks/useVscodeTheme'
 import { WORKFLOWS } from '../core/registry'
 import { useWorkflowRouting } from '../hooks/useWorkflowRouting'
 

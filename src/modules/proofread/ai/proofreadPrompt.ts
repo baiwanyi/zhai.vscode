@@ -5,8 +5,8 @@
  * 回查不到、长度越界、类别非法的条目直接丢弃并计入 dropped，绝不采信模型给出的位置；
  * 同批次内同一区间只保留一条，避免模型重复报告。
  */
-import type { ProofreadIssue } from '../../../shared/types/proofread'
-import type { AiChatMessage as ChatMessage } from '../../ai/provider'
+import type { AiChatMessage as ChatMessage } from '@modules/ai/provider'
+import type { ProofreadIssue } from '@shared/types/proofread'
 import { buildLineStarts, toParagraph } from '../textPosition'
 
 /** 单个检查批次：文本与其在全文中的起始偏移 */

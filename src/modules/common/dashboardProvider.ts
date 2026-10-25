@@ -11,24 +11,38 @@
  * 活跃编辑器与索引状态监听须随面板销毁释放，否则重开面板会叠加监听、重复广播。
  */
 import * as vscode from 'vscode'
-import { resolveStorageRoot } from './config'
+import type { WorkflowRouter } from '@modules/ai/workflowRouter'
+import type { PressCoverStore } from '@modules/imagegen/db/coverRepository'
+import { createAndOpenNote, openNoteByPath } from '@modules/note/noteService'
+import type { PinStore } from '@modules/note/pinStore'
+import { mergeChapterSummaries } from '@modules/press/chapterSummaryMerge'
+import { analyzeProject } from '@modules/press/importAnalysis'
+import { ImportError, PressImportService } from '@modules/press/importService'
 import {
-    aggregateFileStats,
-    listFilesByPaths,
-    listRecentFiles,
-    mergePinnedFiles,
-    RECENT_LIMIT,
-} from './db/statsRepository'
-import { logger } from './logger'
-import { buildStorageUri } from './storagePath'
-import { WEBVIEW_ALLOWED_COMMANDS } from './webviewCommands'
-import { buildWebviewHtml } from './webviewHtml'
-import type { WorkflowRouter } from '../ai/workflowRouter'
-import type { PinStore } from '../note/pinStore'
-import type { IndexService, IndexStatus } from './indexer/indexService'
-import type { DashboardStats } from '../../shared/types/dashboard'
-import type { HostToWebviewMessage } from '../../shared/types/messages'
-import type { NoteActiveState, OpenNoteResult, PinNotesResult } from '../../shared/types/note'
+    hasProjectFile,
+    hasProjectFiles,
+    listPressProjects,
+    listProjectChapterPaths,
+    listVolumeFilePaths,
+    readProjectDetail,
+} from '@modules/press/projectRepository'
+import {
+    createChapter,
+    createProject,
+    createVolume,
+    deleteChapter,
+    deleteProject,
+    deleteVolume,
+    moveChapter,
+    openChapterByPath,
+    openProjectByDir,
+    renameVolume,
+} from '@modules/press/projectService'
+import type { DashboardStats } from '@shared/types/dashboard'
+import type { HostToWebviewMessage } from '@shared/types/messages'
+import { isRequestMessage } from '@shared/types/messages'
+import type { NoteActiveState, OpenNoteResult, PinNotesResult } from '@shared/types/note'
+import { isOpenNoteRequest, isPinNotesRequest } from '@shared/types/note'
 import type {
     CreatePressProjectResult,
     CreatedPressChapter,
@@ -44,12 +58,7 @@ import type {
     PressProjectDetail,
     PressProjectSummary,
     RenamedPressVolume,
-} from '../../shared/types/press'
-import type { OpenWorkflowResult } from '../../shared/types/workflow'
-import type { PressCoverStore } from '../imagegen/db/coverRepository'
-import type Database from 'better-sqlite3'
-import { isRequestMessage } from '../../shared/types/messages'
-import { isOpenNoteRequest, isPinNotesRequest } from '../../shared/types/note'
+} from '@shared/types/press'
 import {
     isCreatePressChapterRequest,
     isCreatePressProjectRequest,
@@ -64,32 +73,23 @@ import {
     isPressImportStartRequest,
     isRenamePressVolumeRequest,
     readPressAudience,
-} from '../../shared/types/press'
-import { isOpenWorkflowRequest } from '../../shared/types/workflow'
-import { createAndOpenNote, openNoteByPath } from '../note/noteService'
-import { mergeChapterSummaries } from '../press/chapterSummaryMerge'
-import { analyzeProject } from '../press/importAnalysis'
-import { ImportError, PressImportService } from '../press/importService'
+} from '@shared/types/press'
+import type { OpenWorkflowResult } from '@shared/types/workflow'
+import { isOpenWorkflowRequest } from '@shared/types/workflow'
+import { resolveStorageRoot } from './config'
 import {
-    hasProjectFile,
-    hasProjectFiles,
-    listPressProjects,
-    listProjectChapterPaths,
-    listVolumeFilePaths,
-    readProjectDetail,
-} from '../press/projectRepository'
-import {
-    createChapter,
-    createProject,
-    createVolume,
-    deleteChapter,
-    deleteProject,
-    deleteVolume,
-    moveChapter,
-    openChapterByPath,
-    openProjectByDir,
-    renameVolume,
-} from '../press/projectService'
+    aggregateFileStats,
+    listFilesByPaths,
+    listRecentFiles,
+    mergePinnedFiles,
+    RECENT_LIMIT,
+} from './db/statsRepository'
+import { logger } from './logger'
+import { buildStorageUri } from './storagePath'
+import { WEBVIEW_ALLOWED_COMMANDS } from './webviewCommands'
+import { buildWebviewHtml } from './webviewHtml'
+import type { IndexService, IndexStatus } from './indexer/indexService'
+import type Database from 'better-sqlite3'
 
 export class DashboardViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'zhai.dashboard'

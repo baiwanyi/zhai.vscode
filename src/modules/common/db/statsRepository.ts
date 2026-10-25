@@ -5,8 +5,8 @@
  * 仪表盘笔记列表与其相关操作只认 notes/ 目录，press 等其它模块的文件不进入列表与模块分布，
  * 目录过滤统一用 substr(path, 1, ?) = ? 比较，避开 LIKE 对 _ 与 % 的转义问题。
  */
+import type { ModuleStat, RecentFile } from '@shared/types/dashboard'
 import { safeParseTags } from './indexRepository'
-import type { ModuleStat, RecentFile } from '../../../shared/types/dashboard'
 import type Database from 'better-sqlite3'
 
 /** 无一级目录的顶层文件归入的模块名 */

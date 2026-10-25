@@ -9,12 +9,16 @@
  */
 
 import * as vscode from 'vscode'
-import {
-    MATERIAL_FILE_NAMES,
-    analyzeProject,
-    isLikelyPersonName,
-    migrateLegacyMaterialDirectory,
-} from './importAnalysis'
+import type { AiChatMessage, AiProvider, AiUsage, AiUsageMeta } from '@modules/ai/provider'
+import { getSelectedCodebuddyModel } from '@modules/ai/providers/codebuddyModels'
+import type { UsageRecorder } from '@modules/ai/usageRecorder'
+import { summarizeMessages } from '@modules/ai/usageRecorder'
+import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
+import type { QuotaKeys } from '@modules/common/db/quotaRepository'
+import { consumeToday, readUsedToday } from '@modules/common/db/quotaRepository'
+import { logger } from '@modules/common/logger'
+import { buildStorageUri } from '@modules/common/storagePath'
+import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR } from '@shared/types/press'
 import type {
     PressExtractedChapter,
     PressExtractedCharacter,
@@ -22,18 +26,14 @@ import type {
     PressExtractedVolume,
     PressSemanticErrorCode,
     PressSemanticProgress,
-} from '../../shared/types/press'
-import type { AiChatMessage, AiProvider, AiUsage, AiUsageMeta } from '../ai/provider'
-import type { UsageRecorder } from '../ai/usageRecorder'
-import type { QuotaKeys } from '../common/db/quotaRepository'
+} from '@shared/types/press'
+import {
+    MATERIAL_FILE_NAMES,
+    analyzeProject,
+    isLikelyPersonName,
+    migrateLegacyMaterialDirectory,
+} from './importAnalysis'
 import type Database from 'better-sqlite3'
-import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR } from '../../shared/types/press'
-import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
-import { summarizeMessages } from '../ai/usageRecorder'
-import { getZhaiConfig, resolveStorageRoot } from '../common/config'
-import { consumeToday, readUsedToday } from '../common/db/quotaRepository'
-import { logger } from '../common/logger'
-import { buildStorageUri } from '../common/storagePath'
 
 /** 角色卡批次：每次处理几个角色，信息密度足够又不至于互相干扰 */
 const CHARACTER_BATCH_SIZE = 3

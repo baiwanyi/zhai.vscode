@@ -5,8 +5,8 @@
  */
 import * as path from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
+import type { PressWorkspaceFiles } from '@shared/types/press'
 import { readFileContent, resetWorkspaceState, setConfigValue, setFileContent } from './stubs/vscode'
-import type { PressWorkspaceFiles } from '../src/shared/types/press'
 import { PROJECT_README_NAME } from '../src/modules/press/projectFactory'
 import { PressSnapshotService } from '../src/modules/press/snapshot/snapshotService'
 import { listStoredSnapshots } from '../src/modules/press/snapshot/snapshotStore'

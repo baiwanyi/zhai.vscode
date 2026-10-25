@@ -5,8 +5,8 @@
  * 取消仍然优先于预算，已取消时直接抛出而不返回部分结果。
  */
 import { describe, expect, it } from 'vitest'
+import type { ProofreadTarget } from '@shared/types/proofread'
 import type { AiProvider, AiStreamChunk } from '../src/modules/ai/provider'
-import type { ProofreadTarget } from '../src/shared/types/proofread'
 import { runAiProofread } from '../src/modules/proofread/ai/aiProofreader'
 
 /** 造一个能记录调用次数的假通道 */

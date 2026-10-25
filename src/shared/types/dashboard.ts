@@ -1,6 +1,6 @@
 /**
  * 仪表盘数据契约：宿主 dashboard/stats 请求的返回结构。
- * 使用方：Webview 仪表盘（src/webview/dashboard/dashboard.tsx）与宿主侧 DashboardViewProvider。
+ * 使用方：Webview 仪表盘（src/dashboard/dashboard.tsx）与宿主侧 DashboardViewProvider。
  * 约束：字段由宿主聚合后填充，前端只负责展示，不承担解析与拼装；
  * 置顶状态来自宿主偏好，列表顺序已由宿主排定（置顶项在前）。
  */

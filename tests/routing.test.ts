@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { WorkflowContextState } from '@shared/types/workflow'
-import { readModuleLabel, resolveWorkflow } from '../src/webview/workflow/core/routing'
+import { readModuleLabel, resolveWorkflow } from '../src/workflow/core/routing'
 
 /** 构造路由事实：仅覆盖用例关心的字段 */
 function buildContext(patch: Partial<WorkflowContextState>): WorkflowContextState {

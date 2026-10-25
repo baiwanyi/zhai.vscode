@@ -5,10 +5,10 @@
  * 关键约束：本层不做清洗、不落库、不计配额；任何异常都向调用方抛出，由服务层决定是否回退到纯模板；
  * 每次调用都必须带上本次变化方向，同一人物重复出图时这是避免画面雷同的唯一输入差异。
  */
+import type { AiProvider, AiUsage, AiUsageMeta } from '@modules/ai/provider'
+import type { PortraitGenerateRequest } from '@shared/types/press'
 import { buildSceneMessages } from './portraitScenePrompt'
 import type { PortraitVariation } from './portraitVariation'
-import type { PortraitGenerateRequest } from '../../../shared/types/press'
-import type { AiProvider, AiUsage, AiUsageMeta } from '../../ai/provider'
 
 /** 单次生成整体超时：一句画面描述通常 2~5s，留出充足余量 */
 const AI_REQUEST_TIMEOUT_MS = 25_000

@@ -2,7 +2,7 @@
  * AI 取名提示词与解析测试：覆盖围栏 / 裸数组 / 脏文本三种输出形态，以及后缀、姓氏、去重与限量校验。
  */
 import { describe, expect, it } from 'vitest'
-import type { NamingRequest } from '../src/shared/types/naming'
+import type { NamingRequest } from '@shared/types/naming'
 import { buildNamingMessages, parseNamingResponse } from '../src/modules/naming/ai/namingPrompt'
 
 function createRequest(overrides: Partial<NamingRequest> = {}): NamingRequest {

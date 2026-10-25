@@ -9,10 +9,10 @@
  */
 import { tmpdir } from 'node:os'
 import { unstable_v2_createSession } from '@tencent-ai/agent-sdk'
+import { getZhaiConfig } from '@modules/common/config'
+import type { SecretsService } from '@modules/common/secrets'
 import { buildCodebuddyEnv } from './codebuddySite'
-import type { SecretsService } from '../../common/secrets'
 import type { Memento } from 'vscode'
-import { getZhaiConfig } from '../../common/config'
 
 /** 单个可选模型 */
 export interface CodebuddyModelOption {

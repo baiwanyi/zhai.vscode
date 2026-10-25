@@ -4,9 +4,9 @@
  * 除 catalog 外的写操作只接受白名单字段（名称、分类、条数）。
  * 关键约束：名称长度与分类必须校验，超长或未知名片一律拒绝，防止异常载荷进入数据库。
  */
+import type { NamingCategory } from '@shared/types/naming'
 import { NAMING_CATEGORIES } from './data/catalog'
 import type { NamingService } from './namingService'
-import type { NamingCategory } from '../../shared/types/naming'
 
 /** 收藏名称最大长度 */
 const MAX_NAME_LENGTH = 16

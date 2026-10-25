@@ -5,10 +5,10 @@
  * 文件不存在时由 ensureLexiconFile 落一份带说明的骨架，用户打开即可照格式补充，不需要额外文档。
  */
 import * as vscode from 'vscode'
-import type { ProofreadLexicon, ProofreadLexiconEntry, ProofreadLexiconState } from '../../../shared/types/proofread'
-import { resolveStorageRoot } from '../../common/config'
-import { logger } from '../../common/logger'
-import { buildStorageUri } from '../../common/storagePath'
+import { resolveStorageRoot } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
+import { buildStorageUri } from '@modules/common/storagePath'
+import type { ProofreadLexicon, ProofreadLexiconEntry, ProofreadLexiconState } from '@shared/types/proofread'
 
 /** 词库目录名：存储根下的一级目录，与 notes / press 平级 */
 const LEXICON_DIR = 'proofread'

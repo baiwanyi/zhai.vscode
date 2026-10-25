@@ -3,8 +3,6 @@
  * 复用约定：枚举合法性由 ../shared/types/naming 与 data/catalog 共同约束，分类变体以 catalog 为准。
  * 关键约束：姓氏与后缀只保留允许字符并限长，具体要求限 150 字，数量上限 48，防止异常载荷放大生成开销。
  */
-import { isValidVariant, NAME_COUNTS, NAMING_CATEGORIES, readCategoryDefinition } from './data/catalog'
-import type { NamingCategoryDefinition } from './data/catalog'
 import type {
     NamingCategory,
     NamingEra,
@@ -14,7 +12,9 @@ import type {
     NamingRequest,
     NamingSource,
     NamingSurnameKind,
-} from '../../shared/types/naming'
+} from '@shared/types/naming'
+import { isValidVariant, NAME_COUNTS, NAMING_CATEGORIES, readCategoryDefinition } from './data/catalog'
+import type { NamingCategoryDefinition } from './data/catalog'
 
 /** 具体要求最大长度（与界面计数一致） */
 const MAX_REQUIREMENT_LENGTH = 150

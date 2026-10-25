@@ -8,12 +8,12 @@
  * 焦点离开文本编辑器（打开设置、切到其它视图）不改变场景事实，沿用上一次的 scene / module / projectDir。
  */
 import * as vscode from 'vscode'
-import type { WorkflowContextState, WorkflowSceneKind } from '../../shared/types/workflow'
-import type { IndexService } from '../common/indexer/indexService'
+import { listFilesByPaths } from '@modules/common/db/statsRepository'
+import type { IndexService } from '@modules/common/indexer/indexService'
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import type { WorkflowContextState, WorkflowSceneKind } from '@shared/types/workflow'
+import { NOTES_MODULE_KEY, ROOT_MODULE_KEY } from '@shared/types/workflow'
 import type Database from 'better-sqlite3'
-import { NOTES_MODULE_KEY, ROOT_MODULE_KEY } from '../../shared/types/workflow'
-import { listFilesByPaths } from '../common/db/statsRepository'
-import { PRESS_MODULE_DIR } from '../common/projectPath'
 
 /** 场景变化去抖时长（毫秒）：短于该值的编辑器焦点切换不触发换页 */
 const SCENE_DEBOUNCE_MS = 800

@@ -6,11 +6,11 @@
  * 拒绝会越出存储根的拼装结果；交给 workspace.fs 的一律是带 file 协议的绝对路径。
  */
 import * as vscode from 'vscode'
+import { resolveStorageRoot } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
+import { buildStorageUri, isPathExisting, toSafeSegments, toStorageRelativePath } from '@modules/common/storagePath'
+import type { CreatedNote } from '@shared/types/note'
 import { createNoteDraft } from './noteFactory'
-import type { CreatedNote } from '../../shared/types/note'
-import { resolveStorageRoot } from '../common/config'
-import { logger } from '../common/logger'
-import { buildStorageUri, isPathExisting, toSafeSegments, toStorageRelativePath } from '../common/storagePath'
 
 /** 同名冲突时的最大重试次数 */
 const MAX_CREATE_ATTEMPTS = 5

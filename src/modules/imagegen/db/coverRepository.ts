@@ -5,9 +5,9 @@
  * 避免把手写路径或越界路径写进库；图片目录同时接受统一目录 Images 与只读兼容的 Cover / Portraits；
  * 作品删除后残留的键无害，读取时按当前作品路径取用。
  */
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import { isPressImageId } from '@shared/types/imagegen'
 import type Database from 'better-sqlite3'
-import { isPressImageId } from '../../../shared/types/imagegen'
-import { PRESS_MODULE_DIR } from '../../common/projectPath'
 import { IMAGE_DIR_NAMES } from '../constants'
 
 /** 键前缀：后接作品相对路径 press/{作品名} */

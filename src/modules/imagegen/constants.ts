@@ -5,7 +5,7 @@
  * 关键约束：二者都是跨文件契约——改目录名只影响新图落盘、旧目录按只读兼容处理，改键名等于清空当日额度；
  * 封面与角色卡共用同一组配额键，避免同一份额度被两处各算一次。
  */
-import type { QuotaKeys } from '../common/db/quotaRepository'
+import type { QuotaKeys } from '@modules/common/db/quotaRepository'
 
 /** 统一图片目录：新生成的封面、角色图与普通图片都落在这里（press/{作品名}/Images） */
 export const IMAGES_DIR = 'Images'

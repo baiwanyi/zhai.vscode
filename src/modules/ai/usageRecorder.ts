@@ -6,11 +6,11 @@
  * 此处不得按倍率估算；提示词按 PROMPT_MAX_LENGTH 截断并标记，保留期清理由用量服务负责。
  */
 import { randomUUID } from 'node:crypto'
+import { logger } from '@modules/common/logger'
+import type { AiUsageModule, AiUsageStatus } from '@shared/types/aiUsage'
 import { insertUsageLog, upsertPrompt } from './db/usageRepository'
 import type { AiChatMessage, AiUsage, AiUsageMeta } from './provider'
-import type { AiUsageModule, AiUsageStatus } from '../../shared/types/aiUsage'
 import type Database from 'better-sqlite3'
-import { logger } from '../common/logger'
 
 /** 提示词入库上限：单轮消息含引用原文时可能较长，超出部分不再保留 */
 const PROMPT_MAX_LENGTH = 20_000

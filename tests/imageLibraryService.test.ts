@@ -6,6 +6,7 @@
 import * as path from 'node:path'
 import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
+import type { ImageLibraryResult } from '@shared/types/imagegen'
 import {
     readDeletedPaths,
     readFileContent,
@@ -14,7 +15,6 @@ import {
     setDirectory,
     setFileContent,
 } from './stubs/vscode'
-import type { ImageLibraryResult } from '../src/shared/types/imagegen'
 import { ensureSchema } from '../src/modules/common/db/schema'
 import { PressCoverStore } from '../src/modules/imagegen/db/coverRepository'
 import { ImageLibraryService } from '../src/modules/imagegen/imageLibraryService'

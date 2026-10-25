@@ -7,7 +7,7 @@
  * 章节文档除正文外的信息（本章介绍 / 出场角色 / 金手指设定 / 字数目标）全部落在 Frontmatter，正文区只写小说文本；
  * 新作品自带默认卷与首章，保证详情页一进去就有可写章节，不留空态。
  */
-import type { PressAudience } from '../../shared/types/press'
+import type { PressAudience } from '@shared/types/press'
 
 /** 作品根文档名：作品被打开时的落点，同时承载背景与风格设定 */
 export const PROJECT_README_NAME = 'README.md'

@@ -3,7 +3,7 @@
  * 以及代码块跳过、忽略词计数、段落号与自定义词条严重度等聚合层约束。
  */
 import { describe, expect, it } from 'vitest'
-import type { ProofreadLexiconEntry, ProofreadLocalResult } from '../src/shared/types/proofread'
+import type { ProofreadLexiconEntry, ProofreadLocalResult } from '@shared/types/proofread'
 import { runLocalChecks } from '../src/modules/proofread/local/localChecker'
 
 /** 只跑规则、不配置词库的快捷入口 */

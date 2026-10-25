@@ -4,8 +4,8 @@
  * 中国名字的双字名保证不取重复字（不叠字、不重字），西方与日本使用现成名字词表。
  * 关键约束：姓氏优先取用户输入，其次按单姓 / 复姓池随机；同名由调用方传入的 exclude 集合过滤。
  */
+import type { NamingCandidate, NamingRequest } from '@shared/types/naming'
 import type { RandomSource } from './random'
-import type { NamingCandidate, NamingRequest } from '../../../shared/types/naming'
 import {
     CN_NAME_POOLS,
     JP_FEMALE_GIVEN,

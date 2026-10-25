@@ -6,7 +6,7 @@
  * 每次探测都实际 stat 磁盘，因此并发或历史残留都不会被漏掉。
  */
 import * as vscode from 'vscode'
-import { isPressImageId } from '../../shared/types/imagegen'
+import { isPressImageId } from '@shared/types/imagegen'
 
 /** 时间戳顺延上限：60 秒足以覆盖任何同秒冲突，再长说明该目录命名异常 */
 const MAX_TIMESTAMP_SHIFT = 60

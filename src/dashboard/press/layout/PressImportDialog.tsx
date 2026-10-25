@@ -23,8 +23,8 @@ import type { PressAudience, PressImportCandidate } from '@shared/types/press'
 import { DEFAULT_PRESS_AUDIENCE, PRESS_AUDIENCES, readPressAudience } from '@shared/types/press'
 import { Button } from '@webview/components/Button'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
+import { formatWordCount } from '@webview/dashboard/utils'
 import type { JSX } from 'react'
-import { formatWordCount } from '../../utils'
 
 /** 编码展示名：面向用户说明源文件编码，落盘统一转为 UTF-8 */
 const ENCODING_LABELS: Readonly<Record<PressImportCandidate['encoding'], string>> = {

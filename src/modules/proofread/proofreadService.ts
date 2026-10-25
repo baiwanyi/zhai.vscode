@@ -7,20 +7,13 @@
  * 同一时刻只允许一个 AI 检查任务，重复发起直接拒绝，避免并发消耗与进度广播错乱。
  */
 import * as vscode from 'vscode'
-import { runAiProofread } from './ai/aiProofreader'
-import {
-    isSameTarget,
-    readDetectCache,
-    readProofreadCache,
-    toCachedTarget,
-    writeDetectCache,
-    writeProofreadCache,
-} from './cache/resultCache'
-import { detectAiContent } from './detect/aiDetector'
-import { ensureLexiconFile, readLexicon, readLexiconState, writeLexicon } from './lexicon/lexiconStore'
-import { runLocalChecks } from './local/localChecker'
-import { applyProofreadEdits, revealProofreadRange } from './target/documentEditor'
-import { readProofreadTarget } from './target/targetReader'
+import type { AiProvider } from '@modules/ai/provider'
+import { getSelectedCodebuddyModel } from '@modules/ai/providers/codebuddyModels'
+import type { UsageRecorder } from '@modules/ai/usageRecorder'
+import { getZhaiConfig } from '@modules/common/config'
+import type { QuotaKeys } from '@modules/common/db/quotaRepository'
+import { consumeToday, readUsedToday } from '@modules/common/db/quotaRepository'
+import type { SecretsService } from '@modules/common/secrets'
 import type {
     ProofreadAiDetectResult,
     ProofreadAiDetectState,
@@ -37,15 +30,22 @@ import type {
     ProofreadRevealResult,
     ProofreadRunResult,
     ProofreadTarget,
-} from '../../shared/types/proofread'
-import type { AiProvider } from '../ai/provider'
-import type { UsageRecorder } from '../ai/usageRecorder'
-import type { QuotaKeys } from '../common/db/quotaRepository'
-import type { SecretsService } from '../common/secrets'
+} from '@shared/types/proofread'
+import { runAiProofread } from './ai/aiProofreader'
+import {
+    isSameTarget,
+    readDetectCache,
+    readProofreadCache,
+    toCachedTarget,
+    writeDetectCache,
+    writeProofreadCache,
+} from './cache/resultCache'
+import { detectAiContent } from './detect/aiDetector'
+import { ensureLexiconFile, readLexicon, readLexiconState, writeLexicon } from './lexicon/lexiconStore'
+import { runLocalChecks } from './local/localChecker'
+import { applyProofreadEdits, revealProofreadRange } from './target/documentEditor'
+import { readProofreadTarget } from './target/targetReader'
 import type Database from 'better-sqlite3'
-import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
-import { getZhaiConfig } from '../common/config'
-import { consumeToday, readUsedToday } from '../common/db/quotaRepository'
 
 /** 写回前留底回调：内容为文档全文，交由快照服务保存 */
 export type BeforeWriteHandler = (uri: vscode.Uri, content: string) => Promise<void>

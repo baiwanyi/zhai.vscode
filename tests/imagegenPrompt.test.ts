@@ -3,10 +3,10 @@
  * 关注点：画风描述必须始终在最后一段；空串不产生多余空行；负向约束统一带「避免出现：」前缀。
  */
 import { describe, expect, it } from 'vitest'
-import type { ImageSettings } from '../src/shared/types/imagegen'
+import type { ImageSettings } from '@shared/types/imagegen'
+import { DEFAULT_IMAGE_SETTINGS } from '@shared/types/imagegen'
 import { STYLE_HINTS } from '../src/modules/imagegen/ai/portraitPrompt'
 import { composeImagePrompt } from '../src/modules/imagegen/promptCompose'
-import { DEFAULT_IMAGE_SETTINGS } from '../src/shared/types/imagegen'
 
 /** 以默认参数为底，便于逐项覆盖 */
 function settingsWith(patch: Partial<ImageSettings>): ImageSettings {

@@ -4,14 +4,14 @@
  * 关键约束：路径、偏移与替换文本全部来自不可信载荷，超长或非整数一律拒绝；
  * 单次写回条数、区间长度与替换文本长度在这里先卡一道，服务层再逐条回查原文。
  */
-import type { ProofreadService } from './proofreadService'
 import type {
     ProofreadApplyEdit,
     ProofreadApplyRequest,
     ProofreadLexicon,
     ProofreadLexiconEntry,
     ProofreadRevealRequest,
-} from '../../shared/types/proofread'
+} from '@shared/types/proofread'
+import type { ProofreadService } from './proofreadService'
 
 /** 单次写回条数上限 */
 const MAX_EDITS = 500

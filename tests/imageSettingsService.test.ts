@@ -5,9 +5,9 @@
  */
 import * as path from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { DEFAULT_IMAGE_SETTINGS } from '@shared/types/imagegen'
 import { readFileContent, resetWorkspaceState, setConfigValue, setDirectory, setFileContent } from './stubs/vscode'
 import { ImageSettingsService } from '../src/modules/imagegen/imageSettingsService'
-import { DEFAULT_IMAGE_SETTINGS } from '../src/shared/types/imagegen'
 
 const STORAGE_ROOT = 'd:/vault'
 const DIR_PATH = 'press/剑来'

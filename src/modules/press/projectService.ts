@@ -9,6 +9,18 @@
  * 旧作品的章节目录仍是 `Chapter`，任何写盘入口都先迁移，读取与校验则同时接受新旧两种目录名。
  */
 import * as vscode from 'vscode'
+import { resolveStorageRoot } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
+import { PRESS_MODULE_DIR, readProjectSegments } from '@modules/common/projectPath'
+import type { DeleteOutcome } from '@modules/common/storagePath'
+import {
+    buildStorageUri,
+    deleteResource,
+    isPathExisting,
+    toSafeSegments,
+    toStorageRelativePath,
+} from '@modules/common/storagePath'
+import type { PressAudience } from '@shared/types/press'
 import {
     CHAPTER_DIR_NAMES,
     DEFAULT_VOLUME_DIR,
@@ -30,18 +42,6 @@ import {
     validateProjectName,
     validateVolumeName,
 } from './projectFactory'
-import type { PressAudience } from '../../shared/types/press'
-import type { DeleteOutcome } from '../common/storagePath'
-import { resolveStorageRoot } from '../common/config'
-import { logger } from '../common/logger'
-import { PRESS_MODULE_DIR, readProjectSegments } from '../common/projectPath'
-import {
-    buildStorageUri,
-    deleteResource,
-    isPathExisting,
-    toSafeSegments,
-    toStorageRelativePath,
-} from '../common/storagePath'
 
 /** 新建章节的序号冲突重试上限 */
 const MAX_CHAPTER_ATTEMPTS = 10

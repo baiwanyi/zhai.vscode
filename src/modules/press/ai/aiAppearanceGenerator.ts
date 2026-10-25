@@ -4,9 +4,9 @@
  * 取消走 AbortController，外部 signal（press/aiAppearance/abort）与内部超时都会中止请求。
  * 关键约束：本函数不做提示词清洗与落库，只负责取回正文、用量与请求标识；抛出的错误由服务层转为可读提示。
  */
+import type { AiProvider, AiUsage, AiUsageMeta } from '@modules/ai/provider'
+import type { CharacterAppearanceRequest } from '@shared/types/press'
 import { buildAppearanceMessages } from './appearancePrompt'
-import type { CharacterAppearanceRequest } from '../../../shared/types/press'
-import type { AiProvider, AiUsage, AiUsageMeta } from '../../ai/provider'
 
 /** 单次生成整体超时：一段白描通常 3~8s，留出充足余量 */
 const AI_REQUEST_TIMEOUT_MS = 60_000

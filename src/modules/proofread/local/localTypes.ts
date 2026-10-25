@@ -3,7 +3,7 @@
  * 复用约定：类别与严重度取自共享契约，规则函数统一签名 (text) => LocalHit[]，由 localChecker 统一聚合。
  * 关键约束：命中偏移一律相对传入文本；replacement 为空表示该条只能提示、不可一键写回。
  */
-import type { ProofreadCategory, ProofreadSeverity } from '../../../shared/types/proofread'
+import type { ProofreadCategory, ProofreadSeverity } from '@shared/types/proofread'
 
 /** 单条规则命中：聚合前的中间结构，不带 id 与段落号 */
 export interface LocalHit {

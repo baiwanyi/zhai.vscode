@@ -3,7 +3,7 @@
  * 纯函数测试，不依赖 DOM 与宿主协议；断言集中在可识别路径、非法编码与 hash 生成三处。
  */
 import { describe, expect, it } from 'vitest'
-import { parseRoute, toHash } from '../src/webview/dashboard/core/routing'
+import { parseRoute, toHash } from '../src/dashboard/core/routing'
 
 describe('parseRoute', () => {
     it('空值与首页回落为概览页', () => {

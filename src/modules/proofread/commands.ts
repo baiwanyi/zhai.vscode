@@ -6,8 +6,8 @@
  * 取消输入不做任何变更，避免误删。
  */
 import * as vscode from 'vscode'
-import type { SecretsService } from '../common/secrets'
-import type { ToastService } from '../common/toastService'
+import type { SecretsService } from '@modules/common/secrets'
+import type { ToastService } from '@modules/common/toastService'
 
 /** 密钥长度上限：异常粘贴直接截断，避免超长字符串进加密存储 */
 const MAX_KEY_LENGTH = 512

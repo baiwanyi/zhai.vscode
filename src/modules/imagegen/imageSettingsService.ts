@@ -8,18 +8,18 @@
  * 配额与超时不在本文件管辖范围，它们是全局护栏，不接受作品级覆盖。
  */
 import * as vscode from 'vscode'
-import { readProjectDirPath } from './portraitService'
+import { resolveStorageRoot } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
+import { readProjectSegments } from '@modules/common/projectPath'
+import { buildStorageUri } from '@modules/common/storagePath'
 import {
     DEFAULT_IMAGE_SETTINGS,
     isImageRatio,
     type ImageSettings,
     type ImageSettingsResult,
-} from '../../shared/types/imagegen'
-import { PORTRAIT_STYLES, type PortraitStyle } from '../../shared/types/press'
-import { resolveStorageRoot } from '../common/config'
-import { logger } from '../common/logger'
-import { readProjectSegments } from '../common/projectPath'
-import { buildStorageUri } from '../common/storagePath'
+} from '@shared/types/imagegen'
+import { PORTRAIT_STYLES, type PortraitStyle } from '@shared/types/press'
+import { readProjectDirPath } from './portraitService'
 
 /** 作品级配置目录：隐藏目录，不参与作品文档索引 */
 const SETTINGS_DIR = '.zhai'

@@ -6,13 +6,13 @@
  * 前端传入的偏移不可信，一律按文档当前长度与单条区间长度上限重新校验。
  */
 import * as vscode from 'vscode'
-import { resolveProofreadUri } from './targetReader'
 import type {
     ProofreadApplyRequest,
     ProofreadApplyResult,
     ProofreadRevealRequest,
     ProofreadRevealResult,
-} from '../../../shared/types/proofread'
+} from '@shared/types/proofread'
+import { resolveProofreadUri } from './targetReader'
 
 /** 单次写回的区间上限：防止异常载荷触发大面积改写 */
 const MAX_EDITS = 500

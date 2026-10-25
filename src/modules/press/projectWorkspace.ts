@@ -6,12 +6,12 @@
  * 读取前先迁移旧章节目录（`Chapter` → `Chapters`），工作台是用户最常进入的入口，在此收敛最省事。
  */
 import * as vscode from 'vscode'
+import { resolveStorageRoot } from '@modules/common/config'
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
+import type { PressWorkspaceDocument, PressWorkspaceFiles } from '@shared/types/press'
 import { PROJECT_README_NAME } from './projectFactory'
 import { migrateLegacyChapterDirectory } from './projectService'
-import type { PressWorkspaceDocument, PressWorkspaceFiles } from '../../shared/types/press'
-import { resolveStorageRoot } from '../common/config'
-import { PRESS_MODULE_DIR } from '../common/projectPath'
-import { buildStorageUri, toSafeSegments } from '../common/storagePath'
 
 /** 工作台文档与文件名的对应关系：与 projectFactory 的骨架命名保持一致 */
 const WORKSPACE_FILE_NAMES: Readonly<Record<keyof PressWorkspaceFiles, string>> = {

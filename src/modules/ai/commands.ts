@@ -8,6 +8,10 @@
  */
 import { unstable_v2_authenticate } from '@tencent-ai/agent-sdk'
 import * as vscode from 'vscode'
+import { getZhaiConfig } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
+import type { ToastService } from '@modules/common/toastService'
+import { isOpenWorkflowRequest } from '@shared/types/workflow'
 import { createContextRefs, MAX_CONTEXT_COUNT } from './contextRefs'
 import { rememberCodebuddyLogin } from './providers/codebuddyLogin'
 import {
@@ -19,10 +23,6 @@ import {
 } from './providers/codebuddySite'
 import type { AiChatService } from './chatService'
 import type { WorkflowRouter } from './workflowRouter'
-import type { ToastService } from '../common/toastService'
-import { isOpenWorkflowRequest } from '../../shared/types/workflow'
-import { getZhaiConfig } from '../common/config'
-import { logger } from '../common/logger'
 
 export function registerAiCommands(
     context: vscode.ExtensionContext,

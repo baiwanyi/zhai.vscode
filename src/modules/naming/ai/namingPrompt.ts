@@ -5,8 +5,8 @@
  * 关键约束：模型输出一律视为不可信——必须再过长度、字符集、后缀、姓氏与去重校验，
  * 不合规项直接丢弃，由调用方决定是否回退本地生成。
  */
-import type { NamingCandidate, NamingRequest } from '../../../shared/types/naming'
-import type { AiChatMessage as ChatMessage } from '../../ai/provider'
+import type { AiChatMessage as ChatMessage } from '@modules/ai/provider'
+import type { NamingCandidate, NamingRequest } from '@shared/types/naming'
 import { readCategoryDefinition } from '../data/catalog'
 
 /** 系统提示：约束输出为纯 JSON，禁止解释与编号 */

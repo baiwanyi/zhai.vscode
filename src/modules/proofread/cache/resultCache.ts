@@ -5,6 +5,7 @@
  * 正文一旦改动（修改时间或字符数变化）签名即不匹配，宁可重跑也不能把旧偏移标到新正文上；
  * 写入失败只记日志，不得影响校对本身的返回。
  */
+import { logger } from '@modules/common/logger'
 import type {
     ProofreadAiDetectResult,
     ProofreadAiResult,
@@ -16,9 +17,8 @@ import type {
     ProofreadLocalResult,
     ProofreadSeverity,
     ProofreadTarget,
-} from '../../../shared/types/proofread'
-import { isProofreadCategory } from '../../../shared/types/proofread'
-import { logger } from '../../common/logger'
+} from '@shared/types/proofread'
+import { isProofreadCategory } from '@shared/types/proofread'
 
 /**
  * 缓存存储接口：只依赖 get / update 两个方法。

@@ -3,8 +3,8 @@
  * 重点验证「越界分段必须丢弃」「额度只认 makers_models_usage」这两条外部字段收窄约束。
  */
 import { describe, expect, it } from 'vitest'
+import type { ProofreadTarget } from '@shared/types/proofread'
 import type { ZhuqueClassifyResult } from '../src/modules/proofread/detect/zhuqueClient'
-import type { ProofreadTarget } from '../src/shared/types/proofread'
 import { toDetectResult } from '../src/modules/proofread/detect/aiDetector'
 import { mapZhuqueResponse } from '../src/modules/proofread/detect/zhuqueClient'
 

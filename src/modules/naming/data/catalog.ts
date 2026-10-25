@@ -3,7 +3,7 @@
  * 复用约定：宿主据此组装 naming/catalog 摘要下发，前端按元信息决定展示哪些字段，不在前端硬编码分类。
  * 关键约束：变体 value 必须与 cores.ts / suffixes.ts 的池键 `${category}:${variant}` 对应。
  */
-import type { NamingCategory, NamingCategoryMeta, NamingOption } from '../../../shared/types/naming'
+import type { NamingCategory, NamingCategoryMeta, NamingOption } from '@shared/types/naming'
 
 /** 分类定义：在共用元信息上补充池键推导所需字段 */
 export interface NamingCategoryDefinition extends NamingCategoryMeta {

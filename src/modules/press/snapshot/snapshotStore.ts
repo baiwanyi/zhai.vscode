@@ -9,18 +9,18 @@
  */
 import { createHash, randomBytes } from 'node:crypto'
 import * as vscode from 'vscode'
+import { resolveStorageRoot } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import { buildStorageUri, isPathExisting, toSafeSegments } from '@modules/common/storagePath'
+import { PRESS_SNAPSHOT_DIR, isPressSnapshotId } from '@shared/types/press'
 import type {
     PressSnapshotEntry,
     PressSnapshotFileKey,
     PressSnapshotReason,
     PressSnapshotTrigger,
     PressWorkspaceFiles,
-} from '../../../shared/types/press'
-import { PRESS_SNAPSHOT_DIR, isPressSnapshotId } from '../../../shared/types/press'
-import { resolveStorageRoot } from '../../common/config'
-import { logger } from '../../common/logger'
-import { PRESS_MODULE_DIR } from '../../common/projectPath'
-import { buildStorageUri, isPathExisting, toSafeSegments } from '../../common/storagePath'
+} from '@shared/types/press'
 import { PROJECT_README_NAME } from '../projectFactory'
 
 /** 快照收录的文档键：顺序固定，写入与读取共用，避免各处顺序不一致导致对照错位 */

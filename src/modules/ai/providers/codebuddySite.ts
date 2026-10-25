@@ -6,7 +6,7 @@
  * 登录方式与授权域名必须同时与站点一致；切换站点后旧凭证不会复用，必须重新登录。
  * 国际站不设置 CODEBUDDY_INTERNET_ENVIRONMENT（SDK 以缺省值表示该站点）。
  */
-import type { CodebuddySite } from '../../common/config'
+import type { CodebuddySite } from '@modules/common/config'
 import type { AuthEnvironment } from '@tencent-ai/agent-sdk'
 
 /** 支持的站点：仅中国站与国际站，企业专享版需自定义 endpoint，暂不开放 */

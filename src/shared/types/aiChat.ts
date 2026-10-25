@@ -1,6 +1,6 @@
 /**
  * AI 对话数据契约：宿主 ai/* 协议的请求与返回结构（设计源：docs/modules/ai-chat.md 第 7.2 节）。
- * 使用方：Webview 工作流 AI 对话页（src/webview/workflow/）与宿主侧 AiChatViewProvider / AiChatService。
+ * 使用方：Webview 工作流 AI 对话页（src/workflow/）与宿主侧 AiChatViewProvider / AiChatService。
  * 约束：字段由宿主归一化后填充，前端只负责展示，不承担解析与拼装。
  */
 

@@ -8,15 +8,6 @@
  * 范围枚举、页码夹紧、请求 id 长度与字符），不接受任意时间字符串；提示词只按请求 id 单条读取，
  * 本地未留存时回落到 CLI 会话记录（出图轮次取图像提示词，其余取用户消息原文）。
  */
-import {
-    getPrompt,
-    listAllUsageLogs,
-    listUsageForCreditSync,
-    prunePrompts,
-    updateUsageCredits,
-} from './db/usageRepository'
-import type { CliUsageEntry, CliUsageIndex } from './cliUsageIndex'
-import type { UsageLogRecord } from './db/usageRepository'
 import type {
     AiUsageItem,
     AiUsageListResult,
@@ -27,9 +18,18 @@ import type {
     AiUsageRange,
     AiUsageStatus,
     AiUsageSummary,
-} from '../../shared/types/aiUsage'
+} from '@shared/types/aiUsage'
+import { isAiUsageModule } from '@shared/types/aiUsage'
+import {
+    getPrompt,
+    listAllUsageLogs,
+    listUsageForCreditSync,
+    prunePrompts,
+    updateUsageCredits,
+} from './db/usageRepository'
+import type { CliUsageEntry, CliUsageIndex } from './cliUsageIndex'
+import type { UsageLogRecord } from './db/usageRepository'
 import type Database from 'better-sqlite3'
-import { isAiUsageModule } from '../../shared/types/aiUsage'
 
 /** 默认与最大页大小：列表行数有限，超出上限直接夹紧而不是报错 */
 const DEFAULT_PAGE_SIZE = 20

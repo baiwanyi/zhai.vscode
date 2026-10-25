@@ -6,6 +6,8 @@
  * 章节与卷按序号前缀排序，缺失前缀的条目排在有序项之后；章节标题取自 Frontmatter title，
  * 文档未声明标题时才用去序号前缀的文件名兜底展示。
  */
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import type { PressChapterEntry, PressProjectDetail, PressProjectSummary, PressVolumeGroup } from '@shared/types/press'
 import {
     CHAPTER_DIR_NAMES,
     PROJECT_README_NAME,
@@ -13,14 +15,7 @@ import {
     readOrderPrefix,
     toDisplayName,
 } from './projectFactory'
-import type {
-    PressChapterEntry,
-    PressProjectDetail,
-    PressProjectSummary,
-    PressVolumeGroup,
-} from '../../shared/types/press'
 import type Database from 'better-sqlite3'
-import { PRESS_MODULE_DIR } from '../common/projectPath'
 
 /** 聚合所需的最小列投影 */
 const PROJECT_FILE_COLUMNS = 'path, title, word_count AS wordCount, mtime'

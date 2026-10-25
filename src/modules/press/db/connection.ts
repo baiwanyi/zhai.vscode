@@ -4,9 +4,9 @@
  * 与 index.db / ai.db / naming.db 相互独立，避免一次性任务的计数污染主库。
  * 关键约束：库文件位于缓存目录，删除后仅丢失配额计数与封面选择，不影响文档、人物卡与已落盘的图片。
  */
+import { openSqliteDatabase } from '@modules/common/db/openDatabase'
 import type Database from 'better-sqlite3'
 import type * as vscode from 'vscode'
-import { openSqliteDatabase } from '../../common/db/openDatabase'
 
 /** meta 表：键值对，保存日期与计数等轻量状态 */
 const SCHEMA_STATEMENTS = [

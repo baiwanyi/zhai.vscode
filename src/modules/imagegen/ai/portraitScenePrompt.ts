@@ -6,10 +6,10 @@
  * 描述不得出现画风词与说明性文字，且场景须贴合身份、能力与世界观，避免现代物品串入古风题材；
  * 本次变化方向必须写进用户消息——同一人物反复出图时，仅靠模型自由发挥会稳定画出同一张画面。
  */
+import type { AiChatMessage as ChatMessage } from '@modules/ai/provider'
+import type { PortraitGenerateRequest } from '@shared/types/press'
 import { formatVariation } from './portraitVariation'
 import type { PortraitVariation } from './portraitVariation'
-import type { PortraitGenerateRequest } from '../../../shared/types/press'
-import type { AiChatMessage as ChatMessage } from '../../ai/provider'
 
 /** 系统提示：只写画面，不写画风与解释 */
 const SYSTEM_PROMPT = `你是中文网文的配图画面设计师。根据人物卡写一句能直接交给绘图模型的画面描述。

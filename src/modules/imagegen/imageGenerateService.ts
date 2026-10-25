@@ -8,6 +8,23 @@
  * 每次成功出图落一份同名 sidecar；单一任务锁防重复扣费，取消走 abort。
  */
 import * as vscode from 'vscode'
+import type { AiProvider } from '@modules/ai/provider'
+import { getSelectedCodebuddyModel } from '@modules/ai/providers/codebuddyModels'
+import type { UsageRecorder } from '@modules/ai/usageRecorder'
+import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
+import { consumeToday, readUsedToday } from '@modules/common/db/quotaRepository'
+import { logger } from '@modules/common/logger'
+import { readProjectSegments } from '@modules/common/projectPath'
+import { readText } from '@modules/common/readInput'
+import { buildStorageUri } from '@modules/common/storagePath'
+import {
+    DEFAULT_IMAGE_SETTINGS,
+    IMAGE_RATIO_SIZE,
+    type ImageGenerateKind,
+    type ImageGenerateResult,
+    type ImageSettings,
+} from '@shared/types/imagegen'
+import { PORTRAIT_STYLES, type PortraitStyle } from '@shared/types/press'
 import { IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
 import { nextImageId } from './imageNaming'
 import { writeSidecarOf } from './imageSidecar'
@@ -16,24 +33,7 @@ import { composeImagePrompt } from './promptCompose'
 import type { ImageGenerator } from './ai/imageProvider'
 import type { PressCoverStore } from './db/coverRepository'
 import type { ImageSettingsService } from './imageSettingsService'
-import type { AiProvider } from '../ai/provider'
-import type { UsageRecorder } from '../ai/usageRecorder'
 import type Database from 'better-sqlite3'
-import {
-    DEFAULT_IMAGE_SETTINGS,
-    IMAGE_RATIO_SIZE,
-    type ImageGenerateKind,
-    type ImageGenerateResult,
-    type ImageSettings,
-} from '../../shared/types/imagegen'
-import { PORTRAIT_STYLES, type PortraitStyle } from '../../shared/types/press'
-import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
-import { getZhaiConfig, resolveStorageRoot } from '../common/config'
-import { consumeToday, readUsedToday } from '../common/db/quotaRepository'
-import { logger } from '../common/logger'
-import { readProjectSegments } from '../common/projectPath'
-import { readText } from '../common/readInput'
-import { buildStorageUri } from '../common/storagePath'
 
 /** 提示词长度上限：远超正常拼装结果，超出视为异常请求 */
 const MAX_PROMPT_LENGTH = 4000

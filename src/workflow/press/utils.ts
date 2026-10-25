@@ -8,6 +8,7 @@
  */
 import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
 import type { CharacterPortrait, PressExtractedCharacter, PressExtractedVolume } from '@shared/types/press'
+import { formatWordCount } from '@webview/dashboard/utils'
 import {
     CHARACTER_BODY_TYPE_META,
     CHARACTER_BODY_TYPE_ORDER,
@@ -28,7 +29,6 @@ import type {
     PlanStatus,
     ProjectSetting,
 } from './types'
-import { formatWordCount } from '../../dashboard/utils'
 
 export { formatWordCount }
 

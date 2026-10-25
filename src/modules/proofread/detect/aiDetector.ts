@@ -4,9 +4,9 @@
  * 关键约束：只保留非人工分段并按置信度降序截断，避免界面被大量低置信分段淹没；
  * 分段序号优先取平台 order，缺失时按展示顺序回填，保证列表可读。
  */
+import type { ProofreadAiDetectResult, ProofreadDetectSegment, ProofreadTarget } from '@shared/types/proofread'
 import { classifyWithZhuque } from './zhuqueClient'
 import type { ZhuqueClassifyResult } from './zhuqueClient'
-import type { ProofreadAiDetectResult, ProofreadDetectSegment, ProofreadTarget } from '../../../shared/types/proofread'
 
 /** 可疑分段展示上限 */
 const MAX_SEGMENTS = 5

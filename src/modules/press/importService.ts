@@ -11,6 +11,17 @@
 import { lstat, readFile } from 'node:fs/promises'
 import * as os from 'node:os'
 import * as vscode from 'vscode'
+import { resolveStorageRoot } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import { buildStorageUri, isPathExisting } from '@modules/common/storagePath'
+import type {
+    PressAudience,
+    PressImportCandidate,
+    PressImportEncoding,
+    PressImportErrorCode,
+    PressImportProgress,
+} from '@shared/types/press'
 import { parseNovel, sanitizeSegment } from './importParser'
 import {
     PROJECT_CHAPTER_DIR,
@@ -21,18 +32,7 @@ import {
 import { migrateLegacyChapterDirectory } from './projectService'
 import type { ParsedNovel } from './importParser'
 import type { ProjectIndexer } from './projectService'
-import type {
-    PressAudience,
-    PressImportCandidate,
-    PressImportEncoding,
-    PressImportErrorCode,
-    PressImportProgress,
-} from '../../shared/types/press'
 import type { Buffer } from 'node:buffer'
-import { resolveStorageRoot } from '../common/config'
-import { logger } from '../common/logger'
-import { PRESS_MODULE_DIR } from '../common/projectPath'
-import { buildStorageUri, isPathExisting } from '../common/storagePath'
 
 /** 导入文件大小上限：约 50 MB，相当于一千六百万字，足以覆盖任何单本小说且不至于读入内存过大 */
 export const MAX_IMPORT_BYTES = 50 * 1024 * 1024

@@ -6,10 +6,10 @@
  * 整体时间预算耗尽时不再提交新批次并计入 skippedBatches——长文档宁可返回部分结果，
  * 也不能让调用方等到请求超时后拿不到任何结论（前端等待上限必须大于该预算）。
  */
+import type { AiProvider, AiUsage, AiUsageMeta } from '@modules/ai/provider'
+import { logger } from '@modules/common/logger'
+import type { ProofreadIssue, ProofreadTarget } from '@shared/types/proofread'
 import { buildProofreadMessages, parseProofreadResponse, splitProofreadBatches } from './proofreadPrompt'
-import type { ProofreadIssue, ProofreadTarget } from '../../../shared/types/proofread'
-import type { AiProvider, AiUsage, AiUsageMeta } from '../../ai/provider'
-import { logger } from '../../common/logger'
 
 /** 单批生成超时：一个批次通常 2–8 秒，留足余量 */
 const BATCH_TIMEOUT_MS = 45_000

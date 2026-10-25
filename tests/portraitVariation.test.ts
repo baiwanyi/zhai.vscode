@@ -5,8 +5,8 @@
  * 关键约束：「每次都不一样」是硬约束，撞车分支必须被断言覆盖，不能只依赖随机性。
  */
 import { describe, expect, it } from 'vitest'
+import type { PortraitGenerateRequest } from '@shared/types/press'
 import type { PortraitVariation } from '../src/modules/imagegen/ai/portraitVariation'
-import type { PortraitGenerateRequest } from '../src/shared/types/press'
 import { buildSceneMessages } from '../src/modules/imagegen/ai/portraitScenePrompt'
 import { formatVariation, pickVariation } from '../src/modules/imagegen/ai/portraitVariation'
 

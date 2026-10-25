@@ -167,7 +167,7 @@ src/modules/proofread/
 
 ## 9. 界面结构
 
-`src/webview/workflow/proofread/`
+`src/workflow/proofread/`
 
 - `index.tsx`：`AppPage` 三区装配（目标信息 / 检查卡 / 底部操作）。
 - `layout/ProofreadCheckList.tsx`：四张检查卡（单字徽标 错/病/险/纠 + 状态徽标 + 命中列表）。

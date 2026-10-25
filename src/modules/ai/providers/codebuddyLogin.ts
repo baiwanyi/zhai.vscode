@@ -4,7 +4,7 @@
  * 关键约束：只在确认可用后写入（登录成功、或一次生成完整走通），失败不清除既有记录；
  * 未注入 globalState 时（测试或激活前）一律按未登录处理，不臆造登录态。
  */
-import type { CodebuddySite } from '../../common/config'
+import type { CodebuddySite } from '@modules/common/config'
 import type * as vscode from 'vscode'
 
 /** 登录态确认标记的键前缀 */

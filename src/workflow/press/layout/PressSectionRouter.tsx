@@ -6,15 +6,15 @@
  * 关键约束：对话与快照按作品目录隔离（dirPath 既是作用域也是对话页 key，切作品即重建），
  * 用量是跨作品的全局统计不隔离；回调统一来自 usePressMutations，路由层不自行读写草稿。
  */
-import type { WorkflowPressSection } from '../../layout/WorkflowPressNav'
+import { AiChat } from '@webview/workflow/aichat'
+import { ImageGenPage } from '@webview/workflow/imagegen'
+import type { WorkflowPressSection } from '@webview/workflow/layout/WorkflowPressNav'
+import { NamingPage } from '@webview/workflow/naming'
+import { ProofreadPage } from '@webview/workflow/proofread'
+import { AiUsagePage } from '@webview/workflow/usage'
 import type { PressMutations } from '../hooks/usePressMutations'
 import type { OutlineWorkspace } from '../types'
 import type { JSX } from 'react'
-import { AiChat } from '../../aichat'
-import { ImageGenPage } from '../../imagegen'
-import { NamingPage } from '../../naming'
-import { ProofreadPage } from '../../proofread'
-import { AiUsagePage } from '../../usage'
 import { PressCharacterPage } from '../character/PressCharacterPage'
 import { DEFAULT_CHAPTER_WORD_GOAL } from '../constants'
 import { PressOutlinePage } from '../outline/PressOutlinePage'

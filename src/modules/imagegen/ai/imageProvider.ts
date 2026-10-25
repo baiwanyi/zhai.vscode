@@ -5,9 +5,9 @@
  * 关键约束：实现唯一为 CodeBuddy 的 ImageGen；能力探测结果缓存，缺失即报错不静默重试，
  * 因为出图按张计费，静默重试会连扣两次。
  */
+import type { AiUsage, AiUsageMeta } from '@modules/ai/provider'
+import type { SecretsService } from '@modules/common/secrets'
 import { CodeBuddyImageProvider } from './codebuddyImageProvider'
-import type { AiUsage, AiUsageMeta } from '../../ai/provider'
-import type { SecretsService } from '../../common/secrets'
 
 /** 图像通道标识 */
 export type ImageProviderId = 'codebuddy'

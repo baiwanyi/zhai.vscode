@@ -9,13 +9,13 @@
  * 前端传入的 dirPath 不可信，打开、提取与快照操作前都必须按索引库回查，读取前由 projectWorkspace 做片段与层级校验；
  * 快照写入挂在回写钩子上而不是重复读盘，回写失败时不会凭空产生一版历史。
  */
-import { hasProjectFiles, listPressProjects } from './projectRepository'
-import { openProjectByDir } from './projectService'
-import { readProjectWorkspace } from './projectWorkspace'
-import { applyProjectWorkspace } from './workspaceWriter'
-import type { ImportSemanticService } from './importSemanticService'
-import type { PressAiService } from './pressAiService'
-import type { PressSnapshotService } from './snapshot/snapshotService'
+import type { WorkflowRouter } from '@modules/ai/workflowRouter'
+import { logger } from '@modules/common/logger'
+import type { PressCoverService } from '@modules/imagegen/coverService'
+import type { ImageGenerateService } from '@modules/imagegen/imageGenerateService'
+import type { ImageLibraryService } from '@modules/imagegen/imageLibraryService'
+import type { ImageSettingsService } from '@modules/imagegen/imageSettingsService'
+import type { PortraitService } from '@modules/imagegen/portraitService'
 import type {
     ChapterSnapshotCaptureResult,
     ChapterSnapshotDeleteResult,
@@ -33,15 +33,7 @@ import type {
     PressSnapshotListResult,
     PressSnapshotRestoreResult,
     PressWorkspaceResult,
-} from '../../shared/types/press'
-import type { WorkflowRouter } from '../ai/workflowRouter'
-import type { PressCoverService } from '../imagegen/coverService'
-import type { ImageGenerateService } from '../imagegen/imageGenerateService'
-import type { ImageLibraryService } from '../imagegen/imageLibraryService'
-import type { ImageSettingsService } from '../imagegen/imageSettingsService'
-import type { PortraitService } from '../imagegen/portraitService'
-import type Database from 'better-sqlite3'
-import type * as vscode from 'vscode'
+} from '@shared/types/press'
 import {
     isChapterSnapshotCaptureRequest,
     isChapterSnapshotDeleteRequest,
@@ -58,8 +50,16 @@ import {
     isPressSnapshotListRequest,
     isPressSnapshotRestoreRequest,
     isPressWorkspaceRequest,
-} from '../../shared/types/press'
-import { logger } from '../common/logger'
+} from '@shared/types/press'
+import { hasProjectFiles, listPressProjects } from './projectRepository'
+import { openProjectByDir } from './projectService'
+import { readProjectWorkspace } from './projectWorkspace'
+import { applyProjectWorkspace } from './workspaceWriter'
+import type { ImportSemanticService } from './importSemanticService'
+import type { PressAiService } from './pressAiService'
+import type { PressSnapshotService } from './snapshot/snapshotService'
+import type Database from 'better-sqlite3'
+import type * as vscode from 'vscode'
 
 export class PressRoutes {
     public constructor(

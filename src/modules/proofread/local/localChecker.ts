@@ -6,13 +6,13 @@
  * 关键约束：命中落在围栏代码块或行内代码内直接丢弃；忽略词按命中位置前后窗口判定，
  * 避免角色名、专有名词被内置词表误报；区间完全重叠时只保留首条，防止同一位置报两种问题。
  */
+import type { ProofreadIssue, ProofreadLexiconEntry, ProofreadLocalResult } from '@shared/types/proofread'
 import { collectIgnoredRanges, isRangeIgnored } from './ignoredRanges'
 import { checkLexiconWords } from './rules/lexicon'
 import { checkPunctuation } from './rules/punctuation'
 import { checkRepeat } from './rules/repeat'
 import { checkTypoWords } from './rules/typo'
 import type { LocalHit } from './localTypes'
-import type { ProofreadIssue, ProofreadLexiconEntry, ProofreadLocalResult } from '../../../shared/types/proofread'
 import { buildLineStarts, toParagraph } from '../textPosition'
 
 /** 忽略词命中窗口：命中区间前后各取若干字符再判断，覆盖跨在名字内部的误报 */

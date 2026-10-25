@@ -11,13 +11,13 @@
  */
 
 import * as vscode from 'vscode'
+import { resolveStorageRoot } from '@modules/common/config'
+import { countWords, parseTitle, splitFrontmatter } from '@modules/common/db/fileMeta'
+import { logger } from '@modules/common/logger'
+import { buildStorageUri, isPathExisting } from '@modules/common/storagePath'
+import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR } from '@shared/types/press'
 import { CHAPTER_DIR_NAMES } from './projectFactory'
 import { migrateLegacyChapterDirectory } from './projectService'
-import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR } from '../../shared/types/press'
-import { resolveStorageRoot } from '../common/config'
-import { countWords, parseTitle, splitFrontmatter } from '../common/db/fileMeta'
-import { logger } from '../common/logger'
-import { buildStorageUri, isPathExisting } from '../common/storagePath'
 
 /** 章节摘录长度：首、中、尾各取该字数；太短只能猜梗概，太长则素材与后续提示词一起膨胀 */
 const DIGEST_LENGTH = 400

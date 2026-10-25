@@ -6,8 +6,8 @@
  * 只有确认存在后才操作，避免把「本来就没有」写进日志当作失败。
  */
 import * as vscode from 'vscode'
-import { logger } from '../common/logger'
-import { isPathExisting } from '../common/storagePath'
+import { logger } from '@modules/common/logger'
+import { isPathExisting } from '@modules/common/storagePath'
 
 /** 从文件名剥出标识：只处理最后一段扩展名，目录部分不受影响 */
 const EXTENSION_PATTERN = /\.[^./]+$/u

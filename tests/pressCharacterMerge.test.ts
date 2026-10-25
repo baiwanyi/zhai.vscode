@@ -5,12 +5,8 @@
  * 关键约束：没有实际变化时必须返回 null，调用方据此跳过写盘，因此「值相同」也算一次断言点。
  */
 import { describe, expect, it } from 'vitest'
-import type { PressExtractedCharacter } from '../src/shared/types/press'
-import {
-    createCharacterCard,
-    mergeCharacterDraft,
-    mergeCharacterDrafts,
-} from '../src/webview/workflow/press/utils'
+import type { PressExtractedCharacter } from '@shared/types/press'
+import { createCharacterCard, mergeCharacterDraft, mergeCharacterDrafts } from '../src/workflow/press/utils'
 
 /** 草案默认值：各用例只覆盖关心的字段，其余保持模型「没给」的空串形态 */
 function createDraft(overrides: Partial<PressExtractedCharacter> = {}): PressExtractedCharacter {

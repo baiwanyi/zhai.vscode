@@ -7,6 +7,10 @@
  * 清理按「近期版数 + 每日首版」执行，手动与恢复前留底不参与自动清理。
  */
 import * as vscode from 'vscode'
+import { logger } from '@modules/common/logger'
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import { isPathExisting, toSafeSegments } from '@modules/common/storagePath'
+import type { ChapterSnapshotEntry, ChapterSnapshotReason, ChapterSnapshotSummary } from '@shared/types/press'
 import {
     createSnapshotId,
     ensureGitignore,
@@ -16,10 +20,6 @@ import {
     snapshotUri,
     writeTextFile,
 } from './snapshotStore'
-import type { ChapterSnapshotEntry, ChapterSnapshotReason, ChapterSnapshotSummary } from '../../../shared/types/press'
-import { logger } from '../../common/logger'
-import { PRESS_MODULE_DIR } from '../../common/projectPath'
-import { isPathExisting, toSafeSegments } from '../../common/storagePath'
 import { PROJECT_CHAPTER_DIR } from '../projectFactory'
 
 /** 章节时间线根目录名：与结构化文档的整版快照目录并列 */

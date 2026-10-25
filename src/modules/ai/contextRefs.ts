@@ -7,8 +7,8 @@
  */
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
-import type { AiContextRef } from '../../shared/types/aiChat'
-import { logger } from '../common/logger'
+import { logger } from '@modules/common/logger'
+import type { AiContextRef } from '@shared/types/aiChat'
 
 /** 单条引用注入上限（约 1.25 万 token），超出按行截断 */
 export const MAX_CONTEXT_CHARS = 20_000

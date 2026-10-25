@@ -6,6 +6,20 @@
  * AI 结果必须经 namingPrompt 校验，不合规时整体回退报错；批次总量按 HISTORY_LIMIT 裁剪。
  */
 import { randomUUID } from 'node:crypto'
+import type { AiProvider } from '@modules/ai/provider'
+import { getSelectedCodebuddyModel } from '@modules/ai/providers/codebuddyModels'
+import type { UsageRecorder } from '@modules/ai/usageRecorder'
+import { summarizeMessages } from '@modules/ai/usageRecorder'
+import { getZhaiConfig } from '@modules/common/config'
+import type {
+    NamingCatalog,
+    NamingCategory,
+    NamingCategoryMeta,
+    NamingFavoriteItem,
+    NamingGenerateResult,
+    NamingHistoryEntry,
+    NamingRequest,
+} from '@shared/types/naming'
 import { generateNamesWithAi } from './ai/aiNameGenerator'
 import { buildNamingMessages, parseNamingResponse } from './ai/namingPrompt'
 import {
@@ -35,21 +49,7 @@ import {
 import { generateNames } from './generator'
 import { normalizeNamingRequest } from './request'
 import type { NamingBatchRow } from './db/namingRepository'
-import type {
-    NamingCatalog,
-    NamingCategory,
-    NamingCategoryMeta,
-    NamingFavoriteItem,
-    NamingGenerateResult,
-    NamingHistoryEntry,
-    NamingRequest,
-} from '../../shared/types/naming'
-import type { AiProvider } from '../ai/provider'
-import type { UsageRecorder } from '../ai/usageRecorder'
 import type Database from 'better-sqlite3'
-import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
-import { summarizeMessages } from '../ai/usageRecorder'
-import { getZhaiConfig } from '../common/config'
 
 /** 历史保留批次上限 */
 const HISTORY_LIMIT = 200

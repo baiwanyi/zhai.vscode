@@ -10,12 +10,10 @@
  * 手工放入的孤儿图可列举、可删除，但文件名不合法时不允许设为封面。
  */
 import * as vscode from 'vscode'
-import { IMAGE_DIR_NAMES } from './constants'
-import { isProjectImagePath, readImageIdFromPath } from './db/coverRepository'
-import { listImageFiles } from './imageDirScan'
-import { deleteSidecarOf } from './imageSidecar'
-import { readProjectDirPath } from './portraitService'
-import type { PressCoverStore } from './db/coverRepository'
+import { resolveStorageRoot } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
+import { readProjectSegments } from '@modules/common/projectPath'
+import { buildStorageUri, deleteResource, toSafeSegments } from '@modules/common/storagePath'
 import {
     isPressImageId,
     parseImageCharacterId,
@@ -28,11 +26,13 @@ import {
     type ImageSetCoverResult,
     type PressImageItem,
     type PressImageKind,
-} from '../../shared/types/imagegen'
-import { resolveStorageRoot } from '../common/config'
-import { logger } from '../common/logger'
-import { readProjectSegments } from '../common/projectPath'
-import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
+} from '@shared/types/imagegen'
+import { IMAGE_DIR_NAMES } from './constants'
+import { isProjectImagePath, readImageIdFromPath } from './db/coverRepository'
+import { listImageFiles } from './imageDirScan'
+import { deleteSidecarOf } from './imageSidecar'
+import { readProjectDirPath } from './portraitService'
+import type { PressCoverStore } from './db/coverRepository'
 
 /** 文件名去掉扩展名 */
 const EXTENSION_PATTERN = /\.[^.]+$/u

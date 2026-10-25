@@ -7,7 +7,7 @@
  * 全文没有卷标记时章节统一落入「默认卷」，与作品骨架「章节一律在卷下」的布局保持一致。
  */
 
-import { countWords } from '../common/db/fileMeta'
+import { countWords } from '@modules/common/db/fileMeta'
 
 /** 中文与阿拉伯数字字符集：卷号、章号与序号校验共用同一字符类 */
 const NUMBER_CHARS = '0-9０-９零〇一二三四五六七八九十百千两壹贰叁肆伍陆柒捌玖拾佰仟'

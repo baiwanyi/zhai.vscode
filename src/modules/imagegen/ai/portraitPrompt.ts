@@ -5,7 +5,7 @@
  * 支持两段式——scene 由文本模型先写画面，缺省时回退到纯字段模板，保证文本模型失败也能出图；
  * 不按封面或纯立绘方向写；提示词上限 900 字，超长时先裁主体、再拼画面要求——宁可少写背景，也不能丢掉约束。
  */
-import type { PortraitGenerateRequest, PortraitStyle } from '../../../shared/types/press'
+import type { PortraitGenerateRequest, PortraitStyle } from '@shared/types/press'
 
 /** 提示词长度上限：多数服务商限制 1000 字符以内，中文按 900 字控制 */
 const MAX_PROMPT_LENGTH = 900

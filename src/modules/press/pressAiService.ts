@@ -6,18 +6,18 @@
  * 关键约束：入参一律先经 normalizeAppearanceRequest 收窄（长度、条数、类型），异常载荷不进入模型调用；
  * 同一时刻只允许一个生成请求，取消由 pressAi/aiAppearance/abort 触发；限额小于等于 0 视为不限制。
  */
+import type { AiProvider } from '@modules/ai/provider'
+import { getSelectedCodebuddyModel } from '@modules/ai/providers/codebuddyModels'
+import type { UsageRecorder } from '@modules/ai/usageRecorder'
+import { summarizeMessages } from '@modules/ai/usageRecorder'
+import { getZhaiConfig } from '@modules/common/config'
+import type { QuotaKeys } from '@modules/common/db/quotaRepository'
+import { consumeToday, readUsedToday } from '@modules/common/db/quotaRepository'
+import { readText, readTextList } from '@modules/common/readInput'
+import type { CharacterAppearanceRequest, CharacterAppearanceResult } from '@shared/types/press'
 import { generateAppearanceWithAi } from './ai/aiAppearanceGenerator'
 import { buildAppearanceMessages, sanitizeAppearance } from './ai/appearancePrompt'
-import type { CharacterAppearanceRequest, CharacterAppearanceResult } from '../../shared/types/press'
-import type { AiProvider } from '../ai/provider'
-import type { UsageRecorder } from '../ai/usageRecorder'
-import type { QuotaKeys } from '../common/db/quotaRepository'
 import type Database from 'better-sqlite3'
-import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
-import { summarizeMessages } from '../ai/usageRecorder'
-import { getZhaiConfig } from '../common/config'
-import { consumeToday, readUsedToday } from '../common/db/quotaRepository'
-import { readText, readTextList } from '../common/readInput'
 
 /** 外貌生成的配额键（press.db 的 meta 表） */
 const QUOTA_KEYS: QuotaKeys = { dateKey: 'press_ai_date', countKey: 'press_ai_count' }
