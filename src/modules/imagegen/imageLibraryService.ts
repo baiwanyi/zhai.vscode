@@ -197,11 +197,14 @@ export class ImageLibraryService {
                 skipped += 1
             }
         }
+        // 指针值形如 press/{作品名}/{目录}/{文件名}，前缀必须连作品段一起比对；
+        // 只写「目录/文件名」会被 PressCoverStore 的归属校验拒绝，导致迁移在搬完图后整单失败
         const selected = this.store.read(dirPath)
-        const hasLegacyCover = selected !== null && !selected.startsWith(`${IMAGES_DIR}/`)
+        const imagesPrefix = [...projectSegments, IMAGES_DIR].join('/')
+        const hasLegacyCover = selected !== null && !selected.startsWith(`${imagesPrefix}/`)
         if (hasLegacyCover) {
             const fileName = selected.slice(selected.lastIndexOf('/') + 1)
-            this.store.write(dirPath, `${IMAGES_DIR}/${fileName}`)
+            this.store.write(dirPath, `${imagesPrefix}/${fileName}`)
         }
         logger.info(`旧目录迁移完成：移动 ${moved} 张，跳过 ${skipped} 张，封面指针改写 ${hasLegacyCover}`)
         return { moved, skipped, coverUpdated: hasLegacyCover }

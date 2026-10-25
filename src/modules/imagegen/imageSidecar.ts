@@ -14,7 +14,9 @@ const EXTENSION_PATTERN = /\.[^./]+$/u
 
 /** 由图片 Uri 推导同名侧车 Uri：`.../photo-xxx.png` → `.../photo-xxx.json` */
 export function toSidecarUri(imageUri: vscode.Uri): vscode.Uri {
-    return imageUri.with({ path: imageUri.path.replace(EXTENSION_PATTERN, '.json') })
+    // 用 joinPath 而不是改 path：目录与文件名都交给 Uri 自己拼，跨平台分隔符与规范化由它保证
+    const fileName = imageUri.path.slice(imageUri.path.lastIndexOf('/') + 1)
+    return vscode.Uri.joinPath(imageUri, '..', `${fileName.replace(EXTENSION_PATTERN, '')}.json`)
 }
 
 /** 随图片删除侧车：图片删除成功后调用，侧车不存在时静默跳过 */
