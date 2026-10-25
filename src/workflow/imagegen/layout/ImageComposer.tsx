@@ -1,14 +1,18 @@
 /**
- * 生图输入卡片：命令动作、画风与角色以芯片内联在正文流中；画风由弹出面板点选，底部经比例菜单选尺寸后发送。
+ * 生图输入卡片：命令动作与角色以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
  * 复用约定：外壳沿用 aichat 的 composer 两层底色（bg-composer / bg-composer-input），芯片输入区取
  * @webview/components/RichChipInput（与 aichat 共用 richText 的 DOM 工具），按钮取 @webview/components/Button，
- * 工具栏取本目录 ImageComposerToolbar（内含画面风格单选卡），底部操作行取本目录 ImageComposerActions。
+ * 工具栏取本目录 ImageComposerToolbar，底部操作行取本目录 ImageComposerActions（内含画面风格单选卡）。
  * 关键约束：芯片只承载「引用意图」，正文在发送瞬间拼装——角色段取人物卡的姓名、性别年龄、身份与外貌；
- * 画风由宿主按 style 注入（与 portraitPrompt 的 STYLE_HINTS 同源），封面模式忽略角色段且 kind 固定 cover；
- * 封面画风与普通出图分开存：切换模式时芯片换用对应一侧，改动按当前模式写回各自配置；
- * 比例与画风改动只经 onSettingsChange 上报；出图前端兜底 15 分钟，超时或失败即 abort 释放并发锁；
+ * 画风不进芯片、不在输入框显示，只落一份 state，发送时随 style 交宿主注入（与 portraitPrompt 的 STYLE_HINTS 同源），
+ * 封面模式忽略角色段且 kind 固定 cover；
+ * 封面画风与普通出图分开存：切换模式时画风 state 换用对应一侧，改动按当前模式写回各自配置；
+ * 比例与画风的手动改动只经 onSettingsChange 上报；正文里出现 1:1 / 16:9 这类比例字面量，
+ * 或「竖版 / 横版 / 方形」及其英文同义词（vertical / landscape / square 等，不区分大小写）时比例自动跟随，
+ * 该切换只改本次会话的选择、不写回作品配置；出图前端兜底 15 分钟，超时或失败即 abort 释放并发锁；
  * 生成中发送按钮切换为「取消生成」，取消后立即复位；取消后迟到的落盘不改写界面，只经 onLateGenerated 让页面静默补图；
- * 发送即清空输入框与角色类芯片（画风留下），草稿存 ref，失败或取消时仅在用户没有新输入的情况下回填；
+ * 发送即清空输入框与全部芯片，增强态一并复位（按钮回到增强图标），草稿存 ref，
+ * 失败或取消时仅在用户没有新输入的情况下回填（正文与增强态同进同退）；
  * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化；
  * 生成态经 onGeneratingChange 上报页面，供列表首位挂骨架，卸载时补发一次结束避免占位卡死。
  */
@@ -16,7 +20,7 @@ import { Sparkles, UserRound } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Skeleton } from '@components/ui/skeleton'
-import type { ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
+import { isImageRatio, type ImageGenerateResult, type ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
@@ -24,7 +28,6 @@ import { RichChipInput, type RichChipInputHandle } from '@webview/components/Ric
 import { ImageComposerActions } from './ImageComposerActions'
 import { ImageComposerToolbar } from './ImageComposerToolbar'
 import type { JSX } from 'react'
-import { STYLE_OPTIONS, styleLabelOf } from '../prompt/imageStyle'
 
 /** 作品设定快照：只取与画面相关的字段，缺省项不参与拼装 */
 export interface PromptSettingSnapshot {
@@ -50,9 +53,9 @@ export interface PromptCharacterSnapshot {
     age?: string
 }
 
-/** 徽标：setting 指作品设定，character 指某个人物，style 指当前画风 */
+/** 徽标：setting 指作品设定，character 指某个人物；画风不进徽标，由底部操作行单选后随请求下发 */
 interface PromptChip {
-    kind: 'setting' | 'character' | 'style'
+    kind: 'setting' | 'character'
     value: string
     label: string
 }
@@ -67,6 +70,50 @@ const ENHANCE_TIMEOUT_MS = 60_000
 const GENDER_LABELS: Readonly<Record<'male' | 'female', string>> = {
     male: '男性',
     female: '女性',
+}
+
+/** 比例字面量：正文里写「16:9」这类比例即可自动切换，全角冒号与斜杠都收，前后紧邻数字或小数点的跳过 */
+const RATIO_PATTERN = /(?<![\d.])(\d{1,2})\s*[:：/]\s*(\d{1,2})(?![\d.])/gu
+
+/** 比例词：中文与英文同义写法等价于数字比例，同样参与「最后一次出现优先」的判定（英文不区分大小写） */
+const RATIO_KEYWORDS: ReadonlyArray<{ keyword: string; ratio: ImageRatio }> = [
+    { keyword: '竖版', ratio: '9:16' },
+    { keyword: 'vertical', ratio: '9:16' },
+    { keyword: 'portrait', ratio: '9:16' },
+    { keyword: '横版', ratio: '16:9' },
+    { keyword: 'horizontal', ratio: '16:9' },
+    { keyword: 'landscape', ratio: '16:9' },
+    { keyword: '方形', ratio: '1:1' },
+    { keyword: 'square', ratio: '1:1' },
+]
+
+/**
+ * 从正文里取最后一个出现的比例意图（数字写法或中英文比例词），供输入卡片自动切换比例。
+ * 关键约束：数字写法只认白名单内的值（1:1 / 3:4 / 4:3 / 16:9 / 9:16），
+ * 文字只认 RATIO_KEYWORDS 里登记的中英文词，其余描述一律不猜——猜错比不猜更糟；
+ * 各类写法按出现位置合流，谁在后面以谁为准，符合「后补的约束覆盖先前描述」的直觉。
+ */
+function detectRatioFromText(text: string): ImageRatio | null {
+    let detected: ImageRatio | null = null
+    let detectedAt = -1
+    for (const match of text.matchAll(RATIO_PATTERN)) {
+        const candidate = `${match[1] ?? ''}:${match[2] ?? ''}`
+        const at = match.index ?? -1
+        if (isImageRatio(candidate) && at > detectedAt) {
+            detected = candidate
+            detectedAt = at
+        }
+    }
+    // 英文词不区分大小写：统一在小写副本上取位置，索引与原串一致
+    const lowered = text.toLowerCase()
+    for (const { keyword, ratio } of RATIO_KEYWORDS) {
+        const at = lowered.lastIndexOf(keyword)
+        if (at > detectedAt) {
+            detected = ratio
+            detectedAt = at
+        }
+    }
+    return detected
 }
 
 /**
@@ -219,9 +266,9 @@ function ComposerBody({
     const generationRef = useRef(0)
     /** 增强前的原文：非空即处于增强态，点按钮可还原 */
     const [enhancedFrom, setEnhancedFrom] = useState<string | null>(null)
-    const [chips, setChips] = useState<PromptChip[]>(() => [
-        { kind: 'style', value: defaultStyle, label: styleLabelOf(defaultStyle) },
-    ])
+    /** 当前画风：不再以芯片展示，只作为请求参数，发送时由宿主并入提示词 */
+    const [style, setStyle] = useState<PortraitStyle>(defaultStyle)
+    const [chips, setChips] = useState<PromptChip[]>([])
 
     const richInputRef = useRef<RichChipInputHandle | null>(null)
 
@@ -237,11 +284,19 @@ function ComposerBody({
         }
     }, [onGeneratingChange])
 
+    /** 正文最新值：回填草稿时要判断用户是否已在等待期间重新输入，事件回调里捕获的 text 可能滞后 */
+    const textRef = useRef(text)
+
+    useEffect(() => {
+        textRef.current = text
+    }, [text])
+
     /**
      * 已发出但还没有结果的草稿：发送时输入框立刻清空，失败或取消再还回去。
      * 既让「已经发出去」有即时反馈，也不至于把刚写好的提示词弄丢。
+     * 增强前原文一并存下：回填时连同「是否处于增强态」一起还回去，按钮才不会与正文脱节。
      */
-    const lastDraftRef = useRef<{ text: string; chips: PromptChip[] } | null>(null)
+    const lastDraftRef = useRef<{ text: string; chips: PromptChip[]; enhancedFrom: string | null } | null>(null)
 
     /** 把草稿还给用户：只在没有新输入时回填，不覆盖等待期间重新写下的内容 */
     const restoreDraft = (): void => {
@@ -250,8 +305,13 @@ function ComposerBody({
         if (draft === null) {
             return
         }
+        const isEmpty = textRef.current.trim().length === 0
         setText((current) => (current.trim().length > 0 ? current : draft.text))
-        setChips((current) => (current.some((chip) => chip.kind !== 'style') ? current : draft.chips))
+        setChips((current) => (current.length > 0 ? current : draft.chips))
+        // 增强态跟着正文走：用户已经重新写过内容时不恢复，否则按钮会对一段新文字喊「还原」
+        if (isEmpty) {
+            setEnhancedFrom(draft.enhancedFrom)
+        }
     }
 
     const activeCharacter = useMemo(
@@ -259,12 +319,8 @@ function ComposerBody({
         [characters, activeCharacterId],
     )
 
-    const styleChip = chips.find((chip) => chip.kind === 'style') ?? null
     const settingChip = chips.find((chip) => chip.kind === 'setting') ?? null
     const characterChip = chips.find((chip) => chip.kind === 'character') ?? null
-
-    /** 当前生效画风：芯片值是 string，按白名单收窄回 PortraitStyle，白名单外的旧值回落作品默认 */
-    const activeStyle = STYLE_OPTIONS.find((option) => option.value === styleChip?.value)?.value ?? defaultStyle
 
     const toggleSetting = (): void => {
         setChips((current) =>
@@ -286,28 +342,26 @@ function ComposerBody({
     }
 
     /**
-     * 封面模式：与角色图互斥；切换时把画风芯片换成对应一侧的作品配置（封面画风与普通出图分开记），
+     * 封面模式：与角色图互斥；切换时画风换用对应一侧的作品配置（封面画风与普通出图分开记），
      * 进入时顺带挂上作品设定，避免空提示词无法发送。
      */
     const toggleCoverMode = (): void => {
         const willEnable = !isCoverMode
         setIsCoverMode(willEnable)
-        const activeStyle = willEnable ? coverStyle : defaultStyle
-        setChips((current) => {
-            const rest = current.filter((chip) => chip.kind !== 'style')
-            const withStyle: PromptChip[] = [
-                ...rest,
-                { kind: 'style', value: activeStyle, label: styleLabelOf(activeStyle) },
-            ]
-            if (!willEnable || withStyle.some((chip) => chip.kind === 'setting')) {
-                return withStyle
-            }
-            return [...withStyle, { kind: 'setting', value: 'setting', label: '作品设定' }]
-        })
+        setStyle(willEnable ? coverStyle : defaultStyle)
+        if (!willEnable) {
+            return
+        }
+        setChips((current) =>
+            current.some((chip) => chip.kind === 'setting')
+                ? current
+                : [...current, { kind: 'setting', value: 'setting', label: '作品设定' }],
+        )
     }
 
-    const pickStyle = (value: PortraitStyle, label: string): void => {
-        setChips((current) => [...current.filter((chip) => chip.kind !== 'style'), { kind: 'style', value, label }])
+    /** 选画风：只记 state 并写回作品配置，输入框不出现徽标，发送时才随请求并入提示词 */
+    const pickStyle = (value: PortraitStyle): void => {
+        setStyle(value)
         onSettingsChange(isCoverMode ? { coverStyle: value } : { portraitStyle: value })
     }
 
@@ -315,6 +369,20 @@ function ComposerBody({
     const handleRatioChange = (value: ImageRatio): void => {
         setRatio(value)
         onSettingsChange({ defaultRatio: value })
+    }
+
+    /**
+     * 正文变化：写入文本，并在比例关键字「刚出现或刚变化」时自动切换比例。
+     * 关键约束：只比较前后两份正文的探测结果，同一关键字持续存在时不重复切——否则用户手动改完比例，
+     * 随手再打一个字就会被打回关键字那一档；自动切换只改本次会话的比例选择，不写回作品配置，
+     * 免得提示词里的一句话把作品默认比例永久改掉。
+     */
+    const handleTextChange = (next: string): void => {
+        const detected = detectRatioFromText(next)
+        setText(next)
+        if (detected !== null && detected !== detectRatioFromText(text)) {
+            setRatio(detected)
+        }
     }
 
     /** 芯片 id 即 kind：芯片集合按 kind 唯一 */
@@ -402,10 +470,13 @@ function ComposerBody({
         generationRef.current = token
         setIsGenerating(true)
         // 发送即清空：生成期间输入框不该还停着上一轮的提示词，否则看起来像没发出去；
-        // 草稿存在 ref 里，失败或取消时再还回去
-        lastDraftRef.current = { text, chips }
+        // 草稿存在 ref 里（含增强前原文），失败或取消时再还回去
+        lastDraftRef.current = { text, chips, enhancedFrom }
         setText('')
-        setChips((current) => current.filter((chip) => chip.kind === 'style'))
+        setChips([])
+        // 空输入框不是「增强结果」，增强态随发送复位，按钮回到 Sparkles；
+        // 本次请求仍带上发送前的 enhancedFrom（闭包值是旧的，不受这次 setState 影响）
+        setEnhancedFrom(null)
         try {
             const result = await request<ImageGenerateResult>(
                 'pressAi/generateImage',
@@ -415,7 +486,8 @@ function ComposerBody({
                     kind: isCoverMode ? 'cover' : activeCharacter === null ? 'photo' : 'portrait',
                     characterId: isCoverMode || activeCharacter === null ? null : activeCharacter.id,
                     ratio,
-                    style: styleChip?.value ?? defaultStyle,
+                    // 画风随请求下发，由宿主并入最终提示词（前端不再另拼，避免画风描述重复）
+                    style,
                     enhancedFrom: enhancedFrom ?? undefined,
                 },
                 GENERATE_TIMEOUT_MS,
@@ -464,9 +536,9 @@ function ComposerBody({
         icon:
             chip.kind === 'character' ? (
                 <UserRound className="size-3 shrink-0 text-muted-foreground" />
-            ) : chip.kind === 'setting' ? (
+            ) : (
                 <Sparkles className="size-3 shrink-0 text-muted-foreground" />
-            ) : undefined,
+            ),
     }))
 
     return (
@@ -474,12 +546,10 @@ function ComposerBody({
             <ImageComposerToolbar
                 isSettingActive={settingChip !== null}
                 isCharacterActive={characterChip !== null}
-                style={activeStyle}
                 isCoverMode={isCoverMode}
                 isGenerating={isGenerating}
                 canPickCharacter={activeCharacter !== null && !isCoverMode}
                 onToggleSetting={toggleSetting}
-                onStyleChange={pickStyle}
                 onToggleCharacter={toggleCharacter}
                 onToggleCoverMode={toggleCoverMode}
                 onInsertPrompt={insertPrompt}
@@ -493,7 +563,7 @@ function ComposerBody({
                     placeholder="描述画面：人物、动作、场景、光线与氛围…"
                     canSend={buildPrompt().length > 0}
                     className="max-h-40 min-h-17 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word text-sm leading-5 outline-none"
-                    onChange={setText}
+                    onChange={handleTextChange}
                     onSend={() => {
                         void handleSend()
                     }}
@@ -501,6 +571,7 @@ function ComposerBody({
                 />
                 <ImageComposerActions
                     ratio={ratio}
+                    style={style}
                     isCoverMode={isCoverMode}
                     isGenerating={isGenerating}
                     isEnhancing={isEnhancing}
@@ -508,6 +579,7 @@ function ComposerBody({
                     canEnhance={!isEnhancing && !isGenerating && text.trim().length > 0}
                     canSend={buildPrompt().length > 0}
                     onRatioChange={handleRatioChange}
+                    onStyleChange={pickStyle}
                     onEnhance={() => {
                         void handleEnhance()
                     }}

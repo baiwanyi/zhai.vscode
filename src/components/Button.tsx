@@ -94,19 +94,8 @@ function Button({
         [isLoading, onClick],
     )
 
-    // asChild 由 Slot 渲染唯一子元素，加载态替换 children 会破坏该契约，故只在普通按钮下换 Spinner；
-    // 原 children 以 invisible 保留，撑住按钮原宽度，避免加载态按钮塌缩引起工具栏重排
-    const content =
-        isLoading && !asChild ? (
-            <>
-                <span className="invisible">{children}</span>
-                <span className="absolute inset-0 flex items-center justify-center">
-                    <Spinner />
-                </span>
-            </>
-        ) : (
-            children
-        )
+    // asChild 由 Slot 渲染唯一子元素，加载态替换 children 会破坏该契约，故只在普通按钮下换 Spinner
+    const content = isLoading && !asChild ? <Spinner /> : children
 
     const button = (
         <ShadcnButton

@@ -1,5 +1,5 @@
 /**
- * 生图比例切换：底部操作行的比例菜单，把全部可选比例收进一个触发器。
+ * 生图比例选择：底部操作行的比例菜单，把全部可选比例收进一个触发器。
  * 复用约定：外壳取 @components/ui 的 dropdown-menu，触发器取 @webview/components/Button，
  * 可选比例取 @shared/types/imagegen 的 IMAGE_RATIOS（与宿主校验同一份清单），类名合并用 cn。
  * 关键约束：当前比例在下拉里整行高亮并在行尾打勾；生成中整体禁用，避免在途请求期间改参数；
@@ -13,7 +13,7 @@ import { IMAGE_RATIOS, type ImageRatio } from '@shared/types/imagegen'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 
-interface ImageComposerRatioSwitchProps {
+interface ImageRatioSelectorProps {
     /** 当前比例：既决定触发器文案，也决定下拉里的高亮项 */
     ratio: ImageRatio
     /** 生成中禁用：在途请求期间不改参数，避免结果与界面上的比例对不上 */
@@ -21,7 +21,7 @@ interface ImageComposerRatioSwitchProps {
     onChange: (ratio: ImageRatio) => void
 }
 
-export function ImageComposerRatioSwitch({ ratio, disabled, onChange }: ImageComposerRatioSwitchProps): JSX.Element {
+export function ImageRatioSelector({ ratio, disabled, onChange }: ImageRatioSelectorProps): JSX.Element {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>

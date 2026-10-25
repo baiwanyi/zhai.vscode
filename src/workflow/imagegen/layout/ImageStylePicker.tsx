@@ -1,9 +1,10 @@
 /**
- * 画面风格选择：工具栏的图标按钮弹出单选面板，用「缩略图 + 文案」的卡片展示全部画风。
+ * 画面风格选择：输入卡片底部操作行的按钮弹出单选面板，用「缩略图 + 文案」的卡片展示全部画风。
  * 复用约定：Popover 取 @components/ui/popover，单选语义取 @components/ui/radio-group（卡片即 Label 包裹，
  * 点整卡即选中），画风清单与标签取 prompt/imageStyle 的 STYLE_OPTIONS（与宿主 STYLE_HINTS 同源）。
- * 关键约束：触发器是图标按钮，可访问名与提示由 aria-label / tooltip 承担（依赖挂载器的 TooltipProvider）；
+ * 关键约束：触发器与比例菜单同形态（图标 + 当前画风名 + 下拉箭头），可访问名带上当前取值；
  * 选中即收盘并回调，不提供「不选」——画风始终有一项生效（默认 auto）；
+ * 选中的画风不进输入框徽标，只在发送时随请求并入提示词；
  * 卡片缩略图是按画风配的渐变示意，不引入图片资源；生成中整体禁用，避免在途请求期间改参数。
  */
 import { cn } from 'cn'
@@ -15,7 +16,7 @@ import { RadioGroup, RadioGroupItem } from '@components/ui/radio-group'
 import type { PortraitStyle } from '@shared/types/press'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
-import { STYLE_OPTIONS } from '../prompt/imageStyle'
+import { STYLE_OPTIONS, styleLabelOf } from '../prompt/imageStyle'
 
 /** 缩略图色板：用渐变示意各画风的冷暖与质感，当作风格预览图使用 */
 const STYLE_SWATCH: Record<PortraitStyle, string> = {
@@ -30,16 +31,17 @@ const STYLE_SWATCH: Record<PortraitStyle, string> = {
 }
 
 interface ImageStylePickerProps {
-    /** 当前生效的画风：来自输入卡片的风格芯片，缺省时为作品默认画风 */
+    /** 当前生效的画风：来自输入卡片的画风 state，缺省时为作品默认画风 */
     value: PortraitStyle
     /** 生成中禁用：在途请求期间不改参数 */
     disabled: boolean
-    /** 选中回调：同时给出取值与标签，由输入卡片写回芯片与作品配置 */
+    /** 选中回调：同时给出取值与标签，由输入卡片记下画风并写回作品配置 */
     onChange: (value: PortraitStyle, label: string) => void
 }
 
 export function ImageStylePicker({ value, disabled, onChange }: ImageStylePickerProps): JSX.Element {
     const [isOpen, setIsOpen] = useState(false)
+    const label = styleLabelOf(value)
 
     /** 选中即收盘：面板只是选择的载体，选完不需要停留 */
     const handleValueChange = (next: string): void => {
@@ -54,8 +56,14 @@ export function ImageStylePicker({ value, disabled, onChange }: ImageStylePicker
     return (
         <Popover open={isOpen} onOpenChange={setIsOpen}>
             <PopoverTrigger asChild>
-                <Button size="icon" variant="ghost" aria-label="画面风格" tooltip="画面风格" disabled={disabled}>
+                <Button
+                    variant="ghost"
+                    className="font-medium bg-white/5 text-foreground hover:bg-white/5 dark:hover:bg-white/5"
+                    aria-label={`画面风格 ${label}，点击切换`}
+                    disabled={disabled}
+                >
                     <Palette />
+                    {label}
                 </Button>
             </PopoverTrigger>
             <PopoverContent align="start">
@@ -83,7 +91,7 @@ export function ImageStylePicker({ value, disabled, onChange }: ImageStylePicker
                                 />
                                 <span
                                     className={cn(
-                                        'w-full truncate text-center text-[11px] leading-4',
+                                        'w-full truncate text-center text-xs leading-4',
                                         isActive ? 'text-foreground' : 'text-muted-foreground',
                                     )}
                                 >

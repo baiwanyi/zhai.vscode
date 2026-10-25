@@ -259,6 +259,24 @@ describe('ImageComposer', () => {
         expect(screen.getByRole('button', { name: '发送' })).toBeDefined()
     })
 
+    it('发送后冷静期内的第二次点击不会误取消在途请求', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) =>
+            method === 'pressAi/generateImage'
+                ? new Promise<ImageGenerateResult>(() => undefined)
+                : Promise.resolve({ aborted: true }),
+        )
+        renderComposer()
+
+        await user.type(inputBox(), '雨夜长街')
+        await user.click(screen.getByRole('button', { name: '发送' }))
+        // 首击后按钮即刻变成取消，连点的第二下正好落在这个位置：冷静期内必须被丢弃
+        await user.click(screen.getByRole('button', { name: '取消生成' }))
+
+        expect(requestMock).not.toHaveBeenCalledWith('pressAi/generateImage/abort')
+        expect(screen.getByRole('button', { name: '取消生成' })).toBeDefined()
+    })
+
     it('生成中切换为取消按钮，取消后迟到回包只走 onLateGenerated', async () => {
         const user = userEvent.setup()
         const onGenerated = vi.fn()
@@ -283,6 +301,10 @@ describe('ImageComposer', () => {
         // 页面靠这个标记在列表首位挂骨架占位
         expect(onGeneratingChange).toHaveBeenLastCalledWith(true)
 
+        // 发送后有 300ms 冷静期，取消按钮在这段窗口内不响应（防连点误取消），等过去再点
+        await new Promise<void>((resolve) => {
+            setTimeout(resolve, 350)
+        })
         await user.click(screen.getByRole('button', { name: '取消生成' }))
         expect(requestMock).toHaveBeenCalledWith('pressAi/generateImage/abort')
         expect(screen.getByRole('button', { name: '发送' })).toBeDefined()
@@ -329,18 +351,94 @@ describe('ImageComposer', () => {
         expect(onSettingsChange).toHaveBeenCalledWith({ defaultRatio: '1:1' })
     })
 
+    it('正文写明比例时自动选中对应比例并随请求下发', async () => {
+        const user = userEvent.setup()
+        const onSettingsChange = vi.fn()
+        renderComposer({ onSettingsChange })
+
+        await user.type(inputBox(), '雨夜长街 16:9 宽幅')
+        expect(screen.getByRole('button', { name: '当前比例 16:9，点击切换' })).toBeDefined()
+
+        await user.click(screen.getByRole('button', { name: '发送' }))
+        const [, params] = requestMock.mock.calls[0] as [string, { ratio: string }]
+        expect(params.ratio).toBe('16:9')
+        // 自动切换只改本次会话，不写回作品默认比例
+        expect(onSettingsChange).not.toHaveBeenCalled()
+    })
+
+    it('比例关键字没变时，继续输入不覆盖手动选的比例', async () => {
+        const user = userEvent.setup()
+        renderComposer()
+
+        await user.type(inputBox(), '雨夜长街 16:9')
+        expect(screen.getByRole('button', { name: '当前比例 16:9，点击切换' })).toBeDefined()
+
+        await user.click(screen.getByRole('button', { name: '当前比例 16:9，点击切换' }))
+        await user.click(screen.getByRole('menuitem', { name: '1:1' }))
+        expect(screen.getByRole('button', { name: '当前比例 1:1，点击切换' })).toBeDefined()
+
+        // 正文里的关键字没变，随手再写字不该把比例打回 16:9
+        await user.type(inputBox(), '，冷调')
+        expect(screen.getByRole('button', { name: '当前比例 1:1，点击切换' })).toBeDefined()
+    })
+
+    it('正文写竖版 / 横版 / 方形时按对应比例切换', async () => {
+        const user = userEvent.setup()
+        renderComposer()
+
+        await user.type(inputBox(), '竖版构图')
+        expect(screen.getByRole('button', { name: '当前比例 9:16，点击切换' })).toBeDefined()
+
+        await user.clear(inputBox())
+        await user.type(inputBox(), '横版海报')
+        expect(screen.getByRole('button', { name: '当前比例 16:9，点击切换' })).toBeDefined()
+
+        await user.clear(inputBox())
+        await user.type(inputBox(), '方形头像')
+        expect(screen.getByRole('button', { name: '当前比例 1:1，点击切换' })).toBeDefined()
+    })
+
+    it('正文写英文比例词时按对应比例切换，且不区分大小写', async () => {
+        const user = userEvent.setup()
+        renderComposer()
+
+        await user.type(inputBox(), 'portrait shot')
+        expect(screen.getByRole('button', { name: '当前比例 9:16，点击切换' })).toBeDefined()
+
+        await user.clear(inputBox())
+        await user.type(inputBox(), 'Landscape poster')
+        expect(screen.getByRole('button', { name: '当前比例 16:9，点击切换' })).toBeDefined()
+
+        await user.clear(inputBox())
+        await user.type(inputBox(), 'Square avatar')
+        expect(screen.getByRole('button', { name: '当前比例 1:1，点击切换' })).toBeDefined()
+    })
+
+    it('中文比例词与数字写法同时出现时，以靠后的为准', async () => {
+        const user = userEvent.setup()
+        renderComposer()
+
+        await user.type(inputBox(), '16:9 改为竖版')
+        expect(screen.getByRole('button', { name: '当前比例 9:16，点击切换' })).toBeDefined()
+
+        await user.clear(inputBox())
+        await user.type(inputBox(), '竖版改为 16:9')
+        expect(screen.getByRole('button', { name: '当前比例 16:9，点击切换' })).toBeDefined()
+    })
+
     it('切换画风按当前模式写回对应一侧配置', async () => {
         const user = userEvent.setup()
         const onSettingsChange = vi.fn()
         renderComposer({ onSettingsChange })
 
-        // 画风收进单选卡面板：先开面板，再点目标画风的单选卡
-        await user.click(screen.getByRole('button', { name: '画面风格' }))
+        // 画风收进单选卡面板：触发器回显当前画风名，先开面板，再点目标画风的单选卡
+        await user.click(screen.getByRole('button', { name: '画面风格 自动，点击切换' }))
         await user.click(screen.getByRole('radio', { name: '古风' }))
         expect(onSettingsChange).toHaveBeenCalledWith({ portraitStyle: 'guofeng' satisfies PortraitStyle })
 
+        // 切到封面模式后触发器换用封面画风（photo → 人像），写回落在 coverStyle 一侧
         await user.click(screen.getByRole('button', { name: '作品封面' }))
-        await user.click(screen.getByRole('button', { name: '画面风格' }))
+        await user.click(screen.getByRole('button', { name: '画面风格 人像，点击切换' }))
         await user.click(screen.getByRole('radio', { name: '写实' }))
         expect(onSettingsChange).toHaveBeenLastCalledWith({ coverStyle: 'realistic' satisfies PortraitStyle })
     })
@@ -360,5 +458,46 @@ describe('ImageComposer', () => {
         expect(inputBox().value).toBe('雨夜长街，湿石板反光')
         await user.click(screen.getByRole('button', { name: '还原提示词' }))
         expect(inputBox().value).toBe('雨夜长街')
+    })
+
+    it('增强后发送，增强态随输入框一起复位', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) =>
+            method === 'pressAi/enhanceImagePrompt'
+                ? Promise.resolve({ text: '雨夜长街，湿石板反光' })
+                : Promise.resolve(GENERATED),
+        )
+        renderComposer()
+
+        await user.type(inputBox(), '雨夜长街')
+        await user.click(screen.getByRole('button', { name: '增强提示词' }))
+        expect(screen.getByRole('button', { name: '还原提示词' })).toBeDefined()
+
+        await user.click(screen.getByRole('button', { name: '发送' }))
+
+        // 空输入框不是增强结果，按钮必须回到增强图标，不能还挂着「还原」
+        expect(screen.getByRole('button', { name: '增强提示词' })).toBeDefined()
+        expect(screen.queryByRole('button', { name: '还原提示词' })).toBeNull()
+    })
+
+    it('增强后发送失败，草稿连同增强态一起还回去', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) => {
+            if (method === 'pressAi/enhanceImagePrompt') {
+                return Promise.resolve({ text: '雨夜长街，湿石板反光' })
+            }
+            if (method === 'pressAi/generateImage') {
+                return Promise.reject(new Error('通道不可用'))
+            }
+            return Promise.resolve({ aborted: true })
+        })
+        renderComposer()
+
+        await user.type(inputBox(), '雨夜长街')
+        await user.click(screen.getByRole('button', { name: '增强提示词' }))
+        await user.click(screen.getByRole('button', { name: '发送' }))
+
+        expect(inputBox().value).toBe('雨夜长街，湿石板反光')
+        expect(screen.getByRole('button', { name: '还原提示词' })).toBeDefined()
     })
 })

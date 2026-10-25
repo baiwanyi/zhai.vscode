@@ -53,7 +53,7 @@ function PromptTagButton({ tag, previewUrl, onInsert }: PromptTagButtonProps): J
                 onInsert(tag.text)
             }}
         >
-            {tag.name}
+            <span className="truncate">{tag.name}</span>
         </Button>
     )
     if (previewUrl === null) {
