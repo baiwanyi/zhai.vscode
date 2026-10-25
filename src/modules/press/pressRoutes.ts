@@ -36,7 +36,9 @@ import type {
 } from '../../shared/types/press'
 import type { WorkflowRouter } from '../ai/workflowRouter'
 import type { PressCoverService } from '../imagegen/coverService'
+import type { ImageGenerateService } from '../imagegen/imageGenerateService'
 import type { ImageLibraryService } from '../imagegen/imageLibraryService'
+import type { ImageSettingsService } from '../imagegen/imageSettingsService'
 import type { PortraitService } from '../imagegen/portraitService'
 import type Database from 'better-sqlite3'
 import type * as vscode from 'vscode'
@@ -69,6 +71,8 @@ export class PressRoutes {
         private readonly semantic: ImportSemanticService,
         private readonly snapshot: PressSnapshotService,
         private readonly imageLibrary: ImageLibraryService,
+        private readonly imageGenerate: ImageGenerateService,
+        private readonly imageSettings: ImageSettingsService,
     ) {}
 
     /**
@@ -113,6 +117,14 @@ export class PressRoutes {
                 return this.covers.remove(payload)
             case 'pressAi/listImageLibrary':
                 return this.imageLibrary.list(payload, toWebviewUri)
+            case 'pressAi/generateImage':
+                return this.imageGenerate.generate(payload, toWebviewUri)
+            case 'pressAi/generateImage/abort':
+                return this.imageGenerate.abort()
+            case 'pressAi/getImageSettings':
+                return this.imageSettings.get(payload)
+            case 'pressAi/saveImageSettings':
+                return this.imageSettings.save(payload)
             case 'pressAi/setImageCover':
                 return this.imageLibrary.setCover(payload)
             case 'pressAi/deleteImage':
