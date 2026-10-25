@@ -105,8 +105,6 @@ export class PressRoutes {
                 return this.portraits.remove(payload)
             case 'pressAi/aiPortrait/abort':
                 return this.portraits.abort()
-            case 'pressAi/generateCover':
-                return this.covers.generate(payload, toWebviewUri)
             case 'pressAi/listCover':
                 return this.covers.list(payload, toWebviewUri)
             case 'pressAi/selectCover':

@@ -5,12 +5,14 @@
  * 关键约束：徽标只承载「引用意图」，其正文内容在发送瞬间拼装——设定与角色快照在此展开，
  * 画风描述由宿主按 style 字段注入（与 portraitPrompt 的 STYLE_HINTS 同一来源）；
  * 未选人物时不允许挂角色徽标，也不允许发送角色图；
+ * 封面模式与角色图互斥：开启后忽略角色徽标、kind 固定为 cover，成功后自动退出并提示；
  * 比例与画风的改动只经 onSettingsChange 上报，本组件不直接读写作品配置；
  * 出图常需 1~3 分钟，前端超时必须长于宿主上限（15 分钟），超时或失败后主动 abort 释放宿主并发锁；
  * 生成中发送按钮切换为「取消生成」，取消后立即恢复可编辑，不等宿主回包。
  */
 import { Send, Sparkles, UserRound, X } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { Badge } from '@components/ui/badge'
 import { Button } from '@components/ui/button'
 import { IMAGE_RATIOS, type ImageGenerateResult, type ImageRatio } from '@shared/types/imagegen'
@@ -114,6 +116,8 @@ export function ImageComposer({
     onGenerated,
 }: ImageComposerProps): JSX.Element {
     const [text, setText] = useState('')
+    /** 封面模式：生成结果落统一图库并自动设为作品封面，与角色图互斥 */
+    const [isCoverMode, setIsCoverMode] = useState(false)
     const [ratio, setRatio] = useState<ImageRatio>(defaultRatio)
     const [isStyleOpen, setIsStyleOpen] = useState(false)
     const [isGenerating, setIsGenerating] = useState(false)
@@ -158,6 +162,16 @@ export function ImageComposer({
                 ? current.filter((chip) => chip.kind !== 'character')
                 : [...current, { kind: 'character', value: activeCharacter.id, label: activeCharacter.name }],
         )
+    }
+
+    /** 封面模式：开启时自动挂上作品设定徽标，避免空提示词无法发送；与角色图互斥 */
+    const toggleCoverMode = (): void => {
+        const willEnable = !isCoverMode
+        setIsCoverMode(willEnable)
+        if (!willEnable || chips.some((chip) => chip.kind === 'setting')) {
+            return
+        }
+        setChips([...chips, { kind: 'setting', value: 'setting', label: '作品设定' }])
     }
 
     const pickStyle = (value: PortraitStyle, label: string): void => {
@@ -229,7 +243,8 @@ export function ImageComposer({
         if (text.trim().length > 0) {
             sections.push(text.trim())
         }
-        if (characterChip !== null) {
+        // 封面不绑定角色：封面模式下即使还挂着角色徽标也不并入提示词
+        if (!isCoverMode && characterChip !== null) {
             const character = characters.find((item) => item.id === characterChip.value)
             if (character !== undefined) {
                 sections.push(`角色：${character.name}`)
@@ -267,8 +282,8 @@ export function ImageComposer({
                 {
                     dirPath,
                     prompt,
-                    kind: activeCharacter === null ? 'photo' : 'portrait',
-                    characterId: activeCharacter === null ? null : activeCharacter.id,
+                    kind: isCoverMode ? 'cover' : activeCharacter === null ? 'photo' : 'portrait',
+                    characterId: isCoverMode || activeCharacter === null ? null : activeCharacter.id,
                     ratio,
                     style: styleChip?.value ?? defaultStyle,
                     enhancedFrom: enhancedFrom ?? undefined,
@@ -282,6 +297,11 @@ export function ImageComposer({
             onGenerated(result)
             setText('')
             setChips((current) => current.filter((chip) => chip.kind === 'style'))
+            // 封面是一次性动作：成功即退出封面模式，回到普通出图
+            if (isCoverMode) {
+                setIsCoverMode(false)
+                toast.success('作品封面已更新')
+            }
         } catch (cause) {
             if (generationRef.current !== token) {
                 return
@@ -328,12 +348,28 @@ export function ImageComposer({
                         type="button"
                         size="sm"
                         variant={characterChip === null ? 'ghost' : 'secondary'}
-                        disabled={activeCharacter === null}
-                        title={activeCharacter === null ? '先在筛选条选择人物' : undefined}
+                        disabled={activeCharacter === null || isCoverMode}
+                        title={
+                            isCoverMode
+                                ? '封面不绑定角色，先关闭作品封面模式'
+                                : activeCharacter === null
+                                  ? '先在筛选条选择人物'
+                                  : undefined
+                        }
                         onClick={toggleCharacter}
                     >
                         <UserRound />
                         角色设定
+                    </Button>
+                    <Button
+                        type="button"
+                        size="sm"
+                        variant={isCoverMode ? 'secondary' : 'ghost'}
+                        disabled={isGenerating}
+                        title="生成结果会落进图库并自动设为作品封面"
+                        onClick={toggleCoverMode}
+                    >
+                        作品封面
                     </Button>
                     <ImagePromptPopover
                         trigger={
@@ -428,7 +464,7 @@ export function ImageComposer({
                                 onClick={() => void handleSend()}
                             >
                                 <Send />
-                                发送
+                                {isCoverMode ? '生成封面' : '发送'}
                             </Button>
                         )}
                     </div>

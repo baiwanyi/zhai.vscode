@@ -1,19 +1,18 @@
 /**
- * 封面字段组：按作品设定用 AI 生成竖版封面，以图库形式展示并支持设为封面、书名合成、删除与重新生成。
- * 复用约定：画风选项复用 constants 的 PORTRAIT_STYLE_OPTIONS，书名排版选项与画布合成来自 ./coverCompose；
- * 控件取自 @components/ui 的 select、button、input 与 field，图库宫格、空态与生成中占位由业务公共层的
- * CoverGallery 承担；生成、回读、保存、设为封面与删除由 useSettingCover 承担。
- * 关键约束：画风与排版只影响本次产物、不写回作品设定；磁盘是唯一事实来源，切回本分组即按目录回读；
- * 生成期间禁用操作并显示同构占位框，避免连点重复扣费；书名合成在本地画布完成、不消耗出图次数，
- * 结果另存为新封面并自动选中，不满意可直接删除；删除当前封面由宿主回退到剩余最新一张。
+ * 封面字段组：展示作品的历史封面，支持设为当前封面、书名合成与删除。
+ * 复用约定：书名排版选项与画布合成来自 ./coverCompose，控件取自 @components/ui 的 select、button、input 与 field，
+ * 图库宫格与空态由业务公共层的 CoverGallery 承担，回读、保存、设为封面与删除由 useSettingCover 承担。
+ * 关键约束：AI 出图统一在「生图」页的封面模式完成，本组不再调用图像通道，只做展示与本地合成；
+ * 磁盘是唯一事实来源，切回本分组即按目录回读；书名合成在本地画布完成、不消耗出图次数，
+ * 结果另存为新封面并自动选中；删除当前封面由宿主回退到剩余最新一张。
  */
-import { Sparkles, Type } from 'lucide-react'
+import { Type } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Field, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
-import type { PressCover, PortraitStyle } from '@shared/types/press'
+import type { PressCover } from '@shared/types/press'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { CoverGallery } from '@webview/components/CoverGallery'
@@ -22,11 +21,9 @@ import { useSettingCover } from './useSettingCover'
 import type { CoverTitlePosition, CoverTitleTone } from './coverCompose'
 import type { SettingFieldsProps } from './sections'
 import type { JSX } from 'react'
-import { PORTRAIT_STYLE_OPTIONS } from '../constants'
 
 export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps): JSX.Element {
-    const { covers, selectedId, isLoading, isGenerating, generate, save, select, remove } = useSettingCover(dirPath)
-    const [style, setStyle] = useState<PortraitStyle>('auto')
+    const { covers, selectedId, isLoading, save, select, remove } = useSettingCover(dirPath)
     const [deleting, setDeleting] = useState<PressCover | null>(null)
     /** 书名与笔名留空时回落到作品名与笔名，避免初始值与后续修改脱节 */
     const [titleText, setTitleText] = useState('')
@@ -38,29 +35,7 @@ export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps
 
     /** 合成作用在选中的封面上：没有选中项时回落到最新一张 */
     const targetCover = covers.find((cover) => cover.id === selectedId) ?? covers[0] ?? null
-    const isBusy = isComposing || isGenerating
-
-    const handleStyleChange = (value: string): void => {
-        const next = PORTRAIT_STYLE_OPTIONS.find((option) => option.value === value)
-        if (next) {
-            setStyle(next.value)
-        }
-    }
-
-    const handleGenerate = async (): Promise<void> => {
-        const cover = await generate({
-            title: setting.title,
-            genres: [...setting.genres],
-            logline: setting.logline,
-            worldview: setting.worldview,
-            tone: setting.tone,
-            perspective: setting.perspective,
-            style,
-        })
-        if (cover !== null) {
-            toast.success('封面已生成并设为作品封面')
-        }
-    }
+    const isBusy = isComposing
 
     const handlePositionChange = (value: string): void => {
         const next = COVER_POSITION_OPTIONS.find((option) => option.value === value)
@@ -83,7 +58,7 @@ export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps
      */
     const handleCompose = async (): Promise<void> => {
         if (targetCover === null) {
-            toast.error('先生成一张封面，再套用书名')
+            toast.error('先在「生图」页生成一张封面，再套用书名')
             return
         }
         setIsComposing(true)
@@ -119,7 +94,7 @@ export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps
             toast.success('封面已删除')
             return
         }
-        toast.error('封面已不在磁盘上，请重新生成')
+        toast.error('封面已不在磁盘上，可在「生图」页重新生成')
     }
 
     return (
@@ -127,37 +102,8 @@ export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps
             <div className="min-w-0">
                 <p className="font-medium">作品封面</p>
                 <p className="text-muted-foreground py-1">
-                    {isGenerating
-                        ? '生成中，出图通常需要 1~3 分钟；关闭面板也会继续，重新打开会自动读取'
-                        : '按基本信息、故事内核与世界观生成竖版封面；生成即成为作品封面，也可在下方另选一张'}
+                    封面在「生图」页生成：打开「作品封面」后发送，新图会自动成为作品封面；这里可以套用书名，或从历史封面里另选一张。
                 </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-                <Select value={style} disabled={isBusy} onValueChange={handleStyleChange}>
-                    <SelectTrigger className="h-8 w-28" aria-label="封面画风">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectGroup>
-                            {PORTRAIT_STYLE_OPTIONS.map((option) => (
-                                <SelectItem key={option.value} value={option.value}>
-                                    {option.label}
-                                </SelectItem>
-                            ))}
-                        </SelectGroup>
-                    </SelectContent>
-                </Select>
-                <Button
-                    variant="outline"
-                    disabled={isGenerating}
-                    onClick={() => {
-                        void handleGenerate()
-                    }}
-                >
-                    <Sparkles />
-                    {isGenerating ? '生成中' : covers.length === 0 ? '生成封面' : '重新生成'}
-                </Button>
             </div>
 
             <div className="flex flex-col gap-2 rounded-lg border border-border p-2">
@@ -250,10 +196,9 @@ export function PressSettingCoverFields({ setting, dirPath }: SettingFieldsProps
                 coverId={selectedId}
                 variant="book"
                 isLoading={isLoading}
-                isGenerating={isGenerating}
                 isBusy={isBusy}
                 emptyTitle="还没有封面"
-                emptyDescription="建议先补全题材、梗概与世界观，出图会更贴合故事。"
+                emptyDescription="在「生图」页打开封面模式生成；先补全题材与世界观，出图会更贴合故事。"
                 altPrefix={`《${setting.title}》的封面`}
                 deleteLabel="删除封面"
                 countLabel={(count) => `已生成 ${count} 张`}

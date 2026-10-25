@@ -546,23 +546,7 @@ export interface PressCover {
     createdAt: string
 }
 
-/** 封面生成请求：作品设定的只读快照，宿主据此拼封面提示词 */
-export interface CoverGenerateRequest {
-    /** 作品目录（press/{作品名}）：封面落在该作品的 Cover 下，删除作品即一并清理 */
-    dirPath: string
-    title: string
-    genres: string[]
-    /** 一句话梗概：决定画面的核心意象 */
-    logline: string
-    worldview: string
-    /** 语感 / 氛围：决定色调与光影 */
-    tone: string
-    perspective: string
-    /** 画面风格：决定提示词里的画风描述 */
-    style: PortraitStyle
-}
-
-/** 封面生成结果 */
+/** 封面合成结果：saveCover 落盘后回传 */
 export interface CoverGenerateResult {
     cover: PressCover
 }

@@ -200,7 +200,7 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 | 超时 | CodeBuddy 通道上限 600s（子进程启动 + 排队），前端兜底 15 分钟 |
 | 产物归一 | `ImageGen` 以 JSON 文本回报 `{ type: 'image_gen_tool_result', images: [{ localPath }] }`，适配层先取结构化字段，再依次尝试 image block / data URL / 绝对路径 / 链接；路径可能不带扩展名，格式一律按文件魔数（PNG/JPEG/WEBP）判定，非图片内容自动跳到下一个候选，统一交给 `portraitService` 落盘 |
 | 落盘位置 | `press/{作品名}/Portraits/portrait-{角色标识}-{年月日时分秒}.{ext}`：图片平铺在作品目录下，角色归属由文件名解析，删除作品即随目录一并清理 |
-| 作品封面 | 与角色卡共用同一图像通道与每日额度：`press/{作品名}/Cover/cover-{年月日时分秒}.{ext}`，提示词由 `ai/coverPrompt.ts` 按作品设定拼装（复用 `STYLE_HINTS` 画风），构图预留标题与署名留白并禁止模型写字；界面按图库展示多张，生成即成为作品封面，也可手动另选或删除（删除当前封面时回退到剩余最新一张）；选中记录存 `press.db` 的 meta 表（键 `cover:{dirPath}`，值为封面相对路径），仪表盘作品列表据此补 `coverUrl`；协议 `pressAi/generateCover` / `listCover` / `selectCover` / `saveCover` / `deleteCover`，入口在作品设定页「封面」分组 |
+| 作品封面 | 生成入口在生图页的「作品封面」模式（`pressAi/generateImage`，`kind=cover`）：新图落 `press/{作品名}/Images/photo-{…}` 并自动设为作品封面；设定页「封面」分组保留历史封面管理——`pressAi/listCover` / `saveCover`（前端画布套用书名，落 `Cover/cover-{年月日时分秒}.png`，不消耗出图次数）/ `selectCover` / `deleteCover`（删除当前封面时回退到剩余最新一张）；选中记录存 `press.db` 的 meta 表（键 `cover:{dirPath}`，值为封面相对路径），仪表盘作品列表据此补 `coverUrl` |
 | 封面书名 | 出图保持无字（提示词禁止模型写字），书名与笔名由前端 `setting/coverCompose.ts` 用画布叠加：按画布宽度折行、逐档缩小字号、最多三行，字体/位置/配色从选项表选择；合成结果经 `pressAi/saveCover` 落盘为新的 `cover-{时间戳}.png` 并自动选中，不消耗出图次数 |
 | 画风与尺寸 | 沿用 `PORTRAIT_STYLES` 与 `zhai.image.size`；CodeBuddy 侧的传参方式（自然语言描述 / 工具入参）待实测，未定前双写 |
 | 文生图模型 | 由 CLI 决定，插件不下发 `--text-to-image-model`：清单来自服务端产品配置（SDK 只返回语言模型，无法枚举），故不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，CLI 会把选择存进自身 settings。驱动工具调用的对话模型复用 AI 面板模型菜单的选择（存 `globalState` 的 `ai.codebuddyModel`，可从账号可用列表选择或手动填写自定义模型 id） |

@@ -135,8 +135,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const pressAiService = new PressAiService(pressDb, aiProvider, usageRecorder)
     const imageRouter = new ImageProviderRouter(secrets)
     const portraitService = new PortraitService(pressDb, aiProvider, imageRouter, usageRecorder)
-    // 作品封面与角色卡共用同一图像通道与每日额度，单独挂服务以便提示词与落盘目录互不干扰
-    const coverService = new PressCoverService(pressDb, imageRouter, usageRecorder)
+    // 封面服务只管历史封面的合成与选择：AI 出图统一走下面的 imageGenerateService（cover 模式）
+    const coverService = new PressCoverService(pressDb)
     // 图片库与上面两个服务共用同一份封面指针：列举、删除与设封面走统一入口，避免指针逻辑分叉
     const imageLibraryService = new ImageLibraryService(pressCoverStore)
     // 图片参数：按作品覆盖，落 press/{作品名}/.zhai/image.json，配额与超时不在此管辖

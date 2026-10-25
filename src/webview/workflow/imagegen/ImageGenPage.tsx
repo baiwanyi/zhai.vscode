@@ -249,7 +249,7 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                             <EmptyTitle>{images.length === 0 ? '还没有图片' : '没有符合条件的图片'}</EmptyTitle>
                             <EmptyDescription>
                                 {images.length === 0
-                                    ? '在下方输入提示词生成第一张，或先在设定页生成作品封面'
+                                    ? '在下方输入提示词生成第一张，或打开「作品封面」模式生成作品门面'
                                     : '换个筛选条件或清空搜索词再试'}
                             </EmptyDescription>
                         </EmptyHeader>

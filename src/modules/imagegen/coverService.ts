@@ -1,43 +1,32 @@
 /**
- * 作品封面服务：按作品设定拼封面提示词，经图像通道路由出图，落到 press/{作品名}/Cover 并返回 webview 可用 URL。
- * 复用约定：提示词复用 ./ai/coverPrompt，出图复用 ./ai/imageProvider 的路由入口，目录名与配额键取自 ./constants，
- * 配额读写经 ../common/db/quotaRepository，作品目录归一复用 ../press/projectService 的片段校验，
+ * 作品封面服务：管理历史封面的合成保存、选择与删除，文件落 press/{作品名}/Cover。
+ * 复用约定：目录名取自 ./constants，封面指针走 ./db/coverRepository，作品目录归一复用 ./portraitService 的校验，
  * 路径一律经 common/storagePath，URL 转换由调用方注入。
- * 关键约束：同一时刻只允许一个生成请求，避免连点重复扣费；封面平铺在 Cover 目录下，
- * 文件名为 cover-{年月日时分秒}.扩展名；列举以磁盘为准，删除只接受 press/{作品名}/Cover 下的白名单路径。
+ * 关键约束：AI 出图已统一到 pressAi/generateImage 的 cover 模式，本服务不再调用图像通道、不计出图额度；
+ * 文件名为 cover-{年月日时分秒}.扩展名，按秒避让不覆盖已有封面；列举以磁盘为准；
+ * 删除只接受该作品目录下的白名单路径，删掉当前封面时回退到剩余最新一张。
  */
 import * as vscode from 'vscode'
-import { buildCoverPrompt } from './ai/coverPrompt'
-import { COVER_DIR, IMAGE_QUOTA_KEYS } from './constants'
+import { COVER_DIR } from './constants'
 import { PressCoverStore, isProjectImagePath } from './db/coverRepository'
 import { readProjectDirPath } from './portraitService'
-import type { ImageProviderRouter } from './ai/imageProvider'
 import type {
     CoverDeleteResult,
-    CoverGenerateRequest,
     CoverGenerateResult,
     CoverListResult,
     CoverSelectResult,
-    PortraitStyle,
     PressCover,
 } from '../../shared/types/press'
-import type { UsageRecorder } from '../ai/usageRecorder'
 import type Database from 'better-sqlite3'
-import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCoverId } from '../../shared/types/press'
-import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
-import { getZhaiConfig, resolveStorageRoot } from '../common/config'
-import { consumeToday, readUsedToday } from '../common/db/quotaRepository'
+import { isPressCoverId } from '../../shared/types/press'
+import { resolveStorageRoot } from '../common/config'
 import { logger } from '../common/logger'
 import { readProjectSegments } from '../common/projectPath'
-import { readText, readTextList } from '../common/readInput'
+import { readText } from '../common/readInput'
 import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
 
 /** 目录扫描只认图片文件，其余一律忽略 */
 const COVER_FILE_PATTERN = /\.(png|jpe?g|webp)$/i
-/** 短字段长度上限 */
-const MAX_SHORT_TEXT = 64
-/** 长字段长度上限 */
-const MAX_LONG_TEXT = 400
 /** 相对路径长度上限：作品名叠加目录名后仍留出余量 */
 const MAX_PATH_LENGTH = 320
 /** 合成封面的 data URL 前缀：只接受 PNG，避免二次压缩损失文字边缘 */
@@ -48,79 +37,11 @@ const SAVED_COVER_EXTENSION = 'png'
 const MAX_COVER_DATA_URL_LENGTH = 24_000_000
 
 export class PressCoverService {
-    /** 进行中的生成请求：封面一次只允许一个，避免连点重复扣费 */
-    private activeRequest: AbortController | null = null
-    /** 封面选择记录：与作品列表共用同一份，生成成功即自动成为作品封面 */
+    /** 封面选择记录：与作品列表共用同一份 */
     private readonly store: PressCoverStore
 
-    public constructor(
-        private readonly db: Database.Database,
-        private readonly router: ImageProviderRouter,
-        private readonly usageRecorder: UsageRecorder,
-    ) {
+    public constructor(db: Database.Database) {
         this.store = new PressCoverStore(db)
-    }
-
-    /**
-     * 生成一张作品封面并落盘。
-     * @param toWebviewUri 把磁盘 Uri 转成 webview 可访问 URL 的转换器
-     */
-    public async generate(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<CoverGenerateResult> {
-        if (this.activeRequest) {
-            throw new Error('已有生成中的封面请求，请等待完成')
-        }
-        const request = normalizeCoverRequest(payload)
-        const config = getZhaiConfig()
-        this.assertQuota()
-        const controller = new AbortController()
-        this.activeRequest = controller
-        const startedAt = Date.now()
-        const prompt = buildCoverPrompt(request)
-        logger.info(
-            `封面生成开始：${request.title.length > 0 ? request.title : request.dirPath}（${config.imageSize}）`,
-        )
-        try {
-            const artifact = await this.router.generate({
-                prompt,
-                size: config.imageSize,
-                signal: controller.signal,
-            })
-            // 出图按张计费：与其他入口一致，成本按请求 id 从 CLI 会话记录回填
-            this.usageRecorder.record({
-                module: 'image',
-                model: getSelectedCodebuddyModel(),
-                usage: artifact.usage ?? null,
-                meta: artifact.meta ?? null,
-                prompt,
-                startedAt: artifact.startedAt ?? startedAt,
-            })
-            // 落到当前作品目录的 Cover 下，作品删除时随目录一并清理
-            const root = resolveStorageRoot()
-            const dirSegments = [...readProjectSegments(request.dirPath), COVER_DIR]
-            await vscode.workspace.fs.createDirectory(buildStorageUri(root, dirSegments))
-            const id = await nextCoverId(root, dirSegments, artifact.extension)
-            const segments = [...dirSegments, `${id}.${artifact.extension}`]
-            const target = buildStorageUri(root, segments)
-            await vscode.workspace.fs.writeFile(target, artifact.bytes)
-            consumeToday(this.db, IMAGE_QUOTA_KEYS)
-            const coverPath = segments.join('/')
-            // 与角色卡一致：新图直接成为封面，仪表盘列表无需额外操作即可看到作品门面
-            this.store.write(request.dirPath, coverPath)
-            logger.info(`封面生成完成：耗时 ${Date.now() - startedAt}ms，${artifact.bytes.byteLength} 字节`)
-            return {
-                cover: {
-                    id,
-                    path: coverPath,
-                    url: toWebviewUri(target),
-                    createdAt: new Date().toISOString(),
-                },
-            }
-        } catch (error) {
-            logger.error(`封面生成失败：耗时 ${Date.now() - startedAt}ms`, error)
-            throw error
-        } finally {
-            this.activeRequest = null
-        }
     }
 
     /**
@@ -254,42 +175,6 @@ export class PressCoverService {
         covers.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
         return covers
     }
-
-    /** 校验今日次数：限额为 0 或负数时视为不限制（与角色卡共用同一额度） */
-    private assertQuota(): void {
-        const limit = getZhaiConfig().imageDailyLimit
-        if (limit <= 0) {
-            return
-        }
-        const used = readUsedToday(this.db, IMAGE_QUOTA_KEYS)
-        if (used >= limit) {
-            throw new Error(`今日图片生成次数已用完（${used} / ${limit}），可明日再试或调高 zhai.image.dailyLimit`)
-        }
-    }
-}
-
-/** 入参收窄：作品目录走白名单，文本字段逐个截断，画风只接受白名单值 */
-function normalizeCoverRequest(payload: unknown): CoverGenerateRequest {
-    const dirPath = readProjectDirPath(payload, 'pressAi/generateCover')
-    const value = payload as {
-        title?: unknown
-        genres?: unknown
-        logline?: unknown
-        worldview?: unknown
-        tone?: unknown
-        perspective?: unknown
-        style?: unknown
-    }
-    return {
-        dirPath,
-        title: readText(value.title, MAX_SHORT_TEXT),
-        genres: readTextList(value.genres, 6, 16),
-        logline: readText(value.logline, MAX_LONG_TEXT),
-        worldview: readText(value.worldview, MAX_LONG_TEXT),
-        tone: readText(value.tone, MAX_SHORT_TEXT),
-        perspective: readText(value.perspective, MAX_SHORT_TEXT),
-        style: readStyle(value.style),
-    }
 }
 
 /** 读取封面请求里的相对路径：删除与设封面共用同一套入参校验 */
@@ -353,12 +238,4 @@ async function nextCoverId(root: vscode.Uri, dirSegments: string[], extension: s
         }
     }
     throw new Error('同名封面过多，请稍后重试')
-}
-
-/** 读取画风：只接受白名单内的值，其余一律回落默认风格 */
-function readStyle(value: unknown): PortraitStyle {
-    if (typeof value !== 'string') {
-        return DEFAULT_PORTRAIT_STYLE
-    }
-    return PORTRAIT_STYLES.find((item) => item === value) ?? DEFAULT_PORTRAIT_STYLE
 }

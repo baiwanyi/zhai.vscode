@@ -2,7 +2,7 @@
 
 **版本**：1.0
 **日期**：2026-10-25
-**状态**：图库管理、统一出图、作品级参数已落地；封面双通路收敛与旧目录迁移待决策
+**状态**：图库管理、统一出图、作品级参数、封面入口收敛已落地；旧封面目录迁移待做
 **宿主**：VSCode 插件 Zhai（宅桌面）
 **存储根**：`{storage.rootPath}/press/{作品名}/`（根目录配置见 `common.md` 第 1 节）
 
@@ -19,7 +19,7 @@
 | 模块 | 边界 |
 | --- | --- |
 | press | 生图依赖作品目录（`press/{作品名}`）作为作用域；角色封面指针写在人物卡 Markdown 里，由前端在生成/删除后经 `updateCharacter` 写回 |
-| press 设定页 | 仍保留独立的「封面画廊」（`generateCover` / `listCover` / `saveCover` / `selectCover` / `deleteCover`），用于合成封面与历史封面选择，见第 8 节 |
+| press 设定页 | 保留「封面画廊」的历史封面管理（`listCover` / `saveCover` / `selectCover` / `deleteCover`）：套用书名、另选、删除；AI 生成本身在生图页，见第 8 节 |
 | ai | 图像通道（`ImageProviderRouter`）与用量记账（`UsageRecorder`）由 ai 提供，生图只消费 |
 
 ---
@@ -88,7 +88,7 @@
 
 ### 3.4 封面面板（设定页）
 
-`pressAi/generateCover`、`pressAi/listCover`、`pressAi/saveCover`、`pressAi/selectCover`、`pressAi/deleteCover`，见第 8 节。
+`pressAi/listCover`、`pressAi/saveCover`、`pressAi/selectCover`、`pressAi/deleteCover`，见第 8 节。AI 生成已并入 `pressAi/generateImage` 的 `kind=cover`。
 
 ### 3.5 角色卡（保留）
 
@@ -104,7 +104,7 @@
 | `imageGenerateService.ts` | 统一出图：参数校验、配额、单任务锁、落盘、侧车、用量记账 |
 | `promptCompose.ts` | 提示词拼装纯函数：正文 → 作品补充 → 负向约束 → 画风描述 |
 | `imageSettingsService.ts` | 作品级参数读写（`.zhai/image.json`），只存与默认不同的键 |
-| `coverService.ts` | 设定页封面画廊：AI 生成（`Cover/` + `cover-*`）、合成保存、选择、删除 |
+| `coverService.ts` | 设定页封面画廊：合成保存（`Cover/` + `cover-*`）、选择、删除，不再调用图像通道 |
 | `portraitService.ts` | 角色图列举/复制/插入/删除与角色级联清理 |
 | `db/coverRepository.ts` | 封面指针（`press.db`）；`isProjectImagePath` 判断归属 |
 
@@ -167,7 +167,7 @@
 
 | 项 | 现状 | 后续 |
 | --- | --- | --- |
-| 封面双通路 | `generateCover`（`Cover/` + `cover-*`）与 `generateImage` 的 `kind=cover`（`Images/` + `photo-*`）并存；前端 composer 只发 `photo` / `portrait` | 需决策：① 保留双通路、明确边界；② 把封面生成入口迁入统一图库，设定页只留合成与选择 |
+| 封面目录 | 新封面由生图页的封面模式生成，落 `Images/` 并自动设为封面；`Cover/` 只保留历史封面与合成封面 | 一次性迁移旧封面进 `Images/` 并改写指针 |
 | 旧目录迁移 | `Cover/` 与 `Portraits/` 只读兼容 | 一次性搬迁进 `Images/` 并改写指针 |
 | 提示词 chip | textarea + 顶部 chip 行 | 与 aichat 一致的内联 chip（需抽 `richInput` 光标逻辑） |
 | 角色快照 | `PromptCharacterSnapshot` 只有 id 与 name | 注入外貌、身份等字段（需前端传更多或宿主提供上下文接口） |
@@ -175,14 +175,21 @@
 
 ---
 
-## 8. 封面面板（设定页）与统一图库的关系
+## 8. 封面生成入口与设定页面板的分工
 
-设定页封面面板仍走 `pressAi/generateCover` 等旧协议，原因：
+**生成只有一套**：生图页 composer 的「作品封面」模式（`kind=cover`）。新封面落 `Images/`、按 `photo-*` 命名、自动设为作品封面，走统一提示词拼装与每日配额。
 
-- 它管理的是**封面画廊**（AI 生成 + 前端画布合成的书名排版图），语义是「候选封面」，不是通用图库；
-- 新生成的封面落 `Cover/` 并由 `store` 登记为当前封面，统一图库通过 `IMAGE_DIR_NAMES` 也能列举到它（归类为 `orphan` 或按旧命名解析）。
+**设定页面板只做三件事**：
 
-因此当前存在**两套 AI 出图入口**：`generateCover`（封面构图提示词 + `zhai.image.size`）与 `generateImage`（统一提示词拼装 + 比例白名单）。两者的配额共用 `IMAGE_QUOTA_KEYS`，记账同一模块 `image`，不会重复计费；差异在落盘目录、命名与提示词口径。
+| 能力 | 协议 | 说明 |
+| --- | --- | --- |
+| 展示历史封面 | `pressAi/listCover` | 扫描 `Cover/`，只认 `cover-*` 命名 |
+| 套用书名 | `pressAi/saveCover` | 前端画布合成 PNG 后上传，落 `Cover/` 并自动设为封面，不消耗出图次数 |
+| 另选 / 删除 | `pressAi/selectCover`、`pressAi/deleteCover` | 删除当前封面时回退到剩余最新一张 |
+
+因此存在两类封面文件：生图页生成的 `Images/photo-*`，与设定页合成的 `Cover/cover-*`。统一图库按 `IMAGE_DIR_NAMES` 都能列举到，但设定页画廊只显示后者（目录与命名过滤所致）；迁移旧封面时两者一并处理。
+
+`pressAi/generateCover` 与 `ai/coverPrompt.ts` 已随入口迁移一并删除；`zhai.image.size` 现在只作用于角色卡出图（`pressAi/generatePortrait`），不再影响封面比例——封面比例取 composer 当前选择。
 
 ---
 
