@@ -175,10 +175,23 @@ export interface ImageSettingsSaveRequest {
     settings: Partial<Record<keyof ImageSettings, ImageSettings[keyof ImageSettings] | null>>
 }
 
+/** 批量删除请求：paths 必须全部属于同一作品，任一路径非法则整单拒绝 */
+export interface ImageBatchDeleteRequest {
+    dirPath: string
+    paths: string[]
+}
+
+/** 批量删除结果：removals 逐张回执，library 为删除后重新列举得到的列表 */
+export interface ImageBatchDeleteResult {
+    removals: { path: string; removed: boolean }[]
+    library: ImageLibraryResult
+}
+
 /** 侧车元数据：与图片同名落盘，供详情展示、复现参数与搜索命中 */
 export interface ImagePromptMeta {
     prompt: string
-    ratio: ImageRatio
+    /** 出图规格：生图页记比例（3:4），角色卡记像素尺寸（768x1024） */
+    ratio: string
     style: PortraitStyle
     characterId: string | null
     /** 增强前的原始输入；未增强时为 null */

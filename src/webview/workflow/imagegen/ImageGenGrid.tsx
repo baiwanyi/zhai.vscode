@@ -3,7 +3,8 @@
  * 复用约定：卡片与徽标一律取 @components/ui，不手写容器；图片统一按 3:4 裁切，
  * 混合比例不会撑乱栅格，原始比例留待详情面板展示。
  * 关键约束：操作按钮只在悬停或聚焦时出现，避免网格噪点；多选模式下点击卡片是切换选中而不是打开详情，
- * 且隐藏悬停操作，避免与勾选冲突；封面徽标由调用方传入的 selectedId 比较得出，本组件不判断业务语义。
+ * 且隐藏悬停操作，避免与勾选冲突；封面徽标由调用方传入的 selectedId 比较得出，本组件不判断业务语义；
+ * 卡片可聚焦，回车/空格触发与点击相同的动作，内部操作按钮的键盘事件不被外层拦截。
  */
 import { cn } from 'cn'
 import { Check, Copy, TextCursorInput, Trash2 } from 'lucide-react'
@@ -51,19 +52,34 @@ export function ImageGenGrid({
             {images.map((image) => {
                 const characterName = image.characterId === null ? null : characterNames.get(image.characterId)
                 const isChecked = selectedPaths.has(image.path)
+                /** 卡片主动作：多选时切换勾选，否则打开详情；点击与键盘共用同一分支 */
+                const activate = (): void => {
+                    if (isSelecting) {
+                        onToggleSelect(image)
+                        return
+                    }
+                    onSelect(image)
+                }
                 return (
                     <Card
                         key={image.path}
+                        tabIndex={0}
+                        aria-label={`${isSelecting ? '选择' : '查看详情'}：${characterName ?? image.id}`}
                         className={cn(
-                            'group relative cursor-pointer overflow-hidden p-0',
+                            'group relative cursor-pointer overflow-hidden p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring',
                             isChecked && 'ring-2 ring-primary',
                         )}
-                        onClick={() => {
-                            if (isSelecting) {
-                                onToggleSelect(image)
+                        onClick={activate}
+                        onKeyDown={(event) => {
+                            // 焦点落在内部操作按钮时不拦截，避免回车既触发按钮又打开详情
+                            if (event.target !== event.currentTarget) {
                                 return
                             }
-                            onSelect(image)
+                            if (event.key !== 'Enter' && event.key !== ' ') {
+                                return
+                            }
+                            event.preventDefault()
+                            activate()
                         }}
                     >
                         <img

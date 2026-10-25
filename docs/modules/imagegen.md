@@ -57,6 +57,7 @@
 
 侧车是可选附属物，读写两侧都不假设它存在：
 
+- 生成：生图页与角色卡通道都写同名侧车；`ratio` 记录实际出图规格——生图页写比例（`3:4`），角色卡写像素尺寸（`768x1024`），详情面板按值形态显示「比例」或「尺寸」。
 - 读取：`pressAi/getImageDetail` 在侧车缺失或 JSON 不合法时，各字段返回 `null`，详情面板隐藏参数区，旧图仍可正常浏览。
 - 删除：图库删图、角色卡删图、封面画廊删图都会顺带删同名侧车（不进回收站）；侧车本不存在时静默跳过。
 - 迁移：`pressAi/migrateImageDirs` 搬图时同步搬走侧车，目标已有同名侧车则不覆盖，避免迁移后图片丢参数、旧目录留孤儿 JSON。
@@ -74,6 +75,7 @@
 | `pressAi/listImageLibrary` | `dirPath` | `ImageLibraryResult` | 合并三目录扫描，按时间降序；`counts` 给出各分类数量 |
 | `pressAi/getImageDetail` | `dirPath`、`path` | `ImageDetailResult` | 读同名侧车；侧车缺失或字段不合法时各字段为 `null`，不抛错 |
 | `pressAi/deleteImage` | `dirPath`、`path` | `ImageDeleteResult` | 进回收站；一次算好作品封面回退值与角色封面回退值 |
+| `pressAi/deleteImages` | `dirPath`、`paths` | `ImageBatchDeleteResult` | 整单校验路径（任一越权即拒绝，最多 500 张）；逐张删除并清侧车，最后只重扫一次目录，回传新图库与逐张回执 |
 | `pressAi/migrateImageDirs` | `dirPath` | `ImageMigrateResult` | 把 `Cover` / `Portraits` 的图片搬进 `Images`，只搬不改名，同名跳过；搬空后删除旧目录 |
 | `pressAi/setImageCover` | `dirPath`、`path` | `ImageSetCoverResult` | 校验归属、文件存在与标准命名 |
 | `pressAi/copyPortrait` | `path` | `PortraitCopyResult` | 宿主写系统剪贴板（webview 受 CSP 限制） |
@@ -103,6 +105,8 @@
 ### 3.5 角色卡（保留）
 
 `pressAi/generatePortrait`、`pressAi/listPortraits`、`pressAi/listPortraitGallery`、`pressAi/aiPortrait/abort`，供角色卡面板使用，不在生图页范围内。
+
+出图规则与生图页已对齐：新图落在 `Images/`，命名 `portrait-{14 位时间戳}-{8 位角色标识}`，并写同名侧车（`ratio` 取 `zhai.image.size` 像素尺寸）；`Portraits/` 目录只作只读兼容，不再写入。
 
 ---
 
@@ -153,9 +157,10 @@
 
 - 筛选全部在内存中完成，不重复请求宿主；计数里「全部」取列表长度，「作品封面」由 `coverSelectedId` 推导，其余取宿主 `counts`。
 - 详情面板用 `@components/ui/sheet`，点缩略图打开；设封面后重新列举，面板停留在当前图片；删除当前图片时面板自动关闭。
-- 多选模式：点卡片切换勾选而不打开详情，悬停操作隐藏；批量删除需二次确认，逐张串行提交后只列举一次。
+- 多选模式：点卡片切换勾选而不打开详情，悬停操作隐藏；批量删除需二次确认，走一次 `pressAi/deleteImages`，宿主删完只重扫一次并回传新图库。
 - 分批渲染：网格一次挂载 60 张（`GRID_PAGE_SIZE`），筛选条件变化自动回到首批，底部「加载更多」按批追加；全选只覆盖已渲染的图片，未加载的图不会被批量删除带走。
-- 选择生命周期：选中集合与筛选签名绑定，换类别/角色/关键词即派生为空集；批量删除只作用于当前筛选结果，删除期间按钮显示「正在删除 n / 总数」并禁止重复触发。
+- 选择生命周期：选中集合与筛选签名绑定，换类别/角色/关键词即派生为空集；批量删除只作用于当前筛选结果，删除期间按钮显示「正在删除 n 张」并禁止重复触发。
+- 键盘与筛选复位：网格卡片可聚焦，回车/空格触发与点击相同的动作（内部操作按钮不拦截）；任一筛选生效时筛选条右侧出现「清空筛选」，一次复位类别、角色与关键词。
 - 页面切换即重挂载：`PressSectionRouter` 按分区条件渲染（离开即卸载），生图页与设定页封面组都靠挂载 effect 重新读盘，因此跨页面改动无需额外刷新信号。
 - 详情参数：按字段存在性分段渲染——无侧车时显示「没有出图参数」空态，提示词为空则隐藏复制按钮，`enhancedFrom` 存在时以折叠区展示增强前原文。
 - 参数读取完成前不挂载 composer，用等高骨架占位，避免默认值覆盖用户已保存的比例与画风。
@@ -192,7 +197,7 @@
 | 提示词芯片 | 已内联：`RichChipInput` 与 aichat 共用 `richText` 的 DOM 工具，芯片可退格删除 |
 | 角色快照 | 已注入姓名、性别年龄、身份与外貌；更细的字段（体型、背景）仍留在人物卡内 |
 | 网格能力 | 已支持多选批量删除与悬停复制/插入/删除 |
-| 批量删除原子性 | 逐张串行提交，非事务：中途失败会提示并按已成功的部分刷新，不做回滚 |
+| 批量删除原子性 | 一次请求内逐张执行，非事务：单张失败只记回执，成功部分照常生效并按最新图库刷新，不做回滚；单次上限 500 张 |
 | 图片扩展名口径 | 图库、角色卡、封面画廊统一认 `png` / `jpe?g` / `webp` / `gif`，由 `imageDirScan.ts` 单点维护 |
 | 图库规模 | `listImageLibrary` 全量返回，前端按 60 张一批挂载（无虚拟滚动）；封面画廊在宿主侧截断到 60 张并回传 `total` |
 | 详情降级 | 读取侧车期间显示骨架占位；无侧车（旧图或手工图）时显示空态说明；`enhancedFrom` 以折叠区展示 |
@@ -222,5 +227,5 @@
 
 - `pnpm exec tsc --noEmit`
 - `pnpm exec eslint src/modules/imagegen src/webview/workflow/imagegen`
-- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryMigrate.test.ts tests/imageLibraryService.test.ts tests/coverCandidates.test.ts tests/coverService.test.ts`
-- 手测清单：列举三目录、按类别/角色/关键词筛选、设为封面、删除当前封面后的回退、详情面板复制与插入、生成中取消、切换作品后参数是否沿用、多选批量删除与角色封面回退、旧目录迁移（含同名跳过）、芯片内联输入与退格删除。
+- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryMigrate.test.ts tests/imageLibraryService.test.ts tests/coverCandidates.test.ts tests/coverService.test.ts tests/imageSettingsService.test.ts`
+- 手测清单：列举三目录、按类别/角色/关键词筛选与「清空筛选」、设为封面、删除当前封面后的回退、详情面板复制与插入（含无侧车空态与骨架过渡）、生成中取消、切换作品后参数是否沿用、多选批量删除（含进度文案与角色封面回退）、旧目录迁移（含同名跳过与搬空后目录删除）、芯片内联输入与退格删除、键盘 Tab 聚焦卡片后回车打开详情。

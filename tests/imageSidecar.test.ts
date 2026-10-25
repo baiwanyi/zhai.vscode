@@ -6,7 +6,7 @@ import * as path from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import * as vscode from 'vscode'
 import { readDeletedPaths, readFileContent, resetWorkspaceState, setDirectory, setFileContent } from './stubs/vscode'
-import { deleteSidecarOf, moveSidecarOf, toSidecarUri } from '../src/modules/imagegen/imageSidecar'
+import { deleteSidecarOf, moveSidecarOf, toSidecarUri, writeSidecarOf } from '../src/modules/imagegen/imageSidecar'
 
 const IMAGE_DIR = path.join('d:', 'vault', 'press', '剑来', 'Images')
 const IMAGE_NAME = 'photo-20260101010101-AbCd1234.png'
@@ -44,6 +44,23 @@ describe('deleteSidecarOf', () => {
         await expect(deleteSidecarOf(vscode.Uri.file(imageFsPath()))).resolves.toBeUndefined()
 
         expect(readDeletedPaths()).toEqual([])
+    })
+})
+
+describe('writeSidecarOf', () => {
+    it('写入同名 .json，字段与传入一致', async () => {
+        const meta = {
+            prompt: '雪夜',
+            ratio: '768x1024',
+            style: 'auto',
+            characterId: '12345678',
+            enhancedFrom: null,
+            createdAt: '2026-10-25T00:00:00.000Z',
+        }
+
+        await writeSidecarOf(vscode.Uri.file(IMAGE_DIR), 'photo-20260101010101-AbCd1234', meta)
+
+        expect(readFileContent(imageFsPath('photo-20260101010101-AbCd1234.json'))).toBe(JSON.stringify(meta))
     })
 })
 

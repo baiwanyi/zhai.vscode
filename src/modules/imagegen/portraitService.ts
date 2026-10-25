@@ -5,8 +5,9 @@
  * 配额读写经 ../common/db/quotaRepository，路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
  * 关键约束：每次出图都重新挑一组画面变化（动作/地点/光线/姿态），文本通道失败时用同一组变化拼模板，
  * 保证同一角色反复出图也不撞画面；描述不计配额，限额只针对图片张数；
- * 图片平铺在 press/{作品名}/Portraits/ 下，文件名为 portrait-{8位角色标识}-{年月日时分秒}.扩展名，
- * 角色归属由文件名里的角色段解析（不再按角色分子目录），跟随作品目录（删除作品即一并清理）；
+ * 新图落在 press/{作品名}/Images/ 下，文件名为 portrait-{14 位时间戳}-{8 位角色标识}.扩展名，
+ * 与生图页共用命名规则与同名侧车（ratio 记像素尺寸）；Portraits 目录只作只读兼容，不再写入；
+ * 角色归属由文件名里的角色段解析（不按角色分子目录），跟随作品目录（删除作品即一并清理）；
  * 目录是图片的唯一事实来源：生成完成即落盘，关闭弹窗不丢结果，列举以磁盘为准；
  * 删除、复制与插入只接受 press/{作品名}/{Images|Cover|Portraits} 下的四段白名单路径，删除优先走回收站，
  * 并顺带清掉同名侧车；
@@ -19,9 +20,9 @@ import { buildPortraitPrompt } from './ai/portraitPrompt'
 import { generateSceneWithAi } from './ai/portraitSceneGenerator'
 import { buildSceneMessages, sanitizeScene } from './ai/portraitScenePrompt'
 import { formatVariation, pickVariation } from './ai/portraitVariation'
-import { IMAGE_DIR_NAMES, IMAGE_QUOTA_KEYS, PORTRAIT_DIR } from './constants'
+import { IMAGE_DIR_NAMES, IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
 import { listImageFiles } from './imageDirScan'
-import { deleteSidecarOf } from './imageSidecar'
+import { deleteSidecarOf, writeSidecarOf } from './imageSidecar'
 import type { ImageProviderRouter } from './ai/imageProvider'
 import type { PortraitVariation } from './ai/portraitVariation'
 import type {
@@ -38,7 +39,7 @@ import type {
 import type { AiProvider } from '../ai/provider'
 import type { UsageRecorder } from '../ai/usageRecorder'
 import type Database from 'better-sqlite3'
-import { parseImageCharacterId } from '../../shared/types/imagegen'
+import { formatPortraitId, parseImageCharacterId } from '../../shared/types/imagegen'
 import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId } from '../../shared/types/press'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { summarizeMessages } from '../ai/usageRecorder'
@@ -49,10 +50,8 @@ import { PRESS_MODULE_DIR, readProjectSegments } from '../common/projectPath'
 import { readText, readTextList } from '../common/readInput'
 import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
 
-/** 角色卡相对路径的段数：press/{作品名}/Portraits/{文件名} */
+/** 角色卡相对路径的段数：press/{作品名}/{Images|Cover|Portraits}/{文件名} */
 const PORTRAIT_SEGMENT_COUNT = 4
-/** 设定图文件名前缀：后接角色标识与时间戳，扁平目录靠它识别归属 */
-const PORTRAIT_FILE_PREFIX = 'portrait'
 /** 短字段长度上限 */
 const MAX_SHORT_TEXT = 64
 /** 长字段长度上限 */
@@ -134,14 +133,27 @@ export class PortraitService {
                 startedAt: artifact.startedAt ?? startedAt,
             })
             logger.info(`角色卡通道：codebuddy（${scene.fromAi ? 'AI 画面描述' : '模板变化描述'}）：${scene.text}`)
-            const id = `${PORTRAIT_FILE_PREFIX}-${request.characterId}-${formatPortraitStamp(new Date())}`
+            const createdAt = new Date().toISOString()
+            // 命名与生图页统一：portrait-{14 位时间戳}-{8 位角色标识}，不再并存两套规则
+            const id = formatPortraitId(formatPortraitStamp(new Date()), request.characterId)
             const extension = artifact.extension
-            // 平铺落到当前作品目录的 Portraits 下，作品删除时随目录一并清理
-            const segments = [...readProjectSegments(request.dirPath), PORTRAIT_DIR, `${id}.${extension}`]
+            // 新图统一落 Images，旧 Portraits 目录只作只读兼容，不再写入；作品删除时随目录一并清理
+            const dirSegments = [...readProjectSegments(request.dirPath), IMAGES_DIR]
+            const segments = [...dirSegments, `${id}.${extension}`]
             const root = resolveStorageRoot()
-            await vscode.workspace.fs.createDirectory(buildStorageUri(root, segments.slice(0, -1)))
+            const dirUri = buildStorageUri(root, dirSegments)
+            await vscode.workspace.fs.createDirectory(dirUri)
             const target = buildStorageUri(root, segments)
             await vscode.workspace.fs.writeFile(target, artifact.bytes)
+            // 与生图页共用侧车：ratio 记像素尺寸，画风与角色标识一并留档，统一图库详情才能看到参数
+            await writeSidecarOf(dirUri, id, {
+                prompt,
+                ratio: config.imageSize,
+                style: request.style,
+                characterId: request.characterId,
+                enhancedFrom: null,
+                createdAt,
+            })
             consumeToday(this.db, IMAGE_QUOTA_KEYS)
             logger.info(`角色卡生成完成：耗时 ${Date.now() - startedAt}ms，${artifact.bytes.byteLength} 字节`)
             return {
@@ -149,7 +161,7 @@ export class PortraitService {
                     id,
                     path: segments.join('/'),
                     url: toWebviewUri(target),
-                    createdAt: new Date().toISOString(),
+                    createdAt,
                 },
             }
         } catch (error) {

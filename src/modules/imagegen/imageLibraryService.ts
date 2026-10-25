@@ -1,6 +1,6 @@
 /**
  * 图片库服务：按作品把统一目录 Images（兼容旧 Cover / Portraits）中的图片聚合为一份可管理列表，
- * 提供列举、删除、设为作品封面、旧目录迁移与侧车读取五项能力，是图片总览页与角色卡页共用的唯一数据入口。
+ * 提供列举、单张删除、批量删除、设为作品封面、旧目录迁移与侧车读取能力，是图片总览页与角色卡页共用的唯一数据入口。
  * 复用约定：目录名取自 ./constants，路径归属校验复用 ./db/coverRepository 的 isProjectImagePath，
  * 封面指针沿用 PressCoverStore（press.db 的 meta 表），作品目录归一复用 ../common/projectPath。
  * 关键约束：磁盘是唯一事实来源，任何写操作后都按目录重扫，不维护内存缓存；
@@ -20,6 +20,7 @@ import {
     isPressImageId,
     parseImageCharacterId,
     parseImageKind,
+    type ImageBatchDeleteResult,
     type ImageDeleteRequest,
     type ImageDeleteResult,
     type ImageDetailResult,
@@ -40,6 +41,8 @@ const EXTENSION_PATTERN = /\.[^.]+$/u
 const TIMESTAMP_PATTERN = /(?:^|-)(\d{14})(?:-|$)/u
 /** 路径长度上限：前端传入的相对路径不应有过长值 */
 const MAX_PATH_LENGTH = 512
+/** 单次批量删除的张数上限：防止一次请求占用过久，也避免前端误传超大数组 */
+const MAX_BATCH_DELETE = 500
 
 /** 从图片标识解析生成时间：解析失败返回 null，由调用方回落到文件修改时间 */
 function readTimestampFromId(id: string): string | null {
@@ -92,6 +95,11 @@ export class ImageLibraryService {
     public async list(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<ImageLibraryResult> {
         const dirPath = readProjectDirPath(payload, 'pressAi/listImageLibrary')
         const images = await this.scan(readProjectSegments(dirPath), toWebviewUri)
+        return this.buildLibrary(dirPath, images)
+    }
+
+    /** 用已扫描出的图片组装列表：counts 与封面指针都从这份数据推导，避免为同一结果重复读盘 */
+    private buildLibrary(dirPath: string, images: PressImageItem[]): ImageLibraryResult {
         const selected = this.store.read(dirPath)
         const counts: Record<PressImageKind, number> = { portrait: 0, photo: 0, orphan: 0 }
         for (const image of images) {
@@ -137,6 +145,57 @@ export class ImageLibraryService {
         const nextPortraitId = characterId === null ? null : this.pickLatestByCharacter(rest, characterId)
         logger.info(`图片已删除：${path}`)
         return { removed: true, coverSelectedId, characterId, nextPortraitId }
+    }
+
+    /**
+     * 批量删除：整单校验路径后逐张删除，最后只重扫一次目录并直接返回新图库。
+     * 关键约束：任一路径不属于该作品即整单拒绝，不执行部分删除；单张失败只记回执、不中断整批；
+     * 若删掉的正是作品封面，指针回退到剩余最新一张，并在重扫后随新图库一并返回，
+     * 前端无需再发列举请求，也不会出现「同一批删除 N 次全量扫描」的开销。
+     */
+    public async batchRemove(
+        payload: unknown,
+        toWebviewUri: (uri: vscode.Uri) => string,
+    ): Promise<ImageBatchDeleteResult> {
+        const dirPath = readProjectDirPath(payload, 'pressAi/deleteImages')
+        const record = payload as { paths?: unknown } | null
+        const rawPaths = Array.isArray(record?.paths) ? record.paths : []
+        const paths = rawPaths.filter((item): item is string => typeof item === 'string' && item.length > 0)
+        if (paths.length === 0) {
+            throw new Error('缺少待删除的图片路径')
+        }
+        if (paths.length > MAX_BATCH_DELETE) {
+            throw new Error(`一次最多删除 ${MAX_BATCH_DELETE} 张图片`)
+        }
+        const uniquePaths = [...new Set(paths)]
+        for (const path of uniquePaths) {
+            if (!isProjectImagePath(dirPath, path)) {
+                throw new Error(`图片路径非法：${path}`)
+            }
+        }
+        const root = resolveStorageRoot()
+        const removals: { path: string; removed: boolean }[] = []
+        for (const path of uniquePaths) {
+            const target = buildStorageUri(root, toSafeSegments(path, '图片'))
+            try {
+                await deleteResource(target, false)
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error)
+                logger.warn(`批量删除中的单张失败：${path}（${reason}）`)
+                removals.push({ path, removed: false })
+                continue
+            }
+            await deleteSidecarOf(target)
+            removals.push({ path, removed: true })
+        }
+        const rest = await this.scan(readProjectSegments(dirPath), toWebviewUri)
+        const selected = this.store.read(dirPath)
+        if (selected !== null && uniquePaths.includes(selected)) {
+            this.store.write(dirPath, rest[0]?.path ?? null)
+        }
+        const removedCount = removals.filter((item) => item.removed).length
+        logger.info(`批量删除完成：成功 ${removedCount} 张，失败 ${removals.length - removedCount} 张`)
+        return { removals, library: this.buildLibrary(dirPath, rest) }
     }
 
     /** 设为作品封面：校验归属、标识合法与文件存在后再写库 */

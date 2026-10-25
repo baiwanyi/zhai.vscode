@@ -116,8 +116,8 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
         signature: '',
         paths: EMPTY_SELECTION,
     })
-    /** 批量删除进度：非空表示正在删除，同时用于禁用重复触发 */
-    const [removing, setRemoving] = useState<{ done: number; total: number } | null>(null)
+    /** 批量删除中的张数：非空表示正在删除，同时用于禁用重复触发 */
+    const [removingTotal, setRemovingTotal] = useState<number | null>(null)
     /** 批量删除的二次确认：与单张删除不同，一次删多张更需要拦一下 */
     const [isConfirmingBatch, setIsConfirmingBatch] = useState(false)
     const [isConfirmingMigrate, setIsConfirmingMigrate] = useState(false)
@@ -177,7 +177,8 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
         detail === null
             ? ''
             : [
-                  detail.ratio === null ? null : `比例 ${detail.ratio}`,
+                  // 生图页写比例（3:4），角色卡写像素尺寸（768x1024），按值形态给对应文案
+                  detail.ratio === null ? null : `${detail.ratio.includes('x') ? '尺寸' : '比例'} ${detail.ratio}`,
                   detail.style === null ? null : `画风 ${styleLabelOf(detail.style)}`,
               ]
                   .filter((part) => part !== null)
@@ -235,6 +236,16 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
         updateSelection(next)
     }
 
+    /** 是否存在生效中的筛选：决定是否显示「清空筛选」 */
+    const hasActiveFilter = kind !== 'all' || characterId !== 'all' || keyword.trim().length > 0
+
+    /** 一键回到全部结果：三个筛选维度一起复位，避免逐个点回 */
+    const handleClearFilters = (): void => {
+        setKind('all')
+        setCharacterId('all')
+        setKeyword('')
+    }
+
     /** 全选只覆盖已渲染的图片：未加载的图不在视野里，不该被批量删除带走 */
     const handleSelectAll = (): void => {
         updateSelection(
@@ -251,7 +262,7 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
      * 提交期间置 removing 防重入，并逐张回推进度，避免长批次看起来像卡死。
      */
     const handleDeleteSelected = async (): Promise<void> => {
-        if (removing !== null) {
+        if (removingTotal !== null) {
             return
         }
         // 只删当前筛选结果内的勾选：勾选可能发生在更早的筛选下，不应波及此刻不可见的图
@@ -259,12 +270,10 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
         if (targets.length === 0) {
             return
         }
-        setRemoving({ done: 0, total: targets.length })
+        setRemovingTotal(targets.length)
         try {
-            const { removals, images: remaining } = await removeImages(targets, (done, total) => {
-                setRemoving({ done, total })
-            })
-            const removed = removals.filter((item) => item.result.removed).map((item) => item.image)
+            const { removals, images: remaining } = await removeImages(targets)
+            const removed = removals.filter((item) => item.removed).map((item) => item.image)
             if (selected !== null && removed.some((image) => image.path === selected.path)) {
                 setSelected(null)
             }
@@ -282,7 +291,7 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                 onChangeCharacter(targetId, { coverPortraitId: nextPortrait === null ? null : nextPortrait.id })
             }
         } finally {
-            setRemoving(null)
+            setRemovingTotal(null)
         }
     }
 
@@ -410,6 +419,11 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                     placeholder="搜索角色或文件名"
                     className="ml-auto h-7 w-44"
                 />
+                {hasActiveFilter ? (
+                    <Button type="button" size="sm" variant="ghost" onClick={handleClearFilters}>
+                        清空筛选
+                    </Button>
+                ) : null}
                 <Button
                     type="button"
                     size="sm"
@@ -456,11 +470,11 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                         size="sm"
                         variant="ghost"
                         className="text-destructive hover:text-destructive ml-auto"
-                        disabled={selectedPaths.size === 0 || removing !== null}
+                        disabled={selectedPaths.size === 0 || removingTotal !== null}
                         onClick={() => setIsConfirmingBatch(true)}
                     >
                         <Trash2 />
-                        {removing === null ? '删除选中' : `正在删除 ${removing.done} / ${removing.total}`}
+                        {removingTotal === null ? '删除选中' : `正在删除 ${removingTotal} 张`}
                     </Button>
                 </div>
             ) : null}

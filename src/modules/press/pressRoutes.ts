@@ -133,6 +133,8 @@ export class PressRoutes {
                 return this.imageLibrary.setCover(payload)
             case 'pressAi/deleteImage':
                 return this.imageLibrary.remove(payload)
+            case 'pressAi/deleteImages':
+                return this.imageLibrary.batchRemove(payload, toWebviewUri)
             case 'press/workspace':
                 return this.readWorkspace(payload)
             case 'press/open':

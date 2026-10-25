@@ -125,6 +125,58 @@ describe('remove', () => {
     })
 })
 
+describe('batchRemove', () => {
+    it('一次删除多张并直接回传新图库，侧车一并清理', async () => {
+        addImage('Images', PHOTO_OLD, '{"prompt":"雪夜"}')
+        addImage('Images', PHOTO_NEW)
+
+        const result = await service.batchRemove(
+            { dirPath: DIR_PATH, paths: [imagePath('Images', PHOTO_OLD), imagePath('Images', PHOTO_NEW)] },
+            (uri) => uri.fsPath,
+        )
+
+        expect(result.removals).toEqual([
+            { path: imagePath('Images', PHOTO_OLD), removed: true },
+            { path: imagePath('Images', PHOTO_NEW), removed: true },
+        ])
+        expect(result.library.images).toEqual([])
+        expect(readFileContent(imageFsPath('Images', 'photo-20260101010101-AbCd1234.json'))).toBeUndefined()
+    })
+
+    it('删掉当前封面时指针回退到剩余最新一张', async () => {
+        addImage('Images', PHOTO_OLD)
+        addImage('Images', PHOTO_NEW)
+        store.write(DIR_PATH, imagePath('Images', PHOTO_NEW))
+
+        const result = await service.batchRemove(
+            { dirPath: DIR_PATH, paths: [imagePath('Images', PHOTO_NEW)] },
+            (uri) => uri.fsPath,
+        )
+
+        expect(result.library.coverSelectedId).toBe('photo-20260101010101-AbCd1234')
+        expect(store.read(DIR_PATH)).toBe(imagePath('Images', PHOTO_OLD))
+    })
+
+    it('任一非法路径即整单拒绝，不删除任何图片', async () => {
+        addImage('Images', PHOTO_OLD)
+
+        await expect(
+            service.batchRemove(
+                { dirPath: DIR_PATH, paths: [imagePath('Images', PHOTO_OLD), 'press/别的/Images/manual.png'] },
+                (uri) => uri.fsPath,
+            ),
+        ).rejects.toThrow('图片路径非法')
+
+        expect(readFileContent(imageFsPath('Images', PHOTO_OLD))).toBe('binary')
+    })
+
+    it('空路径列表直接拒绝', async () => {
+        await expect(service.batchRemove({ dirPath: DIR_PATH, paths: [] }, (uri) => uri.fsPath)).rejects.toThrow(
+            '缺少待删除的图片路径',
+        )
+    })
+})
+
 describe('readDetail', () => {
     it('读取同名侧车字段，空字段回落 null', async () => {
         addImage(

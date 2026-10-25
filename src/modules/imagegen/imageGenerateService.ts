@@ -9,6 +9,7 @@
  */
 import * as vscode from 'vscode'
 import { IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
+import { writeSidecarOf } from './imageSidecar'
 import { readProjectDirPath } from './portraitService'
 import { composeImagePrompt } from './promptCompose'
 import type { ImageProviderRouter } from './ai/imageProvider'
@@ -209,7 +210,7 @@ export class ImageGenerateService {
             const segments = [...dirSegments, `${id}.${artifact.extension}`]
             await vscode.workspace.fs.writeFile(buildStorageUri(root, segments), artifact.bytes)
             const createdAt = new Date().toISOString()
-            await this.writeSidecar(buildStorageUri(root, dirSegments), id, {
+            await writeSidecarOf(buildStorageUri(root, dirSegments), id, {
                 prompt: request.prompt,
                 ratio: request.ratio,
                 style: request.style,
@@ -302,27 +303,6 @@ export class ImageGenerateService {
         })
         logger.info(`提示词增强完成：耗时 ${Date.now() - startedAt}ms`)
         return { text: enhanced.slice(0, MAX_PROMPT_LENGTH) }
-    }
-
-    /** 写侧车元数据：失败不影响主流程，仅导致该图失去提示词快照 */
-    private async writeSidecar(
-        dirUri: vscode.Uri,
-        id: string,
-        meta: {
-            prompt: string
-            ratio: string
-            style: PortraitStyle
-            characterId: string | null
-            enhancedFrom: string | null
-            createdAt: string
-        },
-    ): Promise<void> {
-        try {
-            const content = Buffer.from(JSON.stringify(meta), 'utf8')
-            await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(dirUri, `${id}.json`), content)
-        } catch {
-            logger.warn(`侧车元数据写入失败：${id}`)
-        }
     }
 
     /** 读取作品级参数：失败回落默认值，参数问题不应阻断出图 */
