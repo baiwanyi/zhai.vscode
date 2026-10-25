@@ -4,6 +4,7 @@
  * 约束：全部 Disposable 必须挂载到 context.subscriptions，保证停用后资源释放（AC-10）。
  */
 import * as vscode from 'vscode'
+import { openPromptImageDir } from '@modules/imagegen/promptImageService'
 import { createAndOpenNote } from '@modules/note/noteService'
 import { clearSchemaData } from './db/schema'
 import { logger } from './logger'
@@ -53,5 +54,10 @@ export function registerCommands(
 
     register('zhai.openSettings', () => {
         void vscode.commands.executeCommand('workbench.action.openSettings', '@ext:zhai.zhai-vscode')
+    })
+
+    // 提示词预览图由用户自行下载后放入图库目录，面板空态里提供入口
+    register('zhai.prompt.openImageDir', () => {
+        void openPromptImageDir()
     })
 }

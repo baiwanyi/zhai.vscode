@@ -17,4 +17,6 @@ export const WEBVIEW_ALLOWED_COMMANDS: ReadonlySet<string> = new Set([
     'zhai.ai.loginCodebuddy',
     // 校对：AI 特征检测未配置密钥时，页面内按钮弹出宿主输入框
     'zhai.proofread.setZhuqueKey',
+    // 生图：提示词面板空态里打开预览图库目录，便于用户放入自备图片
+    'zhai.prompt.openImageDir',
 ])

@@ -160,6 +160,7 @@ export type HostMethodName =
     | 'pressAi/generatePortrait'
     | 'pressAi/getImageDetail'
     | 'pressAi/getImageSettings'
+    | 'pressAi/getPromptImageBase'
     | 'pressAi/insertPortrait'
     | 'pressAi/listCover'
     | 'pressAi/listImageLibrary'

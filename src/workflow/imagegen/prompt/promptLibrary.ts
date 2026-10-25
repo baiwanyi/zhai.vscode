@@ -1,56 +1,186 @@
 /**
- * 提示词库：按分类组织的常用画面词条，供输入卡片的提示词面板取用。
- * 复用约定：词条是纯文本片段，点击后插入输入框光标处，不参与任何持久化；
- * 分类与词条集中在此文件，增删词条只改清单，不改组件。
- * 关键约束：词条描述画面要素而非风格名，且与画风解耦——同一词条可叠加任意 STYLE_HINTS。
+ * 提示词库适配层：把 data/promptTags.json 的三级分组摊平成分类清单、扁平词条表与分组索引。
+ * 复用约定：数据由 scripts/build-prompt-tags.mjs 从上游分片生成，本文件只做类型收敛、权重归一与索引；
+ * 组件从 PROMPT_OBJECTS / PROMPT_ATTRIBUTES / PROMPT_TAGS 与三个查询函数取值，不直接依赖 JSON 结构。
+ * 关键约束：prompt 保留上游原文（含 (x:1.3) 权重写法），text 才是插入输入框的归一化文本；
+ * preview 只是文件名，接入地址由宿主按图库目录拼装，本层不感知任何磁盘路径；
+ * 一级分类图标集中在此映射，未命中的分类回落默认图标，新增分类时不会漏渲染。
  */
-import { Aperture, Droplets, PersonStanding, Trees } from 'lucide-react'
+import {
+    Camera,
+    Frame,
+    Gem,
+    Image as ImageIcon,
+    Layers,
+    Package,
+    Palette,
+    PersonStanding,
+    Rainbow,
+    Shapes,
+    Shirt,
+    SlidersHorizontal,
+    Smile,
+    Sparkles,
+    Sun,
+    Trees,
+    UserRound,
+} from 'lucide-react'
+import promptData from './data/promptTags.json'
 import type { LucideIcon } from 'lucide-react'
 
-interface PromptCategory {
-    id: string
-    label: string
+/** 一级分类：name 与数据文件的 object 完全一致 */
+export interface PromptObject {
+    name: string
     icon: LucideIcon
 }
 
-interface PromptItem {
-    id: string
-    category: string
-    title: string
-    text: string
+/** 二级分类：object 所属一级分类，count 为该分组下的词条数 */
+export interface PromptAttribute {
+    object: string
+    name: string
+    count: number
 }
 
-export const PROMPT_CATEGORIES: readonly PromptCategory[] = [
-    { id: 'figure', label: '人物', icon: PersonStanding },
-    { id: 'scene', label: '场景', icon: Trees },
-    { id: 'light', label: '光影', icon: Droplets },
-    { id: 'camera', label: '镜头', icon: Aperture },
-]
+/** 词条：name 是中文显示名，prompt 是上游原文，text 是剥离权重后实际插入的文本 */
+export interface PromptTag {
+    object: string
+    attribute: string
+    name: string
+    prompt: string
+    text: string
+    preview: string
+}
 
-export const PROMPT_ITEMS: readonly PromptItem[] = [
-    { id: 'figure-standing', category: 'figure', title: '独立', text: '人物独立于画面中央，全身可见，双手自然垂落' },
-    { id: 'figure-back', category: 'figure', title: '背影', text: '人物背对镜头，肩线与发丝细节清晰' },
-    { id: 'figure-profile', category: 'figure', title: '侧颜', text: '四分之三侧脸，眼神望向画面外侧' },
-    { id: 'figure-walk', category: 'figure', title: '行走', text: '人物侧身行走，衣摆与发梢带起轻微动态' },
-    { id: 'figure-sit', category: 'figure', title: '端坐', text: '人物端坐于石阶，双手交叠置于膝上' },
-    { id: 'scene-court', category: 'scene', title: '宫阙', text: '重檐建筑层叠向纵深，汉白玉台基与朱红立柱可见' },
-    { id: 'scene-forest', category: 'scene', title: '林间', text: '林木高耸，地面铺满落叶，远处雾气层层退远' },
-    { id: 'scene-town', category: 'scene', title: '长街', text: '湿漉漉的青石长街，两侧店铺灯笼低垂' },
-    { id: 'scene-cliff', category: 'scene', title: '崖顶', text: '人物立于崖顶，脚下云海翻涌，远山只余轮廓' },
-    { id: 'scene-room', category: 'scene', title: '室内', text: '木质室内空间，窗棂投下清晰的格子阴影' },
-    { id: 'light-dusk', category: 'light', title: '夕照', text: '暖金夕照从侧后方打来，边缘光勾勒轮廓' },
-    { id: 'light-rain', category: 'light', title: '阴雨', text: '阴天漫射光，色调偏冷，空气中有可见水汽' },
-    { id: 'light-lantern', category: 'light', title: '灯火', text: '低照度环境，单一暖色光源在面部形成柔和过渡' },
-    { id: 'light-moon', category: 'light', title: '月夜', text: '冷调月光作为主光，暗部保留层次不压成死黑' },
-    { id: 'light-backlit', category: 'light', title: '逆光', text: '强逆光穿过介质形成体积光，人物呈半剪影' },
-    { id: 'camera-eye', category: 'camera', title: '平视', text: '平视机位，人物与环境关系稳定' },
-    { id: 'camera-low', category: 'camera', title: '仰角', text: '略微仰角拍摄，人物更显挺拔，背景向上收束' },
-    { id: 'camera-close', category: 'camera', title: '特写', text: '胸像特写，背景大幅虚化为柔和光斑' },
-    {
-        id: 'camera-wide',
-        category: 'camera',
-        title: '远景',
-        text: '大远景构图，人物作为尺度参照点出现在画面下三分之一',
-    },
-    { id: 'camera-occlude', category: 'camera', title: '前景遮挡', text: '前景有枝叶或帘幕遮挡，形成窥视感' },
-]
+/** 一级分类图标：按 object 中文名映射，键须与数据文件保持一致 */
+const ICON_BY_OBJECT: Readonly<Record<string, LucideIcon>> = {
+    人物: UserRound,
+    环境: Trees,
+    素材: Layers,
+    形状空间: Shapes,
+    '形状|空间': Shapes,
+    图像种类: ImageIcon,
+    艺术风格: Palette,
+    后期处理: SlidersHorizontal,
+    成品范例: Frame,
+    物品: Package,
+    动作: PersonStanding,
+    表情: Smile,
+    服饰: Shirt,
+    饰品: Gem,
+    摄影: Camera,
+    光影效果: Sun,
+    色彩氛围: Rainbow,
+}
+
+/**
+ * 权重后缀：`:1.3` 这类 SD 写法，剥离后对模型是等价的裸标签。
+ * 冒号前必须已有内容——`:3` 是「猫嘴」这类颜文字标签，不能被当作权重吃掉。
+ */
+const WEIGHT_SUFFIX = /(?<=\S)\s*:\s*\d+(?:\.\d+)?\s*$/u
+
+/** 成对括号的两侧：每轮都从头剥一次，兼容 `(tag:1.3)` 这种「先括号后权重」的顺序 */
+const OPEN_BRACKET = /^[([]\s*/u
+
+const CLOSE_BRACKET = /\s*[)\]]$/u
+
+/** 分组索引的键分隔符：分类名里可能出现 `/`，不能用它拼键 */
+const GROUP_SEPARATOR = '::'
+
+/**
+ * 剥离单个片段的权重与强调括号：`(autumn maple forest:1.3)` → `autumn maple forest`。
+ * 最多三轮，嵌套写法（如 `((tag:1.2))`）也能收敛到裸文本，无变化即提前返回。
+ */
+function stripWeight(part: string): string {
+    let current = part
+    for (let round = 0; round < 3; round += 1) {
+        const next = current
+            .replace(WEIGHT_SUFFIX, '')
+            .replace(OPEN_BRACKET, '')
+            .replace(CLOSE_BRACKET, '')
+            .trim()
+        if (next === current) {
+            return current
+        }
+        current = next
+    }
+    return current
+}
+
+/** 归一化提示词：按逗号拆段、逐段剥权重、丢弃空段后统一用「, 」连接 */
+function normalizePrompt(raw: string): string {
+    return raw
+        .split(',')
+        .map((part) => stripWeight(part))
+        .filter((part) => part.length > 0)
+        .join(', ')
+}
+
+/** 分组索引的键：object 与 attribute 的组合，两者都可能含标点，只能用固定分隔符拼接 */
+function groupKey(object: string, attribute: string): string {
+    return `${object}${GROUP_SEPARATOR}${attribute}`
+}
+
+const objects: PromptObject[] = []
+const attributes: PromptAttribute[] = []
+const tags: PromptTag[] = []
+const tagsByGroup = new Map<string, PromptTag[]>()
+const attributesByObject = new Map<string, PromptAttribute[]>()
+
+for (const group of promptData.groups) {
+    objects.push({ name: group.object, icon: ICON_BY_OBJECT[group.object] ?? Sparkles })
+    const groupAttributes: PromptAttribute[] = []
+    for (const attribute of group.attributes) {
+        const attributeItem: PromptAttribute = {
+            object: group.object,
+            name: attribute.name,
+            count: attribute.tags.length,
+        }
+        attributes.push(attributeItem)
+        groupAttributes.push(attributeItem)
+        const attributeTags: PromptTag[] = []
+        for (const tag of attribute.tags) {
+            attributeTags.push({
+                object: group.object,
+                attribute: attribute.name,
+                name: tag.name,
+                prompt: tag.prompt,
+                text: normalizePrompt(tag.prompt),
+                preview: tag.preview,
+            })
+        }
+        tags.push(...attributeTags)
+        tagsByGroup.set(groupKey(group.object, attribute.name), attributeTags)
+    }
+    attributesByObject.set(group.object, groupAttributes)
+}
+
+/** 一级分类清单：顺序与数据文件一致 */
+export const PROMPT_OBJECTS: readonly PromptObject[] = objects
+
+/** 二级分类清单：覆盖全部一级分类，count 供面板显示分组条目数 */
+export const PROMPT_ATTRIBUTES: readonly PromptAttribute[] = attributes
+
+/** 全部词条：搜索与跨分组平铺时使用 */
+export const PROMPT_TAGS: readonly PromptTag[] = tags
+
+/** 取一级分类下的二级分类：面板左栏切换时用它，不必全表过滤 */
+export function promptAttributesOf(object: string): readonly PromptAttribute[] {
+    return attributesByObject.get(object) ?? []
+}
+
+/** 取某个二级分类下的词条：面板右栏按选中分组取数 */
+export function promptTagsOf(object: string, attribute: string): readonly PromptTag[] {
+    return tagsByGroup.get(groupKey(object, attribute)) ?? []
+}
+
+/**
+ * 关键词搜索：按中文名与提示词原文做大小写不敏感的子串匹配，空关键词返回空数组。
+ * 由调用方判断「是否处于搜索态」，避免空串把 5000 条词条全量铺到面板里。
+ */
+export function searchPromptTags(keyword: string): readonly PromptTag[] {
+    const query = keyword.trim().toLowerCase()
+    if (query.length === 0) {
+        return []
+    }
+    return tags.filter((tag) => tag.name.toLowerCase().includes(query) || tag.prompt.toLowerCase().includes(query))
+}

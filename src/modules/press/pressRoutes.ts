@@ -2,6 +2,8 @@
  * 写作管理协议路由：把 pressAi/* 消息分发到人物外貌与角色设定图两个服务，
  * 并承接工作台的作品读取、打开与人物卡提取（press/workspace、press/open、press/extract/characters），
  * 以及作品快照的列举、手动留版、恢复与删除（press/snapshot/*），入参收窄由本层与 shared 类型完成。
+ * 提示词预览图基址（pressAi/getPromptImageBase）也走这里：它不属于作品域，
+ * 借同一条前缀复用 toWebviewUri 注入，避免在 Provider 里再挂一个分支。
  * 复用约定：由 AiChatViewProvider 按前缀统一委托，本类只做方法到服务的映射；
  * 作品列表取索引库聚合结果，文档原文由 projectWorkspace 读取，打开动作与仪表盘 press/open 同口径，
  * 人物卡提取复用语义归纳服务，与仪表盘共用同一实例（单任务锁与配额口径一致）。
@@ -16,6 +18,7 @@ import type { ImageGenerateService } from '@modules/imagegen/imageGenerateServic
 import type { ImageLibraryService } from '@modules/imagegen/imageLibraryService'
 import type { ImageSettingsService } from '@modules/imagegen/imageSettingsService'
 import type { PortraitService } from '@modules/imagegen/portraitService'
+import { readPromptImageBase } from '@modules/imagegen/promptImageService'
 import type {
     ChapterSnapshotCaptureResult,
     ChapterSnapshotDeleteResult,
@@ -125,6 +128,8 @@ export class PressRoutes {
                 return this.imageGenerate.enhance(payload)
             case 'pressAi/getImageSettings':
                 return this.imageSettings.get(payload)
+            case 'pressAi/getPromptImageBase':
+                return readPromptImageBase(toWebviewUri)
             case 'pressAi/saveImageSettings':
                 return this.imageSettings.save(payload)
             case 'pressAi/setImageCover':

@@ -191,6 +191,17 @@ export interface ImagePromptMeta {
     createdAt: string
 }
 
+/**
+ * 提示词预览图基址：词条数据只存文件名，宿主把图库目录转成 webview 可访问的 URL 后由前端拼接。
+ * baseUrl 为 null 表示目录不存在或没有任何图片，此时面板不渲染缩略图，只显示文字按钮。
+ */
+export interface PromptImageBase {
+    /** 图库目录的 webview URL，不带结尾斜杠；目录为空时为 null */
+    baseUrl: string | null
+    /** 图库目录的本地绝对路径：空态直接展示，用户据此把图片放进去 */
+    dirPath: string
+}
+
 /** 时间戳位数：年月日时分秒共 14 位 */
 const TIMESTAMP_LENGTH = 14
 /** 角色标识位数：8 位随机数字，与人物卡标识一致 */

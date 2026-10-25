@@ -283,9 +283,15 @@ function ComposerBody({
         setChips((current) => current.filter((chip) => chip.kind !== id))
     }
 
-    /** 把词条插入光标处：保留已有内容，插入后光标停在片段末尾，便于连续点击累加 */
+    /**
+     * 把词条插入光标处：保留已有内容，插入后光标停在片段末尾，便于连续点击累加。
+     * 词条是英文标签，直接跟在中文字句后会粘成一串，因此按正文末尾补一次分隔符；
+     * 末尾已是标点或空白时不重复补，连续点选即可自然拼成 `a, b, c`。
+     */
     const insertPrompt = (fragment: string): void => {
-        richInputRef.current?.insertText(fragment)
+        const current = text.trimEnd()
+        const isSeparatorNeeded = current.length > 0 && !/[,\s。，、;；:：]$/u.test(current)
+        richInputRef.current?.insertText(isSeparatorNeeded ? `, ${fragment}` : fragment)
     }
 
     /** 增强提示词：只改写输入框正文，chip 与设定留在发送时拼装，避免模型复述设定原文 */

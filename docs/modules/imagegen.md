@@ -103,11 +103,19 @@
 
 可覆盖键：`defaultRatio`、`portraitStyle`、`coverStyle`、`promptSuffix`、`negative`。前三项目前由前端消费（composer 默认比例与画风）；后两项由宿主在出图前叠加。
 
-### 3.4 封面面板（设定页）
+### 3.4 提示词预览图库
+
+| 方法 | 入参 | 返回 | 说明 |
+| --- | --- | --- | --- |
+| `pressAi/getPromptImageBase` | — | `PromptImageBase` | 图库目录取 `{存储根}/prompt/images`，全局共享、与作品无关；目录里没有图片时 `baseUrl` 为 `null`，前端整体隐藏缩略图；`dirPath` 始终回传，空态据此提示用户把图片放在哪里 |
+
+词条数据只存图片文件名，前端用 `baseUrl + '/' + preview` 拼地址。目录内的文件由用户自行下载放入，扩展不打包、不下载任何图片。目录为空与目录缺失走同一条判空逻辑（复用 `imageDirScan` 的 `listImageFiles`），不逐个文件试加载。宿主侧实现见 `modules/imagegen/promptImageService.ts`，另有命令 `zhai.prompt.openImageDir` 供空态按钮打开该目录。
+
+### 3.5 封面面板（设定页）
 
 `pressAi/listCover`、`pressAi/saveCover`、`pressAi/selectCover`、`pressAi/deleteCover`，见第 8 节。候选合并 `Cover/cover-*` 与 `Images/photo-*`，按修改时间降序后最多返回 60 张（`MAX_COVER_CANDIDATES`），同时回传 `total` 命中总数，前端据此提示「仅显示最新 N 张」；AI 生成已并入 `pressAi/generateImage` 的 `kind=cover`。
 
-### 3.5 角色卡（保留）
+### 3.6 角色卡（保留）
 
 `pressAi/generatePortrait`、`pressAi/listPortraits`、`pressAi/listPortraitGallery`、`pressAi/aiPortrait/abort`，供角色卡面板使用，不在生图页范围内。
 
@@ -122,6 +130,7 @@
 | `imageLibraryService.ts` | 三目录合并列举、删除（带回退值计算，侧车同步清理）、设封面、详情读侧车 |
 | `imageGenerateService.ts` | 统一出图：参数校验、配额、单任务锁、落盘、侧车、用量记账 |
 | `imageDirScan.ts` | 图片目录扫描唯一入口：目录缺失视为空、只收普通文件、扩展名口径（png/jpe?g/webp/gif） |
+| `promptImageService.ts` | 提示词预览图库：`{存储根}/prompt/images` 判空并转 webview 基址，另提供打开该目录的命令实现 |
 | `imageNaming.ts` | 图片命名唯一入口：三类标识格式、同秒冲突按秒顺延、永不覆盖 |
 | `imageSidecar.ts` | 侧车路径推导、随图删除与写入，尽力而为、不抛错 |
 | `promptCompose.ts` | 提示词拼装纯函数：正文 → 作品补充 → 负向约束 → 画风描述 |
@@ -150,14 +159,16 @@
 | `ImageGenPage.tsx` | 状态编排：筛选、计数、分批渲染、详情面板、单张/批量删除、设封面、复制、插入 |
 | `ImageGenGrid.tsx` | 等宽卡片网格：3:4 裁切、封面徽标、悬停复制/插入/删除、多选勾选、点击打开详情 |
 | `ImageComposer.tsx` | 输入卡片：命令动作与画风芯片内联、比例、增强提示词、封面模式、发送 / 取消生成 |
-| `ImagePromptPicker.tsx` | 提示词词库（人物 / 场景 / 光影 / 镜头），工具栏图标按钮弹出，点击插入光标 |
+| `ImagePromptPicker.tsx` | 提示词面板：工具栏图标按钮弹出，一级分类 / 二级分类 / 词条三级联动，顶部关键词跨分组搜索，点击插入光标 |
 | `useImageLibrary.ts` | 列举（含不切加载态的静默刷新）、单张删除、批量删除（含最新列表回传） |
 | `useImageDetail.ts` | 详情面板按路径读取侧车；迟到回包按来源路径**丢弃**（不是覆盖后再过滤），切图不会把新图详情清空 |
 | `useImageSettings.ts` | 作品级参数读写，`isLoaded` 之前不得据此保存 |
 | `imageStyle.ts` | 画风取值与中文标签，composer 芯片与详情面板共用 |
 | `@webview/components/RichChipInput.tsx` | 通用芯片输入区：芯片内联进正文流，Enter 发送、组词期间不拦截，命令式 `insertText` |
 | `@webview/components/richText.ts` | 可编辑区 DOM 工具：读写纯文本、光标定位、芯片识别与插入，与 aichat 共用 |
-| `promptLibrary.ts` | 词库数据 |
+| `usePromptImages.ts` | 取提示词预览图基址（面板打开时请求一次），失败按「没有图」处理，不弹错误 |
+| `prompt/promptLibrary.ts` | 词库适配层：读 `prompt/data/promptTags.json`，导出三级清单与查询函数，运行时剥离权重写法 |
+| `prompt/data/promptTags.json` | 词库数据（约 490 KB），由 `scripts/build-prompt-tags.mjs` 从上游分片生成，不手改 |
 
 ### 5.1 页面交互约束
 
@@ -172,6 +183,8 @@
 - 详情参数：按字段存在性分段渲染——无侧车时显示「没有出图参数」空态，提示词为空则隐藏复制按钮，`enhancedFrom` 存在时以折叠区展示增强前原文。
 - 参数读取完成前不挂载 composer，用等高骨架占位，避免默认值覆盖用户已保存的比例与画风。
 - 生成中发送按钮切换为「取消生成」，取消后立即复位界面，不等宿主回包；迟到的回包不写回界面（不认领封面、不清空输入），但会静默刷新列表，把宿主已经落盘的图补上——用户不必切页才发现新图。
+- 提示词面板：一级分类与二级分类都是必选单选，重复点击当前项被忽略；切换一级分类后二级分类按「当前值不在新分组内即回落到首项」派生，不额外维护状态；关键词非空时词条区跨分组平铺命中项，最多渲染 120 条并提示细化；插入只传词条文本，与正文之间的分隔符由输入卡片按末尾字符补齐（末尾已是标点或空白则不加），因此连续点选自然拼成 `a, b, c`。
+- 提示词缩略图：`pressAi/getPromptImageBase` 在面板每次打开时请求一次，`baseUrl` 为 `null` 时整块缩略图不渲染、网格由两列改三列，并在底部提示图库目录与「打开目录」按钮；单张图缺失只影响该条，由 `@webview/components/Image` 的占位兜住。
 
 ### 5.2 超时口径
 
