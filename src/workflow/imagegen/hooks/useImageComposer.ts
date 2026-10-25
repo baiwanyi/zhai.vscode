@@ -1,0 +1,245 @@
+/**
+ * 生图会话状态机：持有正文、增强态与出图请求，处理发送、取消、超时与迟到回包。
+ * 复用约定：请求经 @shared/utils/bridge，失败统一 toastError，芯片集合由 usePromptChips 持有并经回调同步；
+ * 提示词拼装由调用方注入 composePrompt，本 hook 只提供发送瞬间的正文与芯片快照。
+ * 对外回调统一用 on 前缀且 Promise 在 hook 内收口（异步实现拆成 runXxx），调用方可直接交给按钮属性。
+ * 关键约束：generationRef 是请求代号，取消或重发即自增，旧回包按代号丢弃并只经 onLateGenerated 静默补图；
+ * 发送即清空正文与芯片，失败或取消仅在用户没有新输入时回填；生成态经 onGeneratingChange 上报，卸载补发一次结束；
+ * enhancedFrom 取发送前的闭包旧值，不受本次 setState 影响。
+ */
+import { useEffect, useRef, useState } from 'react'
+import type { ImageGenerateKind, ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
+import type { PortraitStyle } from '@shared/types/press'
+import { request } from '@shared/utils/bridge'
+import { toastError } from '@shared/utils/error'
+import type { PromptChip } from './usePromptChips'
+
+/** 出图兜底超时：宿主内置 10 分钟上限，前端放宽到 15 分钟，避免前端先于宿主判超时 */
+const GENERATE_TIMEOUT_MS = 900_000
+
+/** 增强兜底超时：宿主 30 秒上限，前端留一倍余量 */
+const ENHANCE_TIMEOUT_MS = 60_000
+
+interface ImageComposerPromptSource {
+    text: string
+    chips: readonly PromptChip[]
+}
+
+/** 草稿：已发出但还没有结果的正文、芯片与增强前原文 */
+interface ImageComposerDraft {
+    text: string
+    chips: readonly PromptChip[]
+    enhancedFrom: string | null
+}
+
+interface UseImageComposerOptions {
+    dirPath: string
+    /** 拼装提示词：传入发送瞬间的正文与芯片快照，避免回填竞态 */
+    composePrompt: (source: ImageComposerPromptSource) => string
+    /** 生成目标：封面 / 普通图 / 角色图由调用方按当前模式判定 */
+    target: { kind: ImageGenerateKind; characterId: string | null }
+    ratio: ImageRatio
+    style: PortraitStyle
+    /** 当前芯片快照：发送时存草稿，清空与回填交调用方执行 */
+    chips: readonly PromptChip[]
+    onClearChips: () => void
+    onRestoreChips: (snapshot: readonly PromptChip[]) => void
+    onGenerated: (result: ImageGenerateResult) => void
+    /** 迟到落盘的回调：请求已取消或被取代但宿主仍出了图，页面只静默刷新列表 */
+    onLateGenerated: () => void
+    /** 生成中状态上报：页面据此在列表首位挂骨架占位 */
+    onGeneratingChange?: (isGenerating: boolean) => void
+}
+
+interface UseImageComposerResult {
+    text: string
+    setText: (text: string) => void
+    isGenerating: boolean
+    isEnhancing: boolean
+    /** 增强前原文：非空即处于增强态，可还原 */
+    enhancedFrom: string | null
+    /** 增强提示词：Promise 在 hook 内收口，对外是同步回调 */
+    onEnhance: () => void
+    onRestore: () => void
+    /** 发送：Promise 在 hook 内收口，可直接交给按钮的 onSend */
+    onSend: () => void
+    /** 取消生成：Promise 在 hook 内收口，可直接交给按钮的 onAbort */
+    onAbort: () => void
+}
+
+export function useImageComposer({
+    dirPath,
+    composePrompt,
+    target,
+    ratio,
+    style,
+    chips,
+    onClearChips,
+    onRestoreChips,
+    onGenerated,
+    onLateGenerated,
+    onGeneratingChange,
+}: UseImageComposerOptions): UseImageComposerResult {
+    const [text, setText] = useState('')
+    const [isGenerating, setIsGenerating] = useState(false)
+    const [isEnhancing, setIsEnhancing] = useState(false)
+    const [enhancedFrom, setEnhancedFrom] = useState<string | null>(null)
+
+    /** 出图请求代号：取消或重新发送时自增，旧请求迟到的回包按代号丢弃 */
+    const generationRef = useRef(0)
+    /** 正文最新值：回填草稿时要判断用户是否已在等待期间重新输入，事件回调里捕获的 text 可能滞后 */
+    const textRef = useRef(text)
+    /** 已发出但还没有结果的草稿：失败或取消时再还回去 */
+    const lastDraftRef = useRef<ImageComposerDraft | null>(null)
+
+    useEffect(() => {
+        textRef.current = text
+    }, [text])
+
+    /** 上报生成态：成功、失败、取消、超时都会经过 setIsGenerating，页面据此挂载/回收列表骨架 */
+    useEffect(() => {
+        onGeneratingChange?.(isGenerating)
+    }, [isGenerating, onGeneratingChange])
+
+    /** 卸载（切换作品或参数重载）时补发一次结束，否则页面会停在「生成中」的骨架上 */
+    useEffect(() => {
+        return (): void => {
+            onGeneratingChange?.(false)
+        }
+    }, [onGeneratingChange])
+
+    /** 把草稿还给用户：只在没有新输入时回填，不覆盖等待期间重新写下的内容 */
+    const restoreDraft = (): void => {
+        const draft = lastDraftRef.current
+        lastDraftRef.current = null
+        if (draft === null) {
+            return
+        }
+        const isEmpty = textRef.current.trim().length === 0
+        setText((current) => (current.trim().length > 0 ? current : draft.text))
+        onRestoreChips(draft.chips)
+        // 增强态跟着正文走：用户已经重新写过内容时不恢复，否则按钮会对一段新文字喊「还原」
+        if (isEmpty) {
+            setEnhancedFrom(draft.enhancedFrom)
+        }
+    }
+
+    /** 增强提示词：只改写输入框正文，芯片与设定留在发送时拼装，避免模型复述设定原文 */
+    const runEnhance = async (): Promise<void> => {
+        const source = text.trim()
+        if (source.length === 0) {
+            return
+        }
+        setIsEnhancing(true)
+        try {
+            const result = await request<{ text: string }>(
+                'pressAi/enhanceImagePrompt',
+                { dirPath, text: source },
+                ENHANCE_TIMEOUT_MS,
+            )
+            setEnhancedFrom(source)
+            setText(result.text)
+        } catch (cause) {
+            toastError(cause)
+        } finally {
+            setIsEnhancing(false)
+        }
+    }
+
+    /** 增强提示词：对外只给同步回调，避免 Promise 泄漏到按钮的 onEnhance */
+    const onEnhance = (): void => {
+        void runEnhance()
+    }
+
+    /** 还原增强前原文：同步动作，直接暴露给按钮 */
+    const onRestore = (): void => {
+        if (enhancedFrom === null) {
+            return
+        }
+        setText(enhancedFrom)
+        setEnhancedFrom(null)
+    }
+
+    /** 取消宿主的在途出图：尽力而为，宿主无进行中请求时忽略错误 */
+    const abortGeneration = async (): Promise<void> => {
+        try {
+            await request('pressAi/generateImage/abort')
+        } catch {
+            // 取消失败不影响前端复位：下一次发送会由宿主返回「已有生成中」提示
+        }
+    }
+
+    const runSend = async (): Promise<void> => {
+        const prompt = composePrompt({ text, chips })
+        if (prompt.length === 0) {
+            return
+        }
+        const token = generationRef.current + 1
+        generationRef.current = token
+        setIsGenerating(true)
+        // 发送即清空：生成期间输入框不该还停着上一轮的提示词，否则看起来像没发出去；
+        // 草稿存在 ref 里（含增强前原文），失败或取消时再还回去
+        lastDraftRef.current = { text, chips, enhancedFrom }
+        setText('')
+        onClearChips()
+        // 空输入框不是「增强结果」，增强态随发送复位；本次请求仍带上发送前的 enhancedFrom
+        setEnhancedFrom(null)
+        try {
+            const result = await request<ImageGenerateResult>(
+                'pressAi/generateImage',
+                {
+                    dirPath,
+                    prompt,
+                    kind: target.kind,
+                    characterId: target.characterId,
+                    ratio,
+                    // 画风随请求下发，由宿主并入最终提示词（前端不再另拼，避免画风描述重复）
+                    style,
+                    enhancedFrom: enhancedFrom ?? undefined,
+                },
+                GENERATE_TIMEOUT_MS,
+            )
+            // 已取消或被新请求取代：结果照常落盘，但不写回界面（不认领封面、不清空输入），
+            // 只让页面静默刷新列表，免去用户切页才能看到这张图
+            if (generationRef.current !== token) {
+                onLateGenerated()
+                return
+            }
+            lastDraftRef.current = null
+            onGenerated(result)
+        } catch (cause) {
+            if (generationRef.current !== token) {
+                return
+            }
+            // 超时或失败后宿主可能仍在出图，主动取消以释放并发锁
+            void abortGeneration()
+            restoreDraft()
+            toastError(cause)
+        } finally {
+            if (generationRef.current === token) {
+                setIsGenerating(false)
+            }
+        }
+    }
+
+    /** 发送：对外只给同步回调，避免 Promise 泄漏到按钮的 onSend */
+    const onSend = (): void => {
+        void runSend()
+    }
+
+    /** 取消生成：立即复位按钮，不等宿主回包，避免模型慢时界面卡在「生成中」 */
+    const runAbort = async (): Promise<void> => {
+        generationRef.current += 1
+        setIsGenerating(false)
+        // 主动取消多半是想改两句再重发，草稿直接还回去，省得重打一遍
+        restoreDraft()
+        await abortGeneration()
+    }
+
+    /** 取消：对外只给同步回调，点下即复位，不等宿主的取消回包 */
+    const onAbort = (): void => {
+        void runAbort()
+    }
+
+    return { text, setText, isGenerating, isEnhancing, enhancedFrom, onEnhance, onRestore, onSend, onAbort }
+}

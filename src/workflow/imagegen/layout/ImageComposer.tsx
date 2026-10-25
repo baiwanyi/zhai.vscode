@@ -1,165 +1,33 @@
 /**
  * 生图输入卡片：命令动作与角色以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
- * 复用约定：外壳沿用 aichat 的 composer 两层底色（bg-composer / bg-composer-input），芯片输入区取
- * @webview/components/RichChipInput（与 aichat 共用 richText 的 DOM 工具），按钮取 @webview/components/Button，
- * 工具栏取本目录 ImageComposerToolbar，底部操作行取本目录 ImageComposerActions（内含画面风格单选卡）。
- * 关键约束：芯片只承载「引用意图」，正文在发送瞬间拼装——角色段取人物卡的姓名、性别年龄、身份与外貌；
- * 画风不进芯片、不在输入框显示，只落一份 state，发送时随 style 交宿主注入（与 portraitPrompt 的 STYLE_HINTS 同源），
- * 封面模式忽略角色段且 kind 固定 cover；
- * 封面画风与普通出图分开存：切换模式时画风 state 换用对应一侧，改动按当前模式写回各自配置；
- * 比例与画风的手动改动只经 onSettingsChange 上报；正文里出现 1:1 / 16:9 这类比例字面量，
- * 或「竖版 / 横版 / 方形」及其英文同义词（vertical / landscape / square 等，不区分大小写）时比例自动跟随，
- * 该切换只改本次会话的选择、不写回作品配置；出图前端兜底 15 分钟，超时或失败即 abort 释放并发锁；
- * 生成中发送按钮切换为「取消生成」，取消后立即复位；取消后迟到的落盘不改写界面，只经 onLateGenerated 让页面静默补图；
- * 发送即清空输入框与全部芯片，增强态一并复位（按钮回到增强图标），草稿存 ref，
- * 失败或取消时仅在用户没有新输入的情况下回填（正文与增强态同进同退）；
- * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化；
- * 生成态经 onGeneratingChange 上报页面，供列表首位挂骨架，卸载时补发一次结束避免占位卡死。
+ * 复用约定：外壳沿用 aichat 的两层底色（bg-composer / bg-composer-input），输入区取 RichChipInput，
+ * 工具栏与底部操作行取本目录 ImageComposerToolbar / ImageComposerActions；提示词拼装、比例探测与词条插入
+ * 取 ../prompt 下的纯函数，芯片集合与会话状态分别由 ../hooks 的 usePromptChips / useImageComposer 持有。
+ * 关键约束：比例与画风各只落一份 state，手动改动经 onSettingsChange 上报，正文里的比例字面量只自动切换
+ * 本次会话的选择、不写回作品配置；封面画风与普通出图分开存，切换模式时换用对应一侧、改动写回各自配置。
+ * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
  */
 import { Sparkles, UserRound } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Skeleton } from '@components/ui/skeleton'
-import { isImageRatio, type ImageGenerateResult, type ImageRatio } from '@shared/types/imagegen'
+import type { ImageGenerateKind, ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
-import { request } from '@shared/utils/bridge'
-import { toastError } from '@shared/utils/error'
 import { RichChipInput, type RichChipInputHandle } from '@webview/components/RichChipInput'
 import { ImageComposerActions } from './ImageComposerActions'
 import { ImageComposerToolbar } from './ImageComposerToolbar'
 import type { JSX } from 'react'
+import { useImageComposer } from '../hooks/useImageComposer'
+import { usePromptChips, type PromptChip } from '../hooks/usePromptChips'
+import { composeInsertion } from '../prompt/insertFragment'
+import {
+    composePromptSections,
+    type PromptCharacterSnapshot,
+    type PromptSettingSnapshot,
+} from '../prompt/promptSections'
+import { detectImageRatio } from '../prompt/ratioIntent'
 
-/** 作品设定快照：只取与画面相关的字段，缺省项不参与拼装 */
-export interface PromptSettingSnapshot {
-    title?: string
-    genres?: string[]
-    logline?: string
-    worldview?: string
-    tone?: string
-    perspective?: string
-}
-
-/** 角色快照：姓名、性别年龄、身份与外貌，字段缺失时只拼姓名 */
-export interface PromptCharacterSnapshot {
-    id: string
-    name: string
-    /** 外貌白描：角色图的主体描述，缺失时只拼姓名 */
-    appearance?: string
-    /** 身份 / 职业：补足画面语义 */
-    identity?: string
-    /** 性别：人像的硬约束，只在 male / female 时拼入 */
-    gender?: 'male' | 'female'
-    /** 年龄：自由文本，缺失或「未知」时不拼 */
-    age?: string
-}
-
-/** 徽标：setting 指作品设定，character 指某个人物；画风不进徽标，由底部操作行单选后随请求下发 */
-interface PromptChip {
-    kind: 'setting' | 'character'
-    value: string
-    label: string
-}
-
-/** 出图兜底超时：宿主内置 10 分钟上限，前端放宽到 15 分钟，避免前端先于宿主判超时 */
-const GENERATE_TIMEOUT_MS = 900_000
-
-/** 增强兜底超时：宿主 30 秒上限，前端留一倍余量 */
-const ENHANCE_TIMEOUT_MS = 60_000
-
-/** 性别文案：只在已知时拼入，避免把「未知」写成外貌 */
-const GENDER_LABELS: Readonly<Record<'male' | 'female', string>> = {
-    male: '男性',
-    female: '女性',
-}
-
-/** 比例字面量：正文里写「16:9」这类比例即可自动切换，全角冒号与斜杠都收，前后紧邻数字或小数点的跳过 */
-const RATIO_PATTERN = /(?<![\d.])(\d{1,2})\s*[:：/]\s*(\d{1,2})(?![\d.])/gu
-
-/** 比例词：中文与英文同义写法等价于数字比例，同样参与「最后一次出现优先」的判定（英文不区分大小写） */
-const RATIO_KEYWORDS: ReadonlyArray<{ keyword: string; ratio: ImageRatio }> = [
-    { keyword: '竖版', ratio: '9:16' },
-    { keyword: 'vertical', ratio: '9:16' },
-    { keyword: 'portrait', ratio: '9:16' },
-    { keyword: '横版', ratio: '16:9' },
-    { keyword: 'horizontal', ratio: '16:9' },
-    { keyword: 'landscape', ratio: '16:9' },
-    { keyword: '方形', ratio: '1:1' },
-    { keyword: 'square', ratio: '1:1' },
-]
-
-/**
- * 从正文里取最后一个出现的比例意图（数字写法或中英文比例词），供输入卡片自动切换比例。
- * 关键约束：数字写法只认白名单内的值（1:1 / 3:4 / 4:3 / 16:9 / 9:16），
- * 文字只认 RATIO_KEYWORDS 里登记的中英文词，其余描述一律不猜——猜错比不猜更糟；
- * 各类写法按出现位置合流，谁在后面以谁为准，符合「后补的约束覆盖先前描述」的直觉。
- */
-function detectRatioFromText(text: string): ImageRatio | null {
-    let detected: ImageRatio | null = null
-    let detectedAt = -1
-    for (const match of text.matchAll(RATIO_PATTERN)) {
-        const candidate = `${match[1] ?? ''}:${match[2] ?? ''}`
-        const at = match.index ?? -1
-        if (isImageRatio(candidate) && at > detectedAt) {
-            detected = candidate
-            detectedAt = at
-        }
-    }
-    // 英文词不区分大小写：统一在小写副本上取位置，索引与原串一致
-    const lowered = text.toLowerCase()
-    for (const { keyword, ratio } of RATIO_KEYWORDS) {
-        const at = lowered.lastIndexOf(keyword)
-        if (at > detectedAt) {
-            detected = ratio
-            detectedAt = at
-        }
-    }
-    return detected
-}
-
-/**
- * 角色段：姓名 + 性别年龄 + 身份 + 外貌，空项跳过。
- * 关键约束：每项独立成行，便于模型区分「外形硬约束」与「气质描述」；字段全部取自人物卡，此处不做推断。
- */
-function composeCharacterSection(character: PromptCharacterSnapshot): string {
-    const lines = [`角色：${character.name}`]
-    const profile = [character.gender === undefined ? '' : GENDER_LABELS[character.gender], character.age ?? ''].filter(
-        (part) => part.length > 0,
-    )
-    if (profile.length > 0) {
-        lines.push(`外形：${profile.join('，')}`)
-    }
-    if (character.identity !== undefined && character.identity.length > 0) {
-        lines.push(`身份：${character.identity}`)
-    }
-    if (character.appearance !== undefined && character.appearance.length > 0) {
-        lines.push(`外貌：${character.appearance}`)
-    }
-    return lines.join('\n')
-}
-
-/** 把作品设定展开为一段提示词：只输出有值的字段 */
-function formatSetting(setting: PromptSettingSnapshot): string {
-    const lines: string[] = []
-    if (setting.title !== undefined && setting.title.length > 0) {
-        lines.push(`书名：${setting.title}`)
-    }
-    if (setting.genres !== undefined && setting.genres.length > 0) {
-        lines.push(`题材：${setting.genres.join('、')}`)
-    }
-    if (setting.logline !== undefined && setting.logline.length > 0) {
-        lines.push(`简介：${setting.logline}`)
-    }
-    if (setting.worldview !== undefined && setting.worldview.length > 0) {
-        lines.push(`世界观：${setting.worldview}`)
-    }
-    if (setting.tone !== undefined && setting.tone.length > 0) {
-        lines.push(`基调：${setting.tone}`)
-    }
-    if (setting.perspective !== undefined && setting.perspective.length > 0) {
-        lines.push(`视角：${setting.perspective}`)
-    }
-    return lines.join('\n')
-}
+export type { PromptCharacterSnapshot, PromptSettingSnapshot }
 
 interface ImageComposerProps {
     dirPath: string
@@ -242,7 +110,7 @@ export function ImageComposer({
     )
 }
 
-/** 正文卡片：参数就绪后挂载，持有输入文本、芯片与出图请求等会话内状态 */
+/** 正文卡片：参数就绪后挂载，持有比例、画风、封面模式等作品相关选择，其余会话状态在 useImageComposer 内 */
 function ComposerBody({
     dirPath,
     characters,
@@ -256,90 +124,86 @@ function ComposerBody({
     onLateGenerated,
     onGeneratingChange,
 }: ComposerBodyProps): JSX.Element {
-    const [text, setText] = useState('')
     /** 封面模式：生成结果落统一图库并自动设为作品封面，与角色图互斥 */
     const [isCoverMode, setIsCoverMode] = useState(false)
     const [ratio, setRatio] = useState<ImageRatio>(defaultRatio)
-    const [isGenerating, setIsGenerating] = useState(false)
-    const [isEnhancing, setIsEnhancing] = useState(false)
-    /** 出图请求代号：取消或重新发送时自增，旧请求迟到的回包按代号丢弃 */
-    const generationRef = useRef(0)
-    /** 增强前的原文：非空即处于增强态，点按钮可还原 */
-    const [enhancedFrom, setEnhancedFrom] = useState<string | null>(null)
     /** 当前画风：不再以芯片展示，只作为请求参数，发送时由宿主并入提示词 */
     const [style, setStyle] = useState<PortraitStyle>(defaultStyle)
-    const [chips, setChips] = useState<PromptChip[]>([])
+    /** 上次探测到的比例意图：只比较前后两次探测结果，同一关键字持续存在时不重复切 */
+    const detectedRatioRef = useRef<ImageRatio | null>(null)
 
     const richInputRef = useRef<RichChipInputHandle | null>(null)
-
-    /** 上报生成态：成功、失败、取消、超时都会经过 setIsGenerating，页面据此挂载/回收列表骨架 */
-    useEffect(() => {
-        onGeneratingChange?.(isGenerating)
-    }, [isGenerating, onGeneratingChange])
-
-    /** 卸载（切换作品或参数重载）时补发一次结束，否则页面会停在「生成中」的骨架上 */
-    useEffect(() => {
-        return (): void => {
-            onGeneratingChange?.(false)
-        }
-    }, [onGeneratingChange])
-
-    /** 正文最新值：回填草稿时要判断用户是否已在等待期间重新输入，事件回调里捕获的 text 可能滞后 */
-    const textRef = useRef(text)
-
-    useEffect(() => {
-        textRef.current = text
-    }, [text])
-
-    /**
-     * 已发出但还没有结果的草稿：发送时输入框立刻清空，失败或取消再还回去。
-     * 既让「已经发出去」有即时反馈，也不至于把刚写好的提示词弄丢。
-     * 增强前原文一并存下：回填时连同「是否处于增强态」一起还回去，按钮才不会与正文脱节。
-     */
-    const lastDraftRef = useRef<{ text: string; chips: PromptChip[]; enhancedFrom: string | null } | null>(null)
-
-    /** 把草稿还给用户：只在没有新输入时回填，不覆盖等待期间重新写下的内容 */
-    const restoreDraft = (): void => {
-        const draft = lastDraftRef.current
-        lastDraftRef.current = null
-        if (draft === null) {
-            return
-        }
-        const isEmpty = textRef.current.trim().length === 0
-        setText((current) => (current.trim().length > 0 ? current : draft.text))
-        setChips((current) => (current.length > 0 ? current : draft.chips))
-        // 增强态跟着正文走：用户已经重新写过内容时不恢复，否则按钮会对一段新文字喊「还原」
-        if (isEmpty) {
-            setEnhancedFrom(draft.enhancedFrom)
-        }
-    }
 
     const activeCharacter = useMemo(
         () => characters.find((character) => character.id === activeCharacterId) ?? null,
         [characters, activeCharacterId],
     )
 
-    const settingChip = chips.find((chip) => chip.kind === 'setting') ?? null
-    const characterChip = chips.find((chip) => chip.kind === 'character') ?? null
+    const {
+        chips,
+        settingChip,
+        characterChip,
+        toggleSetting,
+        toggleCharacter,
+        ensureSetting,
+        removeChip,
+        clearChips,
+        restoreChips,
+    } = usePromptChips({ activeCharacter })
 
-    const toggleSetting = (): void => {
-        setChips((current) =>
-            current.some((chip) => chip.kind === 'setting')
-                ? current.filter((chip) => chip.kind !== 'setting')
-                : [...current, { kind: 'setting', value: 'setting', label: '作品设定' }],
-        )
+    /** 生成目标：封面模式优先，其次按顶栏是否选中角色区分角色图与普通图 */
+    let targetKind: ImageGenerateKind = 'photo'
+    if (isCoverMode) {
+        targetKind = 'cover'
+    } else if (activeCharacter !== null) {
+        targetKind = 'portrait'
     }
 
-    const toggleCharacter = (): void => {
-        if (activeCharacter === null) {
-            return
-        }
-        setChips((current) =>
-            current.some((chip) => chip.kind === 'character')
-                ? current.filter((chip) => chip.kind !== 'character')
-                : [...current, { kind: 'character', value: activeCharacter.id, label: activeCharacter.name }],
-        )
+    /**
+     * 拼装提示词：芯片只承载「引用意图」，正文、角色段与设定段在发送瞬间合成。
+     * 关键约束：封面不绑定角色，即使还挂着角色徽标也不并入；设定段只在作品设定芯片存在时并入。
+     */
+    const composePrompt = (source: { text: string; chips: readonly PromptChip[] }): string => {
+        const characterId = source.chips.find((chip) => chip.kind === 'character')?.value ?? null
+        const character =
+            isCoverMode || characterId === null ? null : (characters.find((item) => item.id === characterId) ?? null)
+        return composePromptSections({
+            text: source.text,
+            character,
+            setting: source.chips.some((chip) => chip.kind === 'setting') ? setting : null,
+        })
     }
+
+    /** 随请求下发的目标：封面与普通图不带角色，角色图才绑定顶栏选中的角色 */
+    const generateTarget = {
+        kind: targetKind,
+        characterId: targetKind === 'portrait' ? (activeCharacter?.id ?? null) : null,
+    }
+
+    const { text, setText, isGenerating, isEnhancing, enhancedFrom, onEnhance, onRestore, onSend, onAbort } =
+        useImageComposer({
+            dirPath,
+            composePrompt,
+            target: generateTarget,
+            ratio,
+            style,
+            chips,
+            onClearChips: clearChips,
+            onRestoreChips: restoreChips,
+            onGenerated: (result) => {
+                onGenerated(result)
+                // 封面是一次性动作：成功即退出封面模式，回到普通出图
+                if (isCoverMode) {
+                    setIsCoverMode(false)
+                    toast.success('作品封面已更新')
+                }
+            },
+            onLateGenerated,
+            onGeneratingChange,
+        })
+
+    /** 能否发送：正文、角色段与设定段任一有内容即可，输入框与发送按钮共用同一判定 */
+    const canSend = composePrompt({ text, chips }).length > 0
 
     /**
      * 封面模式：与角色图互斥；切换时画风换用对应一侧的作品配置（封面画风与普通出图分开记），
@@ -349,14 +213,9 @@ function ComposerBody({
         const willEnable = !isCoverMode
         setIsCoverMode(willEnable)
         setStyle(willEnable ? coverStyle : defaultStyle)
-        if (!willEnable) {
-            return
+        if (willEnable) {
+            ensureSetting()
         }
-        setChips((current) =>
-            current.some((chip) => chip.kind === 'setting')
-                ? current
-                : [...current, { kind: 'setting', value: 'setting', label: '作品设定' }],
-        )
     }
 
     /** 选画风：只记 state 并写回作品配置，输入框不出现徽标，发送时才随请求并入提示词 */
@@ -372,161 +231,22 @@ function ComposerBody({
     }
 
     /**
-     * 正文变化：写入文本，并在比例关键字「刚出现或刚变化」时自动切换比例。
-     * 关键约束：只比较前后两份正文的探测结果，同一关键字持续存在时不重复切——否则用户手动改完比例，
-     * 随手再打一个字就会被打回关键字那一档；自动切换只改本次会话的比例选择，不写回作品配置，
-     * 免得提示词里的一句话把作品默认比例永久改掉。
+     * 正文变化：写入文本，并在比例意图「刚出现或刚变化」时自动切换比例。
+     * 关键约束：只比较前后两份探测结果——否则用户手动改完比例，随手再打一个字就会被打回关键字那一档；
+     * 自动切换只改本次会话的比例选择，不写回作品配置，免得一句话把作品默认比例永久改掉。
      */
     const handleTextChange = (next: string): void => {
-        const detected = detectRatioFromText(next)
+        const detected = detectImageRatio(next)
         setText(next)
-        if (detected !== null && detected !== detectRatioFromText(text)) {
+        if (detected !== null && detected !== detectedRatioRef.current) {
             setRatio(detected)
         }
+        detectedRatioRef.current = detected
     }
 
-    /** 芯片 id 即 kind：芯片集合按 kind 唯一 */
-    const removeChip = (id: string): void => {
-        setChips((current) => current.filter((chip) => chip.kind !== id))
-    }
-
-    /**
-     * 把词条插入光标处：保留已有内容，插入后光标停在片段末尾，便于连续点击累加。
-     * 词条统一前置逗号，连点几次即可自然拼成 `a, b, c`；正文为空时首个词条也带逗号，
-     * 保证规则可预测。末尾已是标点或空白时不再重复补，避免出现 `a,, b` 这类双分隔符。
-     */
+    /** 把词条插入光标处：保留已有内容，插入后光标停在片段末尾，便于连续点击累加 */
     const insertPrompt = (fragment: string): void => {
-        const current = text.trimEnd()
-        const isSeparatorNeeded = !/[,\s。，、;；:：]$/u.test(current)
-        richInputRef.current?.insertText(isSeparatorNeeded ? `, ${fragment}` : fragment)
-    }
-
-    /** 增强提示词：只改写输入框正文，chip 与设定留在发送时拼装，避免模型复述设定原文 */
-    const handleEnhance = async (): Promise<void> => {
-        const source = text.trim()
-        if (source.length === 0) {
-            return
-        }
-        setIsEnhancing(true)
-        try {
-            const result = await request<{ text: string }>(
-                'pressAi/enhanceImagePrompt',
-                { dirPath, text: source },
-                ENHANCE_TIMEOUT_MS,
-            )
-            setEnhancedFrom(source)
-            setText(result.text)
-        } catch (cause) {
-            toastError(cause)
-        } finally {
-            setIsEnhancing(false)
-        }
-    }
-
-    const handleRestore = (): void => {
-        if (enhancedFrom === null) {
-            return
-        }
-        setText(enhancedFrom)
-        setEnhancedFrom(null)
-    }
-
-    const buildPrompt = (): string => {
-        const sections: string[] = []
-        if (text.trim().length > 0) {
-            sections.push(text.trim())
-        }
-        // 封面不绑定角色：封面模式下即使还挂着角色徽标也不并入提示词
-        if (!isCoverMode && characterChip !== null) {
-            const character = characters.find((item) => item.id === characterChip.value)
-            if (character !== undefined) {
-                sections.push(composeCharacterSection(character))
-            }
-        }
-        if (settingChip !== null) {
-            const snapshot = formatSetting(setting)
-            if (snapshot.length > 0) {
-                sections.push(snapshot)
-            }
-        }
-        return sections.join('\n\n')
-    }
-
-    /** 取消宿主的在途出图：尽力而为，宿主无进行中请求时忽略错误 */
-    const abortGeneration = async (): Promise<void> => {
-        try {
-            await request('pressAi/generateImage/abort')
-        } catch {
-            // 取消失败不影响前端复位：下一次发送会由宿主返回「已有生成中」提示
-        }
-    }
-
-    const handleSend = async (): Promise<void> => {
-        const prompt = buildPrompt()
-        if (prompt.length === 0) {
-            return
-        }
-        const token = generationRef.current + 1
-        generationRef.current = token
-        setIsGenerating(true)
-        // 发送即清空：生成期间输入框不该还停着上一轮的提示词，否则看起来像没发出去；
-        // 草稿存在 ref 里（含增强前原文），失败或取消时再还回去
-        lastDraftRef.current = { text, chips, enhancedFrom }
-        setText('')
-        setChips([])
-        // 空输入框不是「增强结果」，增强态随发送复位，按钮回到 Sparkles；
-        // 本次请求仍带上发送前的 enhancedFrom（闭包值是旧的，不受这次 setState 影响）
-        setEnhancedFrom(null)
-        try {
-            const result = await request<ImageGenerateResult>(
-                'pressAi/generateImage',
-                {
-                    dirPath,
-                    prompt,
-                    kind: isCoverMode ? 'cover' : activeCharacter === null ? 'photo' : 'portrait',
-                    characterId: isCoverMode || activeCharacter === null ? null : activeCharacter.id,
-                    ratio,
-                    // 画风随请求下发，由宿主并入最终提示词（前端不再另拼，避免画风描述重复）
-                    style,
-                    enhancedFrom: enhancedFrom ?? undefined,
-                },
-                GENERATE_TIMEOUT_MS,
-            )
-            // 已取消或被新请求取代：结果照常落盘，但不写回界面（不认领封面、不清空输入），
-            // 只让页面静默刷新列表，免去用户切页才能看到这张图
-            if (generationRef.current !== token) {
-                onLateGenerated()
-                return
-            }
-            lastDraftRef.current = null
-            onGenerated(result)
-            // 封面是一次性动作：成功即退出封面模式，回到普通出图
-            if (isCoverMode) {
-                setIsCoverMode(false)
-                toast.success('作品封面已更新')
-            }
-        } catch (cause) {
-            if (generationRef.current !== token) {
-                return
-            }
-            // 超时或失败后宿主可能仍在出图，主动取消以释放并发锁
-            void abortGeneration()
-            restoreDraft()
-            toastError(cause)
-        } finally {
-            if (generationRef.current === token) {
-                setIsGenerating(false)
-            }
-        }
-    }
-
-    /** 取消生成：立即复位按钮，不等宿主回包，避免模型慢时界面卡在「生成中」 */
-    const handleAbort = async (): Promise<void> => {
-        generationRef.current += 1
-        setIsGenerating(false)
-        // 主动取消多半是想改两句再重发，草稿直接还回去，省得重打一遍
-        restoreDraft()
-        await abortGeneration()
+        richInputRef.current?.insertText(composeInsertion(text, fragment))
     }
 
     /** 芯片渲染项：id 取 kind（同一 kind 只允许一枚），图标按类型区分 */
@@ -561,12 +281,10 @@ function ComposerBody({
                     value={text}
                     chips={richChips}
                     placeholder="描述画面：人物、动作、场景、光线与氛围…"
-                    canSend={buildPrompt().length > 0}
+                    canSend={canSend}
                     className="max-h-40 min-h-17 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word text-sm leading-5 outline-none"
                     onChange={handleTextChange}
-                    onSend={() => {
-                        void handleSend()
-                    }}
+                    onSend={onSend}
                     onRemoveChip={removeChip}
                 />
                 <ImageComposerActions
@@ -577,19 +295,13 @@ function ComposerBody({
                     isEnhancing={isEnhancing}
                     isEnhanced={enhancedFrom !== null}
                     canEnhance={!isEnhancing && !isGenerating && text.trim().length > 0}
-                    canSend={buildPrompt().length > 0}
+                    canSend={canSend}
                     onRatioChange={handleRatioChange}
                     onStyleChange={pickStyle}
-                    onEnhance={() => {
-                        void handleEnhance()
-                    }}
-                    onRestore={handleRestore}
-                    onSend={() => {
-                        void handleSend()
-                    }}
-                    onAbort={() => {
-                        void handleAbort()
-                    }}
+                    onEnhance={onEnhance}
+                    onRestore={onRestore}
+                    onSend={onSend}
+                    onAbort={onAbort}
                 />
             </div>
         </div>

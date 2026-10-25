@@ -148,7 +148,7 @@
 \n\n STYLE_HINTS[style]（始终在最后）
 ```
 
-空串一律跳过；拼装逻辑集中在 `composeImagePrompt`，由 `tests/imagegenPrompt.test.ts` 覆盖顺序与空串行为。
+空串一律跳过；宿主侧拼装集中在 `src/modules/imagegen/promptCompose` 的 `composeImagePrompt`，由 `tests/imagegenPrompt.test.ts` 覆盖顺序与空串行为。前端只负责正文与引用段（`workflow/imagegen/prompt/promptSections.ts` 的 `composePromptSections`），画风与负向约束仍由宿主追加。
 
 ---
 
@@ -163,7 +163,12 @@
 | `useImageLibrary.ts` | 列举（含不切加载态的静默刷新）、单张删除、批量删除（含最新列表回传） |
 | `useImageDetail.ts` | 详情面板按路径读取侧车；迟到回包按来源路径**丢弃**（不是覆盖后再过滤），切图不会把新图详情清空 |
 | `useImageSettings.ts` | 作品级参数读写，`isLoaded` 之前不得据此保存 |
+| `useImageComposer.ts` | 输入卡片会话状态：正文、增强态、生成态与请求代号，发送 / 取消 / 超时，失败或取消按草稿回填 |
+| `usePromptChips.ts` | 芯片集合（作品设定与当前角色按 kind 唯一）、开关、清空与草稿回填；图标映射留在 layout |
 | `imageStyle.ts` | 画风取值与中文标签，composer 的画面风格面板与详情面板共用 |
+| `prompt/promptSections.ts` | 前端提示词分段：正文 + 角色段 + 设定段合成；封面模式是否并入角色由调用方决定 |
+| `prompt/ratioIntent.ts` | 正文比例意图探测：数字写法与中英文比例词合流，取最后出现者 |
+| `prompt/insertFragment.ts` | 词条插入片段：末尾已有标点或空白时不再补前置逗号 |
 | `@webview/components/RichChipInput.tsx` | 通用芯片输入区：芯片内联进正文流，Enter 发送、组词期间不拦截，命令式 `insertText` |
 | `@webview/components/richText.ts` | 可编辑区 DOM 工具：读写纯文本、光标定位、芯片识别与插入，与 aichat 共用 |
 | `usePromptImages.ts` | 取提示词预览图基址（面板打开时请求一次），失败按「没有图」处理，不弹错误 |
