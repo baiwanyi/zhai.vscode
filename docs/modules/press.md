@@ -199,7 +199,7 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 | 延迟加载 | 图像通道需在子进程环境里设 `CODEBUDDY_DEFER_TOOL_LOADING=false`：CLI 默认把 `ImageGen` 放进延迟加载池，`system.init` 的工具全集里有它、但模型可用工具列表里没有，表现为「能力探测通过却始终不出图」 |
 | 超时 | CodeBuddy 通道上限 600s（子进程启动 + 排队），前端兜底 15 分钟 |
 | 产物归一 | `ImageGen` 以 JSON 文本回报 `{ type: 'image_gen_tool_result', images: [{ localPath }] }`，适配层先取结构化字段，再依次尝试 image block / data URL / 绝对路径 / 链接；路径可能不带扩展名，格式一律按文件魔数（PNG/JPEG/WEBP）判定，非图片内容自动跳到下一个候选，统一交给 `portraitService` 落盘 |
-| 落盘位置 | `press/{作品名}/Portraits/portrait-{角色标识}-{年月日时分秒}.{ext}`：图片平铺在作品目录下，角色归属由文件名解析，删除作品即随目录一并清理 |
+| 落盘位置 | `press/{作品名}/Images/portrait-{14 位时间戳}-{8 位角色标识}.{ext}`：所有通道落同一图库目录，角色归属由文件名解析，删除作品即随目录一并清理 |
 | 作品封面 | 生成入口在生图页的「作品封面」模式（`pressAi/generateImage`，`kind=cover`）：新图落 `press/{作品名}/Images/photo-{…}` 并自动设为作品封面；设定页「封面」分组保留历史封面管理——`pressAi/listCover` / `saveCover`（前端画布套用书名，落 `Cover/cover-{年月日时分秒}.png`，不消耗出图次数）/ `selectCover` / `deleteCover`（删除当前封面时回退到剩余最新一张）；选中记录存 `press.db` 的 meta 表（键 `cover:{dirPath}`，值为封面相对路径），仪表盘作品列表据此补 `coverUrl` |
 | 封面书名 | 出图保持无字（提示词禁止模型写字），书名与笔名由前端 `setting/coverCompose.ts` 用画布叠加：按画布宽度折行、逐档缩小字号、最多三行，字体/位置/配色从选项表选择；合成结果经 `pressAi/saveCover` 落盘为新的 `cover-{时间戳}.png` 并自动选中，不消耗出图次数 |
 | 画风与尺寸 | 沿用 `PORTRAIT_STYLES` 与 `zhai.image.size`；CodeBuddy 侧的传参方式（自然语言描述 / 工具入参）待实测，未定前双写 |

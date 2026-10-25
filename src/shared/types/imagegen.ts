@@ -98,16 +98,6 @@ export interface ImageDeleteResult {
     nextPortraitId: string | null
 }
 
-/** 旧目录迁移结果：把 Cover / Portraits 里的图片搬进 Images */
-export interface ImageMigrateResult {
-    /** 实际移动的文件数 */
-    moved: number
-    /** 因目标已存在同名文件或读写失败而跳过的数量 */
-    skipped: number
-    /** 是否改写了作品封面指针的目录前缀 */
-    coverUpdated: boolean
-}
-
 /** 设为作品封面请求：任意已落盘的图片都可以成为作品封面 */
 export interface ImageSetCoverRequest {
     dirPath: string

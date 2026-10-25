@@ -6,7 +6,7 @@
  * 「作品封面」是筛选维度而非图片类别——由 coverSelectedId 与图片 id 比较得出；
  * 删除落盘侧进回收站，本节只刷新列表，不做乐观删除；批量删除后按剩余列表修正角色封面指针，
  * 最后只列举一次；设封面后重新列举，面板仍停在该图片上；
- * 旧目录（Cover / Portraits）仍可列举，残留时提供一次性迁移入口，只搬文件不改名；
+ * 旧目录（Cover / Portraits）只作只读兼容，新图一律落在 Images，页面不做目录搬移；
  * 作品参数读完前不挂载 composer，避免用默认值覆盖用户已保存的比例与画风；
  * 网格按固定步长分批挂载，筛选条件变化即回到首批；全选只覆盖已渲染的图片，
  * 避免把未加载的图连带删掉；选中集合与筛选签名绑定，换筛选即失效；
@@ -55,23 +55,11 @@ const KIND_LABELS: Readonly<Record<PressImageKind, string>> = {
     orphan: '未归类',
 }
 
-/** 旧目录：仍有文件残留时，筛选条下方出现一次性迁移入口 */
-const LEGACY_DIR_NAMES: ReadonlyArray<string> = ['Cover', 'Portraits']
-
 /** 空选中集合：筛选切换后的派生值复用它，避免每次渲染新建对象 */
 const EMPTY_SELECTION: ReadonlySet<string> = new Set()
 
 /** 网格分批挂载的步长：一次只进一屏出头的卡片，避免上百张图同时进 DOM */
 const GRID_PAGE_SIZE = 60
-
-/**
- * 图片是否落在旧目录：path 形如 press/{作品名}/{目录}/{文件名}，
- * 目录取第三段而不是前缀——前缀比对会因作品段在前而恒为 false。
- */
-function isLegacyImagePath(path: string): boolean {
-    const dirName = path.split('/')[2]
-    return dirName !== undefined && LEGACY_DIR_NAMES.includes(dirName)
-}
 
 interface ImageGenPageProps {
     /** 当前作品目录：既是数据作用域，也是切换作品时的重建依据 */
@@ -96,8 +84,7 @@ interface ImageGenPageProps {
 }
 
 export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }: ImageGenPageProps): JSX.Element {
-    const { images, coverSelectedId, counts, isLoading, removeImage, removeImages, migrate, reload } =
-        useImageLibrary(dirPath)
+    const { images, coverSelectedId, counts, isLoading, removeImage, removeImages, reload } = useImageLibrary(dirPath)
     const { settings, isLoaded: isSettingsLoaded, save: saveSettings } = useImageSettings(dirPath)
     const [kind, setKind] = useState<KindFilter>('all')
     const [characterId, setCharacterId] = useState('all')
@@ -120,10 +107,6 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
     const [removingTotal, setRemovingTotal] = useState<number | null>(null)
     /** 批量删除的二次确认：与单张删除不同，一次删多张更需要拦一下 */
     const [isConfirmingBatch, setIsConfirmingBatch] = useState(false)
-    const [isConfirmingMigrate, setIsConfirmingMigrate] = useState(false)
-
-    /** 旧目录里还剩多少张：迁移搬完后归零，提示条随之消失 */
-    const legacyCount = useMemo(() => images.filter((image) => isLegacyImagePath(image.path)).length, [images])
 
     const characterNames = useMemo(
         () => new Map(characters.map((character) => [character.id, character.name])),
@@ -298,15 +281,6 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
         }
     }
 
-    /** 迁移旧目录：只搬文件不改名，搬完刷新列表，旧目录清空后提示条自然消失 */
-    const handleMigrate = async (): Promise<void> => {
-        const result = await migrate()
-        if (result === null) {
-            return
-        }
-        toast.success(`已迁移 ${result.moved} 张${result.skipped > 0 ? `，跳过 ${result.skipped} 张` : ''}`)
-    }
-
     /** 设为作品封面：任意图片都可以，宿主只校验归属与文件存在 */
     const handleSetCover = async (image: PressImageItem): Promise<void> => {
         try {
@@ -437,23 +411,6 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                 </Button>
             </div>
 
-            {legacyCount > 0 ? (
-                <div className="flex items-center gap-2 border-b bg-muted/40 px-4 py-1.5">
-                    <span className="text-muted-foreground text-xs">
-                        有 {legacyCount} 张图仍在旧目录 Cover / Portraits 下
-                    </span>
-                    <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="ml-auto"
-                        onClick={() => setIsConfirmingMigrate(true)}
-                    >
-                        迁移到 Images
-                    </Button>
-                </div>
-            ) : null}
-
             {isSelecting ? (
                 <div className="flex items-center gap-1.5 border-b px-4 py-1.5">
                     <span className="text-muted-foreground text-xs tabular-nums">已选 {selectedPaths.size} 张</span>
@@ -555,6 +512,10 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                             return
                         }
                         onChangeCharacter(characterId, { coverPortraitId: result.image.id })
+                    }}
+                    // 取消后迟到的落盘：只补列表，不认领封面，也不打断用户当前的筛选与选择
+                    onLateGenerated={() => {
+                        void reload({ silent: true })
                     }}
                 />
             ) : (
@@ -727,23 +688,6 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                 onConfirm={() => {
                     setIsConfirmingBatch(false)
                     void handleDeleteSelected()
-                }}
-            />
-
-            <ConfirmDialog
-                open={isConfirmingMigrate}
-                title={`把 ${legacyCount} 张图片迁移到 Images？`}
-                description="只移动文件、不改文件名：作品封面会自动指向新位置，角色封面记录的是图片 id，不受目录影响；目标目录已有同名文件时跳过并保留两份。"
-                confirmLabel="开始迁移"
-                size="sm"
-                onOpenChange={(isOpen) => {
-                    if (!isOpen) {
-                        setIsConfirmingMigrate(false)
-                    }
-                }}
-                onConfirm={() => {
-                    setIsConfirmingMigrate(false)
-                    void handleMigrate()
                 }}
             />
         </div>

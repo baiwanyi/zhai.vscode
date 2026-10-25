@@ -2,7 +2,7 @@
 
 **版本**：1.0
 **日期**：2026-10-25
-**状态**：图库管理、统一出图、作品级参数、封面入口收敛、旧目录迁移、芯片内联、批量删除、角色卡通道对齐、命名冲突统一均已落地
+**状态**：图库管理、统一出图、作品级参数、封面入口收敛、芯片内联、批量删除、角色卡通道对齐、命名冲突统一均已落地
 **宿主**：VSCode 插件 Zhai（宅桌面）
 **存储根**：`{storage.rootPath}/press/{作品名}/`（根目录配置见 `common.md` 第 1 节）
 
@@ -38,7 +38,7 @@
 
 `IMAGE_DIR_NAMES`（`src/modules/imagegen/constants.ts`）是三个目录的白名单：列举、复制、插入、删除、级联清理都按它遍历，因此旧目录里的图仍可正常管理。
 
-旧目录仍有残留时，生图页会在筛选条下方给出一次性迁移入口（`pressAi/migrateImageDirs`）：只搬运文件、不改文件名，目标已存在同名文件时跳过并保留两份，迁移后同步改写作品封面指针的目录前缀。
+旧目录不做迁移：新生成的图片一律落在 `Images/`，`Cover/` 与 `Portraits/` 只作历史文件列举与删除，不提供搬移入口，也不改写已有封面指针。
 
 ### 2.2 图片标识
 
@@ -58,14 +58,15 @@
 
 ### 2.3 侧车元数据
 
-每张新图旁落一份同名 `{id}.json`，字段为 `prompt` / `ratio` / `style` / `characterId` / `enhancedFrom` / `createdAt`，用于复现参数与后续搜索。写入失败只记 warn，不影响出图。
+每张新图旁落一份同名 `{id}.json`，字段为 `prompt` / `ratio` / `style` / `characterId` / `enhancedFrom` / `createdAt`，用途仅限在详情面板复现该图的出图参数。写入失败只记 warn，不影响出图。
+
+侧车不参与任何检索：图库列举只扫目录拿到文件名与时间，不读 JSON；页面搜索也只比对角色名与文件名（见 5.1），**不支持按提示词、画风等侧车字段搜索**。若将来要做按提示词找图，需新增读取侧车的检索协议，不能假设现有链路已具备。
 
 侧车是可选附属物，读写两侧都不假设它存在：
 
 - 生成：生图页与角色卡通道都写同名侧车；`ratio` 记录实际出图规格——生图页写比例（`3:4`），角色卡写像素尺寸（`768x1024`），详情面板按值形态显示「比例」或「尺寸」。
 - 读取：`pressAi/getImageDetail` 在侧车缺失或 JSON 不合法时，各字段返回 `null`，详情面板隐藏参数区，旧图仍可正常浏览。
 - 删除：图库删图、角色卡删图、封面画廊删图都会顺带删同名侧车（不进回收站）；侧车本不存在时静默跳过。
-- 迁移：`pressAi/migrateImageDirs` 搬图时同步搬走侧车，目标已有同名侧车则不覆盖，避免迁移后图片丢参数、旧目录留孤儿 JSON。
 
 ---
 
@@ -81,7 +82,6 @@
 | `pressAi/getImageDetail` | `dirPath`、`path` | `ImageDetailResult` | 读同名侧车；侧车缺失或字段不合法时各字段为 `null`，不抛错 |
 | `pressAi/deleteImage` | `dirPath`、`path` | `ImageDeleteResult` | 进回收站；一次算好作品封面回退值与角色封面回退值 |
 | `pressAi/deleteImages` | `dirPath`、`paths` | `ImageBatchDeleteResult` | 整单校验路径（任一越权即拒绝，最多 500 张）；逐张删除并清侧车，最后只重扫一次目录，回传新图库与逐张回执 |
-| `pressAi/migrateImageDirs` | `dirPath` | `ImageMigrateResult` | 把 `Cover` / `Portraits` 的图片搬进 `Images`，只搬不改名，同名跳过；搬空后删除旧目录 |
 | `pressAi/setImageCover` | `dirPath`、`path` | `ImageSetCoverResult` | 校验归属、文件存在与标准命名 |
 | `pressAi/copyPortrait` | `path` | `PortraitCopyResult` | 宿主写系统剪贴板（webview 受 CSP 限制） |
 | `pressAi/insertPortrait` | `path` | `PortraitInsertResult` | 插入光标处；`no-editor` 视为静默忽略 |
@@ -119,11 +119,11 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `imageLibraryService.ts` | 三目录合并列举、删除（带回退值计算，侧车同步清理）、设封面、旧目录迁移、详情读侧车 |
+| `imageLibraryService.ts` | 三目录合并列举、删除（带回退值计算，侧车同步清理）、设封面、详情读侧车 |
 | `imageGenerateService.ts` | 统一出图：参数校验、配额、单任务锁、落盘、侧车、用量记账 |
 | `imageDirScan.ts` | 图片目录扫描唯一入口：目录缺失视为空、只收普通文件、扩展名口径（png/jpe?g/webp/gif） |
 | `imageNaming.ts` | 图片命名唯一入口：三类标识格式、同秒冲突按秒顺延、永不覆盖 |
-| `imageSidecar.ts` | 侧车路径推导、随图删除/迁移与写入，尽力而为、不抛错 |
+| `imageSidecar.ts` | 侧车路径推导、随图删除与写入，尽力而为、不抛错 |
 | `promptCompose.ts` | 提示词拼装纯函数：正文 → 作品补充 → 负向约束 → 画风描述 |
 | `imageSettingsService.ts` | 作品级参数读写（`.zhai/image.json`），只存与默认不同的键 |
 | `coverService.ts` | 设定页封面画廊：候选合并 `Cover/cover-*` 与 `Images/photo-*`，负责合成保存、选择、删除，不调用图像通道 |
@@ -147,11 +147,11 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `ImageGenPage.tsx` | 状态编排：筛选、计数、分批渲染、详情面板、单张/批量删除、设封面、复制、插入、旧目录迁移 |
+| `ImageGenPage.tsx` | 状态编排：筛选、计数、分批渲染、详情面板、单张/批量删除、设封面、复制、插入 |
 | `ImageGenGrid.tsx` | 等宽卡片网格：3:4 裁切、封面徽标、悬停复制/插入/删除、多选勾选、点击打开详情 |
 | `ImageComposer.tsx` | 输入卡片：命令动作与画风芯片内联、比例、增强提示词、封面模式、发送 / 取消生成 |
 | `ImagePromptPopover.tsx` | 提示词词库（人物 / 场景 / 光影 / 镜头），点击插入光标 |
-| `useImageLibrary.ts` | 列举、单张删除、批量删除（含最新列表回传）、旧目录迁移 |
+| `useImageLibrary.ts` | 列举（含不切加载态的静默刷新）、单张删除、批量删除（含最新列表回传） |
 | `useImageDetail.ts` | 详情面板按路径读取侧车；迟到回包按来源路径**丢弃**（不是覆盖后再过滤），切图不会把新图详情清空 |
 | `useImageSettings.ts` | 作品级参数读写，`isLoaded` 之前不得据此保存 |
 | `imageStyle.ts` | 画风取值与中文标签，composer 芯片与详情面板共用 |
@@ -162,6 +162,7 @@
 ### 5.1 页面交互约束
 
 - 筛选全部在内存中完成，不重复请求宿主；计数里「全部」取列表长度，「作品封面」由 `coverSelectedId` 推导，其余取宿主 `counts`。
+- 关键词范围：输入框占位即「搜索角色或文件名」——只对角色名与图片标识（文件名主干）做大小写不敏感的子串匹配，不读侧车、不搜提示词与画风；未归属角色的图片只匹配文件名。
 - 详情面板用 `@components/ui/sheet`，点缩略图打开；设封面后重新列举，面板停留在当前图片；删除当前图片时面板自动关闭。
 - 多选模式：点卡片切换勾选而不打开详情，悬停操作隐藏；批量删除需二次确认，走一次 `pressAi/deleteImages`，宿主删完只重扫一次并回传新图库。
 - 分批渲染：网格一次挂载 60 张（`GRID_PAGE_SIZE`），筛选条件变化自动回到首批，底部「加载更多」按批追加；全选只覆盖已渲染的图片，未加载的图不会被批量删除带走。
@@ -170,7 +171,7 @@
 - 页面切换即重挂载：`PressSectionRouter` 按分区条件渲染（离开即卸载），生图页与设定页封面组都靠挂载 effect 重新读盘，因此跨页面改动无需额外刷新信号。
 - 详情参数：按字段存在性分段渲染——无侧车时显示「没有出图参数」空态，提示词为空则隐藏复制按钮，`enhancedFrom` 存在时以折叠区展示增强前原文。
 - 参数读取完成前不挂载 composer，用等高骨架占位，避免默认值覆盖用户已保存的比例与画风。
-- 生成中发送按钮切换为「取消生成」，取消后立即复位界面，不等宿主回包；迟到的回包按请求代号丢弃。
+- 生成中发送按钮切换为「取消生成」，取消后立即复位界面，不等宿主回包；迟到的回包不写回界面（不认领封面、不清空输入），但会静默刷新列表，把宿主已经落盘的图补上——用户不必切页才发现新图。
 
 ### 5.2 超时口径
 
@@ -199,7 +200,7 @@
 
 | 项 | 现状 |
 | --- | --- |
-| 旧目录迁移 | 已提供一次性入口（`pressAi/migrateImageDirs`）：只搬不改名，同名跳过；角色封面存 id 不受影响，作品封面指针同步改写 |
+| 旧目录文件 | 不迁移：`Cover/` 与 `Portraits/` 的历史图仍可列举、删除、设封面，新图只写 `Images/` |
 | 提示词芯片 | 已内联：`RichChipInput` 与 aichat 共用 `richText` 的 DOM 工具，芯片可退格删除 |
 | 角色快照 | 已注入姓名、性别年龄、身份与外貌；更细的字段（体型、背景）仍留在人物卡内 |
 | 网格能力 | 已支持多选批量删除与悬停复制/插入/删除 |
@@ -207,7 +208,6 @@
 | 图片扩展名口径 | 图库、角色卡、封面画廊统一认 `png` / `jpe?g` / `webp` / `gif`，由 `imageDirScan.ts` 单点维护 |
 | 图库规模 | `listImageLibrary` 全量返回，前端按 60 张一批挂载（无虚拟滚动）；封面画廊在宿主侧截断到 60 张并回传 `total` |
 | 详情降级 | 读取侧车期间显示骨架占位；无侧车（旧图或手工图）时显示空态说明；`enhancedFrom` 以折叠区展示 |
-| 旧目录清理 | 迁移后若 `Cover` / `Portraits` 已搬空且无其它文件，目录一并删除；有残留文件时保留 |
 
 ---
 
@@ -233,5 +233,5 @@
 
 - `pnpm exec tsc --noEmit`
 - `pnpm exec eslint src/modules/imagegen src/webview/workflow/imagegen`
-- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryMigrate.test.ts tests/imageLibraryService.test.ts tests/coverCandidates.test.ts tests/coverService.test.ts tests/imageSettingsService.test.ts tests/imageGenerateService.test.ts tests/imageNaming.test.ts tests/useImageLibrary.test.tsx tests/useImageDetail.test.tsx`
-- 手测清单：列举三目录、按类别/角色/关键词筛选与「清空筛选」、设为封面、删除当前封面后的回退、详情面板复制与插入（含无侧车空态与骨架过渡）、生成中取消、切换作品后参数是否沿用、多选批量删除（含进度文案与角色封面回退）、旧目录迁移（含同名跳过与搬空后目录删除）、芯片内联输入与退格删除、键盘 Tab 聚焦卡片后回车打开详情。
+- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryService.test.ts tests/coverCandidates.test.ts tests/coverService.test.ts tests/imageSettingsService.test.ts tests/imageGenerateService.test.ts tests/imageNaming.test.ts tests/useImageLibrary.test.tsx tests/useImageDetail.test.tsx tests/components/ImageGenGrid.test.tsx tests/components/ImageComposer.test.tsx tests/components/ImageGenPage.test.tsx`
+- 手测清单：列举三目录、按类别/角色/关键词筛选与「清空筛选」、设为封面、删除当前封面后的回退、详情面板复制与插入（含无侧车空态与骨架过渡）、生成中取消（含取消后迟到出图是否自动补进列表）、切换作品后参数是否沿用、多选批量删除（含进度文案与角色封面回退）、芯片内联输入与退格删除、键盘 Tab 聚焦卡片后回车打开详情。

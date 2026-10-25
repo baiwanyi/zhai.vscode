@@ -5,13 +5,14 @@
  * 关键约束：磁盘是唯一事实来源——任何写操作后重新列举，不做乐观更新；
  * 批量删除走一次 pressAi/deleteImages，宿主删除后只重扫一次并回传新图库，前端直接采用，
  * 不再逐张提交导致 N 次全量扫描；单张失败由宿主标记，这里汇总提示，不中断整批。
+ * 刷新分两种：默认刷新会置 isLoading 让列表回到「正在读取」，静默刷新只换数据、不动加载态，
+ * 供迟到落盘等后台补图场景使用，避免用户眼前的列表闪一下骨架。
  */
 import { useCallback, useEffect, useState } from 'react'
 import type {
     ImageBatchDeleteResult,
     ImageDeleteResult,
     ImageLibraryResult,
-    ImageMigrateResult,
     PressImageItem,
     PressImageKind,
 } from '@shared/types/imagegen'
@@ -37,15 +38,19 @@ export interface ImageBatchRemoval {
     images: PressImageItem[]
 }
 
+/** 刷新选项：silent 为 true 时不切换 isLoading，用于后台补图 */
+interface ReloadOptions {
+    silent?: boolean
+}
+
 interface UseImageLibraryResult {
     images: PressImageItem[]
     coverSelectedId: string | null
     counts: Record<PressImageKind, number>
     isLoading: boolean
-    reload: () => Promise<void>
+    reload: (options?: ReloadOptions) => Promise<void>
     removeImage: (image: PressImageItem) => Promise<ImageDeleteResult | null>
     removeImages: (images: PressImageItem[]) => Promise<ImageBatchRemoval>
-    migrate: () => Promise<ImageMigrateResult | null>
 }
 
 export function useImageLibrary(dirPath: string): UseImageLibraryResult {
@@ -54,17 +59,25 @@ export function useImageLibrary(dirPath: string): UseImageLibraryResult {
     /** 当前列表快照：失败分支回退时直接复用，避免把 state 读进 useCallback 依赖造成额外重建 */
     const currentImages = library.images
 
-    const reload = useCallback(async (): Promise<void> => {
-        setIsLoading(true)
-        try {
-            const result = await request<ImageLibraryResult>('pressAi/listImageLibrary', { dirPath })
-            setLibrary(result)
-        } catch (cause) {
-            toastError(cause)
-        } finally {
-            setIsLoading(false)
-        }
-    }, [dirPath])
+    const reload = useCallback(
+        async (options?: ReloadOptions): Promise<void> => {
+            const isSilent = options?.silent === true
+            if (!isSilent) {
+                setIsLoading(true)
+            }
+            try {
+                const result = await request<ImageLibraryResult>('pressAi/listImageLibrary', { dirPath })
+                setLibrary(result)
+            } catch (cause) {
+                toastError(cause)
+            } finally {
+                if (!isSilent) {
+                    setIsLoading(false)
+                }
+            }
+        },
+        [dirPath],
+    )
 
     useEffect(() => {
         void reload()
@@ -119,17 +132,6 @@ export function useImageLibrary(dirPath: string): UseImageLibraryResult {
         [dirPath, currentImages],
     )
 
-    const migrate = useCallback(async (): Promise<ImageMigrateResult | null> => {
-        try {
-            const result = await request<ImageMigrateResult>('pressAi/migrateImageDirs', { dirPath })
-            await reload()
-            return result
-        } catch (cause) {
-            toastError(cause)
-            return null
-        }
-    }, [dirPath, reload])
-
     return {
         images: library.images,
         coverSelectedId: library.coverSelectedId,
@@ -138,6 +140,5 @@ export function useImageLibrary(dirPath: string): UseImageLibraryResult {
         reload,
         removeImage,
         removeImages,
-        migrate,
     }
 }

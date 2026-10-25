@@ -33,7 +33,7 @@ export async function listImageFiles(projectSegments: string[], dirNames: readon
         try {
             entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
         } catch {
-            // 该目录尚未创建，或旧目录迁移后已清空
+            // 该目录尚未创建：旧目录只读兼容，缺失属正常情况
             continue
         }
         for (const [name, type] of entries) {

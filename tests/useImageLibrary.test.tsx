@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * useImageLibrary 用例：覆盖挂载列举、批量删除只发一次请求、部分失败逐张标记与请求级失败保留列表。
+ * useImageLibrary 用例：覆盖挂载列举、批量删除只发一次请求、部分失败逐张标记、请求级失败保留列表与静默刷新。
  * 复用约定：渲染用 @testing-library/react 的 renderHook，宿主通信以 bridge.request 替身接管；
  * jsdom 环境由首行指令声明，其余用例仍运行在 node 环境。
  * 关键约束：断言的是「请求次数与回包去向」——批量删除后状态必须直接采用回传的 library，
- * 不允许再发一次列举请求，这是协议替换后最容易回退的点。
+ * 不允许再发一次列举请求；silent 刷新只换数据不切加载态，否则迟到落盘会让用户眼前列表闪一下。
  */
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -107,5 +107,28 @@ describe('useImageLibrary', () => {
         expect(batch).toEqual({ removals: [], images: [IMAGE] })
         expect(result.current.images).toHaveLength(1)
         expect(toastErrorMock).toHaveBeenCalledTimes(1)
+    })
+
+    it('静默刷新只换数据，不切回加载态', async () => {
+        requestMock.mockResolvedValueOnce(LIBRARY)
+        const { result } = renderHook(() => useImageLibrary(DIR_PATH))
+        await waitFor(() => expect(result.current.isLoading).toBe(false))
+        requestMock.mockClear()
+        requestMock.mockResolvedValueOnce(EMPTY_LIBRARY)
+
+        let pending: Promise<void> = Promise.resolve()
+        act(() => {
+            pending = result.current.reload({ silent: true })
+        })
+        // 请求未回包期间列表照常可读，不出现「正在读取图片」
+        expect(result.current.isLoading).toBe(false)
+        await act(async () => {
+            await pending
+        })
+
+        expect(requestMock).toHaveBeenCalledTimes(1)
+        expect(requestMock).toHaveBeenCalledWith('pressAi/listImageLibrary', { dirPath: DIR_PATH })
+        expect(result.current.images).toHaveLength(0)
+        expect(result.current.isLoading).toBe(false)
     })
 })

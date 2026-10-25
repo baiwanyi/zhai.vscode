@@ -117,8 +117,6 @@ export class PressRoutes {
                 return this.imageLibrary.list(payload, toWebviewUri)
             case 'pressAi/getImageDetail':
                 return this.imageLibrary.readDetail(payload)
-            case 'pressAi/migrateImageDirs':
-                return this.imageLibrary.migrate(payload)
             case 'pressAi/generateImage':
                 return this.imageGenerate.generate(payload, toWebviewUri)
             case 'pressAi/generateImage/abort':

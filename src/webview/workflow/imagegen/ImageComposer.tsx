@@ -6,7 +6,7 @@
  * 画风由宿主按 style 注入（与 portraitPrompt 的 STYLE_HINTS 同源），封面模式忽略角色段且 kind 固定 cover；
  * 封面画风与普通出图分开存：切换模式时芯片换用对应一侧，改动按当前模式写回各自配置；
  * 比例与画风改动只经 onSettingsChange 上报；出图前端兜底 15 分钟，超时或失败即 abort 释放并发锁；
- * 生成中发送按钮切换为「取消生成」，取消后立即复位，不等宿主回包。
+ * 生成中发送按钮切换为「取消生成」，取消后立即复位；取消后迟到的落盘不改写界面，只经 onLateGenerated 让页面静默补图。
  */
 import { Send, Sparkles, UserRound, X } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
@@ -132,6 +132,8 @@ interface ImageComposerProps {
     }) => void
     /** 生成成功后的回调：由页面负责插入列表并刷新 */
     onGenerated: (result: ImageGenerateResult) => void
+    /** 迟到落盘的回调：请求已取消或被取代但宿主仍出了图，页面只静默刷新列表，不认领封面等副作用 */
+    onLateGenerated: () => void
 }
 
 export function ImageComposer({
@@ -144,6 +146,7 @@ export function ImageComposer({
     coverStyle,
     onSettingsChange,
     onGenerated,
+    onLateGenerated,
 }: ImageComposerProps): JSX.Element {
     const [text, setText] = useState('')
     /** 封面模式：生成结果落统一图库并自动设为作品封面，与角色图互斥 */
@@ -315,8 +318,10 @@ export function ImageComposer({
                 },
                 GENERATE_TIMEOUT_MS,
             )
-            // 已取消或被新请求取代：结果照常落盘，由下次列表刷新带出，这里不再写回界面
+            // 已取消或被新请求取代：结果照常落盘，但不写回界面（不认领封面、不清空输入），
+            // 只让页面静默刷新列表，免去用户切页才能看到这张图
             if (generationRef.current !== token) {
+                onLateGenerated()
                 return
             }
             onGenerated(result)
