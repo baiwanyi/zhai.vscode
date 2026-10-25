@@ -1,21 +1,23 @@
 /**
  * 写作管理 AI 服务：校验密钥与每日配额后执行一次性生成，当前承载人物外貌。
  * 复用约定：模型通道经注入的 AI 通道（../ai/provider）驱动 ./ai/aiAppearanceGenerator，提示词与清洗复用 ./ai/appearancePrompt；
- * 配额经 ./db/quotaRepository 落在 press.db 的 meta 表，与角色设定图各用一组键。
+ * 配额经 ../common/db/quotaRepository 落在 press.db 的 meta 表，与角色设定图各用一组键；
+ * 入参收窄复用 ../common/readInput，不在此重复实现截断与去重。
  * 关键约束：入参一律先经 normalizeAppearanceRequest 收窄（长度、条数、类型），异常载荷不进入模型调用；
  * 同一时刻只允许一个生成请求，取消由 pressAi/aiAppearance/abort 触发；限额小于等于 0 视为不限制。
  */
 import { generateAppearanceWithAi } from './ai/aiAppearanceGenerator'
 import { buildAppearanceMessages, sanitizeAppearance } from './ai/appearancePrompt'
-import { consumeToday, readUsedToday } from './db/quotaRepository'
-import type { QuotaKeys } from './db/quotaRepository'
 import type { CharacterAppearanceRequest, CharacterAppearanceResult } from '../../shared/types/press'
 import type { AiProvider } from '../ai/provider'
 import type { UsageRecorder } from '../ai/usageRecorder'
+import type { QuotaKeys } from '../common/db/quotaRepository'
 import type Database from 'better-sqlite3'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { summarizeMessages } from '../ai/usageRecorder'
 import { getZhaiConfig } from '../common/config'
+import { consumeToday, readUsedToday } from '../common/db/quotaRepository'
+import { readText, readTextList } from '../common/readInput'
 
 /** 外貌生成的配额键（press.db 的 meta 表） */
 const QUOTA_KEYS: QuotaKeys = { dateKey: 'press_ai_date', countKey: 'press_ai_count' }
@@ -145,31 +147,4 @@ function normalizeAppearanceRequest(payload: unknown): CharacterAppearanceReques
         throw new Error('缺少人物姓名，无法生成外貌')
     }
     return request
-}
-
-/** 读取字符串字段：非字符串一律回落空串 */
-export function readText(value: unknown, maxLength: number): string {
-    return typeof value === 'string' ? value.trim().slice(0, maxLength) : ''
-}
-
-/** 读取字符串数组：过滤非字符串、去重并按上限截断 */
-export function readTextList(value: unknown, maxItems: number, maxLength: number): string[] {
-    if (!Array.isArray(value)) {
-        return []
-    }
-    const items: string[] = []
-    for (const item of value) {
-        if (typeof item !== 'string') {
-            continue
-        }
-        const text = item.trim().slice(0, maxLength)
-        if (text.length === 0 || items.includes(text)) {
-            continue
-        }
-        items.push(text)
-        if (items.length >= maxItems) {
-            break
-        }
-    }
-    return items
 }

@@ -9,7 +9,6 @@
  */
 
 import * as vscode from 'vscode'
-import { consumeToday, readUsedToday } from './db/quotaRepository'
 import {
     MATERIAL_FILE_NAMES,
     analyzeProject,
@@ -26,12 +25,13 @@ import type {
 } from '../../shared/types/press'
 import type { AiChatMessage, AiProvider, AiUsage, AiUsageMeta } from '../ai/provider'
 import type { UsageRecorder } from '../ai/usageRecorder'
-import type { QuotaKeys } from './db/quotaRepository'
+import type { QuotaKeys } from '../common/db/quotaRepository'
 import type Database from 'better-sqlite3'
 import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR } from '../../shared/types/press'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { summarizeMessages } from '../ai/usageRecorder'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
+import { consumeToday, readUsedToday } from '../common/db/quotaRepository'
 import { logger } from '../common/logger'
 import { buildStorageUri } from '../common/storagePath'
 

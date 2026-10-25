@@ -206,7 +206,7 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 | 文生图模型 | 由 CLI 决定，插件不下发 `--text-to-image-model`：清单来自服务端产品配置（SDK 只返回语言模型，无法枚举），故不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，CLI 会把选择存进自身 settings。驱动工具调用的对话模型复用 AI 面板模型菜单的选择（存 `globalState` 的 `ai.codebuddyModel`，可从账号可用列表选择或手动填写自定义模型 id） |
 | 频率护栏 | `zhai.image.dailyLimit` 按次计数 |
 
-> **落地状态**：`ImageProvider` 契约与 `ImageProviderRouter` 已实现（`src/modules/press/ai/imageProvider.ts`），唯一实现走 SDK 的 `ImageGen`（`codebuddyImageProvider.ts`）。能力探测读 `system.init` 的 `tools` 是否含 `ImageGen`，结果缓存 10 分钟，出图失败时清空缓存重探。
+> **落地状态**：`ImageProvider` 契约与 `ImageProviderRouter` 已实现（`src/modules/imagegen/ai/imageProvider.ts`），唯一实现走 SDK 的 `ImageGen`（`codebuddyImageProvider.ts`）。能力探测读 `system.init` 的 `tools` 是否含 `ImageGen`，结果缓存 10 分钟，出图失败时清空缓存重探。
 >
 > **为什么生成失败不自动重试**：出图单次耗时数分钟且按张计费，静默重试会连扣两次、产出两张图，必须由用户确认。
 >

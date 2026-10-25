@@ -46,7 +46,7 @@ import type {
     RenamedPressVolume,
 } from '../../shared/types/press'
 import type { OpenWorkflowResult } from '../../shared/types/workflow'
-import type { PressCoverStore } from '../press/db/coverRepository'
+import type { PressCoverStore } from '../imagegen/db/coverRepository'
 import type Database from 'better-sqlite3'
 import { isRequestMessage } from '../../shared/types/messages'
 import { isOpenNoteRequest, isPinNotesRequest } from '../../shared/types/note'

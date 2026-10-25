@@ -6,12 +6,11 @@
  */
 import type Database from 'better-sqlite3'
 import { isPressCoverId } from '../../../shared/types/press'
-import { PRESS_MODULE_DIR } from '../projectFactory'
+import { PRESS_MODULE_DIR } from '../../press/projectFactory'
+import { COVER_DIR } from '../constants'
 
 /** 键前缀：后接作品相对路径 press/{作品名} */
 const KEY_PREFIX = 'cover:'
-/** 封面目录名：与 coverService 的落盘目录保持一致 */
-const COVER_DIR = 'Cover'
 /** 封面相对路径的段数：press/{作品名}/Cover/{文件名} */
 const COVER_SEGMENT_COUNT = 4
 
@@ -34,8 +33,7 @@ export class PressCoverStore {
     /** 读取作品选中的封面相对路径：未设置或记录不合规时返回 null */
     public read(dirPath: string): string | null {
         const row = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(`${KEY_PREFIX}${dirPath}`) as
-            | { value: string }
-            | undefined
+            { value: string } | undefined
         if (row === undefined || !isProjectCoverPath(dirPath, row.value)) {
             return null
         }

@@ -40,12 +40,12 @@ import type {
 } from '../../shared/types/proofread'
 import type { AiProvider } from '../ai/provider'
 import type { UsageRecorder } from '../ai/usageRecorder'
+import type { QuotaKeys } from '../common/db/quotaRepository'
 import type { SecretsService } from '../common/secrets'
-import type { QuotaKeys } from '../press/db/quotaRepository'
 import type Database from 'better-sqlite3'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { getZhaiConfig } from '../common/config'
-import { consumeToday, readUsedToday } from '../press/db/quotaRepository'
+import { consumeToday, readUsedToday } from '../common/db/quotaRepository'
 
 /** 写回前留底回调：内容为文档全文，交由快照服务保存 */
 export type BeforeWriteHandler = (uri: vscode.Uri, content: string) => Promise<void>

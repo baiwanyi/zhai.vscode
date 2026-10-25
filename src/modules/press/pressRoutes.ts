@@ -13,9 +13,7 @@ import { hasProjectFiles, listPressProjects } from './projectRepository'
 import { openProjectByDir } from './projectService'
 import { readProjectWorkspace } from './projectWorkspace'
 import { applyProjectWorkspace } from './workspaceWriter'
-import type { PressCoverService } from './coverService'
 import type { ImportSemanticService } from './importSemanticService'
-import type { PortraitService } from './portraitService'
 import type { PressAiService } from './pressAiService'
 import type { PressSnapshotService } from './snapshot/snapshotService'
 import type {
@@ -37,6 +35,8 @@ import type {
     PressWorkspaceResult,
 } from '../../shared/types/press'
 import type { WorkflowRouter } from '../ai/workflowRouter'
+import type { PressCoverService } from '../imagegen/coverService'
+import type { PortraitService } from '../imagegen/portraitService'
 import type Database from 'better-sqlite3'
 import type * as vscode from 'vscode'
 import {
@@ -157,8 +157,7 @@ export class PressRoutes {
             throw new Error(`作品不在索引中，无法回写：${payload.dirPath}`)
         }
         const result = await applyProjectWorkspace(payload, {
-            onWritten: (outcome) =>
-                this.snapshot.recordWorkspaceWrite(outcome.dirPath, outcome.files, outcome.trigger),
+            onWritten: (outcome) => this.snapshot.recordWorkspaceWrite(outcome.dirPath, outcome.files, outcome.trigger),
         })
         for (const characterId of payload.deletedCharacterIds ?? []) {
             try {
@@ -362,11 +361,7 @@ export class PressRoutes {
             throw new Error(`作品不在索引中，无法删除章节快照：${payload.dirPath}`)
         }
         return {
-            deleted: await this.snapshot.removeChapterVersion(
-                payload.dirPath,
-                payload.chapterPath,
-                payload.snapshotId,
-            ),
+            deleted: await this.snapshot.removeChapterVersion(payload.dirPath, payload.chapterPath, payload.snapshotId),
         }
     }
 }

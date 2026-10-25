@@ -5,10 +5,10 @@
  * 关键约束：「每次都不一样」是硬约束，撞车分支必须被断言覆盖，不能只依赖随机性。
  */
 import { describe, expect, it } from 'vitest'
-import type { PortraitVariation } from '../src/modules/press/ai/portraitVariation'
+import type { PortraitVariation } from '../src/modules/imagegen/ai/portraitVariation'
 import type { PortraitGenerateRequest } from '../src/shared/types/press'
-import { buildSceneMessages } from '../src/modules/press/ai/portraitScenePrompt'
-import { formatVariation, pickVariation } from '../src/modules/press/ai/portraitVariation'
+import { buildSceneMessages } from '../src/modules/imagegen/ai/portraitScenePrompt'
+import { formatVariation, pickVariation } from '../src/modules/imagegen/ai/portraitVariation'
 
 /** 固定随机源：始终取每张候选表的第一项，便于断言具体组合 */
 const FIRST_ITEMS = (): number => 0
@@ -69,9 +69,7 @@ describe('pickVariation', () => {
 
 describe('formatVariation', () => {
     it('四项按 姿态 → 动作 → 地点 → 光线 拼成一句中文', () => {
-        expect(formatVariation(FIRST_VARIATION)).toBe(
-            '侧身回望镜头，临窗翻书，场景是书房窗前，清晨薄雾里的冷光',
-        )
+        expect(formatVariation(FIRST_VARIATION)).toBe('侧身回望镜头，临窗翻书，场景是书房窗前，清晨薄雾里的冷光')
     })
 })
 

@@ -3,8 +3,8 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { PortraitGenerateRequest } from '../src/shared/types/press'
-import { buildPortraitPrompt } from '../src/modules/press/ai/portraitPrompt'
-import { sanitizeScene } from '../src/modules/press/ai/portraitScenePrompt'
+import { buildPortraitPrompt } from '../src/modules/imagegen/ai/portraitPrompt'
+import { sanitizeScene } from '../src/modules/imagegen/ai/portraitScenePrompt'
 
 function createRequest(overrides: Partial<PortraitGenerateRequest> = {}): PortraitGenerateRequest {
     return {

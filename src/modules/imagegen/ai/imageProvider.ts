@@ -69,8 +69,8 @@ export class ImageProviderRouter {
         }
     }
 
-    /** 生成失败后调用：让下次请求重新探测，避免一次性故障长期粘住 */
-    public invalidate(): void {
+    /** 生成失败后重探：仅路由内部调用，避免外部误清缓存导致重复拉起探测子进程 */
+    private invalidate(): void {
         this.availability = null
     }
 

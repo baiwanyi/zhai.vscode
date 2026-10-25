@@ -1,8 +1,8 @@
 /**
  * 角色设定图服务：先用文本模型写画面描述，再经图像通道路由出图，按人物建目录落盘并返回 webview 可用 URL。
  * 复用约定：文本描述经 ./ai/portraitSceneGenerator（通道由注入的 AiProvider 提供），出图经 ./ai/imageProvider 的入口
- * （唯一实现为 CodeBuddy 的 ImageGen），提示词复用 ./ai/portraitPrompt，配额复用 ./db/quotaRepository，
- * 路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
+ * （唯一实现为 CodeBuddy 的 ImageGen），提示词复用 ./ai/portraitPrompt，目录名与配额键取自 ./constants，
+ * 配额读写经 ../common/db/quotaRepository，路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
  * 关键约束：每次出图都重新挑一组画面变化（动作/地点/光线/姿态），文本通道失败时用同一组变化拼模板，
  * 保证同一角色反复出图也不撞画面；描述不计配额，限额只针对图片张数；
  * 图片平铺在 press/{作品名}/Portraits/ 下，文件名为 portrait-{8位角色标识}-{年月日时分秒}.扩展名，
@@ -18,13 +18,9 @@ import { buildPortraitPrompt } from './ai/portraitPrompt'
 import { generateSceneWithAi } from './ai/portraitSceneGenerator'
 import { buildSceneMessages, sanitizeScene } from './ai/portraitScenePrompt'
 import { formatVariation, pickVariation } from './ai/portraitVariation'
-import { consumeToday, readUsedToday } from './db/quotaRepository'
-import { readText, readTextList } from './pressAiService'
-import { PRESS_MODULE_DIR } from './projectFactory'
-import { readProjectSegments } from './projectService'
+import { IMAGE_QUOTA_KEYS, PORTRAIT_DIR } from './constants'
 import type { ImageProviderRouter } from './ai/imageProvider'
 import type { PortraitVariation } from './ai/portraitVariation'
-import type { QuotaKeys } from './db/quotaRepository'
 import type {
     CharacterPortrait,
     PortraitCopyResult,
@@ -49,17 +45,17 @@ import {
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { summarizeMessages } from '../ai/usageRecorder'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
+import { consumeToday, readUsedToday } from '../common/db/quotaRepository'
 import { logger } from '../common/logger'
+import { readText, readTextList } from '../common/readInput'
 import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
+import { PRESS_MODULE_DIR } from '../press/projectFactory'
+import { readProjectSegments } from '../press/projectService'
 
-/** 角色设定图目录名：位于作品目录之下（press/{作品名}/Portraits），与章节文档区分 */
-const PORTRAIT_DIR = 'Portraits'
 /** 角色卡相对路径的段数：press/{作品名}/Portraits/{文件名} */
 const PORTRAIT_SEGMENT_COUNT = 4
 /** 设定图文件名前缀：后接角色标识与时间戳，扁平目录靠它识别归属 */
 const PORTRAIT_FILE_PREFIX = 'portrait'
-/** 角色设定图的配额键（press.db 的 meta 表） */
-const QUOTA_KEYS: QuotaKeys = { dateKey: 'press_image_date', countKey: 'press_image_count' }
 /** 目录扫描只认图片文件，其余（缩略图缓存、说明文件等）一律忽略 */
 const PORTRAIT_FILE_PATTERN = /\.(png|jpe?g|webp|gif)$/i
 /** 短字段长度上限 */
@@ -151,7 +147,7 @@ export class PortraitService {
             await vscode.workspace.fs.createDirectory(buildStorageUri(root, segments.slice(0, -1)))
             const target = buildStorageUri(root, segments)
             await vscode.workspace.fs.writeFile(target, artifact.bytes)
-            consumeToday(this.db, QUOTA_KEYS)
+            consumeToday(this.db, IMAGE_QUOTA_KEYS)
             logger.info(`角色卡生成完成：耗时 ${Date.now() - startedAt}ms，${artifact.bytes.byteLength} 字节`)
             return {
                 portrait: {
@@ -439,7 +435,7 @@ export class PortraitService {
         if (limit <= 0) {
             return
         }
-        const used = readUsedToday(this.db, QUOTA_KEYS)
+        const used = readUsedToday(this.db, IMAGE_QUOTA_KEYS)
         if (used >= limit) {
             throw new Error(`今日角色卡生成次数已用完（${used} / ${limit}），可明日再试或调高 zhai.image.dailyLimit`)
         }

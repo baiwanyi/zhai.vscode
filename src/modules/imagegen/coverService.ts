@@ -1,19 +1,17 @@
 /**
  * 作品封面服务：按作品设定拼封面提示词，经图像通道路由出图，落到 press/{作品名}/Cover 并返回 webview 可用 URL。
- * 复用约定：提示词复用 ./ai/coverPrompt，出图复用 ./ai/imageProvider 的路由入口，配额与角色卡共用同一图像额度，
- * 作品目录归一复用 ./portraitService 的校验，路径一律经 common/storagePath，URL 转换由调用方注入。
+ * 复用约定：提示词复用 ./ai/coverPrompt，出图复用 ./ai/imageProvider 的路由入口，目录名与配额键取自 ./constants，
+ * 配额读写经 ../common/db/quotaRepository，作品目录归一复用 ../press/projectService 的片段校验，
+ * 路径一律经 common/storagePath，URL 转换由调用方注入。
  * 关键约束：同一时刻只允许一个生成请求，避免连点重复扣费；封面平铺在 Cover 目录下，
  * 文件名为 cover-{年月日时分秒}.扩展名；列举以磁盘为准，删除只接受 press/{作品名}/Cover 下的白名单路径。
  */
 import * as vscode from 'vscode'
 import { buildCoverPrompt } from './ai/coverPrompt'
+import { COVER_DIR, IMAGE_QUOTA_KEYS } from './constants'
 import { PressCoverStore, isProjectCoverPath } from './db/coverRepository'
-import { consumeToday, readUsedToday } from './db/quotaRepository'
 import { readProjectDirPath } from './portraitService'
-import { readText, readTextList } from './pressAiService'
-import { readProjectSegments } from './projectService'
 import type { ImageProviderRouter } from './ai/imageProvider'
-import type { QuotaKeys } from './db/quotaRepository'
 import type {
     CoverDeleteResult,
     CoverGenerateRequest,
@@ -28,15 +26,14 @@ import type Database from 'better-sqlite3'
 import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCoverId } from '../../shared/types/press'
 import { getSelectedCodebuddyModel } from '../ai/providers/codebuddyModels'
 import { getZhaiConfig, resolveStorageRoot } from '../common/config'
+import { consumeToday, readUsedToday } from '../common/db/quotaRepository'
 import { logger } from '../common/logger'
+import { readText, readTextList } from '../common/readInput'
 import { buildStorageUri, deleteResource, toSafeSegments } from '../common/storagePath'
+import { readProjectSegments } from '../press/projectService'
 
-/** 封面目录名：位于作品目录之下（press/{作品名}/Cover），与章节文档、角色卡区分 */
-const COVER_DIR = 'Cover'
 /** 目录扫描只认图片文件，其余一律忽略 */
 const COVER_FILE_PATTERN = /\.(png|jpe?g|webp)$/i
-/** 图像配额键：与角色卡共用同一每日额度，避免同一份额度被两处各算一次 */
-const QUOTA_KEYS: QuotaKeys = { dateKey: 'press_image_date', countKey: 'press_image_count' }
 /** 短字段长度上限 */
 const MAX_SHORT_TEXT = 64
 /** 长字段长度上限 */
@@ -68,10 +65,7 @@ export class PressCoverService {
      * 生成一张作品封面并落盘。
      * @param toWebviewUri 把磁盘 Uri 转成 webview 可访问 URL 的转换器
      */
-    public async generate(
-        payload: unknown,
-        toWebviewUri: (uri: vscode.Uri) => string,
-    ): Promise<CoverGenerateResult> {
+    public async generate(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<CoverGenerateResult> {
         if (this.activeRequest) {
             throw new Error('已有生成中的封面请求，请等待完成')
         }
@@ -82,7 +76,9 @@ export class PressCoverService {
         this.activeRequest = controller
         const startedAt = Date.now()
         const prompt = buildCoverPrompt(request)
-        logger.info(`封面生成开始：${request.title.length > 0 ? request.title : request.dirPath}（${config.imageSize}）`)
+        logger.info(
+            `封面生成开始：${request.title.length > 0 ? request.title : request.dirPath}（${config.imageSize}）`,
+        )
         try {
             const artifact = await this.router.generate({
                 prompt,
@@ -106,7 +102,7 @@ export class PressCoverService {
             const segments = [...dirSegments, `${id}.${artifact.extension}`]
             const target = buildStorageUri(root, segments)
             await vscode.workspace.fs.writeFile(target, artifact.bytes)
-            consumeToday(this.db, QUOTA_KEYS)
+            consumeToday(this.db, IMAGE_QUOTA_KEYS)
             const coverPath = segments.join('/')
             // 与角色卡一致：新图直接成为封面，仪表盘列表无需额外操作即可看到作品门面
             this.store.write(request.dirPath, coverPath)
@@ -265,7 +261,7 @@ export class PressCoverService {
         if (limit <= 0) {
             return
         }
-        const used = readUsedToday(this.db, QUOTA_KEYS)
+        const used = readUsedToday(this.db, IMAGE_QUOTA_KEYS)
         if (used >= limit) {
             throw new Error(`今日图片生成次数已用完（${used} / ${limit}），可明日再试或调高 zhai.image.dailyLimit`)
         }
