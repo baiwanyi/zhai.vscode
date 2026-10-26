@@ -94,8 +94,6 @@ interface ProofreadCheckListProps {
     aiStage: ProofreadAiStage
     aiProgress: ProofreadProgress | null
     aiError: string | null
-    /** AI 开关：关闭后 AI 类别只显示「未执行」，与「等待点击开始校对」区分开 */
-    isAiEnabled: boolean
     /** 未覆盖的批次数（失败 + 超时跳过）：不为 0 时不得给出「未发现问题」的结论 */
     uncoveredBatches: number
     onApply: (issue: ProofreadIssue) => void
@@ -120,7 +118,6 @@ interface CheckListContext {
     aiStage: ProofreadAiStage
     aiProgress: ProofreadProgress | null
     aiError: string | null
-    isAiEnabled: boolean
     uncoveredBatches: number
 }
 
@@ -140,7 +137,7 @@ function readLocalState(meta: ProofreadCategoryMeta, count: number, status: Proo
 
 /** AI 类别的状态：区分进行中、失败、未执行与已完成 */
 function readAiState(meta: ProofreadCategoryMeta, count: number, context: CheckListContext): CategoryState {
-    const { aiStage, aiProgress, aiError, status, isAiEnabled, uncoveredBatches } = context
+    const { aiStage, aiProgress, aiError, status, uncoveredBatches } = context
     if (aiStage === 'running') {
         return {
             label: aiProgress === null ? 'AI 检查中' : `AI ${String(aiProgress.batch)}/${String(aiProgress.total)}`,
@@ -162,7 +159,7 @@ function readAiState(meta: ProofreadCategoryMeta, count: number, context: CheckL
             return {
                 label: '未执行',
                 className: MUTED_TONE_CLASS,
-                hint: isAiEnabled ? '点击「开始校对」后才会执行 AI 语义检查' : '已关闭 AI 检查，仅展示本地规则结果',
+                hint: '点击「开始校对」后才会执行 AI 语义检查',
             }
         }
         return { label: '等待中', className: MUTED_TONE_CLASS, hint: '' }
@@ -203,7 +200,6 @@ export function ProofreadCheckList({
     aiStage,
     aiProgress,
     aiError,
-    isAiEnabled,
     uncoveredBatches,
     onApply,
     onReveal,
@@ -211,7 +207,7 @@ export function ProofreadCheckList({
     onOpenLexicon,
 }: ProofreadCheckListProps): JSX.Element {
     const grouped = useMemo(() => groupByCategory(issues), [issues])
-    const context: CheckListContext = { status, aiStage, aiProgress, aiError, isAiEnabled, uncoveredBatches }
+    const context: CheckListContext = { status, aiStage, aiProgress, aiError, uncoveredBatches }
 
     return (
         <div className="flex flex-col gap-2">

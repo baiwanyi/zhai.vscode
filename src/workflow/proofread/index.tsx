@@ -10,9 +10,9 @@ import { Alert, AlertDescription } from '@components/ui/alert'
 import { Badge } from '@components/ui/badge'
 import type { ProofreadTarget } from '@shared/types/proofread'
 import {
+    AppAction,
     AppContent,
     AppDescription,
-    AppFooter,
     AppHeader,
     AppMenu,
     AppPage,
@@ -20,7 +20,6 @@ import {
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
-import { Switch } from '@webview/components/Switch'
 import { useProofreadAiDetect } from './hooks/useProofreadAiDetect'
 import { useProofreadLexicon } from './hooks/useProofreadLexicon'
 import { useProofreadRun } from './hooks/useProofreadRun'
@@ -33,9 +32,8 @@ import type { JSX } from 'react'
 const DESCRIPTION_EMPTY = '在编辑器中打开要校对的章节，回到本页即可开始'
 const DESCRIPTION_READY = '检查错别字、标点与自定义词库命中，可逐条定位并一键写回'
 
-/** 开始校对按钮的提示：是否消耗额度取决于 AI 开关 */
-const RUN_TOOLTIP_AI = '执行本地规则与 AI 语义检查，AI 部分会消耗每日额度'
-const RUN_TOOLTIP_LOCAL = '执行本地规则检查，AI 检查已关闭'
+/** 开始校对按钮的提示：本地规则与 AI 语义检查一起执行 */
+const RUN_TOOLTIP = '执行本地规则与 AI 语义检查，AI 部分会消耗每日额度'
 
 /** 免责提示：AI 结论必须逐条人工确认，底部另常驻一条通用说明 */
 const AI_DISCLAIMER = 'AI 结果由模型判断，请逐条人工确认后再修改'
@@ -54,7 +52,7 @@ function TargetBadges({ target, lexiconLabel }: TargetBadgesProps): JSX.Element 
             <Badge variant="outline" className="max-w-full truncate">
                 {target.title}
             </Badge>
-            <Badge variant="secondary">{target.wordCount.toLocaleString('zh-CN')} 字</Badge>
+            <Badge variant="secondary">共 {target.wordCount.toLocaleString('zh-CN')} 字</Badge>
             {target.kind === 'selection' && <Badge variant="secondary">选区</Badge>}
             {target.truncated && <Badge variant="destructive">正文过长已截断</Badge>}
             <span className="text-xs text-muted-foreground">{lexiconLabel}</span>
@@ -124,11 +122,24 @@ export function ProofreadPage(): JSX.Element {
         <AppPage>
             <AppHeader>
                 <AppTitle>校对</AppTitle>
+                <AppAction>
+                    <Button
+                        variant="outline"
+                        disabled={state.fixableCount === 0}
+                        isLoading={state.isApplying}
+                        onClick={handleApplyFixable}
+                    >
+                        应用 {state.fixableCount} 处修复
+                    </Button>
+                    <Button isLoading={state.isRunning} tooltip={RUN_TOOLTIP} onClick={handleRun}>
+                        {state.hasResult ? '重新校对' : '开始校对'}
+                    </Button>
+                </AppAction>
                 <AppDescription>{target === null ? DESCRIPTION_EMPTY : DESCRIPTION_READY}</AppDescription>
                 {target !== null && <TargetBadges target={target} lexiconLabel={lexicon.label} />}
             </AppHeader>
             <AppContent isScrollable>
-                <div className="flex flex-col gap-3">
+                <div className="flex flex-col gap-3 p-4">
                     {state.errorText !== null && (
                         <Alert variant="destructive">
                             <AlertDescription>{state.errorText}</AlertDescription>
@@ -144,7 +155,6 @@ export function ProofreadPage(): JSX.Element {
                                 aiStage={state.aiStage}
                                 aiProgress={state.aiProgress}
                                 aiError={state.aiError}
-                                isAiEnabled={state.isAiEnabled}
                                 uncoveredBatches={uncoveredBatches}
                                 onApply={(issue) => void state.applyOne(issue)}
                                 onReveal={(issue) => void state.reveal(issue)}
@@ -171,32 +181,6 @@ export function ProofreadPage(): JSX.Element {
                     <AppDescription className="text-center">{DISCLAIMER}</AppDescription>
                 </div>
             </AppContent>
-            <AppFooter className="justify-between">
-                <Switch
-                    id="proofread-ai"
-                    label="AI 检查"
-                    checked={state.isAiEnabled}
-                    tooltip="关闭后只跑本地规则，不再调用 AI"
-                    onCheckedChange={state.setIsAiEnabled}
-                />
-                <div className="flex items-center gap-1.5">
-                    <Button
-                        variant="outline"
-                        disabled={state.fixableCount === 0}
-                        isLoading={state.isApplying}
-                        onClick={handleApplyFixable}
-                    >
-                        应用 {state.fixableCount} 处修复
-                    </Button>
-                    <Button
-                        isLoading={state.isRunning}
-                        tooltip={state.isAiEnabled ? RUN_TOOLTIP_AI : RUN_TOOLTIP_LOCAL}
-                        onClick={handleRun}
-                    >
-                        {state.hasResult ? '重新校对' : '开始校对'}
-                    </Button>
-                </div>
-            </AppFooter>
 
             <ProofreadLexiconDialog
                 key={lexicon.sessionKey}

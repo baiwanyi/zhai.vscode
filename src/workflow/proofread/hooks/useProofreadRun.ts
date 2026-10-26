@@ -5,7 +5,7 @@
  * 关键约束：始终检查整篇正文，不提供选区模式；每次检查都由宿主重新读编辑器正文，前端不缓存文本；
  * AI 结果带回文档版本号，与本地结果版本不一致时整批丢弃，避免把旧偏移标到新正文上；
  * AI 条目与本地重叠时保留本地；进入页面先取宿主缓存（正文未变即直接还原上次结果），没有缓存才跑本地规则；
- * 切换 AI 开关与写回后只重跑本地，AI 语义检查只由「开始校对」显式触发且进行中不可取消；
+ * AI 检查始终启用、不提供关闭入口；写回后只重跑本地，AI 语义检查只由「开始校对」显式触发且进行中不可取消；
  * 还原后的 target 不含正文，仅用于展示与偏移换算，写回与定位仍由宿主回查文档。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -59,7 +59,6 @@ export interface ProofreadRunState {
     suppressed: number
     elapsedMs: number
     errorText: string | null
-    isAiEnabled: boolean
     isApplying: boolean
     /** 本地或 AI 任一阶段进行中 */
     isRunning: boolean
@@ -67,7 +66,6 @@ export interface ProofreadRunState {
     hasResult: boolean
     /** 可一键写回的条目数 */
     fixableCount: number
-    setIsAiEnabled: (value: boolean) => void
     /** 省略 mode 时按 full 处理：按钮点击即包含 AI 检查 */
     run: (mode?: ProofreadRunMode) => Promise<void>
     ignore: (issue: ProofreadIssue) => void
@@ -118,7 +116,6 @@ export function useProofreadRun(): ProofreadRunState {
     const [suppressed, setSuppressed] = useState(0)
     const [elapsedMs, setElapsedMs] = useState(0)
     const [errorText, setErrorText] = useState<string | null>(null)
-    const [isAiEnabled, setIsAiEnabled] = useState(true)
     const [isApplying, setIsApplying] = useState(false)
     const [hasResult, setHasResult] = useState(false)
     /** 当前结果所属文档：路径变化才丢弃忽略集合 */
@@ -165,105 +162,95 @@ export function useProofreadRun(): ProofreadRunState {
         setHasResult(true)
     }, [])
 
-    /** 最新 AI 开关状态：AI 请求回来的结果要按当前开关判断，不能只看发起时的快照 */
-    const aiEnabledRef = useRef(isAiEnabled)
-
-    const run = useCallback(
-        async (mode: ProofreadRunMode = 'full'): Promise<void> => {
-            if (mode === 'local') {
-                setHasResult(false)
-            }
-            // 刷新期间保留旧结果，等新结果返回后整体替换：先清空会让列表塌陷再长回来，页面会明显跳动
-            setStatus('running')
-            setErrorText(null)
-            let result: ProofreadRunResult | null
-            try {
-                // 校对始终针对整篇正文，不再有选区模式
-                result = await request<ProofreadRunResult | null>('proofread/local', {
-                    useSelection: false,
-                })
-            } catch (cause) {
-                setErrorText(toErrorText(cause))
-                setStatus('error')
-                return
-            }
-            if (result === null) {
-                setTarget(null)
-                setLocalIssues([])
+    const run = useCallback(async (mode: ProofreadRunMode = 'full'): Promise<void> => {
+        if (mode === 'local') {
+            setHasResult(false)
+        }
+        // 刷新期间保留旧结果，等新结果返回后整体替换：先清空会让列表塌陷再长回来，页面会明显跳动
+        setStatus('running')
+        setErrorText(null)
+        let result: ProofreadRunResult | null
+        try {
+            // 校对始终针对整篇正文，不再有选区模式
+            result = await request<ProofreadRunResult | null>('proofread/local', {
+                useSelection: false,
+            })
+        } catch (cause) {
+            setErrorText(toErrorText(cause))
+            setStatus('error')
+            return
+        }
+        if (result === null) {
+            setTarget(null)
+            setLocalIssues([])
+            setAiIssues([])
+            setAiStage('idle')
+            setStatus('empty')
+            return
+        }
+        // 换了一份文档才丢弃忽略集合：同一份正文重跑时保留，避免忽略过的条目突然回到列表
+        if (targetPathRef.current !== result.target.path) {
+            setIgnoredIds(new Set())
+            targetPathRef.current = result.target.path
+        }
+        setTarget(result.target)
+        setLocalIssues(result.local.issues)
+        setSuppressed(result.local.suppressed)
+        setElapsedMs(result.local.elapsedMs)
+        setStatus('ready')
+        if (mode === 'full') {
+            setHasResult(true)
+        }
+        if (mode === 'local') {
+            return
+        }
+        setAiProgress(null)
+        setAiStage('running')
+        try {
+            const aiResult = await request<ProofreadAiResult | null>(
+                'proofread/ai',
+                { useSelection: false },
+                AI_TIMEOUT_MS,
+            )
+            if (aiResult === null) {
+                // 没有结果就没有可展示的 AI 条目，旧结果不能继续挂在「未执行」下面
                 setAiIssues([])
                 setAiStage('idle')
-                setStatus('empty')
                 return
             }
-            // 换了一份文档才丢弃忽略集合：同一份正文重跑时保留，避免忽略过的条目突然回到列表
-            if (targetPathRef.current !== result.target.path) {
-                setIgnoredIds(new Set())
-                targetPathRef.current = result.target.path
-            }
-            setTarget(result.target)
-            setLocalIssues(result.local.issues)
-            setSuppressed(result.local.suppressed)
-            setElapsedMs(result.local.elapsedMs)
-            setStatus('ready')
-            if (mode === 'full') {
-                setHasResult(true)
-            }
-            if (mode === 'local' || !isAiEnabled) {
-                return
-            }
-            setAiProgress(null)
-            setAiStage('running')
-            try {
-                const aiResult = await request<ProofreadAiResult | null>(
-                    'proofread/ai',
-                    { useSelection: false },
-                    AI_TIMEOUT_MS,
-                )
-                if (aiResult === null) {
-                    // 没有结果就没有可展示的 AI 条目，旧结果不能继续挂在「未执行」下面
-                    setAiIssues([])
-                    setAiStage('idle')
-                    return
-                }
-                if (aiResult.path !== result.target.path || aiResult.version !== result.target.version) {
-                    setAiIssues([])
-                    setFailedBatches(0)
-                    setSkippedBatches(0)
-                    setAiStage('error')
-                    setAiError('正文在检查期间发生变化，AI 结果已丢弃，请重新校对')
-                    return
-                }
-                // 检查途中被关掉 AI 开关：结果不再展示，按「未执行」收尾
-                if (!aiEnabledRef.current) {
-                    return
-                }
-                setAiIssues(aiResult.issues)
-                setFailedBatches(aiResult.failedBatches)
-                setSkippedBatches(aiResult.skippedBatches)
-                setAiStage('done')
-                if (aiResult.failedBatches > 0 || aiResult.skippedBatches > 0) {
-                    const parts: string[] = []
-                    if (aiResult.failedBatches > 0) {
-                        parts.push(`失败 ${String(aiResult.failedBatches)} 批`)
-                    }
-                    if (aiResult.skippedBatches > 0) {
-                        parts.push(`超时跳过 ${String(aiResult.skippedBatches)} 批`)
-                    }
-                    toast.warning(`AI 检查未覆盖全部批次（${parts.join('，')}），结果可能不完整`)
-                }
-            } catch (cause) {
-                // 失败时不保留旧 AI 条目：徽标已显示「检查失败」，再挂着旧条目会让人误以为本次结论
+            if (aiResult.path !== result.target.path || aiResult.version !== result.target.version) {
                 setAiIssues([])
                 setFailedBatches(0)
                 setSkippedBatches(0)
                 setAiStage('error')
-                setAiError(toErrorText(cause))
-            } finally {
-                setAiProgress(null)
+                setAiError('正文在检查期间发生变化，AI 结果已丢弃，请重新校对')
+                return
             }
-        },
-        [isAiEnabled],
-    )
+            setAiIssues(aiResult.issues)
+            setFailedBatches(aiResult.failedBatches)
+            setSkippedBatches(aiResult.skippedBatches)
+            setAiStage('done')
+            if (aiResult.failedBatches > 0 || aiResult.skippedBatches > 0) {
+                const parts: string[] = []
+                if (aiResult.failedBatches > 0) {
+                    parts.push(`失败 ${String(aiResult.failedBatches)} 批`)
+                }
+                if (aiResult.skippedBatches > 0) {
+                    parts.push(`超时跳过 ${String(aiResult.skippedBatches)} 批`)
+                }
+                toast.warning(`AI 检查未覆盖全部批次（${parts.join('，')}），结果可能不完整`)
+            }
+        } catch (cause) {
+            // 失败时不保留旧 AI 条目：徽标已显示「检查失败」，再挂着旧条目会让人误以为本次结论
+            setAiIssues([])
+            setFailedBatches(0)
+            setSkippedBatches(0)
+            setAiStage('error')
+            setAiError(toErrorText(cause))
+        } finally {
+            setAiProgress(null)
+        }
+    }, [])
 
     /** 挂载时使用的首次运行函数：范围变化走下面的重跑分支，不复用这里的闭包 */
     const initialRunRef = useRef(run)
@@ -294,20 +281,6 @@ export function useProofreadRun(): ProofreadRunState {
             isCancelled = true
         }
     }, [restoreCache])
-
-    // AI 开关变化：本地结果与开关无关，只重置 AI 阶段，避免整页重跑引起列表重建与跳动
-    useEffect(() => {
-        if (aiEnabledRef.current === isAiEnabled) {
-            return
-        }
-        aiEnabledRef.current = isAiEnabled
-        setAiIssues([])
-        setAiProgress(null)
-        setAiError(null)
-        setFailedBatches(0)
-        setSkippedBatches(0)
-        setAiStage('idle')
-    }, [isAiEnabled])
 
     const visibleIssues = useMemo(
         () => mergeIssues(localIssues, aiIssues).filter((issue) => !ignoredIds.has(issue.id)),
@@ -419,12 +392,10 @@ export function useProofreadRun(): ProofreadRunState {
         suppressed,
         elapsedMs,
         errorText,
-        isAiEnabled,
         isApplying,
         hasResult,
         isRunning: status === 'running' || aiStage === 'running',
         fixableCount,
-        setIsAiEnabled,
         run,
         ignore,
         reveal,
