@@ -1,8 +1,10 @@
 /**
  * 带内联芯片的富文本输入区：命令、上下文等「引用意图」以芯片嵌在正文流中，文本紧贴芯片且换行回到行首。
- * 复用约定：芯片取 @components/ui/badge（secondary 变体），移除入口用 @webview/components/Button 的 ghost；
- * DOM 读写与光标操作统一复用 ./richText，芯片标记同样走 data-chip。
+ * 复用约定：芯片取 @components/ui/badge（secondary 变体），移除入口用 @webview/components/Button 的 ghost，
+ * 参考图缩略图大图取 ./Image 与 @components/ui/tooltip；DOM 读写与光标操作统一复用 ./richText，
+ * 芯片标记同样走 data-chip。
  * 关键约束：芯片 contentEditable=false 且不计入正文，正文内容由调用方在发送瞬间拼装；
+ * 带 preview 的芯片只在悬停文件名时弹出大图，移除按钮保留自己的提示，两个气泡互不干扰；
  * 外部改值（增强 / 还原 / 清空）会重写文本节点，用户输入不重写以避免光标跳动；
  * 芯片后保留一个空格文本节点作为光标占位（全空白不计入正文，外部空值不覆盖占位）；
  * Enter 发送、Shift+Enter 换行，中文输入法组词期间不拦截 Enter，粘贴统一降级为纯文本。
@@ -10,7 +12,9 @@
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useImperativeHandle, useRef } from 'react'
 import { Badge } from '@components/ui/badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import { Button } from '@webview/components/Button'
+import { Image } from './Image'
 import {
     findAdjacentChip,
     insertPlainText,
@@ -27,12 +31,20 @@ import type {
     Ref,
 } from 'react'
 
+/** 芯片悬停预览：目前只用于参考图，src 由调用方给出的 webview 地址，组件不读磁盘 */
+export interface RichChipPreview {
+    src: string
+    alt: string
+}
+
 export interface RichChip {
     /** 芯片标识：相邻退格删除时按此回调，移除按钮也用它定位 */
     id: string
     label: string
     /** 前置图标，尺寸由组件统一约束 */
     icon?: ReactNode
+    /** 悬停文件名时展示的大图：缺省时芯片不引入提示层 */
+    preview?: RichChipPreview
 }
 
 /** 对外暴露的命令式能力：词库、模板等需要往光标处插入文本 */
@@ -236,7 +248,24 @@ export function RichChipInput({
                         className="mr-1 h-5 max-w-56 align-top"
                     >
                         {chip.icon}
-                        <span className="min-w-0 truncate text-sm">{chip.label}</span>
+                        {chip.preview === undefined ? (
+                            <span className="min-w-0 truncate text-sm">{chip.label}</span>
+                        ) : (
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <span className="min-w-0 cursor-help truncate text-sm">{chip.label}</span>
+                                </TooltipTrigger>
+                                {/* 预览沿用提示气泡的暗底，只把内边距收窄；箭头与底色同源，不需要额外处理 */}
+                                <TooltipContent side="top" className="w-56 p-1">
+                                    <Image
+                                        src={chip.preview.src}
+                                        alt={chip.preview.alt}
+                                        aspect="auto"
+                                        className="h-auto max-h-48 w-full rounded-sm object-contain"
+                                    />
+                                </TooltipContent>
+                            </Tooltip>
+                        )}
                         <Button
                             variant="ghost"
                             size="icon-xs"

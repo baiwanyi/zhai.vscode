@@ -1,8 +1,8 @@
 # ImageGen（生图）— 模块设计文档
 
-**版本**：1.2
+**版本**：1.3
 **日期**：2026-10-26
-**状态**：图库管理、统一出图（角色卡与其他图片）、作品级参数、封面手动指定、芯片内联、批量删除、角色卡通道对齐、命名冲突统一、出图规则（自定义 md 作为上下文）、上下文与提示词分字段提交均已落地
+**状态**：图库管理、统一出图（角色卡与其他图片）、作品级参数、封面手动指定、芯片内联、批量删除、角色卡通道对齐、命名冲突统一、出图规则（自定义 md 作为上下文）、上下文与提示词分字段提交、参考图（多模态参考上下文）均已落地
 **宿主**：VSCode 插件 Zhai（宅桌面）
 **存储根**：作品资源在 `{storage.rootPath}/press/{作品名}/`，全局提示词资源在 `{storage.rootPath}/prompt/`（根目录配置见 `common.md` 第 1 节）
 
@@ -90,8 +90,9 @@
 
 | 方法 | 说明 |
 | --- | --- |
-| `pressAi/generateImage` | 入参 `prompt` / `promptTags` / `contexts` / `promptRules` / `kind` / `characterId` / `ratio` / `style` / `enhancedFrom`；`promptTags` 是词条芯片的标识（上游原文，最多 20 条），宿主按 `@shared/utils/promptTag` 换取归一化文本后与正文合并（词条在前、正文在后）；`contexts` 是「添加上下文」菜单展开的文本段（如作品设定，最多 4 段、每段 1500 字），不混入 `prompt`；`promptRules` 是规则芯片的标识（文件名主干，最多 5 条），宿主读 md 正文后接在上下文之后；正文、上下文、词条与规则全为空才拒绝出图；落 `Images/`，`kind` 只有 `portrait`（角色卡）与 `photo`（其他图片），生成不改作品封面 |
+| `pressAi/generateImage` | 入参 `prompt` / `promptTags` / `contexts` / `promptRules` / `referenceImages` / `kind` / `characterId` / `ratio` / `style` / `enhancedFrom`；`promptTags` 是词条芯片的标识（上游原文，最多 20 条），宿主按 `@shared/utils/promptTag` 换取归一化文本后与正文合并（词条在前、正文在后）；`contexts` 是「添加上下文」菜单展开的文本段（如作品设定，最多 4 段、每段 1500 字），不混入 `prompt`；`promptRules` 是规则芯片的标识（文件名主干，最多 5 条），宿主读 md 正文后接在上下文之后；`referenceImages` 是参考图芯片的本地路径（只接受选择流程登记过的图片，最多 3 张），宿主读取字节后作为多模态内容随指令提交，不写进文本提示词；正文、上下文、词条、规则与参考图全为空才拒绝出图；落 `Images/`，`kind` 只有 `portrait`（角色卡）与 `photo`（其他图片），生成不改作品封面 |
 | `pressAi/generateImage/abort` | 取消在途请求，返回 `{ aborted }`；单任务锁保证不会并发出图。中断信号经 provider 传到 SDK 会话，真正中止本地出图；产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额，因此「停止」之后不会凭空多出一张图 |
+| `pressAi/pickReferenceImage` | — → `ImageReferencePickResult`。弹出系统文件选择框挑参考图：扩展名限 png / jpg / jpeg / webp / gif，校验常规文件、非符号链接、非空与 ≤12 MB，并按文件头嗅探真实类型；通过后登记路径并回传 `{ path, name, url }`，用户取消时 `reference` 为 `null` |
 | `pressAi/enhanceImagePrompt` | 文本模型改写输入框正文，30 秒上限，不落盘、不计图片配额 |
 
 ### 3.3 作品参数
@@ -137,6 +138,7 @@
 | `imageDirScan.ts` | 图片目录扫描唯一入口：目录缺失视为空、只收普通文件、扩展名口径（png/jpe?g/webp/gif） |
 | `promptImageService.ts` | 提示词预览图库：`{存储根}/prompt/images` 判空并转 webview 基址，另提供打开该目录的命令实现 |
 | `promptRuleService.ts` | 出图规则：`{存储根}/prompt/rules` 列举、新建（不覆盖同名）、打开目录，并提供出图时的正文读取（条数与总长在此收口） |
+| `referenceImageService.ts` | 参考图：系统文件选择框、扩展名 / 体积 / 文件头校验、路径登记表；出图时只读登记过的路径，读成 `{ bytes, mimeType }` 交给通道 |
 | `imageNaming.ts` | 图片命名唯一入口：三类标识格式、同秒冲突按秒顺延、永不覆盖 |
 | `imageSidecar.ts` | 侧车路径推导、随图删除与写入，尽力而为、不抛错 |
 | `promptCompose.ts` | 提示词拼装纯函数：正文 → 作品补充 → 负向约束 → 画风描述 |
@@ -158,6 +160,8 @@
 
 空串一律跳过；词条由 `imageGenerateService` 用 `@shared/utils/promptTag` 的 `normalizePromptTag` 换取并前置，归一化口径与前端词库层同源，因此面板上的词条文本与最终提示词逐字一致；上下文段来自请求的 `contexts`（前端 `composeSettingContext` 展开），规则正文由 `promptRuleService.readForPrompt` 按标识读盘后传给 `composeImagePrompt`，空串、空规则与缺失文件都不占位。宿主侧拼装集中在 `src/modules/imagegen/promptCompose` 的 `composeImagePrompt`（对象入参，顺序固定），由 `tests/imagegenPrompt.test.ts` 覆盖顺序与空串行为，上下文、规则读盘与出图合并在 `tests/imageGenerateService.test.ts` 覆盖。前端只负责正文、角色段与上下文段（`workflow/imagegen/prompt/promptSections.ts`），画风与负向约束仍由宿主追加。
 
+参考图不参与文本拼装：`imageGenerateService` 把 `referenceImages` 交给 `referenceImageService.readForPrompt` 读成字节与真实 MIME，再由 `codebuddyImageProvider` 把「指令文本 + image 内容块」作为一条结构化用户消息提交（`query` 的 `prompt` 支持 `AsyncIterable<UserMessage>`）。无参考图时仍走原字符串提示词路径，二者行为一致；单张参考图失效（被删除、被替换、超限）只跳过该张并记日志，不阻断出图。
+
 ---
 
 ## 5. 前端结构
@@ -166,8 +170,9 @@
 | --- | --- |
 | `ImageGenPage.tsx` | 页面骨架与编排：筛选、计数、分批渲染、详情面板与出图回调；多选、删除与封面指针同步交给 hooks |
 | `ImageGenGrid.tsx` | 等宽卡片网格：3:4 裁切、封面徽标、悬停复制/插入/删除、多选勾选、点击打开详情 |
-| `ImageComposer.tsx` | 输入卡片：添加上下文菜单（作品设定开关、规则）、角色选择与词条芯片、底部比例与画面风格、增强提示词、发送 / 取消生成 |
+| `ImageComposer.tsx` | 输入卡片：添加上下文菜单（作品设定开关、规则）、参考图与角色选择、词条芯片、底部比例与画面风格、增强提示词、发送 / 取消生成 |
 | `ImageCommandMenus.tsx` | 添加上下文菜单：作品设定开关 + 规则子菜单（列出 `prompt/rules` 的 md、勾选即挂芯片、新建规则弹窗、打开规则目录），菜单内各项都作为上下文提交 |
+| `ImageReferencePicker.tsx` | 参考图：工具栏图标按钮，点击由宿主弹文件选择框；选中后挂「缩略图 + 文件名」芯片，悬停文件名预览大图，可挂多枚 |
 | `ImageCharacterPicker.tsx` | 角色选择：工具栏图标按钮下拉，列出作品全部人物卡，选中即挂「图标 + 姓名」徽标，可切回「不使用角色」 |
 | `ImagePromptPicker.tsx` | 提示词面板：工具栏图标按钮弹出，一级分类 / 二级分类 / 词条三级联动，顶部关键词跨分组搜索；点词条切换芯片并回显选中态，不写正文 |
 | `useImageLibrary.ts` | 列举（含不切加载态的静默刷新）、单张删除、批量删除（含最新列表回传） |
@@ -178,12 +183,12 @@
 | `useImageDetail.ts` | 详情面板按路径读取侧车；迟到回包按来源路径**丢弃**（不是覆盖后再过滤），切图不会把新图详情清空 |
 | `useImageSettings.ts` | 作品级参数读写，`isLoaded` 之前不得据此保存 |
 | `useImageComposer.ts` | 输入卡片会话状态：正文、增强态、生成态与请求代号，发送 / 取消 / 超时，失败或取消按草稿回填 |
-| `usePromptChips.ts` | 芯片集合：设定与角色按 kind 唯一，词条按上游原文去重、规则按标识去重且都可多枚；角色直接设置、词条与规则开关、清空与草稿回填；图标映射留在 layout |
+| `usePromptChips.ts` | 芯片集合：设定与角色按 kind 唯一，词条按上游原文去重、规则按标识去重、参考图按磁盘路径去重且都可多枚；角色直接设置、词条与规则开关、参考图只增删、清空与草稿回填；图标映射留在 layout |
 | `usePromptRules.ts` | 规则清单：列举、新建与打开目录，新建成功后自动挂芯片；正文不进前端，规则改文无需刷新 |
 | `imageStyle.ts` | 画风取值与中文标签，composer 的画面风格面板与详情面板共用 |
 | `prompt/promptSections.ts` | 前端提示词分段：正文与角色段合成为 `prompt`，作品设定由 `composeSettingContext` 单独展开为上下文段 |
 | `prompt/ratioIntent.ts` | 正文比例意图探测：数字写法与中英文比例词合流，取最后出现者 |
-| `@webview/components/RichChipInput.tsx` | 通用芯片输入区：芯片内联进正文流，Enter 发送、组词期间不拦截，命令式 `insertText` |
+| `@webview/components/RichChipInput.tsx` | 通用芯片输入区：芯片内联进正文流，带 `preview` 的芯片悬停文件名弹出大图，Enter 发送、组词期间不拦截，命令式 `insertText` |
 | `@webview/components/richText.ts` | 可编辑区 DOM 工具：读写纯文本、光标定位、芯片识别与插入，与 aichat 共用 |
 | `usePromptImages.ts` | 取提示词预览图基址（面板打开时请求一次），失败按「没有图」处理，不弹错误 |
 | `prompt/promptLibrary.ts` | 词库适配层：读 `prompt/data/promptTags.json`，导出三级清单与查询函数，权重归一取 shared |
@@ -247,6 +252,7 @@
 | 提示词芯片 | 已内联：`RichChipInput` 与 aichat 共用 `richText` 的 DOM 工具，芯片可退格删除；芯片只带上游原文，文本由宿主换取，因此宿主不校验词条是否存在于库中 |
 | 出图规则 | 全局共享（`prompt/rules`），不随作品迁移；保存只新建、不覆盖同名文件；规则被删除或读取失败时静默跳过；单次最多 5 条、合计 3000 字，单条正文上限 4000 字 |
 | 上下文拆分 | 作品设定与规则走 `contexts` / `promptRules`，与 `prompt` 正文分字段提交；宿主侧仍拼成一段文本交给图像通道，模型侧只有单段输入 |
+| 参考图 | 只接受选择流程登记过的本地路径（登记表上限 32 条，超出淘汰最早一条）；单次最多 3 张、单张 ≤12 MB；扩展名白名单 + 文件头嗅探双校验；侧车不记录参考图，详情面板无法据此复现 |
 | 角色快照 | 已注入姓名、性别年龄、身份与外貌；更细的字段（体型、背景）仍留在人物卡内 |
 | 网格能力 | 已支持多选批量删除与悬停复制/插入/删除 |
 | 批量删除原子性 | 一次请求内逐张执行，非事务：单张失败只记回执，成功部分照常生效并按最新图库刷新，不做回滚；单次上限 500 张 |

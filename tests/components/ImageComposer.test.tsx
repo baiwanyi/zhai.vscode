@@ -92,6 +92,13 @@ const CHARACTER_B: PromptCharacterSnapshot = {
     age: '三十',
 }
 
+/** 参考图回包：路径是宿主登记过的本地绝对路径，url 只用于芯片缩略图与预览 */
+const REFERENCE = {
+    path: 'd:/vault/ref.png',
+    name: '参考图.png',
+    url: 'https://example.test/ref.png',
+}
+
 const GENERATED: ImageGenerateResult = {
     image: {
         id: 'photo-20261025143000-aB3xK9Qz',
@@ -658,5 +665,51 @@ describe('ImageComposer', () => {
 
         expect(inputBox().value).toBe('雨夜长街，湿石板反光')
         expect(screen.getByRole('button', { name: '还原提示词' })).toBeDefined()
+    })
+
+    it('参考图挂芯片后随请求下发路径，只有参考图也能发送', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) =>
+            method === 'pressAi/pickReferenceImage'
+                ? Promise.resolve({ reference: REFERENCE })
+                : defaultResponse(method),
+        )
+        renderComposer()
+
+        await user.click(screen.getByRole('button', { name: '添加参考图片' }))
+        expect(await screen.findByText(REFERENCE.name)).toBeDefined()
+        // 正文为空，但挂了参考图，发送必须可用
+        expect(screen.getByRole('button', { name: '发送' }).hasAttribute('disabled')).toBe(false)
+
+        await user.click(screen.getByRole('button', { name: '发送' }))
+        expect(generateParams().referenceImages).toEqual([REFERENCE.path])
+        // 发送即清空：参考图芯片跟着正文一起清掉
+        await waitFor(() => expect(screen.queryByText(REFERENCE.name)).toBeNull())
+    })
+
+    it('参考图最多三张，达到上限后选图按钮禁用', async () => {
+        const user = userEvent.setup()
+        let index = 0
+        requestMock.mockImplementation((method: string) => {
+            if (method !== 'pressAi/pickReferenceImage') {
+                return defaultResponse(method)
+            }
+            index += 1
+            return Promise.resolve({
+                reference: {
+                    path: `d:/vault/ref-${String(index)}.png`,
+                    name: `ref-${String(index)}.png`,
+                    url: `https://example.test/ref-${String(index)}.png`,
+                },
+            })
+        })
+        renderComposer()
+
+        for (let count = 1; count <= 3; count += 1) {
+            await user.click(screen.getByRole('button', { name: '添加参考图片' }))
+            expect(await screen.findByText(`ref-${String(count)}.png`)).toBeDefined()
+        }
+
+        expect(screen.getByRole('button', { name: '参考图已达上限' }).hasAttribute('disabled')).toBe(true)
     })
 })

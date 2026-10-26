@@ -1,22 +1,24 @@
 /**
- * 生图输入芯片：维护「引用意图」集合——作品设定、当前角色、已选提示词词条与自定义规则。
+ * 生图输入芯片：维护「引用意图」集合——作品设定、当前角色、已选提示词词条、自定义规则与参考图。
  * 复用约定：角色快照类型取 ../prompt/promptSections，词条类型取 ../prompt/promptLibrary，
- * 规则类型取 @shared/types/imagegen；本 hook 只产出数据与操作，图标等展示留在 layout 渲染。
+ * 规则与参考图类型取 @shared/types/imagegen；本 hook 只产出数据与操作，图标与预览留在 layout 渲染。
  * 关键约束：芯片 id 是删除与 DOM 定位的唯一依据——设定与角色按 kind 唯一，
- * 词条按上游原文去重、规则按标识去重，两者都可挂多枚；
+ * 词条按上游原文去重、规则按标识去重、参考图按磁盘路径去重，三者都可挂多枚；
+ * 参考图只记宿主回传的路径、文件名与预览地址，不自行拼路径，也不在发送前读文件；
  * 角色芯片由角色选择器直接设置（传 null 即清除），词条与规则由各自面板点选开关，再点同一项即取消；
  * 发送时的清空与失败后的草稿回填由 useImageComposer 触发，回填只在用户没有新加芯片时生效。
  */
 import { useState } from 'react'
-import type { PromptRule } from '@shared/types/imagegen'
+import type { ImageReferenceItem, PromptRule } from '@shared/types/imagegen'
 import type { PromptTag } from '../prompt/promptLibrary'
 import type { PromptCharacterSnapshot } from '../prompt/promptSections'
 
-/** 芯片来源：setting 指作品设定，character 指某个人物，prompt 指词库词条，rule 指自定义规则（均可多枚） */
-export type PromptChipKind = 'setting' | 'character' | 'prompt' | 'rule'
+/** 芯片来源：setting 指作品设定，character 指某个人物，prompt 指词库词条，rule 指自定义规则，reference 指参考图 */
+export type PromptChipKind = 'setting' | 'character' | 'prompt' | 'rule' | 'reference'
 
 /**
- * 徽标：value 是交给宿主的标识——角色取角色 id，词条取上游原文，规则取文件名主干；
+ * 徽标：value 是交给宿主的标识——角色取角色 id，词条取上游原文，规则取文件名主干，参考图取磁盘路径；
+ * previewUrl 只有参考图携带，供芯片缩略图与悬停预览；
  * 画风不进徽标，由底部操作行单选后随请求下发。
  */
 export interface PromptChip {
@@ -24,6 +26,8 @@ export interface PromptChip {
     kind: PromptChipKind
     value: string
     label: string
+    /** 参考图的 webview 预览地址：仅 kind 为 reference 时存在 */
+    previewUrl?: string
 }
 
 interface UsePromptChipsOptions {
@@ -39,6 +43,8 @@ interface UsePromptChipsResult {
     promptChips: PromptChip[]
     /** 已选规则芯片：发送时把标识交给宿主读盘并入 */
     ruleChips: PromptChip[]
+    /** 已挂参考图：发送时把路径交给宿主读取为多模态输入 */
+    referenceChips: PromptChip[]
     toggleSetting: () => void
     /** 设置角色芯片：传 null 即清除，菜单选择与移除徽标都走这一条 */
     setCharacter: (character: PromptCharacterSnapshot | null) => void
@@ -46,6 +52,8 @@ interface UsePromptChipsResult {
     togglePrompt: (tag: PromptTag) => void
     /** 点选规则：同一规则在输入区内只出现一枚，多枚规则按点选顺序并入提示词 */
     toggleRule: (rule: PromptRule) => void
+    /** 新增参考图：同一路径只挂一枚，重复选择同一张图不会重复出现 */
+    addReference: (reference: ImageReferenceItem) => void
     removeChip: (id: string) => void
     /** 发送即清空 */
     clearChips: () => void
@@ -69,6 +77,17 @@ function promptChipOf(tag: PromptTag): PromptChip {
 /** 规则芯片：标识取文件名主干，同一规则可与其他规则同时挂载，标签只放规则名 */
 function ruleChipOf(rule: PromptRule): PromptChip {
     return { id: `rule:${rule.id}`, kind: 'rule', value: rule.id, label: rule.name }
+}
+
+/** 参考图芯片：id 与 value 都取磁盘路径（同一张图只挂一枚），预览地址仅供展示 */
+function referenceChipOf(reference: ImageReferenceItem): PromptChip {
+    return {
+        id: `reference:${reference.path}`,
+        kind: 'reference',
+        value: reference.path,
+        label: reference.name,
+        previewUrl: reference.url,
+    }
 }
 
 /** 按 kind 取反：已有则删，没有则追加 */
@@ -113,6 +132,12 @@ export function usePromptChips({ initialCharacter }: UsePromptChipsOptions): Use
         )
     }
 
+    /** 参考图只增不减：删除统一走芯片上的移除入口，重复选到同一张图时保持原样 */
+    const addReference = (reference: ImageReferenceItem): void => {
+        const next = referenceChipOf(reference)
+        setChips((current) => (current.some((chip) => chip.id === next.id) ? current : [...current, next]))
+    }
+
     const removeChip = (id: string): void => {
         setChips((current) => current.filter((chip) => chip.id !== id))
     }
@@ -131,10 +156,12 @@ export function usePromptChips({ initialCharacter }: UsePromptChipsOptions): Use
         characterChip: chips.find((chip) => chip.kind === 'character') ?? null,
         promptChips: chips.filter((chip) => chip.kind === 'prompt'),
         ruleChips: chips.filter((chip) => chip.kind === 'rule'),
+        referenceChips: chips.filter((chip) => chip.kind === 'reference'),
         toggleSetting,
         setCharacter,
         togglePrompt,
         toggleRule,
+        addReference,
         removeChip,
         clearChips,
         restoreChips,

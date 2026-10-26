@@ -3,7 +3,8 @@
  * 复用约定：通道入口复用 ./ai/imageProvider，作品级参数经 ./imageSettingsService，
  * 配额读写经 ../common/db/quotaRepository 并与旧入口共用同一额度，路径拼接一律经 ../common/storagePath；
  * 词条文本由前端传入的上游原文经 @shared/utils/promptTag 归一化换取，与面板展示共用同一套写法；
- * 规则文本由 ./promptRuleService 按标识读盘，前端只传标识，规则改文不必重新进页面。
+ * 规则文本由 ./promptRuleService 按标识读盘，前端只传标识，规则改文不必重新进页面；
+ * 参考图由 ./referenceImageService 校验并读成多模态输入，前端只回传选择流程登记过的路径。
  * 关键约束：文件名按新规范生成——角色图 portrait-{14 位时间戳}-{8 位角色标识}，
  * 其余 photo-{14 位时间戳}-{8 位随机串}；同秒同角色冲突时时间戳逐秒递增而非覆盖；
  * 词条在前、正文在后合并成一段提示词，词条为空数组时行为与纯正文完全一致；
@@ -39,6 +40,7 @@ import { composeImagePrompt } from './promptCompose'
 import type { ImageGenerator } from './ai/imageProvider'
 import type { ImageSettingsService } from './imageSettingsService'
 import type { PromptRuleService } from './promptRuleService'
+import type { ReferenceImageService } from './referenceImageService'
 import type Database from 'better-sqlite3'
 
 /** 提示词长度上限：远超正常拼装结果，超出视为异常请求 */
@@ -55,6 +57,10 @@ const MAX_PROMPT_RULE_ID_LENGTH = 40
 const MAX_CONTEXTS = 4
 /** 单段上下文长度上限：作品设定展开后通常几百字，超出部分截断 */
 const MAX_CONTEXT_LENGTH = 1500
+/** 参考图张数上限：与参考图服务的读取上限一致，超出部分丢弃 */
+const MAX_REFERENCE_IMAGES = 3
+/** 参考图路径长度上限：超长路径无法回查，直接截断后由服务跳过 */
+const MAX_REFERENCE_PATH_LENGTH = 320
 /** 角色标识：与人物卡一致的 8 位数字 */
 const CHARACTER_ID_PATTERN = /^\d{8}$/u
 /** 提示词增强的超时：文本改写足够快，超过即视为失败并由前端保留原文 */
@@ -71,6 +77,8 @@ interface NormalizedImageRequest {
     contexts: string[]
     /** 规则标识：上下文的一部分，正文由宿主读盘后并入 */
     ruleIds: string[]
+    /** 参考图路径：选择流程登记过的本地图片，出图前读成多模态输入 */
+    references: string[]
     kind: ImageGenerateKind
     characterId: string | null
     ratio: '1:1' | '3:4' | '4:3' | '16:9' | '9:16'
@@ -86,6 +94,7 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
         promptTags?: unknown
         contexts?: unknown
         promptRules?: unknown
+        referenceImages?: unknown
         kind?: unknown
         characterId?: unknown
         ratio?: unknown
@@ -105,8 +114,10 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
     // 规则正文在出图前由 PromptRuleService 读盘并入
     const contexts = readTextList(value.contexts, MAX_CONTEXTS, MAX_CONTEXT_LENGTH)
     const ruleIds = readTextList(value.promptRules, MAX_PROMPT_RULES, MAX_PROMPT_RULE_ID_LENGTH)
-    // 正文、上下文与规则都为空时才算空请求——只挂设定或只挂规则也能出图
-    if (mergedPrompt.length === 0 && contexts.length === 0 && ruleIds.length === 0) {
+    // 参考图只收路径，是否可用由 ReferenceImageService 按登记表判断
+    const references = readTextList(value.referenceImages, MAX_REFERENCE_IMAGES, MAX_REFERENCE_PATH_LENGTH)
+    // 正文、上下文、规则与参考图都为空时才算空请求——只挂参考图同样可以出图
+    if (mergedPrompt.length === 0 && contexts.length === 0 && ruleIds.length === 0 && references.length === 0) {
         throw new Error('提示词不能为空')
     }
     const kind = value.kind
@@ -131,6 +142,7 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
         prompt: mergedPrompt,
         contexts,
         ruleIds,
+        references,
         kind,
         characterId: kind === 'portrait' ? characterId : null,
         ratio,
@@ -150,6 +162,7 @@ export class ImageGenerateService {
         private readonly provider: AiProvider,
         private readonly settings: ImageSettingsService,
         private readonly rules: PromptRuleService,
+        private readonly referenceImages: ReferenceImageService,
     ) {}
 
     /**
@@ -165,11 +178,15 @@ export class ImageGenerateService {
         const controller = new AbortController()
         this.activeRequest = controller
         const startedAt = Date.now()
-        logger.info(`出图开始：${request.dirPath}（${request.ratio}，${request.kind}）`)
+        logger.info(
+            `出图开始：${request.dirPath}（${request.ratio}，${request.kind}，参考图 ${String(request.references.length)} 张）`,
+        )
         try {
             const settings = await this.readSettings(request.dirPath)
             // 规则正文按标识读盘：文件已被删除的规则静默跳过，出图不因单条规则缺失而失败
             const ruleTexts = await this.rules.readForPrompt(request.ruleIds)
+            // 参考图按登记表校验后读成多模态输入；单张失效时跳过，不阻断出图
+            const references = await this.referenceImages.readForPrompt(request.references)
             const artifact = await this.router.generate({
                 prompt: composeImagePrompt({
                     prompt: request.prompt,
@@ -179,6 +196,7 @@ export class ImageGenerateService {
                     style: request.style,
                 }),
                 size: IMAGE_RATIO_SIZE[request.ratio],
+                references,
                 signal: controller.signal,
             })
             // 产物到手后再确认一次取消：落盘、扣配额、写封面都是不可撤回的副作用，

@@ -132,6 +132,11 @@ export interface ImageGenerateRequest {
      * 规则正文不进前端，由宿主读盘后作为约束段并入；顺序即芯片顺序。
      */
     promptRules?: string[]
+    /**
+     * 参考图芯片的本地路径：只接受 Host 选择流程登记过的图片。
+     * 图片作为多模态输入随指令提交，供模型观察主体与构图；不写进提示词正文。
+     */
+    referenceImages?: string[]
     kind: ImageGenerateKind
     /** portrait 必填，其余必须为 null */
     characterId: string | null
@@ -147,6 +152,24 @@ export interface ImageGenerateRequest {
  */
 export interface ImageGenerateResult {
     image: PressImageItem
+}
+
+/**
+ * 参考图条目：由宿主文件选择流程产出，前端只持有回传结果，不自行拼路径。
+ * url 仅本次会话有效，供芯片缩略图与悬停预览使用。
+ */
+export interface ImageReferenceItem {
+    /** 磁盘绝对路径：发送时原样回传，宿主按登记表校验后才读取 */
+    path: string
+    /** 文件名：芯片主文案 */
+    name: string
+    /** webview 可访问的完整 URL */
+    url: string
+}
+
+/** 选择参考图结果：用户取消选择框时 reference 为 null，前端静默忽略 */
+export interface ImageReferencePickResult {
+    reference: ImageReferenceItem | null
 }
 
 /** 生成参数：作品级可覆盖项，配额与超时不在此列 */

@@ -1,17 +1,19 @@
 /**
- * 生图输入卡片的工具栏：添加上下文菜单、角色选择与提示词入口。
- * 复用约定：上下文菜单取本目录 ImageCommandMenus，角色选择取本目录 ImageCharacterPicker，
- * 提示词取本目录 ImagePromptPicker。
+ * 生图输入卡片的工具栏：添加上下文菜单、参考图、角色选择与提示词入口。
+ * 复用约定：上下文菜单取本目录 ImageCommandMenus，参考图取本目录 ImageReferencePicker，
+ * 角色选择取本目录 ImageCharacterPicker，提示词取本目录 ImagePromptPicker。
  * 关键约束：本组件不持有状态，各菜单的选中与禁用由输入卡片按芯片算好传入；
  * 上下文与角色都在生成中仍可切换（只影响下一次请求）；
  * 作品设定与规则挂在「添加上下文」的子菜单里，标识与点选事件同样由输入卡片承担；
+ * 参考图只上抛选中结果，芯片与发送都由输入卡片决定；
  * 词条只回传点选事件与已选标识，芯片的增删由输入卡片决定；
  * 画面风格不在此列，改由底部操作行的 ImageStylePicker 承载。
  */
-import type { PromptRule } from '@shared/types/imagegen'
+import type { ImageReferenceItem, PromptRule } from '@shared/types/imagegen'
 import { ImageCharacterPicker } from './ImageCharacterPicker'
 import { ImageCommandMenus } from './ImageCommandMenus'
 import { ImagePromptPicker } from './ImagePromptPicker'
+import { ImageReferencePicker } from './ImageReferencePicker'
 import type { PromptTag } from '../prompt/promptLibrary'
 import type { PromptCharacterSnapshot } from '../prompt/promptSections'
 import type { JSX } from 'react'
@@ -19,6 +21,8 @@ import type { JSX } from 'react'
 interface ImageComposerToolbarProps {
     /** 作品设定芯片是否已挂上 */
     isSettingActive: boolean
+    /** 参考图是否已达上限：参考图按钮据此禁用 */
+    isReferenceFull: boolean
     /** 可选角色：作品下全部人物卡快照 */
     characters: ReadonlyArray<PromptCharacterSnapshot>
     /** 当前角色芯片指向的角色：null 表示不使用角色 */
@@ -35,10 +39,13 @@ interface ImageComposerToolbarProps {
     onTogglePrompt: (tag: PromptTag) => void
     /** 点选规则：由输入卡片切换对应芯片 */
     onToggleRule: (rule: PromptRule) => void
+    /** 选中参考图：由输入卡片挂成参考芯片 */
+    onPickReference: (reference: ImageReferenceItem) => void
 }
 
 export function ImageComposerToolbar({
     isSettingActive,
+    isReferenceFull,
     characters,
     activeCharacterId,
     selectedPrompts,
@@ -47,6 +54,7 @@ export function ImageComposerToolbar({
     onSelectCharacter,
     onTogglePrompt,
     onToggleRule,
+    onPickReference,
 }: ImageComposerToolbarProps): JSX.Element {
     return (
         <div className="flex items-center gap-0.5 p-0.5">
@@ -56,6 +64,7 @@ export function ImageComposerToolbar({
                 onToggleSetting={onToggleSetting}
                 onToggleRule={onToggleRule}
             />
+            <ImageReferencePicker disabled={isReferenceFull} onPick={onPickReference} />
             <ImageCharacterPicker
                 characters={characters}
                 activeCharacterId={activeCharacterId}

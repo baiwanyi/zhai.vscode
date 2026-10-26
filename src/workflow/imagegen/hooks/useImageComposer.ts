@@ -1,12 +1,13 @@
 /**
  * 生图会话状态机：持有正文、增强态与出图请求，处理发送、取消、超时与迟到回包。
  * 复用约定：请求经 @shared/utils/bridge，失败统一 toastError，芯片集合由 usePromptChips 持有并经回调同步；
- * 提示词拼装由调用方注入 composePrompt，上下文、词条与规则分别由 composeContexts / composePromptTags /
- * composePromptRules 注入——上下文与词条文本、规则标识都不拼进正文，随请求的 contexts / promptRules 提交；
+ * 提示词拼装由调用方注入 composePrompt，上下文、词条、规则与参考图分别由 composeContexts /
+ * composePromptTags / composePromptRules / composeReferenceImages 注入——上下文与词条文本、规则标识、
+ * 参考图路径都不拼进正文，随请求的 contexts / promptRules / referenceImages 提交；
  * 增强提交的源文本由 composeEnhanceSource 注入，本 hook 只提供发送瞬间的正文与芯片快照。
  * 对外回调统一用 on 前缀且 Promise 在 hook 内收口（异步实现拆成 runXxx），调用方可直接交给按钮属性。
  * 关键约束：generationRef 是请求代号，取消或重发即自增，旧回包按代号丢弃并只经 onLateGenerated 静默补图；
- * 正文、上下文、词条与规则都为空才拒绝发送，角色芯片不参与可发送判定；
+ * 正文、上下文、词条、规则与参考图都为空才拒绝发送，角色芯片不参与可发送判定；
  * 发送即清空正文与芯片，失败或取消仅在用户没有新输入时回填；生成态经 onGeneratingChange 上报，卸载补发一次结束；
  * enhancedFrom 取发送前的闭包旧值，不受本次 setState 影响。
  */
@@ -45,6 +46,8 @@ interface UseImageComposerOptions {
     composePromptTags?: (chips: readonly PromptChip[]) => string[]
     /** 收集规则标识：发送时交给宿主读盘并入，缺省视为没有规则 */
     composePromptRules?: (chips: readonly PromptChip[]) => string[]
+    /** 收集参考图路径：发送时交给宿主读取为多模态输入，缺省视为没有参考图 */
+    composeReferenceImages?: (chips: readonly PromptChip[]) => string[]
     /** 拼装待增强的正文：把角色段等参考信息并进去，缺省时原样提交 */
     composeEnhanceSource?: (text: string) => string
     /** 生成目标：封面 / 普通图 / 角色图由调用方按当前模式判定 */
@@ -84,6 +87,7 @@ export function useImageComposer({
     composeContexts = (): string[] => [],
     composePromptTags = (): string[] => [],
     composePromptRules = (): string[] => [],
+    composeReferenceImages = (): string[] => [],
     composeEnhanceSource = (source: string): string => source,
     target,
     ratio,
@@ -195,7 +199,15 @@ export function useImageComposer({
         const promptTags = composePromptTags(chips)
         /** 规则标识：正文由宿主读盘，只挂规则同样可以出图 */
         const promptRules = composePromptRules(chips)
-        if (prompt.length === 0 && contexts.length === 0 && promptTags.length === 0 && promptRules.length === 0) {
+        /** 参考图路径：由宿主校验并读成多模态输入，只挂参考图同样可以出图 */
+        const referenceImages = composeReferenceImages(chips)
+        if (
+            prompt.length === 0 &&
+            contexts.length === 0 &&
+            promptTags.length === 0 &&
+            promptRules.length === 0 &&
+            referenceImages.length === 0
+        ) {
             return
         }
         const token = generationRef.current + 1
@@ -220,6 +232,8 @@ export function useImageComposer({
                     promptTags: promptTags.length > 0 ? promptTags : undefined,
                     // 规则同样只传标识，正文由宿主按标识读盘后作为约束段并入
                     promptRules: promptRules.length > 0 ? promptRules : undefined,
+                    // 参考图只传宿主登记过的路径，由宿主读取字节后作为多模态输入
+                    referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
                     kind: target.kind,
                     characterId: target.characterId,
                     ratio,

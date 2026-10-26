@@ -6,7 +6,8 @@
  * 关键约束：只放行 ImageGen 并限制最大轮次（模型常先输出说明、再调用工具、最后收尾）；
  * 工具结果一落地即尝试取图，避免收尾轮被轮次上限截断导致整次作废；ImageGen 以 JSON 文本回报产物（images[].localPath），
  * 路径可能不带扩展名，格式一律按文件魔数判定；同时兼容 image block / data URL / 链接等形态，
- * 逐候选校验，全部失败时记录诊断并明确报错，不返回空图。
+ * 逐候选校验，全部失败时记录诊断并明确报错，不返回空图；
+ * 参考图以 image 内容块与指令同条提交，让模型先看图再决定出图描述，不用文本路径冒充参考。
  */
 import { Buffer } from 'node:buffer'
 import { readFile } from 'node:fs/promises'
@@ -20,8 +21,14 @@ import type { CodebuddySite } from '@modules/common/config'
 import { getZhaiConfig } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import type { SecretsService } from '@modules/common/secrets'
-import type { ImageGenerateOptions, ImageGenerateResult, ImageProvider, ImageProviderId } from './imageProvider'
-import type { ContentBlock, PermissionResult } from '@tencent-ai/agent-sdk'
+import type {
+    ImageGenerateOptions,
+    ImageGenerateResult,
+    ImageProvider,
+    ImageProviderId,
+    ImageReferenceInput,
+} from './imageProvider'
+import type { ContentBlock, ImageContentBlock, PermissionResult, UserMessage } from '@tencent-ai/agent-sdk'
 
 /** 单张图片体积上限 */
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024
@@ -76,12 +83,64 @@ function buildImageEnv(site: CodebuddySite, apiKey?: string): Record<string, str
 
 /** 拼出交给模型的出图指令：要求只调用工具并回报路径，避免它继续解释画面 */
 function buildInstruction(options: ImageGenerateOptions): string {
-    return [
+    const referenceCount = options.references?.length ?? 0
+    const lines = [
         '请立即调用 ImageGen 工具生成一张图片，不要先用文字说明或复述画面，也不要用文字描述代替出图。',
+        referenceCount > 0
+            ? `随附 ${String(referenceCount)} 张参考图片：先观察其中的主体、构图、色调与光影，把它们作为本次画面的参考，不要原样复刻。`
+            : '',
         `画面要求：${options.prompt}`,
         `尺寸：${options.size}`,
         '完成后只回复图片的本地绝对路径或可访问链接，不要附加其他说明。',
-    ].join('\n')
+    ]
+    return lines.filter((line) => line.length > 0).join('\n')
+}
+
+/**
+ * 单条消息的异步序列：query 的结构化入参只接受 AsyncIterable，
+ * 这里把一条消息包成只产出一次的序列，第二次取即 done，让 CLI 正常收尾。
+ */
+function singleMessageStream(message: UserMessage): AsyncIterable<UserMessage> {
+    let isSent = false
+    return {
+        [Symbol.asyncIterator]: (): AsyncIterator<UserMessage> => ({
+            next: (): Promise<IteratorResult<UserMessage>> => {
+                if (isSent) {
+                    return Promise.resolve({ done: true, value: undefined })
+                }
+                isSent = true
+                return Promise.resolve({ done: false, value: message })
+            },
+        }),
+    }
+}
+
+/**
+ * 带参考图的用户消息：指令文本与图片内容块同条提交，模型先看图再决定出图描述。
+ * 关键约束：session_id 传空串，与字符串提示词路径口径一致，由 CLI 在当前会话内补全；
+ * 图片必须按内容块提交，写成文本路径模型是看不到画面的。
+ */
+function promptWithReferences(
+    instruction: string,
+    references: readonly ImageReferenceInput[],
+): AsyncIterable<UserMessage> {
+    const images = references.map((item): ImageContentBlock => ({
+        type: 'image',
+        source: { type: 'base64', media_type: item.mimeType, data: Buffer.from(item.bytes).toString('base64') },
+    }))
+    return singleMessageStream({
+        type: 'user',
+        session_id: '',
+        parent_tool_use_id: null,
+        message: { role: 'user', content: [{ type: 'text', text: instruction }, ...images] },
+    })
+}
+
+/** 出图入参：无参考图时保持字符串提示词，有参考图时改走结构化消息 */
+function buildPrompt(options: ImageGenerateOptions): string | AsyncIterable<UserMessage> {
+    const instruction = buildInstruction(options)
+    const references = options.references ?? []
+    return references.length === 0 ? instruction : promptWithReferences(instruction, references)
 }
 
 /** 把 SDK 的原始错误转成可执行提示 */
@@ -275,7 +334,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
         // 出图驱动模型与对话共用面板菜单里的当前选择，避免同一模型出现分歧
         const model = resolveCodebuddyModel(getSelectedCodebuddyModel())
         const session = query({
-            prompt: buildInstruction(options),
+            prompt: buildPrompt(options),
             options: {
                 // 仅放行出图工具，避免模型顺带读写工作区；allowedTools + canUseTool 双重放行才会真正执行
                 tools: ['ImageGen'],

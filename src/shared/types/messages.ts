@@ -168,6 +168,7 @@ export type HostMethodName =
     | 'pressAi/listPortraitGallery'
     | 'pressAi/listPortraits'
     | 'pressAi/openPromptRuleDir'
+    | 'pressAi/pickReferenceImage'
     | 'pressAi/saveCover'
     | 'pressAi/saveImageSettings'
     | 'pressAi/savePromptRule'

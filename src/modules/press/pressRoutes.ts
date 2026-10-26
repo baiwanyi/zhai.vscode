@@ -3,7 +3,8 @@
  * 并承接工作台的作品读取、打开与人物卡提取（press/workspace、press/open、press/extract/characters），
  * 以及作品快照的列举、手动留版、恢复与删除（press/snapshot/*），入参收窄由本层与 shared 类型完成。
  * 提示词预览图基址（pressAi/getPromptImageBase）也走这里：它不属于作品域，
- * 借同一条前缀复用 toWebviewUri 注入，避免在 Provider 里再挂一个分支。
+ * 借同一条前缀复用 toWebviewUri 注入，避免在 Provider 里再挂一个分支；
+ * 参考图选择（pressAi/pickReferenceImage）同理——文件选择与登记在宿主，前端只拿回结果。
  * 复用约定：由 AiChatViewProvider 按前缀统一委托，本类只做方法到服务的映射；
  * 作品列表取索引库聚合结果，文档原文由 projectWorkspace 读取，打开动作与仪表盘 press/open 同口径，
  * 人物卡提取复用语义归纳服务，与仪表盘共用同一实例（单任务锁与配额口径一致）。
@@ -20,6 +21,7 @@ import type { ImageSettingsService } from '@modules/imagegen/imageSettingsServic
 import type { PortraitService } from '@modules/imagegen/portraitService'
 import { readPromptImageBase } from '@modules/imagegen/promptImageService'
 import type { PromptRuleService } from '@modules/imagegen/promptRuleService'
+import type { ReferenceImageService } from '@modules/imagegen/referenceImageService'
 import type { PromptRuleListResult } from '@shared/types/imagegen'
 import type {
     ChapterSnapshotCaptureResult,
@@ -79,6 +81,7 @@ export class PressRoutes {
         private readonly imageGenerate: ImageGenerateService,
         private readonly imageSettings: ImageSettingsService,
         private readonly promptRules: PromptRuleService,
+        private readonly referenceImages: ReferenceImageService,
     ) {}
 
     /**
@@ -139,6 +142,8 @@ export class PressRoutes {
                 return this.promptRules.save(payload)
             case 'pressAi/openPromptRuleDir':
                 return this.openPromptRuleDir()
+            case 'pressAi/pickReferenceImage':
+                return this.referenceImages.pick(toWebviewUri)
             case 'pressAi/saveImageSettings':
                 return this.imageSettings.save(payload)
             case 'pressAi/setImageCover':

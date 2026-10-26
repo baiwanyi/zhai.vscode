@@ -16,6 +16,7 @@ import { IMAGE_QUOTA_KEYS } from '../src/modules/imagegen/constants'
 import { ImageGenerateService } from '../src/modules/imagegen/imageGenerateService'
 import { ImageSettingsService } from '../src/modules/imagegen/imageSettingsService'
 import { PromptRuleService } from '../src/modules/imagegen/promptRuleService'
+import { ReferenceImageService } from '../src/modules/imagegen/referenceImageService'
 
 const STORAGE_ROOT = 'd:/vault'
 const DIR_PATH = 'press/剑来'
@@ -26,6 +27,7 @@ const ARTIFACT_BYTES = 'png-bytes'
 let db: Database.Database
 let settings: ImageSettingsService
 let rules: PromptRuleService
+let referenceImages: ReferenceImageService
 let service: ImageGenerateService
 /** 每次调用通道时收到的入参，用于断言提示词拼装与尺寸 */
 let calls: { prompt: string; size: string }[]
@@ -80,11 +82,12 @@ beforeEach(() => {
     ensureSchema(db)
     settings = new ImageSettingsService()
     rules = new PromptRuleService()
+    referenceImages = new ReferenceImageService()
     calls = []
     shouldFail = false
     hold = null
     releaseHold = null
-    service = new ImageGenerateService(db, generator, new UsageRecorder(db), provider, settings, rules)
+    service = new ImageGenerateService(db, generator, new UsageRecorder(db), provider, settings, rules, referenceImages)
 })
 
 describe('入参校验', () => {
@@ -109,6 +112,14 @@ describe('入参校验', () => {
 
     it('画面比例只接受白名单值', async () => {
         await expect(service.generate(payload({ ratio: '5:5' }), toUri)).rejects.toThrow('画面比例非法')
+    })
+
+    it('参考图未经过选择流程时拒绝请求，且不调用通道', async () => {
+        await expect(
+            service.generate(payload({ prompt: '', referenceImages: ['d:/vault/pic.png'] }), toUri),
+        ).rejects.toThrow('参考图未经过选择流程')
+
+        expect(calls).toHaveLength(0)
     })
 })
 

@@ -1,12 +1,13 @@
 /**
- * 生图输入卡片：上下文、角色、词条与规则以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
+ * 生图输入卡片：上下文、参考图、角色、词条与规则以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
  * 复用约定：外壳沿用 aichat 的两层底色（bg-composer / bg-composer-input），输入区取 RichChipInput，
  * 工具栏与底部操作行取本目录 ImageComposerToolbar / ImageComposerActions；提示词拼装与比例探测
  * 取 ../prompt 下的纯函数，芯片集合与会话状态分别由 ../hooks 的 usePromptChips / useImageComposer 持有。
  * 关键约束：角色芯片是角色选择的唯一数据源——选择器选中即挂「图标 + 姓名」徽标，移除即回到不使用角色，
  * 生成目标与增强时的角色段都由它派生；顶栏筛选的角色只作初值，之后不与其联动；
+ * 参考图芯片挂「缩略图 + 文件名」徽标，悬停文件名预览大图，只带宿主回传的路径与预览地址；
  * 词条芯片只承载「选了哪些词条」，规则芯片只承载「选了哪些规则」，「添加上下文」里的作品设定展开为上下文段；
- * 三者都不写进输入框，随请求的 contexts / promptTags / promptRules 提交，由宿主在出图时按段并入；
+ * 四者都不写进输入框，随请求的 contexts / referenceImages / promptTags / promptRules 提交，由宿主在出图时按段并入；
  * 生成意图只有两种：挂着角色芯片即角色图，否则是普通图片；生成不碰作品封面，封面在图库里手动指定；
  * 比例与画风各只落一份 state，手动改动经 onSettingsChange 上报，正文里的比例字面量只自动切换
  * 本次会话的选择、不写回作品配置。
@@ -17,7 +18,8 @@ import { useMemo, useRef, useState } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
 import type { ImageGenerateKind, ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
-import { RichChipInput } from '@webview/components/RichChipInput'
+import { Image } from '@webview/components/Image'
+import { RichChipInput, type RichChip } from '@webview/components/RichChipInput'
 import { ImageComposerActions } from './ImageComposerActions'
 import { ImageComposerToolbar } from './ImageComposerToolbar'
 import type { LucideIcon } from 'lucide-react'
@@ -34,8 +36,11 @@ import { detectImageRatio } from '../prompt/ratioIntent'
 
 export type { PromptCharacterSnapshot, PromptSettingSnapshot }
 
-/** 芯片前置图标：与工具栏各入口的图标保持一致，人物卡、设定与规则语义由图标表达 */
-const CHIP_ICONS: Readonly<Record<PromptChipKind, LucideIcon>> = {
+/** 参考图上限：与宿主读取上限一致，达到后按钮禁用，避免挂上却被宿主丢弃 */
+const MAX_REFERENCE_IMAGES = 3
+
+/** 芯片前置图标：与工具栏各入口的图标保持一致，人物卡、设定与规则语义由图标表达；参考图改用缩略图 */
+const CHIP_ICONS: Readonly<Record<Exclude<PromptChipKind, 'reference'>, LucideIcon>> = {
     setting: BookText,
     character: ContactRound,
     prompt: WandSparkles,
@@ -146,10 +151,12 @@ function ComposerBody({
         characterChip,
         promptChips,
         ruleChips,
+        referenceChips,
         toggleSetting,
         setCharacter,
         togglePrompt,
         toggleRule,
+        addReference,
         removeChip,
         clearChips,
         restoreChips,
@@ -203,6 +210,13 @@ function ComposerBody({
     const composePromptRules = (source: readonly PromptChip[]): string[] =>
         source.filter((chip) => chip.kind === 'rule').map((chip) => chip.value)
 
+    /**
+     * 收集参考图路径：路径由宿主选择流程产出并登记，前端只按芯片顺序回传。
+     * 关键约束：图片字节不进前端请求，宿主据此读取并作为多模态输入提交。
+     */
+    const composeReferenceImages = (source: readonly PromptChip[]): string[] =>
+        source.filter((chip) => chip.kind === 'reference').map((chip) => chip.value)
+
     /** 随请求下发的目标：普通图不带角色，角色图才绑定角色芯片指向的人物 */
     const generateTarget = {
         kind: targetKind,
@@ -224,6 +238,7 @@ function ComposerBody({
             composeContexts,
             composePromptTags,
             composePromptRules,
+            composeReferenceImages,
             composeEnhanceSource,
             target: generateTarget,
             ratio,
@@ -236,10 +251,11 @@ function ComposerBody({
             onGeneratingChange,
         })
 
-    /** 能否发送：正文或角色段有内容，或挂了上下文 / 词条 / 规则芯片，输入框与发送按钮共用同一判定 */
+    /** 能否发送：正文或角色段有内容，或挂了上下文 / 参考图 / 词条 / 规则芯片，输入框与发送按钮共用同一判定 */
     const canSend =
         composePrompt({ text, chips }).length > 0 ||
         composeContexts(chips).length > 0 ||
+        referenceChips.length > 0 ||
         promptChips.length > 0 ||
         ruleChips.length > 0
 
@@ -269,8 +285,20 @@ function ComposerBody({
         detectedRatioRef.current = detected
     }
 
-    /** 芯片渲染项：id 由 hook 保证唯一（设定与角色按 kind，词条按上游原文），图标与各入口保持一致 */
-    const richChips = chips.map((chip) => {
+    /**
+     * 芯片渲染项：id 由 hook 保证唯一（设定与角色按 kind，词条按上游原文，参考图按磁盘路径）。
+     * 参考图用缩略图代替前置图标，并把预览地址交给输入区做悬停大图。
+     */
+    const richChips = chips.map((chip): RichChip => {
+        if (chip.kind === 'reference') {
+            const previewUrl = chip.previewUrl
+            return {
+                id: chip.id,
+                label: chip.label,
+                icon: <Image src={previewUrl} alt={chip.label} size="sm" className="size-3.5 shrink-0 object-cover" />,
+                ...(previewUrl === undefined ? {} : { preview: { src: previewUrl, alt: chip.label } }),
+            }
+        }
         const Icon = CHIP_ICONS[chip.kind]
         return {
             id: chip.id,
@@ -283,6 +311,7 @@ function ComposerBody({
         <div className="flex flex-col gap-0.5 rounded-2xl bg-composer p-1.5">
             <ImageComposerToolbar
                 isSettingActive={settingChip !== null}
+                isReferenceFull={referenceChips.length >= MAX_REFERENCE_IMAGES}
                 characters={characters}
                 activeCharacterId={activeCharacter?.id ?? null}
                 selectedPrompts={promptChips.map((chip) => chip.value)}
@@ -291,6 +320,7 @@ function ComposerBody({
                 onSelectCharacter={setCharacter}
                 onTogglePrompt={togglePrompt}
                 onToggleRule={toggleRule}
+                onPickReference={addReference}
             />
 
             <div className="rounded-xl bg-composer-input p-3">

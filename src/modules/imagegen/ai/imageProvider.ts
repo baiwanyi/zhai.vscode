@@ -12,12 +12,26 @@ import { CodeBuddyImageProvider } from './codebuddyImageProvider'
 /** 图像通道标识 */
 export type ImageProviderId = 'codebuddy'
 
+/** 参考图类型：与文件魔数嗅探结果一致，扩展名只用于选择框过滤 */
+export type ImageReferenceMimeType = 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
+
+/** 参考图输入：字节与真实类型都已由宿主侧校验 */
+export interface ImageReferenceInput {
+    bytes: Uint8Array
+    mimeType: ImageReferenceMimeType
+}
+
 /** 单次出图请求 */
 export interface ImageGenerateOptions {
     /** 已组装好的英文提示词 */
     prompt: string
     /** 期望尺寸，形如 768x1024；通道不支持时忽略 */
     size: string
+    /**
+     * 参考图：作为多模态输入随指令提交，供模型观察主体、构图与色调。
+     * 缺省或空数组即纯文生图，通道行为与不带参考图时完全一致。
+     */
+    references?: readonly ImageReferenceInput[]
     signal: AbortSignal
 }
 
