@@ -8,17 +8,13 @@
 import { useState } from 'react'
 import { Field, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
+import { Textarea } from '@components/ui/textarea'
 import { FormDialog } from '@webview/components/FormDialog'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { CharacterGender, CharacterRole, CharacterSeed } from '../types'
 import type { JSX } from 'react'
-import {
-    CHARACTER_GENDER_META,
-    CHARACTER_GENDER_ORDER,
-    CHARACTER_ROLE_META,
-    CHARACTER_ROLE_ORDER,
-} from '../constants'
+import { CHARACTER_GENDER_META, CHARACTER_GENDER_ORDER, CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
 
 interface CharacterCreateDialogProps {
     open: boolean
@@ -110,7 +106,7 @@ export function CharacterCreateDialog({ open, onOpenChange, onCreate }: Characte
             </Field>
             <Field>
                 <FieldLabel htmlFor="character-create-identity">身份</FieldLabel>
-                <Input
+                <Textarea
                     id="character-create-identity"
                     value={identity.value}
                     placeholder="如：落魄剑客、商会掌柜"

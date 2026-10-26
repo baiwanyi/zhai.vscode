@@ -47,7 +47,7 @@ function AppDescription({ className, ...props }: ComponentProps<'p'>): JSX.Eleme
     return (
         <p
             data-slot="app-description"
-            className={cn('col-span-full text-muted-foreground text-xs', className)}
+            className={cn('col-span-full text-muted-foreground text-xs flex items-center gap-2', className)}
             {...props}
         />
     )

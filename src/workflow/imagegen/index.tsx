@@ -16,7 +16,6 @@ import { useState } from 'react'
 import { Badge } from '@components/ui/badge'
 import type { ImageGenerateResult, PressImageItem } from '@shared/types/imagegen'
 import {
-    AppAction,
     AppContent,
     AppDescription,
     AppFooter,
@@ -173,12 +172,12 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
             <AppPage>
                 <AppHeader>
                     <AppTitle>生图</AppTitle>
-                    {isLibraryEmpty ? null : (
-                        <AppAction>
-                            <Badge variant="secondary">{images.length.toLocaleString('zh-CN')} 张</Badge>
-                        </AppAction>
-                    )}
-                    <AppDescription>{setting.title}</AppDescription>
+                    <AppDescription>
+                        <Badge variant="outline">{setting.title}</Badge>{' '}
+                        {isLibraryEmpty ? null : (
+                            <Badge variant="secondary">共 {images.length.toLocaleString('zh-CN')} 张</Badge>
+                        )}
+                    </AppDescription>
                     <AppMenu className="justify-between">
                         <ImageGenFilters
                             kind={kind}

@@ -58,9 +58,10 @@ export function AiUsagePage(): JSX.Element {
                     <AppTitle>AI 使用量</AppTitle>
                     <AppAction>
                         <Button
-                            variant="ghost"
                             size="icon"
+                            variant="outline"
                             aria-label="刷新用量"
+                            tooltip="刷新用量"
                             disabled={isLoading}
                             onClick={refresh}
                         >

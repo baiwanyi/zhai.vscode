@@ -33,7 +33,7 @@ export function DocSnapshotPanel({ dirPath }: DocSnapshotPanelProps): JSX.Elemen
     return (
         <>
             <Card className="h-full">
-                <CardHeader>
+                <CardHeader className="flex items-center justify-between">
                     <CardTitle>快照列表</CardTitle>
                     <CardAction>
                         <Button variant="outline" disabled={isBusy} onClick={() => setIsCreateOpen(true)}>

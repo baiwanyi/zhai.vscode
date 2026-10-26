@@ -115,7 +115,7 @@ export function CharacterList({
 
     return (
         <>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 p-4">
                 {sortedCharacters.map((character) => {
                     const roleMeta = CHARACTER_ROLE_META[character.role]
                     const summary = character.desire.length > 0 ? character.desire : '欲望未填写'
@@ -185,6 +185,7 @@ export function CharacterList({
                     )
                 })}
             </div>
+
             <ConfirmDialog
                 open={deleting !== null}
                 title={`删除「${deleting?.name ?? ''}」？`}

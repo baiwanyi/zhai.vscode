@@ -101,7 +101,7 @@ export function PressSectionRouter({
     }
     // 快照按作品隔离：与文档同目录，切作品即换用该作品自己的时间线
     if (section === 'snapshot') {
-        return <PressSnapshotPage dirPath={dirPath} />
+        return <PressSnapshotPage dirPath={dirPath} title={workspace.setting.title} />
     }
     // 用量是全局统计，不随作品目录隔离：跨作品的消耗在同一张表里汇总
     if (section === 'usage') {
