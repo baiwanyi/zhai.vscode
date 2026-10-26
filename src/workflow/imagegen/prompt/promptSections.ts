@@ -1,9 +1,11 @@
 /**
- * 生图提示词分段：把正文、角色卡快照与作品设定快照合成为一段交给宿主的提示词。
+ * 生图提示词分段：把正文与角色卡快照合成为提示词，并把作品设定快照单独展开为一段上下文。
  * 复用约定：调用方传入已取到的快照，本文件只做「快照 → 文本」的纯转换，状态与请求由 useImageComposer 承担；
- * 与宿主 src/modules/imagegen/promptCompose 的分工是「前端拼正文与引用段、宿主拼画风与负向约束」，故不与其同名。
+ * 与宿主 src/modules/imagegen/promptCompose 的分工是「前端拼正文、角色段与上下文，宿主拼规则与画风」，
+ * 故不与其同名。
  * 关键约束：空字段一律跳过、不落占位；每项独立成行，便于模型区分外形硬约束与气质描述；
- * 封面模式不并角色段——是否传 character 由调用方决定，本层不感知封面模式。
+ * 设定段不进提示词正文——它由 composeSettingContext 单独展开，随请求的 contexts 字段提交，
+ * 因此不参与正文长度与增强请求；封面模式不并角色段——是否传 character 由调用方决定，本层不感知封面模式。
  */
 
 /** 作品设定快照：只取与画面相关的字段，缺省项不参与拼装 */
@@ -30,11 +32,10 @@ export interface PromptCharacterSnapshot {
     age?: string
 }
 
-/** 拼装入参：character 与 setting 为 null 表示本次不并入该段 */
+/** 拼装入参：character 为 null 表示本次不并入角色段 */
 export interface PromptSectionsInput {
     text: string
     character: PromptCharacterSnapshot | null
-    setting: PromptSettingSnapshot | null
 }
 
 /** 性别文案：只在已知时拼入，避免把「未知」写成外貌 */
@@ -64,7 +65,7 @@ function composeCharacterSection(character: PromptCharacterSnapshot): string {
     return lines.join('\n')
 }
 
-/** 把作品设定展开为一段提示词：只输出有值的字段 */
+/** 把作品设定展开为一段文本：只输出有值的字段 */
 function formatSettingSnapshot(setting: PromptSettingSnapshot): string {
     const lines: string[] = []
     if (setting.title !== undefined && setting.title.length > 0) {
@@ -88,8 +89,16 @@ function formatSettingSnapshot(setting: PromptSettingSnapshot): string {
     return lines.join('\n')
 }
 
-/** 合成前端提示词：正文、角色段、设定段依次排布，段间空行分隔，空段不占位 */
-export function composePromptSections({ text, character, setting }: PromptSectionsInput): string {
+/**
+ * 作品设定上下文：展开为一段独立文本，由调用方放进请求的 contexts。
+ * 关键约束：与正文分开，模型侧看到的仍是背景信息，但协议里不再混入 prompt 字段。
+ */
+export function composeSettingContext(setting: PromptSettingSnapshot): string {
+    return formatSettingSnapshot(setting)
+}
+
+/** 合成前端提示词：正文与角色段依次排布，段间空行分隔，空段不占位 */
+export function composePromptSections({ text, character }: PromptSectionsInput): string {
     const sections: string[] = []
     const trimmed = text.trim()
     if (trimmed.length > 0) {
@@ -97,12 +106,6 @@ export function composePromptSections({ text, character, setting }: PromptSectio
     }
     if (character !== null) {
         sections.push(composeCharacterSection(character))
-    }
-    if (setting !== null) {
-        const snapshot = formatSettingSnapshot(setting)
-        if (snapshot.length > 0) {
-            sections.push(snapshot)
-        }
     }
     return sections.join('\n\n')
 }

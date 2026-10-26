@@ -49,7 +49,7 @@ interface ImageGenPageProps {
      * 只取人物卡里与出图相关的几项，不整体透传，避免页面耦合人物卡的全部字段。
      */
     characters: ReadonlyArray<ImageGenCharacter>
-    /** 作品设定快照：命令动作选中「作品设定」时展开进提示词 */
+    /** 作品设定快照：「添加上下文」选中「作品设定」时展开为上下文段 */
     setting: PromptSettingSnapshot
     /** 写回人物卡封面指针：删除与生成后同步，保证角色卡页与本页一致 */
     onChangeCharacter: (characterId: string, patch: { coverPortraitId: string | null }) => void

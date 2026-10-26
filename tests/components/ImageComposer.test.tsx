@@ -306,11 +306,11 @@ describe('ImageComposer', () => {
         expect(params.prompt).toBe('雨夜长街')
     })
 
-    it('命令动作芯片可开关，移除后不再并入提示词', async () => {
+    it('上下文芯片可开关，移除后不再提交上下文', async () => {
         const user = userEvent.setup()
         renderComposer()
 
-        await user.click(screen.getByRole('button', { name: '命令动作' }))
+        await user.click(screen.getByRole('button', { name: '添加上下文' }))
         await user.click(screen.getByRole('menuitemcheckbox', { name: '作品设定' }))
         expect(screen.getByText('作品设定')).toBeDefined()
 
@@ -320,18 +320,20 @@ describe('ImageComposer', () => {
 
         await user.click(screen.getByRole('button', { name: '发送' }))
         expect(generateParams().prompt).toBe('雨夜长街')
+        expect(generateParams().contexts).toBeUndefined()
     })
 
-    it('作品设定芯片并入书名等设定段', async () => {
+    it('作品设定作为上下文提交，不混入提示词正文', async () => {
         const user = userEvent.setup()
         renderComposer()
 
         await user.type(inputBox(), '雨夜长街')
-        await user.click(screen.getByRole('button', { name: '命令动作' }))
+        await user.click(screen.getByRole('button', { name: '添加上下文' }))
         await user.click(screen.getByRole('menuitemcheckbox', { name: '作品设定' }))
         await user.click(screen.getByRole('button', { name: '发送' }))
 
-        expect(generateParams().prompt).toBe('雨夜长街\n\n书名：剑来')
+        expect(generateParams().prompt).toBe('雨夜长街')
+        expect(generateParams().contexts).toEqual(['书名：剑来'])
     })
 
     it('规则子菜单勾选后只带标识随请求下发，发送后芯片清空', async () => {
@@ -343,7 +345,7 @@ describe('ImageComposer', () => {
         )
         renderComposer()
 
-        await user.click(screen.getByRole('button', { name: '命令动作' }))
+        await user.click(screen.getByRole('button', { name: '添加上下文' }))
         // 子菜单由指针移动展开：jsdom 下 userEvent 的 hover 不派发 pointermove，这里显式触发一次
         fireEvent.pointerMove(await screen.findByRole('menuitem', { name: '规则' }), { pointerType: 'mouse' })
         await user.click(await screen.findByRole('menuitemcheckbox', { name: '冷色调' }))

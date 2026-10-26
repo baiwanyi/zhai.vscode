@@ -7,7 +7,7 @@
  * 关键约束：文件名按新规范生成——角色图 portrait-{14 位时间戳}-{8 位角色标识}，
  * 其余 photo-{14 位时间戳}-{8 位随机串}；同秒同角色冲突时时间戳逐秒递增而非覆盖；
  * 词条在前、正文在后合并成一段提示词，词条为空数组时行为与纯正文完全一致；
- * 规则段排在正文之后、作品补充之前，规则缺失只跳过，不阻断出图；
+ * 上下文段与规则段都排在正文之后、作品补充之前，二者合计为空与缺失都只跳过，不阻断出图；
  * 作品级 promptSuffix / negative 在出图前叠加，读取失败回落默认且不阻断出图；
  * 每次成功出图落一份同名 sidecar；单一任务锁防重复扣费，取消走 abort——
  * 产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额。
@@ -51,6 +51,10 @@ const MAX_PROMPT_TAG_LENGTH = 512
 const MAX_PROMPT_RULES = 5
 /** 单条规则标识长度上限：与规则名上限一致 */
 const MAX_PROMPT_RULE_ID_LENGTH = 40
+/** 上下文段数上限：「添加上下文」菜单的项数有限，超出视为异常请求 */
+const MAX_CONTEXTS = 4
+/** 单段上下文长度上限：作品设定展开后通常几百字，超出部分截断 */
+const MAX_CONTEXT_LENGTH = 1500
 /** 角色标识：与人物卡一致的 8 位数字 */
 const CHARACTER_ID_PATTERN = /^\d{8}$/u
 /** 提示词增强的超时：文本改写足够快，超过即视为失败并由前端保留原文 */
@@ -63,7 +67,9 @@ interface NormalizedImageRequest {
     dirPath: string
     /** 已并入词条文本的完整正文 */
     prompt: string
-    /** 规则标识：正文以外的约束，由宿主读盘后并入 */
+    /** 上下文段：正文以外的背景信息，由前端按芯片顺序展开 */
+    contexts: string[]
+    /** 规则标识：上下文的一部分，正文由宿主读盘后并入 */
     ruleIds: string[]
     kind: ImageGenerateKind
     characterId: string | null
@@ -72,12 +78,13 @@ interface NormalizedImageRequest {
     enhancedFrom: string | null
 }
 
-/** 入参收窄：目录、提示词、规则、类别、角色、比例与画风全部在这一层校验 */
+/** 入参收窄：目录、提示词、上下文、规则、类别、角色、比例与画风全部在这一层校验 */
 function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
     const dirPath = readProjectDirPath(payload, 'pressAi/generateImage')
     const value = payload as {
         prompt?: unknown
         promptTags?: unknown
+        contexts?: unknown
         promptRules?: unknown
         kind?: unknown
         characterId?: unknown
@@ -94,10 +101,12 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
         .filter((part) => part.length > 0)
         .join(', ')
         .slice(0, MAX_PROMPT_LENGTH)
-    // 规则只传标识（文件名主干），正文在出图前由 PromptRuleService 读盘并入；
-    // 正文与规则都为空时才算空提示词——只挂规则也能出图
+    // 上下文由「添加上下文」菜单产生：设定段是前端展开的文本，规则只传标识（文件名主干），
+    // 规则正文在出图前由 PromptRuleService 读盘并入
+    const contexts = readTextList(value.contexts, MAX_CONTEXTS, MAX_CONTEXT_LENGTH)
     const ruleIds = readTextList(value.promptRules, MAX_PROMPT_RULES, MAX_PROMPT_RULE_ID_LENGTH)
-    if (mergedPrompt.length === 0 && ruleIds.length === 0) {
+    // 正文、上下文与规则都为空时才算空请求——只挂设定或只挂规则也能出图
+    if (mergedPrompt.length === 0 && contexts.length === 0 && ruleIds.length === 0) {
         throw new Error('提示词不能为空')
     }
     const kind = value.kind
@@ -120,6 +129,7 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
     return {
         dirPath,
         prompt: mergedPrompt,
+        contexts,
         ruleIds,
         kind,
         characterId: kind === 'portrait' ? characterId : null,
@@ -161,7 +171,13 @@ export class ImageGenerateService {
             // 规则正文按标识读盘：文件已被删除的规则静默跳过，出图不因单条规则缺失而失败
             const ruleTexts = await this.rules.readForPrompt(request.ruleIds)
             const artifact = await this.router.generate({
-                prompt: composeImagePrompt(request.prompt, settings, request.style, ruleTexts),
+                prompt: composeImagePrompt({
+                    prompt: request.prompt,
+                    contexts: request.contexts,
+                    rules: ruleTexts,
+                    settings,
+                    style: request.style,
+                }),
                 size: IMAGE_RATIO_SIZE[request.ratio],
                 signal: controller.signal,
             })

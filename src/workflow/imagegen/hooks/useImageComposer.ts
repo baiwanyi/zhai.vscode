@@ -1,12 +1,12 @@
 /**
  * 生图会话状态机：持有正文、增强态与出图请求，处理发送、取消、超时与迟到回包。
  * 复用约定：请求经 @shared/utils/bridge，失败统一 toastError，芯片集合由 usePromptChips 持有并经回调同步；
- * 提示词拼装由调用方注入 composePrompt，词条与规则的标识由 composePromptTags / composePromptRules 注入——
- * 词条文本与规则正文都不在前端拼进正文，改由宿主在出图时按标识换取或读盘；
+ * 提示词拼装由调用方注入 composePrompt，上下文、词条与规则分别由 composeContexts / composePromptTags /
+ * composePromptRules 注入——上下文与词条文本、规则标识都不拼进正文，随请求的 contexts / promptRules 提交；
  * 增强提交的源文本由 composeEnhanceSource 注入，本 hook 只提供发送瞬间的正文与芯片快照。
  * 对外回调统一用 on 前缀且 Promise 在 hook 内收口（异步实现拆成 runXxx），调用方可直接交给按钮属性。
  * 关键约束：generationRef 是请求代号，取消或重发即自增，旧回包按代号丢弃并只经 onLateGenerated 静默补图；
- * 正文、词条与规则都为空才拒绝发送，其余芯片（角色、设定）不参与可发送判定；
+ * 正文、上下文、词条与规则都为空才拒绝发送，角色芯片不参与可发送判定；
  * 发送即清空正文与芯片，失败或取消仅在用户没有新输入时回填；生成态经 onGeneratingChange 上报，卸载补发一次结束；
  * enhancedFrom 取发送前的闭包旧值，不受本次 setState 影响。
  */
@@ -39,6 +39,8 @@ interface UseImageComposerOptions {
     dirPath: string
     /** 拼装提示词：传入发送瞬间的正文与芯片快照，避免回填竞态 */
     composePrompt: (source: ImageComposerPromptSource) => string
+    /** 收集上下文段：发送时作为 contexts 提交，缺省视为没有上下文 */
+    composeContexts?: (chips: readonly PromptChip[]) => string[]
     /** 收集词条标识：发送时一并交给宿主换取词条文本，缺省视为没有词条 */
     composePromptTags?: (chips: readonly PromptChip[]) => string[]
     /** 收集规则标识：发送时交给宿主读盘并入，缺省视为没有规则 */
@@ -79,6 +81,7 @@ interface UseImageComposerResult {
 export function useImageComposer({
     dirPath,
     composePrompt,
+    composeContexts = (): string[] => [],
     composePromptTags = (): string[] => [],
     composePromptRules = (): string[] => [],
     composeEnhanceSource = (source: string): string => source,
@@ -186,11 +189,13 @@ export function useImageComposer({
 
     const runSend = async (): Promise<void> => {
         const prompt = composePrompt({ text, chips })
+        /** 上下文段：菜单里添加的内容，作为背景随请求提交，不进正文 */
+        const contexts = composeContexts(chips)
         /** 词条标识：正文之外的内容，正文为空时也能出图，故与正文一起判定 */
         const promptTags = composePromptTags(chips)
-        /** 规则标识：正文与规则正文都由宿主处理，只挂规则同样可以出图 */
+        /** 规则标识：正文由宿主读盘，只挂规则同样可以出图 */
         const promptRules = composePromptRules(chips)
-        if (prompt.length === 0 && promptTags.length === 0 && promptRules.length === 0) {
+        if (prompt.length === 0 && contexts.length === 0 && promptTags.length === 0 && promptRules.length === 0) {
             return
         }
         const token = generationRef.current + 1
@@ -209,6 +214,8 @@ export function useImageComposer({
                 {
                     dirPath,
                     prompt,
+                    // 上下文作为独立字段提交，不混进上面的 prompt 正文
+                    contexts: contexts.length > 0 ? contexts : undefined,
                     // 词条只传标识，文本由宿主按 prompt 原文换取后并入提示词
                     promptTags: promptTags.length > 0 ? promptTags : undefined,
                     // 规则同样只传标识，正文由宿主按标识读盘后作为约束段并入

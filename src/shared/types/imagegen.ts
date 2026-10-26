@@ -123,7 +123,12 @@ export interface ImageGenerateRequest {
      */
     promptTags?: string[]
     /**
-     * 规则芯片的标识：{存储根}/prompt/rules 下的文件名主干。
+     * 上下文段：「添加上下文」菜单添加的内容（如作品设定），由前端按芯片顺序展开。
+     * 它不进 prompt 字段，宿主接在正文之后、规则之前，作为画面背景而非画面描述。
+     */
+    contexts?: string[]
+    /**
+     * 规则芯片的标识：{存储根}/prompt/rules 下的文件名主干，同样属于上下文而非提示词正文。
      * 规则正文不进前端，由宿主读盘后作为约束段并入；顺序即芯片顺序。
      */
     promptRules?: string[]

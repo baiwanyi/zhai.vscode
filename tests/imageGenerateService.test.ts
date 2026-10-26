@@ -189,6 +189,34 @@ function ruleFsPath(name: string): string {
     return path.join(STORAGE_ROOT, 'prompt', 'rules', `${name}.md`)
 }
 
+describe('上下文段', () => {
+    it('排在正文之后、规则之前', async () => {
+        setFileContent(ruleFsPath('冷色调'), '只用青蓝与灰白。\n')
+
+        await service.generate(
+            payload({ prompt: '雪夜庭院', contexts: ['书名：剑来'], promptRules: ['冷色调'] }),
+            toUri,
+        )
+
+        const prompt = calls[0]?.prompt ?? ''
+        expect(prompt.startsWith('雪夜庭院')).toBe(true)
+        expect(prompt.indexOf('书名：剑来')).toBeGreaterThan(prompt.indexOf('雪夜庭院'))
+        expect(prompt.indexOf('书名：剑来')).toBeLessThan(prompt.indexOf('只用青蓝与灰白'))
+    })
+
+    it('只挂上下文也能出图', async () => {
+        await service.generate(payload({ prompt: '', contexts: ['书名：剑来'] }), toUri)
+
+        expect(calls[0]?.prompt.startsWith('书名：剑来')).toBe(true)
+    })
+
+    it('侧车只记录正文，上下文不进提示词字段', async () => {
+        const result = await service.generate(payload({ prompt: '雪夜庭院', contexts: ['书名：剑来'] }), toUri)
+
+        expect(readFileContent(imageFsPath(result.image.id, 'json'))).toContain('"prompt":"雪夜庭院"')
+    })
+})
+
 describe('规则芯片', () => {
     it('按规则标识读取 md 正文，排在正文之后、作品补充之前', async () => {
         setFileContent(ruleFsPath('冷色调'), '# 冷色调\n只用青蓝与灰白，不要暖色。\n')

@@ -1,18 +1,18 @@
 /**
- * 生图输入卡片：命令动作、角色、词条与规则以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
+ * 生图输入卡片：上下文、角色、词条与规则以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
  * 复用约定：外壳沿用 aichat 的两层底色（bg-composer / bg-composer-input），输入区取 RichChipInput，
  * 工具栏与底部操作行取本目录 ImageComposerToolbar / ImageComposerActions；提示词拼装与比例探测
  * 取 ../prompt 下的纯函数，芯片集合与会话状态分别由 ../hooks 的 usePromptChips / useImageComposer 持有。
  * 关键约束：角色芯片是角色选择的唯一数据源——选择器选中即挂「图标 + 姓名」徽标，移除即回到不使用角色，
  * 生成目标与增强时的角色段都由它派生；顶栏筛选的角色只作初值，之后不与其联动；
- * 词条芯片只承载「选了哪些词条」，规则芯片只承载「选了哪些规则」，文本与正文都不写进输入框，
- * 由宿主在出图时按标识换取或读盘后并入提示词；
+ * 词条芯片只承载「选了哪些词条」，规则芯片只承载「选了哪些规则」，「添加上下文」里的作品设定展开为上下文段；
+ * 三者都不写进输入框，随请求的 contexts / promptTags / promptRules 提交，由宿主在出图时按段并入；
  * 生成意图只有两种：挂着角色芯片即角色图，否则是普通图片；生成不碰作品封面，封面在图库里手动指定；
  * 比例与画风各只落一份 state，手动改动经 onSettingsChange 上报，正文里的比例字面量只自动切换
  * 本次会话的选择、不写回作品配置。
  * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
  */
-import { BookText, ContactRound, ScrollText, WandSparkles } from 'lucide-react'
+import { BookText, ContactRound, PencilRuler, WandSparkles } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
 import type { ImageGenerateKind, ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
@@ -26,6 +26,7 @@ import { useImageComposer } from '../hooks/useImageComposer'
 import { usePromptChips, type PromptChip, type PromptChipKind } from '../hooks/usePromptChips'
 import {
     composePromptSections,
+    composeSettingContext,
     type PromptCharacterSnapshot,
     type PromptSettingSnapshot,
 } from '../prompt/promptSections'
@@ -38,7 +39,7 @@ const CHIP_ICONS: Readonly<Record<PromptChipKind, LucideIcon>> = {
     setting: BookText,
     character: ContactRound,
     prompt: WandSparkles,
-    rule: ScrollText,
+    rule: PencilRuler,
 }
 
 interface ImageComposerProps {
@@ -167,17 +168,25 @@ function ComposerBody({
     const targetKind: ImageGenerateKind = activeCharacter === null ? 'photo' : 'portrait'
 
     /**
-     * 拼装提示词：芯片只承载「引用意图」，正文、角色段与设定段在发送瞬间合成。
-     * 关键约束：设定段只在作品设定芯片存在时并入；角色段按芯片指向的人物实时查快照。
+     * 拼装提示词正文：芯片只承载「引用意图」，正文与角色段在发送瞬间合成。
+     * 关键约束：角色段按芯片指向的人物实时查快照；作品设定不进正文，由下面的 composeContexts 单独提交。
      */
     const composePrompt = (source: { text: string; chips: readonly PromptChip[] }): string => {
         const characterId = source.chips.find((chip) => chip.kind === 'character')?.value ?? null
         const character = characterId === null ? null : (characters.find((item) => item.id === characterId) ?? null)
-        return composePromptSections({
-            text: source.text,
-            character,
-            setting: source.chips.some((chip) => chip.kind === 'setting') ? setting : null,
-        })
+        return composePromptSections({ text: source.text, character })
+    }
+
+    /**
+     * 收集上下文段：「添加上下文」菜单挂上的内容作为背景随请求提交，不写进正文。
+     * 关键约束：设定段只在作品设定芯片存在时展开，空设定不占位；顺序即芯片顺序。
+     */
+    const composeContexts = (source: readonly PromptChip[]): string[] => {
+        if (!source.some((chip) => chip.kind === 'setting')) {
+            return []
+        }
+        const context = composeSettingContext(setting)
+        return context.length > 0 ? [context] : []
     }
 
     /**
@@ -206,12 +215,13 @@ function ComposerBody({
      * 结果回填后角色芯片保留，因此正文与角色段可能各出现一次同类信息，属于可接受的重复。
      */
     const composeEnhanceSource = (source: string): string =>
-        composePromptSections({ text: source, character: activeCharacter, setting: null })
+        composePromptSections({ text: source, character: activeCharacter })
 
     const { text, setText, isGenerating, isEnhancing, enhancedFrom, onEnhance, onRestore, onSend, onAbort } =
         useImageComposer({
             dirPath,
             composePrompt,
+            composeContexts,
             composePromptTags,
             composePromptRules,
             composeEnhanceSource,
@@ -226,8 +236,12 @@ function ComposerBody({
             onGeneratingChange,
         })
 
-    /** 能否发送：正文、角色段与设定段任一有内容，或挂了词条 / 规则芯片，输入框与发送按钮共用同一判定 */
-    const canSend = composePrompt({ text, chips }).length > 0 || promptChips.length > 0 || ruleChips.length > 0
+    /** 能否发送：正文或角色段有内容，或挂了上下文 / 词条 / 规则芯片，输入框与发送按钮共用同一判定 */
+    const canSend =
+        composePrompt({ text, chips }).length > 0 ||
+        composeContexts(chips).length > 0 ||
+        promptChips.length > 0 ||
+        ruleChips.length > 0
 
     /** 选画风：只记 state 并写回作品配置，输入框不出现徽标，发送时才随请求并入提示词 */
     const pickStyle = (value: PortraitStyle): void => {

@@ -1,14 +1,15 @@
 /**
- * 生图命令动作菜单：工具栏左一触发器的下拉，收纳「作品设定」开关与「规则」子菜单。
+ * 生图上下文菜单：工具栏左一「添加上下文」触发器的下拉，收纳「作品设定」开关与「规则」子菜单。
  * 复用约定：外壳取 @components/ui 的 dropdown-menu，触发器取 @webview/components/Button
  * （尺寸 icon，作品设定或规则挂上时切 secondary 底色）；新建规则弹窗取 @webview/components/FormDialog，
  * 字段取 @components/ui 的 field / input / textarea，文本状态取 @webview/hooks/useTrimmedInput；
  * 规则列表与保存走 ../hooks/usePromptRules，正文由宿主读盘，前端只持有标识。
- * 关键约束：开关语义用 CheckboxItem 承载勾选态，选中与否由输入卡片按芯片算好传入；
- * 规则子菜单挂载即重读目录，用户手写 md 后重新打开菜单即可见；新建只新建不覆盖，重名由宿主拒绝，
- * 保存成功后直接把新规则挂成芯片；命令动作在生成中仍可切换（只影响下一次请求），本组件只上抛动作。
+ * 关键约束：这里的每一项都作为上下文提交，不写进提示词正文；勾选态用 CheckboxItem 承载，
+ * 选中与否由输入卡片按芯片算好传入；规则子菜单挂载即重读目录，用户手写 md 后重新打开菜单即可见；
+ * 新建只新建不覆盖，重名由宿主拒绝，保存成功后直接把新规则挂成芯片；
+ * 上下文在生成中仍可切换（只影响下一次请求），本组件只上抛动作。
  */
-import { BookText, Command, FolderOpen, Plus, ScrollText } from 'lucide-react'
+import { BookText, Command, FolderOpen, PencilRuler, Plus } from 'lucide-react'
 import { useState } from 'react'
 import {
     DropdownMenu,
@@ -113,7 +114,7 @@ export function ImageCommandMenus({
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [isRuleDialogOpen, setIsRuleDialogOpen] = useState(false)
 
-    /** 菜单底色：作品设定或任一规则挂上即高亮，用户一眼看出命令动作里有生效项 */
+    /** 菜单底色：作品设定或任一规则挂上即高亮，用户一眼看出已添加了上下文 */
     const isMenuActive = isSettingActive || selectedRules.length > 0
 
     /** 打开菜单即重读规则目录：用户中途往目录里补 md，再开一次菜单就能看到 */
@@ -149,8 +150,8 @@ export function ImageCommandMenus({
                     <Button
                         size="icon"
                         variant={isMenuActive ? 'secondary' : 'ghost'}
-                        tooltip="命令动作"
-                        aria-label="命令动作"
+                        tooltip="添加上下文"
+                        aria-label="添加上下文"
                     >
                         <Command />
                     </Button>
@@ -162,7 +163,7 @@ export function ImageCommandMenus({
                     </DropdownMenuCheckboxItem>
                     <DropdownMenuSub>
                         <DropdownMenuSubTrigger>
-                            <ScrollText />
+                            <PencilRuler />
                             <span className="flex-1">规则</span>
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className="w-56">
