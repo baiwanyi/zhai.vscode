@@ -33,8 +33,6 @@ export interface RichChip {
     label: string
     /** 前置图标，尺寸由组件统一约束 */
     icon?: ReactNode
-    /** 悬停说明，可选 */
-    title?: string
 }
 
 /** 对外暴露的命令式能力：词库、模板等需要往光标处插入文本 */
@@ -42,6 +40,10 @@ export interface RichChipInputHandle {
     insertText: (text: string) => void
     focus: () => void
 }
+
+/** 默认编辑区排版：调用方传 className 时整块替换，故默认值单独成常量便于比对 */
+const DEFAULT_EDITOR_CLASS =
+    'no-scrollbar max-h-40 min-h-17 overflow-y-auto whitespace-pre-wrap wrap-break-word leading-5 outline-none'
 
 interface RichChipInputProps {
     /** 可编辑正文：不含芯片文案 */
@@ -106,15 +108,16 @@ export function RichChipInput({
         if (firstBody !== undefined) {
             chipNodes.forEach((chip) => host.insertBefore(chip, firstBody))
         }
+        // 移动芯片不改变正文，文本只需读一次
+        const body = readEditableText(host)
         if (chipNodes.length === 0) {
             // 去掉最后一个芯片后残留的占位空格一并清掉，避免光标空走一格
-            const body = readEditableText(host)
             if (body.length > 0 && body.trim().length === 0) {
                 writeEditableText(host, '')
             }
             return
         }
-        if (readEditableText(host).length > 0) {
+        if (body.length > 0) {
             return
         }
         host.appendChild(document.createTextNode(' '))
@@ -150,33 +153,39 @@ export function RichChipInput({
         [disabled, emitChange],
     )
 
-    const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
-        if (event.key === 'Enter') {
-            if (event.shiftKey) {
-                return
-            }
-            if (composingRef.current || event.nativeEvent.isComposing) {
-                return
-            }
-            event.preventDefault()
-            if (canSend) {
-                onSend()
-            }
+    /** Enter 发送：Shift+Enter 交给浏览器换行；组词中的 Enter 属于输入法，不能拦截 */
+    const handleEnterKey = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+        if (event.shiftKey) {
             return
         }
-        if (event.key !== 'Backspace' && event.key !== 'Delete') {
+        if (composingRef.current || event.nativeEvent.isComposing) {
             return
         }
+        event.preventDefault()
+        if (canSend) {
+            onSend()
+        }
+    }
+
+    /** 退格 / 删除紧邻芯片：改走状态删除，避免 DOM 删掉节点而芯片集合还在 */
+    const handleChipDeleteKey = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
         const chip = findAdjacentChip(editorRef.current, event.key === 'Backspace' ? 'backward' : 'forward')
-        if (chip === null) {
-            return
-        }
-        const { chipId } = chip.dataset
+        const chipId = chip?.dataset.chipId
         if (chipId === undefined) {
             return
         }
         event.preventDefault()
         onRemoveChip(chipId)
+    }
+
+    const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
+        if (event.key === 'Enter') {
+            handleEnterKey(event)
+            return
+        }
+        if (event.key === 'Backspace' || event.key === 'Delete') {
+            handleChipDeleteKey(event)
+        }
     }
 
     const handlePaste = (event: ReactClipboardEvent<HTMLDivElement>): void => {
@@ -205,10 +214,7 @@ export function RichChipInput({
                 aria-label={placeholder}
                 contentEditable={!disabled}
                 suppressContentEditableWarning
-                className={
-                    className ??
-                    'no-scrollbar max-h-40 min-h-17 overflow-y-auto whitespace-pre-wrap wrap-break-word leading-5 outline-none'
-                }
+                className={className ?? DEFAULT_EDITOR_CLASS}
                 onInput={emitChange}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
@@ -228,15 +234,14 @@ export function RichChipInput({
                         data-chip-id={chip.id}
                         contentEditable={false}
                         className="mr-1 h-5 max-w-56 align-top"
-                        title={chip.title}
                     >
-                        {chip.icon === undefined ? null : chip.icon}
-                        <span className="min-w-0 truncate">{chip.label}</span>
+                        {chip.icon}
+                        <span className="min-w-0 truncate text-sm">{chip.label}</span>
                         <Button
                             variant="ghost"
                             size="icon-xs"
                             className="size-4 shrink-0 text-muted-foreground"
-                            title={`移除${chip.label}`}
+                            tooltip={`移除${chip.label}`}
                             aria-label={`移除${chip.label}`}
                             disabled={disabled}
                             onClick={() => {
@@ -250,7 +255,10 @@ export function RichChipInput({
                 ))}
             </div>
             {isPlaceholderVisible ? (
-                <span className="pointer-events-none absolute top-0 left-0 text-muted-foreground">{placeholder}</span>
+                // 占位文案只作视觉提示：可访问名已由编辑区的 aria-label 承担，避免读屏念两遍
+                <span aria-hidden="true" className="pointer-events-none absolute top-0 left-0 text-muted-foreground">
+                    {placeholder}
+                </span>
             ) : null}
         </div>
     )

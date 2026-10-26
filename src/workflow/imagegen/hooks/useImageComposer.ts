@@ -1,7 +1,8 @@
 /**
  * 生图会话状态机：持有正文、增强态与出图请求，处理发送、取消、超时与迟到回包。
  * 复用约定：请求经 @shared/utils/bridge，失败统一 toastError，芯片集合由 usePromptChips 持有并经回调同步；
- * 提示词拼装由调用方注入 composePrompt，本 hook 只提供发送瞬间的正文与芯片快照。
+ * 提示词拼装由调用方注入 composePrompt，增强提交的源文本由 composeEnhanceSource 注入，
+ * 本 hook 只提供发送瞬间的正文与芯片快照。
  * 对外回调统一用 on 前缀且 Promise 在 hook 内收口（异步实现拆成 runXxx），调用方可直接交给按钮属性。
  * 关键约束：generationRef 是请求代号，取消或重发即自增，旧回包按代号丢弃并只经 onLateGenerated 静默补图；
  * 发送即清空正文与芯片，失败或取消仅在用户没有新输入时回填；生成态经 onGeneratingChange 上报，卸载补发一次结束；
@@ -36,6 +37,8 @@ interface UseImageComposerOptions {
     dirPath: string
     /** 拼装提示词：传入发送瞬间的正文与芯片快照，避免回填竞态 */
     composePrompt: (source: ImageComposerPromptSource) => string
+    /** 拼装待增强的正文：把角色段等参考信息并进去，缺省时原样提交 */
+    composeEnhanceSource?: (text: string) => string
     /** 生成目标：封面 / 普通图 / 角色图由调用方按当前模式判定 */
     target: { kind: ImageGenerateKind; characterId: string | null }
     ratio: ImageRatio
@@ -70,6 +73,7 @@ interface UseImageComposerResult {
 export function useImageComposer({
     dirPath,
     composePrompt,
+    composeEnhanceSource = (source: string): string => source,
     target,
     ratio,
     style,
@@ -124,20 +128,23 @@ export function useImageComposer({
         }
     }
 
-    /** 增强提示词：只改写输入框正文，芯片与设定留在发送时拼装，避免模型复述设定原文 */
+    /**
+     * 增强提示词：提交的是「拼好的增强源」（正文 + 角色段），让改写结果带上角色长相与身份。
+     * 关键约束：enhancedFrom 只记纯正文——还原时回到用户自己写的内容，不把参考段留在输入框里。
+     */
     const runEnhance = async (): Promise<void> => {
-        const source = text.trim()
-        if (source.length === 0) {
+        const original = text.trim()
+        if (original.length === 0) {
             return
         }
         setIsEnhancing(true)
         try {
             const result = await request<{ text: string }>(
                 'pressAi/enhanceImagePrompt',
-                { dirPath, text: source },
+                { dirPath, text: composeEnhanceSource(original).trim() },
                 ENHANCE_TIMEOUT_MS,
             )
-            setEnhancedFrom(source)
+            setEnhancedFrom(original)
             setText(result.text)
         } catch (cause) {
             toastError(cause)

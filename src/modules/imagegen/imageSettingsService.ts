@@ -32,7 +32,6 @@ const MAX_TEXT_LENGTH = 200
 const SETTING_KEYS: ReadonlyArray<keyof ImageSettings> = [
     'defaultRatio',
     'portraitStyle',
-    'coverStyle',
     'promptSuffix',
     'negative',
 ]
@@ -51,10 +50,6 @@ function toOverrides(source: Record<string, unknown>): Partial<ImageSettings> {
     const portraitStyle = toStyle(source.portraitStyle)
     if (portraitStyle !== null) {
         result.portraitStyle = portraitStyle
-    }
-    const coverStyle = toStyle(source.coverStyle)
-    if (coverStyle !== null) {
-        result.coverStyle = coverStyle
     }
     if (typeof source.promptSuffix === 'string') {
         result.promptSuffix = source.promptSuffix.slice(0, MAX_TEXT_LENGTH)

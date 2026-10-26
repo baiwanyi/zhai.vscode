@@ -6,7 +6,7 @@
  * 其余 photo-{14 位时间戳}-{8 位随机串}；同秒同角色冲突时时间戳逐秒递增而非覆盖；
  * 作品级 promptSuffix / negative 在出图前叠加，读取失败回落默认且不阻断出图；
  * 每次成功出图落一份同名 sidecar；单一任务锁防重复扣费，取消走 abort——
- * 产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额、不写封面。
+ * 产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额。
  */
 import * as vscode from 'vscode'
 import type { AiProvider } from '@modules/ai/provider'
@@ -32,7 +32,6 @@ import { writeSidecarOf } from './imageSidecar'
 import { readProjectDirPath } from './portraitService'
 import { composeImagePrompt } from './promptCompose'
 import type { ImageGenerator } from './ai/imageProvider'
-import type { PressCoverStore } from './db/coverRepository'
 import type { ImageSettingsService } from './imageSettingsService'
 import type Database from 'better-sqlite3'
 
@@ -72,7 +71,7 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
         throw new Error('提示词不能为空')
     }
     const kind = value.kind
-    if (kind !== 'cover' && kind !== 'portrait' && kind !== 'photo') {
+    if (kind !== 'portrait' && kind !== 'photo') {
         throw new Error('图片类别非法')
     }
     const characterId = readText(value.characterId, 32)
@@ -107,7 +106,6 @@ export class ImageGenerateService {
         private readonly db: Database.Database,
         private readonly router: ImageGenerator,
         private readonly usageRecorder: UsageRecorder,
-        private readonly store: PressCoverStore,
         private readonly provider: AiProvider,
         private readonly settings: ImageSettingsService,
     ) {}
@@ -166,21 +164,16 @@ export class ImageGenerateService {
             })
             consumeToday(this.db, IMAGE_QUOTA_KEYS)
             const imagePath = segments.join('/')
-            const coverSelectedId = request.kind === 'cover' ? id : null
-            if (coverSelectedId !== null) {
-                this.store.write(request.dirPath, imagePath)
-            }
             logger.info(`出图完成：耗时 ${Date.now() - startedAt}ms，${artifact.bytes.byteLength} 字节`)
             return {
                 image: {
                     id,
-                    kind: request.kind === 'portrait' ? 'portrait' : 'photo',
+                    kind: request.kind,
                     path: imagePath,
                     url: toWebviewUri(buildStorageUri(root, segments)),
                     createdAt,
                     characterId: request.characterId,
                 },
-                coverSelectedId,
             }
         } catch (error) {
             logger.error(`出图失败：耗时 ${Date.now() - startedAt}ms`, error)

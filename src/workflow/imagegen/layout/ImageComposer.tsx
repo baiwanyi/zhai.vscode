@@ -3,13 +3,15 @@
  * 复用约定：外壳沿用 aichat 的两层底色（bg-composer / bg-composer-input），输入区取 RichChipInput，
  * 工具栏与底部操作行取本目录 ImageComposerToolbar / ImageComposerActions；提示词拼装、比例探测与词条插入
  * 取 ../prompt 下的纯函数，芯片集合与会话状态分别由 ../hooks 的 usePromptChips / useImageComposer 持有。
- * 关键约束：比例与画风各只落一份 state，手动改动经 onSettingsChange 上报，正文里的比例字面量只自动切换
- * 本次会话的选择、不写回作品配置；封面画风与普通出图分开存，切换模式时换用对应一侧、改动写回各自配置。
+ * 关键约束：角色芯片是角色选择的唯一数据源——选择器选中即挂「图标 + 姓名」徽标，移除即回到不使用角色，
+ * 生成目标与增强时的角色段都由它派生；顶栏筛选的角色只作初值，之后不与其联动；
+ * 生成意图只有两种：挂着角色芯片即角色图，否则是普通图片；生成不碰作品封面，封面在图库里手动指定；
+ * 比例与画风各只落一份 state，手动改动经 onSettingsChange 上报，正文里的比例字面量只自动切换
+ * 本次会话的选择、不写回作品配置。
  * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
  */
-import { Sparkles, UserRound } from 'lucide-react'
+import { ContactRound, NotebookText } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
 import { Skeleton } from '@components/ui/skeleton'
 import type { ImageGenerateKind, ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
@@ -33,20 +35,14 @@ interface ImageComposerProps {
     dirPath: string
     characters: ReadonlyArray<PromptCharacterSnapshot>
     setting: PromptSettingSnapshot
-    /** 顶栏选中的角色：既是生成目标，也是角色徽标的来源 */
-    activeCharacterId: string | null
+    /** 初始角色：顶栏筛选值只作角色芯片的初值，之后以工具栏角色菜单的选择为准 */
+    initialCharacterId: string | null
     /** 初始比例与画风：来自作品级配置，缺省项由页面回落到默认值 */
     defaultRatio: ImageRatio
-    /** 普通/角色图默认画风 */
+    /** 角色图与普通图默认画风 */
     defaultStyle: PortraitStyle
-    /** 封面画风：与普通出图各记一套，切换封面模式时自动换用 */
-    coverStyle: PortraitStyle
     /** 比例与画风改动：由页面写入作品配置，本组件只负责上报 */
-    onSettingsChange: (patch: {
-        defaultRatio?: ImageRatio
-        portraitStyle?: PortraitStyle
-        coverStyle?: PortraitStyle
-    }) => void
+    onSettingsChange: (patch: { defaultRatio?: ImageRatio; portraitStyle?: PortraitStyle }) => void
     /** 生成成功后的回调：由页面负责插入列表并刷新 */
     onGenerated: (result: ImageGenerateResult) => void
     /** 迟到落盘的回调：请求已取消或被取代但宿主仍出了图，页面只静默刷新列表，不认领封面等副作用 */
@@ -76,10 +72,9 @@ export function ImageComposer({
     dirPath,
     characters,
     setting,
-    activeCharacterId,
+    initialCharacterId,
     defaultRatio,
     defaultStyle,
-    coverStyle,
     onSettingsChange,
     onGenerated,
     onLateGenerated,
@@ -98,10 +93,9 @@ export function ImageComposer({
             dirPath={dirPath}
             characters={characters}
             setting={setting}
-            activeCharacterId={activeCharacterId}
+            initialCharacterId={initialCharacterId}
             defaultRatio={defaultRatio}
             defaultStyle={defaultStyle}
-            coverStyle={coverStyle}
             onSettingsChange={onSettingsChange}
             onGenerated={onGenerated}
             onLateGenerated={onLateGenerated}
@@ -110,22 +104,19 @@ export function ImageComposer({
     )
 }
 
-/** 正文卡片：参数就绪后挂载，持有比例、画风、封面模式等作品相关选择，其余会话状态在 useImageComposer 内 */
+/** 正文卡片：参数就绪后挂载，持有比例、画风等作品相关选择，其余会话状态在 useImageComposer 内 */
 function ComposerBody({
     dirPath,
     characters,
     setting,
-    activeCharacterId,
+    initialCharacterId,
     defaultRatio,
     defaultStyle,
-    coverStyle,
     onSettingsChange,
     onGenerated,
     onLateGenerated,
     onGeneratingChange,
 }: ComposerBodyProps): JSX.Element {
-    /** 封面模式：生成结果落统一图库并自动设为作品封面，与角色图互斥 */
-    const [isCoverMode, setIsCoverMode] = useState(false)
     const [ratio, setRatio] = useState<ImageRatio>(defaultRatio)
     /** 当前画风：不再以芯片展示，只作为请求参数，发送时由宿主并入提示词 */
     const [style, setStyle] = useState<PortraitStyle>(defaultStyle)
@@ -134,39 +125,34 @@ function ComposerBody({
 
     const richInputRef = useRef<RichChipInputHandle | null>(null)
 
-    const activeCharacter = useMemo(
-        () => characters.find((character) => character.id === activeCharacterId) ?? null,
-        [characters, activeCharacterId],
+    /** 初始角色：只用于给芯片落初值，之后顶栏再改筛选也不改写会话内的选择 */
+    const initialCharacter = useMemo(
+        () => characters.find((character) => character.id === initialCharacterId) ?? null,
+        [characters, initialCharacterId],
     )
 
-    const {
-        chips,
-        settingChip,
-        characterChip,
-        toggleSetting,
-        toggleCharacter,
-        ensureSetting,
-        removeChip,
-        clearChips,
-        restoreChips,
-    } = usePromptChips({ activeCharacter })
+    const { chips, settingChip, characterChip, toggleSetting, setCharacter, removeChip, clearChips, restoreChips } =
+        usePromptChips({ initialCharacter })
 
-    /** 生成目标：封面模式优先，其次按顶栏是否选中角色区分角色图与普通图 */
-    let targetKind: ImageGenerateKind = 'photo'
-    if (isCoverMode) {
-        targetKind = 'cover'
-    } else if (activeCharacter !== null) {
-        targetKind = 'portrait'
-    }
+    /** 当前角色：由角色芯片派生，芯片被移除即视为不使用角色，不另落一份 state */
+    const activeCharacter = useMemo(
+        () =>
+            characterChip === null
+                ? null
+                : (characters.find((character) => character.id === characterChip.value) ?? null),
+        [characters, characterChip],
+    )
+
+    /** 生成意图：挂着角色芯片即角色图，否则是普通图片 */
+    const targetKind: ImageGenerateKind = activeCharacter === null ? 'photo' : 'portrait'
 
     /**
      * 拼装提示词：芯片只承载「引用意图」，正文、角色段与设定段在发送瞬间合成。
-     * 关键约束：封面不绑定角色，即使还挂着角色徽标也不并入；设定段只在作品设定芯片存在时并入。
+     * 关键约束：设定段只在作品设定芯片存在时并入；角色段按芯片指向的人物实时查快照。
      */
     const composePrompt = (source: { text: string; chips: readonly PromptChip[] }): string => {
         const characterId = source.chips.find((chip) => chip.kind === 'character')?.value ?? null
-        const character =
-            isCoverMode || characterId === null ? null : (characters.find((item) => item.id === characterId) ?? null)
+        const character = characterId === null ? null : (characters.find((item) => item.id === characterId) ?? null)
         return composePromptSections({
             text: source.text,
             character,
@@ -174,30 +160,32 @@ function ComposerBody({
         })
     }
 
-    /** 随请求下发的目标：封面与普通图不带角色，角色图才绑定顶栏选中的角色 */
+    /** 随请求下发的目标：普通图不带角色，角色图才绑定角色芯片指向的人物 */
     const generateTarget = {
         kind: targetKind,
         characterId: targetKind === 'portrait' ? (activeCharacter?.id ?? null) : null,
     }
 
+    /**
+     * 增强源：把角色段并进待改写的正文，让模型知道角色长相与身份。
+     * 关键约束：设定段仍不并（作品信息会让模型复述进正文）；
+     * 结果回填后角色芯片保留，因此正文与角色段可能各出现一次同类信息，属于可接受的重复。
+     */
+    const composeEnhanceSource = (source: string): string =>
+        composePromptSections({ text: source, character: activeCharacter, setting: null })
+
     const { text, setText, isGenerating, isEnhancing, enhancedFrom, onEnhance, onRestore, onSend, onAbort } =
         useImageComposer({
             dirPath,
             composePrompt,
+            composeEnhanceSource,
             target: generateTarget,
             ratio,
             style,
             chips,
             onClearChips: clearChips,
             onRestoreChips: restoreChips,
-            onGenerated: (result) => {
-                onGenerated(result)
-                // 封面是一次性动作：成功即退出封面模式，回到普通出图
-                if (isCoverMode) {
-                    setIsCoverMode(false)
-                    toast.success('作品封面已更新')
-                }
-            },
+            onGenerated,
             onLateGenerated,
             onGeneratingChange,
         })
@@ -205,23 +193,10 @@ function ComposerBody({
     /** 能否发送：正文、角色段与设定段任一有内容即可，输入框与发送按钮共用同一判定 */
     const canSend = composePrompt({ text, chips }).length > 0
 
-    /**
-     * 封面模式：与角色图互斥；切换时画风换用对应一侧的作品配置（封面画风与普通出图分开记），
-     * 进入时顺带挂上作品设定，避免空提示词无法发送。
-     */
-    const toggleCoverMode = (): void => {
-        const willEnable = !isCoverMode
-        setIsCoverMode(willEnable)
-        setStyle(willEnable ? coverStyle : defaultStyle)
-        if (willEnable) {
-            ensureSetting()
-        }
-    }
-
     /** 选画风：只记 state 并写回作品配置，输入框不出现徽标，发送时才随请求并入提示词 */
     const pickStyle = (value: PortraitStyle): void => {
         setStyle(value)
-        onSettingsChange(isCoverMode ? { coverStyle: value } : { portraitStyle: value })
+        onSettingsChange({ portraitStyle: value })
     }
 
     /** 切换比例并记住：作品级配置随作品走，下次打开沿用 */
@@ -249,15 +224,15 @@ function ComposerBody({
         richInputRef.current?.insertText(composeInsertion(text, fragment))
     }
 
-    /** 芯片渲染项：id 取 kind（同一 kind 只允许一枚），图标按类型区分 */
+    /** 芯片渲染项：id 取 kind（同一 kind 只允许一枚），图标与命令菜单、角色选择器的入口图标保持一致 */
     const richChips = chips.map((chip) => ({
         id: chip.kind,
         label: chip.label,
         icon:
             chip.kind === 'character' ? (
-                <UserRound className="size-3 shrink-0 text-muted-foreground" />
+                <ContactRound className="size-3 shrink-0 text-muted-foreground" />
             ) : (
-                <Sparkles className="size-3 shrink-0 text-muted-foreground" />
+                <NotebookText className="size-3 shrink-0 text-muted-foreground" />
             ),
     }))
 
@@ -265,13 +240,10 @@ function ComposerBody({
         <div className="flex flex-col gap-0.5 rounded-2xl bg-composer p-1.5">
             <ImageComposerToolbar
                 isSettingActive={settingChip !== null}
-                isCharacterActive={characterChip !== null}
-                isCoverMode={isCoverMode}
-                isGenerating={isGenerating}
-                canPickCharacter={activeCharacter !== null && !isCoverMode}
+                characters={characters}
+                activeCharacterId={activeCharacter?.id ?? null}
                 onToggleSetting={toggleSetting}
-                onToggleCharacter={toggleCharacter}
-                onToggleCoverMode={toggleCoverMode}
+                onSelectCharacter={setCharacter}
                 onInsertPrompt={insertPrompt}
             />
 
@@ -290,7 +262,6 @@ function ComposerBody({
                 <ImageComposerActions
                     ratio={ratio}
                     style={style}
-                    isCoverMode={isCoverMode}
                     isGenerating={isGenerating}
                     isEnhancing={isEnhancing}
                     isEnhanced={enhancedFrom !== null}

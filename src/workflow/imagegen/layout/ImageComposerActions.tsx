@@ -26,8 +26,6 @@ interface ImageComposerActionsProps {
     ratio: ImageRatio
     /** 当前画风：交给画面风格面板回显选中项 */
     style: PortraitStyle
-    /** 封面模式：发送按钮的可访问名改为「生成封面」 */
-    isCoverMode: boolean
     /** 生成中：比例菜单与画面风格禁用，发送位换成取消 */
     isGenerating: boolean
     /** 增强请求进行中：增强按钮转圈并禁用 */
@@ -49,7 +47,6 @@ interface ImageComposerActionsProps {
 export function ImageComposerActions({
     ratio,
     style,
-    isCoverMode,
     isGenerating,
     isEnhancing,
     isEnhanced,
@@ -96,7 +93,7 @@ export function ImageComposerActions({
                 <SendButton
                     isGenerating={isGenerating}
                     canSend={canSend}
-                    sendLabel={isCoverMode ? '生成封面' : '发送'}
+                    sendLabel="发送"
                     stopLabel="取消生成"
                     onSend={handleSendClick}
                     onStop={handleStopClick}

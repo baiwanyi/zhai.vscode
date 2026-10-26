@@ -15,8 +15,11 @@ import type { PortraitStyle } from './press'
  */
 export type PressImageKind = 'portrait' | 'photo' | 'orphan'
 
-/** 生成意图：决定落盘命名与是否自动设封面 */
-export type ImageGenerateKind = 'cover' | 'portrait' | 'photo'
+/**
+ * 生成意图：只有角色卡与其他图片两种，决定落盘命名（角色图带角色段，其余随机段）。
+ * 「作品封面」不是生成意图——任意一张非角色图都可以在详情里设为封面。
+ */
+export type ImageGenerateKind = 'portrait' | 'photo'
 
 /** 画面比例 */
 export type ImageRatio = '1:1' | '3:4' | '4:3' | '16:9' | '9:16'
@@ -124,22 +127,19 @@ export interface ImageGenerateRequest {
 }
 
 /**
- * 生成结果：新图是否自动成为作品封面由 kind 决定（cover 自动设为封面）。
+ * 生成结果：只回传新图本身，生成不影响作品封面。
  * 角色封面不在此回传——前端在生成回执后按「该角色尚无封面」自行写回人物卡，避免两套写回口径。
  */
 export interface ImageGenerateResult {
     image: PressImageItem
-    coverSelectedId: string | null
 }
 
 /** 生成参数：作品级可覆盖项，配额与超时不在此列 */
 export interface ImageSettings {
     /** 每次打开 composer 时默认选中的比例 */
     defaultRatio: ImageRatio
-    /** 角色图默认画风 */
+    /** 角色图与普通图默认画风 */
     portraitStyle: PortraitStyle
-    /** 作品封面与普通图默认画风 */
-    coverStyle: PortraitStyle
     /** 附加风格补充：拼在提示词末尾 */
     promptSuffix: string
     /** 负向约束：拼在提示词末尾的「避免」段 */
@@ -150,7 +150,6 @@ export interface ImageSettings {
 export const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
     defaultRatio: '3:4',
     portraitStyle: 'auto',
-    coverStyle: 'auto',
     promptSuffix: '',
     negative: '',
 }

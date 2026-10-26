@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * ImageComposer 交互用例：覆盖参数未读完的占位、发送编排、角色/设定芯片、封面模式、取消与迟到回包、增强还原。
+ * ImageComposer 交互用例：覆盖参数未读完的占位、发送编排、角色/设定芯片、取消与迟到回包、增强还原。
  * 复用约定：渲染查询走 @testing-library/react，输入与点击用 user-event；输入区与词库弹层以轻量替身接管，
  * 断言落在「发什么请求、回调收到什么」上，正文拼装规则由纯函数承担。
- * 关键约束：取消后迟到的成功回包必须走 onLateGenerated 而不是 onGenerated——否则会替用户认领封面、
- * 清空他刚重新输入的正文，这是本组件最容易回退的分支。
+ * 关键约束：取消后迟到的成功回包必须走 onLateGenerated 而不是 onGenerated——否则会清空他刚重新输入的正文，
+ * 这是本组件最容易回退的分支。
  */
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -16,15 +16,13 @@ import { ImageComposer } from '@webview/workflow/imagegen/layout/ImageComposer'
 import type { PromptCharacterSnapshot } from '@webview/workflow/imagegen/layout/ImageComposer'
 import type { JSX } from 'react'
 
-const { requestMock, toastErrorMock, toastSuccessMock } = vi.hoisted(() => ({
+const { requestMock, toastErrorMock } = vi.hoisted(() => ({
     requestMock: vi.fn(),
     toastErrorMock: vi.fn(),
-    toastSuccessMock: vi.fn(),
 }))
 
 vi.mock('@shared/utils/bridge', () => ({ request: requestMock }))
 vi.mock('@shared/utils/error', () => ({ toastError: toastErrorMock }))
-vi.mock('sonner', () => ({ toast: { success: toastSuccessMock } }))
 
 interface FakeChip {
     id: string
@@ -83,6 +81,16 @@ const CHARACTER: PromptCharacterSnapshot = {
     age: '二十',
 }
 
+/** 第二个角色：拼音（bai）排在「林清」（lin）之前，码位序则相反，用来区分排序规则 */
+const CHARACTER_B: PromptCharacterSnapshot = {
+    id: 'char-2',
+    name: '白露',
+    appearance: '青衫执灯',
+    identity: '游医',
+    gender: 'female',
+    age: '三十',
+}
+
 const GENERATED: ImageGenerateResult = {
     image: {
         id: 'photo-20261025143000-aB3xK9Qz',
@@ -92,7 +100,6 @@ const GENERATED: ImageGenerateResult = {
         createdAt: '2026-10-25T14:30:00.000Z',
         characterId: null,
     },
-    coverSelectedId: null,
 }
 
 type ComposerProps = Parameters<typeof ImageComposer>[0]
@@ -102,10 +109,9 @@ function renderComposer(overrides: Partial<ComposerProps> = {}): ComposerProps {
         dirPath: DIR_PATH,
         characters: [CHARACTER],
         setting: { title: '剑来' },
-        activeCharacterId: null,
+        initialCharacterId: null,
         defaultRatio: '3:4',
         defaultStyle: 'auto',
-        coverStyle: 'photo',
         onSettingsChange: vi.fn(),
         onGenerated: vi.fn(),
         onLateGenerated: vi.fn(),
@@ -145,7 +151,6 @@ beforeEach(() => {
     stubDropdownDom()
     requestMock.mockReset()
     toastErrorMock.mockReset()
-    toastSuccessMock.mockReset()
     // 默认：出图成功，abort 视为成功
     requestMock.mockImplementation((method: string) =>
         method === 'pressAi/generateImage/abort' ? Promise.resolve({ aborted: true }) : Promise.resolve(GENERATED),
@@ -193,12 +198,14 @@ describe('ImageComposer', () => {
         expect(inputBox().value).toBe('')
     })
 
-    it('挂上角色芯片后按角色图发送，正文与角色段分段拼接', async () => {
+    it('初始角色自带角色徽标，按角色图发送并拼接角色段', async () => {
         const user = userEvent.setup()
-        renderComposer({ activeCharacterId: CHARACTER.id })
+        renderComposer({ initialCharacterId: CHARACTER.id })
+
+        // 徽标只显示角色名（图标由渲染层补），移除入口的可访问名据此拼接
+        expect(screen.getByRole('button', { name: '移除林清' })).toBeDefined()
 
         await user.type(inputBox(), '雨夜长街')
-        await user.click(screen.getByRole('button', { name: '角色设定' }))
         await user.click(screen.getByRole('button', { name: '发送' }))
 
         const [, params] = requestMock.mock.calls[0] as [string, { prompt: string; kind: string; characterId: string }]
@@ -207,10 +214,53 @@ describe('ImageComposer', () => {
         expect(params.prompt).toBe('雨夜长街\n\n角色：林清\n外形：女性，二十\n身份：剑客\n外貌：白衣负剑')
     })
 
-    it('未选角色时角色设定按钮禁用', () => {
+    it('角色选择器选人即挂角色徽标，按角色图发送', async () => {
+        const user = userEvent.setup()
         renderComposer()
 
-        expect(screen.getByRole('button', { name: '角色设定' }).hasAttribute('disabled')).toBe(true)
+        expect(screen.queryByRole('button', { name: '移除林清' })).toBeNull()
+
+        await user.click(screen.getByRole('button', { name: '角色设定' }))
+        await user.click(screen.getByRole('menuitemradio', { name: '林清' }))
+        expect(screen.getByRole('button', { name: '移除林清' })).toBeDefined()
+
+        await user.type(inputBox(), '雨夜长街')
+        await user.click(screen.getByRole('button', { name: '发送' }))
+
+        const [, params] = requestMock.mock.calls[0] as [string, { kind: string; characterId: string }]
+        expect(params.kind).toBe('portrait')
+        expect(params.characterId).toBe(CHARACTER.id)
+    })
+
+    it('角色菜单按名字字母序排列', async () => {
+        const user = userEvent.setup()
+        renderComposer({ characters: [CHARACTER, CHARACTER_B] })
+
+        await user.click(screen.getByRole('button', { name: '角色设定' }))
+
+        // 「不使用角色」固定置顶，其余按拼音字母序：白露（bai）排在林清（lin）之前
+        const names = screen.getAllByRole('menuitemradio').map((item) => item.textContent)
+        expect(names).toEqual(['不使用角色', '白露', '林清'])
+    })
+
+    it('选「不使用角色」清掉徽标并回落普通图', async () => {
+        const user = userEvent.setup()
+        renderComposer({ initialCharacterId: CHARACTER.id })
+
+        await user.click(screen.getByRole('button', { name: '角色设定' }))
+        await user.click(screen.getByRole('menuitemradio', { name: '不使用角色' }))
+        expect(screen.queryByRole('button', { name: '移除林清' })).toBeNull()
+
+        await user.type(inputBox(), '雨夜长街')
+        await user.click(screen.getByRole('button', { name: '发送' }))
+
+        const [, params] = requestMock.mock.calls[0] as [
+            string,
+            { kind: string; characterId: string | null; prompt: string },
+        ]
+        expect(params.kind).toBe('photo')
+        expect(params.characterId).toBeNull()
+        expect(params.prompt).toBe('雨夜长街')
     })
 
     it('命令动作芯片可开关，移除后不再并入提示词', async () => {
@@ -218,6 +268,7 @@ describe('ImageComposer', () => {
         renderComposer()
 
         await user.click(screen.getByRole('button', { name: '命令动作' }))
+        await user.click(screen.getByRole('menuitemcheckbox', { name: '作品设定' }))
         expect(screen.getByText('作品设定')).toBeDefined()
 
         await user.type(inputBox(), '雨夜长街')
@@ -235,28 +286,11 @@ describe('ImageComposer', () => {
 
         await user.type(inputBox(), '雨夜长街')
         await user.click(screen.getByRole('button', { name: '命令动作' }))
+        await user.click(screen.getByRole('menuitemcheckbox', { name: '作品设定' }))
         await user.click(screen.getByRole('button', { name: '发送' }))
 
         const [, params] = requestMock.mock.calls[0] as [string, { prompt: string }]
         expect(params.prompt).toBe('雨夜长街\n\n书名：剑来')
-    })
-
-    it('封面模式：按钮改文案、以 cover 发送，成功后退出模式并提示', async () => {
-        const user = userEvent.setup()
-        const onGenerated = vi.fn()
-        renderComposer({ onGenerated })
-
-        await user.click(screen.getByRole('button', { name: '作品封面' }))
-        expect(screen.getByRole('button', { name: '生成封面' })).toBeDefined()
-
-        await user.type(inputBox(), '山川远景')
-        await user.click(screen.getByRole('button', { name: '生成封面' }))
-
-        const [, params] = requestMock.mock.calls[0] as [string, { kind: string; characterId: string | null }]
-        expect(params.kind).toBe('cover')
-        expect(params.characterId).toBeNull()
-        expect(toastSuccessMock).toHaveBeenCalledWith('作品封面已更新')
-        expect(screen.getByRole('button', { name: '发送' })).toBeDefined()
     })
 
     it('发送后冷静期内的第二次点击不会误取消在途请求', async () => {
@@ -426,7 +460,7 @@ describe('ImageComposer', () => {
         expect(screen.getByRole('button', { name: '当前比例 16:9，点击切换' })).toBeDefined()
     })
 
-    it('切换画风按当前模式写回对应一侧配置', async () => {
+    it('切换画风写回作品配置', async () => {
         const user = userEvent.setup()
         const onSettingsChange = vi.fn()
         renderComposer({ onSettingsChange })
@@ -436,11 +470,10 @@ describe('ImageComposer', () => {
         await user.click(screen.getByRole('radio', { name: '古风' }))
         expect(onSettingsChange).toHaveBeenCalledWith({ portraitStyle: 'guofeng' satisfies PortraitStyle })
 
-        // 切到封面模式后触发器换用封面画风（photo → 人像），写回落在 coverStyle 一侧
-        await user.click(screen.getByRole('button', { name: '作品封面' }))
-        await user.click(screen.getByRole('button', { name: '画面风格 人像，点击切换' }))
+        // 再换一次：触发器已回显新画风，写回仍是同一侧
+        await user.click(screen.getByRole('button', { name: '画面风格 古风，点击切换' }))
         await user.click(screen.getByRole('radio', { name: '写实' }))
-        expect(onSettingsChange).toHaveBeenLastCalledWith({ coverStyle: 'realistic' satisfies PortraitStyle })
+        expect(onSettingsChange).toHaveBeenLastCalledWith({ portraitStyle: 'realistic' satisfies PortraitStyle })
     })
 
     it('增强提示词改写正文，还原后回到原文', async () => {
@@ -456,6 +489,29 @@ describe('ImageComposer', () => {
         await user.click(screen.getByRole('button', { name: '增强提示词' }))
 
         expect(inputBox().value).toBe('雨夜长街，湿石板反光')
+        await user.click(screen.getByRole('button', { name: '还原提示词' }))
+        expect(inputBox().value).toBe('雨夜长街')
+    })
+
+    it('增强提示词时把角色段一并提交，还原仍回到纯正文', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) =>
+            method === 'pressAi/enhanceImagePrompt'
+                ? Promise.resolve({ text: '雨夜长街，白衣女子负剑而行' })
+                : Promise.resolve(GENERATED),
+        )
+        renderComposer({ initialCharacterId: CHARACTER.id })
+
+        await user.type(inputBox(), '雨夜长街')
+        await user.click(screen.getByRole('button', { name: '增强提示词' }))
+
+        expect(requestMock).toHaveBeenCalledWith(
+            'pressAi/enhanceImagePrompt',
+            { dirPath: DIR_PATH, text: '雨夜长街\n\n角色：林清\n外形：女性，二十\n身份：剑客\n外貌：白衣负剑' },
+            expect.any(Number),
+        )
+        expect(inputBox().value).toBe('雨夜长街，白衣女子负剑而行')
+
         await user.click(screen.getByRole('button', { name: '还原提示词' }))
         expect(inputBox().value).toBe('雨夜长街')
     })

@@ -2,7 +2,7 @@
 
 **版本**：1.0
 **日期**：2026-10-25
-**状态**：图库管理、统一出图、作品级参数、封面入口收敛、芯片内联、批量删除、角色卡通道对齐、命名冲突统一均已落地
+**状态**：图库管理、统一出图（角色卡与其他图片）、作品级参数、封面手动指定、芯片内联、批量删除、角色卡通道对齐、命名冲突统一均已落地
 **宿主**：VSCode 插件 Zhai（宅桌面）
 **存储根**：`{storage.rootPath}/press/{作品名}/`（根目录配置见 `common.md` 第 1 节）
 
@@ -30,7 +30,7 @@
 
 ```
 {root}/press/【小说名】/
-├── Images/                  ← 统一图库：生图（含封面模式）与角色卡都写这里
+├── Images/                  ← 统一图库：生图（角色卡与普通图片）与角色卡都写这里
 ├── Cover/                   ← 仅设定页「套用书名」合成封面写入，历史封面只读兼容
 ├── Portraits/               ← 历史角色图：只读兼容，不再写入新文件
 └── .zhai/image.json         ← 作品级生图参数（隐藏目录，不进作品索引）
@@ -45,7 +45,7 @@
 | 类型 | 规则 | 示例 |
 | --- | --- | --- |
 | 角色图 | `portrait-{14 位时间戳}-{8 位角色标识}` | `portrait-20261025143000-10428736` |
-| 普通图 / 生图封面 | `photo-{14 位时间戳}-{8 位随机串}` | `photo-20261025143000-aB3xK9Qz` |
+| 普通图 | `photo-{14 位时间戳}-{8 位随机串}` | `photo-20261025143000-aB3xK9Qz` |
 | 合成封面（设定页） | `cover-{14 位时间戳}` | `cover-20261025143000` |
 | 旧角色图（只读） | `portrait-{8 位角色标识}-{14 位时间戳}` | `portrait-10428736-20261025143000` |
 | 旧封面（只读） | `cover-{14 位时间戳}` | `cover-20261025143000` |
@@ -90,8 +90,8 @@
 
 | 方法 | 说明 |
 | --- | --- |
-| `pressAi/generateImage` | 入参 `prompt` / `kind` / `characterId` / `ratio` / `style` / `enhancedFrom`；落 `Images/`，`kind=cover` 时自动设封面 |
-| `pressAi/generateImage/abort` | 取消在途请求，返回 `{ aborted }`；单任务锁保证不会并发出图。中断信号经 provider 传到 SDK 会话，真正中止本地出图；产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额、不写封面，因此「停止」之后不会凭空多出一张图 |
+| `pressAi/generateImage` | 入参 `prompt` / `kind` / `characterId` / `ratio` / `style` / `enhancedFrom`；落 `Images/`，`kind` 只有 `portrait`（角色卡）与 `photo`（其他图片），生成不改作品封面 |
+| `pressAi/generateImage/abort` | 取消在途请求，返回 `{ aborted }`；单任务锁保证不会并发出图。中断信号经 provider 传到 SDK 会话，真正中止本地出图；产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额，因此「停止」之后不会凭空多出一张图 |
 | `pressAi/enhanceImagePrompt` | 文本模型改写输入框正文，30 秒上限，不落盘、不计图片配额 |
 
 ### 3.3 作品参数
@@ -101,7 +101,7 @@
 | `pressAi/getImageSettings` | 返回生效参数与已覆盖的键 |
 | `pressAi/saveImageSettings` | 只处理请求中出现的键，`null` 表示取消覆盖；返回保存后的真实状态 |
 
-可覆盖键：`defaultRatio`、`portraitStyle`、`coverStyle`、`promptSuffix`、`negative`。前三项目前由前端消费（composer 默认比例与画风）；后两项由宿主在出图前叠加。
+可覆盖键：`defaultRatio`、`portraitStyle`、`promptSuffix`、`negative`。前两项由前端消费（composer 默认比例与画风）；后两项由宿主在出图前叠加。
 
 ### 3.4 提示词预览图库
 
@@ -113,7 +113,7 @@
 
 ### 3.5 封面面板（设定页）
 
-`pressAi/listCover`、`pressAi/saveCover`、`pressAi/selectCover`、`pressAi/deleteCover`，见第 8 节。候选合并 `Cover/cover-*` 与 `Images/photo-*`，按修改时间降序后最多返回 60 张（`MAX_COVER_CANDIDATES`），同时回传 `total` 命中总数，前端据此提示「仅显示最新 N 张」；AI 生成已并入 `pressAi/generateImage` 的 `kind=cover`。
+`pressAi/listCover`、`pressAi/saveCover`、`pressAi/selectCover`、`pressAi/deleteCover`，见第 8 节。候选合并 `Cover/cover-*` 与 `Images/photo-*`，按修改时间降序后最多返回 60 张（`MAX_COVER_CANDIDATES`），同时回传 `total` 命中总数，前端据此提示「仅显示最新 N 张」；图库里的任意一张普通图都可在详情里直接设为封面，不需要单独生成。
 
 ### 3.6 角色卡（保留）
 
@@ -156,17 +156,22 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `ImageGenPage.tsx` | 状态编排：筛选、计数、分批渲染、详情面板、单张/批量删除、设封面、复制、插入 |
+| `ImageGenPage.tsx` | 页面骨架与编排：筛选、计数、分批渲染、详情面板与出图回调；多选、删除与封面指针同步交给 hooks |
 | `ImageGenGrid.tsx` | 等宽卡片网格：3:4 裁切、封面徽标、悬停复制/插入/删除、多选勾选、点击打开详情 |
-| `ImageComposer.tsx` | 输入卡片：命令动作与角色芯片内联、底部比例与画面风格、增强提示词、封面模式、发送 / 取消生成 |
+| `ImageComposer.tsx` | 输入卡片：命令动作菜单（作品设定开关）与角色选择、底部比例与画面风格、增强提示词、发送 / 取消生成 |
+| `ImageCharacterPicker.tsx` | 角色选择：工具栏图标按钮下拉，列出作品全部人物卡，选中即挂「图标 + 姓名」徽标，可切回「不使用角色」 |
 | `ImagePromptPicker.tsx` | 提示词面板：工具栏图标按钮弹出，一级分类 / 二级分类 / 词条三级联动，顶部关键词跨分组搜索，点击插入光标 |
 | `useImageLibrary.ts` | 列举（含不切加载态的静默刷新）、单张删除、批量删除（含最新列表回传） |
+| `useCharacterIndex.ts` | 角色索引：一次遍历派生 `byId` 与 `names` 两张表，封面修正与卡片角标共用；`ImageGenCharacter` 类型定义在此 |
+| `useImageSelection.ts` | 多选状态：选中集合与筛选签名绑定（换筛选即派生空集）、全选只覆盖已渲染图片、进入/退出都清空 |
+| `useImageDeletion.ts` | 删除编排：单张删除关详情、批量删除只处理当前筛选内的勾选、二次确认与 `removingTotal` 防重入 |
+| `useCharacterCoverSync.ts` | 角色封面指针同步：单删按宿主回退值、批删按剩余列表最新一张、出图仅在该角色无封面时认领 |
 | `useImageDetail.ts` | 详情面板按路径读取侧车；迟到回包按来源路径**丢弃**（不是覆盖后再过滤），切图不会把新图详情清空 |
 | `useImageSettings.ts` | 作品级参数读写，`isLoaded` 之前不得据此保存 |
 | `useImageComposer.ts` | 输入卡片会话状态：正文、增强态、生成态与请求代号，发送 / 取消 / 超时，失败或取消按草稿回填 |
-| `usePromptChips.ts` | 芯片集合（作品设定与当前角色按 kind 唯一）、开关、清空与草稿回填；图标映射留在 layout |
+| `usePromptChips.ts` | 芯片集合（作品设定与当前角色按 kind 唯一）、角色芯片直接设置、清空与草稿回填；图标映射留在 layout |
 | `imageStyle.ts` | 画风取值与中文标签，composer 的画面风格面板与详情面板共用 |
-| `prompt/promptSections.ts` | 前端提示词分段：正文 + 角色段 + 设定段合成；封面模式是否并入角色由调用方决定 |
+| `prompt/promptSections.ts` | 前端提示词分段：正文 + 角色段 + 设定段合成；各段是否并入由调用方按芯片决定 |
 | `prompt/ratioIntent.ts` | 正文比例意图探测：数字写法与中英文比例词合流，取最后出现者 |
 | `prompt/insertFragment.ts` | 词条插入片段：末尾已有标点或空白时不再补前置逗号 |
 | `@webview/components/RichChipInput.tsx` | 通用芯片输入区：芯片内联进正文流，Enter 发送、组词期间不拦截，命令式 `insertText` |
@@ -191,6 +196,8 @@
 - 生成中发送按钮切换为「取消生成」，取消后立即复位界面，不等宿主回包；迟到的回包不写回界面（不认领封面、不清空输入），但会静默刷新列表，把宿主已经落盘的图补上——用户不必切页才发现新图。
 - 出图占位：`isGenerating` 由 composer 经 `onGeneratingChange` 上报，页面在网格首位渲染一张与卡片同比例（3:4）的骨架卡；成功后用静默刷新（`reload({ silent: true })`）拉回列表，占位由 `isRefreshingResult` 一直挂到新图入列，视线里只发生「骨架 → 新图」一次替换，中间不闪整块加载态。失败、取消、超时都会回收占位，composer 卸载时补发一次 `false`，不会卡在「生成中」。
 - 点「停止」是同步复位：`setIsGenerating(false)` 先于取消请求发出，占位当帧收起，不等宿主回包；随后宿主侧中断请求，已取消的产物不会再落盘（见 3.2）。
+- 角色选择：工具栏角色按钮展开作品全部人物卡，选中即挂「图标 + 姓名」徽标，发送时并入角色段（姓名、性别年龄、身份、外貌），随请求的 `kind` 变为 `portrait`、`characterId` 取该角色；选「不使用角色」或移除徽标即回落普通图；顶栏筛选的角色只作初值，之后以选择器为准，两者不联动。
+- 增强提示词：提交的是「正文 + 角色段」，让改写结果带上角色长相与身份；设定段不进增强请求（避免复述作品信息），还原时回到纯正文。
 - 发送即清空：点击发送的同时清掉输入框与全部芯片（画风不在芯片里，只作请求参数，发送时由宿主并入提示词），增强态一并复位（按钮回到增强图标，请求仍带发送前的 `enhancedFrom`），生成期间输入框不会停着上一轮的提示词；草稿存在 `lastDraftRef`（含增强前原文），请求失败或用户取消时再回填，且仅在用户没有重新输入的情况下回填，正文与增强态同进同退，不覆盖等待期间写下的新内容。
 - 提示词面板：一级分类与二级分类都是必选单选，重复点击当前项被忽略；切换一级分类后二级分类按「当前值不在新分组内即回落到首项」派生，不额外维护状态；关键词非空时词条区跨分组平铺命中项，最多渲染 120 条并提示细化；插入只传词条文本，与正文之间的分隔符由输入卡片按末尾字符补齐（末尾已是标点或空白则不加），因此连续点选自然拼成 `a, b, c`。
 - 提示词缩略图：`pressAi/getPromptImageBase` 在面板每次打开时请求一次，`baseUrl` 为 `null` 时整块缩略图不渲染并改用更密的列宽，底部提示图库目录与「打开目录」按钮；单张图缺失只影响该条，由 `@webview/components/Image` 的占位兜住。
@@ -234,9 +241,9 @@
 
 ---
 
-## 8. 封面生成入口与设定页面板的分工
+## 8. 出图与封面设定的分工
 
-**生成只有一套**：生图页 composer 的「作品封面」模式（`kind=cover`）。新封面落 `Images/`、按 `photo-*` 命名、自动设为作品封面，走统一提示词拼装与每日配额。
+**生成只有两种**：角色卡（`kind=portrait`）与其他图片（`kind=photo`）。出图不改作品封面——封面是「图库里当前选中的那张」，任意一张普通图都可以在详情面板里直接指定，不必专门生成。
 
 **设定页面板只做三件事**：
 
@@ -246,9 +253,9 @@
 | 套用书名 | `pressAi/saveCover` | 前端画布合成 PNG 后上传，落 `Cover/` 并自动设为封面，不消耗出图次数 |
 | 另选 / 删除 | `pressAi/selectCover`、`pressAi/deleteCover` | 删除当前封面时回退到剩余最新一张 |
 
-因此存在两类封面文件：生图页生成的 `Images/photo-*`，与设定页合成的 `Cover/cover-*`。画廊把两类合并展示（`Cover/cover-*` + `Images/photo-*`），但**角色图（`portrait-*`）不进画廊**，避免把角色卡当封面误删；在画廊里删除 `Images` 来源的图，等同于从统一图库删除该图（进回收站，封面指针按剩余最新一张回退）。
+因此存在两类封面来源：图库里的普通图 `Images/photo-*`（详情面板里指定），与设定页合成的 `Cover/cover-*`。画廊把两类合并展示，但**角色图（`portrait-*`）不进画廊**，避免把角色卡当封面误删；在画廊里删除 `Images` 来源的图，等同于从统一图库删除该图（进回收站，封面指针按剩余最新一张回退）。
 
-`pressAi/generateCover` 与 `ai/coverPrompt.ts` 已随入口迁移一并删除；`zhai.image.size` 现在只作用于角色卡出图（`pressAi/generatePortrait`），不再影响封面比例——封面比例取 composer 当前选择。
+`pressAi/generateCover` 与 `ai/coverPrompt.ts` 已随入口迁移一并删除；`zhai.image.size` 现在只作用于角色卡出图（`pressAi/generatePortrait`）。
 
 ---
 

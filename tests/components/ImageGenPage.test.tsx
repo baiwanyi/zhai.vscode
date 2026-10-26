@@ -177,7 +177,7 @@ beforeEach(() => {
     reloadMock.mockReset()
 
     settingsMock.mockReturnValue({
-        settings: { defaultRatio: '3:4', portraitStyle: 'auto', coverStyle: 'photo' },
+        settings: { defaultRatio: '3:4', portraitStyle: 'auto' },
         isLoaded: true,
         save: vi.fn(),
     })

@@ -1,5 +1,5 @@
 /**
- * 统一出图服务单元测试：覆盖入参校验、配额、单任务锁、落盘与侧车、封面指针与失败回滚。
+ * 统一出图服务单元测试：覆盖入参校验、配额、单任务锁、落盘与侧车、失败回滚。
  * 通道通过 ImageGenerator 接口替身注入，不触达真实 CLI；磁盘与配置由 vscode 测试桩承接，
  * 配额读写走真实的 quotaRepository（meta 表），因此断言的是实际扣减结果而非打桩值。
  */
@@ -13,7 +13,6 @@ import { UsageRecorder } from '../src/modules/ai/usageRecorder'
 import { readUsedToday } from '../src/modules/common/db/quotaRepository'
 import { ensureSchema } from '../src/modules/common/db/schema'
 import { IMAGE_QUOTA_KEYS } from '../src/modules/imagegen/constants'
-import { PressCoverStore } from '../src/modules/imagegen/db/coverRepository'
 import { ImageGenerateService } from '../src/modules/imagegen/imageGenerateService'
 import { ImageSettingsService } from '../src/modules/imagegen/imageSettingsService'
 
@@ -24,7 +23,6 @@ const IMAGE_DIR = path.join(STORAGE_ROOT, 'press', '剑来', 'Images')
 const ARTIFACT_BYTES = 'png-bytes'
 
 let db: Database.Database
-let store: PressCoverStore
 let settings: ImageSettingsService
 let service: ImageGenerateService
 /** 每次调用通道时收到的入参，用于断言提示词拼装与尺寸 */
@@ -78,13 +76,12 @@ beforeEach(() => {
     setDirectory(path.join(STORAGE_ROOT, 'press', '剑来'))
     db = new Database(':memory:')
     ensureSchema(db)
-    store = new PressCoverStore(db)
     settings = new ImageSettingsService()
     calls = []
     shouldFail = false
     hold = null
     releaseHold = null
-    service = new ImageGenerateService(db, generator, new UsageRecorder(db), store, provider, settings)
+    service = new ImageGenerateService(db, generator, new UsageRecorder(db), provider, settings)
 })
 
 describe('入参校验', () => {
@@ -119,7 +116,6 @@ describe('成功出图', () => {
         expect(result.image.path).toBe(`press/剑来/Images/${result.image.id}.png`)
         expect(result.image.kind).toBe('photo')
         expect(result.image.characterId).toBeNull()
-        expect(result.coverSelectedId).toBeNull()
         expect(readFileContent(imageFsPath(result.image.id))).toBe(ARTIFACT_BYTES)
         expect(readFileContent(imageFsPath(result.image.id, 'json'))).toBe(
             JSON.stringify({
@@ -148,13 +144,6 @@ describe('成功出图', () => {
 
         expect(second.image.path).not.toBe(first.image.path)
         expect(readFileContent(imageFsPath(first.image.id))).toBe(ARTIFACT_BYTES)
-    })
-
-    it('封面模式生成后自动写作品封面指针', async () => {
-        const result = await service.generate(payload({ kind: 'cover' }), toUri)
-
-        expect(result.coverSelectedId).toBe(result.image.id)
-        expect(store.read(DIR_PATH)).toBe(result.image.path)
     })
 
     it('作品级 promptSuffix 叠加进通道提示词，尺寸取比例映射', async () => {
@@ -202,11 +191,11 @@ describe('失败与并发', () => {
         expect(service.abort()).toEqual({ aborted: false })
     })
 
-    it('取消后产物到达也不落盘、不扣配额、不写封面', async () => {
+    it('取消后产物到达也不落盘、不扣配额', async () => {
         hold = new Promise<void>((resolve) => {
             releaseHold = resolve
         })
-        const pending = service.generate(payload({ kind: 'cover' }), toUri)
+        const pending = service.generate(payload(), toUri)
         expect(service.abort()).toEqual({ aborted: true })
 
         // 放行通道：产物照常返回，但请求已被取消，副作用一律不该发生
@@ -214,6 +203,5 @@ describe('失败与并发', () => {
         await expect(pending).rejects.toThrow('出图已取消')
 
         expect(readUsedToday(db, IMAGE_QUOTA_KEYS)).toBe(0)
-        expect(store.read(DIR_PATH)).toBeNull()
     })
 })
