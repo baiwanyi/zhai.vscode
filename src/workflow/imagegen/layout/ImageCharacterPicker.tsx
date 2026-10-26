@@ -51,12 +51,7 @@ export function ImageCharacterPicker({
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button
-                    size="icon"
-                    variant={activeCharacterId === null ? 'ghost' : 'secondary'}
-                    aria-label="角色设定"
-                    tooltip="角色设定"
-                >
+                <Button size="icon" variant="secondary" aria-label="角色设定" tooltip="角色设定">
                     <UserRoundStar />
                 </Button>
             </DropdownMenuTrigger>

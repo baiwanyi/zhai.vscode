@@ -117,7 +117,7 @@ export function ImagePromptPicker({ selectedPrompts, onToggle }: ImagePromptPick
     return (
         <Popover open={isOpen} onOpenChange={handleOpenChange}>
             <PopoverTrigger asChild>
-                <Button size="icon" variant="ghost" aria-label="提示词" tooltip="提示词">
+                <Button size="icon" variant="secondary" aria-label="提示词" tooltip="提示词">
                     <WandSparkles />
                 </Button>
             </PopoverTrigger>

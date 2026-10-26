@@ -114,9 +114,6 @@ export function ImageCommandMenus({
     const [isMenuOpen, setIsMenuOpen] = useState(false)
     const [isRuleDialogOpen, setIsRuleDialogOpen] = useState(false)
 
-    /** 菜单底色：作品设定或任一规则挂上即高亮，用户一眼看出已添加了上下文 */
-    const isMenuActive = isSettingActive || selectedRules.length > 0
-
     /** 打开菜单即重读规则目录：用户中途往目录里补 md，再开一次菜单就能看到 */
     const handleMenuOpenChange = (isOpen: boolean): void => {
         setIsMenuOpen(isOpen)
@@ -147,12 +144,7 @@ export function ImageCommandMenus({
         <>
             <DropdownMenu open={isMenuOpen} onOpenChange={handleMenuOpenChange}>
                 <DropdownMenuTrigger asChild>
-                    <Button
-                        size="icon"
-                        variant={isMenuActive ? 'secondary' : 'ghost'}
-                        tooltip="添加上下文"
-                        aria-label="添加上下文"
-                    >
+                    <Button size="icon" variant="secondary" tooltip="添加上下文" aria-label="添加上下文">
                         <Command />
                     </Button>
                 </DropdownMenuTrigger>
