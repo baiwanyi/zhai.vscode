@@ -1,12 +1,12 @@
 /**
  * 提示词选择：工具栏图标按钮弹出三级面板——一级分类、二级分类、词条；有关键词时词条区跨分组平铺命中项。
- * 复用约定：Popover / ToggleGroup / Input / HoverCard 取 @components/ui，触发与插入按钮取 @webview/components/Button，
+ * 复用约定：Popover / ToggleGroup / Input / HoverCard 取 @components/ui，触发按钮取 @webview/components/Button，
  * 预览大图取 @webview/components/Image，分类与词条取 prompt/promptLibrary，图库基址取 hooks/usePromptImages。
  * 关键约束：两级分类都是必选单选，Radix 允许再点一次回传空串，须判空丢弃以保持始终有一项生效；
  * 切换一级分类不手动清二级分类，由「旧值不在新分组内即回落到首项」的派生规则兜住；
  * 悬停预览只挂在确实有图的词条上，缺图条目退化为纯文字按钮，不弹只有图片占位的空浮层；
  * baseUrl 为 null（图库目录为空）时只在底部提示目录与「打开目录」，面板其余部分照常可用；
- * 插入只回传词条文本，与已有正文的分隔符由输入卡片补齐，本组件不持有输入框状态。
+ * 选中只切换芯片、不写入正文，词条文本由宿主在发送时按 prompt 原文换取，本组件不持有输入框状态。
  */
 import { WandSparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
@@ -39,18 +39,21 @@ interface PromptTagButtonProps {
     tag: PromptTag
     /** 预览图地址，null 表示该条没有图 */
     previewUrl: string | null
-    /** 点击插入：只回传词条文本，分隔符由输入卡片处理 */
-    onInsert: (text: string) => void
+    /** 是否已挂到输入区：选中态据此切换按钮变体，不额外维护一份选中集合 */
+    isSelected: boolean
+    /** 点击切换：已挂则移除，未挂则追加 */
+    onToggle: (tag: PromptTag) => void
 }
 
 /** 单词条：有图时套一层悬停大图，无图时只渲染按钮本身 */
-function PromptTagButton({ tag, previewUrl, onInsert }: PromptTagButtonProps): JSX.Element {
+function PromptTagButton({ tag, previewUrl, isSelected, onToggle }: PromptTagButtonProps): JSX.Element {
     const button = (
         <Button
             size="sm"
-            variant="outline"
+            variant={isSelected ? 'secondary' : 'outline'}
+            aria-pressed={isSelected}
             onClick={() => {
-                onInsert(tag.text)
+                onToggle(tag)
             }}
         >
             <span className="truncate">{tag.name}</span>
@@ -62,19 +65,22 @@ function PromptTagButton({ tag, previewUrl, onInsert }: PromptTagButtonProps): J
     return (
         <HoverCard openDelay={250} closeDelay={80}>
             <HoverCardTrigger asChild>{button}</HoverCardTrigger>
-            <HoverCardContent side="top" sideOffset={6} className="w-48">
+            <HoverCardContent side="top" sideOffset={6} className="w-48 text-center space-y-1">
                 <Image src={previewUrl} alt={tag.name} aspect="3/4" size="md" />
+                <p className="pt-1 line-clamp-3 text-muted-foreground wrap-break-word">{tag.name}</p>
             </HoverCardContent>
         </HoverCard>
     )
 }
 
 interface ImagePromptPickerProps {
-    /** 词条插入回调：调用方负责写入光标位置 */
-    onInsert: (text: string) => void
+    /** 当前已挂的词条标识（上游原文）：用于回显选中态 */
+    selectedPrompts: readonly string[]
+    /** 点选词条：由输入卡片切换芯片 */
+    onToggle: (tag: PromptTag) => void
 }
 
-export function ImagePromptPicker({ onInsert }: ImagePromptPickerProps): JSX.Element {
+export function ImagePromptPicker({ selectedPrompts, onToggle }: ImagePromptPickerProps): JSX.Element {
     const { baseUrl, dirPath, reload } = usePromptImages()
     const [isOpen, setIsOpen] = useState(false)
     const [activeObject, setActiveObject] = useState(PROMPT_OBJECTS[0]?.name ?? '')
@@ -169,7 +175,7 @@ export function ImagePromptPicker({ onInsert }: ImagePromptPickerProps): JSX.Ele
                             }
                         }}
                         aria-label="提示词二级分类"
-                        className="w-32 shrink-0 overflow-y-auto bg-muted/50 p-1.5"
+                        className="w-40 shrink-0 overflow-y-auto bg-muted/50 p-1.5"
                     >
                         {attributes.map((item) => (
                             <ToggleGroupItem
@@ -182,13 +188,14 @@ export function ImagePromptPicker({ onInsert }: ImagePromptPickerProps): JSX.Ele
                             </ToggleGroupItem>
                         ))}
                     </ToggleGroup>
-                    <div className="grid min-w-0 flex-1 grid-cols-3 content-start gap-1.5 overflow-y-auto">
+                    <div className="grid min-w-0 flex-1 grid-cols-2 content-start gap-1.5 overflow-y-auto">
                         {tags.map((tag) => (
                             <PromptTagButton
                                 key={tag.prompt}
                                 tag={tag}
                                 previewUrl={buildPreviewUrl(baseUrl, tag.preview)}
-                                onInsert={onInsert}
+                                isSelected={selectedPrompts.includes(tag.prompt)}
+                                onToggle={onToggle}
                             />
                         ))}
                     </div>

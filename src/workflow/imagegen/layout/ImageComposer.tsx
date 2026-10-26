@@ -1,27 +1,28 @@
 /**
- * 生图输入卡片：命令动作与角色以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
+ * 生图输入卡片：命令动作、角色与词条以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
  * 复用约定：外壳沿用 aichat 的两层底色（bg-composer / bg-composer-input），输入区取 RichChipInput，
- * 工具栏与底部操作行取本目录 ImageComposerToolbar / ImageComposerActions；提示词拼装、比例探测与词条插入
+ * 工具栏与底部操作行取本目录 ImageComposerToolbar / ImageComposerActions；提示词拼装与比例探测
  * 取 ../prompt 下的纯函数，芯片集合与会话状态分别由 ../hooks 的 usePromptChips / useImageComposer 持有。
  * 关键约束：角色芯片是角色选择的唯一数据源——选择器选中即挂「图标 + 姓名」徽标，移除即回到不使用角色，
  * 生成目标与增强时的角色段都由它派生；顶栏筛选的角色只作初值，之后不与其联动；
+ * 词条芯片只承载「选了哪些词条」，文本不写进正文，由宿主在出图时按标识换取后并入提示词；
  * 生成意图只有两种：挂着角色芯片即角色图，否则是普通图片；生成不碰作品封面，封面在图库里手动指定；
  * 比例与画风各只落一份 state，手动改动经 onSettingsChange 上报，正文里的比例字面量只自动切换
  * 本次会话的选择、不写回作品配置。
  * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
  */
-import { ContactRound, NotebookText } from 'lucide-react'
+import { BookText, ContactRound, WandSparkles } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
 import type { ImageGenerateKind, ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
-import { RichChipInput, type RichChipInputHandle } from '@webview/components/RichChipInput'
+import { RichChipInput } from '@webview/components/RichChipInput'
 import { ImageComposerActions } from './ImageComposerActions'
 import { ImageComposerToolbar } from './ImageComposerToolbar'
+import type { LucideIcon } from 'lucide-react'
 import type { JSX } from 'react'
 import { useImageComposer } from '../hooks/useImageComposer'
-import { usePromptChips, type PromptChip } from '../hooks/usePromptChips'
-import { composeInsertion } from '../prompt/insertFragment'
+import { usePromptChips, type PromptChip, type PromptChipKind } from '../hooks/usePromptChips'
 import {
     composePromptSections,
     type PromptCharacterSnapshot,
@@ -30,6 +31,13 @@ import {
 import { detectImageRatio } from '../prompt/ratioIntent'
 
 export type { PromptCharacterSnapshot, PromptSettingSnapshot }
+
+/** 芯片前置图标：与工具栏各入口的图标保持一致，人物卡与设定语义由图标表达 */
+const CHIP_ICONS: Readonly<Record<PromptChipKind, LucideIcon>> = {
+    setting: BookText,
+    character: ContactRound,
+    prompt: WandSparkles,
+}
 
 interface ImageComposerProps {
     dirPath: string
@@ -123,16 +131,24 @@ function ComposerBody({
     /** 上次探测到的比例意图：只比较前后两次探测结果，同一关键字持续存在时不重复切 */
     const detectedRatioRef = useRef<ImageRatio | null>(null)
 
-    const richInputRef = useRef<RichChipInputHandle | null>(null)
-
     /** 初始角色：只用于给芯片落初值，之后顶栏再改筛选也不改写会话内的选择 */
     const initialCharacter = useMemo(
         () => characters.find((character) => character.id === initialCharacterId) ?? null,
         [characters, initialCharacterId],
     )
 
-    const { chips, settingChip, characterChip, toggleSetting, setCharacter, removeChip, clearChips, restoreChips } =
-        usePromptChips({ initialCharacter })
+    const {
+        chips,
+        settingChip,
+        characterChip,
+        promptChips,
+        toggleSetting,
+        setCharacter,
+        togglePrompt,
+        removeChip,
+        clearChips,
+        restoreChips,
+    } = usePromptChips({ initialCharacter })
 
     /** 当前角色：由角色芯片派生，芯片被移除即视为不使用角色，不另落一份 state */
     const activeCharacter = useMemo(
@@ -160,6 +176,13 @@ function ComposerBody({
         })
     }
 
+    /**
+     * 收集词条标识：词条文本不进正文，只把上游原文交给宿主换取。
+     * 关键约束：顺序即芯片顺序，宿主按同一顺序并入提示词，选中多枚时画面元素的前后关系保持稳定。
+     */
+    const composePromptTags = (source: readonly PromptChip[]): string[] =>
+        source.filter((chip) => chip.kind === 'prompt').map((chip) => chip.value)
+
     /** 随请求下发的目标：普通图不带角色，角色图才绑定角色芯片指向的人物 */
     const generateTarget = {
         kind: targetKind,
@@ -178,6 +201,7 @@ function ComposerBody({
         useImageComposer({
             dirPath,
             composePrompt,
+            composePromptTags,
             composeEnhanceSource,
             target: generateTarget,
             ratio,
@@ -190,8 +214,8 @@ function ComposerBody({
             onGeneratingChange,
         })
 
-    /** 能否发送：正文、角色段与设定段任一有内容即可，输入框与发送按钮共用同一判定 */
-    const canSend = composePrompt({ text, chips }).length > 0
+    /** 能否发送：正文、角色段与设定段任一有内容，或至少挂了一枚词条芯片，输入框与发送按钮共用同一判定 */
+    const canSend = composePrompt({ text, chips }).length > 0 || promptChips.length > 0
 
     /** 选画风：只记 state 并写回作品配置，输入框不出现徽标，发送时才随请求并入提示词 */
     const pickStyle = (value: PortraitStyle): void => {
@@ -219,22 +243,15 @@ function ComposerBody({
         detectedRatioRef.current = detected
     }
 
-    /** 把词条插入光标处：保留已有内容，插入后光标停在片段末尾，便于连续点击累加 */
-    const insertPrompt = (fragment: string): void => {
-        richInputRef.current?.insertText(composeInsertion(text, fragment))
-    }
-
-    /** 芯片渲染项：id 取 kind（同一 kind 只允许一枚），图标与命令菜单、角色选择器的入口图标保持一致 */
-    const richChips = chips.map((chip) => ({
-        id: chip.kind,
-        label: chip.label,
-        icon:
-            chip.kind === 'character' ? (
-                <ContactRound className="size-3 shrink-0 text-muted-foreground" />
-            ) : (
-                <NotebookText className="size-3 shrink-0 text-muted-foreground" />
-            ),
-    }))
+    /** 芯片渲染项：id 由 hook 保证唯一（设定与角色按 kind，词条按上游原文），图标与各入口保持一致 */
+    const richChips = chips.map((chip) => {
+        const Icon = CHIP_ICONS[chip.kind]
+        return {
+            id: chip.id,
+            label: chip.label,
+            icon: <Icon className="size-3 shrink-0 text-muted-foreground" />,
+        }
+    })
 
     return (
         <div className="flex flex-col gap-0.5 rounded-2xl bg-composer p-1.5">
@@ -242,14 +259,14 @@ function ComposerBody({
                 isSettingActive={settingChip !== null}
                 characters={characters}
                 activeCharacterId={activeCharacter?.id ?? null}
+                selectedPrompts={promptChips.map((chip) => chip.value)}
                 onToggleSetting={toggleSetting}
                 onSelectCharacter={setCharacter}
-                onInsertPrompt={insertPrompt}
+                onTogglePrompt={togglePrompt}
             />
 
             <div className="rounded-xl bg-composer-input p-3">
                 <RichChipInput
-                    ref={richInputRef}
                     value={text}
                     chips={richChips}
                     placeholder="描述画面：人物、动作、场景、光线与氛围…"

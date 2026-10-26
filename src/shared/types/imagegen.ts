@@ -112,11 +112,16 @@ export interface ImageSetCoverResult {
     coverSelectedId: string | null
 }
 
-/** 按提示词生成图片请求：提示词由前端拼装完成，宿主只做校验、出图与落盘 */
+/** 按提示词生成图片请求：正文由前端拼装，词条文本由宿主换取，画风与负向约束由宿主追加 */
 export interface ImageGenerateRequest {
     dirPath: string
-    /** 已拼装的图像提示词（含画风、设定快照与负向约束） */
+    /** 已拼装的图像提示词（含设定快照；不含词条、画风与负向约束） */
     prompt: string
+    /**
+     * 词条芯片的标识：词条上游原文，全库唯一。
+     * 宿主据此换取归一化后的提示词文本，与正文合并后再生效；词条顺序即芯片顺序。
+     */
+    promptTags?: string[]
     kind: ImageGenerateKind
     /** portrait 必填，其余必须为 null */
     characterId: string | null

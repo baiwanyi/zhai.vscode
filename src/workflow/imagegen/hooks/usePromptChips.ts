@@ -1,16 +1,22 @@
 /**
- * 生图输入芯片：维护「引用意图」集合（作品设定与当前角色），同一 kind 只允许一枚。
- * 复用约定：角色快照类型取 ../prompt/promptSections，本 hook 只产出数据与操作，图标等展示留在 layout 渲染。
- * 关键约束：芯片 id 即 kind，增删都按 kind 判重；角色芯片由角色选择器直接设置（传 null 即清除），不再做开关；
- * 角色芯片的初值取顶栏筛选的角色，之后以选择器的选择为准，两者不联动；
+ * 生图输入芯片：维护「引用意图」集合——作品设定、当前角色与已选提示词词条。
+ * 复用约定：角色快照类型取 ../prompt/promptSections，词条类型取 ../prompt/promptLibrary；
+ * 本 hook 只产出数据与操作，图标等展示留在 layout 渲染。
+ * 关键约束：芯片 id 是删除与 DOM 定位的唯一依据——设定与角色按 kind 唯一，词条按上游原文去重、可挂多枚；
+ * 角色芯片由角色选择器直接设置（传 null 即清除），词条芯片由面板点选开关，再点同一词条即取消；
  * 发送时的清空与失败后的草稿回填由 useImageComposer 触发，回填只在用户没有新加芯片时生效。
  */
 import { useState } from 'react'
+import type { PromptTag } from '../prompt/promptLibrary'
 import type { PromptCharacterSnapshot } from '../prompt/promptSections'
 
-/** 徽标：setting 指作品设定，character 指某个人物；画风不进徽标，由底部操作行单选后随请求下发 */
+/** 芯片来源：setting 指作品设定，character 指某个人物，prompt 指词库词条（可多枚） */
+export type PromptChipKind = 'setting' | 'character' | 'prompt'
+
+/** 徽标：value 是交给宿主的标识——角色取角色 id，词条取上游原文；画风不进徽标，由底部操作行单选后随请求下发 */
 export interface PromptChip {
-    kind: 'setting' | 'character'
+    id: string
+    kind: PromptChipKind
     value: string
     label: string
 }
@@ -24,10 +30,14 @@ interface UsePromptChipsResult {
     chips: PromptChip[]
     settingChip: PromptChip | null
     characterChip: PromptChip | null
+    /** 已选词条芯片：发送时按此逐个交给宿主换取提示词文本 */
+    promptChips: PromptChip[]
     toggleSetting: () => void
     /** 设置角色芯片：传 null 即清除，菜单选择与移除徽标都走这一条 */
     setCharacter: (character: PromptCharacterSnapshot | null) => void
-    removeChip: (kind: string) => void
+    /** 点选词条：未挂则追加，已挂则移除，同一词条在输入区内只出现一枚 */
+    togglePrompt: (tag: PromptTag) => void
+    removeChip: (id: string) => void
     /** 发送即清空 */
     clearChips: () => void
     /** 草稿回填：只在用户没有新加芯片时生效 */
@@ -35,11 +45,16 @@ interface UsePromptChipsResult {
 }
 
 /** 作品设定芯片：value 固定为 setting，与宿主侧的引用口径一致 */
-const SETTING_CHIP: PromptChip = { kind: 'setting', value: 'setting', label: '作品设定' }
+const SETTING_CHIP: PromptChip = { id: 'setting', kind: 'setting', value: 'setting', label: '作品设定' }
 
 /** 角色芯片：值取角色 id，文案只放姓名——人物卡语义由渲染层的前置图标表达，文字不重复占位 */
 function characterChipOf(character: PromptCharacterSnapshot): PromptChip {
-    return { kind: 'character', value: character.id, label: character.name }
+    return { id: 'character', kind: 'character', value: character.id, label: character.name }
+}
+
+/** 词条芯片：prompt 原文全库唯一，直接作 id 与 value，宿主据此换取归一化文本 */
+function promptChipOf(tag: PromptTag): PromptChip {
+    return { id: `prompt:${tag.prompt}`, kind: 'prompt', value: tag.prompt, label: tag.name }
 }
 
 /** 按 kind 取反：已有则删，没有则追加 */
@@ -66,8 +81,17 @@ export function usePromptChips({ initialCharacter }: UsePromptChipsOptions): Use
         })
     }
 
-    const removeChip = (kind: string): void => {
-        setChips((current) => current.filter((chip) => chip.kind !== kind))
+    const togglePrompt = (tag: PromptTag): void => {
+        const next = promptChipOf(tag)
+        setChips((current) =>
+            current.some((chip) => chip.id === next.id)
+                ? current.filter((chip) => chip.id !== next.id)
+                : [...current, next],
+        )
+    }
+
+    const removeChip = (id: string): void => {
+        setChips((current) => current.filter((chip) => chip.id !== id))
     }
 
     const clearChips = (): void => {
@@ -82,8 +106,10 @@ export function usePromptChips({ initialCharacter }: UsePromptChipsOptions): Use
         chips,
         settingChip: chips.find((chip) => chip.kind === 'setting') ?? null,
         characterChip: chips.find((chip) => chip.kind === 'character') ?? null,
+        promptChips: chips.filter((chip) => chip.kind === 'prompt'),
         toggleSetting,
         setCharacter,
+        togglePrompt,
         removeChip,
         clearChips,
         restoreChips,

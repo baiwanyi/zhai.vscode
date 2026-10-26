@@ -76,8 +76,8 @@ export function RichChipInput({
     const editorRef = useRef<HTMLDivElement>(null)
     /** 中文输入法组词中：此时 Enter 用于确认候选词，不能触发发送 */
     const composingRef = useRef(false)
-    /** 芯片签名：只在芯片集合变化时重排 DOM，避免每次渲染都动光标 */
-    const chipSignature = chips.map((chip) => chip.id).join('|')
+    /** 芯片签名：只在芯片集合变化时重排 DOM，避免每次渲染都动光标；分隔符取 NUL，避免 id 自带 `|` 时拼出重复签名 */
+    const chipSignature = chips.map((chip) => chip.id).join('\u0000')
 
     useEffect(() => {
         const host = editorRef.current

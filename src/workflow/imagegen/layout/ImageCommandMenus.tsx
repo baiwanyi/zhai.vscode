@@ -5,7 +5,7 @@
  * 关键约束：开关语义用 CheckboxItem 承载勾选态，选中与否由输入卡片按芯片算好传入；
  * 命令动作在生成中仍可切换（只影响下一次请求）；本组件只上抛开关动作，芯片集合由输入卡片承担。
  */
-import { Command, NotebookText } from 'lucide-react'
+import { Command, BookText } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuCheckboxItem,
@@ -36,7 +36,7 @@ export function ImageCommandMenus({ isSettingActive, onToggleSetting }: ImageCom
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
                 <DropdownMenuCheckboxItem checked={isSettingActive} onCheckedChange={() => onToggleSetting()}>
-                    <NotebookText />
+                    <BookText />
                     <span className="flex-1">作品设定</span>
                 </DropdownMenuCheckboxItem>
             </DropdownMenuContent>

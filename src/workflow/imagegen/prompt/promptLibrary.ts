@@ -1,8 +1,9 @@
 /**
  * 提示词库适配层：把 data/promptTags.json 的三级分组摊平成分类清单、扁平词条表与分组索引。
- * 复用约定：数据由 scripts/build-prompt-tags.mjs 从上游分片生成，本文件只做类型收敛、权重归一与索引；
- * 组件从 PROMPT_OBJECTS / PROMPT_ATTRIBUTES / PROMPT_TAGS 与三个查询函数取值，不直接依赖 JSON 结构。
- * 关键约束：prompt 保留上游原文（含 (x:1.3) 权重写法），text 才是插入输入框的归一化文本；
+ * 复用约定：数据由 scripts/build-prompt-tags.mjs 从上游分片生成，权重归一取 @shared/utils/promptTag
+ * 与宿主共用同一套写法；组件从 PROMPT_OBJECTS / PROMPT_ATTRIBUTES / PROMPT_TAGS 与三个查询函数取值。
+ * 关键约束：prompt 保留上游原文（含 (x:1.3) 权重写法），同时作为词条芯片的标识——全库唯一，可据此在宿主换取文本；
+ * text 只是归一化结果，供悬停预览展示「发送后会变成什么」，选中词条不再依赖它写入正文；
  * preview 只是文件名，接入地址由宿主按图库目录拼装，本层不感知任何磁盘路径；
  * 一级分类图标集中在此映射，未命中的分类回落默认图标，新增分类时不会漏渲染。
  */
@@ -25,6 +26,7 @@ import {
     Trees,
     UserRound,
 } from 'lucide-react'
+import { normalizePromptTag } from '@shared/utils/promptTag'
 import promptData from './data/promptTags.json'
 import type { LucideIcon } from 'lucide-react'
 
@@ -41,7 +43,7 @@ export interface PromptAttribute {
     count: number
 }
 
-/** 词条：name 是中文显示名，prompt 是上游原文，text 是剥离权重后实际插入的文本 */
+/** 词条：name 是中文显示名，prompt 是上游原文兼全库唯一标识，text 是剥离权重后的归一化文本 */
 export interface PromptTag {
     object: string
     attribute: string
@@ -72,48 +74,8 @@ const ICON_BY_OBJECT: Readonly<Record<string, LucideIcon>> = {
     色彩氛围: Rainbow,
 }
 
-/**
- * 权重后缀：`:1.3` 这类 SD 写法，剥离后对模型是等价的裸标签。
- * 冒号前必须已有内容——`:3` 是「猫嘴」这类颜文字标签，不能被当作权重吃掉。
- */
-const WEIGHT_SUFFIX = /(?<=\S)\s*:\s*\d+(?:\.\d+)?\s*$/u
-
-/** 成对括号的两侧：每轮都从头剥一次，兼容 `(tag:1.3)` 这种「先括号后权重」的顺序 */
-const OPEN_BRACKET = /^[([]\s*/u
-
-const CLOSE_BRACKET = /\s*[)\]]$/u
-
 /** 分组索引的键分隔符：分类名里可能出现 `/`，不能用它拼键 */
 const GROUP_SEPARATOR = '::'
-
-/**
- * 剥离单个片段的权重与强调括号：`(autumn maple forest:1.3)` → `autumn maple forest`。
- * 最多三轮，嵌套写法（如 `((tag:1.2))`）也能收敛到裸文本，无变化即提前返回。
- */
-function stripWeight(part: string): string {
-    let current = part
-    for (let round = 0; round < 3; round += 1) {
-        const next = current
-            .replace(WEIGHT_SUFFIX, '')
-            .replace(OPEN_BRACKET, '')
-            .replace(CLOSE_BRACKET, '')
-            .trim()
-        if (next === current) {
-            return current
-        }
-        current = next
-    }
-    return current
-}
-
-/** 归一化提示词：按逗号拆段、逐段剥权重、丢弃空段后统一用「, 」连接 */
-function normalizePrompt(raw: string): string {
-    return raw
-        .split(',')
-        .map((part) => stripWeight(part))
-        .filter((part) => part.length > 0)
-        .join(', ')
-}
 
 /** 分组索引的键：object 与 attribute 的组合，两者都可能含标点，只能用固定分隔符拼接 */
 function groupKey(object: string, attribute: string): string {
@@ -144,7 +106,7 @@ for (const group of promptData.groups) {
                 attribute: attribute.name,
                 name: tag.name,
                 prompt: tag.prompt,
-                text: normalizePrompt(tag.prompt),
+                text: normalizePromptTag(tag.prompt),
                 preview: tag.preview,
             })
         }

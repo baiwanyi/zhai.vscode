@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 /**
- * ImageComposer 交互用例：覆盖参数未读完的占位、发送编排、角色/设定芯片、取消与迟到回包、增强还原。
- * 复用约定：渲染查询走 @testing-library/react，输入与点击用 user-event；输入区与词库弹层以轻量替身接管，
- * 断言落在「发什么请求、回调收到什么」上，正文拼装规则由纯函数承担。
+ * ImageComposer 交互用例：覆盖参数未读完的占位、发送编排、角色/设定/词条芯片、取消与迟到回包、增强还原。
+ * 复用约定：渲染查询走 @testing-library/react，输入与点击用 user-event；输入区以轻量替身接管，
+ * 提示词面板走真实组件与真实词库，断言落在「发什么请求、回调收到什么」上，正文拼装规则由纯函数承担。
  * 关键约束：取消后迟到的成功回包必须走 onLateGenerated 而不是 onGenerated——否则会清空他刚重新输入的正文，
- * 这是本组件最容易回退的分支。
+ * 这是本组件最容易回退的分支；词条只以芯片存在，正文里不该出现词条文本。
  */
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -14,6 +14,7 @@ import type { ImageGenerateResult } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
 import { ImageComposer } from '@webview/workflow/imagegen/layout/ImageComposer'
 import type { PromptCharacterSnapshot } from '@webview/workflow/imagegen/layout/ImageComposer'
+import { PROMPT_TAGS, type PromptTag } from '@webview/workflow/imagegen/prompt/promptLibrary'
 import type { JSX } from 'react'
 
 const { requestMock, toastErrorMock } = vi.hoisted(() => ({
@@ -131,6 +132,22 @@ function inputBox(): HTMLTextAreaElement {
     return screen.getByLabelText<HTMLTextAreaElement>(PLACEHOLDER)
 }
 
+/** 面板首屏第一条词条：一级与二级分类都默认选首项，故它在打开面板后即可见 */
+function firstTag(): PromptTag {
+    const [tag] = PROMPT_TAGS
+    if (tag === undefined) {
+        throw new Error('词库为空，无法执行词条芯片用例')
+    }
+    return tag
+}
+
+/** 打开提示词面板并点选首条词条（已挂则取消） */
+async function clickFirstTag(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    const tag = firstTag()
+    await user.click(screen.getByRole('button', { name: '提示词' }))
+    await user.click(await screen.findByRole('button', { name: tag.name }))
+}
+
 /** 菜单浮层依赖 ResizeObserver 量取尺寸：jsdom 未实现，补空桩避免渲染中断 */
 class ResizeObserverStub {
     observe = (): void => undefined
@@ -151,10 +168,15 @@ beforeEach(() => {
     stubDropdownDom()
     requestMock.mockReset()
     toastErrorMock.mockReset()
-    // 默认：出图成功，abort 视为成功
-    requestMock.mockImplementation((method: string) =>
-        method === 'pressAi/generateImage/abort' ? Promise.resolve({ aborted: true }) : Promise.resolve(GENERATED),
-    )
+    // 默认：出图成功，abort 视为成功，预览图库按「没有图」回包（面板照常可用）
+    requestMock.mockImplementation((method: string) => {
+        if (method === 'pressAi/getPromptImageBase') {
+            return Promise.resolve({ baseUrl: null, dirPath: '' })
+        }
+        return method === 'pressAi/generateImage/abort'
+            ? Promise.resolve({ aborted: true })
+            : Promise.resolve(GENERATED)
+    })
 })
 
 afterEach(cleanup)
@@ -291,6 +313,63 @@ describe('ImageComposer', () => {
 
         const [, params] = requestMock.mock.calls[0] as [string, { prompt: string }]
         expect(params.prompt).toBe('雨夜长街\n\n书名：剑来')
+    })
+
+    it('点选词条只挂芯片不写正文，发送时带上词条标识', async () => {
+        const user = userEvent.setup()
+        renderComposer()
+        const tag = firstTag()
+
+        await clickFirstTag(user)
+
+        // 词条不进正文，只以芯片呈现；正文为空但有词条时同样可发送
+        expect(screen.getByRole('button', { name: `移除${tag.name}` })).toBeDefined()
+        expect(inputBox().value).toBe('')
+        expect(screen.getByRole('button', { name: '发送' }).hasAttribute('disabled')).toBe(false)
+
+        await user.click(screen.getByRole('button', { name: '发送' }))
+
+        // 打开面板时也发过预览图库请求，出图调用要按方法名挑出来
+        const generateCall = requestMock.mock.calls.find(([method]) => method === 'pressAi/generateImage') as
+            [string, { prompt: string; promptTags?: string[] }] | undefined
+        expect(generateCall?.[1].prompt).toBe('')
+        expect(generateCall?.[1].promptTags).toEqual([tag.prompt])
+        // 发送即清空：芯片随正文一起收走
+        expect(screen.queryByRole('button', { name: `移除${tag.name}` })).toBeNull()
+    })
+
+    it('面板按选中态回显，再点同一词条即取消芯片', async () => {
+        const user = userEvent.setup()
+        renderComposer()
+        const tag = firstTag()
+
+        await clickFirstTag(user)
+        expect(screen.getByRole('button', { name: tag.name }).getAttribute('aria-pressed')).toBe('true')
+
+        await user.click(screen.getByRole('button', { name: tag.name }))
+        expect(screen.queryByRole('button', { name: `移除${tag.name}` })).toBeNull()
+        expect(screen.getByRole('button', { name: tag.name }).getAttribute('aria-pressed')).toBe('false')
+    })
+
+    it('发送失败时词条芯片随草稿回填', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) => {
+            if (method === 'pressAi/getPromptImageBase') {
+                return Promise.resolve({ baseUrl: null, dirPath: '' })
+            }
+            if (method === 'pressAi/generateImage') {
+                return Promise.reject(new Error('通道不可用'))
+            }
+            return Promise.resolve({ aborted: true })
+        })
+        renderComposer()
+        const tag = firstTag()
+
+        await clickFirstTag(user)
+        await user.click(screen.getByRole('button', { name: '发送' }))
+
+        expect(toastErrorMock).toHaveBeenCalledTimes(1)
+        expect(screen.getByRole('button', { name: `移除${tag.name}` })).toBeDefined()
     })
 
     it('发送后冷静期内的第二次点击不会误取消在途请求', async () => {

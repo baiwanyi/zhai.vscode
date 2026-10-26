@@ -1,10 +1,12 @@
 /**
  * 生图会话状态机：持有正文、增强态与出图请求，处理发送、取消、超时与迟到回包。
  * 复用约定：请求经 @shared/utils/bridge，失败统一 toastError，芯片集合由 usePromptChips 持有并经回调同步；
- * 提示词拼装由调用方注入 composePrompt，增强提交的源文本由 composeEnhanceSource 注入，
- * 本 hook 只提供发送瞬间的正文与芯片快照。
+ * 提示词拼装由调用方注入 composePrompt，词条芯片的标识由 composePromptTags 注入——
+ * 词条文本不在前端拼进正文，改由宿主在出图时按标识换取；
+ * 增强提交的源文本由 composeEnhanceSource 注入，本 hook 只提供发送瞬间的正文与芯片快照。
  * 对外回调统一用 on 前缀且 Promise 在 hook 内收口（异步实现拆成 runXxx），调用方可直接交给按钮属性。
  * 关键约束：generationRef 是请求代号，取消或重发即自增，旧回包按代号丢弃并只经 onLateGenerated 静默补图；
+ * 正文与词条都为空才拒绝发送，其余芯片（角色、设定）不参与可发送判定；
  * 发送即清空正文与芯片，失败或取消仅在用户没有新输入时回填；生成态经 onGeneratingChange 上报，卸载补发一次结束；
  * enhancedFrom 取发送前的闭包旧值，不受本次 setState 影响。
  */
@@ -37,6 +39,8 @@ interface UseImageComposerOptions {
     dirPath: string
     /** 拼装提示词：传入发送瞬间的正文与芯片快照，避免回填竞态 */
     composePrompt: (source: ImageComposerPromptSource) => string
+    /** 收集词条标识：发送时一并交给宿主换取词条文本，缺省视为没有词条 */
+    composePromptTags?: (chips: readonly PromptChip[]) => string[]
     /** 拼装待增强的正文：把角色段等参考信息并进去，缺省时原样提交 */
     composeEnhanceSource?: (text: string) => string
     /** 生成目标：封面 / 普通图 / 角色图由调用方按当前模式判定 */
@@ -73,6 +77,7 @@ interface UseImageComposerResult {
 export function useImageComposer({
     dirPath,
     composePrompt,
+    composePromptTags = (): string[] => [],
     composeEnhanceSource = (source: string): string => source,
     target,
     ratio,
@@ -178,7 +183,9 @@ export function useImageComposer({
 
     const runSend = async (): Promise<void> => {
         const prompt = composePrompt({ text, chips })
-        if (prompt.length === 0) {
+        /** 词条标识：正文之外的内容，正文为空时也能出图，故与正文一起判定 */
+        const promptTags = composePromptTags(chips)
+        if (prompt.length === 0 && promptTags.length === 0) {
             return
         }
         const token = generationRef.current + 1
@@ -197,6 +204,8 @@ export function useImageComposer({
                 {
                     dirPath,
                     prompt,
+                    // 词条只传标识，文本由宿主按 prompt 原文换取后并入提示词
+                    promptTags: promptTags.length > 0 ? promptTags : undefined,
                     kind: target.kind,
                     characterId: target.characterId,
                     ratio,

@@ -1,9 +1,11 @@
 /**
  * 按提示词出图服务：接收前端拼装好的提示词与比例，经图像通道路由出图，落到作品统一目录 Images。
  * 复用约定：通道入口复用 ./ai/imageProvider，作品级参数经 ./imageSettingsService，
- * 配额读写经 ../common/db/quotaRepository 并与旧入口共用同一额度，路径拼接一律经 ../common/storagePath。
+ * 配额读写经 ../common/db/quotaRepository 并与旧入口共用同一额度，路径拼接一律经 ../common/storagePath；
+ * 词条文本由前端传入的上游原文经 @shared/utils/promptTag 归一化换取，与面板展示共用同一套写法。
  * 关键约束：文件名按新规范生成——角色图 portrait-{14 位时间戳}-{8 位角色标识}，
  * 其余 photo-{14 位时间戳}-{8 位随机串}；同秒同角色冲突时时间戳逐秒递增而非覆盖；
+ * 词条在前、正文在后合并成一段提示词，词条为空数组时行为与纯正文完全一致；
  * 作品级 promptSuffix / negative 在出图前叠加，读取失败回落默认且不阻断出图；
  * 每次成功出图落一份同名 sidecar；单一任务锁防重复扣费，取消走 abort——
  * 产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额。
@@ -16,7 +18,7 @@ import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
 import { consumeToday, readUsedToday } from '@modules/common/db/quotaRepository'
 import { logger } from '@modules/common/logger'
 import { readProjectSegments } from '@modules/common/projectPath'
-import { readText } from '@modules/common/readInput'
+import { readText, readTextList } from '@modules/common/readInput'
 import { buildStorageUri } from '@modules/common/storagePath'
 import {
     DEFAULT_IMAGE_SETTINGS,
@@ -26,6 +28,7 @@ import {
     type ImageSettings,
 } from '@shared/types/imagegen'
 import { PORTRAIT_STYLES, type PortraitStyle } from '@shared/types/press'
+import { normalizePromptTag } from '@shared/utils/promptTag'
 import { IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
 import { nextImageId } from './imageNaming'
 import { writeSidecarOf } from './imageSidecar'
@@ -37,6 +40,10 @@ import type Database from 'better-sqlite3'
 
 /** 提示词长度上限：远超正常拼装结果，超出视为异常请求 */
 const MAX_PROMPT_LENGTH = 4000
+/** 词条条数上限：与前端可选芯片数量同量级，超出视为异常请求 */
+const MAX_PROMPT_TAGS = 20
+/** 单词条原文长度上限 */
+const MAX_PROMPT_TAG_LENGTH = 512
 /** 角色标识：与人物卡一致的 8 位数字 */
 const CHARACTER_ID_PATTERN = /^\d{8}$/u
 /** 提示词增强的超时：文本改写足够快，超过即视为失败并由前端保留原文 */
@@ -47,6 +54,7 @@ const ENHANCE_MAX_TOKENS = 800
 /** 出图入参：只保留落盘与通道需要的字段 */
 interface NormalizedImageRequest {
     dirPath: string
+    /** 已并入词条文本的完整正文 */
     prompt: string
     kind: ImageGenerateKind
     characterId: string | null
@@ -60,6 +68,7 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
     const dirPath = readProjectDirPath(payload, 'pressAi/generateImage')
     const value = payload as {
         prompt?: unknown
+        promptTags?: unknown
         kind?: unknown
         characterId?: unknown
         ratio?: unknown
@@ -67,7 +76,15 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
         enhancedFrom?: unknown
     }
     const prompt = readText(value.prompt, MAX_PROMPT_LENGTH)
-    if (prompt.length === 0) {
+    // 词条芯片只带上游原文，文本在这里换取：顺序即芯片顺序，正文排在词条之后作为补充描述。
+    // 词条未知或书写不合法时归一化为空串并被跳过，不阻断出图——正文仍然可用。
+    const promptTags = readTextList(value.promptTags, MAX_PROMPT_TAGS, MAX_PROMPT_TAG_LENGTH)
+    const tagText = promptTags.map((tag) => normalizePromptTag(tag)).filter((text) => text.length > 0)
+    const mergedPrompt = [...tagText, prompt]
+        .filter((part) => part.length > 0)
+        .join(', ')
+        .slice(0, MAX_PROMPT_LENGTH)
+    if (mergedPrompt.length === 0) {
         throw new Error('提示词不能为空')
     }
     const kind = value.kind
@@ -89,7 +106,7 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
     const style = PORTRAIT_STYLES.some((item) => item === value.style) ? (value.style as PortraitStyle) : 'auto'
     return {
         dirPath,
-        prompt,
+        prompt: mergedPrompt,
         kind,
         characterId: kind === 'portrait' ? characterId : null,
         ratio,

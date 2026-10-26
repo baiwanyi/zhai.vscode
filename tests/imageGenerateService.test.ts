@@ -157,6 +157,30 @@ describe('成功出图', () => {
     })
 })
 
+describe('词条芯片', () => {
+    it('按词条标识换取归一化文本，并与正文合并：词条在前、正文在后', async () => {
+        await service.generate(
+            payload({ prompt: '雨夜长街', promptTags: ['(female:1.3)', '[autumn maple forest]'] }),
+            toUri,
+        )
+
+        expect(calls[0]?.prompt.startsWith('female, autumn maple forest, 雨夜长街')).toBe(true)
+    })
+
+    it('正文为空但挂了词条时照常出图，侧车记录合并后的提示词', async () => {
+        const result = await service.generate(payload({ prompt: '', promptTags: ['(female:1.3)'] }), toUri)
+
+        expect(calls[0]?.prompt.startsWith('female')).toBe(true)
+        expect(readFileContent(imageFsPath(result.image.id, 'json'))).toContain('"prompt":"female"')
+    })
+
+    it('词条为空数组时行为与纯正文一致', async () => {
+        await service.generate(payload({ promptTags: [] }), toUri)
+
+        expect(calls[0]?.prompt.startsWith('雪夜庭院')).toBe(true)
+    })
+})
+
 describe('失败与并发', () => {
     it('通道失败时错误透传，不扣配额、不留文件', async () => {
         shouldFail = true

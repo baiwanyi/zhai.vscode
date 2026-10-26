@@ -90,7 +90,7 @@
 
 | 方法 | 说明 |
 | --- | --- |
-| `pressAi/generateImage` | 入参 `prompt` / `kind` / `characterId` / `ratio` / `style` / `enhancedFrom`；落 `Images/`，`kind` 只有 `portrait`（角色卡）与 `photo`（其他图片），生成不改作品封面 |
+| `pressAi/generateImage` | 入参 `prompt` / `promptTags` / `kind` / `characterId` / `ratio` / `style` / `enhancedFrom`；`promptTags` 是词条芯片的标识（上游原文，最多 20 条），宿主按 `@shared/utils/promptTag` 换取归一化文本后与正文合并（词条在前、正文在后）；落 `Images/`，`kind` 只有 `portrait`（角色卡）与 `photo`（其他图片），生成不改作品封面 |
 | `pressAi/generateImage/abort` | 取消在途请求，返回 `{ aborted }`；单任务锁保证不会并发出图。中断信号经 provider 传到 SDK 会话，真正中止本地出图；产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额，因此「停止」之后不会凭空多出一张图 |
 | `pressAi/enhanceImagePrompt` | 文本模型改写输入框正文，30 秒上限，不落盘、不计图片配额 |
 
@@ -128,7 +128,7 @@
 | 文件 | 职责 |
 | --- | --- |
 | `imageLibraryService.ts` | 三目录合并列举、删除（带回退值计算，侧车同步清理）、设封面、详情读侧车 |
-| `imageGenerateService.ts` | 统一出图：参数校验、配额、单任务锁、落盘、侧车、用量记账 |
+| `imageGenerateService.ts` | 统一出图：参数校验、词条标识换取文本、配额、单任务锁、落盘、侧车、用量记账 |
 | `imageDirScan.ts` | 图片目录扫描唯一入口：目录缺失视为空、只收普通文件、扩展名口径（png/jpe?g/webp/gif） |
 | `promptImageService.ts` | 提示词预览图库：`{存储根}/prompt/images` 判空并转 webview 基址，另提供打开该目录的命令实现 |
 | `imageNaming.ts` | 图片命名唯一入口：三类标识格式、同秒冲突按秒顺延、永不覆盖 |
@@ -142,13 +142,13 @@
 ### 4.1 出图提示词叠加
 
 ```text
-用户正文
+词条文本（按芯片顺序，逗号连接）＋ 用户正文
 \n\n 作品 promptSuffix（可选）
 \n\n 避免出现：{negative}（可选）
 \n\n STYLE_HINTS[style]（始终在最后）
 ```
 
-空串一律跳过；宿主侧拼装集中在 `src/modules/imagegen/promptCompose` 的 `composeImagePrompt`，由 `tests/imagegenPrompt.test.ts` 覆盖顺序与空串行为。前端只负责正文与引用段（`workflow/imagegen/prompt/promptSections.ts` 的 `composePromptSections`），画风与负向约束仍由宿主追加。
+空串一律跳过；词条由 `imageGenerateService` 用 `@shared/utils/promptTag` 的 `normalizePromptTag` 换取并前置，归一化口径与前端词库层同源，因此面板上的词条文本与最终提示词逐字一致；宿主侧拼装集中在 `src/modules/imagegen/promptCompose` 的 `composeImagePrompt`，由 `tests/imagegenPrompt.test.ts` 覆盖顺序与空串行为。前端只负责正文与引用段（`workflow/imagegen/prompt/promptSections.ts` 的 `composePromptSections`），画风与负向约束仍由宿主追加。
 
 ---
 
@@ -158,9 +158,9 @@
 | --- | --- |
 | `ImageGenPage.tsx` | 页面骨架与编排：筛选、计数、分批渲染、详情面板与出图回调；多选、删除与封面指针同步交给 hooks |
 | `ImageGenGrid.tsx` | 等宽卡片网格：3:4 裁切、封面徽标、悬停复制/插入/删除、多选勾选、点击打开详情 |
-| `ImageComposer.tsx` | 输入卡片：命令动作菜单（作品设定开关）与角色选择、底部比例与画面风格、增强提示词、发送 / 取消生成 |
+| `ImageComposer.tsx` | 输入卡片：命令动作菜单（作品设定开关）、角色选择与词条芯片、底部比例与画面风格、增强提示词、发送 / 取消生成 |
 | `ImageCharacterPicker.tsx` | 角色选择：工具栏图标按钮下拉，列出作品全部人物卡，选中即挂「图标 + 姓名」徽标，可切回「不使用角色」 |
-| `ImagePromptPicker.tsx` | 提示词面板：工具栏图标按钮弹出，一级分类 / 二级分类 / 词条三级联动，顶部关键词跨分组搜索，点击插入光标 |
+| `ImagePromptPicker.tsx` | 提示词面板：工具栏图标按钮弹出，一级分类 / 二级分类 / 词条三级联动，顶部关键词跨分组搜索；点词条切换芯片并回显选中态，不写正文 |
 | `useImageLibrary.ts` | 列举（含不切加载态的静默刷新）、单张删除、批量删除（含最新列表回传） |
 | `useCharacterIndex.ts` | 角色索引：一次遍历派生 `byId` 与 `names` 两张表，封面修正与卡片角标共用；`ImageGenCharacter` 类型定义在此 |
 | `useImageSelection.ts` | 多选状态：选中集合与筛选签名绑定（换筛选即派生空集）、全选只覆盖已渲染图片、进入/退出都清空 |
@@ -169,16 +169,16 @@
 | `useImageDetail.ts` | 详情面板按路径读取侧车；迟到回包按来源路径**丢弃**（不是覆盖后再过滤），切图不会把新图详情清空 |
 | `useImageSettings.ts` | 作品级参数读写，`isLoaded` 之前不得据此保存 |
 | `useImageComposer.ts` | 输入卡片会话状态：正文、增强态、生成态与请求代号，发送 / 取消 / 超时，失败或取消按草稿回填 |
-| `usePromptChips.ts` | 芯片集合（作品设定与当前角色按 kind 唯一）、角色芯片直接设置、清空与草稿回填；图标映射留在 layout |
+| `usePromptChips.ts` | 芯片集合：设定与角色按 kind 唯一，词条按上游原文去重且可多枚；角色直接设置、词条开关、清空与草稿回填；图标映射留在 layout |
 | `imageStyle.ts` | 画风取值与中文标签，composer 的画面风格面板与详情面板共用 |
 | `prompt/promptSections.ts` | 前端提示词分段：正文 + 角色段 + 设定段合成；各段是否并入由调用方按芯片决定 |
 | `prompt/ratioIntent.ts` | 正文比例意图探测：数字写法与中英文比例词合流，取最后出现者 |
-| `prompt/insertFragment.ts` | 词条插入片段：末尾已有标点或空白时不再补前置逗号 |
 | `@webview/components/RichChipInput.tsx` | 通用芯片输入区：芯片内联进正文流，Enter 发送、组词期间不拦截，命令式 `insertText` |
 | `@webview/components/richText.ts` | 可编辑区 DOM 工具：读写纯文本、光标定位、芯片识别与插入，与 aichat 共用 |
 | `usePromptImages.ts` | 取提示词预览图基址（面板打开时请求一次），失败按「没有图」处理，不弹错误 |
-| `prompt/promptLibrary.ts` | 词库适配层：读 `prompt/data/promptTags.json`，导出三级清单与查询函数，运行时剥离权重写法 |
+| `prompt/promptLibrary.ts` | 词库适配层：读 `prompt/data/promptTags.json`，导出三级清单与查询函数，权重归一取 shared |
 | `prompt/data/promptTags.json` | 词库数据（约 530 KB），由 `scripts/build-prompt-tags.mjs` 从上游分片生成，不手改 |
+| `@shared/utils/promptTag.ts` | 词条原文归一化：前端词库层与宿主换取共用，剥离 `(x:1.3)` 与强调括号 |
 
 ### 5.1 页面交互约束
 
@@ -199,9 +199,10 @@
 - 角色选择：工具栏角色按钮展开作品全部人物卡，选中即挂「图标 + 姓名」徽标，发送时并入角色段（姓名、性别年龄、身份、外貌），随请求的 `kind` 变为 `portrait`、`characterId` 取该角色；选「不使用角色」或移除徽标即回落普通图；顶栏筛选的角色只作初值，之后以选择器为准，两者不联动。
 - 增强提示词：提交的是「正文 + 角色段」，让改写结果带上角色长相与身份；设定段不进增强请求（避免复述作品信息），还原时回到纯正文。
 - 发送即清空：点击发送的同时清掉输入框与全部芯片（画风不在芯片里，只作请求参数，发送时由宿主并入提示词），增强态一并复位（按钮回到增强图标，请求仍带发送前的 `enhancedFrom`），生成期间输入框不会停着上一轮的提示词；草稿存在 `lastDraftRef`（含增强前原文），请求失败或用户取消时再回填，且仅在用户没有重新输入的情况下回填，正文与增强态同进同退，不覆盖等待期间写下的新内容。
-- 提示词面板：一级分类与二级分类都是必选单选，重复点击当前项被忽略；切换一级分类后二级分类按「当前值不在新分组内即回落到首项」派生，不额外维护状态；关键词非空时词条区跨分组平铺命中项，最多渲染 120 条并提示细化；插入只传词条文本，与正文之间的分隔符由输入卡片按末尾字符补齐（末尾已是标点或空白则不加），因此连续点选自然拼成 `a, b, c`。
+- 提示词面板：一级分类与二级分类都是必选单选，重复点击当前项被忽略；切换一级分类后二级分类按「当前值不在新分组内即回落到首项」派生，不额外维护状态；关键词非空时词条区跨分组平铺命中项，最多渲染 120 条并提示细化。点词条只在输入区挂一枚芯片（已挂则取消），按钮以 `aria-pressed` 与 secondary 变体回显选中态；词条文本不写进正文，发送时按上游原文交给宿主换取，连续选多条即多枚芯片，顺序即并入顺序。
+- 词条芯片：标识取词条上游原文（全库唯一，实测 5040 条无重复），同一条只允许一枚；正文为空但有词条时同样可发送，发送后芯片随正文一起清空，失败或取消时与草稿一并回填。
 - 提示词缩略图：`pressAi/getPromptImageBase` 在面板每次打开时请求一次，`baseUrl` 为 `null` 时整块缩略图不渲染并改用更密的列宽，底部提示图库目录与「打开目录」按钮；单张图缺失只影响该条，由 `@webview/components/Image` 的占位兜住。
-- 词条预览：有图的词条悬停 250ms 弹出 `@components/ui/hover-card` 大图（3:4，宽 10rem）与中文名、英文提示词；缺图条目只保留原生 `title`，不挂浮层。
+- 词条预览：有图的词条悬停 250ms 弹出 `@components/ui/hover-card` 大图（3:4，宽 10rem）与换取前的英文提示词（三行截断）；缺图条目只渲染按钮本身，不挂空浮层。
 
 ### 5.2 超时口径
 
@@ -231,7 +232,7 @@
 | 项 | 现状 |
 | --- | --- |
 | 旧目录文件 | 不迁移：`Cover/` 与 `Portraits/` 的历史图仍可列举、删除、设封面，新图只写 `Images/` |
-| 提示词芯片 | 已内联：`RichChipInput` 与 aichat 共用 `richText` 的 DOM 工具，芯片可退格删除 |
+| 提示词芯片 | 已内联：`RichChipInput` 与 aichat 共用 `richText` 的 DOM 工具，芯片可退格删除；芯片只带上游原文，文本由宿主换取，因此宿主不校验词条是否存在于库中 |
 | 角色快照 | 已注入姓名、性别年龄、身份与外貌；更细的字段（体型、背景）仍留在人物卡内 |
 | 网格能力 | 已支持多选批量删除与悬停复制/插入/删除 |
 | 批量删除原子性 | 一次请求内逐张执行，非事务：单张失败只记回执，成功部分照常生效并按最新图库刷新，不做回滚；单次上限 500 张 |
