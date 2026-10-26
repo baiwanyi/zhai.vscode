@@ -6,7 +6,7 @@
  * 关键约束：取消后迟到的成功回包必须走 onLateGenerated 而不是 onGenerated——否则会清空他刚重新输入的正文，
  * 这是本组件最容易回退的分支；词条只以芯片存在，正文里不该出现词条文本。
  */
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@components/ui/tooltip'
@@ -148,6 +148,37 @@ async function clickFirstTag(user: ReturnType<typeof userEvent.setup>): Promise<
     await user.click(await screen.findByRole('button', { name: tag.name }))
 }
 
+/**
+ * 取出第 n 次出图请求的参数：菜单挂载时会先发规则列举，不能按下标硬取调用记录。
+ * 找不到时直接抛错，避免用例在断言处才报「undefined 上取属性」。
+ */
+function generateParams(index = 0): Record<string, unknown> {
+    const calls = requestMock.mock.calls.filter((call) => call[0] === 'pressAi/generateImage')
+    const params: unknown = calls[index]?.[1]
+    if (typeof params !== 'object' || params === null) {
+        throw new Error('没有出图请求')
+    }
+    return params as Record<string, unknown>
+}
+
+/** 默认回包：规则列举为空、预览图库无图、abort 视为成功，其余按出图成功处理 */
+function defaultResponse(method: string): Promise<unknown> {
+    if (method === 'pressAi/listPromptRules') {
+        return Promise.resolve({ rules: [], dirPath: '' })
+    }
+    if (method === 'pressAi/getPromptImageBase') {
+        return Promise.resolve({ baseUrl: null, dirPath: '' })
+    }
+    return method === 'pressAi/generateImage/abort' ? Promise.resolve({ aborted: true }) : Promise.resolve(GENERATED)
+}
+
+/** 只覆盖出图行为：规则列举、预览图库与 abort 仍走默认回包，避免污染 toast 与调用断言 */
+function mockGenerate(handler: () => Promise<unknown>): void {
+    requestMock.mockImplementation((method: string) =>
+        method === 'pressAi/generateImage' ? handler() : defaultResponse(method),
+    )
+}
+
 /** 菜单浮层依赖 ResizeObserver 量取尺寸：jsdom 未实现，补空桩避免渲染中断 */
 class ResizeObserverStub {
     observe = (): void => undefined
@@ -168,15 +199,8 @@ beforeEach(() => {
     stubDropdownDom()
     requestMock.mockReset()
     toastErrorMock.mockReset()
-    // 默认：出图成功，abort 视为成功，预览图库按「没有图」回包（面板照常可用）
-    requestMock.mockImplementation((method: string) => {
-        if (method === 'pressAi/getPromptImageBase') {
-            return Promise.resolve({ baseUrl: null, dirPath: '' })
-        }
-        return method === 'pressAi/generateImage/abort'
-            ? Promise.resolve({ aborted: true })
-            : Promise.resolve(GENERATED)
-    })
+    // 默认：出图成功，abort 视为成功，规则为空、预览图库按「没有图」回包（两个面板都照常可用）
+    requestMock.mockImplementation((method: string) => defaultResponse(method))
 })
 
 afterEach(cleanup)
@@ -230,7 +254,7 @@ describe('ImageComposer', () => {
         await user.type(inputBox(), '雨夜长街')
         await user.click(screen.getByRole('button', { name: '发送' }))
 
-        const [, params] = requestMock.mock.calls[0] as [string, { prompt: string; kind: string; characterId: string }]
+        const params = generateParams()
         expect(params.kind).toBe('portrait')
         expect(params.characterId).toBe(CHARACTER.id)
         expect(params.prompt).toBe('雨夜长街\n\n角色：林清\n外形：女性，二十\n身份：剑客\n外貌：白衣负剑')
@@ -249,7 +273,7 @@ describe('ImageComposer', () => {
         await user.type(inputBox(), '雨夜长街')
         await user.click(screen.getByRole('button', { name: '发送' }))
 
-        const [, params] = requestMock.mock.calls[0] as [string, { kind: string; characterId: string }]
+        const params = generateParams()
         expect(params.kind).toBe('portrait')
         expect(params.characterId).toBe(CHARACTER.id)
     })
@@ -276,10 +300,7 @@ describe('ImageComposer', () => {
         await user.type(inputBox(), '雨夜长街')
         await user.click(screen.getByRole('button', { name: '发送' }))
 
-        const [, params] = requestMock.mock.calls[0] as [
-            string,
-            { kind: string; characterId: string | null; prompt: string },
-        ]
+        const params = generateParams()
         expect(params.kind).toBe('photo')
         expect(params.characterId).toBeNull()
         expect(params.prompt).toBe('雨夜长街')
@@ -298,8 +319,7 @@ describe('ImageComposer', () => {
         expect(screen.queryByText('作品设定')).toBeNull()
 
         await user.click(screen.getByRole('button', { name: '发送' }))
-        const [, params] = requestMock.mock.calls[0] as [string, { prompt: string }]
-        expect(params.prompt).toBe('雨夜长街')
+        expect(generateParams().prompt).toBe('雨夜长街')
     })
 
     it('作品设定芯片并入书名等设定段', async () => {
@@ -311,8 +331,32 @@ describe('ImageComposer', () => {
         await user.click(screen.getByRole('menuitemcheckbox', { name: '作品设定' }))
         await user.click(screen.getByRole('button', { name: '发送' }))
 
-        const [, params] = requestMock.mock.calls[0] as [string, { prompt: string }]
-        expect(params.prompt).toBe('雨夜长街\n\n书名：剑来')
+        expect(generateParams().prompt).toBe('雨夜长街\n\n书名：剑来')
+    })
+
+    it('规则子菜单勾选后只带标识随请求下发，发送后芯片清空', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) =>
+            method === 'pressAi/listPromptRules'
+                ? Promise.resolve({ rules: [{ id: '冷色调', name: '冷色调' }], dirPath: 'D:/vault/prompt/rules' })
+                : defaultResponse(method),
+        )
+        renderComposer()
+
+        await user.click(screen.getByRole('button', { name: '命令动作' }))
+        // 子菜单由指针移动展开：jsdom 下 userEvent 的 hover 不派发 pointermove，这里显式触发一次
+        fireEvent.pointerMove(await screen.findByRole('menuitem', { name: '规则' }), { pointerType: 'mouse' })
+        await user.click(await screen.findByRole('menuitemcheckbox', { name: '冷色调' }))
+
+        // 规则正文留在磁盘，芯片只带标识
+        expect(screen.getByRole('button', { name: '移除冷色调' })).toBeDefined()
+        expect(inputBox().value).toBe('')
+
+        await user.type(inputBox(), '雨夜长街')
+        await user.click(screen.getByRole('button', { name: '发送' }))
+
+        expect(generateParams().promptRules).toEqual(['冷色调'])
+        expect(screen.queryByRole('button', { name: '移除冷色调' })).toBeNull()
     })
 
     it('点选词条只挂芯片不写正文，发送时带上词条标识', async () => {
@@ -330,10 +374,8 @@ describe('ImageComposer', () => {
         await user.click(screen.getByRole('button', { name: '发送' }))
 
         // 打开面板时也发过预览图库请求，出图调用要按方法名挑出来
-        const generateCall = requestMock.mock.calls.find(([method]) => method === 'pressAi/generateImage') as
-            [string, { prompt: string; promptTags?: string[] }] | undefined
-        expect(generateCall?.[1].prompt).toBe('')
-        expect(generateCall?.[1].promptTags).toEqual([tag.prompt])
+        expect(generateParams().prompt).toBe('')
+        expect(generateParams().promptTags).toEqual([tag.prompt])
         // 发送即清空：芯片随正文一起收走
         expect(screen.queryByRole('button', { name: `移除${tag.name}` })).toBeNull()
     })
@@ -353,15 +395,7 @@ describe('ImageComposer', () => {
 
     it('发送失败时词条芯片随草稿回填', async () => {
         const user = userEvent.setup()
-        requestMock.mockImplementation((method: string) => {
-            if (method === 'pressAi/getPromptImageBase') {
-                return Promise.resolve({ baseUrl: null, dirPath: '' })
-            }
-            if (method === 'pressAi/generateImage') {
-                return Promise.reject(new Error('通道不可用'))
-            }
-            return Promise.resolve({ aborted: true })
-        })
+        mockGenerate(() => Promise.reject(new Error('通道不可用')))
         renderComposer()
         const tag = firstTag()
 
@@ -374,11 +408,7 @@ describe('ImageComposer', () => {
 
     it('发送后冷静期内的第二次点击不会误取消在途请求', async () => {
         const user = userEvent.setup()
-        requestMock.mockImplementation((method: string) =>
-            method === 'pressAi/generateImage'
-                ? new Promise<ImageGenerateResult>(() => undefined)
-                : Promise.resolve({ aborted: true }),
-        )
+        mockGenerate(() => new Promise<ImageGenerateResult>(() => undefined))
         renderComposer()
 
         await user.type(inputBox(), '雨夜长街')
@@ -396,14 +426,12 @@ describe('ImageComposer', () => {
         const onLateGenerated = vi.fn()
         const onGeneratingChange = vi.fn()
         let resolveGenerate: (result: ImageGenerateResult) => void = () => {}
-        requestMock.mockImplementation((method: string) => {
-            if (method === 'pressAi/generateImage') {
-                return new Promise<ImageGenerateResult>((resolve) => {
+        mockGenerate(
+            () =>
+                new Promise<ImageGenerateResult>((resolve) => {
                     resolveGenerate = resolve
-                })
-            }
-            return Promise.resolve({ aborted: true })
-        })
+                }),
+        )
         renderComposer({ onGenerated, onLateGenerated, onGeneratingChange })
 
         await user.type(inputBox(), '雨夜长街')
@@ -436,12 +464,7 @@ describe('ImageComposer', () => {
 
     it('生成失败时提示错误并主动取消宿主在途请求', async () => {
         const user = userEvent.setup()
-        requestMock.mockImplementation((method: string) => {
-            if (method === 'pressAi/generateImage') {
-                return Promise.reject(new Error('通道不可用'))
-            }
-            return Promise.resolve({ aborted: true })
-        })
+        mockGenerate(() => Promise.reject(new Error('通道不可用')))
         renderComposer()
 
         await user.type(inputBox(), '雨夜长街')
@@ -473,8 +496,7 @@ describe('ImageComposer', () => {
         expect(screen.getByRole('button', { name: '当前比例 16:9，点击切换' })).toBeDefined()
 
         await user.click(screen.getByRole('button', { name: '发送' }))
-        const [, params] = requestMock.mock.calls[0] as [string, { ratio: string }]
-        expect(params.ratio).toBe('16:9')
+        expect(generateParams().ratio).toBe('16:9')
         // 自动切换只改本次会话，不写回作品默认比例
         expect(onSettingsChange).not.toHaveBeenCalled()
     })

@@ -32,6 +32,7 @@ import { ImageGenerateService } from './modules/imagegen/imageGenerateService'
 import { ImageLibraryService } from './modules/imagegen/imageLibraryService'
 import { ImageSettingsService } from './modules/imagegen/imageSettingsService'
 import { PortraitService } from './modules/imagegen/portraitService'
+import { PromptRuleService } from './modules/imagegen/promptRuleService'
 import { openNamingDatabase } from './modules/naming/db/connection'
 import { ensureNamingSchema } from './modules/naming/db/schema'
 import { NamingRoutes } from './modules/naming/namingRoutes'
@@ -141,13 +142,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const imageLibraryService = new ImageLibraryService(pressCoverStore)
     // 图片参数：按作品覆盖，落 press/{作品名}/.zhai/image.json，配额与超时不在此管辖
     const imageSettingsService = new ImageSettingsService()
-    // 统一出图入口：新图落 Images 目录，出图前叠加作品级补充与负向约束，与旧入口共用同一通道与每日额度
+    // 出图规则：全局共享，落 {存储根}/prompt/rules 的 md 文件，与作品无关
+    const promptRuleService = new PromptRuleService()
+    // 统一出图入口：新图落 Images 目录，出图前叠加规则、作品级补充与负向约束，与旧入口共用同一通道与每日额度
     const imageGenerateService = new ImageGenerateService(
         pressDb,
         imageRouter,
         usageRecorder,
         aiProvider,
         imageSettingsService,
+        promptRuleService,
     )
     // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown；打开作品时同步路由事实
     // 语义归纳依赖 AI 通道，晚于仪表盘创建；人物卡、大纲与设定的按需提取共用同一实例，
@@ -164,6 +168,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         imageLibraryService,
         imageGenerateService,
         imageSettingsService,
+        promptRuleService,
     )
 
     // 校对：本地规则检查与写回都基于编辑器内存态，写回前与 AI 写回共用同一份快照留底；

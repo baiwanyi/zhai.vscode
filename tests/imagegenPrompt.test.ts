@@ -43,6 +43,23 @@ describe('出图提示词拼装', () => {
         const result = composeImagePrompt('正文', settingsWith({ promptSuffix: '补充', negative: '水印' }), 'cinematic')
         expect(result.split('\n\n')).toEqual(['正文', '补充', '避免出现：水印', STYLE_HINTS.cinematic])
     })
+
+    it('规则紧接正文之后、作品补充之前，空规则不占位', () => {
+        const result = composeImagePrompt(
+            '正文',
+            settingsWith({ promptSuffix: '补充', negative: '水印' }),
+            'cinematic',
+            ['规则一', '', '规则二'],
+        )
+        expect(result.split('\n\n')).toEqual([
+            '正文',
+            '规则一',
+            '规则二',
+            '补充',
+            '避免出现：水印',
+            STYLE_HINTS.cinematic,
+        ])
+    })
 })
 
 describe('词条原文归一化', () => {

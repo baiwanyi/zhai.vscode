@@ -1,17 +1,18 @@
 /**
- * 生图输入卡片：命令动作、角色与词条以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
+ * 生图输入卡片：命令动作、角色、词条与规则以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
  * 复用约定：外壳沿用 aichat 的两层底色（bg-composer / bg-composer-input），输入区取 RichChipInput，
  * 工具栏与底部操作行取本目录 ImageComposerToolbar / ImageComposerActions；提示词拼装与比例探测
  * 取 ../prompt 下的纯函数，芯片集合与会话状态分别由 ../hooks 的 usePromptChips / useImageComposer 持有。
  * 关键约束：角色芯片是角色选择的唯一数据源——选择器选中即挂「图标 + 姓名」徽标，移除即回到不使用角色，
  * 生成目标与增强时的角色段都由它派生；顶栏筛选的角色只作初值，之后不与其联动；
- * 词条芯片只承载「选了哪些词条」，文本不写进正文，由宿主在出图时按标识换取后并入提示词；
+ * 词条芯片只承载「选了哪些词条」，规则芯片只承载「选了哪些规则」，文本与正文都不写进输入框，
+ * 由宿主在出图时按标识换取或读盘后并入提示词；
  * 生成意图只有两种：挂着角色芯片即角色图，否则是普通图片；生成不碰作品封面，封面在图库里手动指定；
  * 比例与画风各只落一份 state，手动改动经 onSettingsChange 上报，正文里的比例字面量只自动切换
  * 本次会话的选择、不写回作品配置。
  * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
  */
-import { BookText, ContactRound, WandSparkles } from 'lucide-react'
+import { BookText, ContactRound, ScrollText, WandSparkles } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
 import type { ImageGenerateKind, ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
@@ -32,11 +33,12 @@ import { detectImageRatio } from '../prompt/ratioIntent'
 
 export type { PromptCharacterSnapshot, PromptSettingSnapshot }
 
-/** 芯片前置图标：与工具栏各入口的图标保持一致，人物卡与设定语义由图标表达 */
+/** 芯片前置图标：与工具栏各入口的图标保持一致，人物卡、设定与规则语义由图标表达 */
 const CHIP_ICONS: Readonly<Record<PromptChipKind, LucideIcon>> = {
     setting: BookText,
     character: ContactRound,
     prompt: WandSparkles,
+    rule: ScrollText,
 }
 
 interface ImageComposerProps {
@@ -142,9 +144,11 @@ function ComposerBody({
         settingChip,
         characterChip,
         promptChips,
+        ruleChips,
         toggleSetting,
         setCharacter,
         togglePrompt,
+        toggleRule,
         removeChip,
         clearChips,
         restoreChips,
@@ -183,6 +187,13 @@ function ComposerBody({
     const composePromptTags = (source: readonly PromptChip[]): string[] =>
         source.filter((chip) => chip.kind === 'prompt').map((chip) => chip.value)
 
+    /**
+     * 收集规则标识：规则正文留在磁盘，只把文件名主干交给宿主读取。
+     * 关键约束：顺序即芯片顺序，宿主按同一顺序并入提示词，多条规则之间的先后关系保持稳定。
+     */
+    const composePromptRules = (source: readonly PromptChip[]): string[] =>
+        source.filter((chip) => chip.kind === 'rule').map((chip) => chip.value)
+
     /** 随请求下发的目标：普通图不带角色，角色图才绑定角色芯片指向的人物 */
     const generateTarget = {
         kind: targetKind,
@@ -202,6 +213,7 @@ function ComposerBody({
             dirPath,
             composePrompt,
             composePromptTags,
+            composePromptRules,
             composeEnhanceSource,
             target: generateTarget,
             ratio,
@@ -214,8 +226,8 @@ function ComposerBody({
             onGeneratingChange,
         })
 
-    /** 能否发送：正文、角色段与设定段任一有内容，或至少挂了一枚词条芯片，输入框与发送按钮共用同一判定 */
-    const canSend = composePrompt({ text, chips }).length > 0 || promptChips.length > 0
+    /** 能否发送：正文、角色段与设定段任一有内容，或挂了词条 / 规则芯片，输入框与发送按钮共用同一判定 */
+    const canSend = composePrompt({ text, chips }).length > 0 || promptChips.length > 0 || ruleChips.length > 0
 
     /** 选画风：只记 state 并写回作品配置，输入框不出现徽标，发送时才随请求并入提示词 */
     const pickStyle = (value: PortraitStyle): void => {
@@ -260,9 +272,11 @@ function ComposerBody({
                 characters={characters}
                 activeCharacterId={activeCharacter?.id ?? null}
                 selectedPrompts={promptChips.map((chip) => chip.value)}
+                selectedRules={ruleChips.map((chip) => chip.value)}
                 onToggleSetting={toggleSetting}
                 onSelectCharacter={setCharacter}
                 onTogglePrompt={togglePrompt}
+                onToggleRule={toggleRule}
             />
 
             <div className="rounded-xl bg-composer-input p-3">

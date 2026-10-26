@@ -122,6 +122,11 @@ export interface ImageGenerateRequest {
      * 宿主据此换取归一化后的提示词文本，与正文合并后再生效；词条顺序即芯片顺序。
      */
     promptTags?: string[]
+    /**
+     * 规则芯片的标识：{存储根}/prompt/rules 下的文件名主干。
+     * 规则正文不进前端，由宿主读盘后作为约束段并入；顺序即芯片顺序。
+     */
+    promptRules?: string[]
     kind: ImageGenerateKind
     /** portrait 必填，其余必须为 null */
     characterId: string | null
@@ -204,6 +209,31 @@ export interface PromptImageBase {
     baseUrl: string | null
     /** 图库目录的本地绝对路径：空态直接展示，用户据此把图片放进去 */
     dirPath: string
+}
+
+/**
+ * 出图规则：{存储根}/prompt/rules 下的 md 文件，全局共享、与作品无关。
+ * 前端只持有标识，正文由宿主读盘并入，因此规则改文无需重新进页面。
+ */
+export interface PromptRule {
+    /** 规则标识：文件名去掉 .md，芯片与出图请求都用它回查 */
+    id: string
+    /** 显示名：与标识同源，即文件名主干 */
+    name: string
+}
+
+/** 规则列举结果：dirPath 始终回传，空态据此提示用户把 md 放到哪里 */
+export interface PromptRuleListResult {
+    rules: PromptRule[]
+    dirPath: string
+}
+
+/** 规则保存请求：只新建、不覆盖，同名文件已存在时由宿主拒绝 */
+export interface PromptRuleSaveRequest {
+    /** 规则名，可带 .md 后缀，宿主统一去后缀后落盘 */
+    name: string
+    /** 规则正文：md 原文，选中后整段作为约束并入提示词 */
+    content: string
 }
 
 /** 时间戳位数：年月日时分秒共 14 位 */

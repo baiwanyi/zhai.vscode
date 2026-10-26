@@ -19,6 +19,8 @@ import type { ImageLibraryService } from '@modules/imagegen/imageLibraryService'
 import type { ImageSettingsService } from '@modules/imagegen/imageSettingsService'
 import type { PortraitService } from '@modules/imagegen/portraitService'
 import { readPromptImageBase } from '@modules/imagegen/promptImageService'
+import type { PromptRuleService } from '@modules/imagegen/promptRuleService'
+import type { PromptRuleListResult } from '@shared/types/imagegen'
 import type {
     ChapterSnapshotCaptureResult,
     ChapterSnapshotDeleteResult,
@@ -76,6 +78,7 @@ export class PressRoutes {
         private readonly imageLibrary: ImageLibraryService,
         private readonly imageGenerate: ImageGenerateService,
         private readonly imageSettings: ImageSettingsService,
+        private readonly promptRules: PromptRuleService,
     ) {}
 
     /**
@@ -130,6 +133,12 @@ export class PressRoutes {
                 return this.imageSettings.get(payload)
             case 'pressAi/getPromptImageBase':
                 return readPromptImageBase(toWebviewUri)
+            case 'pressAi/listPromptRules':
+                return this.promptRules.list()
+            case 'pressAi/savePromptRule':
+                return this.promptRules.save(payload)
+            case 'pressAi/openPromptRuleDir':
+                return this.openPromptRuleDir()
             case 'pressAi/saveImageSettings':
                 return this.imageSettings.save(payload)
             case 'pressAi/setImageCover':
@@ -242,6 +251,16 @@ export class PressRoutes {
         }
         const jobId = `extract-${String(Date.now())}-${Math.random().toString(36).slice(2, 8)}`
         return this.semantic.extractCharacters(jobId, payload.dirPath, postProgress)
+    }
+
+    /**
+     * 打开规则目录：目录不存在时由服务先建出来，再把最新列表回给前端。
+     * 安全约束：目录固定为存储根下的 prompt/rules，不接受前端传入路径。
+     */
+    private async openPromptRuleDir(): Promise<PromptRuleListResult> {
+        const result = await this.promptRules.openDir()
+        logger.info(`已打开规则目录：${result.dirPath}`)
+        return result
     }
 
     /**

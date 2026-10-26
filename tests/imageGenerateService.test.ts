@@ -6,7 +6,7 @@
 import * as path from 'node:path'
 import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { readFileContent, resetWorkspaceState, setConfigValue, setDirectory } from './stubs/vscode'
+import { readFileContent, resetWorkspaceState, setConfigValue, setDirectory, setFileContent } from './stubs/vscode'
 import type { AiProvider } from '../src/modules/ai/provider'
 import type { ImageGenerator } from '../src/modules/imagegen/ai/imageProvider'
 import { UsageRecorder } from '../src/modules/ai/usageRecorder'
@@ -15,6 +15,7 @@ import { ensureSchema } from '../src/modules/common/db/schema'
 import { IMAGE_QUOTA_KEYS } from '../src/modules/imagegen/constants'
 import { ImageGenerateService } from '../src/modules/imagegen/imageGenerateService'
 import { ImageSettingsService } from '../src/modules/imagegen/imageSettingsService'
+import { PromptRuleService } from '../src/modules/imagegen/promptRuleService'
 
 const STORAGE_ROOT = 'd:/vault'
 const DIR_PATH = 'press/剑来'
@@ -24,6 +25,7 @@ const ARTIFACT_BYTES = 'png-bytes'
 
 let db: Database.Database
 let settings: ImageSettingsService
+let rules: PromptRuleService
 let service: ImageGenerateService
 /** 每次调用通道时收到的入参，用于断言提示词拼装与尺寸 */
 let calls: { prompt: string; size: string }[]
@@ -77,11 +79,12 @@ beforeEach(() => {
     db = new Database(':memory:')
     ensureSchema(db)
     settings = new ImageSettingsService()
+    rules = new PromptRuleService()
     calls = []
     shouldFail = false
     hold = null
     releaseHold = null
-    service = new ImageGenerateService(db, generator, new UsageRecorder(db), provider, settings)
+    service = new ImageGenerateService(db, generator, new UsageRecorder(db), provider, settings, rules)
 })
 
 describe('入参校验', () => {
@@ -176,6 +179,39 @@ describe('词条芯片', () => {
 
     it('词条为空数组时行为与纯正文一致', async () => {
         await service.generate(payload({ promptTags: [] }), toUri)
+
+        expect(calls[0]?.prompt.startsWith('雪夜庭院')).toBe(true)
+    })
+})
+
+/** 规则文件的绝对路径：与宿主侧 prompt/rules 口径一致 */
+function ruleFsPath(name: string): string {
+    return path.join(STORAGE_ROOT, 'prompt', 'rules', `${name}.md`)
+}
+
+describe('规则芯片', () => {
+    it('按规则标识读取 md 正文，排在正文之后、作品补充之前', async () => {
+        setFileContent(ruleFsPath('冷色调'), '# 冷色调\n只用青蓝与灰白，不要暖色。\n')
+        await settings.save({ dirPath: DIR_PATH, settings: { promptSuffix: '柔和光线' } })
+
+        await service.generate(payload({ prompt: '雪夜庭院', promptRules: ['冷色调'] }), toUri)
+
+        const prompt = calls[0]?.prompt ?? ''
+        expect(prompt.startsWith('雪夜庭院')).toBe(true)
+        expect(prompt).toContain('只用青蓝与灰白')
+        expect(prompt.indexOf('只用青蓝与灰白')).toBeLessThan(prompt.indexOf('柔和光线'))
+    })
+
+    it('只有规则没有正文时照常出图', async () => {
+        setFileContent(ruleFsPath('水墨留白'), '画面保持水墨留白。\n')
+
+        await service.generate(payload({ prompt: '', promptRules: ['水墨留白'] }), toUri)
+
+        expect(calls[0]?.prompt.startsWith('画面保持水墨留白')).toBe(true)
+    })
+
+    it('规则文件缺失时跳过，不阻断出图', async () => {
+        await service.generate(payload({ prompt: '雪夜庭院', promptRules: ['不存在的规则'] }), toUri)
 
         expect(calls[0]?.prompt.startsWith('雪夜庭院')).toBe(true)
     })

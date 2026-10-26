@@ -1,19 +1,24 @@
 /**
- * 生图输入芯片：维护「引用意图」集合——作品设定、当前角色与已选提示词词条。
- * 复用约定：角色快照类型取 ../prompt/promptSections，词条类型取 ../prompt/promptLibrary；
- * 本 hook 只产出数据与操作，图标等展示留在 layout 渲染。
- * 关键约束：芯片 id 是删除与 DOM 定位的唯一依据——设定与角色按 kind 唯一，词条按上游原文去重、可挂多枚；
- * 角色芯片由角色选择器直接设置（传 null 即清除），词条芯片由面板点选开关，再点同一词条即取消；
+ * 生图输入芯片：维护「引用意图」集合——作品设定、当前角色、已选提示词词条与自定义规则。
+ * 复用约定：角色快照类型取 ../prompt/promptSections，词条类型取 ../prompt/promptLibrary，
+ * 规则类型取 @shared/types/imagegen；本 hook 只产出数据与操作，图标等展示留在 layout 渲染。
+ * 关键约束：芯片 id 是删除与 DOM 定位的唯一依据——设定与角色按 kind 唯一，
+ * 词条按上游原文去重、规则按标识去重，两者都可挂多枚；
+ * 角色芯片由角色选择器直接设置（传 null 即清除），词条与规则由各自面板点选开关，再点同一项即取消；
  * 发送时的清空与失败后的草稿回填由 useImageComposer 触发，回填只在用户没有新加芯片时生效。
  */
 import { useState } from 'react'
+import type { PromptRule } from '@shared/types/imagegen'
 import type { PromptTag } from '../prompt/promptLibrary'
 import type { PromptCharacterSnapshot } from '../prompt/promptSections'
 
-/** 芯片来源：setting 指作品设定，character 指某个人物，prompt 指词库词条（可多枚） */
-export type PromptChipKind = 'setting' | 'character' | 'prompt'
+/** 芯片来源：setting 指作品设定，character 指某个人物，prompt 指词库词条，rule 指自定义规则（均可多枚） */
+export type PromptChipKind = 'setting' | 'character' | 'prompt' | 'rule'
 
-/** 徽标：value 是交给宿主的标识——角色取角色 id，词条取上游原文；画风不进徽标，由底部操作行单选后随请求下发 */
+/**
+ * 徽标：value 是交给宿主的标识——角色取角色 id，词条取上游原文，规则取文件名主干；
+ * 画风不进徽标，由底部操作行单选后随请求下发。
+ */
 export interface PromptChip {
     id: string
     kind: PromptChipKind
@@ -32,11 +37,15 @@ interface UsePromptChipsResult {
     characterChip: PromptChip | null
     /** 已选词条芯片：发送时按此逐个交给宿主换取提示词文本 */
     promptChips: PromptChip[]
+    /** 已选规则芯片：发送时把标识交给宿主读盘并入 */
+    ruleChips: PromptChip[]
     toggleSetting: () => void
     /** 设置角色芯片：传 null 即清除，菜单选择与移除徽标都走这一条 */
     setCharacter: (character: PromptCharacterSnapshot | null) => void
     /** 点选词条：未挂则追加，已挂则移除，同一词条在输入区内只出现一枚 */
     togglePrompt: (tag: PromptTag) => void
+    /** 点选规则：同一规则在输入区内只出现一枚，多枚规则按点选顺序并入提示词 */
+    toggleRule: (rule: PromptRule) => void
     removeChip: (id: string) => void
     /** 发送即清空 */
     clearChips: () => void
@@ -55,6 +64,11 @@ function characterChipOf(character: PromptCharacterSnapshot): PromptChip {
 /** 词条芯片：prompt 原文全库唯一，直接作 id 与 value，宿主据此换取归一化文本 */
 function promptChipOf(tag: PromptTag): PromptChip {
     return { id: `prompt:${tag.prompt}`, kind: 'prompt', value: tag.prompt, label: tag.name }
+}
+
+/** 规则芯片：标识取文件名主干，同一规则可与其他规则同时挂载，标签只放规则名 */
+function ruleChipOf(rule: PromptRule): PromptChip {
+    return { id: `rule:${rule.id}`, kind: 'rule', value: rule.id, label: rule.name }
 }
 
 /** 按 kind 取反：已有则删，没有则追加 */
@@ -90,6 +104,15 @@ export function usePromptChips({ initialCharacter }: UsePromptChipsOptions): Use
         )
     }
 
+    const toggleRule = (rule: PromptRule): void => {
+        const next = ruleChipOf(rule)
+        setChips((current) =>
+            current.some((chip) => chip.id === next.id)
+                ? current.filter((chip) => chip.id !== next.id)
+                : [...current, next],
+        )
+    }
+
     const removeChip = (id: string): void => {
         setChips((current) => current.filter((chip) => chip.id !== id))
     }
@@ -107,9 +130,11 @@ export function usePromptChips({ initialCharacter }: UsePromptChipsOptions): Use
         settingChip: chips.find((chip) => chip.kind === 'setting') ?? null,
         characterChip: chips.find((chip) => chip.kind === 'character') ?? null,
         promptChips: chips.filter((chip) => chip.kind === 'prompt'),
+        ruleChips: chips.filter((chip) => chip.kind === 'rule'),
         toggleSetting,
         setCharacter,
         togglePrompt,
+        toggleRule,
         removeChip,
         clearChips,
         restoreChips,
