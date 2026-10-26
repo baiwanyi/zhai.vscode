@@ -7,7 +7,7 @@
  * 补全已有角色只填空白字段、不覆盖作者已写内容，没有实际变化时必须返回原对象，避免无谓写盘。
  */
 import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
-import type { CharacterPortrait, PressExtractedCharacter, PressExtractedVolume } from '@shared/types/press'
+import type { PressExtractedCharacter, PressExtractedVolume } from '@shared/types/press'
 import { formatWordCount } from '@webview/dashboard/utils'
 import {
     CHARACTER_BODY_TYPE_META,
@@ -67,15 +67,11 @@ export function createId(prefix: 'vol' | 'ch' | 'beat' | 'char'): string {
 }
 
 /**
- * 合并角色图：两侧均为最新在前，本地草稿里磁盘尚未扫到的（刚生成还没回读）排在最前。
- * 按 id 去重，反复打开角色卡不会出现重复项。
+ * 把控件回传的取值收敛到白名单：不在集合内返回 null，调用方据此保持原值，
+ * 用于分段选择器这类只接受枚举档位、又不允许退化成空值的字段。
  */
-export function mergePortraits(
-    listed: readonly CharacterPortrait[],
-    local: readonly CharacterPortrait[],
-): CharacterPortrait[] {
-    const seen = new Set(listed.map((item) => item.id))
-    return [...local.filter((item) => !seen.has(item.id)), ...listed]
+export function toOptionValue<T extends string>(order: readonly T[], value: string): T | null {
+    return order.find((item) => item === value) ?? null
 }
 
 /** 新建一张人物卡：角色默认配角、性别默认男、姓名占位；seed 承接新增弹窗填写的初始值，id 恒由本函数生成 */

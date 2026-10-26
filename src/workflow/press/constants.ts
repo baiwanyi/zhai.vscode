@@ -4,7 +4,6 @@
  * 关键约束：状态与钩子的 key 必须与 types.ts 的联合类型完全一致，新增取值须同时补文案与变体；
  * 张力与步骤的档位顺序参与排序与进度计算，不得随意调整。
  */
-import type { PortraitStyle } from '@shared/types/press'
 import type {
     Audience,
     CharacterBodyType,
@@ -19,9 +18,17 @@ import type {
 /** 徽标语义变体：与 @components/ui/badge 的 variant 保持一致 */
 export type BadgeTone = 'default' | 'secondary' | 'destructive' | 'outline' | 'ghost'
 
-interface OptionMeta<T extends string> {
+export interface OptionMeta<T extends string> {
     value: T
     label: string
+}
+
+/** 选项来源：顺序表 + 同 key 的文案表，两者共同决定选项内容与先后 */
+type OptionSource<T extends string> = Readonly<Record<T, { label: string }>>
+
+/** 由顺序与文案派生选项：顺序与文案只保留一处来源，避免两张表各写一遍后漂移 */
+function toOptions<T extends string>(order: readonly T[], meta: OptionSource<T>): readonly OptionMeta<T>[] {
+    return order.map((value) => ({ value, label: meta[value].label }))
 }
 
 /** 章纲状态元数据：文案、徽标变体、状态点底色类名 */
@@ -73,6 +80,9 @@ export const CHARACTER_ROLE_ORDER: readonly CharacterRole[] = [
     'extra',
 ]
 
+/** 角色选项：由顺序与文案表派生，人物卡的分段选择器直接消费 */
+export const CHARACTER_ROLE_OPTIONS = toOptions(CHARACTER_ROLE_ORDER, CHARACTER_ROLE_META)
+
 /** 角色筛选项：全部与五种分类，供人物页顶部切换，顺序与 CHARACTER_ROLE_ORDER 一致 */
 export const CHARACTER_ROLE_FILTERS: readonly OptionMeta<CharacterRole | 'all'>[] = [
     { value: 'all', label: '全部' },
@@ -91,6 +101,9 @@ export const CHARACTER_GENDER_META: Readonly<Record<CharacterGender, { label: st
 
 /** 性别选项顺序：男、女，必选其一 */
 export const CHARACTER_GENDER_ORDER: readonly CharacterGender[] = ['male', 'female']
+
+/** 性别选项：由顺序与文案表派生，人物卡的分段选择器直接消费 */
+export const CHARACTER_GENDER_OPTIONS = toOptions(CHARACTER_GENDER_ORDER, CHARACTER_GENDER_META)
 
 /**
  * 体型文案与顺序：与角色分类一样以预设选项填写，避免「微胖 / 偏瘦」这类自由表述无法比较。
@@ -123,20 +136,8 @@ export const CHARACTER_BODY_TYPE_ORDER: readonly CharacterBodyType[] = [
     'heavy',
 ]
 
-/**
- * 角色卡画面风格选项：与番茄小说 AI 生图的「画面风格」分类对齐，
- * 值必须落在 shared/types/press 的 PORTRAIT_STYLES 内，提示词由宿主按同一 key 映射。
- */
-export const PORTRAIT_STYLE_OPTIONS: readonly OptionMeta<PortraitStyle>[] = [
-    { value: 'auto', label: '智能匹配' },
-    { value: 'anime', label: '日系动漫' },
-    { value: 'guofeng', label: '东方古风' },
-    { value: 'realistic', label: '纪实写实' },
-    { value: 'cinematic', label: '电影剧照' },
-    { value: 'photo', label: '唯美写真' },
-    { value: 'pixel', label: '像素复古' },
-    { value: 'gameart', label: '游戏立绘' },
-]
+/** 体型选项：由顺序与文案表派生，人物卡的分段选择器直接消费 */
+export const CHARACTER_BODY_TYPE_OPTIONS = toOptions(CHARACTER_BODY_TYPE_ORDER, CHARACTER_BODY_TYPE_META)
 
 /** 题材预设：点击加入、再点移除，也可输入自定义题材 */
 export const GENRE_OPTIONS: readonly string[] = [

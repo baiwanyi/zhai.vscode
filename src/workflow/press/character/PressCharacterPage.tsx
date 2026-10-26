@@ -12,13 +12,14 @@
  */
 import { Plus, Search, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Badge } from '@components/ui/badge'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@components/ui/input-group'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import type { PortraitGalleryItem, PressExtractedCharacter } from '@shared/types/press'
 import {
+    AppAction,
     AppContent,
     AppDescription,
-    AppFooter,
     AppHeader,
     AppMenu,
     AppPage,
@@ -31,7 +32,7 @@ import { CharacterEditDialog } from './CharacterEditDialog'
 import { CharacterList } from './CharacterList'
 import { useCharacterExtract } from './useCharacterExtract'
 import { useCharacterPortrait } from './useCharacterPortrait'
-import type { AppearanceContext } from './useCharacterAppearance'
+import type { CharacterWorkspace } from './CharacterDetail'
 import type { CharacterCard, CharacterRole, CharacterSeed, ProjectSetting } from '../types'
 import type { JSX } from 'react'
 import { CHARACTER_ROLE_FILTERS } from '../constants'
@@ -99,10 +100,10 @@ export function PressCharacterPage({
     )
 
     const editingCharacter = characters.find((character) => character.id === editingId) ?? null
-    // 作品氛围只在设定字段变化时重建，避免弹窗内每次输入都触发新对象
-    const aiContext = useMemo<AppearanceContext>(
-        () => ({ era: setting.era, genres: setting.genres, tone: setting.tone }),
-        [setting.era, setting.genres, setting.tone],
+    // 作品层上下文只在目录与设定字段变化时重建，避免弹窗内每次输入都触发新对象
+    const workspace = useMemo<CharacterWorkspace>(
+        () => ({ aiContext: { era: setting.era, genres: setting.genres, tone: setting.tone }, dirPath }),
+        [dirPath, setting.era, setting.genres, setting.tone],
     )
 
     // 过滤只覆盖列表可见性：检索匹配姓名、昵称与身份，不搜索人物卡正文，避免常用字命中整份设定
@@ -159,10 +160,23 @@ export function PressCharacterPage({
         <>
             <AppPage>
                 <AppHeader>
-                    {/* 眉标：作品名与说明同用弱化小字，避免与页面标题争夺主视觉 */}
-                    <AppDescription>{setting.title}</AppDescription>
                     <AppTitle>人物设定</AppTitle>
-                    <AppDescription>共 {characters.length} 人 · 欲望与弱点决定冲突，大纲排布时会引用</AppDescription>
+                    <AppAction>
+                        <Button variant="outline" disabled={isExtracting} onClick={handleExtract}>
+                            <Sparkles />
+                            {isExtracting ? '提取中' : '提取角色'}
+                        </Button>
+                        <Button disabled={isExtracting} onClick={() => setIsCreateOpen(true)}>
+                            <Plus />
+                            新增
+                        </Button>
+                    </AppAction>
+                    <AppDescription>
+                        <Badge variant="outline" className="max-w-full truncate">
+                            {setting.title}
+                        </Badge>
+                        <Badge variant="secondary">共 {characters.length.toLocaleString('zh-CN')} 人</Badge>
+                    </AppDescription>
                     <AppMenu>
                         <Select value={roleFilter} onValueChange={handleFilterChange}>
                             <SelectTrigger className="h-8 w-24" aria-label="角色筛选">
@@ -214,16 +228,6 @@ export function PressCharacterPage({
                         />
                     )}
                 </AppContent>
-                <AppFooter>
-                    <Button variant="outline" disabled={isExtracting} onClick={handleExtract}>
-                        <Sparkles />
-                        {isExtracting ? '提取中' : '提取'}
-                    </Button>
-                    <Button disabled={isExtracting} onClick={() => setIsCreateOpen(true)}>
-                        <Plus />
-                        新增
-                    </Button>
-                </AppFooter>
             </AppPage>
 
             {/* key 绑定展开状态：每次打开都重建表单，上一次的输入不会带过来 */}
@@ -237,8 +241,7 @@ export function PressCharacterPage({
                 <CharacterEditDialog
                     key={editingCharacter.id}
                     character={editingCharacter}
-                    aiContext={aiContext}
-                    dirPath={dirPath}
+                    workspace={workspace}
                     onSave={onChangeCharacter}
                     onCancel={() => setEditingId(null)}
                 />
