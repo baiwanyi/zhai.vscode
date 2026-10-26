@@ -138,8 +138,14 @@ export class PressRoutes {
                 return readPromptImageBase(toWebviewUri)
             case 'pressAi/listPromptRules':
                 return this.promptRules.list()
+            case 'pressAi/readPromptRule':
+                return this.promptRules.read(payload)
             case 'pressAi/savePromptRule':
                 return this.promptRules.save(payload)
+            case 'pressAi/updatePromptRule':
+                return this.promptRules.update(payload)
+            case 'pressAi/deletePromptRule':
+                return this.promptRules.remove(payload)
             case 'pressAi/openPromptRuleDir':
                 return this.openPromptRuleDir()
             case 'pressAi/pickReferenceImage':

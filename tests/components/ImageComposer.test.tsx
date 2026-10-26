@@ -6,7 +6,7 @@
  * 关键约束：取消后迟到的成功回包必须走 onLateGenerated 而不是 onGenerated——否则会清空他刚重新输入的正文，
  * 这是本组件最容易回退的分支；词条只以芯片存在，正文里不该出现词条文本。
  */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@components/ui/tooltip'
@@ -166,6 +166,15 @@ function generateParams(index = 0): Record<string, unknown> {
         throw new Error('没有出图请求')
     }
     return params as Record<string, unknown>
+}
+
+/**
+ * 打开「添加上下文 → 规则」子菜单：子菜单由指针移动展开，
+ * jsdom 下 userEvent 的 hover 不派发 pointermove，这里显式触发一次。
+ */
+async function openRuleMenu(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+    await user.click(screen.getByRole('button', { name: '添加上下文' }))
+    fireEvent.pointerMove(await screen.findByRole('menuitem', { name: '规则' }), { pointerType: 'mouse' })
 }
 
 /** 默认回包：规则列举为空、预览图库无图、abort 视为成功，其余按出图成功处理 */
@@ -355,7 +364,8 @@ describe('ImageComposer', () => {
         await user.click(screen.getByRole('button', { name: '添加上下文' }))
         // 子菜单由指针移动展开：jsdom 下 userEvent 的 hover 不派发 pointermove，这里显式触发一次
         fireEvent.pointerMove(await screen.findByRole('menuitem', { name: '规则' }), { pointerType: 'mouse' })
-        await user.click(await screen.findByRole('menuitemcheckbox', { name: '冷色调' }))
+        // 规则行同时挂着编辑与删除按钮，accessible name 不止规则名，这里按名称包含匹配
+        await user.click(await screen.findByRole('menuitem', { name: /冷色调/u }))
 
         // 规则正文留在磁盘，芯片只带标识
         expect(screen.getByRole('button', { name: '移除冷色调' })).toBeDefined()
@@ -365,6 +375,95 @@ describe('ImageComposer', () => {
         await user.click(screen.getByRole('button', { name: '发送' }))
 
         expect(generateParams().promptRules).toEqual(['冷色调'])
+        expect(screen.queryByRole('button', { name: '移除冷色调' })).toBeNull()
+    })
+
+    it('编辑规则先读回正文，改名后已挂芯片跟着换标识', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) => {
+            if (method === 'pressAi/listPromptRules') {
+                return Promise.resolve({ rules: [{ id: '冷色调', name: '冷色调' }], dirPath: 'D:/vault/prompt/rules' })
+            }
+            if (method === 'pressAi/readPromptRule') {
+                return Promise.resolve({ name: '冷色调', content: '降饱和，避免高光溢出' })
+            }
+            if (method === 'pressAi/updatePromptRule') {
+                return Promise.resolve({ id: '低饱和', name: '低饱和' })
+            }
+            return defaultResponse(method)
+        })
+        renderComposer()
+
+        await openRuleMenu(user)
+        await user.click(await screen.findByRole('menuitem', { name: /冷色调/u }))
+        expect(screen.getByRole('button', { name: '移除冷色调' })).toBeDefined()
+
+        await openRuleMenu(user)
+        await user.click(await screen.findByRole('button', { name: '编辑冷色调' }))
+
+        // 点行尾按钮只打开弹窗，不能顺带把该行挂载态翻掉；
+        // 模态弹窗会把其余区域标成 aria-hidden，查芯片需显式带上 hidden
+        const dialog = await screen.findByRole('dialog', { name: '编辑规则' })
+        expect(screen.getByRole('button', { name: '移除冷色调', hidden: true })).toBeDefined()
+
+        // 正文由宿主读盘回填，弹窗里不是空表单
+        const nameInput = within(dialog).getByLabelText<HTMLInputElement>('名称')
+        expect(within(dialog).getByLabelText<HTMLTextAreaElement>('规则内容').value).toBe('降饱和，避免高光溢出')
+
+        await user.clear(nameInput)
+        await user.type(nameInput, '低饱和')
+        await user.click(within(dialog).getByRole('button', { name: '保存' }))
+
+        await waitFor(() => {
+            expect(requestMock.mock.calls.find((call) => call[0] === 'pressAi/updatePromptRule')?.[1]).toEqual({
+                previousName: '冷色调',
+                name: '低饱和',
+                content: '降饱和，避免高光溢出',
+            })
+        })
+        // 改名等于换标识：芯片跟着换，旧标识不残留
+        await waitFor(() => {
+            expect(screen.queryByRole('dialog')).toBeNull()
+        })
+        expect(screen.getByRole('button', { name: '移除低饱和' })).toBeDefined()
+        expect(screen.queryByRole('button', { name: '移除冷色调' })).toBeNull()
+    })
+
+    it('删除规则走二次确认，成功后摘掉对应芯片', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) => {
+            if (method === 'pressAi/listPromptRules') {
+                return Promise.resolve({ rules: [{ id: '冷色调', name: '冷色调' }], dirPath: 'D:/vault/prompt/rules' })
+            }
+            if (method === 'pressAi/deletePromptRule') {
+                return Promise.resolve({ rules: [], dirPath: 'D:/vault/prompt/rules' })
+            }
+            return defaultResponse(method)
+        })
+        renderComposer()
+
+        await openRuleMenu(user)
+        await user.click(await screen.findByRole('menuitem', { name: /冷色调/u }))
+        expect(screen.getByRole('button', { name: '移除冷色调' })).toBeDefined()
+
+        await openRuleMenu(user)
+        await user.click(await screen.findByRole('button', { name: '删除冷色调' }))
+
+        // 未确认前不落盘
+        expect(requestMock.mock.calls.some((call) => call[0] === 'pressAi/deletePromptRule')).toBe(false)
+
+        const dialog = await screen.findByRole('alertdialog')
+        await user.click(within(dialog).getByRole('button', { name: '删除' }))
+
+        await waitFor(() => {
+            expect(requestMock.mock.calls.find((call) => call[0] === 'pressAi/deletePromptRule')?.[1]).toEqual({
+                name: '冷色调',
+            })
+        })
+        // 先等确认框收起，否则 aria-hidden 会让「芯片已摘除」看起来成立
+        await waitFor(() => {
+            expect(screen.queryByRole('alertdialog')).toBeNull()
+        })
         expect(screen.queryByRole('button', { name: '移除冷色调' })).toBeNull()
     })
 

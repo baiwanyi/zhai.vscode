@@ -1,16 +1,17 @@
 /**
- * 出图规则服务：列举、新建与出图取文，规则文件落在存储根下 prompt/rules。
- * 复用约定：存储根取 common/config，路径拼装走 common/storagePath，目录与 prompt/images 同级；
+ * 出图规则服务：列举、读取、新建、改写、删除与出图取文，规则文件落在存储根下 prompt/rules。
+ * 复用约定：存储根取 common/config，路径拼装与删除走 common/storagePath，目录与 prompt/images 同级；
  * 「打开目录」沿用 promptImageService 的 revealFileInOS 口径，不另起一套打开方式。
- * 关键约束：规则是用户手写资料——保存只新建、不覆盖同名文件，标识即文件名主干；
- * 出图时按标识回查正文，规则被删除或读取失败一律跳过并记日志，不阻断出图；
+ * 关键约束：规则是用户手写资料——新建不覆盖同名文件，标识即文件名主干，改名等价于换标识；
+ * 读取与改写都以文件名主干定位，非法名称、缺失文件与改名撞名一律拒绝，不静默落到同名文件上；
+ * 删除走回收站优先的 deleteResource，出图时按标识回查正文，缺失或读取失败一律跳过并记日志，不阻断出图；
  * 单次请求最多并入 5 条、合计 3000 字，超出部分丢弃，避免规则挤占画面描述。
  */
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
-import { buildStorageUri, isPathExisting } from '@modules/common/storagePath'
-import type { PromptRule, PromptRuleListResult } from '@shared/types/imagegen'
+import { buildStorageUri, deleteResource, isPathExisting } from '@modules/common/storagePath'
+import type { PromptRule, PromptRuleDetail, PromptRuleListResult } from '@shared/types/imagegen'
 
 /** 提示词模块的一级目录：与预览图库共用同一段，规则与图片各居其下 */
 const PROMPT_DIR = 'prompt'
@@ -72,6 +73,21 @@ function ruleFileUri(name: string): vscode.Uri {
     return buildStorageUri(resolveStorageRoot(), [PROMPT_DIR, RULE_DIR, `${name}${RULE_EXTENSION}`])
 }
 
+/** 名称非法的统一提示：列举之外的入口都按同一句回给前端 */
+const INVALID_NAME_MESSAGE = `规则名称非法：不能为空、含路径分隔符或超过 ${String(MAX_RULE_NAME)} 个字符`
+
+/** 收窄规则正文：去首尾空白后校验空值与上限，新建与改写共用同一口径 */
+function normalizeRuleContent(value: unknown): string {
+    const content = typeof value === 'string' ? value.trim() : ''
+    if (content.length === 0) {
+        throw new Error('规则内容不能为空')
+    }
+    if (content.length > MAX_RULE_CONTENT) {
+        throw new Error(`规则内容过长：上限 ${String(MAX_RULE_CONTENT)} 字`)
+    }
+    return content
+}
+
 export class PromptRuleService {
     /** 列举规则：目录缺失视为空库；名称按中文排序，与角色选择器的展示口径一致 */
     public async list(): Promise<PromptRuleListResult> {
@@ -103,15 +119,9 @@ export class PromptRuleService {
         const record = payload as { name?: unknown; content?: unknown } | null
         const name = normalizeRuleName(record?.name)
         if (name === null) {
-            throw new Error(`规则名称非法：不能为空、含路径分隔符或超过 ${String(MAX_RULE_NAME)} 个字符`)
+            throw new Error(INVALID_NAME_MESSAGE)
         }
-        const content = typeof record?.content === 'string' ? record.content.trim() : ''
-        if (content.length === 0) {
-            throw new Error('规则内容不能为空')
-        }
-        if (content.length > MAX_RULE_CONTENT) {
-            throw new Error(`规则内容过长：上限 ${String(MAX_RULE_CONTENT)} 字`)
-        }
+        const content = normalizeRuleContent(record?.content)
         const fileUri = ruleFileUri(name)
         if (await isPathExisting(fileUri)) {
             throw new Error(`同名规则已存在：${name}`)
@@ -120,6 +130,73 @@ export class PromptRuleService {
         await vscode.workspace.fs.writeFile(fileUri, new TextEncoder().encode(`${content}\n`))
         logger.info(`规则已保存：${fileUri.fsPath}`)
         return { id: name, name }
+    }
+
+    /** 读取规则正文：编辑弹窗回填用，文件缺失直接报错，不返回空内容让表单悄悄清空原文 */
+    public async read(payload: unknown): Promise<PromptRuleDetail> {
+        const record = payload as { name?: unknown } | null
+        const name = normalizeRuleName(record?.name)
+        if (name === null) {
+            throw new Error(INVALID_NAME_MESSAGE)
+        }
+        const fileUri = ruleFileUri(name)
+        let bytes: Uint8Array
+        try {
+            bytes = await vscode.workspace.fs.readFile(fileUri)
+        } catch {
+            throw new Error(`规则不存在：${name}`)
+        }
+        return { name, content: Buffer.from(bytes).toString('utf8').trim() }
+    }
+
+    /**
+     * 改写规则：整段替换正文；改名时先按新名改名再写内容，等价于换一个标识。
+     * 关键约束：原名必须存在，新名不得撞上另一条规则——否则会把两条规则合成一条，且芯片标识凭空失效。
+     */
+    public async update(payload: unknown): Promise<PromptRule> {
+        const record = payload as { previousName?: unknown; name?: unknown; content?: unknown } | null
+        const previousName = normalizeRuleName(record?.previousName)
+        if (previousName === null) {
+            throw new Error(INVALID_NAME_MESSAGE)
+        }
+        const name = normalizeRuleName(record?.name)
+        if (name === null) {
+            throw new Error(INVALID_NAME_MESSAGE)
+        }
+        const content = normalizeRuleContent(record?.content)
+        const sourceUri = ruleFileUri(previousName)
+        if (!(await isPathExisting(sourceUri))) {
+            throw new Error(`规则不存在：${previousName}`)
+        }
+        const targetUri = ruleFileUri(name)
+        // 仅大小写不同时在 Windows 上视为同一文件，跳过撞名检查，交给 rename 改写显示名
+        const isCaseOnlyRename = name !== previousName && name.toLowerCase() === previousName.toLowerCase()
+        if (name !== previousName && !isCaseOnlyRename && (await isPathExisting(targetUri))) {
+            throw new Error(`同名规则已存在：${name}`)
+        }
+        await vscode.workspace.fs.createDirectory(promptRuleDirUri())
+        if (name !== previousName) {
+            await vscode.workspace.fs.rename(sourceUri, targetUri, { overwrite: false })
+        }
+        await vscode.workspace.fs.writeFile(targetUri, new TextEncoder().encode(`${content}\n`))
+        logger.info(`规则已改写：${targetUri.fsPath}`)
+        return { id: name, name }
+    }
+
+    /** 删除规则：文件移入回收站优先，成功后回传最新列表，前端不必再补一次列举 */
+    public async remove(payload: unknown): Promise<PromptRuleListResult> {
+        const record = payload as { name?: unknown } | null
+        const name = normalizeRuleName(record?.name)
+        if (name === null) {
+            throw new Error(INVALID_NAME_MESSAGE)
+        }
+        const fileUri = ruleFileUri(name)
+        if (!(await isPathExisting(fileUri))) {
+            throw new Error(`规则不存在：${name}`)
+        }
+        const outcome = await deleteResource(fileUri, false)
+        logger.info(`规则已删除（${outcome}）：${fileUri.fsPath}`)
+        return this.list()
     }
 
     /** 打开规则目录：不存在时先建出来，再交给系统文件管理器定位，并回传最新列表 */

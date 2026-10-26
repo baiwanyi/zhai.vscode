@@ -6,6 +6,7 @@
  * 词条按上游原文去重、规则按标识去重、参考图按磁盘路径去重，三者都可挂多枚；
  * 参考图只记宿主回传的路径、文件名与预览地址，不自行拼路径，也不在发送前读文件；
  * 角色芯片由角色选择器直接设置（传 null 即清除），词条与规则由各自面板点选开关，再点同一项即取消；
+ * 规则的改名与删除由菜单侧上抛：改名只改已挂的芯片、不会因此挂上新规则，删除则一并摘掉芯片；
  * 发送时的清空与失败后的草稿回填由 useImageComposer 触发，回填只在用户没有新加芯片时生效。
  */
 import { useState } from 'react'
@@ -52,6 +53,10 @@ interface UsePromptChipsResult {
     togglePrompt: (tag: PromptTag) => void
     /** 点选规则：同一规则在输入区内只出现一枚，多枚规则按点选顺序并入提示词 */
     toggleRule: (rule: PromptRule) => void
+    /** 规则改名：已挂的芯片跟着换到新标识，未挂则保持不挂 */
+    renameRule: (previousId: string, rule: PromptRule) => void
+    /** 规则被删除：摘掉对应芯片，未挂则无副作用 */
+    removeRule: (ruleId: string) => void
     /** 新增参考图：同一路径只挂一枚，重复选择同一张图不会重复出现 */
     addReference: (reference: ImageReferenceItem) => void
     removeChip: (id: string) => void
@@ -132,6 +137,20 @@ export function usePromptChips({ initialCharacter }: UsePromptChipsOptions): Use
         )
     }
 
+    const renameRule = (previousId: string, rule: PromptRule): void => {
+        const previousChipId = `rule:${previousId}`
+        setChips((current) =>
+            current.some((chip) => chip.id === previousChipId)
+                ? current.map((chip) => (chip.id === previousChipId ? ruleChipOf(rule) : chip))
+                : current,
+        )
+    }
+
+    const removeRule = (ruleId: string): void => {
+        const chipId = `rule:${ruleId}`
+        setChips((current) => current.filter((chip) => chip.id !== chipId))
+    }
+
     /** 参考图只增不减：删除统一走芯片上的移除入口，重复选到同一张图时保持原样 */
     const addReference = (reference: ImageReferenceItem): void => {
         const next = referenceChipOf(reference)
@@ -161,6 +180,8 @@ export function usePromptChips({ initialCharacter }: UsePromptChipsOptions): Use
         setCharacter,
         togglePrompt,
         toggleRule,
+        renameRule,
+        removeRule,
         addReference,
         removeChip,
         clearChips,

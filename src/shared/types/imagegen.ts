@@ -264,6 +264,24 @@ export interface PromptRuleSaveRequest {
     content: string
 }
 
+/** 规则正文：仅供编辑弹窗回填，列表与出图请求都不携带 */
+export interface PromptRuleDetail {
+    /** 规则名：与文件名主干一致 */
+    name: string
+    /** 规则正文：md 原文（已去首尾空白） */
+    content: string
+}
+
+/** 规则更新请求：整段替换正文，改名时以新名落盘并清理旧文件 */
+export interface PromptRuleUpdateRequest {
+    /** 原规则名：定位待改写的 md 文件 */
+    previousName: string
+    /** 新规则名：与原名不同即视为改名，重名由宿主拒绝 */
+    name: string
+    /** 新正文：md 原文，整段替换旧内容 */
+    content: string
+}
+
 /** 时间戳位数：年月日时分秒共 14 位 */
 const TIMESTAMP_LENGTH = 14
 /** 角色标识位数：8 位随机数字，与人物卡标识一致 */

@@ -156,6 +156,8 @@ function ComposerBody({
         setCharacter,
         togglePrompt,
         toggleRule,
+        renameRule,
+        removeRule,
         addReference,
         removeChip,
         clearChips,
@@ -320,6 +322,8 @@ function ComposerBody({
                 onSelectCharacter={setCharacter}
                 onTogglePrompt={togglePrompt}
                 onToggleRule={toggleRule}
+                onRenameRule={renameRule}
+                onRemoveRule={removeRule}
                 onPickReference={addReference}
             />
 
