@@ -1,19 +1,20 @@
 /**
- * 作品设定页：写作流程的第二步，按「基本信息 / 故事内核 / 世界观 / 金手指 / 写作风格 / 封面」收集作品级输入。
+ * 作品设定页：写作流程的第二步，按「基本信息 / 故事内核 / 世界观 / 金手指 / 写作风格」收集作品级输入。
  * 复用约定：外壳取 components/AppPage（作品名走 AppDescription 眉标、分组栏进 AppMenu、字段区走 AppContent 滚动），
  * 分组切换由 PressSettingRail（ui/toggle-group）承载，文案与缺项字段表来自 ./sections，
- * 各分组字段拆在 PressSetting*Fields 中，缺项判断来自 ../utils；封面分组自带 AI 出图能力。
+ * 各分组字段拆在 PressSetting*Fields 中，缺项判断来自 ../utils；封面只在基本信息左列展示，出图与换图都在生图页完成。
  * 关键约束：页面只向上抛出字段补丁，不直接改文件；同一时刻只渲染一个分组，缺项判断覆盖全部分组；
  * 「AI 补齐设定」把素材归纳结果交给父级合并（只填空字段），提取不到时切到第一个缺项分组、不代替作者填写。
  */
 import { Sparkles } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { Badge } from '@components/ui/badge'
 import type { PressExtractedSetting } from '@shared/types/press'
 import {
+    AppAction,
     AppContent,
     AppDescription,
-    AppFooter,
     AppHeader,
     AppMenu,
     AppPage,
@@ -21,7 +22,6 @@ import {
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { PressSettingBasicFields } from './PressSettingBasicFields'
-import { PressSettingCoverFields } from './PressSettingCoverFields'
 import { PressSettingPowerFields } from './PressSettingPowerFields'
 import { PressSettingRail } from './PressSettingRail'
 import { PressSettingStoryFields } from './PressSettingStoryFields'
@@ -41,7 +41,6 @@ const SECTION_COMPONENTS: Readonly<Record<SettingSectionKey, ComponentType<Setti
     world: PressSettingWorldFields,
     power: PressSettingPowerFields,
     style: PressSettingStyleFields,
-    cover: PressSettingCoverFields,
 }
 
 interface PressSettingPageProps {
@@ -101,10 +100,17 @@ export function PressSettingPage({ setting, dirPath, onChange, onExtractSetting 
     return (
         <AppPage>
             <AppHeader>
-                {/* 眉标：作品名与说明同用弱化小字，避免与页面标题争夺主视觉 */}
-                <AppDescription>{setting.title}</AppDescription>
                 <AppTitle>作品设定</AppTitle>
-                <AppDescription>设定越具体，大纲与续写越不容易跑偏</AppDescription>
+                <AppAction>
+                    <Button variant="outline" disabled={isExtracting} onClick={handleExtract}>
+                        <Sparkles />
+                        {isExtracting ? '提取中' : '提取设定'}
+                    </Button>
+                </AppAction>
+                <AppDescription className="flex-col items-start">
+                    设定越具体，大纲与续写越不容易跑偏
+                    <Badge variant="outline">{setting.title}</Badge>
+                </AppDescription>
                 <AppMenu>
                     <PressSettingRail activeSection={activeSection} onSelect={setActiveSection} />
                 </AppMenu>
@@ -112,17 +118,6 @@ export function PressSettingPage({ setting, dirPath, onChange, onExtractSetting 
             <AppContent isScrollable>
                 <Fields setting={setting} dirPath={dirPath} onChange={onChange} />
             </AppContent>
-            <AppFooter>
-                <Button
-                    variant="outline"
-                    title="按设定候选章的摘录与摘要归纳世界观、规则与核心概念（调用 AI），只填空字段；提取不到时切到缺项分组"
-                    disabled={isExtracting}
-                    onClick={handleExtract}
-                >
-                    <Sparkles />
-                    {isExtracting ? '提取中' : 'AI 补齐设定'}
-                </Button>
-            </AppFooter>
         </AppPage>
     )
 }

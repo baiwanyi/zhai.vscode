@@ -1,9 +1,10 @@
 /**
  * 世界观字段组：世界观总述、地理、时代、势力、力量体系、核心概念与禁忌设定。
- * 复用约定：控件取自 @components/ui 的 field、input 与 textarea，多行说明性字段用 textarea 承载。
+ * 复用约定：字段组容器取 @components/ui 的 field 之 FieldGroup（窄屏单列、宽屏两列，长字段跨两列），
+ * 单字段控件取 input 与 textarea，多行说明性字段用 textarea 承载。
  * 关键约束：核心概念用分号分隔多个名词，续写注入时按同一规则切分，改写分隔符须同步宿主侧解析。
  */
-import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
 import type { SettingFieldsProps } from './sections'
@@ -11,7 +12,7 @@ import type { JSX } from 'react'
 
 export function PressSettingWorldFields({ setting, onChange }: SettingFieldsProps): JSX.Element {
     return (
-        <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
+        <FieldGroup className="grid grid-cols-1 gap-3 @md:grid-cols-2">
             <Field className="@md:col-span-2">
                 <FieldLabel htmlFor="setting-worldview">世界观总述</FieldLabel>
                 <Textarea
@@ -80,6 +81,6 @@ export function PressSettingWorldFields({ setting, onChange }: SettingFieldsProp
                     onChange={(event) => onChange({ taboo: event.target.value })}
                 />
             </Field>
-        </div>
+        </FieldGroup>
     )
 }

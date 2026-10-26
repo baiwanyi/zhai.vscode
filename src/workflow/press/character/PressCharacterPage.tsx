@@ -1,7 +1,7 @@
 /**
  * 人物设定页：写作流程的第三步，用角色下拉筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
  * 复用约定：外壳取 components/AppPage（作品名走 AppDescription 眉标、筛选行进 AppMenu、列表走 AppContent 滚动），
- * 列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterDetail 承担、
+ * 列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterEditPanel 承担、
  * 新增由 CharacterCreateDialog 承担、提取由 useCharacterExtract 发起、封面画廊由 useCharacterPortrait 读取；
  * 搜索框复用 ui/input-group（前置图标交给 InputGroupAddon），提取中的等待态复用 components/StateEmpty；
  * 本文件只做筛选、搜索、提取、封面回读与弹窗编排，以及作品氛围、作品目录的下传。
@@ -32,7 +32,7 @@ import { CharacterEditDialog } from './CharacterEditDialog'
 import { CharacterList } from './CharacterList'
 import { useCharacterExtract } from './useCharacterExtract'
 import { useCharacterPortrait } from './useCharacterPortrait'
-import type { CharacterWorkspace } from './CharacterDetail'
+import type { CharacterWorkspace } from './CharacterEditPanel'
 import type { CharacterCard, CharacterRole, CharacterSeed, ProjectSetting } from '../types'
 import type { JSX } from 'react'
 import { CHARACTER_ROLE_FILTERS } from '../constants'

@@ -1,11 +1,11 @@
 /**
  * 写作风格字段组：叙事人称、语言风格、参考作品与禁写清单。
- * 复用约定：控件取自 @components/ui 的 field 与 input，人称切换由业务公共层的 SegmentedRail
- * （chip 形态，可换行独立胶囊）承载，标签型雷点由 TagField 承载。
+ * 复用约定：字段组容器取 @components/ui 的 field 之 FieldGroup（窄屏单列、宽屏两列），单字段控件取 input，
+ * 人称切换由业务公共层的 SegmentedRail（chip 形态，可换行独立胶囊）承载，标签型雷点由 TagField 承载。
  * 关键约束：人称切换为单选且不允许取消，空值由 SegmentedRail 统一丢弃，避免把空字符串写回设定；
  * 禁写清单会参与续写与改写的排除条件，新增项须保持为可枚举的短语。
  */
-import { Field, FieldDescription, FieldLabel, FieldTitle } from '@components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldTitle } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import { TagField } from './TagField'
@@ -15,7 +15,7 @@ import { BANNED_OPTIONS, PERSPECTIVE_OPTIONS } from '../constants'
 
 export function PressSettingStyleFields({ setting, onChange }: SettingFieldsProps): JSX.Element {
     return (
-        <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
+        <FieldGroup className="grid grid-cols-1 gap-3 @md:grid-cols-2">
             <Field>
                 <FieldTitle>叙事人称</FieldTitle>
                 <SegmentedRail
@@ -55,6 +55,6 @@ export function PressSettingStyleFields({ setting, onChange }: SettingFieldsProp
                 />
                 <FieldDescription>续写与改写会避开清单内的元素</FieldDescription>
             </Field>
-        </div>
+        </FieldGroup>
     )
 }

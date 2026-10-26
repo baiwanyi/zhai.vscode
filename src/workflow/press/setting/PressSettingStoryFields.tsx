@@ -1,9 +1,10 @@
 /**
  * 故事内核字段组：一句话梗概、核心冲突与结局倾向。
- * 复用约定：控件取自 @components/ui 的 field、textarea 与 select，结局取值经 ENDING_OPTIONS 收窄后回传。
+ * 复用约定：字段组容器取 @components/ui 的 field 之 FieldGroup（窄屏单列、宽屏两列，梗概跨两列），
+ * 单字段控件取 input、textarea 与 select，结局取值经 ENDING_OPTIONS 收窄后回传。
  * 关键约束：梗概限 120 字，字数余量随输入实时变化，超长由 maxLength 阻断而不是事后校验。
  */
-import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Textarea } from '@components/ui/textarea'
@@ -24,8 +25,8 @@ export function PressSettingStoryFields({ setting, onChange }: SettingFieldsProp
     }
 
     return (
-        <div className="flex flex-col gap-3">
-            <Field>
+        <FieldGroup className="grid grid-cols-1 gap-3 @md:grid-cols-2">
+            <Field className="@md:col-span-2">
                 <FieldLabel htmlFor="setting-logline">一句话梗概</FieldLabel>
                 <Textarea
                     id="setting-logline"
@@ -39,34 +40,32 @@ export function PressSettingStoryFields({ setting, onChange }: SettingFieldsProp
                     还可输入 {LOGLINE_MAX_LENGTH - setting.logline.length} 字
                 </FieldDescription>
             </Field>
-            <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
-                <Field>
-                    <FieldLabel htmlFor="setting-conflict">核心冲突</FieldLabel>
-                    <Input
-                        id="setting-conflict"
-                        value={setting.conflict}
-                        className="h-7"
-                        onChange={(event) => onChange({ conflict: event.target.value })}
-                    />
-                </Field>
-                <Field>
-                    <FieldLabel htmlFor="setting-ending">结局倾向</FieldLabel>
-                    <Select value={setting.ending} onValueChange={handleEndingChange}>
-                        <SelectTrigger id="setting-ending" className="h-7 w-full">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectGroup>
-                                {ENDING_OPTIONS.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                        {option.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectGroup>
-                        </SelectContent>
-                    </Select>
-                </Field>
-            </div>
-        </div>
+            <Field>
+                <FieldLabel htmlFor="setting-conflict">核心冲突</FieldLabel>
+                <Input
+                    id="setting-conflict"
+                    value={setting.conflict}
+                    className="h-7"
+                    onChange={(event) => onChange({ conflict: event.target.value })}
+                />
+            </Field>
+            <Field>
+                <FieldLabel htmlFor="setting-ending">结局倾向</FieldLabel>
+                <Select value={setting.ending} onValueChange={handleEndingChange}>
+                    <SelectTrigger id="setting-ending" className="h-7 w-full">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectGroup>
+                            {ENDING_OPTIONS.map((option) => (
+                                <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                </SelectItem>
+                            ))}
+                        </SelectGroup>
+                    </SelectContent>
+                </Select>
+            </Field>
+        </FieldGroup>
     )
 }

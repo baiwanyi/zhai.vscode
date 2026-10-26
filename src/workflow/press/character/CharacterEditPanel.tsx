@@ -1,25 +1,23 @@
 /**
  * 人物卡编辑器：按「基础 / 外貌 / 动机 / 背景 / 关系」五组编辑单个角色，字段与 角色设定.md 的区块对齐。
- * 复用约定：分组切换复用 ui/tabs（均分整行、不横向滚动），字段布局复用 ui/field 与同文件的单行 / 多行字段组件，
- * 角色、性别与体型选择复用 components/SegmentedRail，标签型字段（性格）复用设定页的 TagField；
- * 各标签页收在同文件的私有组件里，主组件只做编排与外貌生成状态。
+ * 复用约定：分组切换复用 ui/tabs（均分整行、不横向滚动），字段纵向排布与间距统一交给 ui/field 的 FieldGroup，
+ * 单行 / 多行字段收在同文件的私有组件里；角色、性别与体型选择复用 components/SegmentedRail，
+ * 标签型字段（性格）复用设定页的 TagField；各标签页收在同文件的私有组件里，主组件只做编排与外貌生成状态。
  * 关键约束：所有控件只通过补丁回传给调用方（编辑弹窗的草稿），本组件不持有角色数据副本，生成结果写回后仍需用户保存；
  * 外貌生成的 hook 必须留在主组件：切换标签页会卸载面板内容，挂在面板内会连带取消在途请求；
  * 基础信息固定两列排版，左列展示角色设定图封面、右列为字段；图片统一在生图页产出与替换，人物卡内不再出图；
  * 单行输入统一 32px 高、上下各 6px 内边距；结果与失败原因统一经 sonner 提示，页面内不渲染内联错误文本。
  */
-import { ImagePlus, Sparkles } from 'lucide-react'
+import { Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
-import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@components/ui/input-group'
 import { ScrollArea } from '@components/ui/scroll-area'
-import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@components/ui/tabs'
 import { Textarea } from '@components/ui/textarea'
-import { Image } from '@webview/components/Image'
+import { CoverFigure } from '@webview/components/CoverFigure'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import { useCharacterAppearance } from './useCharacterAppearance'
 import { useCharacterCover } from './useCharacterCover'
@@ -40,8 +38,11 @@ import { toOptionValue } from '../utils'
 /** 单行输入统一 32px 高、上下各 6px 内边距：与 Select 触发器等控件对齐 */
 const INPUT_CLASS = 'h-8 px-3 py-1 leading-5'
 
-/** 标签页内容统一纵向排布：五个面板共用，切换时间距不跳 */
-const TAB_CONTENT_CLASS = 'flex flex-col gap-3 px-1'
+/** 标签页内容左右留一点内边距：五个面板共用，切换时内容宽度不跳 */
+const TAB_CONTENT_CLASS = 'px-1'
+
+/** 字段纵向间距统一交给 FieldGroup：五个标签页与基础页右列共用，改间距只改这一处 */
+const FIELD_GROUP_CLASS = 'gap-3'
 
 /** 多行字段高度档位：短档 4 行、长档 6 行；类名集中在此，调用方不传任意类，避免 Tailwind 扫不到 */
 const TEXTAREA_HEIGHT_CLASS: Readonly<Record<'short' | 'long', string>> = {
@@ -56,13 +57,13 @@ export interface CharacterWorkspace {
     dirPath: string
 }
 
-interface CharacterDetailProps {
+interface CharacterEditPanelProps {
     character: CharacterCard
     workspace: CharacterWorkspace
     onChange: (patch: Partial<CharacterCard>) => void
 }
 
-export function CharacterDetail({ character, workspace, onChange }: CharacterDetailProps): JSX.Element {
+export function CharacterEditPanel({ character, workspace, onChange }: CharacterEditPanelProps): JSX.Element {
     const { aiContext, dirPath } = workspace
     const { isGenerating, generate } = useCharacterAppearance()
 
@@ -149,10 +150,10 @@ function CharacterBasicTab({ character, dirPath, onChange }: CharacterBasicTabPr
     }
 
     return (
-        <>
+        <FieldGroup className={FIELD_GROUP_CLASS}>
             <div className="grid grid-cols-2 gap-3">
                 <CharacterPortraitFigure character={character} dirPath={dirPath} />
-                <div className="flex flex-col gap-3">
+                <FieldGroup className={FIELD_GROUP_CLASS}>
                     <CharacterInputField
                         id="character-name"
                         label="姓名"
@@ -188,7 +189,7 @@ function CharacterBasicTab({ character, dirPath, onChange }: CharacterBasicTabPr
                             variant="chip"
                         />
                     </Field>
-                </div>
+                </FieldGroup>
             </div>
 
             <CharacterTextareaField
@@ -221,7 +222,7 @@ function CharacterBasicTab({ character, dirPath, onChange }: CharacterBasicTabPr
                 />
                 <FieldDescription>与身高一起约束外貌描写和角色设定图的身形比例</FieldDescription>
             </Field>
-        </>
+        </FieldGroup>
     )
 }
 
@@ -240,34 +241,41 @@ function CharacterAppearanceTab({
     onGenerate,
 }: CharacterAppearanceTabProps): JSX.Element {
     return (
-        <Field>
-            <FieldLabel htmlFor="character-appearance">外貌描写</FieldLabel>
-            <InputGroup>
-                <InputGroupTextarea
-                    id="character-appearance"
-                    value={character.appearance}
-                    placeholder="如：瘦高，袖口永远卷到小臂；指节有薄茧，左眉一道旧疤"
-                    className="min-h-40"
-                    onChange={(event) => onChange({ appearance: event.target.value })}
-                />
-                <InputGroupAddon align="block-end">
-                    <InputGroupButton size="icon-xs" className="ml-auto" disabled={isGenerating} onClick={onGenerate}>
-                        {isGenerating ? <Spinner /> : <Sparkles />}
-                        <span className="sr-only">AI 生成</span>
-                    </InputGroupButton>
-                </InputGroupAddon>
-            </InputGroup>
-            <FieldDescription>
-                写外观与气质，供正文引用；AI 会结合角色、性别、身份、性格与作品时代生成一版草稿
-            </FieldDescription>
-        </Field>
+        <FieldGroup className={FIELD_GROUP_CLASS}>
+            <Field>
+                <FieldLabel htmlFor="character-appearance">外貌描写</FieldLabel>
+                <InputGroup>
+                    <InputGroupTextarea
+                        id="character-appearance"
+                        value={character.appearance}
+                        placeholder="如：瘦高，袖口永远卷到小臂；指节有薄茧，左眉一道旧疤"
+                        className="min-h-40"
+                        onChange={(event) => onChange({ appearance: event.target.value })}
+                    />
+                    <InputGroupAddon align="block-end">
+                        <InputGroupButton
+                            size="icon-xs"
+                            className="ml-auto"
+                            disabled={isGenerating}
+                            onClick={onGenerate}
+                        >
+                            {isGenerating ? <Spinner /> : <Sparkles />}
+                            <span className="sr-only">AI 生成</span>
+                        </InputGroupButton>
+                    </InputGroupAddon>
+                </InputGroup>
+                <FieldDescription>
+                    写外观与气质，供正文引用；AI 会结合角色、性别、身份、性格与作品时代生成一版草稿
+                </FieldDescription>
+            </Field>
+        </FieldGroup>
     )
 }
 
 /** 动机页：性格标签与三项多行输入，推动人物做决定的内因集中在这里 */
 function CharacterMotiveTab({ character, onChange }: CharacterTabProps): JSX.Element {
     return (
-        <>
+        <FieldGroup className={FIELD_GROUP_CLASS}>
             <Field>
                 <FieldLabel htmlFor="character-traits">性格标签</FieldLabel>
                 <TagField
@@ -301,14 +309,14 @@ function CharacterMotiveTab({ character, onChange }: CharacterTabProps): JSX.Ele
                 placeholder="出场时反复出现的那句话"
                 onChange={(catchphrase) => onChange({ catchphrase })}
             />
-        </>
+        </FieldGroup>
     )
 }
 
 /** 背景页：出身、能力与成长弧线，长文本统一用长档高度 */
 function CharacterBackgroundTab({ character, onChange }: CharacterTabProps): JSX.Element {
     return (
-        <>
+        <FieldGroup className={FIELD_GROUP_CLASS}>
             <CharacterTextareaField
                 id="character-background"
                 label="背景故事"
@@ -331,22 +339,24 @@ function CharacterBackgroundTab({ character, onChange }: CharacterTabProps): JSX
                 placeholder="从什么状态，走到什么状态"
                 onChange={(arc) => onChange({ arc })}
             />
-        </>
+        </FieldGroup>
     )
 }
 
 /** 关系页：关系图谱尚未提供，先以文字记录与其他人物、组织的张力 */
 function CharacterRelationTab({ character, onChange }: CharacterTabProps): JSX.Element {
     return (
-        <CharacterTextareaField
-            id="character-relation"
-            label="人物关系"
-            value={character.relation}
-            placeholder="与其他人物、组织的关系与张力"
-            height="long"
-            description="关系图谱在后续版本提供，这里先以文字记录"
-            onChange={(relation) => onChange({ relation })}
-        />
+        <FieldGroup className={FIELD_GROUP_CLASS}>
+            <CharacterTextareaField
+                id="character-relation"
+                label="人物关系"
+                value={character.relation}
+                placeholder="与其他人物、组织的关系与张力"
+                height="long"
+                description="关系图谱在后续版本提供，这里先以文字记录"
+                onChange={(relation) => onChange({ relation })}
+            />
+        </FieldGroup>
     )
 }
 
@@ -357,35 +367,18 @@ interface CharacterPortraitFigureProps {
 }
 
 /**
- * 角色设定图展示：取人物卡封面，未设封面时退回最新一张。
- * 回读与选图由 useCharacterCover 承担，出图、换图与图库管理都在生图页完成，这里只呈现结果。
+ * 角色设定图：回读该人物的封面（未设封面时取最新一张）。
+ * 回读由 useCharacterCover 承担，出图、换图与图库管理都在生图页完成，三态展示交给 CoverFigure。
  */
 function CharacterPortraitFigure({ character, dirPath }: CharacterPortraitFigureProps): JSX.Element {
     const { portrait, isLoading } = useCharacterCover(dirPath, character.id, character.coverPortraitId)
-
-    if (isLoading) {
-        return <Skeleton className="aspect-3/4 w-full rounded-lg" />
-    }
-    if (portrait === null) {
-        return (
-            <Empty className="border py-4">
-                <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                        <ImagePlus />
-                    </EmptyMedia>
-                    <EmptyTitle>还没有角色设定图</EmptyTitle>
-                    <EmptyDescription>在生图页为该人物生成后，这里显示封面图</EmptyDescription>
-                </EmptyHeader>
-            </Empty>
-        )
-    }
     return (
-        <Image
-            src={portrait.url}
+        <CoverFigure
+            src={portrait?.url ?? null}
+            isLoading={isLoading}
             alt={`${character.name} 的角色设定图`}
-            aspect="3/4"
-            size="lg"
-            className="border border-border"
+            emptyTitle="还没有角色设定图"
+            emptyDescription="在生图页为该人物生成后，这里显示封面图"
         />
     )
 }
