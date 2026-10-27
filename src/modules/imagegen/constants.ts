@@ -10,8 +10,5 @@ import type { QuotaKeys } from '@modules/common/db/quotaRepository'
 /** 统一图片目录：角色图与普通图都落在这里（press/{作品名}/Images） */
 export const IMAGES_DIR = 'Images'
 
-/** 图片目录集合：扫描接口按数组接收，当前只有统一目录 */
-export const IMAGE_DIR_NAMES: readonly string[] = [IMAGES_DIR]
-
 /** 图像配额键：生图页出图共用同一每日额度 */
 export const IMAGE_QUOTA_KEYS: QuotaKeys = { dateKey: 'press_image_date', countKey: 'press_image_count' }

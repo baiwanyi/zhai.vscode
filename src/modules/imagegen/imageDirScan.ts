@@ -1,5 +1,5 @@
 /**
- * 图片目录扫描：把作品目录下的一组图片目录（统一目录 Images 与旧 Cover / Portraits）展开为扁平文件清单。
+ * 图片目录扫描：把作品目录下的图片目录展开为扁平文件清单。
  * 复用约定：目录名由调用方从 ./constants 取，路径一律经 common/storagePath 构造；
  * URL 转换、时间取值与命名过滤由调用方拿到条目后各自加工，本模块不关心业务含义。
  * 关键约束：目录不存在或读取失败视为空目录而不抛错——并发删除、权限问题只影响单张图，不能让整次列举失败；
@@ -21,28 +21,26 @@ export interface ImageDirFile {
 }
 
 /**
- * 列举图片文件：dirNames 按传入顺序依次展开，结果保持磁盘枚举顺序、不做排序。
+ * 列举图片文件：扫描作品目录下的一个图片目录，结果保持磁盘枚举顺序、不做排序。
  * 关键约束：调用方各自决定排序与命名过滤口径，这里只保证「目录存在则列出其图片文件」。
  */
-export async function listImageFiles(projectSegments: string[], dirNames: readonly string[]): Promise<ImageDirFile[]> {
+export async function listImageFiles(projectSegments: string[], dirName: string): Promise<ImageDirFile[]> {
     const root = resolveStorageRoot()
+    const dirSegments = [...projectSegments, dirName]
     const files: ImageDirFile[] = []
-    for (const dirName of dirNames) {
-        const dirSegments = [...projectSegments, dirName]
-        let entries: [string, vscode.FileType][]
-        try {
-            entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
-        } catch {
-            // 该目录尚未创建：旧目录只读兼容，缺失属正常情况
+    let entries: [string, vscode.FileType][]
+    try {
+        entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
+    } catch {
+        // 该目录尚未创建：作品未出过图时缺失属正常情况
+        return files
+    }
+    for (const [name, type] of entries) {
+        if (type !== vscode.FileType.File || !IMAGE_EXTENSION_PATTERN.test(name)) {
             continue
         }
-        for (const [name, type] of entries) {
-            if (type !== vscode.FileType.File || !IMAGE_EXTENSION_PATTERN.test(name)) {
-                continue
-            }
-            const segments = [...dirSegments, name]
-            files.push({ name, segments, uri: buildStorageUri(root, segments) })
-        }
+        const segments = [...dirSegments, name]
+        files.push({ name, segments, uri: buildStorageUri(root, segments) })
     }
     return files
 }

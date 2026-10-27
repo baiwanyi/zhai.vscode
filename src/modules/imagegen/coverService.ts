@@ -10,7 +10,7 @@ import * as vscode from 'vscode'
 import { readProjectSegments } from '@modules/common/projectPath'
 import { parseImageKind } from '@shared/types/imagegen'
 import type { CoverListResult, PressCover } from '@shared/types/press'
-import { IMAGE_DIR_NAMES } from './constants'
+import { IMAGES_DIR } from './constants'
 import { PressCoverStore } from './db/coverRepository'
 import { listImageFiles } from './imageDirScan'
 import { readProjectDirPath } from './portraitService'
@@ -52,7 +52,7 @@ export class PressCoverService {
         toWebviewUri: (uri: vscode.Uri) => string,
     ): Promise<PressCover[]> {
         const covers: PressCover[] = []
-        for (const file of await listImageFiles(projectSegments, IMAGE_DIR_NAMES)) {
+        for (const file of await listImageFiles(projectSegments, IMAGES_DIR)) {
             const id = file.name.replace(/\.[^.]+$/, '')
             if (parseImageKind(id) !== 'photo') {
                 continue

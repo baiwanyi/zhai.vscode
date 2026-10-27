@@ -53,7 +53,7 @@ const TEXTAREA_HEIGHT_CLASS: Readonly<Record<'short' | 'long', string>> = {
 /** 作品层上下文：外貌生成要时代与题材，角色设定图要目录，两者都随作品切换 */
 export interface CharacterWorkspace {
     aiContext: AppearanceContext
-    /** 当前作品目录：角色设定图从该作品的 Portraits 回读 */
+    /** 当前作品目录：角色设定图从该作品的 Images 回读 */
     dirPath: string
 }
 
@@ -121,7 +121,7 @@ interface CharacterTabProps {
 }
 
 interface CharacterBasicTabProps extends CharacterTabProps {
-    /** 当前作品目录：角色设定图从该作品的 Portraits 回读 */
+    /** 当前作品目录：角色设定图从该作品的 Images 回读 */
     dirPath: string
 }
 
@@ -362,7 +362,7 @@ function CharacterRelationTab({ character, onChange }: CharacterTabProps): JSX.E
 
 interface CharacterPortraitFigureProps {
     character: CharacterCard
-    /** 当前作品目录：角色设定图从该作品的 Portraits 回读 */
+    /** 当前作品目录：角色设定图从该作品的 Images 回读 */
     dirPath: string
 }
 

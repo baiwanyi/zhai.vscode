@@ -35,7 +35,7 @@ export async function openPromptImageDir(): Promise<void> {
  */
 export async function readPromptImageBase(toWebviewUri: (uri: vscode.Uri) => string): Promise<PromptImageBase> {
     const dirUri = promptImageDirUri()
-    const files = await listImageFiles([PROMPT_DIR], [PROMPT_IMAGE_DIR])
+    const files = await listImageFiles([PROMPT_DIR], PROMPT_IMAGE_DIR)
     return {
         baseUrl: files.length === 0 ? null : toWebviewUri(dirUri).replace(/\/$/u, ''),
         dirPath: dirUri.fsPath,

@@ -25,7 +25,7 @@ import type {
     PortraitListResult,
 } from '@shared/types/press'
 import { isPressCharacterId } from '@shared/types/press'
-import { IMAGE_DIR_NAMES } from './constants'
+import { IMAGES_DIR } from './constants'
 import { listImageFiles } from './imageDirScan'
 
 /** 角色卡相对路径的段数：press/{作品名}/Images/{文件名} */
@@ -102,7 +102,7 @@ export class PortraitService {
     ): Promise<CharacterPortrait[]> {
         const portraits: CharacterPortrait[] = []
         // 只扫统一目录 Images：历史 Cover / Portraits 不再读取
-        for (const file of await listImageFiles(projectSegments, IMAGE_DIR_NAMES)) {
+        for (const file of await listImageFiles(projectSegments, IMAGES_DIR)) {
             const id = file.name.replace(/\.[^.]+$/u, '')
             // 只收角色图：普通图片与手工图不属于任何角色
             if (parseImageCharacterId(id) === null) {
@@ -137,8 +137,7 @@ export class PortraitService {
         if (
             segments.length !== PORTRAIT_SEGMENT_COUNT ||
             moduleDir !== PRESS_MODULE_DIR ||
-            portraitDir === undefined ||
-            !IMAGE_DIR_NAMES.includes(portraitDir) ||
+            portraitDir !== IMAGES_DIR ||
             !projectName ||
             !fileName
         ) {
@@ -189,8 +188,7 @@ export class PortraitService {
         if (
             segments.length !== PORTRAIT_SEGMENT_COUNT ||
             moduleDir !== PRESS_MODULE_DIR ||
-            portraitDir === undefined ||
-            !IMAGE_DIR_NAMES.includes(portraitDir) ||
+            portraitDir !== IMAGES_DIR ||
             !projectName ||
             !fileName
         ) {
@@ -210,32 +208,29 @@ export class PortraitService {
      * 关键约束：只删文件名角色段匹配且符合命名规范的文件，手工放入的其它图片不受影响。
      */
     public async removeByCharacterId(dirPath: string, characterId: string): Promise<{ removed: number }> {
-        const projectSegments = readProjectSegments(dirPath)
         const root = resolveStorageRoot()
+        const dirSegments = [...readProjectSegments(dirPath), IMAGES_DIR]
+        let entries: [string, vscode.FileType][]
+        try {
+            entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
+        } catch {
+            return { removed: 0 }
+        }
         let removed = 0
         // 只清理统一目录 Images：历史 Cover / Portraits 不再纳入
         // 这里刻意不过滤扩展名：同名的出图参数侧车（.json）也要随图片一并清掉，故不走图片列举入口
-        for (const dirName of IMAGE_DIR_NAMES) {
-            const dirSegments = [...projectSegments, dirName]
-            let entries: [string, vscode.FileType][]
-            try {
-                entries = await vscode.workspace.fs.readDirectory(buildStorageUri(root, dirSegments))
-            } catch {
+        for (const [name, type] of entries) {
+            if (type !== vscode.FileType.File) {
                 continue
             }
-            for (const [name, type] of entries) {
-                if (type !== vscode.FileType.File) {
-                    continue
-                }
-                if (parseImageCharacterId(name.replace(/\.[^.]+$/u, '')) !== characterId) {
-                    continue
-                }
-                try {
-                    await deleteResource(buildStorageUri(root, [...dirSegments, name]), false)
-                    removed += 1
-                } catch (error) {
-                    logger.error(`角色图清理失败：${name}`, error)
-                }
+            if (parseImageCharacterId(name.replace(/\.[^.]+$/u, '')) !== characterId) {
+                continue
+            }
+            try {
+                await deleteResource(buildStorageUri(root, [...dirSegments, name]), false)
+                removed += 1
+            } catch (error) {
+                logger.error(`角色图清理失败：${name}`, error)
             }
         }
         return { removed }

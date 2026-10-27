@@ -34,7 +34,7 @@
 └── .zhai/image.json         ← 作品级生图参数（隐藏目录，不进作品索引）
 ```
 
-`IMAGE_DIR_NAMES`（`src/modules/imagegen/constants.ts`）只含 `Images`：列举、复制、插入、删除与级联清理都按它遍历。
+`IMAGES_DIR`（`src/modules/imagegen/constants.ts`）是图片目录的唯一来源：列举、复制、插入、删除与级联清理都直接用它，代码里没有按目录分支的判断。
 
 历史目录不再读取：`Cover/` 与 `Portraits/` 里的旧图不参与列举、删除与封面候选，代码不做迁移也不改写已有指针；需要保留的老图请手工移入 `Images/`（命名不符合当前规则的会显示为孤儿图）。
 

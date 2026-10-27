@@ -1,5 +1,5 @@
 /**
- * 图片目录扫描单元测试：覆盖扩展名口径、非文件条目过滤、目录缺失容错与多目录展开顺序。
+ * 图片目录扫描单元测试：覆盖扩展名口径、非文件条目过滤、目录缺失容错与结果片段。
  * 虚拟磁盘与目录由 vscode 测试桩承接，断言只取 listImageFiles 的返回片段，不触碰真实文件系统。
  */
 import * as path from 'node:path'
@@ -34,7 +34,7 @@ describe('listImageFiles', () => {
         addFile('Images', 'note.txt')
         setDirectory(path.join(dirFsPath('Images'), 'thumbs'))
 
-        const files = await listImageFiles(PROJECT_SEGMENTS, ['Images'])
+        const files = await listImageFiles(PROJECT_SEGMENTS, 'Images')
 
         expect(files.map((file) => file.name)).toEqual(['photo-20260101010101-AbCd1234.png'])
     })
@@ -45,38 +45,28 @@ describe('listImageFiles', () => {
             addFile('Images', name)
         }
 
-        const names = (await listImageFiles(PROJECT_SEGMENTS, ['Images'])).map((file) => file.name).sort()
+        const names = (await listImageFiles(PROJECT_SEGMENTS, 'Images')).map((file) => file.name).sort()
 
         expect(names).toEqual(['a.png', 'b.jpg', 'c.jpeg', 'd.webp', 'e.gif'])
     })
 
-    it('目录不存在时跳过而不抛错', async () => {
-        setDirectory(dirFsPath('Images'))
-        addFile('Images', 'a.png')
-
-        const files = await listImageFiles(PROJECT_SEGMENTS, ['Cover', 'Images'])
-
-        expect(files.map((file) => file.segments.join('/'))).toEqual(['press/剑来/Images/a.png'])
+    it('目录不存在时返回空数组而不抛错', async () => {
+        await expect(listImageFiles(PROJECT_SEGMENTS, 'Missing')).resolves.toEqual([])
     })
 
-    it('按传入顺序展开多个目录并给出完整片段与 Uri', async () => {
+    it('给出完整片段与 Uri', async () => {
         setDirectory(dirFsPath('Images'))
         addFile('Images', 'a.png')
-        setDirectory(dirFsPath('Portraits'))
-        addFile('Portraits', 'b.png')
 
-        const files = await listImageFiles(PROJECT_SEGMENTS, ['Portraits', 'Images'])
+        const files = await listImageFiles(PROJECT_SEGMENTS, 'Images')
 
-        expect(files.map((file) => file.segments)).toEqual([
-            ['press', '剑来', 'Portraits', 'b.png'],
-            ['press', '剑来', 'Images', 'a.png'],
-        ])
-        expect(files[0]?.uri.fsPath).toBe(path.join(dirFsPath('Portraits'), 'b.png'))
+        expect(files.map((file) => file.segments)).toEqual([['press', '剑来', 'Images', 'a.png']])
+        expect(files[0]?.uri.fsPath).toBe(path.join(dirFsPath('Images'), 'a.png'))
     })
 
     it('目录为空时返回空数组', async () => {
         setDirectory(dirFsPath('Images'))
 
-        await expect(listImageFiles(PROJECT_SEGMENTS, ['Images'])).resolves.toEqual([])
+        await expect(listImageFiles(PROJECT_SEGMENTS, 'Images')).resolves.toEqual([])
     })
 })

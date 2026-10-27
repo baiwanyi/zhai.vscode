@@ -27,7 +27,7 @@ import {
     type PressImageItem,
     type PressImageKind,
 } from '@shared/types/imagegen'
-import { IMAGE_DIR_NAMES } from './constants'
+import { IMAGES_DIR } from './constants'
 import { isProjectImagePath, readImageIdFromPath } from './db/coverRepository'
 import { listImageFiles } from './imageDirScan'
 import { deleteSidecarOf } from './imageSidecar'
@@ -282,7 +282,7 @@ export class ImageLibraryService {
         toWebviewUri: (uri: vscode.Uri) => string,
     ): Promise<PressImageItem[]> {
         const images: PressImageItem[] = []
-        for (const file of await listImageFiles(projectSegments, IMAGE_DIR_NAMES)) {
+        for (const file of await listImageFiles(projectSegments, IMAGES_DIR)) {
             const id = file.name.replace(EXTENSION_PATTERN, '')
             images.push({
                 id,

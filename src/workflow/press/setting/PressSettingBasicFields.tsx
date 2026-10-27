@@ -107,7 +107,7 @@ export function PressSettingBasicFields({ setting, dirPath, onChange }: SettingF
 }
 
 interface SettingCoverFigureProps {
-    /** 当前作品目录：封面从该作品的 Cover 目录回读 */
+    /** 当前作品目录：封面从该作品的 Images 目录回读 */
     dirPath: string
     /** 作品名：用于封面替代文本 */
     title: string

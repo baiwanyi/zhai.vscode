@@ -41,7 +41,7 @@ interface PressCharacterPageProps {
     characters: CharacterCard[]
     /** 作品设定：外貌生成需要时代、题材与基调 */
     setting: ProjectSetting
-    /** 当前作品目录：角色卡图片落在该作品的 Portraits 下 */
+    /** 当前作品目录：角色卡图片落在该作品的 Images 下 */
     dirPath: string
     /** 建卡并返回新卡 id，供页面直接打开编辑弹窗 */
     onCreateCharacter: (seed: CharacterSeed) => string

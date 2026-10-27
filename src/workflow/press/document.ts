@@ -467,7 +467,7 @@ function parseCharacters(text: string): CharacterCard[] {
             arc: values.get('弧线') ?? '',
             relation: values.get('关系') ?? '',
             portraits: [],
-            // 封面只存图片 id：图片本体在 Portraits 下，URL 由宿主按会话签发，不能写进文档
+            // 封面只存图片 id：图片本体在 Images 下，URL 由宿主按会话签发，不能写进文档
             // 封面只认角色图标识：新旧两种 portrait 命名都合法，photo 与手工图一律清空
             coverPortraitId: parseImageKind(coverId) === 'portrait' ? coverId : null,
             portraitStyle: toPortraitStyle(values.get('画风')),

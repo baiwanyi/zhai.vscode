@@ -162,7 +162,7 @@ describe('草稿回写往返', () => {
             traits: ['隐忍', '护短'],
             background: '穿越前是娱乐公司策划，落地即被当作异端追杀。',
             catchphrase: '我来试试',
-            // 封面与画风必须能往返：只存 id，图片本体在 Portraits 下
+            // 封面与画风必须能往返：只存 id，图片本体在统一 Images 目录下
             portraitStyle: 'guofeng',
             coverPortraitId: 'portrait-20261001120000-12345678',
         })

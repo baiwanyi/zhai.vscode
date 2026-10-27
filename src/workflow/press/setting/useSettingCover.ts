@@ -15,7 +15,7 @@ export interface SettingCoverState {
     isLoading: boolean
 }
 
-/** 入参为当前作品目录（press/{作品名}）：封面只从该作品的 Cover 目录回读 */
+/** 入参为当前作品目录（press/{作品名}）：封面只从该作品的 Images 目录回读 */
 export function useSettingCover(dirPath: string): SettingCoverState {
     const [cover, setCover] = useState<PressCover | null>(null)
     const [isLoading, setIsLoading] = useState(true)
