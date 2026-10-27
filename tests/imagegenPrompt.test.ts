@@ -2,14 +2,14 @@
  * 出图提示词拼装的单测：覆盖上下文、规则、作品级补充、负向约束与画风描述的叠加顺序，以及空串跳过。
  * 关注点：画风描述必须始终在最后一段；空串不产生多余空行；负向约束统一带「避免出现：」前缀；
  * 上下文与规则都排在正文之后、作品补充之前；
- * 词条原文的归一化口径由前端与宿主共用，颜文字标签不能被误当作权重剥掉。
+ * 词条原文的归一化口径由前端与宿主共用，颜文字标签不能被误当作权重剥掉；
+ * 出图指令模板必须内嵌完整提示词与尺寸，并在有参考图时写明张数。
  */
 import { describe, expect, it } from 'vitest'
 import type { ImageSettings } from '@shared/types/imagegen'
 import { DEFAULT_IMAGE_SETTINGS } from '@shared/types/imagegen'
 import { normalizePromptTag } from '@shared/utils/promptTag'
-import { STYLE_HINTS } from '../src/modules/imagegen/ai/portraitPrompt'
-import { composeImagePrompt } from '../src/modules/imagegen/promptCompose'
+import { buildImageInstruction, composeImagePrompt, STYLE_HINTS } from '../src/modules/imagegen/prompt'
 
 /** 以默认参数为底，便于逐项覆盖 */
 function settingsWith(patch: Partial<ImageSettings>): ImageSettings {
@@ -90,5 +90,21 @@ describe('词条原文归一化', () => {
 
     it('空段与纯空白段被丢弃', () => {
         expect(normalizePromptTag(' female , , () ')).toBe('female')
+    })
+})
+
+describe('出图指令模板', () => {
+    it('内嵌完整提示词与尺寸，并要求立即调用出图工具', () => {
+        const instruction = buildImageInstruction({ prompt: '正文', size: '768x1024', referenceCount: 0 })
+        expect(instruction).toContain('画面要求：正文')
+        expect(instruction).toContain('尺寸：768x1024')
+        expect(instruction).toContain('请立即调用 ImageGen 工具生成一张图片')
+    })
+
+    it('无参考图时不出现参考图片说明，有参考图时写明张数', () => {
+        const plain = buildImageInstruction({ prompt: '正文', size: '768x1024', referenceCount: 0 })
+        const withRefs = buildImageInstruction({ prompt: '正文', size: '768x1024', referenceCount: 2 })
+        expect(plain).not.toContain('参考图片')
+        expect(withRefs).toContain('随附 2 张参考图片')
     })
 })

@@ -1,7 +1,7 @@
 /**
  * 图像通道契约与入口：把「英文提示词 → 一张图片字节」抽象出来。
  * 复用约定：与文本通道分离——按张计费与按 token 计费的成本结构、失败模式不同，故不并入 AiProvider；
- * 取消统一走 AbortSignal，产物统一归一为字节 + 扩展名，落盘由 portraitService 负责。
+ * 取消统一走 AbortSignal，产物统一归一为字节 + 扩展名，落盘由 imageGenerateService 负责。
  * 关键约束：实现唯一为 CodeBuddy 的 ImageGen；能力探测结果缓存，缺失即报错不静默重试，
  * 因为出图按张计费，静默重试会连扣两次。
  */

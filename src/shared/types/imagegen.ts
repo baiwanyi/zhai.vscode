@@ -54,11 +54,6 @@ export interface PressImageItem {
     characterId: string | null
 }
 
-/** 图库列举请求：只带作品目录 */
-export interface ImageLibraryRequest {
-    dirPath: string
-}
-
 /** 图库列举结果：按生成时间降序，最新在前；counts 供筛选条显示分项数量 */
 export interface ImageLibraryResult {
     images: PressImageItem[]
@@ -98,12 +93,6 @@ export interface ImageDeleteResult {
     characterId: string | null
     /** 该角色删除后剩余最新一张的 id；无剩余为 null */
     nextPortraitId: string | null
-}
-
-/** 设为作品封面请求：任意已落盘的图片都可以成为作品封面 */
-export interface ImageSetCoverRequest {
-    dirPath: string
-    path: string
 }
 
 /** 设为作品封面结果 */
@@ -197,34 +186,10 @@ export interface ImageSettingsResult {
     overrides: ReadonlyArray<keyof ImageSettings>
 }
 
-/** 参数保存请求：只传改动项，值为 null 表示取消覆盖、回落到全局 */
-export interface ImageSettingsSaveRequest {
-    dirPath: string
-    settings: Partial<Record<keyof ImageSettings, ImageSettings[keyof ImageSettings] | null>>
-}
-
-/** 批量删除请求：paths 必须全部属于同一作品，任一路径非法则整单拒绝 */
-export interface ImageBatchDeleteRequest {
-    dirPath: string
-    paths: string[]
-}
-
 /** 批量删除结果：removals 逐张回执，library 为删除后重新列举得到的列表 */
 export interface ImageBatchDeleteResult {
     removals: { path: string; removed: boolean }[]
     library: ImageLibraryResult
-}
-
-/** 侧车元数据：与图片同名落盘，供详情展示、复现参数与搜索命中 */
-export interface ImagePromptMeta {
-    prompt: string
-    /** 出图规格：生图页记比例（3:4），角色卡记像素尺寸（768x1024） */
-    ratio: string
-    style: PortraitStyle
-    characterId: string | null
-    /** 增强前的原始输入；未增强时为 null */
-    enhancedFrom: string | null
-    createdAt: string
 }
 
 /**
@@ -323,14 +288,4 @@ export function parseImageCharacterId(id: string): string | null {
     }
     const segments = id.split('-')
     return segments[2] ?? null
-}
-
-/** 由时间戳与角色标识拼出角色图标识：时间戳必须是 14 位数字串 */
-export function formatPortraitId(timestamp: string, characterId: string): string {
-    return `portrait-${timestamp}-${characterId}`
-}
-
-/** 由时间戳与随机段拼出普通图片标识 */
-export function formatPhotoId(timestamp: string, random: string): string {
-    return `photo-${timestamp}-${random}`
 }

@@ -1,6 +1,7 @@
 /**
  * 画面风格描述表：key 与 shared/types/press 的 PORTRAIT_STYLES 一一对应，新增风格须在此登记。
- * 复用约定：生图页的提示词拼装（promptCompose）与画风选择共用这一份描述，不散落到调用方。
+ * 复用约定：最终拼装（./finalPrompt）与前端画风选择共用这一份描述，不散落到调用方；
+ * 前端标签文案在 workflow/imagegen/prompt/imageStyle.ts，键必须与本文案保持一一对应。
  * 关键约束：文案用画面要素而不是风格名描述，模型才画得准；键必须与 PORTRAIT_STYLES 对齐，
  * 缺项会让对应画风拼不出提示词，新增风格时两侧同步。
  */

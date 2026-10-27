@@ -4,14 +4,7 @@
  * 旧角色图与旧封面命名一律归为孤儿图；路径校验只接受 press/{作品名}/Images/{文件名}。
  */
 import { describe, expect, it } from 'vitest'
-import {
-    formatPhotoId,
-    formatPortraitId,
-    isImageRatio,
-    isPressImageId,
-    parseImageCharacterId,
-    parseImageKind,
-} from '@shared/types/imagegen'
+import { isImageRatio, isPressImageId, parseImageCharacterId, parseImageKind } from '@shared/types/imagegen'
 import { isProjectImagePath } from '../src/modules/imagegen/db/coverRepository'
 
 describe('图片标识解析', () => {
@@ -45,15 +38,6 @@ describe('图片标识解析', () => {
             expect(parseImageKind(sample)).toBe('orphan')
             expect(parseImageCharacterId(sample)).toBeNull()
         }
-    })
-
-    it('格式化后的标识可以被解析回来', () => {
-        const portraitId = formatPortraitId('20261025143000', '10428736')
-        expect(parseImageCharacterId(portraitId)).toBe('10428736')
-        expect(parseImageKind(portraitId)).toBe('portrait')
-        const photoId = formatPhotoId('20261025143000', 'Ab3dK9xQ')
-        expect(isPressImageId(photoId)).toBe(true)
-        expect(parseImageKind(photoId)).toBe('photo')
     })
 })
 

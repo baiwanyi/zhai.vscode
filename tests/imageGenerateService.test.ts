@@ -15,7 +15,7 @@ import { ensureSchema } from '../src/modules/common/db/schema'
 import { IMAGE_QUOTA_KEYS } from '../src/modules/imagegen/constants'
 import { ImageGenerateService } from '../src/modules/imagegen/imageGenerateService'
 import { ImageSettingsService } from '../src/modules/imagegen/imageSettingsService'
-import { PromptRuleService } from '../src/modules/imagegen/promptRuleService'
+import { PromptRuleService } from '../src/modules/imagegen/prompt'
 import { ReferenceImageService } from '../src/modules/imagegen/referenceImageService'
 
 const STORAGE_ROOT = 'd:/vault'

@@ -1,6 +1,6 @@
 /**
  * 画风选项与中文标签：生图输入芯片与图片详情（侧车）共用同一份文案。
- * 复用约定：value 与宿主 promptCompose 的 STYLE_HINTS 键一一对应，类型取 @shared/types/press 的 PortraitStyle。
+ * 复用约定：value 与宿主 prompt/styleHints 的 STYLE_HINTS 键一一对应，类型取 @shared/types/press 的 PortraitStyle。
  * 关键约束：标签只做展示，不参与协议；白名单外的值（历史侧车里的旧画风）原样返回，避免显示成「自动」误导。
  */
 import type { PortraitStyle } from '@shared/types/press'

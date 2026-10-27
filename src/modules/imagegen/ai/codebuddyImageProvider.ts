@@ -29,6 +29,7 @@ import type {
     ImageReferenceInput,
 } from './imageProvider'
 import type { ContentBlock, ImageContentBlock, PermissionResult, UserMessage } from '@tencent-ai/agent-sdk'
+import { buildImageInstruction } from '../prompt'
 
 /** 单张图片体积上限 */
 const MAX_IMAGE_BYTES = 12 * 1024 * 1024
@@ -81,21 +82,6 @@ function buildImageEnv(site: CodebuddySite, apiKey?: string): Record<string, str
     return { ...env, CODEBUDDY_DEFER_TOOL_LOADING: 'false' }
 }
 
-/** 拼出交给模型的出图指令：要求只调用工具并回报路径，避免它继续解释画面 */
-function buildInstruction(options: ImageGenerateOptions): string {
-    const referenceCount = options.references?.length ?? 0
-    const lines = [
-        '请立即调用 ImageGen 工具生成一张图片，不要先用文字说明或复述画面，也不要用文字描述代替出图。',
-        referenceCount > 0
-            ? `随附 ${String(referenceCount)} 张参考图片：先观察其中的主体、构图、色调与光影，把它们作为本次画面的参考，不要原样复刻。`
-            : '',
-        `画面要求：${options.prompt}`,
-        `尺寸：${options.size}`,
-        '完成后只回复图片的本地绝对路径或可访问链接，不要附加其他说明。',
-    ]
-    return lines.filter((line) => line.length > 0).join('\n')
-}
-
 /**
  * 单条消息的异步序列：query 的结构化入参只接受 AsyncIterable，
  * 这里把一条消息包成只产出一次的序列，第二次取即 done，让 CLI 正常收尾。
@@ -138,7 +124,11 @@ function promptWithReferences(
 
 /** 出图入参：无参考图时保持字符串提示词，有参考图时改走结构化消息 */
 function buildPrompt(options: ImageGenerateOptions): string | AsyncIterable<UserMessage> {
-    const instruction = buildInstruction(options)
+    const instruction = buildImageInstruction({
+        prompt: options.prompt,
+        size: options.size,
+        referenceCount: options.references?.length ?? 0,
+    })
     const references = options.references ?? []
     return references.length === 0 ? instruction : promptWithReferences(instruction, references)
 }

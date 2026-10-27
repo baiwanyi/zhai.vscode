@@ -5,13 +5,14 @@
  * 关键约束：规则是用户手写资料——新建不覆盖同名文件，标识即文件名主干，改名等价于换标识；
  * 读取与改写都以文件名主干定位，非法名称、缺失文件与改名撞名一律拒绝，不静默落到同名文件上；
  * 删除走回收站优先的 deleteResource，出图时按标识回查正文，缺失或读取失败一律跳过并记日志，不阻断出图；
- * 单次请求最多并入 5 条、合计 3000 字，超出部分丢弃，避免规则挤占画面描述。
+ * 条数与总长上限统一取同目录 ./limits，本文件不再自带数值，避免两处各写一份。
  */
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import { buildStorageUri, deleteResource, isPathExisting } from '@modules/common/storagePath'
 import type { PromptRule, PromptRuleDetail, PromptRuleListResult } from '@shared/types/imagegen'
+import { MAX_RULE_CONTENT, MAX_RULE_NAME, MAX_RULES, MAX_RULE_TOTAL_LENGTH } from './limits'
 
 /** 提示词模块的一级目录：与预览图库共用同一段，规则与图片各居其下 */
 const PROMPT_DIR = 'prompt'
@@ -21,18 +22,6 @@ const RULE_DIR = 'rules'
 
 /** 规则文件扩展名：只认 md，目录里的其它文件不参与列举 */
 const RULE_EXTENSION = '.md'
-
-/** 规则名长度上限：文件名主干，过长在菜单里也放不下 */
-const MAX_RULE_NAME = 40
-
-/** 单条规则正文长度上限 */
-const MAX_RULE_CONTENT = 4000
-
-/** 单次出图并入的规则条数上限 */
-const MAX_RULE_COUNT = 5
-
-/** 单次出图并入的规则正文总长上限 */
-const MAX_RULE_TOTAL_LENGTH = 3000
 
 /** 文件名非法字符：路径分隔符与 Windows 保留字符一律禁止 */
 const INVALID_NAME_PATTERN = /[\\/:*?"<>|]/u
@@ -46,7 +35,7 @@ function hasControlChar(value: string): boolean {
 }
 
 /** 规则目录 Uri：列举、保存与打开目录共用同一口径，避免两处拼路径 */
-export function promptRuleDirUri(): vscode.Uri {
+function promptRuleDirUri(): vscode.Uri {
     return buildStorageUri(resolveStorageRoot(), [PROMPT_DIR, RULE_DIR])
 }
 
@@ -214,7 +203,7 @@ export class PromptRuleService {
     public async readForPrompt(ids: readonly string[]): Promise<string[]> {
         const sections: string[] = []
         let total = 0
-        for (const id of ids.slice(0, MAX_RULE_COUNT)) {
+        for (const id of ids.slice(0, MAX_RULES)) {
             const name = normalizeRuleName(id)
             if (name === null) {
                 continue

@@ -130,11 +130,16 @@
 | `imageGenerateService.ts` | 统一出图：参数校验、词条标识换取文本、配额、单任务锁、落盘、侧车、用量记账 |
 | `imageDirScan.ts` | 图片目录扫描唯一入口：目录缺失视为空、只收普通文件、扩展名口径（png/jpe?g/webp/gif） |
 | `promptImageService.ts` | 提示词预览图库：`{存储根}/prompt/images` 判空并转 webview 基址，另提供打开该目录的命令实现 |
-| `promptRuleService.ts` | 出图规则：`{存储根}/prompt/rules` 列举、新建（不覆盖同名）、打开目录，并提供出图时的正文读取（条数与总长在此收口） |
+| `prompt/ruleService.ts` | 出图规则：`{存储根}/prompt/rules` 列举、新建（不覆盖同名）、打开目录，并提供出图时的正文读取（条数与总长取 `prompt/limits.ts`） |
 | `referenceImageService.ts` | 参考图：系统文件选择框、扩展名 / 体积 / 文件头校验、路径登记表；出图时只读登记过的路径，读成 `{ bytes, mimeType }` 交给通道 |
 | `imageNaming.ts` | 图片命名唯一入口：三类标识格式、同秒冲突按秒顺延、永不覆盖 |
 | `imageSidecar.ts` | 侧车路径推导、随图删除与写入，尽力而为、不抛错 |
-| `promptCompose.ts` | 提示词拼装纯函数：正文 → 作品补充 → 负向约束 → 画风描述 |
+| `prompt/finalPrompt.ts` | 提示词拼装纯函数：正文 → 上下文 → 规则 → 作品补充 → 负向约束 → 画风描述 |
+| `prompt/styleHints.ts` | 画风描述表 `STYLE_HINTS`，键与 `PORTRAIT_STYLES` 一一对应 |
+| `prompt/instruction.ts` | 出图指令模板：把拼好的提示词包成「立即调用 ImageGen、只回产物路径」的指令 |
+| `prompt/enhancePrompt.ts` | 提示词增强的系统要求：改写为具体画面描述，保持原意与语言 |
+| `prompt/limits.ts` | 提示词限额契约：正文、词条、上下文、规则的长度与条数上限 |
+| `prompt/index.ts` | 提示词唯一入口，头部即「改提示词导航」 |
 | `imageSettingsService.ts` | 作品级参数读写（`.zhai/image.json`），只存与默认不同的键 |
 | `coverService.ts` | 封面候选列举：只取 `Images/photo-*` 供设定页只读展示，不写盘、不调用图像通道 |
 | `portraitService.ts` | 角色图列举/复制/插入与角色级联清理（出图已迁到 `imageGenerateService`） |
@@ -151,7 +156,7 @@
 \n\n STYLE_HINTS[style]（始终在最后）
 ```
 
-空串一律跳过；词条由 `imageGenerateService` 用 `@shared/utils/promptTag` 的 `normalizePromptTag` 换取并前置，归一化口径与前端词库层同源，因此面板上的词条文本与最终提示词逐字一致；上下文段来自请求的 `contexts`（前端 `composeSettingContext` 展开），规则正文由 `promptRuleService.readForPrompt` 按标识读盘后传给 `composeImagePrompt`，空串、空规则与缺失文件都不占位。宿主侧拼装集中在 `src/modules/imagegen/promptCompose` 的 `composeImagePrompt`（对象入参，顺序固定），由 `tests/imagegenPrompt.test.ts` 覆盖顺序与空串行为，上下文、规则读盘与出图合并在 `tests/imageGenerateService.test.ts` 覆盖。前端只负责正文、角色段与上下文段（`workflow/imagegen/prompt/promptSections.ts`），画风与负向约束仍由宿主追加。
+空串一律跳过；词条由 `imageGenerateService` 用 `@shared/utils/promptTag` 的 `normalizePromptTag` 换取并前置，归一化口径与前端词库层同源，因此面板上的词条文本与最终提示词逐字一致；上下文段来自请求的 `contexts`（前端 `composeSettingContext` 展开），规则正文由 `prompt/ruleService` 的 `readForPrompt` 按标识读盘后传给 `composeImagePrompt`，空串、空规则与缺失文件都不占位。宿主侧拼装集中在 `src/modules/imagegen/prompt/finalPrompt` 的 `composeImagePrompt`（对象入参，顺序固定），由 `tests/imagegenPrompt.test.ts` 覆盖顺序与空串行为，上下文、规则读盘与出图合并在 `tests/imageGenerateService.test.ts` 覆盖。前端只负责正文、角色段与上下文段（`workflow/imagegen/prompt/promptSections.ts`），画风与负向约束仍由宿主追加。改提示词时先看 `src/modules/imagegen/prompt/index.ts` 头部的导航表，它会点名前端与共享侧仍需同步的文件。
 
 参考图不参与文本拼装：`imageGenerateService` 把 `referenceImages` 交给 `referenceImageService.readForPrompt` 读成字节与真实 MIME，再由 `codebuddyImageProvider` 把「指令文本 + image 内容块」作为一条结构化用户消息提交（`query` 的 `prompt` 支持 `AsyncIterable<UserMessage>`）。无参考图时仍走原字符串提示词路径，二者行为一致；单张参考图失效（被删除、被替换、超限）只跳过该张并记日志，不阻断出图。
 

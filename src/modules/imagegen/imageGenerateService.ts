@@ -3,7 +3,8 @@
  * 复用约定：通道入口复用 ./ai/imageProvider，作品级参数经 ./imageSettingsService，
  * 配额读写经 ../common/db/quotaRepository 并与旧入口共用同一额度，路径拼接一律经 ../common/storagePath；
  * 词条文本由前端传入的上游原文经 @shared/utils/promptTag 归一化换取，与面板展示共用同一套写法；
- * 规则文本由 ./promptRuleService 按标识读盘，前端只传标识，规则改文不必重新进页面；
+ * 提示词拼装、限额与增强要求统一取 ./prompt（改提示词先看其 index.ts 的导航表）；
+ * 规则文本由 ./prompt/ruleService 按标识读盘，前端只传标识，规则改文不必重新进页面；
  * 参考图由 ./referenceImageService 校验并读成多模态输入，前端只回传选择流程登记过的路径。
  * 关键约束：文件名按新规范生成——角色图 portrait-{14 位时间戳}-{8 位角色标识}，
  * 其余 photo-{14 位时间戳}-{8 位随机串}；同秒同角色冲突时时间戳逐秒递增而非覆盖；
@@ -36,27 +37,24 @@ import { IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
 import { nextImageId } from './imageNaming'
 import { writeSidecarOf } from './imageSidecar'
 import { readProjectDirPath } from './portraitService'
-import { composeImagePrompt } from './promptCompose'
+import {
+    composeImagePrompt,
+    ENHANCE_SYSTEM_PROMPT,
+    MAX_CONTEXT_LENGTH,
+    MAX_CONTEXTS,
+    MAX_PROMPT_LENGTH,
+    MAX_PROMPT_TAG_LENGTH,
+    MAX_PROMPT_TAGS,
+    MAX_RULE_NAME,
+    MAX_RULES,
+} from './prompt'
 import type { ImageGenerator } from './ai/imageProvider'
 import type { ImageSettingsService } from './imageSettingsService'
-import type { PromptRuleService } from './promptRuleService'
+import type { PromptRuleService } from './prompt'
 import type { ReferenceImageService } from './referenceImageService'
 import type Database from 'better-sqlite3'
 
-/** 提示词长度上限：远超正常拼装结果，超出视为异常请求 */
-const MAX_PROMPT_LENGTH = 4000
-/** 词条条数上限：与前端可选芯片数量同量级，超出视为异常请求 */
-const MAX_PROMPT_TAGS = 20
-/** 单词条原文长度上限 */
-const MAX_PROMPT_TAG_LENGTH = 512
-/** 规则条数上限：与前端可选芯片数量同量级，超出部分由宿主丢弃 */
-const MAX_PROMPT_RULES = 5
-/** 单条规则标识长度上限：与规则名上限一致 */
-const MAX_PROMPT_RULE_ID_LENGTH = 40
-/** 上下文段数上限：「添加上下文」菜单的项数有限，超出视为异常请求 */
-const MAX_CONTEXTS = 4
-/** 单段上下文长度上限：作品设定展开后通常几百字，超出部分截断 */
-const MAX_CONTEXT_LENGTH = 1500
+/** 提示词相关的长度与条数上限统一在 ./prompt/limits.ts，本文件不再自带数值 */
 /** 参考图张数上限：与参考图服务的读取上限一致，超出部分丢弃 */
 const MAX_REFERENCE_IMAGES = 3
 /** 参考图路径长度上限：超长路径无法回查，直接截断后由服务跳过 */
@@ -113,7 +111,7 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
     // 上下文由「添加上下文」菜单产生：设定段是前端展开的文本，规则只传标识（文件名主干），
     // 规则正文在出图前由 PromptRuleService 读盘并入
     const contexts = readTextList(value.contexts, MAX_CONTEXTS, MAX_CONTEXT_LENGTH)
-    const ruleIds = readTextList(value.promptRules, MAX_PROMPT_RULES, MAX_PROMPT_RULE_ID_LENGTH)
+    const ruleIds = readTextList(value.promptRules, MAX_RULES, MAX_RULE_NAME)
     // 参考图只收路径，是否可用由 ReferenceImageService 按登记表判断
     const references = readTextList(value.referenceImages, MAX_REFERENCE_IMAGES, MAX_REFERENCE_PATH_LENGTH)
     // 正文、上下文、规则与参考图都为空时才算空请求——只挂参考图同样可以出图
@@ -280,11 +278,7 @@ export class ImageGenerateService {
                 model: getSelectedCodebuddyModel(),
                 maxTokens: ENHANCE_MAX_TOKENS,
                 messages: [
-                    {
-                        role: 'system',
-                        content:
-                            '你是图像提示词编辑。把用户输入改写成更具体的画面描述：补足人物姿态、服装材质、场景层次、光线方向与镜头距离；保持原意与语言，不要添加解释、标题或列表，只输出一段连续的描述。',
-                    },
+                    { role: 'system', content: ENHANCE_SYSTEM_PROMPT },
                     { role: 'user', content: source },
                 ],
                 signal: controller.signal,

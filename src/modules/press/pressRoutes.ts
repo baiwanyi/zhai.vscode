@@ -19,8 +19,8 @@ import type { ImageGenerateService } from '@modules/imagegen/imageGenerateServic
 import type { ImageLibraryService } from '@modules/imagegen/imageLibraryService'
 import type { ImageSettingsService } from '@modules/imagegen/imageSettingsService'
 import type { PortraitService } from '@modules/imagegen/portraitService'
+import type { PromptRuleService } from '@modules/imagegen/prompt'
 import { readPromptImageBase } from '@modules/imagegen/promptImageService'
-import type { PromptRuleService } from '@modules/imagegen/promptRuleService'
 import type { ReferenceImageService } from '@modules/imagegen/referenceImageService'
 import type { PromptRuleListResult } from '@shared/types/imagegen'
 import type {
