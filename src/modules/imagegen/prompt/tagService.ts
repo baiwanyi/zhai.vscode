@@ -4,6 +4,7 @@
  * md 的解析与序列化交给 ./tagMarkdown（格式契约见其头注释与 docs 的「词库 md 格式规范」），
  * 标识口径与前端芯片共用同一套「分类::分组::名称」。
  * 关键约束：一个分类一个 md，文件名即分类名，改分类等于换文件；同组重名一律拒绝，改名或换组按整块移动；
+ * 分类清单固定把「预设」置顶，其余按中文名排序，改排序只动 listObjects 一处；
  * 出图时按标识回查原文，缺失或非法标识跳过并记日志，不阻断出图；
  * 预览图先按「分类/分组/名称」镜像查找，再按 sha1 前 10 位兜底，两处都没有则视为无图。
  */
@@ -25,6 +26,9 @@ const TAG_DIR = 'tags'
 
 /** 分类文件扩展名：只认 md，目录里的其它文件不参与列举 */
 const TAG_EXTENSION = '.md'
+
+/** 置顶分类：作品预设是出图前的首选入口，固定排在分类列表首位，其余分类仍按中文名排序 */
+const PINNED_OBJECT = '预设'
 
 /** 预览图扩展名白名单：与图库扫描口径一致 */
 const PREVIEW_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif'] as const
@@ -328,7 +332,7 @@ export class PromptTagService {
         return prompts
     }
 
-    /** 分类清单：tags 目录下的 md 文件名主干，按中文排序 */
+    /** 分类清单：tags 目录下的 md 文件名主干，「预设」置顶，其余按中文排序 */
     private async listObjects(): Promise<string[]> {
         let entries: [string, vscode.FileType][]
         try {
@@ -339,7 +343,18 @@ export class PromptTagService {
         return entries
             .filter(([name, type]) => type === vscode.FileType.File && name.toLowerCase().endsWith(TAG_EXTENSION))
             .map(([name]) => stripExtension(name))
-            .sort((left, right) => left.localeCompare(right, 'zh'))
+            .sort((left, right) => {
+                if (left === right) {
+                    return 0
+                }
+                if (left === PINNED_OBJECT) {
+                    return -1
+                }
+                if (right === PINNED_OBJECT) {
+                    return 1
+                }
+                return left.localeCompare(right, 'zh')
+            })
     }
 
     /** 读取一个分类文件：不存在或读取失败按空处理，分类以文件名为准 */

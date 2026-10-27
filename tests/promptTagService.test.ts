@@ -91,6 +91,17 @@ describe('词库列举', () => {
         expect(result.tags[0]?.preview).toBeNull()
     })
 
+    it('分类清单把「预设」置顶，其余按中文名排序', async () => {
+        setDirectory(TAG_DIR)
+        setFileContent(tagPath('人物'), '# 人物\n\n## 基础\n\n### 女性\nfemale\n')
+        setFileContent(tagPath('表情'), '# 表情\n\n## 笑\n\n### 微笑\nsmile\n')
+        setFileContent(tagPath('预设'), '# 预设\n\n## 构图\n\n### 全身\nfull body\n')
+
+        const names = (await service.list()).objects.map((item) => item.name)
+
+        expect(names).toEqual(['预设', '表情', '人物'])
+    })
+
     it('文件内分类标题与文件名不一致时，以文件名为准', async () => {
         setDirectory(TAG_DIR)
         setFileContent(tagPath('人物'), '# 别的分类\n\n## 基础\n\n### 女性\nfemale\n')

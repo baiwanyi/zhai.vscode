@@ -91,6 +91,23 @@ describe('词条原文归一化', () => {
     it('空段与纯空白段被丢弃', () => {
         expect(normalizePromptTag(' female , , () ')).toBe('female')
     })
+
+    it('词内消歧括号不被当作强调剥掉', () => {
+        expect(normalizePromptTag('ballpoint_pen_(medium)')).toBe('ballpoint_pen_(medium)')
+        expect(normalizePromptTag('star_(sky), heart_lock_(kantai_collection)')).toBe(
+            'star_(sky), heart_lock_(kantai_collection)',
+        )
+    })
+
+    it('括号内带逗号的整段先剥括号再分段', () => {
+        expect(normalizePromptTag('((the best quality, super fine illustrations))')).toBe(
+            'the best quality, super fine illustrations',
+        )
+    })
+
+    it('并列的独立括号逐段剥离', () => {
+        expect(normalizePromptTag('(a), (b)')).toBe('a, b')
+    })
 })
 
 describe('出图指令模板', () => {
