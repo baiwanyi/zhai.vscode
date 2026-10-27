@@ -4,11 +4,13 @@
  * 折叠块取 ui/collapsible，无参数空态取 ui/empty；出图参数由 useImageDetail 按图片路径读取同名侧车。
  * 关键约束：image 为 null 即关闭，关闭只经 onOpenChange 上报；复制、插入、删除与设封面一律交给页面，
  * 本组件不直接调宿主协议，避免副作用散落两处；参数区只在有内容时渲染，缺失时给空态说明；
- * 弹窗高度取视口高上下各留 2rem，仅参数区滚动，图片按 contain 缩放不撑破窗口。
+ * 弹窗高度取视口高上下各留 2rem，仅参数区滚动，图片按 contain 缩放不撑破窗口；
+ * 打开时的初始焦点必须交给弹层容器——Radix 默认聚焦首个可聚焦元素（多是删除或复制提示词按钮），
+ * Button 在键盘聚焦时会立即弹出 tooltip，弹窗一开就浮着提示气泡。
  */
-import { ChevronRight, Copy, TextCursorInput, Trash2 } from 'lucide-react'
+import { Copy, TextCursorInput, Trash2 } from 'lucide-react'
+import { useRef } from 'react'
 import { toast } from 'sonner'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import {
     Dialog,
     DialogContent,
@@ -17,7 +19,6 @@ import {
     DialogHeader,
     DialogTitle,
 } from '@components/ui/dialog'
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@components/ui/empty'
 import { Skeleton } from '@components/ui/skeleton'
 import type { PressImageItem, PressImageKind } from '@shared/types/imagegen'
 import { formatDateTime } from '@shared/utils/format'
@@ -61,8 +62,18 @@ export function ImageDetailDialog({
     onInsertImage,
     onDelete,
 }: ImageDetailDialogProps): JSX.Element {
+    const contentRef = useRef<HTMLDivElement>(null)
     const path = image === null ? null : image.path
     const { detail, isLoading } = useImageDetail(dirPath, path)
+
+    /**
+     * 打开时的初始焦点交给弹层容器：不拦截的话 Radix 会聚焦首个可聚焦元素，
+     * 落在删除 / 复制提示词按钮上会连带弹出 tooltip；交给容器后 Tab 仍能正常进入操作区。
+     */
+    const handleOpenAutoFocus = (event: Event): void => {
+        event.preventDefault()
+        contentRef.current?.focus()
+    }
 
     /** 参数区是否有可展示内容：侧车可能只落了部分字段，任一非空即展示 */
     const hasDetail =
@@ -106,7 +117,12 @@ export function ImageDetailDialog({
 
     return (
         <Dialog open={image !== null} onOpenChange={onOpenChange}>
-            <DialogContent className="flex max-h-[calc(100vh-4rem)] flex-col gap-3 sm:max-w-2xl">
+            <DialogContent
+                ref={contentRef}
+                tabIndex={-1}
+                className="flex max-h-[calc(100vh-4rem)] flex-col gap-3 sm:max-w-2xl"
+                onOpenAutoFocus={handleOpenAutoFocus}
+            >
                 {image === null ? null : (
                     <>
                         {/* 标题右侧让出关闭按钮的位置，长文件名不会压到 X 上 */}
@@ -127,7 +143,7 @@ export function ImageDetailDialog({
                                 loading="eager"
                                 className="max-h-[50vh] w-full object-contain"
                             />
-                            <p className="text-muted-foreground mt-2 break-all text-xs">{image.path}</p>
+                            <p className="text-muted-foreground text-center break-all py-3">{image.path}</p>
                             {isLoading ? (
                                 <div className="mt-3 flex flex-col gap-1.5">
                                     <Skeleton className="h-4 w-16" />
@@ -135,9 +151,14 @@ export function ImageDetailDialog({
                                     <Skeleton className="h-3 w-24" />
                                 </div>
                             ) : hasDetail ? (
-                                <div className="mt-3 flex flex-col gap-1.5">
+                                <div className="flex flex-col gap-3">
                                     <div className="flex items-center gap-1">
-                                        <p className="text-xs font-medium">出图参数</p>
+                                        <p className="flex items-center gap-2 text-xs">
+                                            <span className="font-medium">出图参数</span>
+                                            {detailMeta.length === 0 ? null : (
+                                                <span className="text-muted-foreground ">{detailMeta}</span>
+                                            )}
+                                        </p>
                                         {detail.prompt === null ? null : (
                                             <Button
                                                 size="xs"
@@ -155,48 +176,31 @@ export function ImageDetailDialog({
                                         )}
                                     </div>
                                     {detail.prompt === null ? null : (
-                                        <p className="bg-muted/40 max-h-40 overflow-y-auto rounded-md p-2 text-xs leading-5 whitespace-pre-wrap break-all">
+                                        <p className="bg-muted/40 rounded-md p-2 text-xs leading-5 whitespace-pre-wrap break-all">
                                             {detail.prompt}
                                         </p>
                                     )}
-                                    {detailMeta.length === 0 ? null : (
-                                        <p className="text-muted-foreground text-xs">{detailMeta}</p>
-                                    )}
                                     {detail.enhancedFrom === null ? null : (
-                                        <Collapsible>
-                                            <CollapsibleTrigger asChild>
-                                                <Button size="xs" variant="ghost" className="group self-start px-0">
-                                                    <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />
-                                                    增强前原文
-                                                </Button>
-                                            </CollapsibleTrigger>
-                                            <CollapsibleContent>
-                                                <p className="bg-muted/40 mt-1 max-h-32 overflow-y-auto rounded-md p-2 text-xs leading-5 whitespace-pre-wrap break-all">
-                                                    {detail.enhancedFrom}
-                                                </p>
-                                            </CollapsibleContent>
-                                        </Collapsible>
+                                        <div className="flex flex-col gap-1.5">
+                                            <p className="text-xs font-medium">增强前原文</p>
+                                            <p className="bg-muted/40 rounded-md p-2 text-xs leading-5 whitespace-pre-wrap break-all">
+                                                {detail.enhancedFrom}
+                                            </p>
+                                        </div>
                                     )}
                                 </div>
                             ) : (
-                                <Empty className="mt-3 flex-none border-0 p-3">
-                                    <EmptyHeader>
-                                        <EmptyTitle className="text-xs">没有出图参数</EmptyTitle>
-                                        <EmptyDescription className="text-xs">
-                                            这张图没有同名侧车记录，可能是旧目录里的图或手工放入的文件
-                                        </EmptyDescription>
-                                    </EmptyHeader>
-                                </Empty>
+                                <div className="bg-muted p-3 rounded-md">没有出图参数</div>
                             )}
                         </div>
                         <DialogFooter className="flex-wrap items-center gap-2 sm:justify-between">
                             <Button
-                                variant="ghost"
-                                className="text-destructive hover:text-destructive"
+                                size="icon"
+                                variant="destructive"
+                                tooltip="删除图片"
                                 onClick={() => onDelete(image)}
                             >
                                 <Trash2 />
-                                删除这张图片
                             </Button>
                             <div className="flex flex-wrap items-center justify-end gap-2">
                                 <Button variant="outline" onClick={() => onCopyImage(image)}>
