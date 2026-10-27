@@ -106,8 +106,8 @@ export interface ImageGenerateRequest {
     /** 已拼装的图像提示词（含设定快照；不含词条、画风与负向约束） */
     prompt: string
     /**
-     * 词条芯片的标识：词条上游原文，全库唯一。
-     * 宿主据此换取归一化后的提示词文本，与正文合并后再生效；词条顺序即芯片顺序。
+     * 词条芯片的标识：{分类}::{分组}::{名称}，由词库 md 生成。
+     * 宿主据此回查 md 取原文、归一化后与正文合并；词条顺序即芯片顺序。
      */
     promptTags?: string[]
     /**
@@ -244,6 +244,65 @@ export interface PromptRuleUpdateRequest {
     name: string
     /** 新正文：md 原文，整段替换旧内容 */
     content: string
+}
+
+/**
+ * 提示词词条：{存储根}/prompt/tags/*.md 中的一条，全局共享、与作品无关。
+ * 标识由「分类::分组::名称」组成，改名即换标识；芯片只携带标识，原文由宿主按标识回查。
+ */
+export interface PromptTag {
+    /** 词条标识：{分类}::{分组}::{名称}，芯片与出图请求都用它回查 */
+    id: string
+    /** 一级分类：md 文件的 `#` 标题，同时是文件名主干 */
+    object: string
+    /** 二级分组：md 文件内的 `##` 标题 */
+    attribute: string
+    /** 词条名：md 文件内的 `###` 标题，同组内唯一 */
+    name: string
+    /** 提示词原文：md 中标题下的正文，发送时归一化后并入提示词 */
+    prompt: string
+    /** 预览图相对 prompt/images 的路径（正斜杠），null 表示没有图 */
+    preview: string | null
+}
+
+/** 二级分组：count 为该组词条数 */
+export interface PromptTagAttribute {
+    name: string
+    count: number
+}
+
+/** 一级分类：attributes 为分类下的分组，顺序与 md 一致 */
+export interface PromptTagObject {
+    name: string
+    attributes: PromptTagAttribute[]
+}
+
+/** 词库列举结果：tags 为扁平列表，关键词搜索在前端内存中完成 */
+export interface PromptTagListResult {
+    objects: PromptTagObject[]
+    tags: PromptTag[]
+    /** tags 目录本地路径：空态据此提示用户把 md 放到哪里 */
+    dirPath: string
+    /** images 目录本地路径：无图时提示图片该放到哪里 */
+    imageDirPath: string
+}
+
+/** 词条新建请求：分类或分组不存在时由宿主新建 */
+export interface PromptTagSaveRequest {
+    object: string
+    attribute: string
+    name: string
+    prompt: string
+}
+
+/** 词条更新请求：previousId 定位原块，改名或换组即整块移动 */
+export interface PromptTagUpdateRequest {
+    /** 原词条标识：定位待改写的块 */
+    previousId: string
+    object: string
+    attribute: string
+    name: string
+    prompt: string
 }
 
 /** 时间戳位数：年月日时分秒共 14 位 */

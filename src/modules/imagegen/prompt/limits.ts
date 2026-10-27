@@ -31,3 +31,9 @@ export const MAX_RULE_NAME = 40
 
 /** 单条规则正文长度上限 */
 export const MAX_RULE_CONTENT = 4000
+
+/** 词条分类、分组与名称的长度上限：三者共同构成芯片标识，过长在输入区放不下 */
+export const MAX_TAG_LABEL = 40
+
+/** 词条标识长度上限：三段各按上限估算，再加两个分隔符 */
+export const MAX_TAG_ID_LENGTH = MAX_TAG_LABEL * 3 + 4

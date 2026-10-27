@@ -155,6 +155,8 @@ function ComposerBody({
         toggleSetting,
         setCharacter,
         togglePrompt,
+        renamePrompt,
+        removePrompt,
         toggleRule,
         renameRule,
         removeRule,
@@ -199,8 +201,9 @@ function ComposerBody({
     }
 
     /**
-     * 收集词条标识：词条文本不进正文，只把上游原文交给宿主换取。
-     * 关键约束：顺序即芯片顺序，宿主按同一顺序并入提示词，选中多枚时画面元素的前后关系保持稳定。
+     * 收集词条标识：词条文本不进正文，只把「分类::分组::名称」交给宿主回查 md。
+     * 关键约束：顺序即芯片顺序，宿主按同一顺序并入提示词，选中多枚时画面元素的前后关系保持稳定；
+     * 词条被改名或删除时由芯片侧同步，本函数只做取值，不校验存在性。
      */
     const composePromptTags = (source: readonly PromptChip[]): string[] =>
         source.filter((chip) => chip.kind === 'prompt').map((chip) => chip.value)
@@ -321,6 +324,8 @@ function ComposerBody({
                 onToggleSetting={toggleSetting}
                 onSelectCharacter={setCharacter}
                 onTogglePrompt={togglePrompt}
+                onRenamePrompt={renamePrompt}
+                onRemovePrompt={removePrompt}
                 onToggleRule={toggleRule}
                 onRenameRule={renameRule}
                 onRemoveRule={removeRule}

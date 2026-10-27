@@ -32,7 +32,7 @@ import { ImageGenerateService } from './modules/imagegen/imageGenerateService'
 import { ImageLibraryService } from './modules/imagegen/imageLibraryService'
 import { ImageSettingsService } from './modules/imagegen/imageSettingsService'
 import { PortraitService } from './modules/imagegen/portraitService'
-import { PromptRuleService } from './modules/imagegen/prompt'
+import { PromptRuleService, PromptTagService } from './modules/imagegen/prompt'
 import { ReferenceImageService } from './modules/imagegen/referenceImageService'
 import { openNamingDatabase } from './modules/naming/db/connection'
 import { ensureNamingSchema } from './modules/naming/db/schema'
@@ -145,6 +145,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const imageSettingsService = new ImageSettingsService()
     // 出图规则：全局共享，落 {存储根}/prompt/rules 的 md 文件，与作品无关
     const promptRuleService = new PromptRuleService()
+    // 提示词词库：全局共享，按分类落 {存储根}/prompt/tags 的 md，由用户自行维护
+    const promptTagService = new PromptTagService()
     // 参考图：只放行选择流程登记过的本地图片，路径不经前端拼装
     const referenceImageService = new ReferenceImageService()
     // 统一出图入口：新图落 Images 目录，出图前叠加规则、作品级补充与负向约束，与旧入口共用同一通道与每日额度
@@ -155,6 +157,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         aiProvider,
         imageSettingsService,
         promptRuleService,
+        promptTagService,
         referenceImageService,
     )
     // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown；打开作品时同步路由事实
@@ -173,6 +176,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         imageGenerateService,
         imageSettingsService,
         promptRuleService,
+        promptTagService,
         referenceImageService,
     )
 

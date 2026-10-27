@@ -10,12 +10,11 @@
  * 词条只回传点选事件与已选标识，芯片的增删由输入卡片决定；
  * 画面风格不在此列，改由底部操作行的 ImageStylePicker 承载。
  */
-import type { ImageReferenceItem, PromptRule } from '@shared/types/imagegen'
+import type { ImageReferenceItem, PromptRule, PromptTag } from '@shared/types/imagegen'
 import { ImageCharacterPicker } from './ImageCharacterPicker'
 import { ImageCommandMenus } from './ImageCommandMenus'
 import { ImagePromptPicker } from './ImagePromptPicker'
 import { ImageReferencePicker } from './ImageReferencePicker'
-import type { PromptTag } from '../prompt/promptLibrary'
 import type { PromptCharacterSnapshot } from '../prompt/promptSections'
 import type { JSX } from 'react'
 
@@ -38,6 +37,10 @@ interface ImageComposerToolbarProps {
     onSelectCharacter: (character: PromptCharacterSnapshot | null) => void
     /** 点选词条：由输入卡片切换对应芯片 */
     onTogglePrompt: (tag: PromptTag) => void
+    /** 词条改名或换组：由输入卡片把已挂芯片换到新标识上 */
+    onRenamePrompt: (previousId: string, tag: PromptTag) => void
+    /** 词条被删除：由输入卡片摘掉对应芯片 */
+    onRemovePrompt: (tagId: string) => void
     /** 点选规则：由输入卡片切换对应芯片 */
     onToggleRule: (rule: PromptRule) => void
     /** 规则改名：由输入卡片把已挂芯片换到新标识上 */
@@ -58,6 +61,8 @@ export function ImageComposerToolbar({
     onToggleSetting,
     onSelectCharacter,
     onTogglePrompt,
+    onRenamePrompt,
+    onRemovePrompt,
     onToggleRule,
     onRenameRule,
     onRemoveRule,
@@ -79,7 +84,12 @@ export function ImageComposerToolbar({
                 activeCharacterId={activeCharacterId}
                 onSelect={onSelectCharacter}
             />
-            <ImagePromptPicker selectedPrompts={selectedPrompts} onToggle={onTogglePrompt} />
+            <ImagePromptPicker
+                selectedPrompts={selectedPrompts}
+                onToggle={onTogglePrompt}
+                onRenamePrompt={onRenamePrompt}
+                onRemovePrompt={onRemovePrompt}
+            />
         </div>
     )
 }

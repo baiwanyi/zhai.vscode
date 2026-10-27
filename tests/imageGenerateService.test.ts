@@ -15,7 +15,7 @@ import { ensureSchema } from '../src/modules/common/db/schema'
 import { IMAGE_QUOTA_KEYS } from '../src/modules/imagegen/constants'
 import { ImageGenerateService } from '../src/modules/imagegen/imageGenerateService'
 import { ImageSettingsService } from '../src/modules/imagegen/imageSettingsService'
-import { PromptRuleService } from '../src/modules/imagegen/prompt'
+import { PromptRuleService, PromptTagService } from '../src/modules/imagegen/prompt'
 import { ReferenceImageService } from '../src/modules/imagegen/referenceImageService'
 
 const STORAGE_ROOT = 'd:/vault'
@@ -27,6 +27,7 @@ const ARTIFACT_BYTES = 'png-bytes'
 let db: Database.Database
 let settings: ImageSettingsService
 let rules: PromptRuleService
+let tags: PromptTagService
 let referenceImages: ReferenceImageService
 let service: ImageGenerateService
 /** 每次调用通道时收到的入参，用于断言提示词拼装与尺寸 */
@@ -82,12 +83,22 @@ beforeEach(() => {
     ensureSchema(db)
     settings = new ImageSettingsService()
     rules = new PromptRuleService()
+    tags = new PromptTagService()
     referenceImages = new ReferenceImageService()
     calls = []
     shouldFail = false
     hold = null
     releaseHold = null
-    service = new ImageGenerateService(db, generator, new UsageRecorder(db), provider, settings, rules, referenceImages)
+    service = new ImageGenerateService(
+        db,
+        generator,
+        new UsageRecorder(db),
+        provider,
+        settings,
+        rules,
+        tags,
+        referenceImages,
+    )
 })
 
 describe('入参校验', () => {
@@ -171,10 +182,33 @@ describe('成功出图', () => {
     })
 })
 
+/** 词库目录的绝对路径：与宿主侧 prompt/tags 口径一致 */
+function tagDirPath(): string {
+    return path.join(STORAGE_ROOT, 'prompt', 'tags')
+}
+
+/** 词库 md 的绝对路径：与宿主侧 prompt/tags 口径一致 */
+function tagFsPath(object: string): string {
+    return path.join(tagDirPath(), `${object}.md`)
+}
+
+/** 造一份词库 md：一条带权重写法，一条带方括号写法，用于验证宿主侧的归一化口径 */
+function writeTagFile(): void {
+    setDirectory(tagDirPath())
+    setFileContent(
+        tagFsPath('人物'),
+        ['# 人物', '', '## 基础', '', '### 女性', '(female:1.3)', '', '### 秋林', '[autumn maple forest]', ''].join(
+            '\n',
+        ),
+    )
+}
+
 describe('词条芯片', () => {
-    it('按词条标识换取归一化文本，并与正文合并：词条在前、正文在后', async () => {
+    it('按词条标识回查 md 并归一化，与正文合并：词条在前、正文在后', async () => {
+        writeTagFile()
+
         await service.generate(
-            payload({ prompt: '雨夜长街', promptTags: ['(female:1.3)', '[autumn maple forest]'] }),
+            payload({ prompt: '雨夜长街', promptTags: ['人物::基础::女性', '人物::基础::秋林'] }),
             toUri,
         )
 
@@ -182,10 +216,20 @@ describe('词条芯片', () => {
     })
 
     it('正文为空但挂了词条时照常出图，侧车记录合并后的提示词', async () => {
-        const result = await service.generate(payload({ prompt: '', promptTags: ['(female:1.3)'] }), toUri)
+        writeTagFile()
+
+        const result = await service.generate(payload({ prompt: '', promptTags: ['人物::基础::女性'] }), toUri)
 
         expect(calls[0]?.prompt.startsWith('female')).toBe(true)
         expect(readFileContent(imageFsPath(result.image.id, 'json'))).toContain('"prompt":"female"')
+    })
+
+    it('词条标识查不到时跳过，不阻断出图', async () => {
+        writeTagFile()
+
+        await service.generate(payload({ prompt: '雨夜长街', promptTags: ['人物::基础::不存在'] }), toUri)
+
+        expect(calls[0]?.prompt.startsWith('雨夜长街')).toBe(true)
     })
 
     it('词条为空数组时行为与纯正文一致', async () => {

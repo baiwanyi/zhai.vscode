@@ -10,11 +10,10 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testi
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@components/ui/tooltip'
-import type { ImageGenerateResult } from '@shared/types/imagegen'
+import type { ImageGenerateResult, PromptTag, PromptTagListResult } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
 import { ImageComposer } from '@webview/workflow/imagegen/layout/ImageComposer'
 import type { PromptCharacterSnapshot } from '@webview/workflow/imagegen/layout/ImageComposer'
-import { PROMPT_TAGS, type PromptTag } from '@webview/workflow/imagegen/prompt/promptLibrary'
 import type { JSX } from 'react'
 
 const { requestMock, toastErrorMock } = vi.hoisted(() => ({
@@ -139,13 +138,26 @@ function inputBox(): HTMLTextAreaElement {
     return screen.getByLabelText<HTMLTextAreaElement>(PLACEHOLDER)
 }
 
-/** 面板首屏第一条词条：一级与二级分类都默认选首项，故它在打开面板后即可见 */
+/** 测试词条：词库改由宿主回传后，用例自带一条最小数据，不再依赖打包词库 */
+const TAG: PromptTag = {
+    id: '人物::基础::女性',
+    object: '人物',
+    attribute: '基础',
+    name: '女性',
+    prompt: 'female',
+    preview: null,
+}
+
+/** 测试词库：面板首屏一级与二级分类都默认选首项，故这条打开面板后即可见 */
+const TAG_LIBRARY: PromptTagListResult = {
+    objects: [{ name: '人物', attributes: [{ name: '基础', count: 1 }] }],
+    tags: [TAG],
+    dirPath: 'D:/vault/prompt/tags',
+    imageDirPath: 'D:/vault/prompt/images',
+}
+
 function firstTag(): PromptTag {
-    const [tag] = PROMPT_TAGS
-    if (tag === undefined) {
-        throw new Error('词库为空，无法执行词条芯片用例')
-    }
-    return tag
+    return TAG
 }
 
 /** 打开提示词面板并点选首条词条（已挂则取消） */
@@ -177,10 +189,13 @@ async function openRuleMenu(user: ReturnType<typeof userEvent.setup>): Promise<v
     fireEvent.pointerMove(await screen.findByRole('menuitem', { name: '规则' }), { pointerType: 'mouse' })
 }
 
-/** 默认回包：规则列举为空、预览图库无图、abort 视为成功，其余按出图成功处理 */
+/** 默认回包：规则与词库按测试数据返回、预览图库无图、abort 视为成功，其余按出图成功处理 */
 function defaultResponse(method: string): Promise<unknown> {
     if (method === 'pressAi/listPromptRules') {
         return Promise.resolve({ rules: [], dirPath: '' })
+    }
+    if (method === 'pressAi/listPromptTags') {
+        return Promise.resolve(TAG_LIBRARY)
     }
     if (method === 'pressAi/getPromptImageBase') {
         return Promise.resolve({ baseUrl: null, dirPath: '' })
@@ -483,7 +498,7 @@ describe('ImageComposer', () => {
 
         // 打开面板时也发过预览图库请求，出图调用要按方法名挑出来
         expect(generateParams().prompt).toBe('')
-        expect(generateParams().promptTags).toEqual([tag.prompt])
+        expect(generateParams().promptTags).toEqual([tag.id])
         // 发送即清空：芯片随正文一起收走
         expect(screen.queryByRole('button', { name: `移除${tag.name}` })).toBeNull()
     })
@@ -499,6 +514,103 @@ describe('ImageComposer', () => {
         await user.click(screen.getByRole('button', { name: tag.name }))
         expect(screen.queryByRole('button', { name: `移除${tag.name}` })).toBeNull()
         expect(screen.getByRole('button', { name: tag.name }).getAttribute('aria-pressed')).toBe('false')
+    })
+
+    it('新建词条：搜索栏旁的按钮开表单，提交后落盘并回到列表', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) => {
+            if (method === 'pressAi/savePromptTag') {
+                return Promise.resolve({ ...TAG, id: '人物::基础::少女', name: '少女', prompt: 'little_girl' })
+            }
+            return defaultResponse(method)
+        })
+        renderComposer()
+
+        await user.click(screen.getByRole('button', { name: '提示词' }))
+        await user.click(await screen.findByRole('button', { name: '新建词条' }))
+
+        const dialog = await screen.findByRole('dialog', { name: '新建词条' })
+        await user.type(within(dialog).getByLabelText('分类'), '人物')
+        await user.type(within(dialog).getByLabelText('分组'), '基础')
+        await user.type(within(dialog).getByLabelText('词条名'), '少女')
+        await user.type(within(dialog).getByLabelText('提示词原文'), 'little_girl')
+        await user.click(within(dialog).getByRole('button', { name: '保存' }))
+
+        await waitFor(() => {
+            expect(requestMock.mock.calls.find((call) => call[0] === 'pressAi/savePromptTag')?.[1]).toEqual({
+                object: '人物',
+                attribute: '基础',
+                name: '少女',
+                prompt: 'little_girl',
+            })
+        })
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    })
+
+    it('编辑词条：表单回填原文，改名后已挂芯片跟着换新标识', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) => {
+            if (method === 'pressAi/updatePromptTag') {
+                return Promise.resolve({ ...TAG, id: '人物::基础::少女', name: '少女' })
+            }
+            return defaultResponse(method)
+        })
+        renderComposer()
+
+        await clickFirstTag(user)
+        expect(screen.getByRole('button', { name: '移除女性' })).toBeDefined()
+
+        // 编辑入口常驻 DOM、悬停才可点，jsdom 不做命中测试，可直接点击
+        await user.click(await screen.findByRole('button', { name: '编辑女性' }))
+        const dialog = await screen.findByRole('dialog', { name: '编辑词条' })
+        const nameInput = within(dialog).getByLabelText<HTMLInputElement>('词条名')
+        expect(nameInput.value).toBe('女性')
+        expect(within(dialog).getByLabelText<HTMLTextAreaElement>('提示词原文').value).toBe('female')
+
+        await user.clear(nameInput)
+        await user.type(nameInput, '少女')
+        await user.click(within(dialog).getByRole('button', { name: '保存' }))
+
+        await waitFor(() => {
+            expect(requestMock.mock.calls.find((call) => call[0] === 'pressAi/updatePromptTag')?.[1]).toEqual({
+                previousId: TAG.id,
+                object: '人物',
+                attribute: '基础',
+                name: '少女',
+                prompt: 'female',
+            })
+        })
+        await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+        expect(screen.getByRole('button', { name: '移除少女' })).toBeDefined()
+        expect(screen.queryByRole('button', { name: '移除女性' })).toBeNull()
+    })
+
+    it('删除词条走二次确认，成功后摘掉对应芯片', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) => {
+            if (method === 'pressAi/deletePromptTag') {
+                return Promise.resolve({ ...TAG_LIBRARY, objects: [], tags: [] })
+            }
+            return defaultResponse(method)
+        })
+        renderComposer()
+
+        await clickFirstTag(user)
+        await user.click(await screen.findByRole('button', { name: '删除女性' }))
+
+        // 未确认前不落盘
+        expect(requestMock.mock.calls.some((call) => call[0] === 'pressAi/deletePromptTag')).toBe(false)
+
+        const dialog = await screen.findByRole('alertdialog')
+        await user.click(within(dialog).getByRole('button', { name: '删除' }))
+
+        await waitFor(() => {
+            expect(requestMock.mock.calls.find((call) => call[0] === 'pressAi/deletePromptTag')?.[1]).toEqual({
+                id: TAG.id,
+            })
+        })
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull())
+        expect(screen.queryByRole('button', { name: '移除女性' })).toBeNull()
     })
 
     it('发送失败时词条芯片随草稿回填', async () => {

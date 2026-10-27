@@ -2,13 +2,13 @@
  * 按提示词出图服务：接收前端拼装好的提示词与比例，经图像通道路由出图，落到作品统一目录 Images。
  * 复用约定：通道入口复用 ./ai/imageProvider，作品级参数经 ./imageSettingsService，
  * 配额读写经 ../common/db/quotaRepository 并与旧入口共用同一额度，路径拼接一律经 ../common/storagePath；
- * 词条文本由前端传入的上游原文经 @shared/utils/promptTag 归一化换取，与面板展示共用同一套写法；
+ * 词条只传标识，原文由 ./prompt/tagService 按标识回查后经 @shared/utils/promptTag 归一化，与面板展示共用同一套写法；
  * 提示词拼装、限额与增强要求统一取 ./prompt（改提示词先看其 index.ts 的导航表）；
  * 规则文本由 ./prompt/ruleService 按标识读盘，前端只传标识，规则改文不必重新进页面；
  * 参考图由 ./referenceImageService 校验并读成多模态输入，前端只回传选择流程登记过的路径。
  * 关键约束：文件名按新规范生成——角色图 portrait-{14 位时间戳}-{8 位角色标识}，
  * 其余 photo-{14 位时间戳}-{8 位随机串}；同秒同角色冲突时时间戳逐秒递增而非覆盖；
- * 词条在前、正文在后合并成一段提示词，词条为空数组时行为与纯正文完全一致；
+ * 词条在前、正文在后合并成一段提示词（出图前按标识换取），词条为空数组时行为与纯正文完全一致；
  * 上下文段与规则段都排在正文之后、作品补充之前，二者合计为空与缺失都只跳过，不阻断出图；
  * 作品级 promptSuffix / negative 在出图前叠加，读取失败回落默认且不阻断出图；
  * 每次成功出图落一份同名 sidecar；单一任务锁防重复扣费，取消走 abort——
@@ -43,14 +43,14 @@ import {
     MAX_CONTEXT_LENGTH,
     MAX_CONTEXTS,
     MAX_PROMPT_LENGTH,
-    MAX_PROMPT_TAG_LENGTH,
     MAX_PROMPT_TAGS,
     MAX_RULE_NAME,
     MAX_RULES,
+    MAX_TAG_ID_LENGTH,
 } from './prompt'
 import type { ImageGenerator } from './ai/imageProvider'
 import type { ImageSettingsService } from './imageSettingsService'
-import type { PromptRuleService } from './prompt'
+import type { PromptRuleService, PromptTagService } from './prompt'
 import type { ReferenceImageService } from './referenceImageService'
 import type Database from 'better-sqlite3'
 
@@ -69,8 +69,10 @@ const ENHANCE_MAX_TOKENS = 800
 /** 出图入参：只保留落盘与通道需要的字段 */
 interface NormalizedImageRequest {
     dirPath: string
-    /** 已并入词条文本的完整正文 */
+    /** 用户正文：不含词条文本，词条在出图前按标识回查后前置合并 */
     prompt: string
+    /** 词条标识：{分类}::{分组}::{名称}，出图前由词库服务换取原文 */
+    promptTags: string[]
     /** 上下文段：正文以外的背景信息，由前端按芯片顺序展开 */
     contexts: string[]
     /** 规则标识：上下文的一部分，正文由宿主读盘后并入 */
@@ -100,22 +102,23 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
         enhancedFrom?: unknown
     }
     const prompt = readText(value.prompt, MAX_PROMPT_LENGTH)
-    // 词条芯片只带上游原文，文本在这里换取：顺序即芯片顺序，正文排在词条之后作为补充描述。
-    // 词条未知或书写不合法时归一化为空串并被跳过，不阻断出图——正文仍然可用。
-    const promptTags = readTextList(value.promptTags, MAX_PROMPT_TAGS, MAX_PROMPT_TAG_LENGTH)
-    const tagText = promptTags.map((tag) => normalizePromptTag(tag)).filter((text) => text.length > 0)
-    const mergedPrompt = [...tagText, prompt]
-        .filter((part) => part.length > 0)
-        .join(', ')
-        .slice(0, MAX_PROMPT_LENGTH)
+    // 词条只收标识：原文由 PromptTagService 按标识回查，顺序即芯片顺序，
+    // 正文排在词条之后作为补充描述；词条被删除时由词库服务跳过，不阻断出图。
+    const promptTags = readTextList(value.promptTags, MAX_PROMPT_TAGS, MAX_TAG_ID_LENGTH)
     // 上下文由「添加上下文」菜单产生：设定段是前端展开的文本，规则只传标识（文件名主干），
     // 规则正文在出图前由 PromptRuleService 读盘并入
     const contexts = readTextList(value.contexts, MAX_CONTEXTS, MAX_CONTEXT_LENGTH)
     const ruleIds = readTextList(value.promptRules, MAX_RULES, MAX_RULE_NAME)
     // 参考图只收路径，是否可用由 ReferenceImageService 按登记表判断
     const references = readTextList(value.referenceImages, MAX_REFERENCE_IMAGES, MAX_REFERENCE_PATH_LENGTH)
-    // 正文、上下文、规则与参考图都为空时才算空请求——只挂参考图同样可以出图
-    if (mergedPrompt.length === 0 && contexts.length === 0 && ruleIds.length === 0 && references.length === 0) {
+    // 正文、词条、上下文、规则与参考图都为空时才算空请求——只挂参考图同样可以出图
+    if (
+        prompt.length === 0 &&
+        promptTags.length === 0 &&
+        contexts.length === 0 &&
+        ruleIds.length === 0 &&
+        references.length === 0
+    ) {
         throw new Error('提示词不能为空')
     }
     const kind = value.kind
@@ -137,7 +140,8 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
     const style = PORTRAIT_STYLES.some((item) => item === value.style) ? (value.style as PortraitStyle) : 'auto'
     return {
         dirPath,
-        prompt: mergedPrompt,
+        prompt,
+        promptTags,
         contexts,
         ruleIds,
         references,
@@ -160,6 +164,7 @@ export class ImageGenerateService {
         private readonly provider: AiProvider,
         private readonly settings: ImageSettingsService,
         private readonly rules: PromptRuleService,
+        private readonly tags: PromptTagService,
         private readonly referenceImages: ReferenceImageService,
     ) {}
 
@@ -181,13 +186,19 @@ export class ImageGenerateService {
         )
         try {
             const settings = await this.readSettings(request.dirPath)
+            // 词条原文按标识回查：词条已被删除时由词库服务跳过，出图不因单条缺失而失败
+            const tagTexts = await this.tags.readForPrompt(request.promptTags)
+            const mergedPrompt = [...tagTexts.map((text) => normalizePromptTag(text)), request.prompt]
+                .filter((part) => part.length > 0)
+                .join(', ')
+                .slice(0, MAX_PROMPT_LENGTH)
             // 规则正文按标识读盘：文件已被删除的规则静默跳过，出图不因单条规则缺失而失败
             const ruleTexts = await this.rules.readForPrompt(request.ruleIds)
             // 参考图按登记表校验后读成多模态输入；单张失效时跳过，不阻断出图
             const references = await this.referenceImages.readForPrompt(request.references)
             const artifact = await this.router.generate({
                 prompt: composeImagePrompt({
-                    prompt: request.prompt,
+                    prompt: mergedPrompt,
                     contexts: request.contexts,
                     rules: ruleTexts,
                     settings,
@@ -209,7 +220,7 @@ export class ImageGenerateService {
                 model: getSelectedCodebuddyModel(),
                 usage: artifact.usage ?? null,
                 meta: artifact.meta ?? null,
-                prompt: request.prompt,
+                prompt: mergedPrompt,
                 startedAt: artifact.startedAt ?? startedAt,
             })
             const root = resolveStorageRoot()
@@ -221,7 +232,7 @@ export class ImageGenerateService {
             await vscode.workspace.fs.writeFile(buildStorageUri(root, segments), artifact.bytes)
             const createdAt = new Date().toISOString()
             await writeSidecarOf(dirUri, id, {
-                prompt: request.prompt,
+                prompt: mergedPrompt,
                 ratio: request.ratio,
                 style: request.style,
                 characterId: request.characterId,

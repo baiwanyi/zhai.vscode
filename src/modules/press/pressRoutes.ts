@@ -19,10 +19,10 @@ import type { ImageGenerateService } from '@modules/imagegen/imageGenerateServic
 import type { ImageLibraryService } from '@modules/imagegen/imageLibraryService'
 import type { ImageSettingsService } from '@modules/imagegen/imageSettingsService'
 import type { PortraitService } from '@modules/imagegen/portraitService'
-import type { PromptRuleService } from '@modules/imagegen/prompt'
+import type { PromptRuleService, PromptTagService } from '@modules/imagegen/prompt'
 import { readPromptImageBase } from '@modules/imagegen/promptImageService'
 import type { ReferenceImageService } from '@modules/imagegen/referenceImageService'
-import type { PromptRuleListResult } from '@shared/types/imagegen'
+import type { PromptRuleListResult, PromptTagListResult } from '@shared/types/imagegen'
 import type {
     ChapterSnapshotCaptureResult,
     ChapterSnapshotDeleteResult,
@@ -81,6 +81,7 @@ export class PressRoutes {
         private readonly imageGenerate: ImageGenerateService,
         private readonly imageSettings: ImageSettingsService,
         private readonly promptRules: PromptRuleService,
+        private readonly promptTags: PromptTagService,
         private readonly referenceImages: ReferenceImageService,
     ) {}
 
@@ -126,16 +127,26 @@ export class PressRoutes {
                 return readPromptImageBase(toWebviewUri)
             case 'pressAi/listPromptRules':
                 return this.promptRules.list()
+            case 'pressAi/listPromptTags':
+                return this.promptTags.list()
             case 'pressAi/readPromptRule':
                 return this.promptRules.read(payload)
             case 'pressAi/savePromptRule':
                 return this.promptRules.save(payload)
+            case 'pressAi/savePromptTag':
+                return this.promptTags.save(payload)
             case 'pressAi/updatePromptRule':
                 return this.promptRules.update(payload)
+            case 'pressAi/updatePromptTag':
+                return this.promptTags.update(payload)
             case 'pressAi/deletePromptRule':
                 return this.promptRules.remove(payload)
+            case 'pressAi/deletePromptTag':
+                return this.promptTags.remove(payload)
             case 'pressAi/openPromptRuleDir':
                 return this.openPromptRuleDir()
+            case 'pressAi/openPromptTagDir':
+                return this.openPromptTagDir()
             case 'pressAi/pickReferenceImage':
                 return this.referenceImages.pick(toWebviewUri)
             case 'pressAi/saveImageSettings':
@@ -259,6 +270,16 @@ export class PressRoutes {
     private async openPromptRuleDir(): Promise<PromptRuleListResult> {
         const result = await this.promptRules.openDir()
         logger.info(`已打开规则目录：${result.dirPath}`)
+        return result
+    }
+
+    /**
+     * 打开词库目录：目录不存在时由服务先建出来，再把最新列表回给前端。
+     * 安全约束：目录固定为存储根下的 prompt/tags，不接受前端传入路径。
+     */
+    private async openPromptTagDir(): Promise<PromptTagListResult> {
+        const result = await this.promptTags.openDir()
+        logger.info(`已打开词库目录：${result.dirPath}`)
         return result
     }
 

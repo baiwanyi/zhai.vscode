@@ -1,24 +1,23 @@
 /**
  * 生图输入芯片：维护「引用意图」集合——作品设定、当前角色、已选提示词词条、自定义规则与参考图。
- * 复用约定：角色快照类型取 ../prompt/promptSections，词条类型取 ../prompt/promptLibrary，
- * 规则与参考图类型取 @shared/types/imagegen；本 hook 只产出数据与操作，图标与预览留在 layout 渲染。
+ * 复用约定：角色快照类型取 ../prompt/promptSections，词条、规则与参考图类型取 @shared/types/imagegen；
+ * 本 hook 只产出数据与操作，图标与预览留在 layout 渲染。
  * 关键约束：芯片 id 是删除与 DOM 定位的唯一依据——设定与角色按 kind 唯一，
- * 词条按上游原文去重、规则按标识去重、参考图按磁盘路径去重，三者都可挂多枚；
+ * 词条按词条标识去重、规则按标识去重、参考图按磁盘路径去重，三者都可挂多枚；
  * 参考图只记宿主回传的路径、文件名与预览地址，不自行拼路径，也不在发送前读文件；
  * 角色芯片由角色选择器直接设置（传 null 即清除），词条与规则由各自面板点选开关，再点同一项即取消；
  * 规则的改名与删除由菜单侧上抛：改名只改已挂的芯片、不会因此挂上新规则，删除则一并摘掉芯片；
  * 发送时的清空与失败后的草稿回填由 useImageComposer 触发，回填只在用户没有新加芯片时生效。
  */
 import { useState } from 'react'
-import type { ImageReferenceItem, PromptRule } from '@shared/types/imagegen'
-import type { PromptTag } from '../prompt/promptLibrary'
+import type { ImageReferenceItem, PromptRule, PromptTag } from '@shared/types/imagegen'
 import type { PromptCharacterSnapshot } from '../prompt/promptSections'
 
 /** 芯片来源：setting 指作品设定，character 指某个人物，prompt 指词库词条，rule 指自定义规则，reference 指参考图 */
 export type PromptChipKind = 'setting' | 'character' | 'prompt' | 'rule' | 'reference'
 
 /**
- * 徽标：value 是交给宿主的标识——角色取角色 id，词条取上游原文，规则取文件名主干，参考图取磁盘路径；
+ * 徽标：value 是交给宿主的标识——角色取角色 id，词条取「分类::分组::名称」，规则取文件名主干，参考图取磁盘路径；
  * previewUrl 只有参考图携带，供芯片缩略图与悬停预览；
  * 画风不进徽标，由底部操作行单选后随请求下发。
  */
@@ -51,6 +50,10 @@ interface UsePromptChipsResult {
     setCharacter: (character: PromptCharacterSnapshot | null) => void
     /** 点选词条：未挂则追加，已挂则移除，同一词条在输入区内只出现一枚 */
     togglePrompt: (tag: PromptTag) => void
+    /** 词条改名或换组：已挂的芯片跟着换到新标识，未挂则保持不挂 */
+    renamePrompt: (previousId: string, tag: PromptTag) => void
+    /** 词条被删除：摘掉对应芯片，未挂则无副作用 */
+    removePrompt: (tagId: string) => void
     /** 点选规则：同一规则在输入区内只出现一枚，多枚规则按点选顺序并入提示词 */
     toggleRule: (rule: PromptRule) => void
     /** 规则改名：已挂的芯片跟着换到新标识，未挂则保持不挂 */
@@ -74,9 +77,9 @@ function characterChipOf(character: PromptCharacterSnapshot): PromptChip {
     return { id: 'character', kind: 'character', value: character.id, label: character.name }
 }
 
-/** 词条芯片：prompt 原文全库唯一，直接作 id 与 value，宿主据此换取归一化文本 */
+/** 词条芯片：标识取「分类::分组::名称」，宿主据此回查 md 取原文；标签只放词条名 */
 function promptChipOf(tag: PromptTag): PromptChip {
-    return { id: `prompt:${tag.prompt}`, kind: 'prompt', value: tag.prompt, label: tag.name }
+    return { id: `prompt:${tag.id}`, kind: 'prompt', value: tag.id, label: tag.name }
 }
 
 /** 规则芯片：标识取文件名主干，同一规则可与其他规则同时挂载，标签只放规则名 */
@@ -126,6 +129,20 @@ export function usePromptChips({ initialCharacter }: UsePromptChipsOptions): Use
                 ? current.filter((chip) => chip.id !== next.id)
                 : [...current, next],
         )
+    }
+
+    const renamePrompt = (previousId: string, tag: PromptTag): void => {
+        const previousChipId = `prompt:${previousId}`
+        setChips((current) =>
+            current.some((chip) => chip.id === previousChipId)
+                ? current.map((chip) => (chip.id === previousChipId ? promptChipOf(tag) : chip))
+                : current,
+        )
+    }
+
+    const removePrompt = (tagId: string): void => {
+        const chipId = `prompt:${tagId}`
+        setChips((current) => current.filter((chip) => chip.id !== chipId))
     }
 
     const toggleRule = (rule: PromptRule): void => {
@@ -179,6 +196,8 @@ export function usePromptChips({ initialCharacter }: UsePromptChipsOptions): Use
         toggleSetting,
         setCharacter,
         togglePrompt,
+        renamePrompt,
+        removePrompt,
         toggleRule,
         renameRule,
         removeRule,

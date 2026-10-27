@@ -29,6 +29,10 @@ export default defineConfig({
         outDir: resolve(import.meta.dirname, 'dist/webview'),
         emptyOutDir: true,
         target: 'es2022',
+        // 词库已移出打包（改为存储根的 md），主 chunk 剩 React 19 与全部页面业务代码，约 510 KB；
+        // 超过 Vite 默认 500 KB 的提示线。webview 走本地文件加载、无网络传输，成本在解析而非下载，
+        // 因此把阈值抬到 600 KB 保留提示，而不是为此拆出带加载态的路由。
+        chunkSizeWarningLimit: 600,
         // VSCode Webview 环境无法使用运行时 import map，保持单文件产物
         rollupOptions: {
             // 多入口：仪表盘（dashboard/index.html）与工作流 AI 对话（workflow/index.html）均由 Vite 构建
