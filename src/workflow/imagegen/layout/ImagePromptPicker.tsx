@@ -70,12 +70,14 @@ function PromptTagButton({
     onEdit,
     onDelete,
 }: PromptTagButtonProps): JSX.Element {
+    // flex 覆盖底层的 inline-flex：让按钮成为块级，格子高度才等于按钮高度，
+    // 右上角那组编辑/删除按 top/right 内缩定位才不会落到按钮外
     const button = (
         <Button
             size="sm"
             variant={isSelected ? 'secondary' : 'outline'}
             aria-pressed={isSelected}
-            className="w-full"
+            className="flex w-full justify-start"
             onClick={() => {
                 onToggle(tag)
             }}
@@ -92,12 +94,14 @@ function PromptTagButton({
                     <HoverCardTrigger asChild>{button}</HoverCardTrigger>
                     <HoverCardContent side="top" sideOffset={6} className="w-48 text-center space-y-1">
                         <Image src={previewUrl} alt={tag.name} aspect="3/4" size="md" />
-                        <p className="pt-1 line-clamp-3 text-muted-foreground wrap-break-word">{tag.prompt}</p>
+                        <p className="pt-1 line-clamp-3 text-muted-foreground wrap-break-word">{tag.name}</p>
                     </HoverCardContent>
                 </HoverCard>
             )}
-            {/* 未悬停时 pointer-events 关闭：点词条不会误触到右上角的编辑/删除 */}
-            <div className="pointer-events-none absolute -top-1.5 -right-1 flex gap-0.5 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
+            {/* 未悬停时 pointer-events 关闭：点词条不会误触到右上角的编辑/删除；
+                定位必须收在词条按钮内（顶/右各内缩 2px）：负偏移会让按钮悬到词条外，
+                最右列的越界还会把滚动区撑宽，词条区因此冒出横向滚动条 */}
+            <div className="pointer-events-none absolute top-0.5 right-0.5 flex gap-0.5 opacity-0 transition-opacity group-focus-within:pointer-events-auto group-focus-within:opacity-100 group-hover:pointer-events-auto group-hover:opacity-100">
                 <Button
                     size="icon-xs"
                     variant="secondary"
@@ -246,8 +250,6 @@ export function ImagePromptPicker({
                         />
                         <Button
                             size="icon"
-                            variant="ghost"
-                            className="size-7 shrink-0"
                             aria-label="新建词条"
                             tooltip="新建词条"
                             onClick={() => {
