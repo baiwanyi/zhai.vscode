@@ -6,7 +6,7 @@
  * AppFooter 默认右对齐，左侧还需常驻控件时由页面分组后传 justify-between。
  * 关键约束：标题行的两列由组件自身定位，页面按 Title → Action → Description → Menu 书写即可，
  * 顺序颠倒不会错位但会丢掉设计意图；AppAction 只放标题行右侧的少量动作，整行控件一律用 AppMenu，
- * 否则会挤压标题；页面不得再自写 h-full + p-3 外壳与底栏渐变；
+ * 否则会挤压标题；页面不得再自写 h-full + p-3 外壳与顶栏、底栏渐变；
  * 根容器按 h-full 撑满，宿主须给出高度基准，AppContent 的 min-h-0 与 AppFooter 的 shrink-0 是滚动前提。
  */
 import { cn } from 'cn'
@@ -16,6 +16,10 @@ import type { ComponentProps, JSX } from 'react'
 /** 底栏上方的渐变遮罩：滚动内容在按钮下方淡出，只在此处声明一次 */
 const FOOTER_MASK_CLASS =
     'before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent'
+
+/** 顶栏下方的渐变遮罩：方向与底栏相反，从栏底的不透明背景向下淡出，压在滚动内容之上 */
+const HEADER_MASK_CLASS =
+    'before:pointer-events-none before:absolute before:inset-x-0 before:top-full before:z-1 before:h-5 before:bg-linear-to-b before:from-background before:to-transparent'
 
 function AppPage({ className, ...props }: ComponentProps<'div'>): JSX.Element {
     return (
@@ -27,7 +31,11 @@ function AppHeader({ className, ...props }: ComponentProps<'header'>): JSX.Eleme
     return (
         <header
             data-slot="app-header"
-            className={cn('grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pb-2', className)}
+            className={cn(
+                'relative grid shrink-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 pb-2',
+                HEADER_MASK_CLASS,
+                className,
+            )}
             {...props}
         />
     )
@@ -81,7 +89,7 @@ interface AppContentProps extends ComponentProps<'div'> {
 function AppContent({ className, isScrollable = false, children, ...props }: AppContentProps): JSX.Element {
     if (!isScrollable) {
         return (
-            <div data-slot="app-content" className={cn('min-h-0 flex-1', className)} {...props}>
+            <div data-slot="app-content" className={cn('min-h-0 flex-1 px-0.5 py-3', className)} {...props}>
                 {children}
             </div>
         )
@@ -91,7 +99,7 @@ function AppContent({ className, isScrollable = false, children, ...props }: App
         // Radix 会在 viewport 内插入一层 display:table 的内容壳（内联样式，用于量横向溢出），
         // 表格宽度按内容取，长文本会把整页撑宽、再被隐藏的横向滚动条裁掉；这里用 !important 压掉内联 display。
         <ScrollArea className={cn('min-h-0 flex-1 [&_[data-radix-scroll-area-viewport]>div]:block!', className)}>
-            <div data-slot="app-content" className="flex min-h-full w-full flex-col p-0.5" {...props}>
+            <div data-slot="app-content" className="flex min-h-full w-full flex-col px-0.5" {...props}>
                 {children}
             </div>
         </ScrollArea>
