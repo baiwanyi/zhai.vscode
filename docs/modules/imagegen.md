@@ -4,7 +4,7 @@
 **日期**：2026-10-26
 **状态**：图库管理、统一出图（角色卡与其他图片）、作品级参数、封面手动指定、芯片内联、批量删除、角色卡通道对齐、命名冲突统一、出图规则（自定义 md 作为上下文）、上下文与提示词分字段提交、参考图（多模态参考上下文）均已落地
 **宿主**：VSCode 插件 Zhai（宅桌面）
-**存储根**：作品资源在 `{storage.rootPath}/press/{作品名}/`，全局提示词资源在 `{storage.rootPath}/prompt/`（根目录配置见 `common.md` 第 1 节）
+**存储根**：作品资源在 `{storage.rootPath}/press/{作品名}/`，全局提示词资源在「词库目录」下（设置项 `zhai.prompt.rootPath`，留空时为 `{storage.rootPath}/prompt/`，见 `common.md` 第 1 节与 3.4 节）
 
 ---
 
@@ -115,6 +115,8 @@
 
 词库是用户自行维护的本地资料，不随扩展打包：一个一级分类一个 md，文件内以 `# 分类 / ## 分组 / ### 词条 + 原文` 书写，正文多行按空格合并，格式示例见下方「词库 md 格式规范」。词条标识为 `分类::分组::名称`，芯片只带标识，原文由宿主在出图时回查，改正文不必重新进页面；分类以文件名为准，改分类等于换文件。
 
+**目录归属（3.4 节通用）**：词库、预览图与规则三处目录都经 `common/promptRoot` 从设置项 `zhai.prompt.rootPath` 派生——留空时父目录为 `{storage.rootPath}/prompt`，配置后改用该绝对路径，其下同样是 `tags` / `images` / `rules` 三个子目录。配置每次调用即时求值，改完重开面板即生效，不需要重启；目录缺失一律按空库处理，不预先创建。仓库内 `resources/prompt/tags` 保留了一份词库，开发调试时把词库目录指到 `resources/prompt` 即可直读、直改，打包时该目录被 `.vscodeignore` 排除，正式安装版读用户自己的目录。预览图能加载的前提是该父目录在 webview 的 `localResourceRoots` 里，dashboard 与 ai-chat 两处 provider 都已按 `resolvePromptRoot()` 放行。
+
 #### 词库 md 格式规范
 
 ```markdown
@@ -152,9 +154,9 @@ lifeguard
 
 改动 `modules/imagegen/prompt/tagMarkdown.ts` 的解析或序列化逻辑前，先对照本表逐条确认，避免出现「用户手写能用、程序改写过一次就读不出来」的偏差。
 
-预览图先按「分类/分组/名称」镜像查找（如 `prompt/images/人物/基础/女性.webp`），找不到再用 `sha1(分类-分组-名称)` 前 10 位兜底；手工放图走镜像，脚本批量生成走哈希，两种都支持。`preview` 是相对 `prompt/images` 的路径，前端逐段编码后用 `baseUrl + '/' + preview` 拼地址。目录内的文件由用户自行下载或生成，扩展不打包、不下载任何图片。目录为空与目录缺失走同一条判空逻辑（复用 `imageDirScan` 的 `listImageFiles`），不逐个文件试加载。宿主侧实现见 `modules/imagegen/prompt/tagService.ts` 与 `modules/imagegen/promptImageService.ts`，另有命令 `zhai.prompt.openImageDir` 供空态按钮打开图片目录。
+预览图先按「分类/分组/名称」镜像查找（如 `prompt/images/人物/基础/女性.webp`），找不到再用 `sha1(分类-分组-名称)` 前 10 位兜底；手工放图走镜像，脚本批量生成走哈希，两种都支持。`preview` 是相对 `prompt/images` 的路径，前端逐段编码后用 `baseUrl + '/' + preview` 拼地址。目录内的文件由用户自行下载或生成，扩展不打包、不下载任何图片。目录为空与目录缺失走同一条判空逻辑（复用 `imageDirScan` 的 `listImageFiles`），不逐个文件试加载。宿主侧实现见 `modules/imagegen/prompt/tagService.ts` 与 `modules/imagegen/promptImageService.ts`，另有命令 `zhai.prompt.openImageDir` 供空态按钮打开图片目录。目录本身由 `common/promptRoot` 从 `zhai.prompt.rootPath` 派生，可能是用户配置的任意位置。
 
-`docs/tags/` 保留旧词库迁移后的完整结果（16 个分类、5040 条），仅作格式样例与内容基准，不参与运行时，也不随扩展打包；迁移用的临时脚本与源 JSON 已删除，需要重建时按上方格式规范从该目录反向复制即可。
+`resources/prompt/tags/` 是词库迁移后的完整结果（16 个分类、5040 条），开发调试时把 `zhai.prompt.rootPath` 指到 `resources/prompt` 即可当正式词库读写，同时它也是格式样例与内容基准；`resources/prompt/**` 已在 `.vscodeignore` 中排除，不随扩展打包。迁移用的临时脚本与源 JSON 已删除，需要重建时按上方格式规范从该目录反向复制即可。
 
 出图规则是用户手写的 md 约束（如「只用青蓝与灰白」「避免出现文字」），全局共享、与作品无关：前端只持有文件名主干，正文一律由宿主在出图时读盘，规则改文无需重新进页面。文件已被删除的规则静默跳过并记日志，不阻断出图；单次请求最多并入 5 条、合计 3000 字，超出部分丢弃，避免规则挤占画面描述。用户也可以直接往目录里放 md 文件，重新打开命令菜单即可见。
 
@@ -175,9 +177,10 @@ lifeguard
 | `imageLibraryService.ts` | 统一目录列举、删除（带回退值计算，侧车同步清理）、设封面、详情读侧车 |
 | `imageGenerateService.ts` | 统一出图：参数校验、词条标识回查 md、配额、单任务锁、落盘、侧车、用量记账 |
 | `imageDirScan.ts` | 图片目录扫描唯一入口：目录缺失视为空、只收普通文件、扩展名口径（png/jpe?g/webp/gif） |
-| `promptImageService.ts` | 提示词预览图库：`{存储根}/prompt/images` 判空并转 webview 基址，另提供打开该目录的命令实现 |
-| `prompt/ruleService.ts` | 出图规则：`{存储根}/prompt/rules` 列举、新建（不覆盖同名）、打开目录，并提供出图时的正文读取（条数与总长取 `prompt/limits.ts`） |
-| `prompt/tagService.ts` | 词库：`{存储根}/prompt/tags` 按分类分 md 列举、创建、改写、删除与出图取文；预览图按目录镜像与哈希兜底两路解析 |
+| `common/promptRoot.ts` | 提示词资源根：把 `tags` / `images` / `rules` 挂到 `zhai.prompt.rootPath` 之下，留空回落 `{存储根}/prompt`；读写共用同一口径 |
+| `promptImageService.ts` | 提示词预览图库：提示词 `images` 目录判空并转 webview 基址，另提供打开该目录的命令实现 |
+| `prompt/ruleService.ts` | 出图规则：提示词 `rules` 目录列举、新建（不覆盖同名）、打开目录，并提供出图时的正文读取（条数与总长取 `prompt/limits.ts`） |
+| `prompt/tagService.ts` | 词库：提示词 `tags` 目录按分类分 md 列举、创建、改写、删除与出图取文；预览图按目录镜像与哈希兜底两路解析 |
 | `prompt/tagMarkdown.ts` | 词库 md 的纯函数解析与序列化，标识 `分类::分组::名称` 的拼装与拆分 |
 | `referenceImageService.ts` | 参考图：系统文件选择框、扩展名 / 体积 / 文件头校验、路径登记表；出图时只读登记过的路径，读成 `{ bytes, mimeType }` 交给通道 |
 | `imageNaming.ts` | 图片命名唯一入口：三类标识格式、同秒冲突按秒顺延、永不覆盖 |

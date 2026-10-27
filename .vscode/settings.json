@@ -1,4 +1,5 @@
 {
     "editor.formatOnSave": true,
-    "editor.defaultFormatter": "esbenp.prettier-vscode"
+    "editor.defaultFormatter": "esbenp.prettier-vscode",
+    "zhai.prompt.rootPath": "d:/Git/Projects/zhai.vscode/resources/prompt"
 }

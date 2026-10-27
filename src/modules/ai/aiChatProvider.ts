@@ -11,7 +11,7 @@
  * 作品协议只放行工作台需要的读取与打开，仪表盘的作品写操作不得经此入口触达。
  */
 import * as vscode from 'vscode'
-import { resolveStorageRoot } from '@modules/common/config'
+import { resolvePromptRoot, resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import type { SecretsService } from '@modules/common/secrets'
 import { toSafeSegments } from '@modules/common/storagePath'
@@ -102,7 +102,15 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         // 存储根加入资源白名单：角色设定图落盘后需要经 asWebviewUri 供 img 加载
         webviewView.webview.options = {
             enableScripts: true,
-            localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'), resolveStorageRoot()],
+            localResourceRoots: [
+                vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'),
+                resolveStorageRoot(),
+                // 提示词预览图可能落在词库目录设置指定的位置，须在此放行，否则 asWebviewUri 出的地址会被拒
+                resolvePromptRoot(),
+                // 兜底仓库内的词库目录：视图可能在配置就绪前创建，此时 resolvePromptRoot 取到默认值，
+                // 而随后的资源请求按真实配置求值，两者对不上会让预览图一律 401；扩展目录内的这份词库无秘密
+                vscode.Uri.joinPath(this.extensionUri, 'resources', 'prompt'),
+            ],
         }
         void this.renderHtml(webviewView)
         webviewView.webview.onDidReceiveMessage(

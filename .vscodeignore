@@ -11,6 +11,10 @@ vitest.config.mts
 resources/shadcn/**
 resources/models/**
 
+# 提示词资料：仓库内 resources/prompt 只是开发调试用的一份词库（把 zhai.prompt.rootPath 指过来即可直读），
+# 生产环境读用户配置的词库目录，其体量与私有内容都不适合随包
+resources/prompt/**
+
 # 根目录依赖：pnpm 的符号链接布局无法被 vsce 的 npm list 检测处理，故打包时用 --no-dependencies。
 # 需要随包分发的运行时依赖由 dev/scripts/bundle-native.mjs 单独装到 dist/node_modules/ 下，
 # 因此这里只锚定根目录的 node_modules，放行 dist 内的依赖。

@@ -1,24 +1,18 @@
 /**
- * 出图规则服务：列举、读取、新建、改写、删除与出图取文，规则文件落在存储根下 prompt/rules。
- * 复用约定：存储根取 common/config，路径拼装与删除走 common/storagePath，目录与 prompt/images 同级；
- * 「打开目录」沿用 promptImageService 的 revealFileInOS 口径，不另起一套打开方式。
+ * 出图规则服务：列举、读取、新建、改写、删除与出图取文，规则文件落在提示词 rules 目录下。
+ * 复用约定：目录取 common/promptRoot（父目录来自 zhai.prompt.rootPath，留空为存储根下的 prompt），
+ * 删除走 common/storagePath；「打开目录」沿用 promptImageService 的 revealFileInOS 口径，不另起一套打开方式。
  * 关键约束：规则是用户手写资料——新建不覆盖同名文件，标识即文件名主干，改名等价于换标识；
  * 读取与改写都以文件名主干定位，非法名称、缺失文件与改名撞名一律拒绝，不静默落到同名文件上；
  * 删除走回收站优先的 deleteResource，出图时按标识回查正文，缺失或读取失败一律跳过并记日志，不阻断出图；
  * 条数与总长上限统一取同目录 ./limits，本文件不再自带数值，避免两处各写一份。
  */
 import * as vscode from 'vscode'
-import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
-import { buildStorageUri, deleteResource, isPathExisting } from '@modules/common/storagePath'
+import { promptDirUri } from '@modules/common/promptRoot'
+import { deleteResource, isPathExisting } from '@modules/common/storagePath'
 import type { PromptRule, PromptRuleDetail, PromptRuleListResult } from '@shared/types/imagegen'
 import { MAX_RULE_CONTENT, MAX_RULE_NAME, MAX_RULES, MAX_RULE_TOTAL_LENGTH } from './limits'
-
-/** 提示词模块的一级目录：与预览图库共用同一段，规则与图片各居其下 */
-const PROMPT_DIR = 'prompt'
-
-/** 规则子目录 */
-const RULE_DIR = 'rules'
 
 /** 规则文件扩展名：只认 md，目录里的其它文件不参与列举 */
 const RULE_EXTENSION = '.md'
@@ -36,7 +30,7 @@ function hasControlChar(value: string): boolean {
 
 /** 规则目录 Uri：列举、保存与打开目录共用同一口径，避免两处拼路径 */
 function promptRuleDirUri(): vscode.Uri {
-    return buildStorageUri(resolveStorageRoot(), [PROMPT_DIR, RULE_DIR])
+    return promptDirUri('rules')
 }
 
 /**
@@ -59,7 +53,7 @@ function normalizeRuleName(value: unknown): string | null {
 
 /** 规则文件 Uri：名称必须已通过 normalizeRuleName */
 function ruleFileUri(name: string): vscode.Uri {
-    return buildStorageUri(resolveStorageRoot(), [PROMPT_DIR, RULE_DIR, `${name}${RULE_EXTENSION}`])
+    return vscode.Uri.joinPath(promptRuleDirUri(), `${name}${RULE_EXTENSION}`)
 }
 
 /** 名称非法的统一提示：列举之外的入口都按同一句回给前端 */

@@ -76,7 +76,7 @@ import {
 } from '@shared/types/press'
 import type { OpenWorkflowResult } from '@shared/types/workflow'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
-import { resolveStorageRoot } from './config'
+import { resolvePromptRoot, resolveStorageRoot } from './config'
 import {
     aggregateFileStats,
     listFilesByPaths,
@@ -123,7 +123,15 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         // 存储根加入资源白名单：作品封面落盘后需要经 asWebviewUri 供列表缩略图加载
         webviewView.webview.options = {
             enableScripts: true,
-            localResourceRoots: [vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'), resolveStorageRoot()],
+            localResourceRoots: [
+                vscode.Uri.joinPath(this.extensionUri, 'dist', 'webview'),
+                resolveStorageRoot(),
+                // 提示词预览图可能落在词库目录设置指定的位置，须在此放行，否则 asWebviewUri 出的地址会被拒
+                resolvePromptRoot(),
+                // 兜底仓库内的词库目录：视图可能在配置就绪前创建，此时 resolvePromptRoot 取到默认值，
+                // 而随后的资源请求按真实配置求值，两者对不上会让预览图一律 401；扩展目录内的这份词库无秘密
+                vscode.Uri.joinPath(this.extensionUri, 'resources', 'prompt'),
+            ],
         }
         void this.renderHtml(webviewView)
         webviewView.webview.onDidReceiveMessage(

@@ -1,7 +1,8 @@
 /**
  * 配置中心：集中读取 zhai.* 配置项与解析存储路径，避免各模块散落调用 getConfiguration。
  * 复用 VSCode contributes.configuration 全局/工作区两级机制，路径解析遵循 common.md 第 1.5 节存储根约定。
- * 关键约束：文档存储根与索引缓存目录分离——前者是用户资料（Markdown 主存储），后者是可随时重建的 SQLite 缓存。
+ * 关键约束：文档存储根与索引缓存目录分离——前者是用户资料（Markdown 主存储），后者是可随时重建的 SQLite 缓存；
+ * 提示词目录可单独配置，未配置时回落到存储根下的 prompt，配置后读写都跟随新目录。
  */
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -13,10 +14,15 @@ const DEFAULT_STORAGE_DIR = '.zhai'
 /** 索引缓存目录名：全局存储下的固定文件夹名，库文件（index.db / ai.db）位于其中 */
 const CACHE_DIR_NAME = 'zhai.vscode'
 
+/** 提示词目录名：未配置 prompt.rootPath 时占位于存储根之下 */
+const PROMPT_DIR = 'prompt'
+
 /** 插件全部配置项的强类型视图 */
 export interface ZhaiConfig {
     /** 文档保存目录（空 = 用户主目录下的 .zhai） */
     rootPath: string
+    /** 提示词目录（空 = 文档保存目录下的 prompt）：其下分 tags / images / rules */
+    promptRootPath: string
     indexExclude: string[]
     indexDebounceMs: number
     rebuildOnActivate: boolean
@@ -127,6 +133,7 @@ export function getZhaiConfig(): ZhaiConfig {
     const cfg = vscode.workspace.getConfiguration(SECTION)
     return {
         rootPath: cfg.get<string>('storage.rootPath', ''),
+        promptRootPath: cfg.get<string>('prompt.rootPath', ''),
         indexExclude: cfg.get<string[]>('index.exclude', ['**/node_modules/**', '**/.git/**']),
         indexDebounceMs: cfg.get<number>('index.debounceMs', 500),
         rebuildOnActivate: cfg.get<boolean>('index.rebuildOnActivate', true),
@@ -154,26 +161,46 @@ export function getZhaiConfig(): ZhaiConfig {
 }
 
 /**
- * 规范化用户配置的本地路径：盘符路径统一为反斜杠写法。
+ * 规范化用户配置的本地路径：盘符路径统一为「反斜杠 + 小写盘符」写法。
  * 关键约束：Uri.file 仅在第三个字符为反斜杠时才补前导斜杠，正斜杠写法（D:/vault）会产出不带前导
- * 斜杠的相对路径，被 workspace.fs 以「无法解析具有相对文件路径的文件系统提供程序」拒绝。
+ * 斜杠的相对路径，被 workspace.fs 以「无法解析具有相对文件路径的文件系统提供程序」拒绝；
+ * 盘符还须统一小写——同一目录在用户设置与工作区设置里常写成 D: / d: 两种形态，
+ * 而 webview 的 localResourceRoots 与资源地址是逐字符比对的，大小写不一致会让预览图请求被判 401。
  * 非盘符路径（UNC）保持原样，以免反斜杠化后破坏 authority 解析。
  */
 function normalizeRootPath(rootPath: string): string {
     const trimmed = rootPath.trim()
-    return /^[a-zA-Z]:[\\/]/.test(trimmed) ? trimmed.replace(/\//g, '\\') : trimmed
+    if (!/^[a-zA-Z]:[\\/]/.test(trimmed)) {
+        return trimmed
+    }
+    const unified = trimmed.replace(/\//g, '\\')
+    return unified.charAt(0).toLowerCase() + unified.slice(1)
 }
 
 /**
  * 解析文档保存目录 URI：优先取配置值，未配置时回退到用户主目录下的 .zhai。
- * 两条分支都产出本地绝对路径后才交给 Uri.file，避免出现 workspace.fs 拒绝的相对路径。
+ * 两条分支都产出本地绝对路径后才交给 Uri.file，避免出现 workspace.fs 拒绝的相对路径；
+ * 默认分支同样走 normalizeRootPath，保证盘符口径与配置分支一致。
  */
 export function resolveStorageRoot(): vscode.Uri {
     const { rootPath } = getZhaiConfig()
     if (rootPath.trim().length > 0) {
         return vscode.Uri.file(normalizeRootPath(rootPath))
     }
-    return vscode.Uri.file(path.join(os.homedir(), DEFAULT_STORAGE_DIR))
+    return vscode.Uri.file(normalizeRootPath(path.join(os.homedir(), DEFAULT_STORAGE_DIR)))
+}
+
+/**
+ * 解析提示词目录 URI：优先取 prompt.rootPath，未配置时回落到存储根下的 prompt。
+ * 关键约束：其下 tags / images / rules 三个子目录由调用方拼接（见 common/promptRoot），
+ * 改这一处即同时改变读写位置；配置每次调用即时求值，切换目录后无需重启，重开面板即可看到新库。
+ */
+export function resolvePromptRoot(): vscode.Uri {
+    const { promptRootPath } = getZhaiConfig()
+    if (promptRootPath.trim().length > 0) {
+        return vscode.Uri.file(normalizeRootPath(promptRootPath))
+    }
+    return vscode.Uri.joinPath(resolveStorageRoot(), PROMPT_DIR)
 }
 
 /**

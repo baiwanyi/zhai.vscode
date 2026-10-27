@@ -17,6 +17,9 @@ out/
 # 发布包
 *.vsix
 
+# 词库预览图（体积大且与本机绑定，词库 md 仍在版本库内）
+resources/prompt/images/
+
 # 环境变量（密钥禁止入库）
 .env
 .env.*

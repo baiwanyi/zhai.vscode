@@ -1,21 +1,15 @@
 /**
- * 提示词预览图库：定位存储根下的 prompt/images，判空后把它转成 webview 可访问的基址。
- * 复用约定：URL 转换由调用方注入 toWebviewUri，本模块不接触具体 Webview 实例。
+ * 提示词预览图库：定位提示词的 images 目录，判空后把它转成 webview 可访问的基址。
+ * 复用约定：目录取 common/promptRoot（父目录来自 zhai.prompt.rootPath，留空为存储根下的 prompt），
+ * URL 转换由调用方注入 toWebviewUri，本模块不接触具体 Webview 实例。
  * 关键约束：图库全局共享、与作品无关，因此不接受前端传入的任何路径；
  * 图片按「分类/分组/名称」镜像嵌套存放，判空必须下探两层（顶层放哈希图同样算有图），
  * 只看顶层会把整个图库误判为空，前端随之永不渲染预览浮层；
  * 目录为空时 baseUrl 必须为 null，前端据此整体隐藏缩略图，而不是逐张请求失败后再降级。
  */
 import * as vscode from 'vscode'
-import { resolveStorageRoot } from '@modules/common/config'
-import { buildStorageUri } from '@modules/common/storagePath'
+import { promptDirUri } from '@modules/common/promptRoot'
 import type { PromptImageBase } from '@shared/types/imagegen'
-
-/** 提示词模块的一级目录 */
-const PROMPT_DIR = 'prompt'
-
-/** 预览图所在的子目录 */
-const PROMPT_IMAGE_DIR = 'images'
 
 /** 图片扩展名白名单：与 imageDirScan 的列举口径保持一致 */
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|webp|gif)$/i
@@ -25,7 +19,7 @@ const IMAGE_DEPTH = 2
 
 /** 图库目录 Uri：查询基址与「打开目录」命令共用同一口径，避免两处拼路径 */
 export function promptImageDirUri(): vscode.Uri {
-    return buildStorageUri(resolveStorageRoot(), [PROMPT_DIR, PROMPT_IMAGE_DIR])
+    return promptDirUri('images')
 }
 
 /** 打开图库目录：目录不存在时先建出来，再交给系统文件管理器定位 */

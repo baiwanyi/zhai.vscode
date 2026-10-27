@@ -289,8 +289,20 @@
                 }
             },
             {
-                "title": "宅写作：校对",
+                "title": "宅写作：提示词",
                 "order": 5,
+                "properties": {
+                    "zhai.prompt.rootPath": {
+                        "type": "string",
+                        "default": "",
+                        "scope": "machine-overridable",
+                        "markdownDescription": "词库目录：其下分 `tags/`（词条 md）、`images/`（预览图）、`rules/`（出图规则）。留空则使用文档保存目录下的 `prompt`。须填写本地绝对路径，盘符写法 `D:\\路径` 或 `D:/路径` 均可；改动后重新打开提示词面板即可生效"
+                    }
+                }
+            },
+            {
+                "title": "宅写作：校对",
+                "order": 6,
                 "properties": {
                     "zhai.proofread.maxChars": {
                         "type": "number",
@@ -324,7 +336,7 @@
             },
             {
                 "title": "宅写作：隐私与遥测",
-                "order": 6,
+                "order": 7,
                 "properties": {
                     "zhai.telemetry.enabled": {
                         "type": "boolean",

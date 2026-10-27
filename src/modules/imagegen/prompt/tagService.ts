@@ -1,6 +1,7 @@
 /**
- * 词库服务：列举、新建、改写、删除与出图取文，词条按一级分类落在存储根下 prompt/tags 的 md。
- * 复用约定：存储根取 common/config，路径拼装与删除走 common/storagePath，预览图目录取 ../promptImageService；
+ * 词库服务：列举、新建、改写、删除与出图取文，词条按一级分类落在提示词 tags 目录下的 md。
+ * 复用约定：目录取 common/promptRoot（父目录来自 zhai.prompt.rootPath，留空为存储根下的 prompt），
+ * 删除走 common/storagePath，预览图目录取 ../promptImageService；
  * md 的解析与序列化交给 ./tagMarkdown（格式契约见其头注释与 docs 的「词库 md 格式规范」），
  * 标识口径与前端芯片共用同一套「分类::分组::名称」。
  * 关键约束：一个分类一个 md，文件名即分类名，改分类等于换文件；同组重名一律拒绝，改名或换组按整块移动；
@@ -10,19 +11,13 @@
  */
 import { createHash } from 'node:crypto'
 import * as vscode from 'vscode'
-import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
-import { buildStorageUri, deleteResource, isPathExisting } from '@modules/common/storagePath'
+import { promptDirUri } from '@modules/common/promptRoot'
+import { deleteResource, isPathExisting } from '@modules/common/storagePath'
 import type { PromptTag, PromptTagAttribute, PromptTagListResult, PromptTagObject } from '@shared/types/imagegen'
 import { MAX_PROMPT_TAG_LENGTH, MAX_PROMPT_TAGS, MAX_TAG_LABEL } from './limits'
 import { parseTagId, parseTagMarkdown, serializeTagMarkdown, tagIdOf, type TagMarkdownEntry } from './tagMarkdown'
 import { promptImageDirUri } from '../promptImageService'
-
-/** 提示词模块的一级目录：与 rules、images 同级 */
-const PROMPT_DIR = 'prompt'
-
-/** 词库子目录 */
-const TAG_DIR = 'tags'
 
 /** 分类文件扩展名：只认 md，目录里的其它文件不参与列举 */
 const TAG_EXTENSION = '.md'
@@ -52,12 +47,12 @@ function hasControlChar(value: string): boolean {
 
 /** 词库目录 Uri：列举、保存与打开目录共用同一口径 */
 function tagDirUri(): vscode.Uri {
-    return buildStorageUri(resolveStorageRoot(), [PROMPT_DIR, TAG_DIR])
+    return promptDirUri('tags')
 }
 
 /** 分类文件 Uri：分类名必须已通过 normalizeObject */
 function tagFileUri(object: string): vscode.Uri {
-    return buildStorageUri(resolveStorageRoot(), [PROMPT_DIR, TAG_DIR, `${object}${TAG_EXTENSION}`])
+    return vscode.Uri.joinPath(tagDirUri(), `${object}${TAG_EXTENSION}`)
 }
 
 /** 去掉扩展名：分类名与预览图的比对键都按无扩展名口径 */
