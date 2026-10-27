@@ -262,7 +262,10 @@ export function ImagePromptPicker({
     const selectedIds = useMemo(() => new Set(selectedPrompts), [selectedPrompts])
     const searchHint = library.tags.length === 0 ? null : searchHintOf(isSearching, matchedTags.length, tags.length)
 
-    /** 打开即刷新词库与图库基址：用户在目录里手改 md 或放图后，重新打开面板就能看到 */
+    /**
+     * 打开即刷新词库与图库基址：用户在目录里手改 md 或放图后，重新打开面板就能看到。
+     * 词库侧只有首次会显示加载态，之后是静默刷新——面板直接用缓存渲染，回包后再覆盖，不闪空态。
+     */
     const handleOpenChange = (next: boolean): void => {
         setIsOpen(next)
         if (next) {

@@ -2,7 +2,8 @@
  * 带内联芯片的富文本输入区：命令、上下文等「引用意图」以芯片嵌在正文流中，文本紧贴芯片且换行回到行首。
  * 复用约定：芯片取 @components/ui/badge（secondary 变体），移除入口用 @webview/components/Button 的 ghost，
  * 参考图缩略图大图取 ./Image 与 @components/ui/tooltip；DOM 读写与光标操作统一复用 ./richText，
- * 芯片标记同样走 data-chip。
+ * 芯片标记同样走 data-chip；编辑区与占位的排版常量对外导出，AI 对话的自绘芯片输入区共用同一份，
+ * 保证两处底栏输入框的字号、最大高度与滚动条行为不分叉。
  * 关键约束：芯片 contentEditable=false 且不计入正文，正文内容由调用方在发送瞬间拼装；
  * 带 preview 的芯片只在悬停文件名时弹出大图，移除按钮保留自己的提示，两个气泡互不干扰；
  * 外部改值（增强 / 还原 / 清空）会重写文本节点，用户输入不重写以避免光标跳动；
@@ -53,9 +54,15 @@ export interface RichChipInputHandle {
     focus: () => void
 }
 
-/** 默认编辑区排版：调用方传 className 时整块替换，故默认值单独成常量便于比对 */
-const DEFAULT_EDITOR_CLASS =
-    'no-scrollbar max-h-40 min-h-17 overflow-y-auto whitespace-pre-wrap wrap-break-word leading-5 outline-none'
+/**
+ * 编辑区排版：底栏输入框的唯一来源，调用方传 className 时整块替换。
+ * 对外导出给同样自绘芯片的输入区（AI 对话）共用，避免两处底栏在字号、滚动条与最大高度上再次分叉。
+ */
+export const RICH_EDITOR_CLASS =
+    'no-scrollbar max-h-40 min-h-17 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word text-sm leading-5 outline-none'
+
+/** 占位文案排版：与正文同字号，否则提示字比输入字大一号 */
+export const RICH_PLACEHOLDER_CLASS = 'pointer-events-none absolute top-0 left-0 text-sm text-muted-foreground'
 
 interface RichChipInputProps {
     /** 可编辑正文：不含芯片文案 */
@@ -226,7 +233,7 @@ export function RichChipInput({
                 aria-label={placeholder}
                 contentEditable={!disabled}
                 suppressContentEditableWarning
-                className={className ?? DEFAULT_EDITOR_CLASS}
+                className={className ?? RICH_EDITOR_CLASS}
                 onInput={emitChange}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
@@ -285,7 +292,7 @@ export function RichChipInput({
             </div>
             {isPlaceholderVisible ? (
                 // 占位文案只作视觉提示：可访问名已由编辑区的 aria-label 承担，避免读屏念两遍
-                <span aria-hidden="true" className="pointer-events-none absolute top-0 left-0 text-muted-foreground">
+                <span aria-hidden="true" className={RICH_PLACEHOLDER_CLASS}>
                     {placeholder}
                 </span>
             ) : null}

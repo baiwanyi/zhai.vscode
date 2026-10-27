@@ -2,17 +2,20 @@
  * 工作流路由事实：初次拉取宿主快照，随后跟随 workflow 通道广播更新，并维护用户手动覆盖。
  * 复用 @shared/utils/bridge 的请求与状态订阅，收窄逻辑取自 shared/types/workflow。
  * 关键约束：覆盖与生成它的场景指纹绑定，场景事实任一项变化即自动作废；
+ * workflow 通道混走「路由事实」与「页内视图请求」两类载荷，按 kind 分流后再各自落 state；
+ * 视图请求常驻 state 不清空——它按 seq 判新，页面重建后仍能落到宿主指定的分区；
  * 模块选定与清除的失败向上抛出，由页面就地提示，不在本层吞掉；
  * 宿主未就绪（或浏览器预览环境）时保留默认事实，页面照常可用。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { isWorkflowContextState, ROOT_MODULE_KEY } from '@shared/types/workflow'
+import { isWorkflowContextState, isWorkflowViewRequest, ROOT_MODULE_KEY } from '@shared/types/workflow'
 import type {
     OpenWorkflowRequest,
     OpenWorkflowResult,
     ResetWorkflowResult,
     WorkflowContextState,
     WorkflowId,
+    WorkflowViewRequest,
 } from '@shared/types/workflow'
 import { onState, request } from '@shared/utils/bridge'
 import type { WorkflowResolveReason } from '../core/routing'
@@ -34,6 +37,8 @@ interface WorkflowOverride {
 
 export interface WorkflowRoutingState {
     context: WorkflowContextState
+    /** 宿主发起的页内视图请求：页面据 seq 判断是否为新一次跳转，未请求过为 null */
+    viewRequest: WorkflowViewRequest | null
     workflowId: WorkflowId
     /** 解析命中来源，供排查与后续轻提示使用 */
     reason: WorkflowResolveReason
@@ -48,6 +53,7 @@ export interface WorkflowRoutingState {
 
 export function useWorkflowRouting(): WorkflowRoutingState {
     const [context, setContext] = useState<WorkflowContextState>(INITIAL_CONTEXT)
+    const [viewRequest, setViewRequest] = useState<WorkflowViewRequest | null>(null)
     const [isReady, setIsReady] = useState(false)
     const [override, setOverrideState] = useState<WorkflowOverride | null>(null)
 
@@ -69,10 +75,17 @@ export function useWorkflowRouting(): WorkflowRoutingState {
         }
         void load()
         const unsubscribe = onState((message) => {
-            if (message.channel !== 'workflow' || !isWorkflowContextState(message.payload)) {
+            if (message.channel !== 'workflow') {
                 return
             }
-            setContext(message.payload)
+            // 同一通道混走两类载荷：页内视图请求是一次性意图，路由事实是当前所在；先按 kind 分流
+            if (isWorkflowViewRequest(message.payload)) {
+                setViewRequest(message.payload)
+                return
+            }
+            if (isWorkflowContextState(message.payload)) {
+                setContext(message.payload)
+            }
         })
         return (): void => {
             isDisposed = true
@@ -103,6 +116,7 @@ export function useWorkflowRouting(): WorkflowRoutingState {
 
     return {
         context,
+        viewRequest,
         workflowId: resolved.workflowId,
         reason: resolved.reason,
         isReady,

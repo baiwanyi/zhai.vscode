@@ -30,6 +30,18 @@ export interface WorkflowContextState {
     projectDir: string | null
 }
 
+/**
+ * 页内视图请求：宿主在一次操作后要求面板切到指定分区（如「添加到宅对话」后切到对话页）。
+ * 与路由事实分开下发：事实描述「当前在哪」，视图请求表达「去哪」，混在一起会让一次性意图被持久化。
+ * seq 单调递增，保证同一视图被连续请求时前端仍识别为新意图，不受「值未变化」的抑制。
+ */
+export interface WorkflowViewRequest {
+    kind: 'view'
+    /** 页内视图标识：目前与 press 的分区名同口径 */
+    view: string
+    seq: number
+}
+
 /** workflow/open 请求：模块入口携带的模块键 */
 export interface OpenWorkflowRequest {
     /** 目标模块键，形如 press / wechat */
@@ -57,6 +69,24 @@ export function isWorkflowContextState(payload: unknown): payload is WorkflowCon
     const isSelected = candidate.selectedModule === null || typeof candidate.selectedModule === 'string'
     const isProject = candidate.projectDir === null || typeof candidate.projectDir === 'string'
     return isScene && isModule && isSelected && isProject
+}
+
+/**
+ * 判断是否为合法的页内视图请求（类型收窄辅助）。
+ * 约束：视图标识沿用模块键的字符白名单，从源头排除路径片段与任意字符串。
+ */
+export function isWorkflowViewRequest(payload: unknown): payload is WorkflowViewRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { kind?: unknown; view?: unknown; seq?: unknown }
+    return (
+        candidate.kind === 'view' &&
+        typeof candidate.view === 'string' &&
+        /^[a-z][a-z0-9-]*$/.test(candidate.view) &&
+        typeof candidate.seq === 'number' &&
+        Number.isInteger(candidate.seq)
+    )
 }
 
 /**

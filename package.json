@@ -221,11 +221,6 @@
                         "default": 500000,
                         "minimum": 0,
                         "description": "每日 Token 预算，达到阈值后提示并阻断调用"
-                    },
-                    "zhai.ai.autoFocusOnContext": {
-                        "type": "boolean",
-                        "default": true,
-                        "description": "编辑器右键「添加到宅对话」后自动聚焦 AI 对话面板"
                     }
                 }
             },

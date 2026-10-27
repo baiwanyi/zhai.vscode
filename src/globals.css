@@ -339,6 +339,75 @@ body.vscode-high-contrast-light {
     }
 }
 
+/*
+ * 生图输入卡片的生成态光晕：conic 旋转描边 + 模糊背光呼吸。
+ * @property 把首角注册成可插值的角度变量，conic-gradient 才可能逐帧推进，光边才会绕卡流动；
+ * 描边层用 padding 决定线宽，再用两层 mask 的 content-box 反选把中间挖空，只留边框那一圈——
+ * 圆角处由背景被 border-radius 裁剪自然收口，不会残留直角色块，故线宽与外扩必须相等（-inset-px ↔ padding 1px）。
+ * 背光层不挖空、也不旋转：整块交给 blur 打散，只做透明度呼吸，省掉一层渐变的逐帧重绘。
+ * 关键约束：动画只挂在这两个装饰层上，卡片与输入内容不参与；非生成态由父级 [data-glow='on'] 之外暂停动画，
+ * 隐藏后不再逐帧重算渐变；prefers-reduced-motion 下由文件末尾规则压停，元素回落到基值透明度，仍是静态柔光而非消失。
+ */
+@property --composer-glow-angle {
+    syntax: '<angle>';
+    initial-value: 0deg;
+    inherits: false;
+}
+
+@keyframes composer-glow-spin {
+    to {
+        --composer-glow-angle: 360deg;
+    }
+}
+
+@keyframes composer-glow-breathe {
+    0%,
+    100% {
+        opacity: 0.5;
+    }
+    50% {
+        opacity: 1;
+    }
+}
+
+/* 共用一段四色 conic：粉 → 紫 → 蓝 → 紫 → 粉，首尾同亮度闭合，旋转时不出现断层黑边 */
+.composer-glow-edge,
+.composer-glow-halo {
+    background: conic-gradient(
+        from var(--composer-glow-angle),
+        rgb(244 114 182 / 25%) 0deg,
+        rgb(244 114 182 / 95%) 60deg,
+        rgb(168 85 247 / 90%) 130deg,
+        rgb(56 189 248 / 55%) 200deg,
+        rgb(168 85 247 / 90%) 270deg,
+        rgb(244 114 182 / 25%) 330deg
+    );
+}
+
+/* 描边：线宽即 padding，反选掉 content-box 后只剩边框那一圈 */
+.composer-glow-edge {
+    padding: 1px;
+    -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    mask-composite: exclude;
+    animation: composer-glow-spin 5s linear infinite paused;
+}
+
+/* 背光：只呼吸不旋转，大半径 blur 把整块 conic 摊成柔雾 */
+.composer-glow-halo {
+    animation: composer-glow-breathe 3.4s ease-in-out infinite paused;
+}
+
+[data-glow='on'] .composer-glow-edge,
+[data-glow='on'] .composer-glow-halo {
+    animation-play-state: running;
+}
+
 /* 尊重系统 / VSCode 的「减少动效」偏好 */
 @media (prefers-reduced-motion: reduce) {
     *,

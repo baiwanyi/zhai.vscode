@@ -20,11 +20,8 @@ import {
 } from 'lucide-react'
 import { TooltipProvider } from '@components/ui/tooltip'
 import { WorkflowPressNavItem } from './WorkflowPressNavItem'
+import type { WorkflowPressSection } from './pressSections'
 import type { JSX, ReactNode } from 'react'
-
-/** 分区标识：与分区内容一一对应；部分分区（如流程步骤跳转的章节写作）没有独立导航入口 */
-export type WorkflowPressSection =
-    'chapter' | 'outline' | 'character' | 'setting' | 'naming' | 'image' | 'proofread' | 'snapshot' | 'chat' | 'usage'
 
 interface WorkflowPressNavEntry {
     id: WorkflowPressSection

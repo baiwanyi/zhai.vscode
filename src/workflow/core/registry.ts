@@ -4,7 +4,7 @@
  * 注册表只引用模块页面，不直接引用 aichat 目录。
  * 关键约束：新增工作流须同时登记此处与 ./routing 的映射表，否则解析结果无法渲染。
  */
-import type { WorkflowContextState, WorkflowId } from '@shared/types/workflow'
+import type { WorkflowContextState, WorkflowId, WorkflowViewRequest } from '@shared/types/workflow'
 import type { JSX } from 'react'
 import { WorkflowHome } from '../layout/WorkflowHome'
 import { WorkflowNote } from '../layout/WorkflowNote'
@@ -15,6 +15,8 @@ import { WorkflowWechat } from '../layout/WorkflowWechat'
 /** 工作流组件入参：路由事实由宿主下发，动作回调经宿主层落库并广播 */
 export interface WorkflowRenderProps {
     context: WorkflowContextState
+    /** 宿主发起的页内视图请求：未请求过为 null，页面按 seq 判断是否为新一次意图 */
+    viewRequest: WorkflowViewRequest | null
     /** 选定模块：由宿主持久保存并广播新事实 */
     onOpenModule: (module: string) => Promise<void>
     /** 清除模块选择：回到初始页 */

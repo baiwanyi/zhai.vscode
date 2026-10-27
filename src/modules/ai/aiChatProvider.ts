@@ -26,7 +26,7 @@ import type { AiUsageQuery } from '@shared/types/aiUsage'
 import { isAiUsageModule, isAiUsageRange } from '@shared/types/aiUsage'
 import type { HostToWebviewMessage, StreamMessage, ToastPayload } from '@shared/types/messages'
 import { isRequestMessage } from '@shared/types/messages'
-import type { OpenWorkflowResult, ResetWorkflowResult } from '@shared/types/workflow'
+import type { OpenWorkflowResult, ResetWorkflowResult, WorkflowViewRequest } from '@shared/types/workflow'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
 import { getSelectedCodebuddyModel, listCodebuddyModels, setSelectedCodebuddyModel } from './providers/codebuddyModels'
 import type { AiChatService } from './chatService'
@@ -94,6 +94,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             service.onContextChanged(() => this.broadcastContextChanged()),
             service.onWriteStateChanged(() => this.broadcastWriteStateChanged()),
             workflowRouter.onChanged(() => this.broadcastWorkflowChanged()),
+            workflowRouter.onViewRequested((request) => this.broadcastWorkflowView(request)),
             toast.onToast((payload) => this.broadcastToast(payload)),
         )
     }
@@ -340,6 +341,16 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         const context = this.workflowRouter.getContext()
         for (const view of this.views) {
             this.post(view, { type: 'state', channel: 'workflow', payload: context })
+        }
+    }
+
+    /**
+     * 广播页内视图请求：宿主发起的跳转（如「添加到宅对话」后切到对话分区）。
+     * 与路由事实同走 workflow 通道，但载荷形状不同，前端按 kind 分流，不会污染路由状态。
+     */
+    private broadcastWorkflowView(request: WorkflowViewRequest): void {
+        for (const view of this.views) {
+            this.post(view, { type: 'state', channel: 'workflow', payload: request })
         }
     }
 

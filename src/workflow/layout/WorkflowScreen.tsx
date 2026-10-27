@@ -15,7 +15,7 @@ import { WORKFLOWS } from '../core/registry'
 import { useWorkflowRouting } from '../hooks/useWorkflowRouting'
 
 export function WorkflowScreen(): JSX.Element {
-    const { context, workflowId, isReady, openModule, resetModule, setOverride } = useWorkflowRouting()
+    const { context, viewRequest, workflowId, isReady, openModule, resetModule, setOverride } = useWorkflowRouting()
     const { component: Page } = WORKFLOWS[workflowId]
     const theme = useVscodeTheme()
     useHostToast()
@@ -31,7 +31,13 @@ export function WorkflowScreen(): JSX.Element {
 
     return (
         <div className="h-screen">
-            <Page context={context} onOpenModule={openModule} onResetModule={resetModule} onOverride={setOverride} />
+            <Page
+                context={context}
+                viewRequest={viewRequest}
+                onOpenModule={openModule}
+                onResetModule={resetModule}
+                onOverride={setOverride}
+            />
             <Toaster theme={theme} />
         </div>
     )

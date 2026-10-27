@@ -11,7 +11,7 @@ import * as vscode from 'vscode'
 import { listFilesByPaths } from '@modules/common/db/statsRepository'
 import type { IndexService } from '@modules/common/indexer/indexService'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
-import type { WorkflowContextState, WorkflowSceneKind } from '@shared/types/workflow'
+import type { WorkflowContextState, WorkflowSceneKind, WorkflowViewRequest } from '@shared/types/workflow'
 import { NOTES_MODULE_KEY, ROOT_MODULE_KEY } from '@shared/types/workflow'
 import type Database from 'better-sqlite3'
 
@@ -25,6 +25,12 @@ export class WorkflowRouter implements vscode.Disposable {
     private readonly emitter = new vscode.EventEmitter<void>()
     /** 路由事实变更事件：面板据此重新拉取事实并换页 */
     public readonly onChanged: vscode.Event<void> = this.emitter.event
+
+    private readonly viewEmitter = new vscode.EventEmitter<WorkflowViewRequest>()
+    /** 页内视图请求事件：宿主发起的一次性跳转（如切到对话分区），不属于路由事实 */
+    public readonly onViewRequested: vscode.Event<WorkflowViewRequest> = this.viewEmitter.event
+    /** 视图请求序号：同一视图连续请求也递增，前端据此识别新意图 */
+    private viewSeq = 0
 
     /** 用户选定的模块：持久保存，未选定为 null（面板展示初始页） */
     private selectedModule: string | null = null
@@ -51,6 +57,16 @@ export class WorkflowRouter implements vscode.Disposable {
     public selectModule(module: string): void {
         this.selectedModule = module
         this.refresh()
+    }
+
+    /**
+     * 请求面板切到页内视图：只发一次性意图，不写入路由事实。
+     * 关键约束：序号自增后随事件下发，前端据此判断是否为新一次请求，
+     * 因而不依赖「视图值是否变化」，连续两次跳到同一分区也能生效。
+     */
+    public requestView(view: string): void {
+        this.viewSeq += 1
+        this.viewEmitter.fire({ kind: 'view', view, seq: this.viewSeq })
     }
 
     /** 清除模块选定并立即广播：面板据此回到初始页 */
@@ -114,6 +130,7 @@ export class WorkflowRouter implements vscode.Disposable {
     public dispose(): void {
         this.clearDebounce()
         this.emitter.dispose()
+        this.viewEmitter.dispose()
     }
 
     private scheduleRefresh(): void {

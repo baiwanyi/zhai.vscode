@@ -1,8 +1,10 @@
 /**
  * AI 对话富文本输入区：命令与上下文芯片以内联节点嵌在正文流中，文本紧贴芯片且换行回到行首。
  * 复用同目录 commandIcons 的命令图标、../utils 的 describeContext / toContextFileName；
- * 芯片复用 ui/badge（secondary 变体），芯片内的移除入口复用 ui/button 的 ghost/icon-xs 尺寸。
+ * 芯片复用 ui/badge（secondary 变体），芯片内的移除入口复用 ui/button 的 ghost/icon-xs 尺寸；
+ * 编辑区与占位的排版类取 @webview/components/RichChipInput 导出的常量，与生图输入卡片共用同一份。
  * 关键约束：芯片 `contentEditable=false` 且不计入文本值，指令模板由页面在发送时拼装；
+ * 上下文芯片悬停文件名时以 tooltip 给出相对工作区的路径（不含盘符与绝对前缀），悬浮只包文件名、不包移除按钮；
  * 外部改值（增强 / 还原 / 清空）会重写文本节点，用户输入不重写以避免光标跳动；
  * 命令芯片后保留一个空格文本节点作为光标占位（全空白不计入正文，外部空值不覆盖该占位）；
  * Enter 发送、Shift+Enter 换行，中文输入法组词期间不拦截 Enter，粘贴统一降级为纯文本。
@@ -10,8 +12,10 @@
 import { FileText, TextSelect, X } from 'lucide-react'
 import { useCallback, useEffect, useRef } from 'react'
 import { Badge } from '@components/ui/badge'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { AiContextRef } from '@shared/types/aiChat'
 import { Button } from '@webview/components/Button'
+import { RICH_EDITOR_CLASS, RICH_PLACEHOLDER_CLASS } from '@webview/components/RichChipInput'
 import {
     findAdjacentChip,
     insertPlainText,
@@ -170,7 +174,7 @@ export function AiChatRichInput({
                 aria-label={placeholder}
                 contentEditable={!disabled}
                 suppressContentEditableWarning
-                className="no-scrollbar max-h-40 min-h-17 overflow-y-auto whitespace-pre-wrap wrap-break-word leading-5 outline-none"
+                className={RICH_EDITOR_CLASS}
                 onInput={emitChange}
                 onKeyDown={handleKeyDown}
                 onPaste={handlePaste}
@@ -187,12 +191,12 @@ export function AiChatRichInput({
                         variant="secondary"
                         data-chip="command"
                         contentEditable={false}
-                        className="mr-0.5 h-5 max-w-40 align-top"
+                        className="mr-1 h-5 max-w-40 align-top"
                     >
                         {CommandIcon === null ? null : (
                             <CommandIcon className="size-3 shrink-0 text-muted-foreground" />
                         )}
-                        <span className="min-w-0 truncate">{command.title}</span>
+                        <span className="min-w-0 truncate text-sm">{command.title}</span>
                         <Button
                             variant="ghost"
                             size="icon-xs"
@@ -217,15 +221,24 @@ export function AiChatRichInput({
                         data-chip-id={context.id}
                         contentEditable={false}
                         className="mr-1 h-5 max-w-56 align-top"
-                        title={context.displayPath}
                     >
                         {context.kind === 'selection' ? (
                             <TextSelect className="size-3 shrink-0 text-muted-foreground" />
                         ) : (
                             <FileText className="size-3 shrink-0 text-muted-foreground" />
                         )}
-                        <span className="min-w-0 truncate">{toContextFileName(context)}</span>
-                        <span className="shrink-0 text-muted-foreground">{describeContext(context)}</span>
+                        {/* 悬浮只包文件名：移除按钮自带提示，两个气泡互不干扰 */}
+                        <Tooltip>
+                            <TooltipTrigger asChild>
+                                <span className="min-w-0 cursor-help truncate text-sm">
+                                    {toContextFileName(context)}
+                                </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-72">
+                                <span className="break-all">{context.displayPath}</span>
+                            </TooltipContent>
+                        </Tooltip>
+                        <span className="shrink-0 text-muted-foreground text-sm">{describeContext(context)}</span>
                         <Button
                             variant="ghost"
                             size="icon-xs"
@@ -243,9 +256,7 @@ export function AiChatRichInput({
                     </Badge>
                 ))}
             </div>
-            {isPlaceholderVisible ? (
-                <span className="pointer-events-none absolute top-0 left-0 text-muted-foreground">{placeholder}</span>
-            ) : null}
+            {isPlaceholderVisible ? <span className={RICH_PLACEHOLDER_CLASS}>{placeholder}</span> : null}
         </div>
     )
 }

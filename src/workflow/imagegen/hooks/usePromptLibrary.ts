@@ -2,10 +2,14 @@
  * 词库钩子：列举词条与分组，并提供新建、改写、删除与打开目录。
  * 复用约定：协议走 pressAi/listPromptTags、savePromptTag、updatePromptTag、deletePromptTag、openPromptTagDir，
  * 类型取 @shared/types/imagegen；请求经 @shared/utils/bridge，失败统一 toastError。
- * 关键约束：不自动加载，由面板打开时调 reload；写操作一律以宿主回传的整表为准，
- * 不在本地拼接，避免与 md 的实际内容分叉；改写成功后返回新条目，供调用方同步已挂芯片的标识。
+ * 关键约束：不自动加载，由面板打开时调 reload；只有首次加载才进入 isLoading（面板显示加载态），
+ * 之后每次打开只做静默刷新——旧数据立即呈现，回包后再整体覆盖，用户不会再看到「重新加载」；
+ * 静默刷新失败时保留已有词库，不退回空态也不弹错，避免一次读盘抖动清掉用户正在浏览的面板；
+ * 同一时刻只允许一条列举请求在途，连续开关面板复用同一次结果；
+ * 写操作一律以宿主回传的整表为准，不在本地拼接，避免与 md 的实际内容分叉；
+ * 改写成功后返回新条目，供调用方同步已挂芯片的标识。
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type {
     PromptTag,
     PromptTagListResult,
@@ -52,17 +56,40 @@ export function usePromptLibrary(): UsePromptLibraryResult {
     const [data, setData] = useState<PromptTagListResult>(EMPTY)
     const [isLoading, setIsLoading] = useState(false)
     const [isSaving, setIsSaving] = useState(false)
+    /** 是否成功列举过一次：决定这次打开是「加载」还是「静默刷新」 */
+    const hasLoadedRef = useRef(false)
+    /** 在途的列举请求：并发的 reload 复用同一个 promise，不重复扫盘 */
+    const inFlightRef = useRef<Promise<void> | null>(null)
 
-    const reload = useCallback(async (): Promise<void> => {
-        setIsLoading(true)
-        try {
-            setData(await request<PromptTagListResult>('pressAi/listPromptTags'))
-        } catch (cause) {
-            setData(EMPTY)
-            toastError(cause)
-        } finally {
-            setIsLoading(false)
+    const reload = useCallback((): Promise<void> => {
+        const running = inFlightRef.current
+        if (running !== null) {
+            return running
         }
+        const isInitial = !hasLoadedRef.current
+        if (isInitial) {
+            setIsLoading(true)
+        }
+        const task = request<PromptTagListResult>('pressAi/listPromptTags')
+            .then((next) => {
+                setData(next)
+                hasLoadedRef.current = true
+            })
+            .catch((cause: unknown) => {
+                // 已有词库时静默失败：保留旧数据，不为一次读盘抖动把面板退回空态
+                if (isInitial) {
+                    setData(EMPTY)
+                    toastError(cause)
+                }
+            })
+            .finally(() => {
+                if (isInitial) {
+                    setIsLoading(false)
+                }
+                inFlightRef.current = null
+            })
+        inFlightRef.current = task
+        return task
     }, [])
 
     const save = useCallback(async (input: PromptTagSaveRequest): Promise<PromptTag | null> => {

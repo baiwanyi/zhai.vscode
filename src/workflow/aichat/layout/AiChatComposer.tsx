@@ -1,7 +1,9 @@
 /**
  * AI 对话底部区域：输入卡片 + 底部提示行，纵向布局；命令与上下文引用统一以芯片呈现在输入区内。
  * 组合同目录 AiChatPromptInput / AiChatStatusHint，交互全部经回调上抛给页面 hooks。
- * 关键约束：模式、用量、已选命令、上下文与写回目标均由此层透传，输入卡片不直接读取会话状态。
+ * 关键约束：模式、用量、已选命令、上下文与写回目标均由此层透传，输入卡片不直接读取会话状态；
+ * 本层挂载在页面的 AppFooter 内，横向内边距由 AppPage 统一提供，此处不再自带 px，
+ * 否则会与骨架的 p-3 叠加成双重缩进。
  */
 import type { AiContextRef, AiConversationMode, AiModelChoices } from '@shared/types/aiChat'
 import { AiChatPromptInput } from './AiChatPromptInput'
@@ -71,7 +73,7 @@ export function AiChatComposer({
     onModeChange,
 }: AiChatComposerProps): JSX.Element {
     return (
-        <footer className="flex flex-col gap-2 px-3">
+        <div className="flex flex-col flex-1 gap-2">
             <AiChatPromptInput
                 contexts={contexts}
                 input={input}
@@ -99,6 +101,6 @@ export function AiChatComposer({
                 onStop={onStop}
             />
             <AiChatStatusHint hint={hint} isGenerating={isGenerating} />
-        </footer>
+        </div>
     )
 }

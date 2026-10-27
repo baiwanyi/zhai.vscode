@@ -31,8 +31,6 @@ export interface ZhaiConfig {
     aiCodebuddySite: CodebuddySite
     aiMaxContextTokens: number
     aiDailyTokenBudget: number
-    /** 添加上下文引用后是否自动聚焦 AI 对话面板 */
-    aiAutoFocusOnContext: boolean
     /** 取名 AI 生成每日次数上限（本地生成不限） */
     namingAiDailyLimit: number
     /** 写作管理 AI 生成每日次数上限（人物外貌等一次性生成） */
@@ -141,7 +139,6 @@ export function getZhaiConfig(): ZhaiConfig {
         aiCodebuddySite: readCodebuddySite(cfg.get<string>('ai.codebuddySite', 'cn')),
         aiMaxContextTokens: cfg.get<number>('ai.maxContextTokens', 8000),
         aiDailyTokenBudget: cfg.get<number>('ai.dailyTokenBudget', 500000),
-        aiAutoFocusOnContext: cfg.get<boolean>('ai.autoFocusOnContext', true),
         namingAiDailyLimit: cfg.get<number>('naming.aiDailyLimit', 20),
         pressAiDailyLimit: cfg.get<number>('press.aiDailyLimit', 20),
         pressImportAiDailyLimit: cfg.get<number>('press.importAiDailyLimit', 0),

@@ -8,8 +8,9 @@
  */
 import { useCallback, useState } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
+import { isWorkflowPressSection } from './pressSections'
 import { WorkflowPressNav } from './WorkflowPressNav'
-import type { WorkflowPressSection } from './WorkflowPressNav'
+import type { WorkflowPressSection } from './pressSections'
 import type { WorkflowRenderProps } from '../core/registry'
 import type { JSX } from 'react'
 import { usePressMutations } from '../press/hooks/usePressMutations'
@@ -29,8 +30,22 @@ const STEP_SECTIONS: Readonly<Record<number, WorkflowPressSection>> = {
     5: 'chapter',
 }
 
-export function WorkflowPress({ context }: WorkflowRenderProps): JSX.Element {
+export function WorkflowPress({ context, viewRequest }: WorkflowRenderProps): JSX.Element {
     const [activeSection, setActiveSection] = useState<WorkflowPressSection>(DEFAULT_SECTION)
+    const [appliedViewSeq, setAppliedViewSeq] = useState<number | null>(null)
+
+    /**
+     * 宿主发起的页内跳转（如「添加到宅对话」后落到对话分区）：在渲染期对齐，不放进 effect，
+     * 否则要多一轮渲染才能看到目标分区。按序号比对，同一分区被连续请求时也会重新落位；
+     * 不属于本页的视图标识只记序号、不切分区，宿主新增页面时不会把这里切到空白。
+     */
+    if (viewRequest !== null && viewRequest.seq !== appliedViewSeq) {
+        setAppliedViewSeq(viewRequest.seq)
+        if (isWorkflowPressSection(viewRequest.view)) {
+            setActiveSection(viewRequest.view)
+        }
+    }
+
     const workspaceState = usePressWorkspace(context.projectDir)
     const mutations = usePressMutations({
         getWorkspace: workspaceState.getWorkspace,

@@ -1,8 +1,9 @@
 /**
  * AI 命令注册：面板跳转、CodeBuddy 登录、以及「添加到宅对话」上下文入口。
  * 设计源：docs/modules/ai-chat.md 第 7.1 节命令清单。
- * 复用约定：引用生成与预算校验统一委托 modules/ai/contextRefs，面板跳转携带的模块意图交由 WorkflowRouter 承接；
- * 操作反馈统一经 notify 走 Webview 的 sonner，无视图可显示时回退 VS Code 原生提示。
+ * 复用约定：引用生成与预算校验统一委托 modules/ai/contextRefs；面板跳转走 WorkflowRouter——
+ * 模块选定决定显示哪个工作流页，页内视图请求（requestView）决定页内停在哪个分区；
+ * 失败提示统一经 notify 走 Webview 的 sonner，无视图可显示时回退 VS Code 原生提示。
  * 约束：全部 Disposable 挂载到 context.subscriptions，保证停用后释放（AC-10）；密钥与引用原文不落日志。
  * 模型选择不在命令面板，改由 AI 面板输入区的模型菜单（ai/models / ai/selectModel）承接。
  */
@@ -10,6 +11,7 @@ import { unstable_v2_authenticate } from '@tencent-ai/agent-sdk'
 import * as vscode from 'vscode'
 import { getZhaiConfig } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import type { ToastService } from '@modules/common/toastService'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
 import { createContextRefs, MAX_CONTEXT_COUNT } from './contextRefs'
@@ -42,7 +44,7 @@ export function registerAiCommands(
         void vscode.commands.executeCommand('zhai.workflow.focus')
     })
 
-    register('zhai.ai.addToChat', () => addEditorContextToChat(service, toast))
+    register('zhai.ai.addToChat', () => addEditorContextToChat(service, toast, router))
 
     // CodeBuddy 通道：SDK 自带 CLI，用户只需完成一次浏览器登录，凭证由 CLI 按站点分别缓存
     register('zhai.ai.loginCodebuddy', async () => {
@@ -96,9 +98,14 @@ export function registerAiCommands(
 
 /**
  * 「添加到宅对话」：把编辑器选区（无选区则整篇）作为上下文加入 AI 对话。
- * 引用原文不在此刻读取（发送时才取最新内容），此处只做生成、去重与用户提示。
+ * 引用原文不在此刻读取（发送时才取最新内容），此处只做生成、去重与去向跳转。
+ * 关键约束：成功不弹提示——面板里的上下文芯片就是回执；失败与拒绝仍要提示，否则用户不知道为何没加上。
  */
-async function addEditorContextToChat(service: AiChatService, toast: ToastService): Promise<void> {
+async function addEditorContextToChat(
+    service: AiChatService,
+    toast: ToastService,
+    router: WorkflowRouter,
+): Promise<void> {
     const editor = vscode.window.activeTextEditor
     if (!editor) {
         toast.notifyOrShow('warning', '宅写作：请先在编辑器中打开需要引用的文件')
@@ -127,17 +134,17 @@ async function addEditorContextToChat(service: AiChatService, toast: ToastServic
         extras.push(`已达 ${MAX_CONTEXT_COUNT} 项上限`)
     }
     const suffix = extras.length > 0 ? `（${extras.join('，')}）` : ''
-    logger.info(`已添加上下文引用：${labels}`)
-    await notifyContextAdded(toast, labels, suffix)
+    logger.info(`已添加上下文引用：${labels}${suffix}`)
+    await focusChatSection(router)
 }
 
 /**
- * 添加成功的反馈：统一经 sonner 提示；配置开启自动聚焦时再切到面板，
- * 让用户立刻看到上下文清单（提示本身不再依赖面板是否已打开）。
+ * 添加成功后的去向：无论当前停在哪个页面，都切到写作管理模块的对话分区并聚焦面板。
+ * 关键约束：模块选定与页内视图是两件事——前者决定显示哪个工作流页，后者决定页内停在哪个分区；
+ * 已在该模块时模块选定不会产生新事实，必须靠视图请求才能从设定、大纲等分区切回对话。
  */
-async function notifyContextAdded(toast: ToastService, labels: string, suffix: string): Promise<void> {
-    toast.notifyOrShow('success', `宅写作：已添加到宅对话 ${labels}${suffix}`)
-    if (getZhaiConfig().aiAutoFocusOnContext) {
-        await vscode.commands.executeCommand('zhai.workflow.focus')
-    }
+async function focusChatSection(router: WorkflowRouter): Promise<void> {
+    router.selectModule(PRESS_MODULE_DIR)
+    router.requestView('chat')
+    await vscode.commands.executeCommand('zhai.workflow.focus')
 }

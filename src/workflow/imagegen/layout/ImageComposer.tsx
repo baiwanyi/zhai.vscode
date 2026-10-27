@@ -11,8 +11,11 @@
  * 生成意图只有两种：挂着角色芯片即角色图，否则是普通图片；生成不碰作品封面，封面在图库里手动指定；
  * 比例与画风各只落一份 state，手动改动经 onSettingsChange 上报，正文里的比例字面量只自动切换
  * 本次会话的选择、不写回作品配置。
+ * 生成中外扩一圈光晕（conic 描边 + 模糊背光，样式在 globals.css 的 composer-glow 段），
+ * 它必须挂在卡片外侧的兄弟层上——卡片底色不透明，移进卡片内部就会被盖住，装饰层不得承载任何状态或交互；
  * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
  */
+import { cn } from 'cn'
 import { BookText, ContactRound, PencilRuler, WandSparkles } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
@@ -313,51 +316,70 @@ function ComposerBody({
     })
 
     return (
-        <div className="flex flex-col gap-0.5 rounded-2xl bg-composer p-1.5">
-            <ImageComposerToolbar
-                isSettingActive={settingChip !== null}
-                isReferenceFull={referenceChips.length >= MAX_REFERENCE_IMAGES}
-                characters={characters}
-                activeCharacterId={activeCharacter?.id ?? null}
-                selectedPrompts={promptChips.map((chip) => chip.value)}
-                selectedRules={ruleChips.map((chip) => chip.value)}
-                onToggleSetting={toggleSetting}
-                onSelectCharacter={setCharacter}
-                onTogglePrompt={togglePrompt}
-                onRenamePrompt={renamePrompt}
-                onRemovePrompt={removePrompt}
-                onToggleRule={toggleRule}
-                onRenameRule={renameRule}
-                onRemoveRule={removeRule}
-                onPickReference={addReference}
-            />
+        // isolate 给光晕划定层叠边界：-z-10 只在卡片之下，不会沉到页面背景后面
+        <div className="relative isolate">
+            {/*
+                生成态光晕：纯装饰层，pointer-events-none 且 aria-hidden，不参与布局与交互。
+                背光在外、描边在内，二者尺寸与圆角对齐卡片；隐藏时只切透明度。
+            */}
+            <div
+                aria-hidden
+                data-glow={isGenerating ? 'on' : 'off'}
+                className={cn(
+                    'pointer-events-none absolute inset-0 -z-10 transition-opacity duration-500',
+                    isGenerating ? 'opacity-100' : 'opacity-0',
+                )}
+            >
+                <div className="composer-glow-halo absolute -inset-0.5 rounded-2xl opacity-60 blur-sm" />
+                {/* 外扩量与 CSS 里的 padding（线宽）保持一致，描边才刚好贴在卡片边界外 */}
+                <div className="composer-glow-edge absolute -inset-px rounded-2xl" />
+            </div>
 
-            <div className="rounded-xl bg-composer-input p-3">
-                <RichChipInput
-                    value={text}
-                    chips={richChips}
-                    placeholder="描述画面：人物、动作、场景、光线与氛围…"
-                    canSend={canSend}
-                    className="max-h-40 min-h-17 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word text-sm leading-5 outline-none"
-                    onChange={handleTextChange}
-                    onSend={onSend}
-                    onRemoveChip={removeChip}
+            <div className="flex flex-col gap-0.5 rounded-2xl bg-composer p-1.5">
+                <ImageComposerToolbar
+                    isSettingActive={settingChip !== null}
+                    isReferenceFull={referenceChips.length >= MAX_REFERENCE_IMAGES}
+                    characters={characters}
+                    activeCharacterId={activeCharacter?.id ?? null}
+                    selectedPrompts={promptChips.map((chip) => chip.value)}
+                    selectedRules={ruleChips.map((chip) => chip.value)}
+                    onToggleSetting={toggleSetting}
+                    onSelectCharacter={setCharacter}
+                    onTogglePrompt={togglePrompt}
+                    onRenamePrompt={renamePrompt}
+                    onRemovePrompt={removePrompt}
+                    onToggleRule={toggleRule}
+                    onRenameRule={renameRule}
+                    onRemoveRule={removeRule}
+                    onPickReference={addReference}
                 />
-                <ImageComposerActions
-                    ratio={ratio}
-                    style={style}
-                    isGenerating={isGenerating}
-                    isEnhancing={isEnhancing}
-                    isEnhanced={enhancedFrom !== null}
-                    canEnhance={!isEnhancing && !isGenerating && text.trim().length > 0}
-                    canSend={canSend}
-                    onRatioChange={handleRatioChange}
-                    onStyleChange={pickStyle}
-                    onEnhance={onEnhance}
-                    onRestore={onRestore}
-                    onSend={onSend}
-                    onAbort={onAbort}
-                />
+
+                <div className="rounded-xl bg-composer-input p-3">
+                    <RichChipInput
+                        value={text}
+                        chips={richChips}
+                        placeholder="描述画面：人物、动作、场景、光线与氛围…"
+                        canSend={canSend}
+                        onChange={handleTextChange}
+                        onSend={onSend}
+                        onRemoveChip={removeChip}
+                    />
+                    <ImageComposerActions
+                        ratio={ratio}
+                        style={style}
+                        isGenerating={isGenerating}
+                        isEnhancing={isEnhancing}
+                        isEnhanced={enhancedFrom !== null}
+                        canEnhance={!isEnhancing && !isGenerating && text.trim().length > 0}
+                        canSend={canSend}
+                        onRatioChange={handleRatioChange}
+                        onStyleChange={pickStyle}
+                        onEnhance={onEnhance}
+                        onRestore={onRestore}
+                        onSend={onSend}
+                        onAbort={onAbort}
+                    />
+                </div>
             </div>
         </div>
     )

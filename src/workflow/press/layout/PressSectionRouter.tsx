@@ -8,7 +8,7 @@
  */
 import { AiChat } from '@webview/workflow/aichat'
 import { ImageGenPage } from '@webview/workflow/imagegen'
-import type { WorkflowPressSection } from '@webview/workflow/layout/WorkflowPressNav'
+import type { WorkflowPressSection } from '@webview/workflow/layout/pressSections'
 import { NamingPage } from '@webview/workflow/naming'
 import { ProofreadPage } from '@webview/workflow/proofread'
 import { AiUsagePage } from '@webview/workflow/usage'

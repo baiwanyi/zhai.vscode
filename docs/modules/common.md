@@ -246,7 +246,6 @@ PRAGMA foreign_keys = ON;
 | `zhai.search.limit` | number | `50` | 全局搜索单模块返回上限 |
 | `zhai.ai.maxContextTokens` | number | `8000` | 前文与引用上下文注入上限 |
 | `zhai.ai.dailyTokenBudget` | number | `500000` | 每日 Token 预算，超限提示 |
-| `zhai.ai.autoFocusOnContext` | boolean | `true` | 添加对话上下文后自动聚焦 AI 对话面板 |
 | `zhai.telemetry.enabled` | boolean | `false` | 遥测开关，默认关闭 |
 
 > CodeBuddy 模型不设配置项：选择入口为 AI 面板输入区的模型菜单，选中值存于 `globalState`（键 `ai.codebuddyModel`，空表示 CLI 默认），对话、取名、外貌生成与出图驱动共用。
