@@ -1,33 +1,10 @@
 /**
- * 角色设定图提示词：把人物卡与作品氛围拼成图像模型可用的自然语言描述。
- * 复用约定：插画基底、画风提示与禁止项集中在此一份，不散落到服务层；尺寸与模型交给配置，提示词只管画什么。
- * 关键约束：按番茄小说「一键生图」的章节配图观感收口（叙事场景 + 氛围光影，画风交给 STYLE_HINTS），
- * 支持两段式——scene 由文本模型先写画面，缺省时回退到纯字段模板，保证文本模型失败也能出图；
- * 不按封面或纯立绘方向写；提示词上限 900 字，超长时先裁主体、再拼画面要求——宁可少写背景，也不能丢掉约束。
+ * 画面风格描述表：key 与 shared/types/press 的 PORTRAIT_STYLES 一一对应，新增风格须在此登记。
+ * 复用约定：生图页的提示词拼装（promptCompose）与画风选择共用这一份描述，不散落到调用方。
+ * 关键约束：文案用画面要素而不是风格名描述，模型才画得准；键必须与 PORTRAIT_STYLES 对齐，
+ * 缺项会让对应画风拼不出提示词，新增风格时两侧同步。
  */
-import type { PortraitGenerateRequest, PortraitStyle } from '@shared/types/press'
-
-/** 提示词长度上限：多数服务商限制 1000 字符以内，中文按 900 字控制 */
-const MAX_PROMPT_LENGTH = 900
-
-/** 叙述类字段（动机、背景、关系）的单段上限：整段搬进提示词会挤掉画面要求 */
-const MAX_NARRATIVE_LENGTH = 100
-
-/** 长文本裁剪：超长时截断并留省略号，保留可读的前半段 */
-function clip(text: string, limit: number): string {
-    return text.length > limit ? `${text.slice(0, limit)}…` : text
-}
-
-/**
- * 统一插画基底：只约束构图、光影与画面质感，不锁定画风，具体画法交给 STYLE_HINTS。
- * 对齐番茄小说「一键生图」的章节配图观感：人物为主体，场景承载身份信息。
- */
-const ILLUSTRATION_STYLE_BASE =
-    '竖版小说配图（9:16 比例），电影感三分法构图，视平线机位微带仰拍，' +
-    '单个人物作为绝对视觉中心，呈半身至膝上景别，肢体语言与视线带有明确的情节张力与情绪暗示；' +
-    '背景提炼出代表人物身份的核心环境符号，利用“前景虚化遮挡 + 中景主体清晰 + 远景环境纵深”拉开画面空间层次；' +
-    '光影需遵循所选画风的环境逻辑，塑造出明确的人物面部与服装体积感；' +
-    '色彩通透，材质有真实的质感响应，拒绝过度饱和的塑料感和浓重的滤镜感'
+import type { PortraitStyle } from '@shared/types/press'
 
 /**
  * 画面风格描述：key 与 shared/types/press 的 PORTRAIT_STYLES 一一对应，新增风格须在此登记。
@@ -53,63 +30,4 @@ export const STYLE_HINTS: Readonly<Record<PortraitStyle, string>> = {
 
     gameart:
         '高规格商业立绘与半写实厚涂，游戏角色原画级完成度：人物五官与身体比例经唯美化处理，皮肤呈现无瑕疵的陶瓷/哑光CG质感（无真实毛孔），面部有明确的高光与体积感；先建立明确光源（如侧逆光、顶光）再推材质，丝绸有锐利高光与层叠褶皱、金属有窄且冷的高光边缘、皮革有磨砂颗粒；强轮廓光将人物从背景中分离，背景可虚化为概念设计式的散景光斑；保留厚涂笔触的体积感，拒绝真实摄影的粗糙感，也拒绝平涂赛璐璐混入',
-}
-
-/**
- * 构造图像生成提示词
- * @param scene 文本模型先写好的画面描述；缺省或为空时只用人物字段，保证失败也能出图
- */
-export function buildPortraitPrompt(request: PortraitGenerateRequest, scene?: string): string {
-    const background = [...request.genres, request.era].filter((item) => item.length > 0).join('、')
-    // 性别、年龄、身高、体型、身份共同决定身形比例与身份气质，缺项直接跳过
-    const basics = [
-        request.gender,
-        request.age.length > 0 ? `${request.age} 岁` : '',
-        request.height,
-        request.bodyType,
-        request.identity,
-    ]
-        .filter((item) => item.length > 0)
-        .join('，')
-    // 画面描述在基底之后、画风之前：先定「画什么」，再定「怎么画」
-    const sceneLine = scene !== undefined && scene.length > 0 ? `画面：${scene}。` : ''
-    const lines = [
-        `${ILLUSTRATION_STYLE_BASE}。${sceneLine}画风：${STYLE_HINTS[request.style]}。`,
-        `角色：${request.name}（${request.role}）`,
-    ]
-    if (basics.length > 0) {
-        lines.push(`基本信息：${basics}`)
-    }
-    if (request.appearance.length > 0) {
-        lines.push(`外貌：${request.appearance}`)
-    }
-    if (request.traits.length > 0) {
-        lines.push(`气质与性格：${request.traits.join('、')}`)
-    }
-    if (request.ability.length > 0) {
-        lines.push(`能力或随身物件：${request.ability}`)
-    }
-    if (request.desire.length > 0 || request.weakness.length > 0) {
-        const motive = [request.desire, request.weakness].filter((item) => item.length > 0).join('；')
-        lines.push(`动机：${clip(motive, MAX_NARRATIVE_LENGTH)}`)
-    }
-    if (request.background.length > 0) {
-        lines.push(`背景：${clip(request.background, MAX_NARRATIVE_LENGTH)}`)
-    }
-    if (request.relation.length > 0) {
-        // 关系只作为神态与场景语境的参照，画面仍只画一个人，由末尾要求兜底
-        lines.push(`人际关系：${clip(request.relation, MAX_NARRATIVE_LENGTH)}`)
-    }
-    if (background.length > 0) {
-        lines.push(`世界观：${background}`)
-    }
-    if (request.tone.length > 0) {
-        lines.push(`整体氛围：${request.tone}`)
-    }
-    const requirement =
-        '【画面约束】呈现具有强叙事感的“小说内文插图”气质，聚焦单一核心人物；依据其身份与世界观自然融入所处场景、环境光线与随身道具（如古风的玉佩/长剑，现代的咖啡杯/手机），背景适度虚化以突出人物主体；' +
-        '【负面屏蔽】严禁出现文字、水印、logo、边框、海报式排版、杂志封面感、多余人物、分镜拆解图，严禁出现与世界观时代冲突的现代违和物品。'
-    // 先给「要求」留足额度再裁主体：画面约束比背景细节更重要，不能被截掉
-    const body = lines.join('\n')
-    return `${body.slice(0, Math.max(0, MAX_PROMPT_LENGTH - requirement.length - 1))}\n${requirement}`
 }

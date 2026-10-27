@@ -50,7 +50,7 @@ interface UseImageComposerOptions {
     composeReferenceImages?: (chips: readonly PromptChip[]) => string[]
     /** 拼装待增强的正文：把角色段等参考信息并进去，缺省时原样提交 */
     composeEnhanceSource?: (text: string) => string
-    /** 生成目标：封面 / 普通图 / 角色图由调用方按当前模式判定 */
+    /** 生成目标：普通图 / 角色图由调用方按当前模式判定 */
     target: { kind: ImageGenerateKind; characterId: string | null }
     ratio: ImageRatio
     style: PortraitStyle

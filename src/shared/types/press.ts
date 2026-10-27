@@ -2,7 +2,7 @@
  * 作品契约：仪表盘 /press 页的作品摘要、创建、打开、卷重命名/删除与章节删除/移动的请求结构，
  * TXT 作品导入的候选、启动与进度结构，语义归纳与按工作台入口分别提取设定 / 大纲 / 人物卡的结构，
  * 导入素材抽取（press/analyze）的统计结构，目标读者枚举，
- * 以及人物外貌生成（pressAi/aiAppearance）与角色设定图（pressAi/generatePortrait、listPortraits、deletePortrait）的契约。
+ * 以及人物外貌生成（pressAi/aiAppearance）与角色设定图列举（pressAi/listPortraits、listPortraitGallery）的契约。
  * 提取类草案统一按「世界构建 / 情节脉络 / 人物全貌」三个维度铺字段：设定含世界观、地理、势力、规则体系与核心概念；
  * 大纲含卷目标、情节脉络、关键转折与逐章节拍、出场人物；人物卡含别名、年龄、外貌、背景与关系明细。
  * 使用方：仪表盘 Webview 的作品列表与宿主侧 DashboardViewProvider、modules/press 服务；
@@ -439,57 +439,6 @@ export interface CharacterPortrait {
     createdAt: string
 }
 
-/** 角色设定图生成请求：人物卡与作品氛围的只读快照 */
-export interface PortraitGenerateRequest {
-    /** 作品目录（press/{作品名}）：角色卡落在该作品的 Portraits 下，删除作品即一并清理 */
-    dirPath: string
-    /** 人物 id，宿主据此建立图片目录，须为安全的短标识 */
-    characterId: string
-    name: string
-    /** 角色分类中文标签（主角 / 配角 / 反派 / 中立 / 龙套） */
-    role: string
-    /** 性别中文标签：男或女，必填 */
-    gender: string
-    age: string
-    /** 身高：自由文本，直接进提示词约束身形比例 */
-    height: string
-    /** 体型：中文档位标签（匀称 / 削瘦 等），与身高共同约束身形 */
-    bodyType: string
-    identity: string
-    appearance: string
-    traits: string[]
-    desire: string
-    weakness: string
-    ability: string
-    /** 背景故事：出身与关键经历，让服饰、随身物件与场景符合人物来历 */
-    background: string
-    /** 人物关系：只作为场景语境的参照，画面仍只画一个人 */
-    relation: string
-    era: string
-    genres: string[]
-    tone: string
-    /** 画面风格：决定提示词里的画风描述 */
-    style: PortraitStyle
-}
-
-/** 角色设定图生成结果 */
-export interface PortraitGenerateResult {
-    portrait: CharacterPortrait
-}
-
-/** 角色设定图删除请求：只接受 press/{作品名}/Portraits 下的相对路径 */
-export interface PortraitDeleteRequest {
-    path: string
-}
-
-/** 角色设定图列举请求：打开角色卡时按「作品目录 + 人物目录」回读已落盘的图片 */
-export interface PortraitListRequest {
-    /** 作品目录（press/{作品名}） */
-    dirPath: string
-    /** 人物 id，与作品目录共同定位角色卡目录 */
-    characterId: string
-}
-
 /** 角色设定图列举结果：按生成时间降序，最新的排在前面 */
 export interface PortraitListResult {
     portraits: CharacterPortrait[]
@@ -512,21 +461,11 @@ export interface PortraitGalleryResult {
     galleries: Record<string, PortraitGalleryItem[]>
 }
 
-/** 角色设定图插入请求：把已落盘的图片插入当前编辑器光标处 */
-export interface PortraitInsertRequest {
-    path: string
-}
-
 /** 角色设定图插入结果：inserted 为 false 时由 reason 说明原因 */
 export interface PortraitInsertResult {
     inserted: boolean
     /** no-editor：没有活动光标；unsaved：文档未保存；not-markdown：非 Markdown；failed：写入被拒绝 */
     reason?: 'no-editor' | 'unsaved' | 'not-markdown' | 'failed'
-}
-
-/** 角色设定图复制请求：把已落盘的图片写入系统剪贴板 */
-export interface PortraitCopyRequest {
-    path: string
 }
 
 /** 角色设定图复制结果：copied 为 false 时由 reason 说明原因 */
@@ -546,11 +485,6 @@ export interface PressCover {
     createdAt: string
 }
 
-/** 封面合成结果：saveCover 落盘后回传 */
-export interface CoverGenerateResult {
-    cover: PressCover
-}
-
 /** 封面列举结果：按生成时间降序，最新的排在前面；selectedId 为当前选中的封面 */
 export interface CoverListResult {
     /** 候选封面：已按修改时间降序截断到上限 */
@@ -558,44 +492,6 @@ export interface CoverListResult {
     selectedId: string | null
     /** 命中总数：可能大于 covers.length，界面据此提示「仅显示最新 N 张」 */
     total: number
-}
-
-/** 设为封面请求：只接受该作品 Cover 目录下已存在的封面路径 */
-export interface CoverSelectRequest {
-    /** 作品目录（press/{作品名}） */
-    dirPath: string
-    /** 相对存储根的封面路径，由 listCover 返回 */
-    path: string
-}
-
-/** 删除封面请求：作品目录用于校验路径归属，path 为 listCover 返回的相对路径 */
-export interface CoverDeleteRequest {
-    /** 作品目录（press/{作品名}） */
-    dirPath: string
-    /** 相对存储根的封面路径 */
-    path: string
-}
-
-/** 设为封面结果 */
-export interface CoverSelectResult {
-    selectedId: string
-}
-
-/**
- * 保存合成封面请求：底图与书名排版在前端画布合成，宿主只负责落盘。
- * 关键约束：dataUrl 必须是 PNG data URL，宿主按体积上限拒绝异常负载。
- */
-export interface CoverSaveRequest {
-    /** 作品目录（press/{作品名}） */
-    dirPath: string
-    /** 合成结果：data:image/png;base64,... */
-    dataUrl: string
-}
-
-/** 删除封面结果：删除的是当前封面时，selectedId 为回退后的封面（没有则为 null） */
-export interface CoverDeleteResult {
-    removed: boolean
-    selectedId: string | null
 }
 
 /** 封面标识规则：cover-{14 位时间戳}，文件名去掉扩展名后与之一一对应 */

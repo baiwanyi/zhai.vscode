@@ -1,5 +1,5 @@
 /**
- * 图片命名：为待落盘的图片生成不与磁盘冲突的标识，生图页、角色卡与合成封面三条通道共用。
+ * 图片命名：为待落盘的图片生成不与磁盘冲突的标识，供生图页的统一出图入口使用。
  * 复用约定：格式合法性由 shared/types/imagegen 的 isPressImageId 校验，目录与扩展名由调用方给出；
  * 冲突时只按秒顺延，不改类别与角色段，保证文件名始终可被解析回类别与归属。
  * 关键约束：永不覆盖已有文件；顺延上限内仍冲突即抛错，而不是随机改名造出无法识别的文件名；
@@ -16,7 +16,7 @@ const RANDOM_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 const RANDOM_LENGTH = 8
 
 /** 图片类别：决定标识前缀，角色图额外带角色段 */
-export type ImageIdKind = 'portrait' | 'photo' | 'cover'
+export type ImageIdKind = 'portrait' | 'photo'
 
 /** 本地时间戳：YYYYMMDDHHmmss，按文件名即可排序 */
 function formatStamp(date: Date): string {
@@ -50,13 +50,10 @@ async function isFileExisting(uri: vscode.Uri): Promise<boolean> {
     }
 }
 
-/** 按类别拼出标识：角色图带角色段，封面不带随机段，其余带随机段 */
+/** 按类别拼出标识：角色图带角色段，普通图片带随机段 */
 function buildImageId(kind: ImageIdKind, stamp: string, characterId: string | null): string {
     if (kind === 'portrait') {
         return `portrait-${stamp}-${characterId ?? ''}`
-    }
-    if (kind === 'cover') {
-        return `cover-${stamp}`
     }
     return `photo-${stamp}-${randomSuffix()}`
 }

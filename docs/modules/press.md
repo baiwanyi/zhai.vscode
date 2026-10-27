@@ -198,10 +198,9 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 | 工具权限 | `tools: ['ImageGen']` + `allowedTools: ['ImageGen']` 双重限定，`canUseTool` 只对 `ImageGen` 返回 allow 且整次请求最多放行一次（出图按张计费，重入会重复扣费）；`maxTurns: 5`，工具结果落地即取图，收尾轮次失败时在 catch 中兜底交付产物 |
 | 延迟加载 | 图像通道需在子进程环境里设 `CODEBUDDY_DEFER_TOOL_LOADING=false`：CLI 默认把 `ImageGen` 放进延迟加载池，`system.init` 的工具全集里有它、但模型可用工具列表里没有，表现为「能力探测通过却始终不出图」 |
 | 超时 | CodeBuddy 通道上限 600s（子进程启动 + 排队），前端兜底 15 分钟 |
-| 产物归一 | `ImageGen` 以 JSON 文本回报 `{ type: 'image_gen_tool_result', images: [{ localPath }] }`，适配层先取结构化字段，再依次尝试 image block / data URL / 绝对路径 / 链接；路径可能不带扩展名，格式一律按文件魔数（PNG/JPEG/WEBP）判定，非图片内容自动跳到下一个候选，统一交给 `portraitService` 落盘 |
+| 产物归一 | `ImageGen` 以 JSON 文本回报 `{ type: 'image_gen_tool_result', images: [{ localPath }] }`，适配层先取结构化字段，再依次尝试 image block / data URL / 绝对路径 / 链接；路径可能不带扩展名，格式一律按文件魔数（PNG/JPEG/WEBP）判定，非图片内容自动跳到下一个候选，统一交给 `imageGenerateService` 落盘 |
 | 落盘位置 | `press/{作品名}/Images/portrait-{14 位时间戳}-{8 位角色标识}.{ext}`：所有通道落同一图库目录，角色归属由文件名解析，删除作品即随目录一并清理 |
-| 作品封面 | 生成入口在生图页的「作品封面」模式（`pressAi/generateImage`，`kind=cover`）：新图落 `press/{作品名}/Images/photo-{…}` 并自动设为作品封面；设定页「封面」分组保留历史封面管理——`pressAi/listCover` / `saveCover`（前端画布套用书名，落 `Cover/cover-{年月日时分秒}.png`，不消耗出图次数）/ `selectCover` / `deleteCover`（删除当前封面时回退到剩余最新一张）；选中记录存 `press.db` 的 meta 表（键 `cover:{dirPath}`，值为封面相对路径），仪表盘作品列表据此补 `coverUrl` |
-| 封面书名 | 出图保持无字（提示词禁止模型写字），书名与笔名由前端 `setting/coverCompose.ts` 用画布叠加：按画布宽度折行、逐档缩小字号、最多三行，字体/位置/配色从选项表选择；合成结果经 `pressAi/saveCover` 落盘为新的 `cover-{时间戳}.png` 并自动选中，不消耗出图次数 |
+| 作品封面 | 唯一设封面入口是生图页图片详情的 `pressAi/setImageCover`：任意 `Images/photo-*` 都可在详情里直接指定；设定页「基本信息」左列只读展示 `pressAi/listCover` 返回的当前封面（未设时取最新一张），不再提供合成、另选或删除；选中记录存 `press.db` 的 meta 表（键 `cover:{dirPath}`，值为封面相对路径），仪表盘作品列表据此补 `coverUrl`；历史 `Cover/cover-*` 仍参与候选展示，但不再产生新文件 |
 | 画风与尺寸 | 沿用 `PORTRAIT_STYLES` 与 `zhai.image.size`；CodeBuddy 侧的传参方式（自然语言描述 / 工具入参）待实测，未定前双写 |
 | 文生图模型 | 由 CLI 决定，插件不下发 `--text-to-image-model`：清单来自服务端产品配置（SDK 只返回语言模型，无法枚举），故不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，CLI 会把选择存进自身 settings。驱动工具调用的对话模型复用 AI 面板模型菜单的选择（存 `globalState` 的 `ai.codebuddyModel`，可从账号可用列表选择或手动填写自定义模型 id） |
 | 频率护栏 | `zhai.image.dailyLimit` 按次计数 |
@@ -210,7 +209,7 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 >
 > **为什么生成失败不自动重试**：出图单次耗时数分钟且按张计费，静默重试会连扣两次、产出两张图，必须由用户确认。
 >
-> **文本提示词与出图分离**：`portraitPrompt.ts` 仍用本地规则模板拼英文提示词，不引入额外模型调用；若后续启用「AI 生成提示词」，须作为独立开关并提供模板兜底。
+> **提示词拼装分工**：生图页由前端 `promptSections` 拼正文与角色段、宿主 `promptCompose` 拼规则与画风；`ai/portraitPrompt.ts` 只保留 `STYLE_HINTS` 画风描述表供 `promptCompose` 引用，不再拼完整提示词。
 
 ---
 

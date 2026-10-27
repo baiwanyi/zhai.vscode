@@ -40,12 +40,6 @@ describe('nextImageId', () => {
         expect(id).toMatch(/^portrait-\d{14}-12345678$/u)
     })
 
-    it('合成封面命名为 cover-{14 位时间戳}', async () => {
-        const id = await nextImageId(vscode.Uri.file(IMAGE_DIR), 'cover', null, 'png')
-
-        expect(id).toMatch(/^cover-\d{14}$/u)
-    })
-
     it('同秒已有同名文件时顺延时间戳，不返回已占用的标识', async () => {
         const now = Date.now()
         // 覆盖执行瞬间可能落到的秒：前后各留一格，避免测试跨秒导致偶发失败

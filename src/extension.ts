@@ -136,8 +136,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     dashboardProvider.attachPressCoverStore(pressCoverStore)
     const pressAiService = new PressAiService(pressDb, aiProvider, usageRecorder)
     const imageRouter = new ImageProviderRouter(secrets)
-    const portraitService = new PortraitService(pressDb, aiProvider, imageRouter, usageRecorder)
-    // 封面服务只管历史封面的合成与选择：AI 出图统一走下面的 imageGenerateService（cover 模式）
+    const portraitService = new PortraitService()
+    // 封面服务只列举候选供设定页展示：出图、设为封面与删除都在生图页完成
     const coverService = new PressCoverService(pressDb)
     // 图片库与上面两个服务共用同一份封面指针：列举、删除与设封面走统一入口，避免指针逻辑分叉
     const imageLibraryService = new ImageLibraryService(pressCoverStore)

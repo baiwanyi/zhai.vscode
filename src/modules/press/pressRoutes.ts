@@ -1,5 +1,5 @@
 /**
- * 写作管理协议路由：把 pressAi/* 消息分发到人物外貌与角色设定图两个服务，
+ * 写作管理协议路由：把 pressAi/* 消息分发到人物外貌、角色设定图列举与图片库服务，
  * 并承接工作台的作品读取、打开与人物卡提取（press/workspace、press/open、press/extract/characters），
  * 以及作品快照的列举、手动留版、恢复与删除（press/snapshot/*），入参收窄由本层与 shared 类型完成。
  * 提示词预览图基址（pressAi/getPromptImageBase）也走这里：它不属于作品域，
@@ -100,8 +100,6 @@ export class PressRoutes {
                 return this.service.generateAppearance(payload)
             case 'pressAi/aiAppearance/abort':
                 return this.service.abortAppearance()
-            case 'pressAi/generatePortrait':
-                return this.portraits.generate(payload, toWebviewUri)
             case 'pressAi/listPortraits':
                 return this.portraits.list(payload, toWebviewUri)
             case 'pressAi/listPortraitGallery':
@@ -110,18 +108,8 @@ export class PressRoutes {
                 return this.portraits.copyToClipboard(payload)
             case 'pressAi/insertPortrait':
                 return this.portraits.insertIntoEditor(payload)
-            case 'pressAi/deletePortrait':
-                return this.portraits.remove(payload)
-            case 'pressAi/aiPortrait/abort':
-                return this.portraits.abort()
             case 'pressAi/listCover':
                 return this.covers.list(payload, toWebviewUri)
-            case 'pressAi/selectCover':
-                return this.covers.select(payload)
-            case 'pressAi/saveCover':
-                return this.covers.save(payload, toWebviewUri)
-            case 'pressAi/deleteCover':
-                return this.covers.remove(payload)
             case 'pressAi/listImageLibrary':
                 return this.imageLibrary.list(payload, toWebviewUri)
             case 'pressAi/getImageDetail':

@@ -19,7 +19,7 @@
 | 模块 | 边界 |
 | --- | --- |
 | press | 生图依赖作品目录（`press/{作品名}`）作为作用域；角色封面指针写在人物卡 Markdown 里，由前端在生成/删除后经 `updateCharacter` 写回 |
-| press 设定页 | 保留「封面画廊」（`listCover` / `saveCover` / `selectCover` / `deleteCover`）：候选为合成封面与图库 `photo-*`，可套用书名、另选、删除；AI 生成本身在生图页，见第 8 节 |
+| press 设定页 | 只读展示封面（`listCover`）：基本信息左列显示当前封面，未设时取最新一张；出图、设封面与删除都在生图页，见第 8 节 |
 | ai | 图像通道与用量记账由 ai 提供，生图只消费；服务层依赖的是 `ImageGenerator` 最小接口（`ImageProviderRouter` 是其唯一实现），测试可注入替身而无需拉起 CLI |
 
 ---
@@ -30,8 +30,8 @@
 
 ```
 {root}/press/【小说名】/
-├── Images/                  ← 统一图库：生图（角色卡与普通图片）与角色卡都写这里
-├── Cover/                   ← 仅设定页「套用书名」合成封面写入，历史封面只读兼容
+├── Images/                  ← 统一图库：生图页出图（角色图与普通图）都写这里
+├── Cover/                   ← 历史合成封面：只读兼容，不再写入
 ├── Portraits/               ← 历史角色图：只读兼容，不再写入新文件
 └── .zhai/image.json         ← 作品级生图参数（隐藏目录，不进作品索引）
 ```
@@ -46,7 +46,7 @@
 | --- | --- | --- |
 | 角色图 | `portrait-{14 位时间戳}-{8 位角色标识}` | `portrait-20261025143000-10428736` |
 | 普通图 | `photo-{14 位时间戳}-{8 位随机串}` | `photo-20261025143000-aB3xK9Qz` |
-| 合成封面（设定页） | `cover-{14 位时间戳}` | `cover-20261025143000` |
+| 历史合成封面（只读） | `cover-{14 位时间戳}` | `cover-20261025143000` |
 | 旧角色图（只读） | `portrait-{8 位角色标识}-{14 位时间戳}` | `portrait-10428736-20261025143000` |
 | 旧封面（只读） | `cover-{14 位时间戳}` | `cover-20261025143000` |
 
@@ -54,7 +54,7 @@
 
 ### 2.4 命名冲突
 
-三条写入通道（生图页、角色卡、设定页合成封面）共用 `src/modules/imagegen/imageNaming.ts` 的 `nextImageId`：落盘前按秒顺延探测同名文件，找到空位才返回标识，**永不覆盖已有文件**；顺延 60 秒仍冲突即报错，而不是随机改名造出无法解析的文件名。角色卡此前缺少这层保护，同秒同角色重复出图会覆盖前一张，现已统一。
+生图页出图（角色图与普通图）共用 `src/modules/imagegen/imageNaming.ts` 的 `nextImageId`：落盘前按秒顺延探测同名文件，找到空位才返回标识，**永不覆盖已有文件**；顺延 60 秒仍冲突即报错，而不是随机改名造出无法解析的文件名。
 
 ### 2.3 侧车元数据
 
@@ -66,7 +66,7 @@
 
 - 生成：生图页与角色卡通道都写同名侧车；`ratio` 记录实际出图规格——生图页写比例（`3:4`），角色卡写像素尺寸（`768x1024`），详情面板按值形态显示「比例」或「尺寸」。
 - 读取：`pressAi/getImageDetail` 在侧车缺失或 JSON 不合法时，各字段返回 `null`，详情面板隐藏参数区，旧图仍可正常浏览。
-- 删除：图库删图、角色卡删图、封面画廊删图都会顺带删同名侧车（不进回收站）；侧车本不存在时静默跳过。
+- 删除：生图页删图与角色图删图都会顺带删同名侧车（不进回收站）；侧车本不存在时静默跳过。
 
 ---
 
@@ -117,15 +117,13 @@
 
 出图规则是用户手写的 md 约束（如「只用青蓝与灰白」「避免出现文字」），全局共享、与作品无关：前端只持有文件名主干，正文一律由宿主在出图时读盘，规则改文无需重新进页面。文件已被删除的规则静默跳过并记日志，不阻断出图；单次请求最多并入 5 条、合计 3000 字，超出部分丢弃，避免规则挤占画面描述。用户也可以直接往目录里放 md 文件，重新打开命令菜单即可见。
 
-### 3.5 封面面板（设定页）
+### 3.5 作品封面（只读展示）
 
-`pressAi/listCover`、`pressAi/saveCover`、`pressAi/selectCover`、`pressAi/deleteCover`，见第 8 节。候选合并 `Cover/cover-*` 与 `Images/photo-*`，按修改时间降序后最多返回 60 张（`MAX_COVER_CANDIDATES`），同时回传 `total` 命中总数，前端据此提示「仅显示最新 N 张」；图库里的任意一张普通图都可在详情里直接设为封面，不需要单独生成。
+设定页只调 `pressAi/listCover`：候选合并 `Cover/cover-*` 与 `Images/photo-*`，按修改时间降序后最多返回 60 张（`MAX_COVER_CANDIDATES`），同时回传 `total`；基本信息左列取选中封面、未设时取最新一张。合成、另选与删除入口已移除，设封面唯一入口是生图页图片详情的 `pressAi/setImageCover`，见第 8 节。
 
-### 3.6 角色卡（保留）
+### 3.6 角色设定图（列举与图片操作）
 
-`pressAi/generatePortrait`、`pressAi/listPortraits`、`pressAi/listPortraitGallery`、`pressAi/aiPortrait/abort`，供角色卡面板使用，不在生图页范围内。
-
-出图规则与生图页已对齐：新图落在 `Images/`，命名 `portrait-{14 位时间戳}-{8 位角色标识}`，并写同名侧车（`ratio` 取 `zhai.image.size` 像素尺寸）；`Portraits/` 目录只作只读兼容，不再写入。
+`pressAi/listPortraits`、`pressAi/listPortraitGallery` 供人物卡与人物列表回读已落盘的设定图；`pressAi/copyPortrait` 与 `pressAi/insertPortrait` 在生图页图片详情里复用。出图不再有 `pressAi/generatePortrait`，人物设定图统一由生图页 `pressAi/generateImage`（`kind=portrait`）产出：新图落在 `Images/`，命名 `portrait-{14 位时间戳}-{8 位角色标识}`，并写同名侧车（`ratio` 取 `zhai.image.size` 像素尺寸）；`Portraits/` 目录只作只读兼容，不再写入。
 
 ---
 
@@ -143,8 +141,8 @@
 | `imageSidecar.ts` | 侧车路径推导、随图删除与写入，尽力而为、不抛错 |
 | `promptCompose.ts` | 提示词拼装纯函数：正文 → 作品补充 → 负向约束 → 画风描述 |
 | `imageSettingsService.ts` | 作品级参数读写（`.zhai/image.json`），只存与默认不同的键 |
-| `coverService.ts` | 设定页封面画廊：候选合并 `Cover/cover-*` 与 `Images/photo-*`，负责合成保存、选择、删除，不调用图像通道 |
-| `portraitService.ts` | 角色图列举/复制/插入/删除与角色级联清理 |
+| `coverService.ts` | 封面候选列举：合并 `Cover/cover-*` 与 `Images/photo-*` 供设定页只读展示，不写盘、不调用图像通道 |
+| `portraitService.ts` | 角色图列举/复制/插入与角色级联清理（出图已迁到 `imageGenerateService`） |
 | `db/coverRepository.ts` | 封面指针（`press.db`）；`isProjectImagePath` 判断归属 |
 
 ### 4.1 出图提示词叠加
@@ -256,27 +254,21 @@
 | 角色快照 | 已注入姓名、性别年龄、身份与外貌；更细的字段（体型、背景）仍留在人物卡内 |
 | 网格能力 | 已支持多选批量删除与悬停复制/插入/删除 |
 | 批量删除原子性 | 一次请求内逐张执行，非事务：单张失败只记回执，成功部分照常生效并按最新图库刷新，不做回滚；单次上限 500 张 |
-| 图片扩展名口径 | 图库、角色卡、封面画廊统一认 `png` / `jpe?g` / `webp` / `gif`，由 `imageDirScan.ts` 单点维护 |
-| 图库规模 | `listImageLibrary` 全量返回，前端按 60 张一批挂载（无虚拟滚动）；封面画廊在宿主侧截断到 60 张并回传 `total` |
+| 图片扩展名口径 | 图库、角色图、封面候选统一认 `png` / `jpe?g` / `webp` / `gif`，由 `imageDirScan.ts` 单点维护 |
+| 图库规模 | `listImageLibrary` 全量返回，前端按 60 张一批挂载（无虚拟滚动）；封面候选在宿主侧截断到 60 张并回传 `total` |
 | 详情降级 | 读取侧车期间显示骨架占位；无侧车（旧图或手工图）时显示空态说明；`enhancedFrom` 以折叠区展示 |
 
 ---
 
 ## 8. 出图与封面设定的分工
 
-**生成只有两种**：角色卡（`kind=portrait`）与其他图片（`kind=photo`）。出图不改作品封面——封面是「图库里当前选中的那张」，任意一张普通图都可以在详情面板里直接指定，不必专门生成。
+**生成只有两种**：角色图（`kind=portrait`）与其他图片（`kind=photo`）。出图不改作品封面——封面是「图库里当前选中的那张」，任意一张普通图都可以在详情面板里直接指定，不必专门生成。
 
-**设定页面板只做三件事**：
+**封面只有一个写入入口**：生图页图片详情的 `pressAi/setImageCover`。设定页「基本信息」左列只读展示 `pressAi/listCover` 的结果，不再有套用书名、另选或删除。
 
-| 能力 | 协议 | 说明 |
-| --- | --- | --- |
-| 展示候选封面 | `pressAi/listCover` | 合并 `Cover/cover-*` 与 `Images/photo-*`，按修改时间降序，最多返回 60 张并回传 `total` |
-| 套用书名 | `pressAi/saveCover` | 前端画布合成 PNG 后上传，落 `Cover/` 并自动设为封面，不消耗出图次数 |
-| 另选 / 删除 | `pressAi/selectCover`、`pressAi/deleteCover` | 删除当前封面时回退到剩余最新一张 |
+因此封面来源只有图库里的普通图 `Images/photo-*`（详情面板里指定）；历史合成的 `Cover/cover-*` 仍参与候选展示，保证老作品封面不丢，但不再产生新文件，也不进图库列表。角色图（`portrait-*`）不进封面候选，避免把人物设定图当作品封面。
 
-因此存在两类封面来源：图库里的普通图 `Images/photo-*`（详情面板里指定），与设定页合成的 `Cover/cover-*`。画廊把两类合并展示，但**角色图（`portrait-*`）不进画廊**，避免把角色卡当封面误删；在画廊里删除 `Images` 来源的图，等同于从统一图库删除该图（进回收站，封面指针按剩余最新一张回退）。
-
-`pressAi/generateCover` 与 `ai/coverPrompt.ts` 已随入口迁移一并删除；`zhai.image.size` 现在只作用于角色卡出图（`pressAi/generatePortrait`）。
+`pressAi/saveCover`、`selectCover`、`deleteCover`、`generateCover`，以及 `ai/coverPrompt.ts`、`setting/coverCompose.ts`、`ai/portraitSceneGenerator.ts` 等旧链路已随入口迁移一并删除；`zhai.image.size` 现在作用于生图页全部出图。
 
 ---
 
@@ -284,5 +276,5 @@
 
 - `pnpm exec tsc --noEmit`
 - `pnpm exec eslint src/modules/imagegen src/workflow/imagegen`
-- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryService.test.ts tests/coverCandidates.test.ts tests/coverService.test.ts tests/imageSettingsService.test.ts tests/imageGenerateService.test.ts tests/imageNaming.test.ts tests/useImageLibrary.test.tsx tests/useImageDetail.test.tsx tests/components/ImageGenGrid.test.tsx tests/components/ImageComposer.test.tsx tests/components/ImageGenPage.test.tsx`
+- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryService.test.ts tests/coverService.test.ts tests/imageSettingsService.test.ts tests/imageGenerateService.test.ts tests/imageNaming.test.ts tests/useImageLibrary.test.tsx tests/useImageDetail.test.tsx tests/components/ImageGenGrid.test.tsx tests/components/ImageComposer.test.tsx tests/components/ImageGenPage.test.tsx`
 - 手测清单：列举三目录、按类别/角色/关键词筛选与「清空筛选」、设为封面、删除当前封面后的回退、详情面板复制与插入（含无侧车空态与骨架过渡）、生成中取消（含取消后迟到出图是否自动补进列表）、切换作品后参数是否沿用、多选批量删除（含进度文案与角色封面回退）、芯片内联输入与退格删除、键盘 Tab 聚焦卡片后回车打开详情。

@@ -1,30 +1,19 @@
 /**
- * 角色设定图服务：先用文本模型写画面描述，再经图像通道路由出图，按人物建目录落盘并返回 webview 可用 URL。
- * 复用约定：文本描述经 ./ai/portraitSceneGenerator（通道由注入的 AiProvider 提供），出图经 ./ai/imageProvider 的入口
- * （唯一实现为 CodeBuddy 的 ImageGen），提示词复用 ./ai/portraitPrompt，目录名与配额键取自 ./constants，
- * 配额读写经 ../common/db/quotaRepository，路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
- * 关键约束：每次出图都重新挑一组画面变化（动作/地点/光线/姿态），文本通道失败时用同一组变化拼模板，
- * 保证同一角色反复出图也不撞画面；描述不计配额，限额只针对图片张数；
- * 新图落在 press/{作品名}/Images/ 下，文件名为 portrait-{14 位时间戳}-{8 位角色标识}.扩展名，
- * 与生图页共用命名规则与同名侧车（ratio 记像素尺寸）；Portraits 目录只作只读兼容，不再写入；
+ * 角色设定图服务：列举已落盘的设定图、复制到剪贴板、插入 Markdown，以及删除人物时清理其图片。
+ * 复用约定：目录名取自 ./constants，路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
+ * 关键约束：出图统一在生图页完成（pressAi/generateImage），本服务不再生成图片，也不再读写配额；
  * 角色归属由文件名里的角色段解析（不按角色分子目录），跟随作品目录（删除作品即一并清理）；
- * 目录是图片的唯一事实来源：生成完成即落盘，关闭弹窗不丢结果，列举以磁盘为准；
- * 删除、复制与插入只接受 press/{作品名}/{Images|Cover|Portraits} 下的四段白名单路径，删除优先走回收站，
- * 并顺带清掉同名侧车；
- * 复制经平台命令写入系统剪贴板（webview 内写图片受 CSP 与权限限制）；同一时刻只允许一个生成请求。
+ * 目录是图片的唯一事实来源，列举以磁盘为准；
+ * 删除、复制与插入只接受 press/{作品名}/{Images|Cover|Portraits} 下的四段白名单路径，删除优先走回收站；
+ * 复制经平台命令写入系统剪贴板（webview 内写图片受 CSP 与权限限制）。
  */
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import * as vscode from 'vscode'
-import type { AiProvider } from '@modules/ai/provider'
-import { getSelectedCodebuddyModel } from '@modules/ai/providers/codebuddyModels'
-import type { UsageRecorder } from '@modules/ai/usageRecorder'
-import { summarizeMessages } from '@modules/ai/usageRecorder'
-import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
-import { consumeToday, readUsedToday } from '@modules/common/db/quotaRepository'
+import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import { PRESS_MODULE_DIR, readProjectSegments } from '@modules/common/projectPath'
-import { readText, readTextList } from '@modules/common/readInput'
+import { readText } from '@modules/common/readInput'
 import { buildStorageUri, deleteResource, toSafeSegments } from '@modules/common/storagePath'
 import { parseImageCharacterId } from '@shared/types/imagegen'
 import type {
@@ -32,31 +21,17 @@ import type {
     PortraitCopyResult,
     PortraitGalleryItem,
     PortraitGalleryResult,
-    PortraitGenerateRequest,
-    PortraitGenerateResult,
     PortraitInsertResult,
     PortraitListResult,
-    PortraitStyle,
 } from '@shared/types/press'
-import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId } from '@shared/types/press'
-import { buildPortraitPrompt } from './ai/portraitPrompt'
-import { generateSceneWithAi } from './ai/portraitSceneGenerator'
-import { buildSceneMessages, sanitizeScene } from './ai/portraitScenePrompt'
-import { formatVariation, pickVariation } from './ai/portraitVariation'
-import { IMAGE_DIR_NAMES, IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
+import { isPressCharacterId } from '@shared/types/press'
+import { IMAGE_DIR_NAMES } from './constants'
 import { listImageFiles } from './imageDirScan'
-import { nextImageId } from './imageNaming'
-import { deleteSidecarOf, writeSidecarOf } from './imageSidecar'
-import type { ImageGenerator } from './ai/imageProvider'
-import type { PortraitVariation } from './ai/portraitVariation'
-import type Database from 'better-sqlite3'
 
 /** 角色卡相对路径的段数：press/{作品名}/{Images|Cover|Portraits}/{文件名} */
 const PORTRAIT_SEGMENT_COUNT = 4
 /** 短字段长度上限 */
 const MAX_SHORT_TEXT = 64
-/** 长字段长度上限 */
-const MAX_LONG_TEXT = 400
 /** 相对路径长度上限：作品名与人物标识相叠加高，留出余量 */
 const MAX_PATH_LENGTH = 320
 /** 剪贴板命令超时：外部进程卡住时不阻塞界面 */
@@ -82,98 +57,6 @@ const LINUX_CLIPBOARD_MIME: Readonly<Record<string, string>> = {
 const execFileAsync = promisify(execFile)
 
 export class PortraitService {
-    /** 进行中的生成请求：用于 pressAi/aiPortrait/abort 取消 */
-    private activeRequest: AbortController | null = null
-    /** 上一张用过的画面变化：只在本进程内记忆，用来保证连续两次不撞在同一个动作上 */
-    private lastVariation: PortraitVariation | null = null
-
-    public constructor(
-        private readonly db: Database.Database,
-        private readonly provider: AiProvider,
-        private readonly router: ImageGenerator,
-        private readonly usageRecorder: UsageRecorder,
-    ) {}
-
-    /**
-     * 生成一张角色设定图并落盘。
-     * @param toWebviewUri 把磁盘 Uri 转成 webview 可访问 URL 的转换器
-     */
-    public async generate(
-        payload: unknown,
-        toWebviewUri: (uri: vscode.Uri) => string,
-    ): Promise<PortraitGenerateResult> {
-        if (this.activeRequest) {
-            throw new Error('已有生成中的角色卡请求，请等待完成或先取消')
-        }
-        const request = normalizePortraitRequest(payload)
-        const config = getZhaiConfig()
-        this.assertQuota()
-        const controller = new AbortController()
-        this.activeRequest = controller
-        const startedAt = Date.now()
-        logger.info(`角色卡生成开始：${request.name}（${config.imageSize}）`)
-        try {
-            // 每次生成都重新挑一组画面变化：人物卡不变时，这是让画面与动作不重复的唯一差异
-            const variation = pickVariation(this.lastVariation)
-            this.lastVariation = variation
-            // 两段式：先让文本模型按这组变化写画面，再出图；文本通道不可用时用同一组变化拼模板
-            const scene = await this.describeScene(request, variation, controller.signal)
-            const prompt = buildPortraitPrompt(request, scene.text)
-            const artifact = await this.router.generate({
-                prompt,
-                size: config.imageSize,
-                signal: controller.signal,
-            })
-            // 出图按张计费：图像消耗单独成行，积分与其他入口一样按请求 id 从 CLI 会话记录回填
-            this.usageRecorder.record({
-                module: 'image',
-                model: getSelectedCodebuddyModel(),
-                usage: artifact.usage ?? null,
-                meta: artifact.meta ?? null,
-                prompt,
-                startedAt: artifact.startedAt ?? startedAt,
-            })
-            logger.info(`角色卡通道：codebuddy（${scene.fromAi ? 'AI 画面描述' : '模板变化描述'}）：${scene.text}`)
-            const createdAt = new Date().toISOString()
-            // 新图统一落 Images，旧 Portraits 目录只作只读兼容，不再写入；作品删除时随目录一并清理
-            const dirSegments = [...readProjectSegments(request.dirPath), IMAGES_DIR]
-            const extension = artifact.extension
-            const root = resolveStorageRoot()
-            const dirUri = buildStorageUri(root, dirSegments)
-            await vscode.workspace.fs.createDirectory(dirUri)
-            // 命名与生图页共用同一入口：同秒同角色重复出图时顺延时间戳，不覆盖前一张
-            const id = await nextImageId(dirUri, 'portrait', request.characterId, extension)
-            const segments = [...dirSegments, `${id}.${extension}`]
-            const target = buildStorageUri(root, segments)
-            await vscode.workspace.fs.writeFile(target, artifact.bytes)
-            // 与生图页共用侧车：ratio 记像素尺寸，画风与角色标识一并留档，统一图库详情才能看到参数
-            await writeSidecarOf(dirUri, id, {
-                prompt,
-                ratio: config.imageSize,
-                style: request.style,
-                characterId: request.characterId,
-                enhancedFrom: null,
-                createdAt,
-            })
-            consumeToday(this.db, IMAGE_QUOTA_KEYS)
-            logger.info(`角色卡生成完成：耗时 ${Date.now() - startedAt}ms，${artifact.bytes.byteLength} 字节`)
-            return {
-                portrait: {
-                    id,
-                    path: segments.join('/'),
-                    url: toWebviewUri(target),
-                    createdAt,
-                },
-            }
-        } catch (error) {
-            // 取消与超时的文案由执行器给出，此处只补日志便于排查服务商耗时
-            logger.error(`角色卡生成失败：耗时 ${Date.now() - startedAt}ms`, error)
-            throw error
-        } finally {
-            this.activeRequest = null
-        }
-    }
-
     /**
      * 列举某个角色目录下的全部设定图：目录不存在视为空，按文件修改时间降序返回（最新在前）。
      * 磁盘是唯一事实来源，因此关闭弹窗期间完成的生成同样能被读回。
@@ -322,41 +205,6 @@ export class PortraitService {
         return outcome === 'copied' ? { copied: true } : { copied: false, reason: outcome }
     }
 
-    /** 取消进行中的生成 */
-    public abort(): { aborted: boolean } {
-        if (!this.activeRequest) {
-            return { aborted: false }
-        }
-        this.activeRequest.abort()
-        return { aborted: true }
-    }
-
-    /** 删除一张已落盘的角色设定图：优先回收站，不支持时退化为直接删除 */
-    public async remove(payload: unknown): Promise<{ removed: boolean }> {
-        const path = readPortraitPath(payload)
-        const segments = toSafeSegments(path, '角色卡')
-        const fileName = segments[3] ?? ''
-        if (
-            segments.length !== PORTRAIT_SEGMENT_COUNT ||
-            segments[0] !== PRESS_MODULE_DIR ||
-            segments[2] === undefined ||
-            !IMAGE_DIR_NAMES.includes(segments[2]) ||
-            !segments[1] ||
-            parseImageCharacterId(fileName.replace(/\.[^.]+$/u, '')) === null
-        ) {
-            throw new Error(`角色卡路径非法：${path}`)
-        }
-        const target = buildStorageUri(resolveStorageRoot(), segments)
-        try {
-            await deleteResource(target, false)
-        } catch {
-            return { removed: false }
-        }
-        // 图片删掉后侧车已无处可依，一并清理；失败只记日志，不影响删除结果
-        await deleteSidecarOf(target)
-        return { removed: true }
-    }
-
     /**
      * 清理某个角色的全部设定图：删除角色时随角色块一并清理，避免留下无人引用的图片。
      * 关键约束：只删文件名角色段匹配且符合命名规范的文件，手工放入的其它图片不受影响。
@@ -392,125 +240,6 @@ export class PortraitService {
         }
         return { removed }
     }
-
-    /**
-     * 先让文本模型按本次变化写画面描述：未就绪、超时、输出为空或调用失败都回退到模板变化描述，
-     * 保证出图不被拖垮；两条路径共用同一组变化，因此「文本通道失败后每张图都一样」不会再发生。
-     * 这一步不计配额——成本最终落在出图上，限额仍以图片张数为准。
-     */
-    private async describeScene(
-        request: PortraitGenerateRequest,
-        variation: PortraitVariation,
-        signal: AbortSignal,
-    ): Promise<{ text: string; fromAi: boolean }> {
-        const fallback = formatVariation(variation)
-        try {
-            const status = await this.provider.checkReady()
-            if (!status.ready) {
-                logger.info(`角色卡画面描述跳过：${status.reason ?? 'AI 通道未就绪'}；改用模板变化：${fallback}`)
-                return { text: fallback, fromAi: false }
-            }
-            const startedAt = Date.now()
-            const result = await generateSceneWithAi({
-                provider: this.provider,
-                model: getSelectedCodebuddyModel(),
-                request,
-                variation,
-                signal,
-            })
-            const scene = sanitizeScene(result.content)
-            if (scene.length === 0) {
-                logger.info(`角色卡画面描述为空，回退模板变化：${fallback}`)
-                return { text: fallback, fromAi: false }
-            }
-            this.usageRecorder.record({
-                module: 'scene',
-                model: getSelectedCodebuddyModel(),
-                usage: result.usage,
-                meta: result.meta,
-                prompt: summarizeMessages(buildSceneMessages(request, variation)),
-                startedAt,
-            })
-            logger.info(`角色卡画面描述（${Date.now() - startedAt}ms）：${scene}`)
-            return { text: scene, fromAi: true }
-        } catch (error) {
-            logger.error('角色卡画面描述失败，回退模板变化', error)
-            return { text: fallback, fromAi: false }
-        }
-    }
-
-    /** 校验今日次数：限额为 0 或负数时视为不限制 */
-    private assertQuota(): void {
-        const limit = getZhaiConfig().imageDailyLimit
-        if (limit <= 0) {
-            return
-        }
-        const used = readUsedToday(this.db, IMAGE_QUOTA_KEYS)
-        if (used >= limit) {
-            throw new Error(`今日角色卡生成次数已用完（${used} / ${limit}），可明日再试或调高 zhai.image.dailyLimit`)
-        }
-    }
-}
-
-/** 入参收窄：作品目录与人物标识走各自白名单，其余字段逐个截断，姓名为空直接拒绝 */
-function normalizePortraitRequest(payload: unknown): PortraitGenerateRequest {
-    const characterId = normalizeCharacterId(payload, 'pressAi/generatePortrait')
-    const dirPath = readProjectDirPath(payload, 'pressAi/generatePortrait')
-    const value = payload as {
-        characterId?: unknown
-        name?: unknown
-        role?: unknown
-        gender?: unknown
-        age?: unknown
-        height?: unknown
-        bodyType?: unknown
-        identity?: unknown
-        appearance?: unknown
-        traits?: unknown
-        desire?: unknown
-        weakness?: unknown
-        ability?: unknown
-        background?: unknown
-        relation?: unknown
-        era?: unknown
-        genres?: unknown
-        tone?: unknown
-        style?: unknown
-    }
-    const request: PortraitGenerateRequest = {
-        dirPath,
-        characterId,
-        name: readText(value.name, MAX_SHORT_TEXT),
-        role: readText(value.role, MAX_SHORT_TEXT),
-        gender: readText(value.gender, MAX_SHORT_TEXT),
-        age: readText(value.age, MAX_SHORT_TEXT),
-        height: readText(value.height, MAX_SHORT_TEXT),
-        bodyType: readText(value.bodyType, MAX_SHORT_TEXT),
-        identity: readText(value.identity, MAX_SHORT_TEXT),
-        appearance: readText(value.appearance, MAX_LONG_TEXT),
-        traits: readTextList(value.traits, 8, 16),
-        desire: readText(value.desire, MAX_LONG_TEXT),
-        weakness: readText(value.weakness, MAX_LONG_TEXT),
-        ability: readText(value.ability, MAX_LONG_TEXT),
-        background: readText(value.background, MAX_LONG_TEXT),
-        relation: readText(value.relation, MAX_LONG_TEXT),
-        era: readText(value.era, MAX_SHORT_TEXT),
-        genres: readTextList(value.genres, 6, 16),
-        tone: readText(value.tone, MAX_SHORT_TEXT),
-        style: readStyle(value.style),
-    }
-    if (request.name.length === 0) {
-        throw new Error('缺少人物姓名，无法生成角色卡')
-    }
-    return request
-}
-
-/** 读取画风：只接受白名单内的值，其余一律回落默认风格 */
-function readStyle(value: unknown): PortraitStyle {
-    if (typeof value !== 'string') {
-        return DEFAULT_PORTRAIT_STYLE
-    }
-    return PORTRAIT_STYLES.find((item) => item === value) ?? DEFAULT_PORTRAIT_STYLE
 }
 
 /** 读取人物标识：只接受安全字符集，避免拼出越界目录；缺失或非法一律拒绝 */
@@ -610,10 +339,10 @@ function resolveInsertTarget(): vscode.TextEditor | undefined {
         .find((item) => item.document.languageId === 'markdown' && item.document.uri.scheme === 'file')
 }
 
-/** 读取删除请求里的相对路径 */
+/** 读取图片操作（复制 / 插入）里的相对路径 */
 function readPortraitPath(payload: unknown): string {
     if (typeof payload !== 'object' || payload === null) {
-        throw new Error('pressAi/deletePortrait 缺少参数')
+        throw new Error('角色卡请求缺少参数')
     }
     const path = readText((payload as { path?: unknown }).path, MAX_PATH_LENGTH)
     if (path.length === 0) {
