@@ -12,10 +12,10 @@ import { isPathExisting } from '@modules/common/storagePath'
 /** 从文件名剥出标识：只处理最后一段扩展名，目录部分不受影响 */
 const EXTENSION_PATTERN = /\.[^./]+$/u
 
-/** 侧车字段：生图页与角色卡两条出图通道共用同一份结构 */
+/** 侧车字段：生图页出图（角色图与普通图）共用同一份结构 */
 export interface SidecarMeta {
     readonly prompt: string
-    /** 出图规格：生图页记比例（3:4），角色卡记像素尺寸（768x1024） */
+    /** 出图比例：按请求记录（1:1 / 3:4 / 4:3 / 16:9 / 9:16） */
     readonly ratio: string
     readonly style: string
     readonly characterId: string | null

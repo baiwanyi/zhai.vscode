@@ -4,7 +4,7 @@
  * 图标取 lucide-react：可发送时 SendHorizontal（旋转 -90 与文字基线齐）、生成中为 Square。
  * 关键约束：图标按钮没有可见文字，可访问名由 aria-label 承担，tooltip 只作视觉补充；
  * 不可发送时保留灰底并禁用，避免按钮在「空输入」与「主色可点」之间跳色；
- * 文案按场景由调用方覆盖（如「生成封面」「取消生成」），默认发送 / 停止生成。
+ * 文案按场景由调用方覆盖（如「发送」「取消生成」），默认发送 / 停止生成。
  */
 import { cn } from 'cn'
 import { SendHorizontal, Square } from 'lucide-react'

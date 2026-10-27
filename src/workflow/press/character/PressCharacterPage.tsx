@@ -2,13 +2,13 @@
  * 人物设定页：写作流程的第三步，用角色下拉筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
  * 复用约定：外壳取 components/AppPage（作品名走 AppDescription 眉标、筛选行进 AppMenu、列表走 AppContent 滚动），
  * 列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterEditPanel 承担、
- * 新增由 CharacterCreateDialog 承担、提取由 useCharacterExtract 发起、封面画廊由 useCharacterPortrait 读取；
+ * 新增由 CharacterCreateDialog 承担、提取由 useCharacterExtract 发起、角色设定图由 useCharacterPortrait 读取；
  * 搜索框复用 ui/input-group（前置图标交给 InputGroupAddon），提取中的等待态复用 components/StateEmpty；
  * 本文件只做筛选、搜索、提取、封面回读与弹窗编排，以及作品氛围、作品目录的下传。
  * 关键约束：新增后直接打开编辑弹窗，因此 onCreateCharacter 必须回传新卡 id；
  * 编辑弹窗以人物 id 作为 key 重建，关闭即丢弃草稿，页面不保留编辑中间态；
  * 提取得到的是草案，建卡与同名补全由父级完成，页面只负责刷新列表；
- * 画廊只在「作品目录、角色数、封面 id 组合」变化时重读——保存封面后卡片立刻显示新图，日常输入不会反复扫盘。
+ * 设定图只在「作品目录、角色数、封面 id 组合」变化时重读——保存封面后卡片立刻显示新图，日常输入不会反复扫盘。
  */
 import { Plus, Search, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -70,7 +70,7 @@ export function PressCharacterPage({
     const { listGallery } = useCharacterPortrait(dirPath)
 
     /**
-     * 画廊刷新信号：只把「角色集合 + 各自封面」压成字符串作为依赖。
+     * 设定图刷新信号：只把「角色集合 + 各自封面」压成字符串作为依赖。
      * 直接依赖 characters 数组会让每次输入都重读磁盘，压成字符串后只有封面或人数变化才触发。
      */
     const galleryKey = useMemo(
