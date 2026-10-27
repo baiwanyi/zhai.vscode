@@ -204,7 +204,7 @@ lifeguard
 \n\n STYLE_HINTS[style]（始终在最后）
 ```
 
-空串一律跳过；词条由 `imageGenerateService` 按标识从 `prompt/tags` 的 md 取回原文，再用 `@shared/utils/promptTag` 的 `normalizePromptTag` 归一化并前置，归一化口径与前端同源，因此面板上展示的原文与最终提示词逐字一致；上下文段来自请求的 `contexts`（前端 `composeSettingContext` 展开），规则正文由 `prompt/ruleService` 的 `readForPrompt` 按标识读盘后传给 `composeImagePrompt`，空串、空规则与缺失文件都不占位。宿主侧拼装集中在 `src/modules/imagegen/prompt/finalPrompt` 的 `composeImagePrompt`（对象入参，顺序固定），由 `tests/imagegenPrompt.test.ts` 覆盖顺序与空串行为，上下文、规则读盘与出图合并在 `tests/imageGenerateService.test.ts` 覆盖。前端只负责正文、角色段与上下文段（`workflow/imagegen/prompt/promptSections.ts`），画风与负向约束仍由宿主追加。改提示词时先看 `src/modules/imagegen/prompt/index.ts` 头部的导航表，它会点名前端与共享侧仍需同步的文件。
+空串一律跳过；词条由 `imageGenerateService` 按标识从 `prompt/tags` 的 md 取回原文，再用 `@shared/utils/promptTag` 的 `normalizePromptTag` 归一化并前置，归一化口径与前端同源，因此面板上展示的原文与最终提示词逐字一致；上下文段来自请求的 `contexts`（前端 `composeSettingContext` 展开），规则正文由 `prompt/ruleService` 的 `readForPrompt` 按标识读盘后传给 `composeImagePrompt`，空串、空规则与缺失文件都不占位。宿主侧拼装集中在 `src/modules/imagegen/prompt/finalPrompt` 的 `composeImagePrompt`（对象入参，顺序固定），由 `dev/test/imagegenPrompt.test.ts` 覆盖顺序与空串行为，上下文、规则读盘与出图合并在 `dev/test/imageGenerateService.test.ts` 覆盖。前端只负责正文、角色段与上下文段（`workflow/imagegen/prompt/promptSections.ts`），画风与负向约束仍由宿主追加。改提示词时先看 `src/modules/imagegen/prompt/index.ts` 头部的导航表，它会点名前端与共享侧仍需同步的文件。
 
 参考图不参与文本拼装：`imageGenerateService` 把 `referenceImages` 交给 `referenceImageService.readForPrompt` 读成字节与真实 MIME，再由 `codebuddyImageProvider` 把「指令文本 + image 内容块」作为一条结构化用户消息提交（`query` 的 `prompt` 支持 `AsyncIterable<UserMessage>`）。无参考图时仍走原字符串提示词路径，二者行为一致；单张参考图失效（被删除、被替换、超限）只跳过该张并记日志，不阻断出图。
 
@@ -326,5 +326,5 @@ lifeguard
 
 - `pnpm exec tsc --noEmit`
 - `pnpm exec eslint src/modules/imagegen src/workflow/imagegen`
-- `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryService.test.ts tests/coverService.test.ts tests/imageSettingsService.test.ts tests/imageGenerateService.test.ts tests/imageNaming.test.ts tests/useImageLibrary.test.tsx tests/useImageDetail.test.tsx tests/components/ImageGenGrid.test.tsx tests/components/ImageComposer.test.tsx tests/components/ImageGenPage.test.tsx`
+- `pnpm exec vitest run dev/test/imagegenIds.test.ts dev/test/imagegenPrompt.test.ts dev/test/imageDirScan.test.ts dev/test/imageSidecar.test.ts dev/test/imageLibraryService.test.ts dev/test/coverService.test.ts dev/test/imageSettingsService.test.ts dev/test/imageGenerateService.test.ts dev/test/imageNaming.test.ts dev/test/useImageLibrary.test.tsx dev/test/useImageDetail.test.tsx dev/test/components/ImageGenGrid.test.tsx dev/test/components/ImageComposer.test.tsx dev/test/components/ImageGenPage.test.tsx`
 - 手测清单：列举 Images 目录、按类别/角色/关键词筛选与「清空筛选」、设为封面、删除当前封面后的回退、详情面板复制与插入（含无侧车空态与骨架过渡）、生成中取消（含取消后迟到出图是否自动补进列表）、切换作品后参数是否沿用、多选批量删除（含进度文案与角色封面回退）、芯片内联输入与退格删除、键盘 Tab 聚焦卡片后回车打开详情。

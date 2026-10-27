@@ -34,8 +34,8 @@ export default defineConfig([
             },
             parserOptions: {
                 projectService: {
-                    // 根目录 .mjs 构建脚本不在任何 tsconfig 的 include 内，
-                    // 显式登记为默认项目，否则 ESLint 解析直接报错
+                    // 兜底：根目录下未被 tsconfig include 覆盖的 .mjs 登记为默认项目，
+                    // 否则 ESLint 的类型感知解析会直接报错
                     allowDefaultProject: ['*.mjs'],
                 },
                 tsconfigRootDir: import.meta.dirname,

@@ -6,7 +6,7 @@
  * 关键约束：空串一律跳过，避免出现多余空行；顺序固定为 正文 → 上下文 → 规则 → 作品补充 → 负向 → 画风，
  * 上下文与规则都来自「添加上下文」菜单，作为背景与约束而非画面描述；
  * 画风描述固定在最后，与既有出图口径保持一致；负向约束统一加「避免出现：」前缀，
- * 便于模型识别为禁止项而不是画面内容；调整顺序须同步 tests/imagegenPrompt.test.ts。
+ * 便于模型识别为禁止项而不是画面内容；调整顺序须同步 dev/test/imagegenPrompt.test.ts。
  */
 import type { ImageSettings } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'

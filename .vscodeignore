@@ -1,8 +1,7 @@
 # 打包忽略清单：vsix 只需 dist/ 产物、resources/icon.svg 与清单类文件
-# 源码、测试与开发脚本（编译期使用，运行时不读）
+# 源码与开发工具链（编译期使用，运行时不读）
 src/**
-tests/**
-scripts/**
+dev/**
 docs/**
 .codebuddy/**
 .vscode/**
@@ -13,7 +12,7 @@ resources/shadcn/**
 resources/models/**
 
 # 根目录依赖：pnpm 的符号链接布局无法被 vsce 的 npm list 检测处理，故打包时用 --no-dependencies。
-# 需要随包分发的运行时依赖由 scripts/bundle-native.mjs 单独装到 dist/node_modules/ 下，
+# 需要随包分发的运行时依赖由 dev/scripts/bundle-native.mjs 单独装到 dist/node_modules/ 下，
 # 因此这里只锚定根目录的 node_modules，放行 dist 内的依赖。
 /node_modules/**
 

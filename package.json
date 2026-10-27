@@ -36,14 +36,14 @@
         "virtualWorkspaces": false
     },
     "scripts": {
-        "compile": "pnpm run typecheck && node scripts/esbuild.mjs && vite build",
-        "watch": "concurrently -n ts,host,web -c yellow,blue,green \"tsc --noEmit --watch\" \"node scripts/esbuild.mjs --watch\" \"vite build --watch\"",
+        "compile": "pnpm run typecheck && node dev/scripts/esbuild.mjs && vite build",
+        "watch": "concurrently -n ts,host,web -c yellow,blue,green \"tsc --noEmit --watch\" \"node dev/scripts/esbuild.mjs --watch\" \"vite build --watch\"",
         "typecheck": "tsc --noEmit",
         "test": "vitest run",
         "lint": "eslint .",
         "lint:fix": "eslint . --fix",
-        "verify": "pnpm run typecheck && pnpm run lint && pnpm run test && prettier --check src tests package.json eslint.config.mjs",
-        "package": "pnpm run compile && node scripts/bundle-native.mjs && vsce package --no-dependencies"
+        "verify": "pnpm run typecheck && pnpm run lint && pnpm run test && prettier --check src dev/test package.json eslint.config.mjs",
+        "package": "pnpm run compile && node dev/scripts/bundle-native.mjs && vsce package --no-dependencies"
     },
     "contributes": {
         "commands": [
