@@ -30,15 +30,13 @@
 
 ```
 {root}/press/【小说名】/
-├── Images/                  ← 统一图库：生图页出图（角色图与普通图）都写这里
-├── Cover/                   ← 历史合成封面：只读兼容，不再写入
-├── Portraits/               ← 历史角色图：只读兼容，不再写入新文件
+├── Images/                  ← 统一图库：角色图与普通图都写这里
 └── .zhai/image.json         ← 作品级生图参数（隐藏目录，不进作品索引）
 ```
 
-`IMAGE_DIR_NAMES`（`src/modules/imagegen/constants.ts`）是三个目录的白名单：列举、复制、插入、删除、级联清理都按它遍历，因此旧目录里的图仍可正常管理。
+`IMAGE_DIR_NAMES`（`src/modules/imagegen/constants.ts`）只含 `Images`：列举、复制、插入、删除与级联清理都按它遍历。
 
-旧目录不做迁移：新生成的图片一律落在 `Images/`，`Cover/` 与 `Portraits/` 只作历史文件列举与删除，不提供搬移入口，也不改写已有封面指针。
+历史目录不再读取：`Cover/` 与 `Portraits/` 里的旧图不参与列举、删除与封面候选，代码不做迁移也不改写已有指针；需要保留的老图请手工移入 `Images/`（命名不符合当前规则的会显示为孤儿图）。
 
 ### 2.2 图片标识
 
@@ -46,11 +44,8 @@
 | --- | --- | --- |
 | 角色图 | `portrait-{14 位时间戳}-{8 位角色标识}` | `portrait-20261025143000-10428736` |
 | 普通图 | `photo-{14 位时间戳}-{8 位随机串}` | `photo-20261025143000-aB3xK9Qz` |
-| 历史合成封面（只读） | `cover-{14 位时间戳}` | `cover-20261025143000` |
-| 旧角色图（只读） | `portrait-{8 位角色标识}-{14 位时间戳}` | `portrait-10428736-20261025143000` |
-| 旧封面（只读） | `cover-{14 位时间戳}` | `cover-20261025143000` |
 
-解析集中在 `src/shared/types/imagegen.ts`：`parseImageKind` / `parseImageCharacterId` / `isPressImageId`。新旧规则必须并存且互不误判。
+解析集中在 `src/shared/types/imagegen.ts`：`parseImageKind` / `parseImageCharacterId` / `isPressImageId`。只认当前命名，旧角色图与旧封面命名一律归为孤儿图。
 
 ### 2.4 命名冲突
 
@@ -64,7 +59,7 @@
 
 侧车是可选附属物，读写两侧都不假设它存在：
 
-- 生成：生图页与角色卡通道都写同名侧车；`ratio` 记录实际出图规格——生图页写比例（`3:4`），角色卡写像素尺寸（`768x1024`），详情面板按值形态显示「比例」或「尺寸」。
+- 生成：生图页出图（角色图与普通图）都写同名侧车；`ratio` 记录请求比例（`3:4` 等），详情面板据此显示「比例」。
 - 读取：`pressAi/getImageDetail` 在侧车缺失或 JSON 不合法时，各字段返回 `null`，详情面板隐藏参数区，旧图仍可正常浏览。
 - 删除：生图页删图与角色图删图都会顺带删同名侧车（不进回收站）；侧车本不存在时静默跳过。
 
@@ -78,7 +73,7 @@
 
 | 方法 | 入参 | 返回 | 说明 |
 | --- | --- | --- | --- |
-| `pressAi/listImageLibrary` | `dirPath` | `ImageLibraryResult` | 合并三目录扫描，按时间降序；`counts` 给出各分类数量 |
+| `pressAi/listImageLibrary` | `dirPath` | `ImageLibraryResult` | 扫描 Images，按时间降序；`counts` 给出各分类数量 |
 | `pressAi/getImageDetail` | `dirPath`、`path` | `ImageDetailResult` | 读同名侧车；侧车缺失或字段不合法时各字段为 `null`，不抛错 |
 | `pressAi/deleteImage` | `dirPath`、`path` | `ImageDeleteResult` | 进回收站；一次算好作品封面回退值与角色封面回退值 |
 | `pressAi/deleteImages` | `dirPath`、`paths` | `ImageBatchDeleteResult` | 整单校验路径（任一越权即拒绝，最多 500 张）；逐张删除并清侧车，最后只重扫一次目录，回传新图库与逐张回执 |
@@ -119,11 +114,11 @@
 
 ### 3.5 作品封面（只读展示）
 
-设定页只调 `pressAi/listCover`：候选合并 `Cover/cover-*` 与 `Images/photo-*`，按修改时间降序后最多返回 60 张（`MAX_COVER_CANDIDATES`），同时回传 `total`；基本信息左列取选中封面、未设时取最新一张。合成、另选与删除入口已移除，设封面唯一入口是生图页图片详情的 `pressAi/setImageCover`，见第 8 节。
+设定页只调 `pressAi/listCover`：候选只取 `Images/photo-*`，按修改时间降序后最多返回 60 张（`MAX_COVER_CANDIDATES`），同时回传 `total`；基本信息左列取选中封面、未设时取最新一张。合成、另选与删除入口已移除，设封面唯一入口是生图页图片详情的 `pressAi/setImageCover`，见第 8 节。
 
 ### 3.6 角色设定图（列举与图片操作）
 
-`pressAi/listPortraits`、`pressAi/listPortraitGallery` 供人物卡与人物列表回读已落盘的设定图；`pressAi/copyPortrait` 与 `pressAi/insertPortrait` 在生图页图片详情里复用。出图不再有 `pressAi/generatePortrait`，人物设定图统一由生图页 `pressAi/generateImage`（`kind=portrait`）产出：新图落在 `Images/`，命名 `portrait-{14 位时间戳}-{8 位角色标识}`，并写同名侧车（`ratio` 取 `zhai.image.size` 像素尺寸）；`Portraits/` 目录只作只读兼容，不再写入。
+`pressAi/listPortraits`、`pressAi/listPortraitGallery` 供人物卡与人物列表回读已落盘的设定图；`pressAi/copyPortrait` 与 `pressAi/insertPortrait` 在生图页图片详情里复用。出图不再有 `pressAi/generatePortrait`，人物设定图统一由生图页 `pressAi/generateImage`（`kind=portrait`）产出：新图落在 `Images/`，命名 `portrait-{14 位时间戳}-{8 位角色标识}`，并写同名侧车（`ratio` 记录请求比例）。
 
 ---
 
@@ -131,7 +126,7 @@
 
 | 文件 | 职责 |
 | --- | --- |
-| `imageLibraryService.ts` | 三目录合并列举、删除（带回退值计算，侧车同步清理）、设封面、详情读侧车 |
+| `imageLibraryService.ts` | 统一目录列举、删除（带回退值计算，侧车同步清理）、设封面、详情读侧车 |
 | `imageGenerateService.ts` | 统一出图：参数校验、词条标识换取文本、配额、单任务锁、落盘、侧车、用量记账 |
 | `imageDirScan.ts` | 图片目录扫描唯一入口：目录缺失视为空、只收普通文件、扩展名口径（png/jpe?g/webp/gif） |
 | `promptImageService.ts` | 提示词预览图库：`{存储根}/prompt/images` 判空并转 webview 基址，另提供打开该目录的命令实现 |
@@ -141,7 +136,7 @@
 | `imageSidecar.ts` | 侧车路径推导、随图删除与写入，尽力而为、不抛错 |
 | `promptCompose.ts` | 提示词拼装纯函数：正文 → 作品补充 → 负向约束 → 画风描述 |
 | `imageSettingsService.ts` | 作品级参数读写（`.zhai/image.json`），只存与默认不同的键 |
-| `coverService.ts` | 封面候选列举：合并 `Cover/cover-*` 与 `Images/photo-*` 供设定页只读展示，不写盘、不调用图像通道 |
+| `coverService.ts` | 封面候选列举：只取 `Images/photo-*` 供设定页只读展示，不写盘、不调用图像通道 |
 | `portraitService.ts` | 角色图列举/复制/插入与角色级联清理（出图已迁到 `imageGenerateService`） |
 | `db/coverRepository.ts` | 封面指针（`press.db`）；`isProjectImagePath` 判断归属 |
 
@@ -234,7 +229,7 @@
 ## 6. 关键约束
 
 1. **磁盘是唯一事实来源**：任何写操作后重新列举，不做乐观删除或乐观新增。
-2. **作品归属必须校验**：删除与设封面只接受 `press/{作品名}` 下、目录在白名单内的路径；设封面还要求标准命名。
+2. **作品归属必须校验**：删除与设封面只接受 `press/{作品名}/Images` 下的路径；设封面还要求标准命名。
 3. **封面不是类别**：`PressImageKind` 只有 `portrait` / `photo` / `orphan`，「是否为封面」由 `coverSelectedId === id` 判断。
 4. **角色封面指针由前端写回**：宿主只回传 `characterId` 与 `nextPortraitId`，前端在「被删图正是该角色当前封面」时才写回，避免覆盖用户新选择；批量删除时回退值改取「删除后剩余列表中该角色最新一张」，不采用单张回执里的 `nextPortraitId`（同批中可能指向即将被删的图）。
 5. **配额与超时是全局护栏**：`zhai.image.dailyLimit` 不接受作品级覆盖；参数文件只管风格与默认值。
@@ -246,7 +241,7 @@
 
 | 项 | 现状 |
 | --- | --- |
-| 旧目录文件 | 不迁移：`Cover/` 与 `Portraits/` 的历史图仍可列举、删除、设封面，新图只写 `Images/` |
+| 旧目录文件 | 不再读取：`Cover/` 与 `Portraits/` 的历史图不参与列举、删除与封面候选，新图只写 `Images/` |
 | 提示词芯片 | 已内联：`RichChipInput` 与 aichat 共用 `richText` 的 DOM 工具，芯片可退格删除；芯片只带上游原文，文本由宿主换取，因此宿主不校验词条是否存在于库中 |
 | 出图规则 | 全局共享（`prompt/rules`），不随作品迁移；保存只新建、不覆盖同名文件；规则被删除或读取失败时静默跳过；单次最多 5 条、合计 3000 字，单条正文上限 4000 字 |
 | 上下文拆分 | 作品设定与规则走 `contexts` / `promptRules`，与 `prompt` 正文分字段提交；宿主侧仍拼成一段文本交给图像通道，模型侧只有单段输入 |
@@ -266,7 +261,7 @@
 
 **封面只有一个写入入口**：生图页图片详情的 `pressAi/setImageCover`。设定页「基本信息」左列只读展示 `pressAi/listCover` 的结果，不再有套用书名、另选或删除。
 
-因此封面来源只有图库里的普通图 `Images/photo-*`（详情面板里指定）；历史合成的 `Cover/cover-*` 仍参与候选展示，保证老作品封面不丢，但不再产生新文件，也不进图库列表。角色图（`portrait-*`）不进封面候选，避免把人物设定图当作品封面。
+因此封面来源只有图库里的普通图 `Images/photo-*`（详情面板里指定）；历史 `Cover/cover-*` 与 `Portraits/` 一律不再读取。角色图（`portrait-*`）不进封面候选，避免把人物设定图当作品封面。
 
 `pressAi/saveCover`、`selectCover`、`deleteCover`、`generateCover`，以及 `ai/coverPrompt.ts`、`setting/coverCompose.ts`、`ai/portraitSceneGenerator.ts` 等旧链路已随入口迁移一并删除；`zhai.image.size` 现在作用于生图页全部出图。
 
@@ -277,4 +272,4 @@
 - `pnpm exec tsc --noEmit`
 - `pnpm exec eslint src/modules/imagegen src/workflow/imagegen`
 - `pnpm exec vitest run tests/imagegenIds.test.ts tests/imagegenPrompt.test.ts tests/imageDirScan.test.ts tests/imageSidecar.test.ts tests/imageLibraryService.test.ts tests/coverService.test.ts tests/imageSettingsService.test.ts tests/imageGenerateService.test.ts tests/imageNaming.test.ts tests/useImageLibrary.test.tsx tests/useImageDetail.test.tsx tests/components/ImageGenGrid.test.tsx tests/components/ImageComposer.test.tsx tests/components/ImageGenPage.test.tsx`
-- 手测清单：列举三目录、按类别/角色/关键词筛选与「清空筛选」、设为封面、删除当前封面后的回退、详情面板复制与插入（含无侧车空态与骨架过渡）、生成中取消（含取消后迟到出图是否自动补进列表）、切换作品后参数是否沿用、多选批量删除（含进度文案与角色封面回退）、芯片内联输入与退格删除、键盘 Tab 聚焦卡片后回车打开详情。
+- 手测清单：列举 Images 目录、按类别/角色/关键词筛选与「清空筛选」、设为封面、删除当前封面后的回退、详情面板复制与插入（含无侧车空态与骨架过渡）、生成中取消（含取消后迟到出图是否自动补进列表）、切换作品后参数是否沿用、多选批量删除（含进度文案与角色封面回退）、芯片内联输入与退格删除、键盘 Tab 聚焦卡片后回车打开详情。

@@ -60,7 +60,7 @@ const CHARACTERS: CharacterCard[] = [
         arc: '从棋子到棋手',
         relation: '夏侯荻的师弟',
         portraits: [],
-        coverPortraitId: 'portrait-12345678-20261001120000',
+        coverPortraitId: 'portrait-20261001120000-12345678',
         portraitStyle: 'guofeng',
     },
 ]
@@ -164,7 +164,7 @@ describe('草稿回写往返', () => {
             catchphrase: '我来试试',
             // 封面与画风必须能往返：只存 id，图片本体在 Portraits 下
             portraitStyle: 'guofeng',
-            coverPortraitId: 'portrait-12345678-20261001120000',
+            coverPortraitId: 'portrait-20261001120000-12345678',
         })
 
         expect(parsed.volumes).toHaveLength(1)

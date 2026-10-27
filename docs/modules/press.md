@@ -200,7 +200,7 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 | 超时 | CodeBuddy 通道上限 600s（子进程启动 + 排队），前端兜底 15 分钟 |
 | 产物归一 | `ImageGen` 以 JSON 文本回报 `{ type: 'image_gen_tool_result', images: [{ localPath }] }`，适配层先取结构化字段，再依次尝试 image block / data URL / 绝对路径 / 链接；路径可能不带扩展名，格式一律按文件魔数（PNG/JPEG/WEBP）判定，非图片内容自动跳到下一个候选，统一交给 `imageGenerateService` 落盘 |
 | 落盘位置 | `press/{作品名}/Images/portrait-{14 位时间戳}-{8 位角色标识}.{ext}`：所有通道落同一图库目录，角色归属由文件名解析，删除作品即随目录一并清理 |
-| 作品封面 | 唯一设封面入口是生图页图片详情的 `pressAi/setImageCover`：任意 `Images/photo-*` 都可在详情里直接指定；设定页「基本信息」左列只读展示 `pressAi/listCover` 返回的当前封面（未设时取最新一张），不再提供合成、另选或删除；选中记录存 `press.db` 的 meta 表（键 `cover:{dirPath}`，值为封面相对路径），仪表盘作品列表据此补 `coverUrl`；历史 `Cover/cover-*` 仍参与候选展示，但不再产生新文件 |
+| 作品封面 | 唯一设封面入口是生图页图片详情的 `pressAi/setImageCover`：任意 `Images/photo-*` 都可在详情里直接指定；设定页「基本信息」左列只读展示 `pressAi/listCover` 返回的当前封面（未设时取最新一张），不再提供合成、另选或删除；选中记录存 `press.db` 的 meta 表（键 `cover:{dirPath}`，值为封面相对路径），仪表盘作品列表据此补 `coverUrl`；历史 `Cover/cover-*` 与 `Portraits/` 不再读取，候选只来自 `Images/photo-*` |
 | 画风与尺寸 | 沿用 `PORTRAIT_STYLES` 与 `zhai.image.size`；CodeBuddy 侧的传参方式（自然语言描述 / 工具入参）待实测，未定前双写 |
 | 文生图模型 | 由 CLI 决定，插件不下发 `--text-to-image-model`：清单来自服务端产品配置（SDK 只返回语言模型，无法枚举），故不提供配置项；需要更换时在 CLI 中用 `/model:text-to-image list` 查看、`/model:text-to-image <id>` 切换，CLI 会把选择存进自身 settings。驱动工具调用的对话模型复用 AI 面板模型菜单的选择（存 `globalState` 的 `ai.codebuddyModel`，可从账号可用列表选择或手动填写自定义模型 id） |
 | 频率护栏 | `zhai.image.dailyLimit` 按次计数 |

@@ -2,8 +2,7 @@
  * 生图模块契约：图片条目、统一图库的列举/删除/设封面、按提示词生成、生成参数与图片标识规则。
  * 复用约定：图片风格沿用 ./press 的 PortraitStyle 与 PORTRAIT_STYLES，作品目录口径与 press 一致；
  * 图片标识由文件名解析，不另建关联表——portrait 段携带角色标识，其余一律视为普通图片。
- * 关键约束：新增/旧命名的解析规则必须并存（旧照只读兼容、新图按新规则写入），
- * 时间戳在前、角色标识在后的新规则与「角色标识在前」的旧规则互不误判；
+ * 关键约束：只认当前命名（portrait-{时间戳}-{角色标识} 与 photo-{时间戳}-{随机段}），历史命名一律归为孤儿图；
  * 宿主不接受前端传入的任意路径，删除与设封面前必须按 dirPath 校验归属。
  */
 import type { PortraitStyle } from './press'
@@ -289,58 +288,41 @@ const CHARACTER_ID_LENGTH = 8
 /** 普通图片随机段位数 */
 const RANDOM_SUFFIX_LENGTH = 8
 
-/** 新角色图：portrait-{14 位时间戳}-{8 位角色标识} */
+/** 角色图：portrait-{14 位时间戳}-{8 位角色标识} */
 const PORTRAIT_ID_PATTERN = new RegExp(
     `^portrait-\\d{${String(TIMESTAMP_LENGTH)}}-\\d{${String(CHARACTER_ID_LENGTH)}}$`,
-)
-/** 旧角色图：portrait-{8 位角色标识}-{14 位时间戳}，仅读取兼容 */
-const LEGACY_PORTRAIT_ID_PATTERN = new RegExp(
-    `^portrait-\\d{${String(CHARACTER_ID_LENGTH)}}-\\d{${String(TIMESTAMP_LENGTH)}}$`,
 )
 /** 普通图片：photo-{14 位时间戳}-{8 位字母数字} */
 const PHOTO_ID_PATTERN = new RegExp(
     `^photo-\\d{${String(TIMESTAMP_LENGTH)}}-[A-Za-z0-9]{${String(RANDOM_SUFFIX_LENGTH)}}$`,
 )
-/** 旧作品封面：cover-{14 位时间戳}，仅读取兼容 */
-const LEGACY_COVER_ID_PATTERN = new RegExp(`^cover-\\d{${String(TIMESTAMP_LENGTH)}}$`)
 
 /** 判断图片标识是否合法：列举、删除与封面指针校验共用同一口径 */
 export function isPressImageId(value: unknown): value is string {
     if (typeof value !== 'string') {
         return false
     }
-    return (
-        PORTRAIT_ID_PATTERN.test(value) ||
-        LEGACY_PORTRAIT_ID_PATTERN.test(value) ||
-        PHOTO_ID_PATTERN.test(value) ||
-        LEGACY_COVER_ID_PATTERN.test(value)
-    )
+    return PORTRAIT_ID_PATTERN.test(value) || PHOTO_ID_PATTERN.test(value)
 }
 
-/** 按标识判定类别：两个 portrait 规则都返回 portrait，封面旧命名归入普通图 */
+/** 按标识判定类别：portrait 前缀为角色图，photo 前缀为普通图，其余为孤儿图 */
 export function parseImageKind(id: string): PressImageKind {
-    if (PORTRAIT_ID_PATTERN.test(id) || LEGACY_PORTRAIT_ID_PATTERN.test(id)) {
+    if (PORTRAIT_ID_PATTERN.test(id)) {
         return 'portrait'
     }
-    if (PHOTO_ID_PATTERN.test(id) || LEGACY_COVER_ID_PATTERN.test(id)) {
+    if (PHOTO_ID_PATTERN.test(id)) {
         return 'photo'
     }
     return 'orphan'
 }
 
-/**
- * 从图片标识解析所属角色：新规则取末段，旧规则取第二段。
- * 两种规则的段长度不同，先后顺序不影响结果，因此可安全并存。
- */
+/** 从图片标识解析所属角色：角色段固定在第 3 段 */
 export function parseImageCharacterId(id: string): string | null {
+    if (!PORTRAIT_ID_PATTERN.test(id)) {
+        return null
+    }
     const segments = id.split('-')
-    if (PORTRAIT_ID_PATTERN.test(id)) {
-        return segments[2] ?? null
-    }
-    if (LEGACY_PORTRAIT_ID_PATTERN.test(id)) {
-        return segments[1] ?? null
-    }
-    return null
+    return segments[2] ?? null
 }
 
 /** 由时间戳与角色标识拼出角色图标识：时间戳必须是 14 位数字串 */

@@ -1,5 +1,5 @@
 /**
- * 封面服务单元测试：覆盖候选列举的命名白名单、按修改时间排序、上限截断与当前封面回读。
+ * 封面服务单元测试：覆盖候选只收 Images 下的普通图片、按修改时间排序、上限截断与当前封面回读。
  * 用内存库跑真实 schema 承载封面指针；虚拟磁盘与 mtime 由 vscode 测试桩承接。
  */
 import * as path from 'node:path'
@@ -14,7 +14,8 @@ const STORAGE_ROOT = 'd:/vault'
 const DIR_PATH = 'press/剑来'
 const PHOTO_OLD = 'photo-20260101010101-AbCd1234.png'
 const PHOTO_NEW = 'photo-20270101010101-EfGh5678.png'
-const COVER_OLD = 'cover-20250101010101.png'
+/** 历史合成封面：只存在于旧 Cover 目录，不应再进候选 */
+const LEGACY_COVER = 'cover-20250101010101.png'
 /** 与 coverService 的候选上限保持一致：超过该数量应被截断 */
 const CANDIDATE_LIMIT = 60
 
@@ -43,8 +44,7 @@ beforeEach(() => {
 })
 
 describe('list', () => {
-    it('合并 Cover 与 Images 候选并按修改时间降序', async () => {
-        addImage('Cover', COVER_OLD, 100)
+    it('只列举 Images 候选并按修改时间降序', async () => {
         addImage('Images', PHOTO_OLD, 200)
         addImage('Images', PHOTO_NEW, 300)
 
@@ -53,15 +53,15 @@ describe('list', () => {
         expect(result.covers.map((item) => item.id)).toEqual([
             'photo-20270101010101-EfGh5678',
             'photo-20260101010101-AbCd1234',
-            'cover-20250101010101',
         ])
-        expect(result.total).toBe(3)
+        expect(result.total).toBe(2)
         expect(result.selectedId).toBeNull()
     })
 
-    it('跳过 cover- 与 photo- 之外的图片', async () => {
-        addImage('Images', 'manual.png', 100)
+    it('跳过旧 Cover 目录、角色图与手工图', async () => {
+        addImage('Cover', LEGACY_COVER, 100)
         addImage('Images', 'portrait-20260101010101-abcd1234.png', 200)
+        addImage('Images', 'manual.png', 300)
 
         const result = await service.list({ dirPath: DIR_PATH }, (uri) => uri.fsPath)
 
@@ -70,13 +70,13 @@ describe('list', () => {
     })
 
     it('已设封面时回传该封面的标识', async () => {
-        addImage('Cover', COVER_OLD, 100)
         addImage('Images', PHOTO_OLD, 200)
-        store.write(DIR_PATH, `press/剑来/Cover/${COVER_OLD}`)
+        addImage('Images', PHOTO_NEW, 300)
+        store.write(DIR_PATH, `press/剑来/Images/${PHOTO_OLD}`)
 
         const result = await service.list({ dirPath: DIR_PATH }, (uri) => uri.fsPath)
 
-        expect(result.selectedId).toBe('cover-20250101010101')
+        expect(result.selectedId).toBe('photo-20260101010101-AbCd1234')
     })
 
     it('作品目录不存在时返回空列表', async () => {

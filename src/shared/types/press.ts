@@ -416,23 +416,10 @@ export function matchesCharacterId(value: string): boolean {
     return PRESS_CHARACTER_ID_PATTERN.test(value)
 }
 
-/** 设定图标识：portrait-{8位角色标识}-{14位年月日时分秒}，去掉扩展名即图片 id */
-const PRESS_PORTRAIT_ID_PATTERN = /^portrait-(\d{8})-\d{14}$/
-
-/** 判断图片 id 是否合法：封面引用从文档读回时用它校验，避免把任意文本当成图片引用 */
-export function isPressPortraitId(value: unknown): value is string {
-    return typeof value === 'string' && PRESS_PORTRAIT_ID_PATTERN.test(value)
-}
-
-/** 从图片 id 解析所属角色标识：扁平目录不再按角色分子目录，分组全靠文件名里的角色段 */
-export function parsePortraitCharacterId(portraitId: string): string | null {
-    return PRESS_PORTRAIT_ID_PATTERN.exec(portraitId)?.[1] ?? null
-}
-
 /** 角色设定图：宿主生成并落盘后回传的图片信息 */
 export interface CharacterPortrait {
     id: string
-    /** 相对存储根的路径，形如 press/{作品名}/Portraits/portrait-{角色标识}-{时间戳}.png */
+    /** 相对存储根的路径，形如 press/{作品名}/Images/portrait-{时间戳}-{角色标识}.png */
     path: string
     /** webview 可访问的完整 URL，仅本次会话有效（由宿主用 asWebviewUri 转换） */
     url: string
@@ -475,10 +462,10 @@ export interface PortraitCopyResult {
     reason?: 'unsupported' | 'failed'
 }
 
-/** 作品封面：宿主生成并落盘后回传的图片信息 */
+/** 作品封面：图库中当前选中（或最新）的普通图片 */
 export interface PressCover {
     id: string
-    /** 相对存储根的路径，形如 press/{作品名}/Cover/cover-{时间戳}.png */
+    /** 相对存储根的路径，形如 press/{作品名}/Images/photo-{时间戳}-{随机段}.png */
     path: string
     /** webview 可访问的完整 URL，仅本次会话有效（由宿主用 asWebviewUri 转换） */
     url: string
@@ -492,14 +479,6 @@ export interface CoverListResult {
     selectedId: string | null
     /** 命中总数：可能大于 covers.length，界面据此提示「仅显示最新 N 张」 */
     total: number
-}
-
-/** 封面标识规则：cover-{14 位时间戳}，文件名去掉扩展名后与之一一对应 */
-const PRESS_COVER_ID_PATTERN = /^cover-\d{14}$/
-
-/** 判断封面标识是否合法：删除与列举时用它过滤目录里的其它图片 */
-export function isPressCoverId(value: unknown): value is string {
-    return typeof value === 'string' && PRESS_COVER_ID_PATTERN.test(value)
 }
 
 /** 文本文件编码：导入前先探测，写入统一转为 UTF-8 且不带 BOM */

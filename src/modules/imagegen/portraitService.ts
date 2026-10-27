@@ -4,7 +4,7 @@
  * 关键约束：出图统一在生图页完成（pressAi/generateImage），本服务不再生成图片，也不再读写配额；
  * 角色归属由文件名里的角色段解析（不按角色分子目录），跟随作品目录（删除作品即一并清理）；
  * 目录是图片的唯一事实来源，列举以磁盘为准；
- * 删除、复制与插入只接受 press/{作品名}/{Images|Cover|Portraits} 下的四段白名单路径，删除优先走回收站；
+ * 删除、复制与插入只接受 press/{作品名}/Images 下的四段白名单路径，删除优先走回收站；
  * 复制经平台命令写入系统剪贴板（webview 内写图片受 CSP 与权限限制）。
  */
 import { execFile } from 'node:child_process'
@@ -28,7 +28,7 @@ import { isPressCharacterId } from '@shared/types/press'
 import { IMAGE_DIR_NAMES } from './constants'
 import { listImageFiles } from './imageDirScan'
 
-/** 角色卡相对路径的段数：press/{作品名}/{Images|Cover|Portraits}/{文件名} */
+/** 角色卡相对路径的段数：press/{作品名}/Images/{文件名} */
 const PORTRAIT_SEGMENT_COUNT = 4
 /** 短字段长度上限 */
 const MAX_SHORT_TEXT = 64
@@ -70,7 +70,7 @@ export class PortraitService {
 
     /**
      * 一次性列举作品下全部角色的设定图，供人物列表批量显示封面。
-     * 关键约束：图片平铺在 Portraits 下，角色归属由文件名里的角色段解析；
+     * 关键约束：图片平铺在 Images 下，角色归属由文件名里的角色段解析；
      * 不符合命名规则的其它图片不参与分组，顺序与编辑弹窗里的图库完全一致。
      */
     public async listGallery(
@@ -101,7 +101,7 @@ export class PortraitService {
         toWebviewUri: (uri: vscode.Uri) => string,
     ): Promise<CharacterPortrait[]> {
         const portraits: CharacterPortrait[] = []
-        // 统一目录 Images 与两个旧目录一并扫描，新图与历史图出现在同一个列表里
+        // 只扫统一目录 Images：历史 Cover / Portraits 不再读取
         for (const file of await listImageFiles(projectSegments, IMAGE_DIR_NAMES)) {
             const id = file.name.replace(/\.[^.]+$/u, '')
             // 只收角色图：普通图片与手工图不属于任何角色
@@ -180,7 +180,7 @@ export class PortraitService {
 
     /**
      * 把设定图写入系统剪贴板：webview 内写图片受 CSP 与剪贴板权限限制，改由宿主按平台调用原生能力。
-     * 只接受 press/{作品名}/Portraits 下的四段相对路径；平台不支持或依赖缺失时返回原因，由前端提示。
+     * 只接受 press/{作品名}/Images 下的四段相对路径；平台不支持或依赖缺失时返回原因，由前端提示。
      */
     public async copyToClipboard(payload: unknown): Promise<PortraitCopyResult> {
         const path = readPortraitPath(payload)
@@ -213,7 +213,7 @@ export class PortraitService {
         const projectSegments = readProjectSegments(dirPath)
         const root = resolveStorageRoot()
         let removed = 0
-        // 三个图片目录都要清理：新图落在 Images，历史图还在 Cover / Portraits
+        // 只清理统一目录 Images：历史 Cover / Portraits 不再纳入
         // 这里刻意不过滤扩展名：同名的出图参数侧车（.json）也要随图片一并清掉，故不走图片列举入口
         for (const dirName of IMAGE_DIR_NAMES) {
             const dirSegments = [...projectSegments, dirName]

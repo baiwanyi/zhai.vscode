@@ -1,5 +1,5 @@
 /**
- * 图片库服务单元测试：覆盖三目录归类与计数、按生成时间排序、删除后的封面回退与侧车清理、
+ * 图片库服务单元测试：覆盖统一目录归类与计数、按生成时间排序、删除后的封面回退与侧车清理、
  * 角色图删除回传的下一个封面，以及详情侧车的读取与损坏降级。
  * 用内存库跑真实 schema 承载封面指针；虚拟磁盘由 vscode 测试桩承接，断言取返回值与文件内容。
  */
@@ -63,7 +63,7 @@ beforeEach(() => {
 })
 
 describe('list', () => {
-    it('合并三目录并按标识归类，counts 与封面指针同步给出', async () => {
+    it('只列举统一目录并按标识归类，counts 与封面指针同步给出', async () => {
         addImage('Images', PHOTO_OLD)
         addImage('Images', PORTRAIT_OLD)
         addImage('Images', 'manual.png')
@@ -72,8 +72,8 @@ describe('list', () => {
 
         const result = await listLibrary()
 
-        expect(result.images).toHaveLength(4)
-        expect(result.counts).toEqual({ portrait: 1, photo: 2, orphan: 1 })
+        expect(result.images).toHaveLength(3)
+        expect(result.counts).toEqual({ portrait: 1, photo: 1, orphan: 1 })
         expect(result.coverSelectedId).toBe('photo-20260101010101-AbCd1234')
     })
 

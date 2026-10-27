@@ -1,14 +1,14 @@
 /**
  * 作品封面仓储：press.db 的 meta 表按作品记录选中的封面图片（相对存储根路径）。
  * 复用约定：与配额仓储共用 meta 表，键前缀 `cover:` 区分用途；生图页图片详情设封面与仪表盘读封面共用同一份读写逻辑。
- * 关键约束：值只接受 press/{作品名}/{图片目录}/{图片文件名} 形态且图片标识合法，写入前先校验，
- * 避免把手写路径或越界路径写进库；图片目录同时接受统一目录 Images 与只读兼容的 Cover / Portraits；
+ * 关键约束：值只接受 press/{作品名}/Images/{图片文件名} 形态且图片标识合法，写入前先校验，
+ * 避免把手写路径或越界路径写进库；只认统一目录 Images，历史 Cover / Portraits 记录一律判为无效；
  * 作品删除后残留的键无害，读取时按当前作品路径取用。
  */
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { isPressImageId } from '@shared/types/imagegen'
 import type Database from 'better-sqlite3'
-import { IMAGE_DIR_NAMES } from '../constants'
+import { IMAGES_DIR } from '../constants'
 
 /** 键前缀：后接作品相对路径 press/{作品名} */
 const KEY_PREFIX = 'cover:'
@@ -27,7 +27,7 @@ export function isProjectImagePath(dirPath: string, imagePath: string): boolean 
         segments.length === IMAGE_SEGMENT_COUNT &&
         segments[0] === PRESS_MODULE_DIR &&
         `${segments[0]}/${segments[1] ?? ''}` === dirPath &&
-        IMAGE_DIR_NAMES.includes(dirName)
+        dirName === IMAGES_DIR
     )
 }
 
