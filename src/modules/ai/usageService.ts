@@ -1,7 +1,7 @@
 /**
  * AI 用量查询：「AI 使用量」页的宿主侧实现，以 CodeBuddy 会话记录为明细主数据源，本地记账行只补模块与提示词归属。
  * 复用约定：一轮一行由 CliUsageIndex 汇总，模块键与范围枚举来自 shared/types/aiUsage，记录在此归一成下发契约；
- * 本地行按请求 id 关联，关联不上的标为 external；过期提示词在列表请求时顺带清理。
+ * 本地行按请求 id 关联，关联不上的标为 external；对账结论同时回填消息表积分，过期提示词在列表请求时顺带清理。
  * 关键约束：明细与汇总都按 CLI 记录的积分计，本地缺失时留空显示破折号，不做任何估算；
  * 积分消耗为 0 的轮次直接剔除，不占列表位置也不计入条数（未知积分保留，二者口径不同）；
  * 对账以 CLI 记录为准，已回填但偏小的值同样修正（工具调用积分可能晚落盘）；入参一律在本层收窄（模块白名单、
@@ -20,6 +20,7 @@ import type {
     AiUsageSummary,
 } from '@shared/types/aiUsage'
 import { isAiUsageModule } from '@shared/types/aiUsage'
+import { updateMessageCreditsByRequestId } from './db/chatRepository'
 import {
     getPrompt,
     listAllUsageLogs,
@@ -120,17 +121,20 @@ export class AiUsageService {
         if (pending.length === 0) {
             return
         }
-        const updates = pending.flatMap((row) => {
+        const updates: Array<{ id: string; credits: number }> = []
+        for (const row of pending) {
             const credit = this.cliUsage.readCredit(row.requestId)
             if (credit === null) {
-                return []
+                continue
             }
+            // 同请求 id 的助手消息一并修正：积分可能晚落盘，生成结束时只拿到部分值甚至拿不到
+            updateMessageCreditsByRequestId(this.db, row.requestId, credit)
             // 与库内一致则跳过，避免每次翻页都整批重写；积分为逐条累加，比较时留浮点容差
             if (row.credits !== null && Math.abs(row.credits - credit) < CREDIT_EPSILON) {
-                return []
+                continue
             }
-            return [{ id: row.id, credits: credit }]
-        })
+            updates.push({ id: row.id, credits: credit })
+        }
         updateUsageCredits(this.db, updates)
     }
 

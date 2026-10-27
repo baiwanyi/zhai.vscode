@@ -10,7 +10,7 @@
  */
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = '5'
+const SCHEMA_VERSION = '7'
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS conversations (
@@ -37,6 +37,11 @@ const DDL_STATEMENTS = [
         finish_reason   TEXT,
         refs            TEXT NOT NULL DEFAULT '[]',
         error           TEXT,
+        total_tokens    INTEGER NOT NULL DEFAULT 0,
+        duration_ms     INTEGER NOT NULL DEFAULT 0,
+        tokens_estimated INTEGER NOT NULL DEFAULT 0,
+        credits         REAL,
+        request_id      TEXT,
         created_at      TEXT NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages(conversation_id, created_at)`,
@@ -114,6 +119,14 @@ export function ensureAiSchema(db: Database.Database): boolean {
         if (readSchemaVersion(db) < 5) {
             db.exec('UPDATE ai_usage_logs SET credits = NULL')
         }
+        // v6：消息表补本轮用量与耗时，供消息底部工具栏展示；历史消息保持 0 即「未知」，不做回填
+        ensureColumn(db, 'messages', 'total_tokens', 'total_tokens INTEGER NOT NULL DEFAULT 0')
+        ensureColumn(db, 'messages', 'duration_ms', 'duration_ms INTEGER NOT NULL DEFAULT 0')
+        ensureColumn(db, 'messages', 'tokens_estimated', 'tokens_estimated INTEGER NOT NULL DEFAULT 0')
+        // v7：消息表补本轮真实积分与请求 id：积分晚落盘时由用量页按请求 id 对账回填，缺失保持 NULL 即未知
+        ensureColumn(db, 'messages', 'credits', 'credits REAL')
+        ensureColumn(db, 'messages', 'request_id', 'request_id TEXT')
+        db.exec('CREATE INDEX IF NOT EXISTS idx_msg_request ON messages(request_id)')
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)

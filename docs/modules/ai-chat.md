@@ -65,6 +65,7 @@ AI Chat 是插件的**智能交互中枢**，同时服务于两类需求：
 | A15 | 提示词预设 | 音色预设（小说家/诗人/论文）+ 常用指令收藏 | P2 | 待实现 |
 | A16 | 重试与超时 | 指数退避重试（上限 3 次），30s 无首字自动中断 | P1 | 待实现 |
 | A17 | 预算护栏 | 达到 `dailyTokenBudget` 时提示并阻断 | P1 | 待实现 |
+| A18 | 消息工具栏 | 助手回复底部提供复制，并展示本轮 tokens 与耗时（估算值单独标注） | P1 | 已落地 |
 
 ---
 
@@ -244,6 +245,11 @@ CREATE TABLE IF NOT EXISTS messages (
     finish_reason  TEXT,
     refs           TEXT NOT NULL DEFAULT '[]',  -- 引用上下文（JSON：绝对路径 + 行范围 + 展示标签）
     error          TEXT,
+    total_tokens   INTEGER NOT NULL DEFAULT 0,  -- 本轮总 token，0 表示未知（用户消息 / 历史数据）
+    duration_ms    INTEGER NOT NULL DEFAULT 0,  -- 本轮耗时（毫秒，墙钟），0 表示未知
+    tokens_estimated INTEGER NOT NULL DEFAULT 0, -- total_tokens 是否为按回复字数估算
+    credits        REAL,                        -- 本轮真实积分，NULL 表示未知（未对账或未上报）
+    request_id     TEXT,                        -- 通道侧请求 id，用量页对账时按它回填积分
     created_at     TEXT NOT NULL
 );
 
@@ -285,7 +291,7 @@ CREATE INDEX IF NOT EXISTS idx_prompt_date ON ai_prompts(created_at);
 
 **敏感字段说明**：用量表只存模型、模块、成本与请求标识；提示词正文单独存 `ai_prompts`，仅在用户点开某条请求时按 id 单条读取，列表查询不触碰该表。正文入库截断至 20000 字符并标记 `is_truncated`，保留 30 天，打开用量页时顺带清理；消息正文随会话存储，用户删除会话时级联清除。
 
-**迁移**：按版本由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行（v2 补 `provider` / `sdk_session_id`，v3 补 `project_dir`，v4 补用量表的 `module` / `request_id` / `sdk_message_id` / `cost_usd` / `credits` / 缓存 tokens / `status` 并新建 `ai_prompts`，v5 清空按倍率估算的 `credits` 并改由 CLI 记录回填）。`provider` 默认 `codebuddy`，`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话；`project_dir` 为 NULL 表示该会话不属于任何作品（历史会话不做回填）；`module` 默认 `chat`，旧值 `ai-chat` 等在读取时归一为 `chat`，不做回填。依赖新列的索引必须写在补列之后，否则旧库建索引会因缺列失败。
+**迁移**：按版本由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行（v2 补 `provider` / `sdk_session_id`，v3 补 `project_dir`，v4 补用量表的 `module` / `request_id` / `sdk_message_id` / `cost_usd` / `credits` / 缓存 tokens / `status` 并新建 `ai_prompts`，v5 清空按倍率估算的 `credits` 并改由 CLI 记录回填，v6 补消息表的 `total_tokens` / `duration_ms` / `tokens_estimated` 且历史消息不回填，v7 补消息表的 `credits` / `request_id` 并建请求 id 索引）。`provider` 默认 `codebuddy`，`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话；`project_dir` 为 NULL 表示该会话不属于任何作品（历史会话不做回填）；`module` 默认 `chat`，旧值 `ai-chat` 等在读取时归一为 `chat`，不做回填。依赖新列的索引必须写在补列之后，否则旧库建索引会因缺列失败。
 
 **会话作用域**：每个作品（`press/{作品名}`）各有一份对话记录——取最近会话、新建会话、历史列表都按 `project_dir` 过滤（比较用 `IS ?` 以覆盖 NULL），因此切换作品即切换对话上下文，互不串历史。作品页（`WorkflowPress`）把当前作品目录作为作用域下传给 `AiChat`，通用场景不带作用域即取 `project_dir IS NULL` 的那份对话。
 
@@ -341,7 +347,10 @@ interface AiStreamEvent {
     reqId: string
     channel: 'delta' | 'reasoning' | 'done' | 'error'
     text: string
-    usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
+    usage?: { promptTokens: number; completionTokens: number; totalTokens: number }  // 流末携带
+    durationMs?: number              // 本轮耗时（毫秒，墙钟），流末携带
+    tokensEstimated?: boolean        // usage 是否为按回复字数估算
+    credits?: number | null          // 本轮真实积分，null / 缺省均为未知
 }
 
 /** 应用改动（写作模式） */
@@ -504,6 +513,14 @@ interface AbortRequest {
 ### 10.4 设置入口（已迁移）
 
 底部齿轮按钮已移除，插件设置入口改为侧栏视图标题栏图标：`package.json` 的 `menus.view/title` 注册 `zhai.openSettings`（`when = view == zhai.workflow`，`icon = $(gear)`）。无 Key 时仍由对话页空态卡片引导「设置 API Key」。
+
+### 10.5 消息工具栏与用量口径（已落地）
+
+助手消息在生成落定（完成 / 失败 / 停止）且有正文时，底部渲染工具栏（`AiChatMessageActions`）：复制回复、本轮积分、tokens 与耗时；用户消息与流式过程中不出现。tokens 与耗时为 0、积分为 NULL 均视为未知、不渲染对应胶囊；精确值（估算口径、毫秒数与构成说明）经 `ui/tooltip` 悬浮展示。
+
+**积分的来源与回填**：积分只认 CodeBuddy CLI 会话记录（消息积分与工具调用积分之和），与「AI 使用量」页同一口径，本地不按倍率估算。生成结束时随本轮用量一并读取并落库（`messages.credits` / `request_id`）；CLI 记录尚未落盘或工具调用积分晚到时先留空，之后打开「AI 使用量」页触发对账时按请求 id 回填（`updateMessageCreditsByRequestId`），消息胶囊随之补齐。积分 0 是有效值（订阅账号或该轮未计费），显示 `0.00`；NULL 才表示未知。
+
+**本轮用量口径**：CodeBuddy 在 `resume` 续接时，SDK `result` 消息的 `usage` 是**会话累计**（含此前各轮），不能直接当作本轮消耗。生成结束后按「会话号 + 请求 id」定向解析该会话的 CLI 记录文件（`CliUsageIndex.readRoundTokens`），取本轮多条记录的 tokens 累加值——与「AI 使用量」页完全同源；首轮无累计语义时直接用通道回传值；续接且 CLI 记录尚未落盘时退化为按回复字数估算并标记 `tokens_estimated`。同一份结果同时用于消息落库、流末下发与用量记账。
 
 实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
 

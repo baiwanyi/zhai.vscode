@@ -61,6 +61,11 @@ function makeMessage(overrides: Partial<MessageRow> = {}): MessageRow {
         finishReason: null,
         refs: '[]',
         error: null,
+        totalTokens: 0,
+        durationMs: 0,
+        tokensEstimated: 0,
+        credits: null,
+        requestId: null,
         createdAt: '2026-09-25T10:00:00.000Z',
         ...overrides,
     }

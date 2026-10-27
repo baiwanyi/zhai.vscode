@@ -69,6 +69,14 @@ export interface AiMessage {
     error: string | null
     /** 该条消息发送时携带的上下文引用（用于历史回显，正文不含引用原文） */
     refs: AiContextRef[]
+    /** 本轮消耗的总 token；0 表示未知（用户消息、历史数据或通道未回传） */
+    totalTokens: number
+    /** 本轮耗时（毫秒，墙钟）；0 表示未知 */
+    durationMs: number
+    /** totalTokens 是否为按回复字数估算：估算值不得当作真实成本展示 */
+    tokensEstimated: boolean
+    /** 本轮真实积分（来自 CLI 会话记录）；null 表示未知或未对账，不得回退成 0 */
+    credits: number | null
     createdAt: string
 }
 

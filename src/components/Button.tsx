@@ -36,7 +36,7 @@ interface ButtonProps extends ComponentProps<'button'>, VariantProps<typeof butt
  * 底层的箭头是独立 svg（bg-foreground / fill-foreground），继承同一组变量后自动同色，
  * 不必对箭头写子选择器，也不会因特异性差异漏掉箭头。
  */
-const TOOLTIP_CLASS = '[--foreground:#1E1E1E] [--background:var(--background)]'
+export const TOOLTIP_CLASS = '[--foreground:#1E1E1E] [--background:var(--background)]'
 
 function Button({
     className,

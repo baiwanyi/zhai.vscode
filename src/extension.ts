@@ -99,7 +99,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // 用量记账与查询共用 ai.db：记账注入各 AI 入口（对话、取名、外貌、语义、画面），查询供「AI 使用量」页；
     // 积分不落本地估算，由索引从 CodeBuddy 会话记录按请求 id 回填
     const usageRecorder = new UsageRecorder(aiDb)
-    const usageService = new AiUsageService(aiDb, new CliUsageIndex())
+    // CLI 会话记录索引：用量页据此取积分，对话服务据此取本轮真实 tokens，两边共用同一份目录规则
+    const cliUsage = new CliUsageIndex()
+    const usageService = new AiUsageService(aiDb, cliUsage)
 
     // 作品快照：设定、角色、大纲与章节正文在内容变更时按间隔自动留版，正文落在作品的 Snapshots 目录；
     // 先于 AI 对话创建，供写回前强制留底；恢复后由索引服务重建字数，两条通道共用同一套去重与节流
@@ -114,9 +116,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     // 站点登录态同样存 globalState：面板据此决定展示登录引导还是正常空态
     initCodebuddyLogin(context.globalState)
     // 写回前留底：把编辑器里的写回前全文交给快照服务，AI 改坏了可以回到动手前的状态
-    const aiChatService = new AiChatService(aiDb, aiProvider, usageRecorder, {
-        captureBeforeWrite: (uri, content): Promise<void> => snapshotService.captureChapterBeforeWrite(uri, content),
-    })
+    const aiChatService = new AiChatService(
+        aiDb,
+        aiProvider,
+        usageRecorder,
+        {
+            captureBeforeWrite: (uri, content): Promise<void> =>
+                snapshotService.captureChapterBeforeWrite(uri, content),
+        },
+        cliUsage,
+    )
     context.subscriptions.push(aiChatService)
 
     registerAiCommands(context, aiChatService, workflowRouter, toastService)

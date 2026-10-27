@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { AiContextRef, AiConversationMode, AiSendResult, AiSessionSnapshot } from '@shared/types/aiChat'
+import type { StreamUsage } from '@shared/types/messages'
 import { onStream, request } from '@shared/utils/bridge'
 import type { AiApplyPolicy } from '../constants'
 import { patchMessage, toErrorText } from '../utils'
@@ -110,6 +111,11 @@ export function useAiChatSession({
                         content: message.content ?? item.content,
                         status: message.status ?? 'completed',
                         error: message.error ?? null,
+                        // 用量与耗时只在流末下发一次，字段逐个收窄后再并入，缺省保留原值
+                        totalTokens: readStreamTokens(message.usage, item.totalTokens),
+                        durationMs: readStreamNumber(message.durationMs, item.durationMs),
+                        tokensEstimated: message.tokensEstimated === true,
+                        credits: readStreamCredits(message.credits, item.credits),
                     })),
                 )
                 if (message.error) {
@@ -278,4 +284,23 @@ export function useAiChatSession({
         switchMode,
         deleteSession,
     }
+}
+
+/**
+ * 流末用量的 token 数收窄：Webview 侧收到的字段不可信，非有限数或负数一律视为未知，
+ * 沿用消息上已有的值（历史消息为 0，渲染层据此不展示）。
+ */
+function readStreamTokens(usage: StreamUsage | undefined, fallback: number): number {
+    const value = usage?.totalTokens
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+/** 流末耗时收窄：口径与 token 一致，未知时沿用原值 */
+function readStreamNumber(value: number | undefined, fallback: number): number {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
+}
+
+/** 流末积分收窄：null 是「明确未知」而不是 0，原样并入；缺省（undefined）沿用原值 */
+function readStreamCredits(credits: number | null | undefined, fallback: number | null): number | null {
+    return typeof credits === 'number' && Number.isFinite(credits) ? credits : fallback
 }

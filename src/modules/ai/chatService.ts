@@ -2,9 +2,9 @@
  * AI 对话服务：会话编排、流式生成、取消、用量记录与写作模式写回。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节状态机；落地 A6 对话、A8 消息历史、A9 流式、A11 取消、
  * A1/A2 写作模式（本期以「整段替换」实现写回，diff 逐段接受待后续补齐）。
- * 约束：上下文按字符数粗估截断（AC-4 的降级实现），预算护栏达上限时拒绝发送（A17）；
- * 写回只接受消息 id，文档版本与快照不一致时拒绝，写入经 WorkspaceEdit 进入撤销栈；
- * 会话按作用域（作品目录）隔离，取最近会话 / 新建 / 历史列表均须带作用域，跨作品不共用对话记录。
+ * 约束：上下文按字符数粗估截断（AC-4 降级），预算护栏达上限时拒绝发送（A17）；写回只接受消息 id，
+ * 文档版本与快照不一致时拒绝，写入经 WorkspaceEdit 进入撤销栈；会话按作用域（作品目录）隔离，跨作品不共用记录；
+ * 本轮 token 以 CLI 会话记录为准（续接时 SDK 的 result.usage 是会话累计），取不到再按「首轮直采 / 续接估算」回落。
  */
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
@@ -55,6 +55,7 @@ import { readCodebuddyLogin, rememberCodebuddyLogin } from './providers/codebudd
 import { getCachedCodebuddyModels, getSelectedCodebuddyModel } from './providers/codebuddyModels'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
 import { summarizeMessages } from './usageRecorder'
+import type { CliUsageIndex } from './cliUsageIndex'
 import type { HostContextRef, ResolvedContextRef } from './contextRefs'
 import type { ConversationRow, MessageRow } from './db/chatRepository'
 import type { AiChatMessage as ChatMessage, AiProvider, AiUsage as ChatUsage, AiUsageMeta } from './provider'
@@ -139,6 +140,8 @@ export class AiChatService implements vscode.Disposable {
         private readonly provider: AiProvider,
         private readonly usageRecorder: UsageRecorder,
         private readonly writeSnapshotHook?: AiWriteSnapshotHook,
+        /** CLI 会话记录索引：用于按会话文件取本轮真实 tokens（未注入时退化为通道值 / 估算） */
+        private readonly cliUsage: CliUsageIndex | null = null,
     ) {}
 
     /** 运行时信息：通道就绪状态、模型参数与当日用量 */
@@ -477,6 +480,11 @@ export class AiChatService implements vscode.Disposable {
             finishReason: null,
             refs: JSON.stringify(contexts),
             error: null,
+            totalTokens: 0,
+            durationMs: 0,
+            tokensEstimated: 0,
+            credits: null,
+            requestId: null,
             createdAt: now,
         }
         insertMessage(this.db, userMessage)
@@ -490,6 +498,11 @@ export class AiChatService implements vscode.Disposable {
             finishReason: null,
             error: null,
             refs: '[]',
+            totalTokens: 0,
+            durationMs: 0,
+            tokensEstimated: 0,
+            credits: null,
+            requestId: null,
             createdAt: new Date().toISOString(),
         }
         insertMessage(this.db, assistantMessage)
@@ -565,6 +578,10 @@ export class AiChatService implements vscode.Disposable {
         let usage: ChatUsage | null = null
         /** 通道回传的请求标识与成本：流末块携带，用量记账与请求 id 展示都依赖它 */
         let usageMeta: AiUsageMeta | null = null
+        /** 本轮通道会话号：续接取库内值，首轮由 init 消息回传，供定位 CLI 用量记录文件 */
+        let sdkSessionId: string | null = null
+        /** 本轮是否续接通道会话：续接时 result.usage 是会话累计，不能当本轮消耗 */
+        let isResumedSession = false
         let isFirstToken = true
         let isTimedOut = false
         const firstTokenTimer = setTimeout(() => {
@@ -593,6 +610,8 @@ export class AiChatService implements vscode.Disposable {
                 stored !== undefined && stored.provider === this.provider.id && stored.sdkSessionId !== null
                     ? stored.sdkSessionId
                     : undefined
+            sdkSessionId = resumeSessionId ?? null
+            isResumedSession = resumeSessionId !== undefined
             let messages: ChatMessage[]
             if (resumeSessionId !== undefined) {
                 messages = this.buildResumeMessages(input, contextBlock)
@@ -608,6 +627,7 @@ export class AiChatService implements vscode.Disposable {
                 signal: controller.signal,
                 sessionId: resumeSessionId,
                 onSessionId: (sessionId) => {
+                    sdkSessionId = sessionId
                     updateConversationSession(this.db, conversationId, this.provider.id, sessionId)
                 },
             })
@@ -629,12 +649,28 @@ export class AiChatService implements vscode.Disposable {
             }
             clearTimeout(firstTokenTimer)
             flush(true)
+            // 用量与耗时的口径只算一次：落库、流末下发与用量记账共用同一份，避免三处数字对不上
+            const roundUsage = this.resolveRoundUsage(
+                sdkSessionId,
+                usageMeta?.requestId ?? null,
+                isResumedSession,
+                usage,
+                answer,
+            )
+            const finalUsage = roundUsage.usage
+            const durationMs = usageMeta?.durationMs ?? Date.now() - startedAt
+            const isTokensEstimated = roundUsage.isEstimated
             updateMessage(this.db, assistantMessageId, {
                 content: answer,
                 reasoning: reasoning.length > 0 ? reasoning : null,
                 status: 'completed',
                 finishReason: 'stop',
                 error: null,
+                totalTokens: finalUsage.totalTokens,
+                durationMs,
+                tokensEstimated: isTokensEstimated ? 1 : 0,
+                credits: roundUsage.credits,
+                requestId: usageMeta?.requestId ?? null,
             })
             if (answer.length > 0) {
                 this.registerWrittenResult(conversationId, assistantMessageId, writeTarget, applyPolicy)
@@ -644,7 +680,7 @@ export class AiChatService implements vscode.Disposable {
             this.usageRecorder.record({
                 module: 'chat',
                 model: getSelectedCodebuddyModel(),
-                usage: usage ?? estimateUsageFromAnswer(answer),
+                usage: finalUsage,
                 meta: usageMeta,
                 conversationId,
                 prompt: promptText,
@@ -658,6 +694,14 @@ export class AiChatService implements vscode.Disposable {
                 done: true,
                 status: 'completed',
                 content: answer,
+                usage: {
+                    promptTokens: finalUsage.promptTokens,
+                    completionTokens: finalUsage.completionTokens,
+                    totalTokens: finalUsage.totalTokens,
+                },
+                durationMs,
+                tokensEstimated: isTokensEstimated,
+                credits: roundUsage.credits,
             })
         } catch (error) {
             clearTimeout(firstTokenTimer)
@@ -667,12 +711,28 @@ export class AiChatService implements vscode.Disposable {
             const message = isTimedOut
                 ? `首字等待超过 ${FIRST_TOKEN_TIMEOUT_MS / 1000} 秒，已自动中断`
                 : toErrorMessage(error)
+            // 中断前可能已产生部分输出与计费，已消耗的量照常落库，供工具栏如实展示
+            const roundUsage = this.resolveRoundUsage(
+                sdkSessionId,
+                usageMeta?.requestId ?? null,
+                isResumedSession,
+                usage,
+                answer,
+            )
+            const finalUsage = roundUsage.usage
+            const durationMs = usageMeta?.durationMs ?? Date.now() - startedAt
+            const isTokensEstimated = roundUsage.isEstimated
             updateMessage(this.db, assistantMessageId, {
                 content: answer,
                 reasoning: reasoning.length > 0 ? reasoning : null,
                 status,
                 finishReason: isCancelled ? 'cancelled' : 'error',
                 error: message,
+                totalTokens: finalUsage.totalTokens,
+                durationMs,
+                tokensEstimated: isTokensEstimated ? 1 : 0,
+                credits: roundUsage.credits,
+                requestId: usageMeta?.requestId ?? null,
             })
             if (!isCancelled) {
                 logger.error(`AI 生成失败：${message}`, error)
@@ -685,12 +745,54 @@ export class AiChatService implements vscode.Disposable {
                 status,
                 content: answer,
                 error: isCancelled ? undefined : message,
+                usage: {
+                    promptTokens: finalUsage.promptTokens,
+                    completionTokens: finalUsage.completionTokens,
+                    totalTokens: finalUsage.totalTokens,
+                },
+                durationMs,
+                tokensEstimated: isTokensEstimated,
+                credits: roundUsage.credits,
             })
         } finally {
             if (this.activeRequest?.reqId === reqId) {
                 this.activeRequest = null
             }
         }
+    }
+
+    /**
+     * 确定本轮用量与积分：续接会话时 SDK 的 result.usage 是会话累计，不能直接当本轮消耗，
+     * 故优先按会话文件与请求 id 取 CLI 落盘记录（与用量页同一口径，tokens 与积分同源）；
+     * 取不到时首轮直接用通道值，续接则退化为按回复字数估算并打标，绝不用累计值冒充本轮；
+     * 积分只认 CLI 记录，两条回落路径都留 null（未知），不按倍率估算。
+     */
+    private resolveRoundUsage(
+        sessionId: string | null,
+        requestId: string | null,
+        isResumed: boolean,
+        usage: ChatUsage | null,
+        answer: string,
+    ): { usage: ChatUsage; isEstimated: boolean; credits: number | null } {
+        if (this.cliUsage !== null && sessionId !== null && requestId !== null) {
+            const round = this.cliUsage.readRoundUsage(sessionId, requestId)
+            if (round !== null) {
+                return {
+                    usage: {
+                        promptTokens: round.promptTokens,
+                        completionTokens: round.completionTokens,
+                        reasoningTokens: 0,
+                        totalTokens: round.totalTokens,
+                    },
+                    isEstimated: false,
+                    credits: round.credit,
+                }
+            }
+        }
+        if (!isResumed && usage !== null) {
+            return { usage, isEstimated: false, credits: null }
+        }
+        return { usage: estimateUsageFromAnswer(answer), isEstimated: true, credits: null }
     }
 
     /**
@@ -899,6 +1001,10 @@ function toMessage(row: MessageRow): AiMessage {
         finishReason: row.finishReason,
         error: row.error,
         refs: parseStoredContexts(row.refs).map(toPublicContextRef),
+        totalTokens: row.totalTokens,
+        durationMs: row.durationMs,
+        tokensEstimated: row.tokensEstimated === 1,
+        credits: row.credits,
         createdAt: row.createdAt,
     }
 }

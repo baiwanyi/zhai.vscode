@@ -21,6 +21,13 @@ export interface ResponseMessage {
     }
 }
 
+/** 流末携带的用量：通道未回传时该字段整体缺省，前端此时不得臆造 token 数 */
+export interface StreamUsage {
+    promptTokens: number
+    completionTokens: number
+    totalTokens: number
+}
+
 /** 宿主 → Webview：流式增量（AI 输出、索引进度等） */
 export interface StreamMessage {
     type: 'stream'
@@ -34,6 +41,14 @@ export interface StreamMessage {
     /** 结束时回传宿主侧完整正文，用于校正前端逐字累积结果 */
     content?: string
     error?: string
+    /** 结束时回传的本轮用量，供消息底部工具栏展示 */
+    usage?: StreamUsage
+    /** 本轮耗时（毫秒，墙钟：含上下文准备与首字等待），未知时缺省 */
+    durationMs?: number
+    /** usage 是否为按回复字数估算：估算值展示时必须与真实用量区分 */
+    tokensEstimated?: boolean
+    /** 本轮真实积分（来自 CLI 会话记录）：缺省或 null 均为未知 */
+    credits?: number | null
 }
 
 /** 操作反馈级别：与 sonner 的四个入口一一对应 */

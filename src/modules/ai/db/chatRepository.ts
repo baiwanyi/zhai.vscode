@@ -36,6 +36,16 @@ export interface MessageRow {
     /** 发送时携带的上下文引用（JSON 数组，含绝对路径，仅宿主使用） */
     refs: string
     error: string | null
+    /** 本轮消耗的总 token，0 表示未知 */
+    totalTokens: number
+    /** 本轮耗时（毫秒，墙钟），0 表示未知 */
+    durationMs: number
+    /** totalTokens 是否为估算值：SQLite 布尔以 0/1 存储 */
+    tokensEstimated: number
+    /** 本轮真实积分；未对账或未上报为 null（未知不得当成 0） */
+    credits: number | null
+    /** 通道侧请求 id：用量页对账后按它回填积分 */
+    requestId: string | null
     createdAt: string
 }
 
@@ -46,13 +56,20 @@ export interface MessagePatch {
     status: string
     finishReason: string | null
     error: string | null
+    /** 与 MessageRow 同口径，生成结束或失败时一并写入 */
+    totalTokens: number
+    durationMs: number
+    tokensEstimated: number
+    credits: number | null
+    requestId: string | null
 }
 
 const CONVERSATION_COLUMNS = `id, title, mode, file_path AS filePath, project_dir AS projectDir, model, provider,
     sdk_session_id AS sdkSessionId, created_at AS createdAt, updated_at AS updatedAt`
 
 const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, reasoning, status,
-    finish_reason AS finishReason, refs, error, created_at AS createdAt`
+    finish_reason AS finishReason, refs, error, total_tokens AS totalTokens, duration_ms AS durationMs,
+    tokens_estimated AS tokensEstimated, credits, request_id AS requestId, created_at AS createdAt`
 
 export function insertConversation(db: Database.Database, row: ConversationRow): void {
     db.prepare(
@@ -116,8 +133,10 @@ export function deleteConversation(db: Database.Database, id: string): void {
 
 export function insertMessage(db: Database.Database, row: MessageRow): void {
     db.prepare(
-        `INSERT INTO messages (id, conversation_id, role, content, reasoning, status, finish_reason, refs, error, created_at)
-         VALUES (@id, @conversationId, @role, @content, @reasoning, @status, @finishReason, @refs, @error, @createdAt)`,
+        `INSERT INTO messages (id, conversation_id, role, content, reasoning, status, finish_reason, refs, error,
+            total_tokens, duration_ms, tokens_estimated, credits, request_id, created_at)
+         VALUES (@id, @conversationId, @role, @content, @reasoning, @status, @finishReason, @refs, @error,
+            @totalTokens, @durationMs, @tokensEstimated, @credits, @requestId, @createdAt)`,
     ).run(row)
 }
 
@@ -125,9 +144,22 @@ export function updateMessage(db: Database.Database, id: string, patch: MessageP
     db.prepare(
         `UPDATE messages
             SET content = @content, reasoning = @reasoning, status = @status,
-                finish_reason = @finishReason, error = @error
+                finish_reason = @finishReason, error = @error,
+                total_tokens = @totalTokens, duration_ms = @durationMs, tokens_estimated = @tokensEstimated,
+                credits = @credits, request_id = @requestId
           WHERE id = @id`,
     ).run({ ...patch, id })
+}
+
+/**
+ * 按请求 id 回填消息积分：用量页对账拿到 CLI 真实值后修正该轮消息。
+ * 关键约束：只在值变化时写入，避免每次对账都产生无效更新；request_id 为 NULL 的历史消息无法关联，保持未知。
+ */
+export function updateMessageCreditsByRequestId(db: Database.Database, requestId: string, credits: number): number {
+    const result = db
+        .prepare('UPDATE messages SET credits = ? WHERE request_id = ? AND (credits IS NULL OR credits <> ?)')
+        .run(credits, requestId, credits)
+    return result.changes
 }
 
 /** 按会话读取消息（升序，供前端直接渲染） */

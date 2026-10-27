@@ -1,6 +1,6 @@
 /**
  * chatService 单元测试：聚焦发送阶段的上下文注入与预算裁剪——待发送引用是否随消息注入、
- * 失效引用是否跳过、发送后是否清空、引用是否优先于历史保留。
+ * 失效引用是否跳过、发送后是否清空、引用是否优先于历史保留，以及本轮用量与耗时的落库与下发。
  * 复用约定：AI 通道由记录型假实现替身注入；DB 用临时目录真实库。
  */
 import * as fs from 'node:fs'
@@ -10,6 +10,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 import { createUri, resetWorkspaceState, setConfigValue, setFileContent } from './stubs/vscode'
 import type { HostContextRef } from '../../src/modules/ai/contextRefs'
 import type { AiChatMessage, AiProvider, AiStreamChunk, AiStreamRequest } from '../../src/modules/ai/provider'
+import type { StreamMessage } from '../../src/shared/types/messages'
 import type Database from 'better-sqlite3'
 import { AiChatService } from '../../src/modules/ai/chatService'
 import { listMessages } from '../../src/modules/ai/db/chatRepository'
@@ -58,12 +59,14 @@ function makeRef(overrides: Partial<HostContextRef> = {}): HostContextRef {
 }
 
 /** 发送并等待流式终态（generate 为 fire-and-forget，测试需同步到 done 再断言） */
-async function sendAndWait(content: string): Promise<{ skippedContexts: string[] }> {
+async function sendAndWait(content: string): Promise<{ skippedContexts: string[]; done: StreamMessage | null }> {
+    let done: StreamMessage | null = null
     let finish: (() => void) | undefined
     const finished = new Promise<void>((resolve) => {
         finish = resolve
         const subscription = service.onStream((message) => {
             if (message.done) {
+                done = message
                 subscription.dispose()
                 resolve()
             }
@@ -73,7 +76,7 @@ async function sendAndWait(content: string): Promise<{ skippedContexts: string[]
     const result = await service.send(`req-${Date.now()}`, conversationId, content)
     await finished
     clearTimeout(timer)
-    return result
+    return { ...result, done }
 }
 
 /** 取最近一次流式请求的消息数组 */
@@ -156,6 +159,20 @@ describe('发送阶段的上下文注入', () => {
         expect(rows[0]?.status).toBe('completed')
         const logId = rows[0]?.id ?? ''
         expect(getPrompt(db, logId)?.content).toContain('记账检查')
+    })
+
+    it('助手消息落库本轮用量与耗时，并在流末下发同一份数字', async () => {
+        const result = await sendAndWait('统计检查')
+
+        const rows = listMessages(db, conversationId)
+        const assistantRow = rows.filter((row) => row.role === 'assistant').at(-1)
+        expect(assistantRow?.totalTokens).toBeGreaterThan(0)
+        // 假通道不回传 usage，故走按回复字数估算的分支并打标；未注入 CLI 索引时积分留空
+        expect(assistantRow?.tokensEstimated).toBe(1)
+        expect(assistantRow?.credits).toBeNull()
+        expect(result.done?.usage?.totalTokens).toBe(assistantRow?.totalTokens)
+        expect(result.done?.durationMs).toBe(assistantRow?.durationMs)
+        expect(result.done?.tokensEstimated).toBe(true)
     })
 
     it('预算不足时保留引用、裁剪历史', async () => {

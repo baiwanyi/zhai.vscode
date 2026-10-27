@@ -48,6 +48,15 @@ export interface CliPromptInfo {
     isTruncated: boolean
 }
 
+/** 单轮用量：tokens 与积分都与用量页同一口径，同一请求 id 下的多条记录累加 */
+export interface CliRoundUsage {
+    promptTokens: number
+    completionTokens: number
+    totalTokens: number
+    /** 该轮真实积分：整轮未上报任一 credit 时为 null（未知不得当成 0） */
+    credit: number | null
+}
+
 /** 单条记录解析出的用量：timestamp 为 null 表示该行未带时间 */
 interface ParsedUsage {
     requestId: string
@@ -97,6 +106,62 @@ export class CliUsageIndex {
             return null
         }
         return this.entries.get(requestId)?.credit ?? null
+    }
+
+    /**
+     * 定向读取某轮用量：只解析指定会话文件，供对话消息工具栏取与用量页同源的 tokens 与积分。
+     * 关键约束：通道续接时 SDK 的 result.usage 是会话累计，不能当本轮值，故以 CLI 落盘记录为准；
+     * 积分只认 CLI 记录（消息积分与工具调用积分之和），未上报时留 null，绝不按倍率估算；
+     * 会话文件缺失或该轮尚未落盘时返回 null，由调用方自行回落，不得在这里臆造数字。
+     */
+    public readRoundUsage(sessionId: string, requestId: string): CliRoundUsage | null {
+        const file = findSessionFile(this.rootDir, sessionId)
+        if (file === null) {
+            return null
+        }
+        let content: string
+        try {
+            content = fs.readFileSync(file, 'utf8')
+        } catch {
+            return null
+        }
+        const usage: CliRoundUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0, credit: null }
+        let hasData = false
+        for (const line of content.split('\n')) {
+            const trimmed = line.trim()
+            if (trimmed.length === 0 || !trimmed.includes(requestId)) {
+                continue
+            }
+            let record: unknown
+            try {
+                record = JSON.parse(trimmed)
+            } catch {
+                continue
+            }
+            if (!isRecord(record)) {
+                continue
+            }
+            const providerData = record.providerData
+            if (!isRecord(providerData)) {
+                continue
+            }
+            const parsed = readRecordUsage(record)
+            if (parsed === null || parsed.requestId !== requestId) {
+                continue
+            }
+            // 用户消息行既无 rawUsage 也无 credit，不能让它们把「未落盘」伪装成「已读到」
+            if (isRecord(providerData.rawUsage)) {
+                usage.promptTokens += parsed.promptTokens
+                usage.completionTokens += parsed.completionTokens
+                usage.totalTokens += parsed.totalTokens
+                hasData = true
+            }
+            if (parsed.credit !== null) {
+                usage.credit = addCredit(usage.credit, parsed.credit)
+                hasData = true
+            }
+        }
+        return hasData ? usage : null
     }
 
     /**
@@ -200,6 +265,17 @@ function listSessionFiles(rootDir: string): string[] {
     }
     walk(rootDir, 0)
     return files
+}
+
+/** 按会话号定位记录文件：只比较文件名、不参与路径拼接，外部传入的会话号无法越出根目录 */
+function findSessionFile(rootDir: string, sessionId: string): string | null {
+    const fileName = `${sessionId}.jsonl`
+    for (const file of listSessionFiles(rootDir)) {
+        if (path.basename(file) === fileName) {
+            return file
+        }
+    }
+    return null
 }
 
 /** 解析单个会话文件：坏行跳过，不让一条脏数据毁掉整份索引 */
