@@ -39,6 +39,8 @@ interface ImageGenGalleryProps {
     coverSelectedId: string | null
     /** 角色 id → 名称：用于卡片角标，缺失时不显示 */
     characterNames: ReadonlyMap<string, string>
+    /** 条目 id → 名称：设定图角标按它显示 */
+    loreNames: ReadonlyMap<string, string>
     /** 多选模式：点击卡片切换选中，不再打开详情 */
     isSelecting: boolean
     /** 已选中的图片路径集合 */
@@ -61,6 +63,7 @@ export function ImageGenGallery({
     visibleImages,
     coverSelectedId,
     characterNames,
+    loreNames,
     isSelecting,
     selectedPaths,
     onToggleSelect,
@@ -100,6 +103,7 @@ export function ImageGenGallery({
                 pendingCount={isPending ? 1 : 0}
                 coverSelectedId={coverSelectedId}
                 characterNames={characterNames}
+                loreNames={loreNames}
                 isSelecting={isSelecting}
                 selectedPaths={selectedPaths}
                 onToggleSelect={onToggleSelect}

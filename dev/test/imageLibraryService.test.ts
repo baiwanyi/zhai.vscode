@@ -73,7 +73,7 @@ describe('list', () => {
         const result = await listLibrary()
 
         expect(result.images).toHaveLength(3)
-        expect(result.counts).toEqual({ portrait: 1, photo: 1, orphan: 1 })
+        expect(result.counts).toEqual({ portrait: 1, lore: 0, photo: 1, orphan: 1 })
         expect(result.coverSelectedId).toBe('photo-20260101010101-AbCd1234')
     })
 
@@ -103,6 +103,9 @@ describe('remove', () => {
             coverSelectedId: 'photo-20270101010101-AbCd1234',
             characterId: null,
             nextPortraitId: null,
+            loreId: null,
+            loreKind: null,
+            nextLoreImageId: null,
         })
         expect(readDeletedPaths()).toContain(imageFsPath('Images', 'photo-20260101010101-AbCd1234.json'))
         expect(readFileContent(imageFsPath('Images', 'photo-20260101010101-AbCd1234.json'))).toBeUndefined()
@@ -209,6 +212,8 @@ describe('readDetail', () => {
             ratio: null,
             style: null,
             characterId: null,
+            loreId: null,
+            loreKind: null,
             enhancedFrom: null,
             createdAt: null,
         })
@@ -217,6 +222,8 @@ describe('readDetail', () => {
             ratio: null,
             style: null,
             characterId: null,
+            loreId: null,
+            loreKind: null,
             enhancedFrom: null,
             createdAt: null,
         })

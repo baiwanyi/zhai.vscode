@@ -23,7 +23,7 @@ import { toastError } from '@shared/utils/error'
 const EMPTY_LIBRARY: ImageLibraryResult = {
     images: [],
     coverSelectedId: null,
-    counts: { portrait: 0, photo: 0, orphan: 0 },
+    counts: { portrait: 0, lore: 0, photo: 0, orphan: 0 },
 }
 
 /** 批量删除的逐张结果：image 用于把回执对回原图，removed 表示该张是否真的删掉 */

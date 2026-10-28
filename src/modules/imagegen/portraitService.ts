@@ -1,8 +1,8 @@
 /**
- * 角色设定图服务：列举已落盘的设定图、复制到剪贴板、插入 Markdown，以及删除人物时清理其图片。
+ * 设定图服务：列举角色图与条目图、复制到剪贴板、插入 Markdown，以及删除人物或条目时清理其图片。
  * 复用约定：目录名取自 ./constants，路径一律经 common/storagePath 做白名单校验；URL 转换由调用方注入。
  * 关键约束：出图统一在生图页完成（pressAi/generateImage），本服务不再生成图片，也不再读写配额；
- * 角色归属由文件名里的角色段解析（不按角色分子目录），跟随作品目录（删除作品即一并清理）；
+ * 归属由文件名解析（不按归属分子目录）：角色图认角色段，条目图认 faction-/place-/item- 前缀；
  * 目录是图片的唯一事实来源，列举以磁盘为准；
  * 删除、复制与插入只接受 press/{作品名}/Images 下的四段白名单路径，删除优先走回收站；
  * 复制经平台命令写入系统剪贴板（webview 内写图片受 CSP 与权限限制）。
@@ -15,7 +15,7 @@ import { logger } from '@modules/common/logger'
 import { PRESS_MODULE_DIR, readProjectSegments } from '@modules/common/projectPath'
 import { readText } from '@modules/common/readInput'
 import { buildStorageUri, deleteResource, toSafeSegments } from '@modules/common/storagePath'
-import { parseImageCharacterId } from '@shared/types/imagegen'
+import { parseImageCharacterId, parseImageLoreId } from '@shared/types/imagegen'
 import type {
     CharacterPortrait,
     PortraitCopyResult,
@@ -24,7 +24,7 @@ import type {
     PortraitInsertResult,
     PortraitListResult,
 } from '@shared/types/press'
-import { isPressCharacterId } from '@shared/types/press'
+import { isPressCharacterId, isPressLoreId } from '@shared/types/press'
 import { IMAGES_DIR } from './constants'
 import { listImageFiles } from './imageDirScan'
 
@@ -64,8 +64,26 @@ export class PortraitService {
      */
     public async list(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<PortraitListResult> {
         const { dirPath, characterId } = normalizePortraitListRequest(payload)
-        const portraits = await this.readPortraits(readProjectSegments(dirPath), toWebviewUri)
-        return { portraits: portraits.filter((portrait) => parseImageCharacterId(portrait.id) === characterId) }
+        const portraits = await this.readImages(
+            readProjectSegments(dirPath),
+            toWebviewUri,
+            (id) => parseImageCharacterId(id) === characterId,
+        )
+        return { portraits }
+    }
+
+    /**
+     * 列举某个条目的全部设定图：按文件名里的条目段过滤，目录不存在视为空。
+     * 磁盘是唯一事实来源，因此关闭弹窗期间完成的生成同样能被读回。
+     */
+    public async listLore(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<PortraitListResult> {
+        const { dirPath, loreId } = normalizeLoreListRequest(payload)
+        const portraits = await this.readImages(
+            readProjectSegments(dirPath),
+            toWebviewUri,
+            (id) => parseImageLoreId(id) === loreId,
+        )
+        return { portraits }
     }
 
     /**
@@ -79,7 +97,11 @@ export class PortraitService {
     ): Promise<PortraitGalleryResult> {
         const dirPath = readProjectDirPath(payload, 'pressAi/listPortraitGallery')
         const galleries: Record<string, PortraitGalleryItem[]> = {}
-        for (const portrait of await this.readPortraits(readProjectSegments(dirPath), toWebviewUri)) {
+        for (const portrait of await this.readImages(
+            readProjectSegments(dirPath),
+            toWebviewUri,
+            (id) => parseImageCharacterId(id) !== null,
+        )) {
             const characterId = parseImageCharacterId(portrait.id)
             if (characterId === null) {
                 continue
@@ -92,20 +114,48 @@ export class PortraitService {
     }
 
     /**
+     * 一次性列举作品下全部条目的设定图，供条目列表批量显示封面。
+     * 关键约束：只收条目图（faction-/place-/item- 前缀），角色图与普通图不参与分组；
+     * 分组键为条目标识，顺序与编辑弹窗里的图库完全一致。
+     */
+    public async listLoreGallery(
+        payload: unknown,
+        toWebviewUri: (uri: vscode.Uri) => string,
+    ): Promise<PortraitGalleryResult> {
+        const dirPath = readProjectDirPath(payload, 'pressAi/listLoreGallery')
+        const galleries: Record<string, PortraitGalleryItem[]> = {}
+        for (const image of await this.readImages(
+            readProjectSegments(dirPath),
+            toWebviewUri,
+            (id) => parseImageLoreId(id) !== null,
+        )) {
+            const loreId = parseImageLoreId(image.id)
+            if (loreId === null) {
+                continue
+            }
+            const list = galleries[loreId] ?? []
+            list.push({ id: image.id, url: image.url })
+            galleries[loreId] = list
+        }
+        return { galleries }
+    }
+
+    /**
      * 扫描设定图目录：目录不存在返回空数组，读取失败的文件跳过。
      * 关键约束：不抛错——并发删除或权限问题只影响单张图，不能让整次列举失败；
      * 图片 id 取文件名去掉扩展名，角色归属由调用方按其中的角色段解析。
      */
-    private async readPortraits(
+    private async readImages(
         projectSegments: string[],
         toWebviewUri: (uri: vscode.Uri) => string,
+        accept: (id: string) => boolean,
     ): Promise<CharacterPortrait[]> {
         const portraits: CharacterPortrait[] = []
         // 只扫统一目录 Images：历史 Cover / Portraits 不再读取
         for (const file of await listImageFiles(projectSegments, IMAGES_DIR)) {
             const id = file.name.replace(/\.[^.]+$/u, '')
-            // 只收角色图：普通图片与手工图不属于任何角色
-            if (parseImageCharacterId(id) === null) {
+            // 归属由调用方判定：角色图认角色段，条目图认分类前缀
+            if (!accept(id)) {
                 continue
             }
             try {
@@ -208,6 +258,19 @@ export class PortraitService {
      * 关键约束：只删文件名角色段匹配且符合命名规范的文件，手工放入的其它图片不受影响。
      */
     public async removeByCharacterId(dirPath: string, characterId: string): Promise<{ removed: number }> {
+        return this.removeByOwner(dirPath, (id) => parseImageCharacterId(id) === characterId)
+    }
+
+    /**
+     * 清理某个条目的全部设定图：删除条目时随条目块一并清理，避免留下无人引用的图片。
+     * 关键约束：只删文件名条目段匹配且前缀合规的文件，手工放入的其它图片不受影响。
+     */
+    public async removeByLoreId(dirPath: string, loreId: string): Promise<{ removed: number }> {
+        return this.removeByOwner(dirPath, (id) => parseImageLoreId(id) === loreId)
+    }
+
+    /** 按归属批量清理图片：matches 由调用方给出，同名侧车（.json）随图片一并删除 */
+    private async removeByOwner(dirPath: string, matches: (id: string) => boolean): Promise<{ removed: number }> {
         const root = resolveStorageRoot()
         const dirSegments = [...readProjectSegments(dirPath), IMAGES_DIR]
         let entries: [string, vscode.FileType][]
@@ -223,14 +286,14 @@ export class PortraitService {
             if (type !== vscode.FileType.File) {
                 continue
             }
-            if (parseImageCharacterId(name.replace(/\.[^.]+$/u, '')) !== characterId) {
+            if (!matches(name.replace(/\.[^.]+$/u, ''))) {
                 continue
             }
             try {
                 await deleteResource(buildStorageUri(root, [...dirSegments, name]), false)
                 removed += 1
             } catch (error) {
-                logger.error(`角色图清理失败：${name}`, error)
+                logger.error(`设定图清理失败：${name}`, error)
             }
         }
         return { removed }
@@ -271,6 +334,18 @@ function normalizePortraitListRequest(payload: unknown): { dirPath: string; char
         dirPath: readProjectDirPath(payload, 'pressAi/listPortraits'),
         characterId: normalizeCharacterId(payload, 'pressAi/listPortraits'),
     }
+}
+
+/** 条目图列举入参：作品目录与条目标识共同定位，缺失任一项都直接拒绝 */
+function normalizeLoreListRequest(payload: unknown): { dirPath: string; loreId: string } {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('pressAi/listLoreImages 缺少参数')
+    }
+    const loreId = readText((payload as { loreId?: unknown }).loreId, MAX_SHORT_TEXT)
+    if (!isPressLoreId(loreId)) {
+        throw new Error('条目标识非法，无法定位设定图')
+    }
+    return { dirPath: readProjectDirPath(payload, 'pressAi/listLoreImages'), loreId }
 }
 
 /** 剪贴板写入结果：copied 成功、unsupported 平台或依赖缺失、failed 命令执行失败 */

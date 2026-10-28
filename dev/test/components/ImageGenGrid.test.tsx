@@ -25,6 +25,8 @@ const PORTRAIT: PressImageItem = {
     url: 'https://example.test/portrait.png',
     createdAt: '2026-10-25T14:30:00.000Z',
     characterId: CHARACTER_ID,
+    loreId: null,
+    loreKind: null,
 }
 const PHOTO: PressImageItem = {
     id: 'photo-20261025143000-aB3xK9Qz',
@@ -33,9 +35,12 @@ const PHOTO: PressImageItem = {
     url: 'https://example.test/photo.png',
     createdAt: '2026-10-25T14:30:01.000Z',
     characterId: null,
+    loreId: null,
+    loreKind: null,
 }
 
 const CHARACTER_NAMES = new Map([[CHARACTER_ID, CHARACTER_NAME]])
+const LORE_NAMES = new Map<string, string>()
 const EMPTY_SELECTION: ReadonlySet<string> = new Set()
 
 interface RenderOptions {
@@ -61,6 +66,7 @@ function renderGrid(options: RenderOptions = {}): RenderResult {
             pendingCount={options.pendingCount ?? 0}
             coverSelectedId={options.coverSelectedId ?? null}
             characterNames={CHARACTER_NAMES}
+            loreNames={LORE_NAMES}
             isSelecting={options.isSelecting ?? false}
             selectedPaths={options.selectedPaths ?? EMPTY_SELECTION}
             onToggleSelect={handlers.onToggleSelect ?? vi.fn()}

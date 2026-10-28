@@ -29,13 +29,13 @@ beforeEach(() => {
 
 describe('nextImageId', () => {
     it('普通图命名为 photo-{14 位时间戳}-{8 位随机串}', async () => {
-        const id = await nextImageId(vscode.Uri.file(IMAGE_DIR), 'photo', null, 'png')
+        const id = await nextImageId(vscode.Uri.file(IMAGE_DIR), { kind: 'photo' }, 'png')
 
         expect(id).toMatch(/^photo-\d{14}-[A-Za-z0-9]{8}$/u)
     })
 
     it('角色图命名为 portrait-{14 位时间戳}-{角色标识}', async () => {
-        const id = await nextImageId(vscode.Uri.file(IMAGE_DIR), 'portrait', '12345678', 'png')
+        const id = await nextImageId(vscode.Uri.file(IMAGE_DIR), { kind: 'portrait', characterId: '12345678' }, 'png')
 
         expect(id).toMatch(/^portrait-\d{14}-12345678$/u)
     })
@@ -48,17 +48,17 @@ describe('nextImageId', () => {
             setFileContent(path.join(IMAGE_DIR, `${id}.png`), 'old')
         }
 
-        const id = await nextImageId(vscode.Uri.file(IMAGE_DIR), 'portrait', '12345678', 'png')
+        const id = await nextImageId(vscode.Uri.file(IMAGE_DIR), { kind: 'portrait', characterId: '12345678' }, 'png')
 
         expect(reserved).not.toContain(id)
         expect(id).toMatch(/^portrait-\d{14}-12345678$/u)
     })
 
     it('不同扩展名互不冲突', async () => {
-        const id = await nextImageId(vscode.Uri.file(IMAGE_DIR), 'photo', null, 'png')
+        const id = await nextImageId(vscode.Uri.file(IMAGE_DIR), { kind: 'photo' }, 'png')
         setFileContent(path.join(IMAGE_DIR, `${id}.png`), 'old')
 
-        const next = await nextImageId(vscode.Uri.file(IMAGE_DIR), 'photo', null, 'webp')
+        const next = await nextImageId(vscode.Uri.file(IMAGE_DIR), { kind: 'photo' }, 'webp')
 
         expect(next).toMatch(/^photo-\d{14}-[A-Za-z0-9]{8}$/u)
     })

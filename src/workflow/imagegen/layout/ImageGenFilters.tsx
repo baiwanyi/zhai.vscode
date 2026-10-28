@@ -17,6 +17,7 @@ const KIND_FILTERS: ReadonlyArray<{ value: KindFilter; label: string }> = [
     { value: 'all', label: '全部' },
     { value: 'cover', label: '作品封面' },
     { value: 'portrait', label: '角色图' },
+    { value: 'lore', label: '设定图' },
     { value: 'photo', label: '普通图' },
     { value: 'orphan', label: '未归类' },
 ]

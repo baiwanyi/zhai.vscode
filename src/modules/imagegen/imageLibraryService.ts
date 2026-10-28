@@ -1,6 +1,7 @@
 /**
  * 图片库服务：按作品把统一目录 Images 中的图片聚合为一份可管理列表，
- * 提供列举、单张删除、批量删除、设为作品封面与侧车读取能力，是图片总览页与角色卡页共用的唯一数据入口。
+ * 提供列举、单张删除、批量删除、设为作品封面与侧车读取能力，
+ * 是图片总览页、角色卡页与设定条目页共用的唯一数据入口。
  * 复用约定：目录名取自 ./constants，路径归属校验复用 ./db/coverRepository 的 isProjectImagePath，
  * 封面指针沿用 PressCoverStore（press.db 的 meta 表），作品目录归一复用 ../common/projectPath。
  * 关键约束：磁盘是唯一事实来源，任何写操作后都按目录重扫，不维护内存缓存；
@@ -18,6 +19,8 @@ import {
     isPressImageId,
     parseImageCharacterId,
     parseImageKind,
+    parseImageLoreId,
+    parseLoreImageKind,
     type ImageBatchDeleteResult,
     type ImageDeleteRequest,
     type ImageDeleteResult,
@@ -27,6 +30,7 @@ import {
     type PressImageItem,
     type PressImageKind,
 } from '@shared/types/imagegen'
+import type { PressLoreKind } from '@shared/types/press'
 import { IMAGES_DIR } from './constants'
 import { isProjectImagePath, readImageIdFromPath } from './db/coverRepository'
 import { listImageFiles } from './imageDirScan'
@@ -100,7 +104,7 @@ export class ImageLibraryService {
     /** 用已扫描出的图片组装列表：counts 与封面指针都从这份数据推导，避免为同一结果重复读盘 */
     private buildLibrary(dirPath: string, images: PressImageItem[]): ImageLibraryResult {
         const selected = this.store.read(dirPath)
-        const counts: Record<PressImageKind, number> = { portrait: 0, photo: 0, orphan: 0 }
+        const counts: Record<PressImageKind, number> = { portrait: 0, lore: 0, photo: 0, orphan: 0 }
         for (const image of images) {
             counts[image.kind] += 1
         }
@@ -123,6 +127,8 @@ export class ImageLibraryService {
         }
         const id = readImageIdFromPath(path)
         const characterId = parseImageCharacterId(id)
+        const loreId = parseImageLoreId(id)
+        const loreKind = parseLoreImageKind(id)
         const selected = this.store.read(dirPath)
         const currentCoverId = selected === null ? null : readImageIdFromPath(selected)
         const target = buildStorageUri(resolveStorageRoot(), toSafeSegments(path, '图片'))
@@ -130,7 +136,15 @@ export class ImageLibraryService {
             await deleteResource(target, false)
         } catch {
             logger.warn(`图片删除失败：${path}`)
-            return { removed: false, coverSelectedId: currentCoverId, characterId, nextPortraitId: null }
+            return {
+                removed: false,
+                coverSelectedId: currentCoverId,
+                characterId,
+                nextPortraitId: null,
+                loreId,
+                loreKind,
+                nextLoreImageId: null,
+            }
         }
         // 侧车与图片同生共死：图片进回收站后元数据已无意义，直接清掉，失败不影响删除结果
         await deleteSidecarOf(target)
@@ -142,8 +156,9 @@ export class ImageLibraryService {
             coverSelectedId = nextPath === null ? null : readImageIdFromPath(nextPath)
         }
         const nextPortraitId = characterId === null ? null : this.pickLatestByCharacter(rest, characterId)
+        const nextLoreImageId = loreId === null ? null : this.pickLatestByLore(rest, loreId)
         logger.info(`图片已删除：${path}`)
-        return { removed: true, coverSelectedId, characterId, nextPortraitId }
+        return { removed: true, coverSelectedId, characterId, nextPortraitId, loreId, loreKind, nextLoreImageId }
     }
 
     /**
@@ -238,6 +253,8 @@ export class ImageLibraryService {
             ratio: null,
             style: null,
             characterId: null,
+            loreId: null,
+            loreKind: null,
             enhancedFrom: null,
             createdAt: null,
         }
@@ -257,11 +274,17 @@ export class ImageLibraryService {
             return empty
         }
         const record = (typeof parsed === 'object' && parsed !== null ? parsed : {}) as Record<string, unknown>
+        // 旧侧车没有条目字段：缺失即按「不是条目图」处理
+        const loreKindValue = readMetaText(record.loreKind)
+        const loreKind: PressLoreKind | null =
+            loreKindValue === 'faction' || loreKindValue === 'place' || loreKindValue === 'item' ? loreKindValue : null
         return {
             prompt: readMetaText(record.prompt),
             ratio: readMetaText(record.ratio),
             style: readMetaText(record.style),
             characterId: readMetaText(record.characterId),
+            loreId: readMetaText(record.loreId),
+            loreKind,
             enhancedFrom: readMetaText(record.enhancedFrom),
             createdAt: readMetaText(record.createdAt),
         }
@@ -270,6 +293,12 @@ export class ImageLibraryService {
     /** 在已列举结果中取某角色最新一张图：列表已按时间降序，首个命中即最新 */
     private pickLatestByCharacter(images: PressImageItem[], characterId: string): string | null {
         const matched = images.find((image) => image.characterId === characterId)
+        return matched?.id ?? null
+    }
+
+    /** 在已列举结果中取某条目最新一张图：列表已按时间降序，首个命中即最新 */
+    private pickLatestByLore(images: PressImageItem[], loreId: string): string | null {
+        const matched = images.find((image) => image.loreId === loreId)
         return matched?.id ?? null
     }
 
@@ -291,6 +320,8 @@ export class ImageLibraryService {
                 url: toWebviewUri(file.uri),
                 createdAt: await this.readCreatedAt(file.uri, id),
                 characterId: parseImageCharacterId(id),
+                loreId: parseImageLoreId(id),
+                loreKind: parseLoreImageKind(id),
             })
         }
         images.sort((left, right) => {

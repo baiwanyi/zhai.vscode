@@ -12,7 +12,7 @@
  * 出图成功只在该角色尚无封面时认领，取消后迟到的落盘只静默刷新列表；
  * 出图期间与回包后的刷新窗口内，列表首位都保留骨架占位，占位直接由新图顶替。
  */
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { ImageGenerateResult, PressImageItem } from '@shared/types/imagegen'
 import { AppContent, AppFooter, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
@@ -40,13 +40,15 @@ interface ImageGenPageProps {
      * 只取人物卡里与出图相关的几项，不整体透传，避免页面耦合人物卡的全部字段。
      */
     characters: ReadonlyArray<ImageGenCharacter>
+    /** 设定条目清单：详情与网格按 id 还原条目名，只取标识与名称 */
+    lore: ReadonlyArray<{ id: string; name: string }>
     /** 作品设定快照：「添加上下文」选中「作品设定」时展开为上下文段 */
     setting: PromptSettingSnapshot
     /** 写回人物卡封面指针：删除与生成后同步，保证角色卡页与本页一致 */
     onChangeCharacter: (characterId: string, patch: { coverPortraitId: string | null }) => void
 }
 
-export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }: ImageGenPageProps): JSX.Element {
+export function ImageGenPage({ dirPath, characters, lore, setting, onChangeCharacter }: ImageGenPageProps): JSX.Element {
     const { images, coverSelectedId, counts, isLoading, removeImage, removeImages, reload } = useImageLibrary(dirPath)
     const { settings, isLoaded: isSettingsLoaded, save: saveSettings } = useImageSettings(dirPath)
     const {
@@ -66,6 +68,9 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
 
     /** 角色索引：封面指针修正、卡片角标与出图认领都按 id 查，省去多处线性查找 */
     const { byId: charactersById, names: characterNames } = useCharacterIndex(characters)
+
+    /** 条目索引：详情与网格按 id 还原条目名，设定图不显示裸标识 */
+    const loreNames = useMemo(() => new Map(lore.map((entry) => [entry.id, entry.name])), [lore])
 
     /** 详情弹窗当前查看的图片：null 表示未打开 */
     const [selected, setSelected] = useState<PressImageItem | null>(null)
@@ -200,6 +205,7 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                         visibleImages={visibleImages}
                         coverSelectedId={coverSelectedId}
                         characterNames={characterNames}
+                        loreNames={loreNames}
                         isSelecting={isSelecting}
                         selectedPaths={selectedPaths}
                         onToggleSelect={toggleImage}
@@ -234,6 +240,7 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                 dirPath={dirPath}
                 coverSelectedId={coverSelectedId}
                 characterNames={characterNames}
+                loreNames={loreNames}
                 onOpenChange={handleDetailOpenChange}
                 onSetCover={setImageCover}
                 onCopyImage={copyImage}

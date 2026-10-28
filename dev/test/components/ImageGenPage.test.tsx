@@ -90,6 +90,8 @@ const PORTRAIT: PressImageItem = {
     url: 'https://example.test/portrait.png',
     createdAt: '2026-10-25T14:30:00.000Z',
     characterId: CHARACTER.id,
+    loreId: null,
+    loreKind: null,
 }
 const PHOTO: PressImageItem = {
     id: 'photo-20261025143000-aB3xK9Qz',
@@ -98,11 +100,13 @@ const PHOTO: PressImageItem = {
     url: 'https://example.test/photo.png',
     createdAt: '2026-10-25T14:30:01.000Z',
     characterId: null,
+    loreId: null,
+    loreKind: null,
 }
 const LIBRARY: ImageLibraryResult = {
     images: [PORTRAIT, PHOTO],
     coverSelectedId: PHOTO.id,
-    counts: { portrait: 1, photo: 1, orphan: 0 },
+    counts: { portrait: 1, lore: 0, photo: 1, orphan: 0 },
 }
 
 interface LibraryOverrides {
@@ -135,6 +139,7 @@ function renderPage(onChangeCharacter = vi.fn()): typeof onChangeCharacter {
             <ImageGenPage
                 dirPath={DIR_PATH}
                 characters={[CHARACTER]}
+                lore={[]}
                 setting={{ title: '剑来' }}
                 onChangeCharacter={onChangeCharacter}
             />
@@ -198,7 +203,7 @@ describe('ImageGenPage', () => {
     })
 
     it('无图时显示空态引导', () => {
-        setLibrary({ images: [], coverSelectedId: null, counts: { portrait: 0, photo: 0, orphan: 0 } })
+        setLibrary({ images: [], coverSelectedId: null, counts: { portrait: 0, lore: 0, photo: 0, orphan: 0 } })
 
         renderPage()
 
@@ -261,7 +266,7 @@ describe('ImageGenPage', () => {
             id: `photo-2026102514${String(index).padStart(4, '0')}-r${index}`,
             path: `press/剑来/Images/photo-${index}.png`,
         }))
-        setLibrary({ images: many, coverSelectedId: null, counts: { portrait: 0, photo: 61, orphan: 0 } })
+        setLibrary({ images: many, coverSelectedId: null, counts: { portrait: 0, lore: 0, photo: 61, orphan: 0 } })
         renderPage()
 
         await user.click(screen.getByRole('button', { name: '选择' }))

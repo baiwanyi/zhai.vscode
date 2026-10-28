@@ -115,9 +115,21 @@ describe('入参校验', () => {
         )
     })
 
-    it('非角色图不允许携带角色标识', async () => {
+    it('普通图片不允许携带归属标识', async () => {
         await expect(service.generate(payload({ characterId: '12345678' }), toUri)).rejects.toThrow(
-            '非角色图不应携带角色标识',
+            '普通图片不应携带归属标识',
+        )
+        await expect(service.generate(payload({ loreKind: 'faction' }), toUri)).rejects.toThrow(
+            '普通图片不应携带归属标识',
+        )
+    })
+
+    it('条目图缺少分类或条目标识时拒绝', async () => {
+        await expect(service.generate(payload({ kind: 'lore', loreId: '10428736' }), toUri)).rejects.toThrow(
+            '条目图缺少合法的条目分类',
+        )
+        await expect(service.generate(payload({ kind: 'lore', loreKind: 'faction' }), toUri)).rejects.toThrow(
+            '条目图缺少合法的条目标识',
         )
     })
 
@@ -148,6 +160,8 @@ describe('成功出图', () => {
                 ratio: '3:4',
                 style: 'auto',
                 characterId: null,
+                loreKind: null,
+                loreId: null,
                 enhancedFrom: null,
                 createdAt: result.image.createdAt,
             }),
@@ -161,6 +175,20 @@ describe('成功出图', () => {
         expect(result.image.id.startsWith('portrait-')).toBe(true)
         expect(result.image.id.endsWith('-12345678')).toBe(true)
         expect(result.image.characterId).toBe('12345678')
+    })
+
+    it('条目图按分类前缀命名并带上条目标识', async () => {
+        const result = await service.generate(
+            payload({ kind: 'lore', loreKind: 'faction', loreId: '10428736' }),
+            toUri,
+        )
+
+        expect(result.image.id.startsWith('faction-')).toBe(true)
+        expect(result.image.id.endsWith('-10428736')).toBe(true)
+        expect(result.image.kind).toBe('lore')
+        expect(result.image.loreKind).toBe('faction')
+        expect(result.image.loreId).toBe('10428736')
+        expect(result.image.characterId).toBeNull()
     })
 
     it('同角色连续两次生成不会覆盖前一张', async () => {

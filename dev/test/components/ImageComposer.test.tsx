@@ -106,6 +106,8 @@ const GENERATED: ImageGenerateResult = {
         url: 'https://example.test/photo.png',
         createdAt: '2026-10-25T14:30:00.000Z',
         characterId: null,
+        loreId: null,
+        loreKind: null,
     },
 }
 

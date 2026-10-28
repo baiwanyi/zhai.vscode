@@ -8,6 +8,7 @@
 import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
 import { isPathExisting } from '@modules/common/storagePath'
+import type { PressLoreKind } from '@shared/types/press'
 
 /** 从文件名剥出标识：只处理最后一段扩展名，目录部分不受影响 */
 const EXTENSION_PATTERN = /\.[^./]+$/u
@@ -19,6 +20,9 @@ export interface SidecarMeta {
     readonly ratio: string
     readonly style: string
     readonly characterId: string | null
+    /** 条目图归属：旧侧车没有这两个字段，读取端按缺失处理 */
+    readonly loreKind: PressLoreKind | null
+    readonly loreId: string | null
     readonly enhancedFrom: string | null
     readonly createdAt: string
 }

@@ -27,6 +27,8 @@ function detailOf(prompt: string): ImageDetailResult {
         ratio: '3:4',
         style: 'auto',
         characterId: null,
+        loreId: null,
+        loreKind: null,
         enhancedFrom: null,
         createdAt: '2026-01-01T00:00:00.000Z',
     }

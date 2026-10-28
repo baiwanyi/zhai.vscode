@@ -73,6 +73,7 @@ export function useImageFilters({ images, counts, coverSelectedId }: UseImageFil
             all: images.length,
             cover: coverSelectedId === null ? 0 : 1,
             portrait: counts.portrait,
+            lore: counts.lore,
             photo: counts.photo,
             orphan: counts.orphan,
         }),

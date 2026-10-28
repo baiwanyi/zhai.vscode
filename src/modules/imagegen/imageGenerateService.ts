@@ -7,7 +7,8 @@
  * 规则文本由 ./prompt/ruleService 按标识读盘，前端只传标识，规则改文不必重新进页面；
  * 参考图由 ./referenceImageService 校验并读成多模态输入，前端只回传选择流程登记过的路径。
  * 关键约束：文件名按新规范生成——角色图 portrait-{14 位时间戳}-{8 位角色标识}，
- * 其余 photo-{14 位时间戳}-{8 位随机串}；同秒同角色冲突时时间戳逐秒递增而非覆盖；
+ * 条目图 faction-/place-/item-{14 位时间戳}-{8 位条目标识}，
+ * 其余 photo-{14 位时间戳}-{8 位随机串}；同秒同归属冲突时时间戳逐秒递增而非覆盖；
  * 词条在前、正文在后合并成一段提示词（出图前按标识换取），词条为空数组时行为与纯正文完全一致；
  * 上下文段与规则段都排在正文之后、作品补充之前，二者合计为空与缺失都只跳过，不阻断出图；
  * 作品级 promptSuffix / negative 在出图前叠加，读取失败回落默认且不阻断出图；
@@ -33,7 +34,7 @@ import {
     type ImageGenerateResult,
     type ImageSettings,
 } from '@shared/types/imagegen'
-import { PORTRAIT_STYLES, type PortraitStyle } from '@shared/types/press'
+import { PORTRAIT_STYLES, type PortraitStyle, type PressLoreKind } from '@shared/types/press'
 import { IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
 import { nextImageId } from './imageNaming'
 import { writeSidecarOf } from './imageSidecar'
@@ -49,6 +50,7 @@ import {
     STYLE_HINTS,
 } from './prompt'
 import type { ImageGenerator } from './ai/imageProvider'
+import type { ImageOwner } from './imageNaming'
 import type { ImageSettingsService } from './imageSettingsService'
 import type { PromptRuleService, PromptTagService } from './prompt'
 import type { ReferenceImageService } from './referenceImageService'
@@ -59,8 +61,8 @@ import type Database from 'better-sqlite3'
 const MAX_REFERENCE_IMAGES = 3
 /** 参考图路径长度上限：超长路径无法回查，直接截断后由服务跳过 */
 const MAX_REFERENCE_PATH_LENGTH = 320
-/** 角色标识：与人物卡一致的 8 位数字 */
-const CHARACTER_ID_PATTERN = /^\d{8}$/u
+/** 归属标识：人物与资料条目共用同一规范，8 位数字 */
+const NUMERIC_ID_PATTERN = /^\d{8}$/u
 /** 增强输出的 token 上限：图像描述比对话更短，压低上限避免模型扩写 */
 const ENHANCE_MAX_TOKENS = 800
 
@@ -79,6 +81,8 @@ interface NormalizedImageRequest {
     references: string[]
     kind: ImageGenerateKind
     characterId: string | null
+    loreKind: PressLoreKind | null
+    loreId: string | null
     ratio: '1:1' | '3:4' | '4:3' | '16:9' | '9:16'
     style: PortraitStyle
     enhancedFrom: string | null
@@ -95,6 +99,8 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
         referenceImages?: unknown
         kind?: unknown
         characterId?: unknown
+        loreKind?: unknown
+        loreId?: unknown
         ratio?: unknown
         style?: unknown
         enhancedFrom?: unknown
@@ -120,16 +126,35 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
         throw new Error('提示词不能为空')
     }
     const kind = value.kind
-    if (kind !== 'portrait' && kind !== 'photo') {
+    if (kind !== 'portrait' && kind !== 'lore' && kind !== 'photo') {
         throw new Error('图片类别非法')
     }
     const characterId = readText(value.characterId, 32)
+    const loreId = readText(value.loreId, 32)
+    const loreKindValue = value.loreKind
+    const loreKind: PressLoreKind | null =
+        loreKindValue === 'faction' || loreKindValue === 'place' || loreKindValue === 'item'
+            ? loreKindValue
+            : null
     if (kind === 'portrait') {
-        if (!CHARACTER_ID_PATTERN.test(characterId)) {
+        if (!NUMERIC_ID_PATTERN.test(characterId)) {
             throw new Error('角色图缺少合法的角色标识')
         }
-    } else if (characterId.length > 0) {
-        throw new Error('非角色图不应携带角色标识')
+        if (loreId.length > 0 || loreKind !== null) {
+            throw new Error('角色图不应携带条目归属')
+        }
+    } else if (kind === 'lore') {
+        if (!NUMERIC_ID_PATTERN.test(loreId)) {
+            throw new Error('条目图缺少合法的条目标识')
+        }
+        if (loreKind === null) {
+            throw new Error('条目图缺少合法的条目分类')
+        }
+        if (characterId.length > 0) {
+            throw new Error('条目图不应携带角色标识')
+        }
+    } else if (characterId.length > 0 || loreId.length > 0 || loreKind !== null) {
+        throw new Error('普通图片不应携带归属标识')
     }
     const ratio = value.ratio
     if (ratio !== '1:1' && ratio !== '3:4' && ratio !== '4:3' && ratio !== '16:9' && ratio !== '9:16') {
@@ -145,10 +170,23 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
         references,
         kind,
         characterId: kind === 'portrait' ? characterId : null,
+        loreKind: kind === 'lore' ? loreKind : null,
+        loreId: kind === 'lore' ? loreId : null,
         ratio,
         style,
         enhancedFrom: readText(value.enhancedFrom, MAX_PROMPT_LENGTH) || null,
     }
+}
+
+/** 图片归属：出图类别决定文件名前缀与归属段，普通图不带归属 */
+function toImageOwner(request: NormalizedImageRequest): ImageOwner {
+    if (request.kind === 'portrait') {
+        return { kind: 'portrait', characterId: request.characterId ?? '' }
+    }
+    if (request.kind === 'lore' && request.loreKind !== null && request.loreId !== null) {
+        return { kind: 'lore', loreKind: request.loreKind, loreId: request.loreId }
+    }
+    return { kind: 'photo' }
 }
 
 export class ImageGenerateService {
@@ -228,7 +266,7 @@ export class ImageGenerateService {
             const dirSegments = [...readProjectSegments(request.dirPath), IMAGES_DIR]
             const dirUri = buildStorageUri(root, dirSegments)
             await vscode.workspace.fs.createDirectory(dirUri)
-            const id = await nextImageId(dirUri, request.kind, request.characterId, artifact.extension)
+            const id = await nextImageId(dirUri, toImageOwner(request), artifact.extension)
             const segments = [...dirSegments, `${id}.${artifact.extension}`]
             await vscode.workspace.fs.writeFile(buildStorageUri(root, segments), artifact.bytes)
             const createdAt = new Date().toISOString()
@@ -237,6 +275,8 @@ export class ImageGenerateService {
                 ratio: request.ratio,
                 style: request.style,
                 characterId: request.characterId,
+                loreKind: request.loreKind,
+                loreId: request.loreId,
                 enhancedFrom: request.enhancedFrom,
                 createdAt,
             })
@@ -251,6 +291,8 @@ export class ImageGenerateService {
                     url: toWebviewUri(buildStorageUri(root, segments)),
                     createdAt,
                     characterId: request.characterId,
+                    loreId: request.loreId,
+                    loreKind: request.loreKind,
                 },
             }
         } catch (error) {

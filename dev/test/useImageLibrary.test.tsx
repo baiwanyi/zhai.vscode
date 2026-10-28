@@ -24,16 +24,18 @@ const IMAGE: PressImageItem = {
     url: 'https://example.test/1.png',
     createdAt: '2026-01-01T00:00:00.000Z',
     characterId: null,
+    loreId: null,
+    loreKind: null,
 }
 const LIBRARY: ImageLibraryResult = {
     images: [IMAGE],
     coverSelectedId: null,
-    counts: { portrait: 0, photo: 1, orphan: 0 },
+    counts: { portrait: 0, lore: 0, photo: 1, orphan: 0 },
 }
 const EMPTY_LIBRARY: ImageLibraryResult = {
     images: [],
     coverSelectedId: null,
-    counts: { portrait: 0, photo: 0, orphan: 0 },
+    counts: { portrait: 0, lore: 0, photo: 0, orphan: 0 },
 }
 
 beforeEach(() => {

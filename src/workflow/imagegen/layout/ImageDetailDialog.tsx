@@ -31,6 +31,7 @@ import { styleLabelOf } from '../prompt/imageStyle'
 /** 详情面板里的类别文案：与筛选条共用同一套中文名，避免两处口径不一致 */
 const KIND_LABELS: Readonly<Record<PressImageKind, string>> = {
     portrait: '角色图',
+    lore: '设定图',
     photo: '普通图',
     orphan: '未归类',
 }
@@ -44,6 +45,8 @@ interface ImageDetailDialogProps {
     coverSelectedId: string | null
     /** 角色 id → 名称：用于副标题与图片替代文本 */
     characterNames: ReadonlyMap<string, string>
+    /** 条目 id → 名称：设定图的副标题与替代文本按它还原归属 */
+    loreNames: ReadonlyMap<string, string>
     onOpenChange: (isOpen: boolean) => void
     onSetCover: (image: PressImageItem) => void
     onCopyImage: (image: PressImageItem) => void
@@ -56,6 +59,7 @@ export function ImageDetailDialog({
     dirPath,
     coverSelectedId,
     characterNames,
+    loreNames,
     onOpenChange,
     onSetCover,
     onCopyImage,
@@ -98,6 +102,9 @@ export function ImageDetailDialog({
         if (target.characterId !== null) {
             parts.push(characterNames.get(target.characterId) ?? target.characterId)
         }
+        if (target.loreId !== null) {
+            parts.push(loreNames.get(target.loreId) ?? target.loreId)
+        }
         const created = formatDateTime(target.createdAt)
         if (created.length > 0) {
             parts.push(created)
@@ -134,9 +141,11 @@ export function ImageDetailDialog({
                             <Image
                                 src={image.url}
                                 alt={
-                                    image.characterId === null
-                                        ? image.id
-                                        : (characterNames.get(image.characterId) ?? image.id)
+                                    image.characterId !== null
+                                        ? (characterNames.get(image.characterId) ?? image.id)
+                                        : image.loreId === null
+                                          ? image.id
+                                          : (loreNames.get(image.loreId) ?? image.id)
                                 }
                                 aspect="auto"
                                 size="lg"

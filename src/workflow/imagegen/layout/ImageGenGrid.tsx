@@ -32,6 +32,8 @@ interface ImageGenGridProps {
     coverSelectedId: string | null
     /** 角色 id → 名称：用于卡片角标，缺失时不显示 */
     characterNames: ReadonlyMap<string, string>
+    /** 条目 id → 名称：设定图用同一个角标位显示条目名 */
+    loreNames: ReadonlyMap<string, string>
     /** 多选模式：点击卡片切换选中，不再打开详情 */
     isSelecting: boolean
     /** 已选中的图片路径集合 */
@@ -49,6 +51,7 @@ export function ImageGenGrid({
     pendingCount,
     coverSelectedId,
     characterNames,
+    loreNames,
     isSelecting,
     selectedPaths,
     onToggleSelect,
@@ -67,7 +70,13 @@ export function ImageGenGrid({
                 </Card>
             ))}
             {images.map((image) => {
-                const characterName = image.characterId === null ? null : characterNames.get(image.characterId)
+                // 归属名：角色图取角色名，设定图取条目名，普通图没有角标
+                const ownerName =
+                    image.characterId !== null
+                        ? (characterNames.get(image.characterId) ?? null)
+                        : image.loreId === null
+                          ? null
+                          : (loreNames.get(image.loreId) ?? null)
                 const isChecked = selectedPaths.has(image.path)
                 /** 卡片主动作：多选时切换勾选，否则打开详情；点击与键盘共用同一分支 */
                 const activate = (): void => {
@@ -81,7 +90,7 @@ export function ImageGenGrid({
                     <Card
                         key={image.path}
                         tabIndex={0}
-                        aria-label={`${isSelecting ? '选择' : '查看详情'}：${characterName ?? image.id}`}
+                        aria-label={`${isSelecting ? '选择' : '查看详情'}：${ownerName ?? image.id}`}
                         className={cn(
                             'group relative cursor-pointer overflow-hidden p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring',
                             isChecked && 'ring-2 ring-primary',
@@ -101,7 +110,7 @@ export function ImageGenGrid({
                     >
                         <img
                             src={image.url}
-                            alt={characterName ?? image.id}
+                            alt={ownerName ?? image.id}
                             className="aspect-3/4 w-full object-cover"
                             loading="lazy"
                         />
@@ -110,9 +119,9 @@ export function ImageGenGrid({
                                 封面
                             </Badge>
                         ) : null}
-                        {characterName !== null ? (
+                        {ownerName !== null ? (
                             <span className="absolute bottom-2 left-2 max-w-[70%] truncate rounded-md bg-background/80 px-1.5 py-0.5 text-xs">
-                                {characterName}
+                                {ownerName}
                             </span>
                         ) : null}
                         {isSelecting ? (
