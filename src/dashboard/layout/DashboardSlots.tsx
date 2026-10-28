@@ -1,16 +1,17 @@
 /**
- * 仪表盘概览区：并列两个卡片式槽位，分别预留写作趋势与模块分布的位置。
- * 组合同目录 DashboardSlotPlaceholder 呈现占位态，接入图表时逐个替换槽位内容。
- * 关键约束：宽度窄于容器断点时纵向堆叠，保证侧栏收窄后仍可读。
+ * 仪表盘概览区：纵向排列的卡片式槽位，首位预留写作趋势，次位为待办事项模块。
+ * 组合同目录 DashboardTodo 与 DashboardSlotPlaceholder，后续图表接入时替换占位槽位。
+ * 关键约束：槽位一律全宽——待办模块含清单标签、条目列表与输入区，半宽下无法使用。
  */
 import { DashboardSlotPlaceholder } from './DashboardSlotPlaceholder'
+import { DashboardTodo } from './DashboardTodo'
 import type { JSX } from 'react'
 
 export function DashboardSlots(): JSX.Element {
     return (
-        <div className="grid gap-2 @sm:grid-cols-2 pb-0.5">
+        <div className="flex flex-col gap-2 py-1">
             <DashboardSlotPlaceholder title="写作趋势" text="图表接入后展示字数与篇数变化" />
-            <DashboardSlotPlaceholder title="模块分布" text="图表接入后展示各模块内容占比" />
+            <DashboardTodo />
         </div>
     )
 }

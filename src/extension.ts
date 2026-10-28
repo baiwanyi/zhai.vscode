@@ -48,6 +48,10 @@ import { registerPressSnapshotWatcher } from './modules/press/snapshot/snapshotW
 import { registerProofreadCommands } from './modules/proofread/commands'
 import { ProofreadRoutes } from './modules/proofread/proofreadRoutes'
 import { ProofreadService } from './modules/proofread/proofreadService'
+import { TodoRepository } from './modules/todo/todoRepository'
+import { TodoRoutes } from './modules/todo/todoRoutes'
+import { TodoService } from './modules/todo/todoService'
+import { TodoWatcher } from './modules/todo/todoWatcher'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
@@ -201,6 +205,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     })
     const proofreadRoutes = new ProofreadRoutes(proofreadService)
     registerProofreadCommands(context, secrets, toastService)
+
+    // 待办：清单与条目全部落在存储根 todo/ 下的 Markdown，不落库；监听只用于在文件被外部改动时提示面板刷新，
+    // 写操作本身由服务按清单串行并回传完整详情，写入触发的监听事件由服务侧的静默窗口过滤掉
+    const todoRepository = new TodoRepository()
+    const todoService = new TodoService(todoRepository, context.globalState)
+    context.subscriptions.push(todoService, new TodoWatcher(todoService, todoRepository))
+    // 待办卡片落在仪表盘概览区，协议请求由仪表盘面板承接，故后置注入到仪表盘
+    dashboardProvider.attachTodoRoutes(new TodoRoutes(todoService))
 
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,

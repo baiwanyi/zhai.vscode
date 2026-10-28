@@ -1,9 +1,10 @@
 /**
  * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置、
- * 工作流页跳转、写作管理（作品列表、作品详情、新建作品与章节、卷的重命名与删除、章节的删除与跨卷移动、
- * 整部作品删除）聚合与创建，以及宿主命令。
+ * 工作流页跳转、待办清单读写、写作管理（作品列表、作品详情、新建作品与章节、卷的重命名与删除、
+ * 章节的删除与跨卷移动、整部作品删除）聚合与创建，以及宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传；
- * 另经 state 消息主动广播：note 通道给活跃笔记（列表回填选中态），index 通道给索引状态（列表随编辑收敛）；
+ * 另经 state 消息主动广播：note 通道给活跃笔记（列表回填选中态），index 通道给索引状态（列表随编辑收敛），
+ * todo 通道给待办清单的外部改动（卡片收到即重读）；
  * press/active 请求返回当前文档所属的作品目录，供面板打开时一次性跟随到该作品的章节列表。
  * 关键约束：请求处理为异步流程（新建笔记/作品/章节、卷重命名与删除、章节删除与移动需落盘 + 索引 + 打开，
  * 打开与置顶须先经索引库校验路径），
@@ -40,6 +41,7 @@ import {
     openProjectByDir,
     renameVolume,
 } from '@modules/press/projectService'
+import type { TodoRoutes } from '@modules/todo/todoRoutes'
 import type { DashboardStats } from '@shared/types/dashboard'
 import type { HostToWebviewMessage } from '@shared/types/messages'
 import { isRequestMessage } from '@shared/types/messages'
@@ -105,6 +107,10 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private readonly importService: PressImportService
     /** 封面选择仓储：press.db 晚于仪表盘打开，故用后置注入；未注入时列表不带封面 */
     private coverStore: PressCoverStore | null = null
+    /** 待办路由：后置注入，未注入时 todo/* 请求直接报未就绪，不静默返回空结果 */
+    private todoRoutes: TodoRoutes | null = null
+    /** 待办目录变更监听：面板存活期间把外部改动转给 Webview，销毁时释放 */
+    private todoListener: vscode.Disposable | null = null
 
     public constructor(
         private readonly extensionUri: vscode.Uri,
@@ -120,6 +126,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     /** 注入封面选择仓储：由扩展入口在 press.db 打开后调用，作品列表据此显示封面 */
     public attachPressCoverStore(store: PressCoverStore): void {
         this.coverStore = store
+    }
+
+    /** 注入待办路由：由扩展入口在待办服务装配后调用，待办卡片据此读写 todo/ 下的清单 */
+    public attachTodoRoutes(routes: TodoRoutes): void {
+        this.todoRoutes = routes
     }
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -143,9 +154,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         )
         this.watchActiveDocument(webviewView)
         this.watchIndexStatus(webviewView)
+        this.watchTodoChanges(webviewView)
         webviewView.onDidDispose(() => {
             this.stopWatchingActiveDocument()
             this.stopWatchingIndexStatus()
+            this.stopWatchingTodoChanges()
         }, this)
     }
 
@@ -266,8 +279,16 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                 void vscode.commands.executeCommand(command)
                 return Promise.resolve({ executed: true })
             }
-            default:
+            default: {
+                if (method.startsWith('todo/')) {
+                    const routes = this.todoRoutes
+                    if (routes === null) {
+                        throw new Error('待办服务尚未就绪')
+                    }
+                    return routes.handle(method, payload)
+                }
                 throw new Error(`未知的协议方法：${method}`)
+            }
         }
     }
 
@@ -703,6 +724,28 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private stopWatchingIndexStatus(): void {
         this.indexStatusListener?.dispose()
         this.indexStatusListener = null
+    }
+
+    /**
+     * 监听待办变更并转发给 Webview：todo 目录被编辑器改动后，卡片按需重读清单。
+     * 关键约束：仅在面板存活期间订阅，销毁时释放，避免面板重开后叠加监听；
+     * 待办路由为后置注入，未注入时不订阅（此时页面也发不出 todo 请求）。
+     */
+    private watchTodoChanges(view: vscode.WebviewView): void {
+        this.stopWatchingTodoChanges()
+        const routes = this.todoRoutes
+        if (routes === null) {
+            return
+        }
+        this.todoListener = routes.onDidChange(() => {
+            this.post(view, { type: 'state', channel: 'todo', payload: { kind: 'changed' } })
+        })
+    }
+
+    /** 释放待办变更监听 */
+    private stopWatchingTodoChanges(): void {
+        this.todoListener?.dispose()
+        this.todoListener = null
     }
 
     /**

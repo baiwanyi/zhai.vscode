@@ -32,9 +32,7 @@ const FOOTER_MASK_CLASS =
 const TOOLTIP_CLASS = '[--foreground:#1E1E1E] [--background:var(--background)]'
 
 function AppPage({ className, ...props }: ComponentProps<'div'>): JSX.Element {
-    return (
-        <div data-slot="app-page" className={cn('@container flex h-full min-h-0 flex-col p-3', className)} {...props} />
-    )
+    return <div data-slot="app-page" className={cn('@container flex h-full min-h-0 flex-col', className)} {...props} />
 }
 
 /** 标题与操作区的左右位置：end 为标题在左、操作区在右；start 为操作区在左、标题在右 */
@@ -51,7 +49,7 @@ function AppHeader({ className, align = 'end', ...props }: AppHeaderProps): JSX.
             data-slot="app-header"
             data-align={align}
             className={cn(
-                'relative flex shrink-0 flex-wrap items-center gap-2 pb-3',
+                'relative flex shrink-0 flex-wrap items-center gap-2 p-3',
                 align === 'start' && 'flex-row-reverse',
                 className,
             )}
@@ -139,7 +137,7 @@ interface AppContentProps extends ComponentProps<'div'> {
 function AppContent({ className, isScrollable = false, children, ...props }: AppContentProps): JSX.Element {
     if (!isScrollable) {
         return (
-            <div data-slot="app-content" className={cn('min-h-0 flex-1 px-0.5', className)} {...props}>
+            <div data-slot="app-content" className={cn('min-h-0 flex-1 px-3', className)} {...props}>
                 {children}
             </div>
         )
@@ -149,7 +147,7 @@ function AppContent({ className, isScrollable = false, children, ...props }: App
         // Radix 会在 viewport 内插入一层 display:table 的内容壳（内联样式，用于量横向溢出），
         // 表格宽度按内容取，长文本会把整页撑宽、再被隐藏的横向滚动条裁掉；这里用 !important 压掉内联 display。
         <ScrollArea className={cn('min-h-0 flex-1 [&_[data-radix-scroll-area-viewport]>div]:block!', className)}>
-            <div data-slot="app-content" className="flex min-h-full w-full flex-col px-0.5" {...props}>
+            <div data-slot="app-content" className="flex min-h-full w-full flex-col px-3" {...props}>
                 {children}
             </div>
         </ScrollArea>
@@ -160,7 +158,7 @@ function AppFooter({ className, children, ...props }: ComponentProps<'footer'>):
     return (
         <footer
             data-slot="app-footer"
-            className={cn('relative flex w-full items-center justify-end gap-2', FOOTER_MASK_CLASS, className)}
+            className={cn('relative flex w-full items-center justify-end gap-2 px-3', FOOTER_MASK_CLASS, className)}
             {...props}
         >
             {children}

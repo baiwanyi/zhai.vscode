@@ -67,6 +67,7 @@ export interface ToastPayload {
  * press-import 通道承载导入任务的进度与终态，载荷形如 PressImportProgress；
  * press-semantic 通道承载 AI 语义归纳的进度与终态，载荷形如 PressSemanticProgress；
  * proofread 通道承载 AI 校对的分批进度，载荷形如 ProofreadAiProgress；
+ * todo 通道承载待办目录的外部变更（无载荷，收到即刷新）；
  * toast 通道承载宿主的操作反馈，载荷形如 ToastPayload。
  */
 export interface StateMessage {
@@ -81,6 +82,7 @@ export interface StateMessage {
         | 'press-import'
         | 'press-semantic'
         | 'proofread'
+        | 'todo'
         | 'toast'
     payload: unknown
 }
@@ -219,6 +221,14 @@ export type HostMethodName =
     | 'proofread/local'
     | 'proofread/reveal'
     | 'proofread/target'
+    | 'todo/item/add'
+    | 'todo/item/delete'
+    | 'todo/item/toggle'
+    | 'todo/list/create'
+    | 'todo/list/delete'
+    | 'todo/list/rename'
+    | 'todo/lists'
+    | 'todo/items'
     | 'workflow/open'
     | 'workflow/reset'
     | 'workflow/state'
@@ -235,6 +245,7 @@ function isStateChannel(value: unknown): value is StateMessage['channel'] {
         value === 'press-import' ||
         value === 'press-semantic' ||
         value === 'proofread' ||
+        value === 'todo' ||
         value === 'toast'
     )
 }

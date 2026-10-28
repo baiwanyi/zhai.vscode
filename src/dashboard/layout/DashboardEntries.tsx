@@ -1,7 +1,8 @@
 /**
  * 功能入口清单：写作管理与公众号管理的整行入口，形态为全宽胶囊按钮。
  * 行样式与顶部「添加」按钮保持一致，跳转逻辑由页面持有；本组件不含任何宿主调用。
- * 关键约束：文件内的行组件为私有实现，仅用于消除两行之间的样式重复。
+ * 关键约束：入口顺序即展示顺序；待办事项不在此列，它以模块卡片形式落在概览区。
+ * 文件内的行组件为私有实现，仅用于消除各行之间的样式重复。
  */
 import { ChevronRight, MessagesSquare, Pencil } from 'lucide-react'
 import { Button } from '@webview/components/Button'

@@ -9,11 +9,13 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import type { WorkflowContextState, WorkflowId } from '@shared/types/workflow'
 import { toastError } from '@shared/utils/error'
 import { Button } from '@webview/components/Button'
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 import { MODULE_WORKFLOW, readModuleLabel } from '../core/routing'
 
-/** 公众号管理模块键：仅用于区分入口图标 */
-const WECHAT_MODULE_KEY = 'wechat'
+/** 模块入口图标：按模块键取用，未登记的模块回落为铅笔 */
+const MODULE_ICONS: Readonly<Record<string, (props: { className?: string }) => ReactNode>> = {
+    wechat: MessagesSquare,
+}
 
 /** 可选模块：直接取路由表的键，保证入口清单与映射关系不会两处失配 */
 const MODULE_ENTRIES: string[] = Object.keys(MODULE_WORKFLOW)
@@ -45,12 +47,15 @@ export function WorkflowHome({ onOpenModule }: WorkflowHomeProps): JSX.Element {
                     <EmptyDescription>尚未选择模块。从下方入口进入，或在仪表盘打开模块入口。</EmptyDescription>
                 </EmptyHeader>
                 <EmptyContent>
-                    {MODULE_ENTRIES.map((module) => (
-                        <Button key={module} variant="outline" onClick={() => void handleOpen(module)}>
-                            {module === WECHAT_MODULE_KEY ? <MessagesSquare /> : <Pencil />}
-                            {readModuleLabel(module)}
-                        </Button>
-                    ))}
+                    {MODULE_ENTRIES.map((module) => {
+                        const Icon = MODULE_ICONS[module] ?? Pencil
+                        return (
+                            <Button key={module} variant="outline" onClick={() => void handleOpen(module)}>
+                                <Icon />
+                                {readModuleLabel(module)}
+                            </Button>
+                        )
+                    })}
                 </EmptyContent>
             </Empty>
         </div>

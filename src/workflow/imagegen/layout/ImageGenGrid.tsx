@@ -58,7 +58,7 @@ export function ImageGenGrid({
     onSelect,
 }: ImageGenGridProps): JSX.Element {
     return (
-        <div className="grid grid-cols-2 gap-3 p-4 md:grid-cols-3 xl:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
             {Array.from({ length: pendingCount }, (_, index) => (
                 <Card key={`pending-${String(index)}`} aria-hidden className="relative overflow-hidden p-0">
                     <Skeleton className="aspect-3/4 w-full rounded-none" />

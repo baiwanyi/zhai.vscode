@@ -81,7 +81,7 @@ export function CharacterList({
 
     if (sortedCharacters.length === 0) {
         return (
-            <Empty className="border border-dashed border-border py-8">
+            <Empty className="border border-dashed border-border">
                 <EmptyHeader>
                     <EmptyMedia variant="icon">
                         <UserRound />
@@ -115,7 +115,7 @@ export function CharacterList({
 
     return (
         <>
-            <div className="flex flex-col gap-2 p-4">
+            <div className="flex flex-col gap-2 pt-1">
                 {sortedCharacters.map((character) => {
                     const roleMeta = CHARACTER_ROLE_META[character.role]
                     const summary = character.desire.length > 0 ? character.desire : '欲望未填写'

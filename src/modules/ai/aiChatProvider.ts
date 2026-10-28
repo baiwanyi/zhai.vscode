@@ -1,7 +1,8 @@
 /**
  * AI 对话 Webview 面板（宿主侧）：加载 React 构建产物，路由 ai/* 与 workflow/* 协议到对话服务与工作流路由，
- * 并把 naming/*、校对协议（proofread/*）与写作管理协议（pressAi/* 生成类、press/workspace 与 press/open 作品类、
- * press/extract/characters 人物卡提取、press/extract/outline 大纲提取）委托给各自路由。
+ * 并把 naming/*、校对协议（proofread/*）与写作管理协议（pressAi/* 生成类、
+ * press/workspace 与 press/open 作品类、press/extract/characters 人物卡提取、press/extract/outline 大纲提取）
+ * 委托给各自路由。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
  * 上下文增删走 ai/context*，写回走 ai/writeState / ai/setMode / ai/applyWrite，state 广播以 channel 区分
  * ai（runtime / context / writeTarget）与 workflow（路由事实，含当前作品目录）。

@@ -19,6 +19,7 @@ export const MODULE_LABEL: Readonly<Record<string, string>> = {
     press: '写作管理',
     wechat: '公众号管理',
     notes: '笔记',
+    todo: '待办事项',
     reader: '阅读',
     [ROOT_MODULE_KEY]: '根目录',
 }

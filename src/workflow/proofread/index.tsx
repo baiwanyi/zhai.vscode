@@ -132,7 +132,7 @@ export function ProofreadPage(): JSX.Element {
                 />
             </AppHeader>
             <AppContent isScrollable>
-                <div className="flex flex-col gap-3 p-4">
+                <div className="flex flex-col gap-3 pt-1">
                     {state.errorText !== null && (
                         <Alert variant="destructive">
                             <AlertDescription>{state.errorText}</AlertDescription>

@@ -94,7 +94,7 @@ export function ImageGenGallery({
     const hasMore = visibleImages.length < filteredTotal
 
     return (
-        <>
+        <div className="mb-3">
             <ImageGenGrid
                 images={visibleImages}
                 pendingCount={isPending ? 1 : 0}
@@ -115,6 +115,6 @@ export function ImageGenGallery({
                     </Button>
                 </div>
             ) : null}
-        </>
+        </div>
     )
 }

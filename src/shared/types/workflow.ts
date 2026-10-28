@@ -7,7 +7,7 @@
  * 前端回传的模块标识一律经 isOpenWorkflowRequest 收窄后再用，不得把路径形态字符串透传给宿主命令。
  */
 
-/** 工作流页面标识：press / wechat / note 为各模块的专属页面，placeholder 为未接入模块的占位页，home 为未选择模块时的初始页 */
+/** 工作流页面标识：press / wechat / note 为各模块的专属页面（待办模块在仪表盘内呈现，不占工作流页），placeholder 为未接入模块的占位页，home 为未选择模块时的初始页 */
 export type WorkflowId = 'press' | 'wechat' | 'note' | 'placeholder' | 'home'
 
 /** 进入场景：editorNote 为聚焦在笔记文档上，idle 为无编辑器或索引外文档 */
