@@ -15,7 +15,7 @@ interface PressFooterActionsProps {
 
 export function PressFooterActions({ isBusy, onAdd, onImport }: PressFooterActionsProps): JSX.Element {
     return (
-        <div className="flex flex-1 items-center justify-between">
+        <div className="flex flex-1 items-center justify-between pt-3">
             <Button size="icon" variant="outline" disabled={isBusy} onClick={onAdd} tooltip="添加作品">
                 <Plus />
             </Button>

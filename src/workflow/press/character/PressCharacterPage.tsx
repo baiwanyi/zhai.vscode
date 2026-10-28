@@ -1,6 +1,6 @@
 /**
  * 人物设定页：写作流程的第三步，用角色下拉筛选与关键词收敛卡片列表，点卡片在弹窗内编辑。
- * 复用约定：外壳取 components/AppPage（作品名走 AppDescription 眉标、筛选行进 AppMenu、列表走 AppContent 滚动），
+ * 复用约定：外壳取 components/AppPage（作品名与人数走 AppSummary 徽标行、筛选行进 AppMenu、列表走 AppContent 滚动），
  * 列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterEditPanel 承担、
  * 新增由 CharacterCreateDialog 承担、提取由 useCharacterExtract 发起、角色设定图由 useCharacterPortrait 读取；
  * 搜索框复用 ui/input-group（前置图标交给 InputGroupAddon），提取中的等待态复用 components/StateEmpty；
@@ -12,19 +12,11 @@
  */
 import { Plus, Search, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@components/ui/input-group'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import type { PortraitGalleryItem, PressExtractedCharacter } from '@shared/types/press'
-import {
-    AppAction,
-    AppContent,
-    AppDescription,
-    AppHeader,
-    AppMenu,
-    AppPage,
-    AppTitle,
-} from '@webview/components/AppPage'
+import { AppAction, AppContent, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'
+import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { CharacterCreateDialog } from './CharacterCreateDialog'
@@ -171,12 +163,11 @@ export function PressCharacterPage({
                             新增
                         </Button>
                     </AppAction>
-                    <AppDescription>
-                        <Badge variant="outline" className="max-w-full truncate">
-                            {setting.title}
-                        </Badge>
-                        <Badge variant="secondary">共 {characters.length.toLocaleString('zh-CN')} 人</Badge>
-                    </AppDescription>
+                    <AppSummary
+                        title={setting.title}
+                        path={dirPath}
+                        meta={`共 ${characters.length.toLocaleString('zh-CN')} 人`}
+                    />
                     <AppMenu>
                         <Select value={roleFilter} onValueChange={handleFilterChange}>
                             <SelectTrigger className="h-8 w-24" aria-label="角色筛选">

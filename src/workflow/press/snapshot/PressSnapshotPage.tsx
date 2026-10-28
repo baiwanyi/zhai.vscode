@@ -4,12 +4,12 @@
  * 复用约定：外壳取 components/AppPage（标题、说明、分区栏各归其槽位），分区切换由 SnapshotSectionRail 承担，
  * 两个面板各自管理取数、空态与确认弹窗；本文件只做分区状态与布局，页面不自带额外滚动层。
  * 关键约束：两个面板都以 dirPath 为数据边界，切换作品时随路由重挂载，不跨作品复用列表；
- * 说明行只显示当前作品标题（快照按作品隔离，标题即归属提示），不再重复功能说明；
+ * 说明行走 AppDescription 交代留版时机，作品标题走 AppSummary 徽标行（快照按作品隔离，标题即归属提示）；
  * 主体滚动由面板自身承担，故 AppContent 不传 isScrollable，避免外层再套一层滚动容器。
  */
 import { useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import { AppContent, AppDescription, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'
+import { AppSummary } from '@webview/components/AppSummary'
 import { ChapterSnapshotPanel } from './ChapterSnapshotPanel'
 import { DocSnapshotPanel } from './DocSnapshotPanel'
 import { SnapshotSectionRail } from './SnapshotSectionRail'
@@ -19,7 +19,7 @@ import type { JSX } from 'react'
 interface PressSnapshotPageProps {
     /** 当前作品目录：两条时间线都以该作品的 Snapshots 目录为根 */
     dirPath: string
-    /** 当前作品标题：说明行只标归属，不再重复功能说明 */
+    /** 当前作品标题：作为归属徽标显示在摘要行，快照按作品隔离 */
     title: string
 }
 
@@ -30,10 +30,10 @@ export function PressSnapshotPage({ dirPath, title }: PressSnapshotPageProps): J
         <AppPage>
             <AppHeader>
                 <AppTitle>快照</AppTitle>
-                <AppDescription className="flex-col items-start">
+                <AppDescription>
                     设定、大纲等文档与章节正文改动时自动留一版，恢复前也会先留一版，误操作随时可退回。
-                    <Badge variant="outline">{title}</Badge>
                 </AppDescription>
+                <AppSummary title={title} path={dirPath} />
                 <AppMenu>
                     <SnapshotSectionRail activeSection={section} onSelect={setSection} />
                 </AppMenu>

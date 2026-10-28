@@ -1,23 +1,16 @@
 /**
  * 校对页：以 app-page 骨架承载「目标信息 + 四类检查卡 + 免责提示」，承接写作管理页的校对分区。
- * 复用约定：外壳取 @webview/components/AppPage，检查卡与条目由 layout/ 承担，状态编排在 hooks/；
- * 目标信息与无目标空态各自收敛为同文件私有组件，本文件只做状态编排与插槽装配。
+ * 复用约定：外壳取 @webview/components/AppPage，页头说明走 AppDescription、目标徽标行由 AppSummary 渲染，
+ * 检查卡与条目由 layout/ 承担，状态编排在 hooks/；本文件只把目标折算成徽标数据，无目标空态
+ * 收敛为同文件私有组件，其余只做状态编排与插槽装配。
  * 关键约束：始终检查整篇正文；本地检查先出结果、AI 检查随后补检，AI 失败只影响病句与风险段落两张卡；
  * 没有可校对目标时展示引导空态而不是报错；检查进行中只给加载态、不提供取消入口。
  */
 import { SpellCheck } from 'lucide-react'
 import { Alert, AlertDescription } from '@components/ui/alert'
-import { Badge } from '@components/ui/badge'
 import type { ProofreadTarget } from '@shared/types/proofread'
-import {
-    AppAction,
-    AppContent,
-    AppDescription,
-    AppHeader,
-    AppMenu,
-    AppPage,
-    AppTitle,
-} from '@webview/components/AppPage'
+import { AppAction, AppContent, AppDescription, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
+import { AppSummary, type AppSummaryProps } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useProofreadAiDetect } from './hooks/useProofreadAiDetect'
@@ -39,25 +32,17 @@ const RUN_TOOLTIP = '执行本地规则与 AI 语义检查，AI 部分会消耗�
 const AI_DISCLAIMER = 'AI 结果由模型判断，请逐条人工确认后再修改'
 const DISCLAIMER = '智能识别，可能出现误差，仅供参考'
 
-interface TargetBadgesProps {
-    target: ProofreadTarget
-    /** 词库摘要：与目标信息同排呈现，不额外占用一行 */
-    lexiconLabel: string
-}
+/** 目标信息：标题与字数常驻，选区 / 截断两种口径按需追加，词库摘要跟在行尾 */
+function summarizeTarget(target: ProofreadTarget, lexiconLabel: string): AppSummaryProps {
+    const wordCountLabel = `共 ${target.wordCount.toLocaleString('zh-CN')} 字`
 
-/** 目标信息：标题与字数常驻，选区 / 截断两种口径按需追加 */
-function TargetBadges({ target, lexiconLabel }: TargetBadgesProps): JSX.Element {
-    return (
-        <AppMenu>
-            <Badge variant="outline" className="max-w-full truncate">
-                {target.title}
-            </Badge>
-            <Badge variant="secondary">共 {target.wordCount.toLocaleString('zh-CN')} 字</Badge>
-            {target.kind === 'selection' && <Badge variant="secondary">选区</Badge>}
-            {target.truncated && <Badge variant="destructive">正文过长已截断</Badge>}
-            <span className="text-xs text-muted-foreground">{lexiconLabel}</span>
-        </AppMenu>
-    )
+    return {
+        title: target.title,
+        path: target.path,
+        meta: target.kind === 'selection' ? `${wordCountLabel} · 选区` : wordCountLabel,
+        alerts: target.truncated ? '正文过长已截断' : undefined,
+        note: lexiconLabel,
+    }
 }
 
 interface TargetMissingProps {
@@ -90,6 +75,8 @@ export function ProofreadPage(): JSX.Element {
     const lexicon = useProofreadLexicon()
     const detect = useProofreadAiDetect()
     const { target } = state
+    /** 页头目标信息：无目标时为 null，徽标行整行不渲染 */
+    const targetSummary = target === null ? null : summarizeTarget(target, lexicon.label)
     /** 没有目标时的加载口径：首次读取与重跑都只给加载态 */
     const isReadingTarget = state.status === 'loading' || state.status === 'running'
     /** AI 未覆盖的批次数：失败与超时跳过都不能算作「未发现问题」 */
@@ -136,7 +123,13 @@ export function ProofreadPage(): JSX.Element {
                     </Button>
                 </AppAction>
                 <AppDescription>{target === null ? DESCRIPTION_EMPTY : DESCRIPTION_READY}</AppDescription>
-                {target !== null && <TargetBadges target={target} lexiconLabel={lexicon.label} />}
+                <AppSummary
+                    title={targetSummary?.title}
+                    path={targetSummary?.path}
+                    meta={targetSummary?.meta}
+                    alerts={targetSummary?.alerts}
+                    note={targetSummary?.note}
+                />
             </AppHeader>
             <AppContent isScrollable>
                 <div className="flex flex-col gap-3 p-4">

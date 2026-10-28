@@ -1,6 +1,7 @@
 /**
  * AI 使用量页：以 AppPage 骨架承载「标题区（汇总 + 筛选 + 刷新）、用量表格、分页」，点击请求 id 打开提示词弹窗。
- * 复用约定：外壳取 components/AppPage（刷新按钮进标题行 AppAction、汇总与筛选各占一行、表格走 AppContent 滚动、分页进 AppFooter）；
+ * 复用约定：外壳取 components/AppPage（刷新按钮进标题行 AppAction、汇总走 AppDescription、
+ * 今日 / 本月积分以 Badge 与筛选同排在 AppMenu、表格走 AppContent 滚动、分页进 AppFooter）；
  * 列表经 useAiUsage 向宿主取（分页与汇总都在宿主侧完成），提示词经 useUsagePrompt 按需拉取；
  * 表格、筛选、分页与弹窗各自独立成组件，本文件只做状态编排与筛选/翻页的联动复位。
  * 关键约束：筛选变化必须把页码复位到 1，否则会停留在超出新结果集的页码上；
@@ -8,22 +9,35 @@
  * 刷新按钮带 force 强制重扫，页面停留时的 30 秒静默同步由 hook 负责。
  */
 import { RefreshCw } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
+import { Badge } from '@components/ui/badge'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
-import type { AiUsageItem, AiUsageModule, AiUsageRange } from '@shared/types/aiUsage'
-import { AppAction, AppContent, AppFooter, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'
+import type { AiUsageItem, AiUsageModule, AiUsagePeriods, AiUsageRange } from '@shared/types/aiUsage'
+import {
+    AppAction,
+    AppContent,
+    AppDescription,
+    AppFooter,
+    AppHeader,
+    AppMenu,
+    AppPage,
+    AppTitle,
+} from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { DEFAULT_PAGE_SIZE, DEFAULT_RANGE } from './constants'
 import { useAiUsage } from './hooks/useAiUsage'
 import { useUsagePrompt } from './hooks/useUsagePrompt'
 import { UsageFilterBar } from './layout/UsageFilterBar'
-import { UsageHeader } from './layout/UsageHeader'
 import { UsagePagination } from './layout/UsagePagination'
 import { UsagePromptDialog } from './layout/UsagePromptDialog'
 import { UsageTable } from './layout/UsageTable'
+import { formatCredits, formatTokens } from './utils'
 import type { JSX } from 'react'
+
+/** 空列表常量：表格在首轮失败时也要拿到稳定引用，避免每次渲染新建数组 */
+const EMPTY_ITEMS: AiUsageItem[] = []
 
 export function AiUsagePage(): JSX.Element {
     const [module, setModule] = useState<AiUsageModule | null>(null)
@@ -31,25 +45,32 @@ export function AiUsagePage(): JSX.Element {
     const [page, setPage] = useState(1)
     const [activeItem, setActiveItem] = useState<AiUsageItem | null>(null)
     const { result, error, isLoading, refresh } = useAiUsage(module, range, page, DEFAULT_PAGE_SIZE)
-    const { prompt, error: promptError } = useUsagePrompt(activeItem === null ? null : activeItem.requestId)
+    // 弹窗关闭时 activeItem 为 null，请求 id 直接由可选链得出，无需求值再判空
+    const { prompt, error: promptError } = useUsagePrompt(activeItem?.requestId ?? null)
 
-    const handleChangeModule = useCallback((next: AiUsageModule | null): void => {
+    /** 筛选一并复位页码：沿用旧页码会落在新结果集之外 */
+    const handleChangeModule = (next: AiUsageModule | null): void => {
         setModule(next)
         setPage(1)
-    }, [])
+    }
 
-    const handleChangeRange = useCallback((next: AiUsageRange): void => {
+    const handleChangeRange = (next: AiUsageRange): void => {
         setRange(next)
         setPage(1)
-    }, [])
+    }
 
-    const handleOpenRequest = useCallback((item: AiUsageItem): void => {
+    const handleOpenRequest = (item: AiUsageItem): void => {
         setActiveItem(item)
-    }, [])
+    }
 
-    const handleClosePrompt = useCallback((): void => {
+    const handleClosePrompt = (): void => {
         setActiveItem(null)
-    }, [])
+    }
+
+    // 首次加载尚无任何结果才出骨架；后续刷新保留上一份表格，避免闪空
+    const isFirstLoading = isLoading && result === null
+    // 分页优先跟随宿主回传（与表格数据同源），首轮尚未返回时用本地请求参数兜底
+    const pageView = result ?? { page, pageSize: DEFAULT_PAGE_SIZE, total: 0 }
 
     return (
         <>
@@ -72,24 +93,30 @@ export function AiUsagePage(): JSX.Element {
                             )}
                         </Button>
                     </AppAction>
-                    <UsageHeader summary={result?.summary ?? null} periods={result?.periods ?? null} />
-                    <AppMenu>
+                    {result !== null && (
+                        <AppDescription>
+                            共 {result.summary.requests} 次请求 · 合计 {formatCredits(result.summary.credits)} 积分 ·{' '}
+                            {formatTokens(result.summary.tokens)} tokens
+                        </AppDescription>
+                    )}
+                    <AppMenu className="justify-between">
                         <UsageFilterBar
                             module={module}
                             range={range}
                             onChangeModule={handleChangeModule}
                             onChangeRange={handleChangeRange}
                         />
+                        {result !== null && <UsagePeriodBadges periods={result.periods} />}
                     </AppMenu>
                     {error !== null && (
-                        <Alert variant="destructive" className="col-span-full">
+                        <Alert variant="destructive" className="w-full">
                             <AlertDescription>{error}</AlertDescription>
                         </Alert>
                     )}
                 </AppHeader>
 
                 <AppContent isScrollable>
-                    {isLoading && result === null ? (
+                    {isFirstLoading ? (
                         <div className="flex flex-col gap-2 p-3">
                             <Skeleton className="h-8 w-full" />
                             <Skeleton className="h-8 w-full" />
@@ -97,15 +124,15 @@ export function AiUsagePage(): JSX.Element {
                             <Skeleton className="h-8 w-full" />
                         </div>
                     ) : (
-                        <UsageTable items={result?.items ?? []} onOpenRequest={handleOpenRequest} />
+                        <UsageTable items={result?.items ?? EMPTY_ITEMS} onOpenRequest={handleOpenRequest} />
                     )}
                 </AppContent>
 
                 <AppFooter className="justify-center">
                     <UsagePagination
-                        page={result?.page ?? page}
-                        pageSize={result?.pageSize ?? DEFAULT_PAGE_SIZE}
-                        total={result?.total ?? 0}
+                        page={pageView.page}
+                        pageSize={pageView.pageSize}
+                        total={pageView.total}
                         onChangePage={setPage}
                     />
                 </AppFooter>
@@ -114,5 +141,19 @@ export function AiUsagePage(): JSX.Element {
                 <UsagePromptDialog item={activeItem} prompt={prompt} error={promptError} onClose={handleClosePrompt} />
             )}
         </>
+    )
+}
+
+interface UsagePeriodBadgesProps {
+    periods: AiUsagePeriods
+}
+
+/** 固定区间积分：今日与本月只跟随模块筛选，与列表的时间范围无关 */
+function UsagePeriodBadges({ periods }: UsagePeriodBadgesProps): JSX.Element {
+    return (
+        <div className="flex gap-1.5">
+            <Badge variant="outline">今日积分 {formatCredits(periods.today)}</Badge>
+            <Badge variant="outline">本月积分 {formatCredits(periods.month)}</Badge>
+        </div>
     )
 }

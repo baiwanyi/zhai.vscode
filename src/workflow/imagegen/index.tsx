@@ -1,6 +1,6 @@
 /**
  * 生图页：以 app-page 骨架承载「标题与筛选区 + 图片网格 + 底部出图输入区」。
- * 复用约定：外壳取 @webview/components/AppPage（多选操作并进标题行 AppAction，
+ * 复用约定：外壳取 @webview/components/AppPage（多选操作并进标题行 AppAction，作品标题与张数走 AppSummary，
  * 筛选区整行走 AppMenu，网格走 AppContent 滚动，composer 落 AppFooter），
  * 列表经 useImageLibrary、参数经 useImageSettings、筛选与分批经 useImageFilters、图片动作用 useImageActions；
  * 角色索引、多选状态、删除编排与封面指针同步分别由 useCharacterIndex / useImageSelection / useImageDeletion /
@@ -13,17 +13,9 @@
  * 出图期间与回包后的刷新窗口内，列表首位都保留骨架占位，占位直接由新图顶替。
  */
 import { useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import type { ImageGenerateResult, PressImageItem } from '@shared/types/imagegen'
-import {
-    AppContent,
-    AppDescription,
-    AppFooter,
-    AppHeader,
-    AppMenu,
-    AppPage,
-    AppTitle,
-} from '@webview/components/AppPage'
+import { AppContent, AppFooter, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'
+import { AppSummary } from '@webview/components/AppSummary'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { useCharacterCoverSync } from './hooks/useCharacterCoverSync'
 import { useCharacterIndex, type ImageGenCharacter } from './hooks/useCharacterIndex'
@@ -124,6 +116,9 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
     /** 库里一张图都没有：空态文案与标题行张数徽标共用同一判断，避免两处各写一遍长度比较 */
     const isLibraryEmpty = images.length === 0
 
+    /** 标题行张数：空库不展示，避免「共 0 张」与空态文案重复 */
+    const photoCountText = isLibraryEmpty ? undefined : `共 ${images.length.toLocaleString('zh-CN')} 张`
+
     /** 比例与画风改动：只上报改动项，落盘与回显一律以宿主返回的真实状态为准 */
     const handleSettingsChange = (patch: ImageSettingsPatch): void => {
         void saveSettings(patch)
@@ -172,12 +167,7 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
             <AppPage>
                 <AppHeader>
                     <AppTitle>生图</AppTitle>
-                    <AppDescription>
-                        <Badge variant="outline">{setting.title}</Badge>{' '}
-                        {isLibraryEmpty ? null : (
-                            <Badge variant="secondary">共 {images.length.toLocaleString('zh-CN')} 张</Badge>
-                        )}
-                    </AppDescription>
+                    <AppSummary title={setting.title} path={dirPath} meta={photoCountText} />
                     <AppMenu className="justify-between">
                         <ImageGenFilters
                             kind={kind}
@@ -221,7 +211,7 @@ export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }
                     />
                 </AppContent>
                 {/* 出图输入区常驻底部：竖排撑满宽度，参数读完与否的占位差异由 composer 内部承担 */}
-                <AppFooter className="flex-col items-stretch gap-0 pt-0">
+                <AppFooter>
                     <ImageComposer
                         isLoaded={isSettingsLoaded}
                         dirPath={dirPath}

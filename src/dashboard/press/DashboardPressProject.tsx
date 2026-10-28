@@ -215,14 +215,14 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
     return (
         <>
             <AppPage onContextMenu={(event) => event.preventDefault()}>
-                <AppHeader>
-                    <AppTitle>{projectName}</AppTitle>
+                <AppHeader align="start">
+                    <AppTitle tooltip={projectName}>{projectName}</AppTitle>
                     <AppAction>
                         <Button
                             variant="secondary"
                             size="icon"
-                            aria-label="返回仪表盘"
-                            tooltip="返回仪表盘"
+                            aria-label="返回作品列表"
+                            tooltip="返回作品列表"
                             onClick={onBack}
                         >
                             <ChevronLeft />

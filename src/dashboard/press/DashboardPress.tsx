@@ -99,7 +99,7 @@ export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): 
     return (
         <>
             <AppPage onContextMenu={(event) => event.preventDefault()}>
-                <AppHeader>
+                <AppHeader align="start">
                     <AppTitle>作品列表</AppTitle>
                     <AppAction>
                         <Button

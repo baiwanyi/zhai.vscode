@@ -14,7 +14,7 @@ interface DashboardEntriesProps {
 
 export function DashboardEntries({ onOpenWriting, onOpenPress }: DashboardEntriesProps): JSX.Element {
     return (
-        <div className="flex flex-col gap-2">
+        <div className="flex w-full flex-col gap-2">
             <EntryRow icon={<Pencil />} title="写作管理" onSelect={onOpenWriting} />
             <EntryRow icon={<MessagesSquare />} title="公众号管理" onSelect={onOpenPress} />
         </div>
