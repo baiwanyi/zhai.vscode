@@ -1199,3 +1199,20 @@ export function isChapterSnapshotRestoreRequest(payload: unknown): payload is Ch
 export function isChapterSnapshotDeleteRequest(payload: unknown): payload is ChapterSnapshotDeleteRequest {
     return isChapterSnapshotRestoreRequest(payload)
 }
+
+/**
+ * 活跃作品快照：面板打开时按需请求，命中即让仪表盘直接进入该作品的章节列表。
+ * 约束：activeProjectDirPath 为 press/{作品名} 且须在索引库内，焦点不在作品文档（或落在索引外）时为 null。
+ */
+export interface PressActiveState {
+    activeProjectDirPath: string | null
+}
+
+/** 判断是否为合法的活跃作品快照（类型收窄辅助） */
+export function isPressActiveState(payload: unknown): payload is PressActiveState {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { activeProjectDirPath?: unknown }
+    return candidate.activeProjectDirPath === null || typeof candidate.activeProjectDirPath === 'string'
+}

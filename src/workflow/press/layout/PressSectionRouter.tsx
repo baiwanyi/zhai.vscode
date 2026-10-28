@@ -109,5 +109,5 @@ export function PressSectionRouter({
     }
     // 对话按作品隔离：当前作品目录即会话作用域，切作品即换用该作品自己的对话记录；
     // key 跟随作品目录，切作品时重建对话页，命令选择与未发送正文不会带进新作品
-    return <AiChat key={dirPath} projectDir={dirPath} />
+    return <AiChat key={dirPath} projectDir={dirPath} projectTitle={workspace.setting.title} />
 }

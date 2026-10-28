@@ -3,7 +3,8 @@
  * 工作流页跳转、写作管理（作品列表、作品详情、新建作品与章节、卷的重命名与删除、章节的删除与跨卷移动、
  * 整部作品删除）聚合与创建，以及宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传；
- * 另经 state 消息主动广播：note 通道给活跃笔记（列表回填选中态），index 通道给索引状态（列表随编辑收敛）。
+ * 另经 state 消息主动广播：note 通道给活跃笔记（列表回填选中态），index 通道给索引状态（列表随编辑收敛）；
+ * press/active 请求返回当前文档所属的作品目录，供面板打开时一次性跟随到该作品的章节列表。
  * 关键约束：请求处理为异步流程（新建笔记/作品/章节、卷重命名与删除、章节删除与移动需落盘 + 索引 + 打开，
  * 打开与置顶须先经索引库校验路径），
  * 须 await 结果后再回包；命令入口一律经白名单校验，未登记的命令直接拒绝；
@@ -12,6 +13,7 @@
  */
 import * as vscode from 'vscode'
 import type { WorkflowRouter } from '@modules/ai/workflowRouter'
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import type { PressCoverStore } from '@modules/imagegen/db/coverRepository'
 import { createAndOpenNote, openNoteByPath } from '@modules/note/noteService'
 import type { PinStore } from '@modules/note/pinStore'
@@ -51,6 +53,7 @@ import type {
     MergeChapterSummaryResult,
     MovedPressChapter,
     OpenPressProjectResult,
+    PressActiveState,
     PressAnalyzeResult,
     PressImportCandidate,
     PressImportProgress,
@@ -95,7 +98,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'zhai.dashboard'
 
     /** 活跃编辑器监听：面板销毁时释放，避免重开面板后监听堆积、重复广播 */
-    private activeNoteListener: vscode.Disposable | null = null
+    private activeDocumentListener: vscode.Disposable | null = null
     /** 索引状态监听：面板存活期间把索引变更转给 Webview，使列表跟随文件编辑收敛 */
     private indexStatusListener: vscode.Disposable | null = null
     /** 作品导入服务：持有待导入文件 token 与进行中的任务，长任务进度经 state 通道广播 */
@@ -138,10 +141,10 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             (message: unknown) => void this.handleMessage(webviewView, message),
             this,
         )
-        this.watchActiveNote(webviewView)
+        this.watchActiveDocument(webviewView)
         this.watchIndexStatus(webviewView)
         webviewView.onDidDispose(() => {
-            this.stopWatchingActiveNote()
+            this.stopWatchingActiveDocument()
             this.stopWatchingIndexStatus()
         }, this)
     }
@@ -193,6 +196,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             }
             case 'note/active': {
                 return Promise.resolve(this.buildActiveNote())
+            }
+            case 'press/active': {
+                return Promise.resolve(this.buildActivePressProject())
             }
             case 'workflow/open': {
                 return this.openWorkflow(payload)
@@ -663,21 +669,23 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     }
 
     /**
-     * 监听编辑器焦点变化并广播活跃笔记：列表选中态以编辑器真实焦点为准，而非仅记录最后一次点击，
-     * 使用户关闭当前笔记后能跟随 VSCode 的焦点回退自动切回上一篇。
-     * 关键约束：注册前先释放旧监听，面板销毁时一并清理，避免 WebviewView 重建后重复广播。
+     * 监听编辑器焦点变化并广播当前文档：note 通道供笔记列表回填选中态，press 通道供仪表盘同步到当前作品。
+     * 列表选中态以编辑器真实焦点为准，而非仅记录最后一次点击，使用户关闭当前笔记后能跟随 VSCode 的焦点回退自动切回上一篇。
+     * 关键约束：注册前先释放旧监听，面板销毁时一并清理，避免 WebviewView 重建后重复广播；
+     * 两条广播共用同一次焦点事件，press 侧在 webview 抢焦点时按活动标签页回落，不依赖 activeTextEditor 是否存在。
      */
-    private watchActiveNote(view: vscode.WebviewView): void {
-        this.stopWatchingActiveNote()
-        this.activeNoteListener = vscode.window.onDidChangeActiveTextEditor(() => {
+    private watchActiveDocument(view: vscode.WebviewView): void {
+        this.stopWatchingActiveDocument()
+        this.activeDocumentListener = vscode.window.onDidChangeActiveTextEditor(() => {
             this.post(view, { type: 'state', channel: 'note', payload: this.buildActiveNote() })
+            this.post(view, { type: 'state', channel: 'press', payload: this.buildActivePressProject() })
         })
     }
 
     /** 释放活跃编辑器监听 */
-    private stopWatchingActiveNote(): void {
-        this.activeNoteListener?.dispose()
-        this.activeNoteListener = null
+    private stopWatchingActiveDocument(): void {
+        this.activeDocumentListener?.dispose()
+        this.activeDocumentListener = null
     }
 
     /**
@@ -709,6 +717,40 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         const relativePath = this.indexService.toRelativePath(editor.document.uri)
         const [known] = listFilesByPaths(this.db, [relativePath])
         return { activePath: known?.path ?? null }
+    }
+
+    /**
+     * 组装活跃作品快照：面板打开时请求一次，命中即让仪表盘直接进入该作品的章节列表。
+     * 关键约束：webview 抢焦点时 activeTextEditor 会缺位，此时回落到活动标签页的文本输入；
+     * 一级目录必须是 press 且作品须在索引库内，否则一律 null，避免把面板带到不存在的详情页。
+     */
+    private buildActivePressProject(): PressActiveState {
+        const uri = this.readActiveDocumentUri()
+        if (uri === null) {
+            return { activeProjectDirPath: null }
+        }
+        const [moduleKey, projectName] = this.indexService.toRelativePath(uri).split('/')
+        if (moduleKey !== PRESS_MODULE_DIR || projectName === undefined || projectName === '') {
+            return { activeProjectDirPath: null }
+        }
+        const dirPath = `${PRESS_MODULE_DIR}/${projectName}`
+        return { activeProjectDirPath: hasProjectFiles(this.db, dirPath) ? dirPath : null }
+    }
+
+    /** 取当前文档：优先活动编辑器，焦点被 webview 抢走时回落活动标签页的文本输入 */
+    private readActiveDocumentUri(): vscode.Uri | null {
+        const editor = vscode.window.activeTextEditor
+        if (editor !== undefined) {
+            return editor.document.uri
+        }
+        const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input
+        if (input instanceof vscode.TabInputText) {
+            return input.uri
+        }
+        if (input instanceof vscode.TabInputTextDiff) {
+            return input.modified
+        }
+        return null
     }
 
     private post(view: vscode.WebviewView, message: HostToWebviewMessage): void {
