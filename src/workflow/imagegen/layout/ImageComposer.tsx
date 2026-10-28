@@ -11,16 +11,16 @@
  * 生成意图只有两种：挂着角色芯片即角色图，否则是普通图片；生成不碰作品封面，封面在图库里手动指定；
  * 比例与画风各只落一份 state，手动改动经 onSettingsChange 上报，正文里的比例字面量只自动切换
  * 本次会话的选择、不写回作品配置。
- * 生成中外扩一圈光晕（conic 描边 + 模糊背光，样式在 globals.css 的 composer-glow 段），
- * 它必须挂在卡片外侧的兄弟层上——卡片底色不透明，移进卡片内部就会被盖住，装饰层不得承载任何状态或交互；
+ * 生成中外扩一圈光晕取 @webview/components/ComposerGlow（与对话页共用，样式在 globals.css 的 composer-glow 段），
+ * 它挂在卡片外侧的兄弟层上——卡片底色不透明，移进卡片内部就会被盖住，装饰层不得承载任何状态或交互；
  * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
  */
-import { cn } from 'cn'
 import { BookText, ContactRound, PencilRuler, WandSparkles } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
 import type { ImageGenerateKind, ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
+import { ComposerGlow } from '@webview/components/ComposerGlow'
 import { Image } from '@webview/components/Image'
 import { RichChipInput, type RichChip } from '@webview/components/RichChipInput'
 import { ImageComposerActions } from './ImageComposerActions'
@@ -239,6 +239,16 @@ function ComposerBody({
     const composeEnhanceSource = (source: string): string =>
         composePromptSections({ text: source, character: activeCharacter })
 
+    /**
+     * 增强后回收词条芯片：词条原文已随改写结果进入正文，保留会被宿主在发送时二次合并。
+     * 关键约束：只摘词条，角色、设定、规则与参考图仍归用户控制；还原时由 hook 用快照补回。
+     */
+    const consumePromptChips = (): void => {
+        promptChips.forEach((chip) => {
+            removeChip(chip.id)
+        })
+    }
+
     const { text, setText, isGenerating, isEnhancing, enhancedFrom, onEnhance, onRestore, onSend, onAbort } =
         useImageComposer({
             dirPath,
@@ -248,6 +258,7 @@ function ComposerBody({
             composePromptRules,
             composeReferenceImages,
             composeEnhanceSource,
+            onConsumePromptChips: consumePromptChips,
             target: generateTarget,
             ratio,
             style,
@@ -317,23 +328,8 @@ function ComposerBody({
 
     return (
         // isolate 给光晕划定层叠边界：-z-10 只在卡片之下，不会沉到页面背景后面
-        <div className="relative isolate">
-            {/*
-                生成态光晕：纯装饰层，pointer-events-none 且 aria-hidden，不参与布局与交互。
-                背光在外、描边在内，二者尺寸与圆角对齐卡片；隐藏时只切透明度。
-            */}
-            <div
-                aria-hidden
-                data-glow={isGenerating ? 'on' : 'off'}
-                className={cn(
-                    'pointer-events-none absolute inset-0 -z-10 transition-opacity duration-500',
-                    isGenerating ? 'opacity-100' : 'opacity-0',
-                )}
-            >
-                <div className="composer-glow-halo absolute -inset-0.5 rounded-2xl opacity-60 blur-sm" />
-                {/* 外扩量与 CSS 里的 padding（线宽）保持一致，描边才刚好贴在卡片边界外 */}
-                <div className="composer-glow-edge absolute -inset-px rounded-2xl" />
-            </div>
+        <div className="relative isolate flex-1">
+            <ComposerGlow isGenerating={isGenerating} />
 
             <div className="flex flex-col gap-0.5 rounded-2xl bg-composer p-1.5">
                 <ImageComposerToolbar

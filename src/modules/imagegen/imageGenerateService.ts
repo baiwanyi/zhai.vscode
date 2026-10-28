@@ -15,6 +15,8 @@
  * 产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额。
  */
 import * as vscode from 'vscode'
+import { composePrompt, mergePromptTags } from '@modules/ai/finalPrompt'
+import { PromptEnhanceService } from '@modules/ai/promptEnhance'
 import type { AiProvider } from '@modules/ai/provider'
 import { getSelectedCodebuddyModel } from '@modules/ai/providers/codebuddyModels'
 import type { UsageRecorder } from '@modules/ai/usageRecorder'
@@ -32,14 +34,11 @@ import {
     type ImageSettings,
 } from '@shared/types/imagegen'
 import { PORTRAIT_STYLES, type PortraitStyle } from '@shared/types/press'
-import { normalizePromptTag } from '@shared/utils/promptTag'
 import { IMAGE_QUOTA_KEYS, IMAGES_DIR } from './constants'
 import { nextImageId } from './imageNaming'
 import { writeSidecarOf } from './imageSidecar'
 import { readProjectDirPath } from './portraitService'
 import {
-    composeImagePrompt,
-    ENHANCE_SYSTEM_PROMPT,
     MAX_CONTEXT_LENGTH,
     MAX_CONTEXTS,
     MAX_PROMPT_LENGTH,
@@ -47,6 +46,7 @@ import {
     MAX_RULE_NAME,
     MAX_RULES,
     MAX_TAG_ID_LENGTH,
+    STYLE_HINTS,
 } from './prompt'
 import type { ImageGenerator } from './ai/imageProvider'
 import type { ImageSettingsService } from './imageSettingsService'
@@ -61,9 +61,7 @@ const MAX_REFERENCE_IMAGES = 3
 const MAX_REFERENCE_PATH_LENGTH = 320
 /** 角色标识：与人物卡一致的 8 位数字 */
 const CHARACTER_ID_PATTERN = /^\d{8}$/u
-/** 提示词增强的超时：文本改写足够快，超过即视为失败并由前端保留原文 */
-const ENHANCE_TIMEOUT_MS = 30_000
-/** 增强输出的 token 上限 */
+/** 增强输出的 token 上限：图像描述比对话更短，压低上限避免模型扩写 */
 const ENHANCE_MAX_TOKENS = 800
 
 /** 出图入参：只保留落盘与通道需要的字段 */
@@ -156,17 +154,21 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
 export class ImageGenerateService {
     /** 进行中的生成请求：一次只允许一个，避免连点重复扣费 */
     private activeRequest: AbortController | null = null
+    /** 提示词增强：与对话共用同一服务实现，只是口径与记账模块不同 */
+    private readonly promptEnhance: PromptEnhanceService
 
     public constructor(
         private readonly db: Database.Database,
         private readonly router: ImageGenerator,
         private readonly usageRecorder: UsageRecorder,
-        private readonly provider: AiProvider,
+        provider: AiProvider,
         private readonly settings: ImageSettingsService,
         private readonly rules: PromptRuleService,
         private readonly tags: PromptTagService,
         private readonly referenceImages: ReferenceImageService,
-    ) {}
+    ) {
+        this.promptEnhance = new PromptEnhanceService(provider, usageRecorder)
+    }
 
     /**
      * 按提示词生成一张图片并落盘。
@@ -188,21 +190,20 @@ export class ImageGenerateService {
             const settings = await this.readSettings(request.dirPath)
             // 词条原文按标识回查：词条已被删除时由词库服务跳过，出图不因单条缺失而失败
             const tagTexts = await this.tags.readForPrompt(request.promptTags)
-            const mergedPrompt = [...tagTexts.map((text) => normalizePromptTag(text)), request.prompt]
-                .filter((part) => part.length > 0)
-                .join(', ')
-                .slice(0, MAX_PROMPT_LENGTH)
+            // 词条与正文的合并口径统一由 mergePromptTags 提供，与下面的 enhance 共用同一份实现
+            const mergedPrompt = mergePromptTags(tagTexts, request.prompt)
             // 规则正文按标识读盘：文件已被删除的规则静默跳过，出图不因单条规则缺失而失败
             const ruleTexts = await this.rules.readForPrompt(request.ruleIds)
             // 参考图按登记表校验后读成多模态输入；单张失效时跳过，不阻断出图
             const references = await this.referenceImages.readForPrompt(request.references)
             const artifact = await this.router.generate({
-                prompt: composeImagePrompt({
+                prompt: composePrompt({
                     prompt: mergedPrompt,
                     contexts: request.contexts,
                     rules: ruleTexts,
-                    settings,
-                    style: request.style,
+                    suffix: settings.promptSuffix,
+                    negative: settings.negative,
+                    styleHint: STYLE_HINTS[request.style],
                 }),
                 size: IMAGE_RATIO_SIZE[request.ratio],
                 references,
@@ -271,49 +272,34 @@ export class ImageGenerateService {
 
     /**
      * 增强提示词：用文本模型把用户输入改写成更具体的画面描述，不落盘、不计图片配额。
-     * 关键约束：只接收输入框正文，不读作品设定——设定由前端在发送时另行拼装，避免模型复述设定原文；
+     * 复用约定：模型调用、超时与记账统一由 modules/ai/promptEnhance 的 PromptEnhanceService 承担，
+     * 图像口径由该模块的 ENHANCE_SYSTEM_PROMPTS.image 提供；词条原文按标识读盘后经 mergePromptTags 与正文合并，
+     * 与出图共用同一份合并口径，改写结果因此承接词条描述。
+     * 关键约束：只接收输入框正文与词条标识，不读作品设定与规则——设定由前端在发送时另行拼装，避免模型复述设定原文；
+     * 增强结果已含词条描述，前端需据此摘掉词条芯片，否则回填后发送会被二次合并；
      * 失败或超时向调用方抛出，由前端保留原文并提示，不静默替换用户输入。
      */
     public async enhance(payload: unknown): Promise<{ text: string }> {
-        const record = payload as { text?: unknown } | null
+        const record = payload as { text?: unknown; promptTags?: unknown } | null
         const source = readText(record?.text, MAX_PROMPT_LENGTH)
-        if (source.length === 0) {
+        // 词条只收标识：原文由词库服务回查，已被删除的词条跳过，不阻断改写
+        const promptTags = readTextList(record?.promptTags, MAX_PROMPT_TAGS, MAX_TAG_ID_LENGTH)
+        if (source.length === 0 && promptTags.length === 0) {
             throw new Error('请先输入提示词')
         }
-        const controller = new AbortController()
-        const timer = setTimeout(() => controller.abort(), ENHANCE_TIMEOUT_MS)
+        const tagTexts = await this.tags.readForPrompt(promptTags)
+        const mergedPrompt = mergePromptTags(tagTexts, source)
         const startedAt = Date.now()
-        let content = ''
-        try {
-            const stream = this.provider.stream({
-                model: getSelectedCodebuddyModel(),
-                maxTokens: ENHANCE_MAX_TOKENS,
-                messages: [
-                    { role: 'system', content: ENHANCE_SYSTEM_PROMPT },
-                    { role: 'user', content: source },
-                ],
-                signal: controller.signal,
-            })
-            for await (const chunk of stream) {
-                content += chunk.content
-            }
-        } finally {
-            clearTimeout(timer)
-        }
-        const enhanced = content.trim()
-        if (enhanced.length === 0) {
-            throw new Error('增强失败：模型没有返回内容')
-        }
-        this.usageRecorder.record({
+        const text = await this.promptEnhance.enhance({
+            text: mergedPrompt,
+            scene: 'image',
+            maxTokens: ENHANCE_MAX_TOKENS,
+            maxInputLength: MAX_PROMPT_LENGTH,
+            maxOutputLength: MAX_PROMPT_LENGTH,
             module: 'image',
-            model: getSelectedCodebuddyModel(),
-            usage: null,
-            meta: null,
-            prompt: source,
-            startedAt,
         })
         logger.info(`提示词增强完成：耗时 ${Date.now() - startedAt}ms`)
-        return { text: enhanced.slice(0, MAX_PROMPT_LENGTH) }
+        return { text }
     }
 
     /** 读取作品级参数：失败回落默认值，参数问题不应阻断出图 */

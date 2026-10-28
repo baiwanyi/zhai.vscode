@@ -209,7 +209,7 @@ WorkspaceEdit 写入文件（可 Ctrl+Z 撤销）→ 更新字数与写作 sessi
 >
 > **为什么生成失败不自动重试**：出图单次耗时数分钟且按张计费，静默重试会连扣两次、产出两张图，必须由用户确认。
 >
-> **提示词拼装分工**：生图页由前端 `promptSections` 拼正文与角色段、宿主 `modules/imagegen/prompt/finalPrompt` 拼规则与画风；画风描述表 `STYLE_HINTS` 在 `modules/imagegen/prompt/styleHints.ts`，改提示词时先看同目录 `index.ts` 头部的导航表。
+> **提示词拼装分工**：生图页由前端 `promptSections` 拼正文与角色段、宿主 `modules/ai/finalPrompt` 拼规则与画风；画风描述表 `STYLE_HINTS` 在 `modules/imagegen/prompt/styleHints.ts`，改提示词时先看同目录 `index.ts` 头部的导航表。
 
 ---
 

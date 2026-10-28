@@ -4,11 +4,13 @@
  * 提示词拼装由调用方注入 composePrompt，上下文、词条、规则与参考图分别由 composeContexts /
  * composePromptTags / composePromptRules / composeReferenceImages 注入——上下文与词条文本、规则标识、
  * 参考图路径都不拼进正文，随请求的 contexts / promptRules / referenceImages 提交；
- * 增强提交的源文本由 composeEnhanceSource 注入，本 hook 只提供发送瞬间的正文与芯片快照。
+ * 增强提交的源文本由 composeEnhanceSource 注入、词条标识取 composePromptTags，本 hook 只提供提交瞬间的正文与芯片快照。
  * 对外回调统一用 on 前缀且 Promise 在 hook 内收口（异步实现拆成 runXxx），调用方可直接交给按钮属性。
  * 关键约束：generationRef 是请求代号，取消或重发即自增，旧回包按代号丢弃并只经 onLateGenerated 静默补图；
  * 正文、上下文、词条、规则与参考图都为空才拒绝发送，角色芯片不参与可发送判定；
  * 发送即清空正文与芯片，失败或取消仅在用户没有新输入时回填；生成态经 onGeneratingChange 上报，卸载补发一次结束；
+ * 增强会把词条原文并进改写结果，成功后经 onConsumePromptChips 摘掉词条芯片，还原时再随快照一起还回去，
+ * 否则回填后直接发送会让同一批词条被宿主二次合并；
  * enhancedFrom 取发送前的闭包旧值，不受本次 setState 影响。
  */
 import { useEffect, useRef, useState } from 'react'
@@ -50,6 +52,8 @@ interface UseImageComposerOptions {
     composeReferenceImages?: (chips: readonly PromptChip[]) => string[]
     /** 拼装待增强的正文：把角色段等参考信息并进去，缺省时原样提交 */
     composeEnhanceSource?: (text: string) => string
+    /** 增强成功后回收已并入正文的词条芯片：改写结果里已含词条描述，留着会被二次合并 */
+    onConsumePromptChips?: () => void
     /** 生成目标：普通图 / 角色图由调用方按当前模式判定 */
     target: { kind: ImageGenerateKind; characterId: string | null }
     ratio: ImageRatio
@@ -89,6 +93,7 @@ export function useImageComposer({
     composePromptRules = (): string[] => [],
     composeReferenceImages = (): string[] => [],
     composeEnhanceSource = (source: string): string => source,
+    onConsumePromptChips,
     target,
     ratio,
     style,
@@ -110,6 +115,8 @@ export function useImageComposer({
     const textRef = useRef(text)
     /** 已发出但还没有结果的草稿：失败或取消时再还回去 */
     const lastDraftRef = useRef<ImageComposerDraft | null>(null)
+    /** 增强前的芯片快照：增强会把词条写进正文，还原时要连词条芯片一起还回去 */
+    const enhancedChipsRef = useRef<readonly PromptChip[] | null>(null)
 
     useEffect(() => {
         textRef.current = text
@@ -156,11 +163,15 @@ export function useImageComposer({
         try {
             const result = await request<{ text: string }>(
                 'pressAi/enhanceImagePrompt',
-                { dirPath, text: composeEnhanceSource(original).trim() },
+                // 词条只传标识：宿主按标识读盘后与正文合并，与出图共用同一份合并口径
+                { dirPath, text: composeEnhanceSource(original).trim(), promptTags: composePromptTags(chips) },
                 ENHANCE_TIMEOUT_MS,
             )
             setEnhancedFrom(original)
             setText(result.text)
+            // 词条描述已随改写结果进入正文：先记快照再摘芯片，避免回填后发送时二次合并
+            enhancedChipsRef.current = chips
+            onConsumePromptChips?.()
         } catch (cause) {
             toastError(cause)
         } finally {
@@ -179,6 +190,12 @@ export function useImageComposer({
             return
         }
         setText(enhancedFrom)
+        // 词条芯片在增强成功时被摘掉，还原要与正文一起还回去，否则用户拿回原文却丢了词条
+        const snapshot = enhancedChipsRef.current
+        if (snapshot !== null) {
+            onRestoreChips(snapshot)
+            enhancedChipsRef.current = null
+        }
         setEnhancedFrom(null)
     }
 
@@ -220,6 +237,7 @@ export function useImageComposer({
         onClearChips()
         // 空输入框不是「增强结果」，增强态随发送复位；本次请求仍带上发送前的 enhancedFrom
         setEnhancedFrom(null)
+        enhancedChipsRef.current = null
         try {
             const result = await request<ImageGenerateResult>(
                 'pressAi/generateImage',

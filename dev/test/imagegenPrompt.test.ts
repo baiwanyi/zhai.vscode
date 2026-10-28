@@ -1,61 +1,58 @@
 /**
- * 出图提示词拼装的单测：覆盖上下文、规则、作品级补充、负向约束与画风描述的叠加顺序，以及空串跳过。
- * 关注点：画风描述必须始终在最后一段；空串不产生多余空行；负向约束统一带「避免出现：」前缀；
+ * 提示词拼装的单测：覆盖上下文、规则、作品级补充、负向约束与画风描述的叠加顺序，以及空串跳过。
+ * 关注点：拼装与词条合并已上移到 ai/finalPrompt，出图与对话共用同一份实现；
+ * 画风描述必须始终在最后一段；空串不产生多余空行；负向约束统一带「避免出现：」前缀；
  * 上下文与规则都排在正文之后、作品补充之前；
  * 词条原文的归一化口径由前端与宿主共用，颜文字标签不能被误当作权重剥掉；
+ * 词条与正文的合并同时服务出图与提示词增强，空段不留下多余分隔符；
  * 出图指令模板必须内嵌完整提示词与尺寸，并在有参考图时写明张数。
  */
 import { describe, expect, it } from 'vitest'
-import type { ImageSettings } from '@shared/types/imagegen'
-import { DEFAULT_IMAGE_SETTINGS } from '@shared/types/imagegen'
 import { normalizePromptTag } from '@shared/utils/promptTag'
-import { buildImageInstruction, composeImagePrompt, STYLE_HINTS } from '../../src/modules/imagegen/prompt'
+import { composePrompt, MAX_PROMPT_LENGTH, mergePromptTags } from '../../src/modules/ai/finalPrompt'
+import { buildImageInstruction, STYLE_HINTS } from '../../src/modules/imagegen/prompt'
 
-/** 以默认参数为底，便于逐项覆盖 */
-function settingsWith(patch: Partial<ImageSettings>): ImageSettings {
-    return { ...DEFAULT_IMAGE_SETTINGS, ...patch }
-}
-
-describe('出图提示词拼装', () => {
+describe('提示词拼装', () => {
     it('无上下文与作品级补充时只拼正文与画风', () => {
-        expect(composeImagePrompt({ prompt: '少女独立雨中', settings: settingsWith({}), style: 'guofeng' })).toBe(
+        expect(composePrompt({ prompt: '少女独立雨中', styleHint: STYLE_HINTS.guofeng })).toBe(
             `少女独立雨中\n\n${STYLE_HINTS.guofeng}`,
         )
     })
 
     it('上下文紧接正文之后、作品补充之前', () => {
-        const result = composeImagePrompt({
+        const result = composePrompt({
             prompt: '少女独立雨中',
             contexts: ['书名：剑来'],
-            settings: settingsWith({ promptSuffix: '画面偏冷色调' }),
-            style: 'anime',
+            suffix: '画面偏冷色调',
+            styleHint: STYLE_HINTS.anime,
         })
         expect(result.split('\n\n')).toEqual(['少女独立雨中', '书名：剑来', '画面偏冷色调', STYLE_HINTS.anime])
     })
 
     it('负向约束加统一前缀，且排在画风之前', () => {
-        const result = composeImagePrompt({
+        const result = composePrompt({
             prompt: '少女独立雨中',
-            settings: settingsWith({ negative: '多余的手指、水印' }),
-            style: 'realistic',
+            negative: '多余的手指、水印',
+            styleHint: STYLE_HINTS.realistic,
         })
         expect(result).toContain('避免出现：多余的手指、水印')
         expect(result.endsWith(STYLE_HINTS.realistic)).toBe(true)
     })
 
     it('正文为空时只保留有内容的段，不产生连续空行', () => {
-        const result = composeImagePrompt({ prompt: '', settings: settingsWith({}), style: 'pixel' })
+        const result = composePrompt({ prompt: '', styleHint: STYLE_HINTS.pixel })
         expect(result).toBe(STYLE_HINTS.pixel)
         expect(result.includes('\n\n\n')).toBe(false)
     })
 
     it('五项同时存在时顺序固定：正文 → 上下文 → 规则 → 补充 → 负向 → 画风', () => {
-        const result = composeImagePrompt({
+        const result = composePrompt({
             prompt: '正文',
             contexts: ['书名：剑来'],
             rules: ['规则'],
-            settings: settingsWith({ promptSuffix: '补充', negative: '水印' }),
-            style: 'cinematic',
+            suffix: '补充',
+            negative: '水印',
+            styleHint: STYLE_HINTS.cinematic,
         })
         expect(result.split('\n\n')).toEqual([
             '正文',
@@ -68,14 +65,33 @@ describe('出图提示词拼装', () => {
     })
 
     it('上下文与规则中的空串不占位', () => {
-        const result = composeImagePrompt({
+        const result = composePrompt({
             prompt: '正文',
             contexts: ['', '书名：剑来'],
             rules: ['规则一', '', '规则二'],
-            settings: settingsWith({}),
-            style: 'cinematic',
+            styleHint: STYLE_HINTS.cinematic,
         })
         expect(result.split('\n\n')).toEqual(['正文', '书名：剑来', '规则一', '规则二', STYLE_HINTS.cinematic])
+    })
+})
+
+describe('词条与正文合并', () => {
+    it('词条按芯片顺序前置，正文随后，逗号连接', () => {
+        expect(mergePromptTags(['female, long hair', 'smile'], '站在雨中')).toBe('female, long hair, smile, 站在雨中')
+    })
+
+    it('词条原文先做权重归一化再拼接', () => {
+        expect(mergePromptTags(['(female:1.3)'], '')).toBe('female')
+    })
+
+    it('空词条与空正文不留下多余分隔符', () => {
+        expect(mergePromptTags(['', '  '], '正文')).toBe('正文')
+        expect(mergePromptTags([], '正文')).toBe('正文')
+        expect(mergePromptTags(['词条'], '')).toBe('词条')
+    })
+
+    it('合并结果按正文上限截断', () => {
+        expect(mergePromptTags(['x'.repeat(MAX_PROMPT_LENGTH)], '正文')).toHaveLength(MAX_PROMPT_LENGTH)
     })
 })
 

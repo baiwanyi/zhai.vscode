@@ -828,13 +828,45 @@ describe('ImageComposer', () => {
 
         expect(requestMock).toHaveBeenCalledWith(
             'pressAi/enhanceImagePrompt',
-            { dirPath: DIR_PATH, text: '雨夜长街\n\n角色：林清\n外形：女性，二十\n身份：剑客\n外貌：白衣负剑' },
+            {
+                dirPath: DIR_PATH,
+                text: '雨夜长街\n\n角色：林清\n外形：女性，二十\n身份：剑客\n外貌：白衣负剑',
+                promptTags: [],
+            },
             expect.any(Number),
         )
         expect(inputBox().value).toBe('雨夜长街，白衣女子负剑而行')
 
         await user.click(screen.getByRole('button', { name: '还原提示词' }))
         expect(inputBox().value).toBe('雨夜长街')
+    })
+
+    it('增强时带上词条标识，改写后摘芯片，还原时连芯片一起补回', async () => {
+        const user = userEvent.setup()
+        requestMock.mockImplementation((method: string) =>
+            method === 'pressAi/enhanceImagePrompt'
+                ? Promise.resolve({ text: 'female，雨夜长街' })
+                : defaultResponse(method),
+        )
+        renderComposer()
+        const tag = firstTag()
+
+        await clickFirstTag(user)
+        await user.type(inputBox(), '雨夜长街')
+        await user.click(screen.getByRole('button', { name: '增强提示词' }))
+
+        // 词条只传标识，原文由宿主按 mergePromptTags 合并后改写，与出图同一口径
+        expect(requestMock).toHaveBeenCalledWith(
+            'pressAi/enhanceImagePrompt',
+            { dirPath: DIR_PATH, text: '雨夜长街', promptTags: [tag.id] },
+            expect.any(Number),
+        )
+        // 词条描述已并入改写结果，芯片要摘掉，否则发送时会被宿主二次合并
+        expect(screen.queryByRole('button', { name: `移除${tag.name}` })).toBeNull()
+
+        await user.click(screen.getByRole('button', { name: '还原提示词' }))
+        expect(inputBox().value).toBe('雨夜长街')
+        expect(screen.getByRole('button', { name: `移除${tag.name}` })).toBeDefined()
     })
 
     it('增强后发送，增强态随输入框一起复位', async () => {

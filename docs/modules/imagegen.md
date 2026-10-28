@@ -85,10 +85,10 @@
 
 | 方法 | 说明 |
 | --- | --- |
-| `pressAi/generateImage` | 入参 `prompt` / `promptTags` / `contexts` / `promptRules` / `referenceImages` / `kind` / `characterId` / `ratio` / `style` / `enhancedFrom`；`promptTags` 是词条芯片的标识（`分类::分组::名称`，最多 20 条），宿主按标识回查 `prompt/tags` 的 md、经 `@shared/utils/promptTag` 归一化后与正文合并（词条在前、正文在后）；`contexts` 是「添加上下文」菜单展开的文本段（如作品设定，最多 4 段、每段 1500 字），不混入 `prompt`；`promptRules` 是规则芯片的标识（文件名主干，最多 5 条），宿主读 md 正文后接在上下文之后；`referenceImages` 是参考图芯片的本地路径（只接受选择流程登记过的图片，最多 3 张），宿主读取字节后作为多模态内容随指令提交，不写进文本提示词；正文、上下文、词条、规则与参考图全为空才拒绝出图；落 `Images/`，`kind` 只有 `portrait`（角色卡）与 `photo`（其他图片），生成不改作品封面 |
+| `pressAi/generateImage` | 入参 `prompt` / `promptTags` / `contexts` / `promptRules` / `referenceImages` / `kind` / `characterId` / `ratio` / `style` / `enhancedFrom`；`promptTags` 是词条芯片的标识（`分类::分组::名称`，最多 20 条），宿主按标识回查 `prompt/tags` 的 md、经 `@shared/utils/promptTag` 归一化后再由 `mergePromptTags` 与正文合并（词条在前、正文在后）；`contexts` 是「添加上下文」菜单展开的文本段（如作品设定，最多 4 段、每段 1500 字），不混入 `prompt`；`promptRules` 是规则芯片的标识（文件名主干，最多 5 条），宿主读 md 正文后接在上下文之后；`referenceImages` 是参考图芯片的本地路径（只接受选择流程登记过的图片，最多 3 张），宿主读取字节后作为多模态内容随指令提交，不写进文本提示词；正文、上下文、词条、规则与参考图全为空才拒绝出图；落 `Images/`，`kind` 只有 `portrait`（角色卡）与 `photo`（其他图片），生成不改作品封面 |
 | `pressAi/generateImage/abort` | 取消在途请求，返回 `{ aborted }`；单任务锁保证不会并发出图。中断信号经 provider 传到 SDK 会话，真正中止本地出图；产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额，因此「停止」之后不会凭空多出一张图 |
 | `pressAi/pickReferenceImage` | — → `ImageReferencePickResult`。弹出系统文件选择框挑参考图：扩展名限 png / jpg / jpeg / webp / gif，校验常规文件、非符号链接、非空与 ≤12 MB，并按文件头嗅探真实类型；通过后登记路径并回传 `{ path, name, url }`，用户取消时 `reference` 为 `null` |
-| `pressAi/enhanceImagePrompt` | 文本模型改写输入框正文，30 秒上限，不落盘、不计图片配额 |
+| `pressAi/enhanceImagePrompt` | 文本模型改写输入框正文：入参 `text` 与 `promptTags`（词条芯片标识，最多 20 条），词条原文由宿主按标识回查后经 `mergePromptTags` 与正文合并，与出图共用同一份合并口径；模型调用、30 秒超时、口径文本与用量记账统一由 `modules/ai/promptEnhance` 的 `PromptEnhanceService` 承担（与对话增强同一实现，`scene` 取 `image`）；不落盘、不计图片配额，用量记入「出图」模块。改写结果已含词条描述，前端随后摘掉词条芯片，避免回填后发送时被二次合并 |
 
 ### 3.3 作品参数
 
@@ -185,10 +185,8 @@ lifeguard
 | `referenceImageService.ts` | 参考图：系统文件选择框、扩展名 / 体积 / 文件头校验、路径登记表；出图时只读登记过的路径，读成 `{ bytes, mimeType }` 交给通道 |
 | `imageNaming.ts` | 图片命名唯一入口：三类标识格式、同秒冲突按秒顺延、永不覆盖 |
 | `imageSidecar.ts` | 侧车路径推导、随图删除与写入，尽力而为、不抛错 |
-| `prompt/finalPrompt.ts` | 提示词拼装纯函数：正文 → 上下文 → 规则 → 作品补充 → 负向约束 → 画风描述 |
 | `prompt/styleHints.ts` | 画风描述表 `STYLE_HINTS`，键与 `PORTRAIT_STYLES` 一一对应 |
 | `prompt/instruction.ts` | 出图指令模板：把拼好的提示词包成「立即调用 ImageGen、只回产物路径」的指令 |
-| `prompt/enhancePrompt.ts` | 提示词增强的系统要求：改写为具体画面描述，保持原意与语言 |
 | `prompt/limits.ts` | 提示词限额契约：正文、词条、上下文、规则的长度与条数上限 |
 | `prompt/index.ts` | 提示词唯一入口，头部即「改提示词导航」 |
 | `imageSettingsService.ts` | 作品级参数读写（`.zhai/image.json`），只存与默认不同的键 |
@@ -207,7 +205,7 @@ lifeguard
 \n\n STYLE_HINTS[style]（始终在最后）
 ```
 
-空串一律跳过；词条由 `imageGenerateService` 按标识从 `prompt/tags` 的 md 取回原文，再用 `@shared/utils/promptTag` 的 `normalizePromptTag` 归一化并前置，归一化口径与前端同源，因此面板上展示的原文与最终提示词逐字一致；上下文段来自请求的 `contexts`（前端 `composeSettingContext` 展开），规则正文由 `prompt/ruleService` 的 `readForPrompt` 按标识读盘后传给 `composeImagePrompt`，空串、空规则与缺失文件都不占位。宿主侧拼装集中在 `src/modules/imagegen/prompt/finalPrompt` 的 `composeImagePrompt`（对象入参，顺序固定），由 `dev/test/imagegenPrompt.test.ts` 覆盖顺序与空串行为，上下文、规则读盘与出图合并在 `dev/test/imageGenerateService.test.ts` 覆盖。前端只负责正文、角色段与上下文段（`workflow/imagegen/prompt/promptSections.ts`），画风与负向约束仍由宿主追加。改提示词时先看 `src/modules/imagegen/prompt/index.ts` 头部的导航表，它会点名前端与共享侧仍需同步的文件。
+空串一律跳过；词条由 `imageGenerateService` 按标识从 `prompt/tags` 的 md 取回原文，再用 `@shared/utils/promptTag` 的 `normalizePromptTag` 归一化并前置，合并动作统一走 `finalPrompt.ts` 的 `mergePromptTags`（出图与提示词增强共用这一份实现），归一化口径与前端同源，因此面板上展示的原文与最终提示词逐字一致；上下文段来自请求的 `contexts`（前端 `composeSettingContext` 展开），规则正文由 `prompt/ruleService` 的 `readForPrompt` 按标识读盘后传给 `composePrompt`，空串、空规则与缺失文件都不占位。宿主侧拼装集中在 `src/modules/ai/finalPrompt` 的 `composePrompt`（对象入参，顺序固定，出图与对话共用），由 `dev/test/imagegenPrompt.test.ts` 覆盖顺序与空串行为，上下文、规则读盘与出图合并在 `dev/test/imageGenerateService.test.ts` 覆盖。前端只负责正文、角色段与上下文段（`workflow/imagegen/prompt/promptSections.ts`），画风与负向约束仍由宿主追加。改提示词时先看 `src/modules/imagegen/prompt/index.ts` 头部的导航表，它会点名前端与共享侧仍需同步的文件。
 
 参考图不参与文本拼装：`imageGenerateService` 把 `referenceImages` 交给 `referenceImageService.readForPrompt` 读成字节与真实 MIME，再由 `codebuddyImageProvider` 把「指令文本 + image 内容块」作为一条结构化用户消息提交（`query` 的 `prompt` 支持 `AsyncIterable<UserMessage>`）。无参考图时仍走原字符串提示词路径，二者行为一致；单张参考图失效（被删除、被替换、超限）只跳过该张并记日志，不阻断出图。
 
@@ -262,7 +260,7 @@ lifeguard
 - 出图占位：`isGenerating` 由 composer 经 `onGeneratingChange` 上报，页面在网格首位渲染一张与卡片同比例（3:4）的骨架卡；成功后用静默刷新（`reload({ silent: true })`）拉回列表，占位由 `isRefreshingResult` 一直挂到新图入列，视线里只发生「骨架 → 新图」一次替换，中间不闪整块加载态。失败、取消、超时都会回收占位，composer 卸载时补发一次 `false`，不会卡在「生成中」。
 - 点「停止」是同步复位：`setIsGenerating(false)` 先于取消请求发出，占位当帧收起，不等宿主回包；随后宿主侧中断请求，已取消的产物不会再落盘（见 3.2）。
 - 角色选择：工具栏角色按钮展开作品全部人物卡，选中即挂「图标 + 姓名」徽标，发送时并入角色段（姓名、性别年龄、身份、外貌），随请求的 `kind` 变为 `portrait`、`characterId` 取该角色；选「不使用角色」或移除徽标即回落普通图；顶栏筛选的角色只作初值，之后以选择器为准，两者不联动。
-- 增强提示词：提交的是「正文 + 角色段」，让改写结果带上角色长相与身份；设定段不进增强请求（避免复述作品信息），还原时回到纯正文。
+- 增强提示词：提交的是「正文 + 角色段 + 词条原文」，让改写结果带上角色长相、身份与词条描述；词条只传标识，由宿主经 `mergePromptTags` 与正文合并，与出图同一口径；设定段与规则不进增强请求（避免复述作品信息）；改写成功后摘掉词条芯片（描述已并入正文），还原时正文与词条芯片一起回到增强前状态。改写走与对话共用的 `PromptEnhanceService`（`modules/ai/promptEnhance.ts`），仅口径与记账模块不同。
 - 添加上下文：工具栏左一按钮（气泡「添加上下文」）里的项都按上下文提交——「作品设定」由快照展开为 `contexts` 文本段，规则只传文件名主干、正文由宿主读盘，两者都不写进 `prompt` 正文；只挂上下文也能出图，生成中仍可切换（只影响下一次请求）。
 - 出图规则：「添加上下文」菜单的「规则」子菜单列出 `{存储根}/prompt/rules` 下的 md，勾选即挂「图标 + 规则名」芯片，可多枚；芯片只带文件名主干，正文由宿主读盘并入，发送后随正文一起清空、失败时随草稿回填。每次打开菜单都重读目录，用户直接往目录里放文件也能看到；「新建规则」弹窗保存成功后自动挂上该芯片，重名由宿主拒绝，本层不做预判。
 - 发送即清空：点击发送的同时清掉输入框与全部芯片（画风不在芯片里，只作请求参数，发送时由宿主并入提示词），增强态一并复位（按钮回到增强图标，请求仍带发送前的 `enhancedFrom`），生成期间输入框不会停着上一轮的提示词；草稿存在 `lastDraftRef`（含增强前原文），请求失败或用户取消时再回填，且仅在用户没有重新输入的情况下回填，正文与增强态同进同退，不覆盖等待期间写下的新内容。
