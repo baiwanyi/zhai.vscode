@@ -1,6 +1,8 @@
 /**
  * 通用按钮：在 @components/ui/button 之上补齐悬停提示、加载态与点击时序三件事。
- * 复用约定：variant / size / asChild 原样透传底层 Button，图标与文案由调用方经 children 给出；
+ * 复用约定：variant / size / asChild 透传底层 Button，图标与文案由调用方经 children 给出；
+ * variant 额外支持项目定制的 primary——配色沿用 default，尺寸与圆角按页面主操作放大为 rounded h-10 px-4，
+ * 由本层映射到底层 default 再补类名，不改 shadcn 的变体表（避免被 CLI 覆盖）；
  * 传 tooltip 时用受控 Tooltip 包裹，指针进入或键盘聚焦即开、离开或失焦即关，不走 Radix 的延时策略；
  * tooltipSide 仅在提示需要避开所在容器时使用（如活动栏竖排导航用 left），默认由 Radix 自动定位；
  * 气泡固定暗底亮字（不随明暗主题翻转），通过局部重写前景/背景变量实现，箭头随之同色，见 TOOLTIP_CLASS。
@@ -21,8 +23,19 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import type { VariantProps } from 'class-variance-authority'
 import type { ComponentProps, FocusEvent, JSX, MouseEvent, PointerEvent, ReactNode } from 'react'
 
-interface ButtonProps extends ComponentProps<'button'>, VariantProps<typeof buttonVariants> {
+/** 主按钮变体名：不属于 shadcn 的变体表，由本层映射到 default 后追加自定义类 */
+type PrimaryButtonVariant = 'primary'
+
+/** 按钮变体：shadcn 自带取值 + 项目主按钮 */
+type ButtonVariant = NonNullable<VariantProps<typeof buttonVariants>['variant']> | PrimaryButtonVariant
+
+/** 主按钮的尺寸与圆角：排在 size 类之后，覆盖默认的 h-8 / px-2.5 / rounded-lg */
+const PRIMARY_BUTTON_CLASS = 'rounded h-10 px-4 font-light'
+
+interface ButtonProps extends ComponentProps<'button'>, Omit<VariantProps<typeof buttonVariants>, 'variant'> {
     asChild?: boolean
+    /** 变体：除 shadcn 自带取值外，另支持项目主按钮 primary */
+    variant?: ButtonVariant | null
     /** 悬停 / 聚焦提示文案：传入后按钮由受控 Tooltip 包裹，未传则不引入任何提示层 */
     tooltip?: string
     /** 提示框方位，省略时由 Radix 按可用空间自动选择 */
@@ -56,6 +69,9 @@ function Button({
     ...rest
 }: ButtonProps): JSX.Element {
     const [isTooltipOpen, setIsTooltipOpen] = useState(false)
+    // primary 不在底层变体表里：映射成 default 取配色，再补主按钮的尺寸与圆角
+    const isPrimary = variant === 'primary'
+    const resolvedVariant = isPrimary ? 'default' : variant
 
     // 悬停与键盘聚焦都算「指向按钮」：触摸设备没有 hover，键盘用户也应有提示
     function handlePointerEnter(event: PointerEvent<HTMLButtonElement>): void {
@@ -100,10 +116,14 @@ function Button({
     const button = (
         <ShadcnButton
             {...rest}
-            variant={variant}
+            variant={resolvedVariant}
             size={size}
             asChild={asChild}
-            className={cn('relative active:not-aria-[haspopup]:translate-y-0', className)}
+            className={cn(
+                'relative active:not-aria-[haspopup]:translate-y-0',
+                isPrimary && PRIMARY_BUTTON_CLASS,
+                className,
+            )}
             onClick={handleClick}
             onFocus={handleFocus}
             onBlur={handleBlur}

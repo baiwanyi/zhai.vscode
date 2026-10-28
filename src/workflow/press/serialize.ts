@@ -1,6 +1,7 @@
 /**
  * 作品文档序列化：把工作台草稿转成可回写的段落片段，格式与 document.ts 的解析口径严格对齐。
- * 复用约定：状态、钩子、分类等中文标签取自 constants 的元数据表，不另写一套映射。
+ * 复用约定：状态、钩子、分类等中文标签取自 constants 的元数据表，不另写一套映射；
+ * 设定按标签页拆分：基本信息写 README 的「作品设定」段，世界观与金手指各写自己的文档。
  * 关键约束：只产出「段落片段」而非整篇文档，落点与保留策略由宿主 writer 决定；
  * 卷章标题必须保留「第N卷 / 第N章」前缀，否则解析端认不出层级；
  * 键名一旦改动就必须同步改 document.ts 的读取键，否则回写后页面内容会凭空丢失。
@@ -15,13 +16,38 @@ import {
 } from './constants'
 import type { CharacterCard, OutlineChapter, OutlineVolume, ProjectSetting } from './types'
 
-/** 设定段落的键值行：顺序固定，便于人工阅读与 diff */
-function buildSettingLines(setting: ProjectSetting): string[] {
+/**
+ * 键值行只能占一行：textarea 输入的多行文本折成单行，
+ * 否则回写后下一行会被解析端当成缺少冒号的新内容，字段在重新打开时丢失。
+ */
+function toSingleLine(value: string): string {
+    return value.replace(/\s*\r?\n\s*/gu, ' ').trim()
+}
+
+/** 基本信息段落的键值行：顺序跟随表单，便于人工阅读与 diff */
+function buildBasicLines(setting: ProjectSetting): string[] {
     return [
         `- 笔名：${setting.penName}`,
-        `- 一句话简介：${setting.logline}`,
-        `- 核心冲突：${setting.conflict}`,
+        `- 章节字数：${setting.chapterWordGoal}`,
+        `- 时间：${setting.period}`,
+        `- 地点：${setting.place}`,
         `- 结局：${setting.ending}`,
+        `- 视角：${setting.perspective}`,
+        `- 叙事结构：${setting.narrative}`,
+        `- 语调：${setting.tone}`,
+        `- 参考：${setting.references}`,
+        `- 禁写项：${setting.banned.join('、')}`,
+        `- 作品简介：${toSingleLine(setting.summary)}`,
+        `- 一句话简介：${toSingleLine(setting.logline)}`,
+        `- 开篇灵感：${toSingleLine(setting.opening)}`,
+        `- 核心冲突：${toSingleLine(setting.conflict)}`,
+        `- 补充信息：${toSingleLine(setting.extra)}`,
+    ]
+}
+
+/** 世界观段落的键值行：键名与 document.ts 的读取键一一对应 */
+function buildWorldLines(setting: ProjectSetting): string[] {
+    return [
         `- 世界观总述：${setting.worldview}`,
         `- 地理：${setting.geography}`,
         `- 时代：${setting.era}`,
@@ -29,25 +55,38 @@ function buildSettingLines(setting: ProjectSetting): string[] {
         `- 力量体系：${setting.powerSystem}`,
         `- 核心概念：${setting.concepts}`,
         `- 禁忌：${setting.taboo}`,
-        `- 金手指类型：${setting.goldenFingerType}`,
-        `- 金手指能力：${setting.goldenFingerAbility}`,
-        `- 金手指代价：${setting.goldenFingerCost}`,
-        `- 视角：${setting.perspective}`,
-        `- 语调：${setting.tone}`,
-        `- 参考：${setting.references}`,
-        `- 禁写项：${setting.banned.join('、')}`,
     ]
 }
 
-/** 设定.md 的段落正文：只写键值行，用户手写的其它段落由 writer 原样保留 */
-export function serializeSettingSection(setting: ProjectSetting): string {
-    return buildSettingLines(setting).join('\n')
+/** 金手指段落的键值行：键名与 document.ts 的读取键一一对应 */
+function buildGoldenFingerLines(setting: ProjectSetting): string[] {
+    return [
+        `- 金手指类型：${setting.goldenFingerType}`,
+        `- 金手指能力：${setting.goldenFingerAbility}`,
+        `- 金手指代价：${setting.goldenFingerCost}`,
+    ]
+}
+
+/** README「作品设定」段落正文：只写键值行，用户手写的其它段落由 writer 原样保留 */
+export function serializeBasicSection(setting: ProjectSetting): string {
+    return buildBasicLines(setting).join('\n')
+}
+
+/** 世界观.md「提取设定」段落正文 */
+export function serializeWorldSection(setting: ProjectSetting): string {
+    return buildWorldLines(setting).join('\n')
+}
+
+/** 金手指.md「提取设定」段落正文 */
+export function serializeGoldenFingerSection(setting: ProjectSetting): string {
+    return buildGoldenFingerLines(setting).join('\n')
 }
 
 /** README Frontmatter 的四个字段：其余字段（状态、创建时间）由 writer 保留原值 */
 export function serializeReadmeMeta(setting: ProjectSetting): PressApplyMeta {
     return {
-        title: setting.title,
+        // 作品名用 textarea 编辑，Frontmatter 的 title 必须是单行
+        title: toSingleLine(setting.title),
         audience: setting.audience,
         genres: setting.genres,
         wordGoal: setting.wordGoal,
@@ -71,6 +110,7 @@ function buildCharacterBlock(character: CharacterCard): string {
         `- 身高：${character.height}`,
         `- 体型：${CHARACTER_BODY_TYPE_META[character.bodyType].label}`,
         `- 身份：${character.identity}`,
+        `- 外貌标签：${character.appearanceTags.join('、')}`,
         `- 外貌：${character.appearance}`,
         `- 特质：${character.traits.join('、')}`,
         `- 背景：${character.background}`,

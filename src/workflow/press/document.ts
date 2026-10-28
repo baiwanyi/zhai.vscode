@@ -1,6 +1,7 @@
 /**
- * 作品文档解析：把 README.md、设定.md、角色设定.md、大纲.md 的原文解析成工作台的 OutlineWorkspace。
- * 复用约定：字段语义与 types.ts 一致；作品设定取自 README 的 Frontmatter 与两份设定文档，
+ * 作品文档解析：把 README.md、世界观.md、金手指.md、设定.md、角色设定.md、大纲.md 的原文解析成工作台的 OutlineWorkspace。
+ * 复用约定：字段语义与 types.ts 一致；基本信息取自 README 的 Frontmatter 与「作品设定」段，
+ * 世界观与金手指各取自己的文档（旧的 设定.md 仅在这两份缺失时兜底），
  * 角色按「# 角色名」切块，大纲按「卷 → 章 → 键值行」切块，优先认 `- 键：值` 行，缺失时回落到区块段落文本。
  * 关键约束：解析必须容错——文件缺失、区块改名、字段写法变化都只让对应字段为空，绝不抛错；
  * 章纲的 summary 表示计划、wordCount 表示已写事实，两者不互相推导；未识别的名称不进入 characterIds，
@@ -8,7 +9,8 @@
  */
 import { parseImageKind } from '@shared/types/imagegen'
 import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId } from '@shared/types/press'
-import type { PortraitStyle } from '@shared/types/press'
+import type { PortraitStyle, PressSettingSectionFiles, PressWorkspaceFiles } from '@shared/types/press'
+import { PERIOD_OPTIONS, PLACE_OPTIONS } from './setting/settingOptions'
 import type {
     Audience,
     CharacterBodyType,
@@ -96,7 +98,7 @@ const HOOK_LABELS: Readonly<Record<string, HookKind>> = {
 }
 
 /** 结局倾向白名单：只接受类型允许的三个值 */
-const ENDING_LABELS: readonly EndingKind[] = ['HE', 'BE', '开放']
+const ENDING_LABELS: readonly EndingKind[] = ['HE', 'BE', '开放', '真相', '喜忧参半']
 
 /** 目标读者白名单：与 README Frontmatter 取值一致 */
 const AUDIENCE_LABELS: readonly Audience[] = ['男频', '女频']
@@ -205,6 +207,17 @@ function readKeyValues(text: string): Map<string, string> {
     return values
 }
 
+/** 在键值表里按候选键取首个命中值：键名允许新旧并存，先出现的候选优先 */
+function readFirst(values: ReadonlyMap<string, string>, keys: readonly string[]): string | undefined {
+    for (const key of keys) {
+        const value = values.get(key)
+        if (value !== undefined) {
+            return value
+        }
+    }
+    return undefined
+}
+
 /** 提取正文段落：跳过标题、引用、列表与表格行，段内换行合并 */
 function readParagraphs(text: string): string[] {
     return text
@@ -231,11 +244,7 @@ function readFirstParagraph(text: string): string {
  * 优先取自然段落；只有列表项时（如逐条列势力）退化为列表文本，避免整段丢失。
  * limit 供世界观总述这类多句字段放宽截断长度。
  */
-function readSectionText(
-    sections: DocumentSection[],
-    titles: readonly string[],
-    limit = FALLBACK_TEXT_LIMIT,
-): string {
+function readSectionText(sections: DocumentSection[], titles: readonly string[], limit = FALLBACK_TEXT_LIMIT): string {
     const target = sections.find((section) => titles.some((title) => section.title.includes(title)))
     if (target === undefined) {
         return ''
@@ -351,56 +360,111 @@ function parseBeats(value: string | undefined, chapterKey: string): OutlineBeat[
         }))
 }
 
-/** 解析作品设定：README 提供作品级信息，设定.md 提供世界观与写作约束，README 的同名字段优先 */
-function parseSetting(readme: string, settingDoc: string, outlineDoc: string, fallbackTitle: string): ProjectSetting {
+/** 基本信息段落在 README 中的标题：该段存在时基本信息只认这一段，清空才能生效 */
+const BASIC_SECTION_TITLE = '作品设定'
+
+/** 分组文档中工作台写入的段落标题：段落存在即「这一组已由工作台维护」，不再回落旧 设定.md */
+const SETTING_SECTION_TITLE = '提取设定'
+
+/**
+ * 解析作品设定：基本信息取自 README（Frontmatter + 「作品设定」段），
+ * 世界观与金手指各取自自己的文档，旧的 设定.md 只在对应分组文档缺失时兜底。
+ * 关键约束：分组文档存在时独占该分组字段——只在文档缺失时才回落旧文档，
+ * 否则用户清空的字段会被旧值重新填回来。
+ */
+function parseSetting(
+    readme: string,
+    settingDoc: string,
+    outlineDoc: string,
+    settingSections: PressSettingSectionFiles,
+    fallbackTitle: string,
+): ProjectSetting {
     const { frontmatter, body: readmeBody } = splitFrontmatter(readme)
     const readmeValues = readKeyValues(readmeBody)
-    const settingValues = readKeyValues(settingDoc)
-    const sections = splitSections(settingDoc, 2)
+    const legacyValues = readKeyValues(settingDoc)
+    const worldValues = readKeyValues(settingSections.world)
+    const powerValues = readKeyValues(settingSections.power)
     const readmeSections = splitSections(readmeBody, 2)
-    // 作品级字段只从 README 与设定.md 取：大纲里的键值属于章纲，取来会串成单章内容
-    const readValue = (keys: readonly string[]): string | undefined => {
-        for (const key of keys) {
-            const value = readmeValues.get(key) ?? settingValues.get(key)
-            if (value !== undefined) {
-                return value
-            }
+    const legacySections = splitSections(settingDoc, 2)
+    const basicSection = readmeSections.find((section) => section.title.includes(BASIC_SECTION_TITLE))
+    const basicValues = basicSection === undefined ? null : readKeyValues(basicSection.content)
+    // 「提取设定」段落存在才算工作台写过这一组：新建/导入作品的分组文档只有一级标题，
+    // 此时必须继续从旧 设定.md 读，否则导入的世界观与金手指会在页面上凭空消失
+    const sectionMark = `## ${SETTING_SECTION_TITLE}`
+    const hasWorldDoc = settingSections.world.includes(sectionMark)
+    const hasPowerDoc = settingSections.power.includes(sectionMark)
+    /** 基本信息：有「作品设定」段时只认该段，否则先 README 键值、再回落旧 设定.md */
+    const readBasicValue = (keys: readonly string[]): string | undefined => {
+        if (basicValues !== null) {
+            return readFirst(basicValues, keys)
         }
-        return undefined
+        return readFirst(readmeValues, keys) ?? readFirst(legacyValues, keys)
     }
+    /** 世界观：专属文档存在时独占，缺失时回落旧 设定.md */
+    const readWorldValue = (keys: readonly string[]): string | undefined =>
+        readFirst(hasWorldDoc ? worldValues : legacyValues, keys)
+    /** 金手指：专属文档存在时独占，缺失时回落旧 设定.md */
+    const readPowerValue = (keys: readonly string[]): string | undefined =>
+        readFirst(hasPowerDoc ? powerValues : legacyValues, keys)
+    /** 旧 设定.md 的段落兜底：分组文档存在时不再读段落，避免同一字段出现两份口径 */
+    const readLegacySection = (titles: readonly string[], limit?: number): string =>
+        hasWorldDoc ? '' : readSectionText(legacySections, titles, limit)
     const synopsisSections = readmeSections.filter((section) => section.title.includes('简介'))
     const synopsisParagraphs = synopsisSections.flatMap((section) => readParagraphs(section.content))
     const outlineMain = splitSections(outlineDoc, 2).find((section) => section.title.includes('主线'))
     const audienceText = readFrontmatterValue(frontmatter, 'audience') ?? ''
-    const endingText = readValue(['结局倾向', '结局']) ?? ''
+    const endingText = readBasicValue(['结局倾向', '结局']) ?? ''
     const wordGoal = toNumber(readFrontmatterValue(frontmatter, 'wordGoal')) ?? 0
+    // 篇幅走 README Frontmatter，其余新增档位字段只认基本信息的键值行
+    const chapterWordGoal = toNumber(readBasicValue(['章节字数', '单章字数'])) ?? DEFAULT_CHAPTER_WORD_GOAL
+    const periodText = readBasicValue(['时间', '故事时间']) ?? ''
+    const placeText = readBasicValue(['地点', '故事地点']) ?? ''
+    // 「双线交替」属于结构维度，旧文档却把它写在视角里：读到后搬到叙事结构，视角回落默认
+    const perspectiveText = readBasicValue(['视角', '叙述视角']) ?? ''
+    const structureText = readBasicValue(['叙事结构']) ?? ''
+    const isLegacyDual = structureText.length === 0 && perspectiveText.includes('双线交替')
+    const perspective = perspectiveText.length > 0 && !isLegacyDual ? perspectiveText : '第三人称'
+    let narrative = structureText.length > 0 ? structureText : '单线顺叙'
+    if (isLegacyDual) {
+        narrative = '双线交替'
+    }
     return {
         title: readFrontmatterValue(frontmatter, 'title') ?? fallbackTitle,
-        penName: readValue(['笔名']) ?? '',
+        penName: readBasicValue(['笔名']) ?? '',
         audience: AUDIENCE_LABELS.find((item) => item === audienceText) ?? '男频',
-        genres: toList(readFrontmatterValue(frontmatter, 'tags') ?? readValue(['题材'])),
+        genres: toList(readFrontmatterValue(frontmatter, 'tags') ?? readBasicValue(['题材'])),
         wordGoal,
-        logline: readValue(['一句话简介', '简介', '梗概']) ?? synopsisParagraphs[0] ?? readFirstParagraph(outlineMain?.content ?? ''),
-        conflict: readValue(['核心冲突', '冲突']) ?? synopsisParagraphs[1] ?? '',
+        chapterWordGoal,
+        // 简介单独认「作品简介」键：logline 的「简介」是旧文档别名，两者共用会互相覆盖
+        summary: readBasicValue(['作品简介']) ?? '',
+        // 基本信息段落存在时独占：段落里没有一句话简介就按空处理，不再从简介段落猜
+        logline:
+            readBasicValue(['一句话简介', '简介', '梗概']) ??
+            (basicValues === null ? (synopsisParagraphs[0] ?? readFirstParagraph(outlineMain?.content ?? '')) : ''),
+        opening: readBasicValue(['开篇灵感', '开场灵感']) ?? '',
+        extra: readBasicValue(['补充信息', '补充说明']) ?? '',
+        conflict: readBasicValue(['核心冲突', '冲突']) ?? (basicValues === null ? (synopsisParagraphs[1] ?? '') : ''),
         ending: ENDING_LABELS.find((item) => endingText.includes(item)) ?? '开放',
+        period: PERIOD_OPTIONS.find((item) => periodText.includes(item)) ?? '现代',
+        place: PLACE_OPTIONS.find((item) => placeText.includes(item)) ?? '中国',
         // 世界观总述与力量体系都曾回落到「## 世界观」段落：两者取同一段会让字段互相覆盖，
         // 现在各认专属键名与专属段落，段落缺失才退化为空，由作者或提取环节补齐
         worldview:
-            readValue(['世界观总述', '世界设定', '世界观']) ?? readSectionText(sections, ['世界观'], LONG_TEXT_LIMIT),
-        geography: readValue(['地理', '地域', '地理格局']) ?? readSectionText(sections, ['地理', '地域']),
-        era: readValue(['时代', '年代']) ?? '',
-        factions: readValue(['势力', '组织势力']) ?? readSectionText(sections, ['组织势力']),
-        powerSystem: readValue(['力量体系', '修炼体系']) ?? readSectionText(sections, ['修炼体系']),
-        concepts:
-            readValue(['核心概念', '独有名词', '概念']) ?? readSectionText(sections, ['核心概念'], LONG_TEXT_LIMIT),
-        taboo: readValue(['禁忌']) ?? readSectionText(sections, ['写作约束']),
-        goldenFingerType: readValue(['金手指类型', '类型']) ?? '',
-        goldenFingerAbility: readValue(['金手指能力', '能力']) ?? '',
-        goldenFingerCost: readValue(['金手指代价', '代价']) ?? '',
-        perspective: readValue(['视角', '叙述视角']) ?? '',
-        tone: readValue(['语调', '基调', '文风']) ?? '',
-        references: readValue(['参考', '参考资料']) ?? '',
-        banned: toList(readValue(['禁写项', '禁写', '禁写内容'])),
+            readWorldValue(['世界观总述', '世界设定', '世界观']) ?? readLegacySection(['世界观'], LONG_TEXT_LIMIT),
+        geography: readWorldValue(['地理', '地域', '地理格局']) ?? readLegacySection(['地理', '地域']),
+        era: readWorldValue(['时代', '年代']) ?? '',
+        factions: readWorldValue(['势力', '组织势力']) ?? readLegacySection(['组织势力']),
+        powerSystem: readWorldValue(['力量体系', '修炼体系']) ?? readLegacySection(['修炼体系']),
+        concepts: readWorldValue(['核心概念', '独有名词', '概念']) ?? readLegacySection(['核心概念'], LONG_TEXT_LIMIT),
+        taboo: readWorldValue(['禁忌']) ?? readLegacySection(['写作约束']),
+        goldenFingerType: readPowerValue(['金手指类型', '类型']) ?? '',
+        goldenFingerAbility: readPowerValue(['金手指能力', '能力']) ?? '',
+        goldenFingerCost: readPowerValue(['金手指代价', '代价']) ?? '',
+        perspective,
+        narrative,
+        tone: readBasicValue(['语调', '基调', '文风']) ?? '',
+        references: readBasicValue(['参考', '参考资料']) ?? '',
+        banned: toList(readBasicValue(['禁写项', '禁写', '禁写内容'])),
     }
 }
 
@@ -457,6 +521,7 @@ function parseCharacters(text: string): CharacterCard[] {
             height: values.get('身高') ?? '',
             bodyType: toBodyType(values.get('体型')),
             identity: values.get('身份') ?? '',
+            appearanceTags: toList(values.get('外貌标签')),
             appearance: values.get('外貌') ?? '',
             traits: toList(values.get('特质') ?? values.get('性格')),
             background: values.get('背景') ?? values.get('背景故事') ?? '',
@@ -514,7 +579,9 @@ function parseChapter(
 
 /** 判断区块标题是否为卷：认「第N卷」「卷N」「X卷」等写法 */
 function isVolumeTitle(title: string): boolean {
-    return /(第\s*[0-9一二三四五六七八九十百]+\s*卷|^卷\s*[0-9一二三四五六七八九十]|[0-9一二三四五六七八九十]+\s*卷)/u.test(title)
+    return /(第\s*[0-9一二三四五六七八九十百]+\s*卷|^卷\s*[0-9一二三四五六七八九十]|[0-9一二三四五六七八九十]+\s*卷)/u.test(
+        title,
+    )
 }
 
 /** 解析卷内章节：优先认四级标题，其次三级标题，保证自由书写的层级也能读到 */
@@ -527,9 +594,7 @@ function parseVolumeChapters(
     const sections = levelFour.length > 0 ? levelFour : splitSections(content, 3)
     return sections
         .filter((section) => section.title.trim().length > 0)
-        .map((section, index) =>
-            parseChapter(section.title, section.content, volumeOrder, index + 1, characterIds),
-        )
+        .map((section, index) => parseChapter(section.title, section.content, volumeOrder, index + 1, characterIds))
 }
 
 /** 解析大纲：卷标题缺失时把全部章节收进单卷，章标题缺失时返回空卷列表 */
@@ -570,18 +635,18 @@ function buildCharacterIndex(characters: CharacterCard[]): Map<string, string> {
 }
 
 /**
- * 解析整部作品：四份文档原文进来，一份可直接渲染的工作区出去。
- * 关键约束：任何单份文档为空都继续解析其余文档，保证缺文件时页面仍能显示已有内容。
+ * 解析整部作品：四份主文档与设定页的两份分组文档原文进来，一份可直接渲染的工作区出去。
+ * 关键约束：任何单份文档为空都继续解析其余文档，保证缺文件时页面仍能显示已有内容；
+ * 设定分组文档只服务设定页，缺失时世界观与金手指回落到旧的 设定.md。
  */
-export function parseProjectWorkspace(files: {
-    readme: string
-    setting: string
-    characters: string
-    outline: string
-}, fallbackTitle: string): ParsedWorkspace {
+export function parseProjectWorkspace(
+    files: PressWorkspaceFiles,
+    settingSections: PressSettingSectionFiles,
+    fallbackTitle: string,
+): ParsedWorkspace {
     const characters = parseCharacters(files.characters)
     return {
-        setting: parseSetting(files.readme, files.setting, files.outline, fallbackTitle),
+        setting: parseSetting(files.readme, files.setting, files.outline, settingSections, fallbackTitle),
         characters,
         volumes: parseVolumes(files.outline, buildCharacterIndex(characters)),
     }

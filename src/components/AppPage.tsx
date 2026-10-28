@@ -158,7 +158,11 @@ function AppFooter({ className, children, ...props }: ComponentProps<'footer'>):
     return (
         <footer
             data-slot="app-footer"
-            className={cn('relative flex w-full items-center justify-end gap-2 px-3', FOOTER_MASK_CLASS, className)}
+            className={cn(
+                'relative flex w-full items-center justify-end gap-2 px-3 pb-3',
+                FOOTER_MASK_CLASS,
+                className,
+            )}
             {...props}
         >
             {children}

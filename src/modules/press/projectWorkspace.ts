@@ -1,5 +1,6 @@
 /**
- * 作品工作台文档读取：按作品目录读取 README.md、设定.md、角色设定.md、大纲.md 原文，供写作管理页解析成视图模型。
+ * 作品工作台文档读取：按作品目录读取 README.md、设定.md、角色设定.md、大纲.md 原文，
+ * 以及设定页按标签页拆分的世界观.md、金手指.md，供写作管理页解析成视图模型。
  * 复用 common/config 的存储根解析与 common/storagePath 的路径构造、片段校验；本模块只读，不写盘也不触碰索引。
  * 关键约束：dirPath 必须是 press/{作品名} 两段，不接受章节等更深路径与上跳片段；
  * 文件缺失、目录为空或读取失败一律按空串返回，保证单个文件异常不会让整页打不开，格式兼容由 Webview 解析层承担；
@@ -10,7 +11,7 @@ import { resolveStorageRoot } from '@modules/common/config'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
 import type { PressWorkspaceDocument, PressWorkspaceFiles } from '@shared/types/press'
-import { PROJECT_README_NAME } from './projectFactory'
+import { PROJECT_POWER_DOC_NAME, PROJECT_README_NAME, PROJECT_WORLD_DOC_NAME } from './projectFactory'
 import { migrateLegacyChapterDirectory } from './projectService'
 
 /** 工作台文档与文件名的对应关系：与 projectFactory 的骨架命名保持一致 */
@@ -35,7 +36,7 @@ async function readTextFile(uri: vscode.Uri): Promise<string> {
 }
 
 /**
- * 读取作品工作台所需的四份文档原文。
+ * 读取作品工作台所需的文档原文：四份主文档 + 设定页的两份分组文档。
  * 安全约束：路径先经片段校验（拒绝上跳、盘符与反斜杠）并限定为 press/ 下的两段，再由存储根拼装绝对 Uri。
  */
 export async function readProjectWorkspace(dirPath: string): Promise<PressWorkspaceDocument> {
@@ -46,17 +47,19 @@ export async function readProjectWorkspace(dirPath: string): Promise<PressWorksp
     await migrateLegacyChapterDirectory(dirPath)
     const name = segments[1] ?? ''
     const root = resolveStorageRoot()
-    const toUri = (key: keyof PressWorkspaceFiles): vscode.Uri =>
-        buildStorageUri(root, [PRESS_MODULE_DIR, name, WORKSPACE_FILE_NAMES[key]])
-    const [readme, setting, characters, outline] = await Promise.all([
-        readTextFile(toUri('readme')),
-        readTextFile(toUri('setting')),
-        readTextFile(toUri('characters')),
-        readTextFile(toUri('outline')),
+    const toUri = (fileName: string): vscode.Uri => buildStorageUri(root, [PRESS_MODULE_DIR, name, fileName])
+    const [readme, setting, characters, outline, world, power] = await Promise.all([
+        readTextFile(toUri(WORKSPACE_FILE_NAMES.readme)),
+        readTextFile(toUri(WORKSPACE_FILE_NAMES.setting)),
+        readTextFile(toUri(WORKSPACE_FILE_NAMES.characters)),
+        readTextFile(toUri(WORKSPACE_FILE_NAMES.outline)),
+        readTextFile(toUri(PROJECT_WORLD_DOC_NAME)),
+        readTextFile(toUri(PROJECT_POWER_DOC_NAME)),
     ])
     return {
         dirPath,
         name,
         files: { readme, setting, characters, outline },
+        settingSections: { world, power },
     }
 }

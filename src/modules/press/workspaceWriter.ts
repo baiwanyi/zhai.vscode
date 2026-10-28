@@ -1,8 +1,9 @@
 /**
- * 作品文档回写：把工作台草稿对应的段落合并进 README、设定.md、角色设定.md、大纲.md。
+ * 作品文档回写：把工作台草稿对应的段落合并进 README、世界观.md、金手指.md、角色设定.md、大纲.md。
  * 复用约定：路径解析与原文读取复用 projectWorkspace 与 common/storagePath，写盘统一走 vscode.workspace.fs。
- * 关键约束：只做段落级替换——README 仅改 Frontmatter 的四个字段，设定与大纲各替换一个固定标题的二级段落，
- * 角色块按一级标题匹配；用户手写的其它段落原样保留，单份文件写入失败不影响其余文件。
+ * 关键约束：只做段落级替换——README 改 Frontmatter 的四个字段与「作品设定」段落，
+ * 世界观与金手指各替换自己文档里的「提取设定」段落，大纲替换「分卷规划」段落，角色块按一级标题匹配；
+ * 用户手写的其它段落原样保留，单份文件写入失败不影响其余文件；设定分组文档不进快照，只有四份主文档参与留版。
  */
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
@@ -16,10 +17,11 @@ import type {
     PressSnapshotTrigger,
     PressWorkspaceFiles,
 } from '@shared/types/press'
-import { PROJECT_README_NAME } from './projectFactory'
+import { PROJECT_POWER_DOC_NAME, PROJECT_README_NAME, PROJECT_WORLD_DOC_NAME } from './projectFactory'
 import { readProjectWorkspace } from './projectWorkspace'
 
-/** 设定与大纲的回写落点：标题固定，解析端按全文件键值读取，位置不敏感 */
+/** 设定分组的段落落点：基本信息写 README，世界观与金手指各写自己的文档 */
+const BASIC_SECTION_TITLE = '作品设定'
 const SETTING_SECTION_TITLE = '提取设定'
 const OUTLINE_SECTION_TITLE = '分卷规划'
 
@@ -158,18 +160,18 @@ export interface WorkspaceWriteHooks {
     onWritten?: (outcome: WorkspaceWriteOutcome) => Promise<void>
 }
 
-/** 待写条目：保留文档键，写盘成功后据此拼出「变更后的完整四份文档」 */
+/** 待写条目：snapshotKey 为快照收录的文档键，设定分组文档不进快照，取 null */
 interface PendingFile {
-    key: PressSnapshotFileKey
+    snapshotKey: PressSnapshotFileKey | null
     fileName: string
     content: string
 }
 
 /**
  * 回写作品文档：只写请求里带上的那几份，逐份兜住异常并返回实际写入的清单。
- * 即时保存每次只带一份段落，未带的文件保持原样；删除名单与角色块在同一次写入里生效。
+ * 手动保存每次只带当前标签页对应的段落，未带的文件保持原样；删除名单与角色块在同一次写入里生效。
  * 安全约束：作品目录由 readProjectWorkspace 统一校验（press/ 下两段、拒绝上跳），写入路径不复用前端数据。
- * 关键约束：钩子只在确有文件写入成功时触发，且只把写入成功的段落计入快照内容——
+ * 关键约束：钩子只在四份主文档确有写入时触发，且只把写入成功的段落计入快照内容——
  * 某份文档写失败时磁盘仍是旧内容，快照若按新内容存档会造出一版并不存在的历史。
  */
 export async function applyProjectWorkspace(
@@ -180,31 +182,58 @@ export async function applyProjectWorkspace(
     const root = resolveStorageRoot()
     const toUri = (fileName: string): vscode.Uri => buildStorageUri(root, [PRESS_MODULE_DIR, document.name, fileName])
     const nextFiles: PendingFile[] = []
-    if (payload.readme !== undefined) {
+    if (payload.readme !== undefined || payload.basic !== undefined) {
+        // 基本信息与 Frontmatter 同属 README：先替换正文段落，再合并 Frontmatter，两者互不覆盖
+        const base =
+            payload.basic === undefined
+                ? document.files.readme
+                : replaceLevelTwoSection(
+                      document.files.readme,
+                      BASIC_SECTION_TITLE,
+                      payload.basic,
+                      `# ${document.name}`,
+                  )
         nextFiles.push({
-            key: 'readme',
+            snapshotKey: 'readme',
             fileName: WORKSPACE_FILE_NAMES.readme,
-            content: mergeReadmeFrontmatter(document.files.readme, payload.readme),
+            content: payload.readme === undefined ? base : mergeReadmeFrontmatter(base, payload.readme),
         })
     }
-    if (payload.setting !== undefined) {
+    if (payload.world !== undefined) {
         nextFiles.push({
-            key: 'setting',
-            fileName: WORKSPACE_FILE_NAMES.setting,
-            content: replaceLevelTwoSection(document.files.setting, SETTING_SECTION_TITLE, payload.setting, '# 设定'),
+            snapshotKey: null,
+            fileName: PROJECT_WORLD_DOC_NAME,
+            content: replaceLevelTwoSection(
+                document.settingSections.world,
+                SETTING_SECTION_TITLE,
+                payload.world,
+                '# 世界观',
+            ),
+        })
+    }
+    if (payload.power !== undefined) {
+        nextFiles.push({
+            snapshotKey: null,
+            fileName: PROJECT_POWER_DOC_NAME,
+            content: replaceLevelTwoSection(
+                document.settingSections.power,
+                SETTING_SECTION_TITLE,
+                payload.power,
+                '# 金手指',
+            ),
         })
     }
     const deletedNames = payload.deletedCharacterNames ?? []
     if (payload.characters !== undefined || deletedNames.length > 0) {
         nextFiles.push({
-            key: 'characters',
+            snapshotKey: 'characters',
             fileName: WORKSPACE_FILE_NAMES.characters,
             content: mergeCharacterBlocks(document.files.characters, payload.characters ?? [], deletedNames),
         })
     }
     if (payload.outline !== undefined) {
         nextFiles.push({
-            key: 'outline',
+            snapshotKey: 'outline',
             fileName: WORKSPACE_FILE_NAMES.outline,
             content: replaceLevelTwoSection(document.files.outline, OUTLINE_SECTION_TITLE, payload.outline, '# 大纲'),
         })
@@ -223,17 +252,20 @@ export async function applyProjectWorkspace(
         const files: PressWorkspaceFiles = { ...document.files }
         const trigger = new Set<PressSnapshotTrigger>()
         for (const file of nextFiles) {
-            if (!written.includes(file.fileName)) {
+            if (file.snapshotKey === null || !written.includes(file.fileName)) {
                 continue
             }
-            files[file.key] = file.content
-            trigger.add(file.key === 'readme' ? 'setting' : file.key)
+            files[file.snapshotKey] = file.content
+            trigger.add(file.snapshotKey === 'readme' ? 'setting' : file.snapshotKey)
         }
-        try {
-            await hooks.onWritten({ dirPath: payload.dirPath, files, trigger: [...trigger] })
-        } catch (error) {
-            const message = error instanceof Error ? error.message : String(error)
-            logger.warn(`作品文档快照记录失败（不影响本次回写）：${payload.dirPath}（${message}）`)
+        // 只写了分组专属文档时四份主文档没有变化，不留版
+        if (trigger.size > 0) {
+            try {
+                await hooks.onWritten({ dirPath: payload.dirPath, files, trigger: [...trigger] })
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error)
+                logger.warn(`作品文档快照记录失败（不影响本次回写）：${payload.dirPath}（${message}）`)
+            }
         }
     }
     return { written }

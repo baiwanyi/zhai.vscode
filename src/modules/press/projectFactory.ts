@@ -12,6 +12,12 @@ import type { PressAudience } from '@shared/types/press'
 /** 作品根文档名：作品被打开时的落点，同时承载背景与风格设定 */
 export const PROJECT_README_NAME = 'README.md'
 
+/** 世界观文档名：设定页世界观分组手动保存的落点 */
+export const PROJECT_WORLD_DOC_NAME = '世界观.md'
+
+/** 金手指文档名：设定页金手指分组手动保存的落点 */
+export const PROJECT_POWER_DOC_NAME = '金手指.md'
+
 /** 章节目录名：其下的文档计入章节数，新建作品与新增章节统一写在这里 */
 export const PROJECT_CHAPTER_DIR = 'Chapters'
 
@@ -139,7 +145,7 @@ export function buildReadmeContent(name: string, audience: PressAudience, create
 }
 
 /**
- * 生成四份作品级文档：README、大纲、角色设定、设定。
+ * 生成作品级文档：README、大纲、角色设定、设定，以及设定页按标签页拆分的世界观与金手指两份文档。
  * 新建作品与导入作品共用同一份内容来源，避免两处模板分叉；不含任何章节文件。
  */
 export function buildProjectDocuments(name: string, audience: PressAudience, now: Date): ProjectSkeletonFile[] {
@@ -151,6 +157,10 @@ export function buildProjectDocuments(name: string, audience: PressAudience, now
             content: '# 角色设定\n\n> 每个角色以一级标题起条，便于以 [[角色设定#角色名]] 引用。\n',
         },
         { relativePath: '设定.md', content: '# 设定\n\n## 世界观\n\n## 地理\n\n## 组织势力\n' },
+        // 分组文档只留一级标题：设定页首次保存时才由 writer 追加「提取设定」段落，
+        // 段落存在与否即「工作台写过这一组」的标记，解析端据此决定是否回落旧 设定.md
+        { relativePath: PROJECT_WORLD_DOC_NAME, content: '# 世界观\n' },
+        { relativePath: PROJECT_POWER_DOC_NAME, content: '# 金手指\n' },
     ]
 }
 

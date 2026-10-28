@@ -7,10 +7,11 @@
  */
 
 /**
- * 用量来源模块：对话 / 取名 / 外貌 / 语义归纳 / 画面描述 / 出图 / 校对。
+ * 用量来源模块：对话 / 取名 / 外貌 / 设定 / 语义归纳 / 画面描述 / 出图 / 校对。
  * external 表示 CLI 记录里存在、但本地没有对应记账行的轮次（例如记账功能上线前的历史或在其它工具中发起）。
  */
-export type AiUsageModule = 'chat' | 'naming' | 'appearance' | 'semantic' | 'scene' | 'image' | 'proofread' | 'external'
+export type AiUsageModule =
+    'chat' | 'naming' | 'appearance' | 'setting' | 'semantic' | 'scene' | 'image' | 'proofread' | 'external'
 
 /** 时间筛选：今日、近 7 天、近 30 天、全部 */
 export type AiUsageRange = 'today' | '7d' | '30d' | 'all'
@@ -23,6 +24,7 @@ export const AI_USAGE_MODULE_LABELS: Readonly<Record<AiUsageModule, string>> = {
     chat: 'AI对话',
     naming: '取名',
     appearance: '外貌生成',
+    setting: '设定生成',
     semantic: '语义归纳',
     scene: '画面描述',
     image: 'AI出图',
@@ -44,6 +46,7 @@ export function isAiUsageModule(value: unknown): value is AiUsageModule {
         value === 'chat' ||
         value === 'naming' ||
         value === 'appearance' ||
+        value === 'setting' ||
         value === 'semantic' ||
         value === 'scene' ||
         value === 'image' ||

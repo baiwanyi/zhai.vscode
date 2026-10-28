@@ -100,7 +100,11 @@ export class PressRoutes {
             case 'pressAi/aiAppearance':
                 return this.service.generateAppearance(payload)
             case 'pressAi/aiAppearance/abort':
-                return this.service.abortAppearance()
+                return this.service.abortGeneration()
+            case 'pressAi/aiSettingField':
+                return this.service.generateSettingField(payload)
+            case 'pressAi/aiSettingField/abort':
+                return this.service.abortGeneration()
             case 'pressAi/listPortraits':
                 return this.portraits.list(payload, toWebviewUri)
             case 'pressAi/listPortraitGallery':

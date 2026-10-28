@@ -26,22 +26,19 @@ export type CharacterGender = 'male' | 'female'
  * 顺序即表单顺序，不得随意调整——它是作者按身形找档位的唯一线索。
  */
 export type CharacterBodyType =
-    | 'petite'
-    | 'lean'
-    | 'slim'
-    | 'tall'
-    | 'average'
-    | 'athletic'
-    | 'burly'
-    | 'round'
-    | 'plump'
-    | 'heavy'
+    'petite' | 'lean' | 'slim' | 'tall' | 'average' | 'athletic' | 'burly' | 'round' | 'plump' | 'heavy'
 
 /** 目标读者：与作品 README 的 audience 字段取值一致 */
 export type Audience = '男频' | '女频'
 
-/** 结局倾向：HE、BE、开放 */
-export type EndingKind = 'HE' | 'BE' | '开放'
+/** 结局倾向：HE 圆满、BE 悲剧、开放、真相、喜忧参半 */
+export type EndingKind = 'HE' | 'BE' | '开放' | '真相' | '喜忧参半'
+
+/** 故事时间：预设年代档位，写入设定.md 的「时间」键 */
+export type StoryPeriod = '现代' | '古代' | '民国' | '80年代' | '未来' | '历史' | '末日' | '近代'
+
+/** 故事地点：预设地域与场景档位，写入设定.md 的「地点」键 */
+export type StoryPlace = '中国' | '都市' | '职场' | '宫廷' | '农村' | '校园' | '东方' | '西方' | '架空世界' | '现实世界'
 
 /** 单条节拍：章内可勾选的叙事单位，勾选表示正文已兑现 */
 export interface OutlineBeat {
@@ -98,7 +95,9 @@ export interface CharacterCard {
     /** 体型：预设档位之一，不明时取「匀称」 */
     bodyType: CharacterBodyType
     identity: string
-    /** 外貌描写：外观与气质的白描，供正文引用，可由 AI 依据其他字段生成 */
+    /** 外貌标签：七类可观察的短标签，是外貌的主设定，AI 生成时逐条落实 */
+    appearanceTags: string[]
+    /** 外貌描写：标签之外补的句子，作为补充说明，可由 AI 依据其他字段与标签生成 */
     appearance: string
     traits: string[]
     /** 背景故事：出身、关键经历与性格成因，导入时从原文摘录归纳 */
@@ -130,9 +129,23 @@ export interface ProjectSetting {
     audience: Audience
     genres: string[]
     wordGoal: number
+    /** 单章目标字数：新建章与大纲向导的默认值 */
+    chapterWordGoal: number
+    /** 简介：比一句话梗概更完整的内容介绍 */
+    summary: string
     logline: string
+    /** 开篇灵感：第一章的切入画面或开场桥段 */
+    opening: string
+    /** 补充信息：未归入其它字段的备注 */
+    extra: string
     conflict: string
     ending: EndingKind
+    /** 叙事结构：单线顺叙 / 双线交替等，写入设定.md 的「叙事结构」键 */
+    narrative: string
+    /** 故事时间 */
+    period: StoryPeriod
+    /** 故事地点 */
+    place: StoryPlace
     /** 世界观总述：世界形态、历史沿革、种族与文明结构 */
     worldview: string
     /** 地理：主要地域、场景与空间格局 */
@@ -170,3 +183,15 @@ export interface OutlineWizardOptions {
 
 /** 向导步骤：输入确认、卷纲预览、章纲预览 */
 export type WizardStep = 'input' | 'volume' | 'chapter'
+
+/** 标签选项：value 即写入文档的标签文本，hint 为面板内的悬停说明 */
+export interface TagOption {
+    value: string
+    hint?: string
+}
+
+/** 标签分组：TagPicker 按组渲染候选标签，组名只用于面板内的分组切换 */
+export interface TagGroup {
+    label: string
+    options: readonly TagOption[]
+}

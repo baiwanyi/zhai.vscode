@@ -1,5 +1,6 @@
 /**
- * 大纲与人物卡纯函数：字段缺失判断、章节统计、节点构造、字数格式化，以及提取草案的建卡与字段补全。
+ * 大纲与人物卡纯函数：字段缺失判断与设定文本补丁、章节统计、节点构造、字数格式化，
+ * 以及提取草案的建卡与字段补全。
  * 复用约定：字数口径复用仪表盘的 formatWordCount，不另写一套；节点 id 统一由 createId 生成，
  * 保证新增卷、章、节拍在树中可直接作为 key 与选中标识；草案的中文标签按 constants 的元数据表归一。
  * 关键约束：缺失判断只区分「是否填写」，缺失不视为错误、仅用于提示；
@@ -7,7 +8,7 @@
  * 补全已有角色只填空白字段、不覆盖作者已写内容，没有实际变化时必须返回原对象，避免无谓写盘。
  */
 import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
-import type { PressExtractedCharacter, PressExtractedVolume } from '@shared/types/press'
+import type { PressExtractedCharacter, PressExtractedVolume, SettingFieldKey } from '@shared/types/press'
 import { formatWordCount } from '@webview/dashboard/utils'
 import {
     CHARACTER_BODY_TYPE_META,
@@ -48,6 +49,22 @@ export function isSettingFieldMissing(setting: ProjectSetting, key: keyof Projec
     return !isFilled(setting[key])
 }
 
+/** 设定文本字段的补丁：显式分支，避免计算属性被推断成索引签名；故事内核等子集字段同样适用 */
+export function toSettingTextPatch(field: SettingFieldKey, value: string): Partial<ProjectSetting> {
+    switch (field) {
+        case 'title':
+            return { title: value }
+        case 'summary':
+            return { summary: value }
+        case 'logline':
+            return { logline: value }
+        case 'opening':
+            return { opening: value }
+        case 'conflict':
+            return { conflict: value }
+    }
+}
+
 /**
  * 生成人物标识：8 位随机数字，与宿主的人物标识规范一致，也直接作为设定图文件名里的角色段。
  * 用 crypto 采样而非 Math.random，避免同一次解析里连续生成时出现可预期的重复。
@@ -86,6 +103,7 @@ export function createCharacterCard(seed: CharacterSeed = {}): CharacterCard {
         // 体型只有五档预设，默认取中间档：既不让新卡带一个偏颇的身形，也省掉一次必填
         bodyType: 'average',
         identity: '',
+        appearanceTags: [],
         appearance: '',
         traits: [],
         background: '',
@@ -195,8 +213,7 @@ export function mergeCharacterDraft(character: CharacterCard, draft: PressExtrac
         ability: pickDraftText(character.ability, draft.ability),
         arc: pickDraftText(character.arc, draft.arc),
         relation: pickDraftText(character.relation, draft.relation),
-        traits:
-            character.traits.length > 0 || draft.traits.length === 0 ? character.traits : draft.traits,
+        traits: character.traits.length > 0 || draft.traits.length === 0 ? character.traits : draft.traits,
         bodyType:
             character.bodyType === 'average' && draftBodyType !== null && draftBodyType !== 'average'
                 ? draftBodyType

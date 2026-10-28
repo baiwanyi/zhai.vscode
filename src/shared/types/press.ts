@@ -133,11 +133,24 @@ export interface PressWorkspaceFiles {
     outline: string
 }
 
+/**
+ * 设定页分组文档原文：设定按标签页各成一篇，世界观与金手指分别落在自己的文档里。
+ * 与四份主文档分开读取——它们只服务设定页，不参与快照，文件缺失时为空串。
+ */
+export interface PressSettingSectionFiles {
+    /** 世界观.md 原文 */
+    world: string
+    /** 金手指.md 原文 */
+    power: string
+}
+
 /** 工作台文档：一部作品的原始 Markdown 快照，name 取目录名 */
 export interface PressWorkspaceDocument {
     dirPath: string
     name: string
     files: PressWorkspaceFiles
+    /** 设定页分组文档：按标签页拆分，与四份主文档分开读取 */
+    settingSections: PressSettingSectionFiles
 }
 
 /** press/workspace 响应：未选择作品时 project 为 null，仍返回作品列表供初始页选择 */
@@ -364,6 +377,10 @@ export interface CharacterAppearanceRequest {
     gender: string
     age: string
     identity: string
+    /** 外貌标签：可观察的短标签，生成时逐条落实，优先级高于已有描写 */
+    appearanceTags: string[]
+    /** 已写外貌：只作语气与细节补充，与标签冲突时以标签为准 */
+    appearance: string
     traits: string[]
     desire: string
     weakness: string
@@ -376,6 +393,49 @@ export interface CharacterAppearanceRequest {
 
 /** 人物外貌生成结果：单段白描纯文本，可直接写入外貌字段 */
 export interface CharacterAppearanceResult {
+    content: string
+}
+
+/** 设定页可交给 AI 生成的字段：作品名、简介、一句话梗概、开篇灵感、核心冲突 */
+export type SettingFieldKey = 'title' | 'summary' | 'logline' | 'opening' | 'conflict'
+
+/** 设定字段白名单：前端按钮、宿主入参校验与提示词表共用同一份，避免三处口径分叉 */
+export const SETTING_FIELD_KEYS: readonly SettingFieldKey[] = ['title', 'summary', 'logline', 'opening', 'conflict']
+
+/** 设定字段生成请求：目标字段 + 已填设定的只读快照，供 pressAi/aiSettingField 使用 */
+export interface SettingFieldGenerateRequest {
+    /** 目标字段：其当前值也在下方的同名字段里，非空时要求在其基础上完善 */
+    field: SettingFieldKey
+    title: string
+    penName: string
+    /** 目标读者中文标签：男频或女频 */
+    audience: string
+    genres: string[]
+    period: string
+    place: string
+    era: string
+    tone: string
+    ending: string
+    perspective: string
+    narrative: string
+    references: string
+    summary: string
+    logline: string
+    opening: string
+    conflict: string
+    worldview: string
+    geography: string
+    factions: string
+    powerSystem: string
+    concepts: string
+    goldenFingerType: string
+    goldenFingerAbility: string
+    goldenFingerCost: string
+    extra: string
+}
+
+/** 设定字段生成结果：单段纯文本，可直接写入目标字段 */
+export interface SettingFieldGenerateResult {
     content: string
 }
 
@@ -812,14 +872,19 @@ export interface PressApplyMeta {
 /**
  * press/apply 请求：把工作台草稿对应的段落回写进作品文档。
  * 字段是「段落片段」而不是整篇文档，落点与保留策略由宿主决定，避免覆盖用户手写内容。
- * 除 dirPath 外全部可选：即时保存只会带上本次变更的那一份，未带的文件保持原样。
+ * 设定按标签页拆分：基本信息写 README，世界观与金手指各写自己的文档；其余字段按需携带。
+ * 除 dirPath 外全部可选：手动保存只会带上当前标签页对应的那一份，未带的文件保持原样。
  */
 export interface PressApplyRequest {
     /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
     dirPath: string
     readme?: PressApplyMeta
-    /** 设定.md 中「提取设定」段落的正文 */
-    setting?: string
+    /** README.md 中「作品设定」段落的正文（设定页基本信息分组） */
+    basic?: string
+    /** 世界观.md 中「提取设定」段落的正文（设定页世界观分组） */
+    world?: string
+    /** 金手指.md 中「提取设定」段落的正文（设定页金手指分组） */
+    power?: string
     /** 角色块：name 用作匹配键，text 是含「# 名称」标题行的完整块 */
     characters?: { name: string; text: string }[]
     /** 大纲.md 中「分卷规划」段落的正文 */
@@ -850,6 +915,14 @@ function isApplyCharacterBlock(item: unknown): boolean {
     )
 }
 
+/** 校验单份段落正文：允许缺省，出现时必须是未超单份文档上限的字符串 */
+function isApplySectionText(value: unknown): boolean {
+    if (value === undefined) {
+        return true
+    }
+    return typeof value === 'string' && value.length <= MAX_APPLY_FIELD_LENGTH
+}
+
 /** 校验 README 元信息：标题与读者允许为空，但类型与字数目标必须合法 */
 function isApplyMeta(value: unknown): value is PressApplyMeta {
     if (typeof value !== 'object' || value === null) {
@@ -877,7 +950,9 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
     }
     const candidate = payload as {
         readme?: unknown
-        setting?: unknown
+        basic?: unknown
+        world?: unknown
+        power?: unknown
         characters?: unknown
         outline?: unknown
         deletedCharacterNames?: unknown
@@ -885,7 +960,9 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
     }
     const hasContent =
         candidate.readme !== undefined ||
-        candidate.setting !== undefined ||
+        candidate.basic !== undefined ||
+        candidate.world !== undefined ||
+        candidate.power !== undefined ||
         candidate.characters !== undefined ||
         candidate.outline !== undefined ||
         candidate.deletedCharacterNames !== undefined ||
@@ -897,14 +974,10 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
         return false
     }
     if (
-        candidate.setting !== undefined &&
-        (typeof candidate.setting !== 'string' || candidate.setting.length > MAX_APPLY_FIELD_LENGTH)
-    ) {
-        return false
-    }
-    if (
-        candidate.outline !== undefined &&
-        (typeof candidate.outline !== 'string' || candidate.outline.length > MAX_APPLY_FIELD_LENGTH)
+        !isApplySectionText(candidate.basic) ||
+        !isApplySectionText(candidate.world) ||
+        !isApplySectionText(candidate.power) ||
+        !isApplySectionText(candidate.outline)
     ) {
         return false
     }

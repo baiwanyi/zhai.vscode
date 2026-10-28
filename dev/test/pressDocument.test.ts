@@ -1,10 +1,14 @@
 /**
- * 作品文档解析用例：验证 README、设定、角色设定与大纲四份 Markdown 能还原成工作台视图模型。
+ * 作品文档解析用例：验证 README、设定、角色设定与大纲 Markdown 能还原成工作台视图模型。
  * 复用约定：样本文本沿用作品骨架与角色设定.md 「# 角色名」、大纲.md 「卷 → 章 → 键值行」的既有写法。
- * 关键约束：断言覆盖字段映射与容错两条线——键值行优先于区块段落，空文档与缺卷标题都不得抛错。
+ * 关键约束：断言覆盖字段映射与容错两条线——键值行优先于区块段落，空文档与缺卷标题都不得抛错；
+ * 设定分组文档留空，用于覆盖旧 设定.md 的回落口径（新布局由往返用例覆盖）。
  */
 import { describe, expect, it } from 'vitest'
 import { parseProjectWorkspace } from '../../src/workflow/press/document'
+
+/** 设定分组文档留空：走旧 设定.md 回落路径 */
+const EMPTY_SETTING_SECTIONS = { world: '', power: '' }
 
 const README = `---
 title: 城南旧事
@@ -114,6 +118,7 @@ describe('parseProjectWorkspace', () => {
     it('从 README 与设定.md 还原作品设定', () => {
         const parsed = parseProjectWorkspace(
             { readme: README, setting: SETTING, characters: CHARACTERS, outline: OUTLINE },
+            EMPTY_SETTING_SECTIONS,
             '未命名',
         )
         expect(parsed.setting.title).toBe('城南旧事')
@@ -135,6 +140,7 @@ describe('parseProjectWorkspace', () => {
     it('按一级标题还原人物卡并生成稳定 id', () => {
         const parsed = parseProjectWorkspace(
             { readme: README, setting: SETTING, characters: CHARACTERS, outline: OUTLINE },
+            EMPTY_SETTING_SECTIONS,
             '未命名',
         )
         expect(parsed.characters).toHaveLength(2)
@@ -169,7 +175,11 @@ describe('parseProjectWorkspace', () => {
 - id：char-顾青
 - 分类：配角
 `
-        const parsed = parseProjectWorkspace({ readme: '', setting: '', characters, outline: '' }, '未命名')
+        const parsed = parseProjectWorkspace(
+            { readme: '', setting: '', characters, outline: '' },
+            EMPTY_SETTING_SECTIONS,
+            '未命名',
+        )
         expect(parsed.characters.map((card) => card.id)).toEqual(['10845795', '12810129', '11248916'])
         expect(parsed.characters.every((card) => /^\d{8}$/.test(card.id))).toBe(true)
     })
@@ -177,6 +187,7 @@ describe('parseProjectWorkspace', () => {
     it('按卷与章还原章纲，字数、钩子与节拍各归其位', () => {
         const parsed = parseProjectWorkspace(
             { readme: README, setting: SETTING, characters: CHARACTERS, outline: OUTLINE },
+            EMPTY_SETTING_SECTIONS,
             '未命名',
         )
         expect(parsed.volumes).toHaveLength(1)
@@ -204,7 +215,11 @@ describe('parseProjectWorkspace', () => {
 
     it('无卷标题时把章节收进默认卷，空文档不抛错', () => {
         const outline = '## 分卷规划\n\n#### 第1章 甲\n- 状态：draft\n\n#### 第2章 乙\n'
-        const parsed = parseProjectWorkspace({ readme: '', setting: '', characters: '', outline }, '空作品')
+        const parsed = parseProjectWorkspace(
+            { readme: '', setting: '', characters: '', outline },
+            EMPTY_SETTING_SECTIONS,
+            '空作品',
+        )
         expect(parsed.setting.title).toBe('空作品')
         expect(parsed.setting.genres).toEqual([])
         expect(parsed.characters).toEqual([])

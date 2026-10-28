@@ -1,19 +1,13 @@
 /**
- * 大纲模块选项常量：把题材、钩子、状态、角色分类与性别等枚举的展示文案与徽标变体集中在一处。
- * 复用约定：徽标变体只取 badge 组件的语义变体，不写原始色值；页面与卡片均从此表读取，避免各写一套映射。
+ * 大纲与人物模块的选项常量：把钩子、状态、角色分类、性别与体型等枚举的展示文案与徽标变体集中在一处。
+ * 复用约定：徽标变体只取 badge 组件的语义变体，不写原始色值；页面与卡片均从此表读取，避免各写一套映射；
+ * 作品设定字段的选项（篇幅、时间、地点、结局、视角、结构、风格、规避内容与题材标签）统一在
+ * setting/settingOptions.ts 维护，本文件只保留跨模块共用的选项结构类型。
  * 关键约束：状态与钩子的 key 必须与 types.ts 的联合类型完全一致，新增取值须同时补文案与变体；
  * 张力与步骤的档位顺序参与排序与进度计算，不得随意调整。
  */
-import type {
-    Audience,
-    CharacterBodyType,
-    CharacterGender,
-    CharacterRole,
-    EndingKind,
-    HookKind,
-    PlanStatus,
-    ProjectSetting,
-} from './types'
+import type { SettingFieldKey } from '@shared/types/press'
+import type { CharacterBodyType, CharacterGender, CharacterRole, HookKind, PlanStatus, ProjectSetting } from './types'
 
 /** 徽标语义变体：与 @components/ui/badge 的 variant 保持一致 */
 export type BadgeTone = 'default' | 'secondary' | 'destructive' | 'outline' | 'ghost'
@@ -21,6 +15,18 @@ export type BadgeTone = 'default' | 'secondary' | 'destructive' | 'outline' | 'g
 export interface OptionMeta<T extends string> {
     value: T
     label: string
+}
+
+/** 数值型选项：篇幅这类以数字为取值的档位 */
+export interface NumberOptionMeta {
+    value: number
+    label: string
+}
+
+/** 带悬停说明的选项：叙事视角、语言风格这类需要解释取舍的枚举 */
+export interface OptionHintMeta extends OptionMeta<string> {
+    /** 悬停提示：说明该取值的写法与适用场景 */
+    hint: string
 }
 
 /** 选项来源：顺序表 + 同 key 的文案表，两者共同决定选项内容与先后 */
@@ -139,38 +145,8 @@ export const CHARACTER_BODY_TYPE_ORDER: readonly CharacterBodyType[] = [
 /** 体型选项：由顺序与文案表派生，人物卡的分段选择器直接消费 */
 export const CHARACTER_BODY_TYPE_OPTIONS = toOptions(CHARACTER_BODY_TYPE_ORDER, CHARACTER_BODY_TYPE_META)
 
-/** 题材预设：点击加入、再点移除，也可输入自定义题材 */
-export const GENRE_OPTIONS: readonly string[] = [
-    '都市',
-    '悬疑',
-    '玄幻',
-    '仙侠',
-    '科幻',
-    '历史',
-    '言情',
-    '无限流',
-    '游戏',
-    '现实',
-]
-
-/** 目标读者：与 README.md 的 audience 字段一致 */
-export const AUDIENCE_OPTIONS: readonly OptionMeta<Audience>[] = [
-    { value: '男频', label: '男频' },
-    { value: '女频', label: '女频' },
-]
-
-/** 结局倾向 */
-export const ENDING_OPTIONS: readonly OptionMeta<EndingKind>[] = [
-    { value: 'HE', label: 'HE 圆满' },
-    { value: 'BE', label: 'BE 悲剧' },
-    { value: '开放', label: '开放结局' },
-]
-
 /** 金手指类型：可自由输入，预设用于加速填写 */
 export const GOLDEN_FINGER_TYPES: readonly string[] = ['系统', '重生', '异能', '随身空间', '无', '自定义']
-
-/** 叙事人称 */
-export const PERSPECTIVE_OPTIONS: readonly string[] = ['第三人称', '第一人称', '双线交替']
 
 /** 节奏偏好：向导中决定张力默认分布 */
 export const PACING_OPTIONS = [
@@ -181,9 +157,6 @@ export const PACING_OPTIONS = [
 
 /** 结构模板：向导中决定卷纲的阶段划分方式 */
 export const STRUCTURE_OPTIONS: readonly string[] = ['三幕式', '起承转合', '黄金三章', '不使用模板']
-
-/** 常见禁写项：点击加入禁写清单 */
-export const BANNED_OPTIONS: readonly string[] = ['后宫', '虐主', '降智', '工具人配角', '长篇铺垫']
 
 /** 写作流程步骤：设定与人物两页顶部共用 */
 export const FLOW_STEPS: readonly { id: number; label: string }[] = [
@@ -205,3 +178,15 @@ export const REQUIRED_SETTING_KEYS: readonly (keyof ProjectSetting)[] = [
 
 /** 新建卷、新建章时的默认单章目标字数，与网文常规更新量一致 */
 export const DEFAULT_CHAPTER_WORD_GOAL = 2500
+
+/**
+ * 设定页写入文本时的字数上限：输入框 maxLength 与 AI 生成结果的截断共用同一份口径。
+ * 取值比提示词里的篇幅要求宽一档，留给作者自己发挥；作品名只用于截断生成结果，输入框不设限。
+ */
+export const SETTING_FIELD_MAX_LENGTH: Readonly<Record<SettingFieldKey, number>> = {
+    title: 40,
+    summary: 240,
+    logline: 120,
+    opening: 240,
+    conflict: 160,
+}

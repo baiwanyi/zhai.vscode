@@ -178,6 +178,8 @@ export type HostMethodName =
     | 'press/workspace'
     | 'pressAi/aiAppearance'
     | 'pressAi/aiAppearance/abort'
+    | 'pressAi/aiSettingField'
+    | 'pressAi/aiSettingField/abort'
     | 'pressAi/copyPortrait'
     | 'pressAi/deleteImage'
     | 'pressAi/deleteImages'

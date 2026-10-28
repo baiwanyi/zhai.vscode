@@ -83,7 +83,10 @@ export function useCharacterAppearance(): CharacterAppearanceState {
     return { isGenerating, generate, abort }
 }
 
-/** 请求载荷：只上传已填字段，空值交给宿主兜底；性别必填，直接取中文标签 */
+/**
+ * 请求载荷：只上传已填字段，空值交给宿主兜底；性别必填，直接取中文标签。
+ * 外貌标签是主设定，原描写随请求一起上传，但提示词里明确让位给标签。
+ */
 function buildPayload(character: CharacterCard, context: AppearanceContext): CharacterAppearanceRequest {
     return {
         name: character.name,
@@ -91,6 +94,8 @@ function buildPayload(character: CharacterCard, context: AppearanceContext): Cha
         gender: CHARACTER_GENDER_META[character.gender].label,
         age: character.age,
         identity: character.identity,
+        appearanceTags: [...character.appearanceTags],
+        appearance: character.appearance,
         traits: [...character.traits],
         desire: character.desire,
         weakness: character.weakness,

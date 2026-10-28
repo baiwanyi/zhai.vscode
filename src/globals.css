@@ -98,6 +98,16 @@
     [role='button']:not(:disabled) {
         cursor: pointer;
     }
+    /* 数字输入框：全站隐藏上下微调按钮，避免默认控件把表单行高与右侧单位撑歪；
+       Chromium 走 inner / outer-spin-button，Firefox 用 textfield 收回默认外观。 */
+    input[type='number'] {
+        appearance: textfield;
+    }
+    input[type='number']::-webkit-inner-spin-button,
+    input[type='number']::-webkit-outer-spin-button {
+        appearance: none;
+        margin: 0;
+    }
 }
 
 /*

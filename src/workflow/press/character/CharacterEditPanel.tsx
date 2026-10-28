@@ -2,23 +2,27 @@
  * 人物卡编辑器：按「基础 / 外貌 / 动机 / 背景 / 关系」五组编辑单个角色，字段与 角色设定.md 的区块对齐。
  * 复用约定：分组切换复用 ui/tabs（均分整行、不横向滚动），字段纵向排布与间距统一交给 ui/field 的 FieldGroup，
  * 单行 / 多行字段收在同文件的私有组件里；角色、性别与体型选择复用 components/SegmentedRail，
- * 标签型字段（性格）复用设定页的 TagField；各标签页收在同文件的私有组件里，主组件只做编排与外貌生成状态。
+ * 性格标签与外貌标签都复用设定页的 TagPicker：候选分别来自 ./characterTraits 的人性设定库
+ * 与 ./characterAppearanceTags 的七类外貌标签库，外貌标签是主设定、外貌描写只作补充；
+ * 各标签页收在同文件的私有组件里，主组件只做编排与外貌生成状态；
+ * 外貌描写取 @webview/components/AiTextareaField（输入组 + 生成按钮 + 生成态光晕，
+ * 与设定页五个字段共用），本组件只把生成状态与回调传下去。
  * 关键约束：所有控件只通过补丁回传给调用方（编辑弹窗的草稿），本组件不持有角色数据副本，生成结果写回后仍需用户保存；
  * 外貌生成的 hook 必须留在主组件：切换标签页会卸载面板内容，挂在面板内会连带取消在途请求；
  * 基础信息固定两列排版，左列展示角色设定图封面、右列为字段；图片统一在生图页产出与替换，人物卡内不再出图；
  * 单行输入统一 32px 高、上下各 6px 内边距；结果与失败原因统一经 sonner 提示，页面内不渲染内联错误文本。
  */
-import { Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
-import { Field, FieldDescription, FieldGroup, FieldLabel } from '@components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel, FieldTitle } from '@components/ui/field'
 import { Input } from '@components/ui/input'
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from '@components/ui/input-group'
 import { ScrollArea } from '@components/ui/scroll-area'
-import { Spinner } from '@components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@components/ui/tabs'
 import { Textarea } from '@components/ui/textarea'
+import { AiTextareaField } from '@webview/components/AiTextareaField'
 import { CoverFigure } from '@webview/components/CoverFigure'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
+import { APPEARANCE_TAG_GROUPS, APPEARANCE_TAG_MAX_COUNT } from './characterAppearanceTags'
+import { TRAIT_GROUPS, TRAIT_MAX_COUNT } from './characterTraits'
 import { useCharacterAppearance } from './useCharacterAppearance'
 import { useCharacterCover } from './useCharacterCover'
 import type { CharacterCard } from '../types'
@@ -32,7 +36,7 @@ import {
     CHARACTER_ROLE_OPTIONS,
     CHARACTER_ROLE_ORDER,
 } from '../constants'
-import { TagField } from '../setting/TagField'
+import { TagPicker } from '../setting/TagPicker'
 import { toOptionValue } from '../utils'
 
 /** 单行输入统一 32px 高、上下各 6px 内边距：与 Select 触发器等控件对齐 */
@@ -233,7 +237,7 @@ interface CharacterAppearanceTabProps extends CharacterTabProps {
     onGenerate: () => void
 }
 
-/** 外貌页：生成按钮的忙碌态由外层持有，本组件只负责文案与按钮摆放 */
+/** 外貌页：标签定骨架、描写作补充，两者一起交给 AI 生成；忙碌态由外层持有，这里只做透传 */
 function CharacterAppearanceTab({
     character,
     isGenerating,
@@ -243,31 +247,29 @@ function CharacterAppearanceTab({
     return (
         <FieldGroup className={FIELD_GROUP_CLASS}>
             <Field>
-                <FieldLabel htmlFor="character-appearance">外貌描写</FieldLabel>
-                <InputGroup>
-                    <InputGroupTextarea
-                        id="character-appearance"
-                        value={character.appearance}
-                        placeholder="如：瘦高，袖口永远卷到小臂；指节有薄茧，左眉一道旧疤"
-                        className="min-h-40"
-                        onChange={(event) => onChange({ appearance: event.target.value })}
-                    />
-                    <InputGroupAddon align="block-end">
-                        <InputGroupButton
-                            size="icon-xs"
-                            className="ml-auto"
-                            disabled={isGenerating}
-                            onClick={onGenerate}
-                        >
-                            {isGenerating ? <Spinner /> : <Sparkles />}
-                            <span className="sr-only">AI 生成</span>
-                        </InputGroupButton>
-                    </InputGroupAddon>
-                </InputGroup>
+                <FieldTitle>外貌标签</FieldTitle>
+                <TagPicker
+                    groups={APPEARANCE_TAG_GROUPS}
+                    value={character.appearanceTags}
+                    placeholder="点击选择外貌标签，支持自定义"
+                    max={APPEARANCE_TAG_MAX_COUNT}
+                    onChange={(appearanceTags) => onChange({ appearanceTags })}
+                />
                 <FieldDescription>
-                    写外观与气质，供正文引用；AI 会结合角色、性别、身份、性格与作品时代生成一版草稿
+                    七类标签只取看得见的部分，挑 10 到 15 个最能区分人物；喜好要落在穿着与随身物上，不写主观评价
                 </FieldDescription>
             </Field>
+            <AiTextareaField
+                id="character-appearance"
+                label="外貌描写"
+                value={character.appearance}
+                placeholder="如：说话前先把袖口卷到小臂；笑起来时左眉那道旧疤会跟着绷紧"
+                isGenerating={isGenerating}
+                description="标签之外补句子，给正文直接引用；AI 生成以标签为准、这段描写作语气与细节补充，不会覆盖标签"
+                generateLabel="AI 生成"
+                onChange={(appearance) => onChange({ appearance })}
+                onGenerate={onGenerate}
+            />
         </FieldGroup>
     )
 }
@@ -277,13 +279,12 @@ function CharacterMotiveTab({ character, onChange }: CharacterTabProps): JSX.Ele
     return (
         <FieldGroup className={FIELD_GROUP_CLASS}>
             <Field>
-                <FieldLabel htmlFor="character-traits">性格标签</FieldLabel>
-                <TagField
-                    inputId="character-traits"
+                <FieldTitle>性格标签</FieldTitle>
+                <TagPicker
+                    groups={TRAIT_GROUPS}
                     value={character.traits}
-                    options={[]}
-                    placeholder="输入性格标签，回车添加"
-                    max={6}
+                    placeholder="点击选择性格，支持自定义"
+                    max={TRAIT_MAX_COUNT}
                     onChange={(traits) => onChange({ traits })}
                 />
             </Field>

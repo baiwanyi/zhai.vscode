@@ -2,16 +2,19 @@
  * 草稿回写往返：把工作台草稿序列化成文档段落，再按解析口径读回来，验证键名与格式完全对齐。
  * 复用约定：序列化与解析都直接调用生产代码，不复制格式字符串；断言只覆盖用户可见字段。
  * 关键约束：键名或层级一旦改动而解析端未同步，这里的往返断言会立刻失败——这是回写功能的最后一道防线；
+ * 设定按标签页拆分回写：基本信息进 README 的「作品设定」段，世界观与金手指各进自己的文档；
  * 世界观、地理、核心概念、人物背景、卷级情节脉络与关键转折同样纳入往返，导入产出的字段不能写进文档就读不回来。
  */
 import { describe, expect, it } from 'vitest'
 import type { CharacterCard, OutlineVolume, ProjectSetting } from '../../src/workflow/press/types'
 import { parseProjectWorkspace } from '../../src/workflow/press/document'
 import {
+    serializeBasicSection,
     serializeCharacterBlocks,
+    serializeGoldenFingerSection,
     serializeOutlineSection,
     serializeReadmeMeta,
-    serializeSettingSection,
+    serializeWorldSection,
 } from '../../src/workflow/press/serialize'
 
 const SETTING: ProjectSetting = {
@@ -20,9 +23,15 @@ const SETTING: ProjectSetting = {
     audience: '男频',
     genres: ['仙侠', '系统流'],
     wordGoal: 1_000_000,
+    chapterWordGoal: 3_000,
+    summary: '穿越者把现代娱乐业搬进修真界，从被当作异端追杀到自立门户。',
     logline: '穿越者用现代娱乐业改造修真界。',
+    opening: '雪夜破庙，薛牧睁眼发现自己成了被追杀的异端。',
+    extra: '每卷结尾留一个悬念钩子。',
     conflict: '娱乐工业与修真秩序的正面冲突。',
     ending: '开放',
+    period: '古代',
+    place: '架空世界',
     worldview: '修真界与世俗王朝并存，宗门把持灵脉，凡人只能依附势力生存。',
     geography: '天都居中，北有雪原，南接十万大山。',
     era: '架空修真界',
@@ -34,6 +43,7 @@ const SETTING: ProjectSetting = {
     goldenFingerAbility: '把现代文艺作品复刻到修真界',
     goldenFingerCost: '暴露来历会被围杀',
     perspective: '第三人称限知',
+    narrative: '双线交替',
     tone: '轻松',
     references: '起点男频',
     banned: ['暴力细节', '政治隐喻'],
@@ -50,6 +60,7 @@ const CHARACTERS: CharacterCard[] = [
         height: '一米七八',
         bodyType: 'athletic',
         identity: '星月宗弟子',
+        appearanceTags: ['宽肩窄腰', '旧球鞋'],
         appearance: '清瘦，常带笑意',
         traits: ['隐忍', '护短'],
         background: '穿越前是娱乐公司策划，落地即被当作异端追杀。',
@@ -96,7 +107,7 @@ const VOLUMES: OutlineVolume[] = [
 ]
 
 describe('草稿回写往返', () => {
-    it('README、设定、角色设定与大纲回写后可被原样解析', () => {
+    it('README、世界观、金手指、角色设定与大纲回写后可被原样解析', () => {
         const meta = serializeReadmeMeta(SETTING)
         const readme = [
             '---',
@@ -112,15 +123,23 @@ describe('草稿回写往返', () => {
             '',
             '## 简介',
             '',
+            '## 作品设定',
+            '',
+            serializeBasicSection(SETTING),
+            '',
         ].join('\n')
         const parsed = parseProjectWorkspace(
             {
                 readme,
-                setting: `# 设定\n\n## 提取设定\n\n${serializeSettingSection(SETTING)}\n`,
+                setting: '',
                 characters: `# 角色设定\n\n> 提示\n\n${serializeCharacterBlocks(CHARACTERS)
                     .map((block) => block.text)
                     .join('\n\n')}\n`,
                 outline: `# 大纲\n\n## 主线\n\n## 分卷规划\n\n${serializeOutlineSection(VOLUMES, CHARACTERS)}\n`,
+            },
+            {
+                world: `# 世界观\n\n## 提取设定\n\n${serializeWorldSection(SETTING)}\n`,
+                power: `# 金手指\n\n## 提取设定\n\n${serializeGoldenFingerSection(SETTING)}\n`,
             },
             '兜底书名',
         )
@@ -131,8 +150,14 @@ describe('草稿回写往返', () => {
             audience: '男频',
             genres: ['仙侠', '系统流'],
             wordGoal: 1_000_000,
+            chapterWordGoal: SETTING.chapterWordGoal,
+            summary: SETTING.summary,
             logline: SETTING.logline,
+            opening: SETTING.opening,
+            extra: SETTING.extra,
             conflict: SETTING.conflict,
+            period: SETTING.period,
+            place: SETTING.place,
             worldview: SETTING.worldview,
             geography: SETTING.geography,
             era: SETTING.era,
@@ -144,6 +169,7 @@ describe('草稿回写往返', () => {
             goldenFingerAbility: SETTING.goldenFingerAbility,
             goldenFingerCost: SETTING.goldenFingerCost,
             perspective: SETTING.perspective,
+            narrative: SETTING.narrative,
             tone: SETTING.tone,
             ending: '开放',
             banned: ['暴力细节', '政治隐喻'],
@@ -159,6 +185,9 @@ describe('草稿回写往返', () => {
             age: '二十',
             height: '一米七八',
             bodyType: 'athletic',
+            // 外貌标签与外貌描写分别落盘：标签是主设定，描写只作补充
+            appearanceTags: ['宽肩窄腰', '旧球鞋'],
+            appearance: '清瘦，常带笑意',
             traits: ['隐忍', '护短'],
             background: '穿越前是娱乐公司策划，落地即被当作异端追杀。',
             catchphrase: '我来试试',

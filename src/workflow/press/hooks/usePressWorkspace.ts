@@ -1,7 +1,8 @@
 /**
- * 写作工作区装配：按作品目录读取宿主文档、解析成草稿，并负责草稿的即时落盘。
+ * 写作工作区装配：按作品目录读取宿主文档、解析成草稿，并负责草稿的落盘。
  * 复用约定：文档解析交给 ../document 的 parseProjectWorkspace，序列化交给 ../serialize，
  * 请求统一走 @shared/utils/bridge（方法名受 HostMethodName 约束），错误经 @shared/utils/error 的 toastError 提示。
+ * 设定按标签页拆分落点：基本信息写 README，世界观与金手指各写自己的文档，章纲改动仍走防抖写盘。
  * 关键约束：草稿同时存在于 ref 与 state 两份——写盘与合并读 ref（最新值），渲染读 state；
  * 写盘串行排队，防抖窗口内同范围的多次输入合并成一次请求；切换作品与卸载都要清掉未到期的防抖任务，
  * 否则上一个作品的草稿会被写进新作品。
@@ -20,17 +21,19 @@ import { toastError } from '@shared/utils/error'
 import type { OutlineWorkspace } from '../types'
 import { parseProjectWorkspace } from '../document'
 import {
+    serializeBasicSection,
     serializeCharacterBlocks,
+    serializeGoldenFingerSection,
     serializeOutlineSection,
     serializeReadmeMeta,
-    serializeSettingSection,
+    serializeWorldSection,
 } from '../serialize'
 
 /** 即时保存的防抖时长：字段输入停止后写盘，结构性操作不走防抖 */
 const SAVE_DEBOUNCE_MS = 600
 
-/** 可独立写盘的文档范围：设定连带 README 元信息，角色与大纲各自成一份 */
-export type PersistScope = 'setting' | 'characters' | 'outline'
+/** 可独立写盘的文档范围：设定按标签页各写一份，角色与大纲各自成一份 */
+export type PersistScope = 'basic' | 'world' | 'power' | 'characters' | 'outline'
 
 /** 加载状态：作品文档读取中、未打开作品（展示初始页）、已就绪（渲染工作区） */
 export type WorkspaceStatus = 'loading' | 'empty' | 'ready'
@@ -51,7 +54,7 @@ export interface PressWorkspaceState {
     /** 读取最新草稿：写盘与合并时用，避免闭包拿到旧值 */
     getWorkspace: () => OutlineWorkspace | null
     updateWorkspace: (recipe: (previous: OutlineWorkspace) => OutlineWorkspace) => void
-    flush: (scopes: Set<PersistScope>, options?: FlushOptions) => void
+    flush: (scopes: Set<PersistScope>, options?: FlushOptions) => Promise<void>
     scheduleFlush: (scope: PersistScope) => void
 }
 
@@ -113,7 +116,11 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
                     setLoadState({ status: 'empty', projectDir: null, workspace: null, projects: result.projects })
                     return
                 }
-                const parsed = parseProjectWorkspace(result.project.files, result.project.name)
+                const parsed = parseProjectWorkspace(
+                    result.project.files,
+                    result.project.settingSections,
+                    result.project.name,
+                )
                 workspaceRef.current = parsed
                 dirRef.current = result.project.dirPath
                 setLoadState({
@@ -140,21 +147,28 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
 
     /**
      * 立即写盘：把指定范围的最新草稿序列化成段落交给宿主合并，未带上的文档保持原样。
-     * 关键约束：写入排在队列尾部串行执行，避免防抖写入与结构性操作并发覆盖同一份文档；
+     * 关键约束：写入排在队列尾部串行执行，避免多次保存并发覆盖同一份文档；
+     * 返回值在写盘结束（成功或失败）后 resolve，页面据此结束保存态；
      * 删除角色时随请求带上要移除的角色块与设定图，宿主据此删块并清理图片。
      */
-    const flush = useCallback((scopes: Set<PersistScope>, options: FlushOptions = {}): void => {
+    const flush = useCallback((scopes: Set<PersistScope>, options: FlushOptions = {}): Promise<void> => {
         const current = workspaceRef.current
         const dirPath = dirRef.current
         if (current === null || dirPath.length === 0) {
-            return
+            return Promise.resolve()
         }
         const deleted = options.deleted ?? null
         const payload: PressApplyRequest = { dirPath }
-        if (scopes.has('setting')) {
-            // README 的标题、读者、题材、字数目标与设定段落同源，一起写才不会出现两份口径
+        if (scopes.has('basic')) {
+            // README 的标题、读者、题材、字数目标与基本信息段落同源，一起写才不会出现两份口径
             payload.readme = serializeReadmeMeta(current.setting)
-            payload.setting = serializeSettingSection(current.setting)
+            payload.basic = serializeBasicSection(current.setting)
+        }
+        if (scopes.has('world')) {
+            payload.world = serializeWorldSection(current.setting)
+        }
+        if (scopes.has('power')) {
+            payload.power = serializeGoldenFingerSection(current.setting)
         }
         if (scopes.has('characters')) {
             payload.characters = serializeCharacterBlocks(current.characters)
@@ -166,16 +180,21 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
             payload.deletedCharacterNames = [deleted.name]
             payload.deletedCharacterIds = [deleted.id]
         }
-        queueRef.current = queueRef.current.then(async () => {
+        queueRef.current = queueRef.current.then(async (): Promise<void> => {
             try {
-                await request<PressApplyResult>('press/apply', payload)
+                const result = await request<PressApplyResult>('press/apply', payload)
                 if (options.successMessage !== undefined) {
+                    if (result.written.length === 0) {
+                        toast.error('保存失败：目标文档未写入')
+                        return
+                    }
                     toast.success(options.successMessage)
                 }
             } catch (cause) {
                 toastError(cause)
             }
         })
+        return queueRef.current
     }, [])
 
     /** 防抖写盘：字段级输入只在停顿后写一次，连续输入不会产生大量请求 */
@@ -189,7 +208,7 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
                 debounceRef.current = null
                 const scopes = pendingScopesRef.current
                 pendingScopesRef.current = new Set()
-                flush(scopes)
+                void flush(scopes)
             }, SAVE_DEBOUNCE_MS)
         },
         [flush],

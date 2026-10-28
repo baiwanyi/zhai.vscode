@@ -14,6 +14,7 @@ import type {
 } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import type { SettingSectionKey } from '../setting/sections'
 import type {
     CharacterCard,
     CharacterSeed,
@@ -24,6 +25,7 @@ import type {
 } from '../types'
 import type { FlushOptions, PersistScope } from './usePressWorkspace'
 import { DEFAULT_CHAPTER_WORD_GOAL } from '../constants'
+import { SETTING_SECTIONS } from '../setting/sections'
 import {
     createChapter,
     createCharacterCard,
@@ -38,6 +40,8 @@ const VOLUME_PREFIX_PATTERN = /^第\d+卷\s*/
 export interface PressMutations {
     openProject: (dirPath: string) => void
     updateSetting: (patch: Partial<ProjectSetting>) => void
+    /** 保存设定分组：把当前标签页写进它对应的文档，结束后 resolve */
+    saveSettingSection: (section: SettingSectionKey) => Promise<void>
     updateCharacter: (characterId: string, patch: Partial<CharacterCard>) => void
     deleteCharacter: (characterId: string) => void
     createCharacter: (seed: CharacterSeed) => string
@@ -55,7 +59,7 @@ export interface PressMutations {
 interface MutationsDeps {
     getWorkspace: () => OutlineWorkspace | null
     updateWorkspace: (recipe: (previous: OutlineWorkspace) => OutlineWorkspace) => void
-    flush: (scopes: Set<PersistScope>, options?: FlushOptions) => void
+    flush: (scopes: Set<PersistScope>, options?: FlushOptions) => Promise<void>
     scheduleFlush: (scope: PersistScope) => void
 }
 
@@ -77,13 +81,23 @@ export function usePressMutations({
         void open()
     }, [])
 
-    /** 设定字段改动：输入频繁，走防抖写盘，停顿后统一落一次 */
+    /** 设定字段改动：只更新内存草稿，落盘由设定页的保存按钮按当前标签页触发 */
     const updateSetting = useCallback(
         (patch: Partial<ProjectSetting>): void => {
             updateWorkspace((previous) => ({ ...previous, setting: { ...previous.setting, ...patch } }))
-            scheduleFlush('setting')
         },
-        [scheduleFlush, updateWorkspace],
+        [updateWorkspace],
+    )
+
+    /** 保存设定分组：只把当前标签页写进它对应的文档，成功提示由 flush 统一发出 */
+    const saveSettingSection = useCallback(
+        (section: SettingSectionKey): Promise<void> => {
+            const meta = SETTING_SECTIONS[section]
+            return flush(new Set<PersistScope>([section]), {
+                successMessage: `「${meta.label}」已保存`,
+            })
+        },
+        [flush],
     )
 
     /** 人物卡保存：编辑弹窗点保存即写盘，不再依赖手动回写 */
@@ -96,7 +110,7 @@ export function usePressMutations({
                 ),
             }))
             const name = getWorkspace()?.characters.find((character) => character.id === characterId)?.name
-            flush(new Set<PersistScope>(['characters']), {
+            void flush(new Set<PersistScope>(['characters']), {
                 successMessage: name === undefined ? '已保存人物卡' : `已保存「${name}」`,
             })
         },
@@ -122,7 +136,7 @@ export function usePressMutations({
                     ),
                 })),
             }))
-            flush(new Set<PersistScope>(['characters', 'outline']), {
+            void flush(new Set<PersistScope>(['characters', 'outline']), {
                 deleted: target === null ? undefined : { name: target.name, id: target.id },
                 successMessage: target === null ? '已删除人物' : `已删除「${target.name}」`,
             })
@@ -135,7 +149,7 @@ export function usePressMutations({
         (seed: CharacterSeed): string => {
             const character = createCharacterCard(seed)
             updateWorkspace((previous) => ({ ...previous, characters: [...previous.characters, character] }))
-            flush(new Set<PersistScope>(['characters']), { successMessage: '已新建人物，后续改动自动保存' })
+            void flush(new Set<PersistScope>(['characters']), { successMessage: '已新建人物，后续改动自动保存' })
             return character.id
         },
         [flush, updateWorkspace],
@@ -162,7 +176,7 @@ export function usePressMutations({
             if (merged.created === 0 && merged.updated === 0) {
                 return { created: 0, updated: 0 }
             }
-            flush(new Set<PersistScope>(['characters']))
+            void flush(new Set<PersistScope>(['characters']))
             return { created: merged.created, updated: merged.updated }
         },
         [flush, getWorkspace, updateWorkspace],
@@ -190,7 +204,7 @@ export function usePressMutations({
             ...previous,
             volumes: [...previous.volumes, createVolume(previous.volumes.length + 1, DEFAULT_CHAPTER_WORD_GOAL)],
         }))
-        flush(new Set<PersistScope>(['outline']))
+        void flush(new Set<PersistScope>(['outline']))
     }, [flush, updateWorkspace])
 
     const addChapter = useCallback(
@@ -208,7 +222,7 @@ export function usePressMutations({
                     }
                 }),
             }))
-            flush(new Set<PersistScope>(['outline']))
+            void flush(new Set<PersistScope>(['outline']))
         },
         [flush, updateWorkspace],
     )
@@ -223,7 +237,7 @@ export function usePressMutations({
                 }))
                 return { ...previous, volumes: [...previous.volumes, ...appended] }
             })
-            flush(new Set<PersistScope>(['outline']))
+            void flush(new Set<PersistScope>(['outline']))
         },
         [flush, updateWorkspace],
     )
@@ -236,13 +250,13 @@ export function usePressMutations({
             const volumes = createOutlineFromDraft(drafts, DEFAULT_CHAPTER_WORD_GOAL, characters)
             const chapterCount = volumes.reduce((total, volume) => total + volume.chapters.length, 0)
             updateWorkspace((previous) => ({ ...previous, volumes }))
-            flush(new Set<PersistScope>(['outline']))
+            void flush(new Set<PersistScope>(['outline']))
             return chapterCount
         },
         [flush, getWorkspace, updateWorkspace],
     )
 
-    /** 合并设定草案：只填空字段，已有内容一律不动，返回实际填入的字段数 */
+    /** 合并设定草案：只填空字段，已有内容一律不动，返回实际填入的字段数；只改草稿，落盘需在各标签页点保存 */
     const extractSetting = useCallback(
         (draft: PressExtractedSetting): number => {
             const current = getWorkspace()?.setting
@@ -299,16 +313,16 @@ export function usePressMutations({
             const filled = Object.keys(patch).length
             if (filled > 0) {
                 updateWorkspace((previous) => ({ ...previous, setting: { ...previous.setting, ...patch } }))
-                scheduleFlush('setting')
             }
             return filled
         },
-        [getWorkspace, scheduleFlush, updateWorkspace],
+        [getWorkspace, updateWorkspace],
     )
 
     return {
         openProject,
         updateSetting,
+        saveSettingSection,
         updateCharacter,
         deleteCharacter,
         createCharacter,

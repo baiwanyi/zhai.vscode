@@ -48,6 +48,7 @@ export function PressSectionRouter({
                 dirPath={dirPath}
                 onChange={mutations.updateSetting}
                 onExtractSetting={mutations.extractSetting}
+                onSaveSection={mutations.saveSettingSection}
             />
         )
     }
