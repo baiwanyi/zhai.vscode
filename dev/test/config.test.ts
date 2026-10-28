@@ -1,6 +1,7 @@
 /**
  * config 单元测试：覆盖存储根解析的容错分支与索引缓存目录的解析规则。
- * 重点验证：盘符正斜杠写法被规范为反斜杠（否则 Uri.file 会产出被 workspace.fs 拒绝的相对路径）；
+ * 重点验证：盘符正斜杠写法被规范为反斜杠（否则 Uri.file 会产出被 workspace.fs 拒绝的相对路径），
+ * 盘符统一小写（webview 的 localResourceRoots 逐字符比对，大小写不一致会让预览图请求被判 401）；
  * 未配置时回退到用户主目录下的 .zhai；缓存目录固定为全局存储目录的兄弟目录 zhai.vscode。
  */
 import * as os from 'node:os'
@@ -9,6 +10,11 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import * as vscode from 'vscode'
 import { resetWorkspaceState, setConfigValue } from './stubs/vscode'
 import { resolveCacheRoot, resolveStorageRoot } from '../../src/modules/common/config'
+
+/** 按实现对盘符的处理口径小写首字符：非盘符路径原样返回 */
+function lowerDrive(targetPath: string): string {
+    return targetPath.replace(/^[A-Za-z]:/, (drive) => drive.toLowerCase())
+}
 
 beforeEach(() => {
     resetWorkspaceState()
@@ -20,9 +26,9 @@ describe('resolveStorageRoot', () => {
         expect(resolveStorageRoot().fsPath).toBe('d:\\vault')
     })
 
-    it('盘符反斜杠写法保持原样', () => {
+    it('盘符反斜杠写法只统一盘符大小写，反斜杠保持', () => {
         setConfigValue('storage.rootPath', 'D:\\vault')
-        expect(resolveStorageRoot().fsPath).toBe('D:\\vault')
+        expect(resolveStorageRoot().fsPath).toBe('d:\\vault')
     })
 
     it('去除首尾空格后再规范化', () => {
@@ -35,8 +41,8 @@ describe('resolveStorageRoot', () => {
         expect(resolveStorageRoot().fsPath).toBe('//server/share')
     })
 
-    it('未配置时回退到用户主目录下的 .zhai', () => {
-        expect(resolveStorageRoot().fsPath).toBe(path.join(os.homedir(), '.zhai'))
+    it('未配置时回退到用户主目录下的 .zhai，盘符同样小写', () => {
+        expect(resolveStorageRoot().fsPath).toBe(lowerDrive(path.join(os.homedir(), '.zhai')))
     })
 })
 

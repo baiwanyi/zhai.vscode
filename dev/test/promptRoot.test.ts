@@ -38,9 +38,9 @@ describe('提示词目录', () => {
         expect(promptDirUri('tags').fsPath).toBe(path.join(STORE_PROMPT, 'tags'))
     })
 
-    it('正斜杠写法的盘符路径同样可用', () => {
+    it('正斜杠写法的盘符路径同样可用，盘符统一小写', () => {
         setConfigValue('prompt.rootPath', 'D:/library/prompts/')
 
-        expect(promptDirUri('tags').fsPath).toBe(path.join('D:/library/prompts', 'tags'))
+        expect(promptDirUri('tags').fsPath).toBe(path.join('d:/library/prompts', 'tags'))
     })
 })

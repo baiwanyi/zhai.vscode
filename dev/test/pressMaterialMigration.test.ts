@@ -17,8 +17,8 @@ import {
 } from './stubs/vscode'
 import { migrateLegacyMaterialDirectory } from '../../src/modules/press/importAnalysis'
 
-/** 存储根：与 config.test 一致，用盘符路径避免 Uri.file 产出相对路径 */
-const STORAGE_ROOT = 'D:\\vault'
+/** 存储根：与 config.test 一致，用盘符路径避免 Uri.file 产出相对路径；盘符小写与 config 的规范化口径对齐 */
+const STORAGE_ROOT = 'd:\\vault'
 /** 作品目录：迁移函数接收的相对作品路径 */
 const PROJECT_DIR = 'press/白蛇'
 

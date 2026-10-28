@@ -70,11 +70,12 @@ describe('createNote', () => {
         expect(indexed).toHaveLength(2)
     })
 
-    it('未配置保存目录时回退到用户主目录下的 .zhai', async () => {
+    it('未配置保存目录时回退到用户主目录下的 .zhai，盘符统一小写', async () => {
         resetWorkspaceState()
         const { indexer } = createIndexer()
         const created = await createNote(indexer)
-        expect(created.uri.fsPath).toBe(path.join(os.homedir(), '.zhai', ...created.path.split('/')))
+        const expected = path.join(os.homedir(), '.zhai', ...created.path.split('/'))
+        expect(created.uri.fsPath).toBe(expected.replace(/^[A-Za-z]:/, (drive) => drive.toLowerCase()))
     })
 })
 
