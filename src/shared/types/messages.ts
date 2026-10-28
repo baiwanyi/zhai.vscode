@@ -63,6 +63,7 @@ export interface ToastPayload {
 /**
  * 宿主 → Webview：状态广播（索引就绪、配置变更、窗口聚焦、活跃笔记切换、工作流场景切换、
  * 作品导入进度、语义归纳进度、操作反馈）。
+ * press 通道承载当前文档所属的作品目录，载荷形如 PressActiveState；
  * press-import 通道承载导入任务的进度与终态，载荷形如 PressImportProgress；
  * press-semantic 通道承载 AI 语义归纳的进度与终态，载荷形如 PressSemanticProgress；
  * proofread 通道承载 AI 校对的分批进度，载荷形如 ProofreadAiProgress；
@@ -70,7 +71,17 @@ export interface ToastPayload {
  */
 export interface StateMessage {
     type: 'state'
-    channel: 'index' | 'config' | 'ai' | 'note' | 'workflow' | 'press-import' | 'press-semantic' | 'proofread' | 'toast'
+    channel:
+        | 'index'
+        | 'config'
+        | 'ai'
+        | 'note'
+        | 'press'
+        | 'workflow'
+        | 'press-import'
+        | 'press-semantic'
+        | 'proofread'
+        | 'toast'
     payload: unknown
 }
 
@@ -103,6 +114,7 @@ export type HostMethodName =
     | 'ai/context/remove'
     | 'ai/deleteSession'
     | 'ai/draft'
+    | 'ai/enhancePrompt'
     | 'ai/models'
     | 'ai/newSession'
     | 'ai/runtime'
@@ -130,6 +142,7 @@ export type HostMethodName =
     | 'note/create'
     | 'note/open'
     | 'note/pin'
+    | 'press/active'
     | 'press/analyze'
     | 'press/apply'
     | 'press/create'
@@ -217,6 +230,7 @@ function isStateChannel(value: unknown): value is StateMessage['channel'] {
         value === 'config' ||
         value === 'ai' ||
         value === 'note' ||
+        value === 'press' ||
         value === 'workflow' ||
         value === 'press-import' ||
         value === 'press-semantic' ||

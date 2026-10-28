@@ -440,6 +440,7 @@ interface AbortRequest {
 | `ai/selectModel` | Webview → 宿主 | 选择模型（`modelId` + `manual`）：写入 globalState 并广播 `runtime` 变更；空 id 表示 Auto（交给平台自动选择）。`manual` 通道保留但菜单已无对应入口 |
 | `ai/send` | Webview → 宿主 | 落库用户消息与占位助手消息，随后流式回传正文；`titleHint` 为命令名称等展示用短标题，仅用于会话命名 |
 | `ai/draft` | Webview → 宿主 | 保存未发送的输入正文与命令 id（内存、按会话隔离），视图重建后随会话快照的 `draft` 恢复 |
+| `ai/enhancePrompt` | Webview → 宿主 | 增强输入区提示词：按 `mode`（`write` / `chat`）选择改写口径，走文本通道流式收集后返回 `{ text }`；不建会话、不写消息，30 秒超时，用量计入「对话」模块 |
 | `ai/abort` | Webview → 宿主 | 取消当前生成 |
 | `ai/context` | Webview → 宿主 | 取当前会话的待发送上下文清单 |
 | `ai/context/remove` | Webview → 宿主 | 按宿主生成的 id 移除一条引用（不接受路径入参） |
@@ -496,10 +497,10 @@ interface AbortRequest {
 | 操作行左 | 模式按钮 | 下拉菜单列「对话 / 写作」两项：选中项整行高亮并带勾选，行尾 Info 图标悬浮说明两种模式差异；触发器按模式换配色（对话中性底、写作主色实底）；写 `conversations.mode` 持久化；生成中禁用 |
 | 操作行左 | 模型菜单 | 按钮完整展示当前模型名、不截断（空选择显示「Auto」，正文前景色）；模型名优先取菜单清单，初始化阶段清单未拉取时用 `ai/runtime` 的 `modelName` 兜底，避免闪出裸 id；展开时经 `ai/models` 取账号可用清单（激活时已预热，缓存为空才现拉）：菜单最高 `18rem`，模型较多时在菜单内层滚动（外层不滚动，避免毛玻璃底色随内容滚出可视区而出现下半截发透；滚动条为全站统一的细窄样式）；内置组首项为 `Auto`，其后按「内置模型 / 自定义模型」两组列出，两组均按名称字母序排列，每项左侧为本地厂商图标（未提供图标的厂商回退 CodeBuddy 标志），右侧依次为勾选与额度倍率 `✓ 0.51x`（倍率未知时只显示勾选）；选中写入 globalState 并广播 `runtime` 刷新；生成中禁用 |
 | 操作行右 | Token 圆环 | 当日已用 / 预算的环形占比（<70% 主色、70~90% 警示、≥90% destructive），点开浮层看已用 / 预算 / 剩余，每日 0 点重置 |
-| 操作行右 | 增强提示词 | 本地规则化补齐「任务 / 要求」三段式，再次点击还原原文，不消耗 Token |
+| 操作行右 | 增强提示词 | 经 `ai/enhancePrompt` 走文本模型改写：写作模式补足文体、读者、篇幅与风格，对话模式补足背景、约束与期望答案形式，结果回填输入框，再次点击还原原文；请求中按钮转圈，失败保留原文并提示；会消耗 Token，计入「对话」模块 |
 | 操作行右 | 发送 / 停止 | 生成中替换为停止；写作模式无可改写目标时发送禁用 |
 
-- **输入框结构**：输入区为 `contenteditable` 富文本（`AiChatRichInput`），命令与上下文引用以不可编辑芯片与正文同行排列，正文值不含芯片文案；Enter 发送、Shift+Enter 换行，中文输入法组词期间不发送，粘贴统一降级为纯文本。
+- **输入框结构**：输入区为 `contenteditable` 富文本（公共组件 `RichChipInput`，与生图输入卡片共用），命令与上下文引用以不可编辑芯片与正文同行排列，正文值不含芯片文案；Enter 发送、Shift+Enter 换行，中文输入法组词期间不发送，粘贴统一降级为纯文本。
 - **草稿恢复**：未发送的正文与已选命令防抖写入宿主内存草稿（`ai/draft`，按会话隔离），侧边栏切换导致 webview 重建后由会话快照的 `draft` 恢复；发送成功、新建或删除会话时清除。
 - **命令徽章与指令替换**：命令只以徽章展示名称，输入框始终只保存用户可见文本；发送瞬间由 `composeCommandContent` 拼装「指令模板 + 补充文本」，存在命令时允许空输入直接发送，`applyPolicy` 按命令取值。
 - **命令回显**：用户消息渲染前由 `splitCommandContent` 按最长指令前缀拆分，命中时显示命令徽章 + 补充文本（完整提示词经悬浮可见）；落库内容仍为完整正文，历史重载后同样回放，未命中时原样输出。
@@ -522,7 +523,7 @@ interface AbortRequest {
 
 **本轮用量口径**：CodeBuddy 在 `resume` 续接时，SDK `result` 消息的 `usage` 是**会话累计**（含此前各轮），不能直接当作本轮消耗。生成结束后按「会话号 + 请求 id」定向解析该会话的 CLI 记录文件（`CliUsageIndex.readRoundTokens`），取本轮多条记录的 tokens 累加值——与「AI 使用量」页完全同源；首轮无累计语义时直接用通道回传值；续接且 CLI 记录尚未落盘时退化为按回复字数估算并标记 `tokens_estimated`。同一份结果同时用于消息落库、流末下发与用量记账。
 
-实现位置：`src/modules/ai/`（`client.ts` SDK 封装、`chatService.ts` 会话编排、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
+实现位置：`src/modules/ai/`（`providers/` SDK 封装与模型清单、`chatService.ts` 会话编排、`promptEnhance.ts` 提示词增强（写作 / 对话 / 图像三套口径集中）、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
 
 用量页（工作流栏底「AI使用量」，别名 `usage`）为全局统计，不随作品作用域隔离：顶部显示筛选范围内的请求数、积分与 tokens 汇总，并向排显示「今日积分」「本月积分」两张卡片（固定区间，只跟随模块筛选、不随时间范围变化，宿主按本地 0 点与当月 1 日 0 点换算），中部表格列为「时间 / 积分消耗 / 模型 / 请求 / 模块」，请求列显示短 id、点击弹窗按需拉取该轮提示词并展示模型、tokens 与耗时；模块筛选含对话、取名、外貌、语义归纳、画面描述、出图、未归属，时间筛选为今天 / 近 7 天 / 近 30 天 / 全部，分页在宿主侧完成。明细以本机 CodeBuddy 会话记录为主数据源：一轮一行，积分、tokens 与模型直接取 CLI 记录（`providerData.conversationRequestId` 聚合，同一轮的多条记录累加）；能按请求 id 关联到本地记账行的补上模块、耗时与提示词，关联不上的标为「未归属」并说明该轮非本扩展发起；本地有请求 id 但 CLI 记录已清理的轮次仍保留，积分沿用本地缓存。整轮未上报 credit 时显示破折号而不是 0。表头提供刷新按钮（`force` 强制重扫），页面可见时每 30 秒静默同步一次，标签页隐藏时不发请求。
 

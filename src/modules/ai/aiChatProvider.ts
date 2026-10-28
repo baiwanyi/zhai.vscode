@@ -221,6 +221,9 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 this.service.setDraft(conversationId, { input, commandId })
                 return {}
             }
+            case 'ai/enhancePrompt': {
+                return this.service.enhancePrompt(payload)
+            }
             case 'ai/context': {
                 return this.service.getContexts()
             }

@@ -40,7 +40,7 @@ export function AiChatTokenRing({ used, budget }: AiChatTokenRingProps): JSX.Ele
                     variant="ghost"
                     size="icon"
                     className="rounded-full text-muted-foreground"
-                    title={label}
+                    tooltip={label}
                     aria-label={label}
                     disabled={!isAvailable}
                 >

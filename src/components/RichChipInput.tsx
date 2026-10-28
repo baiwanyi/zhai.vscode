@@ -1,15 +1,18 @@
 /**
- * 带内联芯片的富文本输入区：命令、上下文等「引用意图」以芯片嵌在正文流中，文本紧贴芯片且换行回到行首。
+ * 带内联芯片的富文本输入区：命令、上下文、词条等「引用意图」以芯片嵌在正文流中，文本紧贴芯片且换行回到行首。
  * 复用约定：芯片取 @components/ui/badge（secondary 变体），移除入口用 @webview/components/Button 的 ghost，
  * 参考图缩略图大图取 ./Image 与 @components/ui/tooltip；DOM 读写与光标操作统一复用 ./richText，
- * 芯片标记同样走 data-chip；编辑区与占位的排版常量对外导出，AI 对话的自绘芯片输入区共用同一份，
- * 保证两处底栏输入框的字号、最大高度与滚动条行为不分叉。
+ * 芯片标记同样走 data-chip；编辑区与占位的排版常量对外导出，AI 对话与生图两处底栏输入区共用同一份，
+ * 保证字号、最大高度与滚动条行为不分叉。
  * 关键约束：芯片 contentEditable=false 且不计入正文，正文内容由调用方在发送瞬间拼装；
- * 带 preview 的芯片只在悬停文件名时弹出大图，移除按钮保留自己的提示，两个气泡互不干扰；
+ * 悬停提示二选一——preview 出大图、hint 出文本，preview 优先，移除按钮保留自己的提示，两个气泡互不干扰；
+ * 移除语义可由芯片自带的 onRemove 覆盖（如命令芯片走「取消命令」），缺省回落 onRemoveChip(id)；
+ * badgeClassName 交给 cn 合并，调用方用 max-w-* 覆盖默认宽度时不会出现两个同类名并存；
  * 外部改值（增强 / 还原 / 清空）会重写文本节点，用户输入不重写以避免光标跳动；
  * 芯片后保留一个空格文本节点作为光标占位（全空白不计入正文，外部空值不覆盖占位）；
  * Enter 发送、Shift+Enter 换行，中文输入法组词期间不拦截 Enter，粘贴统一降级为纯文本。
  */
+import { cn } from 'cn'
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useImperativeHandle, useRef } from 'react'
 import { Badge } from '@components/ui/badge'
@@ -32,6 +35,9 @@ import type {
     Ref,
 } from 'react'
 
+/** 芯片容器基础排版：默认宽度上限 max-w-56，调用方经 badgeClassName 覆盖 */
+const CHIP_CLASS = 'mr-1 h-5 max-w-56 align-top'
+
 /** 芯片悬停预览：目前只用于参考图，src 由调用方给出的 webview 地址，组件不读磁盘 */
 export interface RichChipPreview {
     src: string
@@ -44,8 +50,18 @@ export interface RichChip {
     label: string
     /** 前置图标，尺寸由组件统一约束 */
     icon?: ReactNode
-    /** 悬停文件名时展示的大图：缺省时芯片不引入提示层 */
+    /** 悬停文件名时展示的大图：与 hint 二选一，优先于 hint */
     preview?: RichChipPreview
+    /** 悬停文件名时展示的文本提示：如上下文引用去掉盘符的相对路径 */
+    hint?: string
+    /** 文本后的副信息（字数、条数等）：缺省或空串不渲染 */
+    meta?: string
+    /** 芯片容器补充类名：如命令芯片用 max-w-40 覆盖默认宽度 */
+    badgeClassName?: string
+    /** 移除按钮的提示与无障碍名：缺省为「移除{label}」 */
+    removeLabel?: string
+    /** 自定义移除语义（如取消命令）：缺省回落 onRemoveChip(id) */
+    onRemove?: () => void
 }
 
 /** 对外暴露的命令式能力：词库、模板等需要往光标处插入文本 */
@@ -56,7 +72,7 @@ export interface RichChipInputHandle {
 
 /**
  * 编辑区排版：底栏输入框的唯一来源，调用方传 className 时整块替换。
- * 对外导出给同样自绘芯片的输入区（AI 对话）共用，避免两处底栏在字号、滚动条与最大高度上再次分叉。
+ * 对外导出给同处底栏的输入区共用，避免两处在字号、滚动条与最大高度上再次分叉。
  */
 export const RICH_EDITOR_CLASS =
     'no-scrollbar max-h-40 min-h-17 w-full overflow-y-auto whitespace-pre-wrap wrap-break-word text-sm leading-5 outline-none'
@@ -64,10 +80,113 @@ export const RICH_EDITOR_CLASS =
 /** 占位文案排版：与正文同字号，否则提示字比输入字大一号 */
 export const RICH_PLACEHOLDER_CLASS = 'pointer-events-none absolute top-0 left-0 text-sm text-muted-foreground'
 
+/** 把芯片统一前置：React 新增节点会追加到既有文本之后，这里拉回「芯片在前、正文在后」的阅读顺序 */
+function hoistChips(host: HTMLDivElement): void {
+    const nodes = Array.from(host.childNodes)
+    const chipNodes = nodes.filter(isChip)
+    const firstBody = nodes.find((node) => !isChip(node))
+    if (firstBody !== undefined) {
+        chipNodes.forEach((chip) => host.insertBefore(chip, firstBody))
+    }
+}
+
+/** 芯片后补一格空白承载光标；没有芯片时清掉残留占位，避免光标空走一格 */
+function syncCaretPlaceholder(host: HTMLDivElement): void {
+    const chipNodes = Array.from(host.childNodes).filter(isChip)
+    const body = readEditableText(host)
+    if (chipNodes.length === 0) {
+        if (body.length > 0 && body.trim().length === 0) {
+            writeEditableText(host, '')
+        }
+        return
+    }
+    if (body.length === 0) {
+        host.appendChild(document.createTextNode(' '))
+        moveCaretToEnd(host)
+    }
+}
+
+/** 移除芯片：芯片自带回调优先（如命令芯片走取消命令），否则回落统一回调 */
+function removeChip(chip: RichChip, onRemoveChip: (id: string) => void): void {
+    if (chip.onRemove !== undefined) {
+        chip.onRemove()
+        return
+    }
+    onRemoveChip(chip.id)
+}
+
+interface ChipLabelProps {
+    chip: RichChip
+}
+
+/** 芯片文本：有 preview 出大图、只有 hint 出文本提示，两者都缺省时不挂浮层 */
+function ChipLabel({ chip }: ChipLabelProps): JSX.Element {
+    const label = <span className="min-w-0 truncate text-sm">{chip.label}</span>
+    if (chip.preview === undefined && chip.hint === undefined) {
+        return label
+    }
+    return (
+        <Tooltip>
+            <TooltipTrigger asChild>{label}</TooltipTrigger>
+            <TooltipContent side="top" className={chip.preview === undefined ? 'max-w-72' : 'w-56 p-1'}>
+                {chip.preview === undefined ? (
+                    <span className="break-all">{chip.hint}</span>
+                ) : (
+                    // 预览沿用提示气泡的暗底，只把内边距收窄；箭头与底色同源，不需要额外处理
+                    <Image
+                        src={chip.preview.src}
+                        alt={chip.preview.alt}
+                        aspect="auto"
+                        className="h-auto max-h-48 w-full rounded-sm object-contain"
+                    />
+                )}
+            </TooltipContent>
+        </Tooltip>
+    )
+}
+
+interface RichChipBadgeProps {
+    chip: RichChip
+    disabled: boolean
+    /** 移除动作：由输入区补齐「取消命令 / 移除引用」的分派与焦点回收 */
+    onRemove: () => void
+}
+
+/** 单枚芯片：图标 + 文本 + 副信息 + 移除按钮，结构与 data 标记只在这里维护 */
+function RichChipBadge({ chip, disabled, onRemove }: RichChipBadgeProps): JSX.Element {
+    const removeLabel = chip.removeLabel ?? `移除${chip.label}`
+    return (
+        <Badge
+            variant="secondary"
+            data-chip="chip"
+            data-chip-id={chip.id}
+            contentEditable={false}
+            className={cn(CHIP_CLASS, chip.badgeClassName)}
+        >
+            {chip.icon}
+            <ChipLabel chip={chip} />
+            {chip.meta === undefined || chip.meta.length === 0 ? null : (
+                <span className="shrink-0 text-muted-foreground text-sm">{chip.meta}</span>
+            )}
+            <Button
+                variant="ghost"
+                size="icon-xs"
+                className="size-4 shrink-0 text-muted-foreground"
+                tooltip={removeLabel}
+                aria-label={removeLabel}
+                disabled={disabled}
+                onClick={onRemove}
+            >
+                <X className="size-3" />
+            </Button>
+        </Badge>
+    )
+}
+
 interface RichChipInputProps {
     /** 可编辑正文：不含芯片文案 */
     value: string
-    chips: RichChip[]
+    chips: readonly RichChip[]
     placeholder: string
     disabled?: boolean
     canSend: boolean
@@ -98,16 +217,17 @@ export function RichChipInput({
     /** 芯片签名：只在芯片集合变化时重排 DOM，避免每次渲染都动光标；分隔符取 NUL，避免 id 自带 `|` 时拼出重复签名 */
     const chipSignature = chips.map((chip) => chip.id).join('\u0000')
 
+    // 外部改值（增强 / 还原 / 发送清空）时重写文本节点；用户输入时 DOM 与 value 已一致，直接跳过以免光标跳动
     useEffect(() => {
         const host = editorRef.current
-        if (!host) {
+        if (host === null) {
             return
         }
         const text = readEditableText(host)
         if (text === value) {
             return
         }
-        // 芯片后的空格是光标占位，外部空值不应清掉它（清空时芯片已随渲染移除，故不会拦下清空）
+        // 芯片后的空格是光标占位，外部空值不应清掉它（发送清空时芯片已随渲染移除，故此判断不会拦下清空）
         if (value.length === 0 && text.trim().length === 0 && host.querySelector('[data-chip]') !== null) {
             return
         }
@@ -115,37 +235,19 @@ export function RichChipInput({
         moveCaretToEnd(host)
     }, [value])
 
-    // React 新增芯片时会追加到既有文本之后，这里统一前置，保持「芯片在前、正文在后」的阅读顺序
+    // 芯片集合变化后重排：先统一前置，再按有无芯片补 / 清光标占位
     useEffect(() => {
         const host = editorRef.current
-        if (!host) {
+        if (host === null) {
             return
         }
-        const nodes = Array.from(host.childNodes)
-        const chipNodes = nodes.filter(isChip)
-        const firstBody = nodes.find((node) => !isChip(node))
-        if (firstBody !== undefined) {
-            chipNodes.forEach((chip) => host.insertBefore(chip, firstBody))
-        }
-        // 移动芯片不改变正文，文本只需读一次
-        const body = readEditableText(host)
-        if (chipNodes.length === 0) {
-            // 去掉最后一个芯片后残留的占位空格一并清掉，避免光标空走一格
-            if (body.length > 0 && body.trim().length === 0) {
-                writeEditableText(host, '')
-            }
-            return
-        }
-        if (body.length > 0) {
-            return
-        }
-        host.appendChild(document.createTextNode(' '))
-        moveCaretToEnd(host)
+        hoistChips(host)
+        syncCaretPlaceholder(host)
     }, [chipSignature])
 
     const emitChange = useCallback((): void => {
         const host = editorRef.current
-        if (!host) {
+        if (host === null) {
             return
         }
         const text = readEditableText(host)
@@ -188,13 +290,14 @@ export function RichChipInput({
 
     /** 退格 / 删除紧邻芯片：改走状态删除，避免 DOM 删掉节点而芯片集合还在 */
     const handleChipDeleteKey = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
-        const chip = findAdjacentChip(editorRef.current, event.key === 'Backspace' ? 'backward' : 'forward')
-        const chipId = chip?.dataset.chipId
-        if (chipId === undefined) {
+        const chipNode = findAdjacentChip(editorRef.current, event.key === 'Backspace' ? 'backward' : 'forward')
+        const chipId = chipNode?.dataset.chipId
+        const chip = chipId === undefined ? undefined : chips.find((item) => item.id === chipId)
+        if (chip === undefined) {
             return
         }
         event.preventDefault()
-        onRemoveChip(chipId)
+        removeChip(chip, onRemoveChip)
     }
 
     const handleKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>): void => {
@@ -246,48 +349,15 @@ export function RichChipInput({
                 }}
             >
                 {chips.map((chip) => (
-                    <Badge
+                    <RichChipBadge
                         key={chip.id}
-                        variant="secondary"
-                        data-chip="chip"
-                        data-chip-id={chip.id}
-                        contentEditable={false}
-                        className="mr-1 h-5 max-w-56 align-top"
-                    >
-                        {chip.icon}
-                        {chip.preview === undefined ? (
-                            <span className="min-w-0 truncate text-sm">{chip.label}</span>
-                        ) : (
-                            <Tooltip>
-                                <TooltipTrigger asChild>
-                                    <span className="min-w-0 cursor-help truncate text-sm">{chip.label}</span>
-                                </TooltipTrigger>
-                                {/* 预览沿用提示气泡的暗底，只把内边距收窄；箭头与底色同源，不需要额外处理 */}
-                                <TooltipContent side="top" className="w-56 p-1">
-                                    <Image
-                                        src={chip.preview.src}
-                                        alt={chip.preview.alt}
-                                        aspect="auto"
-                                        className="h-auto max-h-48 w-full rounded-sm object-contain"
-                                    />
-                                </TooltipContent>
-                            </Tooltip>
-                        )}
-                        <Button
-                            variant="ghost"
-                            size="icon-xs"
-                            className="size-4 shrink-0 text-muted-foreground"
-                            tooltip={`移除${chip.label}`}
-                            aria-label={`移除${chip.label}`}
-                            disabled={disabled}
-                            onClick={() => {
-                                onRemoveChip(chip.id)
-                                editorRef.current?.focus()
-                            }}
-                        >
-                            <X className="size-3" />
-                        </Button>
-                    </Badge>
+                        chip={chip}
+                        disabled={disabled}
+                        onRemove={() => {
+                            removeChip(chip, onRemoveChip)
+                            editorRef.current?.focus()
+                        }}
+                    />
                 ))}
             </div>
             {isPlaceholderVisible ? (

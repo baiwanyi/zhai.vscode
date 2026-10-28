@@ -51,6 +51,7 @@ import {
     updateConversationTitle,
     updateMessage,
 } from './db/chatRepository'
+import { createChatEnhanceRequest, PromptEnhanceService } from './promptEnhance'
 import { readCodebuddyLogin, rememberCodebuddyLogin } from './providers/codebuddyLogin'
 import { getCachedCodebuddyModels, getSelectedCodebuddyModel } from './providers/codebuddyModels'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
@@ -122,6 +123,8 @@ export class AiChatService implements vscode.Disposable {
     private activeConversationId: string | null = null
     /** 当前面板作用域（作品目录）：编辑器右键添加等无作用域入参的操作沿用该值，null 表示通用对话 */
     private activeProjectDir: string | null = null
+    /** 提示词增强：与出图共用同一服务实现，只是口径与记账模块不同 */
+    private readonly promptEnhance: PromptEnhanceService
 
     /** 流式增量事件：由 Provider 订阅并转发到 Webview */
     public readonly onStream: vscode.Event<StreamMessage> = this.streamEmitter.event
@@ -142,7 +145,9 @@ export class AiChatService implements vscode.Disposable {
         private readonly writeSnapshotHook?: AiWriteSnapshotHook,
         /** CLI 会话记录索引：用于按会话文件取本轮真实 tokens（未注入时退化为通道值 / 估算） */
         private readonly cliUsage: CliUsageIndex | null = null,
-    ) {}
+    ) {
+        this.promptEnhance = new PromptEnhanceService(provider, usageRecorder)
+    }
 
     /** 运行时信息：通道就绪状态、模型参数与当日用量 */
     public async getRuntimeInfo(): Promise<AiRuntimeInfo> {
@@ -357,6 +362,17 @@ export class AiChatService implements vscode.Disposable {
         logger.info(`AI 会话模式已切换为 ${mode}：${conversationId}`)
         this.writeStateEmitter.fire()
         return mode
+    }
+
+    /**
+     * 增强输入区提示词：委托共用的 PromptEnhanceService，口径取「写作 / 对话」预设。
+     * 关键约束：不创建会话、不写消息，改写结果只回填输入框；失败直接抛出，由前端保留原文并提示。
+     */
+    public async enhancePrompt(payload: unknown): Promise<{ text: string }> {
+        const record = payload as { text?: unknown; mode?: unknown } | null
+        const text = typeof record?.text === 'string' ? record.text : ''
+        const mode: AiConversationMode = record?.mode === 'write' ? 'write' : 'chat'
+        return { text: await this.promptEnhance.enhance(createChatEnhanceRequest(text, mode)) }
     }
 
     /**

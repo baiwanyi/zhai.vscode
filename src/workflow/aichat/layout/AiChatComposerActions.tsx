@@ -17,6 +17,8 @@ interface AiChatComposerActionsProps {
     canSend: boolean
     canEnhance: boolean
     isEnhanced: boolean
+    /** 增强请求进行中：按钮转圈并丢弃重复点击 */
+    isEnhancing: boolean
     usedTokens: number
     dailyTokenBudget: number
     /** 当前模型 id，空表示使用 CLI 默认模型 */
@@ -41,6 +43,7 @@ export function AiChatComposerActions({
     canSend,
     canEnhance,
     isEnhanced,
+    isEnhancing,
     usedTokens,
     dailyTokenBudget,
     model,
@@ -74,6 +77,7 @@ export function AiChatComposerActions({
                 <EnhanceButton
                     disabled={isGenerating || !canEnhance}
                     isEnhanced={isEnhanced}
+                    isBusy={isEnhancing}
                     onEnhance={onEnhance}
                     onUndo={onUndoEnhance}
                 />

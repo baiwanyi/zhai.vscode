@@ -1,36 +1,30 @@
 /**
  * AI 对话页：以 app-page 骨架承载「标题与用量区 + 消息流 + 底部输入区」。
- * 复用约定：外壳取 @webview/components/AppPage（会话标题走 AppTitle、用量走 AppDescription、
+ * 复用约定：外壳取 @webview/components/AppPage（会话标题走 AppTitle，作品标题与用量走 AppSummary、
  * 历史与新建会话并进标题行 AppAction，消息流走 AppContent，输入区落 AppFooter），
  * 消息流由 MessageScroller 托管（自动滚动 + 回到底部按钮），Message + Bubble 呈现消息，
  * 空态用 Empty、输入区用三段式输入卡片（工具行 / 输入框 / 操作行）；流式正文经宿主 stream 增量渲染。
  * 底部卡片承载写作命令（徽章展示，指令模板在发送时拼装）、参考资料占位、对话 / 写作模式切换、
- * 模型菜单（展开时按需拉取账号可用清单）、Token 圆环、增强提示词与发送；
+ * 模型菜单（展开时按需拉取账号可用清单）、Token 圆环、增强提示词（走文本通道改写，经 ai/enhancePrompt）与发送；
  * 写作模式的结果由消息底部「应用到编辑栏」写回编辑器（宿主校验文档版本）。
  * 会话 / 上下文 / 运行时 / 历史 / 模型 / 写回 / 宿主命令操作拆分至 hooks/，页面区块与消息渲染拆分至 layout/。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机与第 10.3 节写回链路。
  * 关键约束：会话按 projectDir 作用域隔离，作品页传入当前作品目录即换用该作品的对话记录，缺省为通用对话；
  * 页面高度由 AppPage 的 h-full 承接骨架链条，不再自建 h-screen，避免嵌在分区容器里时撑出视口；
- * 生成中的呼吸光晕挂在输入卡片外侧（见 AiChatPromptInput），与生图页共用 globals.css 的 composer-glow 段。
+ * 生成中的呼吸光晕挂在输入卡片外侧（见 AiChatComposer），与生图页共用 globals.css 的 composer-glow 段。
  */
 import { SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { AiConversationMode, AiSessionSnapshot } from '@shared/types/aiChat'
 import { onState, request } from '@shared/utils/bridge'
-import {
-    AppAction,
-    AppContent,
-    AppDescription,
-    AppFooter,
-    AppHeader,
-    AppPage,
-    AppTitle,
-} from '@webview/components/AppPage'
+import { AppAction, AppContent, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
+import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
 import { AI_COMMAND_MAP, isAiCommandId } from './constants'
 import { useAiChatCommands } from './hooks/useAiChatCommands'
 import { useAiChatContexts } from './hooks/useAiChatContexts'
+import { useAiChatEnhance } from './hooks/useAiChatEnhance'
 import { useAiChatHistory } from './hooks/useAiChatHistory'
 import { useAiChatModels } from './hooks/useAiChatModels'
 import { useAiChatRuntime } from './hooks/useAiChatRuntime'
@@ -45,15 +39,18 @@ import type { AiCommand, AiCommandId, AiReferenceSource } from './constants'
 import type { Phase } from './hooks/useAiChatSession'
 import type { JSX } from 'react'
 
-/** 对话页对外入参：只有会话作用域一项，其余状态全部由页面内部 hooks 持有 */
+/** 对话页对外入参：会话作用域与作品标题，其余状态全部由页面内部 hooks 持有 */
 export interface AiChatProps {
     /** 会话作用域（作品目录）：同一作品共用一份对话记录，缺省或 null 表示不属于任何作品的通用对话 */
     projectDir?: string | null
+    /** 当前作品标题：由调用方从作品设定中取，缺省时页头回落为通用对话文案 */
+    projectTitle?: string | null
 }
 
-export function AiChat({ projectDir = null }: AiChatProps): JSX.Element {
+export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps): JSX.Element {
     const { setError, setNotice } = useAiChatStatus()
     const { runHostCommand } = useAiChatCommands({ onError: setError })
+    const { isEnhancing, enhance } = useAiChatEnhance()
     const { contexts, setContexts, loadContexts, removeContext } = useAiChatContexts({
         onError: setError,
         onNotice: setNotice,
@@ -175,10 +172,6 @@ export function AiChat({ projectDir = null }: AiChatProps): JSX.Element {
     const isGenerating = phase === 'streaming'
     const mode: AiConversationMode = session?.conversation.mode ?? 'chat'
     const hasWriteTarget = writeState?.target !== null && writeState?.target !== undefined
-    const hint =
-        mode === 'write' && writeState !== null && !hasWriteTarget
-            ? '请先在编辑器中选中要改写的文本（整篇超过 12000 字时请分段选中）'
-            : null
     /** 已选写作命令：输入区只展示命令名徽章，指令模板在发送时拼装 */
     const command = commandId === null ? null : AI_COMMAND_MAP[commandId]
     /** 当前模型：菜单展开过时以菜单数据为准，否则用运行时带回的模型 id 兜底 */
@@ -187,9 +180,10 @@ export function AiChat({ projectDir = null }: AiChatProps): JSX.Element {
     const currentModelName = runtime?.modelName ?? ''
     /** 会话标题：随会话切换，未建会话时回落为通用文案 */
     const title = session?.conversation.title ?? 'AI 对话'
+    /** 作品标题：无作品或标题未就绪时回落为通用对话，保证用量徽标仍有承载行 */
+    const projectLabel = projectTitle !== null && projectTitle.length > 0 ? projectTitle : 'CodeBuddy'
     /** 用量行：订阅制通道不展示预算分母；运行时未就绪时给出读取提示，避免闪出 0 */
-    const usageText =
-        runtime === null ? '正在读取配置…' : `CodeBuddy · 今日 ${formatTokens(runtime.usedTokensToday)} tokens`
+    const usageText = runtime === null ? '正在读取配置…' : `今日 ${formatTokens(runtime.usedTokensToday)} tokens`
 
     /** 命令点击：只记录选择（再次点击取消），指令模板不写入输入框 */
     const handleCommand = useCallback((next: AiCommand): void => {
@@ -285,7 +279,7 @@ export function AiChat({ projectDir = null }: AiChatProps): JSX.Element {
                         <SquarePen />
                     </Button>
                 </AppAction>
-                <AppDescription>{usageText}</AppDescription>
+                <AppSummary title={projectLabel} path={projectDir ?? undefined} meta={usageText} />
             </AppHeader>
             {/*
                 h-0 是故意的：AppContent 只有 flex-1 时高度来自 flex 计算，MessageScroller 根节点的
@@ -324,7 +318,6 @@ export function AiChat({ projectDir = null }: AiChatProps): JSX.Element {
                     usedTokens={runtime?.usedTokensToday ?? 0}
                     dailyTokenBudget={runtime?.dailyTokenBudget ?? 0}
                     hasWriteTarget={hasWriteTarget}
-                    hint={hint}
                     command={command}
                     model={currentModel}
                     modelName={currentModelName}
@@ -339,6 +332,8 @@ export function AiChat({ projectDir = null }: AiChatProps): JSX.Element {
                     onClearCommand={handleClearCommand}
                     onReference={handleReference}
                     onModeChange={handleModeChange}
+                    isEnhancing={isEnhancing}
+                    onEnhanceRequest={enhance}
                 />
             </AppFooter>
         </AppPage>
