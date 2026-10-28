@@ -134,6 +134,12 @@ describe('createProject', () => {
         expect(readFileContent(path.join(directory, '大纲.md'))).toContain('# 大纲')
         expect(readFileContent(path.join(directory, '角色设定.md'))).toContain('# 角色设定')
         expect(readFileContent(path.join(directory, '设定.md'))).toContain('# 设定')
+        // 设定页分组文档：世界观、金手指与三类资料条目各一份
+        expect(readFileContent(path.join(directory, '世界观.md'))).toContain('# 世界观')
+        expect(readFileContent(path.join(directory, '金手指.md'))).toContain('# 金手指')
+        expect(readFileContent(path.join(directory, '势力.md'))).toContain('# 势力')
+        expect(readFileContent(path.join(directory, '地点.md'))).toContain('# 地点')
+        expect(readFileContent(path.join(directory, '物品.md'))).toContain('# 物品')
         const firstChapters = path.join(directory, 'Chapters', '01-默认卷', '01-未命名章节.md')
         expect(readFileContent(firstChapters)).toContain('title: 01 未命名章节')
         expect(indexed).toEqual([
@@ -141,6 +147,11 @@ describe('createProject', () => {
             path.join(directory, '大纲.md'),
             path.join(directory, '角色设定.md'),
             path.join(directory, '设定.md'),
+            path.join(directory, '世界观.md'),
+            path.join(directory, '金手指.md'),
+            path.join(directory, '势力.md'),
+            path.join(directory, '地点.md'),
+            path.join(directory, '物品.md'),
             firstChapters,
         ])
     })

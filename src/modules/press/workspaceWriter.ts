@@ -1,8 +1,10 @@
 /**
- * 作品文档回写：把工作台草稿对应的段落合并进 README、世界观.md、金手指.md、角色设定.md、大纲.md。
+ * 作品文档回写：把工作台草稿对应的段落合并进 README、世界观.md、金手指.md、
+ * 势力.md、地点.md、物品.md、角色设定.md、大纲.md。
  * 复用约定：路径解析与原文读取复用 projectWorkspace 与 common/storagePath，写盘统一走 vscode.workspace.fs。
- * 关键约束：只做段落级替换——README 改 Frontmatter 的四个字段与「作品设定」段落，
- * 世界观与金手指各替换自己文档里的「提取设定」段落，大纲替换「分卷规划」段落，角色块按一级标题匹配；
+ * 关键约束：字段分组做段落级替换——README 改 Frontmatter 的四个字段与「作品设定」段落，
+ * 世界观与金手指各替换自己文档里的「提取设定」段落，大纲替换「分卷规划」段落；
+ * 资料条目与角色块按标题逐块合并，未涉及的条目原样保留；
  * 用户手写的其它段落原样保留，单份文件写入失败不影响其余文件；设定分组文档不进快照，只有四份主文档参与留版。
  */
 import * as vscode from 'vscode'
@@ -11,13 +13,21 @@ import { logger } from '@modules/common/logger'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { buildStorageUri } from '@modules/common/storagePath'
 import type {
+    PressApplyBlock,
     PressApplyMeta,
     PressApplyRequest,
     PressSnapshotFileKey,
     PressSnapshotTrigger,
     PressWorkspaceFiles,
 } from '@shared/types/press'
-import { PROJECT_POWER_DOC_NAME, PROJECT_README_NAME, PROJECT_WORLD_DOC_NAME } from './projectFactory'
+import {
+    PROJECT_FACTION_DOC_NAME,
+    PROJECT_ITEM_DOC_NAME,
+    PROJECT_PLACE_DOC_NAME,
+    PROJECT_POWER_DOC_NAME,
+    PROJECT_README_NAME,
+    PROJECT_WORLD_DOC_NAME,
+} from './projectFactory'
 import { readProjectWorkspace } from './projectWorkspace'
 
 /** 设定分组的段落落点：基本信息写 README，世界观与金手指各写自己的文档 */
@@ -148,6 +158,54 @@ function mergeCharacterBlocks(
     return normalizeBlankLines(lines.join('\n')).trimEnd() + '\n'
 }
 
+/** 定位二级标题块的结束行：下一个一级或二级标题即终点，找不到则到文件末尾 */
+function findLevelTwoBlockEnd(lines: readonly string[], headingIndex: number): number {
+    for (let cursor = headingIndex + 1; cursor < lines.length; cursor += 1) {
+        if (/^#{1,2}\s+/u.test(lines[cursor] ?? '')) {
+            return cursor
+        }
+    }
+    return lines.length
+}
+
+/**
+ * 合并二级标题条目块：文件抬头（一级标题与说明行）原样保留，
+ * 同名 `## 名称` 块整块替换，新条目追加到文件末尾，删除名单先于合并执行。
+ * 关键约束：只认完整标题行匹配，手写的其它条目不会被改写；
+ * 文件不存在时按 header 建一份新文档，首次保存即可落盘。
+ */
+function mergeLevelTwoBlocks(
+    current: string,
+    blocks: readonly PressApplyBlock[],
+    deletedNames: readonly string[],
+    header: string,
+): string {
+    let lines = (current.trim().length > 0 ? current : `${header}\n`).split(/\r?\n/u)
+    for (const name of deletedNames) {
+        const heading = `## ${name}`
+        const index = lines.findIndex((line) => line.trim() === heading)
+        if (index === -1) {
+            continue
+        }
+        lines = [...lines.slice(0, index), ...lines.slice(findLevelTwoBlockEnd(lines, index))]
+    }
+    for (const block of blocks) {
+        const heading = `## ${block.name}`
+        const index = lines.findIndex((line) => line.trim() === heading)
+        if (index === -1) {
+            lines = [...lines, '', ...block.text.split('\n')]
+            continue
+        }
+        lines = [
+            ...lines.slice(0, index),
+            ...block.text.split('\n'),
+            '',
+            ...lines.slice(findLevelTwoBlockEnd(lines, index)),
+        ]
+    }
+    return normalizeBlankLines(lines.join('\n')).trimEnd() + '\n'
+}
+
 /** 回写完成后的通知载荷：携带写盘后的四份文档全文与本次变更分区，供快照层直接留版 */
 export interface WorkspaceWriteOutcome {
     dirPath: string
@@ -223,6 +281,44 @@ export async function applyProjectWorkspace(
             ),
         })
     }
+    /** 条目文档的回写：块合并与删除名单一起生效，两者都没带时该文档保持原样 */
+    const pushLoreFile = (
+        fileName: string,
+        header: string,
+        current: string,
+        blocks: PressApplyBlock[] | undefined,
+        deletedNames: readonly string[],
+    ): void => {
+        if (blocks === undefined && deletedNames.length === 0) {
+            return
+        }
+        nextFiles.push({
+            snapshotKey: null,
+            fileName,
+            content: mergeLevelTwoBlocks(current, blocks ?? [], deletedNames, header),
+        })
+    }
+    pushLoreFile(
+        PROJECT_FACTION_DOC_NAME,
+        '# 势力',
+        document.settingSections.faction,
+        payload.factions,
+        payload.deletedFactionNames ?? [],
+    )
+    pushLoreFile(
+        PROJECT_PLACE_DOC_NAME,
+        '# 地点',
+        document.settingSections.place,
+        payload.places,
+        payload.deletedPlaceNames ?? [],
+    )
+    pushLoreFile(
+        PROJECT_ITEM_DOC_NAME,
+        '# 物品',
+        document.settingSections.item,
+        payload.items,
+        payload.deletedItemNames ?? [],
+    )
     const deletedNames = payload.deletedCharacterNames ?? []
     if (payload.characters !== undefined || deletedNames.length > 0) {
         nextFiles.push({

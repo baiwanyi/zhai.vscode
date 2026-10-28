@@ -1,14 +1,16 @@
 /**
- * 作品设定页：写作流程的第二步，按「基本信息 / 世界观 / 金手指」收集作品级输入，
- * 基本信息段内含作品信息、故事内核与写作风格三块。
- * 复用约定：外壳取 components/AppPage（作品名走 AppSummary 徽标行、分组栏进 AppMenu、字段区走 AppContent 滚动），
- * 分组切换由 PressSettingRail（ui/toggle-group）承载，文案与缺项字段表来自 ./sections，
- * 各分组字段拆在 PressSetting*Fields 中，缺项判断来自 ../utils；封面只在基本信息左列展示，出图与换图都在生图页完成。
- * 关键约束：页面只向上抛出字段补丁与保存动作，不直接改文件；字段改动只留在内存草稿，
- * 点「保存」才把当前分组写进对应文档（基本信息 → README.md，世界观 → 世界观.md，金手指 → 金手指.md）；
- * 同一时刻只渲染一个分组，缺项判断覆盖全部分组；
+ * 作品设定页：写作流程的第二步，按「基本信息 / 世界观 / 金手指 / 势力 / 地点 / 物品」收集作品级输入，
+ * 前三个分组是字段表单，后三个分组是资料条目列表。
+ * 复用约定：外壳取 components/AppPage（作品名走 AppSummary 徽标行、分组栏进 AppMenu、内容区走 AppContent 滚动），
+ * 分组切换由 PressSettingRail 承载，文案与缺项字段表来自 ./sections，字段分组拆在 PressSetting*Fields，
+ * 条目分组交给 ./lore/PressSettingLoreSection，缺项判断来自 ../utils；
+ * 封面只在基本信息左列展示，出图与换图都在生图页完成。
+ * 关键约束：页面只向上抛出字段补丁、保存动作与条目增删改，不直接改文件；
+ * 字段改动只留在内存草稿，点「保存」才写进对应文档；条目在弹窗保存时立即写盘，因此条目分段不显示保存按钮；
+ * 同一时刻只渲染一个分组，缺项判断只覆盖三个字段分组；
  * 「AI 补齐设定」把素材归纳结果交给父级合并（只填空字段），提取不到时切到第一个缺项分组、不代替作者填写；
- * 字段级 AI 生成的 hook 必须留在本页面——切分组会卸载字段组件，挂在下面会连带取消在途请求。
+ * 字段级 AI 生成的 hook 必须留在本页面——切分组会卸载字段组件，挂在下面会连带取消在途请求；
+ * 条目描述的生成 hook 挂在弹窗内，关闭即取消，与字段级生成互不影响。
  */
 import { Sparkles } from 'lucide-react'
 import { useState } from 'react'
@@ -26,53 +28,67 @@ import {
 } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
+import { PressSettingLoreSection } from './lore/PressSettingLoreSection'
 import { PressSettingBasicFields } from './PressSettingBasicFields'
 import { PressSettingPowerFields } from './PressSettingPowerFields'
 import { PressSettingRail } from './PressSettingRail'
 import { PressSettingWorldFields } from './PressSettingWorldFields'
-import { SETTING_SECTION_ORDER, SETTING_SECTIONS } from './sections'
+import { isLoreSection, SETTING_SECTION_ORDER, SETTING_SECTIONS } from './sections'
 import { useSettingExtract } from './useSettingExtract'
 import { useSettingFieldGenerate } from './useSettingFieldGenerate'
-import type { SettingFieldsProps, SettingSectionKey } from './sections'
-import type { ProjectSetting } from '../types'
+import type { SettingFieldSectionKey, SettingFieldsProps, SettingSectionKey } from './sections'
+import type { CharacterCard, LoreEntry, LoreSeed, ProjectSetting } from '../types'
 import type { ComponentType, JSX } from 'react'
 import { SETTING_FIELD_MAX_LENGTH } from '../constants'
 import { isSettingFieldMissing, toSettingTextPatch } from '../utils'
 
 /**
- * 分组与字段组件的映射：世界观与金手指按此渲染。
- * 基本信息段带字段级 AI 生成，入参比其它分组多一项，故不放进本表、在页面里单独渲染。
+ * 字段分组与组件的映射：世界观与金手指按此渲染。
+ * 基本信息段带字段级 AI 生成，入参比其它分组多一项，故不放进本表、在页面里单独渲染；
+ * 条目分组不进本表，由 PressSettingLoreSection 承担列表编排。
  */
-const SECTION_COMPONENTS: Readonly<Record<Exclude<SettingSectionKey, 'basic'>, ComponentType<SettingFieldsProps>>> = {
+const SECTION_COMPONENTS: Readonly<
+    Record<Exclude<SettingFieldSectionKey, 'basic'>, ComponentType<SettingFieldsProps>>
+> = {
     world: PressSettingWorldFields,
     power: PressSettingPowerFields,
 }
 
 interface PressSettingPageProps {
     setting: ProjectSetting
+    /** 人物卡：条目弹窗的关联人物选择器按它取候选 */
+    characters: readonly CharacterCard[]
+    /** 三类资料条目的全量列表，各分段自行按分类过滤 */
+    lore: readonly LoreEntry[]
     /** 当前作品目录：提取从该作品的 Materials 素材读起 */
     dirPath: string
     onChange: (patch: Partial<ProjectSetting>) => void
     /** 合并提取出的设定草案，返回实际填入的字段数（只填空字段） */
     onExtractSetting: (draft: PressExtractedSetting) => number
-    /** 保存当前分组：只写该分组对应的文档，结束后 resolve */
-    onSaveSection: (section: SettingSectionKey) => Promise<void>
+    /** 保存当前字段分组：只写该分组对应的文档，结束后 resolve */
+    onSaveSection: (section: SettingFieldSectionKey) => Promise<void>
+    /** 新建条目并返回标识 */
+    onCreateLore: (seed: LoreSeed) => string
+    onUpdateLore: (loreId: string, patch: Partial<LoreEntry>) => void
+    onDeleteLore: (loreId: string) => void
 }
 
 export function PressSettingPage({
     setting,
+    characters,
+    lore,
     dirPath,
     onChange,
     onExtractSetting,
     onSaveSection,
+    onCreateLore,
+    onUpdateLore,
+    onDeleteLore,
 }: PressSettingPageProps): JSX.Element {
     const [activeSection, setActiveSection] = useState<SettingSectionKey>('basic')
     const [isSaving, setIsSaving] = useState(false)
     const { isExtracting, extract } = useSettingExtract(dirPath)
     const { generatingField, generate } = useSettingFieldGenerate()
-
-    /** 非基本信息段的字段组件：基本信息段单独渲染，故此处为 null */
-    const OtherFields = activeSection === 'basic' ? null : SECTION_COMPONENTS[activeSection]
 
     const isSectionIncomplete = (key: SettingSectionKey): boolean =>
         SETTING_SECTIONS[key].fields.some((field) => isSettingFieldMissing(setting, field))
@@ -129,17 +145,52 @@ export function PressSettingPage({
         void run()
     }
 
-    /** 保存当前分组：写盘期间禁用按钮，成功与失败的提示由 mutations 统一发出 */
+    /** 保存当前字段分组：写盘期间禁用按钮，成功与失败的提示由 mutations 统一发出 */
     const handleSave = (): void => {
+        if (isLoreSection(activeSection)) {
+            return
+        }
+        const section = activeSection
         const run = async (): Promise<void> => {
             setIsSaving(true)
             try {
-                await onSaveSection(activeSection)
+                await onSaveSection(section)
             } finally {
                 setIsSaving(false)
             }
         }
         void run()
+    }
+
+    /** 内容区按分组类型分流：条目分段渲染列表，其余渲染字段表单 */
+    const renderContent = (): JSX.Element => {
+        if (isLoreSection(activeSection)) {
+            return (
+                <PressSettingLoreSection
+                    kind={activeSection}
+                    entries={lore}
+                    characters={characters}
+                    setting={setting}
+                    dirPath={dirPath}
+                    onCreate={onCreateLore}
+                    onUpdate={onUpdateLore}
+                    onDelete={onDeleteLore}
+                />
+            )
+        }
+        if (activeSection === 'basic') {
+            // 基本信息段额外接字段级 AI 生成：其余分组没有生成入口
+            return (
+                <PressSettingBasicFields
+                    setting={setting}
+                    dirPath={dirPath}
+                    onChange={onChange}
+                    fieldAi={{ generatingField, onGenerate: handleGenerateField }}
+                />
+            )
+        }
+        const Fields = SECTION_COMPONENTS[activeSection]
+        return <Fields setting={setting} dirPath={dirPath} onChange={onChange} />
     }
 
     return (
@@ -158,24 +209,15 @@ export function PressSettingPage({
                     <PressSettingRail activeSection={activeSection} onSelect={setActiveSection} />
                 </AppMenu>
             </AppHeader>
-            <AppContent isScrollable>
-                {/* 基本信息段额外接字段级 AI 生成：其余分组没有生成入口 */}
-                {OtherFields === null ? (
-                    <PressSettingBasicFields
-                        setting={setting}
-                        dirPath={dirPath}
-                        onChange={onChange}
-                        fieldAi={{ generatingField, onGenerate: handleGenerateField }}
-                    />
-                ) : (
-                    <OtherFields setting={setting} dirPath={dirPath} onChange={onChange} />
-                )}
-            </AppContent>
-            <AppFooter className="pt-3">
-                <Button variant="primary" isLoading={isSaving} onClick={handleSave}>
-                    保存更改
-                </Button>
-            </AppFooter>
+            <AppContent isScrollable>{renderContent()}</AppContent>
+            {/* 条目在弹窗保存时立即写盘，只有字段分组才需要这个保存按钮 */}
+            {isLoreSection(activeSection) ? null : (
+                <AppFooter className="pt-3">
+                    <Button variant="primary" isLoading={isSaving} onClick={handleSave}>
+                        保存更改
+                    </Button>
+                </AppFooter>
+            )}
         </AppPage>
     )
 }

@@ -105,10 +105,18 @@ export class PressRoutes {
                 return this.service.generateSettingField(payload)
             case 'pressAi/aiSettingField/abort':
                 return this.service.abortGeneration()
+            case 'pressAi/aiLoreDescription':
+                return this.service.generateLoreDescription(payload)
+            case 'pressAi/aiLoreDescription/abort':
+                return this.service.abortGeneration()
             case 'pressAi/listPortraits':
                 return this.portraits.list(payload, toWebviewUri)
             case 'pressAi/listPortraitGallery':
                 return this.portraits.listGallery(payload, toWebviewUri)
+            case 'pressAi/listLoreImages':
+                return this.portraits.listLore(payload, toWebviewUri)
+            case 'pressAi/listLoreGallery':
+                return this.portraits.listLoreGallery(payload, toWebviewUri)
             case 'pressAi/copyPortrait':
                 return this.portraits.copyToClipboard(payload)
             case 'pressAi/insertPortrait':
@@ -216,6 +224,14 @@ export class PressRoutes {
                 await this.portraits.removeByCharacterId(payload.dirPath, characterId)
             } catch (error) {
                 logger.error(`角色设定图清理失败：${payload.dirPath}/${characterId}`, error)
+            }
+        }
+        // 条目图与角色图分开清理：文件名前缀不同，互不干扰
+        for (const loreId of payload.deletedLoreIds ?? []) {
+            try {
+                await this.portraits.removeByLoreId(payload.dirPath, loreId)
+            } catch (error) {
+                logger.error(`条目设定图清理失败：${payload.dirPath}/${loreId}`, error)
             }
         }
         return result

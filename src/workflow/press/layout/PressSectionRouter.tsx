@@ -45,10 +45,15 @@ export function PressSectionRouter({
         return (
             <PressSettingPage
                 setting={workspace.setting}
+                characters={workspace.characters}
+                lore={workspace.lore}
                 dirPath={dirPath}
                 onChange={mutations.updateSetting}
                 onExtractSetting={mutations.extractSetting}
                 onSaveSection={mutations.saveSettingSection}
+                onCreateLore={mutations.createLore}
+                onUpdateLore={mutations.updateLore}
+                onDeleteLore={mutations.deleteLore}
             />
         )
     }
@@ -91,6 +96,7 @@ export function PressSectionRouter({
                 key={dirPath}
                 dirPath={dirPath}
                 characters={workspace.characters}
+                lore={workspace.lore}
                 setting={workspace.setting}
                 onChangeCharacter={mutations.updateCharacter}
             />

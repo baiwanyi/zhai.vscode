@@ -18,6 +18,15 @@ export const PROJECT_WORLD_DOC_NAME = '世界观.md'
 /** 金手指文档名：设定页金手指分组手动保存的落点 */
 export const PROJECT_POWER_DOC_NAME = '金手指.md'
 
+/** 势力文档名：设定页势力分段的条目落点，每个势力以二级标题起条 */
+export const PROJECT_FACTION_DOC_NAME = '势力.md'
+
+/** 地点文档名：设定页地点分段的条目落点 */
+export const PROJECT_PLACE_DOC_NAME = '地点.md'
+
+/** 物品文档名：设定页物品分段的条目落点 */
+export const PROJECT_ITEM_DOC_NAME = '物品.md'
+
 /** 章节目录名：其下的文档计入章节数，新建作品与新增章节统一写在这里 */
 export const PROJECT_CHAPTER_DIR = 'Chapters'
 
@@ -145,7 +154,8 @@ export function buildReadmeContent(name: string, audience: PressAudience, create
 }
 
 /**
- * 生成作品级文档：README、大纲、角色设定、设定，以及设定页按标签页拆分的世界观与金手指两份文档。
+ * 生成作品级文档：README、大纲、角色设定、设定，以及设定页按标签页拆分的
+ * 世界观、金手指与势力 / 地点 / 物品三份条目文档。
  * 新建作品与导入作品共用同一份内容来源，避免两处模板分叉；不含任何章节文件。
  */
 export function buildProjectDocuments(name: string, audience: PressAudience, now: Date): ProjectSkeletonFile[] {
@@ -161,6 +171,19 @@ export function buildProjectDocuments(name: string, audience: PressAudience, now
         // 段落存在与否即「工作台写过这一组」的标记，解析端据此决定是否回落旧 设定.md
         { relativePath: PROJECT_WORLD_DOC_NAME, content: '# 世界观\n' },
         { relativePath: PROJECT_POWER_DOC_NAME, content: '# 金手指\n' },
+        // 条目文档：一级标题是文件抬头，每个条目以二级标题起条，逐块合并时按二级标题匹配
+        {
+            relativePath: PROJECT_FACTION_DOC_NAME,
+            content: '# 势力\n\n> 每个势力以二级标题起条，便于以 [[势力#势力名]] 引用。\n',
+        },
+        {
+            relativePath: PROJECT_PLACE_DOC_NAME,
+            content: '# 地点\n\n> 每个地点以二级标题起条，便于以 [[地点#地点名]] 引用。\n',
+        },
+        {
+            relativePath: PROJECT_ITEM_DOC_NAME,
+            content: '# 物品\n\n> 每个物品以二级标题起条，便于以 [[物品#物品名]] 引用。\n',
+        },
     ]
 }
 

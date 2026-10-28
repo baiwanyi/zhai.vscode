@@ -1,11 +1,11 @@
 /**
- * 写作管理 AI 服务：校验密钥与每日配额后执行一次性生成，当前承载人物外貌与设定字段。
+ * 写作管理 AI 服务：校验密钥与每日配额后执行一次性生成，承载人物外貌、设定字段与条目描述。
  * 复用约定：模型通道经注入的 AI 通道（../ai/provider）驱动 ./ai/aiTextGenerator，
- * 提示词分别来自 ./ai/appearancePrompt 与 ./ai/settingFieldPrompt，输出统一经 ./ai/plainText 清洗；
- * 配额经 ../common/db/quotaRepository 落在 press.db 的 meta 表，两类生成共用同一份额度；
+ * 提示词分别来自 ./ai/appearancePrompt、./ai/settingFieldPrompt 与 ./ai/lorePrompt，输出统一经 ./ai/plainText 清洗；
+ * 配额经 ../common/db/quotaRepository 落在 press.db 的 meta 表，三类生成共用同一份额度与统计口径；
  * 入参收窄复用 ../common/readInput，不在此重复实现截断与去重。
  * 关键约束：入参一律先经 normalize*Request 收窄（长度、条数、类型、字段白名单），异常载荷不进入模型调用；
- * 同一时刻只允许一个生成请求，取消由 pressAi/aiAppearance/abort 与 pressAi/aiSettingField/abort 触发；
+ * 同一时刻只允许一个生成请求，取消由三类生成各自的 abort 方法触发；
  * 限额小于等于 0 视为不限制。
  */
 import type { AiChatMessage, AiProvider } from '@modules/ai/provider'
@@ -16,15 +16,19 @@ import { getZhaiConfig } from '@modules/common/config'
 import type { QuotaKeys } from '@modules/common/db/quotaRepository'
 import { consumeToday, readUsedToday } from '@modules/common/db/quotaRepository'
 import { readText, readTextList } from '@modules/common/readInput'
-import { SETTING_FIELD_KEYS } from '@shared/types/press'
+import { PRESS_LORE_KINDS, SETTING_FIELD_KEYS } from '@shared/types/press'
 import type {
     CharacterAppearanceRequest,
     CharacterAppearanceResult,
+    LoreDescriptionGenerateRequest,
+    LoreDescriptionGenerateResult,
     SettingFieldGenerateRequest,
     SettingFieldGenerateResult,
+    SettingSnapshot,
 } from '@shared/types/press'
 import { generateTextWithAi } from './ai/aiTextGenerator'
 import { buildAppearanceMessages } from './ai/appearancePrompt'
+import { buildLoreDescriptionMessages } from './ai/lorePrompt'
 import { sanitizePlainText } from './ai/plainText'
 import { buildSettingFieldMessages } from './ai/settingFieldPrompt'
 import type { AiTextGenerateResult } from './ai/aiTextGenerator'
@@ -57,6 +61,27 @@ const APPEARANCE_MAX_TOKENS = 800
 const MAX_SETTING_FIELD_LENGTH = 700
 const SETTING_FIELD_TIMEOUT_MS = 45_000
 const SETTING_FIELD_MAX_TOKENS = 700
+/** 条目描述输出上限、超时与 token：与设定字段同档，描述最长 */
+const MAX_LORE_DESCRIPTION_LENGTH = 700
+const LORE_DESCRIPTION_TIMEOUT_MS = 45_000
+const LORE_DESCRIPTION_MAX_TOKENS = 700
+/** 条目请求里的参照名单条数上限：同类条目名与关联人物名各自收口 */
+const MAX_LORE_REFERENCE_COUNT = 50
+
+/** 一次文本生成的运行参数：三类生成只差提示词、篇幅与提示文案 */
+interface GenerationOptions {
+    /** 用量模块：条目描述复用设定生成的统计口径 */
+    module: 'appearance' | 'setting'
+    messages: AiChatMessage[]
+    maxTokens: number
+    timeoutMs: number
+    /** 清洗后的正文长度上限 */
+    maxLength: number
+    /** 输出为空时的提示 */
+    emptyMessage: string
+    /** 超时或取消时的提示 */
+    abortMessage: string
+}
 
 export class PressAiService {
     /** 进行中的生成请求：用于 abort 两类生成 */
@@ -73,32 +98,16 @@ export class PressAiService {
      * @throws 未配置密钥、配额用尽、请求超时 / 取消、输出为空时抛出可读错误
      */
     public async generateAppearance(payload: unknown): Promise<CharacterAppearanceResult> {
-        const request = normalizeAppearanceRequest(payload)
-        const messages = buildAppearanceMessages(request)
-        const controller = await this.startRequest()
-        try {
-            const result = await generateTextWithAi({
-                provider: this.provider,
-                model: getSelectedCodebuddyModel(),
-                messages,
-                maxTokens: APPEARANCE_MAX_TOKENS,
-                timeoutMs: APPEARANCE_TIMEOUT_MS,
-                signal: controller.signal,
-            })
-            const content = sanitizePlainText(result.content, MAX_APPEARANCE_LENGTH)
-            if (content.length === 0) {
-                throw new Error('AI 未返回可用的外貌描写，请重试或手动填写')
-            }
-            this.commit('appearance', messages, result)
-            return { content }
-        } catch (error) {
-            if (controller.signal.aborted) {
-                throw new Error('AI 外貌生成已取消或超时，请重试', { cause: error })
-            }
-            throw error
-        } finally {
-            this.activeRequest = null
-        }
+        const content = await this.runGeneration({
+            module: 'appearance',
+            messages: buildAppearanceMessages(normalizeAppearanceRequest(payload)),
+            maxTokens: APPEARANCE_MAX_TOKENS,
+            timeoutMs: APPEARANCE_TIMEOUT_MS,
+            maxLength: MAX_APPEARANCE_LENGTH,
+            emptyMessage: 'AI 未返回可用的外貌描写，请重试或手动填写',
+            abortMessage: 'AI 外貌生成已取消或超时，请重试',
+        })
+        return { content }
     }
 
     /**
@@ -106,27 +115,56 @@ export class PressAiService {
      * @throws 未配置密钥、配额用尽、请求超时 / 取消、输出为空时抛出可读错误
      */
     public async generateSettingField(payload: unknown): Promise<SettingFieldGenerateResult> {
-        const request = normalizeSettingFieldRequest(payload)
-        const messages = buildSettingFieldMessages(request)
+        const content = await this.runGeneration({
+            module: 'setting',
+            messages: buildSettingFieldMessages(normalizeSettingFieldRequest(payload)),
+            maxTokens: SETTING_FIELD_MAX_TOKENS,
+            timeoutMs: SETTING_FIELD_TIMEOUT_MS,
+            maxLength: MAX_SETTING_FIELD_LENGTH,
+            emptyMessage: 'AI 未返回可用的内容，请重试或手动填写',
+            abortMessage: 'AI 设定生成已取消或超时，请重试',
+        })
+        return { content }
+    }
+
+    /**
+     * 生成资料条目的描述：以条目名称、已有草稿与整份设定为依据，必要时在草稿上完善。
+     * @throws 未配置密钥、配额用尽、请求超时 / 取消、输出为空时抛出可读错误
+     */
+    public async generateLoreDescription(payload: unknown): Promise<LoreDescriptionGenerateResult> {
+        const content = await this.runGeneration({
+            module: 'setting',
+            messages: buildLoreDescriptionMessages(normalizeLoreDescriptionRequest(payload)),
+            maxTokens: LORE_DESCRIPTION_MAX_TOKENS,
+            timeoutMs: LORE_DESCRIPTION_TIMEOUT_MS,
+            maxLength: MAX_LORE_DESCRIPTION_LENGTH,
+            emptyMessage: 'AI 未返回可用的条目描述，请重试或手动填写',
+            abortMessage: 'AI 条目生成已取消或超时，请重试',
+        })
+        return { content }
+    }
+
+    /** 执行一次文本生成：占请求位 → 请求模型 → 清洗 → 计次记账，三类生成共用同一套流程 */
+    private async runGeneration(options: GenerationOptions): Promise<string> {
         const controller = await this.startRequest()
         try {
             const result = await generateTextWithAi({
                 provider: this.provider,
                 model: getSelectedCodebuddyModel(),
-                messages,
-                maxTokens: SETTING_FIELD_MAX_TOKENS,
-                timeoutMs: SETTING_FIELD_TIMEOUT_MS,
+                messages: options.messages,
+                maxTokens: options.maxTokens,
+                timeoutMs: options.timeoutMs,
                 signal: controller.signal,
             })
-            const content = sanitizePlainText(result.content, MAX_SETTING_FIELD_LENGTH)
+            const content = sanitizePlainText(result.content, options.maxLength)
             if (content.length === 0) {
-                throw new Error('AI 未返回可用的内容，请重试或手动填写')
+                throw new Error(options.emptyMessage)
             }
-            this.commit('setting', messages, result)
-            return { content }
+            this.commit(options.module, options.messages, result)
+            return content
         } catch (error) {
             if (controller.signal.aborted) {
-                throw new Error('AI 设定生成已取消或超时，请重试', { cause: error })
+                throw new Error(options.abortMessage, { cause: error })
             }
             throw error
         } finally {
@@ -134,7 +172,7 @@ export class PressAiService {
         }
     }
 
-    /** 取消进行中的生成：外貌与设定字段共用同一个在途请求 */
+    /** 取消进行中的生成：三类生成共用同一个在途请求 */
     public abortGeneration(): { aborted: boolean } {
         if (!this.activeRequest) {
             return { aborted: false }
@@ -226,7 +264,7 @@ function normalizeAppearanceRequest(payload: unknown): CharacterAppearanceReques
     return request
 }
 
-/** 入参收窄：目标字段必须在白名单内，其余字段逐个截断 */
+/** 入参收窄：目标字段必须在白名单内，其余字段按设定快照处理 */
 function normalizeSettingFieldRequest(payload: unknown): SettingFieldGenerateRequest {
     if (typeof payload !== 'object' || payload === null) {
         throw new Error('pressAi/aiSettingField 缺少参数')
@@ -237,8 +275,15 @@ function normalizeSettingFieldRequest(payload: unknown): SettingFieldGenerateReq
     if (field === undefined) {
         throw new Error('缺少要生成的设定字段')
     }
+    return { field, ...normalizeSettingSnapshot(value) }
+}
+
+/**
+ * 设定快照收窄：字段逐个截断，缺字段按空串处理。
+ * 设定字段与条目描述两类生成共用同一份，保证进提示词的事实行口径一致。
+ */
+function normalizeSettingSnapshot(value: Record<string, unknown>): SettingSnapshot {
     return {
-        field,
         title: readText(value.title, MAX_SHORT_TEXT),
         penName: readText(value.penName, MAX_SHORT_TEXT),
         audience: readText(value.audience, MAX_SHORT_TEXT),
@@ -264,5 +309,30 @@ function normalizeSettingFieldRequest(payload: unknown): SettingFieldGenerateReq
         goldenFingerAbility: readText(value.goldenFingerAbility, MAX_LONG_TEXT),
         goldenFingerCost: readText(value.goldenFingerCost, MAX_LONG_TEXT),
         extra: readText(value.extra, MAX_SETTING_LONG_TEXT),
+    }
+}
+
+/** 入参收窄：分类与名称必填，参照名单去空截断，其余字段按设定快照处理 */
+function normalizeLoreDescriptionRequest(payload: unknown): LoreDescriptionGenerateRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('pressAi/aiLoreDescription 缺少参数')
+    }
+    const value = payload as Record<string, unknown>
+    const rawKind = readText(value.kind, MAX_SHORT_TEXT)
+    const kind = PRESS_LORE_KINDS.find((item) => item === rawKind)
+    if (kind === undefined) {
+        throw new Error('缺少条目分类')
+    }
+    const name = readText(value.name, MAX_SHORT_TEXT)
+    if (name.length === 0) {
+        throw new Error('缺少条目名称，无法生成描述')
+    }
+    return {
+        ...normalizeSettingSnapshot(value),
+        kind,
+        name,
+        description: readText(value.description, MAX_SETTING_LONG_TEXT),
+        siblings: readTextList(value.siblings, MAX_LORE_REFERENCE_COUNT, MAX_SHORT_TEXT),
+        members: readTextList(value.members, MAX_LORE_REFERENCE_COUNT, MAX_SHORT_TEXT),
     }
 }

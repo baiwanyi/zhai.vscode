@@ -1,5 +1,5 @@
 /**
- * 大纲与人物卡纯函数：字段缺失判断与设定文本补丁、章节统计、节点构造、字数格式化，
+ * 大纲与人物卡纯函数：字段缺失判断与设定文本补丁、设定快照、章节统计、节点构造、字数格式化，
  * 以及提取草案的建卡与字段补全。
  * 复用约定：字数口径复用仪表盘的 formatWordCount，不另写一套；节点 id 统一由 createId 生成，
  * 保证新增卷、章、节拍在树中可直接作为 key 与选中标识；草案的中文标签按 constants 的元数据表归一。
@@ -8,7 +8,12 @@
  * 补全已有角色只填空白字段、不覆盖作者已写内容，没有实际变化时必须返回原对象，避免无谓写盘。
  */
 import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
-import type { PressExtractedCharacter, PressExtractedVolume, SettingFieldKey } from '@shared/types/press'
+import type {
+    PressExtractedCharacter,
+    PressExtractedVolume,
+    SettingFieldKey,
+    SettingSnapshot,
+} from '@shared/types/press'
 import { formatWordCount } from '@webview/dashboard/utils'
 import {
     CHARACTER_BODY_TYPE_META,
@@ -24,6 +29,8 @@ import type {
     CharacterCard,
     CharacterSeed,
     HookKind,
+    LoreEntry,
+    LoreSeed,
     OutlineBeat,
     OutlineChapter,
     OutlineVolume,
@@ -66,19 +73,54 @@ export function toSettingTextPatch(field: SettingFieldKey, value: string): Parti
 }
 
 /**
- * 生成人物标识：8 位随机数字，与宿主的人物标识规范一致，也直接作为设定图文件名里的角色段。
+ * 设定快照：把整份设定摊平成 AI 请求可用的只读副本，设定字段与条目描述两类生成共用。
+ * 只挑提示词用得到的字段——字数目标、禁忌词这类纯本地配置不进模型。
+ */
+export function toSettingSnapshot(setting: ProjectSetting): SettingSnapshot {
+    return {
+        title: setting.title,
+        penName: setting.penName,
+        audience: setting.audience,
+        genres: [...setting.genres],
+        period: setting.period,
+        place: setting.place,
+        era: setting.era,
+        tone: setting.tone,
+        ending: setting.ending,
+        perspective: setting.perspective,
+        narrative: setting.narrative,
+        references: setting.references,
+        summary: setting.summary,
+        logline: setting.logline,
+        opening: setting.opening,
+        conflict: setting.conflict,
+        worldview: setting.worldview,
+        geography: setting.geography,
+        factions: setting.factions,
+        powerSystem: setting.powerSystem,
+        concepts: setting.concepts,
+        goldenFingerType: setting.goldenFingerType,
+        goldenFingerAbility: setting.goldenFingerAbility,
+        goldenFingerCost: setting.goldenFingerCost,
+        extra: setting.extra,
+    }
+}
+
+/**
+ * 生成 8 位随机数字标识：人物与资料条目共用，与宿主的标识规范一致，
+ * 也直接作为设定图文件名里的归属段。
  * 用 crypto 采样而非 Math.random，避免同一次解析里连续生成时出现可预期的重复。
  */
-function createCharacterId(): string {
+function createNumericId(): string {
     const buffer = new Uint32Array(1)
     crypto.getRandomValues(buffer)
     return String(10_000_000 + ((buffer[0] ?? 0) % 90_000_000))
 }
 
-/** 生成节点 id：卷、章、节拍、人物共用；人物用 8 位数字，其余带前缀便于排查来源 */
-export function createId(prefix: 'vol' | 'ch' | 'beat' | 'char'): string {
-    if (prefix === 'char') {
-        return createCharacterId()
+/** 生成节点 id：卷、章、节拍、人物与资料条目共用；人物与条目用 8 位数字，其余带前缀便于排查来源 */
+export function createId(prefix: 'vol' | 'ch' | 'beat' | 'char' | 'lore'): string {
+    if (prefix === 'char' || prefix === 'lore') {
+        return createNumericId()
     }
     return `${prefix}-${crypto.randomUUID()}`
 }
@@ -118,6 +160,22 @@ export function createCharacterCard(seed: CharacterSeed = {}): CharacterCard {
         portraitStyle: DEFAULT_PORTRAIT_STYLE,
         ...seed,
         id: createId('char'),
+    }
+}
+
+/**
+ * 新建一条资料条目：分类默认势力、名称占位、无描述与关联人物；
+ * seed 承接弹窗填写的初始值，id 恒由本函数生成，避免调用方伪造主键。
+ */
+export function createLoreEntry(seed: LoreSeed = {}): LoreEntry {
+    return {
+        kind: 'faction',
+        name: '未命名',
+        description: '',
+        memberIds: [],
+        coverImageId: null,
+        ...seed,
+        id: createId('lore'),
     }
 }
 

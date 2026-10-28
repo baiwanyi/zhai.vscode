@@ -7,8 +7,8 @@
 import { describe, expect, it } from 'vitest'
 import { parseProjectWorkspace } from '../../src/workflow/press/document'
 
-/** 设定分组文档留空：走旧 设定.md 回落路径 */
-const EMPTY_SETTING_SECTIONS = { world: '', power: '' }
+/** 设定分组文档留空：走旧 设定.md 回落路径；条目文档留空即没有资料条目 */
+const EMPTY_SETTING_SECTIONS = { world: '', power: '', faction: '', place: '', item: '' }
 
 const README = `---
 title: 城南旧事

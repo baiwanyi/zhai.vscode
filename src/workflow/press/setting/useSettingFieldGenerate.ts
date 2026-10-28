@@ -12,6 +12,7 @@ import type { SettingFieldGenerateRequest, SettingFieldGenerateResult, SettingFi
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import type { ProjectSetting } from '../types'
+import { toSettingSnapshot } from '../utils'
 
 /** AI 通道前端超时：略大于宿主 45s，避免前端先于宿主超时 */
 const AI_REQUEST_TIMEOUT_MS = 55_000
@@ -73,34 +74,7 @@ export function useSettingFieldGenerate(): SettingFieldGenerateState {
     return { generatingField, generate, abort }
 }
 
-/** 请求载荷：整份设定的只读快照，空字段交给宿主决定是否作为约束 */
+/** 请求载荷：目标字段 + 整份设定的只读快照，空字段交给宿主决定是否作为约束 */
 function buildPayload(setting: ProjectSetting, field: SettingFieldKey): SettingFieldGenerateRequest {
-    return {
-        field,
-        title: setting.title,
-        penName: setting.penName,
-        audience: setting.audience,
-        genres: [...setting.genres],
-        period: setting.period,
-        place: setting.place,
-        era: setting.era,
-        tone: setting.tone,
-        ending: setting.ending,
-        perspective: setting.perspective,
-        narrative: setting.narrative,
-        references: setting.references,
-        summary: setting.summary,
-        logline: setting.logline,
-        opening: setting.opening,
-        conflict: setting.conflict,
-        worldview: setting.worldview,
-        geography: setting.geography,
-        factions: setting.factions,
-        powerSystem: setting.powerSystem,
-        concepts: setting.concepts,
-        goldenFingerType: setting.goldenFingerType,
-        goldenFingerAbility: setting.goldenFingerAbility,
-        goldenFingerCost: setting.goldenFingerCost,
-        extra: setting.extra,
-    }
+    return { field, ...toSettingSnapshot(setting) }
 }

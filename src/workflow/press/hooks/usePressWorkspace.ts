@@ -2,7 +2,8 @@
  * 写作工作区装配：按作品目录读取宿主文档、解析成草稿，并负责草稿的落盘。
  * 复用约定：文档解析交给 ../document 的 parseProjectWorkspace，序列化交给 ../serialize，
  * 请求统一走 @shared/utils/bridge（方法名受 HostMethodName 约束），错误经 @shared/utils/error 的 toastError 提示。
- * 设定按标签页拆分落点：基本信息写 README，世界观与金手指各写自己的文档，章纲改动仍走防抖写盘。
+ * 设定按标签页拆分落点：基本信息写 README，世界观与金手指各写自己的文档，
+ * 势力 / 地点 / 物品各写一份条目文档，章纲改动仍走防抖写盘。
  * 关键约束：草稿同时存在于 ref 与 state 两份——写盘与合并读 ref（最新值），渲染读 state；
  * 写盘串行排队，防抖窗口内同范围的多次输入合并成一次请求；切换作品与卸载都要清掉未到期的防抖任务，
  * 否则上一个作品的草稿会被写进新作品。
@@ -18,12 +19,13 @@ import type {
 } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
-import type { OutlineWorkspace } from '../types'
+import type { LoreKind, OutlineWorkspace } from '../types'
 import { parseProjectWorkspace } from '../document'
 import {
     serializeBasicSection,
     serializeCharacterBlocks,
     serializeGoldenFingerSection,
+    serializeLoreBlocks,
     serializeOutlineSection,
     serializeReadmeMeta,
     serializeWorldSection,
@@ -32,15 +34,17 @@ import {
 /** 即时保存的防抖时长：字段输入停止后写盘，结构性操作不走防抖 */
 const SAVE_DEBOUNCE_MS = 600
 
-/** 可独立写盘的文档范围：设定按标签页各写一份，角色与大纲各自成一份 */
-export type PersistScope = 'basic' | 'world' | 'power' | 'characters' | 'outline'
+/** 可独立写盘的文档范围：设定按标签页各写一份，资料条目按分类各写一份，角色与大纲各自成一份 */
+export type PersistScope = 'basic' | 'world' | 'power' | LoreKind | 'characters' | 'outline'
 
 /** 加载状态：作品文档读取中、未打开作品（展示初始页）、已就绪（渲染工作区） */
 export type WorkspaceStatus = 'loading' | 'empty' | 'ready'
 
-/** 立即写盘的可选行为：删除角色时随请求带出待删块，成功后可附一句提示 */
+/** 立即写盘的可选行为：删除人物或条目时随请求带出待删块，成功后可附一句提示 */
 export interface FlushOptions {
     deleted?: { name: string; id: string }
+    /** 删除资料条目：kind 决定写哪份文档的删除名单，id 用于清理设定图 */
+    deletedLore?: { kind: LoreKind; name: string; id: string }
     successMessage?: string
 }
 
@@ -170,6 +174,19 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
         if (scopes.has('power')) {
             payload.power = serializeGoldenFingerSection(current.setting)
         }
+        // 条目按分类各写一份：只带当前分类的块，保存势力时不会把地点与物品也重写一遍
+        if (scopes.has('faction') || scopes.has('place') || scopes.has('item')) {
+            const loreBlocks = serializeLoreBlocks(current.lore, current.characters)
+            if (scopes.has('faction')) {
+                payload.factions = loreBlocks.faction
+            }
+            if (scopes.has('place')) {
+                payload.places = loreBlocks.place
+            }
+            if (scopes.has('item')) {
+                payload.items = loreBlocks.item
+            }
+        }
         if (scopes.has('characters')) {
             payload.characters = serializeCharacterBlocks(current.characters)
         }
@@ -179,6 +196,17 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
         if (deleted !== null) {
             payload.deletedCharacterNames = [deleted.name]
             payload.deletedCharacterIds = [deleted.id]
+        }
+        const deletedLore = options.deletedLore ?? null
+        if (deletedLore !== null) {
+            payload.deletedLoreIds = [deletedLore.id]
+            if (deletedLore.kind === 'faction') {
+                payload.deletedFactionNames = [deletedLore.name]
+            } else if (deletedLore.kind === 'place') {
+                payload.deletedPlaceNames = [deletedLore.name]
+            } else {
+                payload.deletedItemNames = [deletedLore.name]
+            }
         }
         queueRef.current = queueRef.current.then(async (): Promise<void> => {
             try {

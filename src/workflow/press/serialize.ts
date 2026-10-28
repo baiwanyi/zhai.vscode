@@ -1,12 +1,13 @@
 /**
  * 作品文档序列化：把工作台草稿转成可回写的段落片段，格式与 document.ts 的解析口径严格对齐。
  * 复用约定：状态、钩子、分类等中文标签取自 constants 的元数据表，不另写一套映射；
- * 设定按标签页拆分：基本信息写 README 的「作品设定」段，世界观与金手指各写自己的文档。
+ * 设定按标签页拆分：基本信息写 README 的「作品设定」段，世界观与金手指各写自己的文档，
+ * 势力 / 地点 / 物品按分类各产出自己的条目块。
  * 关键约束：只产出「段落片段」而非整篇文档，落点与保留策略由宿主 writer 决定；
- * 卷章标题必须保留「第N卷 / 第N章」前缀，否则解析端认不出层级；
+ * 卷章标题必须保留「第N卷 / 第N章」前缀，条目必须保留「## 名称」二级标题，否则解析端认不出层级；
  * 键名一旦改动就必须同步改 document.ts 的读取键，否则回写后页面内容会凭空丢失。
  */
-import type { PressApplyMeta } from '@shared/types/press'
+import type { PressApplyBlock, PressApplyMeta } from '@shared/types/press'
 import {
     CHARACTER_BODY_TYPE_META,
     CHARACTER_GENDER_META,
@@ -14,7 +15,7 @@ import {
     HOOK_OPTIONS,
     PLAN_STATUS_META,
 } from './constants'
-import type { CharacterCard, OutlineChapter, OutlineVolume, ProjectSetting } from './types'
+import type { CharacterCard, LoreEntry, LoreKind, OutlineChapter, OutlineVolume, ProjectSetting } from './types'
 
 /**
  * 键值行只能占一行：textarea 输入的多行文本折成单行，
@@ -128,6 +129,46 @@ function buildCharacterBlock(character: CharacterCard): string {
 /** 角色块列表：name 作为宿主侧的匹配键，text 是包含标题行的完整块 */
 export function serializeCharacterBlocks(characters: CharacterCard[]): { name: string; text: string }[] {
     return characters.map((character) => ({ name: character.name, text: buildCharacterBlock(character) }))
+}
+
+/**
+ * 单个条目块：二级标题起条，键值行只放引用与关联，描述写标题下方的正文段。
+ * 关键约束：描述为正文而非键值行——键值行只能占一行，多段描述会被解析端截断；
+ * 关联人物写姓名而不是 id，与章纲「人物：」同口径，文档可读也能手改。
+ */
+function buildLoreBlock(entry: LoreEntry, nameById: ReadonlyMap<string, string>): string {
+    const lines = [`## ${entry.name}`, `- id：${entry.id}`]
+    if (entry.kind === 'faction') {
+        const memberNames = entry.memberIds
+            .map((id) => nameById.get(id))
+            .filter((name): name is string => name !== undefined)
+        if (memberNames.length > 0) {
+            lines.push(`- 人物：${memberNames.join('、')}`)
+        }
+    }
+    // 封面只存图片标识：图片本体在 Images 下，URL 由宿主按会话签发，不能写进文档
+    lines.push(`- 封面：${entry.coverImageId ?? ''}`)
+    const description = entry.description.trim()
+    if (description.length > 0) {
+        lines.push('', description)
+    }
+    return lines.join('\n')
+}
+
+/**
+ * 条目块按分类分组：每类对应一份文档，调用方按分类发起各自的分段保存。
+ * name 作为宿主侧的匹配键，text 是含「## 名称」标题行的完整块。
+ */
+export function serializeLoreBlocks(
+    entries: readonly LoreEntry[],
+    characters: readonly CharacterCard[],
+): Record<LoreKind, PressApplyBlock[]> {
+    const nameById = new Map(characters.map((character) => [character.id, character.name]))
+    const blocks: Record<LoreKind, PressApplyBlock[]> = { faction: [], place: [], item: [] }
+    for (const entry of entries) {
+        blocks[entry.kind].push({ name: entry.name, text: buildLoreBlock(entry, nameById) })
+    }
+    return blocks
 }
 
 /** 单章节：标题保留「第N章」前缀，节拍按 ① 分隔以对齐 parseBeats */

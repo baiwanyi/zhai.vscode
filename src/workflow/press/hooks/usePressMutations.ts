@@ -14,10 +14,12 @@ import type {
 } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
-import type { SettingSectionKey } from '../setting/sections'
+import type { SettingFieldSectionKey } from '../setting/sections'
 import type {
     CharacterCard,
     CharacterSeed,
+    LoreEntry,
+    LoreSeed,
     OutlineChapter,
     OutlineVolume,
     OutlineWorkspace,
@@ -29,6 +31,7 @@ import { SETTING_SECTIONS } from '../setting/sections'
 import {
     createChapter,
     createCharacterCard,
+    createLoreEntry,
     createOutlineFromDraft,
     createVolume,
     mergeCharacterDrafts,
@@ -40,12 +43,17 @@ const VOLUME_PREFIX_PATTERN = /^第\d+卷\s*/
 export interface PressMutations {
     openProject: (dirPath: string) => void
     updateSetting: (patch: Partial<ProjectSetting>) => void
-    /** 保存设定分组：把当前标签页写进它对应的文档，结束后 resolve */
-    saveSettingSection: (section: SettingSectionKey) => Promise<void>
+    /** 保存字段分组：把当前标签页写进它对应的文档，结束后 resolve */
+    saveSettingSection: (section: SettingFieldSectionKey) => Promise<void>
     updateCharacter: (characterId: string, patch: Partial<CharacterCard>) => void
     deleteCharacter: (characterId: string) => void
     createCharacter: (seed: CharacterSeed) => string
     extractCharacters: (drafts: PressExtractedCharacter[]) => { created: number; updated: number }
+    /** 新建资料条目并返回标识：条目页据此直接打开编辑弹窗 */
+    createLore: (seed: LoreSeed) => string
+    updateLore: (loreId: string, patch: Partial<LoreEntry>) => void
+    /** 删除条目：同步清理它的设定图，所属文档里的条目块一并移除 */
+    deleteLore: (loreId: string) => void
     updateChapter: (chapterId: string, patch: Partial<OutlineChapter>) => void
     /** 新增卷：命名与默认目标字数由工厂函数决定后立即写盘 */
     addVolume: () => void
@@ -89,9 +97,9 @@ export function usePressMutations({
         [updateWorkspace],
     )
 
-    /** 保存设定分组：只把当前标签页写进它对应的文档，成功提示由 flush 统一发出 */
+    /** 保存字段分组：只把当前标签页写进它对应的文档，成功提示由 flush 统一发出 */
     const saveSettingSection = useCallback(
-        (section: SettingSectionKey): Promise<void> => {
+        (section: SettingFieldSectionKey): Promise<void> => {
             const meta = SETTING_SECTIONS[section]
             return flush(new Set<PersistScope>([section]), {
                 successMessage: `「${meta.label}」已保存`,
@@ -153,6 +161,48 @@ export function usePressMutations({
             return character.id
         },
         [flush, updateWorkspace],
+    )
+
+    /** 新建条目并返回标识：条目页据此直接打开编辑弹窗，新条目立即写盘 */
+    const createLore = useCallback(
+        (seed: LoreSeed): string => {
+            const entry = createLoreEntry(seed)
+            updateWorkspace((previous) => ({ ...previous, lore: [...previous.lore, entry] }))
+            void flush(new Set<PersistScope>([entry.kind]), { successMessage: '已新建条目，后续改动自动保存' })
+            return entry.id
+        },
+        [flush, updateWorkspace],
+    )
+
+    /** 条目保存：只写它所属分类的文档，名称、描述与关联人物一起落盘 */
+    const updateLore = useCallback(
+        (loreId: string, patch: Partial<LoreEntry>): void => {
+            updateWorkspace((previous) => ({
+                ...previous,
+                lore: previous.lore.map((entry) => (entry.id === loreId ? { ...entry, ...patch } : entry)),
+            }))
+            const entry = getWorkspace()?.lore.find((item) => item.id === loreId)
+            void flush(new Set<PersistScope>([entry?.kind ?? 'faction']), {
+                successMessage: entry === undefined ? '已保存条目' : `已保存「${entry.name}」`,
+            })
+        },
+        [flush, getWorkspace, updateWorkspace],
+    )
+
+    /** 删除条目：从草稿移除并清理设定图，所属文档里的条目块连同删除名单一起写盘 */
+    const deleteLore = useCallback(
+        (loreId: string): void => {
+            const target = getWorkspace()?.lore.find((entry) => entry.id === loreId) ?? null
+            updateWorkspace((previous) => ({
+                ...previous,
+                lore: previous.lore.filter((entry) => entry.id !== loreId),
+            }))
+            void flush(new Set<PersistScope>([target?.kind ?? 'faction']), {
+                deletedLore: target === null ? undefined : { kind: target.kind, name: target.name, id: target.id },
+                successMessage: target === null ? '已删除条目' : `已删除「${target.name}」`,
+            })
+        },
+        [flush, getWorkspace, updateWorkspace],
     )
 
     /**
@@ -327,6 +377,9 @@ export function usePressMutations({
         deleteCharacter,
         createCharacter,
         extractCharacters,
+        createLore,
+        updateLore,
+        deleteLore,
         updateChapter,
         addVolume,
         addChapter,

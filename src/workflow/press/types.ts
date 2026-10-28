@@ -1,12 +1,14 @@
 /**
- * 大纲模块视图模型：描述作品设定、人物卡、卷纲与章纲在界面层的形状。
+ * 大纲模块视图模型：描述作品设定、人物卡、资料条目、卷纲与章纲在界面层的形状。
  * 复用约定：仅声明类型，不依赖宿主服务；字段语义与 press 模块的 Markdown 约定一一对应
- * （作品设定 → README.md / 设定.md，人物卡 → 角色设定.md，卷纲与章纲 → 大纲.md）；
+ * （作品设定 → README.md / 世界观.md / 金手指.md，人物卡 → 角色设定.md，
+ * 势力 / 地点 / 物品 → 同名文档，卷纲与章纲 → 大纲.md）；
  * 角色设定图直接复用 shared/types/press 的契约，避免前后端各写一份导致字段分叉。
  * 关键约束：章纲是「计划」，章节文件的摘要才是「事实」，两者不得合并为同一字段，
- * 否则大纲修订后无法区分「打算写」与「已经写」；状态取值须与 constants 中的元数据表保持同步。
+ * 否则大纲修订后无法区分「打算写」与「已经写」；状态取值须与 constants 中的元数据表保持同步；
+ * 条目的名称即文档里的二级标题，同一分类内不得重名，否则回写会互相覆盖。
  */
-import type { CharacterPortrait, PortraitStyle } from '@shared/types/press'
+import type { CharacterPortrait, PortraitStyle, PressLoreKind } from '@shared/types/press'
 
 /** 章纲状态：待写、在写、已完成、大纲已变更需复核 */
 export type PlanStatus = 'planned' | 'drafting' | 'done' | 'stale'
@@ -165,10 +167,34 @@ export interface ProjectSetting {
     banned: string[]
 }
 
+/** 资料条目分类：势力、地点、物品各写一份文档，顺序即设定页分段顺序；取值复用共享契约 */
+export type LoreKind = PressLoreKind
+
+/**
+ * 资料条目：与 势力.md / 地点.md / 物品.md 中的一个二级标题块对应。
+ * 名称即块标题，同分类内不得重名——回写按标题整块匹配，重名会互相覆盖。
+ */
+export interface LoreEntry {
+    /** 8 位数字，与人物标识同规范；设定图靠 faction- / place- / item- 前缀区分归属 */
+    id: string
+    kind: LoreKind
+    name: string
+    /** 描述：条目块正文，支持多段，落盘时为标题下方的自然段落 */
+    description: string
+    /** 关联人物：仅势力使用，值为 CharacterCard.id；落盘写人物姓名，解析按姓名回填 */
+    memberIds: string[]
+    /** 设定图封面：指向磁盘中的条目图，null 表示未设置 */
+    coverImageId: string | null
+}
+
+/** 新建条目的初始值：不含 id，id 一律由 utils.createLoreEntry 生成，避免调用方伪造主键 */
+export type LoreSeed = Partial<Omit<LoreEntry, 'id'>>
+
 /** 工作台数据：三个步骤共享的同一份作品草稿 */
 export interface OutlineWorkspace {
     setting: ProjectSetting
     characters: CharacterCard[]
+    lore: LoreEntry[]
     volumes: OutlineVolume[]
 }
 

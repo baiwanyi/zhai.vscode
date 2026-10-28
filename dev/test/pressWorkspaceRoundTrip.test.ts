@@ -6,12 +6,13 @@
  * 世界观、地理、核心概念、人物背景、卷级情节脉络与关键转折同样纳入往返，导入产出的字段不能写进文档就读不回来。
  */
 import { describe, expect, it } from 'vitest'
-import type { CharacterCard, OutlineVolume, ProjectSetting } from '../../src/workflow/press/types'
+import type { CharacterCard, LoreEntry, OutlineVolume, ProjectSetting } from '../../src/workflow/press/types'
 import { parseProjectWorkspace } from '../../src/workflow/press/document'
 import {
     serializeBasicSection,
     serializeCharacterBlocks,
     serializeGoldenFingerSection,
+    serializeLoreBlocks,
     serializeOutlineSection,
     serializeReadmeMeta,
     serializeWorldSection,
@@ -106,9 +107,38 @@ const VOLUMES: OutlineVolume[] = [
     },
 ]
 
+/** 三类资料条目：覆盖势力关联人物、多段描述与有无封面两种写法 */
+const LORE: LoreEntry[] = [
+    {
+        id: '10428736',
+        kind: 'faction',
+        name: '星月宗',
+        description: '修真界六大宗门之一。\n\n以话本立名，收留穿越者。',
+        memberIds: ['12345678'],
+        coverImageId: 'faction-20261001120000-10428736',
+    },
+    {
+        id: '10428737',
+        kind: 'place',
+        name: '天都',
+        description: '修真界中枢，北有雪原，南接十万大山。',
+        memberIds: [],
+        coverImageId: null,
+    },
+    {
+        id: '10428738',
+        kind: 'item',
+        name: '话本',
+        description: '把现代作品复刻成修真界读物。',
+        memberIds: [],
+        coverImageId: null,
+    },
+]
+
 describe('草稿回写往返', () => {
     it('README、世界观、金手指、角色设定与大纲回写后可被原样解析', () => {
         const meta = serializeReadmeMeta(SETTING)
+        const loreBlocks = serializeLoreBlocks(LORE, CHARACTERS)
         const readme = [
             '---',
             `title: ${meta.title}`,
@@ -140,6 +170,11 @@ describe('草稿回写往返', () => {
             {
                 world: `# 世界观\n\n## 提取设定\n\n${serializeWorldSection(SETTING)}\n`,
                 power: `# 金手指\n\n## 提取设定\n\n${serializeGoldenFingerSection(SETTING)}\n`,
+                faction: `# 势力\n\n> 每个势力以二级标题起条。\n\n${loreBlocks.faction
+                    .map((block) => block.text)
+                    .join('\n\n')}\n`,
+                place: `# 地点\n\n${loreBlocks.place.map((block) => block.text).join('\n\n')}\n`,
+                item: `# 物品\n\n${loreBlocks.item.map((block) => block.text).join('\n\n')}\n`,
             },
             '兜底书名',
         )
@@ -195,6 +230,21 @@ describe('草稿回写往返', () => {
             portraitStyle: 'guofeng',
             coverPortraitId: 'portrait-20261001120000-12345678',
         })
+
+        // 条目按分类各回一份文档：名称即二级标题，描述取正文段，关联人物按姓名回填为 id
+        expect(parsed.lore).toHaveLength(3)
+        const faction = parsed.lore.find((entry) => entry.kind === 'faction')
+        expect(faction).toMatchObject({
+            id: '10428736',
+            name: '星月宗',
+            description: '修真界六大宗门之一。\n\n以话本立名，收留穿越者。',
+            memberIds: ['12345678'],
+            coverImageId: 'faction-20261001120000-10428736',
+        })
+        const place = parsed.lore.find((entry) => entry.kind === 'place')
+        expect(place).toMatchObject({ id: '10428737', name: '天都', memberIds: [], coverImageId: null })
+        const item = parsed.lore.find((entry) => entry.kind === 'item')
+        expect(item).toMatchObject({ id: '10428738', name: '话本', coverImageId: null })
 
         expect(parsed.volumes).toHaveLength(1)
         expect(parsed.volumes[0]).toMatchObject({

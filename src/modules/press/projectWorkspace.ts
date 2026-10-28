@@ -11,7 +11,14 @@ import { resolveStorageRoot } from '@modules/common/config'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
 import type { PressWorkspaceDocument, PressWorkspaceFiles } from '@shared/types/press'
-import { PROJECT_POWER_DOC_NAME, PROJECT_README_NAME, PROJECT_WORLD_DOC_NAME } from './projectFactory'
+import {
+    PROJECT_FACTION_DOC_NAME,
+    PROJECT_ITEM_DOC_NAME,
+    PROJECT_PLACE_DOC_NAME,
+    PROJECT_POWER_DOC_NAME,
+    PROJECT_README_NAME,
+    PROJECT_WORLD_DOC_NAME,
+} from './projectFactory'
 import { migrateLegacyChapterDirectory } from './projectService'
 
 /** 工作台文档与文件名的对应关系：与 projectFactory 的骨架命名保持一致 */
@@ -36,7 +43,7 @@ async function readTextFile(uri: vscode.Uri): Promise<string> {
 }
 
 /**
- * 读取作品工作台所需的文档原文：四份主文档 + 设定页的两份分组文档。
+ * 读取作品工作台所需的文档原文：四份主文档 + 设定页的两份字段分组文档 + 三份条目文档。
  * 安全约束：路径先经片段校验（拒绝上跳、盘符与反斜杠）并限定为 press/ 下的两段，再由存储根拼装绝对 Uri。
  */
 export async function readProjectWorkspace(dirPath: string): Promise<PressWorkspaceDocument> {
@@ -48,18 +55,21 @@ export async function readProjectWorkspace(dirPath: string): Promise<PressWorksp
     const name = segments[1] ?? ''
     const root = resolveStorageRoot()
     const toUri = (fileName: string): vscode.Uri => buildStorageUri(root, [PRESS_MODULE_DIR, name, fileName])
-    const [readme, setting, characters, outline, world, power] = await Promise.all([
+    const [readme, setting, characters, outline, world, power, faction, place, item] = await Promise.all([
         readTextFile(toUri(WORKSPACE_FILE_NAMES.readme)),
         readTextFile(toUri(WORKSPACE_FILE_NAMES.setting)),
         readTextFile(toUri(WORKSPACE_FILE_NAMES.characters)),
         readTextFile(toUri(WORKSPACE_FILE_NAMES.outline)),
         readTextFile(toUri(PROJECT_WORLD_DOC_NAME)),
         readTextFile(toUri(PROJECT_POWER_DOC_NAME)),
+        readTextFile(toUri(PROJECT_FACTION_DOC_NAME)),
+        readTextFile(toUri(PROJECT_PLACE_DOC_NAME)),
+        readTextFile(toUri(PROJECT_ITEM_DOC_NAME)),
     ])
     return {
         dirPath,
         name,
         files: { readme, setting, characters, outline },
-        settingSections: { world, power },
+        settingSections: { world, power, faction, place, item },
     }
 }

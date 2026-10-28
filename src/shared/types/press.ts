@@ -133,8 +133,14 @@ export interface PressWorkspaceFiles {
     outline: string
 }
 
+/** 资料条目分类：设定页条目分段与设定图文件名前缀共用同一份取值 */
+export type PressLoreKind = 'faction' | 'place' | 'item'
+
+/** 条目分类白名单：前端分段、宿主入参校验与提示词表共用同一份，避免三处口径分叉 */
+export const PRESS_LORE_KINDS: readonly PressLoreKind[] = ['faction', 'place', 'item']
+
 /**
- * 设定页分组文档原文：设定按标签页各成一篇，世界观与金手指分别落在自己的文档里。
+ * 设定页分组文档原文：设定按标签页各成一篇，世界观、金手指与三类资料条目分别落在自己的文档里。
  * 与四份主文档分开读取——它们只服务设定页，不参与快照，文件缺失时为空串。
  */
 export interface PressSettingSectionFiles {
@@ -142,6 +148,12 @@ export interface PressSettingSectionFiles {
     world: string
     /** 金手指.md 原文 */
     power: string
+    /** 势力.md 原文：条目文档，按条目块合并，不做整段替换 */
+    faction: string
+    /** 地点.md 原文：条目文档，按条目块合并 */
+    place: string
+    /** 物品.md 原文：条目文档，按条目块合并 */
+    item: string
 }
 
 /** 工作台文档：一部作品的原始 Markdown 快照，name 取目录名 */
@@ -402,10 +414,11 @@ export type SettingFieldKey = 'title' | 'summary' | 'logline' | 'opening' | 'con
 /** 设定字段白名单：前端按钮、宿主入参校验与提示词表共用同一份，避免三处口径分叉 */
 export const SETTING_FIELD_KEYS: readonly SettingFieldKey[] = ['title', 'summary', 'logline', 'opening', 'conflict']
 
-/** 设定字段生成请求：目标字段 + 已填设定的只读快照，供 pressAi/aiSettingField 使用 */
-export interface SettingFieldGenerateRequest {
-    /** 目标字段：其当前值也在下方的同名字段里，非空时要求在其基础上完善 */
-    field: SettingFieldKey
+/**
+ * 设定快照：整份设定的只读副本，设定字段与条目描述两类生成共用同一份字段口径。
+ * 空串表示作者尚未填写，由宿主决定是否作为约束。
+ */
+export interface SettingSnapshot {
     title: string
     penName: string
     /** 目标读者中文标签：男频或女频 */
@@ -434,8 +447,34 @@ export interface SettingFieldGenerateRequest {
     extra: string
 }
 
+/** 设定字段生成请求：目标字段 + 已填设定的只读快照，供 pressAi/aiSettingField 使用 */
+export interface SettingFieldGenerateRequest extends SettingSnapshot {
+    /** 目标字段：其当前值也在快照的同名字段里，非空时要求在其基础上完善 */
+    field: SettingFieldKey
+}
+
 /** 设定字段生成结果：单段纯文本，可直接写入目标字段 */
 export interface SettingFieldGenerateResult {
+    content: string
+}
+
+/**
+ * 条目描述生成请求：条目身份与草稿 + 整份设定快照，供 pressAi/aiLoreDescription 使用。
+ * 名称必填——它既是生成的核心事实，也是文档里的二级标题。
+ */
+export interface LoreDescriptionGenerateRequest extends SettingSnapshot {
+    kind: PressLoreKind
+    name: string
+    /** 已有描述草稿：非空时要求在此基础上完善，不另起一稿 */
+    description: string
+    /** 同分类其它条目名：作为既有设定，避免生成同义重复的条目 */
+    siblings: string[]
+    /** 关联人物姓名：仅势力有值，地点与物品为空表 */
+    members: string[]
+}
+
+/** 条目描述生成结果：单段纯文本，可直接写入条目描述 */
+export interface LoreDescriptionGenerateResult {
     content: string
 }
 
@@ -474,6 +513,14 @@ export function isPressCharacterId(value: unknown): value is string {
  */
 export function matchesCharacterId(value: string): boolean {
     return PRESS_CHARACTER_ID_PATTERN.test(value)
+}
+
+/**
+ * 判断资料条目标识能否用于条目块与设定图文件名：与人物标识同规范（8 位数字）。
+ * 归属靠图片名的 faction- / place- / item- 前缀区分，两者编号空间互不干扰。
+ */
+export function isPressLoreId(value: unknown): value is string {
+    return typeof value === 'string' && PRESS_CHARACTER_ID_PATTERN.test(value)
 }
 
 /** 角色设定图：宿主生成并落盘后回传的图片信息 */
@@ -875,6 +922,21 @@ export interface PressApplyMeta {
  * 设定按标签页拆分：基本信息写 README，世界观与金手指各写自己的文档；其余字段按需携带。
  * 除 dirPath 外全部可选：手动保存只会带上当前标签页对应的那一份，未带的文件保持原样。
  */
+
+/** 回写块：name 是宿主侧的匹配键，text 为含标题行的完整块，写入时整块替换同名块 */
+export interface PressApplyBlock {
+    /** 匹配键：角色取一级标题名，资料条目取二级标题名 */
+    name: string
+    /** 含标题行的完整块，写入时整块替换同名块 */
+    text: string
+}
+
+/**
+ * press/apply 请求：把工作台草稿对应的段落回写进作品文档。
+ * 字段是「段落片段」而不是整篇文档，落点与保留策略由宿主决定，避免覆盖用户手写内容。
+ * 设定按标签页拆分：基本信息写 README，世界观与金手指各写自己的文档，资料条目各写自己的文档。
+ * 除 dirPath 外全部可选：手动保存只会带上当前标签页对应的那一份，未带的文件保持原样。
+ */
 export interface PressApplyRequest {
     /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
     dirPath: string
@@ -885,14 +947,28 @@ export interface PressApplyRequest {
     world?: string
     /** 金手指.md 中「提取设定」段落的正文（设定页金手指分组） */
     power?: string
+    /** 势力.md 的条目块：按二级标题合并 */
+    factions?: PressApplyBlock[]
+    /** 地点.md 的条目块：按二级标题合并 */
+    places?: PressApplyBlock[]
+    /** 物品.md 的条目块：按二级标题合并 */
+    items?: PressApplyBlock[]
     /** 角色块：name 用作匹配键，text 是含「# 名称」标题行的完整块 */
-    characters?: { name: string; text: string }[]
+    characters?: PressApplyBlock[]
     /** 大纲.md 中「分卷规划」段落的正文 */
     outline?: string
     /** 需从 角色设定.md 移除的角色块：按一级标题名匹配，与 characters 同时生效 */
     deletedCharacterNames?: string[]
+    /** 需从 势力.md 移除的条目块：按二级标题名匹配 */
+    deletedFactionNames?: string[]
+    /** 需从 地点.md 移除的条目块 */
+    deletedPlaceNames?: string[]
+    /** 需从 物品.md 移除的条目块 */
+    deletedItemNames?: string[]
     /** 需一并清理设定图的角色标识：扁平目录按文件名中的角色段过滤 */
     deletedCharacterIds?: string[]
+    /** 需一并清理设定图的条目标识：按 faction- / place- / item- 命名中的条目段过滤 */
+    deletedLoreIds?: string[]
 }
 
 /** 单份文档的写入上限：正常作品远低于该值，超出视为异常请求 */
@@ -901,8 +977,8 @@ const MAX_APPLY_FIELD_LENGTH = 2_000_000
 /** 角色块与删除名单的条目上限：正常作品远低于该值，超出视为异常请求 */
 const MAX_APPLY_CHARACTERS = 5000
 
-/** 校验单个角色块：标题非空、正文不超过单份文档上限 */
-function isApplyCharacterBlock(item: unknown): boolean {
+/** 校验单个回写块：标题非空、正文不超过单份文档上限 */
+function isApplyBlock(item: unknown): boolean {
     if (typeof item !== 'object' || item === null) {
         return false
     }
@@ -913,6 +989,39 @@ function isApplyCharacterBlock(item: unknown): boolean {
         typeof block.text === 'string' &&
         block.text.length <= MAX_APPLY_FIELD_LENGTH
     )
+}
+
+/** 校验回写块列表：允许缺省，出现时须是限额内的合法块数组 */
+function isApplyBlockList(value: unknown): boolean {
+    if (value === undefined) {
+        return true
+    }
+    if (!Array.isArray(value) || value.length > MAX_APPLY_CHARACTERS) {
+        return false
+    }
+    return value.every(isApplyBlock)
+}
+
+/** 校验删除名单：允许缺省，出现时须是限额内的非空名称数组 */
+function isApplyNameList(value: unknown): boolean {
+    if (value === undefined) {
+        return true
+    }
+    if (!Array.isArray(value) || value.length > MAX_APPLY_CHARACTERS) {
+        return false
+    }
+    return value.every((name: unknown) => typeof name === 'string' && name.length > 0)
+}
+
+/** 校验标识名单：允许缺省，出现时须是限额内且通过守卫的标识数组 */
+function isApplyIdList(value: unknown, guard: (item: unknown) => boolean): boolean {
+    if (value === undefined) {
+        return true
+    }
+    if (!Array.isArray(value) || value.length > MAX_APPLY_CHARACTERS) {
+        return false
+    }
+    return value.every(guard)
 }
 
 /** 校验单份段落正文：允许缺省，出现时必须是未超单份文档上限的字符串 */
@@ -953,20 +1062,34 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
         basic?: unknown
         world?: unknown
         power?: unknown
+        factions?: unknown
+        places?: unknown
+        items?: unknown
         characters?: unknown
         outline?: unknown
         deletedCharacterNames?: unknown
+        deletedFactionNames?: unknown
+        deletedPlaceNames?: unknown
+        deletedItemNames?: unknown
         deletedCharacterIds?: unknown
+        deletedLoreIds?: unknown
     }
     const hasContent =
         candidate.readme !== undefined ||
         candidate.basic !== undefined ||
         candidate.world !== undefined ||
         candidate.power !== undefined ||
+        candidate.factions !== undefined ||
+        candidate.places !== undefined ||
+        candidate.items !== undefined ||
         candidate.characters !== undefined ||
         candidate.outline !== undefined ||
         candidate.deletedCharacterNames !== undefined ||
-        candidate.deletedCharacterIds !== undefined
+        candidate.deletedFactionNames !== undefined ||
+        candidate.deletedPlaceNames !== undefined ||
+        candidate.deletedItemNames !== undefined ||
+        candidate.deletedCharacterIds !== undefined ||
+        candidate.deletedLoreIds !== undefined
     if (!hasContent) {
         return false
     }
@@ -981,31 +1104,27 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
     ) {
         return false
     }
-    if (candidate.characters !== undefined) {
-        if (!Array.isArray(candidate.characters) || candidate.characters.length > MAX_APPLY_CHARACTERS) {
-            return false
-        }
-        if (!candidate.characters.every(isApplyCharacterBlock)) {
-            return false
-        }
+    if (
+        !isApplyBlockList(candidate.factions) ||
+        !isApplyBlockList(candidate.places) ||
+        !isApplyBlockList(candidate.items) ||
+        !isApplyBlockList(candidate.characters)
+    ) {
+        return false
     }
-    if (candidate.deletedCharacterNames !== undefined) {
-        const names = candidate.deletedCharacterNames
-        if (!Array.isArray(names) || names.length > MAX_APPLY_CHARACTERS) {
-            return false
-        }
-        if (!names.every((name: unknown) => typeof name === 'string' && name.length > 0)) {
-            return false
-        }
+    if (
+        !isApplyNameList(candidate.deletedCharacterNames) ||
+        !isApplyNameList(candidate.deletedFactionNames) ||
+        !isApplyNameList(candidate.deletedPlaceNames) ||
+        !isApplyNameList(candidate.deletedItemNames)
+    ) {
+        return false
     }
-    if (candidate.deletedCharacterIds !== undefined) {
-        const ids = candidate.deletedCharacterIds
-        if (!Array.isArray(ids) || ids.length > MAX_APPLY_CHARACTERS) {
-            return false
-        }
-        if (!ids.every((id: unknown) => isPressCharacterId(id))) {
-            return false
-        }
+    if (!isApplyIdList(candidate.deletedCharacterIds, isPressCharacterId)) {
+        return false
+    }
+    if (!isApplyIdList(candidate.deletedLoreIds, isPressLoreId)) {
+        return false
     }
     return true
 }

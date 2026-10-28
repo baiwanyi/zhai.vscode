@@ -1,14 +1,16 @@
 /**
- * 作品文档解析：把 README.md、世界观.md、金手指.md、设定.md、角色设定.md、大纲.md 的原文解析成工作台的 OutlineWorkspace。
+ * 作品文档解析：把 README.md、世界观.md、金手指.md、势力.md、地点.md、物品.md、
+ * 设定.md、角色设定.md、大纲.md 的原文解析成工作台的 OutlineWorkspace。
  * 复用约定：字段语义与 types.ts 一致；基本信息取自 README 的 Frontmatter 与「作品设定」段，
  * 世界观与金手指各取自己的文档（旧的 设定.md 仅在这两份缺失时兜底），
- * 角色按「# 角色名」切块，大纲按「卷 → 章 → 键值行」切块，优先认 `- 键：值` 行，缺失时回落到区块段落文本。
+ * 角色按「# 角色名」切块，资料条目按「## 名称」切块，大纲按「卷 → 章 → 键值行」切块，
+ * 优先认 `- 键：值` 行，缺失时回落到区块段落文本。
  * 关键约束：解析必须容错——文件缺失、区块改名、字段写法变化都只让对应字段为空，绝不抛错；
  * 章纲的 summary 表示计划、wordCount 表示已写事实，两者不互相推导；未识别的名称不进入 characterIds，
- * 避免正文引用到不存在的人物卡。
+ * 避免正文引用到不存在的人物卡；条目描述取块内自然段落，键值行不参与描述。
  */
 import { parseImageKind } from '@shared/types/imagegen'
-import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId } from '@shared/types/press'
+import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId, isPressLoreId } from '@shared/types/press'
 import type { PortraitStyle, PressSettingSectionFiles, PressWorkspaceFiles } from '@shared/types/press'
 import { PERIOD_OPTIONS, PLACE_OPTIONS } from './setting/settingOptions'
 import type {
@@ -19,6 +21,8 @@ import type {
     CharacterRole,
     EndingKind,
     HookKind,
+    LoreEntry,
+    LoreKind,
     OutlineBeat,
     OutlineChapter,
     OutlineVolume,
@@ -36,6 +40,7 @@ interface DocumentSection {
 export interface ParsedWorkspace {
     setting: ProjectSetting
     characters: CharacterCard[]
+    lore: LoreEntry[]
     volumes: OutlineVolume[]
 }
 
@@ -469,11 +474,11 @@ function parseSetting(
 }
 
 /**
- * 由角色名生成人物标识：对名称做确定性散列并映射到 8 位数字区间。
- * 关键约束：同一姓名每次解析必须得到同一标识（角色卡文件名不会漂移），且取值落在宿主白名单内；
- * 旧文档里的 char- 前缀标识不再识别，缺少合法标识时按姓名散列取号。
+ * 由名称生成稳定标识：对名称做确定性散列并映射到 8 位数字区间，人物与资料条目共用。
+ * 关键约束：同一名称每次解析必须得到同一标识（角色卡与设定图文件名不会漂移），且取值落在宿主白名单内；
+ * 旧文档里的 char- 前缀标识不再识别，缺少合法标识时按名称散列取号。
  */
-function buildCharacterId(name: string): string {
+function buildStableId(name: string): string {
     let hash = 0
     for (const char of name) {
         hash = (hash * 31 + (char.codePointAt(0) ?? 0)) % 90_000_000
@@ -499,12 +504,12 @@ function parseCharacters(text: string): CharacterCard[] {
             continue
         }
         const rawId = values.get('id')
-        const baseId = rawId !== undefined && isPressCharacterId(rawId) ? rawId : buildCharacterId(name)
+        const baseId = rawId !== undefined && isPressCharacterId(rawId) ? rawId : buildStableId(name)
         let id = baseId
         let salt = 1
         while (usedIds.has(id) && salt <= 100) {
             // 重名角色换个散列盐重新取号，保持 8 位数字形态——拼后缀会破坏标识规范
-            id = buildCharacterId(`${name}#${String(salt)}`)
+            id = buildStableId(`${name}#${String(salt)}`)
             salt += 1
         }
         usedIds.add(id)
@@ -539,6 +544,60 @@ function parseCharacters(text: string): CharacterCard[] {
         })
     }
     return cards
+}
+
+/** 条目封面标识的分类前缀：只认本分类，角色图与普通图不会混进条目封面 */
+const LORE_IMAGE_PREFIX: Readonly<Record<LoreKind, string>> = {
+    faction: 'faction-',
+    place: 'place-',
+    item: 'item-',
+}
+
+/** 行首键值行：与 serialize 的写法一致，解析描述前先剔除，避免元信息混进正文 */
+const KEY_VALUE_LINE_PATTERN = /^\s*[-*]\s+[^：:]{1,16}[：:]/u
+
+/**
+ * 解析条目文档：`## 名称` 一块即一个条目，块内 `- 键：值` 提取标识、关联人物与封面，
+ * 其余自然段落合并为描述。
+ * 关键约束：`- id：` 只有符合宿主白名单才沿用，否则按名称散列取号；
+ * 关联人物只认已存在的人物姓名，解析不到的名字直接丢弃，不在条目里留下悬空引用；
+ * 封面只认本分类前缀，换分类或手工改成别的图都会回到「未设置」。
+ */
+function parseLoreEntries(text: string, kind: LoreKind, characterIndex: Map<string, string>): LoreEntry[] {
+    const entries: LoreEntry[] = []
+    const usedIds = new Set<string>()
+    for (const section of splitSections(text, 2)) {
+        const name = section.title.trim()
+        if (name.length === 0) {
+            continue
+        }
+        const values = readKeyValues(section.content)
+        const rawId = values.get('id')
+        let id = rawId !== undefined && isPressLoreId(rawId) ? rawId : buildStableId(name)
+        let salt = 1
+        while (usedIds.has(id) && salt <= 100) {
+            // 重名条目换个散列盐重新取号，与人物卡同一口径——拼后缀会破坏标识规范
+            id = buildStableId(`${name}#${String(salt)}`)
+            salt += 1
+        }
+        usedIds.add(id)
+        const body = section.content
+            .split(/\r?\n/u)
+            .filter((line) => !KEY_VALUE_LINE_PATTERN.test(line))
+            .join('\n')
+        const coverId = values.get('封面') ?? ''
+        entries.push({
+            id,
+            kind,
+            name,
+            description: readParagraphs(body).join('\n\n'),
+            memberIds: toList(values.get('人物'))
+                .map((member) => characterIndex.get(member))
+                .filter((memberId): memberId is string => memberId !== undefined),
+            coverImageId: coverId.startsWith(LORE_IMAGE_PREFIX[kind]) ? coverId : null,
+        })
+    }
+    return entries
 }
 
 /** 解析单章：标题、键值行与节拍共同决定章纲字段，缺失项按默认值补齐 */
@@ -645,9 +704,16 @@ export function parseProjectWorkspace(
     fallbackTitle: string,
 ): ParsedWorkspace {
     const characters = parseCharacters(files.characters)
+    const characterIndex = buildCharacterIndex(characters)
     return {
         setting: parseSetting(files.readme, files.setting, files.outline, settingSections, fallbackTitle),
         characters,
-        volumes: parseVolumes(files.outline, buildCharacterIndex(characters)),
+        // 三份条目文档各按自己的分类解析，顺序固定为势力 → 地点 → 物品
+        lore: [
+            ...parseLoreEntries(settingSections.faction, 'faction', characterIndex),
+            ...parseLoreEntries(settingSections.place, 'place', characterIndex),
+            ...parseLoreEntries(settingSections.item, 'item', characterIndex),
+        ],
+        volumes: parseVolumes(files.outline, characterIndex),
     }
 }

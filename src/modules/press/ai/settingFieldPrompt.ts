@@ -2,12 +2,13 @@
  * 设定字段生成提示词：按作品名 / 简介 / 一句话梗概 / 开篇灵感 / 核心冲突五类，
  * 把作品已填的定位、世界观与故事信息折算成一次性生成的对话消息。
  * 复用约定：消息结构复用 ../../ai/provider 的 AiChatMessage，字段名与白名单取自 shared/types/press；
+ * 事实行由本文件的 buildSettingFactLines 统一产出，条目描述提示词（./lorePrompt）复用同一份；
  * 多行字段进提示词前统一折成单行（见 ./plainText）。
  * 关键约束：只送已填字段，空字段不写占位；目标字段自身不重复列出，已有草稿时要求在其基础上完善、不另起一稿；
  * 篇幅与「只输出正文」的约束按字段分别给出，避免作品名被写成一段话。
  */
 import type { AiChatMessage } from '@modules/ai/provider'
-import type { SettingFieldGenerateRequest, SettingFieldKey } from '@shared/types/press'
+import type { SettingFieldGenerateRequest, SettingFieldKey, SettingSnapshot } from '@shared/types/press'
 import { toSingleLine } from './plainText'
 
 /** 系统提示：限定输出形态与事实边界 */
@@ -69,7 +70,7 @@ export function buildSettingFieldMessages(request: SettingFieldGenerateRequest):
 function buildUserPrompt(request: SettingFieldGenerateRequest): string {
     const label = FIELD_LABELS[request.field]
     const spec = FIELD_SPECS[request.field]
-    const facts = buildFactLines(request)
+    const facts = buildSettingFactLines(request, label)
     const current = toSingleLine(request[request.field])
     const lines = facts.length > 0 ? ['已知信息：', ...facts] : ['已知信息：其它字段都还没填，按常见设定自行取舍。']
     lines.push('', `目标字段：${label}（${spec.length}）`, ...spec.rules.map((rule) => `- ${rule}`))
@@ -80,38 +81,44 @@ function buildUserPrompt(request: SettingFieldGenerateRequest): string {
     return lines.join('\n')
 }
 
-/** 已填信息折算成「键：值」事实行：按定位 → 世界观 → 故事 → 其他排列，目标字段自身不列出 */
-function buildFactLines(request: SettingFieldGenerateRequest): string[] {
-    const facts: readonly (readonly [string, string])[] = [
-        ['目标读者', request.audience],
-        ['题材', request.genres.join('、')],
-        ['时代', request.era],
-        ['时间档位', request.period],
-        ['地点档位', request.place],
-        ['世界观总述', request.worldview],
-        ['地理', request.geography],
-        ['势力', request.factions],
-        ['力量体系', request.powerSystem],
-        ['核心概念', request.concepts],
-        ['金手指类型', request.goldenFingerType],
-        ['金手指能力', request.goldenFingerAbility],
-        ['金手指代价', request.goldenFingerCost],
-        ['作品名', request.title],
-        ['简介', request.summary],
-        ['一句话梗概', request.logline],
-        ['开篇灵感', request.opening],
-        ['核心冲突', request.conflict],
-        ['结局倾向', request.ending],
-        ['叙事视角', request.perspective],
-        ['叙事结构', request.narrative],
-        ['语言风格', request.tone],
-        ['参考作品', request.references],
-        ['补充信息', request.extra],
-    ]
-    const targetLabel = FIELD_LABELS[request.field]
-    return facts
-        .filter(([label]) => label !== targetLabel)
-        .map(([label, value]) => [label, toSingleLine(value)] as const)
+/** 事实行定义：标签 + 快照字段，顺序即提示词里的排列顺序（定位 → 世界观 → 故事 → 其他） */
+const FACT_FIELDS: readonly (readonly [string, keyof SettingSnapshot])[] = [
+    ['目标读者', 'audience'],
+    ['题材', 'genres'],
+    ['时代', 'era'],
+    ['时间档位', 'period'],
+    ['地点档位', 'place'],
+    ['世界观总述', 'worldview'],
+    ['地理', 'geography'],
+    ['势力', 'factions'],
+    ['力量体系', 'powerSystem'],
+    ['核心概念', 'concepts'],
+    ['金手指类型', 'goldenFingerType'],
+    ['金手指能力', 'goldenFingerAbility'],
+    ['金手指代价', 'goldenFingerCost'],
+    ['作品名', 'title'],
+    ['简介', 'summary'],
+    ['一句话梗概', 'logline'],
+    ['开篇灵感', 'opening'],
+    ['核心冲突', 'conflict'],
+    ['结局倾向', 'ending'],
+    ['叙事视角', 'perspective'],
+    ['叙事结构', 'narrative'],
+    ['语言风格', 'tone'],
+    ['参考作品', 'references'],
+    ['补充信息', 'extra'],
+]
+
+/**
+ * 已填信息折算成「键：值」事实行，空字段不写占位。
+ * excludeLabel 用于排除目标字段自身——生成某个字段时不该把它当作既有事实复述一遍。
+ */
+export function buildSettingFactLines(snapshot: SettingSnapshot, excludeLabel?: string): string[] {
+    return FACT_FIELDS.filter(([label]) => label !== excludeLabel)
+        .map(([label, key]): readonly [string, string] => {
+            const value = snapshot[key]
+            return [label, toSingleLine(Array.isArray(value) ? value.join('、') : value)]
+        })
         .filter(([, value]) => value.length > 0)
         .map(([label, value]) => `${label}：${value}`)
 }

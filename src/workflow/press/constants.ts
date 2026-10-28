@@ -1,13 +1,24 @@
 /**
- * 大纲与人物模块的选项常量：把钩子、状态、角色分类、性别与体型等枚举的展示文案与徽标变体集中在一处。
+ * 大纲、人物与资料条目的选项常量：把钩子、状态、角色分类、性别、体型与条目分类的展示文案、
+ * 图标与徽标变体集中在一处。
  * 复用约定：徽标变体只取 badge 组件的语义变体，不写原始色值；页面与卡片均从此表读取，避免各写一套映射；
  * 作品设定字段的选项（篇幅、时间、地点、结局、视角、结构、风格、规避内容与题材标签）统一在
  * setting/settingOptions.ts 维护，本文件只保留跨模块共用的选项结构类型。
  * 关键约束：状态与钩子的 key 必须与 types.ts 的联合类型完全一致，新增取值须同时补文案与变体；
- * 张力与步骤的档位顺序参与排序与进度计算，不得随意调整。
+ * 张力与步骤的档位顺序参与排序与进度计算，不得随意调整；资料条目的顺序即设定页分段顺序。
  */
+import { MapPin, Package, Swords } from 'lucide-react'
 import type { SettingFieldKey } from '@shared/types/press'
-import type { CharacterBodyType, CharacterGender, CharacterRole, HookKind, PlanStatus, ProjectSetting } from './types'
+import type {
+    CharacterBodyType,
+    CharacterGender,
+    CharacterRole,
+    HookKind,
+    LoreKind,
+    PlanStatus,
+    ProjectSetting,
+} from './types'
+import type { LucideIcon } from 'lucide-react'
 
 /** 徽标语义变体：与 @components/ui/badge 的 variant 保持一致 */
 export type BadgeTone = 'default' | 'secondary' | 'destructive' | 'outline' | 'ghost'
@@ -144,6 +155,37 @@ export const CHARACTER_BODY_TYPE_ORDER: readonly CharacterBodyType[] = [
 
 /** 体型选项：由顺序与文案表派生，人物卡的分段选择器直接消费 */
 export const CHARACTER_BODY_TYPE_OPTIONS = toOptions(CHARACTER_BODY_TYPE_ORDER, CHARACTER_BODY_TYPE_META)
+
+/**
+ * 资料条目分类元数据：设定页分段、列表空态与卡片徽标共用。
+ * 关键约束：label 同时是空态文案与保存提示的拼接来源，改文案即改所有提示口径；
+ * 图标只用于分段栏与空态，不得在卡片内重复堆叠。
+ */
+export const LORE_KIND_META: Readonly<
+    Record<LoreKind, { label: string; icon: LucideIcon; emptyTitle: string; emptyDescription: string }>
+> = {
+    faction: {
+        label: '势力',
+        icon: Swords,
+        emptyTitle: '还没有势力',
+        emptyDescription: '先立一个对手组织，冲突才有落点',
+    },
+    place: {
+        label: '地点',
+        icon: MapPin,
+        emptyTitle: '还没有地点',
+        emptyDescription: '写下主要场景，章纲里的地点才有依据',
+    },
+    item: {
+        label: '物品',
+        icon: Package,
+        emptyTitle: '还没有物品',
+        emptyDescription: '记下关键道具，伏笔与回收才不至于断线',
+    },
+}
+
+/** 条目分类顺序：设定页分段顺序与列表筛选顺序共用 */
+export const LORE_KIND_ORDER: readonly LoreKind[] = ['faction', 'place', 'item']
 
 /** 金手指类型：可自由输入，预设用于加速填写 */
 export const GOLDEN_FINGER_TYPES: readonly string[] = ['系统', '重生', '异能', '随身空间', '无', '自定义']
