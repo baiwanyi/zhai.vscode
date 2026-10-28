@@ -48,8 +48,10 @@ export const EMPTY_TITLE = '还没有生成名字'
 
 export const EMPTY_DESCRIPTION = '设置条件后点击「随机取名」，结果会在弹窗中展示。'
 
-/** 生成按钮文案 */
+/** 生成 / 取消按钮文案：生成中按钮转为取消 */
 export const GENERATE_LABEL = '随机取名'
+
+export const ABORT_LABEL = '取消'
 
 /** 查看结果按钮文案：无缓存结果时按钮禁用 */
 export const VIEW_RESULT_LABEL = '查看结果'
