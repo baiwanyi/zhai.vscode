@@ -4,18 +4,31 @@
  * 复用 @shared/utils/error 的错误收窄与 ../utils 的消息替换；上下文清单与历史列表由调用方 hook 持有、经参数注入刷新。
  * 关键约束：发送正文由调用方拼装后传入（写作命令模板不进入输入框），本 hook 只负责提交与清空输入；
  * 增量按 channel 分流——content 追加到正文、reasoning 追加到思维链，两者不混流；流末以宿主回传的完整值校正；
+ * 压缩事件分两态——开始时只置瞬时状态（不落库），完成时追加宿主已落库的系统消息，保证离线回看仍能解释占用变化；
  * 切换 / 删除会话前先中止生成，避免增量写回已切走的会话；切换写入范围不中断在途生成，只对后续发送生效；
  * 会话作用域由调用方以 projectDir 注入，快照加载 / 新建 / 删除后重载都必须带同一作用域，跨作品不共用对话。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import type { AiContextRef, AiContextUsage, AiSendResult, AiSessionSnapshot, AiWriteGrant } from '@shared/types/aiChat'
+import { readAiStep } from '@shared/types/aiChat'
+import type {
+    AiContextRef,
+    AiContextUsage,
+    AiMessage,
+    AiSendResult,
+    AiSessionSnapshot,
+    AiWriteGrant,
+} from '@shared/types/aiChat'
+import type { StreamNoticeMessage } from '@shared/types/messages'
 import { onStream, request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
-import { patchMessage } from '../utils'
+import { patchMessage, upsertStep } from '../utils'
 
 /** 视图阶段：idle 空闲、sending 已提交待首字、streaming 正在逐字生成 */
 export type Phase = 'idle' | 'sending' | 'streaming'
+
+/** 会话级瞬时状态：只描述此刻正在发生什么，不落库，随流末清空 */
+export type AiChatTransientNotice = 'compacting' | null
 
 /** 会话状态机的对外依赖：错误由共享提示 hook 持有，上下文与历史列表由调用方 hook 持有 */
 export interface UseAiChatSessionOptions {
@@ -45,6 +58,8 @@ export interface AiChatSessionState {
     contextUsage: AiContextUsage | null
     /** 正在调用的工具名：null 表示当前没有工具执行，仅用于展示进度 */
     activeTool: string | null
+    /** 会话级瞬时状态：非 null 时在消息流末尾展示对应标记，流末自动清空 */
+    transientNotice: AiChatTransientNotice
     /** 加载会话快照：返回快照供调用方恢复草稿中的命令（失败返回 null） */
     loadSession: () => Promise<AiSessionSnapshot | null>
     /** 提交已拼装的正文；返回是否成功发出，失败时调用方保留输入与已选命令 */
@@ -70,6 +85,8 @@ export function useAiChatSession({
     const [contextUsage, setContextUsage] = useState<AiContextUsage | null>(null)
     /** 正在调用的工具名：工具执行期间展示进度，流末清空 */
     const [activeTool, setActiveTool] = useState<string | null>(null)
+    /** 会话级瞬时状态：压缩进行中时置位，完成或流末清空，不落库 */
+    const [transientNotice, setTransientNotice] = useState<AiChatTransientNotice>(null)
     /** 正在流式填充的消息 id，避免每次增量都触发状态结构变更 */
     const streamingMessageIdRef = useRef<string | null>(null)
     /** 最新输入正文：草稿恢复时判断本地是否已有内容，避免覆盖用户正在写的内容 */
@@ -106,13 +123,27 @@ export function useAiChatSession({
     // 流式增量：按 reqId 找到发起时的助手消息并就地追加
     useEffect(() => {
         return onStream((message) => {
-            // 压缩事件与消息无关：先用 toast 解释，避免占用数字下降被当成数据出错
+            // 压缩事件走流内标记：开始时只置瞬时状态，完成时追加宿主已落库的系统消息。
+            // 不再用 toast —— 提示转瞬即逝，重开面板后无法解释占用为何变小。
             if (message.notice === 'compacting') {
-                toast.info('上下文正在压缩，较早的历史将被摘要')
+                setTransientNotice('compacting')
                 return
             }
             if (message.notice === 'compacted') {
-                toast.info('上下文已压缩，占用按压缩后的规模重新计算')
+                setTransientNotice(null)
+                const notice = message.noticeMessage
+                if (notice !== undefined) {
+                    setSession((previous) => {
+                        // 按 id 去重：快照刷新与流内追加可能命中同一条，重复会让分隔标记出现两次
+                        if (previous === null || previous.messages.some((item) => item.id === notice.id)) {
+                            return previous
+                        }
+                        return {
+                            ...previous,
+                            messages: [...previous.messages, toNoticeMessage(previous.conversation.id, notice)],
+                        }
+                    })
+                }
                 return
             }
             const messageId = streamingMessageIdRef.current
@@ -123,6 +154,7 @@ export function useAiChatSession({
                 streamingMessageIdRef.current = null
                 setPhase('idle')
                 setActiveTool(null)
+                setTransientNotice(null)
                 // 上下文占用只在流末下发一次，未回传时保留上一次的值
                 const nextContextUsage = readContextUsage(message.contextUsage)
                 if (nextContextUsage !== null) {
@@ -151,6 +183,16 @@ export function useAiChatSession({
             if (message.tool !== undefined) {
                 // 工具活动是旁路事件：只更新进度，不追加正文
                 setActiveTool(message.tool)
+                return
+            }
+            if (message.step !== undefined) {
+                // 步骤快照按 id 覆盖：同一步骤会经历排队 / 执行中 / 完成三次下发，以最后一次为准
+                const step = readAiStep(message.step)
+                if (step !== null) {
+                    setSession((previous) =>
+                        patchMessage(previous, messageId, (item) => ({ ...item, steps: upsertStep(item.steps, step) })),
+                    )
+                }
                 return
             }
             if (message.delta.length === 0) {
@@ -223,6 +265,7 @@ export function useAiChatSession({
             setSession(snapshot)
             setContexts(snapshot.contexts)
             setContextUsage(snapshot.contextUsage)
+            setTransientNotice(null)
             setInput('')
             onError(null)
         } catch (cause) {
@@ -268,6 +311,7 @@ export function useAiChatSession({
                 setSession(snapshot)
                 setContexts(snapshot.contexts)
                 setContextUsage(snapshot.contextUsage)
+                setTransientNotice(null)
                 restoreDraft(snapshot.draft.input)
                 setPhase('idle')
                 onError(null)
@@ -293,6 +337,7 @@ export function useAiChatSession({
                     setSession(snapshot)
                     setContexts(snapshot.contexts)
                     setContextUsage(snapshot.contextUsage)
+                    setTransientNotice(null)
                     onError(null)
                 }
                 await refreshSessions()
@@ -310,6 +355,7 @@ export function useAiChatSession({
         setInput,
         contextUsage,
         activeTool,
+        transientNotice,
         loadSession,
         send,
         stop,
@@ -317,6 +363,30 @@ export function useAiChatSession({
         switchSession,
         switchWriteGrant,
         deleteSession,
+    }
+}
+
+/**
+ * 系统事件消息转展示消息：宿主只下发展示与去重需要的字段，其余按「无推理、无引用、无用量」补齐。
+ * 关键约束：status 恒为 completed —— 系统消息没有在途态，误判会出现多余的加载占位。
+ */
+function toNoticeMessage(conversationId: string, notice: StreamNoticeMessage): AiMessage {
+    return {
+        id: notice.id,
+        conversationId,
+        role: 'system',
+        content: notice.content,
+        reasoning: null,
+        steps: [],
+        status: 'completed',
+        finishReason: notice.kind,
+        error: null,
+        refs: [],
+        totalTokens: 0,
+        durationMs: 0,
+        tokensEstimated: false,
+        credits: null,
+        createdAt: notice.createdAt,
     }
 }
 

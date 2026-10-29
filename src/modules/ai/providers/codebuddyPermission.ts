@@ -33,6 +33,11 @@ const PATH_FIELDS: readonly string[] = ['file_path', 'path', 'filePath', 'notebo
 const MAX_QUESTIONS = 4
 const MAX_OPTIONS = 6
 
+/** 单题等待上限：逐题阅读与作答远慢于一次写入确认，60 秒的通用审批超时不够用 */
+const QUESTION_TIMEOUT_MS = 180_000
+/** 问卷总等待上限：四题正好触顶，超时按拒绝处理，模型可换方案或重新提问 */
+const MAX_QUESTION_TIMEOUT_MS = 600_000
+
 /** 守卫构造参数：策略决定边界，审批模式决定写入手感，桥决定交互往返 */
 export interface ToolGuardOptions {
     policy: AiToolPolicy
@@ -192,14 +197,20 @@ async function askUser(
     if (broker === null) {
         return deny('当前没有可用的提问通道', false)
     }
-    const decision = await broker.request({
-        id: toolUseID,
-        kind: 'question',
-        toolName: ASK_USER_QUESTION,
-        detail: `待确认 ${String(questions.length)} 个问题`,
-        editablePath: null,
-        questions,
-    })
+    // 等待窗口按题量给：固定 60 秒只够答一题，多题问卷会在用户操作途中被判超时
+    const timeoutMs = Math.min(questions.length * QUESTION_TIMEOUT_MS, MAX_QUESTION_TIMEOUT_MS)
+    const decision = await broker.request(
+        {
+            id: toolUseID,
+            kind: 'question',
+            toolName: ASK_USER_QUESTION,
+            detail: `待确认 ${String(questions.length)} 个问题`,
+            effect: '回答后模型会继续执行本轮任务。',
+            editablePath: null,
+            questions,
+        },
+        timeoutMs,
+    )
     const answers = decision.answers ?? {}
     if (!decision.allowed || Object.keys(answers).length === 0) {
         return deny('用户没有回答问题', false)
@@ -222,6 +233,8 @@ async function confirmWrite(params: {
         kind: 'tool',
         toolName: params.toolName,
         detail: params.rawPath,
+        // 写入后果统一表述：是否新建文件由 CLI 判断，宿主不据此改写风险口径
+        effect: '该操作会修改磁盘文件，确认后立即执行。',
         editablePath: params.rawPath,
         questions: [],
     }

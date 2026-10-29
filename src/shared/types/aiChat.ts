@@ -11,8 +11,9 @@
 
 /**
  * 写入授权范围：document 仅当前编辑栏文档，project 为整个作品目录。
- * 关键约束：只对 write 模式生效，chat 模式恒为只读；project 需要会话已绑定作品目录，
- * 未绑定作品时退回 document，两者都不满足则拒绝发送。
+ * 新建会话默认取 document，扩大授权必须由用户显式切换。
+ * 关键约束：只对 write 模式生效，chat 模式恒为只读；project 需要会话已绑定作品目录；
+ * 既无活动文档又无作品目录时写入根为空，发送会被拒绝。
  */
 export type AiWriteGrant = 'document' | 'project'
 
@@ -38,7 +39,7 @@ export interface AiAskQuestion {
 /**
  * 待确认的工具调用：宿主推送给 Webview，用户在弹窗里决定后回传。
  * 关键约束：由宿主生成 id（与 SDK 的 toolUseID 一致），前端只回传这个 id；
- * editablePath 非空时允许用户改写到白名单内的其他文件，宿主收到后会重新校验。
+ * editablePath 为写入类目标路径，当前前端不提供改写入口、原样回传，宿主收到后仍会重新校验。
  */
 export interface AiPermissionRequest {
     id: string
@@ -47,10 +48,25 @@ export interface AiPermissionRequest {
     toolName: string
     /** 工具关键参数：写入类给路径，提问类给问题条数摘要 */
     detail: string
-    /** 可改写的目标路径：仅写入类工具提供 */
+    /**
+     * 风险说明：由宿主按工具语义下发的展示文案，前端只渲染，不自行推断工具后果。
+     * 关键约束：新增审批类型必须显式给出，展示层不得回退到硬编码文案。
+     */
+    effect: string
+    /** 写入类工具的目标路径：仅写入类提供，当前前端只原样回传、不提供改写入口 */
     editablePath: string | null
     /** 待回答的问题：kind 为 question 时至少一条 */
     questions: AiAskQuestion[]
+    /**
+     * 归属的助手消息 id：由审批桥补齐（通道层不感知消息），前端据此把提问卡片挂到对应气泡下。
+     * 关键约束：缺省或 null 表示无法归属，前端必须退回弹窗 —— 挂不上消息的卡片会永远不可见。
+     */
+    messageId?: string | null
+    /**
+     * 提交截止时间（毫秒时间戳）：由审批桥按题量计算，前端据此提示剩余时间。
+     * 关键约束：缺省表示宿主未给出期限，前端不得自行编造倒计时。
+     */
+    expiresAt?: number
 }
 
 /** 审批结果：allow 时带回用户可能改过的路径与答案 */
@@ -92,6 +108,63 @@ export interface AiContextRef {
 /** 消息状态：与 ai-chat.md 第 4.2 节对话状态机一致 */
 export type AiMessageStatus = 'pending' | 'streaming' | 'completed' | 'failed' | 'cancelled'
 
+/** 步骤状态：pending 排队待执行、running 进行中、done 已完成、error 失败 */
+export type AiStepStatus = 'pending' | 'running' | 'done' | 'error'
+
+/**
+ * 收窄一条执行步骤：宿主读库与 Webview 收流都会拿到不可信数据，
+ * 缺 id 或工具名的整条丢弃，状态取白名单，其余字段按类型兜底。
+ * 关键约束：未知状态按已完成处理 —— 历史脏数据不该让界面一直停在转圈状态。
+ */
+export function readAiStep(value: unknown): AiStep | null {
+    if (typeof value !== 'object' || value === null) {
+        return null
+    }
+    const record = value as Record<string, unknown>
+    const id = typeof record.id === 'string' ? record.id : ''
+    const name = typeof record.name === 'string' ? record.name : ''
+    if (id.length === 0 || name.length === 0) {
+        return null
+    }
+    return {
+        id,
+        kind: record.kind === 'task' ? 'task' : 'tool',
+        name,
+        detail: typeof record.detail === 'string' ? record.detail : null,
+        status:
+            record.status === 'pending' || record.status === 'running' || record.status === 'error'
+                ? record.status
+                : 'done',
+        error: typeof record.error === 'string' ? record.error : null,
+        parentId: typeof record.parentId === 'string' ? record.parentId : null,
+        elapsedMs: typeof record.elapsedMs === 'number' && Number.isFinite(record.elapsedMs) ? record.elapsedMs : null,
+    }
+}
+
+/** 步骤类型：tool 为一次工具调用，task 为子代理或后台任务 */
+export type AiStepKind = 'tool' | 'task'
+
+/**
+ * 一条执行步骤：助手消息的「过程」载体，与正文、思维链并列。
+ * 关键约束：detail 是脱敏后的展示值（路径只留末段、超长截断），宿主不得把完整入参写入该字段；
+ * id 对工具是 tool_use_id、对任务是 task_id，同一条消息内保持唯一，前端据此增量覆盖。
+ */
+export interface AiStep {
+    id: string
+    kind: AiStepKind
+    /** 原始工具名或任务类型（如 Read / Edit / Agent），展示层经 describeTool 映射中文 */
+    name: string
+    /** 关键入参摘要：文件名、命令或任务描述；无合适取值时为 null */
+    detail: string | null
+    status: AiStepStatus
+    /** 失败原因：仅 status 为 error 时有值 */
+    error: string | null
+    /** 父步骤 id：子代理内部的工具调用挂到对应任务行下 */
+    parentId: string | null
+    /** 已耗时（毫秒）：未知为 null，不填 0 以免显示成「0 秒」 */
+    elapsedMs: number | null
+}
+
 /** 会话 */
 export interface AiConversation {
     id: string
@@ -119,6 +192,8 @@ export interface AiMessage {
     content: string
     /** 思维链，可为空 */
     reasoning: string | null
+    /** 执行步骤：工具调用与子任务的时间线；空数组表示本轮没有可展示的过程 */
+    steps: AiStep[]
     status: AiMessageStatus
     finishReason: string | null
     error: string | null

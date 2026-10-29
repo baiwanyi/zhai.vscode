@@ -2,7 +2,8 @@
  * 写入范围切换：声明本轮可写到哪里，在「仅当前文档」与「整个作品」之间切换。
  * 复用 @components/ui 的 DropdownMenu 与 @webview/components/Button；当前范围整行高亮并在名称后带勾选。
  * 关键约束：范围只影响宿主下发的写入工具白名单，不改动已生成的消息，也不中断在途生成；
- * 本组件只上抛目标范围，持久化由会话 hook 承担。
+ * 本组件只上抛目标范围，持久化由会话 hook 承担；默认范围由宿主新建会话时决定（仅当前文档），
+ * 组件里不得再写死默认值，否则展示与实际授权会分叉。
  */
 import { cn } from 'cn'
 import { Check, ChevronDown, FileText, FolderOpen, Info } from 'lucide-react'

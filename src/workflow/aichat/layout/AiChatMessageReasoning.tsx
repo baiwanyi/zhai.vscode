@@ -36,7 +36,7 @@ export function AiChatMessageReasoning({
     /** 等待首字阶段强制展开：正文为空时不应只剩一个转圈 */
     const isThinking = isStreaming && !hasContent
     return (
-        <Trace className="mb-2">
+        <Trace className="mb-3">
             <TraceCollapsible open={isThinking || isOpen} onOpenChange={setIsOpen}>
                 <TraceCollapsibleTrigger>
                     <TraceLine status={isStreaming ? 'running' : undefined}>
@@ -47,8 +47,8 @@ export function AiChatMessageReasoning({
                         <TraceDescription>{reasoning.length} 字</TraceDescription>
                     </TraceLine>
                 </TraceCollapsibleTrigger>
-                <TraceCollapsibleContent>
-                    <div className="max-h-64 overflow-y-auto whitespace-pre-wrap">{reasoning}</div>
+                <TraceCollapsibleContent className="max-h-64 overflow-y-auto whitespace-pre-wrap">
+                    {reasoning}
                 </TraceCollapsibleContent>
             </TraceCollapsible>
         </Trace>

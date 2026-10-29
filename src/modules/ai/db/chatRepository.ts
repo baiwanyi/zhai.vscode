@@ -4,7 +4,8 @@
  * 作用域约定：会话按 project_dir 隔离，取最近会话与历史列表都必须带作用域，避免跨作品串历史；
  * 作用域比较统一用 `IS ?`（NULL 安全），作品对话与非作品通用对话各成一份。
  * 关键约束：用量写入与分页查询在 usageRepository，本文件只保留预算护栏需要的累计 token 统计；
- * 上下文占用写库时不得顺带刷新 updated_at，否则每次生成都会把会话顶到历史列表最前。
+ * 上下文占用写库时不得顺带刷新 updated_at，否则每次生成都会把会话顶到历史列表最前；
+ * steps 是 JSON 文本列，读写都按不可信输入处理 —— 解析失败一律当空数组，不能让脏数据挡住整条消息。
  */
 import type Database from 'better-sqlite3'
 
@@ -38,6 +39,8 @@ export interface MessageRow {
     role: string
     content: string
     reasoning: string | null
+    /** 执行步骤（JSON 数组，元素为 AiStep，仅展示用） */
+    steps: string
     status: string
     finishReason: string | null
     /** 发送时携带的上下文引用（JSON 数组，含绝对路径，仅宿主使用） */
@@ -60,6 +63,8 @@ export interface MessageRow {
 export interface MessagePatch {
     content: string
     reasoning: string | null
+    /** 执行步骤（JSON 数组）：流末一次性写入，流式过程中不落库 */
+    steps: string
     status: string
     finishReason: string | null
     error: string | null
@@ -76,7 +81,7 @@ const CONVERSATION_COLUMNS = `id, title, mode, project_dir AS projectDir, model,
     context_window_tokens AS contextWindowTokens, write_grant AS writeGrant,
     created_at AS createdAt, updated_at AS updatedAt`
 
-const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, reasoning, status,
+const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, reasoning, steps, status,
     finish_reason AS finishReason, refs, error, total_tokens AS totalTokens, duration_ms AS durationMs,
     tokens_estimated AS tokensEstimated, credits, request_id AS requestId, created_at AS createdAt`
 
@@ -163,9 +168,9 @@ export function deleteConversation(db: Database.Database, id: string): void {
 
 export function insertMessage(db: Database.Database, row: MessageRow): void {
     db.prepare(
-        `INSERT INTO messages (id, conversation_id, role, content, reasoning, status, finish_reason, refs, error,
+        `INSERT INTO messages (id, conversation_id, role, content, reasoning, steps, status, finish_reason, refs, error,
             total_tokens, duration_ms, tokens_estimated, credits, request_id, created_at)
-         VALUES (@id, @conversationId, @role, @content, @reasoning, @status, @finishReason, @refs, @error,
+         VALUES (@id, @conversationId, @role, @content, @reasoning, @steps, @status, @finishReason, @refs, @error,
             @totalTokens, @durationMs, @tokensEstimated, @credits, @requestId, @createdAt)`,
     ).run(row)
 }
@@ -173,7 +178,7 @@ export function insertMessage(db: Database.Database, row: MessageRow): void {
 export function updateMessage(db: Database.Database, id: string, patch: MessagePatch): void {
     db.prepare(
         `UPDATE messages
-            SET content = @content, reasoning = @reasoning, status = @status,
+            SET content = @content, reasoning = @reasoning, steps = @steps, status = @status,
                 finish_reason = @finishReason, error = @error,
                 total_tokens = @totalTokens, duration_ms = @durationMs, tokens_estimated = @tokensEstimated,
                 credits = @credits, request_id = @requestId

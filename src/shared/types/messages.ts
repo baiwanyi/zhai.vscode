@@ -2,7 +2,7 @@
  * Webview 与扩展宿主之间的统一消息协议。
  * 设计源：docs/modules/common.md 第 7.3 节，请求-响应带 reqId 以支持并发匹配、超时与错误定位。
  */
-import type { AiPermissionRequest } from './aiChat'
+import type { AiPermissionRequest, AiStep } from './aiChat'
 
 export interface RequestMessage {
     type: 'request'
@@ -30,6 +30,21 @@ export interface StreamUsage {
     totalTokens: number
 }
 
+/**
+ * 系统事件消息：宿主已落库，随流下发供前端就地追加，无需再拉快照。
+ * 关键约束：只承载展示与去重需要的字段，前端不得据此推断会话状态；
+ * 这类消息不进入模型上下文，宿主侧组装提示词时已按 role 过滤。
+ */
+export interface StreamNoticeMessage {
+    /** 消息 id：前端按它去重，避免重连或快照刷新后重复追加 */
+    id: string
+    /** 展示文案 */
+    content: string
+    /** 事件类型：compacted 渲染为居中的分隔标记 */
+    kind: 'compacted'
+    createdAt: string
+}
+
 /** 宿主 → Webview：流式增量（AI 输出、索引进度等） */
 export interface StreamMessage {
     type: 'stream'
@@ -48,6 +63,11 @@ export interface StreamMessage {
      * 关键约束：同一时刻可能排队多条，前端按 id 去重并顺序展示。
      */
     permission?: AiPermissionRequest
+    /**
+     * 执行步骤的增量快照：同一 id 会多次下发（排队 → 执行中 → 完成 / 失败），前端按 id 覆盖。
+     * 关键约束：旁路事件，delta 为空；不得当作正文追加，也不保证按 id 顺序到达。
+     */
+    step?: AiStep
     /** 结束时（done 为 true）的终态，供前端落定消息状态 */
     status?: 'completed' | 'failed' | 'cancelled'
     /** 结束时回传宿主侧完整正文，用于校正前端逐字累积结果 */
@@ -73,6 +93,11 @@ export interface StreamMessage {
      * 关键约束：只用于提示，不改动正文与用量；与 done 无关，可单独下发。
      */
     notice?: 'compacting' | 'compacted'
+    /**
+     * 压缩完成时落库的系统消息：compacting 不携带（瞬时状态不落库）。
+     * 关键约束：compacted 必须带该字段，前端据此在消息流内留下可回放的标记。
+     */
+    noticeMessage?: StreamNoticeMessage
 }
 
 /** 操作反馈级别：与 sonner 的四个入口一一对应 */

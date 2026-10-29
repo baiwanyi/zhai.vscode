@@ -13,12 +13,15 @@
  * 不用 result.usage 代替 —— 续接会话时它是累计值，会把上下文用量算成整段历史的总和；
  * 单轮用量同样从流事件拼出（输入取 message_start、输出取 message_delta），不读 CLI 会话记录，
  * result.usage 仅作首轮兜底，并以 isRoundUsage 告知上层该值能否直接记账；
- * 窗口只认官方模型清单（getAvailableModelsRaw 的 contextWindow），不探测 SDK 类型未声明的字段。
+ * 窗口只认官方模型清单（getAvailableModelsRaw 的 contextWindow），不探测 SDK 类型未声明的字段；
+ * 步骤快照由 tool_use（排队）、tool_progress（执行中）、tool_result（完成 / 失败）与 task_*（子任务）拼出，
+ * 按 id 覆盖式产出，流末统一收口 —— 否则中断后 UI 会停在「执行中」。
  */
 import { tmpdir } from 'node:os'
 import { getZhaiConfig } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import type { SecretsService } from '@modules/common/secrets'
+import type { AiStep, AiStepStatus } from '@shared/types/aiChat'
 import { sdkCodebuddyClient } from './codebuddyClient'
 import { classifyResultFailure, CodebuddyError, toReadableCodebuddyError } from './codebuddyError'
 import {
@@ -40,13 +43,80 @@ import type {
     AiUsageMeta,
 } from '../provider'
 import type { CodebuddyClient } from './codebuddyClient'
-import type { SessionOptions } from '@tencent-ai/agent-sdk'
+import type { ContentBlock, SessionOptions } from '@tencent-ai/agent-sdk'
 
 /**
  * 上下文预算的配置键：SDK 未提供专用选项，只能经通用的 setConfig 下发，
  * 键名由 CLI 侧约定 —— 升级 CLI 后若改名，这里会静默失效并按模型默认档位继续。
  */
 const CONTEXT_WINDOW_CONFIG_KEY = 'contextWindow'
+
+/** 步骤摘要最大长度：够看清做了什么，又不至于把整段命令或正文塞进消息库 */
+const STEP_DETAIL_MAX_LENGTH = 80
+
+/** 路径类入参字段：展示时只保留末段，完整绝对路径不该进消息库也不该进界面 */
+const STEP_PATH_FIELDS: readonly string[] = ['file_path', 'notebook_path', 'path']
+
+/** 文本类入参字段：命令、检索词与任务描述，按原值截断展示 */
+const STEP_TEXT_FIELDS: readonly string[] = ['command', 'pattern', 'query', 'description']
+
+/** 路径末段：兼容正反斜杠，空值原样返回 */
+function toLastSegment(value: string): string {
+    const segments = value.split(/[\\/]/).filter((segment) => segment.length > 0)
+    return segments[segments.length - 1] ?? value
+}
+
+/** 摘要归一：折叠换行与多余空白后按长度截断，避免整段正文落库 */
+function truncateDetail(value: string): string {
+    const single = value.replace(/\s+/g, ' ').trim()
+    return single.length > STEP_DETAIL_MAX_LENGTH ? `${single.slice(0, STEP_DETAIL_MAX_LENGTH)}…` : single
+}
+
+/**
+ * 提取步骤摘要：先找路径类字段（只留末段），再退到命令与检索词。
+ * 关键约束：只读字符串字段，绝不序列化整个入参 —— 写入类入参带整篇正文，落库会撑爆消息表。
+ */
+function readStepDetail(input: Record<string, unknown>): string | null {
+    for (const field of STEP_PATH_FIELDS) {
+        const value = input[field]
+        if (typeof value === 'string' && value.trim().length > 0) {
+            return truncateDetail(toLastSegment(value.trim()))
+        }
+    }
+    for (const field of STEP_TEXT_FIELDS) {
+        const value = input[field]
+        if (typeof value === 'string' && value.trim().length > 0) {
+            return truncateDetail(value.trim())
+        }
+    }
+    return null
+}
+
+/** 任务终态映射：进行中与暂停不产出事件，避免同一行被反复刷新；未知状态同样按进行中处理 */
+function settleTaskStatus(status: string | undefined): AiStepStatus | null {
+    if (status === 'completed' || status === 'stopped') {
+        return 'done'
+    }
+    if (status === 'failed' || status === 'killed') {
+        return 'error'
+    }
+    return null
+}
+
+/** 工具失败原因：取结果里的文本片段，结构化块跳过（不把整张图片或大对象写进步骤行） */
+function readResultError(content: string | ContentBlock[] | undefined): string | null {
+    if (typeof content === 'string') {
+        return content.trim().length > 0 ? truncateDetail(content) : null
+    }
+    if (!Array.isArray(content)) {
+        return null
+    }
+    const text = content
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join(' ')
+    return text.trim().length > 0 ? truncateDetail(text) : null
+}
 
 /** 提示词拆分结果：system 内容与单轮输入 */
 interface PreparedPrompt {
@@ -167,6 +237,8 @@ export class CodeBuddyProvider implements AiProvider {
         let usage: AiStreamChunk['usage']
         /** 逻辑轮次标识：SDK 在每条消息上回传，任一条拿到即可，供用量日志与 CLI 侧对账 */
         let requestId: string | null = null
+        /** 本轮步骤快照：按 id 覆盖，供流末统一收口 */
+        const steps = new Map<string, AiStep>()
         /** 最近一次请求的上下文用量：每出现一个 message_start 覆盖一次，取最后一轮即当前占用 */
         let contextTokens = 0
         /** 本轮累计输入 token（不含缓存读写）：工具往返会产生多次请求，必须按轮累加 */
@@ -175,6 +247,25 @@ export class CodeBuddyProvider implements AiProvider {
         let roundOutputTokens = 0
         /** 当前轮次的输出：同一轮内 message_delta 上报的是累计值，取最大后再并入合计 */
         let currentRoundOutput = 0
+        /**
+         * 合并一条步骤快照：同 id 覆盖未填字段，返回合并后的完整步骤供下发。
+         * 关键约束：只做字段兜底，不推断状态 —— 何时从 pending 变 running 完全由 SDK 事件决定。
+         */
+        const trackStep = (patch: Partial<AiStep> & { id: string }): AiStep => {
+            const previous = steps.get(patch.id)
+            const next: AiStep = {
+                id: patch.id,
+                kind: patch.kind ?? previous?.kind ?? 'tool',
+                name: patch.name ?? previous?.name ?? 'Tool',
+                detail: patch.detail ?? previous?.detail ?? null,
+                status: patch.status ?? previous?.status ?? 'pending',
+                error: patch.error ?? previous?.error ?? null,
+                parentId: patch.parentId ?? previous?.parentId ?? null,
+                elapsedMs: patch.elapsedMs ?? previous?.elapsedMs ?? null,
+            }
+            steps.set(next.id, next)
+            return next
+        }
         try {
             await session.connect()
             // 档位需在首条消息前生效；CLI 未支持该键时只记日志，不阻断生成
@@ -191,6 +282,18 @@ export class CodeBuddyProvider implements AiProvider {
                 if (message.type === 'tool_progress') {
                     // 工具执行期间没有正文增量，这里单独上报进度，避免上层按无输出判定超时
                     yield { content: '', reasoning: '', toolActivity: message.tool_name }
+                    yield {
+                        content: '',
+                        reasoning: '',
+                        step: trackStep({
+                            id: message.tool_use_id,
+                            kind: 'tool',
+                            name: message.tool_name,
+                            status: 'running',
+                            parentId: message.parent_tool_use_id,
+                            elapsedMs: Math.round(message.elapsed_time_seconds * 1000),
+                        }),
+                    }
                     continue
                 }
                 if (message.type === 'system') {
@@ -207,6 +310,35 @@ export class CodeBuddyProvider implements AiProvider {
                         yield { content: '', reasoning: '', notice: 'compacted' }
                     } else if (message.subtype === 'status' && message.status === 'compacting') {
                         yield { content: '', reasoning: '', notice: 'compacting' }
+                    }
+                    // 子任务：started 建行，updated / notification 只落终态，进行中的重复刷新一律忽略
+                    if (message.subtype === 'task_started') {
+                        yield {
+                            content: '',
+                            reasoning: '',
+                            step: trackStep({
+                                id: message.task_id,
+                                kind: 'task',
+                                name: message.task_type ?? 'Agent',
+                                detail: message.description.length > 0 ? truncateDetail(message.description) : null,
+                                status: 'running',
+                                parentId: message.tool_use_id ?? null,
+                            }),
+                        }
+                    } else if (message.subtype === 'task_updated' || message.subtype === 'task_notification') {
+                        const settled = settleTaskStatus(message.status)
+                        if (settled !== null) {
+                            yield {
+                                content: '',
+                                reasoning: '',
+                                step: trackStep({
+                                    id: message.task_id,
+                                    kind: 'task',
+                                    status: settled,
+                                    error: settled === 'error' ? '任务执行失败' : null,
+                                }),
+                            }
+                        }
                     }
                     continue
                 }
@@ -242,6 +374,24 @@ export class CodeBuddyProvider implements AiProvider {
                     continue
                 }
                 if (message.type === 'assistant') {
+                    // 工具调用：整条消息到达时才有完整入参，这里建行，状态交给 tool_progress / tool_result 推进
+                    for (const block of message.message.content) {
+                        if (block.type !== 'tool_use') {
+                            continue
+                        }
+                        yield {
+                            content: '',
+                            reasoning: '',
+                            step: trackStep({
+                                id: block.id,
+                                kind: 'tool',
+                                name: block.name,
+                                detail: readStepDetail(block.input),
+                                status: 'pending',
+                                parentId: message.parent_tool_use_id,
+                            }),
+                        }
+                    }
                     // 兜底：未收到增量（旧版 CLI 不推送 stream_event）时按整段正文输出一次
                     if (!hasStreamed) {
                         const text = message.message.content
@@ -255,7 +405,40 @@ export class CodeBuddyProvider implements AiProvider {
                     }
                     continue
                 }
+                if (message.type === 'user') {
+                    // 工具结果：工具往返完成后由 CLI 回灌，是 done / error 的唯一权威来源
+                    const blocks = message.message.content
+                    if (Array.isArray(blocks)) {
+                        for (const block of blocks) {
+                            if (block.type !== 'tool_result') {
+                                continue
+                            }
+                            const isFailed = block.is_error === true
+                            yield {
+                                content: '',
+                                reasoning: '',
+                                step: trackStep({
+                                    id: block.tool_use_id,
+                                    status: isFailed ? 'error' : 'done',
+                                    error: isFailed ? (readResultError(block.content) ?? '工具执行失败') : null,
+                                }),
+                            }
+                        }
+                    }
+                    continue
+                }
                 if (message.type === 'result') {
+                    // 收口：中断或 CLI 未回传终态的步骤统一落定，否则界面会一直停在「执行中」
+                    for (const step of steps.values()) {
+                        if (step.status === 'done' || step.status === 'error') {
+                            continue
+                        }
+                        yield {
+                            content: '',
+                            reasoning: '',
+                            step: trackStep({ id: step.id, status: message.subtype === 'success' ? 'done' : 'error' }),
+                        }
+                    }
                     if (message.subtype !== 'success') {
                         const detail = message.errors?.join('；') ?? message.subtype
                         // 失败先归到分类码：subtype 能分辨的（轮次 / 额度）不再依赖文案匹配
@@ -295,7 +478,9 @@ export class CodeBuddyProvider implements AiProvider {
                     }
                     // 窗口只认官方模型清单：getAvailableModelsRaw 下发 defaultLength / supportedLengths / maxInputTokens，
                     // 清单尚未拉取或平台未下发时留 0，由展示层不显示占比，不猜档位
-                    const contextWindow = readModelContextWindow(resolveCodebuddyModel(getSelectedCodebuddyModel()) ?? '')
+                    const contextWindow = readModelContextWindow(
+                        resolveCodebuddyModel(getSelectedCodebuddyModel()) ?? '',
+                    )
                     if (contextWindow === 0) {
                         logger.warn('上下文窗口未取到：模型清单尚未拉取或平台未下发档位')
                     }

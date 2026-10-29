@@ -27,11 +27,13 @@ import type {
     AiRuntimeInfo,
     AiSendResult,
     AiSessionSnapshot,
+    AiStep,
     AiWriteGrant,
     AiWriteState,
     AiWriteTarget,
 } from '@shared/types/aiChat'
-import type { StreamMessage } from '@shared/types/messages'
+import { readAiStep } from '@shared/types/aiChat'
+import type { StreamMessage, StreamNoticeMessage } from '@shared/types/messages'
 import {
     buildContextBlock,
     describeContextRefs,
@@ -100,6 +102,8 @@ const AI_TOOL_MAX_TURNS = 10
 
 /** 流式增量合并窗口，避免高频 postMessage */
 const STREAM_FLUSH_MS = 60
+/** 上下文压缩完成的系统消息文案：重开面板后解释「占用为何变小」的唯一依据 */
+const COMPACTED_NOTICE_TEXT = '上下文已压缩'
 /** 整篇改写上限：超出后只能选中片段，避免模型只看到截断内容却覆盖全文 */
 const MAX_WRITE_DOCUMENT_CHARS = 12_000
 
@@ -256,8 +260,8 @@ export class AiChatService implements vscode.Disposable {
             model: getSelectedCodebuddyModel(),
             provider: this.provider.id,
             sdkSessionId: null,
-            // 新会话默认授权整个作品：写作的主用法是连续生成章节，精确改写再手动收窄
-            writeGrant: 'project',
+            // 新会话默认只授权当前文档：作品级写入必须由用户手动切换，不在默认态放开整库
+            writeGrant: 'document',
             // 新会话尚未发起请求，占用与窗口都从 0 起；窗口由前端按运行时档位补分母
             contextUsedTokens: 0,
             contextWindowTokens: 0,
@@ -475,6 +479,7 @@ export class AiChatService implements vscode.Disposable {
             role: 'user',
             content: input,
             reasoning: null,
+            steps: '[]',
             status: 'completed',
             finishReason: null,
             refs: JSON.stringify(contexts),
@@ -493,6 +498,7 @@ export class AiChatService implements vscode.Disposable {
             role: 'assistant',
             content: '',
             reasoning: null,
+            steps: '[]',
             status: 'pending',
             finishReason: null,
             error: null,
@@ -537,6 +543,36 @@ export class AiChatService implements vscode.Disposable {
             assistantMessage: toMessage(assistantMessage),
             skippedContexts,
         }
+    }
+
+    /**
+     * 追加一条系统事件消息并返回下发用的轻量结构。
+     * 复用约定：写入走 messages 表既有列，kind 存 finish_reason，不新增数据库字段。
+     * 关键约束：系统消息不进入模型上下文 —— 组装提示词时只取 user / assistant，
+     * 通道侧 preparePrompt 同样按 role 过滤，两侧都过滤才允许落库；
+     * 该消息不参与会话命名判断（命名只认 user / assistant 条数），也不计入用量。
+     */
+    private appendSystemNotice(conversationId: string): StreamNoticeMessage {
+        const row: MessageRow = {
+            id: randomUUID(),
+            conversationId,
+            role: 'system',
+            content: COMPACTED_NOTICE_TEXT,
+            reasoning: null,
+            steps: '[]',
+            status: 'completed',
+            finishReason: 'compacted',
+            error: null,
+            refs: '[]',
+            totalTokens: 0,
+            durationMs: 0,
+            tokensEstimated: 0,
+            credits: null,
+            requestId: null,
+            createdAt: new Date().toISOString(),
+        }
+        insertMessage(this.db, row)
+        return { id: row.id, content: row.content, kind: 'compacted', createdAt: row.createdAt }
     }
 
     /** 取消当前生成（AC-2：立即断开连接，避免继续计费）；等待中的审批一并拒绝 */
@@ -584,6 +620,8 @@ export class AiChatService implements vscode.Disposable {
         let usageMeta: AiUsageMeta | null = null
         /** 本轮上下文占用：通道回传后落内存并随流末消息下发，未回传时保留上一次的值 */
         let contextUsage: AiContextUsage | null = null
+        /** 本轮步骤快照：按 id 覆盖，流末随消息落库，供重开面板后回放执行过程 */
+        const steps = new Map<string, AiStep>()
         /** 本轮通道会话号：续接取库内值，首轮由 init 消息回传，供定位 CLI 用量记录文件 */
         let sdkSessionId: string | null = null
         /** 本轮是否续接通道会话：续接时 result.usage 是会话累计，不能当本轮消耗 */
@@ -608,10 +646,11 @@ export class AiChatService implements vscode.Disposable {
         }
         resetIdleTimer()
 
-        // 审批桥：把工具守卫的等待转成一次前端往返，reqId 固定为本轮请求，前端据此归位
+        // 审批桥：把工具守卫的等待转成一次前端往返，reqId 固定为本轮请求，前端据此归位；
+        // 归属消息一并注入，前端据此把提问卡片挂到本轮的助手气泡下（通道层不感知消息）
         const permission = new PermissionBroker((request) => {
             this.streamEmitter.fire({ type: 'stream', reqId, delta: '', done: false, permission: request })
-        })
+        }, assistantMessageId)
         this.activePermission = permission
 
         /**
@@ -678,12 +717,27 @@ export class AiChatService implements vscode.Disposable {
                 // 任意事件都视为通道存活：工具往返期间正文可能长时间没有增量
                 resetIdleTimer()
                 if (chunk.notice) {
-                    // 压缩是旁路提示：不影响正文与用量，立即下发，由前端解释占用为何突变
-                    this.streamEmitter.fire({ type: 'stream', reqId, delta: '', done: false, notice: chunk.notice })
+                    // 压缩是旁路事件：开始时只下发瞬时状态，完成时落成系统消息。
+                    // 只发 toast 不落库的话，重开面板后「占用为何突然下降」就再也没有解释。
+                    const noticeMessage =
+                        chunk.notice === 'compacted' ? this.appendSystemNotice(conversationId) : undefined
+                    this.streamEmitter.fire({
+                        type: 'stream',
+                        reqId,
+                        delta: '',
+                        done: false,
+                        notice: chunk.notice,
+                        noticeMessage,
+                    })
                 }
                 if (chunk.toolActivity !== undefined) {
                     // 工具进度单独下发：前端据此展示「正在读取/写入」，不混进正文
                     this.streamEmitter.fire({ type: 'stream', reqId, delta: '', done: false, tool: chunk.toolActivity })
+                }
+                if (chunk.step !== undefined) {
+                    // 步骤按 id 覆盖：同一工具会经历排队 / 执行中 / 完成三次下发，前端以最后一次为准
+                    steps.set(chunk.step.id, chunk.step)
+                    this.streamEmitter.fire({ type: 'stream', reqId, delta: '', done: false, step: chunk.step })
                 }
                 answer += chunk.content
                 reasoning += chunk.reasoning
@@ -718,6 +772,7 @@ export class AiChatService implements vscode.Disposable {
             updateMessage(this.db, assistantMessageId, {
                 content: answer,
                 reasoning: reasoning.length > 0 ? reasoning : null,
+                steps: JSON.stringify([...steps.values()]),
                 status: 'completed',
                 finishReason: 'stop',
                 error: null,
@@ -772,10 +827,18 @@ export class AiChatService implements vscode.Disposable {
             clearIdleTimer()
             flush(true)
             const isCancelled = controller.signal.aborted
-            const status = isCancelled ? 'cancelled' : 'failed'
-            const message = isTimedOut
-                ? `通道超过 ${STREAM_IDLE_TIMEOUT_MS / 1000} 秒无响应，已自动中断`
-                : toErrorMessage(error)
+            /** 用户主动拒绝写入：属于正常操作，按停止收口，且不把「用户拒绝」当错误提示 */
+            const isUserDenied = permission.hasUserDenied
+            /** 用户点停止：CLI 会回一条 Interrupted by user，那是英文内部错误，不该露给用户 */
+            const isUserStopped = isCancelled && !isTimedOut
+            /** 只有用户自己停手才是 cancelled；超时属于故障，标 failed 才能带出提示 */
+            const status = isUserStopped || isUserDenied ? 'cancelled' : 'failed'
+            const message =
+                isUserDenied || isUserStopped
+                    ? ''
+                    : isTimedOut
+                      ? `通道超过 ${STREAM_IDLE_TIMEOUT_MS / 1000} 秒无响应，已自动中断`
+                      : toErrorMessage(error)
             // 中断前可能已产生部分输出与计费，已消耗的量照常落库，供工具栏如实展示
             const roundUsage = this.resolveRoundUsage(
                 sdkSessionId,
@@ -791,16 +854,19 @@ export class AiChatService implements vscode.Disposable {
             updateMessage(this.db, assistantMessageId, {
                 content: answer,
                 reasoning: reasoning.length > 0 ? reasoning : null,
+                // 中断也保留已完成的过程：用户需要看到停在哪一步，而不是整段消失
+                steps: JSON.stringify([...steps.values()]),
                 status,
-                finishReason: isCancelled ? 'cancelled' : 'error',
-                error: message,
+                finishReason: isUserStopped || isUserDenied ? 'cancelled' : 'error',
+                // 用户拒绝不是错误：落 null，消息只显示「已停止生成」状态行
+                error: message.length > 0 ? message : null,
                 totalTokens: finalUsage.totalTokens,
                 durationMs,
                 tokensEstimated: isTokensEstimated ? 1 : 0,
                 credits: roundUsage.credits,
                 requestId: usageMeta?.requestId ?? null,
             })
-            if (!isCancelled) {
+            if (!isCancelled && !isUserDenied) {
                 logger.error(`AI 生成失败：${message}`, error)
             }
             // 中断前请求已带上上下文，能拿到的用量照常记下，避免圆环回退成未知
@@ -821,7 +887,8 @@ export class AiChatService implements vscode.Disposable {
                 status,
                 content: answer,
                 reasoning: reasoning.length > 0 ? reasoning : undefined,
-                error: isCancelled ? undefined : message,
+                // 空串不下发：前端只在有错误原文时弹提示，拒绝留空即不打扰
+                error: message.length > 0 ? message : undefined,
                 usage: {
                     promptTokens: finalUsage.promptTokens,
                     completionTokens: finalUsage.completionTokens,
@@ -1167,6 +1234,7 @@ function toMessage(row: MessageRow): AiMessage {
         role: row.role === 'assistant' || row.role === 'system' ? row.role : 'user',
         content: row.content,
         reasoning: row.reasoning,
+        steps: parseSteps(row.steps),
         status: toStatus(row.status),
         finishReason: row.finishReason,
         error: row.error,
@@ -1177,6 +1245,23 @@ function toMessage(row: MessageRow): AiMessage {
         credits: row.credits,
         createdAt: row.createdAt,
     }
+}
+
+/**
+ * 解析步骤列：库里的 JSON 文本按不可信输入处理，逐条走共享收窄函数，脏数据整条丢弃。
+ * 关键约束：解析失败返回空数组而不是抛错 —— 过程数据不该让整条消息无法展示。
+ */
+function parseSteps(raw: string): AiStep[] {
+    let parsed: unknown
+    try {
+        parsed = JSON.parse(raw)
+    } catch {
+        return []
+    }
+    if (!Array.isArray(parsed)) {
+        return []
+    }
+    return parsed.map(readAiStep).filter((step): step is AiStep => step !== null)
 }
 
 /** 归一化为可比对的小写绝对路径：与工具守卫的白名单口径保持一致 */

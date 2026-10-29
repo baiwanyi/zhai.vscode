@@ -12,6 +12,7 @@ import type {
     AiPermissionDecision,
     AiPermissionRequest,
     AiProviderId,
+    AiStep,
 } from '@shared/types/aiChat'
 
 /** 通道标识：与 webview 共用的类型来源为 shared/types/aiChat */
@@ -74,6 +75,11 @@ export interface AiStreamChunk {
      * 关键约束：工具执行期间正文可能长时间无增量，上层据此重置空闲计时并向前端展示进度。
      */
     toolActivity?: string
+    /**
+     * 执行步骤的增量快照：通道按 id 覆盖式产出（排队 → 执行中 → 完成 / 失败），上层按 id 合并。
+     * 关键约束：detail 必须由通道脱敏（路径只留末段），完整入参可能含整篇正文，落库会撑爆消息表。
+     */
+    step?: AiStep
 }
 
 /**
@@ -98,10 +104,11 @@ export interface AiToolPolicy {
 
 /**
  * 审批往返能力：由调用方注入，通道在 canUseTool 中调用它把决定权交给用户。
- * 约定：实现方负责超时与取消收口，通道只等待一个结果，不感知交互细节。
+ * 约定：实现方负责超时与取消收口，通道只等待一个结果，不感知交互细节；
+ * 提问类按题量给出 timeoutMs —— 多题问卷逐题作答远慢于一次写入确认，共用同一超时会让问卷必然失效。
  */
 export interface AiPermissionChannel {
-    request(request: AiPermissionRequest): Promise<AiPermissionDecision>
+    request(request: AiPermissionRequest, timeoutMs?: number): Promise<AiPermissionDecision>
 }
 
 /** 流式生成请求：长度上限按通道能力可被忽略，但调用方始终传入 */

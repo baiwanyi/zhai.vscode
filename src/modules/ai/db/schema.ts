@@ -13,7 +13,7 @@
  */
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = '13'
+const SCHEMA_VERSION = '14'
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS conversations (
@@ -26,7 +26,7 @@ const DDL_STATEMENTS = [
         sdk_session_id TEXT,
         context_used_tokens   INTEGER NOT NULL DEFAULT 0,
         context_window_tokens INTEGER NOT NULL DEFAULT 0,
-        write_grant TEXT NOT NULL DEFAULT 'project',
+        write_grant TEXT NOT NULL DEFAULT 'document',
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL
     )`,
@@ -37,6 +37,7 @@ const DDL_STATEMENTS = [
         role            TEXT NOT NULL,
         content         TEXT NOT NULL,
         reasoning       TEXT,
+        steps           TEXT NOT NULL DEFAULT '[]',
         status          TEXT NOT NULL,
         finish_reason   TEXT,
         refs            TEXT NOT NULL DEFAULT '[]',
@@ -155,8 +156,8 @@ export function ensureAiSchema(db: Database.Database): boolean {
         dropColumn(db, 'ai_usage_logs', 'project')
         dropColumn(db, 'ai_usage_logs', 'estimated_cost')
         // v11：会话表补写入授权范围，write 模式据此决定工具白名单边界；
-        // 历史会话默认 project（有作品目录时授权整个作品），与「连续生成章节」的主用法一致
-        ensureColumn(db, 'conversations', 'write_grant', "write_grant TEXT NOT NULL DEFAULT 'project'")
+        // 默认 document（只写当前文档）：扩大授权需用户显式切换，升级库与新建库保持同一口径
+        ensureColumn(db, 'conversations', 'write_grant', "write_grant TEXT NOT NULL DEFAULT 'document'")
         // v12：取消对话 / 写作模式切换，历史会话统一归为写作模式，
         // 否则旧 chat 会话会在界面上既无切换入口、又被按只读处理，用户无法解释
         if (readSchemaVersion(db) < 12) {
@@ -166,6 +167,9 @@ export function ensureAiSchema(db: Database.Database): boolean {
         if (readSchemaVersion(db) < 13) {
             db.exec("UPDATE conversations SET mode = 'craft' WHERE mode = 'write'")
         }
+        // v14：消息表补执行步骤（工具调用与子任务的时间线）
+        // 历史消息保持空数组即「无过程可回放」，不回填也不推断 —— 过程只在生成当时可得
+        ensureColumn(db, 'messages', 'steps', "steps TEXT NOT NULL DEFAULT '[]'")
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)

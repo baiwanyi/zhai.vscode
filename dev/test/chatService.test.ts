@@ -1,7 +1,8 @@
 /**
  * chatService 单元测试：聚焦发送阶段的上下文注入与预算裁剪——待发送引用是否随消息注入、
  * 失效引用是否跳过、发送后是否清空、引用是否优先于历史保留，本轮用量与耗时的落库与下发，
- * 以及思维链按 reasoning 通道分流、落库与终态回传。
+ * 思维链按 reasoning 通道分流、落库与终态回传，压缩事件的两态处理（瞬时 / 落库系统消息），
+ * 以及新建会话的默认写入范围（仅当前文档）。
  * 复用约定：AI 通道由记录型假实现替身注入；DB 用临时目录真实库。
  */
 import * as fs from 'node:fs'
@@ -262,6 +263,83 @@ describe('思维链下发', () => {
     })
 })
 
+describe('上下文压缩事件', () => {
+    it('压缩完成落成系统消息并随流下发，且不进入下一轮模型上下文', async () => {
+        nextChunks = [
+            { content: '', reasoning: '', notice: 'compacting' },
+            { content: '', reasoning: '', notice: 'compacted' },
+            { content: '压缩后的回答', reasoning: '' },
+        ]
+        const { messages } = await sendAndCollect('压缩检查')
+
+        // 瞬时态只置状态、不带消息；完成态才落库并携带轻量结构
+        const compacting = messages.find((message) => message.notice === 'compacting')
+        expect(compacting?.noticeMessage).toBeUndefined()
+
+        const compacted = messages.find((message) => message.notice === 'compacted')
+        expect(compacted?.noticeMessage?.kind).toBe('compacted')
+        expect(compacted?.noticeMessage?.content).toBe('上下文已压缩')
+
+        const rows = listMessages(db, conversationId)
+        const systemRow = rows.find((row) => row.role === 'system')
+        expect(systemRow?.content).toBe('上下文已压缩')
+        expect(systemRow?.finishReason).toBe('compacted')
+
+        // 下一轮组装提示词时系统消息必须被过滤，否则解释性文案会污染上下文
+        nextChunks = []
+        await sendAndWait('下一轮')
+        expect(latestMessages().some((message) => message.content.includes('上下文已压缩'))).toBe(false)
+    })
+})
+
+describe('执行步骤', () => {
+    it('步骤事件随流下发，流末按 id 合并落库', async () => {
+        nextChunks = [
+            {
+                content: '',
+                reasoning: '',
+                step: {
+                    id: 'tu-1',
+                    kind: 'tool',
+                    name: 'Read',
+                    detail: 'c1.md',
+                    status: 'pending',
+                    error: null,
+                    parentId: null,
+                    elapsedMs: null,
+                },
+            },
+            {
+                content: '',
+                reasoning: '',
+                step: {
+                    id: 'tu-1',
+                    kind: 'tool',
+                    name: 'Read',
+                    detail: 'c1.md',
+                    status: 'done',
+                    error: null,
+                    parentId: null,
+                    elapsedMs: 800,
+                },
+            },
+            { content: '读到三行', reasoning: '' },
+        ]
+        const { messages } = await sendAndCollect('读一下')
+
+        const emitted = messages.flatMap((message) => (message.step === undefined ? [] : [message.step]))
+        expect(emitted.map((step) => step.status)).toEqual(['pending', 'done'])
+
+        const assistantRow = listMessages(db, conversationId)
+            .filter((row) => row.role === 'assistant')
+            .at(-1)
+        const stored = JSON.parse(assistantRow?.steps ?? '[]') as Array<{ id: string; status: string }>
+        // 同一 id 只留一条，以最后一次快照为准
+        expect(stored).toHaveLength(1)
+        expect(stored[0]?.status).toBe('done')
+    })
+})
+
 describe('本轮用量的采纳口径', () => {
     it('通道回传单轮用量时直接采用，不再按字数估算', async () => {
         nextChunks = [
@@ -301,5 +379,13 @@ describe('本轮用量的采纳口径', () => {
             .at(-1)
         expect(assistantRow?.totalTokens).toBeLessThan(100)
         expect(assistantRow?.tokensEstimated).toBe(1)
+    })
+})
+
+describe('会话的默认写入范围', () => {
+    it('新建会话默认只授权当前文档', () => {
+        // 用独立作用域建新会话，避免命中 beforeAll 里那份已有会话
+        const snapshot = service.getOrCreateSession('press/默认范围')
+        expect(snapshot.conversation.writeGrant).toBe('document')
     })
 })

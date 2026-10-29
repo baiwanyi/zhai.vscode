@@ -37,17 +37,21 @@ function makePolicy(overrides: Partial<AiToolPolicy> = {}): AiToolPolicy {
     }
 }
 
-/** 审批桥替身：记录请求并固定返回给定结果 */
+/** 审批桥替身：记录请求与等待期限，并固定返回给定结果 */
 function makeBroker(decision: AiPermissionDecision): {
     channel: AiPermissionChannel
     requests: AiPermissionRequest[]
+    timeouts: (number | undefined)[]
 } {
     const requests: AiPermissionRequest[] = []
+    const timeouts: (number | undefined)[] = []
     return {
         requests,
+        timeouts,
         channel: {
-            request: (request: AiPermissionRequest): Promise<AiPermissionDecision> => {
+            request: (request: AiPermissionRequest, timeoutMs?: number): Promise<AiPermissionDecision> => {
                 requests.push(request)
+                timeouts.push(timeoutMs)
                 return Promise.resolve(decision)
             },
         },
@@ -149,6 +153,18 @@ describe('模型提问', () => {
         }
     })
 
+    it('等待窗口按题量给：单题三分钟，四题触顶十分钟', async () => {
+        const broker = makeBroker({ allowed: true, answers: { [question.question]: '第一人称' } })
+        const guard = createToolGuard({ policy: makePolicy(), approval: 'auto', broker: broker.channel })
+
+        await guard('AskUserQuestion', { questions: [question] }, CALL_OPTIONS)
+        expect(broker.timeouts[0]).toBe(180_000)
+
+        const fourQuestions = [1, 2, 3, 4].map((index) => ({ ...question, question: `第 ${String(index)} 问` }))
+        await guard('AskUserQuestion', { questions: fourQuestions }, CALL_OPTIONS)
+        expect(broker.timeouts[1]).toBe(600_000)
+    })
+
     it('没有审批通道时拒绝，避免调用悬空', async () => {
         const guard = createToolGuard({ policy: makePolicy(), approval: 'auto', broker: null })
         const result = await guard('AskUserQuestion', { questions: [question] }, CALL_OPTIONS)
@@ -158,11 +174,7 @@ describe('模型提问', () => {
     it('问题缺少选项时不发起往返', async () => {
         const broker = makeBroker({ allowed: true })
         const guard = createToolGuard({ policy: makePolicy(), approval: 'auto', broker: broker.channel })
-        const result = await guard(
-            'AskUserQuestion',
-            { questions: [{ ...question, options: [] }] },
-            CALL_OPTIONS,
-        )
+        const result = await guard('AskUserQuestion', { questions: [{ ...question, options: [] }] }, CALL_OPTIONS)
         expect(broker.requests).toHaveLength(0)
         expect(result.behavior).toBe('deny')
     })

@@ -241,6 +241,7 @@ CREATE TABLE IF NOT EXISTS messages (
     role           TEXT NOT NULL,     -- 'user' | 'assistant' | 'system'
     content        TEXT NOT NULL,
     reasoning      TEXT,              -- 思维链
+    steps          TEXT NOT NULL DEFAULT '[]', -- 执行步骤（JSON：工具调用与子任务，仅展示用）
     status         TEXT NOT NULL,     -- pending|streaming|completed|failed|cancelled
     finish_reason  TEXT,
     refs           TEXT NOT NULL DEFAULT '[]',  -- 引用上下文（JSON：绝对路径 + 行范围 + 展示标签）
@@ -524,9 +525,39 @@ interface AbortRequest {
 
 **本轮用量口径**：CodeBuddy 在 `resume` 续接时，SDK `result` 消息的 `usage` 是**会话累计**（含此前各轮），不能直接当作本轮消耗。通道因此从 SDK 流事件拼出单轮值——输入取 `message_start.message.usage`、输出取 `message_delta.usage`，并以 `isRoundUsage` 标记该值是否可直接记账；首轮无累计语义时直接用 `result` 回传值。通道拼不出单轮值时（模型未上报流内用量）才回落到 CLI 会话记录（`CliUsageIndex.readRoundUsage`），仍取不到则按回复字数估算并标记 `tokens_estimated`。同一份结果同时用于消息落库、流末下发与用量记账。
 
-**压缩与推理强度**：SDK 的 `compact_boundary` 与 `status='compacting'` 转成 `notice`（`compacted` / `compacting`）随流下发，前端用 toast 解释「占用为何突然下降」，不写入消息与用量。推理强度（`effort`）与上下文档位同属模型菜单的全局选择：取值 `low` / `medium` / `high` / `xhigh`，经 `ai/selectEffort` 写 globalState（`ai.codebuddyEffort`），null 表示跟随模型默认，非白名单值在宿主侧直接拒绝。
+**压缩与推理强度**：SDK 的 `status='compacting'` 与 `compact_boundary` 转成 `notice`（`compacting` / `compacted`）随流下发，两者处理方式不同。`compacting` 是瞬时状态：前端在消息流末尾显示「正在压缩上下文…」的进度 Marker（`role="status"`），流末即清空，不落库。`compacted` 由宿主落成一条 `role='system'` 消息（`finish_reason='compacted'`，文案「上下文已压缩」），随流携带 `noticeMessage` 下发供前端按 id 去重后就地追加；重开面板后它仍以居中分隔标记留在消息流里，用来解释「占用为何突然下降」。系统消息不进模型上下文——`buildChatMessages` 只取 user / assistant，通道侧 `preparePrompt` 同样按 role 过滤，两侧都过滤才允许落库；该类消息不计入用量，也不参与会话命名。推理强度（`effort`）与上下文档位同属模型菜单的全局选择：取值 `low` / `medium` / `high` / `xhigh`，经 `ai/selectEffort` 写 globalState（`ai.codebuddyEffort`），null 表示跟随模型默认，非白名单值在宿主侧直接拒绝。
 
 **上下文用量口径**：底部圆环统计的是「当前会话最近一轮请求带上的上下文规模」，取 SDK 流内 `message_start` 的 `usage` 三项之和（`input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`）——缓存命中的历史同样占窗口，只取 `input_tokens` 会严重低估；分母只取模型清单的 `contextWindow.defaultLength` / 最大档位 / `maxInputTokens`（`getAvailableModelsRaw` 的官方字段），不探测 SDK 类型未声明的字段，取不到即视为未知。**不得**用 `result.usage` 充当上下文（续接时它是会话累计），也不得用 `ai.maxContextTokens`（历史裁剪预算）兜底。**取值优先级**：流内 `message_start` 快照 → 首轮的 `result.usage` 输入三项 → CLI 落盘记录的本轮 `rawUsage.prompt_tokens`；三者都取不到即视为未知，圆环按 0 展示但不编造分子。部分模型在流开头不上报输入用量（三项全 0），此时必须走 CLI 记录，否则圆环会一直停在 0%。占用值随生成结束写入 `conversations.context_used_tokens` / `context_window_tokens`（只改这两列，不刷新 `updated_at`，避免把会话顶到历史列表最前），`ai/session` 与 `ai/switchSession` 的 `contextUsage` 直接从库里读，因此重开窗口、切换会话都能恢复上一轮数字，不需要重新生成。档位选择只作用于该会话的首轮请求（`set_config.contextWindow`，需 `connect()` 后、`send()` 前下发），续接会话沿用首次生效的预算；因此通道由 `query()` 改为 V2 Session（`unstable_v2_createSession` / `unstable_v2_resumeSession`），`query()` 没有暴露 `set_config` 入口。
+
+### 10.6 交互式审批与流内问卷（已落地）
+
+**审批位置**：全部在消息流内完成，不再有模态弹窗。工具的逐次确认走 `canUseTool` → `PermissionBroker` → stream 的 `permission` 字段 → `ai/permissionDecision` 回包，一次只处理队首一条；卡片按 `messageId` 挂到发起该调用的助手气泡下，归属消息不在当前列表（切了会话、历史被裁剪）时回落到列表末尾——挂不上消息的确认会静默消失到超时。
+
+**两类事项两套形态**：写入确认是「是 / 否」二选一，用 `AiChatConfirmCard`（`Card` 槽位：居中标题「允许修改文件？」+ 完整目标路径说明 + 底部等宽双按钮，左拒绝描边、右允许高亮），不再提供路径改写；模型提问是多题选择，用 `AiChatQuestionnaire`（多步表单、进度、字母数字快捷键）。提交口径：写入回传 `{ allowed, path }`（path 恒为原目标），提问回传 `{ allowed, answers }`。分流点在 `AiChatMessageBody` 与列表末尾的兜底卡片，按 `kind` 选组件。
+
+**状态与错误**：助手消息的失败原因统一用 `Alert`（`variant="destructive"` + 图标）呈现；等待首字、已停止、未产生内容等过程状态一律用 `Marker` 状态行（图标 + 文案 + `role="status"`），不留裸文本或裸转圈——前者是错误、后者是过程，样式上必须能区分。
+
+**拒绝与停止不算失败**：用户点「拒绝」或「停止」后本轮按「已停止生成」收口，宿主不下发错误原文、不写错误日志，前端也不弹 toast——这是用户的正常操作，不该被当成故障提示。停止时 CLI 会回一条英文 `Interrupted by user`，它属于内部错误，不落库也不展示；前端对 `cancelled` 状态一律忽略 `error`，存量数据里的英文提示同样不会再露出来。识别依据是审批桥的 `hasUserDenied` 标记（只有「写入类事项被用户主动拒绝」才置位，超时自动拒绝与提问跳过都不算）与「已取消且非超时」的判断。超时仍标为 `failed` 并保留「通道超过 N 秒无响应」的中文提示——那是故障，需要解释。
+
+**流内问卷**：`AiPermissionRequest.kind === 'question'` 时，宿主的 `PermissionBroker` 在推送前补两个字段——`messageId`（本轮助手消息 id，由会话服务注入，通道层不感知消息）与 `expiresAt`（截止时间戳）。前端按 `messageId` 把问卷挂到对应气泡下（`AiChatQuestionnaire`，复用 `@components/ui/questionnaire` 的多步表单）；未命中当前消息列表或宿主未注入 `messageId` 时退回原弹窗，避免卡片永远不可见。答案经 `FormData` 收集，多选按 `、` 合并（与弹窗共用 `ANSWER_SEPARATOR`），以问题原文为键并入 `updatedInput.answers` 归还模型。
+
+**超时口径**：工具审批固定 60 秒；提问按题量给等待窗口——单题 3 分钟、四题触顶 10 分钟（`min(题数 × 180s, 600s)`）。固定 60 秒只够答一题，多题问卷会在用户操作途中被判超时。超时按拒绝结算，模型可换方案或重新提问；问卷因此**不支持断点续填**——SDK 侧该工具调用已被拒绝，补交答案不会生效。
+
+**关键约束**：问卷根是 `<form>`，提交必须 `preventDefault`，否则 webview 会走表单默认行为；过期后只回传拒绝，不再送答案（宿主已按超时结算，再送等于假装生效）。
+
+### 10.7 执行过程（Trace，已落地）
+
+**数据来源**：步骤快照由四类 SDK 消息拼出——`assistant` 的 `tool_use` 块（建行，带工具名与入参）、`tool_progress`（转 running，带累计耗时）、`user` 的 `tool_result` 块（转 done / error，带失败原因）、`system.task_started` 与 `task_updated` / `task_notification`（子任务行）。同一 id 会多次下发，通道与上层都按 id 覆盖，**以最后一次快照为准**。
+
+**脱敏口径**：步骤的 `detail` 只保留「最说明做了什么」的一个入参字段——路径类字段只取末段（`D:/press/剑来/Chapters/c1.md` → `c1.md`），命令与检索词按 80 字符截断。绝不序列化整个入参：写入类工具的入参带整篇正文，落库会撑爆消息表。
+
+**收口**：`result` 到达时，仍未拿到终态的步骤统一落定（成功 → done、失败 → error），否则中断或 CLI 未回传终态时界面会一直停在「执行中」。
+
+**渲染**：`AiChatMessageSteps` 复用 `@components/ui/trace` 的折叠轨迹，排在思维链之后、正文之前。执行中强制展开，落定后收起为一行「执行过程 · N 步」，失败行把原因写进标题文字（状态色不作为唯一信息来源）。`AiChatMessageBody` 在正文为空时优先展示步骤块，其次才是加载态——有过程可看时不该只剩转圈。
+
+**持久化**：`messages.steps`（schema v14，JSON 文本）。写入在流末一次性完成，中断也保留已完成的过程；读取走 `readAiStep` 逐条收窄，解析失败按空数组处理，脏数据不能挡住整条消息的展示。
+
+**已知限制**：后台任务的 `task_notification` 可能晚于本轮 `result`（V2 Session 在 result 处收口），此时子任务行只展示到「进行中」；`input_json_delta` 未解析，工具参数不做逐字流式展示。
 
 实现位置：`src/modules/ai/`（`providers/` SDK 封装与模型清单、`chatService.ts` 会话编排、`promptEnhance.ts` 提示词增强（写作 / 对话 / 图像三套口径集中）、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引（积分补录与单轮用量兜底）、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
 

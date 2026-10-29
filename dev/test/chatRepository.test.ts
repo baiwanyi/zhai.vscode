@@ -1,5 +1,5 @@
 /**
- * chatRepository 单元测试：以临时目录上的真实 SQLite 库验证会话与消息的读写、refs 列往返、
+ * chatRepository 单元测试：以临时目录上的真实 SQLite 库验证会话与消息的读写、refs 与 steps 列往返、
  * 会话按作用域隔离、级联删除与用量统计（与生产同基座 openAiDatabase，含 foreign_keys 开启）。
  */
 import * as fs from 'node:fs'
@@ -19,6 +19,7 @@ import {
     listMessages,
     sumTokensSince,
     updateConversationContextUsage,
+    updateMessage,
 } from '../../src/modules/ai/db/chatRepository'
 import { openAiDatabase } from '../../src/modules/ai/db/connection'
 import { ensureAiSchema } from '../../src/modules/ai/db/schema'
@@ -58,6 +59,7 @@ function makeMessage(overrides: Partial<MessageRow> = {}): MessageRow {
         role: 'user',
         content: '正文',
         reasoning: null,
+        steps: '[]',
         status: 'completed',
         finishReason: null,
         refs: '[]',
@@ -210,9 +212,9 @@ describe('conversations', () => {
         expect(readColumns(legacy, 'ai_usage_logs')).not.toContain('estimated_cost')
         // 只删遗留列，补列与重建索引不受影响
         expect(readColumns(legacy, 'ai_usage_logs')).toContain('credits')
-        const indexes = (
-            legacy.prepare("PRAGMA index_list('conversations')").all() as Array<{ name: string }>
-        ).map((item) => item.name)
+        const indexes = (legacy.prepare("PRAGMA index_list('conversations')").all() as Array<{ name: string }>).map(
+            (item) => item.name,
+        )
         expect(indexes).not.toContain('idx_conv_file')
         expect(indexes).toContain('idx_conv_project')
         legacy.close()
@@ -226,6 +228,39 @@ describe('messages', () => {
         const rows = listMessages(db, 'conv-read')
         const target = rows.find((row) => row.id === 'msg-refs')
         expect(target?.refs).toBe(refs)
+    })
+
+    it('steps 列按 JSON 文本往返，更新时整体覆盖', () => {
+        insertConversation(db, makeConversation({ id: 'conv-steps' }))
+        const steps = JSON.stringify([
+            {
+                id: 'tu-1',
+                kind: 'tool',
+                name: 'Read',
+                detail: 'c1.md',
+                status: 'running',
+                error: null,
+                parentId: null,
+                elapsedMs: 800,
+            },
+        ])
+        insertMessage(db, makeMessage({ id: 'msg-steps', conversationId: 'conv-steps', steps }))
+        expect(listMessages(db, 'conv-steps').find((row) => row.id === 'msg-steps')?.steps).toBe(steps)
+
+        updateMessage(db, 'msg-steps', {
+            content: '正文',
+            reasoning: null,
+            steps: '[]',
+            status: 'completed',
+            finishReason: 'stop',
+            error: null,
+            totalTokens: 1,
+            durationMs: 1,
+            tokensEstimated: 0,
+            credits: null,
+            requestId: null,
+        })
+        expect(listMessages(db, 'conv-steps').find((row) => row.id === 'msg-steps')?.steps).toBe('[]')
     })
 
     it('按创建时间升序返回', () => {

@@ -47,7 +47,6 @@ import { AiChatComposer } from './layout/AiChatComposer'
 import { AiChatHistoryMenu } from './layout/AiChatHistoryMenu'
 import { AiChatMentionDialog } from './layout/AiChatMentionDialog'
 import { AiChatMessageList } from './layout/AiChatMessageList'
-import { AiChatPermissionDialog } from './layout/AiChatPermissionDialog'
 import { AiChatReferenceDialog } from './layout/AiChatReferenceDialog'
 import { composeCommandContent, readAiStateKind, wantsContinuousGeneration } from './utils'
 import type { AiCommand, AiCommandId } from './constants'
@@ -86,6 +85,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         setInput,
         contextUsage,
         activeTool,
+        transientNotice,
         loadSession,
         send,
         stop,
@@ -218,10 +218,11 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
     }, [loadRuntime, loadWriteState, phase])
 
     const messages = session?.messages ?? []
+
     /** 末条消息作为滚动锚点，流式增长时由 MessageScroller 保持贴底 */
     const lastMessageId = messages[messages.length - 1]?.id
     const hasApiKey = runtime?.hasApiKey === true
-    const writeGrant = session?.conversation.writeGrant ?? 'project'
+    const writeGrant = session?.conversation.writeGrant ?? 'document'
     const hasWriteTarget = writeState?.target !== null && writeState?.target !== undefined
     /** 可写范围：编辑器目标或作品目录任一存在即可发送，连续生成章节不依赖选区 */
     const hasWritableScope = hasWriteTarget || (projectDir !== null && projectDir.length > 0)
@@ -419,6 +420,9 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     messages={messages}
                     lastMessageId={lastMessageId}
                     phase={phase}
+                    transientNotice={transientNotice}
+                    pendingApproval={pendingPermission}
+                    onAnswer={(decision) => void respondPermission(decision)}
                     runtime={runtime}
                     onLoginCodebuddy={() => void runHostCommand('zhai.ai.loginCodebuddy')}
                 />
@@ -456,10 +460,6 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     onEnhanceRequest={enhance}
                 />
             </AppFooter>
-            <AiChatPermissionDialog
-                pending={pendingPermission}
-                onRespond={(decision) => void respondPermission(decision)}
-            />
             <ConfirmDialog
                 open={pendingAutoApprove !== null}
                 title="允许本轮直接写入？"

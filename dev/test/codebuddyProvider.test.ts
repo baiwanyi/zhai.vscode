@@ -133,6 +133,53 @@ function assistantWithImage(bytes: Uint8Array): Message {
     }
 }
 
+/** 助手发起一次工具调用：整条消息到达时才有完整入参 */
+function assistantToolUse(id: string, name: string, input: Record<string, unknown>): Message {
+    return {
+        type: 'assistant',
+        uuid: `a-${id}`,
+        session_id: 's1',
+        parent_tool_use_id: null,
+        message: {
+            id: 'm1',
+            type: 'message',
+            role: 'assistant',
+            model: 'deepseek-chat',
+            content: [{ type: 'tool_use', id, name, input }],
+            stop_reason: 'tool_use',
+            stop_sequence: null,
+            usage: { input_tokens: 10, output_tokens: 5 },
+        },
+    }
+}
+
+/** 工具执行进度：累计耗时以秒上报 */
+function toolProgress(id: string, name: string, seconds: number): Message {
+    return {
+        type: 'tool_progress',
+        tool_use_id: id,
+        tool_name: name,
+        parent_tool_use_id: null,
+        elapsed_time_seconds: seconds,
+        uuid: `p-${id}`,
+        session_id: 's1',
+    }
+}
+
+/** 工具结果回灌：done / error 的唯一权威来源 */
+function toolResult(id: string, content: string, isError = false): Message {
+    return {
+        type: 'user',
+        uuid: `u-${id}`,
+        session_id: 's1',
+        parent_tool_use_id: null,
+        message: {
+            role: 'user',
+            content: [{ type: 'tool_result', tool_use_id: id, content, is_error: isError }],
+        },
+    }
+}
+
 /** 文本通道替身：每次会话按工厂产出消息，并记录建会话时下发的选项 */
 function createTextClient(
     factory: () => Message[],
@@ -252,6 +299,63 @@ describe('文本通道的流解析', () => {
         const provider = new CodeBuddyProvider(new SecretsService(createSecretStorage()), client)
 
         await expect(collect(provider, {})).rejects.toThrow('工具轮次已用尽')
+    })
+})
+
+describe('执行步骤的解析', () => {
+    /** 只取带步骤的增量，便于按 id 比对状态序列 */
+    function pickSteps(chunks: AiStreamChunk[]): NonNullable<AiStreamChunk['step']>[] {
+        return chunks.flatMap((chunk) => (chunk.step === undefined ? [] : [chunk.step]))
+    }
+
+    it('工具调用按排队 → 执行中 → 完成三次下发，路径只保留末段', async () => {
+        const { client } = createTextClient(() => [
+            initMessage('s1'),
+            assistantToolUse('tu-1', 'Read', { file_path: 'D:/press/剑来/Chapters/c1.md' }),
+            toolProgress('tu-1', 'Read', 1.5),
+            toolResult('tu-1', '章节正文'),
+            successResult(),
+        ])
+        const provider = new CodeBuddyProvider(new SecretsService(createSecretStorage()), client)
+
+        const steps = pickSteps(await collect(provider, {}))
+        const states = steps.filter((step) => step.id === 'tu-1').map((step) => step.status)
+        expect(states).toEqual(['pending', 'running', 'done'])
+        // 绝对路径只留文件名：本机目录结构不该落库，也不该出现在界面
+        expect(steps[0]?.detail).toBe('c1.md')
+        expect(steps[1]?.elapsedMs).toBe(1500)
+        expect(steps[1]?.status).toBe('running')
+    })
+
+    it('工具失败时标记 error 并带上失败原因', async () => {
+        const { client } = createTextClient(() => [
+            initMessage('s1'),
+            assistantToolUse('tu-2', 'Edit', { file_path: 'D:/press/a.md' }),
+            toolResult('tu-2', '文件不在允许写入的范围内', true),
+            successResult(),
+        ])
+        const provider = new CodeBuddyProvider(new SecretsService(createSecretStorage()), client)
+
+        // 同一 id 会多次下发，终态以最后一次为准
+        const failed = pickSteps(await collect(provider, {}))
+            .filter((step) => step.id === 'tu-2')
+            .at(-1)
+        expect(failed?.status).toBe('error')
+        expect(failed?.error).toContain('不在允许写入')
+    })
+
+    it('流末把未拿到终态的步骤收口为已完成', async () => {
+        const { client } = createTextClient(() => [
+            initMessage('s1'),
+            assistantToolUse('tu-3', 'Grep', { pattern: '剑来' }),
+            successResult(),
+        ])
+        const provider = new CodeBuddyProvider(new SecretsService(createSecretStorage()), client)
+
+        const steps = pickSteps(await collect(provider, {}))
+        expect(steps.at(-1)?.id).toBe('tu-3')
+        expect(steps.at(-1)?.status).toBe('done')
+        expect(steps.at(-1)?.detail).toBe('剑来')
     })
 })
 

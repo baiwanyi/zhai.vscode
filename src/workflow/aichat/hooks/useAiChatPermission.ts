@@ -1,8 +1,10 @@
 /**
- * 工具审批队列：订阅宿主推送的待确认事项，按到达顺序逐条交给弹窗，用户的决定经 ai/permissionDecision 回传。
+ * 待确认队列：订阅宿主推送的写入确认与模型提问，按到达顺序逐条交给消息流内的确认卡片，
+ * 用户的决定经 ai/permissionDecision 回传。
  * 复用约定：错误统一经调用方注入的 onError 上报；队列只保存宿主生成的 id，不解析工具入参。
- * 关键约束：流末必须清空剩余条目（宿主已拒绝全部等待），否则弹窗会停在已失效的事项上；
- * 同 id 重复推送要忽略，避免模型重试时同一条审批被排两次。
+ * 关键约束：流末必须清空剩余条目（宿主已拒绝全部等待），否则卡片会停在已失效的事项上；
+ * 同 id 重复推送要忽略，避免模型重试时同一条审批被排两次；
+ * 一次只放出队首一条 —— 多张卡片同时可提交会让「哪个决定对应哪次调用」变得不可解释。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AiPermissionDecision, AiPermissionRequest } from '@shared/types/aiChat'
