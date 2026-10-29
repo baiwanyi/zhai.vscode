@@ -7,7 +7,7 @@
  */
 
 /** 索引目录：与 images 平级，只放数据库文件，不参与媒体扫描 */
-export const MEDIA_INDEX_DIR = '.media'
+export const MEDIA_INDEX_DIR = 'sqlite'
 /** 索引库文件名 */
 export const MEDIA_DB_FILE = 'media.db'
 

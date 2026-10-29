@@ -1,5 +1,5 @@
 /**
- * 媒体索引库连接：按存储根打开 {root}/.media/media.db，并提供降级与损坏重建。
+ * 媒体索引库连接：按存储根打开 {root}/sqlite/media.db，并提供降级与损坏重建。
  * 复用约定：与 press.db 同用 better-sqlite3，但 PRAGMA 不同——存储根常位于云盘或网络盘，
  * 采用 DELETE 日志模式保证只有一个库文件，避免 -wal / -shm 被同步盘拆成冲突副本；
  * synchronous 取 FULL，元数据写入低频，可靠优先于吞吐。

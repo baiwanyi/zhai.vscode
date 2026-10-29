@@ -160,7 +160,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     dashboardProvider.attachPressCoverStore(pressCoverStore)
     const pressAiService = new PressAiService(pressDb, aiProvider, usageRecorder)
     const imageRouter = new ImageProviderRouter(secrets)
-    // 媒体索引：按当前存储根懒打开 {root}/.media/media.db，切根后由连接缓存自行重建
+    // 媒体索引：按当前存储根懒打开 {root}/sqlite/media.db，切根后由连接缓存自行重建
     const mediaDbProvider = (): ReturnType<typeof openMediaDatabase> =>
         openMediaDatabase(resolveStorageRoot(), cacheRoot)
     const portraitService = new PortraitService(mediaDbProvider)

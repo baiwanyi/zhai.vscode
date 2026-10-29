@@ -5,7 +5,7 @@
 **状态**：已定稿，待实施
 **宿主**：VSCode 插件 Zhai（宅桌面）
 **前身**：`docs/modules/imagegen.md`（生图模块，图片按 `press/{作品}/Images/` 归档）
-**存储根**：`{storage.rootPath}/images/{YYYYMM}/`，索引在 `{storage.rootPath}/.media/media.db`
+**存储根**：`{storage.rootPath}/images/{YYYYMM}/`，索引在 `{storage.rootPath}/sqlite/media.db`
 
 ---
 
@@ -37,7 +37,7 @@
 | 1 | 正文插入改为**引用原图**（写 `@zhai/` 存储根引用，不复制副本） | §5.4 |
 | 2 | 删除角色 / 条目 / 作品时**不删图**，也不改写出处字段 | §7.2 |
 | 3 | 默认**全量按月分组**展示，年月下拉只用于过滤 | §6.1、§6.2 |
-| 4 | 索引库**放存储根**（`.media/media.db`），不放缓存目录 | §4.1 |
+| 4 | 索引库**放存储根**（`sqlite/media.db`），不放缓存目录 | §4.1 |
 
 **关于决策 4 的原因**：放缓存目录时，重建只能恢复文件清单（`id` / `path` / `month` / 体积），而**出处（作品、角色、条目）、出图参数（提示词、比例、画风）、`origin`、`scope` 全部丢失**，`external` 类引用更是无从恢复（需扫全盘）。这些正是本次升级的核心价值，因此索引必须与图片同处一个存储根，随备份与迁移一起走。
 
@@ -73,7 +73,7 @@
 │   │   └── 20261029153102Qm7TzR.webp
 │   └── 202611/
 │       └── 20261101102233Kd4WnE.png
-├── .media/
+├── sqlite/
 │   └── media.db                 ← 媒体索引（随存储根迁移、可随 images 一起备份）
 ├── press/{作品名}/               ← 文档、人物卡、设定，图片不再写这里
 ├── notes/202610/                ← 笔记
@@ -86,7 +86,7 @@
 - `images/` 与 `press/`、`notes/` 平级。换存储根时整库迁移，路径全部是相对路径，不需要改写任何记录。
 - 空目录不预建，落盘时 `createDirectory({recursive: true})`。
 - `prompt/images/` 是词库预览图，由 `zhai.prompt.rootPath` 派生，**不属于媒体库**，扫描必须排除。
-- `.media/` 只放索引，扫描 `images/**` 时天然不会命中（扫描只按 `images/{YYYYMM}/{文件}` 两层取）。
+- `sqlite/` 只放索引，扫描 `images/**` 时天然不会命中（扫描只按 `images/{YYYYMM}/{文件}` 两层取）。
 
 ### 3.2 文件名
 
@@ -128,12 +128,12 @@
 | 侧车 `{id}.json` | 否。跨目录聚合要全量遍历，无法按年月/引用查询 |
 | 放进 `press.db` | 否。媒体跨作品/笔记/外部，与「写作管理库」语义不符 |
 | 新建 `media.db`，放缓存目录 | 否。重建会丢出处、出图参数与 external 引用（见 §1.3） |
-| 新建 `media.db`，放 `{storage.rootPath}/.media/` | **采用**。与图片同处一个根，备份/换机/换根一并带走 |
+| 新建 `media.db`，放 `{storage.rootPath}/sqlite/` | **采用**。与图片同处一个根，备份/换机/换根一并带走 |
 
 **打开与降级**：
 
 ```ts
-// 主路径：{root}/.media/media.db
+// 主路径：{root}/sqlite/media.db
 // 降级：{cache}/media.db（存储根只读 / UNC 锁失败 / 权限不足）
 ```
 
@@ -529,7 +529,7 @@ notes/{YYYYMM}/*.md                                  → note
 
 | 文件 | 职责 |
 | --- | --- |
-| `constants.ts` | `MEDIA_DIR='images'`、`INDEX_DIR='.media'`、扩展名白名单、批量上限、id 正则 |
+| `constants.ts` | `MEDIA_DIR='images'`、`INDEX_DIR='sqlite'`、扩展名白名单、批量上限、id 正则 |
 | `mediaNaming.ts` | `nextMediaId(dirUri, at)`：时间戳 + 6 位随机 + 冲突重试（替代 `imageNaming.ts`） |
 | `db/connection.ts` | 按存储根打开 `media.db`（`journal_mode=DELETE`），建 `media` / `media_usage` / `media_meta`，含降级与 quick_check |
 | `mediaRepository.ts` | 表读写：insert / listByMonth / detail / deleteById / months / ownerNames |
@@ -637,7 +637,7 @@ notes/{YYYYMM}/*.md                                  → note
 - 删除被引用的图有二次确认并列出引用处；删除后封面正确回退。
 - 删除角色后图片仍在库中，出处显示「（已删除）」。
 - 旧库迁移后：图片全部在新目录、封面与角色/条目封面指向正确、原目录清空、侧车清理。
-- 断开/删除 `.media/media.db` 后重启：图片仍在、列表可读，UI 提示索引已重建。
+- 断开/删除 `sqlite/media.db` 后重启：图片仍在、列表可读，UI 提示索引已重建。
 
 ### P1（体验补全）
 
@@ -663,5 +663,5 @@ notes/{YYYYMM}/*.md                                  → note
 | 1 | 插入行为 | 引用原图（写 `@zhai/` 存储根引用） | 源图更新即生效、不产生副本、引用可追踪 |
 | 2 | 删角色/条目/作品 | 不删图、不改写出处 | 图片已全局化，可能被别处引用；历史事实不篡改 |
 | 3 | 默认视图 | 全量按月分组 | 进页面即见全部，符合 Google Photos 式时间轴习惯 |
-| 4 | 索引位置 | `{root}/.media/media.db` | 缓存目录重建会丢出处、出图参数与 external 引用 |
+| 4 | 索引位置 | `{root}/sqlite/media.db` | 缓存目录重建会丢出处、出图参数与 external 引用 |
 | 5 | 关联基数 | 出处一对一、引用一对多 | 一张图可同时被多个作品/笔记/章节使用 |
