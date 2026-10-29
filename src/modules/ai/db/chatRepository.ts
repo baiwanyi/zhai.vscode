@@ -12,6 +12,7 @@ import type Database from 'better-sqlite3'
 export interface ConversationRow {
     id: string
     title: string
+    /** 模式标签：仅归档展示，当前固定 craft */
     mode: string
     /** 会话所属作用域（作品目录，形如 press/{作品名}）；NULL 表示不属于任何作品的通用对话 */
     projectDir: string | null
@@ -130,11 +131,6 @@ export function listConversations(db: Database.Database, limit: number, projectD
 
 export function updateConversationTitle(db: Database.Database, id: string, title: string): void {
     db.prepare('UPDATE conversations SET title = ? WHERE id = ?').run(title, id)
-}
-
-/** 更新会话模式：对话 / 写作，随会话持久化，重启窗口后恢复 */
-export function updateConversationMode(db: Database.Database, id: string, mode: string): void {
-    db.prepare('UPDATE conversations SET mode = ? WHERE id = ?').run(mode, id)
 }
 
 /**

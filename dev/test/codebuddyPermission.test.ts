@@ -120,8 +120,8 @@ describe('写入工具', () => {
         }
     })
 
-    it('只读模式下拒绝写入', async () => {
-        const guard = createToolGuard({ policy: makePolicy(), approval: 'readonly', broker: null })
+    it('没有写入根时拒绝写入', async () => {
+        const guard = createToolGuard({ policy: makePolicy({ writeRoots: [] }), approval: 'auto', broker: null })
         const result = await guard('Write', { file_path: path.join(WRITE_ROOT, 'c1.md') }, CALL_OPTIONS)
         expect(result.behavior).toBe('deny')
     })

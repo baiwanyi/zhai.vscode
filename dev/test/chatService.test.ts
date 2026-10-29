@@ -78,7 +78,7 @@ async function sendAndWait(content: string): Promise<{ skippedContexts: string[]
         })
     })
     const timer = setTimeout(() => finish?.(), 3000)
-    const result = await service.send(`req-${Date.now()}`, conversationId, content)
+    const result = await service.send(`req-${Date.now()}`, conversationId, content, false)
     await finished
     clearTimeout(timer)
     return { ...result, done }

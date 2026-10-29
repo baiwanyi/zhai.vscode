@@ -4,8 +4,8 @@
  * press/workspace 与 press/open 作品类、press/extract/characters 人物卡提取、press/extract/outline 大纲提取）
  * 委托给各自路由。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
- * 上下文增删走 ai/context*；会话模式与写入范围走 ai/setMode / ai/setWriteGrant，
- * 整段写回走 ai/writeState / ai/writeDiff / ai/applyHunks，state 广播以 channel 区分
+ * 上下文增删走 ai/context*；写入范围与审批模式走 ai/setWriteGrant / ai/setApprovalMode，
+ * 工具审批经 ai/permissionDecision 回包，写入状态走 ai/writeState，state 广播以 channel 区分
  * ai（runtime / context / writeTarget）与 workflow（路由事实，含当前作品目录）。
  * 关键约束：上下文移除与写回只接受宿主生成的 id（不接受路径与范围入参），所有 Webview 入参逐字段收窄后再用；
  * 会话协议可带 projectDir 作用域（作品目录），缺省即通用对话，作用域只用于过滤查询、不参与路径拼接；
@@ -25,8 +25,6 @@ import type { NamingRoutes } from '@modules/naming/namingRoutes'
 import type { PressRoutes } from '@modules/press/pressRoutes'
 import type { ProofreadRoutes } from '@modules/proofread/proofreadRoutes'
 import type {
-    AiApprovalMode,
-    AiConversationMode,
     AiModelChoices,
     AiPermissionDecision,
     AiReasoningEffort,
@@ -256,29 +254,16 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             case 'ai/writeState': {
                 return this.service.getWriteState()
             }
-            case 'ai/setMode': {
-                return { mode: this.service.setMode(readModePayload(payload)) }
-            }
             case 'ai/setWriteGrant': {
                 return { writeGrant: this.service.setWriteGrant(readWriteGrantPayload(payload)) }
-            }
-            case 'ai/setApprovalMode': {
-                return { approval: await this.service.setApprovalMode(readApprovalPayload(payload)) }
             }
             case 'ai/permissionDecision': {
                 const { id, decision } = readPermissionDecisionPayload(payload)
                 return { resolved: this.service.resolvePermission(id, decision) }
             }
-            case 'ai/writeDiff': {
-                return this.service.buildWriteDiff(readMessageIdPayload(payload, 'ai/writeDiff'))
-            }
-            case 'ai/applyHunks': {
-                const request = readHunksPayload(payload)
-                return this.service.applyHunks(request.messageId, request.accepted)
-            }
             case 'ai/send': {
-                const { conversationId, content, applyPolicy, titleHint } = readSendPayload(payload)
-                return this.service.send(reqId, conversationId, content, applyPolicy, titleHint)
+                const { conversationId, content, isAutoApprove, titleHint } = readSendPayload(payload)
+                return this.service.send(reqId, conversationId, content, isAutoApprove, titleHint)
             }
             case 'ai/draft': {
                 const { conversationId, input, commandId } = readDraftPayload(payload)
@@ -551,13 +536,13 @@ function readContextIdPayload(payload: unknown): string {
 
 /**
  * 校验 ai/send 入参：Webview 侧数据不可信，逐字段收窄后再落库。
- * applyPolicy 缺省按 replace 处理（写作模式下用户直接输入也允许写回），report 仅由「校对」命令传入。
+ * autoApprove 为本轮写入授权：只有严格为 true 才生效，缺省按逐次确认处理。
  * titleHint 为展示用短标题（命令名称），仅用于会话命名，超长或空值一律忽略。
  */
 function readSendPayload(payload: unknown): {
     conversationId: string
     content: string
-    applyPolicy: 'replace' | 'report'
+    isAutoApprove: boolean
     titleHint: string | null
 } {
     if (typeof payload !== 'object' || payload === null) {
@@ -566,7 +551,7 @@ function readSendPayload(payload: unknown): {
     const value = payload as {
         conversationId?: unknown
         content?: unknown
-        applyPolicy?: unknown
+        autoApprove?: unknown
         titleHint?: unknown
     }
     if (typeof value.conversationId !== 'string' || typeof value.content !== 'string') {
@@ -576,7 +561,7 @@ function readSendPayload(payload: unknown): {
     return {
         conversationId: value.conversationId,
         content: value.content,
-        applyPolicy: value.applyPolicy === 'report' ? 'report' : 'replace',
+        isAutoApprove: value.autoApprove === true,
         titleHint: titleHint.length > 0 && titleHint.length <= MAX_TITLE_HINT_LENGTH ? titleHint : null,
     }
 }
@@ -620,18 +605,6 @@ function readModelSelectionPayload(payload: unknown): { modelId: string; manual:
     return { modelId: value, manual: manual === true }
 }
 
-/** 校验 ai/setMode 入参：只接受两个合法模式值 */
-function readModePayload(payload: unknown): AiConversationMode {
-    if (typeof payload !== 'object' || payload === null) {
-        throw new Error('ai/setMode 缺少参数')
-    }
-    const mode = (payload as { mode?: unknown }).mode
-    if (mode !== 'chat' && mode !== 'write') {
-        throw new Error('ai/setMode 参数类型不正确')
-    }
-    return mode
-}
-
 /** 校验 ai/setWriteGrant 入参：只接受「仅当前文档」与「整个作品」两个范围 */
 function readWriteGrantPayload(payload: unknown): AiWriteGrant {
     if (typeof payload !== 'object' || payload === null) {
@@ -651,18 +624,6 @@ const MAX_PERMISSION_PATH_LENGTH = 512
 /** 答案条数与单条长度上限：答案会并入工具入参发给模型，必须限制规模 */
 const MAX_ANSWER_COUNT = 8
 const MAX_ANSWER_LENGTH = 512
-
-/** 校验 ai/setApprovalMode 入参：只接受三档审批模式 */
-function readApprovalPayload(payload: unknown): AiApprovalMode {
-    if (typeof payload !== 'object' || payload === null) {
-        throw new Error('ai/setApprovalMode 缺少参数')
-    }
-    const approval = (payload as { approval?: unknown }).approval
-    if (approval !== 'ask' && approval !== 'auto' && approval !== 'readonly') {
-        throw new Error('ai/setApprovalMode 参数类型不正确')
-    }
-    return approval
-}
 
 /**
  * 校验 ai/permissionDecision 入参：id 必须存在，路径与答案逐字段收窄后再交给服务层。
@@ -840,40 +801,3 @@ function readPositiveInt(value: unknown, fallback: number): number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 1 ? Math.trunc(value) : fallback
 }
 
-/** 校验写回类入参：只接受宿主生成的助手消息 id，不接受路径与范围（防越权写入任意位置） */
-function readMessageIdPayload(payload: unknown, method: string): string {
-    if (typeof payload !== 'object' || payload === null) {
-        throw new Error(`${method} 缺少参数`)
-    }
-    const messageId = (payload as { messageId?: unknown }).messageId
-    if (typeof messageId !== 'string' || messageId.length === 0) {
-        throw new Error(`${method} 参数类型不正确`)
-    }
-    return messageId
-}
-
-/** 逐段写回的接受段数上限：单篇改写最多千余行，超出视为异常载荷 */
-const MAX_WRITE_HUNKS = 500
-
-/**
- * 校验 ai/applyHunks 入参：消息 id + 接受的段索引数组。
- * 关键约束：索引只接受非负整数，越界索引由服务层忽略而不是错误——前端可能因文档变化滞后一拍。
- */
-function readHunksPayload(payload: unknown): { messageId: string; accepted: number[] } {
-    const messageId = readMessageIdPayload(payload, 'ai/applyHunks')
-    const raw = (payload as { accepted?: unknown }).accepted
-    if (!Array.isArray(raw)) {
-        throw new Error('ai/applyHunks 参数类型不正确')
-    }
-    if (raw.length > MAX_WRITE_HUNKS) {
-        throw new Error('ai/applyHunks 段数超出上限')
-    }
-    const accepted: number[] = []
-    for (const item of raw) {
-        if (typeof item !== 'number' || !Number.isInteger(item) || item < 0) {
-            throw new Error('ai/applyHunks 段索引不正确')
-        }
-        accepted.push(item)
-    }
-    return { messageId, accepted }
-}

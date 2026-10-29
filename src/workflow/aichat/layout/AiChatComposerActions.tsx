@@ -1,31 +1,25 @@
 /**
- * AI 对话输入卡片底部操作行：左侧模式切换与模型菜单，右侧上下文圆环、增强提示词与发送 / 停止。
- * 采用普通行容器组合四个独立子组件，本层只做布局与禁用态分发。
- * 关键约束：生成中除圆环可查看外全部禁用，发送位替换为停止按钮；本层不持有任何会话状态。
+ * AI 对话输入卡片底部操作行：左侧写入范围与模型菜单，右侧上下文圆环、增强提示词与发送 / 停止。
+ * 采用普通行容器组合各独立子组件，本层只做布局与禁用态分发。
+ * 关键约束：生成中除圆环可查看外全部禁用，发送位替换为停止按钮；本层不持有任何会话状态；
+ * 写入审批不再提供常驻开关，连续生成的一次性授权在发送前确认。
  */
 import type {
-    AiApprovalMode,
     AiContextUsage,
-    AiConversationMode,
     AiModelChoices,
     AiReasoningEffort,
     AiWriteGrant,
 } from '@shared/types/aiChat'
 import { EnhanceButton } from '@webview/components/EnhanceButton'
 import { SendButton } from '@webview/components/SendButton'
-import { AiChatApprovalSwitch } from './AiChatApprovalSwitch'
 import { AiChatModelMenu } from './AiChatModelMenu'
-import { AiChatModeSwitch } from './AiChatModeSwitch'
 import { AiChatTokenRing } from './AiChatTokenRing'
 import { AiChatWriteGrantSwitch } from './AiChatWriteGrantSwitch'
 import type { JSX } from 'react'
 
 interface AiChatComposerActionsProps {
-    mode: AiConversationMode
-    /** 写入授权范围：仅写作模式展示切换入口 */
+    /** 写入授权范围 */
     writeGrant: AiWriteGrant
-    /** 审批模式：仅写作模式展示切换入口 */
-    approval: AiApprovalMode
     isGenerating: boolean
     canSend: boolean
     canEnhance: boolean
@@ -43,9 +37,7 @@ interface AiChatComposerActionsProps {
     /** 模型菜单数据：未展开过时为 null */
     modelChoices: AiModelChoices | null
     isLoadingModels: boolean
-    onModeChange: (mode: AiConversationMode) => void
     onWriteGrantChange: (grant: AiWriteGrant) => void
-    onApprovalChange: (approval: AiApprovalMode) => void
     onOpenModels: () => void
     onSelectModel: (modelId: string, manual: boolean) => void
     /** 选择上下文档位：0 表示跟随模型默认 */
@@ -59,9 +51,7 @@ interface AiChatComposerActionsProps {
 }
 
 export function AiChatComposerActions({
-    mode,
     writeGrant,
-    approval,
     isGenerating,
     canSend,
     canEnhance,
@@ -73,9 +63,7 @@ export function AiChatComposerActions({
     modelName,
     modelChoices,
     isLoadingModels,
-    onModeChange,
     onWriteGrantChange,
-    onApprovalChange,
     onOpenModels,
     onSelectModel,
     onSelectContextWindow,
@@ -88,21 +76,7 @@ export function AiChatComposerActions({
     return (
         <div className="flex items-center justify-between gap-2 pt-1">
             <div className="flex items-center gap-0.5">
-                <AiChatModeSwitch mode={mode} disabled={isGenerating} onChange={onModeChange} />
-                {mode === 'write' ? (
-                    <>
-                        <AiChatWriteGrantSwitch
-                            grant={writeGrant}
-                            disabled={isGenerating}
-                            onChange={onWriteGrantChange}
-                        />
-                        <AiChatApprovalSwitch
-                            approval={approval}
-                            disabled={isGenerating}
-                            onChange={onApprovalChange}
-                        />
-                    </>
-                ) : null}
+                <AiChatWriteGrantSwitch grant={writeGrant} disabled={isGenerating} onChange={onWriteGrantChange} />
                 <AiChatModelMenu
                     current={model}
                     currentName={modelName}

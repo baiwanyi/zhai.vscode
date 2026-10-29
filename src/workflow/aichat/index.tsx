@@ -4,10 +4,10 @@
  * 历史与新建会话并进标题行 AppAction，消息流走 AppContent，输入区落 AppFooter），
  * 消息流由 MessageScroller 托管（自动滚动 + 回到底部按钮），Message + Bubble 呈现消息，
  * 空态用 Empty、输入区用三段式输入卡片（工具行 / 输入框 / 操作行）；流式正文经宿主 stream 增量渲染。
- * 底部卡片承载写作命令（徽章展示，指令模板在发送时拼装）、参考资料占位、对话 / 写作模式切换、
+ * 底部卡片承载写作命令（徽章展示，指令模板在发送时拼装）、参考资料占位、写入范围与审批模式、
  * 模型菜单（展开时按需拉取账号可用清单）、上下文圆环、增强提示词（走文本通道改写，经 ai/enhancePrompt）与发送；
- * 对话模式只读（可查阅作品与资料），写作模式由模型直接读写作品目录下的文件；
- * 写入边界由宿主按模式与作品目录裁决，前端只负责展示与发送。
+ * 会话固定为写作模式：模型直接读写作品目录与当前文档，查询资料走只读工具；
+ * 写入边界由宿主的工具守卫裁决，前端只负责展示与发送，不再提供模式切换。
  * 会话 / 上下文 / 运行时 / 历史 / 模型 / 写回 / 宿主命令操作拆分至 hooks/，页面区块与消息渲染拆分至 layout/。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机与第 10.3 节写回链路。
  * 关键约束：会话按 projectDir 作用域隔离，作品页传入当前作品目录即换用该作品的对话记录，缺省为通用对话；
@@ -17,8 +17,6 @@
 import { SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
-    AiApprovalMode,
-    AiConversationMode,
     AiMentionCandidate,
     AiReasoningEffort,
     AiReferenceEntry,
@@ -29,6 +27,7 @@ import { onState, request } from '@shared/utils/bridge'
 import { AppAction, AppContent, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
+import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { AI_COMMAND_MAP, isAiCommandId } from './constants'
 import { useAiChatCommands } from './hooks/useAiChatCommands'
 import { useAiChatContexts } from './hooks/useAiChatContexts'
@@ -43,13 +42,12 @@ import { useAiChatSession } from './hooks/useAiChatSession'
 import { useAiChatStatus } from './hooks/useAiChatStatus'
 import { useAiChatWriteState } from './hooks/useAiChatWriteState'
 import { AiChatComposer } from './layout/AiChatComposer'
-import { AiChatDiffDialog } from './layout/AiChatDiffDialog'
 import { AiChatHistoryMenu } from './layout/AiChatHistoryMenu'
 import { AiChatMentionDialog } from './layout/AiChatMentionDialog'
 import { AiChatMessageList } from './layout/AiChatMessageList'
 import { AiChatPermissionDialog } from './layout/AiChatPermissionDialog'
 import { AiChatReferenceDialog } from './layout/AiChatReferenceDialog'
-import { composeCommandContent, formatTokens, readAiStateKind } from './utils'
+import { composeCommandContent, formatTokens, readAiStateKind, wantsContinuousGeneration } from './utils'
 import type { AiCommand, AiCommandId } from './constants'
 import type { Phase } from './hooks/useAiChatSession'
 import type { AiReferenceAction } from './layout/AiChatReferenceMenu'
@@ -81,8 +79,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         selectEffort,
     } = useAiChatModels({ onError: setError })
     const { runtime, loadRuntime } = useAiChatRuntime({ onError: setError })
-    const { writeState, applyingMessageId, writeDiff, loadWriteState, loadWriteDiff, closeWriteDiff, applyHunks } =
-        useAiChatWriteState({ onError: setError })
+    const { writeState, loadWriteState } = useAiChatWriteState({ onError: setError })
     const {
         session,
         phase,
@@ -95,10 +92,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         stop,
         startNewSession,
         switchSession,
-        switchMode,
         switchWriteGrant,
-        switchApproval,
-        approval,
         deleteSession,
     } = useAiChatSession({
         onError: setError,
@@ -138,8 +132,13 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
             void loadSession()
         },
     })
-    /** 当前写作命令：决定本轮结果是否提供写回入口（校对只报告不写回） */
+    /** 当前已选写作命令：输入区以芯片展示 */
     const [commandId, setCommandId] = useState<AiCommandId | null>(null)
+    /** 待确认的连续生成请求：非空时弹一次「本轮直接写入」授权框 */
+    const [pendingAutoApprove, setPendingAutoApprove] = useState<{
+        content: string
+        titleHint: string | undefined
+    } | null>(null)
     /** 阶段回退到 idle 时刷新用量与写回状态，避免首次挂载重复请求 */
     const previousPhaseRef = useRef<Phase>('idle')
     /** 已套用草稿的会话 id：避免重复套用把用户之后主动取消的命令重新恢复 */
@@ -225,10 +224,9 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
     const lastMessageId = messages[messages.length - 1]?.id
     const hasApiKey = runtime?.hasApiKey === true
     const isGenerating = phase === 'streaming'
-    const mode: AiConversationMode = session?.conversation.mode ?? 'chat'
     const writeGrant = session?.conversation.writeGrant ?? 'project'
     const hasWriteTarget = writeState?.target !== null && writeState?.target !== undefined
-    /** 写作模式的可写范围：编辑器目标或作品目录任一存在即可发送，连续生成章节不依赖选区 */
+    /** 可写范围：编辑器目标或作品目录任一存在即可发送，连续生成章节不依赖选区 */
     const hasWritableScope = hasWriteTarget || (projectDir !== null && projectDir.length > 0)
     /** 已选写作命令：输入区只展示命令名徽章，指令模板在发送时拼装 */
     const command = commandId === null ? null : AI_COMMAND_MAP[commandId]
@@ -336,26 +334,15 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         [switchWriteGrant],
     )
 
-    /** 审批模式：宿主归一化后回传（对话模式强制只读），本层只透传选择 */
-    const handleApprovalChange = useCallback(
-        (next: AiApprovalMode): void => {
-            void switchApproval(next)
-        },
-        [switchApproval],
-    )
-
-    const handleModeChange = useCallback(
-        (next: AiConversationMode): void => {
-            void switchMode(next).then(() => loadWriteState())
-        },
-        [loadWriteState, switchMode],
-    )
-
     /** 发送：指令模板与用户补充在此拼装，输入区与消息气泡始终只呈现命令名 */
     const handleSend = useCallback((): void => {
         const content = command === null ? input : composeCommandContent(command, input)
+        // 连续生成先取得一次授权：否则每写一个文件都要弹一次确认
+        if (writeGrant === 'project' && wantsContinuousGeneration(content)) {
+            setPendingAutoApprove({ content, titleHint: command?.title })
+            return
+        }
         void send(content, {
-            applyPolicy: command?.applyPolicy ?? 'replace',
             titleHint: command?.title,
         }).then((sent) => {
             if (sent) {
@@ -363,7 +350,22 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                 setCommandId(null)
             }
         })
-    }, [command, input, send])
+    }, [command, input, send, writeGrant])
+
+    /** 连续生成授权：确认后本轮直接写入，授权只对这一次发送生效 */
+    const handleAutoApproveConfirm = useCallback((): void => {
+        const pending = pendingAutoApprove
+        setPendingAutoApprove(null)
+        if (pending === null) {
+            return
+        }
+        void send(pending.content, { autoApprove: true, titleHint: pending.titleHint }).then((sent) => {
+            if (sent) {
+                commandIdRef.current = null
+                setCommandId(null)
+            }
+        })
+    }, [pendingAutoApprove, send])
 
     const handleNewSession = useCallback((): void => {
         commandIdRef.current = null
@@ -383,26 +385,6 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
             })
         },
         [applyDraftCommand, loadWriteState, switchSession],
-    )
-
-    /** 写回入口先看变更：勾选后由弹窗提交，未勾选的段保留原文 */
-    const handleApply = useCallback(
-        (messageId: string): void => {
-            void loadWriteDiff(messageId)
-        },
-        [loadWriteDiff],
-    )
-
-    /** 逐段写回：把弹窗里的勾选原样交给宿主 */
-    const handleApplyHunks = useCallback(
-        (accepted: number[]): void => {
-            const messageId = writeDiff?.messageId
-            if (messageId === undefined) {
-                return
-            }
-            void applyHunks(messageId, accepted)
-        },
-        [applyHunks, writeDiff],
     )
 
     return (
@@ -441,17 +423,6 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     lastMessageId={lastMessageId}
                     phase={phase}
                     runtime={runtime}
-                    applyState={
-                        writeState
-                            ? {
-                                  appliableMessageIds: writeState.appliableMessageIds,
-                                  appliedMessageIds: writeState.appliedMessageIds,
-                                  applyingMessageId,
-                                  scopes: writeState.appliableScopes,
-                                  onApply: handleApply,
-                              }
-                            : null
-                    }
                     onLoginCodebuddy={() => void runHostCommand('zhai.ai.loginCodebuddy')}
                 />
             </AppContent>
@@ -463,11 +434,8 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     hasApiKey={hasApiKey}
                     isGenerating={isGenerating}
                     phase={phase}
-                    mode={mode}
                     writeGrant={writeGrant}
                     onWriteGrantChange={handleWriteGrantChange}
-                    approval={approval}
-                    onApprovalChange={handleApprovalChange}
                     activeTool={activeTool}
                     contextUsage={contextUsage}
                     contextWindowTokens={runtime?.contextWindowTokens ?? 0}
@@ -488,20 +456,25 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     onClearCommand={handleClearCommand}
                     onReference={handleReference}
                     onMention={handleMention}
-                    onModeChange={handleModeChange}
                     isEnhancing={isEnhancing}
                     onEnhanceRequest={enhance}
                 />
             </AppFooter>
-            <AiChatDiffDialog
-                diff={writeDiff}
-                applying={applyingMessageId !== null}
-                onApply={handleApplyHunks}
-                onClose={closeWriteDiff}
-            />
             <AiChatPermissionDialog
                 pending={pendingPermission}
                 onRespond={(decision) => void respondPermission(decision)}
+            />
+            <ConfirmDialog
+                open={pendingAutoApprove !== null}
+                title="允许本轮直接写入？"
+                description="本轮将允许模型在白名单范围内（当前文档与作品目录）连续写入，不再逐个确认；授权仅对本次发送生效。"
+                confirmLabel="允许并发送"
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) {
+                        setPendingAutoApprove(null)
+                    }
+                }}
+                onConfirm={handleAutoApproveConfirm}
             />
             <AiChatMentionDialog
                 open={isMentionOpen}

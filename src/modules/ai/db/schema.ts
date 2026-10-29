@@ -13,7 +13,7 @@
  */
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = '11'
+const SCHEMA_VERSION = '13'
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS conversations (
@@ -157,6 +157,15 @@ export function ensureAiSchema(db: Database.Database): boolean {
         // v11：会话表补写入授权范围，write 模式据此决定工具白名单边界；
         // 历史会话默认 project（有作品目录时授权整个作品），与「连续生成章节」的主用法一致
         ensureColumn(db, 'conversations', 'write_grant', "write_grant TEXT NOT NULL DEFAULT 'project'")
+        // v12：取消对话 / 写作模式切换，历史会话统一归为写作模式，
+        // 否则旧 chat 会话会在界面上既无切换入口、又被按只读处理，用户无法解释
+        if (readSchemaVersion(db) < 12) {
+            db.exec("UPDATE conversations SET mode = 'write' WHERE mode <> 'write'")
+        }
+        // v13：模式标签由 write 改名为 craft，仅名称变化，权限语义不变
+        if (readSchemaVersion(db) < 13) {
+            db.exec("UPDATE conversations SET mode = 'craft' WHERE mode = 'write'")
+        }
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)

@@ -5,7 +5,7 @@
  * 命令与上下文在此折算为 RichChip：图标取 ./commandIcons，文件名与摘要取 ../utils。
  * 本层负责提示文案、禁用态与增强状态，交互全部经回调上抛给页面 hooks。
  * 生成态光晕取 @webview/components/ComposerGlow（与生图页共用，样式在 globals.css 的 composer-glow 段）。
- * 关键约束：模式、上下文用量、已选命令、上下文与写回目标均由此层透传，输入卡片不直接读取会话状态；
+ * 关键约束：写入范围、审批模式、上下文用量、已选命令与上下文均由此层透传，输入卡片不直接读取会话状态；
  * 命令芯片的移除语义是「取消命令」，由 chip.onRemove 承担，不走统一的移除引用回调；
  * 增强提示词经页面 hook 请求宿主模型改写（onEnhanceRequest），本层只保存原文并保留还原入口；
  * 光晕是卡片外侧的兄弟层（卡片底色不透明），容器需自带 isolate，装饰层不承载任何状态或交互；
@@ -14,10 +14,8 @@
 import { FileText, Loader2, TextSelect } from 'lucide-react'
 import { useState } from 'react'
 import type {
-    AiApprovalMode,
     AiContextRef,
     AiContextUsage,
-    AiConversationMode,
     AiModelChoices,
     AiReasoningEffort,
     AiWriteGrant,
@@ -74,13 +72,9 @@ interface AiChatComposerProps {
     hasApiKey: boolean
     isGenerating: boolean
     phase: Phase
-    mode: AiConversationMode
-    /** 写入授权范围：仅写作模式生效 */
+    /** 写入授权范围 */
     writeGrant: AiWriteGrant
     onWriteGrantChange: (grant: AiWriteGrant) => void
-    /** 审批模式：仅写作模式展示切换入口 */
-    approval: AiApprovalMode
-    onApprovalChange: (approval: AiApprovalMode) => void
     /** 正在调用的工具名：null 表示当前没有工具执行 */
     activeTool: string | null
     /** 当前会话上下文占用：null 表示本轮还没有产出数据 */
@@ -112,11 +106,10 @@ interface AiChatComposerProps {
     onReference: (action: AiReferenceAction) => void
     /** 打开提及检索：引用笔记 / 章节 */
     onMention: () => void
-    onModeChange: (mode: AiConversationMode) => void
     /** 增强请求进行中：按钮转圈并丢弃重复点击 */
     isEnhancing: boolean
     /** 增强请求：由页面 hook 走宿主协议，失败返回 null */
-    onEnhanceRequest: (text: string, mode: AiConversationMode) => Promise<string | null>
+    onEnhanceRequest: (text: string) => Promise<string | null>
 }
 
 export function AiChatComposer({
@@ -126,11 +119,8 @@ export function AiChatComposer({
     hasApiKey,
     isGenerating,
     phase,
-    mode,
     writeGrant,
     onWriteGrantChange,
-    approval,
-    onApprovalChange,
     activeTool,
     contextUsage,
     contextWindowTokens,
@@ -151,7 +141,6 @@ export function AiChatComposer({
     onClearCommand,
     onReference,
     onMention,
-    onModeChange,
     isEnhancing,
     onEnhanceRequest,
 }: AiChatComposerProps): JSX.Element {
@@ -161,7 +150,7 @@ export function AiChatComposer({
     const canEnhance = input.trim().length > 0
     /** 已有命令时正文由指令模板提供，因此空输入也可发送 */
     const hasContent = command !== null || input.trim().length > 0
-    const canSend = hasApiKey && phase === 'idle' && hasContent && (mode === 'chat' || hasWritableScope)
+    const canSend = hasApiKey && phase === 'idle' && hasContent && hasWritableScope
 
     let placeholder = '提问或输入指令…'
     if (command !== null) {
@@ -182,7 +171,7 @@ export function AiChatComposer({
 
     /** 增强走后端改写：成功后记下原文供还原，失败由 hook 提示并保持原文 */
     const handleEnhance = (): void => {
-        void onEnhanceRequest(input, mode).then((next) => {
+        void onEnhanceRequest(input).then((next) => {
             if (next === null || next.length === 0 || next === input) {
                 return
             }
@@ -231,9 +220,7 @@ export function AiChatComposer({
                     />
 
                     <AiChatComposerActions
-                        mode={mode}
                         writeGrant={writeGrant}
-                        approval={approval}
                         isGenerating={isGenerating}
                         canSend={canSend}
                         canEnhance={canEnhance}
@@ -245,9 +232,7 @@ export function AiChatComposer({
                         modelName={modelName}
                         modelChoices={modelChoices}
                         isLoadingModels={isLoadingModels}
-                        onModeChange={onModeChange}
                         onWriteGrantChange={onWriteGrantChange}
-                        onApprovalChange={onApprovalChange}
                         onOpenModels={onOpenModels}
                         onSelectModel={onSelectModel}
                         onSelectContextWindow={onSelectContextWindow}

@@ -5,10 +5,9 @@
  */
 
 /**
- * 会话模式：chat 对照只读问答（可读文件与检索，不改动磁盘），
- * write 对照写作执行（可读可写，由宿主按范围授权）。
+ * 会话形态：固定为写作执行（可读可写，由宿主按范围授权）。
+ * 历史上有对话 / 写作两种模式，切换入口已移除，不再保留模式类型。
  */
-export type AiConversationMode = 'write' | 'chat'
 
 /**
  * 写入授权范围：document 仅当前编辑栏文档，project 为整个作品目录。
@@ -18,11 +17,12 @@ export type AiConversationMode = 'write' | 'chat'
 export type AiWriteGrant = 'document' | 'project'
 
 /**
- * 审批模式：ask 逐次确认写入、auto 白名单内自动放行、readonly 完全只读。
- * 关键约束：只是宿主侧守卫的策略位，不直接映射 SDK 的 permissionMode ——
- * 后者一旦切到 acceptEdits，编辑类工具由 CLI 直接放行，路径校验会被整体绕过。
+ * 写入审批：ask 逐次确认、auto 白名单内直接写入。
+ * 关键约束：只是宿主侧守卫的策略位，不映射 SDK 的 permissionMode ——
+ * 后者一旦切到 acceptEdits，编辑类工具由 CLI 直接放行，路径校验会被整体绕过；
+ * 模式由本轮发送时的授权决定，不提供常驻开关。
  */
-export type AiApprovalMode = 'ask' | 'auto' | 'readonly'
+export type AiApprovalMode = 'ask' | 'auto'
 
 /** 单个待回答的问题：结构对齐 SDK 的 AskUserQuestion 入参 */
 export interface AiAskQuestion {
@@ -96,8 +96,7 @@ export type AiMessageStatus = 'pending' | 'streaming' | 'completed' | 'failed' |
 export interface AiConversation {
     id: string
     title: string
-    mode: AiConversationMode
-    /** 写入授权范围：chat 模式不生效，write 模式据此决定工具白名单边界 */
+    /** 写入授权范围：据此决定工具白名单边界 */
     writeGrant: AiWriteGrant
     model: string
     createdAt: string
@@ -183,25 +182,9 @@ export interface AiWriteTarget {
     isDirty: boolean
 }
 
-/** 写回状态：实时目标 + 可写回与已写回的消息 id */
+/** 写入状态：仅实时目标，用于发送前置判断与范围提示 */
 export interface AiWriteState {
     target: AiWriteTarget | null
-    /** 每条可写回消息对应的快照作用域：整篇时前端在写入前二次确认 */
-    appliableScopes: Record<string, AiWriteScope>
-    appliableMessageIds: string[]
-    appliedMessageIds: string[]
-}
-
-/** 逐段写回的一段：两侧行文本由宿主算好，前端只负责渲染与勾选 */
-export interface AiWriteHunk {
-    /** 原文起始行号（1 基） */
-    oldStartLine: number
-    /** 被替换的原文行，纯新增时为空 */
-    oldText: string[]
-    /** 新文本起始行号（1 基） */
-    newStartLine: number
-    /** 替换后的新文行，纯删除时为空 */
-    newText: string[]
 }
 
 /** 提及候选类型：按索引路径前缀归类，仅用于展示分组 */
@@ -226,20 +209,6 @@ export interface AiReferenceEntry {
     startLine: number
     /** 检索命中的正文片段，仅用于展示 */
     snippet: string
-}
-
-/** 逐段写回预览：hunks 为空表示回复与原文一致，无需写回 */
-export interface AiWriteDiff {
-    messageId: string
-    label: string
-    hunks: AiWriteHunk[]
-}
-
-/** 写回结果：reason 为 applied 时表示此前已写过，未重复写入 */
-export interface AiApplyResult {
-    applied: boolean
-    label: string
-    reason?: 'applied'
 }
 
 /** AI 通道标识：当前仅 CodeBuddy 一条通道 */

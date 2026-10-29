@@ -19,7 +19,6 @@ import { tmpdir } from 'node:os'
 import { getZhaiConfig } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import type { SecretsService } from '@modules/common/secrets'
-import type { AiApprovalMode } from '@shared/types/aiChat'
 import { sdkCodebuddyClient } from './codebuddyClient'
 import { classifyResultFailure, CodebuddyError, toReadableCodebuddyError } from './codebuddyError'
 import {
@@ -40,7 +39,7 @@ import type {
     AiStreamRequest,
     AiUsageMeta,
 } from '../provider'
-import type { CodebuddyClient, CodebuddySession } from './codebuddyClient'
+import type { CodebuddyClient } from './codebuddyClient'
 import type { SessionOptions } from '@tencent-ai/agent-sdk'
 
 /**
@@ -97,8 +96,6 @@ function sumContextTokens(usage: {
 
 export class CodeBuddyProvider implements AiProvider {
     public readonly id: AiProviderId = 'codebuddy'
-    /** 当前活跃会话：仅供运行中切换权限模式使用，生成结束时释放 */
-    private activeSession: CodebuddySession | null = null
 
     public constructor(
         private readonly secrets: SecretsService,
@@ -111,19 +108,6 @@ export class CodeBuddyProvider implements AiProvider {
      */
     public checkReady(): Promise<AiProviderStatus> {
         return Promise.resolve({ ready: true })
-    }
-
-    /**
-     * 运行中切换权限模式：只映射只读与默认两档。
-     * 关键约束：不接受 acceptEdits / bypassPermissions —— 它们让 CLI 跳过审批回调，
-     * 路径校验会整体失效；无活跃会话时静默返回，等下一次请求按最新配置下发。
-     */
-    public async setPermissionMode(approval: AiApprovalMode): Promise<void> {
-        const session = this.activeSession
-        if (session === null || session.setPermissionMode === undefined) {
-            return
-        }
-        await session.setPermissionMode(approval === 'readonly' ? 'plan' : 'default')
     }
 
     public async *stream(request: AiStreamRequest): AsyncGenerator<AiStreamChunk> {
@@ -141,9 +125,9 @@ export class CodeBuddyProvider implements AiProvider {
             // 无策略时禁用全部内置工具，避免纯文本生成去读工作区；有策略时工具集由会话服务按模式裁决
             tools: toolPolicy === undefined ? [] : [...toolPolicy.tools],
             maxTurns: toolPolicy?.maxTurns ?? 1,
-            // 只读模式交给 CLI 的 plan 档兜底（仅放行只读工具）；其余一律 default，
-            // 因为 acceptEdits 下编辑类工具由 CLI 直接放行，canUseTool 的路径校验会被整体绕过
-            permissionMode: toolPolicy?.approval === 'readonly' ? 'plan' : 'default',
+            // 恒为 default：acceptEdits 下编辑类工具由 CLI 直接放行，canUseTool 的路径校验会被整体绕过；
+            // 只读语义由工具白名单与写入根为空表达，不靠 CLI 的 plan 档
+            permissionMode: 'default',
             includePartialMessages: true,
             systemPrompt,
             model,
@@ -164,12 +148,12 @@ export class CodeBuddyProvider implements AiProvider {
                 policy: toolPolicy,
                 approval: toolPolicy.approval,
                 broker: request.permission ?? null,
+                normalizeWrite: request.normalizeWrite,
             })
         }
         const session = isResume
             ? this.client.resumeSession(request.sessionId ?? '', sessionOptions)
             : this.client.createSession(sessionOptions)
-        this.activeSession = session
         // V2 Session 没有 abortController 选项，中断统一交给 interrupt()
         const forwardAbort = (): void => {
             void session.interrupt()
@@ -210,9 +194,13 @@ export class CodeBuddyProvider implements AiProvider {
                     continue
                 }
                 if (message.type === 'system') {
-                    // init 消息携带会话号：首轮回写，后续轮次据此 resume
-                    if (message.subtype === 'init' && request.onSessionId) {
-                        request.onSessionId(message.session_id)
+                    if (message.subtype === 'init') {
+                        // 工具清单是白名单是否生效的唯一证据：模型看不到 Edit / Write 就只会把正文贴在回复里
+                        logger.info(`AI 工具清单：${message.tools.join(', ')}`)
+                        // init 消息携带会话号：首轮回写，后续轮次据此 resume
+                        if (request.onSessionId) {
+                            request.onSessionId(message.session_id)
+                        }
                     }
                     // 压缩是旁路事件：compacting 在开始时下发，compact_boundary 标记完成
                     if (message.subtype === 'compact_boundary') {
@@ -322,9 +310,6 @@ export class CodeBuddyProvider implements AiProvider {
             throw toReadableCodebuddyError(error, getSelectedCodebuddyModel())
         } finally {
             request.signal.removeEventListener('abort', forwardAbort)
-            if (this.activeSession === session) {
-                this.activeSession = null
-            }
             session.close()
         }
     }

@@ -1,33 +1,22 @@
 /**
  * AI 对话单条消息：按角色分派气泡（用户 default 右对齐、助手 ghost 通栏无气泡）。
- * 正文（含用户消息首行的命令与引用徽章）、写回按钮与统计工具栏分别由同目录独立组件渲染，
+ * 正文（含用户消息首行的命令与引用徽章）与统计工具栏分别由同目录独立组件渲染，
  * 本层只负责结构编排与状态分派。
- * 关键约束：写回按钮仅对可写回的助手消息渲染；错误与停止文案优先于写回入口；
- * 工具栏只在助手消息生成落定（完成 / 失败 / 停止）且有正文时出现，流式中不出现。
+ * 关键约束：错误与停止文案优先于工具栏；工具栏只在助手消息生成落定
+ * （完成 / 失败 / 停止）且有正文时出现，流式中不出现。
  */
 import { Bubble, BubbleContent, BubbleGroup } from '@components/ui/bubble'
 import { Message, MessageContent, MessageFooter } from '@components/ui/message'
-import type { AiMessage, AiWriteScope } from '@shared/types/aiChat'
-import { AiChatApplyButton } from './AiChatApplyButton'
+import type { AiMessage } from '@shared/types/aiChat'
 import { AiChatMessageActions } from './AiChatMessageActions'
 import { AiChatMessageBody } from './AiChatMessageBody'
 import type { JSX } from 'react'
 
-/** 写回入口的渲染状态：由消息列表按宿主下发的可写回集合计算后注入 */
-export interface AiChatApplyAction {
-    appliable: boolean
-    applied: boolean
-    applying: boolean
-    scope: AiWriteScope | null
-    onApply: () => void
-}
-
 interface AiChatMessageViewProps {
     message: AiMessage
-    applyAction?: AiChatApplyAction
 }
 
-export function AiChatMessageView({ message, applyAction }: AiChatMessageViewProps): JSX.Element {
+export function AiChatMessageView({ message }: AiChatMessageViewProps): JSX.Element {
     const isUser = message.role === 'user'
     const isCancelled = message.status === 'cancelled'
     /** 生成已落定：流式过程中不展示工具栏，避免用量与耗时是半成品 */
@@ -59,16 +48,6 @@ export function AiChatMessageView({ message, applyAction }: AiChatMessageViewPro
                         <AiChatMessageActions message={message} />
                     </MessageFooter>
                 )}
-                {applyAction?.appliable ? (
-                    <MessageFooter className="justify-end">
-                        <AiChatApplyButton
-                            scope={applyAction.scope}
-                            applied={applyAction.applied}
-                            applying={applyAction.applying}
-                            onApply={applyAction.onApply}
-                        />
-                    </MessageFooter>
-                ) : null}
             </MessageContent>
         </Message>
     )

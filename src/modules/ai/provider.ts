@@ -118,6 +118,11 @@ export interface AiStreamRequest {
     toolPolicy?: AiToolPolicy
     /** 审批通道：审批模式为 ask 时写入与提问都经它往返；缺省表示无交互能力 */
     permission?: AiPermissionChannel
+    /**
+     * 写入文本规范化：整文件写入前按文档类型补齐元信息，返回修正后的内容。
+     * 约定：只对 Write 生效，Edit 的片段替换不经过它；缺省表示不改写入参。
+     */
+    normalizeWrite?: (filePath: string, content: string) => string
 }
 
 /** 通道就绪状态：未就绪时 reason 为可直接展示给用户的提示 */
@@ -132,9 +137,4 @@ export interface AiProvider {
     /** 发送前检查凭据或登录态；实现不得在此发起生成请求 */
     checkReady(): Promise<AiProviderStatus>
     stream(request: AiStreamRequest): AsyncGenerator<AiStreamChunk>
-    /**
-     * 运行中切换权限模式：作用在当前活跃会话上，之后的工具调用立即按新策略判定。
-     * 约定为可选 —— 通道不支持动态切换时省略，调用方按「下次请求生效」处理。
-     */
-    setPermissionMode?(mode: AiApprovalMode): Promise<void>
 }

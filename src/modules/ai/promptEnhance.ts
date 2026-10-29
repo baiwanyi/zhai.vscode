@@ -1,13 +1,12 @@
 /**
  * 提示词增强服务：对话与出图两侧共用同一套模型调用、超时、空结果校验与用量记账。
  * 复用约定：文本通道与用量记账由调用方注入（两处传入同一 provider 与 UsageRecorder 实例），
- * 改写口径集中在 ENHANCE_SYSTEM_PROMPTS（写作 / 对话 / 图像三种），token 上限、输入输出长度与
- * 归属模块按场景给出；对话侧用 createChatEnhanceRequest 取预设，出图侧直接传 scene: 'image'。
+ * 改写口径集中在 ENHANCE_SYSTEM_PROMPTS（写作 / 图像两种），token 上限、输入输出长度与
+ * 归属模块按场景给出；对话侧用 createChatEnhanceRequest 取写作口径，出图侧直接传 scene: 'image'。
  * 关键约束：模型只做改写，输出直接回填输入框，不建会话、不落盘、不占图片配额；
  * 超时、空结果与超长输出都在本层收口，失败一律抛出，由前端保留原文并提示；
  * 记账是旁路，写库异常不影响改写结果；口径提示词必须要求「保持原意、只输出一段」，否则会污染输入框。
  */
-import type { AiConversationMode } from '@shared/types/aiChat'
 import type { AiUsageModule } from '@shared/types/aiUsage'
 import { getSelectedCodebuddyModel } from './providers/codebuddyModels'
 import type { AiProvider } from './provider'
@@ -20,13 +19,12 @@ const CHAT_ENHANCE_MAX_LENGTH = 8_000
 /** 对话增强的输出 token 上限：中文约 1.6 字符/token，足够覆盖输入区常见长度 */
 const CHAT_ENHANCE_MAX_TOKENS = 1_600
 
-/** 改写场景：写作指令、对话提问与图像画面描述 */
-export type EnhancePromptScene = AiConversationMode | 'image'
+/** 改写场景：写作指令与图像画面描述 */
+export type EnhancePromptScene = 'write' | 'image'
 
-/** 改写口径：三种场景只改口径文本，模型调用、超时与记账完全一致 */
+/** 改写口径：两种场景只改口径文本，模型调用、超时与记账完全一致 */
 export const ENHANCE_SYSTEM_PROMPTS: Record<EnhancePromptScene, string> = {
     write: '你是写作指令编辑。把用户输入改写成可直接交给写作助手的指令：补足文体与视角、目标读者、篇幅或字数、结构与节奏、语言风格与禁忌；保持原意与中文表达，不要添加解释、标题或列表，只输出一段连续的指令。',
-    chat: '你是提问编辑。把用户输入改写成更清晰的提问：补足背景与目的、已有条件或约束、期望的回答形式与详细程度；保持原意与中文表达，不要添加解释、标题或列表，只输出一段连续的提问。',
     image: '你是图像提示词编辑。把用户输入改写成更具体的画面描述：补足人物姿态、服装材质、场景层次、光线方向与镜头距离；保持原意与语言，不要添加解释、标题或列表，只输出一段连续的描述。',
 }
 
@@ -46,11 +44,11 @@ export interface PromptEnhanceRequest {
     module: AiUsageModule
 }
 
-/** 对话侧请求：口径随模式取写作 / 对话，归属对话模块 */
-export function createChatEnhanceRequest(text: string, mode: AiConversationMode): PromptEnhanceRequest {
+/** 对话侧请求：口径固定为写作指令，归属对话模块 */
+export function createChatEnhanceRequest(text: string): PromptEnhanceRequest {
     return {
         text,
-        scene: mode,
+        scene: 'write',
         maxTokens: CHAT_ENHANCE_MAX_TOKENS,
         maxInputLength: CHAT_ENHANCE_MAX_LENGTH,
         maxOutputLength: CHAT_ENHANCE_MAX_LENGTH,

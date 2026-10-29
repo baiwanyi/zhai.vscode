@@ -53,6 +53,7 @@ import { PressAiService } from './modules/press/pressAiService'
 import { PressRoutes } from './modules/press/pressRoutes'
 import { PressSnapshotService } from './modules/press/snapshot/snapshotService'
 import { registerPressSnapshotWatcher } from './modules/press/snapshot/snapshotWatcher'
+import { normalizeWrittenDocument } from './modules/press/writtenDocument'
 import { registerProofreadCommands } from './modules/proofread/commands'
 import { ProofreadRoutes } from './modules/proofread/proofreadRoutes'
 import { ProofreadService } from './modules/proofread/proofreadService'
@@ -142,6 +143,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
                 snapshotService.captureChapterBeforeWrite(uri, content),
         },
         cliUsage,
+        normalizeWrittenDocument,
     )
     context.subscriptions.push(aiChatService)
     // 提及检索：与全局搜索同源（索引库），添加时由宿主查库校验路径

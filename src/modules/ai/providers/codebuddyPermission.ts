@@ -39,6 +39,8 @@ export interface ToolGuardOptions {
     approval: AiApprovalMode
     /** 审批桥：ask 模式下逐次询问；null 表示没有可交互的通道，此时写入一律拒绝 */
     broker: AiPermissionChannel | null
+    /** 写入文本规范化：整文件写入前修正元信息，缺省不改写入参 */
+    normalizeWrite?: (filePath: string, content: string) => string
 }
 
 /** 归一化为可比对的小写绝对路径：Windows 盘符与大小写差异会让前缀比对失真 */
@@ -146,6 +148,27 @@ function allow(input: Record<string, unknown>): PermissionResult {
     return { behavior: 'allow', updatedInput: input }
 }
 
+/**
+ * 整文件写入前应用规范化：只对 Write 且入参带字符串 content 的调用生效。
+ * 关键约束：内容未变化时原样返回入参，避免无意义地改写工具调用记录。
+ */
+function normalizeWriteInput(
+    toolName: string,
+    input: Record<string, unknown>,
+    normalize: ((filePath: string, content: string) => string) | undefined,
+): Record<string, unknown> {
+    if (normalize === undefined || toolName !== 'Write') {
+        return input
+    }
+    const filePath = readToolPath(input)
+    const content = input.content
+    if (filePath === null || typeof content !== 'string') {
+        return input
+    }
+    const next = normalize(filePath, content)
+    return next === content ? input : { ...input, content: next }
+}
+
 function deny(message: string, interrupt: boolean): PermissionResult {
     return { behavior: 'deny', message, interrupt }
 }
@@ -192,6 +215,7 @@ async function confirmWrite(params: {
     toolUseID: string
     policy: AiToolPolicy
     broker: AiPermissionChannel
+    normalizeWrite: ((filePath: string, content: string) => string) | undefined
 }): Promise<PermissionResult> {
     const request: AiPermissionRequest = {
         id: params.toolUseID,
@@ -208,14 +232,14 @@ async function confirmWrite(params: {
     }
     const nextPath = decision.path?.trim()
     if (nextPath === undefined || nextPath.length === 0 || nextPath === params.rawPath) {
-        return allow(params.input)
+        return allow(normalizeWriteInput(params.toolName, params.input, params.normalizeWrite))
     }
     const next = await resolveRealPath(nextPath)
     if (!insideRoots(next, params.policy.writeRoots)) {
         logger.warn(`AI 改写路径越界，已拒绝：${nextPath}`)
         return deny('改写后的路径不在允许写入的范围内', true)
     }
-    return allow(replacePathField(params.input, nextPath))
+    return allow(normalizeWriteInput(params.toolName, replacePathField(params.input, nextPath), params.normalizeWrite))
 }
 
 /**
@@ -224,7 +248,7 @@ async function confirmWrite(params: {
  * 真被调用属于异常路径，拒绝并让模型继续即可，贸然中断会把可恢复的失败放大成整轮失败。
  */
 export function createToolGuard(options: ToolGuardOptions): CanUseTool {
-    const { policy, approval, broker } = options
+    const { policy, approval, broker, normalizeWrite } = options
     return async (toolName, input, callOptions) => {
         if (toolName === ASK_USER_QUESTION) {
             return askUser(input, callOptions.toolUseID, broker)
@@ -247,15 +271,20 @@ export function createToolGuard(options: ToolGuardOptions): CanUseTool {
         if (!insideRoots(target, policy.writeRoots)) {
             return rejectPath('写入', toolName, rawPath)
         }
-        if (approval === 'readonly') {
-            return deny('当前为只读模式，不能修改文件', false)
-        }
         if (approval === 'auto') {
-            return allow(input)
+            return allow(normalizeWriteInput(toolName, input, normalizeWrite))
         }
         if (broker === null) {
             return deny('当前没有可用的审批通道，已拒绝写入', true)
         }
-        return confirmWrite({ input, toolName, rawPath, toolUseID: callOptions.toolUseID, policy, broker })
+        return confirmWrite({
+            input,
+            toolName,
+            rawPath,
+            toolUseID: callOptions.toolUseID,
+            policy,
+            broker,
+            normalizeWrite,
+        })
     }
 }

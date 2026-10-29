@@ -9,17 +9,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type {
-    AiApprovalMode,
     AiContextRef,
     AiContextUsage,
-    AiConversationMode,
     AiSendResult,
     AiSessionSnapshot,
     AiWriteGrant,
 } from '@shared/types/aiChat'
 import type { StreamUsage } from '@shared/types/messages'
 import { onStream, request } from '@shared/utils/bridge'
-import type { AiApplyPolicy } from '../constants'
 import { patchMessage, toErrorText } from '../utils'
 
 /** 视图阶段：idle 空闲、sending 已提交待首字、streaming 正在逐字生成 */
@@ -37,9 +34,10 @@ export interface UseAiChatSessionOptions {
     projectDir: string | null
 }
 
-/** 发送选项：applyPolicy 决定本轮结果是否提供写回入口，titleHint 为命令名称等展示用短标题 */
+/** 发送选项：autoApprove 为本轮写入授权，titleHint 为命令名称等展示用短标题 */
 export interface AiSendOptions {
-    applyPolicy?: AiApplyPolicy
+    /** 本轮是否允许白名单内直接写入：仅在连续生成确认后为 true */
+    autoApprove?: boolean
     titleHint?: string
 }
 
@@ -53,8 +51,6 @@ export interface AiChatSessionState {
     contextUsage: AiContextUsage | null
     /** 正在调用的工具名：null 表示当前没有工具执行，仅用于展示进度 */
     activeTool: string | null
-    /** 当前审批模式：宿主侧守卫的策略位，对话模式恒为只读 */
-    approval: AiApprovalMode
     /** 加载会话快照：返回快照供调用方恢复草稿中的命令（失败返回 null） */
     loadSession: () => Promise<AiSessionSnapshot | null>
     /** 提交已拼装的正文；返回是否成功发出，失败时调用方保留输入与已选命令 */
@@ -63,11 +59,8 @@ export interface AiChatSessionState {
     startNewSession: () => Promise<void>
     /** 切换会话：返回快照供调用方恢复草稿中的命令（未切换或失败返回 null） */
     switchSession: (conversationId: string) => Promise<AiSessionSnapshot | null>
-    switchMode: (mode: AiConversationMode) => Promise<void>
     /** 切换写入授权范围：只影响后续发送下发的写入白名单 */
     switchWriteGrant: (grant: AiWriteGrant) => Promise<void>
-    /** 切换审批模式：宿主归一化后回传，对话模式会被强制为只读 */
-    switchApproval: (mode: AiApprovalMode) => Promise<void>
     deleteSession: (conversationId: string) => Promise<void>
 }
 
@@ -84,8 +77,6 @@ export function useAiChatSession({
     const [contextUsage, setContextUsage] = useState<AiContextUsage | null>(null)
     /** 正在调用的工具名：工具执行期间展示进度，流末清空 */
     const [activeTool, setActiveTool] = useState<string | null>(null)
-    /** 审批模式：会话级运行偏好，宿主不落库，刷新后回落到自动放行 */
-    const [approval, setApproval] = useState<AiApprovalMode>('auto')
     /** 正在流式填充的消息 id，避免每次增量都触发状态结构变更 */
     const streamingMessageIdRef = useRef<string | null>(null)
     /** 最新输入正文：草稿恢复时判断本地是否已有内容，避免覆盖用户正在写的内容 */
@@ -189,7 +180,7 @@ export function useAiChatSession({
                 const result = await request<AiSendResult>('ai/send', {
                     conversationId: session.conversation.id,
                     content: text,
-                    applyPolicy: options.applyPolicy ?? 'replace',
+                    autoApprove: options.autoApprove === true,
                     titleHint: options.titleHint,
                 })
                 streamingMessageIdRef.current = result.assistantMessage.id
@@ -240,32 +231,6 @@ export function useAiChatSession({
         }
     }, [onError, onNotice, projectDir, setContexts])
 
-    /** 切换会话模式：生成中先停止，宿主写库后同步本地快照；模式只影响后续发送与结果处置 */
-    const switchMode = useCallback(
-        async (mode: AiConversationMode): Promise<void> => {
-            if (!session || session.conversation.mode === mode) {
-                return
-            }
-            try {
-                if (phase !== 'idle') {
-                    await request('ai/abort')
-                }
-                const result = await request<{ mode: AiConversationMode }>('ai/setMode', { mode })
-                setSession((previous) =>
-                    previous
-                        ? { ...previous, conversation: { ...previous.conversation, mode: result.mode } }
-                        : previous,
-                )
-                setPhase('idle')
-                onError(null)
-                onNotice(null)
-            } catch (cause) {
-                onError(toErrorText(cause))
-            }
-        },
-        [onError, onNotice, phase, session],
-    )
-
     /** 切换写入范围：不中断在途生成，新范围只对后续发送生效 */
     const switchWriteGrant = useCallback(
         async (grant: AiWriteGrant): Promise<void> => {
@@ -287,22 +252,6 @@ export function useAiChatSession({
             }
         },
         [onError, session],
-    )
-
-    /** 切换审批模式：对话模式由宿主强制为只读，本层只同步宿主回传的结果 */
-    const switchApproval = useCallback(
-        async (mode: AiApprovalMode): Promise<void> => {
-            try {
-                const result = await request<{ approval: AiApprovalMode }>('ai/setApprovalMode', {
-                    approval: mode,
-                })
-                setApproval(result.approval)
-                onError(null)
-            } catch (cause) {
-                onError(toErrorText(cause))
-            }
-        },
-        [onError],
     )
 
     /** 切换到历史会话：生成中先停止再切换，避免增量写回已切走的会话；输入框内容保持不动 */
@@ -363,15 +312,12 @@ export function useAiChatSession({
         setInput,
         contextUsage,
         activeTool,
-        approval,
         loadSession,
         send,
         stop,
         startNewSession,
         switchSession,
-        switchMode,
         switchWriteGrant,
-        switchApproval,
         deleteSession,
     }
 }

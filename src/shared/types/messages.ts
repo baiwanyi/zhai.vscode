@@ -134,7 +134,6 @@ export type WebviewToHostMessage = RequestMessage
  */
 export type HostMethodName =
     | 'ai/abort'
-    | 'ai/applyHunks'
     | 'ai/context'
     | 'ai/context/clear'
     | 'ai/context/remove'
@@ -156,13 +155,10 @@ export type HostMethodName =
     | 'ai/session'
     | 'ai/sessions'
     | 'ai/permissionDecision'
-    | 'ai/setApprovalMode'
-    | 'ai/setMode'
     | 'ai/setWriteGrant'
     | 'ai/switchSession'
     | 'ai/usage'
     | 'ai/usage/prompt'
-    | 'ai/writeDiff'
     | 'ai/writeState'
     | 'dashboard/stats'
     | 'host/command'
