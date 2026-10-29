@@ -516,8 +516,8 @@ export function matchesCharacterId(value: string): boolean {
 }
 
 /**
- * 判断资料条目标识能否用于条目块与设定图文件名：与人物标识同规范（8 位数字）。
- * 归属靠图片名的 faction- / place- / item- 前缀区分，两者编号空间互不干扰。
+ * 判断资料条目标识能否用于条目块与设定图出处：与人物标识同规范（8 位数字）。
+ * 编号空间与人物标识互不干扰，归属由媒体索引的 lore_kind / lore_id 承载，不再靠文件名前缀区分。
  */
 export function isPressLoreId(value: unknown): value is string {
     return typeof value === 'string' && PRESS_CHARACTER_ID_PATTERN.test(value)
@@ -526,7 +526,7 @@ export function isPressLoreId(value: unknown): value is string {
 /** 角色设定图：宿主生成并落盘后回传的图片信息 */
 export interface CharacterPortrait {
     id: string
-    /** 相对存储根的路径，形如 press/{作品名}/Images/portrait-{时间戳}-{角色标识}.png */
+    /** 相对存储根的路径，形如 images/{YYYYMM}/{媒体 id}.png */
     path: string
     /** webview 可访问的完整 URL，仅本次会话有效（由宿主用 asWebviewUri 转换） */
     url: string
@@ -555,24 +555,10 @@ export interface PortraitGalleryResult {
     galleries: Record<string, PortraitGalleryItem[]>
 }
 
-/** 角色设定图插入结果：inserted 为 false 时由 reason 说明原因 */
-export interface PortraitInsertResult {
-    inserted: boolean
-    /** no-editor：没有活动光标；unsaved：文档未保存；not-markdown：非 Markdown；failed：写入被拒绝 */
-    reason?: 'no-editor' | 'unsaved' | 'not-markdown' | 'failed'
-}
-
-/** 角色设定图复制结果：copied 为 false 时由 reason 说明原因 */
-export interface PortraitCopyResult {
-    copied: boolean
-    /** unsupported：当前平台无法写入图片剪贴板；failed：写入过程失败 */
-    reason?: 'unsupported' | 'failed'
-}
-
 /** 作品封面：图库中当前选中（或最新）的普通图片 */
 export interface PressCover {
     id: string
-    /** 相对存储根的路径，形如 press/{作品名}/Images/photo-{时间戳}-{随机段}.png */
+    /** 相对存储根的路径，形如 images/{YYYYMM}/{媒体 id}.png */
     path: string
     /** webview 可访问的完整 URL，仅本次会话有效（由宿主用 asWebviewUri 转换） */
     url: string

@@ -1,81 +1,52 @@
 /**
- * 作品封面服务：列举 Images 下的普通图片作为封面候选，供设定页基本信息展示当前封面。
- * 复用约定：目录名取自 ./constants，封面指针走 ./db/coverRepository，作品目录归一复用 ./portraitService 的校验，
- * URL 转换由调用方注入。
- * 关键约束：出图、设为封面与删除都在生图页完成，本服务只读、不改封面指针；
- * 列举以磁盘为准、按修改时间降序截断到上限并回传总数；
- * 只收 Images 下的 photo-*，角色图不进候选，历史 Cover / Portraits 目录不再读取。
+ * 作品封面服务：从媒体索引取该作品出处下的普通图作为封面候选，供设定页基本信息只读展示。
+ * 复用约定：查询走 @modules/media/mediaRepository，封面指针走 @modules/media/pressCoverStore，
+ * 作品目录归一复用 ./portraitService 的校验，URL 转换由调用方注入。
+ * 关键约束：只读、不改封面指针——设封面唯一入口是媒体页图片详情；
+ * 候选只取 kind 为 photo / unknown 的图，角色图与条目图不进候选；
+ * 按出版时间降序截断到上限并回传总数，界面据此提示「仅显示最新 N 张」。
  */
-import * as vscode from 'vscode'
-import { readProjectSegments } from '@modules/common/projectPath'
-import { parseImageKind } from '@shared/types/imagegen'
+import { resolveStorageRoot } from '@modules/common/config'
+import { buildStorageUri } from '@modules/common/storagePath'
+import type { MediaDatabase } from '@modules/media/db/connection'
+import { countProjectPhotos, listProjectPhotos } from '@modules/media/mediaRepository'
+import { readImageIdFromPath } from '@modules/media/pressCoverStore'
+import type { PressCoverStore } from '@modules/media/pressCoverStore'
 import type { CoverListResult, PressCover } from '@shared/types/press'
-import { IMAGES_DIR } from './constants'
-import { PressCoverStore } from './db/coverRepository'
-import { listImageFiles } from './imageDirScan'
 import { readProjectDirPath } from './portraitService'
-import type Database from 'better-sqlite3'
+import type * as vscode from 'vscode'
 
 /** 候选上限：图库图可能很多，只取最新一批，避免一次性渲染上百张 */
 const MAX_COVER_CANDIDATES = 60
 
-export class PressCoverService {
-    /** 封面选择记录：与作品列表共用同一份 */
-    private readonly store: PressCoverStore
-
-    public constructor(db: Database.Database) {
-        this.store = new PressCoverStore(db)
-    }
-
-    /**
-     * 列举封面候选：Images 下的普通图片，按修改时间降序返回（最新在前）。
-     * 磁盘是唯一事实来源，因此生图页新生成的图片同样能被读回。
-     */
-    public async list(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<CoverListResult> {
-        const dirPath = readProjectDirPath(payload, 'pressAi/listCover')
-        const selected = this.store.read(dirPath)
-        const candidates = await this.readCandidates(readProjectSegments(dirPath), toWebviewUri)
-        return {
-            covers: candidates.slice(0, MAX_COVER_CANDIDATES),
-            selectedId: selected === null ? null : readCoverId(selected),
-            total: candidates.length,
-        }
-    }
-
-    /**
-     * 扫描封面候选：统一目录下按修改时间降序。
-     * 关键约束：不抛错——目录不存在或单张读取失败只影响自身，不能让整次列举失败；
-     * 只认 photo-{…} 命名，角色图与手工放入的其它图片不进候选。
-     */
-    private async readCandidates(
-        projectSegments: string[],
-        toWebviewUri: (uri: vscode.Uri) => string,
-    ): Promise<PressCover[]> {
-        const covers: PressCover[] = []
-        for (const file of await listImageFiles(projectSegments, IMAGES_DIR)) {
-            const id = file.name.replace(/\.[^.]+$/, '')
-            if (parseImageKind(id) !== 'photo') {
-                continue
-            }
-            try {
-                const stat = await vscode.workspace.fs.stat(file.uri)
-                covers.push({
-                    id,
-                    path: file.segments.join('/'),
-                    url: toWebviewUri(file.uri),
-                    createdAt: new Date(stat.mtime).toISOString(),
-                })
-            } catch {
-                // 并发删除时文件可能已消失，跳过而不是让整次扫描失败
-            }
-        }
-        covers.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-        return covers
-    }
+/** 依赖：数据库按当前存储根懒打开，封面指针与仪表盘共用同一份 */
+interface CoverServiceDeps {
+    openDatabase: () => MediaDatabase
+    coverStore: PressCoverStore
 }
 
-/** 从封面相对路径取标识：文件名去掉扩展名 */
-function readCoverId(coverPath: string): string {
-    const fileName = coverPath.slice(coverPath.lastIndexOf('/') + 1)
-    return fileName.replace(/\.[^.]+$/u, '')
+export class PressCoverService {
+    public constructor(private readonly deps: CoverServiceDeps) {}
+
+    /**
+     * 列举封面候选：该作品出处下的普通图，按时间降序返回（最新在前）。
+     * 磁盘是唯一事实来源，因此媒体页新生成的图片同样能被读回。
+     */
+    public list(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): CoverListResult {
+        const dirPath = readProjectDirPath(payload, 'pressAi/listCover')
+        const { db } = this.deps.openDatabase()
+        const selected = this.deps.coverStore.read(dirPath)
+        const root = resolveStorageRoot()
+        const covers: PressCover[] = listProjectPhotos(db, dirPath, MAX_COVER_CANDIDATES).map((row) => ({
+            id: row.id,
+            path: row.path,
+            url: toWebviewUri(buildStorageUri(root, row.path.split('/'))),
+            createdAt: row.createdAt,
+        }))
+        return {
+            covers,
+            selectedId: selected === null ? null : readImageIdFromPath(selected),
+            total: countProjectPhotos(db, dirPath),
+        }
+    }
 }

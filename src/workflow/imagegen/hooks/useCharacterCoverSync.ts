@@ -1,13 +1,13 @@
 /**
- * 生图页角色封面指针同步：把「删除后回退」与「出图后认领」三类写回收在一处，统一口径。
+ * 媒体页封面指针同步：把「删除后回退」与「出图后认领」两类写回收在一处，统一口径。
  * 复用约定：指针写回一律经调用方注入的 onChangeCharacter，本 hook 不直接请求宿主，
  * 角色查找走 useCharacterIndex 产出的 byId 表。
  * 关键约束：写回只在「确有必要」时发生，用户手动选定的封面不能被覆盖——
- * 单张删除仅当被删图正是该角色当前封面时回退到宿主给的值；
+ * 单张删除仅在宿主回执里明确给出该角色的回退候选时才写回；
  * 批量删除的回退值取剩余列表里该角色最新一张，不采用单张回执（同批里它可能指向马上要被删的图）；
  * 出图认领仅在该角色尚无封面时生效。
  */
-import type { PressImageItem } from '@shared/types/imagegen'
+import type { MediaItem } from '@shared/types/media'
 import type { ImageGenCharacter } from './useCharacterIndex'
 
 interface UseCharacterCoverSyncParams {
@@ -19,18 +19,18 @@ interface UseCharacterCoverSyncParams {
 
 interface UseCharacterCoverSyncResult {
     /** 出图成功：该角色尚无封面时把新图认领为封面 */
-    claimOnGenerated: (image: PressImageItem) => void
-    /** 单张删除：被删图正是该角色当前封面时改用宿主给的回退值 */
-    syncAfterDelete: (characterId: string | null, deletedId: string, nextPortraitId: string | null) => void
+    claimOnGenerated: (image: MediaItem) => void
+    /** 单张删除：宿主给出该角色的回退候选时写回 */
+    applyDeleteFallbacks: (fallbacks: Readonly<Record<string, string | null>>) => void
     /** 批量删除：按剩余列表重算受影响角色的封面，避开同批里即将被删的图 */
-    syncAfterBatchDelete: (removed: ReadonlyArray<PressImageItem>, remaining: ReadonlyArray<PressImageItem>) => void
+    syncAfterBatchDelete: (removed: ReadonlyArray<MediaItem>, remaining: ReadonlyArray<MediaItem>) => void
 }
 
 export function useCharacterCoverSync({
     charactersById,
     onChangeCharacter,
 }: UseCharacterCoverSyncParams): UseCharacterCoverSyncResult {
-    const claimOnGenerated = (image: PressImageItem): void => {
+    const claimOnGenerated = (image: MediaItem): void => {
         const characterId = image.characterId
         if (characterId === null) {
             return
@@ -42,20 +42,26 @@ export function useCharacterCoverSync({
         onChangeCharacter(characterId, { coverPortraitId: image.id })
     }
 
-    const syncAfterDelete = (characterId: string | null, deletedId: string, nextPortraitId: string | null): void => {
-        if (characterId === null) {
-            return
+    /**
+     * 单张删除后的封面回退：宿主在删除回执里按角色给出「剩余最新一张」。
+     * 只在角色当前封面确实已不存在时才写回——用户手动选过的封面不能被覆盖。
+     */
+    const applyDeleteFallbacks = (fallbacks: Readonly<Record<string, string | null>>): void => {
+        for (const [characterId, nextId] of Object.entries(fallbacks)) {
+            const target = charactersById.get(characterId)
+            if (target === undefined) {
+                continue
+            }
+            if (nextId !== null && target.coverPortraitId === nextId) {
+                continue
+            }
+            onChangeCharacter(characterId, { coverPortraitId: nextId })
         }
-        const target = charactersById.get(characterId)
-        if (target === undefined || target.coverPortraitId !== deletedId) {
-            return
-        }
-        onChangeCharacter(characterId, { coverPortraitId: nextPortraitId })
     }
 
     const syncAfterBatchDelete = (
-        removed: ReadonlyArray<PressImageItem>,
-        remaining: ReadonlyArray<PressImageItem>,
+        removed: ReadonlyArray<MediaItem>,
+        remaining: ReadonlyArray<MediaItem>,
     ): void => {
         /** 已删图 id 集合：封面指针判断要反复命中，先收成集合避免重复扫描 */
         const removedIds = new Set(removed.map((image) => image.id))
@@ -72,5 +78,5 @@ export function useCharacterCoverSync({
         }
     }
 
-    return { claimOnGenerated, syncAfterDelete, syncAfterBatchDelete }
+    return { claimOnGenerated, applyDeleteFallbacks, syncAfterBatchDelete }
 }

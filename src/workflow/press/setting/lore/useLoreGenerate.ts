@@ -9,7 +9,8 @@
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { DEFAULT_IMAGE_SETTINGS } from '@shared/types/imagegen'
-import type { ImageGenerateResult, ImageSettings, ImageSettingsResult, PressImageItem } from '@shared/types/imagegen'
+import type { ImageGenerateResult, ImageSettings, ImageSettingsResult } from '@shared/types/imagegen'
+import type { MediaItem } from '@shared/types/media'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import type { LoreEntry } from '../../types'
@@ -45,7 +46,7 @@ interface UseLoreGenerateResult {
     /** 是否有在途请求：出图按钮据此显示加载态并禁用 */
     isGenerating: boolean
     /** 为条目生成一张设定图：成功返回新图，失败返回 null 并已提示 */
-    generate: (entry: LoreEntry) => Promise<PressImageItem | null>
+    generate: (entry: LoreEntry) => Promise<MediaItem | null>
 }
 
 export function useLoreGenerate(dirPath: string): UseLoreGenerateResult {
@@ -54,7 +55,7 @@ export function useLoreGenerate(dirPath: string): UseLoreGenerateResult {
     const activeRef = useRef(false)
 
     const generate = useCallback(
-        async (entry: LoreEntry): Promise<PressImageItem | null> => {
+        async (entry: LoreEntry): Promise<MediaItem | null> => {
             if (activeRef.current) {
                 return null
             }
@@ -69,6 +70,8 @@ export function useLoreGenerate(dirPath: string): UseLoreGenerateResult {
                     characterId: null,
                     loreKind: entry.kind,
                     loreId: entry.id,
+                    // 条目名快照随请求带入：宿主据此写入媒体出处，删除条目后仍能显示原归属
+                    loreName: entry.name,
                     ratio: settings.defaultRatio,
                     style: settings.portraitStyle,
                 })

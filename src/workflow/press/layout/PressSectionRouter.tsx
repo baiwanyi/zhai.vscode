@@ -89,8 +89,8 @@ export function PressSectionRouter({
     if (section === 'naming') {
         return <NamingPage />
     }
-    // 生图按作品隔离：图片目录与参数文件都在作品目录下，切作品即重建，筛选与搜索不串味
-    if (section === 'image') {
+    // 媒体库是全库共享的，但出图与「设为作品封面」以当前作品为作用域，切作品即重建，避免参数串味
+    if (section === 'media') {
         return (
             <ImageGenPage
                 key={dirPath}

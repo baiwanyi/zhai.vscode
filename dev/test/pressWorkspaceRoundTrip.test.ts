@@ -72,7 +72,7 @@ const CHARACTERS: CharacterCard[] = [
         arc: '从棋子到棋手',
         relation: '夏侯荻的师弟',
         portraits: [],
-        coverPortraitId: 'portrait-20261001120000-12345678',
+        coverPortraitId: '20261001120000AbCd12',
         portraitStyle: 'guofeng',
     },
 ]
@@ -115,7 +115,7 @@ const LORE: LoreEntry[] = [
         name: '星月宗',
         description: '修真界六大宗门之一。\n\n以话本立名，收留穿越者。',
         memberIds: ['12345678'],
-        coverImageId: 'faction-20261001120000-10428736',
+        coverImageId: '20261001120001EfGh34',
     },
     {
         id: '10428737',
@@ -228,7 +228,7 @@ describe('草稿回写往返', () => {
             catchphrase: '我来试试',
             // 封面与画风必须能往返：只存 id，图片本体在统一 Images 目录下
             portraitStyle: 'guofeng',
-            coverPortraitId: 'portrait-20261001120000-12345678',
+            coverPortraitId: '20261001120000AbCd12',
         })
 
         // 条目按分类各回一份文档：名称即二级标题，描述取正文段，关联人物按姓名回填为 id
@@ -239,7 +239,7 @@ describe('草稿回写往返', () => {
             name: '星月宗',
             description: '修真界六大宗门之一。\n\n以话本立名，收留穿越者。',
             memberIds: ['12345678'],
-            coverImageId: 'faction-20261001120000-10428736',
+            coverImageId: '20261001120001EfGh34',
         })
         const place = parsed.lore.find((entry) => entry.kind === 'place')
         expect(place).toMatchObject({ id: '10428737', name: '天都', memberIds: [], coverImageId: null })

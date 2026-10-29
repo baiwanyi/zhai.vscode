@@ -16,7 +16,7 @@ import { UsageRecorder } from './modules/ai/usageRecorder'
 import { AiUsageService } from './modules/ai/usageService'
 import { WorkflowRouter } from './modules/ai/workflowRouter'
 import { registerCommands } from './modules/common/commands'
-import { getZhaiConfig, resolveCacheRoot } from './modules/common/config'
+import { getZhaiConfig, resolveCacheRoot, resolveStorageRoot } from './modules/common/config'
 import { DashboardViewProvider } from './modules/common/dashboardProvider'
 import { openIndexDatabase } from './modules/common/db/connection'
 import { ensureSchema } from './modules/common/db/schema'
@@ -27,13 +27,16 @@ import { StatusBarService } from './modules/common/statusBar'
 import { ToastService } from './modules/common/toastService'
 import { ImageProviderRouter } from './modules/imagegen/ai/imageProvider'
 import { PressCoverService } from './modules/imagegen/coverService'
-import { PressCoverStore } from './modules/imagegen/db/coverRepository'
 import { ImageGenerateService } from './modules/imagegen/imageGenerateService'
-import { ImageLibraryService } from './modules/imagegen/imageLibraryService'
 import { ImageSettingsService } from './modules/imagegen/imageSettingsService'
 import { PortraitService } from './modules/imagegen/portraitService'
 import { PromptRuleService, PromptTagService } from './modules/imagegen/prompt'
 import { ReferenceImageService } from './modules/imagegen/referenceImageService'
+import { closeMediaDatabases, openMediaDatabase } from './modules/media/db/connection'
+import { MediaLibraryService } from './modules/media/mediaLibraryService'
+import { insertMedia } from './modules/media/mediaRepository'
+import { MediaRoutes } from './modules/media/mediaRoutes'
+import { PressCoverStore } from './modules/media/pressCoverStore'
 import { openNamingDatabase } from './modules/naming/db/connection'
 import { ensureNamingSchema } from './modules/naming/db/schema'
 import { NamingRoutes } from './modules/naming/namingRoutes'
@@ -149,11 +152,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     dashboardProvider.attachPressCoverStore(pressCoverStore)
     const pressAiService = new PressAiService(pressDb, aiProvider, usageRecorder)
     const imageRouter = new ImageProviderRouter(secrets)
-    const portraitService = new PortraitService()
-    // 封面服务只列举候选供设定页展示：出图、设为封面与删除都在生图页完成
-    const coverService = new PressCoverService(pressDb)
-    // 图片库与上面两个服务共用同一份封面指针：列举、删除与设封面走统一入口，避免指针逻辑分叉
-    const imageLibraryService = new ImageLibraryService(pressCoverStore)
+    // 媒体索引：按当前存储根懒打开 {root}/.media/media.db，切根后由连接缓存自行重建
+    const mediaDbProvider = (): ReturnType<typeof openMediaDatabase> =>
+        openMediaDatabase(resolveStorageRoot(), cacheRoot)
+    const portraitService = new PortraitService(mediaDbProvider)
+    // 封面服务只列举候选供设定页展示：出图、设为封面与删除都在媒体页完成
+    const coverService = new PressCoverService({ openDatabase: mediaDbProvider, coverStore: pressCoverStore })
+    // 媒体库：列举、详情、删除、设封面、插入与复制；与封面服务共用同一份指针
+    const mediaLibraryService = new MediaLibraryService({
+        openDatabase: mediaDbProvider,
+        coverStore: pressCoverStore,
+    })
+    const mediaRoutes = new MediaRoutes(mediaLibraryService)
     // 图片参数：按作品覆盖，落 press/{作品名}/.zhai/image.json，配额与超时不在此管辖
     const imageSettingsService = new ImageSettingsService()
     // 出图规则：全局共享，落 {存储根}/prompt/rules 的 md 文件，与作品无关
@@ -172,6 +182,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         promptRuleService,
         promptTagService,
         referenceImageService,
+        // 落盘后写媒体索引：出图模块不直接依赖 media.db，由装配处注入写入器
+        (record) => insertMedia(mediaDbProvider().db, record),
     )
     // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown；打开作品时同步路由事实
     // 语义归纳依赖 AI 通道，晚于仪表盘创建；人物卡、大纲与设定的按需提取共用同一实例，
@@ -185,7 +197,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         workflowRouter,
         semanticService,
         snapshotService,
-        imageLibraryService,
         imageGenerateService,
         imageSettingsService,
         promptRuleService,
@@ -221,6 +232,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         workflowRouter,
         namingRoutes,
         pressRoutes,
+        mediaRoutes,
         proofreadRoutes,
         secrets,
         context.globalState,
@@ -234,11 +246,12 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     const statusBar = new StatusBarService(indexService, indexStatusEmitter.event)
     statusBar.register(context.subscriptions)
 
-    // 配置变更广播（预留：后续 AI / 索引模块消费）
+    // 配置变更广播：存储根可能被改动，媒体索引连接必须按新根重建，否则会写进旧目录的库
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((event) => {
             if (event.affectsConfiguration('zhai.')) {
                 logger.info('宅写作 配置已变更')
+                closeMediaDatabases()
             }
         }),
     )

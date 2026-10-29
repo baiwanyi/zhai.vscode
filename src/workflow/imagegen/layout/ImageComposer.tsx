@@ -229,6 +229,7 @@ function ComposerBody({
     const generateTarget = {
         kind: targetKind,
         characterId: targetKind === 'portrait' ? (activeCharacter?.id ?? null) : null,
+        characterName: targetKind === 'portrait' ? (activeCharacter?.name ?? null) : null,
     }
 
     /**

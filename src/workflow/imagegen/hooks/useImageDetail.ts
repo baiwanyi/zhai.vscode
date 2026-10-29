@@ -1,57 +1,54 @@
 /**
- * 图片详情钩子：按路径读取该图的出图参数快照（同名侧车），切换图片时重新读取。
- * 复用约定：协议 pressAi/getImageDetail，请求经 @shared/utils/bridge，失败经 toastError 提示；
- * 侧车是可选产物，读不到时宿主返回全 null，界面据此隐藏参数区。
- * 关键约束：path 为 null（面板关闭）时不发请求；结果与其来源路径绑定，
+ * 媒体详情钩子：按媒体 id 读取出处、出图参数与全部引用，切换图片时重新读取。
+ * 复用约定：协议 media/detail，请求经 @shared/utils/bridge，失败经 toastError 提示；
+ * 引用列表由宿主按类型与时间排好序，前端只负责分组呈现，不重新排序。
+ * 关键约束：id 为 null（面板关闭）时不发请求；结果与其来源 id 绑定，
  * 迟到的回包不会被当成当前图片的详情；不做本地缓存，重复打开同一张图会重新读取；
- * isLoading 只在当前图片尚无结果时为 true，读取失败同样落到结果态（detail 为 null），不会永远转圈。
+ * isLoading 只在当前图片尚无结果时为 true，读取失败同样落到结果态，不会永远转圈。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ImageDetailResult } from '@shared/types/imagegen'
+import type { MediaDetailResult } from '@shared/types/media'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 
 /** 详情状态：detail 为 null 表示读取中或读取失败；isLoading 用于区分「等待回包」 */
-export interface ImageDetailState {
-    detail: ImageDetailResult | null
+export interface MediaDetailState {
+    detail: MediaDetailResult | null
     isLoading: boolean
 }
 
-export function useImageDetail(dirPath: string, path: string | null): ImageDetailState {
-    /** 结果与来源路径一起保存：展示前先比对路径，避免切图时串味 */
-    const [loaded, setLoaded] = useState<{ path: string; detail: ImageDetailResult | null } | null>(null)
-    /** 当前路径的最新值：回包回来时用它判断是否已经切走 */
-    const latestPath = useRef<string | null>(null)
+export function useImageDetail(id: string | null): MediaDetailState {
+    /** 结果与来源 id 一起保存：展示前先比对 id，避免切图时串味 */
+    const [loaded, setLoaded] = useState<{ id: string; detail: MediaDetailResult | null } | null>(null)
+    /** 当前 id 的最新值：回包回来时用它判断是否已经切走 */
+    const latestId = useRef<string | null>(null)
 
-    const load = useCallback(
-        async (target: string): Promise<void> => {
-            try {
-                const detail = await request<ImageDetailResult>('pressAi/getImageDetail', { dirPath, path: target })
-                // 迟到回包直接丢弃而不是覆盖：否则会把新图的详情清空，面板退回骨架或空态
-                if (latestPath.current !== target) {
-                    return
-                }
-                setLoaded({ path: target, detail })
-            } catch (cause) {
-                // 失败也落到结果态：面板显示空态说明，而不是一直停在骨架屏
-                if (latestPath.current !== target) {
-                    return
-                }
-                setLoaded({ path: target, detail: null })
-                toastError(cause)
+    const load = useCallback(async (target: string): Promise<void> => {
+        try {
+            const detail = await request<MediaDetailResult>('media/detail', { id: target })
+            // 迟到回包直接丢弃而不是覆盖：否则会把新图的详情清空，面板退回骨架或空态
+            if (latestId.current !== target) {
+                return
             }
-        },
-        [dirPath],
-    )
+            setLoaded({ id: target, detail })
+        } catch (cause) {
+            // 失败也落到结果态：面板显示空态说明，而不是一直停在骨架屏
+            if (latestId.current !== target) {
+                return
+            }
+            setLoaded({ id: target, detail: null })
+            toastError(cause)
+        }
+    }, [])
 
     useEffect(() => {
-        latestPath.current = path
-        if (path === null) {
+        latestId.current = id
+        if (id === null) {
             return
         }
-        void load(path)
-    }, [load, path])
+        void load(id)
+    }, [load, id])
 
-    const current = loaded !== null && loaded.path === path ? loaded : null
-    return { detail: current === null ? null : current.detail, isLoading: path !== null && current === null }
+    const current = loaded !== null && loaded.id === id ? loaded : null
+    return { detail: current === null ? null : current.detail, isLoading: id !== null && current === null }
 }

@@ -8,7 +8,7 @@
  */
 import { useCallback, useState } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
-import { isWorkflowPressSection } from './pressSections'
+import { normalizePressSection } from './pressSections'
 import { WorkflowPressNav } from './WorkflowPressNav'
 import type { WorkflowPressSection } from './pressSections'
 import type { WorkflowRenderProps } from '../core/registry'
@@ -41,8 +41,10 @@ export function WorkflowPress({ context, viewRequest }: WorkflowRenderProps): JS
      */
     if (viewRequest !== null && viewRequest.seq !== appliedViewSeq) {
         setAppliedViewSeq(viewRequest.seq)
-        if (isWorkflowPressSection(viewRequest.view)) {
-            setActiveSection(viewRequest.view)
+        // 旧标识 image 映射为 media：存量视图请求仍能落到媒体页
+        const nextSection = normalizePressSection(viewRequest.view)
+        if (nextSection !== null) {
+            setActiveSection(nextSection)
         }
     }
 

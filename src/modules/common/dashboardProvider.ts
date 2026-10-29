@@ -15,7 +15,7 @@
 import * as vscode from 'vscode'
 import type { WorkflowRouter } from '@modules/ai/workflowRouter'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
-import type { PressCoverStore } from '@modules/imagegen/db/coverRepository'
+import type { PressCoverStore } from '@modules/media/pressCoverStore'
 import { createAndOpenNote, openNoteByPath } from '@modules/note/noteService'
 import type { PinStore } from '@modules/note/pinStore'
 import { mergeChapterSummaries } from '@modules/press/chapterSummaryMerge'

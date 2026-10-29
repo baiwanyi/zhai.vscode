@@ -1,23 +1,16 @@
 /**
- * 生图模块契约：图片条目、统一图库的列举/删除/设封面、按提示词生成、生成参数与图片标识规则。
- * 复用约定：图片风格沿用 ./press 的 PortraitStyle 与 PORTRAIT_STYLES，作品目录口径与 press 一致，
- * 条目分类沿用 ./press 的 PressLoreKind；图片标识由文件名解析，不另建关联表。
- * 关键约束：只认当前命名（portrait-{时间戳}-{角色标识}、faction-/place-/item-{时间戳}-{条目标识}
- * 与 photo-{时间戳}-{随机段}），历史命名一律归为孤儿图；
- * 宿主不接受前端传入的任意路径，删除与设封面前必须按 dirPath 校验归属。
+ * 生图模块契约：按提示词生成、生成参数、参考图与提示词词库/规则的出入参。
+ * 复用约定：图片风格沿用 ./press 的 PortraitStyle 与 PORTRAIT_STYLES，作品目录口径与 press 一致；
+ * 生成结果直接复用 ./media 的 MediaItem，不另立图库契约。
+ * 关键约束：文件名不承载语义，出处与出图参数一律进媒体索引；
+ * 图库的列举、删除、设封面与详情全部由 media/* 协议承担，本文件不再定义图片标识规则。
  */
-import type { PortraitStyle, PressLoreKind } from './press'
+import type { MediaItem } from './media'
+import type { PortraitStyle } from './press'
 
 /**
- * 图片类别：角色图、设定条目图、普通图片、无法解析归属的孤儿图。
- * 「当前是否为作品封面」不参与分类——任何一张图都可能被设为封面，
- * 由 coverSelectedId 与图片 id 比较得出，避免同一张图出现两种类型。
- */
-export type PressImageKind = 'portrait' | 'lore' | 'photo' | 'orphan'
-
-/**
- * 生成意图：角色卡、设定条目与其他图片三种，决定落盘命名。
- * 「作品封面」不是生成意图——任意一张非角色图都可以在详情里设为封面。
+ * 生成意图：角色卡、设定条目与其他图片三种，只用于标注出处类别。
+ * 「作品封面」不是生成意图——任意一张非角色图都可以在媒体页设为封面。
  */
 export type ImageGenerateKind = 'portrait' | 'lore' | 'photo'
 
@@ -41,122 +34,12 @@ export function isImageRatio(value: unknown): value is ImageRatio {
     return typeof value === 'string' && IMAGE_RATIOS.some((item) => item === value)
 }
 
-/** 图库条目：一次列举返回 webview 可直接渲染的最小集合 */
-export interface PressImageItem {
-    /** 图片标识：文件名去掉扩展名 */
-    id: string
-    kind: PressImageKind
-    /** 相对存储根路径，形如 press/{作品名}/Images/photo-xxx.png */
-    path: string
-    /** webview 可访问的完整 URL，仅本次会话有效（由宿主用 asWebviewUri 转换） */
-    url: string
-    createdAt: string
-    /** 角色图所属的角色标识；条目图、普通图与孤儿图为 null */
-    characterId: string | null
-    /** 条目图所属的条目标识；角色图、普通图与孤儿图为 null */
-    loreId: string | null
-    /** 条目图所属的分类；非条目图为 null */
-    loreKind: PressLoreKind | null
-}
-
-/** 图库列举结果：按生成时间降序，最新在前；counts 供筛选条显示分项数量 */
-export interface ImageLibraryResult {
-    images: PressImageItem[]
-    /** 作品封面当前指向的图片 id */
-    coverSelectedId: string | null
-    counts: Record<PressImageKind, number>
-}
-
-/** 删除图片请求：path 必须是 listImageLibrary 返回的相对路径 */
-export interface ImageDeleteRequest {
-    dirPath: string
-    path: string
-}
-
-/**
- * 图片详情：读取同名侧车（出图参数快照）。
- * 旧图没有侧车、文件损坏或字段类型不符时对应项为 null，界面据此隐藏参数区。
- */
-export interface ImageDetailResult {
-    prompt: string | null
-    ratio: string | null
-    style: string | null
-    characterId: string | null
-    loreId: string | null
-    loreKind: PressLoreKind | null
-    enhancedFrom: string | null
-    createdAt: string | null
-}
-
-/**
- * 删除图片结果：前端据此一次性修好两处指针，不再二次请求。
- * characterId 非空且 nextPortraitId 变化时，调用方需把该角色的封面指针改为 nextPortraitId。
- */
-export interface ImageDeleteResult {
-    removed: boolean
-    /** 删除后作品封面回退到的图片 id */
-    coverSelectedId: string | null
-    /** 被删图所属角色；非角色图为 null */
-    characterId: string | null
-    /** 该角色删除后剩余最新一张的 id；无剩余为 null */
-    nextPortraitId: string | null
-    /** 被删图所属条目；非条目图为 null */
-    loreId: string | null
-    /** 被删图的条目分类；非条目图为 null */
-    loreKind: PressLoreKind | null
-    /** 该条目删除后剩余最新一张的 id；无剩余为 null */
-    nextLoreImageId: string | null
-}
-
-/** 设为作品封面结果 */
-export interface ImageSetCoverResult {
-    coverSelectedId: string | null
-}
-
-/** 按提示词生成图片请求：正文由前端拼装，词条文本由宿主换取，画风与负向约束由宿主追加 */
-export interface ImageGenerateRequest {
-    dirPath: string
-    /** 已拼装的图像提示词（含设定快照；不含词条、画风与负向约束） */
-    prompt: string
-    /**
-     * 词条芯片的标识：{分类}::{分组}::{名称}，由词库 md 生成。
-     * 宿主据此回查 md 取原文、归一化后与正文合并；词条顺序即芯片顺序。
-     */
-    promptTags?: string[]
-    /**
-     * 上下文段：「添加上下文」菜单添加的内容（如作品设定），由前端按芯片顺序展开。
-     * 它不进 prompt 字段，宿主接在正文之后、规则之前，作为画面背景而非画面描述。
-     */
-    contexts?: string[]
-    /**
-     * 规则芯片的标识：{存储根}/prompt/rules 下的文件名主干，同样属于上下文而非提示词正文。
-     * 规则正文不进前端，由宿主读盘后作为约束段并入；顺序即芯片顺序。
-     */
-    promptRules?: string[]
-    /**
-     * 参考图芯片的本地路径：只接受 Host 选择流程登记过的图片。
-     * 图片作为多模态输入随指令提交，供模型观察主体与构图；不写进提示词正文。
-     */
-    referenceImages?: string[]
-    kind: ImageGenerateKind
-    /** portrait 必填，其余必须为 null */
-    characterId: string | null
-    /** lore 必填，其余必须为 null */
-    loreKind: PressLoreKind | null
-    /** lore 必填，其余必须为 null */
-    loreId: string | null
-    ratio: ImageRatio
-    style: PortraitStyle
-    /** 用户点击「增强提示词」前的原始输入：仅用于落盘 sidecar 复现，未增强时省略 */
-    enhancedFrom?: string
-}
-
 /**
  * 生成结果：只回传新图本身，生成不影响作品封面。
  * 角色封面不在此回传——前端在生成回执后按「该角色尚无封面」自行写回人物卡，避免两套写回口径。
  */
 export interface ImageGenerateResult {
-    image: PressImageItem
+    image: MediaItem
 }
 
 /**
@@ -201,12 +84,6 @@ export const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
 export interface ImageSettingsResult {
     settings: ImageSettings
     overrides: ReadonlyArray<keyof ImageSettings>
-}
-
-/** 批量删除结果：removals 逐张回执，library 为删除后重新列举得到的列表 */
-export interface ImageBatchDeleteResult {
-    removals: { path: string; removed: boolean }[]
-    library: ImageLibraryResult
 }
 
 /**
@@ -320,84 +197,4 @@ export interface PromptTagUpdateRequest {
     attribute: string
     name: string
     prompt: string
-}
-
-/** 时间戳位数：年月日时分秒共 14 位 */
-const TIMESTAMP_LENGTH = 14
-/** 角色标识位数：8 位随机数字，与人物卡标识一致 */
-const CHARACTER_ID_LENGTH = 8
-/** 普通图片随机段位数 */
-const RANDOM_SUFFIX_LENGTH = 8
-
-/** 角色图：portrait-{14 位时间戳}-{8 位角色标识} */
-const PORTRAIT_ID_PATTERN = new RegExp(
-    `^portrait-\\d{${String(TIMESTAMP_LENGTH)}}-\\d{${String(CHARACTER_ID_LENGTH)}}$`,
-)
-/** 条目图：faction- / place- / item- 各带分类前缀，第 3 段为条目标识 */
-const LORE_ID_PATTERNS: Readonly<Record<PressLoreKind, RegExp>> = {
-    faction: new RegExp(`^faction-\\d{${String(TIMESTAMP_LENGTH)}}-\\d{${String(CHARACTER_ID_LENGTH)}}$`),
-    place: new RegExp(`^place-\\d{${String(TIMESTAMP_LENGTH)}}-\\d{${String(CHARACTER_ID_LENGTH)}}$`),
-    item: new RegExp(`^item-\\d{${String(TIMESTAMP_LENGTH)}}-\\d{${String(CHARACTER_ID_LENGTH)}}$`),
-}
-/** 普通图片：photo-{14 位时间戳}-{8 位字母数字} */
-const PHOTO_ID_PATTERN = new RegExp(
-    `^photo-\\d{${String(TIMESTAMP_LENGTH)}}-[A-Za-z0-9]{${String(RANDOM_SUFFIX_LENGTH)}}$`,
-)
-
-/** 判断图片标识是否合法：列举、删除与封面指针校验共用同一口径 */
-export function isPressImageId(value: unknown): value is string {
-    if (typeof value !== 'string') {
-        return false
-    }
-    return (
-        PORTRAIT_ID_PATTERN.test(value) ||
-        PHOTO_ID_PATTERN.test(value) ||
-        parseLoreImageKind(value) !== null
-    )
-}
-
-/** 按标识判定类别：portrait 为角色图，三类条目前缀为条目图，photo 为普通图，其余为孤儿图 */
-export function parseImageKind(id: string): PressImageKind {
-    if (PORTRAIT_ID_PATTERN.test(id)) {
-        return 'portrait'
-    }
-    if (parseLoreImageKind(id) !== null) {
-        return 'lore'
-    }
-    if (PHOTO_ID_PATTERN.test(id)) {
-        return 'photo'
-    }
-    return 'orphan'
-}
-
-/** 从图片标识解析所属角色：角色段固定在第 3 段 */
-export function parseImageCharacterId(id: string): string | null {
-    if (!PORTRAIT_ID_PATTERN.test(id)) {
-        return null
-    }
-    const segments = id.split('-')
-    return segments[2] ?? null
-}
-
-/** 从图片标识解析条目分类：不是条目图返回 null */
-export function parseLoreImageKind(id: string): PressLoreKind | null {
-    if (LORE_ID_PATTERNS.faction.test(id)) {
-        return 'faction'
-    }
-    if (LORE_ID_PATTERNS.place.test(id)) {
-        return 'place'
-    }
-    if (LORE_ID_PATTERNS.item.test(id)) {
-        return 'item'
-    }
-    return null
-}
-
-/** 从图片标识解析条目标识：条目段固定在第 3 段，非条目图返回 null */
-export function parseImageLoreId(id: string): string | null {
-    if (parseLoreImageKind(id) === null) {
-        return null
-    }
-    const segments = id.split('-')
-    return segments[2] ?? null
 }

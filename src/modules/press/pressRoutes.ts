@@ -16,7 +16,6 @@ import type { WorkflowRouter } from '@modules/ai/workflowRouter'
 import { logger } from '@modules/common/logger'
 import type { PressCoverService } from '@modules/imagegen/coverService'
 import type { ImageGenerateService } from '@modules/imagegen/imageGenerateService'
-import type { ImageLibraryService } from '@modules/imagegen/imageLibraryService'
 import type { ImageSettingsService } from '@modules/imagegen/imageSettingsService'
 import type { PortraitService } from '@modules/imagegen/portraitService'
 import type { PromptRuleService, PromptTagService } from '@modules/imagegen/prompt'
@@ -77,7 +76,6 @@ export class PressRoutes {
         private readonly workflowRouter: WorkflowRouter,
         private readonly semantic: ImportSemanticService,
         private readonly snapshot: PressSnapshotService,
-        private readonly imageLibrary: ImageLibraryService,
         private readonly imageGenerate: ImageGenerateService,
         private readonly imageSettings: ImageSettingsService,
         private readonly promptRules: PromptRuleService,
@@ -117,16 +115,8 @@ export class PressRoutes {
                 return this.portraits.listLore(payload, toWebviewUri)
             case 'pressAi/listLoreGallery':
                 return this.portraits.listLoreGallery(payload, toWebviewUri)
-            case 'pressAi/copyPortrait':
-                return this.portraits.copyToClipboard(payload)
-            case 'pressAi/insertPortrait':
-                return this.portraits.insertIntoEditor(payload)
             case 'pressAi/listCover':
                 return this.covers.list(payload, toWebviewUri)
-            case 'pressAi/listImageLibrary':
-                return this.imageLibrary.list(payload, toWebviewUri)
-            case 'pressAi/getImageDetail':
-                return this.imageLibrary.readDetail(payload)
             case 'pressAi/generateImage':
                 return this.imageGenerate.generate(payload, toWebviewUri)
             case 'pressAi/generateImage/abort':
@@ -163,12 +153,6 @@ export class PressRoutes {
                 return this.referenceImages.pick(toWebviewUri)
             case 'pressAi/saveImageSettings':
                 return this.imageSettings.save(payload)
-            case 'pressAi/setImageCover':
-                return this.imageLibrary.setCover(payload)
-            case 'pressAi/deleteImage':
-                return this.imageLibrary.remove(payload)
-            case 'pressAi/deleteImages':
-                return this.imageLibrary.batchRemove(payload, toWebviewUri)
             case 'press/workspace':
                 return this.readWorkspace(payload)
             case 'press/open':
@@ -206,7 +190,8 @@ export class PressRoutes {
 
     /**
      * 回写作品文档：把草稿段落合并进 README、设定、角色设定与大纲，只写请求里带上的那几份。
-     * 删除名单里的角色同时清理其设定图；图片清理失败只记日志，不让已完成的文档回写回滚。
+     * 关键约束：删除角色或条目不再连带删图——图片已全局化，可能同时被章节与笔记引用，
+     * 出处快照保留在媒体索引里，媒体页据此显示「已删除」，由用户自行清理。
      * 安全约束：入参逐字段校验类型与规模，路径由回写模块统一校验，不采信前端拼出的绝对路径。
      */
     private async applyWorkspace(payload: unknown): Promise<PressApplyResult> {
@@ -216,25 +201,9 @@ export class PressRoutes {
         if (!hasProjectFiles(this.db, payload.dirPath)) {
             throw new Error(`作品不在索引中，无法回写：${payload.dirPath}`)
         }
-        const result = await applyProjectWorkspace(payload, {
+        return applyProjectWorkspace(payload, {
             onWritten: (outcome) => this.snapshot.recordWorkspaceWrite(outcome.dirPath, outcome.files, outcome.trigger),
         })
-        for (const characterId of payload.deletedCharacterIds ?? []) {
-            try {
-                await this.portraits.removeByCharacterId(payload.dirPath, characterId)
-            } catch (error) {
-                logger.error(`角色设定图清理失败：${payload.dirPath}/${characterId}`, error)
-            }
-        }
-        // 条目图与角色图分开清理：文件名前缀不同，互不干扰
-        for (const loreId of payload.deletedLoreIds ?? []) {
-            try {
-                await this.portraits.removeByLoreId(payload.dirPath, loreId)
-            } catch (error) {
-                logger.error(`条目设定图清理失败：${payload.dirPath}/${loreId}`, error)
-            }
-        }
-        return result
     }
 
     /**

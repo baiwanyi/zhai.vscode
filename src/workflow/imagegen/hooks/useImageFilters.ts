@@ -1,120 +1,147 @@
 /**
- * 生图页筛选与分批：把「图片类别 + 角色」两个筛选维度、分项计数与分批上限收在一处。
- * 复用约定：图片类型取 @shared/types/imagegen，全部派生都在内存中完成，不发起请求；
- * 计数里「全部」取传入列表长度，「作品封面」按 coverSelectedId 是否指向得出（0 或 1），其余取宿主分项数。
- * 关键约束：「作品封面」是「当前封面指针」这一维度而非图片类别；分批上限与筛选签名绑定，
- * 筛选一变即自然回到首批，切回同一筛选时保留上次的累计上限；调用方的选中集合判断也要复用该签名。
+ * 媒体页筛选与分批：把「年月」这一唯一筛选维度、按月分组与分批上限收在一处。
+ * 复用约定：数据全部来自 media/list 的全量返回，筛选与分组都在内存完成，切换年月不重新请求；
+ * 年月文案统一走 formatMediaMonth，下拉选项与分组头共用同一份格式化，避免两处口径不同。
+ * 关键约束：默认「全部月份」+ 按月倒序分组，进页面即见全库；
+ * 分批以筛选签名为界，切换年月即回到首批，切回同一月份时保留上次的累计上限；
+ * 分组内的顺序完全采用宿主返回的顺序（时间倒序），前端不再二次排序。
  */
 import { useMemo, useState } from 'react'
-import type { PressImageItem, PressImageKind } from '@shared/types/imagegen'
+import type { MediaItem, MediaMonthCount } from '@shared/types/media'
 
-/** 类型筛选：封面是「当前选中」维度，与图片自身的类别并列展示 */
-export type KindFilter = 'all' | 'cover' | PressImageKind
-
-/** 网格分批挂载的步长：一次只进一屏出头的卡片，避免上百张图同时进 DOM */
+/** 每组网格首屏与每次追加的张数：一次只进一屏出头的卡片，避免上百张图同时进 DOM */
 const GRID_PAGE_SIZE = 60
 
-interface UseImageFiltersParams {
-    /** 全部图片：筛选与「全部」计数的唯一数据源 */
-    images: PressImageItem[]
-    /** 宿主分项数：类别计数直接取用，前端不重复分类 */
-    counts: Record<PressImageKind, number>
-    /** 作品封面当前指向的图片 id：「作品封面」维度据此命中 */
-    coverSelectedId: string | null
+/** 按月分组：组头与卡片列表共用一份结构 */
+export interface MediaGroup {
+    /** YYYY-MM */
+    month: string
+    /** 中文显示：2026年10月 */
+    label: string
+    items: MediaItem[]
+    total: number
 }
 
-interface UseImageFiltersResult {
-    kind: KindFilter
-    setKind: (kind: KindFilter) => void
-    /** 角色筛选值：'all' 表示不限 */
-    characterId: string
-    setCharacterId: (characterId: string) => void
-    /** 顶栏选中的角色：'all' 折算为 null，供出图认领与 composer 使用 */
-    activeCharacterId: string | null
+/** 年月格式化：下拉与分组头共用，月份不补零 */
+export function formatMediaMonth(month: string): string {
+    const [year, value] = month.split('-')
+    if (year === undefined || value === undefined) {
+        return month
+    }
+    return `${year}年${Number(value)}月`
+}
+
+interface UseMediaFiltersParams {
+    /** 全部媒体：筛选、分组与计数的唯一数据源 */
+    items: MediaItem[]
+}
+
+interface UseMediaFiltersResult {
+    /** 当前年月：null 表示全部月份 */
+    month: string | null
+    setMonth: (month: string | null) => void
     /** 当前筛选结果：批量删除按它取交集，不受分批上限影响 */
-    filtered: PressImageItem[]
-    kindCounts: Readonly<Record<KindFilter, number>>
+    filtered: MediaItem[]
+    /** 全部月份下的分组（含空月不出现），按年月倒序 */
+    groups: MediaGroup[]
+    /** 已渲染的部分：每组各取前 N 张 */
+    visibleGroups: MediaGroup[]
+    /** 是否还有未渲染的图片 */
+    hasMore: boolean
     /** 是否存在生效中的筛选：决定是否显示「清空筛选」 */
     hasActiveFilter: boolean
     clearFilters: () => void
     /** 当前筛选签名：选中集合与分批上限都以它为界 */
     filterSignature: string
-    /** 已渲染的一批图片：全选与网格只覆盖这一批 */
-    visibleImages: PressImageItem[]
     /** 追加下一批 */
     loadMore: () => void
 }
 
-export function useImageFilters({ images, counts, coverSelectedId }: UseImageFiltersParams): UseImageFiltersResult {
-    const [kind, setKind] = useState<KindFilter>('all')
-    const [characterId, setCharacterId] = useState('all')
+export function useImageFilters({ items }: UseMediaFiltersParams): UseMediaFiltersResult {
+    const [month, setMonth] = useState<string | null>(null)
 
-    /** 顶栏选中的角色：'all' 是筛选占位值，对下游一律折算为 null，避免各处重复判断 */
-    const activeCharacterId = characterId === 'all' ? null : characterId
-
-    /** 筛选只看角色与图片类别：「作品封面」是维度而非类别，命中当前封面指针即通过 */
+    /** 筛选只按年月：不做类型筛选，也不再按角色收敛 */
     const filtered = useMemo(
-        () =>
-            images.filter((image) => {
-                if (activeCharacterId !== null && image.characterId !== activeCharacterId) {
-                    return false
-                }
-                if (kind === 'cover') {
-                    return image.id === coverSelectedId
-                }
-                return kind === 'all' || image.kind === kind
-            }),
-        [images, kind, activeCharacterId, coverSelectedId],
-    )
-
-    /** 筛选计数：全部与作品封面由列表推导，其余取宿主分项数，算好后交给筛选组件呈现 */
-    const kindCounts = useMemo<Record<KindFilter, number>>(
-        () => ({
-            all: images.length,
-            cover: coverSelectedId === null ? 0 : 1,
-            portrait: counts.portrait,
-            lore: counts.lore,
-            photo: counts.photo,
-            orphan: counts.orphan,
-        }),
-        [images.length, coverSelectedId, counts],
+        () => (month === null ? items : items.filter((item) => item.month === month)),
+        [items, month],
     )
 
     /**
-     * 分批：用筛选签名比对而不是在每处 onChange 里重置，筛选一变即自然回到首批。
-     * 已显示数量随签名保存，切回同一筛选时不必重新点「加载更多」。
+     * 分组：单选某月时只有一组；全部月份时按宿主返回的年月顺序分桶。
+     * 空月不建组——下拉里仍会显示该月计数，进组却没有内容会让人误以为列表没加载出来。
      */
+    const groups = useMemo<MediaGroup[]>(() => {
+        if (month !== null) {
+            return filtered.length === 0
+                ? []
+                : [{ month, label: formatMediaMonth(month), items: filtered, total: filtered.length }]
+        }
+        const buckets = new Map<string, MediaItem[]>()
+        for (const item of filtered) {
+            const list = buckets.get(item.month) ?? []
+            list.push(item)
+            buckets.set(item.month, list)
+        }
+        return [...buckets.entries()]
+            .sort((left, right) => right[0].localeCompare(left[0]))
+            .map(([key, list]) => ({
+                month: key,
+                label: formatMediaMonth(key),
+                items: list,
+                total: list.length,
+            }))
+    }, [filtered, month])
+
+    /** 分批：用筛选签名比对而不是在各处 onChange 里重置，筛选一变即自然回到首批 */
     const [paging, setPaging] = useState({ signature: '', count: GRID_PAGE_SIZE })
-    const filterSignature = `${kind}|${characterId}`
-    /** 本批渲染上限：签名与当前筛选不符即回到首批 */
+    const filterSignature = month ?? 'all'
     const renderLimit = paging.signature === filterSignature ? paging.count : GRID_PAGE_SIZE
-    const visibleImages = useMemo(() => filtered.slice(0, renderLimit), [filtered, renderLimit])
 
-    const hasActiveFilter = kind !== 'all' || characterId !== 'all'
+    const visibleGroups = useMemo(
+        () => groups.map((group) => ({ ...group, items: group.items.slice(0, renderLimit) })),
+        [groups, renderLimit],
+    )
 
-    /** 一键回到全部结果：两个筛选维度一起复位，避免逐个点回 */
-    const clearFilters = (): void => {
-        setKind('all')
-        setCharacterId('all')
-    }
+    const hasMore = groups.some((group) => group.total > renderLimit)
 
-    /** 追加一批：记下当前筛选签名，筛选未变时在累计上限上继续加 */
     const loadMore = (): void => {
         setPaging({ signature: filterSignature, count: renderLimit + GRID_PAGE_SIZE })
     }
 
+    const clearFilters = (): void => {
+        setMonth(null)
+    }
+
     return {
-        kind,
-        setKind,
-        characterId,
-        setCharacterId,
-        activeCharacterId,
+        month,
+        setMonth,
         filtered,
-        kindCounts,
-        hasActiveFilter,
+        groups,
+        visibleGroups,
+        hasMore,
+        hasActiveFilter: month !== null,
         clearFilters,
         filterSignature,
-        visibleImages,
         loadMore,
     }
+}
+
+/** 年月选项：把宿主聚合与当前格式化拼成下拉数据，组件层不再自己拼文案 */
+export interface MediaMonthOption {
+    /** 'all' 表示全部月份 */
+    value: string
+    label: string
+    count: number
+}
+
+/** 由宿主聚合生成下拉选项：全部月份排首位，其余按年月倒序 */
+export function toMonthOptions(months: MediaMonthCount[], total: number): MediaMonthOption[] {
+    return [
+        { value: 'all', label: '全部月份', count: total },
+        ...months.map((item) => ({
+            value: item.month,
+            label: formatMediaMonth(item.month),
+            count: item.count,
+        })),
+    ]
 }

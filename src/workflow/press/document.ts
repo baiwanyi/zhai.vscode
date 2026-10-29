@@ -9,7 +9,7 @@
  * 章纲的 summary 表示计划、wordCount 表示已写事实，两者不互相推导；未识别的名称不进入 characterIds，
  * 避免正文引用到不存在的人物卡；条目描述取块内自然段落，键值行不参与描述。
  */
-import { parseImageKind } from '@shared/types/imagegen'
+import { isMediaId } from '@shared/types/media'
 import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId, isPressLoreId } from '@shared/types/press'
 import type { PortraitStyle, PressSettingSectionFiles, PressWorkspaceFiles } from '@shared/types/press'
 import { PERIOD_OPTIONS, PLACE_OPTIONS } from './setting/settingOptions'
@@ -537,20 +537,13 @@ function parseCharacters(text: string): CharacterCard[] {
             arc: values.get('弧线') ?? '',
             relation: values.get('关系') ?? '',
             portraits: [],
-            // 封面只存图片 id：图片本体在 Images 下，URL 由宿主按会话签发，不能写进文档
-            // 封面只认角色图标识：新旧两种 portrait 命名都合法，photo 与手工图一律清空
-            coverPortraitId: parseImageKind(coverId) === 'portrait' ? coverId : null,
+            // 封面只存媒体 id：图片本体在 images/ 下，URL 由宿主按会话签发，不能写进文档；
+            // 出处类别由媒体索引判定，文档侧只校验格式，非媒体 id（历史命名或手改值）一律清空
+            coverPortraitId: isMediaId(coverId) ? coverId : null,
             portraitStyle: toPortraitStyle(values.get('画风')),
         })
     }
     return cards
-}
-
-/** 条目封面标识的分类前缀：只认本分类，角色图与普通图不会混进条目封面 */
-const LORE_IMAGE_PREFIX: Readonly<Record<LoreKind, string>> = {
-    faction: 'faction-',
-    place: 'place-',
-    item: 'item-',
 }
 
 /** 行首键值行：与 serialize 的写法一致，解析描述前先剔除，避免元信息混进正文 */
@@ -561,7 +554,7 @@ const KEY_VALUE_LINE_PATTERN = /^\s*[-*]\s+[^：:]{1,16}[：:]/u
  * 其余自然段落合并为描述。
  * 关键约束：`- id：` 只有符合宿主白名单才沿用，否则按名称散列取号；
  * 关联人物只认已存在的人物姓名，解析不到的名字直接丢弃，不在条目里留下悬空引用；
- * 封面只认本分类前缀，换分类或手工改成别的图都会回到「未设置」。
+ * 封面只校验媒体 id 格式，换分类或手工改成别的值都会回到「未设置」。
  */
 function parseLoreEntries(text: string, kind: LoreKind, characterIndex: Map<string, string>): LoreEntry[] {
     const entries: LoreEntry[] = []
@@ -594,7 +587,7 @@ function parseLoreEntries(text: string, kind: LoreKind, characterIndex: Map<stri
             memberIds: toList(values.get('人物'))
                 .map((member) => characterIndex.get(member))
                 .filter((memberId): memberId is string => memberId !== undefined),
-            coverImageId: coverId.startsWith(LORE_IMAGE_PREFIX[kind]) ? coverId : null,
+            coverImageId: isMediaId(coverId) ? coverId : null,
         })
     }
     return entries

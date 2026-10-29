@@ -11,7 +11,7 @@ import * as vscode from 'vscode'
 import { promptDirUri } from '@modules/common/promptRoot'
 import type { PromptImageBase } from '@shared/types/imagegen'
 
-/** 图片扩展名白名单：与 imageDirScan 的列举口径保持一致 */
+/** 图片扩展名白名单：与媒体扫描的列举口径保持一致 */
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|webp|gif)$/i
 
 /** 判空的下探深度：images → 分类 → 分组 → 文件，再深的层级不参与登记 */

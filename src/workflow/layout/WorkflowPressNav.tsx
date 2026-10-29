@@ -36,7 +36,7 @@ const PRIMARY_ENTRIES: readonly WorkflowPressNavEntry[] = [
     { id: 'character', label: '角色', icon: <Users className="size-6" /> },
     { id: 'outline', label: '大纲', icon: <ListTree className="size-6" /> },
     { id: 'naming', label: '取名', icon: <WandSparkles className="size-6" /> },
-    { id: 'image', label: '生图', icon: <ImageIcon className="size-6" /> },
+    { id: 'media', label: '媒体', icon: <ImageIcon className="size-6" /> },
     { id: 'proofread', label: '校对', icon: <SpellCheck className="size-6" /> },
 ]
 

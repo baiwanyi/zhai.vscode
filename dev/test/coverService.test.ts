@@ -1,98 +1,138 @@
 /**
- * 封面服务单元测试：覆盖候选只收 Images 下的普通图片、按修改时间排序、上限截断与当前封面回读。
- * 用内存库跑真实 schema 承载封面指针；虚拟磁盘与 mtime 由 vscode 测试桩承接。
+ * 封面服务单元测试：候选只取该作品出处下的普通图（photo / unknown），按落盘时间降序、上限截断，并回读当前封面。
+ * 用两张内存库分别承载 press.db（封面指针）与 media.db（媒体索引），schema 走真实实现；
+ * 关键约束：角色图与条目图不进候选——它们属于角色卡与条目弹窗的封面，不应出现在作品封面里。
  */
-import * as path from 'node:path'
 import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { resetWorkspaceState, setConfigValue, setDirectory, setFileContent, setFileMtime } from './stubs/vscode'
+import { resetWorkspaceState, setConfigValue } from './stubs/vscode'
+import type { MediaDatabase } from '../../src/modules/media/db/connection'
+import type { MediaRecord } from '../../src/modules/media/mediaRepository'
 import { ensureSchema } from '../../src/modules/common/db/schema'
 import { PressCoverService } from '../../src/modules/imagegen/coverService'
-import { PressCoverStore } from '../../src/modules/imagegen/db/coverRepository'
+import { ensureMediaSchema } from '../../src/modules/media/db/schema'
+import { insertMedia } from '../../src/modules/media/mediaRepository'
+import { PressCoverStore } from '../../src/modules/media/pressCoverStore'
 
 const STORAGE_ROOT = 'd:/vault'
 const DIR_PATH = 'press/剑来'
-const PHOTO_OLD = 'photo-20260101010101-AbCd1234.png'
-const PHOTO_NEW = 'photo-20270101010101-EfGh5678.png'
-/** 历史合成封面：只存在于旧 Cover 目录，不应再进候选 */
-const LEGACY_COVER = 'cover-20250101010101.png'
+const PHOTO_OLD = '20260101010101AbCd12'
+const PHOTO_NEW = '20270101010101EfGh34'
+const PORTRAIT = '20260101010102IjKl56'
 /** 与 coverService 的候选上限保持一致：超过该数量应被截断 */
 const CANDIDATE_LIMIT = 60
 
 let store: PressCoverStore
+let mediaDb: Database.Database
 let service: PressCoverService
 
-/** 作品目录下某个图片目录里的文件绝对路径 */
-function imageFsPath(dirName: string, fileName: string): string {
-    return path.join(STORAGE_ROOT, 'press', '剑来', dirName, fileName)
+/** 媒体记录工厂：只覆盖断言用到的字段 */
+function mediaOf(overrides: Partial<MediaRecord> & { id: string }): MediaRecord {
+    return {
+        path: `images/202601/${overrides.id}.png`,
+        ext: 'png',
+        byteSize: 1024,
+        month: '2026-01',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        scope: 'press',
+        origin: 'generate',
+        kind: 'photo',
+        pressPath: DIR_PATH,
+        pressName: '剑来',
+        characterId: null,
+        characterName: null,
+        loreKind: null,
+        loreId: null,
+        loreName: null,
+        prompt: null,
+        ratio: null,
+        style: null,
+        enhancedFrom: null,
+        ...overrides,
+    }
 }
 
-/** 登记图片文件并写入修改时间；目录必须显式登记，否则 readDirectory 视为不存在 */
-function addImage(dirName: string, fileName: string, mtime: number): void {
-    setDirectory(path.join(STORAGE_ROOT, 'press', '剑来', dirName))
-    setFileContent(imageFsPath(dirName, fileName), 'binary')
-    setFileMtime(imageFsPath(dirName, fileName), mtime)
+/** 测试用 URL 转换：直接返回磁盘路径，断言里就能比对 */
+function toFsPath(uri: { fsPath: string }): string {
+    return uri.fsPath
 }
 
 beforeEach(() => {
     resetWorkspaceState()
     setConfigValue('storage.rootPath', STORAGE_ROOT)
-    const db = new Database(':memory:')
-    ensureSchema(db)
-    store = new PressCoverStore(db)
-    service = new PressCoverService(db)
+    const pressDb = new Database(':memory:')
+    ensureSchema(pressDb)
+    store = new PressCoverStore(pressDb)
+    const media = new Database(':memory:')
+    ensureMediaSchema(media)
+    mediaDb = media
+    const database: MediaDatabase = { db: media, filePath: ':memory:', degraded: false, isRecovered: false }
+    service = new PressCoverService({ openDatabase: (): MediaDatabase => database, coverStore: store })
 })
 
 describe('list', () => {
-    it('只列举 Images 候选并按修改时间降序', async () => {
-        addImage('Images', PHOTO_OLD, 200)
-        addImage('Images', PHOTO_NEW, 300)
+    it('只列举该作品出处下的普通图，并按落盘时间降序', () => {
+        insertMedia(mediaDb, mediaOf({ id: PHOTO_OLD, createdAt: '2026-01-01T00:00:00.000Z' }))
+        insertMedia(mediaDb, mediaOf({ id: PHOTO_NEW, createdAt: '2027-01-01T00:00:00.000Z' }))
 
-        const result = await service.list({ dirPath: DIR_PATH }, (uri) => uri.fsPath)
+        const result = service.list({ dirPath: DIR_PATH }, toFsPath)
 
-        expect(result.covers.map((item) => item.id)).toEqual([
-            'photo-20270101010101-EfGh5678',
-            'photo-20260101010101-AbCd1234',
-        ])
+        expect(result.covers.map((item) => item.id)).toEqual([PHOTO_NEW, PHOTO_OLD])
         expect(result.total).toBe(2)
-        expect(result.selectedId).toBeNull()
     })
 
-    it('跳过旧 Cover 目录、角色图与手工图', async () => {
-        addImage('Cover', LEGACY_COVER, 100)
-        addImage('Images', 'portrait-20260101010101-abcd1234.png', 200)
-        addImage('Images', 'manual.png', 300)
+    it('角色图与条目图不进作品封面候选', () => {
+        insertMedia(mediaDb, mediaOf({ id: PHOTO_OLD }))
+        insertMedia(
+            mediaDb,
+            mediaOf({
+                id: PORTRAIT,
+                kind: 'portrait',
+                characterId: '10428736',
+                characterName: '林清',
+            }),
+        )
 
-        const result = await service.list({ dirPath: DIR_PATH }, (uri) => uri.fsPath)
+        const result = service.list({ dirPath: DIR_PATH }, toFsPath)
 
-        expect(result.covers).toEqual([])
-        expect(result.total).toBe(0)
+        expect(result.covers.map((item) => item.id)).toEqual([PHOTO_OLD])
     })
 
-    it('已设封面时回传该封面的标识', async () => {
-        addImage('Images', PHOTO_OLD, 200)
-        addImage('Images', PHOTO_NEW, 300)
-        store.write(DIR_PATH, `press/剑来/Images/${PHOTO_OLD}`)
+    it('其他作品出处下的图片不混入当前作品', () => {
+        insertMedia(mediaDb, mediaOf({ id: PHOTO_OLD }))
+        insertMedia(mediaDb, mediaOf({ id: PHOTO_NEW, pressPath: 'press/雪中', pressName: '雪中' }))
 
-        const result = await service.list({ dirPath: DIR_PATH }, (uri) => uri.fsPath)
+        const result = service.list({ dirPath: DIR_PATH }, toFsPath)
 
-        expect(result.selectedId).toBe('photo-20260101010101-AbCd1234')
+        expect(result.covers.map((item) => item.id)).toEqual([PHOTO_OLD])
     })
 
-    it('作品目录不存在时返回空列表', async () => {
-        const result = await service.list({ dirPath: DIR_PATH }, (uri) => uri.fsPath)
-
-        expect(result).toEqual({ covers: [], selectedId: null, total: 0 })
-    })
-
-    it('候选超过上限时截断到 60 张，total 仍为真实总数', async () => {
+    it('候选按上限截断，总数仍返回真实张数', () => {
         for (let index = 0; index < CANDIDATE_LIMIT + 5; index += 1) {
-            addImage('Images', `photo-20260101010101-${String(index).padStart(8, '0')}.png`, index)
+            const id = String(index).padStart(20, '0')
+            insertMedia(mediaDb, mediaOf({ id, createdAt: new Date(Date.now() + index * 1000).toISOString() }))
         }
 
-        const result = await service.list({ dirPath: DIR_PATH }, (uri) => uri.fsPath)
+        const result = service.list({ dirPath: DIR_PATH }, toFsPath)
 
         expect(result.covers).toHaveLength(CANDIDATE_LIMIT)
         expect(result.total).toBe(CANDIDATE_LIMIT + 5)
+    })
+
+    it('当前封面从指针回读：设置过的封面出现在 selectedId', () => {
+        insertMedia(mediaDb, mediaOf({ id: PHOTO_OLD }))
+        store.write(DIR_PATH, `images/202601/${PHOTO_OLD}.png`)
+
+        const result = service.list({ dirPath: DIR_PATH }, toFsPath)
+
+        expect(result.selectedId).toBe(PHOTO_OLD)
+    })
+
+    it('未设置封面时 selectedId 为 null', () => {
+        insertMedia(mediaDb, mediaOf({ id: PHOTO_OLD }))
+
+        const result = service.list({ dirPath: DIR_PATH }, toFsPath)
+
+        expect(result.selectedId).toBeNull()
     })
 })

@@ -54,8 +54,8 @@ interface UseImageComposerOptions {
     composeEnhanceSource?: (text: string) => string
     /** 增强成功后回收已并入正文的词条芯片：改写结果里已含词条描述，留着会被二次合并 */
     onConsumePromptChips?: () => void
-    /** 生成目标：普通图 / 角色图由调用方按当前模式判定 */
-    target: { kind: ImageGenerateKind; characterId: string | null }
+    /** 生成目标：普通图 / 角色图由调用方按当前模式判定；characterName 是写出处的名称快照 */
+    target: { kind: ImageGenerateKind; characterId: string | null; characterName: string | null }
     ratio: ImageRatio
     style: PortraitStyle
     /** 当前芯片快照：发送时存草稿，清空与回填交调用方执行 */
@@ -254,6 +254,8 @@ export function useImageComposer({
                     referenceImages: referenceImages.length > 0 ? referenceImages : undefined,
                     kind: target.kind,
                     characterId: target.characterId,
+                    // 角色名快照：宿主写入媒体出处，角色被删除后仍能显示原归属
+                    characterName: target.characterName,
                     ratio,
                     // 画风随请求下发，由宿主并入最终提示词（前端不再另拼，避免画风描述重复）
                     style,
