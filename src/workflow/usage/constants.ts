@@ -25,6 +25,7 @@ export const MODULE_OPTIONS: readonly UsageModuleOption[] = [
     { value: 'naming', label: AI_USAGE_MODULE_LABELS.naming },
     { value: 'appearance', label: AI_USAGE_MODULE_LABELS.appearance },
     { value: 'setting', label: AI_USAGE_MODULE_LABELS.setting },
+    { value: 'lore', label: AI_USAGE_MODULE_LABELS.lore },
     { value: 'semantic', label: AI_USAGE_MODULE_LABELS.semantic },
     { value: 'scene', label: AI_USAGE_MODULE_LABELS.scene },
     { value: 'image', label: AI_USAGE_MODULE_LABELS.image },

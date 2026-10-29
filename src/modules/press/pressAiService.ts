@@ -2,7 +2,7 @@
  * 写作管理 AI 服务：校验密钥与每日配额后执行一次性生成，承载人物外貌、设定字段与条目描述。
  * 复用约定：模型通道经注入的 AI 通道（../ai/provider）驱动 ./ai/aiTextGenerator，
  * 提示词分别来自 ./ai/appearancePrompt、./ai/settingFieldPrompt 与 ./ai/lorePrompt，输出统一经 ./ai/plainText 清洗；
- * 配额经 ../common/db/quotaRepository 落在 press.db 的 meta 表，三类生成共用同一份额度与统计口径；
+ * 配额经 ../common/db/quotaRepository 落在 press.db 的 meta 表，三类生成共用同一份每日额度（统计模块各自独立）；
  * 入参收窄复用 ../common/readInput，不在此重复实现截断与去重。
  * 关键约束：入参一律先经 normalize*Request 收窄（长度、条数、类型、字段白名单），异常载荷不进入模型调用；
  * 同一时刻只允许一个生成请求，取消由三类生成各自的 abort 方法触发；
@@ -68,10 +68,10 @@ const LORE_DESCRIPTION_MAX_TOKENS = 700
 /** 条目请求里的参照名单条数上限：同类条目名与关联人物名各自收口 */
 const MAX_LORE_REFERENCE_COUNT = 50
 
-/** 一次文本生成的运行参数：三类生成只差提示词、篇幅与提示文案 */
+/** 一次文本生成的运行参数：三类生成只差提示词、篇幅、模块与提示文案 */
 interface GenerationOptions {
-    /** 用量模块：条目描述复用设定生成的统计口径 */
-    module: 'appearance' | 'setting'
+    /** 用量模块：三类生成各自记账，配额仍共用 press_ai */
+    module: 'appearance' | 'setting' | 'lore'
     messages: AiChatMessage[]
     maxTokens: number
     timeoutMs: number
@@ -133,7 +133,7 @@ export class PressAiService {
      */
     public async generateLoreDescription(payload: unknown): Promise<LoreDescriptionGenerateResult> {
         const content = await this.runGeneration({
-            module: 'setting',
+            module: 'lore',
             messages: buildLoreDescriptionMessages(normalizeLoreDescriptionRequest(payload)),
             maxTokens: LORE_DESCRIPTION_MAX_TOKENS,
             timeoutMs: LORE_DESCRIPTION_TIMEOUT_MS,
@@ -196,8 +196,8 @@ export class PressAiService {
         return controller
     }
 
-    /** 成功后计次与记账：两类生成只差 module 与提示词 */
-    private commit(module: 'appearance' | 'setting', messages: AiChatMessage[], result: AiTextGenerateResult): void {
+    /** 成功后计次与记账：三类生成只差 module 与提示词 */
+    private commit(module: GenerationOptions['module'], messages: AiChatMessage[], result: AiTextGenerateResult): void {
         consumeToday(this.db, QUOTA_KEYS)
         this.usageRecorder.record({
             module,
