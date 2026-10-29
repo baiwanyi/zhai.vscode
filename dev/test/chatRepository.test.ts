@@ -71,6 +71,12 @@ function makeMessage(overrides: Partial<MessageRow> = {}): MessageRow {
     }
 }
 
+/** 读取表的实际列名：迁移用例据此断言旧列已删除、补列仍在 */
+function readColumns(database: Database.Database, table: string): string[] {
+    const rows = database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+    return rows.map((item) => item.name)
+}
+
 beforeAll(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zhai-ai-db-'))
     db = openAiDatabase(createUri(tempDir))
@@ -180,6 +186,34 @@ describe('conversations', () => {
             .prepare('SELECT provider, sdk_session_id AS sdkSessionId FROM conversations WHERE id = ?')
             .get('conv-legacy') as { provider: string; sdkSessionId: string | null }
         expect(row).toEqual({ provider: 'codebuddy', sdkSessionId: null })
+        legacy.close()
+    })
+
+    it('旧库清理已废弃的 file_path / project / estimated_cost 列', () => {
+        const legacy = new Database(':memory:')
+        legacy.exec(`CREATE TABLE conversations (
+            id TEXT PRIMARY KEY, title TEXT NOT NULL, mode TEXT NOT NULL, file_path TEXT,
+            model TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+        )`)
+        legacy.exec('CREATE INDEX idx_conv_file ON conversations(file_path)')
+        legacy.exec(`CREATE TABLE ai_usage_logs (
+            id TEXT PRIMARY KEY, conversation_id TEXT, project TEXT NOT NULL, model TEXT NOT NULL,
+            prompt_tokens INTEGER NOT NULL DEFAULT 0, completion_tokens INTEGER NOT NULL DEFAULT 0,
+            reasoning_tokens INTEGER NOT NULL DEFAULT 0, total_tokens INTEGER NOT NULL DEFAULT 0,
+            estimated_cost REAL NOT NULL DEFAULT 0, latency_ms INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL
+        )`)
+        ensureAiSchema(legacy)
+        expect(readColumns(legacy, 'conversations')).not.toContain('file_path')
+        expect(readColumns(legacy, 'ai_usage_logs')).not.toContain('project')
+        expect(readColumns(legacy, 'ai_usage_logs')).not.toContain('estimated_cost')
+        // 只删遗留列，补列与重建索引不受影响
+        expect(readColumns(legacy, 'ai_usage_logs')).toContain('credits')
+        const indexes = (
+            legacy.prepare("PRAGMA index_list('conversations')").all() as Array<{ name: string }>
+        ).map((item) => item.name)
+        expect(indexes).not.toContain('idx_conv_file')
+        expect(indexes).toContain('idx_conv_project')
         legacy.close()
     })
 })

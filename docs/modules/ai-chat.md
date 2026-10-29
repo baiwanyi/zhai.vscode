@@ -222,7 +222,6 @@ CREATE TABLE IF NOT EXISTS conversations (
     id             TEXT PRIMARY KEY,  -- UUID
     title          TEXT NOT NULL,
     mode           TEXT NOT NULL,     -- 'write' | 'chat'
-    file_path      TEXT,              -- 关联的笔记/章节（可为 NULL）
     project_dir    TEXT,              -- 会话作用域（作品目录，如 press/某作品）；NULL 表示通用对话
     model          TEXT NOT NULL,
     provider       TEXT NOT NULL DEFAULT 'codebuddy', -- 创建时使用的 AI 通道
@@ -234,7 +233,6 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 
 CREATE INDEX IF NOT EXISTS idx_conv_updated ON conversations(updated_at DESC);
-CREATE INDEX IF NOT EXISTS idx_conv_file ON conversations(file_path);
 CREATE INDEX IF NOT EXISTS idx_conv_project ON conversations(project_dir, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -260,7 +258,6 @@ CREATE INDEX IF NOT EXISTS idx_msg_conv ON messages(conversation_id, created_at)
 CREATE TABLE IF NOT EXISTS ai_usage_logs (
     id                    TEXT PRIMARY KEY,
     conversation_id       TEXT,
-    project               TEXT NOT NULL,   -- v3 遗留非空列，新写入填模块键
     module                TEXT NOT NULL DEFAULT 'chat',  -- chat | naming | appearance | semantic | scene | image
     model                 TEXT NOT NULL,
     request_id            TEXT,            -- SDK _requestId，与 CLI 侧日志对账

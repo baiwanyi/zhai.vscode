@@ -57,12 +57,11 @@ const USAGE_COLUMNS = `id, request_id AS requestId, module, model, prompt_tokens
     latency_ms AS latencyMs, status, created_at AS createdAt`
 
 export function insertUsageLog(db: Database.Database, row: UsageLogInput): void {
-    // project 是 v3 遗留的非空列：旧库无法改约束，新写入统一用模块键填充，保证两列口径一致
     db.prepare(
-        `INSERT INTO ai_usage_logs (id, conversation_id, project, module, model, request_id, sdk_message_id,
+        `INSERT INTO ai_usage_logs (id, conversation_id, module, model, request_id, sdk_message_id,
             prompt_tokens, prompt_chars, completion_tokens, reasoning_tokens, total_tokens, credits, cost_usd,
             cache_read_tokens, cache_creation_tokens, latency_ms, status, created_at)
-         VALUES (@id, @conversationId, @module, @module, @model, @requestId, @sdkMessageId, @promptTokens,
+         VALUES (@id, @conversationId, @module, @model, @requestId, @sdkMessageId, @promptTokens,
             @promptChars, @completionTokens, @reasoningTokens, @totalTokens, @credits, @costUsd, @cacheReadTokens,
             @cacheCreationTokens, @latencyMs, @status, @createdAt)`,
     ).run(row)

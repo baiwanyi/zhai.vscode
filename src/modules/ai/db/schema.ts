@@ -5,21 +5,21 @@
  * 复用约定：activate 期调用一次，建表与补列都走 IF NOT EXISTS / PRAGMA 判断，可重复执行。
  * 关键约束：会话记录所属 AI 通道与通道侧会话号，通道切换后不得复用旧会话号；
  * 会话按作用域（作品目录）隔离，project_dir 为 NULL 表示不属于任何作品的通用对话；
- * conversations.file_path 与 ai_usage_logs.estimated_cost 已无读写，仅保留旧库兼容，新代码不得使用；
  * 积分只认 CodeBuddy 会话记录里的真实值，v5 起清空按倍率估算的历史值（估算口径已证实偏差约 20 倍）；
  * v9 起用量表记提示词字数，供按真实 token 反算字符/token 比值，历史行留 0 表示未记录；
- * 补列的标识符均为本文件内的常量，不接受外部输入，避免拼接注入。
+ * v10 起删除已无读写的遗留列（conversations.file_path、ai_usage_logs.project / estimated_cost），
+ * 旧库按 DROP COLUMN 就地清理，新库直接按精简结构建表；
+ * 补列与删列的标识符均为本文件内的常量，不接受外部输入，避免拼接注入。
  */
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = '9'
+const SCHEMA_VERSION = '10'
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS conversations (
         id          TEXT PRIMARY KEY,
         title       TEXT NOT NULL,
         mode        TEXT NOT NULL,
-        file_path   TEXT,
         project_dir TEXT,
         model       TEXT NOT NULL,
         provider    TEXT NOT NULL DEFAULT 'codebuddy',
@@ -30,7 +30,6 @@ const DDL_STATEMENTS = [
         updated_at  TEXT NOT NULL
     )`,
     `CREATE INDEX IF NOT EXISTS idx_conv_updated ON conversations(updated_at DESC)`,
-    `CREATE INDEX IF NOT EXISTS idx_conv_file ON conversations(file_path)`,
     `CREATE TABLE IF NOT EXISTS messages (
         id              TEXT PRIMARY KEY,
         conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
@@ -52,13 +51,11 @@ const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS ai_usage_logs (
         id                TEXT PRIMARY KEY,
         conversation_id   TEXT,
-        project           TEXT NOT NULL,
         model             TEXT NOT NULL,
         prompt_tokens     INTEGER NOT NULL DEFAULT 0,
         completion_tokens INTEGER NOT NULL DEFAULT 0,
         reasoning_tokens  INTEGER NOT NULL DEFAULT 0,
         total_tokens      INTEGER NOT NULL DEFAULT 0,
-        estimated_cost    REAL    NOT NULL DEFAULT 0,
         latency_ms        INTEGER NOT NULL DEFAULT 0,
         created_at        TEXT NOT NULL
     )`,
@@ -86,11 +83,23 @@ function readSchemaVersion(db: Database.Database): number {
     return Number.isFinite(version) ? version : 0
 }
 
+/** 判断列是否存在：补列与删列都要先查 PRAGMA，SQLite 没有 IF [NOT] EXISTS */
+function hasColumn(db: Database.Database, table: string, name: string): boolean {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+    return columns.some((item) => item.name === name)
+}
+
 /** 旧库补列：SQLite 的 ADD COLUMN 没有 IF NOT EXISTS，只能先查 PRAGMA 再执行 */
 function ensureColumn(db: Database.Database, table: string, name: string, definition: string): void {
-    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
-    if (!columns.some((item) => item.name === name)) {
+    if (!hasColumn(db, table, name)) {
         db.exec(`ALTER TABLE ${table} ADD COLUMN ${definition}`)
+    }
+}
+
+/** 旧库删列：DROP COLUMN 会因列上仍有索引而失败，调用方须先删索引 */
+function dropColumn(db: Database.Database, table: string, name: string): void {
+    if (hasColumn(db, table, name)) {
+        db.exec(`ALTER TABLE ${table} DROP COLUMN ${name}`)
     }
 }
 
@@ -138,6 +147,12 @@ export function ensureAiSchema(db: Database.Database): boolean {
         // v9：用量表补提示词字数，用于按真实 token 反算「字符 / token」比值，替代写死的 1.6；
         // 历史行保持 0 即「未记录」，统计时被过滤，不影响校准结果
         ensureColumn(db, 'ai_usage_logs', 'prompt_chars', 'prompt_chars INTEGER NOT NULL DEFAULT 0')
+        // v10：删除已无读写的遗留列 —— 会话不再按文件归属，用量表由 module / cost_usd 取代 project / estimated_cost；
+        // 先删索引再删列（SQLite 不允许 DROP 仍被索引引用的列），新库本就没有这些列，hasColumn 会直接跳过
+        db.exec('DROP INDEX IF EXISTS idx_conv_file')
+        dropColumn(db, 'conversations', 'file_path')
+        dropColumn(db, 'ai_usage_logs', 'project')
+        dropColumn(db, 'ai_usage_logs', 'estimated_cost')
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)
