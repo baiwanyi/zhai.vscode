@@ -227,6 +227,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     model          TEXT NOT NULL,
     provider       TEXT NOT NULL DEFAULT 'codebuddy', -- 创建时使用的 AI 通道
     sdk_session_id TEXT,              -- 通道侧会话号，CodeBuddy 通道续接用
+    context_used_tokens   INTEGER NOT NULL DEFAULT 0, -- 最近一轮请求带上的上下文 token；0 表示未记录
+    context_window_tokens INTEGER NOT NULL DEFAULT 0, -- 该轮生效的上下文窗口；0 表示未知
     created_at     TEXT NOT NULL,
     updated_at     TEXT NOT NULL
 );
@@ -291,7 +293,7 @@ CREATE INDEX IF NOT EXISTS idx_prompt_date ON ai_prompts(created_at);
 
 **敏感字段说明**：用量表只存模型、模块、成本与请求标识；提示词正文单独存 `ai_prompts`，仅在用户点开某条请求时按 id 单条读取，列表查询不触碰该表。正文入库截断至 20000 字符并标记 `is_truncated`，保留 30 天，打开用量页时顺带清理；消息正文随会话存储，用户删除会话时级联清除。
 
-**迁移**：按版本由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行（v2 补 `provider` / `sdk_session_id`，v3 补 `project_dir`，v4 补用量表的 `module` / `request_id` / `sdk_message_id` / `cost_usd` / `credits` / 缓存 tokens / `status` 并新建 `ai_prompts`，v5 清空按倍率估算的 `credits` 并改由 CLI 记录回填，v6 补消息表的 `total_tokens` / `duration_ms` / `tokens_estimated` 且历史消息不回填，v7 补消息表的 `credits` / `request_id` 并建请求 id 索引）。`provider` 默认 `codebuddy`，`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话；`project_dir` 为 NULL 表示该会话不属于任何作品（历史会话不做回填）；`module` 默认 `chat`，旧值 `ai-chat` 等在读取时归一为 `chat`，不做回填。依赖新列的索引必须写在补列之后，否则旧库建索引会因缺列失败。
+**迁移**：按版本由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行（v2 补 `provider` / `sdk_session_id`，v3 补 `project_dir`，v4 补用量表的 `module` / `request_id` / `sdk_message_id` / `cost_usd` / `credits` / 缓存 tokens / `status` 并新建 `ai_prompts`，v5 清空按倍率估算的 `credits` 并改由 CLI 记录回填，v6 补消息表的 `total_tokens` / `duration_ms` / `tokens_estimated` 且历史消息不回填，v7 补消息表的 `credits` / `request_id` 并建请求 id 索引，v8 补会话表的 `context_used_tokens` / `context_window_tokens` 且历史会话保持 0 即未记录）。`provider` 默认 `codebuddy`，`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话；`project_dir` 为 NULL 表示该会话不属于任何作品（历史会话不做回填）；`module` 默认 `chat`，旧值 `ai-chat` 等在读取时归一为 `chat`，不做回填。依赖新列的索引必须写在补列之后，否则旧库建索引会因缺列失败。
 
 **会话作用域**：每个作品（`press/{作品名}`）各有一份对话记录——取最近会话、新建会话、历史列表都按 `project_dir` 过滤（比较用 `IS ?` 以覆盖 NULL），因此切换作品即切换对话上下文，互不串历史。作品页（`WorkflowPress`）把当前作品目录作为作用域下传给 `AiChat`，通用场景不带作用域即取 `project_dir IS NULL` 的那份对话。
 
@@ -524,7 +526,7 @@ interface AbortRequest {
 
 **本轮用量口径**：CodeBuddy 在 `resume` 续接时，SDK `result` 消息的 `usage` 是**会话累计**（含此前各轮），不能直接当作本轮消耗。生成结束后按「会话号 + 请求 id」定向解析该会话的 CLI 记录文件（`CliUsageIndex.readRoundTokens`），取本轮多条记录的 tokens 累加值——与「AI 使用量」页完全同源；首轮无累计语义时直接用通道回传值；续接且 CLI 记录尚未落盘时退化为按回复字数估算并标记 `tokens_estimated`。同一份结果同时用于消息落库、流末下发与用量记账。
 
-**上下文用量口径**：底部圆环统计的是「当前会话最近一轮请求带上的上下文规模」，取 SDK 流内 `message_start` 的 `usage` 三项之和（`input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`）——缓存命中的历史同样占窗口，只取 `input_tokens` 会严重低估；分母取 `result.modelUsage` 的实际窗口，取不到再退回模型清单的 `contextWindow.defaultLength` / 最大档位 / `maxInputTokens`，仍取不到即视为未知。**不得**用 `result.usage` 充当上下文（续接时它是会话累计），也不得用 `ai.maxContextTokens`（历史裁剪预算）兜底。**取值优先级**：CLI 落盘记录的本轮 `rawUsage.prompt_tokens`（含缓存折减、续接仍是单轮值）→ 流内 `message_start` 快照 → 首轮的 `result.usage` 输入三项；三者都取不到即视为未知，圆环按 0 展示但不编造分子。部分模型在流开头不上报输入用量（三项全 0），此时必须走 CLI 记录，否则圆环会一直停在 0%。占用值按会话存于宿主内存并随 `ai/session`、`ai/switchSession` 快照的 `contextUsage` 返回，窗口重启后需重新生成一轮才会恢复。档位选择只作用于该会话的首轮请求（`set_config.contextWindow`，需 `connect()` 后、`send()` 前下发），续接会话沿用首次生效的预算；因此通道由 `query()` 改为 V2 Session（`unstable_v2_createSession` / `unstable_v2_resumeSession`），`query()` 没有暴露 `set_config` 入口。
+**上下文用量口径**：底部圆环统计的是「当前会话最近一轮请求带上的上下文规模」，取 SDK 流内 `message_start` 的 `usage` 三项之和（`input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`）——缓存命中的历史同样占窗口，只取 `input_tokens` 会严重低估；分母取 `result.modelUsage` 的实际窗口，取不到再退回模型清单的 `contextWindow.defaultLength` / 最大档位 / `maxInputTokens`，仍取不到即视为未知。**不得**用 `result.usage` 充当上下文（续接时它是会话累计），也不得用 `ai.maxContextTokens`（历史裁剪预算）兜底。**取值优先级**：CLI 落盘记录的本轮 `rawUsage.prompt_tokens`（含缓存折减、续接仍是单轮值）→ 流内 `message_start` 快照 → 首轮的 `result.usage` 输入三项；三者都取不到即视为未知，圆环按 0 展示但不编造分子。部分模型在流开头不上报输入用量（三项全 0），此时必须走 CLI 记录，否则圆环会一直停在 0%。占用值随生成结束写入 `conversations.context_used_tokens` / `context_window_tokens`（只改这两列，不刷新 `updated_at`，避免把会话顶到历史列表最前），`ai/session` 与 `ai/switchSession` 的 `contextUsage` 直接从库里读，因此重开窗口、切换会话都能恢复上一轮数字，不需要重新生成。档位选择只作用于该会话的首轮请求（`set_config.contextWindow`，需 `connect()` 后、`send()` 前下发），续接会话沿用首次生效的预算；因此通道由 `query()` 改为 V2 Session（`unstable_v2_createSession` / `unstable_v2_resumeSession`），`query()` 没有暴露 `set_config` 入口。
 
 实现位置：`src/modules/ai/`（`providers/` SDK 封装与模型清单、`chatService.ts` 会话编排、`promptEnhance.ts` 提示词增强（写作 / 对话 / 图像三套口径集中）、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
 

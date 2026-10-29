@@ -3,7 +3,8 @@
  * 安全约束：全部 SQL 使用预编译参数绑定，禁止字符串拼接；批量写入统一走事务。
  * 作用域约定：会话按 project_dir 隔离，取最近会话与历史列表都必须带作用域，避免跨作品串历史；
  * 作用域比较统一用 `IS ?`（NULL 安全），作品对话与非作品通用对话各成一份。
- * 关键约束：用量写入与分页查询在 usageRepository，本文件只保留预算护栏需要的累计 token 统计。
+ * 关键约束：用量写入与分页查询在 usageRepository，本文件只保留预算护栏需要的累计 token 统计；
+ * 上下文占用写库时不得顺带刷新 updated_at，否则每次生成都会把会话顶到历史列表最前。
  */
 import type Database from 'better-sqlite3'
 
@@ -20,6 +21,10 @@ export interface ConversationRow {
     provider: string
     /** 通道侧会话号：CodeBuddy 用于 resume 续接，其它通道为 null */
     sdkSessionId: string | null
+    /** 最近一轮请求带上的上下文 token；0 表示尚未记录 */
+    contextUsedTokens: number
+    /** 该轮生效的上下文窗口；0 表示未知 */
+    contextWindowTokens: number
     createdAt: string
     updatedAt: string
 }
@@ -65,7 +70,8 @@ export interface MessagePatch {
 }
 
 const CONVERSATION_COLUMNS = `id, title, mode, file_path AS filePath, project_dir AS projectDir, model, provider,
-    sdk_session_id AS sdkSessionId, created_at AS createdAt, updated_at AS updatedAt`
+    sdk_session_id AS sdkSessionId, context_used_tokens AS contextUsedTokens,
+    context_window_tokens AS contextWindowTokens, created_at AS createdAt, updated_at AS updatedAt`
 
 const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, reasoning, status,
     finish_reason AS finishReason, refs, error, total_tokens AS totalTokens, duration_ms AS durationMs,
@@ -74,8 +80,9 @@ const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, r
 export function insertConversation(db: Database.Database, row: ConversationRow): void {
     db.prepare(
         `INSERT INTO conversations (id, title, mode, file_path, project_dir, model, provider, sdk_session_id,
-            created_at, updated_at)
-         VALUES (@id, @title, @mode, @filePath, @projectDir, @model, @provider, @sdkSessionId, @createdAt, @updatedAt)`,
+            context_used_tokens, context_window_tokens, created_at, updated_at)
+         VALUES (@id, @title, @mode, @filePath, @projectDir, @model, @provider, @sdkSessionId,
+            @contextUsedTokens, @contextWindowTokens, @createdAt, @updatedAt)`,
     ).run(row)
 }
 
@@ -121,6 +128,26 @@ export function updateConversationTitle(db: Database.Database, id: string, title
 /** 更新会话模式：对话 / 写作，随会话持久化，重启窗口后恢复 */
 export function updateConversationMode(db: Database.Database, id: string, mode: string): void {
     db.prepare('UPDATE conversations SET mode = ? WHERE id = ?').run(mode, id)
+}
+
+/**
+ * 记录本轮上下文占用：已用与窗口同写，重开窗口后圆环据此恢复上一轮的数字。
+ * 关键约束：只改这两列，不碰 updated_at —— 占用不是会话活跃事件，刷新时间会把会话顶到列表最前。
+ */
+export function updateConversationContextUsage(
+    db: Database.Database,
+    id: string,
+    usedTokens: number,
+    windowTokens: number,
+): void {
+    // 非有限值与负数一律归零：这两列参与占比计算，NaN 会让整条 SQL 触发 NOT NULL 约束
+    const used = Number.isFinite(usedTokens) ? Math.max(Math.trunc(usedTokens), 0) : 0
+    const window = Number.isFinite(windowTokens) ? Math.max(Math.trunc(windowTokens), 0) : 0
+    db.prepare('UPDATE conversations SET context_used_tokens = ?, context_window_tokens = ? WHERE id = ?').run(
+        used,
+        window,
+        id,
+    )
 }
 
 export function touchConversation(db: Database.Database, id: string, updatedAt: string): void {

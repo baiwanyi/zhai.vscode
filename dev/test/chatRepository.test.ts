@@ -18,6 +18,7 @@ import {
     listConversations,
     listMessages,
     sumTokensSince,
+    updateConversationContextUsage,
 } from '../../src/modules/ai/db/chatRepository'
 import { openAiDatabase } from '../../src/modules/ai/db/connection'
 import { ensureAiSchema } from '../../src/modules/ai/db/schema'
@@ -44,6 +45,8 @@ function makeConversation(overrides: Partial<ConversationRow> = {}): Conversatio
         model: 'codebuddy-default',
         provider: 'codebuddy',
         sdkSessionId: null,
+        contextUsedTokens: 0,
+        contextWindowTokens: 0,
         createdAt: '2026-09-25T10:00:00.000Z',
         updatedAt: '2026-09-25T10:00:00.000Z',
         ...overrides,
@@ -89,6 +92,23 @@ describe('conversations', () => {
         expect(row?.title).toBe('测试会话')
         expect(row?.filePath).toBe('notes/a.md')
         expect(row?.mode).toBe('chat')
+    })
+
+    it('上下文占用写入后可读回，且不刷新更新时间', () => {
+        insertConversation(db, makeConversation({ id: 'conv-context', updatedAt: '2026-09-01T00:00:00.000Z' }))
+        updateConversationContextUsage(db, 'conv-context', 71_000, 300_000)
+        const row = getConversation(db, 'conv-context')
+        expect(row?.contextUsedTokens).toBe(71_000)
+        expect(row?.contextWindowTokens).toBe(300_000)
+        expect(row?.updatedAt).toBe('2026-09-01T00:00:00.000Z')
+    })
+
+    it('上下文占用写入时负数归零，避免脏值进入占比计算', () => {
+        insertConversation(db, makeConversation({ id: 'conv-context-negative' }))
+        updateConversationContextUsage(db, 'conv-context-negative', -5, Number.NaN)
+        const row = getConversation(db, 'conv-context-negative')
+        expect(row?.contextUsedTokens).toBe(0)
+        expect(row?.contextWindowTokens).toBe(0)
     })
 
     it('列表按最后活跃时间倒序', () => {

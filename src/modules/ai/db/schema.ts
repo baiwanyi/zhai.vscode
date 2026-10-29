@@ -10,7 +10,7 @@
  */
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = '7'
+const SCHEMA_VERSION = '8'
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS conversations (
@@ -22,6 +22,8 @@ const DDL_STATEMENTS = [
         model       TEXT NOT NULL,
         provider    TEXT NOT NULL DEFAULT 'codebuddy',
         sdk_session_id TEXT,
+        context_used_tokens   INTEGER NOT NULL DEFAULT 0,
+        context_window_tokens INTEGER NOT NULL DEFAULT 0,
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL
     )`,
@@ -127,6 +129,10 @@ export function ensureAiSchema(db: Database.Database): boolean {
         ensureColumn(db, 'messages', 'credits', 'credits REAL')
         ensureColumn(db, 'messages', 'request_id', 'request_id TEXT')
         db.exec('CREATE INDEX IF NOT EXISTS idx_msg_request ON messages(request_id)')
+        // v8：会话表补上下文占用（已用 / 窗口），重开窗口后圆环仍能恢复上一轮的数字；
+        // 历史会话两项均为 0，表示尚未记录过占用，由展示层按运行时窗口补分母
+        ensureColumn(db, 'conversations', 'context_used_tokens', 'context_used_tokens INTEGER NOT NULL DEFAULT 0')
+        ensureColumn(db, 'conversations', 'context_window_tokens', 'context_window_tokens INTEGER NOT NULL DEFAULT 0')
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)

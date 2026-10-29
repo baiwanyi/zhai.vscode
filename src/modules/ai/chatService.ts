@@ -47,6 +47,7 @@ import {
     listMessages,
     sumTokensSince,
     touchConversation,
+    updateConversationContextUsage,
     updateConversationMode,
     updateConversationSession,
     updateConversationTitle,
@@ -119,8 +120,6 @@ export class AiChatService implements vscode.Disposable {
     private readonly pendingContexts = new Map<string, HostContextRef[]>()
     /** 未发送的输入草稿：按会话隔离，视图重建（侧边栏切换）后由会话快照带回 */
     private readonly inputDrafts = new Map<string, AiChatDraft>()
-    /** 会话上下文占用：以最近一轮生成的输入量为准，按会话隔离，切换会话时随快照带回 */
-    private readonly contextUsages = new Map<string, AiContextUsage>()
     /** 写作模式的写回快照：以助手消息 id 为键，记录文档版本与替换范围（不同轮次互不覆盖） */
     private readonly writeTargets = new Map<string, HostWriteTarget>()
     /** 可写回的助手消息 id：仅 replace 类命令产生，按会话隔离 */
@@ -218,7 +217,7 @@ export class AiChatService implements vscode.Disposable {
             messages: listMessages(this.db, latest.id).map(toMessage),
             contexts: this.getContexts(latest.id),
             draft: this.getDraft(latest.id),
-            contextUsage: this.contextUsages.get(latest.id) ?? null,
+            contextUsage: toContextUsage(latest),
         }
     }
 
@@ -234,6 +233,9 @@ export class AiChatService implements vscode.Disposable {
             model: getSelectedCodebuddyModel(),
             provider: this.provider.id,
             sdkSessionId: null,
+            // 新会话尚未发起请求，占用与窗口都从 0 起；窗口由前端按运行时档位补分母
+            contextUsedTokens: 0,
+            contextWindowTokens: 0,
             createdAt: now,
             updatedAt: now,
         }
@@ -272,7 +274,7 @@ export class AiChatService implements vscode.Disposable {
             messages: listMessages(this.db, conversation.id).map(toMessage),
             contexts: this.getContexts(conversation.id),
             draft: this.getDraft(conversation.id),
-            contextUsage: this.contextUsages.get(conversation.id) ?? null,
+            contextUsage: toContextUsage(conversation),
         }
     }
 
@@ -287,7 +289,6 @@ export class AiChatService implements vscode.Disposable {
         deleteConversation(this.db, conversationId)
         this.pendingContexts.delete(conversationId)
         this.inputDrafts.delete(conversationId)
-        this.contextUsages.delete(conversationId)
         for (const messageId of this.appliableMessages.get(conversationId) ?? []) {
             this.writeTargets.delete(messageId)
         }
@@ -730,7 +731,12 @@ export class AiChatService implements vscode.Disposable {
             })
             const resolvedContext = this.resolveContextUsage(contextUsage, roundUsage)
             if (resolvedContext !== null) {
-                this.contextUsages.set(conversationId, resolvedContext)
+                updateConversationContextUsage(
+                    this.db,
+                    conversationId,
+                    resolvedContext.usedTokens,
+                    resolvedContext.windowTokens,
+                )
             }
             this.streamEmitter.fire({
                 type: 'stream',
@@ -786,7 +792,12 @@ export class AiChatService implements vscode.Disposable {
             // 中断前请求已带上上下文，能拿到的用量照常记下，避免圆环回退成未知
             const resolvedContext = this.resolveContextUsage(contextUsage, roundUsage)
             if (resolvedContext !== null) {
-                this.contextUsages.set(conversationId, resolvedContext)
+                updateConversationContextUsage(
+                    this.db,
+                    conversationId,
+                    resolvedContext.usedTokens,
+                    resolvedContext.windowTokens,
+                )
             }
             this.streamEmitter.fire({
                 type: 'stream',
@@ -1061,6 +1072,17 @@ function toConversation(row: ConversationRow): AiConversation {
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
     }
+}
+
+/**
+ * 会话上下文占用：读数来自 conversations 表的两列，重开窗口后仍能恢复上一轮数字。
+ * 两项均为 0 表示从未记录过（也兼容 v8 之前的历史库），返回 null 由展示层按运行时窗口补 0。
+ */
+function toContextUsage(row: ConversationRow): AiContextUsage | null {
+    if (row.contextUsedTokens <= 0 && row.contextWindowTokens <= 0) {
+        return null
+    }
+    return { usedTokens: row.contextUsedTokens, windowTokens: row.contextWindowTokens }
 }
 
 function toMessage(row: MessageRow): AiMessage {
