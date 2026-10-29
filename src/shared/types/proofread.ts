@@ -129,7 +129,7 @@ export interface ProofreadLexiconEntry {
     note?: string
 }
 
-/** 自定义词库：落 {存储根}/proofread/lexicon.json，用户可直接编辑 */
+/** 自定义词库：落 {存储根}/proofread.json，用户可直接编辑 */
 export interface ProofreadLexicon {
     version: 1
     entries: ProofreadLexiconEntry[]
@@ -139,7 +139,7 @@ export interface ProofreadLexicon {
 
 /** 词库文件状态：前端据此展示「设置词库」入口的文案 */
 export interface ProofreadLexiconState {
-    /** 相对存储根路径，形如 proofread/lexicon.json */
+    /** 相对存储根路径，形如 proofread.json */
     path: string
     exists: boolean
     entries: number

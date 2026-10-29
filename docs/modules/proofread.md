@@ -87,7 +87,7 @@ src/modules/proofread/
 │   ├── ignoredRanges.ts      围栏代码块与行内代码区间
 │   ├── data/typoWords.ts     内置错别字对照表（约 80 组）
 │   └── rules/                punctuation / repeat / typo / lexicon
-└── lexicon/lexiconStore.ts   读写 {存储根}/proofread/lexicon.json
+└── lexicon/lexiconStore.ts   读写 {存储根}/proofread.json
 ```
 
 **安全约束**
@@ -98,7 +98,7 @@ src/modules/proofread/
 
 ## 6. 自定义词库
 
-文件：`{storage.rootPath}/proofread/lexicon.json`，用户可直接编辑；「设置词库」按钮由宿主在编辑器中打开（缺失时先落骨架）。
+文件：`{storage.rootPath}/proofread.json`（直接位于存储根，与 `notes/`、`press/` 等一级目录平级），用户可直接编辑；「设置词库」按钮由宿主在编辑器中打开（缺失时先落骨架）。
 
 ```json
 {

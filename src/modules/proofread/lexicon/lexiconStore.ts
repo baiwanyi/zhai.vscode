@@ -1,5 +1,5 @@
 /**
- * 自定义词库存储：读写存储根下 proofread/lexicon.json，供自定义纠错检查与忽略词使用。
+ * 自定义词库存储：读写存储根下的 proofread.json，供自定义纠错检查与忽略词使用。
  * 复用 common/config 的存储根与 common/storagePath 的 Uri 拼装，词库是用户可直接编辑的纯文本文件。
  * 关键约束：解析逐字段收窄并限长，格式损坏时降级为空库并记日志，不能因为词库写坏而让校对整体失败；
  * 文件不存在时由 ensureLexiconFile 落一份带说明的骨架，用户打开即可照格式补充，不需要额外文档。
@@ -10,11 +10,8 @@ import { logger } from '@modules/common/logger'
 import { buildStorageUri } from '@modules/common/storagePath'
 import type { ProofreadLexicon, ProofreadLexiconEntry, ProofreadLexiconState } from '@shared/types/proofread'
 
-/** 词库目录名：存储根下的一级目录，与 notes / press 平级 */
-const LEXICON_DIR = 'proofread'
-
-/** 词库文件名 */
-const LEXICON_FILE = 'lexicon.json'
+/** 词库文件名：直接位于存储根下，不再单独占用子目录 */
+const LEXICON_FILE = 'proofread.json'
 
 /** 词条上限：超出部分忽略，避免异常文件放大检查开销 */
 const MAX_ENTRIES = 2000
@@ -29,7 +26,7 @@ const MAX_WORD_LENGTH = 32
 const MAX_NOTE_LENGTH = 120
 
 /** 词库相对存储根路径 */
-export const LEXICON_RELATIVE_PATH = `${LEXICON_DIR}/${LEXICON_FILE}`
+export const LEXICON_RELATIVE_PATH = LEXICON_FILE
 
 /** 空词库：文件缺失或解析失败时返回，调用方无需判空 */
 const EMPTY_LEXICON: ProofreadLexicon = { version: 1, entries: [], ignores: [] }
@@ -49,7 +46,7 @@ const LEXICON_TEMPLATE = `{
 
 /** 词库文件 Uri */
 function resolveLexiconUri(): vscode.Uri {
-    return buildStorageUri(resolveStorageRoot(), [LEXICON_DIR, LEXICON_FILE])
+    return buildStorageUri(resolveStorageRoot(), [LEXICON_FILE])
 }
 
 /** 文本字段收窄：去控制字符、去首尾空白并限长 */
@@ -152,8 +149,8 @@ export async function ensureLexiconFile(): Promise<vscode.Uri> {
     if (await isExisting(uri)) {
         return uri
     }
-    const directory = buildStorageUri(resolveStorageRoot(), [LEXICON_DIR])
-    await vscode.workspace.fs.createDirectory(directory)
+    // 词库直接落在存储根，存储根可能尚未创建（首次使用），writeFile 不会代建父目录
+    await vscode.workspace.fs.createDirectory(resolveStorageRoot())
     await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(LEXICON_TEMPLATE))
     return uri
 }
@@ -176,8 +173,7 @@ export async function writeLexicon(lexicon: ProofreadLexicon): Promise<void> {
         4,
     )
     const uri = resolveLexiconUri()
-    const directory = buildStorageUri(resolveStorageRoot(), [LEXICON_DIR])
-    await vscode.workspace.fs.createDirectory(directory)
+    await vscode.workspace.fs.createDirectory(resolveStorageRoot())
     const tempUri = uri.with({ path: `${uri.path}.tmp` })
     await vscode.workspace.fs.writeFile(tempUri, new TextEncoder().encode(`${body}\n`))
     await vscode.workspace.fs.rename(tempUri, uri, { overwrite: true })
