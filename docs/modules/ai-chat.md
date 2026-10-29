@@ -451,7 +451,7 @@ interface AbortRequest {
 | `ai/usage` | Webview → 宿主 | 用量列表 `{ items, total, page, pageSize, summary }`：`module` 走白名单（缺省不筛选）、`range` 为 `today/7d/30d/all` 枚举并由宿主换算起止时间、页码与页大小在宿主夹紧（≤500 页 / ≤50 条），分页与汇总都在库侧完成；`force: true` 跳过 5 秒索引节流并立即重扫 CLI 记录（表头刷新按钮），非布尔 true 一律按普通查询处理 |
 | `ai/usage/prompt` | Webview → 宿主 | 按请求 id 取提示词 `{ requestId, content, isTruncated, found }`；未留存时 `found=false`，id 长度与字符集校验失败直接拒绝 |
 | `host/command` | Webview → 宿主 | 白名单命令（`src/modules/common/webviewCommands.ts`），用于 CodeBuddy 登录（`zhai.ai.loginCodebuddy`）、打开设置等；未登记的命令一律拒绝 |
-| `stream` | 宿主 → Webview | 增量 `{ reqId, delta, channel }`；终态 `{ done: true, status, content, error? }` |
+| `stream` | 宿主 → Webview | 增量 `{ reqId, delta, channel }`；终态 `{ done: true, status, content, error?, contextUsage? }`，`contextUsage` 形如 `{ usedTokens, windowTokens }`，缺省表示通道未回传、前端保留上一次的值 |
 | `state` | 宿主 → Webview | `channel: 'ai'`，`payload.kind` 为 `runtime`（密钥变更）、`context`（上下文变更）或 `writeTarget`（模式切换 / 生成完成 / 写回成功）；`channel: 'toast'` 承载宿主操作反馈，`payload` 形如 `{ level, message }` |
 
 ### 10.1 编辑器右键「添加到宅对话」
@@ -496,7 +496,7 @@ interface AbortRequest {
 | 工具行右 | 参考 (`BookOpen` 图标) | 下拉四项：古诗词 / 名言名句 / 经典文本 / 历史资料；当前为占位，点击仅提示「即将上线」，不发起任何请求 |
 | 操作行左 | 模式按钮 | 下拉菜单列「对话 / 写作」两项：选中项整行高亮并带勾选，行尾 Info 图标悬浮说明两种模式差异；触发器按模式换配色（对话中性底、写作主色实底）；写 `conversations.mode` 持久化；生成中禁用 |
 | 操作行左 | 模型菜单 | 按钮完整展示当前模型名、不截断（空选择显示「Auto」，正文前景色）；模型名优先取菜单清单，初始化阶段清单未拉取时用 `ai/runtime` 的 `modelName` 兜底，避免闪出裸 id；展开时经 `ai/models` 取账号可用清单（激活时已预热，缓存为空才现拉）：菜单最高 `18rem`，模型较多时在菜单内层滚动（外层不滚动，避免毛玻璃底色随内容滚出可视区而出现下半截发透；滚动条为全站统一的细窄样式）；内置组首项为 `Auto`，其后按「内置模型 / 自定义模型」两组列出，两组均按名称字母序排列，每项左侧为本地厂商图标（未提供图标的厂商回退 CodeBuddy 标志），右侧依次为勾选与额度倍率 `✓ 0.51x`（倍率未知时只显示勾选）；选中写入 globalState 并广播 `runtime` 刷新；生成中禁用 |
-| 操作行右 | Token 圆环 | 当日已用 / 预算的环形占比（<70% 主色、70~90% 警示、≥90% destructive），点开浮层看已用 / 预算 / 剩余，每日 0 点重置 |
+| 操作行右 | 上下文圆环 | 当前会话上下文占用的环形占比（已用 / 当前模型窗口，<70% 主色、70~90% 警示、≥90% destructive），悬浮显示 `23.7% · 71.0k / 300.0k 上下文已使用`，点开浮层看已用 / 窗口 / 剩余 / 占比；窗口未知时置灰且不给占比 |
 | 操作行右 | 增强提示词 | 经 `ai/enhancePrompt` 走文本模型改写：写作模式补足文体、读者、篇幅与风格，对话模式补足背景、约束与期望答案形式，结果回填输入框，再次点击还原原文；请求中按钮转圈，失败保留原文并提示；会消耗 Token，计入「对话」模块 |
 | 操作行右 | 发送 / 停止 | 生成中替换为停止；写作模式无可改写目标时发送禁用 |
 
@@ -523,11 +523,13 @@ interface AbortRequest {
 
 **本轮用量口径**：CodeBuddy 在 `resume` 续接时，SDK `result` 消息的 `usage` 是**会话累计**（含此前各轮），不能直接当作本轮消耗。生成结束后按「会话号 + 请求 id」定向解析该会话的 CLI 记录文件（`CliUsageIndex.readRoundTokens`），取本轮多条记录的 tokens 累加值——与「AI 使用量」页完全同源；首轮无累计语义时直接用通道回传值；续接且 CLI 记录尚未落盘时退化为按回复字数估算并标记 `tokens_estimated`。同一份结果同时用于消息落库、流末下发与用量记账。
 
+**上下文用量口径**：底部圆环统计的是「当前会话最近一轮请求带上的上下文规模」，取 SDK 流内 `message_start` 的 `usage` 三项之和（`input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`）——缓存命中的历史同样占窗口，只取 `input_tokens` 会严重低估；分母取 `result.modelUsage` 的实际窗口，取不到再退回模型清单的 `contextWindow.defaultLength` / 最大档位 / `maxInputTokens`，仍取不到即视为未知。**不得**用 `result.usage` 充当上下文（续接时它是会话累计），也不得用 `ai.maxContextTokens`（历史裁剪预算）兜底。占用值按会话存于宿主内存并随 `ai/session`、`ai/switchSession` 快照的 `contextUsage` 返回，窗口重启后需重新生成一轮才会恢复。
+
 实现位置：`src/modules/ai/`（`providers/` SDK 封装与模型清单、`chatService.ts` 会话编排、`promptEnhance.ts` 提示词增强（写作 / 对话 / 图像三套口径集中）、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
 
 用量页（工作流栏底「AI使用量」，别名 `usage`）为全局统计，不随作品作用域隔离：顶部显示筛选范围内的请求数、积分与 tokens 汇总，并向排显示「今日积分」「本月积分」两张卡片（固定区间，只跟随模块筛选、不随时间范围变化，宿主按本地 0 点与当月 1 日 0 点换算），中部表格列为「时间 / 积分消耗 / 模型 / 请求 / 模块」，请求列显示短 id、点击弹窗按需拉取该轮提示词并展示模型、tokens 与耗时；模块筛选含对话、取名、外貌、语义归纳、画面描述、出图、未归属，时间筛选为今天 / 近 7 天 / 近 30 天 / 全部，分页在宿主侧完成。明细以本机 CodeBuddy 会话记录为主数据源：一轮一行，积分、tokens 与模型直接取 CLI 记录（`providerData.conversationRequestId` 聚合，同一轮的多条记录累加）；能按请求 id 关联到本地记账行的补上模块、耗时与提示词，关联不上的标为「未归属」并说明该轮非本扩展发起；本地有请求 id 但 CLI 记录已清理的轮次仍保留，积分沿用本地缓存。整轮未上报 credit 时显示破折号而不是 0。表头提供刷新按钮（`force` 强制重扫），页面可见时每 30 秒静默同步一次，标签页隐藏时不发请求。
 
-页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `ghost`）；输入区为 `InputGroup` 三段式卡片（工具行 / 输入框 / 操作行，见 10.3），无 Key 时插入 `Card` 引导项。业务组件按「一文件一组件」拆分：命令菜单、参考菜单、工具行、模式按钮、模型菜单、Token 圆环、增强按钮、操作行、写回按钮、消息正文与引用条目各自独立文件。
+页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `ghost`）；输入区为 `InputGroup` 三段式卡片（工具行 / 输入框 / 操作行，见 10.3），无 Key 时插入 `Card` 引导项。业务组件按「一文件一组件」拆分：命令菜单、参考菜单、工具行、模式按钮、模型菜单、上下文圆环、增强按钮、操作行、写回按钮、消息正文与引用条目各自独立文件。
 
 与本文档的已知差异（后续补齐）：
 

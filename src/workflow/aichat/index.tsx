@@ -5,7 +5,7 @@
  * 消息流由 MessageScroller 托管（自动滚动 + 回到底部按钮），Message + Bubble 呈现消息，
  * 空态用 Empty、输入区用三段式输入卡片（工具行 / 输入框 / 操作行）；流式正文经宿主 stream 增量渲染。
  * 底部卡片承载写作命令（徽章展示，指令模板在发送时拼装）、参考资料占位、对话 / 写作模式切换、
- * 模型菜单（展开时按需拉取账号可用清单）、Token 圆环、增强提示词（走文本通道改写，经 ai/enhancePrompt）与发送；
+ * 模型菜单（展开时按需拉取账号可用清单）、上下文圆环、增强提示词（走文本通道改写，经 ai/enhancePrompt）与发送；
  * 写作模式的结果由消息底部「应用到编辑栏」写回编辑器（宿主校验文档版本）。
  * 会话 / 上下文 / 运行时 / 历史 / 模型 / 写回 / 宿主命令操作拆分至 hooks/，页面区块与消息渲染拆分至 layout/。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机与第 10.3 节写回链路。
@@ -69,6 +69,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         phase,
         input,
         setInput,
+        contextUsage,
         loadSession,
         send,
         stop,
@@ -315,8 +316,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     isGenerating={isGenerating}
                     phase={phase}
                     mode={mode}
-                    usedTokens={runtime?.usedTokensToday ?? 0}
-                    dailyTokenBudget={runtime?.dailyTokenBudget ?? 0}
+                    contextUsage={contextUsage}
                     hasWriteTarget={hasWriteTarget}
                     command={command}
                     model={currentModel}

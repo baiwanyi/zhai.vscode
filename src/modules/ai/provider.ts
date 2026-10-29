@@ -6,7 +6,7 @@
  * 并发隔离交给调用方的 AbortController，避免多入口同时生成时互相串流。
  */
 
-import type { AiProviderId } from '@shared/types/aiChat'
+import type { AiContextUsage, AiProviderId } from '@shared/types/aiChat'
 
 /** 通道标识：与 webview 共用的类型来源为 shared/types/aiChat */
 export type { AiProviderId } from '@shared/types/aiChat'
@@ -50,6 +50,8 @@ export interface AiStreamChunk {
     reasoning: string
     usage?: AiUsage
     meta?: AiUsageMeta
+    /** 本轮上下文占用：通道拿不到模型请求的输入用量时缺省，由上层保留上一次的值 */
+    context?: AiContextUsage
 }
 
 /** 流式生成请求：长度上限按通道能力可被忽略，但调用方始终传入 */

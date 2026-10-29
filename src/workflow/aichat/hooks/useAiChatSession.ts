@@ -8,7 +8,13 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import type { AiContextRef, AiConversationMode, AiSendResult, AiSessionSnapshot } from '@shared/types/aiChat'
+import type {
+    AiContextRef,
+    AiContextUsage,
+    AiConversationMode,
+    AiSendResult,
+    AiSessionSnapshot,
+} from '@shared/types/aiChat'
 import type { StreamUsage } from '@shared/types/messages'
 import { onStream, request } from '@shared/utils/bridge'
 import type { AiApplyPolicy } from '../constants'
@@ -41,6 +47,8 @@ export interface AiChatSessionState {
     phase: Phase
     input: string
     setInput: (input: string) => void
+    /** 当前会话上下文占用：由会话快照初始化，流末按通道回传更新，null 表示尚无数据 */
+    contextUsage: AiContextUsage | null
     /** 加载会话快照：返回快照供调用方恢复草稿中的命令（失败返回 null） */
     loadSession: () => Promise<AiSessionSnapshot | null>
     /** 提交已拼装的正文；返回是否成功发出，失败时调用方保留输入与已选命令 */
@@ -63,6 +71,7 @@ export function useAiChatSession({
     const [session, setSession] = useState<AiSessionSnapshot | null>(null)
     const [phase, setPhase] = useState<Phase>('idle')
     const [input, setInput] = useState('')
+    const [contextUsage, setContextUsage] = useState<AiContextUsage | null>(null)
     /** 正在流式填充的消息 id，避免每次增量都触发状态结构变更 */
     const streamingMessageIdRef = useRef<string | null>(null)
     /** 最新输入正文：草稿恢复时判断本地是否已有内容，避免覆盖用户正在写的内容 */
@@ -86,6 +95,7 @@ export function useAiChatSession({
             const snapshot = await request<AiSessionSnapshot>('ai/session', { projectDir })
             setSession(snapshot)
             setContexts(snapshot.contexts)
+            setContextUsage(snapshot.contextUsage)
             restoreDraft(snapshot.draft.input)
             onError(null)
             return snapshot
@@ -105,6 +115,11 @@ export function useAiChatSession({
             if (message.done) {
                 streamingMessageIdRef.current = null
                 setPhase('idle')
+                // 上下文占用只在流末下发一次，未回传时保留上一次的值
+                const nextContextUsage = readContextUsage(message.contextUsage)
+                if (nextContextUsage !== null) {
+                    setContextUsage(nextContextUsage)
+                }
                 setSession((previous) =>
                     patchMessage(previous, messageId, (item) => ({
                         ...item,
@@ -187,6 +202,7 @@ export function useAiChatSession({
             const snapshot = await request<AiSessionSnapshot>('ai/newSession', { projectDir })
             setSession(snapshot)
             setContexts(snapshot.contexts)
+            setContextUsage(snapshot.contextUsage)
             setInput('')
             onError(null)
             onNotice(null)
@@ -235,6 +251,7 @@ export function useAiChatSession({
                 streamingMessageIdRef.current = null
                 setSession(snapshot)
                 setContexts(snapshot.contexts)
+                setContextUsage(snapshot.contextUsage)
                 restoreDraft(snapshot.draft.input)
                 setPhase('idle')
                 onError(null)
@@ -276,6 +293,7 @@ export function useAiChatSession({
         phase,
         input,
         setInput,
+        contextUsage,
         loadSession,
         send,
         stop,
@@ -303,4 +321,22 @@ function readStreamNumber(value: number | undefined, fallback: number): number {
 /** 流末积分收窄：null 是「明确未知」而不是 0，原样并入；缺省（undefined）沿用原值 */
 function readStreamCredits(credits: number | null | undefined, fallback: number | null): number | null {
     return typeof credits === 'number' && Number.isFinite(credits) ? credits : fallback
+}
+
+/**
+ * 流末上下文用量收窄：Webview 侧数据不可信，两项都必须是有限非负数才采纳；
+ * 任一不合格返回 null 表示未回传，由调用方保留上一次的值。
+ */
+function readContextUsage(value: unknown): AiContextUsage | null {
+    if (typeof value !== 'object' || value === null) {
+        return null
+    }
+    const { usedTokens, windowTokens } = value as { usedTokens?: unknown; windowTokens?: unknown }
+    if (typeof usedTokens !== 'number' || !Number.isFinite(usedTokens) || usedTokens < 0) {
+        return null
+    }
+    if (typeof windowTokens !== 'number' || !Number.isFinite(windowTokens) || windowTokens < 0) {
+        return null
+    }
+    return { usedTokens, windowTokens }
 }

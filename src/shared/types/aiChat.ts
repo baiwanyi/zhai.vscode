@@ -87,6 +87,15 @@ export interface AiChatDraft {
     commandId: string | null
 }
 
+/**
+ * 会话上下文占用：usedTokens 取最近一轮模型请求的输入量（含缓存读写与系统提示），
+ * windowTokens 为该模型当前上下文档位；windowTokens 为 0 表示窗口未知，前端不得据此编造占比。
+ */
+export interface AiContextUsage {
+    usedTokens: number
+    windowTokens: number
+}
+
 /** 会话快照：视图加载与新建会话时返回 */
 export interface AiSessionSnapshot {
     conversation: AiConversation
@@ -95,6 +104,8 @@ export interface AiSessionSnapshot {
     contexts: AiContextRef[]
     /** 未发送的输入草稿：侧边栏切换导致视图重建后用于恢复输入框与命令 */
     draft: AiChatDraft
+    /** 上下文占用：尚未生成过的会话为 null */
+    contextUsage: AiContextUsage | null
 }
 
 /** 写回作用域：selection 为编辑器选区，document 为整篇文档 */

@@ -3,13 +3,15 @@
  * 复用约定：请求与增量结构由 ../provider 定义；SDK 自带 CLI（cli/bin/codebuddy），无需用户单独安装；
  * 站点经 ./codebuddySite 统一映射，保证与登录命令落在同一站点；凭证优先取 SecretStorage 的 API Key。
  * 关键约束：内置工具一律禁用（tools: []）并限制单轮，避免纯文本生成去读工作区；
- * 首轮无会话号时把本地历史拼成单轮提示词，拿到会话号后改为 resume 续接，历史由通道维护。
+ * 首轮无会话号时把本地历史拼成单轮提示词，拿到会话号后改为 resume 续接，历史由通道维护；
+ * 上下文占用只认 message_start 的单次请求输入量（输入 + 缓存读 + 缓存写），
+ * 不用 result.usage 代替 —— 续接会话时它是累计值，会把上下文用量算成整段历史的总和。
  */
 import { tmpdir } from 'node:os'
 import { query } from '@tencent-ai/agent-sdk'
 import { getZhaiConfig } from '@modules/common/config'
 import type { SecretsService } from '@modules/common/secrets'
-import { getSelectedCodebuddyModel, resolveCodebuddyModel } from './codebuddyModels'
+import { getSelectedCodebuddyModel, readModelContextWindow, resolveCodebuddyModel } from './codebuddyModels'
 import { buildCodebuddyEnv, CODEBUDDY_SITE_LABELS } from './codebuddySite'
 import type {
     AiChatMessage,
@@ -20,6 +22,7 @@ import type {
     AiStreamRequest,
     AiUsageMeta,
 } from '../provider'
+import type { ResultMessage } from '@tencent-ai/agent-sdk'
 
 /** 提示词拆分结果：system 内容与单轮输入 */
 interface PreparedPrompt {
@@ -53,6 +56,42 @@ function preparePrompt(messages: AiChatMessage[], isResume: boolean): PreparedPr
         systemPrompt: systemPrompt.length > 0 ? systemPrompt : undefined,
         prompt: `以下是此前的对话记录：\n\n${lines.join('\n\n')}\n\n用户：${last.content}`,
     }
+}
+
+/**
+ * 单次请求的上下文用量：输入、缓存读、缓存写三项相加。
+ * 三者是互不重叠的计费口径，只取 input_tokens 会把命中缓存的历史整体漏掉。
+ */
+function sumContextTokens(usage: {
+    input_tokens: number
+    cache_read_input_tokens?: number | null
+    cache_creation_input_tokens?: number | null
+}): number {
+    return usage.input_tokens + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0)
+}
+
+/**
+ * 从 result.modelUsage 读本轮实际生效的上下文窗口：该字段未写进 SDK 类型声明，只能按运行时结构探测。
+ * 关键约束：逐层校验形状，取不到数字返回 0 表示未知，不得依据模型 id 猜一个档位。
+ */
+function readResultContextWindow(message: ResultMessage): number {
+    if (!('modelUsage' in message)) {
+        return 0
+    }
+    const { modelUsage } = message as ResultMessage & { modelUsage?: unknown }
+    if (typeof modelUsage !== 'object' || modelUsage === null) {
+        return 0
+    }
+    for (const entry of Object.values(modelUsage)) {
+        if (typeof entry !== 'object' || entry === null) {
+            continue
+        }
+        const window = (entry as { contextWindow?: unknown }).contextWindow
+        if (typeof window === 'number' && Number.isFinite(window) && window > 0) {
+            return window
+        }
+    }
+    return 0
 }
 
 /** 把 SDK 的原始错误转成可执行提示：未登录与模型不可用是最常见的两类 */
@@ -119,6 +158,8 @@ export class CodeBuddyProvider implements AiProvider {
         let usage: AiStreamChunk['usage']
         /** 逻辑轮次标识：SDK 在每条消息上回传，任一条拿到即可，供用量日志与 CLI 侧对账 */
         let requestId: string | null = null
+        /** 最近一次请求的上下文用量：每出现一个 message_start 覆盖一次，取最后一轮即当前占用 */
+        let contextTokens = 0
         try {
             for await (const message of session) {
                 requestId = message._requestId ?? requestId
@@ -131,7 +172,10 @@ export class CodeBuddyProvider implements AiProvider {
                 }
                 if (message.type === 'stream_event') {
                     const { event } = message
-                    if (event.type === 'content_block_delta') {
+                    if (event.type === 'message_start') {
+                        // 本次请求真正带上的上下文规模：系统提示、历史与引用的合计，与输出无关
+                        contextTokens = sumContextTokens(event.message.usage)
+                    } else if (event.type === 'content_block_delta') {
                         if (event.delta.type === 'text_delta') {
                             hasStreamed = true
                             yield { content: event.delta.text, reasoning: '' }
@@ -175,7 +219,13 @@ export class CodeBuddyProvider implements AiProvider {
                         cacheReadTokens: message.usage.cache_read_input_tokens ?? 0,
                         cacheCreationTokens: message.usage.cache_creation_input_tokens ?? 0,
                     }
-                    yield { content: '', reasoning: '', usage, meta }
+                    // 窗口以本轮实际生效值为准，退回模型清单档位；都拿不到时留 0，由展示层不显示占比
+                    const contextWindow =
+                        readResultContextWindow(message) ||
+                        readModelContextWindow(resolveCodebuddyModel(getSelectedCodebuddyModel()) ?? '')
+                    const context =
+                        contextTokens > 0 ? { usedTokens: contextTokens, windowTokens: contextWindow } : undefined
+                    yield { content: '', reasoning: '', usage, meta, context }
                 }
             }
         } catch (error) {

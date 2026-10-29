@@ -15,6 +15,7 @@ import type {
     AiApplyResult,
     AiChatDraft,
     AiContextRef,
+    AiContextUsage,
     AiConversation,
     AiConversationMode,
     AiConversationSummary,
@@ -113,6 +114,8 @@ export class AiChatService implements vscode.Disposable {
     private readonly pendingContexts = new Map<string, HostContextRef[]>()
     /** 未发送的输入草稿：按会话隔离，视图重建（侧边栏切换）后由会话快照带回 */
     private readonly inputDrafts = new Map<string, AiChatDraft>()
+    /** 会话上下文占用：以最近一轮生成的输入量为准，按会话隔离，切换会话时随快照带回 */
+    private readonly contextUsages = new Map<string, AiContextUsage>()
     /** 写作模式的写回快照：以助手消息 id 为键，记录文档版本与替换范围（不同轮次互不覆盖） */
     private readonly writeTargets = new Map<string, HostWriteTarget>()
     /** 可写回的助手消息 id：仅 replace 类命令产生，按会话隔离 */
@@ -208,6 +211,7 @@ export class AiChatService implements vscode.Disposable {
             messages: listMessages(this.db, latest.id).map(toMessage),
             contexts: this.getContexts(latest.id),
             draft: this.getDraft(latest.id),
+            contextUsage: this.contextUsages.get(latest.id) ?? null,
         }
     }
 
@@ -230,7 +234,14 @@ export class AiChatService implements vscode.Disposable {
         this.activeConversationId = row.id
         this.activeProjectDir = projectDir
         logger.info(`AI 会话已创建：${row.id}`)
-        return { conversation: toConversation(row), messages: [], contexts: [], draft: { input: '', commandId: null } }
+        return {
+            conversation: toConversation(row),
+            messages: [],
+            contexts: [],
+            draft: { input: '', commandId: null },
+            // 新会话尚未发起请求，没有可展示的上下文占用
+            contextUsage: null,
+        }
     }
 
     /** 指定作用域的历史会话列表（按最后活跃时间倒序），供面板历史浮层展示 */
@@ -254,6 +265,7 @@ export class AiChatService implements vscode.Disposable {
             messages: listMessages(this.db, conversation.id).map(toMessage),
             contexts: this.getContexts(conversation.id),
             draft: this.getDraft(conversation.id),
+            contextUsage: this.contextUsages.get(conversation.id) ?? null,
         }
     }
 
@@ -268,6 +280,7 @@ export class AiChatService implements vscode.Disposable {
         deleteConversation(this.db, conversationId)
         this.pendingContexts.delete(conversationId)
         this.inputDrafts.delete(conversationId)
+        this.contextUsages.delete(conversationId)
         for (const messageId of this.appliableMessages.get(conversationId) ?? []) {
             this.writeTargets.delete(messageId)
         }
@@ -594,6 +607,8 @@ export class AiChatService implements vscode.Disposable {
         let usage: ChatUsage | null = null
         /** 通道回传的请求标识与成本：流末块携带，用量记账与请求 id 展示都依赖它 */
         let usageMeta: AiUsageMeta | null = null
+        /** 本轮上下文占用：通道回传后落内存并随流末消息下发，未回传时保留上一次的值 */
+        let contextUsage: AiContextUsage | null = null
         /** 本轮通道会话号：续接取库内值，首轮由 init 消息回传，供定位 CLI 用量记录文件 */
         let sdkSessionId: string | null = null
         /** 本轮是否续接通道会话：续接时 result.usage 是会话累计，不能当本轮消耗 */
@@ -662,6 +677,9 @@ export class AiChatService implements vscode.Disposable {
                 if (chunk.meta) {
                     usageMeta = chunk.meta
                 }
+                if (chunk.context) {
+                    contextUsage = chunk.context
+                }
             }
             clearTimeout(firstTokenTimer)
             flush(true)
@@ -703,6 +721,9 @@ export class AiChatService implements vscode.Disposable {
                 startedAt,
                 status: controller.signal.aborted ? 'cancelled' : 'completed',
             })
+            if (contextUsage !== null) {
+                this.contextUsages.set(conversationId, contextUsage)
+            }
             this.streamEmitter.fire({
                 type: 'stream',
                 reqId,
@@ -718,6 +739,7 @@ export class AiChatService implements vscode.Disposable {
                 durationMs,
                 tokensEstimated: isTokensEstimated,
                 credits: roundUsage.credits,
+                contextUsage: contextUsage ?? undefined,
             })
         } catch (error) {
             clearTimeout(firstTokenTimer)
@@ -753,6 +775,10 @@ export class AiChatService implements vscode.Disposable {
             if (!isCancelled) {
                 logger.error(`AI 生成失败：${message}`, error)
             }
+            // 中断前请求已带上上下文，能拿到的用量照常记下，避免圆环回退成未知
+            if (contextUsage !== null) {
+                this.contextUsages.set(conversationId, contextUsage)
+            }
             this.streamEmitter.fire({
                 type: 'stream',
                 reqId,
@@ -769,6 +795,7 @@ export class AiChatService implements vscode.Disposable {
                 durationMs,
                 tokensEstimated: isTokensEstimated,
                 credits: roundUsage.credits,
+                contextUsage: contextUsage ?? undefined,
             })
         } finally {
             if (this.activeRequest?.reqId === reqId) {

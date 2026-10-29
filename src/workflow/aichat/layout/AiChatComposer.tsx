@@ -5,7 +5,7 @@
  * 命令与上下文在此折算为 RichChip：图标取 ./commandIcons，文件名与摘要取 ../utils。
  * 本层负责提示文案、禁用态与增强状态，交互全部经回调上抛给页面 hooks。
  * 生成态光晕取 @webview/components/ComposerGlow（与生图页共用，样式在 globals.css 的 composer-glow 段）。
- * 关键约束：模式、用量、已选命令、上下文与写回目标均由此层透传，输入卡片不直接读取会话状态；
+ * 关键约束：模式、上下文用量、已选命令、上下文与写回目标均由此层透传，输入卡片不直接读取会话状态；
  * 命令芯片的移除语义是「取消命令」，由 chip.onRemove 承担，不走统一的移除引用回调；
  * 增强提示词经页面 hook 请求宿主模型改写（onEnhanceRequest），本层只保存原文并保留还原入口；
  * 光晕是卡片外侧的兄弟层（卡片底色不透明），容器需自带 isolate，装饰层不承载任何状态或交互；
@@ -13,7 +13,7 @@
  */
 import { FileText, TextSelect } from 'lucide-react'
 import { useState } from 'react'
-import type { AiContextRef, AiConversationMode, AiModelChoices } from '@shared/types/aiChat'
+import type { AiContextRef, AiContextUsage, AiConversationMode, AiModelChoices } from '@shared/types/aiChat'
 import { ComposerGlow } from '@webview/components/ComposerGlow'
 import { RichChipInput, type RichChip } from '@webview/components/RichChipInput'
 import { AiChatComposerActions } from './AiChatComposerActions'
@@ -66,8 +66,8 @@ interface AiChatComposerProps {
     isGenerating: boolean
     phase: Phase
     mode: AiConversationMode
-    usedTokens: number
-    dailyTokenBudget: number
+    /** 当前会话上下文占用：null 表示尚未生成过 */
+    contextUsage: AiContextUsage | null
     /** 写作模式下是否存在可改写的编辑器目标 */
     hasWriteTarget: boolean
     /** 当前模型 id，空表示使用 CLI 默认模型 */
@@ -102,8 +102,7 @@ export function AiChatComposer({
     isGenerating,
     phase,
     mode,
-    usedTokens,
-    dailyTokenBudget,
+    contextUsage,
     hasWriteTarget,
     model,
     modelName,
@@ -197,8 +196,7 @@ export function AiChatComposer({
                         canEnhance={canEnhance}
                         isEnhanced={enhancedFrom !== null}
                         isEnhancing={isEnhancing}
-                        usedTokens={usedTokens}
-                        dailyTokenBudget={dailyTokenBudget}
+                        contextUsage={contextUsage}
                         model={model}
                         modelName={modelName}
                         modelChoices={modelChoices}

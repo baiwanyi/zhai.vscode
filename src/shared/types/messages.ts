@@ -49,6 +49,11 @@ export interface StreamMessage {
     tokensEstimated?: boolean
     /** 本轮真实积分（来自 CLI 会话记录）：缺省或 null 均为未知 */
     credits?: number | null
+    /** 本轮结束后的会话上下文占用：缺省表示通道未回传，前端保留原值 */
+    contextUsage?: {
+        usedTokens: number
+        windowTokens: number
+    }
 }
 
 /** 操作反馈级别：与 sonner 的四个入口一一对应 */

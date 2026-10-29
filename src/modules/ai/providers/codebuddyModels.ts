@@ -6,12 +6,15 @@
  * 选中值以内存副本供各通道同步读取，写入时才落 globalState —— 配置项已移除，面板菜单是唯一入口；
  * 额度倍率为平台下发文本，解析不出数值时记 null 表示未知，不得回退为 0。
  * 清单只含语言模型，文生图模型由服务端产品配置决定，不予枚举。
+ * 关键约束：上下文窗口只在完整清单里下发（defaultLength / supportedLengths / maxInputTokens 三处兜底），
+ * 简化清单与缓存未就绪时一律记 0 表示未知，由展示层决定不显示占比。
  */
 import { tmpdir } from 'node:os'
 import { unstable_v2_createSession } from '@tencent-ai/agent-sdk'
 import { getZhaiConfig } from '@modules/common/config'
 import type { SecretsService } from '@modules/common/secrets'
 import { buildCodebuddyEnv } from './codebuddySite'
+import type { RawLanguageModel } from '@tencent-ai/agent-sdk'
 import type { Memento } from 'vscode'
 
 /** 单个可选模型 */
@@ -26,6 +29,8 @@ export interface CodebuddyModelOption {
     creditRate: number | null
     /** 是否为用户自定义模型：菜单据此拆分为「内置模型」「自定义模型」两组 */
     custom: boolean
+    /** 模型默认上下文档位（token），0 表示平台未下发 */
+    contextWindowTokens: number
 }
 
 /** 自定义模型 id 前缀：CLI 把用户自建模型统一挂在该前缀下 */
@@ -70,6 +75,33 @@ export function readCreditRate(modelId: string): number | null {
     return matched?.creditRate ?? null
 }
 
+/**
+ * 按模型 id 取默认上下文档位（token）：清单未命中、Auto 空 id 或平台未下发时返回 0 表示未知。
+ * 关键约束：不得用 ai.maxContextTokens（历史裁剪预算）兜底，二者口径完全不同，混用会给出假占比。
+ */
+export function readModelContextWindow(modelId: string): number {
+    const matched = cached.find((item) => item.modelId === modelId.trim())
+    return matched?.contextWindowTokens ?? 0
+}
+
+/**
+ * 从完整清单提取默认上下文档位：defaultLength 优先，其次最大支持档位，最后退回模型输入上限。
+ * 关键约束：三处都可能缺失或为 0，取不到数字时返回 0 表示未知，不得给一个猜测值。
+ */
+function readContextWindowTokens(model: RawLanguageModel): number {
+    const declared = model.contextWindow?.defaultLength
+    if (typeof declared === 'number' && declared > 0) {
+        return declared
+    }
+    const supported = model.contextWindow?.supportedLengths
+    const longest = supported !== undefined && supported.length > 0 ? supported[supported.length - 1] : undefined
+    if (typeof longest === 'number' && longest > 0) {
+        return longest
+    }
+    const inputLimit = model.maxInputTokens
+    return typeof inputLimit === 'number' && inputLimit > 0 ? inputLimit : 0
+}
+
 /** 拉取账号可用模型；force 为 true 时忽略内存缓存 */
 export function listCodebuddyModels(secrets: SecretsService, force = false): Promise<CodebuddyModelOption[]> {
     if (!force && cached.length > 0) {
@@ -101,6 +133,7 @@ async function fetchModels(secrets: SecretsService): Promise<CodebuddyModelOptio
                 credits: model.credits ?? null,
                 creditRate: parseCreditRate(model.credits),
                 custom: isCustomModel(model),
+                contextWindowTokens: readContextWindowTokens(model),
             }))
             return cached
         }
@@ -112,6 +145,8 @@ async function fetchModels(secrets: SecretsService): Promise<CodebuddyModelOptio
             credits: null,
             creditRate: null,
             custom: model.modelId.startsWith(CUSTOM_MODEL_PREFIX),
+            // 简化清单不含模型能力字段，窗口只能留空，展示层据此不显示占比
+            contextWindowTokens: 0,
         }))
         return cached
     } catch {
