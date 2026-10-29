@@ -72,6 +72,7 @@ import {
 import { INTERACTIVE_TOOLS, READ_ONLY_TOOLS, WRITE_TOOLS } from './providers/codebuddyPermission'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
 import { summarizeMessages } from './usageRecorder'
+import { expandZhaiRefs } from './zhaiRefs'
 import type { CliUsageIndex } from './cliUsageIndex'
 import type { HostContextRef, ResolvedContextRef } from './contextRefs'
 import type { ConversationRow, MessageRow } from './db/chatRepository'
@@ -471,6 +472,8 @@ export class AiChatService implements vscode.Disposable {
         const contextBlock = [writeBrief, targetBlock, buildContextBlock(resolved)]
             .filter((block) => block.length > 0)
             .join('\n\n')
+        // 正文里的 @zhai\... 在发送瞬间展开成存储根下的绝对路径，落库与气泡回显仍是用户原文
+        const modelInput = await expandZhaiRefs(input)
 
         const now = new Date().toISOString()
         const userMessage: MessageRow = {
@@ -530,7 +533,7 @@ export class AiChatService implements vscode.Disposable {
             assistantMessage.id,
             userMessage.id,
             conversationId,
-            input,
+            modelInput,
             contextBlock,
             cfg,
             writeTarget,

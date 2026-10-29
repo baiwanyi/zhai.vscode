@@ -17,7 +17,7 @@ import { X } from 'lucide-react'
 import { useCallback, useEffect, useImperativeHandle, useRef } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
-import { Button } from '@webview/components/Button'
+import { Button, TOOLTIP_CLASS } from '@webview/components/Button'
 import { Image } from './Image'
 import {
     findAdjacentChip,
@@ -52,7 +52,7 @@ export interface RichChip {
     icon?: ReactNode
     /** 悬停文件名时展示的大图：与 hint 二选一，优先于 hint */
     preview?: RichChipPreview
-    /** 悬停文件名时展示的文本提示：如上下文引用去掉盘符的相对路径 */
+    /** 悬停文件名时展示的文本提示：如上下文引用的 @zhai 存储根路径 */
     hint?: string
     /** 文本后的副信息（字数、条数等）：缺省或空串不渲染 */
     meta?: string
@@ -128,7 +128,10 @@ function ChipLabel({ chip }: ChipLabelProps): JSX.Element {
     return (
         <Tooltip>
             <TooltipTrigger asChild>{label}</TooltipTrigger>
-            <TooltipContent side="top" className={chip.preview === undefined ? 'max-w-72' : 'w-56 p-1'}>
+            <TooltipContent
+                side="top"
+                className={chip.preview === undefined ? cn(TOOLTIP_CLASS, 'max-w-72 text-white') : 'w-56 p-1'}
+            >
                 {chip.preview === undefined ? (
                     <span className="break-all">{chip.hint}</span>
                 ) : (

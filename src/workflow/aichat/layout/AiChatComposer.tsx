@@ -6,13 +6,14 @@
  * 本层负责提示文案、禁用态与增强状态，交互全部经回调上抛给页面 hooks。
  * 生成态光晕取 @webview/components/ComposerGlow（与生图页共用，样式在 globals.css 的 composer-glow 段）。
  * 关键约束：写入范围、上下文用量、已选命令与上下文均由此层透传，输入卡片不直接读取会话状态；
+ * 粘贴内容里的 `@zhai\` 路径改由宿主添加为上下文引用（成功即变成芯片），只有剩余文本落回输入区；
  * 命令芯片的移除语义是「取消命令」，由 chip.onRemove 承担，不走统一的移除引用回调；
  * 增强提示词经页面 hook 请求宿主模型改写（onEnhanceRequest），本层只保存原文并保留还原入口；
  * 光晕是卡片外侧的兄弟层（卡片底色不透明），容器需自带 isolate，装饰层不承载任何状态或交互；
  * 横向内边距由 AppPage 统一提供，此处不再自带 px，否则会与骨架的 p-3 叠加成双重缩进。
  */
 import { FileText, Loader2, TextSelect } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type {
     AiContextRef,
     AiContextUsage,
@@ -20,15 +21,17 @@ import type {
     AiReasoningEffort,
     AiWriteGrant,
 } from '@shared/types/aiChat'
+import { readZhaiTargets, toZhaiDisplayPath } from '@shared/utils/zhaiPath'
 import { ComposerGlow } from '@webview/components/ComposerGlow'
-import { RichChipInput, type RichChip } from '@webview/components/RichChipInput'
+import { RichChipInput, type RichChip, type RichChipInputHandle } from '@webview/components/RichChipInput'
 import { AiChatComposerActions } from './AiChatComposerActions'
 import { AiChatComposerToolbar } from './AiChatComposerToolbar'
 import { COMMAND_ICONS } from './commandIcons'
 import type { AiCommand } from '../constants'
 import type { AiReferenceAction } from './AiChatReferenceMenu'
+import type { AiPastedRefTarget } from '../hooks/useAiChatMention'
 import type { Phase } from '../hooks/useAiChatSession'
-import type { JSX } from 'react'
+import type { ClipboardEvent, JSX } from 'react'
 import { describeContext, describeTool, toContextFileName } from '../utils'
 
 /** 命令芯片的保留 id：只用于 React key 与退格查找，移除语义由 onRemove 承担 */
@@ -47,7 +50,34 @@ function buildCommandChip(command: AiCommand, onClearCommand: () => void): RichC
     }
 }
 
-/** 上下文芯片：文件名悬停出相对路径，尾部给字数 / 行数摘要，移除走页面回调 */
+/**
+ * 粘贴的路径引用：逐个交给宿主添加，成功的令牌从文本中剥离，失败的留在正文里让用户看得见。
+ * 关键约束：剥离按原始位置切片，令牌之外的空格与换行尽量保留；全部成功时返回空串。
+ */
+async function consumeZhaiTokens(
+    text: string,
+    matches: ReturnType<typeof readZhaiTargets>,
+    addRef: (target: AiPastedRefTarget) => Promise<boolean>,
+): Promise<string> {
+    const handled: typeof matches = []
+    for (const match of matches) {
+        if (await addRef(match.target)) {
+            handled.push(match)
+        }
+    }
+    if (handled.length === 0) {
+        return text
+    }
+    let rest = ''
+    let cursor = 0
+    for (const match of handled) {
+        rest += text.slice(cursor, match.index)
+        cursor = match.index + match.token.length
+    }
+    return `${rest}${text.slice(cursor)}`.replace(/[ \t]{2,}/gu, ' ').trim()
+}
+
+/** 上下文芯片：文件名悬停出 @zhai 存储根路径，尾部给字数 / 行数摘要，移除走页面回调 */
 function buildContextChip(context: AiContextRef): RichChip {
     return {
         id: context.id,
@@ -58,7 +88,7 @@ function buildContextChip(context: AiContextRef): RichChip {
             ) : (
                 <FileText className="size-3 shrink-0 text-muted-foreground" />
             ),
-        hint: context.displayPath,
+        hint: toZhaiDisplayPath(context.displayPath),
         meta: describeContext(context),
         removeLabel: '移除该引用',
     }
@@ -110,6 +140,8 @@ interface AiChatComposerProps {
     isEnhancing: boolean
     /** 增强请求：由页面 hook 走宿主协议，失败返回 null */
     onEnhanceRequest: (text: string) => Promise<string | null>
+    /** 粘贴的 @zhai 引用：交给页面添加为上下文并返回是否成功；缺省时粘贴原样插入 */
+    onAddZhaiRef?: (target: AiPastedRefTarget) => Promise<boolean>
 }
 
 export function AiChatComposer({
@@ -142,9 +174,12 @@ export function AiChatComposer({
     onMention,
     isEnhancing,
     onEnhanceRequest,
+    onAddZhaiRef,
 }: AiChatComposerProps): JSX.Element {
     /** 增强前的原文：非空表示当前输入处于增强态，可一键还原 */
     const [enhancedFrom, setEnhancedFrom] = useState<string | null>(null)
+    /** 输入区句柄：粘贴引用后把剩余文本插回光标处 */
+    const inputRef = useRef<RichChipInputHandle>(null)
 
     const canEnhance = input.trim().length > 0
     /** 生成中：光晕与禁用态的共同来源，由视图阶段派生，避免与页面层重复持有同一状态 */
@@ -189,6 +224,28 @@ export function AiChatComposer({
         setEnhancedFrom(null)
     }
 
+    /** 粘贴拦截：命中 @zhai 路径时改由宿主添加为引用，剩余文本再插回输入区 */
+    const handlePasteCapture = (event: ClipboardEvent<HTMLDivElement>): void => {
+        if (onAddZhaiRef === undefined) {
+            return
+        }
+        const text = event.clipboardData.getData('text/plain')
+        if (!text.includes('@zhai')) {
+            return
+        }
+        const matches = readZhaiTargets(text)
+        if (matches.length === 0) {
+            return
+        }
+        event.preventDefault()
+        event.stopPropagation()
+        void consumeZhaiTokens(text, matches, onAddZhaiRef).then((rest) => {
+            if (rest.length > 0) {
+                inputRef.current?.insertText(rest)
+            }
+        })
+    }
+
     return (
         // isolate 给光晕划定层叠边界：-z-10 只在卡片之下，不会沉到页面背景后面
         <div className="relative isolate flex-1">
@@ -202,7 +259,7 @@ export function AiChatComposer({
                     onReference={onReference}
                     onMention={onMention}
                 />
-                <div className="rounded-xl bg-composer-input p-3">
+                <div className="rounded-xl bg-composer-input p-3" onPasteCapture={handlePasteCapture}>
                     {activeTool === null ? null : (
                         <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                             <Loader2 className="size-3 animate-spin" />
@@ -210,6 +267,7 @@ export function AiChatComposer({
                         </div>
                     )}
                     <RichChipInput
+                        ref={inputRef}
                         value={input}
                         chips={chips}
                         placeholder={placeholder}

@@ -4,10 +4,11 @@
  * 零依赖、无副作用，可被页面主组件与各子组件自由复用；token 折算与错误文案统一取 @shared/utils 的 format 与 error。
  * 关键约束：readAiStateKind 只信任收窄结果；
  * 命令模板只在发送瞬间拼接、在展示时按最长前缀剥离，输入框与消息气泡均不出现 instruction 全文；
- * 复制文本带上命令名与引用标签，剪贴板内容与气泡里看到的一致；
+ * 复制文本带上命令名与 `@zhai\` 写法的引用，剪贴板内容与气泡里看到的一致且可直接粘回输入框；
  * 工具名表只做展示映射，未知工具原样透出，不得据此推断权限。
  */
 import type { AiContextRef, AiMessage, AiSessionSnapshot, AiStep } from '@shared/types/aiChat'
+import { readStorageRootPath, replaceStorageRootPaths, toZhaiDisplayPath } from '@shared/utils/zhaiPath'
 import { AI_COMMAND_PREFIXES } from './constants'
 import type { AiCommand } from './constants'
 
@@ -152,12 +153,25 @@ export function splitCommandContent(content: string): { command: AiCommand | nul
     return { command: null, body: content }
 }
 
+/** 剪贴板里的引用写法：`@zhai\...` 加行范围，与输入框可识别的令牌同构，粘回去即可还原成芯片 */
+function toClipboardRef(ref: AiContextRef): string {
+    const display = toZhaiDisplayPath(ref.displayPath)
+    if (ref.startLine === null || /:\d+(?:-\d+)?$/u.test(display)) {
+        return display
+    }
+    return ref.endLine === null || ref.endLine === ref.startLine
+        ? `${display}:${String(ref.startLine)}`
+        : `${display}:${String(ref.startLine)}-${String(ref.endLine)}`
+}
+
 /**
- * 消息的复制文本：把气泡里看得到的命令名与引用标签一并带上，正文另起一行。
- * 关键约束：只复制用户可见的信息，指令模板全文不进剪贴板；没有徽章时等同于正文。
+ * 消息的复制文本：命令名 + `@zhai\` 写法的引用 + 正文，正文里存储根下的绝对路径同样折算。
+ * 关键约束：只复制用户可见的信息，指令模板全文不进剪贴板；没有徽章时等同于正文；
+ * 路径统一成 `@zhai` 形式，粘贴回输入框时由宿主还原为引用芯片。
  */
 export function toMessageCopyText(message: AiMessage): string {
     const { command, body } = splitCommandContent(message.content)
-    const badges = [...(command === null ? [] : [command.title]), ...message.refs.map((ref) => ref.label)]
-    return [badges.join(' '), body].filter((part) => part.length > 0).join('\n')
+    const badges = [...(command === null ? [] : [command.title]), ...message.refs.map(toClipboardRef)]
+    const text = replaceStorageRootPaths(body, readStorageRootPath())
+    return [badges.join(' '), text].filter((part) => part.length > 0).join('\n')
 }

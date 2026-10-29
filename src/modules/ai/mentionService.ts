@@ -11,6 +11,7 @@ import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { listIndexedPaths, searchFiles } from '@modules/common/db/indexRepository'
 import type { AiContextRef, AiMentionCandidate, AiMentionKind } from '@shared/types/aiChat'
+import { MAX_CONTEXT_CHARS } from './contextRefs'
 import type { AiChatService } from './chatService'
 import type { HostContextRef } from './contextRefs'
 import type Database from 'better-sqlite3'
@@ -49,25 +50,53 @@ export class MentionService {
     }
 
     /**
-     * 按候选路径添加引用。
-     * 关键约束：路径必须在索引库中存在，否则直接拒绝 —— 索引外路径可能指向存储根之外的文件。
+     * 按候选路径添加引用，可选行范围用于粘贴的 @zhai 引用。
+     * 关键约束：路径必须在索引库中存在，否则直接拒绝 —— 索引外路径可能指向存储根之外的文件；
+     * 带行范围时读一次原文校验行号并算出字数，避免芯片上出现 0 字；整篇引用保持零 IO，字数留到发送时统计。
      */
-    public add(relativePath: string): { added: AiContextRef[]; duplicated: number; isFull: boolean } {
+    public async add(
+        relativePath: string,
+        startLine: number | null = null,
+        endLine: number | null = null,
+    ): Promise<{ added: AiContextRef[]; duplicated: number; isFull: boolean }> {
         if (!listIndexedPaths(this.db).has(relativePath)) {
             throw new Error('该条目不在索引中，请先重建索引后再试')
         }
-        const absolutePath = vscode.Uri.joinPath(resolveStorageRoot(), ...relativePath.split('/')).fsPath
-        const ref: HostContextRef = {
-            id: randomUUID(),
-            kind: 'file',
-            label: relativePath,
-            displayPath: relativePath,
-            startLine: null,
-            endLine: null,
-            charCount: 0,
-            isTruncated: false,
-            uri: vscode.Uri.file(absolutePath).fsPath,
+        const uri = vscode.Uri.joinPath(resolveStorageRoot(), ...relativePath.split('/'))
+        if (startLine === null) {
+            const fileRef: HostContextRef = {
+                id: randomUUID(),
+                kind: 'file',
+                label: relativePath,
+                displayPath: relativePath,
+                startLine: null,
+                endLine: null,
+                charCount: 0,
+                isTruncated: false,
+                uri: uri.fsPath,
+            }
+            return this.chat.addContexts([fileRef])
         }
-        return this.chat.addContexts([ref])
+        const lines = new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)).split(/\r?\n/u)
+        const end = endLine ?? startLine
+        if (startLine > lines.length) {
+            throw new Error('行号超出文件长度，请检查引用位置')
+        }
+        const content = lines.slice(startLine - 1, end).join('\n')
+        const rangeRef: HostContextRef = {
+            id: randomUUID(),
+            kind: 'selection',
+            label:
+                startLine === end
+                    ? `${relativePath}:${String(startLine)}`
+                    : `${relativePath}:${String(startLine)}-${String(end)}`,
+            displayPath: relativePath,
+            startLine,
+            endLine: end,
+            charCount: content.length,
+            isTruncated: content.length > MAX_CONTEXT_CHARS,
+            uri: uri.fsPath,
+        }
+        return this.chat.addContexts([rangeRef])
     }
 }

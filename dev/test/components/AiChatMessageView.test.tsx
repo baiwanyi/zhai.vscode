@@ -3,7 +3,7 @@
  * 单条消息用例：覆盖用户消息气泡外复制按钮的取值口径与成功 / 失败反馈、重新填入输入框的入口，
  * 以及取消态错误的呈现方式。
  * 复用约定：剪贴板与 toast 用替身，渲染走 @testing-library/react，交互用 user-event。
- * 关键约束：复制内容与气泡里看到的一致（命令名 + 引用标签 + 正文），写作命令的指令模板不进剪贴板；
+ * 关键约束：复制内容与气泡里看到的一致（命令名 + `@zhai\` 写法的引用 + 正文），写作命令的指令模板不进剪贴板；
  * 复制成功才切对勾，失败只提示不谎报成功；重复按钮只上报消息，回填范围由页面决定。
  */
 import { cleanup, render, screen, waitFor } from '@testing-library/react'
@@ -155,7 +155,7 @@ describe('用户消息气泡外的复制按钮', () => {
 
         await user.click(screen.getByRole('button', { name: '复制' }))
 
-        expect(copyMock).toHaveBeenCalledWith('润色 notes/ch01.md:11-19\n把这一段收紧些')
+        expect(copyMock).toHaveBeenCalledWith('润色 @zhai\\notes\\ch01.md:11-19\n把这一段收紧些')
     })
 
     it('重复按钮把整条消息上报给调用方', async () => {

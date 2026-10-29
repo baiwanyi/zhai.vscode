@@ -223,7 +223,8 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 return this.reference.openDir()
             }
             case 'ai/mention/add': {
-                return this.mention.add(readMentionPathPayload(payload))
+                const target = readMentionPathPayload(payload)
+                return this.mention.add(target.path, target.startLine, target.endLine)
             }
             case 'ai/models': {
                 return this.listModels()
@@ -764,16 +765,35 @@ function readReferencePayload(payload: unknown): { file: string; startLine: numb
     return { file, startLine }
 }
 
-/** 校验 ai/mention/add 入参：只接受相对索引路径，绝对路径与超长值一律拒绝 */
-function readMentionPathPayload(payload: unknown): string {
+/** 可选行号：缺省或 null 表示整篇引用，其余必须是正整数 */
+function readOptionalLine(value: unknown): number | null {
+    if (value === undefined || value === null) {
+        return null
+    }
+    if (typeof value !== 'number' || !Number.isInteger(value) || value < 1) {
+        throw new Error('ai/mention/add 行号参数不正确')
+    }
+    return value
+}
+
+/**
+ * 校验 ai/mention/add 入参：只接受相对索引路径，绝对路径与超长值一律拒绝。
+ * 行范围可选，来自输入框粘贴的 `@zhai\...md:42`；区间倒序直接拒绝，避免下游按 slice 取到空内容。
+ */
+function readMentionPathPayload(payload: unknown): { path: string; startLine: number | null; endLine: number | null } {
     if (typeof payload !== 'object' || payload === null) {
         throw new Error('ai/mention/add 缺少参数')
     }
-    const target = (payload as { path?: unknown }).path
+    const { path: target, startLine, endLine } = payload as { path?: unknown; startLine?: unknown; endLine?: unknown }
     if (typeof target !== 'string' || target.length === 0 || target.length > MAX_MENTION_PATH) {
         throw new Error('ai/mention/add 参数类型不正确')
     }
-    return target
+    const start = readOptionalLine(startLine)
+    const end = readOptionalLine(endLine)
+    if (start !== null && end !== null && end < start) {
+        throw new Error('ai/mention/add 行号区间不合法')
+    }
+    return { path: target, startLine: start, endLine: end }
 }
 
 /** 校验 ai/selectEffort 入参：null 表示跟随模型默认，其余必须是白名单取值 */

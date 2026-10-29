@@ -109,6 +109,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         isSearching: isMentionSearching,
         search: searchMention,
         add: addMention,
+        addPath: addMentionPath,
         reset: resetMention,
     } = useAiChatMention({
         onError: setError,
@@ -475,6 +476,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     onMention={handleMention}
                     isEnhancing={isEnhancing}
                     onEnhanceRequest={enhance}
+                    onAddZhaiRef={addMentionPath}
                 />
             </AppFooter>
             <ConfirmDialog

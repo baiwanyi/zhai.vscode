@@ -1,12 +1,20 @@
 /**
- * 提及检索：按关键词查索引候选，选中后交给宿主添加为上下文引用。
+ * 提及检索：按关键词查索引候选，或按粘贴的 `@zhai\` 路径直接添加为上下文引用。
  * 复用约定：请求走 @shared/utils/bridge，错误经注入的 onError 统一提示；添加成功后由调用方刷新上下文清单。
- * 关键约束：空关键词不发请求；检索按序号丢弃过期回包，避免慢请求覆盖后一次输入的结果。
+ * 关键约束：空关键词不发请求；检索按序号丢弃过期回包，避免慢请求覆盖后一次输入的结果；
+ * 行范围由宿主重新校验并读取，前端只透传粘贴得到的数字。
  */
 import { useCallback, useRef, useState } from 'react'
 import type { AiMentionCandidate } from '@shared/types/aiChat'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
+
+/** 粘贴引用目标：存储根相对路径与可选行范围 */
+export interface AiPastedRefTarget {
+    relative: string
+    startLine: number | null
+    endLine: number | null
+}
 
 /** 提及 hook 的对外依赖 */
 export interface UseAiChatMentionOptions {
@@ -22,6 +30,8 @@ export interface AiChatMentionState {
     search: (keyword: string) => Promise<void>
     /** 添加候选为引用：成功返回 true */
     add: (candidate: AiMentionCandidate) => Promise<boolean>
+    /** 按粘贴的 @zhai 路径添加引用：行范围可选，成功返回 true */
+    addPath: (target: AiPastedRefTarget) => Promise<boolean>
     /** 关闭时清空候选，避免下次打开看到上一次的结果 */
     reset: () => void
 }
@@ -76,11 +86,30 @@ export function useAiChatMention({ onError, onAdded }: UseAiChatMentionOptions):
         [onAdded, onError],
     )
 
+    const addPath = useCallback(
+        async (target: AiPastedRefTarget): Promise<boolean> => {
+            try {
+                await request('ai/mention/add', {
+                    path: target.relative,
+                    startLine: target.startLine,
+                    endLine: target.endLine,
+                })
+                onError(null)
+                onAdded()
+                return true
+            } catch (cause) {
+                onError(toErrorText(cause))
+                return false
+            }
+        },
+        [onAdded, onError],
+    )
+
     const reset = useCallback((): void => {
         searchIdRef.current += 1
         setCandidates([])
         setIsSearching(false)
     }, [])
 
-    return { candidates, isSearching, search, add, reset }
+    return { candidates, isSearching, search, add, addPath, reset }
 }
