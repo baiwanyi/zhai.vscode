@@ -23,12 +23,7 @@ import type {
     PressImportProgress,
 } from '@shared/types/press'
 import { parseNovel, sanitizeSegment } from './importParser'
-import {
-    PROJECT_CHAPTER_DIR,
-    buildChapterDocument,
-    buildProjectDocuments,
-    validateProjectName,
-} from './projectFactory'
+import { PROJECT_CHAPTER_DIR, buildChapterDocument, buildProjectDocuments, validateProjectName } from './projectFactory'
 import { migrateLegacyChapterDirectory } from './projectService'
 import type { ParsedNovel } from './importParser'
 import type { ProjectIndexer } from './projectService'

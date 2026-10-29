@@ -114,7 +114,11 @@ describe('useImageLibrary', () => {
     })
 
     it('部分失败时汇总提示一次，成功的那张仍标记为已删除', async () => {
-        const SECOND: MediaItem = { ...ITEM, id: '20260101010102EfGh34', path: 'images/202601/20260101010102EfGh34.png' }
+        const SECOND: MediaItem = {
+            ...ITEM,
+            id: '20260101010102EfGh34',
+            path: 'images/202601/20260101010102EfGh34.png',
+        }
         requestMock.mockResolvedValueOnce(LIBRARY)
         const { result } = renderHook(() => useImageLibrary())
         await waitFor(() => expect(result.current.isLoading).toBe(false))

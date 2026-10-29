@@ -112,7 +112,10 @@ describe('按章隔离', () => {
         const chapters = await service.listChapters(PROJECT_DIR)
         expect(chapters).toHaveLength(2)
         const first = await service.listChapterVersions(PROJECT_DIR, CHAPTER_PATH)
-        const second = await service.listChapterVersions(PROJECT_DIR, `${PROJECT_DIR}/Chapters/${CHAPTER_DIR}/09-别离.md`)
+        const second = await service.listChapterVersions(
+            PROJECT_DIR,
+            `${PROJECT_DIR}/Chapters/${CHAPTER_DIR}/09-别离.md`,
+        )
         expect(first).toHaveLength(1)
         expect(second).toHaveLength(1)
     })
@@ -163,9 +166,7 @@ describe('单章恢复', () => {
 describe('安全与清理', () => {
     it('越权章节路径被拒绝', async () => {
         const service = new PressSnapshotService()
-        await expect(
-            service.listChapterVersions(PROJECT_DIR, 'press/剑来/Chapters/../../README.md'),
-        ).rejects.toThrow()
+        await expect(service.listChapterVersions(PROJECT_DIR, 'press/剑来/Chapters/../../README.md')).rejects.toThrow()
         await expect(
             service.listChapterVersions(PROJECT_DIR, 'press/其它作品/Chapters/02-卷二/08-初见.md'),
         ).rejects.toThrow('不属于当前作品')

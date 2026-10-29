@@ -59,10 +59,7 @@ export function useCharacterCoverSync({
         }
     }
 
-    const syncAfterBatchDelete = (
-        removed: ReadonlyArray<MediaItem>,
-        remaining: ReadonlyArray<MediaItem>,
-    ): void => {
+    const syncAfterBatchDelete = (removed: ReadonlyArray<MediaItem>, remaining: ReadonlyArray<MediaItem>): void => {
         /** 已删图 id 集合：封面指针判断要反复命中，先收成集合避免重复扫描 */
         const removedIds = new Set(removed.map((image) => image.id))
         const affectedCharacterIds = new Set(

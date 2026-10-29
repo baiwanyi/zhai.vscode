@@ -8,10 +8,7 @@ import * as vscode from 'vscode'
 import type { PressSnapshotService } from './snapshotService'
 
 /** 注册作品文档保存监听：命中四份文档之一时由服务按统一节流规则留版 */
-export function registerPressSnapshotWatcher(
-    service: PressSnapshotService,
-    disposables: vscode.Disposable[],
-): void {
+export function registerPressSnapshotWatcher(service: PressSnapshotService, disposables: vscode.Disposable[]): void {
     disposables.push(
         vscode.workspace.onDidSaveTextDocument((document) => {
             void service.recordEditorSave(document.uri)

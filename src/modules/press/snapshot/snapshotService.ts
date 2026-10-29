@@ -264,11 +264,7 @@ export class PressSnapshotService {
     }
 
     /** 手动给某章留一版：不受间隔限制，正文取磁盘当前内容 */
-    public async captureChapter(
-        dirPath: string,
-        chapterPath: string,
-        label?: string,
-    ): Promise<ChapterSnapshotEntry> {
+    public async captureChapter(dirPath: string, chapterPath: string, label?: string): Promise<ChapterSnapshotEntry> {
         const uri = this.chapterUri(chapterPath)
         const content = await readTextFile(uri)
         if (content === null) {
@@ -322,11 +318,7 @@ export class PressSnapshotService {
     }
 
     /** 删除章节某一版：只影响该版本 */
-    public async removeChapterVersion(
-        dirPath: string,
-        chapterPath: string,
-        snapshotId: string,
-    ): Promise<boolean> {
+    public async removeChapterVersion(dirPath: string, chapterPath: string, snapshotId: string): Promise<boolean> {
         return deleteChapterVersion(dirPath, chapterPath, snapshotId)
     }
 
@@ -384,11 +376,7 @@ export class PressSnapshotService {
     }
 
     /** 首次访问时载入该章最新一版：没有历史时留空，让第一次变更立即产生基线 */
-    private async ensureChapterLoaded(
-        dirPath: string,
-        chapterPath: string,
-        state: ChapterState,
-    ): Promise<void> {
+    private async ensureChapterLoaded(dirPath: string, chapterPath: string, state: ChapterState): Promise<void> {
         if (state.loaded) {
             return
         }

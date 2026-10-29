@@ -11,7 +11,12 @@ import { readProjectSegments } from '@modules/common/projectPath'
 import { readText } from '@modules/common/readInput'
 import { buildStorageUri } from '@modules/common/storagePath'
 import type { MediaDatabase } from '@modules/media/db/connection'
-import { listByCharacter, listByLore, listProjectLoreImages, listProjectPortraits } from '@modules/media/mediaRepository'
+import {
+    listByCharacter,
+    listByLore,
+    listProjectLoreImages,
+    listProjectPortraits,
+} from '@modules/media/mediaRepository'
 import type { StoredMedia } from '@modules/media/mediaRepository'
 import { isPressCharacterId, isPressLoreId } from '@shared/types/press'
 import type {

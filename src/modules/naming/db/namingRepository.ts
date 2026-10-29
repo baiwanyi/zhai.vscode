@@ -75,7 +75,9 @@ export function deleteFavorite(db: Database.Database, name: string, category: st
 
 /** 判断是否已收藏 */
 export function isFavorite(db: Database.Database, name: string, category: string): boolean {
-    return db.prepare('SELECT 1 FROM naming_favorites WHERE name = ? AND category = ?').get(name, category) !== undefined
+    return (
+        db.prepare('SELECT 1 FROM naming_favorites WHERE name = ? AND category = ?').get(name, category) !== undefined
+    )
 }
 
 /** 收藏列表 */
@@ -93,7 +95,8 @@ export function readMeta(db: Database.Database, key: string): string | null {
 
 /** 写入 meta 值（覆盖） */
 export function writeMeta(db: Database.Database, key: string, value: string): void {
-    db.prepare(
-        'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
-    ).run(key, value)
+    db.prepare('INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value').run(
+        key,
+        value,
+    )
 }

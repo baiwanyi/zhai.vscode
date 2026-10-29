@@ -4,7 +4,12 @@
  */
 import { describe, expect, it } from 'vitest'
 import { parseFileMeta } from '../../src/modules/common/db/fileMeta'
-import { buildNoteContent, createNoteDraft, DEFAULT_NOTE_TITLE, generateNoteId } from '../../src/modules/note/noteFactory'
+import {
+    buildNoteContent,
+    createNoteDraft,
+    DEFAULT_NOTE_TITLE,
+    generateNoteId,
+} from '../../src/modules/note/noteFactory'
 
 describe('generateNoteId', () => {
     it('生成 8-4-4-4-12 分组的十六进制 ID', () => {

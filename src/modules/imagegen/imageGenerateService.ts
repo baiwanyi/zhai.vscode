@@ -134,9 +134,7 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
     const loreId = readText(value.loreId, 32)
     const loreKindValue = value.loreKind
     const loreKind: PressLoreKind | null =
-        loreKindValue === 'faction' || loreKindValue === 'place' || loreKindValue === 'item'
-            ? loreKindValue
-            : null
+        loreKindValue === 'faction' || loreKindValue === 'place' || loreKindValue === 'item' ? loreKindValue : null
     if (kind === 'portrait') {
         if (!NUMERIC_ID_PATTERN.test(characterId)) {
             throw new Error('角色图缺少合法的角色标识')

@@ -149,10 +149,7 @@ async function listVersionIds(target: ChapterTarget): Promise<string[]> {
 }
 
 /** 读该章全部版本（按创建时间倒序） */
-export async function listChapterVersions(
-    dirPath: string,
-    chapterPath: string,
-): Promise<StoredChapterVersion[]> {
+export async function listChapterVersions(dirPath: string, chapterPath: string): Promise<StoredChapterVersion[]> {
     const target = resolveChapterTarget(dirPath, chapterPath)
     const ids = await listVersionIds(target)
     const versions: StoredChapterVersion[] = []
@@ -231,22 +228,14 @@ export async function writeChapterSnapshot(input: WriteChapterSnapshotInput): Pr
 }
 
 /** 读某一版正文：缺失按空串处理，让「恢复到空章节」同样成立 */
-export async function readChapterVersion(
-    dirPath: string,
-    chapterPath: string,
-    snapshotId: string,
-): Promise<string> {
+export async function readChapterVersion(dirPath: string, chapterPath: string, snapshotId: string): Promise<string> {
     const target = resolveChapterTarget(dirPath, chapterPath)
     const content = await readTextFile(vscode.Uri.joinPath(target.dirUri, `${snapshotId}.md`))
     return content ?? ''
 }
 
 /** 删一版：正文与元信息一同删除 */
-export async function deleteChapterVersion(
-    dirPath: string,
-    chapterPath: string,
-    snapshotId: string,
-): Promise<boolean> {
+export async function deleteChapterVersion(dirPath: string, chapterPath: string, snapshotId: string): Promise<boolean> {
     const target = resolveChapterTarget(dirPath, chapterPath)
     const mdUri = vscode.Uri.joinPath(target.dirUri, `${snapshotId}.md`)
     const jsonUri = vscode.Uri.joinPath(target.dirUri, `${snapshotId}.json`)

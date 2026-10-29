@@ -32,8 +32,13 @@ export function buildNamingMessages(request: NamingRequest): ChatMessage[] {
 function buildUserPrompt(request: NamingRequest): string {
     const definition = readCategoryDefinition(request.category)
     const variantLabel =
-        definition.variants.find((variant) => variant.value === request.variant)?.label ?? definition.variants[0]?.label ?? ''
-    const lines = [`类别：${definition.label}｜${definition.variantLabel}：${variantLabel}`, `数量：${request.count} 个`]
+        definition.variants.find((variant) => variant.value === request.variant)?.label ??
+        definition.variants[0]?.label ??
+        ''
+    const lines = [
+        `类别：${definition.label}｜${definition.variantLabel}：${variantLabel}`,
+        `数量：${request.count} 个`,
+    ]
     if (definition.isPerson) {
         lines.push(
             `地域：${variantLabel}`,
@@ -114,7 +119,10 @@ export function parseNamingResponse(content: string, request: NamingRequest): Na
 
 /** 从输出中提取名字数组：优先 JSON，失败后退回引号文本 */
 function extractNames(content: string): string[] {
-    const cleaned = content.replace(/```[a-zA-Z]*/g, '').replace(/```/g, '').trim()
+    const cleaned = content
+        .replace(/```[a-zA-Z]*/g, '')
+        .replace(/```/g, '')
+        .trim()
     const objectStart = cleaned.indexOf('{')
     const objectEnd = cleaned.lastIndexOf('}')
     if (objectStart >= 0 && objectEnd > objectStart) {

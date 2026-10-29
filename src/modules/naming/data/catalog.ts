@@ -149,7 +149,9 @@ export const SURNAME_KIND_OPTIONS: readonly NamingOption[] = [
 export const NAME_COUNTS: readonly number[] = [12, 24, 48]
 
 /** 实体组合规则：coreCount 为意象词素段数区间，maxLength 为整体字数上限 */
-export const ENTITY_RULES: Readonly<Record<NamingCategory, { coreCount: readonly [number, number]; maxLength: number }>> = {
+export const ENTITY_RULES: Readonly<
+    Record<NamingCategory, { coreCount: readonly [number, number]; maxLength: number }>
+> = {
     person: { coreCount: [1, 2], maxLength: 12 },
     place: { coreCount: [1, 1], maxLength: 7 },
     faction: { coreCount: [1, 1], maxLength: 8 },

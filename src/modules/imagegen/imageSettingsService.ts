@@ -29,12 +29,7 @@ const SETTINGS_FILE = 'image.json'
 const MAX_TEXT_LENGTH = 200
 
 /** 可覆盖的键全集：保存时按此顺序处理，读取时按此顺序校验 */
-const SETTING_KEYS: ReadonlyArray<keyof ImageSettings> = [
-    'defaultRatio',
-    'portraitStyle',
-    'promptSuffix',
-    'negative',
-]
+const SETTING_KEYS: ReadonlyArray<keyof ImageSettings> = ['defaultRatio', 'portraitStyle', 'promptSuffix', 'negative']
 
 /** 画风收窄：只接受白名单值 */
 function toStyle(value: unknown): PortraitStyle | null {

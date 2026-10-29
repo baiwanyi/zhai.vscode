@@ -83,10 +83,7 @@ export const SETTING_SECTIONS: Readonly<Record<SettingSectionKey, SettingSection
 export const SETTING_FIELD_SECTION_ORDER: readonly SettingFieldSectionKey[] = ['basic', 'world', 'power']
 
 /** 分组顺序：切换栏渲染顺序，字段分组在前、条目分类在后 */
-export const SETTING_SECTION_ORDER: readonly SettingSectionKey[] = [
-    ...SETTING_FIELD_SECTION_ORDER,
-    ...LORE_KIND_ORDER,
-]
+export const SETTING_SECTION_ORDER: readonly SettingSectionKey[] = [...SETTING_FIELD_SECTION_ORDER, ...LORE_KIND_ORDER]
 
 /** 判断分组是否为条目分段：条目分段渲染列表与弹窗，字段分组渲染表单与保存按钮 */
 export function isLoreSection(key: SettingSectionKey): key is LoreKind {

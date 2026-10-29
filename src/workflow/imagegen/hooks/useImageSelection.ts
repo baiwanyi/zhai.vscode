@@ -38,10 +38,7 @@ interface UseMediaSelectionResult {
     selectAll: () => void
 }
 
-export function useImageSelection({
-    visibleItems,
-    filterSignature,
-}: UseMediaSelectionParams): UseMediaSelectionResult {
+export function useImageSelection({ visibleItems, filterSignature }: UseMediaSelectionParams): UseMediaSelectionResult {
     const [selection, setSelection] = useState<SelectionSnapshot>({ signature: '', ids: EMPTY_SELECTION })
     /** 多选模式：点击卡片切换选中，不打开详情 */
     const [isSelecting, setIsSelecting] = useState(false)

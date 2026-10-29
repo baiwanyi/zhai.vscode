@@ -6,7 +6,12 @@
  * 图片以磁盘为准，弹窗关闭期间完成的生成同样能被读回。
  */
 import { useCallback } from 'react'
-import type { CharacterPortrait, PortraitGalleryItem, PortraitGalleryResult, PortraitListResult } from '@shared/types/press'
+import type {
+    CharacterPortrait,
+    PortraitGalleryItem,
+    PortraitGalleryResult,
+    PortraitListResult,
+} from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 
