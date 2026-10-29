@@ -52,6 +52,8 @@ export interface StreamMessage {
     status?: 'completed' | 'failed' | 'cancelled'
     /** 结束时回传宿主侧完整正文，用于校正前端逐字累积结果 */
     content?: string
+    /** 结束时回传宿主侧完整思维链：与 content 同口径校正，缺省表示本轮没有思维链 */
+    reasoning?: string
     error?: string
     /** 结束时回传的本轮用量，供消息底部工具栏展示 */
     usage?: StreamUsage

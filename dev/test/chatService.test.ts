@@ -1,6 +1,7 @@
 /**
  * chatService 单元测试：聚焦发送阶段的上下文注入与预算裁剪——待发送引用是否随消息注入、
- * 失效引用是否跳过、发送后是否清空、引用是否优先于历史保留，以及本轮用量与耗时的落库与下发。
+ * 失效引用是否跳过、发送后是否清空、引用是否优先于历史保留，本轮用量与耗时的落库与下发，
+ * 以及思维链按 reasoning 通道分流、落库与终态回传。
  * 复用约定：AI 通道由记录型假实现替身注入；DB 用临时目录真实库。
  */
 import * as fs from 'node:fs'
@@ -82,6 +83,29 @@ async function sendAndWait(content: string): Promise<{ skippedContexts: string[]
     await finished
     clearTimeout(timer)
     return { ...result, done }
+}
+
+/** 发送并收集本轮全部流式消息：思维链与正文按 channel 分流，断言需要逐条比对 */
+async function sendAndCollect(content: string): Promise<{ messages: StreamMessage[]; done: StreamMessage | null }> {
+    const messages: StreamMessage[] = []
+    let done: StreamMessage | null = null
+    let finish: (() => void) | undefined
+    const finished = new Promise<void>((resolve) => {
+        finish = resolve
+        const subscription = service.onStream((message) => {
+            messages.push(message)
+            if (message.done) {
+                done = message
+                subscription.dispose()
+                resolve()
+            }
+        })
+    })
+    const timer = setTimeout(() => finish?.(), 3000)
+    await service.send(`req-collect-${Date.now()}`, conversationId, content, false)
+    await finished
+    clearTimeout(timer)
+    return { messages, done }
 }
 
 /** 取最近一次流式请求的消息数组 */
@@ -196,6 +220,45 @@ describe('发送阶段的上下文注入', () => {
         expect(tail).toContain('<context')
         expect(tail).toContain('新问题')
         expect(messages.some((message) => message.content.includes('旧问题'))).toBe(false)
+    })
+})
+
+describe('思维链下发', () => {
+    it('思维链走 reasoning 通道，正文通道不混入思考内容', async () => {
+        nextChunks = [
+            { content: '', reasoning: '先看设定，' },
+            { content: '', reasoning: '再写正文。' },
+            { content: '正文第一句', reasoning: '' },
+        ]
+        const { messages, done } = await sendAndCollect('写一段')
+
+        const reasoningDeltas = messages.filter((message) => message.channel === 'reasoning').map((item) => item.delta)
+        const contentDeltas = messages.filter((message) => message.channel === 'content').map((item) => item.delta)
+        expect(reasoningDeltas.join('')).toBe('先看设定，再写正文。')
+        expect(contentDeltas.join('')).toBe('正文第一句')
+        expect(done?.reasoning).toBe('先看设定，再写正文。')
+        expect(done?.content).toBe('正文第一句')
+    })
+
+    it('思维链随助手消息落库，可按快照回显', async () => {
+        nextChunks = [
+            { content: '', reasoning: '内部推理' },
+            { content: '答复', reasoning: '' },
+        ]
+        await sendAndWait('写一段')
+
+        const assistantRow = listMessages(db, conversationId)
+            .filter((row) => row.role === 'assistant')
+            .at(-1)
+        expect(assistantRow?.reasoning).toBe('内部推理')
+    })
+
+    it('无思维链时终态不带该字段，前端保留原值', async () => {
+        nextChunks = [{ content: '只有正文', reasoning: '' }]
+        const { messages, done } = await sendAndCollect('写一段')
+
+        expect(messages.some((message) => message.channel === 'reasoning')).toBe(false)
+        expect(done?.reasoning).toBeUndefined()
     })
 })
 

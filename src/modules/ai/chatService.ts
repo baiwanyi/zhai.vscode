@@ -574,6 +574,8 @@ export class AiChatService implements vscode.Disposable {
         let answer = ''
         let reasoning = ''
         let pending = ''
+        /** 待下发的思维链增量：与正文共用同一节流窗口，但走独立 channel */
+        let pendingReasoning = ''
         let lastEmitAt = 0
         let usage: ChatUsage | null = null
         /** 通道回传的 usage 是否为单轮值：为 false 时续接会话的累计值不可直接记账 */
@@ -612,17 +614,32 @@ export class AiChatService implements vscode.Disposable {
         })
         this.activePermission = permission
 
-        /** 按窗口合并增量，done 时强制冲刷 */
+        /**
+         * 按窗口合并增量，done 时强制冲刷。
+         * 正文与思维链在同一窗口内分别下发：前端按 channel 分流，思维链不进消息正文。
+         */
         const flush = (force: boolean): void => {
-            if (pending.length === 0) {
+            if (pending.length === 0 && pendingReasoning.length === 0) {
                 return
             }
             const now = Date.now()
             if (!force && now - lastEmitAt < STREAM_FLUSH_MS) {
                 return
             }
-            this.streamEmitter.fire({ type: 'stream', reqId, delta: pending, done: false, channel: 'content' })
-            pending = ''
+            if (pending.length > 0) {
+                this.streamEmitter.fire({ type: 'stream', reqId, delta: pending, done: false, channel: 'content' })
+                pending = ''
+            }
+            if (pendingReasoning.length > 0) {
+                this.streamEmitter.fire({
+                    type: 'stream',
+                    reqId,
+                    delta: pendingReasoning,
+                    done: false,
+                    channel: 'reasoning',
+                })
+                pendingReasoning = ''
+            }
             lastEmitAt = now
         }
 
@@ -671,6 +688,7 @@ export class AiChatService implements vscode.Disposable {
                 answer += chunk.content
                 reasoning += chunk.reasoning
                 pending += chunk.content
+                pendingReasoning += chunk.reasoning
                 flush(false)
                 if (chunk.usage) {
                     usage = chunk.usage
@@ -739,6 +757,7 @@ export class AiChatService implements vscode.Disposable {
                 done: true,
                 status: 'completed',
                 content: answer,
+                reasoning: reasoning.length > 0 ? reasoning : undefined,
                 usage: {
                     promptTokens: finalUsage.promptTokens,
                     completionTokens: finalUsage.completionTokens,
@@ -801,6 +820,7 @@ export class AiChatService implements vscode.Disposable {
                 done: true,
                 status,
                 content: answer,
+                reasoning: reasoning.length > 0 ? reasoning : undefined,
                 error: isCancelled ? undefined : message,
                 usage: {
                     promptTokens: finalUsage.promptTokens,

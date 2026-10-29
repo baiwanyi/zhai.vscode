@@ -3,6 +3,7 @@
  * 承载发送 / 停止 / 写入范围切换 / 新建 / 切换 / 删除会话等操作，并订阅宿主 stream 消息按发起时的助手消息 id 就地追加增量。
  * 复用 @shared/utils/error 的错误收窄与 ../utils 的消息替换；上下文清单与历史列表由调用方 hook 持有、经参数注入刷新。
  * 关键约束：发送正文由调用方拼装后传入（写作命令模板不进入输入框），本 hook 只负责提交与清空输入；
+ * 增量按 channel 分流——content 追加到正文、reasoning 追加到思维链，两者不混流；流末以宿主回传的完整值校正；
  * 切换 / 删除会话前先中止生成，避免增量写回已切走的会话；切换写入范围不中断在途生成，只对后续发送生效；
  * 会话作用域由调用方以 projectDir 注入，快照加载 / 新建 / 删除后重载都必须带同一作用域，跨作品不共用对话。
  */
@@ -131,6 +132,8 @@ export function useAiChatSession({
                     patchMessage(previous, messageId, (item) => ({
                         ...item,
                         content: message.content ?? item.content,
+                        // 思维链同口径校正：未回传时保留逐字累积结果
+                        reasoning: message.reasoning ?? item.reasoning,
                         status: message.status ?? 'completed',
                         error: message.error ?? null,
                         // 用量与耗时只在流末下发一次，字段逐个收窄后再并入，缺省保留原值
@@ -153,8 +156,14 @@ export function useAiChatSession({
             if (message.delta.length === 0) {
                 return
             }
+            // 思维链与正文分通道下发：reasoning 只进思维链字段，不污染消息正文
+            const isReasoning = message.channel === 'reasoning'
             setSession((previous) =>
-                patchMessage(previous, messageId, (item) => ({ ...item, content: item.content + message.delta })),
+                patchMessage(previous, messageId, (item) =>
+                    isReasoning
+                        ? { ...item, reasoning: (item.reasoning ?? '') + message.delta }
+                        : { ...item, content: item.content + message.delta },
+                ),
             )
         })
     }, [onError])
