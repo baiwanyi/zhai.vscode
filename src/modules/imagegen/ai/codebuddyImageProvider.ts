@@ -61,22 +61,6 @@ const IMAGE_DONE_PATTERN = /image_gen_tool_result|"status"\s*:\s*"completed"/i
  * 该键由 CLI 侧约定，升级后若失效会表现为能力探测失败（init.tools 不含 ImageGen），需回到此处核对。
  */
 const DEFER_TOOL_LOADING_ENV = 'CODEBUDDY_DEFER_TOOL_LOADING'
-/**
- * 产物回报结构：让模型以 JSON 回报图片位置，取代从自然语言里正则提取。
- * 关键约束：只约束最终回报，不限制工具调用；path 必须是 ImageGen 实际返回的位置，不得自行编造，
- * 因此 schema 描述里写明来源，解析失败时仍回落到块与文本候选。
- */
-const ARTIFACT_OUTPUT_SCHEMA: Record<string, unknown> = {
-    type: 'object',
-    properties: {
-        path: {
-            type: 'string',
-            description: 'ImageGen 工具返回的图片本地绝对路径或可访问的 http(s) 链接，不得自行编造',
-        },
-    },
-    required: ['path'],
-    additionalProperties: false,
-}
 
 /**
  * 工具授权：只放行 ImageGen，其余一律拒绝；整次请求最多放行一次。
@@ -105,47 +89,25 @@ function buildImageEnv(site: CodebuddySite, apiKey?: string): Record<string, str
 }
 
 /**
- * 单条消息的异步序列：query 的结构化入参只接受 AsyncIterable，
- * 这里把一条消息包成只产出一次的序列，第二次取即 done，让 CLI 正常收尾。
- */
-function singleMessageStream(message: UserMessage): AsyncIterable<UserMessage> {
-    let isSent = false
-    return {
-        [Symbol.asyncIterator]: (): AsyncIterator<UserMessage> => ({
-            next: (): Promise<IteratorResult<UserMessage>> => {
-                if (isSent) {
-                    return Promise.resolve({ done: true, value: undefined })
-                }
-                isSent = true
-                return Promise.resolve({ done: false, value: message })
-            },
-        }),
-    }
-}
-
-/**
  * 带参考图的用户消息：指令文本与图片内容块同条提交，模型先看图再决定出图描述。
  * 关键约束：session_id 传空串，与字符串提示词路径口径一致，由 CLI 在当前会话内补全；
  * 图片必须按内容块提交，写成文本路径模型是看不到画面的。
  */
-function promptWithReferences(
-    instruction: string,
-    references: readonly ImageReferenceInput[],
-): AsyncIterable<UserMessage> {
+function promptWithReferences(instruction: string, references: readonly ImageReferenceInput[]): UserMessage {
     const images = references.map((item): ImageContentBlock => ({
         type: 'image',
         source: { type: 'base64', media_type: item.mimeType, data: Buffer.from(item.bytes).toString('base64') },
     }))
-    return singleMessageStream({
+    return {
         type: 'user',
         session_id: '',
         parent_tool_use_id: null,
         message: { role: 'user', content: [{ type: 'text', text: instruction }, ...images] },
-    })
+    }
 }
 
 /** 出图入参：无参考图时保持字符串提示词，有参考图时改走结构化消息 */
-function buildPrompt(options: ImageGenerateOptions): string | AsyncIterable<UserMessage> {
+function buildPrompt(options: ImageGenerateOptions): string | UserMessage {
     const instruction = buildImageInstruction({
         prompt: options.prompt,
         size: options.size,
@@ -239,15 +201,6 @@ function collectBlocks(blocks: ContentBlock[]): ContentBlock[] {
     return flat
 }
 
-/** 从结构化输出里取产物路径：outputFormat 生效时 result 携带 structured_output */
-export function readStructuredPath(output: unknown): string | null {
-    if (typeof output !== 'object' || output === null) {
-        return null
-    }
-    const path = (output as { path?: unknown }).path
-    return typeof path === 'string' && path.trim().length > 0 ? path.trim() : null
-}
-
 /** 从文本里按可信度收集候选：结构化字段 → 内联数据 → 绝对路径 → 链接 */
 function collectCandidates(text: string): string[] {
     const candidates: string[] = []
@@ -300,19 +253,17 @@ export class CodeBuddyImageProvider implements ImageProvider {
      * 拿到 init 即中断，尽量缩短子进程存活时间；探测失败一律视为不可用。
      */
     public async isAvailable(): Promise<boolean> {
-        const controller = new AbortController()
-        const session = this.client.query({
-            prompt: 'ok',
-            options: {
-                maxTurns: 1,
-                includePartialMessages: false,
-                cwd: tmpdir(),
-                abortController: controller,
-                env: buildImageEnv(getZhaiConfig().aiCodebuddySite),
-            },
+        const session = this.client.createSession({
+            maxTurns: 1,
+            includePartialMessages: false,
+            cwd: tmpdir(),
+            env: buildImageEnv(getZhaiConfig().aiCodebuddySite),
         })
         try {
-            for await (const message of session) {
+            await session.connect()
+            // 必须发一条消息才会走到 init：新建会话没有历史，直接 stream 会空转
+            await session.send('ok')
+            for await (const message of session.stream()) {
                 if (message.type === 'system' && message.subtype === 'init') {
                     return message.tools.includes('ImageGen')
                 }
@@ -321,49 +272,42 @@ export class CodeBuddyImageProvider implements ImageProvider {
         } catch {
             return false
         } finally {
-            controller.abort()
+            session.close()
         }
     }
 
     public async generate(options: ImageGenerateOptions): Promise<ImageGenerateResult> {
         const cfg = getZhaiConfig()
         const apiKey = await this.secrets.get('codebuddyApiKey')
-        const controller = new AbortController()
-        const forwardAbort = (): void => controller.abort()
+        // 出图驱动模型与对话共用面板菜单里的当前选择，避免同一模型出现分歧
+        const model = resolveCodebuddyModel(getSelectedCodebuddyModel())
+        const session = this.client.createSession({
+            // 仅放行出图工具，避免模型顺带读写工作区；allowedTools + canUseTool 双重放行才会真正执行
+            tools: ['ImageGen'],
+            allowedTools: ['ImageGen'],
+            canUseTool: createImageGenGate(),
+            // 出图通常需要三轮（说明 / 工具 / 收尾），按 MAX_TURNS 留出试探余量，避免中途被截断
+            maxTurns: MAX_TURNS,
+            permissionMode: 'default',
+            // 需要流事件里的 content_block_start 判断工具是否已开始调用
+            includePartialMessages: true,
+            cwd: tmpdir(),
+            // 驱动模型同样必须落在账号可用列表内，否则 CLI 直接 400
+            model,
+            env: buildImageEnv(cfg.aiCodebuddySite, apiKey),
+        })
+        // V2 没有 abortController 选项：外部取消直接转成会话中断
+        const forwardAbort = (): void => {
+            void session.interrupt()
+        }
         if (options.signal.aborted) {
-            controller.abort()
+            forwardAbort()
         } else {
             options.signal.addEventListener('abort', forwardAbort, { once: true })
         }
-        // 出图驱动模型与对话共用面板菜单里的当前选择，避免同一模型出现分歧
-        const model = resolveCodebuddyModel(getSelectedCodebuddyModel())
-        const session = this.client.query({
-            prompt: buildPrompt(options),
-            options: {
-                // 仅放行出图工具，避免模型顺带读写工作区；allowedTools + canUseTool 双重放行才会真正执行
-                tools: ['ImageGen'],
-                allowedTools: ['ImageGen'],
-                canUseTool: createImageGenGate(),
-                // 出图通常需要三轮（说明 / 工具 / 收尾），按 MAX_TURNS 留出试探余量，避免中途被截断
-                maxTurns: MAX_TURNS,
-                permissionMode: 'default',
-                // 需要流事件里的 content_block_start 判断工具是否已开始调用
-                includePartialMessages: true,
-                cwd: tmpdir(),
-                // 驱动模型同样必须落在账号可用列表内，否则 CLI 直接 400
-                model,
-                abortController: controller,
-                // 产物以 JSON 回报：SDK 会把符合 schema 的结果放进 result.structured_output，
-                // 这是出图产物最稳的解析口径，正则只作兜底
-                outputFormat: { type: 'json_schema', schema: ARTIFACT_OUTPUT_SCHEMA },
-                env: buildImageEnv(cfg.aiCodebuddySite, apiKey),
-            },
-        })
         const blocks: ContentBlock[] = []
         /** 通道侧失败：带分类码，抛错时统一转成可执行提示 */
         let failure: Error | null = null
-        /** 结构化产物路径：仅在 result 的 structured_output 命中时写入 */
-        let structuredPath: string | null = null
         const startedAt = Date.now()
         /** 轮次标识与用量：图像工具按张计费，随产物回传，由服务层记账后按 requestId 回填 */
         let requestId: string | null = null
@@ -390,9 +334,11 @@ export class CodeBuddyImageProvider implements ImageProvider {
             startedAt,
         })
         try {
+            await session.connect()
             // 先把「模型准备中」报出去：这一步会等首字，用户此前看不到任何反馈
             options.onProgress?.({ stage: 'thinking' })
-            for await (const message of session) {
+            await session.send(buildPrompt(options))
+            for await (const message of session.stream()) {
                 requestId = message._requestId ?? requestId
                 if (message.type === 'stream_event') {
                     // 工具调用起始即视为已开始出图：content_block_start 带工具名
@@ -438,10 +384,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
                     durationApiMs = message.duration_api_ms
                     cacheReadTokens = message.usage.cache_read_input_tokens ?? 0
                     cacheCreationTokens = message.usage.cache_creation_input_tokens ?? 0
-                    if (message.subtype === 'success') {
-                        // 结构化产物是首选来源：模型按 outputFormat 回报 {"path": "..."}
-                        structuredPath = readStructuredPath(message.structured_output)
-                    } else {
+                    if (message.subtype !== 'success') {
                         failure = new CodebuddyError(
                             classifyResultFailure(message.subtype, message.errors),
                             message.errors?.join('；') ?? message.subtype,
@@ -459,9 +402,8 @@ export class CodeBuddyImageProvider implements ImageProvider {
             throw toReadableCodebuddyError(error, getSelectedCodebuddyModel())
         } finally {
             options.signal.removeEventListener('abort', forwardAbort)
-            if (!controller.signal.aborted) {
-                controller.abort()
-            }
+            // 无论成功、失败还是取消都释放子进程：V2 Session 持有 CLI 进程，不关会残留
+            session.close()
         }
         if (failure !== null) {
             const readable = toReadableCodebuddyError(failure, getSelectedCodebuddyModel())
@@ -469,14 +411,6 @@ export class CodeBuddyImageProvider implements ImageProvider {
             throw readable === failure
                 ? new Error(`CodeBuddy 出图失败：${failure.message}`, { cause: failure })
                 : readable
-        }
-        // 结构化产物优先：路径由 SDK 结构化输出直接给出，读不到再退回块与文本候选
-        if (structuredPath !== null) {
-            const structured = await this.readCandidate(structuredPath)
-            if (structured !== null) {
-                return settle(structured)
-            }
-            logger.warn(`结构化产物不可读，回退文本候选解析：${structuredPath}`)
         }
         const artifact = await this.readArtifact(blocks)
         if (artifact === null) {

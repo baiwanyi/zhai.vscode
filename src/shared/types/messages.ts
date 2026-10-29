@@ -123,7 +123,6 @@ export type WebviewToHostMessage = RequestMessage
 export type HostMethodName =
     | 'ai/abort'
     | 'ai/applyHunks'
-    | 'ai/applyWrite'
     | 'ai/context'
     | 'ai/context/clear'
     | 'ai/context/remove'

@@ -16,7 +16,7 @@ import { AiChatService } from '../../src/modules/ai/chatService'
 import { listMessages, updateConversationSession } from '../../src/modules/ai/db/chatRepository'
 import { openAiDatabase } from '../../src/modules/ai/db/connection'
 import { ensureAiSchema } from '../../src/modules/ai/db/schema'
-import { getPrompt, listUsageLogs } from '../../src/modules/ai/db/usageRepository'
+import { getPrompt, listAllUsageLogs } from '../../src/modules/ai/db/usageRepository'
 import { UsageRecorder } from '../../src/modules/ai/usageRecorder'
 
 const FILE_PATH = 'd:/notes/ch01.md'
@@ -162,7 +162,7 @@ describe('发送阶段的上下文注入', () => {
     it('发送后写入一条对话用量与对应提示词', async () => {
         await sendAndWait('记账检查')
 
-        const rows = listUsageLogs(db, { module: 'chat', since: null, limit: 10, offset: 0 })
+        const rows = listAllUsageLogs(db, 10)
         expect(rows).toHaveLength(1)
         expect(rows[0]?.status).toBe('completed')
         const logId = rows[0]?.id ?? ''

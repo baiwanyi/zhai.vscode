@@ -19,7 +19,7 @@ const PROMPT_MAX_LENGTH = 20_000
 /** 记账入参：usage 与 meta 由通道流末块回传，缺失时按 0 兜底但不伪造成本 */
 export interface UsageRecordInput {
     module: AiUsageModule
-    /** 模型 id；空串表示交给 CLI 的默认模型，此时倍率未知 */
+    /** 模型 id；空串表示交给 CLI 的默认模型，此时积分未知 */
     model: string
     usage: AiUsage | null
     meta?: AiUsageMeta | null

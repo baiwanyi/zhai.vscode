@@ -30,8 +30,6 @@ export interface AiChatWriteStateResult {
     closeWriteDiff: () => void
     /** 按勾选的段写回 */
     applyHunks: (messageId: string, accepted: number[]) => Promise<void>
-    /** 整段写回：等价于接受全部段 */
-    applyMessage: (messageId: string) => Promise<void>
 }
 
 export function useAiChatWriteState({ onError }: UseAiChatWriteStateOptions): AiChatWriteStateResult {
@@ -83,27 +81,5 @@ export function useAiChatWriteState({ onError }: UseAiChatWriteStateOptions): Ai
         [onError],
     )
 
-    /** 整段写回：不经过预览，宿主按全部段替换 */
-    const applyMessage = useCallback(
-        async (messageId: string): Promise<void> => {
-            setApplyingMessageId(messageId)
-            try {
-                const result = await request<AiApplyResult>('ai/applyWrite', { messageId })
-                onError(null)
-                if (result.reason === 'applied') {
-                    toast.info(`该回复已应用过：${result.label}`)
-                } else {
-                    toast.success(`已写入 ${result.label}，可 Ctrl+Z 撤销`)
-                }
-                setWriteState(await request<AiWriteState>('ai/writeState'))
-            } catch (cause) {
-                toast.error(toErrorText(cause))
-            } finally {
-                setApplyingMessageId(null)
-            }
-        },
-        [onError],
-    )
-
-    return { writeState, applyingMessageId, writeDiff, loadWriteState, loadWriteDiff, closeWriteDiff, applyHunks, applyMessage }
+    return { writeState, applyingMessageId, writeDiff, loadWriteState, loadWriteDiff, closeWriteDiff, applyHunks }
 }

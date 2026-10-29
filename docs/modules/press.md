@@ -586,7 +586,7 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 | 面板「立即快照」 | `press/snapshot/create` | `manual` |
 | 恢复动作内部 | 覆盖前先给当前内容留一版 | `restore` |
 | 章节保存（自动） | `onDidSaveTextDocument`，命中 `press/{作品}/Chapters/**/*.md` | `auto` |
-| 章节 AI 写回前 | `chatService.applyWrite` 在 `applyEdit` 之前取编辑器全文 | `ai-write` |
+| 章节 AI 写回前 | `chatService.applyHunks` 在 `applyEdit` 之前取编辑器全文 | `ai-write` |
 
 `workspace.fs` 写入不产生保存事件，两条通道不会互相触发。
 
@@ -658,7 +658,7 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 去重按单章内容哈希：与最新一版相同直接跳过。节流语义与结构化文档一致——throttle，定时器不续期，末版必留。
 
-**AI 写回留底**：`chatService.applyWrite` 在 `vscode.workspace.applyEdit` 之前调用注入的钩子，内容取 `document.getText()`，即写回前的编辑器状态，与撤销栈完全对齐，且不受文件是否已保存影响。钩子异常只记日志，绝不阻断写回。
+**AI 写回留底**：`chatService.applyHunks` 在 `vscode.workspace.applyEdit` 之前调用注入的钩子，内容取 `document.getText()`，即写回前的编辑器状态，与撤销栈完全对齐，且不受文件是否已保存影响。钩子异常只记日志，绝不阻断写回。
 
 **恢复**：只覆盖该章正文，随后重建该章索引。两道前置：
 

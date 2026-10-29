@@ -50,7 +50,7 @@ import type { PromptRuleService, PromptTagService } from './prompt'
 import type { ReferenceImageService } from './referenceImageService'
 import type Database from 'better-sqlite3'
 
-/** 提示词相关的长度与条数上限统一在 ./prompt/limits.ts，本文件不再自带数值 */
+/** 提示词长度上限来自 @modules/ai/finalPrompt，条数上限来自 ./prompt/limits，本文件不再自带数值 */
 /** 参考图张数上限：与参考图服务的读取上限一致，超出部分丢弃 */
 const MAX_REFERENCE_IMAGES = 3
 /** 参考图路径长度上限：超长路径无法回查，直接截断后由服务跳过 */

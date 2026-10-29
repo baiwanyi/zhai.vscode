@@ -450,8 +450,7 @@ interface AbortRequest {
 | `ai/context/clear` | Webview → 宿主 | 清空待发送上下文，返回空清单 |
 | `ai/writeState` | Webview → 宿主 | 实时改写目标、写回作用域、可写回与已写回消息 id |
 | `ai/setMode` | Webview → 宿主 | 切换会话模式（`chat` / `write`），写库后返回 `{ mode }` |
-| `ai/applyWrite` | Webview → 宿主 | 按助手消息 id 写回编辑栏（不接受路径与范围入参），返回 `{ applied, label, reason? }` |
-| `ai/usage` | Webview → 宿主 | 用量列表 `{ items, total, page, pageSize, summary }`：`module` 走白名单（缺省不筛选）、`range` 为 `today/7d/30d/all` 枚举并由宿主换算起止时间、页码与页大小在宿主夹紧（≤500 页 / ≤50 条），分页与汇总都在库侧完成；`force: true` 跳过 5 秒索引节流并立即重扫 CLI 记录（表头刷新按钮），非布尔 true 一律按普通查询处理 |
+| `ai/usage` | Webview → 宿主 | 用量列表 `{ items, total, page, pageSize, summary }`：`module` 走白名单（缺省不筛选）、`range` 为 `today/7d/30d/all` 枚举并由宿主换算起止时间、页码与页大小在宿主夹紧（≤500 页 / ≤50 条），明细、分页与汇总都以本地记账为准在服务层完成；`force: true` 跳过 5 秒索引节流并立即重扫 CLI 记录（表头刷新按钮），非布尔 true 一律按普通查询处理 |
 | `ai/usage/prompt` | Webview → 宿主 | 按请求 id 取提示词 `{ requestId, content, isTruncated, found }`；未留存时 `found=false`，id 长度与字符集校验失败直接拒绝 |
 | `host/command` | Webview → 宿主 | 白名单命令（`src/modules/common/webviewCommands.ts`），用于 CodeBuddy 登录（`zhai.ai.loginCodebuddy`）、打开设置等；未登记的命令一律拒绝 |
 | `stream` | 宿主 → Webview | 增量 `{ reqId, delta, channel }`；终态 `{ done: true, status, content, error?, contextUsage? }`，`contextUsage` 形如 `{ usedTokens, windowTokens }`，缺省表示通道未回传、前端保留上一次的值 |
@@ -510,7 +509,7 @@ interface AbortRequest {
 - **会话命名**：首条消息带命令时以命令名称作为 `titleHint`，避免标题被指令模板首句占据。
 - **命令写回策略**：改写 / 润色 / 去 AI 味为 `replace`，结果提供「应用到编辑栏」；校对为 `report`，只输出清单，永不写回。
 - **写作模式**：发送时重新捕获目标（选区优先，无选区取整篇，整篇上限 12000 字符），原文以 `<context>` 结构注入并复用引用去重规则；生成完成后该条助手消息进入可写回集合。
-- **写回**：`ai/applyWrite` 只接受消息 id，宿主用发送时快照的 uri / `document.version` / range 校验后以 `WorkspaceEdit` 替换，写入进入撤销栈（`Ctrl+Z` 可回退）；整篇覆盖前由界面二次确认；重复点击不再写第二次。
+- **写回**：`ai/applyHunks` 只接受消息 id 与勾选的段索引，宿主用发送时快照的 uri / `document.version` / range 校验后以 `WorkspaceEdit` 替换，写入进入撤销栈（`Ctrl+Z` 可回退）；整篇覆盖前由界面二次确认；重复点击不再写第二次。
 - **写回前留底**：`applyEdit` 之前调用宿主注入的快照钩子，把编辑器里的写回前全文存入该章的章节快照（`reason = ai-write`，不受间隔限制）；钩子异常只记日志，不影响写回本身。快照落点与清理规则见 `press.md` 11.10。
 - **状态隔离**：写回快照以助手消息 id 为键（不同轮次互不覆盖），可写回与已写回集合按会话隔离，均存于宿主内存；删除会话时一并清理，窗口重启后不再提供历史消息的写回入口。
 

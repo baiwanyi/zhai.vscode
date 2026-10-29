@@ -13,7 +13,6 @@ export interface ConversationRow {
     id: string
     title: string
     mode: string
-    filePath: string | null
     /** 会话所属作用域（作品目录，形如 press/{作品名}）；NULL 表示不属于任何作品的通用对话 */
     projectDir: string | null
     model: string
@@ -69,7 +68,7 @@ export interface MessagePatch {
     requestId: string | null
 }
 
-const CONVERSATION_COLUMNS = `id, title, mode, file_path AS filePath, project_dir AS projectDir, model, provider,
+const CONVERSATION_COLUMNS = `id, title, mode, project_dir AS projectDir, model, provider,
     sdk_session_id AS sdkSessionId, context_used_tokens AS contextUsedTokens,
     context_window_tokens AS contextWindowTokens, created_at AS createdAt, updated_at AS updatedAt`
 
@@ -79,9 +78,9 @@ const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, r
 
 export function insertConversation(db: Database.Database, row: ConversationRow): void {
     db.prepare(
-        `INSERT INTO conversations (id, title, mode, file_path, project_dir, model, provider, sdk_session_id,
+        `INSERT INTO conversations (id, title, mode, project_dir, model, provider, sdk_session_id,
             context_used_tokens, context_window_tokens, created_at, updated_at)
-         VALUES (@id, @title, @mode, @filePath, @projectDir, @model, @provider, @sdkSessionId,
+         VALUES (@id, @title, @mode, @projectDir, @model, @provider, @sdkSessionId,
             @contextUsedTokens, @contextWindowTokens, @createdAt, @updatedAt)`,
     ).run(row)
 }

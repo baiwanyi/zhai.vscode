@@ -42,7 +42,6 @@ export interface AiConversation {
     id: string
     title: string
     mode: AiConversationMode
-    filePath: string | null
     model: string
     createdAt: string
     updatedAt: string

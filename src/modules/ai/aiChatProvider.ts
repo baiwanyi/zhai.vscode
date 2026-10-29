@@ -4,7 +4,7 @@
  * press/workspace 与 press/open 作品类、press/extract/characters 人物卡提取、press/extract/outline 大纲提取）
  * 委托给各自路由。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
- * 上下文增删走 ai/context*，写回走 ai/writeState / ai/setMode / ai/applyWrite，state 广播以 channel 区分
+ * 上下文增删走 ai/context*，写回走 ai/writeState / ai/writeDiff / ai/applyHunks / ai/setMode，state 广播以 channel 区分
  * ai（runtime / context / writeTarget）与 workflow（路由事实，含当前作品目录）。
  * 关键约束：上下文移除与写回只接受宿主生成的 id（不接受路径与范围入参），所有 Webview 入参逐字段收窄后再用；
  * 会话协议可带 projectDir 作用域（作品目录），缺省即通用对话，作用域只用于过滤查询、不参与路径拼接；
@@ -257,9 +257,6 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             case 'ai/applyHunks': {
                 const request = readHunksPayload(payload)
                 return this.service.applyHunks(request.messageId, request.accepted)
-            }
-            case 'ai/applyWrite': {
-                return this.service.applyWrite(readMessageIdPayload(payload, 'ai/applyWrite'))
             }
             case 'ai/send': {
                 const { conversationId, content, applyPolicy, titleHint } = readSendPayload(payload)

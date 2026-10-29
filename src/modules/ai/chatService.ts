@@ -230,7 +230,6 @@ export class AiChatService implements vscode.Disposable {
             id: randomUUID(),
             title,
             mode: 'chat',
-            filePath: null,
             projectDir,
             model: getSelectedCodebuddyModel(),
             provider: this.provider.id,
@@ -458,15 +457,6 @@ export class AiChatService implements vscode.Disposable {
         this.writeStateEmitter.fire()
         logger.info(`AI 内容已写回编辑栏：${label}（接受 ${String(accepted.length)} / ${String(hunks.length)} 段）`)
         return { applied: true, label }
-    }
-
-    /** 整段写回：等价于接受全部变更块，保留给未接逐段预览的入口 */
-    public async applyWrite(messageId: string): Promise<AiApplyResult> {
-        const diff = this.buildWriteDiff(messageId)
-        return this.applyHunks(
-            messageId,
-            diff.hunks.map((_hunk, index) => index),
-        )
     }
 
     /** 读可写回目标与消息行：归属、目标与正文校验集中在此，预览与写回共用同一口径 */
@@ -1128,7 +1118,6 @@ function toConversation(row: ConversationRow): AiConversation {
         id: row.id,
         title: row.title,
         mode: row.mode === 'write' ? 'write' : 'chat',
-        filePath: row.filePath,
         model: row.model,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,

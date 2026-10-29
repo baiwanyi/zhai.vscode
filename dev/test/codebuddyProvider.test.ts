@@ -19,7 +19,6 @@ import { CodeBuddyImageProvider } from '../../src/modules/imagegen/ai/codebuddyI
 const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01])
 
 let tempDir: string
-let imagePath: string
 
 /** 系统初始化消息：通道据此回写会话号 */
 function initMessage(sessionId: string): Message {
@@ -74,9 +73,9 @@ function thinkingDelta(thinking: string): Message {
     return streamEvent({ type: 'content_block_delta', index: 0, delta: { type: 'thinking_delta', thinking } })
 }
 
-/** 成功结果；structured 给出时附带 SDK 结构化输出 */
-function successResult(structured?: unknown): Message {
-    const base = {
+/** 成功结果 */
+function successResult(): Message {
+    return {
         type: 'result',
         subtype: 'success',
         uuid: 'r1',
@@ -90,7 +89,6 @@ function successResult(structured?: unknown): Message {
         usage: { input_tokens: 100, output_tokens: 40 },
         permission_denials: [],
     }
-    return structured === undefined ? { ...base, type: 'result', subtype: 'success' } : { ...base, type: 'result', subtype: 'success', structured_output: structured }
 }
 
 /** 失败结果：轮次用尽 */
@@ -165,29 +163,30 @@ function createTextClient(
                 captured.resumed.push(sessionId)
                 return makeSession(options)
             },
-            query: (): AsyncIterable<Message> => {
-                throw new Error('文本通道不应发起一次性查询')
-            },
         },
     }
 }
 
-/** 出图替身：query 直接产出预设消息 */
+/** 出图替身：新建会话直接产出预设消息，续接一律视为误用 */
 function createImageClient(messages: Message[]): CodebuddyClient {
-    return {
-        createSession: (): CodebuddySession => {
-            throw new Error('出图通道不应创建会话')
+    const makeSession = (): CodebuddySession => ({
+        connect: (): Promise<void> => Promise.resolve(),
+        send: (): Promise<void> => Promise.resolve(),
+        stream: async function* stream(): AsyncGenerator<Message, void> {
+            await Promise.resolve()
+            for (const message of messages) {
+                yield message
+            }
         },
+        interrupt: (): Promise<void> => Promise.resolve(),
+        setConfig: (): Promise<void> => Promise.resolve(),
+        close: (): void => undefined,
+    })
+    return {
+        createSession: makeSession,
         resumeSession: (): CodebuddySession => {
             throw new Error('出图通道不应续接会话')
         },
-        query: (): AsyncIterable<Message> =>
-            (async function* stream(): AsyncGenerator<Message, void> {
-                await Promise.resolve()
-                for (const message of messages) {
-                    yield message
-                }
-            })(),
     }
 }
 
@@ -208,8 +207,6 @@ async function collect(provider: CodeBuddyProvider, request: Partial<AiStreamReq
 
 beforeAll(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'zhai-codebuddy-provider-'))
-    imagePath = path.join(tempDir, 'out.png')
-    fs.writeFileSync(imagePath, PNG_BYTES)
 })
 
 afterAll(() => {
@@ -259,8 +256,8 @@ describe('文本通道的流解析', () => {
 })
 
 describe('出图通道的产物解析', () => {
-    it('结构化输出可用时优先取它给出的路径', async () => {
-        const client = createImageClient([initMessage('s1'), successResult({ path: imagePath })])
+    it('图片内容块可直接落成产物', async () => {
+        const client = createImageClient([initMessage('s1'), assistantWithImage(PNG_BYTES), successResult()])
         const provider = new CodeBuddyImageProvider(new SecretsService(createSecretStorage()), client)
 
         const artifact = await provider.generate({
@@ -272,20 +269,12 @@ describe('出图通道的产物解析', () => {
         expect(artifact.bytes.byteLength).toBe(PNG_BYTES.byteLength)
     })
 
-    it('结构化路径不可读时回落到图片内容块', async () => {
-        const client = createImageClient([
-            initMessage('s1'),
-            assistantWithImage(PNG_BYTES),
-            successResult({ path: path.join(tempDir, 'missing.png') }),
-        ])
+    it('通道失败时抛出分类提示', async () => {
+        const client = createImageClient([initMessage('s1'), maxTurnsResult()])
         const provider = new CodeBuddyImageProvider(new SecretsService(createSecretStorage()), client)
 
-        const artifact = await provider.generate({
-            prompt: '一只猫',
-            size: '768x1024',
-            signal: new AbortController().signal,
-        })
-        expect(artifact.extension).toBe('png')
-        expect(artifact.bytes.byteLength).toBe(PNG_BYTES.byteLength)
+        await expect(
+            provider.generate({ prompt: '一只猫', size: '768x1024', signal: new AbortController().signal }),
+        ).rejects.toThrow('工具轮次已用尽')
     })
 })

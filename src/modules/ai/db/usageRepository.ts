@@ -1,9 +1,8 @@
 /**
- * AI 用量仓储：ai_usage_logs 与 ai_prompts 两表的参数化读写，供记账、分页列表、汇总与提示词查询共用。
- * 复用约定：全部 SQL 预编译绑定；列表、计数与汇总共用同一 WHERE 片段，保证「共 N 条」与表格口径一致；
- * 分页在库侧完成（LIMIT/OFFSET），调用方只把页码换算成偏移量，不把全表交给前端。
- * 关键约束：提示词正文只按请求 id 单条读取，列表查询不触碰该表；
- * 模块筛选以 `@module IS NULL OR module = @module` 表达，NULL 即不筛选，不接受拼接片段。
+ * AI 用量仓储：ai_usage_logs 与 ai_prompts 两表的参数化读写，供记账、用量页读取与提示词查询共用。
+ * 复用约定：全部 SQL 预编译绑定；列表按时间倒序取最近若干行，筛选、分页与汇总由调用方在内存中完成，
+ * 库侧只负责带 LIMIT 的读取与积分回填所需的窗口查询，不把全表交给前端。
+ * 关键约束：提示词正文只按请求 id 单条读取，列表查询不触碰该表。
  */
 import type Database from 'better-sqlite3'
 
@@ -46,30 +45,12 @@ export interface UsageLogRecord {
     createdAt: string
 }
 
-/** 列表筛选：since 为 null 表示不限时间 */
-export interface UsageLogFilter {
-    module: string | null
-    since: string | null
-    limit: number
-    offset: number
-}
-
-/** 汇总结果：credits 为 null 表示当前范围内没有任何一条可估算积分 */
-export interface UsageLogSummaryRow {
-    requests: number
-    credits: number | null
-    costUsd: number
-    tokens: number
-}
-
 /** 提示词行 */
 export interface PromptRecord {
     content: string
     isTruncated: boolean
     createdAt: string
 }
-
-const USAGE_WHERE = `WHERE (@module IS NULL OR module = @module) AND (@since IS NULL OR created_at >= @since)`
 
 const USAGE_COLUMNS = `id, request_id AS requestId, module, model, prompt_tokens AS promptTokens,
     completion_tokens AS completionTokens, total_tokens AS totalTokens, credits, cost_usd AS costUsd,
@@ -167,16 +148,6 @@ export function updateUsageCredits(db: Database.Database, updates: Array<{ id: s
     return changed
 }
 
-/** 查询一页用量：按时间倒序，limit/offset 由调用方夹紧 */
-export function listUsageLogs(db: Database.Database, filter: UsageLogFilter): UsageLogRecord[] {
-    return db
-        .prepare(
-            `SELECT ${USAGE_COLUMNS} FROM ai_usage_logs ${USAGE_WHERE}
-              ORDER BY created_at DESC LIMIT @limit OFFSET @offset`,
-        )
-        .all(filter) as UsageLogRecord[]
-}
-
 /**
  * 列出用量行：用量页以本地记账为明细主数据源，CLI 记录只补积分。
  * 上限由调用方给定，避免历史行无限增长后把整表读进内存。
@@ -185,30 +156,6 @@ export function listAllUsageLogs(db: Database.Database, limit: number): UsageLog
     return db
         .prepare(`SELECT ${USAGE_COLUMNS} FROM ai_usage_logs ORDER BY created_at DESC LIMIT @limit`)
         .all({ limit }) as UsageLogRecord[]
-}
-
-/** 统计满足筛选条件的总条数（分页用） */
-export function countUsageLogs(db: Database.Database, filter: Omit<UsageLogFilter, 'limit' | 'offset'>): number {
-    const row = db.prepare(`SELECT COUNT(*) AS total FROM ai_usage_logs ${USAGE_WHERE}`).get(filter) as
-        { total: number } | undefined
-    return row?.total ?? 0
-}
-
-/** 汇总当前筛选范围：积分全为 NULL 时返回 null，避免把「未知」显示成 0 */
-export function sumUsageLogs(
-    db: Database.Database,
-    filter: Omit<UsageLogFilter, 'limit' | 'offset'>,
-): UsageLogSummaryRow {
-    const row = db
-        .prepare(
-            `SELECT COUNT(*) AS requests,
-                    CASE WHEN COUNT(credits) = 0 THEN NULL ELSE SUM(credits) END AS credits,
-                    COALESCE(SUM(cost_usd), 0) AS costUsd,
-                    COALESCE(SUM(total_tokens), 0) AS tokens
-               FROM ai_usage_logs ${USAGE_WHERE}`,
-        )
-        .get(filter) as UsageLogSummaryRow | undefined
-    return row ?? { requests: 0, credits: null, costUsd: 0, tokens: 0 }
 }
 
 /** 记录提示词：同一请求 id 重复写入时覆盖，便于重试场景复用同一轮次标识 */

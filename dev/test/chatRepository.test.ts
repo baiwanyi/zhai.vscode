@@ -23,12 +23,10 @@ import {
 import { openAiDatabase } from '../../src/modules/ai/db/connection'
 import { ensureAiSchema } from '../../src/modules/ai/db/schema'
 import {
-    countUsageLogs,
     getPrompt,
     insertUsageLog,
-    listUsageLogs,
+    listAllUsageLogs,
     prunePrompts,
-    sumUsageLogs,
     upsertPrompt,
 } from '../../src/modules/ai/db/usageRepository'
 
@@ -40,7 +38,6 @@ function makeConversation(overrides: Partial<ConversationRow> = {}): Conversatio
         id: 'conv-1',
         title: '测试会话',
         mode: 'chat',
-        filePath: null,
         projectDir: null,
         model: 'codebuddy-default',
         provider: 'codebuddy',
@@ -87,10 +84,10 @@ afterAll(() => {
 
 describe('conversations', () => {
     it('写入后可读回全部字段', () => {
-        insertConversation(db, makeConversation({ id: 'conv-read', filePath: 'notes/a.md' }))
+        insertConversation(db, makeConversation({ id: 'conv-read', projectDir: 'press/read' }))
         const row = getConversation(db, 'conv-read')
         expect(row?.title).toBe('测试会话')
-        expect(row?.filePath).toBe('notes/a.md')
+        expect(row?.projectDir).toBe('press/read')
         expect(row?.mode).toBe('chat')
     })
 
@@ -263,22 +260,8 @@ describe('usage logs', () => {
         })
         expect(sumTokensSince(db, '2026-09-25T00:00:00.000Z')).toBe(40)
         expect(sumTokensSince(db, '2026-09-26T00:00:00.000Z')).toBe(10)
-    })
-
-    it('按模块筛选并在库侧分页', () => {
-        const naming = listUsageLogs(db, { module: 'naming', since: null, limit: 10, offset: 0 })
-        expect(naming.map((row) => row.id)).toEqual(['u2'])
-        expect(countUsageLogs(db, { module: null, since: null })).toBe(2)
-        expect(countUsageLogs(db, { module: 'chat', since: null })).toBe(1)
-        const secondPage = listUsageLogs(db, { module: null, since: null, limit: 1, offset: 1 })
-        expect(secondPage.map((row) => row.id)).toEqual(['u1'])
-    })
-
-    it('汇总忽略未知积分而不是按 0 计入', () => {
-        const summary = sumUsageLogs(db, { module: null, since: null })
-        expect(summary.requests).toBe(2)
-        expect(summary.credits).toBeCloseTo(0.02)
-        expect(summary.tokens).toBe(40)
+        // 明细读取按时间倒序，模块字段随行落库
+        expect(listAllUsageLogs(db, 10).map((row) => row.id)).toEqual(['u2', 'u1'])
     })
 
     it('提示词按请求 id 往返并能按时间清理', () => {
