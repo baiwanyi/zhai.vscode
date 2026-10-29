@@ -2,6 +2,8 @@
  * Webview 与扩展宿主之间的统一消息协议。
  * 设计源：docs/modules/common.md 第 7.3 节，请求-响应带 reqId 以支持并发匹配、超时与错误定位。
  */
+import type { AiPermissionRequest } from './aiChat'
+
 export interface RequestMessage {
     type: 'request'
     reqId: string
@@ -36,6 +38,16 @@ export interface StreamMessage {
     done: boolean
     /** 增量所属通道，缺省为正文；reasoning 为模型思维链 */
     channel?: 'content' | 'reasoning'
+    /**
+     * 工具活动：模型正在调用该工具（如 Read / Edit）。
+     * 关键约束：旁路事件，delta 为空；前端据此展示进度，不得当作正文追加。
+     */
+    tool?: string
+    /**
+     * 待确认的工具调用：宿主在 canUseTool 中被 SDK 回调时推送，用户决定后经 ai/permissionDecision 回传。
+     * 关键约束：同一时刻可能排队多条，前端按 id 去重并顺序展示。
+     */
+    permission?: AiPermissionRequest
     /** 结束时（done 为 true）的终态，供前端落定消息状态 */
     status?: 'completed' | 'failed' | 'cancelled'
     /** 结束时回传宿主侧完整正文，用于校正前端逐字累积结果 */
@@ -143,7 +155,10 @@ export type HostMethodName =
     | 'ai/send'
     | 'ai/session'
     | 'ai/sessions'
+    | 'ai/permissionDecision'
+    | 'ai/setApprovalMode'
     | 'ai/setMode'
+    | 'ai/setWriteGrant'
     | 'ai/switchSession'
     | 'ai/usage'
     | 'ai/usage/prompt'

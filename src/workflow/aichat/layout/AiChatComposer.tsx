@@ -11,14 +11,16 @@
  * 光晕是卡片外侧的兄弟层（卡片底色不透明），容器需自带 isolate，装饰层不承载任何状态或交互；
  * 横向内边距由 AppPage 统一提供，此处不再自带 px，否则会与骨架的 p-3 叠加成双重缩进。
  */
-import { FileText, TextSelect } from 'lucide-react'
+import { FileText, Loader2, TextSelect } from 'lucide-react'
 import { useState } from 'react'
 import type {
+    AiApprovalMode,
     AiContextRef,
     AiContextUsage,
     AiConversationMode,
     AiModelChoices,
     AiReasoningEffort,
+    AiWriteGrant,
 } from '@shared/types/aiChat'
 import { ComposerGlow } from '@webview/components/ComposerGlow'
 import { RichChipInput, type RichChip } from '@webview/components/RichChipInput'
@@ -29,7 +31,7 @@ import type { AiCommand } from '../constants'
 import type { AiReferenceAction } from './AiChatReferenceMenu'
 import type { Phase } from '../hooks/useAiChatSession'
 import type { JSX } from 'react'
-import { describeContext, toContextFileName } from '../utils'
+import { describeContext, describeTool, toContextFileName } from '../utils'
 
 /** 命令芯片的保留 id：只用于 React key 与退格查找，移除语义由 onRemove 承担 */
 const COMMAND_CHIP_ID = 'ai-command'
@@ -73,12 +75,20 @@ interface AiChatComposerProps {
     isGenerating: boolean
     phase: Phase
     mode: AiConversationMode
+    /** 写入授权范围：仅写作模式生效 */
+    writeGrant: AiWriteGrant
+    onWriteGrantChange: (grant: AiWriteGrant) => void
+    /** 审批模式：仅写作模式展示切换入口 */
+    approval: AiApprovalMode
+    onApprovalChange: (approval: AiApprovalMode) => void
+    /** 正在调用的工具名：null 表示当前没有工具执行 */
+    activeTool: string | null
     /** 当前会话上下文占用：null 表示本轮还没有产出数据 */
     contextUsage: AiContextUsage | null
     /** 当前模型的上下文窗口：会话尚无占用数据时作为圆环分母 */
     contextWindowTokens: number
-    /** 写作模式下是否存在可改写的编辑器目标 */
-    hasWriteTarget: boolean
+    /** 写作模式下是否存在可写范围：编辑器目标或已绑定作品目录（连续生成章节无需选区） */
+    hasWritableScope: boolean
     /** 当前模型 id，空表示使用 CLI 默认模型 */
     model: string
     /** 当前模型展示名：清单未拉取时由运行时提供，空串表示未知 */
@@ -117,9 +127,14 @@ export function AiChatComposer({
     isGenerating,
     phase,
     mode,
+    writeGrant,
+    onWriteGrantChange,
+    approval,
+    onApprovalChange,
+    activeTool,
     contextUsage,
     contextWindowTokens,
-    hasWriteTarget,
+    hasWritableScope,
     model,
     modelName,
     modelChoices,
@@ -146,7 +161,7 @@ export function AiChatComposer({
     const canEnhance = input.trim().length > 0
     /** 已有命令时正文由指令模板提供，因此空输入也可发送 */
     const hasContent = command !== null || input.trim().length > 0
-    const canSend = hasApiKey && phase === 'idle' && hasContent && (mode === 'chat' || hasWriteTarget)
+    const canSend = hasApiKey && phase === 'idle' && hasContent && (mode === 'chat' || hasWritableScope)
 
     let placeholder = '提问或输入指令…'
     if (command !== null) {
@@ -198,6 +213,12 @@ export function AiChatComposer({
                     onMention={onMention}
                 />
                 <div className="rounded-xl bg-composer-input p-3">
+                    {activeTool === null ? null : (
+                        <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Loader2 className="size-3 animate-spin" />
+                            正在{describeTool(activeTool)}
+                        </div>
+                    )}
                     <RichChipInput
                         value={input}
                         chips={chips}
@@ -211,6 +232,8 @@ export function AiChatComposer({
 
                     <AiChatComposerActions
                         mode={mode}
+                        writeGrant={writeGrant}
+                        approval={approval}
                         isGenerating={isGenerating}
                         canSend={canSend}
                         canEnhance={canEnhance}
@@ -223,6 +246,8 @@ export function AiChatComposer({
                         modelChoices={modelChoices}
                         isLoadingModels={isLoadingModels}
                         onModeChange={onModeChange}
+                        onWriteGrantChange={onWriteGrantChange}
+                        onApprovalChange={onApprovalChange}
                         onOpenModels={onOpenModels}
                         onSelectModel={onSelectModel}
                         onSelectContextWindow={onSelectContextWindow}

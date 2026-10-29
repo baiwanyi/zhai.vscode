@@ -32,8 +32,8 @@ const TRIGGER_CLASS: Record<AiConversationMode, string> = {
 
 /** 模式说明：菜单项右侧信息图标用原生 tooltip 解释差异 */
 const MODE_HINTS: Record<AiConversationMode, string> = {
-    chat: '多轮问答，只输出结果，不改动编辑栏正文',
-    write: '围绕编辑栏正文写作，结果可写回编辑栏',
+    chat: '只读问答：可查阅作品与资料，不改动任何文件',
+    write: '执行写作：可直接读取并修改作品目录下的文件',
 }
 
 /** 菜单展示顺序 */

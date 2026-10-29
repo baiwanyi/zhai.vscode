@@ -2,18 +2,24 @@
  * AI 对话服务：会话编排、流式生成、取消、用量记录与写作模式写回。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节状态机；落地 A6 对话、A8 消息历史、A9 流式、A11 取消、
  * A1/A2 写作模式（本期以「整段替换」实现写回，diff 逐段接受待后续补齐）。
- * 约束：上下文按字符数粗估截断（AC-4 降级），预算护栏达上限时拒绝发送（A17）；写回只接受消息 id，
- * 文档版本与快照不一致时拒绝，写入经 WorkspaceEdit 进入撤销栈；会话按作用域（作品目录）隔离，跨作品不共用记录；
+ * 约束：上下文按字符数粗估截断（AC-4 降级），预算护栏达上限时拒绝发送（A17）；
+ * 工具权限按模式裁决：chat 只读（ask 语义），write 在作品目录或目标文档内可写（craft 语义），
+ * 写入边界由通道侧审批回调逐次校验；craft 下模型直接改文件，宿主不再登记整段写回；
+ * 会话按作用域（作品目录）隔离，跨作品不共用记录；
  * 本轮 token 以通道回传的单轮用量为准（续接时 SDK 的 result.usage 是会话累计，由通道剔除），
  * CLI 会话记录仅用于补齐积分与兜底 tokens，两者都取不到才按回复字数估算并打标。
  */
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import * as vscode from 'vscode'
 import type { ZhaiConfig } from '@modules/common/config'
-import { getZhaiConfig } from '@modules/common/config'
+import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import type {
     AiApplyResult,
+    AiApprovalMode,
     AiChatDraft,
     AiContextRef,
     AiContextUsage,
@@ -21,10 +27,12 @@ import type {
     AiConversationMode,
     AiConversationSummary,
     AiMessage,
+    AiPermissionDecision,
     AiRuntimeInfo,
     AiSendResult,
     AiSessionSnapshot,
     AiWriteDiff,
+    AiWriteGrant,
     AiWriteScope,
     AiWriteState,
     AiWriteTarget,
@@ -54,9 +62,11 @@ import {
     updateConversationMode,
     updateConversationSession,
     updateConversationTitle,
+    updateConversationWriteGrant,
     updateMessage,
 } from './db/chatRepository'
 import { readCharsPerToken } from './db/usageRepository'
+import { PermissionBroker } from './permissionBroker'
 import { createChatEnhanceRequest, PromptEnhanceService } from './promptEnhance'
 import { readCodebuddyLogin, rememberCodebuddyLogin } from './providers/codebuddyLogin'
 import {
@@ -65,12 +75,19 @@ import {
     readModelContextWindow,
     resolveContextWindow,
 } from './providers/codebuddyModels'
+import { INTERACTIVE_TOOLS, READ_ONLY_TOOLS, WRITE_TOOLS } from './providers/codebuddyPermission'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
 import { summarizeMessages } from './usageRecorder'
 import type { CliUsageIndex } from './cliUsageIndex'
 import type { HostContextRef, ResolvedContextRef } from './contextRefs'
 import type { ConversationRow, MessageRow } from './db/chatRepository'
-import type { AiChatMessage as ChatMessage, AiProvider, AiUsage as ChatUsage, AiUsageMeta } from './provider'
+import type {
+    AiChatMessage as ChatMessage,
+    AiProvider,
+    AiToolPolicy,
+    AiUsage as ChatUsage,
+    AiUsageMeta,
+} from './provider'
 import type { UsageRecorder } from './usageRecorder'
 import type Database from 'better-sqlite3'
 
@@ -81,8 +98,13 @@ const TITLE_MAX_LENGTH = 20
 /** 历史对话列表返回条数上限，避免一次拉取过多会话 */
 const SESSION_LIST_LIMIT = 50
 
-/** 首字等待上限：属于会话层策略，与具体通道无关，超时即中断并提示 */
-const FIRST_TOKEN_TIMEOUT_MS = 30_000
+/**
+ * 通道空闲上限：以「任意流事件」为复位点（正文、思维链、工具活动）。
+ * 工具执行期间正文可能长时间无增量，只看首字会把正常的多轮执行误判为超时。
+ */
+const STREAM_IDLE_TIMEOUT_MS = 90_000
+/** 单次请求的最大轮次：多轮工具往返需要大于 1，chat 与 write 共用同一上限 */
+const AI_TOOL_MAX_TURNS = 10
 
 /** 流式增量合并窗口，避免高频 postMessage */
 const STREAM_FLUSH_MS = 60
@@ -132,6 +154,10 @@ export class AiChatService implements vscode.Disposable {
     private activeConversationId: string | null = null
     /** 当前面板作用域（作品目录）：编辑器右键添加等无作用域入参的操作沿用该值，null 表示通用对话 */
     private activeProjectDir: string | null = null
+    /** 会话级审批模式：运行偏好不落库，缺省 auto（白名单内自动放行），可切 ask 逐次确认 */
+    private readonly approvalModes = new Map<string, AiApprovalMode>()
+    /** 当前生成使用的审批桥：前端回包据此唤醒等待中的工具调用 */
+    private activePermission: PermissionBroker | null = null
     /** 提示词增强：与出图共用同一服务实现，只是口径与记账模块不同 */
     private readonly promptEnhance: PromptEnhanceService
 
@@ -234,6 +260,8 @@ export class AiChatService implements vscode.Disposable {
             model: getSelectedCodebuddyModel(),
             provider: this.provider.id,
             sdkSessionId: null,
+            // 新会话默认授权整个作品：写作的主用法是连续生成章节，精确改写再手动收窄
+            writeGrant: 'project',
             // 新会话尚未发起请求，占用与窗口都从 0 起；窗口由前端按运行时档位补分母
             contextUsedTokens: 0,
             contextWindowTokens: 0,
@@ -386,6 +414,36 @@ export class AiChatService implements vscode.Disposable {
         return mode
     }
 
+    /** 切换写入授权范围：写库持久化，只影响后续发送时下发的写入白名单 */
+    public setWriteGrant(grant: AiWriteGrant): AiWriteGrant {
+        const conversationId = this.ensureActiveConversationId()
+        updateConversationWriteGrant(this.db, conversationId, grant)
+        logger.info(`AI 写入范围已切换为 ${grant}：${conversationId}`)
+        this.writeStateEmitter.fire()
+        return grant
+    }
+
+    /**
+     * 切换审批模式：会话级运行偏好，只对写入与提问生效。
+     * 关键约束：对话模式恒为只读，不接受放宽；切换同时作用到活跃会话，
+     * 之后发起的工具调用立即按新策略判定，已挂起的审批仍按发起时的模式结算。
+     */
+    public async setApprovalMode(mode: AiApprovalMode): Promise<AiApprovalMode> {
+        const conversationId = this.ensureActiveConversationId()
+        const conversation = getConversation(this.db, conversationId)
+        const normalized: AiApprovalMode = conversation?.mode === 'write' ? mode : 'readonly'
+        this.approvalModes.set(conversationId, normalized)
+        await this.provider.setPermissionMode?.(normalized)
+        logger.info(`AI 审批模式已切换为 ${normalized}：${conversationId}`)
+        this.writeStateEmitter.fire()
+        return normalized
+    }
+
+    /** 结算一次审批：只在有待确认的工具调用时命中，未命中说明已超时或已取消 */
+    public resolvePermission(id: string, decision: AiPermissionDecision): boolean {
+        return this.activePermission?.resolve(id, decision) ?? false
+    }
+
     /**
      * 增强输入区提示词：委托共用的 PromptEnhanceService，口径取「写作 / 对话」预设。
      * 关键约束：不创建会话、不写消息，改写结果只回填输入框；失败直接抛出，由前端保留原文并提示。
@@ -523,9 +581,23 @@ export class AiChatService implements vscode.Disposable {
 
         // 写作模式在发送时重新捕获目标，避免用户发送前改动选区导致写回范围错位
         const writeTarget = conversation.mode === 'write' ? this.captureWriteTarget() : null
-        if (conversation.mode === 'write' && !writeTarget) {
-            throw new Error('写作模式请先在编辑器中选中要改写的文本（整篇超过 12000 字时请分段选中）')
+        const hasProject = conversation.projectDir !== null && conversation.projectDir.length > 0
+        const grant: AiWriteGrant = conversation.writeGrant === 'document' ? 'document' : 'project'
+        if (conversation.mode === 'write') {
+            if (grant === 'document' && writeTarget === null) {
+                throw new Error('当前写入范围为「仅当前文档」，请先在编辑器中打开并选中要改写的文本')
+            }
+            if (grant === 'project' && !hasProject && writeTarget === null) {
+                throw new Error('当前会话未绑定作品，请先打开作品，或把写入范围切为「仅当前文档」')
+            }
         }
+        if (writeTarget !== null) {
+            await this.prepareWriteTarget(writeTarget)
+        }
+        // 工具权限按模式与可写范围裁决：chat 只读，write 在目标文档或整个作品目录内读写
+        const mode: AiConversationMode = conversation.mode === 'write' ? 'write' : 'chat'
+        const approval = this.readApprovalMode(conversationId, mode)
+        const toolPolicy = this.buildToolPolicy(mode, conversation.projectDir, grant, approval, writeTarget)
 
         // 引用原文在发送时才读取（latest 版本），失效项跳过并回传前端提示
         const contexts = this.pendingContexts.get(conversationId) ?? []
@@ -596,6 +668,7 @@ export class AiChatService implements vscode.Disposable {
             cfg,
             writeTarget,
             applyPolicy,
+            toolPolicy,
         )
 
         return {
@@ -606,11 +679,12 @@ export class AiChatService implements vscode.Disposable {
         }
     }
 
-    /** 取消当前生成（AC-2：立即断开连接，避免继续计费） */
+    /** 取消当前生成（AC-2：立即断开连接，避免继续计费）；等待中的审批一并拒绝 */
     public abort(): boolean {
         if (!this.activeRequest) {
             return false
         }
+        this.activePermission?.cancelAll()
         this.activeRequest.controller.abort()
         return true
     }
@@ -633,6 +707,7 @@ export class AiChatService implements vscode.Disposable {
         cfg: ZhaiConfig,
         writeTarget: HostWriteTarget | null,
         applyPolicy: 'replace' | 'report',
+        toolPolicy: AiToolPolicy,
     ): Promise<void> {
         const controller = new AbortController()
         this.activeRequest = { reqId, controller }
@@ -652,12 +727,31 @@ export class AiChatService implements vscode.Disposable {
         let sdkSessionId: string | null = null
         /** 本轮是否续接通道会话：续接时 result.usage 是会话累计，不能当本轮消耗 */
         let isResumedSession = false
-        let isFirstToken = true
         let isTimedOut = false
-        const firstTokenTimer = setTimeout(() => {
-            isTimedOut = true
-            controller.abort()
-        }, FIRST_TOKEN_TIMEOUT_MS)
+        /** 空闲计时器：任何流事件都会复位，工具执行期间不会因无正文增量而被判超时 */
+        let idleTimer: ReturnType<typeof setTimeout> | null = null
+        const resetIdleTimer = (): void => {
+            if (idleTimer !== null) {
+                clearTimeout(idleTimer)
+            }
+            idleTimer = setTimeout(() => {
+                isTimedOut = true
+                controller.abort()
+            }, STREAM_IDLE_TIMEOUT_MS)
+        }
+        const clearIdleTimer = (): void => {
+            if (idleTimer !== null) {
+                clearTimeout(idleTimer)
+                idleTimer = null
+            }
+        }
+        resetIdleTimer()
+
+        // 审批桥：把工具守卫的等待转成一次前端往返，reqId 固定为本轮请求，前端据此归位
+        const permission = new PermissionBroker((request) => {
+            this.streamEmitter.fire({ type: 'stream', reqId, delta: '', done: false, permission: request })
+        })
+        this.activePermission = permission
 
         /** 按窗口合并增量，done 时强制冲刷 */
         const flush = (force: boolean): void => {
@@ -700,15 +794,19 @@ export class AiChatService implements vscode.Disposable {
                     sdkSessionId = sessionId
                     updateConversationSession(this.db, conversationId, this.provider.id, sessionId)
                 },
+                toolPolicy,
+                permission,
             })
             for await (const chunk of stream) {
+                // 任意事件都视为通道存活：工具往返期间正文可能长时间没有增量
+                resetIdleTimer()
                 if (chunk.notice) {
                     // 压缩是旁路提示：不影响正文与用量，立即下发，由前端解释占用为何突变
                     this.streamEmitter.fire({ type: 'stream', reqId, delta: '', done: false, notice: chunk.notice })
                 }
-                if (isFirstToken && (chunk.content.length > 0 || chunk.reasoning.length > 0)) {
-                    isFirstToken = false
-                    clearTimeout(firstTokenTimer)
+                if (chunk.toolActivity !== undefined) {
+                    // 工具进度单独下发：前端据此展示「正在读取/写入」，不混进正文
+                    this.streamEmitter.fire({ type: 'stream', reqId, delta: '', done: false, tool: chunk.toolActivity })
                 }
                 answer += chunk.content
                 reasoning += chunk.reasoning
@@ -725,7 +823,7 @@ export class AiChatService implements vscode.Disposable {
                     contextUsage = chunk.context
                 }
             }
-            clearTimeout(firstTokenTimer)
+            clearIdleTimer()
             flush(true)
             // 用量与耗时的口径只算一次：落库、流末下发与用量记账共用同一份，避免三处数字对不上
             const roundUsage = this.resolveRoundUsage(
@@ -752,7 +850,10 @@ export class AiChatService implements vscode.Disposable {
                 requestId: usageMeta?.requestId ?? null,
             })
             if (answer.length > 0) {
-                this.registerWrittenResult(conversationId, assistantMessageId, writeTarget, applyPolicy)
+                // craft 模式下模型直接改文件，宿主不再登记整段写回，避免同一结果出现两条落笔路径
+                if (stored?.mode !== 'write') {
+                    this.registerWrittenResult(conversationId, assistantMessageId, writeTarget, applyPolicy)
+                }
                 // 生成完整走通即证明当前站点登录可用：即便用户在 CLI 侧登录，也不必再看登录引导
                 rememberCodebuddyLogin(cfg.aiCodebuddySite, null)
             }
@@ -793,12 +894,12 @@ export class AiChatService implements vscode.Disposable {
                 contextUsage: resolvedContext ?? undefined,
             })
         } catch (error) {
-            clearTimeout(firstTokenTimer)
+            clearIdleTimer()
             flush(true)
             const isCancelled = controller.signal.aborted
             const status = isCancelled ? 'cancelled' : 'failed'
             const message = isTimedOut
-                ? `首字等待超过 ${FIRST_TOKEN_TIMEOUT_MS / 1000} 秒，已自动中断`
+                ? `通道超过 ${STREAM_IDLE_TIMEOUT_MS / 1000} 秒无响应，已自动中断`
                 : toErrorMessage(error)
             // 中断前可能已产生部分输出与计费，已消耗的量照常落库，供工具栏如实展示
             const roundUsage = this.resolveRoundUsage(
@@ -856,6 +957,11 @@ export class AiChatService implements vscode.Disposable {
                 contextUsage: resolvedContext ?? undefined,
             })
         } finally {
+            // 本轮结束必须拒绝全部等待中的审批，否则守卫侧的 Promise 会一直挂着
+            permission.cancelAll()
+            if (this.activePermission === permission) {
+                this.activePermission = null
+            }
             if (this.activeRequest?.reqId === reqId) {
                 this.activeRequest = null
             }
@@ -1004,6 +1110,84 @@ export class AiChatService implements vscode.Disposable {
         return block.length > 0 ? `${block}\n\n${content}` : fallback
     }
 
+    /**
+     * 构造本轮工具策略：chat 为只读（ask 语义），write 为读+写（craft 语义）。
+     * 关键约束：读取根固定为存储根，作品与资料都在其下；写入根按授权在作品目录与目标文档之间切换，
+     * 作品目录存在时优先整体授权（支持连续生成章节），否则只授权当前目标文档，绝不放开存储根以外。
+     */
+    private buildToolPolicy(
+        mode: AiConversationMode,
+        projectDir: string | null,
+        grant: AiWriteGrant,
+        approval: AiApprovalMode,
+        target: HostWriteTarget | null,
+    ): AiToolPolicy {
+        const storageRoot = resolveStorageRoot().fsPath
+        const readRoots = [toComparablePath(storageRoot)]
+        if (mode === 'chat') {
+            return {
+                tools: [...READ_ONLY_TOOLS, ...INTERACTIVE_TOOLS],
+                readRoots,
+                writeRoots: [],
+                approval: 'readonly',
+                maxTurns: AI_TOOL_MAX_TURNS,
+                // cwd 必须真实存在，否则 CLI 启动即失败；存储根尚未创建时退回临时目录
+                cwd: existsSync(storageRoot) ? storageRoot : tmpdir(),
+            }
+        }
+        const writeRoots: string[] = []
+        const projectRoot =
+            projectDir !== null && projectDir.length > 0
+                ? toComparablePath(join(storageRoot, ...projectDir.split('/')))
+                : null
+        // 作品授权放开整个作品目录（连续生成章节），文档授权只放行发送时捕获的这一篇
+        if (grant === 'project' && projectRoot !== null) {
+            writeRoots.push(projectRoot)
+        } else if (target !== null) {
+            writeRoots.push(toComparablePath(target.uri.fsPath))
+        } else if (projectRoot !== null) {
+            writeRoots.push(projectRoot)
+        }
+        const preferredCwd = writeRoots[0] ?? storageRoot
+        return {
+            tools: [...READ_ONLY_TOOLS, ...WRITE_TOOLS, ...INTERACTIVE_TOOLS],
+            readRoots,
+            writeRoots,
+            approval,
+            maxTurns: AI_TOOL_MAX_TURNS,
+            cwd: existsSync(preferredCwd) ? preferredCwd : tmpdir(),
+        }
+    }
+
+    /** 会话的审批模式：对话恒只读，写作取会话偏好，缺省 auto 以免连续生成被逐次弹窗打断 */
+    private readApprovalMode(conversationId: string, mode: AiConversationMode): AiApprovalMode {
+        if (mode === 'chat') {
+            return 'readonly'
+        }
+        return this.approvalModes.get(conversationId) ?? 'auto'
+    }
+
+    /**
+     * craft 发送前的准备：先落盘未保存的修改，再留底一份写回前全文。
+     * CLI 是独立子进程、直接写磁盘：dirty 文档会与外部修改冲突；
+     * 模型自己改文件也不进撤销栈，留底是唯一可回退依据。
+     * 关键约束：保存失败直接中止发送，避免模型改动落在尚未固定的版本上；留底失败只记日志，不阻断。
+     */
+    private async prepareWriteTarget(target: HostWriteTarget): Promise<void> {
+        const document = await this.findWritableDocument(target.uri)
+        if (document.isDirty && !(await document.save())) {
+            throw new Error('当前文档保存失败，请先手动保存后再发送')
+        }
+        if (this.writeSnapshotHook === undefined) {
+            return
+        }
+        try {
+            await this.writeSnapshotHook.captureBeforeWrite(target.uri, document.getText())
+        } catch (error) {
+            logger.warn(`AI 发送前留底失败（不影响发送）：${toErrorMessage(error)}`)
+        }
+    }
+
     /** 实时写回目标：仅推导展示字段，供前端判断能否发送与提示改写范围 */
     private describeWriteTarget(): AiWriteTarget | null {
         const editor = vscode.window.activeTextEditor
@@ -1118,6 +1302,7 @@ function toConversation(row: ConversationRow): AiConversation {
         id: row.id,
         title: row.title,
         mode: row.mode === 'write' ? 'write' : 'chat',
+        writeGrant: row.writeGrant === 'document' ? 'document' : 'project',
         model: row.model,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,
@@ -1152,6 +1337,11 @@ function toMessage(row: MessageRow): AiMessage {
         credits: row.credits,
         createdAt: row.createdAt,
     }
+}
+
+/** 归一化为可比对的小写绝对路径：与工具守卫的白名单口径保持一致 */
+function toComparablePath(value: string): string {
+    return resolve(value).toLowerCase()
 }
 
 /**

@@ -13,7 +13,7 @@
  */
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = '10'
+const SCHEMA_VERSION = '11'
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS conversations (
@@ -26,6 +26,7 @@ const DDL_STATEMENTS = [
         sdk_session_id TEXT,
         context_used_tokens   INTEGER NOT NULL DEFAULT 0,
         context_window_tokens INTEGER NOT NULL DEFAULT 0,
+        write_grant TEXT NOT NULL DEFAULT 'project',
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL
     )`,
@@ -153,6 +154,9 @@ export function ensureAiSchema(db: Database.Database): boolean {
         dropColumn(db, 'conversations', 'file_path')
         dropColumn(db, 'ai_usage_logs', 'project')
         dropColumn(db, 'ai_usage_logs', 'estimated_cost')
+        // v11：会话表补写入授权范围，write 模式据此决定工具白名单边界；
+        // 历史会话默认 project（有作品目录时授权整个作品），与「连续生成章节」的主用法一致
+        ensureColumn(db, 'conversations', 'write_grant', "write_grant TEXT NOT NULL DEFAULT 'project'")
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)

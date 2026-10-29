@@ -7,15 +7,20 @@
  * 单测通过替换 client 覆盖流事件解析与产物解析，不得为了可测性在通道里加分支。
  */
 import { unstable_v2_createSession, unstable_v2_resumeSession } from '@tencent-ai/agent-sdk'
-import type { Message, SessionOptions, UserMessage } from '@tencent-ai/agent-sdk'
+import type { Message, PermissionMode, SessionOptions, UserMessage } from '@tencent-ai/agent-sdk'
 
-/** V2 Session 的最小能力集：文本与图像通道共用这六项 */
+/** V2 Session 的最小能力集：文本与图像通道共用这六项，外加运行中切换权限模式 */
 export interface CodebuddySession {
     connect(): Promise<void>
     send(message: string | UserMessage): Promise<void>
     stream(): AsyncGenerator<Message, void>
     interrupt(): Promise<void>
     setConfig(config: Record<string, unknown>): Promise<void>
+    /**
+     * 运行中切换权限模式：连接前改启动参数，连接后走控制请求。
+     * 约定为可选 —— 实现未提供时调用方按「不支持动态切换」处理，不影响既有流程。
+     */
+    setPermissionMode?(mode: PermissionMode): Promise<void>
     close(): void
 }
 

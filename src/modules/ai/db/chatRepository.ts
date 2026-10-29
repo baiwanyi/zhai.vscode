@@ -24,6 +24,8 @@ export interface ConversationRow {
     contextUsedTokens: number
     /** 该轮生效的上下文窗口；0 表示未知 */
     contextWindowTokens: number
+    /** 写入授权范围：document 仅目标文档，project 为整个作品目录 */
+    writeGrant: string
     createdAt: string
     updatedAt: string
 }
@@ -70,7 +72,8 @@ export interface MessagePatch {
 
 const CONVERSATION_COLUMNS = `id, title, mode, project_dir AS projectDir, model, provider,
     sdk_session_id AS sdkSessionId, context_used_tokens AS contextUsedTokens,
-    context_window_tokens AS contextWindowTokens, created_at AS createdAt, updated_at AS updatedAt`
+    context_window_tokens AS contextWindowTokens, write_grant AS writeGrant,
+    created_at AS createdAt, updated_at AS updatedAt`
 
 const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, reasoning, status,
     finish_reason AS finishReason, refs, error, total_tokens AS totalTokens, duration_ms AS durationMs,
@@ -79,10 +82,15 @@ const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, r
 export function insertConversation(db: Database.Database, row: ConversationRow): void {
     db.prepare(
         `INSERT INTO conversations (id, title, mode, project_dir, model, provider, sdk_session_id,
-            context_used_tokens, context_window_tokens, created_at, updated_at)
+            context_used_tokens, context_window_tokens, write_grant, created_at, updated_at)
          VALUES (@id, @title, @mode, @projectDir, @model, @provider, @sdkSessionId,
-            @contextUsedTokens, @contextWindowTokens, @createdAt, @updatedAt)`,
+            @contextUsedTokens, @contextWindowTokens, @writeGrant, @createdAt, @updatedAt)`,
     ).run(row)
+}
+
+/** 记录写入授权范围：只影响后续发送的工具白名单，不回溯已生成的消息 */
+export function updateConversationWriteGrant(db: Database.Database, id: string, grant: string): void {
+    db.prepare('UPDATE conversations SET write_grant = ? WHERE id = ?').run(grant, id)
 }
 
 /** 记录通道侧会话号：首轮生成拿到 session_id 后回写，供后续 resume 续接 */

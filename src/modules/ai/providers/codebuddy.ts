@@ -3,7 +3,9 @@
  * 复用约定：请求与增量结构由 ../provider 定义；SDK 调用统一走 ./codebuddyClient 的可注入接口，本层不直接 import SDK；
  * SDK 自带 CLI（cli/bin/codebuddy），无需用户单独安装；
  * 站点经 ./codebuddySite 统一映射，保证与登录命令落在同一站点；凭证优先取 SecretStorage 的 API Key。
- * 关键约束：内置工具一律禁用（tools: []）并限制单轮，避免纯文本生成去读工作区；
+ * 关键约束：工具能力由调用方给出的策略裁决 —— 无策略即禁用全部内置工具并限制单轮，避免纯文本生成去读工作区；
+ * 有策略时按策略下发工具白名单、轮次与工作目录；权限模式只在只读档用 plan、其余一律 default，
+ * 由 ./codebuddyPermission 逐次审批，acceptEdits 会绕过回调因此永不启用；
  * 首轮无会话号时把本地历史拼成单轮提示词，拿到会话号后改为 resume 续接，历史由通道维护；
  * 上下文预算经 set_config 下发（SDK 未提供专用选项，键名为 CLI 侧契约，缺失时静默降级），
  * 档位由 ./codebuddyModels 按模型能力裁决；
@@ -17,6 +19,7 @@ import { tmpdir } from 'node:os'
 import { getZhaiConfig } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import type { SecretsService } from '@modules/common/secrets'
+import type { AiApprovalMode } from '@shared/types/aiChat'
 import { sdkCodebuddyClient } from './codebuddyClient'
 import { classifyResultFailure, CodebuddyError, toReadableCodebuddyError } from './codebuddyError'
 import {
@@ -26,6 +29,7 @@ import {
     resolveCodebuddyModel,
     resolveContextWindow,
 } from './codebuddyModels'
+import { createToolGuard } from './codebuddyPermission'
 import { buildCodebuddyEnv } from './codebuddySite'
 import type {
     AiChatMessage,
@@ -36,7 +40,7 @@ import type {
     AiStreamRequest,
     AiUsageMeta,
 } from '../provider'
-import type { CodebuddyClient } from './codebuddyClient'
+import type { CodebuddyClient, CodebuddySession } from './codebuddyClient'
 import type { SessionOptions } from '@tencent-ai/agent-sdk'
 
 /**
@@ -93,6 +97,8 @@ function sumContextTokens(usage: {
 
 export class CodeBuddyProvider implements AiProvider {
     public readonly id: AiProviderId = 'codebuddy'
+    /** 当前活跃会话：仅供运行中切换权限模式使用，生成结束时释放 */
+    private activeSession: CodebuddySession | null = null
 
     public constructor(
         private readonly secrets: SecretsService,
@@ -107,6 +113,19 @@ export class CodeBuddyProvider implements AiProvider {
         return Promise.resolve({ ready: true })
     }
 
+    /**
+     * 运行中切换权限模式：只映射只读与默认两档。
+     * 关键约束：不接受 acceptEdits / bypassPermissions —— 它们让 CLI 跳过审批回调，
+     * 路径校验会整体失效；无活跃会话时静默返回，等下一次请求按最新配置下发。
+     */
+    public async setPermissionMode(approval: AiApprovalMode): Promise<void> {
+        const session = this.activeSession
+        if (session === null || session.setPermissionMode === undefined) {
+            return
+        }
+        await session.setPermissionMode(approval === 'readonly' ? 'plan' : 'default')
+    }
+
     public async *stream(request: AiStreamRequest): AsyncGenerator<AiStreamChunk> {
         const isResume = typeof request.sessionId === 'string' && request.sessionId.length > 0
         const { systemPrompt, prompt } = preparePrompt(request.messages, isResume)
@@ -116,26 +135,41 @@ export class CodeBuddyProvider implements AiProvider {
         const model = resolveCodebuddyModel(getSelectedCodebuddyModel())
         /** 上下文预算：0 表示跟随模型默认档位，交由 CLI 自行裁决 */
         const contextWindow = resolveContextWindow(model ?? '')
+        // 工具策略缺省即纯文本生成：取名、校对、增强等纯文本调用方都不传策略
+        const toolPolicy = request.toolPolicy
         const sessionOptions: SessionOptions = {
-            // 纯文本生成：禁用全部内置工具，避免读工作区文件与多轮 Agent 循环
-            tools: [],
-            maxTurns: 1,
-            permissionMode: 'default',
+            // 无策略时禁用全部内置工具，避免纯文本生成去读工作区；有策略时工具集由会话服务按模式裁决
+            tools: toolPolicy === undefined ? [] : [...toolPolicy.tools],
+            maxTurns: toolPolicy?.maxTurns ?? 1,
+            // 只读模式交给 CLI 的 plan 档兜底（仅放行只读工具）；其余一律 default，
+            // 因为 acceptEdits 下编辑类工具由 CLI 直接放行，canUseTool 的路径校验会被整体绕过
+            permissionMode: toolPolicy?.approval === 'readonly' ? 'plan' : 'default',
             includePartialMessages: true,
             systemPrompt,
             model,
             // 推理强度：null 表示跟随模型默认，不下发该字段
             effort: getSelectedEffort() ?? undefined,
-            // 工作目录指向临时目录，与用户项目隔离
-            cwd: tmpdir(),
+            // 纯文本生成落在临时目录与用户项目隔离；开放工具时由策略指定工作目录
+            cwd: toolPolicy?.cwd ?? tmpdir(),
             env: buildCodebuddyEnv(cfg.aiCodebuddySite, apiKey),
+            // 显式关闭文件系统设置加载：CLI 不读用户 hooks / 插件 / skills，
+            // 与 SDK 未传时的默认行为一致，但把「不继承用户环境」这一安全前提固定在代码里
+            settingSources: [],
             // 关键约束：不得改为 persistSession: false —— 关闭 transcript 后 CLI 不再写会话记录，
             // 而积分（credit）只有该记录里有（SDK 只回 total_cost_usd，且在本项目实测恒为 0），
             // 用量页的积分列与周期徽标会整体失去数据来源。
         }
+        if (toolPolicy !== undefined) {
+            sessionOptions.canUseTool = createToolGuard({
+                policy: toolPolicy,
+                approval: toolPolicy.approval,
+                broker: request.permission ?? null,
+            })
+        }
         const session = isResume
             ? this.client.resumeSession(request.sessionId ?? '', sessionOptions)
             : this.client.createSession(sessionOptions)
+        this.activeSession = session
         // V2 Session 没有 abortController 选项，中断统一交给 interrupt()
         const forwardAbort = (): void => {
             void session.interrupt()
@@ -151,10 +185,12 @@ export class CodeBuddyProvider implements AiProvider {
         let requestId: string | null = null
         /** 最近一次请求的上下文用量：每出现一个 message_start 覆盖一次，取最后一轮即当前占用 */
         let contextTokens = 0
-        /** 本轮输入 token（不含缓存读写）：与 result.usage 同口径，供用量记账 */
+        /** 本轮累计输入 token（不含缓存读写）：工具往返会产生多次请求，必须按轮累加 */
         let roundInputTokens = 0
-        /** 本轮输出 token：message_delta 上报的是本条消息的累计输出，取最后一次即本轮值 */
+        /** 本轮已收口轮次的输出合计 */
         let roundOutputTokens = 0
+        /** 当前轮次的输出：同一轮内 message_delta 上报的是累计值，取最大后再并入合计 */
+        let currentRoundOutput = 0
         try {
             await session.connect()
             // 档位需在首条消息前生效；CLI 未支持该键时只记日志，不阻断生成
@@ -168,6 +204,11 @@ export class CodeBuddyProvider implements AiProvider {
             await session.send(prompt)
             for await (const message of session.stream()) {
                 requestId = message._requestId ?? requestId
+                if (message.type === 'tool_progress') {
+                    // 工具执行期间没有正文增量，这里单独上报进度，避免上层按无输出判定超时
+                    yield { content: '', reasoning: '', toolActivity: message.tool_name }
+                    continue
+                }
                 if (message.type === 'system') {
                     // init 消息携带会话号：首轮回写，后续轮次据此 resume
                     if (message.subtype === 'init' && request.onSessionId) {
@@ -184,17 +225,20 @@ export class CodeBuddyProvider implements AiProvider {
                 if (message.type === 'stream_event') {
                     const { event } = message
                     if (event.type === 'message_start') {
-                        // 本次请求真正带上的上下文规模：系统提示、历史与引用的合计，与输出无关
+                        // 上下文占用取最后一轮请求的规模：多轮工具往返后它才代表当前窗口
                         contextTokens = sumContextTokens(event.message.usage)
-                        roundInputTokens = event.message.usage.input_tokens
+                        // 输入按轮累加：只取最后一次会把前面几轮的输入整体漏记
+                        roundInputTokens += event.message.usage.input_tokens
+                        roundOutputTokens += currentRoundOutput
+                        currentRoundOutput = 0
                         if (contextTokens === 0) {
                             // 部分模型在流开头不上报输入用量，这里必须留证据，否则只能靠猜
                             logger.warn(`message_start 未带输入用量：${JSON.stringify(event.message.usage)}`)
                         }
                     } else if (event.type === 'message_delta') {
-                        // 本轮输出用量：续接会话时 result.usage 是累计值，只有这里给的是单条消息值
+                        // 同一轮内多次 delta 上报的是本条消息的累计输出，取最大值才是该轮输出
                         if (event.usage !== undefined) {
-                            roundOutputTokens = event.usage.output_tokens
+                            currentRoundOutput = Math.max(currentRoundOutput, event.usage.output_tokens)
                             if (roundInputTokens === 0) {
                                 roundInputTokens = event.usage.input_tokens
                             }
@@ -229,6 +273,9 @@ export class CodeBuddyProvider implements AiProvider {
                         // 失败先归到分类码：subtype 能分辨的（轮次 / 额度）不再依赖文案匹配
                         throw new CodebuddyError(classifyResultFailure(message.subtype, message.errors), detail)
                     }
+                    // 收口最后一轮输出：它尚未并入合计
+                    roundOutputTokens += currentRoundOutput
+                    currentRoundOutput = 0
                     // 单轮用量优先由流事件拼出：message_start 的输入 + message_delta 的输出。
                     // 续接会话时 result.usage 是整段会话的累计，只在流事件缺失时退回它（首轮仍是单轮值）
                     const hasStreamedUsage = roundInputTokens > 0 && roundOutputTokens > 0
@@ -275,6 +322,9 @@ export class CodeBuddyProvider implements AiProvider {
             throw toReadableCodebuddyError(error, getSelectedCodebuddyModel())
         } finally {
             request.signal.removeEventListener('abort', forwardAbort)
+            if (this.activeSession === session) {
+                this.activeSession = null
+            }
             session.close()
         }
     }

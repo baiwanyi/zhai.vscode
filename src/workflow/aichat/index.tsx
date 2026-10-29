@@ -6,7 +6,8 @@
  * 空态用 Empty、输入区用三段式输入卡片（工具行 / 输入框 / 操作行）；流式正文经宿主 stream 增量渲染。
  * 底部卡片承载写作命令（徽章展示，指令模板在发送时拼装）、参考资料占位、对话 / 写作模式切换、
  * 模型菜单（展开时按需拉取账号可用清单）、上下文圆环、增强提示词（走文本通道改写，经 ai/enhancePrompt）与发送；
- * 写作模式的结果由消息底部「应用到编辑栏」写回编辑器（宿主校验文档版本）。
+ * 对话模式只读（可查阅作品与资料），写作模式由模型直接读写作品目录下的文件；
+ * 写入边界由宿主按模式与作品目录裁决，前端只负责展示与发送。
  * 会话 / 上下文 / 运行时 / 历史 / 模型 / 写回 / 宿主命令操作拆分至 hooks/，页面区块与消息渲染拆分至 layout/。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机与第 10.3 节写回链路。
  * 关键约束：会话按 projectDir 作用域隔离，作品页传入当前作品目录即换用该作品的对话记录，缺省为通用对话；
@@ -16,11 +17,13 @@
 import { SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
+    AiApprovalMode,
     AiConversationMode,
     AiMentionCandidate,
     AiReasoningEffort,
     AiReferenceEntry,
     AiSessionSnapshot,
+    AiWriteGrant,
 } from '@shared/types/aiChat'
 import { onState, request } from '@shared/utils/bridge'
 import { AppAction, AppContent, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
@@ -33,6 +36,7 @@ import { useAiChatEnhance } from './hooks/useAiChatEnhance'
 import { useAiChatHistory } from './hooks/useAiChatHistory'
 import { useAiChatMention } from './hooks/useAiChatMention'
 import { useAiChatModels } from './hooks/useAiChatModels'
+import { useAiChatPermission } from './hooks/useAiChatPermission'
 import { useAiChatReference } from './hooks/useAiChatReference'
 import { useAiChatRuntime } from './hooks/useAiChatRuntime'
 import { useAiChatSession } from './hooks/useAiChatSession'
@@ -43,6 +47,7 @@ import { AiChatDiffDialog } from './layout/AiChatDiffDialog'
 import { AiChatHistoryMenu } from './layout/AiChatHistoryMenu'
 import { AiChatMentionDialog } from './layout/AiChatMentionDialog'
 import { AiChatMessageList } from './layout/AiChatMessageList'
+import { AiChatPermissionDialog } from './layout/AiChatPermissionDialog'
 import { AiChatReferenceDialog } from './layout/AiChatReferenceDialog'
 import { composeCommandContent, formatTokens, readAiStateKind } from './utils'
 import type { AiCommand, AiCommandId } from './constants'
@@ -84,12 +89,16 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         input,
         setInput,
         contextUsage,
+        activeTool,
         loadSession,
         send,
         stop,
         startNewSession,
         switchSession,
         switchMode,
+        switchWriteGrant,
+        switchApproval,
+        approval,
         deleteSession,
     } = useAiChatSession({
         onError: setError,
@@ -98,6 +107,8 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         refreshSessions: loadSessions,
         projectDir,
     })
+    // 审批队列独立订阅 stream：与消息增量互不影响，宿主推送待确认事项时弹出对应界面
+    const { pending: pendingPermission, respond: respondPermission } = useAiChatPermission({ onError: setError })
     // 提及检索依赖会话快照的刷新函数，必须排在 useAiChatSession 之后
     const [isMentionOpen, setIsMentionOpen] = useState(false)
     const {
@@ -215,7 +226,10 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
     const hasApiKey = runtime?.hasApiKey === true
     const isGenerating = phase === 'streaming'
     const mode: AiConversationMode = session?.conversation.mode ?? 'chat'
+    const writeGrant = session?.conversation.writeGrant ?? 'project'
     const hasWriteTarget = writeState?.target !== null && writeState?.target !== undefined
+    /** 写作模式的可写范围：编辑器目标或作品目录任一存在即可发送，连续生成章节不依赖选区 */
+    const hasWritableScope = hasWriteTarget || (projectDir !== null && projectDir.length > 0)
     /** 已选写作命令：输入区只展示命令名徽章，指令模板在发送时拼装 */
     const command = commandId === null ? null : AI_COMMAND_MAP[commandId]
     /** 当前模型：菜单展开过时以菜单数据为准，否则用运行时带回的模型 id 兜底 */
@@ -313,6 +327,22 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         setIsMentionOpen(false)
         resetMention()
     }, [resetMention])
+
+    /** 写入范围只影响后续发送下发的白名单，切换后无需重新拉取写回状态 */
+    const handleWriteGrantChange = useCallback(
+        (next: AiWriteGrant): void => {
+            void switchWriteGrant(next)
+        },
+        [switchWriteGrant],
+    )
+
+    /** 审批模式：宿主归一化后回传（对话模式强制只读），本层只透传选择 */
+    const handleApprovalChange = useCallback(
+        (next: AiApprovalMode): void => {
+            void switchApproval(next)
+        },
+        [switchApproval],
+    )
 
     const handleModeChange = useCallback(
         (next: AiConversationMode): void => {
@@ -434,9 +464,14 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     isGenerating={isGenerating}
                     phase={phase}
                     mode={mode}
+                    writeGrant={writeGrant}
+                    onWriteGrantChange={handleWriteGrantChange}
+                    approval={approval}
+                    onApprovalChange={handleApprovalChange}
+                    activeTool={activeTool}
                     contextUsage={contextUsage}
                     contextWindowTokens={runtime?.contextWindowTokens ?? 0}
-                    hasWriteTarget={hasWriteTarget}
+                    hasWritableScope={hasWritableScope}
                     command={command}
                     model={currentModel}
                     modelName={currentModelName}
@@ -463,6 +498,10 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                 applying={applyingMessageId !== null}
                 onApply={handleApplyHunks}
                 onClose={closeWriteDiff}
+            />
+            <AiChatPermissionDialog
+                pending={pendingPermission}
+                onRespond={(decision) => void respondPermission(decision)}
             />
             <AiChatMentionDialog
                 open={isMentionOpen}

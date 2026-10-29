@@ -1,9 +1,10 @@
 /**
  * AI 对话展示层纯函数：token 数与引用字数的紧凑折算、未知错误的文本收窄、会话快照的不可变消息替换、
- * 宿主 state 广播载荷的收窄、增强提示词的规则化重写、写作命令模板的发送拼装与回放拆分。
+ * 宿主 state 广播载荷的收窄、增强提示词的规则化重写、写作命令模板的发送拼装与回放拆分、工具名的动作文案。
  * 零依赖、无副作用，可被页面主组件与各子组件自由复用；展示规则与 docs/modules/ai-chat.md 第 10 节一致。
  * 关键约束：相对时间格式化已上移至 @shared/utils/format 供各 Webview 共用；readAiStateKind 只信任收窄结果；
- * 命令模板只在发送瞬间拼接、在展示时按最长前缀剥离，输入框与消息气泡均不出现 instruction 全文。
+ * 命令模板只在发送瞬间拼接、在展示时按最长前缀剥离，输入框与消息气泡均不出现 instruction 全文；
+ * 工具名表只做展示映射，未知工具原样透出，不得据此推断权限。
  */
 import type { AiContextRef, AiConversationMode, AiMessage, AiSessionSnapshot } from '@shared/types/aiChat'
 import { toErrorText } from '@shared/utils/error'
@@ -18,6 +19,24 @@ export { formatTokens, toErrorText }
 export function describeContext(ref: AiContextRef): string {
     const size = ref.charCount >= 1000 ? `${(ref.charCount / 1000).toFixed(1)}k 字` : `${ref.charCount} 字`
     return ref.isTruncated ? `${size} · 已截断` : size
+}
+
+/** 工具名展示表：模型返回英文工具名，界面给出中文动作 */
+const TOOL_LABELS: Readonly<Record<string, string>> = {
+    Read: '读取文件',
+    Glob: '查找文件',
+    Grep: '检索内容',
+    LS: '浏览目录',
+    Edit: '修改文件',
+    Write: '写入文件',
+    MultiEdit: '批量修改',
+    NotebookEdit: '修改笔记',
+    AskUserQuestion: '向你提问',
+}
+
+/** 工具动作文案：进度行与审批弹窗共用，未知工具原样透出便于排查 */
+export function describeTool(name: string): string {
+    return TOOL_LABELS[name] ?? name
 }
 
 /** 引用文件名：只取路径末段（兼容正反斜杠），完整路径由调用方放进悬浮提示 */

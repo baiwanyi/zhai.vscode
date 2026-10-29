@@ -4,8 +4,63 @@
  * 约束：字段由宿主归一化后填充，前端只负责展示，不承担解析与拼装。
  */
 
-/** 会话模式：write 为写作改稿、chat 为侧栏问答；首版仅落地 chat */
+/**
+ * 会话模式：chat 对照只读问答（可读文件与检索，不改动磁盘），
+ * write 对照写作执行（可读可写，由宿主按范围授权）。
+ */
 export type AiConversationMode = 'write' | 'chat'
+
+/**
+ * 写入授权范围：document 仅当前编辑栏文档，project 为整个作品目录。
+ * 关键约束：只对 write 模式生效，chat 模式恒为只读；project 需要会话已绑定作品目录，
+ * 未绑定作品时退回 document，两者都不满足则拒绝发送。
+ */
+export type AiWriteGrant = 'document' | 'project'
+
+/**
+ * 审批模式：ask 逐次确认写入、auto 白名单内自动放行、readonly 完全只读。
+ * 关键约束：只是宿主侧守卫的策略位，不直接映射 SDK 的 permissionMode ——
+ * 后者一旦切到 acceptEdits，编辑类工具由 CLI 直接放行，路径校验会被整体绕过。
+ */
+export type AiApprovalMode = 'ask' | 'auto' | 'readonly'
+
+/** 单个待回答的问题：结构对齐 SDK 的 AskUserQuestion 入参 */
+export interface AiAskQuestion {
+    /** 问题原文：同时作为回传答案的键 */
+    question: string
+    /** 短标签，展示为分组标题 */
+    header: string
+    options: { label: string; description: string }[]
+    /** 是否允许多选 */
+    multiSelect: boolean
+}
+
+/**
+ * 待确认的工具调用：宿主推送给 Webview，用户在弹窗里决定后回传。
+ * 关键约束：由宿主生成 id（与 SDK 的 toolUseID 一致），前端只回传这个 id；
+ * editablePath 非空时允许用户改写到白名单内的其他文件，宿主收到后会重新校验。
+ */
+export interface AiPermissionRequest {
+    id: string
+    /** tool 为工具审批，question 为模型向用户提问 */
+    kind: 'tool' | 'question'
+    toolName: string
+    /** 工具关键参数：写入类给路径，提问类给问题条数摘要 */
+    detail: string
+    /** 可改写的目标路径：仅写入类工具提供 */
+    editablePath: string | null
+    /** 待回答的问题：kind 为 question 时至少一条 */
+    questions: AiAskQuestion[]
+}
+
+/** 审批结果：allow 时带回用户可能改过的路径与答案 */
+export interface AiPermissionDecision {
+    allowed: boolean
+    /** 用户改写后的目标路径：宿主重新校验后才采纳 */
+    path?: string
+    /** 问题答案：键为问题原文，值为选项 label */
+    answers?: Record<string, string>
+}
 
 /** 消息角色 */
 export type AiMessageRole = 'user' | 'assistant' | 'system'
@@ -42,6 +97,8 @@ export interface AiConversation {
     id: string
     title: string
     mode: AiConversationMode
+    /** 写入授权范围：chat 模式不生效，write 模式据此决定工具白名单边界 */
+    writeGrant: AiWriteGrant
     model: string
     createdAt: string
     updatedAt: string

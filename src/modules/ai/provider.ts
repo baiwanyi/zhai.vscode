@@ -6,7 +6,13 @@
  * 并发隔离交给调用方的 AbortController，避免多入口同时生成时互相串流。
  */
 
-import type { AiContextUsage, AiProviderId } from '@shared/types/aiChat'
+import type {
+    AiApprovalMode,
+    AiContextUsage,
+    AiPermissionDecision,
+    AiPermissionRequest,
+    AiProviderId,
+} from '@shared/types/aiChat'
 
 /** 通道标识：与 webview 共用的类型来源为 shared/types/aiChat */
 export type { AiProviderId } from '@shared/types/aiChat'
@@ -63,6 +69,39 @@ export interface AiStreamChunk {
      * 关键约束：旁路提示，不影响正文与用量；上层据此解释「占用为何突然下降」。
      */
     notice?: 'compacting' | 'compacted'
+    /**
+     * 工具活动：模型正在调用某个工具（读取章节、写入文件等）。
+     * 关键约束：工具执行期间正文可能长时间无增量，上层据此重置空闲计时并向前端展示进度。
+     */
+    toolActivity?: string
+}
+
+/**
+ * 工具权限策略：由会话服务按模式与写入范围构造，通道只按策略下发，不感知业务语义。
+ * 关键约束：writeRoots 为空表示完全只读；roots 均为小写化的绝对路径，即白名单边界；
+ * 策略缺省时通道按纯文本生成处理（禁用全部内置工具、单轮、临时目录）。
+ */
+export interface AiToolPolicy {
+    /** 允许调用的内置工具名白名单 */
+    tools: string[]
+    /** 允许读取的目录根（绝对路径） */
+    readRoots: string[]
+    /** 允许写入的目录或文件根（绝对路径），空数组表示完全只读 */
+    writeRoots: string[]
+    /** 审批模式：ask 逐次确认写入、auto 白名单内自动放行、readonly 完全只读 */
+    approval: AiApprovalMode
+    /** 单次请求允许的最大轮次：多轮工具往返需要大于 1 */
+    maxTurns: number
+    /** CLI 工作目录：决定模型相对路径的落点 */
+    cwd: string
+}
+
+/**
+ * 审批往返能力：由调用方注入，通道在 canUseTool 中调用它把决定权交给用户。
+ * 约定：实现方负责超时与取消收口，通道只等待一个结果，不感知交互细节。
+ */
+export interface AiPermissionChannel {
+    request(request: AiPermissionRequest): Promise<AiPermissionDecision>
 }
 
 /** 流式生成请求：长度上限按通道能力可被忽略，但调用方始终传入 */
@@ -75,6 +114,10 @@ export interface AiStreamRequest {
     sessionId?: string
     /** 通道建立或续接会话成功时回传会话号，供上层持久化 */
     onSessionId?: (sessionId: string) => void
+    /** 工具权限策略：缺省即纯文本生成，不开放任何内置工具 */
+    toolPolicy?: AiToolPolicy
+    /** 审批通道：审批模式为 ask 时写入与提问都经它往返；缺省表示无交互能力 */
+    permission?: AiPermissionChannel
 }
 
 /** 通道就绪状态：未就绪时 reason 为可直接展示给用户的提示 */
@@ -89,4 +132,9 @@ export interface AiProvider {
     /** 发送前检查凭据或登录态；实现不得在此发起生成请求 */
     checkReady(): Promise<AiProviderStatus>
     stream(request: AiStreamRequest): AsyncGenerator<AiStreamChunk>
+    /**
+     * 运行中切换权限模式：作用在当前活跃会话上，之后的工具调用立即按新策略判定。
+     * 约定为可选 —— 通道不支持动态切换时省略，调用方按「下次请求生效」处理。
+     */
+    setPermissionMode?(mode: AiApprovalMode): Promise<void>
 }

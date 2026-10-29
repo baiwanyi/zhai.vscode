@@ -44,6 +44,7 @@ function makeConversation(overrides: Partial<ConversationRow> = {}): Conversatio
         sdkSessionId: null,
         contextUsedTokens: 0,
         contextWindowTokens: 0,
+        writeGrant: 'project',
         createdAt: '2026-09-25T10:00:00.000Z',
         updatedAt: '2026-09-25T10:00:00.000Z',
         ...overrides,

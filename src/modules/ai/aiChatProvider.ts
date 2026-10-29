@@ -4,7 +4,8 @@
  * press/workspace 与 press/open 作品类、press/extract/characters 人物卡提取、press/extract/outline 大纲提取）
  * 委托给各自路由。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
- * 上下文增删走 ai/context*，写回走 ai/writeState / ai/writeDiff / ai/applyHunks / ai/setMode，state 广播以 channel 区分
+ * 上下文增删走 ai/context*；会话模式与写入范围走 ai/setMode / ai/setWriteGrant，
+ * 整段写回走 ai/writeState / ai/writeDiff / ai/applyHunks，state 广播以 channel 区分
  * ai（runtime / context / writeTarget）与 workflow（路由事实，含当前作品目录）。
  * 关键约束：上下文移除与写回只接受宿主生成的 id（不接受路径与范围入参），所有 Webview 入参逐字段收窄后再用；
  * 会话协议可带 projectDir 作用域（作品目录），缺省即通用对话，作用域只用于过滤查询、不参与路径拼接；
@@ -23,7 +24,14 @@ import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { NamingRoutes } from '@modules/naming/namingRoutes'
 import type { PressRoutes } from '@modules/press/pressRoutes'
 import type { ProofreadRoutes } from '@modules/proofread/proofreadRoutes'
-import type { AiConversationMode, AiModelChoices, AiReasoningEffort } from '@shared/types/aiChat'
+import type {
+    AiApprovalMode,
+    AiConversationMode,
+    AiModelChoices,
+    AiPermissionDecision,
+    AiReasoningEffort,
+    AiWriteGrant,
+} from '@shared/types/aiChat'
 import { AI_REASONING_EFFORT_LABELS, isAiReasoningEffort } from '@shared/types/aiChat'
 import type { AiUsageQuery } from '@shared/types/aiUsage'
 import { isAiUsageModule, isAiUsageRange } from '@shared/types/aiUsage'
@@ -250,6 +258,16 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             }
             case 'ai/setMode': {
                 return { mode: this.service.setMode(readModePayload(payload)) }
+            }
+            case 'ai/setWriteGrant': {
+                return { writeGrant: this.service.setWriteGrant(readWriteGrantPayload(payload)) }
+            }
+            case 'ai/setApprovalMode': {
+                return { approval: await this.service.setApprovalMode(readApprovalPayload(payload)) }
+            }
+            case 'ai/permissionDecision': {
+                const { id, decision } = readPermissionDecisionPayload(payload)
+                return { resolved: this.service.resolvePermission(id, decision) }
             }
             case 'ai/writeDiff': {
                 return this.service.buildWriteDiff(readMessageIdPayload(payload, 'ai/writeDiff'))
@@ -612,6 +630,84 @@ function readModePayload(payload: unknown): AiConversationMode {
         throw new Error('ai/setMode 参数类型不正确')
     }
     return mode
+}
+
+/** 校验 ai/setWriteGrant 入参：只接受「仅当前文档」与「整个作品」两个范围 */
+function readWriteGrantPayload(payload: unknown): AiWriteGrant {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/setWriteGrant 缺少参数')
+    }
+    const grant = (payload as { writeGrant?: unknown }).writeGrant
+    if (grant !== 'document' && grant !== 'project') {
+        throw new Error('ai/setWriteGrant 参数类型不正确')
+    }
+    return grant
+}
+
+/** 审批 id 上限：与 SDK 的 tool_use_id 同量级，超出视为异常载荷 */
+const MAX_PERMISSION_ID_LENGTH = 128
+/** 改写路径上限：合法路径远短于此，超出直接拒绝 */
+const MAX_PERMISSION_PATH_LENGTH = 512
+/** 答案条数与单条长度上限：答案会并入工具入参发给模型，必须限制规模 */
+const MAX_ANSWER_COUNT = 8
+const MAX_ANSWER_LENGTH = 512
+
+/** 校验 ai/setApprovalMode 入参：只接受三档审批模式 */
+function readApprovalPayload(payload: unknown): AiApprovalMode {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/setApprovalMode 缺少参数')
+    }
+    const approval = (payload as { approval?: unknown }).approval
+    if (approval !== 'ask' && approval !== 'auto' && approval !== 'readonly') {
+        throw new Error('ai/setApprovalMode 参数类型不正确')
+    }
+    return approval
+}
+
+/**
+ * 校验 ai/permissionDecision 入参：id 必须存在，路径与答案逐字段收窄后再交给服务层。
+ * 关键约束：答案会并入工具入参发给模型，条数与长度都必须封顶，避免超长载荷撑爆上下文。
+ */
+function readPermissionDecisionPayload(payload: unknown): { id: string; decision: AiPermissionDecision } {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/permissionDecision 缺少参数')
+    }
+    const record = payload as { id?: unknown; decision?: unknown }
+    const id = typeof record.id === 'string' ? record.id.trim() : ''
+    if (id.length === 0 || id.length > MAX_PERMISSION_ID_LENGTH) {
+        throw new Error('ai/permissionDecision 缺少审批 id')
+    }
+    if (typeof record.decision !== 'object' || record.decision === null) {
+        throw new Error('ai/permissionDecision 缺少审批结果')
+    }
+    const raw = record.decision as { allowed?: unknown; path?: unknown; answers?: unknown }
+    const decision: AiPermissionDecision = { allowed: raw.allowed === true }
+    if (typeof raw.path === 'string') {
+        const path = raw.path.trim()
+        if (path.length > MAX_PERMISSION_PATH_LENGTH) {
+            throw new Error('ai/permissionDecision 路径过长')
+        }
+        decision.path = path
+    }
+    if (typeof raw.answers === 'object' && raw.answers !== null && !Array.isArray(raw.answers)) {
+        const answers: Record<string, string> = {}
+        for (const [key, value] of Object.entries(raw.answers).slice(0, MAX_ANSWER_COUNT)) {
+            if (typeof value !== 'string') {
+                continue
+            }
+            const trimmedKey = key.trim()
+            const trimmedValue = value.trim()
+            if (trimmedKey.length === 0 || trimmedKey.length > MAX_ANSWER_LENGTH) {
+                continue
+            }
+            if (trimmedValue.length === 0 || trimmedValue.length > MAX_ANSWER_LENGTH) {
+                continue
+            }
+            answers[trimmedKey] = trimmedValue
+        }
+        decision.answers = answers
+    }
+    return { id, decision }
 }
 
 /**
