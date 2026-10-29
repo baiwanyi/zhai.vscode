@@ -4,6 +4,7 @@
  * 复用 @shared/utils/error 的错误收窄与 ../utils 的消息替换；上下文清单与历史列表由调用方 hook 持有、经参数注入刷新。
  * 关键约束：发送正文由调用方拼装后传入（写作命令模板不进入输入框），本 hook 只负责提交与清空输入；
  * 增量按 channel 分流——content 追加到正文、reasoning 追加到思维链，两者不混流；流末以宿主回传的完整值校正；
+ * 流末错误只写回消息、由消息视图的 Alert 呈现，不弹 sonner —— 同一句话弹两遍是噪音；
  * 压缩事件分两态——开始时只置瞬时状态（不落库），完成时追加宿主已落库的系统消息，保证离线回看仍能解释占用变化；
  * 切换 / 删除会话前先中止生成，避免增量写回已切走的会话；切换写入范围不中断在途生成，只对后续发送生效；
  * 会话作用域由调用方以 projectDir 注入，快照加载 / 新建 / 删除后重载都必须带同一作用域，跨作品不共用对话。
@@ -175,9 +176,7 @@ export function useAiChatSession({
                         credits: readStreamCredits(message.credits, item.credits),
                     })),
                 )
-                if (message.error) {
-                    onError(message.error)
-                }
+                // 错误原文已随消息落库、由消息视图的 Alert 内联呈现；这里再弹一次 sonner 就是重复提醒
                 return
             }
             if (message.tool !== undefined) {

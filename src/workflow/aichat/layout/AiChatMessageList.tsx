@@ -37,6 +37,8 @@ interface AiChatMessageListProps {
     pendingApproval: AiPermissionRequest | null
     /** 提交确认决定 */
     onAnswer: (decision: AiPermissionDecision) => void
+    /** 重复一条用户消息：把命令与正文回填到输入框 */
+    onRepeat: (message: AiMessage) => void
     runtime: AiRuntimeInfo | null
     onLoginCodebuddy: () => void
 }
@@ -68,6 +70,7 @@ export function AiChatMessageList({
     transientNotice,
     pendingApproval,
     onAnswer,
+    onRepeat,
     runtime,
     onLoginCodebuddy,
 }: AiChatMessageListProps): JSX.Element {
@@ -102,6 +105,7 @@ export function AiChatMessageList({
                                     message={message}
                                     pendingApproval={pendingApproval?.messageId === message.id ? pendingApproval : null}
                                     onAnswer={onAnswer}
+                                    onRepeat={onRepeat}
                                 />
                             </MessageScrollerItem>
                         ))}

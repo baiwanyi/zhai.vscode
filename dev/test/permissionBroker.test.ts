@@ -1,8 +1,9 @@
 /**
- * 审批桥测试：覆盖等待期限的透传、归属消息与截止时间的注入，以及超时与重复结算的收口。
+ * 审批桥测试：覆盖等待期限的透传、归属消息与截止时间的注入、超时与重复结算的收口，
+ * 以及「写入审批未获批准」原因的记录口径。
  * 复用约定：不触网、不弹窗，用记录型 emit 替身观察下发载荷；超时用毫秒级参数快速跑完。
- * 关键约束：提问类必须带 expiresAt（前端据此提示剩余时间），工具审批不带 ——
- * 两者混用会让写入确认也显示倒计时，与实际超时口径不符。
+ * 关键约束：两类事项都要带 expiresAt —— 写入确认靠它显示倒计时、提问靠它提示剩余时间；
+ * 写入类未获批准要记下原因（拒绝 / 超时），提问跳过不记，否则上层给不出正确的中文说明。
  */
 import { describe, expect, it } from 'vitest'
 import type { AiPermissionRequest } from '../../src/shared/types/aiChat'
@@ -17,6 +18,7 @@ const QUESTION_REQUEST: AiPermissionRequest = {
     detail: '待确认 1 个问题',
     effect: '回答后模型会继续执行本轮任务。',
     editablePath: null,
+    preview: null,
     questions: [
         {
             question: QUESTION_TEXT,
@@ -32,8 +34,9 @@ const TOOL_REQUEST: AiPermissionRequest = {
     kind: 'tool',
     toolName: 'Edit',
     detail: 'd:/press/剑来/Chapters/c1.md',
-    effect: '该操作会修改磁盘文件，确认后立即执行。',
+    effect: '文件 「c1.md」 将被修改，确认后立即执行。',
     editablePath: 'd:/press/剑来/Chapters/c1.md',
+    preview: null,
     questions: [],
 }
 
@@ -68,24 +71,46 @@ describe('审批桥', () => {
         await expect(broker.request(TOOL_REQUEST, 1)).resolves.toEqual({ allowed: false })
     })
 
-    it('写入被用户拒绝时留下标记，超时与提问跳过都不算', async () => {
+    it('写入被用户拒绝时记下原因，提问跳过不算', async () => {
         const broker = new PermissionBroker(() => undefined)
         const editPending = broker.request(TOOL_REQUEST, 10_000)
         broker.resolve('tu-2', { allowed: false })
         await editPending
-        expect(broker.hasUserDenied).toBe(true)
+        expect(broker.writeDenialReason).toBe('user')
 
         // 提问被跳过不代表整轮被否决：模型会继续换个问法
         const questionBroker = new PermissionBroker(() => undefined)
         const askPending = questionBroker.request(QUESTION_REQUEST, 10_000)
         questionBroker.resolve('tu-1', { allowed: false })
         await askPending
-        expect(questionBroker.hasUserDenied).toBe(false)
+        expect(questionBroker.writeDenialReason).toBeNull()
+    })
 
-        // 超时是宿主自动拒绝，不是用户决定
-        const timeoutBroker = new PermissionBroker(() => undefined)
-        await timeoutBroker.request(TOOL_REQUEST, 1)
-        expect(timeoutBroker.hasUserDenied).toBe(false)
+    it('写入审批超时记为 timeout：与主动拒绝是两种原因', async () => {
+        const broker = new PermissionBroker(() => undefined)
+
+        await expect(broker.request(TOOL_REQUEST, 1)).resolves.toEqual({ allowed: false })
+
+        expect(broker.writeDenialReason).toBe('timeout')
+    })
+
+    it('提问超时不记录原因：模型可以换个方式继续问', async () => {
+        const broker = new PermissionBroker(() => undefined)
+
+        await expect(broker.request(QUESTION_REQUEST, 1)).resolves.toEqual({ allowed: false })
+
+        expect(broker.writeDenialReason).toBeNull()
+    })
+
+    it('先拒绝后超时只记首次原因，不被后续覆盖', async () => {
+        const broker = new PermissionBroker(() => undefined)
+        const first = broker.request(TOOL_REQUEST, 10_000)
+        broker.resolve('tu-2', { allowed: false })
+        await first
+
+        await broker.request({ ...TOOL_REQUEST, id: 'tu-3' }, 1)
+
+        expect(broker.writeDenialReason).toBe('user')
     })
 
     it('同一 id 只结算一次，重复回包被忽略', async () => {

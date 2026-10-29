@@ -827,15 +827,19 @@ export class AiChatService implements vscode.Disposable {
             clearIdleTimer()
             flush(true)
             const isCancelled = controller.signal.aborted
-            /** 用户主动拒绝写入：属于正常操作，按停止收口，且不把「用户拒绝」当错误提示 */
-            const isUserDenied = permission.hasUserDenied
+            /** 写入审批未获批准的原因：拒绝与超时对用户是两件事，提示要分开说 */
+            const denialReason = permission.writeDenialReason
+            const isWriteDenied = denialReason !== null
             /** 用户点停止：CLI 会回一条 Interrupted by user，那是英文内部错误，不该露给用户 */
             const isUserStopped = isCancelled && !isTimedOut
-            /** 只有用户自己停手才是 cancelled；超时属于故障，标 failed 才能带出提示 */
-            const status = isUserStopped || isUserDenied ? 'cancelled' : 'failed'
-            const message =
-                isUserDenied || isUserStopped
-                    ? ''
+            /** 只有用户自己停手才是 cancelled；流空闲超时属于故障，标 failed 才能带出提示 */
+            const status = isUserStopped || isWriteDenied ? 'cancelled' : 'failed'
+            const message = isUserStopped
+                ? ''
+                : denialReason === 'user'
+                  ? '已拒绝这次写入，本轮已停止'
+                  : denialReason === 'timeout'
+                    ? '写入确认超时，本轮已停止'
                     : isTimedOut
                       ? `通道超过 ${STREAM_IDLE_TIMEOUT_MS / 1000} 秒无响应，已自动中断`
                       : toErrorMessage(error)
@@ -857,8 +861,8 @@ export class AiChatService implements vscode.Disposable {
                 // 中断也保留已完成的过程：用户需要看到停在哪一步，而不是整段消失
                 steps: JSON.stringify([...steps.values()]),
                 status,
-                finishReason: isUserStopped || isUserDenied ? 'cancelled' : 'error',
-                // 用户拒绝不是错误：落 null，消息只显示「已停止生成」状态行
+                finishReason: isUserStopped || isWriteDenied ? 'cancelled' : 'error',
+                // 状态仍是 cancelled（不是故障），但拒绝与超时要留下中文说明，前端用 Alert 呈现
                 error: message.length > 0 ? message : null,
                 totalTokens: finalUsage.totalTokens,
                 durationMs,
@@ -866,7 +870,7 @@ export class AiChatService implements vscode.Disposable {
                 credits: roundUsage.credits,
                 requestId: usageMeta?.requestId ?? null,
             })
-            if (!isCancelled && !isUserDenied) {
+            if (!isCancelled && !isWriteDenied) {
                 logger.error(`AI 生成失败：${message}`, error)
             }
             // 中断前请求已带上上下文，能拿到的用量照常记下，避免圆环回退成未知

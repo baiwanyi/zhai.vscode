@@ -5,12 +5,13 @@
  * 关键约束：SDK 仅在 permissionMode 为 default 时就每次工具调用回调本守卫，
  * 不得改用 acceptEdits —— 该模式下编辑类工具由 CLI 直接放行，路径校验会被整体绕过；
  * 未提供 canUseTool 时 SDK 一律拒绝工具调用，因此放行必须显式返回 allow；
- * 用户在审批中改写路径后必须重新校验，不能因为「已批准」而放过越界写入。
+ * 用户在审批中改写路径后必须重新校验，不能因为「已批准」而放过越界写入；
+ * 下发的写入预览须先经 normalizeWrite 再截断，保证用户看到的就是最终落盘的文本。
  */
 import { realpath } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path'
 import { logger } from '@modules/common/logger'
-import type { AiApprovalMode, AiAskQuestion, AiPermissionRequest } from '@shared/types/aiChat'
+import type { AiApprovalMode, AiAskQuestion, AiPermissionRequest, AiWritePreview } from '@shared/types/aiChat'
 import type { AiPermissionChannel, AiToolPolicy } from '../provider'
 import type { CanUseTool, PermissionResult } from '@tencent-ai/agent-sdk'
 
@@ -32,6 +33,11 @@ const PATH_FIELDS: readonly string[] = ['file_path', 'path', 'filePath', 'notebo
 /** 提问条数与选项上限：SDK 约定 1-4 个问题、每题 2-4 个选项，超出的部分直接截断 */
 const MAX_QUESTIONS = 4
 const MAX_OPTIONS = 6
+
+/** 单段预览字符上限：入参里是整章正文，原样透传会把 IPC 与界面一起拖死 */
+const PREVIEW_MAX_LENGTH = 20_000
+/** 预览段数上限：MultiEdit 可能一次替换几十处，界面只展示最前面的几处 */
+const MAX_PREVIEW_SEGMENTS = 8
 
 /** 单题等待上限：逐题阅读与作答远慢于一次写入确认，60 秒的通用审批超时不够用 */
 const QUESTION_TIMEOUT_MS = 180_000
@@ -174,6 +180,79 @@ function normalizeWriteInput(
     return next === content ? input : { ...input, content: next }
 }
 
+/** 读取入参中的字符串字段：空串按缺失处理，避免把空白预览当成内容 */
+function readTextField(input: Record<string, unknown>, field: string): string | null {
+    const value = input[field]
+    return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+/** 截断单段预览：超出上限时保留前一部分并标记，界面据此提示内容不完整 */
+function clampPreview(text: string): { text: string; truncated: boolean } {
+    return text.length > PREVIEW_MAX_LENGTH
+        ? { text: text.slice(0, PREVIEW_MAX_LENGTH), truncated: true }
+        : { text, truncated: false }
+}
+
+/**
+ * 构造待写入内容预览：整篇写入为单段且无原文，编辑类按处拆分并带上被替换的原文。
+ * 复用约定：Write 的正文先经 normalizeWrite 再截断 —— 预览必须与最终落盘的文本一致，
+ * 否则用户批准的和实际写入的是两份内容。
+ * 关键约束：取不到正文时返回 null，前端退回只报动作与路径，不得伪造预览。
+ */
+function buildWritePreview(
+    toolName: string,
+    input: Record<string, unknown>,
+    rawPath: string,
+    normalizeWrite: ((filePath: string, content: string) => string) | undefined,
+): AiWritePreview[] | null {
+    const segments: { content: string; removed: string | null }[] = []
+    if (toolName === 'Write') {
+        const content = readTextField(input, 'content')
+        if (content !== null) {
+            segments.push({
+                content: normalizeWrite === undefined ? content : normalizeWrite(rawPath, content),
+                removed: null,
+            })
+        }
+    } else if (toolName === 'NotebookEdit') {
+        const source = readTextField(input, 'new_source')
+        if (source !== null) {
+            segments.push({ content: source, removed: null })
+        }
+    } else if (toolName === 'Edit') {
+        const added = readTextField(input, 'new_string')
+        if (added !== null) {
+            segments.push({ content: added, removed: readTextField(input, 'old_string') })
+        }
+    } else if (toolName === 'MultiEdit') {
+        const edits: unknown = input.edits
+        if (Array.isArray(edits)) {
+            for (const item of edits.slice(0, MAX_PREVIEW_SEGMENTS)) {
+                if (typeof item !== 'object' || item === null) {
+                    continue
+                }
+                const record = item as Record<string, unknown>
+                const added = readTextField(record, 'new_string')
+                if (added !== null) {
+                    segments.push({ content: added, removed: readTextField(record, 'old_string') })
+                }
+            }
+        }
+    }
+    if (segments.length === 0) {
+        return null
+    }
+    return segments.map((segment) => {
+        const added = clampPreview(segment.content)
+        const removed = segment.removed === null ? null : clampPreview(segment.removed)
+        return {
+            content: added.text,
+            removed: removed === null ? null : removed.text,
+            truncated: added.truncated || (removed !== null && removed.truncated),
+        }
+    })
+}
+
 function deny(message: string, interrupt: boolean): PermissionResult {
     return { behavior: 'deny', message, interrupt }
 }
@@ -207,6 +286,7 @@ async function askUser(
             detail: `待确认 ${String(questions.length)} 个问题`,
             effect: '回答后模型会继续执行本轮任务。',
             editablePath: null,
+            preview: null,
             questions,
         },
         timeoutMs,
@@ -233,9 +313,12 @@ async function confirmWrite(params: {
         kind: 'tool',
         toolName: params.toolName,
         detail: params.rawPath,
-        // 写入后果统一表述：是否新建文件由 CLI 判断，宿主不据此改写风险口径
-        effect: '该操作会修改磁盘文件，确认后立即执行。',
+        // 完整句子由宿主给出：前端直接展示，不由两侧各拼半句 —— 否则任一方改文案都会拼出病句；
+        // 是否新建文件由 CLI 判断，宿主不据此改写风险口径
+        effect: `文件 「${basename(params.rawPath)}」 将被修改，确认后立即执行。`,
         editablePath: params.rawPath,
+        // 预览在此刻已经完整：canUseTool 只在工具入参生成完毕后回调
+        preview: buildWritePreview(params.toolName, params.input, params.rawPath, params.normalizeWrite),
         questions: [],
     }
     const decision = await params.broker.request(request)

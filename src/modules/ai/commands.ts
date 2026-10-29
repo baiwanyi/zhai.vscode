@@ -46,7 +46,9 @@ export function registerAiCommands(
 
     register('zhai.ai.addToChat', () => addEditorContextToChat(service, toast, router))
 
-    // CodeBuddy 通道：SDK 自带 CLI，用户只需完成一次浏览器登录，凭证由 CLI 按站点分别缓存
+    // CodeBuddy 通道：SDK 自带 CLI，用户只需完成一次浏览器登录，凭证由 CLI 按站点分别缓存。
+    // 命令面板标题在 package.json 的 category + title 中定义，错误提示引导用户时按同一标题表述，
+    // 改标题须同步 providers/codebuddyError 的 auth 文案
     register('zhai.ai.loginCodebuddy', async () => {
         const site = getZhaiConfig().aiCodebuddySite
         await vscode.window.withProgress(

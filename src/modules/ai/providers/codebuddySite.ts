@@ -12,7 +12,11 @@ import type { AuthEnvironment } from '@tencent-ai/agent-sdk'
 /** 支持的站点：仅中国站与国际站，企业专享版需自定义 endpoint，暂不开放 */
 export type { CodebuddySite }
 
-/** 站点展示名：用于登录提示与错误文案 */
+/**
+ * 站点展示名：命令回执（../commands）、面板运行时（../chatService）、
+ * 登录态页（workflow/aichat/layout/AiChatCodebuddyState）与错误提示（./codebuddyError）共用；
+ * 改文案会同时改变上述全部出口，新增站点时须一并补齐。
+ */
 export const CODEBUDDY_SITE_LABELS: Readonly<Record<CodebuddySite, string>> = {
     cn: '中国站',
     ai: '国际站',

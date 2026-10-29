@@ -5,12 +5,15 @@
  * 关键约束：同一 id 只允许结算一次；超时按拒绝处理且不中断会话，避免一次无人应答拖死整轮；
  * 生成中止、会话切换或面板关闭必须调用 cancelAll，否则等待中的 Promise 会永久悬挂；
  * 超时按调用方给出的期限执行 —— 多题问卷需要远长于工具审批的等待窗口，写死单一常量会让它必超时；
- * 写入类被「用户主动拒绝」时要留下标记：那是正常操作，上层不得当成失败弹提示。
+ * 写入类未获批准（主动拒绝或超时）时要记下原因：上层按停止收口，但要能给出对应的中文说明。
  */
 import type { AiPermissionDecision, AiPermissionRequest } from '@shared/types/aiChat'
 
 /** 工具审批默认超时：用户无响应时按拒绝处理，模型可继续换方案 */
 const APPROVAL_TIMEOUT_MS = 60_000
+
+/** 写入审批未获批准的原因：主动拒绝与超时对用户是两件事，提示文案要能分开 */
+export type WriteDenialReason = 'user' | 'timeout'
 
 /** 单个等待中的审批：resolve 由回包、超时或取消触发 */
 interface PendingApproval {
@@ -23,12 +26,12 @@ interface PendingApproval {
 export class PermissionBroker {
     private readonly pending = new Map<string, PendingApproval>()
 
-    /** 本轮是否出现过「用户主动拒绝写入」：超时与取消都不算 */
-    private userDenied = false
+    /** 本轮写入审批未获批准的原因：只记首次，取消不算 */
+    private writeDenial: WriteDenialReason | null = null
 
-    /** 用户是否主动拒绝过写入：上层据此把整轮结束归为正常停止而非失败 */
-    public get hasUserDenied(): boolean {
-        return this.userDenied
+    /** 未获批准的原因：null 表示写入都批准了，或本轮根本没有写入审批 */
+    public get writeDenialReason(): WriteDenialReason | null {
+        return this.writeDenial
     }
 
     /**
@@ -51,6 +54,11 @@ export class PermissionBroker {
         return new Promise<AiPermissionDecision>((resolve) => {
             const timer = setTimeout(() => {
                 this.pending.delete(request.id)
+                // 超时同样意味着没拿到批准：上层据此按停止收口，并给出「超时」而非「拒绝」的说明。
+                // 提问类不置位 —— 跳过一个问题后模型会继续，不代表整轮被否决
+                if (request.kind === 'tool') {
+                    this.writeDenial ??= 'timeout'
+                }
                 resolve({ allowed: false })
             }, timeoutMs)
             this.pending.set(request.id, { resolve, timer, kind: request.kind })
@@ -69,7 +77,7 @@ export class PermissionBroker {
         this.pending.delete(id)
         // 只认写入类：提问被跳过后模型会继续换个问法，不代表本轮被否决
         if (pending.kind === 'tool' && !decision.allowed) {
-            this.userDenied = true
+            this.writeDenial ??= 'user'
         }
         pending.resolve(decision)
         return true

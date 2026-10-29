@@ -42,6 +42,7 @@ const BASE_PROPS = {
     phase: 'idle' as const,
     transientNotice: null,
     onAnswer: (): void => undefined,
+    onRepeat: (): void => undefined,
     runtime: null,
     onLoginCodebuddy: (): void => undefined,
 }
@@ -53,8 +54,9 @@ function makeApproval(id: string): AiPermissionRequest {
         kind: 'tool',
         toolName: 'Edit',
         detail: 'd:/press/剑来/Chapters/c1.md',
-        effect: '该操作会修改磁盘文件，确认后立即执行。',
+        effect: '文件 「c1.md」 将被修改，确认后立即执行。',
         editablePath: 'd:/press/剑来/Chapters/c1.md',
+        preview: null,
         questions: [],
         messageId: 'msg-1',
         expiresAt: Date.now() + 60_000,

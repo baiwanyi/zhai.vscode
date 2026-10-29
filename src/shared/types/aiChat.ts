@@ -37,9 +37,25 @@ export interface AiAskQuestion {
 }
 
 /**
+ * 待写入内容预览：一段对应一次写入或替换，整篇写入为单段且无原文。
+ * 关键约束：只经 stream 通道下发给 Webview 展示，禁止落库 ——
+ * 写入类入参带整篇正文，落库会撑爆消息表；content 与 removed 都已按上限截断，
+ * truncated 为 true 时界面必须提示内容不完整，不得让用户以为看到的就是全部。
+ */
+export interface AiWritePreview {
+    /** 将写入的文本：超长时只保留前一部分 */
+    content: string
+    /** 将被替换的原文：新建或整篇写入时为 null */
+    removed: string | null
+    /** content 或 removed 是否因超长被截断 */
+    truncated: boolean
+}
+
+/**
  * 待确认的工具调用：宿主推送给 Webview，用户在弹窗里决定后回传。
  * 关键约束：由宿主生成 id（与 SDK 的 toolUseID 一致），前端只回传这个 id；
- * editablePath 为写入类目标路径，当前前端不提供改写入口、原样回传，宿主收到后仍会重新校验。
+ * editablePath 为写入类目标路径，当前前端不提供改写入口、原样回传，宿主收到后仍会重新校验；
+ * preview 供用户在决定前看清将要写入的内容，非写入类为 null。
  */
 export interface AiPermissionRequest {
     id: string
@@ -49,12 +65,15 @@ export interface AiPermissionRequest {
     /** 工具关键参数：写入类给路径，提问类给问题条数摘要 */
     detail: string
     /**
-     * 风险说明：由宿主按工具语义下发的展示文案，前端只渲染，不自行推断工具后果。
+     * 风险说明：由宿主下发的完整展示句子（写入类含目标文件名，如「文件「X」将被修改，确认后立即执行。」），
+     * 前端原样渲染，不拼接、也不自行推断工具后果。
      * 关键约束：新增审批类型必须显式给出，展示层不得回退到硬编码文案。
      */
     effect: string
     /** 写入类工具的目标路径：仅写入类提供，当前前端只原样回传、不提供改写入口 */
     editablePath: string | null
+    /** 写入内容预览：仅写入类提供，前端据此让用户在决定前读到全文 */
+    preview: AiWritePreview[] | null
     /** 待回答的问题：kind 为 question 时至少一条 */
     questions: AiAskQuestion[]
     /**

@@ -19,6 +19,7 @@ import { SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
     AiMentionCandidate,
+    AiMessage,
     AiReasoningEffort,
     AiReferenceEntry,
     AiSessionSnapshot,
@@ -48,7 +49,7 @@ import { AiChatHistoryMenu } from './layout/AiChatHistoryMenu'
 import { AiChatMentionDialog } from './layout/AiChatMentionDialog'
 import { AiChatMessageList } from './layout/AiChatMessageList'
 import { AiChatReferenceDialog } from './layout/AiChatReferenceDialog'
-import { composeCommandContent, readAiStateKind, wantsContinuousGeneration } from './utils'
+import { composeCommandContent, readAiStateKind, splitCommandContent, wantsContinuousGeneration } from './utils'
 import type { AiCommand, AiCommandId } from './constants'
 import type { Phase } from './hooks/useAiChatSession'
 import type { AiReferenceAction } from './layout/AiChatReferenceMenu'
@@ -350,6 +351,21 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         })
     }, [command, input, send, writeGrant])
 
+    /**
+     * 重复一条用户消息：命令与补充文本回填输入框，用户改几处即可再发。
+     * 关键约束：引用不回填 —— 历史引用可能已失效，宿主清单只能按文件重新解析，前端不伪造。
+     */
+    const handleRepeat = useCallback(
+        (message: AiMessage): void => {
+            const { command: picked, body } = splitCommandContent(message.content)
+            const nextId = picked?.id ?? null
+            commandIdRef.current = nextId
+            setCommandId(nextId)
+            setInput(body)
+        },
+        [setInput],
+    )
+
     /** 连续生成授权：确认后本轮直接写入，授权只对这一次发送生效 */
     const handleAutoApproveConfirm = useCallback((): void => {
         const pending = pendingAutoApprove
@@ -423,6 +439,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     transientNotice={transientNotice}
                     pendingApproval={pendingPermission}
                     onAnswer={(decision) => void respondPermission(decision)}
+                    onRepeat={handleRepeat}
                     runtime={runtime}
                     onLoginCodebuddy={() => void runHostCommand('zhai.ai.loginCodebuddy')}
                 />

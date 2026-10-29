@@ -1,7 +1,8 @@
 /**
- * 工具权限守卫测试：覆盖只读与写入的路径边界、审批模式的三种走向，以及提问工具的答案回传。
+ * 工具权限守卫测试：覆盖只读与写入的路径边界、审批模式的两种走向、写入预览的内容与截断，
+ * 以及提问工具的答案回传。
  * 复用约定：审批桥用纯函数替身，不触网也不弹窗；路径取系统临时目录，不依赖具体盘符。
- * 关键约束：断言只看守卫返回值（allow / deny 与 updatedInput），不断言日志措辞；
+ * 关键约束：断言只看守卫返回值（allow / deny 与 updatedInput）与下发给前端的审批请求，不断言日志措辞；
  * 路径比较用 resolve 后的绝对值，避免大小写与分隔符差异导致误判。
  */
 import * as os from 'node:os'
@@ -128,6 +129,84 @@ describe('写入工具', () => {
         const guard = createToolGuard({ policy: makePolicy({ writeRoots: [] }), approval: 'auto', broker: null })
         const result = await guard('Write', { file_path: path.join(WRITE_ROOT, 'c1.md') }, CALL_OPTIONS)
         expect(result.behavior).toBe('deny')
+    })
+
+    it('说明文案是含文件名的完整句子，前端不需要拼接', async () => {
+        const broker = makeBroker({ allowed: false })
+        const guard = createToolGuard({ policy: makePolicy(), approval: 'ask', broker: broker.channel })
+
+        await guard('Write', { file_path: path.join(WRITE_ROOT, 'Chapters', 'c1.md'), content: '正文' }, CALL_OPTIONS)
+
+        expect(broker.requests[0]?.effect).toBe('文件 「c1.md」 将被修改，确认后立即执行。')
+    })
+})
+
+describe('写入内容预览', () => {
+    const target = path.join(WRITE_ROOT, 'Chapters', 'c1.md')
+
+    it('Write 预览先经规范化再下发：用户看到的就是最终落盘的文本', async () => {
+        const broker = makeBroker({ allowed: false })
+        const guard = createToolGuard({
+            policy: makePolicy(),
+            approval: 'ask',
+            broker: broker.channel,
+            normalizeWrite: (filePath, content) => `# ${path.basename(filePath)}\n\n${content}`,
+        })
+
+        await guard('Write', { file_path: target, content: '正文' }, CALL_OPTIONS)
+
+        expect(broker.requests[0]?.preview).toEqual([{ content: '# c1.md\n\n正文', removed: null, truncated: false }])
+    })
+
+    it('Edit 预览带上被替换的原文', async () => {
+        const broker = makeBroker({ allowed: false })
+        const guard = createToolGuard({ policy: makePolicy(), approval: 'ask', broker: broker.channel })
+
+        await guard('Edit', { file_path: target, old_string: '旧句', new_string: '新句' }, CALL_OPTIONS)
+
+        expect(broker.requests[0]?.preview).toEqual([{ content: '新句', removed: '旧句', truncated: false }])
+    })
+
+    it('MultiEdit 按处拆分，每处都带原文', async () => {
+        const broker = makeBroker({ allowed: false })
+        const guard = createToolGuard({ policy: makePolicy(), approval: 'ask', broker: broker.channel })
+
+        await guard(
+            'MultiEdit',
+            {
+                file_path: target,
+                edits: [
+                    { old_string: 'a', new_string: 'b' },
+                    { old_string: 'c', new_string: 'd' },
+                ],
+            },
+            CALL_OPTIONS,
+        )
+
+        expect(broker.requests[0]?.preview).toEqual([
+            { content: 'b', removed: 'a', truncated: false },
+            { content: 'd', removed: 'c', truncated: false },
+        ])
+    })
+
+    it('超长正文按上限截断并标注，不让整章正文原样穿过 IPC', async () => {
+        const broker = makeBroker({ allowed: false })
+        const guard = createToolGuard({ policy: makePolicy(), approval: 'ask', broker: broker.channel })
+
+        await guard('Write', { file_path: target, content: '字'.repeat(20_001) }, CALL_OPTIONS)
+
+        const segment = broker.requests[0]?.preview?.[0]
+        expect(segment?.content).toHaveLength(20_000)
+        expect(segment?.truncated).toBe(true)
+    })
+
+    it('入参没有正文时不下发预览，前端退回只报动作与路径', async () => {
+        const broker = makeBroker({ allowed: false })
+        const guard = createToolGuard({ policy: makePolicy(), approval: 'ask', broker: broker.channel })
+
+        await guard('Edit', { file_path: target }, CALL_OPTIONS)
+
+        expect(broker.requests[0]?.preview).toBeNull()
     })
 })
 
