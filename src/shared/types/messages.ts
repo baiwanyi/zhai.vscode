@@ -125,6 +125,7 @@ export type HostMethodName =
     | 'ai/models'
     | 'ai/newSession'
     | 'ai/runtime'
+    | 'ai/selectContextWindow'
     | 'ai/selectModel'
     | 'ai/send'
     | 'ai/session'

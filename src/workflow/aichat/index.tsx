@@ -61,6 +61,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         isLoading: isLoadingModels,
         loadModels,
         selectModel,
+        selectContextWindow,
     } = useAiChatModels({ onError: setError })
     const { runtime, loadRuntime } = useAiChatRuntime({ onError: setError })
     const { writeState, applyingMessageId, loadWriteState, applyMessage } = useAiChatWriteState({ onError: setError })
@@ -199,6 +200,14 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         [selectModel],
     )
 
+    /** 档位选择：是否落在模型可选范围内由宿主裁决，本层只透传点击 */
+    const handleSelectContextWindow = useCallback(
+        (tokens: number): void => {
+            void selectContextWindow(tokens)
+        },
+        [selectContextWindow],
+    )
+
     const handleClearCommand = useCallback((): void => {
         commandIdRef.current = null
         setCommandId(null)
@@ -329,6 +338,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     onCommand={handleCommand}
                     onOpenModels={() => void loadModels()}
                     onSelectModel={handleSelectModel}
+                    onSelectContextWindow={handleSelectContextWindow}
                     onClearCommand={handleClearCommand}
                     onReference={handleReference}
                     onModeChange={handleModeChange}

@@ -438,6 +438,7 @@ interface AbortRequest {
 | `ai/runtime` | Webview → 宿主 | 密钥状态（含脱敏 Key）、模型参数与当日用量；`model` 为当前模型 id，`modelName` 为按激活时预热清单解析出的展示名（未命中为空串），供面板初始化即显示模型名而不必等待 `ai/models` |
 | `ai/models` | Webview → 宿主 | 模型菜单数据 `AiModelChoices`（当前模型 id + 账号可用清单，每项含 `credits` 原文与解析后的 `creditRate` 额度倍率）；读激活时预热的缓存，缓存为空才现拉 |
 | `ai/selectModel` | Webview → 宿主 | 选择模型（`modelId` + `manual`）：写入 globalState 并广播 `runtime` 变更；空 id 表示 Auto（交给平台自动选择）。`manual` 通道保留但菜单已无对应入口 |
+| `ai/selectContextWindow` | Webview → 宿主 | 选择上下文档位（`tokens`，0 表示跟随模型默认）：按当前模型清单里的可选档位校验，通过后写入 globalState 并广播 `runtime`；不支持的档位直接拒绝，不落配置 |
 | `ai/send` | Webview → 宿主 | 落库用户消息与占位助手消息，随后流式回传正文；`titleHint` 为命令名称等展示用短标题，仅用于会话命名 |
 | `ai/draft` | Webview → 宿主 | 保存未发送的输入正文与命令 id（内存、按会话隔离），视图重建后随会话快照的 `draft` 恢复 |
 | `ai/enhancePrompt` | Webview → 宿主 | 增强输入区提示词：按 `mode`（`write` / `chat`）选择改写口径，走文本通道流式收集后返回 `{ text }`；不建会话、不写消息，30 秒超时，用量计入「对话」模块 |
@@ -495,7 +496,7 @@ interface AbortRequest {
 | 工具行左 | 命令 (`Command` 图标) | 下拉四项：改写 / 润色 / 校对 / 去 AI 味，选中项带勾选；选中后输入区顶部显示命令徽章（可点 × 或再次点击取消），指令模板不进入输入框 |
 | 工具行右 | 参考 (`BookOpen` 图标) | 下拉四项：古诗词 / 名言名句 / 经典文本 / 历史资料；当前为占位，点击仅提示「即将上线」，不发起任何请求 |
 | 操作行左 | 模式按钮 | 下拉菜单列「对话 / 写作」两项：选中项整行高亮并带勾选，行尾 Info 图标悬浮说明两种模式差异；触发器按模式换配色（对话中性底、写作主色实底）；写 `conversations.mode` 持久化；生成中禁用 |
-| 操作行左 | 模型菜单 | 按钮完整展示当前模型名、不截断（空选择显示「Auto」，正文前景色）；模型名优先取菜单清单，初始化阶段清单未拉取时用 `ai/runtime` 的 `modelName` 兜底，避免闪出裸 id；展开时经 `ai/models` 取账号可用清单（激活时已预热，缓存为空才现拉）：菜单最高 `18rem`，模型较多时在菜单内层滚动（外层不滚动，避免毛玻璃底色随内容滚出可视区而出现下半截发透；滚动条为全站统一的细窄样式）；内置组首项为 `Auto`，其后按「内置模型 / 自定义模型」两组列出，两组均按名称字母序排列，每项左侧为本地厂商图标（未提供图标的厂商回退 CodeBuddy 标志），右侧依次为勾选与额度倍率 `✓ 0.51x`（倍率未知时只显示勾选）；选中写入 globalState 并广播 `runtime` 刷新；生成中禁用 |
+| 操作行左 | 模型菜单 | 按钮完整展示当前模型名、不截断（空选择显示「Auto」，正文前景色）；模型名优先取菜单清单，初始化阶段清单未拉取时用 `ai/runtime` 的 `modelName` 兜底，避免闪出裸 id；展开时经 `ai/models` 取账号可用清单（激活时已预热，缓存为空才现拉）：菜单最高 `18rem`，模型较多时在菜单内层滚动（外层不滚动，避免毛玻璃底色随内容滚出可视区而出现下半截发透；滚动条为全站统一的细窄样式）；内置组首项为 `Auto`，其后按「内置模型 / 自定义模型」两组列出，两组均按名称字母序排列，每项左侧为本地厂商图标（未提供图标的厂商回退 CodeBuddy 标志），右侧依次为勾选与额度倍率 `✓ 0.51x`（倍率未知时只显示勾选）；选中写入 globalState 并广播 `runtime` 刷新；生成中禁用。当前模型下发可选档位时，菜单底部追加「上下文窗口」组（模型默认 / 300K / 600K / 1M）：选中值经 `ai/selectContextWindow` 落 globalState，只在生成首轮以 `set_config.contextWindow` 下发；切换模型后旧档位不在新模型可选范围内时按「模型默认」呈现，与宿主实际下发值一致 |
 | 操作行右 | 上下文圆环 | 当前会话上下文占用的环形占比（已用 / 当前模型窗口，<70% 主色、70~90% 警示、≥90% destructive），悬浮显示 `23.7% · 71.0k / 300.0k 上下文已使用`，点开浮层看已用 / 窗口 / 剩余 / 占比；窗口未知时置灰且不给占比 |
 | 操作行右 | 增强提示词 | 经 `ai/enhancePrompt` 走文本模型改写：写作模式补足文体、读者、篇幅与风格，对话模式补足背景、约束与期望答案形式，结果回填输入框，再次点击还原原文；请求中按钮转圈，失败保留原文并提示；会消耗 Token，计入「对话」模块 |
 | 操作行右 | 发送 / 停止 | 生成中替换为停止；写作模式无可改写目标时发送禁用 |
@@ -523,7 +524,7 @@ interface AbortRequest {
 
 **本轮用量口径**：CodeBuddy 在 `resume` 续接时，SDK `result` 消息的 `usage` 是**会话累计**（含此前各轮），不能直接当作本轮消耗。生成结束后按「会话号 + 请求 id」定向解析该会话的 CLI 记录文件（`CliUsageIndex.readRoundTokens`），取本轮多条记录的 tokens 累加值——与「AI 使用量」页完全同源；首轮无累计语义时直接用通道回传值；续接且 CLI 记录尚未落盘时退化为按回复字数估算并标记 `tokens_estimated`。同一份结果同时用于消息落库、流末下发与用量记账。
 
-**上下文用量口径**：底部圆环统计的是「当前会话最近一轮请求带上的上下文规模」，取 SDK 流内 `message_start` 的 `usage` 三项之和（`input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`）——缓存命中的历史同样占窗口，只取 `input_tokens` 会严重低估；分母取 `result.modelUsage` 的实际窗口，取不到再退回模型清单的 `contextWindow.defaultLength` / 最大档位 / `maxInputTokens`，仍取不到即视为未知。**不得**用 `result.usage` 充当上下文（续接时它是会话累计），也不得用 `ai.maxContextTokens`（历史裁剪预算）兜底。占用值按会话存于宿主内存并随 `ai/session`、`ai/switchSession` 快照的 `contextUsage` 返回，窗口重启后需重新生成一轮才会恢复。
+**上下文用量口径**：底部圆环统计的是「当前会话最近一轮请求带上的上下文规模」，取 SDK 流内 `message_start` 的 `usage` 三项之和（`input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`）——缓存命中的历史同样占窗口，只取 `input_tokens` 会严重低估；分母取 `result.modelUsage` 的实际窗口，取不到再退回模型清单的 `contextWindow.defaultLength` / 最大档位 / `maxInputTokens`，仍取不到即视为未知。**不得**用 `result.usage` 充当上下文（续接时它是会话累计），也不得用 `ai.maxContextTokens`（历史裁剪预算）兜底。占用值按会话存于宿主内存并随 `ai/session`、`ai/switchSession` 快照的 `contextUsage` 返回，窗口重启后需重新生成一轮才会恢复。档位选择只作用于该会话的首轮请求（`set_config.contextWindow`，需 `connect()` 后、`send()` 前下发），续接会话沿用首次生效的预算；因此通道由 `query()` 改为 V2 Session（`unstable_v2_createSession` / `unstable_v2_resumeSession`），`query()` 没有暴露 `set_config` 入口。
 
 实现位置：`src/modules/ai/`（`providers/` SDK 封装与模型清单、`chatService.ts` 会话编排、`promptEnhance.ts` 提示词增强（写作 / 对话 / 图像三套口径集中）、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
 

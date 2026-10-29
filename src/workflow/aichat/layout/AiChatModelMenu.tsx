@@ -7,7 +7,8 @@
  * 清单项右侧展示平台下发的额度倍率（每个模型的成本消耗速率），勾选位于倍率之前，倍率未知时不渲染；
  * 两组清单均按展示名字母序排列（numeric 比较），Auto 固定在内置组首位；
  * 触发器完整展示当前模型名、不截断，颜色取正文前景色而不是弱化色；
- * 清单未拉取或未命中时用运行时带回的 currentName 兜底，避免初始化阶段闪出裸模型 id。
+ * 清单未拉取或未命中时用运行时带回的 currentName 兜底，避免初始化阶段闪出裸模型 id；
+ * 当前模型下发可选档位时，菜单底部追加「上下文窗口」组（含「模型默认」），档位值由平台清单给出。
  */
 import { Check, ChevronDown, Sparkles } from 'lucide-react'
 import {
@@ -40,6 +41,14 @@ function sortByName(list: AiModelOption[]): AiModelOption[] {
     )
 }
 
+/** 档位展示文本：平台档位均为整千/整百万，折成 300K / 1M，不保留无意义小数 */
+function toWindowLabel(tokens: number): string {
+    if (tokens >= 1_000_000) {
+        return `${Number((tokens / 1_000_000).toFixed(1))}M`
+    }
+    return tokens >= 1000 ? `${Math.round(tokens / 1000)}K` : String(tokens)
+}
+
 interface AiChatModelMenuProps {
     /** 当前模型 id，空表示使用自动模型 */
     current: string
@@ -52,6 +61,8 @@ interface AiChatModelMenuProps {
     /** 菜单展开时按需拉取清单 */
     onOpen: () => void
     onSelect: (modelId: string, manual: boolean) => void
+    /** 选择上下文档位：0 表示跟随模型默认 */
+    onSelectContextWindow: (tokens: number) => void
 }
 
 export function AiChatModelMenu({
@@ -62,11 +73,17 @@ export function AiChatModelMenu({
     disabled,
     onOpen,
     onSelect,
+    onSelectContextWindow,
 }: AiChatModelMenuProps): JSX.Element {
     const options = choices?.options ?? []
     const builtinOptions = sortByName(options.filter((option) => !option.custom))
     const customOptions = sortByName(options.filter((option) => option.custom))
     const currentOption = options.find((option) => option.modelId === current)
+    const windowOptions = currentOption?.contextWindowOptions ?? []
+    const selectedWindow = choices?.contextWindow ?? 0
+    // 切换模型后旧档位可能不在新模型的可选范围内：此时按「模型默认」呈现，与宿主实际下发的值一致
+    const currentWindow = windowOptions.includes(selectedWindow) ? selectedWindow : 0
+    const defaultWindow = currentOption?.contextWindowTokens ?? 0
     const isAuto = current === AUTO_MODEL_ID
     const currentLabel = isAuto
         ? AUTO_MODEL_LABEL
@@ -95,6 +112,14 @@ export function AiChatModelMenu({
             </DropdownMenuItem>
         )
     }
+
+    /** 档位项：0 为「模型默认」，其余为平台下发的可选档位 */
+    const renderWindowOption = (tokens: number, label: string): JSX.Element => (
+        <DropdownMenuItem key={tokens} onSelect={() => onSelectContextWindow(tokens)} className="gap-2">
+            <span className="min-w-0 flex-1 truncate">{label}</span>
+            {currentWindow === tokens ? <Check className="size-3 shrink-0" /> : null}
+        </DropdownMenuItem>
+    )
 
     return (
         <DropdownMenu onOpenChange={(open) => (open ? onOpen() : undefined)}>
@@ -139,6 +164,18 @@ export function AiChatModelMenu({
                     ) : (
                         <DropdownMenuItem disabled>暂无自定义模型</DropdownMenuItem>
                     )}
+                    {/* 档位只在平台下发可选长度时出现：Auto 与未上报能力的自定义模型没有可选项 */}
+                    {windowOptions.length > 0 ? (
+                        <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>上下文窗口</DropdownMenuLabel>
+                            {renderWindowOption(
+                                0,
+                                defaultWindow > 0 ? `模型默认（${toWindowLabel(defaultWindow)}）` : '模型默认',
+                            )}
+                            {windowOptions.map((tokens) => renderWindowOption(tokens, toWindowLabel(tokens)))}
+                        </>
+                    ) : null}
                 </div>
             </DropdownMenuContent>
         </DropdownMenu>

@@ -31,6 +31,8 @@ interface AiChatComposerActionsProps {
     onModeChange: (mode: AiConversationMode) => void
     onOpenModels: () => void
     onSelectModel: (modelId: string, manual: boolean) => void
+    /** 选择上下文档位：0 表示跟随模型默认 */
+    onSelectContextWindow: (tokens: number) => void
     onEnhance: () => void
     onUndoEnhance: () => void
     onSend: () => void
@@ -52,6 +54,7 @@ export function AiChatComposerActions({
     onModeChange,
     onOpenModels,
     onSelectModel,
+    onSelectContextWindow,
     onEnhance,
     onUndoEnhance,
     onSend,
@@ -69,6 +72,7 @@ export function AiChatComposerActions({
                     disabled={isGenerating}
                     onOpen={onOpenModels}
                     onSelect={onSelectModel}
+                    onSelectContextWindow={onSelectContextWindow}
                 />
             </div>
             <div className="flex items-center gap-0.5">

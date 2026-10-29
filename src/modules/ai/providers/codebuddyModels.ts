@@ -7,7 +7,8 @@
  * 额度倍率为平台下发文本，解析不出数值时记 null 表示未知，不得回退为 0。
  * 清单只含语言模型，文生图模型由服务端产品配置决定，不予枚举。
  * 关键约束：上下文窗口只在完整清单里下发（defaultLength / supportedLengths / maxInputTokens 三处兜底），
- * 简化清单与缓存未就绪时一律记 0 表示未知，由展示层决定不显示占比。
+ * 简化清单与缓存未就绪时一律记 0 表示未知，由展示层决定不显示占比；
+ * 上下文档位另存一份用户选择（0 表示跟随模型默认），取值必须按当前模型的可选档位裁决后才下发。
  */
 import { tmpdir } from 'node:os'
 import { unstable_v2_createSession } from '@tencent-ai/agent-sdk'
@@ -31,6 +32,8 @@ export interface CodebuddyModelOption {
     custom: boolean
     /** 模型默认上下文档位（token），0 表示平台未下发 */
     contextWindowTokens: number
+    /** 该模型支持的可选上下文档位（升序）；空数组表示平台未下发 */
+    contextWindowOptions: number[]
 }
 
 /** 自定义模型 id 前缀：CLI 把用户自建模型统一挂在该前缀下 */
@@ -38,15 +41,21 @@ const CUSTOM_MODEL_PREFIX = 'custom-local:'
 
 /** 模型选择的持久化键 */
 const MODEL_STATE_KEY = 'ai.codebuddyModel'
+/** 上下文档位选择的持久化键 */
+const CONTEXT_WINDOW_STATE_KEY = 'ai.codebuddyContextWindow'
 
 let cached: CodebuddyModelOption[] = []
 let inflight: Promise<CodebuddyModelOption[]> | null = null
 /** 已选模型的内存副本：各通道同步读取，避免每次穿透 globalState */
 let activeModel = ''
+/** 已选上下文档位：0 表示跟随模型默认，各通道同步读取 */
+let activeContextWindow = 0
 
-/** 激活时从 globalState 载入已选模型 */
+/** 激活时从 globalState 载入已选模型与档位 */
 export function hydrateSelectedModel(state: Memento): void {
     activeModel = state.get<string>(MODEL_STATE_KEY, '') ?? ''
+    const stored = state.get<number>(CONTEXT_WINDOW_STATE_KEY, 0) ?? 0
+    activeContextWindow = Number.isFinite(stored) && stored > 0 ? Math.trunc(stored) : 0
 }
 
 /** 当前模型 id：空表示交给 CLI 默认模型 */
@@ -84,11 +93,49 @@ export function readModelContextWindow(modelId: string): number {
     return matched?.contextWindowTokens ?? 0
 }
 
+/** 按模型 id 取可选档位：清单未命中、Auto 空 id 或平台未下发时返回空数组 */
+export function getContextWindowOptions(modelId: string): number[] {
+    const matched = cached.find((item) => item.modelId === modelId.trim())
+    return matched?.contextWindowOptions ?? []
+}
+
+/** 当前选择的档位：0 表示跟随模型默认，供运行时信息与菜单回显 */
+export function getSelectedContextWindow(): number {
+    return activeContextWindow
+}
+
+/** 写入档位选择：0 或非法值一律按「跟随模型默认」处理 */
+export async function setSelectedContextWindow(state: Memento, tokens: number): Promise<void> {
+    activeContextWindow = Number.isFinite(tokens) && tokens > 0 ? Math.trunc(tokens) : 0
+    await state.update(CONTEXT_WINDOW_STATE_KEY, activeContextWindow)
+}
+
+/**
+ * 解析本轮要下发的上下文档位：0 表示不设置、跟随模型默认。
+ * 关键约束：只有落在当前模型可选档位内才下发 —— CLI 的 set_config 只校验正整数、不校验档位，
+ * 下游不认的数字会被静默忽略，与其发出一个无声失效的配置，不如回落默认并由展示层如实呈现。
+ */
+export function resolveContextWindow(modelId: string): number {
+    return pickContextWindow(activeContextWindow, getContextWindowOptions(modelId))
+}
+
+/**
+ * 档位裁决的纯函数形态：选择值必须是正整数且落在可选档位内，否则一律 0（跟随模型默认）。
+ * 独立性便于单测覆盖边界，避免测试反向依赖清单缓存。
+ */
+export function pickContextWindow(selected: number, options: number[]): number {
+    if (!Number.isFinite(selected) || selected <= 0) {
+        return 0
+    }
+    const value = Math.trunc(selected)
+    return options.includes(value) ? value : 0
+}
+
 /**
  * 从完整清单提取默认上下文档位：defaultLength 优先，其次最大支持档位，最后退回模型输入上限。
  * 关键约束：三处都可能缺失或为 0，取不到数字时返回 0 表示未知，不得给一个猜测值。
  */
-function readContextWindowTokens(model: RawLanguageModel): number {
+export function readContextWindowTokens(model: RawLanguageModel): number {
     const declared = model.contextWindow?.defaultLength
     if (typeof declared === 'number' && declared > 0) {
         return declared
@@ -100,6 +147,16 @@ function readContextWindowTokens(model: RawLanguageModel): number {
     }
     const inputLimit = model.maxInputTokens
     return typeof inputLimit === 'number' && inputLimit > 0 ? inputLimit : 0
+}
+
+/** 从完整清单提取可选档位：去重升序，非法值与 0 直接丢弃 */
+export function readContextWindowOptions(model: RawLanguageModel): number[] {
+    const supported = model.contextWindow?.supportedLengths
+    if (supported === undefined) {
+        return []
+    }
+    const valid = supported.filter((item) => typeof item === 'number' && Number.isFinite(item) && item > 0)
+    return [...new Set(valid)].sort((left, right) => left - right)
 }
 
 /** 拉取账号可用模型；force 为 true 时忽略内存缓存 */
@@ -134,6 +191,7 @@ async function fetchModels(secrets: SecretsService): Promise<CodebuddyModelOptio
                 creditRate: parseCreditRate(model.credits),
                 custom: isCustomModel(model),
                 contextWindowTokens: readContextWindowTokens(model),
+                contextWindowOptions: readContextWindowOptions(model),
             }))
             return cached
         }
@@ -145,8 +203,9 @@ async function fetchModels(secrets: SecretsService): Promise<CodebuddyModelOptio
             credits: null,
             creditRate: null,
             custom: model.modelId.startsWith(CUSTOM_MODEL_PREFIX),
-            // 简化清单不含模型能力字段，窗口只能留空，展示层据此不显示占比
+            // 简化清单不含模型能力字段，窗口与档位只能留空，展示层据此不显示占比与档位选择
             contextWindowTokens: 0,
+            contextWindowOptions: [],
         }))
         return cached
     } catch {

@@ -54,7 +54,12 @@ import {
 } from './db/chatRepository'
 import { createChatEnhanceRequest, PromptEnhanceService } from './promptEnhance'
 import { readCodebuddyLogin, rememberCodebuddyLogin } from './providers/codebuddyLogin'
-import { getCachedCodebuddyModels, getSelectedCodebuddyModel } from './providers/codebuddyModels'
+import {
+    getCachedCodebuddyModels,
+    getSelectedCodebuddyModel,
+    readModelContextWindow,
+    resolveContextWindow,
+} from './providers/codebuddyModels'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
 import { summarizeMessages } from './usageRecorder'
 import type { CliUsageIndex } from './cliUsageIndex'
@@ -170,6 +175,8 @@ export class AiChatService implements vscode.Disposable {
             model,
             modelName,
             maxContextTokens: cfg.aiMaxContextTokens,
+            // 已选档位优先，未选择（或档位不被当前模型支持）时按模型默认；都没有即 0 表示未知
+            contextWindowTokens: resolveContextWindow(model) || readModelContextWindow(model),
             dailyTokenBudget: cfg.aiDailyTokenBudget,
             usedTokensToday: sumTokensSince(this.db, todayStartIso()),
         }

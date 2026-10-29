@@ -30,7 +30,14 @@ import type { HostToWebviewMessage, StreamMessage, ToastPayload } from '@shared/
 import { isRequestMessage } from '@shared/types/messages'
 import type { OpenWorkflowResult, ResetWorkflowResult, WorkflowViewRequest } from '@shared/types/workflow'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
-import { getSelectedCodebuddyModel, listCodebuddyModels, setSelectedCodebuddyModel } from './providers/codebuddyModels'
+import {
+    getContextWindowOptions,
+    getSelectedCodebuddyModel,
+    getSelectedContextWindow,
+    listCodebuddyModels,
+    setSelectedCodebuddyModel,
+    setSelectedContextWindow,
+} from './providers/codebuddyModels'
 import { CODEBUDDY_CREDITS_URLS } from './providers/codebuddySite'
 import type { AiChatService } from './chatService'
 import type { AiUsageService } from './usageService'
@@ -44,6 +51,8 @@ const MAX_DRAFT_LENGTH = 20_000
 const MAX_COMMAND_ID_LENGTH = 32
 /** 模型 id 长度上限：CLI 模型 id 远短于此值，超出视为异常载荷 */
 const MAX_MODEL_ID_LENGTH = 64
+/** 上下文档位上限：模型窗口最大为百万级，超出视为异常载荷 */
+const MAX_CONTEXT_WINDOW_TOKENS = 10_000_000
 /** 会话作用域长度上限：作品目录形如 press/{作品名}，远短于此值，超出视为异常载荷 */
 const MAX_SCOPE_LENGTH = 160
 
@@ -198,6 +207,9 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             case 'ai/selectModel': {
                 return this.selectModel(payload)
             }
+            case 'ai/selectContextWindow': {
+                return this.selectContextWindow(payload)
+            }
             case 'workflow/state': {
                 return this.workflowRouter.getContext()
             }
@@ -296,7 +308,28 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     /** 模型清单与当前选择：激活时已后台预热缓存，缓存为空（未登录或预热未完成）时此处现拉一次 */
     private async listModels(): Promise<AiModelChoices> {
         const models = await listCodebuddyModels(this.secrets)
-        return { current: getSelectedCodebuddyModel(), options: models }
+        return {
+            current: getSelectedCodebuddyModel(),
+            contextWindow: getSelectedContextWindow(),
+            options: models,
+        }
+    }
+
+    /**
+     * 选择上下文档位：0 表示跟随模型默认，其余必须是当前模型的可选档位。
+     * 关键约束：档位由宿主按清单裁决 —— CLI 的 set_config 只校验正整数、不校验档位，
+     * 不支持的档位会被下游静默忽略，故此处先行拒绝，不写 globalState。
+     */
+    private async selectContextWindow(payload: unknown): Promise<{ contextWindow: number; changed: boolean }> {
+        const tokens = readContextWindowPayload(payload)
+        if (tokens > 0 && !getContextWindowOptions(getSelectedCodebuddyModel()).includes(tokens)) {
+            throw new Error('该上下文档位不在当前模型的可选范围内，请先在模型菜单中确认可选档位')
+        }
+        const previous = getSelectedContextWindow()
+        await setSelectedContextWindow(this.state, tokens)
+        this.service.notifyRuntimeChanged()
+        logger.info(`CodeBuddy 上下文档位已设为 ${tokens > 0 ? String(tokens) : '模型默认'}`)
+        return { contextWindow: tokens, changed: previous !== tokens }
     }
 
     /**
@@ -583,6 +616,22 @@ function readUsagePromptPayload(payload: unknown): string {
         throw new Error('ai/usage/prompt 参数类型不正确')
     }
     return requestId
+}
+
+/** 校验 ai/selectContextWindow 入参：只接受 0（跟随默认）或正整数档位，超量级上限视为异常载荷 */
+function readContextWindowPayload(payload: unknown): number {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/selectContextWindow 缺少参数')
+    }
+    const raw = (payload as { tokens?: unknown }).tokens
+    if (typeof raw !== 'number' || !Number.isFinite(raw) || raw < 0) {
+        throw new Error('ai/selectContextWindow 参数类型不正确')
+    }
+    const value = Math.trunc(raw)
+    if (value > MAX_CONTEXT_WINDOW_TOKENS) {
+        throw new Error('ai/selectContextWindow 参数超出上限')
+    }
+    return value
 }
 
 /** 读取有限正整数：非法值回落默认值，避免 NaN 进入偏移量计算 */

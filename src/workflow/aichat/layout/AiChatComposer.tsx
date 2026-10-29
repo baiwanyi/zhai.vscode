@@ -85,6 +85,8 @@ interface AiChatComposerProps {
     onCommand: (command: AiCommand) => void
     onOpenModels: () => void
     onSelectModel: (modelId: string, manual: boolean) => void
+    /** 选择上下文档位：0 表示跟随模型默认 */
+    onSelectContextWindow: (tokens: number) => void
     onClearCommand: () => void
     onReference: (source: AiReferenceSource) => void
     onModeChange: (mode: AiConversationMode) => void
@@ -115,6 +117,7 @@ export function AiChatComposer({
     onCommand,
     onOpenModels,
     onSelectModel,
+    onSelectContextWindow,
     onClearCommand,
     onReference,
     onModeChange,
@@ -204,6 +207,7 @@ export function AiChatComposer({
                         onModeChange={onModeChange}
                         onOpenModels={onOpenModels}
                         onSelectModel={onSelectModel}
+                        onSelectContextWindow={onSelectContextWindow}
                         onEnhance={handleEnhance}
                         onUndoEnhance={handleUndoEnhance}
                         onSend={onSend}

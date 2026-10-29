@@ -162,6 +162,8 @@ export interface AiRuntimeInfo {
     /** 当前模型的展示名：取自激活时预热的清单，未命中或清单为空时为空串（前端退回展示 id） */
     modelName: string
     maxContextTokens: number
+    /** 当前生效的上下文窗口（token）：优先取用户档位，未选择时取模型默认，0 表示未知 */
+    contextWindowTokens: number
     dailyTokenBudget: number
     /** 当日已消耗 token（预算护栏展示） */
     usedTokensToday: number
@@ -179,11 +181,17 @@ export interface AiModelOption {
     creditRate: number | null
     /** 是否为用户自定义模型：菜单据此拆分为「内置模型」「自定义模型」两组 */
     custom: boolean
+    /** 模型默认上下文档位（token），0 表示平台未下发 */
+    contextWindowTokens: number
+    /** 该模型支持的可选上下文档位（升序），空数组表示平台未下发 */
+    contextWindowOptions: number[]
 }
 
 /** 模型菜单数据：当前选择 + 账号可用清单（current 为空表示使用 CLI 默认模型） */
 export interface AiModelChoices {
     current: string
+    /** 当前上下文档位：0 表示跟随模型默认 */
+    contextWindow: number
     options: AiModelOption[]
 }
 
