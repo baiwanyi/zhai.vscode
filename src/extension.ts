@@ -272,7 +272,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     // CodeBuddy 模型清单后台预热（拉起 CLI 约数秒）；未登录时返回空列表，不阻断激活，选择命令里会现拉
     void listCodebuddyModels(secrets).then((models) => {
         logger.info(
-            `CodeBuddy 可用模型：${models.length > 0 ? models.map((item) => item.modelId).join(', ') : '未获取到（可能未登录）'}`,
+            `CodeBuddy 可用模型：${
+                models.length > 0
+                    ? models.map((item) => `${item.modelId}(${item.contextWindowTokens})`).join(', ')
+                    : '未获取到（可能未登录）'
+            }`,
         )
     })
 

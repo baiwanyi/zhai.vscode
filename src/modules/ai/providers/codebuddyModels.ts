@@ -30,6 +30,8 @@ export interface CodebuddyModelOption {
     creditRate: number | null
     /** 是否为用户自定义模型：菜单据此拆分为「内置模型」「自定义模型」两组 */
     custom: boolean
+    /** 是否为平台默认模型：Auto（空 id）时据此取窗口与档位 */
+    isDefault: boolean
     /** 模型默认上下文档位（token），0 表示平台未下发 */
     contextWindowTokens: number
     /** 该模型支持的可选上下文档位（升序）；空数组表示平台未下发 */
@@ -89,14 +91,22 @@ export function readCreditRate(modelId: string): number | null {
  * 关键约束：不得用 ai.maxContextTokens（历史裁剪预算）兜底，二者口径完全不同，混用会给出假占比。
  */
 export function readModelContextWindow(modelId: string): number {
-    const matched = cached.find((item) => item.modelId === modelId.trim())
-    return matched?.contextWindowTokens ?? 0
+    return findModelOption(modelId)?.contextWindowTokens ?? 0
 }
 
-/** 按模型 id 取可选档位：清单未命中、Auto 空 id 或平台未下发时返回空数组 */
+/** 按模型 id 取可选档位：清单未命中或平台未下发时返回空数组 */
 export function getContextWindowOptions(modelId: string): number[] {
-    const matched = cached.find((item) => item.modelId === modelId.trim())
-    return matched?.contextWindowOptions ?? []
+    return findModelOption(modelId)?.contextWindowOptions ?? []
+}
+
+/**
+ * 按模型 id 定位清单项：Auto（空 id）落到平台默认模型，其余按 id 精确匹配。
+ * 关键约束：只有窗口与档位允许走默认模型兜底 —— 额度倍率仍按 id 精确匹配，
+ * Auto 下的真实路由模型未知，用默认模型的倍率记账会给出错误成本。
+ */
+function findModelOption(modelId: string): CodebuddyModelOption | undefined {
+    const target = modelId.trim()
+    return target.length > 0 ? cached.find((item) => item.modelId === target) : cached.find((item) => item.isDefault)
 }
 
 /** 当前选择的档位：0 表示跟随模型默认，供运行时信息与菜单回显 */
@@ -190,6 +200,7 @@ async function fetchModels(secrets: SecretsService): Promise<CodebuddyModelOptio
                 credits: model.credits ?? null,
                 creditRate: parseCreditRate(model.credits),
                 custom: isCustomModel(model),
+                isDefault: model.isDefault === true,
                 contextWindowTokens: readContextWindowTokens(model),
                 contextWindowOptions: readContextWindowOptions(model),
             }))
@@ -203,6 +214,7 @@ async function fetchModels(secrets: SecretsService): Promise<CodebuddyModelOptio
             credits: null,
             creditRate: null,
             custom: model.modelId.startsWith(CUSTOM_MODEL_PREFIX),
+            isDefault: false,
             // 简化清单不含模型能力字段，窗口与档位只能留空，展示层据此不显示占比与档位选择
             contextWindowTokens: 0,
             contextWindowOptions: [],

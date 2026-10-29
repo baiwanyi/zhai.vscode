@@ -195,6 +195,10 @@ export class CodeBuddyProvider implements AiProvider {
                     if (event.type === 'message_start') {
                         // 本次请求真正带上的上下文规模：系统提示、历史与引用的合计，与输出无关
                         contextTokens = sumContextTokens(event.message.usage)
+                        if (contextTokens === 0) {
+                            // 部分模型在流开头不上报输入用量，这里必须留证据，否则只能靠猜
+                            logger.warn(`message_start 未带输入用量：${JSON.stringify(event.message.usage)}`)
+                        }
                     } else if (event.type === 'content_block_delta') {
                         if (event.delta.type === 'text_delta') {
                             hasStreamed = true
@@ -239,10 +243,23 @@ export class CodeBuddyProvider implements AiProvider {
                         cacheReadTokens: message.usage.cache_read_input_tokens ?? 0,
                         cacheCreationTokens: message.usage.cache_creation_input_tokens ?? 0,
                     }
+                    // 兜底：流开头没给输入用量时，首轮可直接用 result 的输入三项
+                    // （续接不行 —— 此时的 result.usage 是整段会话的累计，会把上下文算成历史总和）
+                    if (contextTokens === 0 && !isResume) {
+                        contextTokens = sumContextTokens(message.usage)
+                    }
+                    if (contextTokens === 0) {
+                        logger.warn('上下文用量未取到：message_start 与 result 均无输入用量')
+                    }
                     // 窗口以本轮实际生效值为准，退回模型清单档位；都拿不到时留 0，由展示层不显示占比
                     const contextWindow =
                         readResultContextWindow(message) ||
                         readModelContextWindow(resolveCodebuddyModel(getSelectedCodebuddyModel()) ?? '')
+                    if (contextWindow === 0) {
+                        // 窗口取不到时打印协议实况：升级 CLI 后字段名可能变化，日志是唯一可核对的证据
+                        const modelUsage = 'modelUsage' in message ? message.modelUsage : undefined
+                        logger.warn(`上下文窗口未取到，modelUsage=${JSON.stringify(modelUsage).slice(0, 300)}`)
+                    }
                     const context =
                         contextTokens > 0 ? { usedTokens: contextTokens, windowTokens: contextWindow } : undefined
                     yield { content: '', reasoning: '', usage, meta, context }

@@ -66,8 +66,10 @@ interface AiChatComposerProps {
     isGenerating: boolean
     phase: Phase
     mode: AiConversationMode
-    /** 当前会话上下文占用：null 表示尚未生成过 */
+    /** 当前会话上下文占用：null 表示本轮还没有产出数据 */
     contextUsage: AiContextUsage | null
+    /** 当前模型的上下文窗口：会话尚无占用数据时作为圆环分母 */
+    contextWindowTokens: number
     /** 写作模式下是否存在可改写的编辑器目标 */
     hasWriteTarget: boolean
     /** 当前模型 id，空表示使用 CLI 默认模型 */
@@ -105,6 +107,7 @@ export function AiChatComposer({
     phase,
     mode,
     contextUsage,
+    contextWindowTokens,
     hasWriteTarget,
     model,
     modelName,
@@ -200,6 +203,7 @@ export function AiChatComposer({
                         isEnhanced={enhancedFrom !== null}
                         isEnhancing={isEnhancing}
                         contextUsage={contextUsage}
+                        contextWindowTokens={contextWindowTokens}
                         model={model}
                         modelName={modelName}
                         modelChoices={modelChoices}

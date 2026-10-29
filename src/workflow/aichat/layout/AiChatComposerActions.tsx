@@ -19,8 +19,10 @@ interface AiChatComposerActionsProps {
     isEnhanced: boolean
     /** 增强请求进行中：按钮转圈并丢弃重复点击 */
     isEnhancing: boolean
-    /** 当前会话上下文占用：null 表示尚未生成过 */
+    /** 当前会话上下文占用：null 表示本轮还没有产出数据 */
     contextUsage: AiContextUsage | null
+    /** 当前模型的上下文窗口：会话尚无占用数据时作为圆环分母 */
+    contextWindowTokens: number
     /** 当前模型 id，空表示使用 CLI 默认模型 */
     model: string
     /** 当前模型展示名：清单未拉取时由运行时提供，空串表示未知 */
@@ -47,6 +49,7 @@ export function AiChatComposerActions({
     isEnhanced,
     isEnhancing,
     contextUsage,
+    contextWindowTokens,
     model,
     modelName,
     modelChoices,
@@ -76,7 +79,7 @@ export function AiChatComposerActions({
                 />
             </div>
             <div className="flex items-center gap-0.5">
-                <AiChatTokenRing usage={contextUsage} />
+                <AiChatTokenRing usage={contextUsage} windowTokens={contextWindowTokens} />
                 <EnhanceButton
                     disabled={isGenerating || !canEnhance}
                     isEnhanced={isEnhanced}

@@ -728,8 +728,9 @@ export class AiChatService implements vscode.Disposable {
                 startedAt,
                 status: controller.signal.aborted ? 'cancelled' : 'completed',
             })
-            if (contextUsage !== null) {
-                this.contextUsages.set(conversationId, contextUsage)
+            const resolvedContext = this.resolveContextUsage(contextUsage, roundUsage)
+            if (resolvedContext !== null) {
+                this.contextUsages.set(conversationId, resolvedContext)
             }
             this.streamEmitter.fire({
                 type: 'stream',
@@ -746,7 +747,7 @@ export class AiChatService implements vscode.Disposable {
                 durationMs,
                 tokensEstimated: isTokensEstimated,
                 credits: roundUsage.credits,
-                contextUsage: contextUsage ?? undefined,
+                contextUsage: resolvedContext ?? undefined,
             })
         } catch (error) {
             clearTimeout(firstTokenTimer)
@@ -783,8 +784,9 @@ export class AiChatService implements vscode.Disposable {
                 logger.error(`AI 生成失败：${message}`, error)
             }
             // 中断前请求已带上上下文，能拿到的用量照常记下，避免圆环回退成未知
-            if (contextUsage !== null) {
-                this.contextUsages.set(conversationId, contextUsage)
+            const resolvedContext = this.resolveContextUsage(contextUsage, roundUsage)
+            if (resolvedContext !== null) {
+                this.contextUsages.set(conversationId, resolvedContext)
             }
             this.streamEmitter.fire({
                 type: 'stream',
@@ -802,13 +804,34 @@ export class AiChatService implements vscode.Disposable {
                 durationMs,
                 tokensEstimated: isTokensEstimated,
                 credits: roundUsage.credits,
-                contextUsage: contextUsage ?? undefined,
+                contextUsage: resolvedContext ?? undefined,
             })
         } finally {
             if (this.activeRequest?.reqId === reqId) {
                 this.activeRequest = null
             }
         }
+    }
+
+    /**
+     * 确定本轮上下文占用：CLI 落盘的本轮输入量优先（含缓存折减，且续接时仍是单轮值），
+     * 其次用通道 message_start 的流内快照；估算值与累计值一律不采纳。
+     * 关键约束：两者都拿不到时返回 null —— 未知不能显示成 0；窗口优先用通道回传的实际档位。
+     */
+    private resolveContextUsage(
+        snapshot: AiContextUsage | null,
+        roundUsage: { usage: ChatUsage; isEstimated: boolean },
+    ): AiContextUsage | null {
+        const usedTokens =
+            !roundUsage.isEstimated && roundUsage.usage.promptTokens > 0
+                ? roundUsage.usage.promptTokens
+                : (snapshot?.usedTokens ?? 0)
+        if (usedTokens <= 0) {
+            return null
+        }
+        const model = getSelectedCodebuddyModel()
+        const windowTokens = snapshot?.windowTokens ?? (resolveContextWindow(model) || readModelContextWindow(model))
+        return { usedTokens, windowTokens }
     }
 
     /**

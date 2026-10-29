@@ -326,6 +326,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     phase={phase}
                     mode={mode}
                     contextUsage={contextUsage}
+                    contextWindowTokens={runtime?.contextWindowTokens ?? 0}
                     hasWriteTarget={hasWriteTarget}
                     command={command}
                     model={currentModel}
