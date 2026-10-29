@@ -3,7 +3,7 @@
  * 复用约定：请求经 @shared/utils/bridge 走 media/setCover、media/copy、media/insert，
  * 异常统一 toastError，结果按宿主回执里的 copied / inserted / reason 分支给出提示。
  * 关键约束：webview 内写图片受 CSP 与权限限制，复制一律交宿主按平台完成；
- * 插入写的是指向原图的相对路径而不是副本，因此失败提示要区分「文档未保存」「非 Markdown」与「无活动光标」；
+ * 插入写的是指向原图的 @zhai/ 存储根引用而不是副本，因此失败提示要区分「文档未保存」「非 Markdown」与「无活动光标」；
  * 插入成功与「本来就没有活动光标」都要收起详情面板，收尾由页面经 onDetailClose 决定；
  * 对外只暴露同参同步回调，Promise 在内部收口，网格与详情面板可直接复用同一组函数。
  */

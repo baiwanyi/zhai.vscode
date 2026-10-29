@@ -46,6 +46,7 @@
         "package": "pnpm run compile && node dev/scripts/bundle-native.mjs && vsce package --no-dependencies"
     },
     "contributes": {
+        "markdown.markdownItPlugins": true,
         "commands": [
             {
                 "command": "zhai.openDashboard",

@@ -34,7 +34,7 @@
 
 | # | 决策 | 影响章节 |
 | --- | --- | --- |
-| 1 | 正文插入改为**引用原图**（写相对路径，不复制副本） | §5.4 |
+| 1 | 正文插入改为**引用原图**（写 `@zhai/` 存储根引用，不复制副本） | §5.4 |
 | 2 | 删除角色 / 条目 / 作品时**不删图**，也不改写出处字段 | §7.2 |
 | 3 | 默认**全量按月分组**展示，年月下拉只用于过滤 | §6.1、§6.2 |
 | 4 | 索引库**放存储根**（`.media/media.db`），不放缓存目录 | §4.1 |
@@ -54,7 +54,7 @@
 | --- | --- | --- |
 | Google Photos | 时间是唯一主轴，按月分组 + 快速跳月 | 默认全量按月分组 + 年月过滤（§6.1、§6.2） |
 | Eagle | 「文件夹分类」弱化，「资源库 + 元数据」为主 | 文件名去语义，元数据入表（§3.2、§4.2） |
-| Obsidian | 反向链接面板：资源页列出「被哪些文档引用」并可跳转 | `media_usage` 多行 + 详情分组列表（§5.6） |
+| Obsidian | 反向链接面板：资源页列出「被哪些文档引用」并可跳转 | `media_usage` 多行 + 详情分组列表（§5.7） |
 | WordPress 媒体库 | 「已上传至 / 被用于」把附件与内容绑定，删除前提示引用 | 出处 + 引用双栏，删除前列清单（§5.1、§7.1） |
 
 共同结论：**文件系统只负责存储，检索与关系必须落到索引**。本项目当前「磁盘是唯一事实来源、靠文件名解析归属」的做法在类型膨胀后会失效——这是本次升级的技术核心。
@@ -294,53 +294,86 @@ CREATE INDEX IF NOT EXISTS idx_usage_type ON media_usage(ref_type);
 
 ### 5.4 正文引用形态（决策 1：引用原图）
 
-**插入 = 在光标处写入指向原图的相对路径，不复制副本。**
+**插入 = 在光标处写入指向原图的 `@zhai/` 存储根引用，不复制副本。**
 
 ```markdown
-![林小满](../../../images/202610/20261029153045aB3xK9.png)
+![林小满](@zhai/images/202610/20261029153045aB3xK9.png)
 ```
 
 实现要点：
 
-- 用 `path.posix.relative(文档目录, 图片绝对路径)` 计算，分隔符统一 `/`；从 `press/{作品}/Chapters/` 出发通常是 `../../../images/...`，从 `notes/YYYYMM/` 出发是 `../../images/...`。
+- 路径 = `@zhai/` + 媒体相对路径，与文档所在目录无关；文档或作品目录整体移动后引用依旧有效，不需要重算。
 - alt 取出处名：`character_name` → `lore_name` → 作品名 → `媒体 {YYYY-MM-DD HH:mm}`。
-- 路径含空格、圆括号等字符时用尖括号包裹：`![alt](<../../images/202610/xxx (1).png>)`。
-- **跨盘 / 存储根外文档**（Windows 无法相对化）：降级为「复制到该文档同级 `assets/`」，usage 记 `ref_scope=absolute` + `ref_anchor=副本文件名`。这是唯一保留副本的场景，界面在该次插入后提示一次。
-- 文档未保存、非 Markdown、无活动编辑器：沿用现有 `PortraitInsertResult` 的 `no-editor` / `unsaved` / `not-markdown` 三态。
+- 不再有跨盘降级：`@zhai/` 只依赖存储根配置，存储根与文档是否同盘都不影响写入的形态。
+- 文档未保存、非 Markdown、无活动编辑器、写入失败：返回 `no-editor` / `unsaved` / `not-markdown` / `failed` 四态。
 
 收益与代价：
 
 | 收益 | 代价 / 缓解 |
 | --- | --- |
 | 源图更新即刻生效，不再有「副本与源图不同步」 | 作品目录单独拷贝会丢图 → P1「导出作品时打包图片」 |
-| 磁盘不再双份，媒体库体积统计真实 | 文档移动后相对路径失效 → 对账标记 `stale`，P1 提供一键重算 |
-| 引用天然可追踪，不依赖文件名反查 | 外部编辑器可能不认相对路径 → 主流编辑器（VSCode / Typora / Obsidian 同仓）均可 |
+| 磁盘不再双份，媒体库体积统计真实 | 文档被拷到存储根之外时 `@zhai/` 无处解析 → 需带着存储根一起搬 |
+| 文档移动、作品改名都不需要改写正文 | 渲染依赖配置的存储根，换根后所有引用一起指向新根（这正是期望行为） |
+| 引用天然可追踪，不依赖文件名反查 | 外部编辑器不认该前缀 → 用 VS Code 原生预览或 webview 查看 |
+
+### 5.5 `@zhai/` 存储根引用
+
+正文以 `@zhai/` 开头的引用由媒体页插入时自动写入，也允许用户或 AI 手写：
+
+```markdown
+![林小满](@zhai/images/202610/20261029153045aB3xK9.png)
+```
+
+| 环节 | 处理 |
+| --- | --- |
+| 媒体索引（`mediaReferenceService.resolveReference`） | 前缀后即存储根相对路径，直接回查 `path` 列，命中后记 `chapter` / `note` 的 usage |
+| webview（react-markdown） | `@shared/utils/zhaiPath` 拼宿主注入的存储根基址（`<meta name="zhai-storage-base">`），产出 `vscode-webview-resource:` URL |
+| VS Code 原生 Markdown 预览 | `extendMarkdownIt` 挂 markdown-it 插件（`modules/markdown/zhaiImagePreview.ts`），把前缀指向的图片读成 data URI 内联，绕开预览的资源白名单；超上限或读取失败才退回相对路径 / `file://` |
+
+约束：
+
+- 只替换前缀，前缀后的子目录与文件名原样保留；`?query` / `#hash` 一并保留。
+- `..`、空段、反斜杠与盘符一律不认，越界引用按 `stale` 处理、不落库。
+- 基址末尾斜杠有无都收敛为单个分隔符，避免 `//` 或缺失分隔符。
+- 非 `@zhai/` 前缀（相对路径、`http(s)`、`data:`）行为不变。
+- 原生预览的资源白名单只含工作区与当前文档目录，存储根一般在其外，相对路径与 `file://` 都会被拦下——插件因此把图片内联成 data URI（单图上限 8MB，按 mtime + 体积缓存）；超过上限的图退回相对路径，此时多半显示不出来，需要预览大图时把存储根作为工作区打开。
+
+媒体页「插入到编辑器」写的就是这一形态（§5.4），无需再手工换算路径。
 
 **迁移期兼容**：历史 `assets/` 副本不动。扫描时把 `assets/<id>.<ext>` 也识别为引用（按主干匹配 `media.id`），一张图在两个文档各留一份副本就记两条 usage——符合"被两处使用"的事实。
 
-### 5.5 对账扫描
+### 5.6 对账扫描
 
-单一入口 `mediaReferenceService.rescan(pressPath?)`：
+协议入口 `media/rescan`（无参数）对应 `MediaLibraryService.rescan()`，分两段串行：
+
+| 段 | 入口 | 产出 |
+| --- | --- | --- |
+| 磁盘对账 | `mediaScan.scanMediaFiles` + `reconcileMedia` | `indexed` / `missing` / `corrected`：补录新文件、标记丢失、按 id 纠正 `path` 与 `month` |
+| 引用重建 | `mediaReferenceService.rescanReferences(db, readPressCover, onlyDirPath?)` | `stale`：解析到但查不到媒体记录的引用数 |
+
+`rescanReferences` 的 `readPressCover` 回读 `press.db` 的作品封面指针以补登 `press_cover`；`onlyDirPath` 可只扫某个作品，缺省扫全部（当前 `media/rescan` 走全量）。
+
+引用重建范围：
 
 ```
-扫描范围
-├── press/*/Chapters/**/*.md           → chapter
-├── press/*/角色设定.md / 势力.md / 地点.md / 物品.md / 设定.md
-│     ├── ![...](...)                  → chapter（设定文档内插图）
-│     └── - 封面：<id>                 → character_cover / lore_cover
-├── notes/**/*.md                       → note
-└── media 表内全部 path（文件存在性）    → missing 标记
+press/*/Chapters/**/*.md（下探两层）                  → chapter
+press/*/{README,设定,角色设定,世界观,金手指,势力,地点,物品,大纲}.md
+      ├── ![...](...)                               → chapter（文档内插图）
+      └── - 封面：<id>                              → character_cover / lore_cover
+notes/{YYYYMM}/*.md                                  → note
 ```
+
+磁盘对账范围：`images/{YYYYMM}/*`。以磁盘为准——磁盘有而库里没有按 `import` 补录，库里有而磁盘没有标 `missing`，同一 id 换了目录则纠正 `path` 与 `month`。
 
 规则：
 
-- 事务内按 `ref_path` 批量替换（先 `DELETE FROM media_usage WHERE ref_path = ?`，再批量 `INSERT`），避免逐条比对。
-- 单文件读取失败只跳过并记 warn，不影响整次扫描。
-- **stale 检测**：解析出的图片路径指向不存在的文件 → 不写 usage，记 `stale` 计数并在详情面板提示「N 处引用已失效」。
-- 触发时机：打开媒体页（增量：只扫 mtime 变化的文档，P1）、删除操作前（只算目标媒体的引用）、应用启动空闲时（P2）。
+- 事务内按 `ref_path` 替换：先 `DELETE FROM media_usage WHERE ref_path = ?`，再逐条写入该文档的引用，扫描中断不会留下半篇记录。
+- 单文件读取失败按空文档跳过，不影响整次扫描。
+- **stale 检测**：解析出的图片路径在 media 表里查不到记录（先按 `path` 精确匹配，再按文件名主干匹配 `id`）→ 不写 usage，计入 `stale` 并在详情面板提示「N 处引用已失效」。
+- 触发时机：打开媒体页时只跑磁盘对账（5s 节流，不解析文档）；`media/rescan` 全量重跑两段；删除前不重扫，直接用已有 usage 判断引用。
 - 扫描只写 usage，不改文档。
 
-### 5.6 呈现规则
+### 5.7 呈现规则
 
 **网格卡片**（`src/workflow/media/layout/MediaGrid.tsx`）：
 
@@ -407,7 +440,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_type ON media_usage(ref_type);
 | `media/setCover` | `{ id }` | `{ coverSelectedId }` |
 | `media/insert` | `{ id }` | `{ inserted, reason?, refPath?, duplicated? }` |
 | `media/copy` | `{ id }` | `{ copied, reason? }` |
-| `media/rescan` | `{ pressPath? }` | `{ indexed, removed, missing, stale }` |
+| `media/rescan` | 无 | `{ indexed, missing, corrected, stale }` |
 | `media/import` | `{ paths }`（P1） | `{ items }` |
 
 安全约束（写进 `src/shared/types/media.ts` 头注释）：
@@ -501,8 +534,8 @@ CREATE INDEX IF NOT EXISTS idx_usage_type ON media_usage(ref_type);
 | `db/connection.ts` | 按存储根打开 `media.db`（`journal_mode=DELETE`），建 `media` / `media_usage` / `media_meta`，含降级与 quick_check |
 | `mediaRepository.ts` | 表读写：insert / listByMonth / detail / deleteById / months / ownerNames |
 | `mediaScan.ts` | 扫描 `images/**` 与表对账（补录、missing、路径纠正） |
-| `mediaReferenceService.ts` | usage 登记与 `rescan`：抽图片引用与封面行，含 stale 检测 |
-| `mediaLibraryService.ts` | 对外 list / detail / delete / setCover / insert / copy |
+| `mediaReferenceService.ts` | usage 登记与 `rescanReferences`：抽图片引用与封面行，含 stale 检测 |
+| `mediaLibraryService.ts` | 对外 list / detail / remove / batchRemove / setCover / insert / copy / rescan |
 | ~~`mediaMigrationService.ts`~~ | 旧 `press/*/Images/` 迁移与指针改写；一次性任务已完成，代码已移除 |
 | `ai/…` | 不变，出图通道与用量记账沿用 |
 
@@ -511,7 +544,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_type ON media_usage(ref_type);
 | 文件 | 改动 |
 | --- | --- |
 | `imageGenerateService.ts` | 落盘目录改 `images/{YYYYMM}/`；命名改用 `nextMediaId`；落盘后写 `media` 表（含出处与名称快照），不再写侧车 |
-| `portraitService.ts` | `insertIntoEditor` 改为写相对路径引用（§5.4），返回 `refPath`；`removeByCharacterId` / `removeByLoreId` 下线 |
+| `portraitService.ts` | `insertIntoEditor` 改为写 `@zhai/` 存储根引用（§5.4），返回 `refPath`；`removeByCharacterId` / `removeByLoreId` 下线 |
 | `coverService.ts` | 列举改为查表 |
 | ~~`imageLibraryService.ts`~~ / ~~`db/coverRepository.ts`~~ | 旧图库链路与兼容转出层已删除；封面仓储迁至 `media/pressCoverStore.ts`，只接受 `images/**` |
 | `common/db/openDatabase.ts` | 增可选参数 `journalMode`（默认 `WAL`，媒体库传 `DELETE`） |
@@ -519,7 +552,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_type ON media_usage(ref_type);
 | `aiChatProvider.ts` | 前缀委托加 `media/` |
 | `shared/types/messages.ts` | `HostMethodName` 增 `media/*` |
 | `shared/types/media.ts` | 新增契约（条目、详情、usage、协议出入参） |
-| `extension.ts` | 装配 `mediaDb` / 各服务；启动后触发迁移与对账 |
+| `extension.ts` | 装配 `mediaDb` / 各服务（对账由媒体页打开与 `media/rescan` 触发） |
 
 ### 9.2 前端（`src/workflow/media/`）
 
@@ -546,7 +579,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_type ON media_usage(ref_type);
 ### 9.3 测试
 
 - 新增：`mediaNaming.test.ts`、`mediaRepository.test.ts`、`mediaScan.test.ts`、`mediaReferenceService.test.ts`（含一对多与 stale）、`useMediaFilters.test.ts`、`components/MediaGallery.test.tsx`。
-- 改造：`imageGenerateService.test.ts`（落盘路径与库写入）、`portraitService` 插入用例（相对路径计算与跨盘降级）。
+- 改造：`imageGenerateService.test.ts`（落盘路径与库写入）、`portraitService` 插入用例（`@zhai/` 引用写入）。
 - 删除：`imageNaming.test.ts`、`imageSidecar.test.ts`、`imageDirScan.test.ts`、`imageLibraryService.test.ts`、`imagegenIds.test.ts`、`components/ImageGenPage.test.tsx`（旧图库交互已不存在）。
 
 ---
@@ -568,7 +601,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_type ON media_usage(ref_type);
 | 11 | 同一文档多次引用同一张图 | 合并为 1 行，`ref_anchor` 记首次行号，引用数不虚高 |
 | 12 | 引用原图后作品目录单独拷贝 | 图片丢失 → P1「导出作品时打包图片」；本期在导出入口提示 |
 | 13 | 文档移动 / 重命名导致相对路径失效 | 对账标 `stale`，详情提示「N 处引用已失效」，P1 一键重算 |
-| 14 | 存储根外文档插入（跨盘） | `path.relative` 不可用 → 降级复制到该文档 `assets/`，usage 记 `ref_scope=absolute` |
+| 14 | 存储根外文档插入（跨盘） | 仍写 `@zhai/` 引用，usage 记 `ref_scope=absolute`；文档离开存储根后图片无处解析，需带着存储根一起搬 |
 | 15 | 路径含空格 / 圆括号 | Markdown 中用 `<...>` 包裹 |
 | 16 | 存储根路径含中文/空格 | 全程 `Uri.joinPath` 与 `path.posix`，不拼字符串 |
 | 17 | 存储根切换 | 全部相对路径；连接按根重建并关闭旧连接 |
@@ -591,7 +624,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_type ON media_usage(ref_type);
 1. 目录与命名改造 + `media.db`（含存储根位置、降级、quick_check）+ 扫描对账。
 2. 媒体页：默认全量按月分组、年月筛选、详情（出处 + 引用分组）、删除保护。
 3. 出图落盘接新链路（角色名 / 作品 / 条目写入出处）。
-4. 插入改为引用原图（含相对路径计算与跨盘降级）。
+4. 插入改为引用原图（写 `@zhai/` 存储根引用，不再按文档目录换算）。
 5. 迁移脚本与指针改写。
 
 验收：
@@ -599,7 +632,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_type ON media_usage(ref_type);
 - 出图落在 `images/{YYYYMM}/{14位}{6位}.png`，文件名符合正则，同秒连发两张不冲突。
 - 进页面即按月分组展示全库；年月下拉显示 `2026年10月（N）`，选中只显示该月；无类型筛选入口。
 - 角色卡出图后详情显示「角色 · 姓名」+「作品 · 作品名」；设定出图显示「设定 · 条目名」+ 作品。
-- 设封面后详情引用出现「作品封面」；插入章节后出现「章节 · 标题」，文档内是 `../../../images/...` 相对路径且预览正常；可点击跳转。
+- 设封面后详情引用出现「作品封面」；插入章节后出现「章节 · 标题」，文档内是 `@zhai/images/...` 存储根引用且预览正常；可点击跳转。
 - 同一张图被 2 个章节 + 1 个笔记 + 1 个封面引用时，详情列出 4 条，卡片显示「被 4 处使用」。
 - 删除被引用的图有二次确认并列出引用处；删除后封面正确回退。
 - 删除角色后图片仍在库中，出处显示「（已删除）」。
@@ -627,7 +660,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_type ON media_usage(ref_type);
 
 | # | 决策 | 结论 | 理由 |
 | --- | --- | --- | --- |
-| 1 | 插入行为 | 引用原图（写相对路径） | 源图更新即生效、不产生副本、引用可追踪 |
+| 1 | 插入行为 | 引用原图（写 `@zhai/` 存储根引用） | 源图更新即生效、不产生副本、引用可追踪 |
 | 2 | 删角色/条目/作品 | 不删图、不改写出处 | 图片已全局化，可能被别处引用；历史事实不篡改 |
 | 3 | 默认视图 | 全量按月分组 | 进页面即见全部，符合 Google Photos 式时间轴习惯 |
 | 4 | 索引位置 | `{root}/.media/media.db` | 缓存目录重建会丢出处、出图参数与 external 引用 |

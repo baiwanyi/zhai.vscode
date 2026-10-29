@@ -1,7 +1,7 @@
 /**
  * 媒体引用服务：登记与重建「图片被谁使用」的关系，覆盖作品封面、角色/条目封面与正文引用。
  * 复用约定：路径一律相对存储根，文档遍历只走作品目录与 notes 目录，扩展名固定 md；
- * 正文引用同时识别三种写法——images/ 相对路径、文档同级 assets/ 副本名、存储根内绝对路径；
+ * 正文引用同时识别四种写法——@zhai/ 存储根引用、images/ 相对路径、文档同级 assets/ 副本名、存储根内绝对路径；
  * 写入复用 mediaRepository 的 insertUsage / replaceUsagesOfDocument，不另写一份 SQL。
  * 关键约束：引用按文档整篇替换（先删后插），同一文档内多次引用同一张图只留一行，避免引用数虚高；
  * 找不到对应媒体的引用记为 stale 且不落库，防止把已删除的图重新挂回来；
@@ -12,6 +12,7 @@ import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { buildStorageUri } from '@modules/common/storagePath'
 import type { MediaRefType } from '@shared/types/media'
+import { isZhaiPath, readZhaiRelativePath } from '@shared/utils/zhaiPath'
 import { PRESS_SCANNED_FILES } from './constants'
 import { insertUsage, listMediaPaths, replaceUsagesOfDocument } from './mediaRepository'
 import type { UsageRecord } from './mediaRepository'
@@ -87,6 +88,25 @@ function toStorageRelative(absolutePath: string): string | null {
  */
 function resolveReference(documentDir: string, raw: string, lookup: MediaLookup): string | null {
     const normalized = normalizeReference(raw)
+    // 存储根引用（@zhai/…）：路径本身已是存储根相对形态，不需要再按文档目录拼接
+    if (isZhaiPath(normalized)) {
+        const relative = readZhaiRelativePath(normalized)
+        if (relative === null) {
+            return null
+        }
+        const byPath = lookup.byPath.get(relative)
+        if (byPath !== undefined) {
+            return byPath
+        }
+        return (
+            lookup.byId.get(
+                relative
+                    .split('/')
+                    .pop()
+                    ?.replace(/\.[^.]+$/u, '') ?? '',
+            ) ?? null
+        )
+    }
     if (path.isAbsolute(normalized)) {
         const relative = toStorageRelative(normalized)
         if (relative === null) {

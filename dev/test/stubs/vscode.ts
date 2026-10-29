@@ -23,6 +23,8 @@ const openableDocuments = new Map<string, vscode.TextDocument>()
 const openedDocumentPaths: string[] = []
 /** fs.delete 的调用记录：按删除顺序保存 fsPath，供用例断言删除范围 */
 const deletedPaths: string[] = []
+/** editor.edit 的插入记录：按插入顺序保存文本，供用例断言写进正文的内容 */
+const editInserts: string[] = []
 /** 系统回收站可用性：置为 false 时 useTrash 删除一律失败，供用例覆盖「降级永久删除」的路径 */
 let isTrashAvailable = true
 
@@ -36,7 +38,10 @@ export function resetWorkspaceState(): void {
     openableDocuments.clear()
     openedDocumentPaths.length = 0
     deletedPaths.length = 0
+    editInserts.length = 0
     isTrashAvailable = true
+    window.activeTextEditor = undefined
+    window.visibleTextEditors.length = 0
 }
 
 /**
@@ -107,6 +112,11 @@ export function registerDirtyTextDocument(path: string, lines: string[]): void {
 /** 读取 showTextDocument 打开过的绝对路径序列，供用例断言打开目标 */
 export function readOpenedDocumentPaths(): string[] {
     return [...openedDocumentPaths]
+}
+
+/** 读取 editor.edit 写入的文本序列，供用例断言插入内容 */
+export function readInsertedTexts(): string[] {
+    return [...editInserts]
 }
 
 /** 读取 fs.delete 删除过的绝对路径序列，供用例断言删除范围 */
@@ -191,6 +201,85 @@ export function createRange(
                 endPosition?.character ?? change?.end?.character ?? endCharacter,
             )
         },
+    }
+}
+
+/** 把 Range 两种构造重载的入参规整为四个坐标：宿主代码按 Position 或数字两种方式构造 */
+function toRangeCorners(
+    startOrLine: vscode.Position | number,
+    endOrCharacter: vscode.Position | number,
+    endLine?: number,
+    endCharacter?: number,
+): [number, number, number, number] {
+    if (typeof startOrLine === 'number' && typeof endOrCharacter === 'number') {
+        return [startOrLine, endOrCharacter, endLine ?? startOrLine, endCharacter ?? endOrCharacter]
+    }
+    if (typeof startOrLine !== 'number' && typeof endOrCharacter !== 'number') {
+        return [startOrLine.line, startOrLine.character, endOrCharacter.line, endOrCharacter.character]
+    }
+    throw new TypeError('Range 构造参数不合法')
+}
+
+/** Range 构造器：宿主代码以 new vscode.Range(...) 建范围，实现委托给 createRange 的工厂 */
+export class Range implements vscode.Range {
+    private readonly inner: vscode.Range
+
+    public constructor(
+        startOrLine: vscode.Position | number,
+        endOrCharacter: vscode.Position | number,
+        endLine?: number,
+        endCharacter?: number,
+    ) {
+        const [startLine, startCharacter, rangeEndLine, rangeEndCharacter] = toRangeCorners(
+            startOrLine,
+            endOrCharacter,
+            endLine,
+            endCharacter,
+        )
+        this.inner = createRange(startLine, startCharacter, rangeEndLine, rangeEndCharacter)
+    }
+
+    public get start(): vscode.Position {
+        return this.inner.start
+    }
+
+    public get end(): vscode.Position {
+        return this.inner.end
+    }
+
+    public get isEmpty(): boolean {
+        return this.inner.isEmpty
+    }
+
+    public get isSingleLine(): boolean {
+        return this.inner.isSingleLine
+    }
+
+    public isEqual(other: vscode.Range): boolean {
+        return this.inner.isEqual(other)
+    }
+
+    public contains(other: vscode.Position | vscode.Range): boolean {
+        return this.inner.contains(other)
+    }
+
+    public intersection(other: vscode.Range): vscode.Range | undefined {
+        return this.inner.intersection(other)
+    }
+
+    public union(other: vscode.Range): vscode.Range {
+        return this.inner.union(other)
+    }
+
+    public with(
+        startOrChange?: vscode.Position | { start?: vscode.Position; end?: vscode.Position },
+        endPosition?: vscode.Position,
+    ): vscode.Range {
+        // 真实 API 的两个重载不能混用联合类型调用，先按「是否为 Position」分流
+        if (startOrChange !== undefined && !('line' in startOrChange)) {
+            return this.inner.with(startOrChange)
+        }
+        return this.inner.with(startOrChange, endPosition)
     }
 }
 
@@ -284,7 +373,18 @@ export function createTextEditor(
         visibleRanges: [createRange(0, 0, 0, 0)],
         options: { tabSize: 4, insertSpaces: true, cursorStyle: 1, lineNumbers: 1 },
         viewColumn: 1,
-        edit: () => Promise.resolve(true),
+        edit: (callback): Promise<boolean> => {
+            const builder: vscode.TextEditorEdit = {
+                insert: (_position, value) => {
+                    editInserts.push(value)
+                },
+                replace: () => undefined,
+                delete: () => undefined,
+                setEndOfLine: () => undefined,
+            }
+            callback(builder)
+            return Promise.resolve(true)
+        },
         insertSnippet: () => Promise.resolve(true),
         setDecorations: () => undefined,
         revealRange: () => undefined,
@@ -502,6 +602,8 @@ export const workspace = {
 
 export const window = {
     activeTextEditor: undefined as vscode.TextEditor | undefined,
+    /** 可见编辑器列表：取插入目标时在活动编辑器缺失后按它回退，用例可自行登记 */
+    visibleTextEditors: [] as vscode.TextEditor[],
     showTextDocument(document: vscode.TextDocument): Promise<vscode.TextEditor> {
         openedDocumentPaths.push(document.uri.fsPath)
         return Promise.resolve(createTextEditor(document))

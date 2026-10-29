@@ -2,7 +2,7 @@
  * 媒体库服务：列举、详情、删除、设封面、插入正文与复制，是媒体页与角色/设定页共用的唯一数据入口。
  * 复用约定：索引读写走 mediaRepository，磁盘扫描走 mediaScan，引用重建走 mediaReferenceService；
  * 作品封面指针沿用 PressCoverStore（press.db meta 表），路径与片段校验复用 common/storagePath；
- * 插入正文写「相对原图路径」而不是复制副本，跨盘等无法相对化的场景才复制到文档同级 assets。
+ * 插入正文写 `@zhai/{存储根相对路径}` 而不是复制副本，文档移动后引用仍有效。
  * 关键约束：磁盘是唯一事实来源——列举前先做一次节流对账（目录遍历），补录手工放入的图片与标记丢失；
  * 前端只传媒体 id，路径一律由表查得后再校验 images/{YYYYMM}/ 形态，不接受任意路径；
  * 删除前不回退引用，而是把引用清单一并回传给前端二次确认；封面被删时回退到该作品出处的最新一张。
@@ -29,6 +29,7 @@ import type {
     MediaSetCoverResult,
     MediaUsageItem,
 } from '@shared/types/media'
+import { ZHAI_PATH_PREFIX } from '@shared/utils/zhaiPath'
 import { writeImageToClipboard } from './clipboardImage'
 import { MAX_BATCH_DELETE } from './constants'
 import { clearCoverUsage, rescanReferences, setCoverUsage } from './mediaReferenceService'
@@ -159,11 +160,6 @@ function toRefType(documentRelative: string | null): { refType: MediaRefType; re
         return { refType: 'chapter', refScope: 'storage' }
     }
     return { refType: 'external', refScope: 'storage' }
-}
-
-/** markdown 路径是否需要尖括号包裹：含空格或圆括号时必须包裹 */
-function needsAngleBracket(value: string): boolean {
-    return /[\s()]/u.test(value)
 }
 
 /** alt 文本取值顺序：角色名 → 条目名 → 作品名 → 日期 */
@@ -317,8 +313,8 @@ export class MediaLibraryService {
     }
 
     /**
-     * 插入到当前编辑器光标处：写指向原图的相对路径，不复制副本。
-     * 跨盘等无法相对化的场景降级为复制到文档同级 assets，并如实回传所用形态。
+     * 插入到当前编辑器光标处：写 @zhai/ 存储根引用，不复制副本。
+     * 该写法与文档位置无关，文档或作品目录移动后依旧有效，因此不再按文档目录算相对路径。
      */
     public async insert(payload: unknown): Promise<MediaInsertResult> {
         const id = readMediaId(payload, 'media/insert')
@@ -345,17 +341,9 @@ export class MediaLibraryService {
         }
         const documentPath = document.uri.fsPath
         const documentRelative = toStorageRelative(documentPath)
-        const relative = path.relative(path.dirname(documentPath), source.fsPath)
-        let refPath: string
-        if (path.isAbsolute(relative)) {
-            // 跨盘：相对路径无法表达，降级为文档内副本，保证预览仍可显示
-            refPath = await this.copyToAssets(document, row)
-        } else {
-            refPath = relative.split(path.sep).join('/')
-        }
+        const refPath = `${ZHAI_PATH_PREFIX}${row.path}`
         const alt = toAltText(row).replaceAll('[', '').replaceAll(']', '')
-        const target = needsAngleBracket(refPath) ? `<${refPath}>` : refPath
-        const snippet = `![${alt}](${target})`
+        const snippet = `![${alt}](${refPath})`
         const insertAt = editor.selection.active
         const didInsert = await editor.edit((builder) => {
             builder.insert(insertAt, snippet)
@@ -423,16 +411,6 @@ export class MediaLibraryService {
             // 对账失败不影响列表读取：索引里已有的图片照常展示
             logger.error('媒体目录对账失败', error)
         }
-    }
-
-    /** 复制到文档同级 assets：跨盘插入的降级路径，返回写入正文的相对路径 */
-    private async copyToAssets(document: vscode.TextDocument, row: StoredMedia): Promise<string> {
-        const fileName = row.path.split('/').pop() ?? `${row.id}.${row.ext}`
-        const assetDirectory = vscode.Uri.joinPath(document.uri, '..', 'assets')
-        await vscode.workspace.fs.createDirectory(assetDirectory)
-        const bytes = await vscode.workspace.fs.readFile(buildStorageUri(resolveStorageRoot(), row.path.split('/')))
-        await vscode.workspace.fs.writeFile(vscode.Uri.joinPath(assetDirectory, fileName), bytes)
-        return `assets/${fileName}`
     }
 
     /**

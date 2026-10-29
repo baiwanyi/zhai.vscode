@@ -359,26 +359,36 @@ export function listUsages(db: Database.Database, mediaId: string): MediaUsageIt
     return rows.map(toUsageItem)
 }
 
-/** 写入一条引用：同键重复时刷新 seen_at，不产生第二行 */
+/**
+ * 写入一条引用：同键重复时刷新 seen_at，不产生第二行。
+ * 关键约束：ref_id 允许为 NULL，而 SQLite 的唯一索引把 NULL 视为互不相等，ON CONFLICT 命中不到这类行；
+ * 因此先按 IS 语义更新，未命中原行再插入，保证正文引用与作品封面的引用数都不虚高。
+ */
 export function insertUsage(db: Database.Database, mediaId: string, usage: UsageRecord): void {
+    const seenAt = new Date().toISOString()
+    const updated = db
+        .prepare(
+            `UPDATE media_usage
+                SET ref_scope = ?, ref_title = ?, ref_anchor = ?, seen_at = ?
+              WHERE media_id = ? AND ref_type = ? AND ref_path = ? AND ref_id IS ?`,
+        )
+        .run(
+            usage.refScope,
+            usage.refTitle,
+            usage.refAnchor,
+            seenAt,
+            mediaId,
+            usage.refType,
+            usage.refPath,
+            usage.refId,
+        )
+    if (updated.changes > 0) {
+        return
+    }
     db.prepare(
         `INSERT INTO media_usage (media_id, ref_type, ref_path, ref_scope, ref_id, ref_title, ref_anchor, seen_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(media_id, ref_type, ref_path, ref_id) DO UPDATE SET
-            ref_scope = excluded.ref_scope,
-            ref_title = excluded.ref_title,
-            ref_anchor = excluded.ref_anchor,
-            seen_at = excluded.seen_at`,
-    ).run(
-        mediaId,
-        usage.refType,
-        usage.refPath,
-        usage.refScope,
-        usage.refId,
-        usage.refTitle,
-        usage.refAnchor,
-        new Date().toISOString(),
-    )
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(mediaId, usage.refType, usage.refPath, usage.refScope, usage.refId, usage.refTitle, usage.refAnchor, seenAt)
 }
 
 /** 清空某篇文档的全部引用：扫描时按文档整篇替换，避免逐条比对 */

@@ -1,6 +1,8 @@
 /**
  * 扩展入口：按 common.md 第 4.2 节激活流程装配 Common 与 AI 服务。
  * 流程：日志 → 打开索引库/AI 库 → schema 校验 → 注册命令/面板/监听 → 自检自愈（后台不阻塞激活）。
+ * 复用约定：激活结果作为扩展 exports 返回，VS Code 的 Markdown 预览读取 extendMarkdownIt 挂载图片路径插件；
+ * 该钩子只需同步返回实例，真正的路径解析在渲染时按当前文档惰性计算。
  */
 import * as vscode from 'vscode'
 import { AiChatViewProvider } from './modules/ai/aiChatProvider'
@@ -32,6 +34,7 @@ import { ImageSettingsService } from './modules/imagegen/imageSettingsService'
 import { PortraitService } from './modules/imagegen/portraitService'
 import { PromptRuleService, PromptTagService } from './modules/imagegen/prompt'
 import { ReferenceImageService } from './modules/imagegen/referenceImageService'
+import { zhaiImagePathPlugin, type MarkdownItLike } from './modules/markdown/zhaiImagePreview'
 import { closeMediaDatabases, openMediaDatabase } from './modules/media/db/connection'
 import { MediaLibraryService } from './modules/media/mediaLibraryService'
 import { insertMedia } from './modules/media/mediaRepository'
@@ -57,7 +60,12 @@ import { TodoService } from './modules/todo/todoService'
 import { TodoWatcher } from './modules/todo/todoWatcher'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+/** 扩展对外导出：Markdown 预览扩展在激活后读取 extendMarkdownIt 挂载自定义插件 */
+export interface ZhaiExports {
+    extendMarkdownIt(md: MarkdownItLike): MarkdownItLike
+}
+
+export async function activate(context: vscode.ExtensionContext): Promise<ZhaiExports> {
     logger.init(vscode.window.createOutputChannel('宅写作'))
     context.subscriptions.push({ dispose: () => logger.dispose() })
 
@@ -272,6 +280,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         `宅写作 已激活（workspace: ${context.workspaceState.get('initialized') === true ? '已初始化' : '首次'}）`,
     )
     void context.workspaceState.update('initialized', true)
+
+    // Markdown 预览钩子：只包装图片规则，未命中 @zhai/ 前缀时保持原生渲染
+    return {
+        extendMarkdownIt(md: MarkdownItLike): MarkdownItLike {
+            zhaiImagePathPlugin(md)
+            return md
+        },
+    }
 }
 
 export function deactivate(): void {

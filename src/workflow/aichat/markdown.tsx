@@ -1,10 +1,24 @@
 /**
  * AI 对话助手回复的 Markdown 元素到主题类名映射：逐标签复用 shadcn 语义令牌渲染正文元素。
  * 与 layout/message-view 的气泡样式解耦，避免引入 typography 插件造成样式互相覆盖（见 markdown-one.md 第 5 节）。
- * 关键约束：仅供 react-markdown 的 components 属性消费，键集须覆盖助手回复可能产出的全部 GFM 元素。
+ * 关键约束：仅供 react-markdown 的 components 属性消费，键集须覆盖助手回复可能产出的全部 GFM 元素；
+ * 图片地址经 @shared/utils/zhaiPath 统一解析，`@zhai/` 开头的引用拼到宿主注入的存储根基址，其余原样输出。
  */
 import { Separator } from '@components/ui/separator'
+import { STORAGE_BASE_META, resolveZhaiSrc } from '@shared/utils/zhaiPath'
 import type { Components } from 'react-markdown'
+
+/** 存储根基址：宿主以 meta 写入 HTML（CSP 禁止内联脚本），缺失时 @zhai/ 引用保持原样 */
+const STORAGE_BASE = readStorageBase()
+
+/** 读取宿主写入的存储根基址：非浏览器环境或未注入时返回空串 */
+function readStorageBase(): string {
+    if (typeof document === 'undefined') {
+        return ''
+    }
+    const meta = document.querySelector(`meta[name="${STORAGE_BASE_META}"]`)
+    return meta?.getAttribute('content') ?? ''
+}
 
 /** Markdown 元素到主题类名的映射：不引入 typography 插件，逐标签复用 shadcn 令牌，避免与气泡样式互相覆盖 */
 export const MARKDOWN_COMPONENTS: Components = {
@@ -26,6 +40,13 @@ export const MARKDOWN_COMPONENTS: Components = {
         <a className="text-link underline underline-offset-2" href={href}>
             {children}
         </a>
+    ),
+    img: ({ src, alt }) => (
+        <img
+            className="mb-2 max-w-full rounded-md last:mb-0"
+            src={typeof src === 'string' ? resolveZhaiSrc(src, STORAGE_BASE) : undefined}
+            alt={alt ?? ''}
+        />
     ),
     code: ({ children, className }) =>
         typeof className === 'string' && className.includes('language-') ? (

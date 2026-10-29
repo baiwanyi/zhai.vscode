@@ -166,7 +166,7 @@ export interface MediaSetCoverResult {
 export interface MediaInsertResult {
     inserted: boolean
     reason?: 'no-editor' | 'unsaved' | 'not-markdown' | 'failed'
-    /** 写入正文的图片引用（相对路径或文档内 assets 副本） */
+    /** 写入正文的图片引用：形如 @zhai/images/{YYYYMM}/{id}.png */
     refPath?: string
     /** true 表示该文档已引用过同一张图，本次未重复插入 */
     duplicated?: boolean
