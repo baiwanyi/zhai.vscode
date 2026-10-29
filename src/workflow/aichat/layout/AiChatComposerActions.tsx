@@ -2,14 +2,9 @@
  * AI 对话输入卡片底部操作行：左侧写入范围与模型菜单，右侧上下文圆环、增强提示词与发送 / 停止。
  * 采用普通行容器组合各独立子组件，本层只做布局与禁用态分发。
  * 关键约束：生成中除圆环可查看外全部禁用，发送位替换为停止按钮；本层不持有任何会话状态；
- * 写入审批不再提供常驻开关，连续生成的一次性授权在发送前确认。
+ * 工具审批默认逐次确认，连续生成的一次性授权在发送前确认。
  */
-import type {
-    AiContextUsage,
-    AiModelChoices,
-    AiReasoningEffort,
-    AiWriteGrant,
-} from '@shared/types/aiChat'
+import type { AiContextUsage, AiModelChoices, AiReasoningEffort, AiWriteGrant } from '@shared/types/aiChat'
 import { EnhanceButton } from '@webview/components/EnhanceButton'
 import { SendButton } from '@webview/components/SendButton'
 import { AiChatModelMenu } from './AiChatModelMenu'
@@ -39,7 +34,7 @@ interface AiChatComposerActionsProps {
     isLoadingModels: boolean
     onWriteGrantChange: (grant: AiWriteGrant) => void
     onOpenModels: () => void
-    onSelectModel: (modelId: string, manual: boolean) => void
+    onSelectModel: (modelId: string) => void
     /** 选择上下文档位：0 表示跟随模型默认 */
     onSelectContextWindow: (tokens: number) => void
     /** 选择推理强度：null 表示跟随模型默认 */

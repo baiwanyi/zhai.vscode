@@ -1,19 +1,14 @@
 /**
- * AI 对话展示层纯函数：token 数与引用字数的紧凑折算、未知错误的文本收窄、会话快照的不可变消息替换、
- * 宿主 state 广播载荷的收窄、写作命令模板的发送拼装与回放拆分、工具名的动作文案。
- * 零依赖、无副作用，可被页面主组件与各子组件自由复用；展示规则与 docs/modules/ai-chat.md 第 10 节一致。
- * 关键约束：相对时间格式化已上移至 @shared/utils/format 供各 Webview 共用；readAiStateKind 只信任收窄结果；
+ * AI 对话展示层纯函数：引用体积的紧凑折算、会话快照的不可变消息替换、宿主 state 广播载荷的收窄、
+ * 写作命令模板的发送拼装与回放拆分、工具名的动作文案。
+ * 零依赖、无副作用，可被页面主组件与各子组件自由复用；token 折算与错误文案统一取 @shared/utils 的 format 与 error。
+ * 关键约束：readAiStateKind 只信任收窄结果；
  * 命令模板只在发送瞬间拼接、在展示时按最长前缀剥离，输入框与消息气泡均不出现 instruction 全文；
  * 工具名表只做展示映射，未知工具原样透出，不得据此推断权限。
  */
 import type { AiContextRef, AiMessage, AiSessionSnapshot } from '@shared/types/aiChat'
-import { toErrorText } from '@shared/utils/error'
-import { formatTokens } from '@shared/utils/format'
 import { AI_COMMAND_PREFIXES } from './constants'
 import type { AiCommand } from './constants'
-
-// token 折算与错误文案已上移到 @shared/utils 的 format 与 error，实现只保留一份；此处转发是为了不改动各调用点的导入路径
-export { formatTokens, toErrorText }
 
 /** 引用体积描述：过千折算 k，被截断时追加标注 */
 export function describeContext(ref: AiContextRef): string {
@@ -92,8 +87,6 @@ export function readAiStateKind(payload: unknown): 'runtime' | 'context' | 'writ
     const kind = (payload as { kind?: unknown }).kind
     return kind === 'runtime' || kind === 'context' || kind === 'writeTarget' ? kind : null
 }
-
-
 
 /**
  * 命令发送拼装：指令模板在前、用户补充在后，二者以空行分隔；无补充时只发指令。

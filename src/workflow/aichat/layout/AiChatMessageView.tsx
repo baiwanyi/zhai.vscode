@@ -21,6 +21,10 @@ export function AiChatMessageView({ message }: AiChatMessageViewProps): JSX.Elem
     const isCancelled = message.status === 'cancelled'
     /** 生成已落定：流式过程中不展示工具栏，避免用量与耗时是半成品 */
     const isSettled = message.status === 'completed' || message.status === 'failed' || isCancelled
+    /** 宿主回传的错误原文：空串按无错误处理，避免出现一行空白提示 */
+    const failureText = message.error !== null && message.error.length > 0 ? message.error : null
+    /** 状态行文案：错误优先，其次区分失败与主动停止 */
+    const statusText = failureText ?? (isCancelled ? '已停止生成' : message.status === 'failed' ? '生成失败' : null)
     return (
         <Message align={isUser ? 'end' : 'start'}>
             <MessageContent>
@@ -39,10 +43,11 @@ export function AiChatMessageView({ message }: AiChatMessageViewProps): JSX.Elem
                         </Bubble>
                     )}
                 </BubbleGroup>
-                {message.error ? <MessageFooter className="text-destructive">{message.error}</MessageFooter> : null}
-                {message.error === null && (message.status === 'failed' || isCancelled) ? (
-                    <MessageFooter>{isCancelled ? '已停止生成' : '生成失败'}</MessageFooter>
-                ) : null}
+                {statusText === null ? null : (
+                    <MessageFooter className={failureText === null ? undefined : 'text-destructive'}>
+                        {statusText}
+                    </MessageFooter>
+                )}
                 {isUser || !isSettled || message.content.length === 0 ? null : (
                     <MessageFooter>
                         <AiChatMessageActions message={message} />

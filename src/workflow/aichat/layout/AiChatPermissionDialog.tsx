@@ -5,7 +5,14 @@
  * 关闭弹窗等同拒绝，避免等待中的工具调用一直挂到超时。
  */
 import { useState } from 'react'
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@components/ui/dialog'
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from '@components/ui/dialog'
 import { Input } from '@components/ui/input'
 import type { AiAskQuestion, AiPermissionDecision, AiPermissionRequest } from '@shared/types/aiChat'
 import { Button } from '@webview/components/Button'
@@ -60,11 +67,7 @@ function ToolBody({ request, onSubmit }: BodyProps): JSX.Element {
                 {request.editablePath === null ? (
                     <span className="break-all text-sm text-muted-foreground">{request.detail}</span>
                 ) : (
-                    <Input
-                        value={path}
-                        aria-label="目标路径"
-                        onChange={(event) => setPath(event.target.value)}
-                    />
+                    <Input value={path} aria-label="目标路径" onChange={(event) => setPath(event.target.value)} />
                 )}
             </div>
             <DialogFooter>
@@ -129,9 +132,7 @@ function QuestionBody({ request, onSubmit }: BodyProps): JSX.Element {
                                 )
                             })}
                         </div>
-                        {question.multiSelect ? (
-                            <span className="text-xs text-muted-foreground">可多选</span>
-                        ) : null}
+                        {question.multiSelect ? <span className="text-xs text-muted-foreground">可多选</span> : null}
                     </div>
                 ))}
             </div>

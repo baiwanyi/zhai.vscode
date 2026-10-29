@@ -5,7 +5,7 @@
  * 命令与上下文在此折算为 RichChip：图标取 ./commandIcons，文件名与摘要取 ../utils。
  * 本层负责提示文案、禁用态与增强状态，交互全部经回调上抛给页面 hooks。
  * 生成态光晕取 @webview/components/ComposerGlow（与生图页共用，样式在 globals.css 的 composer-glow 段）。
- * 关键约束：写入范围、审批模式、上下文用量、已选命令与上下文均由此层透传，输入卡片不直接读取会话状态；
+ * 关键约束：写入范围、上下文用量、已选命令与上下文均由此层透传，输入卡片不直接读取会话状态；
  * 命令芯片的移除语义是「取消命令」，由 chip.onRemove 承担，不走统一的移除引用回调；
  * 增强提示词经页面 hook 请求宿主模型改写（onEnhanceRequest），本层只保存原文并保留还原入口；
  * 光晕是卡片外侧的兄弟层（卡片底色不透明），容器需自带 isolate，装饰层不承载任何状态或交互；
@@ -70,7 +70,7 @@ interface AiChatComposerProps {
     input: string
     setInput: (input: string) => void
     hasApiKey: boolean
-    isGenerating: boolean
+    /** 视图阶段：sending 待首字、streaming 逐字生成，两者都禁止再次发送 */
     phase: Phase
     /** 写入授权范围 */
     writeGrant: AiWriteGrant
@@ -81,7 +81,7 @@ interface AiChatComposerProps {
     contextUsage: AiContextUsage | null
     /** 当前模型的上下文窗口：会话尚无占用数据时作为圆环分母 */
     contextWindowTokens: number
-    /** 写作模式下是否存在可写范围：编辑器目标或已绑定作品目录（连续生成章节无需选区） */
+    /** 是否存在可写范围：编辑器目标或已绑定作品目录（连续生成章节无需选区） */
     hasWritableScope: boolean
     /** 当前模型 id，空表示使用 CLI 默认模型 */
     model: string
@@ -97,7 +97,7 @@ interface AiChatComposerProps {
     onRemoveContext: (id: string) => void
     onCommand: (command: AiCommand) => void
     onOpenModels: () => void
-    onSelectModel: (modelId: string, manual: boolean) => void
+    onSelectModel: (modelId: string) => void
     /** 选择上下文档位：0 表示跟随模型默认 */
     onSelectContextWindow: (tokens: number) => void
     /** 选择推理强度：null 表示跟随模型默认 */
@@ -117,7 +117,6 @@ export function AiChatComposer({
     input,
     setInput,
     hasApiKey,
-    isGenerating,
     phase,
     writeGrant,
     onWriteGrantChange,
@@ -148,6 +147,8 @@ export function AiChatComposer({
     const [enhancedFrom, setEnhancedFrom] = useState<string | null>(null)
 
     const canEnhance = input.trim().length > 0
+    /** 生成中：光晕与禁用态的共同来源，由视图阶段派生，避免与页面层重复持有同一状态 */
+    const isGenerating = phase === 'streaming'
     /** 已有命令时正文由指令模板提供，因此空输入也可发送 */
     const hasContent = command !== null || input.trim().length > 0
     const canSend = hasApiKey && phase === 'idle' && hasContent && hasWritableScope

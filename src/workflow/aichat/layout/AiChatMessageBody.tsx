@@ -1,7 +1,8 @@
 /**
  * AI 对话消息正文：用户消息交给 AiChatMessageUserBody（命令徽章 + 补充文本），助手回复经 unified/remark 渲染 Markdown。
  * 复用上级目录 markdown.tsx 的主题映射、同目录用户正文组件与 @components/ui 的 Spinner。
- * 关键约束：空内容按状态占位（失败 / 已停止给文案，其余给加载态），不渲染空段落；用户消息的命令拆分不改变落库内容。
+ * 关键约束：空内容按状态占位（失败 / 已停止给文案，待首字给加载态，已完成空回复不渲染），不渲染空段落；
+ * 用户消息的命令拆分不改变落库内容。
  */
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -15,7 +16,7 @@ interface AiChatMessageBodyProps {
     message: AiMessage
 }
 
-export function AiChatMessageBody({ message }: AiChatMessageBodyProps): JSX.Element {
+export function AiChatMessageBody({ message }: AiChatMessageBodyProps): JSX.Element | null {
     if (message.content.length > 0) {
         return message.role === 'user' ? (
             <AiChatMessageUserBody message={message} />
@@ -25,5 +26,9 @@ export function AiChatMessageBody({ message }: AiChatMessageBodyProps): JSX.Elem
             </Markdown>
         )
     }
-    return <>{message.status === 'failed' || message.status === 'cancelled' ? '（未产生内容）' : <Spinner />}</>
+    if (message.status === 'failed' || message.status === 'cancelled') {
+        return <>（未产生内容）</>
+    }
+    // 只有待首字与流式中才是加载态：已完成的空回复不再转圈，交由调用方决定是否展示
+    return message.status === 'pending' || message.status === 'streaming' ? <Spinner /> : null
 }

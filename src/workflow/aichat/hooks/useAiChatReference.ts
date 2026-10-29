@@ -6,7 +6,7 @@
 import { useCallback, useRef, useState } from 'react'
 import type { AiReferenceEntry } from '@shared/types/aiChat'
 import { request } from '@shared/utils/bridge'
-import { toErrorText } from '../utils'
+import { toErrorText } from '@shared/utils/error'
 
 export interface UseAiChatReferenceOptions {
     onError: (error: string | null) => void
@@ -30,31 +30,34 @@ export function useAiChatReference({ onError, onAdded }: UseAiChatReferenceOptio
     /** 检索序号：只有最后一次请求的回包允许写入状态 */
     const searchIdRef = useRef(0)
 
-    const search = useCallback(async (keyword: string): Promise<void> => {
-        if (keyword.trim().length === 0) {
-            searchIdRef.current += 1
-            setEntries([])
-            return
-        }
-        const requestId = searchIdRef.current + 1
-        searchIdRef.current = requestId
-        setIsSearching(true)
-        try {
-            const result = await request<{ entries: AiReferenceEntry[] }>('ai/reference/search', { keyword })
-            if (searchIdRef.current === requestId) {
-                setEntries(result.entries)
-            }
-        } catch (cause) {
-            if (searchIdRef.current === requestId) {
+    const search = useCallback(
+        async (keyword: string): Promise<void> => {
+            if (keyword.trim().length === 0) {
+                searchIdRef.current += 1
                 setEntries([])
+                return
             }
-            onError(toErrorText(cause))
-        } finally {
-            if (searchIdRef.current === requestId) {
-                setIsSearching(false)
+            const requestId = searchIdRef.current + 1
+            searchIdRef.current = requestId
+            setIsSearching(true)
+            try {
+                const result = await request<{ entries: AiReferenceEntry[] }>('ai/reference/search', { keyword })
+                if (searchIdRef.current === requestId) {
+                    setEntries(result.entries)
+                }
+            } catch (cause) {
+                if (searchIdRef.current === requestId) {
+                    setEntries([])
+                }
+                onError(toErrorText(cause))
+            } finally {
+                if (searchIdRef.current === requestId) {
+                    setIsSearching(false)
+                }
             }
-        }
-    }, [onError])
+        },
+        [onError],
+    )
 
     const add = useCallback(
         async (entry: AiReferenceEntry): Promise<boolean> => {

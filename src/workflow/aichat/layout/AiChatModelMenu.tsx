@@ -61,7 +61,7 @@ interface AiChatModelMenuProps {
     disabled: boolean
     /** 菜单展开时按需拉取清单 */
     onOpen: () => void
-    onSelect: (modelId: string, manual: boolean) => void
+    onSelect: (modelId: string) => void
     /** 选择上下文档位：0 表示跟随模型默认 */
     onSelectContextWindow: (tokens: number) => void
     /** 选择推理强度：null 表示跟随模型默认 */
@@ -95,7 +95,7 @@ export function AiChatModelMenu({
         : (currentOption?.name ?? (currentName.length > 0 ? currentName : current))
 
     const renderAutoOption = (): JSX.Element => (
-        <DropdownMenuItem onSelect={() => onSelect(AUTO_MODEL_ID, false)} className="gap-2">
+        <DropdownMenuItem onSelect={() => onSelect(AUTO_MODEL_ID)} className="gap-2">
             <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{AUTO_MODEL_LABEL}</span>
             {isAuto ? <Check className="size-3 shrink-0" /> : null}
@@ -105,7 +105,7 @@ export function AiChatModelMenu({
     const renderOption = (option: AiModelOption): JSX.Element => {
         const rateLabel = toRateLabel(option.creditRate)
         return (
-            <DropdownMenuItem key={option.modelId} onSelect={() => onSelect(option.modelId, false)} className="gap-2">
+            <DropdownMenuItem key={option.modelId} onSelect={() => onSelect(option.modelId)} className="gap-2">
                 <ModelIcon modelId={option.modelId} name={option.name} />
                 <span className="min-w-0 flex-1 truncate">{option.name}</span>
                 <span className="flex shrink-0 items-center gap-1">

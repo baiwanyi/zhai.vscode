@@ -31,7 +31,7 @@ export function AiChatHistoryItem({ session, isActive, onSelect, onDelete }: AiC
                     variant="ghost"
                     size="icon"
                     className="col-start-1 row-start-1 opacity-0 group-hover/history:opacity-100"
-                    title="删除会话"
+                    tooltip="删除会话"
                     aria-label="删除会话"
                     onClick={(event) => {
                         event.stopPropagation()

@@ -4,13 +4,7 @@
  * 关键约束：回车才发检索请求；空关键词与空结果都给明确提示；语料为空时提示去「打开语料目录」放文件。
  */
 import { useState } from 'react'
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-} from '@components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@components/ui/dialog'
 import { Input } from '@components/ui/input'
 import type { AiReferenceEntry } from '@shared/types/aiChat'
 import { Button } from '@webview/components/Button'
@@ -70,7 +64,9 @@ export function AiChatReferenceDialog({
                 <div className="max-h-72 overflow-y-auto rounded-lg border border-border">
                     {entries.length === 0 ? (
                         <div className="p-3 text-xs text-muted-foreground">
-                            {isSearching ? '正在检索…' : '没有匹配的条目：换个关键词，或先在「打开语料目录」里放入 .md 语料'}
+                            {isSearching
+                                ? '正在检索…'
+                                : '没有匹配的条目：换个关键词，或先在「打开语料目录」里放入 .md 语料'}
                         </div>
                     ) : (
                         entries.map((entry) => (

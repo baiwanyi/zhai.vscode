@@ -4,7 +4,7 @@
  */
 import { useCallback } from 'react'
 import { request } from '@shared/utils/bridge'
-import { toErrorText } from '../utils'
+import { toErrorText } from '@shared/utils/error'
 
 /** 宿主命令 hook 的对外依赖：错误由共享提示 hook 持有 */
 export interface UseAiChatCommandsOptions {

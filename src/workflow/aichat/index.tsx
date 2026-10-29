@@ -4,12 +4,12 @@
  * 历史与新建会话并进标题行 AppAction，消息流走 AppContent，输入区落 AppFooter），
  * 消息流由 MessageScroller 托管（自动滚动 + 回到底部按钮），Message + Bubble 呈现消息，
  * 空态用 Empty、输入区用三段式输入卡片（工具行 / 输入框 / 操作行）；流式正文经宿主 stream 增量渲染。
- * 底部卡片承载写作命令（徽章展示，指令模板在发送时拼装）、参考资料占位、写入范围与审批模式、
+ * 底部卡片承载写作命令（徽章展示，指令模板在发送时拼装）、参考资料与提及检索、写入范围、
  * 模型菜单（展开时按需拉取账号可用清单）、上下文圆环、增强提示词（走文本通道改写，经 ai/enhancePrompt）与发送；
  * 会话固定为写作模式：模型直接读写作品目录与当前文档，查询资料走只读工具；
- * 写入边界由宿主的工具守卫裁决，前端只负责展示与发送，不再提供模式切换。
- * 会话 / 上下文 / 运行时 / 历史 / 模型 / 写回 / 宿主命令操作拆分至 hooks/，页面区块与消息渲染拆分至 layout/。
- * 设计源：docs/modules/ai-chat.md 第 4.2 节对话状态机与第 10.3 节写回链路。
+ * 写入边界由宿主的工具守卫逐次裁决，连续生成在发送前弹一次「本轮直接写入」授权，前端只负责展示与发送。
+ * 会话 / 上下文 / 运行时 / 历史 / 模型 / 写入状态 / 宿主命令操作拆分至 hooks/，页面区块与消息渲染拆分至 layout/。
+ * 设计源：docs/modules/ai-chat.md 第 4 节会话状态机与第 10.3 节底部输入卡片。
  * 关键约束：会话按 projectDir 作用域隔离，作品页传入当前作品目录即换用该作品的对话记录，缺省为通用对话；
  * 页面高度由 AppPage 的 h-full 承接骨架链条，不再自建 h-screen，避免嵌在分区容器里时撑出视口；
  * 生成中的呼吸光晕挂在输入卡片外侧（见 AiChatComposer），与生图页共用 globals.css 的 composer-glow 段。
@@ -24,6 +24,7 @@ import type {
     AiWriteGrant,
 } from '@shared/types/aiChat'
 import { onState, request } from '@shared/utils/bridge'
+import { formatTokens } from '@shared/utils/format'
 import { AppAction, AppContent, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
@@ -47,7 +48,7 @@ import { AiChatMentionDialog } from './layout/AiChatMentionDialog'
 import { AiChatMessageList } from './layout/AiChatMessageList'
 import { AiChatPermissionDialog } from './layout/AiChatPermissionDialog'
 import { AiChatReferenceDialog } from './layout/AiChatReferenceDialog'
-import { composeCommandContent, formatTokens, readAiStateKind, wantsContinuousGeneration } from './utils'
+import { composeCommandContent, readAiStateKind, wantsContinuousGeneration } from './utils'
 import type { AiCommand, AiCommandId } from './constants'
 import type { Phase } from './hooks/useAiChatSession'
 import type { AiReferenceAction } from './layout/AiChatReferenceMenu'
@@ -57,18 +58,15 @@ import type { JSX } from 'react'
 export interface AiChatProps {
     /** 会话作用域（作品目录）：同一作品共用一份对话记录，缺省或 null 表示不属于任何作品的通用对话 */
     projectDir?: string | null
-    /** 当前作品标题：由调用方从作品设定中取，缺省时页头回落为通用对话文案 */
+    /** 当前作品标题：由调用方从作品设定中取，缺省时摘要行回落为通道名 */
     projectTitle?: string | null
 }
 
 export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps): JSX.Element {
-    const { setError, setNotice } = useAiChatStatus()
+    const { setError } = useAiChatStatus()
     const { runHostCommand } = useAiChatCommands({ onError: setError })
     const { isEnhancing, enhance } = useAiChatEnhance()
-    const { contexts, setContexts, loadContexts, removeContext } = useAiChatContexts({
-        onError: setError,
-        onNotice: setNotice,
-    })
+    const { contexts, setContexts, loadContexts, removeContext } = useAiChatContexts({ onError: setError })
     const { sessions, loadSessions } = useAiChatHistory({ onError: setError, projectDir })
     const {
         choices: modelChoices,
@@ -96,7 +94,6 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         deleteSession,
     } = useAiChatSession({
         onError: setError,
-        onNotice: setNotice,
         setContexts,
         refreshSessions: loadSessions,
         projectDir,
@@ -164,7 +161,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         setCommandId(snapshot.draft.commandId)
     }, [])
 
-    // 会话就绪后恢复草稿中的命令并读取写回状态，保证可写回集合与当前活跃会话一致
+    // 会话就绪后恢复草稿中的命令并读取写入状态，保证写入目标与当前活跃会话一致
     useEffect(() => {
         void loadSession().then((snapshot) => {
             if (snapshot !== null) {
@@ -210,7 +207,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         })
     }, [loadContexts, loadRuntime, loadWriteState])
 
-    // 生成结束后刷新当日用量与可写回集合（宿主也会广播，前端兜底保证圆环及时更新）
+    // 生成结束后刷新当日用量与写入状态（宿主也会广播，前端兜底保证圆环及时更新）
     useEffect(() => {
         if (previousPhaseRef.current !== 'idle' && phase === 'idle') {
             void loadRuntime()
@@ -223,7 +220,6 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
     /** 末条消息作为滚动锚点，流式增长时由 MessageScroller 保持贴底 */
     const lastMessageId = messages[messages.length - 1]?.id
     const hasApiKey = runtime?.hasApiKey === true
-    const isGenerating = phase === 'streaming'
     const writeGrant = session?.conversation.writeGrant ?? 'project'
     const hasWriteTarget = writeState?.target !== null && writeState?.target !== undefined
     /** 可写范围：编辑器目标或作品目录任一存在即可发送，连续生成章节不依赖选区 */
@@ -236,7 +232,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
     const currentModelName = runtime?.modelName ?? ''
     /** 会话标题：随会话切换，未建会话时回落为通用文案 */
     const title = session?.conversation.title ?? 'AI 对话'
-    /** 作品标题：无作品或标题未就绪时回落为通用对话，保证用量徽标仍有承载行 */
+    /** 作品标题：无作品或标题未就绪时回落为通道名，保证用量徽标仍有承载行 */
     const projectLabel = projectTitle !== null && projectTitle.length > 0 ? projectTitle : 'CodeBuddy'
     /** 用量行：订阅制通道不展示预算分母；运行时未就绪时给出读取提示，避免闪出 0 */
     const usageText = runtime === null ? '正在读取配置…' : `今日 ${formatTokens(runtime.usedTokensToday)} tokens`
@@ -248,8 +244,8 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
 
     /** 模型选择：写入结果由宿主广播运行时变更，本层只透传点击 */
     const handleSelectModel = useCallback(
-        (modelId: string, manual: boolean): void => {
-            void selectModel(modelId, manual)
+        (modelId: string): void => {
+            void selectModel(modelId)
         },
         [selectModel],
     )
@@ -432,7 +428,6 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     input={input}
                     setInput={setInput}
                     hasApiKey={hasApiKey}
-                    isGenerating={isGenerating}
                     phase={phase}
                     writeGrant={writeGrant}
                     onWriteGrantChange={handleWriteGrantChange}
@@ -467,7 +462,7 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
             <ConfirmDialog
                 open={pendingAutoApprove !== null}
                 title="允许本轮直接写入？"
-                description="本轮将允许模型在白名单范围内（当前文档与作品目录）连续写入，不再逐个确认；授权仅对本次发送生效。"
+                description="本轮将允许模型在作品目录（含当前文档）内连续写入，不再逐个确认；授权仅对本次发送生效。"
                 confirmLabel="允许并发送"
                 onOpenChange={(isOpen) => {
                     if (!isOpen) {

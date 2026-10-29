@@ -1,31 +1,24 @@
 /**
  * AI 对话会话状态机：持有会话快照、视图阶段（idle / sending / streaming）与输入内容，
- * 承载发送 / 停止 / 模式切换 / 新建 / 切换 / 删除会话等操作，并订阅宿主 stream 消息按发起时的助手消息 id 就地追加增量。
- * 复用 ../utils 的消息替换与错误收窄；上下文清单与历史列表由调用方 hook 持有、经参数注入刷新。
+ * 承载发送 / 停止 / 写入范围切换 / 新建 / 切换 / 删除会话等操作，并订阅宿主 stream 消息按发起时的助手消息 id 就地追加增量。
+ * 复用 @shared/utils/error 的错误收窄与 ../utils 的消息替换；上下文清单与历史列表由调用方 hook 持有、经参数注入刷新。
  * 关键约束：发送正文由调用方拼装后传入（写作命令模板不进入输入框），本 hook 只负责提交与清空输入；
- * 切换 / 删除会话或切换模式前先中止生成，避免增量写回已切走的会话；输入框内容在切换时保持不动；
+ * 切换 / 删除会话前先中止生成，避免增量写回已切走的会话；切换写入范围不中断在途生成，只对后续发送生效；
  * 会话作用域由调用方以 projectDir 注入，快照加载 / 新建 / 删除后重载都必须带同一作用域，跨作品不共用对话。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import type {
-    AiContextRef,
-    AiContextUsage,
-    AiSendResult,
-    AiSessionSnapshot,
-    AiWriteGrant,
-} from '@shared/types/aiChat'
-import type { StreamUsage } from '@shared/types/messages'
+import type { AiContextRef, AiContextUsage, AiSendResult, AiSessionSnapshot, AiWriteGrant } from '@shared/types/aiChat'
 import { onStream, request } from '@shared/utils/bridge'
-import { patchMessage, toErrorText } from '../utils'
+import { toErrorText } from '@shared/utils/error'
+import { patchMessage } from '../utils'
 
 /** 视图阶段：idle 空闲、sending 已提交待首字、streaming 正在逐字生成 */
 export type Phase = 'idle' | 'sending' | 'streaming'
 
-/** 会话状态机的对外依赖：错误 / 提示由共享提示 hook 持有，上下文与历史列表由调用方 hook 持有 */
+/** 会话状态机的对外依赖：错误由共享提示 hook 持有，上下文与历史列表由调用方 hook 持有 */
 export interface UseAiChatSessionOptions {
     onError: (error: string | null) => void
-    onNotice: (notice: string | null) => void
     /** 快照加载 / 会话切换后同步待发送上下文清单 */
     setContexts: (contexts: AiContextRef[]) => void
     /** 删除会话后刷新历史列表 */
@@ -66,7 +59,6 @@ export interface AiChatSessionState {
 
 export function useAiChatSession({
     onError,
-    onNotice,
     setContexts,
     refreshSessions,
     projectDir,
@@ -142,7 +134,7 @@ export function useAiChatSession({
                         status: message.status ?? 'completed',
                         error: message.error ?? null,
                         // 用量与耗时只在流末下发一次，字段逐个收窄后再并入，缺省保留原值
-                        totalTokens: readStreamTokens(message.usage, item.totalTokens),
+                        totalTokens: readStreamNumber(message.usage?.totalTokens, item.totalTokens),
                         durationMs: readStreamNumber(message.durationMs, item.durationMs),
                         tokensEstimated: message.tokensEstimated === true,
                         credits: readStreamCredits(message.credits, item.credits),
@@ -175,7 +167,6 @@ export function useAiChatSession({
             }
             setPhase('sending')
             onError(null)
-            onNotice(null)
             try {
                 const result = await request<AiSendResult>('ai/send', {
                     conversationId: session.conversation.id,
@@ -206,7 +197,7 @@ export function useAiChatSession({
                 return false
             }
         },
-        [onError, onNotice, phase, session, setContexts],
+        [onError, phase, session, setContexts],
     )
 
     const stop = useCallback(async (): Promise<void> => {
@@ -225,11 +216,10 @@ export function useAiChatSession({
             setContextUsage(snapshot.contextUsage)
             setInput('')
             onError(null)
-            onNotice(null)
         } catch (cause) {
             onError(toErrorText(cause))
         }
-    }, [onError, onNotice, projectDir, setContexts])
+    }, [onError, projectDir, setContexts])
 
     /** 切换写入范围：不中断在途生成，新范围只对后续发送生效 */
     const switchWriteGrant = useCallback(
@@ -272,14 +262,13 @@ export function useAiChatSession({
                 restoreDraft(snapshot.draft.input)
                 setPhase('idle')
                 onError(null)
-                onNotice(null)
                 return snapshot
             } catch (cause) {
                 onError(toErrorText(cause))
                 return null
             }
         },
-        [onError, onNotice, phase, restoreDraft, session, setContexts],
+        [onError, phase, restoreDraft, session, setContexts],
     )
 
     /** 删除历史会话：删掉的是当前会话时由宿主切到最近会话（无则新建），随后重新加载快照 */
@@ -294,15 +283,15 @@ export function useAiChatSession({
                     const snapshot = await request<AiSessionSnapshot>('ai/session', { projectDir })
                     setSession(snapshot)
                     setContexts(snapshot.contexts)
+                    setContextUsage(snapshot.contextUsage)
                     onError(null)
-                    onNotice(null)
                 }
                 await refreshSessions()
             } catch (cause) {
                 onError(toErrorText(cause))
             }
         },
-        [onError, onNotice, projectDir, refreshSessions, session, setContexts],
+        [onError, projectDir, refreshSessions, session, setContexts],
     )
 
     return {
@@ -323,15 +312,9 @@ export function useAiChatSession({
 }
 
 /**
- * 流末用量的 token 数收窄：Webview 侧收到的字段不可信，非有限数或负数一律视为未知，
+ * 流末数值收窄：Webview 侧收到的字段不可信，非有限数或负数一律视为未知，
  * 沿用消息上已有的值（历史消息为 0，渲染层据此不展示）。
  */
-function readStreamTokens(usage: StreamUsage | undefined, fallback: number): number {
-    const value = usage?.totalTokens
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
-}
-
-/** 流末耗时收窄：口径与 token 一致，未知时沿用原值 */
 function readStreamNumber(value: number | undefined, fallback: number): number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : fallback
 }

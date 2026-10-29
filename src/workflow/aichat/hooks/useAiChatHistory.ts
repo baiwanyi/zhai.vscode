@@ -6,7 +6,7 @@
 import { useCallback, useState } from 'react'
 import type { AiConversationSummary } from '@shared/types/aiChat'
 import { request } from '@shared/utils/bridge'
-import { toErrorText } from '../utils'
+import { toErrorText } from '@shared/utils/error'
 
 /** 历史列表 hook 的对外依赖：错误由共享提示 hook 持有 */
 export interface UseAiChatHistoryOptions {

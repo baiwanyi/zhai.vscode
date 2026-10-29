@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AiPermissionDecision, AiPermissionRequest } from '@shared/types/aiChat'
 import { onStream, request } from '@shared/utils/bridge'
-import { toErrorText } from '../utils'
+import { toErrorText } from '@shared/utils/error'
 
 /** 审批队列的对外依赖：错误经共享提示 hook 上报 */
 export interface UseAiChatPermissionOptions {

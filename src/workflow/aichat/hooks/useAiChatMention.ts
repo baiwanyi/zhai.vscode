@@ -6,7 +6,7 @@
 import { useCallback, useRef, useState } from 'react'
 import type { AiMentionCandidate } from '@shared/types/aiChat'
 import { request } from '@shared/utils/bridge'
-import { toErrorText } from '../utils'
+import { toErrorText } from '@shared/utils/error'
 
 /** 提及 hook 的对外依赖 */
 export interface UseAiChatMentionOptions {
@@ -32,31 +32,34 @@ export function useAiChatMention({ onError, onAdded }: UseAiChatMentionOptions):
     /** 检索序号：只有最后一次请求的回包才允许写入状态 */
     const searchIdRef = useRef(0)
 
-    const search = useCallback(async (keyword: string): Promise<void> => {
-        if (keyword.trim().length === 0) {
-            searchIdRef.current += 1
-            setCandidates([])
-            return
-        }
-        const requestId = searchIdRef.current + 1
-        searchIdRef.current = requestId
-        setIsSearching(true)
-        try {
-            const result = await request<{ candidates: AiMentionCandidate[] }>('ai/mention/search', { keyword })
-            if (searchIdRef.current === requestId) {
-                setCandidates(result.candidates)
-            }
-        } catch (cause) {
-            if (searchIdRef.current === requestId) {
+    const search = useCallback(
+        async (keyword: string): Promise<void> => {
+            if (keyword.trim().length === 0) {
+                searchIdRef.current += 1
                 setCandidates([])
+                return
             }
-            onError(toErrorText(cause))
-        } finally {
-            if (searchIdRef.current === requestId) {
-                setIsSearching(false)
+            const requestId = searchIdRef.current + 1
+            searchIdRef.current = requestId
+            setIsSearching(true)
+            try {
+                const result = await request<{ candidates: AiMentionCandidate[] }>('ai/mention/search', { keyword })
+                if (searchIdRef.current === requestId) {
+                    setCandidates(result.candidates)
+                }
+            } catch (cause) {
+                if (searchIdRef.current === requestId) {
+                    setCandidates([])
+                }
+                onError(toErrorText(cause))
+            } finally {
+                if (searchIdRef.current === requestId) {
+                    setIsSearching(false)
+                }
             }
-        }
-    }, [onError])
+        },
+        [onError],
+    )
 
     const add = useCallback(
         async (candidate: AiMentionCandidate): Promise<boolean> => {

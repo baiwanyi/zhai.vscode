@@ -5,13 +5,7 @@
  * 选中成功后由调用方关闭弹窗并刷新上下文清单，本组件不持有引用状态。
  */
 import { useState } from 'react'
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle,
-} from '@components/ui/dialog'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@components/ui/dialog'
 import { Input } from '@components/ui/input'
 import type { AiMentionCandidate, AiMentionKind } from '@shared/types/aiChat'
 import { Button } from '@webview/components/Button'

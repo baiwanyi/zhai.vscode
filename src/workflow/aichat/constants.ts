@@ -58,5 +58,3 @@ export const AI_COMMAND_PREFIXES: readonly AiCommand[] = [...AI_COMMANDS].sort(
 export function isAiCommandId(value: unknown): value is AiCommandId {
     return typeof value === 'string' && Object.prototype.hasOwnProperty.call(AI_COMMAND_MAP, value)
 }
-
-

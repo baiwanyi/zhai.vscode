@@ -1,6 +1,6 @@
 /**
  * AI 对话上下文圆环：以环形进度展示当前会话的上下文占用（已用 / 模型窗口），点开浮层查看明细。
- * 复用 @components/ui 的 Popover 与 @webview/components/Button，token 折算沿用 ../utils 的统一口径，
+ * 复用 @components/ui 的 Popover 与 @webview/components/Button，token 折算取 @shared/utils/format 的统一口径，
  * 颜色随占用比例分三档（≥70% 琥珀、≥90% 危险）。
  * 关键约束：任何情况下都给出具体数字 —— 没生成过、窗口未就绪一律按 0 呈现，
  * 不显示「尚未生成」「窗口未知」等空态文案，也不编造分母；
@@ -15,9 +15,9 @@ import {
     PopoverTrigger,
 } from '@components/ui/popover'
 import type { AiContextUsage } from '@shared/types/aiChat'
+import { formatTokens } from '@shared/utils/format'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
-import { formatTokens } from '../utils'
 
 /** 圆环半径与周长（viewBox 24×24，线宽 3） */
 const RADIUS = 9

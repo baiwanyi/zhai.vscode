@@ -1,15 +1,15 @@
 /**
  * AI 对话模型菜单数据：经宿主 ai/models 按需拉取账号可用模型与当前选择，ai/selectModel 写回选择结果，
- * ai/selectContextWindow 写回上下文档位（0 表示跟随模型默认）。
+ * ai/selectContextWindow 写回上下文档位（0 表示跟随模型默认），ai/selectEffort 写回推理强度。
  * 清单拉取需拉起 CLI 子进程（数秒），故只在菜单展开时加载，并复用同一次进行中的请求；
  * 选择成功后由宿主广播运行时变更，本层只同步菜单内的当前值，不重复拉取运行时信息。
- * 关键约束：拉清单的超时上限高于默认值；选择只回传模型 id 与 manual 标记，不传展示名；
- * 档位是否合法由宿主按模型清单裁决，前端只做点击透传，不做本地白名单。
+ * 关键约束：拉清单的超时上限高于默认值；选择只回传模型 id，不传展示名；
+ * 档位与强度是否合法由宿主按模型清单裁决，前端只做点击透传，不做本地白名单。
  */
 import { useCallback, useRef, useState } from 'react'
 import type { AiModelChoices, AiReasoningEffort } from '@shared/types/aiChat'
 import { request } from '@shared/utils/bridge'
-import { toErrorText } from '../utils'
+import { toErrorText } from '@shared/utils/error'
 
 /** 模型清单请求的超时上限：拉起 CLI 比普通请求慢，默认 10 秒不够 */
 const MODELS_TIMEOUT_MS = 30_000
@@ -24,7 +24,7 @@ export interface AiChatModelsState {
     choices: AiModelChoices | null
     isLoading: boolean
     loadModels: () => Promise<void>
-    selectModel: (modelId: string, manual: boolean) => Promise<boolean>
+    selectModel: (modelId: string) => Promise<boolean>
     /** 选择上下文档位：0 表示跟随模型默认 */
     selectContextWindow: (tokens: number) => Promise<boolean>
     /** 选择推理强度：null 表示跟随模型默认 */
@@ -58,14 +58,11 @@ export function useAiChatModels({ onError }: UseAiChatModelsOptions): AiChatMode
         return task
     }, [onError])
 
-    /** 选择模型：空 id 表示恢复 CLI 默认；manual 为 true 时由宿主弹出输入框，返回是否发生变更 */
+    /** 选择模型：空 id 表示恢复 CLI 默认，返回是否发生变更 */
     const selectModel = useCallback(
-        async (modelId: string, manual: boolean): Promise<boolean> => {
+        async (modelId: string): Promise<boolean> => {
             try {
-                const result = await request<{ modelId: string; changed: boolean }>('ai/selectModel', {
-                    modelId,
-                    manual,
-                })
+                const result = await request<{ modelId: string; changed: boolean }>('ai/selectModel', { modelId })
                 if (result.changed) {
                     setChoices((previous) => (previous === null ? previous : { ...previous, current: result.modelId }))
                 }
