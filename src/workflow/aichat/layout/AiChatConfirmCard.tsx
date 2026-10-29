@@ -75,7 +75,7 @@ function WritePreviewSegment({ segment, index }: { segment: AiWritePreview; inde
     const removedLines = segment.removed.split('\n')
     const addedLines = segment.content.split('\n')
     return (
-        <CodeBlock size="sm">
+        <CodeBlock>
             <CodeBlockHeader>
                 <CodeBlockTitle>第 {index + 1} 处替换</CodeBlockTitle>
             </CodeBlockHeader>
