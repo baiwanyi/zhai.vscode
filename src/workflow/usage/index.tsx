@@ -1,20 +1,24 @@
 /**
- * AI 使用量页：以 AppPage 骨架承载「标题区（汇总 + 筛选 + 刷新）、用量表格、分页」，点击请求 id 打开提示词弹窗。
+ * AI 使用量页：以 AppPage 骨架承载「标题区（汇总 + 筛选、周期概览与积分余额入口、刷新）、用量表格、分页」，
+ * 点击请求 id 打开提示词弹窗。
  * 复用约定：外壳取 components/AppPage（刷新按钮进标题行 AppAction、汇总走 AppDescription、
  * 今日 / 本月积分以 Badge 与筛选同排在 AppMenu、表格走 AppContent 滚动、分页进 AppFooter）；
  * 列表经 useAiUsage 向宿主取（分页与汇总都在宿主侧完成），提示词经 useUsagePrompt 按需拉取；
  * 表格、筛选、分页与弹窗各自独立成组件，本文件只做状态编排与筛选/翻页的联动复位。
  * 关键约束：筛选变化必须把页码复位到 1，否则会停留在超出新结果集的页码上；
  * 弹窗关闭即清空当前请求，避免下次打开时闪现上一条提示词；刷新期间保留上一份表格避免闪空；
- * 刷新按钮带 force 强制重扫，页面停留时的 30 秒静默同步由 hook 负责。
+ * 刷新按钮带 force 强制重扫，页面停留时的 30 秒静默同步由 hook 负责；
+ * 积分余额入口只按站点跳转网页，余额构成由 CodeBuddy 网页端展示，本地与 CLI 都没有余额数据。
  */
-import { RefreshCw } from 'lucide-react'
-import { useState } from 'react'
+import { ExternalLink, RefreshCw } from 'lucide-react'
+import { useCallback, useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { Badge } from '@components/ui/badge'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
 import type { AiUsageItem, AiUsageModule, AiUsagePeriods, AiUsageRange } from '@shared/types/aiUsage'
+import { request } from '@shared/utils/bridge'
+import { toastError } from '@shared/utils/error'
 import {
     AppAction,
     AppContent,
@@ -106,7 +110,12 @@ export function AiUsagePage(): JSX.Element {
                             onChangeModule={handleChangeModule}
                             onChangeRange={handleChangeRange}
                         />
-                        {result !== null && <UsagePeriodBadges periods={result.periods} />}
+                        {result !== null && (
+                            <div className="flex items-center gap-1.5">
+                                <UsagePeriodBadges periods={result.periods} />
+                                <OpenCreditsButton />
+                            </div>
+                        )}
                     </AppMenu>
                     {error !== null && (
                         <Alert variant="destructive" className="w-full">
@@ -155,5 +164,22 @@ function UsagePeriodBadges({ periods }: UsagePeriodBadgesProps): JSX.Element {
             <Badge variant="outline">今日积分 {formatCredits(periods.today)}</Badge>
             <Badge variant="outline">本月积分 {formatCredits(periods.month)}</Badge>
         </div>
+    )
+}
+
+/**
+ * 积分余额入口：余额构成（套餐赠送、平台奖励）只在 CodeBuddy 网页端可见，本地与 CLI 都没有余额数据，
+ * 因此这里只按当前站点跳转。关键约束：前端不持有地址，只传固定标识，URL 由宿主解析后 openExternal。
+ */
+function OpenCreditsButton(): JSX.Element {
+    const handleClick = useCallback((): void => {
+        void request('host/openExternal', 'credits').catch(toastError)
+    }, [])
+
+    return (
+        <Button size="xs" variant="outline" tooltip="在浏览器中查看积分余额" onClick={handleClick}>
+            <ExternalLink className="size-3" />
+            积分余额
+        </Button>
     )
 }

@@ -1,5 +1,5 @@
 /**
- * CodeBuddy 站点解析：把配置里的站点映射成 SDK 认证环境、CLI 登录方式与授权域名。
+ * CodeBuddy 站点解析：把配置里的站点映射成 SDK 认证环境、CLI 登录方式、授权域名与积分/套餐页面地址。
  * 复用约定：登录（commands）与调用（文本通道、图像通道）共用本模块，保证两侧落在同一站点；
  * 站点取值与 zhai.ai.codebuddySite 一一对应（cn / ai），auth 环境名与 SDK 的 AuthEnvironment 对齐。
  * 关键约束：仅开放中国站与国际站，两者授权页分属不同域名（copilot.tencent.com / codebuddy.ai），
@@ -26,6 +26,15 @@ export const CODEBUDDY_SITE_LABELS: Readonly<Record<CodebuddySite, string>> = {
 export const CODEBUDDY_SITE_AUTH_HOSTS: Readonly<Record<CodebuddySite, readonly string[]>> = {
     cn: ['copilot.tencent.com', 'codebuddy.cn', 'workbuddy.cn'],
     ai: ['codebuddy.ai', 'staging-codebuddy.tencent.com'],
+}
+
+/**
+ * 站点 → 积分与套餐页面：与 CLI 产品配置的 creditPurchaseActions 指向同一路径，仅主域随站点切换。
+ * 余额构成（套餐赠送、平台奖励）只在该页可见，CLI 与本地记录都不含余额，插件侧只做跳转不做查询。
+ */
+export const CODEBUDDY_CREDITS_URLS: Readonly<Record<CodebuddySite, string>> = {
+    cn: 'https://www.codebuddy.cn/profile/plans-usage',
+    ai: 'https://www.codebuddy.ai/profile/plans-usage',
 }
 
 /** 站点 → SDK 认证环境（internal 对应中国站） */

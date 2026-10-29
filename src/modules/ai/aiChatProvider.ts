@@ -12,13 +12,14 @@
  * 作品协议只放行工作台需要的读取与打开，仪表盘的作品写操作不得经此入口触达。
  */
 import * as vscode from 'vscode'
-import { resolvePromptRoot, resolveStorageRoot } from '@modules/common/config'
+import { getZhaiConfig, resolvePromptRoot, resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import type { SecretsService } from '@modules/common/secrets'
 import { toSafeSegments } from '@modules/common/storagePath'
 import type { ToastService } from '@modules/common/toastService'
 import { WEBVIEW_ALLOWED_COMMANDS } from '@modules/common/webviewCommands'
 import { buildWebviewHtml } from '@modules/common/webviewHtml'
+import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { NamingRoutes } from '@modules/naming/namingRoutes'
 import type { PressRoutes } from '@modules/press/pressRoutes'
 import type { ProofreadRoutes } from '@modules/proofread/proofreadRoutes'
@@ -30,6 +31,7 @@ import { isRequestMessage } from '@shared/types/messages'
 import type { OpenWorkflowResult, ResetWorkflowResult, WorkflowViewRequest } from '@shared/types/workflow'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
 import { getSelectedCodebuddyModel, listCodebuddyModels, setSelectedCodebuddyModel } from './providers/codebuddyModels'
+import { CODEBUDDY_CREDITS_URLS } from './providers/codebuddySite'
 import type { AiChatService } from './chatService'
 import type { AiUsageService } from './usageService'
 import type { WorkflowRouter } from './workflowRouter'
@@ -84,6 +86,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         private readonly workflowRouter: WorkflowRouter,
         private readonly naming: NamingRoutes,
         private readonly press: PressRoutes,
+        private readonly media: MediaRoutes,
         private readonly proofread: ProofreadRoutes,
         private readonly secrets: SecretsService,
         private readonly state: vscode.Memento,
@@ -246,6 +249,9 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 void vscode.commands.executeCommand(command)
                 return { executed: true }
             }
+            case 'host/openExternal': {
+                return this.openCreditsPage(payload)
+            }
             default:
                 if (method.startsWith('proofread/')) {
                     return this.proofread.handle(method, payload, (completed, total) =>
@@ -259,6 +265,9 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 if (method.startsWith('naming/')) {
                     return this.naming.handle(method, payload)
                 }
+                if (method.startsWith('media/')) {
+                    return this.media.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())
+                }
                 if (method.startsWith('pressAi/') || PRESS_WORKSPACE_METHODS.has(method)) {
                     return this.press.handle(
                         method,
@@ -269,6 +278,19 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 }
                 throw new Error(`未知的协议方法：${method}`)
         }
+    }
+
+    /**
+     * 打开积分余额页：余额构成（套餐赠送、平台奖励）只在 CodeBuddy 网页端可见，CLI 与本地记录都不含余额，
+     * 因此这里只做按站点跳转。关键约束：目标由宿主按当前站点的固定表解析，前端只能传固定标识，
+     * 不接受任意 URL，避免 Webview 借本协议打开不可信地址。
+     */
+    private async openCreditsPage(payload: unknown): Promise<{ opened: boolean }> {
+        if (payload !== 'credits') {
+            throw new Error('host/openExternal 参数不正确')
+        }
+        const site = getZhaiConfig().aiCodebuddySite
+        return { opened: await vscode.env.openExternal(vscode.Uri.parse(CODEBUDDY_CREDITS_URLS[site])) }
     }
 
     /** 模型清单与当前选择：激活时已后台预热缓存，缓存为空（未登录或预热未完成）时此处现拉一次 */
