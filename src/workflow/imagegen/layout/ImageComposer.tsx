@@ -250,7 +250,7 @@ function ComposerBody({
         })
     }
 
-    const { text, setText, isGenerating, isEnhancing, enhancedFrom, onEnhance, onRestore, onSend, onAbort } =
+    const { text, setText, isGenerating, stage, isEnhancing, enhancedFrom, onEnhance, onRestore, onSend, onAbort } =
         useImageComposer({
             dirPath,
             composePrompt,
@@ -365,6 +365,7 @@ function ComposerBody({
                         ratio={ratio}
                         style={style}
                         isGenerating={isGenerating}
+                        stage={stage}
                         isEnhancing={isEnhancing}
                         isEnhanced={enhancedFrom !== null}
                         canEnhance={!isEnhancing && !isGenerating && text.trim().length > 0}

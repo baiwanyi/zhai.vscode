@@ -7,7 +7,7 @@
  * 档位是否合法由宿主按模型清单裁决，前端只做点击透传，不做本地白名单。
  */
 import { useCallback, useRef, useState } from 'react'
-import type { AiModelChoices } from '@shared/types/aiChat'
+import type { AiModelChoices, AiReasoningEffort } from '@shared/types/aiChat'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '../utils'
 
@@ -27,6 +27,8 @@ export interface AiChatModelsState {
     selectModel: (modelId: string, manual: boolean) => Promise<boolean>
     /** 选择上下文档位：0 表示跟随模型默认 */
     selectContextWindow: (tokens: number) => Promise<boolean>
+    /** 选择推理强度：null 表示跟随模型默认 */
+    selectEffort: (effort: AiReasoningEffort | null) => Promise<boolean>
 }
 
 export function useAiChatModels({ onError }: UseAiChatModelsOptions): AiChatModelsState {
@@ -97,5 +99,27 @@ export function useAiChatModels({ onError }: UseAiChatModelsOptions): AiChatMode
         [onError],
     )
 
-    return { choices, isLoading, loadModels, selectModel, selectContextWindow }
+    /** 选择推理强度：宿主按白名单校验后回传生效值，本层同步菜单当前档位 */
+    const selectEffort = useCallback(
+        async (effort: AiReasoningEffort | null): Promise<boolean> => {
+            try {
+                const result = await request<{ effort: AiReasoningEffort | null; changed: boolean }>(
+                    'ai/selectEffort',
+                    { effort },
+                )
+                if (result.changed) {
+                    setChoices((previous) =>
+                        previous === null ? previous : { ...previous, reasoningEffort: result.effort },
+                    )
+                }
+                return result.changed
+            } catch (cause) {
+                onError(toErrorText(cause))
+                return false
+            }
+        },
+        [onError],
+    )
+
+    return { choices, isLoading, loadModels, selectModel, selectContextWindow, selectEffort }
 }

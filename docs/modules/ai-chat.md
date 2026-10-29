@@ -2,7 +2,7 @@
 
 **版本**：1.8
 **日期**：2026-10-24
-**状态**：对话模式、编辑器右键上下文（10.1）、会话历史（10.2，已按作品隔离）与写作模式写回（10.3）已落地；diff 逐段接受待实现；第 5 节已按 CodeBuddy 单通道更新（直连通道已移除）
+**状态**：对话模式、编辑器右键上下文（10.1）、会话历史（10.2，已按作品隔离）与写作模式写回（10.3）已落地；diff 逐段接受、`@` 提及与参考资料语料检索已落地；第 5 节已按 CodeBuddy 单通道更新（直连通道已移除）
 **宿主**：VSCode 插件 Zhai（宅桌面）
 
 ---
@@ -50,7 +50,7 @@ AI Chat 是插件的**智能交互中枢**，同时服务于两类需求：
 |------|--------|------|--------|------|
 | A1 | 模式切换 | 写作 / 对话双模式，底部按钮切换并随会话持久化 | P0 | 已落地（见 10.3） |
 | A2 | 写作模式指令 | 输入自然语言指令，直接作用于编辑区选中内容或整篇 | P0 | 已落地（整段替换，见 10.3） |
-| A3 | diff 预览与逐段接受 | 按 hunk 接受/拒绝/重新生成，接受后写入文件 | P0 | 待实现（当前为整段替换 + Ctrl+Z） |
+| A3 | diff 预览与逐段接受 | 按 hunk 接受/拒绝/重新生成，接受后写入文件 | P0 | 已落地（逐段接受；重新生成待做） |
 | A4 | 内联续写 | `Alt+Enter` 从光标处续写，流式占位显示 | P0 | 待实现 |
 | A5 | 选中文本快捷操作 | 改写 / 润色 / 校对 / 去 AI 味 | P1 | 已落地（命令菜单，见 10.3） |
 | A6 | 对话模式 | 侧边栏多轮问答，历史持久化 | P0 | 已落地 |
@@ -204,7 +204,7 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 | 文件写入 | `WorkspaceEdit` / `fs.writeFile` | **WorkspaceEdit** | 写入进入 VSCode Undo 栈，用户 `Ctrl+Z` 可回退，且能处理并发编辑 |
 | diff 呈现 | Webview 内联 diff / `vscode.diff` 原生对比 | **两者结合** | 常规改稿用内联逐段接受；大范围改写提供「在对比编辑器中查看」 |
 | diff 算法 | `diff`（jsdiff）/ 自研 LCS | **diff** | 支持行级与词级，体积小，维护活跃 |
-| Token 估算 | `tiktoken`（wasm）/ 字符数 ÷ 1.6 粗估 | **tiktoken** | 精度高，可提前拦截超窗；wasm 版本无原生编译依赖 |
+| Token 估算 | `tiktoken`（wasm）/ 字符数 ÷ 1.6 粗估 / 按本机真实用量反算比值 | **按本机真实用量反算** | 分词器必须与模型对口：本通道是 DeepSeek 系，`tiktoken` 是 OpenAI 编码，套用不增精度还要背数 MB 包裹与离线编码表；真实比值零依赖且随账号与模型自适应 |
 | 上下文检索 | SQLite 索引 / 全量读取 / 向量检索 | **SQLite 索引优先** | 见 `knowledge-base.md`；向量检索为可选增强 |
 | UI 状态管理 | `useReducer` / `useEffect + useState` | **useReducer** | 流式消息是多步状态机，reducer 更可控且避免竞态 |
 | 数据缓存 | TanStack Query / 自建 | **自建轻量缓存** | AI 流式不适合 Query；仅会话列表等普通数据用 Query |
@@ -397,7 +397,7 @@ interface AbortRequest {
 
 | 风险 | 影响 | 缓解措施 |
 |------|------|----------|
-| 长章节上下文超窗 | 请求失败或成本高 | tiktoken 预估 + 分层压缩（保留最近 N 章原文、更早章节用摘要） |
+| 长章节上下文超窗 | 请求失败或成本高 | 真实比值校准 + 分层压缩（保留最近 N 章原文、更早章节用摘要） |
 | 费用失控 | 账单超预期 | 每日预算上限 + 单次最大生成长度 + 用量面板 |
 | 模型返回不稳定（503/限流） | 体验中断 | 指数退避 + 抖动重试，上限 3 次；失败保留草稿便于重试 |
 | 并发编辑冲突 | 覆盖用户手动修改 | 应用前校验文件 `mtime`/版本号，冲突时提示重新生成 |
@@ -522,23 +522,27 @@ interface AbortRequest {
 
 助手消息在生成落定（完成 / 失败 / 停止）且有正文时，底部渲染工具栏（`AiChatMessageActions`）：复制回复、本轮积分、tokens 与耗时；用户消息与流式过程中不出现。tokens 与耗时为 0、积分为 NULL 均视为未知、不渲染对应胶囊；精确值（估算口径、毫秒数与构成说明）经 `ui/tooltip` 悬浮展示。
 
-**积分的来源与回填**：积分只认 CodeBuddy CLI 会话记录（消息积分与工具调用积分之和），与「AI 使用量」页同一口径，本地不按倍率估算。生成结束时随本轮用量一并读取并落库（`messages.credits` / `request_id`）；CLI 记录尚未落盘或工具调用积分晚到时先留空，之后打开「AI 使用量」页触发对账时按请求 id 回填（`updateMessageCreditsByRequestId`），消息胶囊随之补齐。积分 0 是有效值（订阅账号或该轮未计费），显示 `0.00`；NULL 才表示未知。
+**积分的来源与回填**：积分只认 CodeBuddy CLI 会话记录（消息积分与工具调用积分之和），与「AI 使用量」页同一口径，本地不按倍率估算。生成结束时随本轮用量一并读取并落库（`messages.credits` / `request_id`）；CLI 记录尚未落盘或工具调用积分晚到时先留空，之后打开「AI 使用量」页触发对账时按请求 id 回填（`updateMessageCreditsByRequestId`），消息胶囊随之补齐。积分 0 是有效值（订阅账号或该轮未计费），显示 `0.00`；NULL 才表示未知。**不关闭 transcript 的原因**：SDK 的 `persistSession: false` 可以让会话不落盘，但积分只在落盘记录里，且 `total_cost_usd` 在本项目实测恒为 0；因此通道保持默认落盘，这条链路是积分口径的唯一来源，关掉即等于积分功能下线。
 
-**本轮用量口径**：CodeBuddy 在 `resume` 续接时，SDK `result` 消息的 `usage` 是**会话累计**（含此前各轮），不能直接当作本轮消耗。生成结束后按「会话号 + 请求 id」定向解析该会话的 CLI 记录文件（`CliUsageIndex.readRoundTokens`），取本轮多条记录的 tokens 累加值——与「AI 使用量」页完全同源；首轮无累计语义时直接用通道回传值；续接且 CLI 记录尚未落盘时退化为按回复字数估算并标记 `tokens_estimated`。同一份结果同时用于消息落库、流末下发与用量记账。
+**字符/token 校准**：`ai_usage_logs.prompt_chars` 随每轮记账写入提示词字数，`readCharsPerToken` 按模型取最近 200 行的 `SUM(prompt_chars) / SUM(prompt_tokens)` 作为比值；样本少于 20 行或比值越界（0.5–8）回落 1.6。该校准只影响历史裁剪预算与降级估算（`estimateUsageFromAnswer`），不参与计费与展示。
 
-**上下文用量口径**：底部圆环统计的是「当前会话最近一轮请求带上的上下文规模」，取 SDK 流内 `message_start` 的 `usage` 三项之和（`input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`）——缓存命中的历史同样占窗口，只取 `input_tokens` 会严重低估；分母取 `result.modelUsage` 的实际窗口，取不到再退回模型清单的 `contextWindow.defaultLength` / 最大档位 / `maxInputTokens`，仍取不到即视为未知。**不得**用 `result.usage` 充当上下文（续接时它是会话累计），也不得用 `ai.maxContextTokens`（历史裁剪预算）兜底。**取值优先级**：CLI 落盘记录的本轮 `rawUsage.prompt_tokens`（含缓存折减、续接仍是单轮值）→ 流内 `message_start` 快照 → 首轮的 `result.usage` 输入三项；三者都取不到即视为未知，圆环按 0 展示但不编造分子。部分模型在流开头不上报输入用量（三项全 0），此时必须走 CLI 记录，否则圆环会一直停在 0%。占用值随生成结束写入 `conversations.context_used_tokens` / `context_window_tokens`（只改这两列，不刷新 `updated_at`，避免把会话顶到历史列表最前），`ai/session` 与 `ai/switchSession` 的 `contextUsage` 直接从库里读，因此重开窗口、切换会话都能恢复上一轮数字，不需要重新生成。档位选择只作用于该会话的首轮请求（`set_config.contextWindow`，需 `connect()` 后、`send()` 前下发），续接会话沿用首次生效的预算；因此通道由 `query()` 改为 V2 Session（`unstable_v2_createSession` / `unstable_v2_resumeSession`），`query()` 没有暴露 `set_config` 入口。
+**本轮用量口径**：CodeBuddy 在 `resume` 续接时，SDK `result` 消息的 `usage` 是**会话累计**（含此前各轮），不能直接当作本轮消耗。通道因此从 SDK 流事件拼出单轮值——输入取 `message_start.message.usage`、输出取 `message_delta.usage`，并以 `isRoundUsage` 标记该值是否可直接记账；首轮无累计语义时直接用 `result` 回传值。通道拼不出单轮值时（模型未上报流内用量）才回落到 CLI 会话记录（`CliUsageIndex.readRoundUsage`），仍取不到则按回复字数估算并标记 `tokens_estimated`。同一份结果同时用于消息落库、流末下发与用量记账。
 
-实现位置：`src/modules/ai/`（`providers/` SDK 封装与模型清单、`chatService.ts` 会话编排、`promptEnhance.ts` 提示词增强（写作 / 对话 / 图像三套口径集中）、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
+**压缩与推理强度**：SDK 的 `compact_boundary` 与 `status='compacting'` 转成 `notice`（`compacted` / `compacting`）随流下发，前端用 toast 解释「占用为何突然下降」，不写入消息与用量。推理强度（`effort`）与上下文档位同属模型菜单的全局选择：取值 `low` / `medium` / `high` / `xhigh`，经 `ai/selectEffort` 写 globalState（`ai.codebuddyEffort`），null 表示跟随模型默认，非白名单值在宿主侧直接拒绝。
 
-用量页（工作流栏底「AI使用量」，别名 `usage`）为全局统计，不随作品作用域隔离：顶部显示筛选范围内的请求数、积分与 tokens 汇总，并向排显示「今日积分」「本月积分」两张卡片（固定区间，只跟随模块筛选、不随时间范围变化，宿主按本地 0 点与当月 1 日 0 点换算），中部表格列为「时间 / 积分消耗 / 模型 / 请求 / 模块」，请求列显示短 id、点击弹窗按需拉取该轮提示词并展示模型、tokens 与耗时；模块筛选含对话、取名、外貌、语义归纳、画面描述、出图、未归属，时间筛选为今天 / 近 7 天 / 近 30 天 / 全部，分页在宿主侧完成。明细以本机 CodeBuddy 会话记录为主数据源：一轮一行，积分、tokens 与模型直接取 CLI 记录（`providerData.conversationRequestId` 聚合，同一轮的多条记录累加）；能按请求 id 关联到本地记账行的补上模块、耗时与提示词，关联不上的标为「未归属」并说明该轮非本扩展发起；本地有请求 id 但 CLI 记录已清理的轮次仍保留，积分沿用本地缓存。整轮未上报 credit 时显示破折号而不是 0。表头提供刷新按钮（`force` 强制重扫），页面可见时每 30 秒静默同步一次，标签页隐藏时不发请求。
+**上下文用量口径**：底部圆环统计的是「当前会话最近一轮请求带上的上下文规模」，取 SDK 流内 `message_start` 的 `usage` 三项之和（`input_tokens` + `cache_read_input_tokens` + `cache_creation_input_tokens`）——缓存命中的历史同样占窗口，只取 `input_tokens` 会严重低估；分母只取模型清单的 `contextWindow.defaultLength` / 最大档位 / `maxInputTokens`（`getAvailableModelsRaw` 的官方字段），不探测 SDK 类型未声明的字段，取不到即视为未知。**不得**用 `result.usage` 充当上下文（续接时它是会话累计），也不得用 `ai.maxContextTokens`（历史裁剪预算）兜底。**取值优先级**：流内 `message_start` 快照 → 首轮的 `result.usage` 输入三项 → CLI 落盘记录的本轮 `rawUsage.prompt_tokens`；三者都取不到即视为未知，圆环按 0 展示但不编造分子。部分模型在流开头不上报输入用量（三项全 0），此时必须走 CLI 记录，否则圆环会一直停在 0%。占用值随生成结束写入 `conversations.context_used_tokens` / `context_window_tokens`（只改这两列，不刷新 `updated_at`，避免把会话顶到历史列表最前），`ai/session` 与 `ai/switchSession` 的 `contextUsage` 直接从库里读，因此重开窗口、切换会话都能恢复上一轮数字，不需要重新生成。档位选择只作用于该会话的首轮请求（`set_config.contextWindow`，需 `connect()` 后、`send()` 前下发），续接会话沿用首次生效的预算；因此通道由 `query()` 改为 V2 Session（`unstable_v2_createSession` / `unstable_v2_resumeSession`），`query()` 没有暴露 `set_config` 入口。
+
+实现位置：`src/modules/ai/`（`providers/` SDK 封装与模型清单、`chatService.ts` 会话编排、`promptEnhance.ts` 提示词增强（写作 / 对话 / 图像三套口径集中）、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引（积分补录与单轮用量兜底）、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils.ts` 格式化工具、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
+
+用量页（工作流栏底「AI使用量」，别名 `usage`）为全局统计，不随作品作用域隔离：顶部显示筛选范围内的请求数、积分与 tokens 汇总，并向排显示「今日积分」「本月积分」两张卡片（固定区间，只跟随模块筛选、不随时间范围变化，宿主按本地 0 点与当月 1 日 0 点换算），中部表格列为「时间 / 积分消耗 / 模型 / 请求 / 模块」，请求列显示短 id、点击弹窗按需拉取该轮提示词并展示模型、tokens 与耗时；模块筛选含对话、取名、外貌、语义归纳、画面描述、出图、未归属，时间筛选为今天 / 近 7 天 / 近 30 天 / 全部，分页在宿主侧完成。明细以本机记账行为主数据源：一轮一行，模块、tokens、模型与成本取记账行；积分按请求 id 从 CodeBuddy 会话记录补录（`providerData.conversationRequestId` 聚合，同一轮的多条记录累加），CLI 记录缺失或格式变化只影响积分列、不影响明细可见性；CLI 中有而本地无记录的轮次（记账上线前的历史、其它工具发起）按「未归属」补回，出图轮次按工具结果归到「AI出图」。整轮未上报 credit 时显示破折号而不是 0。表头提供刷新按钮（`force` 强制重扫），页面可见时每 30 秒静默同步一次，标签页隐藏时不发请求。
 
 页面构成：消息区用 `MessageScroller`（`Provider` 托管自动滚动、`Item` 以 `messageId` 作滚动锚点、`Button` 自动显隐），消息结构用 `Message` + `Content/Footer`，气泡用 `Bubble` + `BubbleContent`（用户 `default`、助手 `ghost`）；输入区为 `InputGroup` 三段式卡片（工具行 / 输入框 / 操作行，见 10.3），无 Key 时插入 `Card` 引导项。业务组件按「一文件一组件」拆分：命令菜单、参考菜单、工具行、模式按钮、模型菜单、上下文圆环、增强按钮、操作行、写回按钮、消息正文与引用条目各自独立文件。
 
 与本文档的已知差异（后续补齐）：
 
-- 上下文截断暂以「字符数 ÷ 1.6」粗估，第 5 节所列 tiktoken 方案未接入（AC-4 为降级实现）
-- 积分只能取自 CLI 会话记录：SDK 不透传 credit、`total_cost_usd` 在 CLI 内恒为 0；明细以本机 CLI 记录为准，账号在其它设备或网页端的消耗不在此列；重试指数退避未实现，仅落地 30s 首字超时中断
-- 单次生成上限固定 2048 token（`MAX_COMPLETION_TOKENS`），尚未开放到参数面板（A13）
-- `@` 输入框提及（A12 剩余部分）未实现；待发送上下文与写回状态均为内存态，重启窗口后仅已发送的引用随 `messages.refs` 保留
-- 写作模式当前为「整段替换 + Ctrl+Z 撤销」，未做 diff 逐段接受（A3）；整篇改写上限 12000 字符，超出只能选中片段
-- 参考资料四项为占位，尚未接入检索与注入；命令的 `applyPolicy` 由前端按命令 id 推断，宿主只做字符串收窄
+- 上下文截断按本机真实用量反算的字符/token 比值（`readCharsPerToken`：最近 200 行、样本 ≥ 20 行且比值落在 0.5–8 才采纳，否则回落 1.6），未引入 `tiktoken`——分词器与 DeepSeek 系模型不对口；AC-4 的「自动压缩」仍未实现，只做保守截断
+- 积分只能取自 CLI 会话记录：SDK 不透传 credit、`total_cost_usd` 在 CLI 内恒为 0；明细已改为本机记账为准，积分仍需 CLI 补录，账号在其它设备或网页端的消耗不在此列；重试指数退避未实现，仅落地 30s 首字超时中断
+- 单次生成上限由 `zhai.ai.maxCompletionTokens` 配置（默认 2048，越界夹到 256–32000）；未做面板内调节（A13 余项）
+- `@` 提及已落地为参考菜单入口（不改共享输入组件、不增工具行按钮）：`ai/mention/search` 走全文索引，`ai/mention/add` 先查库确认路径存在再加为引用；待发送上下文与写回状态均为内存态，重启窗口后仅已发送的引用随 `messages.refs` 保留
+- 写作模式已改为 diff 逐段接受（A3）：`ai/writeDiff` 只算不写，`ai/applyHunks` 按勾选段拼装，未接受的段保留原文；整篇改写上限 12000 字符，超出只能选中片段
+- 参考资料由 `{存储根}/reference/*.md` 驱动（一级标题分类、二级标题分条），`ai/reference/search` 检索、`ai/reference/add` 按行范围注入条目正文、`ai/reference/openDir` 打开目录；语料增删改由用户直接操作文件，插件只读；命令的 `applyPolicy` 由前端按命令 id 推断，宿主只做字符串收窄

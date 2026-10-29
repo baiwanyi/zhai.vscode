@@ -13,13 +13,20 @@
  */
 import { FileText, TextSelect } from 'lucide-react'
 import { useState } from 'react'
-import type { AiContextRef, AiContextUsage, AiConversationMode, AiModelChoices } from '@shared/types/aiChat'
+import type {
+    AiContextRef,
+    AiContextUsage,
+    AiConversationMode,
+    AiModelChoices,
+    AiReasoningEffort,
+} from '@shared/types/aiChat'
 import { ComposerGlow } from '@webview/components/ComposerGlow'
 import { RichChipInput, type RichChip } from '@webview/components/RichChipInput'
 import { AiChatComposerActions } from './AiChatComposerActions'
 import { AiChatComposerToolbar } from './AiChatComposerToolbar'
 import { COMMAND_ICONS } from './commandIcons'
-import type { AiCommand, AiReferenceSource } from '../constants'
+import type { AiCommand } from '../constants'
+import type { AiReferenceAction } from './AiChatReferenceMenu'
 import type { Phase } from '../hooks/useAiChatSession'
 import type { JSX } from 'react'
 import { describeContext, toContextFileName } from '../utils'
@@ -89,8 +96,12 @@ interface AiChatComposerProps {
     onSelectModel: (modelId: string, manual: boolean) => void
     /** 选择上下文档位：0 表示跟随模型默认 */
     onSelectContextWindow: (tokens: number) => void
+    /** 选择推理强度：null 表示跟随模型默认 */
+    onSelectEffort: (effort: AiReasoningEffort | null) => void
     onClearCommand: () => void
-    onReference: (source: AiReferenceSource) => void
+    onReference: (action: AiReferenceAction) => void
+    /** 打开提及检索：引用笔记 / 章节 */
+    onMention: () => void
     onModeChange: (mode: AiConversationMode) => void
     /** 增强请求进行中：按钮转圈并丢弃重复点击 */
     isEnhancing: boolean
@@ -121,8 +132,10 @@ export function AiChatComposer({
     onOpenModels,
     onSelectModel,
     onSelectContextWindow,
+    onSelectEffort,
     onClearCommand,
     onReference,
+    onMention,
     onModeChange,
     isEnhancing,
     onEnhanceRequest,
@@ -182,6 +195,7 @@ export function AiChatComposer({
                     activeCommandId={command?.id ?? null}
                     onCommand={onCommand}
                     onReference={onReference}
+                    onMention={onMention}
                 />
                 <div className="rounded-xl bg-composer-input p-3">
                     <RichChipInput
@@ -212,6 +226,7 @@ export function AiChatComposer({
                         onOpenModels={onOpenModels}
                         onSelectModel={onSelectModel}
                         onSelectContextWindow={onSelectContextWindow}
+                        onSelectEffort={onSelectEffort}
                         onEnhance={handleEnhance}
                         onUndoEnhance={handleUndoEnhance}
                         onSend={onSend}

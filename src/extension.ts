@@ -11,9 +11,11 @@ import { CliUsageIndex } from './modules/ai/cliUsageIndex'
 import { registerAiCommands } from './modules/ai/commands'
 import { openAiDatabase } from './modules/ai/db/connection'
 import { ensureAiSchema } from './modules/ai/db/schema'
+import { MentionService } from './modules/ai/mentionService'
 import { createAiProvider } from './modules/ai/providerRegistry'
 import { initCodebuddyLogin } from './modules/ai/providers/codebuddyLogin'
 import { hydrateSelectedModel, listCodebuddyModels } from './modules/ai/providers/codebuddyModels'
+import { ReferenceService } from './modules/ai/referenceService'
 import { UsageRecorder } from './modules/ai/usageRecorder'
 import { AiUsageService } from './modules/ai/usageService'
 import { WorkflowRouter } from './modules/ai/workflowRouter'
@@ -142,6 +144,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         cliUsage,
     )
     context.subscriptions.push(aiChatService)
+    // 提及检索：与全局搜索同源（索引库），添加时由宿主查库校验路径
+    const mentionService = new MentionService(db, aiChatService)
+    // 参考资料：语料由 {存储根}/reference/*.md 驱动，只读不写，条目按行范围注入
+    const referenceService = new ReferenceService(aiChatService)
 
     registerAiCommands(context, aiChatService, workflowRouter, toastService)
 
@@ -237,6 +243,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         context.extensionUri,
         aiChatService,
         usageService,
+        mentionService,
+        referenceService,
         workflowRouter,
         namingRoutes,
         pressRoutes,

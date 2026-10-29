@@ -21,7 +21,7 @@ import type { PortraitService } from '@modules/imagegen/portraitService'
 import type { PromptRuleService, PromptTagService } from '@modules/imagegen/prompt'
 import { readPromptImageBase } from '@modules/imagegen/promptImageService'
 import type { ReferenceImageService } from '@modules/imagegen/referenceImageService'
-import type { PromptRuleListResult, PromptTagListResult } from '@shared/types/imagegen'
+import type { ImageGenerateProgress, PromptRuleListResult, PromptTagListResult } from '@shared/types/imagegen'
 import type {
     ChapterSnapshotCaptureResult,
     ChapterSnapshotDeleteResult,
@@ -87,12 +87,14 @@ export class PressRoutes {
      * 处理写作管理协议方法
      * @param toWebviewUri 把磁盘 Uri 转成 webview 可访问 URL 的转换器
      * @param postProgress 长任务的进度广播：由调用方决定推给哪个面板
+     * @param postImageProgress 出图阶段广播：与语义归纳分开，前端按通道区分处理，缺省表示不关心进度
      */
     public async handle(
         method: string,
         payload: unknown,
         toWebviewUri: (uri: vscode.Uri) => string,
         postProgress: (progress: PressSemanticProgress) => void,
+        postImageProgress?: (progress: ImageGenerateProgress) => void,
     ): Promise<unknown> {
         switch (method) {
             case 'pressAi/aiAppearance':
@@ -118,7 +120,7 @@ export class PressRoutes {
             case 'pressAi/listCover':
                 return this.covers.list(payload, toWebviewUri)
             case 'pressAi/generateImage':
-                return this.imageGenerate.generate(payload, toWebviewUri)
+                return this.imageGenerate.generate(payload, toWebviewUri, postImageProgress)
             case 'pressAi/generateImage/abort':
                 return this.imageGenerate.abort()
             case 'pressAi/enhanceImagePrompt':

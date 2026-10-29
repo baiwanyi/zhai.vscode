@@ -20,7 +20,8 @@ import {
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
 import { Spinner } from '@components/ui/spinner'
-import type { AiModelChoices, AiModelOption } from '@shared/types/aiChat'
+import type { AiModelChoices, AiModelOption, AiReasoningEffort } from '@shared/types/aiChat'
+import { AI_REASONING_EFFORTS, AI_REASONING_EFFORT_LABELS } from '@shared/types/aiChat'
 import { Button } from '@webview/components/Button'
 import { ModelIcon } from './ModelIcon'
 import type { JSX } from 'react'
@@ -63,6 +64,8 @@ interface AiChatModelMenuProps {
     onSelect: (modelId: string, manual: boolean) => void
     /** 选择上下文档位：0 表示跟随模型默认 */
     onSelectContextWindow: (tokens: number) => void
+    /** 选择推理强度：null 表示跟随模型默认 */
+    onSelectEffort: (effort: AiReasoningEffort | null) => void
 }
 
 export function AiChatModelMenu({
@@ -74,6 +77,7 @@ export function AiChatModelMenu({
     onOpen,
     onSelect,
     onSelectContextWindow,
+    onSelectEffort,
 }: AiChatModelMenuProps): JSX.Element {
     const options = choices?.options ?? []
     const builtinOptions = sortByName(options.filter((option) => !option.custom))
@@ -81,6 +85,7 @@ export function AiChatModelMenu({
     const currentOption = options.find((option) => option.modelId === current)
     const windowOptions = currentOption?.contextWindowOptions ?? []
     const selectedWindow = choices?.contextWindow ?? 0
+    const currentEffort = choices?.reasoningEffort ?? null
     // 切换模型后旧档位可能不在新模型的可选范围内：此时按「模型默认」呈现，与宿主实际下发的值一致
     const currentWindow = windowOptions.includes(selectedWindow) ? selectedWindow : 0
     const defaultWindow = currentOption?.contextWindowTokens ?? 0
@@ -118,6 +123,14 @@ export function AiChatModelMenu({
         <DropdownMenuItem key={tokens} onSelect={() => onSelectContextWindow(tokens)} className="gap-2">
             <span className="min-w-0 flex-1 truncate">{label}</span>
             {currentWindow === tokens ? <Check className="size-3 shrink-0" /> : null}
+        </DropdownMenuItem>
+    )
+
+    /** 强度项：null 为「模型默认」，其余为白名单档位 */
+    const renderEffortOption = (effort: AiReasoningEffort | null, label: string): JSX.Element => (
+        <DropdownMenuItem key={effort ?? 'default'} onSelect={() => onSelectEffort(effort)} className="gap-2">
+            <span className="min-w-0 flex-1 truncate">{label}</span>
+            {currentEffort === effort ? <Check className="size-3 shrink-0" /> : null}
         </DropdownMenuItem>
     )
 
@@ -176,6 +189,12 @@ export function AiChatModelMenu({
                             {windowOptions.map((tokens) => renderWindowOption(tokens, toWindowLabel(tokens)))}
                         </>
                     ) : null}
+                    <DropdownMenuSeparator />
+                    <DropdownMenuLabel>推理强度</DropdownMenuLabel>
+                    {renderEffortOption(null, '模型默认')}
+                    {AI_REASONING_EFFORTS.map((effort) =>
+                        renderEffortOption(effort, AI_REASONING_EFFORT_LABELS[effort]),
+                    )}
                 </div>
             </DropdownMenuContent>
         </DropdownMenu>

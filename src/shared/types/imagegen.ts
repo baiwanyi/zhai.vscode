@@ -34,6 +34,17 @@ export function isImageRatio(value: unknown): value is ImageRatio {
     return typeof value === 'string' && IMAGE_RATIOS.some((item) => item === value)
 }
 
+/** 出图阶段：thinking 表示模型在准备提示，generating 表示已开始调用 ImageGen */
+export type ImageGenerateStage = 'thinking' | 'generating'
+
+/**
+ * 出图进度：经 state 消息的 imagegen 通道下发。
+ * 关键约束：只用于界面提示，不参与流程判定——进度丢失不得影响最终结果，终态一律以请求回执为准。
+ */
+export interface ImageGenerateProgress {
+    stage: ImageGenerateStage
+}
+
 /**
  * 生成结果：只回传新图本身，生成不影响作品封面。
  * 角色封面不在此回传——前端在生成回执后按「该角色尚无封面」自行写回人物卡，避免两套写回口径。

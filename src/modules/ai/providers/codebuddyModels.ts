@@ -14,6 +14,8 @@ import { tmpdir } from 'node:os'
 import { unstable_v2_createSession } from '@tencent-ai/agent-sdk'
 import { getZhaiConfig } from '@modules/common/config'
 import type { SecretsService } from '@modules/common/secrets'
+import type { AiReasoningEffort } from '@shared/types/aiChat'
+import { isAiReasoningEffort } from '@shared/types/aiChat'
 import { buildCodebuddyEnv } from './codebuddySite'
 import type { RawLanguageModel } from '@tencent-ai/agent-sdk'
 import type { Memento } from 'vscode'
@@ -45,6 +47,8 @@ const CUSTOM_MODEL_PREFIX = 'custom-local:'
 const MODEL_STATE_KEY = 'ai.codebuddyModel'
 /** 上下文档位选择的持久化键 */
 const CONTEXT_WINDOW_STATE_KEY = 'ai.codebuddyContextWindow'
+/** 推理强度选择的持久化键 */
+const EFFORT_STATE_KEY = 'ai.codebuddyEffort'
 
 let cached: CodebuddyModelOption[] = []
 let inflight: Promise<CodebuddyModelOption[]> | null = null
@@ -52,12 +56,17 @@ let inflight: Promise<CodebuddyModelOption[]> | null = null
 let activeModel = ''
 /** 已选上下文档位：0 表示跟随模型默认，各通道同步读取 */
 let activeContextWindow = 0
+/** 已选推理强度：null 表示跟随模型默认，各通道同步读取 */
+let activeEffort: AiReasoningEffort | null = null
 
-/** 激活时从 globalState 载入已选模型与档位 */
+/** 激活时从 globalState 载入已选模型、档位与推理强度 */
 export function hydrateSelectedModel(state: Memento): void {
     activeModel = state.get<string>(MODEL_STATE_KEY, '') ?? ''
     const stored = state.get<number>(CONTEXT_WINDOW_STATE_KEY, 0) ?? 0
     activeContextWindow = Number.isFinite(stored) && stored > 0 ? Math.trunc(stored) : 0
+    const effort = state.get<string>(EFFORT_STATE_KEY, '')
+    // 白名单外的历史值一律按「跟随模型默认」处理，不把脏值下发给 SDK
+    activeEffort = isAiReasoningEffort(effort) ? effort : null
 }
 
 /** 当前模型 id：空表示交给 CLI 默认模型 */
@@ -118,6 +127,17 @@ export function getSelectedContextWindow(): number {
 export async function setSelectedContextWindow(state: Memento, tokens: number): Promise<void> {
     activeContextWindow = Number.isFinite(tokens) && tokens > 0 ? Math.trunc(tokens) : 0
     await state.update(CONTEXT_WINDOW_STATE_KEY, activeContextWindow)
+}
+
+/** 当前推理强度：null 表示跟随模型默认，供运行时信息与菜单回显 */
+export function getSelectedEffort(): AiReasoningEffort | null {
+    return activeEffort
+}
+
+/** 写入推理强度：null 表示恢复默认，非白名单值同样按默认处理，不把脏值下发给 SDK */
+export async function setSelectedEffort(state: Memento, effort: AiReasoningEffort | null): Promise<void> {
+    activeEffort = isAiReasoningEffort(effort) ? effort : null
+    await state.update(EFFORT_STATE_KEY, activeEffort ?? '')
 }
 
 /**

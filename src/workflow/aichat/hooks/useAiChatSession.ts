@@ -108,6 +108,15 @@ export function useAiChatSession({
     // 流式增量：按 reqId 找到发起时的助手消息并就地追加
     useEffect(() => {
         return onStream((message) => {
+            // 压缩事件与消息无关：先用 toast 解释，避免占用数字下降被当成数据出错
+            if (message.notice === 'compacting') {
+                toast.info('上下文正在压缩，较早的历史将被摘要')
+                return
+            }
+            if (message.notice === 'compacted') {
+                toast.info('上下文已压缩，占用按压缩后的规模重新计算')
+                return
+            }
             const messageId = streamingMessageIdRef.current
             if (!messageId) {
                 return

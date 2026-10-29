@@ -1,7 +1,8 @@
 /**
  * 用量记账：把各 AI 入口的 tokens、请求标识与提示词写入用量库，供「AI 使用量」页展示。
  * 复用约定：模块键取自 shared/types/aiUsage；提示词由调用方传消息数组，拼接成可读文本后截断入库。
- * 关键约束：记账是旁路，任何写库异常只记日志、不得中断生成；积分一律留空，
+ * 关键约束：记账是旁路，任何写库异常只记日志、不得中断生成；提示词字数随行落库，
+ * 供 usageRepository.readCharsPerToken 反算本机真实比值（替代写死的 1.6），字数不参与展示；积分一律留空，
  * 由用量查询从 CodeBuddy 会话记录按请求 id 回填（`rawUsage.credit` 与工具调用 credit 之和），
  * 此处不得按倍率估算；提示词按 PROMPT_MAX_LENGTH 截断并标记，保留期清理由用量服务负责。
  */
@@ -51,6 +52,8 @@ export class UsageRecorder {
                 requestId: meta?.requestId ?? null,
                 sdkMessageId: meta?.messageId ?? null,
                 promptTokens: usage?.promptTokens ?? 0,
+                // 记原始字数（不 trim）：与实际提交量同口径，供按真实 token 反算字符/token 比值
+                promptChars: input.prompt?.length ?? 0,
                 completionTokens: usage?.completionTokens ?? 0,
                 reasoningTokens: usage?.reasoningTokens ?? 0,
                 totalTokens,

@@ -16,6 +16,8 @@ export interface UsageLogInput {
     requestId: string | null
     sdkMessageId: string | null
     promptTokens: number
+    /** 本轮提示词字数：用于按真实 token 反算字符/token 比值，0 表示未记录 */
+    promptChars: number
     completionTokens: number
     reasoningTokens: number
     totalTokens: number
@@ -77,12 +79,54 @@ export function insertUsageLog(db: Database.Database, row: UsageLogInput): void 
     // project 是 v3 遗留的非空列：旧库无法改约束，新写入统一用模块键填充，保证两列口径一致
     db.prepare(
         `INSERT INTO ai_usage_logs (id, conversation_id, project, module, model, request_id, sdk_message_id,
-            prompt_tokens, completion_tokens, reasoning_tokens, total_tokens, credits, cost_usd, cache_read_tokens,
-            cache_creation_tokens, latency_ms, status, created_at)
+            prompt_tokens, prompt_chars, completion_tokens, reasoning_tokens, total_tokens, credits, cost_usd,
+            cache_read_tokens, cache_creation_tokens, latency_ms, status, created_at)
          VALUES (@id, @conversationId, @module, @module, @model, @requestId, @sdkMessageId, @promptTokens,
-            @completionTokens, @reasoningTokens, @totalTokens, @credits, @costUsd, @cacheReadTokens,
+            @promptChars, @completionTokens, @reasoningTokens, @totalTokens, @credits, @costUsd, @cacheReadTokens,
             @cacheCreationTokens, @latencyMs, @status, @createdAt)`,
     ).run(row)
+}
+
+/** 字符/token 的默认比值：样本不足或数据异常时的兜底，也是本模块对外的唯一默认值 */
+export const DEFAULT_CHARS_PER_TOKEN = 1.6
+/** 参与校准的历史行数：越近的行越能代表当前模型与提示词构成 */
+const CALIBRATION_SAMPLE_LIMIT = 200
+/** 校准所需最小行数：样本太少时单轮波动会主导结果，直接回落默认值 */
+const CALIBRATION_MIN_ROWS = 20
+/** 合理区间：越界视为数据异常（跨模型混记、单位写错），不采纳 */
+const MIN_CHARS_PER_TOKEN = 0.5
+const MAX_CHARS_PER_TOKEN = 8
+
+/**
+ * 按模型统计「字符 / token」比值：只统计既记了提示词字数又报了 prompt tokens 的行。
+ * 关键约束：用总量比值而非单行平均，避免短提示词把离群值放大；样本不足或越界一律回落默认值，
+ * 校准结果只用于历史裁剪预算与降级估算，不参与计费，因此宁可保守也不追极端值。
+ */
+export function readCharsPerToken(db: Database.Database, model: string): number {
+    const row = db
+        .prepare(
+            `SELECT COUNT(*) AS rows, SUM(prompt_chars) AS chars, SUM(prompt_tokens) AS tokens FROM (
+                 SELECT prompt_chars, prompt_tokens FROM ai_usage_logs
+                 WHERE model = @model AND prompt_chars > 0 AND prompt_tokens > 0
+                 ORDER BY created_at DESC LIMIT @limit
+             )`,
+        )
+        .get({ model, limit: CALIBRATION_SAMPLE_LIMIT }) as
+        | { rows: number; chars: number | null; tokens: number | null }
+        | undefined
+    if (row === undefined || row.rows < CALIBRATION_MIN_ROWS) {
+        return DEFAULT_CHARS_PER_TOKEN
+    }
+    const chars = row.chars ?? 0
+    const tokens = row.tokens ?? 0
+    if (chars <= 0 || tokens <= 0) {
+        return DEFAULT_CHARS_PER_TOKEN
+    }
+    const ratio = chars / tokens
+    if (!Number.isFinite(ratio) || ratio < MIN_CHARS_PER_TOKEN || ratio > MAX_CHARS_PER_TOKEN) {
+        return DEFAULT_CHARS_PER_TOKEN
+    }
+    return ratio
 }
 
 /** 参与对账的行：本地已有值与请求 id，供与 CLI 记录比对后修正 */
@@ -134,7 +178,7 @@ export function listUsageLogs(db: Database.Database, filter: UsageLogFilter): Us
 }
 
 /**
- * 列出用量行：用量页以 CLI 记录为主数据源，本地行只用于补模块、耗时与提示词归属。
+ * 列出用量行：用量页以本地记账为明细主数据源，CLI 记录只补积分。
  * 上限由调用方给定，避免历史行无限增长后把整表读进内存。
  */
 export function listAllUsageLogs(db: Database.Database, limit: number): UsageLogRecord[] {

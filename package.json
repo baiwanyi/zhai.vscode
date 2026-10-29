@@ -89,6 +89,11 @@
                 "category": "宅写作"
             },
             {
+                "command": "zhai.ai.logoutCodebuddy",
+                "title": "退出 CodeBuddy 登录",
+                "category": "宅写作"
+            },
+            {
                 "command": "zhai.openSettings",
                 "title": "打开插件设置",
                 "category": "宅写作",
@@ -216,6 +221,13 @@
                         "minimum": 1000,
                         "maximum": 200000,
                         "description": "前文与引用上下文注入的 Token 上限"
+                    },
+                    "zhai.ai.maxCompletionTokens": {
+                        "type": "number",
+                        "default": 2048,
+                        "minimum": 256,
+                        "maximum": 32000,
+                        "description": "单次生成的输出 token 上限：数值越大单次成本越高，过小会截断长回答"
                     },
                     "zhai.ai.dailyTokenBudget": {
                         "type": "number",

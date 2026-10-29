@@ -1,6 +1,7 @@
 /**
- * CodeBuddy 图像通道：经 Agent SDK 调用 CLI 内置的 ImageGen 工具出图。
- * 复用约定：提示词与尺寸由调用方给出，本层只负责拼指令、驱动工具、把产物归一为字节，
+ * CodeBuddy 图像通道：经 CodebuddyClient（默认直连 Agent SDK）调用 CLI 内置的 ImageGen 工具出图。
+ * 复用约定：SDK 调用统一走 @modules/ai/providers/codebuddyClient 的可注入接口，本层不直接 import SDK；
+ * 提示词与尺寸由调用方给出，本层只负责拼指令、驱动工具、把产物归一为字节，
  * 并把本轮用量与请求标识随产物回传（记账由调用方完成，本层不写库）；
  * 凭证优先取 SecretStorage 的 CodeBuddy API Key，缺省沿用 CLI 登录态。
  * 关键约束：只放行 ImageGen 并限制最大轮次（模型常先输出说明、再调用工具、最后收尾）；
@@ -13,10 +14,12 @@ import { Buffer } from 'node:buffer'
 import { readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { query } from '@tencent-ai/agent-sdk'
 import type { AiUsage } from '@modules/ai/provider'
+import type { CodebuddyClient } from '@modules/ai/providers/codebuddyClient'
+import { sdkCodebuddyClient } from '@modules/ai/providers/codebuddyClient'
+import { classifyResultFailure, CodebuddyError, toReadableCodebuddyError } from '@modules/ai/providers/codebuddyError'
 import { getSelectedCodebuddyModel, resolveCodebuddyModel } from '@modules/ai/providers/codebuddyModels'
-import { buildCodebuddyEnv, CODEBUDDY_SITE_LABELS } from '@modules/ai/providers/codebuddySite'
+import { buildCodebuddyEnv } from '@modules/ai/providers/codebuddySite'
 import type { CodebuddySite } from '@modules/common/config'
 import { getZhaiConfig } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
@@ -51,6 +54,29 @@ const ABSOLUTE_PATH_PATTERN = /(?:[A-Za-z]:[\\/]|\/)[^\s"'<>(){},;]+/g
 const URL_PATTERN = /(?:https?|file):\/\/[^\s"'<>(){},;]+/g
 /** ImageGen 的完成标记：只在工具明确回报完成时才取图，避免把写到一半的文件当成产物 */
 const IMAGE_DONE_PATTERN = /image_gen_tool_result|"status"\s*:\s*"completed"/i
+/**
+ * 关闭工具延迟加载的 CLI 开关。
+ * CLI 默认把 ImageGen 这类重量级工具放进延迟加载池，只留给 ToolSearch 检索；
+ * 本通道把 tools 限定为 ImageGen，若不关闭延迟加载，模型的可用工具列表里就没有它。
+ * 该键由 CLI 侧约定，升级后若失效会表现为能力探测失败（init.tools 不含 ImageGen），需回到此处核对。
+ */
+const DEFER_TOOL_LOADING_ENV = 'CODEBUDDY_DEFER_TOOL_LOADING'
+/**
+ * 产物回报结构：让模型以 JSON 回报图片位置，取代从自然语言里正则提取。
+ * 关键约束：只约束最终回报，不限制工具调用；path 必须是 ImageGen 实际返回的位置，不得自行编造，
+ * 因此 schema 描述里写明来源，解析失败时仍回落到块与文本候选。
+ */
+const ARTIFACT_OUTPUT_SCHEMA: Record<string, unknown> = {
+    type: 'object',
+    properties: {
+        path: {
+            type: 'string',
+            description: 'ImageGen 工具返回的图片本地绝对路径或可访问的 http(s) 链接，不得自行编造',
+        },
+    },
+    required: ['path'],
+    additionalProperties: false,
+}
 
 /**
  * 工具授权：只放行 ImageGen，其余一律拒绝；整次请求最多放行一次。
@@ -72,14 +98,10 @@ function createImageGenGate(): (toolName: string, input: Record<string, unknown>
     }
 }
 
-/**
- * 图像通道的子进程环境：在站点变量之外关闭工具延迟加载。
- * CLI 默认把 ImageGen 之类重量级工具放进延迟加载池，只留给 ToolSearch 检索；
- * 本通道限定 tools 为 ImageGen，若不关闭延迟加载，模型可用工具列表里就没有它。
- */
+/** 图像通道的子进程环境：在站点变量之外关闭工具延迟加载 */
 function buildImageEnv(site: CodebuddySite, apiKey?: string): Record<string, string> {
     const env = buildCodebuddyEnv(site, apiKey) ?? {}
-    return { ...env, CODEBUDDY_DEFER_TOOL_LOADING: 'false' }
+    return { ...env, [DEFER_TOOL_LOADING_ENV]: 'false' }
 }
 
 /**
@@ -131,26 +153,6 @@ function buildPrompt(options: ImageGenerateOptions): string | AsyncIterable<User
     })
     const references = options.references ?? []
     return references.length === 0 ? instruction : promptWithReferences(instruction, references)
-}
-
-/** 把 SDK 的原始错误转成可执行提示 */
-function toReadableError(error: unknown, model?: string): Error {
-    const message = error instanceof Error ? error.message : String(error)
-    if (/authentication required|please (use|run) \/login/i.test(message)) {
-        const site = CODEBUDDY_SITE_LABELS[getZhaiConfig().aiCodebuddySite]
-        return new Error(`尚未登录 CodeBuddy（${site}）：请执行「宅写作：登录 CodeBuddy」后重试`, { cause: error })
-    }
-    if (/service info not found|supported models for your account/i.test(message)) {
-        const label = model !== undefined && model.length > 0 ? `「${model}」` : '当前模型'
-        return new Error(
-            `CodeBuddy 模型不可用：${label}不在当前账号的可用列表，请在 AI 面板的模型菜单中重新选择（或打开「自动」）`,
-            { cause: error },
-        )
-    }
-    if (/max turns/i.test(message)) {
-        return new Error('CodeBuddy 出图未完成（工具轮次已用尽），请重试', { cause: error })
-    }
-    return error instanceof Error ? error : new Error(message)
 }
 
 /** 按文件头判定图片格式：产物路径可能没有扩展名，不能只看文件名 */
@@ -237,6 +239,15 @@ function collectBlocks(blocks: ContentBlock[]): ContentBlock[] {
     return flat
 }
 
+/** 从结构化输出里取产物路径：outputFormat 生效时 result 携带 structured_output */
+export function readStructuredPath(output: unknown): string | null {
+    if (typeof output !== 'object' || output === null) {
+        return null
+    }
+    const path = (output as { path?: unknown }).path
+    return typeof path === 'string' && path.trim().length > 0 ? path.trim() : null
+}
+
 /** 从文本里按可信度收集候选：结构化字段 → 内联数据 → 绝对路径 → 链接 */
 function collectCandidates(text: string): string[] {
     const candidates: string[] = []
@@ -279,7 +290,10 @@ function summarizeForLog(blocks: ContentBlock[]): string {
 export class CodeBuddyImageProvider implements ImageProvider {
     public readonly id: ImageProviderId = 'codebuddy'
 
-    public constructor(private readonly secrets: SecretsService) {}
+    public constructor(
+        private readonly secrets: SecretsService,
+        private readonly client: CodebuddyClient = sdkCodebuddyClient,
+    ) {}
 
     /**
      * 能力探测：起一次单轮查询，读 system.init 的工具列表里是否含 ImageGen。
@@ -287,7 +301,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
      */
     public async isAvailable(): Promise<boolean> {
         const controller = new AbortController()
-        const session = query({
+        const session = this.client.query({
             prompt: 'ok',
             options: {
                 maxTurns: 1,
@@ -323,7 +337,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
         }
         // 出图驱动模型与对话共用面板菜单里的当前选择，避免同一模型出现分歧
         const model = resolveCodebuddyModel(getSelectedCodebuddyModel())
-        const session = query({
+        const session = this.client.query({
             prompt: buildPrompt(options),
             options: {
                 // 仅放行出图工具，避免模型顺带读写工作区；allowedTools + canUseTool 双重放行才会真正执行
@@ -333,16 +347,23 @@ export class CodeBuddyImageProvider implements ImageProvider {
                 // 出图通常需要三轮（说明 / 工具 / 收尾），按 MAX_TURNS 留出试探余量，避免中途被截断
                 maxTurns: MAX_TURNS,
                 permissionMode: 'default',
-                includePartialMessages: false,
+                // 需要流事件里的 content_block_start 判断工具是否已开始调用
+                includePartialMessages: true,
                 cwd: tmpdir(),
                 // 驱动模型同样必须落在账号可用列表内，否则 CLI 直接 400
                 model,
                 abortController: controller,
+                // 产物以 JSON 回报：SDK 会把符合 schema 的结果放进 result.structured_output，
+                // 这是出图产物最稳的解析口径，正则只作兜底
+                outputFormat: { type: 'json_schema', schema: ARTIFACT_OUTPUT_SCHEMA },
                 env: buildImageEnv(cfg.aiCodebuddySite, apiKey),
             },
         })
         const blocks: ContentBlock[] = []
-        let failure: string | null = null
+        /** 通道侧失败：带分类码，抛错时统一转成可执行提示 */
+        let failure: Error | null = null
+        /** 结构化产物路径：仅在 result 的 structured_output 命中时写入 */
+        let structuredPath: string | null = null
         const startedAt = Date.now()
         /** 轮次标识与用量：图像工具按张计费，随产物回传，由服务层记账后按 requestId 回填 */
         let requestId: string | null = null
@@ -369,8 +390,21 @@ export class CodeBuddyImageProvider implements ImageProvider {
             startedAt,
         })
         try {
+            // 先把「模型准备中」报出去：这一步会等首字，用户此前看不到任何反馈
+            options.onProgress?.({ stage: 'thinking' })
             for await (const message of session) {
                 requestId = message._requestId ?? requestId
+                if (message.type === 'stream_event') {
+                    // 工具调用起始即视为已开始出图：content_block_start 带工具名
+                    if (
+                        message.event.type === 'content_block_start' &&
+                        message.event.content_block.type === 'tool_use' &&
+                        message.event.content_block.name === 'ImageGen'
+                    ) {
+                        options.onProgress?.({ stage: 'generating' })
+                    }
+                    continue
+                }
                 if (message.type === 'assistant') {
                     blocks.push(...message.message.content)
                     continue
@@ -404,8 +438,14 @@ export class CodeBuddyImageProvider implements ImageProvider {
                     durationApiMs = message.duration_api_ms
                     cacheReadTokens = message.usage.cache_read_input_tokens ?? 0
                     cacheCreationTokens = message.usage.cache_creation_input_tokens ?? 0
-                    if (message.subtype !== 'success') {
-                        failure = message.errors?.join('；') ?? message.subtype
+                    if (message.subtype === 'success') {
+                        // 结构化产物是首选来源：模型按 outputFormat 回报 {"path": "..."}
+                        structuredPath = readStructuredPath(message.structured_output)
+                    } else {
+                        failure = new CodebuddyError(
+                            classifyResultFailure(message.subtype, message.errors),
+                            message.errors?.join('；') ?? message.subtype,
+                        )
                     }
                 }
             }
@@ -416,7 +456,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
                 return settle(artifact)
             }
             logger.warn(`CodeBuddy 出图中断且未取到产物：${summarizeForLog(blocks)}`)
-            throw toReadableError(error, getSelectedCodebuddyModel())
+            throw toReadableCodebuddyError(error, getSelectedCodebuddyModel())
         } finally {
             options.signal.removeEventListener('abort', forwardAbort)
             if (!controller.signal.aborted) {
@@ -424,7 +464,19 @@ export class CodeBuddyImageProvider implements ImageProvider {
             }
         }
         if (failure !== null) {
-            throw new Error(`CodeBuddy 出图失败：${failure}`)
+            const readable = toReadableCodebuddyError(failure, getSelectedCodebuddyModel())
+            // 已归类时文案由共用模块给出；未归类补上「出图失败」前缀，避免只看到原始详情
+            throw readable === failure
+                ? new Error(`CodeBuddy 出图失败：${failure.message}`, { cause: failure })
+                : readable
+        }
+        // 结构化产物优先：路径由 SDK 结构化输出直接给出，读不到再退回块与文本候选
+        if (structuredPath !== null) {
+            const structured = await this.readCandidate(structuredPath)
+            if (structured !== null) {
+                return settle(structured)
+            }
+            logger.warn(`结构化产物不可读，回退文本候选解析：${structuredPath}`)
         }
         const artifact = await this.readArtifact(blocks)
         if (artifact === null) {

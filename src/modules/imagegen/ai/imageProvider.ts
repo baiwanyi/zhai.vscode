@@ -7,6 +7,7 @@
  */
 import type { AiUsage, AiUsageMeta } from '@modules/ai/provider'
 import type { SecretsService } from '@modules/common/secrets'
+import type { ImageGenerateProgress } from '@shared/types/imagegen'
 import { CodeBuddyImageProvider } from './codebuddyImageProvider'
 
 /** 图像通道标识 */
@@ -33,6 +34,11 @@ export interface ImageGenerateOptions {
      */
     references?: readonly ImageReferenceInput[]
     signal: AbortSignal
+    /**
+     * 阶段回调：通道在「模型准备」与「开始调用 ImageGen」各报一次。
+     * 关键约束：回调异常不得中断出图，缺省表示调用方不关心进度。
+     */
+    onProgress?: (progress: ImageGenerateProgress) => void
 }
 
 /** 单次出图产物 */

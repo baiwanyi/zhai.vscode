@@ -16,12 +16,21 @@ import { ImageComposer } from '@webview/workflow/imagegen/layout/ImageComposer'
 import type { PromptCharacterSnapshot } from '@webview/workflow/imagegen/layout/ImageComposer'
 import type { JSX } from 'react'
 
-const { requestMock, toastErrorMock } = vi.hoisted(() => ({
-    requestMock: vi.fn(),
-    toastErrorMock: vi.fn(),
-}))
+const { requestMock, toastErrorMock, onStateMock, stateListeners } = vi.hoisted(() => {
+    const listeners: Array<(message: unknown) => void> = []
+    return {
+        requestMock: vi.fn(),
+        toastErrorMock: vi.fn(),
+        stateListeners: listeners,
+        /** 状态订阅替身：记录监听器，用例可主动推一条 state 消息验证阶段文案 */
+        onStateMock: vi.fn((listener: (message: unknown) => void) => {
+            listeners.push(listener)
+            return (): void => undefined
+        }),
+    }
+})
 
-vi.mock('@shared/utils/bridge', () => ({ request: requestMock }))
+vi.mock('@shared/utils/bridge', () => ({ request: requestMock, onState: onStateMock }))
 vi.mock('@shared/utils/error', () => ({ toastError: toastErrorMock }))
 
 interface FakeChip {
@@ -247,6 +256,8 @@ beforeEach(() => {
     stubDropdownDom()
     requestMock.mockReset()
     toastErrorMock.mockReset()
+    // 订阅者在每例重新挂载，监听器不跨用例累积
+    stateListeners.length = 0
     // 默认：出图成功，abort 视为成功，规则为空、预览图库按「没有图」回包（两个面板都照常可用）
     requestMock.mockImplementation((method: string) => defaultResponse(method))
 })
@@ -652,10 +663,26 @@ describe('ImageComposer', () => {
         await user.type(inputBox(), '雨夜长街')
         await user.click(screen.getByRole('button', { name: '发送' }))
         // 首击后按钮即刻变成取消，连点的第二下正好落在这个位置：冷静期内必须被丢弃
-        await user.click(screen.getByRole('button', { name: '取消生成' }))
+        await user.click(screen.getByRole('button', { name: /取消/ }))
 
         expect(requestMock).not.toHaveBeenCalledWith('pressAi/generateImage/abort')
-        expect(screen.getByRole('button', { name: '取消生成' })).toBeDefined()
+        expect(screen.getByRole('button', { name: /取消/ })).toBeDefined()
+    })
+
+    it('宿主广播出图阶段后，取消位文案跟着切换', async () => {
+        const user = userEvent.setup()
+        mockGenerate(() => new Promise<ImageGenerateResult>(() => undefined))
+        renderComposer()
+
+        await user.type(inputBox(), '雨夜长街')
+        await user.click(screen.getByRole('button', { name: '发送' }))
+
+        act(() => {
+            for (const listener of stateListeners) {
+                listener({ type: 'state', channel: 'imagegen', payload: { stage: 'generating' } })
+            }
+        })
+        expect(screen.getByRole('button', { name: '出图中，点击取消' })).toBeDefined()
     })
 
     it('生成中切换为取消按钮，取消后迟到回包只走 onLateGenerated', async () => {
@@ -674,7 +701,7 @@ describe('ImageComposer', () => {
 
         await user.type(inputBox(), '雨夜长街')
         await user.click(screen.getByRole('button', { name: '发送' }))
-        expect(screen.getByRole('button', { name: '取消生成' })).toBeDefined()
+        expect(screen.getByRole('button', { name: /取消/ })).toBeDefined()
         // 发送即清空：不能等出图回包才清，否则生成期间看着像没发出去
         expect(inputBox().value).toBe('')
         // 页面靠这个标记在列表首位挂骨架占位
@@ -684,7 +711,7 @@ describe('ImageComposer', () => {
         await new Promise<void>((resolve) => {
             setTimeout(resolve, 350)
         })
-        await user.click(screen.getByRole('button', { name: '取消生成' }))
+        await user.click(screen.getByRole('button', { name: /取消/ }))
         expect(requestMock).toHaveBeenCalledWith('pressAi/generateImage/abort')
         expect(screen.getByRole('button', { name: '发送' })).toBeDefined()
         // 取消是同步复位：占位必须立刻收起，不能等宿主回包

@@ -37,6 +37,7 @@ function seedUsage(
         requestId,
         sdkMessageId: null,
         promptTokens: 10,
+        promptChars: 16,
         completionTokens: 10,
         reasoningTokens: 0,
         totalTokens: 20,
@@ -199,6 +200,27 @@ describe('aiUsageService', () => {
         expect(byRequestId.get('req-cli')?.credits).toBeCloseTo(1.75)
         expect(byRequestId.get('req-missing')?.credits).toBeNull()
         expect(result.summary.credits).toBeCloseTo(1.75)
+    })
+
+    it('明细以本地记账为准：CLI 只提供积分时不会把 tokens 清零', () => {
+        const projectDir = path.join(cliRoot, 'credit-only')
+        fs.mkdirSync(projectDir, { recursive: true })
+        fs.writeFileSync(
+            path.join(projectDir, 's1.jsonl'),
+            JSON.stringify({
+                type: 'function_call_result',
+                providerData: { conversationRequestId: 'req-credit-only', toolResult: { rawResponse: { credit: 0.4 } } },
+            }),
+            'utf8',
+        )
+        seedUsage('u1', 'proofread', new Date().toISOString(), 'req-credit-only', null)
+
+        const result = service.list({ module: null, range: 'all', page: 1, pageSize: 20 })
+        const item = result.items.find((row) => row.requestId === 'req-credit-only')
+        // 模块与 tokens 都取本地记账行：CLI 只补积分，不参与明细字段
+        expect(item?.module).toBe('proofread')
+        expect(item?.totalTokens).toBe(20)
+        expect(item?.credits).toBeCloseTo(0.4)
     })
 
     it('CLI 记录中本地没有对应行的轮次标为未归属', () => {

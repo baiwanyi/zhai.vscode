@@ -136,6 +136,49 @@ export interface AiWriteState {
     appliedMessageIds: string[]
 }
 
+/** 逐段写回的一段：两侧行文本由宿主算好，前端只负责渲染与勾选 */
+export interface AiWriteHunk {
+    /** 原文起始行号（1 基） */
+    oldStartLine: number
+    /** 被替换的原文行，纯新增时为空 */
+    oldText: string[]
+    /** 新文本起始行号（1 基） */
+    newStartLine: number
+    /** 替换后的新文行，纯删除时为空 */
+    newText: string[]
+}
+
+/** 提及候选类型：按索引路径前缀归类，仅用于展示分组 */
+export type AiMentionKind = 'note' | 'chapter' | 'other'
+
+/** 提及候选：path 为相对存储根的索引路径，添加时原样回传 */
+export interface AiMentionCandidate {
+    path: string
+    title: string
+    kind: AiMentionKind
+}
+
+/** 参考资料条目：检索结果与注入单位；file + startLine 由宿主重新解析校验 */
+export interface AiReferenceEntry {
+    /** 相对存储根的语料文件路径（reference/xxx.md） */
+    file: string
+    /** 分类：文件一级标题，缺省为文件名 */
+    category: string
+    /** 条目名：二级标题 */
+    name: string
+    /** 条目起始行（1 基，含标题行） */
+    startLine: number
+    /** 检索命中的正文片段，仅用于展示 */
+    snippet: string
+}
+
+/** 逐段写回预览：hunks 为空表示回复与原文一致，无需写回 */
+export interface AiWriteDiff {
+    messageId: string
+    label: string
+    hunks: AiWriteHunk[]
+}
+
 /** 写回结果：reason 为 applied 时表示此前已写过，未重复写入 */
 export interface AiApplyResult {
     applied: boolean
@@ -187,11 +230,32 @@ export interface AiModelOption {
     contextWindowOptions: number[]
 }
 
+/** 推理强度：与 SDK 的 Effort 对齐，只开放常用四档（minimal / max 不开放） */
+export type AiReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh'
+
+/** 推理强度展示名：菜单与宿主日志共用 */
+export const AI_REASONING_EFFORT_LABELS: Readonly<Record<AiReasoningEffort, string>> = {
+    low: '低',
+    medium: '中',
+    high: '高',
+    xhigh: '极高',
+}
+
+/** 推理强度白名单：菜单选项与宿主入参校验共用同一份 */
+export const AI_REASONING_EFFORTS: readonly AiReasoningEffort[] = ['low', 'medium', 'high', 'xhigh']
+
+/** 推理强度收窄：非白名单值一律不通过 */
+export function isAiReasoningEffort(value: unknown): value is AiReasoningEffort {
+    return AI_REASONING_EFFORTS.some((item) => item === value)
+}
+
 /** 模型菜单数据：当前选择 + 账号可用清单（current 为空表示使用 CLI 默认模型） */
 export interface AiModelChoices {
     current: string
     /** 当前上下文档位：0 表示跟随模型默认 */
     contextWindow: number
+    /** 当前推理强度：null 表示跟随模型默认 */
+    reasoningEffort: AiReasoningEffort | null
     options: AiModelOption[]
 }
 

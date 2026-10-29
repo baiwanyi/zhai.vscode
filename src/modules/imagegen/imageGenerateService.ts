@@ -27,6 +27,7 @@ import {
     DEFAULT_IMAGE_SETTINGS,
     IMAGE_RATIO_SIZE,
     type ImageGenerateKind,
+    type ImageGenerateProgress,
     type ImageGenerateResult,
     type ImageSettings,
 } from '@shared/types/imagegen'
@@ -209,7 +210,11 @@ export class ImageGenerateService {
      * 按提示词生成一张图片并落盘。
      * @param toWebviewUri 把磁盘 Uri 转成 webview 可访问 URL 的转换器
      */
-    public async generate(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<ImageGenerateResult> {
+    public async generate(
+        payload: unknown,
+        toWebviewUri: (uri: vscode.Uri) => string,
+        onProgress?: (progress: ImageGenerateProgress) => void,
+    ): Promise<ImageGenerateResult> {
         if (this.activeRequest) {
             throw new Error('已有生成中的图片请求，请等待完成')
         }
@@ -243,6 +248,8 @@ export class ImageGenerateService {
                 size: IMAGE_RATIO_SIZE[request.ratio],
                 references,
                 signal: controller.signal,
+                // 进度是旁路：通道回调异常不得影响出图，故只做一次转发
+                onProgress,
             })
             // 产物到手后再确认一次取消：落盘、扣配额、写封面都是不可撤回的副作用，
             // 用户点过停止就不该发生，否则会出现「界面已复位、图却凭空多出来」的情况。

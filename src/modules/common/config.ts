@@ -30,6 +30,8 @@ export interface ZhaiConfig {
     /** CodeBuddy 站点：登录与调用必须一致，切换后需重新登录 */
     aiCodebuddySite: CodebuddySite
     aiMaxContextTokens: number
+    /** 单次生成的输出 token 上限：过大则单次成本失控，过小会截断长回答 */
+    aiMaxCompletionTokens: number
     aiDailyTokenBudget: number
     /** 取名 AI 生成每日次数上限（本地生成不限） */
     namingAiDailyLimit: number
@@ -101,6 +103,11 @@ function readSnapshotInterval(value: number): number {
     )
 }
 
+/** 单次生成上限：默认 2048，低于 256 会明显截断，高于 32000 单次成本失控 */
+function readCompletionTokens(value: number): number {
+    return readBoundedInt(value, 2048, 256, 32000)
+}
+
 /** 收敛章节自动快照间隔：与结构化文档分开取值，互不影响 */
 function readChapterSnapshotInterval(value: number): number {
     return readBoundedSeconds(
@@ -138,6 +145,7 @@ export function getZhaiConfig(): ZhaiConfig {
         searchLimit: cfg.get<number>('search.limit', 50),
         aiCodebuddySite: readCodebuddySite(cfg.get<string>('ai.codebuddySite', 'cn')),
         aiMaxContextTokens: cfg.get<number>('ai.maxContextTokens', 8000),
+        aiMaxCompletionTokens: readCompletionTokens(cfg.get<number>('ai.maxCompletionTokens', 2048)),
         aiDailyTokenBudget: cfg.get<number>('ai.dailyTokenBudget', 500000),
         namingAiDailyLimit: cfg.get<number>('naming.aiDailyLimit', 20),
         pressAiDailyLimit: cfg.get<number>('press.aiDailyLimit', 20),

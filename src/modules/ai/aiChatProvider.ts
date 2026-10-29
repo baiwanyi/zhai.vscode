@@ -23,7 +23,8 @@ import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { NamingRoutes } from '@modules/naming/namingRoutes'
 import type { PressRoutes } from '@modules/press/pressRoutes'
 import type { ProofreadRoutes } from '@modules/proofread/proofreadRoutes'
-import type { AiConversationMode, AiModelChoices } from '@shared/types/aiChat'
+import type { AiConversationMode, AiModelChoices, AiReasoningEffort } from '@shared/types/aiChat'
+import { AI_REASONING_EFFORT_LABELS, isAiReasoningEffort } from '@shared/types/aiChat'
 import type { AiUsageQuery } from '@shared/types/aiUsage'
 import { isAiUsageModule, isAiUsageRange } from '@shared/types/aiUsage'
 import type { HostToWebviewMessage, StreamMessage, ToastPayload } from '@shared/types/messages'
@@ -34,12 +35,16 @@ import {
     getContextWindowOptions,
     getSelectedCodebuddyModel,
     getSelectedContextWindow,
+    getSelectedEffort,
     listCodebuddyModels,
     setSelectedCodebuddyModel,
     setSelectedContextWindow,
+    setSelectedEffort,
 } from './providers/codebuddyModels'
 import { CODEBUDDY_CREDITS_URLS } from './providers/codebuddySite'
 import type { AiChatService } from './chatService'
+import type { MentionService } from './mentionService'
+import type { ReferenceService } from './referenceService'
 import type { AiUsageService } from './usageService'
 import type { WorkflowRouter } from './workflowRouter'
 
@@ -92,6 +97,8 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         private readonly extensionUri: vscode.Uri,
         private readonly service: AiChatService,
         private readonly usageService: AiUsageService,
+        private readonly mention: MentionService,
+        private readonly reference: ReferenceService,
         private readonly workflowRouter: WorkflowRouter,
         private readonly naming: NamingRoutes,
         private readonly press: PressRoutes,
@@ -201,6 +208,22 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             case 'ai/usage/prompt': {
                 return this.usageService.readPrompt(readUsagePromptPayload(payload))
             }
+            case 'ai/mention/search': {
+                return { candidates: this.mention.search(readKeywordPayload(payload, 'ai/mention/search')) }
+            }
+            case 'ai/reference/search': {
+                return { entries: await this.reference.search(readKeywordPayload(payload, 'ai/reference/search')) }
+            }
+            case 'ai/reference/add': {
+                const target = readReferencePayload(payload)
+                return this.reference.add(target.file, target.startLine)
+            }
+            case 'ai/reference/openDir': {
+                return this.reference.openDir()
+            }
+            case 'ai/mention/add': {
+                return this.mention.add(readMentionPathPayload(payload))
+            }
             case 'ai/models': {
                 return this.listModels()
             }
@@ -209,6 +232,9 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             }
             case 'ai/selectContextWindow': {
                 return this.selectContextWindow(payload)
+            }
+            case 'ai/selectEffort': {
+                return this.selectEffort(payload)
             }
             case 'workflow/state': {
                 return this.workflowRouter.getContext()
@@ -225,8 +251,15 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             case 'ai/setMode': {
                 return { mode: this.service.setMode(readModePayload(payload)) }
             }
+            case 'ai/writeDiff': {
+                return this.service.buildWriteDiff(readMessageIdPayload(payload, 'ai/writeDiff'))
+            }
+            case 'ai/applyHunks': {
+                const request = readHunksPayload(payload)
+                return this.service.applyHunks(request.messageId, request.accepted)
+            }
             case 'ai/applyWrite': {
-                return this.service.applyWrite(readApplyPayload(payload))
+                return this.service.applyWrite(readMessageIdPayload(payload, 'ai/applyWrite'))
             }
             case 'ai/send': {
                 const { conversationId, content, applyPolicy, titleHint } = readSendPayload(payload)
@@ -286,6 +319,8 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                         payload,
                         (uri) => view.webview.asWebviewUri(uri).toString(),
                         (progress) => this.post(view, { type: 'state', channel: 'press-semantic', payload: progress }),
+                        // 出图阶段单独走 imagegen 通道：与语义归纳的载荷结构不同，前端按通道区分
+                        (progress) => this.post(view, { type: 'state', channel: 'imagegen', payload: progress }),
                     )
                 }
                 throw new Error(`未知的协议方法：${method}`)
@@ -311,8 +346,22 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         return {
             current: getSelectedCodebuddyModel(),
             contextWindow: getSelectedContextWindow(),
+            reasoningEffort: getSelectedEffort(),
             options: models,
         }
+    }
+
+    /**
+     * 选择推理强度：null 表示跟随模型默认。
+     * 关键约束：只接受白名单取值，非法值直接拒绝且不写 globalState，避免脏值下发给 SDK。
+     */
+    private async selectEffort(payload: unknown): Promise<{ effort: AiReasoningEffort | null; changed: boolean }> {
+        const effort = readEffortPayload(payload)
+        const previous = getSelectedEffort()
+        await setSelectedEffort(this.state, effort)
+        this.service.notifyRuntimeChanged()
+        logger.info(`CodeBuddy 推理强度已设为 ${effort === null ? '模型默认' : AI_REASONING_EFFORT_LABELS[effort]}`)
+        return { effort, changed: previous !== effort }
     }
 
     /**
@@ -634,19 +683,104 @@ function readContextWindowPayload(payload: unknown): number {
     return value
 }
 
+/** 提及关键词上限：标题级短语足够，超长视为异常载荷 */
+const MAX_MENTION_KEYWORD = 64
+/** 提及路径上限：索引内的相对路径远短于此值 */
+const MAX_MENTION_PATH = 400
+
+/** 校验 ai/mention/search 入参：关键词按上限截断，空串由服务层直接返回空列表 */
+function readKeywordPayload(payload: unknown, method: string): string {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error(`${method} 缺少参数`)
+    }
+    const keyword = (payload as { keyword?: unknown }).keyword
+    if (typeof keyword !== 'string') {
+        throw new Error(`${method} 参数类型不正确`)
+    }
+    return keyword.slice(0, MAX_MENTION_KEYWORD)
+}
+
+/** 校验 ai/reference/add 入参：相对语料路径 + 条目起始行，行范围由宿主重新解析得出 */
+function readReferencePayload(payload: unknown): { file: string; startLine: number } {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/reference/add 缺少参数')
+    }
+    const { file, startLine } = payload as { file?: unknown; startLine?: unknown }
+    if (typeof file !== 'string' || file.length === 0 || file.length > MAX_MENTION_PATH) {
+        throw new Error('ai/reference/add 参数类型不正确')
+    }
+    if (typeof startLine !== 'number' || !Number.isInteger(startLine) || startLine < 1) {
+        throw new Error('ai/reference/add 参数类型不正确')
+    }
+    return { file, startLine }
+}
+
+/** 校验 ai/mention/add 入参：只接受相对索引路径，绝对路径与超长值一律拒绝 */
+function readMentionPathPayload(payload: unknown): string {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/mention/add 缺少参数')
+    }
+    const target = (payload as { path?: unknown }).path
+    if (typeof target !== 'string' || target.length === 0 || target.length > MAX_MENTION_PATH) {
+        throw new Error('ai/mention/add 参数类型不正确')
+    }
+    return target
+}
+
+/** 校验 ai/selectEffort 入参：null 表示跟随模型默认，其余必须是白名单取值 */
+function readEffortPayload(payload: unknown): AiReasoningEffort | null {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/selectEffort 缺少参数')
+    }
+    const raw = (payload as { effort?: unknown }).effort
+    if (raw === null || raw === undefined) {
+        return null
+    }
+    if (!isAiReasoningEffort(raw)) {
+        throw new Error('ai/selectEffort 参数不正确')
+    }
+    return raw
+}
+
 /** 读取有限正整数：非法值回落默认值，避免 NaN 进入偏移量计算 */
 function readPositiveInt(value: unknown, fallback: number): number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 1 ? Math.trunc(value) : fallback
 }
 
-/** 校验 ai/applyWrite 入参：只接受宿主生成的助手消息 id，不接受路径与范围（防越权写入任意位置） */
-function readApplyPayload(payload: unknown): string {
+/** 校验写回类入参：只接受宿主生成的助手消息 id，不接受路径与范围（防越权写入任意位置） */
+function readMessageIdPayload(payload: unknown, method: string): string {
     if (typeof payload !== 'object' || payload === null) {
-        throw new Error('ai/applyWrite 缺少参数')
+        throw new Error(`${method} 缺少参数`)
     }
     const messageId = (payload as { messageId?: unknown }).messageId
     if (typeof messageId !== 'string' || messageId.length === 0) {
-        throw new Error('ai/applyWrite 参数类型不正确')
+        throw new Error(`${method} 参数类型不正确`)
     }
     return messageId
+}
+
+/** 逐段写回的接受段数上限：单篇改写最多千余行，超出视为异常载荷 */
+const MAX_WRITE_HUNKS = 500
+
+/**
+ * 校验 ai/applyHunks 入参：消息 id + 接受的段索引数组。
+ * 关键约束：索引只接受非负整数，越界索引由服务层忽略而不是错误——前端可能因文档变化滞后一拍。
+ */
+function readHunksPayload(payload: unknown): { messageId: string; accepted: number[] } {
+    const messageId = readMessageIdPayload(payload, 'ai/applyHunks')
+    const raw = (payload as { accepted?: unknown }).accepted
+    if (!Array.isArray(raw)) {
+        throw new Error('ai/applyHunks 参数类型不正确')
+    }
+    if (raw.length > MAX_WRITE_HUNKS) {
+        throw new Error('ai/applyHunks 段数超出上限')
+    }
+    const accepted: number[] = []
+    for (const item of raw) {
+        if (typeof item !== 'number' || !Number.isInteger(item) || item < 0) {
+            throw new Error('ai/applyHunks 段索引不正确')
+        }
+        accepted.push(item)
+    }
+    return { messageId, accepted }
 }

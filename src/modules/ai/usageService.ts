@@ -1,12 +1,12 @@
 /**
- * AI 用量查询：「AI 使用量」页的宿主侧实现，以 CodeBuddy 会话记录为明细主数据源，本地记账行只补模块与提示词归属。
- * 复用约定：一轮一行由 CliUsageIndex 汇总，模块键与范围枚举来自 shared/types/aiUsage，记录在此归一成下发契约；
- * 本地行按请求 id 关联，关联不上的标为 external；对账结论同时回填消息表积分，过期提示词在列表请求时顺带清理。
- * 关键约束：明细与汇总都按 CLI 记录的积分计，本地缺失时留空显示破折号，不做任何估算；
- * 积分消耗为 0 的轮次直接剔除，不占列表位置也不计入条数（未知积分保留，二者口径不同）；
- * 对账以 CLI 记录为准，已回填但偏小的值同样修正（工具调用积分可能晚落盘）；入参一律在本层收窄（模块白名单、
- * 范围枚举、页码夹紧、请求 id 长度与字符），不接受任意时间字符串；提示词只按请求 id 单条读取，
- * 本地未留存时回落到 CLI 会话记录（出图轮次取图像提示词，其余取用户消息原文）。
+ * AI 用量查询：「AI 使用量」页的宿主侧实现，以本地记账行为明细主数据源，CodeBuddy 会话记录只补积分与历史兜底。
+ * 复用约定：模块键与范围枚举来自 shared/types/aiUsage，记录在此归一成下发契约；本地行按请求 id 与
+ * CliUsageIndex 汇总的积分关联，关联不上的标为 external；积分回填结论同时写回消息表，过期提示词在列表请求时顺带清理。
+ * 关键约束：明细、条数与汇总口径全部来自本地记账，CLI 会话记录只提供积分（SDK 不下发该字段），
+ * 因此 CLI 格式变化只影响积分列，不影响列表可见性；积分缺失留空显示破折号，不做任何估算，
+ * 积分为 0 的轮次直接剔除（未知保留，二者口径不同）；对账以 CLI 记录为准，已回填但偏小的值同样修正；
+ * 入参一律在本层收窄（模块白名单、范围枚举、页码夹紧、请求 id 长度与字符），不接受任意时间字符串；
+ * 提示词只按请求 id 单条读取，本地未留存时回落到 CLI 会话记录（出图轮次取图像提示词，其余取用户消息原文）。
  */
 import type {
     AiUsageItem,
@@ -45,7 +45,7 @@ const MAX_REQUEST_ID_LENGTH = 64
 const DAY_MS = 24 * 60 * 60 * 1000
 /** 积分比较容差：CLI 侧积分为逐条累加的浮点，与库内值比较时避免因尾差反复重写 */
 const CREDIT_EPSILON = 1e-9
-/** 参与关联的本地行上限：表随记账持续增长，只读最近若干条即可覆盖 CLI 记录的同期范围 */
+/** 参与列表的本地行上限：表随记账持续增长，按时间倒序取最近若干条即可覆盖常用范围 */
 const LOCAL_ROW_LIMIT = 2000
 
 export class AiUsageService {
@@ -54,7 +54,7 @@ export class AiUsageService {
         private readonly cliUsage: CliUsageIndex,
     ) {}
 
-    /** 查询一页用量：以 CLI 记录为明细主数据源，先回填本地积分，再筛选、分页与汇总 */
+    /** 查询一页用量：以本地记账为明细主数据源，先回填积分，再筛选、分页与汇总 */
     public list(query: AiUsageQuery): AiUsageListResult {
         this.pruneExpiredPrompts()
         this.syncCreditsFromCli(query.force === true)
@@ -80,28 +80,32 @@ export class AiUsageService {
     }
 
     /**
-     * 汇总明细行：CLI 记录一轮一行，本地行按请求 id 提供模块、耗时与服务端成本。
-     * 本地有请求 id 但 CLI 记录已清理的轮次仍然保留，积分留空显示破折号，避免记录凭空消失；
-     * 本地没有请求 id 的行无法对账，其消耗已包含在对应的 CLI 条目里，不重复计入。
+     * 汇总明细行：本地记账一轮一行，CLI 记录只按请求 id 补积分。
+     * 关键约束：列表可见性由本地记账决定，CLI 文件缺失或改格式时只丢积分、不丢明细；
+     * CLI 中有而本地无的轮次（记账上线前的历史或在其它工具中发起）仍按未归属补回，避免历史凭空消失。
      */
     private collectEntries(): AiUsageItem[] {
-        const byRequestId = new Map<string, UsageLogRecord>()
-        for (const row of listAllUsageLogs(this.db, LOCAL_ROW_LIMIT)) {
-            if (row.requestId !== null) {
-                byRequestId.set(row.requestId, row)
+        const creditByRequestId = new Map<string, number>()
+        for (const entry of this.cliUsage.listEntries()) {
+            if (entry.credit !== null) {
+                creditByRequestId.set(entry.requestId, entry.credit)
             }
         }
+        const rows = listAllUsageLogs(this.db, LOCAL_ROW_LIMIT)
         const items: AiUsageItem[] = []
         const matched = new Set<string>()
-        for (const entry of this.cliUsage.listEntries()) {
-            const row = byRequestId.get(entry.requestId)
-            matched.add(entry.requestId)
-            items.push(toCliItem(entry, row))
+        for (const row of rows) {
+            if (row.requestId === null) {
+                items.push(toItem(row, row.credits))
+                continue
+            }
+            matched.add(row.requestId)
+            // CLI 有积分时以它为准（工具调用积分可能晚落盘），没有就沿用本地已回填值
+            items.push(toItem(row, creditByRequestId.get(row.requestId) ?? row.credits))
         }
-        for (const [requestId, row] of byRequestId) {
-            if (!matched.has(requestId)) {
-                // CLI 记录已清理时用本地缓存值兜底，缓存的积分同样为空则显示破折号
-                items.push(toItem(row))
+        for (const entry of this.cliUsage.listEntries()) {
+            if (!matched.has(entry.requestId)) {
+                items.push(toCliItem(entry, undefined))
             }
         }
         return items
@@ -192,15 +196,15 @@ function readPeriodStarts(): { today: Date; month: Date } {
     }
 }
 
-/** 行转下发契约：模块与状态按白名单收窄，历史行统一归到对话模块 */
-function toItem(row: UsageLogRecord): AiUsageItem {
+/** 行转下发契约：模块与状态按白名单收窄，历史行统一归到对话模块；积分以调用方补充值为准 */
+function toItem(row: UsageLogRecord, credits: number | null): AiUsageItem {
     return {
         id: row.id,
         requestId: row.requestId ?? row.id,
         createdAt: row.createdAt,
         module: toModule(row.module),
         model: row.model,
-        credits: row.credits,
+        credits,
         costUsd: row.costUsd,
         promptTokens: row.promptTokens,
         completionTokens: row.completionTokens,

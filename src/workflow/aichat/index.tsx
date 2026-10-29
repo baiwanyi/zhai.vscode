@@ -15,8 +15,13 @@
  */
 import { SquarePen } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
-import type { AiConversationMode, AiSessionSnapshot } from '@shared/types/aiChat'
+import type {
+    AiConversationMode,
+    AiMentionCandidate,
+    AiReasoningEffort,
+    AiReferenceEntry,
+    AiSessionSnapshot,
+} from '@shared/types/aiChat'
 import { onState, request } from '@shared/utils/bridge'
 import { AppAction, AppContent, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
@@ -26,17 +31,23 @@ import { useAiChatCommands } from './hooks/useAiChatCommands'
 import { useAiChatContexts } from './hooks/useAiChatContexts'
 import { useAiChatEnhance } from './hooks/useAiChatEnhance'
 import { useAiChatHistory } from './hooks/useAiChatHistory'
+import { useAiChatMention } from './hooks/useAiChatMention'
 import { useAiChatModels } from './hooks/useAiChatModels'
+import { useAiChatReference } from './hooks/useAiChatReference'
 import { useAiChatRuntime } from './hooks/useAiChatRuntime'
 import { useAiChatSession } from './hooks/useAiChatSession'
 import { useAiChatStatus } from './hooks/useAiChatStatus'
 import { useAiChatWriteState } from './hooks/useAiChatWriteState'
 import { AiChatComposer } from './layout/AiChatComposer'
+import { AiChatDiffDialog } from './layout/AiChatDiffDialog'
 import { AiChatHistoryMenu } from './layout/AiChatHistoryMenu'
+import { AiChatMentionDialog } from './layout/AiChatMentionDialog'
 import { AiChatMessageList } from './layout/AiChatMessageList'
+import { AiChatReferenceDialog } from './layout/AiChatReferenceDialog'
 import { composeCommandContent, formatTokens, readAiStateKind } from './utils'
-import type { AiCommand, AiCommandId, AiReferenceSource } from './constants'
+import type { AiCommand, AiCommandId } from './constants'
 import type { Phase } from './hooks/useAiChatSession'
+import type { AiReferenceAction } from './layout/AiChatReferenceMenu'
 import type { JSX } from 'react'
 
 /** 对话页对外入参：会话作用域与作品标题，其余状态全部由页面内部 hooks 持有 */
@@ -62,9 +73,11 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         loadModels,
         selectModel,
         selectContextWindow,
+        selectEffort,
     } = useAiChatModels({ onError: setError })
     const { runtime, loadRuntime } = useAiChatRuntime({ onError: setError })
-    const { writeState, applyingMessageId, loadWriteState, applyMessage } = useAiChatWriteState({ onError: setError })
+    const { writeState, applyingMessageId, writeDiff, loadWriteState, loadWriteDiff, closeWriteDiff, applyHunks } =
+        useAiChatWriteState({ onError: setError })
     const {
         session,
         phase,
@@ -84,6 +97,35 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         setContexts,
         refreshSessions: loadSessions,
         projectDir,
+    })
+    // 提及检索依赖会话快照的刷新函数，必须排在 useAiChatSession 之后
+    const [isMentionOpen, setIsMentionOpen] = useState(false)
+    const {
+        candidates: mentionCandidates,
+        isSearching: isMentionSearching,
+        search: searchMention,
+        add: addMention,
+        reset: resetMention,
+    } = useAiChatMention({
+        onError: setError,
+        // 添加成功后重拉会话快照：上下文芯片由宿主维护，前端不本地拼装
+        onAdded: (): void => {
+            void loadSession()
+        },
+    })
+    const [isReferenceOpen, setIsReferenceOpen] = useState(false)
+    const {
+        entries: referenceEntries,
+        isSearching: isReferenceSearching,
+        search: searchReference,
+        add: addReference,
+        openDir: openReferenceDir,
+        reset: resetReference,
+    } = useAiChatReference({
+        onError: setError,
+        onAdded: (): void => {
+            void loadSession()
+        },
     })
     /** 当前写作命令：决定本轮结果是否提供写回入口（校对只报告不写回） */
     const [commandId, setCommandId] = useState<AiCommandId | null>(null)
@@ -208,15 +250,69 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         [selectContextWindow],
     )
 
+    /** 推理强度：白名单由宿主校验，本层只透传选择结果 */
+    const handleSelectEffort = useCallback(
+        (effort: AiReasoningEffort | null): void => {
+            void selectEffort(effort)
+        },
+        [selectEffort],
+    )
+
     const handleClearCommand = useCallback((): void => {
         commandIdRef.current = null
         setCommandId(null)
     }, [])
 
-    /** 参考资料当前全是占位：只给提示，不发起任何宿主请求 */
-    const handleReference = useCallback((source: AiReferenceSource): void => {
-        toast.info(`参考资料即将上线：${source.title}`)
+    /** 参考菜单：检索语料，或打开语料目录（目录不存在时由宿主创建） */
+    const handleReference = useCallback(
+        (action: AiReferenceAction): void => {
+            if (action === 'search') {
+                setIsReferenceOpen(true)
+                return
+            }
+            void openReferenceDir()
+        },
+        [openReferenceDir],
+    )
+
+    const handleReferencePick = useCallback(
+        (entry: AiReferenceEntry): void => {
+            void addReference(entry).then((isAdded) => {
+                if (isAdded) {
+                    setIsReferenceOpen(false)
+                    resetReference()
+                }
+            })
+        },
+        [addReference, resetReference],
+    )
+
+    const handleReferenceClose = useCallback((): void => {
+        setIsReferenceOpen(false)
+        resetReference()
+    }, [resetReference])
+
+    /** 打开提及检索：候选来自全文索引，选中即加为上下文 */
+    const handleMention = useCallback((): void => {
+        setIsMentionOpen(true)
     }, [])
+
+    const handleMentionPick = useCallback(
+        (candidate: AiMentionCandidate): void => {
+            void addMention(candidate).then((isAdded) => {
+                if (isAdded) {
+                    setIsMentionOpen(false)
+                    resetMention()
+                }
+            })
+        },
+        [addMention, resetMention],
+    )
+
+    const handleMentionClose = useCallback((): void => {
+        setIsMentionOpen(false)
+        resetMention()
+    }, [resetMention])
 
     const handleModeChange = useCallback(
         (next: AiConversationMode): void => {
@@ -259,11 +355,24 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
         [applyDraftCommand, loadWriteState, switchSession],
     )
 
+    /** 写回入口先看变更：勾选后由弹窗提交，未勾选的段保留原文 */
     const handleApply = useCallback(
         (messageId: string): void => {
-            void applyMessage(messageId)
+            void loadWriteDiff(messageId)
         },
-        [applyMessage],
+        [loadWriteDiff],
+    )
+
+    /** 逐段写回：把弹窗里的勾选原样交给宿主 */
+    const handleApplyHunks = useCallback(
+        (accepted: number[]): void => {
+            const messageId = writeDiff?.messageId
+            if (messageId === undefined) {
+                return
+            }
+            void applyHunks(messageId, accepted)
+        },
+        [applyHunks, writeDiff],
     )
 
     return (
@@ -340,13 +449,37 @@ export function AiChat({ projectDir = null, projectTitle = null }: AiChatProps):
                     onOpenModels={() => void loadModels()}
                     onSelectModel={handleSelectModel}
                     onSelectContextWindow={handleSelectContextWindow}
+                    onSelectEffort={handleSelectEffort}
                     onClearCommand={handleClearCommand}
                     onReference={handleReference}
+                    onMention={handleMention}
                     onModeChange={handleModeChange}
                     isEnhancing={isEnhancing}
                     onEnhanceRequest={enhance}
                 />
             </AppFooter>
+            <AiChatDiffDialog
+                diff={writeDiff}
+                applying={applyingMessageId !== null}
+                onApply={handleApplyHunks}
+                onClose={closeWriteDiff}
+            />
+            <AiChatMentionDialog
+                open={isMentionOpen}
+                candidates={mentionCandidates}
+                isSearching={isMentionSearching}
+                onSearch={(keyword) => void searchMention(keyword)}
+                onPick={handleMentionPick}
+                onClose={handleMentionClose}
+            />
+            <AiChatReferenceDialog
+                open={isReferenceOpen}
+                entries={referenceEntries}
+                isSearching={isReferenceSearching}
+                onSearch={(keyword) => void searchReference(keyword)}
+                onPick={handleReferencePick}
+                onClose={handleReferenceClose}
+            />
         </AppPage>
     )
 }

@@ -5,7 +5,8 @@
  */
 import { AiChatCommandMenu } from './AiChatCommandMenu'
 import { AiChatReferenceMenu } from './AiChatReferenceMenu'
-import type { AiCommand, AiCommandId, AiReferenceSource } from '../constants'
+import type { AiCommand, AiCommandId } from '../constants'
+import type { AiReferenceAction } from './AiChatReferenceMenu'
 import type { JSX } from 'react'
 
 interface AiChatComposerToolbarProps {
@@ -13,7 +14,9 @@ interface AiChatComposerToolbarProps {
     /** 当前已选命令：供菜单展示勾选标记 */
     activeCommandId: AiCommandId | null
     onCommand: (command: AiCommand) => void
-    onReference: (source: AiReferenceSource) => void
+    onReference: (action: AiReferenceAction) => void
+    /** 打开提及检索：复用参考菜单入口，不额外占用工具行按钮 */
+    onMention: () => void
 }
 
 export function AiChatComposerToolbar({
@@ -21,11 +24,12 @@ export function AiChatComposerToolbar({
     activeCommandId,
     onCommand,
     onReference,
+    onMention,
 }: AiChatComposerToolbarProps): JSX.Element {
     return (
         <div className="flex items-center gap-0.5 p-0.5">
             <AiChatCommandMenu disabled={disabled} activeId={activeCommandId} onSelect={onCommand} />
-            <AiChatReferenceMenu disabled={disabled} onSelect={onReference} />
+            <AiChatReferenceMenu disabled={disabled} onSelect={onReference} onMention={onMention} />
         </div>
     )
 }

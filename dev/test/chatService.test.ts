@@ -13,7 +13,7 @@ import type { AiChatMessage, AiProvider, AiStreamChunk, AiStreamRequest } from '
 import type { StreamMessage } from '../../src/shared/types/messages'
 import type Database from 'better-sqlite3'
 import { AiChatService } from '../../src/modules/ai/chatService'
-import { listMessages } from '../../src/modules/ai/db/chatRepository'
+import { listMessages, updateConversationSession } from '../../src/modules/ai/db/chatRepository'
 import { openAiDatabase } from '../../src/modules/ai/db/connection'
 import { ensureAiSchema } from '../../src/modules/ai/db/schema'
 import { getPrompt, listUsageLogs } from '../../src/modules/ai/db/usageRepository'
@@ -23,6 +23,8 @@ const FILE_PATH = 'd:/notes/ch01.md'
 
 /** 记录每次流式请求的入参 */
 const captured = { requests: [] as AiStreamRequest[] }
+/** 下一条流要产出的增量：由用例按需替换，留空时只产出一段正文 */
+let nextChunks: AiStreamChunk[] = []
 
 /** 记录型假通道：替代真实厂商通道，避免测试触网 */
 const fakeProvider: AiProvider = {
@@ -30,10 +32,13 @@ const fakeProvider: AiProvider = {
     checkReady: () => Promise.resolve({ ready: true }),
     stream: (request: AiStreamRequest): AsyncGenerator<AiStreamChunk> => {
         captured.requests.push(request)
+        const chunks = nextChunks.length > 0 ? nextChunks : [{ content: '回答', reasoning: '' }]
         return (async function* generate(): AsyncGenerator<AiStreamChunk> {
             // 先让出一次微任务，贴近真实流的异步节奏
             await Promise.resolve()
-            yield { content: '回答', reasoning: '', usage: undefined }
+            for (const chunk of chunks) {
+                yield chunk
+            }
         })()
     },
 }
@@ -108,6 +113,9 @@ afterAll(() => {
 beforeEach(() => {
     resetWorkspaceState()
     captured.requests.length = 0
+    nextChunks = []
+    // 续接用例会写会话号，逐例复位成首轮，避免后续用例被带入 resume 分支
+    updateConversationSession(db, conversationId, 'codebuddy', null)
     service.clearContexts()
     // 用量与提示词按用例清空，避免前一条用例的记账干扰条数断言
     db.prepare('DELETE FROM ai_usage_logs').run()
@@ -188,5 +196,47 @@ describe('发送阶段的上下文注入', () => {
         expect(tail).toContain('<context')
         expect(tail).toContain('新问题')
         expect(messages.some((message) => message.content.includes('旧问题'))).toBe(false)
+    })
+})
+
+describe('本轮用量的采纳口径', () => {
+    it('通道回传单轮用量时直接采用，不再按字数估算', async () => {
+        nextChunks = [
+            {
+                content: '回答',
+                reasoning: '',
+                usage: { promptTokens: 12, completionTokens: 8, reasoningTokens: 0, totalTokens: 20 },
+                isRoundUsage: true,
+            },
+        ]
+        const result = await sendAndWait('单轮用量')
+
+        const assistantRow = listMessages(db, conversationId)
+            .filter((row) => row.role === 'assistant')
+            .at(-1)
+        expect(assistantRow?.totalTokens).toBe(20)
+        expect(assistantRow?.tokensEstimated).toBe(0)
+        expect(result.done?.usage?.totalTokens).toBe(20)
+        expect(result.done?.tokensEstimated).toBe(false)
+    })
+
+    it('续接会话时通道回传的累计用量不被当成本轮值', async () => {
+        updateConversationSession(db, conversationId, 'codebuddy', 'sdk-session-1')
+        nextChunks = [
+            {
+                // 续接会话的 result.usage 是整段累计：通道以 isRoundUsage=false 标明，上层必须拒收
+                content: '回答',
+                reasoning: '',
+                usage: { promptTokens: 900, completionTokens: 100, reasoningTokens: 0, totalTokens: 1000 },
+                isRoundUsage: false,
+            },
+        ]
+        await sendAndWait('续接检查')
+
+        const assistantRow = listMessages(db, conversationId)
+            .filter((row) => row.role === 'assistant')
+            .at(-1)
+        expect(assistantRow?.totalTokens).toBeLessThan(100)
+        expect(assistantRow?.tokensEstimated).toBe(1)
     })
 })

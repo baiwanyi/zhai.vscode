@@ -10,7 +10,7 @@
  * 生成中比例菜单与画面风格禁用、发送位换为取消，同一位置不会同时出现两个动作。
  */
 import { useRef } from 'react'
-import type { ImageRatio } from '@shared/types/imagegen'
+import type { ImageGenerateStage, ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
 import { EnhanceButton } from '@webview/components/EnhanceButton'
 import { SendButton } from '@webview/components/SendButton'
@@ -28,6 +28,8 @@ interface ImageComposerActionsProps {
     style: PortraitStyle
     /** 生成中：比例菜单与画面风格禁用，发送位换成取消 */
     isGenerating: boolean
+    /** 出图阶段：只影响取消位的文案，未在出图时为 null */
+    stage: ImageGenerateStage | null
     /** 增强请求进行中：增强按钮转圈并禁用 */
     isEnhancing: boolean
     /** 正文当前是否为增强结果：决定增强按钮的图标与动作 */
@@ -48,6 +50,7 @@ export function ImageComposerActions({
     ratio,
     style,
     isGenerating,
+    stage,
     isEnhancing,
     isEnhanced,
     canEnhance,
@@ -61,6 +64,14 @@ export function ImageComposerActions({
 }: ImageComposerActionsProps): JSX.Element {
     /** 上一次发送的时间戳：ref 不参与渲染，只用于冷却判定，故不违反「不持有状态」 */
     const lastSendAtRef = useRef(0)
+
+    /** 取消位文案跟随出图阶段：准备阶段等首字，之后才是真正出图 */
+    let stopLabel = '取消生成'
+    if (stage === 'generating') {
+        stopLabel = '出图中，点击取消'
+    } else if (stage === 'thinking') {
+        stopLabel = '准备中，点击取消'
+    }
 
     /** 发送：先记时间戳，冷却窗口从这一下开始算 */
     const handleSendClick = (): void => {
@@ -94,7 +105,7 @@ export function ImageComposerActions({
                     isGenerating={isGenerating}
                     canSend={canSend}
                     sendLabel="发送"
-                    stopLabel="取消生成"
+                    stopLabel={stopLabel}
                     onSend={handleSendClick}
                     onStop={handleStopClick}
                 />

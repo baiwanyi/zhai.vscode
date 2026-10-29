@@ -4,7 +4,8 @@
  * A1/A2 写作模式（本期以「整段替换」实现写回，diff 逐段接受待后续补齐）。
  * 约束：上下文按字符数粗估截断（AC-4 降级），预算护栏达上限时拒绝发送（A17）；写回只接受消息 id，
  * 文档版本与快照不一致时拒绝，写入经 WorkspaceEdit 进入撤销栈；会话按作用域（作品目录）隔离，跨作品不共用记录；
- * 本轮 token 以 CLI 会话记录为准（续接时 SDK 的 result.usage 是会话累计），取不到再按「首轮直采 / 续接估算」回落。
+ * 本轮 token 以通道回传的单轮用量为准（续接时 SDK 的 result.usage 是会话累计，由通道剔除），
+ * CLI 会话记录仅用于补齐积分与兜底 tokens，两者都取不到才按回复字数估算并打标。
  */
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
@@ -23,11 +24,13 @@ import type {
     AiRuntimeInfo,
     AiSendResult,
     AiSessionSnapshot,
+    AiWriteDiff,
     AiWriteScope,
     AiWriteState,
     AiWriteTarget,
 } from '@shared/types/aiChat'
 import type { StreamMessage } from '@shared/types/messages'
+import { composeAcceptedText, diffLines } from '@shared/utils/diff'
 import {
     buildContextBlock,
     describeContextRefs,
@@ -53,6 +56,7 @@ import {
     updateConversationTitle,
     updateMessage,
 } from './db/chatRepository'
+import { readCharsPerToken } from './db/usageRepository'
 import { createChatEnhanceRequest, PromptEnhanceService } from './promptEnhance'
 import { readCodebuddyLogin, rememberCodebuddyLogin } from './providers/codebuddyLogin'
 import {
@@ -76,12 +80,10 @@ const DEFAULT_TITLE = '新的对话'
 const TITLE_MAX_LENGTH = 20
 /** 历史对话列表返回条数上限，避免一次拉取过多会话 */
 const SESSION_LIST_LIMIT = 50
-/** 单次生成上限，防止费用失控 */
-const MAX_COMPLETION_TOKENS = 2048
+
 /** 首字等待上限：属于会话层策略，与具体通道无关，超时即中断并提示 */
 const FIRST_TOKEN_TIMEOUT_MS = 30_000
-/** 中文场景 1 token ≈ 1.6 字符（设计文档第 5 节的降级方案） */
-const CHARS_PER_TOKEN = 1.6
+
 /** 流式增量合并窗口，避免高频 postMessage */
 const STREAM_FLUSH_MS = 60
 /** 整篇改写上限：超出后只能选中片段，避免模型只看到截断内容却覆盖全文 */
@@ -397,35 +399,33 @@ export class AiChatService implements vscode.Disposable {
     }
 
     /**
-     * 把指定助手消息写回编辑栏：只接受消息 id，uri 与替换范围一律取发送时保存的快照。
-     * 关键约束：消息须属于当前会话且可写回，文档版本必须与快照一致，写入经 WorkspaceEdit 进入撤销栈。
+     * 逐段写回预览：把「发送时原文」与「回复正文」做行级 diff，交给前端逐段勾选。
+     * 关键约束：只接受可写回消息 id，不接受路径与范围；hunks 为空表示回复与原文一致。
      */
-    public async applyWrite(messageId: string): Promise<AiApplyResult> {
+    public buildWriteDiff(messageId: string): AiWriteDiff {
+        const { target, message } = this.readWritableMessage(messageId)
+        return {
+            messageId,
+            label: writeTargetLabel(target.publicRef),
+            hunks: diffLines(target.text, message.content),
+        }
+    }
+
+    /**
+     * 按勾选的变更块写回：未接受的段保留原文，接受的段替换为新文，再按文档 EOL 还原行尾。
+     * 关键约束：文档版本必须与快照一致，写入经 WorkspaceEdit 进入撤销栈；重复写回直接返回已应用。
+     */
+    public async applyHunks(messageId: string, accepted: readonly number[]): Promise<AiApplyResult> {
         const conversationId = this.activeConversationId
         if (!conversationId) {
             throw new Error('当前没有可写回的会话')
         }
-        const appliable = this.appliableMessages.get(conversationId)
-        if (!appliable || !appliable.has(messageId)) {
-            throw new Error('该回复不在可写回列表中，请重新生成后再试')
-        }
-        const target = this.writeTargets.get(messageId)
-        if (!target) {
-            throw new Error('写回目标已失效，请重新生成')
-        }
-        const label = writeTargetLabel(target.publicRef)
         if (this.appliedMessages.get(conversationId)?.has(messageId)) {
-            return { applied: true, label, reason: 'applied' }
+            const { target } = this.readWritableMessage(messageId)
+            return { applied: true, label: writeTargetLabel(target.publicRef), reason: 'applied' }
         }
-        const message = listMessages(this.db, conversationId).find((row) => row.id === messageId)
-        if (
-            !message ||
-            message.role !== 'assistant' ||
-            message.status !== 'completed' ||
-            message.content.length === 0
-        ) {
-            throw new Error('该回复没有可写回的内容')
-        }
+        const { target, message } = this.readWritableMessage(messageId)
+        const label = writeTargetLabel(target.publicRef)
         const document = await this.findWritableDocument(target.uri)
         if (document.version !== target.version) {
             throw new Error('文档已变更，请重新生成后再应用')
@@ -442,8 +442,12 @@ export class AiChatService implements vscode.Disposable {
                 logger.warn(`AI 写回前的快照留底失败（不影响写回）：${causeText}`)
             }
         }
+        const hunks = diffLines(target.text, message.content)
+        const composed = composeAcceptedText(target.text, hunks, accepted)
+        // 文档可能是 CRLF：按文档 EOL 还原，避免替换后行尾混用
+        const text = document.eol === vscode.EndOfLine.CRLF ? composed.replace(/\n/g, '\r\n') : composed
         const edit = new vscode.WorkspaceEdit()
-        edit.replace(target.uri, target.range, message.content)
+        edit.replace(target.uri, target.range, text)
         const isApplied = await vscode.workspace.applyEdit(edit)
         if (!isApplied) {
             throw new Error('写入编辑栏失败，请重试')
@@ -452,8 +456,43 @@ export class AiChatService implements vscode.Disposable {
         appliedIds.add(messageId)
         this.appliedMessages.set(conversationId, appliedIds)
         this.writeStateEmitter.fire()
-        logger.info(`AI 内容已写回编辑栏：${label}`)
+        logger.info(`AI 内容已写回编辑栏：${label}（接受 ${String(accepted.length)} / ${String(hunks.length)} 段）`)
         return { applied: true, label }
+    }
+
+    /** 整段写回：等价于接受全部变更块，保留给未接逐段预览的入口 */
+    public async applyWrite(messageId: string): Promise<AiApplyResult> {
+        const diff = this.buildWriteDiff(messageId)
+        return this.applyHunks(
+            messageId,
+            diff.hunks.map((_hunk, index) => index),
+        )
+    }
+
+    /** 读可写回目标与消息行：归属、目标与正文校验集中在此，预览与写回共用同一口径 */
+    private readWritableMessage(messageId: string): { target: HostWriteTarget; message: MessageRow } {
+        const conversationId = this.activeConversationId
+        if (!conversationId) {
+            throw new Error('当前没有可写回的会话')
+        }
+        const appliable = this.appliableMessages.get(conversationId)
+        if (!appliable || !appliable.has(messageId)) {
+            throw new Error('该回复不在可写回列表中，请重新生成后再试')
+        }
+        const target = this.writeTargets.get(messageId)
+        if (!target) {
+            throw new Error('写回目标已失效，请重新生成')
+        }
+        const message = listMessages(this.db, conversationId).find((row) => row.id === messageId)
+        if (
+            !message ||
+            message.role !== 'assistant' ||
+            message.status !== 'completed' ||
+            message.content.length === 0
+        ) {
+            throw new Error('该回复没有可写回的内容')
+        }
+        return { target, message }
     }
 
     /**
@@ -613,6 +652,8 @@ export class AiChatService implements vscode.Disposable {
         let pending = ''
         let lastEmitAt = 0
         let usage: ChatUsage | null = null
+        /** 通道回传的 usage 是否为单轮值：为 false 时续接会话的累计值不可直接记账 */
+        let isUsageRound = false
         /** 通道回传的请求标识与成本：流末块携带，用量记账与请求 id 展示都依赖它 */
         let usageMeta: AiUsageMeta | null = null
         /** 本轮上下文占用：通道回传后落内存并随流末消息下发，未回传时保留上一次的值 */
@@ -661,7 +702,7 @@ export class AiChatService implements vscode.Disposable {
             const promptText = summarizeMessages(messages)
             const stream = this.provider.stream({
                 model: getSelectedCodebuddyModel(),
-                maxTokens: MAX_COMPLETION_TOKENS,
+                maxTokens: cfg.aiMaxCompletionTokens,
                 messages,
                 signal: controller.signal,
                 sessionId: resumeSessionId,
@@ -671,6 +712,10 @@ export class AiChatService implements vscode.Disposable {
                 },
             })
             for await (const chunk of stream) {
+                if (chunk.notice) {
+                    // 压缩是旁路提示：不影响正文与用量，立即下发，由前端解释占用为何突变
+                    this.streamEmitter.fire({ type: 'stream', reqId, delta: '', done: false, notice: chunk.notice })
+                }
                 if (isFirstToken && (chunk.content.length > 0 || chunk.reasoning.length > 0)) {
                     isFirstToken = false
                     clearTimeout(firstTokenTimer)
@@ -681,6 +726,7 @@ export class AiChatService implements vscode.Disposable {
                 flush(false)
                 if (chunk.usage) {
                     usage = chunk.usage
+                    isUsageRound = chunk.isRoundUsage === true
                 }
                 if (chunk.meta) {
                     usageMeta = chunk.meta
@@ -697,6 +743,7 @@ export class AiChatService implements vscode.Disposable {
                 usageMeta?.requestId ?? null,
                 isResumedSession,
                 usage,
+                isUsageRound,
                 answer,
             )
             const finalUsage = roundUsage.usage
@@ -769,6 +816,7 @@ export class AiChatService implements vscode.Disposable {
                 usageMeta?.requestId ?? null,
                 isResumedSession,
                 usage,
+                isUsageRound,
                 answer,
             )
             const finalUsage = roundUsage.usage
@@ -846,37 +894,48 @@ export class AiChatService implements vscode.Disposable {
     }
 
     /**
-     * 确定本轮用量与积分：续接会话时 SDK 的 result.usage 是会话累计，不能直接当本轮消耗，
-     * 故优先按会话文件与请求 id 取 CLI 落盘记录（与用量页同一口径，tokens 与积分同源）；
-     * 取不到时首轮直接用通道值，续接则退化为按回复字数估算并打标，绝不用累计值冒充本轮；
-     * 积分只认 CLI 记录，两条回落路径都留 null（未知），不按倍率估算。
+     * 确定本轮用量与积分：tokens 优先用通道回传的单轮值（message_start + message_delta 拼出），
+     * 续接会话时 result.usage 是会话累计，通道会以 isRoundUsage=false 标明，此时不可采纳；
+     * 通道单轮值缺失时才回落到 CLI 会话记录（与用量页同一口径），再不行按回复字数估算并打标；
+     * 积分只认 CLI 记录，其余路径一律留 null（未知），不按倍率估算。
      */
     private resolveRoundUsage(
         sessionId: string | null,
         requestId: string | null,
         isResumed: boolean,
         usage: ChatUsage | null,
+        isRoundUsage: boolean,
         answer: string,
     ): { usage: ChatUsage; isEstimated: boolean; credits: number | null } {
-        if (this.cliUsage !== null && sessionId !== null && requestId !== null) {
-            const round = this.cliUsage.readRoundUsage(sessionId, requestId)
-            if (round !== null) {
-                return {
-                    usage: {
-                        promptTokens: round.promptTokens,
-                        completionTokens: round.completionTokens,
-                        reasoningTokens: 0,
-                        totalTokens: round.totalTokens,
-                    },
-                    isEstimated: false,
-                    credits: round.credit,
-                }
+        // 积分与兜底 tokens 都出自 CLI 记录：一次读取同时满足两种用途
+        const round =
+            this.cliUsage !== null && sessionId !== null && requestId !== null
+                ? this.cliUsage.readRoundUsage(sessionId, requestId)
+                : null
+        if (usage !== null && isRoundUsage) {
+            return { usage, isEstimated: false, credits: round?.credit ?? null }
+        }
+        if (round !== null) {
+            return {
+                usage: {
+                    promptTokens: round.promptTokens,
+                    completionTokens: round.completionTokens,
+                    reasoningTokens: 0,
+                    totalTokens: round.totalTokens,
+                },
+                isEstimated: false,
+                credits: round.credit,
             }
         }
         if (!isResumed && usage !== null) {
+            // 首轮 result 必为单轮值：即使通道未标记（旧实现或异常）也可采纳
             return { usage, isEstimated: false, credits: null }
         }
-        return { usage: estimateUsageFromAnswer(answer), isEstimated: true, credits: null }
+        return {
+            usage: estimateUsageFromAnswer(answer, readCharsPerToken(this.db, getSelectedCodebuddyModel())),
+            isEstimated: true,
+            credits: null,
+        }
     }
 
     /**
@@ -899,7 +958,9 @@ export class AiChatService implements vscode.Disposable {
         input: string,
         contextBlock: string,
     ): Promise<ChatMessage[]> {
-        const budget = Math.max(getZhaiConfig().aiMaxContextTokens, 0) * CHARS_PER_TOKEN
+        // 字符预算由本机真实比值反算：字符/token 随模型与提示词构成变化，历史样本比固定常数更贴近实际
+        const charsPerToken = readCharsPerToken(this.db, getSelectedCodebuddyModel())
+        const budget = Math.max(getZhaiConfig().aiMaxContextTokens, 0) * charsPerToken
         const history = listMessages(this.db, conversationId).filter(
             (row) =>
                 row.id !== currentMessageId &&
@@ -1045,8 +1106,8 @@ export class AiChatService implements vscode.Disposable {
  * 服务端未回传用量时的降级估算：只按回复字符数折算完成 token。
  * 关键约束：prompt 侧无可靠依据，记 0 而不是凭历史长度猜一个数，避免把估算当成真实成本。
  */
-function estimateUsageFromAnswer(answer: string): ChatUsage {
-    const completionTokens = Math.ceil(answer.length / CHARS_PER_TOKEN)
+function estimateUsageFromAnswer(answer: string, charsPerToken: number): ChatUsage {
+    const completionTokens = Math.ceil(answer.length / charsPerToken)
     return { promptTokens: 0, completionTokens, reasoningTokens: 0, totalTokens: completionTokens }
 }
 

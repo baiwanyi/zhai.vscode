@@ -1,5 +1,5 @@
 /**
- * AI 对话底部区域常量：写作命令模板与参考资料源清单，供菜单、输入区徽章、发送拼装与消息回放共用。
+ * AI 对话底部区域常量：写作命令模板与写回策略，供菜单、输入区徽章、发送拼装与消息回放共用。
  * 复用约定：命令标题、指令模板与写回策略集中在此，界面只展示 title，instruction 仅在发送时拼装与回放时剥离。
  * 关键约束：applyPolicy 为 report 的命令只输出检查结果，永不提供写回编辑栏入口；instruction 变更会使旧消息失去徽章回显。
  */
@@ -66,21 +66,4 @@ export function isAiCommandId(value: unknown): value is AiCommandId {
     return typeof value === 'string' && Object.prototype.hasOwnProperty.call(AI_COMMAND_MAP, value)
 }
 
-/** 参考资料类别 */
-export type AiReferenceKind = 'poetry' | 'quote' | 'classic' | 'history'
 
-/** 参考资料源定义：enabled 为 false 时仅作占位，不发起任何请求 */
-export interface AiReferenceSource {
-    kind: AiReferenceKind
-    title: string
-    description: string
-    enabled: boolean
-}
-
-/** 参考资料源清单（当前全部为占位） */
-export const AI_REFERENCE_SOURCES: readonly AiReferenceSource[] = [
-    { kind: 'poetry', title: '古诗词', description: '按意象或主题检索诗句', enabled: false },
-    { kind: 'quote', title: '名言名句', description: '引用名人原话与出处', enabled: false },
-    { kind: 'classic', title: '经典文本', description: '古籍与经典段落原文', enabled: false },
-    { kind: 'history', title: '历史资料', description: '时间、人物与制度背景', enabled: false },
-]

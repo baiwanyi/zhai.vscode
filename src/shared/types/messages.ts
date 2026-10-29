@@ -54,6 +54,11 @@ export interface StreamMessage {
         usedTokens: number
         windowTokens: number
     }
+    /**
+     * 会话内的上下文压缩事件：compacting 表示正在压缩，compacted 表示压缩完成。
+     * 关键约束：只用于提示，不改动正文与用量；与 done 无关，可单独下发。
+     */
+    notice?: 'compacting' | 'compacted'
 }
 
 /** 操作反馈级别：与 sonner 的四个入口一一对应 */
@@ -71,6 +76,7 @@ export interface ToastPayload {
  * press 通道承载当前文档所属的作品目录，载荷形如 PressActiveState；
  * press-import 通道承载导入任务的进度与终态，载荷形如 PressImportProgress；
  * press-semantic 通道承载 AI 语义归纳的进度与终态，载荷形如 PressSemanticProgress；
+ * imagegen 通道承载出图阶段（准备 / 已调用工具），载荷形如 ImageGenerateProgress；
  * proofread 通道承载 AI 校对的分批进度，载荷形如 ProofreadAiProgress；
  * todo 通道承载待办目录的外部变更（无载荷，收到即刷新）；
  * toast 通道承载宿主的操作反馈，载荷形如 ToastPayload。
@@ -86,6 +92,7 @@ export interface StateMessage {
         | 'workflow'
         | 'press-import'
         | 'press-semantic'
+        | 'imagegen'
         | 'proofread'
         | 'todo'
         | 'toast'
@@ -115,6 +122,7 @@ export type WebviewToHostMessage = RequestMessage
  */
 export type HostMethodName =
     | 'ai/abort'
+    | 'ai/applyHunks'
     | 'ai/applyWrite'
     | 'ai/context'
     | 'ai/context/clear'
@@ -122,10 +130,16 @@ export type HostMethodName =
     | 'ai/deleteSession'
     | 'ai/draft'
     | 'ai/enhancePrompt'
+    | 'ai/mention/add'
+    | 'ai/mention/search'
     | 'ai/models'
+    | 'ai/reference/add'
+    | 'ai/reference/openDir'
+    | 'ai/reference/search'
     | 'ai/newSession'
     | 'ai/runtime'
     | 'ai/selectContextWindow'
+    | 'ai/selectEffort'
     | 'ai/selectModel'
     | 'ai/send'
     | 'ai/session'
@@ -134,6 +148,7 @@ export type HostMethodName =
     | 'ai/switchSession'
     | 'ai/usage'
     | 'ai/usage/prompt'
+    | 'ai/writeDiff'
     | 'ai/writeState'
     | 'dashboard/stats'
     | 'host/command'
@@ -258,6 +273,7 @@ function isStateChannel(value: unknown): value is StateMessage['channel'] {
         value === 'workflow' ||
         value === 'press-import' ||
         value === 'press-semantic' ||
+        value === 'imagegen' ||
         value === 'proofread' ||
         value === 'todo' ||
         value === 'toast'

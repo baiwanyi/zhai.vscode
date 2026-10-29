@@ -188,7 +188,7 @@ lifeguard
 | `imageNaming.ts` | 图片命名唯一入口：三类标识格式、同秒冲突按秒顺延、永不覆盖 |
 | `imageSidecar.ts` | 侧车路径推导、随图删除与写入，尽力而为、不抛错 |
 | `prompt/styleHints.ts` | 画风描述表 `STYLE_HINTS`，键与 `PORTRAIT_STYLES` 一一对应 |
-| `prompt/instruction.ts` | 出图指令模板：把拼好的提示词包成「立即调用 ImageGen、只回产物路径」的指令 |
+| `prompt/instruction.ts` | 出图指令模板：把拼好的提示词包成「立即调用 ImageGen、按 `{"path": "..."}` 回报」的指令；回报格式与通道 `outputFormat` 的 schema 必须同步 |
 | `prompt/limits.ts` | 提示词限额契约：正文、词条、上下文、规则的长度与条数上限 |
 | `prompt/index.ts` | 提示词唯一入口，头部即「改提示词导航」 |
 | `imageSettingsService.ts` | 作品级参数读写（`.zhai/image.json`），只存与默认不同的键 |
@@ -210,6 +210,8 @@ lifeguard
 空串一律跳过；词条由 `imageGenerateService` 按标识从 `prompt/tags` 的 md 取回原文，再用 `@shared/utils/promptTag` 的 `normalizePromptTag` 归一化并前置，合并动作统一走 `finalPrompt.ts` 的 `mergePromptTags`（出图与提示词增强共用这一份实现），归一化口径与前端同源，因此面板上展示的原文与最终提示词逐字一致；上下文段来自请求的 `contexts`（前端 `composeSettingContext` 展开），规则正文由 `prompt/ruleService` 的 `readForPrompt` 按标识读盘后传给 `composePrompt`，空串、空规则与缺失文件都不占位。宿主侧拼装集中在 `src/modules/ai/finalPrompt` 的 `composePrompt`（对象入参，顺序固定，出图与对话共用），由 `dev/test/imagegenPrompt.test.ts` 覆盖顺序与空串行为，上下文、规则读盘与出图合并在 `dev/test/imageGenerateService.test.ts` 覆盖。前端只负责正文、角色段与上下文段（`workflow/imagegen/prompt/promptSections.ts`），画风与负向约束仍由宿主追加。改提示词时先看 `src/modules/imagegen/prompt/index.ts` 头部的导航表，它会点名前端与共享侧仍需同步的文件。
 
 参考图不参与文本拼装：`imageGenerateService` 把 `referenceImages` 交给 `referenceImageService.readForPrompt` 读成字节与真实 MIME，再由 `codebuddyImageProvider` 把「指令文本 + image 内容块」作为一条结构化用户消息提交（`query` 的 `prompt` 支持 `AsyncIterable<UserMessage>`）。无参考图时仍走原字符串提示词路径，二者行为一致；单张参考图失效（被删除、被替换、超限）只跳过该张并记日志，不阻断出图。
+
+产物解析顺序：`query` 通过 `options.outputFormat` 声明 `{ path: string }` 的 json_schema，`result.structured_output.path` 是首选来源；取不到时依次回落 `image` 内容块、`data:image/*` 内联数据、文本中的绝对路径与链接，路径不带扩展名时按文件魔数判定格式。结构化产物不可读只记一条 warn 并继续回落，不因单次形状异常放弃整次出图；两者都失败才明确报错，不返回空图。`outputFormat` 属于 SDK 的 `Options`（`query` 路径），V2 Session 没有该字段。
 
 ---
 

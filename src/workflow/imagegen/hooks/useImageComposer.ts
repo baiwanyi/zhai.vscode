@@ -14,9 +14,14 @@
  * enhancedFrom 取发送前的闭包旧值，不受本次 setState 影响。
  */
 import { useEffect, useRef, useState } from 'react'
-import type { ImageGenerateKind, ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
+import type {
+    ImageGenerateKind,
+    ImageGenerateResult,
+    ImageGenerateStage,
+    ImageRatio,
+} from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
-import { request } from '@shared/utils/bridge'
+import { onState, request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import type { PromptChip } from './usePromptChips'
 
@@ -73,6 +78,8 @@ interface UseImageComposerResult {
     text: string
     setText: (text: string) => void
     isGenerating: boolean
+    /** 出图阶段：thinking 准备中、generating 已开始出图；未在出图时为 null */
+    stage: ImageGenerateStage | null
     isEnhancing: boolean
     /** 增强前原文：非空即处于增强态，可还原 */
     enhancedFrom: string | null
@@ -106,6 +113,7 @@ export function useImageComposer({
 }: UseImageComposerOptions): UseImageComposerResult {
     const [text, setText] = useState('')
     const [isGenerating, setIsGenerating] = useState(false)
+    const [stage, setStage] = useState<ImageGenerateStage | null>(null)
     const [isEnhancing, setIsEnhancing] = useState(false)
     const [enhancedFrom, setEnhancedFrom] = useState<string | null>(null)
 
@@ -126,6 +134,26 @@ export function useImageComposer({
     useEffect(() => {
         onGeneratingChange?.(isGenerating)
     }, [isGenerating, onGeneratingChange])
+
+    /**
+     * 出图阶段是旁路广播：只更新按钮文案，丢失不影响结果。
+     * 关键约束：出图有宿主侧单任务锁，同一时刻只有一个请求，故不必按请求 id 区分来源。
+     */
+    useEffect(() => {
+        return onState((message) => {
+            if (message.channel !== 'imagegen') {
+                return
+            }
+            const payload = message.payload
+            if (typeof payload !== 'object' || payload === null) {
+                return
+            }
+            const next = (payload as { stage?: unknown }).stage
+            if (next === 'thinking' || next === 'generating') {
+                setStage(next)
+            }
+        })
+    }, [])
 
     /** 卸载（切换作品或参数重载）时补发一次结束，否则页面会停在「生成中」的骨架上 */
     useEffect(() => {
@@ -230,6 +258,8 @@ export function useImageComposer({
         const token = generationRef.current + 1
         generationRef.current = token
         setIsGenerating(true)
+        // 首帧先给「准备中」，宿主的 thinking 广播到达后覆盖为同一值，避免等待期间没有文案
+        setStage('thinking')
         // 发送即清空：生成期间输入框不该还停着上一轮的提示词，否则看起来像没发出去；
         // 草稿存在 ref 里（含增强前原文），失败或取消时再还回去
         lastDraftRef.current = { text, chips, enhancedFrom }
@@ -282,6 +312,7 @@ export function useImageComposer({
         } finally {
             if (generationRef.current === token) {
                 setIsGenerating(false)
+                setStage(null)
             }
         }
     }
@@ -295,6 +326,7 @@ export function useImageComposer({
     const runAbort = async (): Promise<void> => {
         generationRef.current += 1
         setIsGenerating(false)
+        setStage(null)
         // 主动取消多半是想改两句再重发，草稿直接还回去，省得重打一遍
         restoreDraft()
         await abortGeneration()
@@ -305,5 +337,5 @@ export function useImageComposer({
         void runAbort()
     }
 
-    return { text, setText, isGenerating, isEnhancing, enhancedFrom, onEnhance, onRestore, onSend, onAbort }
+    return { text, setText, isGenerating, stage, isEnhancing, enhancedFrom, onEnhance, onRestore, onSend, onAbort }
 }

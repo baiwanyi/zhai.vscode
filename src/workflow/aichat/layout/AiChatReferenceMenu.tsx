@@ -1,10 +1,10 @@
 /**
- * AI 对话参考资料菜单：顶部工具行右侧的「参考」按钮，当前四项均为占位。
- * 复用 @components/ui 的 DropdownMenu 与 Badge、../constants 的参考源清单。
- * 关键约束：占位项不发起任何宿主请求，仅通过回调提示「即将上线」，后续置 enabled 即可接入。
+ * AI 对话参考资料菜单：顶部工具行右侧的「参考」按钮，两项都由 {存储根}/reference 语料驱动。
+ * 复用 @components/ui 的 DropdownMenu 与 @webview/components/Button。
+ * 关键约束：语料由用户直接增删改文件，插件不写语料；两个入口都不占用工具行的第三个按钮 ——
+ * 检索走宿主 ai/reference/search，打开目录走 ai/reference/openDir（目录不存在时由宿主创建）。
  */
-import { BookOpen } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
+import { AtSign, BookOpen, FolderOpen, Search } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -14,16 +14,19 @@ import {
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
 import { Button } from '@webview/components/Button'
-import type { AiReferenceSource } from '../constants'
 import type { JSX } from 'react'
-import { AI_REFERENCE_SOURCES } from '../constants'
+
+/** 参考菜单动作：检索语料 / 打开语料目录 */
+export type AiReferenceAction = 'search' | 'openDir'
 
 interface AiChatReferenceMenuProps {
     disabled: boolean
-    onSelect: (source: AiReferenceSource) => void
+    onSelect: (action: AiReferenceAction) => void
+    /** 打开提及检索：引用笔记 / 章节 */
+    onMention: () => void
 }
 
-export function AiChatReferenceMenu({ disabled, onSelect }: AiChatReferenceMenuProps): JSX.Element {
+export function AiChatReferenceMenu({ disabled, onSelect, onMention }: AiChatReferenceMenuProps): JSX.Element {
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -38,26 +41,21 @@ export function AiChatReferenceMenu({ disabled, onSelect }: AiChatReferenceMenuP
                     <BookOpen />
                 </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-56">
+            <DropdownMenuContent align="start" className="w-60">
                 <DropdownMenuLabel>参考资料</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                {AI_REFERENCE_SOURCES.map((source) => (
-                    <DropdownMenuItem
-                        key={source.kind}
-                        onSelect={() => onSelect(source)}
-                        className="flex-col items-start gap-0.5"
-                    >
-                        <span className="flex w-full items-center justify-between gap-2">
-                            <span className="truncate">{source.title}</span>
-                            {source.enabled ? null : (
-                                <Badge variant="secondary" className="shrink-0 font-normal">
-                                    即将上线
-                                </Badge>
-                            )}
-                        </span>
-                        <span className="w-full truncate text-muted-foreground">{source.description}</span>
-                    </DropdownMenuItem>
-                ))}
+                <DropdownMenuItem onSelect={() => onSelect('search')} className="gap-2">
+                    <Search className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">检索参考资料</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onMention} className="gap-2">
+                    <AtSign className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">引用笔记 / 章节</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onSelect('openDir')} className="gap-2">
+                    <FolderOpen className="size-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1 truncate">打开语料目录</span>
+                </DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>
     )

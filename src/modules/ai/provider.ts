@@ -50,8 +50,19 @@ export interface AiStreamChunk {
     reasoning: string
     usage?: AiUsage
     meta?: AiUsageMeta
+    /**
+     * usage 是否为「本轮单轮值」。
+     * 关键约束：续接会话时通道底层的累计用量不能当本轮值，只有从单次请求用量（输入）与
+     * 单次消息用量（输出）拼出的才是单轮；为 false 时上层不得据此记账。
+     */
+    isRoundUsage?: boolean
     /** 本轮上下文占用：通道拿不到模型请求的输入用量时缺省，由上层保留上一次的值 */
     context?: AiContextUsage
+    /**
+     * 上下文压缩事件：compacting 表示正在压缩，compacted 表示压缩完成。
+     * 关键约束：旁路提示，不影响正文与用量；上层据此解释「占用为何突然下降」。
+     */
+    notice?: 'compacting' | 'compacted'
 }
 
 /** 流式生成请求：长度上限按通道能力可被忽略，但调用方始终传入 */

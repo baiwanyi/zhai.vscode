@@ -6,11 +6,12 @@
  * 关键约束：会话记录所属 AI 通道与通道侧会话号，通道切换后不得复用旧会话号；
  * 会话按作用域（作品目录）隔离，project_dir 为 NULL 表示不属于任何作品的通用对话；
  * 积分只认 CodeBuddy 会话记录里的真实值，v5 起清空按倍率估算的历史值（估算口径已证实偏差约 20 倍）；
+ * v9 起用量表记提示词字数，供按真实 token 反算字符/token 比值，历史行留 0 表示未记录；
  * 补列的标识符均为本文件内的常量，不接受外部输入，避免拼接注入。
  */
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = '8'
+const SCHEMA_VERSION = '9'
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS conversations (
@@ -133,6 +134,9 @@ export function ensureAiSchema(db: Database.Database): boolean {
         // 历史会话两项均为 0，表示尚未记录过占用，由展示层按运行时窗口补分母
         ensureColumn(db, 'conversations', 'context_used_tokens', 'context_used_tokens INTEGER NOT NULL DEFAULT 0')
         ensureColumn(db, 'conversations', 'context_window_tokens', 'context_window_tokens INTEGER NOT NULL DEFAULT 0')
+        // v9：用量表补提示词字数，用于按真实 token 反算「字符 / token」比值，替代写死的 1.6；
+        // 历史行保持 0 即「未记录」，统计时被过滤，不影响校准结果
+        ensureColumn(db, 'ai_usage_logs', 'prompt_chars', 'prompt_chars INTEGER NOT NULL DEFAULT 0')
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)

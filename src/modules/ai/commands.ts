@@ -1,5 +1,5 @@
 /**
- * AI 命令注册：面板跳转、CodeBuddy 登录、以及「添加到宅对话」上下文入口。
+ * AI 命令注册：面板跳转、CodeBuddy 登录与登出、以及「添加到宅对话」上下文入口。
  * 设计源：docs/modules/ai-chat.md 第 7.1 节命令清单。
  * 复用约定：引用生成与预算校验统一委托 modules/ai/contextRefs；面板跳转走 WorkflowRouter——
  * 模块选定决定显示哪个工作流页，页内视图请求（requestView）决定页内停在哪个分区；
@@ -7,7 +7,7 @@
  * 约束：全部 Disposable 挂载到 context.subscriptions，保证停用后释放（AC-10）；密钥与引用原文不落日志。
  * 模型选择不在命令面板，改由 AI 面板输入区的模型菜单（ai/models / ai/selectModel）承接。
  */
-import { unstable_v2_authenticate } from '@tencent-ai/agent-sdk'
+import { unstable_v2_authenticate, unstable_v2_logout } from '@tencent-ai/agent-sdk'
 import * as vscode from 'vscode'
 import { getZhaiConfig } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
@@ -15,7 +15,7 @@ import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import type { ToastService } from '@modules/common/toastService'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
 import { createContextRefs, MAX_CONTEXT_COUNT } from './contextRefs'
-import { rememberCodebuddyLogin } from './providers/codebuddyLogin'
+import { clearCodebuddyLogin, rememberCodebuddyLogin } from './providers/codebuddyLogin'
 import {
     buildCodebuddyEnv,
     CODEBUDDY_SITE_LABELS,
@@ -91,6 +91,22 @@ export function registerAiCommands(
                 }
             },
         )
+    })
+
+    // 登出：先清 CLI 侧该站点的缓存凭证，再清插件记录的登录态，两者成对执行
+    register('zhai.ai.logoutCodebuddy', async () => {
+        const site = getZhaiConfig().aiCodebuddySite
+        try {
+            await unstable_v2_logout({ environment: toAuthEnvironment(site), env: buildCodebuddyEnv(site) })
+            clearCodebuddyLogin(site)
+            service.notifyRuntimeChanged()
+            logger.info(`CodeBuddy 已登出（${site}）`)
+            toast.notifyOrShow('success', `宅写作：已退出 CodeBuddy 登录（${CODEBUDDY_SITE_LABELS[site]}）`)
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            logger.error(`CodeBuddy 登出失败：${message}`, error)
+            toast.notifyOrShow('error', `宅写作：CodeBuddy 登出失败，${message}`)
+        }
     })
 
     // 模型选择由 AI 面板输入区的模型菜单承接（ai/models + ai/selectModel），此处不再注册命令
