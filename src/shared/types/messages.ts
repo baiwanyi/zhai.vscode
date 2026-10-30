@@ -324,6 +324,7 @@ export type HostMethodName =
     | 'wechat/issues/removeBatch'
     | 'wechat/material/import'
     | 'wechat/material/list'
+    | 'wechat/material/remove'
     | 'wechat/menu/get'
     | 'wechat/menu/save'
     | 'wechat/publishQuota'

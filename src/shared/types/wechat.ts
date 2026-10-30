@@ -287,6 +287,11 @@ export interface WechatArticleSummary {
     sourcePath?: string
     /** 指定的封面图路径：缺省时推送阶段取正文首图 */
     coverPath?: string
+    /**
+     * 是否允许读者留言：写入草稿的 need_open_comment。
+     * 关键约束：账号未开通留言时平台侧不会生效，这里只表达「本次希望开启」，不保证结果。
+     */
+    allowComment: boolean
     /** 正文字数，供列表判断是否为空稿 */
     wordCount: number
 }
@@ -434,6 +439,8 @@ export interface WechatArticleCreateRequest {
     body?: string
     /** 指定的封面图路径：留空则推送时取正文首图 */
     coverPath?: string
+    /** 是否允许读者留言：缺省为关闭 */
+    allowComment?: boolean
 }
 
 /** wechat/cover/pick 响应：用户取消时 path 为 null，路径为存储根相对形式 */
@@ -455,6 +462,8 @@ export interface WechatArticleUpdateRequest {
     body: string
     /** 指定的封面图路径：传空串表示清除 */
     coverPath?: string
+    /** 是否允许读者留言：缺省表示不改动 */
+    allowComment?: boolean
 }
 
 /** wechat/article/update 响应 */
@@ -563,7 +572,13 @@ export function isWechatArticleCreateRequest(payload: unknown): payload is Wecha
     if (typeof payload !== 'object' || payload === null) {
         return false
     }
-    const candidate = payload as { issueId?: unknown; title?: unknown; body?: unknown; coverPath?: unknown }
+    const candidate = payload as {
+        issueId?: unknown
+        title?: unknown
+        body?: unknown
+        coverPath?: unknown
+        allowComment?: unknown
+    }
     if (!isWechatIssueId(candidate.issueId)) {
         return false
     }
@@ -571,6 +586,9 @@ export function isWechatArticleCreateRequest(payload: unknown): payload is Wecha
         return false
     }
     if (candidate.coverPath !== undefined && typeof candidate.coverPath !== 'string') {
+        return false
+    }
+    if (candidate.allowComment !== undefined && typeof candidate.allowComment !== 'boolean') {
         return false
     }
     return candidate.body === undefined || isWechatArticleBody(candidate.body)
@@ -581,11 +599,20 @@ export function isWechatArticleUpdateRequest(payload: unknown): payload is Wecha
     if (typeof payload !== 'object' || payload === null) {
         return false
     }
-    const candidate = payload as { id?: unknown; title?: unknown; body?: unknown; coverPath?: unknown }
+    const candidate = payload as {
+        id?: unknown
+        title?: unknown
+        body?: unknown
+        coverPath?: unknown
+        allowComment?: unknown
+    }
     if (!isWechatIssueId(candidate.id) || readWechatArticleTitle(candidate.title).length === 0) {
         return false
     }
     if (candidate.coverPath !== undefined && typeof candidate.coverPath !== 'string') {
+        return false
+    }
+    if (candidate.allowComment !== undefined && typeof candidate.allowComment !== 'boolean') {
         return false
     }
     return isWechatArticleBody(candidate.body)
@@ -756,6 +783,65 @@ export function isWechatMaterialListRequest(payload: unknown): payload is Wechat
 /** 判断是否为素材导入请求 */
 export function isWechatMaterialImportRequest(payload: unknown): payload is WechatMaterialImportRequest {
     return isWechatMaterialListRequest(payload)
+}
+
+/**
+ * wechat/material/remove 请求：删除平台永久素材并清理本地映射。
+ * 关键约束：删除后已发布文章里对这张图的引用会失效，界面必须二次确认。
+ */
+export interface WechatMaterialRemoveRequest {
+    accountId: string
+    /** 本地素材 id（mat- 前缀），宿主据此回查 media_id */
+    id: string
+}
+
+/**
+ * 账号鉴权失败广播：state 通道的 wechat 频道下发。
+ * 关键约束：只在拿到平台错误码时下发（网络失败不算鉴权失效），
+ * 界面据此提示并刷新账号状态色点，避免用户在其他页面操作时状态长期停留在旧值。
+ */
+export interface WechatAccountAuthFailureEvent {
+    kind: 'authFailure'
+    accountId: string
+    /** 账号名：提示直接说「哪个账号」，不让用户对着 id 猜 */
+    accountName: string
+    /** 平台错误码，如 40164 白名单、40001 密钥失效 */
+    errorCode: number
+    /** 面向用户的可执行提示 */
+    message: string
+}
+
+/** 收窄鉴权失败广播：逐字段校验后再展示 */
+export function isWechatAccountAuthFailureEvent(payload: unknown): payload is WechatAccountAuthFailureEvent {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as {
+        kind?: unknown
+        accountId?: unknown
+        accountName?: unknown
+        errorCode?: unknown
+        message?: unknown
+    }
+    if (candidate.kind !== 'authFailure' || !isWechatAccountId(candidate.accountId)) {
+        return false
+    }
+    if (typeof candidate.accountName !== 'string' || candidate.accountName.length === 0) {
+        return false
+    }
+    if (typeof candidate.errorCode !== 'number' || typeof candidate.message !== 'string') {
+        return false
+    }
+    return candidate.message.length > 0
+}
+
+/** 判断是否为素材删除请求：素材 id 与账号 id 同形态（宿主生成的短 id） */
+export function isWechatMaterialRemoveRequest(payload: unknown): payload is WechatMaterialRemoveRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; id?: unknown }
+    return isWechatAccountId(candidate.accountId) && isWechatAccountId(candidate.id)
 }
 
 /**

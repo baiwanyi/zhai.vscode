@@ -81,7 +81,7 @@ import {
     isRenamePressVolumeRequest,
     readPressAudience,
 } from '@shared/types/press'
-import type { WechatCoverPreviewResult } from '@shared/types/wechat'
+import type { WechatAccountAuthFailureEvent, WechatCoverPreviewResult } from '@shared/types/wechat'
 import { isWechatCoverPreviewRequest } from '@shared/types/wechat'
 import type { OpenWorkflowResult } from '@shared/types/workflow'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
@@ -121,6 +121,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private todoRoutes: TodoRoutes | null = null
     /** 公众号路由：后置注入，未注入时 wechat/* 请求直接报未就绪，不静默返回空列表 */
     private wechatRoutes: WechatRoutes | null = null
+    /** 当前面板实例：仅在挂载期间有效，用于请求之外的主动广播 */
+    private view: vscode.WebviewView | null = null
     /** 待办目录变更监听：面板存活期间把外部改动转给 Webview，销毁时释放 */
     private todoListener: vscode.Disposable | null = null
 
@@ -172,11 +174,24 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         this.watchActiveDocument(webviewView)
         this.watchIndexStatus(webviewView)
         this.watchTodoChanges(webviewView)
+        // 面板实例留一份引用：鉴权失效这类被动变化要在请求之外主动推送
+        this.view = webviewView
         webviewView.onDidDispose(() => {
+            this.view = null
             this.stopWatchingActiveDocument()
             this.stopWatchingIndexStatus()
             this.stopWatchingTodoChanges()
         }, this)
+    }
+
+    /**
+     * 广播公众号账号状态：鉴权失效发生在任意请求内部，列表页据此提示并刷新色点。
+     * 关键约束：面板未挂载时直接丢弃——状态已落库，下次打开列表会自然读到最新值。
+     */
+    public broadcastWechatState(payload: WechatAccountAuthFailureEvent): void {
+        if (this.view !== null) {
+            this.post(this.view, { type: 'state', channel: 'wechat', payload })
+        }
     }
 
     private async renderHtml(webviewView: vscode.WebviewView): Promise<void> {

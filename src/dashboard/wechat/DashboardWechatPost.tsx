@@ -243,6 +243,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                           digest: input.digest,
                           body: input.body,
                           coverPath: input.coverPath,
+                          allowComment: input.allowComment,
                       })
             if (isSaved) {
                 setArticleTarget(null)

@@ -77,7 +77,7 @@
 | G5 | 代码高亮 | shiki 高亮并内联样式 | P1 | 待实现 |
 | G6 | 排版主题/样式中心 | 多套主题（字号/行距/引用块/标题装饰），可自定义；参考秀米/135 样式中心 | P1 | 待实现 |
 | G7 | 图片转永久素材 | 上传 `material/add_material`，回写 URL | P0 | 待实现 |
-| G8 | 封面/摘要/作者/声明 | 封面图、摘要、作者、原创声明、留言开关、话题标签 | P1 | 待实现 |
+| G8 | 封面/摘要/作者/声明 | 封面图与摘要、作者、留言开关均已落地（留言写入草稿的 `need_open_comment`）；原创声明不提供——草稿接口没有该字段，只能在公众号后台手动声明；话题标签未做 | P1 | 部分实现 |
 | G9 | 草稿箱 CRUD | `draft/add`/`update`/`list`/`delete`，返回 media_id | P0 | 待实现 |
 | G10 | 群发/发布 | `freepublish/submit`（认证主体）或 `message/mass/sendall` | P2 | 待验证 |
 | G11 | 预览 | Webview 按公众号宽度预览；支持预览给指定微信号 | P0 | 待实现 |
@@ -524,8 +524,8 @@ interface WechatPublishResult {
 | 侧 | 方法 |
 |----|------|
 | 仪表盘 | `wechat/accounts`、`wechat/account/{create,update,remove,test,select}`、`wechat/issues`、`wechat/issues/{merge,removeBatch}`、`wechat/issue/{create,detail,remove,publishDraft,publish}`、`wechat/publishQuota`、`wechat/article/{create,update,remove,import}`、`wechat/cover/{pick,preview}`、`wechat/tasks`（进行中任务查询）；另复用 `host/openExternal`（标识 `wechatMp`）与 `workflow/selectModule`（只设模块不聚焦）（均已落地） |
-| 工作流 | `wechat/menu/{get,save}`、`wechat/material/{list,import}`、`wechat/fans/{list,tags}`、`wechat/stats/overview`、`wechat/comment/{list,reply,mark,remove}`，运营页复用仪表盘的 `wechat/issues` 与 `wechat/publishQuota`（两个面板共用同一份路由实例） |
-| 广播（state 通道） | `wechat` 通道承载 `WechatPublishProgress`：阶段取 `render` / `material` / `draft` / `submit` / `poll`，附一句面向用户的 `message`；Token 失效广播（`account-status`）尚未实现 |
+| 工作流 | `wechat/menu/{get,save}`、`wechat/material/{list,import,remove}`、`wechat/fans/{list,tags}`、`wechat/stats/overview`、`wechat/comment/{list,reply,mark,remove}`，运营页复用仪表盘的 `wechat/issues` 与 `wechat/publishQuota`（两个面板共用同一份路由实例） |
+| 广播（state 通道） | `wechat` 频道承载两种载荷：`WechatPublishProgress`（阶段取 `render` / `material` / `draft` / `submit` / `poll` + 一句 `message`）与 `WechatAccountAuthFailureEvent`（鉴权失效，由 `tokenService` 统一上报并回写账号状态；网络失败不上报） |
 
 代码落点：类型 `src/shared/types/wechat.ts`（含 `is*Request` 收窄，对齐 `press.ts`）；宿主服务 `src/modules/wechat/`（`accountService`、`tokenService`、`client`、`issueService`、`materialService`、`menuService`、`statsService`、`commentService`、`fanService`、`pushService`、`repository`）；前端 `src/dashboard/wechat/`、`src/workflow/wechat/`。
 
@@ -719,7 +719,7 @@ ready ──设置时间──> scheduled ──到点──> pushing
 | 分区 | 职责 | 页面结构 | 权限 |
 |------|------|----------|------|
 | 自定义菜单 | `menu/get` 拉取、可视化编辑、`menu/create` 覆盖、`menu/delete` | 上部手机壳预览（3 个一级栏位）；下部选中节点的类型表单（发送消息 / 跳转网页 / 跳转小程序 / 素材引用）；页脚「发布到公众号」。限制：一级 ≤3、二级 ≤5、名称 4~8 汉字 | 一般可用 |
-| 素材管理 | 永久素材的列表、上传、删除、复用，与本地媒体库（`src/modules/media`）互通 | `AppMenu` 分段栏（图片 / 语音 / 视频）+ 搜索 + 网格（缩略图、名称、大小）+ 页脚上传；行内显示引用次数 | 一般可用，有配额 |
+| 素材管理 | 永久素材的列表、上传、删除、复用 | **已落地**：本地映射列表（缩略图 / 名称 / 体积 / 日期）+ 文件名搜索 + 从本地导入 + 删除（连平台素材一起删，二次确认写明「已发布文章里引用该图会失效」）；语音 / 视频类型、与本地媒体库互通、引用次数未做 | 一般可用，有配额 |
 | 数据统计 | 用户增长、图文数据、菜单点击、消息分析，只读 | 日期范围（7 / 15 / 30 天）+ 指标卡 + CSS 柱状趋势（不引图表库）；结果落 `wechat_stats_cache` | 需认证 |
 | 留言管理 | 按文章筛选留言、加精、回复、删除 | 顶部文章选择器 + 留言列表（头像、昵称、时间、内容、精选标）+ 行内回复 | 需认证且已开通留言 |
 | 用户管理 | 粉丝列表、标签 CRUD、备注、拉黑 | 分段栏（粉丝 / 标签）+ 分页列表；操作走 `tags/members/batchtagging`、`user/info/updateremark`；`user/get` 单次上限 10000 | 一般可用 |

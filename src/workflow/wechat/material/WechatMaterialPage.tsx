@@ -6,15 +6,26 @@
  * 平台接口有频率限制，回查会让列表在弱网下长时间转圈；
  * 正文里的本地图片在生成草稿时已自动上传，这里因此会出现「没主动上传却有记录」的情况，空态文案要说明。
  */
-import { Copy, ImagePlus, Images } from 'lucide-react'
+import { Copy, ImagePlus, Images, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
+import { Input } from '@components/ui/input'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatMaterialSummary } from '@shared/types/wechat'
 import { copyToClipboard } from '@shared/utils/clipboard'
-import { AppContent, AppDescription, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
+import {
+    AppContent,
+    AppDescription,
+    AppFooter,
+    AppHeader,
+    AppMenu,
+    AppPage,
+    AppTitle,
+} from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
+import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { Image } from '@webview/components/Image'
 import type { JSX } from 'react'
 import { useWechatMaterials } from '../hooks/useWechatMaterials'
@@ -33,7 +44,18 @@ interface WechatMaterialPageProps {
 }
 
 export function WechatMaterialPage({ account }: WechatMaterialPageProps): JSX.Element {
-    const { materials, status, error, isImporting, reload, importImage } = useWechatMaterials(account.id)
+    const { materials, status, error, isImporting, removingId, reload, importImage, removeMaterial } =
+        useWechatMaterials(account.id)
+    const [keyword, setKeyword] = useState('')
+    /** 待删除素材：非 null 即打开确认弹窗 */
+    const [pendingRemove, setPendingRemove] = useState<WechatMaterialSummary | null>(null)
+
+    // 搜索在本地做：素材一次最多几百条，请求平台接口反而更慢且受频率限制
+    const trimmedKeyword = keyword.trim().toLowerCase()
+    const visibleMaterials =
+        trimmedKeyword.length === 0
+            ? materials
+            : materials.filter((item) => item.name.toLowerCase().includes(trimmedKeyword))
 
     /** 复制图片地址：正文里要手写外链时可以省去去后台翻素材 */
     const handleCopy = async (material: WechatMaterialSummary): Promise<void> => {
@@ -80,9 +102,12 @@ export function WechatMaterialPage({ account }: WechatMaterialPageProps): JSX.El
                 </Empty>
             )
         }
+        if (visibleMaterials.length === 0) {
+            return <p className="text-xs text-muted-foreground">{`没有匹配「${keyword.trim()}」的素材`}</p>
+        }
         return (
             <div className="flex w-full flex-col gap-2">
-                {materials.map((material) => (
+                {visibleMaterials.map((material) => (
                     <Item key={material.id} variant="outline" className="flex-nowrap">
                         <ItemMedia variant="image">
                             <Image src={material.url} alt={material.name} />
@@ -105,6 +130,16 @@ export function WechatMaterialPage({ account }: WechatMaterialPageProps): JSX.El
                             >
                                 <Copy />
                             </Button>
+                            <Button
+                                size="icon"
+                                variant="ghost"
+                                aria-label={`删除 ${material.name}`}
+                                tooltip="删除素材"
+                                disabled={removingId === material.id}
+                                onClick={() => setPendingRemove(material)}
+                            >
+                                <Trash2 />
+                            </Button>
                         </ItemActions>
                     </Item>
                 ))}
@@ -113,21 +148,57 @@ export function WechatMaterialPage({ account }: WechatMaterialPageProps): JSX.El
     }
 
     return (
-        <AppPage onContextMenu={(event) => event.preventDefault()}>
-            <AppHeader align="start">
-                <AppTitle>素材管理</AppTitle>
-                <AppDescription>{`${account.name} · ${String(materials.length)} 张图片素材`}</AppDescription>
-            </AppHeader>
-            <AppContent isScrollable>{renderBody()}</AppContent>
-            <AppFooter className="justify-between">
-                <Button variant="outline" onClick={() => void reload()}>
-                    刷新
-                </Button>
-                <Button variant="primary" isLoading={isImporting} onClick={() => void importImage()}>
-                    <ImagePlus data-icon="inline-start" />
-                    上传图片
-                </Button>
-            </AppFooter>
-        </AppPage>
+        <>
+            <AppPage onContextMenu={(event) => event.preventDefault()}>
+                <AppHeader align="start">
+                    <AppTitle>素材管理</AppTitle>
+                    <AppDescription>{`${account.name} · ${String(materials.length)} 张图片素材`}</AppDescription>
+                    <AppMenu>
+                        <Input
+                            value={keyword}
+                            placeholder="按文件名筛选"
+                            aria-label="按文件名筛选素材"
+                            className="h-8 flex-1"
+                            onChange={(event) => setKeyword(event.target.value)}
+                        />
+                    </AppMenu>
+                </AppHeader>
+                <AppContent isScrollable>{renderBody()}</AppContent>
+                <AppFooter className="justify-between">
+                    <Button variant="outline" onClick={() => void reload()}>
+                        刷新
+                    </Button>
+                    <Button variant="primary" isLoading={isImporting} onClick={() => void importImage()}>
+                        <ImagePlus data-icon="inline-start" />
+                        上传图片
+                    </Button>
+                </AppFooter>
+            </AppPage>
+
+            <ConfirmDialog
+                open={pendingRemove !== null}
+                title="删除素材"
+                description={
+                    pendingRemove === null
+                        ? ''
+                        : `将删除「${pendingRemove.name}」。已发布文章里引用这张图的正文会失效，删除后无法恢复。`
+                }
+                confirmLabel="删除"
+                isDestructive
+                isSubmitting={removingId !== null}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setPendingRemove(null)
+                    }
+                }}
+                onConfirm={() => {
+                    const target = pendingRemove
+                    setPendingRemove(null)
+                    if (target !== null) {
+                        void removeMaterial(target.id)
+                    }
+                }}
+            />
+        </>
     )
 }

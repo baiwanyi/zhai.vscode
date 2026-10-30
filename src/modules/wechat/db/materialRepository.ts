@@ -53,6 +53,17 @@ export function listWechatMaterials(db: Database.Database, accountId: string): W
         .all(accountId) as WechatMaterialRow[]
 }
 
+/** 按本地 id 查素材：删除前需要拿到 media_id 去调平台接口 */
+export function findWechatMaterialById(db: Database.Database, id: string): WechatMaterialRow | null {
+    const row = db.prepare('SELECT * FROM wechat_materials WHERE id = ?').get(id)
+    return row === undefined ? null : (row as WechatMaterialRow)
+}
+
+/** 删除本地素材映射：平台侧素材由调用方先行删除 */
+export function deleteWechatMaterial(db: Database.Database, id: string): void {
+    db.prepare('DELETE FROM wechat_materials WHERE id = ?').run(id)
+}
+
 /** 写入素材映射：唯一键冲突说明并发上传了同一张图，调用方重新查询即可 */
 export function insertWechatMaterial(db: Database.Database, record: WechatMaterialRecord): void {
     db.prepare(

@@ -101,6 +101,7 @@ function toArticleSummary(row: WechatArticleRow): WechatArticleSummary {
         sourceKind: row.source_kind === 'note' || row.source_kind === 'press' ? row.source_kind : 'manual',
         ...(row.source_path === null ? {} : { sourcePath: row.source_path }),
         ...(row.cover_path === null ? {} : { coverPath: row.cover_path }),
+        allowComment: row.allow_comment === 1,
         wordCount: row.word_count,
     }
 }
@@ -272,6 +273,7 @@ export class WechatIssueService {
             digest: readWechatArticleDigest(request.digest),
             body,
             coverPath: this.readCoverPath(request.coverPath),
+            allowComment: request.allowComment === true ? 1 : 0,
             sourceKind: 'manual',
             sourcePath: null,
         })
@@ -295,6 +297,7 @@ export class WechatIssueService {
             bodyHash: contentHash(request.body),
             wordCount: countWords(request.body),
             coverPath: request.coverPath === undefined ? existing.cover_path : this.readCoverPath(request.coverPath),
+            allowComment: request.allowComment === undefined ? existing.allow_comment : request.allowComment ? 1 : 0,
         })
         syncWechatIssueArticleCount(this.deps.db, existing.issue_id, new Date().toISOString())
         return { article: this.requireArticleDetail(existing.id) }
@@ -387,6 +390,7 @@ export class WechatIssueService {
             digest: '',
             body: normalizedBody,
             coverPath: null,
+            allowComment: 0,
             sourceKind: request.sourceKind,
             sourcePath: relativePath,
         })
@@ -401,6 +405,7 @@ export class WechatIssueService {
         digest: string
         body: string
         coverPath: string | null
+        allowComment: number
         sourceKind: 'manual' | 'note' | 'press'
         sourcePath: string | null
     }): string {
@@ -415,6 +420,7 @@ export class WechatIssueService {
             bodyHash: contentHash(input.body),
             wordCount: countWords(input.body),
             coverPath: input.coverPath,
+            allowComment: input.allowComment,
             sourceKind: input.sourceKind,
             sourcePath: input.sourcePath,
         })

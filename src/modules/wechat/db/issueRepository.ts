@@ -44,6 +44,7 @@ export interface WechatArticleRow {
     source_kind: string
     source_path: string | null
     is_original: number
+    /** 1 表示允许读者留言，写入草稿的 need_open_comment */
     allow_comment: number
     read_num: number
     like_num: number
@@ -69,6 +70,8 @@ export interface WechatArticleRecord {
     bodyHash: string
     wordCount: number
     coverPath: string | null
+    /** 0 关闭、1 开启：平台字段为 need_open_comment */
+    allowComment: number
     sourceKind: string
     sourcePath: string | null
 }
@@ -83,6 +86,7 @@ export interface WechatArticlePatch {
     bodyHash: string
     wordCount: number
     coverPath: string | null
+    allowComment: number
 }
 
 /** 列出某账号的全部批次，按最近更新倒序 */
@@ -243,7 +247,8 @@ export function listWechatArticlesByIssues(db: Database.Database, issueIds: stri
     const placeholders = issueIds.map(() => '?').join(', ')
     return db
         .prepare(
-            `SELECT id, issue_id, sort_index, title, author, digest, source_kind, source_path, word_count, cover_path
+            `SELECT id, issue_id, sort_index, title, author, digest, source_kind, source_path,
+                    word_count, cover_path, allow_comment
                FROM wechat_articles
               WHERE issue_id IN (${placeholders})
               ORDER BY issue_id ASC, sort_index ASC`,
@@ -263,10 +268,10 @@ export function insertWechatArticle(db: Database.Database, record: WechatArticle
     db.prepare(
         `INSERT INTO wechat_articles
             (id, issue_id, sort_index, title, author, digest, body, body_hash, word_count,
-             cover_path, source_kind, source_path)
+             cover_path, allow_comment, source_kind, source_path)
          VALUES
             (@id, @issueId, @nextIndex, @title, @author, @digest, @body, @bodyHash, @wordCount,
-             @coverPath, @sourceKind, @sourcePath)`,
+             @coverPath, @allowComment, @sourceKind, @sourcePath)`,
     ).run({ ...record, nextIndex })
     return nextIndex
 }
@@ -276,7 +281,8 @@ export function updateWechatArticle(db: Database.Database, patch: WechatArticleP
     db.prepare(
         `UPDATE wechat_articles
             SET title = @title, author = @author, digest = @digest,
-                body = @body, body_hash = @bodyHash, word_count = @wordCount, cover_path = @coverPath
+                body = @body, body_hash = @bodyHash, word_count = @wordCount,
+                cover_path = @coverPath, allow_comment = @allowComment
           WHERE id = @id`,
     ).run(patch)
 }

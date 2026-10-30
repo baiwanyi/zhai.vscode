@@ -7,6 +7,7 @@
  * 表单重置由页面在每次打开时更换组件 key 完成，本组件不在 effect 中写状态。
  */
 import { useState } from 'react'
+import { Checkbox } from '@components/ui/checkbox'
 import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
@@ -30,6 +31,8 @@ export interface WechatArticleDialogInput {
     digest: string
     body: string
     coverPath: string
+    /** 是否允许读者留言 */
+    allowComment: boolean
 }
 
 interface WechatArticleDialogProps {
@@ -57,6 +60,7 @@ export function WechatArticleDialog({
     const digest = useTrimmedInput(article?.digest ?? '')
     const [body, setBody] = useState(article?.body ?? '')
     const [coverPath, setCoverPath] = useState(article?.coverPath ?? '')
+    const [isCommentAllowed, setIsCommentAllowed] = useState(article?.allowComment ?? false)
 
     /** 选择封面：宿主弹系统文件对话框，取消时不改动已选值 */
     const handlePickCover = (): void => {
@@ -77,6 +81,7 @@ export function WechatArticleDialog({
             digest: digest.trimmedValue,
             body,
             coverPath,
+            allowComment: isCommentAllowed,
         })
     }
 
@@ -124,6 +129,20 @@ export function WechatArticleDialog({
                     )}
                 </div>
                 <FieldDescription>只支持 jpg / png；留空时取正文第一张本地图片作封面。</FieldDescription>
+            </Field>
+            <Field>
+                <div className="flex items-center gap-2">
+                    <Checkbox
+                        id="wechat-article-comment"
+                        checked={isCommentAllowed}
+                        disabled={isSubmitting}
+                        onCheckedChange={(value) => setIsCommentAllowed(value === true)}
+                    />
+                    <FieldLabel htmlFor="wechat-article-comment">允许读者留言</FieldLabel>
+                </div>
+                <FieldDescription>
+                    需账号已开通留言功能；未开通时平台侧不会生效，草稿仍会写入开启标记。
+                </FieldDescription>
             </Field>
             <Field>
                 <FieldLabel htmlFor="wechat-article-author">作者</FieldLabel>

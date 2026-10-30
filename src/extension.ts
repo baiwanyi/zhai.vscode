@@ -64,6 +64,7 @@ import { TodoWatcher } from './modules/todo/todoWatcher'
 import { WechatAccountService } from './modules/wechat/accountService'
 import { WechatCommentService } from './modules/wechat/commentService'
 import { createWechatSecretStore } from './modules/wechat/credentials'
+import { findWechatAccount, updateWechatAccountAuth } from './modules/wechat/db/accountRepository'
 import { openWechatDatabase } from './modules/wechat/db/connection'
 import { recoverStalePushingIssues } from './modules/wechat/db/issueRepository'
 import { WechatFanService } from './modules/wechat/fanService'
@@ -75,6 +76,7 @@ import { WechatStatsService } from './modules/wechat/statsService'
 import { WechatTokenService } from './modules/wechat/tokenService'
 import { WechatRoutes } from './modules/wechat/wechatRoutes'
 import type { IndexStatus } from './modules/common/indexer/indexService'
+import type { WechatAccountAuthFailureEvent } from './shared/types/wechat'
 
 /** 扩展对外导出：Markdown 预览扩展在激活后读取 extendMarkdownIt 挂载自定义插件 */
 export interface ZhaiExports {
@@ -270,7 +272,30 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     }
     // 密钥与 Token 缓存全模块共用一份：账号鉴权与素材上传走同一把 Token，避免各自刷新互相失效
     const wechatSecrets = createWechatSecretStore(context.secrets)
-    const wechatTokens = new WechatTokenService()
+    // 鉴权失败的广播出口：面板在装配完成后注册，事件本身由 tokenService 统一上报
+    // （账号测试、素材上传、草稿提交与群发都经过它，不必在每个调用方各写一遍）
+    const wechatAuthEmitters: ((event: WechatAccountAuthFailureEvent) => void)[] = []
+    const wechatTokens = new WechatTokenService({
+        onAuthFailure: (failure): void => {
+            // 与 accountService.authenticate 同口径：额度与权限类记为受限，其余为错误
+            const status = failure.errorCode === 45009 || failure.errorCode === 48001 ? 'limited' : 'error'
+            updateWechatAccountAuth(wechatDb, {
+                id: failure.accountId,
+                status,
+                errorCode: failure.errorCode,
+                statusHint: failure.message,
+                updatedAt: new Date().toISOString(),
+            })
+            const event: WechatAccountAuthFailureEvent = {
+                kind: 'authFailure',
+                accountName: findWechatAccount(wechatDb, failure.accountId)?.name ?? '公众号',
+                ...failure,
+            }
+            for (const emit of wechatAuthEmitters) {
+                emit(event)
+            }
+        },
+    })
     const wechatAccountService = new WechatAccountService({
         db: wechatDb,
         secrets: wechatSecrets,
@@ -307,6 +332,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         comments: new WechatCommentService(wechatTokenDeps),
     })
     dashboardProvider.attachWechatRoutes(wechatRoutes)
+    // 鉴权失效时仪表盘与本面板都该知道：两个面板共用同一份 wechat 通道载荷
+    wechatAuthEmitters.push((event) => dashboardProvider.broadcastWechatState(event))
 
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,
@@ -328,6 +355,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         aiChatProvider,
         vscode.window.registerWebviewViewProvider(AiChatViewProvider.viewId, aiChatProvider),
     )
+    wechatAuthEmitters.push((event) => aiChatProvider.broadcastWechatState(event))
 
     const statusBar = new StatusBarService(indexService, indexStatusEmitter.event)
     statusBar.register(context.subscriptions)

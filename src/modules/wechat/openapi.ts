@@ -452,3 +452,25 @@ export async function deleteWechatComment(
     const outcome = await postWechatJson(token, COMMENT_DELETE_ENDPOINT, body)
     return outcome.ok ? { ok: true, data: null } : outcome
 }
+
+/** 永久素材删除接口 */
+const MATERIAL_DELETE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/material/del_material'
+
+/** 素材不存在的错误码：本地记录本就该清理，重复删除不该报错 */
+const MATERIAL_NOT_FOUND_CODE = 40007
+
+/**
+ * 删除永久素材。
+ * 关键约束：删除后已发布文章里对这张图的引用会失效，界面必须二次确认并写清后果；
+ * 40007 视为已删除——平台侧早就没了，这时让用户卡在「删不掉」毫无意义。
+ */
+export async function deleteWechatMaterialByMediaId(token: string, mediaId: string): Promise<WechatApiResult<null>> {
+    const outcome = await postWechatJson(token, MATERIAL_DELETE_ENDPOINT, { media_id: mediaId })
+    if (outcome.ok) {
+        return { ok: true, data: null }
+    }
+    if (outcome.errorCode === MATERIAL_NOT_FOUND_CODE) {
+        return { ok: true, data: null }
+    }
+    return outcome
+}

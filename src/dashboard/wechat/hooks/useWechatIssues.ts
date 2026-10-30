@@ -49,6 +49,8 @@ export interface WechatArticleFormInput {
     digest: string
     body: string
     coverPath: string
+    /** 是否允许读者留言：写入草稿的 need_open_comment */
+    allowComment: boolean
 }
 
 /** 更新文章的表单载荷 */
@@ -232,6 +234,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
                 digest: input.digest,
                 body: input.body,
                 coverPath: input.coverPath,
+                allowComment: input.allowComment,
             }
             try {
                 await request('wechat/article/update', payload)

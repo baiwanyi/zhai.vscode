@@ -29,6 +29,7 @@ import {
     isWechatIssuesRequest,
     isWechatMaterialImportRequest,
     isWechatMaterialListRequest,
+    isWechatMaterialRemoveRequest,
     isWechatMenuRequest,
     isWechatMenuSaveRequest,
     isWechatPublishDraftRequest,
@@ -199,6 +200,12 @@ export class WechatRoutes {
                     throw new Error('wechat/material/import 参数非法：accountId 须为合法账号标识')
                 }
                 return this.deps.materials.importImage(payload.accountId)
+            }
+            case 'wechat/material/remove': {
+                if (!isWechatMaterialRemoveRequest(payload)) {
+                    throw new Error('wechat/material/remove 参数非法：accountId 与 id 须为合法标识')
+                }
+                return this.deps.materials.remove(payload.accountId, payload.id)
             }
             case 'wechat/menu/get': {
                 if (!isWechatMenuRequest(payload)) {

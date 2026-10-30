@@ -6,11 +6,29 @@
  * 提前 5 分钟视为过期，避免请求途中恰好越过有效期；账号被删除或密钥被改写时必须 invalidate，
  * 否则后续请求会继续复用旧账号的 Token。
  */
-import { requestWechatToken } from './client'
+import { NETWORK_ERROR_CODE, requestWechatToken } from './client'
 import type { WechatAuthOutcome } from './client'
 
 /** 提前刷新窗口：剩余有效期不足该秒数即视为过期 */
 const EARLY_REFRESH_SECONDS = 300
+
+/** 鉴权失败事件：账号 id、平台错误码与可执行提示 */
+export interface WechatAuthFailure {
+    accountId: string
+    errorCode: number
+    message: string
+}
+
+/** 构造选项：鉴权失败的上报出口 */
+export interface WechatTokenServiceOptions {
+    /**
+     * 鉴权失败回调：所有 Token 获取都经过本服务，在这里统一上报可以覆盖账号测试、素材上传、
+     * 草稿提交与群发，不必在每个调用方各写一遍。
+     * 关键约束：网络失败（errorCode 为 NETWORK_ERROR_CODE）不上报——那不代表账号鉴权失效，
+     * 上报会让断网时的账号被误标成错误态。
+     */
+    onAuthFailure?: (failure: WechatAuthFailure) => void
+}
 
 /** 鉴权请求：账号 id 用于分桶，凭据由账号服务读出后传入 */
 export interface WechatTokenRequest {
@@ -31,6 +49,8 @@ export class WechatTokenService {
 
     /** 账号 id → 进行中的刷新请求，用于合并并发调用 */
     private readonly inflight = new Map<string, Promise<WechatAuthOutcome>>()
+
+    public constructor(private readonly options: WechatTokenServiceOptions = {}) {}
 
     /**
      * 取该账号可用的 access_token：命中缓存直接返回，未命中则发起（或复用）一次刷新。
@@ -75,6 +95,13 @@ export class WechatTokenService {
     private async refresh(request: WechatTokenRequest): Promise<WechatAuthOutcome> {
         const outcome = await requestWechatToken(request.appId, request.appSecret)
         if (!outcome.ok) {
+            if (outcome.errorCode !== NETWORK_ERROR_CODE) {
+                this.options.onAuthFailure?.({
+                    accountId: request.accountId,
+                    errorCode: outcome.errorCode,
+                    message: outcome.message,
+                })
+            }
             return outcome
         }
         const lifetimeSeconds = Math.max(outcome.token.expiresIn - EARLY_REFRESH_SECONDS, 0)

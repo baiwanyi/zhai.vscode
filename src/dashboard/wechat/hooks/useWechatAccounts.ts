@@ -22,7 +22,8 @@ import type {
     WechatAccountType,
     WechatAccountsResult,
 } from '@shared/types/wechat'
-import { request } from '@shared/utils/bridge'
+import { isWechatAccountAuthFailureEvent } from '@shared/types/wechat'
+import { onState, request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 import { WECHAT_STATUS_LABELS, type WechatListStatus } from '../utils'
 
@@ -80,6 +81,21 @@ export function useWechatAccounts(): WechatAccountsState {
 
     useEffect(() => {
         void reload()
+    }, [reload])
+
+    /**
+     * 鉴权失效：宿主在任意请求内部广播（可能是素材上传或群发触发的，不在本页发起），
+     * 这里提示一次并重拉列表，让状态色点立刻反映真实状态，而不是等用户手动刷新。
+     */
+    useEffect(() => {
+        return onState((message) => {
+            if (message.channel !== 'wechat' || !isWechatAccountAuthFailureEvent(message.payload)) {
+                return
+            }
+            const event = message.payload
+            toast.error(`「${event.accountName}」鉴权失效：${event.message}`)
+            void reload()
+        })
     }, [reload])
 
     /** 创建成功后重拉并返回账号摘要；失败保留弹窗让用户就地修正 */

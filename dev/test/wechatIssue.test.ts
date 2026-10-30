@@ -24,6 +24,8 @@ import {
     isWechatCoverPreviewRequest,
     isWechatIssuesMergeRequest,
     isWechatIssuesRemoveBatchRequest,
+    isWechatAccountAuthFailureEvent,
+    isWechatMaterialRemoveRequest,
     isWechatPublishProgress,
 } from '../../src/shared/types/wechat'
 
@@ -108,6 +110,40 @@ describe('文章请求收窄', () => {
     it('更新文章：正文必填', () => {
         expect(isWechatArticleUpdateRequest({ id: ARTICLE_ID, title: '标题', body: '' })).toBe(true)
         expect(isWechatArticleUpdateRequest({ id: ARTICLE_ID, title: '标题' })).toBe(false)
+    })
+
+    it('留言开关为可选布尔值，类型不符即拒绝', () => {
+        expect(isWechatArticleCreateRequest({ issueId: ISSUE_ID, title: '标题', allowComment: true })).toBe(true)
+        expect(isWechatArticleCreateRequest({ issueId: ISSUE_ID, title: '标题', allowComment: 1 })).toBe(false)
+        expect(isWechatArticleUpdateRequest({ id: ARTICLE_ID, title: '标题', body: '', allowComment: false })).toBe(
+            true,
+        )
+        expect(isWechatArticleUpdateRequest({ id: ARTICLE_ID, title: '标题', body: '', allowComment: 'yes' })).toBe(
+            false,
+        )
+    })
+
+    it('鉴权失败广播逐字段收窄', () => {
+        const valid = {
+            kind: 'authFailure',
+            accountId: ACCOUNT_ID,
+            accountName: '主号',
+            errorCode: 40164,
+            message: 'IP 不在白名单',
+        }
+        expect(isWechatAccountAuthFailureEvent(valid)).toBe(true)
+        expect(isWechatAccountAuthFailureEvent({ ...valid, accountName: '' })).toBe(false)
+        expect(isWechatAccountAuthFailureEvent({ ...valid, kind: 'other' })).toBe(false)
+        expect(isWechatAccountAuthFailureEvent({ ...valid, errorCode: '40164' })).toBe(false)
+        expect(isWechatAccountAuthFailureEvent({ ...valid, message: '' })).toBe(false)
+        expect(isWechatAccountAuthFailureEvent(null)).toBe(false)
+    })
+
+    it('素材删除要求账号与素材 id 均合法', () => {
+        expect(isWechatMaterialRemoveRequest({ accountId: ACCOUNT_ID, id: 'mat-1a2b3c4d5e' })).toBe(true)
+        expect(isWechatMaterialRemoveRequest({ accountId: ACCOUNT_ID, id: 'MAT-1' })).toBe(false)
+        expect(isWechatMaterialRemoveRequest({ accountId: ACCOUNT_ID })).toBe(false)
+        expect(isWechatMaterialRemoveRequest(null)).toBe(false)
     })
 
     it('封面路径为可选字符串，类型不符即拒绝', () => {

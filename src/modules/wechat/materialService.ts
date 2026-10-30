@@ -13,7 +13,14 @@ import * as vscode from 'vscode'
 import type { WechatMaterialImportResult, WechatMaterialSummary } from '@shared/types/wechat'
 import { uploadWechatImageMaterial } from './client'
 import { findWechatAccount } from './db/accountRepository'
-import { findWechatMaterial, insertWechatMaterial, listWechatMaterials } from './db/materialRepository'
+import {
+    deleteWechatMaterial,
+    findWechatMaterial,
+    findWechatMaterialById,
+    insertWechatMaterial,
+    listWechatMaterials,
+} from './db/materialRepository'
+import { deleteWechatMaterialByMediaId } from './openapi'
 import type { WechatSecretStore } from './credentials'
 import type { WechatMaterialRow } from './db/materialRepository'
 import type { WechatTokenService } from './tokenService'
@@ -185,6 +192,44 @@ export class WechatMaterialService {
                 createdAt: uploaded.record.created_at,
             },
         }
+    }
+
+    /**
+     * 删除素材：先删平台侧，成功后再清本地映射。
+     * 关键约束：先校验归属——不能拿 A 账号的 Token 删 B 账号的素材；
+     * 平台删除失败（除「素材不存在」）时保留本地记录，否则会留下「本地没了、平台还在」的孤儿素材，
+     * 那种素材只能去公众号后台手动清理。
+     */
+    public async remove(accountId: string, id: string): Promise<{ removed: boolean }> {
+        const row = findWechatMaterialById(this.deps.db, id)
+        if (row === null) {
+            throw new Error('素材不存在，可能已被删除')
+        }
+        if (row.account_id !== accountId) {
+            throw new Error('该素材不属于当前公众号账号')
+        }
+        const account = findWechatAccount(this.deps.db, accountId)
+        if (account === null) {
+            throw new Error('公众号账号不存在，可能已被删除')
+        }
+        const appSecret = await this.deps.secrets.read(accountId)
+        if (appSecret === undefined || appSecret.length === 0) {
+            throw new Error('公众号密钥缺失，无法删除素材')
+        }
+        const tokenOutcome = await this.deps.tokens.getToken({
+            accountId,
+            appId: account.app_id,
+            appSecret,
+        })
+        if (!tokenOutcome.ok) {
+            throw new Error(tokenOutcome.message)
+        }
+        const outcome = await deleteWechatMaterialByMediaId(tokenOutcome.token.accessToken, row.media_id)
+        if (!outcome.ok) {
+            throw new Error(outcome.message)
+        }
+        deleteWechatMaterial(this.deps.db, id)
+        return { removed: true }
     }
 
     /** 上传或复用本地图片：先按 hash 查表，未命中才走一次网络 */

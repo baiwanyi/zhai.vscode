@@ -31,6 +31,7 @@ import type { AiUsageQuery } from '@shared/types/aiUsage'
 import { isAiUsageModule, isAiUsageRange } from '@shared/types/aiUsage'
 import type { HostToWebviewMessage, StreamMessage, ToastPayload } from '@shared/types/messages'
 import { isRequestMessage } from '@shared/types/messages'
+import type { WechatAccountAuthFailureEvent } from '@shared/types/wechat'
 import type { OpenWorkflowResult, ResetWorkflowResult, WorkflowViewRequest } from '@shared/types/workflow'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
 import {
@@ -485,6 +486,17 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
 
     private post(view: vscode.WebviewView, message: HostToWebviewMessage): void {
         void view.webview.postMessage(message)
+    }
+
+    /**
+     * 广播公众号账号状态：与仪表盘同一份载荷，供运营分区提示鉴权失效。
+     * 关键约束：对所有已打开视图下发——用户可能同时开着工作流与仪表盘；
+     * 未挂载时不排队，状态已落库，下次进入页面自然读到最新值。
+     */
+    public broadcastWechatState(payload: WechatAccountAuthFailureEvent): void {
+        for (const view of this.views) {
+            this.post(view, { type: 'state', channel: 'wechat', payload })
+        }
     }
 }
 

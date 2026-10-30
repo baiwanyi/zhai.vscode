@@ -11,6 +11,7 @@ import type {
     WechatMaterialImportRequest,
     WechatMaterialImportResult,
     WechatMaterialListRequest,
+    WechatMaterialRemoveRequest,
     WechatMaterialSummary,
 } from '@shared/types/wechat'
 import { request } from '@shared/utils/bridge'
@@ -21,8 +22,11 @@ export interface WechatMaterialsState {
     status: 'loading' | 'ready' | 'error'
     error: string | null
     isImporting: boolean
+    /** 正在删除的素材 id：据此只禁用那一行，不冻结整个列表 */
+    removingId: string | null
     reload: () => Promise<void>
     importImage: () => Promise<void>
+    removeMaterial: (id: string) => Promise<boolean>
 }
 
 export function useWechatMaterials(accountId: string): WechatMaterialsState {
@@ -30,6 +34,7 @@ export function useWechatMaterials(accountId: string): WechatMaterialsState {
     const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
     const [error, setError] = useState<string | null>(null)
     const [isImporting, setIsImporting] = useState(false)
+    const [removingId, setRemovingId] = useState<string | null>(null)
 
     const reload = useCallback(async (): Promise<void> => {
         const payload: WechatMaterialListRequest = { accountId }
@@ -65,5 +70,28 @@ export function useWechatMaterials(accountId: string): WechatMaterialsState {
         }
     }, [accountId, reload])
 
-    return { materials, status, error, isImporting, reload, importImage }
+    /**
+     * 删除素材：平台侧与本地映射一起清。
+     * 关键约束：不可撤销——已发布文章里引用这张图的正文会失效，页面负责二次确认。
+     */
+    const removeMaterial = useCallback(
+        async (id: string): Promise<boolean> => {
+            setRemovingId(id)
+            const payload: WechatMaterialRemoveRequest = { accountId, id }
+            try {
+                await request('wechat/material/remove', payload, 60_000)
+                await reload()
+                toast.success('素材已删除')
+                return true
+            } catch (cause) {
+                toastError(cause)
+                return false
+            } finally {
+                setRemovingId(null)
+            }
+        },
+        [accountId, reload],
+    )
+
+    return { materials, status, error, isImporting, removingId, reload, importImage, removeMaterial }
 }
