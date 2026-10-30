@@ -9,7 +9,7 @@
  */
 import { NOTES_MODULE_KEY } from '@shared/types/workflow'
 import type { WorkflowContextState } from '@shared/types/workflow'
-import type { WorkflowPressSection } from './pressSections'
+import type { WorkflowSection } from './workflowSections'
 
 /** 公众号模块的一级目录名：与宿主 wechat.db 及模块键一致 */
 export const WECHAT_MODULE_KEY = 'wechat'
@@ -18,14 +18,14 @@ export const WECHAT_MODULE_KEY = 'wechat'
 export type ContentScope = 'press' | 'note' | 'wechat'
 
 /** 归属 → 专属分区：公众号的六项运营分区与写作管理的四项并列 */
-export const SCOPE_SECTIONS: Readonly<Record<ContentScope, readonly WorkflowPressSection[]>> = {
+export const SCOPE_SECTIONS: Readonly<Record<ContentScope, readonly WorkflowSection[]>> = {
     press: ['setting', 'character', 'outline', 'naming'],
     note: [],
     wechat: ['menu', 'material', 'stats', 'comment', 'fans', 'push'],
 }
 
 /** 常驻分区：与内容归属无关，任何文档下都可用 */
-export const RESIDENT_SECTIONS: readonly WorkflowPressSection[] = ['chat', 'media', 'proofread', 'snapshot', 'usage']
+export const RESIDENT_SECTIONS: readonly WorkflowSection[] = ['chat', 'media', 'proofread', 'snapshot', 'usage']
 
 /**
  * 读取当前文档的内容归属：笔记与公众号看一级目录名，作品看 projectDir，其余为 null。
@@ -66,7 +66,7 @@ export function readScopeDir(context: WorkflowContextState, scope: ContentScope 
 }
 
 /** 当前归属下可用的分区：常驻分区 + 该归属的专属分区 */
-export function readAvailableSections(scope: ContentScope | null): readonly WorkflowPressSection[] {
+export function readAvailableSections(scope: ContentScope | null): readonly WorkflowSection[] {
     if (scope === null) {
         return RESIDENT_SECTIONS
     }

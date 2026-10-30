@@ -19,12 +19,12 @@ import { WechatMenuPage } from './menu/WechatMenuPage'
 import { WechatPendingSection } from './pending/WechatPendingSection'
 import { WechatPushPage } from './push/WechatPushPage'
 import { WechatStatsPage } from './stats/WechatStatsPage'
-import type { WorkflowPressSection } from '../layout/pressSections'
+import type { WorkflowSection } from '../layout/workflowSections'
 import type { JSX } from 'react'
 
 interface WorkflowWechatProps {
     /** 当前分区：由 WorkflowScreen 托管，与侧边导航同源 */
-    section: WorkflowPressSection
+    section: WorkflowSection
 }
 
 export function WorkflowWechat({ section }: WorkflowWechatProps): JSX.Element {

@@ -1,7 +1,7 @@
 /**
  * 工作流屏幕：按当前文档的内容归属渲染内容区，右侧常驻全局侧边导航，并托管分区与宿主视图请求。
  * 复用约定：路由事实来自 hooks/useWorkflowRouting，归属、可用分区与作用域目录来自 contentScope，
- * 作品文档交给 WorkflowPress（内部分区路由），其余文档交给 WorkflowResidentSection（常驻分区）。
+ * 作品文档交给 press 模块的 WorkflowPress（内部分区路由），其余文档交给 WorkflowResidentSection（常驻分区）。
  * 关键约束：分区（section）由本层托管后同时下发给内容区与导航，两侧不会各持一份；
  * 内容归属变化导致当前分区不可用时，渲染期回落到 AI 对话而不改写 state，切回原归属仍能回到上次分区；
  * 宿主视图请求在本层对齐，不沉到子页面；归档文档只切分区，切换文档归属由宿主事实驱动，
@@ -16,22 +16,22 @@ import { Spinner } from '@components/ui/spinner'
 import { useHostToast } from '@webview/hooks/useHostToast'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
 import { readAvailableSections, readContentScope, readScopeDir } from './contentScope'
-import { isWorkflowPressSection } from './pressSections'
 import { WorkflowNav } from './WorkflowNav'
-import { WorkflowPress } from './WorkflowPress'
 import { WorkflowResidentSection } from './WorkflowResidentSection'
-import type { WorkflowPressSection } from './pressSections'
+import { isWorkflowSection } from './workflowSections'
+import type { WorkflowSection } from './workflowSections'
 import type { JSX } from 'react'
 import { useWorkflowRouting } from '../hooks/useWorkflowRouting'
+import { WorkflowPress } from '../press/WorkflowPress'
 import { WorkflowWechat } from '../wechat/WorkflowWechat'
 
 /** 默认分区：页面主体即 AI 对话，默认高亮与当前可见内容一致 */
-const DEFAULT_SECTION: WorkflowPressSection = 'chat'
+const DEFAULT_SECTION: WorkflowSection = 'chat'
 
 export function WorkflowScreen(): JSX.Element {
     const { context, viewRequest, isReady } = useWorkflowRouting()
     const theme = useVscodeTheme()
-    const [activeSection, setActiveSection] = useState<WorkflowPressSection>(DEFAULT_SECTION)
+    const [activeSection, setActiveSection] = useState<WorkflowSection>(DEFAULT_SECTION)
     const [appliedViewSeq, setAppliedViewSeq] = useState<number | null>(null)
     const scope = readContentScope(context)
     const [appliedScope, setAppliedScope] = useState(scope)
@@ -58,12 +58,12 @@ export function WorkflowScreen(): JSX.Element {
      */
     if (viewRequest !== null && viewRequest.seq !== appliedViewSeq) {
         setAppliedViewSeq(viewRequest.seq)
-        if (isWorkflowPressSection(viewRequest.view)) {
+        if (isWorkflowSection(viewRequest.view)) {
             setActiveSection(viewRequest.view)
         }
     }
 
-    const handleSelectSection = useCallback((section: WorkflowPressSection): void => {
+    const handleSelectSection = useCallback((section: WorkflowSection): void => {
         setActiveSection(section)
     }, [])
 

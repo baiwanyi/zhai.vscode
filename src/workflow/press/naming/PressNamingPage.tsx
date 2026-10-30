@@ -1,5 +1,5 @@
 /**
- * 取名页：以 app-page 骨架承载「标题区 + 条件字段区 + 底部操作区」，承接写作管理页的取名分区。
+ * 取名页：以 app-page 骨架承载「标题区 + 条件字段区 + 底部操作区」，作为写作管理页的取名分区独立成页。
  * 复用约定：外壳取 components/AppPage（分类栏进 AppMenu、生成方式开关进 AppFooter 左端、条件区走 isScrollable），
  * 条件收集与结果渲染由 layout/ 与 hooks/ 承担；本文件只做三态分流与就绪态编排，
  * 结果按分类缓存在 useNamingGenerate 内，生成后由 NamingResultDialog 弹层展示，
@@ -227,7 +227,7 @@ function NamingWorkspace({ catalog }: NamingWorkspaceProps): JSX.Element {
     )
 }
 
-export function NamingPage(): JSX.Element {
+export function PressNamingPage(): JSX.Element {
     const { catalog, error, isLoading } = useNamingCatalog()
 
     if (isLoading) {

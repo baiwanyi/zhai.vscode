@@ -10,11 +10,11 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@c
 import { AiChat } from '@webview/workflow/aichat'
 import { ProofreadPage } from '@webview/workflow/proofread'
 import { AiUsagePage } from '@webview/workflow/usage'
-import type { WorkflowPressSection } from './pressSections'
+import type { WorkflowSection } from './workflowSections'
 import type { JSX } from 'react'
 
 interface WorkflowResidentSectionProps {
-    section: WorkflowPressSection
+    section: WorkflowSection
     /** 内容作用域目录：笔记与公众号取模块目录，其余文档为 null（通用对话） */
     scopeDir: string | null
 }

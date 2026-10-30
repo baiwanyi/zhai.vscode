@@ -1,14 +1,14 @@
 /**
  * 大纲工作台：写作流程的第四步，左侧卷-章树、中间章纲详情、右侧 AI 副驾。
  * 复用约定：三个区域分别由 OutlineTree、OutlineDetail、OutlineAiPanel 承担，本文件负责选中项、
- * 筛选、折叠、向导与提取的编排；步骤条复用 PressFlowSteps，统计口径来自 utils 的 summarizeWorkspace。
+ * 筛选、折叠、向导与提取的编排；步骤条由同文件的 PressFlowSteps 承担，统计口径来自 utils 的 summarizeWorkspace。
  * 关键约束：宽容器用容器查询展开三栏，窄容器（VSCode 侧栏常态）退化为「树 → 详情」下钻，
  * 选中章节后必须隐藏树而不是压缩两栏；折叠状态记录的是「已折叠的卷」，新卷因此默认展开；
  * 提取会用素材重建整棵大纲树，覆盖当前草稿，因此按钮文案与提示都要写明这一点。
  */
 import { cn } from 'cn'
-import { ListTree, Sparkles, Wand2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Check, ChevronRight, ListTree, Sparkles, Wand2 } from 'lucide-react'
+import { Fragment, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Progress } from '@components/ui/progress'
@@ -21,7 +21,7 @@ import { OutlineWizard } from './OutlineWizard'
 import { useOutlineExtract } from './useOutlineExtract'
 import type { OutlineChapter, OutlineVolume, OutlineWorkspace, PlanStatus } from '../types'
 import type { JSX } from 'react'
-import { PressFlowSteps } from '../layout/PressFlowSteps'
+import { FLOW_STEPS } from '../constants'
 import { summarizeWorkspace } from '../utils'
 
 interface PressOutlinePageProps {
@@ -37,6 +37,61 @@ interface PressOutlinePageProps {
     /** 用素材重建整棵大纲树，返回重建的章节数；父级负责覆盖草稿 */
     onExtractOutline: (drafts: PressExtractedVolume[]) => number
     onOpenChat: () => void
+}
+
+interface PressFlowStepsProps {
+    /** 当前步骤序号，取值 1-5 */
+    current: number
+    onSelect: (step: number) => void
+}
+
+/**
+ * 写作流程步骤条：五个圆点串起「新建作品 → 作品设定 → 人物设定 → 大纲 → 章节写作」。
+ * 步骤清单取自 constants 的 FLOW_STEPS，可点击步骤复用 Button 的 ghost 变体承载胶囊外观，不手写焦点环与悬停底色；
+ * 当前步骤以外的文字在窄容器下折叠，只保留序号圆点，避免侧栏宽度把标题挤成竖排。
+ * 关键约束：当前步骤须声明 aria-current="step"；步骤既作进度展示也允许点击跳转，因此每项都是可聚焦按钮而非装饰元素。
+ */
+function PressFlowSteps({ current, onSelect }: PressFlowStepsProps): JSX.Element {
+    return (
+        <ol className="flex min-w-0 items-center gap-0.5 overflow-x-auto" aria-label="写作流程">
+            {FLOW_STEPS.map((step, index) => {
+                const isDone = step.id < current
+                const isCurrent = step.id === current
+
+                return (
+                    <Fragment key={step.id}>
+                        {index > 0 ? (
+                            <ChevronRight className="size-3 shrink-0 text-muted-foreground/60" aria-hidden="true" />
+                        ) : null}
+                        <li className="shrink-0">
+                            <Button
+                                variant="ghost"
+                                aria-current={isCurrent ? 'step' : undefined}
+                                className={cn(
+                                    'h-auto gap-1 rounded-full px-1.5 py-0.5',
+                                    isCurrent ? 'bg-muted text-foreground' : 'text-muted-foreground',
+                                )}
+                                onClick={() => onSelect(step.id)}
+                            >
+                                <span
+                                    className={cn(
+                                        'flex size-4 shrink-0 items-center justify-center rounded-full border tabular-nums',
+                                        isDone && 'border-transparent bg-primary text-primary-foreground',
+                                        isCurrent && !isDone && 'border-primary text-primary',
+                                        !isDone && !isCurrent && 'border-border',
+                                    )}
+                                    aria-hidden="true"
+                                >
+                                    {isDone ? <Check className="size-2.5" /> : step.id}
+                                </span>
+                                <span className={cn('truncate', !isCurrent && 'hidden @xs:inline')}>{step.label}</span>
+                            </Button>
+                        </li>
+                    </Fragment>
+                )
+            })}
+        </ol>
+    )
 }
 
 export function PressOutlinePage({

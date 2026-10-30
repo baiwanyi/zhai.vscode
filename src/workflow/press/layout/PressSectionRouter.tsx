@@ -1,15 +1,14 @@
 /**
  * 写作页分区路由：按导航选中项渲染对应页面，所有分区共享同一份草稿与作品目录。
- * 复用约定：设定 / 人物 / 大纲 / 快照复用本模块页面组件，取名、校对、AI 用量、对话与生图分别复用
- * naming、proofread、usage、aichat、imagegen 的页面组件；
+ * 复用约定：设定 / 人物 / 大纲 / 快照 / 取名复用本模块页面组件，校对、AI 用量、对话与生图分别复用
+ * proofread、usage、aichat、imagegen 的页面组件；
  * 本文件只做「分区 → 页面 + 回调」的映射，不持有任何状态。
  * 关键约束：对话与快照按作品目录隔离（dirPath 既是作用域也是对话页 key，切作品即重建），
  * 用量是跨作品的全局统计不隔离；回调统一来自 usePressMutations，路由层不自行读写草稿。
  */
 import { AiChat } from '@webview/workflow/aichat'
 import { ImageGenPage } from '@webview/workflow/imagegen'
-import type { WorkflowPressSection } from '@webview/workflow/layout/pressSections'
-import { NamingPage } from '@webview/workflow/naming'
+import type { WorkflowSection } from '@webview/workflow/layout/workflowSections'
 import { ProofreadPage } from '@webview/workflow/proofread'
 import { AiUsagePage } from '@webview/workflow/usage'
 import type { PressMutations } from '../hooks/usePressMutations'
@@ -17,12 +16,13 @@ import type { OutlineWorkspace } from '../types'
 import type { JSX } from 'react'
 import { PressCharacterPage } from '../character/PressCharacterPage'
 import { DEFAULT_CHAPTER_WORD_GOAL } from '../constants'
+import { PressNamingPage } from '../naming/PressNamingPage'
 import { PressOutlinePage } from '../outline/PressOutlinePage'
 import { PressSettingPage } from '../setting/PressSettingPage'
 import { PressSnapshotPage } from '../snapshot/PressSnapshotPage'
 
 interface PressSectionRouterProps {
-    section: WorkflowPressSection
+    section: WorkflowSection
     workspace: OutlineWorkspace
     /** 当前作品目录：快照、人物设定图与对话会话的作用域 */
     dirPath: string
@@ -87,7 +87,7 @@ export function PressSectionRouter({
         )
     }
     if (section === 'naming') {
-        return <NamingPage />
+        return <PressNamingPage />
     }
     // 媒体库是全库共享的，但出图与「设为作品封面」以当前作品为作用域，切作品即重建，避免参数串味
     if (section === 'media') {

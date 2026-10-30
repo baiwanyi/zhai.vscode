@@ -32,13 +32,13 @@ import { TooltipProvider } from '@components/ui/tooltip'
 import { SCOPE_SECTIONS } from './contentScope'
 import { WorkflowNavItem } from './WorkflowNavItem'
 import type { ContentScope } from './contentScope'
-import type { WorkflowPressSection } from './pressSections'
+import type { WorkflowSection } from './workflowSections'
 import type { JSX, ReactNode } from 'react'
 
 /** 分组的渲染顺序：首项独占一组，中段承载专属分区与工具入口，尾项落栏底 */
-const LEADING_SECTIONS: readonly WorkflowPressSection[] = ['chat']
-const TOOL_SECTIONS: readonly WorkflowPressSection[] = ['media', 'proofread']
-const FOOTER_SECTIONS: readonly WorkflowPressSection[] = ['snapshot', 'usage']
+const LEADING_SECTIONS: readonly WorkflowSection[] = ['chat']
+const TOOL_SECTIONS: readonly WorkflowSection[] = ['media', 'proofread']
+const FOOTER_SECTIONS: readonly WorkflowSection[] = ['snapshot', 'usage']
 
 interface SectionMeta {
     label: string
@@ -46,7 +46,7 @@ interface SectionMeta {
 }
 
 /** 分区 → 文案与图标：章节写作没有导航入口，只由大纲页的步骤跳转进入，此处登记仅为满足类型完整性 */
-const SECTION_META: Readonly<Record<WorkflowPressSection, SectionMeta>> = {
+const SECTION_META: Readonly<Record<WorkflowSection, SectionMeta>> = {
     chat: { label: 'AI对话', icon: <MessageCircle className="size-6" /> },
     setting: { label: '设定', icon: <Globe className="size-6" /> },
     character: { label: '角色', icon: <Users className="size-6" /> },
@@ -74,15 +74,15 @@ function NavSeparator(): JSX.Element {
 
 interface WorkflowNavProps {
     /** 当前分区：与页面内容同源，由外壳托管 */
-    activeSection: WorkflowPressSection
+    activeSection: WorkflowSection
     /** 当前内容归属：null 表示文档不属于任何已接入模块，此时不渲染专属分区 */
     scope: ContentScope | null
-    onSelect: (section: WorkflowPressSection) => void
+    onSelect: (section: WorkflowSection) => void
 }
 
 export function WorkflowNav({ activeSection, scope, onSelect }: WorkflowNavProps): JSX.Element {
     const scopeSections = scope === null ? [] : SCOPE_SECTIONS[scope]
-    const renderItem = (section: WorkflowPressSection): JSX.Element => {
+    const renderItem = (section: WorkflowSection): JSX.Element => {
         const meta = SECTION_META[section]
         return (
             <WorkflowNavItem

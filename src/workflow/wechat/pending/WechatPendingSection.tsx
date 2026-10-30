@@ -8,7 +8,7 @@
 import { BarChart3, Construction, MessageSquare, Menu, UserRound } from 'lucide-react'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { AppContent, AppDescription, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
-import type { WorkflowPressSection } from '../../layout/pressSections'
+import type { WorkflowSection } from '../../layout/workflowSections'
 import type { JSX } from 'react'
 
 interface PendingMeta {
@@ -50,7 +50,7 @@ const PENDING_META: Readonly<Record<string, PendingMeta>> = {
 }
 
 interface WechatPendingSectionProps {
-    section: WorkflowPressSection
+    section: WorkflowSection
     /** 当前账号名：占位页也告诉用户「这些功能将作用在哪个账号上」 */
     accountName: string
 }
