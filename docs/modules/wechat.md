@@ -180,9 +180,9 @@
 |--------|----------|------|------|
 | 接口调用 | 内置 `fetch` / 官方 SDK | **内置 fetch** | 接口数量少，无需额外依赖；统一超时与错误处理 |
 | Token 并发 | 各自刷新 / singleflight | **singleflight（Promise 复用）** | 并发刷新会互相失效，是公众号对接的经典坑 |
-| HTML 生成 | `markdown-one` 管线 | **复用 markdown-one** | 与导出/预览共用一套 AST，避免多套解析 |
-| 样式内联 | `juice` / 手写替换 | **juice** | 公众号不支持 `<style>` 与外链 CSS，必须内联 |
-| 代码高亮 | `shiki` / `highlight.js` | **shiki** | 输出内联样式的 HTML，正合适 |
+| HTML 生成 | `markdown-one` 管线 / 模块内自建 unified 管线 | **模块内自建（已落地，见 `src/modules/wechat/render.ts`）** | `markdown-one` 尚未落地；先把公众号需要的 `remark-parse` + `remark-gfm` + `remark-rehype` + `rehype-stringify` 收在本模块内，后续该管线成熟后整体迁入并复用之 |
+| 样式内联 | `juice` / 手写替换 | **juice（已落地）** | 公众号不支持 `<style>` 与外链 CSS，必须内联；根选择器用 `section`，`body` 规则在正文片段里找不到宿主元素会被丢弃 |
+| 代码高亮 | `shiki` / `highlight.js` | **shiki（已落地，失败回退纯文本）** | 输出内联样式的 hast，直接替换 `pre > code` 节点；语言未知或加载失败时保留原代码块，宁可没配色也不丢内容 |
 | 图片素材 | 永久素材 / 图文内图片 | **永久素材** | 避免历史文章图片失效；注意每日配额 |
 | 封面图 | 用户指定 / 自动生成 | **两者皆可** | 默认取首图，用户可改 |
 | AI 配图/标题 | CodeBuddy 通道 / 外部图床 | **CodeBuddy 生成标题建议，封面可选本地生成** | 复用项目 AI 通道，避免额外图床依赖 |
@@ -463,10 +463,11 @@ interface WechatPublishResult {
 
 ## 10. 界面架构与落地决策
 
-> **实现进度（2026-10-30）**：M1 账号底座与 M2 批次/文章编辑已落地——
-> `src/modules/wechat`（库与仓储、凭证、Token 并发管理、账号服务、批次服务、协议路由）、
-> `src/dashboard/wechat`（账号列表页、批次列表页、账号与批次弹窗、文章编辑弹窗、导入与删除确认）。
-> 待办：推送链路（M3，含渲染为内联样式 HTML、素材上传、freepublish）与工作流六分区（M4）。
+> **实现进度（2026-10-30）**：M1 账号底座、M2 批次/文章编辑与 M3a 渲染管线已落地——
+> `src/modules/wechat`（库与仓储、凭证、Token 并发管理、账号服务、批次服务、协议路由、
+> `render.ts` 渲染管线与 `theme.ts` 默认主题）、`src/dashboard/wechat`（账号列表页、批次列表页、
+> 账号与批次弹窗、文章编辑弹窗、导入与删除确认）。
+> 待办：素材上传与草稿/发布链路（M3b~M3c）与工作流六分区（M4）。
 
 ### 10.1 三个关键决策
 

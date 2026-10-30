@@ -34,5 +34,9 @@ export default defineConfig({
         include: ['dev/test/**/*.test.{ts,tsx}'],
         environment: 'node',
         restoreMocks: true,
+        // 关闭文件系统模块缓存：其缓存目录固定在 node_modules/.vitest-cache，
+        // 依赖变更后启动时的完整性清理会一次性删除上千个文件，本机安全策略会拦截该批量删除并中断测试；
+        // 关掉后每次全量转换模块，仅慢几秒，换取测试一定能跑起来
+        fsModuleCache: false,
     },
 })
