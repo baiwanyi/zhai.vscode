@@ -19,7 +19,7 @@ interface NotesSelectionBarProps {
 
 export function NotesSelectionBar({ isAllSelectedPinned, onTogglePin, onDelete }: NotesSelectionBarProps): JSX.Element {
     return (
-        <ButtonGroup className="flex-1">
+        <ButtonGroup className="flex-1 pt-3">
             <Button variant="ghost" className="flex-1 text-foreground" onClick={onTogglePin}>
                 {isAllSelectedPinned ? <PinOff className="size-4" /> : <Pin className="size-4" />}
                 {isAllSelectedPinned ? '取消置顶' : '置顶'}
