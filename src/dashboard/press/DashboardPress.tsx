@@ -9,19 +9,9 @@
  * 导入确认弹窗以 token 作 key，切换候选文件即重挂载，表单回到该文件的建议值；
  * 页面内屏蔽浏览器右键菜单，与仪表盘首页保持一致。
  */
-import { ChevronLeft } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import type { PressAudience } from '@shared/types/press'
-import {
-    AppAction,
-    AppContent,
-    AppDescription,
-    AppFooter,
-    AppHeader,
-    AppPage,
-    AppTitle,
-} from '@webview/components/AppPage'
-import { Button } from '@webview/components/Button'
+import { AppContent, AppDescription, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { usePressImport } from './hooks/usePressImport'
 import { usePressProjects } from './hooks/usePressProjects'
 import { PressFooterActions } from './layout/PressFooterActions'
@@ -29,15 +19,14 @@ import { PressImportDialog } from './layout/PressImportDialog'
 import { PressProjectDialog } from './layout/PressProjectDialog'
 import { PressProjectList } from './layout/PressProjectList'
 import type { JSX } from 'react'
+import { DashboardBackAction } from '../layout/DashboardBackAction'
 
 interface DashboardPressProps {
-    /** 返回仪表盘概览：由路由外壳下发，页面不自行改写 hash */
-    onBack: () => void
     /** 打开作品详情：由路由外壳下发，落地到 #/press/{作品名} */
     onOpenProject: (dirPath: string) => void
 }
 
-export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): JSX.Element {
+export function DashboardPress({ onOpenProject }: DashboardPressProps): JSX.Element {
     const { projects, status, error, isCreating, reload, createProject, rebuildIndex } = usePressProjects()
     const { candidate, isPicking, isImporting, pick, start, dismiss } = usePressImport()
     const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -101,17 +90,7 @@ export function DashboardPress({ onBack, onOpenProject }: DashboardPressProps): 
             <AppPage onContextMenu={(event) => event.preventDefault()}>
                 <AppHeader align="start">
                     <AppTitle>作品列表</AppTitle>
-                    <AppAction>
-                        <Button
-                            variant="secondary"
-                            size="icon"
-                            aria-label="返回仪表盘"
-                            tooltip="返回仪表盘"
-                            onClick={onBack}
-                        >
-                            <ChevronLeft />
-                        </Button>
-                    </AppAction>
+                    <DashboardBackAction kind="home" />
                     {projectCount > 0 && <AppDescription>{`${String(projectCount)} 部`}</AppDescription>}
                 </AppHeader>
                 <AppContent isScrollable>

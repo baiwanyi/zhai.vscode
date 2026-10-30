@@ -29,6 +29,11 @@ export function createPressProjectRoute(dirPath: string): DashboardRoute {
     return { name: 'pressProject', dirPath }
 }
 
+/** 上一级路由：作品详情回作品列表，作品列表与概览首页回首页（首页没有更上一层） */
+export function createParentRoute(route: DashboardRoute): DashboardRoute {
+    return route.name === 'pressProject' ? createPressRoute() : createHomeRoute()
+}
+
 /**
  * 解码作品名：非法编码或越界片段返回 null，由调用方回落首页。
  * 安全约束：解码可能产出 `/`、`\`、`.`、`..`，这些片段会把路径带出作品目录，一律拒绝。

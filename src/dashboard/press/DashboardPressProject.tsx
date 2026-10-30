@@ -1,5 +1,5 @@
 /**
- * 作品详情页（#/press/{作品名}）：页头返回作品列表与作品元信息，主体为卷分组章节目录，底部为作品级操作入口。
+ * 作品详情页（#/press/{作品名}）：页头返回动作（回概览 / 回作品列表）与作品元信息，主体为卷分组章节目录，底部为作品级操作入口。
  * 复用约定：外壳取 components/AppPage（页头走 AppHeader、章节目录走 AppContent 滚动、素材抽取与删除作品走 AppFooter
  * 并交给 PressProjectFooterActions、弹窗挂在骨架外）；数据动作经 hooks 下发，加载与失败态由 PressChapterList 自行分派。
  * 关键约束：详情未就绪时页头用路由中的目录名兜底，避免标题闪烁；素材抽取需数据就绪，删除作品期间不可重复触发；
@@ -9,19 +9,9 @@
  * 素材抽取只做本地统计（AI 生成由工作台各页面触发）；摘要回填只补空、不覆盖章节里已有的 summary；
  * 删除作品成功后跳回列表，页面内屏蔽浏览器右键菜单。
  */
-import { ChevronLeft } from 'lucide-react'
 import { useCallback, useMemo, useReducer, useState } from 'react'
 import type { PressChapterEntry, PressVolumeGroup } from '@shared/types/press'
-import {
-    AppAction,
-    AppContent,
-    AppDescription,
-    AppFooter,
-    AppHeader,
-    AppPage,
-    AppTitle,
-} from '@webview/components/AppPage'
-import { Button } from '@webview/components/Button'
+import { AppContent, AppDescription, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { usePressAnalyze } from './hooks/usePressAnalyze'
 import { usePressProjectDetail } from './hooks/usePressProjectDetail'
 import { PressChapterDeleteDialog } from './layout/PressChapterDeleteDialog'
@@ -32,6 +22,7 @@ import { PressVolumeDeleteDialog } from './layout/PressVolumeDeleteDialog'
 import { PressVolumeRenameDialog } from './layout/PressVolumeRenameDialog'
 import { formatProjectMeta } from './utils'
 import type { JSX } from 'react'
+import { DashboardBackAction } from '../layout/DashboardBackAction'
 
 /** 空卷集合常量：详情未就绪时复用同一引用，避免下游回调依赖抖动 */
 const EMPTY_VOLUMES: PressVolumeGroup[] = []
@@ -73,7 +64,7 @@ function projectDialogReducer(state: ProjectDialog, action: ProjectDialogAction)
 interface DashboardPressProjectProps {
     /** 相对存储根的作品目录，由详情路由下发 */
     dirPath: string
-    /** 返回作品列表 */
+    /** 删除作品后跳回作品列表：由路由外壳下发，页头的返回按钮不走该回调 */
     onBack: () => void
 }
 
@@ -217,17 +208,8 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
             <AppPage onContextMenu={(event) => event.preventDefault()}>
                 <AppHeader align="start">
                     <AppTitle tooltip={projectName}>{projectName}</AppTitle>
-                    <AppAction>
-                        <Button
-                            variant="secondary"
-                            size="icon"
-                            aria-label="返回作品列表"
-                            tooltip="返回作品列表"
-                            onClick={onBack}
-                        >
-                            <ChevronLeft />
-                        </Button>
-                    </AppAction>
+                    <DashboardBackAction kind="home" />
+                    <DashboardBackAction kind="back" />
                     {project !== undefined && <AppDescription>{formatProjectMeta(project)}</AppDescription>}
                 </AppHeader>
                 <AppContent isScrollable>
