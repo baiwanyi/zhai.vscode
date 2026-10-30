@@ -265,6 +265,153 @@ export async function submitWechatDraft(
     return { ok: false, errorCode: payload.errorCode, message: describeDraftError(payload.errorCode) }
 }
 
+/** 发布接口：提交异步发布任务与查询其结果 */
+const FREEPUBLISH_SUBMIT_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/freepublish/submit'
+const FREEPUBLISH_GET_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/freepublish/get'
+
+/** 发布相关超时：提交是异步任务，接口本身很快；查询同样轻量 */
+const PUBLISH_TIMEOUT_MS = 20_000
+
+/** 提交发布的结果 */
+export type WechatFreepublishOutcome =
+    { ok: true; publishId: string } | { ok: false; errorCode: number; message: string }
+
+/** 发布状态：pending 表示平台仍在处理，调用方据此决定是否继续轮询 */
+export type WechatPublishState =
+    | { ok: true; state: 'published'; articleUrl?: string }
+    | { ok: true; state: 'pending' }
+    | { ok: true; state: 'failed'; message: string }
+    | { ok: false; errorCode: number; message: string }
+
+/** 发布类错误码的专属提示：未认证主体是最常见的失败原因，提示要直接给出替代路径 */
+const PUBLISH_ERROR_HINTS: Readonly<Record<string, string>> = {
+    '48001': '该账号没有发布权限，通常是未认证主体：草稿已在后台，请到公众号后台手动群发',
+    '45009': '群发次数已用完：订阅号每天 1 次、服务号每月 4 次，请等额度恢复后再发',
+    '40164': '调用方 IP 不在白名单：请把当前出口 IP 加入公众号后台的 IP 白名单',
+    '40001': 'AppSecret 不正确或已被重置，请重新填写密钥',
+    '53503': '内容未通过平台审核，请检查敏感词与外部链接',
+    '53504': '内容未通过平台审核，请检查敏感词与外部链接',
+}
+
+/** 发布错误码 → 可执行提示 */
+export function describePublishError(errorCode: number): string {
+    return PUBLISH_ERROR_HINTS[String(errorCode)] ?? '群发失败，请稍后重试'
+}
+
+/** 发布状态码 → 语义：0 成功、1 发布中、其余按失败处理并给出平台失败类型 */
+function readPublishState(code: number): { state: 'published' | 'pending' | 'failed'; message: string } {
+    switch (code) {
+        case 0:
+            return { state: 'published', message: '' }
+        case 1:
+            return { state: 'pending', message: '' }
+        case 2:
+            return { state: 'failed', message: '原创校验未通过，请到公众号后台查看原因' }
+        case 4:
+            return { state: 'failed', message: '内容未通过平台审核，请检查敏感词与外部链接' }
+        case 5:
+        case 6:
+            return { state: 'failed', message: '发布内容已被删除，请到公众号后台确认' }
+        default:
+            return { state: 'failed', message: '平台发布失败，请到公众号后台查看原因' }
+    }
+}
+
+/**
+ * 提交群发：把草稿箱里的 media_id 交给平台异步发布。
+ * 关键约束：接口成功只代表「任务已受理」，真正是否发布成功要看 freepublish/get；
+ * 未认证主体会返回 48001，此处按可执行提示返回，不作为异常抛出。
+ */
+export async function submitWechatFreepublish(token: string, mediaId: string): Promise<WechatFreepublishOutcome> {
+    const url = new URL(FREEPUBLISH_SUBMIT_ENDPOINT)
+    url.searchParams.set('access_token', token)
+
+    let response: Response
+    try {
+        response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ media_id: mediaId }),
+            signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS),
+        })
+    } catch (cause) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `无法连接微信发布接口：${errorText(cause)}` }
+    }
+    if (!response.ok) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `微信发布接口返回 HTTP ${String(response.status)}` }
+    }
+
+    let raw: unknown
+    try {
+        raw = await response.json()
+    } catch (cause) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `微信发布接口返回无法解析：${errorText(cause)}` }
+    }
+
+    if (typeof raw !== 'object' || raw === null) {
+        return { ok: false, errorCode: -1, message: describePublishError(-1) }
+    }
+    const candidate = raw as { publish_id?: unknown; errcode?: unknown }
+    if (typeof candidate.publish_id === 'string' && candidate.publish_id.length > 0) {
+        return { ok: true, publishId: candidate.publish_id }
+    }
+    const errorCode = typeof candidate.errcode === 'number' ? candidate.errcode : -1
+    return { ok: false, errorCode, message: describePublishError(errorCode) }
+}
+
+/**
+ * 查询发布状态：成功后回传首篇文章的永久链接，供界面跳转查看。
+ * 关键约束：article_detail 可能缺省（发布中），此时只返回 pending，不猜测结果。
+ */
+export async function fetchWechatPublishState(token: string, publishId: string): Promise<WechatPublishState> {
+    const url = new URL(FREEPUBLISH_GET_ENDPOINT)
+    url.searchParams.set('access_token', token)
+
+    let response: Response
+    try {
+        response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ publish_id: publishId }),
+            signal: AbortSignal.timeout(PUBLISH_TIMEOUT_MS),
+        })
+    } catch (cause) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `无法查询发布状态：${errorText(cause)}` }
+    }
+    if (!response.ok) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `发布状态接口返回 HTTP ${String(response.status)}` }
+    }
+
+    let raw: unknown
+    try {
+        raw = await response.json()
+    } catch (cause) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `发布状态返回无法解析：${errorText(cause)}` }
+    }
+    if (typeof raw !== 'object' || raw === null) {
+        return { ok: false, errorCode: -1, message: '发布状态返回格式异常' }
+    }
+
+    const candidate = raw as {
+        errcode?: unknown
+        publish_status?: unknown
+        article_detail?: { item?: { article_url?: unknown }[] }
+    }
+    if (typeof candidate.errcode === 'number' && candidate.errcode !== 0) {
+        return { ok: false, errorCode: candidate.errcode, message: describePublishError(candidate.errcode) }
+    }
+    const statusCode = typeof candidate.publish_status === 'number' ? candidate.publish_status : -1
+    const outcome = readPublishState(statusCode)
+    if (outcome.state === 'published') {
+        const firstUrl = candidate.article_detail?.item?.[0]?.article_url
+        return { ok: true, state: 'published', ...(typeof firstUrl === 'string' ? { articleUrl: firstUrl } : {}) }
+    }
+    if (outcome.state === 'pending') {
+        return { ok: true, state: 'pending' }
+    }
+    return { ok: true, state: 'failed', message: outcome.message }
+}
+
 /**
  * 上传图片为永久素材。
  * 关键约束：走 multipart/form-data，字段名必须是 media；token 只出现在查询串中，不写日志；

@@ -555,6 +555,56 @@ export function isWechatPublishDraftRequest(payload: unknown): payload is Wechat
     return isWechatIssueId((payload as { issueId?: unknown }).issueId)
 }
 
+/**
+ * wechat/issue/publish 请求：把已生成草稿的批次正式群发。
+ * 关键约束：必须先有 media_id（草稿已就绪），且不满足频率额度时直接拒绝——群发不可撤销。
+ */
+export interface WechatPublishRequest {
+    issueId: string
+}
+
+/** wechat/issue/publish 响应：articleUrl 需等平台异步发布完成才有值，可能缺省 */
+export interface WechatPublishResult {
+    issue: WechatIssueSummary
+    articleUrl?: string
+}
+
+/** wechat/publishQuota 请求：查询某账号当前的群发额度 */
+export interface WechatPublishQuotaRequest {
+    accountId: string
+}
+
+/**
+ * 群发额度：订阅号每个自然日 1 次，服务号每个自然月 4 次。
+ * reason 在不可群发时给出可执行说明（如「今日额度已用完，明天 0 点后恢复」）。
+ */
+export interface WechatPublishQuotaResult {
+    /** 周期内允许的次数 */
+    limit: number
+    /** 周期内已用次数 */
+    used: number
+    /** 剩余次数 */
+    remaining: number
+    /** 额度说明：正常时描述周期规则，用尽时给出恢复时间 */
+    reason: string
+}
+
+/** 判断是否为群发请求 */
+export function isWechatPublishRequest(payload: unknown): payload is WechatPublishRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    return isWechatIssueId((payload as { issueId?: unknown }).issueId)
+}
+
+/** 判断是否为额度查询请求 */
+export function isWechatPublishQuotaRequest(payload: unknown): payload is WechatPublishQuotaRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    return isWechatAccountId((payload as { accountId?: unknown }).accountId)
+}
+
 /** 判断是否为从文档导入请求 */
 export function isWechatArticleImportRequest(payload: unknown): payload is WechatArticleImportRequest {
     if (typeof payload !== 'object' || payload === null) {

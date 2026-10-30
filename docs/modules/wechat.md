@@ -371,6 +371,7 @@ CREATE TABLE IF NOT EXISTS wechat_stats_cache (
 | `/cgi-bin/material/add_material` | 上传永久素材 | 认证与否均可（有配额） |
 | `/cgi-bin/draft/add` `draft/update` `draft/batchget` `draft/delete` | 草稿箱 | 一般可用 |
 | `/cgi-bin/freepublish/submit` | 发布（新版接口） | **需认证主体** |
+| `/cgi-bin/freepublish/get` | 查询发布状态与永久链接 | **需认证主体** |
 | `/cgi-bin/message/mass/sendall` | 群发 | **需认证主体** |
 | `/cgi-bin/menu/create` `menu/get` `menu/delete` | 自定义菜单 | 一般可用 |
 | `/cgi-bin/user/get` `user/info/updateremark` `tags/members/batchtagging` | 粉丝与标签 | 一般可用 |
@@ -463,11 +464,11 @@ interface WechatPublishResult {
 
 ## 10. 界面架构与落地决策
 
-> **实现进度（2026-10-31）**：M1 账号底座、M2 批次/文章编辑、M3a 渲染管线与 M3b 草稿提交已落地——
-> `src/modules/wechat`（库与仓储、凭证、Token 并发管理、账号服务、批次服务、素材服务、草稿提交服务、
+> **实现进度（2026-10-31）**：M1 账号底座、M2 批次/文章编辑、M3a 渲染管线、M3b 草稿提交与 M3c 群发已落地——
+> `src/modules/wechat`（库与仓储、凭证、Token 并发管理、账号服务、批次服务、素材服务、草稿与群发服务、
 > 协议路由、`render.ts` 渲染管线与 `theme.ts` 默认主题）、`src/dashboard/wechat`（账号列表页、批次列表页、
-> 账号与批次弹窗、文章编辑弹窗、导入与删除确认）。
-> 待办：群发/发布（M3c，含主体权限与一天一次频率校验）与工作流六分区（M4）。
+> 账号与批次弹窗、文章编辑弹窗、导入与删除确认、群发二次确认）。
+> 待办：定时群发（M3d）与工作流六分区（M4）。
 
 ### 10.1 三个关键决策
 
@@ -517,7 +518,7 @@ interface WechatPublishResult {
 
 | 侧 | 方法 |
 |----|------|
-| 仪表盘 | `wechat/accounts`、`wechat/account/{create,update,remove,test,select}`、`wechat/issues`、`wechat/issue/{create,detail,remove,publishDraft}`、`wechat/article/{create,update,remove,import}`、`wechat/cover/pick`；另复用 `host/openExternal`（标识 `wechatMp`，地址由宿主固定）（均已落地） |
+| 仪表盘 | `wechat/accounts`、`wechat/account/{create,update,remove,test,select}`、`wechat/issues`、`wechat/issue/{create,detail,remove,publishDraft,publish}`、`wechat/publishQuota`、`wechat/article/{create,update,remove,import}`、`wechat/cover/pick`；另复用 `host/openExternal`（标识 `wechatMp`，地址由宿主固定）（均已落地） |
 | 工作流 | `wechat/menu/get`、`wechat/menu/save`、`wechat/material/list`、`wechat/material/upload`、`wechat/material/remove`、`wechat/stats/query`、`wechat/comment/list`、`wechat/comment/reply`、`wechat/comment/mark`、`wechat/fans/list`、`wechat/fans/tag`、`wechat/push/queue`、`wechat/push/history`、`wechat/push/retry` |
 | 广播（state 通道） | `wechat/push-progress`（阶段 + 进度 + 终态）、`wechat/account-status`（Token 失效即时提示） |
 
@@ -642,6 +643,9 @@ interface WechatPublishResult {
 > 导入由宿主弹出文件选择器并回查索引库（前端不传路径），正文以 Markdown 源文入库。
 > 封面在文章弹窗内指定（只接受 jpg/png，路径由宿主签发），未指定时取正文第一张本地图片；
 > 草稿生成后，批次菜单提供「打开公众号后台」，地址由宿主固定解析，前端只传标识。
+> 群发已接入：确认弹窗展示账号、文章清单与额度说明，提交 `freepublish/submit` 后轮询 `freepublish/get`，
+> 本地按「订阅号自然日 1 次 / 服务号自然月 4 次」先拦一层，未认证主体（48001）以可执行提示降级为「去后台群发」；
+> 轮询未出结果时批次停在「推送中」，不臆断成功或失败。
 
 ```
 批次「推送」

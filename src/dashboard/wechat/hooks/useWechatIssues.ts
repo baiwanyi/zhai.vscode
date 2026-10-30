@@ -26,6 +26,10 @@ import type {
     WechatIssuesRequest,
     WechatPublishDraftRequest,
     WechatPublishDraftResult,
+    WechatPublishQuotaRequest,
+    WechatPublishQuotaResult,
+    WechatPublishRequest,
+    WechatPublishResult,
 } from '@shared/types/wechat'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
@@ -60,6 +64,10 @@ export interface WechatIssuesState {
     importArticle: (issueId: string, sourceKind: 'note' | 'press') => Promise<WechatArticleDetail | null>
     loadArticle: (issueId: string, articleId: string) => Promise<WechatArticleDetail | null>
     publishDraft: (issueId: string) => Promise<boolean>
+    /** 正式群发：需已有草稿，受账号频率额度约束 */
+    publish: (issueId: string) => Promise<boolean>
+    /** 查询当前账号的群发额度：确认弹窗据此展示剩余次数 */
+    loadQuota: () => Promise<WechatPublishQuotaResult | null>
     /** 选择封面图：返回存储根相对路径，取消返回 null */
     pickCover: () => Promise<string | null>
     /** 打开公众号后台：URL 由宿主固定，前端只传标识 */
@@ -256,6 +264,46 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         [reload],
     )
 
+    /**
+     * 正式群发：不可撤销，故超时放宽到 180s（含宿主的发布结果轮询）。
+     * 关键约束：返回的批次仍可能是 pushing——平台异步发布未出结果，界面按「处理中」展示，不臆断成功。
+     */
+    const publish = useCallback(
+        async (issueId: string): Promise<boolean> => {
+            setIsMutating(true)
+            const payload: WechatPublishRequest = { issueId }
+            try {
+                const result = await request<WechatPublishResult>('wechat/issue/publish', payload, 180_000)
+                await reload()
+                if (result.issue.status === 'published') {
+                    toast.success('群发已完成，可到公众号后台查看文章')
+                } else {
+                    toast.info('已提交群发，平台仍在处理，稍后可在公众号后台确认')
+                }
+                return true
+            } catch (cause) {
+                toastError(cause)
+                // 失败时也要重拉：宿主已把失败原因写进批次，列表需要展示出来
+                await reload()
+                return false
+            } finally {
+                setIsMutating(false)
+            }
+        },
+        [reload],
+    )
+
+    /** 查询群发额度：确认弹窗打开时拉取，失败只提示不影响继续操作 */
+    const loadQuota = useCallback(async (): Promise<WechatPublishQuotaResult | null> => {
+        const payload: WechatPublishQuotaRequest = { accountId }
+        try {
+            return await request<WechatPublishQuotaResult>('wechat/publishQuota', payload)
+        } catch (cause) {
+            toastError(cause)
+            return null
+        }
+    }, [accountId])
+
     /** 选择封面：超时放宽到 60s，用户在系统文件对话框里停留的时间不可控 */
     const pickCover = useCallback(async (): Promise<string | null> => {
         try {
@@ -290,6 +338,8 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         importArticle,
         loadArticle,
         publishDraft,
+        publish,
+        loadQuota,
         pickCover,
         openBackend,
     }

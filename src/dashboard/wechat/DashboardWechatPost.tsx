@@ -103,6 +103,8 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         importArticle,
         loadArticle,
         publishDraft,
+        publish,
+        loadQuota,
         pickCover,
         openBackend,
     } = useWechatIssues(accountId)
@@ -123,6 +125,10 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
     const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false)
     const [accountDialogKey, setAccountDialogKey] = useState(0)
     const [isAccountRemoveOpen, setIsAccountRemoveOpen] = useState(false)
+    /** 待群发批次：非 null 即打开确认弹窗；群发不可撤销，必须二次确认 */
+    const [pendingPublish, setPendingPublish] = useState<WechatIssueSummary | null>(null)
+    /** 打开确认弹窗时拉到的额度说明，拿不到时用通用文案兜底 */
+    const [quotaReason, setQuotaReason] = useState('')
 
     const account = useMemo(() => accounts.find((item) => item.id === accountId) ?? null, [accountId, accounts])
 
@@ -252,6 +258,40 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         setFilter('all')
     }, [])
 
+    /** 打开群发确认：先拿额度说明，弹窗里展示剩余次数，避免点了才被拒 */
+    const handleOpenPublish = useCallback(
+        (issue: WechatIssueSummary): void => {
+            setPendingPublish(issue)
+            setQuotaReason('')
+            void loadQuota().then((quota) => {
+                if (quota !== null) {
+                    setQuotaReason(quota.reason)
+                }
+            })
+        },
+        [loadQuota],
+    )
+
+    /** 确认群发：先关弹窗再提交，结果由 hook 的 toast 与列表状态呈现 */
+    const handleConfirmPublish = useCallback((): void => {
+        if (pendingPublish === null) {
+            return
+        }
+        const target = pendingPublish
+        setPendingPublish(null)
+        void publish(target.id)
+    }, [pendingPublish, publish])
+
+    /** 群发确认文案：账号、文章清单、额度说明与不可撤销提醒合成一段 */
+    const publishDescription = useMemo((): string => {
+        if (pendingPublish === null) {
+            return ''
+        }
+        const titles = pendingPublish.articles.map((item) => item.title).join('、')
+        const quotaLine = quotaReason.length > 0 ? `${quotaReason}。` : ''
+        return `账号「${account?.name ?? ''}」将群发 ${String(pendingPublish.articleCount)} 篇文章：${titles}。${quotaLine}群发后不可撤销，请确认封面与正文已检查。`
+    }, [account, pendingPublish, quotaReason])
+
     if (accountStatus === 'loading') {
         return (
             <AppPage onContextMenu={(event) => event.preventDefault()}>
@@ -341,6 +381,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                         onRemoveArticle={(issue, article) => setPendingArticle({ issue, article })}
                         onRemoveIssue={setPendingIssue}
                         onPublishDraft={(issue) => void publishDraft(issue.id)}
+                        onPublish={handleOpenPublish}
                         onOpenBackend={() => void openBackend()}
                     />
                 </AppContent>
@@ -446,6 +487,20 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                     }
                 }}
                 onConfirm={handleConfirmArticleRemove}
+            />
+
+            <ConfirmDialog
+                open={pendingPublish !== null}
+                title="确认群发"
+                description={publishDescription}
+                confirmLabel="群发"
+                isSubmitting={isIssueMutating}
+                onOpenChange={(open) => {
+                    if (!open) {
+                        setPendingPublish(null)
+                    }
+                }}
+                onConfirm={handleConfirmPublish}
             />
 
             <ConfirmDialog

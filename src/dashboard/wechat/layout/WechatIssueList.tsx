@@ -33,6 +33,7 @@ interface WechatIssueListProps {
     onRemoveArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
     onRemoveIssue: (issue: WechatIssueSummary) => void
     onPublishDraft: (issue: WechatIssueSummary) => void
+    onPublish: (issue: WechatIssueSummary) => void
     onOpenBackend: () => void
 }
 
@@ -51,6 +52,7 @@ export function WechatIssueList({
     onRemoveArticle,
     onRemoveIssue,
     onPublishDraft,
+    onPublish,
     onOpenBackend,
 }: WechatIssueListProps): JSX.Element {
     if (status === 'loading') {
@@ -104,6 +106,7 @@ export function WechatIssueList({
                     onRemoveArticle={onRemoveArticle}
                     onRemoveIssue={onRemoveIssue}
                     onPublishDraft={onPublishDraft}
+                    onPublish={onPublish}
                     onOpenBackend={onOpenBackend}
                 />
             ))}

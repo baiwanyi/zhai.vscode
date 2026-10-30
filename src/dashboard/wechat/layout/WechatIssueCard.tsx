@@ -30,6 +30,8 @@ interface WechatIssueCardProps {
     onRemoveArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
     onRemoveIssue: (issue: WechatIssueSummary) => void
     onPublishDraft: (issue: WechatIssueSummary) => void
+    /** 正式群发：需已有草稿，确认弹窗由页面承担 */
+    onPublish: (issue: WechatIssueSummary) => void
     /** 打开公众号后台：草稿生成后去后台预览或群发 */
     onOpenBackend: () => void
 }
@@ -43,9 +45,12 @@ export function WechatIssueCard({
     onRemoveArticle,
     onRemoveIssue,
     onPublishDraft,
+    onPublish,
     onOpenBackend,
 }: WechatIssueCardProps): JSX.Element {
     const isFull = issue.articleCount >= WECHAT_ISSUE_ARTICLE_LIMIT
+    /** 群发只在草稿就绪或上次失败后可点：没有 media_id 时宿主会拒绝，前端先置灰避免无效点击 */
+    const canPublish = issue.status === 'ready' || issue.status === 'failed'
 
     return (
         <Item variant="outline" className="flex-col items-stretch gap-2 p-3">
@@ -88,6 +93,9 @@ export function WechatIssueCard({
                                 onSelect={() => onPublishDraft(issue)}
                             >
                                 {issue.status === 'ready' ? '更新草稿' : '生成草稿'}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem disabled={isBusy || !canPublish} onSelect={() => onPublish(issue)}>
+                                群发
                             </DropdownMenuItem>
                             <DropdownMenuItem
                                 disabled={issue.status !== 'ready' && issue.status !== 'published'}

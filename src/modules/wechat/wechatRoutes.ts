@@ -20,6 +20,8 @@ import {
     isWechatIssueRemoveRequest,
     isWechatIssuesRequest,
     isWechatPublishDraftRequest,
+    isWechatPublishQuotaRequest,
+    isWechatPublishRequest,
 } from '@shared/types/wechat'
 import type { WechatAccountService } from './accountService'
 import type { WechatIssueService } from './issueService'
@@ -96,6 +98,18 @@ export class WechatRoutes {
                     throw new Error('wechat/issue/publishDraft 参数非法：issueId 须为合法批次标识')
                 }
                 return this.publish.publishDraft(payload.issueId)
+            }
+            case 'wechat/issue/publish': {
+                if (!isWechatPublishRequest(payload)) {
+                    throw new Error('wechat/issue/publish 参数非法：issueId 须为合法批次标识')
+                }
+                return this.publish.publish(payload.issueId)
+            }
+            case 'wechat/publishQuota': {
+                if (!isWechatPublishQuotaRequest(payload)) {
+                    throw new Error('wechat/publishQuota 参数非法：accountId 须为合法账号标识')
+                }
+                return this.publish.quota(payload.accountId)
             }
             case 'wechat/article/create': {
                 if (!isWechatArticleCreateRequest(payload)) {

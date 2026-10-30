@@ -145,6 +145,44 @@ export function updateWechatIssueDraft(db: Database.Database, patch: WechatIssue
     ).run(patch)
 }
 
+/** 群发结果回写：状态、publish_id、永久链接与失败原因一并落库 */
+export interface WechatIssuePublishPatch {
+    id: string
+    status: string
+    publishId: string | null
+    articleUrl: string | null
+    publishedAt: string | null
+    errorCode: number | null
+    errorHint: string | null
+    updatedAt: string
+}
+
+/** 回写群发结果 */
+export function updateWechatIssuePublish(db: Database.Database, patch: WechatIssuePublishPatch): void {
+    db.prepare(
+        `UPDATE wechat_issues
+            SET status = @status, publish_id = @publishId, article_url = @articleUrl,
+                published_at = @publishedAt, error_code = @errorCode, error_hint = @errorHint,
+                updated_at = @updatedAt
+          WHERE id = @id`,
+    ).run(patch)
+}
+
+/**
+ * 读取某账号已成功推送的时间列表：群发额度按自然日 / 自然月统计，
+ * 只统计 published 状态，失败与被删除的不占额度。
+ */
+export function listWechatPublishedTimes(db: Database.Database, accountId: string): string[] {
+    const rows = db
+        .prepare(
+            `SELECT published_at FROM wechat_issues
+              WHERE account_id = ? AND published_at IS NOT NULL AND status = 'published'
+              ORDER BY published_at DESC`,
+        )
+        .all(accountId) as { published_at: string }[]
+    return rows.map((row) => row.published_at)
+}
+
 /** 删除批次及其文章：同事务执行，避免留下无主正文 */
 export function deleteWechatIssue(db: Database.Database, id: string): void {
     db.transaction(() => {
