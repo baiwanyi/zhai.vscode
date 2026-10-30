@@ -118,7 +118,9 @@ export function diffLines(oldText: string, newText: string): DiffHunk[] {
  * 关键约束：accepted 越界索引一律忽略（不因单个脏值让整次写回失败）；行尾由调用方还原。
  */
 export function composeAcceptedText(oldText: string, hunks: readonly DiffHunk[], accepted: readonly number[]): string {
-    const acceptedSet = new Set(accepted.filter((index) => Number.isInteger(index) && index >= 0 && index < hunks.length))
+    const acceptedSet = new Set(
+        accepted.filter((index) => Number.isInteger(index) && index >= 0 && index < hunks.length),
+    )
     const oldLines = splitLines(oldText)
     const lines: string[] = []
     let cursor = 0

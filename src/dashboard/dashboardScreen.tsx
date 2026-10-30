@@ -7,7 +7,8 @@
  * 作品跟随：打开面板时按活动文档进入该作品详情，之后编辑区切换标签由 press 通道同步；
  * 只在「所属作品发生变化」时导航一次（ref 记录上次跟随值），用户点返回或切到非作品文档不会被弹回，
  * 已在同一作品详情时不重复导航，避免无谓重挂载；
- * 归属回落：当前文档不是作品文档（笔记、公众号，或未保存的 untitled 等索引外文档）时回到概览首页；
+ * 归属回落：当前文档不是作品文档（笔记、公众号，或未保存的 untitled 等索引外文档）时回到概览首页，
+ * 但停在公众号的列表页与账号页时不弹回——这两页与公众号文档属于同一模块，弹走等于打断当前操作；
  * 归属未变化、或焦点不在文本编辑器而没有可判定文档时保持当前页。
  * 全局提示：sonner 的 Toaster 只在本层挂载一次，页面内的操作结果统一用 toast 上报，页面不再自挂；
  * 宿主侧命令结果统一在 Workflow 面板呈现（见 AiChatViewProvider），本层不订阅 toast 广播，避免同一提示弹两次。
@@ -19,13 +20,22 @@ import { Toaster } from '@components/ui/sonner'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
 import { DashboardRouteProvider } from './core/DashboardRouteProvider'
 import { useDashboardRoute } from './core/routeContext'
-import { createHomeRoute, createPressProjectRoute, createPressRoute, readContentScope } from './core/routing'
+import {
+    createHomeRoute,
+    createPressProjectRoute,
+    createPressRoute,
+    createWechatAccountRoute,
+    createWechatRoute,
+    readContentScope,
+} from './core/routing'
 import { Dashboard } from './dashboard'
 import { ActiveNoteProvider } from './hooks/ActiveNoteProvider'
 import { useActiveNote } from './hooks/useActiveNote'
 import { useActivePressProject } from './hooks/useActivePressProject'
 import { DashboardPress } from './press/DashboardPress'
 import { DashboardPressProject } from './press/DashboardPressProject'
+import { DashboardWechat } from './wechat/DashboardWechat'
+import { DashboardWechatPost } from './wechat/DashboardWechatPost'
 import type { DashboardContentScope } from './core/routing'
 import type { JSX } from 'react'
 
@@ -62,6 +72,10 @@ function DashboardScreenContent(): JSX.Element {
         if (scope === undefined || scope === 'press' || scope === previous) {
             return
         }
+        // 公众号页与公众号文档同属一个模块：停在这两页时不回首页，否则点开账号就被弹走
+        if (route.name === 'wechat' || route.name === 'wechatAccount') {
+            return
+        }
         if (route.name !== 'home') {
             navigate(createHomeRoute())
         }
@@ -90,6 +104,17 @@ function DashboardScreenContent(): JSX.Element {
                 )
             case 'press':
                 return <DashboardPress onOpenProject={(dirPath) => navigate(createPressProjectRoute(dirPath))} />
+            case 'wechat':
+                return <DashboardWechat onOpenAccount={(accountId) => navigate(createWechatAccountRoute(accountId))} />
+            case 'wechatAccount':
+                // 账号切换即重挂载：批次列表按账号重新取数，不沿用上一个账号的快照
+                return (
+                    <DashboardWechatPost
+                        key={route.accountId}
+                        accountId={route.accountId}
+                        onRemoved={() => navigate(createWechatRoute())}
+                    />
+                )
             default:
                 return <Dashboard onNavigate={navigate} />
         }

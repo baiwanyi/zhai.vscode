@@ -4,8 +4,8 @@
  * 底栏上方的渐变遮罩由 AppFooter 统一提供，页面不再自行声明。
  * 数据与动作经 useDashboardStats / useNotesList / useDashboardActions 三层 hook 下发，页面只做组合；
  * 操作结果统一由 useDashboardActions 经 sonner 反馈，Toaster 由路由外壳 dashboardScreen 统一挂载。
- * 交互约束：写作管理入口为页内路由跳转（由路由外壳下发的 onNavigate 承担），公众号管理走工作流面板，
- * 待办事项以模块卡片嵌在概览区（不单独成页）；
+ * 交互约束：写作管理与公众号管理入口均为页内路由跳转（由路由外壳下发的 onNavigate 承担），
+ * 公众号的运营功能仍落在工作流面板的专属分区，待办事项以模块卡片嵌在概览区（不单独成页）；
  * 重建索引期间由统计 hook 轮询收敛按钮态；选中条目即按 path 打开笔记，
  * 当前选中项以宿主广播的活跃编辑器为准（点击时先本地回填，关闭笔记后随焦点回退自动切回上一篇），
  * 该选中态由 ActiveNoteProvider 统一持有，与路由外壳的归属判定共享同一份，页面不再自建副本；
@@ -13,7 +13,7 @@
  */
 import { useCallback } from 'react'
 import { AppContent, AppFooter, AppHeader, AppPage } from '@webview/components/AppPage'
-import { createPressRoute } from './core/routing'
+import { createPressRoute, createWechatRoute } from './core/routing'
 import { useActiveNote } from './hooks/useActiveNote'
 import { useDashboardActions } from './hooks/useDashboardActions'
 import { useDashboardStats } from './hooks/useDashboardStats'
@@ -44,17 +44,8 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
         toggleSelecting,
         toggleSelected,
     } = useNotesList(stats)
-    const {
-        pendingAction,
-        createNote,
-        openNote,
-        setPinned,
-        openWorkflow,
-        rebuild,
-        clearCache,
-        openSettings,
-        showNotePending,
-    } = useDashboardActions(reload)
+    const { pendingAction, createNote, openNote, setPinned, rebuild, clearCache, openSettings, showNotePending } =
+        useDashboardActions(reload)
     const { activeId, setActiveId } = useActiveNote()
 
     /** 打开笔记：先本地回填选中态避免打开瞬间高亮丢失，随后由宿主按索引路径打开并以活跃编辑器收敛 */
@@ -79,7 +70,7 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
             <AppHeader>
                 <DashboardEntries
                     onOpenWriting={() => onNavigate(createPressRoute())}
-                    onOpenPress={() => void openWorkflow('wechat')}
+                    onOpenPress={() => onNavigate(createWechatRoute())}
                 />
             </AppHeader>
 

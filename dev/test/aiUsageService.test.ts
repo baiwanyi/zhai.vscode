@@ -209,7 +209,10 @@ describe('aiUsageService', () => {
             path.join(projectDir, 's1.jsonl'),
             JSON.stringify({
                 type: 'function_call_result',
-                providerData: { conversationRequestId: 'req-credit-only', toolResult: { rawResponse: { credit: 0.4 } } },
+                providerData: {
+                    conversationRequestId: 'req-credit-only',
+                    toolResult: { rawResponse: { credit: 0.4 } },
+                },
             }),
             'utf8',
         )

@@ -61,6 +61,11 @@ import { TodoRepository } from './modules/todo/todoRepository'
 import { TodoRoutes } from './modules/todo/todoRoutes'
 import { TodoService } from './modules/todo/todoService'
 import { TodoWatcher } from './modules/todo/todoWatcher'
+import { WechatAccountService } from './modules/wechat/accountService'
+import { createWechatSecretStore } from './modules/wechat/credentials'
+import { openWechatDatabase } from './modules/wechat/db/connection'
+import { WechatTokenService } from './modules/wechat/tokenService'
+import { WechatRoutes } from './modules/wechat/wechatRoutes'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 
 /** 扩展对外导出：Markdown 预览扩展在激活后读取 extendMarkdownIt 挂载自定义插件 */
@@ -240,6 +245,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     context.subscriptions.push(todoService, new TodoWatcher(todoService, todoRepository))
     // 待办卡片落在仪表盘概览区，协议请求由仪表盘面板承接，故后置注入到仪表盘
     dashboardProvider.attachTodoRoutes(new TodoRoutes(todoService))
+
+    // 公众号：独立 wechat.db 承载账号与推送批次，AppSecret 按账号存 SecretStorage（不入库），
+    // Token 缓存与并发去重由 tokenService 承担；账号协议同样由仪表盘面板承接
+    const wechatDb = openWechatDatabase(cacheRoot)
+    context.subscriptions.push({ dispose: () => wechatDb.close() })
+    const wechatAccountService = new WechatAccountService({
+        db: wechatDb,
+        secrets: createWechatSecretStore(context.secrets),
+        tokens: new WechatTokenService(),
+        state: context.globalState,
+    })
+    dashboardProvider.attachWechatRoutes(new WechatRoutes(wechatAccountService))
 
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,

@@ -21,10 +21,26 @@ describe('parseRoute', () => {
         expect(parseRoute(hash)).toEqual({ name: 'pressProject', dirPath: 'press/剑来' })
     })
 
+    it('识别公众号列表页与账号页', () => {
+        expect(parseRoute('#/wechat')).toEqual({ name: 'wechat' })
+        expect(parseRoute('#/wechat/acc-1a2b3c4d5e')).toEqual({
+            name: 'wechatAccount',
+            accountId: 'acc-1a2b3c4d5e',
+        })
+    })
+
     it('未登记路径与多余层级回落首页', () => {
         expect(parseRoute('#/unknown')).toEqual({ name: 'home' })
         expect(parseRoute('#/press/a/b')).toEqual({ name: 'home' })
         expect(parseRoute('#/press/')).toEqual({ name: 'home' })
+        expect(parseRoute('#/wechat/')).toEqual({ name: 'home' })
+        expect(parseRoute('#/wechat/a/b')).toEqual({ name: 'home' })
+    })
+
+    it('公众号账号页的非法 id 回落首页', () => {
+        expect(parseRoute('#/wechat/..')).toEqual({ name: 'home' })
+        expect(parseRoute('#/wechat/ACC-1')).toEqual({ name: 'home' })
+        expect(parseRoute('#/wechat/%E4%B8')).toEqual({ name: 'home' })
     })
 
     it('非法编码与越界片段回落首页', () => {
@@ -43,6 +59,12 @@ describe('toHash', () => {
         expect(parseRoute(toHash({ name: 'pressProject', dirPath: 'press/剑来' }))).toEqual({
             name: 'pressProject',
             dirPath: 'press/剑来',
+        })
+        expect(toHash({ name: 'wechat' })).toBe('#/wechat')
+        expect(toHash({ name: 'wechatAccount', accountId: 'acc-1a2b3c4d5e' })).toBe('#/wechat/acc-1a2b3c4d5e')
+        expect(parseRoute(toHash({ name: 'wechatAccount', accountId: 'acc-1a2b3c4d5e' }))).toEqual({
+            name: 'wechatAccount',
+            accountId: 'acc-1a2b3c4d5e',
         })
     })
 })

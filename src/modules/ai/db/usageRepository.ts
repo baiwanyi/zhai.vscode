@@ -92,8 +92,7 @@ export function readCharsPerToken(db: Database.Database, model: string): number 
              )`,
         )
         .get({ model, limit: CALIBRATION_SAMPLE_LIMIT }) as
-        | { rows: number; chars: number | null; tokens: number | null }
-        | undefined
+        { rows: number; chars: number | null; tokens: number | null } | undefined
     if (row === undefined || row.rows < CALIBRATION_MIN_ROWS) {
         return DEFAULT_CHARS_PER_TOKEN
     }

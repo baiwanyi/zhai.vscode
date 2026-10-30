@@ -14,12 +14,7 @@
  * enhancedFrom 取发送前的闭包旧值，不受本次 setState 影响。
  */
 import { useEffect, useRef, useState } from 'react'
-import type {
-    ImageGenerateKind,
-    ImageGenerateResult,
-    ImageGenerateStage,
-    ImageRatio,
-} from '@shared/types/imagegen'
+import type { ImageGenerateKind, ImageGenerateResult, ImageGenerateStage, ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
 import { onState, request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'

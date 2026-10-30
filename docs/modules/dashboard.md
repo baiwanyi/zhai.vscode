@@ -447,10 +447,12 @@ StatCardRow / ActivityFeed 展示
 | `#/` | 概览首页（`Dashboard`） | 默认落点，未登记路径一律回落此处 |
 | `#/press` | 写作管理页（`DashboardPress`） | 作品列表 + 添加作品 |
 | `#/press/{作品名}` | 作品详情页（`DashboardPressProject`） | 作品元信息 + 添加章节 + 章节目录（分批渲染） |
+| `#/wechat` | 公众号列表页（`DashboardWechat`） | 账号列表 + 添加账号；规划中，未落地 |
+| `#/wechat/{accountId}` | 推送批次列表页（`DashboardWechatPost`） | 账号内的批次与文章，`accountId` 按白名单收窄；规划中，未落地 |
 
 - 路由规则集中在 `src/dashboard/core/routing.ts`（纯函数，可单测），状态由 `hooks/useDashboardRoute` 以 `hashchange` 收敛
 - `dashboardScreen.tsx` 是唯一的页面切换点，页面组件只接收导航回调，不自行改写 hash
-- 「写作管理」入口改为页内导航；「公众号管理」仍经 `workflow/open` 跳转工作流面板
+- 「写作管理」与「公众号管理」入口均为页内导航：公众号落 `#/wechat`，运营六项（菜单/素材/统计/留言/用户/推送）仍在工作流面板的 wechat 专属分区（见 `wechat.md` 第 10~13 节）
 - 切换页面时旧页面卸载，重新进入重新取数，避免跨页面共享过期快照；面板 Reload 后回到概览首页
 
 **协议扩展**（宿主 `DashboardViewProvider`）：
@@ -466,5 +468,6 @@ StatCardRow / ActivityFeed 展示
 | `press/deleteVolume` | 整卷移入回收站并清理该卷索引记录 |
 | `press/open` | 回查索引库后打开作品 README |
 | `press/openChapter` | 回查索引库后打开指定章节文档 |
+| `wechat/accounts`、`wechat/issues` 等 | 公众号账号与推送批次协议，清单见 `wechat.md` 10.4 |
 
 作品侧的实现与规则见 `press.md` 第 10 节；宿主只做入参收窄与转发，聚合与落盘逻辑收敛在 `src/modules/press`。

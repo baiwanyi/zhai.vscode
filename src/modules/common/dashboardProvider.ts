@@ -1,7 +1,7 @@
 /**
  * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置、
  * 工作流页跳转、待办清单读写、写作管理（作品列表、作品详情、新建作品与章节、卷的重命名与删除、
- * 章节的删除与跨卷移动、整部作品删除）聚合与创建，以及宿主命令。
+ * 章节的删除与跨卷移动、整部作品删除）聚合与创建、公众号账号的列表与增删改鉴权，以及宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传；
  * 另经 state 消息主动广播：note 通道给活跃笔记（列表回填选中态），index 通道给索引状态（列表随编辑收敛），
  * todo 通道给待办清单的外部改动（卡片收到即重读）；
@@ -42,6 +42,7 @@ import {
     renameVolume,
 } from '@modules/press/projectService'
 import type { TodoRoutes } from '@modules/todo/todoRoutes'
+import type { WechatRoutes } from '@modules/wechat/wechatRoutes'
 import type { DashboardStats } from '@shared/types/dashboard'
 import type { HostToWebviewMessage } from '@shared/types/messages'
 import { isRequestMessage } from '@shared/types/messages'
@@ -109,6 +110,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private coverStore: PressCoverStore | null = null
     /** 待办路由：后置注入，未注入时 todo/* 请求直接报未就绪，不静默返回空结果 */
     private todoRoutes: TodoRoutes | null = null
+    /** 公众号路由：后置注入，未注入时 wechat/* 请求直接报未就绪，不静默返回空列表 */
+    private wechatRoutes: WechatRoutes | null = null
     /** 待办目录变更监听：面板存活期间把外部改动转给 Webview，销毁时释放 */
     private todoListener: vscode.Disposable | null = null
 
@@ -131,6 +134,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     /** 注入待办路由：由扩展入口在待办服务装配后调用，待办卡片据此读写 todo/ 下的清单 */
     public attachTodoRoutes(routes: TodoRoutes): void {
         this.todoRoutes = routes
+    }
+
+    /** 注入公众号路由：由扩展入口在 wechat.db 打开后调用，公众号列表页据此读写账号 */
+    public attachWechatRoutes(routes: WechatRoutes): void {
+        this.wechatRoutes = routes
     }
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -284,6 +292,13 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                     const routes = this.todoRoutes
                     if (routes === null) {
                         throw new Error('待办服务尚未就绪')
+                    }
+                    return routes.handle(method, payload)
+                }
+                if (method.startsWith('wechat/')) {
+                    const routes = this.wechatRoutes
+                    if (routes === null) {
+                        throw new Error('公众号服务尚未就绪')
                     }
                     return routes.handle(method, payload)
                 }
