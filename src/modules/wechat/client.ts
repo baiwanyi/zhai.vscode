@@ -326,9 +326,12 @@ const FREEPUBLISH_GET_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/freepublish/
 /** 发布相关超时：提交是异步任务，接口本身很快；查询同样轻量 */
 const PUBLISH_TIMEOUT_MS = 20_000
 
-/** 提交发布的结果 */
+/**
+ * 提交发布的结果：msgDataId 是留言接口的定位标识，平台可能不返回（部分主体或旧接口），
+ * 因此保留为可选，缺失时留言分区据此给出明确提示而不是空列表。
+ */
 export type WechatFreepublishOutcome =
-    { ok: true; publishId: string } | { ok: false; errorCode: number; message: string }
+    { ok: true; publishId: string; msgDataId?: string } | { ok: false; errorCode: number; message: string }
 
 /** 发布状态：pending 表示平台仍在处理，调用方据此决定是否继续轮询 */
 export type WechatPublishState =
@@ -405,9 +408,20 @@ export async function submitWechatFreepublish(token: string, mediaId: string): P
     if (typeof raw !== 'object' || raw === null) {
         return { ok: false, errorCode: -1, message: describePublishError(-1) }
     }
-    const candidate = raw as { publish_id?: unknown; errcode?: unknown }
+    const candidate = raw as { publish_id?: unknown; msg_data_id?: unknown; errcode?: unknown }
     if (typeof candidate.publish_id === 'string' && candidate.publish_id.length > 0) {
-        return { ok: true, publishId: candidate.publish_id }
+        // msg_data_id 在部分接口里是数字，统一转成字符串存储
+        const msgDataId =
+            typeof candidate.msg_data_id === 'string'
+                ? candidate.msg_data_id
+                : typeof candidate.msg_data_id === 'number'
+                  ? String(candidate.msg_data_id)
+                  : undefined
+        return {
+            ok: true,
+            publishId: candidate.publish_id,
+            ...(msgDataId === undefined ? {} : { msgDataId }),
+        }
     }
     const errorCode = typeof candidate.errcode === 'number' ? candidate.errcode : -1
     return { ok: false, errorCode, message: describePublishError(errorCode) }

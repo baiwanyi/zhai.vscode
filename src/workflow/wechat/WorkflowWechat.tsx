@@ -11,6 +11,7 @@ import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTi
 import { Skeleton } from '@components/ui/skeleton'
 import { AppContent, AppHeader, AppPage } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
+import { WechatCommentPage } from './comment/WechatCommentPage'
 import { WechatFansPage } from './fans/WechatFansPage'
 import { useWechatAccountScope } from './hooks/useWechatAccountScope'
 import { WechatMaterialPage } from './material/WechatMaterialPage'
@@ -85,6 +86,8 @@ export function WorkflowWechat({ section }: WorkflowWechatProps): JSX.Element {
             return <WechatFansPage key={account.id} account={account} />
         case 'stats':
             return <WechatStatsPage key={account.id} account={account} />
+        case 'comment':
+            return <WechatCommentPage key={account.id} account={account} />
         default:
             return <WechatPendingSection section={section} accountName={account.name} />
     }

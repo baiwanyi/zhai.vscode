@@ -247,6 +247,7 @@ CREATE TABLE IF NOT EXISTS wechat_issues (
     status         TEXT NOT NULL,            -- draft|ready|scheduled|pushing|published|failed
     media_id       TEXT,                     -- draft 返回，draft/update 复用
     publish_id     TEXT,                     -- freepublish 返回
+    msg_data_id    TEXT,                     -- 群发消息标识：留言接口按它 + 文章序号定位
     article_url    TEXT,
     error_code     INTEGER,
     error_hint     TEXT,
@@ -468,7 +469,7 @@ interface WechatPublishResult {
 > M4 基础改造已落地——`src/modules/wechat`（库与仓储、凭证、Token 并发管理、账号服务、批次服务、
 > 素材服务、草稿与群发服务、协议路由、`render.ts` 渲染管线与 `theme.ts` 默认主题）、
 > `src/dashboard/wechat`（账号列表页、批次列表页、账号与批次弹窗、文章编辑弹窗、导入与删除确认、群发二次确认）、
-> `src/workflow/wechat`（公众号工作流页与 push / material / menu / fans / stats 五个分区，comment 待补齐 msg_data_id）。
+> `src/workflow/wechat`（公众号工作流页与 push / material / menu / fans / stats / comment 六个分区）。
 > 定时群发按产品决定不做。
 
 ### 10.1 三个关键决策
@@ -520,7 +521,7 @@ interface WechatPublishResult {
 | 侧 | 方法 |
 |----|------|
 | 仪表盘 | `wechat/accounts`、`wechat/account/{create,update,remove,test,select}`、`wechat/issues`、`wechat/issue/{create,detail,remove,publishDraft,publish}`、`wechat/publishQuota`、`wechat/article/{create,update,remove,import}`、`wechat/cover/pick`；另复用 `host/openExternal`（标识 `wechatMp`，地址由宿主固定）（均已落地） |
-| 工作流 | `wechat/menu/{get,save}`、`wechat/material/{list,import}`、`wechat/fans/{list,tags}`、`wechat/stats/overview`，运营页复用仪表盘的 `wechat/issues` 与 `wechat/publishQuota`（两个面板共用同一份路由实例）；留言相关协议待补齐 `msg_data_id` 后接入 |
+| 工作流 | `wechat/menu/{get,save}`、`wechat/material/{list,import}`、`wechat/fans/{list,tags}`、`wechat/stats/overview`、`wechat/comment/{list,reply,mark,remove}`，运营页复用仪表盘的 `wechat/issues` 与 `wechat/publishQuota`（两个面板共用同一份路由实例） |
 | 广播（state 通道） | `wechat/push-progress`（阶段 + 进度 + 终态）、`wechat/account-status`（Token 失效即时提示） |
 
 代码落点：类型 `src/shared/types/wechat.ts`（含 `is*Request` 收窄，对齐 `press.ts`）；宿主服务 `src/modules/wechat/`（`accountService`、`tokenService`、`client`、`issueService`、`materialService`、`menuService`、`statsService`、`commentService`、`fanService`、`pushService`、`repository`）；前端 `src/dashboard/wechat/`、`src/workflow/wechat/`。
@@ -705,10 +706,10 @@ ready ──设置时间──> scheduled ──到点──> pushing
 
 ### 13.2 六分区职责与页面结构
 
-> **实现状态**：`push`、`material`、`menu`、`fans`、`stats` 五个分区已落地，见 `src/workflow/wechat/` 下同名目录；
-> `comment`（留言管理）仍为占位页，原因是查询留言需要群发返回的 `msg_data_id`，当前链路只保存了 `publish_id`
-> 与 `article_url`，缺少定位留言所需的「群发消息 + 文章序号」，后续需在群发回执中补存该标识。
-> `stats` 依赖认证主体：未认证账号会在该分区看到平台返回的权限提示，而不是空图表。
+> **实现状态**：六个分区均已落地，见 `src/workflow/wechat/` 下同名目录。
+> `comment` 依赖群发回执里的 `msg_data_id`（已随群发一起落库），旧批次没有该标识时会提示「请用当前版本重新群发一次」；
+> 定位口径是「群发消息 + 文章序号」，界面用 1 基序号、宿主转成平台的 0 基 index。
+> `stats` 与 `comment` 都依赖认证主体与平台开关：未认证或未开通留言时，分区展示平台返回的权限提示而不是空数据。
 
 统一骨架：`AppPage` + `AppHeader`（标题 + 分区内主操作）+ `AppMenu`（分段栏或筛选）+ `AppContent isScrollable` + `AppFooter`（写操作）。
 

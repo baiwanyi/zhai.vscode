@@ -17,6 +17,10 @@ import {
     isWechatArticleUpdateRequest,
     isWechatIssueCreateRequest,
     isWechatIssueDetailRequest,
+    isWechatCommentListRequest,
+    isWechatCommentMarkRequest,
+    isWechatCommentRemoveRequest,
+    isWechatCommentReplyRequest,
     isWechatFanListRequest,
     isWechatFanTagsRequest,
     isWechatIssueRemoveRequest,
@@ -31,6 +35,7 @@ import {
     isWechatStatsRequest,
 } from '@shared/types/wechat'
 import type { WechatAccountService } from './accountService'
+import type { WechatCommentService } from './commentService'
 import type { WechatFanService } from './fanService'
 import type { WechatIssueService } from './issueService'
 import type { WechatMaterialService } from './materialService'
@@ -47,6 +52,7 @@ export interface WechatRouteDeps {
     menu: WechatMenuService
     fans: WechatFanService
     stats: WechatStatsService
+    comments: WechatCommentService
 }
 
 export class WechatRoutes {
@@ -196,6 +202,30 @@ export class WechatRoutes {
                     throw new Error('wechat/stats/overview 参数非法：accountId 须合法，days 只接受 7 / 15 / 30')
                 }
                 return this.deps.stats.overview(payload)
+            }
+            case 'wechat/comment/list': {
+                if (!isWechatCommentListRequest(payload)) {
+                    throw new Error('wechat/comment/list 参数非法：accountId、issueId、sortIndex 均须合法')
+                }
+                return this.deps.comments.list(payload)
+            }
+            case 'wechat/comment/reply': {
+                if (!isWechatCommentReplyRequest(payload)) {
+                    throw new Error('wechat/comment/reply 参数非法：留言 id 须合法，内容不能为空且不超过 300 字')
+                }
+                return this.deps.comments.reply(payload)
+            }
+            case 'wechat/comment/mark': {
+                if (!isWechatCommentMarkRequest(payload)) {
+                    throw new Error('wechat/comment/mark 参数非法：留言 id 须合法，elected 须为布尔值')
+                }
+                return this.deps.comments.mark(payload)
+            }
+            case 'wechat/comment/remove': {
+                if (!isWechatCommentRemoveRequest(payload)) {
+                    throw new Error('wechat/comment/remove 参数非法：留言 id 须合法')
+                }
+                return this.deps.comments.remove(payload)
             }
             default:
                 throw new Error(`未知的公众号协议方法：${method}`)

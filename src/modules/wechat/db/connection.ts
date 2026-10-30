@@ -38,6 +38,7 @@ const SCHEMA_STATEMENTS = [
         status         TEXT NOT NULL,
         media_id       TEXT,
         publish_id     TEXT,
+        msg_data_id    TEXT,                     -- 群发消息标识：留言接口按它 + 文章序号定位
         article_url    TEXT,
         error_code     INTEGER,
         error_hint     TEXT,
@@ -94,15 +95,17 @@ function dropLegacyArticleTable(db: Database.Database): void {
 }
 
 /**
- * 补齐文章表的增量列：CREATE TABLE IF NOT EXISTS 不会改动已存在的表，
+ * 补齐增量列：CREATE TABLE IF NOT EXISTS 不会改动已存在的表，
  * 旧库升级时用 ALTER TABLE 加列（SQLite 对 ADD COLUMN 的限制最小，不需要重建表）。
+ * 关键约束：逐列探测，已有该列直接跳过；空表（列数为 0）说明 DDL 刚建好，无需补列。
  */
-function ensureArticleCoverColumn(db: Database.Database): void {
-    const columns = db.prepare('PRAGMA table_info(wechat_articles)').all() as { name: string }[]
-    if (columns.length === 0 || columns.some((column) => column.name === 'cover_path')) {
+function ensureColumn(db: Database.Database, table: string, column: string, definition: string): void {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+    if (columns.length === 0 || columns.some((item) => item.name === column)) {
         return
     }
-    db.exec('ALTER TABLE wechat_articles ADD COLUMN cover_path TEXT')
+    // 表名与列名来自本文件的常量，不含外部输入，拼接是安全的
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
 }
 
 /** 打开（或创建）公众号库，并确保表结构存在 */
@@ -112,6 +115,7 @@ export function openWechatDatabase(cacheDirUri: vscode.Uri): Database.Database {
     for (const ddl of SCHEMA_STATEMENTS) {
         db.exec(ddl)
     }
-    ensureArticleCoverColumn(db)
+    ensureColumn(db, 'wechat_articles', 'cover_path', 'TEXT')
+    ensureColumn(db, 'wechat_issues', 'msg_data_id', 'TEXT')
     return db
 }

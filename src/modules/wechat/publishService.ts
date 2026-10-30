@@ -259,6 +259,7 @@ export class WechatPublishService {
             id: issue.id,
             status: 'pushing',
             publishId: issue.publish_id,
+            msgDataId: issue.msg_data_id,
             articleUrl: null,
             publishedAt: null,
             errorCode: null,
@@ -272,14 +273,20 @@ export class WechatPublishService {
             appSecret,
         })
         if (!tokenOutcome.ok) {
-            this.markPublishFailed(issue.id, issue.publish_id, tokenOutcome.errorCode, tokenOutcome.message)
+            this.markPublishFailed(
+                issue.id,
+                issue.publish_id,
+                issue.msg_data_id,
+                tokenOutcome.errorCode,
+                tokenOutcome.message,
+            )
             throw new Error(tokenOutcome.message)
         }
         const token = tokenOutcome.token.accessToken
 
         const submit = await submitWechatFreepublish(token, issue.media_id)
         if (!submit.ok) {
-            this.markPublishFailed(issue.id, issue.publish_id, submit.errorCode, submit.message)
+            this.markPublishFailed(issue.id, issue.publish_id, issue.msg_data_id, submit.errorCode, submit.message)
             throw new Error(submit.message)
         }
 
@@ -290,6 +297,8 @@ export class WechatPublishService {
                     id: issue.id,
                     status: 'published',
                     publishId: submit.publishId,
+                    // 群发消息标识缺失时保留原值：重复发布不该把已有标识清掉
+                    msgDataId: submit.msgDataId ?? issue.msg_data_id,
                     articleUrl: state.articleUrl ?? null,
                     publishedAt: new Date().toISOString(),
                     errorCode: null,
@@ -303,7 +312,14 @@ export class WechatPublishService {
                 }
             }
             if (state.ok && state.state === 'failed') {
-                this.markPublishFailed(issue.id, submit.publishId, 0, state.message)
+                // 轮询判定失败：任务已受理，msg_data_id 以本次提交为准
+                this.markPublishFailed(
+                    issue.id,
+                    submit.publishId,
+                    submit.msgDataId ?? issue.msg_data_id,
+                    0,
+                    state.message,
+                )
                 throw new Error(state.message)
             }
             if (!state.ok) {
@@ -319,12 +335,22 @@ export class WechatPublishService {
         return { issue: detail.issue }
     }
 
-    /** 回写群发失败：保留 publishId 便于到后台核对，errorCode 为 0 表示没有平台错误码 */
-    private markPublishFailed(id: string, publishId: string | null, errorCode: number, hint: string): void {
+    /**
+     * 回写群发失败：保留 publishId 与 msgDataId 便于到后台核对，
+     * errorCode 为 0 表示没有平台错误码（如轮询判定失败但接口本身成功）。
+     */
+    private markPublishFailed(
+        id: string,
+        publishId: string | null,
+        msgDataId: string | null,
+        errorCode: number,
+        hint: string,
+    ): void {
         updateWechatIssuePublish(this.deps.db, {
             id,
             status: 'failed',
             publishId,
+            msgDataId,
             articleUrl: null,
             publishedAt: null,
             errorCode: errorCode === 0 ? null : errorCode,

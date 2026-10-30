@@ -62,6 +62,7 @@ import { TodoRoutes } from './modules/todo/todoRoutes'
 import { TodoService } from './modules/todo/todoService'
 import { TodoWatcher } from './modules/todo/todoWatcher'
 import { WechatAccountService } from './modules/wechat/accountService'
+import { WechatCommentService } from './modules/wechat/commentService'
 import { createWechatSecretStore } from './modules/wechat/credentials'
 import { openWechatDatabase } from './modules/wechat/db/connection'
 import { WechatFanService } from './modules/wechat/fanService'
@@ -292,6 +293,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         menu: new WechatMenuService(wechatTokenDeps),
         fans: new WechatFanService(wechatTokenDeps),
         stats: new WechatStatsService(wechatTokenDeps),
+        comments: new WechatCommentService(wechatTokenDeps),
     })
     dashboardProvider.attachWechatRoutes(wechatRoutes)
 

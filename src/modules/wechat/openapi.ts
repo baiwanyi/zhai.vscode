@@ -334,3 +334,121 @@ export async function fetchWechatUserCumulate(
     })
     return { ok: true, data: rows.filter((row) => row.date.length > 0) }
 }
+
+/** 留言接口：全部按「群发消息 msg_data_id + 文章序号 index」定位 */
+const COMMENT_LIST_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/comment/list'
+const COMMENT_REPLY_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/comment/reply'
+const COMMENT_MARK_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/comment/markelect'
+const COMMENT_UNMARK_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/comment/unmarkelect'
+const COMMENT_DELETE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/comment/delete'
+
+/** 平台留言行：reply 可能是对象或数组，收窄后在服务层统一 */
+export interface WechatCommentRow {
+    commentId: number
+    openid: string
+    /** 平台返回的秒级时间戳 */
+    createTime: number
+    content: string
+    isElected: boolean
+    replyContent?: string
+}
+
+/** 留言定位参数：index 为文章在本次群发中的序号（0 基） */
+export interface WechatCommentTarget {
+    msgDataId: string
+    index: number
+}
+
+/** 读取一页留言：begin 为偏移量，count 为条数 */
+export async function fetchWechatComments(
+    token: string,
+    target: WechatCommentTarget,
+    begin: number,
+    count: number,
+): Promise<WechatApiResult<{ total: number; comments: WechatCommentRow[] }>> {
+    const body = {
+        msg_data_id: target.msgDataId,
+        index: target.index,
+        begin,
+        count,
+        // 0 表示全部留言，避免只看到「精选」而误以为读者没说话
+        type: 0,
+    }
+    const outcome = await postWechatJson(token, COMMENT_LIST_ENDPOINT, body)
+    if (!outcome.ok) {
+        return outcome
+    }
+    const list = outcome.payload.comment
+    const total = typeof outcome.payload.total === 'number' ? outcome.payload.total : 0
+    if (!Array.isArray(list)) {
+        return { ok: true, data: { total, comments: [] } }
+    }
+    const comments = list.map((item): WechatCommentRow => {
+        const candidate = (typeof item === 'object' && item !== null ? item : {}) as Record<string, unknown>
+        return {
+            commentId: typeof candidate.user_comment_id === 'number' ? candidate.user_comment_id : 0,
+            openid: typeof candidate.openid === 'string' ? candidate.openid : '',
+            createTime: typeof candidate.create_time === 'number' ? candidate.create_time : 0,
+            content: typeof candidate.content === 'string' ? candidate.content : '',
+            isElected: candidate.comment_type === 1,
+            ...readReplyContent(candidate.reply),
+        }
+    })
+    return { ok: true, data: { total, comments: comments.filter((row) => row.commentId > 0) } }
+}
+
+/** 收窄回复字段：平台可能给对象（单条）或数组（多条），取最后一条作为展示内容 */
+function readReplyContent(reply: unknown): { replyContent?: string } {
+    if (Array.isArray(reply)) {
+        // 先断言成 unknown[]：Array.isArray 收窄出的是 any[]，直接取元素会把 any 带进后续判断
+        const items = reply as unknown[]
+        const last: unknown = items[items.length - 1]
+        const content = typeof last === 'object' && last !== null ? (last as { content?: unknown }).content : undefined
+        return typeof content === 'string' && content.length > 0 ? { replyContent: content } : {}
+    }
+    if (typeof reply === 'object' && reply !== null) {
+        const content = (reply as { content?: unknown }).content
+        return typeof content === 'string' && content.length > 0 ? { replyContent: content } : {}
+    }
+    return {}
+}
+
+/** 回复留言 */
+export async function replyWechatComment(
+    token: string,
+    target: WechatCommentTarget,
+    commentId: number,
+    content: string,
+): Promise<WechatApiResult<null>> {
+    const body = {
+        msg_data_id: target.msgDataId,
+        index: target.index,
+        user_comment_id: commentId,
+        content,
+    }
+    const outcome = await postWechatJson(token, COMMENT_REPLY_ENDPOINT, body)
+    return outcome.ok ? { ok: true, data: null } : outcome
+}
+
+/** 设为 / 取消精选：两个接口只差地址 */
+export async function markWechatComment(
+    token: string,
+    target: WechatCommentTarget,
+    commentId: number,
+    elected: boolean,
+): Promise<WechatApiResult<null>> {
+    const body = { msg_data_id: target.msgDataId, index: target.index, user_comment_id: commentId }
+    const outcome = await postWechatJson(token, elected ? COMMENT_MARK_ENDPOINT : COMMENT_UNMARK_ENDPOINT, body)
+    return outcome.ok ? { ok: true, data: null } : outcome
+}
+
+/** 删除留言：不可撤销，界面须二次确认 */
+export async function deleteWechatComment(
+    token: string,
+    target: WechatCommentTarget,
+    commentId: number,
+): Promise<WechatApiResult<null>> {
+    const body = { msg_data_id: target.msgDataId, index: target.index, user_comment_id: commentId }
+    const outcome = await postWechatJson(token, COMMENT_DELETE_ENDPOINT, body)
+    return outcome.ok ? { ok: true, data: null } : outcome
+}

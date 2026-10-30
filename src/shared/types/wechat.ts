@@ -648,6 +648,135 @@ export function isWechatMaterialImportRequest(payload: unknown): payload is Wech
 }
 
 /**
+ * 留言：平台按「群发消息 msg_data_id + 文章序号 index」定位，两者缺一不可。
+ * 关键约束：elected 表示作者设为精选；replyContent 为作者回复，未回复时缺省而不是空串。
+ */
+export interface WechatCommentSummary {
+    /** 平台侧的留言 id（user_comment_id），回复、加精、删除都用它 */
+    id: number
+    openid: string
+    /** 留言时间：ISO 8601 */
+    createdAt: string
+    content: string
+    isElected: boolean
+    replyContent?: string
+}
+
+/** wechat/comment/list 请求：sortIndex 从 1 开始，宿主转成平台的 0 基 index */
+export interface WechatCommentListRequest {
+    accountId: string
+    issueId: string
+    sortIndex: number
+    /** 已加载条数：翻页时作为 begin 传入，首次传 0 或缺省 */
+    offset?: number
+}
+
+/** wechat/comment/list 响应 */
+export interface WechatCommentListResult {
+    comments: WechatCommentSummary[]
+    total: number
+}
+
+/** wechat/comment/reply 请求 */
+export interface WechatCommentReplyRequest {
+    accountId: string
+    issueId: string
+    sortIndex: number
+    commentId: number
+    content: string
+}
+
+/** wechat/comment/mark 请求：elected 为 true 设为精选，false 取消精选 */
+export interface WechatCommentMarkRequest {
+    accountId: string
+    issueId: string
+    sortIndex: number
+    commentId: number
+    elected: boolean
+}
+
+/** wechat/comment/remove 请求 */
+export interface WechatCommentRemoveRequest {
+    accountId: string
+    issueId: string
+    sortIndex: number
+    commentId: number
+}
+
+/** 每页留言条数：平台允许更大，但侧栏一屏放不下更多 */
+export const WECHAT_COMMENT_PAGE_SIZE = 20
+
+/** 单条留言的最大长度：回复内容与留言本体同一上限 */
+export const WECHAT_COMMENT_CONTENT_MAX = 300
+
+/** 收窄 sortIndex：批次内文章序号从 1 开始，上限按批次容量 */
+function isWechatCommentSortIndex(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= WECHAT_ISSUE_ARTICLE_LIMIT
+}
+
+/** 收窄留言 id：平台为自增正整数 */
+function isWechatCommentId(value: unknown): value is number {
+    return typeof value === 'number' && Number.isInteger(value) && value > 0
+}
+
+/**
+ * 公共校验：四个留言动作都要求「账号 + 批次 + 文章序号」齐全。
+ * 关键约束：返回收窄后的三元组而不是布尔值，避免各处再写一次断言；非对象直接判 null。
+ */
+function readCommentTarget(payload: unknown): { accountId: string; issueId: string; sortIndex: number } | null {
+    if (typeof payload !== 'object' || payload === null) {
+        return null
+    }
+    const candidate = payload as { accountId?: unknown; issueId?: unknown; sortIndex?: unknown }
+    if (!isWechatAccountId(candidate.accountId) || !isWechatIssueId(candidate.issueId)) {
+        return null
+    }
+    if (!isWechatCommentSortIndex(candidate.sortIndex)) {
+        return null
+    }
+    return { accountId: candidate.accountId, issueId: candidate.issueId, sortIndex: candidate.sortIndex }
+}
+
+/** 判断是否为留言列表请求 */
+export function isWechatCommentListRequest(payload: unknown): payload is WechatCommentListRequest {
+    if (readCommentTarget(payload) === null) {
+        return false
+    }
+    const offset = (payload as { offset?: unknown }).offset
+    return offset === undefined || (typeof offset === 'number' && offset >= 0)
+}
+
+/** 判断是否为留言回复请求 */
+export function isWechatCommentReplyRequest(payload: unknown): payload is WechatCommentReplyRequest {
+    if (readCommentTarget(payload) === null) {
+        return false
+    }
+    const candidate = payload as { commentId?: unknown; content?: unknown }
+    if (!isWechatCommentId(candidate.commentId) || typeof candidate.content !== 'string') {
+        return false
+    }
+    const content = candidate.content.trim()
+    return content.length > 0 && content.length <= WECHAT_COMMENT_CONTENT_MAX
+}
+
+/** 判断是否为留言加精请求 */
+export function isWechatCommentMarkRequest(payload: unknown): payload is WechatCommentMarkRequest {
+    if (readCommentTarget(payload) === null) {
+        return false
+    }
+    const candidate = payload as { commentId?: unknown; elected?: unknown }
+    return isWechatCommentId(candidate.commentId) && typeof candidate.elected === 'boolean'
+}
+
+/** 判断是否为留言删除请求 */
+export function isWechatCommentRemoveRequest(payload: unknown): payload is WechatCommentRemoveRequest {
+    if (readCommentTarget(payload) === null) {
+        return false
+    }
+    return isWechatCommentId((payload as { commentId?: unknown }).commentId)
+}
+
+/**
  * 菜单按钮的三种动作：发送消息、跳转网页、跳转小程序。
  * 关键约束：其它平台动作（扫码、拍照、地理位置等）依赖特定权限与客户端版本，本期不开放，
  * 保存时统一按这三种校验，避免用户配出一个保存成功但点不动的菜单。
