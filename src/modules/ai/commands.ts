@@ -44,6 +44,16 @@ export function registerAiCommands(
         void vscode.commands.executeCommand('zhai.workflow.focus')
     })
 
+    /**
+     * 只选定模块、不聚焦面板：仪表盘进入公众号页时调用，让工作流侧栏出现公众号六分区。
+     * 关键约束：不能复用 zhai.openAiChat——那条命令会 focus 面板，导致用户点开公众号页时被抢走焦点。
+     */
+    register('zhai.workflow.selectModule', (module?: unknown) => {
+        if (typeof module === 'string' && module.length > 0) {
+            router.selectModule(module)
+        }
+    })
+
     register('zhai.ai.addToChat', () => addEditorContextToChat(service, toast, router))
 
     // CodeBuddy 通道：SDK 自带 CLI，用户只需完成一次浏览器登录，凭证由 CLI 按站点分别缓存。

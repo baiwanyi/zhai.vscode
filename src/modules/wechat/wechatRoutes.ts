@@ -24,6 +24,8 @@ import {
     isWechatFanListRequest,
     isWechatFanTagsRequest,
     isWechatIssueRemoveRequest,
+    isWechatIssuesMergeRequest,
+    isWechatIssuesRemoveBatchRequest,
     isWechatIssuesRequest,
     isWechatMaterialImportRequest,
     isWechatMaterialListRequest,
@@ -34,6 +36,7 @@ import {
     isWechatPublishRequest,
     isWechatStatsRequest,
 } from '@shared/types/wechat'
+import type { WechatPublishProgress } from '@shared/types/wechat'
 import type { WechatAccountService } from './accountService'
 import type { WechatCommentService } from './commentService'
 import type { WechatFanService } from './fanService'
@@ -58,8 +61,15 @@ export interface WechatRouteDeps {
 export class WechatRoutes {
     public constructor(private readonly deps: WechatRouteDeps) {}
 
-    /** 处理公众号协议方法 */
-    public async handle(method: string, payload: unknown): Promise<unknown> {
+    /**
+     * 处理公众号协议方法。
+     * onProgress 由发起请求的面板提供：草稿与群发会分阶段播报，经该回调投递给自己的 Webview。
+     */
+    public async handle(
+        method: string,
+        payload: unknown,
+        onProgress?: (progress: WechatPublishProgress) => void,
+    ): Promise<unknown> {
         switch (method) {
             case 'wechat/accounts':
                 return this.deps.accounts.list()
@@ -99,6 +109,20 @@ export class WechatRoutes {
                 }
                 return this.deps.issues.list(payload.accountId)
             }
+            case 'wechat/issues/merge': {
+                if (!isWechatIssuesMergeRequest(payload)) {
+                    throw new Error(
+                        'wechat/issues/merge 参数非法：ids 须为 1~20 个合法批次标识，targetId 须合法且不在 ids 内',
+                    )
+                }
+                return this.deps.issues.merge(payload)
+            }
+            case 'wechat/issues/removeBatch': {
+                if (!isWechatIssuesRemoveBatchRequest(payload)) {
+                    throw new Error('wechat/issues/removeBatch 参数非法：ids 须为 1~50 个合法批次标识')
+                }
+                return this.deps.issues.removeMany(payload.ids)
+            }
             case 'wechat/issue/create': {
                 if (!isWechatIssueCreateRequest(payload)) {
                     throw new Error('wechat/issue/create 参数非法：accountId 须合法，title 为可选字符串')
@@ -121,14 +145,17 @@ export class WechatRoutes {
                 if (!isWechatPublishDraftRequest(payload)) {
                     throw new Error('wechat/issue/publishDraft 参数非法：issueId 须为合法批次标识')
                 }
-                return this.deps.publish.publishDraft(payload.issueId)
+                return this.deps.publish.publishDraft(payload.issueId, onProgress)
             }
             case 'wechat/issue/publish': {
                 if (!isWechatPublishRequest(payload)) {
                     throw new Error('wechat/issue/publish 参数非法：issueId 须为合法批次标识')
                 }
-                return this.deps.publish.publish(payload.issueId)
+                return this.deps.publish.publish(payload.issueId, onProgress)
             }
+            case 'wechat/tasks':
+                // 进行中任务只读且无参数：任意页面进入时查询一次，用于展示「现在在跑什么」
+                return this.deps.publish.listTasks()
             case 'wechat/publishQuota': {
                 if (!isWechatPublishQuotaRequest(payload)) {
                     throw new Error('wechat/publishQuota 参数非法：accountId 须为合法账号标识')

@@ -323,6 +323,75 @@ export interface WechatIssuesRequest {
     accountId: string
 }
 
+/**
+ * wechat/issues/removeBatch 请求：批量删除批次。
+ * 关键约束：只允许草稿与推送失败的批次——已推送的必须去平台后台删除，
+ * 推送中的也可能已在平台侧生成内容，若前端绕过勾选限制，宿主会整体拒绝并说明原因。
+ */
+export interface WechatIssuesRemoveBatchRequest {
+    ids: string[]
+}
+
+/** wechat/issues/removeBatch 响应 */
+export interface WechatIssuesRemoveBatchResult {
+    removed: number
+}
+
+/** 单次批量删除的条数上限：一次勾选不可能超过列表可见范围 */
+export const WECHAT_ISSUE_REMOVE_BATCH_LIMIT = 50
+
+/**
+ * wechat/issues/merge 请求：把多个草稿批次的文章并入目标批次，源批次随后被删除。
+ * 关键约束：目标批次必须在 ids 之外且同为草稿——已生成草稿的批次内容已进平台草稿箱，
+ * 再往里加文章会让本地与平台不一致；合计篇数受一次群发的 8 篇上限约束。
+ */
+export interface WechatIssuesMergeRequest {
+    /** 源批次 id：合并后这些批次会被删除 */
+    ids: string[]
+    /** 目标批次 id：文章追加到它末尾 */
+    targetId: string
+}
+
+/** wechat/issues/merge 响应：返回合并后的目标批次与迁移的文章数 */
+export interface WechatIssuesMergeResult {
+    issue: WechatIssueSummary
+    movedCount: number
+}
+
+/** 单次合并的源批次上限：与批量删除同口径 */
+export const WECHAT_ISSUE_MERGE_LIMIT = 20
+
+/** 判断是否为批次合并请求 */
+export function isWechatIssuesMergeRequest(payload: unknown): payload is WechatIssuesMergeRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { ids?: unknown; targetId?: unknown }
+    if (!isWechatIssueId(candidate.targetId) || !Array.isArray(candidate.ids)) {
+        return false
+    }
+    if (candidate.ids.length === 0 || candidate.ids.length > WECHAT_ISSUE_MERGE_LIMIT) {
+        return false
+    }
+    if (!candidate.ids.every((item) => isWechatIssueId(item))) {
+        return false
+    }
+    // 目标批次同时出现在源列表里没有意义，直接在契约层拒绝
+    return !candidate.ids.includes(candidate.targetId)
+}
+
+/** 判断是否为批量删除请求 */
+export function isWechatIssuesRemoveBatchRequest(payload: unknown): payload is WechatIssuesRemoveBatchRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const ids = (payload as { ids?: unknown }).ids
+    if (!Array.isArray(ids) || ids.length === 0 || ids.length > WECHAT_ISSUE_REMOVE_BATCH_LIMIT) {
+        return false
+    }
+    return ids.every((item) => isWechatIssueId(item))
+}
+
 /** wechat/issue/create 请求 */
 export interface WechatIssueCreateRequest {
     accountId: string
@@ -547,6 +616,48 @@ export interface WechatPublishDraftResult {
     warnings: string[]
 }
 
+/**
+ * 推送阶段：草稿与群发共用同一套阶段名，界面据此显示「正在做什么」。
+ * 关键约束：阶段只是进度提示，不参与状态机——批次状态仍以 wechat_issues.status 为准。
+ */
+export const WECHAT_PUBLISH_STAGES = ['render', 'material', 'draft', 'submit', 'poll'] as const
+
+/** 推送阶段取值 */
+export type WechatPublishStage = (typeof WECHAT_PUBLISH_STAGES)[number]
+
+/** 阶段文案：广播载荷只带阶段与一句话，界面直接显示 message */
+export const WECHAT_PUBLISH_STAGE_LABELS: Readonly<Record<WechatPublishStage, string>> = {
+    render: '渲染正文',
+    material: '上传图片素材',
+    draft: '提交草稿',
+    submit: '提交群发',
+    poll: '等待发布结果',
+}
+
+/** 推送进度广播载荷：经 state 通道的 wechat 频道下发 */
+export interface WechatPublishProgress {
+    kind: 'progress'
+    issueId: string
+    stage: WechatPublishStage
+    /** 面向用户的一句话，如「渲染第 2/3 篇」 */
+    message: string
+}
+
+/** 收窄进度载荷：Webview 收到的数据不可信，逐字段校验后才显示 */
+export function isWechatPublishProgress(payload: unknown): payload is WechatPublishProgress {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { kind?: unknown; issueId?: unknown; stage?: unknown; message?: unknown }
+    if (candidate.kind !== 'progress' || !isWechatIssueId(candidate.issueId)) {
+        return false
+    }
+    if (typeof candidate.message !== 'string' || candidate.message.length === 0) {
+        return false
+    }
+    return (WECHAT_PUBLISH_STAGES as readonly string[]).includes(String(candidate.stage))
+}
+
 /** 判断是否为生成草稿请求 */
 export function isWechatPublishDraftRequest(payload: unknown): payload is WechatPublishDraftRequest {
     if (typeof payload !== 'object' || payload === null) {
@@ -645,6 +756,35 @@ export function isWechatMaterialListRequest(payload: unknown): payload is Wechat
 /** 判断是否为素材导入请求 */
 export function isWechatMaterialImportRequest(payload: unknown): payload is WechatMaterialImportRequest {
     return isWechatMaterialListRequest(payload)
+}
+
+/**
+ * wechat/cover/preview 请求：把本地封面路径换成 Webview 可加载的 URI。
+ * 关键约束：Webview 受 CSP 限制无法直接加载 file://，必须由宿主用 asWebviewUri 转换；
+ * 只接受存储根内的 jpg/png，一次最多 20 条（够覆盖首屏批次卡片）。
+ */
+export interface WechatCoverPreviewRequest {
+    paths: string[]
+}
+
+/** wechat/cover/preview 响应：键为请求路径，缺失表示该路径不可用 */
+export interface WechatCoverPreviewResult {
+    uris: Record<string, string>
+}
+
+/** 单次预览的路径数上限 */
+export const WECHAT_COVER_PREVIEW_LIMIT = 20
+
+/** 判断是否为封面预览请求 */
+export function isWechatCoverPreviewRequest(payload: unknown): payload is WechatCoverPreviewRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const paths = (payload as { paths?: unknown }).paths
+    if (!Array.isArray(paths) || paths.length === 0 || paths.length > WECHAT_COVER_PREVIEW_LIMIT) {
+        return false
+    }
+    return paths.every((item) => typeof item === 'string' && item.length > 0)
 }
 
 /**

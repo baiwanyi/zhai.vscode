@@ -35,6 +35,9 @@ import {
     type WechatIssueCreateResult,
     type WechatIssueDetailResult,
     type WechatIssueRemoveResult,
+    type WechatIssuesMergeRequest,
+    type WechatIssuesMergeResult,
+    type WechatIssuesRemoveBatchResult,
     type WechatIssueStatus,
     type WechatIssueSummary,
 } from '@shared/types/wechat'
@@ -49,6 +52,7 @@ import {
     listWechatArticles,
     listWechatArticlesByIssues,
     listWechatIssues,
+    moveWechatArticlesToIssue,
     readWechatArticleCount,
     syncWechatIssueArticleCount,
     updateWechatArticle,
@@ -170,6 +174,85 @@ export class WechatIssueService {
         this.requireIssue(id)
         deleteWechatIssue(this.deps.db, id)
         return { removed: true }
+    }
+
+    /**
+     * 批量删除批次：只允许草稿与推送失败两条状态。
+     * 关键约束：先整体校验再删——部分成功会让用户不知道哪几个没删掉；
+     * 已推送的必须去平台后台删（本地删了平台还在，反而更难核对），推送中的同理拒绝。
+     */
+    public removeMany(ids: string[]): WechatIssuesRemoveBatchResult {
+        const blocked: string[] = []
+        for (const id of ids) {
+            const row = findWechatIssue(this.deps.db, id)
+            if (row === null) {
+                blocked.push('已被删除的批次')
+                continue
+            }
+            if (row.status !== 'draft' && row.status !== 'failed') {
+                blocked.push(`《${row.title}》`)
+            }
+        }
+        if (blocked.length > 0) {
+            throw new Error(`只能删除草稿或推送失败的批次，以下批次不可删除：${blocked.join('、')}`)
+        }
+        // 单个 deleteWechatIssue 内部已按批次开事务（同事务删掉文章），这里逐条调用即可
+        for (const id of ids) {
+            deleteWechatIssue(this.deps.db, id)
+        }
+        return { removed: ids.length }
+    }
+
+    /**
+     * 合并批次：把源批次的文章并入目标批次，随后删除空掉的源批次。
+     * 关键约束：只允许合并草稿——已生成草稿的批次内容已进平台草稿箱，再往里加文章会让本地与平台不一致；
+     * 先整体校验（存在、状态、篇数上限）再在一个事务里搬文章并删源批次，避免「搬了一半」；
+     * 顺序号接在目标批次末尾：微信侧 articles 顺序就是推送顺序，直接沿用源批次原序号会打乱目标顺序。
+     */
+    public merge(request: WechatIssuesMergeRequest): WechatIssuesMergeResult {
+        const target = findWechatIssue(this.deps.db, request.targetId)
+        if (target === null) {
+            throw new Error('目标批次不存在，可能已被删除')
+        }
+        if (target.status !== 'draft') {
+            throw new Error('只能并入草稿状态的批次：草稿已就绪的批次内容已经进了平台草稿箱')
+        }
+
+        const sources = request.ids.map((id) => {
+            const row = findWechatIssue(this.deps.db, id)
+            if (row === null) {
+                throw new Error('部分批次已被删除，请刷新后重试')
+            }
+            if (row.status !== 'draft') {
+                throw new Error(`《${row.title}》不是草稿状态，不能合并`)
+            }
+            return row
+        })
+
+        const targetCount = listWechatArticles(this.deps.db, target.id).length
+        const movedCount = sources.reduce((sum, row) => sum + listWechatArticles(this.deps.db, row.id).length, 0)
+        if (movedCount === 0) {
+            throw new Error('所选批次里没有文章，无需合并')
+        }
+        if (targetCount + movedCount > WECHAT_ISSUE_ARTICLE_LIMIT) {
+            throw new Error(
+                `合并后共 ${String(targetCount + movedCount)} 篇，超过单次群发 ${String(WECHAT_ISSUE_ARTICLE_LIMIT)} 篇上限`,
+            )
+        }
+
+        const now = new Date().toISOString()
+        this.deps.db.transaction(() => {
+            let cursor = targetCount
+            for (const row of sources) {
+                const count = listWechatArticles(this.deps.db, row.id).length
+                moveWechatArticlesToIssue(this.deps.db, row.id, target.id, cursor + 1)
+                cursor += count
+                deleteWechatIssue(this.deps.db, row.id)
+            }
+            syncWechatIssueArticleCount(this.deps.db, target.id, now)
+        })()
+
+        return { issue: this.detail(target.id).issue, movedCount }
     }
 
     /** 手写文章：正文可为空（先占位再补写） */

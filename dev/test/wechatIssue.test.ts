@@ -21,11 +21,17 @@ import {
     WECHAT_ARTICLE_BODY_MAX,
     WECHAT_ARTICLE_DIGEST_MAX,
     WECHAT_ARTICLE_TITLE_MAX,
+    isWechatCoverPreviewRequest,
+    isWechatIssuesMergeRequest,
+    isWechatIssuesRemoveBatchRequest,
+    isWechatPublishProgress,
 } from '../../src/shared/types/wechat'
 
 /** 合法账号与批次 id：与宿主生成的短 id 同形态 */
 const ACCOUNT_ID = 'acc-1a2b3c4d5e'
 const ISSUE_ID = 'iss-1a2b3c4d5e'
+/** 第二个批次 id：合并用例需要区分源与目标 */
+const OTHER_ISSUE_ID = 'iss-6f7a8b9c0d'
 const ARTICLE_ID = 'art-1a2b3c4d5e'
 
 describe('文本规整', () => {
@@ -122,6 +128,54 @@ describe('文章请求收窄', () => {
     it('删除文章要求合法 id', () => {
         expect(isWechatArticleRemoveRequest({ id: ARTICLE_ID })).toBe(true)
         expect(isWechatArticleRemoveRequest({ id: 1 })).toBe(false)
+    })
+
+    it('推送进度载荷逐字段收窄', () => {
+        expect(
+            isWechatPublishProgress({
+                kind: 'progress',
+                issueId: ISSUE_ID,
+                stage: 'render',
+                message: '渲染第 1/2 篇',
+            }),
+        ).toBe(true)
+        expect(isWechatPublishProgress({ kind: 'progress', issueId: ISSUE_ID, stage: 'nope', message: 'x' })).toBe(
+            false,
+        )
+        expect(isWechatPublishProgress({ kind: 'progress', issueId: ISSUE_ID, stage: 'render', message: '' })).toBe(
+            false,
+        )
+        expect(isWechatPublishProgress({ kind: 'other', issueId: ISSUE_ID, stage: 'render', message: 'x' })).toBe(false)
+        expect(isWechatPublishProgress(null)).toBe(false)
+    })
+
+    it('批次合并要求 1~20 个源批次，且目标不在源列表内', () => {
+        expect(isWechatIssuesMergeRequest({ ids: [ISSUE_ID], targetId: OTHER_ISSUE_ID })).toBe(true)
+        expect(isWechatIssuesMergeRequest({ ids: [], targetId: OTHER_ISSUE_ID })).toBe(false)
+        expect(isWechatIssuesMergeRequest({ ids: [ISSUE_ID], targetId: ISSUE_ID })).toBe(false)
+        expect(
+            isWechatIssuesMergeRequest({
+                ids: Array.from({ length: 21 }, () => ISSUE_ID),
+                targetId: OTHER_ISSUE_ID,
+            }),
+        ).toBe(false)
+        expect(isWechatIssuesMergeRequest({ ids: [ISSUE_ID], targetId: 'bad id' })).toBe(false)
+    })
+
+    it('批量删除只接受 1~50 个合法批次 id', () => {
+        expect(isWechatIssuesRemoveBatchRequest({ ids: [ISSUE_ID] })).toBe(true)
+        expect(isWechatIssuesRemoveBatchRequest({ ids: [] })).toBe(false)
+        expect(isWechatIssuesRemoveBatchRequest({ ids: ['bad id'] })).toBe(false)
+        expect(isWechatIssuesRemoveBatchRequest({ ids: Array.from({ length: 51 }, () => ISSUE_ID) })).toBe(false)
+    })
+
+    it('封面预览只接受 1~20 个非空路径', () => {
+        expect(isWechatCoverPreviewRequest({ paths: ['images/202610/a.png'] })).toBe(true)
+        expect(isWechatCoverPreviewRequest({ paths: [] })).toBe(false)
+        expect(isWechatCoverPreviewRequest({ paths: [''] })).toBe(false)
+        expect(
+            isWechatCoverPreviewRequest({ paths: Array.from({ length: 21 }, (_, index) => `a${String(index)}.png`) }),
+        ).toBe(false)
     })
 
     it('导入只接受 note 与 press 两个来源', () => {

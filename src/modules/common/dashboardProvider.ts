@@ -12,6 +12,7 @@
  * 作品协议只做入参收窄与转发，聚合/落盘由 modules/press 承担，打开路径须先按索引库回查；
  * 活跃编辑器与索引状态监听须随面板销毁释放，否则重开面板会叠加监听、重复广播。
  */
+import * as path from 'node:path'
 import * as vscode from 'vscode'
 import type { WorkflowRouter } from '@modules/ai/workflowRouter'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
@@ -80,6 +81,8 @@ import {
     isRenamePressVolumeRequest,
     readPressAudience,
 } from '@shared/types/press'
+import type { WechatCoverPreviewResult } from '@shared/types/wechat'
+import { isWechatCoverPreviewRequest } from '@shared/types/wechat'
 import type { OpenWorkflowResult } from '@shared/types/workflow'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
 import { resolvePromptRoot, resolveStorageRoot } from './config'
@@ -99,6 +102,9 @@ import type Database from 'better-sqlite3'
 
 /** 公众号后台地址：前端只传固定标识，URL 固定在此，不接受 Webview 传入任意地址 */
 const WECHAT_MP_URL = 'https://mp.weixin.qq.com/'
+
+/** 封面允许的扩展名：与素材上传口径一致，其它格式即便存在也不给 Webview 地址 */
+const WECHAT_COVER_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg'])
 
 export class DashboardViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'zhai.dashboard'
@@ -227,6 +233,12 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             case 'workflow/open': {
                 return this.openWorkflow(payload)
             }
+            case 'workflow/selectModule': {
+                return this.selectWorkflowModule(payload)
+            }
+            case 'wechat/cover/preview': {
+                return this.previewWechatCovers(view, payload)
+            }
             case 'press/projects': {
                 return this.readPressProjects(view)
             }
@@ -306,7 +318,10 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                     if (routes === null) {
                         throw new Error('公众号服务尚未就绪')
                     }
-                    return routes.handle(method, payload)
+                    // 推送阶段经 state 通道回投给本面板：用户能看到「正在渲染 / 上传 / 提交」
+                    return routes.handle(method, payload, (progress) => {
+                        this.post(view, { type: 'state', channel: 'wechat', payload: progress })
+                    })
                 }
                 throw new Error(`未知的协议方法：${method}`)
             }
@@ -376,6 +391,49 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         }
         await vscode.commands.executeCommand('zhai.openAiChat', { module: payload.module })
         return { opened: true }
+    }
+
+    /**
+     * 本地封面转 Webview 地址：Webview 受 CSP 限制不能直接加载 file://，须经 asWebviewUri 转换。
+     * 关键约束：只接受存储根内的 jpg/png 且文件真实存在，越界、格式不符与不存在的路径一律略过，
+     * 界面对缺失项回落占位图；返回键是请求时的原样路径，便于前端直接按文章里的写法取用。
+     */
+    private async previewWechatCovers(view: vscode.WebviewView, payload: unknown): Promise<WechatCoverPreviewResult> {
+        if (!isWechatCoverPreviewRequest(payload)) {
+            throw new Error('wechat/cover/preview 参数非法：paths 须为 1~20 个非空路径')
+        }
+        const root = resolveStorageRoot()
+        const uris: Record<string, string> = {}
+        for (const item of payload.paths) {
+            if (!WECHAT_COVER_EXTENSIONS.has(path.extname(item).toLowerCase())) {
+                continue
+            }
+            const uri = path.isAbsolute(item) ? vscode.Uri.file(item) : buildStorageUri(root, item.split('/'))
+            const relative = path.relative(root.fsPath, uri.fsPath)
+            if (relative.startsWith('..') || path.isAbsolute(relative)) {
+                continue
+            }
+            try {
+                await vscode.workspace.fs.stat(uri)
+            } catch {
+                continue
+            }
+            uris[item] = view.webview.asWebviewUri(uri).toString()
+        }
+        return { uris }
+    }
+
+    /**
+     * 只选定模块、不聚焦面板：仪表盘进入公众号页时调用，让工作流侧栏出现公众号六分区。
+     * 关键约束：与 workflow/open 的唯一区别是不执行 zhai.workflow.focus——
+     * 用户在仪表盘里点开公众号页时不该被抢走焦点，否则刚点开的页面立刻失去层级。
+     */
+    private async selectWorkflowModule(payload: unknown): Promise<{ selected: boolean }> {
+        if (!isOpenWorkflowRequest(payload)) {
+            throw new Error('workflow/selectModule 参数非法：module 须为非空模块键')
+        }
+        await vscode.commands.executeCommand('zhai.workflow.selectModule', payload.module)
+        return { selected: true }
     }
 
     /**

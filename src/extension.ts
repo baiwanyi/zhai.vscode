@@ -65,6 +65,7 @@ import { WechatAccountService } from './modules/wechat/accountService'
 import { WechatCommentService } from './modules/wechat/commentService'
 import { createWechatSecretStore } from './modules/wechat/credentials'
 import { openWechatDatabase } from './modules/wechat/db/connection'
+import { recoverStalePushingIssues } from './modules/wechat/db/issueRepository'
 import { WechatFanService } from './modules/wechat/fanService'
 import { WechatIssueService } from './modules/wechat/issueService'
 import { WechatMaterialService } from './modules/wechat/materialService'
@@ -257,6 +258,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     // Token 缓存与并发去重由 tokenService 承担；账号协议同样由仪表盘面板承接
     const wechatDb = openWechatDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => wechatDb.close() })
+    // 群发过程中退出会把批次卡在「推送中」：超过 10 分钟的启动时回收为失败并提示去后台确认
+    const stalePushing = recoverStalePushingIssues(
+        wechatDb,
+        // 10 分钟：群发轮询最长约 8 秒，留足余量给慢网，超过基本可判定为宿主中途退出
+        new Date(Date.now() - 10 * 60 * 1000).toISOString(),
+        '宿主在群发过程中退出，发布结果未知：请到公众号后台确认是否已发布',
+    )
+    if (stalePushing > 0) {
+        logger.info(`公众号：回收 ${String(stalePushing)} 个卡在推送中的批次`)
+    }
     // 密钥与 Token 缓存全模块共用一份：账号鉴权与素材上传走同一把 Token，避免各自刷新互相失效
     const wechatSecrets = createWechatSecretStore(context.secrets)
     const wechatTokens = new WechatTokenService()

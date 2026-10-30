@@ -135,6 +135,7 @@ export interface StateMessage {
         | 'proofread'
         | 'todo'
         | 'toast'
+        | 'wechat'
     payload: unknown
 }
 
@@ -310,6 +311,7 @@ export type HostMethodName =
     | 'wechat/comment/remove'
     | 'wechat/comment/reply'
     | 'wechat/cover/pick'
+    | 'wechat/cover/preview'
     | 'wechat/issue/create'
     | 'wechat/issue/detail'
     | 'wechat/issue/publish'
@@ -318,14 +320,18 @@ export type HostMethodName =
     | 'wechat/fans/list'
     | 'wechat/fans/tags'
     | 'wechat/issues'
+    | 'wechat/issues/merge'
+    | 'wechat/issues/removeBatch'
     | 'wechat/material/import'
     | 'wechat/material/list'
     | 'wechat/menu/get'
     | 'wechat/menu/save'
     | 'wechat/publishQuota'
     | 'wechat/stats/overview'
+    | 'wechat/tasks'
     | 'workflow/open'
     | 'workflow/reset'
+    | 'workflow/selectModule'
     | 'workflow/state'
 
 /** 状态广播通道白名单：未知通道直接丢弃，避免订阅者按不可信的 channel 分支 */

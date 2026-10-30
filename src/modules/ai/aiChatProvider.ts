@@ -314,7 +314,10 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 }
                 // 公众号运营分区与应用内仪表盘共用同一份路由：两个面板各自发起请求，数据源只有一套
                 if (method.startsWith('wechat/')) {
-                    return this.wechat.handle(method, payload)
+                    // 推送阶段经 state 通道回投给本面板，与仪表盘同一份载荷结构
+                    return this.wechat.handle(method, payload, (progress) => {
+                        this.post(view, { type: 'state', channel: 'wechat', payload: progress })
+                    })
                 }
                 if (method.startsWith('pressAi/') || PRESS_WORKSPACE_METHODS.has(method)) {
                     return this.press.handle(

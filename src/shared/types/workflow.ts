@@ -16,6 +16,13 @@ export const ROOT_MODULE_KEY = 'root'
 /** 笔记模块键：该目录下的文档构成「笔记编辑场景」 */
 export const NOTES_MODULE_KEY = 'notes'
 
+/**
+ * 公众号模块键：与 wechat.db、wechat/ 目录同名。
+ * 关键约束：公众号页走仪表盘页内路由，不经过「打开 wechat/ 文档」这一步，
+ * 因此侧栏六分区只能靠「用户选定模块」这条状态出现，常量放 shared 供两端共用。
+ */
+export const WECHAT_MODULE_KEY = 'wechat'
+
 /** 路由事实快照：宿主权威下发，前端不自造 */
 export interface WorkflowContextState {
     scene: WorkflowSceneKind
