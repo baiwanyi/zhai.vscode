@@ -10,6 +10,7 @@
  */
 import { MoreHorizontal, Plus, Send } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
+import { toast } from 'sonner'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -19,6 +20,7 @@ import {
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
+import { Spinner } from '@components/ui/spinner'
 import type { WechatArticleDetail, WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
 import {
     AppContent,
@@ -33,11 +35,14 @@ import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useWechatAccounts } from './hooks/useWechatAccounts'
+import { useWechatIssueCovers } from './hooks/useWechatIssueCovers'
 import { useWechatIssues } from './hooks/useWechatIssues'
+import { useWechatModuleSync } from './hooks/useWechatModuleSync'
 import { WechatAccountDialog } from './layout/WechatAccountDialog'
 import { WechatArticleDialog, type WechatArticleDialogInput } from './layout/WechatArticleDialog'
 import { WechatIssueCreateDialog } from './layout/WechatIssueCreateDialog'
 import { WechatIssueList } from './layout/WechatIssueList'
+import { WechatIssueMergeDialog } from './layout/WechatIssueMergeDialog'
 import { formatAccountMeta, formatAccountStatusHint, WECHAT_STATUS_LABELS } from './utils'
 import type { WechatAccountFormInput } from './hooks/useWechatAccounts'
 import type { JSX } from 'react'
@@ -73,6 +78,9 @@ function readSort(value: string): IssueSort {
     return value === 'published' ? 'published' : 'updated'
 }
 
+/** 分批渲染步长：批次多时先渲染 20 个，滚动到底再追加，避免一次挂载全部卡片 */
+const ISSUE_RENDER_STEP = 20
+
 interface DashboardWechatPostProps {
     /** 当前账号 id：由路由外壳下发，来自 #/wechat/{accountId} */
     accountId: string
@@ -81,6 +89,8 @@ interface DashboardWechatPostProps {
 }
 
 export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPostProps): JSX.Element {
+    // 直接落到账号页（刷新、深链）时同样需要同步模块，否则侧栏不会出现公众号分区
+    useWechatModuleSync()
     const {
         accounts,
         status: accountStatus,
@@ -97,6 +107,8 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         reload: reloadIssues,
         createIssue,
         removeIssue,
+        removeIssues,
+        mergeIssues,
         createArticle,
         updateArticle,
         removeArticle,
@@ -104,6 +116,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         loadArticle,
         publishDraft,
         publish,
+        publishProgress,
         loadQuota,
         pickCover,
         openBackend,
@@ -129,6 +142,12 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
     const [pendingPublish, setPendingPublish] = useState<WechatIssueSummary | null>(null)
     /** 打开确认弹窗时拉到的额度说明，拿不到时用通用文案兜底 */
     const [quotaReason, setQuotaReason] = useState('')
+    /** 已勾选待批量删除的批次：非空时页脚切换成选择条 */
+    const [selectedIds, setSelectedIds] = useState<string[]>([])
+    const [isBatchRemoveOpen, setIsBatchRemoveOpen] = useState(false)
+    const [isMergeOpen, setIsMergeOpen] = useState(false)
+    /** 当前渲染上限：随「加载更多」递增，筛选变化时回到首批 */
+    const [renderLimit, setRenderLimit] = useState(ISSUE_RENDER_STEP)
 
     const account = useMemo(() => accounts.find((item) => item.id === accountId) ?? null, [accountId, accounts])
 
@@ -149,6 +168,28 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
             return right.updatedAt.localeCompare(left.updatedAt)
         })
     }, [filter, issues, sort])
+
+    /**
+     * 实际渲染的批次：分页切片后交给列表与封面请求，避免为看不到的批次取图。
+     * 切换筛选/排序时刻意不重置上限——沿用当前上限只是多渲染几个卡片，
+     * 而在 effect 里同步 setState 会多一轮渲染，代价更明显。
+     */
+    const renderIssues = useMemo(() => visibleIssues.slice(0, renderLimit), [renderLimit, visibleIssues])
+
+    /** 已勾选批次的快照：合并与删除都按它判断状态，而不是依赖列表顺序 */
+    const selectedIssues = useMemo(
+        () => issues.filter((issue) => selectedIds.includes(issue.id)),
+        [issues, selectedIds],
+    )
+
+    /** 可合并的目标：草稿状态且不在勾选内（勾中的批次合并后会被删除） */
+    const mergeCandidates = useMemo(
+        () => issues.filter((issue) => issue.status === 'draft' && !selectedIds.includes(issue.id)),
+        [issues, selectedIds],
+    )
+
+    // 批次首图换成 Webview 地址：随渲染结果变化，只对当前可见的批次取图
+    const covers = useWechatIssueCovers(renderIssues)
 
     const openIssueDialog = useCallback((): void => {
         setIssueDialogKey((previous) => previous + 1)
@@ -258,6 +299,50 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         setFilter('all')
     }, [])
 
+    /** 勾选切换：批次删除是破坏性操作，只允许草稿与失败批次被勾选（卡片侧已限制可点） */
+    const handleToggleSelect = useCallback((issue: WechatIssueSummary): void => {
+        setSelectedIds((previous) =>
+            previous.includes(issue.id) ? previous.filter((id) => id !== issue.id) : [...previous, issue.id],
+        )
+    }, [])
+
+    /** 确认批量删除：先清空选择再提交，避免删除失败后仍停留在选择态 */
+    const handleConfirmBatchRemove = useCallback((): void => {
+        const ids = selectedIds
+        setIsBatchRemoveOpen(false)
+        setSelectedIds([])
+        void removeIssues(ids)
+    }, [removeIssues, selectedIds])
+
+    /** 打开合并弹窗：只有全部是草稿批次才允许，草稿已就绪的内容已在平台草稿箱 */
+    const handleOpenMerge = useCallback((): void => {
+        if (selectedIssues.length === 0) {
+            return
+        }
+        if (selectedIssues.some((issue) => issue.status !== 'draft')) {
+            toast.error('只能合并草稿批次：草稿已就绪或已推送的批次不能并入')
+            return
+        }
+        if (mergeCandidates.length === 0) {
+            toast.error('没有其他草稿批次可作为合并目标，请先新建一个空批次')
+            return
+        }
+        setIsMergeOpen(true)
+    }, [mergeCandidates.length, selectedIssues])
+
+    /** 确认合并：成功后清空选择，失败保留选择便于调整目标 */
+    const handleConfirmMerge = useCallback(
+        async (targetId: string): Promise<boolean> => {
+            const isMerged = await mergeIssues(selectedIds, targetId)
+            if (isMerged) {
+                setIsMergeOpen(false)
+                setSelectedIds([])
+            }
+            return isMerged
+        },
+        [mergeIssues, selectedIds],
+    )
+
     /** 打开群发确认：先拿额度说明，弹窗里展示剩余次数，避免点了才被拒 */
     const handleOpenPublish = useCallback(
         (issue: WechatIssueSummary): void => {
@@ -366,11 +451,19 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                     </AppMenu>
                 </AppHeader>
                 <AppContent isScrollable>
+                    {/* 推送阶段：宿主分阶段播报，动作结束后由 hook 清空 */}
+                    {publishProgress !== null && (
+                        <div className="mb-2 flex shrink-0 items-center gap-2 rounded-md bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
+                            <Spinner className="size-3" />
+                            <span className="truncate">{publishProgress.message}</span>
+                        </div>
+                    )}
                     <WechatIssueList
-                        issues={visibleIssues}
+                        issues={renderIssues}
                         status={issueStatus}
                         error={issueError}
                         isBusy={isIssueMutating}
+                        covers={covers}
                         isFiltered={filter !== 'all'}
                         onClearFilter={handleClearFilter}
                         onAdd={openIssueDialog}
@@ -383,42 +476,97 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                         onPublishDraft={(issue) => void publishDraft(issue.id)}
                         onPublish={handleOpenPublish}
                         onOpenBackend={() => void openBackend()}
+                        selectedIds={selectedIds}
+                        onToggleSelect={handleToggleSelect}
                     />
+                    {visibleIssues.length > renderIssues.length && (
+                        <Button
+                            variant="outline"
+                            className="mt-2 w-full"
+                            onClick={() => setRenderLimit((previous) => previous + ISSUE_RENDER_STEP)}
+                        >
+                            {`加载更多（还有 ${String(visibleIssues.length - renderIssues.length)} 个）`}
+                        </Button>
+                    )}
                 </AppContent>
                 <AppFooter className="justify-between">
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <Button size="icon" variant="ghost" aria-label="账号操作" tooltip="账号操作">
-                                <MoreHorizontal />
-                            </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start">
-                            <DropdownMenuLabel>{account.name}</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onSelect={openAccountSettings}>账号设置</DropdownMenuItem>
-                            <DropdownMenuItem onSelect={openAccountSettings}>密钥设置</DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                                disabled={isAccountMutating || account.status !== 'connected'}
-                                onSelect={() => void testAccount(accountId)}
+                    {selectedIds.length > 0 ? (
+                        <>
+                            <span className="text-xs text-muted-foreground">
+                                {`已选 ${String(selectedIds.length)} 个`}
+                            </span>
+                            <div className="flex items-center gap-1">
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    disabled={isIssueMutating}
+                                    onClick={() => setSelectedIds([])}
+                                >
+                                    取消
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={isIssueMutating || selectedIssues.some((item) => item.status !== 'draft')}
+                                    tooltip={
+                                        selectedIssues.some((item) => item.status !== 'draft')
+                                            ? '只能合并草稿批次'
+                                            : '把所选批次的文章并入另一个草稿批次'
+                                    }
+                                    onClick={handleOpenMerge}
+                                >
+                                    合并到…
+                                </Button>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    disabled={isIssueMutating}
+                                    onClick={() => setIsBatchRemoveOpen(true)}
+                                >
+                                    删除所选
+                                </Button>
+                            </div>
+                        </>
+                    ) : (
+                        <>
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button size="icon" variant="ghost" aria-label="账号操作" tooltip="账号操作">
+                                        <MoreHorizontal />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="start">
+                                    <DropdownMenuLabel>{account.name}</DropdownMenuLabel>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem onSelect={openAccountSettings}>账号设置</DropdownMenuItem>
+                                    <DropdownMenuItem onSelect={openAccountSettings}>密钥设置</DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                        disabled={isAccountMutating || account.status !== 'connected'}
+                                        onSelect={() => void testAccount(accountId)}
+                                    >
+                                        重新验证连接
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                        variant="destructive"
+                                        onSelect={() => setIsAccountRemoveOpen(true)}
+                                    >
+                                        删除账号
+                                    </DropdownMenuItem>
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                            <Button
+                                size="icon"
+                                variant="primary"
+                                disabled={isIssueMutating}
+                                tooltip="新建批次"
+                                aria-label="新建批次"
+                                onClick={openIssueDialog}
                             >
-                                重新验证连接
-                            </DropdownMenuItem>
-                            <DropdownMenuItem variant="destructive" onSelect={() => setIsAccountRemoveOpen(true)}>
-                                删除账号
-                            </DropdownMenuItem>
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                    <Button
-                        size="icon"
-                        variant="primary"
-                        disabled={isIssueMutating}
-                        tooltip="新建批次"
-                        aria-label="新建批次"
-                        onClick={openIssueDialog}
-                    >
-                        <Plus />
-                    </Button>
+                                <Plus />
+                            </Button>
+                        </>
+                    )}
                 </AppFooter>
             </AppPage>
 
@@ -470,6 +618,30 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                     }
                 }}
                 onConfirm={handleConfirmIssueRemove}
+            />
+
+            <WechatIssueMergeDialog
+                key={isMergeOpen ? 'merge-open' : 'merge-closed'}
+                open={isMergeOpen}
+                isSubmitting={isIssueMutating}
+                sources={selectedIssues}
+                candidates={mergeCandidates}
+                onOpenChange={setIsMergeOpen}
+                onSubmit={handleConfirmMerge}
+            />
+
+            <ConfirmDialog
+                open={isBatchRemoveOpen}
+                title="删除所选批次"
+                description={
+                    `将删除 ${String(selectedIds.length)} 个批次及其中的文章，删除后无法恢复。` +
+                    '已推送的批次不在此列——它们需要在公众号后台删除。'
+                }
+                confirmLabel="删除"
+                isDestructive
+                isSubmitting={isIssueMutating}
+                onOpenChange={setIsBatchRemoveOpen}
+                onConfirm={handleConfirmBatchRemove}
             />
 
             <ConfirmDialog

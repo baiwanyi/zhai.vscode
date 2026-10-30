@@ -23,15 +23,21 @@ import type {
     WechatIssueDetailResult,
     WechatIssueRemoveRequest,
     WechatIssueSummary,
+    WechatIssuesMergeRequest,
+    WechatIssuesMergeResult,
+    WechatIssuesRemoveBatchRequest,
+    WechatIssuesRemoveBatchResult,
     WechatIssuesRequest,
     WechatPublishDraftRequest,
     WechatPublishDraftResult,
+    WechatPublishProgress,
     WechatPublishQuotaRequest,
     WechatPublishQuotaResult,
     WechatPublishRequest,
     WechatPublishResult,
 } from '@shared/types/wechat'
-import { request } from '@shared/utils/bridge'
+import { isWechatPublishProgress } from '@shared/types/wechat'
+import { onState, request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 import type { WechatListStatus } from '../utils'
 
@@ -55,9 +61,15 @@ export interface WechatIssuesState {
     status: WechatListStatus
     error: string | null
     isMutating: boolean
+    /** 当前推送阶段：宿主播报，动作结束后清空 */
+    publishProgress: WechatPublishProgress | null
     reload: () => Promise<void>
     createIssue: (title?: string) => Promise<WechatIssueSummary | null>
     removeIssue: (id: string) => Promise<boolean>
+    /** 批量删除：只允许草稿与失败批次，宿主会整体校验 */
+    removeIssues: (ids: string[]) => Promise<boolean>
+    /** 合并批次：把所选批次的文章并入目标批次，源批次被删除 */
+    mergeIssues: (ids: string[], targetId: string) => Promise<boolean>
     createArticle: (input: WechatArticleFormInput) => Promise<WechatArticleDetail | null>
     updateArticle: (input: WechatArticleUpdateInput) => Promise<boolean>
     removeArticle: (id: string) => Promise<boolean>
@@ -79,6 +91,17 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
     const [status, setStatus] = useState<WechatListStatus>('loading')
     const [error, setError] = useState<string | null>(null)
     const [isMutating, setIsMutating] = useState(false)
+    const [publishProgress, setPublishProgress] = useState<WechatPublishProgress | null>(null)
+
+    // 订阅推送阶段：只认 wechat 通道且载荷形状正确，其它广播一律忽略
+    useEffect(() => {
+        return onState((message) => {
+            if (message.channel !== 'wechat' || !isWechatPublishProgress(message.payload)) {
+                return
+            }
+            setPublishProgress(message.payload)
+        })
+    }, [])
 
     const reload = useCallback(async (): Promise<void> => {
         try {
@@ -125,6 +148,50 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
                 await request('wechat/issue/remove', payload)
                 await reload()
                 toast.success('已删除推送批次')
+                return true
+            } catch (cause) {
+                toastError(cause)
+                return false
+            } finally {
+                setIsMutating(false)
+            }
+        },
+        [reload],
+    )
+
+    /** 批量删除：成功提示删除条数，失败时宿主的拒绝原因（哪些批次不可删）直接透出 */
+    const removeIssues = useCallback(
+        async (ids: string[]): Promise<boolean> => {
+            setIsMutating(true)
+            const payload: WechatIssuesRemoveBatchRequest = { ids }
+            try {
+                const result = await request<WechatIssuesRemoveBatchResult>(
+                    'wechat/issues/removeBatch',
+                    payload,
+                    60_000,
+                )
+                await reload()
+                toast.success(`已删除 ${String(result.removed)} 个批次`)
+                return true
+            } catch (cause) {
+                toastError(cause)
+                return false
+            } finally {
+                setIsMutating(false)
+            }
+        },
+        [reload],
+    )
+
+    /** 合并批次：成功提示迁移的文章数，失败时宿主的拒绝原因（状态不符 / 超上限）直接透出 */
+    const mergeIssues = useCallback(
+        async (ids: string[], targetId: string): Promise<boolean> => {
+            setIsMutating(true)
+            const payload: WechatIssuesMergeRequest = { ids, targetId }
+            try {
+                const result = await request<WechatIssuesMergeResult>('wechat/issues/merge', payload, 60_000)
+                await reload()
+                toast.success(`已把 ${String(result.movedCount)} 篇文章并入目标批次`)
                 return true
             } catch (cause) {
                 toastError(cause)
@@ -259,6 +326,8 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
                 return false
             } finally {
                 setIsMutating(false)
+                // 阶段提示只服务于本次动作，结束即清空，避免残留在界面上
+                setPublishProgress(null)
             }
         },
         [reload],
@@ -288,6 +357,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
                 return false
             } finally {
                 setIsMutating(false)
+                setPublishProgress(null)
             }
         },
         [reload],
@@ -329,9 +399,12 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         status,
         error,
         isMutating,
+        publishProgress,
         reload,
         createIssue,
         removeIssue,
+        removeIssues,
+        mergeIssues,
         createArticle,
         updateArticle,
         removeArticle,

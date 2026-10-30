@@ -470,6 +470,8 @@ interface WechatPublishResult {
 > 素材服务、草稿与群发服务、协议路由、`render.ts` 渲染管线与 `theme.ts` 默认主题）、
 > `src/dashboard/wechat`（账号列表页、批次列表页、账号与批次弹窗、文章编辑弹窗、导入与删除确认、群发二次确认）、
 > `src/workflow/wechat`（公众号工作流页与 push / material / menu / fans / stats / comment 六个分区）。
+> 推送阶段经 state 通道的 `wechat` 频道实时下发，进行中任务由 `publishService` 在进程内登记、可由 `wechat/tasks` 查询；
+> 宿主中途退出留下的 `pushing` 批次在下次激活时按 10 分钟阈值回收为失败并提示到后台确认。
 > 定时群发按产品决定不做。
 
 ### 10.1 三个关键决策
@@ -513,6 +515,7 @@ interface WechatPublishResult {
 - `accountId` 为本地生成的短 id（`^[a-z0-9-]{1,64}$`），解析时按白名单收窄，不合法即回落首页，避免 hash 承载任意字符串。
 - `readContentScope` 已扩展：`context.selectedModule === 'wechat'` 也判为 wechat 归属（公众号管理不再是「打开 `wechat/` 目录文档」的场景），否则工作流侧栏不会出现专属分区；作用域目录同时回落到模块键，避免公众号对话与 root 共用一份会话。
 - `SCOPE_SECTIONS.wechat` 已由空数组扩为六项，`pressSections.ts` 的分区白名单同步扩充，避免「类型里有、校验里缺」导致宿主视图请求被静默丢弃。
+- 页内路由本身不会设置 `selectedModule`：`#/wechat` 与 `#/wechat/{accountId}` 挂载时会调用 `workflow/selectModule`（只设模块、不聚焦面板）补齐该状态，否则侧栏六分区在正常操作下不可达。
 
 ### 10.4 协议拆分
 
@@ -520,9 +523,9 @@ interface WechatPublishResult {
 
 | 侧 | 方法 |
 |----|------|
-| 仪表盘 | `wechat/accounts`、`wechat/account/{create,update,remove,test,select}`、`wechat/issues`、`wechat/issue/{create,detail,remove,publishDraft,publish}`、`wechat/publishQuota`、`wechat/article/{create,update,remove,import}`、`wechat/cover/pick`；另复用 `host/openExternal`（标识 `wechatMp`，地址由宿主固定）（均已落地） |
+| 仪表盘 | `wechat/accounts`、`wechat/account/{create,update,remove,test,select}`、`wechat/issues`、`wechat/issues/{merge,removeBatch}`、`wechat/issue/{create,detail,remove,publishDraft,publish}`、`wechat/publishQuota`、`wechat/article/{create,update,remove,import}`、`wechat/cover/{pick,preview}`、`wechat/tasks`（进行中任务查询）；另复用 `host/openExternal`（标识 `wechatMp`）与 `workflow/selectModule`（只设模块不聚焦）（均已落地） |
 | 工作流 | `wechat/menu/{get,save}`、`wechat/material/{list,import}`、`wechat/fans/{list,tags}`、`wechat/stats/overview`、`wechat/comment/{list,reply,mark,remove}`，运营页复用仪表盘的 `wechat/issues` 与 `wechat/publishQuota`（两个面板共用同一份路由实例） |
-| 广播（state 通道） | `wechat/push-progress`（阶段 + 进度 + 终态）、`wechat/account-status`（Token 失效即时提示） |
+| 广播（state 通道） | `wechat` 通道承载 `WechatPublishProgress`：阶段取 `render` / `material` / `draft` / `submit` / `poll`，附一句面向用户的 `message`；Token 失效广播（`account-status`）尚未实现 |
 
 代码落点：类型 `src/shared/types/wechat.ts`（含 `is*Request` 收窄，对齐 `press.ts`）；宿主服务 `src/modules/wechat/`（`accountService`、`tokenService`、`client`、`issueService`、`materialService`、`menuService`、`statsService`、`commentService`、`fanService`、`pushService`、`repository`）；前端 `src/dashboard/wechat/`、`src/workflow/wechat/`。
 
@@ -586,7 +589,7 @@ interface WechatPublishResult {
 |------|------|
 | `AppHeader align="start"` | 返回列表动作 + `AppTitle`（账号名，点击弹账号切换）+ `AppDescription`（账号状态摘要） |
 | `AppMenu` | 状态筛选 + 排序两个下拉 |
-| `AppContent isScrollable` | 批次卡片列表，分批渲染（首批 20 个，滚动加载更多） |
+| `AppContent isScrollable` | 批次卡片列表，**分批渲染已落地**：默认渲染 20 个，底部「加载更多」按 20 递增；切换筛选/排序不重置上限（沿用只会多渲染几个卡片，重置换来的是额外一轮渲染） |
 | `AppFooter` | 左：账号级 `...` 菜单（账号设置 / 密钥设置 / 删除账号）；右：`+` 新建批次 |
 | 多选态 | 页脚替换为选择条（删除 / 并入指定批次），复用笔记列表的多选范式 |
 
@@ -594,7 +597,7 @@ interface WechatPublishResult {
 
 ```
 ┌ Item variant="outline" ────────────────────┐
-│  封面 16:9（缺省灰底占位图标）                    │
+│  封面 16:9（取首篇文章封面，缺省灰底占位图标）      │
 │  批次标题（取首篇标题，单行截断）      [状态徽标]     │
 │  ── 文章行 ──                                │
 │  1  标题 ……                        缩略图      │
@@ -633,8 +636,8 @@ interface WechatPublishResult {
 
 | 操作 | 允许范围 |
 |------|----------|
-| 批量删除 | 仅 `draft` / `failed` 批次；已推送只能去平台后台删除 |
-| 并入批次 | 多篇文章合并进一个草稿批次，合计上限 8 篇，超出即拦截 |
+| 批量删除 | **已落地**：批次卡片左侧复选框（仅 `draft` / `failed` 可选），页脚切换为选择条；宿主整体校验，命中不可删批次时整批拒绝并列出标题 |
+| 并入批次 | **已落地**：选择条「合并到…」把所选草稿批次的文章并入目标草稿批次，源批次随后删除；只允许草稿状态，合并后超过 8 篇时禁用提交并说明；顺序号接在目标批次末尾 |
 | 批量推送 | **不提供**：订阅号一天 1 次、服务号一月 4 次，多批次同时提交必然撞频率限制，按钮置灰并说明原因 |
 
 ### 12.6 与推送流程的联动
@@ -720,7 +723,7 @@ ready ──设置时间──> scheduled ──到点──> pushing
 | 数据统计 | 用户增长、图文数据、菜单点击、消息分析，只读 | 日期范围（7 / 15 / 30 天）+ 指标卡 + CSS 柱状趋势（不引图表库）；结果落 `wechat_stats_cache` | 需认证 |
 | 留言管理 | 按文章筛选留言、加精、回复、删除 | 顶部文章选择器 + 留言列表（头像、昵称、时间、内容、精选标）+ 行内回复 | 需认证且已开通留言 |
 | 用户管理 | 粉丝列表、标签 CRUD、备注、拉黑 | 分段栏（粉丝 / 标签）+ 分页列表；操作走 `tags/members/batchtagging`、`user/info/updateremark`；`user/get` 单次上限 10000 | 一般可用 |
-| 推送管理 | 队列、历史、额度，是推送状态的唯一真相；只读，发起动作仍在仪表盘批次页 | 分段栏（待推送 / 历史 / 额度）+ 行内状态徽标与失败原因 + 页脚刷新；定时群发按产品决定不做 | 按主体分级 |
+| 推送管理 | 队列、历史、额度，是推送状态的唯一真相；只读，发起动作仍在仪表盘批次页 | 分段栏（待推送 / 历史 / 额度）+ 行内状态徽标与失败原因 + 顶部「进行中任务」条（挂载时查 `wechat/tasks`，并订阅阶段广播）+ 页脚刷新；定时群发按产品决定不做 | 按主体分级 |
 
 ### 13.3 导航栏容量改造（必须做）
 

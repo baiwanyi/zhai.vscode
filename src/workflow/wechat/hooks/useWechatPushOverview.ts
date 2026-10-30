@@ -6,17 +6,21 @@
  * 额度区单独显示失败原因，不因一个次要数据源失败把整页变成错误页。
  */
 import { useCallback, useEffect, useState } from 'react'
+import { isWechatPublishProgress } from '@shared/types/wechat'
 import type {
     WechatIssueSummary,
     WechatIssuesRequest,
+    WechatPublishProgress,
     WechatPublishQuotaRequest,
     WechatPublishQuotaResult,
 } from '@shared/types/wechat'
-import { request } from '@shared/utils/bridge'
+import { onState, request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
 
 export interface WechatPushOverviewState {
     issues: WechatIssueSummary[]
+    /** 进行中的推送任务：切回本页时仍能看到「现在在跑什么」 */
+    tasks: WechatPublishProgress[]
     quota: WechatPublishQuotaResult | null
     status: 'loading' | 'ready' | 'error'
     error: string | null
@@ -27,6 +31,18 @@ export interface WechatPushOverviewState {
 
 export function useWechatPushOverview(accountId: string): WechatPushOverviewState {
     const [issues, setIssues] = useState<WechatIssueSummary[]>([])
+    const [tasks, setTasks] = useState<WechatPublishProgress[]>([])
+
+    // 即时进度：宿主播报阶段时按批次覆盖，结束时由下一次查询清理
+    useEffect(() => {
+        return onState((message) => {
+            if (message.channel !== 'wechat' || !isWechatPublishProgress(message.payload)) {
+                return
+            }
+            const progress = message.payload
+            setTasks((previous) => [...previous.filter((item) => item.issueId !== progress.issueId), progress])
+        })
+    }, [])
     const [quota, setQuota] = useState<WechatPublishQuotaResult | null>(null)
     const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
     const [error, setError] = useState<string | null>(null)
@@ -35,10 +51,14 @@ export function useWechatPushOverview(accountId: string): WechatPushOverviewStat
     const reload = useCallback(async (): Promise<void> => {
         const issuesPayload: WechatIssuesRequest = { accountId }
         const quotaPayload: WechatPublishQuotaRequest = { accountId }
-        const [issuesResult, quotaResult] = await Promise.allSettled([
+        const [issuesResult, quotaResult, tasksResult] = await Promise.allSettled([
             request<WechatIssueSummary[]>('wechat/issues', issuesPayload),
             request<WechatPublishQuotaResult>('wechat/publishQuota', quotaPayload),
+            request<WechatPublishProgress[]>('wechat/tasks'),
         ])
+
+        // 任务查询是权威口径：以它为准覆盖即时订阅累积的结果，避免已完成的任务残留
+        setTasks(tasksResult.status === 'fulfilled' && Array.isArray(tasksResult.value) ? tasksResult.value : [])
 
         if (issuesResult.status === 'fulfilled') {
             setIssues(Array.isArray(issuesResult.value) ? issuesResult.value : [])
@@ -62,5 +82,5 @@ export function useWechatPushOverview(accountId: string): WechatPushOverviewStat
         void reload()
     }, [reload])
 
-    return { issues, quota, status, error, quotaError, reload }
+    return { issues, tasks, quota, status, error, quotaError, reload }
 }

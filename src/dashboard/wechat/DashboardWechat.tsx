@@ -13,6 +13,7 @@ import { AppContent, AppDescription, AppFooter, AppHeader, AppPage, AppTitle } f
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { useWechatAccounts } from './hooks/useWechatAccounts'
+import { useWechatModuleSync } from './hooks/useWechatModuleSync'
 import { WechatAccountDialog } from './layout/WechatAccountDialog'
 import { WechatAccountList } from './layout/WechatAccountList'
 import type { WechatAccountFormInput } from './hooks/useWechatAccounts'
@@ -25,6 +26,8 @@ interface DashboardWechatProps {
 }
 
 export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.Element {
+    // 同步用户选定模块，让工作流侧栏出现公众号六分区（页内路由不会顺带设置该状态）
+    useWechatModuleSync()
     const {
         accounts,
         selectedId,

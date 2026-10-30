@@ -22,6 +22,11 @@ interface WechatIssueListProps {
     status: WechatListStatus
     error: string | null
     isBusy: boolean
+    /** 批次首图在 Webview 里的地址：键为文章里的封面路径 */
+    covers: Record<string, string>
+    /** 已勾选的批次 id：只有草稿与失败批次可勾选 */
+    selectedIds: string[]
+    onToggleSelect: (issue: WechatIssueSummary) => void
     /** 是否处于筛选态：筛选后为空时给出「清除筛选」而不是「新建批次」 */
     isFiltered: boolean
     onClearFilter: () => void
@@ -42,6 +47,9 @@ export function WechatIssueList({
     status,
     error,
     isBusy,
+    covers,
+    selectedIds,
+    onToggleSelect,
     isFiltered,
     onClearFilter,
     onAdd,
@@ -99,6 +107,10 @@ export function WechatIssueList({
                 <WechatIssueCard
                     key={issue.id}
                     issue={issue}
+                    coverUri={covers[issue.articles[0]?.coverPath ?? '']}
+                    isSelectable={issue.status === 'draft' || issue.status === 'failed'}
+                    isSelected={selectedIds.includes(issue.id)}
+                    onToggleSelect={onToggleSelect}
                     isBusy={isBusy}
                     onAddArticle={onAddArticle}
                     onImport={onImport}

@@ -5,8 +5,9 @@
  * 文章行点击进入编辑，行内菜单负责「移出批次」；批次菜单的「推送」在当前阶段保持禁用并说明原因；
  * 文章数达到上限时，菜单里的添加与导入同时禁用，避免用户点了才被宿主拒绝。
  */
-import { ChevronRight, MoreHorizontal } from 'lucide-react'
+import { ChevronRight, Image as ImageIcon, MoreHorizontal } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
+import { Checkbox } from '@components/ui/checkbox'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -17,11 +18,18 @@ import {
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import { WECHAT_ISSUE_ARTICLE_LIMIT, type WechatArticleSummary, type WechatIssueSummary } from '@shared/types/wechat'
 import { Button } from '@webview/components/Button'
+import { Image } from '@webview/components/Image'
 import type { JSX } from 'react'
 import { formatArticleMeta, formatIssueMeta, WECHAT_ISSUE_STATUS_LABELS, WECHAT_ISSUE_STATUS_VARIANTS } from '../utils'
 
 interface WechatIssueCardProps {
     issue: WechatIssueSummary
+    /** 首篇文章封面在 Webview 里的地址：缺失时卡片显示灰底占位 */
+    coverUri?: string
+    /** 是否可批量选择：只有草稿与推送失败的批次可删，其余不给复选框 */
+    isSelectable: boolean
+    isSelected: boolean
+    onToggleSelect: (issue: WechatIssueSummary) => void
     /** 写操作进行中：菜单项整体禁用，避免并发写导致序号错乱 */
     isBusy: boolean
     onAddArticle: (issue: WechatIssueSummary) => void
@@ -38,6 +46,10 @@ interface WechatIssueCardProps {
 
 export function WechatIssueCard({
     issue,
+    coverUri,
+    isSelectable,
+    isSelected,
+    onToggleSelect,
     isBusy,
     onAddArticle,
     onImport,
@@ -54,7 +66,25 @@ export function WechatIssueCard({
 
     return (
         <Item variant="outline" className="flex-col items-stretch gap-2 p-3">
+            {/* 封面取首篇文章的图：与原型一致，未指定时用灰底占位而不是空白 */}
+            <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-muted/40">
+                {coverUri === undefined ? (
+                    <div className="flex size-full items-center justify-center text-muted-foreground">
+                        <ImageIcon className="size-5" aria-hidden />
+                    </div>
+                ) : (
+                    <Image src={coverUri} alt={issue.title} aspect="video" />
+                )}
+            </div>
             <div className="flex items-start gap-2">
+                {isSelectable && (
+                    <Checkbox
+                        checked={isSelected}
+                        aria-label={`选择 ${issue.title}`}
+                        className="mt-1 shrink-0"
+                        onCheckedChange={() => onToggleSelect(issue)}
+                    />
+                )}
                 <ItemContent className="min-w-0">
                     <ItemTitle className="w-full">
                         <span className="block min-w-0 flex-1 truncate">{issue.title}</span>

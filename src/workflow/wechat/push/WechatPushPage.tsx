@@ -55,7 +55,7 @@ interface WechatPushPageProps {
 }
 
 export function WechatPushPage({ account }: WechatPushPageProps): JSX.Element {
-    const { issues, quota, status, error, quotaError, reload } = useWechatPushOverview(account.id)
+    const { issues, tasks, quota, status, error, quotaError, reload } = useWechatPushOverview(account.id)
     const [tab, setTab] = useState<PushTab>('queue')
 
     const queue = issues.filter((issue) => QUEUE_STATUSES.has(issue.status))
@@ -121,7 +121,19 @@ export function WechatPushPage({ account }: WechatPushPageProps): JSX.Element {
                     />
                 </AppMenu>
             </AppHeader>
-            <AppContent isScrollable>{renderBody()}</AppContent>
+            <AppContent isScrollable>
+                {/* 进行中任务：切回本页仍能看到「现在在跑什么」，完成后由重拉清理 */}
+                {tasks.length > 0 && (
+                    <div className="mb-2 flex shrink-0 flex-col gap-1 rounded-md bg-muted/40 px-2 py-1">
+                        {tasks.map((task) => (
+                            <span key={task.issueId} className="truncate text-xs text-muted-foreground">
+                                {task.message}
+                            </span>
+                        ))}
+                    </div>
+                )}
+                {renderBody()}
+            </AppContent>
             <AppFooter>
                 <Button variant="outline" onClick={() => void reload()}>
                     刷新

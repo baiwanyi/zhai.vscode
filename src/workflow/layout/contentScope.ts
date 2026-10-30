@@ -7,12 +7,12 @@
  * 公众号既可能来自「打开了 wechat/ 目录下的文档」，也可能来自「用户在仪表盘选了公众号」，
  * 后者用 selectedModule 判定：选模块是持久意图，不依赖当前打开哪个文件。
  */
-import { NOTES_MODULE_KEY } from '@shared/types/workflow'
+import { NOTES_MODULE_KEY, WECHAT_MODULE_KEY } from '@shared/types/workflow'
 import type { WorkflowContextState } from '@shared/types/workflow'
 import type { WorkflowSection } from './workflowSections'
 
-/** 公众号模块的一级目录名：与宿主 wechat.db 及模块键一致 */
-export const WECHAT_MODULE_KEY = 'wechat'
+/** 公众号模块键：定义在 shared，这里转出以保持既有引用不变 */
+export { WECHAT_MODULE_KEY }
 
 /** 内容归属：null 表示文档不属于任何已接入模块 */
 export type ContentScope = 'press' | 'note' | 'wechat'
