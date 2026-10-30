@@ -19,14 +19,6 @@ import { Badge } from '@components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import { Button, TOOLTIP_CLASS } from '@webview/components/Button'
 import { Image } from './Image'
-import {
-    findAdjacentChip,
-    insertPlainText,
-    isChip,
-    moveCaretToEnd,
-    readEditableText,
-    writeEditableText,
-} from './richText'
 import type {
     ClipboardEvent as ReactClipboardEvent,
     JSX,
@@ -34,6 +26,14 @@ import type {
     ReactNode,
     Ref,
 } from 'react'
+import {
+    findAdjacentChip,
+    insertPlainText,
+    isChip,
+    moveCaretToEnd,
+    readEditableText,
+    writeEditableText,
+} from '../shared/utils/richText'
 
 /** 芯片容器基础排版：默认宽度上限 max-w-56，调用方经 badgeClassName 覆盖 */
 const CHIP_CLASS = 'mr-1 h-5 max-w-56 align-top'

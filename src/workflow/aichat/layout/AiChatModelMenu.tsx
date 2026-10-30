@@ -2,7 +2,7 @@
  * AI 对话模型菜单：底部操作行展示当前模型，展开时才拉取账号可用清单。
  * 复用 @components/ui 的 DropdownMenu，把「Auto」「内置模型」「自定义模型」合并为同一菜单；
  * 每项左侧图标由 ./ModelIcon 按模型 id 前缀提供（品牌 SVG，缺失时回退品牌色首字母胶囊）。
- * 关键约束：清单拉取需拉起 CLI（数秒），加载中禁止重复选择；Auto 与「空模型 id」一一对应，
+ * 关键约束：清单拉取需拉起 CLI（数秒），展开期间的重复请求复用同一次进行中的拉取；Auto 与「空模型 id」一一对应，
  * 选中即交给平台自动选择模型；本层不提供手动输入，模型 id 只来自清单。
  * 清单项右侧展示平台下发的额度倍率（每个模型的成本消耗速率），勾选位于倍率之前，倍率未知时不渲染；
  * 两组清单均按展示名字母序排列（numeric 比较），Auto 固定在内置组首位；
@@ -30,6 +30,10 @@ import type { JSX } from 'react'
 const AUTO_MODEL_ID = ''
 const AUTO_MODEL_LABEL = 'Auto'
 
+/** 菜单项与勾选标记的公共样式：四组清单共用，间距与尺寸不各写一遍 */
+const ITEM_CLASS = 'gap-2'
+const CHECK_CLASS = 'size-3 shrink-0'
+
 /** 额度倍率展示文本：未知返回 null，避免把「未知」渲染成零成本 */
 function toRateLabel(rate: number | null): string | null {
     return rate === null ? null : `${rate.toFixed(2)}x`
@@ -40,6 +44,20 @@ function sortByName(list: AiModelOption[]): AiModelOption[] {
     return [...list].sort((left, right) =>
         left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: 'base' }),
     )
+}
+
+/** 一次遍历完成「内置 / 自定义」分组后各自排序：两趟 filter 会多遍历一遍并留下中间数组 */
+function splitBySource(list: AiModelOption[]): { builtin: AiModelOption[]; custom: AiModelOption[] } {
+    const builtin: AiModelOption[] = []
+    const custom: AiModelOption[] = []
+    for (const option of list) {
+        if (option.custom) {
+            custom.push(option)
+        } else {
+            builtin.push(option)
+        }
+    }
+    return { builtin: sortByName(builtin), custom: sortByName(custom) }
 }
 
 /** 档位展示文本：平台档位均为整千/整百万，折成 300K / 1M，不保留无意义小数 */
@@ -80,8 +98,7 @@ export function AiChatModelMenu({
     onSelectEffort,
 }: AiChatModelMenuProps): JSX.Element {
     const options = choices?.options ?? []
-    const builtinOptions = sortByName(options.filter((option) => !option.custom))
-    const customOptions = sortByName(options.filter((option) => option.custom))
+    const { builtin: builtinOptions, custom: customOptions } = splitBySource(options)
     const currentOption = options.find((option) => option.modelId === current)
     const windowOptions = currentOption?.contextWindowOptions ?? []
     const selectedWindow = choices?.contextWindow ?? 0
@@ -94,22 +111,28 @@ export function AiChatModelMenu({
         ? AUTO_MODEL_LABEL
         : (currentOption?.name ?? (currentName.length > 0 ? currentName : current))
 
+    /** 勾选标记：四组清单共用，未选中时不渲染，不留空占位 */
+    const renderCheck = (checked: boolean): JSX.Element | null => (checked ? <Check className={CHECK_CLASS} /> : null)
+
+    /** 空态项：清单未拉取或该组没有内容时占一行，避免菜单只剩一个标题 */
+    const renderEmptyItem = (text: string): JSX.Element => <DropdownMenuItem disabled>{text}</DropdownMenuItem>
+
     const renderAutoOption = (): JSX.Element => (
-        <DropdownMenuItem onSelect={() => onSelect(AUTO_MODEL_ID)} className="gap-2">
+        <DropdownMenuItem onSelect={() => onSelect(AUTO_MODEL_ID)} className={ITEM_CLASS}>
             <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
             <span className="min-w-0 flex-1 truncate">{AUTO_MODEL_LABEL}</span>
-            {isAuto ? <Check className="size-3 shrink-0" /> : null}
+            {renderCheck(isAuto)}
         </DropdownMenuItem>
     )
 
     const renderOption = (option: AiModelOption): JSX.Element => {
         const rateLabel = toRateLabel(option.creditRate)
         return (
-            <DropdownMenuItem key={option.modelId} onSelect={() => onSelect(option.modelId)} className="gap-2">
+            <DropdownMenuItem key={option.modelId} onSelect={() => onSelect(option.modelId)} className={ITEM_CLASS}>
                 <ModelIcon modelId={option.modelId} name={option.name} />
                 <span className="min-w-0 flex-1 truncate">{option.name}</span>
                 <span className="flex shrink-0 items-center gap-1">
-                    {option.modelId === current ? <Check className="size-3 shrink-0" /> : null}
+                    {renderCheck(option.modelId === current)}
                     {rateLabel !== null ? (
                         <span className="tabular-nums text-muted-foreground">{rateLabel}</span>
                     ) : null}
@@ -120,22 +143,28 @@ export function AiChatModelMenu({
 
     /** 档位项：0 为「模型默认」，其余为平台下发的可选档位 */
     const renderWindowOption = (tokens: number, label: string): JSX.Element => (
-        <DropdownMenuItem key={tokens} onSelect={() => onSelectContextWindow(tokens)} className="gap-2">
+        <DropdownMenuItem key={tokens} onSelect={() => onSelectContextWindow(tokens)} className={ITEM_CLASS}>
             <span className="min-w-0 flex-1 truncate">{label}</span>
-            {currentWindow === tokens ? <Check className="size-3 shrink-0" /> : null}
+            {renderCheck(currentWindow === tokens)}
         </DropdownMenuItem>
     )
 
     /** 强度项：null 为「模型默认」，其余为白名单档位 */
     const renderEffortOption = (effort: AiReasoningEffort | null, label: string): JSX.Element => (
-        <DropdownMenuItem key={effort ?? 'default'} onSelect={() => onSelectEffort(effort)} className="gap-2">
+        <DropdownMenuItem key={effort ?? 'default'} onSelect={() => onSelectEffort(effort)} className={ITEM_CLASS}>
             <span className="min-w-0 flex-1 truncate">{label}</span>
-            {currentEffort === effort ? <Check className="size-3 shrink-0" /> : null}
+            {renderCheck(currentEffort === effort)}
         </DropdownMenuItem>
     )
 
     return (
-        <DropdownMenu onOpenChange={(open) => (open ? onOpen() : undefined)}>
+        <DropdownMenu
+            onOpenChange={(open) => {
+                if (open) {
+                    onOpen()
+                }
+            }}
+        >
             <DropdownMenuTrigger asChild>
                 <Button
                     variant="ghost"
@@ -163,20 +192,12 @@ export function AiChatModelMenu({
                 <div className="max-h-72 overflow-x-hidden overflow-y-auto">
                     <DropdownMenuLabel>内置模型</DropdownMenuLabel>
                     {renderAutoOption()}
-                    {builtinOptions.length > 0 ? (
-                        builtinOptions.map(renderOption)
-                    ) : (
-                        <DropdownMenuItem disabled>
-                            {isLoading ? '正在读取可用模型…' : '未读取到可用模型'}
-                        </DropdownMenuItem>
-                    )}
+                    {builtinOptions.length > 0
+                        ? builtinOptions.map(renderOption)
+                        : renderEmptyItem(isLoading ? '正在读取可用模型…' : '未读取到可用模型')}
                     <DropdownMenuSeparator />
                     <DropdownMenuLabel>自定义模型</DropdownMenuLabel>
-                    {customOptions.length > 0 ? (
-                        customOptions.map(renderOption)
-                    ) : (
-                        <DropdownMenuItem disabled>暂无自定义模型</DropdownMenuItem>
-                    )}
+                    {customOptions.length > 0 ? customOptions.map(renderOption) : renderEmptyItem('暂无自定义模型')}
                     {/* 档位只在平台下发可选长度时出现：Auto 与未上报能力的自定义模型没有可选项 */}
                     {windowOptions.length > 0 ? (
                         <>

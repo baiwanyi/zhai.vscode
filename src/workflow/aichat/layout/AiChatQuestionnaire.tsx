@@ -24,7 +24,7 @@ import {
     QuestionnaireTitle,
 } from '@components/ui/questionnaire'
 import type { AiAskQuestion, AiPermissionDecision } from '@shared/types/aiChat'
-import type { JSX } from 'react'
+import type { JSX, SubmitEvent } from 'react'
 import { ANSWER_SEPARATOR } from '../utils'
 
 interface AiChatQuestionnaireProps {
@@ -70,7 +70,7 @@ export function AiChatQuestionnaire({ questions, expiresAt, onSubmit }: AiChatQu
         choices: question.options.map((option) => ({ value: option.label })),
     }))
 
-    const handleSubmit = (event: React.FormEvent<HTMLFormElement>): void => {
+    const handleSubmit = (event: SubmitEvent<HTMLFormElement>): void => {
         event.preventDefault()
         if (isExpired) {
             onSubmit({ allowed: false })
