@@ -97,6 +97,9 @@ import { buildWebviewHtml } from './webviewHtml'
 import type { IndexService, IndexStatus } from './indexer/indexService'
 import type Database from 'better-sqlite3'
 
+/** 公众号后台地址：前端只传固定标识，URL 固定在此，不接受 Webview 传入任意地址 */
+const WECHAT_MP_URL = 'https://mp.weixin.qq.com/'
+
 export class DashboardViewProvider implements vscode.WebviewViewProvider {
     public static readonly viewId = 'zhai.dashboard'
 
@@ -287,6 +290,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                 void vscode.commands.executeCommand(command)
                 return Promise.resolve({ executed: true })
             }
+            case 'host/openExternal': {
+                return this.openExternalPage(payload)
+            }
             default: {
                 if (method.startsWith('todo/')) {
                     const routes = this.todoRoutes
@@ -347,6 +353,17 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         }
         await openNoteByPath(target.path)
         return { opened: true }
+    }
+
+    /**
+     * 打开固定外部页面：前端只传标识，URL 由宿主解析。
+     * 安全约束：不接受任意 URL，避免 Webview 借本协议打开不可信地址；新增页面须在此登记常量。
+     */
+    private async openExternalPage(payload: unknown): Promise<{ opened: boolean }> {
+        if (payload !== 'wechatMp') {
+            throw new Error('host/openExternal 参数不正确：仅支持固定页面标识')
+        }
+        return { opened: await vscode.env.openExternal(vscode.Uri.parse(WECHAT_MP_URL)) }
     }
 
     /**

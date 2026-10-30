@@ -30,6 +30,7 @@ import {
     type WechatArticleSummary,
     type WechatArticleUpdateRequest,
     type WechatArticleUpdateResult,
+    type WechatCoverPickResult,
     type WechatIssueCreateRequest,
     type WechatIssueCreateResult,
     type WechatIssueDetailResult,
@@ -65,6 +66,9 @@ export interface WechatIssueServiceDeps {
 /** 导入时允许的源模块：与一级目录名一致 */
 const SOURCE_MODULE_DIRS = { note: 'notes', press: 'press' } as const
 
+/** 封面允许的扩展名：与素材上传口径保持一致，平台只接受 jpg/png */
+const COVER_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg'])
+
 /** 早于该时间前导入的源文档若已改写，界面以 body_hash 与索引 mtime 对比提示（M3 推送前复核） */
 const DEFAULT_ISSUE_TITLE_PREFIX = '未命名批次'
 
@@ -92,6 +96,7 @@ function toArticleSummary(row: WechatArticleRow): WechatArticleSummary {
         ...(row.digest === null ? {} : { digest: row.digest }),
         sourceKind: row.source_kind === 'note' || row.source_kind === 'press' ? row.source_kind : 'manual',
         ...(row.source_path === null ? {} : { sourcePath: row.source_path }),
+        ...(row.cover_path === null ? {} : { coverPath: row.cover_path }),
         wordCount: row.word_count,
     }
 }
@@ -183,6 +188,7 @@ export class WechatIssueService {
             author: readWechatArticleAuthor(request.author),
             digest: readWechatArticleDigest(request.digest),
             body,
+            coverPath: this.readCoverPath(request.coverPath),
             sourceKind: 'manual',
             sourcePath: null,
         })
@@ -205,6 +211,7 @@ export class WechatIssueService {
             body: request.body,
             bodyHash: contentHash(request.body),
             wordCount: countWords(request.body),
+            coverPath: request.coverPath === undefined ? existing.cover_path : this.readCoverPath(request.coverPath),
         })
         syncWechatIssueArticleCount(this.deps.db, existing.issue_id, new Date().toISOString())
         return { article: this.requireArticleDetail(existing.id) }
@@ -216,6 +223,35 @@ export class WechatIssueService {
         deleteWechatArticle(this.deps.db, id)
         syncWechatIssueArticleCount(this.deps.db, existing.issue_id, new Date().toISOString())
         return { removed: true }
+    }
+
+    /**
+     * 选择封面图：宿主弹选择器并返回存储根相对路径，前端不传路径。
+     * 关键约束：只接受存储根内的 jpg/png；用户取消返回 null 而不是抛错。
+     */
+    public async pickCover(): Promise<WechatCoverPickResult> {
+        const root = resolveStorageRoot()
+        const picked = await vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectFolders: false,
+            canSelectMany: false,
+            defaultUri: buildStorageUri(root, ['images']),
+            filters: { 图片: ['png', 'jpg', 'jpeg'] },
+            openLabel: '设为封面',
+            title: '选择封面图',
+        })
+        const [uri] = picked ?? []
+        if (uri === undefined) {
+            return { path: null }
+        }
+        const relativePath = path.relative(root.fsPath, uri.fsPath).split(path.sep).join('/')
+        if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+            throw new Error('封面图必须在文档保存目录内')
+        }
+        if (!COVER_EXTENSIONS.has(path.extname(uri.fsPath).toLowerCase())) {
+            throw new Error('封面只支持 jpg / png')
+        }
+        return { path: relativePath }
     }
 
     /**
@@ -267,6 +303,7 @@ export class WechatIssueService {
             author: '',
             digest: '',
             body: normalizedBody,
+            coverPath: null,
             sourceKind: request.sourceKind,
             sourcePath: relativePath,
         })
@@ -280,6 +317,7 @@ export class WechatIssueService {
         author: string
         digest: string
         body: string
+        coverPath: string | null
         sourceKind: 'manual' | 'note' | 'press'
         sourcePath: string | null
     }): string {
@@ -293,6 +331,7 @@ export class WechatIssueService {
             body: input.body,
             bodyHash: contentHash(input.body),
             wordCount: countWords(input.body),
+            coverPath: input.coverPath,
             sourceKind: input.sourceKind,
             sourcePath: input.sourcePath,
         })
@@ -351,6 +390,21 @@ export class WechatIssueService {
         if (readWechatArticleCount(this.deps.db, issueId) >= WECHAT_ISSUE_ARTICLE_LIMIT) {
             throw new Error(`一次推送最多 ${String(WECHAT_ISSUE_ARTICLE_LIMIT)} 篇，请先移除一篇再添加`)
         }
+    }
+
+    /**
+     * 规整封面路径：空串视为清除（返回 null），其余只做扩展名与相对形式检查。
+     * 关键约束：绝对路径放行，由素材服务在推送时统一做「是否落在存储根内」的最终校验。
+     */
+    private readCoverPath(value: string | undefined): string | null {
+        const trimmed = value?.trim() ?? ''
+        if (trimmed.length === 0) {
+            return null
+        }
+        if (!COVER_EXTENSIONS.has(path.extname(trimmed).toLowerCase())) {
+            throw new Error('封面只支持 jpg / png')
+        }
+        return path.isAbsolute(trimmed) ? trimmed : trimmed.replace(/^\.\//, '')
     }
 
     /** 校验正文长度：超出公众号编辑器上限时提前阻断，避免推送阶段才发现 */

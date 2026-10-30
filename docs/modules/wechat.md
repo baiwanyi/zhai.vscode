@@ -268,6 +268,7 @@ CREATE TABLE IF NOT EXISTS wechat_articles (
     body           TEXT NOT NULL,            -- Markdown 源文
     body_hash      TEXT NOT NULL,            -- 幂等与「源文件已变更」判定
     word_count     INTEGER NOT NULL DEFAULT 0,
+    cover_path     TEXT,                     -- 指定封面（存储根相对或绝对路径），推送时上传为封面素材
     cover_media_id TEXT,
     source_kind    TEXT NOT NULL,            -- note|press|manual
     source_path    TEXT,
@@ -516,7 +517,7 @@ interface WechatPublishResult {
 
 | 侧 | 方法 |
 |----|------|
-| 仪表盘 | `wechat/accounts`、`wechat/account/{create,update,remove,test,select}`、`wechat/issues`、`wechat/issue/{create,detail,remove,publishDraft}`、`wechat/article/{create,update,remove,import}`（均已落地） |
+| 仪表盘 | `wechat/accounts`、`wechat/account/{create,update,remove,test,select}`、`wechat/issues`、`wechat/issue/{create,detail,remove,publishDraft}`、`wechat/article/{create,update,remove,import}`、`wechat/cover/pick`；另复用 `host/openExternal`（标识 `wechatMp`，地址由宿主固定）（均已落地） |
 | 工作流 | `wechat/menu/get`、`wechat/menu/save`、`wechat/material/list`、`wechat/material/upload`、`wechat/material/remove`、`wechat/stats/query`、`wechat/comment/list`、`wechat/comment/reply`、`wechat/comment/mark`、`wechat/fans/list`、`wechat/fans/tag`、`wechat/push/queue`、`wechat/push/history`、`wechat/push/retry` |
 | 广播（state 通道） | `wechat/push-progress`（阶段 + 进度 + 终态）、`wechat/account-status`（Token 失效即时提示） |
 
@@ -639,6 +640,8 @@ interface WechatPublishResult {
 > 渲染正文、补传本地图片素材并提交草稿箱，成功后状态推进为「草稿已就绪」，已有 `media_id` 时改为更新草稿；
 > 外链图片不上传，只以 warning 提示。群发（`freepublish`）仍待 M3c 接入。
 > 导入由宿主弹出文件选择器并回查索引库（前端不传路径），正文以 Markdown 源文入库。
+> 封面在文章弹窗内指定（只接受 jpg/png，路径由宿主签发），未指定时取正文第一张本地图片；
+> 草稿生成后，批次菜单提供「打开公众号后台」，地址由宿主固定解析，前端只传标识。
 
 ```
 批次「推送」

@@ -56,6 +56,7 @@ const SCHEMA_STATEMENTS = [
         body           TEXT NOT NULL,
         body_hash      TEXT NOT NULL,
         word_count     INTEGER NOT NULL DEFAULT 0,
+        cover_path     TEXT,                     -- 指定的封面图（存储根相对或绝对路径），推送时上传
         cover_media_id TEXT,
         source_kind    TEXT NOT NULL,
         source_path    TEXT,
@@ -92,6 +93,18 @@ function dropLegacyArticleTable(db: Database.Database): void {
     db.exec('DROP TABLE wechat_articles')
 }
 
+/**
+ * 补齐文章表的增量列：CREATE TABLE IF NOT EXISTS 不会改动已存在的表，
+ * 旧库升级时用 ALTER TABLE 加列（SQLite 对 ADD COLUMN 的限制最小，不需要重建表）。
+ */
+function ensureArticleCoverColumn(db: Database.Database): void {
+    const columns = db.prepare('PRAGMA table_info(wechat_articles)').all() as { name: string }[]
+    if (columns.length === 0 || columns.some((column) => column.name === 'cover_path')) {
+        return
+    }
+    db.exec('ALTER TABLE wechat_articles ADD COLUMN cover_path TEXT')
+}
+
 /** 打开（或创建）公众号库，并确保表结构存在 */
 export function openWechatDatabase(cacheDirUri: vscode.Uri): Database.Database {
     const db = openSqliteDatabase(cacheDirUri, 'wechat.db')
@@ -99,5 +112,6 @@ export function openWechatDatabase(cacheDirUri: vscode.Uri): Database.Database {
     for (const ddl of SCHEMA_STATEMENTS) {
         db.exec(ddl)
     }
+    ensureArticleCoverColumn(db)
     return db
 }

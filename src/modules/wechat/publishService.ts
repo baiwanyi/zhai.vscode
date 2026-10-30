@@ -56,8 +56,26 @@ export class WechatPublishService {
         const warnings = new Set<string>()
         const drafts: WechatDraftArticle[] = []
         for (const article of articles) {
-            /** 本篇第一张成功上传的图片同时充当封面：平台要求每篇都有 thumb_media_id */
+            /**
+             * 封面优先级：用户指定的封面图 → 正文第一张可用图片。
+             * 平台要求每篇都有 thumb_media_id，两者都没有时直接拒绝，避免提交后被平台打回。
+             */
             let coverMediaId: string | null = null
+            if (article.cover_path !== null && article.cover_path.length > 0) {
+                const cover = await this.deps.materials.ensureImage({
+                    accountId: issue.account_id,
+                    appId: account.app_id,
+                    // 封面路径按存储根口径解析，不跟随源文档目录
+                    sourcePath: null,
+                    imageUrl: article.cover_path,
+                })
+                if (cover.kind === 'uploaded') {
+                    coverMediaId = cover.mediaId
+                } else {
+                    const reason = cover.kind === 'missing' ? cover.reason : '外链封面无法上传'
+                    warnings.add(`《${article.title}》的封面不可用：${reason}`)
+                }
+            }
             const rendered = await renderWechatHtml(article.body, {
                 resolveImageUrl: async (url: string): Promise<string | null> => {
                     const ensured = await this.deps.materials.ensureImage({
@@ -79,7 +97,7 @@ export class WechatPublishService {
                 },
             })
             if (coverMediaId === null) {
-                throw new Error(`《${article.title}》缺少封面：请在正文放入一张本地 jpg/png 图片后重试`)
+                throw new Error(`《${article.title}》缺少封面：请在文章里指定封面图，或在正文放入一张本地 jpg/png 图片`)
             }
             drafts.push({
                 title: article.title,

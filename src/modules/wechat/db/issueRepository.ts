@@ -38,6 +38,7 @@ export interface WechatArticleRow {
     body: string
     body_hash: string
     word_count: number
+    cover_path: string | null
     cover_media_id: string | null
     source_kind: string
     source_path: string | null
@@ -66,11 +67,12 @@ export interface WechatArticleRecord {
     body: string
     bodyHash: string
     wordCount: number
+    coverPath: string | null
     sourceKind: string
     sourcePath: string | null
 }
 
-/** 文章可编辑字段：标题、作者、摘要与正文 */
+/** 文章可编辑字段：标题、作者、摘要、正文与封面 */
 export interface WechatArticlePatch {
     id: string
     title: string
@@ -79,6 +81,7 @@ export interface WechatArticlePatch {
     body: string
     bodyHash: string
     wordCount: number
+    coverPath: string | null
 }
 
 /** 列出某账号的全部批次，按最近更新倒序 */
@@ -165,7 +168,7 @@ export function listWechatArticlesByIssues(db: Database.Database, issueIds: stri
     const placeholders = issueIds.map(() => '?').join(', ')
     return db
         .prepare(
-            `SELECT id, issue_id, sort_index, title, author, digest, source_kind, source_path, word_count
+            `SELECT id, issue_id, sort_index, title, author, digest, source_kind, source_path, word_count, cover_path
                FROM wechat_articles
               WHERE issue_id IN (${placeholders})
               ORDER BY issue_id ASC, sort_index ASC`,
@@ -184,9 +187,11 @@ export function insertWechatArticle(db: Database.Database, record: WechatArticle
     const nextIndex = readWechatArticleCount(db, record.issueId) + 1
     db.prepare(
         `INSERT INTO wechat_articles
-            (id, issue_id, sort_index, title, author, digest, body, body_hash, word_count, source_kind, source_path)
+            (id, issue_id, sort_index, title, author, digest, body, body_hash, word_count,
+             cover_path, source_kind, source_path)
          VALUES
-            (@id, @issueId, @nextIndex, @title, @author, @digest, @body, @bodyHash, @wordCount, @sourceKind, @sourcePath)`,
+            (@id, @issueId, @nextIndex, @title, @author, @digest, @body, @bodyHash, @wordCount,
+             @coverPath, @sourceKind, @sourcePath)`,
     ).run({ ...record, nextIndex })
     return nextIndex
 }
@@ -196,7 +201,7 @@ export function updateWechatArticle(db: Database.Database, patch: WechatArticleP
     db.prepare(
         `UPDATE wechat_articles
             SET title = @title, author = @author, digest = @digest,
-                body = @body, body_hash = @bodyHash, word_count = @wordCount
+                body = @body, body_hash = @bodyHash, word_count = @wordCount, cover_path = @coverPath
           WHERE id = @id`,
     ).run(patch)
 }

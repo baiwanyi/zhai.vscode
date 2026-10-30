@@ -104,6 +104,21 @@ describe('文章请求收窄', () => {
         expect(isWechatArticleUpdateRequest({ id: ARTICLE_ID, title: '标题' })).toBe(false)
     })
 
+    it('封面路径为可选字符串，类型不符即拒绝', () => {
+        expect(
+            isWechatArticleCreateRequest({
+                issueId: ISSUE_ID,
+                title: '标题',
+                coverPath: 'images/202610/cover.png',
+            }),
+        ).toBe(true)
+        expect(isWechatArticleCreateRequest({ issueId: ISSUE_ID, title: '标题', coverPath: 1 })).toBe(false)
+        expect(
+            isWechatArticleUpdateRequest({ id: ARTICLE_ID, title: '标题', body: '', coverPath: 'images/a.png' }),
+        ).toBe(true)
+        expect(isWechatArticleUpdateRequest({ id: ARTICLE_ID, title: '标题', body: '', coverPath: null })).toBe(false)
+    })
+
     it('删除文章要求合法 id', () => {
         expect(isWechatArticleRemoveRequest({ id: ARTICLE_ID })).toBe(true)
         expect(isWechatArticleRemoveRequest({ id: 1 })).toBe(false)

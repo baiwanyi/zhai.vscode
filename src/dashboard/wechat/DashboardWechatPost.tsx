@@ -103,6 +103,8 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         importArticle,
         loadArticle,
         publishDraft,
+        pickCover,
+        openBackend,
     } = useWechatIssues(accountId)
 
     const [filter, setFilter] = useState<IssueFilter>('all')
@@ -193,6 +195,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                           author: input.author,
                           digest: input.digest,
                           body: input.body,
+                          coverPath: input.coverPath,
                       })
             if (isSaved) {
                 setArticleTarget(null)
@@ -338,6 +341,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                         onRemoveArticle={(issue, article) => setPendingArticle({ issue, article })}
                         onRemoveIssue={setPendingIssue}
                         onPublishDraft={(issue) => void publishDraft(issue.id)}
+                        onOpenBackend={() => void openBackend()}
                     />
                 </AppContent>
                 <AppFooter className="justify-between">
@@ -396,6 +400,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                     }
                 }}
                 onSubmit={handleArticleSubmit}
+                onPickCover={pickCover}
             />
 
             <WechatAccountDialog

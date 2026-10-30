@@ -121,6 +121,8 @@ export class WechatRoutes {
                 }
                 return this.issues.importArticle(payload)
             }
+            case 'wechat/cover/pick':
+                return this.issues.pickCover()
             default:
                 throw new Error(`未知的公众号协议方法：${method}`)
         }

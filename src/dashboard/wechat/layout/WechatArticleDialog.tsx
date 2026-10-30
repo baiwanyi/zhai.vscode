@@ -17,17 +17,19 @@ import {
     WECHAT_ARTICLE_TITLE_MAX,
     type WechatArticleDetail,
 } from '@shared/types/wechat'
+import { Button } from '@webview/components/Button'
 import { FormDialog } from '@webview/components/FormDialog'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { JSX } from 'react'
 import { WECHAT_ARTICLE_SOURCE_LABELS } from '../utils'
 
-/** 提交载荷：不含 id 与批次，由页面补齐 */
+/** 提交载荷：不含 id 与批次，由页面补齐；coverPath 空串表示不指定封面 */
 export interface WechatArticleDialogInput {
     title: string
     author: string
     digest: string
     body: string
+    coverPath: string
 }
 
 interface WechatArticleDialogProps {
@@ -37,6 +39,8 @@ interface WechatArticleDialogProps {
     isSubmitting: boolean
     onOpenChange: (open: boolean) => void
     onSubmit: (input: WechatArticleDialogInput) => Promise<boolean>
+    /** 选择封面：返回存储根相对路径，取消返回 null */
+    onPickCover: () => Promise<string | null>
 }
 
 export function WechatArticleDialog({
@@ -45,12 +49,23 @@ export function WechatArticleDialog({
     isSubmitting,
     onOpenChange,
     onSubmit,
+    onPickCover,
 }: WechatArticleDialogProps): JSX.Element {
     const isEditing = article !== null
     const title = useTrimmedInput(article?.title ?? '')
     const author = useTrimmedInput(article?.author ?? '')
     const digest = useTrimmedInput(article?.digest ?? '')
     const [body, setBody] = useState(article?.body ?? '')
+    const [coverPath, setCoverPath] = useState(article?.coverPath ?? '')
+
+    /** 选择封面：宿主弹系统文件对话框，取消时不改动已选值 */
+    const handlePickCover = (): void => {
+        void onPickCover().then((path) => {
+            if (path !== null) {
+                setCoverPath(path)
+            }
+        })
+    }
 
     const handleSubmit = (): void => {
         if (title.isBlank) {
@@ -61,6 +76,7 @@ export function WechatArticleDialog({
             author: author.trimmedValue,
             digest: digest.trimmedValue,
             body,
+            coverPath,
         })
     }
 
@@ -87,6 +103,27 @@ export function WechatArticleDialog({
                     onChange={(event) => title.setValue(event.target.value)}
                 />
                 <FieldDescription>{`最多 ${String(WECHAT_ARTICLE_TITLE_MAX)} 字，超出会被公众号拒绝。`}</FieldDescription>
+            </Field>
+            <Field>
+                <FieldLabel htmlFor="wechat-article-cover">封面图</FieldLabel>
+                <div className="flex items-center gap-2">
+                    <Input
+                        id="wechat-article-cover"
+                        value={coverPath}
+                        readOnly
+                        placeholder="未指定：推送时取正文首图"
+                        disabled={isSubmitting}
+                    />
+                    <Button variant="outline" disabled={isSubmitting} onClick={handlePickCover}>
+                        选择
+                    </Button>
+                    {coverPath.length > 0 && (
+                        <Button variant="ghost" disabled={isSubmitting} onClick={() => setCoverPath('')}>
+                            清除
+                        </Button>
+                    )}
+                </div>
+                <FieldDescription>只支持 jpg / png；留空时取正文第一张本地图片作封面。</FieldDescription>
             </Field>
             <Field>
                 <FieldLabel htmlFor="wechat-article-author">作者</FieldLabel>

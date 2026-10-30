@@ -16,6 +16,7 @@ import type {
     WechatArticleImportResult,
     WechatArticleRemoveRequest,
     WechatArticleUpdateRequest,
+    WechatCoverPickResult,
     WechatIssueCreateRequest,
     WechatIssueCreateResult,
     WechatIssueDetailRequest,
@@ -30,13 +31,14 @@ import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 import type { WechatListStatus } from '../utils'
 
-/** 新建文章的表单载荷：正文可为空，先占位再补写 */
+/** 新建文章的表单载荷：正文可为空，先占位再补写；coverPath 空串表示不指定封面 */
 export interface WechatArticleFormInput {
     issueId: string
     title: string
     author: string
     digest: string
     body: string
+    coverPath: string
 }
 
 /** 更新文章的表单载荷 */
@@ -58,6 +60,10 @@ export interface WechatIssuesState {
     importArticle: (issueId: string, sourceKind: 'note' | 'press') => Promise<WechatArticleDetail | null>
     loadArticle: (issueId: string, articleId: string) => Promise<WechatArticleDetail | null>
     publishDraft: (issueId: string) => Promise<boolean>
+    /** 选择封面图：返回存储根相对路径，取消返回 null */
+    pickCover: () => Promise<string | null>
+    /** 打开公众号后台：URL 由宿主固定，前端只传标识 */
+    openBackend: () => Promise<void>
 }
 
 export function useWechatIssues(accountId: string): WechatIssuesState {
@@ -125,7 +131,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
     const createArticle = useCallback(
         async (input: WechatArticleFormInput): Promise<WechatArticleDetail | null> => {
             setIsMutating(true)
-            const payload: WechatArticleCreateRequest = input
+            const payload: WechatArticleCreateRequest = { ...input }
             try {
                 const created = await request<WechatArticleCreateResult>('wechat/article/create', payload)
                 await reload()
@@ -150,6 +156,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
                 author: input.author,
                 digest: input.digest,
                 body: input.body,
+                coverPath: input.coverPath,
             }
             try {
                 await request('wechat/article/update', payload)
@@ -249,6 +256,26 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         [reload],
     )
 
+    /** 选择封面：超时放宽到 60s，用户在系统文件对话框里停留的时间不可控 */
+    const pickCover = useCallback(async (): Promise<string | null> => {
+        try {
+            const result = await request<WechatCoverPickResult>('wechat/cover/pick', undefined, 60_000)
+            return result.path
+        } catch (cause) {
+            toastError(cause)
+            return null
+        }
+    }, [])
+
+    /** 打开公众号后台：前端只传固定标识，地址由宿主解析 */
+    const openBackend = useCallback(async (): Promise<void> => {
+        try {
+            await request('host/openExternal', 'wechatMp')
+        } catch (cause) {
+            toastError(cause)
+        }
+    }, [])
+
     return {
         issues,
         status,
@@ -263,5 +290,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         importArticle,
         loadArticle,
         publishDraft,
+        pickCover,
+        openBackend,
     }
 }

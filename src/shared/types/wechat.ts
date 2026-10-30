@@ -285,6 +285,8 @@ export interface WechatArticleSummary {
     sourceKind: WechatArticleSourceKind
     /** 源文档相对路径：manual 时缺省 */
     sourcePath?: string
+    /** 指定的封面图路径：缺省时推送阶段取正文首图 */
+    coverPath?: string
     /** 正文字数，供列表判断是否为空稿 */
     wordCount: number
 }
@@ -361,6 +363,13 @@ export interface WechatArticleCreateRequest {
     author?: string
     digest?: string
     body?: string
+    /** 指定的封面图路径：留空则推送时取正文首图 */
+    coverPath?: string
+}
+
+/** wechat/cover/pick 响应：用户取消时 path 为 null，路径为存储根相对形式 */
+export interface WechatCoverPickResult {
+    path: string | null
 }
 
 /** wechat/article/create 响应 */
@@ -375,6 +384,8 @@ export interface WechatArticleUpdateRequest {
     author?: string
     digest?: string
     body: string
+    /** 指定的封面图路径：传空串表示清除 */
+    coverPath?: string
 }
 
 /** wechat/article/update 响应 */
@@ -483,11 +494,14 @@ export function isWechatArticleCreateRequest(payload: unknown): payload is Wecha
     if (typeof payload !== 'object' || payload === null) {
         return false
     }
-    const candidate = payload as { issueId?: unknown; title?: unknown; body?: unknown }
+    const candidate = payload as { issueId?: unknown; title?: unknown; body?: unknown; coverPath?: unknown }
     if (!isWechatIssueId(candidate.issueId)) {
         return false
     }
     if (readWechatArticleTitle(candidate.title).length === 0) {
+        return false
+    }
+    if (candidate.coverPath !== undefined && typeof candidate.coverPath !== 'string') {
         return false
     }
     return candidate.body === undefined || isWechatArticleBody(candidate.body)
@@ -498,8 +512,11 @@ export function isWechatArticleUpdateRequest(payload: unknown): payload is Wecha
     if (typeof payload !== 'object' || payload === null) {
         return false
     }
-    const candidate = payload as { id?: unknown; title?: unknown; body?: unknown }
+    const candidate = payload as { id?: unknown; title?: unknown; body?: unknown; coverPath?: unknown }
     if (!isWechatIssueId(candidate.id) || readWechatArticleTitle(candidate.title).length === 0) {
+        return false
+    }
+    if (candidate.coverPath !== undefined && typeof candidate.coverPath !== 'string') {
         return false
     }
     return isWechatArticleBody(candidate.body)
