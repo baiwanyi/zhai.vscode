@@ -2,10 +2,11 @@
  * 通用按钮：在 @components/ui/button 之上补齐悬停提示、加载态与点击时序三件事。
  * 复用约定：variant / size / asChild 透传底层 Button，图标与文案由调用方经 children 给出；
  * variant 额外支持项目定制的 primary——配色沿用 default，尺寸与圆角按页面主操作放大为 rounded h-10 px-4，
+ * size 取 icon 时再补 w-10：底层的 size-8 只有 32px 宽，与 h-10 拼起来会成竖长条，补齐后为 40×40 正方形；
  * 由本层映射到底层 default 再补类名，不改 shadcn 的变体表（避免被 CLI 覆盖）；
  * 传 tooltip 时用受控 Tooltip 包裹，指针进入或键盘聚焦即开、离开或失焦即关，不走 Radix 的延时策略；
  * tooltipSide 仅在提示需要避开所在容器时使用（如活动栏竖排导航用 left），默认由 Radix 自动定位；
- * 气泡固定暗底亮字（不随明暗主题翻转），通过局部重写前景/背景变量实现，箭头随之同色，见 TOOLTIP_CLASS。
+ * 气泡固定暗底亮字（不随明暗主题翻转），类名统一取自 ./Tooltip 的 TOOLTIP_CLASS，箭头随之同色。
  * 交互上统一取消按下位移：底层 cva 的 active 位移用同修饰符的 translate-y-0 覆盖，点击时位置保持稳定。
  * 关键约束：disabled 与指针处理器必须在解构中取出后显式声明，否则会被 {...rest} 覆盖，
  * 造成加载态失效或 tooltip 卡在打开态；asChild 依赖唯一子元素，加载态只置
@@ -20,6 +21,7 @@ import { useCallback, useState } from 'react'
 import { Button as ShadcnButton, type buttonVariants } from '@components/ui/button'
 import { Spinner } from '@components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
+import { TOOLTIP_CLASS } from './Tooltip'
 import type { VariantProps } from 'class-variance-authority'
 import type { ComponentProps, FocusEvent, JSX, MouseEvent, PointerEvent, ReactNode } from 'react'
 
@@ -32,6 +34,9 @@ type ButtonVariant = NonNullable<VariantProps<typeof buttonVariants>['variant']>
 /** 主按钮的尺寸与圆角：排在 size 类之后，覆盖默认的 h-8 / px-2.5 / rounded-lg */
 const PRIMARY_BUTTON_CLASS = 'rounded h-10 px-4 font-light'
 
+/** 主按钮 + 图标：size 的 size-8 只给到 32px 宽，补到 w-10 与 h-10 凑成正方形 */
+const PRIMARY_ICON_BUTTON_CLASS = 'w-10'
+
 interface ButtonProps extends ComponentProps<'button'>, Omit<VariantProps<typeof buttonVariants>, 'variant'> {
     asChild?: boolean
     /** 变体：除 shadcn 自带取值外，另支持项目主按钮 primary */
@@ -43,13 +48,6 @@ interface ButtonProps extends ComponentProps<'button'>, Omit<VariantProps<typeof
     isLoading?: boolean
     children?: ReactNode
 }
-
-/**
- * 提示气泡统一暗底亮字：直接重写局部前景/背景变量，气泡背景取暗色、文字取亮色。
- * 底层的箭头是独立 svg（bg-foreground / fill-foreground），继承同一组变量后自动同色，
- * 不必对箭头写子选择器，也不会因特异性差异漏掉箭头。
- */
-export const TOOLTIP_CLASS = '[--foreground:#1E1E1E] [--background:var(--background)]'
 
 function Button({
     className,
@@ -71,6 +69,8 @@ function Button({
     const [isTooltipOpen, setIsTooltipOpen] = useState(false)
     // primary 不在底层变体表里：映射成 default 取配色，再补主按钮的尺寸与圆角
     const isPrimary = variant === 'primary'
+    // 图标尺寸下 size-8 的宽度比 h-10 窄，会拉成竖长条：补 w-10 与高度凑成正方形
+    const isPrimaryIcon = isPrimary && size === 'icon'
     const resolvedVariant = isPrimary ? 'default' : variant
 
     // 悬停与键盘聚焦都算「指向按钮」：触摸设备没有 hover，键盘用户也应有提示
@@ -122,6 +122,7 @@ function Button({
             className={cn(
                 'relative active:not-aria-[haspopup]:translate-y-0',
                 isPrimary && PRIMARY_BUTTON_CLASS,
+                isPrimaryIcon && PRIMARY_ICON_BUTTON_CLASS,
                 className,
             )}
             onClick={handleClick}
