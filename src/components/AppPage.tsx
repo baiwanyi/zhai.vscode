@@ -1,16 +1,17 @@
 /**
  * 页面骨架：流程页统一的「标题与操作 / 说明 / 菜单 / 主体 / 底部操作」组合式插槽，同一文件导出整族组件。
  * 复用约定：结构照 ui/card 的槽位写法——ComponentProps 透传、cn 合并类名、data-slot 标记部件；
- * AppHeader 纵向堆叠：标题与 AppAction 收进同一行，align 决定谁在左（默认 end 为标题在左、动作区在右），
- * AppDescription、AppMenu 等其余子元素按书写顺序整行排在下方；
+ * AppHeader 纵向堆叠：标题与 AppAction 收进同一行，align 决定二者关系（默认 end 为标题在左、动作区在右；
+ * start 为动作区夹持标题，首个动作区在左、第二个在右），AppDescription、AppMenu 等其余子元素按书写顺序整行排在下方；
  * 分区栏、筛选行与徽标行收进 AppMenu，主体滚动走 AppContent 的 isScrollable；
  * AppFooter 默认右对齐，左侧还需常驻控件时由页面分组后传 justify-between。
  * 标题被单行截断时用 AppTitle 的 tooltip 补出完整文案，tooltipSide 只在需避开容器时传；
  * 提示走非受控 Tooltip，指针进入即开，不引入额外状态。
  * 双击 AppTitle 复制整条标题，剪贴板写入走 @shared/utils/clipboard，结果经 sonner 提示。
- * 关键约束：标题行的两列由组件自身定位，页面按 Title → Action → Description → Menu 书写即可，
- * 顺序颠倒不会错位但会丢掉设计意图；AppAction 只放标题行右侧的少量动作，整行控件一律用 AppMenu，
- * 否则会挤压标题；页面不得再自写 h-full + p-3 外壳与顶栏、底栏渐变；
+ * 关键约束：标题行的列位由组件自身定位，页面按 Title → Action → Description → Menu 书写即可，
+ * 顺序颠倒不会错位但会丢掉设计意图；AppAction 只放标题行的少量动作，整行控件一律用 AppMenu，
+ * 否则会挤压标题；start 下最多两段动作区——三列网格只有左右两个动作位，第三段会被挤到下一行；
+ * 页面不得再自写 h-full + p-3 外壳与顶栏、底栏渐变；
  * tooltip 依赖挂载器统一提供的 TooltipProvider（见 bootstrap），单独渲染时须自行包裹；
  * 双击复制取整条标题文本而非双击选中的词，事件对象在 await 后 currentTarget 会被置空，文本须先取出；
  * 根容器按 h-full 撑满，宿主须给出高度基准，AppContent 的 min-h-0 与 AppFooter 的 shrink-0 是滚动前提。
@@ -33,7 +34,7 @@ function AppPage({ className, ...props }: ComponentProps<'div'>): JSX.Element {
     return <div data-slot="app-page" className={cn('@container flex h-full min-h-0 flex-col', className)} {...props} />
 }
 
-/** 标题与操作区的左右位置：end 为标题在左、操作区在右；start 为操作区在左、标题在右 */
+/** 标题与操作区的左右位置：end 为标题在左、操作区在右；start 为操作区夹持标题（首个在左、第二个在右） */
 type AppHeaderAlign = 'start' | 'end'
 
 interface AppHeaderProps extends ComponentProps<'header'> {
@@ -41,14 +42,22 @@ interface AppHeaderProps extends ComponentProps<'header'> {
     align?: AppHeaderAlign
 }
 
+/** start 对齐的三列网格：标题钉在第 2 列第 1 行，动作区由 grid 自动放置（首个落左列、第二个落右列），
+ *  标题与动作区之外的子元素（说明、菜单、摘要）一律跨满整行 */
+const HEADER_START_CLASS = [
+    'grid grid-cols-[auto_minmax(0,1fr)_auto]',
+    '[&>[data-slot=app-title]]:col-start-2 [&>[data-slot=app-title]]:row-start-1',
+    '[&>*:not([data-slot=app-title]):not([data-slot=app-action])]:col-span-full',
+].join(' ')
+
 function AppHeader({ className, align = 'end', ...props }: AppHeaderProps): JSX.Element {
     return (
         <header
             data-slot="app-header"
             data-align={align}
             className={cn(
-                'relative flex shrink-0 flex-wrap items-center gap-2 p-3',
-                align === 'start' && 'flex-row-reverse',
+                'relative shrink-0 items-center gap-2 p-3',
+                align === 'start' ? HEADER_START_CLASS : 'flex flex-wrap',
                 className,
             )}
             {...props}
