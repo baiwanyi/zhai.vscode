@@ -183,7 +183,7 @@
 | HTML 生成 | `markdown-one` 管线 / 模块内自建 unified 管线 | **模块内自建（已落地，见 `src/modules/wechat/render.ts`）** | `markdown-one` 尚未落地；先把公众号需要的 `remark-parse` + `remark-gfm` + `remark-rehype` + `rehype-stringify` 收在本模块内，后续该管线成熟后整体迁入并复用之 |
 | 样式内联 | `juice` / 手写替换 | **juice（已落地）** | 公众号不支持 `<style>` 与外链 CSS，必须内联；根选择器用 `section`，`body` 规则在正文片段里找不到宿主元素会被丢弃 |
 | 代码高亮 | `shiki` / `highlight.js` | **shiki（已落地，失败回退纯文本）** | 输出内联样式的 hast，直接替换 `pre > code` 节点；语言未知或加载失败时保留原代码块，宁可没配色也不丢内容 |
-| 图片素材 | 永久素材 / 图文内图片 | **永久素材** | 避免历史文章图片失效；注意每日配额 |
+| 图片素材 | 永久素材 / 图文内图片 | **永久素材（已落地）** | 避免历史文章图片失效；按 `local_hash` 复用，只处理 jpg/png 且 ≤10MB，外链图片不上传（平台会屏蔽，故只给 warning） |
 | 封面图 | 用户指定 / 自动生成 | **两者皆可** | 默认取首图，用户可改 |
 | AI 配图/标题 | CodeBuddy 通道 / 外部图床 | **CodeBuddy 生成标题建议，封面可选本地生成** | 复用项目 AI 通道，避免额外图床依赖 |
 | 敏感词 | 本地词库 / 平台接口 | **本地词库（可更新）+ 可选平台校验** | 发布前零成本预检，降低违规风险 |
@@ -220,22 +220,21 @@ CREATE TABLE IF NOT EXISTS wechat_accounts (
     updated_at      TEXT NOT NULL
 );
 
--- 素材映射（本地文件 → 平台永久素材）
+-- 素材映射（本地文件 → 平台永久素材）：local_hash 为图片字节的 sha256 前 16 位
 CREATE TABLE IF NOT EXISTS wechat_materials (
-    id           TEXT PRIMARY KEY,
-    account_id   TEXT NOT NULL,
-    local_hash   TEXT NOT NULL,        -- 本地图片内容 hash
-    media_id     TEXT NOT NULL,        -- 平台素材 ID
-    url          TEXT NOT NULL,        -- 平台可访问 URL
-    type         TEXT NOT NULL,        -- image|voice|video|thumb
-    group_name   TEXT,                 -- 素材分组
-    size_bytes   INTEGER NOT NULL DEFAULT 0,
-    created_at   TEXT NOT NULL,
+    id          TEXT PRIMARY KEY,
+    account_id  TEXT NOT NULL,
+    local_hash  TEXT NOT NULL,
+    media_id    TEXT NOT NULL,        -- 平台素材 ID
+    url         TEXT NOT NULL,        -- 平台可访问 URL，直接写进正文 img 的 src
+    type        TEXT NOT NULL,        -- image|voice|video|thumb
+    name        TEXT,                 -- 原文件名，便于排查
+    size_bytes  INTEGER NOT NULL DEFAULT 0,
+    created_at  TEXT NOT NULL,
     UNIQUE(account_id, local_hash, type)
 );
 
-CREATE INDEX IF NOT EXISTS idx_material_hash ON wechat_materials(local_hash);
-CREATE INDEX IF NOT EXISTS idx_material_group ON wechat_materials(account_id, group_name);
+CREATE INDEX IF NOT EXISTS idx_material_hash ON wechat_materials(account_id, local_hash);
 
 -- 推送批次：一次群发即一个批次（1~8 篇）
 CREATE TABLE IF NOT EXISTS wechat_issues (
@@ -463,11 +462,11 @@ interface WechatPublishResult {
 
 ## 10. 界面架构与落地决策
 
-> **实现进度（2026-10-30）**：M1 账号底座、M2 批次/文章编辑与 M3a 渲染管线已落地——
-> `src/modules/wechat`（库与仓储、凭证、Token 并发管理、账号服务、批次服务、协议路由、
-> `render.ts` 渲染管线与 `theme.ts` 默认主题）、`src/dashboard/wechat`（账号列表页、批次列表页、
+> **实现进度（2026-10-31）**：M1 账号底座、M2 批次/文章编辑、M3a 渲染管线与 M3b 草稿提交已落地——
+> `src/modules/wechat`（库与仓储、凭证、Token 并发管理、账号服务、批次服务、素材服务、草稿提交服务、
+> 协议路由、`render.ts` 渲染管线与 `theme.ts` 默认主题）、`src/dashboard/wechat`（账号列表页、批次列表页、
 > 账号与批次弹窗、文章编辑弹窗、导入与删除确认）。
-> 待办：素材上传与草稿/发布链路（M3b~M3c）与工作流六分区（M4）。
+> 待办：群发/发布（M3c，含主体权限与一天一次频率校验）与工作流六分区（M4）。
 
 ### 10.1 三个关键决策
 
@@ -517,7 +516,7 @@ interface WechatPublishResult {
 
 | 侧 | 方法 |
 |----|------|
-| 仪表盘 | `wechat/accounts`、`wechat/account/create`、`wechat/account/update`、`wechat/account/remove`、`wechat/account/test`、`wechat/issues`、`wechat/issue/create`、`wechat/issue/update`、`wechat/issue/remove`、`wechat/issue/import`、`wechat/issue/push`、`wechat/account/select` |
+| 仪表盘 | `wechat/accounts`、`wechat/account/{create,update,remove,test,select}`、`wechat/issues`、`wechat/issue/{create,detail,remove,publishDraft}`、`wechat/article/{create,update,remove,import}`（均已落地） |
 | 工作流 | `wechat/menu/get`、`wechat/menu/save`、`wechat/material/list`、`wechat/material/upload`、`wechat/material/remove`、`wechat/stats/query`、`wechat/comment/list`、`wechat/comment/reply`、`wechat/comment/mark`、`wechat/fans/list`、`wechat/fans/tag`、`wechat/push/queue`、`wechat/push/history`、`wechat/push/retry` |
 | 广播（state 通道） | `wechat/push-progress`（阶段 + 进度 + 终态）、`wechat/account-status`（Token 失效即时提示） |
 
@@ -636,7 +635,9 @@ interface WechatPublishResult {
 
 ### 12.6 与推送流程的联动
 
-> **实现状态**：批次卡片与文章增删改、从笔记/作品导入已落地；「推送」菜单项按 M3 计划保持禁用，
+> **实现状态**：批次卡片与文章增删改、从笔记/作品导入、生成草稿已落地；批次菜单的「生成草稿」会
+> 渲染正文、补传本地图片素材并提交草稿箱，成功后状态推进为「草稿已就绪」，已有 `media_id` 时改为更新草稿；
+> 外链图片不上传，只以 warning 提示。群发（`freepublish`）仍待 M3c 接入。
 > 导入由宿主弹出文件选择器并回查索引库（前端不传路径），正文以 Markdown 源文入库。
 
 ```

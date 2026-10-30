@@ -307,6 +307,7 @@ export type HostMethodName =
     | 'wechat/article/update'
     | 'wechat/issue/create'
     | 'wechat/issue/detail'
+    | 'wechat/issue/publishDraft'
     | 'wechat/issue/remove'
     | 'wechat/issues'
     | 'workflow/open'

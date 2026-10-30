@@ -17,6 +17,7 @@ import { unified } from 'unified'
 import { visit } from 'unist-util-visit'
 import { DEFAULT_WECHAT_THEME_CSS } from './theme'
 import type { Element, Root as HastRoot } from 'hast'
+import type { Image, Root as MdastRoot } from 'mdast'
 import type { Plugin } from 'unified'
 import type { Parent } from 'unist'
 
@@ -38,17 +39,22 @@ export interface WechatRenderResult {
 export interface WechatRenderOptions {
     /** 自定义主题 CSS：整段替换默认主题，不做合并，避免两套规则互相覆盖 */
     themeCss?: string
+    /**
+     * 图片地址改写：返回 null 表示保持原样。
+     * 关键约束：改写发生在 mdast 上、渲染之前，调用方在这里完成「本地上传素材 / 外链保留」的决策。
+     */
+    resolveImageUrl?: (url: string) => Promise<string | null>
 }
 
 /** 收集正文中的图片地址：只认 Markdown 图片语法，内联 HTML 不参与 */
 function collectImageUrls(markdown: string): string[] {
     const tree = unified().use(remarkParse).use(remarkGfm).parse(markdown)
     const urls: string[] = []
-    visit(tree, 'image', (node) => {
+    for (const node of collectImageNodes(tree)) {
         if (node.url.length > 0 && !urls.includes(node.url)) {
             urls.push(node.url)
         }
-    })
+    }
     return urls
 }
 
@@ -101,19 +107,40 @@ const rehypeShiki: Plugin<[], HastRoot, HastRoot> = () => {
     }
 }
 
+/** 收集 mdast 中的图片节点：改写 url 需要在语法树上做，字符串替换会漏掉属性转义差异 */
+function collectImageNodes(tree: MdastRoot): Image[] {
+    const nodes: Image[] = []
+    visit(tree, 'image', (node: Image) => {
+        nodes.push(node)
+    })
+    return nodes
+}
+
 /**
  * 渲染公众号正文：Markdown → 内联样式 HTML。
  * 关键约束：juice 的 inlineContent 只处理传入的片段与 CSS，不读外部样式表；
- * 关闭 applyStyleTags 是因为输入里不应存在 style 标签，开启反而会把不可信的标签样式带进来。
+ * 关闭 applyStyleTags 是因为输入里不应存在 style 标签，开启反而会把不可信的标签样式带进来；
+ * 图片地址改写发生在 mdast 上（resolveImageUrl），渲染后不再动 HTML 字符串——
+ * 属性值在序列化时会被转义，字符串比对会漏掉这类差异。
  */
 export async function renderWechatHtml(
     markdown: string,
     options: WechatRenderOptions = {},
 ): Promise<WechatRenderResult> {
     const imageUrls = collectImageUrls(markdown)
-    const processor = unified().use(remarkParse).use(remarkGfm).use(remarkRehype).use(rehypeShiki).use(rehypeStringify)
-    const file = await processor.process(markdown)
-    const fragment = `<section>${String(file)}</section>`
+    const mdast = unified().use(remarkParse).use(remarkGfm).parse(markdown)
+    if (options.resolveImageUrl !== undefined) {
+        const resolve = options.resolveImageUrl
+        for (const node of collectImageNodes(mdast)) {
+            const next = await resolve(node.url)
+            if (next !== null && next.length > 0) {
+                node.url = next
+            }
+        }
+    }
+    const hast = await unified().use(remarkRehype).use(rehypeShiki).run(mdast)
+    const rawHtml = unified().use(rehypeStringify).stringify(hast)
+    const fragment = `<section>${rawHtml}</section>`
     const html = juice.inlineContent(fragment, options.themeCss ?? DEFAULT_WECHAT_THEME_CSS, {
         applyStyleTags: false,
         removeStyleTags: true,

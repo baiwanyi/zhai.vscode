@@ -19,14 +19,17 @@ import {
     isWechatIssueDetailRequest,
     isWechatIssueRemoveRequest,
     isWechatIssuesRequest,
+    isWechatPublishDraftRequest,
 } from '@shared/types/wechat'
 import type { WechatAccountService } from './accountService'
 import type { WechatIssueService } from './issueService'
+import type { WechatPublishService } from './publishService'
 
 export class WechatRoutes {
     public constructor(
         private readonly accounts: WechatAccountService,
         private readonly issues: WechatIssueService,
+        private readonly publish: WechatPublishService,
     ) {}
 
     /** 处理公众号协议方法 */
@@ -87,6 +90,12 @@ export class WechatRoutes {
                     throw new Error('wechat/issue/remove 参数非法：id 须为合法批次标识')
                 }
                 return this.issues.remove(payload.id)
+            }
+            case 'wechat/issue/publishDraft': {
+                if (!isWechatPublishDraftRequest(payload)) {
+                    throw new Error('wechat/issue/publishDraft 参数非法：issueId 须为合法批次标识')
+                }
+                return this.publish.publishDraft(payload.issueId)
             }
             case 'wechat/article/create': {
                 if (!isWechatArticleCreateRequest(payload)) {

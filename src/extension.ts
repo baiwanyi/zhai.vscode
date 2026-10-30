@@ -65,6 +65,8 @@ import { WechatAccountService } from './modules/wechat/accountService'
 import { createWechatSecretStore } from './modules/wechat/credentials'
 import { openWechatDatabase } from './modules/wechat/db/connection'
 import { WechatIssueService } from './modules/wechat/issueService'
+import { WechatMaterialService } from './modules/wechat/materialService'
+import { WechatPublishService } from './modules/wechat/publishService'
 import { WechatTokenService } from './modules/wechat/tokenService'
 import { WechatRoutes } from './modules/wechat/wechatRoutes'
 import type { IndexStatus } from './modules/common/indexer/indexService'
@@ -251,15 +253,34 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     // Token 缓存与并发去重由 tokenService 承担；账号协议同样由仪表盘面板承接
     const wechatDb = openWechatDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => wechatDb.close() })
+    // 密钥与 Token 缓存全模块共用一份：账号鉴权与素材上传走同一把 Token，避免各自刷新互相失效
+    const wechatSecrets = createWechatSecretStore(context.secrets)
+    const wechatTokens = new WechatTokenService()
     const wechatAccountService = new WechatAccountService({
         db: wechatDb,
-        secrets: createWechatSecretStore(context.secrets),
-        tokens: new WechatTokenService(),
+        secrets: wechatSecrets,
+        tokens: wechatTokens,
         state: context.globalState,
     })
     // 批次服务复用索引库做导入源校验：路径先回查 files 表，再读盘，前端无法指定任意文件
     const wechatIssueService = new WechatIssueService({ db: wechatDb, indexDb: db })
-    dashboardProvider.attachWechatRoutes(new WechatRoutes(wechatAccountService, wechatIssueService))
+    // 素材服务按存储根解析本地图片：存储根可随配置变更，故用函数惰性取值
+    const wechatMaterialService = new WechatMaterialService({
+        db: wechatDb,
+        secrets: wechatSecrets,
+        tokens: wechatTokens,
+        resolveRoot: (): string => resolveStorageRoot().fsPath,
+    })
+    const wechatPublishService = new WechatPublishService({
+        db: wechatDb,
+        secrets: wechatSecrets,
+        tokens: wechatTokens,
+        materials: wechatMaterialService,
+        issues: wechatIssueService,
+    })
+    dashboardProvider.attachWechatRoutes(
+        new WechatRoutes(wechatAccountService, wechatIssueService, wechatPublishService),
+    )
 
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,

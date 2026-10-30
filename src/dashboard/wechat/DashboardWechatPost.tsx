@@ -102,6 +102,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         removeArticle,
         importArticle,
         loadArticle,
+        publishDraft,
     } = useWechatIssues(accountId)
 
     const [filter, setFilter] = useState<IssueFilter>('all')
@@ -336,6 +337,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                         onEditArticle={handleEditArticle}
                         onRemoveArticle={(issue, article) => setPendingArticle({ issue, article })}
                         onRemoveIssue={setPendingIssue}
+                        onPublishDraft={(issue) => void publishDraft(issue.id)}
                     />
                 </AppContent>
                 <AppFooter className="justify-between">

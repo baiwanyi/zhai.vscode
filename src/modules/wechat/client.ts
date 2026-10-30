@@ -115,3 +115,192 @@ export async function requestWechatToken(appId: string, appSecret: string): Prom
     const hint = describeWechatError(payload.errorCode)
     return { ok: false, errorCode: payload.errorCode, message: hint.hint }
 }
+
+/** 永久图片素材接口 */
+const MATERIAL_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/material/add_material'
+
+/** 素材上传超时：图片可达数 MB，比鉴权放宽，但必须有上限 */
+const UPLOAD_TIMEOUT_MS = 60_000
+
+/** 上传图片的入参：调用方负责读出字节与判定 MIME */
+export interface WechatImageUploadInput {
+    bytes: Uint8Array
+    fileName: string
+    mimeType: string
+}
+
+/** 素材上传结果：成功返回可访问 URL 与 media_id，失败返回归一后的提示 */
+export type WechatMaterialOutcome =
+    { ok: true; mediaId: string; url: string } | { ok: false; errorCode: number; message: string }
+
+/** 素材类错误码的专属提示：与鉴权的错误语义不同，不能复用鉴权文案 */
+const MATERIAL_ERROR_HINTS: Readonly<Record<string, string>> = {
+    '40005': '图片格式不支持，请改用 jpg 或 png',
+    '40006': '图片超过 10MB 上限，请压缩后再试',
+    '40007': '图片文件无效，请确认文件未损坏',
+    '45009': '素材接口今日额度已用完，请明天再试或复用已有素材',
+    '40164': '调用方 IP 不在白名单：请把当前出口 IP 加入公众号后台的 IP 白名单',
+}
+
+/** 素材错误码 → 可执行提示：未登记的码给出通用说明，不透出英文 errmsg */
+function describeMaterialError(errorCode: number): string {
+    return MATERIAL_ERROR_HINTS[String(errorCode)] ?? '素材上传失败，请稍后重试或更换图片'
+}
+
+/** 收窄素材响应：成功必须有 media_id 与 url */
+function parseMaterialPayload(
+    raw: unknown,
+): { kind: 'ok'; mediaId: string; url: string } | { kind: 'error'; errorCode: number } {
+    if (typeof raw !== 'object' || raw === null) {
+        return { kind: 'error', errorCode: -1 }
+    }
+    const candidate = raw as { media_id?: unknown; url?: unknown; errcode?: unknown }
+    if (typeof candidate.media_id === 'string' && candidate.media_id.length > 0 && typeof candidate.url === 'string') {
+        return { kind: 'ok', mediaId: candidate.media_id, url: candidate.url }
+    }
+    return { kind: 'error', errorCode: typeof candidate.errcode === 'number' ? candidate.errcode : -1 }
+}
+
+/** 草稿箱接口：新增与更新同一份内容的不同动作 */
+const DRAFT_ADD_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/draft/add'
+const DRAFT_UPDATE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/draft/update'
+
+/** 草稿提交超时：正文可能较大，比鉴权放宽 */
+const DRAFT_TIMEOUT_MS = 30_000
+
+/** 单篇草稿内容：字段名按平台要求映射为 snake_case */
+export interface WechatDraftArticle {
+    title: string
+    author: string
+    digest: string
+    /** 内联样式后的正文 HTML */
+    content: string
+    /** 封面素材 ID：平台强制要求 */
+    thumbMediaId: string
+    needOpenComment: boolean
+    onlyFansCanComment: boolean
+}
+
+/** 草稿提交结果 */
+export type WechatDraftOutcome = { ok: true; mediaId: string } | { ok: false; errorCode: number; message: string }
+
+/** 草稿类错误码的专属提示：与鉴权、素材的语义不同，不能复用 */
+const DRAFT_ERROR_HINTS: Readonly<Record<string, string>> = {
+    '40007': '素材或草稿 ID 无效，请重新生成草稿',
+    '45166': '正文内容未通过平台校验，请检查敏感词与外部链接',
+    '45009': '接口调用超过当日额度，请稍后再试',
+    '40164': '调用方 IP 不在白名单：请把当前出口 IP 加入公众号后台的 IP 白名单',
+    '40001': 'AppSecret 不正确或已被重置，请重新填写密钥',
+}
+
+/** 草稿错误码 → 可执行提示 */
+export function describeDraftError(errorCode: number): string {
+    return DRAFT_ERROR_HINTS[String(errorCode)] ?? '草稿提交失败，请稍后重试'
+}
+
+/** 收窄草稿响应：成功必须带 media_id */
+function parseDraftPayload(raw: unknown): { kind: 'ok'; mediaId: string } | { kind: 'error'; errorCode: number } {
+    if (typeof raw !== 'object' || raw === null) {
+        return { kind: 'error', errorCode: -1 }
+    }
+    const candidate = raw as { media_id?: unknown; errcode?: unknown }
+    if (typeof candidate.media_id === 'string' && candidate.media_id.length > 0) {
+        return { kind: 'ok', mediaId: candidate.media_id }
+    }
+    return { kind: 'error', errorCode: typeof candidate.errcode === 'number' ? candidate.errcode : -1 }
+}
+
+/**
+ * 提交草稿：传 mediaId 时更新既有草稿，否则新建。
+ * 关键约束：平台不支持幂等键，重复调用会新增草稿，是否复用由调用方按本地 media_id 决定；
+ * 请求体字段名必须与平台一致（thumb_media_id / need_open_comment 等），拼错会被静默忽略。
+ */
+export async function submitWechatDraft(
+    token: string,
+    articles: WechatDraftArticle[],
+    mediaId?: string,
+): Promise<WechatDraftOutcome> {
+    const isUpdate = mediaId !== undefined && mediaId.length > 0
+    const url = new URL(isUpdate ? DRAFT_UPDATE_ENDPOINT : DRAFT_ADD_ENDPOINT)
+    url.searchParams.set('access_token', token)
+
+    const payloadArticles = articles.map((article) => ({
+        title: article.title,
+        author: article.author,
+        digest: article.digest,
+        content: article.content,
+        content_source_url: '',
+        thumb_media_id: article.thumbMediaId,
+        need_open_comment: article.needOpenComment ? 1 : 0,
+        only_fans_can_comment: article.onlyFansCanComment ? 1 : 0,
+    }))
+    const body = isUpdate ? { media_id: mediaId, index: 0, articles: payloadArticles } : { articles: payloadArticles }
+
+    let response: Response
+    try {
+        response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(DRAFT_TIMEOUT_MS),
+        })
+    } catch (cause) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `无法连接微信草稿接口：${errorText(cause)}` }
+    }
+    if (!response.ok) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `微信草稿接口返回 HTTP ${String(response.status)}` }
+    }
+
+    let raw: unknown
+    try {
+        raw = await response.json()
+    } catch (cause) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `微信草稿接口返回无法解析：${errorText(cause)}` }
+    }
+
+    const payload = parseDraftPayload(raw)
+    if (payload.kind === 'ok') {
+        return { ok: true, mediaId: payload.mediaId }
+    }
+    return { ok: false, errorCode: payload.errorCode, message: describeDraftError(payload.errorCode) }
+}
+
+/**
+ * 上传图片为永久素材。
+ * 关键约束：走 multipart/form-data，字段名必须是 media；token 只出现在查询串中，不写日志；
+ * 返回的 url 是微信侧可访问地址，可直接写进正文 img 的 src。
+ */
+export async function uploadWechatImageMaterial(
+    token: string,
+    input: WechatImageUploadInput,
+): Promise<WechatMaterialOutcome> {
+    const url = new URL(MATERIAL_ENDPOINT)
+    url.searchParams.set('access_token', token)
+    url.searchParams.set('type', 'image')
+
+    const form = new FormData()
+    form.append('media', new Blob([new Uint8Array(input.bytes)], { type: input.mimeType }), input.fileName)
+
+    let response: Response
+    try {
+        response = await fetch(url, { method: 'POST', body: form, signal: AbortSignal.timeout(UPLOAD_TIMEOUT_MS) })
+    } catch (cause) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `无法连接微信素材接口：${errorText(cause)}` }
+    }
+    if (!response.ok) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `微信素材接口返回 HTTP ${String(response.status)}` }
+    }
+
+    let raw: unknown
+    try {
+        raw = await response.json()
+    } catch (cause) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `微信素材接口返回无法解析：${errorText(cause)}` }
+    }
+
+    const payload = parseMaterialPayload(raw)
+    if (payload.kind === 'ok') {
+        return { ok: true, mediaId: payload.mediaId, url: payload.url }
+    }
+    return { ok: false, errorCode: payload.errorCode, message: describeMaterialError(payload.errorCode) }
+}

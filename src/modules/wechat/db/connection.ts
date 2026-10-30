@@ -65,6 +65,19 @@ const SCHEMA_STATEMENTS = [
         like_num       INTEGER NOT NULL DEFAULT 0
     )`,
     `CREATE INDEX IF NOT EXISTS idx_article_issue ON wechat_articles(issue_id, sort_index)`,
+    `CREATE TABLE IF NOT EXISTS wechat_materials (
+        id          TEXT PRIMARY KEY,
+        account_id  TEXT NOT NULL,
+        local_hash  TEXT NOT NULL,
+        media_id    TEXT NOT NULL,
+        url         TEXT NOT NULL,
+        type        TEXT NOT NULL,
+        name        TEXT,
+        size_bytes  INTEGER NOT NULL DEFAULT 0,
+        created_at  TEXT NOT NULL,
+        UNIQUE(account_id, local_hash, type)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_material_hash ON wechat_materials(account_id, local_hash)`,
 ] as const
 
 /**

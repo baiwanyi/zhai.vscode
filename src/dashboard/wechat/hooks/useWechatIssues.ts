@@ -23,6 +23,8 @@ import type {
     WechatIssueRemoveRequest,
     WechatIssueSummary,
     WechatIssuesRequest,
+    WechatPublishDraftRequest,
+    WechatPublishDraftResult,
 } from '@shared/types/wechat'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
@@ -55,6 +57,7 @@ export interface WechatIssuesState {
     removeArticle: (id: string) => Promise<boolean>
     importArticle: (issueId: string, sourceKind: 'note' | 'press') => Promise<WechatArticleDetail | null>
     loadArticle: (issueId: string, articleId: string) => Promise<WechatArticleDetail | null>
+    publishDraft: (issueId: string) => Promise<boolean>
 }
 
 export function useWechatIssues(accountId: string): WechatIssuesState {
@@ -217,6 +220,35 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         }
     }, [])
 
+    /**
+     * 生成草稿：渲染与补传素材在宿主完成，可能耗时数十秒，故单独放宽超时。
+     * 关键约束：非阻断提示（外链图片、文件缺失）用 warning 展示，成功结论不受影响。
+     */
+    const publishDraft = useCallback(
+        async (issueId: string): Promise<boolean> => {
+            setIsMutating(true)
+            const payload: WechatPublishDraftRequest = { issueId }
+            try {
+                const result = await request<WechatPublishDraftResult>('wechat/issue/publishDraft', payload, 180_000)
+                await reload()
+                toast.success('草稿已生成，可到公众号后台预览或群发')
+                const [first] = result.warnings
+                if (first !== undefined) {
+                    const extra =
+                        result.warnings.length > 1 ? `（另有 ${String(result.warnings.length - 1)} 项提示）` : ''
+                    toast.warning(`${first}${extra}`)
+                }
+                return true
+            } catch (cause) {
+                toastError(cause)
+                return false
+            } finally {
+                setIsMutating(false)
+            }
+        },
+        [reload],
+    )
+
     return {
         issues,
         status,
@@ -230,5 +262,6 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         removeArticle,
         importArticle,
         loadArticle,
+        publishDraft,
     }
 }

@@ -513,6 +513,31 @@ export function isWechatArticleRemoveRequest(payload: unknown): payload is Wecha
     return isWechatIssueId((payload as { id?: unknown }).id)
 }
 
+/**
+ * wechat/issue/publishDraft 请求：把批次渲染并提交到草稿箱。
+ * 关键约束：只生成草稿，不触发群发——群发受主体权限与一天一次频率限制，属独立动作。
+ */
+export interface WechatPublishDraftRequest {
+    issueId: string
+}
+
+/**
+ * wechat/issue/publishDraft 响应。
+ * warnings 为非阻断提示（如外链图片未上传、封面取自正文首图），前端用 warning 级提示展示。
+ */
+export interface WechatPublishDraftResult {
+    issue: WechatIssueSummary
+    warnings: string[]
+}
+
+/** 判断是否为生成草稿请求 */
+export function isWechatPublishDraftRequest(payload: unknown): payload is WechatPublishDraftRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    return isWechatIssueId((payload as { issueId?: unknown }).issueId)
+}
+
 /** 判断是否为从文档导入请求 */
 export function isWechatArticleImportRequest(payload: unknown): payload is WechatArticleImportRequest {
     if (typeof payload !== 'object' || payload === null) {

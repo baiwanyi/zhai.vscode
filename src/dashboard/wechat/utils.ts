@@ -73,7 +73,7 @@ export function readAccountInitial(name: string): string {
 /** 批次状态文案 */
 export const WECHAT_ISSUE_STATUS_LABELS: Readonly<Record<WechatIssueStatus, string>> = {
     draft: '草稿',
-    ready: '待推送',
+    ready: '草稿已就绪',
     scheduled: '定时中',
     pushing: '推送中',
     published: '已推送',

@@ -29,6 +29,7 @@ interface WechatIssueCardProps {
     onEditArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
     onRemoveArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
     onRemoveIssue: (issue: WechatIssueSummary) => void
+    onPublishDraft: (issue: WechatIssueSummary) => void
 }
 
 export function WechatIssueCard({
@@ -39,6 +40,7 @@ export function WechatIssueCard({
     onEditArticle,
     onRemoveArticle,
     onRemoveIssue,
+    onPublishDraft,
 }: WechatIssueCardProps): JSX.Element {
     const isFull = issue.articleCount >= WECHAT_ISSUE_ARTICLE_LIMIT
 
@@ -78,8 +80,11 @@ export function WechatIssueCard({
                                 从作品导入
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
-                            <DropdownMenuItem disabled title="推送链路将在下一步接入">
-                                推送
+                            <DropdownMenuItem
+                                disabled={isBusy || issue.articleCount === 0}
+                                onSelect={() => onPublishDraft(issue)}
+                            >
+                                {issue.status === 'ready' ? '更新草稿' : '生成草稿'}
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem

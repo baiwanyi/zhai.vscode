@@ -122,6 +122,26 @@ export function syncWechatIssueArticleCount(db: Database.Database, id: string, u
     return count
 }
 
+/** 草稿提交结果回写：成功清空错误、写入 media_id 并推进状态；失败只记错误，状态不动 */
+export interface WechatIssueDraftPatch {
+    id: string
+    mediaId: string | null
+    status: string
+    errorCode: number | null
+    errorHint: string | null
+    updatedAt: string
+}
+
+/** 回写草稿提交结果 */
+export function updateWechatIssueDraft(db: Database.Database, patch: WechatIssueDraftPatch): void {
+    db.prepare(
+        `UPDATE wechat_issues
+            SET media_id = @mediaId, status = @status, error_code = @errorCode,
+                error_hint = @errorHint, updated_at = @updatedAt
+          WHERE id = @id`,
+    ).run(patch)
+}
+
 /** 删除批次及其文章：同事务执行，避免留下无主正文 */
 export function deleteWechatIssue(db: Database.Database, id: string): void {
     db.transaction(() => {
