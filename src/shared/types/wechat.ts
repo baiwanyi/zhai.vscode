@@ -242,3 +242,285 @@ export function isSelectWechatAccountRequest(payload: unknown): payload is Selec
     const { id } = payload as { id?: unknown }
     return id === null || isWechatAccountId(id)
 }
+
+/** 推送批次状态：与 wechat_issues.status 同值，界面据此决定徽标与可用操作 */
+export const WECHAT_ISSUE_STATUSES = ['draft', 'ready', 'scheduled', 'pushing', 'published', 'failed'] as const
+
+/** 推送批次状态取值 */
+export type WechatIssueStatus = (typeof WECHAT_ISSUE_STATUSES)[number]
+
+/** 文章正文来源：manual 为手写，note / press 为从对应模块的文档导入 */
+export const WECHAT_ARTICLE_SOURCES = ['manual', 'note', 'press'] as const
+
+/** 文章正文来源取值 */
+export type WechatArticleSourceKind = (typeof WECHAT_ARTICLE_SOURCES)[number]
+
+/** 一次群发的篇数上限：平台限制为 8 篇，超出会被拒 */
+export const WECHAT_ISSUE_ARTICLE_LIMIT = 8
+
+/** 标题字数上限：平台限制 64 字 */
+export const WECHAT_ARTICLE_TITLE_MAX = 64
+
+/** 作者字数上限：平台限制 8 字 */
+export const WECHAT_ARTICLE_AUTHOR_MAX = 8
+
+/** 摘要字数上限：平台限制 120 字 */
+export const WECHAT_ARTICLE_DIGEST_MAX = 120
+
+/** 正文字数上限：公众号编辑器限制 2 万字，超出无法保存到草稿 */
+export const WECHAT_ARTICLE_BODY_MAX = 20_000
+
+/** 批次标题长度上限：取标题位的同一口径，仅用于列表展示与输入约束 */
+export const WECHAT_ISSUE_TITLE_MAX = WECHAT_ARTICLE_TITLE_MAX
+
+/** 文章列表项：不含正文，供批次卡片渲染 */
+export interface WechatArticleSummary {
+    id: string
+    /** 批次内顺序，从 1 开始 */
+    sortIndex: number
+    title: string
+    author?: string
+    digest?: string
+    /** 正文来源 */
+    sourceKind: WechatArticleSourceKind
+    /** 源文档相对路径：manual 时缺省 */
+    sourcePath?: string
+    /** 正文字数，供列表判断是否为空稿 */
+    wordCount: number
+}
+
+/** 文章详情：编辑弹窗需要正文原文 */
+export interface WechatArticleDetail extends WechatArticleSummary {
+    /** Markdown 正文：推送前统一渲染为内联样式 HTML，此处只存源文 */
+    body: string
+}
+
+/** 推送批次摘要：一次群发对应一个批次，含 1~8 篇文章 */
+export interface WechatIssueSummary {
+    id: string
+    accountId: string
+    title: string
+    status: WechatIssueStatus
+    /** 批次内文章数：与 articles.length 一致，列表按此判断是否可推送 */
+    articleCount: number
+    /** 批次内文章摘要，按 sortIndex 升序；列表只渲染前若干条 */
+    articles: WechatArticleSummary[]
+    /** 最近更新时间（ISO 8601） */
+    updatedAt: string
+    /** 计划推送时间（ISO 8601），未定时缺省 */
+    scheduledAt?: string
+    /** 实际推送时间（ISO 8601），未推送缺省 */
+    publishedAt?: string
+    /** 失败原因摘要：status 为 failed 时给出可执行提示 */
+    errorHint?: string
+}
+
+/** wechat/issues 请求 */
+export interface WechatIssuesRequest {
+    /** 目标账号 id */
+    accountId: string
+}
+
+/** wechat/issue/create 请求 */
+export interface WechatIssueCreateRequest {
+    accountId: string
+    /** 批次标题，留空时由宿主取「未命名批次 · 日期」 */
+    title?: string
+}
+
+/** wechat/issue/create 响应 */
+export interface WechatIssueCreateResult {
+    issue: WechatIssueSummary
+}
+
+/** wechat/issue/detail 请求 */
+export interface WechatIssueDetailRequest {
+    id: string
+}
+
+/** wechat/issue/detail 响应 */
+export interface WechatIssueDetailResult {
+    issue: WechatIssueSummary
+    articles: WechatArticleDetail[]
+}
+
+/** wechat/issue/remove 请求 */
+export interface WechatIssueRemoveRequest {
+    id: string
+}
+
+/** wechat/issue/remove 响应 */
+export interface WechatIssueRemoveResult {
+    removed: boolean
+}
+
+/** wechat/article/create 请求：手写一篇新文章 */
+export interface WechatArticleCreateRequest {
+    issueId: string
+    title: string
+    author?: string
+    digest?: string
+    body?: string
+}
+
+/** wechat/article/create 响应 */
+export interface WechatArticleCreateResult {
+    article: WechatArticleDetail
+}
+
+/** wechat/article/update 请求 */
+export interface WechatArticleUpdateRequest {
+    id: string
+    title: string
+    author?: string
+    digest?: string
+    body: string
+}
+
+/** wechat/article/update 响应 */
+export interface WechatArticleUpdateResult {
+    article: WechatArticleDetail
+}
+
+/** wechat/article/remove 请求 */
+export interface WechatArticleRemoveRequest {
+    id: string
+}
+
+/** wechat/article/remove 响应 */
+export interface WechatArticleRemoveResult {
+    removed: boolean
+}
+
+/**
+ * wechat/article/import 请求：从笔记或作品文档导入一篇。
+ * 关键约束：不接收路径——源文件由宿主弹出选择器并回查索引库，前端无法指定任意文件。
+ */
+export interface WechatArticleImportRequest {
+    issueId: string
+    /** 源模块：note 只列 notes/ 下的文档，press 只列 press/ 下的文档 */
+    sourceKind: 'note' | 'press'
+}
+
+/**
+ * wechat/article/import 响应：用户取消选择时 imported 为 false 且不含 article。
+ * 关键约束：取消不是错误，前端据此静默结束，不弹提示。
+ */
+export interface WechatArticleImportResult {
+    imported: boolean
+    article?: WechatArticleDetail
+}
+
+/** 规整标题：折叠空白并截断到平台上限 */
+export function readWechatArticleTitle(value: unknown): string {
+    if (typeof value !== 'string') {
+        return ''
+    }
+    return value.replace(/\s+/g, ' ').trim().slice(0, WECHAT_ARTICLE_TITLE_MAX)
+}
+
+/** 规整作者：平台上限 8 字，空串表示不填 */
+export function readWechatArticleAuthor(value: unknown): string {
+    if (typeof value !== 'string') {
+        return ''
+    }
+    return value.replace(/\s+/g, ' ').trim().slice(0, WECHAT_ARTICLE_AUTHOR_MAX)
+}
+
+/** 规整摘要：平台上限 120 字，保留换行折叠为空格 */
+export function readWechatArticleDigest(value: unknown): string {
+    if (typeof value !== 'string') {
+        return ''
+    }
+    return value.replace(/\s+/g, ' ').trim().slice(0, WECHAT_ARTICLE_DIGEST_MAX)
+}
+
+/** 收窄正文：超长直接拒绝，由调用方给出「超出公众号 2 万字上限」的提示 */
+export function isWechatArticleBody(value: unknown): value is string {
+    return typeof value === 'string' && value.length <= WECHAT_ARTICLE_BODY_MAX
+}
+
+/** 判断是否为批次列表请求 */
+export function isWechatIssuesRequest(payload: unknown): payload is WechatIssuesRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    return isWechatAccountId((payload as { accountId?: unknown }).accountId)
+}
+
+/** 判断是否为新建批次请求：标题可缺省 */
+export function isWechatIssueCreateRequest(payload: unknown): payload is WechatIssueCreateRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; title?: unknown }
+    if (!isWechatAccountId(candidate.accountId)) {
+        return false
+    }
+    return candidate.title === undefined || typeof candidate.title === 'string'
+}
+
+/** 判断是否为批次详情请求 */
+export function isWechatIssueDetailRequest(payload: unknown): payload is WechatIssueDetailRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    return isWechatIssueId((payload as { id?: unknown }).id)
+}
+
+/** 判断是否为删除批次请求 */
+export function isWechatIssueRemoveRequest(payload: unknown): payload is WechatIssueRemoveRequest {
+    return isWechatIssueDetailRequest(payload)
+}
+
+/** 收窄批次 / 文章 id：与账号 id 同一形态（宿主生成的短 id） */
+export function isWechatIssueId(value: unknown): value is string {
+    return isWechatAccountId(value)
+}
+
+/** 判断是否为新建文章请求 */
+export function isWechatArticleCreateRequest(payload: unknown): payload is WechatArticleCreateRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { issueId?: unknown; title?: unknown; body?: unknown }
+    if (!isWechatIssueId(candidate.issueId)) {
+        return false
+    }
+    if (readWechatArticleTitle(candidate.title).length === 0) {
+        return false
+    }
+    return candidate.body === undefined || isWechatArticleBody(candidate.body)
+}
+
+/** 判断是否为更新文章请求：正文必填 */
+export function isWechatArticleUpdateRequest(payload: unknown): payload is WechatArticleUpdateRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { id?: unknown; title?: unknown; body?: unknown }
+    if (!isWechatIssueId(candidate.id) || readWechatArticleTitle(candidate.title).length === 0) {
+        return false
+    }
+    return isWechatArticleBody(candidate.body)
+}
+
+/** 判断是否为删除文章请求 */
+export function isWechatArticleRemoveRequest(payload: unknown): payload is WechatArticleRemoveRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    return isWechatIssueId((payload as { id?: unknown }).id)
+}
+
+/** 判断是否为从文档导入请求 */
+export function isWechatArticleImportRequest(payload: unknown): payload is WechatArticleImportRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { issueId?: unknown; sourceKind?: unknown }
+    if (!isWechatIssueId(candidate.issueId)) {
+        return false
+    }
+    return candidate.sourceKind === 'note' || candidate.sourceKind === 'press'
+}

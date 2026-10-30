@@ -3,7 +3,8 @@
  * 复用约定：沿用 common/db/openDatabase 的统一 PRAGMA 与目录创建逻辑，与 index.db / ai.db / press.db 相互独立；
  * 表结构与 docs/modules/wechat.md 第 6 节一致，账号表由本模块自建，不复用微博账号表。
  * 关键约束：库内只存业务元数据，AppSecret 一律进 SecretStorage，任何 DDL 都不得新增密钥列；
- * 批次与文章表在账号底座阶段一并建好，后续接入编辑与推送时不再对已存在的库做迁移。
+ * 文章只存 Markdown 源文（body），内联样式 HTML 在推送前统一渲染，模板变更因此无需重新导入；
+ * 账号底座阶段建表时文章表曾用 html 列，数据尚未产生，探测到旧结构直接重建，不做逐列迁移。
  */
 import { openSqliteDatabase } from '@modules/common/db/openDatabase'
 import type Database from 'better-sqlite3'
@@ -52,8 +53,9 @@ const SCHEMA_STATEMENTS = [
         title          TEXT NOT NULL,
         author         TEXT,
         digest         TEXT,
-        html           TEXT NOT NULL,
-        html_hash      TEXT NOT NULL,
+        body           TEXT NOT NULL,
+        body_hash      TEXT NOT NULL,
+        word_count     INTEGER NOT NULL DEFAULT 0,
         cover_media_id TEXT,
         source_kind    TEXT NOT NULL,
         source_path    TEXT,
@@ -65,9 +67,22 @@ const SCHEMA_STATEMENTS = [
     `CREATE INDEX IF NOT EXISTS idx_article_issue ON wechat_articles(issue_id, sort_index)`,
 ] as const
 
+/**
+ * 清理账号底座阶段的旧文章表：当时的列是 html / html_hash，尚无任何写入路径。
+ * 关键约束：只认 html 列作为旧结构标识，其它差异走正常 DDL 演进，避免误删真实数据。
+ */
+function dropLegacyArticleTable(db: Database.Database): void {
+    const columns = db.prepare('PRAGMA table_info(wechat_articles)').all() as { name: string }[]
+    if (columns.length === 0 || !columns.some((column) => column.name === 'html')) {
+        return
+    }
+    db.exec('DROP TABLE wechat_articles')
+}
+
 /** 打开（或创建）公众号库，并确保表结构存在 */
 export function openWechatDatabase(cacheDirUri: vscode.Uri): Database.Database {
     const db = openSqliteDatabase(cacheDirUri, 'wechat.db')
+    dropLegacyArticleTable(db)
     for (const ddl of SCHEMA_STATEMENTS) {
         db.exec(ddl)
     }

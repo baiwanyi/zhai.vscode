@@ -1,5 +1,5 @@
 /**
- * 公众号协议路由：把 wechat/accounts 与 wechat/account/* 分发到账号服务，是仪表盘侧唯一入口。
+ * 公众号协议路由：把 wechat/accounts、wechat/account/* 与批次、文章相关方法分发到对应服务。
  * 复用约定：由 DashboardViewProvider 按前缀委托，入参收窄统一在 shared/types/wechat 完成，
  * 本层只做方法名到服务方法的映射，不解析业务字段、不拼装提示文案。
  * 关键约束：方法名与 shared/types/messages 的 HostMethodName 一一对应，新增方法须两侧同时维护；
@@ -11,11 +11,23 @@ import {
     isSelectWechatAccountRequest,
     isTestWechatAccountRequest,
     isUpdateWechatAccountRequest,
+    isWechatArticleCreateRequest,
+    isWechatArticleImportRequest,
+    isWechatArticleRemoveRequest,
+    isWechatArticleUpdateRequest,
+    isWechatIssueCreateRequest,
+    isWechatIssueDetailRequest,
+    isWechatIssueRemoveRequest,
+    isWechatIssuesRequest,
 } from '@shared/types/wechat'
 import type { WechatAccountService } from './accountService'
+import type { WechatIssueService } from './issueService'
 
 export class WechatRoutes {
-    public constructor(private readonly accounts: WechatAccountService) {}
+    public constructor(
+        private readonly accounts: WechatAccountService,
+        private readonly issues: WechatIssueService,
+    ) {}
 
     /** 处理公众号协议方法 */
     public async handle(method: string, payload: unknown): Promise<unknown> {
@@ -51,6 +63,54 @@ export class WechatRoutes {
                     throw new Error('wechat/account/select 参数非法：id 须为合法账号标识或 null')
                 }
                 return this.accounts.select(payload.id)
+            }
+            case 'wechat/issues': {
+                if (!isWechatIssuesRequest(payload)) {
+                    throw new Error('wechat/issues 参数非法：accountId 须为合法账号标识')
+                }
+                return this.issues.list(payload.accountId)
+            }
+            case 'wechat/issue/create': {
+                if (!isWechatIssueCreateRequest(payload)) {
+                    throw new Error('wechat/issue/create 参数非法：accountId 须合法，title 为可选字符串')
+                }
+                return this.issues.create(payload)
+            }
+            case 'wechat/issue/detail': {
+                if (!isWechatIssueDetailRequest(payload)) {
+                    throw new Error('wechat/issue/detail 参数非法：id 须为合法批次标识')
+                }
+                return this.issues.detail(payload.id)
+            }
+            case 'wechat/issue/remove': {
+                if (!isWechatIssueRemoveRequest(payload)) {
+                    throw new Error('wechat/issue/remove 参数非法：id 须为合法批次标识')
+                }
+                return this.issues.remove(payload.id)
+            }
+            case 'wechat/article/create': {
+                if (!isWechatArticleCreateRequest(payload)) {
+                    throw new Error('wechat/article/create 参数非法：issueId 与标题必填，正文不得超长')
+                }
+                return this.issues.createArticle(payload)
+            }
+            case 'wechat/article/update': {
+                if (!isWechatArticleUpdateRequest(payload)) {
+                    throw new Error('wechat/article/update 参数非法：id 与标题必填，正文不得超长')
+                }
+                return this.issues.updateArticle(payload)
+            }
+            case 'wechat/article/remove': {
+                if (!isWechatArticleRemoveRequest(payload)) {
+                    throw new Error('wechat/article/remove 参数非法：id 须为合法文章标识')
+                }
+                return this.issues.removeArticle(payload.id)
+            }
+            case 'wechat/article/import': {
+                if (!isWechatArticleImportRequest(payload)) {
+                    throw new Error('wechat/article/import 参数非法：issueId 须合法，sourceKind 须为 note 或 press')
+                }
+                return this.issues.importArticle(payload)
             }
             default:
                 throw new Error(`未知的公众号协议方法：${method}`)

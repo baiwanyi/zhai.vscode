@@ -92,6 +92,24 @@ export function searchFiles(db: Database.Database, keyword: string, limit: numbe
     }))
 }
 
+/** 跨模块的文件引用：只含导入与展示需要的字段，不含正文 */
+export interface IndexedFileRef {
+    path: string
+    title: string
+    wordCount: number
+    mtime: string
+}
+
+/**
+ * 按相对路径查一条索引记录，不限模块（笔记、作品与公众号文档都可查）。
+ * 安全约束：调用方须先用本函数确认路径在索引内，再据此读取文件，避免前端伪造任意路径。
+ */
+export function findIndexedFile(db: Database.Database, path: string): IndexedFileRef | null {
+    const row = db.prepare('SELECT path, title, word_count AS wordCount, mtime FROM files WHERE path = ?').get(path) as
+        IndexedFileRef | undefined
+    return row ?? null
+}
+
 /** 解析 tags 列中的 JSON 数组，异常数据降级为空数组（统计与检索共用） */
 export function safeParseTags(raw: string): string[] {
     try {

@@ -64,6 +64,7 @@ import { TodoWatcher } from './modules/todo/todoWatcher'
 import { WechatAccountService } from './modules/wechat/accountService'
 import { createWechatSecretStore } from './modules/wechat/credentials'
 import { openWechatDatabase } from './modules/wechat/db/connection'
+import { WechatIssueService } from './modules/wechat/issueService'
 import { WechatTokenService } from './modules/wechat/tokenService'
 import { WechatRoutes } from './modules/wechat/wechatRoutes'
 import type { IndexStatus } from './modules/common/indexer/indexService'
@@ -256,7 +257,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         tokens: new WechatTokenService(),
         state: context.globalState,
     })
-    dashboardProvider.attachWechatRoutes(new WechatRoutes(wechatAccountService))
+    // 批次服务复用索引库做导入源校验：路径先回查 files 表，再读盘，前端无法指定任意文件
+    const wechatIssueService = new WechatIssueService({ db: wechatDb, indexDb: db })
+    dashboardProvider.attachWechatRoutes(new WechatRoutes(wechatAccountService, wechatIssueService))
 
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,

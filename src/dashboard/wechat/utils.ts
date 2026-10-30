@@ -5,7 +5,15 @@
  * 关键约束：状态色点只用主题令牌（bg-primary / bg-destructive / bg-muted-foreground），不写死色值；
  * 元信息固定三段「批次数 · 粉丝 · 最近推送」，列表与账号页共用本文件，任一侧加字段都改这里。
  */
-import { WECHAT_ACCOUNT_TYPE_LABELS, type WechatAccountStatus, type WechatAccountSummary } from '@shared/types/wechat'
+import {
+    WECHAT_ACCOUNT_TYPE_LABELS,
+    type WechatAccountStatus,
+    type WechatAccountSummary,
+    type WechatArticleSourceKind,
+    type WechatArticleSummary,
+    type WechatIssueStatus,
+    type WechatIssueSummary,
+} from '@shared/types/wechat'
 import { formatRelativeTime } from '@shared/utils/format'
 import { formatWordCount } from '../utils'
 
@@ -60,4 +68,55 @@ export function formatAccountStatusHint(account: WechatAccountSummary): string {
 export function readAccountInitial(name: string): string {
     const [first] = Array.from(name)
     return first ?? '公'
+}
+
+/** 批次状态文案 */
+export const WECHAT_ISSUE_STATUS_LABELS: Readonly<Record<WechatIssueStatus, string>> = {
+    draft: '草稿',
+    ready: '待推送',
+    scheduled: '定时中',
+    pushing: '推送中',
+    published: '已推送',
+    failed: '推送失败',
+}
+
+/** 批次徽标变体：与 shadcn badge 的变体名同源，避免各页面自选颜色 */
+export const WECHAT_ISSUE_STATUS_VARIANTS: Readonly<
+    Record<WechatIssueStatus, 'default' | 'secondary' | 'destructive' | 'outline'>
+> = {
+    draft: 'outline',
+    ready: 'secondary',
+    scheduled: 'secondary',
+    pushing: 'default',
+    published: 'default',
+    failed: 'destructive',
+}
+
+/** 文章正文来源文案 */
+export const WECHAT_ARTICLE_SOURCE_LABELS: Readonly<Record<WechatArticleSourceKind, string>> = {
+    manual: '手写',
+    note: '笔记',
+    press: '作品',
+}
+
+/**
+ * 批次元信息：篇数 + 时间。已推送看推送时间，定时看计划时间，其余看更新时间。
+ * 关键约束：时间缺失时只展示篇数，不补「未知」占位，避免列表里出现无信息量的文案。
+ */
+export function formatIssueMeta(issue: WechatIssueSummary): string {
+    const parts = [`${String(issue.articleCount)} 篇`]
+    if (issue.publishedAt !== undefined && issue.publishedAt.length > 0) {
+        parts.push(`推送于 ${formatRelativeTime(issue.publishedAt)}`)
+    } else if (issue.scheduledAt !== undefined && issue.scheduledAt.length > 0) {
+        parts.push(`定时 ${formatRelativeTime(issue.scheduledAt)}`)
+    } else {
+        parts.push(`更新于 ${formatRelativeTime(issue.updatedAt)}`)
+    }
+    return parts.join(' · ')
+}
+
+/** 文章行元信息：来源 + 字数，手写稿不重复标注来源 */
+export function formatArticleMeta(article: WechatArticleSummary): string {
+    const source = article.sourceKind === 'manual' ? '' : `来自${WECHAT_ARTICLE_SOURCE_LABELS[article.sourceKind]} · `
+    return `${source}${String(article.wordCount)} 字`
 }

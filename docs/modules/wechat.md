@@ -258,7 +258,7 @@ CREATE TABLE IF NOT EXISTS wechat_issues (
 
 CREATE INDEX IF NOT EXISTS idx_issue_account ON wechat_issues(account_id, updated_at DESC);
 
--- 批次内文章条目：正文为渲染后的内联样式 HTML，源文件只记路径不改动
+-- 批次内文章条目：只存 Markdown 源文，内联样式 HTML 在推送前统一渲染（模板变更无需重新导入）
 CREATE TABLE IF NOT EXISTS wechat_articles (
     id             TEXT PRIMARY KEY,
     issue_id       TEXT NOT NULL,
@@ -266,8 +266,9 @@ CREATE TABLE IF NOT EXISTS wechat_articles (
     title          TEXT NOT NULL,
     author         TEXT,
     digest         TEXT,
-    html           TEXT NOT NULL,
-    html_hash      TEXT NOT NULL,            -- 幂等与「源文件已变更」判定
+    body           TEXT NOT NULL,            -- Markdown 源文
+    body_hash      TEXT NOT NULL,            -- 幂等与「源文件已变更」判定
+    word_count     INTEGER NOT NULL DEFAULT 0,
     cover_media_id TEXT,
     source_kind    TEXT NOT NULL,            -- note|press|manual
     source_path    TEXT,
@@ -462,7 +463,10 @@ interface WechatPublishResult {
 
 ## 10. 界面架构与落地决策
 
-> **实现进度（2026-10-30）**：M1 账号底座已落地——`src/modules/wechat`（库与仓储、凭证、Token 并发管理、账号服务、协议路由）与 `src/dashboard/wechat`（列表页、账号页骨架、账号弹窗、删除确认）；批次与文章编辑、推送链路、工作流六分区待 M2~M4。
+> **实现进度（2026-10-30）**：M1 账号底座与 M2 批次/文章编辑已落地——
+> `src/modules/wechat`（库与仓储、凭证、Token 并发管理、账号服务、批次服务、协议路由）、
+> `src/dashboard/wechat`（账号列表页、批次列表页、账号与批次弹窗、文章编辑弹窗、导入与删除确认）。
+> 待办：推送链路（M3，含渲染为内联样式 HTML、素材上传、freepublish）与工作流六分区（M4）。
 
 ### 10.1 三个关键决策
 
@@ -616,8 +620,8 @@ interface WechatPublishResult {
 
 | 控件 | 选项 |
 |------|------|
-| 状态 | 全部 / 草稿 / 定时中 / 已推送 / 失败 |
-| 排序 | 最近更新（默认）/ 推送时间 / 创建时间 |
+| 状态 | 全部 / 草稿 / 已推送 / 推送失败（定时与推送中并入「全部」，量少不单独成档） |
+| 排序 | 最近更新（默认）/ 推送时间（未推送的排末尾） |
 
 不做关键词搜索：侧栏默认宽度约 300px，搜索框与筛选行抢位，收益低于成本；列表超长时靠滚动加载与状态筛选收敛。
 
@@ -630,6 +634,9 @@ interface WechatPublishResult {
 | 批量推送 | **不提供**：订阅号一天 1 次、服务号一月 4 次，多批次同时提交必然撞频率限制，按钮置灰并说明原因 |
 
 ### 12.6 与推送流程的联动
+
+> **实现状态**：批次卡片与文章增删改、从笔记/作品导入已落地；「推送」菜单项按 M3 计划保持禁用，
+> 导入由宿主弹出文件选择器并回查索引库（前端不传路径），正文以 Markdown 源文入库。
 
 ```
 批次「推送」
