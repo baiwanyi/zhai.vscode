@@ -278,9 +278,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         materials: wechatMaterialService,
         issues: wechatIssueService,
     })
-    dashboardProvider.attachWechatRoutes(
-        new WechatRoutes(wechatAccountService, wechatIssueService, wechatPublishService),
+    // 两个面板共用同一份公众号路由：仪表盘发起账号与批次动作，工作流面板发起运营分区请求
+    const wechatRoutes = new WechatRoutes(
+        wechatAccountService,
+        wechatIssueService,
+        wechatPublishService,
+        wechatMaterialService,
     )
+    dashboardProvider.attachWechatRoutes(wechatRoutes)
 
     const aiChatProvider = new AiChatViewProvider(
         context.extensionUri,
@@ -296,6 +301,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         secrets,
         context.globalState,
         toastService,
+        wechatRoutes,
     )
     context.subscriptions.push(
         aiChatProvider,

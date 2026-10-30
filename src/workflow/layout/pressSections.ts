@@ -1,8 +1,9 @@
 /**
- * 写作管理页的分区标识表：类型与运行时白名单同源，导航栏与页面共用。
+ * 工作流分区标识表：类型与运行时白名单同源，导航栏与各模块页面共用。
  * 复用约定：分区标识以本文件为准，侧栏入口清单见 WorkflowNav（入口可只覆盖部分分区——chapter 没有独立
  * 导航项，仅由流程步骤跳转进入）；页面与宿主视图请求都经 isWorkflowPressSection 收窄，
- * 不在各处重复写分区字面量。
+ * 不在各处重复写分区字面量。名字保留 press 前缀是历史原因：写作管理最早定义了这套分区，
+ * 公众号的六个运营分区复用同一份白名单。
  * 关键约束：新增分区只改这一处，避免出现「类型里有、校验里缺」导致宿主跳转被静默忽略；
  * 该文件只导出常量与纯函数，不含组件，以免破坏导航栏的 fast refresh 边界。
  */
@@ -12,6 +13,12 @@ export const WORKFLOW_PRESS_SECTIONS = [
     'character',
     'setting',
     'naming',
+    'menu',
+    'material',
+    'stats',
+    'comment',
+    'fans',
+    'push',
     'media',
     'proofread',
     'snapshot',

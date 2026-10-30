@@ -24,6 +24,7 @@ import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { NamingRoutes } from '@modules/naming/namingRoutes'
 import type { PressRoutes } from '@modules/press/pressRoutes'
 import type { ProofreadRoutes } from '@modules/proofread/proofreadRoutes'
+import type { WechatRoutes } from '@modules/wechat/wechatRoutes'
 import type { AiModelChoices, AiPermissionDecision, AiReasoningEffort, AiWriteGrant } from '@shared/types/aiChat'
 import { AI_REASONING_EFFORT_LABELS, isAiReasoningEffort } from '@shared/types/aiChat'
 import type { AiUsageQuery } from '@shared/types/aiUsage'
@@ -108,6 +109,8 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         private readonly secrets: SecretsService,
         private readonly state: vscode.Memento,
         private readonly toast: ToastService,
+        /** 公众号运营分区协议：与仪表盘共用同一份路由实例，数据源因此只有一套 */
+        private readonly wechat: WechatRoutes,
     ) {
         this.disposables.push(
             service.onStream((message) => this.broadcast(message)),
@@ -308,6 +311,10 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 }
                 if (method.startsWith('media/')) {
                     return this.media.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())
+                }
+                // 公众号运营分区与应用内仪表盘共用同一份路由：两个面板各自发起请求，数据源只有一套
+                if (method.startsWith('wechat/')) {
+                    return this.wechat.handle(method, payload)
                 }
                 if (method.startsWith('pressAi/') || PRESS_WORKSPACE_METHODS.has(method)) {
                     return this.press.handle(

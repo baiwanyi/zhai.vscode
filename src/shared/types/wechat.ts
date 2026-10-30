@@ -605,6 +605,48 @@ export function isWechatPublishQuotaRequest(payload: unknown): payload is Wechat
     return isWechatAccountId((payload as { accountId?: unknown }).accountId)
 }
 
+/**
+ * 已上传素材摘要：只反映本地映射表，不逐条回查平台详情。
+ * 关键约束：url 是平台可访问地址，可直接粘进正文；mediaId 用于封面与删除。
+ */
+export interface WechatMaterialSummary {
+    id: string
+    mediaId: string
+    url: string
+    name: string
+    sizeBytes: number
+    createdAt: string
+}
+
+/** wechat/material/list 请求 */
+export interface WechatMaterialListRequest {
+    accountId: string
+}
+
+/** wechat/material/import 请求：宿主弹选择器，前端不传路径 */
+export interface WechatMaterialImportRequest {
+    accountId: string
+}
+
+/** wechat/material/import 响应：取消时 imported 为 false */
+export interface WechatMaterialImportResult {
+    imported: boolean
+    material?: WechatMaterialSummary
+}
+
+/** 判断是否为素材列表请求 */
+export function isWechatMaterialListRequest(payload: unknown): payload is WechatMaterialListRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    return isWechatAccountId((payload as { accountId?: unknown }).accountId)
+}
+
+/** 判断是否为素材导入请求 */
+export function isWechatMaterialImportRequest(payload: unknown): payload is WechatMaterialImportRequest {
+    return isWechatMaterialListRequest(payload)
+}
+
 /** 判断是否为从文档导入请求 */
 export function isWechatArticleImportRequest(payload: unknown): payload is WechatArticleImportRequest {
     if (typeof payload !== 'object' || payload === null) {

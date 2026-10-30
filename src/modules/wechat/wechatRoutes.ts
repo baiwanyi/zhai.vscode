@@ -19,12 +19,15 @@ import {
     isWechatIssueDetailRequest,
     isWechatIssueRemoveRequest,
     isWechatIssuesRequest,
+    isWechatMaterialImportRequest,
+    isWechatMaterialListRequest,
     isWechatPublishDraftRequest,
     isWechatPublishQuotaRequest,
     isWechatPublishRequest,
 } from '@shared/types/wechat'
 import type { WechatAccountService } from './accountService'
 import type { WechatIssueService } from './issueService'
+import type { WechatMaterialService } from './materialService'
 import type { WechatPublishService } from './publishService'
 
 export class WechatRoutes {
@@ -32,6 +35,7 @@ export class WechatRoutes {
         private readonly accounts: WechatAccountService,
         private readonly issues: WechatIssueService,
         private readonly publish: WechatPublishService,
+        private readonly materials: WechatMaterialService,
     ) {}
 
     /** 处理公众号协议方法 */
@@ -137,6 +141,18 @@ export class WechatRoutes {
             }
             case 'wechat/cover/pick':
                 return this.issues.pickCover()
+            case 'wechat/material/list': {
+                if (!isWechatMaterialListRequest(payload)) {
+                    throw new Error('wechat/material/list 参数非法：accountId 须为合法账号标识')
+                }
+                return this.materials.list(payload.accountId)
+            }
+            case 'wechat/material/import': {
+                if (!isWechatMaterialImportRequest(payload)) {
+                    throw new Error('wechat/material/import 参数非法：accountId 须为合法账号标识')
+                }
+                return this.materials.importImage(payload.accountId)
+            }
             default:
                 throw new Error(`未知的公众号协议方法：${method}`)
         }

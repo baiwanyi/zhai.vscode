@@ -46,6 +46,13 @@ export function findWechatMaterial(
     return row === undefined ? null : (row as WechatMaterialRow)
 }
 
+/** 列出某账号已上传的素材，按上传时间倒序 */
+export function listWechatMaterials(db: Database.Database, accountId: string): WechatMaterialRow[] {
+    return db
+        .prepare('SELECT * FROM wechat_materials WHERE account_id = ? ORDER BY created_at DESC, id ASC')
+        .all(accountId) as WechatMaterialRow[]
+}
+
 /** 写入素材映射：唯一键冲突说明并发上传了同一张图，调用方重新查询即可 */
 export function insertWechatMaterial(db: Database.Database, record: WechatMaterialRecord): void {
     db.prepare(

@@ -23,6 +23,7 @@ import { WorkflowResidentSection } from './WorkflowResidentSection'
 import type { WorkflowPressSection } from './pressSections'
 import type { JSX } from 'react'
 import { useWorkflowRouting } from '../hooks/useWorkflowRouting'
+import { WorkflowWechat } from '../wechat/WorkflowWechat'
 
 /** 默认分区：页面主体即 AI 对话，默认高亮与当前可见内容一致 */
 const DEFAULT_SECTION: WorkflowPressSection = 'chat'
@@ -82,6 +83,8 @@ export function WorkflowScreen(): JSX.Element {
             <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
                 {scope === 'press' ? (
                     <WorkflowPress context={context} section={section} onSelectSection={handleSelectSection} />
+                ) : scope === 'wechat' ? (
+                    <WorkflowWechat section={section} />
                 ) : (
                     <WorkflowResidentSection section={section} scopeDir={readScopeDir(context, scope)} />
                 )}

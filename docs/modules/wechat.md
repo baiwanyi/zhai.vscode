@@ -464,11 +464,12 @@ interface WechatPublishResult {
 
 ## 10. 界面架构与落地决策
 
-> **实现进度（2026-10-31）**：M1 账号底座、M2 批次/文章编辑、M3a 渲染管线、M3b 草稿提交与 M3c 群发已落地——
-> `src/modules/wechat`（库与仓储、凭证、Token 并发管理、账号服务、批次服务、素材服务、草稿与群发服务、
-> 协议路由、`render.ts` 渲染管线与 `theme.ts` 默认主题）、`src/dashboard/wechat`（账号列表页、批次列表页、
-> 账号与批次弹窗、文章编辑弹窗、导入与删除确认、群发二次确认）。
-> 待办：定时群发（M3d）与工作流六分区（M4）。
+> **实现进度（2026-10-31）**：M1 账号底座、M2 批次/文章编辑、M3a 渲染管线、M3b 草稿提交、M3c 群发与
+> M4 基础改造已落地——`src/modules/wechat`（库与仓储、凭证、Token 并发管理、账号服务、批次服务、
+> 素材服务、草稿与群发服务、协议路由、`render.ts` 渲染管线与 `theme.ts` 默认主题）、
+> `src/dashboard/wechat`（账号列表页、批次列表页、账号与批次弹窗、文章编辑弹窗、导入与删除确认、群发二次确认）、
+> `src/workflow/wechat`（公众号工作流页与 push / material 两个分区）。
+> 待办：工作流剩余四个分区（menu / stats / comment / fans）。定时群发按产品决定不做。
 
 ### 10.1 三个关键决策
 
@@ -509,8 +510,8 @@ interface WechatPublishResult {
 
 - 路由仍由 `core/routing.ts` 的纯函数承担，`dashboardScreen.tsx` 是唯一切换点，页面只接收导航回调。
 - `accountId` 为本地生成的短 id（`^[a-z0-9-]{1,64}$`），解析时按白名单收窄，不合法即回落首页，避免 hash 承载任意字符串。
-- `readContentScope` 需扩展：`context.selectedModule === 'wechat'` 也判为 wechat 归属（公众号管理不再是「打开 `wechat/` 目录文档」的场景），否则工作流侧栏不会出现专属分区。
-- `SCOPE_SECTIONS.wechat` 由空数组扩为六项，`pressSections.ts` 的分区白名单同步扩充，避免「类型里有、校验里缺」导致宿主视图请求被静默丢弃。
+- `readContentScope` 已扩展：`context.selectedModule === 'wechat'` 也判为 wechat 归属（公众号管理不再是「打开 `wechat/` 目录文档」的场景），否则工作流侧栏不会出现专属分区；作用域目录同时回落到模块键，避免公众号对话与 root 共用一份会话。
+- `SCOPE_SECTIONS.wechat` 已由空数组扩为六项，`pressSections.ts` 的分区白名单同步扩充，避免「类型里有、校验里缺」导致宿主视图请求被静默丢弃。
 
 ### 10.4 协议拆分
 
@@ -704,6 +705,10 @@ ready ──设置时间──> scheduled ──到点──> pushing
 
 ### 13.2 六分区职责与页面结构
 
+> **实现状态**：`push`（推送管理）与 `material`（素材管理）已落地，见 `src/workflow/wechat/push` 与
+> `src/workflow/wechat/material`；`menu` / `stats` / `comment` / `fans` 目前渲染结构完整的占位页
+> （说明将提供什么与所需接口权限），待后续接入。
+
 统一骨架：`AppPage` + `AppHeader`（标题 + 分区内主操作）+ `AppMenu`（分段栏或筛选）+ `AppContent isScrollable` + `AppFooter`（写操作）。
 
 | 分区 | 职责 | 页面结构 | 权限 |
@@ -721,7 +726,7 @@ ready ──设置时间──> scheduled ──到点──> pushing
 
 | 改造点 | 做法 |
 |--------|------|
-| 中段可滚动 | 专属分区组包一层 `overflow-y-auto overscroll-contain`，分组顺序改为「chat → 专属区（`flex-1`，可滚动）→ media/proofread → 底部 snapshot/usage」 |
+| 中段可滚动 | 已落地：专属分区与 media/proofread 一起放进 `flex-1 min-h-0 overflow-y-auto overscroll-contain` 的中段，footer 仍贴栏底；`min-h-0` 缺一不可，否则 flex 子项不收缩、滚动条不出现 |
 | tooltip 不被裁剪 | `TooltipContent` 经 Portal 渲染到 `body`，滚动容器只裁内容不裁气泡；验收时逐项 hover 确认 |
 | 图标与文案 | 在 `SECTION_META` 补六项：`menu`=Menu、`material`=FolderOpen、`stats`=BarChart3、`comment`=MessageSquare、`fans`=UserRound（避免与 press 的「角色」重复用 Users）、`push`=Send |
 | 页面容器 | 新增 `src/workflow/wechat/WorkflowWechat.tsx`（对齐 `WorkflowPress`），内部按 `section` 分发六个页面；`WorkflowScreen` 在 `scope === 'wechat'` 时渲染它 |

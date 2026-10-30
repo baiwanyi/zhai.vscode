@@ -9,9 +9,13 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { readFile, stat } from 'node:fs/promises'
 import * as path from 'node:path'
+import * as vscode from 'vscode'
+import type { WechatMaterialImportResult, WechatMaterialSummary } from '@shared/types/wechat'
 import { uploadWechatImageMaterial } from './client'
-import { findWechatMaterial, insertWechatMaterial } from './db/materialRepository'
+import { findWechatAccount } from './db/accountRepository'
+import { findWechatMaterial, insertWechatMaterial, listWechatMaterials } from './db/materialRepository'
 import type { WechatSecretStore } from './credentials'
+import type { WechatMaterialRow } from './db/materialRepository'
 import type { WechatTokenService } from './tokenService'
 import type Database from 'better-sqlite3'
 
@@ -126,35 +130,112 @@ export class WechatMaterialService {
         return this.uploadLocalImage(input, location.filePath)
     }
 
+    /** 列出账号已上传的素材：素材页只读，按上传时间倒序 */
+    public list(accountId: string): WechatMaterialSummary[] {
+        return listWechatMaterials(this.deps.db, accountId).map((row) => ({
+            id: row.id,
+            mediaId: row.media_id,
+            url: row.url,
+            name: row.name ?? '未命名图片',
+            sizeBytes: row.size_bytes,
+            createdAt: row.created_at,
+        }))
+    }
+
+    /**
+     * 从本地导入一张图片为素材：宿主弹选择器，前端不传路径。
+     * 关键约束：只接受存储根内的 jpg/png；已上传过的同一张图按 hash 复用，不会重复占用配额。
+     */
+    public async importImage(accountId: string): Promise<WechatMaterialImportResult> {
+        const account = findWechatAccount(this.deps.db, accountId)
+        if (account === null) {
+            throw new Error('公众号账号不存在，可能已被删除')
+        }
+        const root = this.deps.resolveRoot()
+        const picked = await vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectFolders: false,
+            canSelectMany: false,
+            defaultUri: vscode.Uri.file(path.join(root, 'images')),
+            filters: { 图片: ['png', 'jpg', 'jpeg'] },
+            openLabel: '上传为素材',
+            title: '选择要上传的图片',
+        })
+        const [uri] = picked ?? []
+        if (uri === undefined) {
+            return { imported: false }
+        }
+        const relativePath = path.relative(root, uri.fsPath).split(path.sep).join('/')
+        if (relativePath.startsWith('..') || path.isAbsolute(relativePath)) {
+            throw new Error('图片必须在文档保存目录内')
+        }
+
+        const uploaded = await this.uploadFile({ accountId, appId: account.app_id }, uri.fsPath)
+        if (!uploaded.ok) {
+            throw new Error(uploaded.reason)
+        }
+        return {
+            imported: true,
+            material: {
+                id: uploaded.record.id,
+                mediaId: uploaded.record.media_id,
+                url: uploaded.record.url,
+                name: uploaded.record.name ?? path.basename(uri.fsPath),
+                sizeBytes: uploaded.record.size_bytes,
+                createdAt: uploaded.record.created_at,
+            },
+        }
+    }
+
     /** 上传或复用本地图片：先按 hash 查表，未命中才走一次网络 */
     private async uploadLocalImage(
         input: { accountId: string; appId: string },
         filePath: string,
     ): Promise<WechatImageEnsureResult> {
-        const extension = path.extname(filePath).toLowerCase()
-        const mimeType = SUPPORTED_IMAGE_MIME[extension]
+        const result = await this.uploadFile(input, filePath)
+        if (!result.ok) {
+            return { kind: 'missing', reason: result.reason }
+        }
+        return {
+            kind: 'uploaded',
+            url: result.record.url,
+            mediaId: result.record.media_id,
+            reused: result.reused,
+        }
+    }
+
+    /**
+     * 上传单个本地文件并返回库内记录：新建或命中缓存都返回同一种结构。
+     * 关键约束：校验（格式、体积、存在性）在读取前完成，避免把大文件读进内存再丢弃。
+     */
+    private async uploadFile(
+        input: { accountId: string; appId: string },
+        filePath: string,
+    ): Promise<{ ok: true; record: WechatMaterialRow; reused: boolean } | { ok: false; reason: string }> {
+        const fileName = path.basename(filePath)
+        const mimeType = SUPPORTED_IMAGE_MIME[path.extname(filePath).toLowerCase()]
         if (mimeType === undefined) {
-            return { kind: 'missing', reason: `仅支持 jpg/png，${path.basename(filePath)} 未上传` }
+            return { ok: false, reason: `仅支持 jpg/png，${fileName} 未上传` }
         }
 
         let bytes: Buffer
         try {
             const info = await stat(filePath)
             if (!info.isFile()) {
-                return { kind: 'missing', reason: `${path.basename(filePath)} 不是文件，未上传` }
+                return { ok: false, reason: `${fileName} 不是文件，未上传` }
             }
             if (info.size > MAX_IMAGE_BYTES) {
-                return { kind: 'missing', reason: `${path.basename(filePath)} 超过 10MB，未上传` }
+                return { ok: false, reason: `${fileName} 超过 10MB，未上传` }
             }
             bytes = await readFile(filePath)
         } catch {
-            return { kind: 'missing', reason: `${path.basename(filePath)} 已不存在，未上传` }
+            return { ok: false, reason: `${fileName} 已不存在，未上传` }
         }
 
         const localHash = hashBytes(bytes)
         const cached = findWechatMaterial(this.deps.db, input.accountId, localHash, 'image')
         if (cached !== null) {
-            return { kind: 'uploaded', url: cached.url, mediaId: cached.media_id, reused: true }
+            return { ok: true, record: cached, reused: true }
         }
 
         const appSecret = await this.deps.secrets.read(input.accountId)
@@ -172,11 +253,11 @@ export class WechatMaterialService {
 
         const outcome = await uploadWechatImageMaterial(tokenOutcome.token.accessToken, {
             bytes,
-            fileName: path.basename(filePath),
+            fileName,
             mimeType,
         })
         if (!outcome.ok) {
-            return { kind: 'missing', reason: `${path.basename(filePath)} 上传失败：${outcome.message}` }
+            return { ok: false, reason: `${fileName} 上传失败：${outcome.message}` }
         }
 
         insertWechatMaterial(this.deps.db, {
@@ -186,10 +267,14 @@ export class WechatMaterialService {
             mediaId: outcome.mediaId,
             url: outcome.url,
             type: 'image',
-            name: path.basename(filePath),
+            name: fileName,
             sizeBytes: bytes.byteLength,
             createdAt: new Date().toISOString(),
         })
-        return { kind: 'uploaded', url: outcome.url, mediaId: outcome.mediaId, reused: false }
+        const inserted = findWechatMaterial(this.deps.db, input.accountId, localHash, 'image')
+        if (inserted === null) {
+            throw new Error('素材写入后未能读取，请重试')
+        }
+        return { ok: true, record: inserted, reused: false }
     }
 }

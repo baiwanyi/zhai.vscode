@@ -1,23 +1,30 @@
 /**
  * 工作流侧边导航：全局常驻的纵向图标列，入口分「常驻分区」与「当前内容的专属分区」两类。
- * 分组自上而下为「AI 对话 → 专属分区 → 媒体与校对 →（留白）→ 快照与 AI 使用量」，
- * 专属分区由内容归属决定：作品显示设定/角色/大纲/取名，笔记与公众号先预留（暂无入口），
+ * 分组自上而下为「AI 对话 → 中段（专属分区 + 媒体与校对，可滚动）→ 快照与 AI 使用量」，
+ * 专属分区由内容归属决定：作品显示设定/角色/大纲/取名，公众号显示菜单/素材/统计/留言/用户/推送，
  * 其余文档只显示常驻分区，专属组与它的分隔线都不渲染。
  * 复用约定：受控组件，激活分区、内容归属与选中动作由外壳传入；文案与图标集中在 SECTION_META，
  * 分组只声明分区 id 顺序，专属分区清单见 contentScope 的 SCOPE_SECTIONS；
  * 配色取 globals.css 桥接的活动栏主题令牌，不写死色值。
  * 关键约束：分区项点击只切换高亮，本组件不承载保存动作，也不解析路由、不发起宿主命令；
- * 容器不可设置 overflow: hidden，否则 Tooltip 浮层会被裁切。
+ * 公众号六项加常驻项共 12 项（每项 48px），短面板下必然溢出，故中段自带纵向滚动且必须有 min-h-0，
+ * 否则 flex 子项不会收缩、滚动条不出现；Tooltip 经 Portal 渲染到 body，滚动容器裁不到它。
  */
 import {
     Archive,
+    BarChart3,
     BookOpen,
     Bot,
+    FolderOpen,
     Globe,
     Image as ImageIcon,
     ListTree,
+    Menu,
     MessageCircle,
+    MessageSquare,
+    Send,
     SpellCheck,
+    UserRound,
     Users,
     WandSparkles,
 } from 'lucide-react'
@@ -28,7 +35,7 @@ import type { ContentScope } from './contentScope'
 import type { WorkflowPressSection } from './pressSections'
 import type { JSX, ReactNode } from 'react'
 
-/** 分组的渲染顺序：首项独占一组，工具入口在专属分区之后，尾项落栏底 */
+/** 分组的渲染顺序：首项独占一组，中段承载专属分区与工具入口，尾项落栏底 */
 const LEADING_SECTIONS: readonly WorkflowPressSection[] = ['chat']
 const TOOL_SECTIONS: readonly WorkflowPressSection[] = ['media', 'proofread']
 const FOOTER_SECTIONS: readonly WorkflowPressSection[] = ['snapshot', 'usage']
@@ -45,6 +52,13 @@ const SECTION_META: Readonly<Record<WorkflowPressSection, SectionMeta>> = {
     character: { label: '角色', icon: <Users className="size-6" /> },
     outline: { label: '大纲', icon: <ListTree className="size-6" /> },
     naming: { label: '取名', icon: <WandSparkles className="size-6" /> },
+    menu: { label: '自定义菜单', icon: <Menu className="size-6" /> },
+    material: { label: '素材管理', icon: <FolderOpen className="size-6" /> },
+    stats: { label: '数据统计', icon: <BarChart3 className="size-6" /> },
+    comment: { label: '留言管理', icon: <MessageSquare className="size-6" /> },
+    // 与写作管理的「角色」区分：这里指公众号粉丝，图标刻意不用 Users
+    fans: { label: '用户管理', icon: <UserRound className="size-6" /> },
+    push: { label: '推送管理', icon: <Send className="size-6" /> },
     media: { label: '媒体', icon: <ImageIcon className="size-6" /> },
     proofread: { label: '校对', icon: <SpellCheck className="size-6" /> },
     snapshot: { label: '快照', icon: <Archive className="size-6" /> },
@@ -85,16 +99,17 @@ export function WorkflowNav({ activeSection, scope, onSelect }: WorkflowNavProps
         <nav className="flex w-12 shrink-0 flex-col bg-activity-bar py-1 mr-1 rounded-md" aria-label="工作流导航">
             <TooltipProvider>
                 {LEADING_SECTIONS.map(renderItem)}
-                {scopeSections.length > 0 && (
-                    <>
-                        <NavSeparator />
-                        {scopeSections.map(renderItem)}
-                    </>
-                )}
-                <NavSeparator />
-                {TOOL_SECTIONS.map(renderItem)}
-                {/* 弹性留白：把尾项压到栏底，形成与活动栏一致的上下分组 */}
-                <div className="flex-1" />
+                {/* 中段：专属分区与工具入口一起滚动，短面板下也能滚到最末一项 */}
+                <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+                    {scopeSections.length > 0 && (
+                        <>
+                            <NavSeparator />
+                            {scopeSections.map(renderItem)}
+                        </>
+                    )}
+                    <NavSeparator />
+                    {TOOL_SECTIONS.map(renderItem)}
+                </div>
                 {FOOTER_SECTIONS.map(renderItem)}
             </TooltipProvider>
         </nav>
