@@ -647,6 +647,259 @@ export function isWechatMaterialImportRequest(payload: unknown): payload is Wech
     return isWechatMaterialListRequest(payload)
 }
 
+/**
+ * 菜单按钮的三种动作：发送消息、跳转网页、跳转小程序。
+ * 关键约束：其它平台动作（扫码、拍照、地理位置等）依赖特定权限与客户端版本，本期不开放，
+ * 保存时统一按这三种校验，避免用户配出一个保存成功但点不动的菜单。
+ */
+export const WECHAT_MENU_TYPES = ['click', 'view', 'miniprogram'] as const
+
+/** 菜单动作类型 */
+export type WechatMenuType = (typeof WECHAT_MENU_TYPES)[number]
+
+/** 一级菜单数量上限（平台限制） */
+export const WECHAT_MENU_TOP_LIMIT = 3
+
+/** 单个一级菜单下的二级数量上限（平台限制） */
+export const WECHAT_MENU_SUB_LIMIT = 5
+
+/** 一级菜单名称的字节上限：平台按 UTF-8 字节计，16 字节约 5 个汉字 */
+export const WECHAT_MENU_TOP_NAME_BYTES = 16
+
+/** 二级菜单名称的字节上限 */
+export const WECHAT_MENU_SUB_NAME_BYTES = 60
+
+/** 菜单按钮：type 决定使用哪个内容字段；有 subButton 时自身不参与点击 */
+export interface WechatMenuButton {
+    name: string
+    type?: WechatMenuType
+    /** click 动作的开发者自定义键 */
+    key?: string
+    /** view / miniprogram 的跳转地址 */
+    url?: string
+    /** miniprogram 的小程序 AppID */
+    appid?: string
+    /** miniprogram 的页面路径 */
+    pagepath?: string
+    /** 二级菜单：存在即视为目录节点 */
+    subButton?: WechatMenuButton[]
+}
+
+/** wechat/menu/get 请求 */
+export interface WechatMenuRequest {
+    accountId: string
+}
+
+/** wechat/menu/get 响应：hasMenu 为 false 表示平台侧尚未配置 */
+export interface WechatMenuResult {
+    hasMenu: boolean
+    buttons: WechatMenuButton[]
+    /** 本地最近一次保存时间（ISO 8601），从未保存时缺省 */
+    updatedAt?: string
+}
+
+/** wechat/menu/save 请求：整棵菜单覆盖式保存 */
+export interface WechatMenuSaveRequest {
+    accountId: string
+    buttons: WechatMenuButton[]
+}
+
+/** wechat/menu/save 响应：published 表示平台侧已生效 */
+export interface WechatMenuSaveResult {
+    published: boolean
+    buttons: WechatMenuButton[]
+}
+
+/** 粉丝摘要：昵称与头像来自批量资料接口，未关注用户只保留 openid */
+export interface WechatFanSummary {
+    openid: string
+    nickname: string
+    avatar?: string
+    /** 0 未关注、1 已关注（平台口径） */
+    subscribeStatus: number
+    /** 关注时间：ISO 8601，未关注时缺省 */
+    subscribedAt?: string
+}
+
+/** wechat/fans/list 请求：nextOpenid 为空表示从头拉取 */
+export interface WechatFanListRequest {
+    accountId: string
+    nextOpenid?: string
+}
+
+/** wechat/fans/list 响应 */
+export interface WechatFanListResult {
+    fans: WechatFanSummary[]
+    /** 下一页游标：缺省表示已到末页 */
+    nextOpenid?: string
+    /** 平台给出的关注者总数，用于界面提示还有多少未加载 */
+    total: number
+}
+
+/** 粉丝标签 */
+export interface WechatFanTag {
+    id: number
+    name: string
+    /** 该标签下的粉丝数 */
+    count: number
+}
+
+/** wechat/fans/tags 请求 */
+export interface WechatFanTagsRequest {
+    accountId: string
+}
+
+/** wechat/fans/tags 响应 */
+export interface WechatFanTagsResult {
+    tags: WechatFanTag[]
+}
+
+/** 用户增长的单日数据点：日期为 YYYY-MM-DD（用户所在时区） */
+export interface WechatStatsPoint {
+    date: string
+    newUsers: number
+    cancelUsers: number
+    netUsers: number
+    cumulateUsers: number
+}
+
+/** wechat/stats/overview 请求：只开放三档固定区间，避免任意区间打满接口额度 */
+export interface WechatStatsRequest {
+    accountId: string
+    days: 7 | 15 | 30
+}
+
+/** wechat/stats/overview 响应 */
+export interface WechatStatsResult {
+    points: WechatStatsPoint[]
+    totalNew: number
+    totalCancel: number
+    totalNet: number
+    /** 期末累计关注人数：取最后一天的 cumulateUsers */
+    cumulateUsers: number
+}
+
+/** 判断是否为菜单读取请求 */
+export function isWechatMenuRequest(payload: unknown): payload is WechatMenuRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    return isWechatAccountId((payload as { accountId?: unknown }).accountId)
+}
+
+/** 判断是否为菜单保存请求：结构校验交给 readWechatMenuButtons，这里只挡明显非法载荷 */
+export function isWechatMenuSaveRequest(payload: unknown): payload is WechatMenuSaveRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; buttons?: unknown }
+    return isWechatAccountId(candidate.accountId) && Array.isArray(candidate.buttons)
+}
+
+/** 判断是否为粉丝列表请求 */
+export function isWechatFanListRequest(payload: unknown): payload is WechatFanListRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; nextOpenid?: unknown }
+    if (!isWechatAccountId(candidate.accountId)) {
+        return false
+    }
+    return candidate.nextOpenid === undefined || typeof candidate.nextOpenid === 'string'
+}
+
+/** 判断是否为标签请求 */
+export function isWechatFanTagsRequest(payload: unknown): payload is WechatFanTagsRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    return isWechatAccountId((payload as { accountId?: unknown }).accountId)
+}
+
+/** 判断是否为数据统计请求：days 只接受 7 / 15 / 30 */
+export function isWechatStatsRequest(payload: unknown): payload is WechatStatsRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; days?: unknown }
+    if (!isWechatAccountId(candidate.accountId)) {
+        return false
+    }
+    return candidate.days === 7 || candidate.days === 15 || candidate.days === 30
+}
+
+/** UTF-8 字节数：菜单名按字节限制，不能用字符数近似（一个汉字占 3 字节） */
+function readByteLength(value: string): number {
+    return new TextEncoder().encode(value).length
+}
+
+/**
+ * 校验并规整菜单结构：返回 null 表示结构非法，调用方据此给出可执行提示。
+ * 关键约束：一级 ≤3、二级 ≤5、名称按字节上限校验；目录节点（有 subButton）忽略自身动作字段；
+ * 叶子节点必须有 name 与 type，且 click 需要 key、view 需要 url、miniprogram 需要 appid + pagepath。
+ * 结构化字段只保留用得到的键，避免把前端多余字段带到平台侧。
+ */
+export function readWechatMenuButtons(value: unknown): WechatMenuButton[] | null {
+    if (!Array.isArray(value) || value.length === 0 || value.length > WECHAT_MENU_TOP_LIMIT) {
+        return null
+    }
+    const readLeaf = (item: unknown, isTop: boolean): WechatMenuButton | null => {
+        if (typeof item !== 'object' || item === null) {
+            return null
+        }
+        const candidate = item as {
+            name?: unknown
+            type?: unknown
+            key?: unknown
+            url?: unknown
+            appid?: unknown
+            pagepath?: unknown
+            subButton?: unknown
+        }
+        const name = typeof candidate.name === 'string' ? candidate.name.trim() : ''
+        if (name.length === 0) {
+            return null
+        }
+        const nameLimit = isTop ? WECHAT_MENU_TOP_NAME_BYTES : WECHAT_MENU_SUB_NAME_BYTES
+        if (readByteLength(name) > nameLimit) {
+            return null
+        }
+        if (candidate.subButton !== undefined) {
+            if (!Array.isArray(candidate.subButton) || candidate.subButton.length === 0) {
+                return null
+            }
+            if (candidate.subButton.length > WECHAT_MENU_SUB_LIMIT) {
+                return null
+            }
+            const children = candidate.subButton.map((child) => readLeaf(child, false))
+            if (children.some((child) => child === null)) {
+                return null
+            }
+            return { name, subButton: children as WechatMenuButton[] }
+        }
+        const type = candidate.type
+        if (type !== 'click' && type !== 'view' && type !== 'miniprogram') {
+            return null
+        }
+        if (type === 'click') {
+            const key = typeof candidate.key === 'string' ? candidate.key.trim() : ''
+            return key.length > 0 ? { name, type, key } : null
+        }
+        if (type === 'view') {
+            const url = typeof candidate.url === 'string' ? candidate.url.trim() : ''
+            return url.length > 0 ? { name, type, url } : null
+        }
+        const appid = typeof candidate.appid === 'string' ? candidate.appid.trim() : ''
+        const pagepath = typeof candidate.pagepath === 'string' ? candidate.pagepath.trim() : ''
+        return appid.length > 0 && pagepath.length > 0 ? { name, type, appid, pagepath } : null
+    }
+    const buttons = value.map((item) => readLeaf(item, true))
+    if (buttons.some((item) => item === null)) {
+        return null
+    }
+    return buttons as WechatMenuButton[]
+}
+
 /** 判断是否为从文档导入请求 */
 export function isWechatArticleImportRequest(payload: unknown): payload is WechatArticleImportRequest {
     if (typeof payload !== 'object' || payload === null) {

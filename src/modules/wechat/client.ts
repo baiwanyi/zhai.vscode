@@ -116,6 +116,60 @@ export async function requestWechatToken(appId: string, appSecret: string): Prom
     return { ok: false, errorCode: payload.errorCode, message: hint.hint }
 }
 
+/** 通用 JSON 接口的超时：除素材上传外的查询与写入接口都在秒级返回 */
+const JSON_TIMEOUT_MS = 15_000
+
+/** 通用 JSON 接口结果：payload 为已确认 errcode 为 0 的原始报文 */
+export type WechatJsonOutcome =
+    { ok: true; payload: Record<string, unknown> } | { ok: false; errorCode: number; message: string }
+
+/**
+ * 通用 POST JSON：公众号绝大多数接口都是「查询串带 token + JSON 体」。
+ * 关键约束：只返回 errcode 为 0 的报文，非 0 一律归一到错误分支，调用方无需逐处判 errcode；
+ * 网络失败与 HTTP 异常统一用 NETWORK_ERROR_CODE，与平台错误码区分开，便于界面判断是否值得重试。
+ */
+export async function postWechatJson(
+    token: string,
+    endpoint: string,
+    body: unknown,
+    timeoutMs: number = JSON_TIMEOUT_MS,
+): Promise<WechatJsonOutcome> {
+    const url = new URL(endpoint)
+    url.searchParams.set('access_token', token)
+
+    let response: Response
+    try {
+        response = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(timeoutMs),
+        })
+    } catch (cause) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `无法连接微信接口：${errorText(cause)}` }
+    }
+    if (!response.ok) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `微信接口返回 HTTP ${String(response.status)}` }
+    }
+
+    let raw: unknown
+    try {
+        raw = await response.json()
+    } catch (cause) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `微信接口返回无法解析：${errorText(cause)}` }
+    }
+    if (typeof raw !== 'object' || raw === null) {
+        return { ok: false, errorCode: -1, message: '微信接口返回格式异常' }
+    }
+
+    const candidate = raw as Record<string, unknown>
+    const errorCode = typeof candidate.errcode === 'number' ? candidate.errcode : 0
+    if (errorCode !== 0) {
+        return { ok: false, errorCode, message: describeWechatError(errorCode).hint }
+    }
+    return { ok: true, payload: candidate }
+}
+
 /** 永久图片素材接口 */
 const MATERIAL_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/material/add_material'
 

@@ -64,9 +64,12 @@ import { TodoWatcher } from './modules/todo/todoWatcher'
 import { WechatAccountService } from './modules/wechat/accountService'
 import { createWechatSecretStore } from './modules/wechat/credentials'
 import { openWechatDatabase } from './modules/wechat/db/connection'
+import { WechatFanService } from './modules/wechat/fanService'
 import { WechatIssueService } from './modules/wechat/issueService'
 import { WechatMaterialService } from './modules/wechat/materialService'
+import { WechatMenuService } from './modules/wechat/menuService'
 import { WechatPublishService } from './modules/wechat/publishService'
+import { WechatStatsService } from './modules/wechat/statsService'
 import { WechatTokenService } from './modules/wechat/tokenService'
 import { WechatRoutes } from './modules/wechat/wechatRoutes'
 import type { IndexStatus } from './modules/common/indexer/indexService'
@@ -278,13 +281,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         materials: wechatMaterialService,
         issues: wechatIssueService,
     })
+    // 三个运营服务只依赖账号表、密钥与 Token 缓存，共用同一组依赖
+    const wechatTokenDeps = { db: wechatDb, secrets: wechatSecrets, tokens: wechatTokens }
     // 两个面板共用同一份公众号路由：仪表盘发起账号与批次动作，工作流面板发起运营分区请求
-    const wechatRoutes = new WechatRoutes(
-        wechatAccountService,
-        wechatIssueService,
-        wechatPublishService,
-        wechatMaterialService,
-    )
+    const wechatRoutes = new WechatRoutes({
+        accounts: wechatAccountService,
+        issues: wechatIssueService,
+        publish: wechatPublishService,
+        materials: wechatMaterialService,
+        menu: new WechatMenuService(wechatTokenDeps),
+        fans: new WechatFanService(wechatTokenDeps),
+        stats: new WechatStatsService(wechatTokenDeps),
+    })
     dashboardProvider.attachWechatRoutes(wechatRoutes)
 
     const aiChatProvider = new AiChatViewProvider(

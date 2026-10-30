@@ -36,7 +36,9 @@ const PENDING_META: Readonly<Record<string, PendingMeta>> = {
     comment: {
         title: '留言管理',
         description: '按文章查看留言、加精与回复，是发布后与读者互动的入口。',
-        requirement: '需要认证主体且账号已开通留言功能（2018 年后注册的账号默认没有）。',
+        requirement:
+            '需要认证主体且账号已开通留言（2018 年后注册的账号默认没有）。接入前还需在群发时保存平台返回的 msg_data_id——' +
+            '留言接口按「群发消息 + 文章序号」定位，没有这个标识就无法查询，当前链路尚未保存，因此本分区暂不提供数据。',
         icon: MessageSquare,
     },
     fans: {
