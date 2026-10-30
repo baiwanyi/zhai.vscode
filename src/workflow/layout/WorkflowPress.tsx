@@ -1,25 +1,23 @@
 /**
- * 写作管理工作流页：写作管理模块的专属落点，模块切换时由注册表直接渲染本文件。
+ * 写作管理工作流页：当前文档归属为作品时由 WorkflowScreen 渲染本文件。
  * 复用约定：文档读取与写盘交给 ../press/hooks/usePressWorkspace，结构性变更交给 usePressMutations，
- * 分区渲染交给 ../press/layout/PressSectionRouter，右侧分区入口由同目录 WorkflowPressNav 承载；
+ * 分区渲染交给 ../press/layout/PressSectionRouter；分区状态由外壳托管（section / onSelectSection），
+ * 侧边导航在 WorkflowScreen 层常驻，本页不再自绘导航、也不自行处理宿主视图请求。
  * 作品数据来自宿主读取的 设定.md / 角色设定.md / 大纲.md，经 press/document 解析成 OutlineWorkspace。
- * 关键约束：本页只负责分区切换与三态渲染（读取中 / 未打开作品 / 就绪），不直接发请求、不直接改草稿；
+ * 关键约束：本页只负责分区内容与三态渲染（读取中 / 未打开作品 / 就绪），不直接发请求、不直接改草稿；
+ * 读取中的骨架按 AppPage 的真实结构摆放（页头标题 + 动作区、内容区卡片），避免等待期间页面高度塌陷；
  * 作品定位只认宿主下发的 projectDir；未打开作品时渲染初始页（作品清单入口），不在页面内伪造示例数据。
  */
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
-import { normalizePressSection } from './pressSections'
-import { WorkflowPressNav } from './WorkflowPressNav'
+import type { WorkflowContextState } from '@shared/types/workflow'
+import { AppContent, AppHeader, AppPage } from '@webview/components/AppPage'
 import type { WorkflowPressSection } from './pressSections'
-import type { WorkflowRenderProps } from '../core/registry'
 import type { JSX } from 'react'
 import { usePressMutations } from '../press/hooks/usePressMutations'
 import { usePressWorkspace } from '../press/hooks/usePressWorkspace'
 import { PressSectionRouter } from '../press/layout/PressSectionRouter'
 import { PressWorkspaceStart } from '../press/layout/PressWorkspaceStart'
-
-/** 默认分区：页面主体即 AI 对话，默认高亮与当前可见内容一致 */
-const DEFAULT_SECTION: WorkflowPressSection = 'chat'
 
 /** 流程步骤到分区的映射：第 1 步与第 5 步都落到章节写作，正文由 AI 对话承接 */
 const STEP_SECTIONS: Readonly<Record<number, WorkflowPressSection>> = {
@@ -30,24 +28,14 @@ const STEP_SECTIONS: Readonly<Record<number, WorkflowPressSection>> = {
     5: 'chapter',
 }
 
-export function WorkflowPress({ context, viewRequest }: WorkflowRenderProps): JSX.Element {
-    const [activeSection, setActiveSection] = useState<WorkflowPressSection>(DEFAULT_SECTION)
-    const [appliedViewSeq, setAppliedViewSeq] = useState<number | null>(null)
+/** 写作管理页入参：路由事实与当前分区都由外壳托管，页面不自行取路由或维护分区 */
+interface WorkflowPressProps {
+    context: WorkflowContextState
+    section: WorkflowPressSection
+    onSelectSection: (section: WorkflowPressSection) => void
+}
 
-    /**
-     * 宿主发起的页内跳转（如「添加到宅对话」后落到对话分区）：在渲染期对齐，不放进 effect，
-     * 否则要多一轮渲染才能看到目标分区。按序号比对，同一分区被连续请求时也会重新落位；
-     * 不属于本页的视图标识只记序号、不切分区，宿主新增页面时不会把这里切到空白。
-     */
-    if (viewRequest !== null && viewRequest.seq !== appliedViewSeq) {
-        setAppliedViewSeq(viewRequest.seq)
-        // 旧标识 image 映射为 media：存量视图请求仍能落到媒体页
-        const nextSection = normalizePressSection(viewRequest.view)
-        if (nextSection !== null) {
-            setActiveSection(nextSection)
-        }
-    }
-
+export function WorkflowPress({ context, section, onSelectSection }: WorkflowPressProps): JSX.Element {
     const workspaceState = usePressWorkspace(context.projectDir)
     const mutations = usePressMutations({
         getWorkspace: workspaceState.getWorkspace,
@@ -56,21 +44,30 @@ export function WorkflowPress({ context, viewRequest }: WorkflowRenderProps): JS
         scheduleFlush: workspaceState.scheduleFlush,
     })
 
-    const handleSelectStep = useCallback((step: number): void => {
-        setActiveSection(STEP_SECTIONS[step] ?? 'chapter')
-    }, [])
+    const handleSelectStep = useCallback(
+        (step: number): void => {
+            onSelectSection(STEP_SECTIONS[step] ?? 'chapter')
+        },
+        [onSelectSection],
+    )
 
     const handleOpenChat = useCallback((): void => {
-        setActiveSection('chat')
-    }, [])
+        onSelectSection('chat')
+    }, [onSelectSection])
 
+    // 读取中：按真实页面骨架摆放（页头标题 + 动作区、内容区两张卡片），等待期间高度不塌陷
     if (workspaceState.status === 'loading') {
         return (
-            <div className="flex h-screen flex-col gap-2 p-4">
-                <Skeleton className="h-6 w-32" />
-                <Skeleton className="h-28 w-full" />
-                <Skeleton className="h-28 w-full" />
-            </div>
+            <AppPage>
+                <AppHeader className="justify-between">
+                    <Skeleton className="h-5 w-32" />
+                    <Skeleton className="h-8 w-20 rounded-md" />
+                </AppHeader>
+                <AppContent className="flex flex-col gap-2">
+                    <Skeleton className="h-28 w-full rounded-xl" />
+                    <Skeleton className="h-28 w-full rounded-xl" />
+                </AppContent>
+            </AppPage>
         )
     }
 
@@ -80,18 +77,15 @@ export function WorkflowPress({ context, viewRequest }: WorkflowRenderProps): JS
     }
 
     return (
-        <div className="flex h-screen min-h-0">
-            <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-                <PressSectionRouter
-                    section={activeSection}
-                    workspace={workspace}
-                    dirPath={workspaceState.projectDir ?? ''}
-                    mutations={mutations}
-                    onSelectStep={handleSelectStep}
-                    onOpenChat={handleOpenChat}
-                />
-            </div>
-            <WorkflowPressNav activeSection={activeSection} onSelect={setActiveSection} />
+        <div className="h-full min-h-0 overflow-hidden">
+            <PressSectionRouter
+                section={section}
+                workspace={workspace}
+                dirPath={workspaceState.projectDir ?? ''}
+                mutations={mutations}
+                onSelectStep={handleSelectStep}
+                onOpenChat={handleOpenChat}
+            />
         </div>
     )
 }

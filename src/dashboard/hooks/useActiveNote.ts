@@ -1,50 +1,26 @@
 /**
- * 活跃笔记同步：列表选中态以编辑器真实焦点为准，而非只记录最后一次点击。
- * 复用 @shared/utils/bridge 的请求与状态订阅：挂载时拉一次快照，随后跟随宿主 note 通道广播。
- * 关键约束：选中态由宿主权威下发，页面点击打开时先本地回填再等宿主收敛，避免打开瞬间高亮丢失；
- * 非 note 通道或形态非法的载荷一律忽略，不覆盖已有选中态。
+ * 活跃笔记上下文：定义共享选中态的 Context 与读取 hook，Provider 与各页面都从这里取。
+ * 与 Provider 拆成两个文件，使各自只导出一种成员（非组件 / 组件），避免 fast refresh 失效。
+ * 关键约束：Context 缺省值为 null，Provider 缺位时 useActiveNote 显式抛错而不静默回退——
+ * 静默新建一份状态会让同一页出现两个选中态事实源，页面回填与路由归属就此分叉。
  */
-import { useCallback, useEffect, useState } from 'react'
-import type { NoteActiveState } from '@shared/types/note'
-import { isNoteActiveState } from '@shared/types/note'
-import { onState, request } from '@shared/utils/bridge'
+import { createContext, use } from 'react'
 
 export interface ActiveNoteState {
     activeId: string | null
+    /** 是否存在文本编辑器：false 时表示焦点不在编辑器，归属判定应保持当前页而不是回首页 */
+    hasEditor: boolean
     setActiveId: (path: string | null) => void
 }
 
+/** 共享活跃笔记状态：只由 ActiveNoteProvider 提供，消费方一律走 useActiveNote */
+export const ActiveNoteContext = createContext<ActiveNoteState | null>(null)
+
+/** 读取共享活跃笔记状态：必须在 ActiveNoteProvider 内使用 */
 export function useActiveNote(): ActiveNoteState {
-    const [activeId, setActiveId] = useState<string | null>(null)
-
-    useEffect(() => {
-        let isDisposed = false
-        const loadActiveNote = async (): Promise<void> => {
-            try {
-                const snapshot = await request<NoteActiveState>('note/active')
-                if (!isDisposed) {
-                    setActiveId(snapshot.activePath)
-                }
-            } catch {
-                // 面板刚挂载时宿主可能尚未就绪，失败即保留空选中态，等广播位再回填
-            }
-        }
-        void loadActiveNote()
-        const unsubscribe = onState((message) => {
-            if (message.channel !== 'note' || !isNoteActiveState(message.payload)) {
-                return
-            }
-            setActiveId(message.payload.activePath)
-        })
-        return (): void => {
-            isDisposed = true
-            unsubscribe()
-        }
-    }, [])
-
-    const updateActiveId = useCallback((path: string | null): void => {
-        setActiveId(path)
-    }, [])
-
-    return { activeId, setActiveId: updateActiveId }
+    const state = use(ActiveNoteContext)
+    if (state === null) {
+        throw new Error('useActiveNote 必须在 ActiveNoteProvider 内使用')
+    }
+    return state
 }

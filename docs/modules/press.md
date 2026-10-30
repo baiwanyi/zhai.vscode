@@ -433,9 +433,9 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 | 入口 | 落点 | 页面内容 |
 |------|------|----------|
 | 仪表盘「写作管理」 | 仪表盘页内路由 `#/press` | 作品列表 + 添加作品 |
-| 工作流初始页选「写作管理」 | 工作流 press 页 | AI 对话 + 分区导航（未改动） |
+| 未选定模块 / 侧栏「AI 对话」 | 工作流 press 页 | AI 对话 + 分区导航（不再有独立的模块选择初始页） |
 
-**AI 对话归属**：press 页的 AI 对话按作品隔离——当前作品目录（`press/{作品名}`）作为会话作用域下传给 `AiChat`，取最近会话、新建会话与历史列表都只在该作品范围内进行，切换作品即换用该作品自己的对话记录。未打开作品或从占位页承接的对话不带作用域，走通用对话。会话正文仍存全局 `ai.db` 的 `conversations` / `messages`，由 `project_dir` 记录归属作品（见 `ai-chat.md` 第 6 节）。
+**AI 对话归属**：press 页的 AI 对话按作品隔离——当前作品目录（`press/{作品名}`）作为会话作用域下传给 `AiChat`，取最近会话、新建会话与历史列表都只在该作品范围内进行，切换作品即换用该作品自己的对话记录。未打开作品时的对话不带作用域，走通用对话。会话正文仍存全局 `ai.db` 的 `conversations` / `messages`，由 `project_dir` 记录归属作品（见 `ai-chat.md` 第 6 节）。
 
 **数据来源**：本期不新建 `press.db`，作品摘要直接由索引库 `files` 表聚合（目录即作品），与「Markdown 主存储 + SQLite 仅缓存」原则一致。
 

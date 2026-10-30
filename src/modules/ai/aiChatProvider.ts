@@ -458,7 +458,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         }
     }
 
-    /** 选定模块：初始页与仪表盘入口共用同一状态，结果由广播下发，本层不判定场景 */
+    /** 选定模块：侧边导航与仪表盘入口共用同一状态，结果由广播下发，本层不判定场景 */
     private openWorkflow(payload: unknown): OpenWorkflowResult {
         if (!isOpenWorkflowRequest(payload)) {
             throw new Error('workflow/open 参数非法：module 须为非空模块键')
@@ -467,7 +467,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         return { opened: true }
     }
 
-    /** 清除模块选定：面板回到初始页 */
+    /** 清除模块选定：面板回到写作管理页的对话分区 */
     private resetWorkflow(): ResetWorkflowResult {
         this.workflowRouter.clearModule()
         return { cleared: true }

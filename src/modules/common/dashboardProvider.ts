@@ -751,15 +751,17 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     /**
      * 组装活跃笔记快照：仅认索引库内已登记的笔记，其余（含焦点不在编辑器上）一律为 null，
      * 使列表高亮永远收敛到真实存在的条目。
+     * 关键约束：hasEditor 如实反映「是否存在文本编辑器」，前端据此区分「焦点不在编辑器」与
+     * 「编辑器里是索引外文档（未保存的 untitled 等）」——前者不改变面板当前页，后者须判定为无归属。
      */
     private buildActiveNote(): NoteActiveState {
         const editor = vscode.window.activeTextEditor
         if (editor === undefined) {
-            return { activePath: null }
+            return { activePath: null, hasEditor: false }
         }
         const relativePath = this.indexService.toRelativePath(editor.document.uri)
         const [known] = listFilesByPaths(this.db, [relativePath])
-        return { activePath: known?.path ?? null }
+        return { activePath: known?.path ?? null, hasEditor: true }
     }
 
     /**

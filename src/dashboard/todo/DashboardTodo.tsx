@@ -21,11 +21,11 @@ import type { TodoListSummary } from '@shared/types/todo'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import type { JSX, ReactNode } from 'react'
-import { TodoComposer } from '../todo/TodoComposer'
-import { TodoItemRow } from '../todo/TodoItemRow'
-import { TodoListBar } from '../todo/TodoListBar'
-import { TodoListRenameDialog } from '../todo/TodoListRenameDialog'
-import { useTodoLists } from '../todo/useTodoLists'
+import { TodoComposer } from './TodoComposer'
+import { TodoItemRow } from './TodoItemRow'
+import { TodoListBar } from './TodoListBar'
+import { TodoListRenameDialog } from './TodoListRenameDialog'
+import { useTodoLists } from './useTodoLists'
 
 /** 当前打开的弹窗：删除与重命名共用一份状态，二者互斥 */
 type TodoDialog = { kind: 'delete'; list: TodoListSummary } | { kind: 'rename'; list: TodoListSummary }

@@ -4,8 +4,8 @@
  * 关键约束：槽位一律全宽——待办模块含清单标签、条目列表与输入区，半宽下无法使用。
  */
 import { DashboardSlotPlaceholder } from './DashboardSlotPlaceholder'
-import { DashboardTodo } from './DashboardTodo'
 import type { JSX } from 'react'
+import { DashboardTodo } from '../todo/DashboardTodo'
 
 export function DashboardSlots(): JSX.Element {
     return (

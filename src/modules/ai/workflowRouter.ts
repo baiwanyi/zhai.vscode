@@ -2,8 +2,9 @@
  * 工作流路由事实服务：汇聚「活跃编辑器场景」「用户选定的模块」与「当前作品」，供工作流面板按模块渲染对应页面。
  * 复用 IndexService.toRelativePath 与索引库回查判定文档归属，与仪表盘活跃笔记回填同口径。
  * 关键约束：编辑器监听随扩展停用释放；场景变化经去抖后再广播，避免编辑器焦点抖动导致面板反复换页；
- * 模块选定为持久状态（跨面板重建保留），仅在用户改选或清除时变化，未选定时由面板展示初始页；
- * 作品目录优先取编辑器所在的 press/{作品名}/...，编辑器不在作品内时沿用显式选定值（selectProject 写入），
+ * 模块选定为持久状态（跨面板重建保留），仅在用户改选或清除时变化，未选定时面板直接进写作管理页的对话分区；
+ * 作品目录以编辑器所在的 press/{作品名}/... 为准；编辑器落在笔记或根目录时视为未打开作品（projectDir 清空），
+ * 否则前端会把笔记也判成作品归属，专属分区与对话作用域都切不过去；
  * 索引尚未收录时仍按路径识别，避免新建作品打不开工作台；
  * 焦点离开文本编辑器（打开设置、切到其它视图）不改变场景事实，沿用上一次的 scene / module / projectDir。
  */
@@ -32,7 +33,7 @@ export class WorkflowRouter implements vscode.Disposable {
     /** 视图请求序号：同一视图连续请求也递增，前端据此识别新意图 */
     private viewSeq = 0
 
-    /** 用户选定的模块：持久保存，未选定为 null（面板展示初始页） */
+    /** 用户选定的模块：持久保存，未选定为 null（面板直接进写作管理页的对话分区） */
     private selectedModule: string | null = null
     /** 显式选定的作品目录：仪表盘与工作台打开作品时写入，编辑器不在作品内时以它为准 */
     private projectDir: string | null = null
@@ -69,7 +70,7 @@ export class WorkflowRouter implements vscode.Disposable {
         this.viewEmitter.fire({ kind: 'view', view, seq: this.viewSeq })
     }
 
-    /** 清除模块选定并立即广播：面板据此回到初始页 */
+    /** 清除模块选定并立即广播：面板据此回到写作管理页的对话分区 */
     public clearModule(): void {
         if (this.selectedModule === null) {
             return
@@ -186,11 +187,10 @@ export class WorkflowRouter implements vscode.Disposable {
         }
         const relativePath = this.indexService.toRelativePath(editor.document.uri)
         const [known] = listFilesByPaths(this.db, [relativePath])
-        // 编辑器落在 press 作品内时以编辑器为准；其余文档（笔记、根目录文件）沿用已选定的作品
+        // 作品目录完全以当前编辑器为准：落在作品内取该作品，落在笔记/根目录则清空。
+        // 沿用上一次选定的作品会让前端把笔记也判成作品归属，专属分区与对话作用域都切不过去
         const editorProject = readProjectDir(known?.path ?? relativePath)
-        if (editorProject !== null) {
-            this.projectDir = editorProject
-        }
+        this.projectDir = editorProject
         if (known === undefined) {
             // 索引尚未收录（如刚创建的作品）：仍按路径识别作品，让写作管理页能立即载入，
             // 否则面板要等下一次索引广播才有内容

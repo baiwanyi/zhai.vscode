@@ -103,7 +103,7 @@ export function PressVolumeSection({
                         )}
                     />
                     {/* 标题吃满剩余宽度，把章数顶到右侧，与章节行的字数落在同一列 */}
-                    <span className="min-w-0 truncate">{title}</span>
+                    <span className="font-semibold min-w-0 truncate">{title}</span>
                     <span className="text-xs shrink-0 text-muted-foreground tabular-nums">
                         {volume.chapters.length} 章
                     </span>
@@ -164,19 +164,19 @@ export function PressVolumeSection({
             ) : (
                 volumeHeader
             )}
-            <CollapsibleContent className="flex flex-col gap-0.5 ml-3">
+            <CollapsibleContent className="flex flex-col ml-3">
                 {visibleChapters.map((chapter) => (
                     <ContextMenu key={chapter.path}>
                         <ContextMenuTrigger asChild>
                             <Item
                                 size="xs"
-                                className="cursor-pointer rounded-lg px-2 py-1 data-[state=open]:bg-muted hover:bg-muted"
+                                className="cursor-pointer rounded-lg px-2 py-1.5 data-[state=open]:bg-muted hover:bg-muted"
                                 aria-label={`打开章节 ${chapter.title}`}
                                 onClick={() => onOpenChapter(chapter.path)}
                             >
                                 {/* min-w-0 让内容列可收缩；标题必须回到块级布局，flex 容器上 text-overflow 不生效（只会硬切） */}
                                 <ItemContent className="min-w-0">
-                                    <ItemTitle className="line-clamp-none block w-full truncate">
+                                    <ItemTitle className="font-light line-clamp-none block w-full truncate">
                                         {chapter.title}
                                     </ItemTitle>
                                 </ItemContent>

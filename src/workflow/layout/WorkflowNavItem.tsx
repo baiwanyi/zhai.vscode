@@ -1,5 +1,5 @@
 /**
- * 分区导航项：右侧导航栏中的单个图标按钮，激活时图标提亮并叠加活动栏激活底色。
+ * 导航项：侧边导航栏中的单个图标按钮，激活时图标提亮并叠加活动栏激活底色。
  * 复用约定：纯受控展示组件，激活标识与选中动作由父级传入；按钮复用 @webview/components/Button，
  * 悬浮名称经其 tooltip 参数给出、tooltipSide 取 left 让气泡落在活动栏右侧（Provider 由导航栏统一提供）：
  * 图标取活动栏主题令牌；悬浮提示在实例上局部反转前景与背景变量得到暗底亮字，使组件内箭头随气泡同色
@@ -11,14 +11,14 @@ import { cn } from 'cn'
 import { Button } from '@webview/components/Button'
 import type { JSX, ReactNode } from 'react'
 
-interface WorkflowPressNavItemProps {
+interface WorkflowNavItemProps {
     label: string
     icon: ReactNode
     isActive: boolean
     onSelect: () => void
 }
 
-export function WorkflowPressNavItem({ label, icon, isActive, onSelect }: WorkflowPressNavItemProps): JSX.Element {
+export function WorkflowNavItem({ label, icon, isActive, onSelect }: WorkflowNavItemProps): JSX.Element {
     return (
         <Button
             variant="ghost"

@@ -8,6 +8,50 @@
 /** 作品模块的一级目录名：详情路由据此拼装与还原 dirPath */
 export const PRESS_MODULE_PATH = 'press'
 
+/** 笔记模块的一级目录名：与 shared/types/workflow 的 NOTES_MODULE_KEY 同值 */
+const NOTES_MODULE_PATH = 'notes'
+
+/** 公众号模块的一级目录名：模块尚未接入，先按约定占位，接入后与宿主目录名对齐 */
+const WECHAT_MODULE_PATH = 'wechat'
+
+/** 内容归属：null 表示打开了文档但不属于任何已接入模块 */
+export type DashboardContentScope = 'press' | 'note' | 'wechat' | null
+
+/**
+ * 判定当前文档的内容归属：undefined 表示无从判定（焦点不在文本编辑器），此时保持当前页；
+ * null 表示有编辑器但文档不属于任何已接入模块，仪表盘应回概览首页。
+ * 关键约束：作品以宿主下发的 projectDir 为准，其余按相对路径的一级目录名判定；
+ * 有编辑器却拿不到索引内路径（未保存的 untitled、索引外文件）即视为无归属——
+ * 若沿用上一次归属，面板会停在上一篇文档的页面上，切文档等于没切；
+ * 焦点不在编辑器（打开设置、切到其它视图）一律不做判定，避免面板被无谓弹回首页。
+ */
+export function readContentScope(
+    activePath: string | null,
+    projectDir: string | null,
+    hasEditor: boolean,
+): DashboardContentScope | undefined {
+    if (projectDir !== null) {
+        return 'press'
+    }
+    if (!hasEditor) {
+        return undefined
+    }
+    if (activePath === null) {
+        return null
+    }
+    const moduleKey = activePath.split('/')[0]
+    if (moduleKey === PRESS_MODULE_PATH) {
+        return 'press'
+    }
+    if (moduleKey === NOTES_MODULE_PATH) {
+        return 'note'
+    }
+    if (moduleKey === WECHAT_MODULE_PATH) {
+        return 'wechat'
+    }
+    return null
+}
+
 /** 页内路由：首页、作品列表、作品详情（携带相对存储根的 dirPath） */
 export type DashboardRoute = { name: 'home' } | { name: 'press' } | { name: 'pressProject'; dirPath: string }
 

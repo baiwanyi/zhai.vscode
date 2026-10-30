@@ -1,14 +1,11 @@
 /**
- * 工作流路由契约：宿主下发的场景事实（workflow/* 协议）与工作流页面标识。
+ * 工作流路由契约：宿主下发的场景事实（workflow/* 协议）与页内视图请求。
  * 使用方：Webview 工作流页（src/workflow/）与宿主侧 WorkflowRouter / AiChatViewProvider / DashboardViewProvider。
  * 复用约定：模块键取相对存储根的一级目录名，与索引库 files.path 及展示层 moduleOf 同口径；
  * projectDir 取 press/{作品名} 两段，仅由宿主从活跃文档路径推导，前端据此请求作品文档，不自行拼接路径。
  * 关键约束：字段由宿主归一化后填充，前端只负责解析与渲染，不自行读取配置或访问文件系统；
  * 前端回传的模块标识一律经 isOpenWorkflowRequest 收窄后再用，不得把路径形态字符串透传给宿主命令。
  */
-
-/** 工作流页面标识：press / wechat / note 为各模块的专属页面（待办模块在仪表盘内呈现，不占工作流页），placeholder 为未接入模块的占位页，home 为未选择模块时的初始页 */
-export type WorkflowId = 'press' | 'wechat' | 'note' | 'placeholder' | 'home'
 
 /** 进入场景：editorNote 为聚焦在笔记文档上，idle 为无编辑器或索引外文档 */
 export type WorkflowSceneKind = 'idle' | 'editorNote'
@@ -24,7 +21,7 @@ export interface WorkflowContextState {
     scene: WorkflowSceneKind
     /** 当前模块键：相对存储根的一级目录名，顶层文件为 root */
     module: string
-    /** 用户选定的模块：由仪表盘入口或初始页设置并在宿主持久保持，未选择为 null */
+    /** 用户选定的模块：由仪表盘入口或侧边导航设置并在宿主持久保持，未选择为 null */
     selectedModule: string | null
     /** 当前打开的作品目录（相对存储根，形如 press/{作品名}），未打开作品为 null */
     projectDir: string | null
@@ -53,7 +50,7 @@ export interface OpenWorkflowResult {
     opened: boolean
 }
 
-/** workflow/reset 响应：清除模块选择并回到初始页 */
+/** workflow/reset 响应：清除模块选择并回到写作管理页的对话分区 */
 export interface ResetWorkflowResult {
     cleared: boolean
 }
