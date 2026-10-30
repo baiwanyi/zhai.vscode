@@ -17,7 +17,8 @@ import { X } from 'lucide-react'
 import { useCallback, useEffect, useImperativeHandle, useRef } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
-import { Button, TOOLTIP_CLASS } from '@webview/components/Button'
+import { Button } from '@webview/components/Button'
+import { TOOLTIP_CLASS } from '@webview/components/Tooltip'
 import { Image } from './Image'
 import type {
     ClipboardEvent as ReactClipboardEvent,

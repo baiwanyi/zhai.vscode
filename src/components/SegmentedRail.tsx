@@ -9,6 +9,7 @@
  */
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
+import { TOOLTIP_CLASS } from './Tooltip'
 import type { JSX, ReactNode } from 'react'
 
 /**
@@ -76,12 +77,6 @@ const PILL_ITEM_CLASS =
 const CHIP_ITEM_CLASS =
     'data-[state=on]:border-primary data-[state=on]:bg-primary data-[state=on]:font-medium data-[state=on]:text-primary-foreground'
 
-/**
- * 提示气泡固定暗底亮字：重写局部前景/背景变量即可，箭头是独立 svg（bg-foreground / fill-foreground），
- * 继承同一组变量后自动同色。与 Button 的 TOOLTIP_CLASS 同值，改色时两处一起改。
- */
-const RAIL_TOOLTIP_CLASS = '[--foreground:#1E1E1E] [--background:var(--background)]'
-
 interface RailClassNames {
     container: string | undefined
     item: string | undefined
@@ -140,7 +135,7 @@ export function SegmentedRail<T extends string>(props: SegmentedRailProps<T>): J
                 <TooltipTrigger asChild>
                     <span className="inline-flex">{segment}</span>
                 </TooltipTrigger>
-                <TooltipContent className={RAIL_TOOLTIP_CLASS}>{item.hint}</TooltipContent>
+                <TooltipContent className={TOOLTIP_CLASS}>{item.hint}</TooltipContent>
             </Tooltip>
         )
     })

@@ -2,7 +2,7 @@
  * 通用开关：在 @components/ui/switch 之上补齐文字标签与悬停提示，其余属性原样透传底座。
  * 复用约定：label 以 htmlFor 关联开关（未传 id 时用 useId 兜底），点标签等价于点开关；
  * tooltip 走受控 Tooltip——指针进入或键盘聚焦即开、离开或失焦即关，不套 Radix 的延时策略；
- * tooltipSide 仅在提示需要避开所在容器时传，气泡沿用 Button 的固定暗底亮字，见 TOOLTIP_CLASS。
+ * tooltipSide 仅在提示需要避开所在容器时传，气泡固定暗底亮字，类名统一取自 ./Tooltip 的 TOOLTIP_CLASS。
  * 关键约束：TooltipTrigger 会把自身 data-state 合并进子元素，与开关的选中态同一属性相撞，
  * 故由一层 inline-flex 的 span 承接触发层与事件（disabled 的按钮不派发指针事件，只有外层兜住
  * 才提示得出停用原因）；切换开关不关闭提示——指针仍在开关上不会再次触发进入事件，关掉就弹不回来。
@@ -13,6 +13,7 @@ import { useCallback, useId, useState } from 'react'
 import { Label } from '@components/ui/label'
 import { Switch as ShadcnSwitch } from '@components/ui/switch'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
+import { TOOLTIP_CLASS } from './Tooltip'
 import type { ComponentProps, JSX, ReactNode } from 'react'
 
 interface SwitchProps extends ComponentProps<typeof ShadcnSwitch> {
@@ -23,9 +24,6 @@ interface SwitchProps extends ComponentProps<typeof ShadcnSwitch> {
     /** 提示框方位，省略时由 Radix 按可用空间自动选择 */
     tooltipSide?: ComponentProps<typeof TooltipContent>['side']
 }
-
-/** 与 Button 保持一致：气泡固定暗底亮字，箭头继承同一组变量后自动同色 */
-const TOOLTIP_CLASS = '[--foreground:#1E1E1E] [--background:var(--background)]'
 
 function Switch({ id, label, tooltip, tooltipSide, ...rest }: SwitchProps): JSX.Element {
     const [isTooltipOpen, setIsTooltipOpen] = useState(false)

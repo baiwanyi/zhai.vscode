@@ -22,14 +22,12 @@ import { toast } from 'sonner'
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import { copyToClipboard } from '@shared/utils/clipboard'
+import { TOOLTIP_CLASS } from './Tooltip'
 import type { ComponentProps, JSX, MouseEvent } from 'react'
 
 /** 底栏上方的渐变遮罩：滚动内容在按钮下方淡出，只在此处声明一次 */
 const FOOTER_MASK_CLASS =
     'before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent'
-
-/** 提示气泡与 Button 保持一致：固定暗底亮字，箭头继承同一组变量后自动同色 */
-const TOOLTIP_CLASS = '[--foreground:#1E1E1E] [--background:var(--background)]'
 
 function AppPage({ className, ...props }: ComponentProps<'div'>): JSX.Element {
     return <div data-slot="app-page" className={cn('@container flex h-full min-h-0 flex-col', className)} {...props} />

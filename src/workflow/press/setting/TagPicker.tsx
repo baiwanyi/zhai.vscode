@@ -4,7 +4,7 @@
  * 区内还有逐个删除标签的按钮；面板宽度取 anchor 宽度变量，与触发区同宽、左边缘对齐），
  * 分组切换取 ui/tabs 并竖排（分组有七到九组，横排会挤成两三行），标签按钮取 ui/button、
  * 已选标签取 ui/badge，自定义输入取 ui/input-group；分组数据由页面按目标读者从 settingOptions 取，
- * 标签悬停说明的气泡沿用 Button 的 TOOLTIP_CLASS（固定暗底亮字，箭头随之同色）。
+ * 标签悬停说明的气泡沿用 @webview/components/Tooltip 的 TOOLTIP_CLASS（固定暗底亮字，箭头随之同色）。
  * 关键约束：删除按钮必须阻止冒泡，否则删一个标签会顺带把面板弹开；回车提交须跳过中文输入法的组合态；
  * 达到上限时只禁用未选项与自定义输入，已选项仍可取消；切过受众后不属于当前分组的已选标签保留在触发区。
  */
@@ -15,7 +15,8 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '
 import { Popover, PopoverAnchor, PopoverContent, PopoverHeader, PopoverTitle } from '@components/ui/popover'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
-import { Button, TOOLTIP_CLASS } from '@webview/components/Button'
+import { Button } from '@webview/components/Button'
+import { TOOLTIP_CLASS } from '@webview/components/Tooltip'
 import type { TagGroup } from '../types'
 import type { JSX, KeyboardEvent } from 'react'
 
