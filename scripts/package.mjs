@@ -4,11 +4,13 @@
  * 由 `pnpm run package` 调用，依赖 node_modules/.bin 提供的 vsce，版本取自根 package.json 的 dependencies。
  * 关键约束：better-sqlite3 带原生二进制、agent-sdk 运行时要拉起随包 CLI，两者必须保持 external 并真实落在
  * dist/node_modules（vsce 用 --no-dependencies，根 node_modules 的 pnpm 符号链接布局不可随包），缺任一即失败；
+ * 装好后先按当前平台裁剪多平台二进制与编译期源码（ripgrep / genie-trash / prebuilds 各留一份，deps 整块删除），
+ * 否则 vsix 会带上其它平台的几十 MB 冗余，且体积随平台数量线性增长；
  * 输出目录须先建立且 --out 传完整文件名，同版本重装必须 --force，code 不可用只提示不改退出码；
  * 被 esbuild.mjs import 时靠入口判断隔离，不得执行打包流程。
  */
 import { execFileSync, execSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -115,9 +117,73 @@ function packageVsix() {
     }
 }
 
-/** 打包主流程：依赖先就位，vsce 才能把它们收进 vsix */
+/** 删除目录里不属于目标平台的条目，缺失目录直接跳过；返回删除的条目数 */
+function pruneMismatchedEntries(dir, shouldKeep) {
+    if (!existsSync(dir)) {
+        return 0
+    }
+    let removed = 0
+    for (const name of readdirSync(dir)) {
+        if (shouldKeep(name)) {
+            continue
+        }
+        rmSync(join(dir, name), { recursive: true, force: true })
+        removed += 1
+    }
+    return removed
+}
+
+/**
+ * 裁剪随包依赖里与当前平台无关的文件：三个 vendor 组件与 better-sqlite3 都按平台分目录，只留宿主机那一份；
+ * better-sqlite3 的 deps / src / build 是编译期物料，运行时用不到。
+ * 关键约束：Linux 同时保留 glibc 与 musl 两份 prebuild，避免在 musl 环境（如 Alpine）里缺二进制；
+ * 裁剪只针对 dist/node_modules，不碰根依赖，重复打包命中的仍是同一份已安装内容。
+ */
+function pruneRuntimePayload() {
+    const rgPlatform = `${process.arch}-${process.platform}`
+    const vendorPlatform = `${process.platform}-${process.arch}`
+    const sqlitePrebuild = `${process.platform}-${process.arch}.node`
+    const vendorDir = join(ROOT, 'dist', 'node_modules', '@tencent-ai', 'agent-sdk', 'cli', 'vendor')
+    const sqliteDir = join(ROOT, 'dist', 'node_modules', 'better-sqlite3')
+
+    // ripgrep：目录名是 <arch>-<platform>，当前平台与其授权文件以外的都删掉
+    const ripgrepDir = join(vendorDir, 'ripgrep')
+    const hasRipgrepTarget = existsSync(join(ripgrepDir, rgPlatform))
+    const ripgrepRemoved = pruneMismatchedEntries(ripgrepDir, (name) => name === rgPlatform || name === 'COPYING')
+    // 命名规则若随 agent-sdk 升级而变，上面的白名单会连当前平台一起删光，这里兜住提示
+    if (!hasRipgrepTarget) {
+        console.warn(`⚠ ripgrep 里没有 ${rgPlatform}，检查 agent-sdk 的平台目录命名`)
+    }
+    // genie-trash：除 Windows 是单个 win32-x64.exe 文件外，其余平台都是同名目录
+    const trashRemoved = pruneMismatchedEntries(
+        join(vendorDir, 'genie-trash'),
+        (name) => name === vendorPlatform || name === `${vendorPlatform}.exe`,
+    )
+    // sandbox：macOS 专属的 toybox / zsh 只在 darwin 上保留
+    const sandboxRemoved =
+        process.platform === 'darwin'
+            ? 0
+            : pruneMismatchedEntries(
+                  join(vendorDir, 'sandbox-center-runtime-kit'),
+                  (name) => name !== 'toybox-macos' && name !== 'zsh-macos',
+              )
+
+    for (const dir of ['deps', 'src', 'build']) {
+        rmSync(join(sqliteDir, dir), { recursive: true, force: true })
+    }
+    pruneMismatchedEntries(
+        join(sqliteDir, 'prebuilds'),
+        (name) =>
+            name === sqlitePrebuild || (process.platform === 'linux' && name === `linuxmusl-${process.arch}.node`),
+    )
+
+    console.log(`✓ 已裁剪跨平台冗余 ${ripgrepRemoved + trashRemoved + sandboxRemoved} 项，并清理 sqlite 编译期物料`)
+}
+
+/** 打包主流程：依赖先就位、裁剪完跨平台冗余，vsce 才能把它们收进 vsix */
 function main() {
     installRuntimeDependencies()
+    pruneRuntimePayload()
     packageVsix()
 }
 

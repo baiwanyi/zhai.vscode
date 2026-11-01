@@ -74,7 +74,7 @@
 | G2 | AccessToken 管理 | 集中缓存 + 提前刷新 + 并发去重（singleflight） | P0 | 待实现 |
 | G3 | Markdown → 公众号 HTML | 走 `markdown-one` 管线，输出语义化 HTML | P0 | 待实现 |
 | G4 | 样式内联 | `juice` 将主题 CSS 内联（公众号不支持 `<style>`） | P0 | 待实现 |
-| G5 | 代码高亮 | shiki 高亮并内联样式 | P1 | 待实现 |
+| G5 | 代码高亮 | 不做语法高亮：代码块保持纯文本，底色与等宽字体由主题 CSS 提供 | P1 | 不实现 |
 | G6 | 排版主题/样式中心 | 多套主题（字号/行距/引用块/标题装饰），可自定义；参考秀米/135 样式中心 | P1 | 待实现 |
 | G7 | 图片转永久素材 | 上传 `material/add_material`，回写 URL | P0 | 待实现 |
 | G8 | 封面/摘要/作者/声明 | 封面图与摘要、作者、留言开关均已落地（留言写入草稿的 `need_open_comment`）；原创声明不提供——草稿接口没有该字段，只能在公众号后台手动声明；话题标签未做 | P1 | 部分实现 |
@@ -128,7 +128,7 @@
 当前文件（notes/press 源）
    │
    ▼ markdown-one：md → mdast → rehype → HTML
-   ├─ shiki 代码高亮
+   ├─ 代码块保持纯文本（不做语法高亮）
    ├─ 图片路径收集（相对路径 → 本地绝对路径）
    └─ 生成大纲（用于摘要 / 敏感词预检语料）
    │
@@ -182,7 +182,7 @@
 | Token 并发 | 各自刷新 / singleflight | **singleflight（Promise 复用）** | 并发刷新会互相失效，是公众号对接的经典坑 |
 | HTML 生成 | `markdown-one` 管线 / 模块内自建 unified 管线 | **模块内自建（已落地，见 `src/modules/wechat/render.ts`）** | `markdown-one` 尚未落地；先把公众号需要的 `remark-parse` + `remark-gfm` + `remark-rehype` + `rehype-stringify` 收在本模块内，后续该管线成熟后整体迁入并复用之 |
 | 样式内联 | `juice` / 手写替换 | **juice（已落地）** | 公众号不支持 `<style>` 与外链 CSS，必须内联；根选择器用 `section`，`body` 规则在正文片段里找不到宿主元素会被丢弃 |
-| 代码高亮 | `shiki` / `highlight.js` | **shiki（已落地，失败回退纯文本）** | 输出内联样式的 hast，直接替换 `pre > code` 节点；语言未知或加载失败时保留原代码块，宁可没配色也不丢内容 |
+| 代码高亮 | `shiki` / `highlight.js` / 不做 | **公众号渲染不做（宿主侧已移除依赖）** | 主题 CSS 已给 `pre`/`code` 提供底色与等宽字体，可读性足够；shiki 的 `codeToHast` 便捷入口会把全量语言与主题打进宿主产物（约占 9.6 MB、84%，移除后宿主产物由 12.2 MB 降到 2.3 MB）。`shiki` 仍留在 `devDependencies`，仅供 `resources/shadcn` 的按需 highlighter 组件通过类型检查，业务代码未引用、不参与打包 |
 | 图片素材 | 永久素材 / 图文内图片 | **永久素材（已落地）** | 避免历史文章图片失效；按 `local_hash` 复用，只处理 jpg/png 且 ≤10MB，外链图片不上传（平台会屏蔽，故只给 warning） |
 | 封面图 | 用户指定 / 自动生成 | **两者皆可** | 默认取首图，用户可改 |
 | AI 配图/标题 | CodeBuddy 通道 / 外部图床 | **CodeBuddy 生成标题建议，封面可选本地生成** | 复用项目 AI 通道，避免额外图床依赖 |

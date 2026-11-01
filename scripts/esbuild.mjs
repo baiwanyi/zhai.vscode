@@ -14,7 +14,10 @@ const isWatch = process.argv.includes('--watch')
 // 以脚本位置为基准，保证从任意工作目录执行都落在同一产物上（脚本在 scripts/，仓库根需上溯一级）
 const rootDir = path.resolve(import.meta.dirname, '..')
 
-/** @type {import('esbuild').BuildOptions} */
+/**
+ * @type {import('esbuild').BuildOptions}
+ * sourcemap 固定关闭：宿主产物本身约 12 MB，map 会再翻一倍体积，而随包分发不做源码级调试。
+ */
 const options = {
     absWorkingDir: rootDir,
     entryPoints: ['src/extension.ts'],
@@ -23,7 +26,7 @@ const options = {
     format: 'cjs',
     platform: 'node',
     target: 'node18',
-    sourcemap: true,
+    sourcemap: false,
     external: EXTERNALS,
     logLevel: 'info',
 }
