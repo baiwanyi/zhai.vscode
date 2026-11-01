@@ -14,8 +14,8 @@ const DEFAULT_STORAGE_DIR = '.zhai'
 /** 索引缓存目录名：全局存储下的固定文件夹名，库文件（index.db / ai.db）位于其中 */
 const CACHE_DIR_NAME = 'zhai.vscode'
 
-/** 提示词目录名：未配置 prompt.rootPath 时占位于存储根之下 */
-const PROMPT_DIR = 'prompt'
+/** 提示词目录名：未配置 prompt.rootPath 时占位于存储根之下；索引排除规则复用同一常量 */
+export const PROMPT_DIR = 'prompt'
 
 /** 插件全部配置项的强类型视图 */
 export interface ZhaiConfig {

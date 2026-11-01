@@ -26,11 +26,11 @@ export interface RecentFile {
 
 /** 仪表盘统计快照 */
 export interface DashboardStats {
-    /** 已索引文件数 */
+    /** 已索引的写作文档数（笔记 + 作品）：词库、待办等其它目录不计入 */
     indexedCount: number
-    /** 全库字数合计 */
+    /** 写作文档字数合计（笔记 + 作品）：索引里的其它目录不计入 */
     totalWords: number
-    /** 去重后的标签数 */
+    /** 写作文档去重后的标签数 */
     tagCount: number
     /** 笔记目录（notes/）下的模块分布，按文件数倒序；press 等其它模块不计入 */
     moduleStats: ModuleStat[]

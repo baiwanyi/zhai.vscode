@@ -88,13 +88,17 @@ describe('笔记目录过滤', () => {
         expect(listRecentFiles(db).map((row) => row.path)).toEqual(['notes/a.md'])
     })
 
-    it('模块分布只统计 notes，全库计数与字数仍按整表', () => {
+    it('计数与字数只统计笔记与作品，其它目录不计入', () => {
         insertFile('notes/a.md', 1)
         insertFile('press/某作品/Chapters/01.md', 2)
+        // 词库、待办等目录即便被索引，也不属于写作产出
+        insertFile('prompt/tags/服饰.md', 5)
+        insertFile('todo/2026-11.md', 7)
         const stats = aggregateFileStats(db)
         expect(stats.moduleStats.map((item) => item.name)).toEqual(['notes'])
         expect(stats.indexedCount).toBe(2)
         expect(stats.totalWords).toBe(3)
+        expect(stats.tagCount).toBe(0)
     })
 })
 

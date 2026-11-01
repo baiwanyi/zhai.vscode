@@ -2,9 +2,11 @@
  * 仪表盘统计仓储：对 files 表做只读聚合与最近更新读取，并按宿主下发的置顶顺序合并成列表快照。
  * 安全约束：全部 SQL 使用预编译语句，路径仅作绑定参数、IN 占位符由入参长度生成；仅只读查询，不写库。
  * 关键约束：置顶标记源自宿主偏好而非索引库，合并时置顶项顺序优先且不受条数截断影响；
- * 仪表盘笔记列表与其相关操作只认 notes/ 目录，press 等其它模块的文件不进入列表与模块分布，
+ * 仪表盘笔记列表与其相关操作只认 notes/ 目录，press 等其它模块的文件不进入列表与模块分布；
+ * 字数、文件数与标签只统计笔记与作品，词库、待办、参考资料等目录不计入写作成果；
  * 目录过滤统一用 substr(path, 1, ?) = ? 比较，避开 LIKE 对 _ 与 % 的转义问题。
  */
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import type { ModuleStat, RecentFile } from '@shared/types/dashboard'
 import { safeParseTags } from './indexRepository'
 import type Database from 'better-sqlite3'
@@ -20,6 +22,13 @@ export const RECENT_LIMIT = 20
 
 /** 笔记目录条件片段，绑定参数依次为前缀长度与前缀本身 */
 const NOTE_SCOPE = 'substr(path, 1, ?) = ?'
+
+/**
+ * 计入统计的目录前缀：只有笔记与作品属于写作产出。
+ * 关键约束：词库、待办、参考资料等目录即便被索引，也不能计入字数、文件数与标签数，
+ * 否则仪表盘会把插件的配置数据当成写作成果。
+ */
+const COUNTED_PREFIXES: readonly string[] = [NOTE_PATH_PREFIX, `${PRESS_MODULE_DIR}/`]
 
 /** 索引库中的文件行：置顶标记由宿主偏好决定，不落在 files 表中 */
 export interface RecentFileRow {
@@ -38,22 +47,31 @@ interface FileAggregateRow {
     tags: string
 }
 
-/** 文件级聚合结果：计数、字数、标签去重数与模块分布 */
+/** 文件级聚合结果：前三项只统计笔记与作品，模块分布进一步收窄到笔记目录 */
 export interface FileAggregate {
+    /** 写作文档数（笔记 + 作品） */
     indexedCount: number
+    /** 写作文档字数合计 */
     totalWords: number
+    /** 写作文档的去重标签数 */
     tagCount: number
     /** 笔记目录下的模块分布：只统计 notes/ 下的文件，press 等其它模块不计入 */
     moduleStats: ModuleStat[]
 }
 
-/** 单次扫描 files 表完成全部文件级聚合，避免多次全表查询；模块分布按笔记范围收窄 */
+/** 单次扫描 files 表完成全部文件级聚合，避免多次全表查询；计数与字数按写作范围收窄 */
 export function aggregateFileStats(db: Database.Database): FileAggregate {
     const rows = db.prepare('SELECT path, word_count AS wordCount, tags FROM files').all() as FileAggregateRow[]
     const modules = new Map<string, ModuleStat>()
     const tags = new Set<string>()
+    let indexedCount = 0
     let totalWords = 0
     for (const row of rows) {
+        // 字数、文件数与标签只统计笔记与作品：词库、待办、参考资料等目录不属于写作产出
+        if (!COUNTED_PREFIXES.some((prefix) => row.path.startsWith(prefix))) {
+            continue
+        }
+        indexedCount += 1
         totalWords += row.wordCount
         for (const tag of safeParseTags(row.tags)) {
             tags.add(tag)
@@ -68,7 +86,7 @@ export function aggregateFileStats(db: Database.Database): FileAggregate {
         modules.set(name, stat)
     }
     const moduleStats = [...modules.values()].sort((a, b) => b.fileCount - a.fileCount || a.name.localeCompare(b.name))
-    return { indexedCount: rows.length, totalWords, tagCount: tags.size, moduleStats }
+    return { indexedCount, totalWords, tagCount: tags.size, moduleStats }
 }
 
 /** 读取最近更新的笔记（按 mtime 倒序，只含 notes/ 目录） */

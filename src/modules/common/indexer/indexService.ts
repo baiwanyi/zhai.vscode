@@ -8,7 +8,7 @@ import * as vscode from 'vscode'
 import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR, PRESS_SNAPSHOT_DIR } from '@shared/types/press'
 import type { FileRow } from '../db/indexRepository'
 import type Database from 'better-sqlite3'
-import { getZhaiConfig, resolveStorageRoot } from '../config'
+import { getZhaiConfig, PROMPT_DIR, resolveStorageRoot } from '../config'
 import { parseFileMeta } from '../db/fileMeta'
 import { countFileRows, deleteFileRow, listIndexedPaths, upsertFileRows } from '../db/indexRepository'
 import { logger } from '../logger'
@@ -17,10 +17,29 @@ import { logger } from '../logger'
 const MATERIAL_DIR_NAMES: readonly string[] = [PRESS_IMPORT_DIR, LEGACY_PRESS_IMPORT_DIR]
 
 /**
- * 不参与索引的目录：素材目录之外还有作品快照目录。
- * 关键约束：快照下是四份文档的历史副本，计入索引会让作品字数与侧边栏列表虚高，故与素材同样无条件排除。
+ * 不参与索引的目录：素材、作品快照与词库。
+ * 关键约束：素材目录存素材与 AI 初稿、快照目录存四份文档的历史副本，计入索引会让作品字数与列表虚高；
+ * 词库（tags / rules）是插件自己维护的配置数据，正文不参与检索，计入只会污染字数与文件数；
+ * 三者在增量监听、全量重建与激活自检三条路径上口径必须一致。
  */
-const EXCLUDED_DIR_NAMES: readonly string[] = [...MATERIAL_DIR_NAMES, PRESS_SNAPSHOT_DIR]
+const EXCLUDED_DIR_NAMES: readonly string[] = [...MATERIAL_DIR_NAMES, PRESS_SNAPSHOT_DIR, PROMPT_DIR]
+
+/**
+ * 从排除 glob 中提取纯目录段：`**\/node_modules\/**` → `node_modules`。
+ * 关键约束：`createFileSystemWatcher` 没有 exclude 参数，watcher 只能按路径段自行判断，
+ * 因此这里只认「整段目录」形态；带文件名或其它通配的复杂模式原样跳过，由激活自检兜底清理。
+ */
+function toExcludedDirNames(globs: readonly string[]): string[] {
+    const names: string[] = []
+    for (const glob of globs) {
+        const matched = /^\*\*\/([^*/]+)\/\*\*$/.exec(glob)
+        const name = matched?.[1]
+        if (name !== undefined) {
+            names.push(name)
+        }
+    }
+    return names
+}
 
 /** 索引状态快照，供状态栏与 Webview 展示 */
 export interface IndexStatus {
@@ -36,6 +55,8 @@ export class IndexService {
     private pendingUris: Set<string> = new Set()
     private isRebuilding = false
     private lastBuiltAt: string | null = null
+    /** 增量监听要丢弃的目录名：全量扫描的排除规则里能折成目录段的那部分 */
+    private excludedDirNames: readonly string[] = EXCLUDED_DIR_NAMES
 
     public constructor(
         private readonly db: Database.Database,
@@ -61,6 +82,9 @@ export class IndexService {
             return
         }
         const pattern = new vscode.RelativePattern(root, '**/*.md')
+        // watcher 没有 exclude 参数，只能自行按目录段丢弃：与全量扫描的排除规则同源，
+        // 否则 node_modules / .git 下的 Markdown 会被增量索引而重建扫不到，数量永远对不上
+        this.excludedDirNames = [...EXCLUDED_DIR_NAMES, ...toExcludedDirNames(cfg.indexExclude)]
         this.watcher = vscode.workspace.createFileSystemWatcher(pattern)
         disposables.push(
             this.watcher,
@@ -78,6 +102,9 @@ export class IndexService {
         }
         this.isRebuilding = true
         this.statusEmitter.fire(this.getStatus())
+        /** 本次扫描命中的相对路径：重建结束后据此清理失效记录 */
+        const seen = new Set<string>()
+        let isAborted = false
         try {
             const root = resolveStorageRoot()
             const files = await vscode.workspace.findFiles(
@@ -91,10 +118,18 @@ export class IndexService {
                 async (progress) => {
                     for (const file of files) {
                         if (token?.isCancellationRequested) {
+                            isAborted = true
                             break
                         }
-                        const row = await this.buildRowFromFile(file)
+                        // 单个文件读不到（被占用、权限不足）不该让整次重建失败；
+                        // 但它仍在磁盘上，登记进 seen 以免旧记录被当成孤儿清掉
+                        const row = await this.buildRowFromFile(file).catch((error: unknown) => {
+                            seen.add(this.toRelativePath(file))
+                            logger.debug(`重建跳过不可读文件：${file.path}（${String(error)}）`)
+                            return null
+                        })
                         if (row) {
+                            seen.add(row.path)
                             rows.push(row)
                         }
                         processed += 1
@@ -112,6 +147,10 @@ export class IndexService {
                     progress.report({ increment: 100 })
                 },
             )
+            // 取消时结果不完整，不能据此删记录，否则会清掉尚未扫描到的文件
+            if (!isAborted) {
+                this.pruneMissing(seen)
+            }
             this.lastBuiltAt = new Date().toISOString()
             this.db.prepare('INSERT OR REPLACE INTO meta(key, value) VALUES (?, ?)').run('built_at', this.lastBuiltAt)
             logger.info(`全量重建完成：${processed} 个文件`)
@@ -121,7 +160,27 @@ export class IndexService {
         }
     }
 
-    /** 激活自愈：文件数与记录数不一致时触发后台重建（US-5 故障自修场景） */
+    /**
+     * 清理扫描结果之外的索引记录：全量重建只做 upsert，文件在扩展未运行期间被删、
+     * 或落进排除规则后旧记录会一直留着，自检因此每次都判定数量不一致并反复触发重建。
+     * 关键约束：只能在扫描完整结束时调用，取消或异常时必须跳过，否则会清掉尚未扫描到的文件。
+     */
+    private pruneMissing(seen: ReadonlySet<string>): void {
+        const stale = [...listIndexedPaths(this.db).keys()].filter((path) => !seen.has(path))
+        if (stale.length === 0) {
+            return
+        }
+        for (const path of stale) {
+            deleteFileRow(this.db, path)
+        }
+        logger.info(`已清理失效索引记录 ${String(stale.length)} 条`)
+    }
+
+    /**
+     * 激活自愈（US-5 故障自修场景）：按「缺」与「多」分别处置 ——
+     * 磁盘有而记录没有（索引落后）才全量重建；记录多出来的（文件已被删、或曾误索引排除目录）
+     * 只做定点清理，避免每次激活都因几十条残留记录白跑一遍全量扫描。
+     */
     public async selfCheck(): Promise<void> {
         const cfg = getZhaiConfig()
         let root: vscode.Uri
@@ -135,18 +194,24 @@ export class IndexService {
             new vscode.RelativePattern(root, '**/*.md'),
             this.buildExcludeGlob(),
         )
-        const indexed = countFileRows(this.db)
-        if (files.length === indexed) {
-            logger.info(`索引自检通过：${indexed} 个文件`)
-            const builtAt = this.db.prepare('SELECT value FROM meta WHERE key = ?').get('built_at') as
-                { value: string } | undefined
-            this.lastBuiltAt = builtAt?.value ?? null
+        const seen = new Set(files.map((uri) => this.toRelativePath(uri)))
+        const indexed = listIndexedPaths(this.db)
+        // 缺记录才是真故障（索引落后于磁盘），数量对不上就走全量重建
+        const missingCount = [...seen].filter((path) => !indexed.has(path)).length
+        if (missingCount > 0) {
+            logger.warn(`索引不一致：文件 ${seen.size} / 记录 ${indexed.size}，缺 ${missingCount} 条，触发重建`)
+            if (cfg.rebuildOnActivate) {
+                await this.fullRebuild()
+            }
             return
         }
-        logger.warn(`索引不一致：文件 ${files.length} / 记录 ${indexed}，触发重建`)
-        if (cfg.rebuildOnActivate) {
-            await this.fullRebuild()
-        }
+        // 多出的记录来自「增量监听曾索引到排除目录」或「扩展未运行期间被删的文件」，
+        // 只清这些记录即可：按数量差直接重建会让每次激活都白跑一遍全量扫描
+        this.pruneMissing(seen)
+        logger.info(`索引自检通过：${seen.size} 个文件`)
+        const builtAt = this.db.prepare('SELECT value FROM meta WHERE key = ?').get('built_at') as
+            { value: string } | undefined
+        this.lastBuiltAt = builtAt?.value ?? null
     }
 
     /** 立即索引单个文件并广播状态：供主动写入（如新建笔记）后即时收敛列表，跳过防抖队列 */
@@ -209,8 +274,9 @@ export class IndexService {
     }
 
     private enqueue(uri: vscode.Uri): void {
-        // 素材目录存素材与 AI 初稿、快照目录存历史副本，都不属于作品正文，watcher 触发时直接丢弃
-        if (EXCLUDED_DIR_NAMES.some((name) => uri.path.includes(`/${name}/`))) {
+        // 素材与快照目录不属于作品正文，用户排除目录（node_modules / .git 等）也不该进索引，
+        // 两者都在此处丢弃：watcher 拿不到 findFiles 的 exclude，口径必须自己对齐
+        if (this.excludedDirNames.some((name) => uri.path.includes(`/${name}/`))) {
             return
         }
         this.pendingUris.add(uri.toString())
@@ -280,7 +346,8 @@ export class IndexService {
     /**
      * 排除规则：用户配置项 + 固定的素材目录与快照目录。
      * 关键约束：素材目录下存放素材与 AI 初稿、快照目录下存放历史副本，若计入索引会使作品字数虚高，故无条件排除；
-     * 旧版 `_import` 一并排除——迁移失败或用户手工保留的旧目录同样不能污染字数统计。
+     * 旧版 `_import` 一并排除——迁移失败或用户手工保留的旧目录同样不能污染字数统计；
+     * 增量监听的排除口径由 `excludedDirNames` 对齐本方法中的目录段，两处必须同时改。
      */
     private buildExcludeGlob(): vscode.GlobPattern {
         const excludedGlobs = EXCLUDED_DIR_NAMES.map((name) => `**/${name}/**`)
