@@ -34,15 +34,15 @@
         }
     },
     // resources/shadcn 是 @components 别名的落点，须纳入检查范围，否则组件源码不参与类型校验；
-    // dev/test 是单测目录（不在 src 下），须单独纳入，否则测试文件不参与类型检查
+    // __tests__ 是单测目录、scripts 与根配置文件是构建链，均不在 src 下，须单独纳入，否则不参与类型检查
     "include": [
         "src/**/*.ts",
         "src/**/*.tsx",
-        "dev/test/**/*.ts",
-        "dev/test/**/*.tsx",
+        "__tests__/**/*.ts",
+        "__tests__/**/*.tsx",
         "resources/**/*.ts",
         "resources/**/*.tsx",
-        "dev/scripts/*.mjs",
+        "scripts/*.mjs",
         "vite.config.mjs",
         "vitest.config.mts"
     ]

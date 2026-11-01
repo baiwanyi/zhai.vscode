@@ -6,7 +6,7 @@
  * 关键约束：空串一律跳过，避免出现多余空行；顺序固定为 正文 → 上下文 → 规则 → 作品补充 → 负向 → 画风；
  * 词条合并只做「词条在前、正文在后」的逗号连接并按正文上限截断，各入口必须经 mergePromptTags，
  * 否则同一批词条在不同入口会拼出不同正文；负向约束统一加「避免出现：」前缀，便于模型识别为禁止项；
- * 调整顺序须同步 dev/test/imagegenPrompt.test.ts。
+ * 调整顺序须同步 __tests__/imagegenPrompt.test.ts。
  */
 import { normalizePromptTag } from '@shared/utils/promptTag'
 

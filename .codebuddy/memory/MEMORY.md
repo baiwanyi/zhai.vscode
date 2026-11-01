@@ -5,10 +5,10 @@
 - 设计文档在 `docs/`（`docs/modules/*.md` 模块设计、`docs/development.md` 四期路线图）。源码注释标注「设计源：docs/...」，改代码须同步文档。
 
 ## 工程约定
-- 代码风格：4 空格缩进、单引号、无分号、中文注释；提交前 `pnpm run verify`（typecheck + `eslint .` + vitest run + `prettier --check src eslint.config.mjs`）须全绿。
-- `lint` 是 `eslint .`（覆盖全仓含根目录配置/脚本）；根目录新增任何配置/脚本文件须同步加进 `tsconfig.json` 的 include，否则类型感知规则报「not found by the project service」。
+- 代码风格：4 空格缩进、单引号、无分号、中文注释；提交前 `pnpm run verify`（typecheck + `eslint .` + vitest run + `prettier --check src __tests__ package.json eslint.config.mjs`）须全绿。
+- `lint` 是 `eslint .`（覆盖全仓含根目录配置与 scripts/ 脚本）；tsconfig 的 include 已用 `scripts/*.mjs` 通配脚本，新增根目录配置文件仍须手动加进 include，否则类型感知规则报「not found by the project service」。
 - 构建：`compile` = typecheck（TS 7）+ esbuild（宿主）+ vite（webview 多入口）。`vite.config.mjs` 文件名不可改（shadcn CLI 以此判定框架）。
-- 打包：`package` = compile + `node bundle-native.mjs`（better-sqlite3 原生模块随包并校验 prebuilds）+ `vsce package --no-dependencies`（必须带，否则 vsce 用 npm list 检测 pnpm 布局报 missing 并中止）。长命令易中断，拆步执行。
+- 打包与发布：`package` = compile + `node scripts/package.mjs`（同一脚本先装随包运行时依赖到 dist/node_modules 并校验 better-sqlite3 prebuilds，再 vsce 输出到 `releases/`，默认 `code --install-extension --force` 覆盖安装，`--no-install` 跳过；EXTERNALS 清单也由该脚本导出给 esbuild.mjs）；`release` = `node scripts/release.mjs`（校验工作区/tag/Release → 打包 → 推分支与附注 tag → gh release create）；`market` = `node scripts/publish.mjs`（verify-pat + 上传现成 vsix）。vsce 的 `--no-dependencies` 必须带，否则用 npm list 检测 pnpm 布局报 missing 并中止；`engines.vscode` 不得低于 `@types/vscode` 版本，否则 vsce 直接拒绝打包。
 - Webview 目录结构（2026-09-25 起）：页面按目录组织——仪表盘 `src/webview/index.html` + `main.tsx` + `dashboard.tsx`；AI 对话 `src/webview/aichat/`（`aichat.html` 入口、`aichat.tsx` 挂载、`ai-chat.tsx` 主组件、`message-view.tsx` 消息渲染、`format.ts` 格式化工具）。子目录入口产物在 `dist/webview/aichat/`，宿主 `buildWebviewHtml` 以相对路径定位（`'aichat/aichat.html'`），其资源引用带 `../` 前缀，`webviewHtml.ts` 正则已兼容；浏览器预览地址 `http://localhost:5173/aichat/aichat.html`。
 - Webview 公共设施：`bootstrap.tsx` 主题同步 + 挂载、`bridge.ts` reqId 请求-响应与浏览器降级、宿主 `buildWebviewHtml` 注入 CSP 并重写资源 URI。
 - 环境注意：删除操作优先用 delete_file 工具（PowerShell Remove-Item 易触发保护/超时）；耗时命令重定向到文件防超时。
@@ -22,9 +22,9 @@
 - Markdown 渲染：react-markdown + remark-gfm（devDependencies 随 webview 打包），样式逐标签映射主题令牌类名，**不引 typography 插件**（prose 与气泡样式互相覆盖）。
 - shadcn 组合规则（skill 强制，禁止自绘 markup）：空态 Empty（+Header/Media/Title/Description/Content）、输入区 InputGroup + InputGroupTextarea/Button（禁裸 Textarea）、分区 Separator（禁 border-t）、提示 Alert、占位 Skeleton、状态 Badge、条件类名 cn()、Button 图标 data-icon 且不加 size-*、用 flex gap 替代 space-y-*。消息不带头像与角色标签（对齐 Copilot/CodeBuddy）：用户消息 Bubble default（BubbleContent 加 w-max max-w-full），助手 Bubble ghost + w-full；引用条目（Badge）放用户气泡内正文之上，不放消息/会话头部。
 - **禁止截图验证**（含脚本/无头浏览器）；视觉核对一律由用户手工进行；必要时可临时建 `src/webview/_probe.html` + `_probe.tsx` 探针页（硬编码数据、用完删除并停 5173）。
-- 测试：Vitest（`test`/`test:watch`），配置在根目录 `vitest.config.mts`（独立于 vite.config.mjs），alias `@` → src、`vscode` → `src/tests/stubs/vscode.ts`；测试桩按完整接口构造、不用类型断言，模块级状态用 `resetWorkspaceState()` 复位（vscode `translate`/`with` 桩须接受联合参数）；测试就近放 `src/**/*.test.ts`。
+- 测试：Vitest（`test`/`test:watch`），配置在根目录 `vitest.config.mts`（独立于 vite.config.mjs），alias 与 tsconfig 一致、`vscode` → `__tests__/stubs/vscode.ts`；测试桩按完整接口构造、不用类型断言，模块级状态用 `resetWorkspaceState()` 复位（vscode `translate`/`with` 桩须接受联合参数）；用例集中放根目录 `__tests__/`（组件用例放 `__tests__/components/`），距根一级、引用源码写 `../src/...`。
 - 安全：宿主 SQL 一律预编译参数绑定；Webview 触发宿主命令走白名单（`src/modules/common/webviewCommands.ts`）；Webview 不传文件路径、只收宿主生成的 id，入参逐字段收窄后再用。
-- 脚本目录：构建/命令脚本统一放 `scripts/`（现仅 esbuild.mjs、bundle-native.mjs），脚本内取项目根须上溯一级；配置文件留根目录（vite/vitest/eslint.config）。
+- 脚本位置：构建脚本（esbuild / bundle-native / externals）统一放根目录 `scripts/`，配置文件（vite / vitest / eslint.config）留仓库根；脚本内取项目根用 `path.resolve(import.meta.dirname, '..')`；新增脚本须同步 `tsconfig.json` 的 include 与 `.vscodeignore`。
 
 ## 已落地的视图与命令
 - 侧栏 `zhai-sidebar`：`zhai.dashboard`（`Ctrl+K`）、`zhai.aiChat`（`Ctrl+Shift+L`）。
