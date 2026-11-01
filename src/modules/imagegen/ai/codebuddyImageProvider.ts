@@ -253,7 +253,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
      * 拿到 init 即中断，尽量缩短子进程存活时间；探测失败一律视为不可用。
      */
     public async isAvailable(): Promise<boolean> {
-        const session = this.client.createSession({
+        const session = await this.client.createSession({
             maxTurns: 1,
             includePartialMessages: false,
             cwd: tmpdir(),
@@ -281,7 +281,7 @@ export class CodeBuddyImageProvider implements ImageProvider {
         const apiKey = await this.secrets.get('codebuddyApiKey')
         // 出图驱动模型与对话共用面板菜单里的当前选择，避免同一模型出现分歧
         const model = resolveCodebuddyModel(getSelectedCodebuddyModel())
-        const session = this.client.createSession({
+        const session = await this.client.createSession({
             // 仅放行出图工具，避免模型顺带读写工作区；allowedTools + canUseTool 双重放行才会真正执行
             tools: ['ImageGen'],
             allowedTools: ['ImageGen'],

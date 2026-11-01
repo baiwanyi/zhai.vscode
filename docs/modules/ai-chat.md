@@ -179,7 +179,7 @@ WorkspaceEdit 应用改动（进入 VSCode Undo 栈，Ctrl+Z 可回退）
 
 **登录态记忆**：SDK 只提供 `authenticate` / `logout`，没有查询登录态的接口，且凭证由 CLI 维护，宿主无法零成本探测。因此面板空态是否展示登录引导，以 `globalState` 的站点级标记为准（`ai.codebuddyAuthed.{站点}` / `ai.codebuddyUser.{站点}`，见 `providers/codebuddyLogin.ts`）：`zhai.ai.loginCodebuddy` 登录成功后写入账号名，任意一次生成完整走通也会补记一次（覆盖「只在 CLI 侧登录过」的情形）。标记为真时，空态改为「已登录 CodeBuddy（站点 / 账号）」说明且不再展示登录按钮；站点之间标记互不共享，切换站点后需重新登录。升级前已登录的用户首次仍会看到引导，点一次登录或成功发出一条消息后即转为已登录。
 
-**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在激活时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModelsRaw()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不阻断激活；完整清单不可用时退回 `getAvailableModels()` 的简化清单）。选择入口为 AI 面板底部输入卡片的模型菜单（`ai/models` / `ai/selectModel`），选中值写入 `globalState` 的 `ai.codebuddyModel` —— 对话、取名、外貌生成与出图驱动共用这一项。清单里的项可直接选，也支持「手动输入模型 id」以使用账号可用的自定义模型。通道下发前经 `resolveCodebuddyModel` 归一：空值交给 CLI 默认，非空一律透传，id 是否有效由服务端裁决。
+**模型选择**：CodeBuddy 的 `--model` 只接受当前账号支持的 id，传错会被服务端以 `400 service info not found` 拒绝。模型清单在工作流面板（AI 对话）首次打开时由 `codebuddyModels.ts` 经 SDK `createSession().getAvailableModelsRaw()` 后台预热一次（拉起 CLI 数秒，未登录时为空，不影响面板首屏；扩展激活期不拉取，完整清单不可用时退回 `getAvailableModels()` 的简化清单）。选择入口为 AI 面板底部输入卡片的模型菜单（`ai/models` / `ai/selectModel`），选中值写入 `globalState` 的 `ai.codebuddyModel` —— 对话、取名、外貌生成与出图驱动共用这一项。清单里的项可直接选，也支持「手动输入模型 id」以使用账号可用的自定义模型。通道下发前经 `resolveCodebuddyModel` 归一：空值交给 CLI 默认，非空一律透传，id 是否有效由服务端裁决。
 
 **积分口径（成本消耗）**：模型清单里每个模型带的 `credits` 文本（形如 `x0.51 credits`）只是相对倍率，仅用于菜单右侧展示，不参与计费。真实积分取自 CodeBuddy CLI 落盘的会话记录（`~/.codebuddy/projects/<压缩工作目录>/<sessionId>.jsonl`）：把每条记录 `providerData.rawUsage.credit` 与该轮工具调用的 `providerData.toolResult.rawResponse.credit` 按 `conversationRequestId` 累加，即为该轮实际消耗。请求 id 与 SDK 的 `_requestId` 同源，可直接与用量表逐条对账；SDK 不透传 credit，`result.total_cost_usd` 在 CLI 内恒为 0，故成本列不再作为计费依据。记录缺失（未落盘、未完轮次，或旧版本地 UUID 请求 id）时积分记 `NULL`，界面显示破折号，不做任何估算。实测同一请求的倍率估算值约为真实值的 20 倍，估算口径已废弃。
 
@@ -435,8 +435,8 @@ interface AbortRequest {
 | `ai/sessions` | Webview → 宿主 | 指定作用域的历史会话列表（`AiConversationSummary[]`，按最后活跃倒序；`projectDir` 可选） |
 | `ai/switchSession` | Webview → 宿主 | 切换到指定会话，返回含 `contexts` 的会话快照 |
 | `ai/deleteSession` | Webview → 宿主 | 删除会话及其消息（外键级联），返回 `{ deleted: boolean }` |
-| `ai/runtime` | Webview → 宿主 | 密钥状态（含脱敏 Key）、模型参数与当日用量；`model` 为当前模型 id，`modelName` 为按激活时预热清单解析出的展示名（未命中为空串），供面板初始化即显示模型名而不必等待 `ai/models` |
-| `ai/models` | Webview → 宿主 | 模型菜单数据 `AiModelChoices`（当前模型 id + 账号可用清单，每项含 `credits` 原文与解析后的 `creditRate` 额度倍率）；读激活时预热的缓存，缓存为空才现拉 |
+| `ai/runtime` | Webview → 宿主 | 密钥状态（含脱敏 Key）、模型参数与当日用量；`model` 为当前模型 id，`modelName` 为按面板打开时预热清单解析出的展示名（未命中为空串，清单到位后由运行时广播补齐），供面板初始化即显示模型名而不必等待 `ai/models` |
+| `ai/models` | Webview → 宿主 | 模型菜单数据 `AiModelChoices`（当前模型 id + 账号可用清单，每项含 `credits` 原文与解析后的 `creditRate` 额度倍率）；读面板打开时预热的缓存，缓存为空才现拉 |
 | `ai/selectModel` | Webview → 宿主 | 选择模型（`modelId` + `manual`）：写入 globalState 并广播 `runtime` 变更；空 id 表示 Auto（交给平台自动选择）。`manual` 通道保留但菜单已无对应入口 |
 | `ai/selectContextWindow` | Webview → 宿主 | 选择上下文档位（`tokens`，0 表示跟随模型默认）：按当前模型清单里的可选档位校验，通过后写入 globalState 并广播 `runtime`；不支持的档位直接拒绝，不落配置 |
 | `ai/send` | Webview → 宿主 | 落库用户消息与占位助手消息，随后流式回传正文；`titleHint` 为命令名称等展示用短标题，仅用于会话命名 |

@@ -128,6 +128,8 @@ activate()
        └─ 不一致 → 后台静默全量重建（进度显示于状态栏）
   → 注册 Webview 视图、命令、状态栏、监听器
   → 注册 dispose 到 context.subscriptions
+  → 重量级依赖不在激活期加载：CodeBuddy SDK（约 350ms）与公众号渲染链
+    （juice + unified 生态，约 700ms）均延到首次调用时动态 import，激活只做装配与注册
 ```
 
 ---

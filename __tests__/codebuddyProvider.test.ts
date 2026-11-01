@@ -205,10 +205,12 @@ function createTextClient(
     return {
         captured,
         client: {
-            createSession: makeSession,
-            resumeSession: (sessionId: string, options: SessionOptions): CodebuddySession => {
+            // 建会话接口返回 Promise（真实实现要等 SDK 惰性加载），替身直接 resolve 预设会话
+            createSession: (options: SessionOptions): Promise<CodebuddySession> =>
+                Promise.resolve(makeSession(options)),
+            resumeSession: (sessionId: string, options: SessionOptions): Promise<CodebuddySession> => {
                 captured.resumed.push(sessionId)
-                return makeSession(options)
+                return Promise.resolve(makeSession(options))
             },
         },
     }
@@ -230,8 +232,8 @@ function createImageClient(messages: Message[]): CodebuddyClient {
         close: (): void => undefined,
     })
     return {
-        createSession: makeSession,
-        resumeSession: (): CodebuddySession => {
+        createSession: (): Promise<CodebuddySession> => Promise.resolve(makeSession()),
+        resumeSession: (): Promise<CodebuddySession> => {
             throw new Error('出图通道不应续接会话')
         },
     }

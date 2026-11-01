@@ -139,6 +139,8 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             ],
         }
         void this.renderHtml(webviewView)
+        // 模型清单随面板打开才拉取：属于本面板的首屏数据，不在扩展激活期预支
+        this.warmupModels()
         webviewView.webview.onDidReceiveMessage(
             (message: unknown) => void this.handleMessage(webviewView, message),
             this,
@@ -156,6 +158,28 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             disposable.dispose()
         }
         this.views.clear()
+    }
+
+    /**
+     * 预热模型清单：只在工作流面板解析时触发一次，与扩展激活刻意分开。
+     * 关键约束：拉取要起 CLI 子进程（数秒）且要求已登录，失败一律降级为空列表，不影响面板首屏；
+     * 清单到位后广播运行时变更 —— 面板初始化时可能还没拿到清单，模型名会短暂为空，补齐靠这一次广播。
+     */
+    private warmupModels(): void {
+        void listCodebuddyModels(this.secrets)
+            .then((models) => {
+                if (models.length === 0) {
+                    logger.info('CodeBuddy 可用模型：未获取到（可能未登录）')
+                    return
+                }
+                logger.info(
+                    `CodeBuddy 可用模型：${models
+                        .map((item) => `${item.modelId}(${String(item.contextWindowTokens)})`)
+                        .join(', ')}`,
+                )
+                this.service.notifyRuntimeChanged()
+            })
+            .catch((error: unknown) => logger.warn(`CodeBuddy 模型清单拉取失败：${String(error)}`))
     }
 
     private async renderHtml(webviewView: vscode.WebviewView): Promise<void> {
@@ -347,7 +371,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         return { opened: await vscode.env.openExternal(vscode.Uri.parse(CODEBUDDY_CREDITS_URLS[site])) }
     }
 
-    /** 模型清单与当前选择：激活时已后台预热缓存，缓存为空（未登录或预热未完成）时此处现拉一次 */
+    /** 模型清单与当前选择：面板打开时已后台预热，缓存为空（未登录或预热未完成）时此处现拉一次 */
     private async listModels(): Promise<AiModelChoices> {
         const models = await listCodebuddyModels(this.secrets)
         return {

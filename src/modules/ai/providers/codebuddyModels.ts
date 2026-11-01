@@ -2,7 +2,8 @@
  * CodeBuddy 可用模型清单与当前选择：拉取账号支持的模型并缓存，同时把面板菜单选中的模型持久化到 globalState。
  * 复用约定：经 SDK createSession 的 getAvailableModelsRaw 取完整清单（含额度倍率 credits），
  * 站点与凭证沿用 codebuddySite 的映射；完整清单不可用时退回 getAvailableModels 的简化清单；
- * 关键约束：清单拉取需拉起 CLI 子进程（数秒）且要求已登录，失败一律降级为空列表、不阻断激活；
+ * 关键约束：清单拉取需拉起 CLI 子进程（数秒）且要求已登录，失败一律降级为空列表；
+ * 拉取时机由调用方决定：工作流面板打开时预热（AiChatViewProvider），扩展激活期不预支这份开销；
  * 选中值以内存副本供各通道同步读取，写入时才落 globalState —— 配置项已移除，面板菜单是唯一入口；
  * 额度倍率为平台下发文本，解析不出数值时记 null 表示未知，不得回退为 0。
  * 清单只含语言模型，文生图模型由服务端产品配置决定，不予枚举。
@@ -11,7 +12,6 @@
  * 上下文档位另存一份用户选择（0 表示跟随模型默认），取值必须按当前模型的可选档位裁决后才下发。
  */
 import { tmpdir } from 'node:os'
-import { unstable_v2_createSession } from '@tencent-ai/agent-sdk'
 import { getZhaiConfig } from '@modules/common/config'
 import type { SecretsService } from '@modules/common/secrets'
 import type { AiReasoningEffort } from '@shared/types/aiChat'
@@ -196,7 +196,9 @@ export function listCodebuddyModels(secrets: SecretsService, force = false): Pro
 async function fetchModels(secrets: SecretsService): Promise<CodebuddyModelOption[]> {
     const site = getZhaiConfig().aiCodebuddySite
     const apiKey = await secrets.get('codebuddyApiKey')
-    const session = unstable_v2_createSession({
+    // SDK 首次加载约 350ms：清单拉取本身就要起子进程，加载放在这里，激活期不再背这份开销
+    const sdk = await import('@tencent-ai/agent-sdk')
+    const session = sdk.unstable_v2_createSession({
         cwd: tmpdir(),
         env: buildCodebuddyEnv(site, apiKey),
     })

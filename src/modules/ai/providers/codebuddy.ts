@@ -222,8 +222,8 @@ export class CodeBuddyProvider implements AiProvider {
             })
         }
         const session = isResume
-            ? this.client.resumeSession(request.sessionId ?? '', sessionOptions)
-            : this.client.createSession(sessionOptions)
+            ? await this.client.resumeSession(request.sessionId ?? '', sessionOptions)
+            : await this.client.createSession(sessionOptions)
         // V2 Session 没有 abortController 选项，中断统一交给 interrupt()
         const forwardAbort = (): void => {
             void session.interrupt()

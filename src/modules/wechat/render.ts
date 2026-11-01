@@ -1,31 +1,22 @@
 /**
  * 公众号 HTML 渲染：Markdown → 可直接提交到草稿箱的正文 HTML。
  * 复用约定：解析走 unified + remark-parse + remark-gfm + remark-rehype，样式内联走 juice，
- * 代码高亮走 shiki（语言缺失或高亮失败时回退为普通代码块），主题默认值见 ./theme。
+ * 代码块保持纯文本、不做语法高亮（底色与等宽字体由主题 CSS 提供），主题默认值见 ./theme。
  * 关键约束：公众号不支持 <style> 与外链 CSS，输出必须是内联样式，juice 处理后不得残留 style 标签；
  * 图片只收集地址、不上传——上传素材与改写 URL 属于推送链路，渲染保持纯函数、可重复执行；
  * 输出为正文片段（外层一个 section），不含 html/body，微信编辑器按片段接收；
- * 不开放内联 HTML 解析（不挂 rehype-raw），避免把不可信标签带进平台过滤器。
+ * 不开放内联 HTML 解析（不挂 rehype-raw），避免把不可信标签带进平台过滤器；
+ * juice 与 unified 生态首次加载约 700ms，改为首次渲染时动态加载，激活期不再背这份开销。
  */
-import juice from 'juice'
-import rehypeStringify from 'rehype-stringify'
-import remarkGfm from 'remark-gfm'
-import remarkParse from 'remark-parse'
-import remarkRehype from 'remark-rehype'
-import { codeToHast } from 'shiki'
-import { unified } from 'unified'
-import { visit } from 'unist-util-visit'
 import { DEFAULT_WECHAT_THEME_CSS } from './theme'
-import type { Element, Root as HastRoot } from 'hast'
+import type juice from 'juice'
 import type { Image, Root as MdastRoot } from 'mdast'
-import type { Plugin } from 'unified'
-import type { Parent } from 'unist'
-
-/** 高亮主题：公众号正文以浅色底为主，深色主题在多数阅读场景里显得突兀 */
-const SHIKI_THEME = 'github-light'
-
-/** 语言标识前缀：remark-rehype 把 ```ts 写成 class="language-ts" */
-const CODE_LANG_PREFIX = 'language-'
+import type rehypeStringify from 'rehype-stringify'
+import type remarkGfm from 'remark-gfm'
+import type remarkParse from 'remark-parse'
+import type remarkRehype from 'remark-rehype'
+import type { unified } from 'unified'
+import type { visit } from 'unist-util-visit'
 
 /** 渲染结果 */
 export interface WechatRenderResult {
@@ -46,11 +37,65 @@ export interface WechatRenderOptions {
     resolveImageUrl?: (url: string) => Promise<string | null>
 }
 
+/** 延迟加载的渲染依赖：类型直接取各包导出的类型，避免另写一份手写签名 */
+interface RenderDeps {
+    juice: typeof juice
+    unified: typeof unified
+    remarkParse: typeof remarkParse
+    remarkGfm: typeof remarkGfm
+    remarkRehype: typeof remarkRehype
+    rehypeStringify: typeof rehypeStringify
+    visit: typeof visit
+}
+
+let renderDeps: Promise<RenderDeps> | null = null
+
+/** 加载渲染依赖：七个包并发加载，任一失败即整体失败（不吞错，交由调用方决定如何提示） */
+async function loadRenderDeps(): Promise<RenderDeps> {
+    const [
+        juiceModule,
+        unifiedModule,
+        remarkParseModule,
+        remarkGfmModule,
+        remarkRehypeModule,
+        rehypeStringifyModule,
+        visitModule,
+    ] = await Promise.all([
+        import('juice'),
+        import('unified'),
+        import('remark-parse'),
+        import('remark-gfm'),
+        import('remark-rehype'),
+        import('rehype-stringify'),
+        import('unist-util-visit'),
+    ])
+    return {
+        juice: juiceModule.default,
+        unified: unifiedModule.unified,
+        remarkParse: remarkParseModule.default,
+        remarkGfm: remarkGfmModule.default,
+        remarkRehype: remarkRehypeModule.default,
+        rehypeStringify: rehypeStringifyModule.default,
+        visit: visitModule.visit,
+    }
+}
+
+/** 惰性加载渲染依赖：并发首调用共享同一份 Promise，失败时清空句柄，下次渲染可重试 */
+function ensureRenderDeps(): Promise<RenderDeps> {
+    if (renderDeps === null) {
+        renderDeps = loadRenderDeps().catch((error: unknown) => {
+            renderDeps = null
+            throw error
+        })
+    }
+    return renderDeps
+}
+
 /** 收集正文中的图片地址：只认 Markdown 图片语法，内联 HTML 不参与 */
-function collectImageUrls(markdown: string): string[] {
-    const tree = unified().use(remarkParse).use(remarkGfm).parse(markdown)
+function collectImageUrls(deps: RenderDeps, markdown: string): string[] {
+    const tree = deps.unified().use(deps.remarkParse).use(deps.remarkGfm).parse(markdown)
     const urls: string[] = []
-    for (const node of collectImageNodes(tree)) {
+    for (const node of collectImageNodes(deps, tree)) {
         if (node.url.length > 0 && !urls.includes(node.url)) {
             urls.push(node.url)
         }
@@ -58,59 +103,10 @@ function collectImageUrls(markdown: string): string[] {
     return urls
 }
 
-/** 用 shiki 高亮一个代码块：语言未知或加载失败时返回 null，由调用方保留原节点 */
-async function highlightCodeBlock(code: string, lang: string): Promise<Element | null> {
-    try {
-        const hast = await codeToHast(code, { lang: lang.length > 0 ? lang : 'text', theme: SHIKI_THEME })
-        const [first] = hast.children
-        return first?.type === 'element' ? first : null
-    } catch {
-        return null
-    }
-}
-
-/**
- * rehype 插件：把 pre > code 替换为 shiki 高亮后的节点。
- * 关键约束：unified 的 visitor 不支持异步，先收集目标再逐个替换，避免在遍历中 await；
- * 替换失败时保留原节点，宁可没有配色也不能丢掉代码内容。
- */
-const rehypeShiki: Plugin<[], HastRoot, HastRoot> = () => {
-    return async (tree: HastRoot): Promise<void> => {
-        const targets: { parent: Parent; index: number; code: string; lang: string }[] = []
-        visit(tree, 'element', (node, index, parent) => {
-            if (node.tagName !== 'pre' || index === undefined || parent === undefined) {
-                return
-            }
-            const codeElement = node.children.find(
-                (child): child is Element => child.type === 'element' && child.tagName === 'code',
-            )
-            if (codeElement === undefined) {
-                return
-            }
-            const className = codeElement.properties?.className
-            const langClass = Array.isArray(className)
-                ? className.find((item) => typeof item === 'string' && item.startsWith(CODE_LANG_PREFIX))
-                : undefined
-            targets.push({
-                parent,
-                index,
-                code: codeElement.children.map((child) => (child.type === 'text' ? child.value : '')).join(''),
-                lang: typeof langClass === 'string' ? langClass.slice(CODE_LANG_PREFIX.length) : '',
-            })
-        })
-        for (const target of targets) {
-            const highlighted = await highlightCodeBlock(target.code, target.lang)
-            if (highlighted !== null) {
-                target.parent.children[target.index] = highlighted
-            }
-        }
-    }
-}
-
 /** 收集 mdast 中的图片节点：改写 url 需要在语法树上做，字符串替换会漏掉属性转义差异 */
-function collectImageNodes(tree: MdastRoot): Image[] {
+function collectImageNodes(deps: RenderDeps, tree: MdastRoot): Image[] {
     const nodes: Image[] = []
-    visit(tree, 'image', (node: Image) => {
+    deps.visit(tree, 'image', (node: Image) => {
         nodes.push(node)
     })
     return nodes
@@ -127,21 +123,22 @@ export async function renderWechatHtml(
     markdown: string,
     options: WechatRenderOptions = {},
 ): Promise<WechatRenderResult> {
-    const imageUrls = collectImageUrls(markdown)
-    const mdast = unified().use(remarkParse).use(remarkGfm).parse(markdown)
+    const deps = await ensureRenderDeps()
+    const imageUrls = collectImageUrls(deps, markdown)
+    const mdast = deps.unified().use(deps.remarkParse).use(deps.remarkGfm).parse(markdown)
     if (options.resolveImageUrl !== undefined) {
         const resolve = options.resolveImageUrl
-        for (const node of collectImageNodes(mdast)) {
+        for (const node of collectImageNodes(deps, mdast)) {
             const next = await resolve(node.url)
             if (next !== null && next.length > 0) {
                 node.url = next
             }
         }
     }
-    const hast = await unified().use(remarkRehype).use(rehypeShiki).run(mdast)
-    const rawHtml = unified().use(rehypeStringify).stringify(hast)
+    const hast = await deps.unified().use(deps.remarkRehype).run(mdast)
+    const rawHtml = deps.unified().use(deps.rehypeStringify).stringify(hast)
     const fragment = `<section>${rawHtml}</section>`
-    const html = juice.inlineContent(fragment, options.themeCss ?? DEFAULT_WECHAT_THEME_CSS, {
+    const html = deps.juice.inlineContent(fragment, options.themeCss ?? DEFAULT_WECHAT_THEME_CSS, {
         applyStyleTags: false,
         removeStyleTags: true,
         preserveMediaQueries: false,

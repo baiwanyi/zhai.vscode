@@ -7,7 +7,6 @@
  * 约束：全部 Disposable 挂载到 context.subscriptions，保证停用后释放（AC-10）；密钥与引用原文不落日志。
  * 模型选择不在命令面板，改由 AI 面板输入区的模型菜单（ai/models / ai/selectModel）承接。
  */
-import { unstable_v2_authenticate, unstable_v2_logout } from '@tencent-ai/agent-sdk'
 import * as vscode from 'vscode'
 import { getZhaiConfig } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
@@ -61,6 +60,8 @@ export function registerAiCommands(
     // 改标题须同步 providers/codebuddyError 的 auth 文案
     register('zhai.ai.loginCodebuddy', async () => {
         const site = getZhaiConfig().aiCodebuddySite
+        // SDK 首次加载约 350ms：登录本就要起子进程，加载放在命令内，不占激活耗时
+        const sdk = await import('@tencent-ai/agent-sdk')
         await vscode.window.withProgress(
             {
                 location: vscode.ProgressLocation.Notification,
@@ -71,7 +72,7 @@ export function registerAiCommands(
                 progress.report({ message: '正在打开浏览器授权页…' })
                 try {
                     // 站点同时决定认证环境、登录方式与授权页域名：三站点授权页分属不同域名，错配会在错误站点完成授权
-                    const result = await unstable_v2_authenticate({
+                    const result = await sdk.unstable_v2_authenticate({
                         environment: toAuthEnvironment(site),
                         methodId: toAuthMethodId(site),
                         env: buildCodebuddyEnv(site),
@@ -109,7 +110,8 @@ export function registerAiCommands(
     register('zhai.ai.logoutCodebuddy', async () => {
         const site = getZhaiConfig().aiCodebuddySite
         try {
-            await unstable_v2_logout({ environment: toAuthEnvironment(site), env: buildCodebuddyEnv(site) })
+            const sdk = await import('@tencent-ai/agent-sdk')
+            await sdk.unstable_v2_logout({ environment: toAuthEnvironment(site), env: buildCodebuddyEnv(site) })
             clearCodebuddyLogin(site)
             service.notifyRuntimeChanged()
             logger.info(`CodeBuddy 已登出（${site}）`)

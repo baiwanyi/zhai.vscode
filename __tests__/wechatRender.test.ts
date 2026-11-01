@@ -3,10 +3,16 @@
  * 断言集中在「公众号能接受的形态」上：必须有内联样式、不得残留 style 标签、代码内容不能丢。
  * 不校验具体色值——主题可替换，断言色值会把测试与某一版主题绑死。
  */
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 import { renderWechatHtml } from '../src/modules/wechat/render'
 
 describe('renderWechatHtml', () => {
+    // 渲染依赖改为首次调用时动态加载（激活期不再加载 juice 与 unified 生态），
+    // 先预热一次，避免首个用例把加载耗时算进 5s 用例超时
+    beforeAll(async () => {
+        await renderWechatHtml('预热')
+    }, 30000)
+
     it('输出正文片段并内联基础样式', async () => {
         const { html } = await renderWechatHtml('段落一\n\n段落二')
         expect(html.startsWith('<section')).toBe(true)

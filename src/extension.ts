@@ -3,6 +3,8 @@
  * 流程：日志 → 打开索引库/AI 库 → schema 校验 → 注册命令/面板/监听 → 自检自愈（后台不阻塞激活）。
  * 复用约定：激活结果作为扩展 exports 返回，VS Code 的 Markdown 预览读取 extendMarkdownIt 挂载图片路径插件；
  * 该钩子只需同步返回实例，真正的路径解析在渲染时按当前文档惰性计算。
+ * 关键约束：重量级依赖（CodeBuddy SDK、公众号渲染链）一律惰性加载，激活期只做装配与监听注册；
+ * 新增模块若引入大体积运行时，须沿用同一口径，否则每个窗口启动都要多付一次加载成本。
  */
 import * as vscode from 'vscode'
 import { AiChatViewProvider } from './modules/ai/aiChatProvider'
@@ -14,7 +16,7 @@ import { ensureAiSchema } from './modules/ai/db/schema'
 import { MentionService } from './modules/ai/mentionService'
 import { createAiProvider } from './modules/ai/providerRegistry'
 import { initCodebuddyLogin } from './modules/ai/providers/codebuddyLogin'
-import { hydrateSelectedModel, listCodebuddyModels } from './modules/ai/providers/codebuddyModels'
+import { hydrateSelectedModel } from './modules/ai/providers/codebuddyModels'
 import { ReferenceService } from './modules/ai/referenceService'
 import { UsageRecorder } from './modules/ai/usageRecorder'
 import { AiUsageService } from './modules/ai/usageService'
@@ -84,8 +86,14 @@ export interface ZhaiExports {
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<ZhaiExports> {
+    const activateStartedAt = performance.now()
     logger.init(vscode.window.createOutputChannel('宅写作'))
     context.subscriptions.push({ dispose: () => logger.dispose() })
+
+    // 分段耗时打点：输出通道里可直接读出各阶段花销，用于诊断启动性能（改装配顺序后对比即可）
+    const markStage = (stage: string): void => {
+        logger.info(`激活阶段「${stage}」：${String(Math.round(performance.now() - activateStartedAt))}ms`)
+    }
 
     const secrets = new SecretsService(context.secrets)
 
@@ -97,6 +105,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     const db = openIndexDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => db.close() })
     ensureSchema(db)
+    markStage('索引库就绪')
 
     const indexService = new IndexService(db, indexStatusEmitter)
     context.subscriptions.push({ dispose: () => indexService.dispose() })
@@ -129,6 +138,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     const aiDb = openAiDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => aiDb.close() })
     ensureAiSchema(aiDb)
+    markStage('AI 库就绪')
     // 用量记账与查询共用 ai.db：记账注入各 AI 入口（对话、取名、外貌、语义、画面），查询供「AI 使用量」页；
     // 积分不落本地估算，由索引从 CodeBuddy 会话记录按请求 id 回填
     const usageRecorder = new UsageRecorder(aiDb)
@@ -356,6 +366,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         vscode.window.registerWebviewViewProvider(AiChatViewProvider.viewId, aiChatProvider),
     )
     wechatAuthEmitters.push((event) => aiChatProvider.broadcastWechatState(event))
+    markStage('面板注册完成')
 
     const statusBar = new StatusBarService(indexService, indexStatusEmitter.event)
     statusBar.register(context.subscriptions)
@@ -375,19 +386,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         void indexService.selfCheck().catch((error: unknown) => logger.error('激活自检失败', error))
     }
 
-    // CodeBuddy 模型清单后台预热（拉起 CLI 约数秒）；未登录时返回空列表，不阻断激活，选择命令里会现拉
-    void listCodebuddyModels(secrets).then((models) => {
-        logger.info(
-            `CodeBuddy 可用模型：${
-                models.length > 0
-                    ? models.map((item) => `${item.modelId}(${item.contextWindowTokens})`).join(', ')
-                    : '未获取到（可能未登录）'
-            }`,
-        )
-    })
-
+    // 模型清单不在此预热：它属于工作流面板的首屏数据，由 AiChatViewProvider 在面板打开时拉取，
+    // 激活与「打开面板」是两个阶段，混在激活里会让窗口启动替面板付一次 CLI 子进程开销
     logger.info(
-        `宅写作 已激活（workspace: ${context.workspaceState.get('initialized') === true ? '已初始化' : '首次'}）`,
+        `宅写作 已激活（workspace: ${context.workspaceState.get('initialized') === true ? '已初始化' : '首次'}），耗时 ${String(Math.round(performance.now() - activateStartedAt))}ms`,
     )
     void context.workspaceState.update('initialized', true)
 
