@@ -117,6 +117,14 @@ export function AiChatModelMenu({
     /** 空态项：清单未拉取或该组没有内容时占一行，避免菜单只剩一个标题 */
     const renderEmptyItem = (text: string): JSX.Element => <DropdownMenuItem disabled>{text}</DropdownMenuItem>
 
+    /** 加载态项：拉清单要起 CLI（数秒），与触发器上的指示同源，避免展开后只剩一行静态文字 */
+    const renderLoadingItem = (): JSX.Element => (
+        <DropdownMenuItem disabled className={ITEM_CLASS}>
+            <Spinner className="size-3 shrink-0" aria-label="正在读取可用模型" />
+            <span className="min-w-0 flex-1 truncate">正在读取可用模型…</span>
+        </DropdownMenuItem>
+    )
+
     const renderAutoOption = (): JSX.Element => (
         <DropdownMenuItem onSelect={() => onSelect(AUTO_MODEL_ID)} className={ITEM_CLASS}>
             <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
@@ -190,14 +198,27 @@ export function AiChatModelMenu({
                     overflow-x-hidden 必需——分隔线带 -mx-1，会超出内层宽度 8px，而 overflow-y-auto 会把
                     水平方向一并变成 auto，不裁剪就会出现水平滚动条 */}
                 <div className="max-h-72 overflow-x-hidden overflow-y-auto">
-                    <DropdownMenuLabel>内置模型</DropdownMenuLabel>
-                    {renderAutoOption()}
-                    {builtinOptions.length > 0
-                        ? builtinOptions.map(renderOption)
-                        : renderEmptyItem(isLoading ? '正在读取可用模型…' : '未读取到可用模型')}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuLabel>自定义模型</DropdownMenuLabel>
-                    {customOptions.length > 0 ? customOptions.map(renderOption) : renderEmptyItem('暂无自定义模型')}
+                    {/* 首次展开拉清单（要起 CLI，数秒）：两组清单同源，只给一组占位，
+                        否则「内置 / 自定义」会各转一个 spinner */}
+                    {isLoading && options.length === 0 ? (
+                        <>
+                            <DropdownMenuLabel>可用模型</DropdownMenuLabel>
+                            {renderLoadingItem()}
+                        </>
+                    ) : (
+                        <>
+                            <DropdownMenuLabel>内置模型</DropdownMenuLabel>
+                            {renderAutoOption()}
+                            {builtinOptions.length > 0
+                                ? builtinOptions.map(renderOption)
+                                : renderEmptyItem('未读取到可用模型')}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuLabel>自定义模型</DropdownMenuLabel>
+                            {customOptions.length > 0
+                                ? customOptions.map(renderOption)
+                                : renderEmptyItem('暂无自定义模型')}
+                        </>
+                    )}
                     {/* 档位只在平台下发可选长度时出现：Auto 与未上报能力的自定义模型没有可选项 */}
                     {windowOptions.length > 0 ? (
                         <>
