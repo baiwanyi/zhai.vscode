@@ -12,6 +12,7 @@ import {
     isSelectWechatAccountRequest,
     isTestWechatAccountRequest,
     isUpdateWechatAccountRequest,
+    isWechatArticleCoverRequest,
     isWechatArticleCreateRequest,
     isWechatArticleImportRequest,
     isWechatArticleMetaRequest,
@@ -26,6 +27,7 @@ import {
     isWechatCommentMarkRequest,
     isWechatCommentRemoveRequest,
     isWechatCommentReplyRequest,
+    isWechatCoverSourceRequest,
     isWechatFanListRequest,
     isWechatFanTagsRequest,
     isWechatIssueRemoveRequest,
@@ -222,8 +224,20 @@ export class WechatRoutes {
                 }
                 return this.deps.issues.moveArticle(payload)
             }
+            case 'wechat/article/cover': {
+                if (!isWechatArticleCoverRequest(payload)) {
+                    throw new Error('wechat/article/cover 参数非法：id 须合法，dataUrl 须为 jpeg/png 的 base64 内联图')
+                }
+                return this.deps.issues.saveArticleCover(payload)
+            }
             case 'wechat/cover/pick':
                 return this.deps.issues.pickCover()
+            case 'wechat/cover/source': {
+                if (!isWechatCoverSourceRequest(payload)) {
+                    throw new Error('wechat/cover/source 参数非法：path 须为非空路径')
+                }
+                return this.deps.issues.readCoverSource(payload)
+            }
             case 'wechat/material/list': {
                 if (!isWechatMaterialListRequest(payload)) {
                     throw new Error('wechat/material/list 参数非法：accountId 须为合法账号标识')

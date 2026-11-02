@@ -7,7 +7,8 @@
  * 筛选与排序在本页完成，列表组件只渲染结果，避免两处过滤口径；
  * 新建批次不弹表单：宿主按默认命名直接建目录，标题不在卡片上展示；
  * 添加文章与导入都不弹表单：宿主在批次目录里新建 md 并直接打开编辑器，二次编辑在编辑器里完成；
- * 标题、封面、摘要与留言开关等工作流面板（推送分区）逐篇设置，本页不提供这些入口；
+ * 标题、摘要与留言开关在工作流面板（推送分区）逐篇设置；封面由本页点卡片上的封面图更换——
+ * 选图与裁剪都在封面弹窗里完成，结果落到批次目录 images/ 并回写 cover_path；
  * 账号不存在（被删除或 hash 手改）时给出回到列表的出口，不渲染空白页。
  */
 import { MoreHorizontal, Plus, Send } from 'lucide-react'
@@ -43,6 +44,7 @@ import { useWechatModuleSync } from './hooks/useWechatModuleSync'
 import { WechatAccountDialog } from './layout/WechatAccountDialog'
 import { WechatAccountSecretDialog } from './layout/WechatAccountSecretDialog'
 import { WechatArticleMetaDialog } from './layout/WechatArticleMetaDialog'
+import { WechatCoverDialog } from './layout/WechatCoverDialog'
 import { WechatIssueList } from './layout/WechatIssueList'
 import { WechatIssueMergeDialog } from './layout/WechatIssueMergeDialog'
 import { formatAccountMeta, formatAccountStatusHint, WECHAT_STATUS_LABELS } from './utils'
@@ -116,6 +118,9 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         openArticle,
         moveArticle,
         updateArticleMeta,
+        pickCover,
+        readCoverSource,
+        saveArticleCover,
         removeArticle,
         importArticle,
         publishDraft,
@@ -130,6 +135,8 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
     const [pendingIssue, setPendingIssue] = useState<WechatIssueSummary | null>(null)
     /** 文章设置弹窗的目标：非 null 即打开，作者/摘要/留言通过 wechat/article/meta 保存 */
     const [metaTarget, setMetaTarget] = useState<WechatArticleSummary | null>(null)
+    /** 封面弹窗的目标：非 null 即打开，裁剪结果经 wechat/article/cover 落到批次 images/ */
+    const [coverTarget, setCoverTarget] = useState<WechatArticleSummary | null>(null)
     const [pendingArticle, setPendingArticle] = useState<{
         issue: WechatIssueSummary
         article: WechatArticleSummary
@@ -260,6 +267,29 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
             })
         },
         [metaTarget, updateArticleMeta],
+    )
+
+    /**
+     * 选图并取回原图：宿主弹选择器 → 读成 data URI 交给裁剪弹窗。
+     * 关键约束：两步合成一次交互，用户取消选择时返回 null，弹窗保持原状。
+     */
+    const handlePickCoverImage = useCallback(async (): Promise<string | null> => {
+        const picked = await pickCover()
+        if (picked === null) {
+            return null
+        }
+        return readCoverSource(picked)
+    }, [pickCover, readCoverSource])
+
+    /** 保存裁剪封面：落盘与回写由宿主完成，成功后弹窗关闭、列表刷新 */
+    const handleCoverSubmit = useCallback(
+        async (dataUrl: string): Promise<boolean> => {
+            if (coverTarget === null) {
+                return false
+            }
+            return saveArticleCover(coverTarget.id, dataUrl)
+        },
+        [coverTarget, saveArticleCover],
     )
 
     const handleConfirmIssueRemove = useCallback((): void => {
@@ -492,6 +522,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                         onImport={(issue, sourceKind) => void handleImportArticle(issue, sourceKind)}
                         onOpenArticle={handleOpenArticle}
                         onOpenArticleSetting={setMetaTarget}
+                        onPickCover={setCoverTarget}
                         onMoveArticle={(article, direction) => void moveArticle(article.id, direction)}
                         onRemoveArticle={(issue, article) => setPendingArticle({ issue, article })}
                         onRemoveIssue={setPendingIssue}
@@ -602,6 +633,22 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                         }
                     }}
                     onSubmit={handleArticleSettingSubmit}
+                />
+            )}
+
+            {coverTarget !== null && (
+                <WechatCoverDialog
+                    key={coverTarget.id}
+                    article={coverTarget}
+                    coverUri={coverTarget.coverPath === undefined ? undefined : covers[coverTarget.coverPath]}
+                    isSubmitting={isIssueMutating}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setCoverTarget(null)
+                        }
+                    }}
+                    onPickImage={handlePickCoverImage}
+                    onSubmit={handleCoverSubmit}
                 />
             )}
 

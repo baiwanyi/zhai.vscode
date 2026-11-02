@@ -1,12 +1,14 @@
 /**
  * 推送批次服务：批次与文章的增删改查、从笔记/作品文档导入，是公众号批次侧的唯一编排层。
- * 复用约定：落库走 db/issueRepository，正文文件读写走 ./issueDocument，源文档的元数据解析复用
+ * 复用约定：落库走 db/issueRepository，正文与图片文件读写走 ./issueDocument，源文档的元数据解析复用
  * common/db/fileMeta 的 splitFrontmatter / parseTitle / countWords / contentHash，
- * 路径构造与校验复用 common/storagePath 与 config。
+ * 图片地址定位复用 materialService 的 locateWechatImage，路径构造与校验复用 common/storagePath 与 config。
  * 关键约束：批次最多 8 篇、正文最多 2 万字（平台上限），超出直接拒绝并给出可执行提示；
  * 新建与导入都先把正文写进批次目录（wechat/{appid}/post/{时间戳}/）再落库，发布只读文件，库内 body 只是镜像；
  * 文章文件与笔记同构——标题由正文首个一级标题承载、文件名跟随标题，库内 title 与 file_path 随之同步；
  * 导入不接收前端传入的路径——源文件由宿主弹出选择器、回查索引库后再读盘，从源头排除任意文件读取；
+ * 导入时把正文引用的本地图片复制到批次 images/ 并把引用改写成相对批次文件的写法，使副本自包含；
+ * 封面由前端裁好后以 data URI 回传，宿主只负责写入批次 images/ 并回写 cover_path；
  * 任何增删文章的操作都要同步批次 article_count 与 updated_at，否则列表显示与实际不一致。
  */
 import { randomUUID } from 'node:crypto'
@@ -15,14 +17,17 @@ import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { countWords, contentHash, parseTitle, splitFrontmatter } from '@modules/common/db/fileMeta'
 import { findIndexedFile } from '@modules/common/db/indexRepository'
+import { logger } from '@modules/common/logger'
 import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
 import {
     readWechatArticleAuthor,
     readWechatArticleDigest,
     readWechatArticleTitle,
     WECHAT_ARTICLE_BODY_MAX,
+    WECHAT_COVER_IMAGE_MAX_BYTES,
     WECHAT_ISSUE_ARTICLE_LIMIT,
     WECHAT_ISSUE_TITLE_MAX,
+    type WechatArticleCoverRequest,
     type WechatArticleCreateRequest,
     type WechatArticleCreateResult,
     type WechatArticleDetail,
@@ -37,6 +42,8 @@ import {
     type WechatArticleUpdateRequest,
     type WechatArticleUpdateResult,
     type WechatCoverPickResult,
+    type WechatCoverSourceRequest,
+    type WechatCoverSourceResult,
     type WechatIssueCreateRequest,
     type WechatIssueCreateResult,
     type WechatIssueDetailResult,
@@ -47,6 +54,7 @@ import {
     type WechatIssueStatus,
     type WechatIssueSummary,
 } from '@shared/types/wechat'
+import { isZhaiPath, readZhaiRelativePath } from '@shared/utils/zhaiPath'
 import { findWechatAccount } from './db/accountRepository'
 import {
     deleteWechatArticle,
@@ -63,6 +71,7 @@ import {
     swapWechatArticleSortIndex,
     syncWechatIssueArticleCount,
     updateWechatArticle,
+    updateWechatArticleCover,
     updateWechatArticleFilePath,
     updateWechatArticleTitle,
     updateWechatIssueDirPath,
@@ -70,7 +79,6 @@ import {
 import {
     buildWechatArticleContent,
     buildWechatDocFileName,
-    copyWechatArticleDoc,
     createWechatIssueDirectory,
     focusWechatArticleIfActive,
     readWechatArticleDoc,
@@ -80,8 +88,11 @@ import {
     removeWechatIssueDirectory,
     renameWechatArticleDoc,
     stripLeadingHeading,
+    WECHAT_ISSUE_IMAGES_DIR,
     writeWechatArticleDoc,
+    writeWechatIssueImage,
 } from './issueDocument'
+import { locateWechatImage } from './materialService'
 import type { WechatAccountRow } from './db/accountRepository'
 import type { WechatArticleRow, WechatIssueRow } from './db/issueRepository'
 import type Database from 'better-sqlite3'
@@ -98,6 +109,22 @@ const SOURCE_MODULE_DIRS = { note: 'notes', press: 'press' } as const
 
 /** 封面允许的扩展名：与素材上传口径保持一致，平台只接受 jpg/png */
 const COVER_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg'])
+
+/** 封面扩展名 → MIME：读原图与落盘裁剪结果共用这张表 */
+const COVER_MIME: Readonly<Record<string, string>> = {
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+}
+
+/** 裁剪结果 data URI：只认 base64 的 jpeg / png，其余形式一律拒绝 */
+const COVER_DATA_URL_PATTERN = /^data:(image\/(?:jpeg|png));base64,([A-Za-z0-9+/=]+)$/u
+
+/** 正文图片语法：与 mediaReferenceService 的识别口径一致，改写时保留 alt 与 title */
+const BODY_IMAGE_PATTERN = /!\[([^\]]*)\]\(\s*(<[^>]*>|[^)\s]+)(\s+(?:"[^"]*"|'[^']*'))?\s*\)/gu
+
+/** 批次图片同名时的追加序号上限：超过说明目录已被塞满，交由用户整理 */
+const IMAGE_NAME_SUFFIX_LIMIT = 100
 
 /** 批次标题缺省前缀：新建时拼上日期，用户随后可改 */
 const DEFAULT_ISSUE_TITLE_PREFIX = '未命名批次'
@@ -141,6 +168,65 @@ function toArticleSummary(row: WechatArticleRow): WechatArticleSummary {
 /** 行 → 文章详情：附带 Markdown 源文 */
 function toArticleDetail(row: WechatArticleRow): WechatArticleDetail {
     return { ...toArticleSummary(row), body: row.body }
+}
+
+/** 还原图片地址：去掉尖括号包裹并解码 `%20` 之类的转义，与正文引用解析口径一致 */
+function normalizeImageUrl(raw: string): string {
+    const trimmed = raw.startsWith('<') && raw.endsWith('>') ? raw.slice(1, -1) : raw
+    try {
+        return decodeURI(trimmed)
+    } catch {
+        return trimmed
+    }
+}
+
+/**
+ * 解析裁剪结果：返回字节与落盘扩展名。
+ * 关键约束：格式与体积都在这里拦下，避免把非图片或超大内容写进批次目录。
+ */
+function parseCoverDataUrl(dataUrl: string): { bytes: Buffer; extension: string } {
+    const matched = COVER_DATA_URL_PATTERN.exec(dataUrl.trim())
+    if (matched === null) {
+        throw new Error('封面数据格式不正确，请重新裁剪')
+    }
+    const bytes = Buffer.from(matched[2] ?? '', 'base64')
+    if (bytes.byteLength === 0) {
+        throw new Error('封面数据为空，请重新裁剪')
+    }
+    if (bytes.byteLength > WECHAT_COVER_IMAGE_MAX_BYTES) {
+        const limit = Math.round(WECHAT_COVER_IMAGE_MAX_BYTES / (1024 * 1024))
+        throw new Error(`封面 ${String(Math.round(bytes.byteLength / 1024))}KB，超过 ${String(limit)}MB 上限`)
+    }
+    return { bytes, extension: matched[1] === 'image/png' ? '.png' : '.jpg' }
+}
+
+/** 分配批次图片文件名：同名按「主干 2.扩展名」顺延，并把结果登记进已占用集合 */
+function allocateImageName(fileName: string, taken: Set<string>): string {
+    if (!taken.has(fileName.toLowerCase())) {
+        taken.add(fileName.toLowerCase())
+        return fileName
+    }
+    const dot = fileName.lastIndexOf('.')
+    const stem = dot > 0 ? fileName.slice(0, dot) : fileName
+    const extension = dot > 0 ? fileName.slice(dot) : ''
+    for (let index = 2; index < IMAGE_NAME_SUFFIX_LIMIT; index += 1) {
+        const candidate = `${stem} ${String(index)}${extension}`
+        if (!taken.has(candidate.toLowerCase())) {
+            taken.add(candidate.toLowerCase())
+            return candidate
+        }
+    }
+    throw new Error(`批次图片过多（${fileName}），请先整理批次目录后再导入`)
+}
+
+/** 改写图片语法里的地址部分：从末尾的 `](` 之后定位，避免命中 alt 里的同名字符串 */
+function replaceImageUrl(syntax: string, raw: string, next: string): string {
+    const open = syntax.lastIndexOf('](')
+    const start = open < 0 ? -1 : syntax.indexOf(raw, open + 2)
+    if (start < 0) {
+        return syntax
+    }
+    return `${syntax.slice(0, start)}${next}${syntax.slice(start + raw.length)}`
 }
 
 export class WechatIssueService {
@@ -306,6 +392,7 @@ export class WechatIssueService {
         /**
          * 文件先搬到目标批次目录、再搬库、最后删源文件：
          * 事务失败时源批次与源文件都还在，目标目录最多留一份没人引用的副本。
+         * 正文引用的图片随文章一起搬：源批次目录随后会被删除，相对引用必须重新落到目标批次 images/。
          */
         const root = resolveStorageRoot()
         const targetDir = await this.ensureIssueDirectory(target)
@@ -316,9 +403,17 @@ export class WechatIssueService {
                 if (article.file_path === null || article.file_path.length === 0) {
                     continue
                 }
+                const doc = await readWechatArticleDoc(root, article.file_path)
+                if (doc === null) {
+                    throw new Error(`文章文件已丢失：${article.file_path}，请先打开该文章保存一次再合并`)
+                }
                 const fileName = buildWechatDocFileName(article.title, taken)
                 taken.add(fileName.toLowerCase())
-                const toPath = await copyWechatArticleDoc(root, article.file_path, targetDir, fileName)
+                const body = await this.copyBodyImages(target, article.file_path, doc.body)
+                const toPath = `${targetDir}/${fileName}`
+                // 文件缺一级标题时回落到库内标题，避免重建出一个空标题的文档
+                const title = doc.title.length > 0 ? doc.title : article.title
+                await writeWechatArticleDoc(root, toPath, buildWechatArticleContent(title, body))
                 movedFiles.push({ id: article.id, fromPath: article.file_path, toPath })
             }
         }
@@ -567,6 +662,55 @@ export class WechatIssueService {
     }
 
     /**
+     * 读取封面原图：把存储根内的 jpg/png 读成 data URI，供前端在 canvas 里按封面比例裁剪。
+     * 关键约束：Webview 里的 asWebviewUri 与页面不同源，直接 drawImage 会污染画布、导出触发 SecurityError，
+     * 因此只能内联成 data URI 再裁剪；路径必须落在存储根内且是 jpg/png，体积超限同样拒绝。
+     */
+    public async readCoverSource(request: WechatCoverSourceRequest): Promise<WechatCoverSourceResult> {
+        const root = resolveStorageRoot()
+        const uri = path.isAbsolute(request.path)
+            ? vscode.Uri.file(request.path)
+            : buildStorageUri(root, toSafeSegments(request.path, '封面'))
+        const relative = path.relative(root.fsPath, uri.fsPath)
+        if (relative.startsWith('..') || path.isAbsolute(relative)) {
+            throw new Error('封面图必须在文档保存目录内')
+        }
+        const mime = COVER_MIME[path.extname(uri.fsPath).toLowerCase()]
+        if (mime === undefined) {
+            throw new Error('封面只支持 jpg / png')
+        }
+        let size: number
+        try {
+            size = (await vscode.workspace.fs.stat(uri)).size
+        } catch {
+            throw new Error(`封面图已不存在：${request.path}`)
+        }
+        if (size > WECHAT_COVER_IMAGE_MAX_BYTES) {
+            const limit = Math.round(WECHAT_COVER_IMAGE_MAX_BYTES / (1024 * 1024))
+            throw new Error(`封面图 ${String(Math.round(size / 1024))}KB，超过 ${String(limit)}MB 上限，请先压缩`)
+        }
+        const bytes = Buffer.from(await vscode.workspace.fs.readFile(uri))
+        return { dataUrl: `data:${mime};base64,${bytes.toString('base64')}` }
+    }
+
+    /**
+     * 保存裁剪后的封面：前端已按封面比例合成 jpeg/png 的 data URI，宿主只负责落盘与回写。
+     * 关键约束：文件名固定为批次目录 images/cover-{文章 id}.jpg，同一篇重复裁剪直接覆盖，
+     * 不会堆积孤儿图片；先写文件再改库，写盘失败时列表仍指向上一张可用封面。
+     */
+    public async saveArticleCover(request: WechatArticleCoverRequest): Promise<WechatArticleUpdateResult> {
+        const existing = this.requireArticle(request.id)
+        const issue = this.requireIssue(existing.issue_id)
+        const parsed = parseCoverDataUrl(request.dataUrl)
+        const dirPath = await this.ensureIssueDirectory(issue)
+        const fileName = `cover-${existing.id}${parsed.extension}`
+        const coverPath = await writeWechatIssueImage(resolveStorageRoot(), dirPath, fileName, parsed.bytes)
+        updateWechatArticleCover(this.deps.db, existing.id, coverPath)
+        syncWechatIssueArticleCount(this.deps.db, existing.issue_id, new Date().toISOString())
+        return { article: this.requireArticleDetail(existing.id) }
+    }
+
+    /**
      * 从笔记或作品文档导入一篇：宿主弹选择器 → 校验归属 → 回查索引 → 读盘 → 建文章。
      * 关键约束：用户取消返回 imported: false，不视为错误；文档不在索引内时提示先让索引收录，
      * 因为标题与路径都以索引为准，避免读到索引外的任意文件。
@@ -612,15 +756,19 @@ export class WechatIssueService {
         /**
          * 复制而不是引用源文档：批次目录里的副本才是可改写的发布稿，
          * 之后在弹窗里的二次编辑只影响副本，源笔记/作品保持原样。
+         * 正文引用的本地图片同样复制进批次 images/，并把引用改成相对批次文件的写法，
+         * 让副本自包含——源笔记被移动或删除后，批次里的图片仍然可以发布。
          */
+        const bodyWithImages = await this.copyBodyImages(issue, relativePath, normalizedBody)
+        this.assertBodyLength(bodyWithImages)
         const filePath = await this.allocateArticleFilePath(issue, title)
-        await this.writeArticleDoc({ filePath, title, body: normalizedBody })
+        await this.writeArticleDoc({ filePath, title, body: bodyWithImages })
         const id = this.insertArticle({
             issueId: issue.id,
             title,
             author: '',
             digest: '',
-            body: normalizedBody,
+            body: bodyWithImages,
             coverPath: null,
             allowComment: 0,
             sourceKind: request.sourceKind,
@@ -628,6 +776,99 @@ export class WechatIssueService {
             filePath,
         })
         return { imported: true, article: this.requireArticleDetail(id) }
+    }
+
+    /**
+     * 复制正文图片：把本地图片来源落到批次 images/ 下，返回改写后的正文。
+     * 关键约束：外链与 data URI 原样保留（无法也不必落地）；源图不在存储根内或读取失败时保留原写法并记日志，
+     * 单张图失败不阻断导入；同一地址在一篇里只处理一次，重复引用共用同一份副本。
+     */
+    private async copyBodyImages(issue: WechatIssueRow, sourceDocPath: string, body: string): Promise<string> {
+        const rawUrls = new Set<string>()
+        for (const matched of body.matchAll(BODY_IMAGE_PATTERN)) {
+            const raw = matched[2]
+            if (raw !== undefined) {
+                rawUrls.add(raw)
+            }
+        }
+        if (rawUrls.size === 0) {
+            return body
+        }
+        const root = resolveStorageRoot()
+        const dirPath = await this.ensureIssueDirectory(issue)
+        const taken = await readWechatDirectoryNames(root, `${dirPath}/${WECHAT_ISSUE_IMAGES_DIR}`)
+        const replacements = new Map<string, string>()
+        for (const raw of rawUrls) {
+            const next = await this.copyBodyImage(root, sourceDocPath, dirPath, taken, raw)
+            if (next !== null) {
+                replacements.set(raw, next)
+            }
+        }
+        if (replacements.size === 0) {
+            return body
+        }
+        // 逐段拼接而不是整体 replace：replace 的回调不支持 await，这里只做已算好的地址替换
+        let result = ''
+        let cursor = 0
+        for (const matched of body.matchAll(BODY_IMAGE_PATTERN)) {
+            const raw = matched[2]
+            if (raw === undefined || matched.index === undefined) {
+                continue
+            }
+            const next = replacements.get(raw)
+            if (next === undefined) {
+                continue
+            }
+            result += body.slice(cursor, matched.index) + replaceImageUrl(matched[0], raw, next)
+            cursor = matched.index + matched[0].length
+        }
+        return `${result}${body.slice(cursor)}`
+    }
+
+    /** 复制单张正文图片：返回新的引用写法（相对批次文件），无法复制时返回 null 交由调用方保留原样 */
+    private async copyBodyImage(
+        root: vscode.Uri,
+        sourceDocPath: string,
+        dirPath: string,
+        taken: Set<string>,
+        raw: string,
+    ): Promise<string | null> {
+        const sourcePath = this.resolveBodyImageSource(raw, sourceDocPath, root.fsPath)
+        if (sourcePath === null) {
+            return null
+        }
+        let bytes: Uint8Array
+        try {
+            bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(sourcePath))
+        } catch {
+            logger.warn(`导入时读取图片失败，保留原引用：${sourcePath}`)
+            return null
+        }
+        const fileName = allocateImageName(path.basename(sourcePath), taken)
+        try {
+            await writeWechatIssueImage(root, dirPath, fileName, bytes)
+        } catch (cause) {
+            const reason = cause instanceof Error ? cause.message : String(cause)
+            logger.warn(`导入时写入图片失败，保留原引用：${fileName}（${reason}）`)
+            return null
+        }
+        const relative = `${WECHAT_ISSUE_IMAGES_DIR}/${fileName}`
+        // 含空格的地址在 Markdown 里按惯例用尖括号包裹，保持与源文档一致的写法
+        return raw.startsWith('<') || /\s/u.test(relative) ? `<${relative}>` : relative
+    }
+
+    /**
+     * 把正文图片地址解析成磁盘绝对路径：`@zhai/` 与 `/` 开头按存储根解析，其余相对源文档所在目录。
+     * 关键约束：外链、data URI 与越出存储根的路径一律返回 null，由调用方保持原写法。
+     */
+    private resolveBodyImageSource(raw: string, sourceDocPath: string, rootPath: string): string | null {
+        const normalized = normalizeImageUrl(raw)
+        if (isZhaiPath(normalized)) {
+            const relative = readZhaiRelativePath(normalized)
+            return relative === null ? null : path.join(rootPath, ...relative.split('/'))
+        }
+        const location = locateWechatImage(normalized, sourceDocPath, rootPath)
+        return location.kind === 'local' ? location.filePath : null
     }
 
     /** 插入文章并同步批次计数，返回新文章 id */

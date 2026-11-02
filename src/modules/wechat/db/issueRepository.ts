@@ -331,6 +331,11 @@ export function updateWechatArticleTitle(db: Database.Database, id: string, titl
     db.prepare('UPDATE wechat_articles SET title = @title WHERE id = @id').run({ id, title })
 }
 
+/** 回写封面路径：裁剪后的封面落在批次 images/ 下，只改这一列，不动正文与其它元信息 */
+export function updateWechatArticleCover(db: Database.Database, id: string, coverPath: string | null): void {
+    db.prepare('UPDATE wechat_articles SET cover_path = @coverPath WHERE id = @id').run({ id, coverPath })
+}
+
 /** 按正文文件路径回查文章：保存事件只有路径，重命名与标题同步据此定位记录 */
 export function findWechatArticleByFilePath(db: Database.Database, filePath: string): WechatArticleRow | null {
     const row = db.prepare('SELECT * FROM wechat_articles WHERE file_path = ?').get(filePath)

@@ -36,6 +36,8 @@ interface WechatIssueListProps {
     onOpenArticle: (article: WechatArticleSummary) => void
     /** 文章设置：作者、摘要与留言开关 */
     onOpenArticleSetting: (article: WechatArticleSummary) => void
+    /** 点击封面图：打开选图与裁剪弹窗 */
+    onPickCover: (article: WechatArticleSummary) => void
     /** 上移 / 下移一篇：顺序号即推送顺序 */
     onMoveArticle: (article: WechatArticleSummary, direction: 'up' | 'down') => void
     onRemoveArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
@@ -59,6 +61,7 @@ export function WechatIssueList({
     onImport,
     onOpenArticle,
     onOpenArticleSetting,
+    onPickCover,
     onMoveArticle,
     onRemoveArticle,
     onRemoveIssue,
@@ -116,6 +119,7 @@ export function WechatIssueList({
                     onImport={onImport}
                     onOpenArticle={onOpenArticle}
                     onOpenArticleSetting={onOpenArticleSetting}
+                    onPickCover={onPickCover}
                     onMoveArticle={onMoveArticle}
                     onRemoveArticle={onRemoveArticle}
                     onRemoveIssue={onRemoveIssue}

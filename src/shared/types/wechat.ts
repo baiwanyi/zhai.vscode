@@ -488,6 +488,38 @@ export interface WechatCoverPickResult {
     path: string | null
 }
 
+/**
+ * wechat/cover/source 请求：把选中的封面原图读成 data URI，供前端在 canvas 里裁剪。
+ * 关键约束：Webview 里的 asWebviewUri 地址与页面不同源，直接画进 canvas 会污染画布、
+ * 导出时报 SecurityError；先内联成 data URI 再裁剪，是唯一稳的路径。
+ */
+export interface WechatCoverSourceRequest {
+    /** 存储根相对路径或存储根内的绝对路径 */
+    path: string
+}
+
+/** wechat/cover/source 响应 */
+export interface WechatCoverSourceResult {
+    /** data:image/…;base64,… 形式，可直接作为 img 源与 drawImage 输入 */
+    dataUrl: string
+}
+
+/** 封面原图体积上限：裁剪在 Webview 内存里完成，超大图会让面板卡住 */
+export const WECHAT_COVER_IMAGE_MAX_BYTES = 12 * 1024 * 1024
+
+/** 裁剪结果 data URI 的长度上限：1175×500 的 jpeg 通常远小于此，超出说明不是裁剪产物 */
+export const WECHAT_COVER_DATA_URL_MAX = 4 * 1024 * 1024
+
+/**
+ * wechat/article/cover 请求：保存前端裁剪好的封面图。
+ * 关键约束：dataUrl 只接受 jpeg / png 的 base64 内联图——宿主不做像素处理，
+ * 原图由前端 canvas 按封面比例裁好；落盘位置固定为批次目录 images/ 下。
+ */
+export interface WechatArticleCoverRequest {
+    id: string
+    dataUrl: string
+}
+
 /** wechat/article/create 响应 */
 export interface WechatArticleCreateResult {
     article: WechatArticleDetail
@@ -1008,6 +1040,33 @@ export function isWechatCoverPreviewRequest(payload: unknown): payload is Wechat
         return false
     }
     return paths.every((item) => typeof item === 'string' && item.length > 0)
+}
+
+/** 判断是否为封面原图读取请求：只校验非空与长度，路径归属由宿主再校验一次 */
+export function isWechatCoverSourceRequest(payload: unknown): payload is WechatCoverSourceRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const { path: target } = payload as { path?: unknown }
+    return typeof target === 'string' && target.trim().length > 0 && target.length <= 512
+}
+
+/**
+ * 判断是否为保存裁剪封面请求：只接受 jpeg / png 的 base64 内联图。
+ * 关键约束：长度上限先于解码判断，避免把超大字符串带进内存。
+ */
+export function isWechatArticleCoverRequest(payload: unknown): payload is WechatArticleCoverRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const { id, dataUrl } = payload as { id?: unknown; dataUrl?: unknown }
+    if (!isWechatIssueId(id) || typeof dataUrl !== 'string') {
+        return false
+    }
+    if (dataUrl.length > WECHAT_COVER_DATA_URL_MAX) {
+        return false
+    }
+    return /^data:image\/(?:jpeg|jpg|png);base64,/u.test(dataUrl)
 }
 
 /**

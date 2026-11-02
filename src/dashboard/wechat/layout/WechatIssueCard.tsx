@@ -6,7 +6,8 @@
  * 一次群发即一个批次，因此「推送」是批次级动作而不是文章级，本卡片不提供单篇推送；
  * 文章区固定以第一篇为主图（2.35:1），第 2 篇起进子列表（1:1 缩略图），两处都不显示序号；
  * 文章行点击直接打开批次目录里的 md 文件，正文只在编辑器里维护；
- * 标题、封面、摘要与留言开关在工作流面板的推送分区逐篇设置，卡片只展示结果并负责调序与删除；
+ * 封面图（首篇主图与子列表缩略图）点击即打开封面弹窗，选图与裁剪的结果落到批次目录 images/；
+ * 标题、摘要与留言开关在工作流面板的推送分区逐篇设置，卡片只展示这些结果并负责调序与删除；
  * 删除会连同批次目录里的 md 一起删掉（宿主优先移入回收站），第一篇删掉后其余文章按序号顺延顶上；
  * 文章数达到上限时，菜单里的添加与导入同时禁用，避免用户点了才被宿主拒绝。
  */
@@ -50,6 +51,8 @@ interface WechatIssueCardProps {
     onOpenArticle: (article: WechatArticleSummary) => void
     /** 文章设置：作者、摘要与留言开关，走 wechat/article/meta */
     onOpenArticleSetting: (article: WechatArticleSummary) => void
+    /** 点击封面图：打开选图与裁剪弹窗，结果由页面保存到批次 images/ */
+    onPickCover: (article: WechatArticleSummary) => void
     /** 上移 / 下移一篇：顺序号即公众号的推送顺序 */
     onMoveArticle: (article: WechatArticleSummary, direction: ArticleDirection) => void
     onRemoveArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
@@ -69,6 +72,7 @@ export function WechatIssueCard({
     onImport,
     onOpenArticle,
     onOpenArticleSetting,
+    onPickCover,
     onMoveArticle,
     onRemoveArticle,
     onRemoveIssue,
@@ -160,6 +164,7 @@ export function WechatIssueCard({
                     isBusy={isBusy}
                     onOpenArticle={onOpenArticle}
                     onOpenArticleSetting={onOpenArticleSetting}
+                    onPickCover={onPickCover}
                     onMoveArticle={onMoveArticle}
                     onRemoveArticle={onRemoveArticle}
                 />
@@ -170,7 +175,16 @@ export function WechatIssueCard({
                     {restArticles.map((article, index) => (
                         <Item key={article.id} variant="muted">
                             <ItemMedia variant="image">
-                                <Image src={coverOf(article)} alt={article.title} aspect="square" />
+                                <button
+                                    type="button"
+                                    className="block size-full cursor-pointer focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:cursor-not-allowed"
+                                    aria-label={`设置《${article.title}》的封面`}
+                                    title="点击更换封面"
+                                    disabled={isBusy}
+                                    onClick={() => onPickCover(article)}
+                                >
+                                    <Image src={coverOf(article)} alt={article.title} aspect="square" />
+                                </button>
                             </ItemMedia>
                             <ItemContent className="min-w-0">
                                 <ItemTitle className="w-full">
@@ -218,11 +232,12 @@ interface ArticleFeatureProps {
     isBusy: boolean
     onOpenArticle: (article: WechatArticleSummary) => void
     onOpenArticleSetting: (article: WechatArticleSummary) => void
+    onPickCover: (article: WechatArticleSummary) => void
     onMoveArticle: (article: WechatArticleSummary, direction: ArticleDirection) => void
     onRemoveArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
 }
 
-/** 第一篇：主图位，封面按公众号首图习惯取 2.35:1，可下移但不能再上移 */
+/** 第一篇：主图位，封面按公众号首图习惯取 2.35:1，点击封面即换图与裁剪，可下移但不能再上移 */
 function ArticleFeature({
     issue,
     article,
@@ -230,17 +245,27 @@ function ArticleFeature({
     isBusy,
     onOpenArticle,
     onOpenArticleSetting,
+    onPickCover,
     onMoveArticle,
     onRemoveArticle,
 }: ArticleFeatureProps): JSX.Element {
     return (
         <Item variant="muted" className="gap-2">
-            <Image
-                src={coverUri}
-                alt={article.title}
-                aspect="2.35/1"
-                className="h-auto w-full rounded-lg bg-muted/40"
-            />
+            <button
+                type="button"
+                className="block w-full cursor-pointer rounded-lg focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:cursor-not-allowed"
+                aria-label={`设置《${article.title}》的封面`}
+                title="点击更换封面"
+                disabled={isBusy}
+                onClick={() => onPickCover(article)}
+            >
+                <Image
+                    src={coverUri}
+                    alt={article.title}
+                    aspect="2.35/1"
+                    className="h-auto w-full rounded-lg bg-muted/40"
+                />
+            </button>
             <ItemContent className="min-w-0">
                 <ItemTitle className="w-full">
                     <button

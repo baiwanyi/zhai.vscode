@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import {
     isWechatArticleBody,
+    isWechatArticleCoverRequest,
     isWechatArticleCreateRequest,
     isWechatBatchDocPath,
     isWechatArticleImportRequest,
@@ -27,6 +28,7 @@ import {
     WECHAT_ARTICLE_DIGEST_MAX,
     WECHAT_ARTICLE_TITLE_MAX,
     isWechatCoverPreviewRequest,
+    isWechatCoverSourceRequest,
     isWechatIssuesMergeRequest,
     isWechatIssuesRemoveBatchRequest,
     isWechatAccountAuthFailureEvent,
@@ -250,6 +252,22 @@ describe('文章请求收窄', () => {
         expect(
             isWechatCoverPreviewRequest({ paths: Array.from({ length: 21 }, (_, index) => `a${String(index)}.png`) }),
         ).toBe(false)
+    })
+
+    it('封面原图读取只接受非空路径', () => {
+        expect(isWechatCoverSourceRequest({ path: 'images/202610/a.png' })).toBe(true)
+        expect(isWechatCoverSourceRequest({ path: '   ' })).toBe(false)
+        expect(isWechatCoverSourceRequest({ path: 1 })).toBe(false)
+        expect(isWechatCoverSourceRequest({})).toBe(false)
+    })
+
+    it('裁剪封面只接受 jpeg / png 的 base64 内联图', () => {
+        expect(isWechatArticleCoverRequest({ id: ARTICLE_ID, dataUrl: 'data:image/jpeg;base64,AAAA' })).toBe(true)
+        expect(isWechatArticleCoverRequest({ id: ARTICLE_ID, dataUrl: 'data:image/png;base64,AAAA' })).toBe(true)
+        expect(isWechatArticleCoverRequest({ id: ARTICLE_ID, dataUrl: 'data:image/webp;base64,AAAA' })).toBe(false)
+        expect(isWechatArticleCoverRequest({ id: ARTICLE_ID, dataUrl: 'https://example.com/a.png' })).toBe(false)
+        expect(isWechatArticleCoverRequest({ id: 'bad id', dataUrl: 'data:image/jpeg;base64,AAAA' })).toBe(false)
+        expect(isWechatArticleCoverRequest(null)).toBe(false)
     })
 
     it('导入只接受 note 与 press 两个来源', () => {

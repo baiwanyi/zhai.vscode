@@ -1,9 +1,11 @@
 /**
- * 批次文档：把群发批次落到存储根 wechat/{appid}/post/{YYYYMMDDHHmm}/，每篇文章一个 Markdown 文件。
+ * 批次文档：把群发批次落到存储根 wechat/{appid}/post/{YYYYMMDDHHmm}/，每篇文章一个 Markdown 文件，
+ * 封面与正文图片副本统一收在批次目录的 images/ 下。
  * 复用约定：标题提取走 common/db/fileMeta 的 parseTitle（首个一级标题），
  * 文件命名合法化复用 note/noteFactory，路径拼装与删除走 common/storagePath。
  * 关键约束：文件格式与笔记一致——不写也不认 frontmatter，标题就是正文首个 `# 标题`，文件名跟随标题；
- * 目录名取批次创建时分，同分钟重名追加 -2；文件是发布标题与正文的唯一来源，读不到或正文为空直接抛错。
+ * 目录名取批次创建时分，同分钟重名追加 -2；文件是发布标题与正文的唯一来源，读不到或正文为空直接抛错；
+ * 图片写入按调用方给定的文件名直接覆盖，重名分配由上层完成，本层不做去重。
  */
 import * as path from 'node:path'
 import * as vscode from 'vscode'
@@ -15,6 +17,9 @@ import { WECHAT_MODULE_DIR } from '@shared/types/wechat'
 
 /** 批次目录下的二级目录名：与账号目录、素材目录平级 */
 const WECHAT_POST_DIR = 'post'
+
+/** 批次目录下的图片目录名：封面与正文图片副本都落在这里，正文按 `images/{文件名}` 相对引用 */
+export const WECHAT_ISSUE_IMAGES_DIR = 'images'
 
 /** 同名文件/目录的追加序号上限：超过说明目录已被塞满，交由用户整理 */
 const NAME_SUFFIX_LIMIT = 100
@@ -120,6 +125,24 @@ export async function writeWechatArticleDoc(root: vscode.Uri, relativePath: stri
     await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(content))
 }
 
+/**
+ * 写批次图片：落到 {批次目录}/images/ 下，返回存储根相对路径。
+ * 关键约束：文件名由调用方分配（调用方已避开同名占用），同名直接覆盖；
+ * 字节内容不做格式校验，格式由调用方在写入前决定。
+ */
+export async function writeWechatIssueImage(
+    root: vscode.Uri,
+    dirPath: string,
+    fileName: string,
+    bytes: Uint8Array,
+): Promise<string> {
+    const relativePath = `${dirPath}/${WECHAT_ISSUE_IMAGES_DIR}/${fileName}`
+    const uri = buildStorageUri(root, toSafeSegments(relativePath, '批次图片'))
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(uri.fsPath)))
+    await vscode.workspace.fs.writeFile(uri, bytes)
+    return relativePath
+}
+
 /** 读取文件原文：文件缺失返回 null，由调用方决定提示文案 */
 export async function readWechatArticleContent(root: vscode.Uri, relativePath: string): Promise<string | null> {
     const uri = buildStorageUri(root, toSafeSegments(relativePath, '文章'))
@@ -175,22 +198,6 @@ export async function removeWechatIssueDirectory(root: vscode.Uri, relativePath:
     } catch (cause) {
         logger.warn(`批次目录删除失败：${relativePath}（${cause instanceof Error ? cause.message : String(cause)}）`)
     }
-}
-
-/** 把文章文件搬到另一个批次目录：先复制成功再由调用方删除源文件，避免搬一半丢内容 */
-export async function copyWechatArticleDoc(
-    root: vscode.Uri,
-    fromPath: string,
-    toDirPath: string,
-    fileName: string,
-): Promise<string> {
-    const content = await readWechatArticleContent(root, fromPath)
-    if (content === null) {
-        throw new Error(`文章文件已丢失：${fromPath}，请先打开该文章保存一次再合并`)
-    }
-    const targetPath = `${toDirPath}/${fileName}`
-    await writeWechatArticleDoc(root, targetPath, content)
-    return targetPath
 }
 
 /** 重命名文章文件：目标名由调用方选好，绝不覆盖既有文件 */
