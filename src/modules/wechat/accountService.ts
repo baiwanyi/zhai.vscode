@@ -7,13 +7,19 @@
  * AppSecret 只在此层短暂持有，摘要里只回传「是否已配置 + 尾号」，明文不进入返回值。
  */
 import { randomUUID } from 'node:crypto'
+import { resolveStorageRoot } from '@modules/common/config'
+import { logger } from '@modules/common/logger'
 import {
     readWechatAccountName,
     readWechatAccountType,
+    readWechatArticleAuthor,
     WECHAT_ACCOUNT_STATUSES,
+    WECHAT_MODULE_DIR,
     type CreateWechatAccountRequest,
     type CreateWechatAccountResult,
     type RemoveWechatAccountResult,
+    type SaveWechatAccountCredentialsRequest,
+    type SaveWechatAccountCredentialsResult,
     type SelectWechatAccountResult,
     type UpdateWechatAccountRequest,
     type UpdateWechatAccountResult,
@@ -31,10 +37,12 @@ import {
     insertWechatAccount,
     listWechatAccounts,
     readWechatIssueMetrics,
+    updateWechatAccountAppId,
     updateWechatAccountAuth,
     updateWechatAccountProfile,
     type WechatAccountRow,
 } from './db/accountRepository'
+import { removeWechatIssueDirectory } from './issueDocument'
 import type { WechatTokenService } from './tokenService'
 import type Database from 'better-sqlite3'
 import type * as vscode from 'vscode'
@@ -43,7 +51,7 @@ import type * as vscode from 'vscode'
 const SELECTED_ACCOUNT_KEY = 'zhai.wechat.selectedAccountId'
 
 /** 未配置密钥时的状态提示 */
-const MISSING_SECRET_HINT = '尚未配置 AppSecret，请先在账号设置里填写密钥。'
+const MISSING_SECRET_HINT = '尚未配置凭据，请在「密钥设置」里填写 AppID 与 AppSecret。'
 
 /** 服务依赖：库、密钥存取、Token 缓存与当前账号的持久化位置 */
 export interface WechatAccountServiceDeps {
@@ -80,37 +88,29 @@ export class WechatAccountService {
     }
 
     /**
-     * 创建账号并立即鉴权：AppID 重复即拒绝；鉴权失败保留账号并回写错误状态。
-     * 关键约束：先写密钥再落库，落库失败时把刚写的密钥删掉，避免留下无主的密钥键。
+     * 创建账号：只写账号设置，凭据留空等用户在「密钥设置」里补。
+     * 关键约束：AppID 未配置前落空串，状态置为未鉴权并给出「去填密钥」的提示；
+     * 批次目录以 AppID 命名，因此未配置凭据的账号不能建批次（由批次服务校验）。
      */
     public async create(request: CreateWechatAccountRequest): Promise<CreateWechatAccountResult> {
         const name = readWechatAccountName(request.name)
         if (name.length === 0) {
             throw new Error('账号名称不能为空')
         }
-        const appId = request.appId.trim()
-        if (findWechatAccountByAppId(this.deps.db, appId) !== null) {
-            throw new Error(`该 AppID 已添加过：${appId}`)
-        }
-
         const id = `acc-${randomUUID().replace(/-/g, '').slice(0, 10)}`
         const now = new Date().toISOString()
-        await this.deps.secrets.write(id, request.appSecret.trim())
-        try {
-            insertWechatAccount(this.deps.db, {
-                id,
-                name,
-                avatar: null,
-                appId,
-                accountType: readWechatAccountType(request.accountType),
-                status: 'unauthenticated',
-                createdAt: now,
-            })
-        } catch (cause) {
-            await this.deps.secrets.remove(id)
-            throw cause
-        }
+        insertWechatAccount(this.deps.db, {
+            id,
+            name,
+            avatar: null,
+            appId: '',
+            accountType: readWechatAccountType(request.accountType),
+            status: 'unauthenticated',
+            defaultAuthor: readWechatArticleAuthor(request.defaultAuthor) || null,
+            createdAt: now,
+        })
 
+        // 没有密钥时 authenticate 只写「未配置」提示，不会发起网络请求
         await this.authenticate(id)
         const account = await this.readSummary(id)
         if (account === null) {
@@ -119,7 +119,7 @@ export class WechatAccountService {
         return { account }
     }
 
-    /** 更新资料：密钥留空表示沿用旧值；改名与换密钥都不影响历史批次 */
+    /** 更新账号设置：名称、类型与默认作者，不触碰凭据与鉴权状态 */
     public async update(request: UpdateWechatAccountRequest): Promise<UpdateWechatAccountResult> {
         const existing = findWechatAccount(this.deps.db, request.id)
         if (existing === null) {
@@ -129,29 +129,13 @@ export class WechatAccountService {
         if (name.length === 0) {
             throw new Error('账号名称不能为空')
         }
-        const appId = request.appId.trim()
-        const duplicated = findWechatAccountByAppId(this.deps.db, appId)
-        if (duplicated !== null && duplicated.id !== existing.id) {
-            throw new Error(`该 AppID 已被其它账号使用：${appId}`)
-        }
-
         updateWechatAccountProfile(this.deps.db, {
             id: existing.id,
             name,
-            appId,
             accountType: readWechatAccountType(request.accountType),
+            defaultAuthor: readWechatArticleAuthor(request.defaultAuthor) || null,
             updatedAt: new Date().toISOString(),
         })
-
-        const nextSecret = request.appSecret?.trim() ?? ''
-        const isCredentialChanged = nextSecret.length > 0
-        if (isCredentialChanged) {
-            await this.deps.secrets.write(existing.id, nextSecret)
-            this.deps.tokens.invalidate(existing.id)
-        }
-        if (isCredentialChanged || appId !== existing.app_id) {
-            await this.authenticate(existing.id)
-        }
 
         const account = await this.readSummary(existing.id)
         if (account === null) {
@@ -160,13 +144,55 @@ export class WechatAccountService {
         return { account }
     }
 
-    /** 删除账号：同步清理密钥与 Token 缓存；当前账号被删时一并清空选择 */
+    /**
+     * 保存凭据并立即鉴权：AppID 必填，AppSecret 留空表示沿用已存密钥。
+     * 关键约束：AppID 与其他账号重复即拒绝；写入后先失效 Token 再鉴权，
+     * 否则续用旧 Token 会让「改完密钥仍连不上」看起来像没生效。
+     */
+    public async saveCredentials(
+        request: SaveWechatAccountCredentialsRequest,
+    ): Promise<SaveWechatAccountCredentialsResult> {
+        const existing = findWechatAccount(this.deps.db, request.id)
+        if (existing === null) {
+            throw new Error('账号不存在，可能已被删除')
+        }
+        const appId = request.appId.trim()
+        const duplicated = findWechatAccountByAppId(this.deps.db, appId)
+        if (duplicated !== null && duplicated.id !== existing.id) {
+            throw new Error(`该 AppID 已被其它账号使用：${appId}`)
+        }
+        const nextSecret = request.appSecret?.trim() ?? ''
+        if (nextSecret.length > 0) {
+            await this.deps.secrets.write(existing.id, nextSecret)
+        } else if (existing.app_id.length === 0) {
+            // 首次配置：没有 AppSecret 就无从鉴权，直接拒绝而不是留下半个凭据
+            throw new Error('首次配置需要同时填写 AppSecret')
+        }
+
+        if (appId !== existing.app_id) {
+            updateWechatAccountAppId(this.deps.db, existing.id, appId)
+        }
+        this.deps.tokens.invalidate(existing.id)
+        await this.authenticate(existing.id)
+
+        const account = await this.readSummary(existing.id)
+        if (account === null) {
+            throw new Error('凭据保存后未能读取，请重试')
+        }
+        return { account }
+    }
+
+    /**
+     * 删除账号：同步清理密钥、Token 缓存与该账号的批次目录；当前账号被删时一并清空选择。
+     * 关键约束：批次稿目录是本模块生成的，账号没了就没有再保留的理由；删不掉只记日志，不阻断账号删除。
+     */
     public async remove(id: string): Promise<RemoveWechatAccountResult> {
         const existing = findWechatAccount(this.deps.db, id)
         if (existing === null) {
             return { removed: false }
         }
         deleteWechatAccount(this.deps.db, id)
+        await this.removeAccountDirectory(existing.app_id)
         await this.deps.secrets.remove(id)
         this.deps.tokens.invalidate(id)
         if (this.selectedId() === id) {
@@ -253,6 +279,15 @@ export class WechatAccountService {
         return { status, ...(isNetwork ? {} : { errorCode: outcome.errorCode }), hint: outcome.message }
     }
 
+    /** 清掉该账号的批次目录：存储根未配置或目录被占用时只记日志，不阻断账号删除 */
+    private async removeAccountDirectory(appId: string): Promise<void> {
+        try {
+            await removeWechatIssueDirectory(resolveStorageRoot(), `${WECHAT_MODULE_DIR}/${appId}`)
+        } catch (cause) {
+            logger.warn(`账号批次目录清理失败：${appId}（${cause instanceof Error ? cause.message : String(cause)}）`)
+        }
+    }
+
     /** 读取单个账号摘要：写操作后回传最新快照，前端不必再拉全量 */
     private async readSummary(id: string): Promise<WechatAccountSummary | null> {
         const row = findWechatAccount(this.deps.db, id)
@@ -277,6 +312,9 @@ export class WechatAccountService {
             ...(row.avatar === null ? {} : { avatar: row.avatar }),
             appId: row.app_id,
             accountType: readWechatAccountType(row.account_type),
+            ...(row.default_author === null || row.default_author.length === 0
+                ? {}
+                : { defaultAuthor: row.default_author }),
             verified: row.verified === 1,
             status: readStatus(row.status),
             ...(row.last_error_code === null ? {} : { lastErrorCode: row.last_error_code }),

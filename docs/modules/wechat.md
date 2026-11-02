@@ -203,11 +203,12 @@
 
 ```sql
 -- 账号：名称与头像由用户填写（微信无公开接口可拉取），AppSecret 不入库，只存 SecretStorage 键
+-- app_id 允许空串：新建账号时只填账号设置，AppID/AppSecret 之后在「密钥设置」里单独保存
 CREATE TABLE IF NOT EXISTS wechat_accounts (
     id              TEXT PRIMARY KEY,
     name            TEXT NOT NULL,
     avatar          TEXT,
-    app_id          TEXT NOT NULL UNIQUE,
+    app_id          TEXT NOT NULL DEFAULT '',
     account_type    TEXT NOT NULL,            -- subscription|service
     verified        INTEGER NOT NULL DEFAULT 0,
     status          TEXT NOT NULL,            -- connected|unauthenticated|error|limited
@@ -216,9 +217,13 @@ CREATE TABLE IF NOT EXISTS wechat_accounts (
     fan_count       INTEGER NOT NULL DEFAULT 0,
     issue_count     INTEGER NOT NULL DEFAULT 0,
     last_publish_at TEXT,
+    default_author  TEXT,                     -- 默认作者：文章设置里作者字段的初始值
     created_at      TEXT NOT NULL,
     updated_at      TEXT NOT NULL
 );
+
+-- 非空 AppID 唯一：空串表示「尚未配置」，可以有多行
+CREATE UNIQUE INDEX IF NOT EXISTS idx_account_appid ON wechat_accounts(app_id) WHERE app_id <> '';
 
 -- 素材映射（本地文件 → 平台永久素材）：local_hash 为图片字节的 sha256 前 16 位
 CREATE TABLE IF NOT EXISTS wechat_materials (
@@ -253,12 +258,13 @@ CREATE TABLE IF NOT EXISTS wechat_issues (
     error_hint     TEXT,
     scheduled_at   TEXT,
     published_at   TEXT,
-    updated_at     TEXT NOT NULL
+    updated_at     TEXT NOT NULL,
+    dir_path       TEXT                      -- 批次落盘目录：wechat/{appid}/post/{YYYYMMDDHHmm}
 );
 
 CREATE INDEX IF NOT EXISTS idx_issue_account ON wechat_issues(account_id, updated_at DESC);
 
--- 批次内文章条目：只存 Markdown 源文，内联样式 HTML 在推送前统一渲染（模板变更无需重新导入）
+-- 批次内文章条目：正文以批次目录下的 Markdown 文件为准（file_path），body 只作镜像
 CREATE TABLE IF NOT EXISTS wechat_articles (
     id             TEXT PRIMARY KEY,
     issue_id       TEXT NOT NULL,
@@ -266,13 +272,14 @@ CREATE TABLE IF NOT EXISTS wechat_articles (
     title          TEXT NOT NULL,
     author         TEXT,
     digest         TEXT,
-    body           TEXT NOT NULL,            -- Markdown 源文
+    body           TEXT NOT NULL,            -- 正文镜像（不含标题行），字数统计与列表用
     body_hash      TEXT NOT NULL,            -- 幂等与「源文件已变更」判定
     word_count     INTEGER NOT NULL DEFAULT 0,
     cover_path     TEXT,                     -- 指定封面（存储根相对或绝对路径），推送时上传为封面素材
     cover_media_id TEXT,
     source_kind    TEXT NOT NULL,            -- note|press|manual
-    source_path    TEXT,
+    source_path    TEXT,                     -- 导入来源文档，只作追溯
+    file_path      TEXT,                     -- 批次内正文文件；无 frontmatter，标题即首个 H1，文件名跟随标题
     is_original    INTEGER NOT NULL DEFAULT 0,
     allow_comment  INTEGER NOT NULL DEFAULT 0,
     read_num       INTEGER NOT NULL DEFAULT 0,
@@ -473,6 +480,10 @@ interface WechatPublishResult {
 > 推送阶段经 state 通道的 `wechat` 频道实时下发，进行中任务由 `publishService` 在进程内登记、可由 `wechat/tasks` 查询；
 > 宿主中途退出留下的 `pushing` 批次在下次激活时按 10 分钟阈值回收为失败并提示到后台确认。
 > 定时群发按产品决定不做。
+> 批次正文已改为**文件为唯一来源**：`issueDocument.ts` 负责目录/文件名规则与标题正文拼装，
+> `wechat_issues.dir_path` 与 `wechat_articles.file_path` 记录落盘位置，发布读取文件而非库内 `body`。
+> 文章文件与笔记同构（无 frontmatter、标题即首个 H1、文件名跟随标题，保存时由 `issueRenameService` 对齐），
+> 并已接入 AI 对话、媒体与校对三个常驻分区。
 
 ### 10.1 三个关键决策
 
@@ -523,8 +534,8 @@ interface WechatPublishResult {
 
 | 侧 | 方法 |
 |----|------|
-| 仪表盘 | `wechat/accounts`、`wechat/account/{create,update,remove,test,select}`、`wechat/issues`、`wechat/issues/{merge,removeBatch}`、`wechat/issue/{create,detail,remove,publishDraft,publish}`、`wechat/publishQuota`、`wechat/article/{create,update,remove,import}`、`wechat/cover/{pick,preview}`、`wechat/tasks`（进行中任务查询）；另复用 `host/openExternal`（标识 `wechatMp`）与 `workflow/selectModule`（只设模块不聚焦）（均已落地） |
-| 工作流 | `wechat/menu/{get,save}`、`wechat/material/{list,import,remove}`、`wechat/fans/{list,tags}`、`wechat/stats/overview`、`wechat/comment/{list,reply,mark,remove}`，运营页复用仪表盘的 `wechat/issues` 与 `wechat/publishQuota`（两个面板共用同一份路由实例） |
+| 仪表盘 | `wechat/accounts`、`wechat/account/{create,update,credentials,remove,test,select}`、`wechat/issues`、`wechat/issues/{merge,removeBatch}`、`wechat/issue/{create,detail,remove,publishDraft,publish}`、`wechat/publishQuota`、`wechat/article/{create,update,remove,import,quickCreate,open,move}`、`wechat/cover/{pick,preview}`、`wechat/tasks`（进行中任务查询）；另复用 `host/openExternal`（标识 `wechatMp`）与 `workflow/selectModule`（只设模块不聚焦）（均已落地） |
+| 工作流 | `wechat/menu/{get,save}`、`wechat/material/{list,import,remove}`、`wechat/fans/{list,tags}`、`wechat/stats/overview`、`wechat/comment/{list,reply,mark,remove}`、`wechat/article/meta`（文章元信息），运营页复用仪表盘的 `wechat/issues`、`wechat/publishQuota` 与 `wechat/cover/pick`（两个面板共用同一份路由实例） |
 | 广播（state 通道） | `wechat` 频道承载两种载荷：`WechatPublishProgress`（阶段取 `render` / `material` / `draft` / `submit` / `poll` + 一句 `message`）与 `WechatAccountAuthFailureEvent`（鉴权失效，由 `tokenService` 统一上报并回写账号状态；网络失败不上报） |
 
 代码落点：类型 `src/shared/types/wechat.ts`（含 `is*Request` 收窄，对齐 `press.ts`）；宿主服务 `src/modules/wechat/`（`accountService`、`tokenService`、`client`、`issueService`、`materialService`、`menuService`、`statsService`、`commentService`、`fanService`、`pushService`、`repository`）；前端 `src/dashboard/wechat/`、`src/workflow/wechat/`。
@@ -565,7 +576,7 @@ interface WechatPublishResult {
 |------|------|------|
 | 点击行 | 整行可点 | 写入 `selectedAccountId` 并跳 `#/wechat/{accountId}` |
 | 右键 / 行内 `...` | `DropdownMenu` | 账号设置、密钥设置、刷新统计、删除账号 |
-| 底部 `+` | `AppFooter` | 添加账号弹窗：名称、类型、AppID、AppSecret、头像；提交即调 `wechat/account/test` 验证 Token |
+| 底部 `+` | `AppFooter` | 「账号设置」弹窗只填名称、类型与默认作者，保存即建账号（状态「未配置密钥」）；AppID 与 AppSecret 在随后的「密钥设置」弹窗里保存并立即鉴权 |
 | 空态 | 无账号 | `ui/empty` + 引导文案：先在公众号后台配置 IP 白名单，再填 AppID 与 AppSecret；附「未认证账号只能创建草稿」的说明 |
 
 ### 11.5 多账号管理与切换
@@ -573,6 +584,7 @@ interface WechatPublishResult {
 | 维度 | 设计 |
 |------|------|
 | 凭证隔离 | 每账号一键 `zhai.wechat.appSecret.{accountId}`，仅存 `SecretStorage`；库内只存 `app_id` 与密钥尾号掩码，编辑时留空表示不修改 |
+| 设置拆分 | 「账号设置」只含名称、类型与默认作者（`wechat/account/create|update`）；「密钥设置」只含 AppID 与 AppSecret（`wechat/account/credentials`），保存后立即鉴权；未配置 AppID 的账号不能建批次 |
 | Token 隔离 | Token 缓存与 singleflight 均按 `accountId` 分桶，账号之间互不影响 |
 | 切换主路径 | 返回列表点另一账号（与「作品列表 → 作品详情」一致） |
 | 切换辅路径 | 批次列表页点击页头账号名弹出账号下拉，选中即改 hash 与 `selectedAccountId`，不重建面板 |
@@ -590,37 +602,37 @@ interface WechatPublishResult {
 | `AppHeader align="start"` | 返回列表动作 + `AppTitle`（账号名，点击弹账号切换）+ `AppDescription`（账号状态摘要） |
 | `AppMenu` | 状态筛选 + 排序两个下拉 |
 | `AppContent isScrollable` | 批次卡片列表，**分批渲染已落地**：默认渲染 20 个，底部「加载更多」按 20 递增；切换筛选/排序不重置上限（沿用只会多渲染几个卡片，重置换来的是额外一轮渲染） |
-| `AppFooter` | 左：账号级 `...` 菜单（账号设置 / 密钥设置 / 删除账号）；右：`+` 新建批次 |
+| `AppFooter` | 左：账号级 `...` 菜单（账号设置 / 密钥设置 / 删除账号）；右：`+` 新建批次（直接创建，不弹表单） |
 | 多选态 | 页脚替换为选择条（删除 / 并入指定批次），复用笔记列表的多选范式 |
 
 ### 12.2 批次卡片结构
 
 ```
 ┌ Item variant="outline" ────────────────────┐
-│  封面 16:9（取首篇文章封面，缺省灰底占位图标）      │
-│  批次标题（取首篇标题，单行截断）      [状态徽标]     │
-│  ── 文章行 ──                                │
-│  1  标题 ……                        缩略图      │
-│  2  标题 ……                        缩略图      │
-│  ── 底行 ──                                  │
-│  推送时间 / 定时时间                       ⋯    │
+│  [状态徽标] 文章数 · 推送/定时时间        ⋯    │
+│  第一篇：封面 2.35:1 + 标题 + 元信息 + 菜单      │
+│  ── 第 2~8 篇 ──                              │
+│  1:1 缩略图  标题 ……                     ⋯    │
+│  ── 失败时 ──                                 │
+│  errcode + 一句指引                           │
 └────────────────────────────────────────────┘
 ```
 
-左侧 3px 色带映射状态；文章行点击打开源文档并跳到工作流预览，不在此页编辑正文。
+批次标题不上卡片：新建批次直接按默认命名建目录，用户靠封面与文章辨认；文章行点击打开批次 md，不在此页编辑正文。
 
 ### 12.3 展示字段
 
 | 层级 | 字段 | 说明 |
 |------|------|------|
-| 批次 | 封面、标题、文章数、状态、推送/定时时间、失败摘要 | 失败时底行显示 `errcode` + 一句指引 |
-| 文章 | 序号、标题、缩略图 | 标题超 64 字在编辑时就已阻断，不在此处再截断提示 |
+| 批次 | 状态、文章数、推送/定时时间、失败摘要 | 失败时底行显示 `errcode` + 一句指引；标题仅作为无障碍标签保留 |
+| 文章 | 封面、标题、来源/字数 | 第一篇封面 2.35:1，其余 1:1；不显示序号，标题超 64 字在编辑时就已阻断 |
 
 两级菜单严格按原型拆分：
 
 | 层级 | 菜单项 | 说明 |
 |------|--------|------|
-| 批次 | 添加文章 / 从笔记导入 / 从作品导入 / 推送 / 删除 | 「添加文章」为手写条目；两个导入经 `showOpenDialog` 选源文件后走 `markdown-one` 渲染 |
+| 批次 | 添加文章 / 从笔记导入 / 从作品导入 / 推送 / 删除 | 「添加文章」不弹表单：宿主按「未命名文章 N」建好批次 md 并直接打开编辑器；两个导入经 `showOpenDialog` 选源文件后复制成批次副本并打开；标题与封面等元信息在工作流的推送分区设置 |
+| 文章 | 打开文档 / 文章设置 / 上移 / 下移 / 删除 | 文章区固定以第一篇为主图（封面 2.35:1），第 2~8 篇进子列表（封面 1:1），两处都不显示序号；每篇文章都展示自己的封面，缺失时由 `Image` 渲染占位；顺序号即推送顺序，首项禁上移、末项禁下移，已推送或推送中的批次整体拒绝调序；卡片不提供勾选框；「删除」会连同批次目录里的 md 一起删掉（优先进回收站），删除后剩余序号重排，第一篇删掉时原第二篇顺延顶上；「文章设置」只改作者、摘要与留言开关，作者留空时初值取账号设置的「默认作者」，保存在 `wechat.db` 的 `wechat_articles` 列（`author` / `digest` / `allow_comment`），不写批次目录 JSON、也不写 md frontmatter——md 仍然只有标题与正文，元信息属于结构化查询与列表展示，放库里才能一次查询取全 |
 | 账号（页脚） | 账号设置 / 密钥设置 / 删除账号 | 与列表页右键菜单同源，复用同一组 action |
 
 ### 12.4 筛选与排序
@@ -636,8 +648,8 @@ interface WechatPublishResult {
 
 | 操作 | 允许范围 |
 |------|----------|
-| 批量删除 | **已落地**：批次卡片左侧复选框（仅 `draft` / `failed` 可选），页脚切换为选择条；宿主整体校验，命中不可删批次时整批拒绝并列出标题 |
-| 并入批次 | **已落地**：选择条「合并到…」把所选草稿批次的文章并入目标草稿批次，源批次随后删除；只允许草稿状态，合并后超过 8 篇时禁用提交并说明；顺序号接在目标批次末尾 |
+| 批量删除 | **宿主已落地，界面入口暂缺**：卡片不再显示勾选框，页脚选择条与 `wechat/issues/removeBatch` 保留在页面里，等后续补独立批量模式入口；宿主整体校验，命中不可删批次时整批拒绝并列出标题 |
+| 并入批次 | **宿主已落地，界面入口暂缺**：同批量删除，选择条与 `wechat/issues/merge` 保留但当前无勾选来源；服务端只允许草稿状态，合并后超过 8 篇时拒绝并说明；顺序号接在目标批次末尾 |
 | 批量推送 | **不提供**：订阅号一天 1 次、服务号一月 4 次，多批次同时提交必然撞频率限制，按钮置灰并说明原因 |
 
 ### 12.6 与推送流程的联动
@@ -645,12 +657,23 @@ interface WechatPublishResult {
 > **实现状态**：批次卡片与文章增删改、从笔记/作品导入、生成草稿已落地；批次菜单的「生成草稿」会
 > 渲染正文、补传本地图片素材并提交草稿箱，成功后状态推进为「草稿已就绪」，已有 `media_id` 时改为更新草稿；
 > 外链图片不上传，只以 warning 提示。群发（`freepublish`）仍待 M3c 接入。
-> 导入由宿主弹出文件选择器并回查索引库（前端不传路径），正文以 Markdown 源文入库。
-> 封面在文章弹窗内指定（只接受 jpg/png，路径由宿主签发），未指定时取正文第一张本地图片；
+> 导入由宿主弹出文件选择器并回查索引库（前端不传路径）：源文档内容被复制成批次目录里的 Markdown 副本，
+> 导入成功后直接打开该副本，改写只作用于副本，源笔记/作品不受影响。
+> 批次目录固定为 `wechat/{appid}/post/{YYYYMMDDHHmm}/`（同一分钟重复时追加 `-2`）；
+> 文章文件与笔记同构——**不写 frontmatter**，标题就是正文首个 `# 标题`，文件名跟随标题（重名按笔记口径顺延「标题 2」）；
+> 新建、导入、保存都先把正文写进该文件再落库，发布只读文件内容，文件缺失或正文为空时整批拒绝，不静默回退库内镜像。
+> 仪表盘不再提供文章表单：添加与导入都直接把内容落成批次 md 并打开编辑器，正文只在编辑器里改；
+> 标题、作者、摘要、封面与留言开关在工作流「推送管理」页展开批次后逐篇设置（`wechat/article/meta`），
+> 改标题会重写一级标题并同步重命名文件；在编辑器里改了一级标题并保存时，`issueRenameService` 同样把文件名与库内标题对齐；
+> 封面只接受 jpg/png，路径由宿主签发，未指定时取正文第一张本地图片；
 > 草稿生成后，批次菜单提供「打开公众号后台」，地址由宿主固定解析，前端只传标识。
 > 群发已接入：确认弹窗展示账号、文章清单与额度说明，提交 `freepublish/submit` 后轮询 `freepublish/get`，
 > 本地按「订阅号自然日 1 次 / 服务号自然月 4 次」先拦一层，未认证主体（48001）以可执行提示降级为「去后台群发」；
 > 轮询未出结果时批次停在「推送中」，不臆断成功或失败。
+> **与常驻分区的联动**：批次文章与笔记同构并进入索引库，打开后就属于 `wechat` 归属——
+> AI 对话（`@` 提及能搜到、模型可写回当前文章）、媒体（本地图片库把图片插入当前文章）、校对（对当前文章生效）
+> 三个常驻分区直接可用，不再落到占位页；媒体引用类型为 `article`，重建引用时会扫描 `wechat/{appid}/post/`。
+> 字数统计只认 `notes/` 与 `press/` 前缀，批次稿进索引不会影响写作产出统计。
 
 ```
 批次「推送」
@@ -723,7 +746,7 @@ ready ──设置时间──> scheduled ──到点──> pushing
 | 数据统计 | 用户增长、图文数据、菜单点击、消息分析，只读 | 日期范围（7 / 15 / 30 天）+ 指标卡 + CSS 柱状趋势（不引图表库）；结果落 `wechat_stats_cache` | 需认证 |
 | 留言管理 | 按文章筛选留言、加精、回复、删除 | 顶部文章选择器 + 留言列表（头像、昵称、时间、内容、精选标）+ 行内回复 | 需认证且已开通留言 |
 | 用户管理 | 粉丝列表、标签 CRUD、备注、拉黑 | 分段栏（粉丝 / 标签）+ 分页列表；操作走 `tags/members/batchtagging`、`user/info/updateremark`；`user/get` 单次上限 10000 | 一般可用 |
-| 推送管理 | 队列、历史、额度，是推送状态的唯一真相；只读，发起动作仍在仪表盘批次页 | 分段栏（待推送 / 历史 / 额度）+ 行内状态徽标与失败原因 + 顶部「进行中任务」条（挂载时查 `wechat/tasks`，并订阅阶段广播）+ 页脚刷新；定时群发按产品决定不做 | 按主体分级 |
+| 推送管理 | 队列、历史、额度，是推送状态的唯一真相；另承载文章元信息设置，发起动作仍在仪表盘批次页 | 分段栏（待推送 / 历史 / 额度）+ 批次行展开文章列表（标题、作者、封面状态）+ 「设置」弹窗（标题 / 作者 / 摘要 / 封面 / 留言，走 `wechat/article/meta`）+ 行内状态徽标与失败原因 + 顶部「进行中任务」条（挂载时查 `wechat/tasks`，并订阅阶段广播）+ 页脚刷新；定时群发按产品决定不做 | 按主体分级 |
 
 ### 13.3 导航栏容量改造（必须做）
 

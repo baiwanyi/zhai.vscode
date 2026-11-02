@@ -1,18 +1,19 @@
 /**
- * 推送管理页：把当前账号的批次按「待推送 / 历史 / 额度」三段呈现，是群发状态在运营侧的唯一视图。
- * 复用约定：数据取 hooks/useWechatPushOverview（批次 + 额度），状态徽标文案与变体取仪表盘同一套常量，
- * 外壳取 components/AppPage，分段切换取 SegmentedRail。
- * 关键约束：本页只读——生成草稿与群发仍在仪表盘批次页发起，避免同一动作在两处有入口而口径分叉；
+ * 推送管理页：把当前账号的批次按「待推送 / 历史 / 额度」三段呈现，并承载文章的元信息设置。
+ * 复用约定：数据取 hooks/useWechatPushOverview（批次 + 额度 + 文章元信息写入），状态徽标文案与变体取仪表盘同一套常量，
+ * 外壳取 components/AppPage，分段切换取 SegmentedRail，文章设置弹窗取同目录的 WechatArticleSettingDialog。
+ * 关键约束：推送动作仍在仪表盘批次页发起（生成草稿、群发），本页只做状态呈现与元信息设置，避免同一动作两处入口；
+ * 批次行可展开文章列表，标题、作者、摘要、封面与留言在这里逐篇设置，正文去批次目录的 md 文件里改；
  * 待推送包含草稿与推送中，历史包含已推送与失败，两段合起来覆盖全部状态，不会有批次凭空消失；
  * 额度单独失败时列表照常可用，额度区显示失败原因而不是把整页变成错误页。
  */
-import { Send } from 'lucide-react'
+import { ChevronDown, ChevronRight, Send } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
-import type { WechatAccountSummary, WechatIssueSummary } from '@shared/types/wechat'
+import type { WechatAccountSummary, WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
 import {
     AppContent,
     AppDescription,
@@ -25,10 +26,12 @@ import {
 import { Button } from '@webview/components/Button'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import {
+    formatArticleMeta,
     formatIssueMeta,
     WECHAT_ISSUE_STATUS_LABELS,
     WECHAT_ISSUE_STATUS_VARIANTS,
 } from '@webview/dashboard/wechat/utils'
+import { WechatArticleSettingDialog } from './WechatArticleSettingDialog'
 import type { JSX } from 'react'
 import { useWechatPushOverview } from '../hooks/useWechatPushOverview'
 
@@ -55,8 +58,13 @@ interface WechatPushPageProps {
 }
 
 export function WechatPushPage({ account }: WechatPushPageProps): JSX.Element {
-    const { issues, tasks, quota, status, error, quotaError, reload } = useWechatPushOverview(account.id)
+    const { issues, tasks, quota, status, error, quotaError, reload, saveArticleMeta, pickCover } =
+        useWechatPushOverview(account.id)
     const [tab, setTab] = useState<PushTab>('queue')
+    /** 展开的批次：一次只展开一个，避免长列表里同时挂出几十篇文章 */
+    const [expandedId, setExpandedId] = useState<string | null>(null)
+    /** 正在设置的文章：非 null 即打开弹窗，以文章 id 作 key 重建表单 */
+    const [settingArticle, setSettingArticle] = useState<WechatArticleSummary | null>(null)
 
     const queue = issues.filter((issue) => QUEUE_STATUSES.has(issue.status))
     const history = issues.filter((issue) => !QUEUE_STATUSES.has(issue.status))
@@ -89,7 +97,7 @@ export function WechatPushPage({ account }: WechatPushPageProps): JSX.Element {
                         <EmptyTitle>{tab === 'queue' ? '没有待推送的批次' : '还没有推送记录'}</EmptyTitle>
                         <EmptyDescription>
                             {tab === 'queue'
-                                ? '到仪表盘的批次页新建批次、编辑文章并生成草稿，就绪后会出现在这里。'
+                                ? '到仪表盘的批次页新建批次、添加文章，回到这里设置标题与封面后再生成草稿。'
                                 : '成功群发或失败重试过的批次会留在这里，便于回看时间与失败原因。'}
                         </EmptyDescription>
                     </EmptyHeader>
@@ -99,7 +107,13 @@ export function WechatPushPage({ account }: WechatPushPageProps): JSX.Element {
         return (
             <div className="flex w-full flex-col gap-2">
                 {list.map((issue) => (
-                    <IssueRow key={issue.id} issue={issue} />
+                    <IssueRow
+                        key={issue.id}
+                        issue={issue}
+                        isExpanded={expandedId === issue.id}
+                        onToggle={() => setExpandedId((previous) => (previous === issue.id ? null : issue.id))}
+                        onSetting={setSettingArticle}
+                    />
                 ))}
             </div>
         )
@@ -139,28 +153,91 @@ export function WechatPushPage({ account }: WechatPushPageProps): JSX.Element {
                     刷新
                 </Button>
             </AppFooter>
+
+            {settingArticle !== null && (
+                <WechatArticleSettingDialog
+                    key={settingArticle.id}
+                    article={settingArticle}
+                    defaultAuthor={account.defaultAuthor ?? ''}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setSettingArticle(null)
+                        }
+                    }}
+                    onSubmit={saveArticleMeta}
+                    onPickCover={pickCover}
+                />
+            )}
         </AppPage>
     )
 }
 
-/** 批次行：标题、状态徽标与元信息；失败时把原因放在副行，不再额外弹提示 */
-function IssueRow({ issue }: { issue: WechatIssueSummary }): JSX.Element {
+interface IssueRowProps {
+    issue: WechatIssueSummary
+    isExpanded: boolean
+    onToggle: () => void
+    /** 打开某篇文章的设置弹窗 */
+    onSetting: (article: WechatArticleSummary) => void
+}
+
+/** 批次行：标题、状态徽标与元信息；展开后列出文章与设置入口 */
+function IssueRow({ issue, isExpanded, onToggle, onSetting }: IssueRowProps): JSX.Element {
     const isFailed = issue.status === 'failed'
     return (
-        <Item variant="outline" className="flex-nowrap">
-            <ItemContent className="min-w-0">
-                <ItemTitle className="w-full">
-                    <span className="block min-w-0 flex-1 truncate">{issue.title}</span>
-                </ItemTitle>
-                <ItemDescription className={isFailed ? 'line-clamp-2 text-xs' : 'truncate text-xs'}>
-                    {isFailed && issue.errorHint !== undefined ? issue.errorHint : formatIssueMeta(issue)}
-                </ItemDescription>
-            </ItemContent>
-            <ItemActions className="shrink-0">
-                <Badge variant={WECHAT_ISSUE_STATUS_VARIANTS[issue.status]}>
-                    {WECHAT_ISSUE_STATUS_LABELS[issue.status]}
-                </Badge>
-            </ItemActions>
+        <Item variant="outline" className="flex-col items-stretch gap-2">
+            <div className="flex w-full items-start gap-2">
+                <ItemContent className="min-w-0">
+                    <ItemTitle className="w-full">
+                        <button
+                            type="button"
+                            className="flex w-full min-w-0 items-center gap-1 text-left"
+                            aria-expanded={isExpanded}
+                            onClick={onToggle}
+                        >
+                            {isExpanded ? (
+                                <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                            ) : (
+                                <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
+                            )}
+                            <span className="block min-w-0 flex-1 truncate">{issue.title}</span>
+                        </button>
+                    </ItemTitle>
+                    <ItemDescription className={isFailed ? 'line-clamp-2 text-xs' : 'truncate text-xs'}>
+                        {isFailed && issue.errorHint !== undefined ? issue.errorHint : formatIssueMeta(issue)}
+                    </ItemDescription>
+                </ItemContent>
+                <ItemActions className="shrink-0">
+                    <Badge variant={WECHAT_ISSUE_STATUS_VARIANTS[issue.status]}>
+                        {WECHAT_ISSUE_STATUS_LABELS[issue.status]}
+                    </Badge>
+                </ItemActions>
+            </div>
+
+            {isExpanded &&
+                (issue.articles.length === 0 ? (
+                    <p className="rounded-lg border border-dashed px-2 py-3 text-center text-xs text-muted-foreground">
+                        批次里还没有文章，去仪表盘批次页添加或导入。
+                    </p>
+                ) : (
+                    <ul className="flex flex-col">
+                        {issue.articles.map((article) => (
+                            <li key={article.id} className="flex items-center gap-1">
+                                <span className="w-4 shrink-0 text-center text-xs text-muted-foreground">
+                                    {article.sortIndex}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                    <span className="block truncate text-sm">{article.title}</span>
+                                    <span className="block truncate text-xs text-muted-foreground">
+                                        {formatArticleMeta(article)}
+                                    </span>
+                                </span>
+                                <Button variant="ghost" size="sm" onClick={() => onSetting(article)}>
+                                    设置
+                                </Button>
+                            </li>
+                        ))}
+                    </ul>
+                ))}
         </Item>
     )
 }

@@ -24,6 +24,9 @@ function readMentionKind(relativePath: string): AiMentionKind {
     if (relativePath.startsWith('notes/')) {
         return 'note'
     }
+    if (relativePath.startsWith('wechat/')) {
+        return 'article'
+    }
     if (relativePath.includes('/Chapters/') || relativePath.startsWith('press/')) {
         return 'chapter'
     }

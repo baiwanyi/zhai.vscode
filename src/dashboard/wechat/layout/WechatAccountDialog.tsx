@@ -1,10 +1,10 @@
 /**
- * 账号弹窗：新建与编辑共用一套字段（名称、类型、AppID、AppSecret），提交后由页面层调用宿主。
+ * 账号设置弹窗：只改账号名称、类型与默认作者，凭据在独立的密钥设置弹窗里维护。
  * 复用约定：骨架取 FormDialog，账号类型取 SegmentedRail + shared/types/wechat 的枚举与文案，
  * 文本状态与 trim 判定取 useTrimmedInput，输入控件取 @components/ui/input。
- * 关键约束：编辑态下 AppSecret 留空表示沿用已存密钥，占位文案给出已有密钥的尾号提示；
- * 表单重置由页面在每次打开时更换组件 key 完成（重挂载即回到当前账号的值），本组件不在 effect 中写状态；
- * 前端只判空与长度，AppID/AppSecret 的形态校验由宿主的收窄函数最终裁定。
+ * 关键约束：新建时不询问 AppID / AppSecret——先建出账号，再引导去「密钥设置」补凭据；
+ * 默认作者与文章作者同一套长度限制，留空表示文章设置不预填；
+ * 表单重置由页面在每次打开时更换组件 key 完成（重挂载即回到当前账号的值），本组件不在 effect 中写状态。
  */
 import { useState } from 'react'
 import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
@@ -14,6 +14,7 @@ import {
     WECHAT_ACCOUNT_NAME_MAX,
     WECHAT_ACCOUNT_TYPE_LABELS,
     WECHAT_ACCOUNT_TYPES,
+    WECHAT_ARTICLE_AUTHOR_MAX,
     type WechatAccountSummary,
     type WechatAccountType,
 } from '@shared/types/wechat'
@@ -41,13 +42,11 @@ export function WechatAccountDialog({
 }: WechatAccountDialogProps): JSX.Element {
     const isEditing = account !== null
     const name = useTrimmedInput(account?.name ?? '')
-    const appId = useTrimmedInput(account?.appId ?? '')
-    const appSecret = useTrimmedInput()
+    const defaultAuthor = useTrimmedInput(account?.defaultAuthor ?? '')
     // 初始值只取一次：编辑态回填当前账号类型，新建态回落订阅号
     const [accountType, setAccountType] = useState<WechatAccountType>(() => readWechatAccountType(account?.accountType))
 
-    const isSecretRequired = !isEditing
-    const isSubmitDisabled = name.isBlank || appId.isBlank || (isSecretRequired && appSecret.isBlank)
+    const isSubmitDisabled = name.isBlank
 
     const handleSubmit = (): void => {
         if (isSubmitDisabled) {
@@ -56,8 +55,7 @@ export function WechatAccountDialog({
         void onSubmit({
             name: name.value,
             accountType,
-            appId: appId.value,
-            appSecret: appSecret.value,
+            defaultAuthor: defaultAuthor.value,
         })
     }
 
@@ -67,10 +65,10 @@ export function WechatAccountDialog({
             title={isEditing ? '账号设置' : '添加公众号'}
             description={
                 isEditing
-                    ? '修改名称与 AppID 后会自动重新鉴权；密钥留空表示沿用已保存的密钥。'
-                    : '填写公众号后台「设置与开发 → 基本配置」里的 AppID 与 AppSecret，保存后立即验证连接。'
+                    ? '只改展示用的账号资料；AppID 与 AppSecret 在「密钥设置」里单独维护。'
+                    : '先填账号资料即可创建，创建后再到「密钥设置」填写 AppID 与 AppSecret 完成鉴权。'
             }
-            submitLabel={isEditing ? '保存' : '添加并验证'}
+            submitLabel={isEditing ? '保存' : '创建账号'}
             isSubmitting={isSubmitting}
             isSubmitDisabled={isSubmitDisabled}
             onOpenChange={onOpenChange}
@@ -86,6 +84,7 @@ export function WechatAccountDialog({
                     disabled={isSubmitting}
                     onChange={(event) => name.setValue(event.target.value)}
                 />
+                <FieldDescription>只在本机展示，微信没有公开接口可以拉取公众号名称。</FieldDescription>
             </Field>
             <Field>
                 <FieldLabel>账号类型</FieldLabel>
@@ -101,34 +100,21 @@ export function WechatAccountDialog({
                     size="lg"
                     isDisabled={isSubmitting}
                 />
+                <FieldDescription>类型决定群发频率：订阅号一天一次，服务号一月四次。</FieldDescription>
             </Field>
             <Field>
-                <FieldLabel htmlFor="wechat-account-appid">AppID</FieldLabel>
+                <FieldLabel htmlFor="wechat-account-author">默认作者</FieldLabel>
                 <Input
-                    id="wechat-account-appid"
-                    value={appId.value}
-                    placeholder="wx 开头的开发者 ID"
-                    autoComplete="off"
-                    spellCheck={false}
+                    id="wechat-account-author"
+                    value={defaultAuthor.value}
+                    maxLength={WECHAT_ARTICLE_AUTHOR_MAX}
+                    placeholder="可留空，等同于文章作者留空"
                     disabled={isSubmitting}
-                    onChange={(event) => appId.setValue(event.target.value)}
+                    onChange={(event) => defaultAuthor.setValue(event.target.value)}
                 />
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="wechat-account-secret">AppSecret</FieldLabel>
-                <Input
-                    id="wechat-account-secret"
-                    type="password"
-                    value={appSecret.value}
-                    placeholder={
-                        isEditing ? `留空沿用已存密钥 ${account.secretHint ?? ''}`.trim() : '公众号后台的开发者密码'
-                    }
-                    autoComplete="off"
-                    spellCheck={false}
-                    disabled={isSubmitting}
-                    onChange={(event) => appSecret.setValue(event.target.value)}
-                />
-                <FieldDescription>密钥只写入系统级加密存储，列表与日志只显示尾号，不会写入数据库。</FieldDescription>
+                <FieldDescription>
+                    {`最多 ${String(WECHAT_ARTICLE_AUTHOR_MAX)} 字；新建文章设置时会带出这个作者，可按篇改写。`}
+                </FieldDescription>
             </Field>
         </FormDialog>
     )

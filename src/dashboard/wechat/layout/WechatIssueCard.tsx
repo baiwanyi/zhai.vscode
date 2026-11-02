@@ -1,13 +1,17 @@
 /**
- * 推送批次卡片：封面占位、批次标题与状态徽标、文章行列表、批次操作菜单。
- * 复用 @components/ui 的 item 槽位、badge 与 dropdown-menu，批次与文章的展示口径取 wechat/utils。
- * 关键约束：一次群发即一个批次，因此「推送」是批次级动作而不是文章级，本卡片不提供单篇推送；
- * 文章行点击进入编辑，行内菜单负责「移出批次」；批次菜单的「推送」在当前阶段保持禁用并说明原因；
+ * 推送批次卡片：状态徽标、批次操作菜单，以及批次内按篇数分档的文章区。
+ * 复用 @components/ui 的 item 槽位、badge 与 dropdown-menu，批次与文章的展示口径取 wechat/utils，
+ * 封面图复用 components/Image（缺失或加载失败自带占位）。
+ * 关键约束：批次标题不在卡片上展示（新建即默认命名，用户靠封面与文章辨认），只作为无障碍标签保留；
+ * 一次群发即一个批次，因此「推送」是批次级动作而不是文章级，本卡片不提供单篇推送；
+ * 文章区固定以第一篇为主图（2.35:1），第 2 篇起进子列表（1:1 缩略图），两处都不显示序号；
+ * 文章行点击直接打开批次目录里的 md 文件，正文只在编辑器里维护；
+ * 标题、封面、摘要与留言开关在工作流面板的推送分区逐篇设置，卡片只展示结果并负责调序与删除；
+ * 删除会连同批次目录里的 md 一起删掉（宿主优先移入回收站），第一篇删掉后其余文章按序号顺延顶上；
  * 文章数达到上限时，菜单里的添加与导入同时禁用，避免用户点了才被宿主拒绝。
  */
-import { ChevronRight, Image as ImageIcon, MoreHorizontal } from 'lucide-react'
+import { MoreHorizontal } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
-import { Checkbox } from '@components/ui/checkbox'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -15,26 +19,39 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
-import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
+import {
+    Item,
+    ItemActions,
+    ItemContent,
+    ItemDescription,
+    ItemGroup,
+    ItemHeader,
+    ItemMedia,
+    ItemTitle,
+} from '@components/ui/item'
 import { WECHAT_ISSUE_ARTICLE_LIMIT, type WechatArticleSummary, type WechatIssueSummary } from '@shared/types/wechat'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
 import type { JSX } from 'react'
 import { formatArticleMeta, formatIssueMeta, WECHAT_ISSUE_STATUS_LABELS, WECHAT_ISSUE_STATUS_VARIANTS } from '../utils'
 
+/** 文章调整方向：顺序号即推送顺序 */
+type ArticleDirection = 'up' | 'down'
+
 interface WechatIssueCardProps {
     issue: WechatIssueSummary
-    /** 首篇文章封面在 Webview 里的地址：缺失时卡片显示灰底占位 */
-    coverUri?: string
-    /** 是否可批量选择：只有草稿与推送失败的批次可删，其余不给复选框 */
-    isSelectable: boolean
-    isSelected: boolean
-    onToggleSelect: (issue: WechatIssueSummary) => void
+    /** 文章封面在 Webview 里的地址：键为文章里的 coverPath，缺失时该篇显示占位图 */
+    covers: Record<string, string>
     /** 写操作进行中：菜单项整体禁用，避免并发写导致序号错乱 */
     isBusy: boolean
     onAddArticle: (issue: WechatIssueSummary) => void
     onImport: (issue: WechatIssueSummary, sourceKind: 'note' | 'press') => void
-    onEditArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
+    /** 打开正文文件：卡片不再承载正文编辑 */
+    onOpenArticle: (article: WechatArticleSummary) => void
+    /** 文章设置：作者、摘要与留言开关，走 wechat/article/meta */
+    onOpenArticleSetting: (article: WechatArticleSummary) => void
+    /** 上移 / 下移一篇：顺序号即公众号的推送顺序 */
+    onMoveArticle: (article: WechatArticleSummary, direction: ArticleDirection) => void
     onRemoveArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
     onRemoveIssue: (issue: WechatIssueSummary) => void
     onPublishDraft: (issue: WechatIssueSummary) => void
@@ -46,14 +63,13 @@ interface WechatIssueCardProps {
 
 export function WechatIssueCard({
     issue,
-    coverUri,
-    isSelectable,
-    isSelected,
-    onToggleSelect,
+    covers,
     isBusy,
     onAddArticle,
     onImport,
-    onEditArticle,
+    onOpenArticle,
+    onOpenArticleSetting,
+    onMoveArticle,
     onRemoveArticle,
     onRemoveIssue,
     onPublishDraft,
@@ -63,38 +79,24 @@ export function WechatIssueCard({
     const isFull = issue.articleCount >= WECHAT_ISSUE_ARTICLE_LIMIT
     /** 群发只在草稿就绪或上次失败后可点：没有 media_id 时宿主会拒绝，前端先置灰避免无效点击 */
     const canPublish = issue.status === 'ready' || issue.status === 'failed'
+    const [firstArticle] = issue.articles
+    const restArticles = issue.articles.slice(1)
+    /** 取某篇文章的封面地址：封面路径缺失或转换失败时交给 Image 渲染占位 */
+    const coverOf = (article: WechatArticleSummary): string | undefined => {
+        const coverPath = article.coverPath
+        return coverPath === undefined ? undefined : covers[coverPath]
+    }
 
     return (
         <Item variant="outline" className="flex-col items-stretch gap-2 p-3">
-            {/* 封面取首篇文章的图：与原型一致，未指定时用灰底占位而不是空白 */}
-            <div className="relative aspect-video w-full overflow-hidden rounded-lg bg-muted/40">
-                {coverUri === undefined ? (
-                    <div className="flex size-full items-center justify-center text-muted-foreground">
-                        <ImageIcon className="size-5" aria-hidden />
-                    </div>
-                ) : (
-                    <Image src={coverUri} alt={issue.title} aspect="video" />
-                )}
-            </div>
-            <div className="flex items-start gap-2">
-                {isSelectable && (
-                    <Checkbox
-                        checked={isSelected}
-                        aria-label={`选择 ${issue.title}`}
-                        className="mt-1 shrink-0"
-                        onCheckedChange={() => onToggleSelect(issue)}
-                    />
-                )}
-                <ItemContent className="min-w-0">
-                    <ItemTitle className="w-full">
-                        <span className="block min-w-0 flex-1 truncate">{issue.title}</span>
-                    </ItemTitle>
-                    <ItemDescription className="truncate text-xs">{formatIssueMeta(issue)}</ItemDescription>
-                </ItemContent>
-                <ItemActions className="shrink-0 gap-1">
+            <ItemHeader>
+                <div className="flex min-w-0 items-center gap-2">
                     <Badge variant={WECHAT_ISSUE_STATUS_VARIANTS[issue.status]}>
                         {WECHAT_ISSUE_STATUS_LABELS[issue.status]}
                     </Badge>
+                    <div className="min-w-0 truncate text-xs">{formatIssueMeta(issue)}</div>
+                </div>
+                <ItemActions className="shrink-0 gap-1">
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
                             <Button
@@ -144,65 +146,183 @@ export function WechatIssueCard({
                         </DropdownMenuContent>
                     </DropdownMenu>
                 </ItemActions>
-            </div>
+            </ItemHeader>
 
-            {issue.articles.length === 0 ? (
+            {firstArticle === undefined ? (
                 <p className="rounded-lg border border-dashed px-2 py-3 text-center text-xs text-muted-foreground">
-                    批次还没有文章，可从笔记、作品导入或手写一篇。
+                    批次还没有文章：添加文章会直接新建 md 文档，也可以从笔记或作品导入。
                 </p>
             ) : (
-                <ul className="flex flex-col">
-                    {issue.articles.map((article) => (
-                        <li key={article.id} className="flex items-center gap-1">
-                            <button
-                                type="button"
-                                className="flex min-w-0 flex-1 items-center gap-2 rounded-lg px-1 py-1.5 text-left hover:bg-muted"
-                                onClick={() => onEditArticle(issue, article)}
-                            >
-                                <span className="w-4 shrink-0 text-center text-xs text-muted-foreground">
-                                    {article.sortIndex}
-                                </span>
-                                <span className="min-w-0 flex-1">
-                                    <span className="block truncate text-sm">{article.title}</span>
-                                    <span className="block truncate text-xs text-muted-foreground">
-                                        {formatArticleMeta(article)}
-                                    </span>
-                                </span>
-                                <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" aria-hidden />
-                            </button>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        aria-label={`${article.title} 的操作`}
-                                        tooltip="文章操作"
-                                        disabled={isBusy}
+                <ArticleFeature
+                    issue={issue}
+                    article={firstArticle}
+                    coverUri={coverOf(firstArticle)}
+                    isBusy={isBusy}
+                    onOpenArticle={onOpenArticle}
+                    onOpenArticleSetting={onOpenArticleSetting}
+                    onMoveArticle={onMoveArticle}
+                    onRemoveArticle={onRemoveArticle}
+                />
+            )}
+
+            {restArticles.length > 0 && (
+                <ItemGroup>
+                    {restArticles.map((article, index) => (
+                        <Item key={article.id} variant="muted">
+                            <ItemMedia variant="image">
+                                <Image src={coverOf(article)} alt={article.title} aspect="square" />
+                            </ItemMedia>
+                            <ItemContent className="min-w-0">
+                                <ItemTitle className="w-full">
+                                    <button
+                                        type="button"
+                                        className="block min-w-0 flex-1 truncate text-left"
+                                        onClick={() => onOpenArticle(article)}
                                     >
-                                        <MoreHorizontal />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onSelect={() => onEditArticle(issue, article)}>
-                                        编辑
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                        variant="destructive"
-                                        onSelect={() => onRemoveArticle(issue, article)}
-                                    >
-                                        移出批次
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                        </li>
+                                        {article.title}
+                                    </button>
+                                </ItemTitle>
+                                <ItemDescription className="truncate text-xs">
+                                    {formatArticleMeta(article)}
+                                </ItemDescription>
+                            </ItemContent>
+                            <ItemActions className="shrink-0 gap-1">
+                                <ArticleMenu
+                                    issue={issue}
+                                    article={article}
+                                    isFirst={false}
+                                    isLast={index === restArticles.length - 1}
+                                    isBusy={isBusy}
+                                    onOpenArticle={onOpenArticle}
+                                    onOpenArticleSetting={onOpenArticleSetting}
+                                    onMoveArticle={onMoveArticle}
+                                    onRemoveArticle={onRemoveArticle}
+                                />
+                            </ItemActions>
+                        </Item>
                     ))}
-                </ul>
+                </ItemGroup>
             )}
 
             {issue.errorHint !== undefined && issue.errorHint.length > 0 && (
                 <p className="text-xs text-destructive">{issue.errorHint}</p>
             )}
         </Item>
+    )
+}
+
+interface ArticleFeatureProps {
+    issue: WechatIssueSummary
+    article: WechatArticleSummary
+    coverUri?: string
+    isBusy: boolean
+    onOpenArticle: (article: WechatArticleSummary) => void
+    onOpenArticleSetting: (article: WechatArticleSummary) => void
+    onMoveArticle: (article: WechatArticleSummary, direction: ArticleDirection) => void
+    onRemoveArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
+}
+
+/** 第一篇：主图位，封面按公众号首图习惯取 2.35:1，可下移但不能再上移 */
+function ArticleFeature({
+    issue,
+    article,
+    coverUri,
+    isBusy,
+    onOpenArticle,
+    onOpenArticleSetting,
+    onMoveArticle,
+    onRemoveArticle,
+}: ArticleFeatureProps): JSX.Element {
+    return (
+        <Item variant="muted" className="gap-2">
+            <Image
+                src={coverUri}
+                alt={article.title}
+                aspect="2.35/1"
+                className="h-auto w-full rounded-lg bg-muted/40"
+            />
+            <ItemContent className="min-w-0">
+                <ItemTitle className="w-full">
+                    <button
+                        type="button"
+                        className="block min-w-0 flex-1 truncate text-left"
+                        onClick={() => onOpenArticle(article)}
+                    >
+                        {article.title}
+                    </button>
+                </ItemTitle>
+                <ItemDescription className="truncate text-xs">{formatArticleMeta(article)}</ItemDescription>
+            </ItemContent>
+            <ItemActions className="shrink-0 gap-1">
+                <ArticleMenu
+                    issue={issue}
+                    article={article}
+                    isFirst
+                    isLast={issue.articles.length === 1}
+                    isBusy={isBusy}
+                    onOpenArticle={onOpenArticle}
+                    onOpenArticleSetting={onOpenArticleSetting}
+                    onMoveArticle={onMoveArticle}
+                    onRemoveArticle={onRemoveArticle}
+                />
+            </ItemActions>
+        </Item>
+    )
+}
+
+interface ArticleMenuProps {
+    issue: WechatIssueSummary
+    article: WechatArticleSummary
+    /** 第一篇不能再上移，最后一条不能再下移 */
+    isFirst: boolean
+    isLast: boolean
+    isBusy: boolean
+    onOpenArticle: (article: WechatArticleSummary) => void
+    onOpenArticleSetting: (article: WechatArticleSummary) => void
+    onMoveArticle: (article: WechatArticleSummary, direction: ArticleDirection) => void
+    onRemoveArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
+}
+
+/** 文章行内菜单：打开、设置、调序与删除统一在此，越界方向直接置灰 */
+function ArticleMenu({
+    issue,
+    article,
+    isFirst,
+    isLast,
+    isBusy,
+    onOpenArticle,
+    onOpenArticleSetting,
+    onMoveArticle,
+    onRemoveArticle,
+}: ArticleMenuProps): JSX.Element {
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`${article.title} 的操作`}
+                    tooltip="文章操作"
+                    disabled={isBusy}
+                >
+                    <MoreHorizontal />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => onOpenArticle(article)}>打开文档</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => onOpenArticleSetting(article)}>文章设置</DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled={isBusy || isFirst} onSelect={() => onMoveArticle(article, 'up')}>
+                    上移
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled={isBusy || isLast} onSelect={() => onMoveArticle(article, 'down')}>
+                    下移
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem variant="destructive" onSelect={() => onRemoveArticle(issue, article)}>
+                    删除
+                </DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
     )
 }

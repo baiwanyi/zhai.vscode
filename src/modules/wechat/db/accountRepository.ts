@@ -22,11 +22,13 @@ export interface WechatAccountRow {
     fan_count: number
     issue_count: number
     last_publish_at: string | null
+    /** 默认作者：文章作者字段的初始值，未设置为 null */
+    default_author: string | null
     created_at: string
     updated_at: string
 }
 
-/** 新建账号的落库字段：密钥不在此列 */
+/** 新建账号的落库字段：密钥不在此列，AppID 未配置时传空串 */
 export interface WechatAccountRecord {
     id: string
     name: string
@@ -34,15 +36,16 @@ export interface WechatAccountRecord {
     appId: string
     accountType: string
     status: string
+    defaultAuthor: string | null
     createdAt: string
 }
 
-/** 账号资料更新：不含密钥与鉴权状态 */
+/** 账号设置更新：不含 AppID、密钥与鉴权状态 */
 export interface WechatAccountProfilePatch {
     id: string
     name: string
-    appId: string
     accountType: string
+    defaultAuthor: string | null
     updatedAt: string
 }
 
@@ -82,19 +85,27 @@ export function findWechatAccountByAppId(db: Database.Database, appId: string): 
 export function insertWechatAccount(db: Database.Database, record: WechatAccountRecord): void {
     db.prepare(
         `INSERT INTO wechat_accounts
-            (id, name, avatar, app_id, account_type, verified, status, fan_count, issue_count, created_at, updated_at)
+            (id, name, avatar, app_id, account_type, verified, status, fan_count, issue_count,
+             default_author, created_at, updated_at)
          VALUES
-            (@id, @name, @avatar, @appId, @accountType, 0, @status, 0, 0, @createdAt, @createdAt)`,
+            (@id, @name, @avatar, @appId, @accountType, 0, @status, 0, 0,
+             @defaultAuthor, @createdAt, @createdAt)`,
     ).run(record)
 }
 
-/** 更新账号资料：名称、AppID 与类型；鉴权状态由 updateWechatAccountAuth 单独维护 */
+/** 更新账号设置：名称、类型与默认作者；AppID 走 updateWechatAccountAppId，鉴权状态单独维护 */
 export function updateWechatAccountProfile(db: Database.Database, patch: WechatAccountProfilePatch): void {
     db.prepare(
         `UPDATE wechat_accounts
-            SET name = @name, app_id = @appId, account_type = @accountType, updated_at = @updatedAt
+            SET name = @name, account_type = @accountType, default_author = @defaultAuthor,
+                updated_at = @updatedAt
           WHERE id = @id`,
     ).run(patch)
+}
+
+/** 回写 AppID：保存凭据时一并写入，冲突由部分唯一索引兜底 */
+export function updateWechatAccountAppId(db: Database.Database, id: string, appId: string): void {
+    db.prepare('UPDATE wechat_accounts SET app_id = @appId WHERE id = @id').run({ id, appId })
 }
 
 /** 回写鉴权结果：成功后清空错误码与提示，失败时保留可执行指引 */

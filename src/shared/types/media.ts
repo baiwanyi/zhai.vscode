@@ -20,8 +20,9 @@ export type MediaOrigin = 'generate' | 'import' | 'migrate'
  */
 export type MediaKind = 'portrait' | 'lore' | 'photo' | 'unknown'
 
-/** 引用方类型：三类封面 + 三类正文文档 */
-export type MediaRefType = 'press_cover' | 'character_cover' | 'lore_cover' | 'chapter' | 'note' | 'external'
+/** 引用方类型：三类封面 + 四类正文文档（章节 / 笔记 / 公众号文章 / 根外文档） */
+export type MediaRefType =
+    'press_cover' | 'character_cover' | 'lore_cover' | 'chapter' | 'note' | 'article' | 'external'
 
 /** 引用路径的定位基准：存储根相对路径或绝对路径（存储根外的文档） */
 export type MediaRefScope = 'storage' | 'absolute'

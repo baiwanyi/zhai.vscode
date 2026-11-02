@@ -36,6 +36,8 @@ interface WechatAccountItemProps {
     isTesting: boolean
     onOpen: (id: string) => void
     onEdit: (account: WechatAccountSummary) => void
+    /** 打开密钥设置：AppID 与 AppSecret 单独维护 */
+    onEditCredentials: (account: WechatAccountSummary) => void
     onTest: (id: string) => void
     onRemove: (account: WechatAccountSummary) => void
 }
@@ -46,6 +48,7 @@ export function WechatAccountItem({
     isTesting,
     onOpen,
     onEdit,
+    onEditCredentials,
     onTest,
     onRemove,
 }: WechatAccountItemProps): JSX.Element {
@@ -116,6 +119,7 @@ export function WechatAccountItem({
                             刷新状态
                         </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => onEdit(account)}>账号设置</DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => onEditCredentials(account)}>密钥设置</DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem variant="destructive" onSelect={() => onRemove(account)}>
                             删除账号

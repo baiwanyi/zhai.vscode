@@ -8,11 +8,16 @@
 import {
     isCreateWechatAccountRequest,
     isRemoveWechatAccountRequest,
+    isSaveWechatAccountCredentialsRequest,
     isSelectWechatAccountRequest,
     isTestWechatAccountRequest,
     isUpdateWechatAccountRequest,
     isWechatArticleCreateRequest,
     isWechatArticleImportRequest,
+    isWechatArticleMetaRequest,
+    isWechatArticleMoveRequest,
+    isWechatArticleOpenRequest,
+    isWechatArticleQuickCreateRequest,
     isWechatArticleRemoveRequest,
     isWechatArticleUpdateRequest,
     isWechatIssueCreateRequest,
@@ -76,15 +81,21 @@ export class WechatRoutes {
                 return this.deps.accounts.list()
             case 'wechat/account/create': {
                 if (!isCreateWechatAccountRequest(payload)) {
-                    throw new Error('wechat/account/create 参数非法：名称、AppID 与 AppSecret 均须合法')
+                    throw new Error('wechat/account/create 参数非法：名称必填，类型与默认作者须为字符串')
                 }
                 return this.deps.accounts.create(payload)
             }
             case 'wechat/account/update': {
                 if (!isUpdateWechatAccountRequest(payload)) {
-                    throw new Error('wechat/account/update 参数非法：id、名称与 AppID 均须合法')
+                    throw new Error('wechat/account/update 参数非法：id 与名称必填，类型与默认作者须为字符串')
                 }
                 return this.deps.accounts.update(payload)
+            }
+            case 'wechat/account/credentials': {
+                if (!isSaveWechatAccountCredentialsRequest(payload)) {
+                    throw new Error('wechat/account/credentials 参数非法：id 与 AppID 必填，AppSecret 缺省表示沿用')
+                }
+                return this.deps.accounts.saveCredentials(payload)
             }
             case 'wechat/account/remove': {
                 if (!isRemoveWechatAccountRequest(payload)) {
@@ -186,6 +197,30 @@ export class WechatRoutes {
                     throw new Error('wechat/article/import 参数非法：issueId 须合法，sourceKind 须为 note 或 press')
                 }
                 return this.deps.issues.importArticle(payload)
+            }
+            case 'wechat/article/quickCreate': {
+                if (!isWechatArticleQuickCreateRequest(payload)) {
+                    throw new Error('wechat/article/quickCreate 参数非法：issueId 须为合法批次标识')
+                }
+                return this.deps.issues.quickCreateArticle(payload.issueId)
+            }
+            case 'wechat/article/open': {
+                if (!isWechatArticleOpenRequest(payload)) {
+                    throw new Error('wechat/article/open 参数非法：id 须为合法文章标识')
+                }
+                return this.deps.issues.openArticle(payload.id)
+            }
+            case 'wechat/article/meta': {
+                if (!isWechatArticleMetaRequest(payload)) {
+                    throw new Error('wechat/article/meta 参数非法：id 与标题必填，封面与留言开关须为合法类型')
+                }
+                return this.deps.issues.updateArticleMeta(payload)
+            }
+            case 'wechat/article/move': {
+                if (!isWechatArticleMoveRequest(payload)) {
+                    throw new Error('wechat/article/move 参数非法：id 须合法，direction 只接受 up 或 down')
+                }
+                return this.deps.issues.moveArticle(payload)
             }
             case 'wechat/cover/pick':
                 return this.deps.issues.pickCover()

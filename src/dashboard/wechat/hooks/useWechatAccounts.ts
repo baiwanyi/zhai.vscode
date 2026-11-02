@@ -12,6 +12,8 @@ import type {
     CreateWechatAccountRequest,
     CreateWechatAccountResult,
     RemoveWechatAccountRequest,
+    SaveWechatAccountCredentialsRequest,
+    SaveWechatAccountCredentialsResult,
     SelectWechatAccountRequest,
     SelectWechatAccountResult,
     TestWechatAccountRequest,
@@ -27,17 +29,24 @@ import { onState, request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 import { WECHAT_STATUS_LABELS, type WechatListStatus } from '../utils'
 
-/** 新建账号的表单载荷 */
+/** 账号设置表单：名称、类型与默认作者；凭据走单独的保存动作 */
 export interface WechatAccountFormInput {
     name: string
     accountType: WechatAccountType
-    appId: string
-    appSecret: string
+    /** 默认作者：文章设置里作者字段的初始值，空表示不预填 */
+    defaultAuthor: string
 }
 
-/** 更新账号的表单载荷：appSecret 为空表示沿用旧密钥 */
+/** 更新账号设置的表单载荷 */
 export interface WechatAccountUpdateInput extends WechatAccountFormInput {
     id: string
+}
+
+/** 凭据表单：首次配置必须带 AppSecret，之后留空表示沿用已存密钥 */
+export interface WechatAccountCredentialsInput {
+    id: string
+    appId: string
+    appSecret: string
 }
 
 export interface WechatAccountsState {
@@ -53,6 +62,8 @@ export interface WechatAccountsState {
     reload: () => Promise<void>
     createAccount: (input: WechatAccountFormInput) => Promise<WechatAccountSummary | null>
     updateAccount: (input: WechatAccountUpdateInput) => Promise<boolean>
+    /** 保存 AppID / AppSecret：成功后由宿主立即鉴权 */
+    saveCredentials: (input: WechatAccountCredentialsInput) => Promise<boolean>
     removeAccount: (id: string) => Promise<boolean>
     testAccount: (id: string) => Promise<void>
     selectAccount: (id: string) => Promise<void>
@@ -98,15 +109,19 @@ export function useWechatAccounts(): WechatAccountsState {
         })
     }, [reload])
 
-    /** 创建成功后重拉并返回账号摘要；失败保留弹窗让用户就地修正 */
+    /** 创建账号：只提交账号设置，成功后提示去「密钥设置」补凭据 */
     const createAccount = useCallback(
         async (input: WechatAccountFormInput): Promise<WechatAccountSummary | null> => {
             setIsMutating(true)
-            const payload: CreateWechatAccountRequest = input
+            const payload: CreateWechatAccountRequest = {
+                name: input.name,
+                accountType: input.accountType,
+                defaultAuthor: input.defaultAuthor,
+            }
             try {
                 const created = await request<CreateWechatAccountResult>('wechat/account/create', payload)
                 await reload()
-                toast.success(`已添加公众号：${created.account.name}`)
+                toast.success(`已添加公众号：${created.account.name}，请继续在「密钥设置」里填写 AppID 与 AppSecret`)
                 return created.account
             } catch (cause) {
                 toastError(cause)
@@ -118,20 +133,44 @@ export function useWechatAccounts(): WechatAccountsState {
         [reload],
     )
 
+    /** 更新账号设置：只改名称、类型与默认作者，凭据走 saveCredentials */
     const updateAccount = useCallback(
         async (input: WechatAccountUpdateInput): Promise<boolean> => {
             setIsMutating(true)
             const payload: UpdateWechatAccountRequest = {
                 id: input.id,
                 name: input.name,
-                appId: input.appId,
                 accountType: input.accountType,
-                ...(input.appSecret.length > 0 ? { appSecret: input.appSecret } : {}),
+                defaultAuthor: input.defaultAuthor,
             }
             try {
                 await request<UpdateWechatAccountResult>('wechat/account/update', payload)
                 await reload()
                 toast.success('账号设置已保存')
+                return true
+            } catch (cause) {
+                toastError(cause)
+                return false
+            } finally {
+                setIsMutating(false)
+            }
+        },
+        [reload],
+    )
+
+    /** 保存凭据：宿主写入密钥后立即鉴权，状态与尾号随重拉结果更新 */
+    const saveCredentials = useCallback(
+        async (input: WechatAccountCredentialsInput): Promise<boolean> => {
+            setIsMutating(true)
+            const payload: SaveWechatAccountCredentialsRequest = {
+                id: input.id,
+                appId: input.appId,
+                ...(input.appSecret.length > 0 ? { appSecret: input.appSecret } : {}),
+            }
+            try {
+                await request<SaveWechatAccountCredentialsResult>('wechat/account/credentials', payload)
+                await reload()
+                toast.success('凭据已保存，鉴权结果已更新')
                 return true
             } catch (cause) {
                 toastError(cause)
@@ -208,6 +247,7 @@ export function useWechatAccounts(): WechatAccountsState {
         reload,
         createAccount,
         updateAccount,
+        saveCredentials,
         removeAccount,
         testAccount,
         selectAccount,

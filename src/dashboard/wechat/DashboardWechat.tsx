@@ -16,6 +16,7 @@ import { useWechatAccounts } from './hooks/useWechatAccounts'
 import { useWechatModuleSync } from './hooks/useWechatModuleSync'
 import { WechatAccountDialog } from './layout/WechatAccountDialog'
 import { WechatAccountList } from './layout/WechatAccountList'
+import { WechatAccountSecretDialog } from './layout/WechatAccountSecretDialog'
 import type { WechatAccountFormInput } from './hooks/useWechatAccounts'
 import type { JSX } from 'react'
 import { DashboardBackAction } from '../layout/DashboardBackAction'
@@ -38,6 +39,7 @@ export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.El
         reload,
         createAccount,
         updateAccount,
+        saveCredentials,
         removeAccount,
         testAccount,
         selectAccount,
@@ -48,6 +50,9 @@ export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.El
     const [dialogKey, setDialogKey] = useState(0)
     /** 待删除账号：非 null 即打开确认弹窗 */
     const [pendingRemove, setPendingRemove] = useState<WechatAccountSummary | null>(null)
+    /** 密钥设置弹窗的目标：非 null 即打开，AppID 与 AppSecret 在这里单独维护 */
+    const [secretTarget, setSecretTarget] = useState<WechatAccountSummary | null>(null)
+    const [secretKey, setSecretKey] = useState(0)
     /** 页头只在列表就绪时展示数量，加载与失败态不暴露旧快照 */
     const accountCount = status === 'ready' ? accounts.length : 0
 
@@ -87,6 +92,27 @@ export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.El
         [createAccount, dialogAccount, updateAccount],
     )
 
+    /** 打开密钥设置：换 key 重挂载，AppID 回填当前值、AppSecret 每次都从空开始 */
+    const openCredentials = useCallback((account: WechatAccountSummary): void => {
+        setSecretTarget(account)
+        setSecretKey((previous) => previous + 1)
+    }, [])
+
+    /** 保存凭据：成功后关闭弹窗，失败保留让用户就地修正 */
+    const handleCredentialsSubmit = useCallback(
+        async (input: { appId: string; appSecret: string }): Promise<boolean> => {
+            if (secretTarget === null) {
+                return false
+            }
+            const isSaved = await saveCredentials({ id: secretTarget.id, ...input })
+            if (isSaved) {
+                setSecretTarget(null)
+            }
+            return isSaved
+        },
+        [saveCredentials, secretTarget],
+    )
+
     /** 先清空待删除项再提交，避免确认后弹窗还停留在旧数据上 */
     const handleConfirmRemove = useCallback((): void => {
         if (pendingRemove === null) {
@@ -120,6 +146,7 @@ export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.El
                         onOpen={handleOpen}
                         onAdd={openCreate}
                         onEdit={openEdit}
+                        onEditCredentials={openCredentials}
                         onTest={(id) => void testAccount(id)}
                         onRemove={setPendingRemove}
                         onRetry={handleRetry}
@@ -147,6 +174,21 @@ export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.El
                 onOpenChange={setIsDialogOpen}
                 onSubmit={handleSubmit}
             />
+
+            {secretTarget !== null && (
+                <WechatAccountSecretDialog
+                    key={secretKey}
+                    open
+                    account={secretTarget}
+                    isSubmitting={isMutating}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setSecretTarget(null)
+                        }
+                    }}
+                    onSubmit={handleCredentialsSubmit}
+                />
+            )}
 
             <ConfirmDialog
                 open={pendingRemove !== null}

@@ -8,6 +8,7 @@ import { describeWechatError, NETWORK_ERROR_CODE } from '../src/modules/wechat/c
 import { formatWechatSecretHint } from '../src/modules/wechat/credentials'
 import {
     isCreateWechatAccountRequest,
+    isSaveWechatAccountCredentialsRequest,
     isSelectWechatAccountRequest,
     isUpdateWechatAccountRequest,
     isWechatAccountId,
@@ -61,26 +62,43 @@ describe('isWechatAccountId', () => {
 })
 
 describe('isCreateWechatAccountRequest', () => {
-    it('名称、AppID 与密钥齐备时通过', () => {
-        expect(isCreateWechatAccountRequest({ name: '宅写作', appId: APP_ID, appSecret: APP_SECRET })).toBe(true)
+    it('只填账号设置即可通过，凭据不在创建请求里', () => {
+        expect(isCreateWechatAccountRequest({ name: '宅写作' })).toBe(true)
+        expect(isCreateWechatAccountRequest({ name: '宅写作', accountType: 'service', defaultAuthor: '林小满' })).toBe(
+            true,
+        )
     })
 
-    it('缺密钥、名称空白或 AppID 形态不符都拒绝', () => {
-        expect(isCreateWechatAccountRequest({ name: '宅写作', appId: APP_ID })).toBe(false)
-        expect(isCreateWechatAccountRequest({ name: '  ', appId: APP_ID, appSecret: APP_SECRET })).toBe(false)
-        expect(isCreateWechatAccountRequest({ name: '宅写作', appId: 'a/b', appSecret: APP_SECRET })).toBe(false)
+    it('名称空白或可选字段类型不符时拒绝', () => {
+        expect(isCreateWechatAccountRequest({ name: '  ' })).toBe(false)
+        expect(isCreateWechatAccountRequest({})).toBe(false)
+        expect(isCreateWechatAccountRequest({ name: '宅写作', defaultAuthor: 1 })).toBe(false)
+        expect(isCreateWechatAccountRequest({ name: '宅写作', accountType: true })).toBe(false)
     })
 })
 
 describe('isUpdateWechatAccountRequest', () => {
-    it('密钥缺省表示沿用旧值', () => {
-        expect(isUpdateWechatAccountRequest({ id: 'acc-1', name: '宅写作', appId: APP_ID })).toBe(true)
+    it('只改资料时通过，未带凭据字段', () => {
+        expect(isUpdateWechatAccountRequest({ id: 'acc-1', name: '宅写作' })).toBe(true)
+        expect(isUpdateWechatAccountRequest({ id: 'acc-1', name: '宅写作', defaultAuthor: '' })).toBe(true)
     })
 
-    it('密钥传入但形态不符时拒绝', () => {
-        expect(isUpdateWechatAccountRequest({ id: 'acc-1', name: '宅写作', appId: APP_ID, appSecret: 'short' })).toBe(
-            false,
-        )
+    it('id 不合法或名称空白时拒绝', () => {
+        expect(isUpdateWechatAccountRequest({ id: 'ACC-1', name: '宅写作' })).toBe(false)
+        expect(isUpdateWechatAccountRequest({ id: 'acc-1', name: ' ' })).toBe(false)
+    })
+})
+
+describe('isSaveWechatAccountCredentialsRequest', () => {
+    it('首次配置必须带合法 AppID，密钥可缺省表示沿用', () => {
+        expect(isSaveWechatAccountCredentialsRequest({ id: 'acc-1', appId: APP_ID })).toBe(true)
+        expect(isSaveWechatAccountCredentialsRequest({ id: 'acc-1', appId: APP_ID, appSecret: APP_SECRET })).toBe(true)
+    })
+
+    it('AppID 形态不符或密钥过短时拒绝', () => {
+        expect(isSaveWechatAccountCredentialsRequest({ id: 'acc-1', appId: 'a/b' })).toBe(false)
+        expect(isSaveWechatAccountCredentialsRequest({ id: 'acc-1', appId: APP_ID, appSecret: 'short' })).toBe(false)
+        expect(isSaveWechatAccountCredentialsRequest({ appId: APP_ID })).toBe(false)
     })
 })
 

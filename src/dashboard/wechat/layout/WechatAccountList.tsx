@@ -30,6 +30,8 @@ interface WechatAccountListProps {
     onOpen: (id: string) => void
     onAdd: () => void
     onEdit: (account: WechatAccountSummary) => void
+    /** 打开密钥设置：AppID 与 AppSecret 单独维护 */
+    onEditCredentials: (account: WechatAccountSummary) => void
     onTest: (id: string) => void
     onRemove: (account: WechatAccountSummary) => void
     onRetry: () => void
@@ -45,6 +47,7 @@ export function WechatAccountList({
     onOpen,
     onAdd,
     onEdit,
+    onEditCredentials,
     onTest,
     onRemove,
     onRetry,
@@ -88,6 +91,7 @@ export function WechatAccountList({
                     isTesting={isTestingId === account.id}
                     onOpen={onOpen}
                     onEdit={onEdit}
+                    onEditCredentials={onEditCredentials}
                     onTest={onTest}
                     onRemove={onRemove}
                 />

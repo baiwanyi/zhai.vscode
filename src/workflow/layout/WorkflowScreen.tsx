@@ -84,7 +84,7 @@ export function WorkflowScreen(): JSX.Element {
                 {scope === 'press' ? (
                     <WorkflowPress context={context} section={section} onSelectSection={handleSelectSection} />
                 ) : scope === 'wechat' ? (
-                    <WorkflowWechat section={section} />
+                    <WorkflowWechat section={section} scopeDir={readScopeDir(context, scope)} />
                 ) : (
                     <WorkflowResidentSection section={section} scopeDir={readScopeDir(context, scope)} />
                 )}

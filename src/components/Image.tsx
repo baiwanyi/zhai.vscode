@@ -16,7 +16,7 @@ import { Image as ImageIcon } from 'lucide-react'
 import { useState } from 'react'
 import type { ComponentPropsWithoutRef, JSX, SyntheticEvent } from 'react'
 
-type ImageAspect = 'square' | 'video' | 'auto' | '9/16' | '4/3' | '3/4' | '2/3'
+type ImageAspect = 'square' | 'video' | 'auto' | '9/16' | '4/3' | '3/4' | '2/3' | '2.35/1'
 
 type ImageSize = 'none' | 'sm' | 'md' | 'lg' | 'xl' | 'full'
 
@@ -36,6 +36,7 @@ const ASPECT_CLASS: Record<ImageAspect, string> = {
     '4/3': 'aspect-4/3',
     '3/4': 'aspect-3/4',
     '2/3': 'aspect-2/3',
+    '2.35/1': 'aspect-[2.35/1]',
 }
 
 /** 尺寸档位类名：同样必须写全字面量，且统一走主题 radius 令牌，不写裸 rounded 以免脱离主题 */

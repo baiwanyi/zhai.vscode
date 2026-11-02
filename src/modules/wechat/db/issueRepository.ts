@@ -4,7 +4,8 @@
  * 行列命名由本文件统一映射，调用方不接触 snake_case，也不自行拼装排序号。
  * 关键约束：删除批次必须同事务删掉其文章，避免留下无主正文；删除文章后重排 sort_index，
  * 保证界面上的序号连续（微信侧 articles 数组顺序即推送顺序，空号会让用户误判）；
- * article_count 是列表展示用的冗余列，任何增删文章的操作都须同步刷新。
+ * article_count 是列表展示用的冗余列，任何增删文章的操作都须同步刷新；
+ * dir_path / file_path 由服务层在落盘成功后传入，本文件只管写列，不拼装路径。
  */
 import type Database from 'better-sqlite3'
 
@@ -26,6 +27,8 @@ export interface WechatIssueRow {
     scheduled_at: string | null
     published_at: string | null
     updated_at: string
+    /** 批次落盘目录（存储根相对路径），旧批次可能为空 */
+    dir_path: string | null
 }
 
 /** 文章行：body 为 Markdown 源文，body_hash 用于幂等与「源文件已变更」判定 */
@@ -43,6 +46,8 @@ export interface WechatArticleRow {
     cover_media_id: string | null
     source_kind: string
     source_path: string | null
+    /** 批次内正文文件（存储根相对路径），发布只读它 */
+    file_path: string | null
     is_original: number
     /** 1 表示允许读者留言，写入草稿的 need_open_comment */
     allow_comment: number
@@ -57,6 +62,8 @@ export interface WechatIssueRecord {
     title: string
     status: string
     createdAt: string
+    /** 批次目录：服务层建好目录后传入 */
+    dirPath: string
 }
 
 /** 新建文章的落库字段 */
@@ -74,6 +81,8 @@ export interface WechatArticleRecord {
     allowComment: number
     sourceKind: string
     sourcePath: string | null
+    /** 批次内正文文件：服务层落盘成功后传入 */
+    filePath: string
 }
 
 /** 文章可编辑字段：标题、作者、摘要、正文与封面 */
@@ -87,6 +96,8 @@ export interface WechatArticlePatch {
     wordCount: number
     coverPath: string | null
     allowComment: number
+    /** 正文文件：旧文章首次保存时补建，此后保持不变 */
+    filePath: string
 }
 
 /** 列出某账号的全部批次，按最近更新倒序 */
@@ -105,9 +116,14 @@ export function findWechatIssue(db: Database.Database, id: string): WechatIssueR
 /** 插入批次：article_count 与 status 由调用方给出，写入即视为草稿 */
 export function insertWechatIssue(db: Database.Database, record: WechatIssueRecord): void {
     db.prepare(
-        `INSERT INTO wechat_issues (id, account_id, title, article_count, status, updated_at)
-         VALUES (@id, @accountId, @title, 0, @status, @createdAt)`,
+        `INSERT INTO wechat_issues (id, account_id, title, article_count, status, updated_at, dir_path)
+         VALUES (@id, @accountId, @title, 0, @status, @createdAt, @dirPath)`,
     ).run(record)
+}
+
+/** 回写批次目录：旧批次首次写入正文时补建目录，此后固定不变 */
+export function updateWechatIssueDirPath(db: Database.Database, id: string, dirPath: string): void {
+    db.prepare('UPDATE wechat_issues SET dir_path = @dirPath WHERE id = @id').run({ id, dirPath })
 }
 
 /** 更新批次标题 */
@@ -247,7 +263,7 @@ export function listWechatArticlesByIssues(db: Database.Database, issueIds: stri
     const placeholders = issueIds.map(() => '?').join(', ')
     return db
         .prepare(
-            `SELECT id, issue_id, sort_index, title, author, digest, source_kind, source_path,
+            `SELECT id, issue_id, sort_index, title, author, digest, source_kind, source_path, file_path,
                     word_count, cover_path, allow_comment
                FROM wechat_articles
               WHERE issue_id IN (${placeholders})
@@ -268,10 +284,10 @@ export function insertWechatArticle(db: Database.Database, record: WechatArticle
     db.prepare(
         `INSERT INTO wechat_articles
             (id, issue_id, sort_index, title, author, digest, body, body_hash, word_count,
-             cover_path, allow_comment, source_kind, source_path)
+             cover_path, allow_comment, source_kind, source_path, file_path)
          VALUES
             (@id, @issueId, @nextIndex, @title, @author, @digest, @body, @bodyHash, @wordCount,
-             @coverPath, @allowComment, @sourceKind, @sourcePath)`,
+             @coverPath, @allowComment, @sourceKind, @sourcePath, @filePath)`,
     ).run({ ...record, nextIndex })
     return nextIndex
 }
@@ -282,9 +298,43 @@ export function updateWechatArticle(db: Database.Database, patch: WechatArticleP
         `UPDATE wechat_articles
             SET title = @title, author = @author, digest = @digest,
                 body = @body, body_hash = @bodyHash, word_count = @wordCount,
-                cover_path = @coverPath, allow_comment = @allowComment
+                cover_path = @coverPath, allow_comment = @allowComment, file_path = @filePath
           WHERE id = @id`,
     ).run(patch)
+}
+
+/** 回写正文文件路径：合并批次搬动文件后逐篇更新，不动其它字段 */
+export function updateWechatArticleFilePath(db: Database.Database, id: string, filePath: string): void {
+    db.prepare('UPDATE wechat_articles SET file_path = @filePath WHERE id = @id').run({ id, filePath })
+}
+
+/**
+ * 交换两篇的序号：顺序号即推送顺序，同事务内互换避免中途失败留下重复序号。
+ * 关键约束：调用方保证两条属于同一批次；任一条不存在时静默返回，由服务层先行校验。
+ */
+export function swapWechatArticleSortIndex(db: Database.Database, firstId: string, secondId: string): void {
+    db.transaction(() => {
+        const read = db.prepare('SELECT id, sort_index FROM wechat_articles WHERE id = ?')
+        const first = read.get(firstId) as { id: string; sort_index: number } | undefined
+        const second = read.get(secondId) as { id: string; sort_index: number } | undefined
+        if (first === undefined || second === undefined) {
+            return
+        }
+        const update = db.prepare('UPDATE wechat_articles SET sort_index = ? WHERE id = ?')
+        update.run(second.sort_index, first.id)
+        update.run(first.sort_index, second.id)
+    })()
+}
+
+/** 回写文章标题：文件名跟随正文一级标题后，库内标题同步跟上列表展示 */
+export function updateWechatArticleTitle(db: Database.Database, id: string, title: string): void {
+    db.prepare('UPDATE wechat_articles SET title = @title WHERE id = @id').run({ id, title })
+}
+
+/** 按正文文件路径回查文章：保存事件只有路径，重命名与标题同步据此定位记录 */
+export function findWechatArticleByFilePath(db: Database.Database, filePath: string): WechatArticleRow | null {
+    const row = db.prepare('SELECT * FROM wechat_articles WHERE file_path = ?').get(filePath)
+    return row === undefined ? null : (row as WechatArticleRow)
 }
 
 /** 删除文章并重排剩余序号，保证界面与推送顺序连续 */

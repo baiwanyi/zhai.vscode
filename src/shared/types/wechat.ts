@@ -7,6 +7,9 @@
  * 账号状态由宿主按接口错误码归一（40164 等），前端只负责展示，不自行推断。
  */
 
+/** 公众号在存储根下的一级目录名：其下存放账号的批次正文，不参与文档索引 */
+export const WECHAT_MODULE_DIR = 'wechat'
+
 /** 账号类型：订阅号与服务号的能力差异见 wechat.md 第 8 节 */
 export const WECHAT_ACCOUNT_TYPES = ['subscription', 'service'] as const
 
@@ -52,6 +55,8 @@ export interface WechatAccountSummary {
     appId: string
     /** 账号类型 */
     accountType: WechatAccountType
+    /** 默认作者：文章设置弹窗里作者字段的初始值，未设置时缺省 */
+    defaultAuthor?: string
     /** 是否已认证：决定发布、数据统计等能力是否可用 */
     verified: boolean
     /** 最近一次鉴权结果归一后的状态 */
@@ -81,16 +86,36 @@ export interface WechatAccountsResult {
     selectedId: string | null
 }
 
-/** wechat/account/create 请求 */
-export interface CreateWechatAccountRequest {
+/**
+ * 账号设置：名称、类型与默认作者，创建与更新共用。
+ * 关键约束：凭据（AppID / AppSecret）不在这组字段里——新建账号时只填设置，
+ * 密钥经 wechat/account/credentials 单独保存并触发鉴权。
+ */
+export interface WechatAccountProfileInput {
     /** 账号名称，写入前由宿主折叠空白并截断 */
     name: string
-    /** 平台 AppID */
-    appId: string
-    /** 平台 AppSecret：仅经协议传入一次，落 SecretStorage 后不再回传 */
-    appSecret: string
     /** 账号类型，非法值回落订阅号 */
     accountType?: string
+    /** 默认作者：文章作者字段的初始值，空表示不预填 */
+    defaultAuthor?: string
+}
+
+/** wechat/account/create 请求：只含账号设置，创建后状态为「未配置密钥」 */
+export type CreateWechatAccountRequest = WechatAccountProfileInput
+
+/** wechat/account/credentials 请求：单独保存凭据，成功后立即鉴权 */
+export interface SaveWechatAccountCredentialsRequest {
+    /** 目标账号 id */
+    id: string
+    /** 平台 AppID：未配置时必填，改它会让旧 Token 失效并重新鉴权 */
+    appId: string
+    /** 平台 AppSecret：留空或缺省表示沿用已存密钥 */
+    appSecret?: string
+}
+
+/** wechat/account/credentials 响应 */
+export interface SaveWechatAccountCredentialsResult {
+    account: WechatAccountSummary
 }
 
 /** wechat/account/create 响应：返回落库后的摘要，前端据此跳到该账号 */
@@ -98,18 +123,10 @@ export interface CreateWechatAccountResult {
     account: WechatAccountSummary
 }
 
-/** wechat/account/update 请求 */
-export interface UpdateWechatAccountRequest {
+/** wechat/account/update 请求：只改账号设置，凭据走 wechat/account/credentials */
+export interface UpdateWechatAccountRequest extends WechatAccountProfileInput {
     /** 目标账号 id，须已在库中存在 */
     id: string
-    /** 账号名称 */
-    name: string
-    /** 平台 AppID */
-    appId: string
-    /** 新密钥：留空或缺省表示沿用已存密钥 */
-    appSecret?: string
-    /** 账号类型，非法值回落订阅号 */
-    accountType?: string
 }
 
 /** wechat/account/update 响应 */
@@ -186,33 +203,43 @@ export function isWechatAppSecret(value: unknown): value is string {
     return typeof value === 'string' && APP_SECRET_PATTERN.test(value.trim())
 }
 
-/** 判断是否为创建账号请求：名称、AppID 与密钥三项必填 */
-export function isCreateWechatAccountRequest(payload: unknown): payload is CreateWechatAccountRequest {
-    if (typeof payload !== 'object' || payload === null) {
+/** 收窄账号设置里的可选字段：类型与默认作者都只接受字符串 */
+function isWechatAccountProfileInput(payload: object): boolean {
+    const candidate = payload as { name?: unknown; accountType?: unknown; defaultAuthor?: unknown }
+    if (typeof candidate.name !== 'string' || readWechatAccountName(candidate.name).length === 0) {
         return false
     }
-    const candidate = payload as { name?: unknown; appId?: unknown; appSecret?: unknown }
-    return (
-        typeof candidate.name === 'string' &&
-        readWechatAccountName(candidate.name).length > 0 &&
-        isWechatAppId(candidate.appId) &&
-        isWechatAppSecret(candidate.appSecret)
-    )
+    if (candidate.accountType !== undefined && typeof candidate.accountType !== 'string') {
+        return false
+    }
+    return candidate.defaultAuthor === undefined || typeof candidate.defaultAuthor === 'string'
 }
 
-/** 判断是否为更新账号请求：密钥可缺省表示沿用旧值 */
+/** 判断是否为创建账号请求：只校验账号设置，凭据之后单独保存 */
+export function isCreateWechatAccountRequest(payload: unknown): payload is CreateWechatAccountRequest {
+    return typeof payload === 'object' && payload !== null && isWechatAccountProfileInput(payload)
+}
+
+/** 判断是否为更新账号设置请求：id 合法 + 名称非空 */
 export function isUpdateWechatAccountRequest(payload: unknown): payload is UpdateWechatAccountRequest {
     if (typeof payload !== 'object' || payload === null) {
         return false
     }
-    const candidate = payload as { id?: unknown; name?: unknown; appId?: unknown; appSecret?: unknown }
-    if (!isWechatAccountId(candidate.id)) {
+    if (!isWechatAccountId((payload as { id?: unknown }).id)) {
         return false
     }
-    if (typeof candidate.name !== 'string' || readWechatAccountName(candidate.name).length === 0) {
+    return isWechatAccountProfileInput(payload)
+}
+
+/** 判断是否为保存凭据请求：AppID 必填，AppSecret 缺省表示沿用旧值 */
+export function isSaveWechatAccountCredentialsRequest(
+    payload: unknown,
+): payload is SaveWechatAccountCredentialsRequest {
+    if (typeof payload !== 'object' || payload === null) {
         return false
     }
-    if (!isWechatAppId(candidate.appId)) {
+    const candidate = payload as { id?: unknown; appId?: unknown; appSecret?: unknown }
+    if (!isWechatAccountId(candidate.id) || !isWechatAppId(candidate.appId)) {
         return false
     }
     return candidate.appSecret === undefined || isWechatAppSecret(candidate.appSecret)
@@ -283,8 +310,10 @@ export interface WechatArticleSummary {
     digest?: string
     /** 正文来源 */
     sourceKind: WechatArticleSourceKind
-    /** 源文档相对路径：manual 时缺省 */
+    /** 源文档相对路径：manual 时缺省，只作追溯，不参与发布 */
     sourcePath?: string
+    /** 批次内正文文件（存储根相对路径）：发布内容以它为准，旧文章首次保存后才有 */
+    filePath?: string
     /** 指定的封面图路径：缺省时推送阶段取正文首图 */
     coverPath?: string
     /**
@@ -298,7 +327,7 @@ export interface WechatArticleSummary {
 
 /** 文章详情：编辑弹窗需要正文原文 */
 export interface WechatArticleDetail extends WechatArticleSummary {
-    /** Markdown 正文：推送前统一渲染为内联样式 HTML，此处只存源文 */
+    /** Markdown 正文：批次文件内容的镜像，推送时以文件为准，此处只供编辑回填 */
     body: string
 }
 
@@ -471,6 +500,52 @@ export interface WechatArticleUpdateResult {
     article: WechatArticleDetail
 }
 
+/**
+ * wechat/article/quickCreate 请求：只给批次，其余交给宿主。
+ * 关键约束：标题由宿主按「未命名文章 N」生成，前端不弹表单，新建后直接打开正文文件。
+ */
+export interface WechatArticleQuickCreateRequest {
+    issueId: string
+}
+
+/** wechat/article/open 请求：在编辑器里打开该文章的正文文件 */
+export interface WechatArticleOpenRequest {
+    id: string
+}
+
+/** wechat/article/open 响应：opened 为 false 表示文件不可用（已由宿主提示原因） */
+export interface WechatArticleOpenResult {
+    opened: boolean
+}
+
+/**
+ * wechat/article/meta 请求：只改元信息，正文由用户在编辑器里维护。
+ * 关键约束：coverPath 传空串表示清除、缺省表示不改动；宿主重写 frontmatter 时保留文件里的正文。
+ */
+export interface WechatArticleMetaRequest {
+    id: string
+    title: string
+    author?: string
+    digest?: string
+    coverPath?: string
+    allowComment?: boolean
+}
+
+/**
+ * wechat/article/move 请求：在同一批次内上移或下移一篇。
+ * 关键约束：批次内顺序号即公众号的推送顺序，移动只交换相邻两篇；
+ * 首项上移与末项下移由宿主拒绝，前端同时置灰，避免无效请求。
+ */
+export interface WechatArticleMoveRequest {
+    id: string
+    direction: 'up' | 'down'
+}
+
+/** wechat/article/move 响应 */
+export interface WechatArticleMoveResult {
+    moved: boolean
+}
+
 /** wechat/article/remove 请求 */
 export interface WechatArticleRemoveRequest {
     id: string
@@ -616,6 +691,57 @@ export function isWechatArticleUpdateRequest(payload: unknown): payload is Wecha
         return false
     }
     return isWechatArticleBody(candidate.body)
+}
+
+/** 判断是否为快速新建文章请求：只需要批次标识 */
+export function isWechatArticleQuickCreateRequest(payload: unknown): payload is WechatArticleQuickCreateRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    return isWechatIssueId((payload as { issueId?: unknown }).issueId)
+}
+
+/** 判断是否为打开正文文件请求 */
+export function isWechatArticleOpenRequest(payload: unknown): payload is WechatArticleOpenRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    return isWechatIssueId((payload as { id?: unknown }).id)
+}
+
+/** 判断是否为文章元信息请求：标题必填，封面与留言为可选 */
+export function isWechatArticleMetaRequest(payload: unknown): payload is WechatArticleMetaRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as {
+        id?: unknown
+        title?: unknown
+        coverPath?: unknown
+        allowComment?: unknown
+    }
+    if (!isWechatIssueId(candidate.id) || readWechatArticleTitle(candidate.title).length === 0) {
+        return false
+    }
+    if (candidate.coverPath !== undefined && typeof candidate.coverPath !== 'string') {
+        return false
+    }
+    if (candidate.allowComment !== undefined && typeof candidate.allowComment !== 'boolean') {
+        return false
+    }
+    return true
+}
+
+/** 判断是否为调整文章顺序请求：id 合法且方向只接受 up / down */
+export function isWechatArticleMoveRequest(payload: unknown): payload is WechatArticleMoveRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { id?: unknown; direction?: unknown }
+    if (!isWechatIssueId(candidate.id)) {
+        return false
+    }
+    return candidate.direction === 'up' || candidate.direction === 'down'
 }
 
 /** 判断是否为删除文章请求 */

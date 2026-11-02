@@ -2,7 +2,8 @@
  * 推送服务：先把批次渲染成公众号 HTML、补传本地图片素材并提交草稿箱，再按额度正式群发。
  * 复用约定：渲染走 ./render，素材走 ./materialService，草稿与发布接口走 ./client，落库走 db/issueRepository；
  * 批次摘要复用 issueService.detail，避免这里再拼一套「批次 + 文章」的组装口径。
- * 关键约束：草稿与群发是两个动作——群发需已有 media_id，且受主体权限与「订阅号一天一次、服务号一月四次」约束；
+ * 关键约束：正文只从批次目录的 Markdown 文件读取，文件缺失或为空时整批拒绝，不回退库内镜像；
+ * 草稿与群发是两个动作——群发需已有 media_id，且受主体权限与「订阅号一天一次、服务号一月四次」约束；
  * 单张图片不可用只记警告、不中断整篇；没有可用封面时直接拒绝（平台强制要求 thumb_media_id）；
  * 草稿成功写回 media_id 并推进到 ready，失败只回写错误、状态停在 draft；
  * 群发提交成功只代表任务受理，是否发布成功以 freepublish/get 的轮询结果为准，轮询未出结果时保持 pushing；
@@ -197,7 +198,8 @@ export class WechatPublishService {
                     warnings.add(`《${article.title}》的封面不可用：${reason}`)
                 }
             }
-            const rendered = await renderWechatHtml(article.body, {
+            const doc = await this.deps.issues.readArticleContent(article)
+            const rendered = await renderWechatHtml(doc.body, {
                 resolveImageUrl: async (url: string): Promise<string | null> => {
                     if (!hasReportedMaterial) {
                         hasReportedMaterial = true
@@ -211,7 +213,8 @@ export class WechatPublishService {
                     const ensured = await this.deps.materials.ensureImage({
                         accountId: issue.account_id,
                         appId: account.app_id,
-                        sourcePath: article.source_path,
+                        // 相对图片按正文文件所在目录解析：批次副本里的写法以它自己为基准
+                        sourcePath: article.file_path ?? article.source_path,
                         imageUrl: url,
                     })
                     if (ensured.kind === 'uploaded') {
@@ -230,7 +233,8 @@ export class WechatPublishService {
                 throw new Error(`《${article.title}》缺少封面：请在文章里指定封面图，或在正文放入一张本地 jpg/png 图片`)
             }
             drafts.push({
-                title: article.title,
+                // 标题以正文一级标题为准：列表里的 title 只是镜像，可能落后于刚保存的文件
+                title: doc.title,
                 author: article.author ?? '',
                 digest: article.digest ?? '',
                 content: rendered.html,
@@ -281,7 +285,7 @@ export class WechatPublishService {
             errorHint: null,
             updatedAt: new Date().toISOString(),
         })
-        const detail = this.deps.issues.detail(issue.id)
+        const detail = await this.deps.issues.detail(issue.id)
         return { issue: detail.issue, warnings: [...warnings] }
     }
 
@@ -396,7 +400,7 @@ export class WechatPublishService {
                     errorHint: null,
                     updatedAt: new Date().toISOString(),
                 })
-                const detail = this.deps.issues.detail(issue.id)
+                const detail = await this.deps.issues.detail(issue.id)
                 return {
                     issue: detail.issue,
                     ...(state.articleUrl === undefined ? {} : { articleUrl: state.articleUrl }),
@@ -422,7 +426,7 @@ export class WechatPublishService {
             })
         }
 
-        const detail = this.deps.issues.detail(issue.id)
+        const detail = await this.deps.issues.detail(issue.id)
         return { issue: detail.issue }
     }
 

@@ -34,6 +34,7 @@ const REF_LABELS: Readonly<Record<MediaRefType, string>> = {
     lore_cover: '条目封面',
     chapter: '章节',
     note: '笔记',
+    article: '公众号文章',
     external: '外部文档',
 }
 
@@ -44,6 +45,7 @@ const REF_ORDER: readonly MediaRefType[] = [
     'lore_cover',
     'chapter',
     'note',
+    'article',
     'external',
 ]
 

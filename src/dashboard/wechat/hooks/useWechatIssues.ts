@@ -1,26 +1,26 @@
 /**
- * 推送批次数据：按账号拉取批次快照，并提供新建/删除批次、增删改文章与从文档导入六个动作。
- * 复用约定：请求走 shared/utils/bridge，错误与提示走 shared/utils/error，批次展示口径取 wechat/utils；
- * 写操作成功后统一重拉批次列表，正文内容只在打开编辑弹窗时按需拉取（wechat/issue/detail）。
+ * 推送批次数据：按账号拉取批次快照，并提供新建/删除批次、新建/导入/删除文章与推送等动作。
+ * 复用约定：请求走 shared/utils/bridge，错误与提示走 shared/utils/error，批次展示口径取 wechat/utils。
  * 关键约束：账号切换由页面重新挂载 hook 承担（accountId 变化即重拉），本层不监听路由；
+ * 正文不再经本层读写——新建与导入由宿主落成批次文件并打开编辑器，元信息在工作流面板设置；
  * 导入返回 imported: false 表示用户取消选择，静默结束、不弹提示；
  * 写操作进行中置 isMutating，页面据此禁用入口，避免批次内并发写入导致序号错乱。
  */
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import type {
-    WechatArticleCreateRequest,
     WechatArticleCreateResult,
     WechatArticleDetail,
     WechatArticleImportRequest,
     WechatArticleImportResult,
+    WechatArticleMetaRequest,
+    WechatArticleMoveRequest,
+    WechatArticleOpenRequest,
+    WechatArticleOpenResult,
+    WechatArticleQuickCreateRequest,
     WechatArticleRemoveRequest,
-    WechatArticleUpdateRequest,
-    WechatCoverPickResult,
     WechatIssueCreateRequest,
     WechatIssueCreateResult,
-    WechatIssueDetailRequest,
-    WechatIssueDetailResult,
     WechatIssueRemoveRequest,
     WechatIssueSummary,
     WechatIssuesMergeRequest,
@@ -41,21 +41,14 @@ import { onState, request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 import type { WechatListStatus } from '../utils'
 
-/** 新建文章的表单载荷：正文可为空，先占位再补写；coverPath 空串表示不指定封面 */
-export interface WechatArticleFormInput {
-    issueId: string
+/** 文章设置表单：只含发布元信息，标题与封面不在本入口修改 */
+export interface WechatArticleMetaInput {
+    id: string
+    /** 原样回传：契约要求标题必填，本入口不改它 */
     title: string
     author: string
     digest: string
-    body: string
-    coverPath: string
-    /** 是否允许读者留言：写入草稿的 need_open_comment */
     allowComment: boolean
-}
-
-/** 更新文章的表单载荷 */
-export interface WechatArticleUpdateInput extends WechatArticleFormInput {
-    id: string
 }
 
 export interface WechatIssuesState {
@@ -72,18 +65,21 @@ export interface WechatIssuesState {
     removeIssues: (ids: string[]) => Promise<boolean>
     /** 合并批次：把所选批次的文章并入目标批次，源批次被删除 */
     mergeIssues: (ids: string[], targetId: string) => Promise<boolean>
-    createArticle: (input: WechatArticleFormInput) => Promise<WechatArticleDetail | null>
-    updateArticle: (input: WechatArticleUpdateInput) => Promise<boolean>
+    /** 直接新建一篇：宿主取默认标题、落好文件并打开编辑器 */
+    quickCreateArticle: (issueId: string) => Promise<WechatArticleDetail | null>
+    /** 在编辑器里打开正文文件（旧文章缺文件时宿主会先补建） */
+    openArticle: (articleId: string) => Promise<boolean>
+    /** 上移 / 下移一篇：顺序号即公众号的推送顺序 */
+    moveArticle: (id: string, direction: 'up' | 'down') => Promise<boolean>
+    /** 保存发布元信息：作者、摘要与留言开关，标题与封面原样回传 */
+    updateArticleMeta: (input: WechatArticleMetaInput) => Promise<boolean>
     removeArticle: (id: string) => Promise<boolean>
     importArticle: (issueId: string, sourceKind: 'note' | 'press') => Promise<WechatArticleDetail | null>
-    loadArticle: (issueId: string, articleId: string) => Promise<WechatArticleDetail | null>
     publishDraft: (issueId: string) => Promise<boolean>
     /** 正式群发：需已有草稿，受账号频率额度约束 */
     publish: (issueId: string) => Promise<boolean>
     /** 查询当前账号的群发额度：确认弹窗据此展示剩余次数 */
     loadQuota: () => Promise<WechatPublishQuotaResult | null>
-    /** 选择封面图：返回存储根相对路径，取消返回 null */
-    pickCover: () => Promise<string | null>
     /** 打开公众号后台：URL 由宿主固定，前端只传标识 */
     openBackend: () => Promise<void>
 }
@@ -205,14 +201,15 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         [reload],
     )
 
-    const createArticle = useCallback(
-        async (input: WechatArticleFormInput): Promise<WechatArticleDetail | null> => {
+    /** 直接新建一篇：宿主取默认标题、写好批次文件并打开编辑器，本层只负责重拉列表 */
+    const quickCreateArticle = useCallback(
+        async (issueId: string): Promise<WechatArticleDetail | null> => {
             setIsMutating(true)
-            const payload: WechatArticleCreateRequest = { ...input }
+            const payload: WechatArticleQuickCreateRequest = { issueId }
             try {
-                const created = await request<WechatArticleCreateResult>('wechat/article/create', payload)
+                const created = await request<WechatArticleCreateResult>('wechat/article/quickCreate', payload, 120_000)
                 await reload()
-                toast.success('已添加文章')
+                toast.success(`已新建：${created.article.title}`)
                 return created.article
             } catch (cause) {
                 toastError(cause)
@@ -224,22 +221,52 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         [reload],
     )
 
-    const updateArticle = useCallback(
-        async (input: WechatArticleUpdateInput): Promise<boolean> => {
+    /** 打开正文文件：旧文章需要先补建文件，超时放宽到 60s */
+    const openArticle = useCallback(async (articleId: string): Promise<boolean> => {
+        const payload: WechatArticleOpenRequest = { id: articleId }
+        try {
+            const result = await request<WechatArticleOpenResult>('wechat/article/open', payload, 60_000)
+            return result.opened
+        } catch (cause) {
+            toastError(cause)
+            return false
+        }
+    }, [])
+
+    /** 调整顺序：顺序号即推送顺序，移动结果在列表上直接可见，成功不额外弹提示 */
+    const moveArticle = useCallback(
+        async (id: string, direction: 'up' | 'down'): Promise<boolean> => {
             setIsMutating(true)
-            const payload: WechatArticleUpdateRequest = {
+            const payload: WechatArticleMoveRequest = { id, direction }
+            try {
+                await request('wechat/article/move', payload)
+                await reload()
+                return true
+            } catch (cause) {
+                toastError(cause)
+                return false
+            } finally {
+                setIsMutating(false)
+            }
+        },
+        [reload],
+    )
+
+    /** 保存文章元信息：宿主重写 frontmatter 之外的库内字段，正文文件保持不动 */
+    const updateArticleMeta = useCallback(
+        async (input: WechatArticleMetaInput): Promise<boolean> => {
+            setIsMutating(true)
+            const payload: WechatArticleMetaRequest = {
                 id: input.id,
                 title: input.title,
                 author: input.author,
                 digest: input.digest,
-                body: input.body,
-                coverPath: input.coverPath,
                 allowComment: input.allowComment,
             }
             try {
-                await request('wechat/article/update', payload)
+                await request('wechat/article/meta', payload)
                 await reload()
-                toast.success('文章已保存')
+                toast.success('文章设置已保存')
                 return true
             } catch (cause) {
                 toastError(cause)
@@ -258,7 +285,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             try {
                 await request('wechat/article/remove', payload)
                 await reload()
-                toast.success('已移除文章')
+                toast.success('已删除文章及其批次文档')
                 return true
             } catch (cause) {
                 toastError(cause)
@@ -292,18 +319,6 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         },
         [reload],
     )
-
-    /** 打开编辑弹窗时按需取正文：列表快照不含正文，避免一次把全部文章读进内存 */
-    const loadArticle = useCallback(async (issueId: string, articleId: string): Promise<WechatArticleDetail | null> => {
-        const payload: WechatIssueDetailRequest = { id: issueId }
-        try {
-            const detail = await request<WechatIssueDetailResult>('wechat/issue/detail', payload)
-            return detail.articles.find((article) => article.id === articleId) ?? null
-        } catch (cause) {
-            toastError(cause)
-            return null
-        }
-    }, [])
 
     /**
      * 生成草稿：渲染与补传素材在宿主完成，可能耗时数十秒，故单独放宽超时。
@@ -377,17 +392,6 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         }
     }, [accountId])
 
-    /** 选择封面：超时放宽到 60s，用户在系统文件对话框里停留的时间不可控 */
-    const pickCover = useCallback(async (): Promise<string | null> => {
-        try {
-            const result = await request<WechatCoverPickResult>('wechat/cover/pick', undefined, 60_000)
-            return result.path
-        } catch (cause) {
-            toastError(cause)
-            return null
-        }
-    }, [])
-
     /** 打开公众号后台：前端只传固定标识，地址由宿主解析 */
     const openBackend = useCallback(async (): Promise<void> => {
         try {
@@ -408,15 +412,15 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         removeIssue,
         removeIssues,
         mergeIssues,
-        createArticle,
-        updateArticle,
+        quickCreateArticle,
+        openArticle,
+        moveArticle,
+        updateArticleMeta,
         removeArticle,
         importArticle,
-        loadArticle,
         publishDraft,
         publish,
         loadQuota,
-        pickCover,
         openBackend,
     }
 }

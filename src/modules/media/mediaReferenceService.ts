@@ -1,10 +1,11 @@
 /**
  * 媒体引用服务：登记与重建「图片被谁使用」的关系，覆盖作品封面、角色/条目封面与正文引用。
- * 复用约定：路径一律相对存储根，文档遍历只走作品目录与 notes 目录，扩展名固定 md；
+ * 复用约定：路径一律相对存储根，文档遍历走作品目录、notes 目录与公众号批次目录，扩展名固定 md；
  * 正文引用同时识别四种写法——@zhai/ 存储根引用、images/ 相对路径、文档同级 assets/ 副本名、存储根内绝对路径；
  * 写入复用 mediaRepository 的 insertUsage / replaceUsagesOfDocument，不另写一份 SQL。
  * 关键约束：引用按文档整篇替换（先删后插），同一文档内多次引用同一张图只留一行，避免引用数虚高；
  * 找不到对应媒体的引用记为 stale 且不落库，防止把已删除的图重新挂回来；
+ * 公众号批次文章的引用类型为 article，与笔记一样只按正文图片解析，不涉及封面行；
  * 角色卡文档没有 id 行，角色封面的 ref_id 用角色名承担区分键，条目封面用条目自带的 id 行。
  */
 import * as path from 'node:path'
@@ -12,6 +13,7 @@ import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { buildStorageUri } from '@modules/common/storagePath'
 import type { MediaRefType } from '@shared/types/media'
+import { WECHAT_MODULE_DIR } from '@shared/types/wechat'
 import { isZhaiPath, readZhaiRelativePath } from '@shared/utils/zhaiPath'
 import { PRESS_SCANNED_FILES } from './constants'
 import { insertUsage, listMediaPaths, replaceUsagesOfDocument } from './mediaRepository'
@@ -424,6 +426,48 @@ export async function rescanReferences(
             )
             outcome.documents += 1
             outcome.usages += references.length
+        }
+    }
+
+    // 公众号批次文章：wechat/{appid}/post/{时间戳}/*.md，与笔记一样只按正文图片解析
+    for (const [appId, appType] of await readDirectory(root, WECHAT_MODULE_DIR)) {
+        if (appType !== vscode.FileType.Directory) {
+            continue
+        }
+        for (const [issueDir, issueType] of await readDirectory(root, `${WECHAT_MODULE_DIR}/${appId}/post`)) {
+            if (issueType !== vscode.FileType.Directory) {
+                continue
+            }
+            const dirPath = `${WECHAT_MODULE_DIR}/${appId}/post/${issueDir}`
+            for (const [name, fileType] of await readDirectory(root, dirPath)) {
+                if (fileType !== vscode.FileType.File || !MARKDOWN_PATTERN.test(name)) {
+                    continue
+                }
+                const documentPath = `${dirPath}/${name}`
+                const text = await readDocument(root, documentPath)
+                if (text === null) {
+                    continue
+                }
+                const { references, stale } = parseImageReferences(text, documentPath, lookup)
+                outcome.stale += stale
+                replaceUsagesOfDocument(
+                    db,
+                    documentPath,
+                    references.map((reference) => ({
+                        mediaId: reference.mediaId,
+                        usage: {
+                            refType: 'article' as const,
+                            refPath: documentPath,
+                            refScope: 'storage' as const,
+                            refId: null,
+                            refTitle: toDocumentTitle(name),
+                            refAnchor: reference.refAnchor,
+                        },
+                    })),
+                )
+                outcome.documents += 1
+                outcome.usages += references.length
+            }
         }
     }
     return outcome

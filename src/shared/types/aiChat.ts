@@ -282,7 +282,7 @@ export interface AiWriteState {
 }
 
 /** 提及候选类型：按索引路径前缀归类，仅用于展示分组 */
-export type AiMentionKind = 'note' | 'chapter' | 'other'
+export type AiMentionKind = 'note' | 'chapter' | 'article' | 'other'
 
 /** 提及候选：path 为相对存储根的索引路径，添加时原样回传 */
 export interface AiMentionCandidate {

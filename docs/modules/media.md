@@ -200,7 +200,7 @@ CREATE INDEX IF NOT EXISTS idx_media_scope ON media(scope, month DESC);
 CREATE TABLE IF NOT EXISTS media_usage (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     media_id   TEXT NOT NULL,
-    ref_type   TEXT NOT NULL,   -- press_cover | character_cover | lore_cover | chapter | note | external
+    ref_type   TEXT NOT NULL,   -- press_cover | character_cover | lore_cover | chapter | note | article | external
     ref_path   TEXT NOT NULL,   -- 存储根相对路径；external 为绝对路径
     ref_scope  TEXT NOT NULL DEFAULT 'storage',  -- storage | absolute
     ref_id     TEXT,            -- 角色 / 条目标识；章节与笔记为 NULL
@@ -224,6 +224,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_type ON media_usage(ref_type);
 | `lore_cover` | 设定条目封面 | `press/{作品名}/{势力\|地点\|物品}.md` | 条目 ID |
 | `chapter` | 章节正文引用 | 章节 md 路径 | NULL |
 | `note` | 笔记正文引用 | `notes/YYYYMM/xxx.md` | NULL |
+| `article` | 公众号文章正文引用 | `wechat/{appid}/post/{时间戳}/xxx.md` | NULL |
 | `external` | 存储根外文档引用 | 绝对路径 | NULL |
 
 一对多的三条约束：

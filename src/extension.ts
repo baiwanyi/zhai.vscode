@@ -72,6 +72,7 @@ import { findWechatAccount, updateWechatAccountAuth } from './modules/wechat/db/
 import { openWechatDatabase } from './modules/wechat/db/connection'
 import { recoverStalePushingIssues } from './modules/wechat/db/issueRepository'
 import { WechatFanService } from './modules/wechat/fanService'
+import { WechatIssueRenameService } from './modules/wechat/issueRenameService'
 import { WechatIssueService } from './modules/wechat/issueService'
 import { WechatMaterialService } from './modules/wechat/materialService'
 import { WechatMenuService } from './modules/wechat/menuService'
@@ -323,6 +324,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     })
     // 批次服务复用索引库做导入源校验：路径先回查 files 表，再读盘，前端无法指定任意文件
     const wechatIssueService = new WechatIssueService({ db: wechatDb, indexDb: db })
+    // 批次文章与笔记同构：保存时让 md 文件名跟随正文一级标题，同步 wechat.db 的 title 与 file_path；
+    // 宿主经 workspace.fs 的写入不产生保存事件，两条通道不会互相触发
+    const wechatIssueRenameService = new WechatIssueRenameService(wechatDb)
+    context.subscriptions.push(
+        vscode.workspace.onDidSaveTextDocument((document) => {
+            void wechatIssueRenameService.handleSave(document)
+        }),
+    )
     // 素材服务按存储根解析本地图片：存储根可随配置变更，故用函数惰性取值
     const wechatMaterialService = new WechatMaterialService({
         db: wechatDb,

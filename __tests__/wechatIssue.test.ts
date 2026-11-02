@@ -8,6 +8,10 @@ import {
     isWechatArticleBody,
     isWechatArticleCreateRequest,
     isWechatArticleImportRequest,
+    isWechatArticleMetaRequest,
+    isWechatArticleMoveRequest,
+    isWechatArticleOpenRequest,
+    isWechatArticleQuickCreateRequest,
     isWechatArticleRemoveRequest,
     isWechatArticleUpdateRequest,
     isWechatIssueCreateRequest,
@@ -164,6 +168,31 @@ describe('文章请求收窄', () => {
     it('删除文章要求合法 id', () => {
         expect(isWechatArticleRemoveRequest({ id: ARTICLE_ID })).toBe(true)
         expect(isWechatArticleRemoveRequest({ id: 1 })).toBe(false)
+    })
+
+    it('快速新建与打开文件只要求合法标识', () => {
+        expect(isWechatArticleQuickCreateRequest({ issueId: ISSUE_ID })).toBe(true)
+        expect(isWechatArticleQuickCreateRequest({ issueId: 'bad id' })).toBe(false)
+        expect(isWechatArticleQuickCreateRequest({})).toBe(false)
+        expect(isWechatArticleOpenRequest({ id: ARTICLE_ID })).toBe(true)
+        expect(isWechatArticleOpenRequest({ id: 1 })).toBe(false)
+    })
+
+    it('调整顺序只接受 up / down 两个方向', () => {
+        expect(isWechatArticleMoveRequest({ id: ARTICLE_ID, direction: 'up' })).toBe(true)
+        expect(isWechatArticleMoveRequest({ id: ARTICLE_ID, direction: 'down' })).toBe(true)
+        expect(isWechatArticleMoveRequest({ id: ARTICLE_ID, direction: 'left' })).toBe(false)
+        expect(isWechatArticleMoveRequest({ id: ARTICLE_ID })).toBe(false)
+        expect(isWechatArticleMoveRequest({ id: 1, direction: 'up' })).toBe(false)
+    })
+
+    it('元信息请求标题必填，封面与留言类型不符即拒绝', () => {
+        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, title: '标题' })).toBe(true)
+        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, title: '   ' })).toBe(false)
+        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, title: '标题', coverPath: 'images/a.png' })).toBe(true)
+        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, title: '标题', coverPath: null })).toBe(false)
+        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, title: '标题', allowComment: true })).toBe(true)
+        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, title: '标题', allowComment: 1 })).toBe(false)
     })
 
     it('推送进度载荷逐字段收窄', () => {

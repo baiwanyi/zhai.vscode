@@ -1,13 +1,15 @@
 /**
- * 常驻分区视图：文档不属于作品时承载 AI 对话、校对、用量等跨模块分区。
+ * 常驻分区视图：文档不属于作品时承载 AI 对话、媒体、校对、用量等跨模块分区。
  * 复用约定：对话复用 workflow/aichat 的 WorkflowAiChat（projectDir 即会话作用域），校对与用量分别复用
- * proofread、usage 的页面组件；媒体与快照以作品目录为前提，这里只给出提示而不渲染半成品页面。
+ * proofread、usage 的页面组件，媒体复用 workflow/media 的 MediaLibraryPage（插入作用于当前编辑器）；
+ * 快照以作品目录为前提，这里只给出提示而不渲染半成品页面。
  * 关键约束：对话按作用域目录隔离（笔记/公众号取模块目录，其他文档为通用对话），key 跟随作用域，
  * 切换文档归属时重建页面，命令选择与未发送正文不会串到另一个作用域。
  */
-import { Archive, Image as ImageIcon } from 'lucide-react'
+import { Archive } from 'lucide-react'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { WorkflowAiChat } from '@webview/workflow/aichat/WorkflowAiChat'
+import { MediaLibraryPage } from '@webview/workflow/media/MediaLibraryPage'
 import { WorkflowProofread } from '@webview/workflow/proofread/WorkflowProofread'
 import { WorkflowUsage } from '@webview/workflow/usage/WorkflowUsage'
 import type { WorkflowSection } from './workflowSections'
@@ -28,21 +30,23 @@ export function WorkflowResidentSection({ section, scopeDir }: WorkflowResidentS
     if (section === 'usage') {
         return <WorkflowUsage />
     }
-    // 媒体与快照都以作品目录为前提：非作品文档下给出明确提示，避免渲染空数据页面
-    if (section === 'media' || section === 'snapshot') {
-        const isMedia = section === 'media'
-        const Icon = isMedia ? ImageIcon : Archive
+    // 媒体在非作品文档下同样给完整图库：笔记与公众号文章都要能把图片插入当前文档，
+    // 出图与「设为作品封面」仍留在作品的媒体分区（以作品上下文为前提）
+    if (section === 'media') {
+        return <MediaLibraryPage />
+    }
+    // 快照以作品目录为前提：非作品文档下给出明确提示，避免渲染空数据页面
+    if (section === 'snapshot') {
         return (
             <div className="flex h-full flex-col justify-center p-4">
                 <Empty>
                     <EmptyHeader>
                         <EmptyMedia variant="icon" className="size-12 rounded-2xl">
-                            <Icon className="size-5" />
+                            <Archive className="size-5" />
                         </EmptyMedia>
-                        <EmptyTitle>{isMedia ? '媒体' : '快照'}需要作品上下文</EmptyTitle>
+                        <EmptyTitle>快照需要作品上下文</EmptyTitle>
                         <EmptyDescription>
-                            当前文档不属于任何作品，{isMedia ? '媒体库' : '快照时间线'}以作品目录为前提。
-                            打开作品文档后会切回作品作用域。
+                            当前文档不属于任何作品，快照时间线以作品目录为前提。打开作品文档后会切回作品作用域。
                         </EmptyDescription>
                     </EmptyHeader>
                 </Empty>

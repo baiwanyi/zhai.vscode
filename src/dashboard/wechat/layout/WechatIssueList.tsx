@@ -6,6 +6,7 @@
  * 骨架条数与卡片同高，等待期间列表不塌陷。
  */
 import { Send } from 'lucide-react'
+import { ItemGroup } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
 import { Button } from '@webview/components/Button'
@@ -22,11 +23,8 @@ interface WechatIssueListProps {
     status: WechatListStatus
     error: string | null
     isBusy: boolean
-    /** 批次首图在 Webview 里的地址：键为文章里的封面路径 */
+    /** 文章封面在 Webview 里的地址：键为文章里的封面路径 */
     covers: Record<string, string>
-    /** 已勾选的批次 id：只有草稿与失败批次可勾选 */
-    selectedIds: string[]
-    onToggleSelect: (issue: WechatIssueSummary) => void
     /** 是否处于筛选态：筛选后为空时给出「清除筛选」而不是「新建批次」 */
     isFiltered: boolean
     onClearFilter: () => void
@@ -34,7 +32,12 @@ interface WechatIssueListProps {
     onRetry: () => void
     onAddArticle: (issue: WechatIssueSummary) => void
     onImport: (issue: WechatIssueSummary, sourceKind: 'note' | 'press') => void
-    onEditArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
+    /** 打开正文文件：正文在批次 md 里维护，列表不承载编辑 */
+    onOpenArticle: (article: WechatArticleSummary) => void
+    /** 文章设置：作者、摘要与留言开关 */
+    onOpenArticleSetting: (article: WechatArticleSummary) => void
+    /** 上移 / 下移一篇：顺序号即推送顺序 */
+    onMoveArticle: (article: WechatArticleSummary, direction: 'up' | 'down') => void
     onRemoveArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
     onRemoveIssue: (issue: WechatIssueSummary) => void
     onPublishDraft: (issue: WechatIssueSummary) => void
@@ -48,15 +51,15 @@ export function WechatIssueList({
     error,
     isBusy,
     covers,
-    selectedIds,
-    onToggleSelect,
     isFiltered,
     onClearFilter,
     onAdd,
     onRetry,
     onAddArticle,
     onImport,
-    onEditArticle,
+    onOpenArticle,
+    onOpenArticleSetting,
+    onMoveArticle,
     onRemoveArticle,
     onRemoveIssue,
     onPublishDraft,
@@ -102,19 +105,18 @@ export function WechatIssueList({
     }
 
     return (
-        <div className="flex w-full flex-col gap-2">
+        <ItemGroup className="gap-3">
             {issues.map((issue) => (
                 <WechatIssueCard
                     key={issue.id}
                     issue={issue}
-                    coverUri={covers[issue.articles[0]?.coverPath ?? '']}
-                    isSelectable={issue.status === 'draft' || issue.status === 'failed'}
-                    isSelected={selectedIds.includes(issue.id)}
-                    onToggleSelect={onToggleSelect}
+                    covers={covers}
                     isBusy={isBusy}
                     onAddArticle={onAddArticle}
                     onImport={onImport}
-                    onEditArticle={onEditArticle}
+                    onOpenArticle={onOpenArticle}
+                    onOpenArticleSetting={onOpenArticleSetting}
+                    onMoveArticle={onMoveArticle}
                     onRemoveArticle={onRemoveArticle}
                     onRemoveIssue={onRemoveIssue}
                     onPublishDraft={onPublishDraft}
@@ -122,7 +124,7 @@ export function WechatIssueList({
                     onOpenBackend={onOpenBackend}
                 />
             ))}
-        </div>
+        </ItemGroup>
     )
 }
 

@@ -15,6 +15,7 @@ import type { JSX } from 'react'
 const KIND_LABELS: Readonly<Record<AiMentionKind, string>> = {
     note: '笔记',
     chapter: '章节',
+    article: '公众号文章',
     other: '其他',
 }
 

@@ -1,13 +1,17 @@
 /**
- * 推送管理数据：当前账号的批次快照与群发额度。
+ * 推送管理数据：当前账号的批次快照、群发额度与文章元信息写入。
  * 复用约定：批次读 wechat/issues（与仪表盘批次页同一份数据），额度读 wechat/publishQuota，
- * 两者都按账号收窄；错误提示与展示口径交给页面，本层只做取数与状态。
+ * 文章元信息写 wechat/article/meta，封面选择走 wechat/cover/pick；错误提示与展示口径交给页面。
  * 关键约束：额度与批次必须同时可用——只拿到批次而额度失败时仍渲染列表，
- * 额度区单独显示失败原因，不因一个次要数据源失败把整页变成错误页。
+ * 额度区单独显示失败原因，不因一个次要数据源失败把整页变成错误页；
+ * 正文不在这里读写：保存元信息时宿主保留文件里的正文，本层只提交发布相关字段。
  */
 import { useCallback, useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { isWechatPublishProgress } from '@shared/types/wechat'
 import type {
+    WechatArticleMetaRequest,
+    WechatCoverPickResult,
     WechatIssueSummary,
     WechatIssuesRequest,
     WechatPublishProgress,
@@ -15,7 +19,17 @@ import type {
     WechatPublishQuotaResult,
 } from '@shared/types/wechat'
 import { onState, request } from '@shared/utils/bridge'
-import { toErrorText } from '@shared/utils/error'
+import { toErrorText, toastError } from '@shared/utils/error'
+
+/** 文章元信息表单：正文由编辑器维护，这里只提交发布相关字段 */
+export interface WechatArticleMetaInput {
+    id: string
+    title: string
+    author: string
+    digest: string
+    coverPath: string
+    allowComment: boolean
+}
 
 export interface WechatPushOverviewState {
     issues: WechatIssueSummary[]
@@ -27,6 +41,10 @@ export interface WechatPushOverviewState {
     /** 额度单独失败时的说明：有值时额度区显示该文案而不显示数字 */
     quotaError: string | null
     reload: () => Promise<void>
+    /** 保存文章元信息：成功后重拉批次，正文文件由宿主原样保留 */
+    saveArticleMeta: (input: WechatArticleMetaInput) => Promise<boolean>
+    /** 选择封面图：返回存储根相对路径，取消返回 null */
+    pickCover: () => Promise<string | null>
 }
 
 export function useWechatPushOverview(accountId: string): WechatPushOverviewState {
@@ -82,5 +100,40 @@ export function useWechatPushOverview(accountId: string): WechatPushOverviewStat
         void reload()
     }, [reload])
 
-    return { issues, tasks, quota, status, error, quotaError, reload }
+    /** 保存文章元信息：全文以宿主重写的 frontmatter 为准，成功后重拉批次让卡片显示新标题 */
+    const saveArticleMeta = useCallback(
+        async (input: WechatArticleMetaInput): Promise<boolean> => {
+            const payload: WechatArticleMetaRequest = {
+                id: input.id,
+                title: input.title,
+                author: input.author,
+                digest: input.digest,
+                coverPath: input.coverPath,
+                allowComment: input.allowComment,
+            }
+            try {
+                await request('wechat/article/meta', payload)
+                await reload()
+                toast.success('文章设置已保存')
+                return true
+            } catch (cause) {
+                toastError(cause)
+                return false
+            }
+        },
+        [reload],
+    )
+
+    /** 选择封面：用户在系统对话框里停留的时间不可控，超时放宽到 60s */
+    const pickCover = useCallback(async (): Promise<string | null> => {
+        try {
+            const result = await request<WechatCoverPickResult>('wechat/cover/pick', undefined, 60_000)
+            return result.path
+        } catch (cause) {
+            toastError(cause)
+            return null
+        }
+    }, [])
+
+    return { issues, tasks, quota, status, error, quotaError, reload, saveArticleMeta, pickCover }
 }

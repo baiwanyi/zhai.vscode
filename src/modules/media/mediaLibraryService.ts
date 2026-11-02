@@ -29,6 +29,7 @@ import type {
     MediaSetCoverResult,
     MediaUsageItem,
 } from '@shared/types/media'
+import { WECHAT_MODULE_DIR } from '@shared/types/wechat'
 import { ZHAI_PATH_PREFIX } from '@shared/utils/zhaiPath'
 import { writeImageToClipboard } from './clipboardImage'
 import { MAX_BATCH_DELETE } from './constants'
@@ -148,13 +149,16 @@ function toStorageRelative(fsPath: string): string | null {
     return relative.split(path.sep).join('/')
 }
 
-/** 按文档位置判定引用类型：作品章节、笔记或外部文档 */
+/** 按文档位置判定引用类型：作品章节、笔记、公众号文章或外部文档 */
 function toRefType(documentRelative: string | null): { refType: MediaRefType; refScope: MediaRefScope } {
     if (documentRelative === null) {
         return { refType: 'external', refScope: 'absolute' }
     }
     if (documentRelative.startsWith('notes/')) {
         return { refType: 'note', refScope: 'storage' }
+    }
+    if (documentRelative.startsWith(`${WECHAT_MODULE_DIR}/`)) {
+        return { refType: 'article', refScope: 'storage' }
     }
     if (documentRelative.startsWith('press/')) {
         return { refType: 'chapter', refScope: 'storage' }
