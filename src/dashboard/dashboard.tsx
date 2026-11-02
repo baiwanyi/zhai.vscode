@@ -37,6 +37,7 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
         pinnedNotes,
         unpinnedNotes,
         isFiltered,
+        search,
         isSelecting,
         selectedPaths,
         isAllSelectedPinned,
@@ -82,6 +83,7 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
                     status={status}
                     error={error}
                     isFiltered={isFiltered}
+                    search={search}
                     activeId={activeId}
                     isSelecting={isSelecting}
                     selectedPaths={selectedPaths}

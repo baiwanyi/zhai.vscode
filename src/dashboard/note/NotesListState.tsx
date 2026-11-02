@@ -43,14 +43,14 @@ export function NotesListState({ status, error, isFiltered, onResetFilters }: No
         <StateEmpty
             title={isFiltered ? '筛选无结果' : '暂无笔记'}
             description={
-                isFiltered ? '当前筛选条件下没有笔记，可清除筛选后查看全部。' : '点击上方「添加」创建第一篇笔记。'
+                isFiltered ? '当前筛选或搜索条件下没有笔记，清除后查看全部。' : '点击上方「添加」创建第一篇笔记。'
             }
             icon={FileText}
             className="border px-3 py-4"
         >
             {isFiltered ? (
                 <Button variant="outline" onClick={onResetFilters}>
-                    清除筛选
+                    清除条件
                 </Button>
             ) : null}
         </StateEmpty>
