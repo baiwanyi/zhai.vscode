@@ -1,14 +1,16 @@
 /**
  * 密钥设置弹窗：只维护 AppID 与 AppSecret，账号资料在独立的账号设置弹窗里。
- * 复用约定：骨架取 FormDialog，输入控件取 @components/ui/input，状态取 useTrimmedInput；
- * 提交后由宿主立即鉴权，结果通过列表状态与 toast 回显。
+ * 复用约定：骨架取 FormDialog，单行字段取 @components/ui/input，密钥取 @components/ui/textarea，
+ * 状态取 useTrimmedInput；提交后由宿主立即鉴权，结果通过列表状态与 toast 回显。
  * 关键约束：编辑态 AppSecret 留空表示沿用已存密钥，占位文案给出尾号提示；
  * 首次配置（还没有任何密钥）时 AppSecret 必填，否则宿主拒绝保存半个凭据；
- * 密钥只写入系统级加密存储，列表与日志只显示尾号，本弹窗不回显明文；
+ * 密钥用多行输入框承载（便于核对与整段粘贴），因此输入期间是明文可读的，文案里要提醒；
+ * 密钥只写入系统级加密存储，列表与日志只显示尾号；
  * 表单重置由页面在每次打开时更换组件 key 完成，本组件不在 effect 中写状态。
  */
 import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
+import { Textarea } from '@components/ui/textarea'
 import type { WechatAccountSummary } from '@shared/types/wechat'
 import { FormDialog } from '@webview/components/FormDialog'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
@@ -69,10 +71,10 @@ export function WechatAccountSecretDialog({
             </Field>
             <Field>
                 <FieldLabel htmlFor="wechat-account-secret">AppSecret</FieldLabel>
-                <Input
+                <Textarea
                     id="wechat-account-secret"
-                    type="password"
                     value={appSecret.value}
+                    rows={3}
                     placeholder={
                         account.hasSecret
                             ? `留空沿用已存密钥 ${account.secretHint ?? ''}`.trim()
@@ -80,11 +82,13 @@ export function WechatAccountSecretDialog({
                     }
                     autoComplete="off"
                     spellCheck={false}
+                    className="font-mono text-xs"
                     disabled={isSubmitting}
                     onChange={(event) => appSecret.setValue(event.target.value)}
                 />
                 <FieldDescription>
-                    密钥只写入系统级加密存储，列表与日志只显示尾号，不会写入数据库；未配置 AppID 时无法新建批次。
+                    多行输入便于核对与整段粘贴，输入期间是明文，保存后只写入系统级加密存储；列表与日志只显示尾号，
+                    不会写入数据库。密钥本身不含空格与换行，粘贴后请确认没有多余换行。未配置 AppID 时无法新建批次。
                 </FieldDescription>
             </Field>
         </FormDialog>

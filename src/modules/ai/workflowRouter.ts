@@ -9,11 +9,11 @@
  * 焦点离开文本编辑器（打开设置、切到其它视图）不改变场景事实，沿用上一次的 scene / module / projectDir。
  */
 import * as vscode from 'vscode'
-import { listFilesByPaths } from '@modules/common/db/statsRepository'
+import { findIndexedFile } from '@modules/common/db/indexRepository'
 import type { IndexService } from '@modules/common/indexer/indexService'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import type { WorkflowContextState, WorkflowSceneKind, WorkflowViewRequest } from '@shared/types/workflow'
-import { NOTES_MODULE_KEY, ROOT_MODULE_KEY } from '@shared/types/workflow'
+import { NOTES_MODULE_KEY, ROOT_MODULE_KEY, WECHAT_MODULE_KEY } from '@shared/types/workflow'
 import type Database from 'better-sqlite3'
 
 /** 场景变化去抖时长（毫秒）：短于该值的编辑器焦点切换不触发换页 */
@@ -186,17 +186,22 @@ export class WorkflowRouter implements vscode.Disposable {
             }
         }
         const relativePath = this.indexService.toRelativePath(editor.document.uri)
-        const [known] = listFilesByPaths(this.db, [relativePath])
+        // 必须用 findIndexedFile：listFilesByPaths 只认 notes/，会把作品与公众号文档判成索引外
+        const known = findIndexedFile(this.db, relativePath)
         // 作品目录完全以当前编辑器为准：落在作品内取该作品，落在笔记/根目录则清空。
         // 沿用上一次选定的作品会让前端把笔记也判成作品归属，专属分区与对话作用域都切不过去
         const editorProject = readProjectDir(known?.path ?? relativePath)
         this.projectDir = editorProject
-        if (known === undefined) {
-            // 索引尚未收录（如刚创建的作品）：仍按路径识别作品，让写作管理页能立即载入，
-            // 否则面板要等下一次索引广播才有内容
+        if (known === null) {
+            // 索引尚未收录（如刚创建的笔记、刚解除排除的公众号批次稿）：仍按一级目录识别模块，
+            // 否则面板要等下一次索引广播才切到对应归属；作品目录继续以编辑器路径为准
+            const moduleKey = readModuleKey(relativePath)
+            const isModuleDir =
+                moduleKey === NOTES_MODULE_KEY || moduleKey === WECHAT_MODULE_KEY || moduleKey === PRESS_MODULE_DIR
+            const fallbackModule = isModuleDir ? moduleKey : editorProject === null ? ROOT_MODULE_KEY : PRESS_MODULE_DIR
             return {
-                scene: 'idle',
-                module: editorProject === null ? ROOT_MODULE_KEY : PRESS_MODULE_DIR,
+                scene: fallbackModule === NOTES_MODULE_KEY ? 'editorNote' : 'idle',
+                module: fallbackModule,
                 selectedModule,
                 projectDir: this.projectDir,
             }

@@ -1,9 +1,9 @@
 /**
- * dashboardRouting 单元测试：覆盖页内路由的解析、作品详情路径编解码与回退规则。
+ * dashboardRouting 单元测试：覆盖页内路由的解析、作品详情路径编解码、公众号文档归属与回退规则。
  * 纯函数测试，不依赖 DOM 与宿主协议；断言集中在可识别路径、非法编码与 hash 生成三处。
  */
 import { describe, expect, it } from 'vitest'
-import { parseRoute, toHash } from '../src/dashboard/core/routing'
+import { parseRoute, readWechatAppId, toHash } from '../src/dashboard/core/routing'
 
 describe('parseRoute', () => {
     it('空值与首页回落为概览页', () => {
@@ -48,6 +48,24 @@ describe('parseRoute', () => {
         expect(parseRoute('#/press/a%2Fb')).toEqual({ name: 'home' })
         expect(parseRoute('#/press/%2E%2E')).toEqual({ name: 'home' })
         expect(parseRoute('#/press/%5C')).toEqual({ name: 'home' })
+    })
+})
+
+describe('readWechatAppId', () => {
+    it('批次目录下的文档能解析出账号 AppID', () => {
+        expect(readWechatAppId('wechat/wx1234567890/post/202611021530/标题.md')).toBe('wx1234567890')
+    })
+
+    it('只有 wechat/ 一级目录不算批次文档', () => {
+        expect(readWechatAppId('wechat/wx1234567890/settings.json')).toBeNull()
+        expect(readWechatAppId('wechat/wx1234567890/post')).toBeNull()
+        expect(readWechatAppId('wechat/wx1234567890/posts/202611021530/a.md')).toBeNull()
+    })
+
+    it('非公众号路径与空值一律返回 null', () => {
+        expect(readWechatAppId(null)).toBeNull()
+        expect(readWechatAppId('notes/202611/随手记.md')).toBeNull()
+        expect(readWechatAppId('press/剑来/Chapters/01-开局.md')).toBeNull()
     })
 })
 

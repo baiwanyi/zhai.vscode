@@ -54,6 +54,22 @@ export function readContentScope(
     return null
 }
 
+/** 批次文档路径：wechat/{appid}/post/{时间戳}/{文件}，只有这种形态能定位到账号 */
+const WECHAT_POST_PATH_PATTERN = /^wechat\/([^/]+)\/post\//
+
+/**
+ * 从文档路径解析公众号 AppID：只认 wechat/{appid}/post/ 下的文档，其余返回 null。
+ * 关键约束：AppID 是账号在存储根目录里的唯一标识，仪表盘据此把当前文档跟到对应账号的批次列表；
+ * 只做字符串解析，不校验账号是否存在，找不到账号的判定交给调用方。
+ */
+export function readWechatAppId(activePath: string | null): string | null {
+    if (activePath === null) {
+        return null
+    }
+    const matched = WECHAT_POST_PATH_PATTERN.exec(activePath)
+    return matched?.[1] ?? null
+}
+
 /**
  * 页内路由：概览首页、作品列表、作品详情（携带相对存储根的 dirPath）、
  * 公众号账号列表与某账号下的推送批次列表。

@@ -7,8 +7,19 @@
  * 账号状态由宿主按接口错误码归一（40164 等），前端只负责展示，不自行推断。
  */
 
-/** 公众号在存储根下的一级目录名：其下存放账号的批次正文，不参与文档索引 */
+/** 公众号在存储根下的一级目录名：其下存放账号的批次正文 */
 export const WECHAT_MODULE_DIR = 'wechat'
+
+/** 批次文档路径：wechat/{appid}/post/{时间戳}/{文件名}.md */
+const WECHAT_BATCH_DOC_PATTERN = /^wechat\/[^/]+\/post\/[^/]+\/[^/]+\.md$/
+
+/**
+ * 判断是否为批次文档路径：只做形态判断，不校验账号与文件是否存在。
+ * 关键约束：宿主与前端共用同一份正则，避免「索引未收录」时的兜底判定各写一套。
+ */
+export function isWechatBatchDocPath(relativePath: string): boolean {
+    return WECHAT_BATCH_DOC_PATTERN.test(relativePath)
+}
 
 /** 账号类型：订阅号与服务号的能力差异见 wechat.md 第 8 节 */
 export const WECHAT_ACCOUNT_TYPES = ['subscription', 'service'] as const

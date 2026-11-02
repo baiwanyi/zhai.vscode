@@ -82,10 +82,11 @@ import {
     readPressAudience,
 } from '@shared/types/press'
 import type { WechatAccountAuthFailureEvent, WechatCoverPreviewResult } from '@shared/types/wechat'
-import { isWechatCoverPreviewRequest } from '@shared/types/wechat'
+import { isWechatBatchDocPath, isWechatCoverPreviewRequest } from '@shared/types/wechat'
 import type { OpenWorkflowResult } from '@shared/types/workflow'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
 import { resolvePromptRoot, resolveStorageRoot } from './config'
+import { findIndexedFile } from './db/indexRepository'
 import {
     aggregateFileStats,
     listFilesByPaths,
@@ -866,10 +867,13 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     }
 
     /**
-     * 组装活跃笔记快照：仅认索引库内已登记的笔记，其余（含焦点不在编辑器上）一律为 null，
-     * 使列表高亮永远收敛到真实存在的条目。
+     * 组装活跃笔记快照：优先认索引库内已登记的文档，其余（含焦点不在编辑器上）一律为 null。
      * 关键约束：hasEditor 如实反映「是否存在文本编辑器」，前端据此区分「焦点不在编辑器」与
-     * 「编辑器里是索引外文档（未保存的 untitled 等）」——前者不改变面板当前页，后者须判定为无归属。
+     * 「编辑器里是索引外文档（未保存的 untitled 等）」——前者不改变面板当前页，后者须判定为无归属；
+     * 查索引必须用 findIndexedFile 而不是笔记视角的 listFilesByPaths——后者只认 notes/，会把作品与
+     * 公众号文档一律判成无归属（仪表盘因此无法跟到账号页、工作流也切不过去归属）；
+     * 批次文档（wechat/{appid}/post/…）在索引尚未收录时按路径直接放行：索引是缓存，刚建的文件或
+     * 刚解除排除的目录还没进库，此时仍要能按 AppID 跟随。
      */
     private buildActiveNote(): NoteActiveState {
         const editor = vscode.window.activeTextEditor
@@ -877,8 +881,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             return { activePath: null, hasEditor: false }
         }
         const relativePath = this.indexService.toRelativePath(editor.document.uri)
-        const [known] = listFilesByPaths(this.db, [relativePath])
-        return { activePath: known?.path ?? null, hasEditor: true }
+        const known = findIndexedFile(this.db, relativePath)
+        if (known !== null) {
+            return { activePath: known.path, hasEditor: true }
+        }
+        return { activePath: isWechatBatchDocPath(relativePath) ? relativePath : null, hasEditor: true }
     }
 
     /**

@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import {
     isWechatArticleBody,
     isWechatArticleCreateRequest,
+    isWechatBatchDocPath,
     isWechatArticleImportRequest,
     isWechatArticleMetaRequest,
     isWechatArticleMoveRequest,
@@ -176,6 +177,14 @@ describe('文章请求收窄', () => {
         expect(isWechatArticleQuickCreateRequest({})).toBe(false)
         expect(isWechatArticleOpenRequest({ id: ARTICLE_ID })).toBe(true)
         expect(isWechatArticleOpenRequest({ id: 1 })).toBe(false)
+    })
+
+    it('批次文档路径只认 wechat/{appid}/post/{时间戳}/{文件}.md', () => {
+        expect(isWechatBatchDocPath('wechat/wx1234567890/post/202611021530/标题.md')).toBe(true)
+        expect(isWechatBatchDocPath('wechat/wx1234567890/post/标题.md')).toBe(false)
+        expect(isWechatBatchDocPath('wechat/wx1234567890/posts/202611021530/标题.md')).toBe(false)
+        expect(isWechatBatchDocPath('notes/202611/随手记.md')).toBe(false)
+        expect(isWechatBatchDocPath('wechat/wx1234567890/post/202611021530/封面.png')).toBe(false)
     })
 
     it('调整顺序只接受 up / down 两个方向', () => {

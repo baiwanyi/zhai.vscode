@@ -9,7 +9,7 @@
 import * as path from 'node:path'
 import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
-import { WECHAT_MODULE_DIR } from '@shared/types/wechat'
+import { isWechatBatchDocPath } from '@shared/types/wechat'
 import {
     findWechatArticleByFilePath,
     updateWechatArticleFilePath,
@@ -25,21 +25,9 @@ import {
 import type Database from 'better-sqlite3'
 import type * as vscode from 'vscode'
 
-/** 批次目录的层级下标：wechat/{appid}/post/{时间戳}/{文件} */
-const POST_DIR_SEGMENT_INDEX = 2
-
-/** 批次文章路径的最小段数：少于它就落不到具体文章 */
-const ISSUE_ARTICLE_DEPTH = 5
-
-/** 判定是否批次文章：只认 wechat/{appid}/post/ 下的 Markdown */
+/** 判定是否批次文章：只认 wechat/{appid}/post/ 下的 Markdown，与活跃文档判定同源 */
 export function isWechatIssueArticlePath(relativePath: string): boolean {
-    const segments = relativePath.split('/')
-    return (
-        relativePath.toLowerCase().endsWith('.md') &&
-        segments.length >= ISSUE_ARTICLE_DEPTH &&
-        segments[0] === WECHAT_MODULE_DIR &&
-        segments[POST_DIR_SEGMENT_INDEX] === 'post'
-    )
+    return isWechatBatchDocPath(relativePath)
 }
 
 /** 取存储根口径的相对路径：不在存储根内返回 null */

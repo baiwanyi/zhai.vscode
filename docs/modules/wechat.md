@@ -764,6 +764,7 @@ ready ──设置时间──> scheduled ──到点──> pushing
 
 - 仪表盘 → 工作流：批次「查看数据」或「推送管理」触发 `openWorkflow('wechat')` + 一次性视图请求 `{ view: 'push' | 'stats', seq }`，机制沿用 `WorkflowViewRequest`，仅需接入 wechat 分支。
 - 工作流 → 仪表盘：`push` 分区的队列项提供「打开批次」，经宿主命令切换侧栏视图并落到 `#/wechat/{accountId}`；不自动切换，避免打断当前编辑。
+- 编辑区 → 仪表盘：打开 `wechat/{appid}/post/` 下的批次文档时，仪表盘按 AppID 找到本地账号并跳到 `#/wechat/{accountId}`（该账号的推送批次列表）；跟随按文档路径去重，用户手动点返回后不再弹回，找不到对应账号时回概览首页。
 
 ---
 
