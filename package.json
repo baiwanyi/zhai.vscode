@@ -12,6 +12,7 @@
     },
     "homepage": "https://github.com/baiwanyi/zhai.vscode#readme",
     "categories": [
+        "AI",
         "Other"
     ],
     "keywords": [
@@ -163,6 +164,8 @@
                         "type": "string",
                         "default": "",
                         "scope": "machine-overridable",
+                        "pattern": "^(?:[a-zA-Z]:[\\\\/]|\\\\\\\\[^\\\\/]+[\\\\/]|/)",
+                        "patternErrorMessage": "须填写本地绝对路径，如 D:\\路径、D:/路径、\\\\server\\share，或以 / 开头的 POSIX 路径",
                         "markdownDescription": "文档保存目录（留空则使用用户主目录下的 `.zhai`），其下划分 `notes/`、`press/`、`reader/` 模块目录。须填写本地绝对路径，盘符写法 `D:\\路径` 或 `D:/路径` 均可"
                     },
                     "zhai.index.exclude": {
@@ -288,8 +291,8 @@
                     "zhai.image.size": {
                         "type": "string",
                         "default": "768x1024",
-                        "pattern": "^\\d+x\\d+$",
-                        "patternErrorMessage": "格式须为「宽x高」的纯数字，例如 768x1024",
+                        "pattern": "^[1-9]\\d{0,3}x[1-9]\\d{0,3}$",
+                        "patternErrorMessage": "格式须为「宽x高」的纯数字且不以 0 开头，边长 1-4 位，例如 768x1024",
                         "description": "角色设定图尺寸，格式为「宽x高」（推荐竖版 768x1024）"
                     },
                     "zhai.image.dailyLimit": {
@@ -307,6 +310,8 @@
                         "type": "string",
                         "default": "",
                         "scope": "machine-overridable",
+                        "pattern": "^(?:[a-zA-Z]:[\\\\/]|\\\\\\\\[^\\\\/]+[\\\\/]|/)",
+                        "patternErrorMessage": "须填写本地绝对路径，如 D:\\路径、D:/路径、\\\\server\\share，或以 / 开头的 POSIX 路径",
                         "markdownDescription": "词库目录：其下分 `tags/`（词条 md）、`images/`（预览图）、`rules/`（出图规则）。留空则使用文档保存目录下的 `prompt`。须填写本地绝对路径，盘符写法 `D:\\路径` 或 `D:/路径` 均可；改动后重新打开提示词面板即可生效"
                     }
                 }
@@ -327,7 +332,7 @@
                         "default": 30,
                         "minimum": 0,
                         "maximum": 1000,
-                        "description": "AI 校对每日次数上限（0 或负数表示不限）：每校对一次计一次，与出图、取名分开计数"
+                        "description": "AI 校对每日次数上限（0 表示不限）：每校对一次计一次，与出图、取名分开计数"
                     },
                     "zhai.proofread.batchChars": {
                         "type": "number",
@@ -341,7 +346,7 @@
                         "default": 10,
                         "minimum": 0,
                         "maximum": 500,
-                        "description": "AI 特征检测（朱雀）每日次数上限（0 或负数表示不限）：正文会上传至腾讯云检测服务"
+                        "description": "AI 特征检测（朱雀）每日次数上限（0 表示不限）：正文会上传至腾讯云检测服务"
                     }
                 }
             },
@@ -352,7 +357,7 @@
                     "zhai.telemetry.enabled": {
                         "type": "boolean",
                         "default": false,
-                        "description": "遥测开关（默认关闭，需显式开启）"
+                        "description": "遥测开关（预留，默认关闭）：当前版本不采集也不上报任何遥测数据"
                     }
                 }
             }
