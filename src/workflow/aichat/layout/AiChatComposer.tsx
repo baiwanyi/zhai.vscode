@@ -3,7 +3,8 @@
  * 复用约定：外壳挂载在页面的 AppFooter 内，工具行 / 操作行复用同目录 AiChatComposerToolbar 与
  * AiChatComposerActions，富文本输入取 @webview/components/RichChipInput（与生图输入卡片共用同一份）；
  * 命令与上下文在此折算为 RichChip：图标取 ./commandIcons，文件名与摘要取 ../utils。
- * 本层负责提示文案、禁用态与增强状态，交互全部经回调上抛给页面 hooks。
+ * 本层负责提示文案、禁用态与增强状态，可发送判定取 ../utils 的 resolveSendGate（与页面层同口径），
+ * 交互全部经回调上抛给页面 hooks。
  * 生成态光晕取 @webview/components/ComposerGlow（与生图页共用，样式在 globals.css 的 composer-glow 段）。
  * 关键约束：写入范围、上下文用量、已选命令与上下文均由此层透传，输入卡片不直接读取会话状态；
  * 粘贴内容里的 `@zhai\` 路径改由宿主添加为上下文引用（成功即变成芯片），只有剩余文本落回输入区；
@@ -32,7 +33,7 @@ import type { AiReferenceAction } from './AiChatReferenceMenu'
 import type { AiPastedRefTarget } from '../hooks/useAiChatMention'
 import type { Phase } from '../hooks/useAiChatSession'
 import type { ClipboardEvent, JSX } from 'react'
-import { describeContext, describeTool, toContextFileName } from '../utils'
+import { describeContext, describeTool, resolveSendGate, toContextFileName } from '../utils'
 
 /** 命令芯片的保留 id：只用于 React key 与退格查找，移除语义由 onRemove 承担 */
 const COMMAND_CHIP_ID = 'ai-command'
@@ -184,9 +185,8 @@ export function AiChatComposer({
     const canEnhance = input.trim().length > 0
     /** 生成中：光晕与禁用态的共同来源，由视图阶段派生，避免与页面层重复持有同一状态 */
     const isGenerating = phase === 'streaming'
-    /** 已有命令时正文由指令模板提供，因此空输入也可发送 */
-    const hasContent = command !== null || input.trim().length > 0
-    const canSend = hasApiKey && phase === 'idle' && hasContent && hasWritableScope
+    /** 可发送判定与页面层共用同一份纯函数，避免两处口径漂移 */
+    const canSend = resolveSendGate({ hasApiKey, phase, command, input, hasWritableScope })
 
     let placeholder = '提问或输入指令…'
     if (command !== null) {

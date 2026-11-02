@@ -1,13 +1,15 @@
 /**
  * 提及检索：按关键词查索引候选，或按粘贴的 `@zhai\` 路径直接添加为上下文引用。
- * 复用约定：请求走 @shared/utils/bridge，错误经注入的 onError 统一提示；添加成功后由调用方刷新上下文清单。
- * 关键约束：空关键词不发请求；检索按序号丢弃过期回包，避免慢请求覆盖后一次输入的结果；
- * 行范围由宿主重新校验并读取，前端只透传粘贴得到的数字。
+ * 复用约定：检索骨架取 ./useAiChatSearchResults（空关键词短路、过期回包丢弃、关闭清空），
+ * 请求走 @shared/utils/bridge，错误经注入的 onError 统一提示，添加成功后由调用方刷新上下文清单。
+ * 关键约束：行范围由宿主重新校验并读取，前端只透传粘贴得到的数字；
+ * 候选只透传宿主生成的 path 与展示字段，不在前端解析文件内容。
  */
-import { useCallback, useRef, useState } from 'react'
+import { useCallback } from 'react'
 import type { AiMentionCandidate } from '@shared/types/aiChat'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
+import { useAiChatSearch } from './useAiChatSearchResults'
 
 /** 粘贴引用目标：存储根相对路径与可选行范围 */
 export interface AiPastedRefTarget {
@@ -37,39 +39,12 @@ export interface AiChatMentionState {
 }
 
 export function useAiChatMention({ onError, onAdded }: UseAiChatMentionOptions): AiChatMentionState {
-    const [candidates, setCandidates] = useState<readonly AiMentionCandidate[]>([])
-    const [isSearching, setIsSearching] = useState(false)
-    /** 检索序号：只有最后一次请求的回包才允许写入状态 */
-    const searchIdRef = useRef(0)
+    const load = useCallback(async (keyword: string): Promise<readonly AiMentionCandidate[]> => {
+        const result = await request<{ candidates: AiMentionCandidate[] }>('ai/mention/search', { keyword })
+        return result.candidates
+    }, [])
 
-    const search = useCallback(
-        async (keyword: string): Promise<void> => {
-            if (keyword.trim().length === 0) {
-                searchIdRef.current += 1
-                setCandidates([])
-                return
-            }
-            const requestId = searchIdRef.current + 1
-            searchIdRef.current = requestId
-            setIsSearching(true)
-            try {
-                const result = await request<{ candidates: AiMentionCandidate[] }>('ai/mention/search', { keyword })
-                if (searchIdRef.current === requestId) {
-                    setCandidates(result.candidates)
-                }
-            } catch (cause) {
-                if (searchIdRef.current === requestId) {
-                    setCandidates([])
-                }
-                onError(toErrorText(cause))
-            } finally {
-                if (searchIdRef.current === requestId) {
-                    setIsSearching(false)
-                }
-            }
-        },
-        [onError],
-    )
+    const { items: candidates, isSearching, search, reset } = useAiChatSearch({ onError, load })
 
     const add = useCallback(
         async (candidate: AiMentionCandidate): Promise<boolean> => {
@@ -104,12 +79,6 @@ export function useAiChatMention({ onError, onAdded }: UseAiChatMentionOptions):
         },
         [onAdded, onError],
     )
-
-    const reset = useCallback((): void => {
-        searchIdRef.current += 1
-        setCandidates([])
-        setIsSearching(false)
-    }, [])
 
     return { candidates, isSearching, search, add, addPath, reset }
 }

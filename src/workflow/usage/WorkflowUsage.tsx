@@ -5,7 +5,8 @@
  * 今日 / 本月积分以 Badge 与筛选同排在 AppMenu、表格走 AppContent 滚动、分页进 AppFooter）；
  * 列表经 useAiUsage 向宿主取（分页与汇总都在宿主侧完成），提示词经 useUsagePrompt 按需拉取；
  * 表格、筛选、分页与弹窗各自独立成组件，本文件只做状态编排与筛选/翻页的联动复位。
- * 关键约束：筛选变化必须把页码复位到 1，否则会停留在超出新结果集的页码上；
+ * 关键约束：入口组件由 workflow 分区路由直接引用，文件名即组件名 WorkflowUsage，目录不再提供 index 出口；
+ * 筛选变化必须把页码复位到 1，否则会停留在超出新结果集的页码上；
  * 弹窗关闭即清空当前请求，避免下次打开时闪现上一条提示词；刷新期间保留上一份表格避免闪空；
  * 刷新按钮带 force 强制重扫，页面停留时的 30 秒静默同步由 hook 负责；
  * 积分余额入口只按站点跳转网页，余额构成由 CodeBuddy 网页端展示，本地与 CLI 都没有余额数据。
@@ -43,7 +44,7 @@ import type { JSX } from 'react'
 /** 空列表常量：表格在首轮失败时也要拿到稳定引用，避免每次渲染新建数组 */
 const EMPTY_ITEMS: AiUsageItem[] = []
 
-export function AiUsagePage(): JSX.Element {
+export function WorkflowUsage(): JSX.Element {
     const [module, setModule] = useState<AiUsageModule | null>(null)
     const [range, setRange] = useState<AiUsageRange>(DEFAULT_RANGE)
     const [page, setPage] = useState(1)

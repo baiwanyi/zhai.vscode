@@ -3,7 +3,8 @@
  * 复用约定：外壳取 @webview/components/AppPage，页头说明走 AppDescription、目标徽标行由 AppSummary 渲染，
  * 检查卡与条目由 layout/ 承担，状态编排在 hooks/；本文件只把目标折算成徽标数据，无目标空态
  * 收敛为同文件私有组件，其余只做状态编排与插槽装配。
- * 关键约束：始终检查整篇正文；本地检查先出结果、AI 检查随后补检，AI 失败只影响病句与风险段落两张卡；
+ * 关键约束：入口组件由 workflow 分区路由直接引用，文件名即组件名 WorkflowProofread，目录不再提供 index 出口；
+ * 始终检查整篇正文；本地检查先出结果、AI 检查随后补检，AI 失败只影响病句与风险段落两张卡；
  * 没有可校对目标时展示引导空态而不是报错；检查进行中只给加载态、不提供取消入口。
  */
 import { SpellCheck } from 'lucide-react'
@@ -70,7 +71,7 @@ function TargetMissing({ isReading, onReload }: TargetMissingProps): JSX.Element
     )
 }
 
-export function ProofreadPage(): JSX.Element {
+export function WorkflowProofread(): JSX.Element {
     const state = useProofreadRun()
     const lexicon = useProofreadLexicon()
     const detect = useProofreadAiDetect()

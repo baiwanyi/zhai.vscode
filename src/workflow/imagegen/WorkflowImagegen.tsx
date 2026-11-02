@@ -6,7 +6,8 @@
  * 角色索引、多选状态、删除编排与封面指针同步分别由 useCharacterIndex / useImageSelection / useImageDeletion /
  * useCharacterCoverSync 承担；加载态与分组网格由 ImageGenGallery 渲染，单图详情交由 ImageDetailDialog、
  * 多选操作交由 ImageSelectionActions、年月筛选交由 ImageGenFilters。
- * 关键约束：筛选只有年月一个维度（不做类型筛选，也不按角色收敛），全部在内存中完成，切换不重新请求；
+ * 关键约束：入口组件由 workflow 分区路由直接引用，文件名即组件名 WorkflowImagegen，目录不再提供 index 出口；
+ * 筛选只有年月一个维度（不做类型筛选，也不按角色收敛），全部在内存中完成，切换不重新请求；
  * 默认「全部月份」按月倒序分组，进页面即见全库；
  * 删除落盘侧进回收站，本页只刷新列表；参数读完前 composer 只渲染同高骨架；
  * 出图成功只在该角色尚无封面时认领，取消后迟到的落盘只静默刷新列表。
@@ -32,7 +33,7 @@ import { ImageGenGallery } from './layout/ImageGenGallery'
 import { ImageSelectionActions } from './layout/ImageSelectionActions'
 import type { JSX } from 'react'
 
-interface ImageGenPageProps {
+interface WorkflowImagegenProps {
     /** 当前作品目录：出图作用域与「设为作品封面」的目标 */
     dirPath: string
     /**
@@ -48,7 +49,12 @@ interface ImageGenPageProps {
     onChangeCharacter: (characterId: string, patch: { coverPortraitId: string | null }) => void
 }
 
-export function ImageGenPage({ dirPath, characters, setting, onChangeCharacter }: ImageGenPageProps): JSX.Element {
+export function WorkflowImagegen({
+    dirPath,
+    characters,
+    setting,
+    onChangeCharacter,
+}: WorkflowImagegenProps): JSX.Element {
     const { items, months, total, isLoading, removeMedia, removeMedias, reload } = useImageLibrary()
     const { settings, isLoaded: isSettingsLoaded, save: saveSettings } = useImageSettings(dirPath)
     const {

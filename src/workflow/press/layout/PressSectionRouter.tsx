@@ -6,11 +6,11 @@
  * 关键约束：对话与快照按作品目录隔离（dirPath 既是作用域也是对话页 key，切作品即重建），
  * 用量是跨作品的全局统计不隔离；回调统一来自 usePressMutations，路由层不自行读写草稿。
  */
-import { AiChat } from '@webview/workflow/aichat'
-import { ImageGenPage } from '@webview/workflow/imagegen'
+import { WorkflowAiChat } from '@webview/workflow/aichat/WorkflowAiChat'
+import { WorkflowImagegen } from '@webview/workflow/imagegen/WorkflowImagegen'
 import type { WorkflowSection } from '@webview/workflow/layout/workflowSections'
-import { ProofreadPage } from '@webview/workflow/proofread'
-import { AiUsagePage } from '@webview/workflow/usage'
+import { WorkflowProofread } from '@webview/workflow/proofread/WorkflowProofread'
+import { WorkflowUsage } from '@webview/workflow/usage/WorkflowUsage'
 import type { PressMutations } from '../hooks/usePressMutations'
 import type { OutlineWorkspace } from '../types'
 import type { JSX } from 'react'
@@ -92,7 +92,7 @@ export function PressSectionRouter({
     // 媒体库是全库共享的，但出图与「设为作品封面」以当前作品为作用域，切作品即重建，避免参数串味
     if (section === 'media') {
         return (
-            <ImageGenPage
+            <WorkflowImagegen
                 key={dirPath}
                 dirPath={dirPath}
                 characters={workspace.characters}
@@ -104,7 +104,7 @@ export function PressSectionRouter({
     }
     // 校对以编辑器中的当前文档为目标，切作品即重建，避免上一个作品的问题列表残留
     if (section === 'proofread') {
-        return <ProofreadPage key={dirPath} />
+        return <WorkflowProofread key={dirPath} />
     }
     // 快照按作品隔离：与文档同目录，切作品即换用该作品自己的时间线
     if (section === 'snapshot') {
@@ -112,9 +112,9 @@ export function PressSectionRouter({
     }
     // 用量是全局统计，不随作品目录隔离：跨作品的消耗在同一张表里汇总
     if (section === 'usage') {
-        return <AiUsagePage />
+        return <WorkflowUsage />
     }
     // 对话按作品隔离：当前作品目录即会话作用域，切作品即换用该作品自己的对话记录；
     // key 跟随作品目录，切作品时重建对话页，命令选择与未发送正文不会带进新作品
-    return <AiChat key={dirPath} projectDir={dirPath} projectTitle={workspace.setting.title} />
+    return <WorkflowAiChat key={dirPath} projectDir={dirPath} projectTitle={workspace.setting.title} />
 }

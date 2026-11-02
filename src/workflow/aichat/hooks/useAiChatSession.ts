@@ -23,10 +23,10 @@ import type {
 import type { StreamNoticeMessage } from '@shared/types/messages'
 import { onStream, request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
-import { patchMessage, upsertStep } from '../utils'
+import { patchMessage, upsertStep, type Phase } from '../utils'
 
-/** 视图阶段：idle 空闲、sending 已提交待首字、streaming 正在逐字生成 */
-export type Phase = 'idle' | 'sending' | 'streaming'
+/** 视图阶段定义在展示层 utils，此处转出保持既有引用路径不变 */
+export type { Phase }
 
 /** 会话级瞬时状态：只描述此刻正在发生什么，不落库，随流末清空 */
 export type AiChatTransientNotice = 'compacting' | null

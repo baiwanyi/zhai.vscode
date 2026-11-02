@@ -1,16 +1,27 @@
 /**
- * AI 对话展示层纯函数：引用体积的紧凑折算、路径末段提取、会话快照的不可变消息替换、宿主 state 广播载荷的收窄、
- * 写作命令模板的发送拼装与回放拆分、工具名的动作文案。
+ * AI 对话展示层纯函数与视图类型：引用体积的紧凑折算、路径末段提取、会话快照的不可变消息替换、
+ * 写作命令模板的发送拼装与回放拆分、工具名的动作文案，以及用量文案与可发送条件等派生计算。
  * 零依赖、无副作用，可被页面主组件与各子组件自由复用；token 折算与错误文案统一取 @shared/utils 的 format 与 error。
- * 关键约束：readAiStateKind 只信任收窄结果；
- * 命令模板只在发送瞬间拼接、在展示时按最长前缀剥离，输入框与消息气泡均不出现 instruction 全文；
+ * 视图阶段 Phase 一并定义在此，供会话 hook 与输入卡片共用，避免展示层反向依赖状态机模块。
+ * 关键约束：命令模板只在发送瞬间拼接、在展示时按最长前缀剥离，输入框与消息气泡均不出现 instruction 全文；
  * 复制文本带上命令名与 `@zhai\` 写法的引用，剪贴板内容与气泡里看到的一致且可直接粘回输入框；
  * 工具名表只做展示映射，未知工具原样透出，不得据此推断权限。
  */
-import type { AiContextRef, AiMessage, AiSessionSnapshot, AiStep } from '@shared/types/aiChat'
+import type {
+    AiContextRef,
+    AiMessage,
+    AiRuntimeInfo,
+    AiSessionSnapshot,
+    AiStep,
+    AiWriteState,
+} from '@shared/types/aiChat'
+import { formatTokens } from '@shared/utils/format'
 import { readStorageRootPath, replaceStorageRootPaths, toZhaiDisplayPath } from '@shared/utils/zhaiPath'
 import { AI_COMMAND_PREFIXES } from './constants'
 import type { AiCommand } from './constants'
+
+/** 视图阶段：idle 空闲、sending 已提交待首字、streaming 正在逐字生成 */
+export type Phase = 'idle' | 'sending' | 'streaming'
 
 /** 引用体积描述：过千折算 k，被截断时追加标注 */
 export function describeContext(ref: AiContextRef): string {
@@ -120,13 +131,31 @@ export function patchMessage(
     }
 }
 
-/** 收窄宿主 state 广播的载荷：识别 ai 通道的三类通知 */
-export function readAiStateKind(payload: unknown): 'runtime' | 'context' | 'writeTarget' | null {
-    if (typeof payload !== 'object' || payload === null) {
-        return null
-    }
-    const kind = (payload as { kind?: unknown }).kind
-    return kind === 'runtime' || kind === 'context' || kind === 'writeTarget' ? kind : null
+/** 用量行文案：运行时未就绪时给出读取提示，避免闪出 0 */
+export function toUsageText(runtime: AiRuntimeInfo | null): string {
+    return runtime === null ? '正在读取配置…' : `今日 ${formatTokens(runtime.usedTokensToday)} tokens`
+}
+
+/** 可写范围：编辑器目标或作品目录任一存在即可发送，连续生成章节不依赖选区 */
+export function resolveWritableScope(projectDir: string | null, writeState: AiWriteState | null): boolean {
+    const hasWriteTarget = writeState?.target !== null && writeState?.target !== undefined
+    return hasWriteTarget || (projectDir !== null && projectDir.length > 0)
+}
+
+/** 可发送判定入参：密钥、阶段、命令与正文、写入范围共同决定能否发送 */
+export interface SendGateInput {
+    hasApiKey: boolean
+    phase: Phase
+    /** 已选命令：有命令时正文由指令模板提供，空输入也可发送 */
+    command: AiCommand | null
+    input: string
+    hasWritableScope: boolean
+}
+
+/** 可发送判定：生成中、无密钥、无内容或无写入范围时一律禁止 */
+export function resolveSendGate({ hasApiKey, phase, command, input, hasWritableScope }: SendGateInput): boolean {
+    const hasContent = command !== null || input.trim().length > 0
+    return hasApiKey && phase === 'idle' && hasContent && hasWritableScope
 }
 
 /**

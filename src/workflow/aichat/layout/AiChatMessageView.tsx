@@ -7,26 +7,23 @@
  * 工具栏只在助手消息生成落定（完成 / 失败 / 停止）且有正文时出现，流式中不出现；
  * 系统事件不进气泡：压缩完成用居中分隔标记，其余用普通状态行，
  * 且分隔线不得加 role="separator" —— 子内容会被当作纯装饰，可见标签读不出来；
- * 用户复制带上命令名与引用标签（指令模板不进剪贴板），正文与徽章都为空时不渲染按钮；
+ * 用户复制带上命令名与引用标签（指令模板不进剪贴板），正文与徽章都为空时不渲染按钮，
+ * 复制成功态与失败提示由 ../hooks/useCopyFeedback 承担；
  * 「重新填入输入框」只恢复命令与正文，引用不恢复 —— 历史引用可能已失效，宿主清单只能按文件重新解析。
  */
 import { Check, CircleAlert, CircleSlash, Copy, Undo2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { Bubble, BubbleContent, BubbleGroup } from '@components/ui/bubble'
 import { Marker, MarkerContent, MarkerIcon } from '@components/ui/marker'
 import { Message, MessageContent, MessageFooter } from '@components/ui/message'
 import type { AiMessage, AiPermissionDecision, AiPermissionRequest } from '@shared/types/aiChat'
-import { copyToClipboard } from '@shared/utils/clipboard'
 import { Button } from '@webview/components/Button'
 import { AiChatMessageActions } from './AiChatMessageActions'
 import { AiChatMessageBody } from './AiChatMessageBody'
 import type { JSX, ReactNode } from 'react'
+import { useCopyFeedback } from '../hooks/useCopyFeedback'
 import { toMessageCopyText } from '../utils'
 
-/** 复制成功的图标停留时长：够看清，又不至于一直挂在勾上 */
-const COPIED_RESET_MS = 2000
 /** 存量数据里可能残留的 CLI 英文内部错误：不该再露给用户 */
 const INTERNAL_ERROR_PATTERN = /interrupted by user|permission denied for tool/i
 
@@ -69,31 +66,10 @@ function MessageIconButton({
  * 关键约束：成功才切对勾，失败只提示不谎报；键盘聚焦时由外层 footer 的 focus-within 显示。
  */
 function UserCopyButton({ text }: { text: string }): JSX.Element {
-    const [isCopied, setIsCopied] = useState(false)
-
-    useEffect(() => {
-        if (!isCopied) {
-            return
-        }
-        const timer = setTimeout((): void => {
-            setIsCopied(false)
-        }, COPIED_RESET_MS)
-        return (): void => {
-            clearTimeout(timer)
-        }
-    }, [isCopied])
-
-    async function handleCopy(): Promise<void> {
-        const isSuccess = await copyToClipboard(text)
-        if (!isSuccess) {
-            toast.error('复制失败，请手动选中后复制')
-            return
-        }
-        setIsCopied(true)
-    }
+    const { isCopied, copy } = useCopyFeedback()
 
     return (
-        <MessageIconButton label={isCopied ? '已复制' : '复制'} onClick={() => void handleCopy()}>
+        <MessageIconButton label={isCopied ? '已复制' : '复制'} onClick={() => void copy(text)}>
             {isCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
         </MessageIconButton>
     )
