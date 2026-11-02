@@ -1,42 +1,53 @@
 /**
- * 笔记草稿生成：按「年月目录 + 打散时间戳的 UUID 文件名」产出空笔记的路径与内容。
- * 纯函数、零副作用，供 noteService 落盘与单元测试复用；目录规则见 docs/modules/notes.md 1.1。
- * 关键约束：ID 的时间戳位以固定步长打散分布，降低同日笔记文件名的可预测性；
- * 新建笔记不写 Frontmatter，标题只由一级标题承载，索引器按「Frontmatter title → 首个一级标题 → 文件名」回落提取。
+ * 笔记草稿生成：按「年月目录 + 标题即文件名」产出空笔记的路径与内容。
+ * 纯函数、零副作用，供 noteService 落盘、重命名服务与单元测试复用。
+ * 关键约束：文件名直接取标题，仅做合法化收口（非法字符、保留名、长度与空标题回退），
+ * 使「文件名 = 标题」成为可比较的稳定事实；新建笔记不写 Frontmatter，标题只由一级标题承载，
+ * 索引器按「Frontmatter title → 首个一级标题 → 文件名」回落提取。
  */
-import { randomInt } from 'node:crypto'
 
 /** 笔记在存储根下的一级目录名 */
 export const NOTE_DIR = 'notes'
 
-/** 空笔记的默认标题 */
+/** 空笔记的默认标题：标题为空或清洗后无内容时的文件名回退，也是默认标题的序号前缀 */
 export const DEFAULT_NOTE_TITLE = '未命名笔记'
 
-/** ID 的十六进制总位数（对应 8-4-4-4-12 分组） */
-const ID_HEX_LENGTH = 32
+/** 文件名中不可用的字符：Windows 非法集与控制字符（\p{Cc}），统一置为空格后再折叠 */
+const ILLEGAL_FILE_NAME_PATTERN = /[\\/:*?"<>|\p{Cc}]/gu
 
-/** 时间戳打散步长：与 32 互质，保证各位落在互不相同的位置 */
-const STAMP_STEP = 7
+/** 文件名主体的最大字符数：中文按 3 字节估算，60 字约 180 字节，仍在 255 字节上限内 */
+const MAX_FILE_NAME_LENGTH = 60
 
-/** 单字符随机十六进制位 */
-function randomHexDigit(): string {
-    return randomInt(16).toString(16)
+/** Windows 保留设备名：即便带 .md 后缀也不能作文件名 */
+const RESERVED_FILE_NAMES: ReadonlySet<string> = new Set([
+    'con',
+    'prn',
+    'aux',
+    'nul',
+    ...['com', 'lpt'].flatMap((prefix) => Array.from({ length: 9 }, (_, index) => `${prefix}${String(index + 1)}`)),
+])
+
+/** 第 index 篇未命名笔记的标题：序号从 1 开始，与文件名同源 */
+export function buildDefaultNoteTitle(index: number): string {
+    return `${DEFAULT_NOTE_TITLE} ${String(index)}`
 }
 
-/** 生成带时间戳打散的 UUID 风格 ID */
-export function generateNoteId(now: number): string {
-    const digits: string[] = []
-    for (let index = 0; index < ID_HEX_LENGTH; index += 1) {
-        digits.push(randomHexDigit())
-    }
-    // 起点由时间戳低位决定，写入位置按固定步长推进，避免连续创建的 ID 出现位置规律
-    let cursor = now % ID_HEX_LENGTH
-    for (const char of now.toString(16)) {
-        cursor = (cursor + STAMP_STEP) % ID_HEX_LENGTH
-        digits[cursor] = char
-    }
-    const hex = digits.join('')
-    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+/**
+ * 标题转文件名：非法字符与结尾点去掉、连续空白折叠、超长截断，空标题与保留名走回退。
+ * 调用方拿到的即可直接落盘，也可与磁盘上的现有文件名逐字比较，判断「文件名是否已跟随标题」。
+ */
+export function toNoteFileName(title: string): string {
+    const collapsed = title
+        .replace(ILLEGAL_FILE_NAME_PATTERN, ' ')
+        .replace(/\s+/gu, ' ')
+        .trim()
+        // Windows 不允许文件名以点结尾，标题里的句末标点需先剥掉再截断
+        .replace(/\.+$/u, '')
+        .trim()
+    const clipped = collapsed.slice(0, MAX_FILE_NAME_LENGTH).trim()
+    const base = clipped.length === 0 ? DEFAULT_NOTE_TITLE : clipped
+    const guarded = RESERVED_FILE_NAMES.has(base.toLowerCase()) ? `${base} ${DEFAULT_NOTE_TITLE}` : base
+    return `${guarded}.md`
 }
 
 /** 相对存储根的年月目录，形如 notes/202610 */
@@ -59,9 +70,9 @@ export interface NoteDraft {
     content: string
 }
 
-/** 生成一份空笔记草稿 */
-export function createNoteDraft(now: Date, title: string = DEFAULT_NOTE_TITLE): NoteDraft {
-    const fileName = `${generateNoteId(now.getTime())}.md`
+/** 生成一份空笔记草稿：文件名取自标题，正文保留标题原文（不做文件名合法化改写） */
+export function createNoteDraft(now: Date, title: string = buildDefaultNoteTitle(1)): NoteDraft {
+    const fileName = toNoteFileName(title)
     const directory = buildNoteDirectory(now)
     return {
         path: `${directory}/${fileName}`,

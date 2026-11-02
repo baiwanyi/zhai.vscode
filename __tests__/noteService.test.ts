@@ -42,9 +42,9 @@ describe('createNote', () => {
         const { indexer } = createIndexer()
         const created = await createNote(indexer)
         const directory = created.path.slice(0, created.path.lastIndexOf('/'))
-        expect(created.path).toMatch(/^notes\/\d{6}\/[0-9a-f-]{36}\.md$/)
+        expect(created.path).toMatch(/^notes\/\d{6}\/未命名笔记 1\.md$/)
         expect(hasDirectory(path.join(STORAGE_ROOT, directory))).toBe(true)
-        expect(readFileContent(path.join(STORAGE_ROOT, created.path))).toContain('# 未命名笔记')
+        expect(readFileContent(path.join(STORAGE_ROOT, created.path))).toContain('# 未命名笔记 1')
     })
 
     it('落盘后立即索引，索引路径与返回路径一致', async () => {
@@ -56,15 +56,17 @@ describe('createNote', () => {
     it('返回标题与写入内容一致', async () => {
         const { indexer } = createIndexer()
         const created = await createNote(indexer)
-        expect(created.title).toBe('未命名笔记')
+        expect(created.title).toBe('未命名笔记 1')
         expect(readFileContent(path.join(STORAGE_ROOT, created.path))).toContain(`# ${created.title}`)
     })
 
-    it('连续创建互不覆盖且路径不同', async () => {
+    it('连续创建互不覆盖且序号顺延', async () => {
         const { indexer, indexed } = createIndexer()
         const first = await createNote(indexer)
         const second = await createNote(indexer)
         expect(first.path).not.toBe(second.path)
+        expect(first.path).toMatch(/未命名笔记 1\.md$/)
+        expect(second.path).toMatch(/未命名笔记 2\.md$/)
         expect(readFileContent(path.join(STORAGE_ROOT, first.path))).toBeDefined()
         expect(readFileContent(path.join(STORAGE_ROOT, second.path))).toBeDefined()
         expect(indexed).toHaveLength(2)

@@ -194,6 +194,18 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
+    /**
+     * 重播活跃笔记：笔记文件跟随标题改名后旧路径已不在索引里，列表高亮与路由归属须立刻跟到新路径。
+     * 不能复用 buildActiveNote——改名不触发 onDidChangeActiveTextEditor，此刻编辑器可能仍指向旧 Uri，
+     * 故由调用方直接给出重命名后的相对路径。
+     * 关键约束：面板未挂载时直接丢弃，下次打开会重新请求快照。
+     */
+    public broadcastActiveNote(activePath: string): void {
+        if (this.view !== null) {
+            this.post(this.view, { type: 'state', channel: 'note', payload: { activePath, hasEditor: true } })
+        }
+    }
+
     private async renderHtml(webviewView: vscode.WebviewView): Promise<void> {
         try {
             webviewView.webview.html = await buildWebviewHtml(

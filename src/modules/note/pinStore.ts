@@ -31,4 +31,19 @@ export class PinStore {
         await this.state.update(PINNED_PATHS_KEY, next)
         return next
     }
+
+    /**
+     * 迁移置顶记录：文档跟随标题改名后，原位替换路径以保持置顶状态与原有顺序。
+     * 关键约束：旧路径不在列表或新路径已被占用时不做改动，避免出现重复项；无变化时不写回。
+     */
+    public async renamePath(previousPath: string, nextPath: string): Promise<void> {
+        const current = this.list()
+        if (!current.includes(previousPath) || current.includes(nextPath)) {
+            return
+        }
+        await this.state.update(
+            PINNED_PATHS_KEY,
+            current.map((item) => (item === previousPath ? nextPath : item)),
+        )
+    }
 }

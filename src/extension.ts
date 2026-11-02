@@ -48,6 +48,8 @@ import { openNamingDatabase } from './modules/naming/db/connection'
 import { ensureNamingSchema } from './modules/naming/db/schema'
 import { NamingRoutes } from './modules/naming/namingRoutes'
 import { NamingService } from './modules/naming/namingService'
+import { NoteRenameService } from './modules/note/noteRenameService'
+import { registerNoteRenameWatcher } from './modules/note/noteRenameWatcher'
 import { PinStore } from './modules/note/pinStore'
 import { openPressDatabase } from './modules/press/db/connection'
 import { ImportSemanticService } from './modules/press/importSemanticService'
@@ -133,6 +135,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(DashboardViewProvider.viewId, dashboardProvider),
     )
+
+    // 笔记重命名：保存时让文件名跟随一级标题，避免列表标题与磁盘文件名各说一套；
+    // 改的正是正在编辑的那篇时重播活跃笔记，否则列表高亮会停在已消失的旧路径上
+    const noteRenameService = new NoteRenameService(indexService, pinStore, (nextPath) => {
+        dashboardProvider.broadcastActiveNote(nextPath)
+    })
+    registerNoteRenameWatcher(noteRenameService, context.subscriptions)
 
     // AI 对话：独立 ai.db 承载会话、消息与用量，避免影响索引库写入
     const aiDb = openAiDatabase(cacheRoot)

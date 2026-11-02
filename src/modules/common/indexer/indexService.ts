@@ -41,6 +41,11 @@ function toExcludedDirNames(globs: readonly string[]): string[] {
     return names
 }
 
+/** 路径归一：统一正斜杠并去掉尾部斜杠，使 fsPath 与配置路径可在同一形态下比对 */
+function toSlashedPath(value: string): string {
+    return value.replace(/\\/gu, '/').replace(/\/+$/u, '')
+}
+
 /** 索引状态快照，供状态栏与 Webview 展示 */
 export interface IndexStatus {
     indexedCount: number
@@ -255,13 +260,16 @@ export class IndexService {
     /**
      * 归一化为存储根口径的相对路径：位于存储根内则剥离前缀，否则原样返回绝对路径。
      * 索引写入与宿主侧路径比对（如按活跃编辑器回填列表选中态）共用本方法，避免各处各写一份比较逻辑。
+     * 以 fsPath 为基准而不是 Uri.path：后者是百分号编码形态，中文文件名会被编码成 `%XX` 串，
+     * 既与磁盘名对不上，也无法再作为打开时的路径片段使用。
      * 关键约束：比较统一小写，规避 VSCode 的 fsPath 把盘符小写、而配置保留原始大小写导致的误判。
      */
     public toRelativePath(uri: vscode.Uri): string {
-        const rootPath = resolveStorageRoot().path
-        return uri.path.toLowerCase().startsWith(`${rootPath.toLowerCase()}/`)
-            ? uri.path.slice(rootPath.length + 1)
-            : uri.path
+        const rootPath = toSlashedPath(resolveStorageRoot().fsPath)
+        const targetPath = toSlashedPath(uri.fsPath)
+        return targetPath.toLowerCase().startsWith(`${rootPath.toLowerCase()}/`)
+            ? targetPath.slice(rootPath.length + 1)
+            : targetPath
     }
 
     public dispose(): void {
@@ -339,8 +347,9 @@ export class IndexService {
         }
     }
 
+    /** 文件名兜底标题：取 fsPath 而非 Uri.path，避免中文文件名被编码成 %XX 串显示到列表 */
     private baseName(uri: vscode.Uri): string {
-        return uri.path.split('/').pop() ?? uri.path
+        return uri.fsPath.split(/[\\/]/u).pop() ?? uri.fsPath
     }
 
     /**
