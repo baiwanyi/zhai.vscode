@@ -12,8 +12,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { TooltipProvider } from '@components/ui/tooltip'
 import type { ImageGenerateResult, PromptTag, PromptTagListResult } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
-import { ImageComposer } from '@webview/workflow/imagegen/layout/ImageComposer'
-import type { PromptCharacterSnapshot } from '@webview/workflow/imagegen/layout/ImageComposer'
+import { ImageComposer } from '@webview/workflow/media/layout/ImageComposer'
+import type { PromptCharacterSnapshot } from '@webview/workflow/media/layout/ImageComposer'
 import type { JSX } from 'react'
 
 const { requestMock, toastErrorMock, onStateMock, stateListeners } = vi.hoisted(() => {

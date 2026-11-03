@@ -126,7 +126,7 @@ export class PressRoutes {
             case 'pressAi/enhanceImagePrompt':
                 return this.imageGenerate.enhance(payload)
             case 'pressAi/getImageSettings':
-                return this.imageSettings.get(payload)
+                return this.imageSettings.get()
             case 'pressAi/getPromptImageBase':
                 return readPromptImageBase(toWebviewUri)
             case 'pressAi/listPromptRules':

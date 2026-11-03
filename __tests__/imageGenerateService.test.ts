@@ -77,6 +77,28 @@ function imageFsPath(id: string, extension = 'png'): string {
     return path.join(IMAGE_DIR, id.slice(0, 6), `${id}.${extension}`)
 }
 
+/** 读取落盘的生图参数：与图片同目录的 settings.json，键为媒体 id */
+function readRecordedParameters(record: MediaRecord | undefined): { prompt: string } | null {
+    if (record === undefined) {
+        return null
+    }
+    const settingsPath = path.join(STORAGE_ROOT, path.dirname(record.path), 'settings.json')
+    const content = readFileContent(settingsPath)
+    if (content === undefined) {
+        return null
+    }
+    const parsed: unknown = JSON.parse(content)
+    if (typeof parsed !== 'object' || parsed === null) {
+        return null
+    }
+    const entry = (parsed as Record<string, unknown>)[record.id]
+    if (typeof entry !== 'object' || entry === null) {
+        return null
+    }
+    const prompt = (entry as Record<string, unknown>).prompt
+    return typeof prompt === 'string' ? { prompt } : null
+}
+
 const toUri = (uri: { fsPath: string }): string => uri.fsPath
 
 beforeEach(() => {
@@ -169,12 +191,13 @@ describe('成功出图', () => {
             scope: 'press',
             origin: 'generate',
             pressName: '剑来',
-            prompt: '雪夜庭院',
-            ratio: '3:4',
-            style: 'auto',
             characterId: null,
             loreId: null,
         })
+        // 出图参数不在索引里：与图片同目录的 settings.json 才是唯一来源
+        const settingsPath = path.join(STORAGE_ROOT, 'images', result.image.id.slice(0, 6), 'settings.json')
+        const params: unknown = JSON.parse(readFileContent(settingsPath) ?? '{}')
+        expect(params).toMatchObject({ [result.image.id]: { prompt: '雪夜庭院', ratio: '3:4', style: 'auto' } })
         expect(readUsedToday(db, IMAGE_QUOTA_KEYS)).toBe(1)
     })
 
@@ -260,7 +283,7 @@ describe('词条芯片', () => {
         await service.generate(payload({ prompt: '', promptTags: ['人物::基础::女性'] }), toUri)
 
         expect(calls[0]?.prompt.startsWith('female')).toBe(true)
-        expect(recorded[0]?.prompt).toBe('female')
+        expect(readRecordedParameters(recorded[0])?.prompt).toBe('female')
     })
 
     it('词条标识查不到时跳过，不阻断出图', async () => {
@@ -307,7 +330,7 @@ describe('上下文段', () => {
     it('索引只记录正文，上下文不进提示词字段', async () => {
         await service.generate(payload({ prompt: '雪夜庭院', contexts: ['书名：剑来'] }), toUri)
 
-        expect(recorded[0]?.prompt).toBe('雪夜庭院')
+        expect(readRecordedParameters(recorded[0])?.prompt).toBe('雪夜庭院')
         expect(calls[0]?.prompt).toContain('书名：剑来')
     })
 })

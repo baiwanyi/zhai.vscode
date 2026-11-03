@@ -4,6 +4,7 @@
  * 作品封面指针沿用 PressCoverStore（press.db meta 表），路径与片段校验复用 common/storagePath；
  * 插入正文写 `@zhai/{存储根相对路径}` 而不是复制副本，文档移动后引用仍有效。
  * 关键约束：磁盘是唯一事实来源——列举前先做一次节流对账（目录遍历），补录手工放入的图片与标记丢失；
+ * 出图参数随图片同目录落 settings.json，索引库不再保存，详情按需读取；
  * 前端只传媒体 id，路径一律由表查得后再校验 images/{YYYYMM}/ 形态，不接受任意路径；
  * 删除前不回退引用，而是把引用清单一并回传给前端二次确认；封面被删时回退到该作品出处的最新一张。
  */
@@ -14,6 +15,7 @@ import { logger } from '@modules/common/logger'
 import { readProjectSegments } from '@modules/common/projectPath'
 import { buildStorageUri, deleteResource, isPathExisting } from '@modules/common/storagePath'
 import type { PressCoverStore } from '@modules/media/pressCoverStore'
+import { isImageRatio, type MediaParameters } from '@shared/types/imagegen'
 import { isMediaId, isMediaMonth, readMediaIdFromPath } from '@shared/types/media'
 import type {
     MediaBatchDeleteResult,
@@ -27,12 +29,16 @@ import type {
     MediaRefType,
     MediaRescanResult,
     MediaSetCoverResult,
+    MediaUploadResult,
     MediaUsageItem,
 } from '@shared/types/media'
+import { PORTRAIT_STYLES } from '@shared/types/press'
 import { WECHAT_MODULE_DIR } from '@shared/types/wechat'
 import { ZHAI_PATH_PREFIX } from '@shared/utils/zhaiPath'
 import { writeImageToClipboard } from './clipboardImage'
 import { MAX_BATCH_DELETE } from './constants'
+import { hasLegacyParameterColumns, dropLegacyParameterColumns } from './db/schema'
+import { groupOwners } from './mediaOwners'
 import { clearCoverUsage, rescanReferences, setCoverUsage } from './mediaReferenceService'
 import {
     clearUsagesByMedia,
@@ -40,6 +46,7 @@ import {
     deleteMedia,
     findLatestOfProject,
     findMedia,
+    insertMedia,
     insertUsage,
     listByCharacter,
     listByLore,
@@ -48,11 +55,24 @@ import {
     listUsages,
 } from './mediaRepository'
 import { reconcileMedia, scanMediaFiles } from './mediaScan'
+import { mergeMonthParameters, readMediaParameters, removeMediaParameters } from './mediaSettingsStore'
+import {
+    MAX_UPLOAD_COUNT,
+    MAX_UPLOAD_TOTAL_BYTES,
+    parseUploadItem,
+    readCandidateFile,
+    saveUploadedImage,
+} from './mediaUpload'
 import type { MediaDatabase } from './db/connection'
-import type { StoredMedia } from './mediaRepository'
+import type { MediaRecord, StoredMedia } from './mediaRepository'
+import type { UploadCandidate } from './mediaUpload'
 
 /** 列举前的对账节流窗口：短时间内反复打开面板不重复遍历磁盘 */
 const RECONCILE_INTERVAL_MS = 5_000
+/** 全量对账（含引用重建）的跨会话节流窗口：短时间内重复进入媒体页不重复解析文档 */
+const RESCAN_INTERVAL_MS = 5 * 60_000
+/** 全量对账时刻在 media_meta 里的键 */
+const RESCAN_META_KEY = 'last_full_scan_at'
 
 /** 依赖注入：数据库按当前存储根懒打开，封面指针复用写作管理库 */
 interface MediaServiceDeps {
@@ -62,9 +82,9 @@ interface MediaServiceDeps {
 
 /**
  * 把仓库记录转成协议条目：url 由宿主签发，仅本次会话有效。
- * @param withParams 是否带上出图参数——列表不带（提示词体积大），详情带
+ * 出图参数不在索引库里，这里一律置空，由详情接口按需从同目录 settings.json 补齐。
  */
-function toMediaItem(row: StoredMedia, toWebviewUri: (uri: vscode.Uri) => string, withParams: boolean): MediaItem {
+function toMediaItem(row: StoredMedia, toWebviewUri: (uri: vscode.Uri) => string): MediaItem {
     const root = resolveStorageRoot()
     return {
         id: row.id,
@@ -86,10 +106,24 @@ function toMediaItem(row: StoredMedia, toWebviewUri: (uri: vscode.Uri) => string
         loreName: row.loreName,
         usageCount: row.usageCount,
         missing: row.missing,
-        prompt: withParams ? row.prompt : null,
-        ratio: withParams ? row.ratio : null,
-        style: withParams ? row.style : null,
-        enhancedFrom: withParams ? row.enhancedFrom : null,
+        prompt: null,
+        ratio: null,
+        style: null,
+        enhancedFrom: null,
+    }
+}
+
+/** 把磁盘上的生图参数贴到条目上：读取不到（手工放入的图片）时保持四字段为空 */
+function withParameters(item: MediaItem, params: MediaParameters | null): MediaItem {
+    if (params === null) {
+        return item
+    }
+    return {
+        ...item,
+        prompt: params.prompt,
+        ratio: params.ratio,
+        style: params.style,
+        enhancedFrom: params.enhancedFrom,
     }
 }
 
@@ -180,6 +214,36 @@ function toAltText(row: StoredMedia): string {
     return `媒体 ${row.createdAt.slice(0, 10)}`
 }
 
+/** 旧库的索引行：升级时把出图参数导出到磁盘，列名与已移除的 DDL 一致 */
+interface LegacyParameterRow {
+    path: string
+    month: string
+    prompt: string | null
+    ratio: string | null
+    style: string | null
+    enhanced_from: string | null
+}
+
+/** 旧库行转生图参数：比例或画风不合法的行直接跳过，宁可丢失也不写入猜测值 */
+function toLegacyParameters(row: LegacyParameterRow): MediaParameters | null {
+    if (row.prompt === null && row.ratio === null && row.style === null) {
+        return null
+    }
+    if (!isImageRatio(row.ratio)) {
+        return null
+    }
+    const style = PORTRAIT_STYLES.find((item) => item === row.style)
+    if (style === undefined) {
+        return null
+    }
+    return {
+        prompt: row.prompt ?? '',
+        ratio: row.ratio,
+        style,
+        enhancedFrom: row.enhanced_from,
+    }
+}
+
 /** 取插入目标：优先活动编辑器，其次最近可见的 Markdown 编辑器 */
 function resolveInsertTarget(): vscode.TextEditor | undefined {
     const active = vscode.window.activeTextEditor
@@ -194,30 +258,40 @@ function resolveInsertTarget(): vscode.TextEditor | undefined {
 export class MediaLibraryService {
     /** 上次对账时刻：节流窗口内不重复遍历磁盘 */
     private lastReconcileAt = 0
+    /** 旧库参数列是否已完成导出与移除：成功一次即置位，失败留给下次重试 */
+    private isUpgraded = false
 
     public constructor(private readonly deps: MediaServiceDeps) {}
 
     /** 列举：month 为空返回全部，按年月与时间倒序；months 供下拉与分组头使用 */
     public async list(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<MediaListResult> {
+        await this.ensureUpgraded()
         await this.reconcileIfStale()
         const { db } = this.deps.openDatabase()
         const month = readListMonth(payload)
         return {
-            items: listMedia(db, month).map((row) => toMediaItem(row, toWebviewUri, false)),
+            items: listMedia(db, month).map((row) => toMediaItem(row, toWebviewUri)),
             months: listMonths(db),
             total: countMedia(db),
         }
     }
 
-    /** 详情：条目本身 + 全部引用，引用按类型分组由前端完成 */
-    public detail(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): MediaDetailResult {
+    /** 详情：条目本身 + 全部引用，出图参数按需从同目录 settings.json 读取 */
+    public async detail(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<MediaDetailResult> {
+        await this.ensureUpgraded()
         const id = readMediaId(payload, 'media/detail')
         const { db } = this.deps.openDatabase()
         const row = findMedia(db, id)
         if (row === null) {
             throw new Error('图片不存在或已被删除')
         }
-        return { item: toMediaItem(row, toWebviewUri, true), usages: listUsages(db, id) }
+        const params = await readMediaParameters(resolveStorageRoot(), row.path)
+        const usages = listUsages(db, id)
+        return {
+            item: withParameters(toMediaItem(row, toWebviewUri), params),
+            usages,
+            owners: groupOwners(usages),
+        }
     }
 
     /** 删除单张：进回收站，成功后清引用与表行，并按引用回退作品封面 */
@@ -255,6 +329,7 @@ export class MediaLibraryService {
             clearUsagesByMedia(db, id)
             deleteMedia(db, id)
         })()
+        await this.forgetParameters(row.path)
         const coverSelectedId = this.fallbackCovers(db, row, usages)
         logger.info(`媒体已删除：${row.path}`)
         return { removed: true, usages, coverSelectedId, characterCoverFallbacks, loreCoverFallbacks }
@@ -283,6 +358,7 @@ export class MediaLibraryService {
                 clearUsagesByMedia(db, id)
                 deleteMedia(db, id)
             })()
+            await this.forgetParameters(row.path)
             this.fallbackCovers(db, row, usages)
             removals.push({ id, removed: true })
         }
@@ -386,19 +462,178 @@ export class MediaLibraryService {
         return outcome === 'copied' ? { copied: true } : { copied: false, reason: outcome }
     }
 
-    /** 全量对账：目录补录 + 文档引用重建，供打开媒体页与手动刷新调用 */
-    public async rescan(): Promise<MediaRescanResult> {
+    /**
+     * 上传字节流（拖拽与粘贴）：逐条解析后交给统一落盘流程。
+     * 关键约束：单条非法只跳过该条并回报原因；整批超量直接拒绝，避免半批写盘后才发现超限。
+     */
+    public async uploadBytes(
+        payload: unknown,
+        toWebviewUri: (uri: vscode.Uri) => string,
+    ): Promise<MediaUploadResult> {
+        const raw = readPayload(payload, 'media/uploadBytes').items
+        const list = Array.isArray(raw) ? raw : []
+        if (list.length === 0) {
+            throw new Error('缺少待上传的图片')
+        }
+        if (list.length > MAX_UPLOAD_COUNT) {
+            throw new Error(`一次最多上传 ${String(MAX_UPLOAD_COUNT)} 张图片`)
+        }
+        const candidates: UploadCandidate[] = []
+        const skipped: { name: string; reason: string }[] = []
+        for (const item of list) {
+            const parsed = parseUploadItem(item)
+            if (parsed.ok) {
+                candidates.push(parsed.candidate)
+            } else {
+                skipped.push({ name: parsed.name, reason: parsed.reason })
+            }
+        }
+        const total = candidates.reduce((sum, candidate) => sum + candidate.bytes.byteLength, 0)
+        if (total > MAX_UPLOAD_TOTAL_BYTES) {
+            throw new Error(`本次上传总量超过 ${String(MAX_UPLOAD_TOTAL_BYTES / 1024 / 1024)} MB`)
+        }
+        return this.commitUpload(candidates, skipped, toWebviewUri)
+    }
+
+    /** 上传本地文件（选择文件）：宿主弹选择器，前端不传任何路径 */
+    public async pickUpload(toWebviewUri: (uri: vscode.Uri) => string): Promise<MediaUploadResult> {
+        const picked = await vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectFolders: false,
+            canSelectMany: true,
+            openLabel: '上传到媒体库',
+            filters: { 图片: ['png', 'jpg', 'jpeg', 'webp', 'gif'] },
+            defaultUri: resolveStorageRoot(),
+        })
+        if (picked === undefined || picked.length === 0) {
+            return { uploaded: [], skipped: [] }
+        }
+        const candidates: UploadCandidate[] = []
+        const skipped: { name: string; reason: string }[] = []
+        for (const uri of picked.slice(0, MAX_UPLOAD_COUNT)) {
+            const parsed = await readCandidateFile(uri)
+            if (parsed.ok) {
+                candidates.push(parsed.candidate)
+            } else {
+                skipped.push({ name: parsed.name, reason: parsed.reason })
+            }
+        }
+        if (picked.length > MAX_UPLOAD_COUNT) {
+            skipped.push({
+                name: `${String(picked.length - MAX_UPLOAD_COUNT)} 个文件`,
+                reason: `一次最多上传 ${String(MAX_UPLOAD_COUNT)} 张，其余已跳过`,
+            })
+        }
+        const accepted: UploadCandidate[] = []
+        let total = 0
+        for (const candidate of candidates) {
+            if (total + candidate.bytes.byteLength > MAX_UPLOAD_TOTAL_BYTES) {
+                skipped.push({ name: candidate.name, reason: '本批总量超过上限，已跳过' })
+                continue
+            }
+            total += candidate.bytes.byteLength
+            accepted.push(candidate)
+        }
+        return this.commitUpload(accepted, skipped, toWebviewUri)
+    }
+
+    /**
+     * 上传编排：逐条落盘并入索引，单条失败只记回执。
+     * 关键约束：上传统一记为 general 素材、不写作品归属——图被插进正文后才由 media/insert 建立关联。
+     */
+    private async commitUpload(
+        candidates: readonly UploadCandidate[],
+        skipped: readonly { name: string; reason: string }[],
+        toWebviewUri: (uri: vscode.Uri) => string,
+    ): Promise<MediaUploadResult> {
+        await this.ensureUpgraded()
+        const root = resolveStorageRoot()
+        const { db } = this.deps.openDatabase()
+        const uploaded: MediaItem[] = []
+        const failures = [...skipped]
+        for (const candidate of candidates) {
+            try {
+                const file = await saveUploadedImage(root, candidate.bytes)
+                const record: MediaRecord = {
+                    id: file.id,
+                    path: file.path,
+                    ext: file.ext,
+                    byteSize: file.byteSize,
+                    month: file.month,
+                    createdAt: file.createdAt,
+                    scope: 'general',
+                    origin: 'upload',
+                    kind: 'photo',
+                    pressPath: null,
+                    pressName: null,
+                    characterId: null,
+                    characterName: null,
+                    loreKind: null,
+                    loreId: null,
+                    loreName: null,
+                }
+                insertMedia(db, record)
+                uploaded.push(toMediaItem({ ...record, missing: false, usageCount: 0 }, toWebviewUri))
+            } catch (error) {
+                failures.push({
+                    name: candidate.name,
+                    reason: error instanceof Error ? error.message : '上传失败',
+                })
+                logger.error(`媒体上传失败：${candidate.name}`, error)
+            }
+        }
+        if (uploaded.length > 0) {
+            logger.info(`媒体上传完成：${String(uploaded.length)} 张`)
+        }
+        return { uploaded, skipped: failures }
+    }
+
+    /**
+     * 全量对账：目录补录 + 文档引用重建，供打开媒体页与手动刷新调用。
+     * 关键约束：默认走跨会话节流，重复进入页面不重复解析文档；force 为 true 时忽略节流强制重扫。
+     */
+    public async rescan(payload?: unknown): Promise<MediaRescanResult> {
+        await this.ensureUpgraded()
+        const isForced = typeof payload === 'object' && payload !== null && (payload as { force?: unknown }).force === true
+        if (!isForced && !this.isRescanDue()) {
+            return { skipped: true, indexed: 0, missing: 0, corrected: 0, stale: 0 }
+        }
         const mediaDb = this.deps.openDatabase()
         const files = await scanMediaFiles(resolveStorageRoot())
         const reconcile = reconcileMedia(mediaDb, files)
         const references = await rescanReferences(mediaDb.db, (dirPath) => this.deps.coverStore.read(dirPath))
         this.lastReconcileAt = Date.now()
+        this.markRescanned(mediaDb)
         return {
+            skipped: false,
             indexed: reconcile.indexed,
             missing: reconcile.missing,
             corrected: reconcile.corrected,
             stale: references.stale,
         }
+    }
+
+    /** 是否已过跨会话节流窗口：时间戳存 media_meta，切存储根后自然重新计时 */
+    private isRescanDue(): boolean {
+        const { db } = this.deps.openDatabase()
+        const row = db.prepare('SELECT value FROM media_meta WHERE key = ?').get(RESCAN_META_KEY) as
+            | { value: string }
+            | undefined
+        if (row === undefined) {
+            return true
+        }
+        const last = Number(row.value)
+        return !Number.isFinite(last) || Date.now() - last >= RESCAN_INTERVAL_MS
+    }
+
+    /** 记录本次全量对账时刻：写入 media_meta，跨会话生效 */
+    private markRescanned(mediaDb: MediaDatabase): void {
+        mediaDb.db
+            .prepare(
+                `INSERT INTO media_meta (key, value) VALUES (?, ?)
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+            )
+            .run(RESCAN_META_KEY, String(Date.now()))
     }
 
     /** 节流对账：打开页面时补齐手工放入的图片，不解析文档（引用由 rescan 负责） */
@@ -414,6 +649,55 @@ export class MediaLibraryService {
         } catch (error) {
             // 对账失败不影响列表读取：索引里已有的图片照常展示
             logger.error('媒体目录对账失败', error)
+        }
+    }
+
+    /**
+     * 旧库升级：把索引库里的出图参数按月份导出到各目录 settings.json，全部成功后移除这四列。
+     * 关键约束：先写盘再删列——任一步失败都保留旧列，下次调用继续重试，不让参数凭空消失。
+     */
+    private async ensureUpgraded(): Promise<void> {
+        if (this.isUpgraded) {
+            return
+        }
+        const mediaDb = this.deps.openDatabase()
+        if (!hasLegacyParameterColumns(mediaDb.db)) {
+            this.isUpgraded = true
+            return
+        }
+        try {
+            const root = resolveStorageRoot()
+            const rows = mediaDb.db
+                .prepare('SELECT path, month, prompt, ratio, style, enhanced_from FROM media')
+                .all() as LegacyParameterRow[]
+            const buckets = new Map<string, Record<string, MediaParameters>>()
+            for (const row of rows) {
+                const params = toLegacyParameters(row)
+                if (params === null) {
+                    continue
+                }
+                const monthDir = row.month.replace('-', '')
+                const entries = buckets.get(monthDir) ?? {}
+                entries[readMediaIdFromPath(row.path)] = params
+                buckets.set(monthDir, entries)
+            }
+            for (const [monthDir, entries] of buckets) {
+                await mergeMonthParameters(root, monthDir, entries)
+            }
+            dropLegacyParameterColumns(mediaDb.db)
+            this.isUpgraded = true
+            logger.info(`媒体出图参数已迁出索引库：${String(buckets.size)} 个月`)
+        } catch (error) {
+            logger.error('媒体出图参数迁移失败，索引库暂保留旧列', error)
+        }
+    }
+
+    /** 清掉图片同目录 settings.json 里的这条记录：失败只记日志，不回滚已完成的删除 */
+    private async forgetParameters(mediaPath: string): Promise<void> {
+        try {
+            await removeMediaParameters(resolveStorageRoot(), mediaPath)
+        } catch (error) {
+            logger.error(`生图参数清理失败：${mediaPath}`, error)
         }
     }
 

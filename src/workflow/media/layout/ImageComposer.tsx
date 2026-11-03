@@ -51,16 +51,17 @@ const CHIP_ICONS: Readonly<Record<Exclude<PromptChipKind, 'reference'>, LucideIc
 }
 
 interface ImageComposerProps {
-    dirPath: string
+    /** 作品目录：通用文档下为 null，出图落为通用素材 */
+    dirPath: string | null
     characters: ReadonlyArray<PromptCharacterSnapshot>
     setting: PromptSettingSnapshot
     /** 初始角色：顶栏筛选值只作角色芯片的初值，之后以工具栏角色菜单的选择为准 */
     initialCharacterId: string | null
-    /** 初始比例与画风：来自作品级配置，缺省项由页面回落到默认值 */
+    /** 初始比例与画风：来自全局出图配置，缺省项由页面回落到默认值 */
     defaultRatio: ImageRatio
     /** 角色图与普通图默认画风 */
     defaultStyle: PortraitStyle
-    /** 比例与画风改动：由页面写入作品配置，本组件只负责上报 */
+    /** 比例与画风改动：由页面写入全局配置，本组件只负责上报 */
     onSettingsChange: (patch: { defaultRatio?: ImageRatio; portraitStyle?: PortraitStyle }) => void
     /** 生成成功后的回调：由页面负责插入列表并刷新 */
     onGenerated: (result: ImageGenerateResult) => void

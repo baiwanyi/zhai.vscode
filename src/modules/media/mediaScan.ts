@@ -3,7 +3,7 @@
  * 复用约定：路径一律经 common/storagePath 构造，扩展名口径与 @shared/types/media 的 isMediaPath 同源；
  * 时间优先取文件名前 14 位（本地时间），解析失败回落文件 mtime，与列举排序口径一致。
  * 关键约束：目录缺失视为空而不是错误——首次使用、磁盘清理都属正常；
- * 手工放入的文件按 import 补录，不因命名不合规被拒；同一 id 出现两份时以先入库者为准，后者只记日志；
+ * 手工放入的文件按 upload 补录，不因命名不合规被拒；同一 id 出现两份时以先入库者为准，后者只记日志；
  * 对账只纠正 path / month / missing，绝不改写出处与出图参数。
  */
 import * as vscode from 'vscode'
@@ -127,7 +127,7 @@ export function reconcileMedia(mediaDb: MediaDatabase, files: readonly ScannedMe
                     month: file.month,
                     createdAt: file.createdAt,
                     scope: 'general',
-                    origin: 'import',
+                    origin: 'upload',
                     kind: 'unknown',
                     pressPath: null,
                     pressName: null,
@@ -136,10 +136,6 @@ export function reconcileMedia(mediaDb: MediaDatabase, files: readonly ScannedMe
                     loreKind: null,
                     loreId: null,
                     loreName: null,
-                    prompt: null,
-                    ratio: null,
-                    style: null,
-                    enhancedFrom: null,
                 })
                 outcome.indexed += 1
                 continue

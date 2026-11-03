@@ -39,7 +39,8 @@ interface ImageComposerDraft {
 }
 
 interface UseImageComposerOptions {
-    dirPath: string
+    /** 作品目录：通用文档下为 null，出图落为通用素材 */
+    dirPath: string | null
     /** 拼装提示词：传入发送瞬间的正文与芯片快照，避免回填竞态 */
     composePrompt: (source: ImageComposerPromptSource) => string
     /** 收集上下文段：发送时作为 contexts 提交，缺省视为没有上下文 */
@@ -187,7 +188,11 @@ export function useImageComposer({
             const result = await request<{ text: string }>(
                 'pressAi/enhanceImagePrompt',
                 // 词条只传标识：宿主按标识读盘后与正文合并，与出图共用同一份合并口径
-                { dirPath, text: composeEnhanceSource(original).trim(), promptTags: composePromptTags(chips) },
+                {
+                    dirPath: dirPath ?? undefined,
+                    text: composeEnhanceSource(original).trim(),
+                    promptTags: composePromptTags(chips),
+                },
                 ENHANCE_TIMEOUT_MS,
             )
             setEnhancedFrom(original)
@@ -267,7 +272,7 @@ export function useImageComposer({
             const result = await request<ImageGenerateResult>(
                 'pressAi/generateImage',
                 {
-                    dirPath,
+                    dirPath: dirPath ?? undefined,
                     prompt,
                     // 上下文作为独立字段提交，不混进上面的 prompt 正文
                     contexts: contexts.length > 0 ? contexts : undefined,

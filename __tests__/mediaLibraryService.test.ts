@@ -53,10 +53,6 @@ function mediaOf(id: string, mediaPath = MEDIA_PATH): MediaRecord {
         loreKind: null,
         loreId: null,
         loreName: null,
-        prompt: null,
-        ratio: null,
-        style: null,
-        enhancedFrom: null,
     }
 }
 

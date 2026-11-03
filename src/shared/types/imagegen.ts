@@ -91,10 +91,24 @@ export const DEFAULT_IMAGE_SETTINGS: ImageSettings = {
     negative: '',
 }
 
-/** 参数读取结果：overrides 列出本作品已覆盖的键，其余跟随全局配置 */
+/** 参数读取结果：overrides 列出已覆盖的键，其余跟随默认值 */
 export interface ImageSettingsResult {
     settings: ImageSettings
     overrides: ReadonlyArray<keyof ImageSettings>
+}
+
+/**
+ * 单张图片的生图参数：落 images/{YYYYMM}/settings.json，以媒体 id 为键。
+ * 复用约定：比例与画风沿用 ImageRatio / PortraitStyle 白名单，读取时逐项收窄，非法字段整条丢弃；
+ * enhancedFrom 为提示词增强前的原文，未增强时为 null。
+ * 关键约束：媒体索引库不再保存这四项，本结构是唯一读取来源；
+ * 手工放入的图片没有对应键，由调用方按「无生图信息」展示，不视为错误。
+ */
+export interface MediaParameters {
+    prompt: string
+    ratio: ImageRatio
+    style: PortraitStyle
+    enhancedFrom: string | null
 }
 
 /**

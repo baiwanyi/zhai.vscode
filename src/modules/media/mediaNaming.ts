@@ -1,8 +1,9 @@
 /**
- * 媒体命名：为待落盘的图片生成「年月目录 + 14 位时间戳 + 6 位随机段」的标识，供出图与导入共用。
+ * 媒体命名：为待落盘的图片生成「年月目录 + 14 位时间戳 + 6 位大写随机段」的标识，供出图与上传共用。
  * 复用约定：合法性由 @shared/types/media 的 isMediaId 校验，目录与扩展名由调用方给出；
  * 路径一律经 common/storagePath 构造，时间戳与目录名由同一次计算产出，不会跨秒错位。
  * 关键约束：永不覆盖已有文件——同秒冲突先换随机段，换满再按秒顺延，上限内仍冲突即报错；
+ * 随机段固定 [A-Z0-9]{6}，历史小写 id 仍可读但不再新生成（读侧正则保持宽松）；
  * 时间戳为本地时区，与用户在文件管理器里看到的时间一致，年月目录也按本地时区归集。
  */
 import * as path from 'node:path'
@@ -14,8 +15,8 @@ import { MEDIA_DIR } from '@shared/types/media'
 const STAMP_LENGTH = 14
 /** 随机段长度：6 位字母数字 */
 const RANDOM_LENGTH = 6
-/** 随机段字母表 */
-const RANDOM_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+/** 随机段字母表：大写字母与数字，与文件名规范 [A-Z0-9]{6} 一致 */
+const RANDOM_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
 /** 同秒随机段重试次数 */
 const MAX_RANDOM_RETRY = 5
 /** 时间戳顺延上限：60 秒足以覆盖任何同秒冲突，再长说明命名链路异常 */

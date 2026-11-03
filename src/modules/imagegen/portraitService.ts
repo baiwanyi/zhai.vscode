@@ -58,6 +58,21 @@ export function readProjectDirPath(payload: unknown, method: string): string {
     return readProjectSegments(dirPath).join('/')
 }
 
+/**
+ * 读取可选的上下文作品目录：未提供（非作品文档下出图）返回 null，提供则按作品目录白名单校验。
+ * 安全约束：宽松只作用于「是否必填」——给了就必须是 press/{作品名} 两段，越界路径照样拒绝。
+ */
+export function readOptionalProjectDirPath(payload: unknown): string | null {
+    if (typeof payload !== 'object' || payload === null) {
+        return null
+    }
+    const dirPath = readText((payload as { dirPath?: unknown }).dirPath, MAX_PATH_LENGTH)
+    if (dirPath.length === 0) {
+        return null
+    }
+    return readProjectSegments(dirPath).join('/')
+}
+
 /** 读取人物标识：只接受安全字符集，避免拼出越界目录；缺失或非法一律拒绝 */
 function normalizeCharacterId(payload: unknown, method: string): string {
     if (typeof payload !== 'object' || payload === null) {

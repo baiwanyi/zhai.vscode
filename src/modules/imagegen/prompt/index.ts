@@ -16,9 +16,9 @@
  * 词库 md 格式规范      docs/modules/imagegen.md（3.4「词库 md 格式规范」）
  * 词库 md 解析          modules/imagegen/prompt/tagMarkdown.ts
  * 各段长度 / 条数上限   modules/imagegen/prompt/limits.ts
- * 正文与角色段          workflow/imagegen/prompt/promptSections.ts
- * 作品设定上下文        workflow/imagegen/prompt/promptSections.ts
- * 比例意图关键词        workflow/imagegen/prompt/ratioIntent.ts
+ * 正文与角色段          workflow/media/prompt/promptSections.ts
+ * 作品设定上下文        workflow/media/prompt/promptSections.ts
+ * 比例意图关键词        workflow/media/prompt/ratioIntent.ts
  * 词条权重剥离          shared/utils/promptTag.ts
  * 词库内容              {词库目录}/tags/*.md（zhai.prompt.rootPath，留空为存储根下的 prompt）
  * 预览图                {词库目录}/images/{分类}/{分组}/{词条}.webp，哈希兜底 sha1 前 10 位

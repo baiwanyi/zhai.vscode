@@ -12,9 +12,10 @@ import { lstat, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, isAbsolute } from 'node:path'
 import * as vscode from 'vscode'
+import { sniffImageMime } from '@modules/common/imageSniff'
 import { logger } from '@modules/common/logger'
 import type { ImageReferencePickResult } from '@shared/types/imagegen'
-import type { ImageReferenceInput, ImageReferenceMimeType } from './ai/imageProvider'
+import type { ImageReferenceInput } from './ai/imageProvider'
 
 /** 参考图扩展名白名单：与图像通道支持的图片格式一致 */
 const REFERENCE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif']
@@ -30,33 +31,6 @@ const MAX_PATH_LENGTH = 320
 
 /** 登记表容量：远超单次会话可能用到的张数，只作无界增长兜底 */
 const MAX_TRACKED_PATHS = 32
-
-/** 按文件头判定图片类型：扩展名可以伪造，真实类型一律由文件魔数决定 */
-function sniffMimeType(bytes: Uint8Array): ImageReferenceMimeType | null {
-    if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) {
-        return 'image/png'
-    }
-    if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
-        return 'image/jpeg'
-    }
-    if (
-        bytes.length >= 12 &&
-        bytes[0] === 0x52 &&
-        bytes[1] === 0x49 &&
-        bytes[2] === 0x46 &&
-        bytes[3] === 0x46 &&
-        bytes[8] === 0x57 &&
-        bytes[9] === 0x45 &&
-        bytes[10] === 0x42 &&
-        bytes[11] === 0x50
-    ) {
-        return 'image/webp'
-    }
-    if (bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38) {
-        return 'image/gif'
-    }
-    return null
-}
 
 /** 扩展名白名单：不区分大小写，只认最后一段 */
 function hasReferenceExtension(path: string): boolean {
@@ -100,7 +74,7 @@ export class ReferenceImageService {
             throw new Error(`图片超过 ${String(MAX_REFERENCE_BYTES / 1024 / 1024)} MB 上限`)
         }
         const bytes = new Uint8Array(await readFile(uri.fsPath))
-        const mimeType = sniffMimeType(bytes)
+        const mimeType = sniffImageMime(bytes)
         if (mimeType === null) {
             throw new Error('无法识别的图片格式，请选择 PNG / JPEG / WebP / GIF')
         }
@@ -143,7 +117,7 @@ export class ReferenceImageService {
                 return null
             }
             const bytes = new Uint8Array(await readFile(path))
-            const mimeType = sniffMimeType(bytes)
+            const mimeType = sniffImageMime(bytes)
             if (mimeType === null) {
                 logger.warn(`参考图格式无法识别，已跳过：${path}`)
                 return null

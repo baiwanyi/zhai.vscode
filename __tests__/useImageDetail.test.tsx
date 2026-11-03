@@ -9,7 +9,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MediaDetailResult, MediaItem } from '@shared/types/media'
-import { useImageDetail } from '@webview/workflow/imagegen/hooks/useImageDetail'
+import { useImageDetail } from '@webview/workflow/media/hooks/useImageDetail'
 
 const { requestMock, toastErrorMock } = vi.hoisted(() => ({ requestMock: vi.fn(), toastErrorMock: vi.fn() }))
 
@@ -50,7 +50,7 @@ function itemOf(prompt: string): MediaItem {
 
 /** 详情回包：条目 + 引用，引用为空不影响本轮断言 */
 function detailOf(prompt: string): MediaDetailResult {
-    return { item: itemOf(prompt), usages: [] }
+    return { item: itemOf(prompt), usages: [], owners: [] }
 }
 
 beforeEach(() => {

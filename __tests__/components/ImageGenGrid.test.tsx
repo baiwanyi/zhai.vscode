@@ -10,7 +10,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MediaItem } from '@shared/types/media'
-import { ImageGenGrid } from '@webview/workflow/imagegen/layout/ImageGenGrid'
+import { ImageGenGrid } from '@webview/workflow/media/layout/ImageGenGrid'
 import type { RenderResult } from '@testing-library/react'
 
 afterEach(cleanup)
@@ -54,7 +54,7 @@ const PHOTO = createMedia({
     path: 'images/202610/20261025143001Qm7TzR.png',
     url: 'https://example.test/photo.png',
     kind: 'unknown',
-    origin: 'import',
+    origin: 'upload',
     scope: 'general',
     pressPath: null,
     pressName: null,
@@ -97,11 +97,11 @@ function renderGrid(options: RenderOptions = {}): RenderResult {
 }
 
 describe('ImageGenGrid', () => {
-    it('缩略图按出处命名，角色图显示角色名，无归属的图显示未关联', () => {
+    it('缩略图按出处命名，角色图显示角色名，无归属的图显示无出处', () => {
         renderGrid()
 
         expect(screen.getByAltText(`角色 · ${CHARACTER_NAME}`)).toBeDefined()
-        expect(screen.getByAltText('未关联')).toBeDefined()
+        expect(screen.getByAltText('无出处')).toBeDefined()
     })
 
     it('类型标签只展示来历：角色图显示角色，导入图显示未归类', () => {
@@ -111,11 +111,11 @@ describe('ImageGenGrid', () => {
         expect(screen.getByText('未归类')).toBeDefined()
     })
 
-    it('引用数大于 0 时显示徽标，避免满屏「0 处使用」', () => {
+    it('关联数大于 0 时显示徽标，避免满屏「关联 0」', () => {
         renderGrid({ images: [createMedia({ usageCount: 3 }), PHOTO] })
 
-        expect(screen.getByText('被 3 处使用')).toBeDefined()
-        expect(screen.queryByText('被 0 处使用')).toBeNull()
+        expect(screen.getByText('关联 3')).toBeDefined()
+        expect(screen.queryByText('关联 0')).toBeNull()
     })
 
     it('文件丢失的条目显示已丢失标签', () => {
@@ -147,7 +147,7 @@ describe('ImageGenGrid', () => {
         const onSelect = vi.fn()
         renderGrid({ handlers: { onSelect } })
 
-        await user.click(screen.getByLabelText('查看详情：未关联'))
+        await user.click(screen.getByLabelText('查看详情：无出处'))
 
         expect(onSelect).toHaveBeenCalledTimes(1)
         expect(onSelect).toHaveBeenCalledWith(PHOTO)

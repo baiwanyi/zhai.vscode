@@ -41,7 +41,7 @@ function toOriginLabel(image: MediaItem): string {
     if (image.pressName !== null && image.pressName.length > 0) {
         return `作品 · ${image.pressName}`
     }
-    return '未关联'
+    return '无出处'
 }
 
 interface ImageGenGridProps {
@@ -127,7 +127,7 @@ export function ImageGenGrid({
                         </Badge>
                         {image.usageCount > 0 && !isSelecting ? (
                             <Badge className="absolute top-2 right-2" variant="outline">
-                                被 {image.usageCount} 处使用
+                                关联 {image.usageCount}
                             </Badge>
                         ) : null}
                         <span className="absolute bottom-2 left-2 max-w-[80%] truncate rounded-md bg-background/80 px-1.5 py-0.5 text-xs">

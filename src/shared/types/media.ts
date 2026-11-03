@@ -11,8 +11,11 @@ import type { PressLoreKind } from './press'
 /** 媒体来源作用域：作品、笔记、公众号与通用 */
 export type MediaScope = 'press' | 'note' | 'wechat' | 'general'
 
-/** 入库方式：出图产出、外部导入、历史迁移 */
-export type MediaOrigin = 'generate' | 'import' | 'migrate'
+/**
+ * 入库方式：出图产出，或用户主动上传（含手工放入后由扫描补录）。
+ * 历史值 import / migrate 在索引升级时统一折算为 upload，筛选只有这两档。
+ */
+export type MediaOrigin = 'generate' | 'upload'
 
 /**
  * 条目分类：仅用于展示标签，不参与筛选。
@@ -96,8 +99,8 @@ export interface MediaItem {
     /** 索引有记录但磁盘文件已不在 */
     missing: boolean
     /**
-     * 出图参数：只有详情接口回传真实值，列表接口一律为 null。
-     * 提示词体积可达数 KB，全量列举时带上会让列表消息膨胀数倍。
+     * 出图参数：来源是同目录 images/{YYYYMM}/settings.json，只有详情接口回传真实值，列表接口一律为 null。
+     * 提示词体积可达数 KB，全量列举时带上会让列表消息膨胀数倍；索引库不再保存这四项。
      */
     prompt: string | null
     ratio: string | null
@@ -130,10 +133,39 @@ export interface MediaListResult {
     total: number
 }
 
-/** 详情结果：条目本身 + 全部引用 */
+/** 关联归属类型：作品、具体笔记、公众号批次与存储根外文档 */
+export type MediaOwnerType = 'press' | 'note' | 'wechat' | 'external'
+
+/**
+ * 关联归属：同一作品下的章节与封面合并成一条，笔记精确到某一篇，公众号精确到某一批次。
+ * refs 为该归属下的具体引用行，供详情面板展开到章节 / 文章。
+ */
+export interface MediaOwner {
+    type: MediaOwnerType
+    /** 归属标识：press/{作品名} · notes/{YYYYMM}/{文件}.md · wechat/{appid}/post/{批次} */
+    id: string
+    /** 展示名：作品名 · 笔记标题 · 批次目录名 */
+    label: string
+    /** 该归属下的引用行数 */
+    refCount: number
+    refs: MediaUsageItem[]
+}
+
+/** 详情结果：条目本身 + 全部引用（平铺与按归属分组两种形态） */
 export interface MediaDetailResult {
     item: MediaItem
     usages: MediaUsageItem[]
+    /** 按归属聚合后的引用：前端据此展示「作品《X》/ 笔记《Y》/ 公众号批次 Z」 */
+    owners: MediaOwner[]
+}
+
+/**
+ * 上传结果：成功入库的图片与逐条跳过原因。
+ * 关键约束：失败的项只回报原因，不影响同批其余图片；回执里的 item 与 media/list 同构，前端可直接展示。
+ */
+export interface MediaUploadResult {
+    uploaded: MediaItem[]
+    skipped: { name: string; reason: string }[]
 }
 
 /** 删除单条结果：usages 回传被清掉的引用，供前端提示 */
@@ -181,6 +213,8 @@ export interface MediaCopyResult {
 
 /** 对账结果：补录、标记丢失与路径纠正的数量 */
 export interface MediaRescanResult {
+    /** true 表示落在节流窗口内，本次没有真正扫描，前端不必刷新列表 */
+    skipped: boolean
     indexed: number
     missing: number
     corrected: number

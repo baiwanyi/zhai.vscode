@@ -2,7 +2,8 @@
  * 媒体仓储：media 主表与 media_usage 引用表的全部读写，供列举、详情、删除、扫描对账与迁移共用。
  * 复用约定：SQL 全部走 better-sqlite3 预编译语句，不做字符串拼接；批量写入包在事务里，
  * 行列命名由本文件统一映射为领域字段，调用方不接触 snake_case。
- * 关键约束：补录（scan）只更新 path / month / missing，不覆盖出处与出图参数——出处是历史事实；
+ * 关键约束：补录（scan）只更新 path / month / missing，不覆盖出处——出处是历史事实；
+ * 出图参数不在本表（历史列已由结构升级移除），读写统一走 mediaSettingsStore；
  * 引用按 ref_path 整篇替换（先删后插），保证同一文档多次扫描不产生重复行；
  * 引用唯一键为 (media_id, ref_type, ref_path, ref_id)，同一文档内多次引用同一张图只留一行。
  */
@@ -38,10 +39,6 @@ interface MediaRow {
     lore_kind: string | null
     lore_id: string | null
     lore_name: string | null
-    prompt: string | null
-    ratio: string | null
-    style: string | null
-    enhanced_from: string | null
     missing: number
     usage_count?: number
 }
@@ -75,10 +72,6 @@ export interface MediaRecord {
     loreKind: PressLoreKind | null
     loreId: string | null
     loreName: string | null
-    prompt: string | null
-    ratio: string | null
-    style: string | null
-    enhancedFrom: string | null
 }
 
 /** 仓储读出的媒体：与协议条目的差别只在缺 url 与 usageCount 的拼装 */
@@ -126,10 +119,6 @@ function toStoredMedia(row: MediaRow): StoredMedia {
         loreKind: (row.lore_kind as PressLoreKind | null) ?? null,
         loreId: row.lore_id,
         loreName: row.lore_name,
-        prompt: row.prompt,
-        ratio: row.ratio,
-        style: row.style,
-        enhancedFrom: row.enhanced_from,
         missing: row.missing === 1,
         usageCount: row.usage_count ?? 0,
     }
@@ -155,14 +144,14 @@ const SELECT_MEDIA = `
       LEFT JOIN (SELECT media_id, COUNT(*) AS cnt FROM media_usage GROUP BY media_id) u ON u.media_id = m.id
 `
 
-/** 写入媒体：已存在时只纠正 path / month / missing，出处与出图参数保持首次写入的值 */
+/** 写入媒体：已存在时只纠正 path / month / missing，出处保持首次写入的值 */
 export function insertMedia(db: Database.Database, record: MediaRecord): void {
     db.prepare(
         `INSERT INTO media (
             id, path, ext, byte_size, month, created_at, scope, origin, kind,
             press_path, press_name, character_id, character_name, lore_kind, lore_id, lore_name,
-            prompt, ratio, style, enhanced_from, missing
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
+            missing
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)
         ON CONFLICT(id) DO UPDATE SET
             path = excluded.path,
             month = excluded.month,
@@ -184,10 +173,6 @@ export function insertMedia(db: Database.Database, record: MediaRecord): void {
         record.loreKind,
         record.loreId,
         record.loreName,
-        record.prompt,
-        record.ratio,
-        record.style,
-        record.enhancedFrom,
     )
 }
 

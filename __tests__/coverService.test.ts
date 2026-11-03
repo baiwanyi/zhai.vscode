@@ -44,10 +44,6 @@ function mediaOf(overrides: Partial<MediaRecord> & { id: string }): MediaRecord 
         loreKind: null,
         loreId: null,
         loreName: null,
-        prompt: null,
-        ratio: null,
-        style: null,
-        enhancedFrom: null,
         ...overrides,
     }
 }

@@ -1,13 +1,19 @@
 /**
- * 媒体页筛选与分批：把「年月」这一唯一筛选维度、按月分组与分批上限收在一处。
- * 复用约定：数据全部来自 media/list 的全量返回，筛选与分组都在内存完成，切换年月不重新请求；
+ * 媒体页筛选与分批：把「年月 / 来源 / 关联状态」三个维度、按月分组与分批上限收在一处。
+ * 复用约定：数据全部来自 media/list 的全量返回，筛选与分组都在内存完成，切换任一维度不重新请求；
  * 年月文案统一走 formatMediaMonth，下拉选项与分组头共用同一份格式化，避免两处口径不同。
- * 关键约束：默认「全部月份」+ 按月倒序分组，进页面即见全库；
- * 分批以筛选签名为界，切换年月即回到首批，切回同一月份时保留上次的累计上限；
+ * 关键约束：默认「全部月份 + 全部来源 + 全部关联」+ 按月倒序分组，进页面即见全库；
+ * 关联判定只看 usageCount（media_usage 有行即已关联），不额外请求引用明细；
+ * 分批以筛选签名为界，三维任一变化即回到首批，切回同一组合时保留上次的累计上限；
  * 分组内的顺序完全采用宿主返回的顺序（时间倒序），前端不再二次排序。
  */
 import { useMemo, useState } from 'react'
-import type { MediaItem, MediaMonthCount } from '@shared/types/media'
+import type { MediaItem, MediaMonthCount, MediaOrigin } from '@shared/types/media'
+
+/** 来源筛选：全部 / 上传 / 生图，与 MediaOrigin 两值一一对应 */
+export type MediaOriginFilter = 'all' | MediaOrigin
+/** 关联筛选：全部 / 已关联（usageCount > 0）/ 未关联 */
+export type MediaLinkFilter = 'all' | 'linked' | 'unlinked'
 
 /** 每组网格首屏与每次追加的张数：一次只进一屏出头的卡片，避免上百张图同时进 DOM */
 const GRID_PAGE_SIZE = 60
@@ -40,6 +46,12 @@ interface UseMediaFiltersResult {
     /** 当前年月：null 表示全部月份 */
     month: string | null
     setMonth: (month: string | null) => void
+    /** 当前来源：all 表示不筛 */
+    origin: MediaOriginFilter
+    setOrigin: (origin: MediaOriginFilter) => void
+    /** 当前关联状态：all 表示不筛 */
+    link: MediaLinkFilter
+    setLink: (link: MediaLinkFilter) => void
     /** 当前筛选结果：批量删除按它取交集，不受分批上限影响 */
     filtered: MediaItem[]
     /** 全部月份下的分组（含空月不出现），按年月倒序 */
@@ -59,11 +71,28 @@ interface UseMediaFiltersResult {
 
 export function useImageFilters({ items }: UseMediaFiltersParams): UseMediaFiltersResult {
     const [month, setMonth] = useState<string | null>(null)
+    const [origin, setOrigin] = useState<MediaOriginFilter>('all')
+    const [link, setLink] = useState<MediaLinkFilter>('all')
 
-    /** 筛选只按年月：不做类型筛选，也不再按角色收敛 */
+    /** 三维组合筛选：条件互斥且都是内存判断，任一维度变化都同步反映到分组与分批 */
     const filtered = useMemo(
-        () => (month === null ? items : items.filter((item) => item.month === month)),
-        [items, month],
+        () =>
+            items.filter((item) => {
+                if (month !== null && item.month !== month) {
+                    return false
+                }
+                if (origin !== 'all' && item.origin !== origin) {
+                    return false
+                }
+                if (link === 'linked' && item.usageCount === 0) {
+                    return false
+                }
+                if (link === 'unlinked' && item.usageCount > 0) {
+                    return false
+                }
+                return true
+            }),
+        [items, month, origin, link],
     )
 
     /**
@@ -94,7 +123,7 @@ export function useImageFilters({ items }: UseMediaFiltersParams): UseMediaFilte
 
     /** 分批：用筛选签名比对而不是在各处 onChange 里重置，筛选一变即自然回到首批 */
     const [paging, setPaging] = useState({ signature: '', count: GRID_PAGE_SIZE })
-    const filterSignature = month ?? 'all'
+    const filterSignature = `${month ?? 'all'}|${origin}|${link}`
     const renderLimit = paging.signature === filterSignature ? paging.count : GRID_PAGE_SIZE
 
     const visibleGroups = useMemo(
@@ -110,16 +139,22 @@ export function useImageFilters({ items }: UseMediaFiltersParams): UseMediaFilte
 
     const clearFilters = (): void => {
         setMonth(null)
+        setOrigin('all')
+        setLink('all')
     }
 
     return {
         month,
         setMonth,
+        origin,
+        setOrigin,
+        link,
+        setLink,
         filtered,
         groups,
         visibleGroups,
         hasMore,
-        hasActiveFilter: month !== null,
+        hasActiveFilter: month !== null || origin !== 'all' || link !== 'all',
         clearFilters,
         filterSignature,
         loadMore,

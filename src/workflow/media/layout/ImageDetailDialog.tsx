@@ -20,7 +20,7 @@ import {
     DialogTitle,
 } from '@components/ui/dialog'
 import { Skeleton } from '@components/ui/skeleton'
-import type { MediaItem, MediaRefType, MediaUsageItem } from '@shared/types/media'
+import type { MediaItem, MediaOwner, MediaOwnerType, MediaRefType } from '@shared/types/media'
 import { formatDateTime } from '@shared/utils/format'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
@@ -38,37 +38,17 @@ const REF_LABELS: Readonly<Record<MediaRefType, string>> = {
     external: '外部文档',
 }
 
-/** 引用分组的固定顺序：封面类在前、正文类在后，跨类型阅读时顺序稳定 */
-const REF_ORDER: readonly MediaRefType[] = [
-    'press_cover',
-    'character_cover',
-    'lore_cover',
-    'chapter',
-    'note',
-    'article',
-    'external',
-]
-
-/** 引用分组：同一类型聚在一起，组内沿用宿主返回的时间倒序 */
-interface UsageGroup {
-    refType: MediaRefType
-    label: string
-    items: MediaUsageItem[]
+/** 归属类型前缀：与宿主 mediaOwners 的 type 一一对应 */
+const OWNER_LABELS: Readonly<Record<MediaOwnerType, string>> = {
+    press: '作品',
+    note: '笔记',
+    wechat: '公众号',
+    external: '文档',
 }
 
-/** 按类型分组：只保留实际存在的类型，空组不渲染 */
-function groupUsages(usages: readonly MediaUsageItem[]): UsageGroup[] {
-    const buckets = new Map<MediaRefType, MediaUsageItem[]>()
-    for (const usage of usages) {
-        const list = buckets.get(usage.refType) ?? []
-        list.push(usage)
-        buckets.set(usage.refType, list)
-    }
-    return REF_ORDER.filter((refType) => buckets.has(refType)).map((refType) => ({
-        refType,
-        label: REF_LABELS[refType],
-        items: buckets.get(refType) ?? [],
-    }))
+/** 归属分组头：类型 + 名称，作品精确到作品名、笔记精确到某一篇、公众号精确到批次 */
+function formatOwnerHeading(owner: MediaOwner): string {
+    return `${OWNER_LABELS[owner.type]}《${owner.label}》`
 }
 
 /** 出处一行：角色 / 设定 / 作品三选一，全空时说明未关联 */
@@ -90,7 +70,7 @@ function toOriginLines(item: MediaItem): OriginLine[] {
         lines.push({ label: '设定', value: item.loreName })
     }
     if (lines.length === 0) {
-        lines.push({ label: '来源', value: '未关联' })
+        lines.push({ label: '来源', value: '无出处' })
     }
     return lines
 }
@@ -99,7 +79,8 @@ interface ImageDetailDialogProps {
     /** 当前查看的图片：null 表示关闭 */
     image: MediaItem | null
     onOpenChange: (isOpen: boolean) => void
-    onSetCover: (image: MediaItem) => void
+    /** 设为作品封面：通用文档下没有作品上下文，不传即不出现该按钮 */
+    onSetCover?: (image: MediaItem) => void
     onCopyImage: (image: MediaItem) => void
     onInsertImage: (image: MediaItem) => void
     onDelete: (image: MediaItem) => void
@@ -125,7 +106,8 @@ export function ImageDetailDialog({
         contentRef.current?.focus()
     }
 
-    const usageGroups = useMemo(() => groupUsages(detail?.usages ?? []), [detail])
+    /** 按归属聚合的引用：作品到作品名、笔记到具体篇章、公众号到批次 */
+    const ownerGroups = useMemo<MediaOwner[]>(() => detail?.owners ?? [], [detail])
     const originLines = useMemo(() => (image === null ? [] : toOriginLines(image)), [image])
 
     /** 参数行：比例与画风缺失时整行不渲染，不留下空白分隔符 */
@@ -212,18 +194,24 @@ export function ImageDetailDialog({
                                                 {detail?.usages.length ?? 0}
                                             </span>
                                         </h3>
-                                        {usageGroups.length === 0 ? (
+                                        {ownerGroups.length === 0 ? (
                                             <p className="bg-muted text-muted-foreground rounded-md p-2 text-xs">
                                                 暂未被使用
                                             </p>
                                         ) : (
-                                            <ul className="flex flex-col gap-1">
-                                                {usageGroups.map((group) => (
-                                                    <li key={group.refType} className="flex flex-col gap-0.5">
+                                            <ul className="flex flex-col gap-1.5">
+                                                {ownerGroups.map((owner) => (
+                                                    <li
+                                                        key={`${owner.type}:${owner.id}`}
+                                                        className="flex flex-col gap-0.5"
+                                                    >
                                                         <span className="text-muted-foreground text-[11px]">
-                                                            {group.label}
+                                                            {formatOwnerHeading(owner)}
+                                                            <span className="ml-1 tabular-nums">
+                                                                · {owner.refCount} 处
+                                                            </span>
                                                         </span>
-                                                        {group.items.map((usage) => (
+                                                        {owner.refs.map((usage) => (
                                                             <span
                                                                 key={`${usage.refType}-${usage.refPath}-${usage.refId ?? ''}`}
                                                                 className="bg-muted/40 flex items-center gap-1.5 rounded-md px-2 py-1 text-xs"
@@ -232,8 +220,8 @@ export function ImageDetailDialog({
                                                                 <span className="truncate">
                                                                     {usage.refTitle ?? usage.refPath}
                                                                 </span>
-                                                                <span className="text-muted-foreground ml-auto shrink-0 truncate text-[11px]">
-                                                                    {usage.refPath}
+                                                                <span className="text-muted-foreground ml-auto shrink-0 text-[11px]">
+                                                                    {REF_LABELS[usage.refType]}
                                                                 </span>
                                                             </span>
                                                         ))}
@@ -302,7 +290,9 @@ export function ImageDetailDialog({
                                     <TextCursorInput />
                                     插入到文章
                                 </Button>
-                                <Button onClick={() => onSetCover(image)}>设为作品封面</Button>
+                                {onSetCover === undefined ? null : (
+                                    <Button onClick={() => onSetCover(image)}>设为作品封面</Button>
+                                )}
                             </div>
                         </DialogFooter>
                     </>

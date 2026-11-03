@@ -9,7 +9,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { MediaDeleteResult, MediaItem, MediaListResult } from '@shared/types/media'
-import { useImageLibrary } from '@webview/workflow/imagegen/hooks/useImageLibrary'
+import { useImageLibrary } from '@webview/workflow/media/hooks/useImageLibrary'
 
 const { requestMock, toastErrorMock } = vi.hoisted(() => ({ requestMock: vi.fn(), toastErrorMock: vi.fn() }))
 
@@ -25,7 +25,7 @@ const ITEM: MediaItem = {
     month: '2026-01',
     createdAt: '2026-01-01T00:00:00.000Z',
     scope: 'general',
-    origin: 'import',
+    origin: 'upload',
     kind: 'unknown',
     pressPath: null,
     pressName: null,

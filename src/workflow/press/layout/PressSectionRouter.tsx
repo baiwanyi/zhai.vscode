@@ -1,14 +1,14 @@
 /**
  * 写作页分区路由：按导航选中项渲染对应页面，所有分区共享同一份草稿与作品目录。
- * 复用约定：设定 / 人物 / 大纲 / 快照 / 取名复用本模块页面组件，校对、AI 用量、对话与生图分别复用
- * proofread、usage、aichat、imagegen 的页面组件；
+ * 复用约定：设定 / 人物 / 大纲 / 快照 / 取名复用本模块页面组件，校对、AI 用量、对话与媒体分别复用
+ * proofread、usage、aichat、media 的页面组件；
  * 本文件只做「分区 → 页面 + 回调」的映射，不持有任何状态。
  * 关键约束：对话与快照按作品目录隔离（dirPath 既是作用域也是对话页 key，切作品即重建），
  * 用量是跨作品的全局统计不隔离；回调统一来自 usePressMutations，路由层不自行读写草稿。
  */
 import { WorkflowAiChat } from '@webview/workflow/aichat/WorkflowAiChat'
-import { WorkflowImagegen } from '@webview/workflow/imagegen/WorkflowImagegen'
 import type { WorkflowSection } from '@webview/workflow/layout/workflowSections'
+import { WorkflowMedia } from '@webview/workflow/media/WorkflowMedia'
 import { WorkflowProofread } from '@webview/workflow/proofread/WorkflowProofread'
 import { WorkflowUsage } from '@webview/workflow/usage/WorkflowUsage'
 import type { PressMutations } from '../hooks/usePressMutations'
@@ -89,16 +89,18 @@ export function PressSectionRouter({
     if (section === 'naming') {
         return <PressNamingPage />
     }
-    // 媒体库是全库共享的，但出图与「设为作品封面」以当前作品为作用域，切作品即重建，避免参数串味
+    // 媒体库是全库共享的页面，作品上下文只影响出图归属与「设为作品封面」，切作品即重建组件
     if (section === 'media') {
         return (
-            <WorkflowImagegen
+            <WorkflowMedia
                 key={dirPath}
-                dirPath={dirPath}
-                characters={workspace.characters}
-                lore={workspace.lore}
-                setting={workspace.setting}
-                onChangeCharacter={mutations.updateCharacter}
+                context={{
+                    dirPath,
+                    characters: workspace.characters,
+                    lore: workspace.lore,
+                    setting: workspace.setting,
+                    onChangeCharacter: mutations.updateCharacter,
+                }}
             />
         )
     }

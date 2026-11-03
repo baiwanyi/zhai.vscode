@@ -23,6 +23,7 @@ import { readText, readTextList } from '@modules/common/readInput'
 import { buildStorageUri } from '@modules/common/storagePath'
 import { nextMediaTarget, toMediaPath } from '@modules/media/mediaNaming'
 import type { MediaRecord } from '@modules/media/mediaRepository'
+import { writeMediaParameters } from '@modules/media/mediaSettingsStore'
 import {
     DEFAULT_IMAGE_SETTINGS,
     IMAGE_RATIO_SIZE,
@@ -30,10 +31,11 @@ import {
     type ImageGenerateProgress,
     type ImageGenerateResult,
     type ImageSettings,
+    type MediaParameters,
 } from '@shared/types/imagegen'
 import { PORTRAIT_STYLES, type PortraitStyle, type PressLoreKind } from '@shared/types/press'
 import { IMAGE_QUOTA_KEYS } from './constants'
-import { readProjectDirPath } from './portraitService'
+import { readOptionalProjectDirPath } from './portraitService'
 import {
     MAX_CONTEXT_LENGTH,
     MAX_CONTEXTS,
@@ -64,7 +66,8 @@ const ENHANCE_MAX_TOKENS = 800
 
 /** 出图入参：只保留落盘与通道需要的字段 */
 interface NormalizedImageRequest {
-    dirPath: string
+    /** 作品目录：非作品文档下为 null，出处记为空、作用域记 general */
+    dirPath: string | null
     /** 用户正文：不含词条文本，词条在出图前按标识回查后前置合并 */
     prompt: string
     /** 词条标识：{分类}::{分组}::{名称}，出图前由词库服务换取原文 */
@@ -90,7 +93,8 @@ interface NormalizedImageRequest {
 
 /** 入参收窄：目录、提示词、上下文、规则、类别、角色、比例与画风全部在这一层校验 */
 function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
-    const dirPath = readProjectDirPath(payload, 'pressAi/generateImage')
+    // 作品上下文可选：非作品文档（笔记、公众号、普通文件）下也能出图，出处记为空
+    const dirPath = readOptionalProjectDirPath(payload)
     const value = payload as {
         prompt?: unknown
         promptTags?: unknown
@@ -130,6 +134,10 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
     const kind = value.kind
     if (kind !== 'portrait' && kind !== 'lore' && kind !== 'photo') {
         throw new Error('图片类别非法')
+    }
+    // 角色图与条目图依赖作品出处（角色卡与条目卡按 press_path 回查），无作品上下文时只能出普通图
+    if (dirPath === null && kind !== 'photo') {
+        throw new Error('非作品文档下只能生成普通图片')
     }
     const characterId = readText(value.characterId, 32)
     const loreId = readText(value.loreId, 32)
@@ -224,10 +232,10 @@ export class ImageGenerateService {
         this.activeRequest = controller
         const startedAt = Date.now()
         logger.info(
-            `出图开始：${request.dirPath}（${request.ratio}，${request.kind}，参考图 ${String(request.references.length)} 张）`,
+            `出图开始：${request.dirPath ?? '无作品上下文'}（${request.ratio}，${request.kind}，参考图 ${String(request.references.length)} 张）`,
         )
         try {
-            const settings = await this.readSettings(request.dirPath)
+            const settings = await this.readSettings()
             // 词条原文按标识回查：词条已被删除时由词库服务跳过，出图不因单条缺失而失败
             const tagTexts = await this.tags.readForPrompt(request.promptTags)
             // 词条与正文的合并口径统一由 mergePromptTags 提供，与下面的 enhance 共用同一份实现
@@ -267,7 +275,7 @@ export class ImageGenerateService {
                 startedAt: artifact.startedAt ?? startedAt,
             })
             const root = resolveStorageRoot()
-            const projectName = request.dirPath.split('/')[1] ?? request.dirPath
+            const projectName = request.dirPath === null ? null : (request.dirPath.split('/')[1] ?? request.dirPath)
             // 目录与文件名由同一次计算产出：跨秒或跨月时不会出现「目录 202610、文件名 202611」的错位
             const target = await nextMediaTarget(root, artifact.extension)
             await vscode.workspace.fs.createDirectory(target.dirUri)
@@ -275,6 +283,13 @@ export class ImageGenerateService {
             await vscode.workspace.fs.writeFile(buildStorageUri(root, mediaPath.split('/')), artifact.bytes)
             const createdAt = new Date().toISOString()
             const ext = artifact.extension.replace(/^\./u, '').toLowerCase()
+            // 生图参数随图片落同目录 settings.json：写失败只记日志，图片本身已生成，不因此回滚
+            await this.writeParameters(root, mediaPath, {
+                prompt: mergedPrompt,
+                ratio: request.ratio,
+                style: request.style,
+                enhancedFrom: request.enhancedFrom,
+            })
             this.recordMedia({
                 id: target.id,
                 path: mediaPath,
@@ -282,7 +297,7 @@ export class ImageGenerateService {
                 byteSize: artifact.bytes.byteLength,
                 month: target.month,
                 createdAt,
-                scope: 'press',
+                scope: request.dirPath === null ? 'general' : 'press',
                 origin: 'generate',
                 kind: request.kind,
                 pressPath: request.dirPath,
@@ -292,10 +307,6 @@ export class ImageGenerateService {
                 loreKind: request.loreKind,
                 loreId: request.loreId,
                 loreName: request.loreName,
-                prompt: mergedPrompt,
-                ratio: request.ratio,
-                style: request.style,
-                enhancedFrom: request.enhancedFrom,
             })
             consumeToday(this.db, IMAGE_QUOTA_KEYS)
             logger.info(`出图完成：耗时 ${Date.now() - startedAt}ms，${artifact.bytes.byteLength} 字节`)
@@ -308,7 +319,7 @@ export class ImageGenerateService {
                     byteSize: artifact.bytes.byteLength,
                     month: target.month,
                     createdAt,
-                    scope: 'press',
+                    scope: request.dirPath === null ? 'general' : 'press',
                     origin: 'generate',
                     kind: request.kind,
                     pressPath: request.dirPath,
@@ -375,13 +386,22 @@ export class ImageGenerateService {
         return { text }
     }
 
-    /** 读取作品级参数：失败回落默认值，参数问题不应阻断出图 */
-    private async readSettings(dirPath: string): Promise<ImageSettings> {
+    /** 写入生图参数：失败只记日志——图片已落盘，参数问题不应让整次出图报错 */
+    private async writeParameters(root: vscode.Uri, mediaPath: string, params: MediaParameters): Promise<void> {
         try {
-            const result = await this.settings.get({ dirPath })
+            await writeMediaParameters(root, mediaPath, params)
+        } catch (error) {
+            logger.error(`生图参数写入失败：${mediaPath}`, error)
+        }
+    }
+
+    /** 读取全局出图参数：失败回落默认值，参数问题不应阻断出图 */
+    private async readSettings(): Promise<ImageSettings> {
+        try {
+            const result = await this.settings.get()
             return result.settings
         } catch {
-            logger.warn(`作品生图参数读取失败，已回落默认值：${dirPath}`)
+            logger.warn('出图参数读取失败，已回落默认值')
             return DEFAULT_IMAGE_SETTINGS
         }
     }

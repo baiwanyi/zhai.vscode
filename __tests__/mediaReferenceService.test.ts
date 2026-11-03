@@ -41,10 +41,6 @@ function mediaOf(id: string): MediaRecord {
         loreKind: null,
         loreId: null,
         loreName: null,
-        prompt: null,
-        ratio: null,
-        style: null,
-        enhancedFrom: null,
     }
 }
 
