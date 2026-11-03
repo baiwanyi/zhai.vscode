@@ -159,15 +159,6 @@ export interface MediaDetailResult {
     owners: MediaOwner[]
 }
 
-/**
- * 上传结果：成功入库的图片与逐条跳过原因。
- * 关键约束：失败的项只回报原因，不影响同批其余图片；回执里的 item 与 media/list 同构，前端可直接展示。
- */
-export interface MediaUploadResult {
-    uploaded: MediaItem[]
-    skipped: { name: string; reason: string }[]
-}
-
 /** 删除单条结果：usages 回传被清掉的引用，供前端提示 */
 export interface MediaDeleteResult {
     removed: boolean

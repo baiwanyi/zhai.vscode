@@ -1,7 +1,7 @@
 /**
  * 写作页分区路由：按导航选中项渲染对应页面，所有分区共享同一份草稿与作品目录。
- * 复用约定：设定 / 人物 / 大纲 / 快照 / 取名复用本模块页面组件，校对、AI 用量、对话与媒体分别复用
- * proofread、usage、aichat、media 的页面组件；
+ * 复用约定：设定 / 人物 / 大纲 / 快照 / 取名复用本模块页面组件，校对、AI 用量、对话与媒体（含上传）
+ * 分别复用 proofread、usage、aichat、media 的页面组件；
  * 本文件只做「分区 → 页面 + 回调」的映射，不持有任何状态。
  * 关键约束：对话与快照按作品目录隔离（dirPath 既是作用域也是对话页 key，切作品即重建），
  * 用量是跨作品的全局统计不隔离；回调统一来自 usePressMutations，路由层不自行读写草稿。
@@ -10,6 +10,7 @@ import { WorkflowAiChat } from '@webview/workflow/aichat/WorkflowAiChat'
 import type { WorkflowSection } from '@webview/workflow/layout/workflowSections'
 import { WorkflowMedia } from '@webview/workflow/media/WorkflowMedia'
 import { WorkflowStock } from '@webview/workflow/media/WorkflowStock'
+import { WorkflowUpload } from '@webview/workflow/media/WorkflowUpload'
 import { WorkflowProofread } from '@webview/workflow/proofread/WorkflowProofread'
 import { WorkflowUsage } from '@webview/workflow/usage/WorkflowUsage'
 import type { PressMutations } from '../hooks/usePressMutations'
@@ -108,6 +109,10 @@ export function PressSectionRouter({
     // 在线图库是常驻分区：与作品无关，插入同样作用于当前编辑器的光标处
     if (section === 'stock') {
         return <WorkflowStock />
+    }
+    // 上传同样是常驻分区：文件落存储根的 uploads 目录，与当前作品无关
+    if (section === 'upload') {
+        return <WorkflowUpload />
     }
     // 校对以编辑器中的当前文档为目标，切作品即重建，避免上一个作品的问题列表残留
     if (section === 'proofread') {

@@ -24,10 +24,11 @@ export const SCOPE_SECTIONS: Readonly<Record<ContentScope, readonly WorkflowSect
     wechat: ['menu', 'material', 'stats', 'comment', 'fans', 'push'],
 }
 
-/** 常驻分区：与内容归属无关，任何文档下都可用；在线图库与媒体并列，都是「往当前文档插图」的入口 */
+/** 常驻分区：与内容归属无关，任何文档下都可用；上传与媒体、在线图库并列，都是素材入口 */
 export const RESIDENT_SECTIONS: readonly WorkflowSection[] = [
     'chat',
     'media',
+    'upload',
     'stock',
     'proofread',
     'snapshot',

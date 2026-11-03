@@ -15,6 +15,7 @@ import {
     BarChart3,
     BookOpen,
     Bot,
+    CloudUpload,
     FolderOpen,
     Globe,
     Image as ImageIcon,
@@ -38,7 +39,7 @@ import type { JSX, ReactNode } from 'react'
 
 /** 分组的渲染顺序：首项独占一组，中段承载专属分区与工具入口，尾项落栏底 */
 const LEADING_SECTIONS: readonly WorkflowSection[] = ['chat']
-const TOOL_SECTIONS: readonly WorkflowSection[] = ['media', 'stock', 'proofread']
+const TOOL_SECTIONS: readonly WorkflowSection[] = ['media', 'upload', 'stock', 'proofread']
 const FOOTER_SECTIONS: readonly WorkflowSection[] = ['snapshot', 'usage']
 
 interface SectionMeta {
@@ -61,6 +62,7 @@ const SECTION_META: Readonly<Record<WorkflowSection, SectionMeta>> = {
     fans: { label: '用户管理', icon: <UserRound className="size-6" /> },
     push: { label: '推送管理', icon: <Send className="size-6" /> },
     media: { label: '媒体', icon: <ImageIcon className="size-6" /> },
+    upload: { label: '上传', icon: <CloudUpload className="size-6" /> },
     // 品牌图标取自 resources/icons/unsplash.svg，内联以跟随活动栏前景色
     stock: { label: '在线图库', icon: <UnsplashIcon className="size-6" /> },
     proofread: { label: '校对', icon: <SpellCheck className="size-6" /> },

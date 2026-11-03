@@ -31,10 +31,6 @@ export class MediaRoutes {
                 return this.library.insert(payload)
             case 'media/copy':
                 return this.library.copy(payload)
-            case 'media/pickUpload':
-                return this.library.pickUpload(toWebviewUri)
-            case 'media/uploadBytes':
-                return this.library.uploadBytes(payload, toWebviewUri)
             case 'media/rescan':
                 return this.library.rescan(payload)
             default:

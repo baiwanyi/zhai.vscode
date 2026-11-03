@@ -10,6 +10,7 @@ import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
 import { buildStorageUri } from '@modules/common/storagePath'
 import { MEDIA_DIR } from '@shared/types/media'
+import { parseStampTime } from './mediaNaming'
 import { insertMedia, listMediaPaths, markMediaMissing, updateMediaPath } from './mediaRepository'
 import type { MediaDatabase } from './db/connection'
 import type { ScannedMedia } from './mediaRepository'
@@ -18,28 +19,6 @@ import type { ScannedMedia } from './mediaRepository'
 const MONTH_DIR_PATTERN = /^\d{6}$/u
 /** 图片扩展名：与 shared 口径一致 */
 const EXTENSION_PATTERN = /\.(png|jpe?g|webp|gif)$/iu
-/** 文件名主干里的 14 位时间戳 */
-const TIMESTAMP_PATTERN = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/u
-
-/** 由文件名前缀解析本地时间：非法日期返回 null，由调用方回落 mtime */
-function parseStampTime(id: string): string | null {
-    const matched = TIMESTAMP_PATTERN.exec(id)
-    if (matched === null) {
-        return null
-    }
-    const [, year, month, day, hour, minute, second] = matched
-    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second))
-    if (
-        Number.isNaN(date.getTime()) ||
-        date.getFullYear() !== Number(year) ||
-        date.getMonth() !== Number(month) - 1 ||
-        date.getDate() !== Number(day) ||
-        date.getHours() !== Number(hour)
-    ) {
-        return null
-    }
-    return date.toISOString()
-}
 
 /**
  * 扫描磁盘上的全部媒体文件。

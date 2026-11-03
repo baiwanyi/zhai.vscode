@@ -1,7 +1,7 @@
 /**
- * 媒体命名：为待落盘的图片生成「年月目录 + 14 位时间戳 + 6 位大写随机段」的标识，供出图与上传共用。
- * 复用约定：合法性由 @shared/types/media 的 isMediaId 校验，目录与扩展名由调用方给出；
- * 路径一律经 common/storagePath 构造，时间戳与目录名由同一次计算产出，不会跨秒错位。
+ * 存储命名：为待落盘的文件生成「年月目录 + 14 位时间戳 + 6 位大写随机段」的标识，出图与上传共用。
+ * 复用约定：合法性由 @shared/types/media 的 isMediaId 校验，基址目录与扩展名由调用方给出，
+ * 出图落 images、上传落 uploads；路径一律经 common/storagePath 构造，时间戳与目录名由同一次计算产出，不会跨秒错位。
  * 关键约束：永不覆盖已有文件——同秒冲突先换随机段，换满再按秒顺延，上限内仍冲突即报错；
  * 随机段固定 [A-Z0-9]{6}，历史小写 id 仍可读但不再新生成（读侧正则保持宽松）；
  * 时间戳为本地时区，与用户在文件管理器里看到的时间一致，年月目录也按本地时区归集。
@@ -24,13 +24,13 @@ const MAX_SECOND_SHIFT = 60
 
 /** 落盘目标：id 与年月由同一次计算产出，调用方据此拼路径 */
 interface MediaTarget {
-    /** 媒体 id：文件名主干 */
+    /** 文件 id：文件名主干 */
     id: string
     /** 年月：YYYY-MM */
     month: string
     /** 年月目录：YYYYMM */
     monthDir: string
-    /** 目标目录 Uri：{root}/images/{YYYYMM} */
+    /** 目标目录 Uri：{root}/{基址目录}/{YYYYMM} */
     dirUri: vscode.Uri
 }
 
@@ -45,6 +45,32 @@ function formatStamp(date: Date): string {
         pad(date.getMinutes()),
         pad(date.getSeconds()),
     ].join('')
+}
+
+/** 文件名主干里的 14 位时间戳 */
+const TIMESTAMP_PATTERN = /^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})/u
+
+/**
+ * 由文件名前 14 位解析本地时间：非法日期返回 null，由调用方回落文件 mtime。
+ * 与 formatStamp 互逆，扫描与列举共用同一口径。
+ */
+export function parseStampTime(id: string): string | null {
+    const matched = TIMESTAMP_PATTERN.exec(id)
+    if (matched === null) {
+        return null
+    }
+    const [, year, month, day, hour, minute, second] = matched
+    const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second))
+    if (
+        Number.isNaN(date.getTime()) ||
+        date.getFullYear() !== Number(year) ||
+        date.getMonth() !== Number(month) - 1 ||
+        date.getDate() !== Number(day) ||
+        date.getHours() !== Number(hour)
+    ) {
+        return null
+    }
+    return date.toISOString()
 }
 
 /** 6 位字母数字随机段：仅用于同秒去重，不是安全场景 */
@@ -77,11 +103,13 @@ function toMonth(stamp: string): { month: string; monthDir: string } {
  * @param root 存储根 Uri
  * @param extension 不带点的扩展名，用于探测同名文件
  * @param at 落盘时刻，缺省为当前时间；测试可注入固定值
+ * @param baseDir 存储根下的基址目录，缺省为媒体库的 images，上传场景传 uploads
  */
 export async function nextMediaTarget(
     root: vscode.Uri,
     extension: string,
     at: Date = new Date(),
+    baseDir: string = MEDIA_DIR,
 ): Promise<MediaTarget> {
     const normalized = extension.replace(/^\./u, '').toLowerCase()
     for (let shift = 0; shift < MAX_SECOND_SHIFT; shift += 1) {
@@ -91,7 +119,7 @@ export async function nextMediaTarget(
             continue
         }
         const { month, monthDir } = toMonth(stamp)
-        const dirUri = buildStorageUri(root, [MEDIA_DIR, monthDir])
+        const dirUri = buildStorageUri(root, [baseDir, monthDir])
         for (let retry = 0; retry < MAX_RANDOM_RETRY; retry += 1) {
             const id = `${stamp}${randomSegment()}`
             if (!(await isFileExisting(vscode.Uri.joinPath(dirUri, `${id}.${normalized}`)))) {
@@ -102,7 +130,12 @@ export async function nextMediaTarget(
     throw new Error('图片命名冲突过多，请稍后重试')
 }
 
+/** 存储根相对路径：{baseDir}/{YYYYMM}/{id}.{ext} */
+export function toDatedPath(baseDir: string, monthDir: string, id: string, extension: string): string {
+    return path.posix.join(baseDir, monthDir, `${id}.${extension.replace(/^\./u, '').toLowerCase()}`)
+}
+
 /** 媒体相对路径：images/{YYYYMM}/{id}.{ext} */
 export function toMediaPath(monthDir: string, id: string, extension: string): string {
-    return path.posix.join(MEDIA_DIR, monthDir, `${id}.${extension.replace(/^\./u, '').toLowerCase()}`)
+    return toDatedPath(MEDIA_DIR, monthDir, id, extension)
 }

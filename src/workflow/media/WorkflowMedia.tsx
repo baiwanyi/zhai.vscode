@@ -4,17 +4,18 @@
  * 复用约定：外壳取 @webview/components/AppPage（多选操作并进标题行 AppAction，作品标题与张数走 AppSummary，
  * 筛选区整行走 AppMenu，网格走 AppContent 滚动，composer 落 AppFooter）；
  * 列表经 useImageLibrary、参数经 useImageSettings、筛选与分组经 useImageFilters、图片动作用 useImageActions、
- * 上传经 useMediaUpload、关联刷新经 useMediaRescan；
+ * 关联刷新经 useMediaRescan；
  * 角色索引、多选状态、删除编排与封面指针同步分别由 useCharacterIndex / useImageSelection / useImageDeletion /
  * useCharacterCoverSync 承担；加载态与分组网格由 ImageGenGallery 渲染，单图详情交由 ImageDetailDialog、
  * 多选操作交由 ImageSelectionActions、年月筛选交由 ImageGenFilters。
  * 关键约束：context 为 null（笔记、公众号、普通文件）时仍可出图，但只出通用素材——不渲染作品摘要、
  * 不提供「设为作品封面」，出图由宿主按 scope=general 记录，角色图与条目图需要作品归属故不可选；
+ * 本页不再承接上传：上传已独立为「上传」分区，落存储根的 uploads 目录，与媒体库索引无关；
  * 筛选为「年月 / 来源 / 关联」三维（不做图片类别筛选，也不按角色收敛），全部在内存中完成，切换不重新请求；
  * 默认「全部月份」按月倒序分组，进页面即见全库；删除落盘侧进回收站，本页只刷新列表；
  * 出图成功只在该角色尚无封面时认领，取消后迟到的落盘只静默刷新列表。
  */
-import { RefreshCw, Upload } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import type { ImageGenerateResult } from '@shared/types/imagegen'
 import type { MediaItem } from '@shared/types/media'
@@ -31,7 +32,6 @@ import { useImageLibrary } from './hooks/useImageLibrary'
 import { useImageSelection } from './hooks/useImageSelection'
 import { useImageSettings, type ImageSettingsPatch } from './hooks/useImageSettings'
 import { useMediaRescan } from './hooks/useMediaRescan'
-import { useMediaUpload } from './hooks/useMediaUpload'
 import { ImageComposer, type PromptSettingSnapshot } from './layout/ImageComposer'
 import { ImageDetailDialog } from './layout/ImageDetailDialog'
 import { ImageGenFilters } from './layout/ImageGenFilters'
@@ -71,10 +71,8 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
     const setting = context?.setting ?? EMPTY_SETTING
     const onChangeCharacter = context?.onChangeCharacter ?? ignoreCharacterPatch
     const { items, months, total, isLoading, removeMedia, removeMedias, reload } = useImageLibrary()
-    /** 静默刷新：上传与扫描都只换数据，不把整页打回「正在读取」 */
+    /** 静默刷新：重扫与出图回填都只换数据，不把整页打回「正在读取」 */
     const silentReload = useCallback((): Promise<void> => reload({ silent: true }), [reload])
-    /** 上传：三条通道共用静默刷新 */
-    const { pickFiles, isUploading, isDragging, dragHandlers } = useMediaUpload(silentReload)
     /** 关联刷新：挂载时按节流扫描一次，手动按钮强制重扫 */
     const { rescan } = useMediaRescan(silentReload)
     const { settings, isLoaded: isSettingsLoaded, save: saveSettings } = useImageSettings()
@@ -202,14 +200,7 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
 
     return (
         <>
-            <AppPage className="relative" {...dragHandlers}>
-                {isDragging ? (
-                    <div className="bg-background/80 pointer-events-none absolute inset-0 z-30 flex items-center justify-center backdrop-blur-sm">
-                        <p className="border-primary rounded-xl border-2 border-dashed px-6 py-4 text-sm font-medium">
-                            松开即可上传图片
-                        </p>
-                    </div>
-                ) : null}
+            <AppPage>
                 <AppHeader>
                     <AppTitle>媒体</AppTitle>
                     {context === null ? null : (
@@ -228,15 +219,6 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
                             onClearFilters={clearFilters}
                         />
                         <div className="flex items-center gap-1">
-                            <Button
-                                size="icon"
-                                tooltip="上传图片（支持拖拽与粘贴）"
-                                aria-label="上传图片"
-                                disabled={isUploading}
-                                onClick={pickFiles}
-                            >
-                                <Upload className="size-4" />
-                            </Button>
                             <Button
                                 size="icon"
                                 tooltip="重新扫描关联"

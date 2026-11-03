@@ -29,7 +29,6 @@ import type {
     MediaRefType,
     MediaRescanResult,
     MediaSetCoverResult,
-    MediaUploadResult,
     MediaUsageItem,
 } from '@shared/types/media'
 import { PORTRAIT_STYLES } from '@shared/types/press'
@@ -46,7 +45,6 @@ import {
     deleteMedia,
     findLatestOfProject,
     findMedia,
-    insertMedia,
     insertUsage,
     listByCharacter,
     listByLore,
@@ -56,16 +54,8 @@ import {
 } from './mediaRepository'
 import { reconcileMedia, scanMediaFiles } from './mediaScan'
 import { mergeMonthParameters, readMediaParameters, removeMediaParameters } from './mediaSettingsStore'
-import {
-    MAX_UPLOAD_COUNT,
-    MAX_UPLOAD_TOTAL_BYTES,
-    parseUploadItem,
-    readCandidateFile,
-    saveUploadedImage,
-} from './mediaUpload'
 import type { MediaDatabase } from './db/connection'
-import type { MediaRecord, StoredMedia } from './mediaRepository'
-import type { UploadCandidate } from './mediaUpload'
+import type { StoredMedia } from './mediaRepository'
 
 /** 列举前的对账节流窗口：短时间内反复打开面板不重复遍历磁盘 */
 const RECONCILE_INTERVAL_MS = 5_000
@@ -460,132 +450,6 @@ export class MediaLibraryService {
         const target = buildStorageUri(resolveStorageRoot(), row.path.split('/'))
         const outcome = await writeImageToClipboard(target.fsPath, row.ext)
         return outcome === 'copied' ? { copied: true } : { copied: false, reason: outcome }
-    }
-
-    /**
-     * 上传字节流（拖拽与粘贴）：逐条解析后交给统一落盘流程。
-     * 关键约束：单条非法只跳过该条并回报原因；整批超量直接拒绝，避免半批写盘后才发现超限。
-     */
-    public async uploadBytes(
-        payload: unknown,
-        toWebviewUri: (uri: vscode.Uri) => string,
-    ): Promise<MediaUploadResult> {
-        const raw = readPayload(payload, 'media/uploadBytes').items
-        const list = Array.isArray(raw) ? raw : []
-        if (list.length === 0) {
-            throw new Error('缺少待上传的图片')
-        }
-        if (list.length > MAX_UPLOAD_COUNT) {
-            throw new Error(`一次最多上传 ${String(MAX_UPLOAD_COUNT)} 张图片`)
-        }
-        const candidates: UploadCandidate[] = []
-        const skipped: { name: string; reason: string }[] = []
-        for (const item of list) {
-            const parsed = parseUploadItem(item)
-            if (parsed.ok) {
-                candidates.push(parsed.candidate)
-            } else {
-                skipped.push({ name: parsed.name, reason: parsed.reason })
-            }
-        }
-        const total = candidates.reduce((sum, candidate) => sum + candidate.bytes.byteLength, 0)
-        if (total > MAX_UPLOAD_TOTAL_BYTES) {
-            throw new Error(`本次上传总量超过 ${String(MAX_UPLOAD_TOTAL_BYTES / 1024 / 1024)} MB`)
-        }
-        return this.commitUpload(candidates, skipped, toWebviewUri)
-    }
-
-    /** 上传本地文件（选择文件）：宿主弹选择器，前端不传任何路径 */
-    public async pickUpload(toWebviewUri: (uri: vscode.Uri) => string): Promise<MediaUploadResult> {
-        const picked = await vscode.window.showOpenDialog({
-            canSelectFiles: true,
-            canSelectFolders: false,
-            canSelectMany: true,
-            openLabel: '上传到媒体库',
-            filters: { 图片: ['png', 'jpg', 'jpeg', 'webp', 'gif'] },
-            defaultUri: resolveStorageRoot(),
-        })
-        if (picked === undefined || picked.length === 0) {
-            return { uploaded: [], skipped: [] }
-        }
-        const candidates: UploadCandidate[] = []
-        const skipped: { name: string; reason: string }[] = []
-        for (const uri of picked.slice(0, MAX_UPLOAD_COUNT)) {
-            const parsed = await readCandidateFile(uri)
-            if (parsed.ok) {
-                candidates.push(parsed.candidate)
-            } else {
-                skipped.push({ name: parsed.name, reason: parsed.reason })
-            }
-        }
-        if (picked.length > MAX_UPLOAD_COUNT) {
-            skipped.push({
-                name: `${String(picked.length - MAX_UPLOAD_COUNT)} 个文件`,
-                reason: `一次最多上传 ${String(MAX_UPLOAD_COUNT)} 张，其余已跳过`,
-            })
-        }
-        const accepted: UploadCandidate[] = []
-        let total = 0
-        for (const candidate of candidates) {
-            if (total + candidate.bytes.byteLength > MAX_UPLOAD_TOTAL_BYTES) {
-                skipped.push({ name: candidate.name, reason: '本批总量超过上限，已跳过' })
-                continue
-            }
-            total += candidate.bytes.byteLength
-            accepted.push(candidate)
-        }
-        return this.commitUpload(accepted, skipped, toWebviewUri)
-    }
-
-    /**
-     * 上传编排：逐条落盘并入索引，单条失败只记回执。
-     * 关键约束：上传统一记为 general 素材、不写作品归属——图被插进正文后才由 media/insert 建立关联。
-     */
-    private async commitUpload(
-        candidates: readonly UploadCandidate[],
-        skipped: readonly { name: string; reason: string }[],
-        toWebviewUri: (uri: vscode.Uri) => string,
-    ): Promise<MediaUploadResult> {
-        await this.ensureUpgraded()
-        const root = resolveStorageRoot()
-        const { db } = this.deps.openDatabase()
-        const uploaded: MediaItem[] = []
-        const failures = [...skipped]
-        for (const candidate of candidates) {
-            try {
-                const file = await saveUploadedImage(root, candidate.bytes)
-                const record: MediaRecord = {
-                    id: file.id,
-                    path: file.path,
-                    ext: file.ext,
-                    byteSize: file.byteSize,
-                    month: file.month,
-                    createdAt: file.createdAt,
-                    scope: 'general',
-                    origin: 'upload',
-                    kind: 'photo',
-                    pressPath: null,
-                    pressName: null,
-                    characterId: null,
-                    characterName: null,
-                    loreKind: null,
-                    loreId: null,
-                    loreName: null,
-                }
-                insertMedia(db, record)
-                uploaded.push(toMediaItem({ ...record, missing: false, usageCount: 0 }, toWebviewUri))
-            } catch (error) {
-                failures.push({
-                    name: candidate.name,
-                    reason: error instanceof Error ? error.message : '上传失败',
-                })
-                logger.error(`媒体上传失败：${candidate.name}`, error)
-            }
-        }
-        if (uploaded.length > 0) {
-            logger.info(`媒体上传完成：${String(uploaded.length)} 张`)
-        }
-        return { uploaded, skipped: failures }
     }
 
     /**

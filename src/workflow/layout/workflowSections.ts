@@ -19,6 +19,7 @@ export const WORKFLOW_SECTIONS = [
     'fans',
     'push',
     'media',
+    'upload',
     'stock',
     'proofread',
     'snapshot',
