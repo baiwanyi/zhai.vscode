@@ -1,35 +1,29 @@
 /**
  * 扩展入口：按 common.md 第 4.2 节激活流程装配 Common 与 AI 服务。
- * 流程：日志 → 打开索引库/AI 库 → schema 校验 → 注册命令/面板/监听 → 自检自愈（后台不阻塞激活）。
+ * 流程：日志 → 索引库 → AI/取名层 → 写作与媒体层 → 公众号层 → 面板注册 → 收尾钩子（自检后台执行）。
+ * 分层：领域的装配各自成文件（./activation 下的 aiLayer、wechatLayer、lifecycle），本文件只做串联与错误边界。
  * 复用约定：激活结果作为扩展 exports 返回，VS Code 的 Markdown 预览读取 extendMarkdownIt 挂载图片路径插件；
  * 该钩子只需同步返回实例，真正的路径解析在渲染时按当前文档惰性计算。
  * 关键约束：重量级依赖（CodeBuddy SDK、公众号渲染链）一律惰性加载，激活期只做装配与监听注册；
  * 新增模块若引入大体积运行时，须沿用同一口径，否则每个窗口启动都要多付一次加载成本。
  */
 import * as vscode from 'vscode'
+import { assembleAiLayer } from './activation/aiLayer'
+import { registerLifecycleHooks } from './activation/lifecycle'
+import { assembleWechatLayer } from './activation/wechatLayer'
 import { AiChatViewProvider } from './modules/ai/aiChatProvider'
-import { AiChatService } from './modules/ai/chatService'
-import { CliUsageIndex } from './modules/ai/cliUsageIndex'
-import { registerAiCommands } from './modules/ai/commands'
-import { openAiDatabase } from './modules/ai/db/connection'
-import { ensureAiSchema } from './modules/ai/db/schema'
-import { MentionService } from './modules/ai/mentionService'
-import { createAiProvider } from './modules/ai/providerRegistry'
-import { initCodebuddyLogin } from './modules/ai/providers/codebuddyLogin'
-import { hydrateSelectedModel } from './modules/ai/providers/codebuddyModels'
-import { ReferenceService } from './modules/ai/referenceService'
-import { UsageRecorder } from './modules/ai/usageRecorder'
-import { AiUsageService } from './modules/ai/usageService'
 import { WorkflowRouter } from './modules/ai/workflowRouter'
 import { registerCommands } from './modules/common/commands'
-import { getZhaiConfig, resolveCacheRoot, resolveStorageRoot } from './modules/common/config'
+import { resolveCacheRoot, resolveStorageRoot } from './modules/common/config'
 import { DashboardViewProvider } from './modules/common/dashboardProvider'
 import { openIndexDatabase } from './modules/common/db/connection'
 import { ensureSchema } from './modules/common/db/schema'
 import { IndexService } from './modules/common/indexer/indexService'
+import { lazyDatabase } from './modules/common/lazyDatabase'
 import { logger } from './modules/common/logger'
 import { SecretsService } from './modules/common/secrets'
 import { StatusBarService } from './modules/common/statusBar'
+import { createStorageDatabaseProvider } from './modules/common/storageDbProvider'
 import { ToastService } from './modules/common/toastService'
 import { ImageProviderRouter } from './modules/imagegen/ai/imageProvider'
 import { PressCoverService } from './modules/imagegen/coverService'
@@ -41,13 +35,9 @@ import { ReferenceImageService } from './modules/imagegen/referenceImageService'
 import { zhaiImagePathPlugin, type MarkdownItLike } from './modules/markdown/zhaiImagePreview'
 import { closeMediaDatabases, openMediaDatabase } from './modules/media/db/connection'
 import { MediaLibraryService } from './modules/media/mediaLibraryService'
-import { insertMedia } from './modules/media/mediaRepository'
+import { createMediaRecorder } from './modules/media/mediaRecorder'
 import { MediaRoutes } from './modules/media/mediaRoutes'
 import { PressCoverStore } from './modules/media/pressCoverStore'
-import { openNamingDatabase } from './modules/naming/db/connection'
-import { ensureNamingSchema } from './modules/naming/db/schema'
-import { NamingRoutes } from './modules/naming/namingRoutes'
-import { NamingService } from './modules/naming/namingService'
 import { NoteRenameService } from './modules/note/noteRenameService'
 import { registerNoteRenameWatcher } from './modules/note/noteRenameWatcher'
 import { PinStore } from './modules/note/pinStore'
@@ -57,7 +47,6 @@ import { PressAiService } from './modules/press/pressAiService'
 import { PressRoutes } from './modules/press/pressRoutes'
 import { PressSnapshotService } from './modules/press/snapshot/snapshotService'
 import { registerPressSnapshotWatcher } from './modules/press/snapshot/snapshotWatcher'
-import { normalizeWrittenDocument } from './modules/press/writtenDocument'
 import { registerProofreadCommands } from './modules/proofread/commands'
 import { ProofreadRoutes } from './modules/proofread/proofreadRoutes'
 import { ProofreadService } from './modules/proofread/proofreadService'
@@ -71,37 +60,65 @@ import { TodoRepository } from './modules/todo/todoRepository'
 import { TodoRoutes } from './modules/todo/todoRoutes'
 import { TodoService } from './modules/todo/todoService'
 import { TodoWatcher } from './modules/todo/todoWatcher'
-import { WechatAccountService } from './modules/wechat/accountService'
-import { WechatCommentService } from './modules/wechat/commentService'
-import { createWechatSecretStore } from './modules/wechat/credentials'
-import { findWechatAccount, updateWechatAccountAuth } from './modules/wechat/db/accountRepository'
-import { openWechatDatabase } from './modules/wechat/db/connection'
-import { recoverStalePushingIssues } from './modules/wechat/db/issueRepository'
-import { WechatFanService } from './modules/wechat/fanService'
-import { WechatIssueRenameService } from './modules/wechat/issueRenameService'
-import { WechatIssueService } from './modules/wechat/issueService'
-import { WechatMaterialService } from './modules/wechat/materialService'
-import { WechatMenuService } from './modules/wechat/menuService'
-import { WechatPublishService } from './modules/wechat/publishService'
-import { WechatStatsService } from './modules/wechat/statsService'
-import { WechatTokenService } from './modules/wechat/tokenService'
-import { WechatRoutes } from './modules/wechat/wechatRoutes'
+import { UploadRoutes } from './modules/upload/uploadRoutes'
+import { UploadService } from './modules/upload/uploadService'
 import type { IndexStatus } from './modules/common/indexer/indexService'
-import type { WechatAccountAuthFailureEvent } from './shared/types/wechat'
 
 /** 扩展对外导出：Markdown 预览扩展在激活后读取 extendMarkdownIt 挂载自定义插件 */
 export interface ZhaiExports {
     extendMarkdownIt(md: MarkdownItLike): MarkdownItLike
 }
 
+/** 挂载 Markdown 预览的图片路径插件：不依赖任何服务，激活降级时同样可用 */
+function mountImagePreview(md: MarkdownItLike): void {
+    zhaiImagePathPlugin(md)
+}
+
+/** 激活失败时的兜底导出：只保留 Markdown 预览钩子，其余功能由错误提示引导排查 */
+const FALLBACK_EXPORTS: ZhaiExports = {
+    extendMarkdownIt(md: MarkdownItLike): MarkdownItLike {
+        mountImagePreview(md)
+        return md
+    },
+}
+
+/**
+ * 激活入口：只负责错误边界与降级，装配细节见 activateExtension。
+ * 关键约束：装配期任一环节抛错（缓存目录不可写、库被其它窗口写锁、旧库迁移失败）都不得让扩展
+ * 整体标记为激活失败——否则命令、视图与预览钩子会一起消失；此处先释放已登记资源再返回最小导出。
+ */
 export async function activate(context: vscode.ExtensionContext): Promise<ZhaiExports> {
+    try {
+        return await activateExtension(context)
+    } catch (error) {
+        for (const disposable of context.subscriptions) {
+            try {
+                disposable.dispose()
+            } catch (disposeError) {
+                logger.error('激活失败后释放资源异常', disposeError)
+            }
+        }
+        context.subscriptions.splice(0)
+        logger.error('宅写作 激活失败，已降级为最小功能', error)
+        logger.show()
+        void vscode.window.showErrorMessage('宅写作：初始化失败，部分功能不可用，详见输出面板「宅写作」。')
+        return FALLBACK_EXPORTS
+    }
+}
+
+async function activateExtension(context: vscode.ExtensionContext): Promise<ZhaiExports> {
     const activateStartedAt = performance.now()
     logger.init(vscode.window.createOutputChannel('宅写作'))
     context.subscriptions.push({ dispose: () => logger.dispose() })
 
-    // 分段耗时打点：输出通道里可直接读出各阶段花销，用于诊断启动性能（改装配顺序后对比即可）
+    // 分段耗时打点：同时给出本段增量与累计耗时，输出通道里可直接定位慢阶段（改装配顺序后对比即可）
+    let lastStageAt = activateStartedAt
     const markStage = (stage: string): void => {
-        logger.info(`激活阶段「${stage}」：${String(Math.round(performance.now() - activateStartedAt))}ms`)
+        const now = performance.now()
+        logger.info(
+            `激活阶段「${stage}」：+${String(Math.round(now - lastStageAt))}ms（累计 ${String(Math.round(now - activateStartedAt))}ms）`,
+        )
+        lastStageAt = now
     }
 
     const secrets = new SecretsService(context.secrets)
@@ -139,9 +156,6 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         indexStatusEmitter.event,
         workflowRouter,
     )
-    context.subscriptions.push(
-        vscode.window.registerWebviewViewProvider(DashboardViewProvider.viewId, dashboardProvider),
-    )
 
     // 笔记重命名：保存时让文件名跟随一级标题，避免列表标题与磁盘文件名各说一套；
     // 改的正是正在编辑的那篇时重播活跃笔记，否则列表高亮会停在已消失的旧路径上
@@ -150,68 +164,36 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     })
     registerNoteRenameWatcher(noteRenameService, context.subscriptions)
 
-    // AI 对话：独立 ai.db 承载会话、消息与用量，避免影响索引库写入
-    const aiDb = openAiDatabase(cacheRoot)
-    context.subscriptions.push({ dispose: () => aiDb.close() })
-    ensureAiSchema(aiDb)
-    markStage('AI 库就绪')
-    // 用量记账与查询共用 ai.db：记账注入各 AI 入口（对话、取名、外貌、语义、画面），查询供「AI 使用量」页；
-    // 积分不落本地估算，由索引从 CodeBuddy 会话记录按请求 id 回填
-    const usageRecorder = new UsageRecorder(aiDb)
-    // CLI 会话记录索引：用量页据此取积分，对话服务据此取本轮真实 tokens，两边共用同一份目录规则
-    const cliUsage = new CliUsageIndex()
-    const usageService = new AiUsageService(aiDb, cliUsage)
-
     // 作品快照：设定、角色、大纲与章节正文在内容变更时按间隔自动留版，正文落在作品的 Snapshots 目录；
     // 先于 AI 对话创建，供写回前强制留底；恢复后由索引服务重建字数，两条通道共用同一套去重与节流
     const snapshotService = new PressSnapshotService(indexService)
     context.subscriptions.push(snapshotService)
     registerPressSnapshotWatcher(snapshotService, context.subscriptions)
 
-    // AI 通道全扩展共用一份：唯一实现为 CodeBuddy
-    const aiProvider = await createAiProvider(secrets)
-    // 模型选择存在 globalState（配置项已移除，面板菜单是唯一入口），激活时先载入内存副本
-    hydrateSelectedModel(context.globalState)
-    // 站点登录态同样存 globalState：面板据此决定展示登录引导还是正常空态
-    initCodebuddyLogin(context.globalState)
-    // 写回前留底：把编辑器里的写回前全文交给快照服务，AI 改坏了可以回到动手前的状态
-    const aiChatService = new AiChatService(
-        aiDb,
-        aiProvider,
-        usageRecorder,
-        {
-            captureBeforeWrite: (uri, content): Promise<void> =>
-                snapshotService.captureChapterBeforeWrite(uri, content),
-        },
-        cliUsage,
-        normalizeWrittenDocument,
-    )
-    context.subscriptions.push(aiChatService)
-    // 提及检索：与全局搜索同源（索引库），添加时由宿主查库校验路径
-    const mentionService = new MentionService(db, aiChatService)
-    // 参考资料：语料由 {存储根}/reference/*.md 驱动，只读不写，条目按行范围注入
-    const referenceService = new ReferenceService(aiChatService)
+    // AI 与取名：ai.db 承载会话、消息与用量（首屏数据，激活期打开），naming.db 按需打开；
+    // 通道、记账与写回留底在各入口间共用，AI 命令注册也在层内完成
+    const ai = await assembleAiLayer({
+        context,
+        cacheRoot,
+        indexDb: db,
+        secrets,
+        snapshotService,
+        workflowRouter,
+        toastService,
+        markStage,
+    })
 
-    registerAiCommands(context, aiChatService, workflowRouter, toastService)
-
-    // 取名：独立 naming.db 承载生成历史与收藏，词素库全部留在宿主侧
-    const namingDb = openNamingDatabase(cacheRoot)
-    context.subscriptions.push({ dispose: () => namingDb.close() })
-    ensureNamingSchema(namingDb)
-    const namingService = new NamingService(namingDb, aiProvider, usageRecorder)
-    const namingRoutes = new NamingRoutes(namingService)
-
-    // 写作管理：press.db 只承载 AI 配额等轻量状态，作品文档与人物卡仍以 Markdown 为准
-    const pressDb = openPressDatabase(cacheRoot)
-    context.subscriptions.push({ dispose: () => pressDb.close() })
+    // 写作管理：press.db 只承载 AI 配额等轻量状态，作品文档与人物卡仍以 Markdown 为准；
+    // 库按需打开——配额与封面都要等面板请求才读，激活期不付打开与建表的磁盘开销
+    const pressDb = lazyDatabase(() => openPressDatabase(cacheRoot))
+    context.subscriptions.push({ dispose: () => pressDb.dispose() })
     // 封面选择记录与工作台共用 press.db：仪表盘作品列表据此显示封面（早于此处创建的仪表盘后置注入）
-    const pressCoverStore = new PressCoverStore(pressDb)
+    const pressCoverStore = new PressCoverStore(pressDb.get)
     dashboardProvider.attachPressCoverStore(pressCoverStore)
-    const pressAiService = new PressAiService(pressDb, aiProvider, usageRecorder)
+    const pressAiService = new PressAiService(pressDb.get, ai.aiProvider, ai.usageRecorder)
     const imageRouter = new ImageProviderRouter(secrets)
     // 媒体索引：按当前存储根懒打开 {root}/sqlite/media.db，切根后由连接缓存自行重建
-    const mediaDbProvider = (): ReturnType<typeof openMediaDatabase> =>
-        openMediaDatabase(resolveStorageRoot(), cacheRoot)
+    const mediaDbProvider = createStorageDatabaseProvider(openMediaDatabase, cacheRoot)
     const portraitService = new PortraitService(mediaDbProvider)
     // 封面服务只列举候选供设定页展示：出图、设为封面与删除都在媒体页完成
     const coverService = new PressCoverService({ openDatabase: mediaDbProvider, coverStore: pressCoverStore })
@@ -221,12 +203,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         coverStore: pressCoverStore,
     })
     const mediaRoutes = new MediaRoutes(mediaLibraryService)
+    // 上传：独立于媒体库，落 {root}/uploads/{YYYYMM}，不写任何索引（磁盘即清单）
+    const uploadRoutes = new UploadRoutes(new UploadService())
     // 在线图库：索引按当前存储根懒打开 {root}/sqlite/stock.db，密钥只从 SecretStorage 读
-    const stockDbProvider = (): ReturnType<typeof openStockDatabase> =>
-        openStockDatabase(resolveStorageRoot(), cacheRoot)
-    const stockClient = new StockClient(
-        async (): Promise<string | undefined> => secrets.get('unsplashAccessKey'),
-    )
+    const stockDbProvider = createStorageDatabaseProvider(openStockDatabase, cacheRoot)
+    const stockClient = new StockClient(async (): Promise<string | undefined> => secrets.get('unsplashAccessKey'))
     const stockLibraryService = new StockLibraryService({
         openDatabase: stockDbProvider,
         resolveRoot: resolveStorageRoot,
@@ -249,42 +230,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     const referenceImageService = new ReferenceImageService()
     // 统一出图入口：新图落 Images 目录，出图前叠加规则、作品级补充与负向约束，与旧入口共用同一通道与每日额度
     const imageGenerateService = new ImageGenerateService(
-        pressDb,
+        pressDb.get,
         imageRouter,
-        usageRecorder,
-        aiProvider,
+        ai.usageRecorder,
+        ai.aiProvider,
         imageSettingsService,
         promptRuleService,
         promptTagService,
         referenceImageService,
         // 落盘后写媒体索引：出图模块不直接依赖 media.db，由装配处注入写入器
-        (record) => insertMedia(mediaDbProvider().db, record),
+        createMediaRecorder(mediaDbProvider),
     )
     // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown；打开作品时同步路由事实
     // 语义归纳依赖 AI 通道，晚于仪表盘创建；人物卡、大纲与设定的按需提取共用同一实例，
     // 单任务锁与配额口径因此保持一致
-    const semanticService = new ImportSemanticService(pressDb, aiProvider, usageRecorder)
-    const pressRoutes = new PressRoutes(
-        pressAiService,
-        portraitService,
-        coverService,
-        db,
+    const semanticService = new ImportSemanticService(pressDb.get, ai.aiProvider, ai.usageRecorder)
+    const pressRoutes = new PressRoutes({
+        pressAi: pressAiService,
+        portraits: portraitService,
+        covers: coverService,
+        indexDb: db,
         workflowRouter,
-        semanticService,
-        snapshotService,
-        imageGenerateService,
-        imageSettingsService,
-        promptRuleService,
-        promptTagService,
-        referenceImageService,
-    )
+        semantic: semanticService,
+        snapshot: snapshotService,
+        imageGenerate: imageGenerateService,
+        imageSettings: imageSettingsService,
+        promptRules: promptRuleService,
+        promptTags: promptTagService,
+        referenceImages: referenceImageService,
+    })
 
     // 校对：本地规则检查与写回都基于编辑器内存态，写回前与 AI 写回共用同一份快照留底；
     // AI 通道与用量记账复用对话侧实例，每日次数记在 press.db 的 meta 表，与出图、取名分账
     const proofreadService = new ProofreadService({
-        provider: aiProvider,
-        usageRecorder,
-        db: pressDb,
+        provider: ai.aiProvider,
+        usageRecorder: ai.usageRecorder,
+        db: pressDb.get,
         secrets,
         state: context.globalState,
         beforeWrite: (uri, content): Promise<void> => snapshotService.captureChapterBeforeWrite(uri, content),
@@ -301,151 +282,56 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
     dashboardProvider.attachTodoRoutes(new TodoRoutes(todoService))
 
     // 公众号：独立 wechat.db 承载账号与推送批次，AppSecret 按账号存 SecretStorage（不入库），
-    // Token 缓存与并发去重由 tokenService 承担；账号协议同样由仪表盘面板承接
-    const wechatDb = openWechatDatabase(cacheRoot)
-    context.subscriptions.push({ dispose: () => wechatDb.close() })
-    // 群发过程中退出会把批次卡在「推送中」：超过 10 分钟的启动时回收为失败并提示去后台确认
-    const stalePushing = recoverStalePushingIssues(
-        wechatDb,
-        // 10 分钟：群发轮询最长约 8 秒，留足余量给慢网，超过基本可判定为宿主中途退出
-        new Date(Date.now() - 10 * 60 * 1000).toISOString(),
-        '宿主在群发过程中退出，发布结果未知：请到公众号后台确认是否已发布',
-    )
-    if (stalePushing > 0) {
-        logger.info(`公众号：回收 ${String(stalePushing)} 个卡在推送中的批次`)
-    }
-    // 密钥与 Token 缓存全模块共用一份：账号鉴权与素材上传走同一把 Token，避免各自刷新互相失效
-    const wechatSecrets = createWechatSecretStore(context.secrets)
-    // 鉴权失败的广播出口：面板在装配完成后注册，事件本身由 tokenService 统一上报
-    // （账号测试、素材上传、草稿提交与群发都经过它，不必在每个调用方各写一遍）
-    const wechatAuthEmitters: ((event: WechatAccountAuthFailureEvent) => void)[] = []
-    const wechatTokens = new WechatTokenService({
-        onAuthFailure: (failure): void => {
-            // 与 accountService.authenticate 同口径：额度与权限类记为受限，其余为错误
-            const status = failure.errorCode === 45009 || failure.errorCode === 48001 ? 'limited' : 'error'
-            updateWechatAccountAuth(wechatDb, {
-                id: failure.accountId,
-                status,
-                errorCode: failure.errorCode,
-                statusHint: failure.message,
-                updatedAt: new Date().toISOString(),
-            })
-            const event: WechatAccountAuthFailureEvent = {
-                kind: 'authFailure',
-                accountName: findWechatAccount(wechatDb, failure.accountId)?.name ?? '公众号',
-                ...failure,
-            }
-            for (const emit of wechatAuthEmitters) {
-                emit(event)
-            }
-        },
-    })
-    const wechatAccountService = new WechatAccountService({
-        db: wechatDb,
-        secrets: wechatSecrets,
-        tokens: wechatTokens,
-        state: context.globalState,
-    })
-    // 批次服务复用索引库做导入源校验：路径先回查 files 表，再读盘，前端无法指定任意文件
-    const wechatIssueService = new WechatIssueService({ db: wechatDb, indexDb: db })
-    // 批次文章与笔记同构：保存时让 md 文件名跟随正文一级标题，同步 wechat.db 的 title 与 file_path；
-    // 宿主经 workspace.fs 的写入不产生保存事件，两条通道不会互相触发
-    const wechatIssueRenameService = new WechatIssueRenameService(wechatDb)
+    // 鉴权失效经 EventEmitter 广播给两个面板；账号协议同样由仪表盘面板承接
+    const wechatLayer = assembleWechatLayer({ context, cacheRoot, indexDb: db })
+    dashboardProvider.attachWechatRoutes(wechatLayer.routes)
+    // 仪表盘的封面、待办与公众号三组依赖都是后置注入的，全部就绪后才注册视图，
+    // 避免依赖「VS Code 在 activate 返回前不会恢复视图」这一隐式前提
     context.subscriptions.push(
-        vscode.workspace.onDidSaveTextDocument((document) => {
-            void wechatIssueRenameService.handleSave(document)
-        }),
+        vscode.window.registerWebviewViewProvider(DashboardViewProvider.viewId, dashboardProvider),
     )
-    // 素材服务按存储根解析本地图片：存储根可随配置变更，故用函数惰性取值
-    const wechatMaterialService = new WechatMaterialService({
-        db: wechatDb,
-        secrets: wechatSecrets,
-        tokens: wechatTokens,
-        resolveRoot: (): string => resolveStorageRoot().fsPath,
-    })
-    const wechatPublishService = new WechatPublishService({
-        db: wechatDb,
-        secrets: wechatSecrets,
-        tokens: wechatTokens,
-        materials: wechatMaterialService,
-        issues: wechatIssueService,
-    })
-    // 三个运营服务只依赖账号表、密钥与 Token 缓存，共用同一组依赖
-    const wechatTokenDeps = { db: wechatDb, secrets: wechatSecrets, tokens: wechatTokens }
-    // 两个面板共用同一份公众号路由：仪表盘发起账号与批次动作，工作流面板发起运营分区请求
-    const wechatRoutes = new WechatRoutes({
-        accounts: wechatAccountService,
-        issues: wechatIssueService,
-        publish: wechatPublishService,
-        materials: wechatMaterialService,
-        menu: new WechatMenuService(wechatTokenDeps),
-        fans: new WechatFanService(wechatTokenDeps),
-        stats: new WechatStatsService(wechatTokenDeps),
-        comments: new WechatCommentService(wechatTokenDeps),
-    })
-    dashboardProvider.attachWechatRoutes(wechatRoutes)
     // 鉴权失效时仪表盘与本面板都该知道：两个面板共用同一份 wechat 通道载荷
-    wechatAuthEmitters.push((event) => dashboardProvider.broadcastWechatState(event))
-
-    const aiChatProvider = new AiChatViewProvider(
-        context.extensionUri,
-        aiChatService,
-        usageService,
-        mentionService,
-        referenceService,
-        workflowRouter,
-        namingRoutes,
-        pressRoutes,
-        mediaRoutes,
-        proofreadRoutes,
-        secrets,
-        context.globalState,
-        toastService,
-        wechatRoutes,
-        stockRoutes,
+    context.subscriptions.push(
+        wechatLayer.onAuthFailure((event): void => dashboardProvider.broadcastWechatState(event)),
     )
+
+    const aiChatProvider = new AiChatViewProvider({
+        extensionUri: context.extensionUri,
+        chat: ai.chat,
+        usage: ai.usage,
+        mention: ai.mention,
+        reference: ai.reference,
+        workflowRouter,
+        naming: ai.namingRoutes,
+        press: pressRoutes,
+        media: mediaRoutes,
+        proofread: proofreadRoutes,
+        secrets,
+        state: context.globalState,
+        toast: toastService,
+        wechat: wechatLayer.routes,
+        stock: stockRoutes,
+        upload: uploadRoutes,
+    })
     context.subscriptions.push(
         aiChatProvider,
         vscode.window.registerWebviewViewProvider(AiChatViewProvider.viewId, aiChatProvider),
     )
-    wechatAuthEmitters.push((event) => aiChatProvider.broadcastWechatState(event))
+    context.subscriptions.push(wechatLayer.onAuthFailure((event): void => aiChatProvider.broadcastWechatState(event)))
     markStage('面板注册完成')
 
     const statusBar = new StatusBarService(indexService, indexStatusEmitter.event)
     statusBar.register(context.subscriptions)
 
-    // 配置变更广播：存储根可能被改动，媒体索引连接必须按新根重建，否则会写进旧目录的库
-    context.subscriptions.push(
-        vscode.workspace.onDidChangeConfiguration((event) => {
-            if (event.affectsConfiguration('zhai.')) {
-                logger.info('宅写作 配置已变更')
-                closeMediaDatabases()
-                closeStockDatabases()
-            }
-        }),
-    )
-
-    // 自检自愈后台执行，不阻塞激活
-    if (getZhaiConfig().rebuildOnActivate) {
-        void indexService.selfCheck().catch((error: unknown) => logger.error('激活自检失败', error))
-    }
-
-    // 模型清单不在此预热：它属于工作流面板的首屏数据，由 AiChatViewProvider 在面板打开时拉取，
-    // 激活与「打开面板」是两个阶段，混在激活里会让窗口启动替面板付一次 CLI 子进程开销
-    logger.info(
-        `宅写作 已激活（workspace: ${context.workspaceState.get('initialized') === true ? '已初始化' : '首次'}），耗时 ${String(Math.round(performance.now() - activateStartedAt))}ms`,
-    )
-    void context.workspaceState.update('initialized', true)
+    // 收尾：配置变更同步（重建连接与增量监听）、后台自检、完成日志与初始化标记
+    registerLifecycleHooks({ context, indexService, activateStartedAt })
 
     // Markdown 预览钩子：只包装图片规则，未命中 @zhai/ 前缀时保持原生渲染
-    return {
-        extendMarkdownIt(md: MarkdownItLike): MarkdownItLike {
-            zhaiImagePathPlugin(md)
-            return md
-        },
-    }
+    return FALLBACK_EXPORTS
 }
 
 export function deactivate(): void {
-    // 全部资源通过 context.subscriptions 释放，此处无需额外清理
+    // 随 context.subscriptions 释放的库已由 VS Code 关闭；media/stock 是模块级连接缓存，须显式关闭
+    closeMediaDatabases()
+    closeStockDatabases()
 }

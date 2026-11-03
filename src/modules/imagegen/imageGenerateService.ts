@@ -201,7 +201,8 @@ export class ImageGenerateService {
     private readonly promptEnhance: PromptEnhanceService
 
     public constructor(
-        private readonly db: Database.Database,
+        /** 库按需打开：装配期只登记取值方式，激活不付打开与建表的磁盘开销 */
+        private readonly db: () => Database.Database,
         private readonly router: ImageGenerator,
         private readonly usageRecorder: UsageRecorder,
         provider: AiProvider,
@@ -308,7 +309,7 @@ export class ImageGenerateService {
                 loreId: request.loreId,
                 loreName: request.loreName,
             })
-            consumeToday(this.db, IMAGE_QUOTA_KEYS)
+            consumeToday(this.db(), IMAGE_QUOTA_KEYS)
             logger.info(`出图完成：耗时 ${Date.now() - startedAt}ms，${artifact.bytes.byteLength} 字节`)
             return {
                 image: {
@@ -412,7 +413,7 @@ export class ImageGenerateService {
         if (limit <= 0) {
             return
         }
-        const used = readUsedToday(this.db, IMAGE_QUOTA_KEYS)
+        const used = readUsedToday(this.db(), IMAGE_QUOTA_KEYS)
         if (used >= limit) {
             throw new Error(`今日图片生成次数已用完（${used} / ${limit}），可明日再试或调高 zhai.image.dailyLimit`)
         }

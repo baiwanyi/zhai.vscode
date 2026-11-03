@@ -88,7 +88,8 @@ export class PressAiService {
     private activeRequest: AbortController | null = null
 
     public constructor(
-        private readonly db: Database.Database,
+        /** 库按需打开：装配期只登记取值方式，激活不付打开与建表的磁盘开销 */
+        private readonly db: () => Database.Database,
         private readonly provider: AiProvider,
         private readonly usageRecorder: UsageRecorder,
     ) {}
@@ -198,7 +199,7 @@ export class PressAiService {
 
     /** 成功后计次与记账：三类生成只差 module 与提示词 */
     private commit(module: GenerationOptions['module'], messages: AiChatMessage[], result: AiTextGenerateResult): void {
-        consumeToday(this.db, QUOTA_KEYS)
+        consumeToday(this.db(), QUOTA_KEYS)
         this.usageRecorder.record({
             module,
             model: getSelectedCodebuddyModel(),
@@ -214,7 +215,7 @@ export class PressAiService {
         if (limit <= 0) {
             return
         }
-        const used = readUsedToday(this.db, QUOTA_KEYS)
+        const used = readUsedToday(this.db(), QUOTA_KEYS)
         if (used >= limit) {
             throw new Error(`今日 AI 生成次数已用完（${used} / ${limit}），可手动填写或明日再试`)
         }

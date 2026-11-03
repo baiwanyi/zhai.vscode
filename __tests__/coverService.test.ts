@@ -58,7 +58,7 @@ beforeEach(() => {
     setConfigValue('storage.rootPath', STORAGE_ROOT)
     const pressDb = new Database(':memory:')
     ensureSchema(pressDb)
-    store = new PressCoverStore(pressDb)
+    store = new PressCoverStore(() => pressDb)
     const media = new Database(':memory:')
     ensureMediaSchema(media)
     mediaDb = media

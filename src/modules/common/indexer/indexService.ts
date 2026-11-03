@@ -56,7 +56,8 @@ export interface IndexStatus {
 }
 
 export class IndexService {
-    private watcher: vscode.FileSystemWatcher | null = null
+    /** 当前监听的登记项：重新注册前要先释放，否则旧存储根的 watcher 会继续把事件送进索引 */
+    private watcherDisposables: vscode.Disposable[] = []
     private debounceTimer: NodeJS.Timeout | null = null
     /** 待处理变更路径集合（Set 去重，防抖后批量出队） */
     private pendingUris: Set<string> = new Set()
@@ -78,8 +79,9 @@ export class IndexService {
         }
     }
 
-    /** 注册增量监听，须在 activate 中调用并纳入 subscriptions */
+    /** 注册增量监听，须在 activate 中调用并纳入 subscriptions；存储根变更后可重复调用，旧监听先释放 */
     public registerWatcher(disposables: vscode.Disposable[]): void {
+        this.disposeWatcher()
         const cfg = getZhaiConfig()
         let root: vscode.Uri
         try {
@@ -92,13 +94,14 @@ export class IndexService {
         // watcher 没有 exclude 参数，只能自行按目录段丢弃：与全量扫描的排除规则同源，
         // 否则 node_modules / .git 下的 Markdown 会被增量索引而重建扫不到，数量永远对不上
         this.excludedDirNames = [...EXCLUDED_DIR_NAMES, ...toExcludedDirNames(cfg.indexExclude)]
-        this.watcher = vscode.workspace.createFileSystemWatcher(pattern)
-        disposables.push(
-            this.watcher,
-            this.watcher.onDidChange((uri) => this.enqueue(uri), this),
-            this.watcher.onDidCreate((uri) => this.enqueue(uri), this),
-            this.watcher.onDidDelete((uri) => this.enqueueDelete(uri), this),
-        )
+        const fileWatcher = vscode.workspace.createFileSystemWatcher(pattern)
+        this.watcherDisposables = [
+            fileWatcher,
+            fileWatcher.onDidChange((uri) => this.enqueue(uri), this),
+            fileWatcher.onDidCreate((uri) => this.enqueue(uri), this),
+            fileWatcher.onDidDelete((uri) => this.enqueueDelete(uri), this),
+        ]
+        disposables.push(...this.watcherDisposables)
         logger.info(`增量监听已注册：${pattern.pattern}，防抖 ${cfg.indexDebounceMs}ms`)
     }
 
@@ -279,8 +282,15 @@ export class IndexService {
             clearTimeout(this.debounceTimer)
             this.debounceTimer = null
         }
-        this.watcher?.dispose()
-        this.watcher = null
+        this.disposeWatcher()
+    }
+
+    /** 释放当前增量监听：重复注册前必须先释放，否则旧存储根的 watcher 会继续把事件送进索引 */
+    private disposeWatcher(): void {
+        for (const disposable of this.watcherDisposables) {
+            disposable.dispose()
+        }
+        this.watcherDisposables = []
     }
 
     private enqueue(uri: vscode.Uri): void {

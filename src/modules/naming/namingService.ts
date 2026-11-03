@@ -69,7 +69,8 @@ export class NamingService {
     private activeAiRequest: AbortController | null = null
 
     public constructor(
-        private readonly db: Database.Database,
+        /** 库按需打开：装配期只登记取值方式，激活不付打开与建表的磁盘开销 */
+        private readonly db: () => Database.Database,
         private readonly provider: AiProvider,
         private readonly usageRecorder: UsageRecorder,
     ) {}
@@ -177,12 +178,12 @@ export class NamingService {
     /** 历史批次：按时间倒序 */
     public listHistory(limit: number = HISTORY_PAGE_SIZE): NamingHistoryEntry[] {
         const size = Math.min(Math.max(limit, 1), HISTORY_LIMIT)
-        return listBatches(this.db, size).map(toHistoryEntry)
+        return listBatches(this.db(), size).map(toHistoryEntry)
     }
 
     /** 清空全部历史 */
     public clearHistory(): { cleared: number } {
-        return { cleared: clearBatches(this.db) }
+        return { cleared: clearBatches(this.db()) }
     }
 
     /** 切换收藏状态 */
@@ -191,17 +192,17 @@ export class NamingService {
         category: NamingCategory,
         createdAt: string = new Date().toISOString(),
     ): { favorited: boolean } {
-        if (isFavorite(this.db, name, category)) {
-            deleteFavorite(this.db, name, category)
+        if (isFavorite(this.db(), name, category)) {
+            deleteFavorite(this.db(), name, category)
             return { favorited: false }
         }
-        insertFavorite(this.db, { name, category, createdAt })
+        insertFavorite(this.db(), { name, category, createdAt })
         return { favorited: true }
     }
 
     /** 收藏列表 */
     public listFavorites(): NamingFavoriteItem[] {
-        return listFavorites(this.db, HISTORY_LIMIT).map((row) => ({
+        return listFavorites(this.db(), HISTORY_LIMIT).map((row) => ({
             name: row.name,
             category: row.category as NamingCategory,
             createdAt: row.createdAt,
@@ -222,10 +223,10 @@ export class NamingService {
 
     /** 读取今日已用次数：日期不一致时视为 0 */
     private readAiUsedToday(): number {
-        if (readMeta(this.db, AI_QUOTA_DATE_KEY) !== todayKey()) {
+        if (readMeta(this.db(), AI_QUOTA_DATE_KEY) !== todayKey()) {
             return 0
         }
-        const raw = readMeta(this.db, AI_QUOTA_COUNT_KEY)
+        const raw = readMeta(this.db(), AI_QUOTA_COUNT_KEY)
         const parsed = raw ? Number.parseInt(raw, 10) : 0
         return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
     }
@@ -233,13 +234,13 @@ export class NamingService {
     /** 记录一次成功生成 */
     private consumeAiQuota(): void {
         const used = this.readAiUsedToday()
-        writeMeta(this.db, AI_QUOTA_DATE_KEY, todayKey())
-        writeMeta(this.db, AI_QUOTA_COUNT_KEY, String(used + 1))
+        writeMeta(this.db(), AI_QUOTA_DATE_KEY, todayKey())
+        writeMeta(this.db(), AI_QUOTA_COUNT_KEY, String(used + 1))
     }
 
     /** 读取近期同分类结果，作为新一批次的去重集合 */
     private readRecentNames(category: NamingCategory): string[] {
-        const rows = listBatches(this.db, RECENT_BATCH_LIMIT * 4).filter((row) => row.category === category)
+        const rows = listBatches(this.db(), RECENT_BATCH_LIMIT * 4).filter((row) => row.category === category)
         const names: string[] = []
         for (const row of rows.slice(0, RECENT_BATCH_LIMIT)) {
             for (const name of parseResults(row)) {
@@ -251,7 +252,7 @@ export class NamingService {
 
     /** 落库并裁剪历史 */
     private record(request: NamingRequest, names: readonly string[]): void {
-        insertBatch(this.db, {
+        insertBatch(this.db(), {
             id: randomUUID(),
             category: request.category,
             source: request.source,
@@ -259,7 +260,7 @@ export class NamingService {
             results: JSON.stringify(names),
             createdAt: new Date().toISOString(),
         })
-        trimBatches(this.db, HISTORY_LIMIT)
+        trimBatches(this.db(), HISTORY_LIMIT)
     }
 }
 

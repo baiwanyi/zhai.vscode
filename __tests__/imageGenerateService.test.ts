@@ -118,7 +118,7 @@ beforeEach(() => {
     releaseHold = null
     recorded = []
     service = new ImageGenerateService(
-        db,
+        () => db,
         generator,
         new UsageRecorder(db),
         provider,

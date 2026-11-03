@@ -80,7 +80,7 @@ beforeEach(() => {
     insertMedia(db, mediaOf(MEDIA_ID))
     service = new MediaLibraryService({
         openDatabase: (): MediaDatabase => ({ db, filePath: ':memory:', degraded: false, isRecovered: false }),
-        coverStore: new PressCoverStore(db),
+        coverStore: new PressCoverStore(() => db),
     })
 })
 

@@ -24,11 +24,14 @@ function isCoverPath(coverPath: string): boolean {
 }
 
 export class PressCoverStore {
-    public constructor(private readonly db: Database.Database) {}
+    public constructor(
+        /** 库按需打开：装配期只登记取值方式，激活不付打开与建表的磁盘开销 */
+        private readonly db: () => Database.Database,
+    ) {}
 
     /** 读取作品选中的封面相对路径：未设置或记录不合规时返回 null */
     public read(dirPath: string): string | null {
-        const row = this.db.prepare('SELECT value FROM meta WHERE key = ?').get(`${KEY_PREFIX}${dirPath}`) as
+        const row = this.db().prepare('SELECT value FROM meta WHERE key = ?').get(`${KEY_PREFIX}${dirPath}`) as
             { value: string } | undefined
         if (row === undefined || !isCoverPath(row.value)) {
             return null
@@ -40,13 +43,13 @@ export class PressCoverStore {
     public write(dirPath: string, coverPath: string | null): void {
         const key = `${KEY_PREFIX}${dirPath}`
         if (coverPath === null) {
-            this.db.prepare('DELETE FROM meta WHERE key = ?').run(key)
+            this.db().prepare('DELETE FROM meta WHERE key = ?').run(key)
             return
         }
         if (!isCoverPath(coverPath)) {
             throw new Error(`图片路径非法：${coverPath}`)
         }
-        this.db
+        this.db()
             .prepare('INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value')
             .run(key, coverPath)
     }

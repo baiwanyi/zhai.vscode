@@ -67,21 +67,51 @@ import type { PressSnapshotService } from './snapshot/snapshotService'
 import type Database from 'better-sqlite3'
 import type * as vscode from 'vscode'
 
+/** 写作管理路由依赖：按领域命名，避免 12 个位置参数错位 */
+export interface PressRoutesDeps {
+    pressAi: PressAiService
+    portraits: PortraitService
+    covers: PressCoverService
+    /** 索引库：作品列表与目录存在性校验都查这张表 */
+    indexDb: Database.Database
+    workflowRouter: WorkflowRouter
+    semantic: ImportSemanticService
+    snapshot: PressSnapshotService
+    imageGenerate: ImageGenerateService
+    imageSettings: ImageSettingsService
+    promptRules: PromptRuleService
+    promptTags: PromptTagService
+    referenceImages: ReferenceImageService
+}
+
 export class PressRoutes {
-    public constructor(
-        private readonly service: PressAiService,
-        private readonly portraits: PortraitService,
-        private readonly covers: PressCoverService,
-        private readonly db: Database.Database,
-        private readonly workflowRouter: WorkflowRouter,
-        private readonly semantic: ImportSemanticService,
-        private readonly snapshot: PressSnapshotService,
-        private readonly imageGenerate: ImageGenerateService,
-        private readonly imageSettings: ImageSettingsService,
-        private readonly promptRules: PromptRuleService,
-        private readonly promptTags: PromptTagService,
-        private readonly referenceImages: ReferenceImageService,
-    ) {}
+    private readonly service: PressAiService
+    private readonly portraits: PortraitService
+    private readonly covers: PressCoverService
+    private readonly db: Database.Database
+    private readonly workflowRouter: WorkflowRouter
+    private readonly semantic: ImportSemanticService
+    private readonly snapshot: PressSnapshotService
+    private readonly imageGenerate: ImageGenerateService
+    private readonly imageSettings: ImageSettingsService
+    private readonly promptRules: PromptRuleService
+    private readonly promptTags: PromptTagService
+    private readonly referenceImages: ReferenceImageService
+
+    public constructor(deps: PressRoutesDeps) {
+        this.service = deps.pressAi
+        this.portraits = deps.portraits
+        this.covers = deps.covers
+        this.db = deps.indexDb
+        this.workflowRouter = deps.workflowRouter
+        this.semantic = deps.semantic
+        this.snapshot = deps.snapshot
+        this.imageGenerate = deps.imageGenerate
+        this.imageSettings = deps.imageSettings
+        this.promptRules = deps.promptRules
+        this.promptTags = deps.promptTags
+        this.referenceImages = deps.referenceImages
+    }
 
     /**
      * 处理写作管理协议方法

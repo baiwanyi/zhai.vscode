@@ -712,7 +712,8 @@ export class ImportSemanticService {
     private isRunning = false
 
     public constructor(
-        private readonly db: Database.Database,
+        /** 库按需打开：装配期只登记取值方式，激活不付打开与建表的磁盘开销 */
+        private readonly db: () => Database.Database,
         private readonly provider: AiProvider,
         private readonly usageRecorder: UsageRecorder,
     ) {}
@@ -1020,7 +1021,7 @@ export class ImportSemanticService {
             return { generated: 0, done: 0, total: 0, skipped: true }
         }
         await writeTextFile(settingUri, `${content.trim()}\n`)
-        consumeToday(this.db, QUOTA_KEYS)
+        consumeToday(this.db(), QUOTA_KEYS)
         onState({ done: 1, total: 1, message: `设定草案已生成（取材 ${String(clues.length)} 章）` })
         return { generated: 1, done: 1, total: 1, skipped: false }
     }
@@ -1117,7 +1118,7 @@ export class ImportSemanticService {
                 // 计数按可用卡片算：模型自造的噪声块已被清洗掉，不该算进「已生成 N 项」
                 generated += parseCharacterDrafts(cleaned).length
             }
-            consumeToday(this.db, QUOTA_KEYS)
+            consumeToday(this.db(), QUOTA_KEYS)
             onState({
                 done: index + 1,
                 total: batches.length,
@@ -1134,7 +1135,7 @@ export class ImportSemanticService {
         if (limit <= 0) {
             return
         }
-        const used = readUsedToday(this.db, QUOTA_KEYS)
+        const used = readUsedToday(this.db(), QUOTA_KEYS)
         if (used >= limit) {
             throw new SemanticError(
                 'quota-exceeded',

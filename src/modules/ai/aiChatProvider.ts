@@ -25,6 +25,7 @@ import type { NamingRoutes } from '@modules/naming/namingRoutes'
 import type { PressRoutes } from '@modules/press/pressRoutes'
 import type { ProofreadRoutes } from '@modules/proofread/proofreadRoutes'
 import type { StockRoutes } from '@modules/stock/stockRoutes'
+import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 import type { WechatRoutes } from '@modules/wechat/wechatRoutes'
 import type { AiModelChoices, AiPermissionDecision, AiReasoningEffort, AiWriteGrant } from '@shared/types/aiChat'
 import { AI_REASONING_EFFORT_LABELS, isAiReasoningEffort } from '@shared/types/aiChat'
@@ -90,6 +91,29 @@ const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set([
     'press/snapshot/chapter/delete',
 ])
 
+/** 工作流面板依赖：按用途命名，避免 16 个位置参数错位 */
+export interface AiChatViewProviderDeps {
+    extensionUri: vscode.Uri
+    chat: AiChatService
+    usage: AiUsageService
+    mention: MentionService
+    reference: ReferenceService
+    workflowRouter: WorkflowRouter
+    naming: NamingRoutes
+    press: PressRoutes
+    media: MediaRoutes
+    proofread: ProofreadRoutes
+    secrets: SecretsService
+    state: vscode.Memento
+    toast: ToastService
+    /** 公众号运营分区协议：与仪表盘共用同一份路由实例，数据源因此只有一套 */
+    wechat: WechatRoutes
+    /** 在线图库协议：搜索、已下载列表与插入都落在工作流面板 */
+    stock: StockRoutes
+    /** 上传协议：选择 / 拖拽 / 粘贴统一落存储根的 uploads 目录 */
+    upload: UploadRoutes
+}
+
 export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
     public static readonly viewId = 'zhai.workflow'
 
@@ -97,33 +121,48 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     private readonly views = new Set<vscode.WebviewView>()
     private readonly disposables: vscode.Disposable[] = []
 
-    public constructor(
-        private readonly extensionUri: vscode.Uri,
-        private readonly service: AiChatService,
-        private readonly usageService: AiUsageService,
-        private readonly mention: MentionService,
-        private readonly reference: ReferenceService,
-        private readonly workflowRouter: WorkflowRouter,
-        private readonly naming: NamingRoutes,
-        private readonly press: PressRoutes,
-        private readonly media: MediaRoutes,
-        private readonly proofread: ProofreadRoutes,
-        private readonly secrets: SecretsService,
-        private readonly state: vscode.Memento,
-        private readonly toast: ToastService,
-        /** 公众号运营分区协议：与仪表盘共用同一份路由实例，数据源因此只有一套 */
-        private readonly wechat: WechatRoutes,
-        /** 在线图库协议：搜索、已下载列表与插入都落在工作流面板 */
-        private readonly stock: StockRoutes,
-    ) {
+    private readonly extensionUri: vscode.Uri
+    private readonly service: AiChatService
+    private readonly usageService: AiUsageService
+    private readonly mention: MentionService
+    private readonly reference: ReferenceService
+    private readonly workflowRouter: WorkflowRouter
+    private readonly naming: NamingRoutes
+    private readonly press: PressRoutes
+    private readonly media: MediaRoutes
+    private readonly proofread: ProofreadRoutes
+    private readonly secrets: SecretsService
+    private readonly state: vscode.Memento
+    private readonly toast: ToastService
+    private readonly wechat: WechatRoutes
+    private readonly stock: StockRoutes
+    private readonly upload: UploadRoutes
+
+    public constructor(deps: AiChatViewProviderDeps) {
+        this.extensionUri = deps.extensionUri
+        this.service = deps.chat
+        this.usageService = deps.usage
+        this.mention = deps.mention
+        this.reference = deps.reference
+        this.workflowRouter = deps.workflowRouter
+        this.naming = deps.naming
+        this.press = deps.press
+        this.media = deps.media
+        this.proofread = deps.proofread
+        this.secrets = deps.secrets
+        this.state = deps.state
+        this.toast = deps.toast
+        this.wechat = deps.wechat
+        this.stock = deps.stock
+        this.upload = deps.upload
         this.disposables.push(
-            service.onStream((message) => this.broadcast(message)),
-            service.onRuntimeChanged(() => this.broadcastRuntimeChanged()),
-            service.onContextChanged(() => this.broadcastContextChanged()),
-            service.onWriteStateChanged(() => this.broadcastWriteStateChanged()),
-            workflowRouter.onChanged(() => this.broadcastWorkflowChanged()),
-            workflowRouter.onViewRequested((request) => this.broadcastWorkflowView(request)),
-            toast.onToast((payload) => this.broadcastToast(payload)),
+            this.service.onStream((message) => this.broadcast(message)),
+            this.service.onRuntimeChanged(() => this.broadcastRuntimeChanged()),
+            this.service.onContextChanged(() => this.broadcastContextChanged()),
+            this.service.onWriteStateChanged(() => this.broadcastWriteStateChanged()),
+            this.workflowRouter.onChanged(() => this.broadcastWorkflowChanged()),
+            this.workflowRouter.onViewRequested((request) => this.broadcastWorkflowView(request)),
+            this.toast.onToast((payload) => this.broadcastToast(payload)),
         )
     }
 
@@ -343,6 +382,10 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 // 在线图库与媒体库同为「往当前文档插图」的入口，共用同一份 URL 转换方式
                 if (method.startsWith('stock/')) {
                     return this.stock.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())
+                }
+                // 上传独立于媒体库：落 uploads 目录，不写索引，回执同样需要缩略图 URL
+                if (method.startsWith('upload/')) {
+                    return this.upload.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())
                 }
                 // 公众号运营分区与应用内仪表盘共用同一份路由：两个面板各自发起请求，数据源只有一套
                 if (method.startsWith('wechat/')) {

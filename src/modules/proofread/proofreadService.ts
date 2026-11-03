@@ -62,7 +62,8 @@ const CONSENT_KEY = 'proofread.zhuqueConsent'
 export interface ProofreadServiceDeps {
     provider: AiProvider
     usageRecorder: UsageRecorder
-    db: Database.Database
+    /** 库按需打开：装配期只登记取值方式，激活不付打开与建表的磁盘开销 */
+    db: () => Database.Database
     /** 密钥读取：朱雀 API Key 只存 SecretStorage，前端不接触明文 */
     secrets: SecretsService
     /** 同意标记的存储：插件全局状态 */
@@ -154,7 +155,7 @@ export class ProofreadService {
                 signal: controller.signal,
                 onProgress,
             })
-            consumeToday(this.deps.db, AI_QUOTA)
+            consumeToday(this.deps.db(), AI_QUOTA)
             this.deps.usageRecorder.record({
                 module: 'proofread',
                 model: getSelectedCodebuddyModel(),
@@ -200,7 +201,7 @@ export class ProofreadService {
         const apiKey = (await this.deps.secrets.get('zhuqueApiKey')) ?? ''
         const hasConsent = this.deps.state.get<boolean>(CONSENT_KEY, false) === true
         const limit = getZhaiConfig().proofreadZhuqueDailyLimit
-        const used = readUsedToday(this.deps.db, DETECT_QUOTA)
+        const used = readUsedToday(this.deps.db(), DETECT_QUOTA)
         return {
             hasKey: apiKey.trim().length > 0,
             hasConsent,
@@ -232,11 +233,11 @@ export class ProofreadService {
             throw new Error('请先确认将正文发送至腾讯云朱雀检测服务')
         }
         const limit = getZhaiConfig().proofreadZhuqueDailyLimit
-        if (limit > 0 && readUsedToday(this.deps.db, DETECT_QUOTA) >= limit) {
+        if (limit > 0 && readUsedToday(this.deps.db(), DETECT_QUOTA) >= limit) {
             throw new Error(`今日 AI 特征检测次数已用完（${String(limit)} 次），可在设置中调整上限`)
         }
         const result = await detectAiContent({ target, apiKey })
-        consumeToday(this.deps.db, DETECT_QUOTA)
+        consumeToday(this.deps.db(), DETECT_QUOTA)
         await writeDetectCache(this.deps.state, {
             savedAt: new Date().toISOString(),
             target: toCachedTarget(target),
@@ -310,7 +311,7 @@ export class ProofreadService {
         if (limit <= 0) {
             return
         }
-        const used = readUsedToday(this.deps.db, AI_QUOTA)
+        const used = readUsedToday(this.deps.db(), AI_QUOTA)
         if (used >= limit) {
             throw new Error(`今日 AI 校对次数已用完（${String(limit)} 次），可在设置中调整上限`)
         }
