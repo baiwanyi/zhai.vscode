@@ -24,8 +24,15 @@ export const SCOPE_SECTIONS: Readonly<Record<ContentScope, readonly WorkflowSect
     wechat: ['menu', 'material', 'stats', 'comment', 'fans', 'push'],
 }
 
-/** 常驻分区：与内容归属无关，任何文档下都可用 */
-export const RESIDENT_SECTIONS: readonly WorkflowSection[] = ['chat', 'media', 'proofread', 'snapshot', 'usage']
+/** 常驻分区：与内容归属无关，任何文档下都可用；在线图库与媒体并列，都是「往当前文档插图」的入口 */
+export const RESIDENT_SECTIONS: readonly WorkflowSection[] = [
+    'chat',
+    'media',
+    'stock',
+    'proofread',
+    'snapshot',
+    'usage',
+]
 
 /**
  * 读取当前文档的内容归属：笔记与公众号看一级目录名，作品看 projectDir，其余为 null。

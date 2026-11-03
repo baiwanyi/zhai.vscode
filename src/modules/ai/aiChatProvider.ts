@@ -24,6 +24,7 @@ import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { NamingRoutes } from '@modules/naming/namingRoutes'
 import type { PressRoutes } from '@modules/press/pressRoutes'
 import type { ProofreadRoutes } from '@modules/proofread/proofreadRoutes'
+import type { StockRoutes } from '@modules/stock/stockRoutes'
 import type { WechatRoutes } from '@modules/wechat/wechatRoutes'
 import type { AiModelChoices, AiPermissionDecision, AiReasoningEffort, AiWriteGrant } from '@shared/types/aiChat'
 import { AI_REASONING_EFFORT_LABELS, isAiReasoningEffort } from '@shared/types/aiChat'
@@ -112,6 +113,8 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         private readonly toast: ToastService,
         /** 公众号运营分区协议：与仪表盘共用同一份路由实例，数据源因此只有一套 */
         private readonly wechat: WechatRoutes,
+        /** 在线图库协议：搜索、已下载列表与插入都落在工作流面板 */
+        private readonly stock: StockRoutes,
     ) {
         this.disposables.push(
             service.onStream((message) => this.broadcast(message)),
@@ -336,6 +339,10 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 }
                 if (method.startsWith('media/')) {
                     return this.media.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())
+                }
+                // 在线图库与媒体库同为「往当前文档插图」的入口，共用同一份 URL 转换方式
+                if (method.startsWith('stock/')) {
+                    return this.stock.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())
                 }
                 // 公众号运营分区与应用内仪表盘共用同一份路由：两个面板各自发起请求，数据源只有一套
                 if (method.startsWith('wechat/')) {

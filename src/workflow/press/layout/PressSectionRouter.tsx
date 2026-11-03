@@ -9,6 +9,7 @@
 import { WorkflowAiChat } from '@webview/workflow/aichat/WorkflowAiChat'
 import type { WorkflowSection } from '@webview/workflow/layout/workflowSections'
 import { WorkflowMedia } from '@webview/workflow/media/WorkflowMedia'
+import { WorkflowStock } from '@webview/workflow/media/WorkflowStock'
 import { WorkflowProofread } from '@webview/workflow/proofread/WorkflowProofread'
 import { WorkflowUsage } from '@webview/workflow/usage/WorkflowUsage'
 import type { PressMutations } from '../hooks/usePressMutations'
@@ -89,7 +90,7 @@ export function PressSectionRouter({
     if (section === 'naming') {
         return <PressNamingPage />
     }
-    // 媒体库是全库共享的页面，作品上下文只影响出图归属与「设为作品封面」，切作品即重建组件
+    // 媒体分区是全库共享的页面，作品上下文只影响出图归属与「设为作品封面」，切作品即重建组件
     if (section === 'media') {
         return (
             <WorkflowMedia
@@ -103,6 +104,10 @@ export function PressSectionRouter({
                 }}
             />
         )
+    }
+    // 在线图库是常驻分区：与作品无关，插入同样作用于当前编辑器的光标处
+    if (section === 'stock') {
+        return <WorkflowStock />
     }
     // 校对以编辑器中的当前文档为目标，切作品即重建，避免上一个作品的问题列表残留
     if (section === 'proofread') {

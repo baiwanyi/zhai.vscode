@@ -57,6 +57,18 @@ export interface ZhaiConfig {
     proofreadBatchChars: number
     /** AI 特征检测（朱雀）每日次数上限（0 或负数表示不限） */
     proofreadZhuqueDailyLimit: number
+    /** 在线图库单页条数：Unsplash 的 per_page 上限 30 */
+    stockPerPage: number
+    /** 在线图库本地小时窗口上限（0 表示不限）：Demo 应用为 50 次/小时 */
+    stockHourlyLimit: number
+    /** 在线图库相邻请求最小间隔：避免连点把配额打光 */
+    stockMinIntervalMs: number
+    /** 在线图库下载宽度：决定落盘体积，改配置只影响之后下载的图 */
+    stockImageWidth: number
+    /** 在线图库单图体积上限（MB）：超出后降档重下一次 */
+    stockMaxBytes: number
+    /** 是否在 alt 中追加摄影者署名 */
+    stockAppendCredit: boolean
     telemetryEnabled: boolean
 }
 
@@ -161,6 +173,12 @@ export function getZhaiConfig(): ZhaiConfig {
         proofreadAiDailyLimit: readBoundedInt(cfg.get<number>('proofread.aiDailyLimit', 30), 30, 0, 1000),
         proofreadBatchChars: readBoundedInt(cfg.get<number>('proofread.batchChars', 1200), 1200, 400, 4000),
         proofreadZhuqueDailyLimit: readBoundedInt(cfg.get<number>('proofread.zhuqueDailyLimit', 10), 10, 0, 500),
+        stockPerPage: readBoundedInt(cfg.get<number>('stock.perPage', 20), 20, 6, 30),
+        stockHourlyLimit: readBoundedInt(cfg.get<number>('stock.hourlyLimit', 45), 45, 0, 1000),
+        stockMinIntervalMs: readBoundedInt(cfg.get<number>('stock.minIntervalMs', 1200), 1200, 250, 10000),
+        stockImageWidth: readBoundedInt(cfg.get<number>('stock.imageWidth', 1600), 1600, 800, 3840),
+        stockMaxBytes: readBoundedInt(cfg.get<number>('stock.maxBytes', 15), 15, 1, 50),
+        stockAppendCredit: cfg.get<boolean>('stock.appendCredit', true),
         telemetryEnabled: cfg.get<boolean>('telemetry.enabled', false),
     }
 }

@@ -79,6 +79,16 @@ describe('正文图片引用解析', () => {
         })
     })
 
+    it('在线图库引用既不落库也不计 stale', async () => {
+        // 同一篇里混入一张 unsplash 的图：它是另一个库的资产，查不到不代表失效
+        putChapter('第2章.md', `正文\n\n![山脊](@zhai/unsplash/202611/Kq2WnB6x9eA.jpg)\n![雪夜](@zhai/${MEDIA_PATH})\n`)
+
+        const outcome = await rescanReferences(db, () => null, DIR_PATH)
+
+        expect(outcome.usages).toBe(1)
+        expect(outcome.stale).toBe(0)
+    })
+
     it('相对路径引用保持原有行为', async () => {
         putChapter('第2章.md', `![雪夜](../../../${MEDIA_PATH})\n`)
 

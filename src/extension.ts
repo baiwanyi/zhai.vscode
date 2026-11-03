@@ -61,6 +61,12 @@ import { normalizeWrittenDocument } from './modules/press/writtenDocument'
 import { registerProofreadCommands } from './modules/proofread/commands'
 import { ProofreadRoutes } from './modules/proofread/proofreadRoutes'
 import { ProofreadService } from './modules/proofread/proofreadService'
+import { StockPhotoCache } from './modules/stock/cache'
+import { StockClient } from './modules/stock/client'
+import { closeStockDatabases, openStockDatabase } from './modules/stock/db/connection'
+import { StockLibraryService } from './modules/stock/stockLibraryService'
+import { StockRoutes } from './modules/stock/stockRoutes'
+import { StockService } from './modules/stock/stockService'
 import { TodoRepository } from './modules/todo/todoRepository'
 import { TodoRoutes } from './modules/todo/todoRoutes'
 import { TodoService } from './modules/todo/todoService'
@@ -215,6 +221,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         coverStore: pressCoverStore,
     })
     const mediaRoutes = new MediaRoutes(mediaLibraryService)
+    // 在线图库：索引按当前存储根懒打开 {root}/sqlite/stock.db，密钥只从 SecretStorage 读
+    const stockDbProvider = (): ReturnType<typeof openStockDatabase> =>
+        openStockDatabase(resolveStorageRoot(), cacheRoot)
+    const stockClient = new StockClient(
+        async (): Promise<string | undefined> => secrets.get('unsplashAccessKey'),
+    )
+    const stockLibraryService = new StockLibraryService({
+        openDatabase: stockDbProvider,
+        resolveRoot: resolveStorageRoot,
+    })
+    const stockService = new StockService({
+        client: stockClient,
+        cache: new StockPhotoCache(),
+        library: stockLibraryService,
+        secrets,
+        openDatabase: stockDbProvider,
+    })
+    const stockRoutes = new StockRoutes(stockService)
     // 图片参数：按作品覆盖，落 press/{作品名}/.zhai/image.json，配额与超时不在此管辖
     const imageSettingsService = new ImageSettingsService()
     // 出图规则：全局共享，落 {存储根}/prompt/rules 的 md 文件，与作品无关
@@ -378,6 +402,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
         context.globalState,
         toastService,
         wechatRoutes,
+        stockRoutes,
     )
     context.subscriptions.push(
         aiChatProvider,
@@ -395,6 +420,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<ZhaiEx
             if (event.affectsConfiguration('zhai.')) {
                 logger.info('宅写作 配置已变更')
                 closeMediaDatabases()
+                closeStockDatabases()
             }
         }),
     )

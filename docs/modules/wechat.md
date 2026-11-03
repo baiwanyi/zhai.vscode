@@ -674,6 +674,13 @@ interface WechatPublishResult {
 > AI 对话（`@` 提及能搜到、模型可写回当前文章）、媒体（本地图片库把图片插入当前文章）、校对（对当前文章生效）
 > 三个常驻分区直接可用，不再落到占位页；媒体引用类型为 `article`，重建引用时会扫描 `wechat/{appid}/post/`。
 > 字数统计只认 `notes/` 与 `press/` 前缀，批次稿进索引不会影响写作产出统计。
+> **正文图片的两种写法**：相对批次目录的 `images/{文件名}`（导入时把源文档图片复制进批次目录后改写成的形态）与
+> `@zhai/{存储根相对路径}`（媒体库插入、在线图库插入写的形态，见 `docs/modules/stock.md`）。
+> 推送链目前只解析外链、盘符绝对路径与相对源文档目录三种写法：导入链在 `issueService.resolveBodyImageSource`
+> 里单独处理了 `@zhai/` 并改写成批次相对路径，所以导入的图没问题；但**直接写在批次文章里的 `@zhai/` 引用**
+> 在生成草稿时会被 `locateWechatImage` 判为「文件不存在、未上传」，正文留下破图。
+> 修法是在 `locateWechatImage` 开头补 `@zhai/` 分支（`readZhaiRelativePath` 取相对路径后拼存储根），
+> 与导入链同一口径；补之前，媒体库与在线图库往批次文章里插图都属于不可用路径。
 
 ```
 批次「推送」
@@ -728,7 +735,7 @@ ready ──设置时间──> scheduled ──到点──> pushing
 | `fans` | 用户管理 | wechat 专属 |
 | `push` | 推送管理 | wechat 专属 |
 
-常驻分区（`chat` / `media` / `proofread` / `snapshot` / `usage`）不受归属影响，继续保留。
+常驻分区（`chat` / `media` / `stock` / `proofread` / `snapshot` / `usage`）不受归属影响，继续保留。
 
 ### 13.2 六分区职责与页面结构
 
@@ -750,7 +757,7 @@ ready ──设置时间──> scheduled ──到点──> pushing
 
 ### 13.3 导航栏容量改造（必须做）
 
-现状：`WorkflowNav` 为固定 48px 宽纵向图标列，项高 48px（`size-10 m-1`），无滚动容器。加入六项后共 12 项 + 2 条分隔，≈576px，侧栏高度不足时末尾项会被压掉。
+现状：`WorkflowNav` 为固定 48px 宽纵向图标列，项高 48px（`size-10 m-1`），无滚动容器。加入六项后共 13 项 + 2 条分隔，≈624px，侧栏高度不足时末尾项会被压掉。
 
 | 改造点 | 做法 |
 |--------|------|

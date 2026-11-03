@@ -303,8 +303,53 @@
                 }
             },
             {
-                "title": "宅写作：提示词",
+                "title": "宅写作：在线图库",
                 "order": 5,
+                "properties": {
+                    "zhai.stock.perPage": {
+                        "type": "number",
+                        "default": 20,
+                        "minimum": 6,
+                        "maximum": 30,
+                        "description": "在线图库单页条数：Unsplash 单页上限为 30"
+                    },
+                    "zhai.stock.hourlyLimit": {
+                        "type": "number",
+                        "default": 45,
+                        "minimum": 0,
+                        "description": "本地小时窗口内的接口调用上限（0 表示不限）。Unsplash Demo 应用为 50 次/小时，建议留出余量"
+                    },
+                    "zhai.stock.minIntervalMs": {
+                        "type": "number",
+                        "default": 1200,
+                        "minimum": 250,
+                        "maximum": 10000,
+                        "description": "相邻两次接口请求的最小间隔毫秒数，避免连续点击把配额打光"
+                    },
+                    "zhai.stock.imageWidth": {
+                        "type": "number",
+                        "default": 1600,
+                        "minimum": 800,
+                        "maximum": 3840,
+                        "description": "下载图片的宽度（像素）：数值越大体积越大，只影响之后下载的图片"
+                    },
+                    "zhai.stock.maxBytes": {
+                        "type": "number",
+                        "default": 15,
+                        "minimum": 1,
+                        "maximum": 50,
+                        "description": "单张图片体积上限（MB）：超出后自动降档重下一次"
+                    },
+                    "zhai.stock.appendCredit": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "插入图片时在替代文本中追加摄影者署名（Unsplash 使用条款要求署名）"
+                    }
+                }
+            },
+            {
+                "title": "宅写作：提示词",
+                "order": 6,
                 "properties": {
                     "zhai.prompt.rootPath": {
                         "type": "string",
@@ -318,7 +363,7 @@
             },
             {
                 "title": "宅写作：校对",
-                "order": 6,
+                "order": 7,
                 "properties": {
                     "zhai.proofread.maxChars": {
                         "type": "number",
@@ -352,7 +397,7 @@
             },
             {
                 "title": "宅写作：隐私与遥测",
-                "order": 7,
+                "order": 8,
                 "properties": {
                     "zhai.telemetry.enabled": {
                         "type": "boolean",

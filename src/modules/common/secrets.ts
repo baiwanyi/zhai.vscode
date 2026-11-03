@@ -10,6 +10,8 @@ const SECRET_KEYS = {
     weiboAccessToken: 'zhai.weibo.accessToken',
     wechatAccessToken: 'zhai.wechat.accessToken',
     zhuqueApiKey: 'zhai.zhuque.apiKey',
+    /** Unsplash 在线图库的 Access Key：只在宿主侧读，前端只回尾号 */
+    unsplashAccessKey: 'zhai.unsplash.accessKey',
 } as const
 
 export type SecretKey = keyof typeof SECRET_KEYS

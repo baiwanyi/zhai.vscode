@@ -49,4 +49,18 @@ describe('locateWechatImage', () => {
         expect(locateWechatImage('   ', null, ROOT).kind).toBe('invalid')
         expect(locateWechatImage('data:image/png;base64,AAA', null, ROOT).kind).toBe('invalid')
     })
+
+    it('@zhai/ 存储根引用按存储根解析，不受源文档目录影响', () => {
+        const located = locateWechatImage('@zhai/unsplash/202611/Kq2WnB6x9eA.jpg', 'wechat/wx1/post/202611021530/a.md', ROOT)
+        expect(located).toEqual({ kind: 'local', filePath: path.join(ROOT, 'unsplash/202611/Kq2WnB6x9eA.jpg') })
+        expect(locateWechatImage('@zhai/images/202610/b.png', null, ROOT)).toEqual({
+            kind: 'local',
+            filePath: path.join(ROOT, 'images/202610/b.png'),
+        })
+    })
+
+    it('@zhai/ 前缀但路径越界时直接判不可用', () => {
+        expect(locateWechatImage('@zhai/../secret.png', null, ROOT).kind).toBe('invalid')
+        expect(locateWechatImage('@zhai/', null, ROOT).kind).toBe('invalid')
+    })
 })

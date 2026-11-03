@@ -88,7 +88,8 @@ function resolveClassNames(variant: SegmentedRailVariant, isStretched: boolean, 
         return { container: PILL_CONTAINER_CLASS, item: PILL_ITEM_CLASS }
     }
     if (variant === 'chip') {
-        return { container: isWrapped ? 'flex-wrap' : undefined, item: CHIP_ITEM_CLASS }
+        // max-w-full 让 w-fit 在窄容器（侧栏）里让位给换行，否则整组会横向溢出
+        return { container: isWrapped ? 'max-w-full flex-wrap' : undefined, item: CHIP_ITEM_CLASS }
     }
     return { container: isStretched ? 'w-full' : undefined, item: isStretched ? 'flex-1' : undefined }
 }

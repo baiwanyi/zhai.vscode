@@ -73,8 +73,12 @@
 │   │   └── 20261029153102Qm7TzR.webp
 │   └── 202611/
 │       └── 20261101102233Kd4WnE.png
+├── unsplash/                    ← 在线图库下载件（独立体系，见 stock.md）
+│   └── 202611/
+│       └── Kq2WnB6x9eA.jpg
 ├── sqlite/
-│   └── media.db                 ← 媒体索引（随存储根迁移、可随 images 一起备份）
+│   ├── media.db                 ← 媒体索引（随存储根迁移、可随 images 一起备份）
+│   └── stock.db                 ← 在线图库索引（署名与来源，不属于媒体库）
 ├── press/{作品名}/               ← 文档、人物卡、设定，图片不再写这里
 ├── notes/202610/                ← 笔记
 └── prompt/images/               ← 词库预览图（独立体系，不纳入媒体库）
@@ -86,6 +90,8 @@
 - `images/` 与 `press/`、`notes/` 平级。换存储根时整库迁移，路径全部是相对路径，不需要改写任何记录。
 - 空目录不预建，落盘时 `createDirectory({recursive: true})`。
 - `prompt/images/` 是词库预览图，由 `zhai.prompt.rootPath` 派生，**不属于媒体库**，扫描必须排除。
+- `unsplash/` 是在线图库（见 `docs/modules/stock.md`）的下载目录：文件名沿用上游 `{photoId}.{ext}`，既不符合 3.2 的命名规范，也不登记进 `media` 表，**媒体扫描必须排除**；要跨体系取图走侧栏的「在线图库」分区，不在这里混列。
+- 引用重建同样要跳过在线图库：正文里的 `@zhai/unsplash/...` 在 `media` 表里查不到（按设计如此），若不做前缀短路会被计入 `stale`，媒体详情误报「引用已失效」。
 - `sqlite/` 只放索引，扫描 `images/**` 时天然不会命中（扫描只按 `images/{YYYYMM}/{文件}` 两层取）。
 
 ### 3.2 文件名

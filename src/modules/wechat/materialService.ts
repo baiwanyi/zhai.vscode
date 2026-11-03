@@ -11,6 +11,7 @@ import { readFile, stat } from 'node:fs/promises'
 import * as path from 'node:path'
 import * as vscode from 'vscode'
 import type { WechatMaterialImportResult, WechatMaterialSummary } from '@shared/types/wechat'
+import { isZhaiPath, readZhaiRelativePath } from '@shared/utils/zhaiPath'
 import { uploadWechatImageMaterial } from './client'
 import { findWechatAccount } from './db/accountRepository'
 import {
@@ -88,6 +89,15 @@ export function locateWechatImage(imageUrl: string, sourcePath: string | null, r
     }
 
     const root = path.resolve(rootPath)
+    // 存储根引用（@zhai/…）：前缀后即相对存储根路径，越界校验已由 readZhaiRelativePath 完成。
+    // 媒体库与在线图库插入正文的就是这一形态，缺了这段分支，推送时会被当成相对批次目录的路径而判「未上传」。
+    if (isZhaiPath(trimmed)) {
+        const zhaiRelative = readZhaiRelativePath(trimmed)
+        if (zhaiRelative === null) {
+            return { kind: 'invalid', reason: '@zhai 引用路径非法，未上传' }
+        }
+        return { kind: 'local', filePath: path.join(root, ...zhaiRelative.split('/')) }
+    }
     // 去掉查询串与锚点（?raw=1、#preview），再解码 %20 之类的转义
     const withoutQuery = trimmed.split(/[?#]/)[0] ?? ''
     const decoded = decodePath(withoutQuery)

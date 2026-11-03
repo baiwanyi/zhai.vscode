@@ -1,13 +1,13 @@
 /**
  * 工作流侧边导航：全局常驻的纵向图标列，入口分「常驻分区」与「当前内容的专属分区」两类。
- * 分组自上而下为「AI 对话 → 中段（专属分区 + 媒体与校对，可滚动）→ 快照与 AI 使用量」，
+ * 分组自上而下为「AI 对话 → 中段（专属分区 + 媒体、在线图库与校对，可滚动）→ 快照与 AI 使用量」，
  * 专属分区由内容归属决定：作品显示设定/角色/大纲/取名，公众号显示菜单/素材/统计/留言/用户/推送，
  * 其余文档只显示常驻分区，专属组与它的分隔线都不渲染。
  * 复用约定：受控组件，激活分区、内容归属与选中动作由外壳传入；文案与图标集中在 SECTION_META，
  * 分组只声明分区 id 顺序，专属分区清单见 contentScope 的 SCOPE_SECTIONS；
  * 配色取 globals.css 桥接的活动栏主题令牌，不写死色值。
  * 关键约束：分区项点击只切换高亮，本组件不承载保存动作，也不解析路由、不发起宿主命令；
- * 公众号六项加常驻项共 12 项（每项 48px），短面板下必然溢出，故中段自带纵向滚动且必须有 min-h-0，
+ * 公众号六项加常驻项共 13 项（每项 48px），短面板下必然溢出，故中段自带纵向滚动且必须有 min-h-0，
  * 否则 flex 子项不会收缩、滚动条不出现；Tooltip 经 Portal 渲染到 body，滚动容器裁不到它。
  */
 import {
@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { TooltipProvider } from '@components/ui/tooltip'
 import { SCOPE_SECTIONS } from './contentScope'
+import { UnsplashIcon } from './UnsplashIcon'
 import { WorkflowNavItem } from './WorkflowNavItem'
 import type { ContentScope } from './contentScope'
 import type { WorkflowSection } from './workflowSections'
@@ -37,7 +38,7 @@ import type { JSX, ReactNode } from 'react'
 
 /** 分组的渲染顺序：首项独占一组，中段承载专属分区与工具入口，尾项落栏底 */
 const LEADING_SECTIONS: readonly WorkflowSection[] = ['chat']
-const TOOL_SECTIONS: readonly WorkflowSection[] = ['media', 'proofread']
+const TOOL_SECTIONS: readonly WorkflowSection[] = ['media', 'stock', 'proofread']
 const FOOTER_SECTIONS: readonly WorkflowSection[] = ['snapshot', 'usage']
 
 interface SectionMeta {
@@ -60,6 +61,8 @@ const SECTION_META: Readonly<Record<WorkflowSection, SectionMeta>> = {
     fans: { label: '用户管理', icon: <UserRound className="size-6" /> },
     push: { label: '推送管理', icon: <Send className="size-6" /> },
     media: { label: '媒体', icon: <ImageIcon className="size-6" /> },
+    // 品牌图标取自 resources/icons/unsplash.svg，内联以跟随活动栏前景色
+    stock: { label: '在线图库', icon: <UnsplashIcon className="size-6" /> },
     proofread: { label: '校对', icon: <SpellCheck className="size-6" /> },
     snapshot: { label: '快照', icon: <Archive className="size-6" /> },
     usage: { label: 'AI使用量', icon: <Bot className="size-6" /> },

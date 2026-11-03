@@ -13,6 +13,7 @@ import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { buildStorageUri } from '@modules/common/storagePath'
 import type { MediaRefType } from '@shared/types/media'
+import { STOCK_DIR } from '@shared/types/stock'
 import { WECHAT_MODULE_DIR } from '@shared/types/wechat'
 import { isZhaiPath, readZhaiRelativePath } from '@shared/utils/zhaiPath'
 import { PRESS_SCANNED_FILES } from './constants'
@@ -72,6 +73,19 @@ function normalizeReference(raw: string): string {
     } catch {
         return trimmed
     }
+}
+
+/**
+ * 是否在线图库引用：unsplash/ 下的图按设计不进 media 表，因此「查不到」不等于失效。
+ * 关键约束：必须与 stale 分开统计，否则媒体详情会对引用过在线图库的文档误报「引用已失效」。
+ */
+function isStockLibraryReference(raw: string): boolean {
+    const normalized = normalizeReference(raw)
+    if (isZhaiPath(normalized)) {
+        const relative = readZhaiRelativePath(normalized)
+        return relative !== null && relative.startsWith(`${STOCK_DIR}/`)
+    }
+    return normalized.startsWith(`${STOCK_DIR}/`)
 }
 
 /** 把绝对路径归一为存储根相对路径：不在存储根内返回 null */
@@ -155,6 +169,10 @@ function parseImageReferences(text: string, documentPath: string, lookup: MediaL
     for (const matched of text.matchAll(IMAGE_REF_PATTERN)) {
         const raw = matched[1]
         if (raw === undefined) {
+            continue
+        }
+        // 在线图库的引用不在媒体索引里：跳过计数，既不落 usage 也不计 stale
+        if (isStockLibraryReference(raw)) {
             continue
         }
         const mediaId = resolveReference(documentDir, raw, lookup)
