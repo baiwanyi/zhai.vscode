@@ -316,8 +316,7 @@ export class StockService {
         const photo = await this.resolvePhoto(photoId)
         const downloaded = await this.downloadWithFallback(photo)
         // 库内有记录但文件已丢：沿用原路径重建，保证同一张图的路径稳定
-        const relPath =
-            local === null ? buildStockTarget(root, photoId, downloaded.extension).relPath : local.path
+        const relPath = local === null ? buildStockTarget(root, photoId, downloaded.extension).relPath : local.path
         const segments = relPath.split('/')
         const dirUri = buildStorageUri(root, segments.slice(0, -1))
         const targetUri = buildStorageUri(root, segments)

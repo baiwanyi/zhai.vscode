@@ -1,16 +1,23 @@
 // @vitest-environment jsdom
 /**
- * ImageGenGrid 交互用例：覆盖缩略图与出处角标、引用徽标、卡片主动作、悬停操作回调与键盘可达性。
+ * 统一图片列表交互用例：覆盖适配器产出的缩略图与角标、在途占位、卡片主动作、悬停操作与键盘可达性。
  * 复用约定：渲染查询走 @testing-library/react，点击与键盘用 user-event；
- * jsdom 环境由首行指令声明，其余用例仍运行在 node 环境。
- * 关键约束：卡片是 div + tabIndex 而不是 button，点击不会自动获得焦点，键盘用例须显式 focus；
- * 内部操作按钮必须 stopPropagation，否则一次点击会同时打开详情——这是本轮最易回归的点。
+ * 媒体条目经 toMediaItem 映射，列表以 flat 模式渲染，状态位与续载入参给最小可用值。
+ * 关键约束：卡片主动作是原生 button，操作按钮必须 stopPropagation，否则一次点击会同时触发主动作；
+ * 多选模式下右上徽标与悬停动作一并隐藏，避免与勾选圈重叠。
  */
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
+import { Copy, TextCursorInput, Trash2 } from 'lucide-react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { MediaItem } from '@shared/types/media'
-import { ImageGenGrid } from '@webview/workflow/media/layout/ImageGenGrid'
+import { ImageList } from '@webview/workflow/media/layout/imageList/ImageList'
+import { toMediaItem } from '@webview/workflow/media/layout/imageList/imageListAdapters'
+import type {
+    ImageListAction,
+    ImageListPaging,
+    ImageListStates,
+} from '@webview/workflow/media/layout/imageList/imageListModel'
 import type { RenderResult } from '@testing-library/react'
 
 afterEach(cleanup)
@@ -64,6 +71,8 @@ const PHOTO = createMedia({
 })
 
 const EMPTY_SELECTION: ReadonlySet<string> = new Set()
+const STATES: ImageListStates = { empty: { title: '还没有图片' } }
+const PAGING: ImageListPaging = { mode: 'none' }
 
 interface RenderOptions {
     images?: MediaItem[]
@@ -79,65 +88,76 @@ interface RenderOptions {
     }
 }
 
-function renderGrid(options: RenderOptions = {}): RenderResult {
+function renderList(options: RenderOptions = {}): RenderResult {
     const handlers = options.handlers ?? {}
+    const actions: ImageListAction<MediaItem>[] = [
+        { key: 'copy', label: '复制图片', icon: Copy, onTrigger: (item) => handlers.onCopy?.(item.source) },
+        {
+            key: 'insert',
+            label: '插入到文章',
+            icon: TextCursorInput,
+            onTrigger: (item) => handlers.onInsert?.(item.source),
+        },
+        { key: 'delete', label: '删除图片', icon: Trash2, onTrigger: (item) => handlers.onDelete?.(item.source) },
+    ]
     return render(
-        <ImageGenGrid
-            images={options.images ?? [PORTRAIT, PHOTO]}
+        <ImageList
+            mode="flat"
+            items={(options.images ?? [PORTRAIT, PHOTO]).map((image) => toMediaItem(image))}
+            aspect="3/4"
             pendingCount={options.pendingCount ?? 0}
             isSelecting={options.isSelecting ?? false}
             selectedIds={options.selectedIds ?? EMPTY_SELECTION}
-            onToggleSelect={handlers.onToggleSelect ?? vi.fn()}
-            onDelete={handlers.onDelete ?? vi.fn()}
-            onCopy={handlers.onCopy ?? vi.fn()}
-            onInsert={handlers.onInsert ?? vi.fn()}
-            onSelect={handlers.onSelect ?? vi.fn()}
+            states={STATES}
+            paging={PAGING}
+            actions={actions}
+            onActivate={(item) => handlers.onSelect?.(item.source)}
+            onToggleSelect={(item) => handlers.onToggleSelect?.(item.source)}
         />,
     )
 }
 
-describe('ImageGenGrid', () => {
+describe('ImageList', () => {
     it('缩略图按出处命名，角色图显示角色名，无归属的图显示无出处', () => {
-        renderGrid()
+        renderList()
 
         expect(screen.getByAltText(`角色 · ${CHARACTER_NAME}`)).toBeDefined()
         expect(screen.getByAltText('无出处')).toBeDefined()
     })
 
     it('类型标签只展示来历：角色图显示角色，导入图显示未归类', () => {
-        renderGrid()
+        renderList()
 
         expect(screen.getByText('角色')).toBeDefined()
         expect(screen.getByText('未归类')).toBeDefined()
     })
 
     it('关联数大于 0 时显示徽标，避免满屏「关联 0」', () => {
-        renderGrid({ images: [createMedia({ usageCount: 3 }), PHOTO] })
+        renderList({ images: [createMedia({ usageCount: 3 }), PHOTO] })
 
         expect(screen.getByText('关联 3')).toBeDefined()
         expect(screen.queryByText('关联 0')).toBeNull()
     })
 
     it('文件丢失的条目显示已丢失标签', () => {
-        renderGrid({ images: [createMedia({ missing: true })] })
+        renderList({ images: [createMedia({ missing: true })] })
 
         expect(screen.getByText('已丢失')).toBeDefined()
     })
 
     it('有在途出图时在网格首位渲染骨架占位，已有图片仍在其后', () => {
-        const { container } = renderGrid({ pendingCount: 1 })
+        const { container } = renderList({ pendingCount: 1 })
 
-        const grid = container.firstElementChild
+        const grid = container.querySelector('[data-slot="item-group"]')
         const pendingCard = grid?.firstElementChild
         expect(pendingCard?.querySelector('[data-slot="skeleton"]')).not.toBeNull()
-        // 占位正中的转圈：说明「在等」，而不是一块不会动的灰
         expect(pendingCard?.querySelector('[data-slot="spinner"]')).not.toBeNull()
         expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(1)
         expect(screen.getByAltText(`角色 · ${CHARACTER_NAME}`)).toBeDefined()
     })
 
     it('没有在途出图时不渲染骨架占位', () => {
-        const { container } = renderGrid()
+        const { container } = renderList()
 
         expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(0)
     })
@@ -145,7 +165,7 @@ describe('ImageGenGrid', () => {
     it('点击卡片回传对应条目以打开详情', async () => {
         const user = userEvent.setup()
         const onSelect = vi.fn()
-        renderGrid({ handlers: { onSelect } })
+        renderList({ handlers: { onSelect } })
 
         await user.click(screen.getByLabelText('查看详情：无出处'))
 
@@ -158,7 +178,7 @@ describe('ImageGenGrid', () => {
         const onCopy = vi.fn()
         const onInsert = vi.fn()
         const onDelete = vi.fn()
-        renderGrid({ images: [PHOTO], handlers: { onCopy, onInsert, onDelete } })
+        renderList({ images: [PHOTO], handlers: { onCopy, onInsert, onDelete } })
 
         await user.click(screen.getByRole('button', { name: '复制图片' }))
         await user.click(screen.getByRole('button', { name: '插入到文章' }))
@@ -173,7 +193,7 @@ describe('ImageGenGrid', () => {
         const user = userEvent.setup()
         const onSelect = vi.fn()
         const onCopy = vi.fn()
-        renderGrid({ images: [PHOTO], handlers: { onSelect, onCopy } })
+        renderList({ images: [PHOTO], handlers: { onSelect, onCopy } })
 
         await user.click(screen.getByRole('button', { name: '复制图片' }))
 
@@ -185,7 +205,7 @@ describe('ImageGenGrid', () => {
         const user = userEvent.setup()
         const onToggleSelect = vi.fn()
         const onSelect = vi.fn()
-        renderGrid({ handlers: { onToggleSelect, onSelect }, isSelecting: true })
+        renderList({ handlers: { onToggleSelect, onSelect }, isSelecting: true })
 
         await user.click(screen.getByLabelText(`选择：角色 · ${CHARACTER_NAME}`))
 
@@ -197,7 +217,7 @@ describe('ImageGenGrid', () => {
     it('已选中的卡片带选中描边，回车同样触发卡片动作', async () => {
         const user = userEvent.setup()
         const onToggleSelect = vi.fn()
-        renderGrid({
+        renderList({
             images: [PORTRAIT],
             handlers: { onToggleSelect },
             isSelecting: true,
@@ -205,7 +225,7 @@ describe('ImageGenGrid', () => {
         })
 
         const card = screen.getByLabelText(`选择：角色 · ${CHARACTER_NAME}`)
-        expect(card.className.includes('ring-2')).toBe(true)
+        expect(card.closest('[data-slot="item"]')?.className.includes('ring-2')).toBe(true)
         card.focus()
         await user.keyboard('{Enter}')
         expect(onToggleSelect).toHaveBeenCalledTimes(1)

@@ -51,27 +51,24 @@ export function useStockDownloaded(): UseStockDownloadedResult {
         setMonthState(value)
     }, [])
 
-    const remove = useCallback(
-        async (id: string): Promise<boolean> => {
-            try {
-                const result = await request<StockRemoveResult>('stock/remove', { id })
-                if (!result.removed) {
-                    toastError(new Error('删除失败，文件可能被占用或已不存在'))
-                    return false
-                }
-                setLibrary((previous) => ({
-                    ...previous,
-                    items: previous.items.filter((item) => item.id !== id),
-                    total: Math.max(0, previous.total - 1),
-                }))
-                return true
-            } catch (cause) {
-                toastError(cause)
+    const remove = useCallback(async (id: string): Promise<boolean> => {
+        try {
+            const result = await request<StockRemoveResult>('stock/remove', { id })
+            if (!result.removed) {
+                toastError(new Error('删除失败，文件可能被占用或已不存在'))
                 return false
             }
-        },
-        [],
-    )
+            setLibrary((previous) => ({
+                ...previous,
+                items: previous.items.filter((item) => item.id !== id),
+                total: Math.max(0, previous.total - 1),
+            }))
+            return true
+        } catch (cause) {
+            toastError(cause)
+            return false
+        }
+    }, [])
 
     /**
      * 插入成功后的局部插卡：宿主只回路径与地址，其余字段按「刚下载」的语义补齐。
@@ -110,5 +107,15 @@ export function useStockDownloaded(): UseStockDownloadedResult {
         })
     }, [])
 
-    return { items: library.items, months: library.months, total: library.total, isLoading, month, setMonth, reload, remove, prepend }
+    return {
+        items: library.items,
+        months: library.months,
+        total: library.total,
+        isLoading,
+        month,
+        setMonth,
+        reload,
+        remove,
+        prepend,
+    }
 }

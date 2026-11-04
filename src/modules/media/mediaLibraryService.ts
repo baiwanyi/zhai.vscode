@@ -458,7 +458,8 @@ export class MediaLibraryService {
      */
     public async rescan(payload?: unknown): Promise<MediaRescanResult> {
         await this.ensureUpgraded()
-        const isForced = typeof payload === 'object' && payload !== null && (payload as { force?: unknown }).force === true
+        const isForced =
+            typeof payload === 'object' && payload !== null && (payload as { force?: unknown }).force === true
         if (!isForced && !this.isRescanDue()) {
             return { skipped: true, indexed: 0, missing: 0, corrected: 0, stale: 0 }
         }
@@ -481,8 +482,7 @@ export class MediaLibraryService {
     private isRescanDue(): boolean {
         const { db } = this.deps.openDatabase()
         const row = db.prepare('SELECT value FROM media_meta WHERE key = ?').get(RESCAN_META_KEY) as
-            | { value: string }
-            | undefined
+            { value: string } | undefined
         if (row === undefined) {
             return true
         }

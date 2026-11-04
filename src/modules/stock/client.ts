@@ -30,13 +30,7 @@ const TOPICS_PATH = '/topics'
 
 /** 错误码：服务层据此决定提示形态（是否打开密钥弹窗、是否展示重试） */
 export type StockErrorCode =
-    | 'not-configured'
-    | 'invalid-key'
-    | 'forbidden'
-    | 'rate-limited'
-    | 'network'
-    | 'server'
-    | 'bad-response'
+    'not-configured' | 'invalid-key' | 'forbidden' | 'rate-limited' | 'network' | 'server' | 'bad-response'
 
 /** 在线图库错误：带错误码与「是否值得重试」，路由层直接透传 message */
 export class StockApiError extends Error {
@@ -148,7 +142,8 @@ function parsePhoto(raw: unknown): CachedStockPhoto | null {
     const alt = readString(source, 'alt_description') || readString(source, 'description')
     const photographer = readNestedString(source, 'user', 'name')
     const photographerLink = readNestedString(source, 'user', 'links')
-    const links = typeof source.links === 'object' && source.links !== null ? (source.links as Record<string, unknown>) : {}
+    const links =
+        typeof source.links === 'object' && source.links !== null ? (source.links as Record<string, unknown>) : {}
     return {
         id,
         width: readNumber(source, 'width') ?? 0,
@@ -277,7 +272,9 @@ export class StockClient {
             const total = typeof source.total === 'number' ? source.total : results.length
             const totalPages = typeof source.total_pages === 'number' ? source.total_pages : input.page
             return {
-                photos: results.map((item) => parsePhoto(item)).filter((item): item is CachedStockPhoto => item !== null),
+                photos: results
+                    .map((item) => parsePhoto(item))
+                    .filter((item): item is CachedStockPhoto => item !== null),
                 total,
                 totalPages,
             }

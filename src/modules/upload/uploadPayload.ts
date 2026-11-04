@@ -28,9 +28,7 @@ export interface UploadCandidate {
 }
 
 /** 单条入参的解析结果：失败时带上文件名与原因，由调用方汇总回报 */
-export type UploadParseResult =
-    | { ok: true; candidate: UploadCandidate }
-    | { ok: false; name: string; reason: string }
+export type UploadParseResult = { ok: true; candidate: UploadCandidate } | { ok: false; name: string; reason: string }
 
 /** 读取文件名：缺失或超长时截断，仅作展示用途 */
 function readName(value: unknown): string {

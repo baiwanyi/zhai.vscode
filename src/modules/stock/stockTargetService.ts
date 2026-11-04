@@ -26,8 +26,7 @@ export interface StockInsertTarget {
 
 /** 目标解析结果：失败原因是插入回执里要透传的四态 */
 export type StockTargetOutcome =
-    | { ok: true; target: StockInsertTarget }
-    | { ok: false; reason: 'no-editor' | 'unsaved' | 'not-markdown' }
+    { ok: true; target: StockInsertTarget } | { ok: false; reason: 'no-editor' | 'unsaved' | 'not-markdown' }
 
 /** 存储根外的文档：前缀判断一律按正斜杠相对路径 */
 function toStorageRelative(fsPath: string): string | null {

@@ -15,11 +15,7 @@ export class StockRoutes {
      * 处理在线图库协议方法。
      * @param toWebviewUri 把磁盘 Uri 转成 webview 可访问 URL 的转换器
      */
-    public async handle(
-        method: string,
-        payload: unknown,
-        toWebviewUri: (uri: vscode.Uri) => string,
-    ): Promise<unknown> {
+    public async handle(method: string, payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<unknown> {
         switch (method) {
             case 'stock/status':
                 return this.service.status()

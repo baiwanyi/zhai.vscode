@@ -169,13 +169,7 @@ export interface StockDownloadedResult {
 }
 
 /** 插入失败原因：四态沿用媒体库口径，其余为本模块新增 */
-export type StockInsertReason =
-    | 'no-editor'
-    | 'unsaved'
-    | 'not-markdown'
-    | 'download'
-    | 'write'
-    | 'not-configured'
+export type StockInsertReason = 'no-editor' | 'unsaved' | 'not-markdown' | 'download' | 'write' | 'not-configured'
 
 /** 插入结果 */
 export interface StockInsertResult {

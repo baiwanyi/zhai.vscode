@@ -232,7 +232,9 @@ export class StockLibraryService {
         }
         const result: ScannedStockFile[] = []
         const monthDirs = monthEntries
-            .filter(([name, type]) => type === vscode.FileType.Directory && !name.startsWith('.') && /^\d{6}$/u.test(name))
+            .filter(
+                ([name, type]) => type === vscode.FileType.Directory && !name.startsWith('.') && /^\d{6}$/u.test(name),
+            )
             .map(([name]) => name)
             .sort((left, right) => right.localeCompare(left))
         for (const monthDir of monthDirs) {

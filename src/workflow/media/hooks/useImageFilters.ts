@@ -1,41 +1,23 @@
 /**
- * 媒体页筛选与分批：把「年月 / 来源 / 关联状态」三个维度、按月分组与分批上限收在一处。
- * 复用约定：数据全部来自 media/list 的全量返回，筛选与分组都在内存完成，切换任一维度不重新请求；
- * 年月文案统一走 formatMediaMonth，下拉选项与分组头共用同一份格式化，避免两处口径不同。
+ * 媒体页筛选：把「年月 / 来源 / 关联状态」三个维度与按月分组收在一处，分批交给统一分页 hook。
+ * 复用约定：数据全部来自 media/list 的全量返回，筛选在内存完成；年月格式化与分组取 ./mediaMonth，
+ * 分批取 ./useImageListPaging，年月选项与分组头共用同一份格式化口径。
  * 关键约束：默认「全部月份 + 全部来源 + 全部关联」+ 按月倒序分组，进页面即见全库；
  * 关联判定只看 usageCount（media_usage 有行即已关联），不额外请求引用明细；
- * 分批以筛选签名为界，三维任一变化即回到首批，切回同一组合时保留上次的累计上限；
- * 分组内的顺序完全采用宿主返回的顺序（时间倒序），前端不再二次排序。
+ * 筛选签名变化即让分批回到首批，切回同一组合时保留上次的累计上限，组内沿用宿主返回的时间倒序。
  */
 import { useMemo, useState } from 'react'
-import type { MediaItem, MediaMonthCount, MediaOrigin } from '@shared/types/media'
+import type { MediaItem, MediaOrigin } from '@shared/types/media'
+import { formatMediaMonth, groupByMonth, type MediaMonthGroup } from './mediaMonth'
+import { useImageListPaging } from './useImageListPaging'
 
 /** 来源筛选：全部 / 上传 / 生图，与 MediaOrigin 两值一一对应 */
 export type MediaOriginFilter = 'all' | MediaOrigin
 /** 关联筛选：全部 / 已关联（usageCount > 0）/ 未关联 */
 export type MediaLinkFilter = 'all' | 'linked' | 'unlinked'
 
-/** 每组网格首屏与每次追加的张数：一次只进一屏出头的卡片，避免上百张图同时进 DOM */
-const GRID_PAGE_SIZE = 60
-
-/** 按月分组：组头与卡片列表共用一份结构 */
-export interface MediaGroup {
-    /** YYYY-MM */
-    month: string
-    /** 中文显示：2026年10月 */
-    label: string
-    items: MediaItem[]
-    total: number
-}
-
-/** 年月格式化：下拉与分组头共用，月份不补零 */
-export function formatMediaMonth(month: string): string {
-    const [year, value] = month.split('-')
-    if (year === undefined || value === undefined) {
-        return month
-    }
-    return `${year}年${Number(value)}月`
-}
+/** 媒体分组：统一年月分组在媒体条目上的具化，供页面与适配器共用 */
+export type MediaGroup = MediaMonthGroup<MediaItem>
 
 interface UseMediaFiltersParams {
     /** 全部媒体：筛选、分组与计数的唯一数据源 */
@@ -96,7 +78,7 @@ export function useImageFilters({ items }: UseMediaFiltersParams): UseMediaFilte
     )
 
     /**
-     * 分组：单选某月时只有一组；全部月份时按宿主返回的年月顺序分桶。
+     * 分组：单选某月时只有一组；全部月份时按年月倒序分桶。
      * 空月不建组——下拉里仍会显示该月计数，进组却没有内容会让人误以为列表没加载出来。
      */
     const groups = useMemo<MediaGroup[]>(() => {
@@ -105,37 +87,12 @@ export function useImageFilters({ items }: UseMediaFiltersParams): UseMediaFilte
                 ? []
                 : [{ month, label: formatMediaMonth(month), items: filtered, total: filtered.length }]
         }
-        const buckets = new Map<string, MediaItem[]>()
-        for (const item of filtered) {
-            const list = buckets.get(item.month) ?? []
-            list.push(item)
-            buckets.set(item.month, list)
-        }
-        return [...buckets.entries()]
-            .sort((left, right) => right[0].localeCompare(left[0]))
-            .map(([key, list]) => ({
-                month: key,
-                label: formatMediaMonth(key),
-                items: list,
-                total: list.length,
-            }))
+        return groupByMonth(filtered)
     }, [filtered, month])
 
-    /** 分批：用筛选签名比对而不是在各处 onChange 里重置，筛选一变即自然回到首批 */
-    const [paging, setPaging] = useState({ signature: '', count: GRID_PAGE_SIZE })
+    /** 分批：筛选签名变化即由统一分页 hook 回到首批，本模块不再自持上限 */
     const filterSignature = `${month ?? 'all'}|${origin}|${link}`
-    const renderLimit = paging.signature === filterSignature ? paging.count : GRID_PAGE_SIZE
-
-    const visibleGroups = useMemo(
-        () => groups.map((group) => ({ ...group, items: group.items.slice(0, renderLimit) })),
-        [groups, renderLimit],
-    )
-
-    const hasMore = groups.some((group) => group.total > renderLimit)
-
-    const loadMore = (): void => {
-        setPaging({ signature: filterSignature, count: renderLimit + GRID_PAGE_SIZE })
-    }
+    const { visibleGroups, hasMore, loadMore } = useImageListPaging({ groups, signature: filterSignature })
 
     const clearFilters = (): void => {
         setMonth(null)
@@ -159,24 +116,4 @@ export function useImageFilters({ items }: UseMediaFiltersParams): UseMediaFilte
         filterSignature,
         loadMore,
     }
-}
-
-/** 年月选项：把宿主聚合与当前格式化拼成下拉数据，组件层不再自己拼文案 */
-export interface MediaMonthOption {
-    /** 'all' 表示全部月份 */
-    value: string
-    label: string
-    count: number
-}
-
-/** 由宿主聚合生成下拉选项：全部月份排首位，其余按年月倒序 */
-export function toMonthOptions(months: MediaMonthCount[], total: number): MediaMonthOption[] {
-    return [
-        { value: 'all', label: '全部月份', count: total },
-        ...months.map((item) => ({
-            value: item.month,
-            label: formatMediaMonth(item.month),
-            count: item.count,
-        })),
-    ]
 }

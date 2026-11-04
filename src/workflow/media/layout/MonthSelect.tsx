@@ -6,7 +6,7 @@
  * 回调前统一折算成 null，调用方拿到的始终是 null 或 'YYYY-MM'。
  */
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
-import type { MediaMonthOption } from '../hooks/useImageFilters'
+import type { MediaMonthOption } from '../hooks/mediaMonth'
 import type { JSX } from 'react'
 
 /** 全部月份的占位值：Radix Select 不接受空字符串作为选项值 */

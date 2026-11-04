@@ -24,9 +24,7 @@ export function StockQuotaBadges({ total, remaining }: StockQuotaBadgesProps): J
                 {`已下载 ${String(total)} 张`}
             </StatBadge>
             {remaining === null ? null : (
-                <StatBadge
-                    tooltip={`本小时剩余约 ${String(remaining)} 次接口调用（取本地窗口与服务端剩余中较小者）`}
-                >
+                <StatBadge tooltip={`本小时剩余约 ${String(remaining)} 次接口调用（取本地窗口与服务端剩余中较小者）`}>
                     <Gauge aria-hidden className="size-3.5 font-light" />
                     {`剩余 ${String(remaining)} 次`}
                 </StatBadge>

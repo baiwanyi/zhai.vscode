@@ -382,7 +382,7 @@ notes/{YYYYMM}/*.md                                  → note
 
 ### 5.7 呈现规则
 
-**网格卡片**（`src/workflow/media/layout/MediaGrid.tsx`）：
+**网格卡片**（统一图片列表 `src/workflow/media/layout/imageList/`，条目经 `imageListAdapters.ts` 映射）：
 
 | 位置 | 内容 |
 | --- | --- |
@@ -428,11 +428,12 @@ notes/{YYYYMM}/*.md                                  → note
 
 ### 6.2 网格
 
-- 按月分组，组头 sticky：`2026年10月 · 37 张`；组按 `YYYY-MM` 倒序。
-- 每组首屏 60 张，滚动到底追加（沿用 `GRID_PAGE_SIZE`）。
-- 卡片保持 3:4 裁切（`@components/Image` 的 `aspect`），沿用现有视觉。
-- 多选、批量删除、悬停复制/插入/删除沿用现有交互。
-- 空态两种：仓库为空（「还没有图片，用下方输入区生成第一张」）与当月为空（「2026年10月没有图片」+ 清空筛选）。
+- 统一图片列表 `layout/imageList/ImageList.tsx` 承担加载/空/错误态优先级、分组或平铺、在途占位与续载；媒体、在线图库与上传页共用同一组件，条目经各自适配器映射。
+- 按月分组，组头 sticky：`2026年10月 · 37 张`；组按 `YYYY-MM` 倒序，分组与年月文案统一走 `hooks/mediaMonth.ts`。
+- 每组首屏 60 张（`hooks/useImageListPaging.ts` 的 `PAGE_SIZE`），媒体页用「加载更多」按钮追加，图库与已下载页用滚动哨兵追加；组头计数取组内总数。
+- 卡片取 `ImageCard` + `@webview/components/Image`：媒体页 3:4、图库与上传页 4:3，比例由参数配置；缺失图与非图片文件走图标占位。
+- 多选、批量删除、悬停复制/插入/删除沿用现有交互；卡片主动作为原生 button，键盘可达。
+- 空态两种：仓库为空（「还没有图片，用下方输入区生成第一张」）与筛选无结果（「这个月没有图片」+ 清空筛选）。
 
 ### 6.3 协议
 

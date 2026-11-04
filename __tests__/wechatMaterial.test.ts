@@ -51,7 +51,11 @@ describe('locateWechatImage', () => {
     })
 
     it('@zhai/ 存储根引用按存储根解析，不受源文档目录影响', () => {
-        const located = locateWechatImage('@zhai/unsplash/202611/Kq2WnB6x9eA.jpg', 'wechat/wx1/post/202611021530/a.md', ROOT)
+        const located = locateWechatImage(
+            '@zhai/unsplash/202611/Kq2WnB6x9eA.jpg',
+            'wechat/wx1/post/202611021530/a.md',
+            ROOT,
+        )
         expect(located).toEqual({ kind: 'local', filePath: path.join(ROOT, 'unsplash/202611/Kq2WnB6x9eA.jpg') })
         expect(locateWechatImage('@zhai/images/202610/b.png', null, ROOT)).toEqual({
             kind: 'local',

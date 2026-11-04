@@ -2,20 +2,18 @@
  * 媒体页筛选区：年月 / 来源 / 关联状态三个下拉加清空入口，占标题行下方的整行。
  * 适用范围：只做这三个维度——图片类别（角色 / 设定 / 普通）不进筛选条，
  * 避免同一张图因归类不同而找不到；关联状态以「是否被正文或封面引用」为准。
- * 复用约定：外壳取 components/AppPage 的 AppMenu，下拉取 @components/ui/select（月份选项带该月张数），
- * 按钮取 @webview/components/Button（图标按钮的可访问名由 aria-label 承担）。
+ * 复用约定：外壳取 components/AppPage 的 AppMenu，年月下拉直接复用同目录 MonthSelect，
+ * 来源与关联取 @components/ui/select，按钮取 @webview/components/Button。
  * 关键约束：受控组件，三个维度与清空动作都由页面持有，组件不保存筛选状态；
- * 选项由页面算好后传入，组件不重复推导文案与计数；「全部月份」用 'all' 占位，回调前折算成 null；
- * 来源与关联的取值在回调里显式收窄，不做类型断言。
+ * 选项由页面算好后传入，组件不重复推导文案与计数；来源与关联的取值在回调里显式收窄，不做类型断言。
  */
 import { X } from 'lucide-react'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Button } from '@webview/components/Button'
-import type { MediaLinkFilter, MediaMonthOption, MediaOriginFilter } from '../hooks/useImageFilters'
+import { MonthSelect } from './MonthSelect'
+import type { MediaMonthOption } from '../hooks/mediaMonth'
+import type { MediaLinkFilter, MediaOriginFilter } from '../hooks/useImageFilters'
 import type { JSX } from 'react'
-
-/** 全部月份的占位值：Radix Select 不接受空字符串作为选项值 */
-const ALL_MONTHS = 'all'
 
 /** 触发器宽度固定，切换选项时整行筛选不会因文案长短而抖动 */
 const TRIGGER_CLASS = 'w-32 shrink-0'
@@ -62,11 +60,6 @@ export function ImageGenFilters({
     hasActiveFilter,
     onClearFilters,
 }: ImageGenFiltersProps): JSX.Element {
-    /** 下拉回调只给字符串：'all' 折算回 null，其余原样上报 */
-    const handleMonthChange = (value: string): void => {
-        onMonthChange(value === ALL_MONTHS ? null : value)
-    }
-
     /** 来源收窄：认不出的值一律回到「全部」，不把脏值写进筛选状态 */
     const handleOriginChange = (value: string): void => {
         if (value === 'upload' || value === 'generate') {
@@ -87,22 +80,13 @@ export function ImageGenFilters({
 
     return (
         <div className="flex flex-wrap items-center gap-2">
-            <Select value={month ?? ALL_MONTHS} onValueChange={handleMonthChange}>
-                <SelectTrigger className={TRIGGER_CLASS} aria-label="按年月筛选">
-                    <SelectValue placeholder="全部月份" />
-                </SelectTrigger>
-                {/* 月份数量随使用时长增长：限高 16rem 并在列表内滚动。必须配 popper——默认 item-aligned 的定位写在父级 wrapper 的内联样式上，子元素覆盖不到，限高会把内容压到页面底部 */}
-                <SelectContent position="popper" sideOffset={4} className="max-h-64">
-                    <SelectGroup>
-                        {options.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                                <span className="text-muted-foreground ml-1 text-xs tabular-nums">{option.count}</span>
-                            </SelectItem>
-                        ))}
-                    </SelectGroup>
-                </SelectContent>
-            </Select>
+            <MonthSelect
+                month={month}
+                options={options}
+                onChange={onMonthChange}
+                triggerClassName={TRIGGER_CLASS}
+                ariaLabel="按年月筛选"
+            />
             <Select value={origin} onValueChange={handleOriginChange}>
                 <SelectTrigger className={TRIGGER_CLASS} aria-label="按来源筛选">
                     <SelectValue placeholder="全部来源" />

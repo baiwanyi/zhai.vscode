@@ -6,11 +6,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import type {
-    StockKeyClearResult,
-    StockKeySaveResult,
-    StockStatusResult,
-} from '@shared/types/stock'
+import type { StockKeyClearResult, StockKeySaveResult, StockStatusResult } from '@shared/types/stock'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 

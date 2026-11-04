@@ -150,11 +150,7 @@ export function useUploader(): UseUploaderResult {
                     toast.error('文件读取失败，请重试')
                     return
                 }
-                const result = await request<UploadResult>(
-                    'upload/bytes',
-                    { items: uploadItems },
-                    UPLOAD_TIMEOUT_MS,
-                )
+                const result = await request<UploadResult>('upload/bytes', { items: uploadItems }, UPLOAD_TIMEOUT_MS)
                 await applyResult(result)
             } catch (cause) {
                 toastError(cause)

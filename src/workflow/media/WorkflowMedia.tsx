@@ -1,21 +1,15 @@
 /**
  * 媒体页：作品与通用文档共用的唯一媒体入口，标题与筛选 + 按月分组网格 + 底部出图输入区。
  * 入口由工作流分区路由直接引用，文件名即组件名 WorkflowMedia，目录不提供 index 出口。
- * 复用约定：外壳取 @webview/components/AppPage（多选操作并进标题行 AppAction，作品标题与张数走 AppSummary，
- * 筛选区整行走 AppMenu，网格走 AppContent 滚动，composer 落 AppFooter）；
- * 列表经 useImageLibrary、参数经 useImageSettings、筛选与分组经 useImageFilters、图片动作用 useImageActions、
- * 关联刷新经 useMediaRescan；
- * 角色索引、多选状态、删除编排与封面指针同步分别由 useCharacterIndex / useImageSelection / useImageDeletion /
- * useCharacterCoverSync 承担；加载态与分组网格由 ImageGenGallery 渲染，单图详情交由 ImageDetailDialog、
- * 多选操作交由 ImageSelectionActions、年月筛选交由 ImageGenFilters。
+ * 复用约定：外壳取 @webview/components/AppPage，多选操作并进标题行、筛选区整行走 AppMenu；
+ * 列表走统一图片列表 ImageList，条目经 imageListAdapters 映射、年月分组取 hooks/mediaMonth，
+ * 分批与筛选经 useImageFilters，图片动作用 useImageActions，关联刷新经 useMediaRescan。
  * 关键约束：context 为 null（笔记、公众号、普通文件）时仍可出图，但只出通用素材——不渲染作品摘要、
- * 不提供「设为作品封面」，出图由宿主按 scope=general 记录，角色图与条目图需要作品归属故不可选；
- * 本页不再承接上传：上传已独立为「上传」分区，落存储根的 uploads 目录，与媒体库索引无关；
- * 筛选为「年月 / 来源 / 关联」三维（不做图片类别筛选，也不按角色收敛），全部在内存中完成，切换不重新请求；
- * 默认「全部月份」按月倒序分组，进页面即见全库；删除落盘侧进回收站，本页只刷新列表；
+ * 不提供「设为作品封面」，角色图与条目图需要作品归属故不可选；本页不再承接上传；
+ * 筛选为「年月 / 来源 / 关联」三维，全部在内存完成，切换不重新请求；删除落盘侧进回收站，本页只刷新列表；
  * 出图成功只在该角色尚无封面时认领，取消后迟到的落盘只静默刷新列表。
  */
-import { RefreshCw } from 'lucide-react'
+import { Copy, ImageIcon, RefreshCw, TextCursorInput, Trash2 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import type { ImageGenerateResult } from '@shared/types/imagegen'
 import type { MediaItem } from '@shared/types/media'
@@ -23,11 +17,12 @@ import { AppContent, AppFooter, AppHeader, AppMenu, AppPage, AppTitle } from '@w
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
+import { toMonthOptions } from './hooks/mediaMonth'
 import { useCharacterCoverSync } from './hooks/useCharacterCoverSync'
 import { useCharacterIndex, type ImageGenCharacter } from './hooks/useCharacterIndex'
 import { useImageActions } from './hooks/useImageActions'
 import { useImageDeletion } from './hooks/useImageDeletion'
-import { toMonthOptions, useImageFilters } from './hooks/useImageFilters'
+import { useImageFilters } from './hooks/useImageFilters'
 import { useImageLibrary } from './hooks/useImageLibrary'
 import { useImageSelection } from './hooks/useImageSelection'
 import { useImageSettings, type ImageSettingsPatch } from './hooks/useImageSettings'
@@ -35,8 +30,10 @@ import { useMediaRescan } from './hooks/useMediaRescan'
 import { ImageComposer, type PromptSettingSnapshot } from './layout/ImageComposer'
 import { ImageDetailDialog } from './layout/ImageDetailDialog'
 import { ImageGenFilters } from './layout/ImageGenFilters'
-import { ImageGenGallery } from './layout/ImageGenGallery'
+import { ImageList } from './layout/imageList/ImageList'
+import { toImageListGroups, toMediaItem } from './layout/imageList/imageListAdapters'
 import { ImageSelectionActions } from './layout/ImageSelectionActions'
+import type { ImageListAction, ImageListStates } from './layout/imageList/imageListModel'
 import type { JSX } from 'react'
 
 /** 作品上下文：有值时出图归属该作品并可设为作品封面；为 null 时是通用媒体库 */
@@ -65,6 +62,23 @@ const EMPTY_CHARACTERS: ReadonlyArray<ImageGenCharacter> = []
 /** 通用形态没有人物卡可写回，封面同步整体空转 */
 const ignoreCharacterPatch = (): void => undefined
 
+/** 画廊状态位：整块加载态优先于两种空态，避免先闪一下「还没有图片」 */
+const GALLERY_STATES: ImageListStates = {
+    loadingMode: 'placeholder',
+    loadingLabel: '正在读取图片',
+    emptyClassName: 'flex-1 justify-center',
+    empty: {
+        title: '还没有图片',
+        description: '在下方输入提示词生成第一张，或打开「作品封面」模式生成作品门面',
+        icon: ImageIcon,
+    },
+    noResult: {
+        title: '这个月没有图片',
+        description: '切换到其他月份，或清空筛选查看全部',
+        icon: ImageIcon,
+    },
+}
+
 export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
     const activeDirPath = context?.dirPath ?? null
     const characters = context?.characters ?? EMPTY_CHARACTERS
@@ -85,7 +99,6 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
         setLink,
         filtered,
         visibleGroups,
-        hasMore,
         hasActiveFilter,
         clearFilters,
         filterSignature,
@@ -123,6 +136,9 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
 
     /** 已渲染的图片：全选与网格都只覆盖这一批，未加载的图不进批量操作 */
     const visibleItems = useMemo(() => visibleGroups.flatMap((group) => group.items), [visibleGroups])
+
+    /** 统一列表的分组数据：领域条目与出处标签由适配器折算，组件层不认识媒体字段 */
+    const galleryGroups = useMemo(() => toImageListGroups(visibleGroups, toMediaItem), [visibleGroups])
 
     /** 多选与删除编排：多选只在当前筛选内生效，删除后由封面同步 hook 修正角色指针 */
     const { isSelecting, selectedIds, isAllVisibleSelected, toggleSelecting, exitSelecting, toggleImage, selectAll } =
@@ -198,6 +214,28 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
         }
     }
 
+    /** 卡片悬停动作：只上报领域条目，落盘与提示仍在 useImageActions / useImageDeletion 内 */
+    const mediaActions: ImageListAction<MediaItem>[] = [
+        {
+            key: 'copy',
+            label: '复制图片',
+            icon: Copy,
+            onTrigger: (item) => copyImage(item.source),
+        },
+        {
+            key: 'insert',
+            label: '插入到文章',
+            icon: TextCursorInput,
+            onTrigger: (item) => insertImage(item.source),
+        },
+        {
+            key: 'delete',
+            label: '删除图片',
+            icon: Trash2,
+            onTrigger: (item) => deleteImage(item.source),
+        },
+    ]
+
     return (
         <>
             <AppPage>
@@ -219,12 +257,7 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
                             onClearFilters={clearFilters}
                         />
                         <div className="flex items-center gap-1">
-                            <Button
-                                size="icon"
-                                tooltip="重新扫描关联"
-                                aria-label="重新扫描关联"
-                                onClick={rescan}
-                            >
+                            <Button size="icon" tooltip="重新扫描关联" aria-label="重新扫描关联" onClick={rescan}>
                                 <RefreshCw className="size-4" />
                             </Button>
                             <ImageSelectionActions
@@ -241,21 +274,26 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
                     </AppMenu>
                 </AppHeader>
                 <AppContent isScrollable>
-                    <ImageGenGallery
+                    <ImageList
+                        mode="grouped"
+                        groups={galleryGroups}
+                        columns="responsive"
+                        aspect="3/4"
                         isLoading={isLoading}
-                        isPending={isGenerating || isRefreshingResult}
-                        isLibraryEmpty={isLibraryEmpty}
-                        filteredTotal={filtered.length}
-                        groups={visibleGroups}
-                        hasMore={hasMore}
+                        pendingCount={isGenerating || isRefreshingResult ? 1 : 0}
+                        emptyPhase={isLibraryEmpty ? 'empty' : 'no-result'}
+                        states={GALLERY_STATES}
+                        paging={{
+                            mode: 'button',
+                            rendered: visibleItems.length,
+                            total: filtered.length,
+                            onLoadMore: loadMore,
+                        }}
                         isSelecting={isSelecting}
                         selectedIds={selectedIds}
-                        onToggleSelect={toggleImage}
-                        onDelete={deleteImage}
-                        onCopy={copyImage}
-                        onInsert={insertImage}
-                        onSelect={setSelected}
-                        onLoadMore={loadMore}
+                        onActivate={(item) => setSelected(item.source)}
+                        onToggleSelect={(item) => toggleImage(item.source)}
+                        actions={mediaActions}
                     />
                 </AppContent>
                 {/* 出图输入区常驻底部：竖排撑满宽度，参数读完与否的占位差异由 composer 内部承担 */}

@@ -569,15 +569,15 @@ if (zhaiRelative !== null) {
 | `src/workflow/layout/contentScope.ts` | `RESIDENT_SECTIONS` 增 `stock` |
 | `src/workflow/layout/WorkflowNav.tsx` | `TOOL_SECTIONS` 与 `SECTION_META` 增 `stock` |
 | `src/workflow/media/layout/StockFilterBar.tsx`（新） | 页头筛选行：关键词输入（input-group）+ 方向下拉 + 排序下拉，收进 AppMenu |
-| `src/workflow/media/layout/StockResultPanel.tsx`（新） | 搜索结果区：网格 + 空态与滚动自动加载（哨兵 IntersectionObserver） |
+| `src/workflow/media/layout/imageList/ImageList.tsx`（新） | 搜索结果区：平铺网格 + 空态/错误态与滚动自动加载（哨兵 IntersectionObserver） |
 | `src/workflow/media/layout/ScrollRail.tsx`（新） | 单行横向滑动壳：两端箭头（24px 常驻占位）+ 渐隐遮罩 + 选中项回滚，内容由 children 注入 |
 | `src/workflow/media/layout/MonthSelect.tsx`（新） | 月份下拉：'all' ↔ null 折算、限高滚动，图库页与媒体页可共用 |
 | `src/workflow/media/layout/StockQuotaBadges.tsx`（新） | 页头统计胶囊：已下载张数与剩余配额（悬停精确口径） |
 | `src/workflow/media/layout/stockTopics.ts`（新） | 话题清单与「推荐位 ↔ 协议 null」两向折算 |
 | `src/workflow/media/hooks/useStockDelete.ts`（新） | 删除确认状态机：pending / isDeleting / request / cancel / confirm（ref 闸门防重入） |
-| `src/workflow/media/layout/StockLocalGallery.tsx`（新） | 已下载：年月分组、每组 60、加载更多、hover 删除 |
+| `src/workflow/media/layout/imageList/imageListAdapters.ts`（新） | 搜索结果与已下载条目映射成统一条目：署名、已下载/已丢失角标、缺图占位 |
 | `src/workflow/media/layout/StockSearchBar.tsx`（新） | 搜索框 + 方向分段 + 刷新 |
-| `src/workflow/media/layout/StockGrid.tsx`（新） | 搜索结果网格，含骨架、`已下载` Badge、缩略图重试 |
+| `src/workflow/media/hooks/useImageListPaging.ts`（新） | 已下载按月分组后的统一分批：每组首屏 60 张，滚动续载 |
 | `src/workflow/media/layout/StockKeyDialog.tsx`（新） | 密钥配置弹窗（只写不读回，回显尾号） |
 | `src/workflow/media/hooks/useStockPhotos.ts`（新） | 搜索、话题与关键词互斥、分页（上限 5 页）、竞态、首屏与追加两种 loading |
 | `src/workflow/media/hooks/useStockDownloaded.ts`（新） | 已下载列表、删除、局部插卡 |
@@ -600,7 +600,7 @@ if (zhaiRelative !== null) {
 
 新增单测：`stockNaming`（路径与年月）、`stockClient`（401/403/429 映射、`Retry-After` 冷却、`X-Ratelimit-Remaining` 解析、重试次数、content-type 校验）、`stockRepository`（对账三分支）、`stockService`（去重命中不发网络、下载失败回执、插入四态、`duplicated` 判定）、`locateWechatImage`（`@zhai/` 分支）、`useStockPhotos`（竞态丢弃、翻页去重、`hasMore` 边界）。
 
-组件测：`StockLocalGallery`（空态 / 分组 / 加载更多）、`StockGrid`（骨架 / Badge / 插入回调）。
+组件测：`__tests__/components/ImageList.test.tsx`（缩略图与角标、在途占位、主动作、悬停操作不冒泡、多选与键盘）、`__tests__/workflow/mediaImageList.test.ts`（年月格式化与分组、四类适配器映射）。
 
 ---
 

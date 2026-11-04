@@ -220,7 +220,9 @@ lifeguard
 | 文件 | 职责 |
 | --- | --- |
 | `ImageGenPage.tsx` | 页面骨架与编排：筛选、计数、分批渲染、详情面板与出图回调；多选、删除与封面指针同步交给 hooks |
-| `ImageGenGrid.tsx` | 等宽卡片网格：3:4 裁切、封面徽标、悬停复制/插入/删除、多选勾选、点击打开详情 |
+| `layout/imageList/ImageList.tsx` | 统一图片列表：加载/空/错误态优先级、按月分组或平铺、在途占位、按钮与哨兵两种续载；媒体、图库与上传页共用 |
+| `layout/imageList/ImageCard.tsx` | 统一卡片：3:4 或 4:3 缩略图、角标与说明、悬停动作、多选勾选、键盘可达；领域对象经 `source` 回传 |
+| `layout/imageList/imageListAdapters.ts` | 四类领域条目映射成统一条目；出处、类型与体积文案在此收口 |
 | `ImageComposer.tsx` | 输入卡片：添加上下文菜单（作品设定开关、规则）、参考图与角色选择、词条芯片、底部比例与画面风格、增强提示词、发送 / 取消生成 |
 | `ImageCommandMenus.tsx` | 添加上下文菜单：作品设定开关 + 规则子菜单（列出 `prompt/rules` 的 md、勾选即挂芯片、新建规则弹窗、打开规则目录），菜单内各项都作为上下文提交 |
 | `ImageReferencePicker.tsx` | 参考图：工具栏图标按钮，点击由宿主弹文件选择框；选中后挂「缩略图 + 文件名」芯片，悬停文件名预览大图，可挂多枚 |
@@ -253,15 +255,15 @@ lifeguard
 - 关键词范围：输入框占位即「搜索角色或文件名」——只对角色名与图片标识（文件名主干）做大小写不敏感的子串匹配，不读侧车、不搜提示词与画风；未归属角色的图片只匹配文件名。
 - 详情面板用 `@components/ui/sheet`，点缩略图打开；设封面后重新列举，面板停留在当前图片；删除当前图片时面板自动关闭。
 - 多选模式：点卡片切换勾选而不打开详情，悬停操作隐藏；批量删除需二次确认，走一次 `pressAi/deleteImages`，宿主删完只重扫一次并回传新图库。
-- 分批渲染：网格一次挂载 60 张（`GRID_PAGE_SIZE`），筛选条件变化自动回到首批，底部「加载更多」按批追加；全选只覆盖已渲染的图片，未加载的图不会被批量删除带走。
+- 分批渲染：`hooks/useImageListPaging.ts` 每组首屏 60 张（`PAGE_SIZE`），筛选签名变化自动回到首批，底部「加载更多」按批追加；分组与年月文案统一走 `hooks/mediaMonth.ts` 的 `groupByMonth`，组头计数取组内总数；全选只覆盖已渲染的图片，未加载的图不会被批量删除带走。
 - 选择生命周期：选中集合与筛选签名绑定，换类别/角色/关键词即派生为空集；批量删除只作用于当前筛选结果，删除期间按钮显示「正在删除 n 张」并禁止重复触发。
-- 键盘与筛选复位：网格卡片可聚焦，回车/空格触发与点击相同的动作（内部操作按钮不拦截）；任一筛选生效时筛选条右侧出现「清空筛选」，一次复位类别、角色与关键词。
+- 键盘与筛选复位：卡片主动作是原生 button，Tab 聚焦后回车/空格触发与点击相同的动作（内部操作按钮阻止冒泡）；任一筛选生效时筛选条右侧出现「清空筛选」，一次复位类别、角色与关键词。
 - 页面切换即重挂载：`PressSectionRouter` 按分区条件渲染（离开即卸载），生图页与设定页封面组都靠挂载 effect 重新读盘，因此跨页面改动无需额外刷新信号。
 - 详情参数：按字段存在性分段渲染——无侧车时显示「没有出图参数」空态，提示词为空则隐藏复制按钮，`enhancedFrom` 存在时以折叠区展示增强前原文。
 - 参数读取完成前不挂载 composer，用等高骨架占位，避免默认值覆盖用户已保存的比例与画风。
 - 比例自动跟随：正文里写出 `1:1` / `3:4` / `4:3` / `16:9` / `9:16`（冒号全角半角与斜杠都认），或写「竖版 / 横版 / 方形」（对应 9:16 / 16:9 / 1:1），或写其英文同义词 `vertical` / `portrait`、`horizontal` / `landscape`、`square`（不区分大小写）时，底部比例菜单自动切到该档；各类写法按出现位置合流，多处出现取最后；只在前后的探测结果发生变化时切换，所以关键字没变时手动选的比例不会被后续输入打回；该切换只改本次会话，不写回作品配置。其余模糊描述不猜，避免猜错反而改坏比例。
 - 生成中发送按钮切换为「取消生成」，取消后立即复位界面，不等宿主回包；迟到的回包不写回界面（不认领封面、不清空输入），但会静默刷新列表，把宿主已经落盘的图补上——用户不必切页才发现新图。
-- 出图占位：`isGenerating` 由 composer 经 `onGeneratingChange` 上报，页面在网格首位渲染一张与卡片同比例（3:4）的骨架卡；成功后用静默刷新（`reload({ silent: true })`）拉回列表，占位由 `isRefreshingResult` 一直挂到新图入列，视线里只发生「骨架 → 新图」一次替换，中间不闪整块加载态。失败、取消、超时都会回收占位，composer 卸载时补发一次 `false`，不会卡在「生成中」。
+- 出图占位：`isGenerating` 由 composer 经 `onGeneratingChange` 上报，页面把 `pendingCount` 交给统一图片列表，列表在首组首位挂一张与卡片同比例（3:4）的占位卡；库里还没有分组时占位卡单独成组，不会再落到空态。成功后用静默刷新（`reload({ silent: true })`）拉回列表，占位由 `isRefreshingResult` 一直挂到新图入列，视线里只发生「骨架 → 新图」一次替换，中间不闪整块加载态。失败、取消、超时都会回收占位，composer 卸载时补发一次 `false`，不会卡在「生成中」。
 - 点「停止」是同步复位：`setIsGenerating(false)` 先于取消请求发出，占位当帧收起，不等宿主回包；随后宿主侧中断请求，已取消的产物不会再落盘（见 3.2）。
 - 角色选择：工具栏角色按钮展开作品全部人物卡，选中即挂「图标 + 姓名」徽标，发送时并入角色段（姓名、性别年龄、身份、外貌），随请求的 `kind` 变为 `portrait`、`characterId` 取该角色；选「不使用角色」或移除徽标即回落普通图；顶栏筛选的角色只作初值，之后以选择器为准，两者不联动。
 - 增强提示词：提交的是「正文 + 角色段 + 词条原文」，让改写结果带上角色长相、身份与词条描述；词条只传标识，由宿主经 `mergePromptTags` 与正文合并，与出图同一口径；设定段与规则不进增强请求（避免复述作品信息）；改写成功后摘掉词条芯片（描述已并入正文），还原时正文与词条芯片一起回到增强前状态。改写走与对话共用的 `PromptEnhanceService`（`modules/ai/promptEnhance.ts`），仅口径与记账模块不同。
@@ -331,5 +333,5 @@ lifeguard
 
 - `pnpm exec tsc --noEmit`
 - `pnpm exec eslint src/modules/imagegen src/workflow/imagegen`
-- `pnpm exec vitest run __tests__/imagegenIds.test.ts __tests__/imagegenPrompt.test.ts __tests__/imageDirScan.test.ts __tests__/imageSidecar.test.ts __tests__/imageLibraryService.test.ts __tests__/coverService.test.ts __tests__/imageSettingsService.test.ts __tests__/imageGenerateService.test.ts __tests__/imageNaming.test.ts __tests__/useImageLibrary.test.tsx __tests__/useImageDetail.test.tsx __tests__/components/ImageGenGrid.test.tsx __tests__/components/ImageComposer.test.tsx __tests__/components/ImageGenPage.test.tsx`
+- `pnpm exec vitest run __tests__/imagegenIds.test.ts __tests__/imagegenPrompt.test.ts __tests__/imageDirScan.test.ts __tests__/imageSidecar.test.ts __tests__/imageLibraryService.test.ts __tests__/coverService.test.ts __tests__/imageSettingsService.test.ts __tests__/imageGenerateService.test.ts __tests__/imageNaming.test.ts __tests__/useImageLibrary.test.tsx __tests__/useImageDetail.test.tsx __tests__/components/ImageList.test.tsx __tests__/workflow/mediaImageList.test.ts __tests__/components/ImageComposer.test.tsx __tests__/components/ImageGenPage.test.tsx`
 - 手测清单：列举 Images 目录、按类别/角色/关键词筛选与「清空筛选」、设为封面、删除当前封面后的回退、详情面板复制与插入（含无侧车空态与骨架过渡）、生成中取消（含取消后迟到出图是否自动补进列表）、切换作品后参数是否沿用、多选批量删除（含进度文案与角色封面回退）、芯片内联输入与退格删除、键盘 Tab 聚焦卡片后回车打开详情。

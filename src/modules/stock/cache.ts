@@ -9,13 +9,7 @@ import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { buildStorageUri } from '@modules/common/storagePath'
 import { STOCK_DIR } from '@shared/types/stock'
-import {
-    PHOTO_CACHE_MAX,
-    PHOTO_CACHE_TTL_MS,
-    STOCK_THUMB_DIR,
-    THUMB_MAX_FILES,
-    THUMB_TTL_MS,
-} from './constants'
+import { PHOTO_CACHE_MAX, PHOTO_CACHE_TTL_MS, STOCK_THUMB_DIR, THUMB_MAX_FILES, THUMB_TTL_MS } from './constants'
 
 /** 内存中保留的照片元数据：插入时据此下载，避免为一张图再查一次详情 */
 export interface CachedStockPhoto {
