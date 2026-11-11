@@ -1,7 +1,8 @@
 /**
  * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置、
  * 工作流页跳转、待办清单读写、写作管理（作品列表、作品详情、新建作品与章节、卷的重命名与删除、
- * 章节的删除与跨卷移动、整部作品删除）聚合与创建、公众号账号的列表与增删改鉴权，以及宿主命令。
+ * 章节的删除与跨卷移动、整部作品删除）聚合与创建、公众号账号的列表与增删改鉴权、
+ * 媒体库、在线图库与上传清单的列举（公众号封面选图），以及宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传；
  * 另经 state 消息主动广播：note 通道给活跃笔记（列表回填选中态），index 通道给索引状态（列表随编辑收敛），
  * todo 通道给待办清单的外部改动（卡片收到即重读）；
@@ -16,6 +17,7 @@ import * as path from 'node:path'
 import * as vscode from 'vscode'
 import type { WorkflowRouter } from '@modules/ai/workflowRouter'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { PressCoverStore } from '@modules/media/pressCoverStore'
 import { createAndOpenNote, openNoteByPath } from '@modules/note/noteService'
 import type { PinStore } from '@modules/note/pinStore'
@@ -42,7 +44,9 @@ import {
     openProjectByDir,
     renameVolume,
 } from '@modules/press/projectService'
+import type { StockRoutes } from '@modules/stock/stockRoutes'
 import type { TodoRoutes } from '@modules/todo/todoRoutes'
+import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 import type { WechatRoutes } from '@modules/wechat/wechatRoutes'
 import type { DashboardStats } from '@shared/types/dashboard'
 import type { HostToWebviewMessage } from '@shared/types/messages'
@@ -122,6 +126,12 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private todoRoutes: TodoRoutes | null = null
     /** 公众号路由：后置注入，未注入时 wechat/* 请求直接报未就绪，不静默返回空列表 */
     private wechatRoutes: WechatRoutes | null = null
+    /** 媒体库路由：后置注入，公众号封面据此列举生图结果；未注入时 media/* 直接报未就绪 */
+    private mediaRoutes: MediaRoutes | null = null
+    /** 在线图库路由：后置注入，公众号封面据此列举已下载的在线图片；未注入时 stock/* 直接报未就绪 */
+    private stockRoutes: StockRoutes | null = null
+    /** 上传路由：后置注入，公众号封面据此列举上传页的已上传图片；未注入时 upload/* 直接报未就绪 */
+    private uploadRoutes: UploadRoutes | null = null
     /** 当前面板实例：仅在挂载期间有效，用于请求之外的主动广播 */
     private view: vscode.WebviewView | null = null
     /** 待办目录变更监听：面板存活期间把外部改动转给 Webview，销毁时释放 */
@@ -151,6 +161,21 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     /** 注入公众号路由：由扩展入口在 wechat.db 打开后调用，公众号列表页据此读写账号 */
     public attachWechatRoutes(routes: WechatRoutes): void {
         this.wechatRoutes = routes
+    }
+
+    /** 注入媒体库路由：封面弹窗要从生图结果里挑图，故转发 media/* 请求 */
+    public attachMediaRoutes(routes: MediaRoutes): void {
+        this.mediaRoutes = routes
+    }
+
+    /** 注入在线图库路由：封面弹窗要从已下载的在线图片里挑图，故转发 stock/* 请求 */
+    public attachStockRoutes(routes: StockRoutes): void {
+        this.stockRoutes = routes
+    }
+
+    /** 注入上传路由：封面弹窗要从上传页的已上传图片里挑图，故转发 upload/* 请求 */
+    public attachUploadRoutes(routes: UploadRoutes): void {
+        this.uploadRoutes = routes
     }
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -334,6 +359,28 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                 return this.openExternalPage(payload)
             }
             default: {
+                // 封面选图要列举生图结果与已下载的在线图片：两套路由与工作流面板共用，仅在这里转发
+                if (method.startsWith('media/')) {
+                    const routes = this.mediaRoutes
+                    if (routes === null) {
+                        throw new Error('媒体库服务尚未就绪')
+                    }
+                    return routes.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())
+                }
+                if (method.startsWith('stock/')) {
+                    const routes = this.stockRoutes
+                    if (routes === null) {
+                        throw new Error('在线图库服务尚未就绪')
+                    }
+                    return routes.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())
+                }
+                if (method.startsWith('upload/')) {
+                    const routes = this.uploadRoutes
+                    if (routes === null) {
+                        throw new Error('上传服务尚未就绪')
+                    }
+                    return routes.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())
+                }
                 if (method.startsWith('todo/')) {
                     const routes = this.todoRoutes
                     if (routes === null) {

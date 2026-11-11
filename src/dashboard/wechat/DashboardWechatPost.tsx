@@ -118,7 +118,6 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         openArticle,
         moveArticle,
         updateArticleMeta,
-        pickCover,
         readCoverSource,
         saveArticleCover,
         removeArticle,
@@ -268,18 +267,6 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         },
         [metaTarget, updateArticleMeta],
     )
-
-    /**
-     * 选图并取回原图：宿主弹选择器 → 读成 data URI 交给裁剪弹窗。
-     * 关键约束：两步合成一次交互，用户取消选择时返回 null，弹窗保持原状。
-     */
-    const handlePickCoverImage = useCallback(async (): Promise<string | null> => {
-        const picked = await pickCover()
-        if (picked === null) {
-            return null
-        }
-        return readCoverSource(picked)
-    }, [pickCover, readCoverSource])
 
     /** 保存裁剪封面：落盘与回写由宿主完成，成功后弹窗关闭、列表刷新 */
     const handleCoverSubmit = useCallback(
@@ -647,7 +634,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                             setCoverTarget(null)
                         }
                     }}
-                    onPickImage={handlePickCoverImage}
+                    onReadImage={readCoverSource}
                     onSubmit={handleCoverSubmit}
                 />
             )}

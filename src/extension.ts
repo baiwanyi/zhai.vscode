@@ -285,6 +285,10 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     // 鉴权失效经 EventEmitter 广播给两个面板；账号协议同样由仪表盘面板承接
     const wechatLayer = assembleWechatLayer({ context, cacheRoot, indexDb: db })
     dashboardProvider.attachWechatRoutes(wechatLayer.routes)
+    // 封面弹窗要从生图结果、已下载的在线图片与上传清单里挑图：三套路由同样后置注入仪表盘
+    dashboardProvider.attachMediaRoutes(mediaRoutes)
+    dashboardProvider.attachStockRoutes(stockRoutes)
+    dashboardProvider.attachUploadRoutes(uploadRoutes)
     // 仪表盘的封面、待办与公众号三组依赖都是后置注入的，全部就绪后才注册视图，
     // 避免依赖「VS Code 在 activate 返回前不会恢复视图」这一隐式前提
     context.subscriptions.push(

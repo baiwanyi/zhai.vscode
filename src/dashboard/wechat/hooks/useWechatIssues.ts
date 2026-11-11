@@ -4,7 +4,7 @@
  * 关键约束：账号切换由页面重新挂载 hook 承担（accountId 变化即重拉），本层不监听路由；
  * 正文不再经本层读写——新建与导入由宿主落成批次文件并打开编辑器，元信息在工作流面板设置；
  * 导入返回 imported: false 表示用户取消选择，静默结束、不弹提示；
- * 封面裁剪分三步：pickCover 由宿主弹选择器、readCoverSource 取回 data URI 供 canvas 使用、
+ * 封面裁剪分两步：readCoverSource 把选中的图源读成 data URI 供 canvas 使用、
  * saveArticleCover 回传裁剪结果落到批次 images/，原图与结果都不落前端仓库；
  * 写操作进行中置 isMutating，页面据此禁用入口，避免批次内并发写入导致序号错乱。
  */
@@ -22,7 +22,6 @@ import type {
     WechatArticleOpenResult,
     WechatArticleQuickCreateRequest,
     WechatArticleRemoveRequest,
-    WechatCoverPickResult,
     WechatCoverSourceRequest,
     WechatCoverSourceResult,
     WechatIssueCreateRequest,
@@ -79,8 +78,6 @@ export interface WechatIssuesState {
     moveArticle: (id: string, direction: 'up' | 'down') => Promise<boolean>
     /** 保存发布元信息：作者、摘要与留言开关，标题与封面原样回传 */
     updateArticleMeta: (input: WechatArticleMetaInput) => Promise<boolean>
-    /** 选择封面原图：宿主弹选择器并返回存储根相对路径，取消时返回 null */
-    pickCover: () => Promise<string | null>
     /** 读取封面原图：返回 data URI，供裁剪弹窗在 canvas 里绘制 */
     readCoverSource: (path: string) => Promise<string | null>
     /** 保存裁剪后的封面：宿主落盘到批次 images/ 并回写封面路径 */
@@ -290,17 +287,6 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         [reload],
     )
 
-    /** 选择封面原图：用户取消与读取失败都返回 null，失败原因已由 toast 呈现 */
-    const pickCover = useCallback(async (): Promise<string | null> => {
-        try {
-            const result = await request<WechatCoverPickResult>('wechat/cover/pick', undefined, 60_000)
-            return result.path
-        } catch (cause) {
-            toastError(cause)
-            return null
-        }
-    }, [])
-
     /** 读取封面原图：内联成 data URI 才能在 canvas 里裁剪，超大图由宿主拒绝并提示 */
     const readCoverSource = useCallback(async (path: string): Promise<string | null> => {
         const payload: WechatCoverSourceRequest = { path }
@@ -471,7 +457,6 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         openArticle,
         moveArticle,
         updateArticleMeta,
-        pickCover,
         readCoverSource,
         saveArticleCover,
         removeArticle,

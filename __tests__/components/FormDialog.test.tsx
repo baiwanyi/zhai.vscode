@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * FormDialog 交互用例：覆盖字段区插槽、提交与取消两条回调路径、两档禁用状态。
+ * FormDialog 交互用例：覆盖字段区插槽、说明的可省略性、提交与取消两条回调路径、两档禁用状态。
  * 复用约定：渲染与查询走 @testing-library/react，点击用 user-event；
  * jsdom 环境由本文件首行指令声明，其余用例仍运行在 node 环境。
  * 关键约束：组件不持有字段状态、也不在提交成功后自行关闭，
@@ -40,6 +40,13 @@ describe('FormDialog', () => {
         expect(screen.getByText('字段区')).toBeDefined()
         expect(screen.getByRole('button', { name: '创建' })).toBeDefined()
         expect(screen.getByRole('button', { name: '取消' })).toBeDefined()
+    })
+
+    it('省略说明时不渲染可见说明文案', () => {
+        renderDialog({ description: undefined })
+
+        expect(screen.getByRole('dialog')).toBeDefined()
+        expect(screen.queryByText('填写作品基础信息')).toBeNull()
     })
 
     it('open 为假时不渲染对话框', () => {

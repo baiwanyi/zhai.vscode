@@ -1,5 +1,5 @@
 /**
- * 通用表单对话框：承载「标题 + 说明 + 字段组 + 取消/提交」的统一骨架，字段内容由调用方以 children 传入。
+ * 通用表单对话框：承载「标题 + 可选说明 + 字段组 + 取消/提交」的统一骨架，字段内容由调用方以 children 传入。
  * 复用约定：结构取 @components/ui 的 dialog 与 field-group，取消按钮固定 outline 变体；
  * 提交中统一禁用取消与提交，避免表单在请求未回时被关闭或重复提交。
  * 关键约束：本组件不持有字段状态、也不决定成功后是否关闭——调用方在 onSubmit 里完成提交并自行关闭；
@@ -20,7 +20,8 @@ import type { JSX, ReactNode } from 'react'
 export interface FormDialogProps {
     open: boolean
     title: string
-    description: string
+    /** 说明文案：省略时不渲染描述节点，避免为凑结构补一句废话 */
+    description?: string
     /** 提交按钮文案：动词要具体（创建 / 保存 / 开始导入），不用笼统的「确定」 */
     submitLabel: string
     cancelLabel?: string
@@ -54,7 +55,12 @@ export function FormDialog({
             <DialogContent className={contentClassName}>
                 <DialogHeader>
                     <DialogTitle className="text-lg">{title}</DialogTitle>
-                    <DialogDescription>{description}</DialogDescription>
+                    {/* 省略说明时只保留读屏用的描述节点，既不加视觉文案，也不让 Radix 提示缺少描述 */}
+                    {description ? (
+                        <DialogDescription>{description}</DialogDescription>
+                    ) : (
+                        <DialogDescription className="sr-only">{title}</DialogDescription>
+                    )}
                 </DialogHeader>
                 <FieldGroup>{children}</FieldGroup>
                 <DialogFooter>
