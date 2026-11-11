@@ -54,7 +54,7 @@ export function ChapterSnapshotPanel({ dirPath }: ChapterSnapshotPanelProps): JS
                             <StateEmpty
                                 isLoading={isLoading}
                                 icon={BookOpen}
-                                title="还没有章节快照"
+                                title={isLoading ? '正在读取…' : '还没有章节快照'}
                                 description="在编辑器里保存章节后会自动留版，AI 写回前也会留底；留过版的章节会出现在这里。"
                                 className="h-full border border-dashed border-border"
                             />

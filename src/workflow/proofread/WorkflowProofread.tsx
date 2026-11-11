@@ -55,14 +55,13 @@ interface TargetMissingProps {
 /** 无目标空态：读完仍为空才给引导与重新读取入口 */
 function TargetMissing({ isReading, onReload }: TargetMissingProps): JSX.Element {
     if (isReading) {
-        return <StateEmpty title="尚未读取到校对目标" isLoading loadingLabel="正在读取校对目标…" />
+        return <StateEmpty title="正在读取校对目标…" isLoading />
     }
     return (
         <StateEmpty
             title="尚未读取到校对目标"
             description="校对以当前编辑器中的文档为准，请先打开章节或笔记文档"
             icon={SpellCheck}
-            iconClassName="size-12 rounded-2xl"
         >
             <Button variant="outline" onClick={onReload}>
                 重新读取

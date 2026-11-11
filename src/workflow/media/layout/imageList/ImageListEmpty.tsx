@@ -23,7 +23,7 @@ export function ImageListEmpty({ phase, states, errorText }: ImageListEmptyProps
 
     if (phase === 'loading') {
         const label = states.loadingLabel ?? '正在读取…'
-        return <StateEmpty title={label} isLoading loadingLabel={label} className={className} />
+        return <StateEmpty title={label} isLoading className={className} />
     }
 
     const view =

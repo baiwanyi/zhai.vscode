@@ -6,13 +6,13 @@
  * 内容归属变化导致当前分区不可用时，渲染期回落到 AI 对话而不改写 state，切回原归属仍能回到上次分区；
  * 宿主视图请求在本层对齐，不沉到子页面；归档文档只切分区，切换文档归属由宿主事实驱动，
  * 归属切换后当前分区在新归属下仍可用则保留，不可用才落回 AI 对话；
- * 路由事实未就绪时渲染居中转圈，避免先闪出空白内容区。
+ * 路由事实未就绪时渲染全屏加载空态，避免先闪出空白内容区。
  * 全局提示：sonner 的 Toaster 只在本层挂载一次，页面内的操作结果统一用 toast 上报，页面不再自挂；
  * 宿主侧命令结果经 useHostToast 订阅 toast 广播，在本层同样用 sonner 呈现。
  */
 import { useCallback, useState } from 'react'
 import { Toaster } from '@components/ui/sonner'
-import { Spinner } from '@components/ui/spinner'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import { useHostToast } from '@webview/hooks/useHostToast'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
 import { readAvailableSections, readContentScope, readScopeDir } from './contentScope'
@@ -68,11 +68,7 @@ export function WorkflowScreen(): JSX.Element {
     }, [])
 
     if (!isReady) {
-        return (
-            <div className="flex h-screen justify-center pt-3">
-                <Spinner />
-            </div>
-        )
+        return <StateEmpty className="h-screen" title="正在读取工作流" isLoading />
     }
 
     // 归属变化后当前分区可能不可用（如从作品切到笔记时停在「设定」）：渲染期回落，不改写 state

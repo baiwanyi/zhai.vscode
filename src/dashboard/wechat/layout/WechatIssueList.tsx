@@ -98,7 +98,6 @@ export function WechatIssueList({
                 title="还没有推送批次"
                 description="一次群发对应一个批次，批次内可放 1~8 篇文章。先建一个批次，再从笔记或作品导入文章。"
                 icon={Send}
-                iconClassName="size-12 rounded-2xl"
             >
                 <Button disabled={isBusy} onClick={onAdd}>
                     新建批次

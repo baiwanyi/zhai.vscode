@@ -2,8 +2,8 @@
 /**
  * StateEmpty 渲染用例：覆盖空态、加载态、说明可选、图标位与底部操作区插槽。
  * 复用约定：渲染与查询走 @testing-library/react；jsdom 环境由本文件首行指令声明。
- * 关键约束：加载态与空态互斥——isLoading 为真时不得再出现标题与说明，
- * 否则「还没有数据」会被读屏与用户在读取过程中同时看到，本用例守住这条。
+ * 关键约束：加载态与空态互斥——isLoading 为真时只以 title 作为加载文案，不渲染说明与业务图标，
+ * 避免空态的「还没有数据」被读屏与用户在读取过程中同时看到，本用例守住这条。
  */
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -31,18 +31,17 @@ describe('StateEmpty', () => {
         expect(screen.queryByText('保存后会自动留版')).toBeNull()
     })
 
-    it('加载态只渲染加载文案，不同时展示标题与说明', () => {
-        render(<StateEmpty title="还没有快照" description="保存后会自动留版" isLoading />)
+    it('加载态以 title 为文案，不渲染说明', () => {
+        render(<StateEmpty title="正在读取快照…" description="保存后会自动留版" isLoading />)
 
-        expect(screen.getByText('正在读取…')).toBeDefined()
-        expect(screen.queryByText('还没有快照')).toBeNull()
+        expect(screen.getByText('正在读取快照…')).toBeDefined()
         expect(screen.queryByText('保存后会自动留版')).toBeNull()
     })
 
-    it('loadingLabel 覆盖默认加载文案', () => {
-        render(<StateEmpty title="还没有快照" isLoading loadingLabel="正在读取快照…" />)
+    it('加载文案随 title 变化，组件不再提供默认措辞', () => {
+        render(<StateEmpty title="正在提取人物卡…" isLoading />)
 
-        expect(screen.getByText('正在读取快照…')).toBeDefined()
+        expect(screen.getByText('正在提取人物卡…')).toBeDefined()
         expect(screen.queryByText('正在读取…')).toBeNull()
     })
 
@@ -51,7 +50,7 @@ describe('StateEmpty', () => {
         expect(screen.getByTestId('empty-icon')).toBeDefined()
         unmount()
 
-        render(<StateEmpty title="还没有快照" icon={EmptyIcon} isLoading />)
+        render(<StateEmpty title="正在读取快照…" icon={EmptyIcon} isLoading />)
         expect(screen.queryByTestId('empty-icon')).toBeNull()
     })
 

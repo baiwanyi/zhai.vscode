@@ -46,7 +46,7 @@ export function DocSnapshotPanel({ dirPath }: DocSnapshotPanelProps): JSX.Elemen
                     {snapshots.length === 0 ? (
                         <StateEmpty
                             isLoading={isLoading}
-                            title="还没有快照"
+                            title={isLoading ? '正在读取…' : '还没有快照'}
                             description="设定、角色或大纲内容有改动时会自动留一版；也可以点上方「立即快照」手动留一版。"
                             className="h-full border border-dashed border-border"
                         />

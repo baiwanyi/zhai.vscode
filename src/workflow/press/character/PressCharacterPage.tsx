@@ -200,9 +200,8 @@ export function PressCharacterPage({
                     {isExtracting ? (
                         // 提取期间整块替换为加载态：进度文案由宿主逐批回传，形如「角色卡 3/5」
                         <StateEmpty
-                            title="正在提取人物卡"
+                            title={progress?.message ?? '正在提取人物卡…'}
                             isLoading
-                            loadingLabel={progress?.message ?? '正在提取人物卡…'}
                             className="flex-1 justify-center"
                         />
                     ) : (

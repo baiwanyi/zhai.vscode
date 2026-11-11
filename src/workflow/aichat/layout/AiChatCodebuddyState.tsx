@@ -28,7 +28,6 @@ export function AiChatCodebuddyState({ site, loggedIn, userName, onLogin }: AiCh
         return (
             <StateEmpty
                 icon={Sparkles}
-                iconClassName="size-12 rounded-2xl"
                 title={`已登录 CodeBuddy（${userName === null ? siteLabel : `${siteLabel} / ${userName}`}）`}
                 description="对话、取名与人物外貌生成走 CodeBuddy 额度，直接在下方输入即可开始；切换站点（zhai.ai.codebuddySite）后需重新登录。"
             />
@@ -37,7 +36,6 @@ export function AiChatCodebuddyState({ site, loggedIn, userName, onLogin }: AiCh
     return (
         <StateEmpty
             icon={LogIn}
-            iconClassName="size-12 rounded-2xl"
             title={`当前使用 CodeBuddy（${siteLabel}）`}
             description="对话、取名与人物外貌生成走 CodeBuddy 额度。首次使用需完成一次浏览器登录，凭据按站点保存在本机，切换站点（zhai.ai.codebuddySite）后需重新登录。"
         >

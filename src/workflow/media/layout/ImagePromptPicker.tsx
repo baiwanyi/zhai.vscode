@@ -350,7 +350,7 @@ export function ImagePromptPicker({
                         </Button>
                     </div>
                     {library.isLoading ? (
-                        <StateEmpty className="h-80" isLoading loadingLabel="正在加载词库…" title="词库" />
+                        <StateEmpty className="h-80" isLoading title="正在加载词库…" />
                     ) : library.tags.length === 0 ? (
                         <StateEmpty
                             className="h-80 rounded-md bg-muted/40 p-3"

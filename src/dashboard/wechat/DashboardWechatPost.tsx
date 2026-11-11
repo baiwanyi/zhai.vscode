@@ -540,7 +540,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                         </Button>
                     )}
                 </AppContent>
-                <AppFooter className="justify-between">
+                <AppFooter className="justify-between py-1">
                     {selectedIds.length > 0 ? (
                         <>
                             <span className="text-xs text-muted-foreground">
