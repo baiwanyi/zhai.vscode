@@ -3,7 +3,8 @@
  * 复用约定：图标沿用 StateEmpty 的函数签名以兼容 lucide 图标，领域对象经 source 原样回传，
  * 组件层不认识 MediaItem / StockPhoto 等具体类型；比例与栅格类名在此写全，避免 Tailwind 漏扫动态拼接。
  * 关键约束：数据以 flat / grouped 二选一的联合传入，避免两种模式同时给出产生歧义；
- * 列表为受控纯展示，加载、删除确认与任何宿主请求都由调用方持有。
+ * 列表为受控纯展示，加载、删除确认与任何宿主请求都由调用方持有；
+ * 悬停动作统一排在右下角竖列、与左下角信息角标分居两侧，避免按钮压住常驻文案。
  */
 import type { ReactNode } from 'react'
 
@@ -14,9 +15,15 @@ export type ImageListAspect = '3/4' | '4/3' | 'square'
 export type ImageListColumns = 'compact' | 'responsive'
 
 export interface ImageListBadge {
-    text: string
-    position: 'top-left' | 'top-right'
+    /** 角标文案：纯图标角标可省略 */
+    text?: string
+    /** 左上、右上、左下三个信息角标位置：左下用于关联角标与上传尺寸文案 */
+    position: 'top-left' | 'top-right' | 'bottom-left'
     variant?: 'secondary' | 'outline' | 'destructive'
+    /** 图标：给出时渲染在文案之前，关联角标靠它表达语义 */
+    icon?: ImageListIcon
+    /** 悬停展开的标题：只在首次悬停时按需请求，列表阶段不为每张图各发一次 */
+    hoverTitles?: () => Promise<readonly string[]>
 }
 
 /** 单张卡片的展示数据：适配器由领域条目映射而来 */
@@ -38,17 +45,17 @@ export interface ImageListItem<T = unknown> {
     isBusy?: boolean
     isFailed?: boolean
     fallback?: { icon: ImageListIcon; label?: string }
+    /** 图片解码后回报原始像素：上传页据此在角标里展示尺寸，非图片条目不会触发 */
+    onMeasured?: (width: number, height: number) => void
     source: T
 }
 
+/** 悬停动作：统一排在卡片右下角竖列，按清单顺序自上而下 */
 export interface ImageListAction<T> {
     key: string
     label: string
     icon: ImageListIcon
-    text?: string
     variant?: 'ghost' | 'secondary' | 'destructive'
-    /** rail 为右侧竖排悬停动作，corner 为右下角悬停动作（如重试、删除） */
-    placement?: 'rail' | 'corner'
     isVisible?: (item: ImageListItem<T>) => boolean
     onTrigger: (item: ImageListItem<T>) => void
 }
@@ -90,9 +97,8 @@ export type ImageListPaging =
 export type ImageListProps<T> = ImageListData<T> & {
     columns?: ImageListColumns
     aspect?: ImageListAspect
-    groupUnit?: '张' | '个'
-    /** overlay 把说明压在图片底部，below 把说明排在图片下方 */
-    captionPlacement?: 'overlay' | 'below'
+    /** overlay 把说明压在图片底部，below 排在图片下方，none 不展示说明（左下角让给关联与操作条） */
+    captionPlacement?: 'overlay' | 'below' | 'none'
     dimOnHover?: 'none' | 'light' | 'strong'
     isLoading?: boolean
     skeletonCount?: number

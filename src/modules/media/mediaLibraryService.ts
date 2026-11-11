@@ -10,8 +10,11 @@
  */
 import * as path from 'node:path'
 import * as vscode from 'vscode'
+import { writeImageToClipboard } from '@modules/common/clipboardImage'
 import { resolveStorageRoot } from '@modules/common/config'
+import { resolveMarkdownEditor } from '@modules/common/insertTarget'
 import { logger } from '@modules/common/logger'
+import { buildBlockInsertion, readBlockContext } from '@modules/common/markdownBlock'
 import { readProjectSegments } from '@modules/common/projectPath'
 import { buildStorageUri, deleteResource, isPathExisting } from '@modules/common/storagePath'
 import type { PressCoverStore } from '@modules/media/pressCoverStore'
@@ -34,7 +37,6 @@ import type {
 import { PORTRAIT_STYLES } from '@shared/types/press'
 import { WECHAT_MODULE_DIR } from '@shared/types/wechat'
 import { ZHAI_PATH_PREFIX } from '@shared/utils/zhaiPath'
-import { writeImageToClipboard } from './clipboardImage'
 import { MAX_BATCH_DELETE } from './constants'
 import { hasLegacyParameterColumns, dropLegacyParameterColumns } from './db/schema'
 import { groupOwners } from './mediaOwners'
@@ -234,17 +236,6 @@ function toLegacyParameters(row: LegacyParameterRow): MediaParameters | null {
     }
 }
 
-/** 取插入目标：优先活动编辑器，其次最近可见的 Markdown 编辑器 */
-function resolveInsertTarget(): vscode.TextEditor | undefined {
-    const active = vscode.window.activeTextEditor
-    if (active !== undefined) {
-        return active
-    }
-    return [...vscode.window.visibleTextEditors]
-        .reverse()
-        .find((item) => item.document.languageId === 'markdown' && item.document.uri.scheme === 'file')
-}
-
 export class MediaLibraryService {
     /** 上次对账时刻：节流窗口内不重复遍历磁盘 */
     private lastReconcileAt = 0
@@ -398,7 +389,7 @@ export class MediaLibraryService {
         if (!(await isPathExisting(source))) {
             throw new Error('图片文件已不存在，请刷新列表')
         }
-        const editor = resolveInsertTarget()
+        const editor = resolveMarkdownEditor()
         if (editor === undefined) {
             return { inserted: false, reason: 'no-editor' }
         }
@@ -415,13 +406,18 @@ export class MediaLibraryService {
         const alt = toAltText(row).replaceAll('[', '').replaceAll(']', '')
         const snippet = `![${alt}](${refPath})`
         const insertAt = editor.selection.active
+        // 引用自成一段：光标夹在行中间时先断开当前行，前后各留一个空行
+        const block = buildBlockInsertion(readBlockContext(document, insertAt), snippet)
         const didInsert = await editor.edit((builder) => {
-            builder.insert(insertAt, snippet)
+            builder.insert(insertAt, block.text)
         })
         if (!didInsert) {
             return { inserted: false, reason: 'failed' }
         }
-        const range = new vscode.Range(insertAt, insertAt.translate(0, snippet.length))
+        const range = new vscode.Range(
+            insertAt.translate(0, block.start),
+            insertAt.translate(0, block.start + snippet.length),
+        )
         await vscode.window.showTextDocument(document, { viewColumn: editor.viewColumn, selection: range })
         const { refType, refScope } = toRefType(documentRelative)
         const usagePath = documentRelative ?? documentPath

@@ -1,18 +1,16 @@
 /**
- * 媒体页筛选：把「年月 / 来源 / 关联状态」三个维度与按月分组收在一处，分批交给统一分页 hook。
+ * 媒体页筛选：把「年月 / 关联状态」两个维度与按月分组收在一处，分批交给统一分页 hook。
  * 复用约定：数据全部来自 media/list 的全量返回，筛选在内存完成；年月格式化与分组取 ./mediaMonth，
- * 分批取 ./useImageListPaging，年月选项与分组头共用同一份格式化口径。
- * 关键约束：默认「全部月份 + 全部来源 + 全部关联」+ 按月倒序分组，进页面即见全库；
+ * 分批取 ./useImageListPaging，年月选项与分组数据共用同一份格式化口径。
+ * 关键约束：默认「全部月份 + 全部关联」+ 按月倒序分组，进页面即见全库；
  * 关联判定只看 usageCount（media_usage 有行即已关联），不额外请求引用明细；
  * 筛选签名变化即让分批回到首批，切回同一组合时保留上次的累计上限，组内沿用宿主返回的时间倒序。
  */
 import { useMemo, useState } from 'react'
-import type { MediaItem, MediaOrigin } from '@shared/types/media'
+import type { MediaItem } from '@shared/types/media'
 import { formatMediaMonth, groupByMonth, type MediaMonthGroup } from './mediaMonth'
 import { useImageListPaging } from './useImageListPaging'
 
-/** 来源筛选：全部 / 上传 / 生图，与 MediaOrigin 两值一一对应 */
-export type MediaOriginFilter = 'all' | MediaOrigin
 /** 关联筛选：全部 / 已关联（usageCount > 0）/ 未关联 */
 export type MediaLinkFilter = 'all' | 'linked' | 'unlinked'
 
@@ -28,9 +26,6 @@ interface UseMediaFiltersResult {
     /** 当前年月：null 表示全部月份 */
     month: string | null
     setMonth: (month: string | null) => void
-    /** 当前来源：all 表示不筛 */
-    origin: MediaOriginFilter
-    setOrigin: (origin: MediaOriginFilter) => void
     /** 当前关联状态：all 表示不筛 */
     link: MediaLinkFilter
     setLink: (link: MediaLinkFilter) => void
@@ -53,17 +48,13 @@ interface UseMediaFiltersResult {
 
 export function useImageFilters({ items }: UseMediaFiltersParams): UseMediaFiltersResult {
     const [month, setMonth] = useState<string | null>(null)
-    const [origin, setOrigin] = useState<MediaOriginFilter>('all')
     const [link, setLink] = useState<MediaLinkFilter>('all')
 
-    /** 三维组合筛选：条件互斥且都是内存判断，任一维度变化都同步反映到分组与分批 */
+    /** 两维组合筛选：条件互斥且都是内存判断，任一维度变化都同步反映到分组与分批 */
     const filtered = useMemo(
         () =>
             items.filter((item) => {
                 if (month !== null && item.month !== month) {
-                    return false
-                }
-                if (origin !== 'all' && item.origin !== origin) {
                     return false
                 }
                 if (link === 'linked' && item.usageCount === 0) {
@@ -74,7 +65,7 @@ export function useImageFilters({ items }: UseMediaFiltersParams): UseMediaFilte
                 }
                 return true
             }),
-        [items, month, origin, link],
+        [items, month, link],
     )
 
     /**
@@ -91,27 +82,24 @@ export function useImageFilters({ items }: UseMediaFiltersParams): UseMediaFilte
     }, [filtered, month])
 
     /** 分批：筛选签名变化即由统一分页 hook 回到首批，本模块不再自持上限 */
-    const filterSignature = `${month ?? 'all'}|${origin}|${link}`
+    const filterSignature = `${month ?? 'all'}|${link}`
     const { visibleGroups, hasMore, loadMore } = useImageListPaging({ groups, signature: filterSignature })
 
     const clearFilters = (): void => {
         setMonth(null)
-        setOrigin('all')
         setLink('all')
     }
 
     return {
         month,
         setMonth,
-        origin,
-        setOrigin,
         link,
         setLink,
         filtered,
         groups,
         visibleGroups,
         hasMore,
-        hasActiveFilter: month !== null || origin !== 'all' || link !== 'all',
+        hasActiveFilter: month !== null || link !== 'all',
         clearFilters,
         filterSignature,
         loadMore,

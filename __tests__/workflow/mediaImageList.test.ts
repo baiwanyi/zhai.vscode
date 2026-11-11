@@ -5,7 +5,8 @@
  * 关键约束：分组键倒序但组内顺序沿用入参，组头计数取组内总数；source 原样保留领域对象，
  * 缺图与非图片文件分别落到各自的占位语义，避免两类占位混用。
  */
-import { describe, expect, it } from 'vitest'
+import { Link2 } from 'lucide-react'
+import { describe, expect, it, vi } from 'vitest'
 import type { MediaItem } from '@shared/types/media'
 import type { StockPhoto } from '@shared/types/stock'
 import type { UploadFileItem } from '@shared/types/upload'
@@ -55,6 +56,7 @@ function createStockPhoto(overrides: Partial<StockPhoto> = {}): StockPhoto {
         alt: '山间薄雾',
         photographer: '张三',
         photographerUrl: 'https://example.test/author',
+        sizes: [],
         downloaded: false,
         ...overrides,
     }
@@ -111,15 +113,32 @@ describe('mediaMonth', () => {
 })
 
 describe('imageListAdapters', () => {
-    it('媒体条目带出处别名、类型角标与关联徽标，source 原样保留', () => {
+    it('媒体条目带出处别名、类型角标与左下角关联角标，source 原样保留', () => {
         const media = createMedia({ usageCount: 2 })
         const item = toMediaItem(media)
 
         expect(item.alt).toBe('角色 · 林清')
-        expect(item.activateLabel).toBe('查看详情：角色 · 林清')
+        expect(item.activateLabel).toBe('插入到文章：角色 · 林清')
         expect(item.badges).toContainEqual({ text: '角色', position: 'top-left', variant: 'secondary' })
-        expect(item.badges).toContainEqual({ text: '关联 2', position: 'top-right', variant: 'outline' })
+        expect(item.badges).toContainEqual({
+            text: '2',
+            position: 'bottom-left',
+            variant: 'secondary',
+            icon: Link2,
+            hoverTitles: undefined,
+        })
         expect(item.source).toBe(media)
+    })
+
+    it('引用角标只在注入查询函数后提供悬停标题，且按条目 id 查询', async () => {
+        const loadUsageTitles = vi.fn(() => Promise.resolve(['第一章 起风', '笔记 A']))
+        const media = createMedia({ usageCount: 2 })
+        const badge = toMediaItem(media, {}, loadUsageTitles).badges?.[1]
+
+        expect(badge?.hoverTitles).toBeDefined()
+        await expect(badge?.hoverTitles?.()).resolves.toEqual(['第一章 起风', '笔记 A'])
+        expect(loadUsageTitles).toHaveBeenCalledWith(media.id)
+        expect(toMediaItem(media).badges?.[1]?.hoverTitles).toBeUndefined()
     })
 
     it('丢失的媒体条目只灰显，不会被映射成禁用', () => {
@@ -148,6 +167,20 @@ describe('imageListAdapters', () => {
         expect(document.meta).toBe('512 B')
         expect(document.src).toBeNull()
         expect(document.fallback?.label).toBe('pdf')
+    })
+
+    it('上传条目的左下角标给出像素与体积，未测到像素时只给体积', () => {
+        const measured = toUploadFileItem(createUpload(), {}, { width: 1920, height: 1080 })
+        const pending = toUploadFileItem(createUpload())
+        const document = toUploadFileItem(createUpload({ url: null, ext: 'pdf' }), {}, { width: 10, height: 10 })
+
+        expect(measured.badges?.[0]).toEqual({
+            text: '1920×1080 · 1.0 KB',
+            position: 'bottom-left',
+            variant: 'secondary',
+        })
+        expect(pending.badges?.[0]?.text).toBe('1.0 KB')
+        expect(document.badges?.[0]?.text).toBe('1.0 KB')
     })
 
     it('分组折算保留组头总数并逐条映射', () => {

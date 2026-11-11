@@ -27,6 +27,8 @@ export class StockRoutes {
                 return this.service.search(payload, toWebviewUri)
             case 'stock/insert':
                 return this.service.insert(payload, toWebviewUri)
+            case 'stock/copy':
+                return this.service.copy(payload)
             case 'stock/thumb':
                 return this.service.thumb(payload, toWebviewUri)
             case 'stock/downloaded':

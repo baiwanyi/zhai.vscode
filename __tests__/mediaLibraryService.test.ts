@@ -91,7 +91,8 @@ describe('插入到编辑器', () => {
         const result = await service.insert({ id: MEDIA_ID })
 
         expect(result).toMatchObject({ inserted: true, refPath: ZHAI_REFERENCE, duplicated: false })
-        expect(readInsertedTexts()).toEqual([`![剑来](${ZHAI_REFERENCE})`])
+        // 引用自成一段：光标所在行后面还有内容，插入后空一行再接原文
+        expect(readInsertedTexts()).toEqual([`![剑来](${ZHAI_REFERENCE})\n\n`])
         expect(readUsages(MEDIA_ID)).toEqual([
             { ref_type: 'chapter', ref_scope: 'storage', ref_path: 'press/剑来/Chapters/第1章.md' },
         ])
@@ -104,7 +105,7 @@ describe('插入到编辑器', () => {
         const result = await service.insert({ id: MEDIA_ID })
 
         expect(result).toMatchObject({ inserted: true, refPath: ZHAI_REFERENCE })
-        expect(readInsertedTexts()).toEqual([`![剑来](${ZHAI_REFERENCE})`])
+        expect(readInsertedTexts()).toEqual([`![剑来](${ZHAI_REFERENCE})\n\n`])
         expect(readUsages(MEDIA_ID)).toEqual([{ ref_type: 'external', ref_scope: 'absolute', ref_path: outsidePath }])
     })
 

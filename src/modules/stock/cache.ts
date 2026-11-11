@@ -11,6 +11,14 @@ import { buildStorageUri } from '@modules/common/storagePath'
 import { STOCK_DIR } from '@shared/types/stock'
 import { PHOTO_CACHE_MAX, PHOTO_CACHE_TTL_MS, STOCK_THUMB_DIR, THUMB_MAX_FILES, THUMB_TTL_MS } from './constants'
 
+/** Unsplash 的四档原生地址：raw 为原图入口，其余为上游预置尺寸，缺档为 null */
+export interface StockPhotoUrls {
+    raw: string | null
+    full: string | null
+    regular: string | null
+    small: string | null
+}
+
 /** 内存中保留的照片元数据：插入时据此下载，避免为一张图再查一次详情 */
 export interface CachedStockPhoto {
     id: string
@@ -19,12 +27,10 @@ export interface CachedStockPhoto {
     alt: string
     photographer: string
     photographerUrl: string
-    /** 下载入口：raw 优先，缺失时由调用方回落 full / regular */
-    downloadUrl: string
+    /** 四档原生地址：插入按档位取用，raw / full / regular 全缺时该条不参与插入 */
+    urls: StockPhotoUrls
     /** 下载计数端点：插入成功后触发一次，Unsplash 条款要求 */
     downloadLocation: string | null
-    /** 缩略图源地址：用于补取缩略图 */
-    smallUrl: string | null
 }
 
 /** 带时间戳的缓存条目 */

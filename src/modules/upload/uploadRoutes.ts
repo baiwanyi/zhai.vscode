@@ -21,8 +21,12 @@ export class UploadRoutes {
                 return this.upload.pickUpload(toWebviewUri)
             case 'upload/bytes':
                 return this.upload.uploadBytes(payload, toWebviewUri)
+            case 'upload/insert':
+                return this.upload.insert(payload)
             case 'upload/list':
                 return this.upload.list(toWebviewUri)
+            case 'upload/remove':
+                return this.upload.remove(payload)
             case 'upload/reveal':
                 return this.upload.reveal()
             default:

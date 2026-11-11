@@ -53,6 +53,22 @@ export function isStockTopicId(value: unknown): value is string {
     return typeof value === 'string' && STOCK_TOPIC_ID_PATTERN.test(value)
 }
 
+/** 图片尺寸档位：与 Unsplash urls 的四档一一对应 */
+export type StockPhotoSizeKey = 'raw' | 'full' | 'regular' | 'small'
+
+/** 尺寸是否合法：非法值按「未指定」处理，回到默认下载口径 */
+export function isStockPhotoSizeKey(value: unknown): value is StockPhotoSizeKey {
+    return value === 'raw' || value === 'full' || value === 'regular' || value === 'small'
+}
+
+/** 可选尺寸：宽高按原图比例折算，前端只用于展示与回传档位 */
+export interface StockPhotoSize {
+    key: StockPhotoSizeKey
+    label: string
+    width: number
+    height: number
+}
+
 /** 搜索结果条目：缩略图已由宿主本地化，前端直接渲染 */
 export interface StockPhoto {
     /** Unsplash 照片 id，也是插入时唯一凭据 */
@@ -67,6 +83,8 @@ export interface StockPhoto {
     photographer: string
     /** 摄影者主页：带 utm 参数跳转 */
     photographerUrl: string
+    /** 可用尺寸档位：只列上游真实给出的档，按从大到小排列 */
+    sizes: readonly StockPhotoSize[]
     /** 已在本地库中：插入时不发网络、不耗配额 */
     downloaded: boolean
 }
@@ -185,6 +203,12 @@ export interface StockInsertResult {
     source?: 'local' | 'remote'
     /** true 表示该文档已引用过这张图 */
     duplicated?: boolean
+}
+
+/** 复制图片结果：与媒体库同一套剪贴板口径，reason 区分平台不支持与执行失败 */
+export interface StockCopyResult {
+    copied: boolean
+    reason?: 'unsupported' | 'failed'
 }
 
 /** 缩略图补取结果 */

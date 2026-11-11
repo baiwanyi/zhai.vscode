@@ -4,12 +4,14 @@
  * 复用约定：渲染查询走 @testing-library/react，点击与键盘用 user-event；
  * 媒体条目经 toMediaItem 映射，列表以 flat 模式渲染，状态位与续载入参给最小可用值。
  * 关键约束：卡片主动作是原生 button，操作按钮必须 stopPropagation，否则一次点击会同时触发主动作；
+ * 关联角标与 bottom-left 操作条同处左下角，操作按钮带 tooltip，渲染须自带 TooltipProvider 与 ResizeObserver 桩；
  * 多选模式下右上徽标与悬停动作一并隐藏，避免与勾选圈重叠。
  */
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { Copy, TextCursorInput, Trash2 } from 'lucide-react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { Copy, Info, TextCursorInput, Trash2 } from 'lucide-react'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { TooltipProvider } from '@components/ui/tooltip'
 import type { MediaItem } from '@shared/types/media'
 import { ImageList } from '@webview/workflow/media/layout/imageList/ImageList'
 import { toMediaItem } from '@webview/workflow/media/layout/imageList/imageListAdapters'
@@ -19,6 +21,25 @@ import type {
     ImageListStates,
 } from '@webview/workflow/media/layout/imageList/imageListModel'
 import type { RenderResult } from '@testing-library/react'
+
+/** jsdom 没有 ResizeObserver：Radix Tooltip 用它测量锚点，缺了就整棵树渲染失败 */
+class ResizeObserverStub implements ResizeObserver {
+    public observe(): void {
+        return undefined
+    }
+
+    public unobserve(): void {
+        return undefined
+    }
+
+    public disconnect(): void {
+        return undefined
+    }
+}
+
+beforeAll(() => {
+    globalThis.ResizeObserver = ResizeObserverStub
+})
 
 afterEach(cleanup)
 
@@ -79,6 +100,7 @@ interface RenderOptions {
     pendingCount?: number
     isSelecting?: boolean
     selectedIds?: ReadonlySet<string>
+    actions?: ImageListAction<MediaItem>[]
     handlers?: {
         onToggleSelect?: (image: MediaItem) => void
         onDelete?: (image: MediaItem) => void
@@ -88,32 +110,37 @@ interface RenderOptions {
     }
 }
 
+/** 默认动作：右侧竖排的复制 / 插入 / 删除，覆盖通用 placements 的既有能力 */
+const DEFAULT_ACTIONS = (handlers: RenderOptions['handlers'] = {}): ImageListAction<MediaItem>[] => [
+    { key: 'copy', label: '复制图片', icon: Copy, onTrigger: (item) => handlers.onCopy?.(item.source) },
+    {
+        key: 'insert',
+        label: '插入到文章',
+        icon: TextCursorInput,
+        onTrigger: (item) => handlers.onInsert?.(item.source),
+    },
+    { key: 'delete', label: '删除图片', icon: Trash2, onTrigger: (item) => handlers.onDelete?.(item.source) },
+]
+
 function renderList(options: RenderOptions = {}): RenderResult {
     const handlers = options.handlers ?? {}
-    const actions: ImageListAction<MediaItem>[] = [
-        { key: 'copy', label: '复制图片', icon: Copy, onTrigger: (item) => handlers.onCopy?.(item.source) },
-        {
-            key: 'insert',
-            label: '插入到文章',
-            icon: TextCursorInput,
-            onTrigger: (item) => handlers.onInsert?.(item.source),
-        },
-        { key: 'delete', label: '删除图片', icon: Trash2, onTrigger: (item) => handlers.onDelete?.(item.source) },
-    ]
+    const actions = options.actions ?? DEFAULT_ACTIONS(handlers)
     return render(
-        <ImageList
-            mode="flat"
-            items={(options.images ?? [PORTRAIT, PHOTO]).map((image) => toMediaItem(image))}
-            aspect="3/4"
-            pendingCount={options.pendingCount ?? 0}
-            isSelecting={options.isSelecting ?? false}
-            selectedIds={options.selectedIds ?? EMPTY_SELECTION}
-            states={STATES}
-            paging={PAGING}
-            actions={actions}
-            onActivate={(item) => handlers.onSelect?.(item.source)}
-            onToggleSelect={(item) => handlers.onToggleSelect?.(item.source)}
-        />,
+        <TooltipProvider>
+            <ImageList
+                mode="flat"
+                items={(options.images ?? [PORTRAIT, PHOTO]).map((image) => toMediaItem(image))}
+                aspect="3/4"
+                pendingCount={options.pendingCount ?? 0}
+                isSelecting={options.isSelecting ?? false}
+                selectedIds={options.selectedIds ?? EMPTY_SELECTION}
+                states={STATES}
+                paging={PAGING}
+                actions={actions}
+                onActivate={(item) => handlers.onSelect?.(item.source)}
+                onToggleSelect={(item) => handlers.onToggleSelect?.(item.source)}
+            />
+        </TooltipProvider>,
     )
 }
 
@@ -132,11 +159,12 @@ describe('ImageList', () => {
         expect(screen.getByText('未归类')).toBeDefined()
     })
 
-    it('关联数大于 0 时显示徽标，避免满屏「关联 0」', () => {
+    it('关联角标落在左下角且只显示引用条数，避免满屏「关联 0」', () => {
         renderList({ images: [createMedia({ usageCount: 3 }), PHOTO] })
 
-        expect(screen.getByText('关联 3')).toBeDefined()
-        expect(screen.queryByText('关联 0')).toBeNull()
+        const usage = screen.getByText('3')
+        expect(usage.closest('.absolute')?.className).toContain('bottom-1.5')
+        expect(screen.queryByText('0')).toBeNull()
     })
 
     it('文件丢失的条目显示已丢失标签', () => {
@@ -162,15 +190,39 @@ describe('ImageList', () => {
         expect(container.querySelectorAll('[data-slot="skeleton"]')).toHaveLength(0)
     })
 
-    it('点击卡片回传对应条目以打开详情', async () => {
+    it('点击卡片回传对应条目以执行主动作', async () => {
         const user = userEvent.setup()
         const onSelect = vi.fn()
         renderList({ handlers: { onSelect } })
 
-        await user.click(screen.getByLabelText('查看详情：无出处'))
+        await user.click(screen.getByLabelText('插入到文章：无出处'))
 
         expect(onSelect).toHaveBeenCalledTimes(1)
         expect(onSelect).toHaveBeenCalledWith(PHOTO)
+    })
+
+    it('悬停动作排在右下角竖列，按钮点击回传领域条目', async () => {
+        const user = userEvent.setup()
+        const onDetail = vi.fn()
+        renderList({
+            images: [createMedia({ usageCount: 1 })],
+            actions: [
+                {
+                    key: 'detail',
+                    label: '查看详情',
+                    icon: Info,
+                    onTrigger: (item): void => {
+                        onDetail(item.source)
+                    },
+                },
+            ],
+        })
+
+        const button = screen.getByRole('button', { name: '查看详情' })
+        expect(button.parentElement?.className).toContain('right-1.5')
+        expect(button.parentElement?.className).toContain('flex-col')
+        await user.click(button)
+        expect(onDetail).toHaveBeenCalledTimes(1)
     })
 
     it('复制、插入、删除三个操作按钮各自回传条目', async () => {

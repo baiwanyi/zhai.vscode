@@ -3,9 +3,10 @@
  * 复用约定：只做纯映射，不触碰宿主协议；出处、类型与体积文案在此收口，组件层不再认识领域字段；
  * 分组结构取 hooks/mediaMonth 的 MediaMonthGroup，组头文案与月份下拉同源。
  * 关键约束：source 原样保留领域对象，动作回调据此拿到完整条目；missing 只灰显、不可点由 isDisabled 表达；
- * 上传条目的 url 为 null 时走文件图标占位，缩略图缺失走缺图图标占位，二者不混用。
+ * 媒体条目的激活语义是「插入到文章」，类型与丢失态占左上、引用计数占左下，引用标题只在悬停时按需查询；
+ * 上传条目的左下角标给出像素与体积，url 为 null 时走文件图标占位，缩略图缺失走缺图图标占位，二者不混用。
  */
-import { File as FileIcon, ImageOff } from 'lucide-react'
+import { File as FileIcon, ImageOff, Link2 } from 'lucide-react'
 import type { MediaItem, MediaKind } from '@shared/types/media'
 import type { StockLocalPhoto, StockPhoto } from '@shared/types/stock'
 import type { UploadFileItem } from '@shared/types/upload'
@@ -52,20 +53,35 @@ function formatSize(bytes: number): string {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function toMediaItem(image: MediaItem, flags: ImageListItemFlags = {}): ImageListItem<MediaItem> {
+/**
+ * 媒体条目映射：左上角是类型或丢失态，左下角是引用角标。
+ * loadUsageTitles 由页面注入按需查询，缺省时角标只作图标与计数展示，不提供悬停内容。
+ */
+export function toMediaItem(
+    image: MediaItem,
+    flags: ImageListItemFlags = {},
+    loadUsageTitles?: (id: string) => Promise<readonly string[]>,
+): ImageListItem<MediaItem> {
     const originLabel = toOriginLabel(image)
     const badges: ImageListBadge[] = [
         { text: image.missing ? '已丢失' : KIND_LABEL[image.kind], position: 'top-left', variant: 'secondary' },
     ]
     if (image.usageCount > 0) {
-        badges.push({ text: `关联 ${image.usageCount}`, position: 'top-right', variant: 'outline' })
+        badges.push({
+            text: String(image.usageCount),
+            position: 'bottom-left',
+            variant: 'secondary',
+            icon: Link2,
+            hoverTitles:
+                loadUsageTitles === undefined ? undefined : (): Promise<readonly string[]> => loadUsageTitles(image.id),
+        })
     }
     return {
         id: image.id,
         src: image.url,
         alt: originLabel,
         title: originLabel,
-        activateLabel: `查看详情：${originLabel}`,
+        activateLabel: `插入到文章：${originLabel}`,
         badges,
         state: image.missing ? 'missing' : 'normal',
         isBusy: flags.isBusy,
@@ -113,14 +129,28 @@ export function toStockLocalItem(
     }
 }
 
-export function toUploadFileItem(item: UploadFileItem, flags: ImageListItemFlags = {}): ImageListItem<UploadFileItem> {
+/**
+ * 上传条目映射：左下角角标给出图片像素与体积，非图片文件只给体积。
+ * pixel 由页面在图片加载后回报并缓存，未回报前先只显示体积。
+ */
+export function toUploadFileItem(
+    item: UploadFileItem,
+    flags: ImageListItemFlags = {},
+    pixel?: { width: number; height: number },
+): ImageListItem<UploadFileItem> {
+    const sizeText = formatSize(item.byteSize)
+    const metaText =
+        pixel === undefined || item.url === null
+            ? sizeText
+            : `${String(pixel.width)}×${String(pixel.height)} · ${sizeText}`
     return {
         id: item.path,
         src: item.url,
         alt: item.name,
         title: item.name,
-        meta: formatSize(item.byteSize),
+        meta: metaText,
         activateLabel: `复制路径：${item.name}`,
+        badges: [{ text: metaText, position: 'bottom-left', variant: 'secondary' }],
         fallback: { icon: FileIcon, label: item.ext },
         state: 'normal',
         isBusy: flags.isBusy,

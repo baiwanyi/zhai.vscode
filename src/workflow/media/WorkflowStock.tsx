@@ -6,13 +6,18 @@
  * 已下载的分批取 useImageListPaging，搜索侧仍由 useStockPhotos 持有远端分页与配额上限。
  * 关键约束：默认停在搜索——已下载是二级视图，搜索面板常驻挂载、切到已下载只做隐藏，
  * 回来时不丢搜索词也不重复消耗配额；未配置密钥时不发任何请求、先给引导空态；
+ * 卡片单击按默认尺寸插入，右下角悬停动作为详情 / 复制（已下载另有删除）；
+ * 详情弹窗按上游四档尺寸逐档插入，已下载的图只有本地一份，不再列档位；
+ * 复制由宿主写入系统剪贴板，首次复制会先落盘并刷新已下载列表；
  * 插入成功只做局部插卡，删除走二次确认；密钥明文只在弹窗输入期间存在，保存后立即丢弃。
  */
 import {
     ChevronLeft,
     CloudDownload,
+    Copy,
     ImageIcon,
     ImageOff,
+    Info,
     KeyRound,
     MoreHorizontal,
     RotateCw,
@@ -21,7 +26,7 @@ import {
 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@components/ui/dropdown-menu'
-import type { StockLocalPhoto, StockPhoto } from '@shared/types/stock'
+import type { StockLocalPhoto, StockPhoto, StockPhotoSizeKey } from '@shared/types/stock'
 import {
     AppAction,
     AppContent,
@@ -37,6 +42,7 @@ import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { SegmentedRailItem } from '@webview/components/SegmentedRail'
 import { groupByMonth, toMonthOptions } from './hooks/mediaMonth'
 import { useImageListPaging } from './hooks/useImageListPaging'
+import { useStockCopy } from './hooks/useStockCopy'
 import { useStockDelete } from './hooks/useStockDelete'
 import { useStockDownloaded } from './hooks/useStockDownloaded'
 import { useStockInsert } from './hooks/useStockInsert'
@@ -46,11 +52,13 @@ import { ImageList } from './layout/imageList/ImageList'
 import { toImageListGroups, toStockLocalItem, toStockPhotoItem } from './layout/imageList/imageListAdapters'
 import { MonthSelect } from './layout/MonthSelect'
 import { ScrollRail } from './layout/ScrollRail'
+import { StockDetailDialog } from './layout/StockDetailDialog'
 import { StockFilterBar } from './layout/StockFilterBar'
 import { StockKeyDialog } from './layout/StockKeyDialog'
 import { StockQuotaBadges } from './layout/StockQuotaBadges'
 import { TOPIC_TAB_ITEMS, toStockTopic, toTopicTabValue } from './layout/stockTopics'
 import type { ImageListAction, ImageListItem, ImageListStates } from './layout/imageList/imageListModel'
+import type { StockDetailPhoto } from './layout/StockDetailDialog'
 import type { JSX } from 'react'
 
 /** 两个视图：搜索是首页，已下载是二级视图（进入后标题行左侧给返回） */
@@ -94,6 +102,34 @@ const LOCAL_STATES: ImageListStates = {
     },
 }
 
+/** 搜索结果 → 详情模型：尺寸档位按上游真实给出的档位展示 */
+function toSearchDetail(photo: StockPhoto): StockDetailPhoto {
+    return {
+        id: photo.id,
+        url: photo.thumbUrl,
+        alt: photo.alt,
+        photographer: photo.photographer,
+        width: photo.width,
+        height: photo.height,
+        sizes: photo.sizes,
+        downloaded: photo.downloaded,
+    }
+}
+
+/** 已下载条目 → 详情模型：本地只有一份文件，不再给档位 */
+function toLocalDetail(photo: StockLocalPhoto): StockDetailPhoto {
+    return {
+        id: photo.id,
+        url: photo.url,
+        alt: photo.alt,
+        photographer: photo.photographer,
+        width: photo.width,
+        height: photo.height,
+        sizes: [],
+        downloaded: true,
+    }
+}
+
 export function WorkflowStock(): JSX.Element {
     const { status, reload: reloadStatus, saveKey } = useStockStatus()
     const { items, months, total, isLoading, month, setMonth, reload, remove, prepend } = useStockDownloaded()
@@ -113,22 +149,31 @@ export function WorkflowStock(): JSX.Element {
             void reloadStatus()
         },
     })
+    /** 详情弹窗当前查看的图片：null 表示未打开 */
+    const [detail, setDetail] = useState<StockDetailPhoto | null>(null)
+    /** 复制：宿主管下载与剪贴板，首次复制也会落盘，成功后刷新已下载列表与配额 */
+    const { copyingId, copy } = useStockCopy({
+        onCopied: () => {
+            void reload()
+            void reloadStatus()
+        },
+    })
 
     /** 月份下拉选项：复用媒体页的聚合口径，全部月份排首位 */
     const monthOptions = useMemo(() => toMonthOptions(months, total), [months, total])
 
-    /** 搜索结果：插入中、失败与并发禁用折算成统一条目的运行态 */
+    /** 搜索结果：插入 / 复制中、失败与并发禁用折算成统一条目的运行态 */
     const searchItems = useMemo<ImageListItem<StockPhoto>[]>(
         () =>
             photos.items.map((photo) => {
-                const isBusy = insertingId === photo.id
+                const isBusy = insertingId === photo.id || copyingId === photo.id
                 return toStockPhotoItem(photo, {
                     isBusy,
                     isFailed: failedId === photo.id,
-                    isDisabled: insertingId !== null && !isBusy,
+                    isDisabled: (insertingId !== null || copyingId !== null) && !isBusy,
                 })
             }),
-        [failedId, insertingId, photos.items],
+        [copyingId, failedId, insertingId, photos.items],
     )
 
     /** 已下载：按月分组后走统一分批，滚动到底自动续放，不限页数 */
@@ -141,14 +186,14 @@ export function WorkflowStock(): JSX.Element {
     const localListGroups = useMemo(
         () =>
             toImageListGroups(visibleGroups, (photo: StockLocalPhoto) => {
-                const isBusy = insertingId === photo.id
+                const isBusy = insertingId === photo.id || copyingId === photo.id
                 return toStockLocalItem(photo, {
                     isBusy,
                     isFailed: failedId === photo.id,
-                    isDisabled: insertingId !== null && !isBusy,
+                    isDisabled: (insertingId !== null || copyingId !== null) && !isBusy,
                 })
             }),
-        [failedId, insertingId, visibleGroups],
+        [copyingId, failedId, insertingId, visibleGroups],
     )
 
     /** 刷新：两个视图的数据一起换，状态顺带更新配额与目标 */
@@ -179,31 +224,57 @@ export function WorkflowStock(): JSX.Element {
         },
     })
 
-    /** 搜索卡片的角标动作：缩略图缺失时才出现「重试」 */
+    /** 搜索卡片的悬停动作：详情、复制，缩略图缺失时多一个重试 */
     const searchActions: ImageListAction<StockPhoto>[] = [
+        {
+            key: 'detail',
+            label: '查看详情',
+            icon: Info,
+            onTrigger: (item) => setDetail(toSearchDetail(item.source)),
+        },
+        {
+            key: 'copy',
+            label: '复制图片',
+            icon: Copy,
+            onTrigger: (item) => copy(item.source.id),
+        },
         {
             key: 'retry-thumb',
             label: '重新获取缩略图',
             icon: RotateCw,
-            text: '重试',
-            variant: 'secondary',
-            placement: 'corner',
             isVisible: (item) => item.src === null,
             onTrigger: (item) => photos.retryThumb(item.source.id),
         },
     ]
 
-    /** 已下载卡片的删除：本处只上报意图，二次确认由页面负责 */
+    /** 已下载卡片的悬停动作：详情、复制与删除，删除的二次确认由页面负责 */
     const localActions: ImageListAction<StockLocalPhoto>[] = [
+        {
+            key: 'detail',
+            label: '查看详情',
+            icon: Info,
+            onTrigger: (item) => setDetail(toLocalDetail(item.source)),
+        },
+        {
+            key: 'copy',
+            label: '复制图片',
+            icon: Copy,
+            onTrigger: (item) => copy(item.source.id),
+        },
         {
             key: 'delete',
             label: '删除这张图片',
             icon: Trash2,
             variant: 'destructive',
-            placement: 'corner',
             onTrigger: (item) => deletion.request(item.source),
         },
     ]
+
+    /** 详情里插入：尺寸省略表示默认尺寸，插入后收起弹窗 */
+    const handleDetailInsert = (photo: StockDetailPhoto, size?: StockPhotoSizeKey): void => {
+        insert(photo.id, size)
+        setDetail(null)
+    }
 
     /** 搜索区状态：未配置先给引导，冷却与限流错误由 error 态呈现「多久后恢复」 */
     const searchStates: ImageListStates = {
@@ -315,7 +386,7 @@ export function WorkflowStock(): JSX.Element {
                             mode="grouped"
                             groups={localListGroups}
                             columns="compact"
-                            aspect="4/3"
+                            aspect="3/4"
                             dimOnHover="strong"
                             isLoading={isLoading}
                             states={LOCAL_STATES}
@@ -335,7 +406,7 @@ export function WorkflowStock(): JSX.Element {
                             mode="flat"
                             items={searchItems}
                             columns="compact"
-                            aspect="4/3"
+                            aspect="3/4"
                             dimOnHover="light"
                             isLoading={isConfigured && photos.isLoadingFirst}
                             errorText={isConfigured ? photos.errorText : null}
@@ -358,6 +429,18 @@ export function WorkflowStock(): JSX.Element {
                 secretHint={status?.secretHint ?? null}
                 onOpenChange={setIsKeyOpen}
                 onSubmit={handleSaveKey}
+            />
+
+            {/* 详情：搜索与已下载共用，尺寸档位由宿主给出的上游档位决定 */}
+            <StockDetailDialog
+                photo={detail}
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) {
+                        setDetail(null)
+                    }
+                }}
+                onInsert={handleDetailInsert}
+                onCopy={copy}
             />
 
             <ConfirmDialog

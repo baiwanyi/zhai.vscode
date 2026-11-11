@@ -1,8 +1,8 @@
 /**
  * 统一图片列表：编排加载态、空态、按月分组或平铺网格、在途占位与续载入口，供媒体、图库与上传页共用。
- * 复用约定：状态位、骨架、分组头与续载入口各由同族组件承担，卡片取 ImageCard，
- * 网格容器取 @components/ui 的 ItemGroup；数据为 flat / grouped 二选一的受控输入。
- * 关键约束：状态优先级固定为「加载 → 错误 → 空 → 内容」，加载态与空态不产生包裹节点，
+ * 复用约定：状态位、骨架与续载入口各由同族组件承担，卡片取 ImageCard，网格容器取 @components/ui 的 ItemGroup；
+ * 数据为 flat / grouped 二选一的受控输入，分组只按组渲染网格，不输出年月标题与计数。
+ * 关键约束：状态优先级固定为「加载 → 错误 → 空 → 内容」，加载态、空态与分组都不产生额外包裹节点，
  * 保证空态仍是 AppContent 的直接弹性子元素；列表不发起请求、不持有筛选与删除状态。
  */
 import { cn } from 'cn'
@@ -10,7 +10,6 @@ import { Fragment } from 'react'
 import { ItemGroup } from '@components/ui/item'
 import { ImageCard } from './ImageCard'
 import { ImageListEmpty } from './ImageListEmpty'
-import { ImageListGroup } from './ImageListGroup'
 import { ImageListLoadMore } from './ImageListLoadMore'
 import { IMAGE_LIST_GRID_CLASS } from './imageListModel'
 import { ImageListSkeleton } from './ImageListSkeleton'
@@ -21,7 +20,6 @@ export function ImageList<T>(props: ImageListProps<T>): JSX.Element {
     const {
         columns = 'compact',
         aspect = '4/3',
-        groupUnit = '张',
         captionPlacement = 'overlay',
         dimOnHover = 'none',
         isLoading = false,
@@ -93,12 +91,10 @@ export function ImageList<T>(props: ImageListProps<T>): JSX.Element {
         <div className={cn('mb-3', className)}>
             {props.mode === 'grouped' ? (
                 props.groups.map((group, index) => (
-                    <ImageListGroup key={group.key} label={group.label} total={group.total} unit={groupUnit}>
-                        <ItemGroup className={gridClass}>
-                            {index === 0 ? pendingCards : null}
-                            {group.items.map(renderItem)}
-                        </ItemGroup>
-                    </ImageListGroup>
+                    <ItemGroup key={group.key} className={gridClass}>
+                        {index === 0 ? pendingCards : null}
+                        {group.items.map(renderItem)}
+                    </ItemGroup>
                 ))
             ) : (
                 <ItemGroup className={gridClass}>

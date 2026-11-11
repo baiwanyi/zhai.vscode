@@ -7,7 +7,7 @@
  */
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
-import type { StockInsertResult } from '@shared/types/stock'
+import type { StockInsertResult, StockPhotoSizeKey } from '@shared/types/stock'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 
@@ -21,7 +21,8 @@ interface UseStockInsertResult {
     insertingId: string | null
     /** 上次失败的图片标识：卡片据此显示「重试」 */
     failedId: string | null
-    insert: (id: string) => void
+    /** 插入一张图：size 省略时用默认尺寸（配置宽度） */
+    insert: (id: string, size?: StockPhotoSizeKey) => void
 }
 
 export function useStockInsert(options?: UseStockInsertOptions): UseStockInsertResult {
@@ -30,11 +31,12 @@ export function useStockInsert(options?: UseStockInsertOptions): UseStockInsertR
     const onInserted = options?.onInserted
 
     const run = useCallback(
-        async (id: string): Promise<void> => {
+        async (id: string, size?: StockPhotoSizeKey): Promise<void> => {
             setInsertingId(id)
             setFailedId(null)
             try {
-                const result = await request<StockInsertResult>('stock/insert', { id })
+                const payload = size === undefined ? { id } : { id, size }
+                const result = await request<StockInsertResult>('stock/insert', payload)
                 if (result.inserted) {
                     toast.success(
                         result.duplicated === true
@@ -80,11 +82,11 @@ export function useStockInsert(options?: UseStockInsertOptions): UseStockInsertR
 
     /** 对外只给同步回调：JSX 属性不收返回 Promise 的处理函数 */
     const insert = useCallback(
-        (id: string): void => {
+        (id: string, size?: StockPhotoSizeKey): void => {
             if (insertingId !== null) {
                 return
             }
-            void run(id)
+            void run(id, size)
         },
         [insertingId, run],
     )

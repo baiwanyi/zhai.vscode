@@ -1,19 +1,23 @@
 /**
  * 媒体页：作品与通用文档共用的唯一媒体入口，标题与筛选 + 按月分组网格 + 底部出图输入区。
  * 入口由工作流分区路由直接引用，文件名即组件名 WorkflowMedia，目录不提供 index 出口。
- * 复用约定：外壳取 @webview/components/AppPage，多选操作并进标题行、筛选区整行走 AppMenu；
+ * 复用约定：外壳取 @webview/components/AppPage，多选操作并进筛选行，强制重扫收进页头「更多操作」下拉菜单；
  * 列表走统一图片列表 ImageList，条目经 imageListAdapters 映射、年月分组取 hooks/mediaMonth，
  * 分批与筛选经 useImageFilters，图片动作用 useImageActions，关联刷新经 useMediaRescan。
  * 关键约束：context 为 null（笔记、公众号、普通文件）时仍可出图，但只出通用素材——不渲染作品摘要、
  * 不提供「设为作品封面」，角色图与条目图需要作品归属故不可选；本页不再承接上传；
- * 筛选为「年月 / 来源 / 关联」三维，全部在内存完成，切换不重新请求；删除落盘侧进回收站，本页只刷新列表；
+ * 筛选为「年月 / 关联」两维，全部在内存完成，切换不重新请求；多选时选择操作覆盖整行、筛选区让位且不换行；
+ * 卡片单击直接插入当前文档，详情 / 复制 / 删除收在右下角竖排悬停动作，引用标题在悬停左下角关联角标时按需读取；
+ * 删除落盘侧进回收站，本页只刷新列表；
  * 出图成功只在该角色尚无封面时认领，取消后迟到的落盘只静默刷新列表。
  */
-import { Copy, ImageIcon, RefreshCw, TextCursorInput, Trash2 } from 'lucide-react'
+import { Copy, ImageIcon, Info, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@components/ui/dropdown-menu'
 import type { ImageGenerateResult } from '@shared/types/imagegen'
-import type { MediaItem } from '@shared/types/media'
-import { AppContent, AppFooter, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'
+import type { MediaDetailResult, MediaItem } from '@shared/types/media'
+import { request } from '@shared/utils/bridge'
+import { AppAction, AppContent, AppFooter, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
@@ -87,14 +91,12 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
     const { items, months, total, isLoading, removeMedia, removeMedias, reload } = useImageLibrary()
     /** 静默刷新：重扫与出图回填都只换数据，不把整页打回「正在读取」 */
     const silentReload = useCallback((): Promise<void> => reload({ silent: true }), [reload])
-    /** 关联刷新：挂载时按节流扫描一次，手动按钮强制重扫 */
+    /** 关联刷新：挂载时按节流扫描一次，菜单入口强制重扫 */
     const { rescan } = useMediaRescan(silentReload)
     const { settings, isLoaded: isSettingsLoaded, save: saveSettings } = useImageSettings()
     const {
         month,
         setMonth,
-        origin,
-        setOrigin,
         link,
         setLink,
         filtered,
@@ -137,8 +139,20 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
     /** 已渲染的图片：全选与网格都只覆盖这一批，未加载的图不进批量操作 */
     const visibleItems = useMemo(() => visibleGroups.flatMap((group) => group.items), [visibleGroups])
 
+    /**
+     * 引用标题按需读取：列表接口只带引用条数，标题在悬停关联角标时才查详情，
+     * 每条引用取标题，缺失时退回路径。
+     */
+    const loadUsageTitles = useCallback(async (id: string): Promise<readonly string[]> => {
+        const detail = await request<MediaDetailResult>('media/detail', { id })
+        return detail.usages.map((usage) => usage.refTitle ?? usage.refPath)
+    }, [])
+
     /** 统一列表的分组数据：领域条目与出处标签由适配器折算，组件层不认识媒体字段 */
-    const galleryGroups = useMemo(() => toImageListGroups(visibleGroups, toMediaItem), [visibleGroups])
+    const galleryGroups = useMemo(
+        () => toImageListGroups(visibleGroups, (image) => toMediaItem(image, {}, loadUsageTitles)),
+        [visibleGroups, loadUsageTitles],
+    )
 
     /** 多选与删除编排：多选只在当前筛选内生效，删除后由封面同步 hook 修正角色指针 */
     const { isSelecting, selectedIds, isAllVisibleSelected, toggleSelecting, exitSelecting, toggleImage, selectAll } =
@@ -214,8 +228,14 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
         }
     }
 
-    /** 卡片悬停动作：只上报领域条目，落盘与提示仍在 useImageActions / useImageDeletion 内 */
+    /** 卡片悬停动作：右下角竖排依次是详情 / 复制 / 删除，单击卡片本身直接插入当前文档 */
     const mediaActions: ImageListAction<MediaItem>[] = [
+        {
+            key: 'detail',
+            label: '查看详情',
+            icon: Info,
+            onTrigger: (item) => setSelected(item.source),
+        },
         {
             key: 'copy',
             label: '复制图片',
@@ -223,15 +243,10 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
             onTrigger: (item) => copyImage(item.source),
         },
         {
-            key: 'insert',
-            label: '插入到文章',
-            icon: TextCursorInput,
-            onTrigger: (item) => insertImage(item.source),
-        },
-        {
             key: 'delete',
             label: '删除图片',
             icon: Trash2,
+            variant: 'destructive',
             onTrigger: (item) => deleteImage(item.source),
         },
     ]
@@ -244,22 +259,36 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
                     {context === null ? null : (
                         <AppSummary title={setting.title} path={context.dirPath} meta={totalText} />
                     )}
-                    <AppMenu className="justify-between">
-                        <ImageGenFilters
-                            month={month}
-                            options={monthOptions}
-                            onMonthChange={setMonth}
-                            origin={origin}
-                            onOriginChange={setOrigin}
-                            link={link}
-                            onLinkChange={setLink}
-                            hasActiveFilter={hasActiveFilter}
-                            onClearFilters={clearFilters}
-                        />
-                        <div className="flex items-center gap-1">
-                            <Button size="icon" tooltip="重新扫描关联" aria-label="重新扫描关联" onClick={rescan}>
-                                <RefreshCw className="size-4" />
-                            </Button>
+                    <AppAction>
+                        <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                                <Button variant="ghost" size="icon" tooltip="更多操作" aria-label="更多操作">
+                                    <MoreHorizontal className="size-4" />
+                                </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                                <DropdownMenuItem onSelect={rescan}>
+                                    <RefreshCw className="size-4" />
+                                    重新扫描关联
+                                </DropdownMenuItem>
+                            </DropdownMenuContent>
+                        </DropdownMenu>
+                    </AppAction>
+                    <AppMenu className={isSelecting ? 'flex-nowrap justify-end' : 'justify-between'}>
+                        {isSelecting ? null : (
+                            <ImageGenFilters
+                                month={month}
+                                options={monthOptions}
+                                onMonthChange={setMonth}
+                                link={link}
+                                onLinkChange={setLink}
+                                hasActiveFilter={hasActiveFilter}
+                                onClearFilters={clearFilters}
+                            />
+                        )}
+                        <div
+                            className={isSelecting ? 'flex w-full items-center justify-end' : 'flex items-center gap-1'}
+                        >
                             <ImageSelectionActions
                                 isSelecting={isSelecting}
                                 selectedCount={selectedIds.size}
@@ -279,6 +308,8 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
                         groups={galleryGroups}
                         columns="responsive"
                         aspect="3/4"
+                        captionPlacement="none"
+                        dimOnHover="light"
                         isLoading={isLoading}
                         pendingCount={isGenerating || isRefreshingResult ? 1 : 0}
                         emptyPhase={isLibraryEmpty ? 'empty' : 'no-result'}
@@ -291,7 +322,7 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
                         }}
                         isSelecting={isSelecting}
                         selectedIds={selectedIds}
-                        onActivate={(item) => setSelected(item.source)}
+                        onActivate={(item) => insertImage(item.source)}
                         onToggleSelect={(item) => toggleImage(item.source)}
                         actions={mediaActions}
                     />

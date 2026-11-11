@@ -1,14 +1,22 @@
 /**
- * 上传页数据与动作：清单读取、选择 / 拖拽 / 粘贴三条上传通道与「打开上传目录」。
+ * 上传页数据与动作：清单读取、选择 / 拖拽 / 粘贴三条上传通道、插入到文档、删除与「打开上传目录」。
  * 复用约定：清单走 upload/list，选择文件走 upload/pick（宿主弹选择器、零拷贝），
- * 拖拽与粘贴把 File 读成 base64 后走 upload/bytes，打开目录走 upload/reveal；回执由 toast 汇总。
+ * 拖拽与粘贴把 File 读成 base64 后走 upload/bytes，插入走 upload/insert，删除走 upload/remove（回收站），
+ * 打开目录走 upload/reveal；回执由 toast 汇总。
  * 关键约束：上传成功后只静默重拉清单，不做乐观插入（磁盘是唯一事实来源）；
  * 粘贴监听只处理剪贴板里的文件，文本粘贴完全不拦截；
  * 拖拽用进入计数抵消子元素冒泡，避免鼠标划过内部控件时高亮层闪烁。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import type { UploadFileItem, UploadListResult, UploadResult, UploadRevealResult } from '@shared/types/upload'
+import type {
+    UploadFileItem,
+    UploadInsertResult,
+    UploadListResult,
+    UploadRemoveResult,
+    UploadResult,
+    UploadRevealResult,
+} from '@shared/types/upload'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import type { DragEvent } from 'react'
@@ -54,6 +62,8 @@ interface UseUploaderResult {
     isUploading: boolean
     /** 正在唤起系统文件管理器 */
     isRevealing: boolean
+    /** 正在删除文件：确认框据此禁用重复提交 */
+    isRemoving: boolean
     /** 拖拽悬停中：页面据此显示高亮层 */
     isDragging: boolean
     /** 挂在页面根节点上的拖拽处理器 */
@@ -65,6 +75,10 @@ interface UseUploaderResult {
     }
     /** 打开系统文件选择器：宿主侧完成读取与落盘 */
     pickFiles: () => void
+    /** 插入到当前 Markdown 光标处：图片写图片语法、其余写链接 */
+    insert: (path: string) => void
+    /** 删除一个已上传文件：成功后静默重拉清单 */
+    remove: (path: string) => void
     /** 在系统文件管理器中打开上传目录 */
     reveal: () => void
 }
@@ -74,6 +88,7 @@ export function useUploader(): UseUploaderResult {
     const [isLoading, setIsLoading] = useState(true)
     const [isUploading, setIsUploading] = useState(false)
     const [isRevealing, setIsRevealing] = useState(false)
+    const [isRemoving, setIsRemoving] = useState(false)
     const [isDragging, setIsDragging] = useState(false)
     /** 拖拽进入深度：子元素之间的移动会连续触发 enter/leave，用计数抵消 */
     const dragDepthRef = useRef(0)
@@ -177,6 +192,63 @@ export function useUploader(): UseUploaderResult {
         }
     }, [submitFiles])
 
+    /** 插入到当前文档：失败按原因分支提示，与媒体页插入同一套口径 */
+    const insert = useCallback((path: string): void => {
+        void (async (): Promise<void> => {
+            try {
+                const result = await request<UploadInsertResult>('upload/insert', { path })
+                if (result.inserted) {
+                    toast.success(
+                        result.duplicated === true ? '已插入（该文档此前已引用过这个文件）' : '已插入到当前文档光标处',
+                    )
+                    return
+                }
+                switch (result.reason) {
+                    case 'no-editor':
+                        toast.error('请先把光标放到一个 Markdown 文档中')
+                        break
+                    case 'not-markdown':
+                        toast.error('仅在 Markdown 文件中支持插入')
+                        break
+                    case 'unsaved':
+                        toast.error('请先保存当前文档再插入')
+                        break
+                    default:
+                        toast.error('插入失败，请重试')
+                        break
+                }
+            } catch (cause) {
+                toastError(cause)
+            }
+        })()
+    }, [])
+
+    /**
+     * 删除文件：宿主移入回收站，成功后静默重拉清单。
+     * 关键约束：文件已不存在时同样重拉，让列表与磁盘对齐；失败只提示，不动本地清单。
+     */
+    const remove = useCallback(
+        (path: string): void => {
+            void (async (): Promise<void> => {
+                setIsRemoving(true)
+                try {
+                    const result = await request<UploadRemoveResult>('upload/remove', { path })
+                    await reload(true)
+                    if (result.removed) {
+                        toast.success('文件已移入回收站')
+                        return
+                    }
+                    toast.error('文件已不存在，列表已刷新')
+                } catch (cause) {
+                    toastError(cause)
+                } finally {
+                    setIsRemoving(false)
+                }
+            })()
+        },
+        [reload],
+    )
+
     const reveal = useCallback((): void => {
         void (async (): Promise<void> => {
             setIsRevealing(true)
@@ -221,5 +293,17 @@ export function useUploader(): UseUploaderResult {
         [submitFiles],
     )
 
-    return { items, isLoading, isUploading, isRevealing, isDragging, dragHandlers, pickFiles, reveal }
+    return {
+        items,
+        isLoading,
+        isUploading,
+        isRevealing,
+        isRemoving,
+        isDragging,
+        dragHandlers,
+        pickFiles,
+        insert,
+        remove,
+        reveal,
+    }
 }

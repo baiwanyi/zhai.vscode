@@ -3,22 +3,36 @@
  * 复用约定：HTTP 走 ./client，照片元数据留 ./cache，本地库读写走 ./stockLibraryService，
  * 密钥存取走 common/secrets（SecretStorage），路径拼接走 common/storagePath，正文写入与媒体库同一套口径。
  * 关键约束：前端只传 photoId，下载地址与保存目录一律在宿主解析；命中本地库时全程不发网络、不耗配额；
+ * 插入可按上游原生档位（raw / full / regular / small）下载，未指定档位时用配置宽度取 raw 入口；
+ * 复制与插入共用同一段落盘链，复制不依赖活动编辑器，落盘归属按 general 记账；
  * 目标解析前置——没有可用编辑器时直接返回四态，不做任何下载；
  * 写盘先落 .part 再 rename，失败清掉临时文件；同一时刻只允许一个下载插入任务。
  */
 import * as vscode from 'vscode'
+import { writeImageToClipboard } from '@modules/common/clipboardImage'
 import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
+import { buildBlockInsertion, readBlockContext } from '@modules/common/markdownBlock'
 import type { SecretsService } from '@modules/common/secrets'
 import { buildStorageUri, isPathExisting } from '@modules/common/storagePath'
-import { isStockFileStem, isStockOrderBy, isStockOrientation, isStockTopicId } from '@shared/types/stock'
+import type { MediaScope } from '@shared/types/media'
+import {
+    isStockFileStem,
+    isStockOrderBy,
+    isStockOrientation,
+    isStockPhotoSizeKey,
+    isStockTopicId,
+} from '@shared/types/stock'
 import type {
+    StockCopyResult,
     StockDownloadedResult,
     StockOrderBy,
     StockInsertResult,
     StockKeyClearResult,
     StockKeySaveResult,
     StockPhoto,
+    StockPhotoSize,
+    StockPhotoSizeKey,
     StockRemoveResult,
     StockSearchResult,
     StockStatusResult,
@@ -45,6 +59,22 @@ const THUMB_CONCURRENCY = 4
 const THUMB_WIDTH = 400
 /** 密钥尾号展示保留位数 */
 const SECRET_HINT_TAIL = 4
+/** 尺寸档位文案：与 Unsplash urls 四档一一对应 */
+const SIZE_LABELS: Readonly<Record<StockPhotoSizeKey, string>> = {
+    raw: '原始',
+    full: '大图',
+    regular: '中图',
+    small: '小图',
+}
+/** 档位标称宽度：raw / full 保留原图宽度，regular / small 由上游裁好 */
+const SIZE_WIDTHS: Readonly<Record<StockPhotoSizeKey, number>> = {
+    raw: 0,
+    full: 0,
+    regular: 1080,
+    small: 400,
+}
+/** 档位从大到小：超体积时沿此顺序降级 */
+const SIZE_ORDER: readonly StockPhotoSizeKey[] = ['raw', 'full', 'regular', 'small']
 
 /** 服务依赖：客户端、缓存、本地库与密钥分别注入，便于单测替换 */
 export interface StockServiceDeps {
@@ -126,6 +156,33 @@ function sanitizeAlt(value: string): string {
 function buildSnippet(alt: string, photographer: string | null, refPath: string): string {
     const credit = getZhaiConfig().stockAppendCredit && photographer !== null ? ` · ${photographer}` : ''
     return `![${sanitizeAlt(`${alt.length === 0 ? '图片' : alt}${credit}`)}](${refPath})`
+}
+
+/** 默认下载入口：raw → full → regular，parsePhoto 已保证至少一档存在 */
+function defaultDownloadUrl(photo: CachedStockPhoto): string {
+    return photo.urls.raw ?? photo.urls.full ?? photo.urls.regular ?? ''
+}
+
+/** 从相对路径取扩展名：剪贴板按类型写入，取不到时按 jpg 处理 */
+function readPathExtension(relPath: string): string {
+    const index = relPath.lastIndexOf('.')
+    return index < 0 ? 'jpg' : relPath.slice(index + 1).toLowerCase()
+}
+
+/** 可用尺寸：只列上游真实给出的档，宽高按原图比例折算 */
+function toSizes(photo: CachedStockPhoto): StockPhotoSize[] {
+    const sizes: StockPhotoSize[] = []
+    for (const key of SIZE_ORDER) {
+        if (photo.urls[key] === null) {
+            continue
+        }
+        const nominal = SIZE_WIDTHS[key]
+        const width = nominal === 0 ? photo.width : Math.min(nominal, photo.width)
+        const height =
+            photo.width > 0 && photo.height > 0 && width > 0 ? Math.round((width * photo.height) / photo.width) : 0
+        sizes.push({ key, label: SIZE_LABELS[key], width, height })
+    }
+    return sizes
 }
 
 export class StockService {
@@ -213,6 +270,7 @@ export class StockService {
                         alt: photo.alt,
                         photographer: photo.photographer,
                         photographerUrl: photo.photographerUrl,
+                        sizes: toSizes(photo),
                         downloaded: row !== null && !row.missing,
                     }
                 }),
@@ -260,10 +318,13 @@ export class StockService {
      * 下载成功但写入失败时文件保留，回执带原因，用户重试不会再下一遍。
      */
     public async insert(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<StockInsertResult> {
-        const photoId = readPayload(payload, 'stock/insert').id
+        const body = readPayload(payload, 'stock/insert')
+        const photoId = body.id
         if (!isStockFileStem(photoId)) {
             throw new Error('stock/insert 缺少合法的图片标识')
         }
+        // 尺寸档位可省略：省略时按配置宽度下载 raw 入口，等价于「默认尺寸」
+        const size = isStockPhotoSizeKey(body.size) ? body.size : undefined
         const outcome = resolveStockTarget()
         if (!outcome.ok) {
             return { inserted: false, reason: outcome.reason }
@@ -273,10 +334,39 @@ export class StockService {
         }
         this.activeInsert = photoId
         try {
-            return await this.insertOnce(photoId, outcome.target, toWebviewUri)
+            return await this.insertOnce(photoId, outcome.target, toWebviewUri, size)
         } finally {
             this.activeInsert = null
         }
+    }
+
+    /**
+     * 复制图片到系统剪贴板：本地有文件直接复制，没有则按默认尺寸下载落盘后再复制。
+     * 关键约束：复制不依赖活动编辑器，落盘归属按 general 记账；下载与写盘复用插入链路。
+     */
+    public async copy(payload: unknown): Promise<StockCopyResult> {
+        const photoId = readPayload(payload, 'stock/copy').id
+        if (!isStockFileStem(photoId)) {
+            throw new Error('stock/copy 缺少合法的图片标识')
+        }
+        const root = resolveStorageRoot()
+        const local = this.deps.library.find(photoId)
+        if (local !== null) {
+            const localUri = buildStorageUri(root, local.path.split('/'))
+            if (await isPathExisting(localUri)) {
+                const outcome = await writeImageToClipboard(localUri.fsPath, local.ext)
+                return outcome === 'copied' ? { copied: true } : { copied: false, reason: outcome }
+            }
+        }
+        const target = resolveStockTarget()
+        const scope: MediaScope = target.ok ? target.target.scope : 'general'
+        const stored = await this.downloadToLibrary(photoId, undefined, scope)
+        if (!stored.ok) {
+            return { copied: false, reason: 'failed' }
+        }
+        const fileUri = buildStorageUri(root, stored.relPath.split('/'))
+        const outcome = await writeImageToClipboard(fileUri.fsPath, readPathExtension(stored.relPath))
+        return outcome === 'copied' ? { copied: true } : { copied: false, reason: outcome }
     }
 
     /** 缩略图：命中缓存直接用，未命中下载并写盘；单张失败返回 null 不抛错 */
@@ -289,11 +379,11 @@ export class StockService {
         if (fresh !== null) {
             return toWebviewUri(fresh)
         }
-        if (photo.smallUrl === null) {
+        if (photo.urls.small === null) {
             return null
         }
         try {
-            const downloaded = await this.deps.client.download(photo.smallUrl, THUMB_WIDTH)
+            const downloaded = await this.deps.client.download(photo.urls.small, THUMB_WIDTH)
             const written = await writeThumb(root, photo.id, downloaded.bytes)
             return toWebviewUri(written)
         } catch (error) {
@@ -302,33 +392,60 @@ export class StockService {
         }
     }
 
-    /** 单次插入：本地复用优先，其次缓存与回源，最后下载落盘并写入正文 */
+    /** 单次插入：本地复用优先，其次缓存与回源，最后按档位下载落盘并写入正文 */
     private async insertOnce(
         photoId: string,
         target: StockInsertTarget,
         toWebviewUri: (uri: vscode.Uri) => string,
+        size: StockPhotoSizeKey | undefined,
     ): Promise<StockInsertResult> {
         const root = resolveStorageRoot()
         const local = this.deps.library.find(photoId)
+        // 本地已有文件时不再回源：尺寸档位只决定下载内容，复用本地时一律用已落盘的那一份
         if (local !== null && (await isPathExisting(buildStorageUri(root, local.path.split('/'))))) {
             return this.writeIntoEditor(target, local.path, toWebviewUri, 'local', local.alt, local.photographer)
         }
+        const stored = await this.downloadToLibrary(photoId, size, target.scope)
+        if (!stored.ok) {
+            return { inserted: false, reason: 'write', path: stored.relPath }
+        }
+        return this.writeIntoEditor(
+            target,
+            stored.relPath,
+            toWebviewUri,
+            'remote',
+            stored.photo.alt,
+            stored.photo.photographer,
+        )
+    }
+
+    /**
+     * 下载并落盘一张图：库内已有记录时沿用原路径，未记录才按当前时间新建目录。
+     * 关键约束：先落 .part 再 rename，写盘失败回传 relPath 供前端提示，不抛错；
+     * 下载与入库是插入与复制共用的同一段，避免两条链路各写一份。
+     */
+    private async downloadToLibrary(
+        photoId: string,
+        size: StockPhotoSizeKey | undefined,
+        scope: MediaScope,
+    ): Promise<{ ok: true; relPath: string; photo: CachedStockPhoto } | { ok: false; relPath: string }> {
+        const root = resolveStorageRoot()
+        const local = this.deps.library.find(photoId)
         const photo = await this.resolvePhoto(photoId)
-        const downloaded = await this.downloadWithFallback(photo)
+        const downloaded = await this.downloadForSize(photo, size)
         // 库内有记录但文件已丢：沿用原路径重建，保证同一张图的路径稳定
         const relPath = local === null ? buildStockTarget(root, photoId, downloaded.extension).relPath : local.path
         const segments = relPath.split('/')
-        const dirUri = buildStorageUri(root, segments.slice(0, -1))
         const targetUri = buildStorageUri(root, segments)
         if (!(await isPathExisting(targetUri))) {
             try {
-                await vscode.workspace.fs.createDirectory(dirUri)
+                await vscode.workspace.fs.createDirectory(buildStorageUri(root, segments.slice(0, -1)))
                 const tempUri = buildStorageUri(root, [...segments.slice(0, -1), `${photoId}.part`])
                 await vscode.workspace.fs.writeFile(tempUri, downloaded.bytes)
                 await vscode.workspace.fs.rename(tempUri, targetUri, { overwrite: false })
             } catch (error) {
                 logger.error(`在线图库写盘失败：${relPath}`, error)
-                return { inserted: false, reason: 'write', path: relPath }
+                return { ok: false, relPath }
             }
         }
         insertStockPhoto(this.deps.openDatabase().db, {
@@ -342,13 +459,39 @@ export class StockService {
             photographer: photo.photographer,
             photographerUrl: photo.photographerUrl,
             downloadLocation: photo.downloadLocation,
-            scope: target.scope,
+            scope,
             downloadedAt: new Date().toISOString(),
         })
         if (photo.downloadLocation !== null) {
             void this.deps.client.trackDownload(photo.downloadLocation)
         }
-        return this.writeIntoEditor(target, relPath, toWebviewUri, 'remote', photo.alt, photo.photographer)
+        return { ok: true, relPath, photo }
+    }
+
+    /**
+     * 按档位下载：给了档位就走上游原生地址，超过体积上限时沿更小的档位降级；
+     * 未给档位或全部档位都不满足时回到默认宽度口径（raw 入口 + 配置宽度）。
+     */
+    private async downloadForSize(
+        photo: CachedStockPhoto,
+        size: StockPhotoSizeKey | undefined,
+    ): Promise<{ bytes: Uint8Array; extension: string; byteSize: number }> {
+        if (size === undefined) {
+            return this.downloadWithFallback(photo)
+        }
+        const maxBytes = getZhaiConfig().stockMaxBytes * 1024 * 1024
+        for (const key of SIZE_ORDER.slice(SIZE_ORDER.indexOf(size))) {
+            const url = photo.urls[key]
+            if (url === null) {
+                continue
+            }
+            const result = await this.deps.client.download(url, null)
+            if (result.byteSize <= maxBytes) {
+                return result
+            }
+            logger.warn(`所选尺寸超过体积上限，降档重试：${photo.id}（${key} / ${String(result.byteSize)} 字节）`)
+        }
+        return this.downloadWithFallback(photo)
     }
 
     /** 取照片元数据：内存缓存 → 回源；回源要求满足上游 id 形态 */
@@ -368,12 +511,12 @@ export class StockService {
     ): Promise<{ bytes: Uint8Array; extension: string; byteSize: number }> {
         const config = getZhaiConfig()
         const maxBytes = config.stockMaxBytes * 1024 * 1024
-        const first = await this.deps.client.download(photo.downloadUrl, config.stockImageWidth)
+        const first = await this.deps.client.download(defaultDownloadUrl(photo), config.stockImageWidth)
         if (first.byteSize <= maxBytes) {
             return first
         }
         logger.warn(`图片超过体积上限，降档重试：${photo.id}（${String(first.byteSize)} 字节）`)
-        const fallback = await this.deps.client.download(photo.downloadUrl, FALLBACK_IMAGE_WIDTH)
+        const fallback = await this.deps.client.download(defaultDownloadUrl(photo), FALLBACK_IMAGE_WIDTH)
         if (fallback.byteSize > maxBytes) {
             throw new Error(`图片超过 ${String(config.stockMaxBytes)}MB 上限，未下载`)
         }
@@ -395,13 +538,18 @@ export class StockService {
         const document = editor.document
         const isDuplicated = document.getText().includes(refPath)
         const insertAt = editor.selection.active
+        // 引用自成一段：光标夹在行中间时先断开当前行，前后各留一个空行
+        const block = buildBlockInsertion(readBlockContext(document, insertAt), snippet)
         const didInsert = await editor.edit((builder) => {
-            builder.insert(insertAt, snippet)
+            builder.insert(insertAt, block.text)
         })
         if (!didInsert) {
             return { inserted: false, reason: 'write', path: relPath, refPath, source }
         }
-        const range = new vscode.Range(insertAt, insertAt.translate(0, snippet.length))
+        const range = new vscode.Range(
+            insertAt.translate(0, block.start),
+            insertAt.translate(0, block.start + snippet.length),
+        )
         await vscode.window.showTextDocument(document, { viewColumn: editor.viewColumn, selection: range })
         return {
             inserted: true,

@@ -1,9 +1,10 @@
 /**
- * 统一图片卡片：栅格内的缩略图、角标、说明、悬停动作、多选勾选与在途/丢失态。
+ * 统一图片卡片：栅格内的缩略图、角标、说明、右下角悬停动作、多选勾选与在途/丢失态。
  * 复用约定：外壳取 @components/ui 的 Item（须置于 ItemGroup 内），图片取 @webview/components/Image，
  * 按钮取 @webview/components/Button，叠层交给 ImageCardOverlay；领域对象经 item.source 原样回传。
  * 关键约束：卡片主动作是原生 button，键盘回车与空格都能触发；内部操作按钮阻止冒泡，
  * 避免同时触发主动作；焦点环用负偏移 outline，防止被卡片的 overflow-hidden 裁掉；
+ * 悬停动作统一排在右下角竖列、多选下整列隐藏；图片解码后回报原始像素，供上传页展示尺寸；
  * 缺图与非图片文件走图标占位而非空白卡，多选模式下隐藏右上徽标与悬停动作。
  */
 import { cn } from 'cn'
@@ -14,12 +15,12 @@ import { Image } from '@webview/components/Image'
 import { ImageCardOverlay } from './ImageCardOverlay'
 import { IMAGE_LIST_ASPECT_CLASS } from './imageListModel'
 import type { ImageListAction, ImageListAspect, ImageListItem } from './imageListModel'
-import type { JSX } from 'react'
+import type { JSX, SyntheticEvent } from 'react'
 
 interface ImageCardProps<T> {
     item: ImageListItem<T>
     aspect: ImageListAspect
-    captionPlacement: 'overlay' | 'below'
+    captionPlacement: 'overlay' | 'below' | 'none'
     dimOnHover: 'none' | 'light' | 'strong'
     isSelecting: boolean
     isSelected: boolean
@@ -40,8 +41,6 @@ export function ImageCard<T>({
     onToggleSelect,
 }: ImageCardProps<T>): JSX.Element {
     const visibleActions = actions.filter((action) => action.isVisible?.(item) ?? true)
-    const railActions = visibleActions.filter((action) => (action.placement ?? 'rail') === 'rail')
-    const cornerActions = visibleActions.filter((action) => action.placement === 'corner')
     const FallbackIcon = item.fallback?.icon
     const isDisabled = item.isDisabled === true || item.isBusy === true
     const activateLabel = isSelecting ? `选择：${item.alt}` : (item.activateLabel ?? item.alt)
@@ -52,6 +51,15 @@ export function ImageCard<T>({
             return
         }
         onActivate?.(item)
+    }
+
+    /** 解码完成回传原始像素：宽高为 0 时不回报，避免把占位图当成真实尺寸 */
+    function handleImageLoad(event: SyntheticEvent<HTMLImageElement>): void {
+        const { naturalWidth, naturalHeight } = event.currentTarget
+        if (naturalWidth <= 0 || naturalHeight <= 0) {
+            return
+        }
+        item.onMeasured?.(naturalWidth, naturalHeight)
     }
 
     return (
@@ -68,7 +76,6 @@ export function ImageCard<T>({
             <button
                 type="button"
                 aria-label={activateLabel}
-                title={item.title}
                 disabled={isDisabled}
                 className="block w-full cursor-pointer text-left outline-none focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2 disabled:cursor-default"
                 onClick={handleActivate}
@@ -86,7 +93,14 @@ export function ImageCard<T>({
                         )}
                     </span>
                 ) : (
-                    <Image src={item.src} alt={item.alt} aspect={aspect} className="w-full bg-muted" loading="lazy" />
+                    <Image
+                        src={item.src}
+                        alt={item.alt}
+                        aspect={aspect}
+                        className="w-full bg-muted"
+                        loading="lazy"
+                        onLoad={handleImageLoad}
+                    />
                 )}
                 {captionPlacement === 'below' ? (
                     <>
@@ -105,7 +119,7 @@ export function ImageCard<T>({
                     aria-hidden
                     className={cn(
                         'pointer-events-none absolute inset-0 opacity-0 transition-opacity group-hover:opacity-100',
-                        dimOnHover === 'strong' ? 'bg-black/20' : 'bg-black/10',
+                        dimOnHover === 'strong' ? 'bg-black/50' : 'bg-black/30',
                     )}
                 />
             )}
@@ -128,54 +142,30 @@ export function ImageCard<T>({
                 >
                     {isSelected ? <Check className="size-3.5" /> : null}
                 </span>
-            ) : (
-                <>
-                    {railActions.length > 0 ? (
-                        <div className="absolute top-12 right-1 flex flex-col gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
-                            {railActions.map((action) => {
-                                const Icon = action.icon
-                                return (
-                                    <Button
-                                        key={action.key}
-                                        variant={action.variant ?? 'ghost'}
-                                        size="icon-sm"
-                                        aria-label={action.label}
-                                        disabled={isDisabled}
-                                        className="bg-background/80"
-                                        onClick={(event) => {
-                                            event.stopPropagation()
-                                            action.onTrigger(item)
-                                        }}
-                                    >
-                                        <Icon className="size-4" />
-                                    </Button>
-                                )
-                            })}
-                        </div>
-                    ) : null}
-                    {cornerActions.map((action) => {
+            ) : visibleActions.length > 0 ? (
+                <div className="absolute right-1.5 bottom-2.5 flex flex-col gap-1 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+                    {visibleActions.map((action) => {
                         const Icon = action.icon
                         return (
                             <Button
                                 key={action.key}
                                 variant={action.variant ?? 'secondary'}
-                                size="xs"
+                                size="icon-xs"
                                 aria-label={action.label}
                                 tooltip={action.label}
                                 disabled={isDisabled}
-                                className="absolute right-1.5 bottom-1.5 opacity-0 transition-opacity group-focus-within:opacity-80 group-hover:opacity-80"
+                                className="bg-background/80"
                                 onClick={(event) => {
                                     event.stopPropagation()
                                     action.onTrigger(item)
                                 }}
                             >
                                 <Icon className="size-3.5" />
-                                {action.text}
                             </Button>
                         )
                     })}
-                </>
-            )}
+                </div>
+            ) : null}
         </Item>
     )
 }

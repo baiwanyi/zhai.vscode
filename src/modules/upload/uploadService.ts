@@ -8,10 +8,20 @@
  */
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
+import { resolveMarkdownEditor } from '@modules/common/insertTarget'
 import { logger } from '@modules/common/logger'
-import { buildStorageUri } from '@modules/common/storagePath'
-import { UPLOAD_DIR } from '@shared/types/upload'
-import type { UploadFileItem, UploadListResult, UploadResult, UploadRevealResult } from '@shared/types/upload'
+import { buildBlockInsertion, readBlockContext } from '@modules/common/markdownBlock'
+import { buildStorageUri, deleteResource, isPathExisting } from '@modules/common/storagePath'
+import { isUploadPath, UPLOAD_DIR } from '@shared/types/upload'
+import type {
+    UploadFileItem,
+    UploadInsertResult,
+    UploadListResult,
+    UploadRemoveResult,
+    UploadResult,
+    UploadRevealResult,
+} from '@shared/types/upload'
+import { ZHAI_PATH_PREFIX } from '@shared/utils/zhaiPath'
 import { MAX_UPLOAD_COUNT, MAX_UPLOAD_TOTAL_BYTES, parseUploadItem, readCandidateFile } from './uploadPayload'
 import { listUploadFiles, saveUploadFile } from './uploadStorage'
 import type { UploadCandidate } from './uploadPayload'
@@ -123,6 +133,73 @@ export class UploadService {
         const root = resolveStorageRoot()
         const files = await listUploadFiles(root)
         return { items: files.map((file) => toUploadItem(root, file, toWebviewUri)) }
+    }
+
+    /**
+     * 插入到当前 Markdown 光标处：图片写图片语法，其余写链接语法，引用一律走 @zhai/ 存储根口径。
+     * 关键约束：只接受 uploads/{YYYYMM}/ 下的单层文件；文件已不在磁盘时抛错，由前端提示刷新；
+     * 重复引用只提示不阻止，与媒体插入口径一致；无可用编辑器时不做任何写入。
+     */
+    public async insert(payload: unknown): Promise<UploadInsertResult> {
+        const target = readPayload(payload, 'upload/insert').path
+        if (!isUploadPath(target)) {
+            throw new Error('upload/insert 缺少合法的文件路径')
+        }
+        const uri = buildStorageUri(resolveStorageRoot(), target.split('/'))
+        if (!(await isPathExisting(uri))) {
+            throw new Error('文件已不存在，请刷新列表')
+        }
+        const editor = resolveMarkdownEditor()
+        if (editor === undefined) {
+            return { inserted: false, reason: 'no-editor' }
+        }
+        const document = editor.document
+        if (document.uri.scheme !== 'file') {
+            return { inserted: false, reason: 'unsaved' }
+        }
+        if (document.languageId !== 'markdown') {
+            return { inserted: false, reason: 'not-markdown' }
+        }
+        const fileName = target.split('/').pop() ?? target
+        const ext = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase() : ''
+        const label = fileName.replace(/[[\]\r\n]+/gu, ' ').trim()
+        const refPath = `${ZHAI_PATH_PREFIX}${target}`
+        // 图片用图片语法嵌入，其余按附件链接写入，避免非图片被当成图片渲染
+        const snippet = PREVIEW_EXTENSIONS.has(ext) ? `![${label}](${refPath})` : `[${label}](${refPath})`
+        const isDuplicated = document.getText().includes(refPath)
+        const insertAt = editor.selection.active
+        // 引用自成一段：光标夹在行中间时先断开当前行，前后各留一个空行
+        const block = buildBlockInsertion(readBlockContext(document, insertAt), snippet)
+        const didInsert = await editor.edit((builder) => {
+            builder.insert(insertAt, block.text)
+        })
+        if (!didInsert) {
+            return { inserted: false, reason: 'failed', refPath }
+        }
+        const range = new vscode.Range(
+            insertAt.translate(0, block.start),
+            insertAt.translate(0, block.start + snippet.length),
+        )
+        await vscode.window.showTextDocument(document, { viewColumn: editor.viewColumn, selection: range })
+        return { inserted: true, refPath, duplicated: isDuplicated }
+    }
+
+    /**
+     * 删除一个已上传文件：路径必须是 uploads/{YYYYMM}/ 下的单层文件，越界一律拒绝。
+     * 关键约束：文件移入回收站（不可用时降级永久删除），删不掉时抛错由前端提示重试。
+     */
+    public async remove(payload: unknown): Promise<UploadRemoveResult> {
+        const target = readPayload(payload, 'upload/remove').path
+        if (!isUploadPath(target)) {
+            throw new Error('upload/remove 缺少合法的文件路径')
+        }
+        const uri = buildStorageUri(resolveStorageRoot(), target.split('/'))
+        if (!(await isPathExisting(uri))) {
+            return { removed: false }
+        }
+        await deleteResource(uri, false)
+        logger.info(`上传文件已删除：${target}`)
+        return { removed: true }
     }
 
     /** 打开上传目录：目录不存在时先建出来，命令不可用只回报 false */

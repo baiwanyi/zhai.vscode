@@ -17,7 +17,7 @@ import {
     SEARCH_TIMEOUT_MS,
     MAX_RETRY,
 } from './constants'
-import type { CachedStockPhoto } from './cache'
+import type { CachedStockPhoto, StockPhotoUrls } from './cache'
 
 /** 接口根地址：查询类接口都在 api.unsplash.com 上 */
 const API_BASE = 'https://api.unsplash.com'
@@ -135,8 +135,14 @@ function parsePhoto(raw: unknown): CachedStockPhoto | null {
         return null
     }
     const urls = typeof source.urls === 'object' && source.urls !== null ? (source.urls as Record<string, unknown>) : {}
-    const downloadUrl = readString(urls, 'raw') || readString(urls, 'full') || readString(urls, 'regular')
-    if (downloadUrl.length === 0) {
+    // 四档地址按需保留：raw / full / regular 全缺时无法插入，直接丢弃该条
+    const photoUrls: StockPhotoUrls = {
+        raw: readString(urls, 'raw') || null,
+        full: readString(urls, 'full') || null,
+        regular: readString(urls, 'regular') || null,
+        small: readString(urls, 'small') || null,
+    }
+    if (photoUrls.raw === null && photoUrls.full === null && photoUrls.regular === null) {
         return null
     }
     const alt = readString(source, 'alt_description') || readString(source, 'description')
@@ -151,9 +157,8 @@ function parsePhoto(raw: unknown): CachedStockPhoto | null {
         alt,
         photographer: photographer.length === 0 ? '未署名' : photographer,
         photographerUrl: photographerLink.length === 0 ? '' : withUtm(photographerLink),
-        downloadUrl,
+        urls: photoUrls,
         downloadLocation: readString(links, 'download_location') || null,
-        smallUrl: readString(urls, 'small') || null,
     }
 }
 
@@ -317,13 +322,16 @@ export class StockClient {
 
     /**
      * 下载图片本体：只走 CDN，不占接口配额，因此不进闸门也不重试整轮配额。
-     * 关键约束：content-type 必须以 image/ 开头——CDN 出错时返回的 HTML 错误页不能当图片写盘。
+     * 关键约束：width 为 null 时保留上游原生档位（raw / full / regular / small），不追加 w / q / fm；
+     * content-type 必须以 image/ 开头——CDN 出错时返回的 HTML 错误页不能当图片写盘。
      */
-    public async download(url: string, width: number): Promise<StockDownloadResult> {
+    public async download(url: string, width: number | null): Promise<StockDownloadResult> {
         const target = new URL(url)
-        target.searchParams.set('w', String(width))
-        target.searchParams.set('q', '85')
-        target.searchParams.set('fm', 'jpg')
+        if (width !== null) {
+            target.searchParams.set('w', String(width))
+            target.searchParams.set('q', '85')
+            target.searchParams.set('fm', 'jpg')
+        }
 
         let response: Response
         try {
