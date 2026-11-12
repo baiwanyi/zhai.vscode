@@ -16,10 +16,12 @@ import {
     Minus,
     Pilcrow,
     Quote,
+    Smile,
     SquareCode,
     Table as TableIcon,
     Type,
 } from 'lucide-react'
+import { openEmojiPicker } from './emojiStore'
 import type { ChainedCommands, Editor, Range } from '@tiptap/core'
 import type { LucideIcon } from 'lucide-react'
 
@@ -120,6 +122,18 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         icon: TableIcon,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }))
+        },
+    },
+    {
+        id: 'emoji',
+        label: '表情',
+        hint: '插入 emoji',
+        keywords: ['emoji', '表情', '符号', 'smile'],
+        icon: Smile,
+        run: (editor, range): void => {
+            // 只删掉「/表情」这段触发文本，块类型不变；随后在光标处打开选择器
+            apply(editor, range, (chain) => chain)
+            openEmojiPicker(editor)
         },
     },
     {

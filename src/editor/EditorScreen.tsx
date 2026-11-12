@@ -32,6 +32,7 @@ import { AnnotationExtension } from './marks/annotationExtension'
 import { ZhaiImage } from './marks/ZhaiImage'
 import { SearchExtension } from './search/searchExtension'
 import { useDocumentSearch } from './search/useDocumentSearch'
+import { EmojiPicker } from './toolbar/EmojiPicker'
 import { SlashCommandExtension } from './toolbar/slashCommandExtension'
 import { SlashMenu } from './toolbar/SlashMenu'
 import { handleSlashKey } from './toolbar/slashStore'
@@ -149,6 +150,7 @@ export function EditorScreen(): JSX.Element {
                         <EditorContent editor={editor} />
                         {editor === null ? null : <BlockHandle editor={editor} />}
                         <SlashMenu />
+                        <EmojiPicker />
                         {search.isOpen ? (
                             <SearchPanel
                                 query={search.query}
