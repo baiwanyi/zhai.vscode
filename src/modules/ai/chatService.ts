@@ -22,6 +22,7 @@ import type {
     AiContextUsage,
     AiConversation,
     AiConversationSummary,
+    AiInFlightSnapshot,
     AiMessage,
     AiPermissionDecision,
     AiRuntimeInfo,
@@ -143,6 +144,17 @@ export class AiChatService implements vscode.Disposable {
     private readonly writeStateEmitter = new vscode.EventEmitter<void>()
     /** 进行中的生成请求，用于 A11 取消 */
     private activeRequest: { reqId: string; controller: AbortController } | null = null
+    /**
+     * 在途生成的累积结果：只在内存里维护，供视图重建后经 ai/streaming 补齐离开期间缺失的增量。
+     * 与 activeRequest 同生命周期，本轮结束后置空——库里 pending 消息不代表仍在生成。
+     */
+    private inFlight: {
+        conversationId: string
+        assistantMessageId: string
+        content: string
+        reasoning: string
+        steps: Map<string, AiStep>
+    } | null = null
     /** 待发送上下文：按会话隔离，发送成功后清空（内存态，不随窗口重启保留） */
     private readonly pendingContexts = new Map<string, HostContextRef[]>()
     /** 未发送的输入草稿：按会话隔离，视图重建（侧边栏切换）后由会话快照带回 */
@@ -212,6 +224,24 @@ export class AiChatService implements vscode.Disposable {
     /** 通知运行时信息已变更（登录态或模型选择变化后由命令层与面板调用） */
     public notifyRuntimeChanged(): void {
         this.runtimeEmitter.fire()
+    }
+
+    /**
+     * 读取在途生成快照：视图重建后据此补齐离开期间缺失的正文与思维链。
+     * 关键约束：没有在途请求时返回 null —— 快照里的 pending 消息可能是崩溃残留，不能据此恢复流式态。
+     */
+    public getInFlightSnapshot(): AiInFlightSnapshot | null {
+        if (this.activeRequest === null || this.inFlight === null) {
+            return null
+        }
+        const { conversationId, assistantMessageId, content, reasoning, steps } = this.inFlight
+        return {
+            conversationId,
+            messageId: assistantMessageId,
+            content,
+            reasoning,
+            steps: [...steps.values()],
+        }
     }
 
     /** 读取会话草稿：无草稿时返回空内容 */
@@ -625,6 +655,9 @@ export class AiChatService implements vscode.Disposable {
         let contextUsage: AiContextUsage | null = null
         /** 本轮步骤快照：按 id 覆盖，流末随消息落库，供重开面板后回放执行过程 */
         const steps = new Map<string, AiStep>()
+        // 累积结果同步到在途快照：视图重建后经 ai/streaming 读取，补齐离开期间缺失的增量。
+        // steps 与本地 Map 同一引用，后续 set 自动可见；正文与思维链在每次累积后同步。
+        this.inFlight = { conversationId, assistantMessageId, content: '', reasoning: '', steps }
         /** 本轮通道会话号：续接取库内值，首轮由 init 消息回传，供定位 CLI 用量记录文件 */
         let sdkSessionId: string | null = null
         /** 本轮是否续接通道会话：续接时 result.usage 是会话累计，不能当本轮消耗 */
@@ -746,6 +779,11 @@ export class AiChatService implements vscode.Disposable {
                 reasoning += chunk.reasoning
                 pending += chunk.content
                 pendingReasoning += chunk.reasoning
+                // 与累积值同步（只换引用，不复制）：视图重建后读到的就是此刻的完整已生成内容
+                if (this.inFlight !== null && this.inFlight.assistantMessageId === assistantMessageId) {
+                    this.inFlight.content = answer
+                    this.inFlight.reasoning = reasoning
+                }
                 flush(false)
                 if (chunk.usage) {
                     usage = chunk.usage
@@ -914,6 +952,10 @@ export class AiChatService implements vscode.Disposable {
             }
             if (this.activeRequest?.reqId === reqId) {
                 this.activeRequest = null
+            }
+            // 在途快照随本轮结束作废：结果已落库，前端后续一律以会话快照为准
+            if (this.inFlight?.assistantMessageId === assistantMessageId) {
+                this.inFlight = null
             }
         }
     }

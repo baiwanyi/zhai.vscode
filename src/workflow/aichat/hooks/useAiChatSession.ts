@@ -7,6 +7,10 @@
  * 流末错误只写回消息、由消息视图的 Alert 呈现，不弹 sonner —— 同一句话弹两遍是噪音；
  * 压缩事件分两态——开始时只置瞬时状态（不落库），完成时追加宿主已落库的系统消息，保证离线回看仍能解释占用变化；
  * 切换 / 删除会话前先中止生成，避免增量写回已切走的会话；切换写入范围不中断在途生成，只对后续发送生效；
+ * 生成由宿主推进、与页面生命周期无关：切分区、切文档（含跨作用域换会话）都不中断生成，重进时按快照里的
+ * 在途消息接管流式锚点，并回拉 ai/streaming 的在途快照补齐离开期间缺失的正文与思维链；
+ * 在途生成属于别的会话时只放出停止入口，尚未接管到锚点的流末直接回拉会话快照，
+ * 避免回到页面后停在占位态、丢失停止入口；
  * 会话作用域由调用方以 projectDir 注入，快照加载 / 新建 / 删除后重载都必须带同一作用域，跨作品不共用对话。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -15,9 +19,11 @@ import { readAiStep } from '@shared/types/aiChat'
 import type {
     AiContextRef,
     AiContextUsage,
+    AiInFlightSnapshot,
     AiMessage,
     AiSendResult,
     AiSessionSnapshot,
+    AiStep,
     AiWriteGrant,
 } from '@shared/types/aiChat'
 import type { StreamNoticeMessage } from '@shared/types/messages'
@@ -92,10 +98,16 @@ export function useAiChatSession({
     const streamingMessageIdRef = useRef<string | null>(null)
     /** 最新输入正文：草稿恢复时判断本地是否已有内容，避免覆盖用户正在写的内容 */
     const inputRef = useRef('')
+    /** 最新视图阶段：loadSession 会在异步流程里被调用，state 可能滞后，用 ref 取提交后的值 */
+    const phaseRef = useRef<Phase>('idle')
 
     useEffect(() => {
         inputRef.current = input
     }, [input])
+
+    useEffect(() => {
+        phaseRef.current = phase
+    }, [phase])
 
     /** 恢复宿主带回的草稿：本地已有输入或草稿为空时跳过 */
     const restoreDraft = useCallback((draft: string): void => {
@@ -113,6 +125,34 @@ export function useAiChatSession({
             setContexts(snapshot.contexts)
             setContextUsage(snapshot.contextUsage)
             restoreDraft(snapshot.draft.input)
+            /*
+             * 与宿主在途生成对账：生成由宿主推进、与页面生命周期无关，切换文档（乃至跨作用域换会话）都不中断。
+             * 三种结果分开处理 —— 属于本会话就补挂锚点并回填离开期间缺失的正文与思维链；
+             * 属于别的会话时消息流里没有锚点可挂，只把阶段置为生成中，让停止入口可用（否则发送被宿主拒绝又停不掉）；
+             * 没有在途请求则说明快照里的 pending 只是残留占位，把本地阶段复位。
+             * 只在本地空手（未发送、无在途锚点）时对账，避免覆盖本地更权威的阶段。
+             */
+            const inFlightId = readInFlightMessageId(snapshot)
+            if (streamingMessageIdRef.current === null && phaseRef.current !== 'sending') {
+                const inFlight = await readInFlight()
+                if (
+                    inFlight !== null &&
+                    inFlightId !== null &&
+                    inFlight.conversationId === snapshot.conversation.id &&
+                    inFlight.messageId === inFlightId
+                ) {
+                    streamingMessageIdRef.current = inFlightId
+                    setPhase('streaming')
+                    setSession((previous) =>
+                        patchMessage(previous, inFlightId, (item) => mergeInFlight(item, inFlight)),
+                    )
+                } else if (inFlight !== null) {
+                    setPhase('streaming')
+                } else if (phaseRef.current !== 'idle') {
+                    setPhase('idle')
+                    setActiveTool(null)
+                }
+            }
             onError(null)
             return snapshot
         } catch (cause) {
@@ -149,6 +189,14 @@ export function useAiChatSession({
             }
             const messageId = streamingMessageIdRef.current
             if (!messageId) {
+                // 没有接管的在途锚点（如视图重建早于快照、或本轮属于别的会话）：本页无法归位增量，
+                // 流末复位阶段并回拉快照补齐结果，避免残留的生成中态把发送一直拦住
+                if (message.done) {
+                    setPhase('idle')
+                    setActiveTool(null)
+                    setTransientNotice(null)
+                    void loadSession()
+                }
                 return
             }
             if (message.done) {
@@ -207,7 +255,7 @@ export function useAiChatSession({
                 ),
             )
         })
-    }, [onError])
+    }, [loadSession, onError])
 
     const send = useCallback(
         async (content: string, options: AiSendOptions = {}): Promise<boolean> => {
@@ -244,15 +292,22 @@ export function useAiChatSession({
             } catch (cause) {
                 onError(toErrorText(cause))
                 setPhase('idle')
+                // 失败原因可能是宿主仍在生成（切换文档后旧会话尚未结束）：回拉快照把停止入口恢复出来
+                void loadSession()
                 return false
             }
         },
-        [onError, phase, session, setContexts],
+        [loadSession, onError, phase, session, setContexts],
     )
 
+    /** 取消本轮生成：宿主已无在途请求时（接管到的只是残留占位）就地复位阶段，别把发送一直拦住 */
     const stop = useCallback(async (): Promise<void> => {
         try {
-            await request('ai/abort')
+            const result = await request<{ aborted?: boolean }>('ai/abort')
+            if (result.aborted !== true) {
+                streamingMessageIdRef.current = null
+                setPhase('idle')
+            }
         } catch (cause) {
             onError(toErrorText(cause))
         }
@@ -363,6 +418,81 @@ export function useAiChatSession({
         switchWriteGrant,
         deleteSession,
     }
+}
+
+/**
+ * 找出快照里仍在生成的消息：宿主只在发送时落 pending，流末统一改成终态，
+ * 因此「还有 assistant 消息处于 pending / streaming」即表示本轮尚未结束。
+ * 关键约束：取最后一条命中项 —— 压缩产生的系统消息可能追加在生成中的助手消息之后。
+ */
+function readInFlightMessageId(snapshot: AiSessionSnapshot): string | null {
+    let inFlightId: string | null = null
+    for (const message of snapshot.messages) {
+        if (message.role === 'assistant' && (message.status === 'pending' || message.status === 'streaming')) {
+            inFlightId = message.id
+        }
+    }
+    return inFlightId
+}
+
+/**
+ * 读取宿主在途生成快照：视图重建后补齐离开期间被丢弃的正文、思维链与步骤，
+ * 同时用于判断「在途生成是否属于当前会话」——切换文档后它可能属于刚离开的那个会话。
+ * 关键约束：请求失败只是退化为「只显示重连之后的部分」，不得让会话加载整体失败；
+ * 会话与消息 id 缺一即视为无效快照，其余字段逐项收窄（Webview 侧数据不可信）。
+ */
+async function readInFlight(): Promise<AiInFlightSnapshot | null> {
+    try {
+        const payload = await request<unknown>('ai/streaming')
+        if (typeof payload !== 'object' || payload === null) {
+            return null
+        }
+        const record = payload as {
+            conversationId?: unknown
+            messageId?: unknown
+            content?: unknown
+            reasoning?: unknown
+            steps?: unknown
+        }
+        const { conversationId, messageId } = record
+        if (typeof conversationId !== 'string' || conversationId.length === 0) {
+            return null
+        }
+        if (typeof messageId !== 'string' || messageId.length === 0) {
+            return null
+        }
+        return {
+            conversationId,
+            messageId,
+            content: typeof record.content === 'string' ? record.content : '',
+            reasoning: typeof record.reasoning === 'string' ? record.reasoning : '',
+            steps: Array.isArray(record.steps)
+                ? record.steps.map((item) => readAiStep(item)).filter((item): item is AiStep => item !== null)
+                : [],
+        }
+    } catch {
+        return null
+    }
+}
+
+/**
+ * 把在途快照并入待展示消息：快照是「截至读取时刻」的累积值，
+ * 若本地已在此基础上有新增量则保留本地，避免回填与增量推送交错时把刚到的几个字覆盖掉；
+ * 最终仍以流末的完整值校正，缺口不会残留到结束之后。
+ */
+function mergeInFlight(message: AiMessage, snapshot: AiInFlightSnapshot): AiMessage {
+    const reasoning = preferLonger(message.reasoning ?? '', snapshot.reasoning)
+    return {
+        ...message,
+        content: preferLonger(message.content, snapshot.content),
+        reasoning: reasoning.length > 0 ? reasoning : message.reasoning,
+        steps: snapshot.steps.length > 0 ? snapshot.steps : message.steps,
+    }
+}
+
+/** 取同源增长中更长的那份：本地以快照为前缀时说明已接到新增量，否则用快照补齐缺口 */
+function preferLonger(current: string, incoming: string): string {
+    return current.length > incoming.length && current.startsWith(incoming) ? current : incoming
 }
 
 /**

@@ -257,6 +257,23 @@ export interface AiSessionSnapshot {
     contextUsage: AiContextUsage | null
 }
 
+/**
+ * 在途生成快照：宿主内存里当前累积的正文、思维链与步骤，供视图重建后补齐离开期间缺失的增量。
+ * 关键约束：不落库、不代表历史消息；没有在途请求时宿主返回 null，前端不得据此恢复流式态。
+ */
+export interface AiInFlightSnapshot {
+    /** 发起本轮的会话 id：前端与自己的当前会话比对后才回填 */
+    conversationId: string
+    /** 本轮助手消息 id：与快照里的 pending 消息 id 对齐后才回填 */
+    messageId: string
+    /** 截至读取时刻已累积的正文 */
+    content: string
+    /** 截至读取时刻已累积的思维链，空串表示本轮没有思维链 */
+    reasoning: string
+    /** 截至读取时刻的步骤快照（按 id 完整覆盖口径） */
+    steps: AiStep[]
+}
+
 /** 写回作用域：selection 为编辑器选区，document 为整篇文档 */
 export type AiWriteScope = 'selection' | 'document'
 

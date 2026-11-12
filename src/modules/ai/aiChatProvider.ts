@@ -5,7 +5,8 @@
  * 委托给各自路由。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
  * 上下文增删走 ai/context*；写入范围走 ai/setWriteGrant，工具审批经 ai/permissionDecision 回包
- * （本轮授权随 ai/send 的 autoApprove 下发，无常驻审批开关），写入状态走 ai/writeState，state 广播以 channel 区分
+ * （本轮授权随 ai/send 的 autoApprove 下发，无常驻审批开关），写入状态走 ai/writeState，
+ * 在途生成快照走 ai/streaming（视图重建后补齐缺失增量），state 广播以 channel 区分
  * ai（runtime / context / writeTarget）与 workflow（路由事实，含当前作品目录）。
  * 关键约束：上下文移除与写回只接受宿主生成的 id（不接受路径与范围入参），所有 Webview 入参逐字段收窄后再用；
  * 会话协议可带 projectDir 作用域（作品目录），缺省即通用对话，作用域只用于过滤查询、不参与路径拼接；
@@ -257,6 +258,10 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         switch (method) {
             case 'ai/session': {
                 return this.service.getOrCreateSession(readScopePayload(payload, 'ai/session'))
+            }
+            case 'ai/streaming': {
+                // 在途生成快照：视图重建后补齐离开期间缺失的正文与思维链，无入参、无在途请求时返回 null
+                return this.service.getInFlightSnapshot()
             }
             case 'ai/newSession': {
                 return this.service.createSession(readScopePayload(payload, 'ai/newSession'))

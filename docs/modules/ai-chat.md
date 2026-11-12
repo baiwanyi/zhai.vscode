@@ -442,7 +442,8 @@ interface AbortRequest {
 | `ai/send` | Webview → 宿主 | 落库用户消息与占位助手消息，随后流式回传正文；`titleHint` 为命令名称等展示用短标题，仅用于会话命名 |
 | `ai/draft` | Webview → 宿主 | 保存未发送的输入正文与命令 id（内存、按会话隔离），视图重建后随会话快照的 `draft` 恢复 |
 | `ai/enhancePrompt` | Webview → 宿主 | 增强输入区提示词：按 `mode`（`write` / `chat`）选择改写口径，走文本通道流式收集后返回 `{ text }`；不建会话、不写消息，30 秒超时，用量计入「对话」模块 |
-| `ai/abort` | Webview → 宿主 | 取消当前生成 |
+| `ai/abort` | Webview → 宿主 | 取消当前生成，返回 `{ aborted: boolean }`；无在途请求时为 false，前端据此复位本地阶段 |
+| `ai/streaming` | Webview → 宿主 | 在途生成快照 `AiInFlightSnapshot`（`conversationId` / `messageId` / `content` / `reasoning` / `steps`），用于视图重建后补齐切走期间被丢弃的增量；无在途请求时返回 `null`，`pending` 消息只是崩溃残留时不得据此恢复流式态。生成与页面、文档切换无关，因此快照可能属于**别的会话**（切作品后旧会话仍在跑）：此时前端只据此放出停止入口，不回填消息、`send` 仍被宿主拒绝 |
 | `ai/context` | Webview → 宿主 | 取当前会话的待发送上下文清单 |
 | `ai/context/remove` | Webview → 宿主 | 按宿主生成的 id 移除一条引用（不接受路径入参） |
 | `ai/context/clear` | Webview → 宿主 | 清空待发送上下文，返回空清单 |
