@@ -7,6 +7,7 @@
  */
 import * as vscode from 'vscode'
 import { MarkdownEditorProvider } from '@modules/editor/editorProvider'
+import type { ChapterSnapshotWriter } from '@modules/editor/editorProvider'
 import { RICH_EDITOR_VIEW_TYPE, readActiveTabUri } from '@modules/editor/openDocument'
 
 /** 读取活跃 URI 并交给回调；取不到时提示用户先打开文档 */
@@ -19,8 +20,11 @@ async function withActiveUri(run: (uri: vscode.Uri) => Promise<void>): Promise<v
     await run(uri)
 }
 
-export function assembleEditorLayer(context: vscode.ExtensionContext): void {
-    const provider = new MarkdownEditorProvider(context.extensionUri)
+export function assembleEditorLayer(
+    context: vscode.ExtensionContext,
+    snapshot: ChapterSnapshotWriter | null = null,
+): void {
+    const provider = new MarkdownEditorProvider(context.extensionUri, snapshot)
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider(MarkdownEditorProvider.viewType, provider, {
             webviewOptions: { retainContextWhenHidden: true },

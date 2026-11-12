@@ -164,6 +164,18 @@ export interface BlockEdit {
     text: string
 }
 
+/**
+ * 应用替换清单得到新全文：edits 必须已按 start 倒序，这样前面的偏移不会被后续替换影响。
+ * 用途是写入前的自检——先把结果拼出来重新解析，确认没有引入不支持的语法，再真正落盘。
+ */
+export function applyBlockEdits(text: string, edits: readonly BlockEdit[]): string {
+    let next = text
+    for (const edit of edits) {
+        next = `${next.slice(0, edit.start)}${edit.text}${next.slice(edit.end)}`
+    }
+    return next
+}
+
 /** 把变化块的 HTML 转回 Markdown，生成按偏移倒序排列的替换清单 */
 export async function buildBlockEdits(
     blocks: EditorBlock[],

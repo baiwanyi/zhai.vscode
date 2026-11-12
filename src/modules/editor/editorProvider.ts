@@ -14,8 +14,13 @@ import { isEditorChangeRequest } from '@shared/types/editor'
 import type { EditorChangeResult, EditorDocSnapshot } from '@shared/types/editor'
 import { isRequestMessage } from '@shared/types/messages'
 import { clearRichDocument, reportRichDocument } from './activeDocument'
-import { buildBlockEdits, readEditorSnapshot } from './editorDocService'
+import { applyBlockEdits, buildBlockEdits, readEditorSnapshot } from './editorDocService'
 import { RICH_EDITOR_VIEW_TYPE } from './openDocument'
+
+/** 章节写回前留底：只用到这一个方法，按结构化接口声明便于替身注入 */
+export interface ChapterSnapshotWriter {
+    captureChapterBeforeWrite: (uri: vscode.Uri, content: string) => Promise<void>
+}
 
 export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = RICH_EDITOR_VIEW_TYPE
@@ -26,7 +31,13 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     /** 自己写回后产生的文档版本：用于跳过回声推送 */
     private readonly appliedVersions = new Map<string, number>()
 
-    public constructor(private readonly extensionUri: vscode.Uri) {}
+    /** 已留底过的文档：每个打开会话只留一次，避免每 500ms 就生成一版章节快照 */
+    private readonly capturedChapters = new Set<string>()
+
+    public constructor(
+        private readonly extensionUri: vscode.Uri,
+        private readonly snapshot: ChapterSnapshotWriter | null = null,
+    ) {}
 
     public async resolveCustomTextEditor(
         document: vscode.TextDocument,
@@ -77,6 +88,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             }
             this.snapshots.delete(key)
             this.appliedVersions.delete(key)
+            this.capturedChapters.delete(key)
             clearRichDocument(document.uri)
         })
 
@@ -167,6 +179,18 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         const edits = await buildBlockEdits(snapshot.blocks, changes)
         if (edits.length === 0) {
             return { appliedBlocks: 0, stale: false, version: document.version }
+        }
+        // 写入前自检：把结果拼出来重新解析，确认没有引入白名单外语法
+        // （例如把表格、图片或链接粘进富文本），否则落盘后反而变成整篇只读
+        const nextText = applyBlockEdits(document.getText(), edits)
+        const nextSnapshot = await readEditorSnapshot(nextText, document.version, snapshot.path)
+        if (!nextSnapshot.editable) {
+            return { appliedBlocks: 0, stale: false, version: document.version, rejected: 'unsupported-syntax' }
+        }
+        // 首次真正写入前留底：快照服务只对 Chapters 下的文档生效，其它文档内部直接返回
+        if (this.snapshot !== null && !this.capturedChapters.has(key)) {
+            await this.snapshot.captureChapterBeforeWrite(document.uri, document.getText())
+            this.capturedChapters.add(key)
         }
         const workspaceEdit = new vscode.WorkspaceEdit()
         for (const item of edits) {

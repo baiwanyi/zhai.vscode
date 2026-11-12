@@ -5,7 +5,12 @@
  * 关键约束：非白名单节点必须置只读并渲染为源码块——这条是回写不破坏语法的最后防线。
  */
 import { describe, expect, it } from 'vitest'
-import { buildBlockEdits, readEditorSnapshot, splitFrontmatter } from '@modules/editor/editorDocService'
+import {
+    applyBlockEdits,
+    buildBlockEdits,
+    readEditorSnapshot,
+    splitFrontmatter,
+} from '@modules/editor/editorDocService'
 
 const SAMPLE_DOC = [
     '---',
@@ -89,5 +94,21 @@ describe('buildBlockEdits', () => {
         ])
         expect(edits).toHaveLength(2)
         expect(edits[0]?.start).toBeGreaterThan(edits[1]?.start ?? 0)
+    })
+})
+
+describe('applyBlockEdits', () => {
+    it('倒序应用替换后得到预期全文，未编辑块保持原样', async () => {
+        const source = '第一段\n\n第二段\n\n第三段'
+        const snapshot = await readEditorSnapshot(source, 1, 'x.md')
+        const edits = await buildBlockEdits(snapshot.blocks, [
+            { index: 0, html: '<p>改一</p>' },
+            { index: 2, html: '<p>改三</p>' },
+        ])
+        expect(applyBlockEdits(source, edits)).toBe('改一\n\n第二段\n\n改三')
+    })
+
+    it('无变化的清单不改变原文', () => {
+        expect(applyBlockEdits('原文', [])).toBe('原文')
     })
 })

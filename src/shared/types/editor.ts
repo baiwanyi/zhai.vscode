@@ -42,6 +42,8 @@ export interface EditorChangeResult {
     stale: boolean
     /** 写入后的 TextDocument.version：前端据此更新基准，否则下一次回写必然 stale */
     version: number
+    /** 写入前自检未通过的原因：目前只有「修改会引入暂不支持的语法」 */
+    rejected?: 'unsupported-syntax'
 }
 
 /** 收窄快照：Webview 收到的是不可信数据，块结构与版本逐字段校验 */

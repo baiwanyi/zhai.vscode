@@ -20,6 +20,7 @@ const STATUS_LOADING = '载入中'
 const STATUS_READY = '富文本模式'
 const STATUS_READONLY = '只读预览：文档含暂不支持的语法'
 const STATUS_FAILED = '同步失败，请改用文本编辑器确认'
+const STATUS_REJECTED = '修改含暂不支持的语法，已阻止保存并回滚'
 
 /** 把当前文档的顶层节点序列化为 HTML 数组：下标即宿主 blocks 下标 */
 function serializeBlocks(editor: Editor): string[] {
@@ -48,8 +49,8 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
 
     /** 应用快照：先灌内容再采样基准，最后按宿主的 editable 决定是否可写 */
     const applySnapshot = useCallback(
-        (snapshot: EditorDocSnapshot): void => {
-            if (editor === null || snapshot.version <= versionRef.current) {
+        (snapshot: EditorDocSnapshot, force: boolean): void => {
+            if (editor === null || (!force && snapshot.version <= versionRef.current)) {
                 return
             }
             editor.commands.setContent(snapshot.blocks.map((block) => block.html).join(''), { emitUpdate: false })
@@ -68,21 +69,24 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
         [editor],
     )
 
-    /** 拉取最新快照：首次进入与 stale 后共用 */
-    const loadSnapshot = useCallback(async (): Promise<void> => {
-        try {
-            const snapshot = await request<EditorDocSnapshot>('editor/snapshot')
-            applySnapshot(snapshot)
-        } catch {
-            setState({ status: STATUS_FAILED, isEditable: false })
-        }
-    }, [applySnapshot])
+    /** 拉取最新快照：首次进入与 stale / 自检拦截后共用；force 用于同版本内容回滚 */
+    const loadSnapshot = useCallback(
+        async (force: boolean): Promise<void> => {
+            try {
+                const snapshot = await request<EditorDocSnapshot>('editor/snapshot')
+                applySnapshot(snapshot, force)
+            } catch {
+                setState({ status: STATUS_FAILED, isEditable: false })
+            }
+        },
+        [applySnapshot],
+    )
 
     useEffect(() => {
         if (editor === null) {
             return
         }
-        void loadSnapshot()
+        void loadSnapshot(false)
     }, [editor, loadSnapshot])
 
     // 宿主推送：外部修改、保存后刷新、只读判定变化
@@ -94,7 +98,7 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
             if (message.payload.version === versionRef.current) {
                 return
             }
-            applySnapshot(message.payload)
+            applySnapshot(message.payload, false)
         })
     }, [applySnapshot])
 
@@ -118,7 +122,13 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
             })
             if (result.stale) {
                 // 外部已改动：放弃本次输入，以宿主内容为准，避免覆盖别人的修改
-                await loadSnapshot()
+                await loadSnapshot(true)
+                return
+            }
+            if (result.rejected === 'unsupported-syntax') {
+                // 写入前自检拦下：宿主未落盘，本地必须回滚到宿主版本，并明确告知原因
+                await loadSnapshot(true)
+                setState((prev) => ({ ...prev, status: STATUS_REJECTED }))
                 return
             }
             baselineRef.current = blocks
