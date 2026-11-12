@@ -13,6 +13,7 @@ import { buildWebviewHtml } from '@modules/common/webviewHtml'
 import { isEditorChangeRequest } from '@shared/types/editor'
 import type { EditorChangeResult, EditorDocSnapshot } from '@shared/types/editor'
 import { isRequestMessage } from '@shared/types/messages'
+import { clearRichDocument, reportRichDocument } from './activeDocument'
 import { buildBlockEdits, readEditorSnapshot } from './editorDocService'
 import { RICH_EDITOR_VIEW_TYPE } from './openDocument'
 
@@ -63,6 +64,12 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 }
                 void this.pushSnapshot(document, panel)
             }),
+            // 富文本 tab 获得焦点时上报活跃文档：工作流路由与插入目标据此判断当前文档
+            panel.onDidChangeViewState((event) => {
+                if (event.webviewPanel.active) {
+                    reportRichDocument(document.uri)
+                }
+            }),
         ]
         panel.onDidDispose(() => {
             for (const subscription of subscriptions) {
@@ -70,8 +77,12 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             }
             this.snapshots.delete(key)
             this.appliedVersions.delete(key)
+            clearRichDocument(document.uri)
         })
 
+        if (panel.active) {
+            reportRichDocument(document.uri)
+        }
         logger.info(`富文本编辑器已打开：${document.uri.fsPath}`)
         await this.pushSnapshot(document, panel)
     }

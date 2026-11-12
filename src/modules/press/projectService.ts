@@ -20,6 +20,7 @@ import {
     toSafeSegments,
     toStorageRelativePath,
 } from '@modules/common/storagePath'
+import { openStorageDocument } from '@modules/editor/openDocument'
 import type { PressAudience, PressDocKey } from '@shared/types/press'
 import {
     CHAPTER_DIR_NAMES,
@@ -386,8 +387,7 @@ export async function openProjectByDir(dirPath: string): Promise<void> {
     const root = resolveStorageRoot()
     const segments = readProjectSegments(dirPath)
     const readme = buildStorageUri(root, [...segments, PROJECT_README_NAME])
-    const document = await vscode.workspace.openTextDocument(readme)
-    await vscode.window.showTextDocument(document, { preview: false })
+    await openStorageDocument(readme)
     logger.info(`已打开作品：${dirPath}`)
 }
 
@@ -445,8 +445,7 @@ export async function openProjectDoc(dirPath: string, doc: PressDocKey): Promise
         isCreated = true
         logger.info(`已补建作品文档：${dirPath}/${fileName}`)
     }
-    const document = await vscode.workspace.openTextDocument(target)
-    await vscode.window.showTextDocument(document, { preview: false })
+    await openStorageDocument(target)
     logger.info(`已打开作品文档：${dirPath}/${fileName}`)
     return { created: isCreated }
 }
@@ -712,7 +711,6 @@ export async function openChapterByPath(indexPath: string): Promise<void> {
         throw new Error(`章节路径非法：${indexPath}`)
     }
     const uri = buildStorageUri(root, segments)
-    const document = await vscode.workspace.openTextDocument(uri)
-    await vscode.window.showTextDocument(document, { preview: false })
+    await openStorageDocument(uri)
     logger.info(`已打开章节：${indexPath}`)
 }

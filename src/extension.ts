@@ -26,6 +26,7 @@ import { SecretsService } from './modules/common/secrets'
 import { StatusBarService } from './modules/common/statusBar'
 import { createStorageDatabaseProvider } from './modules/common/storageDbProvider'
 import { ToastService } from './modules/common/toastService'
+import { trackActiveDocument } from './modules/editor/activeDocument'
 import { ImageProviderRouter } from './modules/imagegen/ai/imageProvider'
 import { PressCoverService } from './modules/imagegen/coverService'
 import { ImageGenerateService } from './modules/imagegen/imageGenerateService'
@@ -327,6 +328,8 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
 
     // 编辑器：富文本自定义编辑器与切换命令；打开动作由 modules/editor/openDocument 统一决定
     assembleEditorLayer(context)
+    // 活跃文档事实源：文本与富文本切换统一由此广播，工作流路由与插入目标不再直读 activeTextEditor
+    trackActiveDocument(context.subscriptions)
 
     const statusBar = new StatusBarService(indexService, indexStatusEmitter.event)
     statusBar.register(context.subscriptions)

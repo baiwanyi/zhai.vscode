@@ -16,6 +16,7 @@ import * as vscode from 'vscode'
 import { findIndexedFile } from '@modules/common/db/indexRepository'
 import type { IndexService } from '@modules/common/indexer/indexService'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import { getActiveDocument, onDidChangeActiveDocument } from '@modules/editor/activeDocument'
 import type { WorkflowContextState, WorkflowSceneKind, WorkflowViewRequest } from '@shared/types/workflow'
 import { NOTES_MODULE_KEY, ROOT_MODULE_KEY, WECHAT_MODULE_KEY } from '@shared/types/workflow'
 import type Database from 'better-sqlite3'
@@ -56,8 +57,8 @@ export class WorkflowRouter implements vscode.Disposable {
     public register(subscriptions: vscode.Disposable[]): void {
         subscriptions.push(
             this,
-            // 切换文档立即同步：事实没变时 refresh 内部会抑制，不需要去抖兜住「同一事实的多次事件」
-            vscode.window.onDidChangeActiveTextEditor(() => this.refresh()),
+            // 文本与富文本切换统一走活跃文档事实源：事实没变时 refresh 内部会抑制，不需要去抖
+            onDidChangeActiveDocument(() => this.refresh()),
         )
     }
 
@@ -176,13 +177,13 @@ export class WorkflowRouter implements vscode.Disposable {
 
     /** 组装路由事实：仅认可索引库内的文档，索引外文件视为无场景；作品目录以编辑器为准，缺位时沿用选定值 */
     private buildContext(): WorkflowContextState {
-        const editor = vscode.window.activeTextEditor
+        const active = getActiveDocument()
         // 模块选定只对「选定当时的那份文档」有效：用户切到别的文档就回到文档驱动，
         // 否则从公众号页打开作品或笔记时，菜单会被残留的选定压住、不跟随当前文档
         this.dropStaleSelectedModule()
         const selectedModule = this.selectedModule
-        if (editor === undefined) {
-            // 焦点不在文本编辑器（打开设置页、切到其它面板）不代表场景改变：
+        if (active === null) {
+            // 没有活跃文档（打开设置页、切到其它面板）不代表场景改变：
             // 沿用上一次事实与已选定的作品，否则面板会被动跳回初始页
             return {
                 scene: this.lastContext?.scene ?? 'idle',
@@ -191,7 +192,7 @@ export class WorkflowRouter implements vscode.Disposable {
                 projectDir: this.projectDir,
             }
         }
-        const relativePath = this.indexService.toRelativePath(editor.document.uri)
+        const relativePath = this.indexService.toRelativePath(active.uri)
         // 必须用 findIndexedFile：listFilesByPaths 只认 notes/，会把作品与公众号文档判成索引外
         const known = findIndexedFile(this.db, relativePath)
         // 作品目录完全以当前编辑器为准：落在作品内取该作品，落在笔记/根目录则清空。
@@ -234,10 +235,9 @@ export class WorkflowRouter implements vscode.Disposable {
     }
 }
 
-/** 活跃文档键：判断模块选定是否仍属于当前文档，焦点不在文本编辑器时为 null */
+/** 活跃文档键：判断模块选定是否仍属于当前文档，无活跃文档时为 null */
 function readActiveDocumentKey(): string | null {
-    const editor = vscode.window.activeTextEditor
-    return editor === undefined ? null : editor.document.uri.toString()
+    return getActiveDocument()?.uri.toString() ?? null
 }
 
 /** 取相对路径的一级目录名：与展示层 moduleOf 同口径，顶层文件归入 root */

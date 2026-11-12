@@ -12,6 +12,8 @@ import * as vscode from 'vscode'
 import { parseTitle } from '@modules/common/db/fileMeta'
 import { logger } from '@modules/common/logger'
 import { buildStorageUri, deleteResource, isPathExisting, toSafeSegments } from '@modules/common/storagePath'
+import { getActiveDocument } from '@modules/editor/activeDocument'
+import { openStorageDocument } from '@modules/editor/openDocument'
 import { toNoteFileName } from '@modules/note/noteFactory'
 import { WECHAT_MODULE_DIR } from '@shared/types/wechat'
 
@@ -216,19 +218,27 @@ export async function focusWechatArticleIfActive(
     previousPath: string,
     nextPath: string,
 ): Promise<void> {
-    const editor = vscode.window.activeTextEditor
-    if (editor === undefined) {
+    const active = getActiveDocument()
+    if (active === null) {
         return
     }
     const previousUri = buildStorageUri(root, toSafeSegments(previousPath, '文章'))
-    if (editor.document.uri.toString() !== previousUri.toString()) {
+    if (active.uri.toString() !== previousUri.toString()) {
         return
     }
     const oldTab = vscode.window.tabGroups.all
         .flatMap((group) => group.tabs)
-        .find((tab) => tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === previousUri.toString())
+        .find((tab) => {
+            if (tab.input instanceof vscode.TabInputText) {
+                return tab.input.uri.toString() === previousUri.toString()
+            }
+            if (tab.input instanceof vscode.TabInputCustom) {
+                return tab.input.uri.toString() === previousUri.toString()
+            }
+            return false
+        })
     const nextUri = buildStorageUri(root, toSafeSegments(nextPath, '文章'))
-    await vscode.window.showTextDocument(nextUri, { preview: false })
+    await openStorageDocument(nextUri)
     if (oldTab !== undefined) {
         await vscode.window.tabGroups.close(oldTab)
     }

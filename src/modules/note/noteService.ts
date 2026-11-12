@@ -10,6 +10,7 @@ import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import { buildStorageUri, isPathExisting, toSafeSegments, toStorageRelativePath } from '@modules/common/storagePath'
+import { openStorageDocument } from '@modules/editor/openDocument'
 import type { CreatedNote } from '@shared/types/note'
 import { buildDefaultNoteTitle, createNoteDraft } from './noteFactory'
 
@@ -26,10 +27,9 @@ export interface CreatedNoteHandle extends CreatedNote {
     uri: vscode.Uri
 }
 
-/** 在编辑器中展示笔记：统一 preview: false，使每次打开都占据独立标签而非覆盖预览标签 */
-async function showNoteDocument(uri: vscode.Uri): Promise<vscode.TextEditor> {
-    const document = await vscode.workspace.openTextDocument(uri)
-    return vscode.window.showTextDocument(document, { preview: false })
+/** 展示笔记：统一走打开入口，由 openDocument 按入口策略决定富文本或文本编辑器 */
+async function showNoteDocument(uri: vscode.Uri): Promise<void> {
+    await openStorageDocument(uri)
 }
 
 /**
@@ -58,12 +58,9 @@ export async function createNote(indexer: NoteIndexer): Promise<CreatedNoteHandl
     throw new Error(`创建笔记失败：连续 ${MAX_CREATE_ATTEMPTS} 个序号均已存在`)
 }
 
-/** 用编辑器打开新建的笔记，并把光标落到末尾（空笔记即标题下方） */
+/** 打开新建的笔记：交给统一入口；空笔记没有定位需求，不再强设光标 */
 export async function openNoteDocument(uri: vscode.Uri): Promise<void> {
-    const editor = await showNoteDocument(uri)
-    const position = new vscode.Position(editor.document.lineCount - 1, 0)
-    editor.selection = new vscode.Selection(position, position)
-    editor.revealRange(new vscode.Range(position, position))
+    await showNoteDocument(uri)
 }
 
 /** 新建并打开空笔记：命令面板与 Webview 共用的完整动作 */

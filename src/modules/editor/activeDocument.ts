@@ -1,0 +1,69 @@
+/**
+ * 活跃文档事实源：统一记录编辑器里的文档及类型（文本 / 富文本），供工作流路由与插入目标读取。
+ * 复用约定：文本编辑器事件由本文件订阅，富文本侧由 editorProvider 上报；口径与 WorkflowRouter 一致——
+ * 焦点移到面板或设置页不清空，沿用最后一次活跃文档，避免打开设置就把场景事实丢掉。
+ * 关键约束：模块级单例，随激活注册一次；业务代码不得再直接读 window.activeTextEditor——
+ * 富文本 tab 下它为空，绕过本文件会静默失效或插到错误文档。
+ */
+import * as vscode from 'vscode'
+
+/** 活跃文档：kind 决定后续能否拿到 TextEditor，rich 只用于路由与展示 */
+export interface ActiveDocument {
+    uri: vscode.Uri
+    kind: 'text' | 'rich'
+}
+
+const emitter = new vscode.EventEmitter<ActiveDocument | null>()
+
+/** 活跃文档变更事件：文本与富文本切换统一从这里广播 */
+export const onDidChangeActiveDocument: vscode.Event<ActiveDocument | null> = emitter.event
+
+let current: ActiveDocument | null = null
+
+/** 更新事实并广播：调用方按变化与否自行去重（事件量很小，不去抖） */
+function setActiveDocument(next: ActiveDocument | null): void {
+    current = next
+    emitter.fire(next)
+}
+
+/** 注册文本编辑器监听并托管 emitter：随 context.subscriptions 释放 */
+export function trackActiveDocument(subscriptions: vscode.Disposable[]): void {
+    subscriptions.push(
+        emitter,
+        vscode.window.onDidChangeActiveTextEditor((editor) => {
+            if (editor === undefined) {
+                // 焦点离开编辑器不清空：与工作流路由同一口径
+                return
+            }
+            setActiveDocument({ uri: editor.document.uri, kind: 'text' })
+        }),
+    )
+}
+
+/**
+ * 富文本编辑器上报活跃状态：打开或获得焦点时调用。
+ * 关键约束：只在 panel 处于 active 时上报，避免后台 tab 抢走活跃事实。
+ */
+export function reportRichDocument(uri: vscode.Uri): void {
+    setActiveDocument({ uri, kind: 'rich' })
+}
+
+/** 富文本编辑器关闭：只有当前活跃的正是它时才清空，避免关后台 tab 误清别的文档 */
+export function clearRichDocument(uri: vscode.Uri): void {
+    if (current?.kind === 'rich' && current.uri.toString() === uri.toString()) {
+        setActiveDocument(null)
+    }
+}
+
+/** 读取当前活跃文档：未打开任何文档或尚未收到事件时为 null */
+export function getActiveDocument(): ActiveDocument | null {
+    return current
+}
+
+/** 取文本编辑器：活跃文档是富文本时返回 undefined，调用方必须处理该分支 */
+export function getActiveTextEditor(): vscode.TextEditor | undefined {
+    if (current?.kind === 'rich') {
+        return undefined
+    }
+    return vscode.window.activeTextEditor
+}

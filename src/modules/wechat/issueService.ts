@@ -19,6 +19,7 @@ import { countWords, contentHash, parseTitle, splitFrontmatter } from '@modules/
 import { findIndexedFile } from '@modules/common/db/indexRepository'
 import { logger } from '@modules/common/logger'
 import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
+import { openStorageDocument } from '@modules/editor/openDocument'
 import {
     readWechatArticleAuthor,
     readWechatArticleDigest,
@@ -501,8 +502,7 @@ export class WechatIssueService {
         const article = this.requireArticle(id)
         const filePath = await this.ensureArticleFile(article)
         const uri = buildStorageUri(resolveStorageRoot(), toSafeSegments(filePath, '文章'))
-        const document = await vscode.workspace.openTextDocument(uri)
-        await vscode.window.showTextDocument(document, { preview: false })
+        await openStorageDocument(uri)
         return { opened: true }
     }
 

@@ -5,9 +5,16 @@
  * 本函数不返回失败原因，避免两处语义分叉。
  */
 import * as vscode from 'vscode'
+import { getActiveDocument } from '@modules/editor/activeDocument'
 
-/** 取插入目标：优先活动编辑器，其次最近可见的 Markdown 编辑器 */
+/**
+ * 取插入目标：优先活动编辑器，其次最近可见的 Markdown 编辑器。
+ * 富文本 tab 没有 TextEditor，此时直接返回 undefined——回退到其它可见编辑器会插进错误的文档。
+ */
 export function resolveMarkdownEditor(): vscode.TextEditor | undefined {
+    if (getActiveDocument()?.kind === 'rich') {
+        return undefined
+    }
     const active = vscode.window.activeTextEditor
     if (active !== undefined) {
         return active
