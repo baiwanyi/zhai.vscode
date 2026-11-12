@@ -4,7 +4,7 @@
  * 七个字段都是多句描述，统一取 @webview/components/AiTextareaField（多行输入 + 字段级 AI 生成）；
  * 字数上限与 AI 生成结果截断共用 constants 的 SETTING_FIELD_MAX_LENGTH。
  * 关键约束：同一时刻只允许一项生成，忙碌态由页面持有、本组件只按字段渲染按钮状态；
- * 多数值由 textarea 输入，写盘时折成单行键值行（见 serialize.ts），因此不要指望换行落到文档里；
+ * 多数值由 textarea 输入，写盘时折成单行写在字段标题下（见 serialize.ts），因此换行不会落到文档里；
  * 核心概念用分号分隔多个名词，续写注入时按同一规则切分，改写分隔符须同步宿主侧解析。
  */
 import { FieldGroup } from '@components/ui/field'

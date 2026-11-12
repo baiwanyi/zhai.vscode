@@ -3,7 +3,9 @@
  * 复用约定：状态、钩子、分类等中文标签取自 constants 的元数据表，不另写一套映射；
  * 设定按标签页拆分：基本信息写 README 的「作品设定」段，世界观与金手指各写自己的文档，
  * 势力 / 地点 / 物品按分类各产出自己的条目块。
- * 关键约束：只产出「段落片段」而非整篇文档，落点与保留策略由宿主 writer 决定；
+ * 关键约束：设定字段与角色字段以标题承载（三级标题，角色卡再分三级分组 + 四级字段），不再用 `- 键：值` 列表；
+ * 段落与块内部只能出现三、四级标题——宿主按「下一个一/二级标题」判断段落终点，写成二级会把文档截断；
+ * 只产出「段落片段」而非整篇文档，落点与保留策略由宿主 writer 决定；
  * 卷章标题必须保留「第N卷 / 第N章」前缀，条目必须保留「## 名称」二级标题，否则解析端认不出层级；
  * 键名一旦改动就必须同步改 document.ts 的读取键，否则回写后页面内容会凭空丢失。
  */
@@ -18,71 +20,74 @@ import {
 import type { CharacterCard, LoreEntry, LoreKind, OutlineChapter, OutlineVolume, ProjectSetting } from './types'
 
 /**
- * 键值行只能占一行：textarea 输入的多行文本折成单行，
- * 否则回写后下一行会被解析端当成缺少冒号的新内容，字段在重新打开时丢失。
+ * 字段正文折成单行：字段值写在标题下，正文里出现换行会被解析端当成新段落甚至新标题。
+ * 条目描述走的是正文段而非字段，保留多段，不经过这里。
  */
 function toSingleLine(value: string): string {
     return value.replace(/\s*\r?\n\s*/gu, ' ').trim()
 }
 
-/** 基本信息段落的键值行：顺序跟随表单，便于人工阅读与 diff */
-function buildBasicLines(setting: ProjectSetting): string[] {
-    return [
-        `- 笔名：${setting.penName}`,
-        `- 章节字数：${setting.chapterWordGoal}`,
-        `- 时间：${setting.period}`,
-        `- 地点：${setting.place}`,
-        `- 结局：${setting.ending}`,
-        `- 视角：${setting.perspective}`,
-        `- 叙事结构：${setting.narrative}`,
-        `- 语调：${setting.tone}`,
-        `- 参考：${setting.references}`,
-        `- 禁写项：${setting.banned.join('、')}`,
-        `- 作品简介：${toSingleLine(setting.summary)}`,
-        `- 一句话简介：${toSingleLine(setting.logline)}`,
-        `- 开篇灵感：${toSingleLine(setting.opening)}`,
-        `- 核心冲突：${toSingleLine(setting.conflict)}`,
-        `- 补充信息：${toSingleLine(setting.extra)}`,
-    ]
+/**
+ * 单个设定字段：`### 标题` + 正文行。
+ * 关键约束：标题固定三级——「作品设定」「提取设定」等段落以二级标题起头，
+ * 段内出现二级标题会被 writer 当成段落终点，后半段直接被截掉。
+ */
+function buildField(title: string, value: string): string {
+    return `### ${title}\n\n${toSingleLine(value)}`
 }
 
-/** 世界观段落的键值行：键名与 document.ts 的读取键一一对应，字段由 textarea 输入故须折成单行 */
-function buildWorldLines(setting: ProjectSetting): string[] {
-    return [
-        `- 世界观总述：${toSingleLine(setting.worldview)}`,
-        `- 地理：${toSingleLine(setting.geography)}`,
-        `- 时代：${toSingleLine(setting.era)}`,
-        `- 势力：${toSingleLine(setting.factions)}`,
-        `- 力量体系：${toSingleLine(setting.powerSystem)}`,
-        `- 核心概念：${toSingleLine(setting.concepts)}`,
-        `- 禁忌：${toSingleLine(setting.taboo)}`,
-    ]
+/** 字段组：空值不写标题，作者清空某字段后它的标题随之从文档里消失 */
+function buildFields(pairs: readonly (readonly [string, string])[]): string {
+    return pairs
+        .map(([title, value]) => [title, toSingleLine(value)] as const)
+        .filter(([, value]) => value.length > 0)
+        .map(([title, value]) => buildField(title, value))
+        .join('\n\n')
 }
 
-/** 金手指段落的键值行：键名与 document.ts 的读取键一一对应，描述类字段由 textarea 输入故须折成单行 */
-function buildGoldenFingerLines(setting: ProjectSetting): string[] {
-    return [
-        `- 金手指类型：${toSingleLine(setting.goldenFingerType)}`,
-        `- 金手指能力：${toSingleLine(setting.goldenFingerAbility)}`,
-        `- 金手指代价：${toSingleLine(setting.goldenFingerCost)}`,
-        `- 金手指限制：${toSingleLine(setting.goldenFingerLimit)}`,
-        `- 升级体系：${toSingleLine(setting.goldenFingerUpgrade)}`,
-    ]
-}
-
-/** README「作品设定」段落正文：只写键值行，用户手写的其它段落由 writer 原样保留 */
+/** 基本信息段落正文：标题即字段名，顺序跟随表单，便于人工阅读与 diff */
 export function serializeBasicSection(setting: ProjectSetting): string {
-    return buildBasicLines(setting).join('\n')
+    return buildFields([
+        ['笔名', setting.penName],
+        ['章节字数', String(setting.chapterWordGoal)],
+        ['时间', setting.period],
+        ['地点', setting.place],
+        ['结局', setting.ending],
+        ['视角', setting.perspective],
+        ['叙事结构', setting.narrative],
+        ['语调', setting.tone],
+        ['参考', setting.references],
+        ['禁写项', setting.banned.join('、')],
+        ['作品简介', setting.summary],
+        ['一句话简介', setting.logline],
+        ['开篇灵感', setting.opening],
+        ['核心冲突', setting.conflict],
+        ['补充信息', setting.extra],
+    ])
 }
 
-/** 世界观.md「提取设定」段落正文 */
+/** 世界观段落正文：标题与 document.ts 的读取键一一对应 */
 export function serializeWorldSection(setting: ProjectSetting): string {
-    return buildWorldLines(setting).join('\n')
+    return buildFields([
+        ['世界观总述', setting.worldview],
+        ['地理', setting.geography],
+        ['时代', setting.era],
+        ['势力', setting.factions],
+        ['力量体系', setting.powerSystem],
+        ['核心概念', setting.concepts],
+        ['禁忌', setting.taboo],
+    ])
 }
 
-/** 金手指.md「提取设定」段落正文 */
+/** 金手指段落正文：标题与 document.ts 的读取键一一对应，抬头「# 金手指」已限定语境故省去前缀 */
 export function serializeGoldenFingerSection(setting: ProjectSetting): string {
-    return buildGoldenFingerLines(setting).join('\n')
+    return buildFields([
+        ['类型', setting.goldenFingerType],
+        ['能力', setting.goldenFingerAbility],
+        ['代价', setting.goldenFingerCost],
+        ['限制', setting.goldenFingerLimit],
+        ['升级体系', setting.goldenFingerUpgrade],
+    ])
 }
 
 /** README Frontmatter 的四个字段：其余字段（状态、创建时间）由 writer 保留原值 */
@@ -96,65 +101,105 @@ export function serializeReadmeMeta(setting: ProjectSetting): PressApplyMeta {
     }
 }
 
-/**
- * 单个角色块：一级标题起条，键名与 parseCharacters 一一对应。
- * 关键约束：封面与画风必须随块落盘——图片本体在 Images 下，文档只记引用；
- * 不写这两行，重新打开作品后封面选择会丢失，列表与角色卡页都回到「未生成」状态。
- */
-function buildCharacterBlock(character: CharacterCard): string {
-    return [
-        `# ${character.name}`,
-        `- id：${character.id}`,
-        `- 姓名：${character.name}`,
-        `- 别名：${character.alias}`,
-        `- 分类：${CHARACTER_ROLE_META[character.role].label}`,
-        `- 性别：${CHARACTER_GENDER_META[character.gender].label}`,
-        `- 年龄：${character.age}`,
-        `- 身高：${character.height}`,
-        `- 体型：${CHARACTER_BODY_TYPE_META[character.bodyType].label}`,
-        `- 身份：${character.identity}`,
-        `- 外貌标签：${character.appearanceTags.join('、')}`,
-        `- 外貌：${character.appearance}`,
-        `- 特质：${character.traits.join('、')}`,
-        `- 背景：${character.background}`,
-        `- 欲望：${character.desire}`,
-        `- 弱点：${character.weakness}`,
-        `- 口头禅：${character.catchphrase}`,
-        `- 能力：${character.ability}`,
-        `- 弧线：${character.arc}`,
-        `- 关系：${character.relation}`,
-        `- 画风：${character.portraitStyle}`,
-        `- 封面：${character.coverPortraitId ?? ''}`,
-    ].join('\n')
+/** 角色卡字段组：三级标题分组，组内每个字段一个四级标题 */
+interface CharacterFieldGroup {
+    title: string
+    fields: readonly (readonly [string, string])[]
 }
 
-/** 角色块列表：name 作为宿主侧的匹配键，text 是包含标题行的完整块 */
+/**
+ * 角色卡正文：`## 角色名` 起块，三级标题分组、四级标题承载字段。
+ * 关键约束：块标题必须是二级——角色文档的一级标题留给文件抬头，writer 按一/二级边界切块；
+ * 空字段不写标题，因此清空某字段等于让它的标题消失；
+ * 封面为空表示未设置，同样不写，避免把空串读成「有封面但无效」。
+ */
+function buildCharacterBlock(character: CharacterCard): string {
+    const groups: readonly CharacterFieldGroup[] = [
+        {
+            title: '身份档案',
+            fields: [
+                ['id', character.id],
+                ['姓名', character.name],
+                ['别名', character.alias],
+                ['分类', CHARACTER_ROLE_META[character.role].label],
+                ['性别', CHARACTER_GENDER_META[character.gender].label],
+                ['年龄', character.age],
+                ['身高', character.height],
+                ['体型', CHARACTER_BODY_TYPE_META[character.bodyType].label],
+                ['身份', character.identity],
+            ],
+        },
+        {
+            title: '外貌形象',
+            fields: [
+                ['外貌标签', character.appearanceTags.join('、')],
+                ['外貌', character.appearance],
+                ['画风', character.portraitStyle],
+                ['封面', character.coverPortraitId ?? ''],
+            ],
+        },
+        {
+            title: '性格与能力',
+            fields: [
+                ['特质', character.traits.join('、')],
+                ['口头禅', character.catchphrase],
+                ['能力', character.ability],
+            ],
+        },
+        {
+            title: '背景与关系',
+            fields: [
+                ['背景', character.background],
+                ['欲望', character.desire],
+                ['弱点', character.weakness],
+                ['弧线', character.arc],
+                ['关系', character.relation],
+            ],
+        },
+    ]
+    const body = groups
+        .map((group) => {
+            const fields = group.fields
+                .map(([title, value]) => [title, toSingleLine(value)] as const)
+                .filter(([, value]) => value.length > 0)
+                .map(([title, value]) => `#### ${title}\n\n${value}`)
+                .join('\n\n')
+            return fields.length === 0 ? '' : `### ${group.title}\n\n${fields}`
+        })
+        .filter((text) => text.length > 0)
+        .join('\n\n')
+    return body.length > 0 ? `## ${character.name}\n\n${body}` : `## ${character.name}`
+}
+
+/** 角色块列表：name 作为宿主侧的匹配键，text 是包含「## 名称」标题行的完整块 */
 export function serializeCharacterBlocks(characters: CharacterCard[]): { name: string; text: string }[] {
     return characters.map((character) => ({ name: character.name, text: buildCharacterBlock(character) }))
 }
 
 /**
- * 单个条目块：二级标题起条，键值行只放引用与关联，描述写标题下方的正文段。
- * 关键约束：描述为正文而非键值行——键值行只能占一行，多段描述会被解析端截断；
- * 关联人物写姓名而不是 id，与章纲「人物：」同口径，文档可读也能手改。
+ * 单个条目块：二级标题起条，标识与关联写三级标题下的单行，描述作为三级标题下的正文段。
+ * 关键约束：id 必须落盘（设定图与媒体引用靠它区分归属），关联人物写姓名而不是 id，文档可读也能手改；
+ * 描述可以多段——它不在字典型字段里，换行不会破坏结构。
  */
 function buildLoreBlock(entry: LoreEntry, nameById: ReadonlyMap<string, string>): string {
-    const lines = [`## ${entry.name}`, `- id：${entry.id}`]
+    const sections = [`### id\n\n${entry.id}`]
     if (entry.kind === 'faction') {
         const memberNames = entry.memberIds
             .map((id) => nameById.get(id))
             .filter((name): name is string => name !== undefined)
         if (memberNames.length > 0) {
-            lines.push(`- 人物：${memberNames.join('、')}`)
+            sections.push(`### 关联人物\n\n${memberNames.join('、')}`)
         }
     }
     // 封面只存图片标识：图片本体在 Images 下，URL 由宿主按会话签发，不能写进文档
-    lines.push(`- 封面：${entry.coverImageId ?? ''}`)
+    if (entry.coverImageId !== null) {
+        sections.push(`### 封面\n\n${entry.coverImageId}`)
+    }
     const description = entry.description.trim()
     if (description.length > 0) {
-        lines.push('', description)
+        sections.push(`### 描述\n\n${description}`)
     }
-    return lines.join('\n')
+    return `## ${entry.name}\n\n${sections.join('\n\n')}`
 }
 
 /**

@@ -1,8 +1,9 @@
 /**
  * 作品文档解析用例：验证 README、设定、角色设定与大纲 Markdown 能还原成工作台视图模型。
- * 复用约定：样本文本沿用作品骨架与角色设定.md 「# 角色名」、大纲.md 「卷 → 章 → 键值行」的既有写法。
+ * 复用约定：前四组样本沿用旧写法（「# 角色名」+ 键值行），用于守住历史作品的兼容口径；
+ * 末组样本是新格式（`## 角色名` + 三级分组 + 四级字段、`### 字段` 承载设定），覆盖标题读取路径。
  * 关键约束：断言覆盖字段映射与容错两条线——键值行优先于区块段落，空文档与缺卷标题都不得抛错；
- * 设定分组文档留空，用于覆盖旧 设定.md 的回落口径（新布局由往返用例覆盖）。
+ * 设定分组文档留空时用于覆盖旧 设定.md 的回落口径。
  */
 import { describe, expect, it } from 'vitest'
 import { parseProjectWorkspace } from '../src/workflow/press/document'
@@ -226,5 +227,203 @@ describe('parseProjectWorkspace', () => {
         expect(parsed.volumes[0]?.name).toBe('第1卷')
         expect(parsed.volumes[0]?.chapters.map((chapter) => chapter.order)).toEqual([1, 2])
         expect(parsed.volumes[0]?.chapters[0]?.status).toBe('drafting')
+    })
+
+    it('标题承载的新格式：设定字段、角色分组与条目字段都能还原', () => {
+        const readme = `---
+title: 长夜行
+audience: 女频
+wordGoal: 600000
+tags: [仙侠]
+---
+
+# 长夜行
+
+## 作品设定
+
+### 笔名
+青梧
+
+### 章节字数
+3200
+
+### 时间
+古代
+
+### 结局
+开放
+
+### 一句话简介
+她替人补命，也替自己补了一笔旧债。
+
+### 作品简介
+补命者以他人余寿换命，代价记在自己的命数上。
+
+### 禁写项
+血腥细节、政治隐喻
+`
+        const characters = `# 角色设定
+
+> 每个角色以二级标题起条。
+
+## 沈青梧
+
+### 身份档案
+
+#### id
+12345678
+
+#### 姓名
+沈青梧
+
+#### 分类
+主角
+
+#### 性别
+女
+
+#### 年龄
+二十四
+
+#### 身高
+一米六五
+
+#### 体型
+纤细
+
+### 外貌形象
+
+#### 外貌标签
+素衣、腕上缠红线
+
+#### 外貌
+眉眼清淡，说话时习惯垂眼。
+
+#### 封面
+20261001120000AbCd12
+
+### 性格与能力
+
+#### 特质
+隐忍、护短
+
+#### 口头禅
+这笔账记我名下。
+
+#### 能力
+替人补命
+
+### 背景与关系
+
+#### 背景
+幼年被命簿选中。
+
+#### 关系
+与守簿人亦师亦敌。
+`
+        const parsed = parseProjectWorkspace(
+            { readme, setting: '', characters, outline: '' },
+            {
+                world: `# 世界观
+
+## 提取设定
+
+### 世界观总述
+命簿定人寿数，补命者可改写一笔。
+
+### 核心概念
+命簿：记载凡人寿数的册子；补命：以他人余寿换回一条命
+`,
+                power: `# 金手指
+
+## 提取设定
+
+### 类型
+补命术
+
+### 能力
+能看见他人的剩余寿数
+
+### 代价
+每改一笔折自己的寿
+
+### 限制
+只能改与自己有因果的人
+
+### 升级体系
+先改一笔，再改一卷，最后能改命簿本身
+`,
+                faction: `# 势力
+
+## 守簿人
+
+### id
+87654321
+
+### 关联人物
+沈青梧
+
+### 封面
+20261001120002IjKl56
+
+### 描述
+守着命簿的旧人。
+
+又一代的代价在这里结算。
+`,
+                place: '',
+                item: '',
+            },
+            '未命名',
+        )
+
+        expect(parsed.setting).toMatchObject({
+            title: '长夜行',
+            audience: '女频',
+            penName: '青梧',
+            genres: ['仙侠'],
+            wordGoal: 600000,
+            chapterWordGoal: 3200,
+            period: '古代',
+            ending: '开放',
+            logline: '她替人补命，也替自己补了一笔旧债。',
+            summary: '补命者以他人余寿换命，代价记在自己的命数上。',
+            banned: ['血腥细节', '政治隐喻'],
+            worldview: '命簿定人寿数，补命者可改写一笔。',
+            goldenFingerType: '补命术',
+            goldenFingerCost: '每改一笔折自己的寿',
+            goldenFingerLimit: '只能改与自己有因果的人',
+            goldenFingerUpgrade: '先改一笔，再改一卷，最后能改命簿本身',
+        })
+        expect(parsed.setting.concepts).toContain('命簿：')
+
+        const [character] = parsed.characters
+        expect(character).toMatchObject({
+            id: '12345678',
+            name: '沈青梧',
+            role: 'protagonist',
+            gender: 'female',
+            age: '二十四',
+            height: '一米六五',
+            bodyType: 'slim',
+            appearanceTags: ['素衣', '腕上缠红线'],
+            appearance: '眉眼清淡，说话时习惯垂眼。',
+            traits: ['隐忍', '护短'],
+            catchphrase: '这笔账记我名下。',
+            ability: '替人补命',
+            background: '幼年被命簿选中。',
+            relation: '与守簿人亦师亦敌。',
+            coverPortraitId: '20261001120000AbCd12',
+        })
+
+        const [faction] = parsed.lore
+        expect(faction).toMatchObject({
+            id: '87654321',
+            kind: 'faction',
+            name: '守簿人',
+            description: '守着命簿的旧人。\n\n又一代的代价在这里结算。',
+            coverImageId: '20261001120002IjKl56',
+        })
+        expect(faction?.memberIds).toEqual(['12345678'])
     })
 })

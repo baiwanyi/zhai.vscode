@@ -6,7 +6,8 @@
  * 关键约束：引用按文档整篇替换（先删后插），同一文档内多次引用同一张图只留一行，避免引用数虚高；
  * 找不到对应媒体的引用记为 stale 且不落库，防止把已删除的图重新挂回来；
  * 公众号批次文章的引用类型为 article，与笔记一样只按正文图片解析，不涉及封面行；
- * 角色卡文档没有 id 行，角色封面的 ref_id 用角色名承担区分键，条目封面用条目自带的 id 行。
+ * 角色封面的 ref_id 用角色名承担区分键（角色改名后仍按块标题定位），条目封面用条目自带的 id 字段；
+ * 封面与 id 优先按「三/四级标题 + 下一行值」读取，旧文档的 `- 封面：` / `- id：` 列表行一并兼容。
  */
 import * as path from 'node:path'
 import * as vscode from 'vscode'
@@ -23,12 +24,14 @@ import type Database from 'better-sqlite3'
 
 /** markdown 图片语法：支持尖括号包裹的含空格路径与可选 title */
 const IMAGE_REF_PATTERN = /!\[[^\]]*\]\(\s*(<[^>]*>|[^)\s]+)(?:\s+(?:"[^"]*"|'[^']*'))?\s*\)/gu
-/** 封面行：`- 封面：<mediaId>`，与 serialize 写出的格式一致 */
+/** 旧格式封面行：`- 封面：<mediaId>`，仍兼容读取 */
 const COVER_LINE_PATTERN = /^\s*[-*]\s*封面[：:]\s*(\S+)\s*$/u
-/** 标题行：一级 / 二级 */
+/** 标题行：一级 / 二级（块标题），三/四级是块内字段标题 */
 const HEADING_PATTERN = /^(#{1,2})\s+(.+?)\s*$/u
-/** 条目 id 行：`- id：xxx` */
+/** 旧格式条目 id 行：`- id：xxx`，仍兼容读取 */
 const LORE_ID_LINE_PATTERN = /^\s*[-*]\s*id[：:]\s*(\S+)\s*$/u
+/** 字段标题行：`### 封面` / `#### 封面`，值取标题下首个非空行 */
+const FIELD_HEADING_PATTERN = /^(#{3,4})\s+(.+?)\s*$/u
 /** markdown 扩展名 */
 const MARKDOWN_PATTERN = /\.md$/iu
 
@@ -197,21 +200,52 @@ interface CoverBlock {
     coverId: string | null
 }
 
+/** 取行内首个字段值：媒体标识本身不含空白，行尾注释与标点不参与比较 */
+function readFirstToken(line: string): string | null {
+    const [token] = line.trim().split(/\s+/u)
+    return token === undefined || token.length === 0 ? null : token
+}
+
 /**
- * 按标题切块抽取封面行。
- * @param level 1 = 角色卡一级标题；2 = 条目文档二级标题
+ * 按标题切块抽取封面与实体 id。
+ * 同时兼容两代写法：标题承载（`### 封面` / `#### 封面` + 下方一行值）与旧的 `- 封面：xxx` 列表行。
+ * @param levels 块标题的层级：角色卡新格式为二级、旧文件为一级，条目文档恒为二级
  */
-function parseCoverBlocks(text: string, level: 1 | 2): CoverBlock[] {
+function parseCoverBlocks(text: string, levels: readonly (1 | 2)[]): CoverBlock[] {
     const blocks: CoverBlock[] = []
     let current: CoverBlock | null = null
+    /** 当前已读到的块内字段标题：三/四级标题之后的首个非空行即该字段的值 */
+    let pendingField: string | null = null
     for (const line of text.split(/\r?\n/u)) {
         const heading = HEADING_PATTERN.exec(line)
-        if (heading !== null && heading[1]?.length === level) {
-            current = { title: (heading[2] ?? '').trim(), entityId: null, coverId: null }
-            blocks.push(current)
+        if (heading !== null && heading[1] !== undefined) {
+            const level: 1 | 2 = heading[1].length === 1 ? 1 : 2
+            if (levels.includes(level)) {
+                current = { title: (heading[2] ?? '').trim(), entityId: null, coverId: null }
+                blocks.push(current)
+            }
+            pendingField = null
             continue
         }
         if (current === null) {
+            continue
+        }
+        const fieldHeading = FIELD_HEADING_PATTERN.exec(line)
+        if (fieldHeading !== null) {
+            pendingField = (fieldHeading[2] ?? '').trim()
+            continue
+        }
+        const trimmed = line.trim()
+        if (trimmed.length === 0) {
+            continue
+        }
+        if (pendingField !== null) {
+            if (pendingField === '封面') {
+                current.coverId = readFirstToken(trimmed)
+            } else if (pendingField === 'id') {
+                current.entityId = readFirstToken(trimmed)
+            }
+            pendingField = null
             continue
         }
         const cover = COVER_LINE_PATTERN.exec(line)
@@ -330,7 +364,7 @@ function collectDocumentUsages(
     }
     let stale = parsed.stale
     if (isCharacterDoc || isLoreDoc) {
-        for (const block of parseCoverBlocks(text, isCharacterDoc ? 1 : 2)) {
+        for (const block of parseCoverBlocks(text, isCharacterDoc ? [1, 2] : [2])) {
             if (block.coverId === null) {
                 continue
             }

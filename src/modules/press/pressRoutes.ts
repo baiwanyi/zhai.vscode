@@ -31,6 +31,7 @@ import type {
     ChapterSnapshotVersionsResult,
     OpenPressProjectResult,
     PressApplyResult,
+    PressOpenDocResult,
     PressExtractCharactersResult,
     PressExtractOutlineResult,
     PressExtractSettingResult,
@@ -349,17 +350,18 @@ export class PressRoutes {
     /**
      * 打开作品下的某份文档：设定 / 人物 / 大纲页右上角的「打开文档」走这里。
      * 安全约束：作品目录先按索引库回查，文档名由宿主的白名单映射决定，前端只传枚举键。
-     * 关键约束：文档尚未生成时由服务层抛可读错误，前端按统一错误通道提示。
+     * 关键约束：文档缺失时由服务层按最小骨架补建（旧作品没有分组文档），回执带 created
+     * 供前端提示「这是新建的空文档」，不把缺文件当错误抛给界面。
      */
-    private async openDoc(payload: unknown): Promise<OpenPressProjectResult> {
+    private async openDoc(payload: unknown): Promise<PressOpenDocResult> {
         if (!isPressOpenDocRequest(payload)) {
             throw new Error('press/openDoc 参数非法：dirPath 须为非空字符串，doc 须为已知文档键')
         }
         if (!hasProjectFiles(this.db, payload.dirPath)) {
             throw new Error(`作品不在索引中，无法打开：${payload.dirPath}`)
         }
-        await openProjectDoc(payload.dirPath, payload.doc)
-        return { opened: true }
+        const { created: isCreated } = await openProjectDoc(payload.dirPath, payload.doc)
+        return { opened: true, created: isCreated }
     }
 
     /**

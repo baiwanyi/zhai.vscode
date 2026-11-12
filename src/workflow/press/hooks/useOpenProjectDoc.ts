@@ -3,10 +3,11 @@
  * 复用约定：请求经 @shared/utils/bridge 的 press/openDoc，失败原因统一由 toastError 提示，
  * 不向组件回传错误状态，也不在本地维护打开进度（编辑器打开是瞬时动作）。
  * 关键约束：前端只传 PressDocKey，真实文件名由宿主白名单映射，避免把文档名当路径传递；
- * 文档尚未生成时宿主抛可读错误，这里只提示，不代建文件——建文档要走各页自己的保存通道。
+ * 文档缺失由宿主按最小骨架补建，回执 created 为真时提示一次，让作者知道这是新建的空文件。
  */
 import { useCallback } from 'react'
-import type { OpenPressProjectResult, PressDocKey } from '@shared/types/press'
+import { toast } from 'sonner'
+import type { PressDocKey, PressOpenDocResult } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 
@@ -20,7 +21,10 @@ export function useOpenProjectDoc(dirPath: string): OpenProjectDocState {
         (doc: PressDocKey): void => {
             const run = async (): Promise<void> => {
                 try {
-                    await request<OpenPressProjectResult>('press/openDoc', { dirPath, doc })
+                    const result = await request<PressOpenDocResult>('press/openDoc', { dirPath, doc })
+                    if (result.created) {
+                        toast.info('该文档原先不存在，已按骨架新建，可直接编辑')
+                    }
                 } catch (cause) {
                     toastError(cause)
                 }

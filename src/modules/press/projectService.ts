@@ -407,22 +407,48 @@ const PROJECT_DOC_FILE_NAMES: Readonly<Record<PressDocKey, string>> = {
 }
 
 /**
+ * 缺失文档补建用的最小骨架：只留一级标题，与 projectFactory 的骨架命名一致。
+ * 分组文档刻意不写「提取设定」段——该段是否存在是「工作台写过这一组」的标记，
+ * 提前写入会让旧作品里 设定.md 的既有内容不再被读取。
+ * README 不在此表：没有 README 的目录本身不会被认作作品，缺了就是异常，直接报错。
+ */
+const PROJECT_DOC_SKELETONS: Readonly<Partial<Record<PressDocKey, string>>> = {
+    world: '# 世界观\n',
+    power: '# 金手指\n',
+    faction: '# 势力\n',
+    place: '# 地点\n',
+    item: '# 物品\n',
+    characters: '# 角色设定\n',
+    outline: '# 大纲\n\n## 主线\n\n## 分卷规划\n',
+}
+
+/**
  * 打开作品目录下的某份文档（设定 / 人物 / 大纲页右上角的「打开文档」）。
  * 安全约束：文件名只从白名单映射取值，前端传的是枚举键而非路径，无法拼出任意文件；
  * 目录按 press/{作品名} 两段校验，存在性由调用方按索引库回查。
- * 关键约束：文档可能尚未生成（新建作品只落主文档与设定骨架），缺失时报可读错误，不让 ENOENT 冒到界面。
+ * 关键约束：旧作品的骨架没有分组文档（只有 设定.md），缺失时按最小骨架补建再打开，
+ * 否则「打开文档」对这类作品永远报错；补建只写一级标题，工作台保存时才追加「提取设定」段。
+ * 返回是否发生了补建，前端据此提示用户这是一份新建的空文档。
  */
-export async function openProjectDoc(dirPath: string, doc: PressDocKey): Promise<void> {
+export async function openProjectDoc(dirPath: string, doc: PressDocKey): Promise<{ created: boolean }> {
     const segments = readProjectSegments(dirPath)
     const fileName = PROJECT_DOC_FILE_NAMES[doc]
     const root = resolveStorageRoot()
     const target = buildStorageUri(root, [...segments, fileName])
+    let isCreated = false
     if (!(await isPathExisting(target))) {
-        throw new Error(`作品文档不存在：${fileName}，可能尚未生成或已被移动`)
+        const skeleton = PROJECT_DOC_SKELETONS[doc]
+        if (skeleton === undefined) {
+            throw new Error(`作品文档不存在：${fileName}，可能尚未生成或已被移动`)
+        }
+        await vscode.workspace.fs.writeFile(target, new TextEncoder().encode(skeleton))
+        isCreated = true
+        logger.info(`已补建作品文档：${dirPath}/${fileName}`)
     }
     const document = await vscode.workspace.openTextDocument(target)
     await vscode.window.showTextDocument(document, { preview: false })
     logger.info(`已打开作品文档：${dirPath}/${fileName}`)
+    return { created: isCreated }
 }
 
 /**

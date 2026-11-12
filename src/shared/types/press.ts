@@ -114,6 +114,15 @@ export interface PressOpenDocRequest {
     doc: PressDocKey
 }
 
+/**
+ * press/openDoc 响应：created 表示该文档原本不存在、本次按最小骨架补建后打开。
+ * 旧作品的骨架只有 设定.md 等主文档，分组文档缺失属正常情况，不视为错误。
+ */
+export interface PressOpenDocResult {
+    opened: boolean
+    created: boolean
+}
+
 /** 章节条目：Chapters/ 下的一个 Markdown 文档 */
 export interface PressChapterEntry {
     /** 相对存储根路径，形如 press/剑来/Chapters/01-初见.md */
@@ -994,7 +1003,7 @@ export interface PressApplyMeta {
 
 /** 回写块：name 是宿主侧的匹配键，text 为含标题行的完整块，写入时整块替换同名块 */
 export interface PressApplyBlock {
-    /** 匹配键：角色取一级标题名，资料条目取二级标题名 */
+    /** 匹配键：角色与资料条目都取块标题名（角色新格式二级、旧文件一级，条目恒为二级） */
     name: string
     /** 含标题行的完整块，写入时整块替换同名块 */
     text: string
@@ -1022,11 +1031,11 @@ export interface PressApplyRequest {
     places?: PressApplyBlock[]
     /** 物品.md 的条目块：按二级标题合并 */
     items?: PressApplyBlock[]
-    /** 角色块：name 用作匹配键，text 是含「# 名称」标题行的完整块 */
+    /** 角色块：name 用作匹配键，text 是含「## 名称」标题行的完整块（块内三级分组、四级字段） */
     characters?: PressApplyBlock[]
     /** 大纲.md 中「分卷规划」段落的正文 */
     outline?: string
-    /** 需从 角色设定.md 移除的角色块：按一级标题名匹配，与 characters 同时生效 */
+    /** 需从 角色设定.md 移除的角色块：按块标题名匹配（一级/二级都认），与 characters 同时生效 */
     deletedCharacterNames?: string[]
     /** 需从 势力.md 移除的条目块：按二级标题名匹配 */
     deletedFactionNames?: string[]

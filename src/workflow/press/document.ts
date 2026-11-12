@@ -3,11 +3,12 @@
  * 设定.md、角色设定.md、大纲.md 的原文解析成工作台的 OutlineWorkspace。
  * 复用约定：字段语义与 types.ts 一致；基本信息取自 README 的 Frontmatter 与「作品设定」段，
  * 世界观与金手指各取自己的文档（旧的 设定.md 仅在这两份缺失时兜底），
- * 角色按「# 角色名」切块，资料条目按「## 名称」切块，大纲按「卷 → 章 → 键值行」切块，
- * 优先认 `- 键：值` 行，缺失时回落到区块段落文本。
+ * 角色按「## 角色名」切块（旧文件为「# 角色名」），资料条目按「## 名称」切块，大纲按「卷 → 章 → 键值行」切块。
+ * 字段读取统一走「标题优先、键值兜底」：新格式是 `### 字段`（角色卡再分 `### 分组` + `#### 字段`），
+ * 旧格式的 `- 键：值` 行仍认，保证历史作品升级后内容不丢。
  * 关键约束：解析必须容错——文件缺失、区块改名、字段写法变化都只让对应字段为空，绝不抛错；
  * 章纲的 summary 表示计划、wordCount 表示已写事实，两者不互相推导；未识别的名称不进入 characterIds，
- * 避免正文引用到不存在的人物卡；条目描述取块内自然段落，键值行不参与描述。
+ * 避免正文引用到不存在的人物卡；条目描述优先取「### 描述」段，旧格式则取块内自然段落。
  */
 import { isMediaId } from '@shared/types/media'
 import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId, isPressLoreId } from '@shared/types/press'
@@ -212,6 +213,45 @@ function readKeyValues(text: string): Map<string, string> {
     return values
 }
 
+/**
+ * 标题承载的字段：`### 字段` 起头，若其下还有 `#### 字段` 则以四级为字段、三级为分组。
+ * 兼容两种手写：分组式（角色卡）与省略分组的直写式（设定文档）。
+ * 值优先取自然段落，写成列表时按行兜底；同名字段保留首次出现，与键值读取同一口径。
+ */
+function readHeadingFields(text: string): Map<string, string> {
+    const values = new Map<string, string>()
+    const setValue = (title: string, content: string): void => {
+        const paragraphs = readParagraphs(content)
+        // 段落之间保留空行：条目描述是多段正文，单换行会在往返后把两段粘成一段
+        const value = paragraphs.length > 0 ? paragraphs.join('\n\n') : readPlainLines(content)
+        if (value.length > 0 && !values.has(title)) {
+            values.set(title, value)
+        }
+    }
+    for (const section of splitSections(text, 3)) {
+        const fields = splitSections(section.content, 4)
+        if (fields.length === 0) {
+            setValue(section.title, section.content)
+            continue
+        }
+        for (const field of fields) {
+            setValue(field.title, field.content)
+        }
+    }
+    return values
+}
+
+/** 块内字段：标题承载优先，旧格式的 `- 键：值` 兜底，同名字段以标题为准 */
+function readBlockFields(content: string): Map<string, string> {
+    const values = new Map(readHeadingFields(content))
+    for (const [key, value] of readKeyValues(content)) {
+        if (!values.has(key)) {
+            values.set(key, value)
+        }
+    }
+    return values
+}
+
 /** 在键值表里按候选键取首个命中值：键名允许新旧并存，先出现的候选优先 */
 function readFirst(values: ReadonlyMap<string, string>, keys: readonly string[]): string | undefined {
     for (const key of keys) {
@@ -244,6 +284,16 @@ function readFirstParagraph(text: string): string {
     return readParagraphs(text)[0] ?? ''
 }
 
+/** 列表行兜底：段落为空时按行拼接，去掉标题行、引用行与列表符号 */
+function readPlainLines(text: string): string {
+    return text
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => line.length > 0 && !line.startsWith('#') && !line.startsWith('>'))
+        .map((line) => line.replace(/^[-*]\s+/u, ''))
+        .join('；')
+}
+
 /**
  * 区块文本合并：用于「组织势力」「写作约束」这类自由书写区块。
  * 优先取自然段落；只有列表项时（如逐条列势力）退化为列表文本，避免整段丢失。
@@ -255,15 +305,7 @@ function readSectionText(sections: DocumentSection[], titles: readonly string[],
         return ''
     }
     const paragraphs = readParagraphs(target.content)
-    const text =
-        paragraphs.length > 0
-            ? paragraphs.join('；')
-            : target.content
-                  .split(/\r?\n/)
-                  .map((line) => line.trim())
-                  .filter((line) => line.length > 0 && !line.startsWith('#') && !line.startsWith('>'))
-                  .map((line) => line.replace(/^[-*]\s+/u, ''))
-                  .join('；')
+    const text = paragraphs.length > 0 ? paragraphs.join('；') : readPlainLines(target.content)
     return text.length > limit ? `${text.slice(0, limit)}…` : text
 }
 
@@ -393,24 +435,34 @@ function parseSetting(
     const legacySections = splitSections(settingDoc, 2)
     const basicSection = readmeSections.find((section) => section.title.includes(BASIC_SECTION_TITLE))
     const basicValues = basicSection === undefined ? null : readKeyValues(basicSection.content)
+    /** 标题承载的字段：新格式的首选来源，旧格式文档读出来是空表，自动回落键值 */
+    const basicFields = basicSection === undefined ? new Map<string, string>() : readHeadingFields(basicSection.content)
     // 「提取设定」段落存在才算工作台写过这一组：新建/导入作品的分组文档只有一级标题，
     // 此时必须继续从旧 设定.md 读，否则导入的世界观与金手指会在页面上凭空消失
     const sectionMark = `## ${SETTING_SECTION_TITLE}`
     const hasWorldDoc = settingSections.world.includes(sectionMark)
     const hasPowerDoc = settingSections.power.includes(sectionMark)
-    /** 基本信息：有「作品设定」段时只认该段，否则先 README 键值、再回落旧 设定.md */
+    const worldSection = splitSections(settingSections.world, 2).find((section) =>
+        section.title.includes(SETTING_SECTION_TITLE),
+    )
+    const powerSection = splitSections(settingSections.power, 2).find((section) =>
+        section.title.includes(SETTING_SECTION_TITLE),
+    )
+    const worldFields = worldSection === undefined ? new Map<string, string>() : readHeadingFields(worldSection.content)
+    const powerFields = powerSection === undefined ? new Map<string, string>() : readHeadingFields(powerSection.content)
+    /** 基本信息：有「作品设定」段时只认该段（标题优先、键值兜底），否则先 README 键值、再回落旧 设定.md */
     const readBasicValue = (keys: readonly string[]): string | undefined => {
-        if (basicValues !== null) {
-            return readFirst(basicValues, keys)
+        if (basicValues === null) {
+            return readFirst(readmeValues, keys) ?? readFirst(legacyValues, keys)
         }
-        return readFirst(readmeValues, keys) ?? readFirst(legacyValues, keys)
+        return readFirst(basicFields, keys) ?? readFirst(basicValues, keys)
     }
-    /** 世界观：专属文档存在时独占，缺失时回落旧 设定.md */
+    /** 世界观：专属文档存在时独占（标题优先、键值兜底），缺失时回落旧 设定.md */
     const readWorldValue = (keys: readonly string[]): string | undefined =>
-        readFirst(hasWorldDoc ? worldValues : legacyValues, keys)
-    /** 金手指：专属文档存在时独占，缺失时回落旧 设定.md */
+        readFirst(worldFields, keys) ?? readFirst(hasWorldDoc ? worldValues : legacyValues, keys)
+    /** 金手指：专属文档存在时独占（标题优先、键值兜底），缺失时回落旧 设定.md */
     const readPowerValue = (keys: readonly string[]): string | undefined =>
-        readFirst(hasPowerDoc ? powerValues : legacyValues, keys)
+        readFirst(powerFields, keys) ?? readFirst(hasPowerDoc ? powerValues : legacyValues, keys)
     /** 旧 设定.md 的段落兜底：分组文档存在时不再读段落，避免同一字段出现两份口径 */
     const readLegacySection = (titles: readonly string[], limit?: number): string =>
         hasWorldDoc ? '' : readSectionText(legacySections, titles, limit)
@@ -420,7 +472,7 @@ function parseSetting(
     const audienceText = readFrontmatterValue(frontmatter, 'audience') ?? ''
     const endingText = readBasicValue(['结局倾向', '结局']) ?? ''
     const wordGoal = toNumber(readFrontmatterValue(frontmatter, 'wordGoal')) ?? 0
-    // 篇幅走 README Frontmatter，其余新增档位字段只认基本信息的键值行
+    // 篇幅走 README Frontmatter，其余档位字段从「作品设定」段的标题/键值行读取
     const chapterWordGoal = toNumber(readBasicValue(['章节字数', '单章字数'])) ?? DEFAULT_CHAPTER_WORD_GOAL
     const periodText = readBasicValue(['时间', '故事时间']) ?? ''
     const placeText = readBasicValue(['地点', '故事地点']) ?? ''
@@ -488,19 +540,34 @@ function buildStableId(name: string): string {
     return String(10_000_000 + hash)
 }
 
+/** 角色文档里不是角色块的标题：文件抬头与索引段 */
+const CHARACTER_DOC_HEADINGS: readonly string[] = ['角色设定', '角色索引']
+
 /**
- * 解析人物卡：每个「# 角色名」一块，块内键值行按字段映射，缺省值取类型默认。
- * 关键约束：`- id：` 只有本身符合宿主白名单才沿用（否则生成设定图会被拒绝），
+ * 角色块：新格式以二级标题起条（三级分组 + 四级字段），旧文件是一级标题 + 键值行。
+ * 优先按二级切块；一个二级块都没有时说明是旧文件，回落一级；
+ * 两者并存（迁移到一半的文档）时二级优先、同名一级块去重后补齐，避免尚未升级的角色被漏掉。
+ */
+function readCharacterSections(text: string): DocumentSection[] {
+    const levelTwo = splitSections(text, 2).filter((section) => !CHARACTER_DOC_HEADINGS.includes(section.title))
+    const levelOne = splitSections(text, 1).filter((section) => !CHARACTER_DOC_HEADINGS.includes(section.title))
+    if (levelTwo.length === 0) {
+        return levelOne
+    }
+    const migrated = new Set(levelTwo.map((section) => section.title))
+    return [...levelTwo, ...levelOne.filter((section) => !migrated.has(section.title))]
+}
+
+/**
+ * 解析人物卡：块内字段按「标题优先、键值兜底」读取，缺省值取类型默认。
+ * 关键约束：`id` 只有本身符合宿主白名单才沿用（否则生成设定图会被拒绝），
  * 同名角色按出现顺序追加序号，避免角色卡目录互相覆盖。
  */
 function parseCharacters(text: string): CharacterCard[] {
     const cards: CharacterCard[] = []
     const usedIds = new Set<string>()
-    for (const section of splitSections(text, 1)) {
-        if (section.title === '角色设定' || section.title === '角色索引') {
-            continue
-        }
-        const values = readKeyValues(section.content)
+    for (const section of readCharacterSections(text)) {
+        const values = readBlockFields(section.content)
         const name = values.get('姓名') ?? section.title
         if (name.length === 0) {
             continue
@@ -552,9 +619,10 @@ function parseCharacters(text: string): CharacterCard[] {
 const KEY_VALUE_LINE_PATTERN = /^\s*[-*]\s+[^：:]{1,16}[：:]/u
 
 /**
- * 解析条目文档：`## 名称` 一块即一个条目，块内 `- 键：值` 提取标识、关联人物与封面，
- * 其余自然段落合并为描述。
- * 关键约束：`- id：` 只有符合宿主白名单才沿用，否则按名称散列取号；
+ * 解析条目文档：`## 名称` 一块即一个条目。
+ * 块内字段按「标题优先、键值兜底」读标识、关联人物与封面；描述优先取「### 描述」段，
+ * 旧格式没有该标题时把其余自然段落合并成描述。
+ * 关键约束：`id` 只有符合宿主白名单才沿用，否则按名称散列取号；
  * 关联人物只认已存在的人物姓名，解析不到的名字直接丢弃，不在条目里留下悬空引用；
  * 封面只校验媒体 id 格式，换分类或手工改成别的值都会回到「未设置」。
  */
@@ -566,7 +634,8 @@ function parseLoreEntries(text: string, kind: LoreKind, characterIndex: Map<stri
         if (name.length === 0) {
             continue
         }
-        const values = readKeyValues(section.content)
+        const headingValues = readHeadingFields(section.content)
+        const values = readBlockFields(section.content)
         const rawId = values.get('id')
         let id = rawId !== undefined && isPressLoreId(rawId) ? rawId : buildStableId(name)
         let salt = 1
@@ -576,6 +645,7 @@ function parseLoreEntries(text: string, kind: LoreKind, characterIndex: Map<stri
             salt += 1
         }
         usedIds.add(id)
+        // 旧格式的描述散落在块内正文，新格式独占「### 描述」段：前者需剔除键值行后再取段落
         const body = section.content
             .split(/\r?\n/u)
             .filter((line) => !KEY_VALUE_LINE_PATTERN.test(line))
@@ -585,8 +655,8 @@ function parseLoreEntries(text: string, kind: LoreKind, characterIndex: Map<stri
             id,
             kind,
             name,
-            description: readParagraphs(body).join('\n\n'),
-            memberIds: toList(values.get('人物'))
+            description: headingValues.get('描述') ?? readParagraphs(body).join('\n\n'),
+            memberIds: toList(values.get('关联人物') ?? values.get('人物'))
                 .map((member) => characterIndex.get(member))
                 .filter((memberId): memberId is string => memberId !== undefined),
             coverImageId: isMediaId(coverId) ? coverId : null,

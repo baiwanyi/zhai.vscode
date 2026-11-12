@@ -4,7 +4,8 @@
  * 复用约定：路径解析与原文读取复用 projectWorkspace 与 common/storagePath，写盘统一走 vscode.workspace.fs。
  * 关键约束：字段分组做段落级替换——README 改 Frontmatter 的四个字段与「作品设定」段落，
  * 世界观与金手指各替换自己文档里的「提取设定」段落，大纲替换「分卷规划」段落；
- * 资料条目与角色块按标题逐块合并，未涉及的条目原样保留；
+ * 段落终点始终是下一个一/二级标题，因此段内字段只能用三级及更深标题；
+ * 资料条目与角色块按标题逐块合并（角色块新格式二级、旧文件一级，改名等价于删旧写新），未涉及的块原样保留；
  * 用户手写的其它段落原样保留，单份文件写入失败不影响其余文件；设定分组文档不进快照，只有四份主文档参与留版。
  */
 import * as vscode from 'vscode'
@@ -104,10 +105,31 @@ function replaceLevelTwoSection(text: string, title: string, body: string, fallb
     return normalizeBlankLines(merged.join('\n')).trimEnd() + '\n'
 }
 
-/** 定位一级标题块的结束行：下一个一级标题即终点，找不到则到文件末尾 */
-function findBlockEnd(lines: readonly string[], headingIndex: number): number {
+/** 正则转义：角色名是作者输入，可能含括号与点等元字符 */
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+}
+
+/**
+ * 定位角色块标题行与其级别：新格式是二级标题（块内三级分组、四级字段），旧文件是一级标题。
+ * 关键约束：标题必须整行精确匹配，避免「薛牧」命中「薛牧之」这类前缀相同的角色。
+ */
+function findCharacterHeading(lines: readonly string[], name: string): { index: number; level: 1 | 2 } | null {
+    const pattern = new RegExp(`^(#{1,2})\\s+${escapeRegExp(name)}\\s*$`, 'u')
+    for (let index = 0; index < lines.length; index += 1) {
+        const matched = pattern.exec((lines[index] ?? '').trim())
+        if (matched?.[1] !== undefined) {
+            return { index, level: matched[1].length === 1 ? 1 : 2 }
+        }
+    }
+    return null
+}
+
+/** 角色块终点：一级块到下一个一级标题，二级块到下一个一/二级标题 */
+function findCharacterBlockEnd(lines: readonly string[], headingIndex: number, level: 1 | 2): number {
+    const endPattern = level === 1 ? /^#\s+/u : /^#{1,2}\s+/u
     for (let cursor = headingIndex + 1; cursor < lines.length; cursor += 1) {
-        if (/^#\s+/u.test(lines[cursor] ?? '')) {
+        if (endPattern.test(lines[cursor] ?? '')) {
             return cursor
         }
     }
@@ -115,8 +137,9 @@ function findBlockEnd(lines: readonly string[], headingIndex: number): number {
 }
 
 /**
- * 移除角色块：删除角色时按一级标题整块移除，其余角色与文件头保持原样。
- * 关键约束：只删标题完全一致且有对应角色块的段，标题不存在时跳过，避免误删相邻内容。
+ * 移除角色块：删除角色时整块移除，其余角色与文件头保持原样。
+ * 关键约束：只删标题完全一致且有对应角色块的段，标题不存在时跳过，避免误删相邻内容；
+ * 一级与二级标题都认，旧文件里尚未迁移的块也能删除。
  */
 function removeCharacterBlocks(current: string, names: readonly string[]): string {
     if (names.length === 0) {
@@ -124,18 +147,20 @@ function removeCharacterBlocks(current: string, names: readonly string[]): strin
     }
     let lines = current.split(/\r?\n/u)
     for (const name of names) {
-        const heading = `# ${name}`
-        const index = lines.findIndex((line) => line.trim() === heading)
-        if (index === -1) {
+        const target = findCharacterHeading(lines, name)
+        if (target === null) {
             continue
         }
-        lines = [...lines.slice(0, index), ...lines.slice(findBlockEnd(lines, index))]
+        lines = [
+            ...lines.slice(0, target.index),
+            ...lines.slice(findCharacterBlockEnd(lines, target.index, target.level)),
+        ]
     }
     return lines.join('\n')
 }
 
 /**
- * 合并角色块：按一级标题匹配，同名整块替换，其余追加到文件末尾。
+ * 合并角色块：同名整块替换，其余追加到文件末尾，旧的一级标题块就地升级为二级。
  * 关键约束：文件头提示（「# 角色设定」与其说明）不是角色块，匹配时按完整标题行精确比较；
  * 删除先于合并执行，因此「改名的角色」等价于删旧块 + 写新块。
  */
@@ -147,13 +172,13 @@ function mergeCharacterBlocks(
     const base = removeCharacterBlocks(current, deletedNames)
     let lines = (base.trim().length > 0 ? base : '# 角色设定\n').split(/\r?\n/u)
     for (const block of blocks) {
-        const heading = `# ${block.name}`
-        const index = lines.findIndex((line) => line.trim() === heading)
-        if (index === -1) {
+        const target = findCharacterHeading(lines, block.name)
+        if (target === null) {
             lines = [...lines, '', ...block.text.split('\n')]
             continue
         }
-        lines = [...lines.slice(0, index), ...block.text.split('\n'), '', ...lines.slice(findBlockEnd(lines, index))]
+        const end = findCharacterBlockEnd(lines, target.index, target.level)
+        lines = [...lines.slice(0, target.index), ...block.text.split('\n'), '', ...lines.slice(end)]
     }
     return normalizeBlankLines(lines.join('\n')).trimEnd() + '\n'
 }

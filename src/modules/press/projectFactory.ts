@@ -164,25 +164,26 @@ export function buildProjectDocuments(name: string, audience: PressAudience, now
         { relativePath: '大纲.md', content: '# 大纲\n\n## 主线\n\n## 分卷规划\n' },
         {
             relativePath: '角色设定.md',
-            content: '# 角色设定\n\n> 每个角色以一级标题起条，便于以 [[角色设定#角色名]] 引用。\n',
+            content:
+                '# 角色设定\n\n> 每个角色以二级标题起条，字段按三级分组（身份档案 / 外貌形象 / 性格与能力 / 背景与关系）与四级标题承载，便于以 [[角色设定#角色名]] 引用。\n',
         },
         { relativePath: '设定.md', content: '# 设定\n\n## 世界观\n\n## 地理\n\n## 组织势力\n' },
         // 分组文档只留一级标题：设定页首次保存时才由 writer 追加「提取设定」段落，
         // 段落存在与否即「工作台写过这一组」的标记，解析端据此决定是否回落旧 设定.md
         { relativePath: PROJECT_WORLD_DOC_NAME, content: '# 世界观\n' },
         { relativePath: PROJECT_POWER_DOC_NAME, content: '# 金手指\n' },
-        // 条目文档：一级标题是文件抬头，每个条目以二级标题起条，逐块合并时按二级标题匹配
+        // 条目文档：一级标题是文件抬头，每个条目以二级标题起条，块内字段用三级标题，逐块合并时按二级标题匹配
         {
             relativePath: PROJECT_FACTION_DOC_NAME,
-            content: '# 势力\n\n> 每个势力以二级标题起条，便于以 [[势力#势力名]] 引用。\n',
+            content: '# 势力\n\n> 每个势力以二级标题起条，字段用三级标题承载，便于以 [[势力#势力名]] 引用。\n',
         },
         {
             relativePath: PROJECT_PLACE_DOC_NAME,
-            content: '# 地点\n\n> 每个地点以二级标题起条，便于以 [[地点#地点名]] 引用。\n',
+            content: '# 地点\n\n> 每个地点以二级标题起条，字段用三级标题承载，便于以 [[地点#地点名]] 引用。\n',
         },
         {
             relativePath: PROJECT_ITEM_DOC_NAME,
-            content: '# 物品\n\n> 每个物品以二级标题起条，便于以 [[物品#物品名]] 引用。\n',
+            content: '# 物品\n\n> 每个物品以二级标题起条，字段用三级标题承载，便于以 [[物品#物品名]] 引用。\n',
         },
     ]
 }
