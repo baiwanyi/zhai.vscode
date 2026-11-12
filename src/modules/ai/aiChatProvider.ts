@@ -21,6 +21,7 @@ import { toSafeSegments } from '@modules/common/storagePath'
 import type { ToastService } from '@modules/common/toastService'
 import { WEBVIEW_ALLOWED_COMMANDS } from '@modules/common/webviewCommands'
 import { buildWebviewHtml } from '@modules/common/webviewHtml'
+import type { AnnotationRoutes } from '@modules/editor/annotationRoutes'
 import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { NamingRoutes } from '@modules/naming/namingRoutes'
 import type { PressRoutes } from '@modules/press/pressRoutes'
@@ -124,6 +125,8 @@ export interface AiChatViewProviderDeps {
     stock: StockRoutes
     /** 上传协议：选择 / 拖拽 / 粘贴统一落存储根的 uploads 目录 */
     upload: UploadRoutes
+    /** 标注协议：工作流「标注」总览页的列表、统计、跳转与删除 */
+    annotation: AnnotationRoutes
 }
 
 export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Disposable {
@@ -149,6 +152,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     private readonly wechat: WechatRoutes
     private readonly stock: StockRoutes
     private readonly upload: UploadRoutes
+    private readonly annotation: AnnotationRoutes
 
     public constructor(deps: AiChatViewProviderDeps) {
         this.extensionUri = deps.extensionUri
@@ -167,6 +171,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         this.wechat = deps.wechat
         this.stock = deps.stock
         this.upload = deps.upload
+        this.annotation = deps.annotation
         this.disposables.push(
             this.service.onStream((message) => this.broadcast(message)),
             this.service.onRuntimeChanged(() => this.broadcastRuntimeChanged()),
@@ -396,6 +401,10 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 }
                 if (method.startsWith('naming/')) {
                     return this.naming.handle(method, payload)
+                }
+                // 标注总览：跨文档查询与跳转，与编辑区的 editor/annotation/* 是两套入口、同一份库
+                if (method.startsWith('annotation/')) {
+                    return this.annotation.handle(method, payload)
                 }
                 if (method.startsWith('media/')) {
                     return this.media.handle(method, payload, (uri) => view.webview.asWebviewUri(uri).toString())

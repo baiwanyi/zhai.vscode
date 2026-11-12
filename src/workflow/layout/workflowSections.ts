@@ -22,6 +22,7 @@ export const WORKFLOW_SECTIONS = [
     'upload',
     'stock',
     'proofread',
+    'annotation',
     'snapshot',
     'chat',
     'usage',

@@ -27,6 +27,7 @@ import { StatusBarService } from './modules/common/statusBar'
 import { createStorageDatabaseProvider } from './modules/common/storageDbProvider'
 import { ToastService } from './modules/common/toastService'
 import { trackActiveDocument } from './modules/editor/activeDocument'
+import { AnnotationRoutes } from './modules/editor/annotationRoutes'
 import { closeAnnotationDatabases, openAnnotationDatabase } from './modules/editor/db/connection'
 import { ImageProviderRouter } from './modules/imagegen/ai/imageProvider'
 import { PressCoverService } from './modules/imagegen/coverService'
@@ -197,6 +198,12 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     const imageRouter = new ImageProviderRouter(secrets)
     // 媒体索引：按当前存储根懒打开 {root}/sqlite/media.db，切根后由连接缓存自行重建
     const mediaDbProvider = createStorageDatabaseProvider(openMediaDatabase, cacheRoot)
+    // 标注库：工作流总览页与编辑区共用同一个连接工厂，换根后由连接缓存重建
+    const annotationDbProvider = createStorageDatabaseProvider(openAnnotationDatabase, cacheRoot)
+    const annotationRoutes = new AnnotationRoutes({
+        db: annotationDbProvider,
+        root: (): vscode.Uri => resolveStorageRoot(),
+    })
     const portraitService = new PortraitService(mediaDbProvider)
     // 封面服务只列举候选供设定页展示：出图、设为封面与删除都在媒体页完成
     const coverService = new PressCoverService({ openDatabase: mediaDbProvider, coverStore: pressCoverStore })
@@ -319,6 +326,7 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         wechat: wechatLayer.routes,
         stock: stockRoutes,
         upload: uploadRoutes,
+        annotation: annotationRoutes,
     })
     context.subscriptions.push(
         aiChatProvider,
@@ -330,7 +338,6 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     // 编辑器：富文本自定义编辑器与切换命令；打开动作由 modules/editor/openDocument 统一决定；
     // 注入章节快照服务，使富文本首次回写前与 AI 写回同一套留底口径；
     // 标注库按存储根懒打开，换根后由连接缓存自行重建
-    const annotationDbProvider = createStorageDatabaseProvider(openAnnotationDatabase, cacheRoot)
     // 查询复用全扩展共用的通道与记账实例，模型取当前选中模型，不新增模型入口
     assembleEditorLayer(context, snapshotService, annotationDbProvider, {
         provider: ai.aiProvider,

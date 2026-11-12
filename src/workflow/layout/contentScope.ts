@@ -33,6 +33,7 @@ export const RESIDENT_SECTIONS: readonly WorkflowSection[] = [
     'upload',
     'stock',
     'proofread',
+    'annotation',
     'snapshot',
     'usage',
 ]

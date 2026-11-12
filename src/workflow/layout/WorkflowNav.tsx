@@ -24,6 +24,7 @@ import {
     MessageCircle,
     MessageSquare,
     Send,
+    Highlighter,
     SpellCheck,
     UserRound,
     Users,
@@ -39,7 +40,7 @@ import type { JSX, ReactNode } from 'react'
 
 /** 分组的渲染顺序：首项独占一组，中段承载专属分区与工具入口，尾项落栏底 */
 const LEADING_SECTIONS: readonly WorkflowSection[] = ['chat']
-const TOOL_SECTIONS: readonly WorkflowSection[] = ['media', 'upload', 'stock', 'proofread']
+const TOOL_SECTIONS: readonly WorkflowSection[] = ['media', 'upload', 'stock', 'proofread', 'annotation']
 const FOOTER_SECTIONS: readonly WorkflowSection[] = ['snapshot', 'usage']
 
 interface SectionMeta {
@@ -66,6 +67,7 @@ const SECTION_META: Readonly<Record<WorkflowSection, SectionMeta>> = {
     // 品牌图标取自 resources/icons/unsplash.svg，内联以跟随活动栏前景色
     stock: { label: '在线图库', icon: <UnsplashIcon className="size-6" /> },
     proofread: { label: '校对', icon: <SpellCheck className="size-6" /> },
+    annotation: { label: '标注', icon: <Highlighter className="size-6" /> },
     snapshot: { label: '快照', icon: <Archive className="size-6" /> },
     usage: { label: 'AI使用量', icon: <Bot className="size-6" /> },
     chapter: { label: '章节写作', icon: <BookOpen className="size-6" /> },

@@ -10,6 +10,7 @@
 import { Archive } from 'lucide-react'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { WorkflowAiChat } from '@webview/workflow/aichat/WorkflowAiChat'
+import { WorkflowAnnotation } from '@webview/workflow/annotation/WorkflowAnnotation'
 import { WorkflowMedia } from '@webview/workflow/media/WorkflowMedia'
 import { WorkflowStock } from '@webview/workflow/media/WorkflowStock'
 import { WorkflowUpload } from '@webview/workflow/media/WorkflowUpload'
@@ -32,6 +33,10 @@ export function WorkflowResidentSection({ section, scopeDir }: WorkflowResidentS
     // 用量是全局统计，不随内容归属隔离
     if (section === 'usage') {
         return <WorkflowUsage />
+    }
+    // 标注是跨文档视图：作品、笔记、公众号下看到的都是全库记录
+    if (section === 'annotation') {
+        return <WorkflowAnnotation />
     }
     // 媒体在非作品文档下同样是完整页面：既能插入当前文档，也能直接出图（落为通用素材）
     if (section === 'media') {

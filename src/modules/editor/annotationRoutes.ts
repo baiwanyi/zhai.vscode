@@ -1,0 +1,132 @@
+/**
+ * 标注路由：工作流「标注」总览页的列表、统计、跳转与删除。
+ * 复用约定：查询走 annotationSearch，写入走 annotationRepository，路径构造与校验复用 common/storagePath；
+ * 跳转沿用校对定位的范式（打开文档 + 选中区间），不新写一套定位逻辑。
+ * 关键约束：payload 来自 Webview，逐字段收窄后才进查询，非法值一律按「不限」处理而不是抛错；
+ * 跳转前必须校验文件存在——文档已删除给 missing-file，定位失效给 orphaned，都不打开空白编辑器。
+ */
+import * as vscode from 'vscode'
+import { buildStorageUri, isPathExisting, toSafeSegments } from '@modules/common/storagePath'
+import type {
+    AnnotationCursor,
+    AnnotationListQuery,
+    AnnotationListResult,
+    AnnotationStats,
+    HighlightColor,
+} from '@shared/types/editor'
+import { findAnnotation, removeAnnotation } from './annotationRepository'
+import { listAnnotations, statsAnnotations } from './annotationSearch'
+import type { AnnotationDatabase } from './db/connection'
+
+/** 允许的类型与颜色：与库内枚举一致，其余取值按「不限」处理 */
+const KINDS: readonly string[] = ['highlight', 'note']
+const COLORS: readonly HighlightColor[] = ['coral', 'violet', 'blue', 'emerald', 'amber']
+
+/** 默认分页条数：与查询层的默认值保持一致 */
+const DEFAULT_LIMIT = 50
+
+export interface AnnotationRoutesDeps {
+    /** 标注库连接：按存储根懒打开，调用时才求值 */
+    db: () => AnnotationDatabase
+    /** 存储根：跳转时把相对路径还原成绝对路径 */
+    root: () => vscode.Uri
+}
+
+/** 收窄游标：两端都缺失时视为首页 */
+function readCursor(input: unknown): AnnotationCursor | null {
+    if (typeof input !== 'object' || input === null) {
+        return null
+    }
+    const value = input as { createdAt?: unknown; id?: unknown }
+    if (typeof value.createdAt !== 'string' || typeof value.id !== 'string') {
+        return null
+    }
+    return { createdAt: value.createdAt, id: value.id }
+}
+
+/** 收窄列表条件：任何字段非法都退化为「不限」，不让一次脏输入把页面打空 */
+function readListQuery(payload: unknown): AnnotationListQuery {
+    const source = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
+    const kind =
+        typeof source.kind === 'string' && KINDS.includes(source.kind) ? (source.kind as 'highlight' | 'note') : null
+    const color =
+        typeof source.color === 'string' && (COLORS as readonly string[]).includes(source.color)
+            ? (source.color as HighlightColor)
+            : null
+    return {
+        cursor: readCursor(source.cursor),
+        limit: typeof source.limit === 'number' ? source.limit : DEFAULT_LIMIT,
+        kind,
+        color,
+        docPath: typeof source.docPath === 'string' ? source.docPath : null,
+        orphanedOnly: source.orphanedOnly === true,
+        keyword: typeof source.keyword === 'string' ? source.keyword : '',
+    }
+}
+
+/** 收窄 id：缺失直接抛错，由上层转成 error 回执 */
+function readId(payload: unknown): string {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('标注参数非法：缺少 id')
+    }
+    const value = (payload as { id?: unknown }).id
+    if (typeof value !== 'string' || value.length === 0) {
+        throw new Error('标注参数非法：缺少 id')
+    }
+    return value
+}
+
+export class AnnotationRoutes {
+    public constructor(private readonly deps: AnnotationRoutesDeps) {}
+
+    /** 分发标注方法：未知方法直接抛错，由面板转成 error 回执 */
+    public async handle(method: string, payload: unknown): Promise<unknown> {
+        switch (method) {
+            case 'annotation/list':
+                return this.list(payload)
+            case 'annotation/stats':
+                return this.stats(payload)
+            case 'annotation/reveal':
+                return this.reveal(payload)
+            case 'annotation/remove':
+                return this.remove(payload)
+            default:
+                throw new Error(`未知的标注方法：${method}`)
+        }
+    }
+
+    private list(payload: unknown): AnnotationListResult {
+        return listAnnotations(this.deps.db().db, readListQuery(payload))
+    }
+
+    private stats(payload: unknown): AnnotationStats {
+        const source = typeof payload === 'object' && payload !== null ? (payload as { docPath?: unknown }) : {}
+        const docPath = typeof source.docPath === 'string' ? source.docPath : null
+        return statsAnnotations(this.deps.db().db, docPath)
+    }
+
+    /** 跳转到原文：打开文本编辑器并选中区间，文档缺失与定位失效分开回报 */
+    private async reveal(payload: unknown): Promise<{ revealed: boolean; reason?: string; orphaned?: boolean }> {
+        const record = findAnnotation(this.deps.db().db, readId(payload))
+        if (record === null) {
+            return { revealed: false, reason: 'missing' }
+        }
+        const uri = buildStorageUri(this.deps.root(), toSafeSegments(record.docPath, '标注'))
+        if (!(await isPathExisting(uri))) {
+            return { revealed: false, reason: 'missing-file' }
+        }
+        const document = await vscode.workspace.openTextDocument(uri)
+        const length = document.getText().length
+        const start = Math.min(Math.max(record.startOffset, 0), length)
+        const end = Math.min(Math.max(record.endOffset, start), length)
+        await vscode.window.showTextDocument(document, {
+            selection: new vscode.Range(document.positionAt(start), document.positionAt(end)),
+            preserveFocus: false,
+        })
+        return { revealed: true, orphaned: record.orphaned }
+    }
+
+    private remove(payload: unknown): { removed: boolean } {
+        return { removed: removeAnnotation(this.deps.db().db, readId(payload)) }
+    }
+}
