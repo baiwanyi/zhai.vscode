@@ -19,6 +19,7 @@ import { logger } from '@modules/common/logger'
 import { buildBlockInsertion, readBlockContext } from '@modules/common/markdownBlock'
 import type { SecretsService } from '@modules/common/secrets'
 import { buildStorageUri, isPathExisting } from '@modules/common/storagePath'
+import { insertIntoRichDocument } from '@modules/editor/activeDocument'
 import type { MediaScope } from '@shared/types/media'
 import {
     isStockFileStem,
@@ -170,8 +171,13 @@ function sanitizeAlt(value: string): string {
 
 /** 拼装片段：描述 + 可选摄影者署名 */
 function buildSnippet(alt: string, photographer: string | null, refPath: string): string {
+    return `![${buildAltText(alt, photographer)}](${refPath})`
+}
+
+/** 图片替代文本：alt 为空时用「图片」，可选追加署名；富文本分支复用同一份文案 */
+function buildAltText(alt: string, photographer: string | null): string {
     const credit = getZhaiConfig().stockAppendCredit && photographer !== null ? ` · ${photographer}` : ''
-    return `![${sanitizeAlt(`${alt.length === 0 ? '图片' : alt}${credit}`)}](${refPath})`
+    return sanitizeAlt(`${alt.length === 0 ? '图片' : alt}${credit}`)
 }
 
 /** 默认下载入口：raw → full → regular，parsePhoto 已保证至少一档存在 */
@@ -753,8 +759,20 @@ export class StockService {
         photographer: string | null,
     ): Promise<StockInsertResult> {
         const refPath = toStockRefPath(relPath)
-        const snippet = buildSnippet(alt, photographer, refPath)
+        const url = toWebviewUri(buildStorageUri(resolveStorageRoot(), relPath.split('/')))
         const editor = target.editor
+        // 富文本：插 image 节点，署名已拼进 alt，不需要另插文本片段
+        if (editor === undefined) {
+            const isInserted = insertIntoRichDocument(target.uri, {
+                image: { src: refPath, alt: buildAltText(alt, photographer) },
+                text: null,
+            })
+            if (!isInserted) {
+                return { inserted: false, reason: 'no-editor', path: relPath, refPath, source }
+            }
+            return { inserted: true, path: relPath, refPath, url, source, duplicated: false }
+        }
+        const snippet = buildSnippet(alt, photographer, refPath)
         const document = editor.document
         const isDuplicated = document.getText().includes(refPath)
         const insertAt = editor.selection.active
@@ -771,13 +789,6 @@ export class StockService {
             insertAt.translate(0, block.start + snippet.length),
         )
         await vscode.window.showTextDocument(document, { viewColumn: editor.viewColumn, selection: range })
-        return {
-            inserted: true,
-            path: relPath,
-            refPath,
-            url: toWebviewUri(buildStorageUri(resolveStorageRoot(), relPath.split('/'))),
-            source,
-            duplicated: isDuplicated,
-        }
+        return { inserted: true, path: relPath, refPath, url, source, duplicated: isDuplicated }
     }
 }

@@ -8,12 +8,16 @@
 import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
+import { getActiveDocument } from '@modules/editor/activeDocument'
 import type { MediaScope } from '@shared/types/media'
 import { formatMonthDir } from './stockNaming'
 
 /** 插入目标：编辑器与展示信息 */
 export interface StockInsertTarget {
-    editor: vscode.TextEditor
+    /** 文本编辑器目标：富文本 tab 下为 undefined，写正文改走富文本插入注册点 */
+    editor: vscode.TextEditor | undefined
+    /** 目标文档 uri：两种目标都有，富文本写回据此定位 */
+    uri: vscode.Uri
     /** 文档的存储根相对路径：存储根外的文档为 null（仍允许插入，只是归属记 general） */
     documentRelative: string | null
     /** 文档归属：只用于索引元数据与页头提示 */
@@ -83,6 +87,30 @@ export function resolveInsertEditor(): vscode.TextEditor | undefined {
  * 关键约束：只读不写——解析过程不得移动光标或切换编辑器，失败时由调用方给出提示。
  */
 export function resolveStockTarget(at: Date = new Date()): StockTargetOutcome {
+    // 富文本 tab 优先：它没有 TextEditor，但活跃文档就是插入目标。
+    // 必须先判，否则 resolveInsertEditor 会回落到「最近可见的文本编辑器」，把图插进别的文件。
+    const active = getActiveDocument()
+    if (active !== null && active.kind === 'rich') {
+        if (active.uri.scheme !== 'file') {
+            return { ok: false, reason: 'unsaved' }
+        }
+        if (!active.uri.fsPath.toLowerCase().endsWith('.md')) {
+            return { ok: false, reason: 'not-markdown' }
+        }
+        const richRelative = toStorageRelative(active.uri.fsPath)
+        return {
+            ok: true,
+            target: {
+                editor: undefined,
+                uri: active.uri,
+                documentRelative: richRelative,
+                scope: readScope(richRelative),
+                // 富文本下不便同步读一级标题，用文件名：标签仅用于页头提示与索引元数据
+                label: path.basename(active.uri.fsPath).replace(/\.md$/iu, ''),
+                dirPath: `unsplash/${formatMonthDir(at)}`,
+            },
+        }
+    }
     const editor = resolveInsertEditor()
     if (editor === undefined) {
         return { ok: false, reason: 'no-editor' }
@@ -99,6 +127,7 @@ export function resolveStockTarget(at: Date = new Date()): StockTargetOutcome {
         ok: true,
         target: {
             editor,
+            uri: document.uri,
             documentRelative,
             scope: readScope(documentRelative),
             label: readDocumentLabel(document),
