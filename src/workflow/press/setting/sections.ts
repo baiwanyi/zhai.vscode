@@ -93,7 +93,7 @@ export function isLoreSection(key: SettingSectionKey): key is LoreKind {
 /** 字段组件入参：分组组件只读取设定并向上抛出补丁 */
 export interface SettingFieldsProps {
     setting: ProjectSetting
-    /** 当前作品目录：作品封面等只读资源从该目录回读 */
+    /** 当前作品目录：封面回读、出图归属等作品级资源以它为作用域 */
     dirPath: string
     onChange: (patch: Partial<ProjectSetting>) => void
 }

@@ -16,6 +16,8 @@ export interface PromptSettingSnapshot {
     worldview?: string
     tone?: string
     perspective?: string
+    /** 时代背景：人物卡生成角色形象时决定服饰与器物，普通出图可缺省 */
+    era?: string
 }
 
 /** 角色快照：姓名、性别年龄、身份与外貌，字段缺失时只拼姓名 */
@@ -85,6 +87,9 @@ function formatSettingSnapshot(setting: PromptSettingSnapshot): string {
     }
     if (setting.perspective !== undefined && setting.perspective.length > 0) {
         lines.push(`视角：${setting.perspective}`)
+    }
+    if (setting.era !== undefined && setting.era.length > 0) {
+        lines.push(`时代：${setting.era}`)
     }
     return lines.join('\n')
 }

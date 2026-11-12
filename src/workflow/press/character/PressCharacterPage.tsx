@@ -4,7 +4,7 @@
  * 列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterEditPanel 承担、
  * 新增由 CharacterCreateDialog 承担、提取由 useCharacterExtract 发起、角色设定图由 useCharacterPortrait 读取；
  * 搜索框复用 ui/input-group（前置图标交给 InputGroupAddon），提取中的等待态复用 components/StateEmpty；
- * 本文件只做筛选、搜索、提取、封面回读与弹窗编排，以及作品氛围、作品目录的下传。
+ * 本文件只做筛选、搜索、提取、封面回读与弹窗编排，以及作品氛围、设定快照与作品目录的下传。
  * 关键约束：新增后直接打开编辑弹窗，因此 onCreateCharacter 必须回传新卡 id；
  * 编辑弹窗以人物 id 作为 key 重建，关闭即丢弃草稿，页面不保留编辑中间态；
  * 提取得到的是草案，建卡与同名补全由父级完成，页面只负责刷新列表；
@@ -94,8 +94,29 @@ export function PressCharacterPage({
     const editingCharacter = characters.find((character) => character.id === editingId) ?? null
     // 作品层上下文只在目录与设定字段变化时重建，避免弹窗内每次输入都触发新对象
     const workspace = useMemo<CharacterWorkspace>(
-        () => ({ aiContext: { era: setting.era, genres: setting.genres, tone: setting.tone }, dirPath }),
-        [dirPath, setting.era, setting.genres, setting.tone],
+        () => ({
+            aiContext: { era: setting.era, genres: setting.genres, tone: setting.tone },
+            setting: {
+                title: setting.title,
+                genres: setting.genres,
+                logline: setting.logline,
+                worldview: setting.worldview,
+                tone: setting.tone,
+                perspective: setting.perspective,
+                era: setting.era,
+            },
+            dirPath,
+        }),
+        [
+            dirPath,
+            setting.era,
+            setting.genres,
+            setting.logline,
+            setting.perspective,
+            setting.title,
+            setting.tone,
+            setting.worldview,
+        ],
     )
 
     // 过滤只覆盖列表可见性：检索匹配姓名、昵称与身份，不搜索人物卡正文，避免常用字命中整份设定

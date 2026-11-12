@@ -4,14 +4,15 @@
  * 与故事内核（简介、一句话梗概、开篇灵感、核心冲突、补充信息）四段排列。
  * 复用约定：段容器取 @components/ui 的 field 之 FieldSet + FieldLegend，字段网格取 FieldGroup，
  * 单字段控件取 input / textarea / select；标签与规避内容都取 TagPicker（分组弹层 + 自定义输入），
- * 其余单选走 SegmentedRail（选项带悬停说明）；封面由 CoverFigure 只读展示，选项与标签库统一来自
- * ./settingOptions；带 AI 生成的五个字段统一取 @webview/components/AiTextareaField
+ * 其余单选走 SegmentedRail（选项带悬停说明）；封面交给 ./SettingCoverSection（生成 + 候选图库），
+ * 选项与标签库统一来自 ./settingOptions；带 AI 生成的五个字段统一取 @webview/components/AiTextareaField
  * （输入组 + 生成按钮 + 生成态光晕），故事内核四项由 STORY_FIELDS 数据驱动渲染；
  * 时间 / 地点与写作风格三组选择，分别收在同文件的 PlainSelectField 与 ChipChoiceField 里。
  * 关键约束：作品名与目录名一一对应；多行字段写入文档时统一折成单行；篇幅 0 表示不限；
- * 封面只读，出图与换设都在生图页完成；故事内核四个字段的字数上限取 SETTING_FIELD_MAX_LENGTH，
- * 输入与 AI 生成结果共用同一份口径；标签按目标读者取库，切换受众只换候选；
- * 题材标签与规避内容各自独立计上限，互不占用额度；忙碌字段由页面持有，本组件只按字段渲染按钮状态。
+ * 封面的生成状态与刷新信号由页面持有（切分组会卸载本组件），这里只透传；
+ * 故事内核四个字段的字数上限取 SETTING_FIELD_MAX_LENGTH，输入与 AI 生成结果共用同一份口径；
+ * 标签按目标读者取库，切换受众只换候选；题材标签与规避内容各自独立计上限，互不占用额度；
+ * 忙碌字段由页面持有，本组件只按字段渲染按钮状态。
  */
 import {
     Field,
@@ -29,9 +30,9 @@ import { Textarea } from '@components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import type { SettingFieldKey } from '@shared/types/press'
 import { AiTextareaField } from '@webview/components/AiTextareaField'
-import { CoverFigure } from '@webview/components/CoverFigure'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { SegmentedRailItem } from '@webview/components/SegmentedRail'
+import { SettingCoverSection } from './SettingCoverSection'
 import {
     AUDIENCE_OPTIONS,
     AUDIENCE_TAG_GROUPS,
@@ -47,7 +48,6 @@ import {
     TONE_OPTIONS,
 } from './settingOptions'
 import { TagPicker } from './TagPicker'
-import { useSettingCover } from './useSettingCover'
 import type { SettingFieldsProps } from './sections'
 import type { Audience } from '../types'
 import type { JSX } from 'react'
@@ -61,8 +61,16 @@ export interface SettingFieldAi {
     onGenerate: (field: SettingFieldKey) => void
 }
 
+/** 封面生成状态：同样由页面持有；version 在生成成功后递增，作为封面重读信号 */
+export interface SettingCoverControl {
+    isGenerating: boolean
+    version: number
+    onGenerate: () => void
+}
+
 interface SettingBasicFieldsProps extends SettingFieldsProps {
     fieldAi: SettingFieldAi
+    coverControl: SettingCoverControl
 }
 
 /** 故事内核里带 AI 生成的四个字段：key 同时是设定字段名与宿主生成字段键 */
@@ -85,7 +93,13 @@ const STORY_FIELDS: readonly StoryFieldMeta[] = [
 /** 写作风格三组选择的标题：比普通字段名更轻，避免与段标题抢层级 */
 const CHOICE_TITLE_CLASS = 'text-muted-foreground text-xs font-light'
 
-export function PressSettingBasicFields({ setting, dirPath, onChange, fieldAi }: SettingBasicFieldsProps): JSX.Element {
+export function PressSettingBasicFields({
+    setting,
+    dirPath,
+    onChange,
+    fieldAi,
+    coverControl,
+}: SettingBasicFieldsProps): JSX.Element {
     const { generatingField, onGenerate } = fieldAi
     /** 任一字段在生成时按钮全部禁用：一次只跑一项，避免并发请求 */
     const isBusy = generatingField !== null
@@ -121,7 +135,13 @@ export function PressSettingBasicFields({ setting, dirPath, onChange, fieldAi }:
                 <FieldGroup className="grid grid-cols-1 items-start gap-5 @md:grid-cols-3">
                     <Field>
                         <FieldTitle>作品封面</FieldTitle>
-                        <SettingCoverFigure dirPath={dirPath} title={setting.title} />
+                        <SettingCoverSection
+                            setting={setting}
+                            dirPath={dirPath}
+                            isGenerating={coverControl.isGenerating}
+                            refreshKey={coverControl.version}
+                            onGenerate={coverControl.onGenerate}
+                        />
                     </Field>
                     <FieldGroup className="gap-3 @md:col-span-2">
                         <AiTextareaField
@@ -383,29 +403,5 @@ function ChipChoiceField<T extends string>({ label, items, value, onChange }: Ch
             <FieldTitle className={CHOICE_TITLE_CLASS}>{label}</FieldTitle>
             <SegmentedRail items={items} value={value} onChange={onChange} ariaLabel={label} variant="chip" size="sm" />
         </Field>
-    )
-}
-
-interface SettingCoverFigureProps {
-    /** 当前作品目录：封面从该作品的 Images 目录回读 */
-    dirPath: string
-    /** 作品名：用于封面替代文本 */
-    title: string
-}
-
-/**
- * 作品封面：取当前选中封面，未设封面时退回最新一张。
- * 回读由 useSettingCover 承担，出图、设为封面与删除都在生图页完成，三态展示交给 CoverFigure。
- */
-function SettingCoverFigure({ dirPath, title }: SettingCoverFigureProps): JSX.Element {
-    const { cover, isLoading } = useSettingCover(dirPath)
-    return (
-        <CoverFigure
-            src={cover?.url ?? null}
-            isLoading={isLoading}
-            alt={`《${title}》的封面`}
-            emptyTitle="还没有作品封面"
-            emptyDescription="在生图页为作品生成封面后，这里显示封面图"
-        />
     )
 }

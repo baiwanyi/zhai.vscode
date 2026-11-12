@@ -4,12 +4,13 @@
  * 复用约定：外壳取 components/AppPage（作品名走 AppSummary 徽标行、分组栏进 AppMenu、内容区走 AppContent 滚动），
  * 分组切换由 PressSettingRail 承载，文案与缺项字段表来自 ./sections，字段分组拆在 PressSetting*Fields，
  * 条目分组交给 ./lore/PressSettingLoreSection，缺项判断来自 ../utils；
- * 封面只在基本信息左列展示，出图与换图都在生图页完成。
+ * 封面在基本信息左列展示，可一键生成并选用候选，复杂图库仍在生图页。
  * 关键约束：页面只向上抛出字段补丁、保存动作与条目增删改，不直接改文件；
  * 字段改动只留在内存草稿，点「保存」才写进对应文档；条目在弹窗保存时立即写盘，因此条目分段不显示保存按钮；
  * 同一时刻只渲染一个分组，缺项判断只覆盖三个字段分组；
  * 「AI 补齐设定」把素材归纳结果交给父级合并（只填空字段），提取不到时切到第一个缺项分组、不代替作者填写；
- * 字段级 AI 生成的 hook 必须留在本页面——切分组会卸载字段组件，挂在下面会连带取消在途请求；
+ * 字段级 AI 与封面生成的 hook 必须留在本页面——切分组会卸载字段组件，挂在下面会连带取消在途请求；
+ * 封面生成成功后递增版本号，让封面区块按磁盘重读（设封面在 hook 内完成）；
  * 条目描述的生成 hook 挂在弹窗内，关闭即取消，与字段级生成互不影响。
  */
 import { Sparkles } from 'lucide-react'
@@ -34,6 +35,7 @@ import { PressSettingPowerFields } from './PressSettingPowerFields'
 import { PressSettingRail } from './PressSettingRail'
 import { PressSettingWorldFields } from './PressSettingWorldFields'
 import { isLoreSection, SETTING_SECTION_ORDER, SETTING_SECTIONS } from './sections'
+import { useSettingCoverGenerate } from './useSettingCoverGenerate'
 import { useSettingExtract } from './useSettingExtract'
 import { useSettingFieldGenerate } from './useSettingFieldGenerate'
 import type { SettingFieldSectionKey, SettingFieldsProps, SettingSectionKey } from './sections'
@@ -87,8 +89,11 @@ export function PressSettingPage({
 }: PressSettingPageProps): JSX.Element {
     const [activeSection, setActiveSection] = useState<SettingSectionKey>('basic')
     const [isSaving, setIsSaving] = useState(false)
+    /** 封面重读信号：生成成功后递增，封面区块据此按磁盘重新回读 */
+    const [coverVersion, setCoverVersion] = useState(0)
     const { isExtracting, extract } = useSettingExtract(dirPath)
     const { generatingField, generate } = useSettingFieldGenerate()
+    const { isGenerating: isGeneratingCover, generate: generateCover } = useSettingCoverGenerate(dirPath)
 
     const isSectionIncomplete = (key: SettingSectionKey): boolean =>
         SETTING_SECTIONS[key].fields.some((field) => isSettingFieldMissing(setting, field))
@@ -103,6 +108,17 @@ export function PressSettingPage({
             const value = content.slice(0, SETTING_FIELD_MAX_LENGTH[field])
             onChange(toSettingTextPatch(field, value))
             toast.success('已生成一版，可直接修改或继续生成')
+        }
+        void run()
+    }
+
+    /** 生成作品封面：hook 内已设封面并提示，成功后只递增版本号让封面区块重读 */
+    const handleGenerateCover = (): void => {
+        const run = async (): Promise<void> => {
+            const image = await generateCover(setting)
+            if (image !== null) {
+                setCoverVersion((previous) => previous + 1)
+            }
         }
         void run()
     }
@@ -186,6 +202,11 @@ export function PressSettingPage({
                     dirPath={dirPath}
                     onChange={onChange}
                     fieldAi={{ generatingField, onGenerate: handleGenerateField }}
+                    coverControl={{
+                        isGenerating: isGeneratingCover,
+                        version: coverVersion,
+                        onGenerate: handleGenerateCover,
+                    }}
                 />
             )
         }
@@ -212,7 +233,7 @@ export function PressSettingPage({
             <AppContent isScrollable>{renderContent()}</AppContent>
             {/* 条目在弹窗保存时立即写盘，只有字段分组才需要这个保存按钮 */}
             {isLoreSection(activeSection) ? null : (
-                <AppFooter className="pt-3">
+                <AppFooter className="pt-2">
                     <Button variant="primary" isLoading={isSaving} onClick={handleSave}>
                         保存更改
                     </Button>

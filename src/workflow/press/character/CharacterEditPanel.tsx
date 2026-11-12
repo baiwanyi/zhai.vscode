@@ -8,8 +8,9 @@
  * 外貌描写取 @webview/components/AiTextareaField（输入组 + 生成按钮 + 生成态光晕，
  * 与设定页五个字段共用），本组件只把生成状态与回调传下去。
  * 关键约束：所有控件只通过补丁回传给调用方（编辑弹窗的草稿），本组件不持有角色数据副本，生成结果写回后仍需用户保存；
+ * 例外是删除角色形象后的封面回退——删除不可撤销，必须经 onPersist 立即落盘；
  * 外貌生成的 hook 必须留在主组件：切换标签页会卸载面板内容，挂在面板内会连带取消在途请求；
- * 基础信息固定两列排版，左列展示角色设定图封面、右列为字段；图片统一在生图页产出与替换，人物卡内不再出图；
+ * 基础信息固定两列排版，左列是角色形象区块、右列为字段；形象区块可一键生成并设首选，复杂图库仍在生图页；
  * 单行输入统一 32px 高、上下各 6px 内边距；结果与失败原因统一经 sonner 提示，页面内不渲染内联错误文本。
  */
 import { toast } from 'sonner'
@@ -19,12 +20,13 @@ import { ScrollArea } from '@components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@components/ui/tabs'
 import { Textarea } from '@components/ui/textarea'
 import { AiTextareaField } from '@webview/components/AiTextareaField'
-import { CoverFigure } from '@webview/components/CoverFigure'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
+import type { PromptSettingSnapshot } from '@webview/workflow/media/prompt/promptSections'
 import { APPEARANCE_TAG_GROUPS, APPEARANCE_TAG_MAX_COUNT } from './characterAppearanceTags'
+import { CharacterPortraitSection } from './CharacterPortraitSection'
 import { TRAIT_GROUPS, TRAIT_MAX_COUNT } from './characterTraits'
 import { useCharacterAppearance } from './useCharacterAppearance'
-import { useCharacterCover } from './useCharacterCover'
+import { useCharacterPortraitGenerate } from './useCharacterPortraitGenerate'
 import type { CharacterCard } from '../types'
 import type { AppearanceContext } from './useCharacterAppearance'
 import type { JSX } from 'react'
@@ -54,10 +56,12 @@ const TEXTAREA_HEIGHT_CLASS: Readonly<Record<'short' | 'long', string>> = {
     long: 'min-h-24',
 }
 
-/** 作品层上下文：外貌生成要时代与题材，角色设定图要目录，两者都随作品切换 */
+/** 作品层上下文：外貌生成要时代与题材，角色形象要目录与整份设定，两者都随作品切换 */
 export interface CharacterWorkspace {
     aiContext: AppearanceContext
-    /** 当前作品目录：角色设定图从该作品的 Images 回读 */
+    /** 作品设定快照：生成角色形象时展开为上下文，空字段由拼装层跳过 */
+    setting: PromptSettingSnapshot
+    /** 当前作品目录：角色形象从该作品的媒体索引回读 */
     dirPath: string
 }
 
@@ -65,11 +69,19 @@ interface CharacterEditPanelProps {
     character: CharacterCard
     workspace: CharacterWorkspace
     onChange: (patch: Partial<CharacterCard>) => void
+    /** 立即落盘补丁：仅删除角色形象后的封面回退使用，普通编辑仍走草稿 */
+    onPersist: (patch: Partial<CharacterCard>) => void
 }
 
-export function CharacterEditPanel({ character, workspace, onChange }: CharacterEditPanelProps): JSX.Element {
-    const { aiContext, dirPath } = workspace
+export function CharacterEditPanel({
+    character,
+    workspace,
+    onChange,
+    onPersist,
+}: CharacterEditPanelProps): JSX.Element {
+    const { aiContext, setting, dirPath } = workspace
     const { isGenerating, generate } = useCharacterAppearance()
+    const { isGenerating: isGeneratingPortrait, generate: generatePortrait } = useCharacterPortraitGenerate(dirPath)
 
     /** 生成外貌草稿：成功后直接写入字段，用户仍可修改或撤销 */
     const handleGenerateAppearance = async (): Promise<void> => {
@@ -77,6 +89,21 @@ export function CharacterEditPanel({ character, workspace, onChange }: Character
         if (content !== null) {
             onChange({ appearance: content })
             toast.success('外貌描写已生成，保存人物卡后生效')
+        }
+    }
+
+    /**
+     * 生成角色形象：姓名是核心事实，空名先拦下；成功后只认领封面，不覆盖人物卡其它字段。
+     * 关键约束：hook 必须留在主组件——切换标签页会卸载基础页，挂在区块内会丢掉在途回执。
+     */
+    const handleGeneratePortrait = async (): Promise<void> => {
+        if (character.name.trim().length === 0) {
+            toast.error('请先填写姓名，AI 需要它作为生成的核心事实')
+            return
+        }
+        const image = await generatePortrait(character, setting)
+        if (image !== null) {
+            onChange({ coverPortraitId: image.id })
         }
     }
 
@@ -92,7 +119,16 @@ export function CharacterEditPanel({ character, workspace, onChange }: Character
             {/* 滚动槽常驻：长短标签页切换时内容宽度不跳，避免滚动条反复挤占空间 */}
             <ScrollArea className="min-h-0 flex-1 p-4">
                 <TabsContent value="basic" className={TAB_CONTENT_CLASS}>
-                    <CharacterBasicTab character={character} dirPath={dirPath} onChange={onChange} />
+                    <CharacterBasicTab
+                        character={character}
+                        dirPath={dirPath}
+                        isGeneratingPortrait={isGeneratingPortrait}
+                        onChange={onChange}
+                        onPersist={onPersist}
+                        onGeneratePortrait={() => {
+                            void handleGeneratePortrait()
+                        }}
+                    />
                 </TabsContent>
                 <TabsContent value="appearance" className={TAB_CONTENT_CLASS}>
                     <CharacterAppearanceTab
@@ -125,12 +161,25 @@ interface CharacterTabProps {
 }
 
 interface CharacterBasicTabProps extends CharacterTabProps {
-    /** 当前作品目录：角色设定图从该作品的 Images 回读 */
+    /** 当前作品目录：角色形象从该作品的媒体索引回读 */
     dirPath: string
+    /** 是否正在出图：由主组件持有，切页不中断 */
+    isGeneratingPortrait: boolean
+    /** 立即落盘补丁：删除角色形象后的封面回退使用 */
+    onPersist: (patch: Partial<CharacterCard>) => void
+    /** 触发一次角色形象生成：姓名校验与回执处理都在主组件 */
+    onGeneratePortrait: () => void
 }
 
-/** 基础页：左列角色设定图、右列姓名等单行字段与性别；身份、角色、体型排在下方 */
-function CharacterBasicTab({ character, dirPath, onChange }: CharacterBasicTabProps): JSX.Element {
+/** 基础页：左列角色形象与生成入口、右列姓名等单行字段与性别；身份、角色、体型排在下方 */
+function CharacterBasicTab({
+    character,
+    dirPath,
+    isGeneratingPortrait,
+    onChange,
+    onPersist,
+    onGeneratePortrait,
+}: CharacterBasicTabProps): JSX.Element {
     const handleGenderChange = (value: string): void => {
         const next = toOptionValue(CHARACTER_GENDER_ORDER, value)
         if (next !== null) {
@@ -156,7 +205,14 @@ function CharacterBasicTab({ character, dirPath, onChange }: CharacterBasicTabPr
     return (
         <FieldGroup className={FIELD_GROUP_CLASS}>
             <div className="grid grid-cols-2 gap-3">
-                <CharacterPortraitFigure character={character} dirPath={dirPath} />
+                <CharacterPortraitSection
+                    character={character}
+                    dirPath={dirPath}
+                    isGenerating={isGeneratingPortrait}
+                    onGenerate={onGeneratePortrait}
+                    onChange={onChange}
+                    onPersist={onPersist}
+                />
                 <FieldGroup className={FIELD_GROUP_CLASS}>
                     <CharacterInputField
                         id="character-name"
@@ -358,29 +414,6 @@ function CharacterRelationTab({ character, onChange }: CharacterTabProps): JSX.E
                 onChange={(relation) => onChange({ relation })}
             />
         </FieldGroup>
-    )
-}
-
-interface CharacterPortraitFigureProps {
-    character: CharacterCard
-    /** 当前作品目录：角色设定图从该作品的 Images 回读 */
-    dirPath: string
-}
-
-/**
- * 角色设定图：回读该人物的封面（未设封面时取最新一张）。
- * 回读由 useCharacterCover 承担，出图、换图与图库管理都在生图页完成，三态展示交给 CoverFigure。
- */
-function CharacterPortraitFigure({ character, dirPath }: CharacterPortraitFigureProps): JSX.Element {
-    const { portrait, isLoading } = useCharacterCover(dirPath, character.id, character.coverPortraitId)
-    return (
-        <CoverFigure
-            src={portrait?.url ?? null}
-            isLoading={isLoading}
-            alt={`${character.name} 的角色设定图`}
-            emptyTitle="还没有角色设定图"
-            emptyDescription="在生图页为该人物生成后，这里显示封面图"
-        />
     )
 }
 
