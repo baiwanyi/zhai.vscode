@@ -45,6 +45,8 @@ export interface PressMutations {
     updateSetting: (patch: Partial<ProjectSetting>) => void
     /** 保存字段分组：把当前标签页写进它对应的文档，结束后 resolve */
     saveSettingSection: (section: SettingFieldSectionKey) => Promise<void>
+    /** 静默保存多个字段分组：供切页自动保存使用，不发成功提示以免一次切页弹多条 */
+    flushSettingSections: (sections: SettingFieldSectionKey[]) => Promise<void>
     updateCharacter: (characterId: string, patch: Partial<CharacterCard>) => void
     deleteCharacter: (characterId: string) => void
     createCharacter: (seed: CharacterSeed) => string
@@ -104,6 +106,17 @@ export function usePressMutations({
             return flush(new Set<PersistScope>([section]), {
                 successMessage: `「${meta.label}」已保存`,
             })
+        },
+        [flush],
+    )
+
+    /** 静默保存多个字段分组：切页自动保存走这里，只写盘不提示 */
+    const flushSettingSections = useCallback(
+        (sections: SettingFieldSectionKey[]): Promise<void> => {
+            if (sections.length === 0) {
+                return Promise.resolve()
+            }
+            return flush(new Set<PersistScope>(sections))
         },
         [flush],
     )
@@ -373,6 +386,7 @@ export function usePressMutations({
         openProject,
         updateSetting,
         saveSettingSection,
+        flushSettingSections,
         updateCharacter,
         deleteCharacter,
         createCharacter,

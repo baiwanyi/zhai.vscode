@@ -4,12 +4,13 @@
  * 封面三态取 components/CoverFigure，关联人物选择取 ui/popover，分类徽标取 constants 的 CHARACTER_ROLE_META。
  * 关键约束：草稿只在本次打开期间存在，调用方须以条目 id 或「新建」作为 key 重建组件，否则会带上上一条的输入；
  * 关闭或取消一律丢弃草稿；名称必填与同分类去重由调用方校验，本组件只负责把草稿抛出去；
+ * 切分组 / 切模块会直接卸载弹窗，此时未提交且有改动的草稿经 onAutoSave 写回（保存与取消已标记，不会重复写盘）；
  * 描述生成在本弹窗内发起、结果只写本地草稿，与出图互斥（任一进行中即禁用另一个按钮）；
  * 设定图由调用方落盘并回读，这里只读展示封面。
  */
 import { cn } from 'cn'
 import { Sparkles, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Badge } from '@components/ui/badge'
 import {
@@ -49,6 +50,8 @@ interface LoreEditDialogProps {
     onGenerateCover: () => void
     /** 保存草稿：返回 false 表示校验未通过，弹窗保持打开 */
     onSubmit: (draft: LoreEntry) => boolean
+    /** 静默写回：切分组卸载弹窗时调用，不关闭弹窗也不做提示 */
+    onAutoSave: (draft: LoreEntry) => void
     onCancel: () => void
 }
 
@@ -67,11 +70,39 @@ export function LoreEditDialog({
     isGeneratingCover,
     onGenerateCover,
     onSubmit,
+    onAutoSave,
     onCancel,
 }: LoreEditDialogProps): JSX.Element {
     const meta = LORE_KIND_META[kind]
     const [draft, setDraft] = useState<LoreEntry>(() => entry ?? createBlankEntry(kind))
+    /** 草稿最新值：卸载时读到的是本次渲染后的内容，不受清理闭包捕获的旧值影响 */
+    const draftRef = useRef<LoreEntry>(draft)
+    /** 打开时的基线：草稿与它一致说明没有改动，卸载时不必写盘 */
+    const initialRef = useRef<LoreEntry | null>(null)
+    /** 已保存或已取消：这两种关窗方式不能让卸载逻辑再写一次 */
+    const committedRef = useRef(false)
+    if (initialRef.current === null) {
+        initialRef.current = draft
+    }
     const { isGenerating: isGeneratingDescription, generate: generateDescription } = useLoreDescriptionGenerate()
+
+    useEffect(() => {
+        draftRef.current = draft
+    }, [draft])
+
+    // 切分组 / 切模块会直接卸载弹窗：把未提交的草稿写回，正在编辑的条目不会随页面消失
+    useEffect(() => {
+        return (): void => {
+            if (committedRef.current) {
+                return
+            }
+            const latest = draftRef.current
+            if (initialRef.current === null || JSON.stringify(latest) === JSON.stringify(initialRef.current)) {
+                return
+            }
+            onAutoSave(latest)
+        }
+    }, [onAutoSave])
 
     const handleChange = (patch: Partial<LoreEntry>): void => {
         setDraft((previous) => ({ ...previous, ...patch }))
@@ -101,8 +132,15 @@ export function LoreEditDialog({
 
     const handleSave = (): void => {
         if (onSubmit(draft)) {
+            committedRef.current = true
             onCancel()
         }
+    }
+
+    /** 用户主动关闭：标记已提交，卸载逻辑不再重复写盘 */
+    const handleCancel = (): void => {
+        committedRef.current = true
+        onCancel()
     }
 
     return (
@@ -110,7 +148,7 @@ export function LoreEditDialog({
             open
             onOpenChange={(isOpen) => {
                 if (!isOpen) {
-                    onCancel()
+                    handleCancel()
                 }
             }}
         >
@@ -137,7 +175,7 @@ export function LoreEditDialog({
                     onChange={handleChange}
                 />
                 <DialogFooter>
-                    <Button variant="outline" onClick={onCancel}>
+                    <Button variant="outline" onClick={handleCancel}>
                         取消
                     </Button>
                     <Button onClick={handleSave}>保存</Button>

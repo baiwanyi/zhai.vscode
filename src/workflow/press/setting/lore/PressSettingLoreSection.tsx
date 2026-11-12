@@ -5,6 +5,7 @@
  * 封面回读走 useLoreImages，出图走 useLoreGenerate，分类文案取自 constants 的 LORE_KIND_META。
  * 关键约束：只渲染当前分类的条目，搜索匹配名称、描述与（势力的）关联人物名；
  * 名称必填且同分类唯一——回写按标题整块匹配，重名会互相覆盖，必须在提交前拦下；
+ * 切分组 / 切模块会卸载编辑弹窗，未提交的草稿经 persistDraft 静默写回（无名或重名则放弃）；
  * 新建与编辑共用同一个弹窗，key 用「create」或条目 id，切换即重建草稿，不保留上一次输入；
  * 封面地址以 coverImageId 为准，指针缺失时回落到该条目最新一张；生成成功后只在没有封面时写回指针。
  */
@@ -127,6 +128,29 @@ export function PressSettingLoreSection({
         return true
     }
 
+    /**
+     * 静默写回：切分组 / 切模块卸载弹窗时调用，与提交同口径但不提示。
+     * 关键约束：名称空或同分类重名一律放弃——自动保存写出一条无名或重名条目，
+     * 会在回写时与标题块互相覆盖，比丢弃草稿更糟。
+     */
+    const persistDraft = useCallback(
+        (draft: LoreEntry): void => {
+            const name = draft.name.trim()
+            if (name.length === 0) {
+                return
+            }
+            if (kindEntries.some((entry) => entry.id !== draft.id && entry.name === name)) {
+                return
+            }
+            if (draft.id.length === 0) {
+                onCreate({ ...draft, name })
+                return
+            }
+            onUpdate(draft.id, { ...draft, name })
+        },
+        [kindEntries, onCreate, onUpdate],
+    )
+
     /** 生成设定图：成功即换封面，条目原本没有封面时才写回指针，避免覆盖作者已选的图 */
     const handleGenerateCover = useCallback(async (): Promise<void> => {
         if (editingEntry === null) {
@@ -189,6 +213,7 @@ export function PressSettingLoreSection({
                         void handleGenerateCover()
                     }}
                     onSubmit={handleSubmit}
+                    onAutoSave={persistDraft}
                     onCancel={closeDialog}
                 />
             ) : null}

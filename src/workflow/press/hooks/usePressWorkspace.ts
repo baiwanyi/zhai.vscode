@@ -5,8 +5,8 @@
  * 设定按标签页拆分落点：基本信息写 README，世界观与金手指各写自己的文档，
  * 势力 / 地点 / 物品各写一份条目文档，章纲改动仍走防抖写盘。
  * 关键约束：草稿同时存在于 ref 与 state 两份——写盘与合并读 ref（最新值），渲染读 state；
- * 写盘串行排队，防抖窗口内同范围的多次输入合并成一次请求；切换作品与卸载都要清掉未到期的防抖任务，
- * 否则上一个作品的草稿会被写进新作品。
+ * 写盘串行排队，防抖窗口内同范围的多次输入合并成一次请求；切换作品要清掉未到期的防抖任务，
+ * 否则上一个作品的草稿会被写进新作品；整体卸载则改为立即写盘，切模块时输入不随页面消失。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -87,18 +87,6 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
     const debounceRef = useRef<number | null>(null)
     /** 写盘串行队列：防抖写入与立即写入排队执行，避免并发覆盖同一份文档 */
     const queueRef = useRef<Promise<void>>(Promise.resolve())
-
-    // 卸载时丢弃未到期的防抖任务：定时器属于已消失的页面，回调再跑只会写脏数据
-    useEffect(
-        () => (): void => {
-            if (debounceRef.current !== null) {
-                window.clearTimeout(debounceRef.current)
-                debounceRef.current = null
-            }
-            pendingScopesRef.current = new Set()
-        },
-        [],
-    )
 
     useEffect(() => {
         // 切作品先清掉未到期的防抖任务：它属于上一个作品的草稿，不能写进新作品
@@ -224,6 +212,26 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
         })
         return queueRef.current
     }, [])
+
+    /**
+     * 卸载兜底：把未到期的防抖任务立即写盘。
+     * 页面整体消失（切模块）时输入不能随之丢失；切作品由上方 effect 主动清空，不会走到这里。
+     * 写盘只读 ref 快照，请求不依赖组件存活，卸载后仍能落到当前作品。
+     */
+    useEffect(
+        () => (): void => {
+            if (debounceRef.current !== null) {
+                window.clearTimeout(debounceRef.current)
+                debounceRef.current = null
+            }
+            const scopes = pendingScopesRef.current
+            pendingScopesRef.current = new Set()
+            if (scopes.size > 0) {
+                void flush(scopes)
+            }
+        },
+        [flush],
+    )
 
     /** 防抖写盘：字段级输入只在停顿后写一次，连续输入不会产生大量请求 */
     const scheduleFlush = useCallback(

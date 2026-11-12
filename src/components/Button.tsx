@@ -5,6 +5,7 @@
  * 图标尺寸按 size 分流：icon 补 w-10 凑 40×40 正方形，icon-xs 补 w-8 h-8 收成 32×32 正方形；
  * 由本层映射到底层 default 再补类名，不改 shadcn 的变体表（避免被 CLI 覆盖）；
  * 传 tooltip 时用受控 Tooltip 包裹，指针进入或键盘聚焦即开、离开或失焦即关，不走 Radix 的延时策略；
+ * 提示停留超过固定时长即自动收起——图标按钮密集排列时，长期悬停的气泡会盖住相邻控件；
  * tooltipSide 仅在提示需要避开所在容器时使用（如活动栏竖排导航用 left），默认由 Radix 自动定位；
  * 气泡固定暗底亮字（不随明暗主题翻转），类名统一取自 ./Tooltip 的 TOOLTIP_CLASS，箭头随之同色。
  * 交互上统一取消按下位移：底层 cva 的 active 位移用同修饰符的 translate-y-0 覆盖，点击时位置保持稳定。
@@ -17,7 +18,7 @@
 'use client'
 
 import { cn } from 'cn'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button as ShadcnButton, type buttonVariants } from '@components/ui/button'
 import { Spinner } from '@components/ui/spinner'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
@@ -37,6 +38,9 @@ const PRIMARY_BUTTON_CLASS = 'rounded h-10 px-4 font-light'
 /** 主按钮 + 图标：icon 补 w-10 与 h-10 凑成 40×40；icon-xs 压回 32×32，避免被 h-10 拉高 */
 const PRIMARY_ICON_BUTTON_CLASS = 'w-10'
 const PRIMARY_ICON_XS_BUTTON_CLASS = 'w-8 h-8'
+
+/** 提示自动收起时长：够读完一句话，又不会长期悬在图标上方遮挡相邻控件 */
+const TOOLTIP_AUTO_HIDE_MS = 3000
 
 interface ButtonProps extends ComponentProps<'button'>, Omit<VariantProps<typeof buttonVariants>, 'variant'> {
     asChild?: boolean
@@ -68,6 +72,33 @@ function Button({
     ...rest
 }: ButtonProps): JSX.Element {
     const [isTooltipOpen, setIsTooltipOpen] = useState(false)
+    /** 自动收起的定时器：指针离开、点击与卸载都要清掉，避免对已关闭的提示重复 setState */
+    const hideTimerRef = useRef<number | null>(null)
+
+    const clearHideTimer = useCallback((): void => {
+        if (hideTimerRef.current !== null) {
+            window.clearTimeout(hideTimerRef.current)
+            hideTimerRef.current = null
+        }
+    }, [])
+
+    /** 打开提示并排定自动收起：指针停在按钮上不移动时，气泡也不会长期挡住相邻控件 */
+    const showTooltip = useCallback((): void => {
+        setIsTooltipOpen(true)
+        clearHideTimer()
+        hideTimerRef.current = window.setTimeout(() => {
+            hideTimerRef.current = null
+            setIsTooltipOpen(false)
+        }, TOOLTIP_AUTO_HIDE_MS)
+    }, [clearHideTimer])
+
+    // 卸载时清掉定时器：组件已消失，回调再跑只会做一次无效的状态更新
+    useEffect(() => {
+        return (): void => {
+            clearHideTimer()
+        }
+    }, [clearHideTimer])
+
     // primary 不在底层变体表里：映射成 default 取配色，再补主按钮的尺寸与圆角
     const isPrimary = variant === 'primary'
     // 图标尺寸下 h-10 会把按钮拉高：icon 补宽度凑 40×40，icon-xs 直接收成 32×32
@@ -78,24 +109,26 @@ function Button({
     // 悬停与键盘聚焦都算「指向按钮」：触摸设备没有 hover，键盘用户也应有提示
     function handlePointerEnter(event: PointerEvent<HTMLButtonElement>): void {
         if (tooltip) {
-            setIsTooltipOpen(true)
+            showTooltip()
         }
         onPointerEnter?.(event)
     }
 
     function handlePointerLeave(event: PointerEvent<HTMLButtonElement>): void {
+        clearHideTimer()
         setIsTooltipOpen(false)
         onPointerLeave?.(event)
     }
 
     function handleFocus(event: FocusEvent<HTMLButtonElement>): void {
         if (tooltip) {
-            setIsTooltipOpen(true)
+            showTooltip()
         }
         onFocus?.(event)
     }
 
     function handleBlur(event: FocusEvent<HTMLButtonElement>): void {
+        clearHideTimer()
         setIsTooltipOpen(false)
         onBlur?.(event)
     }
@@ -106,10 +139,11 @@ function Button({
             if (isLoading) {
                 return
             }
+            clearHideTimer()
             setIsTooltipOpen(false)
             onClick?.(event)
         },
-        [isLoading, onClick],
+        [clearHideTimer, isLoading, onClick],
     )
 
     // asChild 由 Slot 渲染唯一子元素，加载态替换 children 会破坏该契约，故只在普通按钮下换 Spinner

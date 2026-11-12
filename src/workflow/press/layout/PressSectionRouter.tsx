@@ -53,6 +53,7 @@ export function PressSectionRouter({
                 onChange={mutations.updateSetting}
                 onExtractSetting={mutations.extractSetting}
                 onSaveSection={mutations.saveSettingSection}
+                onFlushSettingSections={mutations.flushSettingSections}
                 onCreateLore={mutations.createLore}
                 onUpdateLore={mutations.updateLore}
                 onDeleteLore={mutations.deleteLore}

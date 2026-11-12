@@ -11,10 +11,11 @@
  * 「AI 补齐设定」把素材归纳结果交给父级合并（只填空字段），提取不到时切到第一个缺项分组、不代替作者填写；
  * 字段级 AI 与封面生成的 hook 必须留在本页面——切分组会卸载字段组件，挂在下面会连带取消在途请求；
  * 封面生成成功后递增版本号，让封面区块按磁盘重读（设封面在 hook 内完成）；
+ * 切分区 / 切模块会直接卸载本页：编辑过但未点保存的字段分组在卸载时静默写盘，只写脏分组；
  * 条目描述的生成 hook 挂在弹窗内，关闭即取消，与字段级生成互不影响。
  */
 import { Sparkles } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { PressExtractedSetting, SettingFieldKey } from '@shared/types/press'
 import {
@@ -69,6 +70,8 @@ interface PressSettingPageProps {
     onExtractSetting: (draft: PressExtractedSetting) => number
     /** 保存当前字段分组：只写该分组对应的文档，结束后 resolve */
     onSaveSection: (section: SettingFieldSectionKey) => Promise<void>
+    /** 切页自动保存：把编辑过但未保存的分组写盘，不提示 */
+    onFlushSettingSections: (sections: SettingFieldSectionKey[]) => Promise<void>
     /** 新建条目并返回标识 */
     onCreateLore: (seed: LoreSeed) => string
     onUpdateLore: (loreId: string, patch: Partial<LoreEntry>) => void
@@ -83,6 +86,7 @@ export function PressSettingPage({
     onChange,
     onExtractSetting,
     onSaveSection,
+    onFlushSettingSections,
     onCreateLore,
     onUpdateLore,
     onDeleteLore,
@@ -94,9 +98,36 @@ export function PressSettingPage({
     const { isExtracting, extract } = useSettingExtract(dirPath)
     const { generatingField, generate } = useSettingFieldGenerate()
     const { isGenerating: isGeneratingCover, generate: generateCover } = useSettingCoverGenerate(dirPath)
+    /** 编辑过但未保存的字段分组：切页时只写这些，没动过的文档不重写 */
+    const dirtySectionsRef = useRef<Set<SettingFieldSectionKey>>(new Set())
+    const flushSectionsRef = useRef(onFlushSettingSections)
+
+    useEffect(() => {
+        flushSectionsRef.current = onFlushSettingSections
+    }, [onFlushSettingSections])
+
+    // 切分区 / 切模块会直接卸载本页：把编辑过的分组写盘，正在填的内容不随页面消失
+    useEffect(() => {
+        // 复用同一个 Set 引用：清理时读到的是整个编辑期间累积的脏分组
+        const dirtySections = dirtySectionsRef.current
+        return (): void => {
+            const sections = [...dirtySections]
+            dirtySections.clear()
+            if (sections.length === 0) {
+                return
+            }
+            void flushSectionsRef.current(sections)
+        }
+    }, [])
 
     const isSectionIncomplete = (key: SettingSectionKey): boolean =>
         SETTING_SECTIONS[key].fields.some((field) => isSettingFieldMissing(setting, field))
+
+    /** 记录编辑过的分组并透传补丁：只有真正键入过才参与切页自动保存 */
+    const markDirty = (section: SettingFieldSectionKey, patch: Partial<ProjectSetting>): void => {
+        dirtySectionsRef.current.add(section)
+        onChange(patch)
+    }
 
     /** 生成单个设定字段：成功后立即写回草稿，结果按字段上限截断（与输入框 maxLength 同源） */
     const handleGenerateField = (field: SettingFieldKey): void => {
@@ -200,7 +231,7 @@ export function PressSettingPage({
                 <PressSettingBasicFields
                     setting={setting}
                     dirPath={dirPath}
-                    onChange={onChange}
+                    onChange={(patch) => markDirty('basic', patch)}
                     fieldAi={{ generatingField, onGenerate: handleGenerateField }}
                     coverControl={{
                         isGenerating: isGeneratingCover,
@@ -211,7 +242,7 @@ export function PressSettingPage({
             )
         }
         const Fields = SECTION_COMPONENTS[activeSection]
-        return <Fields setting={setting} dirPath={dirPath} onChange={onChange} />
+        return <Fields setting={setting} dirPath={dirPath} onChange={(patch) => markDirty(activeSection, patch)} />
     }
 
     return (
