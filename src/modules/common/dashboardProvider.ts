@@ -17,6 +17,7 @@ import * as path from 'node:path'
 import * as vscode from 'vscode'
 import type { WorkflowRouter } from '@modules/ai/workflowRouter'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import { getActiveDocument, onDidChangeActiveDocument } from '@modules/editor/activeDocument'
 import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { PressCoverStore } from '@modules/media/pressCoverStore'
 import { createAndOpenNote, openNoteByPath } from '@modules/note/noteService'
@@ -875,7 +876,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
      */
     private watchActiveDocument(view: vscode.WebviewView): void {
         this.stopWatchingActiveDocument()
-        this.activeDocumentListener = vscode.window.onDidChangeActiveTextEditor(() => {
+        // 订阅统一事实源而不是 onDidChangeActiveTextEditor：切到富文本 tab 时后者不触发，
+        // 仪表盘的笔记高亮与作品跟随就会停在上一份文档
+        this.activeDocumentListener = onDidChangeActiveDocument(() => {
             this.post(view, { type: 'state', channel: 'note', payload: this.buildActiveNote() })
             this.post(view, { type: 'state', channel: 'press', payload: this.buildActivePressProject() })
         })
@@ -936,11 +939,13 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
      * 刚解除排除的目录还没进库，此时仍要能按 AppID 跟随。
      */
     private buildActiveNote(): NoteActiveState {
-        const editor = vscode.window.activeTextEditor
-        if (editor === undefined) {
+        // 用活跃文档事实源而不是 activeTextEditor：富文本 tab 没有 TextEditor，
+        // 直读会让仪表盘在富文本下永远判成「焦点不在编辑器」，列表不跟随
+        const active = getActiveDocument()
+        if (active === null) {
             return { activePath: null, hasEditor: false }
         }
-        const relativePath = this.indexService.toRelativePath(editor.document.uri)
+        const relativePath = this.indexService.toRelativePath(active.uri)
         const known = findIndexedFile(this.db, relativePath)
         if (known !== null) {
             return { activePath: known.path, hasEditor: true }
@@ -968,9 +973,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
 
     /** 取当前文档：优先活动编辑器，焦点被 webview 抢走时回落活动标签页的文本输入 */
     private readActiveDocumentUri(): vscode.Uri | null {
-        const editor = vscode.window.activeTextEditor
-        if (editor !== undefined) {
-            return editor.document.uri
+        const active = getActiveDocument()
+        if (active !== null) {
+            return active.uri
         }
         const input = vscode.window.tabGroups.activeTabGroup.activeTab?.input
         if (input instanceof vscode.TabInputText) {
@@ -978,6 +983,10 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         }
         if (input instanceof vscode.TabInputTextDiff) {
             return input.modified
+        }
+        // 富文本自定义编辑器同样算「打开了某篇文档」
+        if (input instanceof vscode.TabInputCustom) {
+            return input.uri
         }
         return null
     }

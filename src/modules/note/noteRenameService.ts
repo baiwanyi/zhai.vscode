@@ -12,6 +12,8 @@ import { resolveStorageRoot } from '@modules/common/config'
 import { parseTitle, splitFrontmatter } from '@modules/common/db/fileMeta'
 import { logger } from '@modules/common/logger'
 import { buildStorageUri, isPathExisting } from '@modules/common/storagePath'
+import { getActiveDocument } from '@modules/editor/activeDocument'
+import { openStorageDocument } from '@modules/editor/openDocument'
 import { NOTE_DIR, toNoteFileName } from './noteFactory'
 
 /** 目标名被占用时的最大顺延次数，超出即放弃本次重命名（保持现状比造出一串无意义后缀更安全） */
@@ -93,7 +95,10 @@ export class NoteRenameService {
         if (target === null) {
             return
         }
-        const isActiveDocument = vscode.window.activeTextEditor?.document.uri.toString() === document.uri.toString()
+        // 用活跃文档事实源判断：富文本 tab 没有 TextEditor，直读会让重命名后不重播活跃路径
+        const active = getActiveDocument()
+        const isActiveRich = active?.kind === 'rich' && active.uri.toString() === document.uri.toString()
+        const isActiveDocument = active !== null && active.uri.toString() === document.uri.toString()
         await vscode.workspace.fs.rename(document.uri, target.uri, { overwrite: false })
         const nextRelativePath = [...segments.slice(0, -1), target.fileName].join('/')
         this.indexer.removeFile(relativePath)
@@ -101,6 +106,11 @@ export class NoteRenameService {
         await this.pins.renamePath(relativePath, nextRelativePath)
         if (isActiveDocument) {
             this.onActiveRenamed(nextRelativePath)
+        }
+        // 富文本 tab 绑的是旧 Uri：重命名后它已失效，按新路径重新打开一次，
+        // 否则用户会看到一个「文件已被删除」的编辑器，正文像是丢了
+        if (isActiveRich) {
+            await openStorageDocument(target.uri)
         }
         logger.info(`笔记已按标题重命名：${relativePath} → ${nextRelativePath}`)
     }
