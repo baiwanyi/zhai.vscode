@@ -256,9 +256,6 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
             <AppPage>
                 <AppHeader>
                     <AppTitle>媒体</AppTitle>
-                    {context === null ? null : (
-                        <AppSummary title={setting.title} path={context.dirPath} meta={totalText} />
-                    )}
                     <AppAction>
                         <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -274,6 +271,9 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </AppAction>
+                    {context === null ? null : (
+                        <AppSummary title={setting.title} path={context.dirPath} meta={totalText} />
+                    )}
                     <AppMenu className={isSelecting ? 'flex-nowrap justify-end' : 'justify-between'}>
                         {isSelecting ? null : (
                             <ImageGenFilters

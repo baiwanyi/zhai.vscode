@@ -105,7 +105,7 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
                 />
             </AppContent>
 
-            <AppFooter className="justify-between py-1">
+            <AppFooter className="justify-between pt-2">
                 {isSelecting && selectedPaths.length > 0 ? (
                     <NotesSelectionBar
                         isAllSelectedPinned={isAllSelectedPinned}

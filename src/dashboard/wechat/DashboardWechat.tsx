@@ -152,7 +152,7 @@ export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.El
                         onRetry={handleRetry}
                     />
                 </AppContent>
-                <AppFooter className="py-1">
+                <AppFooter className="pt-2">
                     <Button
                         size="icon-xs"
                         variant="primary"

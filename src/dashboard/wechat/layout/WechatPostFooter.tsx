@@ -36,7 +36,7 @@ export function WechatPostFooter({
     onCreateIssue,
 }: WechatPostFooterProps): JSX.Element {
     return (
-        <AppFooter className="justify-between py-1">
+        <AppFooter className="justify-between pt-2">
             <Button
                 size="icon-xs"
                 variant="primary"
