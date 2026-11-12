@@ -122,7 +122,10 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             reportRichDocument(document.uri)
         }
         logger.info(`富文本编辑器已打开：${document.uri.fsPath}`)
-        await this.pushSnapshot(document, panel)
+        // 不 await：postMessage 在 webview 脚本就绪前会一直挂起，resolveCustomTextEditor 迟迟不返回，
+        // 调用方（note/open、press/openChapter 等）就会 10s 超时；前端本来会主动拉 editor/snapshot，
+        // 首推只是加速展示，不能让它挡住打开流程。
+        void this.pushSnapshot(document, panel)
     }
 
     /** 读取当前文档快照并记录为回写基准 */
@@ -137,7 +140,14 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     private async pushSnapshot(document: vscode.TextDocument, panel: vscode.WebviewPanel): Promise<void> {
         try {
             const snapshot = await this.readSnapshot(document)
-            await panel.webview.postMessage({ type: 'state', channel: 'editor', payload: snapshot })
+            // 不 await 投递：webview 未就绪时它可能长时间挂在 pending，把调用链一起拖住
+            panel.webview.postMessage({ type: 'state', channel: 'editor', payload: snapshot }).then(
+                () => undefined,
+                (error: unknown) => {
+                    const reason = error instanceof Error ? error.message : String(error)
+                    logger.warn(`编辑器快照投递失败：${document.uri.fsPath}（${reason}）`)
+                },
+            )
         } catch (error) {
             logger.error(`编辑器快照推送失败：${document.uri.fsPath}`, error)
         }
