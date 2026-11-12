@@ -6,22 +6,14 @@
  */
 import { Check, MessageSquareText, Trash2 } from 'lucide-react'
 import { useRef, useState } from 'react'
-import type { AnnotationRecord, HighlightColor } from '@shared/types/editor'
+import type { AnnotationRecord } from '@shared/types/editor'
 import { formatDateTime } from '@shared/utils/format'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
+import { readColorCss } from '../colors'
 
 /** 二次确认的等待时长：超时自动复原 */
 const CONFIRM_TIMEOUT_MS = 3000
-
-/** 颜色圆点：与编辑区色板同源，仅此处用于列表辨识 */
-const SWATCH_COLORS: Readonly<Record<HighlightColor, string>> = {
-    coral: 'rgb(255, 138, 128)',
-    violet: 'rgb(186, 140, 255)',
-    blue: 'rgb(120, 170, 255)',
-    emerald: 'rgb(110, 220, 170)',
-    amber: 'rgb(255, 205, 120)',
-}
 
 export interface AnnotationListItemProps {
     item: AnnotationRecord
@@ -58,7 +50,7 @@ export function AnnotationListItem({ item, onReveal, onRemove }: AnnotationListI
                     ) : (
                         <span
                             className="mt-1.5 size-2.5 shrink-0 rounded-full"
-                            style={{ backgroundColor: SWATCH_COLORS[item.color] }}
+                            style={{ backgroundColor: readColorCss(item.color) }}
                         />
                     )}
                     <span className="line-clamp-2 text-sm">{item.quote}</span>

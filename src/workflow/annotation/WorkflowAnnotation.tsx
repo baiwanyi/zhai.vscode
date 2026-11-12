@@ -6,12 +6,15 @@
  * 跳转失败必须给出可见提示——文档已删除与定位失效分开说明，不能让点击毫无反应。
  */
 import { Highlighter } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { Input } from '@components/ui/input'
+import type { AnnotationStats } from '@shared/types/editor'
+import { request } from '@shared/utils/bridge'
 import { AppAction, AppContent, AppDescription, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
+import { ANNOTATION_COLORS } from './colors'
 import { useAnnotationList } from './hooks/useAnnotationList'
 import { AnnotationListItem } from './layout/AnnotationListItem'
 import type { AnnotationFilters } from './hooks/useAnnotationList'
@@ -32,6 +35,18 @@ export function WorkflowAnnotation(): JSX.Element {
     const { items, total, isLoading, error, hasMore, filters, setFilters, loadMore, remove, reveal } =
         useAnnotationList()
     const [notice, setNotice] = useState<string | null>(null)
+    const [stats, setStats] = useState<AnnotationStats | null>(null)
+
+    // 统计随条目数变化重新拉一次：删除或新建后总数要跟着变，失败不影响列表展示
+    useEffect(() => {
+        void (async (): Promise<void> => {
+            try {
+                setStats(await request<AnnotationStats>('annotation/stats', {}))
+            } catch {
+                setStats(null)
+            }
+        })()
+    }, [items.length])
 
     const handleReveal = async (id: string): Promise<void> => {
         const outcome = await reveal(id)
@@ -67,6 +82,24 @@ export function WorkflowAnnotation(): JSX.Element {
                             </Button>
                         ))}
                     </div>
+                    <div className="flex items-center gap-1">
+                        {ANNOTATION_COLORS.map((option) => (
+                            <Button
+                                key={option.value}
+                                variant={filters.color === option.value ? 'secondary' : 'ghost'}
+                                size="icon-xs"
+                                aria-label={`只看${option.label}划线`}
+                                onClick={(): void => {
+                                    setFilters({
+                                        ...filters,
+                                        color: filters.color === option.value ? null : option.value,
+                                    })
+                                }}
+                            >
+                                <span className="size-3 rounded-full" style={{ backgroundColor: option.css }} />
+                            </Button>
+                        ))}
+                    </div>
                     <Input
                         value={filters.keyword}
                         placeholder="搜索划线 / 段落 / 批注（两字以上）"
@@ -85,6 +118,12 @@ export function WorkflowAnnotation(): JSX.Element {
                         仅看失效
                     </Button>
                 </div>
+                {stats === null ? null : (
+                    <p className="text-xs text-muted-foreground">
+                        共 {stats.total} 条 · 划线 {stats.highlights} · 批注 {stats.notes}
+                        {stats.orphaned === 0 ? '' : ` · 失效 ${stats.orphaned}`}
+                    </p>
+                )}
                 {notice === null ? null : (
                     <Alert>
                         <AlertDescription>{notice}</AlertDescription>

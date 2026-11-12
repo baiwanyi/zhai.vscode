@@ -5,7 +5,7 @@
  * 不做整页刷新——用户翻到第 3 页删除一条，刷新会把他弹回顶部。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AnnotationCursor, AnnotationListResult, AnnotationRecord } from '@shared/types/editor'
+import type { AnnotationCursor, AnnotationListResult, AnnotationRecord, HighlightColor } from '@shared/types/editor'
 import { request } from '@shared/utils/bridge'
 
 /** 每页条数：与查询层默认值一致 */
@@ -16,6 +16,8 @@ const SEARCH_DEBOUNCE_MS = 300
 
 export interface AnnotationFilters {
     kind: 'highlight' | 'note' | null
+    /** 划线颜色：null 表示不限 */
+    color: HighlightColor | null
     orphanedOnly: boolean
     keyword: string
 }
@@ -45,7 +47,12 @@ export function useAnnotationList(): UseAnnotationListResult {
     const [total, setTotal] = useState<number | null>(null)
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
-    const [filters, setFilters] = useState<AnnotationFilters>({ kind: null, orphanedOnly: false, keyword: '' })
+    const [filters, setFilters] = useState<AnnotationFilters>({
+        kind: null,
+        color: null,
+        orphanedOnly: false,
+        keyword: '',
+    })
     const cursorRef = useRef<AnnotationCursor | null>(null)
     const filtersRef = useRef(filters)
     const isLoadingRef = useRef(false)
@@ -62,7 +69,7 @@ export function useAnnotationList(): UseAnnotationListResult {
                 cursor,
                 limit: PAGE_SIZE,
                 kind: current.kind,
-                color: null,
+                color: current.color,
                 docPath: null,
                 orphanedOnly: current.orphanedOnly,
                 keyword: current.keyword,
