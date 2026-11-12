@@ -8,6 +8,7 @@
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { useEditorDocument } from './hooks/useEditorDocument'
+import { SelectionToolbar } from './layout/SelectionToolbar'
 import type { JSX } from 'react'
 
 export function EditorScreen(): JSX.Element {
@@ -27,6 +28,7 @@ export function EditorScreen(): JSX.Element {
             <div className="min-h-0 flex-1 overflow-auto">
                 <div className="mx-auto w-full max-w-3xl px-8 py-10">
                     <EditorContent editor={editor} />
+                    <SelectionToolbar editor={editor} />
                 </div>
             </div>
             <div className="flex shrink-0 items-center gap-3 border-t px-4 py-1.5 text-xs text-muted-foreground">
