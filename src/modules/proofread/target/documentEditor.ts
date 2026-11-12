@@ -6,6 +6,7 @@
  * 前端传入的偏移不可信，一律按文档当前长度与单条区间长度上限重新校验。
  */
 import * as vscode from 'vscode'
+import { revealInRichDocument } from '@modules/editor/activeDocument'
 import type {
     ProofreadApplyRequest,
     ProofreadApplyResult,
@@ -118,12 +119,19 @@ export async function applyProofreadEdits(
     return { applied, skipped }
 }
 
-/** 定位区间：打开文档并选中，让用户直接看到命中位置 */
+/**
+ * 定位区间：打开文档并选中，让用户直接看到命中位置。
+ * 富文本 tab 已打开时改由它就地选中——否则点一条校对问题会被强行切到文本编辑器。
+ */
 export async function revealProofreadRange(request: ProofreadRevealRequest): Promise<ProofreadRevealResult> {
     const document = await readDocumentByPath(request.path)
-    const length = document.getText().length
+    const text = document.getText()
+    const length = text.length
     const start = Math.min(Math.max(request.documentStart, 0), length)
     const end = Math.min(Math.max(request.documentEnd, start), length)
+    if (revealInRichDocument(document.uri, { quote: text.slice(start, end), blockIndex: -1 })) {
+        return { revealed: true }
+    }
     const selection = new vscode.Range(document.positionAt(start), document.positionAt(end))
     await vscode.window.showTextDocument(document, { selection, preserveFocus: false })
     return { revealed: true }

@@ -7,6 +7,7 @@
  */
 import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
+import { setRichRevealHandler } from '@modules/editor/activeDocument'
 import type { AnnotationDatabase } from '@modules/editor/db/connection'
 import { MarkdownEditorProvider } from '@modules/editor/editorProvider'
 import type { ChapterSnapshotWriter } from '@modules/editor/editorProvider'
@@ -47,6 +48,8 @@ export function assembleEditorLayer(
             })
         }),
     )
+    // 校对定位、标注跳转都通过这个注册点走富文本；未注册时它们自然回落到文本编辑器
+    setRichRevealHandler((uri, request): boolean => provider.revealInPanel(uri, request))
     // 注册成功即打一条：排查「插件打开仍在文本编辑器」时，先确认 provider 是否真的注册上了
     logger.info(`编辑器层就绪：viewType=${MarkdownEditorProvider.viewType}`)
     // 返回实例：标注跳转需要知道当前文档是否已有富文本面板，能直接定位就不必改开文本编辑器

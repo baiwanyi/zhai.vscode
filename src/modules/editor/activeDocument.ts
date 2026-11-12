@@ -48,6 +48,23 @@ export function reportRichDocument(uri: vscode.Uri): void {
     setActiveDocument({ uri, kind: 'rich' })
 }
 
+/**
+ * 富文本内定位处理器：由编辑层注册，供校对、标注跳转等模块调用。
+ * 用注册点而不是层层注入——调用方（proofread / routes）不该知道编辑器实现。
+ */
+type RichRevealHandler = (uri: vscode.Uri, request: { quote: string; blockIndex: number }) => boolean
+
+let richRevealHandler: RichRevealHandler | null = null
+
+export function setRichRevealHandler(handler: RichRevealHandler | null): void {
+    richRevealHandler = handler
+}
+
+/** 若该文档已在富文本打开则就地定位；返回 false 表示调用方应回落到文本编辑器 */
+export function revealInRichDocument(uri: vscode.Uri, request: { quote: string; blockIndex: number }): boolean {
+    return richRevealHandler === null ? false : richRevealHandler(uri, request)
+}
+
 /** 富文本编辑器关闭：只有当前活跃的正是它时才清空，避免关后台 tab 误清别的文档 */
 export function clearRichDocument(uri: vscode.Uri): void {
     if (current?.kind === 'rich' && current.uri.toString() === uri.toString()) {
