@@ -11,7 +11,7 @@ import TaskList from '@tiptap/extension-task-list'
 import UniqueID from '@tiptap/extension-unique-id'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { AnnotationRecord } from '@shared/types/editor'
 import { BlockHandle } from './blocks/BlockHandle'
 import { useAnnotations } from './hooks/useAnnotations'
@@ -22,9 +22,12 @@ import { useSourceMode } from './hooks/useSourceMode'
 import { AnnotationDialog } from './layout/AnnotationDialog'
 import { AnnotationPopover } from './layout/AnnotationPopover'
 import { QueryDialog } from './layout/QueryDialog'
+import { SearchPanel } from './layout/SearchPanel'
 import { SelectionToolbar } from './layout/SelectionToolbar'
 import { SourceEditor } from './layout/SourceEditor'
 import { AnnotationExtension } from './marks/annotationExtension'
+import { SearchExtension } from './search/searchExtension'
+import { useDocumentSearch } from './search/useDocumentSearch'
 import { SlashCommandExtension } from './toolbar/slashCommandExtension'
 import { SlashMenu } from './toolbar/SlashMenu'
 import { handleSlashKey } from './toolbar/slashStore'
@@ -50,6 +53,7 @@ export function EditorScreen(): JSX.Element {
             // 表格：md 侧由 adaptTableHtml 给单元格补 <p>，回写由 toTableMarkdown 拼 GFM
             TableKit.configure({ table: { resizable: false } }),
             AnnotationExtension,
+            SearchExtension,
             SlashCommandExtension,
             // 块运行期 id：仅用于编辑态定位（批注锚点 / 拖拽），转 Markdown 时会被丢弃，不写入正文
             UniqueID.configure({
@@ -75,6 +79,22 @@ export function EditorScreen(): JSX.Element {
     const [notePopover, setNotePopover] = useState<NotePopoverState | null>(null)
     const [queryQuote, setQueryQuote] = useState<string | null>(null)
     const query = useDocumentQuery(path)
+    const search = useDocumentSearch(editor)
+    const { open: openSearch } = search
+
+    // Ctrl/Cmd+F 打开查找：webview 内没有原生查找条，必须自己接管，否则按了没反应
+    useEffect(() => {
+        const handleFind = (event: KeyboardEvent): void => {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+                event.preventDefault()
+                openSearch()
+            }
+        }
+        window.addEventListener('keydown', handleFind)
+        return (): void => {
+            window.removeEventListener('keydown', handleFind)
+        }
+    }, [openSearch])
 
     /** 段末图标点击：widget 由 ProseMirror 插入，只有事件委托能拿到点击 */
     const handleContentClick = (event: MouseEvent<HTMLDivElement>): void => {
@@ -117,6 +137,18 @@ export function EditorScreen(): JSX.Element {
                         <EditorContent editor={editor} />
                         {editor === null ? null : <BlockHandle editor={editor} />}
                         <SlashMenu />
+                        {search.isOpen ? (
+                            <SearchPanel
+                                query={search.query}
+                                matchCount={search.matchCount}
+                                activeIndex={search.activeIndex}
+                                isCapped={search.isCapped}
+                                onQueryChange={search.setQuery}
+                                onNext={search.goNext}
+                                onPrev={search.goPrev}
+                                onClose={search.close}
+                            />
+                        ) : null}
                         <SelectionToolbar
                             editor={editor}
                             onHighlight={addOrToggleHighlight}
