@@ -465,6 +465,8 @@ function parseSetting(
         goldenFingerType: readPowerValue(['金手指类型', '类型']) ?? '',
         goldenFingerAbility: readPowerValue(['金手指能力', '能力']) ?? '',
         goldenFingerCost: readPowerValue(['金手指代价', '代价']) ?? '',
+        goldenFingerLimit: readPowerValue(['金手指限制', '限制']) ?? '',
+        goldenFingerUpgrade: readPowerValue(['升级体系', '成长体系']) ?? '',
         perspective,
         narrative,
         tone: readBasicValue(['语调', '基调', '文风']) ?? '',

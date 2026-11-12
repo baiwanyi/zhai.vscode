@@ -4,10 +4,11 @@
  * 筛选、折叠、向导与提取的编排；步骤条由同文件的 PressFlowSteps 承担，统计口径来自 utils 的 summarizeWorkspace。
  * 关键约束：宽容器用容器查询展开三栏，窄容器（VSCode 侧栏常态）退化为「树 → 详情」下钻，
  * 选中章节后必须隐藏树而不是压缩两栏；折叠状态记录的是「已折叠的卷」，新卷因此默认展开；
+ * 头部「打开文档」按文档键打开大纲.md，与提取 / 生成大纲并列，不参与草稿状态；
  * 提取会用素材重建整棵大纲树，覆盖当前草稿，因此按钮文案与提示都要写明这一点。
  */
 import { cn } from 'cn'
-import { Check, ChevronRight, ListTree, Sparkles, Wand2 } from 'lucide-react'
+import { Check, ChevronRight, FileText, ListTree, Sparkles, Wand2 } from 'lucide-react'
 import { Fragment, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
@@ -22,6 +23,7 @@ import { useOutlineExtract } from './useOutlineExtract'
 import type { OutlineChapter, OutlineVolume, OutlineWorkspace, PlanStatus } from '../types'
 import type { JSX } from 'react'
 import { FLOW_STEPS } from '../constants'
+import { useOpenProjectDoc } from '../hooks/useOpenProjectDoc'
 import { summarizeWorkspace } from '../utils'
 
 interface PressOutlinePageProps {
@@ -111,6 +113,7 @@ export function PressOutlinePage({
     const [collapsedVolumeIds, setCollapsedVolumeIds] = useState<string[]>([])
     const [isWizardOpen, setIsWizardOpen] = useState(false)
     const { isExtracting, extract } = useOutlineExtract(dirPath)
+    const { openDoc } = useOpenProjectDoc(dirPath)
 
     const entries = useMemo(
         () => workspace.volumes.flatMap((volume) => volume.chapters.map((chapter) => ({ volume, chapter }))),
@@ -165,6 +168,14 @@ export function PressOutlinePage({
                         </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-1.5">
+                        <Button
+                            variant="outline"
+                            title="打开「大纲.md」，可直接手改卷纲与章纲原文"
+                            onClick={() => openDoc('outline')}
+                        >
+                            <FileText />
+                            打开文档
+                        </Button>
                         <Button
                             variant="outline"
                             title="按已抽取的素材重建卷与章，含情节脉络、关键转折、章纲节拍与出场人物（不调用模型），会覆盖当前大纲草稿"

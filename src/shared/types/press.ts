@@ -88,6 +88,32 @@ export interface OpenPressProjectResult {
     opened: boolean
 }
 
+/**
+ * 工作台可直接打开的文档键：设定各分组、人物页与大纲页的「打开文档」都按它定位文件。
+ * 前端只传这个键，文件名映射留在宿主侧，避免把可变的文档名暴露成可伪造的路径。
+ */
+export type PressDocKey = 'readme' | 'world' | 'power' | 'faction' | 'place' | 'item' | 'characters' | 'outline'
+
+/** 可打开文档的白名单：前端按钮与宿主入参校验共用同一份 */
+export const PRESS_DOC_KEYS: readonly PressDocKey[] = [
+    'readme',
+    'world',
+    'power',
+    'faction',
+    'place',
+    'item',
+    'characters',
+    'outline',
+]
+
+/** press/openDoc 请求：打开作品目录下的某份文档 */
+export interface PressOpenDocRequest {
+    /** 相对存储根的作品目录，须已在索引库中存在 */
+    dirPath: string
+    /** 目标文档键：命中宿主侧的文件名映射表 */
+    doc: PressDocKey
+}
+
 /** 章节条目：Chapters/ 下的一个 Markdown 文档 */
 export interface PressChapterEntry {
     /** 相对存储根路径，形如 press/剑来/Chapters/01-初见.md */
@@ -363,6 +389,16 @@ export function isPressDirPath(payload: unknown): payload is { dirPath: string }
     return typeof candidate.dirPath === 'string' && candidate.dirPath.length > 0
 }
 
+/** 判断是否为合法的打开作品文档请求（类型收窄辅助）：文档键必须在白名单内 */
+export function isPressOpenDocRequest(payload: unknown): payload is PressOpenDocRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { dirPath?: unknown; doc?: unknown }
+    const hasDirPath = typeof candidate.dirPath === 'string' && candidate.dirPath.length > 0
+    return hasDirPath && PRESS_DOC_KEYS.some((key) => key === candidate.doc)
+}
+
 /** 判断是否为合法的打开章节请求（类型收窄辅助） */
 export function isOpenPressChapterRequest(payload: unknown): payload is OpenPressChapterRequest {
     if (typeof payload !== 'object' || payload === null) {
@@ -408,11 +444,47 @@ export interface CharacterAppearanceResult {
     content: string
 }
 
-/** 设定页可交给 AI 生成的字段：作品名、简介、一句话梗概、开篇灵感、核心冲突 */
-export type SettingFieldKey = 'title' | 'summary' | 'logline' | 'opening' | 'conflict'
+/**
+ * 设定页可交给 AI 生成的字段：作品名、故事内核四项，以及世界观与金手指里可展开的描述类字段。
+ * 金手指类型不在其中——它是短词枚举，也是其余字段生成的输入约束，不交给模型改写。
+ */
+export type SettingFieldKey =
+    | 'title'
+    | 'summary'
+    | 'logline'
+    | 'opening'
+    | 'conflict'
+    | 'worldview'
+    | 'geography'
+    | 'era'
+    | 'factions'
+    | 'powerSystem'
+    | 'concepts'
+    | 'taboo'
+    | 'goldenFingerAbility'
+    | 'goldenFingerCost'
+    | 'goldenFingerLimit'
+    | 'goldenFingerUpgrade'
 
 /** 设定字段白名单：前端按钮、宿主入参校验与提示词表共用同一份，避免三处口径分叉 */
-export const SETTING_FIELD_KEYS: readonly SettingFieldKey[] = ['title', 'summary', 'logline', 'opening', 'conflict']
+export const SETTING_FIELD_KEYS: readonly SettingFieldKey[] = [
+    'title',
+    'summary',
+    'logline',
+    'opening',
+    'conflict',
+    'worldview',
+    'geography',
+    'era',
+    'factions',
+    'powerSystem',
+    'concepts',
+    'taboo',
+    'goldenFingerAbility',
+    'goldenFingerCost',
+    'goldenFingerLimit',
+    'goldenFingerUpgrade',
+]
 
 /**
  * 设定快照：整份设定的只读副本，设定字段与条目描述两类生成共用同一份字段口径。
@@ -441,9 +513,15 @@ export interface SettingSnapshot {
     factions: string
     powerSystem: string
     concepts: string
+    taboo: string
     goldenFingerType: string
     goldenFingerAbility: string
+    /** 代价：使用金手指要付出的东西 */
     goldenFingerCost: string
+    /** 限制：适用范围的边界与不可逾越的硬约束 */
+    goldenFingerLimit: string
+    /** 升级体系：金手指自身的成长阶段与解锁条件 */
+    goldenFingerUpgrade: string
     extra: string
 }
 
@@ -879,7 +957,12 @@ export interface PressExtractedSetting {
     taboo: string
     goldenFingerType: string
     goldenFingerAbility: string
+    /** 代价：使用金手指要付出的东西 */
     goldenFingerCost: string
+    /** 限制：适用范围的边界与不可逾越的硬约束 */
+    goldenFingerLimit: string
+    /** 升级体系：金手指自身的成长阶段与解锁条件 */
+    goldenFingerUpgrade: string
     perspective: string
     tone: string
     /** 题材标签，来自模型判断，前端与现有题材取并集 */

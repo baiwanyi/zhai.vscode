@@ -56,7 +56,7 @@ export function isSettingFieldMissing(setting: ProjectSetting, key: keyof Projec
     return !isFilled(setting[key])
 }
 
-/** 设定文本字段的补丁：显式分支，避免计算属性被推断成索引签名；故事内核等子集字段同样适用 */
+/** 设定文本字段的补丁：显式分支，避免计算属性被推断成索引签名；世界观、金手指等子集字段同样适用 */
 export function toSettingTextPatch(field: SettingFieldKey, value: string): Partial<ProjectSetting> {
     switch (field) {
         case 'title':
@@ -69,6 +69,28 @@ export function toSettingTextPatch(field: SettingFieldKey, value: string): Parti
             return { opening: value }
         case 'conflict':
             return { conflict: value }
+        case 'worldview':
+            return { worldview: value }
+        case 'geography':
+            return { geography: value }
+        case 'era':
+            return { era: value }
+        case 'factions':
+            return { factions: value }
+        case 'powerSystem':
+            return { powerSystem: value }
+        case 'concepts':
+            return { concepts: value }
+        case 'taboo':
+            return { taboo: value }
+        case 'goldenFingerAbility':
+            return { goldenFingerAbility: value }
+        case 'goldenFingerCost':
+            return { goldenFingerCost: value }
+        case 'goldenFingerLimit':
+            return { goldenFingerLimit: value }
+        case 'goldenFingerUpgrade':
+            return { goldenFingerUpgrade: value }
     }
 }
 
@@ -99,9 +121,12 @@ export function toSettingSnapshot(setting: ProjectSetting): SettingSnapshot {
         factions: setting.factions,
         powerSystem: setting.powerSystem,
         concepts: setting.concepts,
+        taboo: setting.taboo,
         goldenFingerType: setting.goldenFingerType,
         goldenFingerAbility: setting.goldenFingerAbility,
         goldenFingerCost: setting.goldenFingerCost,
+        goldenFingerLimit: setting.goldenFingerLimit,
+        goldenFingerUpgrade: setting.goldenFingerUpgrade,
         extra: setting.extra,
     }
 }

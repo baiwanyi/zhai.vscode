@@ -363,6 +363,12 @@ export function usePressMutations({
             if (current.goldenFingerCost.length === 0 && draft.goldenFingerCost.length > 0) {
                 patch.goldenFingerCost = draft.goldenFingerCost
             }
+            if (current.goldenFingerLimit.length === 0 && draft.goldenFingerLimit.length > 0) {
+                patch.goldenFingerLimit = draft.goldenFingerLimit
+            }
+            if (current.goldenFingerUpgrade.length === 0 && draft.goldenFingerUpgrade.length > 0) {
+                patch.goldenFingerUpgrade = draft.goldenFingerUpgrade
+            }
             if (current.perspective.length === 0 && draft.perspective.length > 0) {
                 patch.perspective = draft.perspective
             }

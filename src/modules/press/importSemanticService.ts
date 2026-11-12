@@ -617,6 +617,8 @@ function parseSettingDraft(text: string, clues: GoldenClue[]): PressExtractedSet
         goldenFingerType: read('金手指类型'),
         goldenFingerAbility: read('金手指能力'),
         goldenFingerCost: read('金手指代价'),
+        goldenFingerLimit: read('金手指限制'),
+        goldenFingerUpgrade: read('升级体系'),
         perspective: read('视角'),
         tone: read('语调'),
         genres: toTraitLabels(read('题材')),
@@ -630,7 +632,8 @@ function parseSettingDraft(text: string, clues: GoldenClue[]): PressExtractedSet
         setting.factions.length > 0 ||
         setting.powerSystem.length > 0 ||
         setting.concepts.length > 0 ||
-        setting.goldenFingerType.length > 0
+        setting.goldenFingerType.length > 0 ||
+        setting.goldenFingerAbility.length > 0
     return hasContent ? setting : null
 }
 
@@ -974,9 +977,11 @@ export class ImportSemanticService {
                     '- 力量体系：等级、进阶路径与运作规则，写清「怎么变强、上限在哪」',
                     '- 核心概念：作品独有的名词与设定（如灵气、序列、异火），每个词后跟一句解释，用分号分隔',
                     '- 禁忌：世界规则中的禁区或代价',
-                    '- 金手指类型：',
-                    '- 金手指能力：',
-                    '- 金手指代价：',
+                    '- 金手指类型：一句话，如系统 / 重生 / 随身空间',
+                    '- 金手指能力：金手指能给主角什么，2 到 3 句',
+                    '- 金手指代价：使用它要付出什么，一句话',
+                    '- 金手指限制：什么时候用不了、做不到什么，一句话',
+                    '- 升级体系：金手指自身的成长阶段与解锁条件，2 到 3 句',
                     '- 视角：第一人称 / 第三人称限知 / 第三人称全知，三选一',
                     '- 语调：用一个词概括（如轻松、热血、压抑）',
                     '- 题材：用顿号分隔 1-3 个标签',

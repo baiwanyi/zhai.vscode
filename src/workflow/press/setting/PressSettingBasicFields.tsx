@@ -48,18 +48,11 @@ import {
     TONE_OPTIONS,
 } from './settingOptions'
 import { TagPicker } from './TagPicker'
-import type { SettingFieldsProps } from './sections'
+import type { SettingFieldAi, SettingFieldsProps } from './sections'
 import type { Audience } from '../types'
 import type { JSX } from 'react'
 import { DEFAULT_CHAPTER_WORD_GOAL, SETTING_FIELD_MAX_LENGTH } from '../constants'
 import { toSettingTextPatch } from '../utils'
-
-/** 字段级 AI 生成状态：忙碌字段与触发回调由页面持有，切分组不会打断在途请求 */
-export interface SettingFieldAi {
-    /** 正在生成的字段：null 表示空闲 */
-    generatingField: SettingFieldKey | null
-    onGenerate: (field: SettingFieldKey) => void
-}
 
 /** 封面生成状态：同样由页面持有；version 在生成成功后递增，作为封面重读信号 */
 export interface SettingCoverControl {

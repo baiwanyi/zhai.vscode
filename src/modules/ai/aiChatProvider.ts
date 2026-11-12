@@ -84,6 +84,7 @@ const MAX_SCOPE_LENGTH = 160
 const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set([
     'press/workspace',
     'press/open',
+    'press/openDoc',
     'press/extract/characters',
     'press/extract/outline',
     'press/extract/setting',
@@ -98,6 +99,9 @@ const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set([
     'press/snapshot/chapter/restore',
     'press/snapshot/chapter/delete',
 ])
+
+/** 会切换活跃编辑器的作品协议：打开即切文档，需要立即同步工作流事实，菜单才不会滞后 */
+const PRESS_DOCUMENT_METHODS: ReadonlySet<string> = new Set(['press/openDoc'])
 
 /** 工作流面板依赖：按用途命名，避免 16 个位置参数错位 */
 export interface AiChatViewProviderDeps {
@@ -417,7 +421,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                     return result
                 }
                 if (method.startsWith('pressAi/') || PRESS_WORKSPACE_METHODS.has(method)) {
-                    return this.press.handle(
+                    const result = await this.press.handle(
                         method,
                         payload,
                         (uri) => view.webview.asWebviewUri(uri).toString(),
@@ -425,6 +429,11 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                         // 出图阶段单独走 imagegen 通道：与语义归纳的载荷结构不同，前端按通道区分
                         (progress) => this.post(view, { type: 'state', channel: 'imagegen', payload: progress }),
                     )
+                    // 打开作品文档会把活跃编辑器切到作品内：立即同步归属，菜单才与当前文档一致
+                    if (PRESS_DOCUMENT_METHODS.has(method)) {
+                        this.workflowRouter.syncFromEditor()
+                    }
+                    return result
                 }
                 throw new Error(`未知的协议方法：${method}`)
         }

@@ -9,12 +9,14 @@
  * 字段改动只留在内存草稿，点「保存」才写进对应文档；条目在弹窗保存时立即写盘，因此条目分段不显示保存按钮；
  * 同一时刻只渲染一个分组，缺项判断只覆盖三个字段分组；
  * 「AI 补齐设定」把素材归纳结果交给父级合并（只填空字段），提取不到时切到第一个缺项分组、不代替作者填写；
+ * 字段级 AI 覆盖三个字段分组（作品名、故事内核、世界观与金手指的描述类字段），金手指类型不生成；
+ * 「打开文档」按当前分组打开对应的 Markdown（README / 世界观 / 金手指 / 势力 / 地点 / 物品）；
  * 字段级 AI 与封面生成的 hook 必须留在本页面——切分组会卸载字段组件，挂在下面会连带取消在途请求；
  * 封面生成成功后递增版本号，让封面区块按磁盘重读（设封面在 hook 内完成）；
  * 切分区 / 切模块会直接卸载本页：编辑过但未点保存的字段分组在卸载时静默写盘，只写脏分组；
  * 条目描述的生成 hook 挂在弹窗内，关闭即取消，与字段级生成互不影响。
  */
-import { Sparkles } from 'lucide-react'
+import { FileText, Sparkles } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { PressExtractedSetting, SettingFieldKey } from '@shared/types/press'
@@ -35,23 +37,25 @@ import { PressSettingBasicFields } from './PressSettingBasicFields'
 import { PressSettingPowerFields } from './PressSettingPowerFields'
 import { PressSettingRail } from './PressSettingRail'
 import { PressSettingWorldFields } from './PressSettingWorldFields'
-import { isLoreSection, SETTING_SECTION_ORDER, SETTING_SECTIONS } from './sections'
+import { isLoreSection, SETTING_FIELD_SECTION_ORDER, SETTING_SECTION_ORDER, SETTING_SECTIONS } from './sections'
 import { useSettingCoverGenerate } from './useSettingCoverGenerate'
 import { useSettingExtract } from './useSettingExtract'
 import { useSettingFieldGenerate } from './useSettingFieldGenerate'
-import type { SettingFieldSectionKey, SettingFieldsProps, SettingSectionKey } from './sections'
+import type { SettingFieldAi, SettingFieldSectionKey, SettingFieldsProps, SettingSectionKey } from './sections'
 import type { CharacterCard, LoreEntry, LoreSeed, ProjectSetting } from '../types'
 import type { ComponentType, JSX } from 'react'
 import { SETTING_FIELD_MAX_LENGTH } from '../constants'
+import { useOpenProjectDoc } from '../hooks/useOpenProjectDoc'
 import { isSettingFieldMissing, toSettingTextPatch } from '../utils'
 
 /**
  * 字段分组与组件的映射：世界观与金手指按此渲染。
- * 基本信息段带字段级 AI 生成，入参比其它分组多一项，故不放进本表、在页面里单独渲染；
+ * 三个字段分组都带字段级 AI 生成，入参比 SettingFieldsProps 多一项 fieldAi；
+ * 基本信息段还多带封面生成，故不放进本表、在页面里单独渲染；
  * 条目分组不进本表，由 PressSettingLoreSection 承担列表编排。
  */
 const SECTION_COMPONENTS: Readonly<
-    Record<Exclude<SettingFieldSectionKey, 'basic'>, ComponentType<SettingFieldsProps>>
+    Record<Exclude<SettingFieldSectionKey, 'basic'>, ComponentType<SettingFieldsProps & { fieldAi: SettingFieldAi }>>
 > = {
     world: PressSettingWorldFields,
     power: PressSettingPowerFields,
@@ -97,6 +101,7 @@ export function PressSettingPage({
     const [coverVersion, setCoverVersion] = useState(0)
     const { isExtracting, extract } = useSettingExtract(dirPath)
     const { generatingField, generate } = useSettingFieldGenerate()
+    const { openDoc } = useOpenProjectDoc(dirPath)
     const { isGenerating: isGeneratingCover, generate: generateCover } = useSettingCoverGenerate(dirPath)
     /** 编辑过但未保存的字段分组：切页时只写这些，没动过的文档不重写 */
     const dirtySectionsRef = useRef<Set<SettingFieldSectionKey>>(new Set())
@@ -129,6 +134,12 @@ export function PressSettingPage({
         onChange(patch)
     }
 
+    /** 字段所属的字段分组：生成结果等同于一次键入，按分组标脏，切页自动保存才不会丢掉生成内容 */
+    const findFieldSection = (field: SettingFieldKey): SettingFieldSectionKey | null =>
+        SETTING_FIELD_SECTION_ORDER.find((section) =>
+            SETTING_SECTIONS[section].fields.some((item) => item === field),
+        ) ?? null
+
     /** 生成单个设定字段：成功后立即写回草稿，结果按字段上限截断（与输入框 maxLength 同源） */
     const handleGenerateField = (field: SettingFieldKey): void => {
         const run = async (): Promise<void> => {
@@ -137,7 +148,13 @@ export function PressSettingPage({
                 return
             }
             const value = content.slice(0, SETTING_FIELD_MAX_LENGTH[field])
-            onChange(toSettingTextPatch(field, value))
+            const patch = toSettingTextPatch(field, value)
+            const section = findFieldSection(field)
+            if (section === null) {
+                onChange(patch)
+            } else {
+                markDirty(section, patch)
+            }
             toast.success('已生成一版，可直接修改或继续生成')
         }
         void run()
@@ -242,7 +259,14 @@ export function PressSettingPage({
             )
         }
         const Fields = SECTION_COMPONENTS[activeSection]
-        return <Fields setting={setting} dirPath={dirPath} onChange={(patch) => markDirty(activeSection, patch)} />
+        return (
+            <Fields
+                setting={setting}
+                dirPath={dirPath}
+                onChange={(patch) => markDirty(activeSection, patch)}
+                fieldAi={{ generatingField, onGenerate: handleGenerateField }}
+            />
+        )
     }
 
     return (
@@ -250,6 +274,14 @@ export function PressSettingPage({
             <AppHeader>
                 <AppTitle>作品设定</AppTitle>
                 <AppAction>
+                    <Button
+                        variant="outline"
+                        title="在当前分组的 Markdown 文档中打开，可直接手改原文"
+                        onClick={() => openDoc(SETTING_SECTIONS[activeSection].docKey)}
+                    >
+                        <FileText />
+                        打开文档
+                    </Button>
                     <Button variant="outline" disabled={isExtracting} onClick={handleExtract}>
                         <Sparkles />
                         {isExtracting ? '提取中' : '提取设定'}

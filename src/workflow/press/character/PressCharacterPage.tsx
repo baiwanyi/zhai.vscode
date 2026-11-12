@@ -4,13 +4,14 @@
  * 列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterEditPanel 承担、
  * 新增由 CharacterCreateDialog 承担、提取由 useCharacterExtract 发起、角色设定图由 useCharacterPortrait 读取；
  * 搜索框复用 ui/input-group（前置图标交给 InputGroupAddon），提取中的等待态复用 components/StateEmpty；
- * 本文件只做筛选、搜索、提取、封面回读与弹窗编排，以及作品氛围、设定快照与作品目录的下传。
+ * 本文件只做筛选、搜索、提取、封面回读与弹窗编排，以及作品氛围、设定快照与作品目录的下传；
+ * 右上角「打开文档」按文档键打开角色设定.md（文件名映射在宿主侧，前端不拼路径）。
  * 关键约束：新增后直接打开编辑弹窗，因此 onCreateCharacter 必须回传新卡 id；
  * 编辑弹窗以人物 id 作为 key 重建，关闭即丢弃草稿，页面不保留编辑中间态；
  * 提取得到的是草案，建卡与同名补全由父级完成，页面只负责刷新列表；
  * 设定图只在「作品目录、角色数、封面 id 组合」变化时重读——保存封面后卡片立刻显示新图，日常输入不会反复扫盘。
  */
-import { Plus, Search, Sparkles } from 'lucide-react'
+import { FileText, Plus, Search, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@components/ui/input-group'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
@@ -28,6 +29,7 @@ import type { CharacterWorkspace } from './CharacterEditPanel'
 import type { CharacterCard, CharacterRole, CharacterSeed, ProjectSetting } from '../types'
 import type { JSX } from 'react'
 import { CHARACTER_ROLE_FILTERS } from '../constants'
+import { useOpenProjectDoc } from '../hooks/useOpenProjectDoc'
 
 interface PressCharacterPageProps {
     characters: CharacterCard[]
@@ -60,6 +62,7 @@ export function PressCharacterPage({
     const [galleries, setGalleries] = useState<Record<string, PortraitGalleryItem[]>>({})
     const { isExtracting, progress, extract } = useCharacterExtract(dirPath)
     const { listGallery } = useCharacterPortrait(dirPath)
+    const { openDoc } = useOpenProjectDoc(dirPath)
 
     /**
      * 设定图刷新信号：只把「角色集合 + 各自封面」压成字符串作为依赖。
@@ -175,6 +178,14 @@ export function PressCharacterPage({
                 <AppHeader>
                     <AppTitle>人物设定</AppTitle>
                     <AppAction>
+                        <Button
+                            variant="outline"
+                            title="打开「角色设定.md」，可直接手改人物卡原文"
+                            onClick={() => openDoc('characters')}
+                        >
+                            <FileText />
+                            打开文档
+                        </Button>
                         <Button variant="outline" disabled={isExtracting} onClick={handleExtract}>
                             <Sparkles />
                             {isExtracting ? '提取中' : '提取角色'}

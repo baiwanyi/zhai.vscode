@@ -160,7 +160,12 @@ export interface ProjectSetting {
     taboo: string
     goldenFingerType: string
     goldenFingerAbility: string
+    /** 代价：使用金手指要付出的东西 */
     goldenFingerCost: string
+    /** 限制：适用范围的边界与不可逾越的硬约束 */
+    goldenFingerLimit: string
+    /** 升级体系：金手指自身的成长阶段与解锁条件 */
+    goldenFingerUpgrade: string
     perspective: string
     tone: string
     references: string

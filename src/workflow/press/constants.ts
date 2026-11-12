@@ -187,8 +187,29 @@ export const LORE_KIND_META: Readonly<
 /** 条目分类顺序：设定页分段顺序与列表筛选顺序共用 */
 export const LORE_KIND_ORDER: readonly LoreKind[] = ['faction', 'place', 'item']
 
-/** 金手指类型：可自由输入，预设用于加速填写 */
-export const GOLDEN_FINGER_TYPES: readonly string[] = ['系统', '重生', '异能', '随身空间', '无', '自定义']
+/** 金手指类型候选分组：`label` 是下拉里的分组标题 */
+export interface GoldenFingerTypeGroup {
+    label: string
+    options: readonly string[]
+}
+
+/**
+ * 金手指类型候选：按网文常见套路归类，设定页以分组的单选下拉呈现。
+ * 改动这里即同时影响选择器与「当前值是否在候选内」的判断，不另写第二份清单。
+ */
+export const GOLDEN_FINGER_TYPE_GROUPS: readonly GoldenFingerTypeGroup[] = [
+    {
+        label: '系统流',
+        options: ['系统', '签到系统', '任务系统', '商城系统', '抽卡系统', '模拟器', '聊天群', '直播系统'],
+    },
+    { label: '重生与穿越', options: ['重生', '穿越', '魂穿', '回到过去', '未来记忆'] },
+    { label: '空间与储物', options: ['随身空间', '洞天福地', '随身庄园', '储物空间', '灵田空间'] },
+    { label: '血脉与异能', options: ['异能', '血脉觉醒', '天赋异禀', '传承记忆', '神格碎片'] },
+    { label: '器灵与外挂', options: ['随身老爷爷', '器灵', '功法宝库', '无限复制', '鉴定之眼'] },
+    { label: '信息与预见', options: ['预知未来', '读心术', '未来日记', '推演模拟', '时间回溯'] },
+    { label: '气运与召唤', options: ['气运之子', '欧皇体质', '召唤角色', '契约兽', '绝对防御'] },
+    { label: '无金手指', options: ['无'] },
+]
 
 /** 节奏偏好：向导中决定张力默认分布 */
 export const PACING_OPTIONS = [
@@ -231,4 +252,15 @@ export const SETTING_FIELD_MAX_LENGTH: Readonly<Record<SettingFieldKey, number>>
     logline: 120,
     opening: 240,
     conflict: 160,
+    worldview: 600,
+    geography: 300,
+    era: 120,
+    factions: 300,
+    powerSystem: 300,
+    concepts: 400,
+    taboo: 200,
+    goldenFingerAbility: 300,
+    goldenFingerCost: 200,
+    goldenFingerLimit: 200,
+    goldenFingerUpgrade: 300,
 }

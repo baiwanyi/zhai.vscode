@@ -1,5 +1,5 @@
 /**
- * 作品服务：把新作品骨架或新章节落到 press/ 目录并纳入索引，或按作品/章节路径打开对应文档，
+ * 作品服务：把新作品骨架或新章节落到 press/ 目录并纳入索引，或按作品/章节/文档键打开对应文档，
  * 并承担卷的重命名与删除、章节的删除与跨卷移动（保留或重排序号前缀、同步收敛索引）。
  * 复用 common/storagePath 的路径构造与片段校验、common/config 的存储根解析、IndexService 的单文件索引与前缀清理能力。
  * 关键约束：落盘前校验作品名、卷名、目标目录与文件名存在性，已存在即报错、绝不覆盖；写入后立即索引，
@@ -20,14 +20,19 @@ import {
     toSafeSegments,
     toStorageRelativePath,
 } from '@modules/common/storagePath'
-import type { PressAudience } from '@shared/types/press'
+import type { PressAudience, PressDocKey } from '@shared/types/press'
 import {
     CHAPTER_DIR_NAMES,
     DEFAULT_VOLUME_DIR,
     DEFAULT_VOLUME_ORDER,
     LEGACY_PROJECT_CHAPTER_DIR,
     PROJECT_CHAPTER_DIR,
+    PROJECT_FACTION_DOC_NAME,
+    PROJECT_ITEM_DOC_NAME,
+    PROJECT_PLACE_DOC_NAME,
+    PROJECT_POWER_DOC_NAME,
     PROJECT_README_NAME,
+    PROJECT_WORLD_DOC_NAME,
     buildChapterFileName,
     buildChapterSkeleton,
     buildChapterTitle,
@@ -384,6 +389,40 @@ export async function openProjectByDir(dirPath: string): Promise<void> {
     const document = await vscode.workspace.openTextDocument(readme)
     await vscode.window.showTextDocument(document, { preview: false })
     logger.info(`已打开作品：${dirPath}`)
+}
+
+/**
+ * 「打开文档」的键与文件名映射：设定各分组、人物页与大纲页共用。
+ * 角色设定与大纲不属设定分组文档，projectFactory 未单列常量，此处按骨架命名就地声明。
+ */
+const PROJECT_DOC_FILE_NAMES: Readonly<Record<PressDocKey, string>> = {
+    readme: PROJECT_README_NAME,
+    world: PROJECT_WORLD_DOC_NAME,
+    power: PROJECT_POWER_DOC_NAME,
+    faction: PROJECT_FACTION_DOC_NAME,
+    place: PROJECT_PLACE_DOC_NAME,
+    item: PROJECT_ITEM_DOC_NAME,
+    characters: '角色设定.md',
+    outline: '大纲.md',
+}
+
+/**
+ * 打开作品目录下的某份文档（设定 / 人物 / 大纲页右上角的「打开文档」）。
+ * 安全约束：文件名只从白名单映射取值，前端传的是枚举键而非路径，无法拼出任意文件；
+ * 目录按 press/{作品名} 两段校验，存在性由调用方按索引库回查。
+ * 关键约束：文档可能尚未生成（新建作品只落主文档与设定骨架），缺失时报可读错误，不让 ENOENT 冒到界面。
+ */
+export async function openProjectDoc(dirPath: string, doc: PressDocKey): Promise<void> {
+    const segments = readProjectSegments(dirPath)
+    const fileName = PROJECT_DOC_FILE_NAMES[doc]
+    const root = resolveStorageRoot()
+    const target = buildStorageUri(root, [...segments, fileName])
+    if (!(await isPathExisting(target))) {
+        throw new Error(`作品文档不存在：${fileName}，可能尚未生成或已被移动`)
+    }
+    const document = await vscode.workspace.openTextDocument(target)
+    await vscode.window.showTextDocument(document, { preview: false })
+    logger.info(`已打开作品文档：${dirPath}/${fileName}`)
 }
 
 /**

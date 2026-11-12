@@ -306,9 +306,12 @@ function normalizeSettingSnapshot(value: Record<string, unknown>): SettingSnapsh
         factions: readText(value.factions, MAX_SETTING_LONG_TEXT),
         powerSystem: readText(value.powerSystem, MAX_SETTING_LONG_TEXT),
         concepts: readText(value.concepts, MAX_SETTING_LONG_TEXT),
+        taboo: readText(value.taboo, MAX_SETTING_LONG_TEXT),
         goldenFingerType: readText(value.goldenFingerType, MAX_SHORT_TEXT),
         goldenFingerAbility: readText(value.goldenFingerAbility, MAX_LONG_TEXT),
         goldenFingerCost: readText(value.goldenFingerCost, MAX_LONG_TEXT),
+        goldenFingerLimit: readText(value.goldenFingerLimit, MAX_LONG_TEXT),
+        goldenFingerUpgrade: readText(value.goldenFingerUpgrade, MAX_LONG_TEXT),
         extra: readText(value.extra, MAX_SETTING_LONG_TEXT),
     }
 }

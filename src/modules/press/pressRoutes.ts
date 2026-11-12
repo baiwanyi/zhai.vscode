@@ -1,6 +1,7 @@
 /**
  * 写作管理协议路由：把 pressAi/* 消息分发到人物外貌、角色设定图列举与图片库服务，
- * 并承接工作台的作品读取、打开与人物卡提取（press/workspace、press/open、press/extract/characters），
+ * 并承接工作台的作品读取、打开（含按文档键打开设定文档的 press/openDoc）与人物卡提取
+ * （press/workspace、press/open、press/openDoc、press/extract/characters），
  * 以及作品快照的列举、手动留版、恢复与删除（press/snapshot/*），入参收窄由本层与 shared 类型完成。
  * 提示词预览图基址（pressAi/getPromptImageBase）也走这里：它不属于作品域，
  * 借同一条前缀复用 toWebviewUri 注入，避免在 Provider 里再挂一个分支；
@@ -51,6 +52,7 @@ import {
     isPressExtractCharactersRequest,
     isPressExtractOutlineRequest,
     isPressExtractSettingRequest,
+    isPressOpenDocRequest,
     isPressSnapshotCreateRequest,
     isPressSnapshotDeleteRequest,
     isPressSnapshotListRequest,
@@ -58,7 +60,7 @@ import {
     isPressWorkspaceRequest,
 } from '@shared/types/press'
 import { hasProjectFiles, listPressProjects } from './projectRepository'
-import { openProjectByDir } from './projectService'
+import { openProjectByDir, openProjectDoc } from './projectService'
 import { readProjectWorkspace } from './projectWorkspace'
 import { applyProjectWorkspace } from './workspaceWriter'
 import type { ImportSemanticService } from './importSemanticService'
@@ -191,6 +193,8 @@ export class PressRoutes {
                 return this.readWorkspace(payload)
             case 'press/open':
                 return this.openProject(payload)
+            case 'press/openDoc':
+                return this.openDoc(payload)
             case 'press/extract/characters':
                 return this.extractCharacters(payload, postProgress)
             case 'press/extract/outline':
@@ -339,6 +343,22 @@ export class PressRoutes {
         }
         await openProjectByDir(payload.dirPath)
         this.workflowRouter.selectProject(payload.dirPath)
+        return { opened: true }
+    }
+
+    /**
+     * 打开作品下的某份文档：设定 / 人物 / 大纲页右上角的「打开文档」走这里。
+     * 安全约束：作品目录先按索引库回查，文档名由宿主的白名单映射决定，前端只传枚举键。
+     * 关键约束：文档尚未生成时由服务层抛可读错误，前端按统一错误通道提示。
+     */
+    private async openDoc(payload: unknown): Promise<OpenPressProjectResult> {
+        if (!isPressOpenDocRequest(payload)) {
+            throw new Error('press/openDoc 参数非法：dirPath 须为非空字符串，doc 须为已知文档键')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法打开：${payload.dirPath}`)
+        }
+        await openProjectDoc(payload.dirPath, payload.doc)
         return { opened: true }
     }
 

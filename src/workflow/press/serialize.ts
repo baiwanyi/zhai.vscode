@@ -46,25 +46,27 @@ function buildBasicLines(setting: ProjectSetting): string[] {
     ]
 }
 
-/** 世界观段落的键值行：键名与 document.ts 的读取键一一对应 */
+/** 世界观段落的键值行：键名与 document.ts 的读取键一一对应，字段由 textarea 输入故须折成单行 */
 function buildWorldLines(setting: ProjectSetting): string[] {
     return [
-        `- 世界观总述：${setting.worldview}`,
-        `- 地理：${setting.geography}`,
-        `- 时代：${setting.era}`,
-        `- 势力：${setting.factions}`,
-        `- 力量体系：${setting.powerSystem}`,
-        `- 核心概念：${setting.concepts}`,
-        `- 禁忌：${setting.taboo}`,
+        `- 世界观总述：${toSingleLine(setting.worldview)}`,
+        `- 地理：${toSingleLine(setting.geography)}`,
+        `- 时代：${toSingleLine(setting.era)}`,
+        `- 势力：${toSingleLine(setting.factions)}`,
+        `- 力量体系：${toSingleLine(setting.powerSystem)}`,
+        `- 核心概念：${toSingleLine(setting.concepts)}`,
+        `- 禁忌：${toSingleLine(setting.taboo)}`,
     ]
 }
 
-/** 金手指段落的键值行：键名与 document.ts 的读取键一一对应 */
+/** 金手指段落的键值行：键名与 document.ts 的读取键一一对应，描述类字段由 textarea 输入故须折成单行 */
 function buildGoldenFingerLines(setting: ProjectSetting): string[] {
     return [
-        `- 金手指类型：${setting.goldenFingerType}`,
-        `- 金手指能力：${setting.goldenFingerAbility}`,
-        `- 金手指代价：${setting.goldenFingerCost}`,
+        `- 金手指类型：${toSingleLine(setting.goldenFingerType)}`,
+        `- 金手指能力：${toSingleLine(setting.goldenFingerAbility)}`,
+        `- 金手指代价：${toSingleLine(setting.goldenFingerCost)}`,
+        `- 金手指限制：${toSingleLine(setting.goldenFingerLimit)}`,
+        `- 升级体系：${toSingleLine(setting.goldenFingerUpgrade)}`,
     ]
 }
 
