@@ -152,9 +152,9 @@ export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.El
                         onRetry={handleRetry}
                     />
                 </AppContent>
-                <AppFooter>
+                <AppFooter className="py-1">
                     <Button
-                        size="icon"
+                        size="icon-xs"
                         variant="primary"
                         disabled={isMutating}
                         tooltip="添加账号"

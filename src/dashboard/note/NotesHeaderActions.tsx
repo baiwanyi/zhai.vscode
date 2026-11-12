@@ -73,11 +73,11 @@ export function NotesHeaderActions({ isSelecting, search, onToggleSelecting }: N
 
     return (
         <div className="flex items-center gap-0.5">
-            <Button variant="ghost" size="icon" aria-label="多选" tooltip="多选" onClick={onToggleSelecting}>
-                <ListChecks />
-            </Button>
             <Button variant="ghost" size="icon" aria-label={SEARCH_LABEL} tooltip={SEARCH_LABEL} onClick={search.open}>
                 <Search />
+            </Button>
+            <Button variant="ghost" size="icon" aria-label="多选" tooltip="多选" onClick={onToggleSelecting}>
+                <ListChecks />
             </Button>
         </div>
     )
