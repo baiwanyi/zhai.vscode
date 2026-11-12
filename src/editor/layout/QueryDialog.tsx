@@ -64,6 +64,9 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
                         setQuestion(event.target.value)
                     }}
                 />
+                {query.isFromCache ? (
+                    <p className="text-xs text-muted-foreground">来自缓存：本次未调用模型，也未消耗额度</p>
+                ) : null}
                 {query.content.length > 0 ? (
                     <ScrollArea className="max-h-72 rounded-md border p-3">
                         <div className="text-sm">

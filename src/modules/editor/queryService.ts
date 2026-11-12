@@ -8,6 +8,8 @@
 import type { AiChatMessage, AiProvider, AiUsage, AiUsageMeta } from '@modules/ai/provider'
 import { getSelectedCodebuddyModel } from '@modules/ai/providers/codebuddyModels'
 import type { UsageRecorder } from '@modules/ai/usageRecorder'
+import { findCachedQuery, saveQuery } from './queryRepository'
+import type Database from 'better-sqlite3'
 
 /** 选中文本入提示词的上限：长段落只取前段，避免一次查询吃掉大量上下文 */
 const MAX_QUOTE_CHARS = 2000
@@ -27,9 +29,12 @@ const SYSTEM_PROMPT =
 export interface EditorQueryDeps {
     provider: AiProvider
     usageRecorder: UsageRecorder
+    /** 缓存与历史所在库：懒求值，激活期不打开库；缺省时不做缓存，只回答 */
+    db?: () => Database.Database
 }
 
 export interface EditorQueryInput {
+    docPath: string
     quote: string
     question: string
     signal: AbortSignal
@@ -43,16 +48,28 @@ export interface EditorQueryOutcome {
     reason?: string
     /** 已生成的内容：失败时可能非空，供界面保留部分结果 */
     content: string
+    /** 命中缓存：内容直接返回，本次未调用模型、未计费 */
+    fromCache?: boolean
 }
 
 /** 执行一次查询：先查通道就绪，再流式生成并记账 */
 export async function runEditorQuery(deps: EditorQueryDeps, input: EditorQueryInput): Promise<EditorQueryOutcome> {
+    const quote = input.quote.slice(0, MAX_QUOTE_CHARS).trim()
+    const question = input.question.slice(0, MAX_QUESTION_CHARS).trim() || DEFAULT_QUESTION
+    // 库按需打开：一条查询里缓存与写回共用同一个连接，避免重复求值
+    const db = deps.db === undefined ? null : deps.db()
+    // 缓存优先：同一段文字问同样的问题不再扣额度。命中时不校验通道就绪——结果已在本地，
+    // 断网或未登录也能回看。
+    if (db !== null) {
+        const cached = findCachedQuery(db, input.docPath, quote, question)
+        if (cached !== null) {
+            return { ok: true, content: cached.answer, fromCache: true }
+        }
+    }
     const status = await deps.provider.checkReady()
     if (!status.ready) {
         return { ok: false, reason: status.reason ?? 'AI 通道未就绪', content: '' }
     }
-    const quote = input.quote.slice(0, MAX_QUOTE_CHARS).trim()
-    const question = input.question.slice(0, MAX_QUESTION_CHARS).trim() || DEFAULT_QUESTION
     const messages: AiChatMessage[] = [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: `选中文本：\n${quote}\n\n问题：${question}` },
@@ -99,5 +116,13 @@ export async function runEditorQuery(deps: EditorQueryDeps, input: EditorQueryIn
         }
     }
     deps.usageRecorder.record({ module: 'editor', model, usage, meta, prompt, startedAt, status: 'completed' })
+    // 写历史失败不影响本次结果：用户已经拿到答案，历史只是附加价值
+    if (db !== null && content.trim().length > 0) {
+        try {
+            saveQuery(db, { docPath: input.docPath, quote, question, answer: content, model })
+        } catch {
+            // 忽略：库不可写时不影响回答
+        }
+    }
     return { ok: true, content }
 }

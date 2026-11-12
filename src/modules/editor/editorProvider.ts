@@ -340,6 +340,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     private async runQuery(
         panel: vscode.WebviewPanel,
         request: { quote: string; question: string; clientId: string },
+        docPath: string,
         controller: AbortController,
     ): Promise<void> {
         const deps = this.query
@@ -348,6 +349,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         }
         try {
             const outcome = await runEditorQuery(deps, {
+                docPath,
                 quote: request.quote,
                 question: request.question,
                 signal: controller.signal,
@@ -368,6 +370,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                     status: outcome.ok ? 'done' : 'error',
                     reason: outcome.reason ?? null,
                     content: outcome.content,
+                    fromCache: outcome.fromCache === true,
                 },
             })
         } finally {
@@ -503,7 +506,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 this.queries.set(payload.clientId, controller)
                 // 先回执再流式推送：request 的 promise 立即结束，增量走 state 通道
                 await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { started: true } })
-                void this.runQuery(panel, payload, controller)
+                void this.runQuery(panel, payload, this.readRelativePath(document), controller)
                 return
             }
             if (method === 'editor/query/abort') {

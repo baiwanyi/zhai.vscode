@@ -15,6 +15,8 @@ export interface UseDocumentQueryResult {
     status: QueryStatus
     content: string
     error: string | null
+    /** 本次结果来自缓存：界面标出「来自缓存」，说明未消耗额度 */
+    isFromCache: boolean
     /** 发起查询：quote 为选中文本，question 为空时宿主用默认问题 */
     start: (quote: string, question: string) => Promise<void>
     /** 中断当前查询：关闭弹窗、点停止都走这里 */
@@ -50,6 +52,7 @@ export function useDocumentQuery(path: string): UseDocumentQueryResult {
     const [status, setStatus] = useState<QueryStatus>('idle')
     const [content, setContent] = useState('')
     const [error, setError] = useState<string | null>(null)
+    const [isFromCache, setIsFromCache] = useState(false)
     const clientIdRef = useRef<string>('')
 
     const start = useCallback(
@@ -62,6 +65,7 @@ export function useDocumentQuery(path: string): UseDocumentQueryResult {
             setStatus('streaming')
             setContent('')
             setError(null)
+            setIsFromCache(false)
             try {
                 await request('editor/query', { path, quote, question, clientId })
             } catch (reason) {
@@ -103,6 +107,7 @@ export function useDocumentQuery(path: string): UseDocumentQueryResult {
             }
             if (isQueryDone(payload) && payload.clientId === clientIdRef.current) {
                 setContent(payload.content)
+                setIsFromCache(payload.fromCache === true)
                 if (payload.status === 'done') {
                     setStatus('done')
                     return
@@ -113,5 +118,5 @@ export function useDocumentQuery(path: string): UseDocumentQueryResult {
         })
     }, [])
 
-    return { status, content, error, start, abort, reset }
+    return { status, content, error, isFromCache, start, abort, reset }
 }

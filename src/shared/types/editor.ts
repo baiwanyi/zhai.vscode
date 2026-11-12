@@ -69,6 +69,8 @@ export interface EditorQueryDone {
     status: 'done' | 'error'
     reason: string | null
     content: string
+    /** 命中缓存：界面据此标出「来自缓存」，提示本次未消耗额度 */
+    fromCache: boolean
 }
 
 /** 取消查询：按 clientId 定位在途请求 */

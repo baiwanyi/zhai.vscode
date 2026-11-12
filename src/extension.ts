@@ -69,6 +69,7 @@ import { UploadRoutes } from './modules/upload/uploadRoutes'
 import { UploadService } from './modules/upload/uploadService'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 import type { MarkdownEditorProvider } from './modules/editor/editorProvider'
+import type Database from 'better-sqlite3'
 
 /** 扩展对外导出：Markdown 预览扩展在激活后读取 extendMarkdownIt 挂载自定义插件 */
 export interface ZhaiExports {
@@ -354,6 +355,8 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         {
             provider: ai.aiProvider,
             usageRecorder: ai.usageRecorder,
+            // 查询缓存与历史复用标注库：懒打开，首次查询时才建连接
+            db: (): Database.Database => annotationDbProvider().db,
         },
         // 编辑器内的粘贴 / 拖拽上传复用同一个上传路由，落盘目录与命名口径完全一致
         uploadRoutes,
