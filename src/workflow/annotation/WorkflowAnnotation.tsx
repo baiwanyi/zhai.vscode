@@ -36,8 +36,20 @@ const NOTICE_MISSING_FILE = '原文已删除，无法跳转'
 const NOTICE_ORPHANED = '原文已修改，无法精确定位；已打开文档供你手动查找'
 
 export function WorkflowAnnotation(): JSX.Element {
-    const { items, documents, total, isLoading, error, hasMore, filters, setFilters, loadMore, remove, reveal } =
-        useAnnotationList()
+    const {
+        items,
+        documents,
+        total,
+        isLoading,
+        error,
+        hasMore,
+        filters,
+        setFilters,
+        loadMore,
+        updateColor,
+        remove,
+        reveal,
+    } = useAnnotationList()
     const [notice, setNotice] = useState<string | null>(null)
     const [stats, setStats] = useState<AnnotationStats | null>(null)
 
@@ -168,7 +180,13 @@ export function WorkflowAnnotation(): JSX.Element {
                 ) : (
                     <div className="flex flex-col gap-2">
                         {items.map((item) => (
-                            <AnnotationListItem key={item.id} item={item} onReveal={handleReveal} onRemove={remove} />
+                            <AnnotationListItem
+                                key={item.id}
+                                item={item}
+                                onReveal={handleReveal}
+                                onUpdateColor={updateColor}
+                                onRemove={remove}
+                            />
                         ))}
                     </div>
                 )}

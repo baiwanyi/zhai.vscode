@@ -28,6 +28,7 @@ import { createStorageDatabaseProvider } from './modules/common/storageDbProvide
 import { ToastService } from './modules/common/toastService'
 import { trackActiveDocument } from './modules/editor/activeDocument'
 import { AnnotationRoutes } from './modules/editor/annotationRoutes'
+import { registerAnnotationWatchers } from './modules/editor/annotationWatcher'
 import { closeAnnotationDatabases, openAnnotationDatabase } from './modules/editor/db/connection'
 import { ImageProviderRouter } from './modules/imagegen/ai/imageProvider'
 import { PressCoverService } from './modules/imagegen/coverService'
@@ -209,6 +210,8 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         root: (): vscode.Uri => resolveStorageRoot(),
         revealInRich: (uri, request): boolean => editorProviderRef?.revealInPanel(uri, request) ?? false,
     })
+    // 标注维护：删除置失效、改名迁移、保存后校正锚点——库方法早已就绪，此前缺的是这三个接线点
+    registerAnnotationWatchers(context, annotationDbProvider)
     const portraitService = new PortraitService(mediaDbProvider)
     // 封面服务只列举候选供设定页展示：出图、设为封面与删除都在媒体页完成
     const coverService = new PressCoverService({ openDatabase: mediaDbProvider, coverStore: pressCoverStore })

@@ -48,6 +48,8 @@ export interface UseAnnotationListResult {
     filters: AnnotationFilters
     setFilters: (next: AnnotationFilters) => void
     loadMore: () => Promise<void>
+    /** 改划线颜色：只更新该条，不重load 列表 */
+    updateColor: (id: string, color: HighlightColor) => Promise<void>
     remove: (id: string) => Promise<void>
     reveal: (id: string) => Promise<RevealOutcome>
 }
@@ -145,6 +147,16 @@ export function useAnnotationList(): UseAnnotationListResult {
         [loadDocuments],
     )
 
+    const updateColor = useCallback(async (id: string, color: HighlightColor): Promise<void> => {
+        try {
+            await request('annotation/update', { id, color })
+            // 局部更新：不重拉列表，用户翻到第 3 页改个颜色不该被弹回顶部
+            setItems((previous) => previous.map((item) => (item.id === id ? { ...item, color } : item)))
+        } catch {
+            setError('改色失败，请稍后重试')
+        }
+    }, [])
+
     const reveal = useCallback(async (id: string): Promise<RevealOutcome> => {
         return request<RevealOutcome>('annotation/reveal', { id })
     }, [])
@@ -164,6 +176,7 @@ export function useAnnotationList(): UseAnnotationListResult {
         filters,
         setFilters,
         loadMore,
+        updateColor,
         remove,
         reveal,
     }

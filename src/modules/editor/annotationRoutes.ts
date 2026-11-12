@@ -14,7 +14,7 @@ import type {
     AnnotationStats,
     HighlightColor,
 } from '@shared/types/editor'
-import { findAnnotation, removeAnnotation } from './annotationRepository'
+import { findAnnotation, removeAnnotation, updateAnnotation } from './annotationRepository'
 import { listAnnotationDocuments, listAnnotations, statsAnnotations } from './annotationSearch'
 import type { AnnotationDatabase } from './db/connection'
 
@@ -94,6 +94,8 @@ export class AnnotationRoutes {
                 return this.remove(payload)
             case 'annotation/documents':
                 return { items: listAnnotationDocuments(this.deps.db().db) }
+            case 'annotation/update':
+                return this.update(payload)
             default:
                 throw new Error(`未知的标注方法：${method}`)
         }
@@ -138,5 +140,15 @@ export class AnnotationRoutes {
 
     private remove(payload: unknown): { removed: boolean } {
         return { removed: removeAnnotation(this.deps.db().db, readId(payload)) }
+    }
+
+    /** 改色：只接受枚举色值，其余按未提供处理（清除颜色） */
+    private update(payload: unknown): { updated: boolean } {
+        const source = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
+        const color =
+            typeof source.color === 'string' && (COLORS as readonly string[]).includes(source.color)
+                ? (source.color as HighlightColor)
+                : null
+        return { updated: updateAnnotation(this.deps.db().db, readId(payload), { color }) }
     }
 }

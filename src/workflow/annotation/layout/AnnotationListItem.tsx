@@ -6,11 +6,11 @@
  */
 import { Check, MessageSquareText, Trash2 } from 'lucide-react'
 import { useRef, useState } from 'react'
-import type { AnnotationRecord } from '@shared/types/editor'
+import type { AnnotationRecord, HighlightColor } from '@shared/types/editor'
 import { formatDateTime } from '@shared/utils/format'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
-import { readColorCss } from '../colors'
+import { ANNOTATION_COLORS, readColorCss } from '../colors'
 
 /** 二次确认的等待时长：超时自动复原 */
 const CONFIRM_TIMEOUT_MS = 3000
@@ -18,11 +18,13 @@ const CONFIRM_TIMEOUT_MS = 3000
 export interface AnnotationListItemProps {
     item: AnnotationRecord
     onReveal: (id: string) => Promise<void>
+    onUpdateColor: (id: string, color: HighlightColor) => Promise<void>
     onRemove: (id: string) => Promise<void>
 }
 
-export function AnnotationListItem({ item, onReveal, onRemove }: AnnotationListItemProps): JSX.Element {
+export function AnnotationListItem({ item, onReveal, onUpdateColor, onRemove }: AnnotationListItemProps): JSX.Element {
     const [isConfirming, setIsConfirming] = useState(false)
+    const [isPickingColor, setIsPickingColor] = useState(false)
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     const handleRemove = (): void => {
@@ -42,15 +44,21 @@ export function AnnotationListItem({ item, onReveal, onRemove }: AnnotationListI
     }
 
     return (
-        <div className="flex flex-col gap-1 rounded-md border p-2.5">
+        <div className="relative flex flex-col gap-1 rounded-md border p-2.5">
             <div className="flex items-start justify-between gap-2">
                 <div className="flex min-w-0 items-start gap-2">
                     {item.color === null ? (
                         <MessageSquareText className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                     ) : (
-                        <span
-                            className="mt-1.5 size-2.5 shrink-0 rounded-full"
+                        <button
+                            type="button"
+                            aria-label="更改颜色"
+                            title="更改颜色"
+                            className="mt-1 size-2.5 shrink-0 rounded-full ring-offset-1 hover:ring-1 hover:ring-ring"
                             style={{ backgroundColor: readColorCss(item.color) }}
+                            onClick={(): void => {
+                                setIsPickingColor((previous) => !previous)
+                            }}
                         />
                     )}
                     <span className="line-clamp-2 text-sm">{item.quote}</span>
@@ -75,6 +83,24 @@ export function AnnotationListItem({ item, onReveal, onRemove }: AnnotationListI
                     </Button>
                 </div>
             </div>
+            {isPickingColor && item.color !== null ? (
+                <div className="absolute left-6 top-7 z-10 flex items-center gap-1 rounded-md border bg-background p-1 shadow-sm">
+                    {ANNOTATION_COLORS.map((option) => (
+                        <button
+                            key={option.value}
+                            type="button"
+                            aria-label={`改为${option.label}`}
+                            title={`改为${option.label}`}
+                            className="size-3.5 rounded-full ring-offset-1 hover:ring-2 hover:ring-ring"
+                            style={{ backgroundColor: option.css }}
+                            onClick={(): void => {
+                                setIsPickingColor(false)
+                                void onUpdateColor(item.id, option.value)
+                            }}
+                        />
+                    ))}
+                </div>
+            ) : null}
             <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
                 <span className="max-w-[50%] truncate">{item.docTitle}</span>
                 <span>{formatDateTime(item.createdAt)}</span>

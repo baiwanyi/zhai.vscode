@@ -194,6 +194,7 @@ export type HostMethodName =
     | 'annotation/list'
     | 'annotation/remove'
     | 'annotation/reveal'
+    | 'annotation/update'
     | 'annotation/stats'
     | 'dashboard/stats'
     | 'editor/annotation/add'
