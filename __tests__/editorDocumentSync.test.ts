@@ -62,8 +62,17 @@ describe('readEditorSnapshot', () => {
         expect(snapshot.blocks[0]?.html).toContain('zhai-source-block')
     })
 
-    it('任务列表判为只读，避免保存后把 GFM 语法改坏', async () => {
+    it('任务列表转成 Tiptap 可识别的结构', async () => {
         const snapshot = await readEditorSnapshot('- [ ] 待办\n- [x] 完成', 1, 'x.md')
+        expect(snapshot.editable).toBe(true)
+        const html = snapshot.blocks[0]?.html ?? ''
+        expect(html).toContain('data-type="taskList"')
+        expect(html).toContain('data-checked="false"')
+        expect(html).toContain('data-checked="true"')
+    })
+
+    it('任务项内嵌列表时整篇只读（暂不支持）', async () => {
+        const snapshot = await readEditorSnapshot('- [ ] 待办\n  - 子项', 1, 'x.md')
         expect(snapshot.editable).toBe(false)
     })
 
@@ -97,6 +106,14 @@ describe('buildBlockEdits', () => {
         expect(edits).toHaveLength(1)
         expect(edits[0]?.text).toBe('改后的正文')
         expect(edits[0]?.text).not.toContain('id=')
+    })
+
+    it('任务列表回写成 GFM 语法且不带转义', async () => {
+        const snapshot = await readEditorSnapshot('- [ ] 待办', 1, 'x.md')
+        const html =
+            '<ul data-type="taskList"><li data-type="taskItem" data-checked="true"><label><input type="checkbox" checked="checked"><span></span></label><div><p>已完成</p></div></li><li data-type="taskItem" data-checked="false"><label><input type="checkbox"><span></span></label><div><p>未完成</p></div></li></ul>'
+        const edits = await buildBlockEdits(snapshot.blocks, [{ index: 0, html }])
+        expect(edits[0]?.text).toBe('- [x] 已完成\n- [ ] 未完成')
     })
 
     it('多块变更按偏移倒序排列，便于从后往前应用', async () => {

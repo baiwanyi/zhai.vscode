@@ -6,7 +6,19 @@
  * 首批只做 StarterKit 内建块（标题 / 列表 / 引用 / 代码块 / 分隔线），图片与表格留到后续批次，
  * 它们需要上传通道与白名单放开，现在放进来只会造出无法保存的内容。
  */
-import { Heading1, Heading2, Heading3, List, ListOrdered, Minus, Pilcrow, Quote, SquareCode, Type } from 'lucide-react'
+import {
+    Heading1,
+    Heading2,
+    Heading3,
+    List,
+    ListOrdered,
+    ListTodo,
+    Minus,
+    Pilcrow,
+    Quote,
+    SquareCode,
+    Type,
+} from 'lucide-react'
 import type { ChainedCommands, Editor, Range } from '@tiptap/core'
 import type { LucideIcon } from 'lucide-react'
 
@@ -80,6 +92,16 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         },
     },
     {
+        id: 'taskList',
+        label: '任务列表',
+        hint: '待办勾选',
+        keywords: ['todo', 'task', 'check', '任务', '待办'],
+        icon: ListTodo,
+        run: (editor, range): void => {
+            apply(editor, range, (chain) => chain.toggleTaskList())
+        },
+    },
+    {
         id: 'orderedList',
         label: '有序列表',
         hint: '带编号的步骤',
@@ -142,6 +164,7 @@ const TURN_INTO_IDS: readonly string[] = [
     'heading3',
     'bulletList',
     'orderedList',
+    'taskList',
     'blockquote',
     'codeBlock',
 ]

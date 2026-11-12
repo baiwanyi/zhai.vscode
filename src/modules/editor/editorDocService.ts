@@ -108,11 +108,14 @@ function isSupported(node: RootContent | { type: string; children?: unknown[] })
     if (!EDITABLE_NODE_TYPES.has(node.type)) {
         return false
     }
-    // 任务列表暂不支持：未装 taskList 扩展时，`- [ ] x` 会被解析成字面量「[ ] x」，
-    // 保存时再被转义回 `- \[ ]`，等于把 GFM 语法改坏。在转换层做完之前一律按只读处理。
-    const candidate = node as { type: string; checked?: unknown }
+    // 任务列表：纯文本项已支持（见 adaptTaskListHtml），但任务项内再嵌列表暂不支持——
+    // 半支持会把它改写成普通列表，等于悄悄丢掉勾选状态，所以整篇转只读更安全。
+    const candidate = node as { type: string; checked?: unknown; children?: { type: string }[] }
     if (candidate.type === 'listItem' && candidate.checked !== null && candidate.checked !== undefined) {
-        return false
+        const children = candidate.children ?? []
+        if (children.some((child) => child.type === 'list')) {
+            return false
+        }
     }
     const children = 'children' in node ? node.children : undefined
     if (!Array.isArray(children)) {
@@ -128,6 +131,38 @@ function isSupported(node: RootContent | { type: string; children?: unknown[] })
 /** HTML 转义：源码块要原样展示，不能让内容被当作标签解析 */
 function escapeHtml(value: string): string {
     return value.replace(/&/gu, '&amp;').replace(/</gu, '&lt;').replace(/>/gu, '&gt;')
+}
+
+/**
+ * 任务列表的 md → html 适配：remark-gfm 输出 `<ul class="contains-task-list">` 与裸 `<input>`，
+ * 而 Tiptap 的 TaskList / TaskItem 只认 `data-type` 与 `data-checked`，且要求项内容是块级元素，
+ * 否则解析时会退化成普通列表、勾选状态丢失。
+ * 关键约束：这里依赖 remark-rehype 的固定输出结构，改动管线时必须同步改本函数（有单测守着）。
+ */
+function adaptTaskListHtml(html: string): string {
+    if (!html.includes('contains-task-list')) {
+        return html
+    }
+    return html.replace(/<ul class="contains-task-list">([\s\S]*?)<\/ul>/gu, (_whole: string, inner: string) => {
+        const items = inner.replace(
+            /<li class="task-list-item"><input type="checkbox"( checked)? disabled>([\s\S]*?)<\/li>/gu,
+            (_item: string, checked: string | undefined, text: string) =>
+                `<li data-type="taskItem" data-checked="${checked === undefined ? 'false' : 'true'}"><p>${text.trim()}</p></li>`,
+        )
+        return `<ul data-type="taskList">${items}</ul>`
+    })
+}
+
+/** Tiptap 输出的任务项：`<li data-type="taskItem" data-checked="true"><label>…</label><div><p>文本</p></div></li>` */
+const TASK_ITEM_PATTERN = /<li[^>]*data-checked="(true|false)"[^>]*>([\s\S]*?)<\/li>/gu
+
+/** 去掉 Tiptap 任务项的包装层，只留正文：label 里的 checkbox 与 div/p 包裹都不是内容 */
+function stripTaskItemWrappers(inner: string): string {
+    return inner
+        .replace(/<label[\s\S]*?<\/label>/gu, '')
+        .replace(/<input[^>]*>/gu, '')
+        .replace(/<\/?(?:div|p)[^>]*>/gu, '')
+        .trim()
 }
 
 /**
@@ -153,10 +188,12 @@ export async function readEditorSnapshot(text: string, version: number, path: st
             isEditable = false
         }
         const html = isNodeSupported
-            ? toHtml
-                  .stringify(toHtml.runSync({ type: 'root', children: [node] }))
-                  .toString()
-                  .trim()
+            ? adaptTaskListHtml(
+                  toHtml
+                      .stringify(toHtml.runSync({ type: 'root', children: [node] }))
+                      .toString()
+                      .trim(),
+              )
             : `<pre class="zhai-source-block">${escapeHtml(body.slice(start, end))}</pre>`
         blocks.push({ html, start: offset + start, end: offset + end })
     }
@@ -193,13 +230,35 @@ export async function buildBlockEdits(
         .use(loaded.rehypeParse, { fragment: true })
         .use(loaded.rehypeRemark)
         .use(loaded.remarkStringify, { bullet: '-', emphasis: '*', strong: '*' })
+    /**
+     * 任务列表的 html → md：不能走通用管线——rehype-remark 会把 checkbox 转成文本「[x]」，
+     * 再被 stringify 转义成 `\[x]`，GFM 语法当场失效。改为逐项读取 data-checked 自行拼行。
+     */
+    const toTaskMarkdown = (html: string): string => {
+        const lines: string[] = []
+        for (const match of html.matchAll(TASK_ITEM_PATTERN)) {
+            const isChecked = match[1] === 'true'
+            const inner = stripTaskItemWrappers(match[2] ?? '')
+            const text =
+                inner.length === 0
+                    ? ''
+                    : toMarkdown
+                          .stringify(toMarkdown.runSync(toMarkdown.parse(inner)))
+                          .trim()
+                          .replace(/\n+/gu, ' ')
+            lines.push(`- [${isChecked ? 'x' : ' '}] ${text}`.trimEnd())
+        }
+        return lines.join('\n')
+    }
     const edits: BlockEdit[] = []
     for (const change of [...changes].sort((left, right) => right.index - left.index)) {
         const block = blocks[change.index]
         if (block === undefined) {
             continue
         }
-        const markdown = toMarkdown.stringify(toMarkdown.runSync(toMarkdown.parse(change.html))).trim()
+        const markdown = change.html.includes('data-type="taskList"')
+            ? toTaskMarkdown(change.html)
+            : toMarkdown.stringify(toMarkdown.runSync(toMarkdown.parse(change.html))).trim()
         edits.push({ start: block.start, end: block.end, text: markdown })
     }
     return edits

@@ -5,6 +5,8 @@
  * 关键约束：本组件不直接发协议请求，也不决定可编辑性——只读判定来自宿主快照；
  * 状态栏必须如实展示同步状态，出现只读或同步失败时不能让用户以为内容已保存。
  */
+import TaskItem from '@tiptap/extension-task-item'
+import TaskList from '@tiptap/extension-task-list'
 import UniqueID from '@tiptap/extension-unique-id'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
@@ -40,6 +42,9 @@ export function EditorScreen(): JSX.Element {
     const editor = useEditor({
         extensions: [
             StarterKit,
+            // 任务列表：md 侧由 adaptTaskListHtml 转成 data-type 结构，回写由 toTaskMarkdown 还原 GFM
+            TaskList,
+            TaskItem.configure({ nested: true }),
             AnnotationExtension,
             SlashCommandExtension,
             // 块运行期 id：仅用于编辑态定位（批注锚点 / 拖拽），转 Markdown 时会被丢弃，不写入正文
