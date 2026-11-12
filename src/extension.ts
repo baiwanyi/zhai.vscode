@@ -27,6 +27,7 @@ import { StatusBarService } from './modules/common/statusBar'
 import { createStorageDatabaseProvider } from './modules/common/storageDbProvider'
 import { ToastService } from './modules/common/toastService'
 import { trackActiveDocument } from './modules/editor/activeDocument'
+import { closeAnnotationDatabases } from './modules/editor/db/connection'
 import { ImageProviderRouter } from './modules/imagegen/ai/imageProvider'
 import { PressCoverService } from './modules/imagegen/coverService'
 import { ImageGenerateService } from './modules/imagegen/imageGenerateService'
@@ -343,7 +344,8 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
 }
 
 export function deactivate(): void {
-    // 随 context.subscriptions 释放的库已由 VS Code 关闭；media/stock 是模块级连接缓存，须显式关闭
+    // 随 context.subscriptions 释放的库已由 VS Code 关闭；media / stock / 标注库是模块级连接缓存，须显式关闭
     closeMediaDatabases()
     closeStockDatabases()
+    closeAnnotationDatabases()
 }

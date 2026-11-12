@@ -76,6 +76,47 @@ export function isEditorDocSnapshot(input: unknown): input is EditorDocSnapshot 
     })
 }
 
+/** 划线颜色：固定枚举而非任意色值，保证深浅主题下的可读性 */
+export type HighlightColor = 'coral' | 'violet' | 'blue' | 'emerald' | 'amber'
+
+/** 标注类型：划线只存区间，批注额外有正文 */
+export type AnnotationKind = 'highlight' | 'note'
+
+/** 批注形态：inline 为自绘气泡，thread 为原生 Comment API 线程 */
+export type AnnotationMode = 'inline' | 'thread'
+
+/** 一条标注：docPath 为相对存储根路径，锚点四件套共同支撑重定位 */
+export interface AnnotationRecord {
+    id: string
+    docPath: string
+    /** 写入时的文档标题快照：总览页分组不依赖索引库 */
+    docTitle: string
+    kind: AnnotationKind
+    mode: AnnotationMode
+    /** 划线文本；批注时为目标文本 */
+    quote: string
+    prefix: string
+    suffix: string
+    startOffset: number
+    endOffset: number
+    /** 块运行期 id：仅在富文本打开期间有效，不写入 Markdown */
+    blockId: string
+    blockIndex: number
+    blockHash: string
+    /** 段落原文快照（截断 1000 字）：总览页展示「所在段落」 */
+    blockText: string
+    color: HighlightColor | null
+    note: string | null
+    /** 线程回复（JSON 字符串）：仅 mode=thread 使用 */
+    replies: string
+    orphaned: boolean
+    createdAt: string
+    updatedAt: string
+}
+
+/** 新增标注的入参：id 与时间由仓储生成 */
+export type NewAnnotation = Omit<AnnotationRecord, 'id' | 'createdAt' | 'updatedAt'>
+
 /** 收窄回写请求：Webview 数据不可信，逐字段校验后才用于定位原文 */
 export function isEditorChangeRequest(input: unknown): input is EditorChangeRequest {
     if (typeof input !== 'object' || input === null) {

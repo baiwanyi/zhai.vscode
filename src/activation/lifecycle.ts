@@ -9,6 +9,7 @@ import { runWithLoggedFailure } from '@modules/common/asyncTask'
 import { getZhaiConfig } from '@modules/common/config'
 import type { IndexService } from '@modules/common/indexer/indexService'
 import { logger } from '@modules/common/logger'
+import { closeAnnotationDatabases } from '@modules/editor/db/connection'
 import { closeMediaDatabases } from '@modules/media/db/connection'
 import { closeStockDatabases } from '@modules/stock/db/connection'
 
@@ -30,6 +31,8 @@ export function registerLifecycleHooks(deps: LifecycleDeps): void {
                 logger.info('宅写作 配置已变更')
                 closeMediaDatabases()
                 closeStockDatabases()
+                // 标注库同样按存储根缓存，换根后必须重建连接，否则会继续写旧目录
+                closeAnnotationDatabases()
             }
             // 增量监听按存储根生成 pattern：改根后不重建，新目录的改动永远不会进索引
             if (event.affectsConfiguration('zhai.storage.rootPath')) {
