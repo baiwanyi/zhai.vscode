@@ -1,16 +1,19 @@
 /**
- * 编辑区文档同步：从宿主拉取块快照渲染到 TipTap，编辑后只把发生变化的块回写 TextDocument。
+ * 编辑区文档同步：从宿主拉取块快照渲染到 TipTap，编辑后只把发生变化的区间回写 TextDocument。
  * 复用约定：协议走 @shared/utils/bridge 的 request / onState，类型与守卫取 @shared/types/editor；
- * 块序列化用 ProseMirror 的 DOMSerializer，宿主侧按同样的下标定位 mdast 顶层节点。
+ * 块序列化用 ProseMirror 的 DOMSerializer，回写区间由 blockDiff 用快照偏移算出来。
  * 关键约束：baseline 必须在 setContent 之后重新采样——宿主的 HTML 与 PM 序列化结果不同，
- * 拿宿主 HTML 当基准会把所有块误判为变化；只读快照绝不发起回写，收到 stale 立即重拉快照并放弃本次修改。
+ * 拿宿主 HTML 当基准会把所有块误判为变化；只读快照绝不发起回写，收到 stale 立即重拉快照并放弃本次修改；
+ * 空文本块（编辑器尾部恒有一个）不产生 Markdown，采集时必须跳过，否则块序列会与宿主整体错位。
  */
 import { DOMSerializer } from '@tiptap/pm/model'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isEditorSnapshotMessage } from '@shared/types/editor'
 import type { EditorBlock, EditorChangeResult, EditorSnapshotMessage } from '@shared/types/editor'
 import { onState, request } from '@shared/utils/bridge'
+import type { BlockBaseline } from '../blocks/blockDiff'
 import type { Editor } from '@tiptap/react'
+import { buildBlockChanges, pairBaseline } from '../blocks/blockDiff'
 import { setAssetPrefix } from '../marks/imageAsset'
 
 /** 回写防抖：与文档同步口径一致，避免每次按键都产生一次 WorkspaceEdit */
@@ -23,11 +26,14 @@ const STATUS_READONLY = '只读预览：文档含暂不支持的语法'
 const STATUS_FAILED = '同步失败，请改用文本编辑器确认'
 const STATUS_REJECTED = '修改含暂不支持的语法，已阻止保存并回滚'
 
-/** 把当前文档的顶层节点序列化为 HTML 数组：下标即宿主 blocks 下标 */
-function serializeBlocks(editor: Editor): string[] {
+/** 采集顶层块 HTML：跳过空文本块，它们不产生 Markdown 块，留着会让块序列与宿主错位 */
+function collectBlocks(editor: Editor): string[] {
     const serializer = DOMSerializer.fromSchema(editor.schema)
     const blocks: string[] = []
     editor.state.doc.content.forEach((node) => {
+        if (node.isTextblock && node.content.size === 0) {
+            return
+        }
         const container = document.createElement('div')
         container.append(serializer.serializeNode(node))
         blocks.push(container.innerHTML)
@@ -60,7 +66,7 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
         path: '',
         blocks: [],
     })
-    const baselineRef = useRef<string[]>([])
+    const baselineRef = useRef<BlockBaseline[]>([])
     const pathRef = useRef('')
     const versionRef = useRef(0)
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -86,7 +92,7 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
             })
             // 下一帧再采样：setContent 的 DOM 同步完成后序列化结果才稳定
             requestAnimationFrame(() => {
-                baselineRef.current = serializeBlocks(editor)
+                baselineRef.current = pairBaseline(collectBlocks(editor), snapshot.blocks)
             })
         },
         [editor],
@@ -125,23 +131,21 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
         })
     }, [applySnapshot])
 
-    /** 收集变化块并回写：无变化不发请求，只读状态直接跳过 */
+    /** 收集变化区间并回写：无变化不发请求，只读状态直接跳过 */
     const flush = useCallback(async (): Promise<void> => {
         if (editor === null || pathRef.current.length === 0 || !editor.isEditable) {
             return
         }
-        const blocks = serializeBlocks(editor)
-        const changes = blocks
-            .map((html, index) => ({ html, index }))
-            .filter((item) => item.html !== baselineRef.current[item.index])
-        if (changes.length === 0) {
+        const blocks = collectBlocks(editor)
+        const edits = buildBlockChanges(blocks, baselineRef.current)
+        if (edits.length === 0) {
             return
         }
         try {
             const result = await request<EditorChangeResult>('editor/change', {
                 path: pathRef.current,
                 version: versionRef.current,
-                blocks: changes,
+                edits,
             })
             if (result.stale) {
                 // 外部已改动：放弃本次输入，以宿主内容为准，避免覆盖别人的修改
@@ -154,7 +158,10 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
                 setState((prev) => ({ ...prev, status: STATUS_REJECTED }))
                 return
             }
-            baselineRef.current = blocks
+            // 偏移基准必须跟着宿主刷新：写入会改变正文长度，旧区间再也对不上新内容
+            if (result.blocks !== undefined) {
+                baselineRef.current = pairBaseline(blocks, result.blocks)
+            }
             versionRef.current = result.version
             setState((prev) => ({ ...prev, status: STATUS_READY }))
         } catch {

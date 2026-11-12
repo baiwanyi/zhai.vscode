@@ -1,19 +1,23 @@
 /**
  * 编辑器 webview 主屏：承载 TipTap 编辑区，正文与宿主 TextDocument 双向同步，并驱动划线与批注弹层。
  * 复用约定：内容同步在 useEditorDocument，标注读写在 useAnnotations，浮层组件各自独立；
+ * 编辑区底色、版心与空行占位样式在 ./editor.css，Tailwind 只用于状态栏与浮层；
+ * 块把手与表格浮动操作的定位基准都是 .zhai-editor-page（position: relative）；
  * 段末批注图标的点击通过容器事件委托捕获（widget 是原生 DOM，不参与 React 树）。
  * 关键约束：本组件不直接发协议请求，也不决定可编辑性——只读判定来自宿主快照；
  * 状态栏必须如实展示同步状态，出现只读或同步失败时不能让用户以为内容已保存。
  */
+import Placeholder from '@tiptap/extension-placeholder'
 import { TableKit } from '@tiptap/extension-table'
 import TaskItem from '@tiptap/extension-task-item'
 import TaskList from '@tiptap/extension-task-list'
 import UniqueID from '@tiptap/extension-unique-id'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AnnotationRecord } from '@shared/types/editor'
 import { BlockHandle } from './blocks/BlockHandle'
+import { TableTools } from './blocks/TableTools'
 import { useAnnotations } from './hooks/useAnnotations'
 import { useDocumentQuery } from './hooks/useDocumentQuery'
 import { useEditorDocument } from './hooks/useEditorDocument'
@@ -21,14 +25,17 @@ import { useEditorInsert } from './hooks/useEditorInsert'
 import { useEditorReveal } from './hooks/useEditorReveal'
 import { useEditorSelectionReport } from './hooks/useEditorSelectionReport'
 import { useEditorUpload } from './hooks/useEditorUpload'
+import { useHeadingOutline } from './hooks/useHeadingOutline'
 import { useSourceMode } from './hooks/useSourceMode'
 import { AnnotationDialog } from './layout/AnnotationDialog'
 import { AnnotationPopover } from './layout/AnnotationPopover'
+import { HeadingNav } from './layout/HeadingNav'
 import { QueryDialog } from './layout/QueryDialog'
 import { SearchPanel } from './layout/SearchPanel'
 import { SelectionToolbar } from './layout/SelectionToolbar'
 import { SourceEditor } from './layout/SourceEditor'
 import { AnnotationExtension } from './marks/annotationExtension'
+import { CursorLineExtension } from './marks/cursorLineExtension'
 import { ZhaiImage } from './marks/ZhaiImage'
 import { SearchExtension } from './search/searchExtension'
 import { useDocumentSearch } from './search/useDocumentSearch'
@@ -36,6 +43,7 @@ import { EmojiPicker } from './toolbar/EmojiPicker'
 import { SlashCommandExtension } from './toolbar/slashCommandExtension'
 import { SlashMenu } from './toolbar/SlashMenu'
 import { handleSlashKey } from './toolbar/slashStore'
+import type { HeadingItem } from './hooks/useHeadingOutline'
 import type { EditorView } from '@tiptap/pm/view'
 import type { JSX, MouseEvent } from 'react'
 
@@ -51,7 +59,11 @@ interface NotePopoverState {
 export function EditorScreen(): JSX.Element {
     const editor = useEditor({
         extensions: [
-            StarterKit,
+            // 链接：预置在 StarterKit 里，关掉点击跳转与自动识别，避免点正文里的链接就跳出编辑器、
+            // 也避免敲一个裸 URL 就把纯文本改写成链接语法
+            StarterKit.configure({ link: { openOnClick: false, autolink: false } }),
+            // 空行占位提示：装饰只落在光标所在的空文本块上，形态见 editor.css 的 .is-empty
+            Placeholder.configure({ placeholder: "Write, type '/' for commands…" }),
             // 任务列表：md 侧由 adaptTaskListHtml 转成 data-type 结构，回写由 toTaskMarkdown 还原 GFM
             TaskList,
             TaskItem.configure({ nested: true }),
@@ -60,6 +72,8 @@ export function EditorScreen(): JSX.Element {
             // 图片：显示时把 @zhai/ 转成 webview 地址，序列化仍保留原始引用
             ZhaiImage.configure({ inline: false, allowBase64: false }),
             AnnotationExtension,
+            // 当前行：给光标所在块挂 class，editor.css 据此高亮左侧行号
+            CursorLineExtension,
             SearchExtension,
             SlashCommandExtension,
             // 块运行期 id：仅用于编辑态定位（批注锚点 / 拖拽），转 Markdown 时会被丢弃，不写入正文
@@ -71,7 +85,7 @@ export function EditorScreen(): JSX.Element {
         content: '<p></p>',
         editorProps: {
             attributes: {
-                class: 'min-h-[60vh] text-base leading-8 outline-none',
+                class: 'zhai-editor-content',
             },
             // 斜杠菜单打开时优先消费导航键，否则方向键会被编辑器当成光标移动
             handleKeyDown: (_view: EditorView, event: KeyboardEvent): boolean => handleSlashKey(event),
@@ -94,6 +108,10 @@ export function EditorScreen(): JSX.Element {
     const query = useDocumentQuery(path)
     const search = useDocumentSearch(editor)
     const { open: openSearch } = search
+    // 编辑区页面容器：块把手与表格工具都相对它定位
+    const pageRef = useRef<HTMLDivElement | null>(null)
+    // 右侧标题导航的数据源：只认顶层 heading
+    const outline = useHeadingOutline(editor)
 
     // Ctrl/Cmd+F 打开查找：webview 内没有原生查找条，必须自己接管，否则按了没反应
     useEffect(() => {
@@ -127,6 +145,14 @@ export function EditorScreen(): JSX.Element {
         setNotePopover({ left: rect.left, top: rect.bottom + POPOVER_OFFSET, blockIndex })
     }
 
+    /** 大纲点击：光标落进标题文本并滚到可见 */
+    const handleOutlineSelect = (item: HeadingItem): void => {
+        if (editor === null) {
+            return
+        }
+        editor.chain().focus().setTextSelection(item.pos + 1).scrollIntoView().run()
+    }
+
     const noteItems: readonly AnnotationRecord[] =
         notePopover === null
             ? []
@@ -135,7 +161,7 @@ export function EditorScreen(): JSX.Element {
               )
 
     return (
-        <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
+        <div className="zhai-editor">
             {source.isSourceMode ? (
                 <SourceEditor
                     content={source.content}
@@ -145,10 +171,11 @@ export function EditorScreen(): JSX.Element {
                     onExit={source.exit}
                 />
             ) : (
-                <div className="min-h-0 flex-1 overflow-auto">
-                    <div className="relative mx-auto w-full max-w-3xl px-8 py-10" onClick={handleContentClick}>
+                <div className="zhai-editor-scroll">
+                    <div ref={pageRef} className="zhai-editor-page" onClick={handleContentClick}>
                         <EditorContent editor={editor} />
                         {editor === null ? null : <BlockHandle editor={editor} />}
+                        {editor === null ? null : <TableTools editor={editor} containerRef={pageRef} />}
                         <SlashMenu />
                         <EmojiPicker />
                         {search.isOpen ? (
@@ -176,6 +203,8 @@ export function EditorScreen(): JSX.Element {
                     </div>
                 </div>
             )}
+            {/* 大纲挂在滚动区之外：定位基准是 .zhai-editor，不会随正文滚走 */}
+            {source.isSourceMode ? null : <HeadingNav items={outline} onSelect={handleOutlineSelect} />}
             <div className="flex shrink-0 items-center gap-3 border-t px-4 py-1.5 text-xs text-muted-foreground">
                 <span>{status}</span>
                 {isEditable ? null : <span>切换回文本编辑器可继续编辑</span>}

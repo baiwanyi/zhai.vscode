@@ -28,6 +28,7 @@ import {
     isEditorSourceSaveRequest,
 } from '@shared/types/editor'
 import type {
+    EditorBlockChange,
     EditorChangeResult,
     EditorDocSnapshot,
     EditorInsertContent,
@@ -35,7 +36,7 @@ import type {
 } from '@shared/types/editor'
 import { isRequestMessage } from '@shared/types/messages'
 import { clearRichDocument, reportRichDocument } from './activeDocument'
-import { applyBlockEdits, buildBlockEdits, readEditorSnapshot } from './editorDocService'
+import { applyBlockEdits, buildEdits, readEditorSnapshot } from './editorDocService'
 import { RICH_EDITOR_VIEW_TYPE } from './openDocument'
 import { listRecentQueries } from './queryRepository'
 import { runEditorQuery } from './queryService'
@@ -147,7 +148,6 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         if (panel.active) {
             reportRichDocument(document.uri)
         }
-        logger.info(`富文本编辑器已打开：${document.uri.fsPath}`)
         // 不 await：postMessage 在 webview 脚本就绪前会一直挂起，resolveCustomTextEditor 迟迟不返回，
         // 调用方（note/open、press/openChapter 等）就会 10s 超时；前端本来会主动拉 editor/snapshot，
         // 首推只是加速展示，不能让它挡住打开流程。
@@ -460,7 +460,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                     })
                     return
                 }
-                const result = await this.applyChange(document, payload.version, payload.blocks)
+                const result = await this.applyChange(document, payload.version, payload.edits)
                 await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: result })
                 return
             }
@@ -547,31 +547,35 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         }
     }
 
-    /** 按块回写：版本过期直接拒绝，成功后再刷新快照供下一次定位 */
+    /**
+     * 按区间回写：版本过期直接拒绝，成功后再刷新快照并把新块区间回传前端。
+     * 区间由前端按快照偏移算出，这里只做范围与语法校验——按块下标定位会在插入块后整体位移。
+     */
     private async applyChange(
         document: vscode.TextDocument,
         version: number,
-        changes: readonly { index: number; html: string }[],
+        ranges: readonly EditorBlockChange[],
     ): Promise<EditorChangeResult> {
         const key = document.uri.toString()
         const snapshot = this.snapshots.get(key)
         if (snapshot === undefined || version !== document.version) {
             return { appliedBlocks: 0, stale: true, version: document.version }
         }
-        const edits = await buildBlockEdits(snapshot.blocks, changes)
+        const text = document.getText()
+        const edits = await buildEdits(text, ranges)
         if (edits.length === 0) {
-            return { appliedBlocks: 0, stale: false, version: document.version }
+            return { appliedBlocks: 0, stale: false, version: document.version, blocks: snapshot.blocks }
         }
         // 写入前自检：把结果拼出来重新解析，确认没有引入白名单外语法
         // （例如把表格、图片或链接粘进富文本），否则落盘后反而变成整篇只读
-        const nextText = applyBlockEdits(document.getText(), edits)
+        const nextText = applyBlockEdits(text, edits)
         const nextSnapshot = await readEditorSnapshot(nextText, document.version, snapshot.path)
         if (!nextSnapshot.editable) {
             return { appliedBlocks: 0, stale: false, version: document.version, rejected: 'unsupported-syntax' }
         }
         // 首次真正写入前留底：快照服务只对 Chapters 下的文档生效，其它文档内部直接返回
         if (this.snapshot !== null && !this.capturedChapters.has(key)) {
-            await this.snapshot.captureChapterBeforeWrite(document.uri, document.getText())
+            await this.snapshot.captureChapterBeforeWrite(document.uri, text)
             this.capturedChapters.add(key)
         }
         const workspaceEdit = new vscode.WorkspaceEdit()
@@ -584,10 +588,10 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         }
         const isApplied = await vscode.workspace.applyEdit(workspaceEdit)
         if (!isApplied) {
-            return { appliedBlocks: 0, stale: false, version: document.version }
+            return { appliedBlocks: 0, stale: false, version: document.version, blocks: snapshot.blocks }
         }
         this.appliedVersions.set(key, document.version)
         const next = await this.readSnapshot(document)
-        return { appliedBlocks: edits.length, stale: false, version: next.version }
+        return { appliedBlocks: edits.length, stale: false, version: next.version, blocks: next.blocks }
     }
 }

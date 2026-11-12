@@ -178,26 +178,6 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
     },
 ]
 
-/**
- * 块类型转换（turn into）可用项：只保留能直接套在文本块上的命令。
- * 分隔线与纯文本不是「转换」语义（前者插入新块、后者是清格式），故排除。
- */
-const TURN_INTO_IDS: readonly string[] = [
-    'paragraph',
-    'heading1',
-    'heading2',
-    'heading3',
-    'bulletList',
-    'orderedList',
-    'taskList',
-    'blockquote',
-    'codeBlock',
-]
-
-export const TURN_INTO_COMMANDS: readonly SlashCommand[] = SLASH_COMMANDS.filter((command) =>
-    TURN_INTO_IDS.includes(command.id),
-)
-
 /** 按查询词过滤：匹配 label、id 与关键词，空查询返回全部 */
 export function filterSlashCommands(query: string): SlashCommand[] {
     const keyword = query.trim().toLowerCase()

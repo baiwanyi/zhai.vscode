@@ -1,0 +1,128 @@
+/**
+ * 编辑区样式：编辑器 webview 的底色、版心、行号、正文与空行占位，独立成文只服务 editor 入口。
+ * 复用约定：底色与文字色桥接 VSCode 编辑器变量，字号行高沿用 globals.css 的令牌；
+ * 类名统一 zhai- 前缀，Tailwind 不参与本文件规则的书写。
+ * 关键约束：EditorContent 的根节点同时是 .zhai-editor-content 与 .ProseMirror，
+ * 正文与占位符规则必须写在同一层，不能再多套一层后代选择器；
+ * 占位符占 ::before、行号占 ::after，两者不能互换，空行同时需要这两个伪元素；
+ * 占位符与行号都由扩展 / 计数器直接作用在顶层块上，只有本文件的选择器能命中。
+ */
+
+.zhai-editor {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    min-height: 0;
+    /* 右侧标题导航以本容器定位，不随正文滚动 */
+    position: relative;
+    /* 底色取编辑器底色而非侧栏底色：与 VSCode 原生 Markdown 标签页的观感保持一致 */
+    background-color: var(--vscode-editor-background, var(--background));
+    color: var(--vscode-editor-foreground, var(--foreground));
+}
+
+.zhai-editor-scroll {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+}
+
+/*
+ * 版心：与 VSCode 原生编辑器一致，正文左对齐且铺满可用宽度，不再居中收窄。
+ * 左侧留白供行号（28px）与块把手（44px）使用并留出间隔；右侧留白要同时容下表格加号（20px）
+ * 与标题导航细线，所以取 4.5rem——两者贴着正文右边缘摆放时不会互相盖住。
+ */
+.zhai-editor-page {
+    position: relative;
+    width: 100%;
+    padding: 2.5rem 4.5rem 2.5rem 6rem;
+}
+
+/* 正文区：min-height 保证空文档也有足够点击高度，outline 去掉聚焦描边（与原生编辑器一致） */
+.zhai-editor-content {
+    min-height: 60vh;
+    font-size: var(--font-size-ui);
+    line-height: 2rem;
+    outline: none;
+    counter-reset: zhai-line;
+}
+
+/*
+ * 行号：按顶层块计数（富文本没有物理行，块即一行），画在正文左侧、块把手之外。
+ * 用 ::after 而不是 ::before，因为空行的 ::before 已被占位提示占用。
+ */
+.zhai-editor-content > * {
+    position: relative;
+    counter-increment: zhai-line;
+}
+
+.zhai-editor-content > *::after {
+    content: counter(zhai-line);
+    position: absolute;
+    top: 0;
+    left: -5.5rem;
+    width: 1.75rem;
+    color: var(--vscode-editorLineNumber-foreground, var(--muted-foreground));
+    font-family: var(--font-code);
+    font-size: 0.75rem;
+    line-height: 2rem;
+    text-align: right;
+    user-select: none;
+    pointer-events: none;
+}
+
+/* 当前行：光标所在块的行号改用编辑器激活前景色，与 VSCode 行号高亮一致 */
+.zhai-editor-content > .is-cursor-line::after {
+    color: var(--vscode-editorLineNumber-activeForeground, var(--vscode-editor-foreground, var(--foreground)));
+    font-weight: 600;
+}
+
+/* 空行占位：Placeholder 扩展在空文本块上挂 is-empty 与 data-placeholder，这里只负责呈现 */
+.zhai-editor-content .is-empty::before {
+    content: attr(data-placeholder);
+    float: left;
+    height: 0;
+    color: var(--vscode-input-placeholderForeground, var(--placeholder));
+    pointer-events: none;
+}
+
+/*
+ * 表格：Tiptap 只输出 table / colgroup 结构，没有任何自带样式。
+ * 缺了边框与内边距，新插入的空表格在正文里几乎不可见，看起来就像「没插进来」。
+ */
+.zhai-editor-content table {
+    width: 100%;
+    margin: 1rem 0;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+
+.zhai-editor-content th,
+.zhai-editor-content td {
+    position: relative;
+    min-width: 2rem;
+    padding: 0.25rem 0.5rem;
+    border: 1px solid var(--vscode-editorIndentGuide-background1, var(--border));
+    text-align: left;
+    vertical-align: top;
+}
+
+/* 表头底色取浮层色：与正文拉开一档，空表也能一眼看出结构 */
+.zhai-editor-content th {
+    background-color: var(--vscode-editorWidget-background, var(--muted));
+    font-weight: 600;
+}
+
+/* 单元格内段落不再额外撑开行高，表格行高由 cell 内边距决定 */
+.zhai-editor-content th > p,
+.zhai-editor-content td > p {
+    margin: 0;
+}
+
+/* 选中单元格：用编辑器选中色铺底，看清当前操作的是哪一格 */
+.zhai-editor-content .selectedCell::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-color: var(--vscode-editor-selectionBackground, rgb(38 79 120 / 40%));
+    pointer-events: none;
+}

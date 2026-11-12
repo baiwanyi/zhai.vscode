@@ -7,7 +7,7 @@
  * 界面转只读预览——宁可不给编辑，也不能把不支持的语法回写成别的形态；
  * 依赖体量大（unified 全家桶），首次使用时动态加载，激活期不承担这份开销。
  */
-import type { EditorBlock, EditorDocSnapshot } from '@shared/types/editor'
+import type { EditorBlock, EditorBlockChange, EditorDocSnapshot } from '@shared/types/editor'
 import type { Root as MdastRoot, RootContent } from 'mdast'
 import type rehypeParse from 'rehype-parse'
 import type rehypeRemark from 'rehype-remark'
@@ -18,7 +18,11 @@ import type remarkRehype from 'remark-rehype'
 import type remarkStringify from 'remark-stringify'
 import type { unified } from 'unified'
 
-/** 当前可安全编辑的节点类型：与 StarterKit 的 schema 一一对应，扩展开启后再逐项放开 */
+/**
+ * 当前可安全编辑的节点类型：与 StarterKit 的 schema 一一对应，扩展开启后再逐项放开。
+ * link 已放开：StarterKit 自带 Link，编辑态可正常选中改动，回写也会还原成 `[文本](地址)`；
+ * 把它排除在外会让任何带链接的文档整篇转只读，实际影响面远大于收益。
+ */
 const EDITABLE_NODE_TYPES: ReadonlySet<string> = new Set([
     'paragraph',
     'heading',
@@ -31,6 +35,7 @@ const EDITABLE_NODE_TYPES: ReadonlySet<string> = new Set([
     'tableRow',
     'tableCell',
     'image',
+    'link',
     'text',
     'emphasis',
     'strong',
@@ -266,10 +271,14 @@ export function applyBlockEdits(text: string, edits: readonly BlockEdit[]): stri
     return next
 }
 
-/** 把变化块的 HTML 转回 Markdown，生成按偏移倒序排列的替换清单 */
-export async function buildBlockEdits(
-    blocks: EditorBlock[],
-    changes: readonly { index: number; html: string }[],
+/**
+ * 把区间变更里的 HTML 转回 Markdown，生成按偏移倒序排列的替换清单。
+ * 区间由 Webview 用快照偏移算出，宿主只做范围校验与内容转换——块下标会随插入 / 删除整体位移，偏移不会。
+ * 越界、倒序或相互重叠的区间一律丢弃：宁可少写一次，也不能把两段替换套在同一片原文上。
+ */
+export async function buildEdits(
+    text: string,
+    ranges: readonly EditorBlockChange[],
 ): Promise<BlockEdit[]> {
     const loaded = await loadDeps()
     const toMarkdown = loaded
@@ -330,25 +339,55 @@ export async function buildBlockEdits(
         const divider = header.map(() => '---')
         return [header, divider, ...rows.slice(1)].map((cells) => `| ${cells.join(' | ')} |`).join('\n')
     }
-    const edits: BlockEdit[] = []
-    for (const change of [...changes].sort((left, right) => right.index - left.index)) {
-        const block = blocks[change.index]
-        if (block === undefined) {
-            continue
+    /** 单块 HTML → Markdown：表格与任务列表各有专用管线，其余走通用 rehype-remark */
+    const toBlockMarkdown = (html: string): string => {
+        if (html.includes('<table')) {
+            return toTableMarkdown(html)
         }
-        let markdown: string
-        if (change.html.includes('<table')) {
-            markdown = toTableMarkdown(change.html)
-        } else if (change.html.includes('data-type="taskList"')) {
-            markdown = toTaskMarkdown(change.html)
-        } else {
-            markdown = toMarkdown.stringify(toMarkdown.runSync(toMarkdown.parse(change.html))).trim()
+        if (html.includes('data-type="taskList"')) {
+            return toTaskMarkdown(html)
         }
-        if (markdown.length === 0) {
-            // 放弃改写的块（例如合并单元格表格）保留原文，宁可丢这次改动也不压坏结构
-            continue
-        }
-        edits.push({ start: block.start, end: block.end, text: markdown })
+        return toMarkdown.stringify(toMarkdown.runSync(toMarkdown.parse(html))).trim()
     }
-    return edits
+    const edits: BlockEdit[] = []
+    for (const range of ranges) {
+        if (!Number.isInteger(range.start) || !Number.isInteger(range.end)) {
+            continue
+        }
+        if (range.start < 0 || range.end < range.start || range.end > text.length) {
+            continue
+        }
+        if (range.htmls.length === 0) {
+            // 前端明确要求删除该区间：空区间没有可删的内容
+            if (range.start !== range.end) {
+                edits.push({ start: range.start, end: range.end, text: '' })
+            }
+            continue
+        }
+        const parts = range.htmls.map(toBlockMarkdown).filter((part) => part.length > 0)
+        if (parts.length === 0) {
+            // 转换放弃（如合并单元格表格）或内容为空：保留原文，宁可丢这次改动也不压坏结构
+            continue
+        }
+        const markdown = parts.join('\n\n')
+        // 块与块之间靠空行分隔：插入点两侧缺少空行时必须补上，否则新块会和相邻段落粘成一段
+        const before = text.slice(0, range.start)
+        const after = text.slice(range.end)
+        const leading = range.start > 0 && !before.endsWith('\n\n') ? '\n\n' : ''
+        const trailing = range.end < text.length && !after.startsWith('\n\n') ? '\n\n' : ''
+        edits.push({ start: range.start, end: range.end, text: `${leading}${markdown}${trailing}` })
+    }
+    // 从后往前应用：前面的偏移才不会被后面的替换推走
+    edits.sort((left, right) => right.start - left.start)
+    // 重叠区间只能留一条：从后往前扫，遇到与前一条相交的整条丢弃
+    const ordered: BlockEdit[] = []
+    let cursor = Number.POSITIVE_INFINITY
+    for (const edit of edits) {
+        if (edit.end > cursor) {
+            continue
+        }
+        cursor = edit.start
+        ordered.push(edit)
+    }
+    return ordered
 }
