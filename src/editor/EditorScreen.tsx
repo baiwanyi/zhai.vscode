@@ -5,12 +5,12 @@
  * 关键约束：本组件不直接发协议请求，也不决定可编辑性——只读判定来自宿主快照；
  * 状态栏必须如实展示同步状态，出现只读或同步失败时不能让用户以为内容已保存。
  */
-import { DragHandle } from '@tiptap/extension-drag-handle-react'
+import UniqueID from '@tiptap/extension-unique-id'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
-import { GripVertical } from 'lucide-react'
 import { useState } from 'react'
 import type { AnnotationRecord } from '@shared/types/editor'
+import { BlockHandle } from './blocks/BlockHandle'
 import { useAnnotations } from './hooks/useAnnotations'
 import { useDocumentQuery } from './hooks/useDocumentQuery'
 import { useEditorDocument } from './hooks/useEditorDocument'
@@ -38,7 +38,16 @@ interface NotePopoverState {
 
 export function EditorScreen(): JSX.Element {
     const editor = useEditor({
-        extensions: [StarterKit, AnnotationExtension, SlashCommandExtension],
+        extensions: [
+            StarterKit,
+            AnnotationExtension,
+            SlashCommandExtension,
+            // 块运行期 id：仅用于编辑态定位（批注锚点 / 拖拽），转 Markdown 时会被丢弃，不写入正文
+            UniqueID.configure({
+                types: ['paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList', 'listItem', 'codeBlock'],
+                attributeName: 'id',
+            }),
+        ],
         content: '<p></p>',
         editorProps: {
             attributes: {
@@ -95,11 +104,7 @@ export function EditorScreen(): JSX.Element {
                 <div className="min-h-0 flex-1 overflow-auto">
                     <div className="relative mx-auto w-full max-w-3xl px-8 py-10" onClick={handleContentClick}>
                         <EditorContent editor={editor} />
-                        {editor === null ? null : (
-                            <DragHandle editor={editor}>
-                                <GripVertical className="size-4 text-muted-foreground" />
-                            </DragHandle>
-                        )}
+                        {editor === null ? null : <BlockHandle editor={editor} />}
                         <SlashMenu />
                         <SelectionToolbar
                             editor={editor}

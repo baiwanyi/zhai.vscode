@@ -86,6 +86,14 @@ describe('buildBlockEdits', () => {
         expect(edits).toHaveLength(0)
     })
 
+    it('块上的运行期 id 不会写进 Markdown', async () => {
+        const snapshot = await readEditorSnapshot('第一段', 1, 'x.md')
+        const edits = await buildBlockEdits(snapshot.blocks, [{ index: 0, html: '<p id="blk-9f2a">改后的正文</p>' }])
+        expect(edits).toHaveLength(1)
+        expect(edits[0]?.text).toBe('改后的正文')
+        expect(edits[0]?.text).not.toContain('id=')
+    })
+
     it('多块变更按偏移倒序排列，便于从后往前应用', async () => {
         const snapshot = await readEditorSnapshot('第一段\n\n第二段\n\n第三段', 1, 'x.md')
         const edits = await buildBlockEdits(snapshot.blocks, [

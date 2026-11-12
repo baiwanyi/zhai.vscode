@@ -18,12 +18,14 @@ export interface SlashCommand {
     /** 参与搜索的额外关键词：让 `/h2` 这类输入也能命中 */
     keywords: readonly string[]
     icon: LucideIcon
-    run: (editor: Editor, range: Range) => void
+    /** range 为 null 表示不是从斜杠菜单触发（例如把手上的「转换为」），此时不删除任何文本 */
+    run: (editor: Editor, range: Range | null) => void
 }
 
 /** 统一执行：先删掉触发的「/查询词」，再跑命令，并保证焦点回到正文 */
-function apply(editor: Editor, range: Range, action: (chain: ChainedCommands) => ChainedCommands): void {
-    action(editor.chain().focus().deleteRange(range)).run()
+function apply(editor: Editor, range: Range | null, action: (chain: ChainedCommands) => ChainedCommands): void {
+    const chain = editor.chain().focus()
+    action(range === null ? chain : chain.deleteRange(range)).run()
 }
 
 export const SLASH_COMMANDS: readonly SlashCommand[] = [
@@ -128,6 +130,25 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         },
     },
 ]
+
+/**
+ * 块类型转换（turn into）可用项：只保留能直接套在文本块上的命令。
+ * 分隔线与纯文本不是「转换」语义（前者插入新块、后者是清格式），故排除。
+ */
+const TURN_INTO_IDS: readonly string[] = [
+    'paragraph',
+    'heading1',
+    'heading2',
+    'heading3',
+    'bulletList',
+    'orderedList',
+    'blockquote',
+    'codeBlock',
+]
+
+export const TURN_INTO_COMMANDS: readonly SlashCommand[] = SLASH_COMMANDS.filter((command) =>
+    TURN_INTO_IDS.includes(command.id),
+)
 
 /** 按查询词过滤：匹配 label、id 与关键词，空查询返回全部 */
 export function filterSlashCommands(query: string): SlashCommand[] {
