@@ -34,7 +34,8 @@ function serializeBlocks(editor: Editor): string[] {
     return blocks
 }
 
-export interface EditorDocumentState {
+/** 快照状态：随推送变化的部分，与动作分开，避免 useState 被迫持有函数 */
+export interface EditorDocumentSnapshotState {
     status: string
     /** 是否允许编辑：宿主判定为 false 时前端必须置只读 */
     isEditable: boolean
@@ -44,8 +45,15 @@ export interface EditorDocumentState {
     blocks: EditorBlock[]
 }
 
+export interface EditorDocumentState extends EditorDocumentSnapshotState {
+    /** 重新拉取快照：源码模式保存后用它让富文本与最新原文对齐 */
+    reload: () => Promise<void>
+    /** 立即同步未提交的编辑：切到源码模式前调用，避免最后 500ms 的输入被漏掉 */
+    flush: () => Promise<void>
+}
+
 export function useEditorDocument(editor: Editor | null): EditorDocumentState {
-    const [state, setState] = useState<EditorDocumentState>({
+    const [state, setState] = useState<EditorDocumentSnapshotState>({
         status: STATUS_LOADING,
         isEditable: false,
         path: '',
@@ -173,5 +181,10 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
         }
     }, [editor, flush])
 
-    return state
+    /** 强制重载：源码模式整篇写回后，富文本侧必须按新原文重建，不能靠版本去重跳过 */
+    const reload = useCallback(async (): Promise<void> => {
+        await loadSnapshot(true)
+    }, [loadSnapshot])
+
+    return { ...state, reload, flush }
 }

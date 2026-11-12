@@ -12,10 +12,12 @@ import type { AnnotationRecord } from '@shared/types/editor'
 import { useAnnotations } from './hooks/useAnnotations'
 import { useDocumentQuery } from './hooks/useDocumentQuery'
 import { useEditorDocument } from './hooks/useEditorDocument'
+import { useSourceMode } from './hooks/useSourceMode'
 import { AnnotationDialog } from './layout/AnnotationDialog'
 import { AnnotationPopover } from './layout/AnnotationPopover'
 import { QueryDialog } from './layout/QueryDialog'
 import { SelectionToolbar } from './layout/SelectionToolbar'
+import { SourceEditor } from './layout/SourceEditor'
 import { AnnotationExtension } from './marks/annotationExtension'
 import type { JSX, MouseEvent } from 'react'
 
@@ -38,8 +40,9 @@ export function EditorScreen(): JSX.Element {
             },
         },
     })
-    const { status, isEditable, path, blocks } = useEditorDocument(editor)
+    const { status, isEditable, path, blocks, reload, flush } = useEditorDocument(editor)
     const { items, addOrToggleHighlight, addNote, removeAnnotation } = useAnnotations(editor, path, blocks)
+    const source = useSourceMode(path, reload, flush)
     const [annotationQuote, setAnnotationQuote] = useState<string | null>(null)
     const [notePopover, setNotePopover] = useState<NotePopoverState | null>(null)
     const [queryQuote, setQueryQuote] = useState<string | null>(null)
@@ -72,24 +75,35 @@ export function EditorScreen(): JSX.Element {
 
     return (
         <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
-            <div className="min-h-0 flex-1 overflow-auto">
-                <div className="mx-auto w-full max-w-3xl px-8 py-10" onClick={handleContentClick}>
-                    <EditorContent editor={editor} />
-                    <SelectionToolbar
-                        editor={editor}
-                        onHighlight={addOrToggleHighlight}
-                        onAnnotate={(quote): void => {
-                            setAnnotationQuote(quote)
-                        }}
-                        onQuery={(quote): void => {
-                            setQueryQuote(quote)
-                        }}
-                    />
+            {source.isSourceMode ? (
+                <SourceEditor
+                    content={source.content}
+                    isSaving={source.isSaving}
+                    error={source.error}
+                    onChange={source.update}
+                    onExit={source.exit}
+                />
+            ) : (
+                <div className="min-h-0 flex-1 overflow-auto">
+                    <div className="mx-auto w-full max-w-3xl px-8 py-10" onClick={handleContentClick}>
+                        <EditorContent editor={editor} />
+                        <SelectionToolbar
+                            editor={editor}
+                            onHighlight={addOrToggleHighlight}
+                            onAnnotate={(quote): void => {
+                                setAnnotationQuote(quote)
+                            }}
+                            onQuery={(quote): void => {
+                                setQueryQuote(quote)
+                            }}
+                        />
+                    </div>
                 </div>
-            </div>
+            )}
             <div className="flex shrink-0 items-center gap-3 border-t px-4 py-1.5 text-xs text-muted-foreground">
                 <span>{status}</span>
                 {isEditable ? null : <span>切换回文本编辑器可继续编辑</span>}
+                <span className="ml-auto">Ctrl+Shift+M 源码</span>
             </div>
             <AnnotationDialog
                 isOpen={annotationQuote !== null}

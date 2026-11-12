@@ -23,6 +23,7 @@ import {
     isEditorChangeRequest,
     isEditorQueryAbortRequest,
     isEditorQueryRequest,
+    isEditorSourceSaveRequest,
 } from '@shared/types/editor'
 import type { EditorChangeResult, EditorDocSnapshot } from '@shared/types/editor'
 import { isRequestMessage } from '@shared/types/messages'
@@ -296,6 +297,56 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             if (method === 'editor/snapshot') {
                 const snapshot = await this.readSnapshot(document)
                 await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: snapshot })
+                return
+            }
+            if (method === 'editor/source') {
+                await panel.webview.postMessage({
+                    type: 'response',
+                    reqId,
+                    ok: true,
+                    payload: {
+                        path: this.readRelativePath(document),
+                        version: document.version,
+                        content: document.getText(),
+                    },
+                })
+                return
+            }
+            if (method === 'editor/source/save') {
+                if (!isEditorSourceSaveRequest(payload)) {
+                    await this.respondError(panel, reqId, 'invalid-payload', '源码保存参数非法')
+                    return
+                }
+                if (payload.path !== this.readRelativePath(document)) {
+                    await this.respondError(panel, reqId, 'path-mismatch', '保存路径与当前文档不一致')
+                    return
+                }
+                if (payload.version !== document.version) {
+                    await panel.webview.postMessage({
+                        type: 'response',
+                        reqId,
+                        ok: true,
+                        payload: { saved: false, stale: true, version: document.version },
+                    })
+                    return
+                }
+                // 整篇替换：源码模式就是直接改原文，不存在块级定位问题
+                const edit = new vscode.WorkspaceEdit()
+                const text = document.getText()
+                edit.replace(
+                    document.uri,
+                    new vscode.Range(document.positionAt(0), document.positionAt(text.length)),
+                    payload.content,
+                )
+                const isApplied = await vscode.workspace.applyEdit(edit)
+                this.appliedVersions.set(document.uri.toString(), document.version)
+                const next = await this.readSnapshot(document)
+                await panel.webview.postMessage({
+                    type: 'response',
+                    reqId,
+                    ok: true,
+                    payload: { saved: isApplied, stale: false, version: next.version },
+                })
                 return
             }
             if (method === 'editor/change') {
