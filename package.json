@@ -435,9 +435,12 @@
         "better-sqlite3": "^13.0.3",
         "date-fns": "^4.4.0",
         "juice": "^12.2.3",
+        "rehype-parse": "^9.0.1",
+        "rehype-remark": "^10.0.1",
         "rehype-stringify": "^10.0.1",
         "remark-parse": "^11.0.0",
         "remark-rehype": "^11.1.2",
+        "remark-stringify": "^11.0.0",
         "unified": "^11.0.5",
         "unist-util-visit": "^5.2.0"
     },

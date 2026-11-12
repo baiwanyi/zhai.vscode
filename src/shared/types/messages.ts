@@ -126,6 +126,7 @@ export interface StateMessage {
         | 'index'
         | 'config'
         | 'ai'
+        | 'editor'
         | 'note'
         | 'press'
         | 'workflow'
@@ -190,6 +191,8 @@ export type HostMethodName =
     | 'ai/usage/prompt'
     | 'ai/writeState'
     | 'dashboard/stats'
+    | 'editor/change'
+    | 'editor/snapshot'
     | 'host/command'
     | 'host/openExternal'
     | 'index/rebuild'
@@ -366,6 +369,7 @@ function isStateChannel(value: unknown): value is StateMessage['channel'] {
         value === 'index' ||
         value === 'config' ||
         value === 'ai' ||
+        value === 'editor' ||
         value === 'note' ||
         value === 'press' ||
         value === 'workflow' ||

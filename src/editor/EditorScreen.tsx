@@ -1,27 +1,26 @@
 /**
- * 编辑器 webview 主屏：承载 TipTap 编辑区，后续接入标注装饰、浮动菜单与 AI 查询。
- * 复用约定：挂载与主题由 src/bootstrap 统一处理，本组件只管编辑区布局与状态栏；
+ * 编辑器 webview 主屏：承载 TipTap 编辑区，正文与宿主 TextDocument 双向同步。
+ * 复用约定：内容读写与状态收敛在 useEditorDocument，挂载与主题由 src/bootstrap 统一处理；
  * 正文样式走 Tailwind 语义类，字号继承 globals.css 的 --text-base（随 VSCode 界面字号变化）。
- * 关键约束：本阶段正文只存在于 webview 内存，P0-2 起改以宿主 TextDocument 为唯一真相；
- * 不在组件内引入第二套主题或字号变量，避免与 VSCode 主题桥接冲突。
+ * 关键约束：本组件不直接发协议请求，也不自行决定可编辑性——只读判定来自宿主快照；
+ * 状态栏必须如实展示同步状态，出现只读或同步失败时不能让用户以为内容已保存。
  */
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import { useEditorDocument } from './hooks/useEditorDocument'
 import type { JSX } from 'react'
-
-/** 初始占位正文：只用于验证挂载与主题，接入宿主文档后由 editor/doc 覆盖 */
-const PLACEHOLDER_CONTENT = '<p>在这里开始写作。选中文本后会出现操作菜单。</p>'
 
 export function EditorScreen(): JSX.Element {
     const editor = useEditor({
         extensions: [StarterKit],
-        content: PLACEHOLDER_CONTENT,
+        content: '<p></p>',
         editorProps: {
             attributes: {
                 class: 'min-h-[60vh] text-base leading-8 outline-none',
             },
         },
     })
+    const { status, isEditable } = useEditorDocument(editor)
 
     return (
         <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
@@ -30,8 +29,9 @@ export function EditorScreen(): JSX.Element {
                     <EditorContent editor={editor} />
                 </div>
             </div>
-            <div className="flex shrink-0 items-center border-t px-4 py-1.5 text-xs text-muted-foreground">
-                富文本模式 · 正文接入中
+            <div className="flex shrink-0 items-center gap-3 border-t px-4 py-1.5 text-xs text-muted-foreground">
+                <span>{status}</span>
+                {isEditable ? null : <span>切换回文本编辑器可继续编辑</span>}
             </div>
         </div>
     )
