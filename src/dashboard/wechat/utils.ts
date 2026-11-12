@@ -1,9 +1,11 @@
 /**
- * 公众号列表页展示层工具：状态文案、状态色点与账号元信息格式化。
+ * 公众号展示层纯函数：状态文案、批次筛选排序、弹窗文案与关闭适配。
  * 复用约定：相对时间取 shared/utils/format，字数与粉丝数取 dashboard/utils 的 formatWordCount，
- * 账号类型文案取 shared/types/wechat 的 WECHAT_ACCOUNT_TYPE_LABELS，三处口径不在此重复定义。
+ * 账号类型文案取 shared/types/wechat 的 WECHAT_ACCOUNT_TYPE_LABELS，三处口径不在此重复定义；
+ * 筛选档位的选项与收窄取本目录 constants，本文件只消费不重定义。
  * 关键约束：状态色点只用主题令牌（bg-primary / bg-destructive / bg-muted-foreground），不写死色值；
- * 元信息固定三段「批次数 · 粉丝 · 最近推送」，列表与账号页共用本文件，任一侧加字段都改这里。
+ * 元信息固定三段「批次数 · 粉丝 · 最近推送」，列表与账号页共用本文件，任一侧加字段都改这里；
+ * 本文件不含 React 与宿主请求，所有函数可直接单测。
  */
 import {
     WECHAT_ACCOUNT_TYPE_LABELS,
@@ -15,6 +17,7 @@ import {
     type WechatIssueSummary,
 } from '@shared/types/wechat'
 import { formatRelativeTime } from '@shared/utils/format'
+import type { IssueFilter, IssueSort } from './constants'
 import { formatWordCount } from '../utils'
 
 /** 数据加载状态：ready 表示已拿到快照，error 表示最近一次拉取失败 */
@@ -119,4 +122,60 @@ export function formatIssueMeta(issue: WechatIssueSummary): string {
 export function formatArticleMeta(article: WechatArticleSummary): string {
     const source = article.sourceKind === 'manual' ? '' : `来自${WECHAT_ARTICLE_SOURCE_LABELS[article.sourceKind]} · `
     return `${source}${String(article.wordCount)} 字`
+}
+
+/**
+ * 按状态筛选并按选定字段倒序：推送时间档把未推送的排末尾，同档回落到更新时间。
+ * 关键约束：先复制再排序，不改动宿主快照数组的顺序（列表与封面请求共用同一份快照）。
+ */
+export function filterAndSortIssues(
+    issues: WechatIssueSummary[],
+    filter: IssueFilter,
+    sort: IssueSort,
+): WechatIssueSummary[] {
+    const filtered = filter === 'all' ? issues : issues.filter((issue) => issue.status === filter)
+    return [...filtered].sort((left, right) => {
+        if (sort === 'published') {
+            const leftTime = left.publishedAt ?? ''
+            const rightTime = right.publishedAt ?? ''
+            if (leftTime !== rightTime) {
+                return rightTime.localeCompare(leftTime)
+            }
+        }
+        return right.updatedAt.localeCompare(left.updatedAt)
+    })
+}
+
+/**
+ * 文章设置弹窗的作者默认值：账号默认作者优先，其次列表里最近一篇填过作者的文章。
+ * 关键约束：只作为弹窗初始值，不落库也不参与校验，用户改完即按文章各自保存。
+ */
+export function readDefaultArticleAuthor(account: WechatAccountSummary | null, issues: WechatIssueSummary[]): string {
+    if (account !== null && account.defaultAuthor !== undefined && account.defaultAuthor.length > 0) {
+        return account.defaultAuthor
+    }
+    for (const issue of issues) {
+        for (const article of issue.articles) {
+            if (article.author !== undefined && article.author.length > 0) {
+                return article.author
+            }
+        }
+    }
+    return ''
+}
+
+/** 群发确认文案：账号、文章清单、额度说明与不可撤销提醒合成一段 */
+export function buildPublishDescription(accountName: string, issue: WechatIssueSummary, quotaReason: string): string {
+    const titles = issue.articles.map((item) => item.title).join('、')
+    const quotaLine = quotaReason.length > 0 ? `${quotaReason}。` : ''
+    return `账号「${accountName}」将群发 ${String(issue.articleCount)} 篇文章：${titles}。${quotaLine}群发后不可撤销，请确认封面与正文已检查。`
+}
+
+/** 弹窗 onOpenChange 适配：只在关闭时清空目标，避免打开瞬间把目标清掉 */
+export function closeWhenHidden(close: () => void): (open: boolean) => void {
+    return (open) => {
+        if (!open) {
+            close()
+        }
+    }
 }

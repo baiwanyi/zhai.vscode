@@ -1,89 +1,34 @@
 /**
  * 公众号账号页（#/wechat/{accountId}）：账号名与状态、推送批次列表、批次内文章的增删与导入。
- * 复用约定：外壳取 components/AppPage（页头走 AppHeader、筛选走 AppMenu、列表走 AppContent、账号级动作走 AppFooter），
- * 账号数据取 hooks/useWechatAccounts，批次与文章取 hooks/useWechatIssues，展示口径取 wechat/utils，
- * 弹窗只保留账号设置、合并与公共 ConfirmDialog。
- * 关键约束：本页按 accountId 从账号快照中定位，切换账号由路由外壳重新挂载（key 为 accountId）；
- * 筛选与排序在本页完成，列表组件只渲染结果，避免两处过滤口径；
- * 新建批次不弹表单：宿主按默认命名直接建目录，标题不在卡片上展示；
- * 添加文章与导入都不弹表单：宿主在批次目录里新建 md 并直接打开编辑器，二次编辑在编辑器里完成；
- * 标题、摘要与留言开关在工作流面板（推送分区）逐篇设置；封面由本页点卡片上的封面图更换——
- * 选图与裁剪都在封面弹窗里完成，结果落到批次目录 images/ 并回写 cover_path；
- * 账号不存在（被删除或 hash 手改）时给出回到列表的出口，不渲染空白页。
+ * 复用约定：外壳取 components/AppPage（页头/页脚由 layout/WechatPostHeader、WechatPostFooter 承担），
+ * 数据取 hooks/useWechatAccounts 与 hooks/useWechatIssues，筛选分页取 useWechatIssueQuery，
+ * 弹窗编排取 useWechatContentDialogs / useWechatAccountDialogs / useWechatPublishConfirm，
+ * 弹窗渲染统一交给 layout/WechatPostDialogs。
+ * 关键约束：本页只做数据装配与布局，不承载筛选与弹窗状态，也不拼装展示文案（口径在 wechat/utils）；
+ * 本页按 accountId 从账号快照中定位，切换账号由路由外壳重新挂载（key 为 accountId）；
+ * 新建批次、添加文章与导入都不弹表单，宿主直接建目录/文件并打开编辑器；
+ * 账号不存在（被删除或 hash 手改）与账号读取失败都要给出可执行出口，不渲染空白页。
  */
-import { MoreHorizontal, Plus, Send } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
-import { toast } from 'sonner'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@components/ui/dropdown-menu'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
+import { Send } from 'lucide-react'
+import { useCallback, useMemo } from 'react'
 import { Spinner } from '@components/ui/spinner'
 import type { WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
-import {
-    AppContent,
-    AppDescription,
-    AppFooter,
-    AppHeader,
-    AppMenu,
-    AppPage,
-    AppTitle,
-} from '@webview/components/AppPage'
+import { AppContent, AppPage } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { StateEmpty } from '@webview/components/StateEmpty'
+import { useWechatAccountDialogs } from './hooks/useWechatAccountDialogs'
 import { useWechatAccounts } from './hooks/useWechatAccounts'
-import { useWechatIssueCovers } from './hooks/useWechatIssueCovers'
+import { useWechatContentDialogs } from './hooks/useWechatContentDialogs'
+import { useWechatIssueQuery } from './hooks/useWechatIssueQuery'
 import { useWechatIssues } from './hooks/useWechatIssues'
 import { useWechatModuleSync } from './hooks/useWechatModuleSync'
-import { WechatAccountDialog } from './layout/WechatAccountDialog'
-import { WechatAccountSecretDialog } from './layout/WechatAccountSecretDialog'
-import { WechatArticleMetaDialog } from './layout/WechatArticleMetaDialog'
-import { WechatCoverDialog } from './layout/WechatCoverDialog'
+import { useWechatPublishConfirm } from './hooks/useWechatPublishConfirm'
 import { WechatIssueList } from './layout/WechatIssueList'
-import { WechatIssueMergeDialog } from './layout/WechatIssueMergeDialog'
-import { formatAccountMeta, formatAccountStatusHint, WECHAT_STATUS_LABELS } from './utils'
-import type { WechatAccountFormInput } from './hooks/useWechatAccounts'
+import { WechatPostDialogs } from './layout/WechatPostDialogs'
+import { WechatPostFooter } from './layout/WechatPostFooter'
+import { WechatPostHeader } from './layout/WechatPostHeader'
+import { formatAccountMeta, formatAccountStatusHint, readDefaultArticleAuthor, WECHAT_STATUS_LABELS } from './utils'
 import type { JSX } from 'react'
-import { DashboardBackAction } from '../layout/DashboardBackAction'
-
-/** 状态筛选：只暴露最常用的四档，其余状态并入「全部」 */
-type IssueFilter = 'all' | 'draft' | 'published' | 'failed'
-
-/** 排序方式：最近更新或推送时间，后者把未推送的排在末尾 */
-type IssueSort = 'updated' | 'published'
-
-/** 筛选选项与文案 */
-const FILTER_OPTIONS: readonly { value: IssueFilter; label: string }[] = [
-    { value: 'all', label: '全部状态' },
-    { value: 'draft', label: '草稿' },
-    { value: 'published', label: '已推送' },
-    { value: 'failed', label: '推送失败' },
-]
-
-/** 排序选项与文案 */
-const SORT_OPTIONS: readonly { value: IssueSort; label: string }[] = [
-    { value: 'updated', label: '最近更新' },
-    { value: 'published', label: '推送时间' },
-]
-
-/** 收窄选择器回传值：非法值回落到默认档，避免把任意字符串当成筛选条件 */
-function readFilter(value: string): IssueFilter {
-    return FILTER_OPTIONS.some((item) => item.value === value) ? (value as IssueFilter) : 'all'
-}
-
-/** 收窄排序回传值 */
-function readSort(value: string): IssueSort {
-    return value === 'published' ? 'published' : 'updated'
-}
-
-/** 分批渲染步长：批次多时先渲染 20 个，滚动到底再追加，避免一次挂载全部卡片 */
-const ISSUE_RENDER_STEP = 20
 
 interface DashboardWechatPostProps {
     /** 当前账号 id：由路由外壳下发，来自 #/wechat/{accountId} */
@@ -98,7 +43,9 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
     const {
         accounts,
         status: accountStatus,
+        error: accountError,
         isMutating: isAccountMutating,
+        reload: reloadAccounts,
         updateAccount,
         saveCredentials,
         removeAccount,
@@ -112,8 +59,6 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         reload: reloadIssues,
         createIssue,
         removeIssue,
-        removeIssues,
-        mergeIssues,
         quickCreateArticle,
         openArticle,
         moveArticle,
@@ -129,79 +74,22 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         openBackend,
     } = useWechatIssues(accountId)
 
-    const [filter, setFilter] = useState<IssueFilter>('all')
-    const [sort, setSort] = useState<IssueSort>('updated')
-    const [pendingIssue, setPendingIssue] = useState<WechatIssueSummary | null>(null)
-    /** 文章设置弹窗的目标：非 null 即打开，作者/摘要/留言通过 wechat/article/meta 保存 */
-    const [metaTarget, setMetaTarget] = useState<WechatArticleSummary | null>(null)
-    /** 封面弹窗的目标：非 null 即打开，裁剪结果经 wechat/article/cover 落到批次 images/ */
-    const [coverTarget, setCoverTarget] = useState<WechatArticleSummary | null>(null)
-    const [pendingArticle, setPendingArticle] = useState<{
-        issue: WechatIssueSummary
-        article: WechatArticleSummary
-    } | null>(null)
-    const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false)
-    const [accountDialogKey, setAccountDialogKey] = useState(0)
-    const [isSecretDialogOpen, setIsSecretDialogOpen] = useState(false)
-    const [secretDialogKey, setSecretDialogKey] = useState(0)
-    const [isAccountRemoveOpen, setIsAccountRemoveOpen] = useState(false)
-    /** 待群发批次：非 null 即打开确认弹窗；群发不可撤销，必须二次确认 */
-    const [pendingPublish, setPendingPublish] = useState<WechatIssueSummary | null>(null)
-    /** 打开确认弹窗时拉到的额度说明，拿不到时用通用文案兜底 */
-    const [quotaReason, setQuotaReason] = useState('')
-    /** 已勾选待批量删除的批次：非空时页脚切换成选择条 */
-    const [selectedIds, setSelectedIds] = useState<string[]>([])
-    const [isBatchRemoveOpen, setIsBatchRemoveOpen] = useState(false)
-    const [isMergeOpen, setIsMergeOpen] = useState(false)
-    /** 当前渲染上限：随「加载更多」递增，筛选变化时回到首批 */
-    const [renderLimit, setRenderLimit] = useState(ISSUE_RENDER_STEP)
-
     const account = useMemo(() => accounts.find((item) => item.id === accountId) ?? null, [accountId, accounts])
+    const query = useWechatIssueQuery(issues)
+    const content = useWechatContentDialogs({ updateArticleMeta, saveArticleCover, removeArticle, removeIssue })
+    const accountDialogs = useWechatAccountDialogs({
+        accountId,
+        onRemoved,
+        updateAccount,
+        saveCredentials,
+        removeAccount,
+    })
+    const publishConfirm = useWechatPublishConfirm({ accountName: account?.name ?? '', loadQuota, publish })
 
-    /** 筛选与排序：先按状态收窄，再按选定字段倒序，未推送的批次在「推送时间」档排末尾 */
-    const visibleIssues = useMemo(() => {
-        const filtered =
-            filter === 'all'
-                ? issues
-                : issues.filter((issue) => (filter === 'draft' ? issue.status === 'draft' : issue.status === filter))
-        return [...filtered].sort((left, right) => {
-            if (sort === 'published') {
-                const leftTime = left.publishedAt ?? ''
-                const rightTime = right.publishedAt ?? ''
-                if (leftTime !== rightTime) {
-                    return rightTime.localeCompare(leftTime)
-                }
-            }
-            return right.updatedAt.localeCompare(left.updatedAt)
-        })
-    }, [filter, issues, sort])
+    /** 作者默认值：账号设置优先，其次是列表里最近一篇填过作者的文章，取值口径在 wechat/utils */
+    const defaultArticleAuthor = useMemo(() => readDefaultArticleAuthor(account, issues), [account, issues])
 
-    /**
-     * 实际渲染的批次：分页切片后交给列表与封面请求，避免为看不到的批次取图。
-     * 切换筛选/排序时刻意不重置上限——沿用当前上限只是多渲染几个卡片，
-     * 而在 effect 里同步 setState 会多一轮渲染，代价更明显。
-     */
-    const renderIssues = useMemo(() => visibleIssues.slice(0, renderLimit), [renderLimit, visibleIssues])
-
-    /** 已勾选批次的快照：合并与删除都按它判断状态，而不是依赖列表顺序 */
-    const selectedIssues = useMemo(
-        () => issues.filter((issue) => selectedIds.includes(issue.id)),
-        [issues, selectedIds],
-    )
-
-    /** 可合并的目标：草稿状态且不在勾选内（勾中的批次合并后会被删除） */
-    const mergeCandidates = useMemo(
-        () => issues.filter((issue) => issue.status === 'draft' && !selectedIds.includes(issue.id)),
-        [issues, selectedIds],
-    )
-
-    // 批次首图换成 Webview 地址：随渲染结果变化，只对当前可见的批次取图
-    const covers = useWechatIssueCovers(renderIssues)
-
-    /**
-     * 新建批次：宿主按默认命名直接建好目录，不弹表单。
-     * 关键约束：批次标题不在卡片上展示，用户建完直接往里面加文章即可。
-     */
+    /** 新建批次：宿主按默认命名直接建好目录，不弹表单 */
     const handleCreateIssue = useCallback((): void => {
         void createIssue()
     }, [createIssue])
@@ -233,218 +121,37 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         [openArticle],
     )
 
-    /**
-     * 作者默认值：优先账号设置里的「默认作者」，没设时回落到列表里最近一篇填过作者的文章。
-     * 关键约束：只作为弹窗的初始值，不落库也不参与校验，用户改完即按文章各自保存。
-     */
-    const defaultArticleAuthor = useMemo((): string => {
-        if (account !== null && account.defaultAuthor !== undefined && account.defaultAuthor.length > 0) {
-            return account.defaultAuthor
-        }
-        for (const issue of issues) {
-            for (const article of issue.articles) {
-                if (article.author !== undefined && article.author.length > 0) {
-                    return article.author
-                }
-            }
-        }
-        return ''
-    }, [account, issues])
-
-    /** 保存文章设置：标题原样回传，只改作者、摘要与留言开关 */
-    const handleArticleSettingSubmit = useCallback(
-        async (input: { author: string; digest: string; allowComment: boolean }): Promise<boolean> => {
-            if (metaTarget === null) {
-                return false
-            }
-            return updateArticleMeta({
-                id: metaTarget.id,
-                title: metaTarget.title,
-                author: input.author,
-                digest: input.digest,
-                allowComment: input.allowComment,
-            })
-        },
-        [metaTarget, updateArticleMeta],
+    /** 封面地址：只认当前渲染批次的取图结果，缺失项返回 undefined 由弹窗回落占位 */
+    const coverUriOf = useCallback(
+        (article: WechatArticleSummary): string | undefined =>
+            article.coverPath === undefined ? undefined : query.covers[article.coverPath],
+        [query.covers],
     )
-
-    /** 保存裁剪封面：落盘与回写由宿主完成，成功后弹窗关闭、列表刷新 */
-    const handleCoverSubmit = useCallback(
-        async (dataUrl: string): Promise<boolean> => {
-            if (coverTarget === null) {
-                return false
-            }
-            return saveArticleCover(coverTarget.id, dataUrl)
-        },
-        [coverTarget, saveArticleCover],
-    )
-
-    const handleConfirmIssueRemove = useCallback((): void => {
-        if (pendingIssue === null) {
-            return
-        }
-        const target = pendingIssue
-        setPendingIssue(null)
-        void removeIssue(target.id)
-    }, [pendingIssue, removeIssue])
-
-    const handleConfirmArticleRemove = useCallback((): void => {
-        if (pendingArticle === null) {
-            return
-        }
-        const target = pendingArticle
-        setPendingArticle(null)
-        void removeArticle(target.article.id)
-    }, [pendingArticle, removeArticle])
-
-    const handleAccountSubmit = useCallback(
-        async (input: WechatAccountFormInput): Promise<boolean> => {
-            const isSaved = await updateAccount({ ...input, id: accountId })
-            if (isSaved) {
-                setIsAccountDialogOpen(false)
-            }
-            return isSaved
-        },
-        [accountId, updateAccount],
-    )
-
-    const openAccountSettings = useCallback((): void => {
-        setAccountDialogKey((previous) => previous + 1)
-        setIsAccountDialogOpen(true)
-    }, [])
-
-    const openCredentialSettings = useCallback((): void => {
-        setSecretDialogKey((previous) => previous + 1)
-        setIsSecretDialogOpen(true)
-    }, [])
-
-    /** 保存凭据：成功后关闭弹窗；鉴权结果由列表状态与 toast 回显 */
-    const handleCredentialsSubmit = useCallback(
-        async (input: { appId: string; appSecret: string }): Promise<boolean> => {
-            const isSaved = await saveCredentials({ id: accountId, ...input })
-            if (isSaved) {
-                setIsSecretDialogOpen(false)
-            }
-            return isSaved
-        },
-        [accountId, saveCredentials],
-    )
-
-    const handleConfirmAccountRemove = useCallback((): void => {
-        setIsAccountRemoveOpen(false)
-        void removeAccount(accountId).then((isRemoved) => {
-            if (isRemoved) {
-                onRemoved()
-            }
-        })
-    }, [accountId, onRemoved, removeAccount])
-
-    const handleClearFilter = useCallback((): void => {
-        setFilter('all')
-    }, [])
-
-    /** 确认批量删除：先清空选择再提交，避免删除失败后仍停留在选择态 */
-    const handleConfirmBatchRemove = useCallback((): void => {
-        const ids = selectedIds
-        setIsBatchRemoveOpen(false)
-        setSelectedIds([])
-        void removeIssues(ids)
-    }, [removeIssues, selectedIds])
-
-    /** 打开合并弹窗：只有全部是草稿批次才允许，草稿已就绪的内容已在平台草稿箱 */
-    const handleOpenMerge = useCallback((): void => {
-        if (selectedIssues.length === 0) {
-            return
-        }
-        if (selectedIssues.some((issue) => issue.status !== 'draft')) {
-            toast.error('只能合并草稿批次：草稿已就绪或已推送的批次不能并入')
-            return
-        }
-        if (mergeCandidates.length === 0) {
-            toast.error('没有其他草稿批次可作为合并目标，请先新建一个空批次')
-            return
-        }
-        setIsMergeOpen(true)
-    }, [mergeCandidates.length, selectedIssues])
-
-    /** 确认合并：成功后清空选择，失败保留选择便于调整目标 */
-    const handleConfirmMerge = useCallback(
-        async (targetId: string): Promise<boolean> => {
-            const isMerged = await mergeIssues(selectedIds, targetId)
-            if (isMerged) {
-                setIsMergeOpen(false)
-                setSelectedIds([])
-            }
-            return isMerged
-        },
-        [mergeIssues, selectedIds],
-    )
-
-    /** 打开群发确认：先拿额度说明，弹窗里展示剩余次数，避免点了才被拒 */
-    const handleOpenPublish = useCallback(
-        (issue: WechatIssueSummary): void => {
-            setPendingPublish(issue)
-            setQuotaReason('')
-            void loadQuota().then((quota) => {
-                if (quota !== null) {
-                    setQuotaReason(quota.reason)
-                }
-            })
-        },
-        [loadQuota],
-    )
-
-    /** 确认群发：先关弹窗再提交，结果由 hook 的 toast 与列表状态呈现 */
-    const handleConfirmPublish = useCallback((): void => {
-        if (pendingPublish === null) {
-            return
-        }
-        const target = pendingPublish
-        setPendingPublish(null)
-        void publish(target.id)
-    }, [pendingPublish, publish])
-
-    /** 群发确认文案：账号、文章清单、额度说明与不可撤销提醒合成一段 */
-    const publishDescription = useMemo((): string => {
-        if (pendingPublish === null) {
-            return ''
-        }
-        const titles = pendingPublish.articles.map((item) => item.title).join('、')
-        const quotaLine = quotaReason.length > 0 ? `${quotaReason}。` : ''
-        return `账号「${account?.name ?? ''}」将群发 ${String(pendingPublish.articleCount)} 篇文章：${titles}。${quotaLine}群发后不可撤销，请确认封面与正文已检查。`
-    }, [account, pendingPublish, quotaReason])
 
     if (accountStatus === 'loading') {
+        return <StateEmpty title="正在读取账号" isLoading />
+    }
+
+    if (accountStatus === 'error') {
         return (
-            <AppPage onContextMenu={(event) => event.preventDefault()}>
-                <AppHeader align="start">
-                    <AppTitle>正在读取账号…</AppTitle>
-                    <DashboardBackAction kind="back" />
-                </AppHeader>
-                <AppContent />
-            </AppPage>
+            <StateEmpty title="无法读取账号" description={accountError ?? '请稍后重试'}>
+                <Button variant="outline" onClick={() => void reloadAccounts()}>
+                    重试
+                </Button>
+                <Button variant="ghost" onClick={onRemoved}>
+                    返回账号列表
+                </Button>
+            </StateEmpty>
         )
     }
 
     if (account === null) {
         return (
-            <AppPage onContextMenu={(event) => event.preventDefault()}>
-                <AppHeader align="start">
-                    <AppTitle>账号不存在</AppTitle>
-                    <DashboardBackAction kind="back" />
-                </AppHeader>
-                <AppContent>
-                    <StateEmpty
-                        title="找不到该公众号账号"
-                        description="账号可能已被删除，或链接里的标识不完整。"
-                        icon={Send}
-                    >
-                        <Button variant="outline" onClick={onRemoved}>
-                            返回账号列表
-                        </Button>
-                    </StateEmpty>
-                </AppContent>
-            </AppPage>
+            <StateEmpty title="找不到该公众号账号" description="账号可能已被删除，或链接里的标识不完整。" icon={Send}>
+                <Button variant="outline" onClick={onRemoved}>
+                    返回账号列表
+                </Button>
+            </StateEmpty>
         )
     }
 
@@ -456,37 +163,14 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
     return (
         <>
             <AppPage onContextMenu={(event) => event.preventDefault()}>
-                <AppHeader align="start">
-                    <AppTitle tooltip={account.name}>{account.name}</AppTitle>
-                    <DashboardBackAction kind="back" />
-                    <AppDescription>{statusText}</AppDescription>
-                    <AppMenu>
-                        <Select value={filter} onValueChange={(value) => setFilter(readFilter(value))}>
-                            <SelectTrigger size="sm" aria-label="状态筛选" className="min-w-28 flex-1">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {FILTER_OPTIONS.map((item) => (
-                                    <SelectItem key={item.value} value={item.value}>
-                                        {item.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                        <Select value={sort} onValueChange={(value) => setSort(readSort(value))}>
-                            <SelectTrigger size="sm" aria-label="排序方式" className="min-w-28 flex-1">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                {SORT_OPTIONS.map((item) => (
-                                    <SelectItem key={item.value} value={item.value}>
-                                        {item.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectContent>
-                        </Select>
-                    </AppMenu>
-                </AppHeader>
+                <WechatPostHeader
+                    account={account}
+                    statusText={statusText}
+                    filter={query.filter}
+                    sort={query.sort}
+                    onFilterChange={query.setFilter}
+                    onSortChange={query.setSort}
+                />
                 <AppContent isScrollable>
                     {/* 推送阶段：宿主分阶段播报，动作结束后由 hook 清空 */}
                     {publishProgress !== null && (
@@ -496,254 +180,55 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                         </div>
                     )}
                     <WechatIssueList
-                        issues={renderIssues}
+                        issues={query.renderIssues}
                         status={issueStatus}
                         error={issueError}
                         isBusy={isIssueMutating}
-                        covers={covers}
-                        isFiltered={filter !== 'all'}
-                        onClearFilter={handleClearFilter}
+                        covers={query.covers}
+                        isFiltered={query.filter !== 'all'}
+                        onClearFilter={() => query.setFilter('all')}
                         onAdd={handleCreateIssue}
                         onRetry={() => void reloadIssues()}
                         onAddArticle={handleAddArticle}
                         onImport={(issue, sourceKind) => void handleImportArticle(issue, sourceKind)}
                         onOpenArticle={handleOpenArticle}
-                        onOpenArticleSetting={setMetaTarget}
-                        onPickCover={setCoverTarget}
+                        onOpenArticleSetting={content.meta.open}
+                        onPickCover={content.cover.open}
                         onMoveArticle={(article, direction) => void moveArticle(article.id, direction)}
-                        onRemoveArticle={(issue, article) => setPendingArticle({ issue, article })}
-                        onRemoveIssue={setPendingIssue}
+                        onRemoveArticle={(issue, article) => content.articleRemove.request(article)}
+                        onRemoveIssue={content.issueRemove.request}
                         onPublishDraft={(issue) => void publishDraft(issue.id)}
-                        onPublish={handleOpenPublish}
+                        onPublish={publishConfirm.request}
                         onOpenBackend={() => void openBackend()}
                     />
-                    {visibleIssues.length > renderIssues.length && (
-                        <Button
-                            variant="outline"
-                            className="mt-2 w-full"
-                            onClick={() => setRenderLimit((previous) => previous + ISSUE_RENDER_STEP)}
-                        >
-                            {`加载更多（还有 ${String(visibleIssues.length - renderIssues.length)} 个）`}
+                    {query.hasMore && (
+                        <Button variant="outline" className="mt-2 w-full" onClick={query.loadMore}>
+                            {`加载更多（还有 ${String(query.remaining)} 个）`}
                         </Button>
                     )}
                 </AppContent>
-                <AppFooter className="justify-between py-1">
-                    {selectedIds.length > 0 ? (
-                        <>
-                            <span className="text-xs text-muted-foreground">
-                                {`已选 ${String(selectedIds.length)} 个`}
-                            </span>
-                            <div className="flex items-center gap-1">
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    disabled={isIssueMutating}
-                                    onClick={() => setSelectedIds([])}
-                                >
-                                    取消
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={isIssueMutating || selectedIssues.some((item) => item.status !== 'draft')}
-                                    tooltip={
-                                        selectedIssues.some((item) => item.status !== 'draft')
-                                            ? '只能合并草稿批次'
-                                            : '把所选批次的文章并入另一个草稿批次'
-                                    }
-                                    onClick={handleOpenMerge}
-                                >
-                                    合并到…
-                                </Button>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={isIssueMutating}
-                                    onClick={() => setIsBatchRemoveOpen(true)}
-                                >
-                                    删除所选
-                                </Button>
-                            </div>
-                        </>
-                    ) : (
-                        <>
-                            <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                    <Button size="icon" variant="ghost" aria-label="账号操作" tooltip="账号操作">
-                                        <MoreHorizontal />
-                                    </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="start">
-                                    <DropdownMenuLabel>{account.name}</DropdownMenuLabel>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem onSelect={openAccountSettings}>账号设置</DropdownMenuItem>
-                                    <DropdownMenuItem onSelect={openCredentialSettings}>密钥设置</DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                        disabled={isAccountMutating || account.status !== 'connected'}
-                                        onSelect={() => void testAccount(accountId)}
-                                    >
-                                        重新验证连接
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                        variant="destructive"
-                                        onSelect={() => setIsAccountRemoveOpen(true)}
-                                    >
-                                        删除账号
-                                    </DropdownMenuItem>
-                                </DropdownMenuContent>
-                            </DropdownMenu>
-                            <Button
-                                size="icon-xs"
-                                variant="primary"
-                                disabled={isIssueMutating}
-                                tooltip="新建批次"
-                                aria-label="新建批次"
-                                onClick={handleCreateIssue}
-                            >
-                                <Plus />
-                            </Button>
-                        </>
-                    )}
-                </AppFooter>
+                <WechatPostFooter
+                    account={account}
+                    isBusy={isIssueMutating}
+                    isAccountBusy={isAccountMutating}
+                    onOpenAccountSettings={accountDialogs.edit.open}
+                    onOpenCredentials={accountDialogs.credentials.open}
+                    onTestAccount={() => void testAccount(accountId)}
+                    onOpenAccountRemove={accountDialogs.remove.open}
+                    onCreateIssue={handleCreateIssue}
+                />
             </AppPage>
 
-            {metaTarget !== null && (
-                <WechatArticleMetaDialog
-                    key={metaTarget.id}
-                    article={metaTarget}
-                    defaultAuthor={defaultArticleAuthor}
-                    isSubmitting={isIssueMutating}
-                    onOpenChange={(open) => {
-                        if (!open) {
-                            setMetaTarget(null)
-                        }
-                    }}
-                    onSubmit={handleArticleSettingSubmit}
-                />
-            )}
-
-            {coverTarget !== null && (
-                <WechatCoverDialog
-                    key={coverTarget.id}
-                    article={coverTarget}
-                    coverUri={coverTarget.coverPath === undefined ? undefined : covers[coverTarget.coverPath]}
-                    isSubmitting={isIssueMutating}
-                    onOpenChange={(open) => {
-                        if (!open) {
-                            setCoverTarget(null)
-                        }
-                    }}
-                    onReadImage={readCoverSource}
-                    onSubmit={handleCoverSubmit}
-                />
-            )}
-
-            <WechatAccountDialog
-                key={accountDialogKey}
-                open={isAccountDialogOpen}
+            <WechatPostDialogs
+                content={content}
+                accountDialogs={accountDialogs}
+                publish={publishConfirm}
                 account={account}
-                isSubmitting={isAccountMutating}
-                onOpenChange={setIsAccountDialogOpen}
-                onSubmit={handleAccountSubmit}
-            />
-
-            {account !== null && (
-                <WechatAccountSecretDialog
-                    key={secretDialogKey}
-                    open={isSecretDialogOpen}
-                    account={account}
-                    isSubmitting={isAccountMutating}
-                    onOpenChange={setIsSecretDialogOpen}
-                    onSubmit={handleCredentialsSubmit}
-                />
-            )}
-
-            <ConfirmDialog
-                open={pendingIssue !== null}
-                title="删除推送批次"
-                description={
-                    pendingIssue === null
-                        ? ''
-                        : `将删除「${pendingIssue.title}」及其中的 ${String(pendingIssue.articleCount)} 篇文章，删除后无法恢复。`
-                }
-                confirmLabel="删除"
-                isDestructive
-                isSubmitting={isIssueMutating}
-                onOpenChange={(open) => {
-                    if (!open) {
-                        setPendingIssue(null)
-                    }
-                }}
-                onConfirm={handleConfirmIssueRemove}
-            />
-
-            <WechatIssueMergeDialog
-                key={isMergeOpen ? 'merge-open' : 'merge-closed'}
-                open={isMergeOpen}
-                isSubmitting={isIssueMutating}
-                sources={selectedIssues}
-                candidates={mergeCandidates}
-                onOpenChange={setIsMergeOpen}
-                onSubmit={handleConfirmMerge}
-            />
-
-            <ConfirmDialog
-                open={isBatchRemoveOpen}
-                title="删除所选批次"
-                description={
-                    `将删除 ${String(selectedIds.length)} 个批次及其中的文章，删除后无法恢复。` +
-                    '已推送的批次不在此列——它们需要在公众号后台删除。'
-                }
-                confirmLabel="删除"
-                isDestructive
-                isSubmitting={isIssueMutating}
-                onOpenChange={setIsBatchRemoveOpen}
-                onConfirm={handleConfirmBatchRemove}
-            />
-
-            <ConfirmDialog
-                open={pendingArticle !== null}
-                title="删除文章"
-                description={
-                    pendingArticle === null
-                        ? ''
-                        : `将删除「${pendingArticle.article.title}」及其批次目录内的 Markdown 文档（优先移入系统回收站，回收站不可用时永久删除），删除后其余文章自动顺延序号。`
-                }
-                confirmLabel="删除"
-                isDestructive
-                isSubmitting={isIssueMutating}
-                onOpenChange={(open) => {
-                    if (!open) {
-                        setPendingArticle(null)
-                    }
-                }}
-                onConfirm={handleConfirmArticleRemove}
-            />
-
-            <ConfirmDialog
-                open={pendingPublish !== null}
-                title="确认群发"
-                description={publishDescription}
-                confirmLabel="群发"
-                isSubmitting={isIssueMutating}
-                onOpenChange={(open) => {
-                    if (!open) {
-                        setPendingPublish(null)
-                    }
-                }}
-                onConfirm={handleConfirmPublish}
-            />
-
-            <ConfirmDialog
-                open={isAccountRemoveOpen}
-                title="删除公众号账号"
-                description={`将删除「${account.name}」的本地配置、已保存密钥与其下的推送批次，公众号后台的内容不受影响。`}
-                confirmLabel="删除"
-                isDestructive
-                isSubmitting={isAccountMutating}
-                onOpenChange={setIsAccountRemoveOpen}
-                onConfirm={handleConfirmAccountRemove}
+                defaultAuthor={defaultArticleAuthor}
+                isBusy={isIssueMutating}
+                isAccountBusy={isAccountMutating}
+                coverUriOf={coverUriOf}
+                onReadCoverSource={readCoverSource}
             />
         </>
     )

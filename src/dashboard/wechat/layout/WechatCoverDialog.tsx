@@ -23,6 +23,7 @@ import { Button } from '@webview/components/Button'
 import { FormDialog } from '@webview/components/FormDialog'
 import { Image } from '@webview/components/Image'
 import { StateEmpty } from '@webview/components/StateEmpty'
+import { useRenderLimit } from '@webview/hooks/useRenderLimit'
 import type { JSX, PointerEvent, ReactNode } from 'react'
 import { useWechatCoverSources, type CoverSourceImage, type CoverSourceKind } from '../hooks/useWechatCoverSources'
 
@@ -115,9 +116,8 @@ function CoverSourcePickerDialog({
 }: CoverSourcePickerDialogProps): JSX.Element {
     const meta = SOURCE_META[kind]
     const { items, isLoading } = useWechatCoverSources(kind)
-    const [visibleCount, setVisibleCount] = useState(PICKER_PAGE_SIZE)
-    const visibleItems = items.slice(0, visibleCount)
-    const remaining = items.length - visibleItems.length
+    const { limit, hasMore, remaining, loadMore } = useRenderLimit(items.length, PICKER_PAGE_SIZE)
+    const visibleItems = items.slice(0, limit)
 
     return (
         <Dialog open onOpenChange={onOpenChange}>
@@ -163,13 +163,8 @@ function CoverSourcePickerDialog({
                         </div>
                         <div className="flex items-center justify-between gap-2">
                             <span className="text-xs text-muted-foreground">{`共 ${String(items.length)} 张`}</span>
-                            {remaining > 0 ? (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    disabled={isReading}
-                                    onClick={() => setVisibleCount((current) => current + PICKER_PAGE_SIZE)}
-                                >
+                            {hasMore ? (
+                                <Button variant="outline" size="sm" disabled={isReading} onClick={loadMore}>
                                     {`加载更多（还有 ${String(remaining)} 张）`}
                                 </Button>
                             ) : null}
