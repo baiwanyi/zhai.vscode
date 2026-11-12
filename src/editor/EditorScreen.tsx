@@ -5,8 +5,10 @@
  * 关键约束：本组件不直接发协议请求，也不决定可编辑性——只读判定来自宿主快照；
  * 状态栏必须如实展示同步状态，出现只读或同步失败时不能让用户以为内容已保存。
  */
+import { DragHandle } from '@tiptap/extension-drag-handle-react'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import { GripVertical } from 'lucide-react'
 import { useState } from 'react'
 import type { AnnotationRecord } from '@shared/types/editor'
 import { useAnnotations } from './hooks/useAnnotations'
@@ -19,6 +21,10 @@ import { QueryDialog } from './layout/QueryDialog'
 import { SelectionToolbar } from './layout/SelectionToolbar'
 import { SourceEditor } from './layout/SourceEditor'
 import { AnnotationExtension } from './marks/annotationExtension'
+import { SlashCommandExtension } from './toolbar/slashCommandExtension'
+import { SlashMenu } from './toolbar/SlashMenu'
+import { handleSlashKey } from './toolbar/slashStore'
+import type { EditorView } from '@tiptap/pm/view'
 import type { JSX, MouseEvent } from 'react'
 
 /** 段末图标与气泡之间的间距 */
@@ -32,12 +38,14 @@ interface NotePopoverState {
 
 export function EditorScreen(): JSX.Element {
     const editor = useEditor({
-        extensions: [StarterKit, AnnotationExtension],
+        extensions: [StarterKit, AnnotationExtension, SlashCommandExtension],
         content: '<p></p>',
         editorProps: {
             attributes: {
                 class: 'min-h-[60vh] text-base leading-8 outline-none',
             },
+            // 斜杠菜单打开时优先消费导航键，否则方向键会被编辑器当成光标移动
+            handleKeyDown: (_view: EditorView, event: KeyboardEvent): boolean => handleSlashKey(event),
         },
     })
     const { status, isEditable, path, blocks, reload, flush } = useEditorDocument(editor)
@@ -85,8 +93,14 @@ export function EditorScreen(): JSX.Element {
                 />
             ) : (
                 <div className="min-h-0 flex-1 overflow-auto">
-                    <div className="mx-auto w-full max-w-3xl px-8 py-10" onClick={handleContentClick}>
+                    <div className="relative mx-auto w-full max-w-3xl px-8 py-10" onClick={handleContentClick}>
                         <EditorContent editor={editor} />
+                        {editor === null ? null : (
+                            <DragHandle editor={editor}>
+                                <GripVertical className="size-4 text-muted-foreground" />
+                            </DragHandle>
+                        )}
+                        <SlashMenu />
                         <SelectionToolbar
                             editor={editor}
                             onHighlight={addOrToggleHighlight}
