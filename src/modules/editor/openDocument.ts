@@ -34,16 +34,19 @@ export function readActiveTabUri(): vscode.Uri | undefined {
  * 关闭该文档的干净文本 tab：否则 openWith 之后同一文件会同时存在文本与富文本两个 tab。
  * 关键约束：只关未修改的 tab——isDirty 的 tab 里可能有用户没保存的内容，关掉就是丢字。
  */
-async function closeCleanTextTabs(uri: vscode.Uri): Promise<void> {
+async function closeCleanTextTabs(uri: vscode.Uri): Promise<number> {
     const target = uri.toString()
     const tabs = vscode.window.tabGroups.all
         .flatMap((group) => group.tabs)
         .filter(
             (tab) => tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === target && !tab.isDirty,
         )
+    let closedCount = 0
     for (const tab of tabs) {
         await vscode.window.tabGroups.close(tab)
+        closedCount += 1
     }
+    return closedCount
 }
 
 /**
@@ -53,7 +56,8 @@ async function closeCleanTextTabs(uri: vscode.Uri): Promise<void> {
  * openWith 失败必须让用户看见提示，静默回退到文本编辑器会让人以为富文本没生效。
  */
 export async function openStorageDocument(uri: vscode.Uri): Promise<void> {
-    await closeCleanTextTabs(uri)
+    const closedCount = await closeCleanTextTabs(uri)
+    logger.info(`按插件入口打开（富文本）：${uri.fsPath}（关闭干净文本 tab ${String(closedCount)} 个）`)
     try {
         await vscode.commands.executeCommand('vscode.openWith', uri, RICH_EDITOR_VIEW_TYPE)
     } catch (error) {

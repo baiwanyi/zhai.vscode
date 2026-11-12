@@ -51,6 +51,18 @@
     },
     "contributes": {
         "markdown.markdownItPlugins": true,
+        "customEditors": [
+            {
+                "viewType": "zhai.markdownEditor",
+                "displayName": "宅写作 富文本编辑器",
+                "selector": [
+                    {
+                        "filenamePattern": "*.md"
+                    }
+                ],
+                "priority": "option"
+            }
+        ],
         "commands": [
             {
                 "command": "zhai.openDashboard",
