@@ -17,6 +17,7 @@ import { BlockHandle } from './blocks/BlockHandle'
 import { useAnnotations } from './hooks/useAnnotations'
 import { useDocumentQuery } from './hooks/useDocumentQuery'
 import { useEditorDocument } from './hooks/useEditorDocument'
+import { useEditorReveal } from './hooks/useEditorReveal'
 import { useSourceMode } from './hooks/useSourceMode'
 import { AnnotationDialog } from './layout/AnnotationDialog'
 import { AnnotationPopover } from './layout/AnnotationPopover'
@@ -68,6 +69,8 @@ export function EditorScreen(): JSX.Element {
     const { status, isEditable, path, blocks, reload, flush } = useEditorDocument(editor)
     const { items, addOrToggleHighlight, addNote, removeAnnotation } = useAnnotations(editor, path, blocks)
     const source = useSourceMode(path, reload, flush)
+    // 标注总览跳转到当前文档时，由宿主发 reveal 消息，这里负责选中与滚动
+    useEditorReveal(editor)
     const [annotationQuote, setAnnotationQuote] = useState<string | null>(null)
     const [notePopover, setNotePopover] = useState<NotePopoverState | null>(null)
     const [queryQuote, setQueryQuote] = useState<string | null>(null)

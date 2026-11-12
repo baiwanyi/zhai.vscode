@@ -30,6 +30,8 @@ export interface AnnotationRoutesDeps {
     db: () => AnnotationDatabase
     /** 存储根：跳转时把相对路径还原成绝对路径 */
     root: () => vscode.Uri
+    /** 文档已在富文本 tab 打开时直接定位；没有实例返回 false，由本类回落文本编辑器 */
+    revealInRich?: (uri: vscode.Uri, request: { quote: string; blockIndex: number }) => boolean
 }
 
 /** 收窄游标：两端都缺失时视为首页 */
@@ -114,6 +116,12 @@ export class AnnotationRoutes {
         const uri = buildStorageUri(this.deps.root(), toSafeSegments(record.docPath, '标注'))
         if (!(await isPathExisting(uri))) {
             return { revealed: false, reason: 'missing-file' }
+        }
+        // 已在富文本打开时直接定位：既不打断用户的编辑态，也不会多出一个文本 tab
+        const isRevealedInRich =
+            this.deps.revealInRich?.(uri, { quote: record.quote, blockIndex: record.blockIndex }) ?? false
+        if (isRevealedInRich) {
+            return { revealed: true, orphaned: record.orphaned }
         }
         const document = await vscode.workspace.openTextDocument(uri)
         const length = document.getText().length

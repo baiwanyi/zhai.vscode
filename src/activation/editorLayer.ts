@@ -28,7 +28,7 @@ export function assembleEditorLayer(
     snapshot: ChapterSnapshotWriter | null = null,
     annotationDb: (() => AnnotationDatabase) | null = null,
     query: EditorQueryDeps | null = null,
-): void {
+): MarkdownEditorProvider {
     const provider = new MarkdownEditorProvider(context.extensionUri, snapshot, annotationDb, query)
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider(MarkdownEditorProvider.viewType, provider, {
@@ -49,4 +49,6 @@ export function assembleEditorLayer(
     )
     // 注册成功即打一条：排查「插件打开仍在文本编辑器」时，先确认 provider 是否真的注册上了
     logger.info(`编辑器层就绪：viewType=${MarkdownEditorProvider.viewType}`)
+    // 返回实例：标注跳转需要知道当前文档是否已有富文本面板，能直接定位就不必改开文本编辑器
+    return provider
 }

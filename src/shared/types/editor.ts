@@ -168,6 +168,22 @@ export function isEditorSourceSaveRequest(input: unknown): input is EditorSource
     )
 }
 
+/** 富文本定位请求：标注总览跳转时，若文档已在富文本 tab 中，直接选中并滚动到原文 */
+export interface EditorRevealPayload {
+    kind: 'reveal'
+    quote: string
+    blockIndex: number
+}
+
+/** 收窄定位请求：blockIndex 允许为 -1（按全文搜索兜底） */
+export function isEditorRevealPayload(input: unknown): input is EditorRevealPayload {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const value = input as { kind?: unknown; quote?: unknown; blockIndex?: unknown }
+    return value.kind === 'reveal' && typeof value.quote === 'string' && typeof value.blockIndex === 'number'
+}
+
 /** 收窄快照：Webview 收到的是不可信数据，块结构与版本逐字段校验 */
 export function isEditorDocSnapshot(input: unknown): input is EditorDocSnapshot {
     if (typeof input !== 'object' || input === null) {

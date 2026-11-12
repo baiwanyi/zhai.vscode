@@ -54,6 +54,9 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     /** 在途查询：reqId → AbortController，关闭弹窗或关 tab 时统一中断 */
     private readonly queries = new Map<string, AbortController>()
 
+    /** 打开中的富文本面板：标注跳转据此判断能否直接定位，而不是改开文本编辑器 */
+    private readonly panels = new Map<string, vscode.WebviewPanel>()
+
     public constructor(
         private readonly extensionUri: vscode.Uri,
         private readonly snapshot: ChapterSnapshotWriter | null = null,
@@ -83,6 +86,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             return
         }
 
+        this.panels.set(key, panel)
         const subscriptions: vscode.Disposable[] = [
             webview.onDidReceiveMessage((message: unknown) => {
                 void this.handleMessage(document, panel, message)
@@ -111,6 +115,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             this.snapshots.delete(key)
             this.appliedVersions.delete(key)
             this.capturedChapters.delete(key)
+            this.panels.delete(key)
             for (const controller of this.queries.values()) {
                 controller.abort()
             }
@@ -151,6 +156,24 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         } catch (error) {
             logger.error(`编辑器快照推送失败：${document.uri.fsPath}`, error)
         }
+    }
+
+    /**
+     * 在已打开的富文本面板里定位原文：没有实例时返回 false，调用方改走文本编辑器。
+     * 关键约束：只发消息不等待回执——webview 不可达时也要立刻回落，不能把跳转卡在这里。
+     */
+    public revealInPanel(uri: vscode.Uri, request: { quote: string; blockIndex: number }): boolean {
+        const panel = this.panels.get(uri.toString())
+        if (panel === undefined) {
+            return false
+        }
+        void panel.webview.postMessage({
+            type: 'state',
+            channel: 'editor',
+            payload: { kind: 'reveal', quote: request.quote, blockIndex: request.blockIndex },
+        })
+        panel.reveal(undefined, false)
+        return true
     }
 
     /** 取标注库连接：未装配时返回 null，协议层据此给出「尚未就绪」 */
