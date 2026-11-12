@@ -27,6 +27,9 @@ const EDITABLE_NODE_TYPES: ReadonlySet<string> = new Set([
     'listItem',
     'code',
     'thematicBreak',
+    'table',
+    'tableRow',
+    'tableCell',
     'text',
     'emphasis',
     'strong',
@@ -110,10 +113,23 @@ function isSupported(node: RootContent | { type: string; children?: unknown[] })
     }
     // 任务列表：纯文本项已支持（见 adaptTaskListHtml），但任务项内再嵌列表暂不支持——
     // 半支持会把它改写成普通列表，等于悄悄丢掉勾选状态，所以整篇转只读更安全。
-    const candidate = node as { type: string; checked?: unknown; children?: { type: string }[] }
+    const candidate = node as {
+        type: string
+        checked?: unknown
+        align?: (string | null)[]
+        children?: { type: string }[]
+    }
     if (candidate.type === 'listItem' && candidate.checked !== null && candidate.checked !== undefined) {
         const children = candidate.children ?? []
         if (children.some((child) => child.type === 'list')) {
+            return false
+        }
+    }
+    // 表格：Tiptap 的 TableCell 不认对齐属性，放开编辑会把 `:---:` 之类的标记丢掉，
+    // 等于改坏原文格式。带对齐的表格仍按只读预览处理。
+    if (candidate.type === 'table') {
+        const align = candidate.align
+        if (Array.isArray(align) && align.some((item) => item !== null && item !== undefined)) {
             return false
         }
     }
@@ -166,6 +182,34 @@ function stripTaskItemWrappers(inner: string): string {
 }
 
 /**
+ * 表格的 md → html 适配：remark-rehype 输出的单元格是裸文本，
+ * 而 Tiptap 的 TableCell / TableHeader 要求内容是块级元素，否则整张表解析不出结构。
+ */
+function adaptTableHtml(html: string): string {
+    if (!html.includes('<table')) {
+        return html
+    }
+    // 标签名后必须紧跟 > 或空白：否则 `<thead>` 会被当成 `<th>` + 属性 "ead" 吞掉
+    return html.replace(
+        /<(th|td)(\s[^>]*)?>([\s\S]*?)<\/\1>/gu,
+        (whole: string, tag: string, attrs: string | undefined, inner: string) => {
+            const trimmed = inner.trim()
+            if (trimmed.length === 0 || trimmed.startsWith('<p')) {
+                return whole
+            }
+            return `<${tag}${attrs ?? ''}><p>${trimmed}</p></${tag}>`
+        },
+    )
+}
+
+/** 表格行与单元格：Tiptap 输出结构固定，这里按标签切分即可，不需要整棵 HTML 树 */
+const TABLE_ROW_PATTERN = /<tr(?:\s[^>]*)?>([\s\S]*?)<\/tr>/gu
+const TABLE_CELL_PATTERN = /<(?:th|td)(?:\s[^>]*)?>([\s\S]*?)<\/(?:th|td)>/gu
+
+/** 合并单元格在 GFM 里无法表达，遇到即放弃改写（保留原文，不让表格结构被压坏） */
+const MERGED_CELL_PATTERN = /<(?:td|th)\s[^>]*(?:colspan|rowspan)="[2-9]/u
+
+/**
  * 读取文档快照：frontmatter 原样透传，正文按顶层节点切成块。
  * @param text TextDocument 全文，用于取原文偏移；调用方需保证与 document.version 同源
  */
@@ -188,11 +232,13 @@ export async function readEditorSnapshot(text: string, version: number, path: st
             isEditable = false
         }
         const html = isNodeSupported
-            ? adaptTaskListHtml(
-                  toHtml
-                      .stringify(toHtml.runSync({ type: 'root', children: [node] }))
-                      .toString()
-                      .trim(),
+            ? adaptTableHtml(
+                  adaptTaskListHtml(
+                      toHtml
+                          .stringify(toHtml.runSync({ type: 'root', children: [node] }))
+                          .toString()
+                          .trim(),
+                  ),
               )
             : `<pre class="zhai-source-block">${escapeHtml(body.slice(start, end))}</pre>`
         blocks.push({ html, start: offset + start, end: offset + end })
@@ -250,15 +296,57 @@ export async function buildBlockEdits(
         }
         return lines.join('\n')
     }
+    /**
+     * 表格的 html → md：通用管线不认识 table 节点（rehype-remark 直接抛 unknown node），
+     * 必须自己按行列拼 GFM 表格；合并单元格无法表达，返回空串表示放弃改写。
+     */
+    const toTableMarkdown = (html: string): string => {
+        if (MERGED_CELL_PATTERN.test(html)) {
+            return ''
+        }
+        const rows: string[][] = []
+        for (const rowMatch of html.matchAll(TABLE_ROW_PATTERN)) {
+            const cells: string[] = []
+            for (const cellMatch of (rowMatch[1] ?? '').matchAll(TABLE_CELL_PATTERN)) {
+                const inner = (cellMatch[1] ?? '').replace(/<\/?p[^>]*>/gu, '').trim()
+                const text =
+                    inner.length === 0
+                        ? ''
+                        : toMarkdown
+                              .stringify(toMarkdown.runSync(toMarkdown.parse(inner)))
+                              .trim()
+                              .replace(/\n+/gu, ' ')
+                cells.push(text.replace(/\|/gu, '\\|'))
+            }
+            if (cells.length > 0) {
+                rows.push(cells)
+            }
+        }
+        if (rows.length === 0) {
+            return ''
+        }
+        const header = rows[0] ?? []
+        const divider = header.map(() => '---')
+        return [header, divider, ...rows.slice(1)].map((cells) => `| ${cells.join(' | ')} |`).join('\n')
+    }
     const edits: BlockEdit[] = []
     for (const change of [...changes].sort((left, right) => right.index - left.index)) {
         const block = blocks[change.index]
         if (block === undefined) {
             continue
         }
-        const markdown = change.html.includes('data-type="taskList"')
-            ? toTaskMarkdown(change.html)
-            : toMarkdown.stringify(toMarkdown.runSync(toMarkdown.parse(change.html))).trim()
+        let markdown: string
+        if (change.html.includes('<table')) {
+            markdown = toTableMarkdown(change.html)
+        } else if (change.html.includes('data-type="taskList"')) {
+            markdown = toTaskMarkdown(change.html)
+        } else {
+            markdown = toMarkdown.stringify(toMarkdown.runSync(toMarkdown.parse(change.html))).trim()
+        }
+        if (markdown.length === 0) {
+            // 放弃改写的块（例如合并单元格表格）保留原文，宁可丢这次改动也不压坏结构
+            continue
+        }
         edits.push({ start: block.start, end: block.end, text: markdown })
     }
     return edits

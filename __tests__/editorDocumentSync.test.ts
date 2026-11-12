@@ -56,8 +56,16 @@ describe('readEditorSnapshot', () => {
         expect(heading?.html).toContain('<h2>')
     })
 
-    it('含表格时转只读并渲染为源码块', async () => {
+    it('无对齐的表格可编辑，且单元格内容被包成段落', async () => {
         const snapshot = await readEditorSnapshot('| a | b |\n| - | - |\n| 1 | 2 |', 1, 'x.md')
+        expect(snapshot.editable).toBe(true)
+        const html = snapshot.blocks[0]?.html ?? ''
+        expect(html).toContain('<table')
+        expect(html).toContain('<p>a</p>')
+    })
+
+    it('带对齐标记的表格判只读，避免保存后丢掉对齐', async () => {
+        const snapshot = await readEditorSnapshot('| a | b |\n| :-- | --: |\n| 1 | 2 |', 1, 'x.md')
         expect(snapshot.editable).toBe(false)
         expect(snapshot.blocks[0]?.html).toContain('zhai-source-block')
     })
@@ -106,6 +114,22 @@ describe('buildBlockEdits', () => {
         expect(edits).toHaveLength(1)
         expect(edits[0]?.text).toBe('改后的正文')
         expect(edits[0]?.text).not.toContain('id=')
+    })
+
+    it('表格回写成 GFM 表格', async () => {
+        const snapshot = await readEditorSnapshot('| a |\n| - |\n| 1 |', 1, 'x.md')
+        const html =
+            '<table><tbody><tr><th><p>列一</p></th><th><p>列二</p></th></tr><tr><td><p>甲</p></td><td><p>乙</p></td></tr></tbody></table>'
+        const edits = await buildBlockEdits(snapshot.blocks, [{ index: 0, html }])
+        expect(edits[0]?.text).toBe('| 列一 | 列二 |\n| --- | --- |\n| 甲 | 乙 |')
+    })
+
+    it('合并单元格的表格放弃改写，保留原文', async () => {
+        const snapshot = await readEditorSnapshot('| a |\n| - |\n| 1 |', 1, 'x.md')
+        const html =
+            '<table><tbody><tr><th colspan="2"><p>跨列</p></th></tr><tr><td><p>甲</p></td><td><p>乙</p></td></tr></tbody></table>'
+        const edits = await buildBlockEdits(snapshot.blocks, [{ index: 0, html }])
+        expect(edits).toHaveLength(0)
     })
 
     it('任务列表回写成 GFM 语法且不带转义', async () => {
