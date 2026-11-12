@@ -30,31 +30,36 @@ export function readActiveTabUri(): vscode.Uri | undefined {
     return undefined
 }
 
-/** 该 URI 是否已有文本编辑器 tab：有则复用，避免与富文本 tab 并存 */
-function hasTextTab(uri: vscode.Uri): boolean {
+/**
+ * 关闭该文档的干净文本 tab：否则 openWith 之后同一文件会同时存在文本与富文本两个 tab。
+ * 关键约束：只关未修改的 tab——isDirty 的 tab 里可能有用户没保存的内容，关掉就是丢字。
+ */
+async function closeCleanTextTabs(uri: vscode.Uri): Promise<void> {
     const target = uri.toString()
-    return vscode.window.tabGroups.all.some((group) =>
-        group.tabs.some((tab) => tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === target),
-    )
+    const tabs = vscode.window.tabGroups.all
+        .flatMap((group) => group.tabs)
+        .filter(
+            (tab) => tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === target && !tab.isDirty,
+        )
+    for (const tab of tabs) {
+        await vscode.window.tabGroups.close(tab)
+    }
 }
 
 /**
- * 用富文本编辑器打开文档：已有文本 tab 时聚焦复用，否则 openWith 自定义编辑器。
- * 插件内所有「打开笔记 / 章节 / 公众号正文」都应走这里，资源管理器打开不受影响。
+ * 用富文本编辑器打开文档：插件内所有「打开笔记 / 章节 / 公众号正文」都应走这里。
+ * 关键约束：即使该文件已有文本 tab 也切到富文本——插件入口一律富文本是既定行为；
+ * 干净的文本 tab 会被关掉以免两个 tab 并存，未保存的文本 tab 保留（宁可多一个 tab 也不丢改动）；
+ * openWith 失败必须让用户看见提示，静默回退到文本编辑器会让人以为富文本没生效。
  */
 export async function openStorageDocument(uri: vscode.Uri): Promise<void> {
-    if (hasTextTab(uri)) {
-        await vscode.commands.executeCommand('vscode.open', uri)
-        return
-    }
+    await closeCleanTextTabs(uri)
     try {
         await vscode.commands.executeCommand('vscode.openWith', uri, RICH_EDITOR_VIEW_TYPE)
     } catch (error) {
-        logger.warn(
-            `富文本编辑器打开失败，回退到文本编辑器：${uri.fsPath}（${
-                error instanceof Error ? error.message : String(error)
-            }）`,
-        )
+        const reason = error instanceof Error ? error.message : String(error)
+        logger.warn(`富文本编辑器打开失败，回退到文本编辑器：${uri.fsPath}（${reason}）`)
+        void vscode.window.showWarningMessage(`富文本编辑器不可用，已改用文本编辑器打开（${reason}）`)
         await vscode.commands.executeCommand('vscode.open', uri)
     }
 }
