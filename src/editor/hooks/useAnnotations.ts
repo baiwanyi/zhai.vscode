@@ -1,7 +1,7 @@
 /**
- * 标注读写：加载当前文档划线、按选区新建或取消，并把结果同步到装饰层。
+ * 标注读写：加载当前文档的划线与批注，按选区新建、按 id 删除，并把结果同步到装饰层。
  * 复用约定：协议走 bridge 的 request，类型取 @shared/types/editor；装饰应用交给 marks/annotationDecorations。
- * 关键约束：新建前按「同块 + 同 quote」判断是否已存在——存在即删除，实现「同色再点即取消」；
+ * 关键约束：新建前按「同块 + 同 quote」判断是否已有划线——存在即删除，实现「同色再点即取消」；
  * 一律以宿主回执后的重新加载为准，不在本地推测列表，避免与另一个窗口的改动打架。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -67,11 +67,16 @@ function buildDraft(editor: Editor, blocks: readonly EditorBlock[]): AnnotationD
 }
 
 export interface UseAnnotationsResult {
-    /** 首次加载完成：为 false 时划线条目尚未渲染 */
+    /** 首次加载完成：为 false 时标注尚未渲染 */
     isReady: boolean
+    /** 当前文档的标注列表：段末图标点击时按 blockIndex 取用 */
+    items: AnnotationRecord[]
     /** 新建划线；同一位置已有划线则删除（toggle 语义） */
     addOrToggleHighlight: (color: HighlightColor) => Promise<void>
-    removeHighlight: (id: string) => Promise<void>
+    /** 为当前选区新建批注 */
+    addNote: (note: string) => Promise<void>
+    /** 删除任意标注（划线或批注） */
+    removeAnnotation: (id: string) => Promise<void>
     /** 文档内容变化后重新加载，用于刷新锚点与装饰 */
     refresh: () => Promise<void>
 }
@@ -82,7 +87,7 @@ export function useAnnotations(
     blocks: readonly EditorBlock[],
 ): UseAnnotationsResult {
     const [isReady, setIsReady] = useState(false)
-    const itemsRef = useRef<AnnotationRecord[]>([])
+    const [items, setItems] = useState<AnnotationRecord[]>([])
     const blocksRef = useRef(blocks)
 
     useEffect(() => {
@@ -95,7 +100,7 @@ export function useAnnotations(
         }
         try {
             const result = await request<{ items: AnnotationRecord[] }>('editor/annotations')
-            itemsRef.current = result.items
+            setItems(result.items)
             applyAnnotationDecorations(editor, result.items)
             setIsReady(true)
         } catch {
@@ -116,7 +121,7 @@ export function useAnnotations(
             if (draft === null) {
                 return
             }
-            const existing = itemsRef.current.find(
+            const existing = items.find(
                 (item) =>
                     item.kind === 'highlight' &&
                     item.blockIndex === draft.blockIndex &&
@@ -127,17 +132,36 @@ export function useAnnotations(
                 if (existing !== undefined) {
                     await request('editor/annotation/remove', { path, id: existing.id })
                 } else {
-                    await request('editor/annotation/add', { path, color, draft })
+                    await request('editor/annotation/add', { path, kind: 'highlight', color, note: null, draft })
                 }
                 await refresh()
             } catch {
                 // 失败保持原状：宿主侧错误已由文档同步状态栏统一提示
             }
         },
+        [editor, items, path, refresh],
+    )
+
+    const addNote = useCallback(
+        async (note: string): Promise<void> => {
+            if (editor === null || path.length === 0 || !editor.isEditable || note.trim() === '') {
+                return
+            }
+            const draft = buildDraft(editor, blocksRef.current)
+            if (draft === null) {
+                return
+            }
+            try {
+                await request('editor/annotation/add', { path, kind: 'note', color: null, note, draft })
+                await refresh()
+            } catch {
+                // 同上
+            }
+        },
         [editor, path, refresh],
     )
 
-    const removeHighlight = useCallback(
+    const removeAnnotation = useCallback(
         async (id: string): Promise<void> => {
             try {
                 await request('editor/annotation/remove', { path, id })
@@ -149,5 +173,5 @@ export function useAnnotations(
         [path, refresh],
     )
 
-    return { isReady, addOrToggleHighlight, removeHighlight, refresh }
+    return { isReady, items, addOrToggleHighlight, addNote, removeAnnotation, refresh }
 }

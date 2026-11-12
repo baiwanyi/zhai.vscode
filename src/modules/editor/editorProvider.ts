@@ -190,7 +190,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             const item = insertAnnotation(db, {
                 docPath: path,
                 docTitle: this.readDocTitle(document),
-                kind: 'highlight',
+                kind: payload.kind,
                 mode: 'inline',
                 quote: payload.draft.quote,
                 prefix: payload.draft.prefix,
@@ -202,7 +202,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 blockHash: payload.draft.blockHash,
                 blockText: payload.draft.blockText,
                 color: payload.color,
-                note: null,
+                note: payload.note,
                 replies: '[]',
                 orphaned: false,
             })

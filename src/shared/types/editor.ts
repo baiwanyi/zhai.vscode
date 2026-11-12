@@ -133,10 +133,14 @@ export interface AnnotationDraft {
     blockText: string
 }
 
-/** 新建划线请求 */
+/** 新建标注请求：kind 决定落库形态，划线带颜色、批注带正文 */
 export interface AddAnnotationRequest {
     path: string
-    color: HighlightColor
+    kind: AnnotationKind
+    /** 划线颜色；批注为 null */
+    color: HighlightColor | null
+    /** 批注正文；划线为 null */
+    note: string | null
     draft: AnnotationDraft
 }
 
@@ -165,18 +169,34 @@ export function isAnnotationDraft(input: unknown): input is AnnotationDraft {
     return draft.quote !== ''
 }
 
-/** 收窄新建请求：path 为相对存储根路径，颜色必须是枚举值 */
+/** 收窄新建请求：path 为相对存储根路径；划线必须有合法颜色，批注必须有非空正文 */
 export function isAddAnnotationRequest(input: unknown): input is AddAnnotationRequest {
     if (typeof input !== 'object' || input === null) {
         return false
     }
-    const request = input as { path?: unknown; color?: unknown; draft?: unknown }
-    return (
-        typeof request.path === 'string' &&
-        typeof request.color === 'string' &&
-        HIGHLIGHT_COLOR_VALUES.includes(request.color) &&
-        isAnnotationDraft(request.draft)
-    )
+    const request = input as { path?: unknown; kind?: unknown; color?: unknown; note?: unknown; draft?: unknown }
+    if (typeof request.path !== 'string') {
+        return false
+    }
+    if (request.kind !== 'highlight' && request.kind !== 'note') {
+        return false
+    }
+    const hasValidColor =
+        request.color === null || (typeof request.color === 'string' && HIGHLIGHT_COLOR_VALUES.includes(request.color))
+    if (!hasValidColor) {
+        return false
+    }
+    const hasValidNote = request.note === null || typeof request.note === 'string'
+    if (!hasValidNote) {
+        return false
+    }
+    if (request.kind === 'highlight' && request.color === null) {
+        return false
+    }
+    if (request.kind === 'note' && (typeof request.note !== 'string' || request.note.trim() === '')) {
+        return false
+    }
+    return isAnnotationDraft(request.draft)
 }
 
 /** 收窄按 id 操作请求：color 只允许缺省、null 或枚举值 */

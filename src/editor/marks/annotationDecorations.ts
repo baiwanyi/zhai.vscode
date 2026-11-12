@@ -46,12 +46,44 @@ export function createAnnotationPlugin(): Plugin<DecorationSet> {
 }
 
 /**
- * 按标注重建装饰：只处理非失效的划线，按 blockIndex 定位顶层块，再在块文本内用 quote 定位。
- * 用 quote 而不是字符偏移定位——Markdown 源码偏移与 ProseMirror 位置口径不同（标记占位、换行折叠），
+ * 段末批注图标：纯 DOM 元素，点击由外层事件委托处理（widget 不持有 React 状态）。
+ * 用内联 SVG 而非 emoji，避免不同字体下的尺寸与基线漂移。
+ */
+function createAnnotationMarker(blockIndex: number, count: number): HTMLElement {
+    const marker = document.createElement('button')
+    marker.type = 'button'
+    marker.className = 'zhai-annotation-marker'
+    // 样式就地内联：widget 由 ProseMirror 直接插 DOM，不在 React 树里，Tailwind 类不会进产物
+    marker.style.cssText =
+        'display:inline-flex;align-items:center;gap:2px;margin-left:6px;padding:0 2px;border:0;background:transparent;' +
+        'color:var(--vscode-editorInfo-foreground,#3794ff);opacity:.75;cursor:pointer;vertical-align:baseline;font-size:10px;'
+    marker.dataset.annotationBlock = String(blockIndex)
+    marker.setAttribute('aria-label', `第 ${String(blockIndex + 1)} 段有 ${String(count)} 条批注`)
+    marker.innerHTML =
+        '<svg viewBox="0 0 16 16" width="11" height="11" fill="currentColor" aria-hidden="true">' +
+        '<path d="M2 3.5A1.5 1.5 0 0 1 3.5 2h9A1.5 1.5 0 0 1 14 3.5v6a1.5 1.5 0 0 1-1.5 1.5H8.2L5 14v-3H3.5A1.5 1.5 0 0 1 2 9.5z"/>' +
+        '</svg>'
+    if (count > 1) {
+        const badge = document.createElement('span')
+        badge.textContent = String(count)
+        marker.append(badge)
+    }
+    return marker
+}
+
+/**
+ * 按标注重建装饰：划线用 inline 装饰，批注用段末 widget；orphaned 的条目不渲染。
+ * 定位用 quote 而不是字符偏移——Markdown 源码偏移与 ProseMirror 位置口径不同（标记占位、换行折叠），
  * 直接用偏移会错位；quote 是纯文本，块内匹配更可靠。
  */
 export function applyAnnotationDecorations(editor: Editor, items: readonly AnnotationRecord[]): void {
     const decorations: Decoration[] = []
+    const notesByBlock = new Map<number, number>()
+    for (const item of items) {
+        if (item.kind === 'note' && !item.orphaned) {
+            notesByBlock.set(item.blockIndex, (notesByBlock.get(item.blockIndex) ?? 0) + 1)
+        }
+    }
     editor.state.doc.content.forEach((node, offset, index) => {
         if (!node.isTextblock) {
             return
@@ -70,6 +102,16 @@ export function applyAnnotationDecorations(editor: Editor, items: readonly Annot
             }
             const from = offset + 1 + localStart
             decorations.push(Decoration.inline(from, from + item.quote.length, { style: HIGHLIGHT_STYLES[item.color] }))
+        }
+        const noteCount = notesByBlock.get(index)
+        if (noteCount !== undefined && noteCount > 0) {
+            const endPos = offset + node.nodeSize - 1
+            decorations.push(
+                Decoration.widget(endPos, createAnnotationMarker(index, noteCount), {
+                    side: 1,
+                    key: `zhai-note-${String(index)}`,
+                }),
+            )
         }
     })
     const set = DecorationSet.create(editor.state.doc, decorations)

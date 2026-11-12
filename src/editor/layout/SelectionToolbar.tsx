@@ -34,9 +34,11 @@ export interface SelectionToolbarProps {
     editor: Editor | null
     /** 划线：同一位置已有划线时取消，由调用方实现 toggle */
     onHighlight: (color: HighlightColor) => Promise<void>
+    /** 批注：把选中文本交给弹窗填写正文 */
+    onAnnotate: (quote: string) => void
 }
 
-export function SelectionToolbar({ editor, onHighlight }: SelectionToolbarProps): JSX.Element | null {
+export function SelectionToolbar({ editor, onHighlight, onAnnotate }: SelectionToolbarProps): JSX.Element | null {
     const { isOpen, left, top, text, dismiss } = useSelectionToolbar(editor)
     const [isCopied, setIsCopied] = useState(false)
     const [isPaletteOpen, setIsPaletteOpen] = useState(false)
@@ -97,7 +99,14 @@ export function SelectionToolbar({ editor, onHighlight }: SelectionToolbarProps)
                         <Highlighter className="size-3.5" />
                         马克笔
                     </Button>
-                    <Button variant="ghost" size="sm" disabled>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(): void => {
+                            onAnnotate(text)
+                            dismiss()
+                        }}
+                    >
                         <MessageSquareText className="size-3.5" />
                         批注
                     </Button>
