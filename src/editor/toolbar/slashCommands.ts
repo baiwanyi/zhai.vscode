@@ -17,6 +17,7 @@ import {
     Pilcrow,
     Quote,
     SquareCode,
+    Table as TableIcon,
     Type,
 } from 'lucide-react'
 import type { ChainedCommands, Editor, Range } from '@tiptap/core'
@@ -109,6 +110,16 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         icon: ListOrdered,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.toggleOrderedList())
+        },
+    },
+    {
+        id: 'table',
+        label: '表格',
+        hint: '3 × 3 带表头',
+        keywords: ['table', 'grid', '表格'],
+        icon: TableIcon,
+        run: (editor, range): void => {
+            apply(editor, range, (chain) => chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }))
         },
     },
     {
