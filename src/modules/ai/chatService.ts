@@ -15,6 +15,7 @@ import * as vscode from 'vscode'
 import type { ZhaiConfig } from '@modules/common/config'
 import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
+import { getActiveDocument, readRichSelection } from '@modules/editor/activeDocument'
 import type {
     AiApprovalMode,
     AiChatDraft,
@@ -73,6 +74,7 @@ import {
 import { INTERACTIVE_TOOLS, READ_ONLY_TOOLS, WRITE_TOOLS } from './providers/codebuddyPermission'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
 import { summarizeMessages } from './usageRecorder'
+import { decideWriteOffsets } from './writeRangeOffsets'
 import { expandZhaiRefs } from './zhaiRefs'
 import type { CliUsageIndex } from './cliUsageIndex'
 import type { HostContextRef, ResolvedContextRef } from './contextRefs'
@@ -1164,34 +1166,89 @@ export class AiChatService implements vscode.Disposable {
         }
     }
 
+    /**
+     * 富文本版写回目标：没有 TextEditor 时用上报的选区推导，规则与文本编辑器一致。
+     * 文档未加载或范围不可用时返回 null——宁可显示「不可写回」，也不猜一个范围让模型改错地方。
+     */
+    private readRichWriteTarget(): {
+        document: vscode.TextDocument
+        range: vscode.Range
+        publicRef: AiWriteTarget
+    } | null {
+        const active = getActiveDocument()
+        if (active === null || active.kind !== 'rich') {
+            return null
+        }
+        const document = vscode.workspace.textDocuments.find((item) => item.uri.toString() === active.uri.toString())
+        if (document === undefined) {
+            return null
+        }
+        const snapshot = readRichSelection(active.uri)
+        const decision = decideWriteOffsets(
+            document.getText(),
+            snapshot === null ? '' : snapshot.quote,
+            MAX_WRITE_DOCUMENT_CHARS,
+        )
+        if (decision === null) {
+            return null
+        }
+        const range = new vscode.Range(document.positionAt(decision.start), document.positionAt(decision.end))
+        return {
+            document,
+            range,
+            publicRef: {
+                scope: decision.scope,
+                displayPath: vscode.workspace.asRelativePath(document.uri, false),
+                startLine: range.start.line + 1,
+                endLine: range.end.line + 1,
+                charCount: decision.end - decision.start,
+                isDirty: document.isDirty,
+            },
+        }
+    }
+
     /** 实时写回目标：仅推导展示字段，供前端判断能否发送与提示改写范围 */
     private describeWriteTarget(): AiWriteTarget | null {
         const editor = vscode.window.activeTextEditor
-        if (!editor) {
-            return null
+        if (editor !== undefined) {
+            const snapshot = buildWriteRange(editor)
+            return snapshot ? snapshot.publicRef : null
         }
-        const snapshot = buildWriteRange(editor)
-        return snapshot ? snapshot.publicRef : null
+        const rich = this.readRichWriteTarget()
+        return rich === null ? null : rich.publicRef
     }
 
     /** 捕获写回目标：在展示字段之外保存 uri、文档版本、替换范围与原文，供发送注入与写回校验 */
     private captureWriteTarget(): HostWriteTarget | null {
         const editor = vscode.window.activeTextEditor
-        if (!editor) {
+        if (editor !== undefined) {
+            const snapshot = buildWriteRange(editor)
+            if (!snapshot) {
+                return null
+            }
+            const text = editor.document.getText(snapshot.range)
+            if (text.trim().length === 0) {
+                return null
+            }
+            return {
+                uri: editor.document.uri,
+                publicRef: snapshot.publicRef,
+                text,
+            }
+        }
+        // 富文本：写回仍由 CLI 直接落盘，这里只需正确给出 uri 与范围，供授权与提示词使用
+        const rich = this.readRichWriteTarget()
+        if (rich === null) {
             return null
         }
-        const snapshot = buildWriteRange(editor)
-        if (!snapshot) {
-            return null
-        }
-        const text = editor.document.getText(snapshot.range)
-        if (text.trim().length === 0) {
+        const snippet = rich.document.getText(rich.range)
+        if (snippet.trim().length === 0) {
             return null
         }
         return {
-            uri: editor.document.uri,
-            publicRef: snapshot.publicRef,
-            text,
+            uri: rich.document.uri,
+            publicRef: rich.publicRef,
+            text: snippet,
         }
     }
 
