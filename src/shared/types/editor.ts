@@ -157,6 +157,13 @@ export interface AnnotationStats {
     byColor: Record<HighlightColor, number>
 }
 
+/** 有标注的文档清单：供总览页的文档维度筛选，docTitle 取该文档最近一条记录 */
+export interface AnnotationDocumentSummary {
+    docPath: string
+    docTitle: string
+    count: number
+}
+
 /** 收窄源码保存请求：content 允许为空（用户可能清空全文） */
 export function isEditorSourceSaveRequest(input: unknown): input is EditorSourceSaveRequest {
     if (typeof input !== 'object' || input === null) {

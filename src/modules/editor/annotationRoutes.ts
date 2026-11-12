@@ -15,7 +15,7 @@ import type {
     HighlightColor,
 } from '@shared/types/editor'
 import { findAnnotation, removeAnnotation } from './annotationRepository'
-import { listAnnotations, statsAnnotations } from './annotationSearch'
+import { listAnnotationDocuments, listAnnotations, statsAnnotations } from './annotationSearch'
 import type { AnnotationDatabase } from './db/connection'
 
 /** 允许的类型与颜色：与库内枚举一致，其余取值按「不限」处理 */
@@ -92,6 +92,8 @@ export class AnnotationRoutes {
                 return this.reveal(payload)
             case 'annotation/remove':
                 return this.remove(payload)
+            case 'annotation/documents':
+                return { items: listAnnotationDocuments(this.deps.db().db) }
             default:
                 throw new Error(`未知的标注方法：${method}`)
         }

@@ -9,6 +9,7 @@ import { Highlighter } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { Input } from '@components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import type { AnnotationStats } from '@shared/types/editor'
 import { request } from '@shared/utils/bridge'
 import { AppAction, AppContent, AppDescription, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
@@ -19,6 +20,9 @@ import { useAnnotationList } from './hooks/useAnnotationList'
 import { AnnotationListItem } from './layout/AnnotationListItem'
 import type { AnnotationFilters } from './hooks/useAnnotationList'
 import type { JSX } from 'react'
+
+/** 下拉里「全部文档」的占位值：Radix 不允许空字符串作为选项值 */
+const ALL_DOCUMENTS = '__all_documents__'
 
 /** 类型选项：全部 / 划线 / 批注 */
 const KIND_OPTIONS: ReadonlyArray<{ value: AnnotationFilters['kind']; label: string }> = [
@@ -32,7 +36,7 @@ const NOTICE_MISSING_FILE = '原文已删除，无法跳转'
 const NOTICE_ORPHANED = '原文已修改，无法精确定位；已打开文档供你手动查找'
 
 export function WorkflowAnnotation(): JSX.Element {
-    const { items, total, isLoading, error, hasMore, filters, setFilters, loadMore, remove, reveal } =
+    const { items, documents, total, isLoading, error, hasMore, filters, setFilters, loadMore, remove, reveal } =
         useAnnotationList()
     const [notice, setNotice] = useState<string | null>(null)
     const [stats, setStats] = useState<AnnotationStats | null>(null)
@@ -100,6 +104,26 @@ export function WorkflowAnnotation(): JSX.Element {
                             </Button>
                         ))}
                     </div>
+                    {documents.length === 0 ? null : (
+                        <Select
+                            value={filters.docPath ?? ALL_DOCUMENTS}
+                            onValueChange={(value): void => {
+                                setFilters({ ...filters, docPath: value === ALL_DOCUMENTS ? null : value })
+                            }}
+                        >
+                            <SelectTrigger className="h-8 w-48 text-xs">
+                                <SelectValue placeholder="全部文档" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value={ALL_DOCUMENTS}>全部文档</SelectItem>
+                                {documents.map((doc) => (
+                                    <SelectItem key={doc.docPath} value={doc.docPath}>
+                                        {doc.docTitle}（{doc.count}）
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    )}
                     <Input
                         value={filters.keyword}
                         placeholder="搜索划线 / 段落 / 批注（两字以上）"

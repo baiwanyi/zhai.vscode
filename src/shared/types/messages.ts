@@ -190,6 +190,7 @@ export type HostMethodName =
     | 'ai/usage'
     | 'ai/usage/prompt'
     | 'ai/writeState'
+    | 'annotation/documents'
     | 'annotation/list'
     | 'annotation/remove'
     | 'annotation/reveal'

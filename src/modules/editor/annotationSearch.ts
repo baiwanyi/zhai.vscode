@@ -7,6 +7,7 @@
  * total 只在首页算一次，翻页时传 null，避免每页都全量 COUNT。
  */
 import type {
+    AnnotationDocumentSummary,
     AnnotationListQuery,
     AnnotationListResult,
     AnnotationRecord,
@@ -195,4 +196,29 @@ export function statsAnnotations(db: Database.Database, docPath: string | null):
         }
     }
     return stats
+}
+
+/**
+ * 有标注的文档清单：按文档分组，取该文档最近一条记录的标题。
+ * 关键约束：标题用「最近一条」而不是任意一条——文档改名后旧记录里还是旧标题，
+ * 取最新的才与用户认知一致；同一文档的标题理论上一致，取最新只是兜底。
+ */
+export function listAnnotationDocuments(db: Database.Database): AnnotationDocumentSummary[] {
+    const rows = db
+        .prepare(
+            `SELECT a.doc_path AS docPath,
+                    (SELECT b.doc_title FROM annotations b
+                      WHERE b.doc_path = a.doc_path
+                      ORDER BY b.created_at DESC LIMIT 1) AS docTitle,
+                    COUNT(*) AS itemCount
+               FROM annotations a
+              GROUP BY a.doc_path
+              ORDER BY MAX(a.created_at) DESC`,
+        )
+        .all() as Array<{ docPath: string; docTitle: string | null; itemCount: number }>
+    return rows.map((row) => ({
+        docPath: row.docPath,
+        docTitle: row.docTitle === null || row.docTitle === '' ? row.docPath : row.docTitle,
+        count: row.itemCount,
+    }))
 }

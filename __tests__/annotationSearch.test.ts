@@ -7,7 +7,12 @@
 import Database from 'better-sqlite3'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { insertAnnotation } from '@modules/editor/annotationRepository'
-import { countAnnotations, listAnnotations, statsAnnotations } from '@modules/editor/annotationSearch'
+import {
+    countAnnotations,
+    listAnnotationDocuments,
+    listAnnotations,
+    statsAnnotations,
+} from '@modules/editor/annotationSearch'
 import { ensureAnnotationSchema } from '@modules/editor/db/schema'
 import type { AnnotationListQuery, AnnotationRecord, NewAnnotation } from '@shared/types/editor'
 
@@ -168,5 +173,26 @@ describe('statsAnnotations', () => {
         insertAt('A 文档', '2026-11-01T00:00:00.000Z')
         insertAt('B 文档', '2026-11-02T00:00:00.000Z', { docPath: DOC_B })
         expect(statsAnnotations(db, DOC_B).total).toBe(1)
+    })
+})
+
+describe('listAnnotationDocuments', () => {
+    it('按文档分组计数，并按最近一条的标题与时间排序', () => {
+        insertAt('甲一', '2026-11-01T00:00:00.000Z', { docTitle: '第一章' })
+        insertAt('甲二', '2026-11-02T00:00:00.000Z', { docTitle: '第一章' })
+        insertAt('乙一', '2026-11-03T00:00:00.000Z', { docPath: DOC_B, docTitle: '随笔' })
+        const documents = listAnnotationDocuments(db)
+        expect(documents).toHaveLength(2)
+        // 排序按最近一条记录：B 文档最新，排在前
+        expect(documents[0]?.docPath).toBe(DOC_B)
+        expect(documents[0]?.docTitle).toBe('随笔')
+        expect(documents[0]?.count).toBe(1)
+        expect(documents[1]?.count).toBe(2)
+    })
+
+    it('标题为空时回落到文档路径，不返回空串', () => {
+        insertAt('无题', '2026-11-01T00:00:00.000Z', { docTitle: '' })
+        const documents = listAnnotationDocuments(db)
+        expect(documents[0]?.docTitle).toBe(DOC_A)
     })
 })
