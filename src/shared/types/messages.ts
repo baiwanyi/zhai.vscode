@@ -202,6 +202,7 @@ export type HostMethodName =
     | 'editor/change'
     | 'editor/query'
     | 'editor/query/abort'
+    | 'editor/selection'
     | 'editor/snapshot'
     | 'editor/source'
     | 'editor/source/save'

@@ -19,6 +19,7 @@ import { useDocumentQuery } from './hooks/useDocumentQuery'
 import { useEditorDocument } from './hooks/useEditorDocument'
 import { useEditorInsert } from './hooks/useEditorInsert'
 import { useEditorReveal } from './hooks/useEditorReveal'
+import { useEditorSelectionReport } from './hooks/useEditorSelectionReport'
 import { useEditorUpload } from './hooks/useEditorUpload'
 import { useSourceMode } from './hooks/useSourceMode'
 import { AnnotationDialog } from './layout/AnnotationDialog'
@@ -84,6 +85,8 @@ export function EditorScreen(): JSX.Element {
     useEditorInsert(editor)
     // 编辑器内粘贴 / 拖拽文件：先上传再插引用，落盘仍归上传模块
     const upload = useEditorUpload(editor)
+    // 选区上报：AI 的选区引用与写回定位靠它拿到当前选中的文字
+    useEditorSelectionReport(editor, path)
     const [annotationQuote, setAnnotationQuote] = useState<string | null>(null)
     const [notePopover, setNotePopover] = useState<NotePopoverState | null>(null)
     const [queryQuote, setQueryQuote] = useState<string | null>(null)

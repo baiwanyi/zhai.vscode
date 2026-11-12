@@ -80,6 +80,27 @@ export function insertIntoRichDocument(uri: vscode.Uri, content: EditorInsertCon
     return richInsertHandler === null ? false : richInsertHandler(uri, content)
 }
 
+/** 富文本选区快照：引用与写回只需要 anchor 文本，不需要 ProseMirror 位置 */
+export interface RichSelectionSnapshot {
+    quote: string
+    blockIndex: number
+    isEmpty: boolean
+}
+
+/** 富文本选区读取器：由编辑层注册，供 AI 引用与写回定位使用 */
+type RichSelectionReader = (uri: vscode.Uri) => RichSelectionSnapshot | null
+
+let richSelectionReader: RichSelectionReader | null = null
+
+export function setRichSelectionReader(reader: RichSelectionReader | null): void {
+    richSelectionReader = reader
+}
+
+/** 读最近一次上报的选区；返回 null 表示该文档没有富文本实例或用户还没动过选区 */
+export function readRichSelection(uri: vscode.Uri): RichSelectionSnapshot | null {
+    return richSelectionReader === null ? null : richSelectionReader(uri)
+}
+
 /** 富文本编辑器关闭：只有当前活跃的正是它时才清空，避免关后台 tab 误清别的文档 */
 export function clearRichDocument(uri: vscode.Uri): void {
     if (current?.kind === 'rich' && current.uri.toString() === uri.toString()) {

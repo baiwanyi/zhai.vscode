@@ -12,9 +12,9 @@ import { getZhaiConfig } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import type { ToastService } from '@modules/common/toastService'
-import { getActiveDocument } from '@modules/editor/activeDocument'
+import { getActiveDocument, readRichSelection } from '@modules/editor/activeDocument'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
-import { createContextRefs, createDocumentContextRef, MAX_CONTEXT_COUNT } from './contextRefs'
+import { createContextRefs, createDocumentContextRef, createQuoteContextRef, MAX_CONTEXT_COUNT } from './contextRefs'
 import { clearCodebuddyLogin, rememberCodebuddyLogin } from './providers/codebuddyLogin'
 import {
     buildCodebuddyEnv,
@@ -144,9 +144,12 @@ async function addEditorContextToChat(
     if (editor !== undefined) {
         contextResult = createContextRefs(editor)
     } else if (active !== null) {
-        // 富文本 tab 没有 TextEditor：按整篇引用。
-        // 选区级引用需要 webview 上报选区，等选区上报落地后再补。
-        contextResult = createDocumentContextRef(await vscode.workspace.openTextDocument(active.uri))
+        // 富文本 tab 没有 TextEditor：优先用上报的选区，定位不到再降级为整篇
+        const document = await vscode.workspace.openTextDocument(active.uri)
+        const snapshot = readRichSelection(active.uri)
+        const quoteRef =
+            snapshot !== null && snapshot.quote !== '' ? createQuoteContextRef(document, snapshot.quote) : null
+        contextResult = quoteRef === null ? createDocumentContextRef(document) : { refs: [quoteRef], rejected: [] }
     } else {
         toast.notifyOrShow('warning', '宅写作：请先在编辑器中打开需要引用的文件')
         return

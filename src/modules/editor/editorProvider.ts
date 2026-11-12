@@ -24,6 +24,7 @@ import {
     isEditorChangeRequest,
     isEditorQueryAbortRequest,
     isEditorQueryRequest,
+    isEditorSelectionRequest,
     isEditorSourceSaveRequest,
 } from '@shared/types/editor'
 import type {
@@ -45,6 +46,13 @@ export interface ChapterSnapshotWriter {
     captureChapterBeforeWrite: (uri: vscode.Uri, content: string) => Promise<void>
 }
 
+/** 宿主缓存的选区快照：quote 用于在 Markdown 里定位，块序号仅作提示 */
+export interface EditorSelectionSnapshot {
+    quote: string
+    blockIndex: number
+    isEmpty: boolean
+}
+
 export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     public static readonly viewType = RICH_EDITOR_VIEW_TYPE
 
@@ -62,6 +70,9 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     /** 打开中的富文本面板：标注跳转据此判断能否直接定位，而不是改开文本编辑器 */
     private readonly panels = new Map<string, vscode.WebviewPanel>()
+
+    /** 各文档最近一次上报的选区：选区级引用与 AI 写回据此定位，key 为相对路径 */
+    private readonly selections = new Map<string, EditorSelectionSnapshot>()
 
     public constructor(
         private readonly extensionUri: vscode.Uri,
@@ -124,6 +135,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             this.appliedVersions.delete(key)
             this.capturedChapters.delete(key)
             this.panels.delete(key)
+            this.selections.delete(this.readRelativePath(document))
             for (const controller of this.queries.values()) {
                 controller.abort()
             }
@@ -204,6 +216,11 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         })
         panel.reveal(undefined, false)
         return true
+    }
+
+    /** 读取最近一次上报的选区：没有上报过（或已关闭）时返回 null，调用方应回落到整篇 */
+    public readSelectionFor(uri: vscode.Uri): EditorSelectionSnapshot | null {
+        return this.selections.get(vscode.workspace.asRelativePath(uri, false)) ?? null
     }
 
     /** 快照消息：附带存储根的 webview 前缀，供前端把 `@zhai/` 引用转成可加载地址 */
@@ -441,6 +458,20 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 }
                 const result = await this.applyChange(document, payload.version, payload.blocks)
                 await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: result })
+                return
+            }
+            // 选区上报：前端节流后推来，宿主只做缓存与路径校验，供选区引用与写回定位使用
+            if (method === 'editor/selection') {
+                if (!isEditorSelectionRequest(payload) || payload.path !== this.readRelativePath(document)) {
+                    await this.respondError(panel, reqId, 'invalid-payload', '选区上报参数非法')
+                    return
+                }
+                this.selections.set(payload.path, {
+                    quote: payload.quote,
+                    blockIndex: payload.blockIndex,
+                    isEmpty: payload.isEmpty,
+                })
+                await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { ok: true } })
                 return
             }
             // 上传：编辑器内粘贴 / 拖拽要自己发起上传，复用工作流面板的上传路由，落盘口径完全一致

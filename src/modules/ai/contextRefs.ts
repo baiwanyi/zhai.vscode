@@ -50,6 +50,23 @@ export function createDocumentContextRef(document: vscode.TextDocument): Context
     return { refs: [createFileRef(document, displayPath)], rejected: [] }
 }
 
+/**
+ * 按选区文本生成引用：富文本没有行号，先用 quote 在文档里定位，再复用行范围口径。
+ * 定位不到（原文已被改过）返回 null，由调用方降级为整篇引用，而不是给出一条错位的引用。
+ */
+export function createQuoteContextRef(document: vscode.TextDocument, quote: string): HostContextRef | null {
+    const needle = quote.trim()
+    if (needle === '') {
+        return null
+    }
+    const index = document.getText().indexOf(needle)
+    if (index < 0) {
+        return null
+    }
+    const range = new vscode.Range(document.positionAt(index), document.positionAt(index + needle.length))
+    return createSelectionRef(document, vscode.workspace.asRelativePath(document.uri, false), range)
+}
+
 /** 依据编辑器选区生成引用：无选区取整篇，有选区逐个取覆盖的行范围 */
 export function createContextRefs(editor: vscode.TextEditor): ContextRefResult {
     const { document } = editor

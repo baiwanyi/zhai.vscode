@@ -7,7 +7,8 @@
  */
 import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
-import { setRichInsertHandler, setRichRevealHandler } from '@modules/editor/activeDocument'
+import { setRichInsertHandler, setRichRevealHandler, setRichSelectionReader } from '@modules/editor/activeDocument'
+import type { RichSelectionSnapshot } from '@modules/editor/activeDocument'
 import type { AnnotationDatabase } from '@modules/editor/db/connection'
 import { MarkdownEditorProvider } from '@modules/editor/editorProvider'
 import type { ChapterSnapshotWriter } from '@modules/editor/editorProvider'
@@ -54,6 +55,8 @@ export function assembleEditorLayer(
     setRichRevealHandler((uri, request): boolean => provider.revealInPanel(uri, request))
     // 上传 / 图库的插入同样走注册点：有富文本实例就插节点，否则上传模块回落文本编辑器
     setRichInsertHandler((uri, content): boolean => provider.insertInPanel(uri, content))
+    // 选区快照：AI 的选区引用与写回定位都从这里取，不再依赖 activeTextEditor
+    setRichSelectionReader((uri): RichSelectionSnapshot | null => provider.readSelectionFor(uri))
     // 注册成功即打一条：排查「插件打开仍在文本编辑器」时，先确认 provider 是否真的注册上了
     logger.info(`编辑器层就绪：viewType=${MarkdownEditorProvider.viewType}`)
     // 返回实例：标注跳转需要知道当前文档是否已有富文本面板，能直接定位就不必改开文本编辑器

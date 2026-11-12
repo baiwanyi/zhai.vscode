@@ -212,6 +212,31 @@ export function isEditorSnapshotMessage(input: unknown): input is EditorSnapshot
     return typeof value.assetPrefix === 'string'
 }
 
+/** 富文本选区上报：宿主据此知道用户在富文本里选了什么，用于选区引用与写回定位 */
+export interface EditorSelectionRequest {
+    path: string
+    /** 选区纯文本：跨块时为空串（宿主无法用整段文字在 Markdown 中定位） */
+    quote: string
+    /** 选区起点所在块序号；跨块或空选区为 -1 */
+    blockIndex: number
+    /** 是否为空选区（只有光标） */
+    isEmpty: boolean
+}
+
+/** 收窄选区上报请求 */
+export function isEditorSelectionRequest(input: unknown): input is EditorSelectionRequest {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const value = input as { path?: unknown; quote?: unknown; blockIndex?: unknown; isEmpty?: unknown }
+    return (
+        typeof value.path === 'string' &&
+        typeof value.quote === 'string' &&
+        typeof value.blockIndex === 'number' &&
+        typeof value.isEmpty === 'boolean'
+    )
+}
+
 /** 富文本定位请求：标注总览跳转时，若文档已在富文本 tab 中，直接选中并滚动到原文 */
 export interface EditorRevealPayload {
     kind: 'reveal'
