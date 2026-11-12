@@ -196,6 +196,8 @@ export type HostMethodName =
     | 'editor/annotation/update'
     | 'editor/annotations'
     | 'editor/change'
+    | 'editor/query'
+    | 'editor/query/abort'
     | 'editor/snapshot'
     | 'host/command'
     | 'host/openExternal'

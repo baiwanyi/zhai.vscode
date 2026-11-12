@@ -36,9 +36,16 @@ export interface SelectionToolbarProps {
     onHighlight: (color: HighlightColor) => Promise<void>
     /** 批注：把选中文本交给弹窗填写正文 */
     onAnnotate: (quote: string) => void
+    /** 查询：把选中文本交给 AI 查询弹窗 */
+    onQuery: (quote: string) => void
 }
 
-export function SelectionToolbar({ editor, onHighlight, onAnnotate }: SelectionToolbarProps): JSX.Element | null {
+export function SelectionToolbar({
+    editor,
+    onHighlight,
+    onAnnotate,
+    onQuery,
+}: SelectionToolbarProps): JSX.Element | null {
     const { isOpen, left, top, text, dismiss } = useSelectionToolbar(editor)
     const [isCopied, setIsCopied] = useState(false)
     const [isPaletteOpen, setIsPaletteOpen] = useState(false)
@@ -110,7 +117,14 @@ export function SelectionToolbar({ editor, onHighlight, onAnnotate }: SelectionT
                         <MessageSquareText className="size-3.5" />
                         批注
                     </Button>
-                    <Button variant="ghost" size="sm" disabled>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(): void => {
+                            onQuery(text)
+                            dismiss()
+                        }}
+                    >
                         <Search className="size-3.5" />
                         查询
                     </Button>

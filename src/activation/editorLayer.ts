@@ -10,6 +10,7 @@ import type { AnnotationDatabase } from '@modules/editor/db/connection'
 import { MarkdownEditorProvider } from '@modules/editor/editorProvider'
 import type { ChapterSnapshotWriter } from '@modules/editor/editorProvider'
 import { RICH_EDITOR_VIEW_TYPE, readActiveTabUri } from '@modules/editor/openDocument'
+import type { EditorQueryDeps } from '@modules/editor/queryService'
 
 /** 读取活跃 URI 并交给回调；取不到时提示用户先打开文档 */
 async function withActiveUri(run: (uri: vscode.Uri) => Promise<void>): Promise<void> {
@@ -25,8 +26,9 @@ export function assembleEditorLayer(
     context: vscode.ExtensionContext,
     snapshot: ChapterSnapshotWriter | null = null,
     annotationDb: (() => AnnotationDatabase) | null = null,
+    query: EditorQueryDeps | null = null,
 ): void {
-    const provider = new MarkdownEditorProvider(context.extensionUri, snapshot, annotationDb)
+    const provider = new MarkdownEditorProvider(context.extensionUri, snapshot, annotationDb, query)
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider(MarkdownEditorProvider.viewType, provider, {
             webviewOptions: { retainContextWhenHidden: true },

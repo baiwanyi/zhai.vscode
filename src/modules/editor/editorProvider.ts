@@ -17,12 +17,20 @@ import {
     updateAnnotation,
 } from '@modules/editor/annotationRepository'
 import type { AnnotationDatabase } from '@modules/editor/db/connection'
-import { isAddAnnotationRequest, isAnnotationIdRequest, isEditorChangeRequest } from '@shared/types/editor'
+import {
+    isAddAnnotationRequest,
+    isAnnotationIdRequest,
+    isEditorChangeRequest,
+    isEditorQueryAbortRequest,
+    isEditorQueryRequest,
+} from '@shared/types/editor'
 import type { EditorChangeResult, EditorDocSnapshot } from '@shared/types/editor'
 import { isRequestMessage } from '@shared/types/messages'
 import { clearRichDocument, reportRichDocument } from './activeDocument'
 import { applyBlockEdits, buildBlockEdits, readEditorSnapshot } from './editorDocService'
 import { RICH_EDITOR_VIEW_TYPE } from './openDocument'
+import { runEditorQuery } from './queryService'
+import type { EditorQueryDeps } from './queryService'
 import type Database from 'better-sqlite3'
 
 /** 章节写回前留底：只用到这一个方法，按结构化接口声明便于替身注入 */
@@ -42,10 +50,14 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     /** 已留底过的文档：每个打开会话只留一次，避免每 500ms 就生成一版章节快照 */
     private readonly capturedChapters = new Set<string>()
 
+    /** 在途查询：reqId → AbortController，关闭弹窗或关 tab 时统一中断 */
+    private readonly queries = new Map<string, AbortController>()
+
     public constructor(
         private readonly extensionUri: vscode.Uri,
         private readonly snapshot: ChapterSnapshotWriter | null = null,
         private readonly annotationDb: (() => AnnotationDatabase) | null = null,
+        private readonly query: EditorQueryDeps | null = null,
     ) {}
 
     public async resolveCustomTextEditor(
@@ -98,6 +110,10 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             this.snapshots.delete(key)
             this.appliedVersions.delete(key)
             this.capturedChapters.delete(key)
+            for (const controller of this.queries.values()) {
+                controller.abort()
+            }
+            this.queries.clear()
             clearRichDocument(document.uri)
         })
 
@@ -227,7 +243,46 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         return true
     }
 
-    /** 处理前端请求：snapshot、change 与标注协议，其余一律以 unknown-method 拒绝 */
+    /** 执行查询并把增量与终态推给 webview：终态带全文，重开弹窗也能看到上次结果 */
+    private async runQuery(
+        panel: vscode.WebviewPanel,
+        request: { quote: string; question: string; clientId: string },
+        controller: AbortController,
+    ): Promise<void> {
+        const deps = this.query
+        if (deps === null) {
+            return
+        }
+        try {
+            const outcome = await runEditorQuery(deps, {
+                quote: request.quote,
+                question: request.question,
+                signal: controller.signal,
+                onDelta: (delta): void => {
+                    void panel.webview.postMessage({
+                        type: 'state',
+                        channel: 'editor',
+                        payload: { kind: 'query', clientId: request.clientId, delta },
+                    })
+                },
+            })
+            await panel.webview.postMessage({
+                type: 'state',
+                channel: 'editor',
+                payload: {
+                    kind: 'query',
+                    clientId: request.clientId,
+                    status: outcome.ok ? 'done' : 'error',
+                    reason: outcome.reason ?? null,
+                    content: outcome.content,
+                },
+            })
+        } finally {
+            this.queries.delete(request.clientId)
+        }
+    }
+
+    /** 处理前端请求：snapshot、change、查询与标注协议，其余一律以 unknown-method 拒绝 */
     private async handleMessage(
         document: vscode.TextDocument,
         panel: vscode.WebviewPanel,
@@ -255,6 +310,35 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 }
                 const result = await this.applyChange(document, payload.version, payload.blocks)
                 await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: result })
+                return
+            }
+            if (method === 'editor/query') {
+                if (!isEditorQueryRequest(payload)) {
+                    await this.respondError(panel, reqId, 'invalid-payload', '查询参数非法')
+                    return
+                }
+                if (payload.path !== this.readRelativePath(document)) {
+                    await this.respondError(panel, reqId, 'path-mismatch', '查询路径与当前文档不一致')
+                    return
+                }
+                if (this.query === null) {
+                    await this.respondError(panel, reqId, 'ai-unavailable', 'AI 通道尚未就绪')
+                    return
+                }
+                const controller = new AbortController()
+                this.queries.set(payload.clientId, controller)
+                // 先回执再流式推送：request 的 promise 立即结束，增量走 state 通道
+                await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { started: true } })
+                void this.runQuery(panel, payload, controller)
+                return
+            }
+            if (method === 'editor/query/abort') {
+                if (!isEditorQueryAbortRequest(payload)) {
+                    await this.respondError(panel, reqId, 'invalid-payload', '取消参数非法')
+                    return
+                }
+                this.queries.get(payload.clientId)?.abort()
+                await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { aborted: true } })
                 return
             }
             if (await this.handleAnnotation(document, panel, reqId, method, payload)) {

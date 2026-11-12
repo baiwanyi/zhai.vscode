@@ -331,7 +331,11 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     // 注入章节快照服务，使富文本首次回写前与 AI 写回同一套留底口径；
     // 标注库按存储根懒打开，换根后由连接缓存自行重建
     const annotationDbProvider = createStorageDatabaseProvider(openAnnotationDatabase, cacheRoot)
-    assembleEditorLayer(context, snapshotService, annotationDbProvider)
+    // 查询复用全扩展共用的通道与记账实例，模型取当前选中模型，不新增模型入口
+    assembleEditorLayer(context, snapshotService, annotationDbProvider, {
+        provider: ai.aiProvider,
+        usageRecorder: ai.usageRecorder,
+    })
     // 活跃文档事实源：文本与富文本切换统一由此广播，工作流路由与插入目标不再直读 activeTextEditor
     trackActiveDocument(context.subscriptions)
 

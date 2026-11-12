@@ -10,9 +10,11 @@ import StarterKit from '@tiptap/starter-kit'
 import { useState } from 'react'
 import type { AnnotationRecord } from '@shared/types/editor'
 import { useAnnotations } from './hooks/useAnnotations'
+import { useDocumentQuery } from './hooks/useDocumentQuery'
 import { useEditorDocument } from './hooks/useEditorDocument'
 import { AnnotationDialog } from './layout/AnnotationDialog'
 import { AnnotationPopover } from './layout/AnnotationPopover'
+import { QueryDialog } from './layout/QueryDialog'
 import { SelectionToolbar } from './layout/SelectionToolbar'
 import { AnnotationExtension } from './marks/annotationExtension'
 import type { JSX, MouseEvent } from 'react'
@@ -40,6 +42,8 @@ export function EditorScreen(): JSX.Element {
     const { items, addOrToggleHighlight, addNote, removeAnnotation } = useAnnotations(editor, path, blocks)
     const [annotationQuote, setAnnotationQuote] = useState<string | null>(null)
     const [notePopover, setNotePopover] = useState<NotePopoverState | null>(null)
+    const [queryQuote, setQueryQuote] = useState<string | null>(null)
+    const query = useDocumentQuery(path)
 
     /** 段末图标点击：widget 由 ProseMirror 插入，只有事件委托能拿到点击 */
     const handleContentClick = (event: MouseEvent<HTMLDivElement>): void => {
@@ -77,6 +81,9 @@ export function EditorScreen(): JSX.Element {
                         onAnnotate={(quote): void => {
                             setAnnotationQuote(quote)
                         }}
+                        onQuery={(quote): void => {
+                            setQueryQuote(quote)
+                        }}
                     />
                 </div>
             </div>
@@ -105,6 +112,16 @@ export function EditorScreen(): JSX.Element {
                     }
                 }}
                 onRemove={removeAnnotation}
+            />
+            <QueryDialog
+                isOpen={queryQuote !== null}
+                quote={queryQuote ?? ''}
+                onOpenChange={(nextOpen): void => {
+                    if (!nextOpen) {
+                        setQueryQuote(null)
+                    }
+                }}
+                query={query}
             />
         </div>
     )

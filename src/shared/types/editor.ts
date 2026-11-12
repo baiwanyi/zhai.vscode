@@ -46,6 +46,61 @@ export interface EditorChangeResult {
     rejected?: 'unsupported-syntax'
 }
 
+/** 编辑区查询请求：选中文本 + 问题，路径用于归属校验，clientId 用于匹配流式回包 */
+export interface EditorQueryRequest {
+    path: string
+    quote: string
+    question: string
+    /** 前端生成的关联 id：宿主的增量与终态都带上它，避免多窗口串流 */
+    clientId: string
+}
+
+/** 查询流增量：宿主按 clientId 推给 webview */
+export interface EditorQueryDelta {
+    kind: 'query'
+    clientId: string
+    delta: string
+}
+
+/** 查询结束：status 为 error 时 reason 必有值 */
+export interface EditorQueryDone {
+    kind: 'query'
+    clientId: string
+    status: 'done' | 'error'
+    reason: string | null
+    content: string
+}
+
+/** 取消查询：按 clientId 定位在途请求 */
+export interface EditorQueryAbortRequest {
+    clientId: string
+}
+
+/** 收窄取消请求 */
+export function isEditorQueryAbortRequest(input: unknown): input is EditorQueryAbortRequest {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const request = input as { clientId?: unknown }
+    return typeof request.clientId === 'string' && request.clientId.length > 0
+}
+
+/** 收窄查询请求：quote 必须非空，question 允许为空（用默认问题） */
+export function isEditorQueryRequest(input: unknown): input is EditorQueryRequest {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const request = input as { path?: unknown; quote?: unknown; question?: unknown; clientId?: unknown }
+    return (
+        typeof request.path === 'string' &&
+        typeof request.quote === 'string' &&
+        request.quote.trim() !== '' &&
+        typeof request.question === 'string' &&
+        typeof request.clientId === 'string' &&
+        request.clientId.length > 0
+    )
+}
+
 /** 收窄快照：Webview 收到的是不可信数据，块结构与版本逐字段校验 */
 export function isEditorDocSnapshot(input: unknown): input is EditorDocSnapshot {
     if (typeof input !== 'object' || input === null) {
