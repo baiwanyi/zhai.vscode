@@ -34,6 +34,22 @@ export interface ResolvedContextRef {
     isTruncated: boolean
 }
 
+/**
+ * 按整篇文档生成引用：富文本 tab 没有 TextEditor，但引用只需要 TextDocument。
+ * 与 createContextRefs 的无选区分支同口径（超过单次上限时拒绝并给出可执行建议）。
+ */
+export function createDocumentContextRef(document: vscode.TextDocument): ContextRefResult {
+    const displayPath = vscode.workspace.asRelativePath(document.uri, false)
+    const charCount = document.getText().length
+    if (charCount > MAX_CONTEXT_CHARS) {
+        return {
+            refs: [],
+            rejected: [`${displayPath} 共约 ${charCount} 字，超过单次引用上限，富文本下请切回文本编辑器选中片段`],
+        }
+    }
+    return { refs: [createFileRef(document, displayPath)], rejected: [] }
+}
+
 /** 依据编辑器选区生成引用：无选区取整篇，有选区逐个取覆盖的行范围 */
 export function createContextRefs(editor: vscode.TextEditor): ContextRefResult {
     const { document } = editor
