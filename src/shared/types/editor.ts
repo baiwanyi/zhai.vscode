@@ -122,6 +122,41 @@ export interface EditorSourceSaveResult {
     version: number
 }
 
+/** 列表游标：keyset 分页，避免深 OFFSET 扫描 */
+export interface AnnotationCursor {
+    createdAt: string
+    id: string
+}
+
+/** 总览页查询条件：全部字段可空，空表示不限 */
+export interface AnnotationListQuery {
+    cursor: AnnotationCursor | null
+    /** 每页条数：默认 50，上限 200 */
+    limit: number
+    kind: AnnotationKind | null
+    color: HighlightColor | null
+    docPath: string | null
+    orphanedOnly: boolean
+    /** 关键词：≥3 字走 FTS，1–2 字走 LIKE */
+    keyword: string
+}
+
+/** 列表结果：total 只在首页返回，避免每次翻页都做一次全量 COUNT */
+export interface AnnotationListResult {
+    items: AnnotationRecord[]
+    nextCursor: AnnotationCursor | null
+    total: number | null
+}
+
+/** 总览统计：按类型与颜色分组 */
+export interface AnnotationStats {
+    total: number
+    highlights: number
+    notes: number
+    orphaned: number
+    byColor: Record<HighlightColor, number>
+}
+
 /** 收窄源码保存请求：content 允许为空（用户可能清空全文） */
 export function isEditorSourceSaveRequest(input: unknown): input is EditorSourceSaveRequest {
     if (typeof input !== 'object' || input === null) {
