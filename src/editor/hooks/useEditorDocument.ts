@@ -8,7 +8,7 @@
 import { DOMSerializer } from '@tiptap/pm/model'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isEditorDocSnapshot } from '@shared/types/editor'
-import type { EditorChangeResult, EditorDocSnapshot } from '@shared/types/editor'
+import type { EditorBlock, EditorChangeResult, EditorDocSnapshot } from '@shared/types/editor'
 import { onState, request } from '@shared/utils/bridge'
 import type { Editor } from '@tiptap/react'
 
@@ -38,10 +38,19 @@ export interface EditorDocumentState {
     status: string
     /** 是否允许编辑：宿主判定为 false 时前端必须置只读 */
     isEditable: boolean
+    /** 当前文档相对路径：标注协议用它做路径校验 */
+    path: string
+    /** 块偏移快照：标注存全文偏移时用于换算 */
+    blocks: EditorBlock[]
 }
 
 export function useEditorDocument(editor: Editor | null): EditorDocumentState {
-    const [state, setState] = useState<EditorDocumentState>({ status: STATUS_LOADING, isEditable: false })
+    const [state, setState] = useState<EditorDocumentState>({
+        status: STATUS_LOADING,
+        isEditable: false,
+        path: '',
+        blocks: [],
+    })
     const baselineRef = useRef<string[]>([])
     const pathRef = useRef('')
     const versionRef = useRef(0)
@@ -60,6 +69,8 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
             setState({
                 status: snapshot.editable ? STATUS_READY : STATUS_READONLY,
                 isEditable: snapshot.editable,
+                path: snapshot.path,
+                blocks: snapshot.blocks,
             })
             // 下一帧再采样：setContent 的 DOM 同步完成后序列化结果才稳定
             requestAnimationFrame(() => {
@@ -76,7 +87,7 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
                 const snapshot = await request<EditorDocSnapshot>('editor/snapshot')
                 applySnapshot(snapshot, force)
             } catch {
-                setState({ status: STATUS_FAILED, isEditable: false })
+                setState((prev) => ({ ...prev, status: STATUS_FAILED, isEditable: false }))
             }
         },
         [applySnapshot],

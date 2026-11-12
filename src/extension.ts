@@ -27,7 +27,7 @@ import { StatusBarService } from './modules/common/statusBar'
 import { createStorageDatabaseProvider } from './modules/common/storageDbProvider'
 import { ToastService } from './modules/common/toastService'
 import { trackActiveDocument } from './modules/editor/activeDocument'
-import { closeAnnotationDatabases } from './modules/editor/db/connection'
+import { closeAnnotationDatabases, openAnnotationDatabase } from './modules/editor/db/connection'
 import { ImageProviderRouter } from './modules/imagegen/ai/imageProvider'
 import { PressCoverService } from './modules/imagegen/coverService'
 import { ImageGenerateService } from './modules/imagegen/imageGenerateService'
@@ -328,8 +328,10 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     markStage('面板注册完成')
 
     // 编辑器：富文本自定义编辑器与切换命令；打开动作由 modules/editor/openDocument 统一决定；
-    // 注入章节快照服务，使富文本首次回写前与 AI 写回同一套留底口径
-    assembleEditorLayer(context, snapshotService)
+    // 注入章节快照服务，使富文本首次回写前与 AI 写回同一套留底口径；
+    // 标注库按存储根懒打开，换根后由连接缓存自行重建
+    const annotationDbProvider = createStorageDatabaseProvider(openAnnotationDatabase, cacheRoot)
+    assembleEditorLayer(context, snapshotService, annotationDbProvider)
     // 活跃文档事实源：文本与富文本切换统一由此广播，工作流路由与插入目标不再直读 activeTextEditor
     trackActiveDocument(context.subscriptions)
 

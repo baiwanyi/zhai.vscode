@@ -6,6 +6,7 @@
  * 本层不持有连接或文件句柄，全部 Disposable 交给 context.subscriptions 释放。
  */
 import * as vscode from 'vscode'
+import type { AnnotationDatabase } from '@modules/editor/db/connection'
 import { MarkdownEditorProvider } from '@modules/editor/editorProvider'
 import type { ChapterSnapshotWriter } from '@modules/editor/editorProvider'
 import { RICH_EDITOR_VIEW_TYPE, readActiveTabUri } from '@modules/editor/openDocument'
@@ -23,8 +24,9 @@ async function withActiveUri(run: (uri: vscode.Uri) => Promise<void>): Promise<v
 export function assembleEditorLayer(
     context: vscode.ExtensionContext,
     snapshot: ChapterSnapshotWriter | null = null,
+    annotationDb: (() => AnnotationDatabase) | null = null,
 ): void {
-    const provider = new MarkdownEditorProvider(context.extensionUri, snapshot)
+    const provider = new MarkdownEditorProvider(context.extensionUri, snapshot, annotationDb)
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider(MarkdownEditorProvider.viewType, provider, {
             webviewOptions: { retainContextWhenHidden: true },

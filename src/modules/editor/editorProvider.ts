@@ -10,12 +10,20 @@ import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import { buildWebviewHtml } from '@modules/common/webviewHtml'
-import { isEditorChangeRequest } from '@shared/types/editor'
+import {
+    insertAnnotation,
+    listAnnotationsByDoc,
+    removeAnnotation,
+    updateAnnotation,
+} from '@modules/editor/annotationRepository'
+import type { AnnotationDatabase } from '@modules/editor/db/connection'
+import { isAddAnnotationRequest, isAnnotationIdRequest, isEditorChangeRequest } from '@shared/types/editor'
 import type { EditorChangeResult, EditorDocSnapshot } from '@shared/types/editor'
 import { isRequestMessage } from '@shared/types/messages'
 import { clearRichDocument, reportRichDocument } from './activeDocument'
 import { applyBlockEdits, buildBlockEdits, readEditorSnapshot } from './editorDocService'
 import { RICH_EDITOR_VIEW_TYPE } from './openDocument'
+import type Database from 'better-sqlite3'
 
 /** 章节写回前留底：只用到这一个方法，按结构化接口声明便于替身注入 */
 export interface ChapterSnapshotWriter {
@@ -37,6 +45,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     public constructor(
         private readonly extensionUri: vscode.Uri,
         private readonly snapshot: ChapterSnapshotWriter | null = null,
+        private readonly annotationDb: (() => AnnotationDatabase) | null = null,
     ) {}
 
     public async resolveCustomTextEditor(
@@ -117,7 +126,108 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         }
     }
 
-    /** 处理前端请求：只认 snapshot 与 change，其余一律以 unknown-method 拒绝 */
+    /** 取标注库连接：未装配时返回 null，协议层据此给出「尚未就绪」 */
+    private readAnnotationDatabase(): Database.Database | null {
+        return this.annotationDb === null ? null : this.annotationDb().db
+    }
+
+    /** 当前文档相对路径：与快照里的 path 同口径，用于拒绝跨文档写标注 */
+    private readRelativePath(document: vscode.TextDocument): string {
+        return vscode.workspace.asRelativePath(document.uri, false)
+    }
+
+    /** 文档标题快照：取文件名去扩展名，不额外解析 Frontmatter */
+    private readDocTitle(document: vscode.TextDocument): string {
+        const name = document.uri.path.split('/').pop() ?? ''
+        return name.endsWith('.md') ? name.slice(0, -3) : name
+    }
+
+    /** 统一错误回执：前端按 code 分发文案 */
+    private async respondError(
+        panel: vscode.WebviewPanel,
+        reqId: string,
+        code: string,
+        message: string,
+    ): Promise<void> {
+        await panel.webview.postMessage({ type: 'response', reqId, ok: false, error: { code, message } })
+    }
+
+    /**
+     * 标注协议：列表、新建划线、删除、改色。
+     * 关键约束：所有写操作都要求 payload.path 与当前文档相对路径一致，
+     * 否则前端拼错路径就能往别的文档里塞标注；返回 true 表示已处理。
+     */
+    private async handleAnnotation(
+        document: vscode.TextDocument,
+        panel: vscode.WebviewPanel,
+        reqId: string,
+        method: string,
+        payload: unknown,
+    ): Promise<boolean> {
+        if (method !== 'editor/annotations' && !method.startsWith('editor/annotation/')) {
+            return false
+        }
+        const db = this.readAnnotationDatabase()
+        if (db === null) {
+            await this.respondError(panel, reqId, 'annotation-db-unavailable', '标注库尚未就绪')
+            return true
+        }
+        const path = this.readRelativePath(document)
+        if (method === 'editor/annotations') {
+            const items = listAnnotationsByDoc(db, path)
+            await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { items } })
+            return true
+        }
+        if (method === 'editor/annotation/add') {
+            if (!isAddAnnotationRequest(payload)) {
+                await this.respondError(panel, reqId, 'invalid-payload', '划线参数非法')
+                return true
+            }
+            if (payload.path !== path) {
+                await this.respondError(panel, reqId, 'path-mismatch', '标注路径与当前文档不一致')
+                return true
+            }
+            const item = insertAnnotation(db, {
+                docPath: path,
+                docTitle: this.readDocTitle(document),
+                kind: 'highlight',
+                mode: 'inline',
+                quote: payload.draft.quote,
+                prefix: payload.draft.prefix,
+                suffix: payload.draft.suffix,
+                startOffset: payload.draft.startOffset,
+                endOffset: payload.draft.endOffset,
+                blockId: payload.draft.blockId,
+                blockIndex: payload.draft.blockIndex,
+                blockHash: payload.draft.blockHash,
+                blockText: payload.draft.blockText,
+                color: payload.color,
+                note: null,
+                replies: '[]',
+                orphaned: false,
+            })
+            await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { item } })
+            return true
+        }
+        if (!isAnnotationIdRequest(payload)) {
+            await this.respondError(panel, reqId, 'invalid-payload', '标注参数非法')
+            return true
+        }
+        if (payload.path !== path) {
+            await this.respondError(panel, reqId, 'path-mismatch', '标注路径与当前文档不一致')
+            return true
+        }
+        if (method === 'editor/annotation/remove') {
+            const isRemoved = removeAnnotation(db, payload.id)
+            await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { removed: isRemoved } })
+            return true
+        }
+        const isUpdated = updateAnnotation(db, payload.id, { color: payload.color ?? null })
+        await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { updated: isUpdated } })
+        return true
+    }
+
+    /** 处理前端请求：snapshot、change 与标注协议，其余一律以 unknown-method 拒绝 */
     private async handleMessage(
         document: vscode.TextDocument,
         panel: vscode.WebviewPanel,
@@ -145,6 +255,9 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 }
                 const result = await this.applyChange(document, payload.version, payload.blocks)
                 await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: result })
+                return
+            }
+            if (await this.handleAnnotation(document, panel, reqId, method, payload)) {
                 return
             }
             await panel.webview.postMessage({

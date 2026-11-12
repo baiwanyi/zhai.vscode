@@ -69,6 +69,9 @@ importers:
       '@testing-library/user-event':
         specifier: ^14.6.9
         version: 14.6.9(@testing-library/dom@10.4.2)
+      '@tiptap/core':
+        specifier: ^3.33.1
+        version: 3.33.1(@tiptap/pm@3.33.1)
       '@tiptap/pm':
         specifier: ^3.33.1
         version: 3.33.1

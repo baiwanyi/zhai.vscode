@@ -117,6 +117,83 @@ export interface AnnotationRecord {
 /** 新增标注的入参：id 与时间由仓储生成 */
 export type NewAnnotation = Omit<AnnotationRecord, 'id' | 'createdAt' | 'updatedAt'>
 
+/** 颜色枚举的运行时白名单：与类型定义同源，供守卫复用 */
+const HIGHLIGHT_COLOR_VALUES: readonly string[] = ['coral', 'violet', 'blue', 'emerald', 'amber']
+
+/** 划线选区草稿：由 Webview 从 ProseMirror 文档算出，宿主只做校验与落库 */
+export interface AnnotationDraft {
+    quote: string
+    prefix: string
+    suffix: string
+    startOffset: number
+    endOffset: number
+    blockId: string
+    blockIndex: number
+    blockHash: string
+    blockText: string
+}
+
+/** 新建划线请求 */
+export interface AddAnnotationRequest {
+    path: string
+    color: HighlightColor
+    draft: AnnotationDraft
+}
+
+/** 按 id 操作标注（删除、改色） */
+export interface AnnotationIdRequest {
+    path: string
+    id: string
+    /** 改色时必填；null 表示清除划线颜色 */
+    color?: HighlightColor | null
+}
+
+/** 收窄草案：数值与字符串逐字段校验，空白 quote 直接拒绝 */
+export function isAnnotationDraft(input: unknown): input is AnnotationDraft {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const draft = input as Record<string, unknown>
+    const stringKeys: readonly string[] = ['quote', 'prefix', 'suffix', 'blockId', 'blockHash', 'blockText']
+    if (!stringKeys.every((key) => typeof draft[key] === 'string')) {
+        return false
+    }
+    const numberKeys: readonly string[] = ['startOffset', 'endOffset', 'blockIndex']
+    if (!numberKeys.every((key) => typeof draft[key] === 'number')) {
+        return false
+    }
+    return draft.quote !== ''
+}
+
+/** 收窄新建请求：path 为相对存储根路径，颜色必须是枚举值 */
+export function isAddAnnotationRequest(input: unknown): input is AddAnnotationRequest {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const request = input as { path?: unknown; color?: unknown; draft?: unknown }
+    return (
+        typeof request.path === 'string' &&
+        typeof request.color === 'string' &&
+        HIGHLIGHT_COLOR_VALUES.includes(request.color) &&
+        isAnnotationDraft(request.draft)
+    )
+}
+
+/** 收窄按 id 操作请求：color 只允许缺省、null 或枚举值 */
+export function isAnnotationIdRequest(input: unknown): input is AnnotationIdRequest {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const request = input as { path?: unknown; id?: unknown; color?: unknown }
+    if (typeof request.path !== 'string' || typeof request.id !== 'string') {
+        return false
+    }
+    if (request.color === undefined || request.color === null) {
+        return true
+    }
+    return typeof request.color === 'string' && HIGHLIGHT_COLOR_VALUES.includes(request.color)
+}
+
 /** 收窄回写请求：Webview 数据不可信，逐字段校验后才用于定位原文 */
 export function isEditorChangeRequest(input: unknown): input is EditorChangeRequest {
     if (typeof input !== 'object' || input === null) {

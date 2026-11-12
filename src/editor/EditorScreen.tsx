@@ -7,13 +7,15 @@
  */
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
+import { useAnnotations } from './hooks/useAnnotations'
 import { useEditorDocument } from './hooks/useEditorDocument'
 import { SelectionToolbar } from './layout/SelectionToolbar'
+import { AnnotationExtension } from './marks/annotationExtension'
 import type { JSX } from 'react'
 
 export function EditorScreen(): JSX.Element {
     const editor = useEditor({
-        extensions: [StarterKit],
+        extensions: [StarterKit, AnnotationExtension],
         content: '<p></p>',
         editorProps: {
             attributes: {
@@ -21,14 +23,15 @@ export function EditorScreen(): JSX.Element {
             },
         },
     })
-    const { status, isEditable } = useEditorDocument(editor)
+    const { status, isEditable, path, blocks } = useEditorDocument(editor)
+    const { addOrToggleHighlight } = useAnnotations(editor, path, blocks)
 
     return (
         <div className="flex h-screen min-h-0 flex-col bg-background text-foreground">
             <div className="min-h-0 flex-1 overflow-auto">
                 <div className="mx-auto w-full max-w-3xl px-8 py-10">
                     <EditorContent editor={editor} />
-                    <SelectionToolbar editor={editor} />
+                    <SelectionToolbar editor={editor} onHighlight={addOrToggleHighlight} />
                 </div>
             </div>
             <div className="flex shrink-0 items-center gap-3 border-t px-4 py-1.5 text-xs text-muted-foreground">
