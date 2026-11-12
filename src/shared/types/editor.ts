@@ -168,6 +168,50 @@ export function isEditorSourceSaveRequest(input: unknown): input is EditorSource
     )
 }
 
+/** 快照消息：在文档快照基础上补资源前缀，图片据此拼出 webview 可访问地址 */
+export interface EditorSnapshotMessage extends EditorDocSnapshot {
+    /** 存储根的 webview URL 前缀，形如 https://file+.vscode-resource...；拼接 `@zhai/` 引用时使用 */
+    assetPrefix: string
+}
+
+/** 插入内容：图片插节点、其余插文本，两者互斥；宿主与 webview 共用这一层结构 */
+export interface EditorInsertContent {
+    image: { src: string; alt: string } | null
+    text: string | null
+}
+
+/** 插入请求：在内容之上加一个 kind 判别字段，供 webview 的 state 通道分流 */
+export interface EditorInsertPayload extends EditorInsertContent {
+    kind: 'insert'
+}
+
+/** 收窄插入请求：image 与 text 至少有一个 */
+export function isEditorInsertPayload(input: unknown): input is EditorInsertPayload {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const value = input as { kind?: unknown; image?: unknown; text?: unknown }
+    if (value.kind !== 'insert') {
+        return false
+    }
+    const hasImage =
+        typeof value.image === 'object' &&
+        value.image !== null &&
+        typeof (value.image as { src?: unknown }).src === 'string' &&
+        typeof (value.image as { alt?: unknown }).alt === 'string'
+    const hasText = typeof value.text === 'string'
+    return hasImage || hasText
+}
+
+/** 收窄快照消息：在文档快照校验之上再要求 assetPrefix 为非空字符串 */
+export function isEditorSnapshotMessage(input: unknown): input is EditorSnapshotMessage {
+    if (!isEditorDocSnapshot(input)) {
+        return false
+    }
+    const value = input as { assetPrefix?: unknown }
+    return typeof value.assetPrefix === 'string'
+}
+
 /** 富文本定位请求：标注总览跳转时，若文档已在富文本 tab 中，直接选中并滚动到原文 */
 export interface EditorRevealPayload {
     kind: 'reveal'

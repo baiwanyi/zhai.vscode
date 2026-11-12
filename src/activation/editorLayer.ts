@@ -7,12 +7,13 @@
  */
 import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
-import { setRichRevealHandler } from '@modules/editor/activeDocument'
+import { setRichInsertHandler, setRichRevealHandler } from '@modules/editor/activeDocument'
 import type { AnnotationDatabase } from '@modules/editor/db/connection'
 import { MarkdownEditorProvider } from '@modules/editor/editorProvider'
 import type { ChapterSnapshotWriter } from '@modules/editor/editorProvider'
 import { RICH_EDITOR_VIEW_TYPE, readActiveTabUri } from '@modules/editor/openDocument'
 import type { EditorQueryDeps } from '@modules/editor/queryService'
+import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 
 /** 读取活跃 URI 并交给回调；取不到时提示用户先打开文档 */
 async function withActiveUri(run: (uri: vscode.Uri) => Promise<void>): Promise<void> {
@@ -29,8 +30,9 @@ export function assembleEditorLayer(
     snapshot: ChapterSnapshotWriter | null = null,
     annotationDb: (() => AnnotationDatabase) | null = null,
     query: EditorQueryDeps | null = null,
+    upload: UploadRoutes | null = null,
 ): MarkdownEditorProvider {
-    const provider = new MarkdownEditorProvider(context.extensionUri, snapshot, annotationDb, query)
+    const provider = new MarkdownEditorProvider(context.extensionUri, snapshot, annotationDb, query, upload)
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider(MarkdownEditorProvider.viewType, provider, {
             webviewOptions: { retainContextWhenHidden: true },
@@ -50,6 +52,8 @@ export function assembleEditorLayer(
     )
     // 校对定位、标注跳转都通过这个注册点走富文本；未注册时它们自然回落到文本编辑器
     setRichRevealHandler((uri, request): boolean => provider.revealInPanel(uri, request))
+    // 上传 / 图库的插入同样走注册点：有富文本实例就插节点，否则上传模块回落文本编辑器
+    setRichInsertHandler((uri, content): boolean => provider.insertInPanel(uri, content))
     // 注册成功即打一条：排查「插件打开仍在文本编辑器」时，先确认 provider 是否真的注册上了
     logger.info(`编辑器层就绪：viewType=${MarkdownEditorProvider.viewType}`)
     // 返回实例：标注跳转需要知道当前文档是否已有富文本面板，能直接定位就不必改开文本编辑器

@@ -17,7 +17,9 @@ import { BlockHandle } from './blocks/BlockHandle'
 import { useAnnotations } from './hooks/useAnnotations'
 import { useDocumentQuery } from './hooks/useDocumentQuery'
 import { useEditorDocument } from './hooks/useEditorDocument'
+import { useEditorInsert } from './hooks/useEditorInsert'
 import { useEditorReveal } from './hooks/useEditorReveal'
+import { useEditorUpload } from './hooks/useEditorUpload'
 import { useSourceMode } from './hooks/useSourceMode'
 import { AnnotationDialog } from './layout/AnnotationDialog'
 import { AnnotationPopover } from './layout/AnnotationPopover'
@@ -26,6 +28,7 @@ import { SearchPanel } from './layout/SearchPanel'
 import { SelectionToolbar } from './layout/SelectionToolbar'
 import { SourceEditor } from './layout/SourceEditor'
 import { AnnotationExtension } from './marks/annotationExtension'
+import { ZhaiImage } from './marks/ZhaiImage'
 import { SearchExtension } from './search/searchExtension'
 import { useDocumentSearch } from './search/useDocumentSearch'
 import { SlashCommandExtension } from './toolbar/slashCommandExtension'
@@ -52,6 +55,8 @@ export function EditorScreen(): JSX.Element {
             TaskItem.configure({ nested: true }),
             // 表格：md 侧由 adaptTableHtml 给单元格补 <p>，回写由 toTableMarkdown 拼 GFM
             TableKit.configure({ table: { resizable: false } }),
+            // 图片：显示时把 @zhai/ 转成 webview 地址，序列化仍保留原始引用
+            ZhaiImage.configure({ inline: false, allowBase64: false }),
             AnnotationExtension,
             SearchExtension,
             SlashCommandExtension,
@@ -75,6 +80,10 @@ export function EditorScreen(): JSX.Element {
     const source = useSourceMode(path, reload, flush)
     // 标注总览跳转到当前文档时，由宿主发 reveal 消息，这里负责选中与滚动
     useEditorReveal(editor)
+    // 上传 / 图库插入到当前文档时，由宿主发 insert 消息，这里负责插节点或文本
+    useEditorInsert(editor)
+    // 编辑器内粘贴 / 拖拽文件：先上传再插引用，落盘仍归上传模块
+    const upload = useEditorUpload(editor)
     const [annotationQuote, setAnnotationQuote] = useState<string | null>(null)
     const [notePopover, setNotePopover] = useState<NotePopoverState | null>(null)
     const [queryQuote, setQueryQuote] = useState<string | null>(null)
@@ -165,6 +174,8 @@ export function EditorScreen(): JSX.Element {
             <div className="flex shrink-0 items-center gap-3 border-t px-4 py-1.5 text-xs text-muted-foreground">
                 <span>{status}</span>
                 {isEditable ? null : <span>切换回文本编辑器可继续编辑</span>}
+                {upload.isUploading ? <span>正在上传文件…</span> : null}
+                {upload.error === null ? null : <span className="text-destructive">{upload.error}</span>}
                 <span className="ml-auto">Ctrl+Shift+M 源码</span>
             </div>
             <AnnotationDialog

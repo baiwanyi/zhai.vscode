@@ -30,6 +30,7 @@ const EDITABLE_NODE_TYPES: ReadonlySet<string> = new Set([
     'table',
     'tableRow',
     'tableCell',
+    'image',
     'text',
     'emphasis',
     'strong',

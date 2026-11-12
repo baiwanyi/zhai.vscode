@@ -12,6 +12,7 @@ import { resolveMarkdownEditor } from '@modules/common/insertTarget'
 import { logger } from '@modules/common/logger'
 import { buildBlockInsertion, readBlockContext } from '@modules/common/markdownBlock'
 import { buildStorageUri, deleteResource, isPathExisting } from '@modules/common/storagePath'
+import { getActiveDocument, insertIntoRichDocument } from '@modules/editor/activeDocument'
 import { isUploadPath, UPLOAD_DIR } from '@shared/types/upload'
 import type {
     UploadFileItem,
@@ -149,8 +150,28 @@ export class UploadService {
         if (!(await isPathExisting(uri))) {
             throw new Error('文件已不存在，请刷新列表')
         }
+        const fileName = target.split('/').pop() ?? target
+        const ext = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase() : ''
+        const label = fileName.replace(/[[\]\r\n]+/gu, ' ').trim()
+        const refPath = `${ZHAI_PATH_PREFIX}${target}`
+        const isImage = PREVIEW_EXTENSIONS.has(ext)
+        // 图片用图片语法嵌入，其余按附件链接写入，避免非图片被当成图片渲染
+        const snippet = isImage ? `![${label}](${refPath})` : `[${label}](${refPath})`
         const editor = resolveMarkdownEditor()
         if (editor === undefined) {
+            // 富文本 tab 没有 TextEditor：改插节点，图片走 image、其余按纯文本链接，
+            // 不能把 markdown 语法当正文塞进去，否则用户会看到字面量 ![](...)
+            const active = getActiveDocument()
+            const isInserted =
+                active === null
+                    ? false
+                    : insertIntoRichDocument(active.uri, {
+                          image: isImage ? { src: refPath, alt: label } : null,
+                          text: isImage ? null : snippet,
+                      })
+            if (isInserted) {
+                return { inserted: true, refPath }
+            }
             return { inserted: false, reason: 'no-editor' }
         }
         const document = editor.document
@@ -160,12 +181,6 @@ export class UploadService {
         if (document.languageId !== 'markdown') {
             return { inserted: false, reason: 'not-markdown' }
         }
-        const fileName = target.split('/').pop() ?? target
-        const ext = fileName.includes('.') ? fileName.slice(fileName.lastIndexOf('.') + 1).toLowerCase() : ''
-        const label = fileName.replace(/[[\]\r\n]+/gu, ' ').trim()
-        const refPath = `${ZHAI_PATH_PREFIX}${target}`
-        // 图片用图片语法嵌入，其余按附件链接写入，避免非图片被当成图片渲染
-        const snippet = PREVIEW_EXTENSIONS.has(ext) ? `![${label}](${refPath})` : `[${label}](${refPath})`
         const isDuplicated = document.getText().includes(refPath)
         const insertAt = editor.selection.active
         // 引用自成一段：光标夹在行中间时先断开当前行，前后各留一个空行

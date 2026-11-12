@@ -17,6 +17,7 @@ import {
     updateAnnotation,
 } from '@modules/editor/annotationRepository'
 import type { AnnotationDatabase } from '@modules/editor/db/connection'
+import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 import {
     isAddAnnotationRequest,
     isAnnotationIdRequest,
@@ -25,7 +26,12 @@ import {
     isEditorQueryRequest,
     isEditorSourceSaveRequest,
 } from '@shared/types/editor'
-import type { EditorChangeResult, EditorDocSnapshot } from '@shared/types/editor'
+import type {
+    EditorChangeResult,
+    EditorDocSnapshot,
+    EditorInsertContent,
+    EditorSnapshotMessage,
+} from '@shared/types/editor'
 import { isRequestMessage } from '@shared/types/messages'
 import { clearRichDocument, reportRichDocument } from './activeDocument'
 import { applyBlockEdits, buildBlockEdits, readEditorSnapshot } from './editorDocService'
@@ -62,6 +68,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         private readonly snapshot: ChapterSnapshotWriter | null = null,
         private readonly annotationDb: (() => AnnotationDatabase) | null = null,
         private readonly query: EditorQueryDeps | null = null,
+        /** 上传协议：编辑器 webview 自己发起粘贴 / 拖拽上传，复用工作流面板那一套路由实例 */
+        private readonly upload: UploadRoutes | null = null,
     ) {}
 
     public async resolveCustomTextEditor(
@@ -146,13 +154,15 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         try {
             const snapshot = await this.readSnapshot(document)
             // 不 await 投递：webview 未就绪时它可能长时间挂在 pending，把调用链一起拖住
-            panel.webview.postMessage({ type: 'state', channel: 'editor', payload: snapshot }).then(
-                () => undefined,
-                (error: unknown) => {
-                    const reason = error instanceof Error ? error.message : String(error)
-                    logger.warn(`编辑器快照投递失败：${document.uri.fsPath}（${reason}）`)
-                },
-            )
+            panel.webview
+                .postMessage({ type: 'state', channel: 'editor', payload: this.toSnapshotMessage(snapshot, panel) })
+                .then(
+                    () => undefined,
+                    (error: unknown) => {
+                        const reason = error instanceof Error ? error.message : String(error)
+                        logger.warn(`编辑器快照投递失败：${document.uri.fsPath}（${reason}）`)
+                    },
+                )
         } catch (error) {
             logger.error(`编辑器快照推送失败：${document.uri.fsPath}`, error)
         }
@@ -174,6 +184,34 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         })
         panel.reveal(undefined, false)
         return true
+    }
+
+    /**
+     * 往已打开的富文本面板插入内容：图片插节点、其余插文本。
+     * 复用约定：上传模块只负责落盘与算引用路径，插入动作统一由这里转给 webview，
+     * 与文本编辑器路径（WorkspaceEdit 插行）互不干扰。
+     * 关键约束：没有面板时返回 false，调用方应回报「no-editor」而不是静默成功。
+     */
+    public insertInPanel(uri: vscode.Uri, content: EditorInsertContent): boolean {
+        const panel = this.panels.get(uri.toString())
+        if (panel === undefined) {
+            return false
+        }
+        void panel.webview.postMessage({
+            type: 'state',
+            channel: 'editor',
+            payload: { kind: 'insert', image: content.image, text: content.text },
+        })
+        panel.reveal(undefined, false)
+        return true
+    }
+
+    /** 快照消息：附带存储根的 webview 前缀，供前端把 `@zhai/` 引用转成可加载地址 */
+    private toSnapshotMessage(snapshot: EditorDocSnapshot, panel: vscode.WebviewPanel): EditorSnapshotMessage {
+        return {
+            ...snapshot,
+            assetPrefix: panel.webview.asWebviewUri(resolveStorageRoot()).toString(),
+        }
     }
 
     /** 取标注库连接：未装配时返回 null，协议层据此给出「尚未就绪」 */
@@ -333,7 +371,12 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         try {
             if (method === 'editor/snapshot') {
                 const snapshot = await this.readSnapshot(document)
-                await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: snapshot })
+                await panel.webview.postMessage({
+                    type: 'response',
+                    reqId,
+                    ok: true,
+                    payload: this.toSnapshotMessage(snapshot, panel),
+                })
                 return
             }
             if (method === 'editor/source') {
@@ -397,6 +440,18 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                     return
                 }
                 const result = await this.applyChange(document, payload.version, payload.blocks)
+                await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: result })
+                return
+            }
+            // 上传：编辑器内粘贴 / 拖拽要自己发起上传，复用工作流面板的上传路由，落盘口径完全一致
+            if (method.startsWith('upload/')) {
+                if (this.upload === null) {
+                    await this.respondError(panel, reqId, 'upload-unavailable', '上传模块尚未装配')
+                    return
+                }
+                const result = await this.upload.handle(method, payload, (uri) =>
+                    panel.webview.asWebviewUri(uri).toString(),
+                )
                 await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: result })
                 return
             }

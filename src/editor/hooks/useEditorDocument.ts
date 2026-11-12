@@ -7,10 +7,11 @@
  */
 import { DOMSerializer } from '@tiptap/pm/model'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { isEditorDocSnapshot } from '@shared/types/editor'
-import type { EditorBlock, EditorChangeResult, EditorDocSnapshot } from '@shared/types/editor'
+import { isEditorSnapshotMessage } from '@shared/types/editor'
+import type { EditorBlock, EditorChangeResult, EditorSnapshotMessage } from '@shared/types/editor'
 import { onState, request } from '@shared/utils/bridge'
 import type { Editor } from '@tiptap/react'
+import { setAssetPrefix } from '../marks/imageAsset'
 
 /** 回写防抖：与文档同步口径一致，避免每次按键都产生一次 WorkspaceEdit */
 const SYNC_DEBOUNCE_MS = 500
@@ -66,7 +67,10 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
 
     /** 应用快照：先灌内容再采样基准，最后按宿主的 editable 决定是否可写 */
     const applySnapshot = useCallback(
-        (snapshot: EditorDocSnapshot, force: boolean): void => {
+        (snapshot: EditorSnapshotMessage, force: boolean): void => {
+            // 图片资源前缀与文档版本无关：即使这次内容被版本去重跳过，也要先更新，
+            // 否则图片会一直挂在空前缀上显示为裂图
+            setAssetPrefix(snapshot.assetPrefix)
             if (editor === null || (!force && snapshot.version <= versionRef.current)) {
                 return
             }
@@ -92,7 +96,7 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
     const loadSnapshot = useCallback(
         async (force: boolean): Promise<void> => {
             try {
-                const snapshot = await request<EditorDocSnapshot>('editor/snapshot')
+                const snapshot = await request<EditorSnapshotMessage>('editor/snapshot')
                 applySnapshot(snapshot, force)
             } catch {
                 setState((prev) => ({ ...prev, status: STATUS_FAILED, isEditable: false }))
@@ -111,7 +115,7 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
     // 宿主推送：外部修改、保存后刷新、只读判定变化
     useEffect(() => {
         return onState((message) => {
-            if (message.channel !== 'editor' || !isEditorDocSnapshot(message.payload)) {
+            if (message.channel !== 'editor' || !isEditorSnapshotMessage(message.payload)) {
                 return
             }
             if (message.payload.version === versionRef.current) {

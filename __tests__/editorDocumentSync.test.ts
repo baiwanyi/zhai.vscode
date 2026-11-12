@@ -116,6 +116,23 @@ describe('buildBlockEdits', () => {
         expect(edits[0]?.text).not.toContain('id=')
     })
 
+    it('图片段落可编辑，且保留 @zhai 原始引用', async () => {
+        const snapshot = await readEditorSnapshot('![山](@zhai/uploads/202611/a.png)', 1, 'x.md')
+        expect(snapshot.editable).toBe(true)
+        const html = snapshot.blocks[0]?.html ?? ''
+        expect(html).toContain('<img')
+        expect(html).toContain('@zhai/uploads/202611/a.png')
+    })
+
+    it('图片回写成原始引用，不出现 webview 地址', async () => {
+        const snapshot = await readEditorSnapshot('第一段', 1, 'x.md')
+        const edits = await buildBlockEdits(snapshot.blocks, [
+            { index: 0, html: '<p><img src="@zhai/uploads/202611/a.png" alt="山"></p>' },
+        ])
+        expect(edits[0]?.text).toBe('![山](@zhai/uploads/202611/a.png)')
+        expect(edits[0]?.text).not.toContain('vscode-resource')
+    })
+
     it('表格回写成 GFM 表格', async () => {
         const snapshot = await readEditorSnapshot('| a |\n| - |\n| 1 |', 1, 'x.md')
         const html =

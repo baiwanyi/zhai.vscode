@@ -6,6 +6,7 @@
  * 富文本 tab 下它为空，绕过本文件会静默失效或插到错误文档。
  */
 import * as vscode from 'vscode'
+import type { EditorInsertContent } from '@shared/types/editor'
 
 /** 活跃文档：kind 决定后续能否拿到 TextEditor，rich 只用于路由与展示 */
 export interface ActiveDocument {
@@ -63,6 +64,20 @@ export function setRichRevealHandler(handler: RichRevealHandler | null): void {
 /** 若该文档已在富文本打开则就地定位；返回 false 表示调用方应回落到文本编辑器 */
 export function revealInRichDocument(uri: vscode.Uri, request: { quote: string; blockIndex: number }): boolean {
     return richRevealHandler === null ? false : richRevealHandler(uri, request)
+}
+
+/** 富文本插入处理器：上传、图库等模块把内容送进富文本时调用，不需要知道编辑器实现 */
+type RichInsertHandler = (uri: vscode.Uri, content: EditorInsertContent) => boolean
+
+let richInsertHandler: RichInsertHandler | null = null
+
+export function setRichInsertHandler(handler: RichInsertHandler | null): void {
+    richInsertHandler = handler
+}
+
+/** 若该文档已在富文本打开则插入内容；返回 false 表示没有可用的富文本实例 */
+export function insertIntoRichDocument(uri: vscode.Uri, content: EditorInsertContent): boolean {
+    return richInsertHandler === null ? false : richInsertHandler(uri, content)
 }
 
 /** 富文本编辑器关闭：只有当前活跃的正是它时才清空，避免关后台 tab 误清别的文档 */
