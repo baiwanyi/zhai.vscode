@@ -46,6 +46,34 @@ export interface ImageGenerateProgress {
 }
 
 /**
+ * 最近一次成功出图的回执：随在途快照下发，供视图重建后的接管态补做封面认领与列表回填。
+ * 关键约束：只在内存里留存最后一轮，finishedAt 用于前端过滤过旧回执，别把它当历史来源。
+ */
+export interface ImageGenerateCompleted {
+    /** 出图归属：作品目录，null 为通用素材 */
+    dirPath: string | null
+    /** 完成时刻（毫秒时间戳） */
+    finishedAt: number
+    result: ImageGenerateResult
+}
+
+/**
+ * 在途出图快照：视图重建（切分区 / 切作品）后据此恢复骨架、阶段文案与取消入口。
+ * 关键约束：dirPath 是归属判定依据——作用域不一致时前端不得把它当成本页的进度，
+ * 单任务锁只会让发送被拒绝，不能展示别人的进度条。
+ */
+export interface ImageGenerateState {
+    /** 是否有在途出图请求 */
+    generating: boolean
+    /** 在途请求的作用域（作品目录），null 表示通用素材；generating 为 false 时无意义 */
+    dirPath: string | null
+    /** 已进入的出图阶段：尚未收到任何进度时为 null */
+    stage: ImageGenerateStage | null
+    /** 最近一次成功出图的回执（无论此刻是否在生成）：没有出过图为 null */
+    lastResult: ImageGenerateCompleted | null
+}
+
+/**
  * 生成结果：只回传新图本身，生成不影响作品封面。
  * 角色封面不在此回传——前端在生成回执后按「该角色尚无封面」自行写回人物卡，避免两套写回口径。
  */

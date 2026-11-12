@@ -8,7 +8,9 @@
  * 规则文本由 ./prompt/ruleService 按标识读盘，参考图由 ./referenceImageService 校验并读成多模态输入。
  * 关键约束：文件名不再承载语义（14 位时间戳 + 6 位随机段），出处（作品 / 角色 / 条目）与出图参数全部进媒体索引，
  * 名称快照由前端随请求带入——宿主不重复解析人物卡与条目文档；
- * 单一任务锁防重复扣费，取消走 abort：产物到手后再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额。
+ * 单一任务锁防重复扣费，取消走 abort：产物到手后再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额；
+ * 在途请求记归属作用域与阶段，视图重建后由 generateImage/state 对账恢复，取消只作用于归属一致的那一次；
+ * 成功回执在内存里留最后一轮，供接管态补做封面认领（回执本身不落库，历史以媒体索引为准）。
  */
 import * as vscode from 'vscode'
 import { composePrompt, mergePromptTags } from '@modules/ai/finalPrompt'
@@ -27,9 +29,12 @@ import { writeMediaParameters } from '@modules/media/mediaSettingsStore'
 import {
     DEFAULT_IMAGE_SETTINGS,
     IMAGE_RATIO_SIZE,
+    type ImageGenerateCompleted,
     type ImageGenerateKind,
     type ImageGenerateProgress,
     type ImageGenerateResult,
+    type ImageGenerateStage,
+    type ImageGenerateState,
     type ImageSettings,
     type MediaParameters,
 } from '@shared/types/imagegen'
@@ -195,8 +200,22 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
 export type MediaRecorder = (record: MediaRecord) => void
 
 export class ImageGenerateService {
-    /** 进行中的生成请求：一次只允许一个，避免连点重复扣费 */
-    private activeRequest: AbortController | null = null
+    /**
+     * 进行中的生成请求：一次只允许一个，避免连点重复扣费。
+     * 除中断控制外还记作用域与阶段——视图重建后前端据此恢复进度与取消入口，取消时据此避免误杀别的作用域。
+     */
+    private activeRequest: {
+        controller: AbortController
+        /** 归属作用域：作品目录，null 为通用素材 */
+        dirPath: string | null
+        /** 已进入的出图阶段：尚未收到任何进度时为 null */
+        stage: ImageGenerateStage | null
+    } | null = null
+    /**
+     * 最近一次成功出图的回执：只在内存里留最后一轮。
+     * 接管态（视图重建后接回来的生成）没有本地 Promise 回执，只能靠它补做封面认领与列表回填。
+     */
+    private lastResult: ImageGenerateCompleted | null = null
     /** 提示词增强：与对话共用同一服务实现，只是口径与记账模块不同 */
     private readonly promptEnhance: PromptEnhanceService
 
@@ -230,7 +249,7 @@ export class ImageGenerateService {
         const request = normalizeGenerateRequest(payload)
         this.assertQuota()
         const controller = new AbortController()
-        this.activeRequest = controller
+        this.activeRequest = { controller, dirPath: request.dirPath, stage: null }
         const startedAt = Date.now()
         logger.info(
             `出图开始：${request.dirPath ?? '无作品上下文'}（${request.ratio}，${request.kind}，参考图 ${String(request.references.length)} 张）`,
@@ -257,8 +276,14 @@ export class ImageGenerateService {
                 size: IMAGE_RATIO_SIZE[request.ratio],
                 references,
                 signal: controller.signal,
-                // 进度是旁路：通道回调异常不得影响出图，故只做一次转发
-                onProgress,
+                // 进度是旁路：通道回调异常不得影响出图，故只做一次转发；
+                // 同时留在在途快照里，视图重建后前端才能接着显示阶段文案
+                onProgress: (progress: ImageGenerateProgress): void => {
+                    if (this.activeRequest?.controller === controller) {
+                        this.activeRequest.stage = progress.stage
+                    }
+                    onProgress?.(progress)
+                },
             })
             // 产物到手后再确认一次取消：落盘、扣配额、写封面都是不可撤回的副作用，
             // 用户点过停止就不该发生，否则会出现「界面已复位、图却凭空多出来」的情况。
@@ -311,7 +336,7 @@ export class ImageGenerateService {
             })
             consumeToday(this.db(), IMAGE_QUOTA_KEYS)
             logger.info(`出图完成：耗时 ${Date.now() - startedAt}ms，${artifact.bytes.byteLength} 字节`)
-            return {
+            const result: ImageGenerateResult = {
                 image: {
                     id: target.id,
                     path: mediaPath,
@@ -338,21 +363,48 @@ export class ImageGenerateService {
                     enhancedFrom: request.enhancedFrom,
                 },
             }
+            // 回执留在内存：视图重建后接管态没有本地 Promise，只能靠它补做封面认领与列表回填
+            this.lastResult = { dirPath: request.dirPath, finishedAt: Date.now(), result }
+            return result
         } catch (error) {
             logger.error(`出图失败：耗时 ${Date.now() - startedAt}ms`, error)
             throw error
         } finally {
-            this.activeRequest = null
+            // 只放自己这一轮的锁：取消后立刻重发时，旧请求的 finally 不能把新请求的锁放掉
+            if (this.activeRequest?.controller === controller) {
+                this.activeRequest = null
+            }
         }
     }
 
-    /** 取消进行中的生成：无进行中请求时返回 false，由前端决定是否提示 */
-    public abort(): { aborted: boolean } {
-        if (!this.activeRequest) {
+    /**
+     * 取消进行中的生成：只取消归属与入参一致的那一次，避免切作品后把上一次的请求误杀。
+     * @param dirPath 调用方所属作用域（作品目录，null 为通用素材）；缺省表示不校验归属
+     */
+    public abort(dirPath?: string | null): { aborted: boolean } {
+        const active = this.activeRequest
+        if (active === null) {
             return { aborted: false }
         }
-        this.activeRequest.abort()
+        if (dirPath !== undefined && active.dirPath !== dirPath) {
+            return { aborted: false }
+        }
+        active.controller.abort()
         return { aborted: true }
+    }
+
+    /**
+     * 在途出图快照：视图重建（切分区 / 切作品）后由前端对账，恢复骨架、阶段文案与取消入口；
+     * 同时带回最近一次成功出图的回执，供接管态收尾时补做封面认领与列表回填。
+     * 关键约束：无在途请求时 stage 与 dirPath 一并给 null，前端不得据此编造进度；
+     * lastResult 与在途态相互独立——切页期间就已完成的那张图也要能被认领。
+     */
+    public getGeneratingState(): ImageGenerateState {
+        const active = this.activeRequest
+        if (active === null) {
+            return { generating: false, dirPath: null, stage: null, lastResult: this.lastResult }
+        }
+        return { generating: true, dirPath: active.dirPath, stage: active.stage, lastResult: this.lastResult }
     }
 
     /**

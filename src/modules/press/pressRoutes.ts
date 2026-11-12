@@ -151,8 +151,10 @@ export class PressRoutes {
                 return this.covers.list(payload, toWebviewUri)
             case 'pressAi/generateImage':
                 return this.imageGenerate.generate(payload, toWebviewUri, postImageProgress)
+            case 'pressAi/generateImage/state':
+                return this.imageGenerate.getGeneratingState()
             case 'pressAi/generateImage/abort':
-                return this.imageGenerate.abort()
+                return this.imageGenerate.abort(readAbortScope(payload))
             case 'pressAi/enhanceImagePrompt':
                 return this.imageGenerate.enhance(payload)
             case 'pressAi/getImageSettings':
@@ -453,4 +455,23 @@ export class PressRoutes {
             deleted: await this.snapshot.removeChapterVersion(payload.dirPath, payload.chapterPath, payload.snapshotId),
         }
     }
+}
+
+/**
+ * 读取取消归属：payload 带 dirPath 字段时才校验——字符串为作品目录、null 为通用素材，
+ * 未带该字段表示不校验归属（保持旧调用方的行为，直接取消在途那一轮）。
+ * 关键约束：取值非法一律回落为「不校验」，宁可退回旧语义也不把取消请求变成空操作。
+ */
+function readAbortScope(payload: unknown): string | null | undefined {
+    if (typeof payload !== 'object' || payload === null) {
+        return undefined
+    }
+    const record = payload as { dirPath?: unknown }
+    if (!('dirPath' in record)) {
+        return undefined
+    }
+    if (record.dirPath === null) {
+        return null
+    }
+    return typeof record.dirPath === 'string' && record.dirPath.length > 0 ? record.dirPath : undefined
 }

@@ -88,7 +88,8 @@
 | 方法 | 说明 |
 | --- | --- |
 | `pressAi/generateImage` | 入参 `prompt` / `promptTags` / `contexts` / `promptRules` / `referenceImages` / `kind` / `characterId` / `ratio` / `style` / `enhancedFrom`；`promptTags` 是词条芯片的标识（`分类::分组::名称`，最多 20 条），宿主按标识回查 `prompt/tags` 的 md、经 `@shared/utils/promptTag` 归一化后再由 `mergePromptTags` 与正文合并（词条在前、正文在后）；`contexts` 是「添加上下文」菜单展开的文本段（如作品设定，最多 4 段、每段 1500 字），不混入 `prompt`；`promptRules` 是规则芯片的标识（文件名主干，最多 5 条），宿主读 md 正文后接在上下文之后；`referenceImages` 是参考图芯片的本地路径（只接受选择流程登记过的图片，最多 3 张），宿主读取字节后作为多模态内容随指令提交，不写进文本提示词；正文、上下文、词条、规则与参考图全为空才拒绝出图；落 `Images/`，`kind` 只有 `portrait`（角色卡）与 `photo`（其他图片），生成不改作品封面 |
-| `pressAi/generateImage/abort` | 取消在途请求，返回 `{ aborted }`；单任务锁保证不会并发出图。中断信号经 provider 传到 SDK 会话，真正中止本地出图；产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额，因此「停止」之后不会凭空多出一张图 |
+| `pressAi/generateImage/abort` | 取消在途请求，返回 `{ aborted }`；payload 可带 `dirPath`（字符串为作品目录、`null` 为通用素材），带上时只取消归属一致的那一次，缺省则不校验归属。单任务锁保证不会并发出图，因此切作品后再发送撞锁不会误杀上一次的请求。中断信号经 provider 传到 SDK 会话，真正中止本地出图；产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额，因此「停止」之后不会凭空多出一张图 |
+| `pressAi/generateImage/state` | — → `ImageGenerateState`：`{ generating, dirPath, stage, lastResult }`。出图是宿主单例任务，切分区 / 切作品只卸载视图、请求继续跑，挂载时据此对账：仍在生成则恢复骨架、阶段文案与取消入口；`lastResult`（最后一轮成功回执，含 `dirPath` / `finishedAt` / `result`）让切页期间就完成的图仍能被认领封面并补进列表。前端按作用域与图片 id 去重，且只接受有效窗口内的回执 |
 | `pressAi/pickReferenceImage` | — → `ImageReferencePickResult`。弹出系统文件选择框挑参考图：扩展名限 png / jpg / jpeg / webp / gif，校验常规文件、非符号链接、非空与 ≤12 MB，并按文件头嗅探真实类型；通过后登记路径并回传 `{ path, name, url }`，用户取消时 `reference` 为 `null` |
 | `pressAi/enhanceImagePrompt` | 文本模型改写输入框正文：入参 `text` 与 `promptTags`（词条芯片标识，最多 20 条），词条原文由宿主按标识回查后经 `mergePromptTags` 与正文合并，与出图共用同一份合并口径；模型调用、30 秒超时、口径文本与用量记账统一由 `modules/ai/promptEnhance` 的 `PromptEnhanceService` 承担（与对话增强同一实现，`scene` 取 `image`）；不落盘、不计图片配额，用量记入「出图」模块。改写结果已含词条描述，前端随后摘掉词条芯片，避免回填后发送时被二次合并 |
 
@@ -284,7 +285,7 @@ lifeguard
 | `pressAi/enhanceImagePrompt` | 60 秒 | 30 秒 |
 | 其他图库请求 | bridge 默认 10 秒 | — |
 
-出图超时或失败后前端主动调用 `abort`，释放宿主单任务锁，避免下一张被「已有生成中的图片请求」拒绝。
+出图超时或失败后前端主动调用 `abort`（带当前 `dirPath`，只取消归属一致的那次），释放宿主单任务锁，避免下一张被「已有生成中的图片请求」拒绝。切页导致的卸载不中断出图：结果照常落盘，视图重建后经 `pressAi/generateImage/state` 对账恢复进度，或用 `lastResult` 补做封面认领。
 
 ---
 
