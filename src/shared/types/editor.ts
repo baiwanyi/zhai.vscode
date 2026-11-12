@@ -282,12 +282,14 @@ export interface AddAnnotationRequest {
     draft: AnnotationDraft
 }
 
-/** 按 id 操作标注（删除、改色） */
+/** 按 id 操作标注（删除、改色、改批注正文） */
 export interface AnnotationIdRequest {
     path: string
     id: string
     /** 改色时必填；null 表示清除划线颜色 */
     color?: HighlightColor | null
+    /** 批注正文：编辑批注时传，空串由守卫拦下 */
+    note?: string
 }
 
 /** 收窄草案：数值与字符串逐字段校验，空白 quote 直接拒绝 */
@@ -337,13 +339,16 @@ export function isAddAnnotationRequest(input: unknown): input is AddAnnotationRe
     return isAnnotationDraft(request.draft)
 }
 
-/** 收窄按 id 操作请求：color 只允许缺省、null 或枚举值 */
+/** 收窄按 id 操作请求：color 只允许缺省、null 或枚举值；note 缺省或非空字符串 */
 export function isAnnotationIdRequest(input: unknown): input is AnnotationIdRequest {
     if (typeof input !== 'object' || input === null) {
         return false
     }
-    const request = input as { path?: unknown; id?: unknown; color?: unknown }
+    const request = input as { path?: unknown; id?: unknown; color?: unknown; note?: unknown }
     if (typeof request.path !== 'string' || typeof request.id !== 'string') {
+        return false
+    }
+    if (request.note !== undefined && (typeof request.note !== 'string' || request.note.trim() === '')) {
         return false
     }
     if (request.color === undefined || request.color === null) {

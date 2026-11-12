@@ -272,7 +272,11 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { removed: isRemoved } })
             return true
         }
-        const isUpdated = updateAnnotation(db, payload.id, { color: payload.color ?? null })
+        // 按传入字段增量更新：改色只传 color，改批注只传 note，避免把另一项误清空
+        const isUpdated = updateAnnotation(db, payload.id, {
+            ...(payload.color === undefined ? {} : { color: payload.color }),
+            ...(payload.note === undefined ? {} : { note: payload.note }),
+        })
         await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { updated: isUpdated } })
         return true
     }

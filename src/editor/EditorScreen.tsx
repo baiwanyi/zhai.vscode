@@ -67,7 +67,7 @@ export function EditorScreen(): JSX.Element {
         },
     })
     const { status, isEditable, path, blocks, reload, flush } = useEditorDocument(editor)
-    const { items, addOrToggleHighlight, addNote, removeAnnotation } = useAnnotations(editor, path, blocks)
+    const { items, addOrToggleHighlight, addNote, updateNote, removeAnnotation } = useAnnotations(editor, path, blocks)
     const source = useSourceMode(path, reload, flush)
     // 标注总览跳转到当前文档时，由宿主发 reveal 消息，这里负责选中与滚动
     useEditorReveal(editor)
@@ -155,6 +155,7 @@ export function EditorScreen(): JSX.Element {
                         setNotePopover(null)
                     }
                 }}
+                onUpdateNote={updateNote}
                 onRemove={removeAnnotation}
             />
             <QueryDialog

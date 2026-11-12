@@ -75,6 +75,8 @@ export interface UseAnnotationsResult {
     addOrToggleHighlight: (color: HighlightColor) => Promise<void>
     /** 为当前选区新建批注 */
     addNote: (note: string) => Promise<void>
+    /** 编辑批注正文 */
+    updateNote: (id: string, note: string) => Promise<void>
     /** 删除任意标注（划线或批注） */
     removeAnnotation: (id: string) => Promise<void>
     /** 文档内容变化后重新加载，用于刷新锚点与装饰 */
@@ -161,6 +163,21 @@ export function useAnnotations(
         [editor, path, refresh],
     )
 
+    const updateNote = useCallback(
+        async (id: string, note: string): Promise<void> => {
+            if (note.trim() === '') {
+                return
+            }
+            try {
+                await request('editor/annotation/update', { path, id, note })
+                await refresh()
+            } catch {
+                // 同上，不打断编辑
+            }
+        },
+        [path, refresh],
+    )
+
     const removeAnnotation = useCallback(
         async (id: string): Promise<void> => {
             try {
@@ -173,5 +190,5 @@ export function useAnnotations(
         [path, refresh],
     )
 
-    return { isReady, items, addOrToggleHighlight, addNote, removeAnnotation, refresh }
+    return { isReady, items, addOrToggleHighlight, addNote, updateNote, removeAnnotation, refresh }
 }
