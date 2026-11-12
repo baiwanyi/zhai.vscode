@@ -548,11 +548,13 @@ export class WechatIssueService {
     /**
      * 只改元信息：标题、作者、摘要、封面与留言开关（工作流面板的文章设置）。
      * 关键约束：正文以批次文件为准，改标题时把文件里的正文原样保留并重写一级标题，
-     * 随后让文件名跟随标题；用库内镜像写回会覆盖用户在编辑器里的改动，文件缺失时先按镜像补建。
+     * 随后让文件名跟随标题；用库内镜像写回会覆盖用户在编辑器里的改动，文件缺失时先按镜像补建；
+     * title 缺省表示不改标题，沿用库内值——仪表盘的文章设置只改作者/摘要/留言，
+     * 回传列表快照里的旧标题会在并行编辑后把新标题与文件名改回去。
      */
     public async updateArticleMeta(request: WechatArticleMetaRequest): Promise<WechatArticleUpdateResult> {
         const existing = this.requireArticle(request.id)
-        const title = readWechatArticleTitle(request.title)
+        const title = request.title === undefined ? existing.title : readWechatArticleTitle(request.title)
         if (title.length === 0) {
             throw new Error('文章标题不能为空')
         }

@@ -197,13 +197,14 @@ describe('文章请求收窄', () => {
         expect(isWechatArticleMoveRequest({ id: 1, direction: 'up' })).toBe(false)
     })
 
-    it('元信息请求标题必填，封面与留言类型不符即拒绝', () => {
+    it('元信息请求 id 必填、标题缺省表示不改，封面与留言类型不符即拒绝', () => {
+        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID })).toBe(true)
         expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, title: '标题' })).toBe(true)
         expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, title: '   ' })).toBe(false)
-        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, title: '标题', coverPath: 'images/a.png' })).toBe(true)
+        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, coverPath: 'images/a.png' })).toBe(true)
         expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, title: '标题', coverPath: null })).toBe(false)
-        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, title: '标题', allowComment: true })).toBe(true)
-        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, title: '标题', allowComment: 1 })).toBe(false)
+        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, allowComment: true })).toBe(true)
+        expect(isWechatArticleMetaRequest({ id: ARTICLE_ID, allowComment: 1 })).toBe(false)
     })
 
     it('推送进度载荷逐字段收窄', () => {

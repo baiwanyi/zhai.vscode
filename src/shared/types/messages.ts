@@ -373,7 +373,8 @@ function isStateChannel(value: unknown): value is StateMessage['channel'] {
         value === 'imagegen' ||
         value === 'proofread' ||
         value === 'todo' ||
-        value === 'toast'
+        value === 'toast' ||
+        value === 'wechat'
     )
 }
 

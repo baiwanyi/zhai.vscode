@@ -25,9 +25,11 @@ import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { NamingRoutes } from '@modules/naming/namingRoutes'
 import type { PressRoutes } from '@modules/press/pressRoutes'
 import type { ProofreadRoutes } from '@modules/proofread/proofreadRoutes'
+import { PROOFREAD_DOCUMENT_METHODS } from '@modules/proofread/proofreadRoutes'
 import type { StockRoutes } from '@modules/stock/stockRoutes'
 import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 import type { WechatRoutes } from '@modules/wechat/wechatRoutes'
+import { WECHAT_DOCUMENT_METHODS } from '@modules/wechat/wechatRoutes'
 import type { AiModelChoices, AiPermissionDecision, AiReasoningEffort, AiWriteGrant } from '@shared/types/aiChat'
 import { AI_REASONING_EFFORT_LABELS, isAiReasoningEffort } from '@shared/types/aiChat'
 import type { AiUsageQuery } from '@shared/types/aiUsage'
@@ -35,7 +37,12 @@ import { isAiUsageModule, isAiUsageRange } from '@shared/types/aiUsage'
 import type { HostToWebviewMessage, StreamMessage, ToastPayload } from '@shared/types/messages'
 import { isRequestMessage } from '@shared/types/messages'
 import type { WechatAccountAuthFailureEvent } from '@shared/types/wechat'
-import type { OpenWorkflowResult, ResetWorkflowResult, WorkflowViewRequest } from '@shared/types/workflow'
+import type {
+    OpenWorkflowResult,
+    ResetWorkflowResult,
+    WorkflowContextState,
+    WorkflowViewRequest,
+} from '@shared/types/workflow'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
 import {
     getContextWindowOptions,
@@ -161,7 +168,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             this.service.onRuntimeChanged(() => this.broadcastRuntimeChanged()),
             this.service.onContextChanged(() => this.broadcastContextChanged()),
             this.service.onWriteStateChanged(() => this.broadcastWriteStateChanged()),
-            this.workflowRouter.onChanged(() => this.broadcastWorkflowChanged()),
+            this.workflowRouter.onChanged((context) => this.broadcastWorkflowChanged(context)),
             this.workflowRouter.onViewRequested((request) => this.broadcastWorkflowView(request)),
             this.toast.onToast((payload) => this.broadcastToast(payload)),
         )
@@ -370,13 +377,18 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             }
             default:
                 if (method.startsWith('proofread/')) {
-                    return this.proofread.handle(method, payload, (completed, total) =>
+                    const result = await this.proofread.handle(method, payload, (completed, total) =>
                         this.post(view, {
                             type: 'state',
                             channel: 'proofread',
                             payload: { kind: 'progress', batch: completed, total },
                         }),
                     )
+                    // 定位命中与打开词库都会切换活跃编辑器：立即同步归属，菜单才能跟随当前文档
+                    if (PROOFREAD_DOCUMENT_METHODS.has(method)) {
+                        this.workflowRouter.syncFromEditor()
+                    }
+                    return result
                 }
                 if (method.startsWith('naming/')) {
                     return this.naming.handle(method, payload)
@@ -395,9 +407,14 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 // 公众号运营分区与应用内仪表盘共用同一份路由：两个面板各自发起请求，数据源只有一套
                 if (method.startsWith('wechat/')) {
                     // 推送阶段经 state 通道回投给本面板，与仪表盘同一份载荷结构
-                    return this.wechat.handle(method, payload, (progress) => {
+                    const result = await this.wechat.handle(method, payload, (progress) => {
                         this.post(view, { type: 'state', channel: 'wechat', payload: progress })
                     })
+                    // 打开 / 新建即打开 / 导入即打开正文都会切换活跃编辑器：立即同步路由事实
+                    if (WECHAT_DOCUMENT_METHODS.has(method)) {
+                        this.workflowRouter.syncFromEditor()
+                    }
+                    return result
                 }
                 if (method.startsWith('pressAi/') || PRESS_WORKSPACE_METHODS.has(method)) {
                     return this.press.handle(
@@ -527,12 +544,16 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         }
     }
 
-    /** 广播路由事实（场景切换或模块选定变更）：面板据此重新解析并换页 */
-    private broadcastWorkflowChanged(): void {
+    /**
+     * 广播路由事实（场景切换或模块选定变更）：面板据此重新解析并换页。
+     * 关键约束：载荷必须直接用路由层给出的事实，不能回查 getContext() 重新推导——
+     * 重新推导依赖 activeTextEditor，显式打开作品时编辑器若尚未切到作品文档，
+     * 会把刚下发的作品事实覆盖回笔记事实，面板菜单就不随文档切换。
+     */
+    private broadcastWorkflowChanged(context: WorkflowContextState): void {
         if (this.views.size === 0) {
             return
         }
-        const context = this.workflowRouter.getContext()
         for (const view of this.views) {
             this.post(view, { type: 'state', channel: 'workflow', payload: context })
         }

@@ -28,7 +28,11 @@ export interface WorkflowContextState {
     scene: WorkflowSceneKind
     /** 当前模块键：相对存储根的一级目录名，顶层文件为 root */
     module: string
-    /** 用户选定的模块：由仪表盘入口或侧边导航设置并在宿主持久保持，未选择为 null */
+    /**
+     * 用户选定的模块：由仪表盘入口或侧边导航设置，未选择为 null。
+     * 关键约束：该选定只在「选定当时的活跃文档」上有效，用户切到别的文档后宿主会清空它，
+     * 避免残留的模块压住当前文档的归属（否则菜单不随文档切换）。
+     */
     selectedModule: string | null
     /** 当前打开的作品目录（相对存储根，形如 press/{作品名}），未打开作品为 null */
     projectDir: string | null

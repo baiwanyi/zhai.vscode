@@ -54,6 +54,16 @@ import type { WechatMenuService } from './menuService'
 import type { WechatPublishService } from './publishService'
 import type { WechatStatsService } from './statsService'
 
+/**
+ * 会切换活跃编辑器的公众号协议：打开正文、新建即打开、导入即打开。
+ * 使用方：两个 Provider 处理完请求后立即同步工作流路由事实，使侧栏菜单跟随当前文档。
+ */
+export const WECHAT_DOCUMENT_METHODS: ReadonlySet<string> = new Set([
+    'wechat/article/import',
+    'wechat/article/open',
+    'wechat/article/quickCreate',
+])
+
 /** 路由依赖：按域注入，新增运营分区时只加字段，不改构造签名 */
 export interface WechatRouteDeps {
     accounts: WechatAccountService
@@ -214,7 +224,9 @@ export class WechatRoutes {
             }
             case 'wechat/article/meta': {
                 if (!isWechatArticleMetaRequest(payload)) {
-                    throw new Error('wechat/article/meta 参数非法：id 与标题必填，封面与留言开关须为合法类型')
+                    throw new Error(
+                        'wechat/article/meta 参数非法：id 必填，标题给出时须非空，封面与留言开关须为合法类型',
+                    )
                 }
                 return this.deps.issues.updateArticleMeta(payload)
             }

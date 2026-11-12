@@ -1,10 +1,14 @@
 /**
  * 工作流路由事实服务：汇聚「活跃编辑器场景」「用户选定的模块」与「当前作品」，供工作流面板按模块渲染对应页面。
  * 复用 IndexService.toRelativePath 与索引库回查判定文档归属，与仪表盘活跃笔记回填同口径。
- * 关键约束：编辑器监听随扩展停用释放；场景变化经去抖后再广播，避免编辑器焦点抖动导致面板反复换页；
- * 模块选定为持久状态（跨面板重建保留），仅在用户改选或清除时变化，未选定时面板直接进写作管理页的对话分区；
+ * 关键约束：编辑器监听随扩展停用释放；切换文档一律立即广播、不做去抖——每个事实都经 isSameAsLast 比对，
+ * 同一归属内的文档切换（同作品换章、同为笔记）本身不会产生新事实，跨归属切换则必须实时跟随；
+ * 模块选定为持久状态（跨面板重建保留），仅在用户改选、清除，或用户切到另一份文档时变化——
+ * 板块选定不能压住用户随后打开的文档，否则从公众号页打开作品/笔记时菜单会停在上一个模块；
+ * 广播载荷即变更后的完整事实，订阅端不得回查编辑器重新推导，否则显式打开作品的意图会被旧编辑器状态覆盖；
  * 作品目录以编辑器所在的 press/{作品名}/... 为准；编辑器落在笔记或根目录时视为未打开作品（projectDir 清空），
  * 否则前端会把笔记也判成作品归属，专属分区与对话作用域都切不过去；
+ * 仪表盘与工作台打开作品时以显式目录立即广播（该次广播不经编辑器推导），随后编辑器事实与之收敛；
  * 索引尚未收录时仍按路径识别，避免新建作品打不开工作台；
  * 焦点离开文本编辑器（打开设置、切到其它视图）不改变场景事实，沿用上一次的 scene / module / projectDir。
  */
@@ -16,16 +20,17 @@ import type { WorkflowContextState, WorkflowSceneKind, WorkflowViewRequest } fro
 import { NOTES_MODULE_KEY, ROOT_MODULE_KEY, WECHAT_MODULE_KEY } from '@shared/types/workflow'
 import type Database from 'better-sqlite3'
 
-/** 场景变化去抖时长（毫秒）：短于该值的编辑器焦点切换不触发换页 */
-const SCENE_DEBOUNCE_MS = 800
-
 /** 作品文档的最小段数：press/{作品名}/{文档} */
 const PRESS_PROJECT_DEPTH = 3
 
 export class WorkflowRouter implements vscode.Disposable {
-    private readonly emitter = new vscode.EventEmitter<void>()
-    /** 路由事实变更事件：面板据此重新拉取事实并换页 */
-    public readonly onChanged: vscode.Event<void> = this.emitter.event
+    private readonly emitter = new vscode.EventEmitter<WorkflowContextState>()
+    /**
+     * 路由事实变更事件：载荷就是变更后的完整事实，订阅方直接落 state。
+     * 关键约束：不得在订阅端回查编辑器重新推导——显式打开作品时编辑器可能尚未切到作品文档，
+     * 二次推导会把「打开作品」这一意图覆盖回笔记事实，面板菜单因此不随作品切换。
+     */
+    public readonly onChanged: vscode.Event<WorkflowContextState> = this.emitter.event
 
     private readonly viewEmitter = new vscode.EventEmitter<WorkflowViewRequest>()
     /** 页内视图请求事件：宿主发起的一次性跳转（如切到对话分区），不属于路由事实 */
@@ -35,9 +40,10 @@ export class WorkflowRouter implements vscode.Disposable {
 
     /** 用户选定的模块：持久保存，未选定为 null（面板直接进写作管理页的对话分区） */
     private selectedModule: string | null = null
+    /** 选定模块时活跃的文档键：与之后的活跃文档不一致，说明用户已切到别的文档，选定随之失效 */
+    private selectedModuleDoc: string | null = null
     /** 显式选定的作品目录：仪表盘与工作台打开作品时写入，编辑器不在作品内时以它为准 */
     private projectDir: string | null = null
-    private debounceTimer: ReturnType<typeof setTimeout> | null = null
     /** 上次产出的事实，用于抑制无变化的重复广播 */
     private lastContext: WorkflowContextState | null = null
 
@@ -50,13 +56,15 @@ export class WorkflowRouter implements vscode.Disposable {
     public register(subscriptions: vscode.Disposable[]): void {
         subscriptions.push(
             this,
-            vscode.window.onDidChangeActiveTextEditor(() => this.scheduleRefresh()),
+            // 切换文档立即同步：事实没变时 refresh 内部会抑制，不需要去抖兜住「同一事实的多次事件」
+            vscode.window.onDidChangeActiveTextEditor(() => this.refresh()),
         )
     }
 
     /** 选定模块并立即广播：使已挂载的面板切到该模块的工作流页 */
     public selectModule(module: string): void {
         this.selectedModule = module
+        this.selectedModuleDoc = readActiveDocumentKey()
         this.refresh()
     }
 
@@ -70,27 +78,38 @@ export class WorkflowRouter implements vscode.Disposable {
         this.viewEmitter.fire({ kind: 'view', view, seq: this.viewSeq })
     }
 
+    /**
+     * 立即按当前编辑器同步一次事实：打开文档类操作（打开笔记、公众号正文、章节、词库）后调用。
+     * 关键约束：与编辑器监听同源推导，显式调用是为了不依赖「事件是否恰好触发」（preserveFocus、
+     * 打开的是同一文档等情形不会发出 activeTextEditor 事件），事实没变时由 isSameAsLast 抑制。
+     */
+    public syncFromEditor(): void {
+        this.refresh()
+    }
+
     /** 清除模块选定并立即广播：面板据此回到写作管理页的对话分区 */
     public clearModule(): void {
         if (this.selectedModule === null) {
             return
         }
         this.selectedModule = null
+        this.selectedModuleDoc = null
         this.refresh()
     }
 
     /**
      * 选定作品并立即广播：仪表盘与工作台打开作品后调用。
      * 关键约束：不依赖 activeTextEditor 是否已切到作品文档（webview 抢焦点时编辑器可能短暂缺位），
-     * 直接以传入目录广播，工作台据此重新读取作品文档；同一目录重复打开不重复广播。
+     * 直接以传入目录广播，工作台据此重新读取作品文档；抑制条件比对完整事实而非仅比对目录，
+     * 否则「目录没变、但当前事实仍是笔记/其它模块」时不会广播，菜单停在旧文档上。
      */
     public selectProject(dirPath: string): void {
-        if (this.projectDir === dirPath) {
-            return
-        }
         this.projectDir = dirPath
+        // 打开作品即离开原先的模块选定（如在公众号页选过模块），否则前端会继续按选定模块判归属
+        this.dropStaleSelectedModule()
         const next: WorkflowContextState = {
-            scene: this.lastContext?.scene ?? 'idle',
+            // 显式打开作品即脱离笔记编辑场景，场景与模块同口径（见 buildContext）
+            scene: 'idle',
             module: PRESS_MODULE_DIR,
             selectedModule: this.selectedModule,
             projectDir: dirPath,
@@ -99,7 +118,7 @@ export class WorkflowRouter implements vscode.Disposable {
             return
         }
         this.lastContext = next
-        this.emitter.fire()
+        this.emitter.fire(next)
     }
 
     /** 清除作品选定并立即广播：作品被删除后调用，工作台据此回到初始页 */
@@ -108,6 +127,7 @@ export class WorkflowRouter implements vscode.Disposable {
             return
         }
         this.projectDir = null
+        this.dropStaleSelectedModule()
         const next: WorkflowContextState = {
             scene: this.lastContext?.scene ?? 'idle',
             module: PRESS_MODULE_DIR,
@@ -118,7 +138,7 @@ export class WorkflowRouter implements vscode.Disposable {
             return
         }
         this.lastContext = next
-        this.emitter.fire()
+        this.emitter.fire(next)
     }
 
     /** 读取当前路由事实：面板按需拉取与广播共用本方法，读取不改变选定状态 */
@@ -129,25 +149,8 @@ export class WorkflowRouter implements vscode.Disposable {
     }
 
     public dispose(): void {
-        this.clearDebounce()
         this.emitter.dispose()
         this.viewEmitter.dispose()
-    }
-
-    private scheduleRefresh(): void {
-        this.clearDebounce()
-        this.debounceTimer = setTimeout(() => {
-            this.debounceTimer = null
-            this.refresh()
-        }, SCENE_DEBOUNCE_MS)
-    }
-
-    private clearDebounce(): void {
-        if (this.debounceTimer === null) {
-            return
-        }
-        clearTimeout(this.debounceTimer)
-        this.debounceTimer = null
     }
 
     /** 广播路由事实：仅在事实变化时发，避免无谓换页 */
@@ -157,7 +160,7 @@ export class WorkflowRouter implements vscode.Disposable {
             return
         }
         this.lastContext = next
-        this.emitter.fire()
+        this.emitter.fire(next)
     }
 
     private isSameAsLast(context: WorkflowContextState): boolean {
@@ -173,8 +176,11 @@ export class WorkflowRouter implements vscode.Disposable {
 
     /** 组装路由事实：仅认可索引库内的文档，索引外文件视为无场景；作品目录以编辑器为准，缺位时沿用选定值 */
     private buildContext(): WorkflowContextState {
-        const selectedModule = this.selectedModule
         const editor = vscode.window.activeTextEditor
+        // 模块选定只对「选定当时的那份文档」有效：用户切到别的文档就回到文档驱动，
+        // 否则从公众号页打开作品或笔记时，菜单会被残留的选定压住、不跟随当前文档
+        this.dropStaleSelectedModule()
+        const selectedModule = this.selectedModule
         if (editor === undefined) {
             // 焦点不在文本编辑器（打开设置页、切到其它面板）不代表场景改变：
             // 沿用上一次事实与已选定的作品，否则面板会被动跳回初始页
@@ -210,6 +216,28 @@ export class WorkflowRouter implements vscode.Disposable {
         const scene: WorkflowSceneKind = moduleKey === NOTES_MODULE_KEY ? 'editorNote' : 'idle'
         return { scene, module: moduleKey, selectedModule, projectDir: this.projectDir }
     }
+
+    /**
+     * 丢弃已不属于当前文档的模块选定：选定当时记录了活跃文档键，键不一致即为用户已切换文档。
+     * 关键约束：活跃文档缺位（焦点在面板、设置页）时不做判断，避免切换焦点就把选定清掉。
+     */
+    private dropStaleSelectedModule(): void {
+        if (this.selectedModule === null) {
+            return
+        }
+        const activeDoc = readActiveDocumentKey()
+        if (activeDoc === null || activeDoc === this.selectedModuleDoc) {
+            return
+        }
+        this.selectedModule = null
+        this.selectedModuleDoc = null
+    }
+}
+
+/** 活跃文档键：判断模块选定是否仍属于当前文档，焦点不在文本编辑器时为 null */
+function readActiveDocumentKey(): string | null {
+    const editor = vscode.window.activeTextEditor
+    return editor === undefined ? null : editor.document.uri.toString()
 }
 
 /** 取相对路径的一级目录名：与展示层 moduleOf 同口径，顶层文件归入 root */

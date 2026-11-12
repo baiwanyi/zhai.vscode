@@ -48,6 +48,7 @@ import type { StockRoutes } from '@modules/stock/stockRoutes'
 import type { TodoRoutes } from '@modules/todo/todoRoutes'
 import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 import type { WechatRoutes } from '@modules/wechat/wechatRoutes'
+import { WECHAT_DOCUMENT_METHODS } from '@modules/wechat/wechatRoutes'
 import type { DashboardStats } from '@shared/types/dashboard'
 import type { HostToWebviewMessage } from '@shared/types/messages'
 import { isRequestMessage } from '@shared/types/messages'
@@ -263,13 +264,16 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private invoke(view: vscode.WebviewView, method: string, payload: unknown): Promise<unknown> {
+    private async invoke(view: vscode.WebviewView, method: string, payload: unknown): Promise<unknown> {
         switch (method) {
             case 'dashboard/stats': {
                 return Promise.resolve(this.buildStats())
             }
             case 'note/create': {
-                return createAndOpenNote(this.indexService)
+                const created = await createAndOpenNote(this.indexService)
+                // 新建即打开：与 note/open 同口径，立即把工作流菜单切到笔记归属
+                this.workflowRouter.syncFromEditor()
+                return created
             }
             case 'note/pin': {
                 return this.setPinned(payload)
@@ -394,9 +398,14 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
                         throw new Error('公众号服务尚未就绪')
                     }
                     // 推送阶段经 state 通道回投给本面板：用户能看到「正在渲染 / 上传 / 提交」
-                    return routes.handle(method, payload, (progress) => {
+                    const result = await routes.handle(method, payload, (progress) => {
                         this.post(view, { type: 'state', channel: 'wechat', payload: progress })
                     })
+                    // 打开 / 新建即打开 / 导入即打开正文都会切换活跃编辑器：立即同步路由事实
+                    if (WECHAT_DOCUMENT_METHODS.has(method)) {
+                        this.workflowRouter.syncFromEditor()
+                    }
+                    return result
                 }
                 throw new Error(`未知的协议方法：${method}`)
             }
@@ -442,6 +451,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             throw new Error(`笔记不在索引中，无法打开：${payload.path}`)
         }
         await openNoteByPath(target.path)
+        // 打开笔记后立即同步工作流事实：菜单不等编辑器事件，避免与后续请求抢时序
+        this.workflowRouter.syncFromEditor()
         return { opened: true }
     }
 
@@ -709,6 +720,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             throw new Error(`章节不在索引中，无法打开：${payload.path}`)
         }
         await openChapterByPath(payload.path)
+        // 打开章节会把活跃编辑器切到作品内：立即同步归属，从笔记/公众号页跳进来时菜单也要跟上
+        this.workflowRouter.syncFromEditor()
         return { opened: true }
     }
 

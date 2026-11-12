@@ -563,11 +563,14 @@ export interface WechatArticleOpenResult {
 
 /**
  * wechat/article/meta 请求：只改元信息，正文由用户在编辑器里维护。
- * 关键约束：coverPath 传空串表示清除、缺省表示不改动；宿主重写 frontmatter 时保留文件里的正文。
+ * 关键约束：coverPath 传空串表示清除、缺省表示不改动；宿主重写 frontmatter 时保留文件里的正文；
+ * title 缺省表示「不改标题」——只改作者/摘要/留言的入口不得回传列表快照里的旧标题，
+ * 否则并行编辑（编辑器或推送面板改过标题）后会把新标题与文件名改回旧值。
  */
 export interface WechatArticleMetaRequest {
     id: string
-    title: string
+    /** 新标题，缺省表示不修改；给出时须非空 */
+    title?: string
     author?: string
     digest?: string
     coverPath?: string
@@ -752,7 +755,7 @@ export function isWechatArticleOpenRequest(payload: unknown): payload is WechatA
     return isWechatIssueId((payload as { id?: unknown }).id)
 }
 
-/** 判断是否为文章元信息请求：标题必填，封面与留言为可选 */
+/** 判断是否为文章元信息请求：id 必填；标题缺省表示不改标题，给出时须非空；封面与留言为可选 */
 export function isWechatArticleMetaRequest(payload: unknown): payload is WechatArticleMetaRequest {
     if (typeof payload !== 'object' || payload === null) {
         return false
@@ -763,7 +766,10 @@ export function isWechatArticleMetaRequest(payload: unknown): payload is WechatA
         coverPath?: unknown
         allowComment?: unknown
     }
-    if (!isWechatIssueId(candidate.id) || readWechatArticleTitle(candidate.title).length === 0) {
+    if (!isWechatIssueId(candidate.id)) {
+        return false
+    }
+    if (candidate.title !== undefined && readWechatArticleTitle(candidate.title).length === 0) {
         return false
     }
     if (candidate.coverPath !== undefined && typeof candidate.coverPath !== 'string') {

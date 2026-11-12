@@ -49,8 +49,8 @@ import type { WechatListStatus } from '../utils'
 /** 文章设置表单：只含发布元信息，标题与封面不在本入口修改 */
 export interface WechatArticleMetaInput {
     id: string
-    /** 原样回传：契约要求标题必填，本入口不改它 */
-    title: string
+    /** 新标题：缺省表示不改标题，本入口不提交它 */
+    title?: string
     author: string
     digest: string
     allowComment: boolean
@@ -267,7 +267,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             setIsMutating(true)
             const payload: WechatArticleMetaRequest = {
                 id: input.id,
-                title: input.title,
+                ...(input.title === undefined ? {} : { title: input.title }),
                 author: input.author,
                 digest: input.digest,
                 allowComment: input.allowComment,

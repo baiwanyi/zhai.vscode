@@ -28,6 +28,12 @@ const MAX_REPLACEMENT_LENGTH = 200
 /** 进度广播回调：由宿主注入，把 AI 分批进度推给前端 */
 export type ProofreadProgressHandler = (completed: number, total: number) => void
 
+/**
+ * 会切换活跃编辑器的校对协议：定位命中区间（打开目标文档）与打开词库文件。
+ * 使用方：AiChatViewProvider 处理完请求后立即同步工作流路由事实，使侧栏菜单跟随当前文档。
+ */
+export const PROOFREAD_DOCUMENT_METHODS: ReadonlySet<string> = new Set(['proofread/lexicon/open', 'proofread/reveal'])
+
 export class ProofreadRoutes {
     public constructor(private readonly service: ProofreadService) {}
 

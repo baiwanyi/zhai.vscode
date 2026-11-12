@@ -5,7 +5,9 @@
  * 关键约束：归属、专属分区、作用域目录都由本文件推导，导航、内容区与对话页不得各自判断，避免口径漂移；
  * 作品归属以 projectDir 存在为准——press 一级目录下的散文档不算作品文档，只显示常驻分区；
  * 公众号既可能来自「打开了 wechat/ 目录下的文档」，也可能来自「用户在仪表盘选了公众号」，
- * 后者用 selectedModule 判定：选模块是持久意图，不依赖当前打开哪个文件。
+ * 后者用 selectedModule 判定：选模块是显式意图，不依赖当前打开哪个文件；
+ * 该意图只对「选定当时的那份文档」有效——宿主在活跃文档变化时清空它（见 WorkflowRouter），
+ * 因此菜单始终跟随当前文档，不会被残留的模块选定压住。
  */
 import { NOTES_MODULE_KEY, WECHAT_MODULE_KEY } from '@shared/types/workflow'
 import type { WorkflowContextState } from '@shared/types/workflow'
