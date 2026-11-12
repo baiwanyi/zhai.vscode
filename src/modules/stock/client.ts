@@ -28,9 +28,16 @@ const LIST_PATH = '/photos'
 /** 话题列表与话题内浏览：后者形如 /topics/{slug}/photos */
 const TOPICS_PATH = '/topics'
 
-/** 错误码：服务层据此决定提示形态（是否打开密钥弹窗、是否展示重试） */
+/** 错误码：服务层据此决定提示形态（是否打开密钥弹窗、是否展示重试、是否降级） */
 export type StockErrorCode =
-    'not-configured' | 'invalid-key' | 'forbidden' | 'rate-limited' | 'network' | 'server' | 'bad-response'
+    | 'not-configured'
+    | 'invalid-key'
+    | 'forbidden'
+    | 'not-found'
+    | 'rate-limited'
+    | 'network'
+    | 'server'
+    | 'bad-response'
 
 /** 在线图库错误：带错误码与「是否值得重试」，路由层直接透传 message */
 export class StockApiError extends Error {
@@ -252,8 +259,7 @@ export class StockClient {
         topic: string | null
         orderBy: StockOrderBy | null
     }): Promise<StockSearchPage> {
-        const config = getZhaiConfig()
-        const perPage = clamp(config.stockPerPage, 20, MIN_PER_PAGE, MAX_PER_PAGE)
+        const perPage = clamp(getZhaiConfig().stockPerPage, 20, MIN_PER_PAGE, MAX_PER_PAGE)
         const isSearch = input.topic === null && input.query.length > 0
         const url = new URL(resolveSearchPath(input), API_BASE)
         url.searchParams.set('page', String(input.page))
@@ -450,6 +456,10 @@ export class StockClient {
             }
             if (response.status === 403) {
                 throw new StockApiError('forbidden', 'Unsplash 应用没有该接口权限，请检查应用审核状态')
+            }
+            if (response.status === 404) {
+                // 独立错误码：话题 slug 失效与照片被删都走这里，服务层据此决定是否降级
+                throw new StockApiError('not-found', 'Unsplash 上找不到这个资源（HTTP 404）')
             }
             if (response.status === 429) {
                 const waitSeconds = readRetryAfter(response.headers)

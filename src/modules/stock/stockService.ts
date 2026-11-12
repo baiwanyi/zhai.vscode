@@ -1,8 +1,12 @@
 /**
  * 在线图库服务：搜索、缩略图、插入、密钥与状态，是 stock/* 协议的唯一实现入口。
- * 复用约定：HTTP 走 ./client，照片元数据留 ./cache，本地库读写走 ./stockLibraryService，
- * 密钥存取走 common/secrets（SecretStorage），路径拼接走 common/storagePath，正文写入与媒体库同一套口径。
+ * 复用约定：HTTP 走 ./client，照片元数据留 ./cache，浏览流列表缓存走 ./stockListCache，
+ * 本地库读写走 ./stockLibraryService，密钥存取走 common/secrets（SecretStorage），
+ * 路径拼接走 common/storagePath，正文写入与媒体库同一套口径。
  * 关键约束：前端只传 photoId，下载地址与保存目录一律在宿主解析；命中本地库时全程不发网络、不耗配额；
+ * 浏览流与话题流以 {存储根}/unsplash.json 为准，但只缓存实际加载过的页：首页进来只抓第 1 页，
+ * 滚动续载时才抓下一页，两者共用同一套按页 8 小时过期与回源规则；
+ * 同一列表同一页的并发请求合并为一次（定时器、刷新按钮与首屏不会各抓一遍）；
  * 插入可按上游原生档位（raw / full / regular / small）下载，未指定档位时用配置宽度取 raw 入口；
  * 复制与插入共用同一段落盘链，复制不依赖活动编辑器，落盘归属按 general 记账；
  * 目标解析前置——没有可用编辑器时直接返回四态，不做任何下载；
@@ -27,6 +31,7 @@ import type {
     StockCopyResult,
     StockDownloadedResult,
     StockOrderBy,
+    StockOrientation,
     StockInsertResult,
     StockKeyClearResult,
     StockKeySaveResult,
@@ -39,14 +44,25 @@ import type {
     StockThumbResult,
 } from '@shared/types/stock'
 import { pruneThumbs, readFreshThumb, writeThumb } from './cache'
+import { StockApiError } from './client'
 import { FALLBACK_IMAGE_WIDTH, MAX_ACCESS_KEY_LENGTH, MIN_ACCESS_KEY_LENGTH } from './constants'
 import { insertStockPhoto } from './repository'
+import {
+    findCachedPage,
+    findCachedPhoto,
+    isStockPageUsable,
+    mergeCachedPage,
+    readStockListCache,
+    saveStockList,
+    toStockListKey,
+} from './stockListCache'
 import { buildStockTarget, toStockRefPath } from './stockNaming'
 import { resolveStockTarget } from './stockTargetService'
 import type { CachedStockPhoto, StockPhotoCache } from './cache'
-import type { StockClient } from './client'
+import type { StockClient, StockSearchPage } from './client'
 import type { StockDatabase } from './db/connection'
 import type { StockLibraryService } from './stockLibraryService'
+import type { StockCachedPage, StockListKeyInput } from './stockListCache'
 import type { StockInsertTarget } from './stockTargetService'
 
 /** 关键词长度上限：超长查询对上游没有收益，按截断处理 */
@@ -185,9 +201,23 @@ function toSizes(photo: CachedStockPhoto): StockPhotoSize[] {
     return sizes
 }
 
+/** 关键词搜索入参：全部来自 readQuery / isStockOrientation / readOrderBy，不再二次收窄 */
+interface StockRemoteSearchInput {
+    query: string
+    page: number
+    orientation: StockOrientation | null
+    orderBy: StockOrderBy | null
+}
+
 export class StockService {
     /** 进行中的下载插入：一次只允许一个，避免连点触发重复下载 */
     private activeInsert: string | null = null
+
+    /**
+     * 进行中的取页：按「列表键#页码」合并并发请求。
+     * 关键约束：定时器、刷新按钮与首屏可能同时要同一页，不合并就会各抓一遍（每次一页一份配额）。
+     */
+    private readonly pendingPages = new Map<string, Promise<StockCachedPage>>()
 
     public constructor(private readonly deps: StockServiceDeps) {}
 
@@ -239,7 +269,7 @@ export class StockService {
     }
 
     /**
-     * 搜索：查询 → 缓存元数据 → 本地化缩略图 → 标记是否已下载。
+     * 搜索入口：关键词走远端分页（不落盘），浏览流与话题流按页走 {存储根}/unsplash.json 缓存。
      * @param toWebviewUri 把磁盘 Uri 转成 webview 可访问 URL 的转换器
      */
     public async search(payload: unknown, toWebviewUri: (uri: vscode.Uri) => string): Promise<StockSearchResult> {
@@ -251,42 +281,13 @@ export class StockService {
         const orientation = topic === null && isStockOrientation(body.orientation) ? body.orientation : null
         // 排序只对浏览流有意义，关键词搜索端点不接受 order_by（client 侧忽略）
         const orderBy = readOrderBy(body.orderBy)
-        const result = await this.deps.client.search({ query, page, orientation, topic, orderBy })
-        for (const photo of result.photos) {
-            this.deps.cache.set(photo)
+        // 关键词组合无穷，不落盘：只有浏览流与话题流有资格吃缓存、省配额
+        if (query.length > 0) {
+            return this.searchRemote({ query, page, orientation, orderBy }, toWebviewUri)
         }
-        const items: StockPhoto[] = []
-        // 分批并发：缩略图是整页最慢的一步，串行会让首屏等上好几秒
-        for (let index = 0; index < result.photos.length; index += THUMB_CONCURRENCY) {
-            const batch = result.photos.slice(index, index + THUMB_CONCURRENCY)
-            const mapped = await Promise.all(
-                batch.map(async (photo): Promise<StockPhoto> => {
-                    const row = this.deps.library.find(photo.id)
-                    return {
-                        id: photo.id,
-                        thumbUrl: await this.ensureThumb(photo, toWebviewUri),
-                        width: photo.width,
-                        height: photo.height,
-                        alt: photo.alt,
-                        photographer: photo.photographer,
-                        photographerUrl: photo.photographerUrl,
-                        sizes: toSizes(photo),
-                        downloaded: row !== null && !row.missing,
-                    }
-                }),
-            )
-            items.push(...mapped)
-        }
-        // 顺带清理过期缩略图：失败不影响本次搜索
-        void pruneThumbs(resolveStorageRoot())
-        return {
-            items,
-            page,
-            totalPages: result.totalPages,
-            total: result.total,
-            hasMore: page < result.totalPages && items.length > 0,
-            remaining: this.deps.client.getSnapshot().remaining,
-        }
+        // refresh 只由「更多 - 刷新」与 8 小时定时器置为 true；只对首页有意义，续载页照常按页缓存
+        const isForced = body.refresh === true && page === 1
+        return this.browsePage({ topic, orientation, orderBy }, page, isForced, toWebviewUri)
     }
 
     /** 补取单张缩略图：搜索结果里 thumbUrl 为 null 时由前端触发 */
@@ -295,9 +296,7 @@ export class StockService {
         if (!isStockFileStem(value)) {
             throw new Error('stock/thumb 缺少合法的图片标识')
         }
-        const cached = this.deps.cache.get(value)
-        const photo = cached ?? (await this.deps.client.photo(value))
-        this.deps.cache.set(photo)
+        const photo = await this.resolvePhoto(value)
         return { thumbUrl: await this.ensureThumb(photo, toWebviewUri) }
     }
 
@@ -367,6 +366,218 @@ export class StockService {
         const fileUri = buildStorageUri(root, stored.relPath.split('/'))
         const outcome = await writeImageToClipboard(fileUri.fsPath, readPathExtension(stored.relPath))
         return outcome === 'copied' ? { copied: true } : { copied: false, reason: outcome }
+    }
+
+    /**
+     * 关键词搜索：保持远端分页语义，不落盘——关键词组合无穷，缓存文件会被撑爆且命中率极低。
+     * 关键约束：结果仍写入内存元数据缓存，插入时不必再回源取下载地址。
+     */
+    private async searchRemote(
+        input: StockRemoteSearchInput,
+        toWebviewUri: (uri: vscode.Uri) => string,
+    ): Promise<StockSearchResult> {
+        const result = await this.deps.client.search({
+            query: input.query,
+            page: input.page,
+            orientation: input.orientation,
+            topic: null,
+            orderBy: input.orderBy,
+        })
+        for (const photo of result.photos) {
+            this.deps.cache.set(photo)
+        }
+        const items = await this.toStockItems(result.photos, toWebviewUri)
+        // 顺带清理过期缩略图：失败不影响本次搜索
+        void pruneThumbs(resolveStorageRoot())
+        return {
+            items,
+            page: input.page,
+            totalPages: result.totalPages,
+            total: result.total,
+            hasMore: input.page < result.totalPages && items.length > 0,
+            remaining: this.deps.client.getSnapshot().remaining,
+            fromCache: false,
+            syncedAt: null,
+        }
+    }
+
+    /**
+     * 浏览流与话题流的一页：该页未过期就直接本地化，否则只回源这一页并写回。
+     * 关键约束：首页与续载页走完全相同的规则——首屏只抓第 1 页，滚动到第 N 页才抓第 N 页，
+     * 缓存里只有真正看过的页；命中缓存仍要重新签发缩略图地址，但不发任何接口请求。
+     */
+    private async browsePage(
+        input: StockListKeyInput,
+        page: number,
+        isForced: boolean,
+        toWebviewUri: (uri: vscode.Uri) => string,
+    ): Promise<StockSearchResult> {
+        const root = resolveStorageRoot()
+        const key = toStockListKey(input)
+        if (!isForced) {
+            const cachedFile = await readStockListCache(root)
+            const cached = findCachedPage(cachedFile.lists[key], page)
+            if (cached !== null && isStockPageUsable(cached, getZhaiConfig().stockPerPage)) {
+                return this.toPageResult(cached, true, toWebviewUri)
+            }
+        }
+        try {
+            const fetched = await this.fetchPage(root, key, input, page)
+            return this.toPageResult(fetched, false, toWebviewUri)
+        } catch (error) {
+            // 把列表标识与页码带进文案：同一句「限流 / 404」在页面上要能看出是哪一页出的问题
+            const message = error instanceof Error ? error.message : String(error)
+            logger.warn(`在线图库取页失败：${key} 第 ${String(page)} 页（${message}）`)
+            throw new Error(`${message}（列表：${key} 第 ${String(page)} 页）`, { cause: error })
+        }
+    }
+
+    /** 缓存页 → 协议回执：本地化缩略图后交给页面，分页信息随页回传，前端据此决定是否继续续载 */
+    private async toPageResult(
+        page: StockCachedPage,
+        isFromCache: boolean,
+        toWebviewUri: (uri: vscode.Uri) => string,
+    ): Promise<StockSearchResult> {
+        return {
+            items: await this.toStockItems(page.photos, toWebviewUri),
+            page: page.page,
+            totalPages: page.totalPages,
+            total: page.total,
+            hasMore: page.hasMore,
+            remaining: this.deps.client.getSnapshot().remaining,
+            fromCache: isFromCache,
+            syncedAt: page.syncedAt,
+        }
+    }
+
+    /**
+     * 取一页并落盘：同一「列表键 + 页码」同一时刻只跑一次。
+     * 关键约束：8 小时定时刷新、刷新按钮与首屏可能同时要同一页，不合并就会各抓一遍；
+     * 合并只针对同一页，续载下一页是另一件事，不会互相等待。
+     */
+    private async fetchPage(
+        root: vscode.Uri,
+        key: string,
+        input: StockListKeyInput,
+        page: number,
+    ): Promise<StockCachedPage> {
+        const pendingKey = `${key}#${String(page)}`
+        const pending = this.pendingPages.get(pendingKey)
+        if (pending !== undefined) {
+            return pending
+        }
+        const task = this.fetchPageOnce(root, key, input, page).finally(() => {
+            this.pendingPages.delete(pendingKey)
+        })
+        this.pendingPages.set(pendingKey, task)
+        return task
+    }
+
+    /**
+     * 单页回源：抓一页、进内存缓存、并入磁盘缓存。
+     * 关键约束：页与页之间按页覆盖——重抓第 N 页时第 N+1 页起的旧页一并作废（分页顺序可能已变）；
+     * 缓存写失败只记日志，本次结果照常返回，下次访问再补写。
+     */
+    private async fetchPageOnce(
+        root: vscode.Uri,
+        key: string,
+        input: StockListKeyInput,
+        page: number,
+    ): Promise<StockCachedPage> {
+        const result = await this.requestPage(input, page, false)
+        const cachedPage: StockCachedPage = {
+            page,
+            photos: result.photos,
+            syncedAt: new Date().toISOString(),
+            perPage: getZhaiConfig().stockPerPage,
+            // 浏览流没有总页数（client 按「本页有内容就还有下一页」估），空页即到底
+            hasMore: page < result.totalPages && result.photos.length > 0,
+            totalPages: result.totalPages,
+            total: result.total,
+        }
+        for (const photo of result.photos) {
+            this.deps.cache.set(photo)
+        }
+        try {
+            const current = (await readStockListCache(root)).lists[key]
+            await saveStockList(root, mergeCachedPage(current, input, cachedPage))
+        } catch (error) {
+            const message = error instanceof Error ? error.message : String(error)
+            logger.warn(`在线图库列表缓存写入失败：${key} 第 ${String(page)} 页（${message}）`)
+        }
+        void pruneThumbs(root)
+        return cachedPage
+    }
+
+    /**
+     * 单页请求：话题首页 404（上游下线该 slug）时改用 slug 作关键词搜一次。
+     * 关键约束：只对 404 降级，限流、网络与权限问题照旧抛出，不做无谓的二次消耗。
+     */
+    private async requestPage(input: StockListKeyInput, page: number, isFallback: boolean): Promise<StockSearchPage> {
+        try {
+            return await this.searchOnce(input, page, isFallback)
+        } catch (error) {
+            const topic = input.topic
+            const canFallback =
+                !isFallback && topic !== null && error instanceof StockApiError && error.code === 'not-found'
+            if (!canFallback) {
+                throw error
+            }
+            logger.warn(`在线图库话题已不可用，改为关键词搜索：${topic}`)
+            return this.searchOnce(input, page, true)
+        }
+    }
+
+    /** 实际请求：常规走话题流或浏览流，降级时把 slug 拆成关键词走后一页同一口径 */
+    private async searchOnce(input: StockListKeyInput, page: number, isFallback: boolean): Promise<StockSearchPage> {
+        const topic = input.topic
+        if (isFallback && topic !== null) {
+            return this.deps.client.search({
+                // slug 是连字符形态，当关键词用时拆成词更贴近搜索意图
+                query: topic.replace(/-/gu, ' '),
+                page,
+                orientation: null,
+                topic: null,
+                orderBy: null,
+            })
+        }
+        return this.deps.client.search({
+            query: '',
+            page,
+            orientation: input.orientation,
+            topic,
+            orderBy: input.orderBy,
+        })
+    }
+
+    /** 元数据 → 协议条目：本地化缩略图并标记是否已下载，缓存与回源两条路径共用 */
+    private async toStockItems(
+        photos: readonly CachedStockPhoto[],
+        toWebviewUri: (uri: vscode.Uri) => string,
+    ): Promise<StockPhoto[]> {
+        const items: StockPhoto[] = []
+        // 分批并发：缩略图是整屏最慢的一步，串行会让首屏等上好几秒
+        for (let index = 0; index < photos.length; index += THUMB_CONCURRENCY) {
+            const batch = photos.slice(index, index + THUMB_CONCURRENCY)
+            const mapped = await Promise.all(
+                batch.map(async (photo): Promise<StockPhoto> => {
+                    const row = this.deps.library.find(photo.id)
+                    return {
+                        id: photo.id,
+                        thumbUrl: await this.ensureThumb(photo, toWebviewUri),
+                        width: photo.width,
+                        height: photo.height,
+                        alt: photo.alt,
+                        photographer: photo.photographer,
+                        photographerUrl: photo.photographerUrl,
+                        sizes: toSizes(photo),
+                        downloaded: row !== null && !row.missing,
+                    }
+                }),
+            )
+            items.push(...mapped)
+        }
+        return items
     }
 
     /** 缩略图：命中缓存直接用，未命中下载并写盘；单张失败返回 null 不抛错 */
@@ -494,11 +705,20 @@ export class StockService {
         return this.downloadWithFallback(photo)
     }
 
-    /** 取照片元数据：内存缓存 → 回源；回源要求满足上游 id 形态 */
+    /**
+     * 取照片元数据：内存缓存 → 磁盘列表缓存 → 回源。
+     * 关键约束：磁盘里留下的元数据已经过一次校验，能省掉一次详情请求；
+     * 读盘失败按未命中处理，绝不因为缓存不可用而阻断插入。
+     */
     private async resolvePhoto(photoId: string): Promise<CachedStockPhoto> {
         const cached = this.deps.cache.get(photoId)
         if (cached !== null) {
             return cached
+        }
+        const stored = findCachedPhoto(await readStockListCache(resolveStorageRoot()), photoId)
+        if (stored !== null) {
+            this.deps.cache.set(stored)
+            return stored
         }
         const photo = await this.deps.client.photo(photoId)
         this.deps.cache.set(photo)

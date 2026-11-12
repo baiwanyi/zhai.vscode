@@ -6,6 +6,7 @@
  * 已下载的分批取 useImageListPaging，搜索侧仍由 useStockPhotos 持有远端分页与配额上限。
  * 关键约束：默认停在搜索——已下载是二级视图，搜索面板常驻挂载、切到已下载只做隐藏，
  * 回来时不丢搜索词也不重复消耗配额；未配置密钥时不发任何请求、先给引导空态；
+ * 搜索列表由宿主缓存 8 小时，「更多 - 刷新」只强制同步当前视图对应的列表，两个视图互不影响；
  * 卡片单击按默认尺寸插入，右下角悬停动作为详情 / 复制（已下载另有删除）；
  * 详情弹窗按上游四档尺寸逐档插入，已下载的图只有本地一份，不再列档位；
  * 复制由宿主写入系统剪贴板，首次复制会先落盘并刷新已下载列表；
@@ -196,10 +197,17 @@ export function WorkflowStock(): JSX.Element {
         [copyingId, failedId, insertingId, visibleGroups],
     )
 
-    /** 刷新：两个视图的数据一起换，状态顺带更新配额与目标 */
-    function refresh(): void {
-        void reload()
-        void reloadStatus()
+    /**
+     * 刷新：只同步当前视图对应的列表——搜索视图强制回源当前话题与筛选，已下载视图重读磁盘。
+     * 关键约束：不互相牵连，刷新搜索不会重拉已下载列表，反之亦然；配额状态两者都跟着更新。
+     */
+    async function refresh(): Promise<void> {
+        if (isDownloadedView) {
+            await reload()
+        } else {
+            await photos.refresh()
+        }
+        await reloadStatus()
     }
 
     /** 切话题：推荐位折算回 null，切话题会清空搜索词（由 useStockPhotos 负责） */
@@ -345,7 +353,15 @@ export function WorkflowStock(): JSX.Element {
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
                                 <DropdownMenuItem onSelect={() => setIsKeyOpen(true)}>密钥设置</DropdownMenuItem>
-                                <DropdownMenuItem onSelect={refresh}>刷新</DropdownMenuItem>
+                                {/* 同步期间禁用：宿主已把同一列表的并发同步合并，这里只是避免重复点击的错觉 */}
+                                <DropdownMenuItem
+                                    disabled={!isDownloadedView && photos.isSyncing}
+                                    onSelect={() => {
+                                        void refresh()
+                                    }}
+                                >
+                                    {!isDownloadedView && photos.isSyncing ? '同步中…' : '刷新'}
+                                </DropdownMenuItem>
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </AppAction>

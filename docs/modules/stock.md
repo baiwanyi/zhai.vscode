@@ -244,6 +244,56 @@ CREATE INDEX IF NOT EXISTS idx_stock_photo_month ON stock_photos(rel_path);
 
 扫描范围：`unsplash/{YYYYMM}/*`（两层），扩展名白名单 `png|jpe?g|webp|gif`。触发时机：打开「已下载」tab 时（5s 节流）+ `stock/downloaded` 显式刷新。
 
+### 4.4 列表缓存（`unsplash.json`）
+
+浏览流与话题流**按页**把照片元数据落 `{storage.rootPath}/unsplash.json`，与 `unsplash/` 目录平级、不进索引库：它是可随时删除的缓存，删掉后下一次访问自然重建。
+
+```json
+{
+  "version": 2,
+  "lists": {
+    "feed|any|default": {
+      "key": "feed|any|default",
+      "topic": null,
+      "orientation": null,
+      "orderBy": null,
+      "pages": [
+        {
+          "page": 1,
+          "photos": [
+            {
+              "id": "Kq2WnB6x9eA",
+              "width": 4000,
+              "height": 6000,
+              "alt": "…",
+              "photographer": "…",
+              "urls": { "raw": "…", "full": "…", "regular": "…", "small": "…" },
+              "downloadLocation": "…"
+            }
+          ],
+          "syncedAt": "2026-11-12T08:00:00.000Z",
+          "hasMore": true,
+          "totalPages": 12,
+          "total": 240
+        }
+      ]
+    }
+  }
+}
+```
+
+- **键**：话题 slug 直接作键；推荐流用 `feed|{orientation}|{orderBy}`，三组筛选互不覆盖。
+- **只缓存看过的页**：首屏进来只请求第 1 页并落盘；滚动到底触发续载时才请求第 N 页，两处走完全相同的读写规则（同一份文件、同一套 8 小时有效期）。
+- **按页过期**：每页以自身 `syncedAt` 计 8 小时，到点后该页下次访问回源重取；重取任意一页都会作废它之后的页（分页顺序可能已变，旧的第 N+1 页接不上新的第 N 页）。
+- **页数上限**：每个列表最多缓存 5 页（与前端续载上限一致），每页条数取 `zhai.stock.perPage`（默认 20），累计约 100 条。
+- **刷新**：「更多 - 刷新」与 8 小时定时器只强制刷新当前列表的**首页**（后续页不再预取），只作用于当前话题与筛选。
+- **话题失效降级**：话题首页返回 404（上游下线该 slug）时，改用 slug 作关键词搜一次（连字符拆空格）；限流、网络与权限错误不降级，照旧抛出。
+- **并发**：同一「列表键 + 页码」的请求合并为一个 Promise；文件读改写排队执行，先写 `.part` 再 rename。
+- **错误文案**：失败时在原文案后追加 `（列表：{key} 第 {N} 页）`，页面上一眼能看出是哪一页出的问题。
+- **安全**：文件按不可信输入解析——`photoId` 必须满足上游形态，四档地址与计数端点只放行 `https` 的 Unsplash 主机，非法条目丢弃。
+- **关键词搜索不落盘**：组合无穷、命中率极低，只走远端分页。
+- **缩略图**：仍留在 `unsplash/.thumbs`；缓存命中也重新签发 webview 地址（仅当次会话有效），但不再发任何接口请求。
+
 ---
 
 ## 5. 页面结构与交互
@@ -280,7 +330,7 @@ WorkflowStock
 │    ├─ 首屏加载 → 6 张骨架卡（aspect-4/3）
 │    ├─ 无结果 → StateEmpty「没有匹配的图片，换个关键词试试」
 │    ├─ 网格：2 列（侧栏约 300px），卡片右上角 Badge「已下载」
-│    └─ 滚动到底自动续载（哨兵提前 300px，浏览流上限 5 页），加载中底部转圈
+│    └─ 首屏只取第 1 页（默认 20 条），滚动到底自动续载下一页（上限 5 页 = 约 100 条）；每页独立缓存
 ├─ 已下载视图（二级）
 │    ├─ 按月分组，组头 sticky：`2026年11月 · 37 张`
 │    ├─ 每组首屏 60 张，「加载更多」按 60 递增
@@ -317,10 +367,13 @@ idle → loadingFirst → ready | empty | error
 - **话题与关键词互斥**：切话题清空搜索词；输入搜索词即回到「推荐」——话题端点不接受 `query`，方向筛选同理，故话题浏览时方向分段整组禁用。
 - **配额闸门**：`isEnabled` 取 `stock/status.configured`，未配置密钥时一个请求都不发（此前会先撞一次 `not-configured`）。
 - **话题清单**：标签行是前端固定的 12 项（「推荐」+ 11 个常用话题，顺序同 Unsplash 官网导航，中文显示名 + 上游 slug），点击即浏览该话题，不回源拉取标签。
-- **分页**：`page` 从 1 起；`hasMore = page < totalPages && page < 5`（浏览流上限 5 页，只在前端封顶）；追加时按 `photoId` 过滤已存在的条目。
+- **分页**：浏览流、话题流与关键词搜索同一口径——`page` 从 1 起，`hasMore = page < totalPages && page < 5`（上限 5 页，只在前端封顶），追加时按 `photoId` 过滤已存在的条目。
+- **按页缓存**：宿主按「列表键 + 页码」命中 `unsplash.json`，该页未过期（8 小时）直接返回并本地化缩略图，`isSyncing` 不置位；续载第 N 页时才回源第 N 页，不预取后续页。
+- **刷新**：「更多 - 刷新」与 8 小时定时器带 `refresh: true`，只强制刷新当前列表的首页（后续页随 items 一起重置），二者共用同一个入口，只作用于当前话题与筛选；刷新期间菜单项显示「同步中…」并禁用。
+- **失败处理**：首屏失败走错误态并提供「重试」；强制刷新失败与续载下一页失败只 toast、保留已展示的列表，继续滚动会再试同一页。
 - **自动加载**：搜索面板底部哨兵进视口（提前 300px）即续载，没有「加载更多」按钮；`items` 变化即重建观察，一屏没填满会链式补载到填满或触顶。
 - **视图保留**：搜索面板常驻挂载，切到已下载只用 `display` 隐藏——返回时不丢搜索词与已加载页，也不会因重挂载再搜一次（每次搜索都消耗配额）。
-- **已下载视图插入成功后局部插入新卡**，不整页重拉。
+- **已下载视图插入成功后局部插入新卡**，不整页重拉；已下载视图的「刷新」只重读磁盘列表，不碰搜索侧的缓存。
 
 ### 5.5 卡片交互
 
@@ -344,7 +397,7 @@ idle → loadingFirst → ready | empty | error
 | `stock/status` | 无 | `{ configured, secretHint, remaining, cooldownUntil, downloadedCount, target }` |
 | `stock/key/save` | `{ accessKey }` | `{ configured, secretHint }` |
 | `stock/key/clear` | 无 | `{ configured: false }` |
-| `stock/search` | `{ query?: string, page: number, orientation?: 'landscape' \| 'portrait' \| 'squarish', topic?: string \| null, orderBy?: 'latest' \| 'oldest' \| 'popular' \| null }` | `{ items: StockPhoto[], page, totalPages, total, hasMore, remaining }` |
+| `stock/search` | `{ query?: string, page: number, orientation?: 'landscape' \| 'portrait' \| 'squarish', topic?: string \| null, orderBy?: 'latest' \| 'oldest' \| 'popular' \| null, refresh?: boolean }` | `{ items: StockPhoto[], page, totalPages, total, hasMore, remaining, fromCache?, syncedAt? }` |
 | `stock/insert` | `{ photoId }` | `StockInsertResult` |
 | `stock/thumb` | `{ photoId }` | `{ thumbUrl: string \| null }` |
 | `stock/downloaded` | `{ month?: 'YYYY-MM' \| null }` | `{ items: StockLocalPhoto[], months, total }` |
@@ -427,7 +480,7 @@ unsplashAccessKey: 'zhai.unsplash.accessKey',
 
 | 键 | 类型 | 默认 | 约束 | 说明 |
 | --- | --- | --- | --- | --- |
-| `zhai.stock.perPage` | number | 20 | 6–30 | 单页条数，Unsplash 上限 30 |
+| `zhai.stock.perPage` | number | 20 | 6–30 | 单页条数（浏览流、话题流与关键词搜索共用），Unsplash 上限 30；改此项会让已缓存页与新页的边界不一致，旧页按过期自然替换 |
 | `zhai.stock.hourlyLimit` | number | 45 | ≥0 | 本地滑动窗口上限（0 表示不限）。Demo 应用为 50 次/小时，留出余量 |
 | `zhai.stock.minIntervalMs` | number | 1200 | 250–10000 | 相邻请求最小间隔，避免连点把配额打光 |
 | `zhai.stock.imageWidth` | number | 1600 | 800–3840 | 下载宽度，决定落盘体积；改配置只影响之后下载的图 |
@@ -470,8 +523,8 @@ stock/insert { photoId }
  │     └ 命中且文件存在 → source='local'
  │          · 跳过内存缓存与网络，不发请求、不耗配额
  │          · 若 download_location 有值且本次触发过计数 → 跳过（已计过）
- ├ 3. 内存缓存（搜索时留下的 urls/links）→ 下载
- ├ 4. 缓存未命中 → GET /photos/{id} 回源一次 → 下载
+ ├ 3. 内存缓存 → 磁盘 unsplash.json 的元数据 → 下载
+ ├ 4. 两处都未命中 → GET /photos/{id} 回源一次 → 下载
  ├ 5. 下载：w/q/fm 参数、30s 超时、退避 3 次、content-type 校验、体积降档
  ├ 6. 落盘 unsplash/{YYYYMM}/{photoId}.{ext}
  │     ├ 先写 `{name}.part`，成功再 rename（overwrite:false）
@@ -550,7 +603,8 @@ if (zhaiRelative !== null) {
 | `src/modules/stock/repository.ts`（新） | 表读写：`insert` / `find` / `list` / `remove` / `markMissing` |
 | `src/modules/stock/stockNaming.ts`（新） | `buildUnsplashPath(photoId, ext, at)` → `{ relPath, monthDir, dirUri }`，目录创建前先探测 `photoId` 合法性 |
 | `src/modules/stock/stockLibraryService.ts`（新） | `downloaded()` 磁盘扫描 + 对账、`remove()`、`status()` 计数 |
-| `src/modules/stock/stockService.ts`（新） | `status` / `search` / `insert` / `thumb` / `keySave` / `keyClear` |
+| `src/modules/stock/stockListCache.ts`（新） | `{root}/unsplash.json` 按页读写：不可信输入校验、`.part` + rename 落盘、读改写排队、按页 8 小时过期与每页条数一致性判定 |
+| `src/modules/stock/stockService.ts`（新） | `status` / `search`（关键词走远端分页，浏览流与话题流按页走缓存）/ `insert` / `thumb` / `keySave` / `keyClear`；同一「列表键 + 页码」的并发请求合并为一次 |
 | `src/modules/stock/stockRoutes.ts`（新） | 方法分发，未登记即抛错 |
 | `src/modules/common/secrets.ts` | `SECRET_KEYS` 增 `unsplashAccessKey` |
 | `src/modules/common/config.ts` | `ZhaiConfig` + `getZhaiConfig()` 增 6 个字段 |
@@ -579,7 +633,7 @@ if (zhaiRelative !== null) {
 | `src/workflow/media/layout/StockSearchBar.tsx`（新） | 搜索框 + 方向分段 + 刷新 |
 | `src/workflow/media/hooks/useImageListPaging.ts`（新） | 已下载按月分组后的统一分批：每组首屏 60 张，滚动续载 |
 | `src/workflow/media/layout/StockKeyDialog.tsx`（新） | 密钥配置弹窗（只写不读回，回显尾号） |
-| `src/workflow/media/hooks/useStockPhotos.ts`（新） | 搜索、话题与关键词互斥、分页（上限 5 页）、竞态、首屏与追加两种 loading |
+| `src/workflow/media/hooks/useStockPhotos.ts`（新） | 搜索、话题与关键词互斥、按页续载（上限 5 页）、竞态、首屏与追加两种 loading、当前列表首页 8 小时自动刷新与强制刷新 |
 | `src/workflow/media/hooks/useStockDownloaded.ts`（新） | 已下载列表、删除、局部插卡 |
 | `src/workflow/media/hooks/useStockInsert.ts`（新） | 插入、按 `reason` 分支提示、失败重试 |
 | `src/workflow/media/hooks/useStockStatus.ts`（新） | 密钥状态、配额、冷却倒计时、目标文档标题 |
@@ -628,7 +682,7 @@ if (zhaiRelative !== null) {
 | 18 | 「已下载」列表里的文件被外部删除 | 扫描标 `missing` 灰显 +「移除记录」；点插入回 `reason: 'download'` 并可重新下载 |
 | 19 | `unsplash/` 目录被整体删除 | 下次扫描为空，库内行全标 missing；插入自动转远程下载 |
 | 20 | 同一 `photoId` 手工放入两个月份 | 取路径字典序靠前者，另一份忽略并在对账时记日志 |
-| 21 | `.thumbs` 无限增长 | 上限 300 张或 7 天，按 mtime 升序清理；扫描跳 `.` 开头目录 |
+| 21 | `.thumbs` 无限增长 | 上限 1200 张或 7 天，按 mtime 升序清理；扫描跳 `.` 开头目录。上限按「每列表 100 张 × 12 个话题」留量，偏小会把刚缓存列表的缩略图挤掉 |
 | 22 | 文档已引用同一张图 | 照旧插入，`duplicated: true` + toast「该文档此前已引用过这张图」 |
 | 23 | 删除已下载图时正文仍在引用 | 二次确认文案如实写「正文引用会显示破图」，不阻断、不代改文档 |
 | 24 | 存储根切换 | 全部相对路径，无需迁移；`unsplash/` 随根走，`stock.db` 随之重建对账 |

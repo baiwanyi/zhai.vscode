@@ -1,7 +1,7 @@
 /**
  * 在线图库契约：Unsplash 搜索结果、本地已下载条目与 stock/* 协议的出入参模型。
- * 复用约定：图片落 {存储根}/unsplash/{YYYYMM}/{photoId}.{ext}，条目 id 即文件名主干；
- * scope 四值复用 @shared/types/media 的 MediaScope，年月收窄复用 isMediaMonth，不另立一套口径。
+ * 复用约定：图片落 {存储根}/unsplash/{YYYYMM}/{photoId}.{ext}，浏览流列表缓存落 {存储根}/unsplash.json；
+ * 条目 id 即文件名主干，scope 四值复用 @shared/types/media 的 MediaScope，年月收窄复用 isMediaMonth。
  * 关键约束：photoId 只允许 [A-Za-z0-9_-]，直接充当文件名，不做二次清洗；
  * thumbUrl 必须是宿主签发的本地地址，前端永不接触 unsplash.com 域名；
  * 密钥状态只回尾号，明文不出宿主。
@@ -162,9 +162,15 @@ export interface StockSearchRequest {
     topic?: string | null
     /** 浏览流排序：不给则尊重上游默认（/photos 为 latest，话题流为 position） */
     orderBy?: StockOrderBy | null
+    /** true 表示跳过本地缓存强制同步当前列表：「更多 - 刷新」与 8 小时定时同步用 */
+    refresh?: boolean
 }
 
-/** 搜索结果 */
+/**
+ * 搜索结果：一次只回一页。
+ * 浏览流与话题流按页交给宿主缓存（未过期时零请求），关键词搜索不落盘；
+ * 两者分页语义一致——滚动到底再要下一页，页数由前端封顶。
+ */
 export interface StockSearchResult {
     items: StockPhoto[]
     page: number
@@ -172,6 +178,10 @@ export interface StockSearchResult {
     total: number
     hasMore: boolean
     remaining: number | null
+    /** 本页是否来自 unsplash.json 缓存：false 表示这一页刚回源 */
+    fromCache?: boolean
+    /** 本页抓取时刻（ISO）：来自缓存时即上次抓取时间 */
+    syncedAt?: string | null
 }
 
 /** 已下载列表入参：month 缺省或非法值时按全部处理 */
