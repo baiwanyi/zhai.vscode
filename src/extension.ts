@@ -1,7 +1,7 @@
 /**
  * 扩展入口：按 common.md 第 4.2 节激活流程装配 Common 与 AI 服务。
  * 流程：日志 → 索引库 → AI/取名层 → 写作与媒体层 → 公众号层 → 面板注册 → 收尾钩子（自检后台执行）。
- * 分层：领域的装配各自成文件（./activation 下的 aiLayer、wechatLayer、lifecycle），本文件只做串联与错误边界。
+ * 分层：领域的装配各自成文件（./activation 下的 aiLayer、editorLayer、wechatLayer、lifecycle），本文件只做串联与错误边界。
  * 复用约定：激活结果作为扩展 exports 返回，VS Code 的 Markdown 预览读取 extendMarkdownIt 挂载图片路径插件；
  * 该钩子只需同步返回实例，真正的路径解析在渲染时按当前文档惰性计算。
  * 关键约束：重量级依赖（CodeBuddy SDK、公众号渲染链）一律惰性加载，激活期只做装配与监听注册；
@@ -9,6 +9,7 @@
  */
 import * as vscode from 'vscode'
 import { assembleAiLayer } from './activation/aiLayer'
+import { assembleEditorLayer } from './activation/editorLayer'
 import { registerLifecycleHooks } from './activation/lifecycle'
 import { assembleWechatLayer } from './activation/wechatLayer'
 import { AiChatViewProvider } from './modules/ai/aiChatProvider'
@@ -323,6 +324,9 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     )
     context.subscriptions.push(wechatLayer.onAuthFailure((event): void => aiChatProvider.broadcastWechatState(event)))
     markStage('面板注册完成')
+
+    // 编辑器：富文本自定义编辑器与切换命令；打开动作由 modules/editor/openDocument 统一决定
+    assembleEditorLayer(context)
 
     const statusBar = new StatusBarService(indexService, indexStatusEmitter.event)
     statusBar.register(context.subscriptions)

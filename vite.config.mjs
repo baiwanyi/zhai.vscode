@@ -3,7 +3,7 @@
  * 产物输出 dist/webview/，宿主侧负责注入 CSP 与资源 URI 重写。
  * 采用 .mjs 扩展名以匹配 Vite 8 默认 native ESM config loader，避免 CJS 加载警告。
  * 关键约束：文件名须保持 vite.config.*——shadcn CLI 以该命名 glob 判定框架，改名将导致其命令不可用；
- * root 为 src，宿主与前端源码同处一层，打包范围只由两个 HTML 入口的依赖图决定，宿主 .ts 不参与。
+ * root 为 src，宿主与前端源码同处一层，打包范围只由三个 HTML 入口的依赖图决定，宿主 .ts 不参与。
  */
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -35,10 +35,12 @@ export default defineConfig({
         chunkSizeWarningLimit: 600,
         // VSCode Webview 环境无法使用运行时 import map，保持单文件产物
         rollupOptions: {
-            // 多入口：仪表盘（dashboard/index.html）与工作流 AI 对话（workflow/index.html）均由 Vite 构建
+            // 多入口：仪表盘（dashboard）、工作流（workflow）与编辑区富文本编辑器（editor）各自独立成入口；
+            // 编辑器入口只由自定义编辑器 webview 加载，Tiptap 内核不会进入另两个入口的依赖图
             input: {
                 index: resolve(import.meta.dirname, 'src/dashboard/index.html'),
                 workflow: resolve(import.meta.dirname, 'src/workflow/index.html'),
+                editor: resolve(import.meta.dirname, 'src/editor/index.html'),
             },
         },
     },
