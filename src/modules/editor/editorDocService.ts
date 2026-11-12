@@ -108,6 +108,12 @@ function isSupported(node: RootContent | { type: string; children?: unknown[] })
     if (!EDITABLE_NODE_TYPES.has(node.type)) {
         return false
     }
+    // 任务列表暂不支持：未装 taskList 扩展时，`- [ ] x` 会被解析成字面量「[ ] x」，
+    // 保存时再被转义回 `- \[ ]`，等于把 GFM 语法改坏。在转换层做完之前一律按只读处理。
+    const candidate = node as { type: string; checked?: unknown }
+    if (candidate.type === 'listItem' && candidate.checked !== null && candidate.checked !== undefined) {
+        return false
+    }
     const children = 'children' in node ? node.children : undefined
     if (!Array.isArray(children)) {
         return true

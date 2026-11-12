@@ -62,6 +62,11 @@ describe('readEditorSnapshot', () => {
         expect(snapshot.blocks[0]?.html).toContain('zhai-source-block')
     })
 
+    it('任务列表判为只读，避免保存后把 GFM 语法改坏', async () => {
+        const snapshot = await readEditorSnapshot('- [ ] 待办\n- [x] 完成', 1, 'x.md')
+        expect(snapshot.editable).toBe(false)
+    })
+
     it('链接段落同样判为只读', async () => {
         const snapshot = await readEditorSnapshot('见[文档](https://example.com)。', 1, 'x.md')
         expect(snapshot.editable).toBe(false)
