@@ -5,7 +5,7 @@
  * 关键约束：关闭必须先 abort——否则宿主会继续生成并计费；生成中只保留「停止」，
  * 避免用户连点发起多条并发请求。
  */
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import {
@@ -33,6 +33,17 @@ export interface QueryDialogProps {
 
 export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogProps): JSX.Element {
     const [question, setQuestion] = useState('')
+    const [isHistoryOpen, setIsHistoryOpen] = useState(false)
+    /** 回看的答案：非空时优先展示它，用户点「查询」再清掉 */
+    const [previewAnswer, setPreviewAnswer] = useState<string | null>(null)
+    const { loadHistory } = query
+
+    // 打开即拉历史：只在真正打开时请求一次
+    useEffect(() => {
+        if (isOpen) {
+            void loadHistory()
+        }
+    }, [isOpen, loadHistory])
 
     /** 关闭统一走这里：中断在途请求并复位状态 */
     const handleOpenChange = (nextOpen: boolean): void => {
@@ -40,11 +51,14 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
             void query.abort()
             query.reset()
             setQuestion('')
+            setIsHistoryOpen(false)
+            setPreviewAnswer(null)
         }
         onOpenChange(nextOpen)
     }
 
     const isStreaming = query.status === 'streaming'
+    const visibleContent = previewAnswer ?? query.content
 
     return (
         <Dialog open={isOpen} onOpenChange={handleOpenChange}>
@@ -64,18 +78,54 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
                         setQuestion(event.target.value)
                     }}
                 />
-                {query.isFromCache ? (
+                {query.isFromCache && previewAnswer === null ? (
                     <p className="text-xs text-muted-foreground">来自缓存：本次未调用模型，也未消耗额度</p>
                 ) : null}
-                {query.content.length > 0 ? (
+                {visibleContent.length > 0 ? (
                     <ScrollArea className="max-h-72 rounded-md border p-3">
                         <div className="text-sm">
                             <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-                                {query.content}
+                                {visibleContent}
                             </ReactMarkdown>
                         </div>
                     </ScrollArea>
                 ) : null}
+                {query.history.length === 0 ? null : (
+                    <div className="flex flex-col gap-1">
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="w-fit"
+                            onClick={(): void => {
+                                setIsHistoryOpen((previous) => !previous)
+                            }}
+                        >
+                            最近查询（{query.history.length}）
+                        </Button>
+                        {isHistoryOpen ? (
+                            <ScrollArea className="max-h-40 rounded-md border">
+                                <div className="flex flex-col">
+                                    {query.history.map((entry) => (
+                                        <button
+                                            key={entry.id}
+                                            type="button"
+                                            className="flex flex-col gap-0.5 border-b px-2 py-1.5 text-left last:border-b-0 hover:bg-accent"
+                                            onClick={(): void => {
+                                                setPreviewAnswer(entry.answer)
+                                                setIsHistoryOpen(false)
+                                            }}
+                                        >
+                                            <span className="line-clamp-1 text-xs text-muted-foreground">
+                                                {entry.question}
+                                            </span>
+                                            <span className="line-clamp-1 text-xs">{entry.quote}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </ScrollArea>
+                        ) : null}
+                    </div>
+                )}
                 {query.error === null ? null : <p className="text-xs text-destructive">{query.error}</p>}
                 <DialogFooter>
                     <Button
@@ -99,6 +149,8 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
                         <Button
                             isLoading={false}
                             onClick={(): void => {
+                                // 发起新查询即退出回看态，否则会一直显示历史答案
+                                setPreviewAnswer(null)
                                 void query.start(quote, question)
                             }}
                         >

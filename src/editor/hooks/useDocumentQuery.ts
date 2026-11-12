@@ -5,7 +5,12 @@
  * 关键约束：关闭弹窗必须先 abort，否则宿主会继续计费；错误与取消都要落到可展示的文案上。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { EditorQueryDelta, EditorQueryDone } from '@shared/types/editor'
+import type {
+    EditorQueryDelta,
+    EditorQueryDone,
+    EditorQueryHistoryEntry,
+    EditorQueryHistoryResult,
+} from '@shared/types/editor'
 import { onState, request } from '@shared/utils/bridge'
 
 /** 查询状态：idle 空闲，streaming 生成中，done 完成，error 失败或取消 */
@@ -17,10 +22,14 @@ export interface UseDocumentQueryResult {
     error: string | null
     /** 本次结果来自缓存：界面标出「来自缓存」，说明未消耗额度 */
     isFromCache: boolean
+    /** 当前文档的最近查询：弹窗打开时拉取，完成后刷新 */
+    history: EditorQueryHistoryEntry[]
     /** 发起查询：quote 为选中文本，question 为空时宿主用默认问题 */
     start: (quote: string, question: string) => Promise<void>
     /** 中断当前查询：关闭弹窗、点停止都走这里 */
     abort: () => Promise<void>
+    /** 拉取最近查询：打开弹窗与每次查询完成后调用 */
+    loadHistory: () => Promise<void>
     /** 重置到空闲：下次打开弹窗时用 */
     reset: () => void
 }
@@ -53,7 +62,22 @@ export function useDocumentQuery(path: string): UseDocumentQueryResult {
     const [content, setContent] = useState('')
     const [error, setError] = useState<string | null>(null)
     const [isFromCache, setIsFromCache] = useState(false)
+    const [history, setHistory] = useState<EditorQueryHistoryEntry[]>([])
     const clientIdRef = useRef<string>('')
+
+    const loadHistory = useCallback(async (): Promise<void> => {
+        if (path.length === 0) {
+            setHistory([])
+            return
+        }
+        try {
+            const result = await request<EditorQueryHistoryResult>('editor/query/history', { path })
+            setHistory(result.items)
+        } catch {
+            // 历史是附加能力：拉取失败不影响查询本身
+            setHistory([])
+        }
+    }, [path])
 
     const start = useCallback(
         async (quote: string, question: string): Promise<void> => {
@@ -118,5 +142,12 @@ export function useDocumentQuery(path: string): UseDocumentQueryResult {
         })
     }, [])
 
-    return { status, content, error, isFromCache, start, abort, reset }
+    // 查询完成即刷新历史：用户刚问过的那条应立刻出现在列表里
+    useEffect(() => {
+        if (status === 'done') {
+            void loadHistory()
+        }
+    }, [status, loadHistory])
+
+    return { status, content, error, isFromCache, history, start, abort, loadHistory, reset }
 }

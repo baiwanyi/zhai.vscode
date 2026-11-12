@@ -37,6 +37,7 @@ import { isRequestMessage } from '@shared/types/messages'
 import { clearRichDocument, reportRichDocument } from './activeDocument'
 import { applyBlockEdits, buildBlockEdits, readEditorSnapshot } from './editorDocService'
 import { RICH_EDITOR_VIEW_TYPE } from './openDocument'
+import { listRecentQueries } from './queryRepository'
 import { runEditorQuery } from './queryService'
 import type { EditorQueryDeps } from './queryService'
 import type Database from 'better-sqlite3'
@@ -507,6 +508,13 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 // 先回执再流式推送：request 的 promise 立即结束，增量走 state 通道
                 await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { started: true } })
                 void this.runQuery(panel, payload, this.readRelativePath(document), controller)
+                return
+            }
+            if (method === 'editor/query/history') {
+                const historyDb = this.readAnnotationDatabase()
+                // 库不可用时返回空清单：历史是附加能力，不该让弹窗报错
+                const items = historyDb === null ? [] : listRecentQueries(historyDb, this.readRelativePath(document))
+                await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { items } })
                 return
             }
             if (method === 'editor/query/abort') {

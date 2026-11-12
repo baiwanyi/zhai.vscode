@@ -5,6 +5,7 @@
  * 入库前 quote / question 必须与提示词同样 trim + 截断，否则「同一问题」永远命中不到自己写下的记录。
  */
 import { randomUUID } from 'node:crypto'
+import type { EditorQueryHistoryEntry } from '@shared/types/editor'
 import type Database from 'better-sqlite3'
 
 /** 与 queryService 的提示词上限保持一致：两处不一致会导致缓存永不命中 */
@@ -21,13 +22,7 @@ export interface CachedQuery {
     createdAt: string
 }
 
-export interface QueryHistoryEntry {
-    id: string
-    quote: string
-    question: string
-    answer: string
-    createdAt: string
-}
+export type QueryHistoryEntry = EditorQueryHistoryEntry
 
 /** 归一化：与发送给模型的内容同口径，保证读写两侧键一致 */
 function normalize(quote: string, question: string): { quote: string; question: string } {

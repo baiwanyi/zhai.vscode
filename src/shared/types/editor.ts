@@ -262,6 +262,20 @@ export function isEditorRevealPayload(input: unknown): input is EditorRevealPayl
     return value.kind === 'reveal' && typeof value.quote === 'string' && typeof value.blockIndex === 'number'
 }
 
+/** 一条查询历史：缓存与历史共用同一张表，此处只暴露回看所需字段 */
+export interface EditorQueryHistoryEntry {
+    id: string
+    quote: string
+    question: string
+    answer: string
+    createdAt: string
+}
+
+/** 查询历史响应：按时间倒序，条数由宿主限制 */
+export interface EditorQueryHistoryResult {
+    items: EditorQueryHistoryEntry[]
+}
+
 /** 收窄快照：Webview 收到的是不可信数据，块结构与版本逐字段校验 */
 export function isEditorDocSnapshot(input: unknown): input is EditorDocSnapshot {
     if (typeof input !== 'object' || input === null) {

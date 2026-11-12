@@ -204,6 +204,7 @@ export type HostMethodName =
     | 'editor/change'
     | 'editor/query'
     | 'editor/query/abort'
+    | 'editor/query/history'
     | 'editor/selection'
     | 'editor/snapshot'
     | 'editor/source'
