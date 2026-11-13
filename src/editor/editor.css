@@ -1,11 +1,13 @@
 /**
- * 编辑区样式：编辑器 webview 的底色、版心、行号、正文与空行占位，独立成文只服务 editor 入口。
- * 复用约定：底色与文字色桥接 VSCode 编辑器变量，字号行高沿用 globals.css 的令牌；
- * 类名统一 zhai- 前缀，Tailwind 不参与本文件规则的书写。
+ * 编辑区与 Markdown 渲染样式：上半部服务 TipTap 编辑区（底色、版心、行号、空行占位、表格），
+ * 下半部以 .zhai-markdown 为容器，集中承载 GitHub 风格的 Markdown 元素排版。
+ * 复用约定：颜色桥接 VSCode 编辑器变量与 globals.css 令牌，字号与字体族沿用同一套令牌；
+ * 所有 var() 均带 GitHub 浅色回退值，脱离主题变量时仍是可读的浅色排版；类名统一 zhai- 前缀。
  * 关键约束：EditorContent 的根节点同时是 .zhai-editor-content 与 .ProseMirror，
  * 正文与占位符规则必须写在同一层，不能再多套一层后代选择器；
  * 占位符占 ::before、行号占 ::after，两者不能互换，空行同时需要这两个伪元素；
- * 占位符与行号都由扩展 / 计数器直接作用在顶层块上，只有本文件的选择器能命中。
+ * 占位符与行号都由扩展 / 计数器直接作用在顶层块上，只有本文件的选择器能命中；
+ * Markdown 段的选择器一律挂在 .zhai-markdown 之下，不得写裸元素名，否则会串进编辑器正文。
  */
 
 .zhai-editor {
@@ -28,7 +30,7 @@
 
 /*
  * 版心：与 VSCode 原生编辑器一致，正文左对齐且铺满可用宽度，不再居中收窄。
- * 左侧留白供行号（28px）与块把手（44px）使用并留出间隔；右侧留白要同时容下表格加号（20px）
+ * 左侧留白供行号（28px）与块把手（60px）使用并留出间隔；右侧留白要同时容下表格加号（20px）
  * 与标题导航细线，所以取 4.5rem——两者贴着正文右边缘摆放时不会互相盖住。
  */
 .zhai-editor-page {
@@ -47,33 +49,64 @@
 }
 
 /*
+ * 拖拽把手：位置由 drag-handle 扩展写成 inline left/top，这里给这两个属性加过渡，
+ * 块与块之间切换时把手从上一块滑到下一块，而不是直接闪现在新位置。
+ * 扩展隐藏时写 visibility: hidden，这里覆盖成常显并交给内容透明度控制，
+ * 否则 visibility 会硬切、淡出根本看不到；拖拽中位置由指针驱动，过渡必须关掉。
+ */
+.drag-handle {
+    visibility: visible !important;
+    transition:
+        left 140ms cubic-bezier(0.22, 1, 0.36, 1),
+        top 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* 拖拽中与滚动中位置由指针 / 滚动条连续给定，过渡只会拖出尾巴 */
+.drag-handle[data-dragging='true'],
+.drag-handle[data-scrolling='true'] {
+    transition: none;
+}
+
+/* globals.css 在「减少动效」下把所有过渡压到 0.01ms；把手的滑动是块位置的唯一线索，这里按需求保留 */
+@media (prefers-reduced-motion: reduce) {
+    .drag-handle {
+        transition-duration: 140ms !important;
+    }
+}
+
+/*
  * 行号：按顶层块计数（富文本没有物理行，块即一行），画在正文左侧、块把手之外。
  * 用 ::after 而不是 ::before，因为空行的 ::before 已被占位提示占用。
+ * 字体与字号直接取 VSCode 编辑器配置（editor.fontFamily / editor.fontSize）；
+ * 宽度不写死：右边缘固定、宽度收缩到内容，位数变多时向左扩展，
+ * 与 VSCode 行号栏「右对齐、按最大位数定宽」的表现一致。
  */
 .zhai-editor-content > * {
     position: relative;
     counter-increment: zhai-line;
 }
 
+/* 行高跟随所在块：标题用了 1.3 的紧行高，写死 2rem 会让行号偏离首行基线 */
 .zhai-editor-content > *::after {
     content: counter(zhai-line);
     position: absolute;
     top: 0;
-    left: -5.5rem;
-    width: 1.75rem;
+    /* 右边缘落在块把手左侧（把手占 3.75rem），正文位置不随行号位数变化 */
+    right: calc(100% + 3.75rem);
     color: var(--vscode-editorLineNumber-foreground, var(--muted-foreground));
-    font-family: var(--font-code);
-    font-size: 0.75rem;
-    line-height: 2rem;
-    text-align: right;
+    font-family: var(--vscode-editor-font-family, var(--font-code));
+    font-size: var(--vscode-editor-font-size, 0.75rem);
+    /* 伪元素不会命中 globals 的 `* { font-light }`，但字重会从块继承 300，这里按编辑器设置显式回落 */
+    font-weight: var(--vscode-editor-font-weight, 400);
+    line-height: inherit;
+    white-space: nowrap;
     user-select: none;
     pointer-events: none;
 }
 
-/* 当前行：光标所在块的行号改用编辑器激活前景色，与 VSCode 行号高亮一致 */
+/* 当前行：VSCode 原生只换行号颜色、不改字重，这里保持一致 */
 .zhai-editor-content > .is-cursor-line::after {
     color: var(--vscode-editorLineNumber-activeForeground, var(--vscode-editor-foreground, var(--foreground)));
-    font-weight: 600;
 }
 
 /* 空行占位：Placeholder 扩展在空文本块上挂 is-empty 与 data-placeholder，这里只负责呈现 */
@@ -125,4 +158,528 @@
     inset: 0;
     background-color: var(--vscode-editor-selectionBackground, rgb(38 79 120 / 40%));
     pointer-events: none;
+}
+
+/* ==========================================================================
+ * Markdown 渲染段
+ * 作用域：.zhai-markdown（渲染容器）与 .zhai-editor-content（编辑器正文）两套容器，
+ * 同一份元素规则既服务渲染态也服务编辑态，风格参照 GitHub Markdown。
+ * 颜色先取 VSCode 变量与 globals.css 令牌，再退回 GitHub 浅色配色，
+ * 脱离主题变量单独使用时仍是可读的浅色排版；间距一律用 em，
+ * 随容器字号等比缩放，不写死像素。
+ * 例外：表格整段与链接地址提示只作用于 .zhai-markdown —— 编辑态表格要保留 TableKit 的
+ * fixed 布局与浮动工具定位，地址提示则会撑乱正在编辑的正文。
+ * ========================================================================== */
+
+/*
+ * 容器：统一正文基准。globals.css 的 `* { font-light }` 会直接命中每个元素
+ * （不是继承），因此正文类元素在各自规则里显式恢复 400，标题与强调另设字重。
+ * 字号、行高与文字色只给渲染容器：编辑器由 .zhai-editor-content 提供同名字样，
+ * 它的行高 2rem 是行号对齐的依据，不能被这里的 1.7 覆盖。
+ */
+.zhai-markdown {
+    font-size: var(--font-size-ui, 13px);
+    line-height: 1.7;
+    color: var(--foreground, #1f2328);
+}
+
+.zhai-markdown,
+.zhai-editor-content {
+    overflow-wrap: break-word;
+}
+
+/* 首尾元素贴边，避免容器上下多出一截空白 */
+:is(.zhai-markdown, .zhai-editor-content) > :first-child {
+    margin-top: 0;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) > :last-child {
+    margin-bottom: 0;
+}
+
+/* ── 标题 ── */
+:is(.zhai-markdown, .zhai-editor-content) h1,
+:is(.zhai-markdown, .zhai-editor-content) h2,
+:is(.zhai-markdown, .zhai-editor-content) h3,
+:is(.zhai-markdown, .zhai-editor-content) h4,
+:is(.zhai-markdown, .zhai-editor-content) h5,
+:is(.zhai-markdown, .zhai-editor-content) h6 {
+    margin: 1.5em 0 0.6em;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+/* 一级、二级标题补下边框，与正文段落拉开层级（GitHub 同款处理） */
+:is(.zhai-markdown, .zhai-editor-content) h1,
+:is(.zhai-markdown, .zhai-editor-content) h2 {
+    padding-bottom: 0.3em;
+    border-bottom: 1px solid var(--border, #d1d9e0);
+}
+
+:is(.zhai-markdown, .zhai-editor-content) h1 {
+    font-size: 1.75em;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) h2 {
+    font-size: 1.4em;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) h3 {
+    font-size: 1.2em;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) h4 {
+    font-size: 1.05em;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) h5 {
+    font-size: 1em;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) h6 {
+    font-size: 0.9em;
+    color: var(--muted-foreground, #59636e);
+}
+
+/* ── 段落与强调 ── */
+:is(.zhai-markdown, .zhai-editor-content) p {
+    margin: 0 0 1em;
+    font-weight: 400;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) strong {
+    font-weight: 600;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) em {
+    font-style: italic;
+}
+
+/* 渲染态输出 del，编辑器的 Strike 扩展输出 s，两者同一套弱化色 */
+:is(.zhai-markdown, .zhai-editor-content) del,
+:is(.zhai-markdown, .zhai-editor-content) s {
+    color: var(--muted-foreground, #59636e);
+}
+
+/* 高亮：复用编辑器查找命中底色，亮暗主题都自带可读的淡色底 */
+:is(.zhai-markdown, .zhai-editor-content) mark {
+    padding: 0.05em 0.2em;
+    border-radius: 0.25em;
+    background-color: var(--vscode-editor-findMatchHighlightBackground, rgb(255 213 0 / 30%));
+    color: inherit;
+}
+
+/* ── 链接：默认无下划线，悬停补下划线，与 GitHub 一致 ── */
+:is(.zhai-markdown, .zhai-editor-content) a {
+    color: var(--link, #0969da);
+    text-decoration: none;
+    text-underline-offset: 0.2em;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) a:hover {
+    text-decoration: underline;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) a:focus-visible {
+    border-radius: 0.2em;
+    outline: 1px solid var(--ring, #0969da);
+    outline-offset: 2px;
+}
+
+/* ── 代码：等宽字体，块级与行内共用一份底色令牌 ── */
+:is(.zhai-markdown, .zhai-editor-content) code,
+:is(.zhai-markdown, .zhai-editor-content) kbd,
+:is(.zhai-markdown, .zhai-editor-content) pre,
+:is(.zhai-markdown, .zhai-editor-content) samp {
+    font-family: var(--font-code, ui-monospace, monospace);
+}
+
+:is(.zhai-markdown, .zhai-editor-content) code {
+    padding: 0.15em 0.35em;
+    border-radius: 0.375rem;
+    background-color: var(--code-background, rgb(175 184 193 / 20%));
+    font-size: 0.9em;
+    white-space: break-spaces;
+}
+
+/* 代码块：明显背景 + 细边框 + 横向滚动，长行不折行 */
+:is(.zhai-markdown, .zhai-editor-content) pre {
+    margin: 0 0 1em;
+    padding: 0.85em 1em;
+    overflow: auto;
+    border: 1px solid var(--border, #d1d9e0);
+    border-radius: 0.5rem;
+    background-color: var(--code-background, #f6f8fa);
+    line-height: 1.55;
+    tab-size: 4;
+}
+
+/* 块内的 code 不再叠加行内样式，否则会出现「码中码」底色 */
+:is(.zhai-markdown, .zhai-editor-content) pre code {
+    display: block;
+    padding: 0;
+    border-radius: 0;
+    background-color: transparent;
+    font-size: 0.9em;
+    white-space: pre;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) kbd {
+    display: inline-block;
+    padding: 0.15em 0.4em;
+    border: 1px solid var(--border, #d1d9e0);
+    border-bottom-width: 2px;
+    border-radius: 0.375rem;
+    background-color: var(--code-background, #f6f8fa);
+    font-size: 0.85em;
+    line-height: 1;
+}
+
+/* ── 引用块：左侧竖线定层级，弱底色与弱文字色区分正文 ── */
+:is(.zhai-markdown, .zhai-editor-content) blockquote {
+    /* 语法标记段在竖线右侧画一个 “>”，左侧内边距要为它留位 */
+    position: relative;
+    margin: 0 0 1em;
+    padding: 0.4em 1em 0.4em 1.75em;
+    border-left: 3px solid var(--quote-border, #d1d9e0);
+    background-color: var(--quote-background, transparent);
+    color: var(--muted-foreground, #59636e);
+    font-weight: 400;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) blockquote > :last-child {
+    margin-bottom: 0;
+}
+
+/* ── 列表：Tailwind preflight 会清空 list-style 与缩进，这里必须显式恢复 ── */
+:is(.zhai-markdown, .zhai-editor-content) ul,
+:is(.zhai-markdown, .zhai-editor-content) ol {
+    margin: 0 0 1em;
+    padding-left: 1.75em;
+}
+
+/* 无序列表的圆点改由文件末尾的语法标记段画成 “-”，这里只保留有序列表的数字标记 */
+:is(.zhai-markdown, .zhai-editor-content) ol {
+    list-style-type: decimal;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) li {
+    margin: 0.25em 0;
+    font-weight: 400;
+}
+
+/* 嵌套列表紧跟父项，只留一次间距，避免列表越深越松散 */
+:is(.zhai-markdown, .zhai-editor-content) li > ul,
+:is(.zhai-markdown, .zhai-editor-content) li > ol {
+    margin: 0.25em 0 0;
+}
+
+/* 松散列表的项内段落：压掉默认段距，末段归零 */
+:is(.zhai-markdown, .zhai-editor-content) li > p {
+    margin: 0 0 0.5em;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) li > p:last-child {
+    margin-bottom: 0;
+}
+
+/* 任务列表：渲染态是 .contains-task-list，编辑态是 ul[data-type='taskList']，两种都要收窄缩进 */
+:is(.zhai-markdown, .zhai-editor-content) .contains-task-list,
+:is(.zhai-markdown, .zhai-editor-content) ul[data-type='taskList'] {
+    padding-left: 0.25em;
+}
+
+/* 去掉项标记：渲染态有类名，编辑态只有 data-checked 属性 */
+:is(.zhai-markdown, .zhai-editor-content) .task-list-item,
+:is(.zhai-markdown, .zhai-editor-content) li[data-checked] {
+    list-style-type: none;
+}
+
+/*
+ * 编辑态结构是 li[data-checked] > label > input + li > div，默认 label 与 div 各占一行，
+ * 开关会和文字上下分家。改成 flex 后两者同排，段落折行只发生在文字侧。
+ */
+:is(.zhai-markdown, .zhai-editor-content) ul[data-type='taskList'] > li {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5em;
+}
+
+/* 开关与首行文字对齐：1lh 就是所在块的行高，多行文本时开关仍贴首行 */
+:is(.zhai-markdown, .zhai-editor-content) ul[data-type='taskList'] > li > label {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    height: 1lh;
+    cursor: pointer;
+    user-select: none;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) ul[data-type='taskList'] > li > div {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+/* 项内段落不再额外撑距，行距只由 li 的上下外边距决定 */
+:is(.zhai-markdown, .zhai-editor-content) ul[data-type='taskList'] p {
+    margin: 0;
+}
+
+/*
+ * 开关外观：Markdown 解析出的只是原生 input[type=checkbox]，React 的 Switch 组件插不进
+ * 解析生成的 HTML，这里用 appearance: none 复刻项目 Switch（sm 档）的轨道 + 圆形滑块，
+ * 勾选态轨道取主色、滑块右移，尺寸与位移都用 em，随字号等比缩放。
+ */
+:is(.zhai-markdown, .zhai-editor-content) .task-list-item > input[type='checkbox'],
+:is(.zhai-markdown, .zhai-editor-content) ul[data-type='taskList'] input[type='checkbox'] {
+    position: relative;
+    flex: 0 0 auto;
+    width: 1.85em;
+    height: 1.08em;
+    margin: 0;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    background-color: var(--input, rgb(128 128 128 / 35%));
+    appearance: none;
+    cursor: pointer;
+    transition: background-color 120ms ease-out;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) .task-list-item > input[type='checkbox']::after,
+:is(.zhai-markdown, .zhai-editor-content) ul[data-type='taskList'] input[type='checkbox']::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0.08em;
+    width: 0.92em;
+    height: 0.92em;
+    border-radius: 50%;
+    background-color: var(--foreground, #1f2328);
+    transform: translateY(-50%);
+    transition: transform 120ms ease-out;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) .task-list-item > input[type='checkbox']:checked,
+:is(.zhai-markdown, .zhai-editor-content) ul[data-type='taskList'] input[type='checkbox']:checked {
+    background-color: var(--primary, #0078d4);
+}
+
+:is(.zhai-markdown, .zhai-editor-content) .task-list-item > input[type='checkbox']:checked::after,
+:is(.zhai-markdown, .zhai-editor-content) ul[data-type='taskList'] input[type='checkbox']:checked::after {
+    transform: translate(0.77em, -50%);
+}
+
+/* 渲染态的复选框是 disabled 的，不给出可点击的指针暗示 */
+:is(.zhai-markdown, .zhai-editor-content) .task-list-item > input[type='checkbox']:disabled {
+    cursor: default;
+}
+
+/* 渲染态没有 flex 包裹，复选框靠右外边距与文字拉开距离 */
+:is(.zhai-markdown, .zhai-editor-content) .task-list-item > input[type='checkbox'] {
+    margin: 0 0.5em 0 0;
+    vertical-align: middle;
+}
+
+/* ── 表格：整表可横向滚动，边框与表头底色固定区分 ── */
+.zhai-markdown table {
+    display: block;
+    width: max-content;
+    max-width: 100%;
+    margin: 0 0 1em;
+    overflow: auto;
+    border-collapse: collapse;
+    border-spacing: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+.zhai-markdown th,
+.zhai-markdown td {
+    padding: 0.4em 0.75em;
+    border: 1px solid var(--border, #d1d9e0);
+    text-align: left;
+    vertical-align: top;
+    font-weight: 400;
+}
+
+.zhai-markdown th {
+    background-color: var(--vscode-editorWidget-background, #f6f8fa);
+    font-weight: 600;
+}
+
+/* 斑马纹：用前景色做极低透明度叠加，亮暗主题下深浅自动相反 */
+.zhai-markdown tbody tr:nth-child(2n) {
+    background-color: color-mix(in srgb, var(--foreground, #1f2328) 4%, transparent);
+}
+
+/* 单元格内段落不再额外撑开行高，行高由内边距决定 */
+.zhai-markdown th > p,
+.zhai-markdown td > p {
+    margin: 0;
+}
+
+/* ── 图片与分隔线 ── */
+:is(.zhai-markdown, .zhai-editor-content) img {
+    max-width: 100%;
+    height: auto;
+    margin: 0.5em 0;
+    border-radius: 0.375rem;
+    vertical-align: middle;
+}
+
+/* 分隔线用背景色而非 border：preflight 给 hr 预留了 border 宽度，直接改底色更可控 */
+:is(.zhai-markdown, .zhai-editor-content) hr {
+    height: 1px;
+    margin: 1.5em 0;
+    border: 0;
+    background-color: var(--border, #d1d9e0);
+}
+
+/* ── 其余常见行内元素 ── */
+:is(.zhai-markdown, .zhai-editor-content) sup,
+:is(.zhai-markdown, .zhai-editor-content) sub {
+    line-height: 0;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) details {
+    margin: 0 0 1em;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) summary {
+    font-weight: 600;
+    cursor: pointer;
+}
+
+/* ==========================================================================
+ * Markdown 语法标记显示
+ * 把源标记用伪元素还原到渲染结果上：标题前的 #、粗体两侧的 **、无序列表的 - 等，
+ * 让同一份内容既保留排版层级，又能直接看出对应的 Markdown 写法。
+ * 关键约束：标记全部由 ::before / ::after 生成，不进入 DOM，不参与任何逻辑与锚点计算；
+ * 标记统一取弱文字色、等宽字体且字号小于所在元素，避免与正文抢视觉重心；
+ * 表格的管道符与图片的 ![]() 不做还原（表格需逐格描边、图片是替换元素，伪元素不可见）。
+ * ========================================================================== */
+
+/* ── 标题：等宽弱色 #，个数即层级 ── */
+:is(.zhai-markdown, .zhai-editor-content) h1::before,
+:is(.zhai-markdown, .zhai-editor-content) h2::before,
+:is(.zhai-markdown, .zhai-editor-content) h3::before,
+:is(.zhai-markdown, .zhai-editor-content) h4::before,
+:is(.zhai-markdown, .zhai-editor-content) h5::before,
+:is(.zhai-markdown, .zhai-editor-content) h6::before {
+    margin-right: 0.3em;
+    color: var(--muted-foreground, #59636e);
+    font-family: var(--font-code, ui-monospace, monospace);
+    font-size: 0.8em;
+    font-weight: 400;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) h1::before {
+    content: '#';
+}
+
+:is(.zhai-markdown, .zhai-editor-content) h2::before {
+    content: '##';
+}
+
+:is(.zhai-markdown, .zhai-editor-content) h3::before {
+    content: '###';
+}
+
+:is(.zhai-markdown, .zhai-editor-content) h4::before {
+    content: '####';
+}
+
+:is(.zhai-markdown, .zhai-editor-content) h5::before {
+    content: '#####';
+}
+
+:is(.zhai-markdown, .zhai-editor-content) h6::before {
+    content: '######';
+}
+
+/* ── 强调：星号不跟着变形，单独回落 400 字重与正体 ── */
+:is(.zhai-markdown, .zhai-editor-content) strong::before,
+:is(.zhai-markdown, .zhai-editor-content) strong::after {
+    content: '**';
+    color: var(--muted-foreground, #59636e);
+    font-size: 0.85em;
+    font-weight: 400;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) em::before,
+:is(.zhai-markdown, .zhai-editor-content) em::after {
+    content: '*';
+    color: var(--muted-foreground, #59636e);
+    font-size: 0.85em;
+    font-style: normal;
+    font-weight: 400;
+}
+
+/* 高亮为扩展语法，写法是 ==文本== */
+:is(.zhai-markdown, .zhai-editor-content) mark::before,
+:is(.zhai-markdown, .zhai-editor-content) mark::after {
+    content: '==';
+    color: var(--muted-foreground, #59636e);
+    font-size: 0.85em;
+    font-weight: 400;
+}
+
+/* 删除线会从元素传播到伪元素且无法在子级取消，~~ 会一并被划掉；s 是编辑态的删除线标签 */
+:is(.zhai-markdown, .zhai-editor-content) del::before,
+:is(.zhai-markdown, .zhai-editor-content) del::after,
+:is(.zhai-markdown, .zhai-editor-content) s::before,
+:is(.zhai-markdown, .zhai-editor-content) s::after {
+    content: '~~';
+    color: var(--muted-foreground, #59636e);
+    font-size: 0.85em;
+    font-weight: 400;
+}
+
+/* ── 行内代码：反引号贴在行内底色内侧；代码块内的 code 不加，避免与围栏重复 ── */
+:is(.zhai-markdown, .zhai-editor-content) :not(pre) > code::before,
+:is(.zhai-markdown, .zhai-editor-content) :not(pre) > code::after {
+    content: '`';
+    color: var(--muted-foreground, #59636e);
+    font-weight: 400;
+}
+
+/* ── 链接：行尾补出目标地址，悬停下划线会同样作用到地址上 ── */
+.zhai-markdown a[href]::after {
+    content: ' (' attr(href) ')';
+    color: var(--muted-foreground, #59636e);
+    font-size: 0.85em;
+    font-weight: 400;
+    word-break: break-all;
+}
+
+/* ── 引用块：竖线右侧补一个 “>”，整块只标一次 ── */
+:is(.zhai-markdown, .zhai-editor-content) blockquote::before {
+    content: '>';
+    position: absolute;
+    top: 0.4em;
+    left: 0.5em;
+    color: var(--muted-foreground, #59636e);
+    font-family: var(--font-code, ui-monospace, monospace);
+    font-size: 0.85em;
+    line-height: inherit;
+    pointer-events: none;
+}
+
+/* ── 无序列表：圆点换成 “-”，负偏移把标记拉回 ul 的内边距区域；任务项由复选框自己表达 ── */
+:is(.zhai-markdown, .zhai-editor-content) ul > li:not(.task-list-item):not([data-checked]) {
+    position: relative;
+    list-style-type: none;
+}
+
+/* 用绝对定位而非行内负边距：松散列表的项内首个子元素是 p（块级），
+   行内标记会独占一个行盒，把正文顶到下一行 */
+:is(.zhai-markdown, .zhai-editor-content) ul > li:not(.task-list-item):not([data-checked])::before {
+    content: '-';
+    position: absolute;
+    top: 0;
+    left: -1.1em;
+    width: 1.1em;
+    color: var(--muted-foreground, #59636e);
+    font-family: var(--font-code, ui-monospace, monospace);
+    font-weight: 400;
+    text-align: left;
 }

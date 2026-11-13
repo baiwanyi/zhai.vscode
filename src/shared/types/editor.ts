@@ -283,6 +283,23 @@ export interface EditorQueryHistoryResult {
     items: EditorQueryHistoryEntry[]
 }
 
+/** 跨文档的 AI 解释记录：标注总览页据此展示，比单文档历史多出 docPath 与 model */
+export interface EditorQueryRecord {
+    id: string
+    docPath: string
+    quote: string
+    question: string
+    answer: string
+    model: string
+    createdAt: string
+}
+
+/** AI 解释记录列表：total 是符合关键词的总数，items 只取最近一页 */
+export interface EditorQueryListResult {
+    items: EditorQueryRecord[]
+    total: number
+}
+
 /** 收窄快照：Webview 收到的是不可信数据，块结构与版本逐字段校验 */
 export function isEditorDocSnapshot(input: unknown): input is EditorDocSnapshot {
     if (typeof input !== 'object' || input === null) {

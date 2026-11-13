@@ -12,10 +12,12 @@ import type {
     AnnotationListQuery,
     AnnotationListResult,
     AnnotationStats,
+    EditorQueryListResult,
     HighlightColor,
 } from '@shared/types/editor'
 import { findAnnotation, removeAnnotation, updateAnnotation } from './annotationRepository'
 import { listAnnotationDocuments, listAnnotations, statsAnnotations } from './annotationSearch'
+import { countQueries, listQueries, removeQueryById } from './queryRepository'
 import type { AnnotationDatabase } from './db/connection'
 
 /** 允许的类型与颜色：与库内枚举一致，其余取值按「不限」处理 */
@@ -24,6 +26,12 @@ const COLORS: readonly HighlightColor[] = ['coral', 'violet', 'blue', 'emerald',
 
 /** 默认分页条数：与查询层的默认值保持一致 */
 const DEFAULT_LIMIT = 50
+
+/** AI 解释列表的默认条数：与标注列表同档，首批不做翻页 */
+const QUERY_LIST_LIMIT = 50
+
+/** 关键词上限：搜索框输入不该带着整段正文进查询 */
+const MAX_KEYWORD_CHARS = 100
 
 export interface AnnotationRoutesDeps {
     /** 标注库连接：按存储根懒打开，调用时才求值 */
@@ -66,6 +74,15 @@ function readListQuery(payload: unknown): AnnotationListQuery {
     }
 }
 
+/** 收窄 AI 解释列表条件：关键词截断，limit 由仓储夹到上限 */
+function readQueryListOptions(payload: unknown): { keyword: string; limit: number } {
+    const source = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
+    return {
+        keyword: typeof source.keyword === 'string' ? source.keyword.slice(0, MAX_KEYWORD_CHARS) : '',
+        limit: typeof source.limit === 'number' ? source.limit : QUERY_LIST_LIMIT,
+    }
+}
+
 /** 收窄 id：缺失直接抛错，由上层转成 error 回执 */
 function readId(payload: unknown): string {
     if (typeof payload !== 'object' || payload === null) {
@@ -96,6 +113,10 @@ export class AnnotationRoutes {
                 return { items: listAnnotationDocuments(this.deps.db().db) }
             case 'annotation/update':
                 return this.update(payload)
+            case 'annotation/queries':
+                return this.listQueries(payload)
+            case 'annotation/query/remove':
+                return { removed: removeQueryById(this.deps.db().db, readId(payload)) }
             default:
                 throw new Error(`未知的标注方法：${method}`)
         }
@@ -150,5 +171,12 @@ export class AnnotationRoutes {
                 ? (source.color as HighlightColor)
                 : null
         return { updated: updateAnnotation(this.deps.db().db, readId(payload), { color }) }
+    }
+
+    /** AI 解释列表：只按文本聚合，关键词同时匹配原文、问题与答案 */
+    private listQueries(payload: unknown): EditorQueryListResult {
+        const options = readQueryListOptions(payload)
+        const db = this.deps.db().db
+        return { items: listQueries(db, options), total: countQueries(db, options.keyword) }
     }
 }

@@ -18,6 +18,7 @@ import { StateEmpty } from '@webview/components/StateEmpty'
 import { ANNOTATION_COLORS } from './colors'
 import { useAnnotationList } from './hooks/useAnnotationList'
 import { AnnotationListItem } from './layout/AnnotationListItem'
+import { QueryRecordSection } from './layout/QueryRecordSection'
 import type { AnnotationFilters } from './hooks/useAnnotationList'
 import type { JSX } from 'react'
 
@@ -195,6 +196,8 @@ export function WorkflowAnnotation(): JSX.Element {
                         加载更多
                     </Button>
                 ) : null}
+                {/* AI 解释与标注分属两张表：独立区块展示，避免把查询结果混进划线 / 批注的筛选口径 */}
+                <QueryRecordSection />
             </AppContent>
         </AppPage>
     )

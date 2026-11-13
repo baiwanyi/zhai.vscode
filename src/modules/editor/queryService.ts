@@ -58,10 +58,10 @@ export async function runEditorQuery(deps: EditorQueryDeps, input: EditorQueryIn
     const question = input.question.slice(0, MAX_QUESTION_CHARS).trim() || DEFAULT_QUESTION
     // 库按需打开：一条查询里缓存与写回共用同一个连接，避免重复求值
     const db = deps.db === undefined ? null : deps.db()
-    // 缓存优先：同一段文字问同样的问题不再扣额度。命中时不校验通道就绪——结果已在本地，
-    // 断网或未登录也能回看。
+    // 缓存优先：同一段文字问同样的问题不再扣额度，且与文档无关——在另一篇里查到同一段
+    // 也直接复用。命中时不校验通道就绪：结果已在本地，断网或未登录也能回看。
     if (db !== null) {
-        const cached = findCachedQuery(db, input.docPath, quote, question)
+        const cached = findCachedQuery(db, quote, question)
         if (cached !== null) {
             return { ok: true, content: cached.answer, fromCache: true }
         }

@@ -15,7 +15,9 @@ import UniqueID from '@tiptap/extension-unique-id'
 import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { useEffect, useRef, useState } from 'react'
+import { Toaster } from '@components/ui/sonner'
 import type { AnnotationRecord } from '@shared/types/editor'
+import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
 import { BlockHandle } from './blocks/BlockHandle'
 import { TableTools } from './blocks/TableTools'
 import { useAnnotations } from './hooks/useAnnotations'
@@ -55,6 +57,8 @@ interface NotePopoverState {
     top: number
     blockIndex: number
 }
+
+/** AI 解释的目标文本：两个入口都只传文本，弹窗自己按固定问题发起查询 */
 
 export function EditorScreen(): JSX.Element {
     const editor = useEditor({
@@ -104,6 +108,7 @@ export function EditorScreen(): JSX.Element {
     useEditorSelectionReport(editor, path)
     const [annotationQuote, setAnnotationQuote] = useState<string | null>(null)
     const [notePopover, setNotePopover] = useState<NotePopoverState | null>(null)
+    // AI 解释的目标文本：选区工具条与块菜单共用同一条通道，弹窗不提供输入框
     const [queryQuote, setQueryQuote] = useState<string | null>(null)
     const query = useDocumentQuery(path)
     const search = useDocumentSearch(editor)
@@ -112,6 +117,8 @@ export function EditorScreen(): JSX.Element {
     const pageRef = useRef<HTMLDivElement | null>(null)
     // 右侧标题导航的数据源：只认顶层 heading
     const outline = useHeadingOutline(editor)
+    // 块菜单的复制结果要弹提示：Toaster 只在本层挂一次，后续有新的提示需求直接复用
+    const theme = useVscodeTheme()
 
     // Ctrl/Cmd+F 打开查找：webview 内没有原生查找条，必须自己接管，否则按了没反应
     useEffect(() => {
@@ -150,7 +157,12 @@ export function EditorScreen(): JSX.Element {
         if (editor === null) {
             return
         }
-        editor.chain().focus().setTextSelection(item.pos + 1).scrollIntoView().run()
+        editor
+            .chain()
+            .focus()
+            .setTextSelection(item.pos + 1)
+            .scrollIntoView()
+            .run()
     }
 
     const noteItems: readonly AnnotationRecord[] =
@@ -174,7 +186,15 @@ export function EditorScreen(): JSX.Element {
                 <div className="zhai-editor-scroll">
                     <div ref={pageRef} className="zhai-editor-page" onClick={handleContentClick}>
                         <EditorContent editor={editor} />
-                        {editor === null ? null : <BlockHandle editor={editor} />}
+                        {editor === null ? null : (
+                            <BlockHandle
+                                editor={editor}
+                                onAskAi={(quote): void => {
+                                    // 与选区工具的「查询」同一条通道：弹窗打开即发起解释查询
+                                    setQueryQuote(quote)
+                                }}
+                            />
+                        )}
                         {editor === null ? null : <TableTools editor={editor} containerRef={pageRef} />}
                         <SlashMenu />
                         <EmojiPicker />
@@ -245,6 +265,7 @@ export function EditorScreen(): JSX.Element {
                 }}
                 query={query}
             />
+            <Toaster theme={theme} />
         </div>
     )
 }

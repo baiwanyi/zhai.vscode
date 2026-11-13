@@ -192,6 +192,8 @@ export type HostMethodName =
     | 'ai/writeState'
     | 'annotation/documents'
     | 'annotation/list'
+    | 'annotation/queries'
+    | 'annotation/query/remove'
     | 'annotation/remove'
     | 'annotation/reveal'
     | 'annotation/update'

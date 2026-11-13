@@ -38,7 +38,8 @@ const DDL_STATEMENTS = [
     `CREATE INDEX IF NOT EXISTS idx_annotations_time ON annotations(created_at DESC)`,
     `CREATE INDEX IF NOT EXISTS idx_annotations_orphaned ON annotations(orphaned)`,
     // 编辑区查询的缓存与历史：与标注同一个库，省掉第二套连接与生命周期管理。
-    // 缓存键为 doc_path + quote + question——不含 block_hash，因为 webview 只上报选区文本；
+    // 缓存键为 quote + question——不含 doc_path：同一段文字在任何文档里查询都命中同一条答案，
+    // 同一段引用不会在 A、B 两篇里各扣一次额度；doc_path 仍随记录保存，供标注页展示与跳转。
     // 代价是「选区文字没变、段落其他部分改过」时可能命中旧答案，界面必须标出「来自缓存」。
     `CREATE TABLE IF NOT EXISTS editor_queries (
         id         TEXT PRIMARY KEY,
@@ -49,7 +50,9 @@ const DDL_STATEMENTS = [
         model      TEXT NOT NULL,
         created_at TEXT NOT NULL
     )`,
-    `CREATE INDEX IF NOT EXISTS idx_editor_queries_cache ON editor_queries(doc_path, quote, question)`,
+    // 旧库上的 (doc_path, quote, question) 索引已无用：命中不再按文档过滤，留着只白占写入开销
+    `DROP INDEX IF EXISTS idx_editor_queries_cache`,
+    `CREATE INDEX IF NOT EXISTS idx_editor_queries_lookup ON editor_queries(quote, question)`,
     `CREATE INDEX IF NOT EXISTS idx_editor_queries_time ON editor_queries(created_at DESC)`,
     `CREATE VIRTUAL TABLE IF NOT EXISTS annotations_fts USING fts5(
         id UNINDEXED,
