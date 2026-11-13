@@ -81,7 +81,7 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
         <Dialog open={isOpen} onOpenChange={handleOpenChange}>
             <DialogContent className="sm:max-w-xl">
                 <DialogHeader>
-                    <DialogTitle>AI 解释</DialogTitle>
+                    <DialogTitle className="text-lg">AI 查询</DialogTitle>
                     <DialogDescription className="line-clamp-2 border-l-2 pl-2 text-muted-foreground">
                         {quote}
                     </DialogDescription>
@@ -92,7 +92,7 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
                         <MarkerIcon>
                             <Loader2Icon className="animate-spin" />
                         </MarkerIcon>
-                        <MarkerContent>正在生成…</MarkerContent>
+                        <MarkerContent>正在查询…</MarkerContent>
                     </Marker>
                 ) : null}
                 {notice === null ? null : (
@@ -102,8 +102,8 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
                     </Alert>
                 )}
                 {!isPending && query.content.length > 0 ? (
-                    <ScrollArea className="max-h-72 rounded-md border p-3">
-                        <div className="text-sm">
+                    <ScrollArea className="max-h-72 min-h-0">
+                        <div className="px-3 pb-3">
                             <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
                                 {query.content}
                             </ReactMarkdown>

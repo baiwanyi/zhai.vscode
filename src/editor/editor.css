@@ -39,11 +39,15 @@
     padding: 2.5rem 4.5rem 2.5rem 6rem;
 }
 
-/* 正文区：min-height 保证空文档也有足够点击高度，outline 去掉聚焦描边（与原生编辑器一致） */
+/* 正文区：min-height 保证空文档也有足够点击高度，outline 去掉聚焦描边（与原生编辑器一致）；
+ * 字体族与字号取 VSCode 编辑器设置（editor.fontFamily / editor.fontSize），
+ * 行高取其自动行高比例（editor.lineHeight 为 0 时即字号 × 1.5），
+ * 这样与原生编辑器并排时字形、字号、疏密都对得上，不再用界面字体与固定 2rem。 */
 .zhai-editor-content {
     min-height: 60vh;
-    font-size: var(--font-size-ui);
-    line-height: 2rem;
+    font-family: var(--vscode-editor-font-family, var(--font-code));
+    font-size: var(--vscode-editor-font-size, var(--font-size-ui));
+    line-height: 1.5;
     outline: none;
     counter-reset: zhai-line;
 }
@@ -86,7 +90,7 @@
     counter-increment: zhai-line;
 }
 
-/* 行高跟随所在块：标题用了 1.3 的紧行高，写死 2rem 会让行号偏离首行基线 */
+/* 行高跟随所在块：标题用了 1.3 的紧行高，写死固定行高会让行号偏离首行基线 */
 .zhai-editor-content > *::after {
     content: counter(zhai-line);
     position: absolute;
@@ -95,7 +99,8 @@
     right: calc(100% + 3.75rem);
     color: var(--vscode-editorLineNumber-foreground, var(--muted-foreground));
     font-family: var(--vscode-editor-font-family, var(--font-code));
-    font-size: var(--vscode-editor-font-size, 0.75rem);
+    /* 与正文同源：1em 即编辑器字号，下面按字号倍数换算的行号下移量才不会随字号漂移 */
+    font-size: var(--vscode-editor-font-size, var(--font-size-ui));
     /* 伪元素不会命中 globals 的 `* { font-light }`，但字重会从块继承 300，这里按编辑器设置显式回落 */
     font-weight: var(--vscode-editor-font-weight, 400);
     line-height: inherit;
@@ -107,6 +112,42 @@
 /* 当前行：VSCode 原生只换行号颜色、不改字重，这里保持一致 */
 .zhai-editor-content > .is-cursor-line::after {
     color: var(--vscode-editorLineNumber-activeForeground, var(--vscode-editor-foreground, var(--foreground)));
+}
+
+/*
+ * 标题行号垂直对齐：行号字号是编辑器字号，而标题首行行盒按标题字号（h1 为 1.75 倍）撑高，
+ * top: 0 把两者顶端对齐后，行号中心必然高于标题首行中心，看起来就是「行号偏上」。
+ * 这里按「(字号倍数 − 1) × 标题 line-height 1.3 ÷ 2」下移，让行号中心落在标题首行中心；
+ * 1em 即编辑器字号，字号设置变化时比例不变。h5 是 1em，与正文同号，无需偏移。
+ */
+.zhai-editor-content > h1::after {
+    top: calc((1.75 - 1) * 0.65em);
+}
+
+.zhai-editor-content > h2::after {
+    top: calc((1.4 - 1) * 0.65em);
+}
+
+.zhai-editor-content > h3::after {
+    top: calc((1.2 - 1) * 0.65em);
+}
+
+.zhai-editor-content > h4::after {
+    top: calc((1.05 - 1) * 0.65em);
+}
+
+.zhai-editor-content > h6::after {
+    top: calc((0.9 - 1) * 0.65em);
+}
+
+/* 带纵向内边距的块：行号的 top 相对 padding 盒边界，不下移就会压在 padding 区、高过首行 */
+.zhai-editor-content > blockquote::after {
+    top: 0.4em;
+}
+
+/* 代码块：让开 padding-top 0.85em，再按首行 code 的 0.9em 字号与 1.55 行高上移半个行盒差 */
+.zhai-editor-content > pre::after {
+    top: 0.7725em;
 }
 
 /* 空行占位：Placeholder 扩展在空文本块上挂 is-empty 与 data-placeholder，这里只负责呈现 */
@@ -175,7 +216,7 @@
  * 容器：统一正文基准。globals.css 的 `* { font-light }` 会直接命中每个元素
  * （不是继承），因此正文类元素在各自规则里显式恢复 400，标题与强调另设字重。
  * 字号、行高与文字色只给渲染容器：编辑器由 .zhai-editor-content 提供同名字样，
- * 它的行高 2rem 是行号对齐的依据，不能被这里的 1.7 覆盖。
+ * 它的行高是行号对齐的依据，不能被这里的 1.7 覆盖。
  */
 .zhai-markdown {
     font-size: var(--font-size-ui, 13px);

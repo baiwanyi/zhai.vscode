@@ -35,6 +35,7 @@ import { HeadingNav } from './layout/HeadingNav'
 import { QueryDialog } from './layout/QueryDialog'
 import { SearchPanel } from './layout/SearchPanel'
 import { SelectionToolbar } from './layout/SelectionToolbar'
+import { WordCountBadge } from './layout/WordCountBadge'
 import { AnnotationExtension } from './marks/annotationExtension'
 import { CursorLineExtension } from './marks/cursorLineExtension'
 import { ZhaiImage } from './marks/ZhaiImage'
@@ -184,7 +185,7 @@ export function EditorScreen(): JSX.Element {
               )
 
     return (
-        <div className="zhai-editor">
+        <div className="zhai-editor" onContextMenu={(event) => event.preventDefault()}>
             <div className="zhai-editor-scroll">
                 <div ref={pageRef} className="zhai-editor-page" onClick={handleContentClick}>
                     <EditorContent editor={editor} />
@@ -226,6 +227,7 @@ export function EditorScreen(): JSX.Element {
             </div>
             {/* 大纲挂在滚动区之外：定位基准是 .zhai-editor，不会随正文滚走 */}
             <HeadingNav items={outline} onSelect={handleOutlineSelect} />
+            <WordCountBadge editor={editor} />
             <AnnotationDialog
                 isOpen={annotationQuote !== null}
                 quote={annotationQuote ?? ''}
