@@ -209,8 +209,6 @@ export type HostMethodName =
     | 'editor/query/history'
     | 'editor/selection'
     | 'editor/snapshot'
-    | 'editor/source'
-    | 'editor/source/save'
     | 'host/command'
     | 'host/openExternal'
     | 'index/rebuild'

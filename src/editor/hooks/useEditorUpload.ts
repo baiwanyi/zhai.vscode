@@ -1,11 +1,13 @@
 /**
  * 编辑器内上传：粘贴或拖拽文件时先走 upload/bytes 落盘，再把引用插进正文。
  * 复用约定：与上传页共用同一协议、同一目录（uploads/{YYYYMM}），文件命名与落盘全部由上传模块负责，
- * 编辑器只负责「发起上传」与「插入引用」，自己不写磁盘、不生成文件名。
+ * 编辑器只负责「发起上传」与「插入引用」，自己不写磁盘、不生成文件名；
+ * 上传进度与结果用 sonner 提示，同一次上传共用一个 toast id，不额外渲染常驻状态。
  * 关键约束：只接管「带文件」的粘贴与拖拽——纯文本粘贴必须原样放行，否则复制正文会失效；
  * 监听必须挂在捕获阶段并阻止冒泡，否则 ProseMirror 会先把图片当成 URL 或 HTML 处理掉。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect } from 'react'
+import { toast } from 'sonner'
 import type { UploadFileItem, UploadResult } from '@shared/types/upload'
 import { request } from '@shared/utils/bridge'
 import { ZHAI_PATH_PREFIX } from '@shared/utils/zhaiPath'
@@ -28,15 +30,7 @@ function readAsDataUrl(file: File): Promise<string | null> {
     })
 }
 
-export interface UseEditorUploadResult {
-    isUploading: boolean
-    error: string | null
-}
-
-export function useEditorUpload(editor: Editor | null): UseEditorUploadResult {
-    const [isUploading, setIsUploading] = useState(false)
-    const [error, setError] = useState<string | null>(null)
-
+export function useEditorUpload(editor: Editor | null): void {
     /** 插入上传结果：url 非空即图片（宿主按扩展名签发），否则退化成链接文本 */
     const insertUploaded = useCallback(
         (items: readonly UploadFileItem[]): void => {
@@ -67,8 +61,7 @@ export function useEditorUpload(editor: Editor | null): UseEditorUploadResult {
 
         const upload = (files: readonly File[]): void => {
             void (async (): Promise<void> => {
-                setIsUploading(true)
-                setError(null)
+                const toastId = toast.loading('正在上传文件…')
                 try {
                     const uploadItems: Array<{ name: string; dataBase64: string }> = []
                     for (const file of files) {
@@ -78,7 +71,7 @@ export function useEditorUpload(editor: Editor | null): UseEditorUploadResult {
                         }
                     }
                     if (uploadItems.length === 0) {
-                        setError('文件读取失败，请重试')
+                        toast.error('文件读取失败，请重试', { id: toastId })
                         return
                     }
                     const result = await request<UploadResult>(
@@ -87,12 +80,11 @@ export function useEditorUpload(editor: Editor | null): UseEditorUploadResult {
                         UPLOAD_TIMEOUT_MS,
                     )
                     insertUploaded(result.uploaded)
+                    toast.success(`已插入 ${String(result.uploaded.length)} 个文件`, { id: toastId })
                 } catch (cause) {
                     // 带出真实原因：之前只显示通用文案，把「协议没人处理」这类错误藏在里面无法排查
                     const reason = cause instanceof Error ? cause.message : String(cause)
-                    setError(`上传失败：${reason}`)
-                } finally {
-                    setIsUploading(false)
+                    toast.error(`上传失败：${reason}`, { id: toastId })
                 }
             })()
         }
@@ -124,6 +116,4 @@ export function useEditorUpload(editor: Editor | null): UseEditorUploadResult {
             dom.removeEventListener('drop', handleDrop, true)
         }
     }, [editor, insertUploaded])
-
-    return { isUploading, error }
 }

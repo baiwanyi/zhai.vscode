@@ -110,27 +110,6 @@ export function isEditorQueryRequest(input: unknown): input is EditorQueryReques
     )
 }
 
-/** 源码模式快照：原文全文 + 版本，供纯文本编辑与整篇回写 */
-export interface EditorSourceResult {
-    path: string
-    version: number
-    content: string
-}
-
-/** 源码模式保存：整篇替换，version 用于拒绝过期写入 */
-export interface EditorSourceSaveRequest {
-    path: string
-    version: number
-    content: string
-}
-
-/** 源码模式保存结果：stale 为版本过期未写入 */
-export interface EditorSourceSaveResult {
-    saved: boolean
-    stale: boolean
-    version: number
-}
-
 /** 列表游标：keyset 分页，避免深 OFFSET 扫描 */
 export interface AnnotationCursor {
     createdAt: string
@@ -171,17 +150,6 @@ export interface AnnotationDocumentSummary {
     docPath: string
     docTitle: string
     count: number
-}
-
-/** 收窄源码保存请求：content 允许为空（用户可能清空全文） */
-export function isEditorSourceSaveRequest(input: unknown): input is EditorSourceSaveRequest {
-    if (typeof input !== 'object' || input === null) {
-        return false
-    }
-    const request = input as { path?: unknown; version?: unknown; content?: unknown }
-    return (
-        typeof request.path === 'string' && typeof request.version === 'number' && typeof request.content === 'string'
-    )
 }
 
 /** 快照消息：在文档快照基础上补资源前缀，图片据此拼出 webview 可访问地址 */

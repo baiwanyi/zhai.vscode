@@ -5,7 +5,8 @@
  * 块把手与表格浮动操作的定位基准都是 .zhai-editor-page（position: relative）；
  * 段末批注图标的点击通过容器事件委托捕获（widget 是原生 DOM，不参与 React 树）。
  * 关键约束：本组件不直接发协议请求，也不决定可编辑性——只读判定来自宿主快照；
- * 状态栏必须如实展示同步状态，出现只读或同步失败时不能让用户以为内容已保存。
+ * 同步失败、只读与上传结果统一用 sonner 提示，不设常驻状态栏；
+ * 源码编辑交给 VSCode 原生文本编辑器，webview 内不再提供源码模式，切走前必须 flush 防抖中的输入。
  */
 import Placeholder from '@tiptap/extension-placeholder'
 import { TableKit } from '@tiptap/extension-table'
@@ -28,14 +29,12 @@ import { useEditorReveal } from './hooks/useEditorReveal'
 import { useEditorSelectionReport } from './hooks/useEditorSelectionReport'
 import { useEditorUpload } from './hooks/useEditorUpload'
 import { useHeadingOutline } from './hooks/useHeadingOutline'
-import { useSourceMode } from './hooks/useSourceMode'
 import { AnnotationDialog } from './layout/AnnotationDialog'
 import { AnnotationPopover } from './layout/AnnotationPopover'
 import { HeadingNav } from './layout/HeadingNav'
 import { QueryDialog } from './layout/QueryDialog'
 import { SearchPanel } from './layout/SearchPanel'
 import { SelectionToolbar } from './layout/SelectionToolbar'
-import { SourceEditor } from './layout/SourceEditor'
 import { AnnotationExtension } from './marks/annotationExtension'
 import { CursorLineExtension } from './marks/cursorLineExtension'
 import { ZhaiImage } from './marks/ZhaiImage'
@@ -95,15 +94,14 @@ export function EditorScreen(): JSX.Element {
             handleKeyDown: (_view: EditorView, event: KeyboardEvent): boolean => handleSlashKey(event),
         },
     })
-    const { status, isEditable, path, blocks, reload, flush } = useEditorDocument(editor)
+    const { path, blocks, flush } = useEditorDocument(editor)
     const { items, addOrToggleHighlight, addNote, updateNote, removeAnnotation } = useAnnotations(editor, path, blocks)
-    const source = useSourceMode(path, reload, flush)
     // 标注总览跳转到当前文档时，由宿主发 reveal 消息，这里负责选中与滚动
     useEditorReveal(editor)
     // 上传 / 图库插入到当前文档时，由宿主发 insert 消息，这里负责插节点或文本
     useEditorInsert(editor)
-    // 编辑器内粘贴 / 拖拽文件：先上传再插引用，落盘仍归上传模块
-    const upload = useEditorUpload(editor)
+    // 编辑器内粘贴 / 拖拽文件：先上传再插引用，进度与结果由上传 hook 走 sonner 提示
+    useEditorUpload(editor)
     // 选区上报：AI 的选区引用与写回定位靠它拿到当前选中的文字
     useEditorSelectionReport(editor, path)
     const [annotationQuote, setAnnotationQuote] = useState<string | null>(null)
@@ -133,6 +131,19 @@ export function EditorScreen(): JSX.Element {
             window.removeEventListener('keydown', handleFind)
         }
     }, [openSearch])
+
+    // 切到文本编辑器或其它标签页前先落盘：回写防抖窗口里的输入不能随 webview 一起被挂起
+    useEffect(() => {
+        const handleHidden = (): void => {
+            if (document.visibilityState === 'hidden') {
+                void flush()
+            }
+        }
+        document.addEventListener('visibilitychange', handleHidden)
+        return (): void => {
+            document.removeEventListener('visibilitychange', handleHidden)
+        }
+    }, [flush])
 
     /** 段末图标点击：widget 由 ProseMirror 插入，只有事件委托能拿到点击 */
     const handleContentClick = (event: MouseEvent<HTMLDivElement>): void => {
@@ -174,64 +185,47 @@ export function EditorScreen(): JSX.Element {
 
     return (
         <div className="zhai-editor">
-            {source.isSourceMode ? (
-                <SourceEditor
-                    content={source.content}
-                    isSaving={source.isSaving}
-                    error={source.error}
-                    onChange={source.update}
-                    onExit={source.exit}
-                />
-            ) : (
-                <div className="zhai-editor-scroll">
-                    <div ref={pageRef} className="zhai-editor-page" onClick={handleContentClick}>
-                        <EditorContent editor={editor} />
-                        {editor === null ? null : (
-                            <BlockHandle
-                                editor={editor}
-                                onAskAi={(quote): void => {
-                                    // 与选区工具的「查询」同一条通道：弹窗打开即发起解释查询
-                                    setQueryQuote(quote)
-                                }}
-                            />
-                        )}
-                        {editor === null ? null : <TableTools editor={editor} containerRef={pageRef} />}
-                        <SlashMenu />
-                        <EmojiPicker />
-                        {search.isOpen ? (
-                            <SearchPanel
-                                query={search.query}
-                                matchCount={search.matchCount}
-                                activeIndex={search.activeIndex}
-                                isCapped={search.isCapped}
-                                onQueryChange={search.setQuery}
-                                onNext={search.goNext}
-                                onPrev={search.goPrev}
-                                onClose={search.close}
-                            />
-                        ) : null}
-                        <SelectionToolbar
+            <div className="zhai-editor-scroll">
+                <div ref={pageRef} className="zhai-editor-page" onClick={handleContentClick}>
+                    <EditorContent editor={editor} />
+                    {editor === null ? null : (
+                        <BlockHandle
                             editor={editor}
-                            onHighlight={addOrToggleHighlight}
-                            onAnnotate={(quote): void => {
-                                setAnnotationQuote(quote)
-                            }}
-                            onQuery={(quote): void => {
+                            onAskAi={(quote): void => {
+                                // 与选区工具的「查询」同一条通道：弹窗打开即发起解释查询
                                 setQueryQuote(quote)
                             }}
                         />
-                    </div>
+                    )}
+                    {editor === null ? null : <TableTools editor={editor} containerRef={pageRef} />}
+                    <SlashMenu />
+                    <EmojiPicker />
+                    {search.isOpen ? (
+                        <SearchPanel
+                            query={search.query}
+                            matchCount={search.matchCount}
+                            activeIndex={search.activeIndex}
+                            isCapped={search.isCapped}
+                            onQueryChange={search.setQuery}
+                            onNext={search.goNext}
+                            onPrev={search.goPrev}
+                            onClose={search.close}
+                        />
+                    ) : null}
+                    <SelectionToolbar
+                        editor={editor}
+                        onHighlight={addOrToggleHighlight}
+                        onAnnotate={(quote): void => {
+                            setAnnotationQuote(quote)
+                        }}
+                        onQuery={(quote): void => {
+                            setQueryQuote(quote)
+                        }}
+                    />
                 </div>
-            )}
-            {/* 大纲挂在滚动区之外：定位基准是 .zhai-editor，不会随正文滚走 */}
-            {source.isSourceMode ? null : <HeadingNav items={outline} onSelect={handleOutlineSelect} />}
-            <div className="flex shrink-0 items-center gap-3 border-t px-4 py-1.5 text-xs text-muted-foreground">
-                <span>{status}</span>
-                {isEditable ? null : <span>切换回文本编辑器可继续编辑</span>}
-                {upload.isUploading ? <span>正在上传文件…</span> : null}
-                {upload.error === null ? null : <span className="text-destructive">{upload.error}</span>}
-                <span className="ml-auto">Ctrl+Shift+M 源码</span>
             </div>
+            {/* 大纲挂在滚动区之外：定位基准是 .zhai-editor，不会随正文滚走 */}
+            <HeadingNav items={outline} onSelect={handleOutlineSelect} />
             <AnnotationDialog
                 isOpen={annotationQuote !== null}
                 quote={annotationQuote ?? ''}

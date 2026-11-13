@@ -127,13 +127,18 @@
             },
             {
                 "command": "zhai.editor.openRich",
-                "title": "用富文本编辑器打开",
-                "category": "宅写作"
+                "title": "切换到宅写作编辑器",
+                "category": "宅写作",
+                "icon": {
+                    "light": "resources/icons/switch-zhai-light.svg",
+                    "dark": "resources/icons/switch-zhai-dark.svg"
+                }
             },
             {
                 "command": "zhai.editor.openText",
-                "title": "用文本编辑器打开",
-                "category": "宅写作"
+                "title": "切换到文本编辑器",
+                "category": "宅写作",
+                "icon": "$(file-code)"
             }
         ],
         "menus": {
@@ -148,12 +153,24 @@
                 {
                     "command": "zhai.editor.openRich",
                     "group": "navigation@1",
-                    "when": "resourceLangId == markdown && activeEditor == 'default'"
+                    "when": "editorLangId == markdown && !activeCustomEditorId"
                 },
                 {
                     "command": "zhai.editor.openText",
                     "group": "navigation@2",
-                    "when": "activeEditor == 'zhai.markdownEditor'"
+                    "when": "activeCustomEditorId == 'zhai.markdownEditor'"
+                }
+            ],
+            "editor/title/context": [
+                {
+                    "command": "zhai.editor.openRich",
+                    "group": "zhai@1",
+                    "when": "editorLangId == markdown && !activeCustomEditorId"
+                },
+                {
+                    "command": "zhai.editor.openText",
+                    "group": "zhai@2",
+                    "when": "activeCustomEditorId == 'zhai.markdownEditor'"
                 }
             ],
             "view/title": [

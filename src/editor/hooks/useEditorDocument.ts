@@ -4,10 +4,12 @@
  * 块序列化用 ProseMirror 的 DOMSerializer，回写区间由 blockDiff 用快照偏移算出来。
  * 关键约束：baseline 必须在 setContent 之后重新采样——宿主的 HTML 与 PM 序列化结果不同，
  * 拿宿主 HTML 当基准会把所有块误判为变化；只读快照绝不发起回写，收到 stale 立即重拉快照并放弃本次修改；
- * 空文本块（编辑器尾部恒有一个）不产生 Markdown，采集时必须跳过，否则块序列会与宿主整体错位。
+ * 空文本块（编辑器尾部恒有一个）不产生 Markdown，采集时必须跳过，否则块序列会与宿主整体错位；
+ * 只读与同步失败不走常驻状态栏，一律用 sonner 提示，同一类提示用固定 id 去重不叠加。
  */
 import { DOMSerializer } from '@tiptap/pm/model'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import { isEditorSnapshotMessage } from '@shared/types/editor'
 import type { EditorBlock, EditorChangeResult, EditorSnapshotMessage } from '@shared/types/editor'
 import { onState, request } from '@shared/utils/bridge'
@@ -19,12 +21,13 @@ import { setAssetPrefix } from '../marks/imageAsset'
 /** 回写防抖：与文档同步口径一致，避免每次按键都产生一次 WorkspaceEdit */
 const SYNC_DEBOUNCE_MS = 500
 
-/** 状态文案：同步失败与只读都必须让用户看见，不能静默 */
-const STATUS_LOADING = '载入中'
-const STATUS_READY = '富文本模式'
-const STATUS_READONLY = '只读预览：文档含暂不支持的语法'
-const STATUS_FAILED = '同步失败，请改用文本编辑器确认'
-const STATUS_REJECTED = '修改含暂不支持的语法，已阻止保存并回滚'
+/** 提示文案与去重 id：同步失败、只读、自检拦截都必须让用户看见，不能静默 */
+const MESSAGE_READONLY = '只读预览：文档含暂不支持的语法，可切换到文本编辑器继续编辑'
+const MESSAGE_FAILED = '同步失败，请切换到文本编辑器确认'
+const MESSAGE_REJECTED = '修改含暂不支持的语法，已阻止保存并回滚'
+const TOAST_ID_READONLY = 'zhai-editor-readonly'
+const TOAST_ID_FAILED = 'zhai-editor-failed'
+const TOAST_ID_REJECTED = 'zhai-editor-rejected'
 
 /** 采集顶层块 HTML：跳过空文本块，它们不产生 Markdown 块，留着会让块序列与宿主错位 */
 function collectBlocks(editor: Editor): string[] {
@@ -43,7 +46,6 @@ function collectBlocks(editor: Editor): string[] {
 
 /** 快照状态：随推送变化的部分，与动作分开，避免 useState 被迫持有函数 */
 export interface EditorDocumentSnapshotState {
-    status: string
     /** 是否允许编辑：宿主判定为 false 时前端必须置只读 */
     isEditable: boolean
     /** 当前文档相对路径：标注协议用它做路径校验 */
@@ -53,15 +55,14 @@ export interface EditorDocumentSnapshotState {
 }
 
 export interface EditorDocumentState extends EditorDocumentSnapshotState {
-    /** 重新拉取快照：源码模式保存后用它让富文本与最新原文对齐 */
+    /** 强制重载快照：内容被外部整篇改写后需要按最新原文重建 */
     reload: () => Promise<void>
-    /** 立即同步未提交的编辑：切到源码模式前调用，避免最后 500ms 的输入被漏掉 */
+    /** 立即同步未提交的编辑：切换编辑器或离开页面前调用，避免最后 500ms 的输入被漏掉 */
     flush: () => Promise<void>
 }
 
 export function useEditorDocument(editor: Editor | null): EditorDocumentState {
     const [state, setState] = useState<EditorDocumentSnapshotState>({
-        status: STATUS_LOADING,
         isEditable: false,
         path: '',
         blocks: [],
@@ -70,6 +71,8 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
     const pathRef = useRef('')
     const versionRef = useRef(0)
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    /** 只读提示只在「变为只读」时弹一次，恢复可编辑后复位 */
+    const readonlyNotifiedRef = useRef(false)
 
     /** 应用快照：先灌内容再采样基准，最后按宿主的 editable 决定是否可写 */
     const applySnapshot = useCallback(
@@ -84,8 +87,13 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
             editor.setEditable(snapshot.editable)
             pathRef.current = snapshot.path
             versionRef.current = snapshot.version
+            if (snapshot.editable) {
+                readonlyNotifiedRef.current = false
+            } else if (!readonlyNotifiedRef.current) {
+                readonlyNotifiedRef.current = true
+                toast.warning(MESSAGE_READONLY, { id: TOAST_ID_READONLY })
+            }
             setState({
-                status: snapshot.editable ? STATUS_READY : STATUS_READONLY,
                 isEditable: snapshot.editable,
                 path: snapshot.path,
                 blocks: snapshot.blocks,
@@ -105,7 +113,7 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
                 const snapshot = await request<EditorSnapshotMessage>('editor/snapshot')
                 applySnapshot(snapshot, force)
             } catch {
-                setState((prev) => ({ ...prev, status: STATUS_FAILED, isEditable: false }))
+                toast.error(MESSAGE_FAILED, { id: TOAST_ID_FAILED })
             }
         },
         [applySnapshot],
@@ -155,7 +163,7 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
             if (result.rejected === 'unsupported-syntax') {
                 // 写入前自检拦下：宿主未落盘，本地必须回滚到宿主版本，并明确告知原因
                 await loadSnapshot(true)
-                setState((prev) => ({ ...prev, status: STATUS_REJECTED }))
+                toast.error(MESSAGE_REJECTED, { id: TOAST_ID_REJECTED })
                 return
             }
             // 偏移基准必须跟着宿主刷新：写入会改变正文长度，旧区间再也对不上新内容
@@ -163,9 +171,10 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
                 baselineRef.current = pairBaseline(blocks, result.blocks)
             }
             versionRef.current = result.version
-            setState((prev) => ({ ...prev, status: STATUS_READY }))
+            // 回写成功即收起上一次的同步失败提示，避免旧错误一直挂在屏幕上
+            toast.dismiss(TOAST_ID_FAILED)
         } catch {
-            setState((prev) => ({ ...prev, status: STATUS_FAILED }))
+            toast.error(MESSAGE_FAILED, { id: TOAST_ID_FAILED })
         }
     }, [editor, loadSnapshot])
 
@@ -192,7 +201,7 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
         }
     }, [editor, flush])
 
-    /** 强制重载：源码模式整篇写回后，富文本侧必须按新原文重建，不能靠版本去重跳过 */
+    /** 强制重载：外部整篇改写原文后，富文本侧必须按新原文重建，不能靠版本去重跳过 */
     const reload = useCallback(async (): Promise<void> => {
         await loadSnapshot(true)
     }, [loadSnapshot])
