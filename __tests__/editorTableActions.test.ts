@@ -5,6 +5,7 @@ import { TextSelection } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
 import { describe, expect, it } from 'vitest'
 import { appendTableColumn, appendTableRow } from '@webview/editor/blocks/tableActions'
+import { CursorLineExtension } from '@webview/editor/marks/cursorLineExtension'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 
 /**
@@ -58,13 +59,23 @@ function fillLastCell(editor: Editor, text: string): void {
     if (last === undefined) {
         return
     }
-    editor.chain().setTextSelection(last + 1).insertContent(text).run()
+    editor
+        .chain()
+        .setTextSelection(last + 1)
+        .insertContent(text)
+        .run()
 }
 
 /** 光标放回第一个单元格：用来验证「光标在别处时追加仍落在末尾」 */
 function focusFirstCell(editor: Editor): void {
     const selection = TextSelection.near(editor.state.doc.resolve(1))
     editor.chain().setTextSelection(selection.from).run()
+}
+
+/** 表格的 DOM 节点：悬停触发的追加按它定位表格 */
+function findTableElement(editor: Editor): HTMLTableElement | null {
+    const element = editor.view.dom.querySelector('table')
+    return element instanceof HTMLTableElement ? element : null
 }
 
 describe('表格末尾追加', () => {
@@ -113,6 +124,39 @@ describe('表格末尾追加', () => {
         appendTableRow(editor)
         appendTableColumn(editor)
         expect(findTable(editor)).toBeNull()
+        editor.destroy()
+    })
+
+    it('光标在表格外时，按传入的表格 DOM 追加到该表末尾', () => {
+        const editor = createEditor()
+        editor.commands.setContent(
+            '<p>正文</p><table><tbody><tr><th><p>H</p></th></tr><tr><td><p>Z</p></td></tr></tbody></table>',
+        )
+        // 光标留在正文段落里：悬停触发的追加必须靠自己把光标落进目标表格
+        editor.commands.setTextSelection(2)
+        const table = findTableElement(editor)
+        expect(table).not.toBeNull()
+        if (table === null) {
+            return
+        }
+        appendTableRow(editor, table)
+        const rows = rowTexts(editor)
+        expect(rows).toHaveLength(3)
+        expect(rows[1]).toBe('Z')
+        editor.destroy()
+    })
+})
+
+describe('当前单元格标记', () => {
+    it('光标所在单元格挂上 is-cursor-cell，且只标记一格', () => {
+        const editor = new Editor({
+            extensions: [StarterKit, TableKit.configure({ table: { resizable: false } }), CursorLineExtension],
+            content: '<p></p>',
+        })
+        editor.commands.insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+        const cells = Array.from(editor.view.dom.querySelectorAll('td, th'))
+        const marked = cells.filter((cell) => cell.classList.contains('is-cursor-cell'))
+        expect(marked).toHaveLength(1)
         editor.destroy()
     })
 })

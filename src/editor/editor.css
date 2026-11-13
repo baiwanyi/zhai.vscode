@@ -42,9 +42,12 @@
 /* 正文区：min-height 保证空文档也有足够点击高度，outline 去掉聚焦描边（与原生编辑器一致）；
  * 字体族与字号取 VSCode 编辑器设置（editor.fontFamily / editor.fontSize），
  * 行高取其自动行高比例（editor.lineHeight 为 0 时即字号 × 1.5），
- * 这样与原生编辑器并排时字形、字号、疏密都对得上，不再用界面字体与固定 2rem。 */
+ * 这样与原生编辑器并排时字形、字号、疏密都对得上，不再用界面字体与固定 2rem。
+ * padding-bottom 是「文档写到最后一行之后仍有可写空间」的那几行空白：
+ * 落在这里的点击由 EditorScreen 接管，末尾补一个空段落并把光标放进去。 */
 .zhai-editor-content {
     min-height: 60vh;
+    padding-bottom: 20rem;
     font-family: var(--vscode-editor-font-family, var(--font-code));
     font-size: var(--vscode-editor-font-size, var(--font-size-ui));
     line-height: 1.5;
@@ -161,12 +164,83 @@
 
 /*
  * 表格：Tiptap 只输出 table / colgroup 结构，没有任何自带样式。
- * 缺了边框与内边距，新插入的空表格在正文里几乎不可见，看起来就像「没插进来」。
+ * 视觉规则同时对 .zhai-markdown 与 .zhai-editor-content 生效，两处容器共用一套呈现：
+ * 外框一条细线、内部只留横线，去掉网格感；表头铺浮层色加一条略深底线；
+ * 斑马纹与悬停都压到 4% / 6% 前景色，深浅主题下自动相反。
  */
+:is(.zhai-markdown, .zhai-editor-content) table {
+    margin: 0 0 1em;
+    border-radius: 0.55em;
+    /* 外框与内线不合并，圆角与单元格底色才不会被 collapse 压平 */
+    border-collapse: separate;
+    border-spacing: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) th,
+:is(.zhai-markdown, .zhai-editor-content) td {
+    padding: 0.5em 0.85em;
+    /* 只留横线：竖线交给外框，表格不再像一张网格 */
+    border-bottom: 1px solid var(--vscode-editorIndentGuide-background1, var(--border, #d1d9e0));
+    text-align: left;
+    vertical-align: top;
+    font-weight: 400;
+}
+
+/* 表头：浮层色铺底 + 一条略深的底线，空表也能一眼看出层级 */
+:is(.zhai-markdown, .zhai-editor-content) th {
+    background-color: var(--vscode-editorWidget-background, var(--muted, #f6f8fa));
+    border-bottom-color: color-mix(in srgb, var(--foreground, #1f2328) 18%, transparent);
+    color: var(--foreground, #1f2328);
+    font-weight: 600;
+}
+
+/* 最后一行交给外框收边，避免底部出现双线 */
+:is(.zhai-markdown, .zhai-editor-content) tr:last-child > th,
+:is(.zhai-markdown, .zhai-editor-content) tr:last-child > td {
+    border-bottom: 0;
+}
+
+/* 圆角只落在四个角：table 自身的圆角裁不掉单元格底色 */
+:is(.zhai-markdown, .zhai-editor-content) tr:first-child > :first-child {
+    border-top-left-radius: 0.55em;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) tr:first-child > :last-child {
+    border-top-right-radius: 0.55em;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) tr:last-child > :first-child {
+    border-bottom-left-radius: 0.55em;
+}
+
+:is(.zhai-markdown, .zhai-editor-content) tr:last-child > :last-child {
+    border-bottom-right-radius: 0.55em;
+}
+
+/* 斑马纹：用前景色做极低透明度叠加，亮暗主题下深浅自动相反 */
+:is(.zhai-markdown, .zhai-editor-content) tbody tr {
+    background-color: color-mix(in srgb, var(--foreground, #1f2328) 7%, transparent);
+}
+
+:is(.zhai-markdown, .zhai-editor-content) tbody tr:nth-child(2n) {
+    background-color: color-mix(in srgb, var(--foreground, #1f2328) 5%, transparent);
+}
+
+/* 悬停再提一档，鼠标扫过长表时能定位到行 */
+:is(.zhai-markdown, .zhai-editor-content) tbody tr:hover {
+    background-color: color-mix(in srgb, var(--foreground, #1f2328) 10%, transparent);
+}
+
+/* 单元格内段落不再额外撑开行高，行高由内边距决定 */
+:is(.zhai-markdown, .zhai-editor-content) th > p,
+:is(.zhai-markdown, .zhai-editor-content) td > p {
+    margin: 0;
+}
+
+/* 编辑态布局：TableKit 需要固定布局，选中框依赖单元格自身定位 */
 .zhai-editor-content table {
     width: 100%;
-    margin: 1rem 0;
-    border-collapse: collapse;
     table-layout: fixed;
 }
 
@@ -174,30 +248,26 @@
 .zhai-editor-content td {
     position: relative;
     min-width: 2rem;
-    padding: 0.25rem 0.5rem;
-    border: 1px solid var(--vscode-editorIndentGuide-background1, var(--border));
-    text-align: left;
-    vertical-align: top;
 }
 
-/* 表头底色取浮层色：与正文拉开一档，空表也能一眼看出结构 */
-.zhai-editor-content th {
-    background-color: var(--vscode-editorWidget-background, var(--muted));
-    font-weight: 600;
-}
-
-/* 单元格内段落不再额外撑开行高，表格行高由 cell 内边距决定 */
-.zhai-editor-content th > p,
-.zhai-editor-content td > p {
-    margin: 0;
-}
-
-/* 选中单元格：用编辑器选中色铺底，看清当前操作的是哪一格 */
-.zhai-editor-content .selectedCell::after {
+/*
+ * 当前单元格：光标所在格用一圈圆角描边标出，宽表、多列表格里一眼看出正在编辑哪一格。
+ * class 由 CursorLineExtension 用 Decoration.node 挂在 cell 上，不写进文档；
+ * 与上面的多选底色分开——那个表达「选中范围」，这里是常驻的定位提示。
+ * 描边参照 input 的聚焦态：2px 实线 + 外圈半透明光晕，颜色取 --ring（即 VSCode 焦点描边色）。
+ * 圆角与描边都必须画在 ::before 上，不能写进单元格自身：表格只留一条 border-bottom，
+ * border-radius 会把这条横线一起弯折，与相邻格的直线接不上，格子四周就留下一段弧形残线。
+ * 伪元素用 inset 阴影描边，不参与布局，table-layout: fixed 的列宽不受影响；
+ * ::after 已被多选底色占用，故这里用 ::before；覆盖层只有边缘几像素，关掉指针后才不挡选词与点击。
+ */
+.zhai-editor-content .is-cursor-cell::before {
     content: '';
     position: absolute;
     inset: 0;
-    background-color: var(--vscode-editor-selectionBackground, rgb(38 79 120 / 40%));
+    border-radius: 0.5em;
+    box-shadow:
+        inset 0 0 0 2px var(--ring, #007fd4),
+        inset 0 0 0 2px color-mix(in srgb, var(--ring, #007fd4) 30%, transparent);
     pointer-events: none;
 }
 
@@ -208,8 +278,8 @@
  * 颜色先取 VSCode 变量与 globals.css 令牌，再退回 GitHub 浅色配色，
  * 脱离主题变量单独使用时仍是可读的浅色排版；间距一律用 em，
  * 随容器字号等比缩放，不写死像素。
- * 例外：表格整段与链接地址提示只作用于 .zhai-markdown —— 编辑态表格要保留 TableKit 的
- * fixed 布局与浮动工具定位，地址提示则会撑乱正在编辑的正文。
+ * 例外：表格的滚动布局与链接地址提示只作用于 .zhai-markdown —— 编辑态表格要保留 TableKit 的
+ * fixed 布局与浮动工具定位（视觉呈现两处共用），地址提示则会撑乱正在编辑的正文。
  * ========================================================================== */
 
 /*
@@ -358,10 +428,8 @@
     margin: 0 0 1em;
     padding: 0.85em 1em;
     overflow: auto;
-    border: 1px solid var(--border, #d1d9e0);
     border-radius: 0.5rem;
     background-color: var(--code-background, #f6f8fa);
-    line-height: 1.55;
     tab-size: 4;
 }
 
@@ -391,6 +459,8 @@
     /* 语法标记段在竖线右侧画一个 “>”，左侧内边距要为它留位 */
     position: relative;
     margin: 0 0 1em;
+    border-top-right-radius: 0.5em;
+    border-bottom-right-radius: 0.5em;
     padding: 0.4em 1em 0.4em 1.75em;
     border-left: 3px solid var(--quote-border, #d1d9e0);
     background-color: var(--quote-background, transparent);
@@ -531,50 +601,25 @@
     vertical-align: middle;
 }
 
-/* ── 表格：整表可横向滚动，边框与表头底色固定区分 ── */
+/* ── 表格：只补渲染态的滚动布局，视觉规则见上文共用段 ── */
 .zhai-markdown table {
     display: block;
     width: max-content;
     max-width: 100%;
-    margin: 0 0 1em;
     overflow: auto;
-    border-collapse: collapse;
-    border-spacing: 0;
-    font-variant-numeric: tabular-nums;
 }
 
-.zhai-markdown th,
-.zhai-markdown td {
-    padding: 0.4em 0.75em;
-    border: 1px solid var(--border, #d1d9e0);
-    text-align: left;
-    vertical-align: top;
-    font-weight: 400;
-}
-
-.zhai-markdown th {
-    background-color: var(--vscode-editorWidget-background, #f6f8fa);
-    font-weight: 600;
-}
-
-/* 斑马纹：用前景色做极低透明度叠加，亮暗主题下深浅自动相反 */
-.zhai-markdown tbody tr:nth-child(2n) {
-    background-color: color-mix(in srgb, var(--foreground, #1f2328) 4%, transparent);
-}
-
-/* 单元格内段落不再额外撑开行高，行高由内边距决定 */
-.zhai-markdown th > p,
-.zhai-markdown td > p {
-    margin: 0;
-}
-
-/* ── 图片与分隔线 ── */
+/*
+ * ── 图片与分隔线 ──
+ * 图片来源有两处：渲染态由 Markdown 输出，编辑态由 ZhaiImage 的 nodeView 直插 DOM。
+ * 后者不写内联样式，尺寸、留白与圆角一律在这条规则里给，两处才完全一致。
+ */
 :is(.zhai-markdown, .zhai-editor-content) img {
+    display: block;
     max-width: 100%;
     height: auto;
     margin: 0.5em 0;
-    border-radius: 0.375rem;
-    vertical-align: middle;
+    border-radius: 0.5em;
 }
 
 /* 分隔线用背景色而非 border：preflight 给 hr 预留了 border 宽度，直接改底色更可控 */
@@ -618,9 +663,7 @@
 :is(.zhai-markdown, .zhai-editor-content) h6::before {
     margin-right: 0.3em;
     color: var(--muted-foreground, #59636e);
-    font-family: var(--font-code, ui-monospace, monospace);
-    font-size: 0.8em;
-    font-weight: 400;
+    font-weight: 300;
 }
 
 :is(.zhai-markdown, .zhai-editor-content) h1::before {
@@ -665,15 +708,6 @@
     font-weight: 400;
 }
 
-/* 高亮为扩展语法，写法是 ==文本== */
-:is(.zhai-markdown, .zhai-editor-content) mark::before,
-:is(.zhai-markdown, .zhai-editor-content) mark::after {
-    content: '==';
-    color: var(--muted-foreground, #59636e);
-    font-size: 0.85em;
-    font-weight: 400;
-}
-
 /* 删除线会从元素传播到伪元素且无法在子级取消，~~ 会一并被划掉；s 是编辑态的删除线标签 */
 :is(.zhai-markdown, .zhai-editor-content) del::before,
 :is(.zhai-markdown, .zhai-editor-content) del::after,
@@ -682,14 +716,6 @@
     content: '~~';
     color: var(--muted-foreground, #59636e);
     font-size: 0.85em;
-    font-weight: 400;
-}
-
-/* ── 行内代码：反引号贴在行内底色内侧；代码块内的 code 不加，避免与围栏重复 ── */
-:is(.zhai-markdown, .zhai-editor-content) :not(pre) > code::before,
-:is(.zhai-markdown, .zhai-editor-content) :not(pre) > code::after {
-    content: '`';
-    color: var(--muted-foreground, #59636e);
     font-weight: 400;
 }
 

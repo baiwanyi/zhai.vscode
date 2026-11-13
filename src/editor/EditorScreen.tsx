@@ -7,7 +7,9 @@
  * 关键约束：本组件不直接发协议请求，也不决定可编辑性——只读判定来自宿主快照；
  * 同步失败、只读与上传结果统一用 sonner 提示，不设常驻状态栏；
  * 源码编辑交给 VSCode 原生文本编辑器，webview 内不再提供源码模式，切走前必须 flush 防抖中的输入；
- * Ctrl/Cmd+S 由本层接管：先 flush 再请宿主 document.save()，autoSave 关闭时才有真正的落盘路径。
+ * Ctrl/Cmd+S 由本层接管：先 flush 再请宿主 document.save()，autoSave 关闭时才有真正的落盘路径；
+ * 正文下方留白（正文 padding 区与页面底部留白）点击即续行：末尾补一个空段落并落光标，
+ * 末块是表格 / 图片时光标无处可去，这一步才让「底部空白」等价于「多一行可写」。
  */
 import Placeholder from '@tiptap/extension-placeholder'
 import { TableKit } from '@tiptap/extension-table'
@@ -57,6 +59,9 @@ import type { JSX, MouseEvent } from 'react'
 /** 段末图标与气泡之间的间距 */
 const POPOVER_OFFSET = 4
 
+/** 空行占位提示：斜杠菜单是发现块命令的唯一入口，文案里必须把 `/` 说出来 */
+const PLACEHOLDER_TEXT = '开始写作，输入 / 唤起命令…'
+
 /**
  * 双击选词：按词边界选中命中的片段。
  * ProseMirror 默认按空白切分，一整段中文没有空白可切，双击会一路扩成整段——
@@ -104,7 +109,7 @@ export function EditorScreen(): JSX.Element {
             // 也避免敲一个裸 URL 就把纯文本改写成链接语法
             StarterKit.configure({ link: { openOnClick: false, autolink: false } }),
             // 空行占位提示：装饰只落在光标所在的空文本块上，形态见 editor.css 的 .is-empty
-            Placeholder.configure({ placeholder: "Write, type '/' for commands…" }),
+            Placeholder.configure({ placeholder: PLACEHOLDER_TEXT }),
             // 任务列表：md 侧由 adaptTaskListHtml 转成 data-type 结构，回写由 toTaskMarkdown 还原 GFM
             TaskList,
             TaskItem.configure({ nested: true }),
@@ -257,6 +262,59 @@ export function EditorScreen(): JSX.Element {
         }
     }, [editor])
 
+    /**
+     * 续行到文档末尾：末尾已有空段落时只把光标放进去，否则补一个空段落再落光标。
+     * 末块是表格、图片这类非文本块时光标无处可写，必须先补段落才「点得进去」。
+     */
+    const appendTrailingParagraph = useCallback((): void => {
+        if (editor === null || editor.isDestroyed || !editor.isEditable) {
+            return
+        }
+        const { doc } = editor.state
+        const end = doc.content.size
+        const last = doc.lastChild
+        if (last !== null && last.type.name === 'paragraph' && last.content.size === 0) {
+            const selection = TextSelection.near(doc.resolve(end))
+            editor.chain().focus().setTextSelection(selection.from).scrollIntoView().run()
+            return
+        }
+        editor
+            .chain()
+            .focus()
+            .insertContentAt(end, { type: 'paragraph' })
+            .setTextSelection(end + 1)
+            .scrollIntoView()
+            .run()
+    }, [editor])
+
+    /**
+     * 正文下方空白点击：在末尾续一行可写。
+     * 只接管「命中空白容器本身」且落点低于最后一个块的点击——正文块内的空隙交给 ProseMirror，
+     * 浮动工具（表格加号、块把手、菜单）的点击命中它们自己的元素，不会被这里拦掉。
+     */
+    const handlePageMouseDown = (event: MouseEvent<HTMLDivElement>): void => {
+        if (editor === null || editor.isDestroyed || !editor.isEditable) {
+            return
+        }
+        const target = event.target
+        const page = pageRef.current
+        if (!(target instanceof Element) || page === null) {
+            return
+        }
+        const content = editor.view.dom
+        const isBlankHost = target === content || target === page || target.classList.contains('zhai-editor-scroll')
+        if (!isBlankHost) {
+            return
+        }
+        const lastBlock = content.lastElementChild
+        if (lastBlock === null || event.clientY < lastBlock.getBoundingClientRect().bottom) {
+            return
+        }
+        // 接管后必须拦掉默认行为，否则 ProseMirror 还会按坐标把光标贴回最后一块
+        event.preventDefault()
+        appendTrailingParagraph()
+    }
+
     /** 段末图标点击：widget 由 ProseMirror 插入，只有事件委托能拿到点击 */
     const handleContentClick = (event: MouseEvent<HTMLDivElement>): void => {
         const target = event.target
@@ -298,7 +356,12 @@ export function EditorScreen(): JSX.Element {
     return (
         <div className="zhai-editor" onContextMenu={(event) => event.preventDefault()}>
             <div className="zhai-editor-scroll">
-                <div ref={pageRef} className="zhai-editor-page" onClick={handleContentClick}>
+                <div
+                    ref={pageRef}
+                    className="zhai-editor-page"
+                    onMouseDownCapture={handlePageMouseDown}
+                    onClick={handleContentClick}
+                >
                     <EditorContent editor={editor} />
                     {editor === null ? null : (
                         <BlockHandle

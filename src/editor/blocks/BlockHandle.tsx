@@ -10,7 +10,9 @@
  * 菜单打开期间必须锁住拖拽，否则 Radix 的 pointerdown 会被原生 dragstart 抢占；
  * 插入菜单与块菜单共用一个「有菜单打开」的判断：同时锁拖拽、冻结把手定位，关闭后补算一次位置；
  * 块菜单的目标块由「最近一次非空悬停位置」冻结——鼠标移到把手上时扩展给的是 null，现读会丢目标；
- * 插入命令先把光标移到当前块内容末尾，插入类命令因此落在当前行之后，而不是插进行内。
+ * 插入命令先把光标移到当前块内容末尾，插入类命令因此落在当前行之后，而不是插进行内；
+ * 插入菜单关闭时必须拦掉 Radix 归还焦点的默认行为并由编辑器接管：表情命令会在光标处再开一个
+ * 长驻浮层，焦点一被抢走、正文一失焦，那个面板当场就关，表现为「点了没反应」。
  */
 import { DragHandle } from '@tiptap/extension-drag-handle-react'
 import { cn } from 'cn'
@@ -33,7 +35,7 @@ export interface BlockHandleProps {
 }
 
 /** 把手容器：总占位 3.75rem（w-14 + pr-1），两个 20px 图标槽并排常驻，留出余量避免被 flex 挤压变形 */
-const HANDLE_CLASS = 'flex w-14 shrink-0 items-center pt-1 pr-2'
+const HANDLE_CLASS = 'flex w-14 shrink-0 items-center pr-2'
 
 /**
  * 把手定位：left 表示贴参考元素左侧并垂直居中，参考元素是下面算出的「块首行」。
@@ -342,7 +344,17 @@ export function BlockHandle({ editor, onAskAi }: BlockHandleProps): JSX.Element 
                             <CirclePlus className="size-3.5" />
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent side="right" align="start" className="w-64">
+                    <DropdownMenuContent
+                        side="right"
+                        align="start"
+                        className="w-64"
+                        onCloseAutoFocus={(event): void => {
+                            // 默认行为会把焦点送回插入按钮，正文随即失焦。表情命令要在光标处再开一个
+                            // 长驻浮层，焦点一外移它当场就关，表现为「点了没反应」；这里改由编辑器接管
+                            event.preventDefault()
+                            editor.chain().focus().run()
+                        }}
+                    >
                         {SLASH_COMMANDS.map((command) => (
                             <DropdownMenuItem
                                 key={command.id}
