@@ -18,6 +18,7 @@ import { CirclePlus, GripVertical } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@components/ui/dropdown-menu'
 import { Button } from '@webview/components/Button'
+import { readTopBlockPos } from './blockCommands'
 import { BlockMenu } from './BlockMenu'
 import type { SlashCommand } from '../toolbar/slashCommands'
 import type { Editor } from '@tiptap/core'
@@ -68,18 +69,6 @@ function firstLineRect(element: HTMLElement): DOMRect {
     return rect.height > 0 ? rect : element.getBoundingClientRect()
 }
 
-/** 光标所在顶层块的位置：定位与插入都以它为准，不再看鼠标落在哪一块 */
-function readCaretBlockPos(editor: Editor): number | null {
-    if (editor.isDestroyed) {
-        return null
-    }
-    const { doc, selection } = editor.state
-    // 文档切换瞬间旧选区可能越界，resolve 会抛 RangeError，先夹到有效范围
-    const resolved = doc.resolve(Math.min(selection.from, doc.content.size))
-    const pos = resolved.depth > 0 ? resolved.before(1) : 0
-    return doc.nodeAt(pos) === null ? null : pos
-}
-
 /** 正文行高：与 editor.css 的 .zhai-editor-content（line-height: 2rem）保持一致 */
 const CONTENT_LINE_HEIGHT = 32
 
@@ -119,7 +108,7 @@ function findHandleElement(editor: Editor): HTMLElement | null {
  */
 function positionHandleAt(editor: Editor, hoverPos: number | null): boolean {
     const handle = findHandleElement(editor)
-    const pos = hoverPos ?? readCaretBlockPos(editor)
+    const pos = hoverPos ?? readTopBlockPos(editor)
     const dom = pos === null ? null : editor.view.nodeDOM(pos)
     const owner = handle?.offsetParent ?? editor.view.dom.parentElement
     const base = owner instanceof HTMLElement ? owner.getBoundingClientRect() : null
@@ -278,7 +267,7 @@ export function BlockHandle({ editor, onAskAi }: BlockHandleProps): JSX.Element 
         return {
             getBoundingClientRect: (): DOMRect => {
                 // 菜单开着时锚点必须锁在冻结的目标块上，鼠标再移到别的块也不能把菜单带走
-                const pos = menuTargetPos ?? blockPosRef.current ?? readCaretBlockPos(editor)
+                const pos = menuTargetPos ?? blockPosRef.current ?? readTopBlockPos(editor)
                 const dom = pos === null ? null : editor.view.nodeDOM(pos)
                 return dom instanceof HTMLElement ? handleAnchorRect(editor, dom) : new DOMRect()
             },
@@ -315,13 +304,13 @@ export function BlockHandle({ editor, onAskAi }: BlockHandleProps): JSX.Element 
             setMenuTargetPos(null)
             return
         }
-        setMenuTargetPos(lastBlockPosRef.current ?? readCaretBlockPos(editor))
+        setMenuTargetPos(lastBlockPosRef.current ?? readTopBlockPos(editor))
         setIsBlockMenuOpen(true)
     }
 
     /** 执行命令：把光标移到当前块之后，插入类命令不再插进行内 */
     const runCommand = (command: SlashCommand): void => {
-        const pos = readCaretBlockPos(editor)
+        const pos = readTopBlockPos(editor)
         const node = pos === null ? null : editor.state.doc.nodeAt(pos)
         if (pos === null || node === null) {
             return

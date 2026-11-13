@@ -317,6 +317,16 @@
     text-underline-offset: 0.2em;
 }
 
+/*
+ * 编辑态链接彻底禁用指针命中：webview 的链接处理只认被命中的 a 元素，
+ * pointer-events: none 后单击打不到 a 上，也就不会跳转；
+ * 打开走 Ctrl / Cmd + 点击（按坐标识别链接 mark），光标仍按正文文字处理。
+ */
+.zhai-editor-content a {
+    cursor: text;
+    pointer-events: none;
+}
+
 :is(.zhai-markdown, .zhai-editor-content) a:hover {
     text-decoration: underline;
 }

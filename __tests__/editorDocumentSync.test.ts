@@ -2,16 +2,12 @@
  * 编辑器文档快照与区间回写：验证 frontmatter 分离、块偏移、只读判定、块差异定位与按偏移替换。
  * 复用约定：直接调用 editorDocService 与 blockDiff 的纯函数，不触碰 vscode API 与文件系统；
  * 断言全部基于原文切片，确保偏移与 TextDocument 内容同源。
- * 关键约束：非白名单节点必须置只读并渲染为源码块——这条是回写不破坏语法的最后防线；
+ * 关键约束：不再做整篇白名单判定——只读会让链接、划线、回车一起失效，任何文档都以可编辑状态打开；
+ * 管线渲染不出的节点按纯文本段落呈现，既不设源码块标识也不能少块（少一块后面偏移全错位）；
  * 块差异必须按内容对齐而不是按下标，插入 / 删除块后下标错位会把内容写到别的段落上。
  */
 import { describe, expect, it } from 'vitest'
-import {
-    applyBlockEdits,
-    buildEdits,
-    readEditorSnapshot,
-    splitFrontmatter,
-} from '@modules/editor/editorDocService'
+import { applyBlockEdits, buildEdits, readEditorSnapshot, splitFrontmatter } from '@modules/editor/editorDocService'
 import { buildBlockChanges } from '@webview/editor/blocks/blockDiff'
 
 const SAMPLE_DOC = [
@@ -66,10 +62,11 @@ describe('readEditorSnapshot', () => {
         expect(html).toContain('<p>a</p>')
     })
 
-    it('带对齐标记的表格判只读，避免保存后丢掉对齐', async () => {
+    it('带对齐标记的表格同样以可编辑状态打开', async () => {
+        // 曾经整篇转只读；只读会让链接、划线、回车一起失效，现在不再做整篇白名单判定
         const snapshot = await readEditorSnapshot('| a | b |\n| :-- | --: |\n| 1 | 2 |', 1, 'x.md')
-        expect(snapshot.editable).toBe(false)
-        expect(snapshot.blocks[0]?.html).toContain('zhai-source-block')
+        expect(snapshot.editable).toBe(true)
+        expect(snapshot.blocks[0]?.html).toContain('<table')
     })
 
     it('任务列表转成 Tiptap 可识别的结构', async () => {
@@ -81,9 +78,20 @@ describe('readEditorSnapshot', () => {
         expect(html).toContain('data-checked="true"')
     })
 
-    it('任务项内嵌列表时整篇只读（暂不支持）', async () => {
+    it('任务项内嵌列表时仍可编辑', async () => {
         const snapshot = await readEditorSnapshot('- [ ] 待办\n  - 子项', 1, 'x.md')
-        expect(snapshot.editable).toBe(false)
+        expect(snapshot.editable).toBe(true)
+    })
+
+    it('裸地址不再自动识别为链接，显式语法仍保留', async () => {
+        // 回归：GFM 的 autolink literal 会把裸 URL 重新识别成链接，
+        // 取消链接写回裸地址后又被还原，看起来就是「取消不掉」
+        const bare = await readEditorSnapshot('见 https://example.com 说明', 1, 'x.md')
+        expect(bare.blocks[0]?.html ?? '').not.toContain('<a ')
+        const explicit = await readEditorSnapshot('见[文档](https://example.com)说明', 1, 'x.md')
+        expect(explicit.blocks[0]?.html ?? '').toContain('href="https://example.com"')
+        const angle = await readEditorSnapshot('见 <https://example.com> 说明', 1, 'x.md')
+        expect(angle.blocks[0]?.html ?? '').toContain('href="https://example.com"')
     })
 
     it('链接段落可编辑，回写保留链接语法', async () => {
@@ -96,11 +104,37 @@ describe('readEditorSnapshot', () => {
         expect(edits[0]?.text).toBe('见[文档](https://example.com)。')
     })
 
+    it('原始 HTML 块按纯文本呈现，不丢块也不出现源码块标识', async () => {
+        // 回归：管线不认识 html 节点时会渲染成空串，块序列比宿主短一格，
+        // 后面所有块的偏移整体错位；现在改为转义成段落文字，既不设只读也不显示源码块
+        const source = '<div class="note">手写块</div>\n\n正常段落'
+        const snapshot = await readEditorSnapshot(source, 1, 'x.md')
+        expect(snapshot.editable).toBe(true)
+        expect(snapshot.blocks).toHaveLength(2)
+        expect(snapshot.blocks[0]?.html).toContain('&lt;div')
+        expect(snapshot.blocks[0]?.html).not.toContain('zhai-source-block')
+        expect(snapshot.blocks[1]?.html).toContain('正常段落')
+    })
+
+    it('链接定义渲染为空时仍保留一个纯文本块', async () => {
+        const source = '[文档]: https://example.com\n\n正文'
+        const snapshot = await readEditorSnapshot(source, 1, 'x.md')
+        expect(snapshot.blocks).toHaveLength(2)
+        expect(snapshot.blocks[0]?.html.length).toBeGreaterThan(0)
+    })
+
     it('独立成段的链接与代码块混排也可编辑', async () => {
         // 回归：带链接的模板文档一度整篇只读，链接现在放开
-        const source = ['## 安装', '', '```', 'npx @tiptap/cli init', '```', '', '[查看全文](https://example.com/demo)', ''].join(
-            '\n',
-        )
+        const source = [
+            '## 安装',
+            '',
+            '```',
+            'npx @tiptap/cli init',
+            '```',
+            '',
+            '[查看全文](https://example.com/demo)',
+            '',
+        ].join('\n')
         const snapshot = await readEditorSnapshot(source, 1, 'x.md')
         expect(snapshot.editable).toBe(true)
         expect(snapshot.blocks.some((block) => block.html.includes('<a href='))).toBe(true)
@@ -166,7 +200,9 @@ describe('buildEdits', () => {
 
     it('纯插入时给新块补空行分隔', async () => {
         const source = '只有一段'
-        const edits = await buildEdits(source, [{ start: source.length, end: source.length, htmls: ['<p>新增的一段</p>'] }])
+        const edits = await buildEdits(source, [
+            { start: source.length, end: source.length, htmls: ['<p>新增的一段</p>'] },
+        ])
         expect(applyBlockEdits(source, edits)).toBe('只有一段\n\n新增的一段')
     })
 
@@ -193,6 +229,14 @@ describe('buildEdits', () => {
         expect(edits).toHaveLength(1)
         expect(edits[0]?.text).toBe('改后的正文')
         expect(edits[0]?.text).not.toContain('id=')
+    })
+
+    it('删除线回写成 GFM 语法，不因未知节点失败', async () => {
+        // 回归：stringify 管线缺 GFM 扩展时会抛 `Cannot handle unknown node 'delete'`，
+        // 含删除线的段落一被编辑就整块写不回去（Strike 渲染成 <s>）
+        const edits = await buildEdits('第一段', [{ start: 0, end: 3, htmls: ['<p>正常<s>删掉</s>尾巴</p>'] }])
+        expect(edits).toHaveLength(1)
+        expect(edits[0]?.text).toBe('正常~~删掉~~尾巴')
     })
 
     it('图片段落可编辑，且保留 @zhai 原始引用', async () => {

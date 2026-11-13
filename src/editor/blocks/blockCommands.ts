@@ -78,6 +78,20 @@ const TARGET_HEADING_LEVELS: Readonly<Partial<Record<BlockTargetId, number>>> = 
     heading3: 3,
 }
 
+/**
+ * 指定位置（缺省为选区起点）所在的顶层块起始位置：块把手、块菜单与选区工具条共用同一口径。
+ * 文档切换瞬间旧偏移可能越界，resolve 会抛 RangeError，先夹到有效范围。
+ */
+export function readTopBlockPos(editor: Editor, pos?: number): number | null {
+    if (editor.isDestroyed) {
+        return null
+    }
+    const { doc, selection } = editor.state
+    const resolved = doc.resolve(Math.min(pos ?? selection.from, doc.content.size))
+    const top = resolved.depth > 0 ? resolved.before(1) : 0
+    return doc.nodeAt(top) === null ? null : top
+}
+
 /** 读取顶层块：pos 越界时返回 null，nodeAt 在越界位置会抛 RangeError */
 export function readBlockNode(editor: Editor, pos: number): ProseMirrorNode | null {
     if (editor.isDestroyed || pos < 0 || pos >= editor.state.doc.content.size) {

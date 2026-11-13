@@ -3,12 +3,13 @@
  * 复用约定：解析与序列化走项目已有的 unified / remark 生态（remark-parse、remark-gfm、remark-rehype、
  * rehype-stringify、rehype-parse、rehype-remark、remark-stringify），与公众号渲染同一条管线；
  * 回写只替换发生变化块的原文区间，未编辑块保留原始 Markdown，避免整篇重排。
- * 关键约束：白名单外的节点（表格、图片、HTML 块、脚注、链接等）一律渲染为源码块并置 editable=false，
- * 界面转只读预览——宁可不给编辑，也不能把不支持的语法回写成别的形态；
+ * 关键约束：不再做整篇白名单判定，任何文档都以可编辑状态打开——只读会让链接、划线、
+ * 甚至回车都失效，用户只会觉得编辑器坏了；管线渲染不出的节点（原始 HTML、指令、扩展语法）
+ * 一律转义成纯文本段落，既不设只读也不显示源码块标识，保证块数与内容始终可对齐；
  * 依赖体量大（unified 全家桶），首次使用时动态加载，激活期不承担这份开销。
  */
 import type { EditorBlock, EditorBlockChange, EditorDocSnapshot } from '@shared/types/editor'
-import type { Root as MdastRoot, RootContent } from 'mdast'
+import type { Link, Parent, Root as MdastRoot } from 'mdast'
 import type rehypeParse from 'rehype-parse'
 import type rehypeRemark from 'rehype-remark'
 import type rehypeStringify from 'rehype-stringify'
@@ -17,32 +18,6 @@ import type remarkParse from 'remark-parse'
 import type remarkRehype from 'remark-rehype'
 import type remarkStringify from 'remark-stringify'
 import type { unified } from 'unified'
-
-/**
- * 当前可安全编辑的节点类型：与 StarterKit 的 schema 一一对应，扩展开启后再逐项放开。
- * link 已放开：StarterKit 自带 Link，编辑态可正常选中改动，回写也会还原成 `[文本](地址)`；
- * 把它排除在外会让任何带链接的文档整篇转只读，实际影响面远大于收益。
- */
-const EDITABLE_NODE_TYPES: ReadonlySet<string> = new Set([
-    'paragraph',
-    'heading',
-    'blockquote',
-    'list',
-    'listItem',
-    'code',
-    'thematicBreak',
-    'table',
-    'tableRow',
-    'tableCell',
-    'image',
-    'link',
-    'text',
-    'emphasis',
-    'strong',
-    'delete',
-    'inlineCode',
-    'break',
-])
 
 /** Frontmatter 块：整段原样保留，不参与块编号与回写 */
 const FRONTMATTER_PATTERN = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/u
@@ -112,47 +87,54 @@ export function splitFrontmatter(text: string): { frontmatter: string; body: str
     return { frontmatter, body: text.slice(frontmatter.length), offset: frontmatter.length }
 }
 
-/** 递归判断节点是否全部在白名单内：任一子节点越界即视为不可编辑 */
-function isSupported(node: RootContent | { type: string; children?: unknown[] }): boolean {
-    if (!EDITABLE_NODE_TYPES.has(node.type)) {
+/** 源片段不以 `[` 或 `<` 起头，说明这枚链接是 GFM 从裸地址自动识别出来的 */
+function isAutolinkLiteral(node: Link, source: string): boolean {
+    const start = node.position?.start.offset
+    const end = node.position?.end.offset
+    if (start === undefined || end === undefined) {
         return false
     }
-    // 任务列表：纯文本项已支持（见 adaptTaskListHtml），但任务项内再嵌列表暂不支持——
-    // 半支持会把它改写成普通列表，等于悄悄丢掉勾选状态，所以整篇转只读更安全。
-    const candidate = node as {
-        type: string
-        checked?: unknown
-        align?: (string | null)[]
-        children?: { type: string }[]
-    }
-    if (candidate.type === 'listItem' && candidate.checked !== null && candidate.checked !== undefined) {
-        const children = candidate.children ?? []
-        if (children.some((child) => child.type === 'list')) {
-            return false
-        }
-    }
-    // 表格：Tiptap 的 TableCell 不认对齐属性，放开编辑会把 `:---:` 之类的标记丢掉，
-    // 等于改坏原文格式。带对齐的表格仍按只读预览处理。
-    if (candidate.type === 'table') {
-        const align = candidate.align
-        if (Array.isArray(align) && align.some((item) => item !== null && item !== undefined)) {
-            return false
-        }
-    }
-    const children = 'children' in node ? node.children : undefined
-    if (!Array.isArray(children)) {
-        return true
-    }
-    return children.every((child) =>
-        typeof child === 'object' && child !== null && 'type' in child
-            ? isSupported(child as { type: string; children?: unknown[] })
-            : false,
-    )
+    const raw = source.slice(start, end)
+    return !raw.startsWith('[') && !raw.startsWith('<')
 }
 
-/** HTML 转义：源码块要原样展示，不能让内容被当作标签解析 */
+/**
+ * 裸 URL 的 GFM 自动识别会让「取消链接」失效：取消后回写成裸地址，
+ * 下一次快照又被识别成链接，看起来点了取消却没生效。
+ * 这里把自动识别出来的 link 降级为纯文本，只保留显式写的 `[文字](地址)` 与 `<地址>`。
+ */
+function demoteAutolinkLiterals(node: Parent, source: string): void {
+    const children = node.children
+    for (let index = 0; index < children.length; index += 1) {
+        const child = children[index]
+        if (child === undefined) {
+            continue
+        }
+        if (child.type === 'link' && isAutolinkLiteral(child, source)) {
+            children[index] = {
+                type: 'text',
+                value: child.children.map((item) => ('value' in item ? item.value : '')).join(''),
+            }
+            continue
+        }
+        if ('children' in child) {
+            demoteAutolinkLiterals(child, source)
+        }
+    }
+}
+
+/** HTML 转义：纯文本兜底要把原文原样显示，不能让内容被当作标签解析 */
 function escapeHtml(value: string): string {
     return value.replace(/&/gu, '&amp;').replace(/</gu, '&lt;').replace(/>/gu, '&gt;')
+}
+
+/**
+ * 纯文本兜底：管线渲染不出的节点按原样文字呈现。
+ * 关键约束：必须包成一个段落，空串会被 TipTap 直接丢弃——块序列一旦比宿主短，
+ * 后续所有块的偏移整体错位，回写就会落到别的段落上；这里宁可显示原文也不放弃这一块。
+ */
+function toPlainTextHtml(source: string): string {
+    return `<p>${escapeHtml(source.trim())}</p>`
 }
 
 /**
@@ -226,30 +208,41 @@ export async function readEditorSnapshot(text: string, version: number, path: st
     const root: MdastRoot = parser.parse(body)
     const toHtml = loaded.unified().use(loaded.remarkRehype).use(loaded.rehypeStringify)
     const blocks: EditorBlock[] = []
-    let isEditable = true
     for (const node of root.children) {
         const start = node.position?.start.offset
         const end = node.position?.end.offset
         if (start === undefined || end === undefined) {
             continue
         }
-        const isNodeSupported = isSupported(node)
-        if (!isNodeSupported) {
-            isEditable = false
+        // 先把裸地址自动识别出来的链接降级成纯文本：否则「取消链接」写得回去、读回来又是链接
+        if ('children' in node) {
+            demoteAutolinkLiterals(node, body)
         }
-        const html = isNodeSupported
-            ? adaptTableHtml(
-                  adaptTaskListHtml(
-                      toHtml
-                          .stringify(toHtml.runSync({ type: 'root', children: [node] }))
-                          .toString()
-                          .trim(),
-                  ),
-              )
-            : `<pre class="zhai-source-block">${escapeHtml(body.slice(start, end))}</pre>`
+        const raw = body.slice(start, end)
+        let html: string
+        try {
+            html = adaptTableHtml(
+                adaptTaskListHtml(
+                    toHtml
+                        .stringify(toHtml.runSync({ type: 'root', children: [node] }))
+                        .toString()
+                        .trim(),
+                ),
+            )
+        } catch {
+            // 管线不认识这个节点（扩展语法、被 HTML 包裹的块等）：按纯文本处理，
+            // 不设只读、不显示源码块标识，编辑后回写成普通段落文字
+            html = toPlainTextHtml(raw)
+        }
+        if (html.length === 0) {
+            // 渲染结果为空（原始 HTML 节点、链接定义等会被管线静默丢弃）：
+            // 直接透传会让 TipTap 少一个块，后续块的偏移全部错位，必须换成纯文本占位
+            html = toPlainTextHtml(raw)
+        }
         blocks.push({ html, start: offset + start, end: offset + end })
     }
-    return { path, version, frontmatter, blocks, editable: isEditable }
+    // 不再做整篇白名单判定：编辑器始终可编辑，语法能否往返由回写后的自检兜底
+    return { path, version, frontmatter, blocks, editable: true }
 }
 
 /** 一个待应用的文本替换：偏移基于当前文档，多个块必须从后往前应用 */
@@ -261,7 +254,7 @@ export interface BlockEdit {
 
 /**
  * 应用替换清单得到新全文：edits 必须已按 start 倒序，这样前面的偏移不会被后续替换影响。
- * 用途是写入前的自检——先把结果拼出来重新解析，确认没有引入不支持的语法，再真正落盘。
+ * 宿主回写直接交给 WorkspaceEdit 按区间替换；这里保留整篇拼装口径，供单测与偏移核对复用。
  */
 export function applyBlockEdits(text: string, edits: readonly BlockEdit[]): string {
     let next = text
@@ -276,15 +269,16 @@ export function applyBlockEdits(text: string, edits: readonly BlockEdit[]): stri
  * 区间由 Webview 用快照偏移算出，宿主只做范围校验与内容转换——块下标会随插入 / 删除整体位移，偏移不会。
  * 越界、倒序或相互重叠的区间一律丢弃：宁可少写一次，也不能把两段替换套在同一片原文上。
  */
-export async function buildEdits(
-    text: string,
-    ranges: readonly EditorBlockChange[],
-): Promise<BlockEdit[]> {
+export async function buildEdits(text: string, ranges: readonly EditorBlockChange[]): Promise<BlockEdit[]> {
     const loaded = await loadDeps()
     const toMarkdown = loaded
         .unified()
         .use(loaded.rehypeParse, { fragment: true })
         .use(loaded.rehypeRemark)
+        // remark-gfm 必须挂上：删除线（Strike 渲染成 <s>）会转成 mdast 的 delete 节点，
+        // 没有 GFM 的 stringify 扩展就会抛 `Cannot handle unknown node 'delete'`，
+        // 含删除线的块一旦编辑就整块回写失败
+        .use(loaded.remarkGfm)
         .use(loaded.remarkStringify, { bullet: '-', emphasis: '*', strong: '*' })
     /**
      * 任务列表的 html → md：不能走通用管线——rehype-remark 会把 checkbox 转成文本「[x]」，

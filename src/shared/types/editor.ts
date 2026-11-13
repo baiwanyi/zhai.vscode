@@ -2,8 +2,8 @@
  * 编辑区富文本编辑器的跨进程契约：文档快照、块级变更与只读判定。
  * 复用约定：Webview 与宿主共用同一份类型，回写按全文偏移定位原文区间，而不是按块下标；
  * version 取 TextDocument.version，用于拒绝过期回写，避免与外部修改互相覆盖。
- * 关键约束：frontmatter 不属于正文块，单独原样透传；editable 为 false 时界面必须转只读预览，
- * 不得只隐藏按钮——只读是防止不支持语法被回写破坏的唯一保障；
+ * 关键约束：frontmatter 不属于正文块，单独原样透传；语法能否往返不作为拒绝编辑的理由——
+ * 宿主恒返回 editable: true，渲染不出的语法按纯文本呈现，不设源码块标识也不转只读；
  * 块下标只在同一版本内有效，插入 / 删除块会让后续下标整体位移，故回写一律带 start/end。
  */
 
@@ -20,7 +20,7 @@ export interface EditorDocSnapshot {
     version: number
     frontmatter: string
     blocks: EditorBlock[]
-    /** 是否允许编辑：文档含白名单外语法时为 false，界面转只读预览 */
+    /** 是否允许编辑：宿主恒返回 true，保留字段只为兼容既有协议与前端分支 */
     editable: boolean
 }
 
@@ -49,8 +49,13 @@ export interface EditorChangeResult {
     version: number
     /** 写入后的块区间：前端据此刷新基准偏移，不必等下一次快照推送 */
     blocks?: EditorBlock[]
-    /** 写入前自检未通过的原因：目前只有「修改会引入暂不支持的语法」 */
-    rejected?: 'unsupported-syntax'
+    /** 宿主侧没能落盘（applyEdit 被拒绝等）：前端据此提示，避免「静默成功」 */
+    failed?: boolean
+    /**
+     * 本次请求里被转换环节丢弃的区间数（越界、重叠、合并单元格、空内容）。
+     * appliedBlocks 为 0 时它表示「整批改动都没落盘」，前端必须提示且不得刷新基准偏移。
+     */
+    discarded?: number
 }
 
 /** 编辑区查询请求：选中文本 + 问题，路径用于归属校验，clientId 用于匹配流式回包 */
@@ -299,7 +304,7 @@ export function isEditorDocSnapshot(input: unknown): input is EditorDocSnapshot 
 }
 
 /** 划线颜色：固定枚举而非任意色值，保证深浅主题下的可读性 */
-export type HighlightColor = 'coral' | 'violet' | 'blue' | 'emerald' | 'amber'
+export type HighlightColor = 'amber' | 'blue' | 'coral' | 'emerald' | 'violet'
 
 /** 标注类型：划线只存区间，批注额外有正文 */
 export type AnnotationKind = 'highlight' | 'note'
@@ -339,8 +344,8 @@ export interface AnnotationRecord {
 /** 新增标注的入参：id 与时间由仓储生成 */
 export type NewAnnotation = Omit<AnnotationRecord, 'id' | 'createdAt' | 'updatedAt'>
 
-/** 颜色枚举的运行时白名单：与类型定义同源，供守卫复用 */
-const HIGHLIGHT_COLOR_VALUES: readonly string[] = ['coral', 'violet', 'blue', 'emerald', 'amber']
+/** 颜色枚举的运行时白名单：与类型定义同源同序，供守卫复用 */
+const HIGHLIGHT_COLOR_VALUES: readonly string[] = ['amber', 'blue', 'coral', 'emerald', 'violet']
 
 /** 划线选区草稿：由 Webview 从 ProseMirror 文档算出，宿主只做校验与落库 */
 export interface AnnotationDraft {

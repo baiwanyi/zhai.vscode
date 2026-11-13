@@ -35,12 +35,33 @@ import type {
 } from '@shared/types/editor'
 import { isRequestMessage } from '@shared/types/messages'
 import { clearRichDocument, reportRichDocument } from './activeDocument'
-import { applyBlockEdits, buildEdits, readEditorSnapshot } from './editorDocService'
+import { buildEdits, readEditorSnapshot } from './editorDocService'
 import { RICH_EDITOR_VIEW_TYPE } from './openDocument'
 import { listRecentQueries } from './queryRepository'
 import { runEditorQuery } from './queryService'
 import type { EditorQueryDeps } from './queryService'
 import type Database from 'better-sqlite3'
+
+/** 可交给系统打开器的协议：相对地址与脚本协议一律拒绝 */
+const OPENABLE_LINK_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
+
+/**
+ * 校验待打开的链接：Webview 传来的地址不可信，必须能解析且协议在白名单内。
+ * 不合格返回 null，由调用方按 invalid-payload 拒绝，避免借本协议打开任意地址。
+ */
+function readOpenableUrl(payload: unknown): string | null {
+    const value = typeof payload === 'object' && payload !== null ? (payload as { url?: unknown }).url : undefined
+    if (typeof value !== 'string') {
+        return null
+    }
+    try {
+        const url = new URL(value)
+        return OPENABLE_LINK_PROTOCOLS.has(url.protocol) ? url.toString() : null
+    } catch {
+        // 解析失败（含手写的裸域名）直接拒绝，不猜
+        return null
+    }
+}
 
 /** 章节写回前留底：只用到这一个方法，按结构化接口声明便于替身注入 */
 export interface ChapterSnapshotWriter {
@@ -62,6 +83,9 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     /** 自己写回后产生的文档版本：用于跳过回声推送 */
     private readonly appliedVersions = new Map<string, number>()
+
+    /** 正在执行 applyEdit 的文档：变更事件若先于回执到达，靠它识别回声，否则会推快照把前端整篇重建 */
+    private readonly applying = new Set<string>()
 
     /** 已留底过的文档：每个打开会话只留一次，避免每 500ms 就生成一版章节快照 */
     private readonly capturedChapters = new Set<string>()
@@ -115,8 +139,17 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 if (event.document.uri.toString() !== key) {
                     return
                 }
-                if (this.appliedVersions.get(key) === event.document.version) {
-                    this.appliedVersions.delete(key)
+                // 回声判定必须双保险：applyEdit 执行期间事件可能先于回执到达（此时版本号还没记下来），
+                // 记录值又可能因一次编辑产生多个版本而落后。漏判的代价是推一次快照，
+                // 前端收到就 setContent 整篇重建——正在打字的选区、浮层与菜单全部被打断。
+                if (this.applying.has(key)) {
+                    return
+                }
+                const applied = this.appliedVersions.get(key)
+                if (applied !== undefined && event.document.version <= applied) {
+                    if (event.document.version === applied) {
+                        this.appliedVersions.delete(key)
+                    }
                     return
                 }
                 void this.pushSnapshot(document, panel)
@@ -413,6 +446,24 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: result })
                 return
             }
+            // 显式保存：webview 内没有原生菜单，Ctrl/Cmd+S 由前端拦截后发起，
+            // autoSave 关闭时也能真正落盘（常规回写只置脏，不替用户决定何时写文件）
+            if (method === 'editor/save') {
+                const isSaved = await this.saveDocumentNow(document)
+                await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { saved: isSaved } })
+                return
+            }
+            // 打开正文里的链接：前端在 Ctrl/Cmd + 点击时发起，普通点击不会走到这里
+            if (method === 'editor/openLink') {
+                const url = readOpenableUrl(payload)
+                if (url === null) {
+                    await this.respondError(panel, reqId, 'invalid-payload', '链接地址不合法')
+                    return
+                }
+                const isOpened = await vscode.env.openExternal(vscode.Uri.parse(url))
+                await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { opened: isOpened } })
+                return
+            }
             // 选区上报：前端节流后推来，宿主只做缓存与路径校验，供选区引用与写回定位使用
             if (method === 'editor/selection') {
                 if (!isEditorSelectionRequest(payload) || payload.path !== this.readRelativePath(document)) {
@@ -497,6 +548,18 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     }
 
     /**
+     * 显式落盘：只响应用户主动保存（webview 的 Ctrl/Cmd+S），常规回写仍然只置脏。
+     * 复用约定：document.save() 写的是同一份 TextDocument，与原生文本编辑器保存完全等价。
+     * 关键约束：不做脏检查以外的判断——文件只读、被占用时 save() 返回 false，由前端提示。
+     */
+    private async saveDocumentNow(document: vscode.TextDocument): Promise<boolean> {
+        if (!document.isDirty) {
+            return true
+        }
+        return document.save()
+    }
+
+    /**
      * 按区间回写：版本过期直接拒绝，成功后再刷新快照并把新块区间回传前端。
      * 区间由前端按快照偏移算出，这里只做范围与语法校验——按块下标定位会在插入块后整体位移。
      */
@@ -513,15 +576,14 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         const text = document.getText()
         const edits = await buildEdits(text, ranges)
         if (edits.length === 0) {
-            return { appliedBlocks: 0, stale: false, version: document.version, blocks: snapshot.blocks }
+            // 区间被转换放弃（越界、重叠、合并单元格等）时会落到这里。
+            // 必须带上 discarded 回执：前端据此提示「没落盘」，而不是当成成功继续刷新基准偏移，
+            // 否则下一轮会算出同一批无效区间——表现就是改了永远不保存，且屏幕上一声不响。
+            logger.warn(`回写未产生写入：${document.uri.fsPath}（${String(ranges.length)} 个区间）`)
+            return { appliedBlocks: 0, stale: false, version: document.version, discarded: ranges.length }
         }
-        // 写入前自检：把结果拼出来重新解析，确认没有引入白名单外语法
-        // （例如把表格、图片或链接粘进富文本），否则落盘后反而变成整篇只读
-        const nextText = applyBlockEdits(text, edits)
-        const nextSnapshot = await readEditorSnapshot(nextText, document.version, snapshot.path)
-        if (!nextSnapshot.editable) {
-            return { appliedBlocks: 0, stale: false, version: document.version, rejected: 'unsupported-syntax' }
-        }
+        // 不再做「写入前白名单自检」：编辑态已不再因语法把整篇转只读，
+        // 这里再拦一次只会让链接、划线这类正常改动被静默回滚
         // 首次真正写入前留底：快照服务只对 Chapters 下的文档生效，其它文档内部直接返回
         if (this.snapshot !== null && !this.capturedChapters.has(key)) {
             await this.snapshot.captureChapterBeforeWrite(document.uri, text)
@@ -535,11 +597,29 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 item.text,
             )
         }
-        const isApplied = await vscode.workspace.applyEdit(workspaceEdit)
-        if (!isApplied) {
-            return { appliedBlocks: 0, stale: false, version: document.version, blocks: snapshot.blocks }
+        // 预期版本必须先记下再执行：change 事件可能先于 applyEdit 的回执到达，
+        // 那时 appliedVersions 还是空的，回声会被当成外部修改推回前端
+        this.appliedVersions.set(key, document.version + 1)
+        this.applying.add(key)
+        let isApplied: boolean
+        try {
+            isApplied = await vscode.workspace.applyEdit(workspaceEdit)
+        } finally {
+            this.applying.delete(key)
         }
+        if (!isApplied) {
+            // applyEdit 被拒绝时既没异常也没落盘：以前静默返回「成功」，前端看到链接变蓝却写不进文件
+            this.appliedVersions.delete(key)
+            logger.warn(
+                `回写被编辑器拒绝：${document.uri.fsPath}（${String(edits.length)} 个区间，version ${String(document.version)}）`,
+            )
+            return { appliedBlocks: 0, stale: false, failed: true, version: document.version, blocks: snapshot.blocks }
+        }
+        // 覆盖成写入后的真实版本：迟到的 change 事件靠它命中并跳过推送
         this.appliedVersions.set(key, document.version)
+        // 不主动 document.save()：回写只把改动写进 TextDocument 并置脏，
+        // 落盘交给 VSCode 自己的 files.autoSave 机制（afterDelay / onFocusChange 等），
+        // 用户设为 off 时就是「手动保存」，这与原生编辑器的行为一致，不该由扩展越权代劳
         const next = await this.readSnapshot(document)
         return { appliedBlocks: edits.length, stale: false, version: next.version, blocks: next.blocks }
     }

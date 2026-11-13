@@ -89,8 +89,10 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
                 {/* 生成期间只给等待态：增量不展示，结果一次性出现，避免边出边跳 */}
                 {isPending ? (
                     <Marker role="status">
-                        <MarkerIcon>
-                            <Loader2Icon className="animate-spin" />
+                        {/* 图标槽必须自己居中：span 里直接放 svg 会带上基线空隙，
+                            旋转时看起来偏下，还会把等待态撑高一点，结果替换进来就产生滚动跳动 */}
+                        <MarkerIcon className="flex items-center justify-center">
+                            <Loader2Icon className="size-4 animate-spin" />
                         </MarkerIcon>
                         <MarkerContent>正在查询…</MarkerContent>
                     </Marker>
