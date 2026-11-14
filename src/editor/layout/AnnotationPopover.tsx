@@ -141,7 +141,7 @@ export function AnnotationPopover({
                 }}
             >
                 {/* 限高必须落在 Viewport 上：Root 只有 max-height 时其百分比高度无法解析，内容会溢出而不是滚动 */}
-                <ScrollArea className="[&>[data-slot=scroll-area-viewport]]:max-h-72">
+                <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-72">
                     <div className="flex flex-col gap-2">
                         {items.map((item) => (
                             <div key={item.id} className="flex flex-col gap-1 border-b pb-2 last:border-b-0 last:pb-0">

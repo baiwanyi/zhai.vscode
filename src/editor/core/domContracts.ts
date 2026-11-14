@@ -1,8 +1,10 @@
 /**
  * 编辑器 DOM 契约：正文 / 版心 / 滚动容器的类名与段末批注图标属性，供事件委托与定位共用。
- * 复用约定：editor.css 与 annotations/annotationDecorations 负责写 DOM，本模块只提供读取侧常量。
+ * 复用约定：editor.css 与 annotations/annotationMarker 负责写 DOM，本模块提供两侧共用常量，
+ * 并成对提供批注图标的写入口（setAnnotationBlockAttr）与读入口（readAnnotationMarker）。
  * 关键约束：类名改名前必须同步 editor.css 与全部 closest 调用点（TS 无法约束 CSS）；
- * data-annotation-block 由 widget 写成字符串，读回时必须按非负整数校验——空串经 Number 会变成 0；
+ * data-annotation-block 由 widget 写成字符串，读回时必须按非负整数校验——空串经 Number 会变成 0，
+ * 属性缺失更要先判 null，否则 Number(null) 会把「没有属性」当成第 0 段；
  * 命中判定只能用 Element：图标内部是 SVG，点到的是 SVGElement，收窄成 HTMLElement 会让图标失效。
  */
 
@@ -34,9 +36,18 @@ export interface AnnotationMarker {
 }
 
 /**
+ * 写入段末批注图标的块号：widget 侧的唯一写入入口。
+ * 读写共用 ANNOTATION_BLOCK_ATTR 一个常量（不经 dataset 驼峰别名），改名时不会漏掉写侧。
+ */
+export function setAnnotationBlockAttr(marker: HTMLElement, blockIndex: number): void {
+    marker.setAttribute(ANNOTATION_BLOCK_ATTR, String(blockIndex))
+}
+
+/**
  * 从事件目标向上找段末批注图标；命中返回块号与矩形，否则 null。
  * 判定基准必须是 Element：图标主体是内联 SVG，点上去的 target 是 SVGElement 而不是 HTMLElement，
  * 只认 HTMLElement 会让整枚图标（按钮上几乎没有 SVG 之外的空白）完全点不动。
+ * 属性缺失时直接判为不命中：Number(null) 会得到 0，把「没有属性」当成第 0 段。
  */
 export function readAnnotationMarker(target: EventTarget | null): AnnotationMarker | null {
     if (!(target instanceof Element)) {
@@ -46,7 +57,11 @@ export function readAnnotationMarker(target: EventTarget | null): AnnotationMark
     if (!(marker instanceof HTMLElement)) {
         return null
     }
-    const blockIndex = Number(marker.dataset.annotationBlock)
+    const raw = marker.getAttribute(ANNOTATION_BLOCK_ATTR)
+    if (raw === null) {
+        return null
+    }
+    const blockIndex = Number(raw)
     if (!Number.isInteger(blockIndex) || blockIndex < 0) {
         return null
     }
