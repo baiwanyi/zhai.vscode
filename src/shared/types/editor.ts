@@ -12,9 +12,9 @@ export interface EditorBlock {
     html: string
     start: number
     end: number
-    /** 块首行在 Markdown 全文中的行号（1 起，含 frontmatter 占用行）：编辑器行号栏据此对齐文本编辑器 */
+    /** 块首行在 Markdown 全文中的行号（1 起，含 frontmatter 占用行）：宿主据此换算「加入 AI 对话」的引用行范围 */
     startLine?: number
-    /** 块末行行号：与 startLine 相减即块占的逻辑行数，多行块据此逐行标注 */
+    /** 块末行行号：与 startLine 相减即块占的逻辑行数，多行块据此把整段并入引用 */
     endLine?: number
 }
 

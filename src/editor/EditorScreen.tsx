@@ -36,7 +36,6 @@ import { useHeadingOutline } from './hooks/useHeadingOutline'
 import { useTrailingParagraph } from './hooks/useTrailingParagraph'
 import { AnnotationDialog } from './layout/AnnotationDialog'
 import { AnnotationPopover } from './layout/AnnotationPopover'
-import { EditorLineNumbers } from './layout/EditorLineNumbers'
 import { HeadingNav } from './layout/HeadingNav'
 import { QueryDialog } from './layout/QueryDialog'
 import { SearchPanel } from './layout/SearchPanel'
@@ -144,8 +143,6 @@ export function EditorScreen(): JSX.Element {
                     onClick={annotationPopover.handleContentClick}
                 >
                     <EditorContent editor={editor} />
-                    {/* 行号栏按 Markdown 真实行号逐行渲染，挂在 page 内才有正确的定位基准 */}
-                    <EditorLineNumbers editor={editor} blocks={blocks} />
                     {editor === null ? null : (
                         <>
                             <BlockHandle

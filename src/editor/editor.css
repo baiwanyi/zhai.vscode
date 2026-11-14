@@ -1,13 +1,12 @@
 /**
- * 编辑区与 Markdown 渲染样式：上半部服务 TipTap 编辑区（底色、版心、行号、空行占位、表格），
+ * 编辑区与 Markdown 渲染样式：上半部服务 TipTap 编辑区（底色、版心、块把手、空行占位、表格），
  * 下半部是两态共用的 Markdown 元素排版——选择器统一写成 :is(.zhai-markdown, .zhai-editor-content)，
  * 渲染态与编辑态共用一套 GitHub 风格呈现，少数只服务渲染态的规则单独标注。
  * 复用约定：颜色桥接 VSCode 编辑器变量与 globals.css 令牌，字号与字体族沿用同一套令牌；
  * 所有 var() 均带 GitHub 浅色回退值，脱离主题变量时仍是可读的浅色排版；类名统一 zhai- 前缀。
  * 关键约束：EditorContent 的根节点同时是 .zhai-editor-content 与 .ProseMirror，
  * 正文与占位符规则必须写在同一层，不能再多套一层后代选择器；
- * 空行占位符占 ::before（由 Placeholder 扩展挂在空文本块上）；行号不是伪元素，
- * 由 EditorLineNumbers 测量后渲染成 .zhai-line-number 元素并绝对定位在正文左侧；
+ * 空行占位符占 ::before（由 Placeholder 扩展挂在空文本块上）；
  * 语法标记段用 ::before / ::after 还原源标记，与上述占位符互不干扰；
  * Markdown 段的选择器一律经 :is(...) 挂在两个容器之下，不得写裸元素名，否则会串进编辑器正文。
  */
@@ -32,14 +31,15 @@
 
 /*
  * 版心：与 VSCode 原生编辑器一致，正文左对齐且铺满可用宽度，不再居中收窄。
- * 左侧留白 6rem，与行号栏同宽，其中 3.75rem 让给块把手，行号数字右对齐落在把手外侧；
- * 右侧留白要同时容下表格加列按钮（20px）与标题导航细线，所以取 4.5rem——
+ * 左侧留白 4.5rem：编辑器不显示行号，这段空白只留给块把手（约 60px，实测 wrapper 宽 60~64px），
+ * 留 8px 余量避免把手被 .zhai-editor-scroll 的 overflow 裁掉；把手定位按正文左边缘反推，改宽度要同步这里；
+ * 右侧留白同样 4.5rem，要同时容下表格加列按钮（20px）与标题导航细线，
  * 两者贴着正文右边缘摆放时不会互相盖住。
  */
 .zhai-editor-page {
     position: relative;
     width: 100%;
-    padding: 2.5rem 4.5rem 2.5rem 6rem;
+    padding: 2.5rem 4.5rem 2.5rem 4.5rem;
 }
 
 /* 正文区：min-height 保证空文档也有足够点击高度，outline 去掉聚焦描边（与原生编辑器一致）；
@@ -93,41 +93,6 @@
 /* 顶层块建立定位上下文：块内绝对定位的语法标记与单元格描边伪元素都以所在块为参照 */
 .zhai-editor-content > * {
     position: relative;
-}
-
-/*
- * 行号栏：由 EditorLineNumbers 按 Markdown 真实行号逐行渲染（含块内多行与块间空行），
- * 位置在正文左侧、块把手之外，随内容滚动；行号数值与纵坐标都由组件测量后给出，
- * 这里只负责定位、字体与颜色，不做计数。
- * 关键约束：列本身不参与布局、不接收指针事件；容器宽 6rem（与正文左内边距同宽），
- * 行号右对齐、右边缘让开 3.75rem 的块把手，位数变多时数字向左扩展。
- */
-.zhai-line-numbers {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 6rem;
-    pointer-events: none;
-    user-select: none;
-}
-
-.zhai-line-number {
-    position: absolute;
-    /* 容器宽 6rem 即正文左内边距，再让开 3.75rem 的块把手 */
-    right: 3.75rem;
-    color: var(--vscode-editorLineNumber-foreground, var(--muted-foreground));
-    font-family: var(--vscode-editor-font-family, var(--font-code));
-    font-size: var(--vscode-editor-font-size, var(--font-size-ui));
-    /* 行号栏不命中 globals 的 `* { font-light }`，但字重会从容器继承，这里按编辑器设置显式回落 */
-    font-weight: var(--vscode-editor-font-weight, 400);
-    text-align: right;
-    white-space: nowrap;
-}
-
-/* 当前行：VSCode 原生只换行号颜色、不改字重，这里保持一致 */
-.zhai-line-number.is-active {
-    color: var(--vscode-editorLineNumber-activeForeground, var(--vscode-editor-foreground, var(--foreground)));
 }
 
 /* 空行占位：Placeholder 扩展在空文本块上挂 is-empty 与 data-placeholder，这里只负责呈现 */

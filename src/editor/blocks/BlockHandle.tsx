@@ -2,7 +2,8 @@
  * 块把手：拖拽手柄与插入按钮常驻并列，位置沿正文左侧的一条竖线随光标块滑动。
  * 复用约定：DragHandle 负责悬停定位与整块拖拽，定位调度在 useHandlePosition、测量在 handlePosition，
  * 两个菜单各自成组件（InsertBlockMenu / BlockMenu），本文件只做装配与菜单目标冻结。
- * 关键约束：容器总占位固定为 3.75rem（w-14 + pr-2），行号偏移与版心左留白都按这个宽度排，改宽度要同步两处；
+ * 关键约束：容器总占位固定为 3.75rem（w-14 + pr-2），版心左留白（editor.css 的 .zhai-editor-page）
+ * 只按这个宽度排，改宽度要同步两处；
  * 定位基准是「正文左边缘 + 块首行高度」而不是块的文本矩形：块内有 padding（引用、列表）时把手不会左右漂；
  * 定位配置必须是模块级常量，内联对象每次渲染都会换引用，DragHandle 会反复重注册插件；
  * 显示不依赖鼠标悬停：扩展写的 visibility 与 pointer-events 在 editor.css 里被一并覆盖、改由内容透明度控制，

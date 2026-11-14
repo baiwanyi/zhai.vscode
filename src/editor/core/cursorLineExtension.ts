@@ -1,7 +1,7 @@
 /**
  * 光标位置标记：给光标所在的顶层块加 is-cursor-line，给光标所在的表格单元格加 is-cursor-cell。
  * 复用约定：用 Decoration.node 走视图层，和划线装饰同一套思路——只影响 DOM，不写进文档。
- * 关键约束：行号高亮已改由行号栏按选区自行计算，is-cursor-line 只留给样式层备用，
+ * 关键约束：编辑器不显示行号，is-cursor-line 目前没有样式消费者，只留给样式层备用，
  * 标记必须落在 depth 1 的节点上，段落内部的装饰不会命中；
  * 单元格标记只在光标位于表内时产出，必须向上找到 tableCell / tableHeader 那一层，
  * 否则装饰会落在段落上、命不中编辑器样式里的单元格规则；
@@ -13,7 +13,7 @@ import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { EditorState } from '@tiptap/pm/state'
 
-/** 光标所在块的 class：行号高亮已改由行号栏按选区计算，这里保留给样式层备用 */
+/** 光标所在块的 class：当前无样式消费者，保留给样式层备用 */
 const CURSOR_LINE_CLASS = 'is-cursor-line'
 
 /** 光标所在单元格的 class，与 editor.css 的当前格底色规则对应 */

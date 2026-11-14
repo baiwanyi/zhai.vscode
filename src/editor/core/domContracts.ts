@@ -12,7 +12,7 @@ export const EDITOR_ROOT_CLASS = 'zhai-editor'
 /** 滚动容器：正文与弹层的滚动收起都挂在这里 */
 export const EDITOR_SCROLL_CLASS = 'zhai-editor-scroll'
 
-/** 版心：块把手、行号栏与表格工具的定位基准（position: relative） */
+/** 版心：块把手与表格工具的定位基准（position: relative） */
 export const EDITOR_PAGE_CLASS = 'zhai-editor-page'
 
 /** ProseMirror 编辑区：与 target 全等比较时用于识别「点在正文空白处」 */

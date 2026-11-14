@@ -252,7 +252,8 @@ export async function readEditorSnapshot(text: string, version: number, path: st
             // 直接透传会让 TipTap 少一个块，后续块的偏移全部错位，必须换成纯文本占位
             html = toPlainTextHtml(raw)
         }
-        // 行号补上 frontmatter 占用行：前端行号栏要与文本编辑器的行号逐行对上
+        // 行号补上 frontmatter 占用行：编辑器不显示行号，这份行号只服务「加入 AI 对话」的引用行范围，
+        // 必须与文本编辑器的行号逐行对上
         const startLine = frontmatterLines + (node.position?.start.line ?? 1)
         const endLine = frontmatterLines + (node.position?.end.line ?? node.position?.start.line ?? 1)
         blocks.push({ html, start: offset + start, end: offset + end, startLine, endLine })

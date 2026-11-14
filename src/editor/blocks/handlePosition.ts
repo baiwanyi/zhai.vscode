@@ -69,7 +69,7 @@ export function findHandleElement(editor: Editor): HTMLElement | null {
 /**
  * 把把手移到指定块的左侧：hoverPos 是鼠标所在块（与扩展一致），为空时退回光标块。
  * left/top 必须相对 element 的 offsetParent 计算 —— 扩展创建的 wrapper 才是绝对定位的包含块，
- * 拿编辑区容器的矩形当基准会整体偏出一个版心内边距（横向差 96px、纵向差 40px）。
+ * 拿编辑区容器的矩形当基准会整体偏出一个版心内边距（横向差 72px、纵向差 40px）。
  * 返回是否真的写入了位置：挂载初期扩展的 wrapper 还没建好，调用方据此决定要不要显示。
  */
 export function positionHandleAt(editor: Editor, hoverPos: number | null): boolean {
