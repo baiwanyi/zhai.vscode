@@ -136,37 +136,45 @@ export type AnnotationPatch = Partial<
     >
 >
 
-/** 局部更新：先读后合并，再整行写回；记录不存在返回 false */
+/** 字段 → 列名映射：动态 SET 的列名只从这里取，不接受外部拼接 */
+const PATCH_COLUMNS: Readonly<Record<keyof AnnotationPatch, string>> = {
+    docTitle: 'doc_title',
+    quote: 'quote',
+    prefix: 'prefix',
+    suffix: 'suffix',
+    startOffset: 'start_offset',
+    endOffset: 'end_offset',
+    blockId: 'block_id',
+    blockIndex: 'block_index',
+    blockHash: 'block_hash',
+    blockText: 'block_text',
+    color: 'color',
+    note: 'note',
+    replies: 'replies',
+    orphaned: 'orphaned',
+}
+
+/** 局部更新：先读后合并，只写 patch 中出现的列；记录不存在返回 false */
 export function updateAnnotation(db: Database.Database, id: string, patch: AnnotationPatch): boolean {
     const current = findAnnotation(db, id)
     if (current === null) {
         return false
     }
     const next: AnnotationRecord = { ...current, ...patch, updatedAt: new Date().toISOString() }
-    db.prepare(
-        `UPDATE annotations SET
-            doc_title = ?, quote = ?, prefix = ?, suffix = ?,
-            start_offset = ?, end_offset = ?, block_id = ?, block_index = ?, block_hash = ?, block_text = ?,
-            color = ?, note = ?, replies = ?, orphaned = ?, updated_at = ?
-         WHERE id = ?`,
-    ).run(
-        next.docTitle,
-        next.quote,
-        next.prefix,
-        next.suffix,
-        next.startOffset,
-        next.endOffset,
-        next.blockId,
-        next.blockIndex,
-        next.blockHash,
-        next.blockText,
-        next.color,
-        next.note,
-        next.replies,
-        next.orphaned ? 1 : 0,
-        next.updatedAt,
-        id,
-    )
+    // 只写实际改动的列：SET 列表里带上 quote / block_text / note 就会触发 FTS 触发器重建，
+    // 改个颜色也重建全文索引的话，每次都是「删一行 + 插一行」两次磁盘写
+    const assignments: string[] = []
+    const values: unknown[] = []
+    for (const key of Object.keys(patch) as Array<keyof AnnotationPatch>) {
+        if (!Object.hasOwn(PATCH_COLUMNS, key)) {
+            continue
+        }
+        assignments.push(`${PATCH_COLUMNS[key]} = ?`)
+        values.push(key === 'orphaned' ? (next.orphaned ? 1 : 0) : next[key])
+    }
+    assignments.push('updated_at = ?')
+    values.push(next.updatedAt, id)
+    db.prepare(`UPDATE annotations SET ${assignments.join(', ')} WHERE id = ?`).run(...values)
     return true
 }
 

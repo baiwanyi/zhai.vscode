@@ -8,6 +8,7 @@
 import type { AiChatMessage, AiProvider, AiUsage, AiUsageMeta } from '@modules/ai/provider'
 import { getSelectedCodebuddyModel } from '@modules/ai/providers/codebuddyModels'
 import type { UsageRecorder } from '@modules/ai/usageRecorder'
+import { logger } from '@modules/common/logger'
 import { findCachedQuery, saveQuery } from './queryRepository'
 import type Database from 'better-sqlite3'
 
@@ -56,8 +57,21 @@ export interface EditorQueryOutcome {
 export async function runEditorQuery(deps: EditorQueryDeps, input: EditorQueryInput): Promise<EditorQueryOutcome> {
     const quote = input.quote.slice(0, MAX_QUOTE_CHARS).trim()
     const question = input.question.slice(0, MAX_QUESTION_CHARS).trim() || DEFAULT_QUESTION
-    // 库按需打开：一条查询里缓存与写回共用同一个连接，避免重复求值
-    const db = deps.db === undefined ? null : deps.db()
+    // 没有文本就没有可解释的对象：不查缓存也不调模型，省下一次无意义的额度消耗
+    if (quote.length === 0) {
+        return { ok: false, reason: '没有可分析的文本', content: '' }
+    }
+    // 库按需打开：一条查询里缓存与写回共用同一个连接，避免重复求值。
+    // 缓存与历史都是附加能力，库打不开（存储介质只读、库文件被锁）不能让整条查询失败
+    let db: Database.Database | null = null
+    if (deps.db !== undefined) {
+        try {
+            db = deps.db()
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error)
+            logger.warn(`查询缓存不可用，本次跳过缓存与历史：${reason}`)
+        }
+    }
     // 缓存优先：同一段文字问同样的问题不再扣额度，且与文档无关——在另一篇里查到同一段
     // 也直接复用。命中时不校验通道就绪：结果已在本地，断网或未登录也能回看。
     if (db !== null) {

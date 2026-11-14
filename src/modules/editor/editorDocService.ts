@@ -207,7 +207,7 @@ const TABLE_ROW_PATTERN = /<tr(?:\s[^>]*)?>([\s\S]*?)<\/tr>/gu
 const TABLE_CELL_PATTERN = /<(?:th|td)(?:\s[^>]*)?>([\s\S]*?)<\/(?:th|td)>/gu
 
 /** 合并单元格在 GFM 里无法表达，遇到即放弃改写（保留原文，不让表格结构被压坏） */
-const MERGED_CELL_PATTERN = /<(?:td|th)\s[^>]*(?:colspan|rowspan)="[2-9]/u
+const MERGED_CELL_PATTERN = /<(?:td|th)\s[^>]*(?:colspan|rowspan)="(?:[2-9]|[1-9]\d+)"/u
 
 /**
  * 读取文档快照：frontmatter 原样透传，正文按顶层节点切成块。

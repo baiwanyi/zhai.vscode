@@ -48,7 +48,13 @@ export function relocateDocumentAnnotations(
 
         if (quote.length > 0) {
             const sameBlock = blockTexts[record.blockIndex] ?? ''
-            const inSameBlock = sameBlock.indexOf(quote)
+            // 先看原偏移处是否仍是这段文字：同一块里重复出现（如「他说」两次）时 indexOf 恒取第一处，
+            // 会把第二条标注悄悄挪到别的句子上
+            const originalOffset = record.startOffset - (blocks[record.blockIndex]?.start ?? 0)
+            const inSameBlock =
+                originalOffset >= 0 && sameBlock.startsWith(quote, originalOffset)
+                    ? originalOffset
+                    : sameBlock.indexOf(quote)
             if (inSameBlock >= 0) {
                 matchedIndex = record.blockIndex
                 offsetInBlock = inSameBlock

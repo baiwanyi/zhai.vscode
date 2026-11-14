@@ -50,6 +50,13 @@ interface SearchRow {
     updated_at: string
 }
 
+/** 颜色收窄：库里的脏值一律回落为 null，避免把非法色值喂给样式 */
+function toColor(value: string | null): HighlightColor | null {
+    return value !== null && (HIGHLIGHT_COLORS as readonly string[]).includes(value)
+        ? (value as HighlightColor)
+        : null
+}
+
 /** 行转记录：与仓储保持同一收窄口径 */
 function toRecord(row: SearchRow): AnnotationRecord {
     return {
@@ -67,10 +74,7 @@ function toRecord(row: SearchRow): AnnotationRecord {
         blockIndex: row.block_index,
         blockHash: row.block_hash,
         blockText: row.block_text,
-        color:
-            row.color !== null && (HIGHLIGHT_COLORS as readonly string[]).includes(row.color)
-                ? (row.color as HighlightColor)
-                : null,
+        color: toColor(row.color),
         note: row.note,
         replies: row.replies,
         orphaned: row.orphaned === 1,
@@ -82,6 +86,38 @@ function toRecord(row: SearchRow): AnnotationRecord {
 /** 关键词转 FTS 短语查询：整体加引号并转义内部引号，避免被当成语法 */
 function buildMatchQuery(keyword: string): string {
     return `"${keyword.replace(/"/gu, '""')}"`
+}
+
+/**
+ * 关键词 LIKE 兜底：trigram 索引不到 1–2 字词时改走全文 LIKE。
+ * 必须带 ESCAPE：关键词里的 % 与 _ 否则会退化成通配符，「50%」能匹配出任意含 50 的行。
+ */
+const LIKE_KEYWORD_CLAUSE =
+    " AND (a.quote LIKE ? ESCAPE '\\' OR a.block_text LIKE ? ESCAPE '\\' OR a.note LIKE ? ESCAPE '\\')"
+
+/** LIKE 模式：两侧加通配符，内部的 \ % _ 先转义，配合上面的 ESCAPE 使用 */
+function buildLikePattern(keyword: string): string {
+    return `%${keyword.replace(/[\\%_]/gu, (char) => `\\${char}`)}%`
+}
+
+/**
+ * 关键词过滤：≥3 字走 FTS 虚表 JOIN，1–2 字退回 LIKE，空关键词不加条件。
+ * FROM 与条件必须成对给出——少了 JOIN 却带上 MATCH 会引用不存在的表。
+ */
+function buildKeywordFilter(keyword: string): { from: string; clause: string; params: unknown[] } {
+    if (keyword.length >= FTS_MIN_CHARS) {
+        return {
+            from: 'FROM annotations a JOIN annotations_fts f ON f.rowid = a.rowid',
+            clause: ' AND annotations_fts MATCH ?',
+            params: [buildMatchQuery(keyword)],
+        }
+    }
+    const from = 'FROM annotations a'
+    if (keyword.length === 0) {
+        return { from, clause: '', params: [] }
+    }
+    const pattern = buildLikePattern(keyword)
+    return { from, clause: LIKE_KEYWORD_CLAUSE, params: [pattern, pattern, pattern] }
 }
 
 /** 组装 WHERE 片段与参数：分页游标单独拼，避免参数顺序错乱 */
@@ -115,24 +151,14 @@ function buildFilters(query: AnnotationListQuery): { clause: string; params: unk
  */
 export function listAnnotations(db: Database.Database, query: AnnotationListQuery): AnnotationListResult {
     const limit = Math.min(Math.max(Math.trunc(query.limit) || DEFAULT_LIMIT, 1), MAX_LIMIT)
-    const keyword = query.keyword.trim()
+    const keywordFilter = buildKeywordFilter(query.keyword.trim())
     const filters = buildFilters(query)
-    const isFtsQuery = keyword.length >= FTS_MIN_CHARS
-    const from = isFtsQuery ? 'FROM annotations a JOIN annotations_fts f ON f.rowid = a.rowid' : 'FROM annotations a'
-    const keywordClause = isFtsQuery
-        ? ' AND annotations_fts MATCH ?'
-        : keyword.length === 0
-          ? ''
-          : ' AND (a.quote LIKE ? OR a.block_text LIKE ? OR a.note LIKE ?)'
-    const keywordParams = isFtsQuery
-        ? [buildMatchQuery(keyword)]
-        : keyword.length === 0
-          ? []
-          : [`%${keyword}%`, `%${keyword}%`, `%${keyword}%`]
     const cursorClause = query.cursor === null ? '' : ' AND (a.created_at < ? OR (a.created_at = ? AND a.id < ?))'
     const cursorParams = query.cursor === null ? [] : [query.cursor.createdAt, query.cursor.createdAt, query.cursor.id]
-    const sql = `SELECT a.* ${from} WHERE 1 = 1${filters.clause}${keywordClause}${cursorClause} ORDER BY a.created_at DESC, a.id DESC LIMIT ?`
-    const rows = db.prepare(sql).all(...filters.params, ...keywordParams, ...cursorParams, limit + 1) as SearchRow[]
+    const sql = `SELECT a.* ${keywordFilter.from} WHERE 1 = 1${filters.clause}${keywordFilter.clause}${cursorClause} ORDER BY a.created_at DESC, a.id DESC LIMIT ?`
+    const rows = db
+        .prepare(sql)
+        .all(...filters.params, ...keywordFilter.params, ...cursorParams, limit + 1) as SearchRow[]
     const hasMore = rows.length > limit
     const pageRows = hasMore ? rows.slice(0, limit) : rows
     const items = pageRows.map(toRecord)
@@ -146,23 +172,11 @@ export function listAnnotations(db: Database.Database, query: AnnotationListQuer
 
 /** 按同一组过滤条件计数：只有首页需要 */
 export function countAnnotations(db: Database.Database, query: AnnotationListQuery): number {
-    const keyword = query.keyword.trim()
+    const keywordFilter = buildKeywordFilter(query.keyword.trim())
     const filters = buildFilters(query)
-    const isFtsQuery = keyword.length >= FTS_MIN_CHARS
-    const from = isFtsQuery ? 'FROM annotations a JOIN annotations_fts f ON f.rowid = a.rowid' : 'FROM annotations a'
-    const keywordClause = isFtsQuery
-        ? ' AND annotations_fts MATCH ?'
-        : keyword.length === 0
-          ? ''
-          : ' AND (a.quote LIKE ? OR a.block_text LIKE ? OR a.note LIKE ?)'
-    const keywordParams = isFtsQuery
-        ? [buildMatchQuery(keyword)]
-        : keyword.length === 0
-          ? []
-          : [`%${keyword}%`, `%${keyword}%`, `%${keyword}%`]
     const row = db
-        .prepare(`SELECT COUNT(*) AS total ${from} WHERE 1 = 1${filters.clause}${keywordClause}`)
-        .get(...filters.params, ...keywordParams) as { total: number } | undefined
+        .prepare(`SELECT COUNT(*) AS total ${keywordFilter.from} WHERE 1 = 1${filters.clause}${keywordFilter.clause}`)
+        .get(...filters.params, ...keywordFilter.params) as { total: number } | undefined
     return row?.total ?? 0
 }
 
@@ -170,31 +184,34 @@ export function countAnnotations(db: Database.Database, query: AnnotationListQue
 export function statsAnnotations(db: Database.Database, docPath: string | null): Omit<AnnotationStats, 'queries'> {
     const clause = docPath === null ? '' : ' WHERE doc_path = ?'
     const params = docPath === null ? [] : [docPath]
-    const rows = db.prepare(`SELECT kind, color, orphaned FROM annotations${clause}`).all(...params) as Array<{
-        kind: string
-        color: string | null
-        orphaned: number
-    }>
+    // 按颜色分组一次聚合：逐行拉回内存统计在标注上万条时既慢又占内存
+    const rows = db
+        .prepare(
+            `SELECT color,
+                    COUNT(*) AS total,
+                    COALESCE(SUM(kind = 'note'), 0) AS notes,
+                    COALESCE(SUM(orphaned), 0) AS orphaned
+               FROM annotations${clause}
+              GROUP BY color`,
+        )
+        .all(...params) as Array<{ color: string | null; total: number; notes: number; orphaned: number }>
     const stats: Omit<AnnotationStats, 'queries'> = {
-        total: rows.length,
+        total: 0,
         highlights: 0,
         notes: 0,
         orphaned: 0,
         byColor: { amber: 0, blue: 0, coral: 0, emerald: 0, violet: 0 },
     }
     for (const row of rows) {
-        if (row.kind === 'note') {
-            stats.notes += 1
-        } else {
-            stats.highlights += 1
-        }
-        if (row.orphaned === 1) {
-            stats.orphaned += 1
-        }
-        if (row.color !== null && (HIGHLIGHT_COLORS as readonly string[]).includes(row.color)) {
-            stats.byColor[row.color as HighlightColor] += 1
+        stats.total += row.total
+        stats.notes += row.notes
+        stats.orphaned += row.orphaned
+        const color = toColor(row.color)
+        if (color !== null) {
+            stats.byColor[color] += row.total
         }
     }
+    stats.highlights = stats.total - stats.notes
     return stats
 }
 

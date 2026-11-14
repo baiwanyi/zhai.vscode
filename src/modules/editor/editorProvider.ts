@@ -12,6 +12,7 @@ import { logger } from '@modules/common/logger'
 import { toStorageDocPath } from '@modules/common/storagePath'
 import { buildWebviewHtml } from '@modules/common/webviewHtml'
 import {
+    findAnnotation,
     insertAnnotation,
     listAnnotationsByDoc,
     removeAnnotation,
@@ -104,8 +105,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
     /** 已留底过的文档：每个打开会话只留一次，避免每 500ms 就生成一版章节快照 */
     private readonly capturedChapters = new Set<string>()
 
-    /** 在途查询：reqId → AbortController，关闭弹窗或关 tab 时统一中断 */
-    private readonly queries = new Map<string, AbortController>()
+    /** 在途查询：reqId → 控制器与所属文档，关闭 tab 时只中断该文档发出的请求 */
+    private readonly queries = new Map<string, { controller: AbortController; docKey: string }>()
 
     /** 打开中的富文本面板：标注跳转据此判断能否直接定位，而不是改开文本编辑器 */
     private readonly panels = new Map<string, vscode.WebviewPanel>()
@@ -186,10 +187,13 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             this.capturedChapters.delete(key)
             this.panels.delete(key)
             this.selections.delete(this.readRelativePath(document))
-            for (const controller of this.queries.values()) {
-                controller.abort()
+            // 只中断本文档发起的那几条：queries 跨文档共用，一刀切会把别的 tab 正在跑的查询也取消
+            for (const [clientId, entry] of this.queries) {
+                if (entry.docKey === key) {
+                    entry.controller.abort()
+                    this.queries.delete(clientId)
+                }
             }
-            this.queries.clear()
             clearRichDocument(document.uri)
         })
 
@@ -374,6 +378,16 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             await this.respondError(panel, reqId, 'path-mismatch', '标注路径与当前文档不一致')
             return true
         }
+        // 归属校验：path 与 id 是两个独立字段，只比对 path 挡不住「当前文档路径 + 别篇标注 id」
+        const target = findAnnotation(db, payload.id)
+        if (target === null) {
+            await this.respondError(panel, reqId, 'annotation-missing', '标注不存在或已被删除')
+            return true
+        }
+        if (target.docPath !== path) {
+            await this.respondError(panel, reqId, 'path-mismatch', '标注不属于当前文档')
+            return true
+        }
         if (method === 'editor/annotation/remove') {
             const isRemoved = removeAnnotation(db, payload.id)
             await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { removed: isRemoved } })
@@ -426,7 +440,10 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 },
             })
         } finally {
-            this.queries.delete(request.clientId)
+            // 同一 clientId 可能已被后一次请求覆盖：只清理自己这条
+            if (this.queries.get(request.clientId)?.controller === controller) {
+                this.queries.delete(request.clientId)
+            }
         }
     }
 
@@ -542,7 +559,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                     return
                 }
                 const controller = new AbortController()
-                this.queries.set(payload.clientId, controller)
+                this.queries.set(payload.clientId, { controller, docKey: document.uri.toString() })
                 // 先回执再流式推送：request 的 promise 立即结束，增量走 state 通道
                 await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { started: true } })
                 void this.runQuery(panel, payload, this.readRelativePath(document), controller)
@@ -560,7 +577,11 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                     await this.respondError(panel, reqId, 'invalid-payload', '取消参数非法')
                     return
                 }
-                this.queries.get(payload.clientId)?.abort()
+                const entry = this.queries.get(payload.clientId)
+                // clientId 由前端生成，不排除两个文档撞上同一个值：只中断本文档发起的请求
+                if (entry !== undefined && entry.docKey === document.uri.toString()) {
+                    entry.controller.abort()
+                }
                 await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { aborted: true } })
                 return
             }

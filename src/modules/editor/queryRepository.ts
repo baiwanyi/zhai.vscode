@@ -111,8 +111,12 @@ function buildKeywordClause(keyword: string): { clause: string; params: string[]
     if (trimmed.length === 0) {
         return { clause: '', params: [] }
     }
-    const pattern = `%${trimmed}%`
-    return { clause: ' AND (quote LIKE ? OR answer LIKE ? OR question LIKE ?)', params: [pattern, pattern, pattern] }
+    // 转义 \ % _ 并配 ESCAPE：否则输入「50%」会被当成通配符，匹配范围远超用户预期
+    const pattern = `%${trimmed.replace(/[\\%_]/gu, (char) => `\\${char}`)}%`
+    return {
+        clause: " AND (quote LIKE ? ESCAPE '\\' OR answer LIKE ? ESCAPE '\\' OR question LIKE ? ESCAPE '\\')",
+        params: [pattern, pattern, pattern],
+    }
 }
 
 /**

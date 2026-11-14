@@ -76,7 +76,8 @@ function readListQuery(payload: unknown): AnnotationListQuery {
         color,
         docPath: typeof source.docPath === 'string' ? source.docPath : null,
         orphanedOnly: source.orphanedOnly === true,
-        keyword: typeof source.keyword === 'string' ? source.keyword : '',
+        // 与 AI 解释列表同口径截断：超长关键词会让 LIKE 兜底在全表上白扫一遍
+        keyword: typeof source.keyword === 'string' ? source.keyword.slice(0, MAX_KEYWORD_CHARS) : '',
     }
 }
 
