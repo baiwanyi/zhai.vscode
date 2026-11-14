@@ -2,7 +2,7 @@
  * 选区浮动菜单状态：把 ProseMirror 选区换算成视口坐标、冻结范围与格式快照。
  * 复用约定：坐标取 editor.view.coordsAtPos，与 shadcn Popover 的 fixed 锚点配合；
  * 关闭条件统一收敛在此（选区塌陷、过短、滚动、缩放、Esc、点击外部）；
- * 块类型取 blocks/blockCommands，激活格式取 toolbar/formatCommands，本文件不重复判定。
+ * 块位置与块类型取 blocks/blockQueries 与 blocks/blockTargets，激活格式取 toolbar/formatCommands，本文件不重复判定。
  * 关键约束：只有选中的文字才会弹菜单——点击、单击标注文本一律不弹，走编辑器常规交互；
  * 正文内按住鼠标的整个拖选过程都不弹，松手一拍后才结算（等 ProseMirror 落地）；
  * 指针在 webview 外松开会导致 pointerup 丢失，用 pointermove 的 buttons 位兜底纠正；
@@ -13,10 +13,11 @@
  * 主动收起要开静默窗口：click 早于 pointerup 的结算计时器，否则点「AI 查询」后浮层会被同一次点击弹回来。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { SelectionBlockRange } from '../blocks/blockCommands'
+import type { SelectionBlockRange } from '../blocks/blockQueries'
 import type { FrozenRange, InlineFormatId } from '../toolbar/formatCommands'
 import type { Editor } from '@tiptap/core'
-import { readBlockLabel, readSelectionBlockRange, readTopBlockIndexAt, readTopBlockPos } from '../blocks/blockCommands'
+import { readSelectionBlockRange, readTopBlockIndexAt, readTopBlockPos } from '../blocks/blockQueries'
+import { readBlockLabel } from '../blocks/blockTargets'
 import { readActiveFormats } from '../toolbar/formatCommands'
 
 /** 菜单最小触发长度：一两个字符的选区多半是误触 */

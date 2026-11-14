@@ -1,18 +1,42 @@
 // @vitest-environment jsdom
-import { Editor } from '@tiptap/core'
+import { Editor, Node } from '@tiptap/core'
 import TaskItem from '@tiptap/extension-task-item'
 import TaskList from '@tiptap/extension-task-list'
 import UniqueID from '@tiptap/extension-unique-id'
 import StarterKit from '@tiptap/starter-kit'
 import { describe, expect, it } from 'vitest'
-import {
-    convertBlock,
-    deleteBlock,
-    duplicateBlock,
-    readBlockLabel,
-    readBlockNode,
-} from '@webview/editor/blocks/blockCommands'
+import { canConvertBlock, convertBlock } from '@webview/editor/blocks/blockConversion'
+import { deleteBlock, duplicateBlock } from '@webview/editor/blocks/blockMutations'
+import { readBlockNode } from '@webview/editor/blocks/blockQueries'
+import { readBlockLabel } from '@webview/editor/blocks/blockTargets'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
+
+/**
+ * 带 id 的叶子块：当前 schema 里的叶子（图片、分隔线）都没有 id，
+ * 这里补一个只为验证「单独给叶子配 id 时复制也要清空」这条约束。
+ */
+const AtomWithId = Node.create({
+    name: 'atomWithId',
+    group: 'block',
+    atom: true,
+    addAttributes() {
+        return {
+            id: {
+                default: null,
+                parseHTML: (element: HTMLElement): string | null => element.getAttribute('data-rid'),
+                renderHTML: (attributes: Record<string, unknown>): Record<string, string> => ({
+                    'data-rid': typeof attributes.id === 'string' ? attributes.id : '',
+                }),
+            },
+        }
+    },
+    parseHTML() {
+        return [{ tag: 'img[data-rid]' }]
+    },
+    renderHTML({ HTMLAttributes }) {
+        return ['img', HTMLAttributes]
+    },
+})
 
 /**
  * 块级命令：把手菜单背后的转换、复制与删除。
@@ -20,7 +44,7 @@ import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
  * 关键约束：id 必须换新（同 id 会让批注定位串位）；唯一块删除后必须仍有一个空段落；
  * 表格、图片、分隔线这类没有段落内容的块一律拒绝转换，而不是猜一个形态。
  */
-function createEditor(content: string): Editor {
+function createEditor(content: string, extraNodes: readonly Node[] = []): Editor {
     return new Editor({
         extensions: [
             StarterKit,
@@ -30,6 +54,7 @@ function createEditor(content: string): Editor {
             UniqueID.configure({
                 types: ['paragraph', 'heading', 'blockquote', 'bulletList', 'orderedList', 'listItem', 'codeBlock'],
             }),
+            ...extraNodes,
         ],
         content,
     })
@@ -105,6 +130,30 @@ describe('convertBlock', () => {
         expect(editor.state.doc.child(1).type.name).toBe('horizontalRule')
         editor.destroy()
     })
+
+    it('引用块内含分隔线时拒绝整体转换，撇下分隔线不算成功', () => {
+        const editor = createEditor('<blockquote><p>引</p><hr></blockquote>')
+        expect(convertBlock(editor, blockPos(editor, 0), 'bulletList')).toBe(false)
+        expect(editor.state.doc.child(0).type.name).toBe('blockquote')
+        expect(editor.state.doc.child(0).childCount).toBe(2)
+        editor.destroy()
+    })
+
+    it('引用块只含段落时照常转换，收紧判定没有误伤', () => {
+        const editor = createEditor('<blockquote><p>一</p><p>二</p></blockquote>')
+        expect(canConvertBlock(editor.state.doc.child(0))).toBe(true)
+        expect(convertBlock(editor, blockPos(editor, 0), 'paragraph')).toBe(true)
+        expect(editor.state.doc.childCount).toBe(2)
+        editor.destroy()
+    })
+})
+
+describe('canConvertBlock', () => {
+    it('含分隔线的引用块不给入口：菜单据此置灰', () => {
+        const editor = createEditor('<blockquote><p>引</p><hr></blockquote>')
+        expect(canConvertBlock(editor.state.doc.child(0))).toBe(false)
+        editor.destroy()
+    })
 })
 
 describe('duplicateBlock', () => {
@@ -124,6 +173,17 @@ describe('duplicateBlock', () => {
         const sourceItemId = readNodeId(editor.state.doc.child(0).child(0))
         expect(duplicateBlock(editor, blockPos(editor, 0))).toBe(true)
         expect(readNodeId(editor.state.doc.child(1).child(0))).not.toBe(sourceItemId)
+        editor.destroy()
+    })
+
+    it('叶子块上的 id 也要清空：按 isLeaf 直接返回会漏清', () => {
+        const editor = createEditor('<img data-rid="fixed-id">', [AtomWithId])
+        expect(readNodeId(editor.state.doc.child(0))).toBe('fixed-id')
+        expect(duplicateBlock(editor, blockPos(editor, 0))).toBe(true)
+        // 副本紧跟原块；不比对 childCount，编辑器初始化会自行补尾随段落
+        expect(editor.state.doc.child(1).type.name).toBe('atomWithId')
+        expect(readNodeId(editor.state.doc.child(1))).toBeNull()
+        expect(readNodeId(editor.state.doc.child(0))).toBe('fixed-id')
         editor.destroy()
     })
 })

@@ -1,37 +1,17 @@
 /**
  * 块把手菜单：块类型标签、转换类型子菜单（表格块换成表格结构操作子菜单），
  * 以及复制 / 询问 AI / 加入对话 / 删除四项块级操作。
- * 复用约定：菜单结构取 @components/ui/dropdown-menu，块级命令委托 ./blockCommands，
- * 表格结构命令与光标定位复用 ./tableActions；复制走 @shared/utils/clipboard，
- * 操作结果用 sonner 提示（编辑器入口统一挂 Toaster）；加入对话只把块文本交给宿主，
- * 引用定位、去重与写入都在宿主侧完成。
+ * 复用约定：菜单结构取 @components/ui/dropdown-menu，块级命令委托 ./blockConversion 与 ./blockMutations，
+ * 表格结构操作整体交给 ./TableBlockMenuItems，复制提示走 @shared/utils/clipboard 的 copyWithToast，
+ * 只读守卫走 ../toolbar/editableGuard；加入对话只把块文本交给宿主，定位与去重都在宿主侧完成。
  * 关键约束：pos 由把手在打开瞬间冻结后传入，菜单内不再读选区，避免鼠标离开块时目标漂移；
  * 触发按钮不在这里渲染——Radix 的 Trigger 会在 pointerdown 上 preventDefault，把原生 dragstart 压掉，
  * 按住拖动就失效了；这里只放一个与按钮等尺寸的透明锚点负责定位，开合由把手的按钮自己控制；
- * 表格结构命令只作用于光标所在行列，执行前必须先把光标落进目标表格，否则会改到另一张表；
- * 表格块没有可转换的类型，子菜单原位交给表格操作；删除项在表格块上直接删表，
- * 但整篇只剩这一张表时仍需保留一个空段落，否则事务会被 schema 拒绝；
- * 删除项直接用 MenuItem 的 destructive variant——Content 上带 !important 的后代规则本会把红色压成普通文字色，
- * 这层压制已由 globals.css 末尾的 utilities 覆盖段统一还原，这里不再叠加颜色类；
- * 快捷键文字只做视觉对齐、没有注册全局键位，Backspace 按下仍由编辑器原生处理；
- * 关闭时阻止 Radix 把焦点还给锚点并主动聚焦正文，否则点完菜单光标就消失。
+ * 删除表格块时直接删表，但整篇只剩这一张表时仍需保留一个空段落，否则事务会被 schema 拒绝；
+ * 关闭后的焦点归属由调用方经 onClosed 决定：菜单只是执行者，开合的所有者是把手；
+ * 快捷键文字只做视觉对齐、没有注册全局键位，Backspace 按下仍由编辑器原生处理。
  */
-import {
-    ArrowDownToLine,
-    ArrowLeftToLine,
-    ArrowRightToLine,
-    ArrowUpToLine,
-    Columns3,
-    Copy,
-    CopyPlus,
-    MessageSquarePlus,
-    Rows3,
-    Sparkles,
-    Table,
-    TableProperties,
-    Trash2,
-    Type,
-} from 'lucide-react'
+import { Copy, CopyPlus, MessageSquarePlus, Sparkles, Trash2, Type } from 'lucide-react'
 import { toast } from 'sonner'
 import {
     DropdownMenu,
@@ -45,23 +25,16 @@ import {
     DropdownMenuSubTrigger,
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
-import { copyToClipboard } from '@shared/utils/clipboard'
-import {
-    BLOCK_TARGETS,
-    canConvertBlock,
-    convertBlock,
-    deleteBlock,
-    duplicateBlock,
-    isCurrentTarget,
-    readBlockIndex,
-    readBlockLabel,
-    readBlockNode,
-    readBlockText,
-} from './blockCommands'
-import { focusTable } from './tableActions'
+import { copyWithToast } from '@shared/utils/clipboard'
+import { canConvertBlock, convertBlock } from './blockConversion'
+import { deleteBlock, duplicateBlock } from './blockMutations'
+import { readBlockIndex, readBlockNode, readBlockText } from './blockQueries'
+import { readBlockLabel, readConvertTargetStates } from './blockTargets'
+import { runTableStructureAction } from './tableBlockActions'
+import { TableBlockMenuItems } from './TableBlockMenuItems'
 import type { Editor } from '@tiptap/core'
-import type { LucideIcon } from 'lucide-react'
 import type { JSX } from 'react'
+import { ensureEditable } from '../toolbar/editableGuard'
 
 /** 删除项的快捷键提示：仅展示，不注册键位（见文件头约束） */
 const SHORTCUT_DELETE = 'Backspace'
@@ -69,82 +42,64 @@ const SHORTCUT_DELETE = 'Backspace'
 /** 表格块的类型名：命中时子菜单换成表格结构操作，删除项改走删表 */
 const TABLE_NODE = 'table'
 
-/** 表格结构操作：每一项都直接作用于表格内的当前光标行列，执行前由 focusTableBlock 落位 */
-const TABLE_ACTIONS: ReadonlyArray<{ label: string; icon: LucideIcon; run: (editor: Editor) => void }> = [
-    { label: '上方插入行', icon: ArrowUpToLine, run: (editor) => editor.chain().focus().addRowBefore().run() },
-    { label: '下方插入行', icon: ArrowDownToLine, run: (editor) => editor.chain().focus().addRowAfter().run() },
-    { label: '左侧插入列', icon: ArrowLeftToLine, run: (editor) => editor.chain().focus().addColumnBefore().run() },
-    { label: '右侧插入列', icon: ArrowRightToLine, run: (editor) => editor.chain().focus().addColumnAfter().run() },
-    { label: '删除当前行', icon: Rows3, run: (editor) => editor.chain().focus().deleteRow().run() },
-    { label: '删除当前列', icon: Columns3, run: (editor) => editor.chain().focus().deleteColumn().run() },
-    { label: '切换表头行', icon: TableProperties, run: (editor) => editor.chain().focus().toggleHeaderRow().run() },
-]
-
-/**
- * 把光标落进目标顶层表格：块菜单的目标块由悬停冻结，光标可能停在别的块上，
- * 表格结构命令必须先生效于用户看着的那张表。找不到表格 DOM 时直接放弃，不猜位置。
- */
-function focusTableBlock(editor: Editor, pos: number): boolean {
-    if (editor.isDestroyed) {
-        return false
-    }
-    const dom = editor.view.nodeDOM(pos)
-    const host = dom instanceof HTMLElement ? dom : null
-    const table = host instanceof HTMLTableElement ? host : (host?.querySelector('table') ?? null)
-    return table instanceof HTMLTableElement && focusTable(editor, table)
-}
-
 export interface BlockMenuProps {
     editor: Editor
     /** 目标块起始位置：菜单打开瞬间冻结，为 null 时全部条目置灰 */
     pos: number | null
     isOpen: boolean
     onOpenChange: (isOpen: boolean) => void
+    /** 关闭后的焦点归属：由把手决定（它才是菜单开合的所有者），本组件不做策略 */
+    onClosed: () => void
     /** 询问 AI：把块文本交给编辑器现有的查询弹窗 */
     onAskAi: (quote: string) => void
     /** 加入 AI 对话：块文本 + 顶层序号交给宿主，换算成行范围后成为对话的上下文引用 */
     onAddToChat: (quote: string, blockIndex: number) => void
 }
 
-export function BlockMenu({ editor, pos, isOpen, onOpenChange, onAskAi, onAddToChat }: BlockMenuProps): JSX.Element {
+export function BlockMenu({
+    editor,
+    pos,
+    isOpen,
+    onOpenChange,
+    onClosed,
+    onAskAi,
+    onAddToChat,
+}: BlockMenuProps): JSX.Element {
     const node = pos === null ? null : readBlockNode(editor, pos)
     const text = node === null ? '' : readBlockText(node)
-    const isConvertible = node !== null && canConvertBlock(node)
+    // 菜单关闭时 Content 根本不挂载，这个派生值无人消费；canConvertBlock 会递归整块并创建节点，
+    // 而父组件在 AI 流式输出期间会频繁重渲染，关闭态下能省则省
+    const isConvertible = isOpen && node !== null && canConvertBlock(node)
     const isTable = node !== null && node.type.name === TABLE_NODE
     const isBlank = text.trim().length === 0
+    // 「当前项」判定与选区块类型菜单共用；本菜单把当前项渲染成置灰而不是打勾
+    const convertTargets = readConvertTargetStates(node)
 
-    /** 复制块文本：空块不给复制，避免把空串写进剪贴板后用户毫无感知 */
+    /** 复制块文本：空块不给复制，避免把空串写进剪贴板后用户毫无感知；只读态照常可复制 */
     const handleCopy = async (): Promise<void> => {
         if (isBlank) {
             toast.error('这个块没有可复制的文本')
             return
         }
-        const isCopied = await copyToClipboard(text)
-        if (isCopied) {
-            toast.success('已复制块内容')
-            return
-        }
-        toast.error('剪贴板不可用，复制失败')
+        await copyWithToast(text, '已复制块内容')
     }
 
-    /** 表格结构命令：先把光标落进目标表格，命令才会作用在用户看着的那张表上 */
-    const runTableAction = (targetPos: number, run: (target: Editor) => void): void => {
-        if (!focusTableBlock(editor, targetPos)) {
+    /** 复制块：只读文档下命令层会静默返回 false，先把原因说出来 */
+    const handleDuplicate = (): void => {
+        if (pos === null || !ensureEditable(editor)) {
             return
         }
-        run(editor)
+        duplicateBlock(editor, pos)
     }
 
     /** 删除块：表格块直接删表，其余块交给 deleteBlock */
     const handleDelete = (): void => {
-        if (pos === null) {
+        if (pos === null || !ensureEditable(editor)) {
             return
         }
         // 整篇只剩这一张表时不能删表：空文档会被 schema 拒绝，退回 deleteBlock 换成空段落
         if (isTable && editor.state.doc.childCount > 1) {
-            runTableAction(pos, (target): void => {
-                target.chain().focus().deleteTable().run()
-            })
+            runTableStructureAction(editor, pos, (target): boolean => target.chain().focus().deleteTable().run())
             return
         }
         deleteBlock(editor, pos)
@@ -161,39 +116,14 @@ export function BlockMenu({ editor, pos, isOpen, onOpenChange, onAskAi, onAddToC
                 align="start"
                 className="w-56"
                 onCloseAutoFocus={(event): void => {
-                    // 默认行为会把焦点送回锚点，正文随即失焦；这里改由编辑器接管
+                    // 默认行为会把焦点送回锚点，正文随即失焦；聚焦策略交给调用方决定
                     event.preventDefault()
-                    editor.chain().focus().run()
+                    onClosed()
                 }}
             >
                 <DropdownMenuLabel>{node === null ? '块' : readBlockLabel(node)}</DropdownMenuLabel>
                 {isTable ? (
-                    <DropdownMenuSub>
-                        <DropdownMenuSubTrigger>
-                            <Table />
-                            <span className="flex-1">表格操作</span>
-                        </DropdownMenuSubTrigger>
-                        <DropdownMenuSubContent className="w-40">
-                            {TABLE_ACTIONS.map((action) => {
-                                const Icon = action.icon
-                                return (
-                                    <DropdownMenuItem
-                                        key={action.label}
-                                        disabled={pos === null}
-                                        onSelect={(): void => {
-                                            if (pos === null) {
-                                                return
-                                            }
-                                            runTableAction(pos, action.run)
-                                        }}
-                                    >
-                                        <Icon />
-                                        {action.label}
-                                    </DropdownMenuItem>
-                                )
-                            })}
-                        </DropdownMenuSubContent>
-                    </DropdownMenuSub>
+                    <TableBlockMenuItems editor={editor} pos={pos} />
                 ) : (
                     <DropdownMenuSub>
                         <DropdownMenuSubTrigger disabled={!isConvertible}>
@@ -201,21 +131,21 @@ export function BlockMenu({ editor, pos, isOpen, onOpenChange, onAskAi, onAddToC
                             <span className="flex-1">转换类型</span>
                         </DropdownMenuSubTrigger>
                         <DropdownMenuSubContent className="w-40">
-                            {BLOCK_TARGETS.map((target) => {
-                                const Icon = target.icon
+                            {convertTargets.map((state) => {
+                                const Icon = state.target.icon
                                 return (
                                     <DropdownMenuItem
-                                        key={target.id}
-                                        disabled={!isConvertible || (node !== null && isCurrentTarget(node, target.id))}
+                                        key={state.target.id}
+                                        disabled={!isConvertible || state.isCurrent}
                                         onSelect={(): void => {
-                                            if (pos === null) {
+                                            if (pos === null || !ensureEditable(editor)) {
                                                 return
                                             }
-                                            convertBlock(editor, pos, target.id)
+                                            convertBlock(editor, pos, state.target.id)
                                         }}
                                     >
                                         <Icon />
-                                        {target.label}
+                                        {state.target.label}
                                     </DropdownMenuItem>
                                 )
                             })}
@@ -223,15 +153,7 @@ export function BlockMenu({ editor, pos, isOpen, onOpenChange, onAskAi, onAddToC
                     </DropdownMenuSub>
                 )}
                 <DropdownMenuSeparator />
-                <DropdownMenuItem
-                    disabled={node === null}
-                    onSelect={(): void => {
-                        if (pos === null) {
-                            return
-                        }
-                        duplicateBlock(editor, pos)
-                    }}
-                >
+                <DropdownMenuItem disabled={node === null} onSelect={handleDuplicate}>
                     <CopyPlus />
                     复制块
                 </DropdownMenuItem>

@@ -8,13 +8,12 @@
  */
 import { Copy, ImagePlus, Images, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Input } from '@components/ui/input'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatMaterialSummary } from '@shared/types/wechat'
-import { copyToClipboard } from '@shared/utils/clipboard'
+import { copyWithToast } from '@shared/utils/clipboard'
 import {
     AppContent,
     AppDescription,
@@ -59,12 +58,7 @@ export function WechatMaterialPage({ account }: WechatMaterialPageProps): JSX.El
 
     /** 复制图片地址：正文里要手写外链时可以省去去后台翻素材 */
     const handleCopy = async (material: WechatMaterialSummary): Promise<void> => {
-        const isSuccess = await copyToClipboard(material.url)
-        if (isSuccess) {
-            toast.success('已复制图片地址')
-            return
-        }
-        toast.error('复制失败，请手动选择复制')
+        await copyWithToast(material.url, '已复制图片地址')
     }
 
     const renderBody = (): JSX.Element => {

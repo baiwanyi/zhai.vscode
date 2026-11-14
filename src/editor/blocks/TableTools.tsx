@@ -80,8 +80,9 @@ function isLastColumnCell(cell: HTMLTableCellElement): boolean {
 }
 
 export function TableTools({ editor, containerRef }: TableToolsProps): JSX.Element | null {
-    // 指针悬停的表格与单元格：优先于光标所在位置，鼠标扫到哪一格，加行 / 加列就按那一格决定是否出现
-    const [hover, setHover] = useState<TableHover | null>(null)
+    // 指针悬停的表格与单元格：优先于光标所在位置，鼠标扫到哪一格，加行 / 加列就按那一格决定是否出现。
+    // 存 ref 而非 state：它不参与渲染，指针回调改完直接重算矩形，监听器才不会随每次跨格反复解绑重绑
+    const hoverRef = useRef<TableHover | null>(null)
     const [frame, setFrame] = useState<TableFrame | null>(null)
     // 最新一次算出的矩形与单元格：热区判定在事件回调里读，走 ref 才不会拿到过期闭包
     const frameRef = useRef<TableFrame | null>(null)
@@ -125,6 +126,7 @@ export function TableTools({ editor, containerRef }: TableToolsProps): JSX.Eleme
             return
         }
         // 悬停的表格可能已被删除（撤销、删表），此时退回光标所在表格
+        const hover = hoverRef.current
         const hovered = hover !== null && hover.table.isConnected ? hover : null
         const table = hovered === null ? findActiveTable(editor) : hovered.table
         if (table === null) {
@@ -164,7 +166,16 @@ export function TableTools({ editor, containerRef }: TableToolsProps): JSX.Eleme
                 ? previous
                 : next,
         )
-    }, [containerRef, editor, hover])
+    }, [containerRef, editor])
+
+    /** 清空悬停目标并立即重算：指针离开表格与加号的热区时调用 */
+    const clearHover = useCallback((): void => {
+        if (hoverRef.current === null) {
+            return
+        }
+        hoverRef.current = null
+        update()
+    }, [update])
 
     /**
      * 悬停检测：命中表格就记下它所在的单元格；指针落在工具条自身（加号）上时保持不动。
@@ -179,17 +190,16 @@ export function TableTools({ editor, containerRef }: TableToolsProps): JSX.Eleme
             if (table instanceof HTMLTableElement) {
                 const matched = element?.closest('td, th') ?? null
                 const cell = matched instanceof HTMLTableCellElement ? matched : null
-                setHover((previous) => {
-                    if (previous !== null && previous.table === table) {
-                        // 表格内部但没命中单元格（边框、行列间隙）时保留上一次的单元格，
-                        // 否则从末行滑向加号按钮的途中按钮会闪断
-                        if (cell === null) {
-                            return previous
-                        }
-                        return previous.cell === cell ? previous : { table, cell }
+                const previous = hoverRef.current
+                if (previous !== null && previous.table === table) {
+                    // 表格内部但没命中单元格（边框、行列间隙）时保留上一次的单元格，
+                    // 否则从末行滑向加号按钮的途中按钮会闪断
+                    if (cell === null || previous.cell === cell) {
+                        return
                     }
-                    return { table, cell }
-                })
+                }
+                hoverRef.current = { table, cell }
+                update()
                 return
             }
             if (element !== null && element.closest(`[${TOOLS_ATTR}]`) !== null) {
@@ -198,15 +208,10 @@ export function TableTools({ editor, containerRef }: TableToolsProps): JSX.Eleme
             if (isInHotZone(event)) {
                 return
             }
-            setHover((previous) => (previous === null ? previous : null))
+            clearHover()
         },
-        [isInHotZone],
+        [clearHover, isInHotZone, update],
     )
-
-    /** 指针离开编辑区：清掉悬停目标，退回到光标所在表格与单元格 */
-    const handlePointerLeave = useCallback((): void => {
-        setHover((previous) => (previous === null ? previous : null))
-    }, [])
 
     useEffect(() => {
         update()
@@ -217,15 +222,15 @@ export function TableTools({ editor, containerRef }: TableToolsProps): JSX.Eleme
         scrollHost?.addEventListener('scroll', update, { passive: true })
         window.addEventListener('resize', update)
         container?.addEventListener('pointermove', handlePointerMove)
-        container?.addEventListener('pointerleave', handlePointerLeave)
+        container?.addEventListener('pointerleave', clearHover)
         return (): void => {
             editor.off('transaction', update)
             scrollHost?.removeEventListener('scroll', update)
             window.removeEventListener('resize', update)
             container?.removeEventListener('pointermove', handlePointerMove)
-            container?.removeEventListener('pointerleave', handlePointerLeave)
+            container?.removeEventListener('pointerleave', clearHover)
         }
-    }, [containerRef, editor, handlePointerLeave, handlePointerMove, update])
+    }, [clearHover, containerRef, editor, handlePointerMove, update])
 
     if (frame === null) {
         return null
@@ -243,6 +248,7 @@ export function TableTools({ editor, containerRef }: TableToolsProps): JSX.Eleme
                     variant="outline"
                     size="icon-xs"
                     tooltip="添加行"
+                    data-table-tools=""
                     className="absolute h-5 mt-1 border-dashed bg-white/10"
                     style={{ top: frame.top + frame.height - 1, left: frame.left, width: frame.width }}
                     onClick={(): void => {
@@ -258,6 +264,7 @@ export function TableTools({ editor, containerRef }: TableToolsProps): JSX.Eleme
                     variant="outline"
                     size="icon-xs"
                     tooltip="添加列"
+                    data-table-tools=""
                     className="absolute w-5 ml-1 border-dashed bg-white/10"
                     style={{ top: frame.top, left: frame.left + frame.width - 1, height: frame.height }}
                     onClick={(): void => {

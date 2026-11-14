@@ -14,10 +14,14 @@ export interface BlockBaseline {
     end: number
 }
 
-/** 最长公共子序列：返回内容相同的块下标配对 [当前下标, 基线下标] */
-function matchBlocks(current: readonly string[], baseline: readonly string[]): Array<[number, number]> {
-    const rows = current.length
-    const cols = baseline.length
+/** 中间差异区的最长公共子序列：按局部坐标建表，返回值已补回 offset 变成全局下标 */
+function matchMiddle(
+    current: readonly string[],
+    baseline: readonly string[],
+    offset: number,
+    rows: number,
+    cols: number,
+): Array<[number, number]> {
     const lengths: number[][] = Array.from({ length: rows + 1 }, () => new Array<number>(cols + 1).fill(0))
     for (let row = rows - 1; row >= 0; row -= 1) {
         for (let col = cols - 1; col >= 0; col -= 1) {
@@ -27,15 +31,17 @@ function matchBlocks(current: readonly string[], baseline: readonly string[]): A
                 continue
             }
             line[col] =
-                current[row] === baseline[col] ? (next[col + 1] ?? 0) + 1 : Math.max(next[col] ?? 0, line[col + 1] ?? 0)
+                current[offset + row] === baseline[offset + col]
+                    ? (next[col + 1] ?? 0) + 1
+                    : Math.max(next[col] ?? 0, line[col + 1] ?? 0)
         }
     }
     const matches: Array<[number, number]> = []
     let row = 0
     let col = 0
     while (row < rows && col < cols) {
-        if (current[row] === baseline[col]) {
-            matches.push([row, col])
+        if (current[offset + row] === baseline[offset + col]) {
+            matches.push([offset + row, offset + col])
             row += 1
             col += 1
             continue
@@ -45,6 +51,40 @@ function matchBlocks(current: readonly string[], baseline: readonly string[]): A
         } else {
             col += 1
         }
+    }
+    return matches
+}
+
+/**
+ * 最长公共子序列：返回内容相同的块下标配对 [当前下标, 基线下标]。
+ * 首尾相同的块先直接配对，再只对中间差异区建表：两个序列首元素相同时必存在以它们开头的
+ * 最长公共子序列，裁剪不改变配对结果，却把「只改一段」的代价从整篇 O(n·m) 压到只算变化那几块。
+ */
+function matchBlocks(current: readonly string[], baseline: readonly string[]): Array<[number, number]> {
+    const rows = current.length
+    const cols = baseline.length
+    let prefix = 0
+    while (prefix < rows && prefix < cols && current[prefix] === baseline[prefix]) {
+        prefix += 1
+    }
+    let suffix = 0
+    while (suffix < rows - prefix && suffix < cols - prefix) {
+        if (current[rows - 1 - suffix] !== baseline[cols - 1 - suffix]) {
+            break
+        }
+        suffix += 1
+    }
+    const matches: Array<[number, number]> = []
+    for (let index = 0; index < prefix; index += 1) {
+        matches.push([index, index])
+    }
+    const midRows = rows - prefix - suffix
+    const midCols = cols - prefix - suffix
+    if (midRows > 0 && midCols > 0) {
+        matches.push(...matchMiddle(current, baseline, prefix, midRows, midCols))
+    }
+    for (let index = 0; index < suffix; index += 1) {
+        matches.push([rows - suffix + index, cols - suffix + index])
     }
     return matches
 }

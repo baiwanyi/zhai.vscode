@@ -19,10 +19,9 @@
 'use client'
 
 import { cn } from 'cn'
-import { toast } from 'sonner'
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
-import { copyToClipboard } from '@shared/utils/clipboard'
+import { copyWithToast } from '@shared/utils/clipboard'
 import { preventContextMenu } from './dom'
 import { TOOLTIP_CLASS } from './Tooltip'
 import type { ComponentProps, JSX, MouseEvent } from 'react'
@@ -91,12 +90,7 @@ function AppTitle({ className, tooltip, tooltipSide, children, onDoubleClick, ..
         if (text.length === 0) {
             return
         }
-        const isSuccess = await copyToClipboard(text)
-        if (isSuccess) {
-            toast.success('已复制标题')
-            return
-        }
-        toast.error('复制失败，请手动选中后复制')
+        await copyWithToast(text, '已复制标题')
     }
 
     const title = (

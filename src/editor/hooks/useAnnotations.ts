@@ -10,6 +10,7 @@ import type { AnnotationDraft, AnnotationRecord, EditorBlock, HighlightColor } f
 import { request } from '@shared/utils/bridge'
 import type { FrozenRange } from '../toolbar/formatCommands'
 import type { Editor } from '@tiptap/react'
+import { selectBlockAnnotations } from '../annotations/selectors'
 import { applyAnnotationDecorations } from '../marks/annotationDecorations'
 import { textOffsetAt } from '../selection/wordSelection'
 
@@ -140,12 +141,8 @@ export function useAnnotations(
             if (draft === null) {
                 return
             }
-            const existing = items.find(
-                (item) =>
-                    item.kind === 'highlight' &&
-                    item.blockIndex === draft.blockIndex &&
-                    item.quote === draft.quote &&
-                    !item.orphaned,
+            const existing = selectBlockAnnotations(items, draft.blockIndex, 'highlight').find(
+                (item) => item.quote === draft.quote,
             )
             try {
                 if (existing !== undefined) {
@@ -174,12 +171,8 @@ export function useAnnotations(
             if (draft === null) {
                 return
             }
-            const existing = items.find(
-                (item) =>
-                    item.kind === 'highlight' &&
-                    item.blockIndex === draft.blockIndex &&
-                    item.quote === draft.quote &&
-                    !item.orphaned,
+            const existing = selectBlockAnnotations(items, draft.blockIndex, 'highlight').find(
+                (item) => item.quote === draft.quote,
             )
             if (existing !== undefined && existing.color === color) {
                 return

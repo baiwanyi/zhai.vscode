@@ -13,9 +13,8 @@
  */
 import { Copy, FolderOpen, Trash2, Upload } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
-import { toast } from 'sonner'
 import type { UploadFileItem } from '@shared/types/upload'
-import { copyToClipboard } from '@shared/utils/clipboard'
+import { copyWithToast } from '@shared/utils/clipboard'
 import { ZHAI_PATH_PREFIX } from '@shared/utils/zhaiPath'
 import { AppAction, AppContent, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
@@ -92,14 +91,7 @@ export function WorkflowUpload(): JSX.Element {
 
     /** 复制路径：按正文引用口径补 @zhai/ 前缀，粘回文档即可被识别 */
     function handleCopyPath(item: UploadFileItem): void {
-        void (async (): Promise<void> => {
-            const isSuccess = await copyToClipboard(`${ZHAI_PATH_PREFIX}${item.path}`)
-            if (isSuccess) {
-                toast.success('已复制文件路径')
-                return
-            }
-            toast.error('复制失败，请手动复制')
-        })()
+        void copyWithToast(`${ZHAI_PATH_PREFIX}${item.path}`, '已复制文件路径')
     }
 
     /** 右下角悬停动作：复制路径与删除，删除先经二次确认 */

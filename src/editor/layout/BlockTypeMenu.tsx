@@ -1,6 +1,6 @@
 /**
  * 选区工具条的块类型菜单：把当前块在正文、标题、列表、引用与代码块之间互转。
- * 复用约定：目标清单与转换命令全部取自 blocks/blockCommands，图标存组件引用，
+ * 复用约定：目标清单取 blocks/blockTargets、转换命令取 blocks/blockConversion，图标存组件引用，
  * 菜单壳用 @components/ui/dropdown-menu，与块把手的「转换类型」共用同一套语义。
  * 关键约束：目标块位置由外层在浮层打开时冻结后传入，菜单内不再现读选区——
  * 菜单夺焦期间选区会变，现读会把转换落到别的块上；不可转换的块整组置灰；
@@ -12,10 +12,12 @@ import { Check, ChevronDown } from 'lucide-react'
 import { useState } from 'react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@components/ui/dropdown-menu'
 import { Button } from '@webview/components/Button'
-import type { BlockTargetId } from '../blocks/blockCommands'
+import type { BlockTargetId } from '../blocks/blockTargets'
 import type { Editor } from '@tiptap/react'
 import type { JSX } from 'react'
-import { BLOCK_TARGETS, canConvertBlock, convertBlock, isCurrentTarget, readBlockNode } from '../blocks/blockCommands'
+import { canConvertBlock, convertBlock } from '../blocks/blockConversion'
+import { readBlockNode } from '../blocks/blockQueries'
+import { readConvertTargetStates } from '../blocks/blockTargets'
 import { ensureEditable } from '../toolbar/editableGuard'
 
 export interface BlockTypeMenuProps {
@@ -84,18 +86,17 @@ export function BlockTypeMenu({
                     event.preventDefault()
                 }}
             >
-                {BLOCK_TARGETS.map((target) => {
-                    const Icon = target.icon
-                    const isCurrent = node !== null && isCurrentTarget(node, target.id)
+                {readConvertTargetStates(node).map((state) => {
+                    const Icon = state.target.icon
                     return (
                         <DropdownMenuItem
-                            key={target.id}
-                            disabled={!isConvertible || isCurrent}
-                            onSelect={(): void => handleConvert(target.id)}
+                            key={state.target.id}
+                            disabled={!isConvertible || state.isCurrent}
+                            onSelect={(): void => handleConvert(state.target.id)}
                         >
                             <Icon />
-                            <span className="flex-1">{target.label}</span>
-                            {isCurrent ? <Check /> : null}
+                            <span className="flex-1">{state.target.label}</span>
+                            {state.isCurrent ? <Check /> : null}
                         </DropdownMenuItem>
                     )
                 })}

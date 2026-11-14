@@ -3,7 +3,7 @@
  * 只在选中文字时出现——单击正文、单击已有划线或链接都不弹，保持编辑器常规交互。
  * 复用约定：浮层用 shadcn Popover（锚点为零尺寸 fixed 元素），按钮用 src/components 的 Button，
  * 色板与划线动作由 useAnnotations 统一处理落库与装饰，格式命令与块转换分别取自
- * toolbar/formatCommands 与 blocks/blockCommands，复制走 @shared/utils/clipboard。
+ * toolbar/formatCommands 与 blocks/blockQueries，复制走 @shared/utils/clipboard。
  * 关键约束：点按钮必须阻止默认行为，否则 webview 失焦会让选区塌陷、复制内容变空；
  * 工具条挂在选区末行下方（锚点取底边），不压住正在读的那一行；
  * 「划线」点一下即按当前颜色落笔，色板随后浮起供改色——不要求先选色再划线；
@@ -38,7 +38,7 @@ import { BlockTypeMenu } from './BlockTypeMenu'
 import { CopyButton } from './CopyButton'
 import { InlineFormatGroup } from './InlineFormatGroup'
 import { SelectionMoreMenu } from './SelectionMoreMenu'
-import type { SelectionBlockRange } from '../blocks/blockCommands'
+import type { SelectionBlockRange } from '../blocks/blockQueries'
 import type { FrozenRange, InlineFormatId } from '../toolbar/formatCommands'
 import type { Editor } from '@tiptap/react'
 import type { JSX } from 'react'

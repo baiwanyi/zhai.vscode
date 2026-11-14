@@ -8,7 +8,7 @@
 import { MessageSquarePlus, Sparkles } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@webview/components/Button'
-import type { SelectionBlockRange } from '../blocks/blockCommands'
+import type { SelectionBlockRange } from '../blocks/blockQueries'
 import type { JSX } from 'react'
 
 export interface AiActionsProps {

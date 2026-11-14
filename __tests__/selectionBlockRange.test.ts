@@ -8,7 +8,7 @@
 import { Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { describe, expect, it } from 'vitest'
-import { readSelectionBlockRange } from '@webview/editor/blocks/blockCommands'
+import { readSelectionBlockRange } from '@webview/editor/blocks/blockQueries'
 
 /** 构造编辑器：content 用 HTML，块序号与 useEditorDocument 的 collectBlocks 同口径 */
 function createEditor(content: string): Editor {

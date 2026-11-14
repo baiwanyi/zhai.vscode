@@ -9,25 +9,24 @@
 import { TextSelection } from '@tiptap/pm/state'
 import type { Editor } from '@tiptap/core'
 
-/** 光标所在表格的 DOM：返回 null 表示光标不在表格里 */
-export function findActiveTable(editor: Editor): HTMLTableElement | null {
+/** 选区起点处的 DOM 元素：表格与单元格都从这一处往上取 closest，定位口径只此一份 */
+function readSelectionElement(editor: Editor): Element | null {
     if (editor.isDestroyed || !editor.isActive('table')) {
         return null
     }
     const { node } = editor.view.domAtPos(editor.state.selection.from)
-    const element = node instanceof Element ? node : node.parentElement
-    const table = element?.closest('table')
+    return node instanceof Element ? node : node.parentElement
+}
+
+/** 光标所在表格的 DOM：返回 null 表示光标不在表格里 */
+export function findActiveTable(editor: Editor): HTMLTableElement | null {
+    const table = readSelectionElement(editor)?.closest('table')
     return table instanceof HTMLTableElement ? table : null
 }
 
 /** 光标所在单元格的 DOM：与 findActiveTable 同源，供「是否在末行 / 末列」判断 */
 export function findCursorCell(editor: Editor): HTMLTableCellElement | null {
-    if (editor.isDestroyed || !editor.isActive('table')) {
-        return null
-    }
-    const { node } = editor.view.domAtPos(editor.state.selection.from)
-    const element = node instanceof Element ? node : node.parentElement
-    const cell = element?.closest('td, th')
+    const cell = readSelectionElement(editor)?.closest('td, th')
     return cell instanceof HTMLTableCellElement ? cell : null
 }
 
@@ -107,4 +106,18 @@ export function appendTableColumn(editor: Editor, table?: HTMLTableElement): voi
         return
     }
     editor.chain().focus().addColumnAfter().run()
+}
+
+/**
+ * 把光标落进指定顶层块位置的表格：块菜单的目标块由悬停冻结，光标可能停在别的块上，
+ * 表格结构命令必须先生效于用户看着的那张表。找不到表格 DOM 时直接放弃，不猜位置。
+ */
+export function focusTableAtBlock(editor: Editor, pos: number): boolean {
+    if (editor.isDestroyed) {
+        return false
+    }
+    const dom = editor.view.nodeDOM(pos)
+    const host = dom instanceof HTMLElement ? dom : null
+    const table = host instanceof HTMLTableElement ? host : (host?.querySelector('table') ?? null)
+    return table instanceof HTMLTableElement && focusTable(editor, table)
 }
