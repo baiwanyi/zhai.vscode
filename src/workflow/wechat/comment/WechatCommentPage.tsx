@@ -28,6 +28,8 @@ import {
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
+import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
+import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
 import type { JSX } from 'react'
 import { useWechatComments } from '../hooks/useWechatComments'
 
@@ -48,6 +50,13 @@ export function WechatCommentPage({ account }: WechatCommentPageProps): JSX.Elem
     const [pendingRemove, setPendingRemove] = useState<WechatCommentSummary | null>(null)
 
     const selectedIssue = state.issues.find((issue) => issue.id === state.selectedIssueId)
+    const hasMore = state.comments.length < state.total
+    // 条目数作为观察信号：首屏未填满时靠它重建观察，才能链式补载
+    const sentinelRef = useScrollSentinel({
+        hasMore,
+        onLoadMore: state.loadMore,
+        observeKey: state.comments.length,
+    })
 
     const handleOpenReply = (comment: WechatCommentSummary): void => {
         setReplyingId(comment.id)
@@ -187,11 +196,18 @@ export function WechatCommentPage({ account }: WechatCommentPageProps): JSX.Elem
         return (
             <div className="flex w-full flex-col gap-2">
                 {state.comments.map(renderComment)}
-                {state.comments.length < state.total && (
-                    <Button variant="outline" isLoading={state.isMutating} onClick={() => void state.loadMore()}>
+                {hasMore ? <LoadMoreSentinel sentinelRef={sentinelRef} isLoading={state.isLoadingMore} /> : null}
+                {/* 哨兵负责滚动续载，按钮留作手动兜底：接口偶发失败时用户仍有明确出口 */}
+                {hasMore ? (
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        isLoading={state.isLoadingMore}
+                        onClick={() => void state.loadMore()}
+                    >
                         {`加载更多（已显示 ${String(state.comments.length)}/${String(state.total)}）`}
                     </Button>
-                )}
+                ) : null}
             </div>
         )
     }

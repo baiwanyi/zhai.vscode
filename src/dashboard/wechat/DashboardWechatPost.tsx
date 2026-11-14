@@ -15,7 +15,9 @@ import { Spinner } from '@components/ui/spinner'
 import type { WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
 import { AppContent, AppPage } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
+import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
 import { StateEmpty } from '@webview/components/StateEmpty'
+import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
 import { useWechatAccountDialogs } from './hooks/useWechatAccountDialogs'
 import { useWechatAccounts } from './hooks/useWechatAccounts'
 import { useWechatContentDialogs } from './hooks/useWechatContentDialogs'
@@ -76,6 +78,12 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
 
     const account = useMemo(() => accounts.find((item) => item.id === accountId) ?? null, [accountId, accounts])
     const query = useWechatIssueQuery(issues)
+    // 批次是本地分批渲染、没有在途请求，哨兵只承担滚动续载，转圈恒为隐形占位
+    const issueSentinelRef = useScrollSentinel({
+        hasMore: query.hasMore,
+        onLoadMore: query.loadMore,
+        observeKey: query.renderIssues.length,
+    })
     const content = useWechatContentDialogs({ updateArticleMeta, saveArticleCover, removeArticle, removeIssue })
     const accountDialogs = useWechatAccountDialogs({
         accountId,
@@ -201,11 +209,13 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                         onPublish={publishConfirm.request}
                         onOpenBackend={() => void openBackend()}
                     />
-                    {query.hasMore && (
-                        <Button variant="outline" className="mt-2 w-full" onClick={query.loadMore}>
+                    {query.hasMore ? <LoadMoreSentinel sentinelRef={issueSentinelRef} isLoading={false} /> : null}
+                    {/* 哨兵负责滚动续载，按钮留作手动兜底 */}
+                    {query.hasMore ? (
+                        <Button variant="ghost" className="mt-2 w-full" onClick={query.loadMore}>
                             {`加载更多（还有 ${String(query.remaining)} 个）`}
                         </Button>
-                    )}
+                    ) : null}
                 </AppContent>
                 <WechatPostFooter
                     account={account}

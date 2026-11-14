@@ -31,6 +31,8 @@ export interface WechatCommentsState {
     status: 'loading' | 'ready' | 'error'
     error: string | null
     isMutating: boolean
+    /** 是否正在追加下一页：只标续载，首屏与写操作后的重拉不计入 */
+    isLoadingMore: boolean
     selectIssue: (issueId: string) => void
     selectArticle: (sortIndex: number) => void
     reload: () => Promise<void>
@@ -49,6 +51,7 @@ export function useWechatComments(accountId: string): WechatCommentsState {
     const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
     const [error, setError] = useState<string | null>(null)
     const [isMutating, setIsMutating] = useState(false)
+    const [isLoadingMore, setIsLoadingMore] = useState(false)
 
     /** 只有已推送且有文章的批次才有留言可查 */
     const issues = useMemo(
@@ -141,11 +144,16 @@ export function useWechatComments(accountId: string): WechatCommentsState {
     }, [])
 
     const loadMore = useCallback(async (): Promise<void> => {
-        if (comments.length >= total) {
+        if (isLoadingMore || comments.length >= total) {
             return
         }
-        await loadComments(comments.length)
-    }, [comments.length, loadComments, total])
+        setIsLoadingMore(true)
+        try {
+            await loadComments(comments.length)
+        } finally {
+            setIsLoadingMore(false)
+        }
+    }, [comments.length, isLoadingMore, loadComments, total])
 
     /** 写操作的公共骨架：校验选中项、置忙、调用、刷新 */
     const runWrite = useCallback(
@@ -231,6 +239,7 @@ export function useWechatComments(accountId: string): WechatCommentsState {
         status,
         error,
         isMutating,
+        isLoadingMore,
         selectIssue,
         selectArticle,
         reload,

@@ -26,6 +26,7 @@ import {
 import { Item, ItemActions, ItemContent, ItemTitle } from '@components/ui/item'
 import type { PressVolumeGroup } from '@shared/types/press'
 import { Button } from '@webview/components/Button'
+import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
 import { formatWordCount } from '@webview/dashboard/utils'
 import type { JSX } from 'react'
 import { useProgressiveList } from '../hooks/useProgressiveList'
@@ -224,7 +225,8 @@ export function PressVolumeSection({
                         </ContextMenuContent>
                     </ContextMenu>
                 ))}
-                <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />
+                {/* 本卷只在本地切片，没有在途请求，故转圈恒为隐形占位，哨兵仅承担观察目标 */}
+                {hasMore ? <LoadMoreSentinel sentinelRef={sentinelRef} isLoading={false} /> : null}
                 {hasMore ? (
                     <Button variant="ghost" className="rounded-full" onClick={loadMore}>
                         加载更多（剩余 {volume.chapters.length - visibleCount} 章）

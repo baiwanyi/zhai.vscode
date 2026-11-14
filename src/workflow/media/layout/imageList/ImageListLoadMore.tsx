@@ -1,15 +1,21 @@
 /**
  * 图片列表续载入口：按钮与滚动哨兵两种形态，只上报加载意图、不发起任何请求。
- * 复用约定：按钮取 @webview/components/Button，转圈取 @components/ui/spinner；
- * 哨兵用 IntersectionObserver 提前 300px 触发，条目数变化时重建观察并在卸载时解绑。
+ * 复用约定：按钮取 @webview/components/Button；哨兵与观察器交给 LoadMoreSentinel + useScrollSentinel
+ * （root 取最近的 ScrollArea 视口、距底部 300px 提前触发），转圈由哨兵组件统一呈现。
  * 关键约束：按钮分母取筛选结果总数、分子取已渲染数，两者相等时不渲染入口；
  * 哨兵在没有更多条目时不渲染也不观察，避免一屏没填满时反复触发空请求。
  */
-import { useEffect, useRef } from 'react'
-import { Spinner } from '@components/ui/spinner'
 import { Button } from '@webview/components/Button'
+import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
+import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
 import type { ImageListPaging } from './imageListModel'
 import type { JSX } from 'react'
+
+/** 卡片密度低于文字列表，提前量放宽到 300px，滚动中不出现空窗 */
+const IMAGE_SENTINEL_MARGIN = '300px'
+
+/** none 模式下的占位回调：此时 isActive 为假、观察器不会挂载，只为满足 hook 的必填签名 */
+const NOOP = (): void => {}
 
 interface ImageListLoadMoreProps {
     paging: ImageListPaging
@@ -18,29 +24,14 @@ interface ImageListLoadMoreProps {
 }
 
 export function ImageListLoadMore({ paging, observeKey = 0 }: ImageListLoadMoreProps): JSX.Element | null {
-    const sentinelRef = useRef<HTMLDivElement | null>(null)
     const isSentinel = paging.mode === 'sentinel'
-    const hasMore = isSentinel && paging.hasMore
-    const onLoadMore = paging.mode === 'none' ? null : paging.onLoadMore
-
-    useEffect(() => {
-        const sentinel = sentinelRef.current
-        if (!isSentinel || !hasMore || sentinel === null || onLoadMore === null) {
-            return
-        }
-        const observer = new IntersectionObserver(
-            (entries) => {
-                if (entries.some((entry) => entry.isIntersecting)) {
-                    onLoadMore()
-                }
-            },
-            { rootMargin: '300px 0px' },
-        )
-        observer.observe(sentinel)
-        return (): void => {
-            observer.disconnect()
-        }
-    }, [hasMore, isSentinel, observeKey, onLoadMore])
+    const sentinelRef = useScrollSentinel({
+        hasMore: paging.mode === 'sentinel' && paging.hasMore,
+        onLoadMore: paging.mode === 'none' ? NOOP : paging.onLoadMore,
+        rootMargin: IMAGE_SENTINEL_MARGIN,
+        observeKey,
+        isActive: isSentinel,
+    })
 
     if (paging.mode === 'button') {
         if (paging.rendered >= paging.total) {
@@ -55,13 +46,9 @@ export function ImageListLoadMore({ paging, observeKey = 0 }: ImageListLoadMoreP
         )
     }
 
-    if (!isSentinel || !hasMore) {
+    if (!isSentinel || !paging.hasMore) {
         return null
     }
 
-    return (
-        <div ref={sentinelRef} className="flex justify-center py-3">
-            <Spinner className={paging.isLoadingMore ? 'size-4 text-muted-foreground' : 'invisible'} />
-        </div>
-    )
+    return <LoadMoreSentinel sentinelRef={sentinelRef} isLoading={paging.isLoadingMore} />
 }
