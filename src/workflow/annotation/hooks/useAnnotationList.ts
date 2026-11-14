@@ -2,7 +2,8 @@
  * 标注列表数据：分页、筛选、关键词防抖与删除后局部更新。
  * 复用约定：协议走 bridge，类型取 @shared/types/editor；跳转直接调宿主的 annotation/reveal。
  * 关键约束：关键词 300ms 防抖并重置游标；删除后只从当前页移除并重算总数，
- * 不做整页刷新——用户翻到第 3 页删除一条，刷新会把他弹回顶部。
+ * 不做整页刷新——用户翻到第 3 页删除一条，刷新会把他弹回顶部；
+ * 跳转发现原文缺失时宿主会把整篇置失效，这里按 docPath 同步标记已有的条目，避免还要手动刷新。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type {
@@ -54,13 +55,13 @@ export interface UseAnnotationListResult {
     reveal: (id: string) => Promise<RevealOutcome>
 }
 
-export function useAnnotationList(): UseAnnotationListResult {
+export function useAnnotationList(initialKind: AnnotationFilters['kind'] = null): UseAnnotationListResult {
     const [items, setItems] = useState<AnnotationRecord[]>([])
     const [total, setTotal] = useState<number | null>(null)
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [filters, setFilters] = useState<AnnotationFilters>({
-        kind: null,
+        kind: initialKind,
         color: null,
         docPath: null,
         orphanedOnly: false,
@@ -158,7 +159,18 @@ export function useAnnotationList(): UseAnnotationListResult {
     }, [])
 
     const reveal = useCallback(async (id: string): Promise<RevealOutcome> => {
-        return request<RevealOutcome>('annotation/reveal', { id })
+        const outcome = await request<RevealOutcome>('annotation/reveal', { id })
+        if (!outcome.revealed && outcome.reason === 'missing-file') {
+            // 宿主已把该文档整篇置失效：本地同步标记，列表不必重新拉取就能看到失效状态
+            setItems((previous) => {
+                const target = previous.find((item) => item.id === id)
+                if (target === undefined) {
+                    return previous
+                }
+                return previous.map((item) => (item.docPath === target.docPath ? { ...item, orphaned: true } : item))
+            })
+        }
+        return outcome
     }, [])
 
     // 首次挂载拉一次文档清单：筛选下拉需要它，与列表请求并行

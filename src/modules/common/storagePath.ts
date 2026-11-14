@@ -1,6 +1,7 @@
 /**
  * 存储路径工具：以文档存储根为基准构造绝对 Uri，校验索引库口径的相对路径片段，并提供统一的删除入口。
  * 复用 common/config 的存储根解析；笔记、作品等模块共用同一套拼装、越界校验与删除策略，避免各处各写一份。
+ * 同时提供「文档 → 库口径路径」的唯一换算入口：标注、查询等库表的 doc_path 一律按存储根相对路径记录。
  * 关键约束：路径先经片段校验（拒绝上跳、当前目录、盘符与反斜杠）再交给 path.join，从源头排除越出存储根；
  * 错误文案带入调用方给定的实体名（如「笔记」「作品」），便于用户定位到具体入口；
  * 删除一律走 deleteResource，回收站不可用时由它显式降级，不依赖调用方各自处理。
@@ -58,6 +59,29 @@ export function toStorageRelativePath(indexPath: string, label: string): string 
     }
     const rawRoot = rootPath.replace(/^\/+/, '').replace(/\/+$/, '')
     return indexPath.replace(/^\/+/, '').slice(rawRoot.length + 1)
+}
+
+/**
+ * 历史 doc_path 归一化：早期写入的是 asRelativePath 的绝对路径（文档不在工作区内时会这样），
+ * 形如 `c:\Users\…\notes\a.md` 或 `C:/Users/…/notes/a.md`。
+ * 统一成「正斜杠 + 前导斜杠」的 Uri.path 形态，才能交给 toStorageRelativePath 按存储根剥离。
+ */
+export function normalizeStoredDocPath(docPath: string): string {
+    const unified = docPath.replace(/\\/gu, '/')
+    return /^[a-z]:\//iu.test(unified) ? `/${unified}` : unified
+}
+
+/**
+ * 文档的库口径路径：标注、查询等库表的 doc_path 统一按存储根相对路径记录。
+ * 关键约束：文档不在存储根内时 asRelativePath 返回绝对路径，这类记录无法按存储根回拼，
+ * 因此回落为工作区相对路径——重要的是与前端 payload.path 用的是同一个函数，两侧始终一致。
+ */
+export function toStorageDocPath(uri: vscode.Uri): string {
+    try {
+        return toStorageRelativePath(uri.path, '文档')
+    } catch {
+        return vscode.workspace.asRelativePath(uri, false)
+    }
 }
 
 /** 判定目标是否已存在：stat 抛错即视为不存在（FileSystem 未提供 exists API），文件与目录同口径 */

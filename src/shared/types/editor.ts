@@ -181,12 +181,13 @@ export interface AnnotationListResult {
     total: number | null
 }
 
-/** 总览统计：按类型与颜色分组 */
+/** 总览统计：按类型与颜色分组；queries 为 AI 解释记录数，与标注分属两张表、无文档维度 */
 export interface AnnotationStats {
     total: number
     highlights: number
     notes: number
     orphaned: number
+    queries: number
     byColor: Record<HighlightColor, number>
 }
 

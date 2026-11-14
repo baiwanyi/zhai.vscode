@@ -9,6 +9,7 @@
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
+import { toStorageDocPath } from '@modules/common/storagePath'
 import { buildWebviewHtml } from '@modules/common/webviewHtml'
 import {
     insertAnnotation,
@@ -203,7 +204,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     /** 读取当前文档快照并记录为回写基准 */
     private async readSnapshot(document: vscode.TextDocument): Promise<EditorDocSnapshot> {
-        const path = vscode.workspace.asRelativePath(document.uri, false)
+        const path = this.readRelativePath(document)
         const snapshot = await readEditorSnapshot(document.getText(), document.version, path)
         this.snapshots.set(document.uri.toString(), snapshot)
         return snapshot
@@ -268,7 +269,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
 
     /** 读取最近一次上报的选区：没有上报过（或已关闭）时返回 null，调用方应回落到整篇 */
     public readSelectionFor(uri: vscode.Uri): EditorSelectionSnapshot | null {
-        return this.selections.get(vscode.workspace.asRelativePath(uri, false)) ?? null
+        return this.selections.get(toStorageDocPath(uri)) ?? null
     }
 
     /** 快照消息：附带存储根的 webview 前缀，供前端把 `@zhai/` 引用转成可加载地址 */
@@ -284,9 +285,12 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         return this.annotationDb === null ? null : this.annotationDb().db
     }
 
-    /** 当前文档相对路径：与快照里的 path 同口径，用于拒绝跨文档写标注 */
+    /**
+     * 当前文档的库口径路径：标注 / 查询的 doc_path、快照 path 与前端上报的 payload.path 共用这一处。
+     * 关键约束：口径必须与 storagePath.toStorageDocPath 一致，否则编辑器与总览页会各认一套路径。
+     */
     private readRelativePath(document: vscode.TextDocument): string {
-        return vscode.workspace.asRelativePath(document.uri, false)
+        return toStorageDocPath(document.uri)
     }
 
     /** 文档标题快照：取文件名去扩展名，不额外解析 Frontmatter */

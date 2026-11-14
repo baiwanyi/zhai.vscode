@@ -6,14 +6,15 @@
  */
 import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
+import { toStorageDocPath } from '@modules/common/storagePath'
 import { relocateDocumentAnnotations } from './annotationAnchors'
 import { markDocOrphaned, renameAnnotationDoc } from './annotationRepository'
 import { readEditorSnapshot } from './editorDocService'
 import type { AnnotationDatabase } from './db/connection'
 
-/** 相对路径：与编辑区写入标注时同一口径（asRelativePath 不带 workspace 前缀） */
+/** 相对路径：与编辑区写入标注、总览页跳转共用同一口径（存储根相对路径） */
 function toDocPath(uri: vscode.Uri): string {
-    return vscode.workspace.asRelativePath(uri, false)
+    return toStorageDocPath(uri)
 }
 
 function describeError(error: unknown): string {

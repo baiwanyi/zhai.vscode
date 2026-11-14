@@ -6,7 +6,13 @@
  * 跳转前必须校验文件存在——文档已删除给 missing-file，定位失效给 orphaned，都不打开空白编辑器。
  */
 import * as vscode from 'vscode'
-import { buildStorageUri, isPathExisting, toSafeSegments } from '@modules/common/storagePath'
+import {
+    buildStorageUri,
+    isPathExisting,
+    normalizeStoredDocPath,
+    toSafeSegments,
+    toStorageRelativePath,
+} from '@modules/common/storagePath'
 import type {
     AnnotationCursor,
     AnnotationListQuery,
@@ -15,7 +21,7 @@ import type {
     EditorQueryListResult,
     HighlightColor,
 } from '@shared/types/editor'
-import { findAnnotation, removeAnnotation, updateAnnotation } from './annotationRepository'
+import { findAnnotation, markDocOrphaned, removeAnnotation, updateAnnotation } from './annotationRepository'
 import { listAnnotationDocuments, listAnnotations, statsAnnotations } from './annotationSearch'
 import { countQueries, listQueries, removeQueryById } from './queryRepository'
 import type { AnnotationDatabase } from './db/connection'
@@ -74,12 +80,14 @@ function readListQuery(payload: unknown): AnnotationListQuery {
     }
 }
 
-/** 收窄 AI 解释列表条件：关键词截断，limit 由仓储夹到上限 */
-function readQueryListOptions(payload: unknown): { keyword: string; limit: number } {
+/** 收窄 AI 解释列表条件：关键词截断，limit 由仓储夹到上限，offset 非法值一律按首页处理 */
+function readQueryListOptions(payload: unknown): { keyword: string; limit: number; offset: number } {
     const source = typeof payload === 'object' && payload !== null ? (payload as Record<string, unknown>) : {}
+    const offset = typeof source.offset === 'number' && Number.isFinite(source.offset) ? Math.max(source.offset, 0) : 0
     return {
         keyword: typeof source.keyword === 'string' ? source.keyword.slice(0, MAX_KEYWORD_CHARS) : '',
         limit: typeof source.limit === 'number' ? source.limit : QUERY_LIST_LIMIT,
+        offset: Math.trunc(offset),
     }
 }
 
@@ -126,10 +134,24 @@ export class AnnotationRoutes {
         return listAnnotations(this.deps.db().db, readListQuery(payload))
     }
 
+    /** 统计：标注侧按 docPath 收窄；查询数取全库，查询表没有文档维度 */
     private stats(payload: unknown): AnnotationStats {
         const source = typeof payload === 'object' && payload !== null ? (payload as { docPath?: unknown }) : {}
         const docPath = typeof source.docPath === 'string' ? source.docPath : null
-        return statsAnnotations(this.deps.db().db, docPath)
+        const db = this.deps.db().db
+        return { ...statsAnnotations(db, docPath), queries: countQueries(db, '') }
+    }
+
+    /**
+     * 把某文档的标注整篇置失效：跳转打不开时用户最需要这条状态。
+     * 关键约束：置失效是附加动作，失败只吞掉——不能把「打不开」升级成「报错」。
+     */
+    private invalidateDoc(docPath: string): void {
+        try {
+            markDocOrphaned(this.deps.db().db, docPath)
+        } catch {
+            // 库不可用或已锁：跳转结果照旧返回 missing-file，由前端提示
+        }
     }
 
     /** 跳转到原文：打开文本编辑器并选中区间，文档缺失与定位失效分开回报 */
@@ -138,8 +160,18 @@ export class AnnotationRoutes {
         if (record === null) {
             return { revealed: false, reason: 'missing' }
         }
-        const uri = buildStorageUri(this.deps.root(), toSafeSegments(record.docPath, '标注'))
+        let uri: vscode.Uri
+        try {
+            const relativePath = toStorageRelativePath(normalizeStoredDocPath(record.docPath), '标注')
+            uri = buildStorageUri(this.deps.root(), toSafeSegments(relativePath, '标注'))
+        } catch {
+            // 路径折算不出来（存储根之外的历史记录）：判失效并把结论留在库里，不抛裸错误
+            this.invalidateDoc(record.docPath)
+            return { revealed: false, reason: 'missing-file' }
+        }
         if (!(await isPathExisting(uri))) {
+            // 文件已不在：整篇标注一起置失效，列表下次进来就能看到，不必逐条点
+            this.invalidateDoc(record.docPath)
             return { revealed: false, reason: 'missing-file' }
         }
         // 已在富文本打开时直接定位：既不打断用户的编辑态，也不会多出一个文本 tab

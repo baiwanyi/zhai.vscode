@@ -5,8 +5,10 @@
  * 「可换行独立胶囊」三种形态，pill 与 chip 的选中态都用主色；分段项可带 hint，悬停提示固定暗底亮字。
  * 关键约束：有 hint 时 Tooltip 只能挂在 span 包裹层上，绝不能直接包 ToggleGroupItem——
  * Tooltip 会向子节点注入自身 data-state，覆盖 ToggleGroup 的选中态导致高亮失效；
- * 单选回传空串表示取消选中，须按 items 反查后再回调，多选回传的值同样要过滤成合法枚举。
+ * 单选回传空串表示取消选中，须按 items 反查后再回调，多选回传的值同样要过滤成合法枚举；
+ * size=full 只是布局档位（容器铺满、分段等分），高度仍按 default，不可把该值透给 toggleVariants。
  */
+import { cn } from 'cn'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import { TOOLTIP_CLASS } from './Tooltip'
@@ -32,6 +34,9 @@ export interface SegmentedRailItem<T extends string> {
 /** pill 主色块高亮、outline 连体等分描边、chip 独立描边胶囊 */
 export type SegmentedRailVariant = 'pill' | 'outline' | 'chip'
 
+/** 尺寸档位：full 只改布局——容器铺满所在行、各分段等分宽度，高度仍按 default */
+export type SegmentedRailSize = 'default' | 'sm' | 'lg' | 'full'
+
 interface SegmentedRailBaseProps<T extends string> {
     items: readonly SegmentedRailItem<T>[]
     ariaLabel: string
@@ -46,8 +51,8 @@ interface SegmentedRailBaseProps<T extends string> {
      * false 时单行排布，配合外层横向滚动使用。
      */
     isWrapped?: boolean
-    /** 分段项尺寸档位：弹窗内的必选组用 lg，默认 default */
-    size?: 'default' | 'sm' | 'lg'
+    /** 分段项尺寸档位：弹窗内的必选组用 lg，默认 default；full 为整行等分布局 */
+    size?: SegmentedRailSize
     /** 整组禁用：提交中禁用全部选项 */
     isDisabled?: boolean
 }
@@ -82,16 +87,28 @@ interface RailClassNames {
     item: string | undefined
 }
 
-/** 三种形态的容器与分段项类名在这里集中决定，调用方只选语义不拼样式 */
-function resolveClassNames(variant: SegmentedRailVariant, isStretched: boolean, isWrapped: boolean): RailClassNames {
+/**
+ * 三种形态的容器与分段项类名在这里集中决定，调用方只选语义不拼样式。
+ * isFullWidth（size=full）压过 isStretched：容器铺满、每项 flex-1 等分；min-w-0 让长文案先于等分被压缩。
+ */
+function resolveClassNames(
+    variant: SegmentedRailVariant,
+    isStretched: boolean,
+    isWrapped: boolean,
+    isFullWidth: boolean,
+): RailClassNames {
+    const fill = isFullWidth ? 'w-full' : undefined
+    // shrink 显式写回：分段项自带 shrink-0，等分时需要允许被压缩
+    const grow = isFullWidth ? 'min-w-0 shrink flex-1' : undefined
     if (variant === 'pill') {
-        return { container: PILL_CONTAINER_CLASS, item: PILL_ITEM_CLASS }
+        return { container: cn(PILL_CONTAINER_CLASS, fill), item: cn(PILL_ITEM_CLASS, grow) }
     }
     if (variant === 'chip') {
         // max-w-full 让 w-fit 在窄容器（侧栏）里让位给换行，否则整组会横向溢出
-        return { container: isWrapped ? 'max-w-full flex-wrap' : undefined, item: CHIP_ITEM_CLASS }
+        return { container: cn(isWrapped ? 'max-w-full flex-wrap' : undefined, fill), item: cn(CHIP_ITEM_CLASS, grow) }
     }
-    return { container: isStretched ? 'w-full' : undefined, item: isStretched ? 'flex-1' : undefined }
+    const isSpread = isFullWidth || isStretched
+    return { container: isSpread ? 'w-full' : undefined, item: isSpread ? 'flex-1' : undefined }
 }
 
 export function SegmentedRail<T extends string>(props: SegmentedRailProps<T>): JSX.Element {
@@ -104,7 +121,10 @@ export function SegmentedRail<T extends string>(props: SegmentedRailProps<T>): J
         size = 'default',
         isDisabled = false,
     } = props
-    const classNames = resolveClassNames(variant, isStretched, isWrapped)
+    // full 只是布局档位：高度沿用 default，不能把未知档位透给 toggleVariants
+    const isFullWidth = size === 'full'
+    const railSize = isFullWidth ? 'default' : size
+    const classNames = resolveClassNames(variant, isStretched, isWrapped, isFullWidth)
     const spacing = variant === 'pill' ? 1 : variant === 'chip' ? 2 : 0
     const groupVariant = variant === 'outline' ? 'outline' : undefined
 
@@ -147,7 +167,7 @@ export function SegmentedRail<T extends string>(props: SegmentedRailProps<T>): J
                 type="multiple"
                 spacing={spacing}
                 variant={groupVariant}
-                size={size}
+                size={railSize}
                 disabled={isDisabled}
                 value={[...props.value]}
                 onValueChange={(next) => {
@@ -166,7 +186,7 @@ export function SegmentedRail<T extends string>(props: SegmentedRailProps<T>): J
             type="single"
             spacing={spacing}
             variant={groupVariant}
-            size={size}
+            size={railSize}
             disabled={isDisabled}
             value={props.value}
             onValueChange={(next) => {

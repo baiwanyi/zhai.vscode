@@ -127,10 +127,15 @@ const QUERY_DEDUP_FROM = `(
 
 /**
  * 跨文档列举 AI 解释记录：标注总览页的数据源。
- * 关键约束：只取下一页需要的条数，排序按时间倒序 + rowid 兜底（同一毫秒写入也能稳定分页）。
+ * 关键约束：只取当前页需要的条数，排序按时间倒序 + rowid 兜底（同一毫秒写入也能稳定分页）；
+ * 分页走 offset —— 去重视图无法按 created_at 走 keyset 游标，界面按页追加即可接受偏移抖动。
  */
-export function listQueries(db: Database.Database, options: { keyword: string; limit: number }): EditorQueryRecord[] {
+export function listQueries(
+    db: Database.Database,
+    options: { keyword: string; limit: number; offset?: number },
+): EditorQueryRecord[] {
     const limit = Math.min(Math.max(Math.trunc(options.limit) || DEFAULT_LIST_LIMIT, 1), MAX_LIST_LIMIT)
+    const offset = Math.max(Math.trunc(options.offset ?? 0) || 0, 0)
     const { clause, params } = buildKeywordClause(options.keyword)
     const rows = db
         .prepare(
@@ -138,9 +143,9 @@ export function listQueries(db: Database.Database, options: { keyword: string; l
                FROM ${QUERY_DEDUP_FROM}
               WHERE rn = 1${clause}
               ORDER BY created_at DESC, rid DESC
-              LIMIT ?`,
+              LIMIT ? OFFSET ?`,
         )
-        .all(...params, limit) as QueryRow[]
+        .all(...params, limit, offset) as QueryRow[]
     return rows.map(toCachedQuery)
 }
 
@@ -152,9 +157,21 @@ export function countQueries(db: Database.Database, keyword: string): number {
     return row?.total ?? 0
 }
 
-/** 删除一条：返回是否真的删掉，界面据此区分「已删」与「记录不在了」 */
+/**
+ * 删除一条：返回是否真的删掉，界面据此区分「已删」与「记录不在了」。
+ * 关键约束：列表按 quote + question 去重展示，历史库里同键可能存着多行；
+ * 只删代表行会让下一条历史行顶上来，用户看到的是「删了还在」，所以按整组删除。
+ */
 export function removeQueryById(db: Database.Database, id: string): boolean {
-    return db.prepare('DELETE FROM editor_queries WHERE id = ?').run(id).changes > 0
+    const row = db.prepare('SELECT quote, question FROM editor_queries WHERE id = ?').get(id) as
+        { quote: string; question: string } | undefined
+    if (row === undefined) {
+        return false
+    }
+    const result = db
+        .prepare('DELETE FROM editor_queries WHERE quote = ? AND question = ?')
+        .run(row.quote, row.question)
+    return result.changes > 0
 }
 
 /** 最近查询：按文档倒序取若干条，供弹窗回看 */

@@ -137,4 +137,40 @@ describe('queryRepository', () => {
         expect(items[0]?.answer).toBe('新答案')
         expect(countQueries(db, '')).toBe(1)
     })
+
+    it('offset 分页续接：每页条数受控且不重不漏', () => {
+        for (let index = 0; index < 5; index += 1) {
+            saveQuery(db, {
+                docPath: DOC_A,
+                quote: `片段${index}`,
+                question: '解释',
+                answer: `答案${index}`,
+                model: 'm1',
+            })
+        }
+        const first = listQueries(db, { keyword: '', limit: 2, offset: 0 })
+        const second = listQueries(db, { keyword: '', limit: 2, offset: 2 })
+        const third = listQueries(db, { keyword: '', limit: 2, offset: 4 })
+        expect(first).toHaveLength(2)
+        expect(second).toHaveLength(2)
+        expect(third).toHaveLength(1)
+        const ids = [...first, ...second, ...third].map((item) => item.id)
+        expect(new Set(ids).size).toBe(5)
+    })
+
+    it('删除按文本 + 问题整组清掉，历史重复行不会顶上来', () => {
+        // 只删代表行时，同键的旧行会变成新的 rn = 1，界面表现为「删了还在」
+        const insert = db.prepare(
+            `INSERT INTO editor_queries (id, doc_path, quote, question, answer, model, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        insert.run('old-1', DOC_A, '饕餮', '解释', '旧答案', 'm1', '2026-01-01T00:00:00.000Z')
+        insert.run('old-2', DOC_B, '饕餮', '解释', '新答案', 'm1', '2026-01-02T00:00:00.000Z')
+        const [first] = listQueries(db, { keyword: '', limit: 50 })
+        expect(first).toBeDefined()
+        expect(removeQueryById(db, first?.id ?? '')).toBe(true)
+        expect(listQueries(db, { keyword: '', limit: 50 })).toHaveLength(0)
+        expect(countQueries(db, '')).toBe(0)
+        expect(findCachedQuery(db, '饕餮', '解释')).toBeNull()
+    })
 })

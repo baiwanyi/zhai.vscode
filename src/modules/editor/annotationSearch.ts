@@ -166,8 +166,8 @@ export function countAnnotations(db: Database.Database, query: AnnotationListQue
     return row?.total ?? 0
 }
 
-/** 统计：总数、类型、失效数与各颜色数量；byColor 补齐零值 */
-export function statsAnnotations(db: Database.Database, docPath: string | null): AnnotationStats {
+/** 统计：总数、类型、失效数与各颜色数量；byColor 补齐零值；查询数由路由层从查询表合并 */
+export function statsAnnotations(db: Database.Database, docPath: string | null): Omit<AnnotationStats, 'queries'> {
     const clause = docPath === null ? '' : ' WHERE doc_path = ?'
     const params = docPath === null ? [] : [docPath]
     const rows = db.prepare(`SELECT kind, color, orphaned FROM annotations${clause}`).all(...params) as Array<{
@@ -175,7 +175,7 @@ export function statsAnnotations(db: Database.Database, docPath: string | null):
         color: string | null
         orphaned: number
     }>
-    const stats: AnnotationStats = {
+    const stats: Omit<AnnotationStats, 'queries'> = {
         total: rows.length,
         highlights: 0,
         notes: 0,
