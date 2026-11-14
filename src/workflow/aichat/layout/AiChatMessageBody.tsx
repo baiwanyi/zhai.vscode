@@ -2,7 +2,7 @@
  * AI 对话消息正文：用户消息交给 AiChatMessageUserBody（命令徽章 + 补充文本），助手回复经 unified/remark 渲染 Markdown，
  * 思维链与执行过程分别由同目录 AiChatMessageReasoning / AiChatMessageSteps 以可折叠轨迹排在正文上方，
  * 待确认事项（写入确认 / 模型提问）以流内卡片附在正文之后。
- * 复用上级目录 markdown.tsx 的主题映射、同目录用户正文 / 思考过程 / 步骤 / 审批问卷组件、
+ * 复用 @webview/components/Markdown 的主题映射、同目录用户正文 / 思考过程 / 步骤 / 审批问卷组件、
  * @components/ui 的 Marker 与 Spinner。
  * 关键约束：有思维链或步骤时优先展示它们——等待首字期间这就是主体，正文出现后各自收起为一行；
  * 确认卡片优先于加载态：等待确认期间流已暂停，再转圈会让人以为还在生成；
@@ -11,18 +11,16 @@
  * 用户消息的命令拆分不改变落库内容，思维链、步骤与确认卡片只属于助手消息。
  */
 import { CircleSlash } from 'lucide-react'
-import Markdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { Marker, MarkerContent, MarkerIcon } from '@components/ui/marker'
 import { Spinner } from '@components/ui/spinner'
 import type { AiMessage, AiPermissionDecision, AiPermissionRequest } from '@shared/types/aiChat'
+import { Markdown } from '@webview/components/Markdown'
 import { AiChatConfirmCard } from './AiChatConfirmCard'
 import { AiChatMessageReasoning } from './AiChatMessageReasoning'
 import { AiChatMessageSteps } from './AiChatMessageSteps'
 import { AiChatMessageUserBody } from './AiChatMessageUserBody'
 import { AiChatQuestionnaire } from './AiChatQuestionnaire'
 import type { JSX } from 'react'
-import { MARKDOWN_COMPONENTS } from '../markdown'
 
 interface AiChatMessageBodyProps {
     message: AiMessage
@@ -73,9 +71,7 @@ export function AiChatMessageBody({ message, pendingApproval, onAnswer }: AiChat
                 {message.role === 'user' ? (
                     <AiChatMessageUserBody message={message} />
                 ) : (
-                    <Markdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-                        {message.content}
-                    </Markdown>
+                    <Markdown content={message.content} />
                 )}
                 {approvalBlock}
             </>

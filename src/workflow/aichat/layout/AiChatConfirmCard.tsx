@@ -1,7 +1,7 @@
 /**
  * 流内是/否确认卡片：承载「允许 / 拒绝」二选一的确认（写入类工具附内容预览），不再让用户填任何内容。
  * 复用 @components/ui 的 Card 槽位、badge 倒计时、trace 折叠行与 code-block 差异行、
- * @webview/components/Button，预览正文沿用上级目录 markdown 的主题映射。
+ * @webview/components/Button，预览正文沿用 @webview/components/Markdown 的主题映射。
  * 关键约束：用户必须在决定前读到将要写入的内容 —— 只报路径与动作等于让用户盲签，预览默认展开；
  * 说明文案整句由宿主下发、原样渲染，前端不拼半句，否则任一方改文案都会拼出病句；
  * 倒计时归零即按拒绝结算且只结算一次：超时、关闭、切会话都是拒绝，本组件也不把「允许」设为默认焦点；
@@ -9,8 +9,6 @@
  */
 import { FileText } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import Markdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import { Badge } from '@components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@components/ui/card'
 import { CodeBlock, CodeBlockContent, CodeBlockHeader, CodeBlockLine, CodeBlockTitle } from '@components/ui/code-block'
@@ -26,8 +24,8 @@ import {
 } from '@components/ui/trace'
 import type { AiPermissionDecision, AiPermissionRequest, AiWritePreview } from '@shared/types/aiChat'
 import { Button } from '@webview/components/Button'
+import { Markdown } from '@webview/components/Markdown'
 import type { JSX } from 'react'
-import { MARKDOWN_COMPONENTS } from '../markdown'
 import { describeTool } from '../utils'
 
 /** 倒计时刷新间隔：秒级足够，逐帧刷新只会让数字闪烁 */
@@ -66,11 +64,7 @@ function describePreview(preview: AiWritePreview[]): string {
 /** 单段预览：整篇写入按 Markdown 正读，片段替换按删除 / 新增行对照 */
 function WritePreviewSegment({ segment, index }: { segment: AiWritePreview; index: number }): JSX.Element {
     if (segment.removed === null) {
-        return (
-            <Markdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>
-                {segment.content}
-            </Markdown>
-        )
+        return <Markdown content={segment.content} />
     }
     const removedLines = segment.removed.split('\n')
     const addedLines = segment.content.split('\n')
