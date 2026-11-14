@@ -15,7 +15,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { isEditorSnapshotMessage } from '@shared/types/editor'
 import type { EditorBlock, EditorChangeResult, EditorSnapshotMessage } from '@shared/types/editor'
-import { HostRequestError, onState, request } from '@shared/utils/bridge'
+import { onState, request } from '@shared/utils/bridge'
+import { describeError } from '@shared/utils/errorText'
 import type { BlockBaseline } from '../blocks/blockDiff'
 import type { Editor } from '@tiptap/react'
 import { buildBlockChanges, pairBaseline } from '../blocks/blockDiff'
@@ -39,11 +40,8 @@ const TOAST_ID_STALE = 'zhai-editor-stale'
 const TOAST_ID_NO_SNAPSHOT = 'zhai-editor-no-snapshot'
 
 /** 失败原因摘要：只显示「同步失败」无法区分是参数非法、版本过期还是转换抛错 */
-function describeError(error: unknown): string {
-    if (error instanceof HostRequestError) {
-        return `${error.code}：${error.message}`
-    }
-    return error instanceof Error ? error.message : '未知错误'
+function describeFailure(error: unknown): string {
+    return describeError(error, '未知错误')
 }
 
 /** 采集顶层块 HTML：跳过空文本块，它们不产生 Markdown 块，留着会让块序列与宿主错位 */
@@ -138,7 +136,7 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
                 const snapshot = await request<EditorSnapshotMessage>('editor/snapshot')
                 applySnapshot(snapshot, force)
             } catch (error) {
-                toast.error(MESSAGE_FAILED, { id: TOAST_ID_FAILED, description: describeError(error) })
+                toast.error(MESSAGE_FAILED, { id: TOAST_ID_FAILED, description: describeFailure(error) })
             }
         },
         [applySnapshot],
@@ -228,7 +226,7 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
             toast.dismiss(TOAST_ID_NO_SNAPSHOT)
             return true
         } catch (error) {
-            toast.error(MESSAGE_FAILED, { id: TOAST_ID_FAILED, description: describeError(error) })
+            toast.error(MESSAGE_FAILED, { id: TOAST_ID_FAILED, description: describeFailure(error) })
             return false
         }
     }, [editor, loadSnapshot])

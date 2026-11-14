@@ -21,7 +21,8 @@ export interface AnnotationDialogProps {
     /** 选中的引用片段：只读展示，帮助用户确认批注对象 */
     quote: string
     onOpenChange: (isOpen: boolean) => void
-    onSubmit: (note: string) => Promise<void>
+    /** 提交批注：返回 false 时保留弹窗与已填正文，提示文案由调用方给出 */
+    onSubmit: (note: string) => Promise<boolean>
 }
 
 export function AnnotationDialog({ isOpen, quote, onOpenChange, onSubmit }: AnnotationDialogProps): JSX.Element {
@@ -43,8 +44,10 @@ export function AnnotationDialog({ isOpen, quote, onOpenChange, onSubmit }: Anno
         }
         setIsSubmitting(true)
         try {
-            await onSubmit(note.trim())
-            handleOpenChange(false)
+            // 只有真正写入才关闭：失败时保住用户刚写的内容，等它改完再提交
+            if (await onSubmit(note.trim())) {
+                handleOpenChange(false)
+            }
         } finally {
             setIsSubmitting(false)
         }
@@ -63,7 +66,7 @@ export function AnnotationDialog({ isOpen, quote, onOpenChange, onSubmit }: Anno
                     autoFocus
                     value={note}
                     rows={5}
-                    placeholder="写下你的想法，支持轻量 Markdown"
+                    placeholder="写下你的想法"
                     onChange={(event): void => {
                         setNote(event.target.value)
                     }}

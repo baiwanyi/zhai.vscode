@@ -11,6 +11,7 @@ import { request } from '@shared/utils/bridge'
 import type { FrozenRange } from '../toolbar/formatCommands'
 import type { Editor } from '@tiptap/react'
 import { applyAnnotationDecorations } from '../marks/annotationDecorations'
+import { textOffsetAt } from '../selection/wordSelection'
 
 /** 前后文各取多少字符：重定位时用于消歧 */
 const CONTEXT_CHARS = 32
@@ -52,8 +53,10 @@ function buildDraft(editor: Editor, blocks: readonly EditorBlock[], range?: Froz
     if (blockIndex < 0) {
         return null
     }
-    const blockText = editor.state.doc.child(blockIndex).textContent.slice(0, BLOCK_TEXT_LIMIT)
-    const localStart = Math.max(0, from - blockStart - 1)
+    const blockNode = editor.state.doc.child(blockIndex)
+    const blockText = blockNode.textContent.slice(0, BLOCK_TEXT_LIMIT)
+    // 文档位置差要扣掉 inline leaf（硬换行）占的位置，否则含软换行的段落锚点会漂
+    const localStart = textOffsetAt(blockNode, Math.max(0, from - blockStart - 1))
     const block = blocks[blockIndex]
     const globalStart = (block?.start ?? 0) + localStart
     return {
@@ -78,12 +81,12 @@ export interface UseAnnotationsResult {
     addOrToggleHighlight: (color: HighlightColor, range?: FrozenRange) => Promise<void>
     /** 划线改色：同一位置已有划线只更新颜色，没有才新建（不做 toggle） */
     applyHighlightColor: (color: HighlightColor, range?: FrozenRange) => Promise<void>
-    /** 为指定范围（缺省当前选区）新建批注 */
-    addNote: (note: string, range?: FrozenRange) => Promise<void>
-    /** 编辑批注正文 */
-    updateNote: (id: string, note: string) => Promise<void>
-    /** 删除任意标注（划线或批注） */
-    removeAnnotation: (id: string) => Promise<void>
+    /** 为指定范围（缺省当前选区）新建批注；返回是否真的写入（跨块、只读、快照未就绪均为 false） */
+    addNote: (note: string, range?: FrozenRange) => Promise<boolean>
+    /** 编辑批注正文：返回是否真的写入（空正文、宿主拒绝均为 false，调用方据此决定是否收起编辑态） */
+    updateNote: (id: string, note: string) => Promise<boolean>
+    /** 删除任意标注（划线或批注）：返回是否真的删除（失败时由调用方提示，列表按重载结果自愈） */
+    removeAnnotation: (id: string) => Promise<boolean>
     /** 文档内容变化后重新加载，用于刷新锚点与装饰 */
     refresh: () => Promise<void>
 }
@@ -196,46 +199,53 @@ export function useAnnotations(
     )
 
     const addNote = useCallback(
-        async (note: string, range?: FrozenRange): Promise<void> => {
+        async (note: string, range?: FrozenRange): Promise<boolean> => {
             if (editor === null || path.length === 0 || !editor.isEditable || note.trim() === '') {
-                return
+                return false
             }
             const draft = buildDraft(editor, blocksRef.current, range)
             if (draft === null) {
-                return
+                // 跨块选区、选区已塌陷或锚点算不出来：不猜范围，由调用方提示并保住用户输入
+                return false
             }
             try {
                 await request('editor/annotation/add', { path, kind: 'note', color: null, note, draft })
                 await refresh()
+                return true
             } catch {
-                // 同上
+                // 同上，失败要把结果交回调用方，不能关掉弹窗当成成功
+                return false
             }
         },
         [editor, path, refresh],
     )
 
     const updateNote = useCallback(
-        async (id: string, note: string): Promise<void> => {
+        async (id: string, note: string): Promise<boolean> => {
             if (note.trim() === '') {
-                return
+                return false
             }
             try {
                 await request('editor/annotation/update', { path, id, note })
                 await refresh()
+                return true
             } catch {
-                // 同上，不打断编辑
+                // 失败要把结果交回调用方：收起编辑态会让用户以为改好了
+                return false
             }
         },
         [path, refresh],
     )
 
     const removeAnnotation = useCallback(
-        async (id: string): Promise<void> => {
+        async (id: string): Promise<boolean> => {
             try {
                 await request('editor/annotation/remove', { path, id })
                 await refresh()
+                return true
             } catch {
-                // 同上，不打断编辑
+                // 同上，删除失败不能让调用方静默当成删掉了
+                return false
             }
         },
         [path, refresh],

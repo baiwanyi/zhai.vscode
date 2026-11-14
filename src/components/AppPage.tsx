@@ -23,6 +23,7 @@ import { toast } from 'sonner'
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import { copyToClipboard } from '@shared/utils/clipboard'
+import { preventContextMenu } from './dom'
 import { TOOLTIP_CLASS } from './Tooltip'
 import type { ComponentProps, JSX, MouseEvent } from 'react'
 
@@ -30,8 +31,15 @@ import type { ComponentProps, JSX, MouseEvent } from 'react'
 const FOOTER_MASK_CLASS =
     'before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent'
 
-function AppPage({ className, ...props }: ComponentProps<'div'>): JSX.Element {
-    return <div data-slot="app-page" className={cn('@container flex h-full min-h-0 flex-col', className)} {...props} />
+function AppPage({ className, onContextMenu = preventContextMenu, ...props }: ComponentProps<'div'>): JSX.Element {
+    return (
+        <div
+            data-slot="app-page"
+            className={cn('@container flex h-full min-h-0 flex-col', className)}
+            onContextMenu={onContextMenu}
+            {...props}
+        />
+    )
 }
 
 /** 标题与操作区的左右位置：end 为标题在左、操作区在右；start 为操作区夹持标题（首个在左、第二个在右） */

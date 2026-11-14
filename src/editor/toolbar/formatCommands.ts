@@ -8,6 +8,7 @@
  */
 import { getMarkRange } from '@tiptap/core'
 import { Bold, Italic, Link2, Strikethrough } from 'lucide-react'
+import { normalizeHref } from '@shared/utils/url'
 import type { ChainedCommands, Editor } from '@tiptap/core'
 import type { LucideIcon } from 'lucide-react'
 
@@ -45,14 +46,7 @@ const TOGGLE_COMMANDS: Readonly<Record<ToggleFormatId, (chain: ChainedCommands) 
     strike: (chain) => chain.toggleStrike(),
 }
 
-/** 只放行这三类协议：javascript:、data: 等一律视为非法 */
-const ALLOWED_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
-
-/** 站内相对地址：不做协议补全，原样保留 */
-const RELATIVE_HREF = /^(?:\.{0,2}\/|#|\/)/u
-
-/** 是否已带协议：用于区分「example.com」与「javascript:alert(1)」 */
-const HAS_PROTOCOL = /^[a-z][a-z0-9+.-]*:/iu
+/** 链接协议白名单与解析口径统一在 @shared/utils/url，前端与宿主共用同一份实现 */
 
 /** 冻结当前选区：空选区返回 null，调用方据此禁用需要范围的命令 */
 export function readFrozenRange(editor: Editor): FrozenRange | null {
@@ -123,21 +117,7 @@ export function readSelectionLink(editor: Editor, range?: FrozenRange): string {
  * 判空与协议白名单是唯一的放行条件，调用方拿到 null 必须拒绝写入。
  */
 export function normalizeLinkHref(input: string): string | null {
-    const value = input.trim()
-    if (value.length === 0) {
-        return null
-    }
-    if (RELATIVE_HREF.test(value)) {
-        return value
-    }
-    const candidate = HAS_PROTOCOL.test(value) ? value : `https://${value}`
-    try {
-        const url = new URL(candidate)
-        return ALLOWED_PROTOCOLS.has(url.protocol) ? url.toString() : null
-    } catch {
-        // URL 解析失败（含裸主机名缺协议）一律视为非法，不猜
-        return null
-    }
+    return normalizeHref(input)
 }
 
 /**

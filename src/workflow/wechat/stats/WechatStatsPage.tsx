@@ -123,7 +123,7 @@ export function WechatStatsPage({ account }: WechatStatsPageProps): JSX.Element 
     }
 
     return (
-        <AppPage onContextMenu={(event) => event.preventDefault()}>
+        <AppPage>
             <AppHeader align="start">
                 <AppTitle>数据统计</AppTitle>
                 <AppDescription>{`${account.name} · 用户增长`}</AppDescription>

@@ -149,7 +149,7 @@ export function WechatMaterialPage({ account }: WechatMaterialPageProps): JSX.El
 
     return (
         <>
-            <AppPage onContextMenu={(event) => event.preventDefault()}>
+            <AppPage>
                 <AppHeader align="start">
                     <AppTitle>素材管理</AppTitle>
                     <AppDescription>{`${account.name} · ${String(materials.length)} 张图片素材`}</AppDescription>

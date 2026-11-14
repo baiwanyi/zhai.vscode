@@ -205,7 +205,7 @@ export function DashboardPressProject({ dirPath, onBack }: DashboardPressProject
 
     return (
         <>
-            <AppPage onContextMenu={(event) => event.preventDefault()}>
+            <AppPage>
                 <AppHeader align="start">
                     <AppTitle tooltip={projectName}>{projectName}</AppTitle>
                     <DashboardBackAction kind="home" />

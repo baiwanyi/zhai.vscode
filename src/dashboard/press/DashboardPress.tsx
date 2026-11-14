@@ -87,7 +87,7 @@ export function DashboardPress({ onOpenProject }: DashboardPressProps): JSX.Elem
 
     return (
         <>
-            <AppPage onContextMenu={(event) => event.preventDefault()}>
+            <AppPage>
                 <AppHeader align="start">
                     <AppTitle>作品列表</AppTitle>
                     <DashboardBackAction kind="home" />

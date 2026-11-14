@@ -62,7 +62,7 @@ export function WechatPendingSection({ section, accountName }: WechatPendingSect
     const description = meta?.description ?? '这个分区还没有接入对应的公众号接口。'
 
     return (
-        <AppPage onContextMenu={(event) => event.preventDefault()}>
+        <AppPage>
             <AppHeader align="start">
                 <AppTitle>{title}</AppTitle>
                 <AppDescription>{accountName}</AppDescription>

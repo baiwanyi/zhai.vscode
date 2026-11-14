@@ -38,6 +38,7 @@ import type {
     EditorSnapshotMessage,
 } from '@shared/types/editor'
 import { isRequestMessage } from '@shared/types/messages'
+import { parseOpenableUrl } from '@shared/utils/url'
 import { clearRichDocument, reportRichDocument } from './activeDocument'
 import { buildEdits, readEditorSnapshot } from './editorDocService'
 import { RICH_EDITOR_VIEW_TYPE } from './openDocument'
@@ -46,25 +47,14 @@ import { runEditorQuery } from './queryService'
 import type { EditorQueryDeps } from './queryService'
 import type Database from 'better-sqlite3'
 
-/** 可交给系统打开器的协议：相对地址与脚本协议一律拒绝 */
-const OPENABLE_LINK_PROTOCOLS: ReadonlySet<string> = new Set(['http:', 'https:', 'mailto:'])
-
 /**
  * 校验待打开的链接：Webview 传来的地址不可信，必须能解析且协议在白名单内。
+ * 白名单与解析口径由 @shared/utils/url 统一维护，宿主与前端不再各写一份。
  * 不合格返回 null，由调用方按 invalid-payload 拒绝，避免借本协议打开任意地址。
  */
 function readOpenableUrl(payload: unknown): string | null {
     const value = typeof payload === 'object' && payload !== null ? (payload as { url?: unknown }).url : undefined
-    if (typeof value !== 'string') {
-        return null
-    }
-    try {
-        const url = new URL(value)
-        return OPENABLE_LINK_PROTOCOLS.has(url.protocol) ? url.toString() : null
-    } catch {
-        // 解析失败（含手写的裸域名）直接拒绝，不猜
-        return null
-    }
+    return typeof value === 'string' ? parseOpenableUrl(value) : null
 }
 
 /** 章节写回前留底：只用到这一个方法，按结构化接口声明便于替身注入 */

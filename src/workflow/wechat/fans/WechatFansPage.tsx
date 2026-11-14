@@ -169,7 +169,7 @@ export function WechatFansPage({ account }: WechatFansPageProps): JSX.Element {
     }
 
     return (
-        <AppPage onContextMenu={(event) => event.preventDefault()}>
+        <AppPage>
             <AppHeader align="start">
                 <AppTitle>用户管理</AppTitle>
                 <AppDescription>

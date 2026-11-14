@@ -106,7 +106,7 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
     }, [])
 
     return (
-        <AppPage onContextMenu={(event) => event.preventDefault()}>
+        <AppPage>
             <AppHeader>
                 <DashboardEntries
                     onOpenWriting={() => onNavigate(createPressRoute())}

@@ -170,7 +170,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
 
     return (
         <>
-            <AppPage onContextMenu={(event) => event.preventDefault()}>
+            <AppPage>
                 <WechatPostHeader
                     account={account}
                     statusText={statusText}

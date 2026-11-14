@@ -27,6 +27,7 @@ import type { SlashCommand } from '../toolbar/slashCommands'
 import type { Editor } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { ComponentProps, JSX } from 'react'
+import { EDITOR_SCROLL_CLASS } from '../domContracts'
 import { SLASH_COMMANDS } from '../toolbar/slashCommands'
 
 export interface BlockHandleProps {
@@ -200,7 +201,7 @@ export function BlockHandle({ editor, onAskAi, onAddToChat }: BlockHandleProps):
             })
         }
         // 滚动时块相对容器整体位移，位置必须立刻跟上；过渡要临时关掉，否则会拖出一条尾巴
-        const scroller = editor.view.dom.closest<HTMLElement>('.zhai-editor-scroll')
+        const scroller = editor.view.dom.closest<HTMLElement>(`.${EDITOR_SCROLL_CLASS}`)
         const onScroll = (): void => {
             const handle = findHandleElement(editor)
             if (handle !== null) {

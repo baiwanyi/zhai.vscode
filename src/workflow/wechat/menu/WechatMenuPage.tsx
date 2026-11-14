@@ -97,7 +97,7 @@ export function WechatMenuPage({ account }: WechatMenuPageProps): JSX.Element {
     }
 
     return (
-        <AppPage onContextMenu={(event) => event.preventDefault()}>
+        <AppPage>
             <AppHeader align="start">
                 <AppTitle>自定义菜单</AppTitle>
                 <AppDescription>{`${account.name} · ${String(menu.buttons.length)}/${String(WECHAT_MENU_TOP_LIMIT)} 个一级`}</AppDescription>

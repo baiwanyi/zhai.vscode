@@ -129,7 +129,7 @@ export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.El
 
     return (
         <>
-            <AppPage onContextMenu={(event) => event.preventDefault()}>
+            <AppPage>
                 <AppHeader align="start">
                     <AppTitle>公众号列表</AppTitle>
                     <DashboardBackAction kind="home" />

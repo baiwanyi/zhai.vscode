@@ -120,7 +120,7 @@ export function WechatPushPage({ account }: WechatPushPageProps): JSX.Element {
     }
 
     return (
-        <AppPage onContextMenu={(event) => event.preventDefault()}>
+        <AppPage>
             <AppHeader align="start">
                 <AppTitle>推送管理</AppTitle>
                 <AppDescription>{`${account.name} · ${String(issues.length)} 个批次`}</AppDescription>

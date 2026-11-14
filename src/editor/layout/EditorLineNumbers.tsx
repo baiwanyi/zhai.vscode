@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { EditorBlock } from '@shared/types/editor'
 import type { Editor } from '@tiptap/core'
 import type { JSX } from 'react'
+import { EDITOR_PAGE_CLASS } from '../domContracts'
 
 /** 一条行号：top / height 为相对 .zhai-editor-page 的像素值 */
 interface LineMark {
@@ -51,7 +52,7 @@ function readActiveBlockIndex(editor: Editor): number {
 
 /** 测量一次行号：先按 DOM 顺序对齐快照块，再逐块均分行、补齐块间空行 */
 function collectMarks(editor: Editor, blocks: readonly EditorBlock[]): LineMark[] {
-    const page = editor.view.dom.closest('.zhai-editor-page')
+    const page = editor.view.dom.closest(`.${EDITOR_PAGE_CLASS}`)
     if (!(page instanceof HTMLElement)) {
         return []
     }

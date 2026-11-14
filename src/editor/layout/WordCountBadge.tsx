@@ -16,7 +16,14 @@ const COUNT_DEBOUNCE_MS = 300
 
 /** 字数口径：去空白字符数，与宿主统计保持一致（含标点） */
 function countChars(editor: Editor): number {
-    return editor.state.doc.textContent.replace(/\s/g, '').length
+    // 逐文本节点累加，不拼全文再替换：长文档下 textContent 与 replace 各分配一份全文大小的字符串
+    let total = 0
+    editor.state.doc.descendants((node): void => {
+        if (node.isText && node.text !== undefined) {
+            total += node.text.replace(/\s/g, '').length
+        }
+    })
+    return total
 }
 
 export interface WordCountBadgeProps {
@@ -24,13 +31,18 @@ export interface WordCountBadgeProps {
 }
 
 export function WordCountBadge({ editor }: WordCountBadgeProps): JSX.Element | null {
-    const [count, setCount] = useState(0)
+    // null 表示尚未统计：与真实 0 字区分开，避免快照灌入前先闪一个「0」
+    const [count, setCount] = useState<number | null>(null)
 
     useEffect(() => {
         if (editor === null) {
             return
         }
         let timer: ReturnType<typeof setTimeout> | null = null
+        // 空正文不落值：快照灌入前先统计到 0 会把「0」当成真实字数显示出来
+        const measure = (): void => {
+            setCount(editor.state.doc.content.size === 0 ? null : countChars(editor))
+        }
         // 正文有变化才重新统计：宿主灌正文用的是 emitUpdate: false，只听 update 会漏掉加载完成这一次
         const recount = (event: { transaction: Transaction }): void => {
             if (!event.transaction.docChanged) {
@@ -41,16 +53,14 @@ export function WordCountBadge({ editor }: WordCountBadgeProps): JSX.Element | n
             }
             timer = setTimeout((): void => {
                 timer = null
-                setCount(countChars(editor))
+                measure()
             }, COUNT_DEBOUNCE_MS)
         }
-        // 首次统计放到下一帧：effect 内同步 setState 会多一次渲染，也留出正文灌入的时间
-        const frame = requestAnimationFrame((): void => {
-            setCount(countChars(editor))
-        })
+        // 首次数用定时器而不是 rAF：webview 不可见时 rAF 不执行，effect 内同步 setState 又会多一次渲染
+        const initialTimer = setTimeout(measure, 0)
         editor.on('transaction', recount)
         return (): void => {
-            cancelAnimationFrame(frame)
+            clearTimeout(initialTimer)
             editor.off('transaction', recount)
             if (timer !== null) {
                 clearTimeout(timer)
@@ -58,7 +68,7 @@ export function WordCountBadge({ editor }: WordCountBadgeProps): JSX.Element | n
         }
     }, [editor])
 
-    if (editor === null) {
+    if (editor === null || count === null) {
         return null
     }
 
