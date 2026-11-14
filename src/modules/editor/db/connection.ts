@@ -1,11 +1,13 @@
 /**
  * 标注库连接：按存储根打开 {root}/sqlite/annotations.db，与 media.db 同目录同 PRAGMA。
  * 复用约定：连接按存储根缓存，切换存储根由 closeAnnotationDatabases 关闭；
- * 打开失败降级到扩展缓存目录，损坏时留档后新建，并把留档路径回传给界面提示；
+ * 打开失败降级到扩展缓存目录（按存储根指纹分文件，多个根互不覆盖），损坏时留档后新建，
+ * 并把留档路径回传给界面提示；
  * 打开后顺带把 doc_path 的绝对路径历史记录收敛成存储根相对路径（幂等，失败只记日志）。
  * 关键约束：标注是用户数据、无法从 Markdown 重建，因此损坏时只能留档重建并明确告知，
  * 不得像 media.db 那样静默恢复；DELETE 日志模式保证只有一个库文件，避免云同步拆出 -wal / -shm。
  */
+import { createHash } from 'node:crypto'
 import * as fs from 'node:fs'
 import * as path from 'node:path'
 import Database from 'better-sqlite3'
@@ -55,7 +57,14 @@ function migrateDocPaths(db: Database.Database): void {
     const invalidate = db.prepare('UPDATE annotations SET orphaned = 1, updated_at = ? WHERE doc_path = ?')
     const migrate = db.transaction((): void => {
         for (const table of DOC_PATH_TABLES) {
-            const rows = db.prepare(`SELECT DISTINCT doc_path FROM ${table}`).all() as Array<{ doc_path: string }>
+            // 预过滤三种历史形态（c:\…、c:/…、/c:/…）：正常库迁移后恒为 0 行，
+            // 免得每次打开都在全表上做 DISTINCT；表名取自上方常量元组，不接受外部输入
+            const rows = db
+                .prepare(
+                    `SELECT DISTINCT doc_path FROM ${table}
+                      WHERE doc_path LIKE '%\\%' OR doc_path LIKE '_:/%' OR doc_path LIKE '/_:/%'`,
+                )
+                .all() as Array<{ doc_path: string }>
             const update = db.prepare(`UPDATE ${table} SET doc_path = ? WHERE doc_path = ?`)
             for (const row of rows) {
                 const normalized = normalizeStoredDocPath(row.doc_path)
@@ -77,44 +86,84 @@ function migrateDocPaths(db: Database.Database): void {
     migrate()
 }
 
-/** 打开指定路径：目录不存在先创建，损坏则留档后新建 */
+/** 应用 PRAGMA：多条合并成一次 exec，省掉每次打开的多轮往返 */
+function applyPragmas(db: Database.Database): void {
+    db.exec(PRAGMAS.join('\n'))
+}
+
+/**
+ * 归档损坏库：改名失败（只读介质、文件被同步盘或杀软占用）不阻断重建，但必须留日志，
+ * 否则用户既拿不到归档文件，也不知道数据为何消失。
+ */
+function archiveCorruptFile(filePath: string): string | null {
+    const archive = `${filePath}.corrupt-${String(Date.now())}`
+    try {
+        fs.renameSync(filePath, archive)
+        return archive
+    } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error)
+        logger.warn(`标注库归档失败，跳过留档直接重建：${filePath}（${reason}）`)
+        return null
+    }
+}
+
+/** 结构就位：建表 + doc_path 口径迁移，建表失败由调用方负责关闭连接 */
+function applySchema(db: Database.Database, filePath: string): void {
+    ensureAnnotationSchema(db)
+    try {
+        migrateDocPaths(db)
+    } catch (error) {
+        // 迁移失败不能拖垮打开流程：旧路径仍可跳转（读取侧兼容绝对路径），只是编辑区可能对不上
+        const reason = error instanceof Error ? error.message : String(error)
+        logger.warn(`doc_path 口径迁移失败：${filePath}（${reason}）`)
+    }
+}
+
+/** 打开指定路径：目录不存在先创建，先体检后建表，损坏则留档后新建 */
 function openAt(filePath: string): { db: Database.Database; corruptArchive: string | null } {
     fs.mkdirSync(path.dirname(filePath), { recursive: true })
-    const openFresh = (): Database.Database => {
-        const fresh = new Database(filePath)
-        for (const pragma of PRAGMAS) {
-            fresh.exec(pragma)
-        }
-        ensureAnnotationSchema(fresh)
-        try {
-            migrateDocPaths(fresh)
-        } catch (error) {
-            // 迁移失败不能拖垮打开流程：旧路径仍可跳转（读取侧兼容绝对路径），只是编辑区可能对不上
-            const reason = error instanceof Error ? error.message : String(error)
-            logger.warn(`doc_path 口径迁移失败：${filePath}（${reason}）`)
-        }
-        return fresh
-    }
-    const db = openFresh()
+    // 打不开（权限、只读介质、UNC 锁）与「打开了但内容坏了」要分开：前者文件本身是好的，
+    // 改名归档反而会动到用户的库，直接抛出交给调用方降级即可
+    let db = new Database(filePath)
+    let corruptArchive: string | null = null
     try {
+        // 体检在建表之前：损坏时先给出结论，不在坏文件上继续写 DDL
         const check = db.pragma('quick_check', { simple: true })
         if (check !== 'ok') {
             throw new Error(`quick_check 未通过：${String(check)}`)
         }
-        return { db, corruptArchive: null }
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)
         logger.error(`标注库损坏，留档后新建：${filePath}（${reason}）`)
+        // 句柄不释放则 Windows 上连归档改名都会失败，必须先关
         db.close()
-        const archive = `${filePath}.corrupt-${String(Date.now())}`
-        fs.renameSync(filePath, archive)
-        return { db: openFresh(), corruptArchive: archive }
+        corruptArchive = archiveCorruptFile(filePath)
+        // 重建失败会直接抛到调用方：此时归档文件才是用户数据的唯一副本，不能吞
+        db = new Database(filePath)
     }
+    try {
+        applyPragmas(db)
+        applySchema(db, filePath)
+    } catch (error) {
+        db.close()
+        throw error
+    }
+    return { db, corruptArchive }
 }
 
 /** 库文件的预期绝对路径：设置页与提示文案用，不触发打开 */
 export function resolveAnnotationDbPath(root: vscode.Uri): string {
     return path.join(root.fsPath, ANNOTATION_INDEX_DIR, ANNOTATION_DB_FILE)
+}
+
+/**
+ * 降级库路径：文件名带存储根指纹。多个存储根都不可写时会共用同一个缓存目录，
+ * 若统统写 annotations.db，两个根会争同一文件的写锁（DELETE 日志模式下尤其明显），
+ * 甚至把 A 的标注写进 B 的库，因此必须按根分流。
+ */
+function resolveFallbackDbPath(root: vscode.Uri, cacheRoot: vscode.Uri): string {
+    const digest = createHash('sha1').update(root.fsPath).digest('hex').slice(0, 8)
+    return path.join(cacheRoot.fsPath, `annotations-${digest}.db`)
 }
 
 /**
@@ -136,9 +185,18 @@ export function openAnnotationDatabase(root: vscode.Uri, cacheRoot: vscode.Uri):
     } catch (error) {
         const reason = error instanceof Error ? error.message : String(error)
         logger.warn(`标注库打开失败，降级到缓存目录：${primaryPath}（${reason}）`)
-        const fallbackPath = path.join(cacheRoot.fsPath, ANNOTATION_DB_FILE)
-        const { db, corruptArchive } = openAt(fallbackPath)
-        opened = { db, filePath: fallbackPath, degraded: true, corruptArchive }
+        const fallbackPath = resolveFallbackDbPath(root, cacheRoot)
+        try {
+            const { db, corruptArchive } = openAt(fallbackPath)
+            opened = { db, filePath: fallbackPath, degraded: true, corruptArchive }
+        } catch (fallbackError) {
+            // 主路径与降级路径都不可用：显式报错优于返回空库，用户才不会误以为标注全丢了
+            const fallbackReason = fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+            throw new Error(
+                `标注库无法打开：${primaryPath}（${reason}）；降级路径 ${fallbackPath}（${fallbackReason}）`,
+                { cause: fallbackError },
+            )
+        }
     }
     connections.set(key, opened)
     return opened

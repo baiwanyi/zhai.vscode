@@ -4,12 +4,13 @@
  * 复用约定：与 index.db / media.db 同为 better-sqlite3 手写 DDL，版本号写 user_version；
  * FTS5 虚表与触发器无法用 ORM 表达，必须手写并与主表字段保持一致。
  * 关键约束：block_id / block_hash / quote 三列是重定位的降级链，缺一不可；
- * orphaned 只置位不物理删除，用户可能还要找回这条批注。
+ * orphaned 只置位不物理删除，用户可能还要找回这条批注；
+ * CREATE ... IF NOT EXISTS 对已存在的对象不生效，定义变更必须先 DROP 再建，见 migrateSchema。
  */
 import type Database from 'better-sqlite3'
 
 /** 当前 schema 版本：新增列或索引时递增，由 ensureAnnotationSchema 就地迁移 */
-const SCHEMA_VERSION = 1
+const SCHEMA_VERSION = 2
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS annotations (
@@ -50,10 +51,10 @@ const DDL_STATEMENTS = [
         model      TEXT NOT NULL,
         created_at TEXT NOT NULL
     )`,
-    // 旧库上的 (doc_path, quote, question) 索引已无用：命中不再按文档过滤，留着只白占写入开销
-    `DROP INDEX IF EXISTS idx_editor_queries_cache`,
     `CREATE INDEX IF NOT EXISTS idx_editor_queries_lookup ON editor_queries(quote, question)`,
     `CREATE INDEX IF NOT EXISTS idx_editor_queries_time ON editor_queries(created_at DESC)`,
+    // 最近查询按文档倒序取若干条：缺这个索引就得全表扫 + 排序
+    `CREATE INDEX IF NOT EXISTS idx_editor_queries_doc ON editor_queries(doc_path, created_at DESC)`,
     `CREATE VIRTUAL TABLE IF NOT EXISTS annotations_fts USING fts5(
         id UNINDEXED,
         quote,
@@ -70,21 +71,55 @@ const DDL_STATEMENTS = [
     `CREATE TRIGGER IF NOT EXISTS annotations_ad AFTER DELETE ON annotations BEGIN
         DELETE FROM annotations_fts WHERE rowid = old.rowid;
     END`,
-    `CREATE TRIGGER IF NOT EXISTS annotations_au AFTER UPDATE ON annotations BEGIN
+    // 限定列：orphaned 置位、updated_at 刷新这类写入不该重写全文索引，否则每次批量置失效都放大成 N 次磁盘写
+    `CREATE TRIGGER IF NOT EXISTS annotations_au AFTER UPDATE OF quote, block_text, note ON annotations BEGIN
         DELETE FROM annotations_fts WHERE rowid = old.rowid;
         INSERT INTO annotations_fts(rowid, id, quote, block_text, note)
         VALUES (new.rowid, new.id, new.quote, new.block_text, COALESCE(new.note, ''));
     END`,
 ] as const
 
+/**
+ * 按版本就地迁移：CREATE ... IF NOT EXISTS 不会覆盖已存在的对象，所以定义变过的触发器、
+ * 要废弃的索引必须先 DROP，再由 DDL_STATEMENTS 重建。
+ * @param fromVersion 打开时读到的 user_version
+ */
+function migrateSchema(db: Database.Database, fromVersion: number): void {
+    if (fromVersion < 2) {
+        // 旧版按 (doc_path, quote, question) 建索引：命中已不按文档过滤，留着只白占写入开销
+        db.exec('DROP INDEX IF EXISTS idx_editor_queries_cache')
+        // 旧版 AFTER UPDATE 无列限定，任意更新都重写全文索引
+        db.exec('DROP TRIGGER IF EXISTS annotations_au')
+    }
+}
+
+/**
+ * FTS 存量回填：触发器只覆盖增量，主表有数据而索引缺失（早期版本无 FTS、或索引被清空）时
+ * 搜索会静默漏结果。计数一致即跳过，保证每次打开都是幂等的。
+ */
+function backfillFts(db: Database.Database): void {
+    const total = db.prepare('SELECT COUNT(*) AS total FROM annotations').get() as { total: number }
+    const indexed = db.prepare('SELECT COUNT(*) AS total FROM annotations_fts').get() as { total: number }
+    if (total.total === indexed.total) {
+        return
+    }
+    db.exec('DELETE FROM annotations_fts')
+    db.exec(`INSERT INTO annotations_fts(rowid, id, quote, block_text, note)
+             SELECT rowid, id, quote, block_text, COALESCE(note, '') FROM annotations`)
+}
+
 /** 确保表结构与版本号就位；返回是否为全新建库 */
 export function ensureAnnotationSchema(db: Database.Database): boolean {
-    const isCreated = db.pragma('user_version', { simple: true }) === 0
+    const currentVersion = Number(db.pragma('user_version', { simple: true }))
+    const isCreated = currentVersion === 0
     db.transaction(() => {
+        migrateSchema(db, currentVersion)
         for (const ddl of DDL_STATEMENTS) {
             db.exec(ddl)
         }
-        if (isCreated) {
+        backfillFts(db)
+        // 老库的版本号必须跟着推进，否则下次仍会被当成「已是最新」，后续迁移无从判断
+        if (currentVersion < SCHEMA_VERSION) {
             db.pragma(`user_version = ${String(SCHEMA_VERSION)}`)
         }
     })()
