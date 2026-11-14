@@ -1,13 +1,15 @@
 /**
  * 编辑区与 Markdown 渲染样式：上半部服务 TipTap 编辑区（底色、版心、行号、空行占位、表格），
- * 下半部以 .zhai-markdown 为容器，集中承载 GitHub 风格的 Markdown 元素排版。
+ * 下半部是两态共用的 Markdown 元素排版——选择器统一写成 :is(.zhai-markdown, .zhai-editor-content)，
+ * 渲染态与编辑态共用一套 GitHub 风格呈现，少数只服务渲染态的规则单独标注。
  * 复用约定：颜色桥接 VSCode 编辑器变量与 globals.css 令牌，字号与字体族沿用同一套令牌；
  * 所有 var() 均带 GitHub 浅色回退值，脱离主题变量时仍是可读的浅色排版；类名统一 zhai- 前缀。
  * 关键约束：EditorContent 的根节点同时是 .zhai-editor-content 与 .ProseMirror，
  * 正文与占位符规则必须写在同一层，不能再多套一层后代选择器；
- * 占位符占 ::before、行号占 ::after，两者不能互换，空行同时需要这两个伪元素；
- * 占位符与行号都由扩展 / 计数器直接作用在顶层块上，只有本文件的选择器能命中；
- * Markdown 段的选择器一律挂在 .zhai-markdown 之下，不得写裸元素名，否则会串进编辑器正文。
+ * 空行占位符占 ::before（由 Placeholder 扩展挂在空文本块上）；行号不是伪元素，
+ * 由 EditorLineNumbers 测量后渲染成 .zhai-line-number 元素并绝对定位在正文左侧；
+ * 语法标记段用 ::before / ::after 还原源标记，与上述占位符互不干扰；
+ * Markdown 段的选择器一律经 :is(...) 挂在两个容器之下，不得写裸元素名，否则会串进编辑器正文。
  */
 
 .zhai-editor {
@@ -30,8 +32,9 @@
 
 /*
  * 版心：与 VSCode 原生编辑器一致，正文左对齐且铺满可用宽度，不再居中收窄。
- * 左侧留白供行号（28px）与块把手（60px）使用并留出间隔；右侧留白要同时容下表格加号（20px）
- * 与标题导航细线，所以取 4.5rem——两者贴着正文右边缘摆放时不会互相盖住。
+ * 左侧留白 6rem，与行号栏同宽，其中 3.75rem 让给块把手，行号数字右对齐落在把手外侧；
+ * 右侧留白要同时容下表格加列按钮（20px）与标题导航细线，所以取 4.5rem——
+ * 两者贴着正文右边缘摆放时不会互相盖住。
  */
 .zhai-editor-page {
     position: relative;
@@ -40,9 +43,8 @@
 }
 
 /* 正文区：min-height 保证空文档也有足够点击高度，outline 去掉聚焦描边（与原生编辑器一致）；
- * 字体族与字号取 VSCode 编辑器设置（editor.fontFamily / editor.fontSize），
- * 行高取其自动行高比例（editor.lineHeight 为 0 时即字号 × 1.5），
- * 这样与原生编辑器并排时字形、字号、疏密都对得上，不再用界面字体与固定 2rem。
+ * 字体族与字号取 VSCode 编辑器设置（editor.fontFamily / editor.fontSize），行高固定 1.5，
+ * 即原生编辑器「自动」行高比例下的疏密；这样并排时字形、字号、行距都对得上，不再用界面字体。
  * padding-bottom 是「文档写到最后一行之后仍有可写空间」的那几行空白：
  * 落在这里的点击由 EditorScreen 接管，末尾补一个空段落并把光标放进去。 */
 .zhai-editor-content {
@@ -52,7 +54,6 @@
     font-size: var(--vscode-editor-font-size, var(--font-size-ui));
     line-height: 1.5;
     outline: none;
-    counter-reset: zhai-line;
 }
 
 /*
@@ -81,76 +82,44 @@
     }
 }
 
-/*
- * 行号：按顶层块计数（富文本没有物理行，块即一行），画在正文左侧、块把手之外。
- * 用 ::after 而不是 ::before，因为空行的 ::before 已被占位提示占用。
- * 字体与字号直接取 VSCode 编辑器配置（editor.fontFamily / editor.fontSize）；
- * 宽度不写死：右边缘固定、宽度收缩到内容，位数变多时向左扩展，
- * 与 VSCode 行号栏「右对齐、按最大位数定宽」的表现一致。
- */
+/* 顶层块建立定位上下文：块内绝对定位的语法标记与单元格描边伪元素都以所在块为参照 */
 .zhai-editor-content > * {
     position: relative;
-    counter-increment: zhai-line;
 }
 
-/* 行高跟随所在块：标题用了 1.3 的紧行高，写死固定行高会让行号偏离首行基线 */
-.zhai-editor-content > *::after {
-    content: counter(zhai-line);
+/*
+ * 行号栏：由 EditorLineNumbers 按 Markdown 真实行号逐行渲染（含块内多行与块间空行），
+ * 位置在正文左侧、块把手之外，随内容滚动；行号数值与纵坐标都由组件测量后给出，
+ * 这里只负责定位、字体与颜色，不做计数。
+ * 关键约束：列本身不参与布局、不接收指针事件；容器宽 6rem（与正文左内边距同宽），
+ * 行号右对齐、右边缘让开 3.75rem 的块把手，位数变多时数字向左扩展。
+ */
+.zhai-line-numbers {
     position: absolute;
     top: 0;
-    /* 右边缘落在块把手左侧（把手占 3.75rem），正文位置不随行号位数变化 */
-    right: calc(100% + 3.75rem);
+    bottom: 0;
+    left: 0;
+    width: 6rem;
+    pointer-events: none;
+    user-select: none;
+}
+
+.zhai-line-number {
+    position: absolute;
+    /* 容器宽 6rem 即正文左内边距，再让开 3.75rem 的块把手 */
+    right: 3.75rem;
     color: var(--vscode-editorLineNumber-foreground, var(--muted-foreground));
     font-family: var(--vscode-editor-font-family, var(--font-code));
-    /* 与正文同源：1em 即编辑器字号，下面按字号倍数换算的行号下移量才不会随字号漂移 */
     font-size: var(--vscode-editor-font-size, var(--font-size-ui));
-    /* 伪元素不会命中 globals 的 `* { font-light }`，但字重会从块继承 300，这里按编辑器设置显式回落 */
+    /* 行号栏不命中 globals 的 `* { font-light }`，但字重会从容器继承，这里按编辑器设置显式回落 */
     font-weight: var(--vscode-editor-font-weight, 400);
-    line-height: inherit;
+    text-align: right;
     white-space: nowrap;
-    user-select: none;
-    pointer-events: none;
 }
 
 /* 当前行：VSCode 原生只换行号颜色、不改字重，这里保持一致 */
-.zhai-editor-content > .is-cursor-line::after {
+.zhai-line-number.is-active {
     color: var(--vscode-editorLineNumber-activeForeground, var(--vscode-editor-foreground, var(--foreground)));
-}
-
-/*
- * 标题行号垂直对齐：行号字号是编辑器字号，而标题首行行盒按标题字号（h1 为 1.75 倍）撑高，
- * top: 0 把两者顶端对齐后，行号中心必然高于标题首行中心，看起来就是「行号偏上」。
- * 这里按「(字号倍数 − 1) × 标题 line-height 1.3 ÷ 2」下移，让行号中心落在标题首行中心；
- * 1em 即编辑器字号，字号设置变化时比例不变。h5 是 1em，与正文同号，无需偏移。
- */
-.zhai-editor-content > h1::after {
-    top: calc((1.75 - 1) * 0.65em);
-}
-
-.zhai-editor-content > h2::after {
-    top: calc((1.4 - 1) * 0.65em);
-}
-
-.zhai-editor-content > h3::after {
-    top: calc((1.2 - 1) * 0.65em);
-}
-
-.zhai-editor-content > h4::after {
-    top: calc((1.05 - 1) * 0.65em);
-}
-
-.zhai-editor-content > h6::after {
-    top: calc((0.9 - 1) * 0.65em);
-}
-
-/* 带纵向内边距的块：行号的 top 相对 padding 盒边界，不下移就会压在 padding 区、高过首行 */
-.zhai-editor-content > blockquote::after {
-    top: 0.4em;
-}
-
-/* 代码块：让开 padding-top 0.85em，再按首行 code 的 0.9em 字号与 1.55 行高上移半个行盒差 */
-.zhai-editor-content > pre::after {
-    top: 0.7725em;
 }
 
 /* 空行占位：Placeholder 扩展在空文本块上挂 is-empty 与 data-placeholder，这里只负责呈现 */
@@ -165,11 +134,13 @@
 /*
  * 表格：Tiptap 只输出 table / colgroup 结构，没有任何自带样式。
  * 视觉规则同时对 .zhai-markdown 与 .zhai-editor-content 生效，两处容器共用一套呈现：
- * 外框一条细线、内部只留横线，去掉网格感；表头铺浮层色加一条略深底线；
- * 斑马纹与悬停都压到 4% / 6% 前景色，深浅主题下自动相反。
+ * 不画外框与竖线，每行只留一条横线，靠圆角与底色区分区块；表头铺浮层色加一条略深底线；
+ * 斑马纹压到 7% / 5% 前景色、悬停 10%，深浅主题下自动相反。
+ * 编辑态铺满正文宽度；渲染态在文件末尾另改为 max-content + 横向滚动，长表不撑破页面。
  */
 :is(.zhai-markdown, .zhai-editor-content) table {
-    margin: 0 0 1em;
+    width: 100%;
+    margin: 2em 0;
     border-radius: 0.55em;
     /* 外框与内线不合并，圆角与单元格底色才不会被 collapse 压平 */
     border-collapse: separate;
@@ -187,12 +158,13 @@
     font-weight: 400;
 }
 
-/* 表头：浮层色铺底 + 一条略深的底线，空表也能一眼看出层级 */
+/* 表头：浮层色铺底 + 一条略深的底线，空表也能一眼看出层级；标题一律单行，不随列宽折行 */
 :is(.zhai-markdown, .zhai-editor-content) th {
     background-color: var(--vscode-editorWidget-background, var(--muted, #f6f8fa));
     border-bottom-color: color-mix(in srgb, var(--foreground, #1f2328) 18%, transparent);
     color: var(--foreground, #1f2328);
     font-weight: 600;
+    white-space: nowrap;
 }
 
 /* 最后一行交给外框收边，避免底部出现双线 */
@@ -238,27 +210,25 @@
     margin: 0;
 }
 
-/* 编辑态布局：TableKit 需要固定布局，选中框依赖单元格自身定位 */
-.zhai-editor-content table {
-    width: 100%;
-    table-layout: fixed;
-}
-
+/*
+ * 编辑态单元格：定位上下文供描边伪元素使用；min-width 防止窄内容把列压到无法编辑，
+ * 列宽本身仍由 TableKit 的 fixed 布局分配。
+ */
 .zhai-editor-content th,
 .zhai-editor-content td {
     position: relative;
-    min-width: 2rem;
+    min-width: 6em;
 }
 
 /*
  * 当前单元格：光标所在格用一圈圆角描边标出，宽表、多列表格里一眼看出正在编辑哪一格。
  * class 由 CursorLineExtension 用 Decoration.node 挂在 cell 上，不写进文档；
- * 与上面的多选底色分开——那个表达「选中范围」，这里是常驻的定位提示。
- * 描边参照 input 的聚焦态：2px 实线 + 外圈半透明光晕，颜色取 --ring（即 VSCode 焦点描边色）。
+ * 描边取 --ring（VSCode 焦点描边色），用两圈同尺寸 inset 阴影叠加——实色线保证边界清晰，
+ * 同色 30% 那层压在线条内侧，深色主题下不至于过硬。
  * 圆角与描边都必须画在 ::before 上，不能写进单元格自身：表格只留一条 border-bottom，
  * border-radius 会把这条横线一起弯折，与相邻格的直线接不上，格子四周就留下一段弧形残线。
  * 伪元素用 inset 阴影描边，不参与布局，table-layout: fixed 的列宽不受影响；
- * ::after 已被多选底色占用，故这里用 ::before；覆盖层只有边缘几像素，关掉指针后才不挡选词与点击。
+ * 覆盖层只有边缘几像素，故关掉指针事件，不挡选词与点击。
  */
 .zhai-editor-content .is-cursor-cell::before {
     content: '';
@@ -388,13 +358,11 @@
 }
 
 /*
- * 编辑态链接彻底禁用指针命中：webview 的链接处理只认被命中的 a 元素，
- * pointer-events: none 后单击打不到 a 上，也就不会跳转；
- * 打开走 Ctrl / Cmd + 点击（按坐标识别链接 mark），光标仍按正文文字处理。
+ * 编辑态链接保留链接外观与手型指针，但普通单击不跳转：跳转只在 Ctrl / Cmd + 点击时触发
+ * （webview 按坐标识别链接 mark 后交给宿主打开），其余点击仍按正文文字落光标。
  */
 .zhai-editor-content a {
-    cursor: text;
-    pointer-events: none;
+    cursor: pointer;
 }
 
 :is(.zhai-markdown, .zhai-editor-content) a:hover {
@@ -423,7 +391,7 @@
     white-space: break-spaces;
 }
 
-/* 代码块：明显背景 + 细边框 + 横向滚动，长行不折行 */
+/* 代码块：浅底 + 圆角，内容区横向滚动，长行不折行（由内部 pre code 的 white-space 保证） */
 :is(.zhai-markdown, .zhai-editor-content) pre {
     margin: 0 0 1em;
     padding: 0.85em 1em;
@@ -517,7 +485,7 @@
 }
 
 /*
- * 编辑态结构是 li[data-checked] > label > input + li > div，默认 label 与 div 各占一行，
+ * 编辑态结构是 li > (label > input) + div，默认 label 与 div 各占一行，
  * 开关会和文字上下分家。改成 flex 后两者同排，段落折行只发生在文字侧。
  */
 :is(.zhai-markdown, .zhai-editor-content) ul[data-type='taskList'] > li {
@@ -647,14 +615,17 @@
 
 /* ==========================================================================
  * Markdown 语法标记显示
- * 把源标记用伪元素还原到渲染结果上：标题前的 #、粗体两侧的 **、无序列表的 - 等，
- * 让同一份内容既保留排版层级，又能直接看出对应的 Markdown 写法。
+ * 把源标记用伪元素还原到渲染结果上：标题前的 #、粗体两侧的 **、删除线的 ~~、
+ * 无序列表的 -、引用块的 >、链接尾部的地址等，让同一份内容既保留排版层级，
+ * 又能直接看出对应的 Markdown 写法。
  * 关键约束：标记全部由 ::before / ::after 生成，不进入 DOM，不参与任何逻辑与锚点计算；
- * 标记统一取弱文字色、等宽字体且字号小于所在元素，避免与正文抢视觉重心；
+ * 标记统一取弱文字色避免与正文抢视觉重心——标题标记与标题同字号、只降字重，
+ * 行内标记（强调 / 删除线 / 链接地址）与列表、引用标记另取 0.85em，
+ * 其中列表与引用标记用等宽字体，与对应语法的书写形态一致；
  * 表格的管道符与图片的 ![]() 不做还原（表格需逐格描边、图片是替换元素，伪元素不可见）。
  * ========================================================================== */
 
-/* ── 标题：等宽弱色 #，个数即层级 ── */
+/* ── 标题：弱色 #，个数即层级，字号随标题、字重降到 300 以免抢眼 ── */
 :is(.zhai-markdown, .zhai-editor-content) h1::before,
 :is(.zhai-markdown, .zhai-editor-content) h2::before,
 :is(.zhai-markdown, .zhai-editor-content) h3::before,

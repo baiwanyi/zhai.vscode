@@ -22,14 +22,6 @@ import type { TodoListSummary } from '@shared/types/todo'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 
-/**
- * 删除项的危险色：下拉内容层用 `**:data-[variant=destructive]:text-accent-foreground!`
- * 把 destructive 变体的文字强制拉回常规色，故这里改用显式类；图标另需 important——
- * 菜单项基础样式里有 `not-data-[variant=destructive]:focus:**:text-accent-foreground`，
- * 聚焦（悬停）时会把所有后代文字（含 svg）拉回常规色，不加 important 图标就会在悬停时变色。
- */
-const DELETE_ITEM_CLASS = 'text-destructive focus:bg-destructive/10! focus:text-destructive [&_svg]:text-destructive!'
-
 export interface TodoListBarProps {
     lists: TodoListSummary[]
     activeListId: string | null
@@ -116,7 +108,7 @@ function ActionsMenu({
                         重命名
                     </DropdownMenuItem>
                     <DropdownMenuItem
-                        className={DELETE_ITEM_CLASS}
+                        variant="destructive"
                         disabled={isDisabled}
                         onSelect={() => onDelete(activeList)}
                     >

@@ -429,3 +429,94 @@ body.vscode-high-contrast-light {
         scroll-behavior: auto !important;
     }
 }
+
+/*
+ * 菜单 destructive 变体还原（项目覆盖）：radix-nova 在 menuAccent=subtle 下会给下拉菜单、
+ * 右键菜单与 menubar 的 Content / SubContent 生成三条带 !important 的后代规则——
+ * `**:data-[variant=destructive]:text-accent-foreground!`（元素自身及其全部后代）与
+ * `**:data-[variant=destructive]:focus:bg-foreground/10!`。它们盖过三类 Item 自带的 destructive 样式，
+ * 使 variant="destructive" 只剩普通文字色与前景 10% 底色，图标、快捷键一并跟着变灰；
+ * 业务侧此前只能逐处补 important 类。这里以等 / 更高特异性的后置声明还原 shadcn 规范效果，
+ * 菜单项直接写 variant 即可，不必再叠加任何颜色类。
+ * 关键约束：规则必须留在 @layer utilities 内并带 !important——未分层的 important 声明在层叠顺序中优先级最低，
+ * 写到层外反而会被组件内置的 important 规则反压；shadcn preset 重写本文件后需整段补回。
+ */
+@layer utilities {
+    /* 元素自身与全部后代一并染红：压制规则给每个后代都下了 important 声明，只染 item 本身不够——
+       svg 内的 path / line、文本包裹层各自的 color 都会胜过继承值，于是图标与文字仍是灰的 */
+    :is(
+            [data-slot='dropdown-menu-content'],
+            [data-slot='dropdown-menu-sub-content'],
+            [data-slot='context-menu-content'],
+            [data-slot='context-menu-sub-content'],
+            [data-slot='menubar-content'],
+            [data-slot='menubar-sub-content']
+        )
+        [data-variant='destructive'],
+    :is(
+            [data-slot='dropdown-menu-content'],
+            [data-slot='dropdown-menu-sub-content'],
+            [data-slot='context-menu-content'],
+            [data-slot='context-menu-sub-content'],
+            [data-slot='menubar-content'],
+            [data-slot='menubar-sub-content']
+        )
+        [data-variant='destructive']
+        * {
+        color: var(--destructive) !important;
+    }
+
+    /* 快捷键：常态跟随 muted，聚焦时与普通菜单项一致回到 accent-foreground */
+    :is(
+            [data-slot='dropdown-menu-content'],
+            [data-slot='dropdown-menu-sub-content'],
+            [data-slot='context-menu-content'],
+            [data-slot='context-menu-sub-content'],
+            [data-slot='menubar-content'],
+            [data-slot='menubar-sub-content']
+        )
+        [data-variant='destructive']
+        [data-slot$='-shortcut'] {
+        color: var(--muted-foreground) !important;
+    }
+
+    :is(
+            [data-slot='dropdown-menu-content'],
+            [data-slot='dropdown-menu-sub-content'],
+            [data-slot='context-menu-content'],
+            [data-slot='context-menu-sub-content'],
+            [data-slot='menubar-content'],
+            [data-slot='menubar-sub-content']
+        )
+        [data-variant='destructive']:focus
+        [data-slot$='-shortcut'] {
+        color: var(--accent-foreground) !important;
+    }
+
+    /* 聚焦底色取 destructive/10，暗色取 20%，与组件自带的 destructive 聚焦规则同源 */
+    :is(
+            [data-slot='dropdown-menu-content'],
+            [data-slot='dropdown-menu-sub-content'],
+            [data-slot='context-menu-content'],
+            [data-slot='context-menu-sub-content'],
+            [data-slot='menubar-content'],
+            [data-slot='menubar-sub-content']
+        )
+        [data-variant='destructive']:focus {
+        background-color: color-mix(in oklab, var(--destructive) 10%, transparent) !important;
+        color: var(--destructive) !important;
+    }
+
+    .dark
+        :is(
+            [data-slot='dropdown-menu-content'],
+            [data-slot='dropdown-menu-sub-content'],
+            [data-slot='context-menu-content'],
+            [data-slot='context-menu-sub-content'],
+            [data-slot='menubar-content'],
+            [data-slot='menubar-sub-content']
+        )
+        [data-variant='destructive']:focus {
+        background-color: color-mix(in oklab, var(--destructive) 20%, transparent) !important;
+    }
+}
