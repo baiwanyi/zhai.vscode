@@ -39,7 +39,7 @@ describe('QueryDialog', () => {
 
         expect(screen.queryByRole('textbox')).toBeNull()
         expect(screen.getByRole('status')).toBeDefined()
-        expect(screen.getByText('正在生成…')).toBeDefined()
+        expect(screen.getByText('正在查询…')).toBeDefined()
         await waitFor(() => {
             expect(query.start).toHaveBeenCalledTimes(1)
         })
@@ -53,7 +53,7 @@ describe('QueryDialog', () => {
         render(<QueryDialog isOpen quote={QUOTE} onOpenChange={vi.fn()} query={query} />)
 
         expect(screen.getByRole('status')).toBeDefined()
-        expect(screen.getByText('正在生成…')).toBeDefined()
+        expect(screen.getByText('正在查询…')).toBeDefined()
         expect(screen.queryByText('半截内容')).toBeNull()
         expect(screen.queryByRole('button', { name: '停止' })).toBeNull()
         // 关闭只剩 DialogContent 右上角的默认按钮（可访问名取自 sr-only 的 Close）
@@ -65,7 +65,7 @@ describe('QueryDialog', () => {
         render(<QueryDialog isOpen quote={QUOTE} onOpenChange={vi.fn()} query={query} />)
 
         expect(screen.getByText('完整结果')).toBeDefined()
-        expect(screen.queryByText('正在生成…')).toBeNull()
+        expect(screen.queryByText('正在查询…')).toBeNull()
         expect(screen.queryByRole('button', { name: '重新解释' })).toBeNull()
         expect(screen.queryByRole('button', { name: '再查一次' })).toBeNull()
     })

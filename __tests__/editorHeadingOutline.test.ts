@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook } from '@testing-library/react'
+import { act, renderHook } from '@testing-library/react'
 import { Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { describe, expect, it } from 'vitest'
@@ -48,6 +48,18 @@ describe('useHeadingOutline', () => {
         const editor = createEditor('<p>只有正文</p>')
         const { result } = renderHook(() => useHeadingOutline(editor))
         expect(result.current).toHaveLength(0)
+        editor.destroy()
+    })
+
+    // 宿主灌正文走 setContent({ emitUpdate: false })，只听 update 会漏掉这一次；大纲必须跟着刷新
+    it('宿主灌正文（emitUpdate: false）后大纲仍然刷新', () => {
+        const editor = createEditor('<p>加载中</p>')
+        const { result } = renderHook(() => useHeadingOutline(editor))
+        expect(result.current).toHaveLength(0)
+        act(() => {
+            editor.commands.setContent('<h2>灌入的标题</h2>', { emitUpdate: false })
+        })
+        expect(result.current.map((item) => item.text)).toEqual(['灌入的标题'])
         editor.destroy()
     })
 })

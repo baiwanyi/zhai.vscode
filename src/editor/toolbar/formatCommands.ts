@@ -129,6 +129,20 @@ export function toEditableHref(href: string): string {
     return href.replace(/^https:\/\//iu, '').replace(/^([^/]+)\/$/u, '$1')
 }
 
+/** 链接输入框的长度上限：与回填/校验同源，超长地址交给 normalizeHref 也没有意义 */
+export const LINK_INPUT_MAX_LENGTH = 2048
+
+/** 自带前缀的形态：完整协议、站内绝对路径、锚点，或以 . 起头的相对路径 */
+const HREF_OWN_PREFIX = /^(?:[a-z][a-z0-9+.-]*:|\/|#|\.)/iu
+
+/**
+ * 输入框里的地址是否自带前缀：自带时左侧固定的 https:// 要隐掉，否则会与内容重复。
+ * 与 toEditableHref 互为正反——回填时剥前缀、展示时判前缀，两半必须守同一条规则。
+ */
+export function hasOwnHrefPrefix(value: string): boolean {
+    return HREF_OWN_PREFIX.test(value)
+}
+
 /**
  * 给选区套上链接：地址须已通过 normalizeLinkHref 校验；返回是否真的写入了文档。
  * 与摘链一样走纯事务，不 focus 也不改选区——面板按钮点击时抢焦点会连带关掉浮层、

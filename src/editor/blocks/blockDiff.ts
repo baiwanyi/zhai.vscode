@@ -27,9 +27,7 @@ function matchBlocks(current: readonly string[], baseline: readonly string[]): A
                 continue
             }
             line[col] =
-                current[row] === baseline[col]
-                    ? (next[col + 1] ?? 0) + 1
-                    : Math.max(next[col] ?? 0, line[col + 1] ?? 0)
+                current[row] === baseline[col] ? (next[col + 1] ?? 0) + 1 : Math.max(next[col] ?? 0, line[col + 1] ?? 0)
         }
     }
     const matches: Array<[number, number]> = []
@@ -61,10 +59,7 @@ export function pairBaseline(htmls: readonly string[], blocks: readonly EditorBl
 }
 
 /** 计算区间变更：只覆盖真正变化的部分，内容未变的块不产生写入 */
-export function buildBlockChanges(
-    current: readonly string[],
-    baseline: readonly BlockBaseline[],
-): EditorBlockChange[] {
+export function buildBlockChanges(current: readonly string[], baseline: readonly BlockBaseline[]): EditorBlockChange[] {
     const matches = matchBlocks(
         current,
         baseline.map((block) => block.html),

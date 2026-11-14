@@ -9,12 +9,14 @@
  * 浮层内外的按钮与正文会一起失去点击响应。
  */
 import { Check, ChevronDown } from 'lucide-react'
+import { useState } from 'react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@components/ui/dropdown-menu'
 import { Button } from '@webview/components/Button'
 import type { BlockTargetId } from '../blocks/blockCommands'
-import type { Editor } from '@tiptap/core'
+import type { Editor } from '@tiptap/react'
 import type { JSX } from 'react'
 import { BLOCK_TARGETS, canConvertBlock, convertBlock, isCurrentTarget, readBlockNode } from '../blocks/blockCommands'
+import { ensureEditable } from '../toolbar/editableGuard'
 
 export interface BlockTypeMenuProps {
     editor: Editor
@@ -22,8 +24,9 @@ export interface BlockTypeMenuProps {
     pos: number | null
     /** 当前块类型标签：按钮上直接显示 */
     label: string
-    isOpen: boolean
-    onOpenChange: (isOpen: boolean) => void
+    /** 受控开合：不传时菜单自持状态（父层不需要读它，只有点击外部判定靠 DOM 归属） */
+    isOpen?: boolean
+    onOpenChange?: (isOpen: boolean) => void
     /** 转换成功：外层据此收起整个浮层 */
     onConverted: () => void
 }
@@ -36,11 +39,22 @@ export function BlockTypeMenu({
     onOpenChange,
     onConverted,
 }: BlockTypeMenuProps): JSX.Element {
+    const [isSelfOpen, setIsSelfOpen] = useState(false)
+    const isMenuOpen = isOpen ?? isSelfOpen
+    /** 自持与受控共用一条写入路径：受控时仍回调，方便调用方按需接管 */
+    const handleOpenChange = (nextOpen: boolean): void => {
+        setIsSelfOpen(nextOpen)
+        onOpenChange?.(nextOpen)
+    }
     const node = pos === null ? null : readBlockNode(editor, pos)
     const isConvertible = node !== null && canConvertBlock(node)
 
     const handleConvert = (target: BlockTargetId): void => {
         if (pos === null) {
+            return
+        }
+        // 只读文档下命令层会静默返回 false，菜单项点了没反应：先把原因说出来
+        if (!ensureEditable(editor)) {
             return
         }
         const isConverted = convertBlock(editor, pos, target)
@@ -54,9 +68,9 @@ export function BlockTypeMenu({
     return (
         // 与「更多」菜单同理：嵌在选区浮层里的菜单不能走模态，否则 body 上的
         // pointer-events: none 会让整片界面（含浮层本身）失去点击响应
-        <DropdownMenu modal={false} open={isOpen} onOpenChange={onOpenChange}>
+        <DropdownMenu modal={false} open={isMenuOpen} onOpenChange={handleOpenChange}>
             <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" aria-expanded={isOpen} aria-haspopup="menu">
+                <Button variant="ghost" size="sm" aria-expanded={isMenuOpen} aria-haspopup="menu">
                     <span className="max-w-24 truncate">{label.length === 0 ? '块类型' : label}</span>
                     <ChevronDown className="size-3" />
                 </Button>
@@ -77,9 +91,7 @@ export function BlockTypeMenu({
                         <DropdownMenuItem
                             key={target.id}
                             disabled={!isConvertible || isCurrent}
-                            onSelect={(): void => {
-                                handleConvert(target.id)
-                            }}
+                            onSelect={(): void => handleConvert(target.id)}
                         >
                             <Icon />
                             <span className="flex-1">{target.label}</span>

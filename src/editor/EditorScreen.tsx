@@ -166,6 +166,8 @@ export function EditorScreen(): JSX.Element {
                     {search.isOpen ? <SearchPanel state={search} /> : null}
                     <SelectionToolbar
                         editor={editor}
+                        // 色板要按选区反查已有划线的颜色，这里直接把标注列表交下去
+                        highlights={items}
                         onHighlight={addOrToggleHighlight}
                         onHighlightColor={applyHighlightColor}
                         onAnnotate={(quote, range): void => {

@@ -306,7 +306,7 @@ export function ProofreadAiDetectCard({
             <Dialog open={isConsentOpen} onOpenChange={handleConsentOpenChange}>
                 <DialogContent>
                     <DialogHeader>
-                        <DialogTitle>确认将正文上传至第三方</DialogTitle>
+                        <DialogTitle className="text-lg">确认将正文上传至第三方</DialogTitle>
                         <DialogDescription>
                             AI 特征检测需要把当前正文发送至腾讯云 EdgeOne
                             朱雀检测服务。正文不会保存在本插件，但会经过第三方服务处理，请确认后再继续。

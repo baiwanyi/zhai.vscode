@@ -81,7 +81,13 @@ export function useDocumentQuery(path: string): UseDocumentQueryResult {
 
     const start = useCallback(
         async (quote: string, question: string): Promise<void> => {
-            if (path.length === 0 || quote.trim() === '') {
+            if (path.length === 0) {
+                // 快照未就绪时不发请求，但必须落一个可展示的失败态：只停在 idle 会让弹窗永远显示等待
+                setStatus('error')
+                setError('文档尚未就绪，请稍后重试')
+                return
+            }
+            if (quote.trim() === '') {
                 return
             }
             const clientId = crypto.randomUUID()

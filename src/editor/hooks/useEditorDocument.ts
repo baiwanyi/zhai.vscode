@@ -98,12 +98,15 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
      * 旧实现放在 requestAnimationFrame 里，webview 不可见时 rAF 不执行，baseline 会一直是空数组，
      * 之后第一次回写就把整篇当成新增内容全量替换。
      */
-    const sampleBaseline = useCallback((blocks: readonly EditorBlock[]): void => {
-        if (editor === null || editor.isDestroyed) {
-            return
-        }
-        baselineRef.current = pairBaseline(collectBlocks(editor), blocks)
-    }, [editor])
+    const sampleBaseline = useCallback(
+        (blocks: readonly EditorBlock[]): void => {
+            if (editor === null || editor.isDestroyed) {
+                return
+            }
+            baselineRef.current = pairBaseline(collectBlocks(editor), blocks)
+        },
+        [editor],
+    )
 
     /** 应用快照：先灌内容再采样基准，最后按宿主的 editable 决定是否可写 */
     const applySnapshot = useCallback(

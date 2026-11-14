@@ -101,8 +101,9 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
                         <AlertDescription>{notice}</AlertDescription>
                     </Alert>
                 )}
+                {/* 限高必须落在 Viewport 上：Root 只有 max-height 时其百分比高度无法解析，正文会溢出弹窗 */}
                 {!isPending && query.content.length > 0 ? (
-                    <ScrollArea className="max-h-72 min-h-0">
+                    <ScrollArea className="*:data-[slot=scroll-area-viewport]:max-h-72">
                         <div className="px-3 pb-3">
                             <Markdown content={query.content} />
                         </div>
@@ -115,7 +116,6 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
                         <AlertDescription>{query.error}</AlertDescription>
                     </Alert>
                 )}
-                {/* 关闭统一交给 DialogContent 右上角的默认关闭按钮，footer 不再重复一个 */}
             </DialogContent>
         </Dialog>
     )

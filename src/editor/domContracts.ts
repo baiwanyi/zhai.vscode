@@ -20,6 +20,12 @@ export const EDITOR_CONTENT_CLASS = 'zhai-editor-content'
 /** 段末批注图标的块号属性 */
 export const ANNOTATION_BLOCK_ATTR = 'data-annotation-block'
 
+/**
+ * 悬浮 Popover 的壳：宽高与底色、内边距、阴影、描边全部让给内部块（工具条 / InputGroup），
+ * 否则弹层自带的装饰会与内部块叠成双层边框。
+ */
+export const FLOATING_POPOVER_CLASS = 'w-auto border-0 bg-transparent p-0 shadow-none ring-0'
+
 /** 段末批注图标：块号与图标矩形一次取出，调用方据此定位弹层 */
 export interface AnnotationMarker {
     blockIndex: number

@@ -57,7 +57,7 @@ export function AnnotationDialog({ isOpen, quote, onOpenChange, onSubmit }: Anno
         <Dialog open={isOpen} onOpenChange={handleOpenChange}>
             <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
-                    <DialogTitle>新建批注</DialogTitle>
+                    <DialogTitle className="text-lg">新建批注</DialogTitle>
                     <DialogDescription className="line-clamp-2 border-l-2 pl-2 text-muted-foreground">
                         {quote}
                     </DialogDescription>

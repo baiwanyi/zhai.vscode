@@ -50,7 +50,7 @@ export function AiChatMentionDialog({
         <Dialog open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
             <DialogContent className="max-w-lg">
                 <DialogHeader>
-                    <DialogTitle>引用笔记或章节</DialogTitle>
+                    <DialogTitle className="text-lg">引用笔记或章节</DialogTitle>
                     <DialogDescription>按标题或正文关键词检索索引，选中后加入本轮上下文</DialogDescription>
                 </DialogHeader>
                 <div className="flex items-center gap-2">

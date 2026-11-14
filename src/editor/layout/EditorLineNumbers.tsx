@@ -8,7 +8,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import type { EditorBlock } from '@shared/types/editor'
-import type { Editor } from '@tiptap/core'
+import type { Editor } from '@tiptap/react'
 import type { JSX } from 'react'
 import { EDITOR_PAGE_CLASS } from '../domContracts'
 
@@ -28,6 +28,9 @@ export interface EditorLineNumbersProps {
 
 /** 单个块最多渲染的行数：异常数据（行号跨度失真）时兜底，避免把行号栏撑爆 */
 const MAX_LINES_PER_BLOCK = 500
+
+/** 测量节流：行号不比光标，120ms 的跟随延迟不可感知，却能把长文档的每帧测量降一个数量级 */
+const MEASURE_THROTTLE_MS = 120
 
 /**
  * 光标所在块的快照下标：与 useEditorDocument 的采集口径一致，空文本块不计入。
@@ -84,7 +87,9 @@ function collectMarks(editor: Editor, blocks: readonly EditorBlock[]): LineMark[
         const top = rect.top - pageTop
         const height = rect.height
         // 快照缺失或落后时按上一块末行续排：新敲的段落先给一个临时行号，回写后自动校正
-        const startLine: number = block?.startLine ?? (previousEndLine === null ? 1 : previousEndLine + 1)
+        const rawStartLine: number = block?.startLine ?? (previousEndLine === null ? 1 : previousEndLine + 1)
+        // 快照与 DOM 错位时行号可能倒挂：夹到上一块末行之后，否则重复行号会撞 React key 并叠字
+        const startLine: number = previousEndLine === null ? rawStartLine : Math.max(rawStartLine, previousEndLine + 1)
         const endLine: number = block?.endLine ?? startLine
         const lineCount = Math.max(Math.min(endLine - startLine + 1, MAX_LINES_PER_BLOCK), 1)
         // 块间空行：Markdown 两个块之间必有空行，不补就会跳号，与文本编辑器对不上
@@ -119,21 +124,41 @@ function collectMarks(editor: Editor, blocks: readonly EditorBlock[]): LineMark[
 export function EditorLineNumbers({ editor, blocks }: EditorLineNumbersProps): JSX.Element | null {
     const [marks, setMarks] = useState<LineMark[]>([])
     const frameRef = useRef<number | null>(null)
+    /** 上次测量的时间戳：行号不必逐帧精确，按 MEASURE_THROTTLE_MS 节流 */
+    const measuredAtRef = useRef(0)
+    const tailRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     useEffect(() => {
         if (editor === null || editor.isDestroyed) {
             return
         }
-        // 逐帧合并：键入时每个字符都会触发 update，逐次量矩形会让滚动与输入都发涩
+        const measure = (): void => {
+            measuredAtRef.current = performance.now()
+            setMarks(collectMarks(editor, blocks))
+        }
+        /**
+         * 逐帧合并 + 时间节流：键入时每个字符都会触发 update，逐次量矩形会让滚动与输入都发涩。
+         * 已在排队时不重复排队；到期测量读的是当时最新的 doc，最后一次输入不会丢。
+         */
         const schedule = (): void => {
-            if (frameRef.current !== null) {
+            if (frameRef.current !== null || tailRef.current !== null) {
                 return
             }
-            frameRef.current = requestAnimationFrame(() => {
-                frameRef.current = null
-                setMarks(collectMarks(editor, blocks))
-            })
+            const wait = MEASURE_THROTTLE_MS - (performance.now() - measuredAtRef.current)
+            if (wait <= 0) {
+                frameRef.current = requestAnimationFrame((): void => {
+                    frameRef.current = null
+                    measure()
+                })
+                return
+            }
+            tailRef.current = setTimeout((): void => {
+                tailRef.current = null
+                measure()
+            }, wait)
         }
+        // 换文档或快照到达时立即重测，不等节流窗口
+        measuredAtRef.current = 0
         schedule()
         editor.on('update', schedule)
         editor.on('selectionUpdate', schedule)
@@ -148,6 +173,10 @@ export function EditorLineNumbers({ editor, blocks }: EditorLineNumbersProps): J
             if (frameRef.current !== null) {
                 cancelAnimationFrame(frameRef.current)
                 frameRef.current = null
+            }
+            if (tailRef.current !== null) {
+                clearTimeout(tailRef.current)
+                tailRef.current = null
             }
         }
     }, [editor, blocks])

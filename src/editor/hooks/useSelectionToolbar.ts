@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SelectionBlockRange } from '../blocks/blockCommands'
 import type { FrozenRange, InlineFormatId } from '../toolbar/formatCommands'
 import type { Editor } from '@tiptap/core'
-import { readBlockLabel, readSelectionBlockRange, readTopBlockPos } from '../blocks/blockCommands'
+import { readBlockLabel, readSelectionBlockRange, readTopBlockIndexAt, readTopBlockPos } from '../blocks/blockCommands'
 import { readActiveFormats } from '../toolbar/formatCommands'
 
 /** 菜单最小触发长度：一两个字符的选区多半是误触 */
@@ -50,6 +50,8 @@ interface ToolbarSnapshot {
     blockRange: SelectionBlockRange | null
     /** 选区起点所在顶层块：块类型菜单据此定位转换目标 */
     blockPos: number | null
+    /** 选区起点的顶层块序号（doc 原始顺序，含空块）：色板据此反查划线颜色 */
+    blockIndex: number
     /** 该块的类型标签：菜单按钮上直接显示「一级标题」这类文案 */
     blockLabel: string
 }
@@ -73,6 +75,7 @@ export function useSelectionToolbar(editor: Editor | null): SelectionToolbarStat
         range: EMPTY_RANGE,
         blockRange: null,
         blockPos: null,
+        blockIndex: -1,
         blockLabel: '',
     })
     const [activeFormats, setActiveFormats] = useState<readonly InlineFormatId[]>([])
@@ -119,6 +122,7 @@ export function useSelectionToolbar(editor: Editor | null): SelectionToolbarStat
             const left = Math.min(Math.max(centerX, VIEWPORT_PADDING), window.innerWidth - VIEWPORT_PADDING)
             const blockPos = readTopBlockPos(editor)
             const node = blockPos === null ? null : editor.state.doc.nodeAt(blockPos)
+            const blockIndex = readTopBlockIndexAt(editor.state.doc, from)
             openRef.current = true
             openKeyRef.current = nextKey
             setSnapshot({
@@ -130,6 +134,7 @@ export function useSelectionToolbar(editor: Editor | null): SelectionToolbarStat
                 range: { from, to },
                 blockRange: readSelectionBlockRange(editor, from, to),
                 blockPos,
+                blockIndex,
                 blockLabel: node === null ? '' : readBlockLabel(node),
             })
         },

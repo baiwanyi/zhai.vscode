@@ -172,6 +172,24 @@ export function readBlockNode(editor: Editor, pos: number): ProseMirrorNode | nu
     return editor.state.doc.nodeAt(pos)
 }
 
+/**
+ * pos 所在的顶层块序号（按 doc 原始顺序，含空文本块）。
+ * 与 readBlockIndexBefore 的「跳过空块」口径不同：批注锚点用的是原始序号，两者不可混用。
+ * pos 落空（越界或文末）返回 -1，调用方按「定位不到」处理。
+ */
+export function readTopBlockIndexAt(doc: ProseMirrorNode, pos: number): number {
+    if (pos < 0 || pos >= doc.content.size) {
+        return -1
+    }
+    let found = -1
+    doc.content.forEach((node, offset, index) => {
+        if (pos >= offset && pos < offset + node.nodeSize) {
+            found = index
+        }
+    })
+    return found
+}
+
 /** 块纯文本：复制文本与 AI 询问都取这一份口径 */
 export function readBlockText(node: ProseMirrorNode): string {
     return node.textContent

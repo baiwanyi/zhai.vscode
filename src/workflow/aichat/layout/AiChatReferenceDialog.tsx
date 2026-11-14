@@ -40,7 +40,7 @@ export function AiChatReferenceDialog({
         <Dialog open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
             <DialogContent className="max-w-lg">
                 <DialogHeader>
-                    <DialogTitle>检索参考资料</DialogTitle>
+                    <DialogTitle className="text-lg">检索参考资料</DialogTitle>
                     <DialogDescription>
                         语料来自存储根下的 reference 目录，按一级标题分类、二级标题分条；选中只注入该条正文
                     </DialogDescription>

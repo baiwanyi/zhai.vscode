@@ -1,11 +1,13 @@
 /**
  * 标题大纲：扫描顶层 heading 节点，供右侧导航渲染与跳转。
- * 复用约定：只读 editor.state.doc 的结构与文本，不碰 DOM；变化监听走 editor 的 update 事件。
- * 关键约束：空标题（只有样式没有文字）不进入大纲，否则跳转位置会落在节点边界外；
+ * 复用约定：只读 editor.state.doc 的结构与文本，不碰 DOM；变化监听走 editor 的 transaction（只看 docChanged）。
+ * 关键约束：宿主灌正文走 emitUpdate: false，只听 update 会漏掉加载完成那次，导航会一直空着；
+ * 空标题（只有样式没有文字）不进入大纲，否则跳转位置会落在节点边界外；
  * 位置取 doc.forEach 的 offset，与 ProseMirror 节点位置同源，跳转时再加 1 才进入文本。
  */
 import { useEffect, useState } from 'react'
 import type { Editor } from '@tiptap/core'
+import type { Transaction } from '@tiptap/pm/state'
 
 export interface HeadingItem {
     /** 标题节点在文档中的位置 */
@@ -52,14 +54,21 @@ export function useHeadingOutline(editor: Editor | null): HeadingItem[] {
         if (editor === null) {
             return
         }
-        const update = (): void => {
+        const syncItems = (): void => {
             const next = collectHeadings(editor)
             setItems((previous) => (isSameOutline(previous, next) ? previous : next))
         }
-        update()
-        editor.on('update', update)
+        // 正文有变化才重新采集：宿主灌正文用的是 emitUpdate: false，只听 update 会漏掉加载完成这一次
+        const handleTransaction = (event: { transaction: Transaction }): void => {
+            if (!event.transaction.docChanged) {
+                return
+            }
+            syncItems()
+        }
+        syncItems()
+        editor.on('transaction', handleTransaction)
         return (): void => {
-            editor.off('update', update)
+            editor.off('transaction', handleTransaction)
         }
     }, [editor])
 

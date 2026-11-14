@@ -11,6 +11,7 @@
  * 它不参与工具条的文档流，展开时工具条位置纹丝不动，也不会向下盖住正文；
  * 色板在同一浮层内展开，不嵌套第二个 Popover——嵌套 Portal 会抢焦点并丢选区；
  * 块类型与更多菜单是独立 Portal，点击它们会被 Popover 判为外部点击，开着菜单时不能顺手关浮层；
+ * 两个子菜单自持开合状态，父层不再为它们存 state——工具条按选区重挂载，状态自然复位；
  * 链接输入框与色板同一套浮层机制：绝对定位挂在链接按钮下方，工具条不换形、不位移；
  * 链接输入态必须放开 mousedown 的默认行为，否则输入框无法聚焦、也无法选中文字；
  * 工具条按选区范围作 key 重挂载，换一段文字后输入态与菜单不会残留到新选区上；
@@ -18,18 +19,8 @@
  * 选中某行的一部分时按所在块取整行范围（口径见 readSelectionBlockRange）。
  */
 import { cn } from 'cn'
-import {
-    Check,
-    Copy,
-    CornerDownLeft,
-    Highlighter,
-    MessageSquarePlus,
-    MessageSquareText,
-    Sparkles,
-    Trash,
-} from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { Check, CornerDownLeft, Highlighter, MessageSquareText, Trash } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
     InputGroup,
     InputGroupAddon,
@@ -39,57 +30,32 @@ import {
 } from '@components/ui/input-group'
 import { Popover, PopoverAnchor, PopoverContent } from '@components/ui/popover'
 import { Separator } from '@components/ui/separator'
-import type { HighlightColor } from '@shared/types/editor'
-import { copyToClipboard } from '@shared/utils/clipboard'
+import type { AnnotationRecord, HighlightColor } from '@shared/types/editor'
+import { DEFAULT_HIGHLIGHT_COLOR, HIGHLIGHT_PALETTE } from '@shared/utils/highlightPalette'
 import { Button } from '@webview/components/Button'
+import { AiActions } from './AiActions'
 import { BlockTypeMenu } from './BlockTypeMenu'
+import { CopyButton } from './CopyButton'
 import { InlineFormatGroup } from './InlineFormatGroup'
 import { SelectionMoreMenu } from './SelectionMoreMenu'
 import type { SelectionBlockRange } from '../blocks/blockCommands'
 import type { FrozenRange, InlineFormatId } from '../toolbar/formatCommands'
 import type { Editor } from '@tiptap/react'
 import type { JSX } from 'react'
+import { FLOATING_POPOVER_CLASS } from '../domContracts'
+import { useLinkEditor } from '../hooks/useLinkEditor'
 import { useSelectionToolbar } from '../hooks/useSelectionToolbar'
-import {
-    applySelectionLink,
-    normalizeLinkHref,
-    readSelectionLink,
-    removeSelectionLink,
-    toEditableHref,
-} from '../toolbar/formatCommands'
-
-/** 复制成功提示的停留时长 */
-const COPIED_HINT_MS = 1200
-
-/** 色板颜色：与装饰层共用同一枚举，按字母序展示，与 HIGHLIGHT_STYLES 的书写顺序一致 */
-const HIGHLIGHT_COLORS: readonly HighlightColor[] = ['amber', 'blue', 'coral', 'emerald', 'violet']
-
-/** 色板圆点颜色：与 marks/annotationDecorations 的底色同源，这里不透明便于辨认 */
-const SWATCH_COLORS: Readonly<Record<HighlightColor, string>> = {
-    amber: 'rgb(255, 226, 122)',
-    blue: 'rgb(133, 189, 255)',
-    coral: 'rgb(255, 150, 160)',
-    emerald: 'rgb(137, 226, 160)',
-    violet: 'rgb(199, 160, 255)',
-}
-
-/** 颜色中文名：供无障碍标签与提示使用 */
-const COLOR_LABELS: Readonly<Record<HighlightColor, string>> = {
-    amber: '琥珀黄',
-    blue: '湖蓝',
-    coral: '珊瑚红',
-    emerald: '青绿',
-    violet: '紫罗兰',
-}
-
-/** 默认划线色：琥珀黄，最接近荧光笔在纸面上的观感，首次使用不必先选色 */
-const DEFAULT_COLOR: HighlightColor = 'amber'
+import { ensureEditable } from '../toolbar/editableGuard'
+import { hasOwnHrefPrefix, LINK_INPUT_MAX_LENGTH } from '../toolbar/formatCommands'
+import { findHighlightColor } from '../toolbar/selectionHighlight'
 
 /** 浮层内的单个视觉块：色板与工具条各自成块，靠间隙分开而不是共用一张底 */
 const FLOATING_BLOCK_CLASS = 'rounded-lg bg-popover shadow-md'
 
 export interface SelectionToolbarProps {
     editor: Editor | null
+    /** 当前文档的标注：色板据此显示选区上真实划线的颜色，缺省按默认色处理 */
+    highlights: readonly AnnotationRecord[]
     /** 划线：同一位置已有划线时取消，由调用方实现 toggle；range 是菜单冻结的范围 */
     onHighlight: (color: HighlightColor, range: FrozenRange) => Promise<void>
     /** 划线改色：同一位置已有划线只更新颜色，没有才新建（不做 toggle） */
@@ -114,12 +80,10 @@ interface LinkEditorProps {
     onCancel: () => void
 }
 
-/** 输入自带协议、或以 / # . 起头时，左侧固定前缀会与内容重复，此时把它隐掉 */
-const HREF_OWN_PREFIX = /^(?:[a-z][a-z0-9+.-]*:|\/|#|\.)/iu
-
 /** 链接输入面板：浮在链接按钮下方，https:// 由左侧固定前缀给出，用户只填网址 */
 function LinkEditor({ value, hasLink, onChange, onApply, onRemove, onCancel }: LinkEditorProps): JSX.Element {
-    const hasOwnPrefix = HREF_OWN_PREFIX.test(value)
+    // 自带协议或路径前缀时隐掉左侧固定的 https://，规则与回填共用 formatCommands 里那一份
+    const hasOwnPrefix = hasOwnHrefPrefix(value)
     return (
         <div className="w-80 flex items-center gap-2" data-toolbar-input>
             <InputGroup>
@@ -131,7 +95,7 @@ function LinkEditor({ value, hasLink, onChange, onApply, onRemove, onCancel }: L
                 <InputGroupInput
                     autoFocus
                     value={value}
-                    maxLength={2048}
+                    maxLength={LINK_INPUT_MAX_LENGTH}
                     placeholder="example.com/page"
                     aria-label="链接地址"
                     onChange={(event): void => {
@@ -165,6 +129,106 @@ function LinkEditor({ value, hasLink, onChange, onApply, onRemove, onCancel }: L
     )
 }
 
+/** 工具条分隔线：竖向细线，四处共用同一套间距，改间距时只有这一处 */
+function ToolbarSeparator(): JSX.Element {
+    return <Separator orientation="vertical" className="mx-0.5 my-1 bg-muted" />
+}
+
+interface HighlightActionsProps {
+    editor: Editor
+    range: FrozenRange
+    isPaletteOpen: boolean
+    /** 开合色板：与链接面板互斥的规则留在外层，这里只表达意图 */
+    onPaletteOpenChange: (isOpen: boolean) => void
+    onHighlight: (color: HighlightColor, range: FrozenRange) => Promise<void>
+    onHighlightColor: (color: HighlightColor, range: FrozenRange) => Promise<void>
+    /** 选区上已有划线的颜色：没有或不确定时为 null，色板回落到默认色 */
+    highlightColor: HighlightColor | null
+}
+
+/** 划线按钮与色板：点一下按当前色落笔，色板随后浮起供改色；改色接在落笔之后，不被当成再新建一条 */
+function HighlightActions({
+    editor,
+    range,
+    isPaletteOpen,
+    onPaletteOpenChange,
+    onHighlight,
+    onHighlightColor,
+    highlightColor,
+}: HighlightActionsProps): JSX.Element {
+    /** 本实例里用户刚点的颜色：优先于「选区上已有划线的颜色」，选区一换整条工具条重挂载即重置 */
+    const [pickedColor, setPickedColor] = useState<HighlightColor | null>(null)
+    const activeColor = pickedColor ?? highlightColor ?? DEFAULT_HIGHLIGHT_COLOR
+    // 落笔与改色共用一条任务链：色板改色必须等落笔落库，否则 items 还是旧值，改色会被当成再新建一条
+    const highlightTaskRef = useRef<Promise<void> | null>(null)
+
+    /** 点划线按钮：按当前色落笔，同一位置已有划线则取消（不改色） */
+    const handleToggle = (): void => {
+        if (!ensureEditable(editor)) {
+            return
+        }
+        highlightTaskRef.current = onHighlight(activeColor, range).catch((): void => undefined)
+        onPaletteOpenChange(!isPaletteOpen)
+    }
+
+    /** 色板选色：接在任务链尾，连续点两个颜色时落库顺序与点击顺序一致 */
+    const handlePick = (color: HighlightColor): void => {
+        if (!ensureEditable(editor)) {
+            return
+        }
+        setPickedColor(color)
+        onPaletteOpenChange(false)
+        const chain = highlightTaskRef.current ?? Promise.resolve()
+        const task = chain.then(() => onHighlightColor(color, range))
+        highlightTaskRef.current = task.catch((): void => undefined)
+    }
+
+    return (
+        <div className="relative">
+            <Button
+                variant="ghost"
+                size="icon-sm"
+                tooltip="划线"
+                aria-expanded={isPaletteOpen}
+                aria-haspopup="true"
+                onClick={handleToggle}
+            >
+                <Highlighter className="size-3.5" />
+            </Button>
+            {/* 色板脱离文档流浮在按钮下方：上方是正文，工具条也不因它展开而下沉 */}
+            {isPaletteOpen ? (
+                <div
+                    className={cn(
+                        FLOATING_BLOCK_CLASS,
+                        'absolute top-full left-1/2 z-10 mt-2 flex w-40 -translate-x-1/2 items-center justify-center gap-1.5 px-2 py-1.5',
+                    )}
+                >
+                    {HIGHLIGHT_PALETTE.map((item) => (
+                        <Button
+                            key={item.value}
+                            variant="ghost"
+                            size="icon-xs"
+                            aria-label={`划线 ${item.label}`}
+                            aria-pressed={activeColor === item.value}
+                            tooltip={item.label}
+                            onClick={(): void => {
+                                handlePick(item.value)
+                            }}
+                        >
+                            <span
+                                className="flex size-5 items-center justify-center rounded-full"
+                                style={{ backgroundColor: item.css }}
+                            >
+                                {activeColor === item.value ? <Check className="size-3 text-black/60" /> : null}
+                            </span>
+                        </Button>
+                    ))}
+                </div>
+            ) : null}
+        </div>
+    )
+}
+
 interface ToolbarBodyProps {
     editor: Editor
     range: FrozenRange
@@ -172,6 +236,8 @@ interface ToolbarBodyProps {
     blockRange: SelectionBlockRange | null
     blockPos: number | null
     blockLabel: string
+    /** 选区上已有划线的颜色：色板的选中态据此显示 */
+    highlightColor: HighlightColor | null
     activeFormats: readonly InlineFormatId[]
     onHighlight: (color: HighlightColor, range: FrozenRange) => Promise<void>
     onHighlightColor: (color: HighlightColor, range: FrozenRange) => Promise<void>
@@ -190,6 +256,7 @@ function ToolbarBody({
     blockRange,
     blockPos,
     blockLabel,
+    highlightColor,
     activeFormats,
     onHighlight,
     onHighlightColor,
@@ -199,254 +266,68 @@ function ToolbarBody({
     onAddToChat,
     onDismiss,
 }: ToolbarBodyProps): JSX.Element {
-    const [isCopied, setIsCopied] = useState(false)
-    // 复制提示的计时器：连点要重置起点，卸载要清掉
-    const copyTimerRef = useRef<number | null>(null)
-    const [activeColor, setActiveColor] = useState<HighlightColor>(DEFAULT_COLOR)
     const [isPaletteOpen, setIsPaletteOpen] = useState(false)
-    const [isLinkEditing, setIsLinkEditing] = useState(false)
-    const [linkValue, setLinkValue] = useState('')
-    // 选区上是否真有链接：删除入口只认它，不能跟着输入框里的草稿走
-    const [hasExistingLink, setHasExistingLink] = useState(false)
-    const [isBlockMenuOpen, setIsBlockMenuOpen] = useState(false)
-    const [isMoreOpen, setIsMoreOpen] = useState(false)
+    // 链接输入态整包下沉：面板显隐、地址草稿与三个写入动作都在 hook 里
+    const link = useLinkEditor(editor, range, onCommitted)
 
-    const handleCopy = async (): Promise<void> => {
-        const isOk = await copyToClipboard(text)
-        if (!isOk) {
-            toast.error('复制失败，请检查剪贴板权限')
-            return
+    /** 色板开合：与链接面板互斥——两块浮层都挂在按钮下方，同开会互相遮挡 */
+    const handlePaletteOpenChange = (nextOpen: boolean): void => {
+        if (nextOpen) {
+            link.cancel()
         }
-        setIsCopied(true)
-        // 连点会重复排队：先清旧计时，提示从最后一次点击起算
-        if (copyTimerRef.current !== null) {
-            window.clearTimeout(copyTimerRef.current)
-        }
-        copyTimerRef.current = window.setTimeout((): void => {
-            copyTimerRef.current = null
-            setIsCopied(false)
-        }, COPIED_HINT_MS)
+        setIsPaletteOpen(nextOpen)
     }
 
-    // 工具条按选区重挂载：卸载时清掉计时器，回调不能落到已卸载的组件上
-    useEffect((): (() => void) => {
-        return (): void => {
-            if (copyTimerRef.current !== null) {
-                window.clearTimeout(copyTimerRef.current)
-                copyTimerRef.current = null
-            }
-        }
-    }, [])
-
-    // 落笔请求：色板改色要等它落库完成，否则 items 还是旧值，改色会被当成再新建一条
-    const highlightTaskRef = useRef<Promise<void> | null>(null)
-
-    /** 点划线按钮：按当前色落笔，同一位置已有划线则取消（不改色） */
-    const handleToggleHighlight = (): void => {
-        if (!ensureEditable()) {
-            return
-        }
-        highlightTaskRef.current = onHighlight(activeColor, range).catch((): void => undefined)
-        setIsPaletteOpen((previous) => !previous)
-    }
-
-    /** 色板选色：等落笔结束再改色，只更新颜色，不走 toggle */
-    const handlePickColor = (color: HighlightColor): void => {
-        if (!ensureEditable()) {
-            return
-        }
-        setActiveColor(color)
-        setIsPaletteOpen(false)
-        const pending = highlightTaskRef.current ?? Promise.resolve()
-        highlightTaskRef.current = null
-        void pending.then(() => onHighlightColor(color, range)).catch((): void => undefined)
-    }
-
-    /** 只读文档下所有写命令都会被静默拦下：先把原因说出来，别让用户以为按钮坏了 */
-    const ensureEditable = (): boolean => {
-        if (editor.isEditable) {
-            return true
-        }
-        toast.error('当前文档为只读，改动不会写回')
-        return false
-    }
-
-    /** 两个子菜单各自开合：关闭判定交给外层的 pointerdown，这里只维护自身状态 */
-    const handleBlockMenuOpenChange = (isOpen: boolean): void => {
-        setIsBlockMenuOpen(isOpen)
-    }
-
-    const handleMoreOpenChange = (isOpen: boolean): void => {
-        setIsMoreOpen(isOpen)
-    }
-
+    /** 链接按钮：打开面板前先收起色板，两块浮层都挂在按钮下方，同开会互相遮挡 */
     const handleToggleLink = (): void => {
-        if (isLinkEditing) {
-            setIsLinkEditing(false)
-            return
+        if (!link.isEditing) {
+            setIsPaletteOpen(false)
         }
-        if (editor.schema.marks.link === undefined) {
-            toast.error('当前编辑器未启用链接')
-            return
-        }
-        // 没有选中文字就无从套链接：静默不弹面板会让人以为按钮坏了
-        if (range.from >= range.to) {
-            toast.error('请先选中要加链接的文字')
-            return
-        }
-        // 已有链接预填进来便于改地址：按菜单冻结的范围读，点击态下选区只有塌陷光标
-        const href = readSelectionLink(editor, range)
-        setLinkValue(toEditableHref(href))
-        // 「移除链接」按选区真实状态判定：输入框清空或随手敲字都不改变它
-        setHasExistingLink(href.length > 0)
-        setIsLinkEditing(true)
-    }
-
-    const handleApplyLink = (): void => {
-        if (!ensureEditable()) {
-            return
-        }
-        if (range.from >= range.to) {
-            toast.error('请先选中要加链接的文字')
-            return
-        }
-        const href = normalizeLinkHref(linkValue)
-        if (href === null) {
-            toast.error('链接地址不可用：仅支持 http(s)、mailto 或站内路径')
-            return
-        }
-        if (!applySelectionLink(editor, range, href)) {
-            toast.error('链接未能写入：请重新选中文字后再试')
-            return
-        }
-        setHasExistingLink(true)
-        // 只收起地址面板，浮层留着：同一段文字往往还要接着划线或再改地址
-        setIsLinkEditing(false)
-        onCommitted()
-    }
-
-    const handleRemoveLink = (): void => {
-        if (!ensureEditable()) {
-            return
-        }
-        if (!removeSelectionLink(editor, range)) {
-            toast.error('取消链接未生效：请重新选中文字后再试')
-            return
-        }
-        setHasExistingLink(false)
-        // 不 focus 也不关浮层：摘链只改 mark，抢焦点会让选区离开这段文字，
-        // 浮层一关这段文字又既非链接也非划线，之后点它不会再弹
-        setIsLinkEditing(false)
-        onCommitted()
+        link.toggle()
     }
 
     return (
         <div className={cn(FLOATING_BLOCK_CLASS, 'flex items-center gap-0.5 px-1.5 py-1')}>
-            <Button
-                variant="ghost"
-                size="sm"
-                onClick={(): void => {
-                    onQuery(text)
-                    onDismiss()
-                }}
-            >
-                <Sparkles className="size-3.5" />
-                询问 AI
-            </Button>
-            <Button
-                variant="ghost"
-                size="icon-sm"
-                tooltip="选中行加入 AI 对话"
-                onClick={(): void => {
-                    // 块序号随选区一起冻结，这里不再读 editor；定位不到说明快照尚未就绪，直接提示
-                    if (blockRange === null) {
-                        toast.error('未能在文档中定位选中的行')
-                        return
-                    }
-                    onAddToChat(text, blockRange)
-                    onDismiss()
-                }}
-            >
-                <MessageSquarePlus className="size-3.5" />
-            </Button>
-
-            <Separator orientation="vertical" className="mx-0.5 my-1 bg-muted" />
-            <BlockTypeMenu
-                editor={editor}
-                pos={blockPos}
-                label={blockLabel}
-                isOpen={isBlockMenuOpen}
-                onOpenChange={handleBlockMenuOpenChange}
-                onConverted={onDismiss}
+            <AiActions
+                text={text}
+                blockRange={blockRange}
+                onQuery={onQuery}
+                onAddToChat={onAddToChat}
+                onDismiss={onDismiss}
             />
-            <Separator orientation="vertical" className="mx-0.5 my-1 bg-muted" />
+
+            <ToolbarSeparator />
+            <BlockTypeMenu editor={editor} pos={blockPos} label={blockLabel} onConverted={onDismiss} />
+            <ToolbarSeparator />
             <InlineFormatGroup
                 editor={editor}
                 range={range}
                 activeFormats={activeFormats}
-                isLinkEditing={isLinkEditing}
+                isLinkEditing={link.isEditing}
                 onLinkToggle={handleToggleLink}
                 linkPanel={
                     <div className={cn(FLOATING_BLOCK_CLASS, 'p-1.5')} data-toolbar-input>
                         <LinkEditor
-                            value={linkValue}
-                            hasLink={hasExistingLink}
-                            onChange={setLinkValue}
-                            onApply={handleApplyLink}
-                            onRemove={handleRemoveLink}
-                            onCancel={(): void => {
-                                setIsLinkEditing(false)
-                            }}
+                            value={link.value}
+                            hasLink={link.hasLink}
+                            onChange={link.change}
+                            onApply={link.apply}
+                            onRemove={link.remove}
+                            onCancel={link.cancel}
                         />
                     </div>
                 }
             />
-            <Separator orientation="vertical" className="mx-0.5 my-1 bg-muted" />
-            <div className="relative">
-                <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    tooltip="划线"
-                    aria-expanded={isPaletteOpen}
-                    aria-haspopup="true"
-                    onClick={(): void => {
-                        // 先按当前色直接落笔，再开合色板供改色：不必等选完颜色才划线
-                        handleToggleHighlight()
-                    }}
-                >
-                    <Highlighter className="size-3.5" />
-                </Button>
-                {/* 色板脱离文档流浮在按钮下方：上方是正文，工具条也不因它展开而下沉 */}
-                {isPaletteOpen ? (
-                    <div
-                        className={cn(
-                            FLOATING_BLOCK_CLASS,
-                            'absolute top-full left-1/2 z-10 mt-2 flex w-40 -translate-x-1/2 items-center justify-center gap-1.5 px-2 py-1.5',
-                        )}
-                    >
-                        {HIGHLIGHT_COLORS.map((color) => (
-                            <Button
-                                key={color}
-                                variant="ghost"
-                                size="icon-xs"
-                                aria-label={`划线 ${COLOR_LABELS[color]}`}
-                                aria-pressed={activeColor === color}
-                                tooltip={COLOR_LABELS[color]}
-                                onClick={(): void => {
-                                    handlePickColor(color)
-                                }}
-                            >
-                                <span
-                                    className="flex size-5 items-center justify-center rounded-full"
-                                    style={{ backgroundColor: SWATCH_COLORS[color] }}
-                                >
-                                    {activeColor === color ? <Check className="size-3 text-black/60" /> : null}
-                                </span>
-                            </Button>
-                        ))}
-                    </div>
-                ) : null}
-            </div>
+            <ToolbarSeparator />
+            <HighlightActions
+                editor={editor}
+                range={range}
+                isPaletteOpen={isPaletteOpen}
+                onPaletteOpenChange={handlePaletteOpenChange}
+                onHighlight={onHighlight}
+                onHighlightColor={onHighlightColor}
+                highlightColor={highlightColor}
+            />
             <Button
                 variant="ghost"
                 size="icon-sm"
@@ -458,28 +339,16 @@ function ToolbarBody({
             >
                 <MessageSquareText className="size-3.5" />
             </Button>
-            <Separator orientation="vertical" className="mx-0.5 my-1 bg-muted" />
-            <Button
-                variant="ghost"
-                size="icon-sm"
-                tooltip={isCopied ? '已复制' : '复制'}
-                onClick={(): void => void handleCopy()}
-            >
-                {isCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-            </Button>
-            <SelectionMoreMenu
-                editor={editor}
-                range={range}
-                isOpen={isMoreOpen}
-                onOpenChange={handleMoreOpenChange}
-                onApplied={onDismiss}
-            />
+            <ToolbarSeparator />
+            <CopyButton text={text} />
+            <SelectionMoreMenu editor={editor} range={range} onApplied={onDismiss} />
         </div>
     )
 }
 
 export function SelectionToolbar({
     editor,
+    highlights,
     onHighlight,
     onHighlightColor,
     onAnnotate,
@@ -487,8 +356,13 @@ export function SelectionToolbar({
     onQuery,
     onAddToChat,
 }: SelectionToolbarProps): JSX.Element | null {
-    const { isOpen, left, top, text, range, blockRange, blockPos, blockLabel, activeFormats, dismiss } =
+    const { isOpen, left, top, text, range, blockRange, blockPos, blockIndex, blockLabel, activeFormats, dismiss } =
         useSelectionToolbar(editor)
+    // 选区上已有划线时色板显示它的颜色；匹配不到（重复文本、跨块）一律回落默认色，不猜
+    const highlightColor = useMemo(
+        () => findHighlightColor(highlights, blockIndex, text),
+        [blockIndex, highlights, text],
+    )
 
     // 子菜单与输入框都是独立 Portal：关闭判定按 DOM 归属统一处理，
     // 不能交给 Popover 自己的 outside-click——点菜单项会被它当成「点了浮层外面」
@@ -526,7 +400,7 @@ export function SelectionToolbar({
                 side="bottom"
                 align="center"
                 collisionPadding={16}
-                className="w-auto gap-1.5 border-0 bg-transparent p-0 shadow-none ring-0"
+                className={cn(FLOATING_POPOVER_CLASS, 'gap-1.5')}
                 onOpenAutoFocus={(event): void => {
                     event.preventDefault()
                 }}
@@ -548,6 +422,7 @@ export function SelectionToolbar({
                     blockRange={blockRange}
                     blockPos={blockPos}
                     blockLabel={blockLabel}
+                    highlightColor={highlightColor}
                     activeFormats={activeFormats}
                     onHighlight={onHighlight}
                     onHighlightColor={onHighlightColor}

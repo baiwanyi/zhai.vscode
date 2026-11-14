@@ -10,8 +10,9 @@
 import { Fragment } from 'react'
 import { Button } from '@webview/components/Button'
 import type { FrozenRange, InlineFormatId } from '../toolbar/formatCommands'
-import type { Editor } from '@tiptap/core'
+import type { Editor } from '@tiptap/react'
 import type { JSX, ReactNode } from 'react'
+import { ensureEditable } from '../toolbar/editableGuard'
 import { INLINE_FORMATS, toggleInlineFormat } from '../toolbar/formatCommands'
 
 export interface InlineFormatGroupProps {
@@ -53,8 +54,13 @@ export function InlineFormatGroup({
                         aria-pressed={isActive}
                         className={isActive ? 'bg-muted text-foreground' : undefined}
                         onClick={(): void => {
+                            // 链接按钮只开合输入面板（只读也能查看与复制），真正的写入在面板里另判
                             if (format.id === 'link') {
                                 onLinkToggle()
+                                return
+                            }
+                            // 只读文档下命令层会静默 return，按钮不会点亮：先把原因说出来
+                            if (!ensureEditable(editor)) {
                                 return
                             }
                             toggleInlineFormat(editor, range, format.id)
