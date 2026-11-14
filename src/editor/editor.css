@@ -59,14 +59,22 @@
 /*
  * 拖拽把手：位置由 drag-handle 扩展写成 inline left/top，这里给这两个属性加过渡，
  * 块与块之间切换时把手从上一块滑到下一块，而不是直接闪现在新位置。
- * 扩展隐藏时写 visibility: hidden，这里覆盖成常显并交给内容透明度控制，
- * 否则 visibility 会硬切、淡出根本看不到；拖拽中位置由指针驱动，过渡必须关掉。
+ * 扩展隐藏时同时写 visibility: hidden 与 pointer-events: none，两者必须一起压掉：
+ * 只覆盖 visibility 会让被隐藏过的把手停在 pointer-events: none 上——看得见却点不动，
+ * 且要等鼠标在正文里换到另一个块（扩展只在块变化时重新放开指针）才恢复。
+ * 这里把 element 自身恒设为不命中，命中与否交给内层容器按显隐决定，
+ * 否则透明把手会挡住正文左侧的点击；拖拽中内层一并让开，避免遮挡落点判定。
  */
 .drag-handle {
     visibility: visible !important;
+    pointer-events: none !important;
     transition:
         left 140ms cubic-bezier(0.22, 1, 0.36, 1),
         top 140ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.drag-handle[data-dragging='true'] > * {
+    pointer-events: none !important;
 }
 
 /* 拖拽中与滚动中位置由指针 / 滚动条连续给定，过渡只会拖出尾巴 */
@@ -140,7 +148,7 @@
  */
 :is(.zhai-markdown, .zhai-editor-content) table {
     width: 100%;
-    margin: 2em 0;
+    margin: 1em 0 2em;
     border-radius: 0.55em;
     /* 外框与内线不合并，圆角与单元格底色才不会被 collapse 压平 */
     border-collapse: separate;

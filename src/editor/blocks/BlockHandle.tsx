@@ -6,7 +6,8 @@
  * 位置由光标所在块驱动，鼠标只负责触发扩展重算，两者写的是同一对 left/top；
  * 对齐基准是块的「首行矩形」而不是整块：多行段落居中对齐会让按钮掉到两行之间；
  * 定位配置必须是模块级常量，内联对象每次渲染都会换引用，DragHandle 会反复重注册插件；
- * 显示不依赖鼠标悬停：扩展写的 visibility 在 editor.css 里被覆盖成常显，显隐交给内容透明度；
+ * 显示不依赖鼠标悬停：扩展写的 visibility 与 pointer-events 在 editor.css 里被一并覆盖、改由内容透明度控制，
+ * 点击命中必须由内层容器显式给 pointer-events——只覆盖 visibility 会留下「看得见却点不动」的把手；
  * 菜单打开期间必须锁住拖拽，否则 Radix 的 pointerdown 会被原生 dragstart 抢占；
  * 插入菜单与块菜单共用一个「有菜单打开」的判断：同时锁拖拽、冻结把手定位，关闭后补算一次位置；
  * 块菜单的目标块由「最近一次非空悬停位置」冻结——鼠标移到把手上时扩展给的是 null，现读会丢目标；
@@ -337,7 +338,9 @@ export function BlockHandle({ editor, onAskAi, onAddToChat }: BlockHandleProps):
                 className={cn(
                     HANDLE_CLASS,
                     'transition-opacity duration-150',
-                    isVisible ? 'opacity-100' : 'pointer-events-none opacity-0',
+                    // pointer-events 必须显式双向写：外层 .drag-handle 恒为 none（见 editor.css），
+                    // 只有内层 auto 才能恢复命中；隐藏态再关掉，透明把手才不会挡正文
+                    isVisible ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
                 )}
             >
                 <DropdownMenu open={isInsertMenuOpen} onOpenChange={handleInsertMenuOpenChange}>
