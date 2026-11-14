@@ -1,10 +1,11 @@
 /**
- * 块级命令：把手菜单里的类型转换、复制与删除，只读写 ProseMirror 文档。
+ * 块级命令：把手菜单里的类型转换、复制与删除，以及块与选区的序号换算，只读写 ProseMirror 文档。
  * 复用约定：入参统一是「顶层块起始位置」，命令返回是否真的执行；DOM、剪贴板与提示都不在这里，
  * 结构重建直接走 schema 而不是链式 toggleXxx——跨类型（列表 ↔ 文本块）时链式命令只改局部语义。
  * 关键约束：复制必须递归清空 id——UniqueID 只补缺失值、不去重，同 id 的两块会让批注与定位串位；
  * 删除必须保证文档至少留一个空段落，否则事务会被 schema 拒绝、块根本删不掉；
- * 表格 / 图片 / 分隔线没有可读的段落内容，一律返回 false，由菜单置灰而不是猜一个形态。
+ * 表格 / 图片 / 分隔线没有可读的段落内容，一律返回 false，由菜单置灰而不是猜一个形态；
+ * 快照序号一律跳过空文本块，与 useEditorDocument 的采集口径一致，否则宿主会取到相邻块的行范围。
  */
 import { Selection } from '@tiptap/pm/state'
 import { Heading1, Heading2, Heading3, List, ListOrdered, ListTodo, Pilcrow, Quote, SquareCode } from 'lucide-react'
@@ -90,6 +91,77 @@ export function readTopBlockPos(editor: Editor, pos?: number): number | null {
     const resolved = doc.resolve(Math.min(pos ?? selection.from, doc.content.size))
     const top = resolved.depth > 0 ? resolved.before(1) : 0
     return doc.nodeAt(top) === null ? null : top
+}
+
+/** 选区覆盖的快照块范围：起点块与终点块，供宿主把「选中行」换算成 Markdown 行范围 */
+export interface SelectionBlockRange {
+    startIndex: number
+    endIndex: number
+}
+
+/**
+ * 块在快照里的序号：宿主据此把块换算成 Markdown 行号，比按文本搜索精确——
+ * 同一句在文中出现多次时不会定位到第一次。
+ * 关键约束：必须与 useEditorDocument 的 collectBlocks 同口径，跳过空文本块——
+ * 空段落不产生 Markdown 块，若把它算进序号，宿主会取到相邻块，引用的行范围与字数都会错。
+ * 位置越界或落在空块上返回 -1，由宿主退回文本定位。
+ */
+export function readBlockIndex(editor: Editor, pos: number | null): number {
+    if (pos === null || pos < 0 || pos > editor.state.doc.content.size) {
+        return -1
+    }
+    let index = -1
+    let counted = 0
+    editor.state.doc.content.forEach((node, offset) => {
+        if (node.isTextblock && node.content.size === 0) {
+            return
+        }
+        if (offset === pos) {
+            index = counted
+        }
+        counted += 1
+    })
+    return index
+}
+
+/**
+ * 位置之前的最后一个非空快照块序号：按「块起点 < 位置」推进，不做 doc.resolve。
+ * 关键约束：不能用 resolve + before(1) 求终点块——终点是「最后一个选中字符之后」，
+ * 落在块边界或空段落上时 resolve 只给到浅层位置，before(1) 会退化成文档首块，
+ * 整段范围随之塌成只有第一行；按块起点推进则天然把终点归到它之前的那一块。
+ * 空文本块不进快照，这里一并跳过，与 readBlockIndex 同口径。
+ */
+function readBlockIndexBefore(editor: Editor, pos: number): number {
+    const { doc } = editor.state
+    const limit = Math.min(Math.max(pos, 0), doc.content.size)
+    let index = -1
+    let counted = 0
+    doc.content.forEach((node, offset) => {
+        if (node.isTextblock && node.content.size === 0) {
+            return
+        }
+        if (offset < limit) {
+            index = counted
+        }
+        counted += 1
+    })
+    return index
+}
+
+/**
+ * 选区覆盖的快照块范围：起点块与终点块各取一次序号，供宿主按「整行」引用。
+ * 关键约束：选区只覆盖某行的一部分时仍按所在块取范围，宿主据此引用整行——
+ * 行号换算在宿主侧完成，webview 只交出块序号，不自己算行；
+ * 终点落在空段落（选中范围拖到文末空行）时回溯到最近的非空块，不能退回首块；
+ * 终点序号小于起点（选区退化）时按起点块处理，避免宿主取到空区间。
+ */
+export function readSelectionBlockRange(editor: Editor, from: number, to: number): SelectionBlockRange | null {
+    const startIndex = readBlockIndexBefore(editor, from)
+    if (startIndex < 0) {
+        return null
+    }
+    const endIndex = readBlockIndexBefore(editor, to)
+    return { startIndex, endIndex: endIndex < startIndex ? startIndex : endIndex }
 }
 
 /** 读取顶层块：pos 越界时返回 null，nodeAt 在越界位置会抛 RangeError */

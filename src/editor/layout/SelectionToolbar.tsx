@@ -1,5 +1,5 @@
 /**
- * 选中文本浮动菜单：划线色板、块类型、行内格式、批注与更多操作。
+ * 选中文本浮动菜单：询问 AI、选中行加入对话、划线色板、块类型、行内格式、批注与更多操作。
  * 只在选中文字时出现——单击正文、单击已有划线或链接都不弹，保持编辑器常规交互。
  * 复用约定：浮层用 shadcn Popover（锚点为零尺寸 fixed 元素），按钮用 src/components 的 Button，
  * 色板与划线动作由 useAnnotations 统一处理落库与装饰，格式命令与块转换分别取自
@@ -13,10 +13,21 @@
  * 块类型与更多菜单是独立 Portal，点击它们会被 Popover 判为外部点击，开着菜单时不能顺手关浮层；
  * 链接输入框与色板同一套浮层机制：绝对定位挂在链接按钮下方，工具条不换形、不位移；
  * 链接输入态必须放开 mousedown 的默认行为，否则输入框无法聚焦、也无法选中文字；
- * 工具条按选区范围作 key 重挂载，换一段文字后输入态与菜单不会残留到新选区上。
+ * 工具条按选区范围作 key 重挂载，换一段文字后输入态与菜单不会残留到新选区上；
+ * 「加入对话」只交出去块序号与文本，行号换算、引用去重与跳转都在宿主侧完成，
+ * 选中某行的一部分时按所在块取整行范围（口径见 readSelectionBlockRange）。
  */
 import { cn } from 'cn'
-import { Check, Copy, CornerDownLeft, Highlighter, MessageSquareText, Sparkles, Trash } from 'lucide-react'
+import {
+    Check,
+    Copy,
+    CornerDownLeft,
+    Highlighter,
+    MessageSquarePlus,
+    MessageSquareText,
+    Sparkles,
+    Trash,
+} from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
@@ -34,6 +45,7 @@ import { Button } from '@webview/components/Button'
 import { BlockTypeMenu } from './BlockTypeMenu'
 import { InlineFormatGroup } from './InlineFormatGroup'
 import { SelectionMoreMenu } from './SelectionMoreMenu'
+import type { SelectionBlockRange } from '../blocks/blockCommands'
 import type { FrozenRange, InlineFormatId } from '../toolbar/formatCommands'
 import type { Editor } from '@tiptap/react'
 import type { JSX } from 'react'
@@ -88,6 +100,8 @@ export interface SelectionToolbarProps {
     onCommitted: () => void
     /** 查询：把选中文本交给 AI 查询弹窗 */
     onQuery: (quote: string) => void
+    /** 加入对话：选中文本 + 覆盖的快照块范围，由宿主换算成整行范围的引用 */
+    onAddToChat: (quote: string, blockRange: SelectionBlockRange) => void
 }
 
 interface LinkEditorProps {
@@ -155,6 +169,7 @@ interface ToolbarBodyProps {
     editor: Editor
     range: FrozenRange
     text: string
+    blockRange: SelectionBlockRange | null
     blockPos: number | null
     blockLabel: string
     activeFormats: readonly InlineFormatId[]
@@ -163,6 +178,7 @@ interface ToolbarBodyProps {
     onAnnotate: (quote: string, range: FrozenRange) => void
     onCommitted: () => void
     onQuery: (quote: string) => void
+    onAddToChat: (quote: string, blockRange: SelectionBlockRange) => void
     onDismiss: () => void
 }
 
@@ -171,6 +187,7 @@ function ToolbarBody({
     editor,
     range,
     text,
+    blockRange,
     blockPos,
     blockLabel,
     activeFormats,
@@ -179,6 +196,7 @@ function ToolbarBody({
     onAnnotate,
     onCommitted,
     onQuery,
+    onAddToChat,
     onDismiss,
 }: ToolbarBodyProps): JSX.Element {
     const [isCopied, setIsCopied] = useState(false)
@@ -335,6 +353,22 @@ function ToolbarBody({
                 <Sparkles className="size-3.5" />
                 询问 AI
             </Button>
+            <Button
+                variant="ghost"
+                size="icon-sm"
+                tooltip="选中行加入 AI 对话"
+                onClick={(): void => {
+                    // 块序号随选区一起冻结，这里不再读 editor；定位不到说明快照尚未就绪，直接提示
+                    if (blockRange === null) {
+                        toast.error('未能在文档中定位选中的行')
+                        return
+                    }
+                    onAddToChat(text, blockRange)
+                    onDismiss()
+                }}
+            >
+                <MessageSquarePlus className="size-3.5" />
+            </Button>
 
             <Separator orientation="vertical" className="mx-0.5 my-1 bg-muted" />
             <BlockTypeMenu
@@ -451,8 +485,10 @@ export function SelectionToolbar({
     onAnnotate,
     onCommitted,
     onQuery,
+    onAddToChat,
 }: SelectionToolbarProps): JSX.Element | null {
-    const { isOpen, left, top, text, range, blockPos, blockLabel, activeFormats, dismiss } = useSelectionToolbar(editor)
+    const { isOpen, left, top, text, range, blockRange, blockPos, blockLabel, activeFormats, dismiss } =
+        useSelectionToolbar(editor)
 
     // 子菜单与输入框都是独立 Portal：关闭判定按 DOM 归属统一处理，
     // 不能交给 Popover 自己的 outside-click——点菜单项会被它当成「点了浮层外面」
@@ -509,6 +545,7 @@ export function SelectionToolbar({
                     editor={editor}
                     range={range}
                     text={text}
+                    blockRange={blockRange}
                     blockPos={blockPos}
                     blockLabel={blockLabel}
                     activeFormats={activeFormats}
@@ -517,6 +554,7 @@ export function SelectionToolbar({
                     onAnnotate={onAnnotate}
                     onCommitted={onCommitted}
                     onQuery={onQuery}
+                    onAddToChat={onAddToChat}
                     onDismiss={dismiss}
                 />
             </PopoverContent>

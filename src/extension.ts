@@ -13,6 +13,7 @@ import { assembleEditorLayer } from './activation/editorLayer'
 import { registerLifecycleHooks } from './activation/lifecycle'
 import { assembleWechatLayer } from './activation/wechatLayer'
 import { AiChatViewProvider } from './modules/ai/aiChatProvider'
+import { addQuoteToChat } from './modules/ai/commands'
 import { WorkflowRouter } from './modules/ai/workflowRouter'
 import { registerCommands } from './modules/common/commands'
 import { resolveCacheRoot, resolveStorageRoot } from './modules/common/config'
@@ -360,6 +361,8 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         },
         // 编辑器内的粘贴 / 拖拽上传复用同一个上传路由，落盘目录与命名口径完全一致
         uploadRoutes,
+        // 块菜单「添加到 AI 对话」：块区间换算行号、上下文写入与切到对话分区都复用 AI 层现成实现
+        (document, quote, blockRange) => addQuoteToChat(ai.chat, workflowRouter, document, quote, blockRange),
     )
     // 活跃文档事实源：文本与富文本切换统一由此广播，工作流路由与插入目标不再直读 activeTextEditor
     trackActiveDocument(context.subscriptions)

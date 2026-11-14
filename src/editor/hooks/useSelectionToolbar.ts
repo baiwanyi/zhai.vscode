@@ -9,12 +9,14 @@
  * 锚点取选区末行底边，浮层向下弹，不覆盖正在读的那一行文字；
  * 激活态必须听 transaction——切换 mark 不改变选区，只听 selectionUpdate 会漏掉点亮；
  * 冻结的 from/to 是菜单或输入框夺焦后的唯一执行依据，命令执行时不能再现读选区；
+ * 选区覆盖的块范围与文本一并冻结：「选中行加入对话」要按当时的块序号换算行号，不能等点击时再读；
  * 主动收起要开静默窗口：click 早于 pointerup 的结算计时器，否则点「AI 查询」后浮层会被同一次点击弹回来。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { SelectionBlockRange } from '../blocks/blockCommands'
 import type { FrozenRange, InlineFormatId } from '../toolbar/formatCommands'
 import type { Editor } from '@tiptap/core'
-import { readBlockLabel, readTopBlockPos } from '../blocks/blockCommands'
+import { readBlockLabel, readSelectionBlockRange, readTopBlockPos } from '../blocks/blockCommands'
 import { readActiveFormats } from '../toolbar/formatCommands'
 
 /** 菜单最小触发长度：一两个字符的选区多半是误触 */
@@ -44,6 +46,8 @@ interface ToolbarSnapshot {
     text: string
     /** 冻结的选区范围：块类型转换与格式命令的唯一依据 */
     range: FrozenRange
+    /** 选区覆盖的快照块范围：加入 AI 对话时按它换算 Markdown 行范围，null 表示定位不到 */
+    blockRange: SelectionBlockRange | null
     /** 选区起点所在顶层块：块类型菜单据此定位转换目标 */
     blockPos: number | null
     /** 该块的类型标签：菜单按钮上直接显示「一级标题」这类文案 */
@@ -67,6 +71,7 @@ export function useSelectionToolbar(editor: Editor | null): SelectionToolbarStat
         top: 0,
         text: '',
         range: EMPTY_RANGE,
+        blockRange: null,
         blockPos: null,
         blockLabel: '',
     })
@@ -123,6 +128,7 @@ export function useSelectionToolbar(editor: Editor | null): SelectionToolbarStat
                 top: Math.max(start.bottom, end.bottom) + 2,
                 text,
                 range: { from, to },
+                blockRange: readSelectionBlockRange(editor, from, to),
                 blockPos,
                 blockLabel: node === null ? '' : readBlockLabel(node),
             })

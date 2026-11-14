@@ -55,6 +55,8 @@ export interface RichChip {
     preview?: RichChipPreview
     /** 悬停文件名时展示的文本提示：如上下文引用的 @zhai 存储根路径 */
     hint?: string
+    /** 文本后的固定后缀（如引用行号）：不参与截断，文件名被截掉也始终可见 */
+    tail?: string
     /** 文本后的副信息（字数、条数等）：缺省或空串不渲染 */
     meta?: string
     /** 芯片容器补充类名：如命令芯片用 max-w-40 覆盖默认宽度 */
@@ -122,7 +124,15 @@ interface ChipLabelProps {
 
 /** 芯片文本：有 preview 出大图、只有 hint 出文本提示，两者都缺省时不挂浮层 */
 function ChipLabel({ chip }: ChipLabelProps): JSX.Element {
-    const label = <span className="min-w-0 truncate text-sm">{chip.label}</span>
+    // 副缀放在截断区之外：文件名过长时先截文件名，行号等信息必须留着
+    const label = (
+        <span className="flex min-w-0 items-center">
+            <span className="min-w-0 truncate text-sm">{chip.label}</span>
+            {chip.tail === undefined || chip.tail.length === 0 ? null : (
+                <span className="shrink-0 text-sm">{chip.tail}</span>
+            )}
+        </span>
+    )
     if (chip.preview === undefined && chip.hint === undefined) {
         return label
     }

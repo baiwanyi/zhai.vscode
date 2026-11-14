@@ -1,17 +1,18 @@
 /**
- * 块把手菜单：块类型标签、转换类型子菜单，以及复制 / AI / 删除三项块级操作。
+ * 块把手菜单：块类型标签、转换类型子菜单，以及复制 / 询问 AI / 加入对话 / 删除四项块级操作。
  * 复用约定：菜单结构取 @components/ui/dropdown-menu，命令全部委托 ./blockCommands，
- * 复制走 @shared/utils/clipboard，操作结果用 sonner 提示（编辑器入口统一挂 Toaster）。
+ * 复制走 @shared/utils/clipboard，操作结果用 sonner 提示（编辑器入口统一挂 Toaster）；
+ * 加入对话只把块文本交给宿主，引用定位、去重与写入都在宿主侧完成。
  * 关键约束：pos 由把手在打开瞬间冻结后传入，菜单内不再读选区，避免鼠标离开块时目标漂移；
  * 触发按钮不在这里渲染——Radix 的 Trigger 会在 pointerdown 上 preventDefault，把原生 dragstart 压掉，
  * 按住拖动就失效了；这里只放一个与按钮等尺寸的透明锚点负责定位，开合由把手的按钮自己控制；
- * 删除项不能用 MenuItem 的 destructive variant：Content 上带 !important 的
- * `**:data-[variant=destructive]:text-accent-foreground` 会把红色压成普通文字色，只能自己补 important 类；
+ * 删除项直接用 MenuItem 的 destructive variant——Content 上带 !important 的后代规则本会把红色压成普通文字色，
+ * 这层压制已由 globals.css 末尾的 utilities 覆盖段统一还原，这里不再叠加颜色类；
  * 快捷键文字只做视觉对齐、没有注册全局键位，Backspace 按下仍由编辑器原生处理；
  * 不可转换的块整组置灰——宁可不给，也不能把表格、图片的结构改坏；
  * 关闭时阻止 Radix 把焦点还给锚点并主动聚焦正文，否则点完菜单光标就消失。
  */
-import { Copy, CopyPlus, Sparkles, Trash2, Type } from 'lucide-react'
+import { Copy, CopyPlus, MessageSquarePlus, Sparkles, Trash2, Type } from 'lucide-react'
 import { toast } from 'sonner'
 import {
     DropdownMenu,
@@ -33,6 +34,7 @@ import {
     deleteBlock,
     duplicateBlock,
     isCurrentTarget,
+    readBlockIndex,
     readBlockLabel,
     readBlockNode,
     readBlockText,
@@ -51,9 +53,11 @@ export interface BlockMenuProps {
     onOpenChange: (isOpen: boolean) => void
     /** 询问 AI：把块文本交给编辑器现有的查询弹窗 */
     onAskAi: (quote: string) => void
+    /** 加入 AI 对话：块文本 + 顶层序号交给宿主，换算成行范围后成为对话的上下文引用 */
+    onAddToChat: (quote: string, blockIndex: number) => void
 }
 
-export function BlockMenu({ editor, pos, isOpen, onOpenChange, onAskAi }: BlockMenuProps): JSX.Element {
+export function BlockMenu({ editor, pos, isOpen, onOpenChange, onAskAi, onAddToChat }: BlockMenuProps): JSX.Element {
     const node = pos === null ? null : readBlockNode(editor, pos)
     const text = node === null ? '' : readBlockText(node)
     const isConvertible = node !== null && canConvertBlock(node)
@@ -151,9 +155,21 @@ export function BlockMenu({ editor, pos, isOpen, onOpenChange, onAskAi }: BlockM
                     <Sparkles />
                     询问 AI
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                    disabled={isBlank}
+                    onSelect={(): void => {
+                        if (isBlank) {
+                            return
+                        }
+                        onAddToChat(text, readBlockIndex(editor, pos))
+                    }}
+                >
+                    <MessageSquarePlus />
+                    添加到 AI 对话
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                    className="text-destructive! [&_svg]:text-destructive!"
+                    variant="destructive"
                     disabled={node === null}
                     onSelect={(): void => {
                         if (pos === null) {

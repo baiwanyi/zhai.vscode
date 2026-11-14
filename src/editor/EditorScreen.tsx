@@ -4,7 +4,7 @@
  * 编辑区底色、版心与空行占位样式在 ./editor.css，Tailwind 只用于状态栏与浮层；
  * 块把手与表格浮动操作的定位基准都是 .zhai-editor-page（position: relative）；
  * 段末批注图标的点击通过容器事件委托捕获（widget 是原生 DOM，不参与 React 树）。
- * 关键约束：本组件不直接发协议请求，也不决定可编辑性——只读判定来自宿主快照；
+ * 关键约束：本组件不自己拼消息、协议请求一律走 bridge 的 request，也不决定可编辑性——只读判定来自宿主快照；
  * 同步失败、只读与上传结果统一用 sonner 提示，不设常驻状态栏；
  * 源码编辑交给 VSCode 原生文本编辑器，webview 内不再提供源码模式，切走前必须 flush 防抖中的输入；
  * Ctrl/Cmd+S 由本层接管：先 flush 再请宿主 document.save()，autoSave 关闭时才有真正的落盘路径；
@@ -22,7 +22,7 @@ import StarterKit from '@tiptap/starter-kit'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Toaster } from '@components/ui/sonner'
-import type { AnnotationRecord } from '@shared/types/editor'
+import type { AnnotationRecord, EditorChatContextRequest, EditorChatContextResult } from '@shared/types/editor'
 import { request } from '@shared/utils/bridge'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
 import { BlockHandle } from './blocks/BlockHandle'
@@ -37,6 +37,7 @@ import { useEditorUpload } from './hooks/useEditorUpload'
 import { useHeadingOutline } from './hooks/useHeadingOutline'
 import { AnnotationDialog } from './layout/AnnotationDialog'
 import { AnnotationPopover } from './layout/AnnotationPopover'
+import { EditorLineNumbers } from './layout/EditorLineNumbers'
 import { HeadingNav } from './layout/HeadingNav'
 import { QueryDialog } from './layout/QueryDialog'
 import { SearchPanel } from './layout/SearchPanel'
@@ -184,6 +185,30 @@ export function EditorScreen(): JSX.Element {
             toast.error('保存失败：请确认文件未被占用或设为只读')
         }
     }, [flush])
+
+    /**
+     * 加入宅对话：宿主用块序号换算出 Markdown 行范围，写入对话上下文并切到对话分区。
+     * 块菜单只传当前块；选区工具条会带上终点块序号，把选中的多行整段纳入引用。
+     * 这里只负责请求与提示——行号换算、引用生成、去重与条数上限都在宿主侧判断，避免两处各算一套。
+     */
+    const handleAddToChat = async (quote: string, blockIndex: number, endBlockIndex?: number): Promise<void> => {
+        // 先把防抖窗口里的输入回写进 TextDocument：宿主要按最新快照的块偏移换算行号，
+        // 防抖未结束时快照还是旧的，行号会指向改动前的位置
+        await flush()
+        try {
+            // 未给终点块时只引用单块：块菜单入口不传，选区入口按选中行给出的起止块传
+            const payload: EditorChatContextRequest =
+                endBlockIndex === undefined ? { quote, blockIndex } : { quote, blockIndex, endBlockIndex }
+            const result = await request<EditorChatContextResult>('editor/chat/context', payload)
+            if (result.added) {
+                toast.success(result.label === undefined ? '已添加到 AI 对话' : `已添加到 AI 对话：${result.label}`)
+                return
+            }
+            toast.warning(result.reason ?? '未能添加到 AI 对话')
+        } catch (reason) {
+            toast.error(reason instanceof Error ? reason.message : '添加到 AI 对话失败')
+        }
+    }
 
     // Ctrl/Cmd+F 打开查找、Ctrl/Cmd+S 保存：webview 内没有原生查找条与保存入口，必须自己接管
     useEffect(() => {
@@ -363,12 +388,17 @@ export function EditorScreen(): JSX.Element {
                     onClick={handleContentClick}
                 >
                     <EditorContent editor={editor} />
+                    {/* 行号栏按 Markdown 真实行号逐行渲染，挂在 page 内才有正确的定位基准 */}
+                    <EditorLineNumbers editor={editor} blocks={blocks} />
                     {editor === null ? null : (
                         <BlockHandle
                             editor={editor}
                             onAskAi={(quote): void => {
                                 // 与选区工具的「查询」同一条通道：弹窗打开即发起解释查询
                                 setQueryQuote(quote)
+                            }}
+                            onAddToChat={(quote, blockIndex): void => {
+                                void handleAddToChat(quote, blockIndex)
                             }}
                         />
                     )}
@@ -401,6 +431,10 @@ export function EditorScreen(): JSX.Element {
                         }}
                         onQuery={(quote): void => {
                             setQueryQuote(quote)
+                        }}
+                        onAddToChat={(quote, blockRange): void => {
+                            // 行号由宿主按块偏移换算；这里只交出选区覆盖的起止块
+                            void handleAddToChat(quote, blockRange.startIndex, blockRange.endIndex)
                         }}
                     />
                 </div>

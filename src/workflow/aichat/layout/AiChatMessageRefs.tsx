@@ -14,7 +14,7 @@ import type { AiContextRef } from '@shared/types/aiChat'
 import { toZhaiDisplayPath } from '@shared/utils/zhaiPath'
 import { TOOLTIP_CLASS } from '@webview/components/Tooltip'
 import type { JSX } from 'react'
-import { toContextFileName } from '../utils'
+import { toContextFileName, toContextLineRange } from '../utils'
 
 interface AiChatMessageRefsProps {
     refs: AiContextRef[]
@@ -34,6 +34,7 @@ export function AiChatMessageRefs({ refs }: AiChatMessageRefsProps): JSX.Element
                             className="mr-1.5 max-w-56 border-0 bg-primary-foreground/15 align-top font-normal text-primary-foreground"
                         >
                             <span className="min-w-0 truncate">{toContextFileName(ref)}</span>
+                            <span className="shrink-0">{toContextLineRange(ref)}</span>
                         </Badge>
                     </TooltipTrigger>
                     <TooltipContent side="top" className={cn(TOOLTIP_CLASS, 'max-w-72 text-white')}>

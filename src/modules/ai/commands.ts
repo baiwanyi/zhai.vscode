@@ -3,7 +3,8 @@
  * 设计源：docs/modules/ai-chat.md 第 7.1 节命令清单。
  * 复用约定：引用生成与预算校验统一委托 modules/ai/contextRefs；面板跳转走 WorkflowRouter——
  * 模块选定决定显示哪个工作流页，页内视图请求（requestView）决定页内停在哪个分区；
- * 失败提示统一经 notify 走 Webview 的 sonner，无视图可显示时回退 VS Code 原生提示。
+ * 失败提示统一经 notify 走 Webview 的 sonner，无视图可显示时回退 VS Code 原生提示；
+ * 编辑器块菜单的「添加到 AI 对话」直接调 addQuoteToChat，与命令共用同一套引用生成与去向。
  * 约束：全部 Disposable 挂载到 context.subscriptions，保证停用后释放（AC-10）；密钥与引用原文不落日志。
  * 模型选择不在命令面板，改由 AI 面板输入区的模型菜单（ai/models / ai/selectModel）承接。
  */
@@ -13,8 +14,16 @@ import { logger } from '@modules/common/logger'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import type { ToastService } from '@modules/common/toastService'
 import { getActiveDocument, readRichSelection } from '@modules/editor/activeDocument'
-import { isOpenWorkflowRequest } from '@shared/types/workflow'
-import { createContextRefs, createDocumentContextRef, createQuoteContextRef, MAX_CONTEXT_COUNT } from './contextRefs'
+import type { EditorChatContextResult } from '@shared/types/editor'
+import { isOpenWorkflowRequest, NOTES_MODULE_KEY, WECHAT_MODULE_KEY } from '@shared/types/workflow'
+import type { WorkflowContextState } from '@shared/types/workflow'
+import {
+    createContextRefs,
+    createDocumentContextRef,
+    createOffsetContextRef,
+    createQuoteContextRef,
+    MAX_CONTEXT_COUNT,
+} from './contextRefs'
 import { clearCodebuddyLogin, rememberCodebuddyLogin } from './providers/codebuddyLogin'
 import {
     buildCodebuddyEnv,
@@ -159,6 +168,8 @@ async function addEditorContextToChat(
         toast.notifyOrShow('warning', `宅写作：${rejected.join('；')}`)
         return
     }
+    // 引用必须落到当前文档所属的会话上：面板未打开时也要先对齐作用域，否则会加进通用对话
+    service.useScope(readDocumentScope(router))
     const result = service.addContexts(refs)
     if (result.added.length === 0) {
         const reason =
@@ -182,6 +193,41 @@ async function addEditorContextToChat(
 }
 
 /**
+ * 把一段引用文本加入宅对话上下文：编辑器块菜单「添加到 AI 对话」的宿主侧实现。
+ * 行范围优先按块在原文中的字符区间换算，偏移过期（快照重建前）才退回按文本搜索——
+ * 文本搜索对重复段落会定位到第一次出现，行号就不对；块偏移不会。
+ * 成功后的去向与命令一致：切到写作管理模块的对话分区并聚焦面板。
+ */
+export async function addQuoteToChat(
+    service: AiChatService,
+    router: WorkflowRouter,
+    document: vscode.TextDocument,
+    quote: string,
+    /** 块在 Markdown 原文中的字符区间：由编辑器快照的块偏移给出，缺省表示按文本定位 */
+    blockRange: { start: number; end: number } | null = null,
+): Promise<EditorChatContextResult> {
+    const byOffset = blockRange === null ? null : createOffsetContextRef(document, blockRange.start, blockRange.end)
+    const ref = byOffset ?? createQuoteContextRef(document, quote)
+    if (ref === null) {
+        return { added: false, reason: '未能在文档中定位这段内容，可能已被修改' }
+    }
+    // 与命令同一口径：先把会话作用域对齐到当前文档，笔记之间才不会互相串对话
+    service.useScope(readDocumentScope(router))
+    const result = service.addContexts([ref])
+    if (result.added.length === 0) {
+        return {
+            added: false,
+            reason:
+                result.duplicated > 0
+                    ? '这段内容已在对话上下文中'
+                    : `上下文已达 ${MAX_CONTEXT_COUNT} 项上限，请先在对话面板中移除`,
+        }
+    }
+    await focusChatSection(router)
+    return { added: true, label: ref.label }
+}
+
+/**
  * 添加成功后的去向：无论当前停在哪个页面，都切到写作管理模块的对话分区并聚焦面板。
  * 关键约束：模块选定与页内视图是两件事——前者决定显示哪个工作流页，后者决定页内停在哪个分区；
  * 已在该模块时模块选定不会产生新事实，必须靠视图请求才能从设定、大纲等分区切回对话。
@@ -190,4 +236,35 @@ async function focusChatSection(router: WorkflowRouter): Promise<void> {
     router.selectModule(PRESS_MODULE_DIR)
     router.requestView('chat')
     await vscode.commands.executeCommand('zhai.workflow.focus')
+}
+
+/** 文档是否属于当前归属：作品看作品目录前缀，笔记 / 公众号看模块目录前缀 */
+function isDocumentInScope(context: WorkflowContextState, docPath: string): boolean {
+    if (context.module === NOTES_MODULE_KEY) {
+        return docPath.startsWith(`${NOTES_MODULE_KEY}/`)
+    }
+    if (context.module === WECHAT_MODULE_KEY) {
+        return docPath.startsWith(`${WECHAT_MODULE_KEY}/`)
+    }
+    return context.projectDir !== null && docPath.startsWith(`${context.projectDir}/`)
+}
+
+/**
+ * 当前文档的会话作用域：与前端 contentScope 的 readScopeDir 同口径——
+ * 每个文档各自一份对话，文档属于当前归属时取文档相对路径；
+ * 否则回落到旧口径（笔记取模块目录、公众号取模块键、作品取目录）。
+ */
+function readDocumentScope(router: WorkflowRouter): string | null {
+    const context = router.getContext()
+    const docPath = context.docPath
+    if (docPath !== null && isDocumentInScope(context, docPath)) {
+        return docPath
+    }
+    if (context.module === NOTES_MODULE_KEY) {
+        return context.module
+    }
+    if (context.module === WECHAT_MODULE_KEY || context.selectedModule === WECHAT_MODULE_KEY) {
+        return WECHAT_MODULE_KEY
+    }
+    return context.projectDir
 }

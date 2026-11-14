@@ -77,6 +77,18 @@ async function loadDeps(): Promise<EditorDocDeps> {
     return deps
 }
 
+/**
+ * frontmatter 占用的行数：mdast 的行号从正文第一行算起，要加回这段，否则与文本编辑器差几行。
+ * 末尾换行会切出一个空串，那一行不属于 frontmatter。
+ */
+function countFrontmatterLines(frontmatter: string): number {
+    if (frontmatter === '') {
+        return 0
+    }
+    const lines = frontmatter.split(/\r?\n/u)
+    return lines[lines.length - 1] === '' ? lines.length - 1 : lines.length
+}
+
 /** 拆分 Frontmatter 与正文：正文偏移在返回值中已加上前缀长度，与全文一致 */
 export function splitFrontmatter(text: string): { frontmatter: string; body: string; offset: number } {
     const match = FRONTMATTER_PATTERN.exec(text)
@@ -204,6 +216,7 @@ const MERGED_CELL_PATTERN = /<(?:td|th)\s[^>]*(?:colspan|rowspan)="[2-9]/u
 export async function readEditorSnapshot(text: string, version: number, path: string): Promise<EditorDocSnapshot> {
     const loaded = await loadDeps()
     const { frontmatter, body, offset } = splitFrontmatter(text)
+    const frontmatterLines = countFrontmatterLines(frontmatter)
     const parser = loaded.unified().use(loaded.remarkParse).use(loaded.remarkGfm)
     const root: MdastRoot = parser.parse(body)
     const toHtml = loaded.unified().use(loaded.remarkRehype).use(loaded.rehypeStringify)
@@ -239,7 +252,10 @@ export async function readEditorSnapshot(text: string, version: number, path: st
             // 直接透传会让 TipTap 少一个块，后续块的偏移全部错位，必须换成纯文本占位
             html = toPlainTextHtml(raw)
         }
-        blocks.push({ html, start: offset + start, end: offset + end })
+        // 行号补上 frontmatter 占用行：前端行号栏要与文本编辑器的行号逐行对上
+        const startLine = frontmatterLines + (node.position?.start.line ?? 1)
+        const endLine = frontmatterLines + (node.position?.end.line ?? node.position?.start.line ?? 1)
+        blocks.push({ html, start: offset + start, end: offset + end, startLine, endLine })
     }
     // 不再做整篇白名单判定：编辑器始终可编辑，语法能否往返由回写后的自检兜底
     return { path, version, frontmatter, blocks, editable: true }

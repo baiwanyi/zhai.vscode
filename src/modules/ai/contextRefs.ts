@@ -1,7 +1,8 @@
 /**
  * 编辑器上下文引用（「添加到宅对话」）：把当前编辑器/选区转换为文件引用，并负责读取、截断与渲染。
  * 复用约定：内容优先取 workspace.textDocuments 的内存态文档（含未保存修改），缺失时回退磁盘原文；
- * 渲染为 <context> 结构化片段交由 chatService 注入，前端只消费剥离绝对路径后的展示字段。
+ * 渲染为 <context> 结构化片段交由 chatService 注入，前端只消费剥离绝对路径后的展示字段；
+ * 行范围来源有两套——选区按文本搜索定位，块按编辑器快照的字符偏移换算，字段与去重键完全一致。
  * 关键约束：引用原文属不可信文本，须转义 </context> 防结构逃逸；整篇超限直接拒绝（避免模型基于
  * 残缺全文作答），单条选区超限按行截断并标注；前端删除引用只回传 id，不接受任何路径入参。
  */
@@ -64,6 +65,24 @@ export function createQuoteContextRef(document: vscode.TextDocument, quote: stri
         return null
     }
     const range = new vscode.Range(document.positionAt(index), document.positionAt(index + needle.length))
+    return createSelectionRef(document, vscode.workspace.asRelativePath(document.uri, false), range)
+}
+
+/**
+ * 按字符偏移生成引用：编辑器块快照给出的是 Markdown 原文区间，这里换算成 1-based 行范围。
+ * 与按文本搜索相比不再受重复段落影响——同一句话在文中出现多次时，行号仍指向当前块；
+ * 加粗、表格这类原文与块纯文本不逐字相同的块也能定位。偏移越界（快照已过期）返回 null。
+ */
+export function createOffsetContextRef(
+    document: vscode.TextDocument,
+    startOffset: number,
+    endOffset: number,
+): HostContextRef | null {
+    const limit = document.getText().length
+    if (startOffset < 0 || startOffset >= endOffset || endOffset > limit) {
+        return null
+    }
+    const range = new vscode.Range(document.positionAt(startOffset), document.positionAt(endOffset))
     return createSelectionRef(document, vscode.workspace.asRelativePath(document.uri, false), range)
 }
 

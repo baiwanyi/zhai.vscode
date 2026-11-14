@@ -92,6 +92,19 @@ export function toContextFileName(ref: AiContextRef): string {
     return toFileName(ref.displayPath)
 }
 
+/**
+ * 引用的行范围后缀：`:12` / `:12-33` 形态紧跟在文件名之后，单行给一个行号、跨行给区间。
+ * 整篇引用（startLine 为 null）返回空串，调用方据此不渲染后缀。
+ */
+export function toContextLineRange(ref: AiContextRef): string {
+    if (ref.startLine === null) {
+        return ''
+    }
+    return ref.endLine === null || ref.endLine === ref.startLine
+        ? `:${String(ref.startLine)}`
+        : `:${String(ref.startLine)}-${String(ref.endLine)}`
+}
+
 /** 连续生成意图关键词：一次要写多章或整卷时，需要先取得一次「白名单内直接写入」授权 */
 const CONTINUOUS_INTENT_KEYWORDS: readonly string[] = [
     '连续',

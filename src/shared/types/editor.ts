@@ -12,6 +12,10 @@ export interface EditorBlock {
     html: string
     start: number
     end: number
+    /** 块首行在 Markdown 全文中的行号（1 起，含 frontmatter 占用行）：编辑器行号栏据此对齐文本编辑器 */
+    startLine?: number
+    /** 块末行行号：与 startLine 相减即块占的逻辑行数，多行块据此逐行标注 */
+    endLine?: number
 }
 
 /** 文档快照：blocks 与正文顶层节点一一对应，start/end 即回写定位依据 */
@@ -113,6 +117,42 @@ export function isEditorQueryRequest(input: unknown): input is EditorQueryReques
         typeof request.clientId === 'string' &&
         request.clientId.length > 0
     )
+}
+
+/**
+ * 「添加到 AI 对话」请求：传选中文本与它在编辑器文档里覆盖的块序号。
+ * 不接受路径入参——webview 无权指定读哪份文件，引用只能落在当前编辑的这个文档上；
+ * 块序号让宿主把块换算成精确的 Markdown 行范围，文本只在换算失败时兜底定位；
+ * 选区入口会带上终点块序号，把选中的多行整段纳入引用（行范围按整行计，不按字符裁剪）。
+ */
+export interface EditorChatContextRequest {
+    quote: string
+    /** 选区起点块在编辑器文档中的顶层序号（0 起）；-1 或缺失表示按文本定位 */
+    blockIndex?: number
+    /** 选区终点块序号；缺失或小于 blockIndex 时只引用起点块 */
+    endBlockIndex?: number
+}
+
+/** 收窄加入对话请求：quote 去空白后非空才受理，超长内容由引用读取侧统一截断 */
+export function isEditorChatContextRequest(input: unknown): input is EditorChatContextRequest {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const request = input as { quote?: unknown; blockIndex?: unknown; endBlockIndex?: unknown }
+    return (
+        typeof request.quote === 'string' &&
+        request.quote.trim() !== '' &&
+        (request.blockIndex === undefined || typeof request.blockIndex === 'number') &&
+        (request.endBlockIndex === undefined || typeof request.endBlockIndex === 'number')
+    )
+}
+
+/** 加入对话结果：added 为 false 时 reason 说明重复、超限或定位失败，前端据此提示 */
+export interface EditorChatContextResult {
+    added: boolean
+    reason?: string
+    /** 成功时的引用标签（路径 + 行范围），前端提示里直接展示，让行号可见 */
+    label?: string
 }
 
 /** 列表游标：keyset 分页，避免深 OFFSET 扫描 */

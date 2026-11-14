@@ -32,6 +32,8 @@ export interface BlockHandleProps {
     editor: Editor
     /** 询问 AI：块菜单里触发，把该块文本交给编辑器现有的查询弹窗 */
     onAskAi: (quote: string) => void
+    /** 加入 AI 对话：块菜单里触发，把该块文本与顶层序号交给宿主写入工作流区对话上下文 */
+    onAddToChat: (quote: string, blockIndex: number) => void
 }
 
 /** 把手容器：总占位 3.75rem（w-14 + pr-1），两个 20px 图标槽并排常驻，留出余量避免被 flex 挤压变形 */
@@ -139,7 +141,7 @@ function setDragLocked(editor: Editor, isLocked: boolean): void {
     editor.view.dispatch(editor.state.tr.setMeta('lockDragHandle', isLocked))
 }
 
-export function BlockHandle({ editor, onAskAi }: BlockHandleProps): JSX.Element {
+export function BlockHandle({ editor, onAskAi, onAddToChat }: BlockHandleProps): JSX.Element {
     // 插入菜单与块菜单各自开合：任一打开都要同时锁拖拽并冻结定位
     const [isInsertMenuOpen, setIsInsertMenuOpen] = useState(false)
     const [isBlockMenuOpen, setIsBlockMenuOpen] = useState(false)
@@ -396,6 +398,7 @@ export function BlockHandle({ editor, onAskAi }: BlockHandleProps): JSX.Element 
                         isOpen={isBlockMenuOpen}
                         onOpenChange={handleBlockMenuOpenChange}
                         onAskAi={onAskAi}
+                        onAddToChat={onAddToChat}
                     />
                 </div>
             </div>

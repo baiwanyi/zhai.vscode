@@ -22,6 +22,7 @@ import {
     isAddAnnotationRequest,
     isAnnotationIdRequest,
     isEditorChangeRequest,
+    isEditorChatContextRequest,
     isEditorQueryAbortRequest,
     isEditorQueryRequest,
     isEditorSelectionRequest,
@@ -29,6 +30,7 @@ import {
 import type {
     EditorBlockChange,
     EditorChangeResult,
+    EditorChatContextResult,
     EditorDocSnapshot,
     EditorInsertContent,
     EditorSnapshotMessage,
@@ -68,6 +70,17 @@ export interface ChapterSnapshotWriter {
     captureChapterBeforeWrite: (uri: vscode.Uri, content: string) => Promise<void>
 }
 
+/**
+ * 把一段文本加入宅对话上下文：由 AI 层注入，编辑器只交出自身文档、文本与块在原文中的字符区间。
+ * 关键约束：文档由宿主提供，引用只能落在当前打开的这份文件上，webview 传不了路径；
+ * 字符区间用来换算精确行号，为 null 时由实现方退回按文本定位。
+ */
+export type AddChatContext = (
+    document: vscode.TextDocument,
+    quote: string,
+    blockRange: { start: number; end: number } | null,
+) => Promise<EditorChatContextResult>
+
 /** 宿主缓存的选区快照：quote 用于在 Markdown 里定位，块序号仅作提示 */
 export interface EditorSelectionSnapshot {
     quote: string
@@ -106,6 +119,8 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         private readonly query: EditorQueryDeps | null = null,
         /** 上传协议：编辑器 webview 自己发起粘贴 / 拖拽上传，复用工作流面板那一套路由实例 */
         private readonly upload: UploadRoutes | null = null,
+        /** 加入宅对话：块菜单把当前块追加为对话上下文，由 AI 层注入 */
+        private readonly addChatContext: AddChatContext | null = null,
     ) {}
 
     public async resolveCustomTextEditor(
@@ -453,6 +468,25 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
                 await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: { saved: isSaved } })
                 return
             }
+            // 块菜单「添加到 AI 对话」：只传文本，引用定位、上下文写入与面板跳转都在宿主侧完成，
+            // 前端只按回执提示结果——这样 webview 拿不到也写不了任意文件的引用
+            if (method === 'editor/chat/context') {
+                if (!isEditorChatContextRequest(payload)) {
+                    await this.respondError(panel, reqId, 'invalid-payload', '加入对话参数非法')
+                    return
+                }
+                if (this.addChatContext === null) {
+                    await this.respondError(panel, reqId, 'ai-unavailable', 'AI 通道尚未就绪')
+                    return
+                }
+                const result = await this.addChatContext(
+                    document,
+                    payload.quote,
+                    this.readBlockRange(document, payload.blockIndex, payload.endBlockIndex),
+                )
+                await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: result })
+                return
+            }
             // 打开正文里的链接：前端在 Ctrl/Cmd + 点击时发起，普通点击不会走到这里
             if (method === 'editor/openLink') {
                 const url = readOpenableUrl(payload)
@@ -557,6 +591,39 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
             return true
         }
         return document.save()
+    }
+
+    /**
+     * 块序号 → Markdown 原文区间：块快照与前端 TipTap 的顶层块同序（回写也依赖这一对应关系）。
+     * 快照缺失、序号越界或偏移已超出当前文档时返回 null，由调用方退回按文本定位。
+     * 关键约束：给了终点块序号就取首块起点到末块终点的整段区间——选区工具条按「选中行」引用，
+     * 行范围由首末块决定即可覆盖中间所有行；终点块倒序时只取起点块；
+     * 终点块越界（两端块序列短暂不一致）时按最后一个块收敛并记日志——
+     * 此时宁可多引到文末，也不能退化成「只引用第一行」。
+     */
+    private readBlockRange(
+        document: vscode.TextDocument,
+        blockIndex: number | undefined,
+        endBlockIndex?: number,
+    ): { start: number; end: number } | null {
+        if (blockIndex === undefined || blockIndex < 0) {
+            return null
+        }
+        const blocks = this.snapshots.get(document.uri.toString())?.blocks
+        const first = blocks?.[blockIndex]
+        if (first === undefined || blocks === undefined) {
+            return null
+        }
+        const lastBlockIndex = blocks.length - 1
+        const requestedEnd = endBlockIndex === undefined || endBlockIndex <= blockIndex ? blockIndex : endBlockIndex
+        if (requestedEnd > lastBlockIndex) {
+            logger.debug(`选中行终点块序号越界，按最后一个块收敛：${String(requestedEnd)}/${String(lastBlockIndex)}`)
+        }
+        const last = blocks[Math.min(requestedEnd, lastBlockIndex)] ?? first
+        if (last.end > document.getText().length) {
+            return null
+        }
+        return { start: first.start, end: last.end }
     }
 
     /**
