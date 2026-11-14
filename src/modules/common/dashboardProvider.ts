@@ -1,5 +1,5 @@
 /**
- * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开、置顶设置、
+ * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开/删除、置顶设置、
  * 工作流页跳转、待办清单读写、写作管理（作品列表、作品详情、新建作品与章节、卷的重命名与删除、
  * 章节的删除与跨卷移动、整部作品删除）聚合与创建、公众号账号的列表与增删改鉴权、
  * 媒体库、在线图库与上传清单的列举（公众号封面选图），以及宿主命令。
@@ -8,7 +8,8 @@
  * todo 通道给待办清单的外部改动（卡片收到即重读）；
  * press/active 请求返回当前文档所属的作品目录，供面板打开时一次性跟随到该作品的章节列表。
  * 关键约束：请求处理为异步流程（新建笔记/作品/章节、卷重命名与删除、章节删除与移动需落盘 + 索引 + 打开，
- * 打开与置顶须先经索引库校验路径），
+ * 打开、置顶与删除须先经索引库校验路径），
+ * 批量删除按条独立处理，单条失败不阻断其余条目，失败原因随响应回传而非整单抛错；
  * 须 await 结果后再回包；命令入口一律经白名单校验，未登记的命令直接拒绝；
  * 作品协议只做入参收窄与转发，聚合/落盘由 modules/press 承担，打开路径须先按索引库回查；
  * 活跃编辑器与索引状态监听须随面板销毁释放，否则重开面板会叠加监听、重复广播。
@@ -20,7 +21,7 @@ import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { getActiveDocument, onDidChangeActiveDocument } from '@modules/editor/activeDocument'
 import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { PressCoverStore } from '@modules/media/pressCoverStore'
-import { createAndOpenNote, openNoteByPath } from '@modules/note/noteService'
+import { createAndOpenNote, deleteNote, openNoteByPath } from '@modules/note/noteService'
 import type { PinStore } from '@modules/note/pinStore'
 import { mergeChapterSummaries } from '@modules/press/chapterSummaryMerge'
 import { analyzeProject } from '@modules/press/importAnalysis'
@@ -53,8 +54,14 @@ import { WECHAT_DOCUMENT_METHODS } from '@modules/wechat/wechatRoutes'
 import type { DashboardStats } from '@shared/types/dashboard'
 import type { HostToWebviewMessage } from '@shared/types/messages'
 import { isRequestMessage } from '@shared/types/messages'
-import type { NoteActiveState, OpenNoteResult, PinNotesResult } from '@shared/types/note'
-import { isOpenNoteRequest, isPinNotesRequest } from '@shared/types/note'
+import type {
+    DeleteNotesResult,
+    NoteActiveState,
+    NoteDeleteFailure,
+    OpenNoteResult,
+    PinNotesResult,
+} from '@shared/types/note'
+import { isDeleteNotesRequest, isOpenNoteRequest, isPinNotesRequest } from '@shared/types/note'
 import type {
     CreatePressProjectResult,
     CreatedPressChapter,
@@ -279,6 +286,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             case 'note/pin': {
                 return this.setPinned(payload)
             }
+            case 'note/delete': {
+                return this.deleteNotes(payload)
+            }
             case 'note/open': {
                 return this.openNote(payload)
             }
@@ -455,6 +465,42 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         // 打开笔记后立即同步工作流事实：菜单不等编辑器事件，避免与后续请求抢时序
         this.workflowRouter.syncFromEditor()
         return { opened: true }
+    }
+
+    /**
+     * 批量删除笔记：先按索引库回查确认归属，再逐条落盘删除并收敛索引与置顶偏好。
+     * 安全约束：不采信 Webview 传入的任意路径形态，未在索引库登记（或不属于 notes/ 目录）的路径一律拒绝，
+     * 从源头排除目录穿越与越权删除；路径重复项先去重，避免同一文件产生无意义的失败提示。
+     * 关键约束：单条失败不阻断其余条目，失败原因随响应回传，由前端逐条提示；
+     * 置顶偏好只清理真正删除成功的路径，删除失败项保持原状，避免状态提前丢失。
+     */
+    private async deleteNotes(payload: unknown): Promise<DeleteNotesResult> {
+        if (!isDeleteNotesRequest(payload)) {
+            throw new Error('note/delete 参数非法：paths 须为非空字符串数组')
+        }
+        const targets = [...new Set(payload.paths)]
+        const indexedPaths = new Set(listFilesByPaths(this.db, targets).map((file) => file.path))
+        const deletedPaths: string[] = []
+        const failures: NoteDeleteFailure[] = []
+        let hasPermanentDelete = false
+        for (const target of targets) {
+            if (!indexedPaths.has(target)) {
+                failures.push({ path: target, message: `笔记不在索引中，无法删除：${target}` })
+                continue
+            }
+            try {
+                const outcome = await deleteNote(this.indexService, target)
+                hasPermanentDelete = hasPermanentDelete || outcome === 'permanent'
+                deletedPaths.push(target)
+            } catch (cause) {
+                failures.push({ path: target, message: cause instanceof Error ? cause.message : String(cause) })
+            }
+        }
+        if (deletedPaths.length > 0) {
+            await this.pins.setPinned(deletedPaths, false)
+            logger.info(`笔记删除完成：成功 ${deletedPaths.length} 项，失败 ${failures.length} 项`)
+        }
+        return { deletedPaths, failures, hasPermanentDelete }
     }
 
     /**

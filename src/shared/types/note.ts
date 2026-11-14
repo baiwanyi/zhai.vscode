@@ -1,8 +1,9 @@
 /**
- * 笔记契约：宿主 note/create、note/pin、note/open 请求的出入参结构，以及活跃笔记快照。
- * 使用方：Webview 仪表盘的「添加」「置顶」「打开」入口与列表选中态，宿主侧笔记服务与仪表盘面板。
+ * 笔记契约：宿主 note/create、note/pin、note/open、note/delete 请求的出入参结构，以及活跃笔记快照。
+ * 使用方：Webview 仪表盘的「添加」「置顶」「打开」「删除」入口与列表选中态，宿主侧笔记服务与仪表盘面板。
  * 约束：path 为相对存储根的路径，与索引库 files.path 同口径；
- * 置顶与打开的请求路径均须由宿主按索引库校验存在性后才可继续处理，避免任意字符串触及文件系统；
+ * 置顶、打开与删除的请求路径均须由宿主按索引库校验存在性后才可继续处理，避免任意字符串触及文件系统；
+ * 删除为批量语义：单条删除即长度为 1 的路径集合，全部失败也不抛错而由 failures 回传原因；
  * 活跃笔记快照由宿主权威下发，前端不自造选中态。
  */
 
@@ -36,6 +37,41 @@ export interface OpenNoteRequest {
 /** note/open 响应：确认已交由编辑器展示 */
 export interface OpenNoteResult {
     opened: boolean
+}
+
+/** note/delete 请求：批量删除笔记（单条删除即长度为 1 的集合） */
+export interface DeleteNotesRequest {
+    /** 待删除的笔记路径集合 */
+    paths: string[]
+}
+
+/** 单条笔记删除失败的原因 */
+export interface NoteDeleteFailure {
+    path: string
+    /** 失败原因，可直接展示给用户 */
+    message: string
+}
+
+/** note/delete 响应：已删除路径与失败明细 */
+export interface DeleteNotesResult {
+    /** 已从磁盘移除并清理索引的笔记路径 */
+    deletedPaths: string[]
+    /** 未删除的路径与原因，全部成功时为空数组 */
+    failures: NoteDeleteFailure[]
+    /** 是否出现回收站不可用而永久删除的条目，供前端提示不可恢复 */
+    hasPermanentDelete: boolean
+}
+
+/** 判断是否为合法的删除请求（类型收窄辅助） */
+export function isDeleteNotesRequest(payload: unknown): payload is DeleteNotesRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { paths?: unknown }
+    if (!Array.isArray(candidate.paths) || candidate.paths.length === 0) {
+        return false
+    }
+    return candidate.paths.every((item: unknown) => typeof item === 'string' && item.length > 0)
 }
 
 /** 判断是否为合法的置顶请求（类型收窄辅助） */

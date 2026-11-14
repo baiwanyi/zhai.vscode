@@ -1,24 +1,39 @@
 /**
- * 仪表盘宿主动作：新建空笔记、打开笔记、批量置顶、工作流页跳转、索引重建、缓存清理与打开设置。
- * 复用 @shared/utils/bridge 走宿主协议、@shared/utils/error 的 toastError 反馈结果，错误经 Error 收窄后提示。
+ * 仪表盘宿主动作：新建空笔记、打开笔记、批量置顶、批量删除笔记、工作流页跳转、索引重建、缓存清理与打开设置。
+ * 复用 @shared/utils/bridge 走宿主协议、@shared/utils/error 的 toErrorText 归一错误文案，结果统一经 sonner 提示。
  * 关键约束：耗时动作进行中记录 pendingAction 阻止重复提交；打开笔记与工作流跳转不占用该状态，
- * 避免顶栏操作区被整体禁用；提示在本层即时发出，页面不再渲染提示行。
+ * 避免顶栏操作区被整体禁用；提示在本层即时发出，页面不再渲染提示行；
+ * 删除为批量语义：成功与失败分别提示，全部失败时不做成功提示，部分成功仍返回已删路径供页面清理选中态。
  */
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
-import type { NoteAction } from '@shared/types/dashboard'
 import type { HostMethodName } from '@shared/types/messages'
-import type { CreatedNote, OpenNoteRequest, OpenNoteResult, PinNotesRequest } from '@shared/types/note'
+import type {
+    CreatedNote,
+    DeleteNotesRequest,
+    DeleteNotesResult,
+    NoteDeleteFailure,
+    OpenNoteRequest,
+    OpenNoteResult,
+    PinNotesRequest,
+} from '@shared/types/note'
 import type { OpenWorkflowRequest, OpenWorkflowResult } from '@shared/types/workflow'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
 
-/** 尚未接入宿主协议的条目操作 */
-export type PendingNoteAction = Extract<NoteAction, 'delete'>
+/** 成功提示：带上条数，回收站不可用时点明已永久删除，让用户知道能否恢复 */
+function formatDeletedNotice(count: number, hasPermanentDelete: boolean): string {
+    const base = `已删除 ${String(count)} 篇笔记`
+    return hasPermanentDelete ? `${base}（回收站不可用，已永久删除）` : base
+}
 
-/** 笔记条目操作的提示文案（仅覆盖未接入协议的动作） */
-const NOTE_NOTICE: Record<PendingNoteAction, string> = {
-    delete: '删除笔记将在后续版本接入',
+/** 失败提示：单条给出具体原因，多条只给条数与首条原因，避免提示被逐条刷屏 */
+function formatFailureNotice(failures: NoteDeleteFailure[]): string {
+    const [first] = failures
+    if (first === undefined) {
+        return '笔记删除失败'
+    }
+    return failures.length === 1 ? first.message : `${String(failures.length)} 篇笔记删除失败：${first.message}`
 }
 
 export interface DashboardActionsState {
@@ -26,11 +41,11 @@ export interface DashboardActionsState {
     createNote: () => Promise<CreatedNote | null>
     openNote: (path: string) => Promise<void>
     setPinned: (paths: string[], isPinned: boolean) => Promise<void>
+    deleteNotes: (paths: string[]) => Promise<DeleteNotesResult | null>
     openWorkflow: (module: string) => Promise<void>
     rebuild: () => Promise<void>
     clearCache: () => Promise<void>
     openSettings: () => Promise<void>
-    showNotePending: (action: PendingNoteAction) => void
 }
 
 export function useDashboardActions(onCompleted: () => Promise<void>): DashboardActionsState {
@@ -98,6 +113,35 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         [runAction],
     )
 
+    /**
+     * 批量删除笔记：宿主逐条删除并以 failures 回传失败原因，本层分别提示后刷新列表与统计。
+     * 关键约束：无论成败都先刷新一次快照，使列表与磁盘即时一致；整单异常（参数非法等）只给错误提示并返回 null，
+     * 由页面保留待处理项，避免静默丢失用户意图。
+     */
+    const deleteNotes = useCallback(
+        async (paths: string[]): Promise<DeleteNotesResult | null> => {
+            setPendingAction('delete')
+            try {
+                const payload: DeleteNotesRequest = { paths }
+                const result = await request<DeleteNotesResult>('note/delete', payload)
+                await onCompleted()
+                if (result.deletedPaths.length > 0) {
+                    toast.success(formatDeletedNotice(result.deletedPaths.length, result.hasPermanentDelete))
+                }
+                if (result.failures.length > 0) {
+                    toast.error(formatFailureNotice(result.failures))
+                }
+                return result
+            } catch (cause) {
+                toast.error(toErrorText(cause))
+                return null
+            } finally {
+                setPendingAction(null)
+            }
+        },
+        [onCompleted],
+    )
+
     const rebuild = useCallback((): Promise<void> => runAction('rebuild', 'index/rebuild'), [runAction])
     const clearCache = useCallback(
         (): Promise<void> => runAction('clear', 'host/command', 'zhai.clearIndex'),
@@ -108,19 +152,15 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         [runAction],
     )
 
-    const showNotePending = useCallback((action: PendingNoteAction): void => {
-        toast.info(NOTE_NOTICE[action])
-    }, [])
-
     return {
         pendingAction,
         createNote,
         openNote,
         setPinned,
+        deleteNotes,
         openWorkflow,
         rebuild,
         clearCache,
         openSettings,
-        showNotePending,
     }
 }

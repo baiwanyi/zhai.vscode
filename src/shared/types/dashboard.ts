@@ -42,5 +42,5 @@ export interface DashboardStats {
     isRebuilding: boolean
 }
 
-/** 笔记条目可发起的操作：open 与 delete 的宿主协议尚未接入，pin 与 unpin 已由 note/pin 承接 */
+/** 笔记条目可发起的操作：open 打开、pin/unpin 切换置顶、delete 删除，均由宿主协议承接 */
 export type NoteAction = 'open' | 'delete' | 'pin' | 'unpin'
