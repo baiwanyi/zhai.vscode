@@ -8,7 +8,8 @@
  * 显示不依赖鼠标悬停：扩展写的 visibility 与 pointer-events 在 editor.css 里被一并覆盖、改由内容透明度控制，
  * 点击命中必须由内层容器显式给 pointer-events——只覆盖 visibility 会留下「看得见却点不动」的把手；
  * 两个菜单共用一个「有菜单打开」的判断：同时锁拖拽、冻结把手定位，关闭后补算一次位置；
- * 块菜单的目标块由「最近一次非空悬停位置」冻结——鼠标移到把手上时扩展给的是 null，现读会丢目标。
+ * 两个菜单的目标块都由「最近一次非空悬停位置」冻结——鼠标移到把手上时扩展给的是 null，现读会丢目标；
+ * 插入菜单同样不能用选区兜底：选区停在上次输入处（多在文末），那样从哪一行插入都会落到文档末尾。
  */
 import { DragHandle } from '@tiptap/extension-drag-handle-react'
 import { cn } from 'cn'
@@ -57,6 +58,8 @@ export function BlockHandle({ editor, onAskAi, onAddToChat }: BlockHandleProps):
     // 插入菜单与块菜单各自开合：任一打开都要同时锁拖拽并冻结定位
     const [isInsertMenuOpen, setIsInsertMenuOpen] = useState(false)
     const [isBlockMenuOpen, setIsBlockMenuOpen] = useState(false)
+    // 插入菜单的目标块：打开瞬间冻结为鼠标悬停的那一块，插入内容落在这一行之后
+    const [insertTargetPos, setInsertTargetPos] = useState<number | null>(null)
     // 块菜单的目标块：打开瞬间冻结，菜单内所有命令都以它为准
     const [menuTargetPos, setMenuTargetPos] = useState<number | null>(null)
     const isMenuOpen = isInsertMenuOpen || isBlockMenuOpen
@@ -73,7 +76,7 @@ export function BlockHandle({ editor, onAskAi, onAddToChat }: BlockHandleProps):
         return {
             getBoundingClientRect: (): DOMRect => {
                 // 菜单开着时锚点必须锁在冻结的目标块上，鼠标再移到别的块也不能把菜单带走
-                const pos = menuTargetPos ?? blockPosRef.current ?? readTopBlockPos(editor)
+                const pos = menuTargetPos ?? insertTargetPos ?? blockPosRef.current ?? readTopBlockPos(editor)
                 const dom = pos === null ? null : editor.view.nodeDOM(pos)
                 return dom instanceof HTMLElement ? handleAnchorRect(editor, dom) : new DOMRect()
             },
@@ -96,6 +99,20 @@ export function BlockHandle({ editor, onAskAi, onAddToChat }: BlockHandleProps):
         requestAnimationFrame((): void => {
             positionHandleAt(editor, blockPosRef.current)
         })
+    }
+
+    /**
+     * 插入菜单开合：打开时把悬停块冻结成插入目标，关闭时清空。
+     * 不读选区：选区还停在上次输入的位置（常在文末），那样插入内容永远落在文档末尾。
+     */
+    const handleInsertMenuOpenChange = (isOpen: boolean): void => {
+        if (!isOpen) {
+            setIsInsertMenuOpen(false)
+            setInsertTargetPos(null)
+            return
+        }
+        setInsertTargetPos(lastBlockPosRef.current ?? readTopBlockPos(editor))
+        setIsInsertMenuOpen(true)
     }
 
     /** 块菜单开合：打开时把目标块冻结下来，关闭时清空并让把手重新贴合当前块 */
@@ -127,7 +144,12 @@ export function BlockHandle({ editor, onAskAi, onAddToChat }: BlockHandleProps):
                     isVisible ? 'pointer-events-auto opacity-100' : 'pointer-events-none opacity-0',
                 )}
             >
-                <InsertBlockMenu editor={editor} isOpen={isInsertMenuOpen} onOpenChange={setIsInsertMenuOpen} />
+                <InsertBlockMenu
+                    editor={editor}
+                    pos={insertTargetPos}
+                    isOpen={isInsertMenuOpen}
+                    onOpenChange={handleInsertMenuOpenChange}
+                />
                 {/*
                  * 拖拽手柄：整块 drag 由扩展挂在容器上，这里只需要一个抓手图标。
                  * 按钮不能兼任 Radix 的 Trigger——Trigger 会在 pointerdown 上 preventDefault，

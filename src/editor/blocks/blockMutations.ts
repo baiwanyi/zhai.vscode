@@ -3,7 +3,9 @@
  * 复用约定：入参统一是「顶层块起始位置」（取自 blockQueries 的 readTopBlockPos），返回是否真的执行；
  * 块读取走 blockQueries，DOM、剪贴板与提示都不在这里，由调用方负责。
  * 关键约束：复制必须递归清空 id（含叶子块）——UniqueID 只补缺失值、不去重，同 id 的两块会让批注与定位串位；
- * 删除必须保证文档至少留一个空段落，否则事务会被 schema 拒绝、块根本删不掉。
+ * 删除必须保证文档至少留一个空段落，否则事务会被 schema 拒绝、块根本删不掉；
+ * 两条命令都要在事务里显式落选区——菜单关闭时 focus 会 scrollIntoView 到当前选区，
+ * 不落点就沿用旧光标，界面会莫名滚回文末或别处。
  */
 import { Selection } from '@tiptap/pm/state'
 import { readBlockNode } from './blockQueries'
@@ -32,7 +34,12 @@ function stripBlockIds(node: ProseMirrorNode): ProseMirrorNode {
     return node.type.create(attrs, children, node.marks)
 }
 
-/** 复制块：副本紧跟原块，id 交给 UniqueID 重新生成，避免两块共用同一个定位键 */
+/**
+ * 复制块：副本紧跟原块，id 交给 UniqueID 重新生成，避免两块共用同一个定位键。
+ * 事务里必须显式落一次选区：菜单关闭后 focus 会 scrollIntoView 到当前选区，
+ * 不落点就停在旧光标（多在文末），看起来就是「复制完跳到了文档末尾」；
+ * 落到副本内容起点，视野与光标都留在刚复制的那一行。
+ */
 export function duplicateBlock(editor: Editor, pos: number): boolean {
     if (editor.isDestroyed || !editor.isEditable) {
         return false
@@ -42,7 +49,10 @@ export function duplicateBlock(editor: Editor, pos: number): boolean {
         return false
     }
     const { tr } = editor.state
-    tr.insert(pos + node.nodeSize, stripBlockIds(node))
+    const copyPos = pos + node.nodeSize
+    tr.insert(copyPos, stripBlockIds(node))
+    // bias 取默认值（向后优先）：文本块落到副本内容起点，叶子块 / 表格落到最近的可编辑位置
+    tr.setSelection(Selection.near(tr.doc.resolve(copyPos)))
     editor.view.dispatch(tr)
     return true
 }

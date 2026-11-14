@@ -5,6 +5,8 @@
  * 块位置与块类型取 blocks/blockQueries 与 blocks/blockTargets，激活格式取 selection/formatCommands，本文件不重复判定。
  * 关键约束：只有选中的文字才会弹菜单——点击、单击标注文本一律不弹，走编辑器常规交互；
  * 正文内按住鼠标的整个拖选过程都不弹，松手一拍后才结算（等 ProseMirror 落地）；
+ * 结算只认「正文内的松手或正文仍有焦点」：批注弹窗等正文外区域的松手不改选区，
+ * 照旧结算会把刚收起的浮层用旧选区弹回来；
  * 指针在 webview 外松开会导致 pointerup 丢失，用 pointermove 的 buttons 位兜底纠正；
  * 锚点取选区末行底边，浮层向下弹，不覆盖正在读的那一行文字；
  * 激活态必须听 transaction——切换 mark 不改变选区，只听 selectionUpdate 会漏掉点亮；
@@ -166,6 +168,7 @@ export function useSelectionToolbar(editor: Editor | null): SelectionToolbarStat
         if (editor === null || editor.isDestroyed) {
             return
         }
+        const dom = editor.view.dom
         const handleUpdate = (): void => {
             if (timerRef.current !== null) {
                 clearTimeout(timerRef.current)
@@ -203,6 +206,9 @@ export function useSelectionToolbar(editor: Editor | null): SelectionToolbarStat
          * 松手才结算：等一拍让 ProseMirror 先把选区落地。
          * 不判 isSelectingRef——按住标记一旦因异常路径卡住，整场会话就再也不弹了；
          * 结算本身是幂等的，点在浮层上松手也只会把当前选区再确认一次。
+         * 只有「在正文里松手、或正文仍持有焦点」才算一次选择结算：
+         * 批注弹窗、对话框、标题导航这些正文外区域的松手不改选区，
+         * 照样 refresh 就会拿旧选区把刚收起的浮层重新弹回来（填批注时最明显）。
          */
         const handlePointerUp = (event: PointerEvent): void => {
             isSelectingRef.current = false
@@ -212,6 +218,10 @@ export function useSelectionToolbar(editor: Editor | null): SelectionToolbarStat
             }
             // Ctrl / Cmd + 点击是「打开链接」，交给正文的点击处理，不跟着弹菜单
             if (event.ctrlKey || event.metaKey) {
+                return
+            }
+            const isInsideContent = event.target instanceof Node && dom.contains(event.target)
+            if (!isInsideContent && !editor.view.hasFocus()) {
                 return
             }
             // 句柄必须记进 timerRef：卸载后这条 0ms 任务仍会跑一次 refresh
@@ -234,7 +244,6 @@ export function useSelectionToolbar(editor: Editor | null): SelectionToolbarStat
                 dismiss()
             }
         }
-        const dom = editor.view.dom
         dom.addEventListener('pointerdown', handlePointerDown)
         window.addEventListener('pointerup', handlePointerUp)
         window.addEventListener('pointercancel', handlePointerUp)

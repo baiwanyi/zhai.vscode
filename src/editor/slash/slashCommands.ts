@@ -3,6 +3,8 @@
  * 复用约定：图标存 lucide 组件引用而不是 JSX 元素，本文件因此保持纯 TS（不含 React 渲染）；
  * 执行统一走 editor.chain()，只描述「有什么命令、怎么执行」，不认识弹层与键盘。
  * 关键约束：执行前必须 deleteRange 去掉用户已输入的「/xxx」，否则命令插入的节点会带着这段文字；
+ * kind 只描述「改当前块类型」还是「在光标处插入节点」，落点由调用方决定：斜杠菜单在块内执行，
+ * 块把手的插入菜单要在目标行之后新起一行，两种意图不能靠同一条规则硬套；
  * 首批只做 StarterKit 内建块（标题 / 列表 / 引用 / 代码块 / 分隔线），图片与表格留到后续批次，
  * 它们需要上传通道与白名单放开，现在放进来只会造出无法保存的内容。
  */
@@ -25,6 +27,13 @@ import type { ChainedCommands, Editor, Range } from '@tiptap/core'
 import type { LucideIcon } from 'lucide-react'
 import { openEmojiPicker } from '../emoji/emojiStore'
 
+/**
+ * 命令对所在行的作用方式，块把手的插入菜单据此决定落点：
+ * convert 是「把光标所在块改成这个类型」，插入菜单会先在其后开一行新段落再套用，原行保持不动；
+ * insert 是「在光标处插入一个节点」，光标停在块末尾即可让新内容落到这一行之后。
+ */
+export type SlashCommandKind = 'convert' | 'insert'
+
 /** 一条斜杠命令：run 必须是同步的编辑器事务，不接受异步副作用 */
 export interface SlashCommand {
     id: string
@@ -32,8 +41,9 @@ export interface SlashCommand {
     hint: string
     /** 参与搜索的额外关键词：让 `/h2` 这类输入也能命中 */
     keywords: readonly string[]
+    kind: SlashCommandKind
     icon: LucideIcon
-    /** range 为 null 表示不是从斜杠菜单触发（例如把手上的「转换为」），此时不删除任何文本 */
+    /** range 为 null 表示不是从斜杠菜单触发（例如把手上的「插入块」），此时不删除任何文本 */
     run: (editor: Editor, range: Range | null) => void
 }
 
@@ -49,6 +59,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '正文',
         hint: '普通段落',
         keywords: ['text', 'p', 'paragraph', '正文'],
+        kind: 'insert',
         icon: Pilcrow,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.setParagraph())
@@ -59,6 +70,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '一级标题',
         hint: '章标题',
         keywords: ['h1', 'title', 'heading', '标题'],
+        kind: 'convert',
         icon: Heading1,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.toggleHeading({ level: 1 }))
@@ -69,6 +81,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '二级标题',
         hint: '节标题',
         keywords: ['h2', 'heading', '标题'],
+        kind: 'convert',
         icon: Heading2,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.toggleHeading({ level: 2 }))
@@ -79,6 +92,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '三级标题',
         hint: '小节标题',
         keywords: ['h3', 'heading', '标题'],
+        kind: 'convert',
         icon: Heading3,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.toggleHeading({ level: 3 }))
@@ -89,6 +103,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '无序列表',
         hint: '要点罗列',
         keywords: ['ul', 'bullet', 'list', '列表'],
+        kind: 'convert',
         icon: List,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.toggleBulletList())
@@ -99,6 +114,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '任务列表',
         hint: '待办勾选',
         keywords: ['todo', 'task', 'check', '任务', '待办'],
+        kind: 'convert',
         icon: ListTodo,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.toggleTaskList())
@@ -109,6 +125,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '有序列表',
         hint: '带编号的步骤',
         keywords: ['ol', 'number', 'list', '列表'],
+        kind: 'convert',
         icon: ListOrdered,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.toggleOrderedList())
@@ -119,6 +136,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '表格',
         hint: '3 × 3 带表头',
         keywords: ['table', 'grid', '表格'],
+        kind: 'insert',
         icon: TableIcon,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }))
@@ -129,6 +147,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '表情',
         hint: '插入 emoji',
         keywords: ['emoji', '表情', '符号', 'smile'],
+        kind: 'insert',
         icon: Smile,
         run: (editor, range): void => {
             // 只删掉「/表情」这段触发文本，块类型不变；随后在光标处打开选择器
@@ -141,6 +160,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '引用',
         hint: '摘录与旁白',
         keywords: ['quote', 'blockquote', '引用'],
+        kind: 'convert',
         icon: Quote,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.toggleBlockquote())
@@ -151,6 +171,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '代码块',
         hint: '等宽原文',
         keywords: ['code', 'pre', '代码'],
+        kind: 'convert',
         icon: SquareCode,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.toggleCodeBlock())
@@ -161,6 +182,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '分隔线',
         hint: '场景分隔',
         keywords: ['hr', 'divider', '分隔'],
+        kind: 'insert',
         icon: Minus,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.setHorizontalRule())
@@ -171,6 +193,7 @@ export const SLASH_COMMANDS: readonly SlashCommand[] = [
         label: '纯文本',
         hint: '清除格式',
         keywords: ['clear', 'unset', '清除'],
+        kind: 'insert',
         icon: Type,
         run: (editor, range): void => {
             apply(editor, range, (chain) => chain.unsetAllMarks().clearNodes())

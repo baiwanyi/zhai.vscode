@@ -2,7 +2,8 @@
  * 编辑器 DOM 契约：正文 / 版心 / 滚动容器的类名与段末批注图标属性，供事件委托与定位共用。
  * 复用约定：editor.css 与 annotations/annotationDecorations 负责写 DOM，本模块只提供读取侧常量。
  * 关键约束：类名改名前必须同步 editor.css 与全部 closest 调用点（TS 无法约束 CSS）；
- * data-annotation-block 由 widget 写成字符串，读回时必须按非负整数校验——空串经 Number 会变成 0。
+ * data-annotation-block 由 widget 写成字符串，读回时必须按非负整数校验——空串经 Number 会变成 0；
+ * 命中判定只能用 Element：图标内部是 SVG，点到的是 SVGElement，收窄成 HTMLElement 会让图标失效。
  */
 
 /** 最外层容器：标题导航以它为定位基准 */
@@ -32,9 +33,13 @@ export interface AnnotationMarker {
     rect: DOMRect
 }
 
-/** 从事件目标向上找段末批注图标；命中返回块号与矩形，否则 null */
+/**
+ * 从事件目标向上找段末批注图标；命中返回块号与矩形，否则 null。
+ * 判定基准必须是 Element：图标主体是内联 SVG，点上去的 target 是 SVGElement 而不是 HTMLElement，
+ * 只认 HTMLElement 会让整枚图标（按钮上几乎没有 SVG 之外的空白）完全点不动。
+ */
 export function readAnnotationMarker(target: EventTarget | null): AnnotationMarker | null {
-    if (!(target instanceof HTMLElement)) {
+    if (!(target instanceof Element)) {
         return null
     }
     const marker = target.closest(`[${ANNOTATION_BLOCK_ATTR}]`)
