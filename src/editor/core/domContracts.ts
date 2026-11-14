@@ -1,6 +1,6 @@
 /**
  * 编辑器 DOM 契约：正文 / 版心 / 滚动容器的类名与段末批注图标属性，供事件委托与定位共用。
- * 复用约定：editor.css 与 marks/annotationDecorations 负责写 DOM，本模块只提供读取侧常量。
+ * 复用约定：editor.css 与 annotations/annotationDecorations 负责写 DOM，本模块只提供读取侧常量。
  * 关键约束：类名改名前必须同步 editor.css 与全部 closest 调用点（TS 无法约束 CSS）；
  * data-annotation-block 由 widget 写成字符串，读回时必须按非负整数校验——空串经 Number 会变成 0。
  */

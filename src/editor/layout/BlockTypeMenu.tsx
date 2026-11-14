@@ -18,7 +18,7 @@ import type { JSX } from 'react'
 import { canConvertBlock, convertBlock } from '../blocks/blockConversion'
 import { readBlockNode } from '../blocks/blockQueries'
 import { readConvertTargetStates } from '../blocks/blockTargets'
-import { ensureEditable } from '../toolbar/editableGuard'
+import { ensureEditable } from '../core/editableGuard'
 
 export interface BlockTypeMenuProps {
     editor: Editor

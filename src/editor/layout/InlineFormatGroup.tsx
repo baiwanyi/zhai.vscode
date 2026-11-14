@@ -1,6 +1,6 @@
 /**
  * 选区的行内格式按钮组：加粗、斜体、删除线与链接。
- * 复用约定：按钮清单与命令取自 toolbar/formatCommands，按钮用 @webview/components/Button
+ * 复用约定：按钮清单与命令取自 selection/formatCommands，按钮用 @webview/components/Button
  * （自带 tooltip 与图标尺寸），按下态用 aria-pressed + bg-muted 表达。
  * 关键约束：命令一律按外层冻结的 range 执行，不现读选区——点按钮会让选区在浏览器侧塌陷；
  * 只放行 GFM 能回写的格式，下划线、上下标不在此列（写入即变内联 HTML，整篇会转只读）；
@@ -9,11 +9,11 @@
  */
 import { Fragment } from 'react'
 import { Button } from '@webview/components/Button'
-import type { FrozenRange, InlineFormatId } from '../toolbar/formatCommands'
+import type { FrozenRange, InlineFormatId } from '../selection/formatCommands'
 import type { Editor } from '@tiptap/react'
 import type { JSX, ReactNode } from 'react'
-import { ensureEditable } from '../toolbar/editableGuard'
-import { INLINE_FORMATS, toggleInlineFormat } from '../toolbar/formatCommands'
+import { ensureEditable } from '../core/editableGuard'
+import { INLINE_FORMATS, toggleInlineFormat } from '../selection/formatCommands'
 
 export interface InlineFormatGroupProps {
     editor: Editor

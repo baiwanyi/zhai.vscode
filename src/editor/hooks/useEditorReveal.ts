@@ -51,7 +51,9 @@ export function useEditorReveal(editor: Editor | null): void {
                 return
             }
             const { quote, blockIndex } = message.payload
-            const range = collectRanges(editor, quote, blockIndex)[0] ?? collectRanges(editor, quote, -1)[0]
+            // blockIndex 为 -1 时第一次已是全文搜索，再兜底只会把同一篇文档重复遍历一遍
+            const scoped = collectRanges(editor, quote, blockIndex)[0]
+            const range = scoped ?? (blockIndex < 0 ? undefined : collectRanges(editor, quote, -1)[0])
             if (range === undefined) {
                 return
             }

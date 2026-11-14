@@ -19,7 +19,7 @@ import {
 import { Popover, PopoverAnchor, PopoverContent } from '@components/ui/popover'
 import type { UseDocumentSearchResult } from '../search/useDocumentSearch'
 import type { JSX } from 'react'
-import { FLOATING_POPOVER_CLASS } from '../domContracts'
+import { FLOATING_POPOVER_CLASS } from '../core/domContracts'
 
 /** 查找条常驻：Popover 只作为浮层壳，外部点击与 Esc 都不收起（Esc 由输入框自己处理） */
 const IGNORE_OPEN_CHANGE = (): void => undefined

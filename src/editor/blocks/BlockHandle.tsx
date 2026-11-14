@@ -22,7 +22,7 @@ import { InsertBlockMenu } from './InsertBlockMenu'
 import type { Editor } from '@tiptap/core'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 import type { ComponentProps, JSX } from 'react'
-import { focusEditor } from '../focusPolicy'
+import { focusEditor } from '../core/focusPolicy'
 import { useHandlePosition } from '../hooks/useHandlePosition'
 
 export interface BlockHandleProps {

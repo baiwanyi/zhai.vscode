@@ -132,8 +132,13 @@ export function toEditableHref(href: string): string {
 /** 链接输入框的长度上限：与回填/校验同源，超长地址交给 normalizeHref 也没有意义 */
 export const LINK_INPUT_MAX_LENGTH = 2048
 
-/** 自带前缀的形态：完整协议、站内绝对路径、锚点，或以 . 起头的相对路径 */
-const HREF_OWN_PREFIX = /^(?:[a-z][a-z0-9+.-]*:|\/|#|\.)/iu
+/**
+ * 自带前缀的形态：完整协议、站内绝对路径、锚点，或以 `./` / `../` 起头的相对路径。
+ * 末尾的 `\.{1,2}\/` 必须与 shared/utils/url 的 RELATIVE_HREF_PATTERN 同口径——
+ * 这里放宽成「以点开头」的话，`.example.com` 会被判成自带前缀（隐藏 https:// 显示），
+ * 实际写入却按裸域名补成 `https://.example.com`。
+ */
+const HREF_OWN_PREFIX = /^(?:[a-z][a-z0-9+.-]*:|\/|#|\.{1,2}\/)/iu
 
 /**
  * 输入框里的地址是否自带前缀：自带时左侧固定的 https:// 要隐掉，否则会与内容重复。

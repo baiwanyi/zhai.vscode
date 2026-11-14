@@ -20,7 +20,7 @@ import { describeError } from '@shared/utils/errorText'
 import type { BlockBaseline } from '../blocks/blockDiff'
 import type { Editor } from '@tiptap/react'
 import { buildBlockChanges, pairBaseline } from '../blocks/blockDiff'
-import { setAssetPrefix } from '../marks/imageAsset'
+import { setAssetPrefix } from '../image/imageAsset'
 
 /** 回写防抖：与文档同步口径一致，避免每次按键都产生一次 WorkspaceEdit */
 const SYNC_DEBOUNCE_MS = 500
@@ -33,11 +33,13 @@ const MESSAGE_FAILED = '同步失败，请切换到文本编辑器确认'
 const MESSAGE_DISCARDED = '改动未能写入磁盘：该段语法暂不支持回写，原文已保留'
 const MESSAGE_STALE = '文档已被外部修改，已刷新为最新内容，请重新输入'
 const MESSAGE_NO_SNAPSHOT = '尚未取到文档快照，改动暂无法保存'
+const MESSAGE_SNAPSHOT_REPLACED = '文档加载完成，加载前输入的内容未被保存'
 const TOAST_ID_READONLY = 'zhai-editor-readonly'
 const TOAST_ID_FAILED = 'zhai-editor-failed'
 const TOAST_ID_DISCARDED = 'zhai-editor-discarded'
 const TOAST_ID_STALE = 'zhai-editor-stale'
 const TOAST_ID_NO_SNAPSHOT = 'zhai-editor-no-snapshot'
+const TOAST_ID_REPLACED = 'zhai-editor-replaced'
 
 /** 失败原因摘要：只显示「同步失败」无法区分是参数非法、版本过期还是转换抛错 */
 function describeFailure(error: unknown): string {
@@ -116,6 +118,11 @@ export function useEditorDocument(editor: Editor | null): EditorDocumentState {
             setAssetPrefix(snapshot.assetPrefix)
             if (editor === null || (!force && snapshot.version <= versionRef.current)) {
                 return
+            }
+            // 首次快照晚于用户输入时，setContent 会把这段输入整篇覆盖，且没有 path 可回写：
+            // 至少要把「丢了什么」说出来，否则用户只看到刚写的内容凭空消失
+            if (versionRef.current === 0 && editor.state.doc.textContent.length > 0) {
+                toast.warning(MESSAGE_SNAPSHOT_REPLACED, { id: TOAST_ID_REPLACED })
             }
             editor.commands.setContent(snapshot.blocks.map((block) => block.html).join(''), { emitUpdate: false })
             editor.setEditable(snapshot.editable)

@@ -1,6 +1,6 @@
 /**
  * 标注读写：加载当前文档的划线与批注，按选区新建、按 id 删除，并把结果同步到装饰层。
- * 复用约定：协议走 bridge 的 request，类型取 @shared/types/editor；装饰应用交给 marks/annotationDecorations。
+ * 复用约定：协议走 bridge 的 request，类型取 @shared/types/editor；装饰应用交给 annotations/annotationDecorations。
  * 关键约束：新建前按「同块 + 同 quote」判断是否已有划线——存在即删除，实现「同色再点即取消」；
  * 改色不能复用这条 toggle：命中即删会把刚划的线抹掉，故单列 applyHighlightColor 走增量更新；
  * 一律以宿主回执后的重新加载为准，不在本地推测列表，避免与另一个窗口的改动打架。
@@ -8,10 +8,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AnnotationDraft, AnnotationRecord, EditorBlock, HighlightColor } from '@shared/types/editor'
 import { request } from '@shared/utils/bridge'
-import type { FrozenRange } from '../toolbar/formatCommands'
+import type { FrozenRange } from '../selection/formatCommands'
 import type { Editor } from '@tiptap/react'
+import { applyAnnotationDecorations } from '../annotations/annotationDecorations'
 import { selectBlockAnnotations } from '../annotations/selectors'
-import { applyAnnotationDecorations } from '../marks/annotationDecorations'
 import { textOffsetAt } from '../selection/wordSelection'
 
 /** 前后文各取多少字符：重定位时用于消歧 */
@@ -100,22 +100,41 @@ export function useAnnotations(
     const [isReady, setIsReady] = useState(false)
     const [items, setItems] = useState<AnnotationRecord[]>([])
     const blocksRef = useRef(blocks)
+    /** 请求序号：并发 refresh 只认最后一次，避免旧响应把新列表覆盖回去 */
+    const seqRef = useRef(0)
+    /** 当前文档路径：响应回来时校验归属，切文档后旧文档的列表不得落库 */
+    const pathRef = useRef(path)
 
     useEffect(() => {
         blocksRef.current = blocks
     }, [blocks])
 
+    // 切文档即作废在途请求并清空列表：新文档的标注返回之前，旧列表会被当成当前文档
+    // 参与 toggle 命中与装饰绘制——同块同 quote 时会拿上一份文档的 id 去删，跨文档误删
+    useEffect(() => {
+        pathRef.current = path
+        seqRef.current += 1
+        setItems([])
+        setIsReady(false)
+    }, [path])
+
     const refresh = useCallback(async (): Promise<void> => {
         if (editor === null || path.length === 0) {
             return
         }
+        seqRef.current += 1
+        const seq = seqRef.current
+        const requestedPath = path
         try {
             const result = await request<{ items: AnnotationRecord[] }>('editor/annotations')
+            // 后发先至与切文档都要丢弃：只有最新一次请求、且仍属同一文档才允许落库
+            if (seq !== seqRef.current || requestedPath !== pathRef.current) {
+                return
+            }
             setItems(result.items)
-            applyAnnotationDecorations(editor, result.items)
             setIsReady(true)
         } catch {
-            setIsReady(false)
+            // 失败不降级 isReady：置回 false 会让下面的补绘永久停摆，已画出的划线再也回不来
         }
     }, [editor, path])
 
@@ -126,7 +145,7 @@ export function useAnnotations(
     // 文档重建后重绘：快照回灌、回滚与 stale 重载都会 setContent 整篇重建，
     // 装饰随事务 mapping 一起失效，而 items 没变不会触发 refresh——不补这一笔，划线就凭空消失
     useEffect(() => {
-        if (editor === null || !isReady) {
+        if (editor === null || editor.isDestroyed || !isReady) {
             return
         }
         applyAnnotationDecorations(editor, items)
@@ -215,7 +234,8 @@ export function useAnnotations(
 
     const updateNote = useCallback(
         async (id: string, note: string): Promise<boolean> => {
-            if (note.trim() === '') {
+            // 快照未就绪时 path 为空，宿主必然拒绝，不必多走一次往返
+            if (editor === null || path.length === 0 || note.trim() === '') {
                 return false
             }
             try {
@@ -227,11 +247,14 @@ export function useAnnotations(
                 return false
             }
         },
-        [path, refresh],
+        [editor, path, refresh],
     )
 
     const removeAnnotation = useCallback(
         async (id: string): Promise<boolean> => {
+            if (editor === null || path.length === 0) {
+                return false
+            }
             try {
                 await request('editor/annotation/remove', { path, id })
                 await refresh()
@@ -241,7 +264,7 @@ export function useAnnotations(
                 return false
             }
         },
-        [path, refresh],
+        [editor, path, refresh],
     )
 
     return { isReady, items, addOrToggleHighlight, applyHighlightColor, addNote, updateNote, removeAnnotation, refresh }

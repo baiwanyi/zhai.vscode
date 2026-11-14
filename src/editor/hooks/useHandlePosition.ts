@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Editor } from '@tiptap/core'
 import type { RefObject } from 'react'
 import { findHandleElement, positionHandleAt } from '../blocks/handlePosition'
-import { EDITOR_SCROLL_CLASS } from '../domContracts'
+import { EDITOR_SCROLL_CLASS } from '../core/domContracts'
 
 /** drag-handle 扩展的 meta 名：命令不在 editor.commands 类型里，只能按名派发 */
 const DRAG_LOCK_META = 'lockDragHandle'
@@ -101,6 +101,9 @@ export function useHandlePosition(editor: Editor, isMenuOpen: boolean): HandlePo
         }
         // 滚动时块相对容器整体位移，位置必须立刻跟上；过渡要临时关掉，否则会拖出一条尾巴
         const scroller = editor.view.dom.closest<HTMLElement>(`.${EDITOR_SCROLL_CLASS}`)
+        // 找不到滚动容器时退化到 window 捕获阶段：scroll 不冒泡但捕获能收到，
+        // 否则滚动时完全不重定位，把手会停在旧位置与正文脱节
+        const scrollTarget: EventTarget = scroller ?? window
         const onScroll = (): void => {
             const handle = findHandleElement(editor)
             if (handle !== null) {
@@ -123,7 +126,7 @@ export function useHandlePosition(editor: Editor, isMenuOpen: boolean): HandlePo
         schedule()
         editor.on('selectionUpdate', schedule)
         editor.on('focus', schedule)
-        scroller?.addEventListener('scroll', onScroll, { passive: true })
+        scrollTarget.addEventListener('scroll', onScroll, { passive: true, capture: true })
         // 窗口尺寸变化会改变正文左边缘与首行高度，位置必须重算
         window.addEventListener('resize', schedule)
         return (): void => {
@@ -138,7 +141,7 @@ export function useHandlePosition(editor: Editor, isMenuOpen: boolean): HandlePo
             }
             editor.off('selectionUpdate', schedule)
             editor.off('focus', schedule)
-            scroller?.removeEventListener('scroll', onScroll)
+            scrollTarget.removeEventListener('scroll', onScroll, { capture: true })
             window.removeEventListener('resize', schedule)
             scheduleRef.current = null
         }

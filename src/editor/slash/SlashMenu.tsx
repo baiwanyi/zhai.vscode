@@ -13,10 +13,15 @@ import type { JSX } from 'react'
 
 export function SlashMenu(): JSX.Element | null {
     const session = useSyncExternalStore(subscribeSlash, getSlashSession, getSlashSession)
-    const [selectedIndex, setSelectedIndex] = useState(0)
+    // 选中项记成「会话起点 + 相对下标」：本组件常驻（session 为 null 时只是不渲染），
+    // 裸下标会把上一次会话停留的位置带进新会话，回车就执行到列表中间那一项
+    const [selection, setSelection] = useState<{ start: number; index: number }>({ start: -1, index: 0 })
 
     const items = useMemo(() => session?.items ?? [], [session])
     const itemCount = items.length
+    // 会话起点变化即视为新会话，选中项自然回到第一项：同一次会话内 range.from 固定，只有 to 随查询词增长
+    const sessionStart = session === null ? -1 : session.range.from
+    const selectedIndex = selection.start === sessionStart ? selection.index : 0
     // 列表变短时夹紧选中项：不在 effect 里 setState，直接按边界取值，避免多一轮渲染
     const activeIndex = itemCount === 0 ? 0 : Math.min(selectedIndex, itemCount - 1)
 
@@ -35,11 +40,11 @@ export function SlashMenu(): JSX.Element | null {
         }
         setSlashKeyHandler((event) => {
             if (event.key === 'ArrowDown') {
-                setSelectedIndex((previous) => (previous + 1) % itemCount)
+                setSelection({ start: sessionStart, index: (activeIndex + 1) % itemCount })
                 return true
             }
             if (event.key === 'ArrowUp') {
-                setSelectedIndex((previous) => (previous - 1 + itemCount) % itemCount)
+                setSelection({ start: sessionStart, index: (activeIndex - 1 + itemCount) % itemCount })
                 return true
             }
             if (event.key === 'Enter') {
@@ -55,7 +60,7 @@ export function SlashMenu(): JSX.Element | null {
         return (): void => {
             setSlashKeyHandler(null)
         }
-    }, [activeIndex, itemCount, items, session])
+    }, [activeIndex, itemCount, items, session, sessionStart])
 
     if (session === null) {
         return null
@@ -88,7 +93,7 @@ export function SlashMenu(): JSX.Element | null {
                                 size="sm"
                                 className="justify-start"
                                 onMouseEnter={(): void => {
-                                    setSelectedIndex(index)
+                                    setSelection({ start: sessionStart, index })
                                 }}
                                 onClick={(): void => {
                                     session.run(item)

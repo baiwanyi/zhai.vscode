@@ -30,6 +30,29 @@ const MATCH_STYLE = 'background-color:rgba(255,214,10,0.28);border-radius:2px;'
 const ACTIVE_STYLE =
     'background-color:rgba(255,196,0,0.62);border-radius:2px;box-shadow:0 0 0 1px rgba(255,170,0,0.85);'
 
+/** 收窄查找结果：matches 必须是区间数组、activeIndex 必须是数字，否则退回既有的 mapping 跟随 */
+function isSearchPayload(input: unknown): input is SearchPayload {
+    if (typeof input !== 'object' || input === null) {
+        return false
+    }
+    const value = input as { matches?: unknown; activeIndex?: unknown }
+    if (!Array.isArray(value.matches) || typeof value.activeIndex !== 'number') {
+        return false
+    }
+    return value.matches.every((match: unknown): boolean => {
+        if (typeof match !== 'object' || match === null) {
+            return false
+        }
+        const range = match as { from?: unknown; to?: unknown }
+        return (
+            typeof range.from === 'number' &&
+            Number.isInteger(range.from) &&
+            typeof range.to === 'number' &&
+            Number.isInteger(range.to)
+        )
+    })
+}
+
 function buildDecorations(doc: ProseMirrorNode, payload: SearchPayload): DecorationSet {
     const decorations = payload.matches.map((match, index) =>
         Decoration.inline(match.from, match.to, {
@@ -45,8 +68,8 @@ const searchPlugin = new Plugin<DecorationSet>({
         init: (): DecorationSet => DecorationSet.empty,
         apply(transaction, previous): DecorationSet {
             const payload: unknown = transaction.getMeta(searchPluginKey)
-            if (typeof payload === 'object' && payload !== null) {
-                return buildDecorations(transaction.doc, payload as SearchPayload)
+            if (isSearchPayload(payload)) {
+                return buildDecorations(transaction.doc, payload)
             }
             // 文档被编辑时按 mapping 跟随，避免旧高亮错位
             return previous.map(transaction.mapping, transaction.doc)
@@ -61,7 +84,7 @@ const searchPlugin = new Plugin<DecorationSet>({
 
 export const SearchExtension = Extension.create({
     name: 'zhaiSearch',
-    addProseMirrorPlugins() {
+    addProseMirrorPlugins(): Plugin[] {
         return [searchPlugin]
     },
 })

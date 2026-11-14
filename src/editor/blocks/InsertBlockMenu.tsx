@@ -1,6 +1,6 @@
 /**
  * 块把手的插入菜单：列出与「/」菜单同源的块命令，选中后先把光标移出当前块再执行。
- * 复用约定：命令清单取 toolbar/slashCommands，菜单壳取 @components/ui/dropdown-menu，
+ * 复用约定：命令清单取 slash/slashCommands，菜单壳取 @components/ui/dropdown-menu，
  * 关闭后的焦点交回正文由 focusPolicy 统一处理。
  * 关键约束：插入命令必须先把光标移到当前块内容末尾，否则会插进行内而不是行后；
  * 关闭时若把焦点还给插入按钮，表情命令随后打开的长驻浮层会当场关闭，表现为「点了没反应」。
@@ -9,11 +9,11 @@ import { CirclePlus } from 'lucide-react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@components/ui/dropdown-menu'
 import { Button } from '@webview/components/Button'
 import { readTopBlockPos } from './blockQueries'
-import type { SlashCommand } from '../toolbar/slashCommands'
+import type { SlashCommand } from '../slash/slashCommands'
 import type { Editor } from '@tiptap/core'
 import type { JSX } from 'react'
-import { returnFocusToEditor } from '../focusPolicy'
-import { SLASH_COMMANDS } from '../toolbar/slashCommands'
+import { returnFocusToEditor } from '../core/focusPolicy'
+import { SLASH_COMMANDS } from '../slash/slashCommands'
 
 export interface InsertBlockMenuProps {
     editor: Editor

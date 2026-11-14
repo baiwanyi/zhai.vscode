@@ -2,7 +2,7 @@
 import { Editor } from '@tiptap/core'
 import StarterKit from '@tiptap/starter-kit'
 import { describe, expect, it } from 'vitest'
-import { CursorLineExtension } from '@webview/editor/marks/cursorLineExtension'
+import { CursorLineExtension } from '@webview/editor/core/cursorLineExtension'
 
 /**
  * 当前行高亮：验证标记落在光标所在的顶层块上，且同一时刻只有一个块被标记。

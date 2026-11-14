@@ -1,6 +1,6 @@
 /**
  * 表格块的结构命令：菜单项清单与统一执行入口，供块把手的「表格操作」子菜单与删除项共用。
- * 复用约定：落位与命令走 tableActions 的 focusTableAtBlock，只读守卫走 toolbar/editableGuard，
+ * 复用约定：落位与命令走 tableActions 的 focusTableAtBlock，只读守卫走 core/editableGuard，
  * 与其它编辑器写入口共用同一条提示；本模块不含 JSX，图标只作为数据引用。
  * 关键约束：命令只作用于光标所在行列，执行前必须先把光标落进目标表格，否则会改到另一张表；
  * run() 返回 false 表示被 schema 拒绝（删到只剩一行 / 一列），必须提示，否则用户以为点击没生效。
@@ -18,7 +18,7 @@ import { toast } from 'sonner'
 import { focusTableAtBlock } from './tableActions'
 import type { Editor } from '@tiptap/core'
 import type { LucideIcon } from 'lucide-react'
-import { ensureEditable } from '../toolbar/editableGuard'
+import { ensureEditable } from '../core/editableGuard'
 
 /** 表格结构命令被 schema 拒绝时的提示：删到只剩一行 / 一列、表头切换不可用等都会走到这里 */
 const MESSAGE_TABLE_ACTION_FAILED = '这个表格操作在当前结构下不可用'

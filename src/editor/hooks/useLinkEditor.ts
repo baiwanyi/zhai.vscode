@@ -1,6 +1,6 @@
 /**
  * 链接输入态：开合地址面板、回填已有链接、应用与移除，状态机与命令执行收在一处。
- * 复用约定：地址解析与命令取 toolbar/formatCommands，只读守卫取 toolbar/editableGuard，
+ * 复用约定：地址解析与命令取 selection/formatCommands，只读守卫取 core/editableGuard，
  * 失败一律 toast 说明；面板自身的显隐与草稿归本 hook，与色板的互斥由调用方处理。
  * 关键约束：所有写入都按外层冻结的 range 执行——点按钮会让选区塌陷，现读不可靠；
  * 摘链不抢焦点也不关浮层，抢焦点会让选区离开这段文字，之后点它不再弹；
@@ -8,16 +8,16 @@
  */
 import { useState } from 'react'
 import { toast } from 'sonner'
-import type { FrozenRange } from '../toolbar/formatCommands'
+import type { FrozenRange } from '../selection/formatCommands'
 import type { Editor } from '@tiptap/react'
-import { ensureEditable } from '../toolbar/editableGuard'
+import { ensureEditable } from '../core/editableGuard'
 import {
     applySelectionLink,
     normalizeLinkHref,
     readSelectionLink,
     removeSelectionLink,
     toEditableHref,
-} from '../toolbar/formatCommands'
+} from '../selection/formatCommands'
 
 export interface LinkEditorState {
     /** 地址面板是否展开 */

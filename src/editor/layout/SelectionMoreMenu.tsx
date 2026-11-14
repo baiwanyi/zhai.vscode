@@ -1,6 +1,6 @@
 /**
  * 选区工具条的「更多」菜单：收纳不常用且会改变块结构的操作。
- * 复用约定：菜单壳用 @components/ui/dropdown-menu，命令取自 toolbar/formatCommands，
+ * 复用约定：菜单壳用 @components/ui/dropdown-menu，命令取自 selection/formatCommands，
  * 目标范围由外层冻结后传入，菜单内不现读选区。
  * 关键约束：清除格式会同时摘掉内联标记并把标题、列表回落为正文——这是唯一能保证
  * 回写结果仍在 GFM 内的「重置」手段；上下标、对齐、缩进没有对应语法，故不设入口；
@@ -17,11 +17,11 @@ import {
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
 import { Button } from '@webview/components/Button'
-import type { FrozenRange } from '../toolbar/formatCommands'
+import type { FrozenRange } from '../selection/formatCommands'
 import type { Editor } from '@tiptap/react'
 import type { JSX } from 'react'
-import { ensureEditable } from '../toolbar/editableGuard'
-import { clearSelectionFormatting } from '../toolbar/formatCommands'
+import { ensureEditable } from '../core/editableGuard'
+import { clearSelectionFormatting } from '../selection/formatCommands'
 
 export interface SelectionMoreMenuProps {
     editor: Editor

@@ -5,7 +5,7 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { AnnotationRecord } from '@shared/types/editor'
-import { findHighlightColor } from '@webview/editor/toolbar/selectionHighlight'
+import { findHighlightColor } from '@webview/editor/annotations/selectionHighlight'
 
 /** 造一条标注：默认是一条琥珀色划线，用例只覆写关心的字段 */
 function createRecord(overrides: Partial<AnnotationRecord> = {}): AnnotationRecord {

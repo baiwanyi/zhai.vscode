@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { AnnotationRecord } from '@shared/types/editor'
 import type { MouseEvent, RefObject } from 'react'
 import { selectBlockAnnotations } from '../annotations/selectors'
-import { EDITOR_SCROLL_CLASS, readAnnotationMarker } from '../domContracts'
+import { EDITOR_SCROLL_CLASS, readAnnotationMarker } from '../core/domContracts'
 
 /** 段末图标与气泡之间的间距 */
 const POPOVER_OFFSET = 4
@@ -58,21 +58,29 @@ export function useAnnotationPopover(
         setTarget(null)
     }, [])
 
+    // 该块最后一条批注被删掉后弹层自身已无可渲染内容（内部返回 null），target 必须一并清掉；
+    // 否则同块之后再新增批注时 target 仍指向该块，弹层会在没点图标的情况下自动弹出
+    useEffect(() => {
+        if (target !== null && blockItems.length === 0) {
+            setTarget(null)
+        }
+    }, [blockItems.length, target])
+
     // 弹层坐标是打开瞬间的视口值：正文一滚就与段末图标脱节，滚动即收起
     useEffect(() => {
         if (target === null) {
             return
         }
-        const scroller = containerRef.current?.closest(`.${EDITOR_SCROLL_CLASS}`)
-        if (!(scroller instanceof HTMLElement)) {
-            return
-        }
         const handleScroll = (): void => {
             setTarget(null)
         }
-        scroller.addEventListener('scroll', handleScroll, { passive: true })
+        const scroller = containerRef.current?.closest(`.${EDITOR_SCROLL_CLASS}`)
+        // 找不到滚动容器时退化到 window：scroll 不冒泡但捕获阶段能收到，
+        // 避免类名或层级变动后监听静默失效、弹层永不收起
+        const scrollTarget: EventTarget = scroller instanceof HTMLElement ? scroller : window
+        scrollTarget.addEventListener('scroll', handleScroll, { passive: true, capture: true })
         return (): void => {
-            scroller.removeEventListener('scroll', handleScroll)
+            scrollTarget.removeEventListener('scroll', handleScroll, { capture: true })
         }
     }, [containerRef, target])
 

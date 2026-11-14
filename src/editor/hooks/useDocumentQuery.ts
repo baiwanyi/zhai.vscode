@@ -122,6 +122,8 @@ export function useDocumentQuery(path: string): UseDocumentQueryResult {
         setStatus('idle')
         setContent('')
         setError(null)
+        // 缓存标记必须一并复位：否则下次打开的第一次查询还没回来，界面就挂着上一次的「来自缓存」
+        setIsFromCache(false)
         clientIdRef.current = ''
     }, [])
 

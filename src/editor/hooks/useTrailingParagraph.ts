@@ -9,7 +9,7 @@ import { TextSelection } from '@tiptap/pm/state'
 import { useCallback } from 'react'
 import type { Editor } from '@tiptap/react'
 import type { MouseEvent, RefObject } from 'react'
-import { EDITOR_SCROLL_CLASS } from '../domContracts'
+import { EDITOR_SCROLL_CLASS } from '../core/domContracts'
 
 export interface UseTrailingParagraphResult {
     handlePageMouseDown: (event: MouseEvent<HTMLDivElement>) => void

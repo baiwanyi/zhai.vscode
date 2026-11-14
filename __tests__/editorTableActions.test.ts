@@ -5,7 +5,7 @@ import { TextSelection } from '@tiptap/pm/state'
 import StarterKit from '@tiptap/starter-kit'
 import { describe, expect, it } from 'vitest'
 import { appendTableColumn, appendTableRow } from '@webview/editor/blocks/tableActions'
-import { CursorLineExtension } from '@webview/editor/marks/cursorLineExtension'
+import { CursorLineExtension } from '@webview/editor/core/cursorLineExtension'
 import type { Node as ProseMirrorNode } from '@tiptap/pm/model'
 
 /**

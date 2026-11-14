@@ -21,9 +21,9 @@ import {
     Table as TableIcon,
     Type,
 } from 'lucide-react'
-import { openEmojiPicker } from './emojiStore'
 import type { ChainedCommands, Editor, Range } from '@tiptap/core'
 import type { LucideIcon } from 'lucide-react'
+import { openEmojiPicker } from '../emoji/emojiStore'
 
 /** 一条斜杠命令：run 必须是同步的编辑器事务，不接受异步副作用 */
 export interface SlashCommand {

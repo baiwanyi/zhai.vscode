@@ -3,7 +3,7 @@
  * 以及复制 / 询问 AI / 加入对话 / 删除四项块级操作。
  * 复用约定：菜单结构取 @components/ui/dropdown-menu，块级命令委托 ./blockConversion 与 ./blockMutations，
  * 表格结构操作整体交给 ./TableBlockMenuItems，复制提示走 @shared/utils/clipboard 的 copyWithToast，
- * 只读守卫走 ../toolbar/editableGuard；加入对话只把块文本交给宿主，定位与去重都在宿主侧完成。
+ * 只读守卫走 ../core/editableGuard；加入对话只把块文本交给宿主，定位与去重都在宿主侧完成。
  * 关键约束：pos 由把手在打开瞬间冻结后传入，菜单内不再读选区，避免鼠标离开块时目标漂移；
  * 触发按钮不在这里渲染——Radix 的 Trigger 会在 pointerdown 上 preventDefault，把原生 dragstart 压掉，
  * 按住拖动就失效了；这里只放一个与按钮等尺寸的透明锚点负责定位，开合由把手的按钮自己控制；
@@ -34,7 +34,7 @@ import { runTableStructureAction } from './tableBlockActions'
 import { TableBlockMenuItems } from './TableBlockMenuItems'
 import type { Editor } from '@tiptap/core'
 import type { JSX } from 'react'
-import { ensureEditable } from '../toolbar/editableGuard'
+import { ensureEditable } from '../core/editableGuard'
 
 /** 删除项的快捷键提示：仅展示，不注册键位（见文件头约束） */
 const SHORTCUT_DELETE = 'Backspace'

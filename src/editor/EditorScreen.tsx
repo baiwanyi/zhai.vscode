@@ -1,6 +1,6 @@
 /**
  * 编辑器 webview 主屏：编排 TipTap 编辑区、标注读写、查找与四类浮层。
- * 复用约定：扩展装配在 ./editorExtensions，选词在 ./selection/wordSelection，DOM 契约在 ./domContracts；
+ * 复用约定：扩展装配在 ./core/editorExtensions，选词在 ./selection/wordSelection，DOM 契约在 ./core/domContracts；
  * 文档同步、标注、对话上下文、底部续行与段末弹层各自独立成 hook，本层只负责组合与状态提升；
  * 编辑区底色、版心与空行占位样式在 ./editor.css，Tailwind 只用于状态栏与浮层。
  * 关键约束：本组件不自己拼消息、协议请求一律走 bridge 的 request，也不决定可编辑性——只读判定来自宿主快照；
@@ -18,8 +18,9 @@ import { preventContextMenu } from '@webview/components/dom'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
 import { BlockHandle } from './blocks/BlockHandle'
 import { TableTools } from './blocks/TableTools'
-import { EDITOR_CONTENT_CLASS, EDITOR_PAGE_CLASS, EDITOR_ROOT_CLASS, EDITOR_SCROLL_CLASS } from './domContracts'
-import { createEditorExtensions } from './editorExtensions'
+import { EDITOR_CONTENT_CLASS, EDITOR_PAGE_CLASS, EDITOR_ROOT_CLASS, EDITOR_SCROLL_CLASS } from './core/domContracts'
+import { createEditorExtensions } from './core/editorExtensions'
+import { EmojiPicker } from './emoji/EmojiPicker'
 import { useAnnotationPopover } from './hooks/useAnnotationPopover'
 import { useAnnotations } from './hooks/useAnnotations'
 import { useDocumentQuery } from './hooks/useDocumentQuery'
@@ -43,11 +44,10 @@ import { SelectionToolbar } from './layout/SelectionToolbar'
 import { WordCountBadge } from './layout/WordCountBadge'
 import { useDocumentSearch } from './search/useDocumentSearch'
 import { selectWordAt } from './selection/wordSelection'
-import { EmojiPicker } from './toolbar/EmojiPicker'
-import { SlashMenu } from './toolbar/SlashMenu'
-import { handleSlashKey } from './toolbar/slashStore'
+import { SlashMenu } from './slash/SlashMenu'
+import { handleSlashKey } from './slash/slashStore'
 import type { HeadingItem } from './hooks/useHeadingOutline'
-import type { FrozenRange } from './toolbar/formatCommands'
+import type { FrozenRange } from './selection/formatCommands'
 import type { EditorView } from '@tiptap/pm/view'
 import type { JSX } from 'react'
 

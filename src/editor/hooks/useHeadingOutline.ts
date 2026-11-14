@@ -51,7 +51,8 @@ export function useHeadingOutline(editor: Editor | null): HeadingItem[] {
     const [items, setItems] = useState<HeadingItem[]>([])
 
     useEffect(() => {
-        if (editor === null) {
+        // 已销毁的实例上注册监听属于未定义行为：卸载与编辑器销毁不一定同拍
+        if (editor === null || editor.isDestroyed) {
             return
         }
         const syncItems = (): void => {

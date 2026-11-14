@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { EditorBlock } from '@shared/types/editor'
 import type { Editor } from '@tiptap/react'
 import type { JSX } from 'react'
-import { EDITOR_PAGE_CLASS } from '../domContracts'
+import { EDITOR_PAGE_CLASS } from '../core/domContracts'
 
 /** 一条行号：top / height 为相对 .zhai-editor-page 的像素值 */
 interface LineMark {

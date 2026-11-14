@@ -2,7 +2,7 @@
  * 选区浮动菜单状态：把 ProseMirror 选区换算成视口坐标、冻结范围与格式快照。
  * 复用约定：坐标取 editor.view.coordsAtPos，与 shadcn Popover 的 fixed 锚点配合；
  * 关闭条件统一收敛在此（选区塌陷、过短、滚动、缩放、Esc、点击外部）；
- * 块位置与块类型取 blocks/blockQueries 与 blocks/blockTargets，激活格式取 toolbar/formatCommands，本文件不重复判定。
+ * 块位置与块类型取 blocks/blockQueries 与 blocks/blockTargets，激活格式取 selection/formatCommands，本文件不重复判定。
  * 关键约束：只有选中的文字才会弹菜单——点击、单击标注文本一律不弹，走编辑器常规交互；
  * 正文内按住鼠标的整个拖选过程都不弹，松手一拍后才结算（等 ProseMirror 落地）；
  * 指针在 webview 外松开会导致 pointerup 丢失，用 pointermove 的 buttons 位兜底纠正；
@@ -14,11 +14,11 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SelectionBlockRange } from '../blocks/blockQueries'
-import type { FrozenRange, InlineFormatId } from '../toolbar/formatCommands'
+import type { FrozenRange, InlineFormatId } from '../selection/formatCommands'
 import type { Editor } from '@tiptap/core'
 import { readSelectionBlockRange, readTopBlockIndexAt, readTopBlockPos } from '../blocks/blockQueries'
 import { readBlockLabel } from '../blocks/blockTargets'
-import { readActiveFormats } from '../toolbar/formatCommands'
+import { readActiveFormats } from '../selection/formatCommands'
 
 /** 菜单最小触发长度：一两个字符的选区多半是误触 */
 const MIN_SELECTION_CHARS = 2
@@ -162,7 +162,8 @@ export function useSelectionToolbar(editor: Editor | null): SelectionToolbarStat
     }, [editor, openAt])
 
     useEffect(() => {
-        if (editor === null) {
+        // 已销毁的实例上注册监听属于未定义行为：卸载与编辑器销毁不一定同拍
+        if (editor === null || editor.isDestroyed) {
             return
         }
         const handleUpdate = (): void => {
@@ -213,7 +214,11 @@ export function useSelectionToolbar(editor: Editor | null): SelectionToolbarStat
             if (event.ctrlKey || event.metaKey) {
                 return
             }
-            window.setTimeout(refresh, 0)
+            // 句柄必须记进 timerRef：卸载后这条 0ms 任务仍会跑一次 refresh
+            timerRef.current = setTimeout((): void => {
+                timerRef.current = null
+                refresh()
+            }, 0)
         }
         /**
          * 兜底：指针在 webview 外松开时收不到 pointerup，按住标记会一直挂着，
@@ -256,7 +261,8 @@ export function useSelectionToolbar(editor: Editor | null): SelectionToolbarStat
 
     // 激活态跟随每一次事务：点「加粗」不改变选区，必须靠 transaction 补齐点亮
     useEffect(() => {
-        if (editor === null) {
+        // 同「监听注册」口径：已销毁的实例不再挂订阅
+        if (editor === null || editor.isDestroyed) {
             return
         }
         const sync = (): void => {

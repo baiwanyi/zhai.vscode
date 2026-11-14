@@ -133,7 +133,8 @@ export function useDocumentSearch(editor: Editor | null): UseDocumentSearchResul
         if (editor !== null) {
             // 带出当前选区文本作为默认关键词，选中即搜是最常见的使用方式
             const { from, to } = editor.state.selection
-            const selected = from === to ? '' : editor.state.doc.textBetween(from, to, ' ')
+            // 用换行拼接块间内容：跨块选区会带上 \n，据此按原意图跳过（空格拼接会让该判断恒为假）
+            const selected = from === to ? '' : editor.state.doc.textBetween(from, to, '\n')
             if (selected !== '' && !selected.includes('\n')) {
                 run(selected, 0)
             }

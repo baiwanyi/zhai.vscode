@@ -138,30 +138,42 @@ function createAnnotationMarker(blockIndex: number, count: number): HTMLElement 
  */
 export function applyAnnotationDecorations(editor: Editor, items: readonly AnnotationRecord[]): void {
     const decorations: Decoration[] = []
+    // 先按块分组：逐块扫全量标注是「块数 × 标注数」的乘积，长文档叠上密集批注会明显放大；
+    // 分组后总量降到一次遍历加一次块遍历，块内顺序仍按 items 原序（装饰顺序不变）
     const notesByBlock = new Map<number, number>()
+    const highlightsByBlock = new Map<number, Array<{ quote: string; color: HighlightColor }>>()
     for (const item of items) {
-        if (item.kind === 'note' && !item.orphaned) {
-            notesByBlock.set(item.blockIndex, (notesByBlock.get(item.blockIndex) ?? 0) + 1)
+        if (item.orphaned) {
+            continue
         }
+        if (item.kind === 'note') {
+            notesByBlock.set(item.blockIndex, (notesByBlock.get(item.blockIndex) ?? 0) + 1)
+            continue
+        }
+        if (item.kind !== 'highlight' || item.color === null || item.quote.length === 0) {
+            continue
+        }
+        const bucket = highlightsByBlock.get(item.blockIndex)
+        if (bucket === undefined) {
+            highlightsByBlock.set(item.blockIndex, [{ quote: item.quote, color: item.color }])
+            continue
+        }
+        bucket.push({ quote: item.quote, color: item.color })
     }
     editor.state.doc.content.forEach((node, offset, index) => {
         if (!node.isTextblock) {
             return
         }
         const text = node.textContent
-        for (const item of items) {
-            if (item.blockIndex !== index || item.orphaned || item.kind !== 'highlight' || item.color === null) {
-                continue
-            }
-            if (item.quote.length === 0) {
-                continue
-            }
-            const localStart = text.indexOf(item.quote)
+        for (const highlight of highlightsByBlock.get(index) ?? []) {
+            const localStart = text.indexOf(highlight.quote)
             if (localStart < 0) {
                 continue
             }
             const from = offset + 1 + localStart
-            decorations.push(Decoration.inline(from, from + item.quote.length, { style: HIGHLIGHT_STYLES[item.color] }))
+            decorations.push(
+                Decoration.inline(from, from + highlight.quote.length, { style: HIGHLIGHT_STYLES[highlight.color] }),
+            )
         }
         const noteCount = notesByBlock.get(index)
         if (noteCount !== undefined && noteCount > 0) {
@@ -169,7 +181,9 @@ export function applyAnnotationDecorations(editor: Editor, items: readonly Annot
             decorations.push(
                 Decoration.widget(endPos, createAnnotationMarker(index, noteCount), {
                     side: 1,
-                    key: `zhai-note-${String(index)}`,
+                    // 数量必须编进 key：WidgetType.eq 在 spec.key 相同时直接判等，同 key 会复用旧 DOM，
+                    // 角标数字与 aria-label 就永远停在首次渲染的值
+                    key: `zhai-note-${String(index)}-${String(noteCount)}`,
                 }),
             )
         }
