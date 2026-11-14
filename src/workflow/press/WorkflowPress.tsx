@@ -12,6 +12,7 @@ import { useCallback } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
 import type { WorkflowContextState } from '@shared/types/workflow'
 import { AppContent, AppHeader, AppPage } from '@webview/components/AppPage'
+import { readScopeDir } from '@webview/workflow/layout/contentScope'
 import { usePressMutations } from './hooks/usePressMutations'
 import { usePressWorkspace } from './hooks/usePressWorkspace'
 import { PressSectionRouter } from './layout/PressSectionRouter'
@@ -76,12 +77,16 @@ export function WorkflowPress({ context, section, onSelectSection }: WorkflowPre
         return <PressWorkspaceStart projects={workspaceState.projects} onOpenProject={mutations.openProject} />
     }
 
+    // 对话按文档隔离：当前打开的这一章即会话作用域，没有定位到文档时才回落到作品目录
+    const chatScope = readScopeDir(context, 'press')
+
     return (
         <div className="h-full min-h-0 overflow-hidden">
             <PressSectionRouter
                 section={section}
                 workspace={workspace}
                 dirPath={workspaceState.projectDir ?? ''}
+                chatScope={chatScope}
                 mutations={mutations}
                 onSelectStep={handleSelectStep}
                 onOpenChat={handleOpenChat}

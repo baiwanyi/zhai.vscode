@@ -21,7 +21,7 @@ import type { JSX } from 'react'
 
 interface WorkflowResidentSectionProps {
     section: WorkflowSection
-    /** 内容作用域目录：笔记与公众号取模块目录，其余文档为 null（通用对话） */
+    /** 会话作用域键：通常是当前文档路径；没有活跃文档时取作品目录或模块键，其余为 null（通用对话） */
     scopeDir: string | null
 }
 

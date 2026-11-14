@@ -58,17 +58,36 @@ export function readContentScope(context: WorkflowContextState): ContentScope | 
 }
 
 /**
- * 当前内容的数据与对话作用域目录：作品取 projectDir，笔记与公众号取模块目录，其余文档没有作用域。
- * 作用域直接作为 AiChat 的 projectDir 使用，同一目录共用一份对话记录。
+ * 文档是否属于该归属：只有归属内的文档才按文档级作用域隔离。
+ * 选了公众号模块却停在根目录文档时，那份文档并不属于公众号，不能把对话绑到它身上。
+ */
+function isDocumentInScope(context: WorkflowContextState, scope: ContentScope): boolean {
+    const path = context.docPath
+    if (path === null) {
+        return false
+    }
+    if (scope === 'press') {
+        return context.projectDir !== null && path.startsWith(`${context.projectDir}/`)
+    }
+    return path.startsWith(`${scope === 'note' ? NOTES_MODULE_KEY : WECHAT_MODULE_KEY}/`)
+}
+
+/**
+ * 当前内容的数据与对话作用域键：每个文档各自一份对话，文档属于当前归属时取文档相对路径。
+ * 没有活跃文档（显式打开作品、仪表盘选了模块）时回落到旧口径：作品取 projectDir、公众号取模块键。
  * 关键约束：公众号在「选模块」场景下 module 可能仍是 root，作用域要回落到模块键本身，
- * 否则公众号对话会与管理面板落到同一个 root 作用域。
+ * 否则公众号对话会与管理面板落到同一个 root 作用域；笔记没有活跃文档时回落到模块目录。
  */
 export function readScopeDir(context: WorkflowContextState, scope: ContentScope | null): string | null {
-    if (scope === 'press') {
-        return context.projectDir
-    }
     if (scope === null) {
         return null
+    }
+    // 文档级隔离优先：作品内的每章、公众号的每篇批次稿都各自一份对话
+    if (isDocumentInScope(context, scope)) {
+        return context.docPath
+    }
+    if (scope === 'press') {
+        return context.projectDir
     }
     if (scope === 'wechat') {
         return context.module === WECHAT_MODULE_KEY ? context.module : WECHAT_MODULE_KEY

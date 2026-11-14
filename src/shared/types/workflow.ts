@@ -36,6 +36,12 @@ export interface WorkflowContextState {
     selectedModule: string | null
     /** 当前打开的作品目录（相对存储根，形如 press/{作品名}），未打开作品为 null */
     projectDir: string | null
+    /**
+     * 当前活跃文档的相对路径（形如 notes/{笔记名}.md），无活跃文档为 null。
+     * 笔记的对话按文档隔离：宿主与前端都用它作为会话作用域键，同一目录下的不同笔记各自一份会话；
+     * 作品与公众号仍按目录作用域，不使用本字段。
+     */
+    docPath: string | null
 }
 
 /**
@@ -71,12 +77,19 @@ export function isWorkflowContextState(payload: unknown): payload is WorkflowCon
     if (typeof payload !== 'object' || payload === null) {
         return false
     }
-    const candidate = payload as { scene?: unknown; module?: unknown; selectedModule?: unknown; projectDir?: unknown }
+    const candidate = payload as {
+        scene?: unknown
+        module?: unknown
+        selectedModule?: unknown
+        projectDir?: unknown
+        docPath?: unknown
+    }
     const isScene = candidate.scene === 'idle' || candidate.scene === 'editorNote'
     const isModule = typeof candidate.module === 'string' && candidate.module.length > 0
     const isSelected = candidate.selectedModule === null || typeof candidate.selectedModule === 'string'
     const isProject = candidate.projectDir === null || typeof candidate.projectDir === 'string'
-    return isScene && isModule && isSelected && isProject
+    const isDoc = candidate.docPath === null || typeof candidate.docPath === 'string'
+    return isScene && isModule && isSelected && isProject && isDoc
 }
 
 /**

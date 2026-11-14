@@ -17,6 +17,7 @@ const INITIAL_CONTEXT: WorkflowContextState = {
     module: ROOT_MODULE_KEY,
     selectedModule: null,
     projectDir: null,
+    docPath: null,
 }
 
 export interface WorkflowRoutingState {

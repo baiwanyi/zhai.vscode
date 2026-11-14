@@ -3,7 +3,8 @@
  * 设计源：docs/modules/ai-chat.md 第 4.2 节状态机；落地 A6 对话、A8 消息历史、A9 流式、A11 取消。
  * 约束：上下文按字符数粗估截断（AC-4 降级），预算护栏达上限时拒绝发送（A17）；
  * 会话固定写作模式：工具白名单按写入范围裁决，写入边界由通道侧审批回调逐次校验，
- * 模型直接改文件、宿主不做整段写回；会话按作用域（作品目录）隔离，跨作品不共用记录；
+ * 模型直接改文件、宿主不做整段写回；会话按作用域隔离——每个文档一份（无活跃文档时按作品目录 / 模块键），
+ * 跨作用域不共用记录；
  * 本轮 token 以通道回传的单轮用量为准（续接时 SDK 的 result.usage 是会话累计，由通道剔除），
  * CLI 会话记录仅用于补齐积分与兜底 tokens，两者都取不到才按回复字数估算并打标。
  */
@@ -163,7 +164,7 @@ export class AiChatService implements vscode.Disposable {
     private readonly inputDrafts = new Map<string, AiChatDraft>()
     /** 当前活跃会话 id，供上下文协议定位待发送列表 */
     private activeConversationId: string | null = null
-    /** 当前面板作用域（作品目录）：编辑器右键添加等无作用域入参的操作沿用该值，null 表示通用对话 */
+    /** 当前面板作用域（文档相对路径，缺省为作品目录 / 模块键）：无作用域入参的操作沿用该值，null 为通用对话 */
     private activeProjectDir: string | null = null
     /** 当前生成使用的审批桥：前端回包据此唤醒等待中的工具调用 */
     private activePermission: PermissionBroker | null = null
@@ -262,7 +263,8 @@ export class AiChatService implements vscode.Disposable {
 
     /**
      * 取指定作用域的最近会话，不存在则新建（AC-9：重启窗口后会话与消息恢复）。
-     * 作用域为作品目录（如 press/{作品名}），null 表示不属于任何作品的通用对话；
+     * 作用域通常是当前文档的相对路径（如 press/作品/第一章.md），即每个文档一份对话；
+     * 没有活跃文档时回落到作品目录（press/{作品名}）或模块键，null 表示通用对话。
      * 调用即视为当前面板作用域，后续「添加到宅对话」等无作用域入参的操作沿用最近一次值。
      */
     public getOrCreateSession(projectDir: string | null = null): AiSessionSnapshot {
@@ -279,6 +281,18 @@ export class AiChatService implements vscode.Disposable {
             draft: this.getDraft(latest.id),
             contextUsage: toContextUsage(latest),
         }
+    }
+
+    /**
+     * 对齐当前会话作用域：命令路径（编辑器右键、块菜单）在面板未打开或已切到别的文档时，
+     * 把「待发送上下文」落到当前文档所属的会话上，避免笔记的引用加进通用对话或上一篇笔记。
+     * 已在同一作用域且有活跃会话时什么都不做，不打断用户手动切换的历史会话。
+     */
+    public useScope(scope: string | null): void {
+        if (scope === this.activeProjectDir && this.activeConversationId !== null) {
+            return
+        }
+        this.getOrCreateSession(scope)
     }
 
     /** 在指定作用域下新建会话；作用域随会话落库，历史列表据此过滤 */
@@ -315,7 +329,7 @@ export class AiChatService implements vscode.Disposable {
         }
     }
 
-    /** 指定作用域的历史会话列表（按最后活跃时间倒序），供面板历史浮层展示 */
+    /** 指定作用域的历史会话列表（按最后活跃时间倒序），作用域为文档路径时只列这一篇的记录 */
     public listSessions(projectDir: string | null = null): AiConversationSummary[] {
         return listConversations(this.db, SESSION_LIST_LIMIT, projectDir).map((row) => ({
             id: row.id,
@@ -1118,8 +1132,10 @@ export class AiChatService implements vscode.Disposable {
         const storageRoot = resolveStorageRoot().fsPath
         const readRoots = [toComparablePath(storageRoot)]
         const writeRoots: string[] = []
-        const projectPath =
+        const scopePath =
             projectDir !== null && projectDir.length > 0 ? join(storageRoot, ...projectDir.split('/')) : null
+        // 作用域可能是单个文件（每篇笔记一份对话）：工具侧只认目录，授权与 cwd 都落到文件所在目录
+        const projectPath = scopePath !== null && scopePath.endsWith('.md') ? dirname(scopePath) : scopePath
         // 当前打开的文档是基线可写范围：用户指着它要求改写，与授权范围无关
         if (target !== null) {
             writeRoots.push(toComparablePath(target.uri.fsPath))

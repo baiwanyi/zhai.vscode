@@ -29,11 +29,11 @@ import { AiChatComposerActions } from './AiChatComposerActions'
 import { AiChatComposerToolbar } from './AiChatComposerToolbar'
 import { COMMAND_ICONS } from './commandIcons'
 import type { AiCommand } from '../constants'
-import type { AiReferenceAction } from './AiChatReferenceMenu'
 import type { AiPastedRefTarget } from '../hooks/useAiChatMention'
 import type { Phase } from '../hooks/useAiChatSession'
+import type { AiReferenceAction } from './AiChatReferenceMenu'
 import type { ClipboardEvent, JSX } from 'react'
-import { describeContext, describeTool, resolveSendGate, toContextFileName } from '../utils'
+import { describeContext, describeTool, resolveSendGate, toContextFileName, toContextLineRange } from '../utils'
 
 /** 命令芯片的保留 id：只用于 React key 与退格查找，移除语义由 onRemove 承担 */
 const COMMAND_CHIP_ID = 'ai-command'
@@ -83,6 +83,7 @@ function buildContextChip(context: AiContextRef): RichChip {
     return {
         id: context.id,
         label: toContextFileName(context),
+        tail: toContextLineRange(context),
         icon:
             context.kind === 'selection' ? (
                 <TextSelect className="size-3 shrink-0 text-muted-foreground" />

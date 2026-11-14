@@ -3,8 +3,9 @@
  * 复用约定：设定 / 人物 / 大纲 / 快照 / 取名复用本模块页面组件，校对、AI 用量、对话与媒体（含上传）
  * 分别复用 proofread、usage、aichat、media 的页面组件；
  * 本文件只做「分区 → 页面 + 回调」的映射，不持有任何状态。
- * 关键约束：对话与快照按作品目录隔离（dirPath 既是作用域也是对话页 key，切作品即重建），
- * 用量是跨作品的全局统计不隔离；回调统一来自 usePressMutations，路由层不自行读写草稿。
+ * 关键约束：快照按作品目录隔离（dirPath 是作用域）；对话按文档隔离（chatScope 是当前文档路径，
+ * 缺失时才用作品目录）；用量是跨作品的全局统计不隔离；
+ * 回调统一来自 usePressMutations，路由层不自行读写草稿。
  */
 import { WorkflowAiChat } from '@webview/workflow/aichat/WorkflowAiChat'
 import type { WorkflowSection } from '@webview/workflow/layout/workflowSections'
@@ -26,8 +27,10 @@ import { PressSnapshotPage } from '../snapshot/PressSnapshotPage'
 interface PressSectionRouterProps {
     section: WorkflowSection
     workspace: OutlineWorkspace
-    /** 当前作品目录：快照、人物设定图与对话会话的作用域 */
+    /** 当前作品目录：快照与人物设定图的作用域 */
     dirPath: string
+    /** 对话作用域：当前文档相对路径，未定位到文档时为 null（回落到作品目录） */
+    chatScope: string | null
     mutations: PressMutations
     /** 大纲页的步骤跳转：按步骤映射回分区 */
     onSelectStep: (step: number) => void
@@ -39,6 +42,7 @@ export function PressSectionRouter({
     section,
     workspace,
     dirPath,
+    chatScope,
     mutations,
     onSelectStep,
     onOpenChat,
@@ -127,7 +131,8 @@ export function PressSectionRouter({
     if (section === 'usage') {
         return <WorkflowUsage />
     }
-    // 对话按作品隔离：当前作品目录即会话作用域，切作品即换用该作品自己的对话记录；
-    // key 跟随作品目录，切作品时重建对话页，命令选择与未发送正文不会带进新作品
-    return <WorkflowAiChat key={dirPath} projectDir={dirPath} projectTitle={workspace.setting.title} />
+    // 对话按文档隔离：key 跟随作用域，切文档即重建对话页，命令选择与未发送正文不会带进另一章；
+    // 没有定位到文档时回落到作品目录，保证「打开作品但未打开章节」也有可用的对话
+    const scope = chatScope ?? dirPath
+    return <WorkflowAiChat key={scope} projectDir={scope} projectTitle={workspace.setting.title} />
 }

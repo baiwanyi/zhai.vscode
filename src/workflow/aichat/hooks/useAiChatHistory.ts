@@ -1,7 +1,7 @@
 /**
  * AI 对话历史会话列表：经宿主 ai/sessions 协议拉取最近会话摘要，供「历史对话」浮层展示。
  * 列表仅在浮层打开 / 删除会话后按需刷新，避免展示过期数据；切换会话的写入动作由会话 hook 承担。
- * 关键约束：列表按作用域（作品目录）过滤，只列出当前作品的对话，切作品即换一份历史。
+ * 关键约束：列表按作用域过滤（通常是当前文档路径），切文档即换一份历史。
  */
 import { useCallback, useState } from 'react'
 import type { AiConversationSummary } from '@shared/types/aiChat'

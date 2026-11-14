@@ -10,7 +10,9 @@
  * 否则前端会把笔记也判成作品归属，专属分区与对话作用域都切不过去；
  * 仪表盘与工作台打开作品时以显式目录立即广播（该次广播不经编辑器推导），随后编辑器事实与之收敛；
  * 索引尚未收录时仍按路径识别，避免新建作品打不开工作台；
- * 焦点离开文本编辑器（打开设置、切到其它视图）不改变场景事实，沿用上一次的 scene / module / projectDir。
+ * 焦点离开文本编辑器（打开设置、切到其它视图）不改变场景事实，沿用上一次的 scene / module / projectDir；
+ * 当前文档相对路径 docPath 一并下发并参与事实比对——笔记对话按文档隔离，同一模块内切换笔记也必须广播，
+ * 否则面板会停在上一篇笔记的会话上。
  */
 import * as vscode from 'vscode'
 import { findIndexedFile } from '@modules/common/db/indexRepository'
@@ -114,6 +116,8 @@ export class WorkflowRouter implements vscode.Disposable {
             module: PRESS_MODULE_DIR,
             selectedModule: this.selectedModule,
             projectDir: dirPath,
+            // 作品按目录作用域，文档路径在编辑器切到作品文档后由下一次 refresh 补齐
+            docPath: null,
         }
         if (this.isSameAsLast(next)) {
             return
@@ -134,6 +138,7 @@ export class WorkflowRouter implements vscode.Disposable {
             module: PRESS_MODULE_DIR,
             selectedModule: this.selectedModule,
             projectDir: null,
+            docPath: this.lastContext?.docPath ?? null,
         }
         if (this.isSameAsLast(next)) {
             return
@@ -171,7 +176,8 @@ export class WorkflowRouter implements vscode.Disposable {
             last.scene === context.scene &&
             last.module === context.module &&
             last.selectedModule === context.selectedModule &&
-            last.projectDir === context.projectDir
+            last.projectDir === context.projectDir &&
+            last.docPath === context.docPath
         )
     }
 
@@ -190,6 +196,7 @@ export class WorkflowRouter implements vscode.Disposable {
                 module: this.lastContext?.module ?? ROOT_MODULE_KEY,
                 selectedModule,
                 projectDir: this.projectDir,
+                docPath: this.lastContext?.docPath ?? null,
             }
         }
         const relativePath = this.indexService.toRelativePath(active.uri)
@@ -211,11 +218,12 @@ export class WorkflowRouter implements vscode.Disposable {
                 module: fallbackModule,
                 selectedModule,
                 projectDir: this.projectDir,
+                docPath: relativePath,
             }
         }
         const moduleKey = readModuleKey(known.path)
         const scene: WorkflowSceneKind = moduleKey === NOTES_MODULE_KEY ? 'editorNote' : 'idle'
-        return { scene, module: moduleKey, selectedModule, projectDir: this.projectDir }
+        return { scene, module: moduleKey, selectedModule, projectDir: this.projectDir, docPath: relativePath }
     }
 
     /**

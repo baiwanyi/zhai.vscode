@@ -72,7 +72,7 @@ const MAX_COMMAND_ID_LENGTH = 32
 const MAX_MODEL_ID_LENGTH = 64
 /** 上下文档位上限：模型窗口最大为百万级，超出视为异常载荷 */
 const MAX_CONTEXT_WINDOW_TOKENS = 10_000_000
-/** 会话作用域长度上限：作品目录形如 press/{作品名}，远短于此值，超出视为异常载荷 */
+/** 会话作用域长度上限：作品目录形如 press/{作品名}、笔记形如 notes/{笔记名}.md，超出视为异常载荷 */
 const MAX_SCOPE_LENGTH = 160
 
 /**
@@ -619,8 +619,9 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
 }
 
 /**
- * 校验会话作用域入参（可选）：缺省或空串表示通用对话，不属于任何作品。
- * 关键约束：作用域只作查询过滤条件，仍按路径片段规则拒绝上跳、盘符与反斜杠，长度超限视为异常载荷。
+ * 校验会话作用域入参（可选）：缺省或空串表示通用对话。
+ * 作用域既可能是作品目录（press/{作品名}），也可能是单篇笔记的文档路径（notes/{笔记名}.md）。
+ * 关键约束：只作查询过滤条件，仍按路径片段规则拒绝上跳、盘符与反斜杠，长度超限视为异常载荷。
  */
 function readScopePayload(payload: unknown, method: string): string | null {
     if (payload === undefined || payload === null) {
