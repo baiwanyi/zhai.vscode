@@ -1,9 +1,11 @@
 /**
  * 编辑器装配层：注册富文本自定义编辑器与「用富文本 / 用文本」切换命令。
  * 复用约定：命令只作用于当前活跃 tab 的 URI，不接受 Webview 传入的任意路径；
- * 打开动作统一收敛在 modules/editor/openDocument，命令层只做取 URI 与派发。
+ * 打开与形态切换统一收敛在 modules/editor/openDocument，命令层只做取 URI 与派发，
+ * 切换在当前标签内完成，不新开 tab。
  * 关键约束：supportsMultipleEditorsPerDocument 关闭，避免同一文档开出两个 webview 实例各写一份内容；
- * 本层不持有连接或文件句柄，全部 Disposable 交给 context.subscriptions 释放。
+ * 本层不持有连接或文件句柄，全部 Disposable 交给 context.subscriptions 释放；
+ * 块菜单的「添加到 AI 对话」只由本层转发 AI 回调，引用生成与面板跳转都不在这里实现。
  */
 import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
@@ -11,8 +13,8 @@ import { setRichInsertHandler, setRichRevealHandler, setRichSelectionReader } fr
 import type { RichSelectionSnapshot } from '@modules/editor/activeDocument'
 import type { AnnotationDatabase } from '@modules/editor/db/connection'
 import { MarkdownEditorProvider } from '@modules/editor/editorProvider'
-import type { ChapterSnapshotWriter } from '@modules/editor/editorProvider'
-import { RICH_EDITOR_VIEW_TYPE, readActiveTabUri } from '@modules/editor/openDocument'
+import type { AddChatContext, ChapterSnapshotWriter } from '@modules/editor/editorProvider'
+import { openDocumentWith, readActiveTabUri } from '@modules/editor/openDocument'
 import type { EditorQueryDeps } from '@modules/editor/queryService'
 import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 
@@ -32,8 +34,17 @@ export function assembleEditorLayer(
     annotationDb: (() => AnnotationDatabase) | null = null,
     query: EditorQueryDeps | null = null,
     upload: UploadRoutes | null = null,
+    /** 加入宅对话：块菜单把当前块追加为对话上下文，AI 侧实现由入口注入 */
+    addChatContext: AddChatContext | null = null,
 ): MarkdownEditorProvider {
-    const provider = new MarkdownEditorProvider(context.extensionUri, snapshot, annotationDb, query, upload)
+    const provider = new MarkdownEditorProvider(
+        context.extensionUri,
+        snapshot,
+        annotationDb,
+        query,
+        upload,
+        addChatContext,
+    )
     context.subscriptions.push(
         vscode.window.registerCustomEditorProvider(MarkdownEditorProvider.viewType, provider, {
             webviewOptions: { retainContextWhenHidden: true },
@@ -41,13 +52,12 @@ export function assembleEditorLayer(
         }),
         vscode.commands.registerCommand('zhai.editor.openRich', async (): Promise<void> => {
             await withActiveUri(async (uri) => {
-                await vscode.commands.executeCommand('vscode.openWith', uri, RICH_EDITOR_VIEW_TYPE)
+                await openDocumentWith(uri, 'rich')
             })
         }),
         vscode.commands.registerCommand('zhai.editor.openText', async (): Promise<void> => {
             await withActiveUri(async (uri) => {
-                // 'default' 是 VSCode 约定的文本编辑器标识，用于从自定义编辑器切回原生
-                await vscode.commands.executeCommand('vscode.openWith', uri, 'default')
+                await openDocumentWith(uri, 'text')
             })
         }),
     )

@@ -23,6 +23,14 @@ const openableDocuments = new Map<string, vscode.TextDocument>()
 const openedDocumentPaths: string[] = []
 /** fs.delete 的调用记录：按删除顺序保存 fsPath，供用例断言删除范围 */
 const deletedPaths: string[] = []
+/** 命令调用记录：切换编辑器、打开文档等动作在用例里据此断言 */
+const executedCommands: string[] = []
+/** 标签分组容器：用可变数组承载，resetWorkspaceState 直接清空（vscode 类型里是只读数组） */
+const tabGroupList: vscode.TabGroup[] = []
+/** 活跃分组内的标签：同上，默认没有标签 */
+const activeGroupTabs: vscode.Tab[] = []
+/** 被关闭过的标签记录：切换编辑器用例据此断言旧 tab 是否已收起 */
+const closedTabs: vscode.Tab[] = []
 /** editor.edit 的插入记录：按插入顺序保存文本，供用例断言写进正文的内容 */
 const editInserts: string[] = []
 /** 系统回收站可用性：置为 false 时 useTrash 删除一律失败，供用例覆盖「降级永久删除」的路径 */
@@ -39,6 +47,10 @@ export function resetWorkspaceState(): void {
     openedDocumentPaths.length = 0
     deletedPaths.length = 0
     editInserts.length = 0
+    executedCommands.length = 0
+    tabGroupList.length = 0
+    activeGroupTabs.length = 0
+    closedTabs.length = 0
     isTrashAvailable = true
     window.activeTextEditor = undefined
     window.visibleTextEditors.length = 0
@@ -122,6 +134,26 @@ export function readInsertedTexts(): string[] {
 /** 读取 fs.delete 删除过的绝对路径序列，供用例断言删除范围 */
 export function readDeletedPaths(): string[] {
     return [...deletedPaths]
+}
+
+/** 读取 executeCommand 调用过的命令序列，供用例断言打开 / 切换动作 */
+export function readExecutedCommands(): string[] {
+    return [...executedCommands]
+}
+
+/**
+ * 登记一个已打开的标签：切换编辑器用例据此构造「该文档已用某种形态打开」的前提。
+ * 标签本身挂在调用方构造的分组 tabs 里，这里只保证该分组出现在 tabGroups.all。
+ */
+export function registerTab(tab: vscode.Tab): void {
+    if (!tabGroupList.includes(tab.group)) {
+        tabGroupList.push(tab.group)
+    }
+}
+
+/** 读取被 close 关闭过的标签序列，供用例断言切换时确实收起了旧 tab */
+export function readClosedTabs(): vscode.Tab[] {
+    return [...closedTabs]
 }
 
 /** 构造 file 协议的 Uri */
@@ -433,11 +465,58 @@ export class EventEmitter<T> {
     }
 }
 
+/**
+ * 编辑器标签输入：切换编辑器时按 instanceof 区分「文本编辑器」与「自定义编辑器」，
+ * 桩里只需承载 URI 与 viewType，其余字段不参与被测逻辑。
+ */
+export class TabInputText {
+    public constructor(public readonly uri: vscode.Uri) {}
+}
+
+export class TabInputCustom {
+    public constructor(
+        public readonly uri: vscode.Uri,
+        public readonly viewType: string,
+    ) {}
+}
+
+export class TabInputTextDiff {
+    public constructor(
+        public readonly original: vscode.Uri,
+        public readonly modified: vscode.Uri,
+    ) {}
+}
+
 /** 文件类型枚举：取值与 vscode.FileType 一致，供 readDirectory 的调用方按目录/文件分流 */
 export const FileType = {
     File: 1,
     Directory: 2,
     SymbolicLink: 64,
+}
+
+/**
+ * 命令桩：打开类命令要落到虚拟编辑器上，否则「打开笔记」这类用例没有可观测结果。
+ * 关键约束：打开未登记的文档按真实行为失败（ENOENT），用例靠它覆盖「目标文件缺失」分支；
+ * 其余命令只记录调用，由用例按 readExecutedCommands 断言。
+ */
+export const commands = {
+    executeCommand(command: string, ...args: unknown[]): Promise<undefined> {
+        executedCommands.push(command)
+        if (command === 'vscode.openWith' || command === 'vscode.open') {
+            const [target] = args
+            if (target !== undefined && target !== null && typeof target === 'object' && 'fsPath' in target) {
+                const fsPath = (target as vscode.Uri).fsPath
+                if (!openableDocuments.has(fsPath)) {
+                    return Promise.reject(new Error(`ENOENT: ${fsPath}`))
+                }
+                openedDocumentPaths.push(fsPath)
+            }
+        }
+        return Promise.resolve(undefined)
+    },
+    registerCommand(): vscode.Disposable {
+        return { dispose: (): void => undefined }
+    },
 }
 
 export const Uri: Pick<typeof vscode.Uri, 'file' | 'parse' | 'joinPath' | 'from'> = {
@@ -624,4 +703,25 @@ export const window = {
     showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined),
     showErrorMessage: (): Promise<undefined> => Promise.resolve(undefined),
     setStatusBarMessage: (): vscode.Disposable => ({ dispose: (): void => undefined }),
+    /** 编辑器标签：默认没有任何标签，切换编辑器时按「文档尚未在 tab 中打开」的路径处理 */
+    tabGroups: {
+        all: tabGroupList,
+        activeTabGroup: {
+            viewColumn: 1,
+            isActive: true,
+            tabs: activeGroupTabs,
+            activeTab: undefined as vscode.Tab | undefined,
+        } as vscode.TabGroup,
+        close(tab: vscode.Tab): Promise<boolean> {
+            // 只记录关闭了哪些标签：后续打开由命令桩承接，不需要真的维护组内状态
+            closedTabs.push(tab)
+            return Promise.resolve(true)
+        },
+        onDidChangeTabs(): vscode.Disposable {
+            return { dispose: (): void => undefined }
+        },
+        onDidChangeTabGroups(): vscode.Disposable {
+            return { dispose: (): void => undefined }
+        },
+    },
 }
