@@ -26,9 +26,9 @@ import { listAnnotationDocuments, listAnnotations, statsAnnotations } from './an
 import { countQueries, listQueries, removeQueryById } from './queryRepository'
 import type { AnnotationDatabase } from './db/connection'
 
-/** 允许的类型与颜色：与库内枚举一致，其余取值按「不限」处理 */
+/** 允许的类型与颜色：与库内枚举一致（颜色按字母序），其余取值按「不限」处理 */
 const KINDS: readonly string[] = ['highlight', 'note']
-const COLORS: readonly HighlightColor[] = ['coral', 'violet', 'blue', 'emerald', 'amber']
+const COLORS: readonly HighlightColor[] = ['amber', 'blue', 'coral', 'emerald', 'violet']
 
 /** 默认分页条数：与查询层的默认值保持一致 */
 const DEFAULT_LIMIT = 50

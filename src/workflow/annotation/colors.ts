@@ -11,12 +11,16 @@ export interface AnnotationColorOption {
     css: string
 }
 
+/**
+ * 色板：按枚举值字母序排列；色值与文案与编辑区 SelectionToolbar 的色板同源，
+ * 改这里要同步那一份，否则总览页的圆点会和划线落下的颜色对不上。
+ */
 export const ANNOTATION_COLORS: readonly AnnotationColorOption[] = [
-    { value: 'coral', label: '珊瑚', css: 'rgb(255, 138, 128)' },
-    { value: 'violet', label: '紫罗兰', css: 'rgb(186, 140, 255)' },
-    { value: 'blue', label: '蓝', css: 'rgb(120, 170, 255)' },
-    { value: 'emerald', label: '青', css: 'rgb(110, 220, 170)' },
-    { value: 'amber', label: '琥珀', css: 'rgb(255, 205, 120)' },
+    { value: 'amber', label: '琥珀黄', css: 'rgb(255, 226, 122)' },
+    { value: 'blue', label: '湖蓝', css: 'rgb(133, 189, 255)' },
+    { value: 'coral', label: '珊瑚红', css: 'rgb(255, 150, 160)' },
+    { value: 'emerald', label: '青绿', css: 'rgb(137, 226, 160)' },
+    { value: 'violet', label: '紫罗兰', css: 'rgb(199, 160, 255)' },
 ]
 
 /** 取颜色对应的 CSS 值：未知或空值回落到透明 */

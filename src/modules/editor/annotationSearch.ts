@@ -23,8 +23,8 @@ const MAX_LIMIT = 200
 /** trigram 索引的最小查询长度：低于此值 MATCH 必然空 */
 const FTS_MIN_CHARS = 3
 
-/** 颜色枚举：统计结果按此顺序补齐零值，前端不必做缺省处理 */
-const HIGHLIGHT_COLORS: readonly HighlightColor[] = ['coral', 'violet', 'blue', 'emerald', 'amber']
+/** 颜色枚举：与类型定义同序（字母序），统计结果按此顺序补齐零值，前端不必做缺省处理 */
+const HIGHLIGHT_COLORS: readonly HighlightColor[] = ['amber', 'blue', 'coral', 'emerald', 'violet']
 
 /** 行结构：与 annotations 表一致，仅本文件使用 */
 interface SearchRow {
@@ -180,7 +180,7 @@ export function statsAnnotations(db: Database.Database, docPath: string | null):
         highlights: 0,
         notes: 0,
         orphaned: 0,
-        byColor: { coral: 0, violet: 0, blue: 0, emerald: 0, amber: 0 },
+        byColor: { amber: 0, blue: 0, coral: 0, emerald: 0, violet: 0 },
     }
     for (const row of rows) {
         if (row.kind === 'note') {

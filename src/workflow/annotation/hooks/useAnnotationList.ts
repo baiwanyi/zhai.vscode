@@ -1,18 +1,14 @@
 /**
  * 标注列表数据：分页、筛选、关键词防抖与删除后局部更新。
  * 复用约定：协议走 bridge，类型取 @shared/types/editor；跳转直接调宿主的 annotation/reveal。
- * 关键约束：关键词 300ms 防抖并重置游标；删除后只从当前页移除并重算总数，
+ * 关键约束：只有关键词吃 300ms 防抖，点选类筛选与首屏立即下发；删除后只从当前页移除，
  * 不做整页刷新——用户翻到第 3 页删除一条，刷新会把他弹回顶部；
- * 跳转发现原文缺失时宿主会把整篇置失效，这里按 docPath 同步标记已有的条目，避免还要手动刷新。
+ * 续载有闸门、首页请求不受限，并发靠请求序号只认最后一次，避免旧响应盖掉新筛选结果；
+ * 跳转发现原文缺失时宿主会把整篇置失效，这里按 docPath 同步标记已有的条目，避免还要手动刷新；
+ * isEnabled 为假时（如「查询」页签）不下发请求，回切时依赖变化会重新拉首页。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type {
-    AnnotationCursor,
-    AnnotationDocumentSummary,
-    AnnotationListResult,
-    AnnotationRecord,
-    HighlightColor,
-} from '@shared/types/editor'
+import type { AnnotationCursor, AnnotationListResult, AnnotationRecord, HighlightColor } from '@shared/types/editor'
 import { request } from '@shared/utils/bridge'
 
 /** 每页条数：与查询层默认值一致 */
@@ -39,10 +35,6 @@ export interface RevealOutcome {
 
 export interface UseAnnotationListResult {
     items: AnnotationRecord[]
-    /** 有标注的文档清单：文档维度筛选的数据源 */
-    documents: AnnotationDocumentSummary[]
-    /** 首页总量：翻页后不再变化 */
-    total: number | null
     isLoading: boolean
     error: string | null
     hasMore: boolean
@@ -55,9 +47,15 @@ export interface UseAnnotationListResult {
     reveal: (id: string) => Promise<RevealOutcome>
 }
 
-export function useAnnotationList(initialKind: AnnotationFilters['kind'] = null): UseAnnotationListResult {
+/**
+ * @param initialKind 首屏筛选类型：与页签默认值同源，仅首次挂载生效
+ * @param isEnabled 视图是否在展示列表：为假时挂起请求，回切时重新拉首页
+ */
+export function useAnnotationList(
+    initialKind: AnnotationFilters['kind'] = null,
+    isEnabled = true,
+): UseAnnotationListResult {
     const [items, setItems] = useState<AnnotationRecord[]>([])
-    const [total, setTotal] = useState<number | null>(null)
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [filters, setFilters] = useState<AnnotationFilters>({
@@ -67,16 +65,23 @@ export function useAnnotationList(initialKind: AnnotationFilters['kind'] = null)
         orphanedOnly: false,
         keyword: '',
     })
-    /** 有标注的文档清单：供文档维度筛选，随删除刷新（某文档可能归零后消失） */
-    const [documents, setDocuments] = useState<AnnotationDocumentSummary[]>([])
-    const cursorRef = useRef<AnnotationCursor | null>(null)
+    /** 下一页游标：null 表示已到末页；作为渲染输入（hasMore），必须放 state 而非 ref */
+    const [cursor, setCursor] = useState<AnnotationCursor | null>(null)
     const filtersRef = useRef(filters)
     const isLoadingRef = useRef(false)
+    /** 请求序号：并发时只认最后一次，旧响应回来即作废 */
+    const requestSeqRef = useRef(0)
+    /** 上一次的关键词：只有它变化才需要等用户停手，其余筛选是点选，立即生效 */
+    const prevKeywordRef = useRef(filters.keyword)
 
     const fetchPage = useCallback(async (cursor: AnnotationCursor | null, append: boolean): Promise<void> => {
-        if (isLoadingRef.current) {
+        // 续载保留闸门：哨兵会连续触发，同一游标不重复请求；
+        // 首页请求不受闸门限制，否则会被在飞的续载吞掉，表现为「筛选没反应」
+        if (append && isLoadingRef.current) {
             return
         }
+        requestSeqRef.current += 1
+        const seq = requestSeqRef.current
         isLoadingRef.current = true
         setIsLoading(true)
         try {
@@ -90,63 +95,62 @@ export function useAnnotationList(initialKind: AnnotationFilters['kind'] = null)
                 orphanedOnly: current.orphanedOnly,
                 keyword: current.keyword,
             })
-            cursorRef.current = result.nextCursor
-            setItems((previous) => (append ? [...previous, ...result.items] : result.items))
-            if (result.total !== null) {
-                setTotal(result.total)
+            // 过期响应：期间已有更新的请求（筛选变更），本次结果作废
+            if (seq !== requestSeqRef.current) {
+                return
             }
+            setCursor(result.nextCursor)
+            setItems((previous) => (append ? [...previous, ...result.items] : result.items))
             setError(null)
         } catch {
-            setError('加载失败，请稍后重试')
+            if (seq === requestSeqRef.current) {
+                setError('加载失败，请稍后重试')
+            }
         } finally {
-            isLoadingRef.current = false
-            setIsLoading(false)
+            // 只在最新请求结束时释放闸门与加载态，旧请求不得干扰新请求
+            if (seq === requestSeqRef.current) {
+                isLoadingRef.current = false
+                setIsLoading(false)
+            }
         }
     }, [])
 
-    // 筛选或关键词变化即回到首页：防抖期间用户还在输入，不打请求
+    // 筛选或关键词变化即回到首页：只有关键词需要等用户停手，点选类条件立即生效
     useEffect(() => {
         filtersRef.current = filters
-        const timer = setTimeout((): void => {
-            cursorRef.current = null
-            void fetchPage(null, false)
-        }, SEARCH_DEBOUNCE_MS)
+        // 视图没在展示列表（如「查询」页签）时就别下发：切回时依赖变化会补拉首页
+        if (!isEnabled) {
+            return undefined
+        }
+        const isKeywordChanged = prevKeywordRef.current !== filters.keyword
+        prevKeywordRef.current = filters.keyword
+        const timer = setTimeout(
+            (): void => {
+                setCursor(null)
+                void fetchPage(null, false)
+            },
+            isKeywordChanged ? SEARCH_DEBOUNCE_MS : 0,
+        )
         return (): void => {
             clearTimeout(timer)
         }
-    }, [fetchPage, filters])
+    }, [fetchPage, filters, isEnabled])
 
     const loadMore = useCallback(async (): Promise<void> => {
-        if (cursorRef.current === null) {
+        if (cursor === null) {
             return
         }
-        await fetchPage(cursorRef.current, true)
-    }, [fetchPage])
+        await fetchPage(cursor, true)
+    }, [cursor, fetchPage])
 
-    /** 文档清单：随删除刷新，某文档条目归零后应从下拉里消失 */
-    const loadDocuments = useCallback(async (): Promise<void> => {
+    const remove = useCallback(async (id: string): Promise<void> => {
         try {
-            const result = await request<{ items: AnnotationDocumentSummary[] }>('annotation/documents', {})
-            setDocuments(result.items)
+            await request('annotation/remove', { id })
+            setItems((previous) => previous.filter((item) => item.id !== id))
         } catch {
-            // 清单失败不影响列表本身，下拉退化为「全部文档」
-            setDocuments([])
+            setError('删除失败，请稍后重试')
         }
     }, [])
-
-    const remove = useCallback(
-        async (id: string): Promise<void> => {
-            try {
-                await request('annotation/remove', { id })
-                setItems((previous) => previous.filter((item) => item.id !== id))
-                setTotal((previous) => (previous === null ? previous : Math.max(previous - 1, 0)))
-                await loadDocuments()
-            } catch {
-                setError('删除失败，请稍后重试')
-            }
-        },
-        [loadDocuments],
-    )
 
     const updateColor = useCallback(async (id: string, color: HighlightColor): Promise<void> => {
         try {
@@ -173,18 +177,11 @@ export function useAnnotationList(initialKind: AnnotationFilters['kind'] = null)
         return outcome
     }, [])
 
-    // 首次挂载拉一次文档清单：筛选下拉需要它，与列表请求并行
-    useEffect(() => {
-        void loadDocuments()
-    }, [loadDocuments])
-
     return {
         items,
-        total,
-        documents,
         isLoading,
         error,
-        hasMore: cursorRef.current !== null,
+        hasMore: cursor !== null,
         filters,
         setFilters,
         loadMore,

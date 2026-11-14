@@ -33,8 +33,8 @@ interface AnnotationRow {
     updated_at: string
 }
 
-/** 颜色白名单：库里的脏值一律回落为 null，避免把非法色值喂给样式 */
-const HIGHLIGHT_COLORS: readonly HighlightColor[] = ['coral', 'violet', 'blue', 'emerald', 'amber']
+/** 颜色白名单（字母序，与类型定义同序）：库里的脏值一律回落为 null，避免把非法色值喂给样式 */
+const HIGHLIGHT_COLORS: readonly HighlightColor[] = ['amber', 'blue', 'coral', 'emerald', 'violet']
 
 function toColor(value: string | null): HighlightColor | null {
     return value !== null && (HIGHLIGHT_COLORS as readonly string[]).includes(value) ? (value as HighlightColor) : null
