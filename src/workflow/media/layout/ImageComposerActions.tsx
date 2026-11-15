@@ -1,7 +1,8 @@
 /**
  * 生图输入卡片的底部操作行：左侧比例与画面风格，右侧增强与发送。
  * 复用约定：比例菜单取本目录 ImageRatioSelector，画面风格取本目录 ImageStylePicker，
- * 增强与发送取 @webview/components 的 EnhanceButton / SendButton（与 aichat 共用同一组图标按钮）。
+ * 增强与发送取 @webview/components 的 EnhanceButton / SendButton（与 aichat 共用同一组图标按钮）；
+ * 根节点即 AppComposer 骨架的操作行槽位，className 由外层传入以撑满剩余宽度。
  * 关键约束：本组件不持有渲染状态，可否增强与可否发送由输入卡片按正文与生成态算好传入；
  * 发送套一层点击冷却（ref 记时间戳，不触发渲染）：首击后按钮即刻换成取消，连点的第二下若落到那一刻的
  * 取消位上会误取消刚发出的请求，冷却期内直接丢弃；
@@ -9,6 +10,7 @@
  * 画风只记录选用结果，不参与正文展示，由输入卡片在发送时并入提示词；
  * 生成中比例菜单与画面风格禁用、发送位换为取消，同一位置不会同时出现两个动作。
  */
+import { cn } from 'cn'
 import { useRef } from 'react'
 import type { ImageGenerateStage, ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
@@ -22,6 +24,8 @@ import type { JSX } from 'react'
 const CLICK_COOLDOWN_MS = 300
 
 interface ImageComposerActionsProps {
+    /** 由外层骨架槽位传入的补充类名：操作行是 Footer 唯一子项，须撑满剩余宽度 */
+    className?: string
     /** 当前比例：交给比例菜单显示与切换 */
     ratio: ImageRatio
     /** 当前画风：交给画面风格面板回显选中项 */
@@ -47,6 +51,7 @@ interface ImageComposerActionsProps {
 }
 
 export function ImageComposerActions({
+    className,
     ratio,
     style,
     isGenerating,
@@ -88,8 +93,8 @@ export function ImageComposerActions({
     }
 
     return (
-        <div className="flex items-center justify-between gap-2 pt-1">
-            <div className="flex items-center gap-0.5">
+        <div className={cn('flex min-w-0 items-center justify-between gap-2 pt-1', className)}>
+            <div className="flex min-w-0 items-center gap-0.5">
                 <ImageRatioSelector ratio={ratio} disabled={isGenerating} onChange={onRatioChange} />
                 <ImageStylePicker value={style} disabled={isGenerating} onChange={onStyleChange} />
             </div>

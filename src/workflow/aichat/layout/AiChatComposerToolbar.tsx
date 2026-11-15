@@ -1,7 +1,8 @@
 /**
  * AI 对话输入卡片顶部工具行：左侧命令菜单、右侧参考菜单，严格保持两个按钮。
  * 采用普通行容器承载两个独立菜单组件，本层只做布局与禁用态分发。
- * 关键约束：工具行内不放入设置、会话等其它入口，避免与模板的两个按钮约定冲突。
+ * 关键约束：工具行内不放入设置、会话等其它入口，避免与模板的两个按钮约定冲突；
+ * 留白由外层 AppComposerHeader 的 p-1 提供，本层不再自带 padding，否则会叠加成双重缩进。
  */
 import { AiChatCommandMenu } from './AiChatCommandMenu'
 import { AiChatReferenceMenu } from './AiChatReferenceMenu'
@@ -27,7 +28,7 @@ export function AiChatComposerToolbar({
     onMention,
 }: AiChatComposerToolbarProps): JSX.Element {
     return (
-        <div className="flex items-center gap-0.5 p-0.5">
+        <div className="flex items-center gap-0.5">
             <AiChatCommandMenu disabled={disabled} activeId={activeCommandId} onSelect={onCommand} />
             <AiChatReferenceMenu disabled={disabled} onSelect={onReference} onMention={onMention} />
         </div>

@@ -1,26 +1,22 @@
 /**
  * 生图输入卡片：上下文、参考图、角色、词条与规则以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
- * 复用约定：外壳沿用 aichat 的两层底色（bg-composer / bg-composer-input），输入区取 RichChipInput，
- * 工具栏与底部操作行取本目录 ImageComposerToolbar / ImageComposerActions；提示词拼装与比例探测
- * 取 ../prompt 下的纯函数，芯片集合与会话状态分别由 ../hooks 的 usePromptChips / useImageComposer 持有。
- * 关键约束：角色芯片是角色选择的唯一数据源——选择器选中即挂「图标 + 姓名」徽标，移除即回到不使用角色，
- * 生成目标与增强时的角色段都由它派生；顶栏筛选的角色只作初值，之后不与其联动；
- * 参考图芯片挂「缩略图 + 文件名」徽标，悬停文件名预览大图，只带宿主回传的路径与预览地址；
- * 词条芯片只承载「选了哪些词条」，规则芯片只承载「选了哪些规则」，「添加上下文」里的作品设定展开为上下文段；
- * 四者都不写进输入框，随请求的 contexts / referenceImages / promptTags / promptRules 提交，由宿主在出图时按段并入；
- * 生成意图只有两种：挂着角色芯片即角色图，否则是普通图片；生成不碰作品封面，封面在图库里手动指定；
+ * 复用约定：外壳取 @webview/components/AppComposer 骨架（双层底色、生成态光晕与分层留白由骨架承担），
+ * 输入区取 RichChipInput，工具栏与底部操作行取本目录 ImageComposerToolbar / ImageComposerActions；
+ * 提示词拼装与比例探测取 ../prompt 下的纯函数，芯片集合与会话状态由 ../hooks 的 usePromptChips / useImageComposer 持有。
+ * 关键约束：角色芯片是角色选择的唯一数据源——选中即挂「图标 + 姓名」徽标，移除即回到不使用角色，
+ * 生成目标与增强时的角色段都由它派生，顶栏筛选的角色只作初值；
+ * 参考图芯片挂「缩略图 + 文件名」徽标并悬停预览，词条 / 规则芯片只承载「选了哪些」，
+ * 四者都不写进输入框，随请求的 contexts / referenceImages / promptTags / promptRules 提交；
+ * 生成意图只有两种：挂着角色芯片即角色图，否则是普通图片，生成不碰作品封面；
  * 比例与画风各只落一份 state，手动改动经 onSettingsChange 上报，正文里的比例字面量只自动切换
- * 本次会话的选择、不写回作品配置。
- * 生成中外扩一圈光晕取 @webview/components/ComposerGlow（与对话页共用，样式在 globals.css 的 composer-glow 段），
- * 它挂在卡片外侧的兄弟层上——卡片底色不透明，移进卡片内部就会被盖住，装饰层不得承载任何状态或交互；
- * 参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
+ * 本次会话的选择、不写回作品配置；参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
  */
 import { BookText, ContactRound, PencilRuler, WandSparkles } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
 import type { ImageGenerateKind, ImageGenerateResult, ImageRatio } from '@shared/types/imagegen'
 import type { PortraitStyle } from '@shared/types/press'
-import { ComposerGlow } from '@webview/components/ComposerGlow'
+import { AppComposer, AppComposerContent, AppComposerFooter, AppComposerHeader } from '@webview/components/AppComposer'
 import { Image } from '@webview/components/Image'
 import { RichChipInput, type RichChip } from '@webview/components/RichChipInput'
 import { ImageComposerActions } from './ImageComposerActions'
@@ -329,11 +325,8 @@ function ComposerBody({
     })
 
     return (
-        // isolate 给光晕划定层叠边界：-z-10 只在卡片之下，不会沉到页面背景后面
-        <div className="relative isolate flex-1">
-            <ComposerGlow isGenerating={isGenerating} />
-
-            <div className="flex flex-col gap-0.5 rounded-2xl bg-composer p-1.5">
+        <AppComposer isGenerating={isGenerating}>
+            <AppComposerHeader>
                 <ImageComposerToolbar
                     isSettingActive={settingChip !== null}
                     isReferenceFull={referenceChips.length >= MAX_REFERENCE_IMAGES}
@@ -351,18 +344,22 @@ function ComposerBody({
                     onRemoveRule={removeRule}
                     onPickReference={addReference}
                 />
+            </AppComposerHeader>
 
-                <div className="rounded-xl bg-composer-input p-3">
-                    <RichChipInput
-                        value={text}
-                        chips={richChips}
-                        placeholder="描述画面：人物、动作、场景、光线与氛围…"
-                        canSend={canSend}
-                        onChange={handleTextChange}
-                        onSend={onSend}
-                        onRemoveChip={removeChip}
-                    />
+            <AppComposerContent>
+                <RichChipInput
+                    value={text}
+                    chips={richChips}
+                    placeholder="描述画面：人物、动作、场景、光线与氛围…"
+                    canSend={canSend}
+                    onChange={handleTextChange}
+                    onSend={onSend}
+                    onRemoveChip={removeChip}
+                />
+
+                <AppComposerFooter>
                     <ImageComposerActions
+                        className="flex-1"
                         ratio={ratio}
                         style={style}
                         isGenerating={isGenerating}
@@ -378,8 +375,8 @@ function ComposerBody({
                         onSend={onSend}
                         onAbort={onAbort}
                     />
-                </div>
-            </div>
-        </div>
+                </AppComposerFooter>
+            </AppComposerContent>
+        </AppComposer>
     )
 }

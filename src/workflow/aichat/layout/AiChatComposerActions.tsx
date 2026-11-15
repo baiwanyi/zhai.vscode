@@ -1,18 +1,20 @@
 /**
  * AI 对话输入卡片底部操作行：左侧写入范围与模型菜单，右侧上下文圆环、增强提示词与发送 / 停止。
  * 采用普通行容器组合各独立子组件，本层只做布局与禁用态分发。
+ * 根节点即 AppComposer 骨架的操作行槽位，className 由外层传入以撑满剩余宽度。
  * 关键约束：生成中除圆环可查看外全部禁用，发送位替换为停止按钮；本层不持有任何会话状态；
  * 工具审批默认逐次确认，连续生成的一次性授权在发送前确认。
  */
+import { cn } from 'cn'
 import type { AiContextUsage, AiModelChoices, AiReasoningEffort, AiWriteGrant } from '@shared/types/aiChat'
 import { EnhanceButton } from '@webview/components/EnhanceButton'
 import { SendButton } from '@webview/components/SendButton'
 import { AiChatModelMenu } from './AiChatModelMenu'
 import { AiChatTokenRing } from './AiChatTokenRing'
 import { AiChatWriteGrantSwitch } from './AiChatWriteGrantSwitch'
-import type { JSX } from 'react'
+import type { ComponentProps, JSX } from 'react'
 
-interface AiChatComposerActionsProps {
+interface AiChatComposerActionsProps extends ComponentProps<'div'> {
     /** 写入授权范围 */
     writeGrant: AiWriteGrant
     isGenerating: boolean
@@ -46,6 +48,7 @@ interface AiChatComposerActionsProps {
 }
 
 export function AiChatComposerActions({
+    className,
     writeGrant,
     isGenerating,
     canSend,
@@ -69,8 +72,8 @@ export function AiChatComposerActions({
     onStop,
 }: AiChatComposerActionsProps): JSX.Element {
     return (
-        <div className="flex items-center justify-between gap-2 pt-1">
-            <div className="flex items-center gap-0.5">
+        <div className={cn('flex min-w-0 items-center justify-between gap-2 pt-1', className)}>
+            <div className="flex min-w-0 items-center gap-0.5">
                 <AiChatWriteGrantSwitch grant={writeGrant} disabled={isGenerating} onChange={onWriteGrantChange} />
                 <AiChatModelMenu
                     current={model}

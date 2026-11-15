@@ -1,17 +1,13 @@
 /**
- * AI 对话底部输入卡片：顶部工具行（命令 / 参考）、富文本输入区（内联命令与上下文芯片）、底部操作行。
- * 复用约定：外壳挂载在页面的 AppFooter 内，工具行 / 操作行复用同目录 AiChatComposerToolbar 与
- * AiChatComposerActions，富文本输入取 @webview/components/RichChipInput（与生图输入卡片共用同一份）；
+ * AI 对话底部输入卡片：按 AppComposer 骨架拼装顶栏工具行、富文本输入区与底部操作行。
+ * 复用约定：外壳取 @webview/components/AppComposer 族（双层底色、生成态光晕与分层留白均由骨架承担），
+ * 顶栏 / 操作行取同目录 AiChatComposerToolbar 与 AiChatComposerActions，富文本输入取 RichChipInput；
  * 命令与上下文在此折算为 RichChip：图标取 ./commandIcons，文件名与摘要取 ../utils。
- * 本层负责提示文案、禁用态与增强状态，可发送判定取 ../utils 的 resolveSendGate（与页面层同口径），
- * 交互全部经回调上抛给页面 hooks。
- * 生成态光晕取 @webview/components/ComposerGlow（与生图页共用，样式在 globals.css 的 composer-glow 段）。
- * 关键约束：写入范围、上下文用量、已选命令与上下文均由此层透传，输入卡片不直接读取会话状态；
+ * 本层负责提示文案、禁用态与增强状态，可发送判定取 ../utils 的 resolveSendGate（与页面层同口径）。
+ * 关键约束：输入卡片不读会话状态，上下文、写入范围、用量、命令与模型均由此层透传；
  * 粘贴内容里的 `@zhai\` 路径改由宿主添加为上下文引用（成功即变成芯片），只有剩余文本落回输入区；
  * 命令芯片的移除语义是「取消命令」，由 chip.onRemove 承担，不走统一的移除引用回调；
- * 增强提示词经页面 hook 请求宿主模型改写（onEnhanceRequest），本层只保存原文并保留还原入口；
- * 光晕是卡片外侧的兄弟层（卡片底色不透明），容器需自带 isolate，装饰层不承载任何状态或交互；
- * 横向内边距由 AppPage 统一提供，此处不再自带 px，否则会与骨架的 p-3 叠加成双重缩进。
+ * 操作行是 AppComposerFooter 的唯一子项，须带 flex-1 才能让左右两组分别贴住两侧。
  */
 import { FileText, Loader2, TextSelect } from 'lucide-react'
 import { useRef, useState } from 'react'
@@ -23,7 +19,12 @@ import type {
     AiWriteGrant,
 } from '@shared/types/aiChat'
 import { readZhaiTargets, toZhaiDisplayPath } from '@shared/utils/zhaiPath'
-import { ComposerGlow } from '@webview/components/ComposerGlow'
+import {
+    AppComposer,
+    AppComposerContent,
+    AppComposerFooter,
+    AppComposerHeader,
+} from '@webview/components/AppComposer'
 import { RichChipInput, type RichChip, type RichChipInputHandle } from '@webview/components/RichChipInput'
 import { AiChatComposerActions } from './AiChatComposerActions'
 import { AiChatComposerToolbar } from './AiChatComposerToolbar'
@@ -248,11 +249,8 @@ export function AiChatComposer({
     }
 
     return (
-        // isolate 给光晕划定层叠边界：-z-10 只在卡片之下，不会沉到页面背景后面
-        <div className="relative isolate flex-1">
-            <ComposerGlow isGenerating={isGenerating} />
-
-            <div className="flex flex-col gap-0.5 rounded-2xl bg-composer p-1.5">
+        <AppComposer isGenerating={isGenerating}>
+            <AppComposerHeader>
                 <AiChatComposerToolbar
                     disabled={isGenerating}
                     activeCommandId={command?.id ?? null}
@@ -260,26 +258,31 @@ export function AiChatComposer({
                     onReference={onReference}
                     onMention={onMention}
                 />
-                <div className="rounded-xl bg-composer-input p-3" onPasteCapture={handlePasteCapture}>
-                    {activeTool === null ? null : (
-                        <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                            <Loader2 className="size-3 animate-spin" />
-                            正在{describeTool(activeTool)}
-                        </div>
-                    )}
-                    <RichChipInput
-                        ref={inputRef}
-                        value={input}
-                        chips={chips}
-                        placeholder={placeholder}
-                        disabled={isGenerating}
-                        canSend={canSend}
-                        onChange={handleInputChange}
-                        onSend={onSend}
-                        onRemoveChip={onRemoveContext}
-                    />
+            </AppComposerHeader>
 
+            {/* 粘贴拦截挂在内层内容区上：芯片与正文都在这一层，拦截时机先于 RichChipInput 的默认粘贴 */}
+            <AppComposerContent onPasteCapture={handlePasteCapture}>
+                {activeTool === null ? null : (
+                    <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Loader2 className="size-3 animate-spin" />
+                        正在{describeTool(activeTool)}
+                    </div>
+                )}
+                <RichChipInput
+                    ref={inputRef}
+                    value={input}
+                    chips={chips}
+                    placeholder={placeholder}
+                    disabled={isGenerating}
+                    canSend={canSend}
+                    onChange={handleInputChange}
+                    onSend={onSend}
+                    onRemoveChip={onRemoveContext}
+                />
+
+                <AppComposerFooter>
                     <AiChatComposerActions
+                        className="flex-1"
                         writeGrant={writeGrant}
                         isGenerating={isGenerating}
                         canSend={canSend}
@@ -302,8 +305,8 @@ export function AiChatComposer({
                         onSend={onSend}
                         onStop={onStop}
                     />
-                </div>
-            </div>
-        </div>
+                </AppComposerFooter>
+            </AppComposerContent>
+        </AppComposer>
     )
 }

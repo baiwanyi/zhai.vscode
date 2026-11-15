@@ -8,7 +8,8 @@
  * 规则的改名与删除也只上抛标识，芯片的改写仍留在输入卡片；
  * 参考图只上抛选中结果，芯片与发送都由输入卡片决定；
  * 词条只回传点选事件与已选标识，芯片的增删由输入卡片决定；
- * 画面风格不在此列，改由底部操作行的 ImageStylePicker 承载。
+ * 画面风格不在此列，改由底部操作行的 ImageStylePicker 承载；
+ * 留白由外层 AppComposerHeader 的 p-1 提供，本层不再自带 padding，否则会叠加成双重缩进。
  */
 import type { ImageReferenceItem, PromptRule, PromptTag } from '@shared/types/imagegen'
 import { ImageCharacterPicker } from './ImageCharacterPicker'
@@ -69,7 +70,7 @@ export function ImageComposerToolbar({
     onPickReference,
 }: ImageComposerToolbarProps): JSX.Element {
     return (
-        <div className="flex items-center gap-0.5 p-0.5">
+        <div className="flex items-center gap-0.5">
             <ImageCommandMenus
                 isSettingActive={isSettingActive}
                 selectedRules={selectedRules}
