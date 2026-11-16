@@ -2,15 +2,16 @@
  * 活跃笔记 Provider：仪表盘外壳挂一次，概览页的列表选中态与路由跟随的归属判定共享同一份。
  * 复用 @shared/utils/bridge 的请求与状态订阅：挂载时拉一次快照，随后跟随宿主 note 通道广播。
  * 关键约束：选中态由宿主权威下发，页面点击打开时先经本层回填再等宿主收敛，避免打开瞬间高亮丢失；
- * 非 note 通道或形态非法的载荷一律忽略，不覆盖已有选中态；请求与订阅只在本层发起一次，
+ * 非 note 通道或形态非法的载荷一律忽略，不覆盖已有选中态；广播优先于初始快照，
+ * 收到广播后丢弃后到的快照，防止旧值把新选中态盖回去；请求与订阅只在本层发起一次，
  * 消费方一律走 useActiveNote 读取，避免重复打开通道与多份状态分叉；
  * hasEditor 只跟宿主动事实走，本地回填不改它，否则「焦点在面板上」会被误判成编辑器里有文档。
  */
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { NoteActiveState } from '@shared/types/note'
 import { isNoteActiveState } from '@shared/types/note'
 import { onState, request } from '@shared/utils/bridge'
-import { ActiveNoteContext } from './useActiveNote'
+import { ActiveNoteContext, type ActiveNoteState } from './useActiveNote'
 import type { JSX, ReactNode } from 'react'
 
 interface ActiveNoteProviderProps {
@@ -20,9 +21,12 @@ interface ActiveNoteProviderProps {
 export function ActiveNoteProvider({ children }: ActiveNoteProviderProps): JSX.Element {
     const [activeId, setActiveId] = useState<string | null>(null)
     const [hasEditor, setHasEditor] = useState(false)
+    /** 是否已收到广播：广播一定比初始快照新，收到后丢弃后到的快照，避免旧值把新选中态盖回去 */
+    const hasBroadcastRef = useRef(false)
 
     useEffect(() => {
         let isDisposed = false
+        hasBroadcastRef.current = false
         const applySnapshot = (snapshot: NoteActiveState): void => {
             setActiveId(snapshot.activePath)
             setHasEditor(snapshot.hasEditor)
@@ -30,7 +34,7 @@ export function ActiveNoteProvider({ children }: ActiveNoteProviderProps): JSX.E
         const loadActiveNote = async (): Promise<void> => {
             try {
                 const snapshot = await request<NoteActiveState>('note/active')
-                if (!isDisposed) {
+                if (!isDisposed && !hasBroadcastRef.current) {
                     applySnapshot(snapshot)
                 }
             } catch {
@@ -42,6 +46,7 @@ export function ActiveNoteProvider({ children }: ActiveNoteProviderProps): JSX.E
             if (message.channel !== 'note' || !isNoteActiveState(message.payload)) {
                 return
             }
+            hasBroadcastRef.current = true
             applySnapshot(message.payload)
         })
         return (): void => {
@@ -54,7 +59,11 @@ export function ActiveNoteProvider({ children }: ActiveNoteProviderProps): JSX.E
         setActiveId(path)
     }, [])
 
-    return (
-        <ActiveNoteContext value={{ activeId, hasEditor, setActiveId: updateActiveId }}>{children}</ActiveNoteContext>
+    /** 上下文值按字段缓存：Provider 因父级重渲染而重绘时不连带所有消费方一起更新 */
+    const contextValue = useMemo<ActiveNoteState>(
+        () => ({ activeId, hasEditor, setActiveId: updateActiveId }),
+        [activeId, hasEditor, updateActiveId],
     )
+
+    return <ActiveNoteContext value={contextValue}>{children}</ActiveNoteContext>
 }

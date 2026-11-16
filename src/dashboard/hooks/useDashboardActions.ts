@@ -1,13 +1,13 @@
 /**
  * 仪表盘宿主动作：新建/打开/置顶/删除笔记，笔记本的增删改与偏好，以及回收站的恢复与清除。
  * 复用 @shared/utils/bridge 走宿主协议、@shared/utils/error 的 toErrorText 归一错误文案，结果统一经 sonner 提示。
- * 关键约束：耗时动作进行中记录 pendingAction 阻止重复提交；打开笔记与工作流跳转不占用该状态，
- * 避免顶栏操作区被整体禁用；提示在本层即时发出，页面不再渲染提示行；
+ * 关键约束：耗时动作进行中记录 pendingAction 阻止重复提交，并发动作按在途计数收敛、全部落定才解锁；
+ * 打开笔记与工作流跳转不占用该状态，避免顶栏操作区被整体禁用；提示在本层即时发出，页面不再渲染提示行；
  * 删除为批量语义且只移入回收站：成功与失败分别提示，全部失败时不做成功提示，部分成功仍返回已处理路径供页面清理选中态；
  * 笔记本删除会连带把其中笔记移入回收站，成功提示要带上笔记条数，避免用户以为笔记已彻底消失；
  * 索引重建与插件设置由 VS Code 标题栏的「…」菜单直接触发命令，不经过本 Hook。
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { HostMethodName } from '@shared/types/messages'
 import type {
@@ -47,8 +47,23 @@ function formatTrashNotice(action: string, failures: { message: string }[]): str
     return `${String(failures.length)} 项${action}失败：${failures[0]?.message ?? '未知原因'}`
 }
 
+/** 在途动作标识：页面据它判断具体哪个操作正在进行（如确认弹窗的 isSubmitting） */
+export type PendingAction =
+    | 'create'
+    | 'delete'
+    | 'notebook-create'
+    | 'notebook-delete'
+    | 'notebook-open'
+    | 'notebook-pin'
+    | 'notebook-rename'
+    | 'notebook-sort'
+    | 'pin'
+    | 'trash-clear'
+    | 'trash-purge'
+    | 'trash-restore'
+
 export interface DashboardActionsState {
-    pendingAction: string | null
+    pendingAction: PendingAction | null
     createNote: (notebookId?: string) => Promise<CreatedNote | null>
     openNote: (path: string) => Promise<void>
     setPinned: (paths: string[], isPinned: boolean) => Promise<void>
@@ -66,27 +81,41 @@ export interface DashboardActionsState {
 }
 
 export function useDashboardActions(onCompleted: () => Promise<void>): DashboardActionsState {
-    const [pendingAction, setPendingAction] = useState<string | null>(null)
+    const [pendingAction, setPendingAction] = useState<PendingAction | null>(null)
+    /** 在途动作计数：并发动作全部落定才清空 pendingAction，避免先完成者提前解锁界面 */
+    const pendingCountRef = useRef(0)
+
+    const beginAction = useCallback((action: PendingAction): void => {
+        pendingCountRef.current += 1
+        setPendingAction(action)
+    }, [])
+
+    const endAction = useCallback((): void => {
+        pendingCountRef.current = Math.max(0, pendingCountRef.current - 1)
+        if (pendingCountRef.current === 0) {
+            setPendingAction(null)
+        }
+    }, [])
 
     const runAction = useCallback(
-        async (action: string, method: HostMethodName, payload?: unknown): Promise<void> => {
-            setPendingAction(action)
+        async (action: PendingAction, method: HostMethodName, payload?: unknown): Promise<void> => {
+            beginAction(action)
             try {
                 await request(method, payload)
                 await onCompleted()
             } catch (cause) {
                 toast.error(toErrorText(cause))
             } finally {
-                setPendingAction(null)
+                endAction()
             }
         },
-        [onCompleted],
+        [beginAction, endAction, onCompleted],
     )
 
     /** 新建空笔记：可指定落点笔记本，成功后刷新统计并回报提示，返回值供页面选中新条目 */
     const createNote = useCallback(
         async (notebookId?: string): Promise<CreatedNote | null> => {
-            setPendingAction('create')
+            beginAction('create')
             try {
                 const payload: CreateNoteRequest = notebookId === undefined ? {} : { notebookId }
                 const created = await request<CreatedNote>('note/create', payload)
@@ -97,10 +126,10 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
                 toast.error(toErrorText(cause))
                 return null
             } finally {
-                setPendingAction(null)
+                endAction()
             }
         },
-        [onCompleted],
+        [beginAction, endAction, onCompleted],
     )
 
     /** 打开笔记：路径存在性由宿主按索引库校验，失败仅提示，不改动列表与统计 */
@@ -141,7 +170,7 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
      */
     const deleteNotes = useCallback(
         async (paths: string[]): Promise<DeleteNotesResult | null> => {
-            setPendingAction('delete')
+            beginAction('delete')
             try {
                 const result = await request<DeleteNotesResult>('note/delete', { paths })
                 await onCompleted()
@@ -156,16 +185,16 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
                 toast.error(toErrorText(cause))
                 return null
             } finally {
-                setPendingAction(null)
+                endAction()
             }
         },
-        [onCompleted],
+        [beginAction, endAction, onCompleted],
     )
 
     /** 新建笔记本：成功后关闭弹窗（返回 true），失败保持打开供用户就地改名 */
     const createNotebook = useCallback(
         async (name: string): Promise<boolean> => {
-            setPendingAction('notebook-create')
+            beginAction('notebook-create')
             try {
                 const result = await request<CreateNotebookResult>('notebook/create', { name })
                 await onCompleted()
@@ -175,16 +204,16 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
                 toast.error(toErrorText(cause))
                 return false
             } finally {
-                setPendingAction(null)
+                endAction()
             }
         },
-        [onCompleted],
+        [beginAction, endAction, onCompleted],
     )
 
     /** 重命名笔记本：目录改名并迁移索引与偏好，成功后关闭弹窗 */
     const renameNotebook = useCallback(
         async (id: string, name: string): Promise<boolean> => {
-            setPendingAction('notebook-rename')
+            beginAction('notebook-rename')
             try {
                 const result = await request<RenameNotebookResult>('notebook/rename', { id, name })
                 await onCompleted()
@@ -194,16 +223,16 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
                 toast.error(toErrorText(cause))
                 return false
             } finally {
-                setPendingAction(null)
+                endAction()
             }
         },
-        [onCompleted],
+        [beginAction, endAction, onCompleted],
     )
 
     /** 删除笔记本：其中笔记一并移入回收站，成功提示要带上条数 */
     const deleteNotebook = useCallback(
         async (id: string): Promise<DeleteNotebookResult | null> => {
-            setPendingAction('notebook-delete')
+            beginAction('notebook-delete')
             try {
                 const result = await request<DeleteNotebookResult>('notebook/delete', { id })
                 await onCompleted()
@@ -223,10 +252,10 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
                 toast.error(toErrorText(cause))
                 return null
             } finally {
-                setPendingAction(null)
+                endAction()
             }
         },
-        [onCompleted],
+        [beginAction, endAction, onCompleted],
     )
 
     const pinNotebooks = useCallback(
@@ -243,7 +272,7 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
      */
     const setNotebookSort = useCallback(
         async (sort: NotebookSort): Promise<boolean> => {
-            setPendingAction('notebook-sort')
+            beginAction('notebook-sort')
             const payload: SetNotebookSortRequest = { sort }
             try {
                 await request('notebook/setSort', payload)
@@ -253,16 +282,16 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
                 toast.error(toErrorText(cause))
                 return false
             } finally {
-                setPendingAction(null)
+                endAction()
             }
         },
-        [onCompleted],
+        [beginAction, endAction, onCompleted],
     )
 
     /** 覆盖展开集合：返回是否落库成功，供调用方决定是否回滚展开状态 */
     const setNotebookOpen = useCallback(
         async (ids: string[]): Promise<boolean> => {
-            setPendingAction('notebook-open')
+            beginAction('notebook-open')
             const payload: SetNotebookOpenRequest = { ids }
             try {
                 await request('notebook/setOpen', payload)
@@ -272,10 +301,10 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
                 toast.error(toErrorText(cause))
                 return false
             } finally {
-                setPendingAction(null)
+                endAction()
             }
         },
-        [onCompleted],
+        [beginAction, endAction, onCompleted],
     )
 
     /**
@@ -284,7 +313,7 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
      */
     const restoreTrash = useCallback(
         async (ids: string[]): Promise<TrashRestoreResult | null> => {
-            setPendingAction('trash-restore')
+            beginAction('trash-restore')
             try {
                 const result = await request<TrashRestoreResult>('trash/restore', { ids })
                 await onCompleted()
@@ -299,16 +328,16 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
                 toast.error(toErrorText(cause))
                 return null
             } finally {
-                setPendingAction(null)
+                endAction()
             }
         },
-        [onCompleted],
+        [beginAction, endAction, onCompleted],
     )
 
     /** 彻底清除回收站条目：不可恢复，确认交互由页面承担 */
     const purgeTrash = useCallback(
         async (ids: string[]): Promise<TrashPurgeResult | null> => {
-            setPendingAction('trash-purge')
+            beginAction('trash-purge')
             try {
                 const result = await request<TrashPurgeResult>('trash/purge', { ids })
                 await onCompleted()
@@ -323,15 +352,15 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
                 toast.error(toErrorText(cause))
                 return null
             } finally {
-                setPendingAction(null)
+                endAction()
             }
         },
-        [onCompleted],
+        [beginAction, endAction, onCompleted],
     )
 
     /** 清空回收站：逐条彻底删除，失败条数随结果提示 */
     const clearTrash = useCallback(async (): Promise<TrashClearResult | null> => {
-        setPendingAction('trash-clear')
+        beginAction('trash-clear')
         try {
             const result = await request<TrashClearResult>('trash/clear')
             await onCompleted()
@@ -346,9 +375,9 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
             toast.error(toErrorText(cause))
             return null
         } finally {
-            setPendingAction(null)
+            endAction()
         }
-    }, [onCompleted])
+    }, [beginAction, endAction, onCompleted])
 
     return {
         pendingAction,
