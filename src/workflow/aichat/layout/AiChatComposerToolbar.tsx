@@ -13,15 +13,12 @@ import { RuleDialogs } from '@webview/components/RuleDialogs'
 import { useRuleMenu } from '@webview/hooks/useRuleMenu'
 import { AiChatContextMenu } from './AiChatContextMenu'
 import { AiChatContextPicker } from './AiChatContextPicker'
-import { AiChatMoreMenu } from './AiChatMoreMenu'
-import type { AiCommand, AiCommandId, AiContextPickerView, AiReferenceAction } from '../constants'
+import { AiChatReferenceMenu } from './AiChatReferenceMenu'
+import type { AiContextPickerView, AiReferenceAction } from '../constants'
 import type { JSX } from 'react'
 
 interface AiChatComposerToolbarProps {
     disabled: boolean
-    /** 当前已选命令：供菜单展示勾选标记 */
-    activeCommandId: AiCommandId | null
-    onCommand: (command: AiCommand) => void
     onReference: (action: AiReferenceAction) => void
     /** 打开提及检索：复用「更多」菜单入口，不额外占用工具行按钮 */
     onMention: () => void
@@ -38,8 +35,6 @@ interface AiChatComposerToolbarProps {
 
 export function AiChatComposerToolbar({
     disabled,
-    activeCommandId,
-    onCommand,
     onReference,
     onMention,
     onContextAdded,
@@ -96,13 +91,7 @@ export function AiChatComposerToolbar({
                             open={isMenuOpen}
                             onOpenChange={handleMenuOpenChange}
                         />
-                        <AiChatMoreMenu
-                            disabled={disabled}
-                            activeId={activeCommandId}
-                            onCommand={onCommand}
-                            onReference={onReference}
-                            onMention={onMention}
-                        />
+                        <AiChatReferenceMenu disabled={disabled} onReference={onReference} onMention={onMention} />
                     </div>
                 </PopoverAnchor>
                 <AiChatContextPicker

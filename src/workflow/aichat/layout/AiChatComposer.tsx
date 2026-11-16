@@ -67,7 +67,7 @@ interface AiChatComposerProps {
     onSend: () => void
     onStop: () => void
     onRemoveContext: (id: string) => void
-    onCommand: (command: AiCommand) => void
+    /** 取消已恢复的写作命令：命令入口已下线，仅草稿恢复出来的徽章还需要移除能力 */
     onClearCommand: () => void
     onReference: (action: AiReferenceAction) => void
     /** 打开提及检索：引用笔记 / 章节 */
@@ -104,7 +104,6 @@ export function AiChatComposer({
     onSend,
     onStop,
     onRemoveContext,
-    onCommand,
     onClearCommand,
     onReference,
     onMention,
@@ -161,8 +160,6 @@ export function AiChatComposer({
             <AppComposerHeader>
                 <AiChatComposerToolbar
                     disabled={isLocked}
-                    activeCommandId={command?.id ?? null}
-                    onCommand={onCommand}
                     onReference={onReference}
                     onMention={onMention}
                     onContextAdded={onContextAdded}

@@ -33,8 +33,7 @@ export interface AiChatDraftState {
     command: AiCommand | null
     /** 已挂规则名：按挂载顺序，发送时随请求下发 */
     ruleNames: readonly string[]
-    /** 命令点击：只记录选择（再次点击同一命令即取消） */
-    selectCommand: (command: AiCommand) => void
+    /** 取消命令：命令入口已下线，只保留草稿 / 历史恢复出的徽章的移除能力 */
     clearCommand: () => void
     /** 规则点击：已挂则摘除，未挂则追加到末尾 */
     toggleRule: (rule: PromptRule) => void
@@ -69,13 +68,6 @@ export function useAiChatDraft({ conversationId, input, setInput }: UseAiChatDra
         ruleNamesRef.current = next
         setRuleNames(next)
     }, [])
-
-    const selectCommand = useCallback(
-        (next: AiCommand): void => {
-            commitCommand(commandIdRef.current === next.id ? null : next.id)
-        },
-        [commitCommand],
-    )
 
     const clearCommand = useCallback((): void => {
         commitCommand(null)
@@ -154,7 +146,6 @@ export function useAiChatDraft({ conversationId, input, setInput }: UseAiChatDra
             commandId,
             command,
             ruleNames,
-            selectCommand,
             clearCommand,
             toggleRule,
             renameRule,
@@ -171,7 +162,6 @@ export function useAiChatDraft({ conversationId, input, setInput }: UseAiChatDra
             renameRule,
             restoreFromMessage,
             ruleNames,
-            selectCommand,
             toggleRule,
         ],
     )

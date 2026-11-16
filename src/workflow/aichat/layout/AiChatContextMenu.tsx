@@ -5,7 +5,7 @@
  * 关键约束：选择作品进入来源列表后再选作品，其余三项直接进入候选列表；
  * 规则子菜单的编辑与删除弹窗必须渲染在菜单之外（菜单收起会卸载子树），由工具行负责挂载。
  */
-import { FileText, Library, Newspaper, Package } from 'lucide-react'
+import { Command, FileText, Library, Newspaper, Package } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -60,11 +60,11 @@ export function AiChatContextMenu({
                     variant="ghost"
                     size="icon"
                     className="rounded-full text-muted-foreground"
-                    title="添加上下文"
+                    tooltip="添加上下文"
                     aria-label="添加上下文"
                     disabled={disabled}
                 >
-                    <Library />
+                    <Command />
                 </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-52">
@@ -74,7 +74,10 @@ export function AiChatContextMenu({
                     <Library className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate">选择笔记本</span>
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => onSelect({ mode: 'items', target: { kind: 'note' } })} className="gap-2">
+                <DropdownMenuItem
+                    onSelect={() => onSelect({ mode: 'items', target: { kind: 'note' } })}
+                    className="gap-2"
+                >
                     <FileText className="size-3.5 shrink-0 text-muted-foreground" />
                     <span className="min-w-0 flex-1 truncate">选择笔记</span>
                 </DropdownMenuItem>

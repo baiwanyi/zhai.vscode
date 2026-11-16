@@ -94,7 +94,6 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
     const {
         command,
         ruleNames,
-        selectCommand,
         clearCommand,
         toggleRule,
         renameRule,
@@ -289,7 +288,6 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                     onSend={handleSend}
                     onStop={() => void stop()}
                     onRemoveContext={(id) => void removeContext(id)}
-                    onCommand={selectCommand}
                     onClearCommand={clearCommand}
                     onReference={handleReference}
                     onMention={mentionPicker.open}
