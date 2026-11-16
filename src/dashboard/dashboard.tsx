@@ -1,38 +1,35 @@
 /**
- * 仪表盘概览页：以 AppPage 骨架承载「头部操作 + 入口区 + 笔记本分组列表 + 多选栏」。
- * 复用约定：外壳取 components/AppPage（头部操作与入口区走 AppHeader、列表走 AppContent 滚动、多选栏走 AppFooter），
- * 底栏上方的渐变遮罩由 AppFooter 统一提供，页面不再自行声明。
- * 头部首行常驻搜索输入框与「添加笔记」按钮（由 layout/DashboardHeaderActions 承载），回收站入口收在笔记区块的「更多」下拉内；
- * 索引重建、缓存清理与插件设置收在 VS Code 标题栏的「…」下拉里（view/title 的 9_zhai 分组），页内不再自绘浮层。
- * 数据与动作经 useDashboardStats / useDashboardActions / useNotebooks / useNoteSelection / useNoteSearch 下发，页面只做组合；
- * 操作结果统一由 useDashboardActions 经 sonner 反馈，Toaster 由路由外壳 dashboardScreen 统一挂载。
+ * 仪表盘概览页：以 AppPage 骨架承载「头部操作 + 入口区 + 笔记本分组列表 + 多选栏」，自身只做组合。
+ * 复用约定：外壳取 components/AppPage（头部走 AppHeader、列表走 AppContent 滚动、多选栏走 AppFooter，遮罩由 AppFooter 提供）；
+ * 数据与动作经 useDashboardStats / useDashboardActions / useNotebooks / useNoteSelection / useNoteSearch 下发；
+ * 笔记操作族收在 useDashboardNoteActions，笔记本弹窗与笔记删除弹窗分别收在 useNotebookDialogs / useNotesDeleteDialog，
+ * 弹窗渲染统一由 layout/DashboardDialogs 承担；操作结果统一由 useDashboardActions 经 sonner 反馈，Toaster 由路由外壳挂载。
  * 交互约束：页面上只有一套笔记列表——笔记本分组包住其笔记，笔记不再有跨笔记本的旁路入口；
- * 搜索态切换为扁平结果并禁用笔记本级操作；批量操作栏仅在多选态且有选中项时出现，其按钮语义由选中项的置顶状态决定；
- * 删除（单条、批量或删除整个笔记本）一律先经确认弹窗，笔记只移入应用内回收站，彻底清除在回收站页完成；
- * 当前选中项以宿主广播的活跃编辑器为准（点击时先本地回填，关闭笔记后随焦点回退自动切回上一篇），
- * 该选中态由 ActiveNoteProvider 统一持有，页面不再自建副本。
+ * 搜索态切换为扁平结果并禁用笔记本级操作，关键词一变即作废勾选（勾选不得跨列表来源继续生效）；
+ * 批量操作栏仅在多选态且有选中项时出现，其按钮语义由选中项的置顶状态决定；
+ * 删除（单条、批量或删除整个笔记本）一律先经确认弹窗，笔记只移入应用内回收站，确认结果落定后弹窗才关闭、整单失败保留重试；
+ * 删除后指向已消失条目的选中态一律清空；当前选中项以宿主广播的活跃编辑器为准，由 ActiveNoteProvider 统一持有。
  */
-import { useCallback, useMemo, useState } from 'react'
-import type { NoteAction } from '@shared/types/dashboard'
-import type { NotebookSummary } from '@shared/types/notebook'
+import { useCallback, useMemo } from 'react'
 import { AppContent, AppFooter, AppHeader, AppPage } from '@webview/components/AppPage'
 import { createPressRoute, createTrashRoute, createWechatRoute } from './core/routing'
 import { useActiveNote } from './hooks/useActiveNote'
-import { useConfirmAction } from './hooks/useConfirmAction'
 import { useDashboardActions } from './hooks/useDashboardActions'
+import { useDashboardNoteActions } from './hooks/useDashboardNoteActions'
 import { useDashboardStats } from './hooks/useDashboardStats'
+import { useNotebookDialogs } from './hooks/useNotebookDialogs'
 import { useNotebooks } from './hooks/useNotebooks'
 import { useNoteQuery } from './hooks/useNoteQuery'
+import { useNotesDeleteDialog } from './hooks/useNotesDeleteDialog'
 import { useNoteSearch } from './hooks/useNoteSearch'
 import { useNoteSelection } from './hooks/useNoteSelection'
+import { DashboardDialogs } from './layout/DashboardDialogs'
 import { DashboardHeaderActions } from './layout/DashboardHeaderActions'
 import { DashboardHeaderEntries } from './layout/DashboardHeaderEntries'
 import { DashboardSlots } from './layout/DashboardSlots'
-import { NotebookDeleteDialog } from './note/NotebookDeleteDialog'
-import { NotebookNameDialog } from './note/NotebookNameDialog'
-import { NotesDeleteDialog } from './note/NotesDeleteDialog'
 import { NotesSection } from './note/NotesSection'
 import { NotesSelectionBar } from './note/NotesSelectionBar'
+import { buildTitleByPath, isNoteUnderNotebook } from './note/utils'
 import type { DashboardRoute } from './core/routing'
 import type { JSX } from 'react'
 
@@ -43,8 +40,6 @@ interface DashboardProps {
 
 export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
     const { stats, status, error, reload } = useDashboardStats()
-    const search = useNoteQuery()
-    const searchState = useNoteSearch(search.query)
     const actions = useDashboardActions(reload)
     /** 笔记本动作单独 memo：useNotebooks 的回调依赖它，避免每帧新建对象导致条目重渲染 */
     const notebookActions = useMemo(
@@ -58,121 +53,70 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
     )
     const selection = useNoteSelection(pinnedPaths)
     const { activeId, setActiveId } = useActiveNote()
-    /** 待删除的笔记路径集合：空集合即弹窗关闭，单条删除即长度为 1 的集合 */
-    const [deletePaths, setDeletePaths] = useState<string[]>([])
-    const deleteConfirm = useConfirmAction({ close: () => setDeletePaths([]) })
-    /** 新建笔记本弹窗的 key：每次打开自增，让输入框回到空值 */
-    const [createDialogKey, setCreateDialogKey] = useState(0)
-    const [isCreateOpen, setIsCreateOpen] = useState(false)
-    const [renameTarget, setRenameTarget] = useState<NotebookSummary | null>(null)
-    const [deleteTarget, setDeleteTarget] = useState<NotebookSummary | null>(null)
+    /** 关键词一变即作废勾选：列表来源在「笔记本分组」与「搜索结果」之间切换，旧勾选对应的条目可能已不可见 */
+    const search = useNoteQuery(selection.clearSelection)
+    const searchState = useNoteSearch(search.query)
 
-    /** 标题反查：已展开的组内笔记与搜索命中都参与，弹窗文案不因快照裁剪而落成裸路径 */
-    const titleByPath = useMemo(() => {
-        const map = new Map<string, string>()
-        for (const note of notebooks.allNotes) {
-            map.set(note.path, note.title)
-        }
-        for (const note of searchState.results) {
-            map.set(note.path, note.title)
-        }
-        return map
-    }, [notebooks.allNotes, searchState.results])
-
-    const deleteTitles = useMemo(
-        () => deletePaths.map((path) => titleByPath.get(path) ?? path),
-        [deletePaths, titleByPath],
+    /** 标题反查：已展开的组内笔记与搜索命中都参与，搜索命中优先，弹窗文案不因快照裁剪而落成裸路径 */
+    const titleByPath = useMemo(
+        () => buildTitleByPath(notebooks.allNotes, searchState.results),
+        [notebooks.allNotes, searchState.results],
+    )
+    const resolveDeleteTitles = useCallback(
+        (paths: readonly string[]): string[] => paths.map((path) => titleByPath.get(path) ?? ''),
+        [titleByPath],
     )
 
-    /** 打开笔记：先本地回填选中态避免打开瞬间高亮丢失，随后由宿主按索引路径打开并以活跃编辑器收敛 */
-    const handleOpen = useCallback(
-        (path: string): void => {
-            setActiveId(path)
-            void actions.openNote(path)
-        },
-        [actions, setActiveId],
-    )
-
-    /** 新建笔记：默认落点由宿主决定；指定笔记本时顺带展开该组，让新笔记立刻可见 */
-    const handleCreateNote = useCallback(
-        async (notebookId?: string): Promise<void> => {
-            const created = await actions.createNote(notebookId)
-            if (created === null) {
-                return
-            }
-            setActiveId(created.path)
-            if (notebookId !== undefined && !notebooks.isOpen(notebookId)) {
-                notebooks.toggleOpen(notebookId)
-            }
-        },
-        [actions, notebooks, setActiveId],
-    )
-
-    /**
-     * 确认删除：结果落定后才清空待处理集合让弹窗退场，时序由 useConfirmAction 承担。
-     * 整单异常或全部失败时任务返回 false，待处理项保留供原地重试或取消；
-     * 结果提示由数据层统一发出；删除成功的条目若正是当前选中笔记则清空选中态，
-     * 批量删除后退出多选，避免选中集合残留已不存在的路径。
-     */
-    const handleConfirmDelete = useCallback((): void => {
-        const targets = deletePaths
-        deleteConfirm.confirm(async () => {
-            const result = await actions.deleteNotes(targets)
-            if (result === null || result.trashedPaths.length === 0) {
-                return false
-            }
-            const removed = new Set(result.trashedPaths)
+    /** 删除成功后的收尾：当前打开的被删掉则清空选中态，批量删除后退出多选，避免残留已不存在的路径 */
+    const handleNotesDeleted = useCallback(
+        (trashedPaths: readonly string[]): void => {
+            const removed = new Set(trashedPaths)
             if (activeId !== null && removed.has(activeId)) {
                 setActiveId(null)
             }
             if (selection.isSelecting) {
                 selection.toggleSelecting()
             }
-            return true
-        })
-    }, [actions, activeId, deleteConfirm, deletePaths, selection, setActiveId])
-
-    /** 笔记条目上的操作：打开、置顶切换、删除入回收站 */
-    const handleInvokeNote = useCallback(
-        (path: string, action: NoteAction): void => {
-            if (action === 'open') {
-                handleOpen(path)
-                return
-            }
-            if (action === 'pin' || action === 'unpin') {
-                void actions.setPinned([path], action === 'pin')
-                return
-            }
-            // 删除须二次确认：先把条目送入弹窗，确认后才提交宿主
-            setDeletePaths([path])
         },
-        [actions, handleOpen],
+        [activeId, selection, setActiveId],
     )
 
-    const handleOpenCreateDialog = useCallback((): void => {
-        setCreateDialogKey((previous) => previous + 1)
-        setIsCreateOpen(true)
-    }, [])
+    const notesDelete = useNotesDeleteDialog({
+        isSubmitting: actions.isPending('delete'),
+        resolveTitles: resolveDeleteTitles,
+        deleteNotes: actions.deleteNotes,
+        onDeleted: handleNotesDeleted,
+    })
 
-    const handleConfirmDeleteNotebook = useCallback((): void => {
-        const target = deleteTarget
-        setDeleteTarget(null)
-        if (target !== null) {
-            void actions.deleteNotebook(target.id)
-        }
-    }, [actions, deleteTarget])
-
-    const handleRenameSubmit = useCallback(
-        async (name: string): Promise<boolean> => {
-            if (renameTarget === null) {
-                return false
+    /** 笔记本删除后的收尾：其笔记已全部移入回收站，当前打开的若是其一则清空选中态 */
+    const handleNotebookDeleted = useCallback(
+        (notebookId: string): void => {
+            if (activeId !== null && isNoteUnderNotebook(activeId, notebookId)) {
+                setActiveId(null)
             }
-            return actions.renameNotebook(renameTarget.id, name)
         },
-        [actions, renameTarget],
+        [activeId, setActiveId],
     )
 
-    const handleCreateSubmit = useCallback((name: string): Promise<boolean> => actions.createNotebook(name), [actions])
+    const notebookDialogs = useNotebookDialogs({
+        isCreating: actions.isPending('notebook-create'),
+        isRenaming: actions.isPending('notebook-rename'),
+        isDeleting: actions.isPending('notebook-delete'),
+        createNotebook: actions.createNotebook,
+        renameNotebook: actions.renameNotebook,
+        deleteNotebook: actions.deleteNotebook,
+        onDeleted: handleNotebookDeleted,
+    })
+
+    const noteActions = useDashboardNoteActions({
+        openNote: actions.openNote,
+        createNote: actions.createNote,
+        setPinned: actions.setPinned,
+        setActiveId,
+        isNotebookOpen: notebooks.isOpen,
+        toggleNotebookOpen: notebooks.toggleOpen,
+        requestDelete: notesDelete.requestDelete,
+    })
 
     /** 有操作在途时禁用所有入口按钮，避免重复触发 */
     const isBusy = actions.pendingAction !== null
@@ -180,7 +124,7 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
     return (
         <AppPage>
             <AppHeader>
-                <DashboardHeaderActions isBusy={isBusy} search={search} onCreate={() => void handleCreateNote()} />
+                <DashboardHeaderActions isBusy={isBusy} search={search} onCreate={() => void noteActions.create()} />
                 <DashboardHeaderEntries
                     onOpenWriting={() => onNavigate(createPressRoute())}
                     onOpenPress={() => onNavigate(createWechatRoute())}
@@ -207,14 +151,14 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
                     onToggleOpen={notebooks.toggleOpen}
                     onChangeSort={notebooks.changeSort}
                     onCollapseAll={notebooks.collapseAll}
-                    onCreateNotebook={handleOpenCreateDialog}
+                    onCreateNotebook={notebookDialogs.openCreate}
                     onOpenTrash={() => onNavigate(createTrashRoute())}
-                    onAddNote={(id) => void handleCreateNote(id)}
-                    onRenameNotebook={setRenameTarget}
+                    onAddNote={(id) => void noteActions.create(id)}
+                    onRenameNotebook={notebookDialogs.openRename}
                     onToggleNotebookPin={(notebook) => void actions.pinNotebooks([notebook.id], !notebook.isPinned)}
-                    onDeleteNotebook={setDeleteTarget}
-                    onSelect={handleOpen}
-                    onInvoke={handleInvokeNote}
+                    onDeleteNotebook={notebookDialogs.openDelete}
+                    onSelect={noteActions.open}
+                    onInvoke={noteActions.invoke}
                     onToggleSelecting={selection.toggleSelecting}
                     onToggleSelected={selection.toggleSelected}
                     onClearQuery={search.clear}
@@ -229,62 +173,12 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
                         onTogglePin={() =>
                             void actions.setPinned(selection.selectedPaths, !selection.isAllSelectedPinned)
                         }
-                        onDelete={() => setDeletePaths(selection.selectedPaths)}
+                        onDelete={() => notesDelete.requestDelete(selection.selectedPaths)}
                     />
                 </AppFooter>
             ) : null}
 
-            {deletePaths.length > 0 ? (
-                <NotesDeleteDialog
-                    open
-                    titles={deleteTitles}
-                    isSubmitting={actions.pendingAction === 'delete'}
-                    onOpenChange={deleteConfirm.onOpenChange}
-                    onConfirm={handleConfirmDelete}
-                />
-            ) : null}
-
-            {isCreateOpen ? (
-                <NotebookNameDialog
-                    key={createDialogKey}
-                    open
-                    mode="create"
-                    isSubmitting={actions.pendingAction === 'notebook-create'}
-                    onOpenChange={setIsCreateOpen}
-                    onSubmit={handleCreateSubmit}
-                />
-            ) : null}
-
-            {renameTarget !== null ? (
-                <NotebookNameDialog
-                    key={renameTarget.id}
-                    open
-                    mode="rename"
-                    initialName={renameTarget.name}
-                    isSubmitting={actions.pendingAction === 'notebook-rename'}
-                    onOpenChange={(isOpen) => {
-                        if (!isOpen) {
-                            setRenameTarget(null)
-                        }
-                    }}
-                    onSubmit={handleRenameSubmit}
-                />
-            ) : null}
-
-            {deleteTarget !== null ? (
-                <NotebookDeleteDialog
-                    open
-                    notebookName={deleteTarget.name}
-                    noteCount={deleteTarget.noteCount}
-                    isSubmitting={actions.pendingAction === 'notebook-delete'}
-                    onOpenChange={(isOpen) => {
-                        if (!isOpen) {
-                            setDeleteTarget(null)
-                        }
-                    }}
-                    onConfirm={handleConfirmDeleteNotebook}
-                />
-            ) : null}
+            <DashboardDialogs notes={notesDelete} notebook={notebookDialogs} />
         </AppPage>
     )
 }

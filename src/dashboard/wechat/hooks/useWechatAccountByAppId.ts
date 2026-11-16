@@ -4,7 +4,8 @@
  * 请求失败与「查不到账号」一律按 null 处理，由调用方回首页。
  * 关键约束：appId 为 null 时不发请求，返回 undefined 表示「无结论」；
  * 返回值三态——undefined 尚未解析、null 没有匹配账号、string 命中账号，
- * 调用方在 undefined 期间应保持当前页，避免先回首页再跳转造成闪烁。
+ * 调用方在 undefined 期间应保持当前页，避免先回首页再跳转造成闪烁；
+ * 与 useHostChannelState 无关：本 Hook 由参数变化触发一次性请求，没有通道订阅与广播优先级，故不复用「快照 + 广播」模板。
  */
 import { useEffect, useState } from 'react'
 import type { WechatAccountsResult } from '@shared/types/wechat'

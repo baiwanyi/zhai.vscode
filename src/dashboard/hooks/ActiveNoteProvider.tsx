@@ -5,7 +5,9 @@
  * 非 note 通道或形态非法的载荷一律忽略，不覆盖已有选中态；广播优先于初始快照，
  * 收到广播后丢弃后到的快照，防止旧值把新选中态盖回去；请求与订阅只在本层发起一次，
  * 消费方一律走 useActiveNote 读取，避免重复打开通道与多份状态分叉；
- * hasEditor 只跟宿主动事实走，本地回填不改它，否则「焦点在面板上」会被误判成编辑器里有文档。
+ * hasEditor 只跟宿主动事实走，本地回填不改它，否则「焦点在面板上」会被误判成编辑器里有文档；
+ * 未复用 useHostChannelState：本层还要对外暴露 setActiveId 做本地乐观覆盖，
+ * 即在宿主权威态上叠加写入口，通用 Hook 只承载只读镜像，套用会让选中态出现两个事实源。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { NoteActiveState } from '@shared/types/note'

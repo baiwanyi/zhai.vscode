@@ -4,7 +4,9 @@
  * 关键约束：所有内容都落到写作管理页、默认分区即 AI 对话，因此不再做模块与场景分流，也不维护页内覆盖；
  * workflow 通道混走「路由事实」与「页内视图请求」两类载荷，按 kind 分流后再各自落 state；
  * 视图请求常驻 state 不清空——它按 seq 判新，页面重建后仍能落到宿主指定的分区；
- * 宿主未就绪（或浏览器预览环境）时保留默认事实，页面照常可用。
+ * 宿主未就绪（或浏览器预览环境）时保留默认事实，页面照常可用；
+ * 未复用 useHostChannelState：同一通道混走两类载荷需按 kind 分流，且额外维护 isReady 就绪态，
+ * 语义超出「单载荷只读镜像」的适用范围。
  */
 import { useEffect, useState } from 'react'
 import { isWorkflowContextState, isWorkflowViewRequest, ROOT_MODULE_KEY } from '@shared/types/workflow'

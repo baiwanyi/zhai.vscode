@@ -25,9 +25,11 @@ export type DashboardContentScope = 'press' | 'note' | 'wechat' | null
  * 关键约束：作品以宿主下发的 projectDir 为准，其余按相对路径的一级目录名判定；
  * 有编辑器却拿不到索引内路径（未保存的 untitled、索引外文件）即视为无归属——
  * 若沿用上一次归属，面板会停在上一篇文档的页面上，切文档等于没切；
- * 焦点不在编辑器（打开设置、切到其它视图）一律不做判定，避免面板被无谓弹回首页。
+ * 焦点不在编辑器（打开设置、切到其它视图）一律不做判定，避免面板被无谓弹回首页；
+ * 与 workflow/layout/contentScope 的 readContentScope 同名不同义：这里作品优先（press 通道实时计算、不会残留），
+ * 工作流侧笔记/公众号优先（其 projectDir 可能滞后），两处不可互相替换。
  */
-export function readContentScope(
+export function readDashboardScope(
     activePath: string | null,
     projectDir: string | null,
     hasEditor: boolean,
@@ -52,6 +54,24 @@ export function readContentScope(
         return 'wechat'
     }
     return null
+}
+
+/**
+ * 归属回落判定：非作品、非公众号归属且相对上次发生了切换时，仪表盘应回概览首页。
+ * 关键约束：undefined 表示焦点不在文本编辑器、无从判定，一律保持当前页；
+ * press 与 wechat 归属交给各自的跟随逻辑处理，本函数不参与，避免两条规则抢同一个导航；
+ * 归属未变化时不重复导航，用户手动进出其它页不会被弹回；
+ * 已在首页时不再产出导航，省掉一次无意义的 hash 写入。
+ */
+export function shouldFallbackToHome(
+    scope: DashboardContentScope | undefined,
+    previousScope: DashboardContentScope | undefined,
+    routeName: DashboardRoute['name'],
+): boolean {
+    if (scope === undefined || scope === 'press' || scope === 'wechat' || scope === previousScope) {
+        return false
+    }
+    return routeName !== 'home'
 }
 
 /** 批次文档路径：wechat/{appid}/post/{时间戳}/{文件}，只有这种形态能定位到账号 */

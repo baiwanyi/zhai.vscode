@@ -79,7 +79,7 @@ export function DashboardTrash(): JSX.Element {
                     description="彻底删除后无法恢复，原笔记文件将从磁盘移除。"
                     confirmLabel="彻底删除"
                     isDestructive
-                    isSubmitting={actions.pendingAction === 'trash-purge'}
+                    isSubmitting={actions.isPending('trash-purge')}
                     onOpenChange={purgeConfirm.onOpenChange}
                     onConfirm={handleConfirmPurge}
                 />
@@ -92,7 +92,7 @@ export function DashboardTrash(): JSX.Element {
                     description={`将彻底删除全部 ${String(items.length)} 项，操作不可恢复。`}
                     confirmLabel="全部清除"
                     isDestructive
-                    isSubmitting={actions.pendingAction === 'trash-clear'}
+                    isSubmitting={actions.isPending('trash-clear')}
                     onOpenChange={clearConfirm.onOpenChange}
                     onConfirm={handleConfirmClear}
                 />

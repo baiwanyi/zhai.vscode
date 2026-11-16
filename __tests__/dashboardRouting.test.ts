@@ -3,7 +3,13 @@
  * 纯函数测试，不依赖 DOM 与宿主协议；断言集中在可识别路径、非法编码与 hash 生成三处。
  */
 import { describe, expect, it } from 'vitest'
-import { parseRoute, readWechatAppId, toHash } from '../src/dashboard/core/routing'
+import {
+    parseRoute,
+    readDashboardScope,
+    readWechatAppId,
+    shouldFallbackToHome,
+    toHash,
+} from '../src/dashboard/core/routing'
 
 describe('parseRoute', () => {
     it('空值与首页回落为概览页', () => {
@@ -66,6 +72,45 @@ describe('readWechatAppId', () => {
         expect(readWechatAppId(null)).toBeNull()
         expect(readWechatAppId('notes/202611/随手记.md')).toBeNull()
         expect(readWechatAppId('press/剑来/Chapters/01-开局.md')).toBeNull()
+    })
+})
+
+describe('readDashboardScope', () => {
+    it('作品归属优先于文档一级目录', () => {
+        expect(readDashboardScope('notes/202611/随手记.md', 'press/剑来', true)).toBe('press')
+    })
+
+    it('按文档一级目录判定笔记与公众号归属', () => {
+        expect(readDashboardScope('notes/202611/随手记.md', null, true)).toBe('note')
+        expect(readDashboardScope('wechat/wx1234567890/post/202611021530/a.md', null, true)).toBe('wechat')
+        expect(readDashboardScope('press/剑来/Chapters/01-开局.md', null, true)).toBe('press')
+    })
+
+    it('焦点不在编辑器时无从判定，索引外文档视为无归属', () => {
+        expect(readDashboardScope('notes/202611/随手记.md', null, false)).toBeUndefined()
+        expect(readDashboardScope(null, null, true)).toBeNull()
+        expect(readDashboardScope('README.md', null, true)).toBeNull()
+    })
+})
+
+describe('shouldFallbackToHome', () => {
+    it('归属从作品切到笔记或未知文档且不在首页时回首页', () => {
+        expect(shouldFallbackToHome('note', 'press', 'pressProject')).toBe(true)
+        expect(shouldFallbackToHome(null, 'press', 'wechatAccount')).toBe(true)
+    })
+
+    it('已在首页或归属未变化时不导航', () => {
+        expect(shouldFallbackToHome('note', 'press', 'home')).toBe(false)
+        expect(shouldFallbackToHome('note', 'note', 'pressProject')).toBe(false)
+    })
+
+    it('作品与公众号归属交由各自的跟随逻辑处理', () => {
+        expect(shouldFallbackToHome('press', 'note', 'wechat')).toBe(false)
+        expect(shouldFallbackToHome('wechat', 'note', 'press')).toBe(false)
+    })
+
+    it('无从判定（焦点不在编辑器）时保持当前页', () => {
+        expect(shouldFallbackToHome(undefined, 'press', 'pressProject')).toBe(false)
     })
 })
 
