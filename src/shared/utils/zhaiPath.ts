@@ -177,6 +177,39 @@ export function readZhaiTargets(text: string): ZhaiTokenMatch[] {
 }
 
 /**
+ * 按令牌位置把文本切成片段：片段数恒为「命中数 + 1」，第 i 个片段的末尾紧跟第 i 个令牌。
+ * 用途是让「替换」与「剥离」两种消费方式共用同一份下标推进规则 —— 谁都不必自己算 cursor。
+ */
+export function splitZhaiSegments(text: string, matches: readonly ZhaiTokenMatch[]): string[] {
+    const segments: string[] = []
+    let cursor = 0
+    for (const match of matches) {
+        segments.push(text.slice(cursor, match.index))
+        cursor = match.index + match.token.length
+    }
+    segments.push(text.slice(cursor))
+    return segments
+}
+
+/**
+ * 按令牌位置重建文本：replacements[i] 替换第 i 个命中，传原 token 即保留。
+ * 关键约束：replacements 少于命中数时按「保留原令牌」补齐，调用方漏算一项不会吞掉正文。
+ */
+export function spliceZhaiSegments(
+    text: string,
+    matches: readonly ZhaiTokenMatch[],
+    replacements: readonly string[],
+): string {
+    const segments = splitZhaiSegments(text, matches)
+    let output = segments[0] ?? ''
+    matches.forEach((match, index) => {
+        output += replacements[index] ?? match.token
+        output += segments[index + 1] ?? ''
+    })
+    return output
+}
+
+/**
  * 把正文里位于存储根下的绝对路径改写成 `@zhai\` 形式，其余文本原样保留。
  * 用途是复制消息时统一路径口径，让剪贴板内容可以直接粘回输入框被识别。
  */

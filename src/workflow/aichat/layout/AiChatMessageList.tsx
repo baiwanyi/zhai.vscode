@@ -24,7 +24,8 @@ import { AiChatConfirmCard } from './AiChatConfirmCard'
 import { AiChatEmptyState } from './AiChatEmptyState'
 import { AiChatMessageView } from './AiChatMessageView'
 import { AiChatQuestionnaire } from './AiChatQuestionnaire'
-import type { AiChatTransientNotice, Phase } from '../hooks/useAiChatSession'
+import type { AiChatTransientNotice } from '../hooks/useAiChatSession'
+import type { Phase } from '../utils'
 import type { JSX } from 'react'
 
 interface AiChatMessageListProps {

@@ -12,9 +12,9 @@
  * 出图是宿主单例任务，切分区 / 切作品只卸载本页：挂载时按作用域对账在途快照、恢复骨架与取消入口，
  * 接管态靠轮询收尾，命中宿主留存的回执就补做封面认领、否则只静默补图；回执按图片 id 去重，
  * 取消与失败兜底一律带作用域，避免误杀别的作品；
- * 增强会把词条原文并进改写结果，成功后经 onConsumePromptChips 摘掉词条芯片，还原时再随快照一起还回去，
- * 否则回填后直接发送会让同一批词条被宿主二次合并；
- * enhancedFrom 取发送前的闭包旧值，不受本次 setState 影响。
+ * 增强态取 @webview/hooks/usePromptEnhance（与对话输入卡片共用「记原文 + 归属校验 + 还原」语义），
+ * 本层只注入请求与芯片旁路：成功后经 onConsumePromptChips 摘掉词条芯片，还原时再随快照一起还回去，
+ * 否则回填后直接发送会让同一批词条被宿主二次合并；发送前先取一次 enhancedFrom 快照，草稿与请求都用它。
  */
 import { useEffect, useRef, useState } from 'react'
 import type {
@@ -28,6 +28,8 @@ import type {
 import type { PortraitStyle } from '@shared/types/press'
 import { onState, request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { ENHANCE_TIMEOUT_MS } from '@shared/utils/timeouts'
+import { usePromptEnhance } from '@webview/hooks/usePromptEnhance'
 import type { PromptChip } from './usePromptChips'
 
 /** 出图兜底超时：宿主内置 10 分钟上限，前端放宽到 15 分钟，避免前端先于宿主判超时 */
@@ -42,8 +44,7 @@ const GENERATE_RESULT_TTL_MS = 600_000
 /** 已处理回执的登记上限：满了整体清空，过期窗口已经挡住旧回执，不会重复认领 */
 const CONSUMED_RESULT_LIMIT = 50
 
-/** 增强兜底超时：宿主 30 秒上限，前端留一倍余量 */
-const ENHANCE_TIMEOUT_MS = 60_000
+
 
 interface ImageComposerPromptSource {
     text: string
@@ -129,8 +130,6 @@ export function useImageComposer({
     const [text, setText] = useState('')
     const [isGenerating, setIsGenerating] = useState(false)
     const [stage, setStage] = useState<ImageGenerateStage | null>(null)
-    const [isEnhancing, setIsEnhancing] = useState(false)
-    const [enhancedFrom, setEnhancedFrom] = useState<string | null>(null)
 
     /** 出图请求代号：取消或重新发送时自增，旧请求迟到的回包按代号丢弃 */
     const generationRef = useRef(0)
@@ -160,6 +159,52 @@ export function useImageComposer({
     useEffect(() => {
         generatedRef.current = onGenerated
     }, [onGenerated])
+
+    /**
+     * 发起改写：词条只传标识，由宿主按标识读盘后与正文合并（与出图共用同一份合并口径）。
+     * 失败提示在本层收口，返回 null 让增强态保持原文不动。
+     */
+    const requestEnhance = async (source: string): Promise<string | null> => {
+        try {
+            const result = await request<{ text: string }>(
+                'pressAi/enhanceImagePrompt',
+                {
+                    dirPath: dirPath ?? undefined,
+                    text: source.trim(),
+                    promptTags: composePromptTags(chips),
+                },
+                ENHANCE_TIMEOUT_MS,
+            )
+            return result.text
+        } catch (cause) {
+            toastError(cause)
+            return null
+        }
+    }
+
+    /**
+     * 增强态：与对话输入卡片共用同一套「记原文 + 归属校验 + 还原」语义。
+     * 关键约束：enhancedFrom 只记纯正文——还原时回到用户自己写的内容，不把角色段留在输入框里；
+     * 成功后先记芯片快照再摘词条，还原时连芯片一起还回去，否则用户拿回原文却丢了词条。
+     */
+    const promptEnhance = usePromptEnhance({
+        value: text,
+        setValue: setText,
+        composeSource: composeEnhanceSource,
+        request: requestEnhance,
+        onApplied: (): void => {
+            // 词条描述已随改写结果进入正文：先记快照再摘芯片，避免回填后发送时二次合并
+            enhancedChipsRef.current = chips
+            onConsumePromptChips?.()
+        },
+        onRestored: (): void => {
+            const snapshot = enhancedChipsRef.current
+            if (snapshot !== null) {
+                onRestoreChips(snapshot)
+                enhancedChipsRef.current = null
+            }
+        },
+    })
 
     /**
      * 与宿主对账：切分区 / 切作品只会卸载本页，出图请求仍在宿主继续跑。
@@ -281,61 +326,8 @@ export function useImageComposer({
         onRestoreChips(draft.chips)
         // 增强态跟着正文走：用户已经重新写过内容时不恢复，否则按钮会对一段新文字喊「还原」
         if (isEmpty) {
-            setEnhancedFrom(draft.enhancedFrom)
+            promptEnhance.restoreFrom(draft.enhancedFrom)
         }
-    }
-
-    /**
-     * 增强提示词：提交的是「拼好的增强源」（正文 + 角色段），让改写结果带上角色长相与身份。
-     * 关键约束：enhancedFrom 只记纯正文——还原时回到用户自己写的内容，不把参考段留在输入框里。
-     */
-    const runEnhance = async (): Promise<void> => {
-        const original = text.trim()
-        if (original.length === 0) {
-            return
-        }
-        setIsEnhancing(true)
-        try {
-            const result = await request<{ text: string }>(
-                'pressAi/enhanceImagePrompt',
-                // 词条只传标识：宿主按标识读盘后与正文合并，与出图共用同一份合并口径
-                {
-                    dirPath: dirPath ?? undefined,
-                    text: composeEnhanceSource(original).trim(),
-                    promptTags: composePromptTags(chips),
-                },
-                ENHANCE_TIMEOUT_MS,
-            )
-            setEnhancedFrom(original)
-            setText(result.text)
-            // 词条描述已随改写结果进入正文：先记快照再摘芯片，避免回填后发送时二次合并
-            enhancedChipsRef.current = chips
-            onConsumePromptChips?.()
-        } catch (cause) {
-            toastError(cause)
-        } finally {
-            setIsEnhancing(false)
-        }
-    }
-
-    /** 增强提示词：对外只给同步回调，避免 Promise 泄漏到按钮的 onEnhance */
-    const onEnhance = (): void => {
-        void runEnhance()
-    }
-
-    /** 还原增强前原文：同步动作，直接暴露给按钮 */
-    const onRestore = (): void => {
-        if (enhancedFrom === null) {
-            return
-        }
-        setText(enhancedFrom)
-        // 词条芯片在增强成功时被摘掉，还原要与正文一起还回去，否则用户拿回原文却丢了词条
-        const snapshot = enhancedChipsRef.current
-        if (snapshot !== null) {
-            onRestoreChips(snapshot)
-            enhancedChipsRef.current = null
-        }
-        setEnhancedFrom(null)
     }
 
     /**
@@ -378,11 +370,12 @@ export function useImageComposer({
         setStage('thinking')
         // 发送即清空：生成期间输入框不该还停着上一轮的提示词，否则看起来像没发出去；
         // 草稿存在 ref 里（含增强前原文），失败或取消时再还回去
+        const enhancedFrom = promptEnhance.enhancedFrom
         lastDraftRef.current = { text, chips, enhancedFrom }
         setText('')
         onClearChips()
         // 空输入框不是「增强结果」，增强态随发送复位；本次请求仍带上发送前的 enhancedFrom
-        setEnhancedFrom(null)
+        promptEnhance.reset()
         enhancedChipsRef.current = null
         try {
             const result = await request<ImageGenerateResult>(
@@ -456,7 +449,18 @@ export function useImageComposer({
         void runAbort()
     }
 
-    return { text, setText, isGenerating, stage, isEnhancing, enhancedFrom, onEnhance, onRestore, onSend, onAbort }
+    return {
+        text,
+        setText,
+        isGenerating,
+        stage,
+        isEnhancing: promptEnhance.isEnhancing,
+        enhancedFrom: promptEnhance.enhancedFrom,
+        onEnhance: promptEnhance.enhance,
+        onRestore: promptEnhance.restore,
+        onSend,
+        onAbort,
+    }
 }
 
 /**

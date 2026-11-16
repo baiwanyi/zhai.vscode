@@ -156,7 +156,7 @@ export function resolveWritableScope(projectDir: string | null, writeState: AiWr
     return hasWriteTarget || (projectDir !== null && projectDir.length > 0)
 }
 
-/** 可发送判定入参：密钥、阶段、命令与正文、写入范围共同决定能否发送 */
+/** 可发送判定入参：密钥、阶段、命令与正文、写入范围与授权挂起共同决定能否发送 */
 export interface SendGateInput {
     hasApiKey: boolean
     phase: Phase
@@ -164,12 +164,65 @@ export interface SendGateInput {
     command: AiCommand | null
     input: string
     hasWritableScope: boolean
+    /** 连续生成授权等待确认：正文已挂在确认框里，此时再发会覆盖挂起项 */
+    isAwaitingApproval: boolean
 }
 
-/** 可发送判定：生成中、无密钥、无内容或无写入范围时一律禁止 */
-export function resolveSendGate({ hasApiKey, phase, command, input, hasWritableScope }: SendGateInput): boolean {
+/** 可发送判定：生成中、无密钥、无内容、无写入范围或正等授权时一律禁止 */
+export function resolveSendGate({
+    hasApiKey,
+    phase,
+    command,
+    input,
+    hasWritableScope,
+    isAwaitingApproval,
+}: SendGateInput): boolean {
     const hasContent = command !== null || input.trim().length > 0
-    return hasApiKey && phase === 'idle' && hasContent && hasWritableScope
+    return hasApiKey && phase === 'idle' && hasContent && hasWritableScope && !isAwaitingApproval
+}
+
+/** 输入卡片门禁入参：阶段与授权挂起决定锁定态，其余四项参与可发送 / 可增强判定 */
+export interface ComposerGateInput {
+    phase: Phase
+    isAwaitingApproval: boolean
+    hasApiKey: boolean
+    hasWritableScope: boolean
+    command: AiCommand | null
+    input: string
+}
+
+/** 输入卡片门禁：生成态、锁定态、可发送、可增强与占位文案一次算齐 */
+export interface ComposerGate {
+    /** 生成中：sending 也算，否则等待期既不能发送也没有停止入口 */
+    isGenerating: boolean
+    /** 输入区与外层控件统一锁定：生成中，或正等一次连续生成授权 */
+    isLocked: boolean
+    canSend: boolean
+    canEnhance: boolean
+    placeholder: string
+}
+
+/**
+ * 输入卡片的五个门禁值：把「sending 也算生成中」「授权挂起即锁定」这类规则从组件注释搬进纯函数。
+ * 关键约束：可发送判定必须复用 resolveSendGate，避免页面层与输入卡片出现两套口径。
+ */
+export function resolveComposerGate({
+    phase,
+    isAwaitingApproval,
+    hasApiKey,
+    hasWritableScope,
+    command,
+    input,
+}: ComposerGateInput): ComposerGate {
+    const isGenerating = phase !== 'idle'
+    return {
+        isGenerating,
+        isLocked: isGenerating || isAwaitingApproval,
+        canSend: resolveSendGate({ hasApiKey, phase, command, input, hasWritableScope, isAwaitingApproval }),
+        canEnhance: input.trim().length > 0,
+        placeholder:
+            command === null ? '提问或输入指令…' : `可补充「${command.title}」的要求，留空直接发送`,
+    }
 }
 
 /**

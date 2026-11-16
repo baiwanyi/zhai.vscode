@@ -69,7 +69,8 @@ export interface RichChip {
 
 /** 对外暴露的命令式能力：词库、模板等需要往光标处插入文本 */
 export interface RichChipInputHandle {
-    insertText: (text: string) => void
+    /** 插入文本：返回是否真正写入 —— 禁用或未挂载时为 false，调用方据此决定要不要另作兜底 */
+    insertText: (text: string) => boolean
     focus: () => void
 }
 
@@ -272,14 +273,15 @@ export function RichChipInput({
     useImperativeHandle(
         ref,
         () => ({
-            insertText: (text: string): void => {
+            insertText: (text: string): boolean => {
                 const host = editorRef.current
                 if (host === null || disabled) {
-                    return
+                    return false
                 }
                 host.focus()
                 insertPlainText(host, text)
                 emitChange()
+                return true
             },
             focus: (): void => {
                 editorRef.current?.focus()

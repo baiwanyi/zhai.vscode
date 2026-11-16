@@ -9,7 +9,7 @@
 import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
-import { readZhaiTargets } from '@shared/utils/zhaiPath'
+import { readZhaiTargets, spliceZhaiSegments } from '@shared/utils/zhaiPath'
 import type { ZhaiTarget } from '@shared/utils/zhaiPath'
 
 /** 目标是否落在存储根内：根自身不算，跨盘时 relative 返回绝对路径即判定越界 */
@@ -51,17 +51,12 @@ export async function expandZhaiRefs(content: string): Promise<string> {
         return content
     }
     const root = resolveStorageRoot().fsPath
-    let output = ''
-    let cursor = 0
+    // 先逐条判定再交给公共切片：下标推进规则与 webview 侧的剥离共用同一份实现
+    const replacements: string[] = []
     for (const match of matches) {
-        output += content.slice(cursor, match.index)
-        cursor = match.index + match.token.length
         const target = path.join(root, ...match.target.relative.split('/'))
-        if (!isInsideRoot(root, target) || !(await isReachable(target))) {
-            output += match.token
-            continue
-        }
-        output += `${target}${toLineSuffix(match.target)}`
+        const isReplaced = isInsideRoot(root, target) && (await isReachable(target))
+        replacements.push(isReplaced ? `${target}${toLineSuffix(match.target)}` : match.token)
     }
-    return output + content.slice(cursor)
+    return spliceZhaiSegments(content, matches, replacements)
 }

@@ -8,9 +8,7 @@
 import { useCallback, useState } from 'react'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
-
-/** 增强兜底超时：宿主 30 秒上限，前端留一倍余量 */
-const ENHANCE_TIMEOUT_MS = 60_000
+import { ENHANCE_TIMEOUT_MS } from '@shared/utils/timeouts'
 
 interface UseAiChatEnhanceResult {
     /** 增强请求进行中：输入卡片的按钮转圈并丢弃重复点击 */

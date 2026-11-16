@@ -59,7 +59,8 @@ export interface WorkflowAiChatProps {
 export function WorkflowAiChat({ projectDir = null, projectTitle = null }: WorkflowAiChatProps): JSX.Element {
     const { setError } = useAiChatStatus()
     const { runLoginCodebuddy } = useAiChatCommands({ onError: setError })
-    const { isEnhancing, enhance } = useAiChatEnhance()
+    // 增强进行态由输入卡片的 usePromptEnhance 自己维护，页面只提供请求本身
+    const { enhance } = useAiChatEnhance()
     const { contexts, setContexts, loadContexts, removeContext } = useAiChatContexts({ onError: setError })
     const { sessions, loadSessions } = useAiChatHistory({ onError: setError, projectDir })
     const { runtime, loadRuntime } = useAiChatRuntime({ onError: setError })
@@ -244,7 +245,6 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                     onClearCommand={clearCommand}
                     onReference={handleReference}
                     onMention={mentionPicker.open}
-                    isEnhancing={isEnhancing}
                     onEnhanceRequest={enhance}
                     onAddZhaiRef={addMentionPath}
                 />

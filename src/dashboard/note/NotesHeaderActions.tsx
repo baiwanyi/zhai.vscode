@@ -102,6 +102,7 @@ export function NotesHeaderActions({
                         <ListChevronsDownUp />
                         收起全部
                     </DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     <DropdownMenuLabel id={sortLabelId}>排序方式</DropdownMenuLabel>
                     <DropdownMenuRadioGroup
                         aria-labelledby={sortLabelId}

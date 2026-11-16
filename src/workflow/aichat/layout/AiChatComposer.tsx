@@ -1,96 +1,37 @@
 /**
  * AI 对话底部输入卡片：按 AppComposer 骨架拼装顶栏工具行、富文本输入区与底部操作行。
  * 复用约定：外壳取 @webview/components/AppComposer 族（双层底色、生成态光晕与分层留白均由骨架承担），
- * 顶栏 / 操作行取同目录 AiChatComposerToolbar 与 AiChatComposerActions，富文本输入取 RichChipInput；
- * 命令与上下文在此折算为 RichChip：图标取 ./commandIcons，文件名与摘要取 ../utils。
- * 本层负责提示文案、禁用态与增强状态，可发送判定取 ../utils 的 resolveSendGate（与页面层同口径）。
+ * 顶栏 / 操作行取同目录 AiChatComposerToolbar 与 AiChatComposerActions，富文本输入取 RichChipInput，
+ * 芯片映射取 ./composerChips，粘贴引用取 ../hooks/useZhaiPasteRefs，增强态取 @webview/hooks/usePromptEnhance，
+ * 门禁（生成 / 锁定 / 可发送 / 可增强 / 占位）取 ../utils 的 resolveComposerGate。
+ * 本层只做装配：提示文案与禁用态由门禁派生，增强与粘贴两条异步流程各自收敛在独立 hook 内。
  * 关键约束：输入卡片不读会话状态，上下文、写入范围、用量、命令与模型控制均由此层透传；
  * sending 与等待连续生成授权都按锁定态处理（前者给停止入口，后者不给），避免等待期的改动在确认发送后被清空；
- * 粘贴内容里的 `@zhai\` 路径改由宿主添加为上下文引用（成功即变成芯片），只有剩余文本落回输入区；
+ * 增强结果只在正文仍是发起时那一份时才套用（归属校验在 usePromptEnhance 内）；
+ * 粘贴的 `@zhai\` 路径改由宿主添加为引用，剩余正文优先回光标、输入区锁定时回落受控值，不丢内容；
  * 命令芯片的移除语义是「取消命令」，由 chip.onRemove 承担，不走统一的移除引用回调；
  * 操作行是 AppComposerFooter 的唯一子项，须带 flex-1 才能让左右两组分别贴住两侧。
  */
-import { FileText, Loader2, TextSelect } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { Loader2 } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import type { AiContextRef, AiContextUsage, AiWriteGrant } from '@shared/types/aiChat'
-import { readZhaiTargets, toZhaiDisplayPath } from '@shared/utils/zhaiPath'
 import {
     AppComposer,
     AppComposerContent,
     AppComposerFooter,
     AppComposerHeader,
 } from '@webview/components/AppComposer'
-import { RichChipInput, type RichChip, type RichChipInputHandle } from '@webview/components/RichChipInput'
+import { RichChipInput, type RichChipInputHandle } from '@webview/components/RichChipInput'
+import { usePromptEnhance } from '@webview/hooks/usePromptEnhance'
 import { AiChatComposerActions } from './AiChatComposerActions'
 import { AiChatComposerToolbar } from './AiChatComposerToolbar'
-import { COMMAND_ICONS } from './commandIcons'
+import { buildComposerChips } from './composerChips'
 import type { AiCommand, AiReferenceAction } from '../constants'
 import type { AiPastedRefTarget } from '../hooks/useAiChatMention'
 import type { AiChatModelControl } from '../hooks/useAiChatModelControl'
-import type { Phase } from '../hooks/useAiChatSession'
-import type { ClipboardEvent, JSX } from 'react'
-import { describeContext, describeTool, resolveSendGate, toContextFileName, toContextLineRange } from '../utils'
-
-/** 命令芯片的保留 id：只用于 React key 与退格查找，移除语义由 onRemove 承担 */
-const COMMAND_CHIP_ID = 'ai-command'
-
-/** 命令芯片：图标取命令表，移除按钮即「取消命令」 */
-function buildCommandChip(command: AiCommand, onClearCommand: () => void): RichChip {
-    const Icon = COMMAND_ICONS[command.id]
-    return {
-        id: COMMAND_CHIP_ID,
-        label: command.title,
-        icon: <Icon className="size-3 shrink-0 text-muted-foreground" />,
-        badgeClassName: 'max-w-40',
-        removeLabel: '取消命令',
-        onRemove: onClearCommand,
-    }
-}
-
-/**
- * 粘贴的路径引用：逐个交给宿主添加，成功的令牌从文本中剥离，失败的留在正文里让用户看得见。
- * 关键约束：剥离按原始位置切片，令牌之外的空格与换行尽量保留；全部成功时返回空串。
- */
-async function consumeZhaiTokens(
-    text: string,
-    matches: ReturnType<typeof readZhaiTargets>,
-    addRef: (target: AiPastedRefTarget) => Promise<boolean>,
-): Promise<string> {
-    const handled: typeof matches = []
-    for (const match of matches) {
-        if (await addRef(match.target)) {
-            handled.push(match)
-        }
-    }
-    if (handled.length === 0) {
-        return text
-    }
-    let rest = ''
-    let cursor = 0
-    for (const match of handled) {
-        rest += text.slice(cursor, match.index)
-        cursor = match.index + match.token.length
-    }
-    return `${rest}${text.slice(cursor)}`.replace(/[ \t]{2,}/gu, ' ').trim()
-}
-
-/** 上下文芯片：文件名悬停出 @zhai 存储根路径，尾部给字数 / 行数摘要，移除走页面回调 */
-function buildContextChip(context: AiContextRef): RichChip {
-    return {
-        id: context.id,
-        label: toContextFileName(context),
-        tail: toContextLineRange(context),
-        icon:
-            context.kind === 'selection' ? (
-                <TextSelect className="size-3 shrink-0 text-muted-foreground" />
-            ) : (
-                <FileText className="size-3 shrink-0 text-muted-foreground" />
-            ),
-        hint: toZhaiDisplayPath(context.displayPath),
-        meta: describeContext(context),
-        removeLabel: '移除该引用',
-    }
-}
+import type { JSX } from 'react'
+import { useZhaiPasteRefs } from '../hooks/useZhaiPasteRefs'
+import { describeTool, resolveComposerGate, type Phase } from '../utils'
 
 interface AiChatComposerProps {
     /** 已添加的上下文引用：以内联芯片呈现在输入区首行 */
@@ -125,9 +66,7 @@ interface AiChatComposerProps {
     onReference: (action: AiReferenceAction) => void
     /** 打开提及检索：引用笔记 / 章节 */
     onMention: () => void
-    /** 增强请求进行中：按钮转圈并丢弃重复点击 */
-    isEnhancing: boolean
-    /** 增强请求：由页面 hook 走宿主协议，失败返回 null */
+    /** 增强请求：由页面 hook 走宿主协议，失败返回 null；进行态由 usePromptEnhance 自己维护 */
     onEnhanceRequest: (text: string) => Promise<string | null>
     /** 粘贴的 @zhai 引用：交给页面添加为上下文并返回是否成功；缺省时粘贴原样插入 */
     onAddZhaiRef?: (target: AiPastedRefTarget) => Promise<boolean>
@@ -155,82 +94,50 @@ export function AiChatComposer({
     onClearCommand,
     onReference,
     onMention,
-    isEnhancing,
     onEnhanceRequest,
     onAddZhaiRef,
 }: AiChatComposerProps): JSX.Element {
-    /** 增强前的原文：非空表示当前输入处于增强态，可一键还原 */
-    const [enhancedFrom, setEnhancedFrom] = useState<string | null>(null)
     /** 输入区句柄：粘贴引用后把剩余文本插回光标处 */
     const inputRef = useRef<RichChipInputHandle>(null)
-
-    const canEnhance = input.trim().length > 0
     /**
-     * 生成中：已提交待首字（sending）也算 —— 否则这段等待期既不能发送也没有停止入口；
-     * 光晕与停止按钮都由此派生，避免与页面层重复持有同一状态。
+     * 正文的最新值：粘贴引用是异步流程，回来时正文可能已被发送清空，
+     * 回落追加必须以当前值为基准，不能只信闭包里的旧值。
      */
-    const isGenerating = phase !== 'idle'
-    /** 输入区与外层控件统一锁定：生成中，或正等一次连续生成授权 */
-    const isLocked = isGenerating || isAwaitingApproval
-    /** 可发送判定与页面层共用同一份纯函数，避免两处口径漂移；等待授权时一律禁止再发 */
-    const canSend = resolveSendGate({ hasApiKey, phase, command, input, hasWritableScope }) && !isAwaitingApproval
+    const currentInputRef = useRef(input)
 
-    let placeholder = '提问或输入指令…'
-    if (command !== null) {
-        placeholder = `可补充「${command.title}」的要求，留空直接发送`
-    }
+    useEffect(() => {
+        currentInputRef.current = input
+    }, [input])
 
-    /** 芯片集合：命令在前、上下文按添加顺序随后，与输入区的展示顺序一致 */
-    const chips: RichChip[] = [
-        ...(command === null ? [] : [buildCommandChip(command, onClearCommand)]),
-        ...contexts.map(buildContextChip),
-    ]
+    /** 生成态、锁定态、可发送、可增强与占位文案：规则集中在 resolveComposerGate，本层只取结果 */
+    const { isGenerating, isLocked, canSend, canEnhance, placeholder } = resolveComposerGate({
+        phase,
+        isAwaitingApproval,
+        hasApiKey,
+        hasWritableScope,
+        command,
+        input,
+    })
 
-    /** 手动输入或修改即退出增强态，避免还原时覆盖用户的新内容 */
+    const chips = buildComposerChips({ command, contexts, onClearCommand })
+    /** 增强态：请求期间继续输入或已发送清空时，结果会被丢弃，不覆盖新内容 */
+    const promptEnhance = usePromptEnhance({ value: input, setValue: setInput, request: onEnhanceRequest })
+    /** 粘贴拦截：命中 @zhai 令牌时改由宿主添加为引用，剩余正文回落到光标或受控值 */
+    const { capturePaste } = useZhaiPasteRefs({
+        addRef: onAddZhaiRef,
+        insertAtCaret: (rest) => inputRef.current?.insertText(rest) === true,
+        appendToInput: (rest) => {
+            const current = currentInputRef.current
+            setInput(current.length === 0 ? rest : `${current}\n${rest}`)
+        },
+    })
+
+    /** 手动输入或修改即退出增强态，避免「还原」把用户新写的内容覆盖 */
     const handleInputChange = (value: string): void => {
-        setEnhancedFrom(null)
+        // 同步记下最新正文：粘贴回落与增强归属判断都依赖它
+        currentInputRef.current = value
+        promptEnhance.reset()
         setInput(value)
-    }
-
-    /** 增强走后端改写：成功后记下原文供还原，失败由 hook 提示并保持原文 */
-    const handleEnhance = (): void => {
-        void onEnhanceRequest(input).then((next) => {
-            if (next === null || next.length === 0 || next === input) {
-                return
-            }
-            setEnhancedFrom(input)
-            setInput(next)
-        })
-    }
-
-    const handleUndoEnhance = (): void => {
-        if (enhancedFrom === null) {
-            return
-        }
-        setInput(enhancedFrom)
-        setEnhancedFrom(null)
-    }
-
-    /** 粘贴拦截：命中 @zhai 路径时改由宿主添加为引用，剩余文本再插回输入区 */
-    const handlePasteCapture = (event: ClipboardEvent<HTMLDivElement>): void => {
-        if (onAddZhaiRef === undefined) {
-            return
-        }
-        const text = event.clipboardData.getData('text/plain')
-        if (!text.includes('@zhai')) {
-            return
-        }
-        const matches = readZhaiTargets(text)
-        if (matches.length === 0) {
-            return
-        }
-        event.preventDefault()
-        event.stopPropagation()
-        void consumeZhaiTokens(text, matches, onAddZhaiRef).then((rest) => {
-            if (rest.length > 0) {
-                inputRef.current?.insertText(rest)
-            }
-        })
     }
 
     return (
@@ -246,7 +153,7 @@ export function AiChatComposer({
             </AppComposerHeader>
 
             {/* 粘贴拦截挂在内层内容区上：芯片与正文都在这一层，拦截时机先于 RichChipInput 的默认粘贴 */}
-            <AppComposerContent onPasteCapture={handlePasteCapture}>
+            <AppComposerContent onPasteCapture={capturePaste}>
                 {activeTool === null ? null : (
                     <div className="mb-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                         <Loader2 className="size-3 animate-spin" />
@@ -273,14 +180,14 @@ export function AiChatComposer({
                         isLocked={isLocked}
                         canSend={canSend}
                         canEnhance={canEnhance}
-                        isEnhanced={enhancedFrom !== null}
-                        isEnhancing={isEnhancing}
+                        isEnhanced={promptEnhance.isEnhanced}
+                        isEnhancing={promptEnhance.isEnhancing}
                         contextUsage={contextUsage}
                         contextWindowTokens={contextWindowTokens}
                         modelControl={modelControl}
                         onWriteGrantChange={onWriteGrantChange}
-                        onEnhance={handleEnhance}
-                        onUndoEnhance={handleUndoEnhance}
+                        onEnhance={promptEnhance.enhance}
+                        onUndoEnhance={promptEnhance.restore}
                         onSend={onSend}
                         onStop={onStop}
                     />
