@@ -1,6 +1,7 @@
 /**
- * AI 对话底部区域常量：写作命令模板，供菜单、输入区徽章、发送拼装与消息回放共用。
- * 复用约定：命令标题与指令模板集中在此，界面只展示 title，instruction 仅在发送时拼装与回放时剥离。
+ * AI 对话底部区域常量：写作命令模板与参考菜单动作，供菜单、输入区徽章、发送拼装与消息回放共用。
+ * 复用约定：命令标题与指令模板集中在此，界面只展示 title，instruction 仅在发送时拼装与回放时剥离；
+ * 参考菜单的动作联合类型也放在此处，页面与菜单共用同一份定义，不必反向依赖展示组件。
  * 关键约束：命令只能约束模型的写作口径，落盘与否由指令模板自身与宿主工具守卫决定；
  * instruction 变更会使旧消息失去徽章回显。
  */
@@ -58,3 +59,6 @@ export const AI_COMMAND_PREFIXES: readonly AiCommand[] = [...AI_COMMANDS].sort(
 export function isAiCommandId(value: unknown): value is AiCommandId {
     return typeof value === 'string' && Object.prototype.hasOwnProperty.call(AI_COMMAND_MAP, value)
 }
+
+/** 参考菜单动作：检索语料（弹窗）或打开语料目录（目录不存在时由宿主创建） */
+export type AiReferenceAction = 'search' | 'openDir'

@@ -1,13 +1,13 @@
 /**
  * 参考资料检索弹窗：输入关键词查 {存储根}/reference 语料，选中即按条目行范围注入上下文。
- * 复用约定：外壳取 @components/ui/dialog，输入取 ui/input，结果项取 @webview/components/Button；
+ * 复用约定：外壳取 @components/ui/dialog，检索输入行取同目录 AiChatSearchField，
+ * 结果项取 @webview/components/Button。
  * 关键约束：回车才发检索请求；空关键词与空结果都给明确提示；语料为空时提示去「打开语料目录」放文件。
  */
-import { useState } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@components/ui/dialog'
-import { Input } from '@components/ui/input'
 import type { AiReferenceEntry } from '@shared/types/aiChat'
 import { Button } from '@webview/components/Button'
+import { AiChatSearchField } from './AiChatSearchField'
 import type { JSX } from 'react'
 
 interface AiChatReferenceDialogProps {
@@ -27,15 +27,6 @@ export function AiChatReferenceDialog({
     onPick,
     onClose,
 }: AiChatReferenceDialogProps): JSX.Element {
-    const [keyword, setKeyword] = useState('')
-
-    const submit = (): void => {
-        if (keyword.trim().length === 0) {
-            return
-        }
-        onSearch(keyword)
-    }
-
     return (
         <Dialog open={open} onOpenChange={(next) => (next ? undefined : onClose())}>
             <DialogContent className="max-w-lg">
@@ -45,22 +36,7 @@ export function AiChatReferenceDialog({
                         语料来自存储根下的 reference 目录，按一级标题分类、二级标题分条；选中只注入该条正文
                     </DialogDescription>
                 </DialogHeader>
-                <div className="flex items-center gap-2">
-                    <Input
-                        autoFocus
-                        value={keyword}
-                        placeholder="输入关键词后回车"
-                        onChange={(event) => setKeyword(event.target.value)}
-                        onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                                submit()
-                            }
-                        }}
-                    />
-                    <Button variant="secondary" disabled={isSearching} onClick={submit}>
-                        {isSearching ? '检索中…' : '检索'}
-                    </Button>
-                </div>
+                <AiChatSearchField isSearching={isSearching} onSubmit={onSearch} />
                 <div className="max-h-72 overflow-y-auto rounded-lg border border-border">
                     {entries.length === 0 ? (
                         <div className="p-3 text-xs text-muted-foreground">

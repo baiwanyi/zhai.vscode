@@ -6,8 +6,7 @@
  */
 import { AiChatCommandMenu } from './AiChatCommandMenu'
 import { AiChatReferenceMenu } from './AiChatReferenceMenu'
-import type { AiCommand, AiCommandId } from '../constants'
-import type { AiReferenceAction } from './AiChatReferenceMenu'
+import type { AiCommand, AiCommandId, AiReferenceAction } from '../constants'
 import type { JSX } from 'react'
 
 interface AiChatComposerToolbarProps {

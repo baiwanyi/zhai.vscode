@@ -1,7 +1,8 @@
 /**
  * AI 对话参考资料菜单：顶部工具行右侧的「参考」按钮，汇总三条上下文入口 ——
  * 检索 reference 语料、引用全文索引中的笔记 / 章节、打开语料目录。
- * 复用 @components/ui 的 DropdownMenu 与 @webview/components/Button。
+ * 复用 @components/ui 的 DropdownMenu 与 @webview/components/Button；动作联合类型取 ../constants，
+ * 与页面共用同一份定义，避免页面反向依赖本组件。
  * 关键约束：语料由用户直接增删改文件，插件不写语料；三条入口都不占用工具行的第三个按钮 ——
  * 检索走宿主 ai/reference/search，引用走 ai/mention/search，打开目录走 ai/reference/openDir（目录不存在时由宿主创建）。
  */
@@ -15,10 +16,8 @@ import {
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
 import { Button } from '@webview/components/Button'
+import type { AiReferenceAction } from '../constants'
 import type { JSX } from 'react'
-
-/** 参考菜单动作：检索语料 / 打开语料目录 */
-export type AiReferenceAction = 'search' | 'openDir'
 
 interface AiChatReferenceMenuProps {
     disabled: boolean

@@ -1,6 +1,6 @@
 /**
  * AI 对话展示层纯函数与视图类型：引用体积的紧凑折算、路径末段提取、会话快照的不可变消息替换、
- * 写作命令模板的发送拼装与回放拆分、工具名的动作文案，以及用量文案与可发送条件等派生计算。
+ * 写作命令模板的发送拼装与回放拆分、工具名的动作文案，以及用量文案、可发送条件与页面视图汇总等派生计算。
  * 零依赖、无副作用，可被页面主组件与各子组件自由复用；token 折算与错误文案统一取 @shared/utils 的 format 与 error。
  * 视图阶段 Phase 一并定义在此，供会话 hook 与输入卡片共用，避免展示层反向依赖状态机模块。
  * 关键约束：命令模板只在发送瞬间拼接、在展示时按最长前缀剥离，输入框与消息气泡均不出现 instruction 全文；
@@ -13,6 +13,7 @@ import type {
     AiRuntimeInfo,
     AiSessionSnapshot,
     AiStep,
+    AiWriteGrant,
     AiWriteState,
 } from '@shared/types/aiChat'
 import { formatTokens } from '@shared/utils/format'
@@ -216,4 +217,60 @@ export function toMessageCopyText(message: AiMessage): string {
     const badges = [...(command === null ? [] : [command.title]), ...message.refs.map(toClipboardRef)]
     const text = replaceStorageRootPaths(body, readStorageRootPath())
     return [badges.join(' '), text].filter((part) => part.length > 0).join('\n')
+}
+
+/** 会话标题兜底：会话快照尚未就绪时占位，避免标题区随加载闪空 */
+const FALLBACK_TITLE = 'AI 对话'
+
+/** 摘要行通道名：无作品或作品标题未就绪时作为标题徽标兜底，保证用量徽标仍有承载行 */
+const FALLBACK_CHANNEL_LABEL = 'CodeBuddy'
+
+/** 空消息列表：会话快照未就绪时复用同一份引用，避免每次渲染新建数组 */
+const EMPTY_MESSAGES: AiMessage[] = []
+
+/** 对话页视图入参：只取决定展示的四个来源，模型与菜单数据由模型控制 hook 自行派生 */
+export interface AiChatViewInput {
+    session: AiSessionSnapshot | null
+    runtime: AiRuntimeInfo | null
+    writeState: AiWriteState | null
+    projectDir: string | null
+    projectTitle: string | null
+}
+
+/** 对话页视图：渲染所需的全部展示值，纯派生、不含任何交互 */
+export interface AiChatView {
+    messages: AiMessage[]
+    /** 末条消息 id：作为消息流的滚动锚点，流式增长时保持贴底 */
+    lastMessageId: string | undefined
+    hasApiKey: boolean
+    writeGrant: AiWriteGrant
+    hasWritableScope: boolean
+    title: string
+    projectLabel: string
+    usageText: string
+}
+
+/**
+ * 汇总对话页的展示值：消息与滚动锚点、密钥就绪、写入授权与可写范围、会话标题与用量文案。
+ * 关键约束：作品标题为空时才兜底为通道名，缺作品不能影响用量徽标的承载行；
+ * 本函数只读快照与运行时，不发请求、不写状态，页面据此可整段替换而不触碰交互逻辑。
+ */
+export function resolveAiChatView({
+    session,
+    runtime,
+    writeState,
+    projectDir,
+    projectTitle,
+}: AiChatViewInput): AiChatView {
+    const messages = session?.messages ?? EMPTY_MESSAGES
+    return {
+        messages,
+        lastMessageId: messages[messages.length - 1]?.id,
+        hasApiKey: runtime?.hasApiKey === true,
+        writeGrant: session?.conversation.writeGrant ?? 'document',
+        hasWritableScope: resolveWritableScope(projectDir, writeState),
+        title: session?.conversation.title ?? FALLBACK_TITLE,
+        projectLabel: projectTitle !== null && projectTitle.length > 0 ? projectTitle : FALLBACK_CHANNEL_LABEL,
+        usageText: toUsageText(runtime),
+    }
 }
