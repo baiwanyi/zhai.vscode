@@ -1,8 +1,8 @@
 /**
  * 生图上下文菜单：工具栏左一「添加上下文」触发器的下拉，收纳「作品设定」开关与「规则」子菜单。
  * 复用约定：外壳取 @components/ui 的 dropdown-menu，触发器取 @webview/components/Button
- * （作品设定挂上时切 secondary 底色）；规则子菜单取同目录 ImageRuleMenu、配套弹窗取 ImageRuleDialogs，
- * 规则数据、增删改与弹窗开关统一由 ../hooks/useRuleMenu 编排。
+ * （作品设定挂上时切 secondary 底色）；规则子菜单取共享层 RuleMenu、配套弹窗取 RuleDialogs，
+ * 规则数据、增删改与弹窗开关统一由共享层的 useRuleMenu 编排，与 AI 对话上下文菜单同一份实现。
  * 关键约束：这里的每一项都作为上下文提交，不写进提示词正文；选中与否由输入卡片按芯片算好传入；
  * 规则弹窗必须渲染在下拉菜单之外——菜单一收起，其子树连同弹窗一起卸载；
  * 本组件只留菜单开关与两块拼装，不展开规则的具体流程。
@@ -18,10 +18,10 @@ import {
 } from '@components/ui/dropdown-menu'
 import type { PromptRule } from '@shared/types/imagegen'
 import { Button } from '@webview/components/Button'
-import { ImageRuleDialogs } from './ImageRuleDialogs'
-import { ImageRuleMenu } from './ImageRuleMenu'
+import { RuleDialogs } from '@webview/components/RuleDialogs'
+import { RuleMenu } from '@webview/components/RuleMenu'
+import { useRuleMenu } from '@webview/hooks/useRuleMenu'
 import type { JSX } from 'react'
-import { useRuleMenu } from '../hooks/useRuleMenu'
 
 interface ImageCommandMenusProps {
     /** 作品设定芯片是否已挂上 */
@@ -74,7 +74,7 @@ export function ImageCommandMenus({
                         <BookText />
                         <span className="flex-1">作品设定</span>
                     </DropdownMenuCheckboxItem>
-                    <ImageRuleMenu
+                    <RuleMenu
                         rules={ruleMenu.rules}
                         isLoading={ruleMenu.isLoading}
                         selectedRules={selectedRules}
@@ -86,7 +86,7 @@ export function ImageCommandMenus({
                     />
                 </DropdownMenuContent>
             </DropdownMenu>
-            <ImageRuleDialogs
+            <RuleDialogs
                 form={ruleMenu.formState}
                 pendingDelete={ruleMenu.pendingDelete}
                 dirPath={ruleMenu.dirPath}

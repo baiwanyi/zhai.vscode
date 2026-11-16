@@ -100,28 +100,36 @@ export interface AiPermissionDecision {
 /** 消息角色 */
 export type AiMessageRole = 'user' | 'assistant' | 'system'
 
-/** 对话上下文引用类型：file 为整篇文档，selection 为行范围 */
-export type AiContextRefKind = 'file' | 'selection'
+/** 对话上下文引用类型：file 为整篇文档，selection 为行范围，notebook 为整本笔记本打包 */
+export type AiContextRefKind = 'file' | 'selection' | 'notebook'
+
+/** 笔记本引用的打包档位：全文 / 节选 / 仅目录 / 模型压缩 */
+export type AiNotebookPackMode = 'full' | 'excerpt' | 'outline' | 'compressed'
 
 /**
  * 对话上下文引用的展示契约：宿主生成，Webview 只消费。
- * 约束：不含绝对路径（宿主内部保留），前端删除引用时只回传 id，不得据 label 访问文件。
+ * 约束：不含绝对路径（宿主内部保留），前端删除引用时只回传 id，不得据 label 访问文件；
+ * notebook 引用由宿主打包后回传字数与篇数，前端只展示，不得据 displayPath 自行读盘。
  */
 export interface AiContextRef {
     /** 宿主生成的引用 id */
     id: string
     kind: AiContextRefKind
-    /** 展示标签：notes/ch01.md:11-19（整篇为 notes/ch01.md） */
+    /** 展示标签：notes/ch01.md:11-19（整篇为 notes/ch01.md），笔记本为笔记目录 */
     label: string
     /** 展示路径：工作区相对路径；未命名文档为文件名 */
     displayPath: string
-    /** 行范围（1-based，含首尾）；整篇引用为 null */
+    /** 行范围（1-based，含首尾）；整篇引用与笔记本引用为 null */
     startLine: number | null
     endLine: number | null
-    /** 注入前预估字符数 */
+    /** 注入前预估字符数：笔记本为打包后的实际字数 */
     charCount: number
     /** 是否因超出单条上限而被截断 */
     isTruncated: boolean
+    /** 笔记本引用包含的笔记篇数，其余类型不传 */
+    memberCount?: number
+    /** 笔记本引用的打包档位，其余类型不传 */
+    packMode?: AiNotebookPackMode
 }
 
 /** 消息状态：与 ai-chat.md 第 4.2 节对话状态机一致 */
@@ -218,6 +226,8 @@ export interface AiMessage {
     error: string | null
     /** 该条消息发送时携带的上下文引用（用于历史回显，正文不含引用原文） */
     refs: AiContextRef[]
+    /** 该轮挂载的规则名（仅用户消息）：历史回显只展示徽章，规则正文不重复注入 */
+    ruleNames: string[]
     /** 本轮消耗的总 token；0 表示未知（用户消息、历史数据或通道未回传） */
     totalTokens: number
     /** 本轮耗时（毫秒，墙钟）；0 表示未知 */
@@ -229,11 +239,13 @@ export interface AiMessage {
     createdAt: string
 }
 
-/** 输入草稿：未发送的正文与已选命令，视图重建后由宿主带回 */
+/** 输入草稿：未发送的正文、已选命令与已挂规则，视图重建后由宿主带回 */
 export interface AiChatDraft {
     input: string
     /** 已选写作命令 id；恢复时由前端按命令表收窄 */
     commandId: string | null
+    /** 已挂规则名；恢复时由前端按规则目录收窄，缺失即视为未挂载 */
+    ruleNames?: string[]
 }
 
 /**
@@ -296,6 +308,101 @@ export interface AiWriteTarget {
 /** 写入状态：仅实时目标，用于发送前置判断与范围提示 */
 export interface AiWriteState {
     target: AiWriteTarget | null
+}
+
+/** 上下文可选的内容分类：设定按文档分节选取，其余按索引路径列举 */
+export type AiContextItemKind = 'note' | 'article' | 'chapter' | 'character' | 'outline' | 'setting'
+
+/** 可列举的内容来源分类：笔记本、公众号、作品，均作为筛选维度而非引用单位 */
+export type AiContextSourceScope = 'notebook' | 'account' | 'project'
+
+/** 来源列表项：count 为该来源下的内容条数，用于菜单展示 */
+export interface AiContextSource {
+    /** 来源标识：笔记本为 notes/<目录>，公众号为账号 id，作品为 press/<作品名> */
+    id: string
+    /** 展示名：目录名 / 公众号名 / 作品名 */
+    name: string
+    count: number
+}
+
+/** 上下文来源列举结果 */
+export interface AiContextSourceResult {
+    sources: AiContextSource[]
+}
+
+/**
+ * 上下文查询入参：keyword 为空即「最近内容」，offset 递增加载。
+ * 约束：sourceId 由来源列表产生，宿主按分类校验后才用于路径前缀过滤，前端不得自行拼接。
+ */
+export interface AiContextQueryRequest {
+    kind: AiContextItemKind
+    /** 来源过滤：笔记为笔记本 id，文章为账号 id，章节 / 人物 / 大纲为作品目录 */
+    sourceId?: string
+    keyword?: string
+    offset?: number
+    limit?: number
+}
+
+/** 上下文候选：path 为相对存储根的索引路径或文档路径，添加时原样回传 */
+export interface AiContextItem {
+    path: string
+    title: string
+    /** 辅助信息：笔记本名 / 公众号名 / 作品名 */
+    subtitle?: string
+    kind: AiContextItemKind
+    /** 分节引用时的行范围（1-based，含首尾），整篇不传 */
+    startLine?: number
+    endLine?: number
+    charCount?: number
+    /** 最近更新时间（ISO 8601） */
+    updatedAt?: string
+}
+
+/** 上下文查询结果：hasMore 决定是否继续加载下一批 */
+export interface AiContextQueryResult {
+    items: AiContextItem[]
+    hasMore: boolean
+}
+
+/**
+ * 文档分节：设定 / 人物 / 大纲按 Markdown 标题切块后的行范围。
+ * 约束：level 2 为分组或条目（## 起条），level 3 为字段（### 起条），行号为 1-based 且含首尾。
+ */
+export interface AiDocSection {
+    title: string
+    /** 标题层级：设定字段为 3，分组与条目为 2，大纲的章节可能落在 3 或 4 */
+    level: 2 | 3 | 4
+    startLine: number
+    endLine: number
+    charCount: number
+}
+
+/** 文档分节结果：doc 为宿主侧 PressDocKey，前端只透传 */
+export interface AiDocSectionsResult {
+    sections: AiDocSection[]
+}
+
+/** 单条待添加引用：行范围可选，整篇引用不带行号 */
+export interface AiContextAddItem {
+    path: string
+    startLine?: number
+    endLine?: number
+    /** 仅笔记本生效：先由模型压缩再添加，压缩失败时回退为打包原文 */
+    compress?: boolean
+}
+
+/** 批量添加上下文：一项即一条引用，可带行范围 */
+export interface AiContextAddRequest {
+    items: AiContextAddItem[]
+}
+
+/** 批量添加结果：failed 逐项说明原因，便于界面提示「哪几项没加上」 */
+export interface AiContextAddResult {
+    added: number
+    duplicated: number
+    failed: { path: string; reason: string }[]
+    /** 是否已达单会话引用条数上限 */
+    isFull: boolean
 }
 
 /** 提及候选类型：按索引路径前缀归类，仅用于展示分组 */
@@ -404,4 +511,6 @@ export interface AiSendResult {
     assistantMessage: AiMessage
     /** 发送时读取失败（文件被删/不可读）而跳过的引用标签 */
     skippedContexts: string[]
+    /** 超长或读取失败而未注入的规则名 */
+    skippedRules: string[]
 }

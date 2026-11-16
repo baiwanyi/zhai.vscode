@@ -64,7 +64,7 @@ import {
 } from './db/chatRepository'
 import { readCharsPerToken } from './db/usageRepository'
 import { PermissionBroker } from './permissionBroker'
-import { createChatEnhanceRequest, PromptEnhanceService } from './promptEnhance'
+import { createChatEnhanceRequest, createCompressRequest, PromptEnhanceService } from './promptEnhance'
 import { readCodebuddyLogin, rememberCodebuddyLogin } from './providers/codebuddyLogin'
 import {
     getCachedCodebuddyModels,
@@ -74,12 +74,14 @@ import {
 } from './providers/codebuddyModels'
 import { INTERACTIVE_TOOLS, READ_ONLY_TOOLS, WRITE_TOOLS } from './providers/codebuddyPermission'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
+import { buildRuleBlock, describeRules, parseStoredRuleNames } from './ruleContext'
 import { summarizeMessages } from './usageRecorder'
 import { decideWriteOffsets } from './writeRangeOffsets'
 import { expandZhaiRefs } from './zhaiRefs'
 import type { CliUsageIndex } from './cliUsageIndex'
 import type { HostContextRef, ResolvedContextRef } from './contextRefs'
 import type { ConversationRow, MessageRow } from './db/chatRepository'
+import type { NotebookPackService } from './notebookPackService'
 import type {
     AiChatMessage as ChatMessage,
     AiProvider,
@@ -195,6 +197,10 @@ export class AiChatService implements vscode.Disposable {
          * 约定由宿主注入（press 侧实现），ai 模块不反向依赖作品模块。
          */
         private readonly documentNormalizer?: (filePath: string, content: string) => string,
+        /** 笔记本打包：整本引用在发送时取打包文本，未注入时该类引用按失效跳过 */
+        private readonly notebookPack?: NotebookPackService,
+        /** 规则正文读取：由装配层注入出图侧的规则服务，ai 模块不反向依赖它 */
+        private readonly readPromptRule?: (name: string) => Promise<string | null>,
     ) {
         this.promptEnhance = new PromptEnhanceService(provider, usageRecorder)
     }
@@ -406,8 +412,13 @@ export class AiChatService implements vscode.Disposable {
             return []
         }
         const existing = this.pendingContexts.get(conversationId) ?? []
+        const target = existing.find((ref) => ref.id === id)
         const remaining = existing.filter((ref) => ref.id !== id)
         if (remaining.length !== existing.length) {
+            // 笔记本引用移除后清掉打包缓存，避免下次重新添加时读到旧内容
+            if (target !== undefined && target.kind === 'notebook') {
+                this.notebookPack?.forget(target.displayPath)
+            }
             this.pendingContexts.set(conversationId, remaining)
             this.contextEmitter.fire()
         }
@@ -420,6 +431,7 @@ export class AiChatService implements vscode.Disposable {
         const count = conversationId ? (this.pendingContexts.get(conversationId)?.length ?? 0) : 0
         if (conversationId && count > 0) {
             this.pendingContexts.delete(conversationId)
+            this.notebookPack?.clear()
             this.contextEmitter.fire()
         }
         return count
@@ -458,6 +470,28 @@ export class AiChatService implements vscode.Disposable {
     }
 
     /**
+     * 压缩整本笔记：把已打包文本交给模型压成要点，结果写回打包缓存。
+     * 关键约束：必须已打包过（缓存命中）才压缩，避免对空笔记本发起无用调用；
+     * 失败直接抛出，由调用方回退到打包原文，不阻塞添加。
+     */
+    public async compressNotebook(notebookId: string): Promise<boolean> {
+        if (this.notebookPack === undefined) {
+            throw new Error('笔记本压缩不可用')
+        }
+        const packed = await this.notebookPack.pack(notebookId)
+        if (packed === null) {
+            throw new Error('该笔记本暂无笔记')
+        }
+        if (packed.packMode === 'compressed') {
+            return true
+        }
+        const compressed = await this.promptEnhance.enhance(createCompressRequest(packed.text))
+        const entry = this.notebookPack.override(notebookId, compressed)
+        logger.info(`笔记本已压缩：${notebookId}，${String(packed.charCount)} → ${String(entry?.charCount ?? 0)} 字`)
+        return entry !== null
+    }
+
+    /**
      * 发送用户消息并启动流式生成。
      * 落库用户消息与占位的助手消息后立即返回，正文经 onStream 增量推送。
      * 发送时重新捕获编辑器目标（选区优先），供本轮提示词注入与写入白名单使用。
@@ -469,6 +503,8 @@ export class AiChatService implements vscode.Disposable {
         content: string,
         autoApprove: boolean,
         titleHint: string | null = null,
+        /** 本轮挂载的规则名：按顺序读取正文并入提示词，不进上下文配额 */
+        ruleNames: readonly string[] = [],
     ): Promise<AiSendResult> {
         if (this.activeRequest) {
             throw new Error('已有生成中的回复，请先停止后再发送')
@@ -509,13 +545,15 @@ export class AiChatService implements vscode.Disposable {
 
         // 引用原文在发送时才读取（latest 版本），失效项跳过并回传前端提示
         const contexts = this.pendingContexts.get(conversationId) ?? []
-        const resolved = await resolveContextRefs(contexts)
+        const resolved = await resolveContextRefs(contexts, (ref) => this.readNotebookText(ref))
         const resolvedIds = new Set(resolved.map((item) => item.ref.id))
         const skippedContexts = contexts.filter((ref) => !resolvedIds.has(ref.id)).map((ref) => ref.label)
         const targetBlock = writeTarget ? this.buildWriteBlock(writeTarget, resolved) : ''
         // 无可写范围时不注入落笔要求：否则模型会反复尝试写入并被守卫拒绝
         const writeBrief = toolPolicy.writeRoots.length > 0 ? WRITE_EXECUTION_BRIEF : ''
-        const contextBlock = [writeBrief, targetBlock, buildContextBlock(resolved)]
+        // 规则是约束而非资料：置于引用原文之前，超长规则整条跳过并回传前端提示
+        const rules = await buildRuleBlock(ruleNames, this.readPromptRule)
+        const contextBlock = [writeBrief, rules.block, targetBlock, buildContextBlock(resolved)]
             .filter((block) => block.length > 0)
             .join('\n\n')
         // 正文里的 @zhai\... 在发送瞬间展开成存储根下的绝对路径，落库与气泡回显仍是用户原文
@@ -532,6 +570,7 @@ export class AiChatService implements vscode.Disposable {
             status: 'completed',
             finishReason: null,
             refs: JSON.stringify(contexts),
+            ruleNames: JSON.stringify(ruleNames),
             error: null,
             totalTokens: 0,
             durationMs: 0,
@@ -552,6 +591,7 @@ export class AiChatService implements vscode.Disposable {
             finishReason: null,
             error: null,
             refs: '[]',
+            ruleNames: '[]',
             totalTokens: 0,
             durationMs: 0,
             tokensEstimated: 0,
@@ -591,6 +631,7 @@ export class AiChatService implements vscode.Disposable {
             userMessage: toMessage(userMessage),
             assistantMessage: toMessage(assistantMessage),
             skippedContexts,
+            skippedRules: rules.skipped,
         }
     }
 
@@ -613,6 +654,7 @@ export class AiChatService implements vscode.Disposable {
             finishReason: 'compacted',
             error: null,
             refs: '[]',
+            ruleNames: '[]',
             totalTokens: 0,
             durationMs: 0,
             tokensEstimated: 0,
@@ -1080,7 +1122,12 @@ export class AiChatService implements vscode.Disposable {
         const prepared = await Promise.all(
             history.map(async (row, index): Promise<ChatMessage> => {
                 const refs = storedRefs[index] ?? []
-                const content = await this.renderHistoryContent(row.content, refs, index === lastRefsIndex)
+                const content = await this.renderHistoryContent(
+                    row.content,
+                    refs,
+                    index === lastRefsIndex,
+                    parseStoredRuleNames(row.ruleNames),
+                )
                 return { role: row.role === 'assistant' ? 'assistant' : 'user', content }
             }),
         )
@@ -1101,21 +1148,30 @@ export class AiChatService implements vscode.Disposable {
         return [{ role: 'system', content: SYSTEM_PROMPT }, ...selected, { role: 'user', content: lastContent }]
     }
 
-    /** 历史消息正文：最近一条带引用时补原文，更早的仅补引用说明 */
+    /** 历史消息正文：最近一条带引用时补原文，更早的仅补引用与规则说明 */
     private async renderHistoryContent(
         content: string,
         refs: HostContextRef[],
         isInjectText: boolean,
+        ruleNames: readonly string[],
     ): Promise<string> {
+        // 规则正文只在当轮注入，历史只留「挂了哪些规则」这一行说明
+        const ruleLine = describeRules(ruleNames)
+        const withRules = ruleLine.length > 0 ? `${ruleLine}\n\n${content}` : content
         if (refs.length === 0) {
-            return content
+            return withRules
         }
-        const fallback = `${describeContextRefs(refs)}\n\n${content}`
+        const fallback = `${describeContextRefs(refs)}\n\n${withRules}`
         if (!isInjectText) {
             return fallback
         }
-        const block = buildContextBlock(await resolveContextRefs(refs))
-        return block.length > 0 ? `${block}\n\n${content}` : fallback
+        const block = buildContextBlock(await resolveContextRefs(refs, (ref) => this.readNotebookText(ref)))
+        return block.length > 0 ? `${block}\n\n${withRules}` : fallback
+    }
+
+    /** 笔记本引用取打包文本：缓存按笔记本维度，笔记增删改后由指纹自动失效 */
+    private async readNotebookText(ref: HostContextRef): Promise<string | null> {
+        return this.notebookPack === undefined ? null : this.notebookPack.read(ref.displayPath)
     }
 
     /**
@@ -1361,6 +1417,7 @@ function toMessage(row: MessageRow): AiMessage {
         finishReason: row.finishReason,
         error: row.error,
         refs: parseStoredContexts(row.refs).map(toPublicContextRef),
+        ruleNames: parseStoredRuleNames(row.ruleNames),
         totalTokens: row.totalTokens,
         durationMs: row.durationMs,
         tokensEstimated: row.tokensEstimated === 1,

@@ -132,6 +132,7 @@ function toNoticeMessage(conversationId: string, notice: StreamNoticeMessage): A
         finishReason: notice.kind,
         error: null,
         refs: [],
+        ruleNames: [],
         totalTokens: 0,
         durationMs: 0,
         tokensEstimated: false,

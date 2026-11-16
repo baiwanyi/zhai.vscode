@@ -45,6 +45,8 @@ export interface MessageRow {
     finishReason: string | null
     /** 发送时携带的上下文引用（JSON 数组，含绝对路径，仅宿主使用） */
     refs: string
+    /** 该轮挂载的规则名（JSON 字符串数组，仅用户消息有值） */
+    ruleNames: string
     error: string | null
     /** 本轮消耗的总 token，0 表示未知 */
     totalTokens: number
@@ -82,8 +84,9 @@ const CONVERSATION_COLUMNS = `id, title, mode, project_dir AS projectDir, model,
     created_at AS createdAt, updated_at AS updatedAt`
 
 const MESSAGE_COLUMNS = `id, conversation_id AS conversationId, role, content, reasoning, steps, status,
-    finish_reason AS finishReason, refs, error, total_tokens AS totalTokens, duration_ms AS durationMs,
-    tokens_estimated AS tokensEstimated, credits, request_id AS requestId, created_at AS createdAt`
+    finish_reason AS finishReason, refs, rule_names AS ruleNames, error, total_tokens AS totalTokens,
+    duration_ms AS durationMs, tokens_estimated AS tokensEstimated, credits, request_id AS requestId,
+    created_at AS createdAt`
 
 export function insertConversation(db: Database.Database, row: ConversationRow): void {
     db.prepare(
@@ -168,10 +171,10 @@ export function deleteConversation(db: Database.Database, id: string): void {
 
 export function insertMessage(db: Database.Database, row: MessageRow): void {
     db.prepare(
-        `INSERT INTO messages (id, conversation_id, role, content, reasoning, steps, status, finish_reason, refs, error,
-            total_tokens, duration_ms, tokens_estimated, credits, request_id, created_at)
-         VALUES (@id, @conversationId, @role, @content, @reasoning, @steps, @status, @finishReason, @refs, @error,
-            @totalTokens, @durationMs, @tokensEstimated, @credits, @requestId, @createdAt)`,
+        `INSERT INTO messages (id, conversation_id, role, content, reasoning, steps, status, finish_reason, refs,
+            rule_names, error, total_tokens, duration_ms, tokens_estimated, credits, request_id, created_at)
+         VALUES (@id, @conversationId, @role, @content, @reasoning, @steps, @status, @finishReason, @refs,
+            @ruleNames, @error, @totalTokens, @durationMs, @tokensEstimated, @credits, @requestId, @createdAt)`,
     ).run(row)
 }
 

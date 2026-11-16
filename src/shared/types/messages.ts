@@ -164,8 +164,13 @@ export type WebviewToHostMessage = RequestMessage
 export type HostMethodName =
     | 'ai/abort'
     | 'ai/context'
+    | 'ai/context/add'
     | 'ai/context/clear'
+    | 'ai/context/compress'
+    | 'ai/context/query'
     | 'ai/context/remove'
+    | 'ai/context/sections'
+    | 'ai/context/sources'
     | 'ai/deleteSession'
     | 'ai/draft'
     | 'ai/enhancePrompt'

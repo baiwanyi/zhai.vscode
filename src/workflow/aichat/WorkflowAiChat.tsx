@@ -88,8 +88,18 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
         refreshSessions: loadSessions,
         projectDir,
     })
-    // 草稿按会话保存：未发送正文与命令防抖写入宿主，快照回填的命令由本 hook 判定是否套用
-    const { command, selectCommand, clearCommand, applySnapshot, restoreFromMessage } = useAiChatDraft({
+    // 草稿按会话保存：未发送正文、命令与规则防抖写入宿主，快照回填由本 hook 判定是否套用
+    const {
+        command,
+        ruleNames,
+        selectCommand,
+        clearCommand,
+        toggleRule,
+        renameRule,
+        removeRule,
+        applySnapshot,
+        restoreFromMessage,
+    } = useAiChatDraft({
         conversationId: session?.conversation.id ?? null,
         input,
         setInput,
@@ -178,11 +188,11 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
         [openReferenceDir, openReferenceSearch],
     )
 
-    /** 发送：指令模板与用户补充在此拼装，输入区与消息气泡始终只呈现命令名 */
+    /** 发送：指令模板与用户补充在此拼装，输入区与消息气泡始终只呈现命令名；规则随请求下发 */
     const handleSend = useCallback((): void => {
         const content = command === null ? input : composeCommandContent(command, input)
-        void submitMessage(content, { writeGrant, titleHint: command?.title })
-    }, [command, input, submitMessage, writeGrant])
+        void submitMessage(content, { writeGrant, titleHint: command?.title, ruleNames })
+    }, [command, input, ruleNames, submitMessage, writeGrant])
 
     return (
         <AppPage>
@@ -237,6 +247,10 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                     hasWritableScope={hasWritableScope}
                     isAwaitingApproval={pendingAutoApprove !== null}
                     command={command}
+                    ruleNames={ruleNames}
+                    onToggleRule={toggleRule}
+                    onRenameRule={renameRule}
+                    onRemoveRule={removeRule}
                     modelControl={modelControl}
                     onSend={handleSend}
                     onStop={() => void stop()}
@@ -245,6 +259,8 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                     onClearCommand={clearCommand}
                     onReference={handleReference}
                     onMention={mentionPicker.open}
+                    onContextAdded={handleContextAdded}
+                    onContextError={setError}
                     onEnhanceRequest={enhance}
                     onAddZhaiRef={addMentionPath}
                 />

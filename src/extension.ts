@@ -185,6 +185,9 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     context.subscriptions.push(snapshotService)
     registerPressSnapshotWatcher(snapshotService, context.subscriptions)
 
+    // 出图规则：全局共享，落 {存储根}/prompt/rules 的 md 文件，与作品无关；
+    // AI 对话与出图读同一批 md，实例在此提前创建供两层共用
+    const promptRuleService = new PromptRuleService()
     // AI 与取名：ai.db 承载会话、消息与用量（首屏数据，激活期打开），naming.db 按需打开；
     // 通道、记账与写回留底在各入口间共用，AI 命令注册也在层内完成
     const ai = await assembleAiLayer({
@@ -196,6 +199,15 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         workflowRouter,
         toastService,
         markStage,
+        // 规则正文由出图侧服务读取：ai 模块只拿回调，不反向依赖 imagegen
+        readPromptRule: async (name: string): Promise<string | null> => {
+            try {
+                const detail = await promptRuleService.read({ name })
+                return detail.content
+            } catch {
+                return null
+            }
+        },
     })
 
     // 写作管理：press.db 只承载 AI 配额等轻量状态，作品文档与人物卡仍以 Markdown 为准；
@@ -249,8 +261,7 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     const stockRoutes = new StockRoutes(stockService)
     // 图片参数：按作品覆盖，落 press/{作品名}/.zhai/image.json，配额与超时不在此管辖
     const imageSettingsService = new ImageSettingsService()
-    // 出图规则：全局共享，落 {存储根}/prompt/rules 的 md 文件，与作品无关
-    const promptRuleService = new PromptRuleService()
+    // 出图规则服务实例在上方提前创建，此处直接复用，避免两个实例各读一份目录
     // 提示词词库：全局共享，按分类落 {存储根}/prompt/tags 的 md，由用户自行维护
     const promptTagService = new PromptTagService()
     // 参考图：只放行选择流程登记过的本地图片，路径不经前端拼装
@@ -332,6 +343,7 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         usage: ai.usage,
         mention: ai.mention,
         reference: ai.reference,
+        contextSources: ai.contextSources,
         workflowRouter,
         naming: ai.namingRoutes,
         press: pressRoutes,

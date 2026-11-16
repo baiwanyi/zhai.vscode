@@ -18,7 +18,7 @@ export const MAX_CONTEXT_COUNT = 10
 
 /** 宿主侧引用：在展示字段之外持有绝对路径与行范围，仅宿主内部使用 */
 export interface HostContextRef extends AiContextRef {
-    /** 文档绝对路径，用于发送时读取最新内容 */
+    /** 文档绝对路径，用于发送时读取最新内容；笔记本引用为目录路径 */
     uri: string
 }
 
@@ -115,10 +115,20 @@ export async function readContextContent(ref: HostContextRef): Promise<{ text: s
     return truncateContext(raw)
 }
 
-/** 批量读取引用内容，失效项被丢弃（调用方据结果与入参差集提示用户） */
-export async function resolveContextRefs(refs: HostContextRef[]): Promise<ResolvedContextRef[]> {
+/**
+ * 批量读取引用内容，失效项被丢弃（调用方据结果与入参差集提示用户）。
+ * 笔记本引用的正文由打包服务提供，读不到同样按失效处理；未注入该回调时笔记本引用一律跳过。
+ */
+export async function resolveContextRefs(
+    refs: HostContextRef[],
+    readNotebook?: (ref: HostContextRef) => Promise<string | null>,
+): Promise<ResolvedContextRef[]> {
     const results = await Promise.all(
         refs.map(async (ref): Promise<ResolvedContextRef | null> => {
+            if (ref.kind === 'notebook') {
+                const text = readNotebook === undefined ? null : await readNotebook(ref)
+                return text === null || text.length === 0 ? null : { ref, text, isTruncated: ref.isTruncated }
+            }
             const content = await readContextContent(ref)
             return content === null ? null : { ref, text: content.text, isTruncated: content.isTruncated }
         }),
@@ -157,6 +167,8 @@ export function toPublicContextRef(ref: HostContextRef): AiContextRef {
         endLine: ref.endLine,
         charCount: ref.charCount,
         isTruncated: ref.isTruncated,
+        memberCount: ref.memberCount,
+        packMode: ref.packMode,
     }
 }
 
@@ -305,7 +317,7 @@ function isHostContextRef(value: unknown): value is HostContextRef {
     const ref = value as Record<string, unknown>
     return (
         typeof ref.id === 'string' &&
-        (ref.kind === 'file' || ref.kind === 'selection') &&
+        (ref.kind === 'file' || ref.kind === 'selection' || ref.kind === 'notebook') &&
         typeof ref.label === 'string' &&
         typeof ref.displayPath === 'string' &&
         (ref.startLine === null || typeof ref.startLine === 'number') &&

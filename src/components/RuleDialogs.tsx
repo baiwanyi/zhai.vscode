@@ -1,8 +1,8 @@
 /**
- * 生图「规则」配套弹窗：表单承担新建与编辑，确认框承担删除。
+ * 通用规则配套弹窗：表单承担新建与编辑，确认框承担删除，生图与 AI 对话共用。
  * 复用约定：表单取 @webview/components/FormDialog，删除确认取 @webview/components/ConfirmDialog，
  * 字段取 @components/ui 的 field/input/textarea，文本状态取 @webview/hooks/useTrimmedInput；
- * 表单状态类型取 ../hooks/useRuleMenu 的 RuleFormState，规则类型取 @shared/types/imagegen。
+ * 表单状态类型取 @webview/hooks/useRuleMenu 的 RuleFormState，规则类型取 @shared/types/imagegen。
  * 关键约束：弹窗必须渲染在下拉菜单之外——菜单收起会卸载整棵子树；
  * 表单按原条目区分新建与编辑，换 key 重挂载回到初值，关闭时由调用方清空待处理项。
  */
@@ -12,11 +12,11 @@ import { Textarea } from '@components/ui/textarea'
 import type { PromptRule } from '@shared/types/imagegen'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { FormDialog } from '@webview/components/FormDialog'
+import type { RuleFormState } from '@webview/hooks/useRuleMenu'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
-import type { RuleFormState } from '../hooks/useRuleMenu'
 import type { JSX } from 'react'
 
-interface ImageRuleDialogsProps {
+interface RuleDialogsProps {
     form: RuleFormState | null
     /** 待删除的规则：null 表示删除确认关闭 */
     pendingDelete: PromptRule | null
@@ -111,7 +111,7 @@ function RuleFormDialog({ form, dirPath, isSaving, onOpenChange, onSubmit }: Rul
 }
 
 /** 规则表单与删除确认：由调用方放在下拉菜单之外，避免菜单收起时被一起卸载 */
-export function ImageRuleDialogs({
+export function RuleDialogs({
     form,
     pendingDelete,
     dirPath,
@@ -120,7 +120,7 @@ export function ImageRuleDialogs({
     onFormSubmit,
     onDeleteClose,
     onConfirmDelete,
-}: ImageRuleDialogsProps): JSX.Element {
+}: RuleDialogsProps): JSX.Element {
     return (
         <>
             {/* 每次打开换 key 重挂载，字段自然回到新建空值或该条正文，不必在子组件里手写重置 */}

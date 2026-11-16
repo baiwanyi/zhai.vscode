@@ -8,9 +8,11 @@
 import { AiChatService } from '@modules/ai/chatService'
 import { CliUsageIndex } from '@modules/ai/cliUsageIndex'
 import { registerAiCommands } from '@modules/ai/commands'
+import { ContextSourceService } from '@modules/ai/contextSourceService'
 import { openAiDatabase } from '@modules/ai/db/connection'
 import { ensureAiSchema } from '@modules/ai/db/schema'
 import { MentionService } from '@modules/ai/mentionService'
+import { NotebookPackService } from '@modules/ai/notebookPackService'
 import type { AiProvider } from '@modules/ai/provider'
 import { createAiProvider } from '@modules/ai/providerRegistry'
 import { initCodebuddyLogin } from '@modules/ai/providers/codebuddyLogin'
@@ -42,6 +44,8 @@ export interface AiLayerDeps {
     toastService: ToastService
     /** 激活耗时打点：由入口提供，层内只在 AI 库就绪时打一次 */
     markStage: (stage: string) => void
+    /** 规则正文读取：由入口注入出图侧的规则服务，失败返回 null，ai 模块不反向依赖它 */
+    readPromptRule?: (name: string) => Promise<string | null>
 }
 
 /** 装配产物：通道与记账实例交给写作 / 出图 / 取名模块复用，routes 与面板服务交给面板注册 */
@@ -52,6 +56,7 @@ export interface AiLayer {
     usage: AiUsageService
     mention: MentionService
     reference: ReferenceService
+    contextSources: ContextSourceService
     namingRoutes: NamingRoutes
 }
 
@@ -76,6 +81,8 @@ export async function assembleAiLayer(deps: AiLayerDeps): Promise<AiLayer> {
     hydrateSelectedModel(context.globalState)
     // 站点登录态同样存 globalState：面板据此决定展示登录引导还是正常空态
     initCodebuddyLogin(context.globalState)
+    // 笔记本打包：整本笔记引用按预算压成一段，发送时取缓存文本
+    const notebookPack = new NotebookPackService(indexDb)
     // 写回前留底：把编辑器里的写回前全文交给快照服务，AI 改坏了可以回到动手前的状态
     const chat = new AiChatService(
         aiDb,
@@ -87,12 +94,16 @@ export async function assembleAiLayer(deps: AiLayerDeps): Promise<AiLayer> {
         },
         cliUsage,
         normalizeWrittenDocument,
+        notebookPack,
+        deps.readPromptRule,
     )
     context.subscriptions.push(chat)
     // 提及检索：与全局搜索同源（索引库），添加时由宿主查库校验路径
     const mention = new MentionService(indexDb, chat)
     // 参考资料：语料由 {存储根}/reference/*.md 驱动，只读不写，条目按行范围注入
     const reference = new ReferenceService(chat)
+    // 上下文来源：菜单的来源列举、分页查询与批量添加，候选全部来自索引库与作品文档分节
+    const contextSources = new ContextSourceService(indexDb, chat, notebookPack)
 
     registerAiCommands(context, chat, deps.workflowRouter, deps.toastService)
 
@@ -107,5 +118,5 @@ export async function assembleAiLayer(deps: AiLayerDeps): Promise<AiLayer> {
     const namingService = new NamingService(namingDb.get, aiProvider, usageRecorder)
     const namingRoutes = new NamingRoutes(namingService)
 
-    return { aiProvider, usageRecorder, chat, usage, mention, reference, namingRoutes }
+    return { aiProvider, usageRecorder, chat, usage, mention, reference, contextSources, namingRoutes }
 }

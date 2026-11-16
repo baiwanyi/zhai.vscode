@@ -15,6 +15,7 @@ import { wantsContinuousGeneration } from '../utils'
 export interface PendingAutoApprove {
     content: string
     titleHint: string | undefined
+    ruleNames: readonly string[]
 }
 
 /** 提交发送时需要透传给会话 hook 的上下文 */
@@ -23,6 +24,8 @@ export interface AutoApproveSubmitOptions {
     writeGrant: AiWriteGrant
     /** 命令名称等展示用短标题 */
     titleHint?: string
+    /** 本轮挂载的规则名：随发送下发，不占上下文配额 */
+    ruleNames?: readonly string[]
 }
 
 /** 连续生成授权 hook 的对外依赖 */
@@ -48,10 +51,17 @@ export function useAiChatAutoApprove({ send, onSent }: UseAiChatAutoApproveOptio
         async (content: string, options: AutoApproveSubmitOptions): Promise<void> => {
             // 连续生成先取得一次授权：否则每写一个文件都要弹一次确认
             if (options.writeGrant === 'project' && wantsContinuousGeneration(content)) {
-                setPending({ content, titleHint: options.titleHint })
+                setPending({
+                    content,
+                    titleHint: options.titleHint,
+                    ruleNames: options.ruleNames ?? [],
+                })
                 return
             }
-            const isSent = await send(content, { titleHint: options.titleHint })
+            const isSent = await send(content, {
+                titleHint: options.titleHint,
+                ruleNames: options.ruleNames,
+            })
             if (isSent) {
                 onSent()
             }
@@ -66,7 +76,11 @@ export function useAiChatAutoApprove({ send, onSent }: UseAiChatAutoApproveOptio
         if (current === null) {
             return
         }
-        void send(current.content, { autoApprove: true, titleHint: current.titleHint }).then((isSent) => {
+        void send(current.content, {
+            autoApprove: true,
+            titleHint: current.titleHint,
+            ruleNames: current.ruleNames,
+        }).then((isSent) => {
             if (isSent) {
                 onSent()
             }

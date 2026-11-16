@@ -6,6 +6,7 @@
  * 复制入口在气泡外（见 AiChatMessageView），本组件只负责正文排版，不放任何操作按钮；
  * 正文行高固定 leading-5，与 20px 徽章配合 align-top 才能保证徽章与首行文字几何重合。
  */
+import { PencilRuler } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
 import type { AiMessage } from '@shared/types/aiChat'
 import { AiChatMessageRefs } from './AiChatMessageRefs'
@@ -31,6 +32,16 @@ export function AiChatMessageUserBody({ message }: AiChatMessageUserBodyProps): 
                     <span className="min-w-0 truncate">{command.title}</span>
                 </Badge>
             )}
+            {message.ruleNames.map((ruleName) => (
+                <Badge
+                    key={ruleName}
+                    variant="secondary"
+                    className="mr-1.5 inline-flex align-top border-0 bg-primary-foreground/10 font-normal text-primary-foreground"
+                >
+                    <PencilRuler />
+                    <span className="min-w-0 truncate">{ruleName}</span>
+                </Badge>
+            ))}
             <AiChatMessageRefs refs={message.refs} />
             {body.length > 0 ? body : null}
         </div>

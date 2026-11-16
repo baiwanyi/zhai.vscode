@@ -6,23 +6,28 @@
  * 命令芯片自带 onRemove（语义是取消命令），上下文芯片缺省回落 onRemoveChip(id)；
  * 命令芯片 id 是保留值，只用于 key 与退格查找，不得与上下文引用 id 复用。
  */
-import { FileText, TextSelect } from 'lucide-react'
+import { FileText, Library, PencilRuler, TextSelect } from 'lucide-react'
 import type { AiContextRef } from '@shared/types/aiChat'
 import { toZhaiDisplayPath } from '@shared/utils/zhaiPath'
 import type { RichChip } from '@webview/components/RichChipInput'
 import { COMMAND_ICONS } from './commandIcons'
 import type { AiCommand } from '../constants'
+import type { JSX } from 'react'
 import { describeContext, toContextFileName, toContextLineRange } from '../utils'
 
 /** 命令芯片的保留 id：只用于 React key 与退格查找，移除语义由 onRemove 承担 */
 const COMMAND_CHIP_ID = 'ai-command'
 
-/** 芯片集合入参：命令可为空，上下文按添加顺序排列 */
+/** 芯片集合入参：命令可为空，规则按挂载顺序，上下文按添加顺序 */
 export interface BuildComposerChipsInput {
     command: AiCommand | null
+    /** 已挂规则名：作为提示词约束，与上下文分属两套预算 */
+    ruleNames: readonly string[]
     contexts: AiContextRef[]
     /** 取消命令：命令芯片的移除语义由它承担，不走统一的移除引用回调 */
     onClearCommand: () => void
+    /** 摘除规则：规则芯片的移除回调 */
+    onRemoveRule: (ruleName: string) => void
 }
 
 /** 命令芯片：图标取命令表，移除按钮即「取消命令」 */
@@ -38,28 +43,53 @@ export function buildCommandChip(command: AiCommand, onClearCommand: () => void)
     }
 }
 
+/** 上下文芯片图标：笔记本用书库图标，行范围引用用选区图标，其余为文档图标 */
+function buildContextIcon(kind: AiContextRef['kind']): JSX.Element {
+    if (kind === 'notebook') {
+        return <Library className="size-3 shrink-0 text-muted-foreground" />
+    }
+    if (kind === 'selection') {
+        return <TextSelect className="size-3 shrink-0 text-muted-foreground" />
+    }
+    return <FileText className="size-3 shrink-0 text-muted-foreground" />
+}
+
 /** 上下文芯片：文件名悬停出 @zhai 存储根路径，尾部给字数 / 行数摘要，移除走页面回调 */
 export function buildContextChip(context: AiContextRef): RichChip {
     return {
         id: context.id,
         label: toContextFileName(context),
         tail: toContextLineRange(context),
-        icon:
-            context.kind === 'selection' ? (
-                <TextSelect className="size-3 shrink-0 text-muted-foreground" />
-            ) : (
-                <FileText className="size-3 shrink-0 text-muted-foreground" />
-            ),
+        icon: buildContextIcon(context.kind),
         hint: toZhaiDisplayPath(context.displayPath),
         meta: describeContext(context),
         removeLabel: '移除该引用',
     }
 }
 
-/** 芯片集合：命令在前、上下文按添加顺序随后，与输入区的展示顺序一致 */
-export function buildComposerChips({ command, contexts, onClearCommand }: BuildComposerChipsInput): RichChip[] {
+/** 规则芯片：名称即标识，移除按钮摘掉挂载，发送时不再注入该规则 */
+export function buildRuleChip(ruleName: string, onRemove: () => void): RichChip {
+    return {
+        id: `ai-rule-${ruleName}`,
+        label: ruleName,
+        icon: <PencilRuler className="size-3 shrink-0 text-muted-foreground" />,
+        badgeClassName: 'max-w-40',
+        removeLabel: '移除该规则',
+        onRemove,
+    }
+}
+
+/** 芯片集合：命令、规则、上下文依次排列，与输入区的展示顺序一致 */
+export function buildComposerChips({
+    command,
+    ruleNames,
+    contexts,
+    onClearCommand,
+    onRemoveRule,
+}: BuildComposerChipsInput): RichChip[] {
     return [
         ...(command === null ? [] : [buildCommandChip(command, onClearCommand)]),
+        ...ruleNames.map((ruleName) => buildRuleChip(ruleName, () => onRemoveRule(ruleName))),
         ...contexts.map(buildContextChip),
     ]
 }

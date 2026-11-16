@@ -92,6 +92,49 @@ export function searchFiles(db: Database.Database, keyword: string, limit: numbe
     }))
 }
 
+/** 上下文候选行：按前缀列举时只取展示需要的字段 */
+export interface ContextFileRow {
+    path: string
+    title: string
+    wordCount: number
+    mtime: string
+}
+
+/**
+ * 按路径前缀列举候选：keyword 为空即「最近内容」，非空按标题与路径包含匹配。
+ * 安全约束：前缀与关键词一律绑定参数，用 substr / instr 比较而非 LIKE，避开 _ 与 % 的转义问题；
+ * contains 用于在宽前缀下收窄到正文目录（如 wechat/ 下的 /post/）。
+ */
+export function listFilesByPrefix(
+    db: Database.Database,
+    prefix: string,
+    options: { keyword?: string; contains?: string; offset: number; limit: number },
+): ContextFileRow[] {
+    const keyword = (options.keyword ?? '').trim().toLowerCase()
+    const contains = options.contains ?? ''
+    return db
+        .prepare(
+            `SELECT path, title, word_count AS wordCount, mtime
+             FROM files
+             WHERE substr(path, 1, ?) = ?
+               AND (? = '' OR instr(lower(title), ?) > 0 OR instr(lower(path), ?) > 0)
+               AND (? = '' OR instr(path, ?) > 0)
+             ORDER BY mtime DESC
+             LIMIT ? OFFSET ?`,
+        )
+        .all(
+            prefix.length,
+            prefix,
+            keyword,
+            keyword,
+            keyword,
+            contains,
+            contains,
+            options.limit,
+            options.offset,
+        ) as ContextFileRow[]
+}
+
 /** 跨模块的文件引用：只含导入与展示需要的字段，不含正文 */
 export interface IndexedFileRef {
     path: string

@@ -24,6 +24,7 @@ import { buildWebviewHtml } from '@modules/common/webviewHtml'
 import type { AnnotationRoutes } from '@modules/editor/annotationRoutes'
 import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { NamingRoutes } from '@modules/naming/namingRoutes'
+import { readDocSections } from '@modules/press/docSections'
 import type { PressRoutes } from '@modules/press/pressRoutes'
 import type { ProofreadRoutes } from '@modules/proofread/proofreadRoutes'
 import { PROOFREAD_DOCUMENT_METHODS } from '@modules/proofread/proofreadRoutes'
@@ -31,12 +32,23 @@ import type { StockRoutes } from '@modules/stock/stockRoutes'
 import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 import type { WechatRoutes } from '@modules/wechat/wechatRoutes'
 import { WECHAT_DOCUMENT_METHODS } from '@modules/wechat/wechatRoutes'
-import type { AiModelChoices, AiPermissionDecision, AiReasoningEffort, AiWriteGrant } from '@shared/types/aiChat'
+import type {
+    AiContextAddRequest,
+    AiContextItemKind,
+    AiContextQueryRequest,
+    AiContextSourceScope,
+    AiModelChoices,
+    AiPermissionDecision,
+    AiReasoningEffort,
+    AiWriteGrant,
+} from '@shared/types/aiChat'
 import { AI_REASONING_EFFORT_LABELS, isAiReasoningEffort } from '@shared/types/aiChat'
 import type { AiUsageQuery } from '@shared/types/aiUsage'
 import { isAiUsageModule, isAiUsageRange } from '@shared/types/aiUsage'
 import type { HostToWebviewMessage, StreamMessage, ToastPayload } from '@shared/types/messages'
 import { isRequestMessage } from '@shared/types/messages'
+import { PRESS_DOC_KEYS } from '@shared/types/press'
+import type { PressDocKey } from '@shared/types/press'
 import type { WechatAccountAuthFailureEvent } from '@shared/types/wechat'
 import type {
     OpenWorkflowResult,
@@ -57,6 +69,7 @@ import {
 } from './providers/codebuddyModels'
 import { CODEBUDDY_CREDITS_URLS } from './providers/codebuddySite'
 import type { AiChatService } from './chatService'
+import type { ContextSourceAccount, ContextSourceService } from './contextSourceService'
 import type { MentionService } from './mentionService'
 import type { ReferenceService } from './referenceService'
 import type { AiUsageService } from './usageService'
@@ -111,6 +124,8 @@ export interface AiChatViewProviderDeps {
     usage: AiUsageService
     mention: MentionService
     reference: ReferenceService
+    /** 上下文来源：菜单的来源列举、分页查询与批量添加 */
+    contextSources: ContextSourceService
     workflowRouter: WorkflowRouter
     naming: NamingRoutes
     press: PressRoutes
@@ -141,6 +156,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     private readonly usageService: AiUsageService
     private readonly mention: MentionService
     private readonly reference: ReferenceService
+    private readonly contextSources: ContextSourceService
     private readonly workflowRouter: WorkflowRouter
     private readonly naming: NamingRoutes
     private readonly press: PressRoutes
@@ -160,6 +176,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         this.usageService = deps.usage
         this.mention = deps.mention
         this.reference = deps.reference
+        this.contextSources = deps.contextSources
         this.workflowRouter = deps.workflowRouter
         this.naming = deps.naming
         this.press = deps.press
@@ -270,6 +287,12 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         }
     }
 
+    /** 读取公众号账号快照：目录段就是 AppID，展示名取账号名 */
+    private async readContextAccounts(): Promise<ContextSourceAccount[]> {
+        const raw = await this.wechat.handle('wechat/accounts', {})
+        return readAccountSnapshot(raw)
+    }
+
     private async invoke(method: string, payload: unknown, reqId: string, view: vscode.WebviewView): Promise<unknown> {
         switch (method) {
             case 'ai/session': {
@@ -349,16 +372,33 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 return { resolved: this.service.resolvePermission(id, decision) }
             }
             case 'ai/send': {
-                const { conversationId, content, isAutoApprove, titleHint } = readSendPayload(payload)
-                return this.service.send(reqId, conversationId, content, isAutoApprove, titleHint)
+                const { conversationId, content, isAutoApprove, titleHint, ruleNames } = readSendPayload(payload)
+                return this.service.send(reqId, conversationId, content, isAutoApprove, titleHint, ruleNames)
             }
             case 'ai/draft': {
-                const { conversationId, input, commandId } = readDraftPayload(payload)
-                this.service.setDraft(conversationId, { input, commandId })
+                const { conversationId, input, commandId, ruleNames } = readDraftPayload(payload)
+                this.service.setDraft(conversationId, { input, commandId, ruleNames })
                 return {}
             }
             case 'ai/enhancePrompt': {
                 return this.service.enhancePrompt(payload)
+            }
+            case 'ai/context/sources': {
+                const scope = readContextSourceScope(payload)
+                const accounts = scope === 'account' ? await this.readContextAccounts() : []
+                return { sources: this.contextSources.listSources(scope, accounts) }
+            }
+            case 'ai/context/query': {
+                const request = readContextQueryPayload(payload)
+                const accounts = request.kind === 'article' ? await this.readContextAccounts() : []
+                return this.contextSources.query(request, accounts)
+            }
+            case 'ai/context/sections': {
+                const { dirPath, doc } = readDocSectionsPayload(payload)
+                return { sections: await readDocSections(dirPath, doc) }
+            }
+            case 'ai/context/add': {
+                return this.contextSources.addContexts(readContextAddPayload(payload).items)
             }
             case 'ai/context': {
                 return this.service.getContexts()
@@ -681,6 +721,7 @@ function readSendPayload(payload: unknown): {
     content: string
     isAutoApprove: boolean
     titleHint: string | null
+    ruleNames: string[]
 } {
     if (typeof payload !== 'object' || payload === null) {
         throw new Error('ai/send 缺少参数')
@@ -690,6 +731,7 @@ function readSendPayload(payload: unknown): {
         content?: unknown
         autoApprove?: unknown
         titleHint?: unknown
+        ruleNames?: unknown
     }
     if (typeof value.conversationId !== 'string' || typeof value.content !== 'string') {
         throw new Error('ai/send 参数类型不正确')
@@ -700,7 +742,23 @@ function readSendPayload(payload: unknown): {
         content: value.content,
         isAutoApprove: value.autoApprove === true,
         titleHint: titleHint.length > 0 && titleHint.length <= MAX_TITLE_HINT_LENGTH ? titleHint : null,
+        ruleNames: readRuleNames(value.ruleNames),
     }
+}
+
+/** 规则名上限：一次挂载的规则数量有限，超量或超长的名称一律丢弃 */
+const MAX_RULE_NAMES = 10
+
+/** 收窄规则名清单：只接受字符串数组，逐项截断后去重 */
+function readRuleNames(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+        return []
+    }
+    const names = value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0 && item.length <= MAX_MENTION_KEYWORD)
+    return [...new Set(names)].slice(0, MAX_RULE_NAMES)
 }
 
 /** 校验 ai/draft 入参：只接受未发送正文与命令 id，超长截断，避免异常载荷占用内存 */
@@ -708,11 +766,17 @@ function readDraftPayload(payload: unknown): {
     conversationId: string
     input: string
     commandId: string | null
+    ruleNames: string[]
 } {
     if (typeof payload !== 'object' || payload === null) {
         throw new Error('ai/draft 缺少参数')
     }
-    const value = payload as { conversationId?: unknown; input?: unknown; commandId?: unknown }
+    const value = payload as {
+        conversationId?: unknown
+        input?: unknown
+        commandId?: unknown
+        ruleNames?: unknown
+    }
     if (typeof value.conversationId !== 'string' || typeof value.input !== 'string') {
         throw new Error('ai/draft 参数类型不正确')
     }
@@ -726,6 +790,7 @@ function readDraftPayload(payload: unknown): {
         conversationId: value.conversationId,
         input: value.input.length > MAX_DRAFT_LENGTH ? value.input.slice(0, MAX_DRAFT_LENGTH) : value.input,
         commandId,
+        ruleNames: readRuleNames(value.ruleNames),
     }
 }
 
@@ -955,4 +1020,115 @@ function readEffortPayload(payload: unknown): AiReasoningEffort | null {
 /** 读取有限正整数：非法值回落默认值，避免 NaN 进入偏移量计算 */
 function readPositiveInt(value: unknown, fallback: number): number {
     return typeof value === 'number' && Number.isFinite(value) && value >= 1 ? Math.trunc(value) : fallback
+}
+
+/** 上下文来源分类白名单：三个筛选维度，不接受任意字符串 */
+const CONTEXT_SOURCE_SCOPES: readonly AiContextSourceScope[] = ['notebook', 'account', 'project']
+
+/** 上下文候选分类白名单：设定不在其中，它按文档分节单独选取 */
+const CONTEXT_ITEM_KINDS: readonly AiContextItemKind[] = ['note', 'article', 'chapter', 'character', 'outline']
+
+/** 批量添加上限：远超单会话条数上限即可，超出视为异常载荷 */
+const MAX_CONTEXT_ADD_ITEMS = 20
+
+/** 校验 ai/context/sources 入参：只接受三个来源分类 */
+function readContextSourceScope(payload: unknown): AiContextSourceScope {
+    const raw = typeof payload === 'object' && payload !== null ? (payload as { scope?: unknown }).scope : undefined
+    const scope = CONTEXT_SOURCE_SCOPES.find((item) => item === raw)
+    if (scope === undefined) {
+        throw new Error('ai/context/sources 参数非法：scope 须为 notebook / account / project')
+    }
+    return scope
+}
+
+/** 校验 ai/context/query 入参：分类走白名单，来源 id 与关键词按上限截断 */
+function readContextQueryPayload(payload: unknown): AiContextQueryRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/context/query 缺少参数')
+    }
+    const { kind, sourceId, keyword, offset, limit } = payload as {
+        kind?: unknown
+        sourceId?: unknown
+        keyword?: unknown
+        offset?: unknown
+        limit?: unknown
+    }
+    const itemKind = CONTEXT_ITEM_KINDS.find((item) => item === kind)
+    if (itemKind === undefined) {
+        throw new Error('ai/context/query 参数非法：kind 须为 note / article / chapter / character / outline')
+    }
+    return {
+        kind: itemKind,
+        sourceId: typeof sourceId === 'string' && sourceId.length > 0 ? sourceId.slice(0, MAX_MENTION_PATH) : undefined,
+        keyword: typeof keyword === 'string' ? keyword.slice(0, MAX_MENTION_KEYWORD) : undefined,
+        offset: typeof offset === 'number' && Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0,
+        limit: readPositiveInt(limit, 20),
+    }
+}
+
+/** 校验 ai/context/sections 入参：作品目录 + 文档键白名单，文件名映射留在宿主 */
+function readDocSectionsPayload(payload: unknown): { dirPath: string; doc: PressDocKey } {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/context/sections 缺少参数')
+    }
+    const { dirPath, doc } = payload as { dirPath?: unknown; doc?: unknown }
+    if (typeof dirPath !== 'string' || dirPath.length === 0 || dirPath.length > MAX_MENTION_PATH) {
+        throw new Error('ai/context/sections 参数非法：dirPath 须为相对作品目录')
+    }
+    const docKey = PRESS_DOC_KEYS.find((item) => item === doc)
+    if (docKey === undefined) {
+        throw new Error('ai/context/sections 参数非法：doc 不在文档白名单内')
+    }
+    return { dirPath, doc: docKey }
+}
+
+/** 校验 ai/context/add 入参：逐项收窄路径与行范围，任一项非法即拒绝整批 */
+function readContextAddPayload(payload: unknown): AiContextAddRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/context/add 缺少参数')
+    }
+    const { items } = payload as { items?: unknown }
+    if (!Array.isArray(items) || items.length === 0 || items.length > MAX_CONTEXT_ADD_ITEMS) {
+        throw new Error('ai/context/add 参数非法：items 须为 1~20 项')
+    }
+    const targets = items.map((item) => {
+        if (typeof item !== 'object' || item === null) {
+            throw new Error('ai/context/add 参数非法：条目须为对象')
+        }
+        const { path: target, startLine, endLine, compress } = item as {
+            path?: unknown
+            startLine?: unknown
+            endLine?: unknown
+            compress?: unknown
+        }
+        if (typeof target !== 'string' || target.length === 0 || target.length > MAX_MENTION_PATH) {
+            throw new Error('ai/context/add 参数非法：path 须为相对路径')
+        }
+        const start = readOptionalLine(startLine)
+        const end = readOptionalLine(endLine)
+        if (start !== null && end !== null && end < start) {
+            throw new Error('ai/context/add 参数非法：行号区间倒序')
+        }
+        const base = start === null ? { path: target } : { path: target, startLine: start, endLine: end ?? start }
+        return compress === true ? { ...base, compress: true } : base
+    })
+    return { items: targets }
+}
+
+/** 收窄公众号账号快照：跨路由取数按不可信输入处理，缺字段的账号直接跳过 */
+function readAccountSnapshot(raw: unknown): ContextSourceAccount[] {
+    if (typeof raw !== 'object' || raw === null) {
+        return []
+    }
+    const { accounts } = raw as { accounts?: unknown }
+    if (!Array.isArray(accounts)) {
+        return []
+    }
+    return accounts.flatMap((item) => {
+        if (typeof item !== 'object' || item === null) {
+            return []
+        }
+        const { appId, name } = item as { appId?: unknown; name?: unknown }
+        return typeof appId === 'string' && typeof name === 'string' && appId.length > 0 ? [{ appId, name }] : []
+    })
 }

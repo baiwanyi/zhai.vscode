@@ -1,7 +1,7 @@
 /**
- * 生图「规则」子菜单：子菜单列出规则 md，行内完成挂载、编辑与删除。
+ * 通用规则子菜单：子菜单列出规则 md，行内完成挂载、编辑与删除，生图与 AI 对话共用同一套交互。
  * 复用约定：子菜单与菜单项取 @components/ui 的 dropdown-menu，行尾操作取 @webview/components/Button，
- * 配套的表单与删除确认交给同目录 ImageRuleDialogs，类型取 @shared/types/imagegen。
+ * 配套的表单与删除确认交给同层 RuleDialogs，规则类型取 @shared/types/imagegen。
  * 关键约束：子菜单与弹窗必须分开渲染——菜单收起会卸载子菜单整棵子树，弹窗挂在其内会随之消失；
  * 行尾按钮必须在 pointerdown / pointerup / click 上截断冒泡，否则点一次编辑会连带翻转该行的芯片，
  * 这层拦截统一收在 RuleRowAction 里；Escape 仍要冒泡出去关菜单，故按键只拦截回车与空格。
@@ -19,7 +19,7 @@ import type { PromptRule } from '@shared/types/imagegen'
 import { Button } from '@webview/components/Button'
 import type { JSX, KeyboardEvent, ReactNode, SyntheticEvent } from 'react'
 
-interface ImageRuleMenuProps {
+interface RuleMenuProps {
     /** 已列举的规则：排序与归属由调用方决定 */
     rules: readonly PromptRule[]
     isLoading: boolean
@@ -109,7 +109,7 @@ function RuleRow({ rule, isSelected, onToggle, onEdit, onDelete }: RuleRowProps)
 }
 
 /** 规则子菜单：列表 + 新建入口 + 打开目录，必须渲染在下拉菜单内 */
-export function ImageRuleMenu({
+export function RuleMenu({
     rules,
     isLoading,
     selectedRules,
@@ -118,7 +118,7 @@ export function ImageRuleMenu({
     onDelete,
     onCreate,
     onOpenDir,
-}: ImageRuleMenuProps): JSX.Element {
+}: RuleMenuProps): JSX.Element {
     return (
         <DropdownMenuSub>
             <DropdownMenuSubTrigger>

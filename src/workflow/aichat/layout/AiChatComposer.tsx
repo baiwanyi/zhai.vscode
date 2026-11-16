@@ -10,11 +10,12 @@
  * 增强结果只在正文仍是发起时那一份时才套用（归属校验在 usePromptEnhance 内）；
  * 粘贴的 `@zhai\` 路径改由宿主添加为引用，剩余正文优先回光标、输入区锁定时回落受控值，不丢内容；
  * 命令芯片的移除语义是「取消命令」，由 chip.onRemove 承担，不走统一的移除引用回调；
- * 操作行是 AppComposerFooter 的唯一子项，须带 flex-1 才能让左右两组分别贴住两侧。
+ * 操作行是 AppComposerFooter 的唯一子项，撑满与左右贴边由 AiChatComposerActions 自带的 flex-1 承担。
  */
 import { Loader2 } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { AiContextRef, AiContextUsage, AiWriteGrant } from '@shared/types/aiChat'
+import type { PromptRule } from '@shared/types/imagegen'
 import {
     AppComposer,
     AppComposerContent,
@@ -58,6 +59,11 @@ interface AiChatComposerProps {
     modelControl: AiChatModelControl
     /** 当前已选写作命令：输入区以芯片展示，指令模板不进入输入框 */
     command: AiCommand | null
+    /** 已挂规则名：输入区以规则芯片展示，发送时随请求下发 */
+    ruleNames: readonly string[]
+    onToggleRule: (rule: PromptRule) => void
+    onRenameRule: (previousName: string, rule: PromptRule) => void
+    onRemoveRule: (ruleName: string) => void
     onSend: () => void
     onStop: () => void
     onRemoveContext: (id: string) => void
@@ -66,6 +72,10 @@ interface AiChatComposerProps {
     onReference: (action: AiReferenceAction) => void
     /** 打开提及检索：引用笔记 / 章节 */
     onMention: () => void
+    /** 上下文添加成功后刷新会话快照 */
+    onContextAdded: () => void
+    /** 上下文添加失败的提示出口 */
+    onContextError: (error: string) => void
     /** 增强请求：由页面 hook 走宿主协议，失败返回 null；进行态由 usePromptEnhance 自己维护 */
     onEnhanceRequest: (text: string) => Promise<string | null>
     /** 粘贴的 @zhai 引用：交给页面添加为上下文并返回是否成功；缺省时粘贴原样插入 */
@@ -87,6 +97,10 @@ export function AiChatComposer({
     isAwaitingApproval,
     modelControl,
     command,
+    ruleNames,
+    onToggleRule,
+    onRenameRule,
+    onRemoveRule,
     onSend,
     onStop,
     onRemoveContext,
@@ -94,6 +108,8 @@ export function AiChatComposer({
     onClearCommand,
     onReference,
     onMention,
+    onContextAdded,
+    onContextError,
     onEnhanceRequest,
     onAddZhaiRef,
 }: AiChatComposerProps): JSX.Element {
@@ -119,7 +135,7 @@ export function AiChatComposer({
         input,
     })
 
-    const chips = buildComposerChips({ command, contexts, onClearCommand })
+    const chips = buildComposerChips({ command, ruleNames, contexts, onClearCommand, onRemoveRule })
     /** 增强态：请求期间继续输入或已发送清空时，结果会被丢弃，不覆盖新内容 */
     const promptEnhance = usePromptEnhance({ value: input, setValue: setInput, request: onEnhanceRequest })
     /** 粘贴拦截：命中 @zhai 令牌时改由宿主添加为引用，剩余正文回落到光标或受控值 */
@@ -149,6 +165,12 @@ export function AiChatComposer({
                     onCommand={onCommand}
                     onReference={onReference}
                     onMention={onMention}
+                    onContextAdded={onContextAdded}
+                    onContextError={onContextError}
+                    ruleNames={ruleNames}
+                    onToggleRule={onToggleRule}
+                    onRenameRule={onRenameRule}
+                    onRemoveRule={onRemoveRule}
                 />
             </AppComposerHeader>
 
@@ -174,7 +196,6 @@ export function AiChatComposer({
 
                 <AppComposerFooter>
                     <AiChatComposerActions
-                        className="flex-1"
                         writeGrant={writeGrant}
                         isGenerating={isGenerating}
                         isLocked={isLocked}

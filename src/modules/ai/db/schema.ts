@@ -13,7 +13,7 @@
  */
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = '14'
+const SCHEMA_VERSION = '15'
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS conversations (
@@ -41,6 +41,7 @@ const DDL_STATEMENTS = [
         status          TEXT NOT NULL,
         finish_reason   TEXT,
         refs            TEXT NOT NULL DEFAULT '[]',
+        rule_names      TEXT NOT NULL DEFAULT '[]',
         error           TEXT,
         total_tokens    INTEGER NOT NULL DEFAULT 0,
         duration_ms     INTEGER NOT NULL DEFAULT 0,
@@ -170,6 +171,9 @@ export function ensureAiSchema(db: Database.Database): boolean {
         // v14：消息表补执行步骤（工具调用与子任务的时间线）
         // 历史消息保持空数组即「无过程可回放」，不回填也不推断 —— 过程只在生成当时可得
         ensureColumn(db, 'messages', 'steps', "steps TEXT NOT NULL DEFAULT '[]'")
+        // v15：消息表补已挂规则名（仅用户消息），历史回显只展示徽章，规则正文不随历史重复注入；
+        // 历史消息保持空数组即「未挂规则」，不回填也不推断
+        ensureColumn(db, 'messages', 'rule_names', "rule_names TEXT NOT NULL DEFAULT '[]'")
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)

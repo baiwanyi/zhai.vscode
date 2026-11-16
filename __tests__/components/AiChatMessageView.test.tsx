@@ -50,6 +50,7 @@ function makeMessage(content: string): AiMessage {
         finishReason: null,
         error: null,
         refs: [],
+        ruleNames: [],
         totalTokens: 0,
         durationMs: 0,
         tokensEstimated: false,

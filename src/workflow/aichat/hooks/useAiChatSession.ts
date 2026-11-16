@@ -57,6 +57,8 @@ export interface AiSendOptions {
     /** 本轮是否允许白名单内直接写入：仅在连续生成确认后为 true */
     autoApprove?: boolean
     titleHint?: string
+    /** 本轮挂载的规则名：由宿主读正文并入提示词，不占上下文配额 */
+    ruleNames?: readonly string[]
 }
 
 /** 会话状态机对外暴露的状态与操作 */
@@ -267,6 +269,7 @@ export function useAiChatSession({
                     content: text,
                     autoApprove: options.autoApprove === true,
                     titleHint: options.titleHint,
+                    ruleNames: options.ruleNames ?? [],
                 })
                 setSession((previous) =>
                     previous
@@ -280,6 +283,9 @@ export function useAiChatSession({
                 setContexts([])
                 if (result.skippedContexts.length > 0) {
                     toast.info(`已跳过失效引用：${result.skippedContexts.join('、')}`)
+                }
+                if (result.skippedRules.length > 0) {
+                    toast.info(`已跳过超长或不可读的规则：${result.skippedRules.join('、')}`)
                 }
                 // 等待期间用户点了停止：消息照常入列，但不再挂流锚点、不把阶段推回生成中
                 // （否则宿主的流末已过去，界面会停在无人推进的流式态），也不清空输入

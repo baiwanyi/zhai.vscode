@@ -6,6 +6,8 @@
  * instruction 变更会使旧消息失去徽章回显。
  */
 
+import type { AiContextItemKind, AiContextSourceScope } from '@shared/types/aiChat'
+
 /** 写作命令 id */
 export type AiCommandId = 'rewrite' | 'polish' | 'typo' | 'deai'
 
@@ -62,3 +64,21 @@ export function isAiCommandId(value: unknown): value is AiCommandId {
 
 /** 参考菜单动作：检索语料（弹窗）或打开语料目录（目录不存在时由宿主创建） */
 export type AiReferenceAction = 'search' | 'openDir'
+
+/** 上下文查询目标：内容分类 + 可选来源过滤，来源 id 由宿主产生 */
+export interface AiContextTarget {
+    kind: AiContextItemKind
+    sourceId?: string
+}
+
+/** 作品下的分类标签：章节走索引，人物与大纲走文档分节，设定按字段与条目多选 */
+export type AiContextProjectTab = 'chapter' | 'character' | 'outline' | 'setting'
+
+/**
+ * 「添加上下文」面板视图：来源列表、候选列表与作品分类三态。
+ * 关键约束：视图由一级菜单选定，面板内只向上切换，不再回读菜单状态。
+ */
+export type AiContextPickerView =
+    | { mode: 'source'; scope: AiContextSourceScope }
+    | { mode: 'items'; target: AiContextTarget }
+    | { mode: 'project'; dirPath: string; tab: AiContextProjectTab }

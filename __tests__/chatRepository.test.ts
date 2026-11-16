@@ -63,6 +63,7 @@ function makeMessage(overrides: Partial<MessageRow> = {}): MessageRow {
         status: 'completed',
         finishReason: null,
         refs: '[]',
+        ruleNames: '[]',
         error: null,
         totalTokens: 0,
         durationMs: 0,

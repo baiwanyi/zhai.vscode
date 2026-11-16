@@ -1,7 +1,8 @@
 /**
  * AI 对话输入卡片底部操作行：左侧写入范围与模型菜单，右侧上下文圆环、增强提示词与发送 / 停止。
  * 采用普通行容器组合各独立子组件，本层只做布局与禁用态分发。
- * 根节点即 AppComposer 骨架的操作行槽位，className 由外层传入以撑满剩余宽度。
+ * 根节点即 AppComposer 骨架的操作行槽位：flex-1 固化在本层（骨架要求操作行撑满、左右两组各自贴边），
+ * className 只留给外层做额外布局微调。
  * 关键约束：生成中除圆环可查看外全部禁用，发送位替换为停止按钮；
  * 等待连续生成授权时同样全部锁定，但不出现停止按钮（此时没有在途请求可停）；本层不持有任何会话状态；
  * 工具审批默认逐次确认，连续生成的一次性授权在发送前确认。
@@ -59,7 +60,7 @@ export function AiChatComposerActions({
     onStop,
 }: AiChatComposerActionsProps): JSX.Element {
     return (
-        <div className={cn('flex min-w-0 items-center justify-between gap-2 pt-1', className)}>
+        <div className={cn('flex min-w-0 flex-1 items-center justify-between gap-2 pt-1', className)}>
             <div className="flex min-w-0 items-center gap-0.5">
                 <AiChatWriteGrantSwitch grant={writeGrant} disabled={isLocked} onChange={onWriteGrantChange} />
                 <AiChatModelMenu

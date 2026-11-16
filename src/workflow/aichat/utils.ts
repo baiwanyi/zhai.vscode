@@ -10,6 +10,7 @@
 import type {
     AiContextRef,
     AiMessage,
+    AiNotebookPackMode,
     AiRuntimeInfo,
     AiSessionSnapshot,
     AiStep,
@@ -24,9 +25,22 @@ import type { AiCommand } from './constants'
 /** 视图阶段：idle 空闲、sending 已提交待首字、streaming 正在逐字生成 */
 export type Phase = 'idle' | 'sending' | 'streaming'
 
-/** 引用体积描述：过千折算 k，被截断时追加标注 */
+/** 笔记本打包档位的中文标注：全文不额外标注，其余三档各自说明 */
+const NOTEBOOK_PACK_LABELS: Readonly<Record<AiNotebookPackMode, string>> = {
+    full: '',
+    excerpt: '已节选',
+    outline: '仅目录',
+    compressed: '已压缩',
+}
+
+/** 引用体积描述：过千折算 k；笔记本补篇数与打包档位，普通引用在截断时追加标注 */
 export function describeContext(ref: AiContextRef): string {
     const size = ref.charCount >= 1000 ? `${(ref.charCount / 1000).toFixed(1)}k 字` : `${ref.charCount} 字`
+    if (ref.kind === 'notebook') {
+        const members = ref.memberCount === undefined ? '' : `${String(ref.memberCount)} 篇`
+        const packLabel = ref.packMode === undefined ? '' : NOTEBOOK_PACK_LABELS[ref.packMode]
+        return [members, size, packLabel].filter((part) => part.length > 0).join(' · ')
+    }
     return ref.isTruncated ? `${size} · 已截断` : size
 }
 

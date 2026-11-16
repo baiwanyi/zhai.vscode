@@ -19,14 +19,20 @@ const CHAT_ENHANCE_MAX_LENGTH = 8_000
 /** 对话增强的输出 token 上限：中文约 1.6 字符/token，足够覆盖输入区常见长度 */
 const CHAT_ENHANCE_MAX_TOKENS = 1_600
 
-/** 改写场景：写作指令与图像画面描述 */
-export type EnhancePromptScene = 'write' | 'image'
+/** 改写场景：写作指令、图像画面描述与笔记合集压缩 */
+export type EnhancePromptScene = 'write' | 'image' | 'compress'
 
-/** 改写口径：两种场景只改口径文本，模型调用、超时与记账完全一致 */
+/** 改写口径：各场景只改口径文本，模型调用、超时与记账完全一致 */
 export const ENHANCE_SYSTEM_PROMPTS: Record<EnhancePromptScene, string> = {
     write: '你是写作指令编辑。把用户输入改写成可直接交给写作助手的指令：补足文体与视角、目标读者、篇幅或字数、结构与节奏、语言风格与禁忌；保持原意与中文表达，不要添加解释、标题或列表，只输出一段连续的指令。',
     image: '你是图像提示词编辑。把用户输入改写成更具体的画面描述：补足人物姿态、服装材质、场景层次、光线方向与镜头距离；保持原意与语言，不要添加解释、标题或列表，只输出一段连续的描述。',
+    compress: '你是资料压缩助手。把给定的笔记合集压缩成结构化要点：保留人物、设定、事件与结论等事实，去掉重复表述与举例；按笔记标题分组，用简洁的条目输出，不得编造未出现的信息，不要添加解释或前言。',
 }
+
+/** 压缩输出 token 上限：目标是把整本笔记压到两千字以内 */
+const COMPRESS_MAX_TOKENS = 2_000
+/** 压缩输入上限：打包文本通常在六千字以内，留出一倍余量 */
+const COMPRESS_MAX_INPUT = 12_000
 
 /** 一次增强请求：场景、上限与用量归属由调用方给出 */
 export interface PromptEnhanceRequest {
@@ -42,6 +48,18 @@ export interface PromptEnhanceRequest {
     maxOutputLength: number
     /** 用量归属模块：对话记 chat，出图记 image */
     module: AiUsageModule
+}
+
+/** 压缩请求：口径固定为资料压缩，归属对话模块，输出上限收紧到两千 token */
+export function createCompressRequest(text: string): PromptEnhanceRequest {
+    return {
+        text,
+        scene: 'compress',
+        maxTokens: COMPRESS_MAX_TOKENS,
+        maxInputLength: COMPRESS_MAX_INPUT,
+        maxOutputLength: COMPRESS_MAX_INPUT,
+        module: 'chat',
+    }
 }
 
 /** 对话侧请求：口径固定为写作指令，归属对话模块 */
