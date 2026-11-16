@@ -1,12 +1,12 @@
 /**
  * 作品封面仓储：press.db 的 meta 表按作品记录选中的封面图片（相对存储根路径）。
  * 复用约定：与配额仓储共用 meta 表，键前缀 `cover:` 区分用途；仪表盘、设定页与媒体页共用同一份读写逻辑；
- * 路径形态由 @shared/types/media 的 isMediaPath 判定，避免媒体模块反向依赖生图模块。
+ * 路径形态由 @shared/types/mediaPath 的 isMediaPath 判定，避免媒体模块反向依赖生图模块。
  * 关键约束：封面只接受 images/{YYYYMM}/{文件}——旧目录 press/{作品名}/Images/ 已由一次性迁移收编，
  * 读端不再为它留兼容分支，库里残留的旧值一律按「未选择封面」处理；
  * 其它形态同样拒绝，防止把手写路径或越界路径写进库；作品删除后残留的键无害，读取时按当前作品路径取用。
  */
-import { isMediaPath } from '@shared/types/media'
+import { isMediaPath } from '@shared/types/mediaPath'
 import type Database from 'better-sqlite3'
 
 /** 键前缀：后接作品相对路径 press/{作品名} */

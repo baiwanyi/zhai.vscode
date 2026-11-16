@@ -26,18 +26,17 @@ import { buildStorageUri } from '@modules/common/storagePath'
 import { nextMediaTarget, toMediaPath } from '@modules/media/mediaNaming'
 import type { MediaRecord } from '@modules/media/mediaRepository'
 import { writeMediaParameters } from '@modules/media/mediaSettingsStore'
-import {
-    DEFAULT_IMAGE_SETTINGS,
-    IMAGE_RATIO_SIZE,
-    type ImageGenerateCompleted,
-    type ImageGenerateKind,
-    type ImageGenerateProgress,
-    type ImageGenerateResult,
-    type ImageGenerateStage,
-    type ImageGenerateState,
-    type ImageSettings,
-    type MediaParameters,
-} from '@shared/types/imagegen'
+import type {
+    ImageGenerateCompleted,
+    ImageGenerateKind,
+    ImageGenerateProgress,
+    ImageGenerateResult,
+    ImageGenerateStage,
+    ImageGenerateState,
+} from '@shared/types/imageGenerate'
+import { IMAGE_RATIO_SIZE } from '@shared/types/imageRatio'
+import { DEFAULT_IMAGE_SETTINGS, type ImageSettings } from '@shared/types/imageSettings'
+import type { MediaParameters } from '@shared/types/mediaParameters'
 import { PORTRAIT_STYLES, type PortraitStyle, type PressLoreKind } from '@shared/types/press'
 import { IMAGE_QUOTA_KEYS } from './constants'
 import { readOptionalProjectDirPath } from './portraitService'

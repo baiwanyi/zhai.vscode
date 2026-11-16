@@ -1,6 +1,6 @@
 /**
  * 出图参数服务：读写全局出图配置，并向调用方回报覆盖了哪些键。
- * 复用约定：默认值取自 shared/types/imagegen 的 DEFAULT_IMAGE_SETTINGS（前端同一份），
+ * 复用约定：默认值取自 shared/types/mediaParameters 的 DEFAULT_IMAGE_SETTINGS（前端同一份），
  * 配置落 {存储根}/imagegen.json，与作品目录无关；写入前确保存储根存在，读取失败一律回落默认值。
  * 关键约束：只保存「与默认不同」的键，值为 null 表示取消覆盖；
  * 非法值不写入并以保存后的真实状态回给前端，避免前端按请求值渲染出与实际不符的界面；
@@ -9,13 +9,9 @@
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
-import {
-    DEFAULT_IMAGE_SETTINGS,
-    isImageRatio,
-    type ImageSettings,
-    type ImageSettingsResult,
-} from '@shared/types/imagegen'
-import { PORTRAIT_STYLES, type PortraitStyle } from '@shared/types/press'
+import { isImageRatio } from '@shared/types/imageRatio'
+import { DEFAULT_IMAGE_SETTINGS, type ImageSettings, type ImageSettingsResult } from '@shared/types/imageSettings'
+import { isPortraitStyle } from '@shared/types/imageStyle'
 
 /** 配置文件：存储根下的单文件，与 images / press 等目录平级 */
 const SETTINGS_FILE = 'imagegen.json'
@@ -25,20 +21,14 @@ const MAX_TEXT_LENGTH = 200
 /** 可覆盖的键全集：保存时按此顺序处理，读取时按此顺序校验 */
 const SETTING_KEYS: ReadonlyArray<keyof ImageSettings> = ['defaultRatio', 'portraitStyle', 'promptSuffix', 'negative']
 
-/** 画风收窄：只接受白名单值 */
-function toStyle(value: unknown): PortraitStyle | null {
-    return PORTRAIT_STYLES.some((item) => item === value) ? (value as PortraitStyle) : null
-}
-
 /** 把磁盘或入参的原始对象收窄为合法的覆盖集合：非法字段直接丢弃 */
 function toOverrides(source: Record<string, unknown>): Partial<ImageSettings> {
     const result: Partial<ImageSettings> = {}
     if (isImageRatio(source.defaultRatio)) {
         result.defaultRatio = source.defaultRatio
     }
-    const portraitStyle = toStyle(source.portraitStyle)
-    if (portraitStyle !== null) {
-        result.portraitStyle = portraitStyle
+    if (isPortraitStyle(source.portraitStyle)) {
+        result.portraitStyle = source.portraitStyle
     }
     if (typeof source.promptSuffix === 'string') {
         result.promptSuffix = source.promptSuffix.slice(0, MAX_TEXT_LENGTH)

@@ -1,11 +1,13 @@
 /**
- * 媒体库契约：媒体条目、引用关系、年月筛选与各协议的出入参模型。
- * 复用约定：条目分类沿用 ./press 的 PressLoreKind；路径一律为相对存储根的 images/{YYYYMM}/{文件}，
+ * 媒体库契约：媒体条目、引用关系、年月聚合与各协议的出入参模型。
+ * 复用约定：条目分类沿用 ./press 的 PressLoreKind，基址目录与标识/路径校验见 ./mediaPath，
+ * 出图参数的比例与画风直接取 ./imageRatio、./imageStyle 的白名单类型，不另立字符串口径；
  * 条目 id 即文件名主干，前端只持有 id，落盘路径由宿主查表得出。
- * 关键约束：id 为 14 位本地时间戳 + 6 位 [A-Za-z0-9] 随机段，语义不进文件名；
- * 出处（作品 / 角色 / 条目）写入后不再改写，引用为一行一条、天然一对多；
+ * 关键约束：语义不进文件名，出处（作品 / 角色 / 条目）写入后不再改写，引用为一行一条、天然一对多；
  * 手工放入的图片允许不符合命名规范，但路径必须落在 images/{YYYYMM}/ 下。
  */
+import type { ImageRatio } from './imageRatio'
+import type { PortraitStyle } from './imageStyle'
 import type { PressLoreKind } from './press'
 
 /** 媒体来源作用域：作品、笔记、公众号与通用 */
@@ -29,43 +31,6 @@ export type MediaRefType =
 
 /** 引用路径的定位基准：存储根相对路径或绝对路径（存储根外的文档） */
 export type MediaRefScope = 'storage' | 'absolute'
-
-/** 引用基址：媒体路径的相对根目录名，扫描、列举与校验都以这里为准 */
-export const MEDIA_DIR = 'images'
-
-/** 媒体 id：14 位时间戳 + 6 位字母数字随机段 */
-const MEDIA_ID_PATTERN = /^\d{14}[A-Za-z0-9]{6}$/
-/** 媒体相对路径：images/{YYYYMM}/{文件名}，文件名允许手工命名 */
-const MEDIA_PATH_PATTERN = /^images\/(\d{6})\/([^/]+)$/
-/** 图片扩展名白名单：与宿主扫描口径同源 */
-const MEDIA_EXTENSION_PATTERN = /\.(png|jpe?g|webp|gif)$/i
-/** 年月格式：YYYY-MM */
-const MEDIA_MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/
-
-/** 媒体标识是否合法：迁移前的旧命名（portrait-…）不通过 */
-export function isMediaId(value: unknown): value is string {
-    return typeof value === 'string' && MEDIA_ID_PATTERN.test(value)
-}
-
-/** 媒体相对路径是否合法：必须落在 images/{YYYYMM}/ 下且扩展名在图片集合内 */
-export function isMediaPath(value: unknown): value is string {
-    if (typeof value !== 'string') {
-        return false
-    }
-    const matched = MEDIA_PATH_PATTERN.exec(value)
-    return matched !== null && MEDIA_EXTENSION_PATTERN.test(matched[2] ?? '')
-}
-
-/** 从媒体路径取 id：文件名去掉扩展名；路径不合法时返回空串 */
-export function readMediaIdFromPath(path: string): string {
-    const fileName = path.split('/').pop() ?? ''
-    return fileName.replace(/\.[^.]+$/u, '')
-}
-
-/** 年月是否合法：供协议入参收窄 */
-export function isMediaMonth(value: unknown): value is string {
-    return typeof value === 'string' && MEDIA_MONTH_PATTERN.test(value)
-}
 
 /**
  * 媒体条目：一次列举返回 webview 可直接渲染的最小集合。
@@ -100,11 +65,12 @@ export interface MediaItem {
     missing: boolean
     /**
      * 出图参数：来源是同目录 images/{YYYYMM}/settings.json，只有详情接口回传真实值，列表接口一律为 null。
-     * 提示词体积可达数 KB，全量列举时带上会让列表消息膨胀数倍；索引库不再保存这四项。
+     * 提示词体积可达数 KB，全量列举时带上会让列表消息膨胀数倍；索引库不再保存这四项；
+     * 比例与画风已在读取时收窄到白名单，非法记录不会流到这里。
      */
     prompt: string | null
-    ratio: string | null
-    style: string | null
+    ratio: ImageRatio | null
+    style: PortraitStyle | null
     enhancedFrom: string | null
 }
 

@@ -8,8 +8,8 @@
  */
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { DEFAULT_IMAGE_SETTINGS } from '@shared/types/imagegen'
-import type { ImageGenerateResult, ImageSettings, ImageSettingsResult } from '@shared/types/imagegen'
+import type { ImageGenerateResult } from '@shared/types/imageGenerate'
+import { DEFAULT_IMAGE_SETTINGS, type ImageSettings, type ImageSettingsResult } from '@shared/types/imageSettings'
 import type { MediaItem } from '@shared/types/media'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'

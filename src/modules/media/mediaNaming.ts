@@ -1,6 +1,6 @@
 /**
  * 存储命名：为待落盘的文件生成「年月目录 + 14 位时间戳 + 6 位大写随机段」的标识，出图与上传共用。
- * 复用约定：合法性由 @shared/types/media 的 isMediaId 校验，基址目录与扩展名由调用方给出，
+ * 复用约定：合法性由 @shared/types/mediaPath 的 isMediaId 校验，基址目录与扩展名由调用方给出，
  * 出图落 images、上传落 uploads；路径一律经 common/storagePath 构造，时间戳与目录名由同一次计算产出，不会跨秒错位。
  * 关键约束：永不覆盖已有文件——同秒冲突先换随机段，换满再按秒顺延，上限内仍冲突即报错；
  * 随机段固定 [A-Z0-9]{6}，历史小写 id 仍可读但不再新生成（读侧正则保持宽松）；
@@ -9,7 +9,7 @@
 import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { buildStorageUri } from '@modules/common/storagePath'
-import { MEDIA_DIR } from '@shared/types/media'
+import { MEDIA_DIR } from '@shared/types/mediaPath'
 
 /** 年月目录与文件名共用的时间戳位数：YYYYMMDDHHmmss */
 const STAMP_LENGTH = 14

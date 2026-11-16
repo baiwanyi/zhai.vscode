@@ -14,7 +14,7 @@ import { basename, isAbsolute } from 'node:path'
 import * as vscode from 'vscode'
 import { sniffImageMime } from '@modules/common/imageSniff'
 import { logger } from '@modules/common/logger'
-import type { ImageReferencePickResult } from '@shared/types/imagegen'
+import type { ImageReferencePickResult } from '@shared/types/imageReference'
 import type { ImageReferenceInput } from './ai/imageProvider'
 
 /** 参考图扩展名白名单：与图像通道支持的图片格式一致 */

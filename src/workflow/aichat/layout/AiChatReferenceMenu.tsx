@@ -29,14 +29,7 @@ export function AiChatReferenceMenu({ disabled, onReference, onMention }: AiChat
     return (
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full text-muted-foreground"
-                    title="参考资料"
-                    aria-label="参考资料"
-                    disabled={disabled}
-                >
+                <Button variant="secondary" size="icon" tooltip="参考资料" aria-label="参考资料" disabled={disabled}>
                     <LibraryBig />
                 </Button>
             </DropdownMenuTrigger>

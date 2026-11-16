@@ -16,7 +16,7 @@ import type {
     MediaScope,
     MediaUsageItem,
 } from '@shared/types/media'
-import type { PressLoreKind } from '@shared/types/press'
+import { isPressLoreKind, type PressLoreKind } from '@shared/types/press'
 import type Database from 'better-sqlite3'
 
 /** 主表行：字段名与 DDL 一致，仅在仓储内部使用 */
@@ -116,7 +116,7 @@ function toStoredMedia(row: MediaRow): StoredMedia {
         pressName: row.press_name,
         characterId: row.character_id,
         characterName: row.character_name,
-        loreKind: (row.lore_kind as PressLoreKind | null) ?? null,
+        loreKind: isPressLoreKind(row.lore_kind) ? row.lore_kind : null,
         loreId: row.lore_id,
         loreName: row.lore_name,
         missing: row.missing === 1,

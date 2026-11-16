@@ -6,7 +6,7 @@
  * 预览图只是辅助信息，缺图时面板照常可用；baseUrl 为 null 时调用方必须整体隐藏缩略图。
  */
 import { useCallback, useState } from 'react'
-import type { PromptImageBase } from '@shared/types/imagegen'
+import type { PromptImageBase } from '@shared/types/promptLibrary'
 import { request } from '@shared/utils/bridge'
 
 /** 未取到与无图时共用的空基址：dirPath 为空串表示尚未回包 */

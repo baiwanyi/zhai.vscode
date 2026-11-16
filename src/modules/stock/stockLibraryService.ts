@@ -9,7 +9,7 @@
 import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
 import { buildStorageUri, deleteResource } from '@modules/common/storagePath'
-import { isMediaMonth } from '@shared/types/media'
+import { isMediaMonth } from '@shared/types/mediaPath'
 import { STOCK_DIR, isStockFileStem } from '@shared/types/stock'
 import type { StockDownloadedResult, StockLocalPhoto, StockRemoveResult } from '@shared/types/stock'
 import { resolveThumbUri } from './cache'

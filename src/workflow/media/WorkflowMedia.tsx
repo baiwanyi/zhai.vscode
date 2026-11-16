@@ -14,7 +14,7 @@
 import { Copy, ImageIcon, Info, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@components/ui/dropdown-menu'
-import type { ImageGenerateResult } from '@shared/types/imagegen'
+import type { ImageGenerateResult } from '@shared/types/imageGenerate'
 import type { MediaDetailResult, MediaItem } from '@shared/types/media'
 import { request } from '@shared/utils/bridge'
 import { AppAction, AppContent, AppFooter, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'

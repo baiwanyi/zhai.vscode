@@ -18,7 +18,7 @@
 import { SquarePen } from 'lucide-react'
 import { useCallback } from 'react'
 import type { AiMentionCandidate, AiReferenceEntry } from '@shared/types/aiChat'
-import type { PromptRule } from '@shared/types/imagegen'
+import type { PromptRule } from '@shared/types/promptLibrary'
 import { AppAction, AppContent, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'

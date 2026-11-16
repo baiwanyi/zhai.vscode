@@ -7,7 +7,7 @@
  */
 import type { AiUsage, AiUsageMeta } from '@modules/ai/provider'
 import type { SecretsService } from '@modules/common/secrets'
-import type { ImageGenerateProgress } from '@shared/types/imagegen'
+import type { ImageGenerateProgress } from '@shared/types/imageGenerate'
 import { CodeBuddyImageProvider } from './codebuddyImageProvider'
 
 /** 图像通道标识 */

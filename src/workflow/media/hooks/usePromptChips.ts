@@ -1,6 +1,7 @@
 /**
  * 生图输入芯片：维护「引用意图」集合——作品设定、当前角色、已选提示词词条、自定义规则与参考图。
- * 复用约定：角色快照类型取 ../prompt/promptSections，词条、规则与参考图类型取 @shared/types/imagegen；
+ * 复用约定：角色快照类型取 ../prompt/promptSections，参考图类型取 @shared/types/imageReference，
+ * 词条与规则类型取 @shared/types/promptLibrary；
  * 本 hook 只产出数据与操作，图标与预览留在 layout 渲染。
  * 关键约束：芯片 id 是删除与 DOM 定位的唯一依据——设定与角色按 kind 唯一，
  * 词条按词条标识去重、规则按标识去重、参考图按磁盘路径去重，三者都可挂多枚；
@@ -10,7 +11,8 @@
  * 发送时的清空与失败后的草稿回填由 useImageComposer 触发，回填只在用户没有新加芯片时生效。
  */
 import { useState } from 'react'
-import type { ImageReferenceItem, PromptRule, PromptTag } from '@shared/types/imagegen'
+import type { ImageReferenceItem } from '@shared/types/imageReference'
+import type { PromptRule, PromptTag } from '@shared/types/promptLibrary'
 import type { PromptCharacterSnapshot } from '../prompt/promptSections'
 
 /** 芯片来源：setting 指作品设定，character 指某个人物，prompt 指词库词条，rule 指自定义规则，reference 指参考图 */

@@ -1,6 +1,6 @@
 /**
  * AI 对话草稿：持有写作命令、已挂规则与未发送正文，负责防抖写入宿主草稿、按会话快照回填、按历史消息回填。
- * 复用约定：命令表取 ../constants，快照与消息类型取 @shared/types/aiChat，规则类型取 @shared/types/imagegen，
+ * 复用约定：命令表取 ../constants，快照与消息类型取 @shared/types/aiChat，规则类型取 @shared/types/promptLibrary，
  * 持久化走 @shared/utils/bridge 的 ai/draft 协议，消息回显拆分复用 ../utils。
  * 关键约束：commandId / ruleNames 的 ref 与 state 必须同一出口同步写——快照回填先判 ref 再判 state，
  * 否则一次渲染延迟会让用户之后主动取消的选择被重新恢复；同一会话的草稿只套用一次；
@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { AiMessage, AiSessionSnapshot } from '@shared/types/aiChat'
-import type { PromptRule } from '@shared/types/imagegen'
+import type { PromptRule } from '@shared/types/promptLibrary'
 import { request } from '@shared/utils/bridge'
 import type { AiCommand, AiCommandId } from '../constants'
 import { AI_COMMAND_MAP, isAiCommandId } from '../constants'

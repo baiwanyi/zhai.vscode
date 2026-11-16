@@ -47,7 +47,7 @@
 | 角色图 | `portrait-{14 位时间戳}-{8 位角色标识}` | `portrait-20261025143000-10428736` |
 | 普通图 | `photo-{14 位时间戳}-{8 位随机串}` | `photo-20261025143000-aB3xK9Qz` |
 
-解析集中在 `src/shared/types/imagegen.ts`：`parseImageKind` / `parseImageCharacterId` / `isPressImageId`。只认当前命名，旧角色图与旧封面命名一律归为孤儿图。
+标识的构造与落盘路径由 `src/modules/media/mediaNaming.ts` 承担，形态校验（`isMediaId` / `readMediaIdFromPath`）在 `src/shared/types/mediaPath.ts`；出图相关的契约类型已按域拆分到 `src/shared/types/imageGenerate.ts`、`src/shared/types/imageSettings.ts` 与 `src/shared/types/mediaParameters.ts`。只认当前命名，旧角色图与旧封面命名一律归为孤儿图。
 
 ### 2.4 命名冲突
 

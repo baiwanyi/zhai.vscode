@@ -5,7 +5,7 @@
  */
 import * as path from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { DEFAULT_IMAGE_SETTINGS } from '@shared/types/imagegen'
+import { DEFAULT_IMAGE_SETTINGS } from '@shared/types/imageSettings'
 import { readFileContent, resetWorkspaceState, setConfigValue, setFileContent } from './stubs/vscode'
 import { ImageSettingsService } from '../src/modules/imagegen/imageSettingsService'
 

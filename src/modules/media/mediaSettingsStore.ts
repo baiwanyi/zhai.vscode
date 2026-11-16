@@ -1,7 +1,7 @@
 /**
  * 生图参数存储：每张图的出图参数按月目录聚合为 images/{YYYYMM}/settings.json，键为媒体 id。
  * 复用约定：路径一律经 common/storagePath 构造，年月目录由媒体相对路径推导，不另算时钟；
- * 比例与画风沿用 @shared/types 的白名单收窄，读取时逐项校验，非法条目整条丢弃。
+ * 记录收窄统一走 @shared/utils/mediaParameters，非法条目整条丢弃，本文件不再自行校验字段。
  * 关键约束：索引库不再保存 prompt / ratio / style / enhancedFrom 四项，本文件是唯一来源；
  * 写入采用「读整份 → 改单键 → 临时文件 + 覆盖改名」，任何时刻读到的都是完整对象；
  * 旧文件解析失败时先改名留档再重建，绝不在无法解析的内容上直接覆盖。
@@ -9,9 +9,9 @@
 import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
 import { buildStorageUri } from '@modules/common/storagePath'
-import { isImageRatio, type MediaParameters } from '@shared/types/imagegen'
-import { MEDIA_DIR, readMediaIdFromPath } from '@shared/types/media'
-import { PORTRAIT_STYLES, type PortraitStyle } from '@shared/types/press'
+import type { MediaParameters } from '@shared/types/mediaParameters'
+import { MEDIA_DIR, readMediaIdFromPath } from '@shared/types/mediaPath'
+import { parseMediaParameters } from '@shared/utils/mediaParameters'
 
 /** 参数文件名：与图片同目录，键为媒体 id */
 const SETTINGS_FILE = 'settings.json'
@@ -28,37 +28,11 @@ export function toMonthDir(mediaPath: string): string | null {
     return MONTH_DIR_PATTERN.test(monthDir) ? monthDir : null
 }
 
-/** 画风收窄：只接受白名单值 */
-function toStyle(value: unknown): PortraitStyle | null {
-    return PORTRAIT_STYLES.some((item) => item === value) ? (value as PortraitStyle) : null
-}
-
-/** 单条参数收窄：任一必填字段不合法即整条丢弃，避免把脏数据写回界面 */
-function toParameters(value: unknown): MediaParameters | null {
-    if (typeof value !== 'object' || value === null) {
-        return null
-    }
-    const record = value as Record<string, unknown>
-    if (typeof record.prompt !== 'string' || !isImageRatio(record.ratio)) {
-        return null
-    }
-    const style = toStyle(record.style)
-    if (style === null) {
-        return null
-    }
-    return {
-        prompt: record.prompt,
-        ratio: record.ratio,
-        style,
-        enhancedFrom: typeof record.enhancedFrom === 'string' ? record.enhancedFrom : null,
-    }
-}
-
 /** 整份收窄：非法条目丢弃，保留合法键 */
 function toParametersMap(raw: Record<string, unknown>): Record<string, MediaParameters> {
     const result: Record<string, MediaParameters> = {}
     for (const [id, value] of Object.entries(raw)) {
-        const params = toParameters(value)
+        const params = parseMediaParameters(value)
         if (params !== null) {
             result[id] = params
         }

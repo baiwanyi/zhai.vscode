@@ -1,7 +1,7 @@
 /**
  * 通用规则子菜单：子菜单列出规则 md，行内完成挂载、编辑与删除，生图与 AI 对话共用同一套交互。
  * 复用约定：子菜单与菜单项取 @components/ui 的 dropdown-menu，行尾操作取 @webview/components/Button，
- * 配套的表单与删除确认交给同层 RuleDialogs，规则类型取 @shared/types/imagegen。
+ * 配套的表单与删除确认交给同层 RuleDialogs，规则类型取 @shared/types/promptLibrary。
  * 关键约束：子菜单与弹窗必须分开渲染——菜单收起会卸载子菜单整棵子树，弹窗挂在其内会随之消失；
  * 行尾按钮必须在 pointerdown / pointerup / click 上截断冒泡，否则点一次编辑会连带翻转该行的芯片，
  * 这层拦截统一收在 RuleRowAction 里；Escape 仍要冒泡出去关菜单，故按键只拦截回车与空格。
@@ -15,7 +15,7 @@ import {
     DropdownMenuSubContent,
     DropdownMenuSubTrigger,
 } from '@components/ui/dropdown-menu'
-import type { PromptRule } from '@shared/types/imagegen'
+import type { PromptRule } from '@shared/types/promptLibrary'
 import { Button } from '@webview/components/Button'
 import type { JSX, KeyboardEvent, ReactNode, SyntheticEvent } from 'react'
 

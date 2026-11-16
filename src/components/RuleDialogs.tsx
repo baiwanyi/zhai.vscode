@@ -2,14 +2,14 @@
  * 通用规则配套弹窗：表单承担新建与编辑，确认框承担删除，生图与 AI 对话共用。
  * 复用约定：表单取 @webview/components/FormDialog，删除确认取 @webview/components/ConfirmDialog，
  * 字段取 @components/ui 的 field/input/textarea，文本状态取 @webview/hooks/useTrimmedInput；
- * 表单状态类型取 @webview/hooks/useRuleMenu 的 RuleFormState，规则类型取 @shared/types/imagegen。
+ * 表单状态类型取 @webview/hooks/useRuleMenu 的 RuleFormState，规则类型取 @shared/types/promptLibrary。
  * 关键约束：弹窗必须渲染在下拉菜单之外——菜单收起会卸载整棵子树；
  * 表单按原条目区分新建与编辑，换 key 重挂载回到初值，关闭时由调用方清空待处理项。
  */
 import { Field, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
-import type { PromptRule } from '@shared/types/imagegen'
+import type { PromptRule } from '@shared/types/promptLibrary'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { FormDialog } from '@webview/components/FormDialog'
 import type { RuleFormState } from '@webview/hooks/useRuleMenu'

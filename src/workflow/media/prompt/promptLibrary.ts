@@ -6,7 +6,7 @@
  * 由调用方判断「是否处于搜索态」，避免空串把整库铺到面板里；
  * 分类图标由面板自行决定，本层不维护名称到图标的映射，用户新建分类无需登记图标。
  */
-import type { PromptTag, PromptTagAttribute, PromptTagObject } from '@shared/types/imagegen'
+import type { PromptTag, PromptTagAttribute, PromptTagObject } from '@shared/types/promptLibrary'
 
 export type { PromptTag, PromptTagAttribute, PromptTagObject }
 

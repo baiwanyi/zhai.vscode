@@ -1,11 +1,11 @@
 /**
  * 正文比例意图探测：从提示词正文里识别用户写下的画面比例（数字写法或中英文比例词）。
- * 复用约定：比例白名单取 @shared/types/imagegen 的 isImageRatio，本文件只负责定位与取值，
+ * 复用约定：比例白名单取 @shared/types/imageRatio 的 isImageRatio，本文件只负责定位与取值，
  * 是否真的切换比例由调用方决定，不写回任何作品配置。
  * 关键约束：数字写法只认白名单内的值，文字只认 RATIO_KEYWORDS 登记的中英文词，其余描述一律不猜；
  * 多类写法按出现位置合流，最后一次出现优先；英文词在小写副本上定位，索引与原串一致。
  */
-import { isImageRatio, type ImageRatio } from '@shared/types/imagegen'
+import { isImageRatio, type ImageRatio } from '@shared/types/imageRatio'
 
 /** 比例字面量：正文里写「16:9」这类比例即可自动切换，全角冒号与斜杠都收，前后紧邻数字或小数点的跳过 */
 const RATIO_PATTERN = /(?<![\d.])(\d{1,2})\s*[:：/]\s*(\d{1,2})(?![\d.])/gu

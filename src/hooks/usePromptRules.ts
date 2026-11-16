@@ -2,7 +2,7 @@
  * 出图规则钩子：列举 {存储根}/prompt/rules 下的 md 规则，并支持读取、新建、改写、删除与打开目录。
  * 复用约定：协议走 pressAi/listPromptRules、pressAi/readPromptRule、pressAi/savePromptRule、
  * pressAi/updatePromptRule、pressAi/deletePromptRule、pressAi/openPromptRuleDir，
- * 类型取 @shared/types/imagegen；请求经 @shared/utils/bridge，失败统一 toastError。
+ * 类型取 @shared/types/promptLibrary；请求经 @shared/utils/bridge，失败统一 toastError。
  * 关键约束：宿主只回报标识与显示名，正文仅在编辑时按需读取——规则改文无需前端刷新；
  * 新建只允许新增、改写允许换名，重名一律由宿主拒绝，本 hook 不做预判；
  * 列表按中文名排序，与宿主列举口径一致；改写换名后必须先剔除旧标识，否则列表会残留一条指向已不存在文件的条目；
@@ -15,7 +15,7 @@ import type {
     PromptRuleListResult,
     PromptRuleSaveRequest,
     PromptRuleUpdateRequest,
-} from '@shared/types/imagegen'
+} from '@shared/types/promptLibrary'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 

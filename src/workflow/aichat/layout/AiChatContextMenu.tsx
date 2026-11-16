@@ -1,109 +1,116 @@
 /**
- * 「添加上下文」一级菜单：扁平四项 + 规则子菜单，只负责选定视图与挂载规则，不承载搜索与列表。
- * 复用约定：外壳取 @components/ui 的 DropdownMenu，触发器取 @webview/components/Button；
- * 规则子菜单取共享层 RuleMenu，与出图侧同一份实现；视图联合类型与查询目标取 ../constants。
- * 关键约束：选择作品进入来源列表后再选作品，其余三项直接进入候选列表；
- * 规则子菜单的编辑与删除弹窗必须渲染在菜单之外（菜单收起会卸载子树），由工具行负责挂载。
+ * 「添加上下文」入口：触发器按钮加单层 Popover，内部挂 AiChatContextPicker 选择器。
+ * 复用约定：外壳取 @components/ui 的 popover，触发器取 @webview/components/Button，
+ * 规则数据与增删改统一由 @webview/hooks/useRuleMenu 编排，弹窗取 @webview/components/RuleDialogs。
+ * 关键约束：一级列表与二级视图都在同一个 Popover 内切换——早先用下拉菜单去打开面板，
+ * 两层浮层同帧一关一开会把面板判成外部交互而立即收起（表现为闪退）；
+ * 规则弹窗必须渲染在浮层之外，面板收起不会连带卸载它；
+ * 打开面板时回到根视图并重读规则目录，关闭时同样复位视图，下次仍从根开始。
  */
-import { Command, FileText, Library, Newspaper, Package } from 'lucide-react'
-import {
-    DropdownMenu,
-    DropdownMenuContent,
-    DropdownMenuItem,
-    DropdownMenuLabel,
-    DropdownMenuSeparator,
-    DropdownMenuTrigger,
-} from '@components/ui/dropdown-menu'
-import type { PromptRule } from '@shared/types/imagegen'
+import { Command } from 'lucide-react'
+import { useState } from 'react'
+import { Popover, PopoverContent, PopoverTrigger } from '@components/ui/popover'
+import type { PromptRule } from '@shared/types/promptLibrary'
 import { Button } from '@webview/components/Button'
-import { RuleMenu } from '@webview/components/RuleMenu'
+import { RuleDialogs } from '@webview/components/RuleDialogs'
+import { useRuleMenu } from '@webview/hooks/useRuleMenu'
+import { AiChatContextPicker } from './AiChatContextPicker'
 import type { AiContextPickerView } from '../constants'
 import type { JSX } from 'react'
 
 interface AiChatContextMenuProps {
     disabled: boolean
-    /** 选定视图：由页面打开面板并渲染对应列表 */
-    onSelect: (view: AiContextPickerView) => void
-    /** 已列举的规则：排序与归属由工具行的 useRuleMenu 决定 */
-    rules: readonly PromptRule[]
-    isLoadingRules: boolean
-    /** 已挂规则名：子菜单据此回显挂载态 */
-    selectedRules: readonly string[]
+    /** 上下文添加成功后刷新会话快照 */
+    onContextAdded: () => void
+    /** 上下文添加失败的提示出口 */
+    onContextError: (error: string) => void
+    /** 已挂规则名：选择器的规则视图据此回显挂载态 */
+    ruleNames: readonly string[]
     onToggleRule: (rule: PromptRule) => void
-    onEditRule: (rule: PromptRule) => void
-    onDeleteRule: (rule: PromptRule) => void
-    onCreateRule: () => void
-    onOpenRuleDir: () => void
-    /** 菜单受控开合：规则编辑与删除需要先收起菜单，再由工具行打开对应弹窗 */
-    open: boolean
-    onOpenChange: (isOpen: boolean) => void
+    onRenameRule: (previousName: string, rule: PromptRule) => void
+    onRemoveRule: (ruleName: string) => void
 }
+
+/** 选择器初始视图：每次打开都从根列表开始 */
+const ROOT_VIEW: AiContextPickerView = { mode: 'root' }
 
 export function AiChatContextMenu({
     disabled,
-    onSelect,
-    rules,
-    isLoadingRules,
-    selectedRules,
+    onContextAdded,
+    onContextError,
+    ruleNames,
     onToggleRule,
-    onEditRule,
-    onDeleteRule,
-    onCreateRule,
-    onOpenRuleDir,
-    open,
-    onOpenChange,
+    onRenameRule,
+    onRemoveRule,
 }: AiChatContextMenuProps): JSX.Element {
+    const [isOpen, setIsOpen] = useState(false)
+    const [pickerView, setPickerView] = useState<AiContextPickerView>(ROOT_VIEW)
+
+    const ruleMenu = useRuleMenu({
+        onToggleRule,
+        onRenameRule,
+        onRemoveRule,
+        // 编辑与删除要先收起面板再弹窗，否则两层浮层会叠在一起
+        onCloseMenu: (): void => setIsOpen(false),
+    })
+
+    /** 面板开合：打开时重读规则目录，开合都复位视图 */
+    const handleOpenChange = (isOpen: boolean): void => {
+        setIsOpen(isOpen)
+        setPickerView(ROOT_VIEW)
+        if (isOpen) {
+            void ruleMenu.reload()
+        }
+    }
+
     return (
-        <DropdownMenu open={open} onOpenChange={onOpenChange}>
-            <DropdownMenuTrigger asChild>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    className="rounded-full text-muted-foreground"
-                    tooltip="添加上下文"
-                    aria-label="添加上下文"
-                    disabled={disabled}
+        <>
+            <Popover open={isOpen} onOpenChange={handleOpenChange}>
+                <PopoverTrigger asChild>
+                    <Button
+                        variant="secondary"
+                        size="icon"
+                        tooltip="添加上下文"
+                        aria-label="添加上下文"
+                        disabled={disabled}
+                    >
+                        <Command />
+                    </Button>
+                </PopoverTrigger>
+                {/* 外观对齐下拉菜单：p-1、半透明毛玻璃底、菜单项圆角高亮，宽度与参考资料菜单一致 */}
+                <PopoverContent
+                    align="start"
+                    side="top"
+                    className="relative w-56 gap-0 overflow-x-hidden overflow-y-auto rounded-lg bg-popover/70 p-1 shadow-md ring-1 ring-foreground/10 before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:rounded-[inherit] before:backdrop-blur-2xl before:backdrop-saturate-150"
+                    onOpenAutoFocus={(event): void => event.preventDefault()}
                 >
-                    <Command />
-                </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-52">
-                <DropdownMenuLabel>添加上下文</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => onSelect({ mode: 'source', scope: 'notebook' })} className="gap-2">
-                    <Library className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">选择笔记本</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                    onSelect={() => onSelect({ mode: 'items', target: { kind: 'note' } })}
-                    className="gap-2"
-                >
-                    <FileText className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">选择笔记</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                    onSelect={() => onSelect({ mode: 'items', target: { kind: 'article' } })}
-                    className="gap-2"
-                >
-                    <Newspaper className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">选择文章</span>
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => onSelect({ mode: 'source', scope: 'project' })} className="gap-2">
-                    <Package className="size-3.5 shrink-0 text-muted-foreground" />
-                    <span className="min-w-0 flex-1 truncate">选择作品</span>
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <RuleMenu
-                    rules={rules}
-                    isLoading={isLoadingRules}
-                    selectedRules={selectedRules}
-                    onToggle={onToggleRule}
-                    onEdit={onEditRule}
-                    onDelete={onDeleteRule}
-                    onCreate={onCreateRule}
-                    onOpenDir={onOpenRuleDir}
-                />
-            </DropdownMenuContent>
-        </DropdownMenu>
+                    <AiChatContextPicker
+                        view={pickerView}
+                        onViewChange={setPickerView}
+                        onClose={(): void => setIsOpen(false)}
+                        onAdded={onContextAdded}
+                        onError={onContextError}
+                        rules={ruleMenu.rules}
+                        isLoadingRules={ruleMenu.isLoading}
+                        selectedRules={ruleNames}
+                        onToggleRule={onToggleRule}
+                        onEditRule={ruleMenu.edit}
+                        onDeleteRule={ruleMenu.requestDelete}
+                        onCreateRule={ruleMenu.create}
+                        onOpenRuleDir={ruleMenu.openDir}
+                    />
+                </PopoverContent>
+            </Popover>
+            <RuleDialogs
+                form={ruleMenu.formState}
+                pendingDelete={ruleMenu.pendingDelete}
+                dirPath={ruleMenu.dirPath}
+                isSaving={ruleMenu.isSaving}
+                onFormClose={ruleMenu.closeForm}
+                onFormSubmit={ruleMenu.submit}
+                onDeleteClose={ruleMenu.closeDelete}
+                onConfirmDelete={ruleMenu.confirmDelete}
+            />
+        </>
     )
 }

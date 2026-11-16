@@ -22,7 +22,7 @@ import type { PortraitService } from '@modules/imagegen/portraitService'
 import type { PromptRuleService, PromptTagService } from '@modules/imagegen/prompt'
 import { readPromptImageBase } from '@modules/imagegen/promptImageService'
 import type { ReferenceImageService } from '@modules/imagegen/referenceImageService'
-import type { ImageGenerateProgress, PromptRuleListResult, PromptTagListResult } from '@shared/types/imagegen'
+import type { ImageGenerateProgress } from '@shared/types/imageGenerate'
 import type {
     ChapterSnapshotCaptureResult,
     ChapterSnapshotDeleteResult,
@@ -60,6 +60,7 @@ import {
     isPressSnapshotRestoreRequest,
     isPressWorkspaceRequest,
 } from '@shared/types/press'
+import type { PromptRuleListResult, PromptTagListResult } from '@shared/types/promptLibrary'
 import { hasProjectFiles, listPressProjects } from './projectRepository'
 import { openProjectByDir, openProjectDoc } from './projectService'
 import { readProjectWorkspace } from './projectWorkspace'

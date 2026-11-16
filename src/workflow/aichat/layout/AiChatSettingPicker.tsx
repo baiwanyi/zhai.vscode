@@ -36,12 +36,7 @@ function buildItemKey(doc: PressDocKey, startLine: number): string {
     return `${doc}|${String(startLine)}`
 }
 
-export function AiChatSettingPicker({
-    dirPath,
-    onClose,
-    onAdded,
-    onError,
-}: AiChatSettingPickerProps): JSX.Element {
+export function AiChatSettingPicker({ dirPath, onClose, onAdded, onError }: AiChatSettingPickerProps): JSX.Element {
     const [groups, setGroups] = useState<readonly SettingGroup[]>([])
     const [selectedKeys, setSelectedKeys] = useState((): ReadonlySet<string> => new Set())
     const [wholeDocs, setWholeDocs] = useState((): ReadonlySet<PressDocKey> => new Set())
@@ -160,7 +155,10 @@ export function AiChatSettingPicker({
         try {
             const result = await request<AiContextAddResult>('ai/context/add', { items })
             if (result.added === 0) {
-                onError(result.failed[0]?.reason ?? (result.isFull ? '上下文已达上限，请先移除部分引用' : '这些条目已在上下文中'))
+                onError(
+                    result.failed[0]?.reason ??
+                        (result.isFull ? '上下文已达上限，请先移除部分引用' : '这些条目已在上下文中'),
+                )
                 return
             }
             onAdded()
@@ -174,7 +172,7 @@ export function AiChatSettingPicker({
 
     return (
         <div className="flex max-h-96 flex-col">
-            <div className="px-2 pb-1">
+            <div className="px-1 pb-1">
                 <AiChatSearchField isSearching={false} onSubmit={setKeyword} placeholder="搜索设定字段或条目" />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">

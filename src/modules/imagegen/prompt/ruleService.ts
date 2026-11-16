@@ -11,7 +11,7 @@ import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
 import { promptDirUri } from '@modules/common/promptRoot'
 import { deleteResource, isPathExisting } from '@modules/common/storagePath'
-import type { PromptRule, PromptRuleDetail, PromptRuleListResult } from '@shared/types/imagegen'
+import type { PromptRule, PromptRuleDetail, PromptRuleListResult } from '@shared/types/promptLibrary'
 import { MAX_RULE_CONTENT, MAX_RULE_NAME, MAX_RULES, MAX_RULE_TOTAL_LENGTH } from './limits'
 
 /** 规则文件扩展名：只认 md，目录里的其它文件不参与列举 */

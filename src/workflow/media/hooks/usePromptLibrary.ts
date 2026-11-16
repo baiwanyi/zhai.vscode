@@ -1,7 +1,7 @@
 /**
  * 词库钩子：列举词条与分组，并提供新建、改写、删除与打开目录。
  * 复用约定：协议走 pressAi/listPromptTags、savePromptTag、updatePromptTag、deletePromptTag、openPromptTagDir，
- * 类型取 @shared/types/imagegen；请求经 @shared/utils/bridge，失败统一 toastError。
+ * 类型取 @shared/types/promptLibrary；请求经 @shared/utils/bridge，失败统一 toastError。
  * 关键约束：不自动加载，由面板打开时调 reload；只有首次加载才进入 isLoading（面板显示加载态），
  * 之后每次打开只做静默刷新——旧数据立即呈现，回包后再整体覆盖，用户不会再看到「重新加载」；
  * 静默刷新失败时保留已有词库，不退回空态也不弹错，避免一次读盘抖动清掉用户正在浏览的面板；
@@ -16,7 +16,7 @@ import type {
     PromptTagObject,
     PromptTagSaveRequest,
     PromptTagUpdateRequest,
-} from '@shared/types/imagegen'
+} from '@shared/types/promptLibrary'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 

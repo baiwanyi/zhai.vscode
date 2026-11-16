@@ -1,6 +1,6 @@
 /**
  * 媒体扫描：遍历 {root}/images/{YYYYMM}/ 得到磁盘真实清单，并与索引库对账。
- * 复用约定：路径一律经 common/storagePath 构造，扩展名口径与 @shared/types/media 的 isMediaPath 同源；
+ * 复用约定：路径一律经 common/storagePath 构造，扩展名口径与 @shared/types/mediaPath 的 isMediaPath 同源；
  * 时间优先取文件名前 14 位（本地时间），解析失败回落文件 mtime，与列举排序口径一致。
  * 关键约束：目录缺失视为空而不是错误——首次使用、磁盘清理都属正常；
  * 手工放入的文件按 upload 补录，不因命名不合规被拒；同一 id 出现两份时以先入库者为准，后者只记日志；
@@ -9,7 +9,7 @@
 import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
 import { buildStorageUri } from '@modules/common/storagePath'
-import { MEDIA_DIR } from '@shared/types/media'
+import { MEDIA_DIR } from '@shared/types/mediaPath'
 import { parseStampTime } from './mediaNaming'
 import { insertMedia, listMediaPaths, markMediaMissing, updateMediaPath } from './mediaRepository'
 import type { MediaDatabase } from './db/connection'

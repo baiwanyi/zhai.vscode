@@ -8,7 +8,7 @@
 import { Field, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
-import type { PromptTag, PromptTagObject, PromptTagSaveRequest } from '@shared/types/imagegen'
+import type { PromptTag, PromptTagObject, PromptTagSaveRequest } from '@shared/types/promptLibrary'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { FormDialog } from '@webview/components/FormDialog'

@@ -12,7 +12,8 @@
  */
 import { cn } from 'cn'
 import { useRef } from 'react'
-import type { ImageGenerateStage, ImageRatio } from '@shared/types/imagegen'
+import type { ImageGenerateStage } from '@shared/types/imageGenerate'
+import type { ImageRatio } from '@shared/types/imageRatio'
 import type { PortraitStyle } from '@shared/types/press'
 import { EnhanceButton } from '@webview/components/EnhanceButton'
 import { SendButton } from '@webview/components/SendButton'

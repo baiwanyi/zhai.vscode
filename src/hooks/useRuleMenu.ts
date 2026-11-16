@@ -1,14 +1,14 @@
 /**
  * 规则菜单编排：把「列举、读文、增删改」与表单 / 删除确认的开关收在一处，
  * 供生图与 AI 对话的上下文菜单在子菜单与弹窗两处共用同一份状态。
- * 复用约定：数据与协议走 ./usePromptRules，类型取 @shared/types/imagegen；
+ * 复用约定：数据与协议走 ./usePromptRules，类型取 @shared/types/promptLibrary；
  * 表单与确认框只由调用方渲染，本 hook 不产出 JSX。
  * 关键约束：编辑与删除前必须调 onCloseMenu 收起外层菜单，否则两层浮层会叠在一起，
  * 且弹窗随菜单卸载会一起消失；新建成功后直接挂芯片，编辑只在改名时同步芯片；
  * 关闭回调用途只是清空待处理项，落盘与列表刷新由 usePromptRules 负责，不在此重复。
  */
 import { useState } from 'react'
-import type { PromptRule, PromptRuleDetail } from '@shared/types/imagegen'
+import type { PromptRule, PromptRuleDetail } from '@shared/types/promptLibrary'
 import { usePromptRules } from './usePromptRules'
 
 /** 规则表单状态：null 表示关闭，original 为 null 表示新建 */

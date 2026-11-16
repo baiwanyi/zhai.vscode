@@ -1,12 +1,12 @@
 /**
  * 规则目录快照：只取规则名集合，供历史消息判断「该规则是否已被删除」。
  * 复用约定：协议走 pressAi/listPromptRules（宿主已把 pressAi/* 转发给写作管理路由），
- * 类型取 @shared/types/imagegen，与规则菜单读同一个 prompt/rules 目录。
+ * 类型取 @shared/types/promptLibrary，与规则菜单读同一个 prompt/rules 目录。
  * 关键约束：读取失败保持 null —— 未知不能当作已删除，否则会把全部规则徽章误置灰；
  * 规则的新建、改名与删除后由调用方主动 reload，本 hook 不轮询也不监听文件变化。
  */
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { PromptRuleListResult } from '@shared/types/imagegen'
+import type { PromptRuleListResult } from '@shared/types/promptLibrary'
 import { request } from '@shared/utils/bridge'
 
 /** 规则目录状态的对外结构 */

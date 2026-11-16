@@ -23,9 +23,9 @@ import type {
     ImageGenerateResult,
     ImageGenerateStage,
     ImageGenerateState,
-    ImageRatio,
-} from '@shared/types/imagegen'
-import type { PortraitStyle } from '@shared/types/press'
+} from '@shared/types/imageGenerate'
+import type { ImageRatio } from '@shared/types/imageRatio'
+import type { PortraitStyle } from '@shared/types/imageStyle'
 import { onState, request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import { ENHANCE_TIMEOUT_MS } from '@shared/utils/timeouts'

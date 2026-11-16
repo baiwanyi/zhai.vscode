@@ -18,8 +18,8 @@ import { buildBlockInsertion, readBlockContext } from '@modules/common/markdownB
 import { readProjectSegments } from '@modules/common/projectPath'
 import { buildStorageUri, deleteResource, isPathExisting } from '@modules/common/storagePath'
 import type { PressCoverStore } from '@modules/media/pressCoverStore'
-import { isImageRatio, type MediaParameters } from '@shared/types/imagegen'
-import { isMediaId, isMediaMonth, readMediaIdFromPath } from '@shared/types/media'
+import { isImageRatio } from '@shared/types/imageRatio'
+import { isPortraitStyle } from '@shared/types/imageStyle'
 import type {
     MediaBatchDeleteResult,
     MediaCopyResult,
@@ -34,7 +34,8 @@ import type {
     MediaSetCoverResult,
     MediaUsageItem,
 } from '@shared/types/media'
-import { PORTRAIT_STYLES } from '@shared/types/press'
+import type { MediaParameters } from '@shared/types/mediaParameters'
+import { isMediaId, isMediaMonth, readMediaIdFromPath } from '@shared/types/mediaPath'
 import { WECHAT_MODULE_DIR } from '@shared/types/wechat'
 import { ZHAI_PATH_PREFIX } from '@shared/utils/zhaiPath'
 import { MAX_BATCH_DELETE } from './constants'
@@ -221,17 +222,13 @@ function toLegacyParameters(row: LegacyParameterRow): MediaParameters | null {
     if (row.prompt === null && row.ratio === null && row.style === null) {
         return null
     }
-    if (!isImageRatio(row.ratio)) {
-        return null
-    }
-    const style = PORTRAIT_STYLES.find((item) => item === row.style)
-    if (style === undefined) {
+    if (!isImageRatio(row.ratio) || !isPortraitStyle(row.style)) {
         return null
     }
     return {
         prompt: row.prompt ?? '',
         ratio: row.ratio,
-        style,
+        style: row.style,
         enhancedFrom: row.enhanced_from,
     }
 }

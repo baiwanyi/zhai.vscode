@@ -16,7 +16,7 @@ import {
     DropdownMenuContent,
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
-import type { PromptRule } from '@shared/types/imagegen'
+import type { PromptRule } from '@shared/types/promptLibrary'
 import { Button } from '@webview/components/Button'
 import { RuleDialogs } from '@webview/components/RuleDialogs'
 import { RuleMenu } from '@webview/components/RuleMenu'

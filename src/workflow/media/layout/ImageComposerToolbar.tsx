@@ -11,7 +11,8 @@
  * 画面风格不在此列，改由底部操作行的 ImageStylePicker 承载；
  * 留白由外层 AppComposerHeader 的 p-1 提供，本层不再自带 padding，否则会叠加成双重缩进。
  */
-import type { ImageReferenceItem, PromptRule, PromptTag } from '@shared/types/imagegen'
+import type { ImageReferenceItem } from '@shared/types/imageReference'
+import type { PromptRule, PromptTag } from '@shared/types/promptLibrary'
 import { ImageCharacterPicker } from './ImageCharacterPicker'
 import { ImageCommandMenus } from './ImageCommandMenus'
 import { ImagePromptPicker } from './ImagePromptPicker'

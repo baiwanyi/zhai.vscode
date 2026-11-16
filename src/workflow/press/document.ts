@@ -10,7 +10,7 @@
  * 章纲的 summary 表示计划、wordCount 表示已写事实，两者不互相推导；未识别的名称不进入 characterIds，
  * 避免正文引用到不存在的人物卡；条目描述优先取「### 描述」段，旧格式则取块内自然段落。
  */
-import { isMediaId } from '@shared/types/media'
+import { isMediaId } from '@shared/types/mediaPath'
 import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId, isPressLoreId } from '@shared/types/press'
 import type { PortraitStyle, PressSettingSectionFiles, PressWorkspaceFiles } from '@shared/types/press'
 import { PERIOD_OPTIONS, PLACE_OPTIONS } from './setting/settingOptions'

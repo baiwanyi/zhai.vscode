@@ -8,7 +8,7 @@
  */
 import { ImagePlus } from 'lucide-react'
 import { useState } from 'react'
-import type { ImageReferenceItem, ImageReferencePickResult } from '@shared/types/imagegen'
+import type { ImageReferenceItem, ImageReferencePickResult } from '@shared/types/imageReference'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import { Button } from '@webview/components/Button'

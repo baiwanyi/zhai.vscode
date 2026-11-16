@@ -174,6 +174,11 @@ export type PressLoreKind = 'faction' | 'place' | 'item'
 /** 条目分类白名单：前端分段、宿主入参校验与提示词表共用同一份，避免三处口径分叉 */
 export const PRESS_LORE_KINDS: readonly PressLoreKind[] = ['faction', 'place', 'item']
 
+/** 条目分类收窄：命名字段来自磁盘与索引行，非法值一律判否，不做默认归类 */
+export function isPressLoreKind(value: unknown): value is PressLoreKind {
+    return PRESS_LORE_KINDS.some((item) => item === value)
+}
+
 /**
  * 设定页分组文档原文：设定按标签页各成一篇，世界观、金手指与三类资料条目分别落在自己的文档里。
  * 与四份主文档分开读取——它们只服务设定页，不参与快照，文件缺失时为空串。
@@ -565,23 +570,11 @@ export interface LoreDescriptionGenerateResult {
     content: string
 }
 
-/** 画面风格：对齐番茄小说 AI 生图的风格分类，取值参与宿主提示词映射，新增值须同时在前端选项表与宿主 STYLE_HINTS 中登记 */
-export type PortraitStyle = 'auto' | 'anime' | 'guofeng' | 'realistic' | 'cinematic' | 'photo' | 'pixel' | 'gameart'
-
-/** 风格白名单：前端选项与宿主入参校验共用同一份，避免两处口径分叉 */
-export const PORTRAIT_STYLES: readonly PortraitStyle[] = [
-    'auto',
-    'anime',
-    'guofeng',
-    'realistic',
-    'cinematic',
-    'photo',
-    'pixel',
-    'gameart',
-]
-
-/** 默认风格：智能匹配，由宿主按题材与世界观选择具体画风 */
-export const DEFAULT_PORTRAIT_STYLE: PortraitStyle = 'auto'
+/**
+ * 画面风格相关定义已下沉到 ./imageStyle：出图参数与媒体模块不再需要通过 press 契约取用，
+ * 此处保留转发仅为兼容既有 @shared/types/press 引用，新增代码请直接从 ./imageStyle 取。
+ */
+export { DEFAULT_PORTRAIT_STYLE, isPortraitStyle, PORTRAIT_STYLES, type PortraitStyle } from './imageStyle'
 
 /** 人物标识白名单：8 位随机数字，同时作为设定图文件名里的角色段，天然不含路径分隔符 */
 const PRESS_CHARACTER_ID_PATTERN = /^\d{8}$/

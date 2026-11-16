@@ -1,18 +1,21 @@
 /**
- * 「添加上下文」选择面板：来源列表、候选列表与作品分类三种视图，统一由本组件渲染。
- * 复用约定：外壳取 @components/ui 的 popover，搜索行取同目录 AiChatSearchField，列表项取 @webview/components/Button；
+ * 「添加上下文」选择器：根列表、规则、来源列表、候选列表与作品分类五种视图都由本组件渲染。
+ * 复用约定：浮层外壳（触发器与 Popover）由同目录 AiChatContextMenu 提供，本组件只渲染内容；
+ * 搜索行取同目录 AiChatSearchField，列表项取 @webview/components/Button，
  * 分页与即时搜索由 ../hooks/useAiChatContextSource 承担，添加走宿主 ai/context/add。
- * 关键约束：滚动到底追加下一批而不是换页；选中即添加并关闭，失败保持打开便于重选；
- * 作品分类里的设定走多选面板，不在本组件内实现。
+ * 关键约束：视图切换只在浮层内进行，不关闭面板；滚动到底追加下一批而不是换页；
+ * 选中即添加并关闭，失败保持打开便于重选；作品分类里的设定走多选面板，不在本组件内实现。
  */
 import { cn } from 'cn'
 import { ChevronLeft, FileArchive } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { PopoverContent } from '@components/ui/popover'
 import type { AiContextAddItem, AiContextAddResult, AiContextItem, AiContextSource } from '@shared/types/aiChat'
+import type { PromptRule } from '@shared/types/promptLibrary'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
 import { Button } from '@webview/components/Button'
+import { AiChatContextRootList } from './AiChatContextRootList'
+import { AiChatRulePanel } from './AiChatRulePanel'
 import { AiChatSearchField } from './AiChatSearchField'
 import { AiChatSettingPicker } from './AiChatSettingPicker'
 import type { AiContextPickerView, AiContextProjectTab, AiContextTarget } from '../constants'
@@ -32,12 +35,21 @@ const PROJECT_TABS: readonly { key: AiContextProjectTab; label: string }[] = [
 
 interface AiChatContextPickerProps {
     /** 当前视图：由工具行持有，面板内部只向上切换 */
-    view: AiContextPickerView | null
+    view: AiContextPickerView
     onViewChange: (view: AiContextPickerView) => void
     onClose: () => void
     /** 添加成功后由页面重拉上下文清单 */
     onAdded: () => void
     onError: (error: string) => void
+    /** 规则视图的数据与动作：与工具行的 useRuleMenu 同一份状态 */
+    rules: readonly PromptRule[]
+    isLoadingRules: boolean
+    selectedRules: readonly string[]
+    onToggleRule: (rule: PromptRule) => void
+    onEditRule: (rule: PromptRule) => void
+    onDeleteRule: (rule: PromptRule) => void
+    onCreateRule: () => void
+    onOpenRuleDir: () => void
 }
 
 interface ContextItemListProps {
@@ -59,13 +71,13 @@ function ContextItemList({ items, isLoading, emptyText, onPick, onScrollBottom }
     return (
         <div className="max-h-72 overflow-y-auto overscroll-contain" onScroll={handleScroll}>
             {items.length === 0 ? (
-                <div className="px-2 py-3 text-xs text-muted-foreground">{isLoading ? '读取中…' : emptyText}</div>
+                <div className="px-1.5 py-1.5 text-xs text-muted-foreground">{isLoading ? '读取中…' : emptyText}</div>
             ) : (
                 items.map((item) => (
                     <Button
                         key={`${item.path}-${String(item.startLine ?? 0)}`}
                         variant="ghost"
-                        className="h-auto w-full justify-start gap-2 rounded-none px-2 py-1.5 text-left font-normal"
+                        className="h-auto w-full justify-start gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-normal"
                         onClick={() => onPick(item)}
                     >
                         <span className="min-w-0 flex-1 truncate">{item.title}</span>
@@ -107,18 +119,20 @@ function ContextSourceList({
     const matched = sources.filter((source) => source.name.toLowerCase().includes(normalized))
     return (
         <>
-            <div className="px-2 pb-1">
+            <div className="px-1 pb-1">
                 <AiChatSearchField isSearching={false} onSubmit={setKeyword} placeholder="筛选名称" />
             </div>
             <div className="max-h-72 overflow-y-auto overscroll-contain">
                 {matched.length === 0 ? (
-                    <div className="px-2 py-3 text-xs text-muted-foreground">{isLoading ? '读取中…' : emptyText}</div>
+                    <div className="px-1.5 py-1.5 text-xs text-muted-foreground">
+                        {isLoading ? '读取中…' : emptyText}
+                    </div>
                 ) : (
                     matched.map((source) => (
                         <div key={source.id} className="flex items-center">
                             <Button
                                 variant="ghost"
-                                className="h-auto min-w-0 flex-1 justify-start gap-2 rounded-none px-2 py-1.5 text-left font-normal"
+                                className="h-auto min-w-0 flex-1 justify-start gap-1.5 rounded-md px-1.5 py-1 text-left text-sm font-normal"
                                 disabled={isBusy}
                                 onClick={() => onPick(source, false)}
                             >
@@ -152,18 +166,23 @@ export function AiChatContextPicker({
     onClose,
     onAdded,
     onError,
+    rules,
+    isLoadingRules,
+    selectedRules,
+    onToggleRule,
+    onEditRule,
+    onDeleteRule,
+    onCreateRule,
+    onOpenRuleDir,
 }: AiChatContextPickerProps): JSX.Element {
     /** 提交进行中：压缩会等待一次模型调用，期间禁用列表避免重复提交 */
     const [isSubmitting, setIsSubmitting] = useState(false)
     const query = useAiChatContextQuery(onError)
-    const sourceScope = view?.mode === 'source' ? view.scope : null
+    const sourceScope = view.mode === 'source' ? view.scope : null
     const sourcesState = useAiChatContextSources(sourceScope, onError)
 
-    /** 查询目标：来源列表与设定页不发候选查询 */
+    /** 查询目标：根列表、规则、来源列表与设定页都不发候选查询 */
     const queryTarget = useMemo((): AiContextTarget | null => {
-        if (view === null) {
-            return null
-        }
         if (view.mode === 'items') {
             return view.target
         }
@@ -226,10 +245,13 @@ export function AiChatContextPicker({
         onViewChange({ mode: 'project', dirPath: source.id, tab: 'chapter' })
     }
 
-    /** 标题文案：视图决定，来源列表与候选列表各自一套 */
+    /** 标题文案：视图决定，根视图固定为「添加上下文」 */
     const headerTitle = ((): string => {
-        if (view === null) {
+        if (view.mode === 'root') {
             return '添加上下文'
+        }
+        if (view.mode === 'rules') {
+            return '规则'
         }
         if (view.mode === 'source') {
             return view.scope === 'notebook' ? '选择笔记本' : '选择作品'
@@ -240,20 +262,37 @@ export function AiChatContextPicker({
         return view.target.kind === 'article' ? '最近文章' : '最近笔记'
     })()
 
-    /** 返回动作：作品分类回作品列表，带来源的候选回来源列表，其余无可返回 */
+    /** 返回动作：作品分类回作品列表，带来源的候选回来源列表，其余回根列表 */
     const backView = ((): (() => void) | null => {
-        if (view?.mode === 'project') {
+        if (view.mode === 'root') {
+            return null
+        }
+        if (view.mode === 'project') {
             return (): void => onViewChange({ mode: 'source', scope: 'project' })
         }
-        if (view?.mode === 'items' && view.target.sourceId !== undefined) {
+        if (view.mode === 'items' && view.target.sourceId !== undefined) {
             return (): void => onViewChange({ mode: 'source', scope: 'notebook' })
         }
-        return null
+        return (): void => onViewChange({ mode: 'root' })
     })()
 
     const renderBody = (): JSX.Element => {
-        if (view === null) {
-            return <div className="px-2 py-3 text-xs text-muted-foreground">请选择要添加的内容</div>
+        if (view.mode === 'root') {
+            return <AiChatContextRootList onSelect={onViewChange} selectedRuleCount={selectedRules.length} />
+        }
+        if (view.mode === 'rules') {
+            return (
+                <AiChatRulePanel
+                    rules={rules}
+                    isLoading={isLoadingRules}
+                    selectedRules={selectedRules}
+                    onToggle={onToggleRule}
+                    onEdit={onEditRule}
+                    onDelete={onDeleteRule}
+                    onCreate={onCreateRule}
+                    onOpenDir={onOpenRuleDir}
+                />
+            )
         }
         if (view.mode === 'source') {
             return (
@@ -272,11 +311,13 @@ export function AiChatContextPicker({
         }
         return (
             <>
-                <div className="px-2 pb-1">
+                <div className="px-1 pb-1">
                     <AiChatSearchField
                         isSearching={query.isLoading}
                         onSubmit={query.search}
-                        placeholder={view.mode === 'items' && view.target.kind === 'article' ? '搜索文章标题' : '搜索标题'}
+                        placeholder={
+                            view.mode === 'items' && view.target.kind === 'article' ? '搜索文章标题' : '搜索标题'
+                        }
                     />
                 </div>
                 <ContextItemList
@@ -291,14 +332,9 @@ export function AiChatContextPicker({
     }
 
     return (
-        <PopoverContent
-            align="start"
-            side="top"
-            className="w-80 gap-1 p-1"
-            onOpenAutoFocus={(event): void => event.preventDefault()}
-        >
-            <div className="flex flex-col gap-1 px-1 pt-1">
-                <div className="flex items-center gap-1">
+        <div className="flex flex-col gap-1">
+            <div className="flex flex-col gap-1">
+                <div className="flex items-center gap-1 px-1.5 py-1">
                     {backView === null ? null : (
                         <Button variant="ghost" size="icon-xs" aria-label="返回上一级" onClick={backView}>
                             <ChevronLeft />
@@ -308,7 +344,7 @@ export function AiChatContextPicker({
                         {headerTitle}
                     </span>
                 </div>
-                {view?.mode === 'project' ? (
+                {view.mode === 'project' ? (
                     <div className="flex items-center gap-0.5">
                         {PROJECT_TABS.map((tab) => (
                             <Button
@@ -325,6 +361,6 @@ export function AiChatContextPicker({
                 ) : null}
             </div>
             {renderBody()}
-        </PopoverContent>
+        </div>
     )
 }

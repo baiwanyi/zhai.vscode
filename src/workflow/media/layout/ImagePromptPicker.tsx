@@ -21,7 +21,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from '@components/ui/ho
 import { Input } from '@components/ui/input'
 import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } from '@components/ui/popover'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
-import type { PromptTag, PromptTagSaveRequest } from '@shared/types/imagegen'
+import type { PromptTag, PromptTagSaveRequest } from '@shared/types/promptLibrary'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import { Button } from '@webview/components/Button'

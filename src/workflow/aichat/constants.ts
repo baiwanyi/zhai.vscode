@@ -75,10 +75,14 @@ export interface AiContextTarget {
 export type AiContextProjectTab = 'chapter' | 'character' | 'outline' | 'setting'
 
 /**
- * 「添加上下文」面板视图：来源列表、候选列表与作品分类三态。
- * 关键约束：视图由一级菜单选定，面板内只向上切换，不再回读菜单状态。
+ * 「添加上下文」面板视图：根列表、规则、来源列表、候选列表与作品分类五态。
+ * 关键约束：所有视图都在同一个 Popover 内切换，不再用二级下拉菜单去打开面板——
+ * 两层浮层同帧一关一开会把新开的面板判为外部交互而立即收起（表现为闪退）；
+ * 根视图没有返回按钮，其余视图均可回上一级。
  */
 export type AiContextPickerView =
+    | { mode: 'root' }
+    | { mode: 'rules' }
     | { mode: 'source'; scope: AiContextSourceScope }
     | { mode: 'items'; target: AiContextTarget }
     | { mode: 'project'; dirPath: string; tab: AiContextProjectTab }

@@ -9,7 +9,7 @@
  */
 import * as vscode from 'vscode'
 import { promptDirUri } from '@modules/common/promptRoot'
-import type { PromptImageBase } from '@shared/types/imagegen'
+import type { PromptImageBase } from '@shared/types/promptLibrary'
 
 /** 图片扩展名白名单：与媒体扫描的列举口径保持一致 */
 const IMAGE_EXTENSION_PATTERN = /\.(png|jpe?g|webp|gif)$/i

@@ -15,7 +15,7 @@
 import { Loader2 } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 import type { AiContextRef, AiContextUsage, AiWriteGrant } from '@shared/types/aiChat'
-import type { PromptRule } from '@shared/types/imagegen'
+import type { PromptRule } from '@shared/types/promptLibrary'
 import {
     AppComposer,
     AppComposerContent,
