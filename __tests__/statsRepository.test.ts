@@ -1,5 +1,5 @@
 /**
- * statsRepository 单元测试：覆盖按路径批量取行、最近更新条数上限、笔记目录过滤与置顶合并规则。
+ * statsRepository 单元测试：覆盖按路径批量取行、最近更新条数上限、笔记目录过滤、笔记本分组与置顶合并规则。
  * 用内存库跑真实 schema，避免测试自建表结构与实现漂移；纯合并规则直接构造行对象断言。
  */
 import Database from 'better-sqlite3'
@@ -9,6 +9,7 @@ import { ensureSchema } from '../src/modules/common/db/schema'
 import {
     aggregateFileStats,
     listFilesByPaths,
+    listNotesByNotebook,
     listRecentFiles,
     mergePinnedFiles,
     RECENT_LIMIT,
@@ -90,15 +91,47 @@ describe('笔记目录过滤', () => {
 
     it('计数与字数只统计笔记与作品，其它目录不计入', () => {
         insertFile('notes/a.md', 1)
-        insertFile('press/某作品/Chapters/01.md', 2)
+        insertFile('notes/AMZ/b.md', 2)
+        insertFile('notes/AMZ/c.md', 3)
+        insertFile('press/某作品/Chapters/01.md', 5)
         // 词库、待办等目录即便被索引，也不属于写作产出
-        insertFile('prompt/tags/服饰.md', 5)
-        insertFile('todo/2026-11.md', 7)
+        insertFile('prompt/tags/服饰.md', 7)
+        insertFile('todo/2026-11.md', 9)
         const stats = aggregateFileStats(db)
-        expect(stats.moduleStats.map((item) => item.name)).toEqual(['notes'])
-        expect(stats.indexedCount).toBe(2)
-        expect(stats.totalWords).toBe(3)
+        // 笔记本按 notes/ 下的二级目录聚合，笔记根下的散落文档归入未分类
+        expect(stats.moduleStats.map((item) => item.name)).toEqual(['AMZ', '未分类'])
+        expect(stats.notebookStats.map((item) => item.id)).toEqual(['notes/AMZ', 'notes/未分类'])
+        expect(stats.indexedCount).toBe(4)
+        expect(stats.totalWords).toBe(11)
         expect(stats.tagCount).toBe(0)
+    })
+})
+
+describe('listNotesByNotebook', () => {
+    it('普通笔记本只返回该目录下的笔记，按 mtime 倒序', () => {
+        insertFile('notes/AMZ/a.md', 1)
+        insertFile('notes/AMZ/b.md', 2)
+        insertFile('notes/other/c.md', 3)
+        expect(listNotesByNotebook(db, 'notes/AMZ', 10).map((row) => row.path)).toEqual([
+            'notes/AMZ/b.md',
+            'notes/AMZ/a.md',
+        ])
+    })
+
+    it('未分类并入笔记根下的散落文档，其余笔记本不受影响', () => {
+        insertFile('notes/a.md', 1)
+        insertFile('notes/未分类/b.md', 2)
+        insertFile('notes/AMZ/c.md', 3)
+        expect(listNotesByNotebook(db, 'notes/未分类', 10).map((row) => row.path)).toEqual([
+            'notes/未分类/b.md',
+            'notes/a.md',
+        ])
+    })
+
+    it('条数按 limit 截断', () => {
+        insertFile('notes/AMZ/a.md', 1)
+        insertFile('notes/AMZ/b.md', 2)
+        expect(listNotesByNotebook(db, 'notes/AMZ', 1).map((row) => row.path)).toEqual(['notes/AMZ/b.md'])
     })
 })
 

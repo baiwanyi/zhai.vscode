@@ -1,6 +1,6 @@
 /**
  * 提示词弹窗：展示某条请求实际提交给模型的内容，以及该请求的模型、模块、tokens 与耗时。
- * 复用约定：弹层复用 ui/dialog（含无障碍标题与描述），错误用 alert 呈现，加载用 spinner，
+ * 复用约定：弹层复用 ui/dialog（含无障碍标题与描述），错误用 ListErrorAlert 呈现，加载用 spinner，
  * 提示词分区复用 ui/card（CardHeader/CardTitle/CardAction + CardContent）；
  * 提示词正文整包来自宿主，本组件不做任何拼接或富文本渲染；复制走 ../utils 的 copyPrompt，结果用 sonner 提示。
  * 关键约束：以返回结果的 requestId 与当前请求比对判断是否就绪，切换请求时不会闪出上一条内容；
@@ -8,7 +8,6 @@
  */
 import { Copy } from 'lucide-react'
 import { toast } from 'sonner'
-import { Alert, AlertDescription } from '@components/ui/alert'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@components/ui/card'
 import {
     Dialog,
@@ -21,6 +20,7 @@ import {
 import { Spinner } from '@components/ui/spinner'
 import type { AiUsageItem, AiUsagePromptResult } from '@shared/types/aiUsage'
 import { Button } from '@webview/components/Button'
+import { ListErrorAlert } from '@webview/components/ListErrorAlert'
 import type { JSX } from 'react'
 import { copyPrompt, formatCredits, formatDuration, formatTokens, formatUsageTime, readModuleLabel } from '../utils'
 
@@ -77,9 +77,7 @@ export function UsagePromptDialog({ item, prompt, error, onClose }: UsagePromptD
                     )}
                 </div>
                 {error !== null ? (
-                    <Alert variant="destructive">
-                        <AlertDescription>{error}</AlertDescription>
-                    </Alert>
+                    <ListErrorAlert title="提示词读取失败" error={error} />
                 ) : !isReady ? (
                     <div className="text-muted-foreground flex items-center gap-2">
                         <Spinner />

@@ -6,6 +6,7 @@
  */
 import * as vscode from 'vscode'
 import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR, PRESS_SNAPSHOT_DIR } from '@shared/types/press'
+import { TRASH_DIR_NAME } from '@shared/types/trash'
 import type { FileRow } from '../db/indexRepository'
 import type Database from 'better-sqlite3'
 import { getZhaiConfig, PROMPT_DIR, resolveStorageRoot } from '../config'
@@ -17,14 +18,20 @@ import { logger } from '../logger'
 const MATERIAL_DIR_NAMES: readonly string[] = [PRESS_IMPORT_DIR, LEGACY_PRESS_IMPORT_DIR]
 
 /**
- * 不参与索引的目录：素材、作品快照与词库。
+ * 不参与索引的目录：素材、作品快照、词库与回收站。
  * 关键约束：素材目录存素材与 AI 初稿、快照目录存四份文档的历史副本，计入索引会让作品字数与列表虚高；
  * 词库（tags / rules）是插件自己维护的配置数据，正文不参与检索，计入只会污染字数与文件数；
+ * 回收站（.trash）里的笔记已从列表移除，若进入索引会被搜索与统计当成正常笔记，恢复后还会重复；
  * 公众号批次稿（wechat/{appid}/post/…）与笔记同构，需要进入索引：AI 对话提及、校对与活跃文档判定都靠它；
  * 字数统计只认 notes/ 与 press/ 前缀（statsRepository 的 COUNTED_PREFIXES），不会被批次稿污染；
- * 三者在增量监听、全量重建与激活自检三条路径上口径必须一致。
+ * 四者在增量监听、全量重建与激活自检三条路径上口径必须一致。
  */
-const EXCLUDED_DIR_NAMES: readonly string[] = [...MATERIAL_DIR_NAMES, PRESS_SNAPSHOT_DIR, PROMPT_DIR]
+const EXCLUDED_DIR_NAMES: readonly string[] = [
+    ...MATERIAL_DIR_NAMES,
+    PRESS_SNAPSHOT_DIR,
+    PROMPT_DIR,
+    TRASH_DIR_NAME,
+]
 
 /**
  * 从排除 glob 中提取纯目录段：`**\/node_modules\/**` → `node_modules`。

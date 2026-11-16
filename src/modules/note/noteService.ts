@@ -1,27 +1,25 @@
 /**
- * 笔记服务：把空笔记草稿落到存储根并立即纳入索引，按索引路径打开已有笔记，或把笔记从磁盘移除并收敛索引。
+ * 笔记服务：把空笔记草稿落到指定笔记本并立即纳入索引，按索引路径打开已有笔记，或把笔记移入回收站。
  * 复用 common/storagePath 的路径构造、片段校验与统一删除入口、common/config 的存储根解析、IndexService 的单文件索引能力。
  * 命令面板与 Webview 入口共用同一实现。
- * 关键约束：新笔记标题为「未命名笔记 N」，N 从 1 起在同月目录内顺延，写入前先判定存在性，同名顺延而非覆盖；
- * 打开与删除的相对路径须先经片段校验，拒绝会越出存储根的拼装结果；
- * 删除只接受 notes/ 目录下的 Markdown 文档，其它归属的路径即便在索引内也一律拒绝；
- * 有未保存修改的文档拒绝删除，避免删盘后编辑器再保存把文件写回；
+ * 关键约束：新笔记标题为「未命名笔记 N」，N 从 1 起在目标笔记本内顺延，写入前先判定存在性，同名顺延而非覆盖；
+ * 落点目录须先经 toNoteDirectory 收窄为 notes/<单段>，拒绝会越出存储根的拼装结果；
+ * 移除笔记只接受 notes/ 目录下的 Markdown 文档，其它归属的路径即便在索引内也一律拒绝；
+ * 有未保存修改的文档拒绝移除，避免移走后编辑器再保存把文件写回原处；
  * 交给 workspace.fs 的一律是带 file 协议的绝对路径。
  */
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
-import type { DeleteOutcome } from '@modules/common/storagePath'
 import {
     buildStorageUri,
-    deleteResource,
     isPathExisting,
     toSafeSegments,
     toStorageRelativePath,
 } from '@modules/common/storagePath'
 import { openStorageDocument } from '@modules/editor/openDocument'
 import type { CreatedNote } from '@shared/types/note'
-import { NOTE_DIR, buildDefaultNoteTitle, createNoteDraft } from './noteFactory'
+import { DEFAULT_NOTE_DIRECTORY, NOTE_DIR, buildDefaultNoteTitle, createNoteDraft, toNoteDirectory } from './noteFactory'
 
 /** 默认标题的序号上限：同月已有 N 篇未命名笔记时顺延到 N+1，取一个足够大的上限兜住异常目录 */
 const MAX_CREATE_ATTEMPTS = 200
@@ -47,15 +45,20 @@ async function showNoteDocument(uri: vscode.Uri): Promise<void> {
 }
 
 /**
- * 在存储根下创建一篇空笔记并立即索引。
- * 标题从「未命名笔记 1」开始按序顺延：文件名即标题，同月已有同号笔记时取下一个序号，
+ * 在指定笔记本下创建一篇空笔记并立即索引，未指定时落未分类。
+ * 标题从「未命名笔记 1」开始按序顺延：文件名即标题，目标目录已有同号笔记时取下一个序号，
  * 因此序号连续性只取决于目录现状，不依赖任何额外计数。
  */
-export async function createNote(indexer: NoteIndexer): Promise<CreatedNoteHandle> {
+export async function createNote(
+    indexer: NoteIndexer,
+    directory: string = DEFAULT_NOTE_DIRECTORY,
+): Promise<CreatedNoteHandle> {
     const root = resolveStorageRoot()
+    // 落点先收窄：即便上游传了越界片段，也在这里被拒绝，不会拼到存储根之外
+    const targetDirectory = toNoteDirectory(directory)
     logger.debug(`笔记存储根解析：scheme=${root.scheme} path=${root.path} fsPath=${root.fsPath}`)
     for (let index = 1; index <= MAX_CREATE_ATTEMPTS; index += 1) {
-        const draft = createNoteDraft(new Date(), buildDefaultNoteTitle(index))
+        const draft = createNoteDraft(buildDefaultNoteTitle(index), targetDirectory)
         const directorySegments = draft.directory.split('/')
         const directory = buildStorageUri(root, directorySegments)
         const target = buildStorageUri(root, [...directorySegments, draft.fileName])
@@ -78,8 +81,11 @@ export async function openNoteDocument(uri: vscode.Uri): Promise<void> {
 }
 
 /** 新建并打开空笔记：命令面板与 Webview 共用的完整动作 */
-export async function createAndOpenNote(indexer: NoteIndexer): Promise<CreatedNote> {
-    const created = await createNote(indexer)
+export async function createAndOpenNote(
+    indexer: NoteIndexer,
+    directory: string = DEFAULT_NOTE_DIRECTORY,
+): Promise<CreatedNote> {
+    const created = await createNote(indexer, directory)
     await openNoteDocument(created.uri)
     return { path: created.path, title: created.title }
 }
@@ -98,10 +104,10 @@ export async function openNoteByPath(indexPath: string): Promise<void> {
 }
 
 /**
- * 阻止删除有未保存修改的笔记：磁盘文件被删后编辑器内容仍是脏的，用户一旦保存就会把文件写回，
- * 造成「已删除却复活」的错觉，因此要求先保存再删。
+ * 阻止移走有未保存修改的笔记：文件搬进回收站后编辑器内容仍是脏的，用户一旦保存就会把文件写回原处，
+ * 造成「已删除却复活」的错觉，因此要求先保存再移走。
  */
-function assertNoteSaved(uri: vscode.Uri, indexPath: string): void {
+export function assertNoteSaved(uri: vscode.Uri, indexPath: string): void {
     const opened = vscode.workspace.textDocuments.find((document) => document.uri.toString() === uri.toString())
     if (opened !== undefined && opened.isDirty) {
         throw new Error(`笔记有未保存的修改，请先保存再删除：${indexPath}`)
@@ -109,25 +115,22 @@ function assertNoteSaved(uri: vscode.Uri, indexPath: string): void {
 }
 
 /**
- * 删除单篇笔记：归属校验通过后从磁盘移除并清理索引记录，返回删除方式供调用方区分可否恢复。
- * 关键约束：调用方须已按索引库确认该 path 是登记的笔记，本函数只做片段与归属复核；
- * 归属校验同时收窄一级目录与扩展名，避免把路径拼装错误放大成删除其它模块的文档；
- * 磁盘上已不存在的文件视为失败而非静默成功，避免索引里留着无效条目却提示删除完成。
+ * 校验目标是一篇可移除的笔记：只认 notes/ 一级目录下的 Markdown 文档。
+ * 关键约束：调用方须已按索引库确认该 path 存在；归属校验同时收窄一级目录与扩展名，
+ * 避免把路径拼装错误放大成移除其它模块的文档。
  */
-export async function deleteNote(indexer: NoteIndexer, indexPath: string): Promise<DeleteOutcome> {
+export function assertRemovableNote(indexPath: string): string[] {
     const segments = toSafeSegments(toStorageRelativePath(indexPath, '笔记'), '笔记')
     const [moduleDir] = segments
     const fileName = segments[segments.length - 1] ?? ''
     if (moduleDir !== NOTE_DIR || !fileName.toLowerCase().endsWith(NOTE_EXTENSION)) {
         throw new Error(`不是可删除的笔记文档：${indexPath}`)
     }
-    const target = buildStorageUri(resolveStorageRoot(), segments)
-    if (!(await isPathExisting(target))) {
-        throw new Error(`笔记文件不存在，可能已被移除：${indexPath}`)
-    }
-    assertNoteSaved(target, indexPath)
-    const outcome = await deleteResource(target, false)
-    indexer.removeFile(segments.join('/'))
-    logger.info(`已删除笔记：${indexPath}（${outcome === 'trash' ? '移入回收站' : '永久删除'}）`)
-    return outcome
+    return segments
+}
+
+/** 判定笔记文件当前是否存在于磁盘：移入回收站前用它排除索引残留 */
+export async function isNoteExisting(indexPath: string): Promise<boolean> {
+    const segments = assertRemovableNote(indexPath)
+    return isPathExisting(buildStorageUri(resolveStorageRoot(), segments))
 }

@@ -1,7 +1,7 @@
 /**
  * 标注列表区块：提示条、错误条、空态与划线 / 批注条目，滚到底部自动续载。
  * 复用约定：条目取同目录 AnnotationListItem、容器取 ui/item 的 ItemGroup、空态文案取 ../emptyState、
- * 提示条取 ui/alert、哨兵取 LoadMoreSentinel（观察器由 useScrollSentinel 提供）；
+ * 提示条取 ui/alert、错误条取 ListErrorAlert、哨兵取 LoadMoreSentinel（观察器由 useScrollSentinel 提供）；
  * 数据与状态仍由页面的 hooks/useAnnotationList 持有，本组件只负责呈现与「继续加载」的触发。
  * 关键约束：续载哨兵统一走 @webview/hooks/useScrollSentinel（root 取页面 ScrollArea 视口、条目数变化重建）；
  * 空态与转圈必须跟随 isLoading——首屏未回来时不能先闪「还没有标注」；加载失败时只留错误条，
@@ -15,6 +15,7 @@ import { memo } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { ItemGroup } from '@components/ui/item'
 import type { AnnotationRecord, HighlightColor } from '@shared/types/editor'
+import { ListErrorAlert } from '@webview/components/ListErrorAlert'
 import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
@@ -64,11 +65,7 @@ function AnnotationListSectionBase({
                     <AlertDescription>{notice}</AlertDescription>
                 </Alert>
             )}
-            {error === null ? null : (
-                <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                </Alert>
-            )}
+            {error === null ? null : <ListErrorAlert title="标注读取失败" error={error} />}
             {items.length === 0 && error === null ? (
                 <StateEmpty
                     title={emptyCopy.title}

@@ -44,9 +44,11 @@ import { MediaLibraryService } from './modules/media/mediaLibraryService'
 import { createMediaRecorder } from './modules/media/mediaRecorder'
 import { MediaRoutes } from './modules/media/mediaRoutes'
 import { PressCoverStore } from './modules/media/pressCoverStore'
+import { NotebookStore } from './modules/note/notebookStore'
 import { NoteRenameService } from './modules/note/noteRenameService'
 import { registerNoteRenameWatcher } from './modules/note/noteRenameWatcher'
 import { PinStore } from './modules/note/pinStore'
+import { TrashStore } from './modules/note/trashStore'
 import { openPressDatabase } from './modules/press/db/connection'
 import { ImportSemanticService } from './modules/press/importSemanticService'
 import { PressAiService } from './modules/press/pressAiService'
@@ -152,6 +154,9 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     indexService.registerWatcher(context.subscriptions)
 
     const pinStore = new PinStore(context.globalState)
+    // 笔记本偏好与回收站：与置顶同走 globalState 持久化；回收站靠索引服务恢复后重新收录
+    const notebookStore = new NotebookStore(context.globalState)
+    const trashStore = new TrashStore(indexService)
     // 工作流路由：汇聚活跃编辑器场景、选定模块与当前作品，供工作流面板按模块类型换页；
     // 仪表盘打开/删除作品时会同步作品选定，故先于仪表盘创建
     const workflowRouter = new WorkflowRouter(db, indexService)
@@ -161,6 +166,8 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         db,
         indexService,
         pinStore,
+        notebookStore,
+        trashStore,
         indexStatusEmitter.event,
         workflowRouter,
     )

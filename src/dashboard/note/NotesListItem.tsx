@@ -6,7 +6,7 @@
  * 选中态与悬停态一律以背景块表达，不描边（始终走 default 变体，禁止改用 outline 变体）。
  */
 import { cn } from 'cn'
-import { FolderOpen, Pin, PinOff, Trash2 } from 'lucide-react'
+import { FolderOpen, Trash2 } from 'lucide-react'
 import { Checkbox } from '@components/ui/checkbox'
 import {
     ContextMenu,
@@ -19,6 +19,7 @@ import {
 import { Item, ItemActions, ItemContent, ItemTitle } from '@components/ui/item'
 import type { NoteAction, RecentFile } from '@shared/types/dashboard'
 import { formatRelativeTime } from '@shared/utils/format'
+import { getPinToggleMeta } from './constants'
 import type { JSX } from 'react'
 
 interface NotesListItemProps {
@@ -40,45 +41,61 @@ export function NotesListItem({
     onInvoke,
     onToggleSelected,
 }: NotesListItemProps): JSX.Element {
-    const item = (
-        <Item
-            size="sm"
-            className={cn(
-                'cursor-pointer rounded-full py-1.5 data-[state=open]:bg-muted hover:bg-muted',
-                isActive && 'bg-muted',
-            )}
-            aria-current={isActive ? 'true' : undefined}
-            onClick={isSelecting ? onToggleSelected : onSelect}
-        >
-            {isSelecting ? (
+    /** 标题兜底：索引可能落到空标题，空行无法辨认，复选圈也会失去可读名称 */
+    const title = note.title.trim() === '' ? '未命名笔记' : note.title
+    const pinToggle = getPinToggleMeta(note.isPinned)
+    const PinToggleIcon = pinToggle.icon
+    /** 行壳类名：多选态与普通态共用，选中与悬停一律以背景块表达 */
+    const itemClassName = cn(
+        'cursor-pointer rounded-full py-1.5 data-[state=open]:bg-muted hover:bg-muted',
+        isActive && 'bg-muted',
+    )
+    /** 标题与时间：两种形态共用同一份内容，避免多选与普通两套结构各自漂移 */
+    const itemBody = (
+        <>
+            {/* min-w-0 让标题列可收缩，长标题截断后给右侧时间留位 */}
+            <ItemContent className="min-w-0">
+                <ItemTitle className={cn(isActive && 'font-semibold')}>{title}</ItemTitle>
+            </ItemContent>
+            <ItemActions className="shrink-0">
+                <span className="text-xs text-muted-foreground tabular-nums">{formatRelativeTime(note.mtime)}</span>
+            </ItemActions>
+        </>
+    )
+
+    // 多选态只切换勾选，不提供条目级操作：整行是容器，键盘路径由复选圈本身承担
+    if (isSelecting) {
+        return (
+            <Item
+                size="sm"
+                className={itemClassName}
+                aria-current={isActive ? 'true' : undefined}
+                onClick={onToggleSelected}
+            >
                 <Checkbox
                     checked={isSelected}
                     className="rounded-full"
-                    aria-label={`选择 ${note.title}`}
+                    aria-label={`选择 ${title}`}
                     onClick={(event) => {
                         event.stopPropagation()
                     }}
                     onCheckedChange={onToggleSelected}
                 />
-            ) : null}
-            {/* min-w-0 让标题列可收缩，长标题截断后给右侧时间留位 */}
-            <ItemContent className="min-w-0">
-                <ItemTitle className={cn(isActive && 'font-semibold')}>{note.title}</ItemTitle>
-            </ItemContent>
-            <ItemActions className="shrink-0">
-                <span className="text-xs text-muted-foreground tabular-nums">{formatRelativeTime(note.mtime)}</span>
-            </ItemActions>
-        </Item>
-    )
-
-    // 多选态只切换勾选，不提供条目级操作，避免与批量删除等语义冲突
-    if (isSelecting) {
-        return item
+                {itemBody}
+            </Item>
+        )
     }
 
     return (
         <ContextMenu>
-            <ContextMenuTrigger asChild>{item}</ContextMenuTrigger>
+            {/* 普通态整行是真按钮：Enter/Space 原生可激活，focus-visible 焦点环才落得到行上 */}
+            <ContextMenuTrigger asChild>
+                <Item asChild size="sm" className={itemClassName} aria-current={isActive ? 'true' : undefined}>
+                    <button type="button" className="text-left" onClick={onSelect}>
+                        {itemBody}
+                    </button>
+                </Item>
+            </ContextMenuTrigger>
             <ContextMenuContent>
                 <ContextMenuGroup>
                     <ContextMenuItem onSelect={() => onInvoke('open')}>
@@ -86,8 +103,8 @@ export function NotesListItem({
                         打开
                     </ContextMenuItem>
                     <ContextMenuItem onSelect={() => onInvoke(note.isPinned ? 'unpin' : 'pin')}>
-                        {note.isPinned ? <PinOff /> : <Pin />}
-                        {note.isPinned ? '取消置顶' : '置顶'}
+                        <PinToggleIcon />
+                        {pinToggle.label}
                     </ContextMenuItem>
                 </ContextMenuGroup>
                 <ContextMenuSeparator />

@@ -1,7 +1,7 @@
 /**
  * AI 解释区块：标注页里的解释记录（按文本聚合），滚到底部自动续载。
  * 复用约定：条目取同目录 QueryRecordItem、空态文案取 ../emptyState、容器取 ui/item 的 ItemGroup、
- * 错误条取 ui/alert、哨兵取 LoadMoreSentinel，观察器由 useScrollSentinel 提供。
+ * 错误条取 ListErrorAlert、哨兵取 LoadMoreSentinel，观察器由 useScrollSentinel 提供。
  * 关键约束：搜索复用页面顶部那一个输入框（keyword 由外部传入），本区块不自建搜索栏、不套卡片外壳；
  * 数据自取而非受控：分页与删除编排在 hooks/useQueryRecords，本区块与页签开关、页头统计无联动，
  * 提到页面只会多一层 keyword 与 onRemove 的透传；加载失败时只留错误条，不再叠「还没有记录」的空态；
@@ -11,8 +11,8 @@
 'use client'
 
 import { Sparkles } from 'lucide-react'
-import { Alert, AlertDescription } from '@components/ui/alert'
 import { ItemGroup } from '@components/ui/item'
+import { ListErrorAlert } from '@webview/components/ListErrorAlert'
 import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
@@ -40,11 +40,7 @@ export function QueryRecordSection({ keyword, onRecordsChange }: QueryRecordSect
 
     return (
         <div className="flex flex-col gap-2">
-            {error === null ? null : (
-                <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                </Alert>
-            )}
+            {error === null ? null : <ListErrorAlert title="解释记录读取失败" error={error} />}
             {items.length === 0 && error === null ? (
                 <StateEmpty
                     title={emptyCopy.title}

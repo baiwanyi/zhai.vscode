@@ -22,7 +22,7 @@ import { cn } from 'cn'
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import { copyWithToast } from '@shared/utils/clipboard'
-import { preventContextMenu } from './dom'
+import { preventContextMenu } from '@shared/utils/dom'
 import { TOOLTIP_CLASS } from './Tooltip'
 import type { ComponentProps, JSX, MouseEvent } from 'react'
 

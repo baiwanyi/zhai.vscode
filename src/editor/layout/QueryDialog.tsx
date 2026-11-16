@@ -7,12 +7,13 @@
  * 关闭即 abort 并复位，关闭后再打开才算新的一次；
  * 自动发起用 ref 只放行一次：query 每次渲染都换对象，只靠 effect 依赖会重复请求。
  */
-import { CircleAlertIcon, InfoIcon, Loader2Icon } from 'lucide-react'
+import { InfoIcon, Loader2Icon } from 'lucide-react'
 import { useEffect, useRef } from 'react'
-import { Alert, AlertDescription, AlertTitle } from '@components/ui/alert'
+import { Alert, AlertDescription } from '@components/ui/alert'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@components/ui/dialog'
 import { Marker, MarkerContent, MarkerIcon } from '@components/ui/marker'
 import { ScrollArea } from '@components/ui/scroll-area'
+import { ListErrorAlert } from '@webview/components/ListErrorAlert'
 import { Markdown } from '@webview/components/Markdown'
 import type { UseDocumentQueryResult } from '../hooks/useDocumentQuery'
 import type { JSX } from 'react'
@@ -109,13 +110,7 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
                         </div>
                     </ScrollArea>
                 ) : null}
-                {query.error === null || isPending ? null : (
-                    <Alert variant="destructive">
-                        <CircleAlertIcon />
-                        <AlertTitle>查询失败</AlertTitle>
-                        <AlertDescription>{query.error}</AlertDescription>
-                    </Alert>
-                )}
+                {query.error === null || isPending ? null : <ListErrorAlert title="查询失败" error={query.error} />}
             </DialogContent>
         </Dialog>
     )

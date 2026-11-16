@@ -13,7 +13,6 @@
  */
 import { ExternalLink, RefreshCw } from 'lucide-react'
 import { useCallback, useState } from 'react'
-import { Alert, AlertDescription } from '@components/ui/alert'
 import { Badge } from '@components/ui/badge'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
@@ -31,6 +30,7 @@ import {
     AppTitle,
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
+import { ListErrorAlert } from '@webview/components/ListErrorAlert'
 import { DEFAULT_PAGE_SIZE, DEFAULT_RANGE } from './constants'
 import { useAiUsage } from './hooks/useAiUsage'
 import { useUsagePrompt } from './hooks/useUsagePrompt'
@@ -118,11 +118,7 @@ export function WorkflowUsage(): JSX.Element {
                             </div>
                         )}
                     </AppMenu>
-                    {error !== null && (
-                        <Alert variant="destructive" className="w-full">
-                            <AlertDescription>{error}</AlertDescription>
-                        </Alert>
-                    )}
+                    {error !== null && <ListErrorAlert title="用量读取失败" error={error} />}
                 </AppHeader>
 
                 <AppContent isScrollable>

@@ -71,11 +71,12 @@ export function readWechatAppId(activePath: string | null): string | null {
 }
 
 /**
- * 页内路由：概览首页、作品列表、作品详情（携带相对存储根的 dirPath）、
+ * 页内路由：概览首页、回收站、作品列表、作品详情（携带相对存储根的 dirPath）、
  * 公众号账号列表与某账号下的推送批次列表。
  */
 export type DashboardRoute =
     | { name: 'home' }
+    | { name: 'trash' }
     | { name: 'press' }
     | { name: 'pressProject'; dirPath: string }
     | { name: 'wechat' }
@@ -90,6 +91,11 @@ const WECHAT_ACCOUNT_PATH_PATTERN = /^\/wechat\/([^/]+)$/
 /** 概览首页路由：解析兜底与导航共用 */
 export function createHomeRoute(): DashboardRoute {
     return { name: 'home' }
+}
+
+/** 回收站页路由 */
+export function createTrashRoute(): DashboardRoute {
+    return { name: 'trash' }
 }
 
 /** 作品列表页路由 */
@@ -145,6 +151,9 @@ export function parseRoute(hash: string): DashboardRoute {
     if (path === '/') {
         return createHomeRoute()
     }
+    if (path === '/trash') {
+        return createTrashRoute()
+    }
     if (path === '/press') {
         return createPressRoute()
     }
@@ -169,6 +178,8 @@ export function parseRoute(hash: string): DashboardRoute {
 /** 生成页面路径对应的 hash，供导航写入地址栏 */
 export function toHash(route: DashboardRoute): string {
     switch (route.name) {
+        case 'trash':
+            return '#/trash'
         case 'press':
             return '#/press'
         case 'pressProject':

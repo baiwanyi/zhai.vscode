@@ -1,15 +1,15 @@
 /**
  * noteService 单元测试：覆盖空笔记落盘位置（含默认存储根回退）、目录创建、写入内容与索引触发，
- * 按索引路径打开已有笔记时的路径校验与编辑器调用，以及删除笔记的归属校验、脏文档拦截与索引收敛。
+ * 按索引路径打开已有笔记时的路径校验与编辑器调用，以及移除笔记前的归属校验与脏文档拦截。
  * 虚拟磁盘、目录与可打开文档由 vscode 测试桩承接，不触达真实文件系统；
  * 断言路径统一用 node:path 规范化，与实现一样规避分隔符差异。
  */
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
+import * as vscode from 'vscode'
 import {
     hasDirectory,
-    readDeletedPaths,
     readFileContent,
     readOpenedDocumentPaths,
     registerDirtyTextDocument,
@@ -17,10 +17,15 @@ import {
     resetWorkspaceState,
     setConfigValue,
     setFileContent,
-    setTrashAvailable,
 } from './stubs/vscode'
 import type { NoteIndexer } from '../src/modules/note/noteService'
-import { createNote, deleteNote, openNoteByPath } from '../src/modules/note/noteService'
+import {
+    assertNoteSaved,
+    assertRemovableNote,
+    createNote,
+    isNoteExisting,
+    openNoteByPath,
+} from '../src/modules/note/noteService'
 
 const STORAGE_ROOT = 'd:/vault'
 
@@ -46,13 +51,27 @@ beforeEach(() => {
 })
 
 describe('createNote', () => {
-    it('在存储根的年月目录下落盘并创建目录', async () => {
+    it('在未分类笔记本下落盘并创建目录', async () => {
         const { indexer } = createIndexer()
         const created = await createNote(indexer)
         const directory = created.path.slice(0, created.path.lastIndexOf('/'))
-        expect(created.path).toMatch(/^notes\/\d{6}\/未命名笔记 1\.md$/)
+        expect(created.path).toMatch(/^notes\/未分类\/未命名笔记 1\.md$/)
         expect(hasDirectory(path.join(STORAGE_ROOT, directory))).toBe(true)
         expect(readFileContent(path.join(STORAGE_ROOT, created.path))).toContain('# 未命名笔记 1')
+    })
+
+    it('可指定目标笔记本，目录不存在时自动创建', async () => {
+        const { indexer } = createIndexer()
+        const created = await createNote(indexer, 'notes/AMZ')
+        expect(created.path).toBe('notes/AMZ/未命名笔记 1.md')
+        expect(hasDirectory(path.join(STORAGE_ROOT, 'notes/AMZ'))).toBe(true)
+    })
+
+    it('拒绝越界目录，不产生任何落盘', async () => {
+        const { indexer, indexed } = createIndexer()
+        await expect(createNote(indexer, 'notes/../secret')).rejects.toThrow('笔记本目录非法')
+        await expect(createNote(indexer, 'press/剑来')).rejects.toThrow('笔记本目录非法')
+        expect(indexed).toEqual([])
     })
 
     it('落盘后立即索引，索引路径与返回路径一致', async () => {
@@ -124,70 +143,39 @@ describe('openNoteByPath', () => {
     })
 })
 
-describe('deleteNote', () => {
-    it('删除笔记：移入回收站、清理索引并从磁盘移除', async () => {
-        const { indexer, removedFiles } = createIndexer()
+describe('assertRemovableNote', () => {
+    it('接受 notes/ 下的 Markdown 文档', () => {
+        expect(assertRemovableNote('notes/202610/a.md')).toEqual(['notes', '202610', 'a.md'])
+        expect(assertRemovableNote('notes/a.md')).toEqual(['notes', 'a.md'])
+    })
+
+    it('拒绝 notes/ 之外的归属与非 Markdown 文件', () => {
+        expect(() => assertRemovableNote('press/剑来/Chapters/01-初遇.md')).toThrow('不是可删除的笔记文档')
+        expect(() => assertRemovableNote('notes/202610/a.txt')).toThrow('不是可删除的笔记文档')
+    })
+
+    it('拒绝上跳片段与含盘符、反斜杠的路径', () => {
+        expect(() => assertRemovableNote('notes/../../secret.md')).toThrow('笔记路径非法')
+        expect(() => assertRemovableNote('C:/notes/a.md')).toThrow('笔记路径非法')
+        expect(() => assertRemovableNote('notes\\a.md')).toThrow('笔记路径非法')
+    })
+})
+
+describe('isNoteExisting', () => {
+    it('磁盘存在返回 true，缺失返回 false', async () => {
         const target = path.join(STORAGE_ROOT, 'notes/202610/a.md')
         setFileContent(target, '# 标题')
-
-        const outcome = await deleteNote(indexer, 'notes/202610/a.md')
-
-        expect(outcome).toBe('trash')
-        expect(readDeletedPaths()).toEqual([target])
-        expect(removedFiles).toEqual(['notes/202610/a.md'])
-        expect(readFileContent(target)).toBeUndefined()
+        await expect(isNoteExisting('notes/202610/a.md')).resolves.toBe(true)
+        await expect(isNoteExisting('notes/202610/missing.md')).resolves.toBe(false)
     })
+})
 
-    it('回收站不可用时降级永久删除，仍清理索引', async () => {
-        const { indexer, removedFiles } = createIndexer()
+describe('assertNoteSaved', () => {
+    it('已保存放行，有未保存修改时拒绝', () => {
         const target = path.join(STORAGE_ROOT, 'notes/202610/a.md')
-        setFileContent(target, '# 标题')
-        setTrashAvailable(false)
-
-        const outcome = await deleteNote(indexer, 'notes/202610/a.md')
-
-        expect(outcome).toBe('permanent')
-        expect(readDeletedPaths()).toEqual([target])
-        expect(removedFiles).toEqual(['notes/202610/a.md'])
-    })
-
-    it('拒绝 notes/ 之外归属的路径，不产生删除调用', async () => {
-        const { indexer, removedFiles } = createIndexer()
-        const pressFile = path.join(STORAGE_ROOT, 'press/剑来/Chapters/01-初遇.md')
-        setFileContent(pressFile, '# 初遇')
-
-        await expect(deleteNote(indexer, 'press/剑来/Chapters/01-初遇.md')).rejects.toThrow('不是可删除的笔记文档')
-        await expect(deleteNote(indexer, 'notes/202610/a.txt')).rejects.toThrow('不是可删除的笔记文档')
-        expect(readDeletedPaths()).toEqual([])
-        expect(removedFiles).toEqual([])
-    })
-
-    it('拒绝上跳片段与含盘符、反斜杠的路径', async () => {
-        const { indexer } = createIndexer()
-
-        await expect(deleteNote(indexer, 'notes/../../secret.md')).rejects.toThrow('笔记路径非法')
-        await expect(deleteNote(indexer, 'C:/notes/a.md')).rejects.toThrow('笔记路径非法')
-        await expect(deleteNote(indexer, 'notes\\a.md')).rejects.toThrow('笔记路径非法')
-        expect(readDeletedPaths()).toEqual([])
-    })
-
-    it('磁盘文件缺失时报错，不清理索引', async () => {
-        const { indexer, removedFiles } = createIndexer()
-
-        await expect(deleteNote(indexer, 'notes/202610/missing.md')).rejects.toThrow('笔记文件不存在')
-        expect(readDeletedPaths()).toEqual([])
-        expect(removedFiles).toEqual([])
-    })
-
-    it('文档有未保存修改时拒绝删除，磁盘文件与索引都保留', async () => {
-        const { indexer, removedFiles } = createIndexer()
-        const target = path.join(STORAGE_ROOT, 'notes/202610/a.md')
-        setFileContent(target, '# 标题')
+        registerTextDocument(target, ['# 标题'])
+        expect(() => assertNoteSaved(vscode.Uri.file(target), 'notes/202610/a.md')).not.toThrow()
         registerDirtyTextDocument(target, ['# 标题（未保存）'])
-
-        await expect(deleteNote(indexer, 'notes/202610/a.md')).rejects.toThrow('笔记有未保存的修改')
-        expect(readDeletedPaths()).toEqual([])
-        expect(removedFiles).toEqual([])
-        expect(readFileContent(target)).toBe('# 标题')
+        expect(() => assertNoteSaved(vscode.Uri.file(target), 'notes/202610/a.md')).toThrow('笔记有未保存的修改')
     })
 })

@@ -1,13 +1,20 @@
 /**
- * 笔记草稿生成：按「年月目录 + 标题即文件名」产出空笔记的路径与内容。
+ * 笔记草稿生成：按「笔记本目录 + 标题即文件名」产出空笔记的路径与内容。
  * 纯函数、零副作用，供 noteService 落盘、重命名服务与单元测试复用。
  * 关键约束：文件名直接取标题，仅做合法化收口（非法字符、保留名、长度与空标题回退），
  * 使「文件名 = 标题」成为可比较的稳定事实；新建笔记不写 Frontmatter，标题只由一级标题承载，
- * 索引器按「Frontmatter title → 首个一级标题 → 文件名」回落提取。
+ * 索引器按「Frontmatter title → 首个一级标题 → 文件名」回落提取；
+ * 笔记本目录名与 statsRepository 的 UNCLASSIFIED_NOTEBOOK_DIR 必须保持一致。
  */
 
 /** 笔记在存储根下的一级目录名 */
 export const NOTE_DIR = 'notes'
+
+/** 未分类笔记本的目录名：没有归属的笔记一律落在这里 */
+export const UNCLASSIFIED_DIR = '未分类'
+
+/** 未分类笔记本的相对目录：新建笔记的默认落点 */
+export const DEFAULT_NOTE_DIRECTORY = `${NOTE_DIR}/${UNCLASSIFIED_DIR}`
 
 /** 空笔记的默认标题：标题为空或清洗后无内容时的文件名回退，也是默认标题的序号前缀 */
 export const DEFAULT_NOTE_TITLE = '未命名笔记'
@@ -50,10 +57,20 @@ export function toNoteFileName(title: string): string {
     return `${guarded}.md`
 }
 
-/** 相对存储根的年月目录，形如 notes/202610 */
-export function buildNoteDirectory(now: Date): string {
-    const month = String(now.getMonth() + 1).padStart(2, '0')
-    return `${NOTE_DIR}/${now.getFullYear()}${month}`
+/**
+ * 目录规范化：把笔记本目录收成 notes/<单段>。
+ * 安全约束：多余层级、上跳与当前目录片段、反斜杠与盘符一律拒绝，避免拼装结果越出存储根。
+ */
+export function toNoteDirectory(value: string): string {
+    const segments = value.split('/').filter((segment) => segment.length > 0)
+    const [first, second] = segments
+    if (segments.length !== 2 || first !== NOTE_DIR || second === undefined || second.length === 0) {
+        throw new Error(`笔记本目录非法：${value}`)
+    }
+    if (second === '.' || second === '..' || second.includes('\\') || second.includes(':')) {
+        throw new Error(`笔记本目录非法：${value}`)
+    }
+    return segments.join('/')
 }
 
 /** 空笔记内容：仅一级标题 + 末尾换行作为光标落点，落地即可书写，不写 Frontmatter */
@@ -70,13 +87,16 @@ export interface NoteDraft {
     content: string
 }
 
-/** 生成一份空笔记草稿：文件名取自标题，正文保留标题原文（不做文件名合法化改写） */
-export function createNoteDraft(now: Date, title: string = buildDefaultNoteTitle(1)): NoteDraft {
+/** 生成一份空笔记草稿：文件名取自标题，落点目录默认未分类，正文保留标题原文（不做文件名合法化改写） */
+export function createNoteDraft(
+    title: string = buildDefaultNoteTitle(1),
+    directory: string = DEFAULT_NOTE_DIRECTORY,
+): NoteDraft {
     const fileName = toNoteFileName(title)
-    const directory = buildNoteDirectory(now)
+    const targetDirectory = toNoteDirectory(directory)
     return {
-        path: `${directory}/${fileName}`,
-        directory,
+        path: `${targetDirectory}/${fileName}`,
+        directory: targetDirectory,
         fileName,
         title,
         content: buildNoteContent(title),

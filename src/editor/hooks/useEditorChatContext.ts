@@ -8,7 +8,7 @@ import { useCallback } from 'react'
 import { toast } from 'sonner'
 import type { EditorChatContextRequest, EditorChatContextResult } from '@shared/types/editor'
 import { request } from '@shared/utils/bridge'
-import { toHostErrorText } from '@shared/utils/errorText'
+import { toHostErrorText } from '@shared/utils/error'
 
 /** 失败兜底：宿主回的 reason 缺失或为空串时，提示条不能没有文字 */
 const MESSAGE_ADD_CHAT_FAILED = '未能添加到 AI 对话'

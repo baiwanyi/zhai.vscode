@@ -21,8 +21,17 @@ import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { getActiveDocument, onDidChangeActiveDocument } from '@modules/editor/activeDocument'
 import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { PressCoverStore } from '@modules/media/pressCoverStore'
-import { createAndOpenNote, deleteNote, openNoteByPath } from '@modules/note/noteService'
+import { createNotebook, deleteNotebook, listNotebooks, renameNotebook, sortNotebooks } from '@modules/note/notebookService'
+import type { NotebookStore } from '@modules/note/notebookStore'
+import {
+    assertNoteSaved,
+    assertRemovableNote,
+    createAndOpenNote,
+    isNoteExisting,
+    openNoteByPath,
+} from '@modules/note/noteService'
 import type { PinStore } from '@modules/note/pinStore'
+import type { TrashStore } from '@modules/note/trashStore'
 import { mergeChapterSummaries } from '@modules/press/chapterSummaryMerge'
 import { analyzeProject } from '@modules/press/importAnalysis'
 import { ImportError, PressImportService } from '@modules/press/importService'
@@ -55,13 +64,40 @@ import type { DashboardStats } from '@shared/types/dashboard'
 import type { HostToWebviewMessage } from '@shared/types/messages'
 import { isRequestMessage } from '@shared/types/messages'
 import type {
+    CreateNoteRequest,
+    CreatedNote,
     DeleteNotesResult,
     NoteActiveState,
     NoteDeleteFailure,
     OpenNoteResult,
     PinNotesResult,
+    SearchNotesResult,
 } from '@shared/types/note'
-import { isDeleteNotesRequest, isOpenNoteRequest, isPinNotesRequest } from '@shared/types/note'
+import {
+    isCreateNoteRequest,
+    isDeleteNotesRequest,
+    isOpenNoteRequest,
+    isPinNotesRequest,
+    isSearchNotesRequest,
+} from '@shared/types/note'
+import type {
+    CreateNotebookResult,
+    DeleteNotebookResult,
+    ListNotebookNotesResult,
+    PinNotebooksResult,
+    RenameNotebookResult,
+    SetNotebookOpenResult,
+    SetNotebookSortResult,
+} from '@shared/types/notebook'
+import {
+    isCreateNotebookRequest,
+    isDeleteNotebookRequest,
+    isListNotebookNotesRequest,
+    isPinNotebooksRequest,
+    isRenameNotebookRequest,
+    isSetNotebookOpenRequest,
+    isSetNotebookSortRequest,
+} from '@shared/types/notebook'
 import type {
     CreatePressProjectResult,
     CreatedPressChapter,
@@ -94,6 +130,8 @@ import {
     isRenamePressVolumeRequest,
     readPressAudience,
 } from '@shared/types/press'
+import type { TrashClearResult, TrashListResult, TrashPurgeResult, TrashRestoreResult } from '@shared/types/trash'
+import { isTrashPurgeRequest, isTrashRestoreRequest } from '@shared/types/trash'
 import type { WechatAccountAuthFailureEvent, WechatCoverPreviewResult } from '@shared/types/wechat'
 import { isWechatBatchDocPath, isWechatCoverPreviewRequest } from '@shared/types/wechat'
 import type { OpenWorkflowResult } from '@shared/types/workflow'
@@ -101,11 +139,15 @@ import { isOpenWorkflowRequest } from '@shared/types/workflow'
 import { resolvePromptRoot, resolveStorageRoot } from './config'
 import { findIndexedFile } from './db/indexRepository'
 import {
+    UNCLASSIFIED_NOTEBOOK_ID,
     aggregateFileStats,
     listFilesByPaths,
+    listNotesByNotebook,
     listRecentFiles,
     mergePinnedFiles,
     RECENT_LIMIT,
+    searchNotes,
+    toNotebookId,
 } from './db/statsRepository'
 import { logger } from './logger'
 import { buildStorageUri } from './storagePath'
@@ -151,6 +193,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         private readonly db: Database.Database,
         private readonly indexService: IndexService,
         private readonly pins: PinStore,
+        private readonly notebookStore: NotebookStore,
+        private readonly trashStore: TrashStore,
         private readonly indexStatus: vscode.Event<IndexStatus>,
         private readonly workflowRouter: WorkflowRouter,
     ) {
@@ -275,25 +319,58 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private async invoke(view: vscode.WebviewView, method: string, payload: unknown): Promise<unknown> {
         switch (method) {
             case 'dashboard/stats': {
-                return Promise.resolve(this.buildStats())
+                return this.buildStats()
             }
             case 'note/create': {
-                const created = await createAndOpenNote(this.indexService)
-                // 新建即打开：与 note/open 同口径，立即把工作流菜单切到笔记归属
-                this.workflowRouter.syncFromEditor()
-                return created
+                return this.createNote(payload)
             }
             case 'note/pin': {
                 return this.setPinned(payload)
             }
             case 'note/delete': {
-                return this.deleteNotes(payload)
+                return this.trashNotes(payload)
             }
             case 'note/open': {
                 return this.openNote(payload)
             }
+            case 'note/search': {
+                return Promise.resolve(this.handleSearchNotes(payload))
+            }
             case 'note/active': {
                 return Promise.resolve(this.buildActiveNote())
+            }
+            case 'notebook/create': {
+                return this.handleCreateNotebook(payload)
+            }
+            case 'notebook/rename': {
+                return this.handleRenameNotebook(payload)
+            }
+            case 'notebook/delete': {
+                return this.handleDeleteNotebook(payload)
+            }
+            case 'notebook/pin': {
+                return this.setNotebooksPinned(payload)
+            }
+            case 'notebook/setSort': {
+                return this.setNotebookSort(payload)
+            }
+            case 'notebook/setOpen': {
+                return this.setNotebookOpen(payload)
+            }
+            case 'notebook/notes': {
+                return Promise.resolve(this.handleNotebookNotes(payload))
+            }
+            case 'trash/list': {
+                return this.listTrash()
+            }
+            case 'trash/restore': {
+                return this.restoreTrash(payload)
+            }
+            case 'trash/purge': {
+                return this.purgeTrash(payload)
+            }
+            case 'trash/clear': {
+                return this.clearTrash()
             }
             case 'press/active': {
                 return Promise.resolve(this.buildActivePressProject())
@@ -419,15 +496,35 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    /** 组装统计快照：文件级聚合与最近更新来自索引库，置顶顺序来自宿主偏好，构建状态来自索引服务 */
-    private buildStats(): DashboardStats {
+    /**
+     * 组装统计快照：文件级聚合与最近更新来自索引库，笔记本列表由扫盘与索引合并，
+     * 置顶与排序偏好来自宿主存储，构建状态来自索引服务。
+     * 关键约束：先按扫盘结果自愈偏好，再用自愈后的偏好排序，避免失效 id 影响置顶与默认落点；
+     * 统计不返回内部分组合集，笔记本条目下钻的笔记由 notebook/notes 按需读取。
+     */
+    private async buildStats(): Promise<DashboardStats> {
         const status = this.indexService.getStatus()
         const pinnedPaths = this.pins.list()
         // 多取置顶项数量：置顶项可能同时命中最近更新，多取的额度用于抵消这部分重复占位
         const recent = listRecentFiles(this.db, RECENT_LIMIT + pinnedPaths.length)
+        const aggregate = aggregateFileStats(this.db)
+        const scanned = await listNotebooks(aggregate.notebookStats, this.notebookStore)
+        await this.notebookStore.prune(new Set(scanned.map((notebook) => notebook.id)))
+        const prefs = this.notebookStore.readPrefs()
+        const pinnedIds = new Set(this.notebookStore.listPinned())
+        const ordered = sortNotebooks(scanned, prefs.sort, [...pinnedIds])
         return {
-            ...aggregateFileStats(this.db),
+            indexedCount: aggregate.indexedCount,
+            totalWords: aggregate.totalWords,
+            tagCount: aggregate.tagCount,
+            moduleStats: aggregate.moduleStats,
             recentFiles: mergePinnedFiles(listFilesByPaths(this.db, pinnedPaths), recent, RECENT_LIMIT),
+            notebooks: ordered.map((notebook) => ({
+                ...notebook,
+                isPinned: pinnedIds.has(notebook.id),
+                isDefault: prefs.defaultId === notebook.id,
+            })),
+            notebookPrefs: prefs,
             lastBuiltAt: status.lastBuiltAt,
             isRebuilding: status.isRebuilding,
         }
@@ -464,39 +561,231 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     }
 
     /**
-     * 批量删除笔记：先按索引库回查确认归属，再逐条落盘删除并收敛索引与置顶偏好。
+     * 批量删除笔记：先按索引库回查确认归属，再逐条移入应用内回收站并收敛索引与置顶偏好。
      * 安全约束：不采信 Webview 传入的任意路径形态，未在索引库登记（或不属于 notes/ 目录）的路径一律拒绝，
      * 从源头排除目录穿越与越权删除；路径重复项先去重，避免同一文件产生无意义的失败提示。
      * 关键约束：单条失败不阻断其余条目，失败原因随响应回传，由前端逐条提示；
-     * 置顶偏好只清理真正删除成功的路径，删除失败项保持原状，避免状态提前丢失。
+     * 置顶偏好只清理真正移走的路径；移走的正是当前打开的文档时顺手关闭其标签页，
+     * 否则编辑器会停在一个已被搬走的文件上继续编辑。
      */
-    private async deleteNotes(payload: unknown): Promise<DeleteNotesResult> {
+    private async trashNotes(payload: unknown): Promise<DeleteNotesResult> {
         if (!isDeleteNotesRequest(payload)) {
             throw new Error('note/delete 参数非法：paths 须为非空字符串数组')
         }
         const targets = [...new Set(payload.paths)]
-        const indexedPaths = new Set(listFilesByPaths(this.db, targets).map((file) => file.path))
-        const deletedPaths: string[] = []
+        const indexed = new Map(listFilesByPaths(this.db, targets).map((file) => [file.path, file]))
+        const trashedPaths: string[] = []
         const failures: NoteDeleteFailure[] = []
-        let hasPermanentDelete = false
         for (const target of targets) {
-            if (!indexedPaths.has(target)) {
+            const known = indexed.get(target)
+            if (known === undefined) {
                 failures.push({ path: target, message: `笔记不在索引中，无法删除：${target}` })
                 continue
             }
             try {
-                const outcome = await deleteNote(this.indexService, target)
-                hasPermanentDelete = hasPermanentDelete || outcome === 'permanent'
-                deletedPaths.push(target)
+                const segments = assertRemovableNote(target)
+                const uri = buildStorageUri(resolveStorageRoot(), segments)
+                if (!(await isNoteExisting(target))) {
+                    throw new Error(`笔记文件不存在，可能已被移除：${target}`)
+                }
+                assertNoteSaved(uri, target)
+                const notebookId = toNotebookId(target)
+                await this.trashStore.moveToTrash({
+                    indexPath: target,
+                    notebookId,
+                    notebookName: notebookId.split('/')[1] ?? notebookId,
+                    title: known.title,
+                })
+                this.indexService.removeFile(target)
+                trashedPaths.push(target)
             } catch (cause) {
                 failures.push({ path: target, message: cause instanceof Error ? cause.message : String(cause) })
             }
         }
-        if (deletedPaths.length > 0) {
-            await this.pins.setPinned(deletedPaths, false)
-            logger.info(`笔记删除完成：成功 ${deletedPaths.length} 项，失败 ${failures.length} 项`)
+        if (trashedPaths.length > 0) {
+            await this.pins.setPinned(trashedPaths, false)
+            void this.closeTabsForPaths(trashedPaths)
+            logger.info(`笔记移入回收站完成：成功 ${String(trashedPaths.length)} 项，失败 ${String(failures.length)} 项`)
         }
-        return { deletedPaths, failures, hasPermanentDelete }
+        return { trashedPaths, failures }
+    }
+
+    /**
+     * 新建笔记：可指定落点笔记本，未指定时取默认落点，仍无默认则落未分类。
+     * 安全约束：落点 id 由 noteFactory 的目录收窄统一校验，非法形态不会拼到存储根之外。
+     */
+    private async createNote(payload: unknown): Promise<CreatedNote> {
+        if (!isCreateNoteRequest(payload)) {
+            throw new Error('note/create 参数非法：notebookId 须为合法笔记本 id')
+        }
+        const request: CreateNoteRequest = payload ?? {}
+        const directory = request.notebookId ?? this.notebookStore.readPrefs().defaultId ?? UNCLASSIFIED_NOTEBOOK_ID
+        const created = await createAndOpenNote(this.indexService, directory)
+        // 新建即打开：与 note/open 同口径，立即把工作流菜单切到笔记归属
+        this.workflowRouter.syncFromEditor()
+        return created
+    }
+
+    /** 新建笔记本：建好后若尚无默认落点则设为默认，并自动展开，避免建完看不见 */
+    private async handleCreateNotebook(payload: unknown): Promise<CreateNotebookResult> {
+        if (!isCreateNotebookRequest(payload)) {
+            throw new Error('notebook/create 参数非法：name 须为非空字符串')
+        }
+        const notebook = await createNotebook(payload.name)
+        const prefs = this.notebookStore.readPrefs()
+        const shouldBecomeDefault = prefs.defaultId === null
+        if (shouldBecomeDefault) {
+            await this.notebookStore.setDefault(notebook.id)
+        }
+        await this.notebookStore.setOpen([...new Set([...prefs.openIds, notebook.id])])
+        logger.info(`笔记本已创建并展开：${notebook.id}`)
+        return { notebook: { ...notebook, isDefault: shouldBecomeDefault } }
+    }
+
+    /** 重命名笔记本：目录整体改名并重建索引，置顶与偏好随之迁移 */
+    private async handleRenameNotebook(payload: unknown): Promise<RenameNotebookResult> {
+        if (!isRenameNotebookRequest(payload)) {
+            throw new Error('notebook/rename 参数非法：id 须为合法笔记本 id，name 须为非空字符串')
+        }
+        const renamed = await renameNotebook(
+            { indexer: this.indexService, pins: this.pins, prefStore: this.notebookStore },
+            payload.id,
+            payload.name,
+        )
+        return renamed
+    }
+
+    /**
+     * 删除笔记本：目录内笔记逐条移入回收站后才移除空目录。
+     * 关键约束：默认落点被删后偏好回落 null，这里补回未分类，保证下一次新建笔记仍有落点；
+     * 存在失败条目时目录保留，由前端把失败原因逐条提示。
+     */
+    private async handleDeleteNotebook(payload: unknown): Promise<DeleteNotebookResult> {
+        if (!isDeleteNotebookRequest(payload)) {
+            throw new Error('notebook/delete 参数非法：id 须为合法笔记本 id')
+        }
+        const result = await deleteNotebook(
+            {
+                indexer: this.indexService,
+                pins: this.pins,
+                prefStore: this.notebookStore,
+                trash: this.trashStore,
+            },
+            payload.id,
+        )
+        if (result.deleted && this.notebookStore.readPrefs().defaultId === null) {
+            await this.notebookStore.setDefault(UNCLASSIFIED_NOTEBOOK_ID)
+        }
+        return result
+    }
+
+    /** 批量设置笔记本置顶：只接受磁盘上真实存在的目录，避免失效 id 常驻偏好 */
+    private async setNotebooksPinned(payload: unknown): Promise<PinNotebooksResult> {
+        if (!isPinNotebooksRequest(payload)) {
+            throw new Error('notebook/pin 参数非法：ids 须为笔记本 id 数组，isPinned 须为布尔值')
+        }
+        const aggregate = aggregateFileStats(this.db)
+        const scanned = await listNotebooks(aggregate.notebookStats, this.notebookStore)
+        const known = new Set(scanned.map((notebook) => notebook.id))
+        const accepted = payload.ids.filter((id) => known.has(id))
+        const pinnedIds = await this.notebookStore.setPinned(accepted, payload.isPinned)
+        logger.info(`笔记本置顶更新：${payload.isPinned ? '置顶' : '取消置顶'} ${String(accepted.length)} 项`)
+        return { pinnedIds }
+    }
+
+    /** 切换笔记本排序方式：偏好落库后由前端重新拉取快照 */
+    private async setNotebookSort(payload: unknown): Promise<SetNotebookSortResult> {
+        if (!isSetNotebookSortRequest(payload)) {
+            throw new Error('notebook/setSort 参数非法：sort 须为 name 或 mtime')
+        }
+        return { sort: await this.notebookStore.setSort(payload.sort) }
+    }
+
+    /** 覆盖已展开的笔记本集合：整表可信，不做增量合并 */
+    private async setNotebookOpen(payload: unknown): Promise<SetNotebookOpenResult> {
+        if (!isSetNotebookOpenRequest(payload)) {
+            throw new Error('notebook/setOpen 参数非法：ids 须为笔记本 id 数组')
+        }
+        return { openIds: await this.notebookStore.setOpen(payload.ids) }
+    }
+
+    /** 跨笔记本搜索：命中项按 mtime 倒序，置顶项仍排在结果最前，条数上限收窄到 200 */
+    private handleSearchNotes(payload: unknown): SearchNotesResult {
+        if (!isSearchNotesRequest(payload)) {
+            throw new Error('note/search 参数非法：query 须为非空字符串')
+        }
+        const limit = Math.min(payload.limit ?? 100, 200)
+        const rows = searchNotes(this.db, payload.query, limit)
+        const rowPaths = new Set(rows.map((row) => row.path))
+        const pinnedPaths = this.pins.list().filter((path) => rowPaths.has(path))
+        return { items: mergePinnedFiles(listFilesByPaths(this.db, pinnedPaths), rows, limit) }
+    }
+
+    /** 读取某个笔记本下的笔记：组内置顶项排在最前，条数上限收窄到 500 */
+    private handleNotebookNotes(payload: unknown): ListNotebookNotesResult {
+        if (!isListNotebookNotesRequest(payload)) {
+            throw new Error('notebook/notes 参数非法：id 须为合法笔记本 id')
+        }
+        const limit = Math.min(payload.limit ?? 100, 500)
+        const rows = listNotesByNotebook(this.db, payload.id, limit)
+        const rowPaths = new Set(rows.map((row) => row.path))
+        const pinnedPaths = this.pins.list().filter((path) => rowPaths.has(path))
+        return { items: mergePinnedFiles(listFilesByPaths(this.db, pinnedPaths), rows, limit) }
+    }
+
+    /** 读取回收站列表：条目已按删除时间倒序，损坏记录由仓储跳过 */
+    private async listTrash(): Promise<TrashListResult> {
+        return { items: await this.trashStore.list() }
+    }
+
+    /** 恢复回收站条目：落点由仓储按原笔记本决定，恢复后立即重新索引 */
+    private async restoreTrash(payload: unknown): Promise<TrashRestoreResult> {
+        if (!isTrashRestoreRequest(payload)) {
+            throw new Error('trash/restore 参数非法：ids 须为回收站条目 id 数组')
+        }
+        const result = await this.trashStore.restore(payload.ids)
+        logger.info(`回收站恢复完成：成功 ${String(result.restored.length)} 项，失败 ${String(result.failures.length)} 项`)
+        return result
+    }
+
+    /** 彻底清除回收站条目：不再进系统回收站，与首次删除语义严格区分 */
+    private async purgeTrash(payload: unknown): Promise<TrashPurgeResult> {
+        if (!isTrashPurgeRequest(payload)) {
+            throw new Error('trash/purge 参数非法：ids 须为回收站条目 id 数组')
+        }
+        return this.trashStore.purge(payload.ids)
+    }
+
+    /** 清空回收站：逐条彻底删除，失败条数随结果回传 */
+    private async clearTrash(): Promise<TrashClearResult> {
+        return this.trashStore.clear()
+    }
+
+    /**
+     * 关闭指向已移走笔记的标签页：文件搬进回收站后旧 Uri 已失效，
+     * 编辑器留在上面会让用户以为还能继续编辑；只关普通文本与富文本标签，不动差异视图以外的页签。
+     */
+    private async closeTabsForPaths(indexPaths: string[]): Promise<void> {
+        const root = resolveStorageRoot()
+        const targets = new Set(
+            indexPaths.map((indexPath) =>
+                buildStorageUri(root, indexPath.split('/')).fsPath.toLowerCase(),
+            ),
+        )
+        const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs)
+        const matched = tabs.filter((tab) => {
+            const input = tab.input
+            if (input instanceof vscode.TabInputText || input instanceof vscode.TabInputCustom) {
+                return targets.has(input.uri.fsPath.toLowerCase())
+            }
+            if (input instanceof vscode.TabInputTextDiff) {
+                return targets.has(input.modified.fsPath.toLowerCase())
+            }
+            return false
+        })
+        if (matched.length > 0) {
+            await vscode.window.tabGroups.close(matched, true)
+        }
     }
 
     /**

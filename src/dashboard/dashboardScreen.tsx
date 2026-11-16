@@ -36,6 +36,7 @@ import { useActiveNote } from './hooks/useActiveNote'
 import { useActivePressProject } from './hooks/useActivePressProject'
 import { DashboardPress } from './press/DashboardPress'
 import { DashboardPressProject } from './press/DashboardPressProject'
+import { DashboardTrash } from './trash/DashboardTrash'
 import { DashboardWechat } from './wechat/DashboardWechat'
 import { DashboardWechatPost } from './wechat/DashboardWechatPost'
 import { useWechatAccountByAppId } from './wechat/hooks/useWechatAccountByAppId'
@@ -133,6 +134,8 @@ function DashboardScreenContent(): JSX.Element {
                         onBack={() => navigate(createPressRoute())}
                     />
                 )
+            case 'trash':
+                return <DashboardTrash />
             case 'press':
                 return <DashboardPress onOpenProject={(dirPath) => navigate(createPressProjectRoute(dirPath))} />
             case 'wechat':

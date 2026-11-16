@@ -46,4 +46,36 @@ export class PinStore {
             current.map((item) => (item === previousPath ? nextPath : item)),
         )
     }
+
+    /**
+     * 目录改名后的批量迁移：该目录下所有置顶笔记原位换前缀，其余条目保持原顺序。
+     * 关键约束：只替换完整路径段前缀，notes/AMZ 不会误伤 notes/AMZ2 下的笔记；无变化时不写回。
+     */
+    public async renamePrefix(previousPrefix: string, nextPrefix: string): Promise<void> {
+        const current = this.list()
+        const previous = `${previousPrefix}/`
+        const next = `${nextPrefix}/`
+        if (!current.some((item) => item.startsWith(previous))) {
+            return
+        }
+        const migrated = current.map((item) =>
+            item.startsWith(previous) ? `${next}${item.slice(previous.length)}` : item,
+        )
+        // 迁移后可能与既有路径重复（目标目录已有同名笔记），去重后再落库
+        await this.state.update(PINNED_PATHS_KEY, [...new Set(migrated)])
+    }
+
+    /**
+     * 目录被删后的清理：移除该目录下全部置顶记录，避免偏好里残留失效路径。
+     * 关键约束：同样按完整路径段前缀匹配，无命中时不写回。
+     */
+    public async removeUnder(prefix: string): Promise<void> {
+        const current = this.list()
+        const scope = `${prefix}/`
+        const next = current.filter((item) => !item.startsWith(scope))
+        if (next.length === current.length) {
+            return
+        }
+        await this.state.update(PINNED_PATHS_KEY, next)
+    }
 }
