@@ -262,11 +262,6 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                 </AppAction>
                 <AppSummary title={projectLabel} path={projectDir ?? undefined} meta={usageText} />
             </AppHeader>
-            {/*
-                h-0 是故意的：AppContent 只有 flex-1 时高度来自 flex 计算，MessageScroller 根节点的
-                size-full（height:100%）没有确定的百分比基准，消息一多就会按内容高度撑开、把底栏顶出视口。
-                显式 height:0 交给 flex 拉伸后，used height 才是 definitely sized，子项百分比高度才稳定。
-            */}
             <AppContent className="flex h-0 flex-col mb-3">
                 <AiChatMessageList
                     messages={messages}
@@ -314,11 +309,13 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                     onAddZhaiRef={addMentionPath}
                 />
             </AppFooter>
+            {/* 自动批准对话 */}
             <AiChatAutoApproveDialog
                 pending={pendingAutoApprove}
                 onConfirm={confirmAutoApprove}
                 onDismiss={dismissAutoApprove}
             />
+            {/* 提及检索 */}
             <AiChatMentionDialog
                 open={isMentionOpen}
                 candidates={mentionCandidates}
@@ -327,6 +324,7 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                 onPick={handleMentionPick}
                 onClose={handleMentionClose}
             />
+            {/* 参考语料 */}
             <AiChatReferenceDialog
                 open={isReferenceOpen}
                 entries={referenceEntries}
