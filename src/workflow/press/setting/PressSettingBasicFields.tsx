@@ -48,8 +48,8 @@ import {
     TONE_OPTIONS,
 } from './settingOptions'
 import { TagPicker } from './TagPicker'
-import type { SettingFieldAi, SettingFieldsProps } from './sections'
 import type { Audience } from '../types'
+import type { SettingFieldAi, SettingFieldsProps } from './sections'
 import type { JSX } from 'react'
 import { DEFAULT_CHAPTER_WORD_GOAL, SETTING_FIELD_MAX_LENGTH } from '../constants'
 import { toSettingTextPatch } from '../utils'

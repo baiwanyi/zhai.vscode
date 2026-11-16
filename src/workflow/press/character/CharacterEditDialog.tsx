@@ -12,8 +12,8 @@ import { useEffect, useRef, useState } from 'react'
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@components/ui/dialog'
 import { Button } from '@webview/components/Button'
 import { CharacterEditPanel } from './CharacterEditPanel'
-import type { CharacterWorkspace } from './CharacterEditPanel'
 import type { CharacterCard } from '../types'
+import type { CharacterWorkspace } from './CharacterEditPanel'
 import type { JSX } from 'react'
 
 interface CharacterEditDialogProps {
