@@ -13,6 +13,7 @@ import { TooltipProvider } from '@components/ui/tooltip'
 import type { AiMessage } from '@shared/types/aiChat'
 import { AI_COMMAND_MAP } from '@webview/workflow/aichat/constants'
 import { AiChatMessageView } from '@webview/workflow/aichat/layout/AiChatMessageView'
+import { AiChatRuleCatalogProvider } from '@webview/workflow/aichat/layout/ruleCatalogProvider'
 
 const { copyMock, toastErrorMock } = vi.hoisted(() => ({
     copyMock: vi.fn(() => Promise.resolve(true)),
@@ -196,6 +197,36 @@ describe('用户消息气泡外的复制按钮', () => {
 
         expect(toastErrorMock).toHaveBeenCalledTimes(1)
         expect(screen.getByRole('button', { name: '复制' })).toBeTruthy()
+    })
+})
+
+describe('规则徽章的删除态', () => {
+    /** 渲染带规则徽章的用户消息：available 为 null 表示目录尚未读到 */
+    function renderWithRules(available: ReadonlySet<string> | null): void {
+        const message: AiMessage = { ...makeMessage('继续写下去'), ruleNames: ['冷色调画面', '避免水印'] }
+        render(
+            <TooltipProvider>
+                <AiChatRuleCatalogProvider names={available}>
+                    <AiChatMessageView message={message} pendingApproval={null} onAnswer={(): void => undefined} />
+                </AiChatRuleCatalogProvider>
+            </TooltipProvider>,
+        )
+    }
+
+    it('目录里已不存在的规则置灰并提示已删除', () => {
+        renderWithRules(new Set(['冷色调画面']))
+
+        const badge = screen.getByText('避免水印').closest('[title]')
+        expect(badge?.getAttribute('title')).toBe('该规则已从规则目录中删除')
+        expect(badge?.className).toContain('line-through')
+        // 仍在目录里的规则保持正常样式
+        expect(screen.getByText('冷色调画面').closest('[title]')).toBeNull()
+    })
+
+    it('目录未读到时不判定删除态', () => {
+        renderWithRules(null)
+
+        expect(screen.getByText('避免水印').closest('[title]')).toBeNull()
     })
 })
 

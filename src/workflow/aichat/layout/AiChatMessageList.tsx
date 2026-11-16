@@ -24,6 +24,7 @@ import { AiChatConfirmCard } from './AiChatConfirmCard'
 import { AiChatEmptyState } from './AiChatEmptyState'
 import { AiChatMessageView } from './AiChatMessageView'
 import { AiChatQuestionnaire } from './AiChatQuestionnaire'
+import { AiChatRuleCatalogProvider } from './ruleCatalogProvider'
 import type { AiChatTransientNotice } from '../hooks/useAiChatSession'
 import type { Phase } from '../utils'
 import type { JSX } from 'react'
@@ -42,6 +43,8 @@ interface AiChatMessageListProps {
     onRepeat: (message: AiMessage) => void
     runtime: AiRuntimeInfo | null
     onLoginCodebuddy: () => void
+    /** 现存规则名：传给气泡用于把已删除的规则徽章置灰；缺省或 null 表示尚未读到目录 */
+    availableRuleNames?: ReadonlySet<string> | null
 }
 
 /**
@@ -74,6 +77,7 @@ export function AiChatMessageList({
     onRepeat,
     runtime,
     onLoginCodebuddy,
+    availableRuleNames = null,
 }: AiChatMessageListProps): JSX.Element {
     /**
      * 归属消息是否还在当前列表：切换会话或历史被裁剪后它会失效，
@@ -89,69 +93,73 @@ export function AiChatMessageList({
      * 首屏仍滚到最新（defaultScrollPosition="end"），只是不再多留那 64px 预览。
      */
     return (
-        <MessageScrollerProvider defaultScrollPosition="last-anchor" scrollPreviousItemPeek={100}>
-            <MessageScroller>
-                <MessageScrollerViewport aria-label="对话消息" className="px-3 pb-6">
-                    <MessageScrollerContent>
-                        {messages.length === 0 ? (
-                            <AiChatEmptyState runtime={runtime} onLoginCodebuddy={onLoginCodebuddy} />
-                        ) : null}
-                        {messages.map((message) => (
-                            <MessageScrollerItem
-                                key={message.id}
-                                messageId={message.id}
-                                scrollAnchor={message.id === lastMessageId}
-                            >
-                                <AiChatMessageView
-                                    message={message}
-                                    pendingApproval={pendingApproval?.messageId === message.id ? pendingApproval : null}
-                                    onAnswer={onAnswer}
-                                    onRepeat={onRepeat}
-                                />
-                            </MessageScrollerItem>
-                        ))}
-                        {phase === 'sending' ? (
-                            <Marker role="status">
-                                <MarkerIcon>
-                                    <Spinner />
-                                </MarkerIcon>
-                                <MarkerContent>正在准备上下文…</MarkerContent>
-                            </Marker>
-                        ) : transientNotice === 'compacting' ? (
-                            <Marker role="status">
-                                <MarkerIcon>
-                                    <Spinner />
-                                </MarkerIcon>
-                                <MarkerContent>正在压缩上下文…</MarkerContent>
-                            </Marker>
-                        ) : null}
-                        {pendingApproval !== null && !hasAnchor ? (
-                            <MessageScrollerItem
-                                key={`approval-${pendingApproval.id}`}
-                                messageId={`approval-${pendingApproval.id}`}
-                                scrollAnchor
-                            >
-                                {pendingApproval.kind === 'tool' ? (
-                                    <AiChatConfirmCard
-                                        key={pendingApproval.id}
-                                        request={pendingApproval}
-                                        onSubmit={onAnswer}
+        <AiChatRuleCatalogProvider names={availableRuleNames}>
+            <MessageScrollerProvider defaultScrollPosition="last-anchor" scrollPreviousItemPeek={100}>
+                <MessageScroller>
+                    <MessageScrollerViewport aria-label="对话消息" className="px-3 pb-6">
+                        <MessageScrollerContent>
+                            {messages.length === 0 ? (
+                                <AiChatEmptyState runtime={runtime} onLoginCodebuddy={onLoginCodebuddy} />
+                            ) : null}
+                            {messages.map((message) => (
+                                <MessageScrollerItem
+                                    key={message.id}
+                                    messageId={message.id}
+                                    scrollAnchor={message.id === lastMessageId}
+                                >
+                                    <AiChatMessageView
+                                        message={message}
+                                        pendingApproval={
+                                            pendingApproval?.messageId === message.id ? pendingApproval : null
+                                        }
+                                        onAnswer={onAnswer}
+                                        onRepeat={onRepeat}
                                     />
-                                ) : (
-                                    <AiChatQuestionnaire
-                                        key={pendingApproval.id}
-                                        questions={pendingApproval.questions}
-                                        expiresAt={pendingApproval.expiresAt}
-                                        onSubmit={onAnswer}
-                                    />
-                                )}
-                            </MessageScrollerItem>
-                        ) : null}
-                    </MessageScrollerContent>
-                </MessageScrollerViewport>
-                <MessageScrollerButton />
-            </MessageScroller>
-            <ApprovalAutoScroll approvalId={pendingApproval?.id ?? null} />
-        </MessageScrollerProvider>
+                                </MessageScrollerItem>
+                            ))}
+                            {phase === 'sending' ? (
+                                <Marker role="status">
+                                    <MarkerIcon>
+                                        <Spinner />
+                                    </MarkerIcon>
+                                    <MarkerContent>正在准备上下文…</MarkerContent>
+                                </Marker>
+                            ) : transientNotice === 'compacting' ? (
+                                <Marker role="status">
+                                    <MarkerIcon>
+                                        <Spinner />
+                                    </MarkerIcon>
+                                    <MarkerContent>正在压缩上下文…</MarkerContent>
+                                </Marker>
+                            ) : null}
+                            {pendingApproval !== null && !hasAnchor ? (
+                                <MessageScrollerItem
+                                    key={`approval-${pendingApproval.id}`}
+                                    messageId={`approval-${pendingApproval.id}`}
+                                    scrollAnchor
+                                >
+                                    {pendingApproval.kind === 'tool' ? (
+                                        <AiChatConfirmCard
+                                            key={pendingApproval.id}
+                                            request={pendingApproval}
+                                            onSubmit={onAnswer}
+                                        />
+                                    ) : (
+                                        <AiChatQuestionnaire
+                                            key={pendingApproval.id}
+                                            questions={pendingApproval.questions}
+                                            expiresAt={pendingApproval.expiresAt}
+                                            onSubmit={onAnswer}
+                                        />
+                                    )}
+                                </MessageScrollerItem>
+                            ) : null}
+                        </MessageScrollerContent>
+                    </MessageScrollerViewport>
+                    <MessageScrollerButton />
+                </MessageScroller>
+                <ApprovalAutoScroll approvalId={pendingApproval?.id ?? null} />
+            </MessageScrollerProvider>
+        </AiChatRuleCatalogProvider>
     )
 }

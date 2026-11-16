@@ -18,6 +18,7 @@
 import { SquarePen } from 'lucide-react'
 import { useCallback } from 'react'
 import type { AiMentionCandidate, AiReferenceEntry } from '@shared/types/aiChat'
+import type { PromptRule } from '@shared/types/imagegen'
 import { AppAction, AppContent, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
@@ -34,6 +35,7 @@ import { useAiChatPageSync } from './hooks/useAiChatPageSync'
 import { useAiChatPermission } from './hooks/useAiChatPermission'
 import { useAiChatPicker } from './hooks/useAiChatPicker'
 import { useAiChatReference } from './hooks/useAiChatReference'
+import { useAiChatRuleCatalog } from './hooks/useAiChatRuleCatalog'
 import { useAiChatRuntime } from './hooks/useAiChatRuntime'
 import { useAiChatSession } from './hooks/useAiChatSession'
 import { useAiChatStatus } from './hooks/useAiChatStatus'
@@ -104,6 +106,8 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
         input,
         setInput,
     })
+    // 规则目录快照：历史消息的规则徽章据此判断「是否已被删除」，规则增删改后刷新
+    const { names: availableRuleNames, reload: reloadRuleCatalog } = useAiChatRuleCatalog()
     // 宿主广播与首屏加载统一编排：密钥、上下文、写回目标变更与生成结束都走这里刷新
     useAiChatPageSync({
         phase,
@@ -188,6 +192,35 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
         [openReferenceDir, openReferenceSearch],
     )
 
+    /** 挂载规则：快照里还没有的规则说明目录刚被手改过，顺手刷一次避免徽章误判 */
+    const handleToggleRule = useCallback(
+        (rule: PromptRule): void => {
+            toggleRule(rule)
+            if (availableRuleNames !== null && !availableRuleNames.has(rule.name)) {
+                void reloadRuleCatalog()
+            }
+        },
+        [availableRuleNames, reloadRuleCatalog, toggleRule],
+    )
+
+    /** 规则改名后目录已变，历史徽章要跟着重判 */
+    const handleRenameRule = useCallback(
+        (previousName: string, rule: PromptRule): void => {
+            renameRule(previousName, rule)
+            void reloadRuleCatalog()
+        },
+        [reloadRuleCatalog, renameRule],
+    )
+
+    /** 规则删除后目录已变：已挂的摘除，历史徽章转为置灰 */
+    const handleRemoveRule = useCallback(
+        (ruleName: string): void => {
+            removeRule(ruleName)
+            void reloadRuleCatalog()
+        },
+        [reloadRuleCatalog, removeRule],
+    )
+
     /** 发送：指令模板与用户补充在此拼装，输入区与消息气泡始终只呈现命令名；规则随请求下发 */
     const handleSend = useCallback((): void => {
         const content = command === null ? input : composeCommandContent(command, input)
@@ -226,6 +259,7 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                     phase={phase}
                     transientNotice={transientNotice}
                     pendingApproval={pendingPermission}
+                    availableRuleNames={availableRuleNames}
                     onAnswer={(decision) => void respondPermission(decision)}
                     onRepeat={restoreFromMessage}
                     runtime={runtime}
@@ -248,9 +282,9 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                     isAwaitingApproval={pendingAutoApprove !== null}
                     command={command}
                     ruleNames={ruleNames}
-                    onToggleRule={toggleRule}
-                    onRenameRule={renameRule}
-                    onRemoveRule={removeRule}
+                    onToggleRule={handleToggleRule}
+                    onRenameRule={handleRenameRule}
+                    onRemoveRule={handleRemoveRule}
                     modelControl={modelControl}
                     onSend={handleSend}
                     onStop={() => void stop()}
