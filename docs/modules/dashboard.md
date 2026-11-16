@@ -429,7 +429,7 @@ StatCardRow / ActivityFeed 展示
 |------------|----------|
 | `GET /api/dashboard/stats` | Webview 协议 `dashboard/stats` → `DashboardViewProvider` → `db/statsRepository.ts` 聚合 `files` 表 |
 | StatCardRow | 4 张统计卡：已索引文件 / 字数合计 / 标签数 / 索引状态（含上次构建相对时间） |
-| QuickActions | 重建索引（`index/rebuild` 协议）、清空缓存与插件设置（`host/command` 协议，走命令白名单） |
+| QuickActions | 收在侧栏标题栏的「…」菜单里（`view/title` 贡献非 navigation 分组）：重建索引 `zhai.rebuildIndex`、插件设置 `zhai.openSettings`；页内不再自绘更多操作浮层，也不单独提供「清空索引」 |
 | 笔记列表 | 只展示 `notes/` 下的笔记：`listRecentFiles`、`listFilesByPaths`（置顶回查 / 打开 / 置顶校验）与 `moduleStats` 均按 `notes/` 前缀收窄，`press/` 等模块的文件不进入列表；目录过滤用 `substr(path, 1, ?) = ?` 比较，避开 `LIKE` 对 `_` 与 `%` 的转义问题 |
 | 模块分布 | 规划中的「按一级目录聚合占比」尚未实现；当前 `moduleStats` 口径已收窄为笔记范围（供笔记列表的模块筛选），若图表需要全库占比须另设字段 |
 | ActivityFeed / WidgetTodo / WidgetShortcut | 待实现，`meta` 表可承载快捷方式配置 |

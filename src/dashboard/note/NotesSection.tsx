@@ -1,9 +1,8 @@
 /**
  * 笔记列表区块：卡片内组合标题行操作、置顶分组与状态分派，自身不取数、不持有筛选状态。
  * 数据与筛选经页面 useNotesList 下发；无可用数据时交由 NotesListState 呈现三态。
- * 关键约束：标题行操作置于 CardAction 槽位以对齐卡片头部网格，按钮组内部自行横向排布；
- * 搜索框展开后以覆盖层占满标题行，故标题行须为定位祖先（relative）；
- * 标题行最小高度对齐搜索框的 h-8：覆盖层脱离文档流后不再撑高，否则展开瞬间行高塌回文字高度、整栏抖动；
+ * 关键约束：标题行操作置于 CardAction 槽位以对齐卡片头部网格；
+ * 搜索框已常驻页面头部，标题行只保留多选切换，不再承载搜索入口与覆盖层；
  * 多选态的批量操作栏由页面底部承担，本区块不承载任何操作按钮。
  */
 import { NotebookText } from 'lucide-react'
@@ -13,7 +12,6 @@ import { NotesHeaderActions } from './NotesHeaderActions'
 import { NotesList } from './NotesList'
 import { NotesListState } from './NotesListState'
 import type { StatsStatus } from '../hooks/useDashboardStats'
-import type { NotesSearchState } from '../hooks/useNotesList'
 import type { JSX } from 'react'
 
 interface NotesSectionProps {
@@ -24,8 +22,6 @@ interface NotesSectionProps {
     status: StatsStatus
     error: string | null
     isFiltered: boolean
-    /** 搜索入口的展开态与关键词，原样透传给标题行操作 */
-    search: NotesSearchState
     activeId: string | null
     isSelecting: boolean
     selectedPaths: string[]
@@ -42,7 +38,6 @@ export function NotesSection({
     status,
     error,
     isFiltered,
-    search,
     activeId,
     isSelecting,
     selectedPaths,
@@ -63,11 +58,7 @@ export function NotesSection({
                     {isSelecting ? (selectedCount > 0 ? `已选择 ${selectedCount} 个笔记` : '选择笔记') : '笔记列表'}
                 </CardTitle>
                 <CardAction className="row-span-1">
-                    <NotesHeaderActions
-                        isSelecting={isSelecting}
-                        search={search}
-                        onToggleSelecting={onToggleSelecting}
-                    />
+                    <NotesHeaderActions isSelecting={isSelecting} onToggleSelecting={onToggleSelecting} />
                 </CardAction>
             </CardHeader>
             <CardContent className="px-0">

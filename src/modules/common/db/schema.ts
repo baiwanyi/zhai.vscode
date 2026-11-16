@@ -65,8 +65,3 @@ export function ensureSchema(db: Database.Database): boolean {
     })()
     return isCreated
 }
-
-/** 清空全部索引数据（保留 schema），供「清空索引缓存」命令使用 */
-export function clearSchemaData(db: Database.Database): void {
-    db.exec('DELETE FROM files; DELETE FROM files_fts; DELETE FROM meta;')
-}

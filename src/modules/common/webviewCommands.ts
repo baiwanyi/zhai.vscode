@@ -5,7 +5,6 @@
 export const WEBVIEW_ALLOWED_COMMANDS: ReadonlySet<string> = new Set([
     // 索引维护
     'zhai.rebuildIndex',
-    'zhai.clearIndex',
     'zhai.showIndexStatus',
     'zhai.exportDiagnostics',
     // 设置

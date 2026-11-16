@@ -225,10 +225,9 @@ PRAGMA foreign_keys = ON;
 
 | Command ID | 标题 | 说明 |
 |------------|------|------|
-| `zhai.rebuildIndex` | 重建索引 | 全量扫描工作区并重建索引库 |
+| `zhai.rebuildIndex` | 重建索引 | 全量扫描并重建索引库：覆盖写命中文档、清理失效记录（等价于清空后重建，故不再单独提供「清空索引」） |
 | `zhai.openDashboard` | 打开仪表盘 | 聚焦侧栏仪表盘视图 |
 | `zhai.showIndexStatus` | 索引状态 | 显示文件数、索引数、上次构建时间 |
-| `zhai.clearIndex` | 清空索引缓存 | 删除 index.db（安全，可重建） |
 | `zhai.exportDiagnostics` | 查看日志 | 打开输出面板查看运行日志，便于排查 |
 | `zhai.openSettings` | 打开插件设置 | 跳转到 `zhai.*` 配置分组 |
 | `zhai.openAiChat` | 打开 AI 对话 | 聚焦侧栏 AI 对话视图 |

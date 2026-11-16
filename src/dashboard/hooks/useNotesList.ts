@@ -4,17 +4,16 @@
  * 关键约束：筛选选项取自宿主聚合的模块统计，模块名口径须与宿主聚合规则一致；
  * 置顶分组直接取宿主下发的 isPinned，展示层不自行排序；
  * 退出多选模式时一并清空已选集合，避免残留状态影响下次进入；
- * 搜索的展开态与关键词同属视图状态：进入多选收起搜索框，关键词保留以免丢失过滤条件；
+ * 搜索框常驻页面头部，本 Hook 只持有关键词（无展开态）：进入多选保留关键词以免丢失过滤条件；
  * 关键词匹配标题与路径且不区分大小写，清除筛选时连同关键词一并复位。
  */
 import { useCallback, useMemo, useReducer } from 'react'
 import type { DashboardStats, ModuleStat, RecentFile } from '@shared/types/dashboard'
 import { moduleOf } from '../utils'
 
-/** 视图初始值：不筛选、无关键词、搜索收起、非多选、无选中项 */
+/** 视图初始值：不筛选、无关键词、非多选、无选中项 */
 const INITIAL_VIEW: NotesViewState = {
     activeModules: [],
-    isSearchOpen: false,
     query: '',
     isSelecting: false,
     selectedPaths: [],
@@ -26,7 +25,6 @@ const EMPTY_MODULES: ModuleStat[] = []
 
 interface NotesViewState {
     activeModules: string[]
-    isSearchOpen: boolean
     query: string
     isSelecting: boolean
     selectedPaths: string[]
@@ -38,23 +36,16 @@ type NotesViewAction =
     | { type: 'toggleSelecting' }
     | { type: 'toggleSelected'; path: string }
     | { type: 'clearSelection' }
-    | { type: 'openSearch' }
-    | { type: 'dismissSearch' }
+    | { type: 'clearQuery' }
     | { type: 'changeQuery'; query: string }
-    | { type: 'collapseSearch' }
 
-/** 搜索入口的可控句柄：展开态与关键词同源，输入层只负责上抛变更 */
+/** 搜索框的可控句柄：常驻页面头部，输入层只负责上抛变更与清空 */
 export interface NotesSearchState {
-    /** 搜索输入框是否处于展开态 */
-    isOpen: boolean
     /** 当前关键词，参与列表过滤 */
     query: string
-    open: () => void
-    /** 显式取消：收起并清空关键词 */
-    dismiss: () => void
     changeQuery: (value: string) => void
-    /** 失焦策略：有关键词则保持展开，关键词为空才收起 */
-    collapse: () => void
+    /** 清空关键词，列表回到未搜索状态 */
+    clear: () => void
 }
 
 export interface NotesListState {
@@ -89,12 +80,12 @@ function notesViewReducer(state: NotesViewState, action: NotesViewAction): Notes
                     : [...state.activeModules, action.name],
             }
         case 'resetFilters':
-            return { ...state, activeModules: [], query: '', isSearchOpen: false }
+            return { ...state, activeModules: [], query: '' }
         case 'toggleSelecting':
-            // 进入多选时收起搜索框：多选态只留退出按钮，留着展开的输入框会无处安放
+            // 关键词不随多选开关复位：多选期间的列表仍按同一份过滤结果展示
             return state.isSelecting
                 ? { ...state, isSelecting: false, selectedPaths: [] }
-                : { ...state, isSelecting: true, isSearchOpen: false }
+                : { ...state, isSelecting: true }
         case 'toggleSelected':
             return {
                 ...state,
@@ -104,15 +95,10 @@ function notesViewReducer(state: NotesViewState, action: NotesViewAction): Notes
             }
         case 'clearSelection':
             return { ...state, selectedPaths: [] }
-        case 'openSearch':
-            return { ...state, isSearchOpen: true }
-        case 'dismissSearch':
-            return { ...state, isSearchOpen: false, query: '' }
+        case 'clearQuery':
+            return { ...state, query: '' }
         case 'changeQuery':
             return { ...state, query: action.query }
-        case 'collapseSearch':
-            // 有关键词说明用户正在用这份过滤结果，收起会让列表停在筛选态却没有入口可改
-            return state.query === '' ? { ...state, isSearchOpen: false } : state
         default:
             return state
     }
@@ -150,21 +136,16 @@ export function useNotesList(stats: DashboardStats | null): NotesListState {
     const toggleSelecting = useCallback((): void => dispatch({ type: 'toggleSelecting' }), [])
     const toggleSelected = useCallback((path: string): void => dispatch({ type: 'toggleSelected', path }), [])
     const clearSelection = useCallback((): void => dispatch({ type: 'clearSelection' }), [])
-    const openSearch = useCallback((): void => dispatch({ type: 'openSearch' }), [])
-    const dismissSearch = useCallback((): void => dispatch({ type: 'dismissSearch' }), [])
-    const collapseSearch = useCallback((): void => dispatch({ type: 'collapseSearch' }), [])
+    const clearQuery = useCallback((): void => dispatch({ type: 'clearQuery' }), [])
     const changeQuery = useCallback((value: string): void => dispatch({ type: 'changeQuery', query: value }), [])
 
     const search = useMemo<NotesSearchState>(
         () => ({
-            isOpen: view.isSearchOpen,
             query: view.query,
-            open: openSearch,
-            dismiss: dismissSearch,
             changeQuery,
-            collapse: collapseSearch,
+            clear: clearQuery,
         }),
-        [view.isSearchOpen, view.query, openSearch, dismissSearch, changeQuery, collapseSearch],
+        [view.query, changeQuery, clearQuery],
     )
 
     return {

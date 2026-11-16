@@ -1,9 +1,10 @@
 /**
- * 仪表盘宿主动作：新建空笔记、打开笔记、批量置顶、批量删除笔记、工作流页跳转、索引重建、缓存清理与打开设置。
+ * 仪表盘宿主动作：新建空笔记、打开笔记、批量置顶、批量删除笔记与工作流页跳转。
  * 复用 @shared/utils/bridge 走宿主协议、@shared/utils/error 的 toErrorText 归一错误文案，结果统一经 sonner 提示。
  * 关键约束：耗时动作进行中记录 pendingAction 阻止重复提交；打开笔记与工作流跳转不占用该状态，
  * 避免顶栏操作区被整体禁用；提示在本层即时发出，页面不再渲染提示行；
- * 删除为批量语义：成功与失败分别提示，全部失败时不做成功提示，部分成功仍返回已删路径供页面清理选中态。
+ * 删除为批量语义：成功与失败分别提示，全部失败时不做成功提示，部分成功仍返回已删路径供页面清理选中态；
+ * 索引重建与插件设置由 VS Code 标题栏的「…」菜单直接触发命令，不经过本 Hook。
  */
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
@@ -43,9 +44,6 @@ export interface DashboardActionsState {
     setPinned: (paths: string[], isPinned: boolean) => Promise<void>
     deleteNotes: (paths: string[]) => Promise<DeleteNotesResult | null>
     openWorkflow: (module: string) => Promise<void>
-    rebuild: () => Promise<void>
-    clearCache: () => Promise<void>
-    openSettings: () => Promise<void>
 }
 
 export function useDashboardActions(onCompleted: () => Promise<void>): DashboardActionsState {
@@ -142,16 +140,6 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         [onCompleted],
     )
 
-    const rebuild = useCallback((): Promise<void> => runAction('rebuild', 'index/rebuild'), [runAction])
-    const clearCache = useCallback(
-        (): Promise<void> => runAction('clear', 'host/command', 'zhai.clearIndex'),
-        [runAction],
-    )
-    const openSettings = useCallback(
-        (): Promise<void> => runAction('settings', 'host/command', 'zhai.openSettings'),
-        [runAction],
-    )
-
     return {
         pendingAction,
         createNote,
@@ -159,8 +147,5 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         setPinned,
         deleteNotes,
         openWorkflow,
-        rebuild,
-        clearCache,
-        openSettings,
     }
 }

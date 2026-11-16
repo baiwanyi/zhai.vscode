@@ -148,7 +148,7 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     const toastService = new ToastService()
     context.subscriptions.push(toastService)
 
-    registerCommands(context, db, indexService, toastService)
+    registerCommands(context, indexService, toastService)
     indexService.registerWatcher(context.subscriptions)
 
     const pinStore = new PinStore(context.globalState)

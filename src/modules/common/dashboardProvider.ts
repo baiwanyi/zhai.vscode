@@ -358,10 +358,6 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             case 'press/mergeChapterSummary': {
                 return this.mergePressChapterSummary(payload)
             }
-            case 'index/rebuild': {
-                void this.indexService.fullRebuild()
-                return Promise.resolve({ started: true })
-            }
             case 'host/command': {
                 const command = typeof payload === 'string' ? payload : ''
                 if (!WEBVIEW_ALLOWED_COMMANDS.has(command)) {

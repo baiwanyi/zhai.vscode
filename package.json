@@ -90,11 +90,6 @@
                 "category": "宅写作"
             },
             {
-                "command": "zhai.clearIndex",
-                "title": "清空索引缓存",
-                "category": "宅写作"
-            },
-            {
                 "command": "zhai.ai.addToChat",
                 "title": "添加到宅对话",
                 "category": "宅写作"
@@ -111,7 +106,7 @@
             },
             {
                 "command": "zhai.openSettings",
-                "title": "打开插件设置",
+                "title": "插件设置",
                 "category": "宅写作",
                 "icon": "$(gear)"
             },
@@ -174,6 +169,16 @@
                 }
             ],
             "view/title": [
+                {
+                    "command": "zhai.rebuildIndex",
+                    "when": "view == zhai.dashboard",
+                    "group": "9_zhai@1"
+                },
+                {
+                    "command": "zhai.openSettings",
+                    "when": "view == zhai.dashboard",
+                    "group": "9_zhai@2"
+                },
                 {
                     "command": "zhai.openSettings",
                     "when": "view == zhai.workflow",

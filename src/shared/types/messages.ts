@@ -214,7 +214,6 @@ export type HostMethodName =
     | 'editor/snapshot'
     | 'host/command'
     | 'host/openExternal'
-    | 'index/rebuild'
     | 'media/copy'
     | 'media/delete'
     | 'media/deleteBatch'

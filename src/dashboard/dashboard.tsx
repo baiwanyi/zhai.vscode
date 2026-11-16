@@ -1,7 +1,10 @@
 /**
- * 仪表盘概览页：以 AppPage 骨架承载「入口区 + 笔记滚动区 + 贴底操作栏」三段。
- * 复用约定：外壳取 components/AppPage（入口区走 AppHeader、概览与列表走 AppContent 滚动、底部操作栏与多选栏走 AppFooter），
+ * 仪表盘概览页：以 AppPage 骨架承载「头部操作 + 入口区 + 笔记滚动区 + 多选栏」。
+ * 复用约定：外壳取 components/AppPage（头部操作与入口区走 AppHeader、概览与列表走 AppContent 滚动、多选栏走 AppFooter），
  * 底栏上方的渐变遮罩由 AppFooter 统一提供，页面不再自行声明。
+ * 头部首行常驻搜索输入框（仅有关键词时右侧才出现 X 清空）与「添加笔记」按钮（由 layout/DashboardHeaderActions 承载）；
+ * 索引重建、缓存清理与插件设置收在 VS Code 标题栏的「…」下拉里（view/title 的 9_zhai 分组），页内不再自绘浮层；
+ * 入口区仍由 AppMenu 整行排在头部下方；底栏只在多选且有选中项时挂载，其余时候整个 AppFooter 不渲染。
  * 数据与动作经 useDashboardStats / useNotesList / useDashboardActions 三层 hook 下发，页面只做组合；
  * 操作结果统一由 useDashboardActions 经 sonner 反馈，Toaster 由路由外壳 dashboardScreen 统一挂载。
  * 交互约束：写作管理与公众号管理入口均为页内路由跳转（由路由外壳下发的 onNavigate 承担），
@@ -20,8 +23,8 @@ import { useActiveNote } from './hooks/useActiveNote'
 import { useDashboardActions } from './hooks/useDashboardActions'
 import { useDashboardStats } from './hooks/useDashboardStats'
 import { useNotesList } from './hooks/useNotesList'
-import { DashboardEntries } from './layout/DashboardEntries'
-import { DashboardFooterActions } from './layout/DashboardFooterActions'
+import { DashboardHeaderActions } from './layout/DashboardHeaderActions'
+import { DashboardHeaderEntries } from './layout/DashboardHeaderEntries'
 import { DashboardSlots } from './layout/DashboardSlots'
 import { NotesDeleteDialog } from './note/NotesDeleteDialog'
 import { NotesSection } from './note/NotesSection'
@@ -48,8 +51,7 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
         toggleSelecting,
         toggleSelected,
     } = useNotesList(stats)
-    const { pendingAction, createNote, openNote, setPinned, deleteNotes, rebuild, clearCache, openSettings } =
-        useDashboardActions(reload)
+    const { pendingAction, createNote, openNote, setPinned, deleteNotes } = useDashboardActions(reload)
     const { activeId, setActiveId } = useActiveNote()
     /** 待删除的笔记路径集合：空集合即弹窗关闭，单条删除即长度为 1 的集合 */
     const [deletePaths, setDeletePaths] = useState<string[]>([])
@@ -105,10 +107,14 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
         }
     }, [])
 
+    /** 有操作在途时禁用所有入口按钮，避免重复触发 */
+    const isBusy = pendingAction !== null
+
     return (
         <AppPage>
             <AppHeader>
-                <DashboardEntries
+                <DashboardHeaderActions isBusy={isBusy} search={search} onCreate={() => void handleCreate()} />
+                <DashboardHeaderEntries
                     onOpenWriting={() => onNavigate(createPressRoute())}
                     onOpenPress={() => onNavigate(createWechatRoute())}
                 />
@@ -122,7 +128,6 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
                     status={status}
                     error={error}
                     isFiltered={isFiltered}
-                    search={search}
                     activeId={activeId}
                     isSelecting={isSelecting}
                     selectedPaths={selectedPaths}
@@ -145,24 +150,15 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
                 />
             </AppContent>
 
-            <AppFooter className="justify-between pt-2">
-                {isSelecting && selectedPaths.length > 0 ? (
+            {isSelecting && selectedPaths.length > 0 ? (
+                <AppFooter className="pt-2">
                     <NotesSelectionBar
                         isAllSelectedPinned={isAllSelectedPinned}
                         onTogglePin={() => void setPinned(selectedPaths, !isAllSelectedPinned)}
                         onDelete={() => setDeletePaths(selectedPaths)}
                     />
-                ) : (
-                    <DashboardFooterActions
-                        isBusy={pendingAction !== null}
-                        isRebuilding={stats?.isRebuilding === true}
-                        onAdd={() => void handleCreate()}
-                        onRebuild={() => void rebuild()}
-                        onClearCache={() => void clearCache()}
-                        onOpenSettings={() => void openSettings()}
-                    />
-                )}
-            </AppFooter>
+                </AppFooter>
+            ) : null}
 
             {deletePaths.length > 0 ? (
                 <NotesDeleteDialog
