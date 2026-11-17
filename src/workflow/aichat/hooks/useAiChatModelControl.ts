@@ -3,7 +3,9 @@
  * 复用约定：清单拉取与选择走 ./useAiChatModels，展示名兜底取 @shared/types/aiChat 的 AiRuntimeInfo，
  * 页面与输入卡片只透传这一个控制对象，不再逐项搬 runtime / choices / 回调。
  * 关键约束：展示名只在运行时模型与当前模型一致时采用 —— 切换瞬间运行时仍是旧名称，
- * 直接采用会让菜单出现「新 id 配旧名称」；不一致时留空，由菜单退回展示 id。
+ * 直接采用会让菜单出现「新 id 配旧名称」；不一致时留空，由菜单改显读取指示而不是裸模型 id。
+ * 空模型 id 有两种含义：运行时与清单都没到位（插件刚加载），或已就绪且用户选了自动。
+ * 二者都表现为 current 为空串，故必须一并给出 isReady 让菜单区分，否则加载阶段会被误判成 Auto。
  */
 import { useCallback, useMemo } from 'react'
 import type { AiModelChoices, AiReasoningEffort, AiRuntimeInfo } from '@shared/types/aiChat'
@@ -22,6 +24,8 @@ export interface AiChatModelControl {
     current: string
     /** 当前模型展示名：清单未拉取时由运行时提供，空串表示未知 */
     currentName: string
+    /** 模型信息是否已就绪：运行时与清单都未到位时为空串 current 只是「还没读到」，不是自动模型 */
+    isReady: boolean
     /** 菜单数据：未展开过时为 null */
     choices: AiModelChoices | null
     /** 清单拉取中：菜单据此展示加载态并丢弃重复展开 */
@@ -44,6 +48,8 @@ export function useAiChatModelControl({ runtime, onError }: UseAiChatModelContro
     const current = choices?.current ?? runtime?.model ?? ''
     /** 展示名与当前模型对齐后才采用，避免切换瞬间出现「新 id 配旧名称」 */
     const currentName = runtime !== null && runtime.model === current ? runtime.modelName : ''
+    /** 两处数据源任一到位才算就绪：都缺时 current 的空串只是占位，不能当自动模型 */
+    const isReady = runtime !== null || choices !== null
 
     const open = useCallback((): void => {
         void loadModels()
@@ -74,6 +80,7 @@ export function useAiChatModelControl({ runtime, onError }: UseAiChatModelContro
         () => ({
             current,
             currentName,
+            isReady,
             choices,
             isLoading,
             open,
@@ -81,6 +88,6 @@ export function useAiChatModelControl({ runtime, onError }: UseAiChatModelContro
             selectContextWindow: selectWindow,
             selectEffort: selectReasoningEffort,
         }),
-        [choices, current, currentName, isLoading, open, select, selectReasoningEffort, selectWindow],
+        [choices, current, currentName, isLoading, isReady, open, select, selectReasoningEffort, selectWindow],
     )
 }

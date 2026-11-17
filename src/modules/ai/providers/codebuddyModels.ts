@@ -3,10 +3,12 @@
  * 复用约定：经 SDK createSession 的 getAvailableModelsRaw 取完整清单（含额度倍率 credits），
  * 站点与凭证沿用 codebuddySite 的映射；完整清单不可用时退回 getAvailableModels 的简化清单；
  * 关键约束：清单拉取需拉起 CLI 子进程（数秒）且要求已登录，失败一律降级为空列表；
- * 拉取时机由调用方决定：工作流面板打开时预热（AiChatViewProvider），扩展激活期不预支这份开销；
+ * 拉取时机由调用方决定：工作流面板打开且当前文档为 md 时预热（AiChatViewProvider），
+ * 扩展激活期与非 md 文档下都不预支这份开销；
  * 选中值以内存副本供各通道同步读取，写入时才落 globalState —— 配置项已移除，面板菜单是唯一入口；
  * 额度倍率为平台下发文本，解析不出数值时记 null 表示未知，不得回退为 0。
  * 清单只含语言模型，文生图模型由服务端产品配置决定，不予枚举。
+ * 模型展示名统一首字母大写（只动首字符），菜单项、触发器与运行时 name 共用同一份归一结果。
  * 关键约束：上下文窗口只在完整清单里下发（defaultLength / supportedLengths / maxInputTokens 三处兜底），
  * 简化清单与缓存未就绪时一律记 0 表示未知，由展示层决定不显示占比；
  * 上下文档位另存一份用户选择（0 表示跟随模型默认），取值必须按当前模型的可选档位裁决后才下发。
@@ -152,6 +154,16 @@ export function pickContextWindow(selected: number, options: number[]): number {
 }
 
 /**
+ * 模型展示名归一：统一首字母大写，消除平台清单里「deepseek-v4.1」与「Hunyuan-A13B」的大小写混杂。
+ * 关键约束：只动首字符，其余原样保留 —— 型号里的 V4.1、Flash、A13B 大小写有语义，整体转换会写错型号；
+ * 首字符不是拉丁字母（中文、数字、符号）时 toUpperCase 无副作用，空串原样返回。
+ */
+export function formatModelName(name: string): string {
+    const trimmed = name.trim()
+    return trimmed.length === 0 ? '' : trimmed.charAt(0).toUpperCase() + trimmed.slice(1)
+}
+
+/**
  * 从完整清单提取默认上下文档位：defaultLength 优先，其次最大支持档位，最后退回模型输入上限。
  * 关键约束：三处都可能缺失或为 0，取不到数字时返回 0 表示未知，不得给一个猜测值。
  */
@@ -208,7 +220,7 @@ async function fetchModels(secrets: SecretsService): Promise<CodebuddyModelOptio
         if (raw.length > 0) {
             cached = raw.map((model) => ({
                 modelId: model.id,
-                name: model.name ?? model.id,
+                name: formatModelName(model.name ?? model.id),
                 credits: model.credits ?? null,
                 creditRate: parseCreditRate(model.credits),
                 custom: isCustomModel(model),
@@ -222,7 +234,7 @@ async function fetchModels(secrets: SecretsService): Promise<CodebuddyModelOptio
         const models = await session.getAvailableModels()
         cached = models.map((model) => ({
             modelId: model.modelId,
-            name: model.name,
+            name: formatModelName(model.name),
             credits: null,
             creditRate: null,
             custom: model.modelId.startsWith(CUSTOM_MODEL_PREFIX),

@@ -2,12 +2,16 @@
  * AI 对话模型菜单：底部操作行展示当前模型，展开时才拉取账号可用清单。
  * 复用 @components/ui 的 DropdownMenu，把「Auto」「内置模型」「自定义模型」合并为同一菜单；
  * 每项左侧图标由同目录 ModelIcon 按模型 id 前缀提供（品牌 SVG，缺失时回退品牌色首字母胶囊）。
- * 关键约束：清单拉取需拉起 CLI（数秒），展开期间的重复请求复用同一次进行中的拉取；Auto 与「空模型 id」一一对应，
- * 选中即交给平台自动选择模型；本层不提供手动输入，模型 id 只来自清单。
+ * 关键约束：清单拉取需拉起 CLI（数秒），展开期间的重复请求复用同一次进行中的拉取；
+ * 空模型 id 只有「已就绪」才等于 Auto —— 插件刚加载时运行时与清单都没到位，此时空串只是占位，
+ * 必须由 isReady 拦下，否则会先闪一屏「Auto」再跳成真实模型；本层不提供手动输入，模型 id 只来自清单。
  * 清单项右侧展示平台下发的额度倍率（每个模型的成本消耗速率），勾选位于倍率之前，倍率未知时不渲染；
+ * 展示名在宿主清单构造时已统一首字母大写（见 codebuddyModels 的 formatModelName），本层直接原样渲染，
+ * 菜单项、触发器与运行时 currentName 三处口径一致，不再各自转换；
  * 两组清单均按展示名字母序排列（numeric 比较），Auto 固定在内置组首位；
  * 触发器完整展示当前模型名、不截断，颜色取正文前景色而不是弱化色；
- * 清单未拉取或未命中时用运行时带回的 currentName 兜底，避免初始化阶段闪出裸模型 id；
+ * 名称一律来自清单或运行时 currentName，两者都没有时（首屏、切换瞬间）整块换成转圈与读取文案，
+ * 连模型图标一并收起 —— 裸 id 是小写串，先闪出来与菜单里的名称对不上；名称到位后再整块换回；
  * 当前模型下发可选档位时，菜单底部追加「上下文窗口」组（含「模型默认」），档位值由平台清单给出。
  */
 import { Check, ChevronDown, Sparkles } from 'lucide-react'
@@ -69,10 +73,12 @@ function toWindowLabel(tokens: number): string {
 }
 
 interface AiChatModelMenuProps {
-    /** 当前模型 id，空表示使用自动模型 */
+    /** 当前模型 id：空串在就绪后表示自动模型，未就绪时只代表「还没读到」，两者靠 isReady 区分 */
     current: string
     /** 当前模型展示名（运行时提供）：清单未拉取或未命中时用于替代裸 id */
     currentName: string
+    /** 模型信息是否已就绪：未就绪时不得把空 current 解释成自动模型 */
+    isReady: boolean
     /** 菜单数据：未展开过时为 null */
     choices: AiModelChoices | null
     isLoading: boolean
@@ -89,6 +95,7 @@ interface AiChatModelMenuProps {
 export function AiChatModelMenu({
     current,
     currentName,
+    isReady,
     choices,
     isLoading,
     disabled,
@@ -106,10 +113,13 @@ export function AiChatModelMenu({
     // 切换模型后旧档位可能不在新模型的可选范围内：此时按「模型默认」呈现，与宿主实际下发的值一致
     const currentWindow = windowOptions.includes(selectedWindow) ? selectedWindow : 0
     const defaultWindow = currentOption?.contextWindowTokens ?? 0
-    const isAuto = current === AUTO_MODEL_ID
-    const currentLabel = isAuto
-        ? AUTO_MODEL_LABEL
-        : (currentOption?.name ?? (currentName.length > 0 ? currentName : current))
+    // 空串在「运行时与清单都没到位」时只是占位：插件刚加载就判成 Auto 会先闪一屏「Auto」再跳成真实模型
+    const isAuto = isReady && current === AUTO_MODEL_ID
+    // 名称只认清单与运行时两处：都没有时留空，由触发器改显读取指示，绝不回退成裸模型 id
+    const currentLabel = isAuto ? AUTO_MODEL_LABEL : (currentOption?.name ?? currentName)
+    const hasLabel = currentLabel.length > 0
+    /** 名称未知与清单拉取中共用同一个读取指示：两者对用户是同一种「还没好」 */
+    const isPending = isLoading || !hasLabel
 
     /** 勾选标记：四组清单共用，未选中时不渲染，不留空占位 */
     const renderCheck = (checked: boolean): JSX.Element | null => (checked ? <Check className={CHECK_CLASS} /> : null)
@@ -176,20 +186,27 @@ export function AiChatModelMenu({
             <DropdownMenuTrigger asChild>
                 <Button
                     variant="ghost"
-                    className="shrink-0 gap-1 items-center text-foreground font-normal"
-                    aria-label={`当前模型 ${currentLabel}，点击切换`}
-                    disabled={disabled}
+                    className="shrink-0 gap-1 items-center font-normal bg-white/5 text-foreground hover:bg-white/5 dark:hover:bg-white/5"
+                    aria-label={isPending ? '正在读取可用模型，点击展开' : `当前模型 ${currentLabel}，点击切换`}
+                    disabled={isPending || disabled}
                 >
-                    {isAuto ? (
-                        <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+                    {/* 名称与清单两件事都没到位时不展示模型内容：只有转圈与读取文案，
+                        避免先闪出一段与菜单里对不上的裸 id；到位后整块换成图标 + 名称 + 箭头 */}
+                    {isPending ? (
+                        <>
+                            <Spinner className="size-3.5 shrink-0" aria-label="正在读取可用模型" />
+                            <span className="whitespace-nowrap text-xs">正在读取可用模型…</span>
+                        </>
                     ) : (
-                        <ModelIcon modelId={current} name={currentLabel} />
-                    )}
-                    <span className="whitespace-nowrap">{currentLabel}</span>
-                    {isLoading ? (
-                        <Spinner className="size-3 shrink-0" aria-label="正在读取可用模型" />
-                    ) : (
-                        <ChevronDown className="size-3 shrink-0" />
+                        <>
+                            {isAuto ? (
+                                <Sparkles className="size-3.5 shrink-0 text-muted-foreground" />
+                            ) : (
+                                <ModelIcon modelId={current} name={currentLabel} />
+                            )}
+                            <span className="whitespace-nowrap">{currentLabel}</span>
+                            <ChevronDown className="size-3.5 shrink-0" />
+                        </>
                     )}
                 </Button>
             </DropdownMenuTrigger>

@@ -58,6 +58,7 @@ export function AiChatComposerActions({
                 <AiChatModelMenu
                     current={modelControl.current}
                     currentName={modelControl.currentName}
+                    isReady={modelControl.isReady}
                     choices={modelControl.choices}
                     isLoading={modelControl.isLoading}
                     disabled={isLocked}

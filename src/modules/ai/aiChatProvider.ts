@@ -153,6 +153,8 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     /** 已解析的视图实例，用于推送流式增量与运行时变更 */
     private readonly views = new Set<vscode.WebviewView>()
     private readonly disposables: vscode.Disposable[] = []
+    /** 模型清单预热是否已发起：视图解析与「切到 md」两处都会触发，靠它保证只拉起一次 CLI */
+    private modelsWarmupStarted = false
 
     private readonly extensionUri: vscode.Uri
     private readonly service: AiChatService
@@ -197,7 +199,13 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             this.service.onRuntimeChanged(() => this.broadcastRuntimeChanged()),
             this.service.onContextChanged(() => this.broadcastContextChanged()),
             this.service.onWriteStateChanged(() => this.broadcastWriteStateChanged()),
-            this.workflowRouter.onChanged((context) => this.broadcastWorkflowChanged(context)),
+            this.workflowRouter.onChanged((context) => {
+                this.broadcastWorkflowChanged(context)
+                // 面板可能在非 md 文档下就打开了，那一次预热会被跳过：切到 md 的这次广播就是补齐时机
+                if (context.isMarkdown) {
+                    this.warmupModels()
+                }
+            }),
             this.workflowRouter.onViewRequested((request) => this.broadcastWorkflowView(request)),
             this.toast.onToast((payload) => this.broadcastToast(payload)),
         )
@@ -218,8 +226,11 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             ],
         }
         void this.renderHtml(webviewView)
-        // 模型清单随面板打开才拉取：属于本面板的首屏数据，不在扩展激活期预支
-        this.warmupModels()
+        // 模型清单随面板打开才拉取，且只在 md 文档下拉：非 md 时面板只剩空白页，模型菜单用不到，
+        // 预热会平白替用户拉起一次 CLI 子进程（数秒）
+        if (this.workflowRouter.getContext().isMarkdown) {
+            this.warmupModels()
+        }
         webviewView.webview.onDidReceiveMessage(
             (message: unknown) => void this.handleMessage(webviewView, message),
             this,
@@ -240,11 +251,17 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     }
 
     /**
-     * 预热模型清单：只在工作流面板解析时触发一次，与扩展激活刻意分开。
+     * 预热模型清单：只在「面板已解析且当前是 md 文档」时触发，与扩展激活刻意分开。
      * 关键约束：拉取要起 CLI 子进程（数秒）且要求已登录，失败一律降级为空列表，不影响面板首屏；
+     * 幂等：视图解析与路由事实变化都会调用，modelsWarmupStarted 保证只拉起一次子进程；
+     * 失败不自动重试（未登录时反复拉只会反复起子进程），由菜单展开时的 listModels 现拉兜底；
      * 清单到位后广播运行时变更 —— 面板初始化时可能还没拿到清单，模型名会短暂为空，补齐靠这一次广播。
      */
     private warmupModels(): void {
+        if (this.modelsWarmupStarted) {
+            return
+        }
+        this.modelsWarmupStarted = true
         void listCodebuddyModels(this.secrets)
             .then((models) => {
                 if (models.length === 0) {
@@ -501,7 +518,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         return { opened: await vscode.env.openExternal(vscode.Uri.parse(CODEBUDDY_CREDITS_URLS[site])) }
     }
 
-    /** 模型清单与当前选择：面板打开时已后台预热，缓存为空（未登录或预热未完成）时此处现拉一次 */
+    /** 模型清单与当前选择：md 文档下面板打开时已后台预热，缓存为空（未登录、非 md 或预热未完成）时此处现拉一次 */
     private async listModels(): Promise<AiModelChoices> {
         const models = await listCodebuddyModels(this.secrets)
         return {

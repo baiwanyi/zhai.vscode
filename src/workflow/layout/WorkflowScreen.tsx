@@ -6,18 +6,21 @@
  * 内容归属变化导致当前分区不可用时，渲染期回落到 AI 对话而不改写 state，切回原归属仍能回到上次分区；
  * 宿主视图请求在本层对齐，不沉到子页面；归档文档只切分区，切换文档归属由宿主事实驱动，
  * 归属切换后当前分区在新归属下仍可用则保留，不可用才落回 AI 对话；
- * 工作流区只服务 Markdown：宿主事实 isMarkdown 为假时整块不可用，导航与内容都不渲染，
+ * 工作流区只服务 Markdown：宿主事实 isMarkdown 为假时整块不可用，只给一张居中的空白页（产品 logo）——
+ * 导航、内容与任何提示文案都不渲染，避免非 md 文件被工作流区接管时露出多余说明；
  * 该判定只看宿主下发的字段，本层不按路径自行推断；
  * 路由事实未就绪时渲染全屏加载空态，避免先闪出空白内容区。
- * 全局提示：sonner 的 Toaster 只在本层挂载一次，页面内的操作结果统一用 toast 上报，页面不再自挂；
+ * 全局提示：sonner 的 Toaster 只在本层挂载一次，且挂在内容之外 —— 面板未就绪、空白页与正常页共用同一个实例，
+ * 切换文档不卸载，空白页期间宿主推来的提示也能即时显示；页面内的操作结果统一用 toast 上报，页面不再自挂；
  * 宿主侧命令结果经 useHostToast 订阅 toast 广播，在本层同样用 sonner 呈现。
  */
-import { FileText } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { Toaster } from '@components/ui/sonner'
+import { Image } from '@webview/components/Image'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useHostToast } from '@webview/hooks/useHostToast'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
+import logoIcon from '@resources/icon.svg'
 import { readAvailableSections, readContentScope, readScopeDir } from './contentScope'
 import { WorkflowNav } from './WorkflowNav'
 import { WorkflowResidentSection } from './WorkflowResidentSection'
@@ -70,49 +73,65 @@ export function WorkflowScreen(): JSX.Element {
         setActiveSection(section)
     }, [])
 
-    if (!isReady) {
-        return <StateEmpty className="h-screen" title="正在读取工作流" isLoading />
-    }
-
-    // 非 Markdown 文档下工作流区整体不可用：导航与内容都不渲染，避免进入任何依赖文档的分区
-    if (!context.isMarkdown) {
+    /**
+     * 内容区：按「非 Markdown → 路由未就绪 → 正常」依次回落。
+     * 只产出内容、不挂提示容器 —— Toaster 在下方与内容同级只挂一次，切换文档时不被卸载，
+     * 正在显示的宿主提示不会被打断后再补发重放。
+     */
+    const renderContent = (): JSX.Element => {
+        // 非 Markdown 文档下工作流区整体不可用：只借 StateEmpty 的居中骨架挂淡化 logo 与一句 slogan，
+        // 不给说明与操作区，保持空白页观感；图标位默认是灰底小方块，这里整组覆盖成透明大图
+        if (!context.isMarkdown) {
+            return (
+                <StateEmpty
+                    className="h-screen"
+                    title="宅于一隅，落笔千言"
+                    icon={BrandLogo}
+                    iconClassName="size-32 rounded-none bg-transparent"
+                />
+            )
+        }
+        if (!isReady) {
+            return <StateEmpty className="h-screen" title="正在读取工作流" isLoading />
+        }
+        // 归属变化后当前分区可能不可用（如从作品切到笔记时停在「设定」）：渲染期回落，不改写 state
+        const section = readAvailableSections(scope).includes(activeSection) ? activeSection : DEFAULT_SECTION
         return (
             <div className="flex h-screen min-h-0">
-                <StateEmpty
-                    className="h-full"
-                    icon={FileText}
-                    title="工作流区仅支持 Markdown 文档"
-                    description="当前打开的文件不是 .md。切到任意 Markdown 文档后即可继续使用工作流区与宅写作编辑器。"
-                />
-                <Toaster theme={theme} />
+                <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+                    {scope === 'press' ? (
+                        <WorkflowPress context={context} section={section} onSelectSection={handleSelectSection} />
+                    ) : scope === 'wechat' ? (
+                        <WorkflowWechat
+                            section={section}
+                            scopeDir={readScopeDir(context, scope)}
+                            docPath={context.docPath}
+                        />
+                    ) : (
+                        <WorkflowResidentSection
+                            section={section}
+                            scopeDir={readScopeDir(context, scope)}
+                            docPath={context.docPath}
+                        />
+                    )}
+                </div>
+                <WorkflowNav activeSection={section} scope={scope} onSelect={handleSelectSection} />
             </div>
         )
     }
 
-    // 归属变化后当前分区可能不可用（如从作品切到笔记时停在「设定」）：渲染期回落，不改写 state
-    const section = readAvailableSections(scope).includes(activeSection) ? activeSection : DEFAULT_SECTION
-
     return (
-        <div className="flex h-screen min-h-0">
-            <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-                {scope === 'press' ? (
-                    <WorkflowPress context={context} section={section} onSelectSection={handleSelectSection} />
-                ) : scope === 'wechat' ? (
-                    <WorkflowWechat
-                        section={section}
-                        scopeDir={readScopeDir(context, scope)}
-                        docPath={context.docPath}
-                    />
-                ) : (
-                    <WorkflowResidentSection
-                        section={section}
-                        scopeDir={readScopeDir(context, scope)}
-                        docPath={context.docPath}
-                    />
-                )}
-            </div>
-            <WorkflowNav activeSection={section} scope={scope} onSelect={handleSelectSection} />
+        <>
+            {renderContent()}
             <Toaster theme={theme} />
-        </div>
+        </>
     )
+}
+
+/**
+ * 空白页 logo：StateEmpty 的 icon 只接受组件形式，提取到模块层保持稳定身份 ——
+ * 内联箭头函数每轮渲染都是新类型，会让 Image 被卸载重挂，加载态跟着重置。
+ */
+function BrandLogo(): JSX.Element {
+    return <Image src={logoIcon} alt="" className="size-32 object-contain opacity-10" />
 }

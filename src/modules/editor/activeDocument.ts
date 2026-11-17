@@ -3,7 +3,9 @@
  * 复用约定：文本编辑器事件由本文件订阅，富文本侧由 editorProvider 上报；口径与 WorkflowRouter 一致——
  * 焦点移到面板或设置页不清空，沿用最后一次活跃文档，避免打开设置就把场景事实丢掉。
  * 关键约束：模块级单例，随激活注册一次；业务代码不得再直接读 window.activeTextEditor——
- * 富文本 tab 下它为空，绕过本文件会静默失效或插到错误文档。
+ * 富文本 tab 下它为空，绕过本文件会静默失效或插到错误文档；
+ * 注册时必须把「启动时已经打开的那份文档」登记进来：VSCode 恢复会话时不会为初始编辑器补发切换事件，
+ * 不登记就会让工作流路由一直读到 null，非 md 文件因此按默认放行进工作流区。
  */
 import * as vscode from 'vscode'
 import type { EditorInsertContent } from '@shared/types/editor'
@@ -27,8 +29,30 @@ function setActiveDocument(next: ActiveDocument | null): void {
     emitter.fire(next)
 }
 
+/**
+ * 启动时的活跃文档：优先取文本编辑器；面板已抢走焦点时 activeTextEditor 为空，退回活跃 tab。
+ * 关键约束：只认普通文本 tab —— 自定义编辑器（宅写作编辑器）由 reportRichDocument 上报，
+ * 在这里按 tab 类型推断 kind 会与其真实生命周期打架。
+ */
+function readInitialDocument(): ActiveDocument | null {
+    const editor = vscode.window.activeTextEditor
+    if (editor !== undefined) {
+        return { uri: editor.document.uri, kind: 'text' }
+    }
+    const tab = vscode.window.tabGroups.activeTabGroup.activeTab
+    if (tab === undefined || !(tab.input instanceof vscode.TabInputText)) {
+        return null
+    }
+    return { uri: tab.input.uri, kind: 'text' }
+}
+
 /** 注册文本编辑器监听并托管 emitter：随 context.subscriptions 释放 */
 export function trackActiveDocument(subscriptions: vscode.Disposable[]): void {
+    // 恢复会话时不补发切换事件：注册前先登记一次，工作流路由与插入目标才有「当前文档」可读
+    const initial = readInitialDocument()
+    if (initial !== null) {
+        setActiveDocument(initial)
+    }
     subscriptions.push(
         emitter,
         vscode.window.onDidChangeActiveTextEditor((editor) => {

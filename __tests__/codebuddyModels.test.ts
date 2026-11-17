@@ -1,21 +1,47 @@
 /**
- * codebuddyModels 单元测试：覆盖额度倍率（credits）解析与自定义模型判定。
+ * codebuddyModels 单元测试：覆盖额度倍率（credits）解析、展示名归一与自定义模型判定。
  * 重点验证：平台下发格式并不统一（"x0.51 credits" / "x1.62"），两种都要取出数值；
  * "x0.00 credits" 是真实的零倍率，必须解析为 0 而不是未知；缺失或无数值时一律返回 null，
  * 避免把未知倍率误当成免费模型写进成本统计；自定义模型按 id 前缀、vendor、tags 三路识别，
  * 菜单分组的正确性依赖该判定。
+ * 展示名归一只动首字符：平台清单里大小写混杂，整体转换会把 V4.1 / A13B 之类的型号写错。
  * 上下文档位部分重点验证：默认档位取 defaultLength → 最大支持档位 → maxInputTokens 的兜底顺序，
  * 可选档位去重升序且丢弃非法值，选择值不在可选范围内时必须回落 0（跟随模型默认），
  * 否则会把下游静默忽略的档位当成已生效。
  */
 import { describe, expect, it } from 'vitest'
 import {
+    formatModelName,
     isCustomModel,
     parseCreditRate,
     pickContextWindow,
     readContextWindowOptions,
     readContextWindowTokens,
 } from '../src/modules/ai/providers/codebuddyModels'
+
+describe('formatModelName', () => {
+    it('小写开头统一为首字母大写', () => {
+        expect(formatModelName('deepseek-v4.1')).toBe('Deepseek-v4.1')
+    })
+
+    it('已是大写开头时原样返回', () => {
+        expect(formatModelName('Hunyuan-A13B')).toBe('Hunyuan-A13B')
+    })
+
+    it('只动首字符，型号内的大小写与数字保留', () => {
+        expect(formatModelName('glm-V4.1-Flash')).toBe('Glm-V4.1-Flash')
+    })
+
+    it('中文或数字开头不加改动', () => {
+        expect(formatModelName('混元-lite')).toBe('混元-lite')
+        expect(formatModelName('4.1-flash')).toBe('4.1-flash')
+    })
+
+    it('空串与纯空白返回空串', () => {
+        expect(formatModelName('')).toBe('')
+        expect(formatModelName('   ')).toBe('')
+    })
+})
 
 describe('parseCreditRate', () => {
     it('带 credits 后缀的倍率取出数值', () => {
