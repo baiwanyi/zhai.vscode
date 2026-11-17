@@ -5,15 +5,14 @@
  * tooltipSide 仅在提示需要避开所在容器时传，气泡固定暗底亮字，类名统一取自 ./Tooltip 的 TOOLTIP_CLASS。
  * 关键约束：TooltipTrigger 会把自身 data-state 合并进子元素，与开关的选中态同一属性相撞，
  * 故由一层 inline-flex 的 span 承接触发层与事件（disabled 的按钮不派发指针事件，只有外层兜住
- * 才提示得出停用原因）；切换开关不关闭提示——指针仍在开关上不会再次触发进入事件，关掉就弹不回来。
+ * 才提示得出停用原因）；点击开关即由 ./Tooltip 的全局设定关闭，指针离开后重新悬停才会再次出现。
  */
 'use client'
 
 import { useCallback, useId, useState } from 'react'
 import { Label } from '@components/ui/label'
 import { Switch as ShadcnSwitch } from '@components/ui/switch'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
-import { TOOLTIP_CLASS } from './Tooltip'
+import { TOOLTIP_CLASS, Tooltip, TooltipContent, TooltipTrigger } from './Tooltip'
 import type { ComponentProps, JSX, ReactNode } from 'react'
 
 interface SwitchProps extends ComponentProps<typeof ShadcnSwitch> {

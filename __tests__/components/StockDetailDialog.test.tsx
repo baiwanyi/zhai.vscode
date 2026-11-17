@@ -9,8 +9,8 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
-import { TooltipProvider } from '@components/ui/tooltip'
 import type { StockPhotoSizeKey } from '@shared/types/stock'
+import { TooltipProvider } from '@webview/components/Tooltip'
 import { StockDetailDialog } from '@webview/workflow/media/layout/StockDetailDialog'
 import type { StockDetailPhoto } from '@webview/workflow/media/layout/StockDetailDialog'
 

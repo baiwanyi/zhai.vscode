@@ -20,10 +20,9 @@
 
 import { cn } from 'cn'
 import { ScrollArea } from '@components/ui/scroll-area'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
 import { copyWithToast } from '@shared/utils/clipboard'
 import { preventContextMenu } from '@shared/utils/dom'
-import { TOOLTIP_CLASS } from './Tooltip'
+import { TOOLTIP_CLASS, Tooltip, TooltipContent, TooltipTrigger } from './Tooltip'
 import type { ComponentProps, JSX, MouseEvent } from 'react'
 
 /** 底栏上方的渐变遮罩：滚动内容在按钮下方淡出，只在此处声明一次 */

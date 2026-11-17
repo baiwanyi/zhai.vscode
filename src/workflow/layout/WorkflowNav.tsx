@@ -30,7 +30,7 @@ import {
     Users,
     WandSparkles,
 } from 'lucide-react'
-import { TooltipProvider } from '@components/ui/tooltip'
+import { TooltipProvider } from '@webview/components/Tooltip'
 import { SCOPE_SECTIONS } from './contentScope'
 import { UnsplashIcon } from './UnsplashIcon'
 import { WorkflowNavItem } from './WorkflowNavItem'

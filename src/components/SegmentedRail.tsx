@@ -10,8 +10,7 @@
  */
 import { cn } from 'cn'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
-import { TOOLTIP_CLASS } from './Tooltip'
+import { TOOLTIP_CLASS, Tooltip, TooltipContent, TooltipTrigger } from './Tooltip'
 import type { JSX, ReactNode } from 'react'
 
 /**

@@ -9,8 +9,7 @@
  */
 import { cn } from 'cn'
 import { Badge } from '@components/ui/badge'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@components/ui/tooltip'
-import { TOOLTIP_CLASS } from './Tooltip'
+import { TOOLTIP_CLASS, Tooltip, TooltipContent, TooltipTrigger } from './Tooltip'
 import type { ComponentProps, JSX, ReactNode } from 'react'
 
 /** 统计胶囊口径：图标与文字留 4px、字重放轻，指针取 pointer 呼应可悬停查精确值；高度不再覆盖，沿用 ui/badge 的 h-5 */
