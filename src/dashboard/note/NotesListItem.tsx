@@ -55,7 +55,11 @@ export function NotesListItem({
         <>
             {/* min-w-0 让标题列可收缩，长标题截断后给右侧时间留位 */}
             <ItemContent className="min-w-0">
-                <ItemTitle className={cn(isActive && 'font-semibold')}>{title}</ItemTitle>
+                {/* ItemTitle 默认是 flex + w-fit：宽度按内容撑开，且 flex 容器下 text-overflow 不生效，
+                    长标题只会换行。改为 block + w-full + truncate，宽度受父列约束后才单行省略 */}
+                <ItemTitle className={cn('block w-full min-w-0 truncate', isActive && 'font-semibold')}>
+                    {title}
+                </ItemTitle>
             </ItemContent>
             <ItemActions className="shrink-0">
                 <span className="text-xs text-muted-foreground tabular-nums">{formatRelativeTime(note.mtime)}</span>

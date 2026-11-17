@@ -20,7 +20,7 @@ import type { JSX } from 'react'
  * 让行内 truncate 失效——必须把这层改回 block（内联样式只能用 ! 覆盖）。
  */
 const VIEWPORT_CLASS =
-    'min-h-0 flex-1 *:data-[slot=scroll-area-viewport]:max-h-72 [&_[data-slot=scroll-area-viewport]>div]:block!'
+    'min-h-0 flex-1 *:data-[slot=scroll-area-viewport]:max-h-80 [&_[data-slot=scroll-area-viewport]>div]:block!'
 
 /** 空回调：未接入续载时占位，避免每次渲染新建函数把观察器重建掉 */
 const NOOP = (): void => undefined
