@@ -21,6 +21,7 @@ import {
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
 import { Popover, PopoverAnchor, PopoverContent } from '@components/ui/popover'
+import type { AiContextScope } from '@shared/types/aiChat'
 import type { PromptRule } from '@shared/types/promptLibrary'
 import { Button } from '@webview/components/Button'
 import { useRuleMenu } from '@webview/hooks/useRuleMenu'
@@ -32,6 +33,8 @@ import type { JSX } from 'react'
 
 interface AiChatContextMenuProps {
     disabled: boolean
+    /** 待发送上下文作用域：对话按会话隔离，生图面板固定一份；缺省按对话 */
+    scope?: AiContextScope
     /** 上下文添加成功后刷新会话快照 */
     onContextAdded: () => void
     /** 上下文添加失败的提示出口 */
@@ -45,6 +48,7 @@ interface AiChatContextMenuProps {
 
 export function AiChatContextMenu({
     disabled,
+    scope = 'chat',
     onContextAdded,
     onContextError,
     ruleNames,
@@ -132,6 +136,7 @@ export function AiChatContextMenu({
                                 <DropdownMenuLabel>添加上下文</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
                                 <AiChatContextSourceMenu
+                                    scope={scope}
                                     onClose={closeMenu}
                                     onAdded={onContextAdded}
                                     onError={onContextError}
@@ -171,6 +176,7 @@ export function AiChatContextMenu({
                             // 换作品即重新挂载：页签与勾选状态一并复位
                             key={renderedDirPath}
                             dirPath={renderedDirPath}
+                            scope={scope}
                             onClose={closeMenu}
                             onAdded={onContextAdded}
                             onError={onContextError}

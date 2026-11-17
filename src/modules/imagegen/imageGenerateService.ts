@@ -125,16 +125,7 @@ function normalizeGenerateRequest(payload: unknown): NormalizedImageRequest {
     const ruleIds = readTextList(value.promptRules, MAX_RULES, MAX_RULE_NAME)
     // 参考图只收路径，是否可用由 ReferenceImageService 按登记表判断
     const references = readTextList(value.referenceImages, MAX_REFERENCE_IMAGES, MAX_REFERENCE_PATH_LENGTH)
-    // 正文、词条、上下文、规则与参考图都为空时才算空请求——只挂参考图同样可以出图
-    if (
-        prompt.length === 0 &&
-        promptTags.length === 0 &&
-        contexts.length === 0 &&
-        ruleIds.length === 0 &&
-        references.length === 0
-    ) {
-        throw new Error('提示词不能为空')
-    }
+    // 空请求判定不在此处：宿主侧的上下文清单是异步读取的，统一放到 generate 里判定
     const kind = value.kind
     if (kind !== 'portrait' && kind !== 'lore' && kind !== 'photo') {
         throw new Error('图片类别非法')
@@ -229,6 +220,11 @@ export class ImageGenerateService {
         private readonly tags: PromptTagService,
         private readonly referenceImages: ReferenceImageService,
         private readonly recordMedia: MediaRecorder,
+        /**
+         * 生图作用域的待发送上下文：由装配层注入对话服务的读取器，读出后清单即清空。
+         * 约定：以回调注入，imagegen 不反向依赖 ai 模块的会话服务。
+         */
+        private readonly readContextTexts?: () => Promise<string[]>,
     ) {
         this.promptEnhance = new PromptEnhanceService(provider, usageRecorder)
     }
@@ -255,6 +251,19 @@ export class ImageGenerateService {
         )
         try {
             const settings = await this.readSettings()
+            // 生图作用域的待发送上下文：宿主解析成文本段，读取即清空（与对话「发送即清空」同口径）
+            const hostContexts = this.readContextTexts === undefined ? [] : await this.readContextTexts()
+            // 空请求判定放在读取之后：只挂上下文（无正文、词条、规则、参考图）同样可以出图
+            if (
+                request.prompt.length === 0 &&
+                request.promptTags.length === 0 &&
+                request.contexts.length === 0 &&
+                hostContexts.length === 0 &&
+                request.ruleIds.length === 0 &&
+                request.references.length === 0
+            ) {
+                throw new Error('提示词不能为空')
+            }
             // 词条原文按标识回查：词条已被删除时由词库服务跳过，出图不因单条缺失而失败
             const tagTexts = await this.tags.readForPrompt(request.promptTags)
             // 词条与正文的合并口径统一由 mergePromptTags 提供，与下面的 enhance 共用同一份实现
@@ -266,7 +275,7 @@ export class ImageGenerateService {
             const artifact = await this.router.generate({
                 prompt: composePrompt({
                     prompt: mergedPrompt,
-                    contexts: request.contexts,
+                    contexts: [...request.contexts, ...hostContexts],
                     rules: ruleTexts,
                     suffix: settings.promptSuffix,
                     negative: settings.negative,

@@ -1,12 +1,13 @@
 /**
  * 提及检索：按关键词查索引候选，或按粘贴的 `@zhai\` 路径直接添加为上下文引用。
  * 复用约定：检索骨架取 ./useAiChatSearchResults（空关键词短路、过期回包丢弃、关闭清空），
- * 请求走 @shared/utils/bridge，错误经注入的 onError 统一提示，添加成功后由调用方刷新上下文清单。
+ * 请求走 @shared/utils/bridge，错误经注入的 onError 统一提示，添加成功后由调用方刷新上下文清单；
+ * 对话与生图共用本 hook，添加时随作用域写入各自的待发送清单。
  * 关键约束：行范围由宿主重新校验并读取，前端只透传粘贴得到的数字；
  * 候选只透传宿主生成的 path 与展示字段，不在前端解析文件内容。
  */
 import { useCallback } from 'react'
-import type { AiMentionCandidate } from '@shared/types/aiChat'
+import type { AiContextScope, AiMentionCandidate } from '@shared/types/aiChat'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
 import { useAiChatSearch } from './useAiChatSearchResults'
@@ -23,6 +24,8 @@ export interface UseAiChatMentionOptions {
     onError: (error: string | null) => void
     /** 添加成功后的回调：由调用方重拉上下文清单 */
     onAdded: () => void
+    /** 作用域：缺省为对话，生图面板传 image */
+    scope?: AiContextScope
 }
 
 export interface AiChatMentionState {
@@ -38,7 +41,7 @@ export interface AiChatMentionState {
     reset: () => void
 }
 
-export function useAiChatMention({ onError, onAdded }: UseAiChatMentionOptions): AiChatMentionState {
+export function useAiChatMention({ onError, onAdded, scope = 'chat' }: UseAiChatMentionOptions): AiChatMentionState {
     const load = useCallback(async (keyword: string): Promise<readonly AiMentionCandidate[]> => {
         const result = await request<{ candidates: AiMentionCandidate[] }>('ai/mention/search', { keyword })
         return result.candidates
@@ -49,7 +52,7 @@ export function useAiChatMention({ onError, onAdded }: UseAiChatMentionOptions):
     const add = useCallback(
         async (candidate: AiMentionCandidate): Promise<boolean> => {
             try {
-                await request('ai/mention/add', { path: candidate.path })
+                await request('ai/mention/add', { path: candidate.path, scope })
                 onError(null)
                 onAdded()
                 return true
@@ -58,7 +61,7 @@ export function useAiChatMention({ onError, onAdded }: UseAiChatMentionOptions):
                 return false
             }
         },
-        [onAdded, onError],
+        [onAdded, onError, scope],
     )
 
     const addPath = useCallback(
@@ -68,6 +71,7 @@ export function useAiChatMention({ onError, onAdded }: UseAiChatMentionOptions):
                     path: target.relative,
                     startLine: target.startLine,
                     endLine: target.endLine,
+                    scope,
                 })
                 onError(null)
                 onAdded()
@@ -77,7 +81,7 @@ export function useAiChatMention({ onError, onAdded }: UseAiChatMentionOptions):
                 return false
             }
         },
-        [onAdded, onError],
+        [onAdded, onError, scope],
     )
 
     return { candidates, isSearching, search, add, addPath, reset }

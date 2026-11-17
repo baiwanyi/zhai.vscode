@@ -3,7 +3,7 @@
  * 下方按分类渲染候选列表（章节 / 人物 / 大纲）或设定多选（本文件内的 ProjectSettingPanel）。
  * 复用约定：标题行取 @components/ui 的 PopoverHeader / PopoverTitle，分类页签与设定分组取 ToggleGroup，
  * 候选列表复用 ../block 的 AiChatContextItemView 非菜单形态（检索行 + 候选 + 滚动续载）；
- * 分类文案取 ../block/contextLabels，回调统一取 ../constants 的公共基座，设定分节行取宿主 ai/context/sections。
+ * 分类文案取 ../utils/context/labels，回调统一取 ../utils/context/types 的公共基座，设定分节行取宿主 ai/context/sections。
  * 关键约束：view 必须按目录与分类 memo 稳定，否则每次渲染都会让内容层重发同一批查询；
  * 整层不在菜单上下文内，因此只能用普通按钮，不能出现 DropdownMenuItem；
  * 换作品由外壳的 key 重新挂载，页签与勾选一并复位；设定分类自带提交按钮并自行在添加成功后关闭浮层。
@@ -19,13 +19,13 @@ import { toErrorText } from '@shared/utils/error'
 import { isLoreSection, SETTING_SECTIONS, SETTING_SECTION_ORDER } from '@webview/workflow/press/setting/sections'
 import type { SettingSectionKey } from '@webview/workflow/press/setting/sections'
 import { AiChatSearchField } from './AiChatSearchField'
-import type { AiChatContextSubMenuCallbacks, AiContextProjectTab, AiContextTarget } from '../constants'
+import type { AiChatContextSubMenuCallbacks, AiContextProjectTab, AiContextTarget } from '../utils/context/types'
 import type { JSX } from 'react'
 import { AiChatContextItemView } from '../block/AiChatContextItemView'
-import { CONTEXT_KIND_LABELS, contextSearchPlaceholderOf } from '../block/contextLabels'
-import { CONTEXT_PICK_BUTTON_CLASS } from '../block/menuStyles'
 import { useAddContextItems } from '../hooks/useAddContextItems'
 import { useAiChatContextQuery, useContextQueryTarget } from '../hooks/useAiChatContextSource'
+import { CONTEXT_KIND_LABELS, contextSearchPlaceholderOf } from '../utils/context/labels'
+import { CONTEXT_PICK_BUTTON_CLASS } from '../utils/context/styles'
 
 /** 分类顺序：顺序即页签顺序，首项为默认分类 */
 const PROJECT_TABS: readonly AiContextProjectTab[] = ['chapter', 'character', 'outline', 'setting']
@@ -257,12 +257,13 @@ export interface AiChatContextProjectPickerProps extends AiChatContextSubMenuCal
 
 /**
  * 作品面板：标题行（作品名）、分类页签、按页签渲染候选列表或设定面板。
- * 标题收在 PopoverHeader 里，与提示词面板（ImagePromptPicker）同一套浮层骨架：
+ * 标题收在 PopoverHeader 里，与提示词面板（AiChatPromptPicker）同一套浮层骨架：
  * 标题行 → 页签 + 搜索栏 → 内容区吃满剩余高度，浮层高度不随分类切换跳动，也不会被内容撑破。
  * 搜索栏四类分类共用：章节 / 人物 / 大纲交给宿主检索，设定分类在本地过滤已读取的分节。
  */
 export function AiChatContextProjectPicker({
     dirPath,
+    scope,
     onClose,
     onAdded,
     onError,
@@ -274,7 +275,7 @@ export function AiChatContextProjectPicker({
     /** 查询口径：目录与分类任一变化都换对象，其余情况保持引用稳定，避免内容层反复重发查询 */
     const target = useMemo((): AiContextTarget => ({ kind: tab, sourceId: dirPath }), [dirPath, tab])
     const query = useAiChatContextQuery(onError)
-    const { isSubmitting, submitItems } = useAddContextItems(onAdded, onClose, onError)
+    const { isSubmitting, submitItems } = useAddContextItems(onAdded, onClose, onError, scope)
     // 目标切换：检索行与列表都在本层，切分类只发一批新查询；
     // 设定分类走本地分节与过滤，宿主候选查询不接受 kind=setting，故传 null 复位而不是发请求
     useContextQueryTarget(query, tab === 'setting' ? null : target)

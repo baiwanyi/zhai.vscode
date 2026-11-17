@@ -304,6 +304,13 @@ export type AiContextItemKind = 'note' | 'article' | 'chapter' | 'character' | '
 /** 可列举的内容来源分类：笔记本、公众号、作品，均作为筛选维度而非引用单位 */
 export type AiContextSourceScope = 'notebook' | 'account' | 'project'
 
+/**
+ * 待发送上下文的作用域：chat 按会话隔离，image 全局面板只有一份。
+ * 关键约束：两套清单互不干扰 —— 生图页添加的引用不得出现在对话输入区，反之亦然；
+ * 与 AiContextSourceScope 不是一回事，后者是「来源筛选维度」。
+ */
+export type AiContextScope = 'chat' | 'image'
+
 /** 来源列表项：count 为该来源下的内容条数，用于菜单展示 */
 export interface AiContextSource {
     /** 来源标识：笔记本为 notes/<目录>，公众号为账号 id，作品为 press/<作品名> */

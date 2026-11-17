@@ -87,7 +87,7 @@
 
 | 方法 | 说明 |
 | --- | --- |
-| `pressAi/generateImage` | 入参 `prompt` / `promptTags` / `contexts` / `promptRules` / `referenceImages` / `kind` / `characterId` / `ratio` / `style` / `enhancedFrom`；`promptTags` 是词条芯片的标识（`分类::分组::名称`，最多 20 条），宿主按标识回查 `prompt/tags` 的 md、经 `@shared/utils/promptTag` 归一化后再由 `mergePromptTags` 与正文合并（词条在前、正文在后）；`contexts` 是「添加上下文」菜单展开的文本段（如作品设定，最多 4 段、每段 1500 字），不混入 `prompt`；`promptRules` 是规则芯片的标识（文件名主干，最多 5 条），宿主读 md 正文后接在上下文之后；`referenceImages` 是参考图芯片的本地路径（只接受选择流程登记过的图片，最多 3 张），宿主读取字节后作为多模态内容随指令提交，不写进文本提示词；正文、上下文、词条、规则与参考图全为空才拒绝出图；落 `Images/`，`kind` 只有 `portrait`（角色卡）与 `photo`（其他图片），生成不改作品封面 |
+| `pressAi/generateImage` | 入参 `prompt` / `promptTags` / `contexts` / `promptRules` / `referenceImages` / `kind` / `characterId` / `ratio` / `style` / `enhancedFrom`；`promptTags` 是词条芯片的标识（`分类::分组::名称`，最多 20 条），宿主按标识回查 `prompt/imagegen` 的 md、经 `@shared/utils/promptTag` 归一化后再由 `mergePromptTags` 与正文合并（词条在前、正文在后）；`contexts` 是上下文文本段（如作品设定芯片展开的内容，最多 4 段、每段 1500 字；此外还包括宿主从生图作用域待发送清单解析出的引用文本），不混入 `prompt`；`promptRules` 是规则芯片的标识（文件名主干，最多 5 条），宿主读 md 正文后接在上下文之后；`referenceImages` 是参考图芯片的本地路径（只接受选择流程登记过的图片，最多 3 张），宿主读取字节后作为多模态内容随指令提交，不写进文本提示词；正文、上下文、词条、规则与参考图全为空才拒绝出图；落 `Images/`，`kind` 只有 `portrait`（角色卡）与 `photo`（其他图片），生成不改作品封面 |
 | `pressAi/generateImage/abort` | 取消在途请求，返回 `{ aborted }`；payload 可带 `dirPath`（字符串为作品目录、`null` 为通用素材），带上时只取消归属一致的那一次，缺省则不校验归属。单任务锁保证不会并发出图，因此切作品后再发送撞锁不会误杀上一次的请求。中断信号经 provider 传到 SDK 会话，真正中止本地出图；产物到手后还会再确认一次中断标记，已取消的请求不落盘、不记用量、不扣配额，因此「停止」之后不会凭空多出一张图 |
 | `pressAi/generateImage/state` | — → `ImageGenerateState`：`{ generating, dirPath, stage, lastResult }`。出图是宿主单例任务，切分区 / 切作品只卸载视图、请求继续跑，挂载时据此对账：仍在生成则恢复骨架、阶段文案与取消入口；`lastResult`（最后一轮成功回执，含 `dirPath` / `finishedAt` / `result`）让切页期间就完成的图仍能被认领封面并补进列表。前端按作用域与图片 id 去重，且只接受有效窗口内的回执 |
 | `pressAi/pickReferenceImage` | — → `ImageReferencePickResult`。弹出系统文件选择框挑参考图：扩展名限 png / jpg / jpeg / webp / gif，校验常规文件、非符号链接、非空与 ≤12 MB，并按文件头嗅探真实类型；通过后登记路径并回传 `{ path, name, url }`，用户取消时 `reference` 为 `null` |
@@ -106,10 +106,11 @@
 
 | 方法 | 入参 | 返回 | 说明 |
 | --- | --- | --- | --- |
-| `pressAi/listPromptTags` | — | `PromptTagListResult` | 列举 `{存储根}/prompt/tags/*.md`，一个一级分类一个文件；返回分类树、扁平词条（含 `id`、原文与预览图相对路径）、`dirPath` 与 `imageDirPath`；目录缺失视为空库，分类按中文名排序 |
+| `pressAi/listPromptTags` | — | `PromptTagListResult` | 列举 `{存储根}/prompt/imagegen/*.md`，一个一级分类一个文件；返回分类树、扁平词条（含 `id`、原文与预览图相对路径）、`dirPath` 与 `imageDirPath`；目录缺失视为空库，分类按中文名排序 |
 | `pressAi/savePromptTag` | `{ object, attribute, name, prompt }` | `PromptTag` | 新建词条：分类文件或分组不存在时补建，同组同名拒绝；分类名即文件名，禁止路径分隔符与换行；原文上限 512 字 |
 | `pressAi/updatePromptTag` | `{ previousId, object, attribute, name, prompt }` | `PromptTag` | 按原标识整块替换，改名或换组即移动到目标分类文件；目标标识已存在且不是自己时拒绝 |
 | `pressAi/deletePromptTag` | `{ id }` | `PromptTagListResult` | 删除整块；分类文件删空时一并移除，避免留下空标题 |
+| `pressAi/listChatPromptTags` / `saveChatPromptTag` / `updateChatPromptTag` / `deleteChatPromptTag` / `openChatPromptTagDir` | 同上 | 同上 | 同一套词库服务作用于 `{存储根}/prompt/press`：AI 对话输入卡片的「提示词」入口据此增删改选；写作词条不挂预览图，`imageDirPath` 恒为空串、`preview` 恒为 `null` |
 | `pressAi/openPromptTagDir` | — | `PromptTagListResult` | 目录不存在时先建出来，再用系统文件管理器定位，并回传最新列表 |
 | `pressAi/getPromptImageBase` | — | `PromptImageBase` | 图库目录取 `{存储根}/prompt/images`，全局共享、与作品无关；目录里没有图片时 `baseUrl` 为 `null`，前端整体隐藏缩略图；`dirPath` 始终回传，空态据此提示用户把图片放在哪里 |
 | `pressAi/listPromptRules` | — | `PromptRuleListResult` | 列举 `{存储根}/prompt/rules` 下的 `*.md`，返回 `{ id, name }`（均为文件名主干）与 `dirPath`；目录缺失视为空库，按中文名排序 |
@@ -118,7 +119,7 @@
 
 词库是用户自行维护的本地资料，不随扩展打包：一个一级分类一个 md，文件内以 `# 分类 / ## 分组 / ### 词条 + 原文` 书写，正文多行按空格合并，格式示例见下方「词库 md 格式规范」。词条标识为 `分类::分组::名称`，芯片只带标识，原文由宿主在出图时回查，改正文不必重新进页面；分类以文件名为准，改分类等于换文件。
 
-**目录归属（3.4 节通用）**：词库、预览图与规则三处目录都经 `common/promptRoot` 从设置项 `zhai.prompt.rootPath` 派生——留空时父目录为 `{storage.rootPath}/prompt`，配置后改用该绝对路径，其下同样是 `tags` / `images` / `rules` 三个子目录。配置每次调用即时求值，改完重开面板即生效，不需要重启；目录缺失一律按空库处理，不预先创建。仓库内 `resources/prompt/tags` 保留了一份词库，开发调试时把词库目录指到 `resources/prompt` 即可直读、直改，打包时该目录被 `.vscodeignore` 排除，正式安装版读用户自己的目录。预览图能加载的前提是该父目录在 webview 的 `localResourceRoots` 里，dashboard 与 ai-chat 两处 provider 都已按 `resolvePromptRoot()` 放行。
+**目录归属（3.4 节通用）**：两套词库、预览图与规则四处目录都经 `common/promptRoot` 从设置项 `zhai.prompt.rootPath` 派生——留空时父目录为 `{storage.rootPath}/prompt`，配置后改用该绝对路径，其下同样是 `imagegen`（生图词条）/ `press`（AI 对话写作提示词）/ `images` / `rules` 四个子目录。配置每次调用即时求值，改完重开面板即生效，不需要重启；目录缺失一律按空库处理，不预先创建。旧的 `tags` 目录在激活期会整体改名为 `imagegen`（只改名、不改内容；扩展安装目录下的样例词库不参与该迁移）。仓库内 `resources/prompt/tags` 保留了一份词库，开发调试时把词库目录指到 `resources/prompt` 并自行把 `tags` 改名为 `imagegen` 即可直读、直改，打包时该目录被 `.vscodeignore` 排除，正式安装版读用户自己的目录。预览图能加载的前提是该父目录在 webview 的 `localResourceRoots` 里，dashboard 与 ai-chat 两处 provider 都已按 `resolvePromptRoot()` 放行。
 
 #### 词库 md 格式规范
 
@@ -159,7 +160,7 @@ lifeguard
 
 预览图先按「分类/分组/名称」镜像查找（如 `prompt/images/人物/基础/女性.webp`），找不到再用 `sha1(分类-分组-名称)` 前 10 位兜底；手工放图走镜像，脚本批量生成走哈希，两种都支持。`preview` 是相对 `prompt/images` 的路径，前端逐段编码后用 `baseUrl + '/' + preview` 拼地址。目录内的文件由用户自行下载或生成，扩展不打包、不下载任何图片。目录为空与目录缺失走同一条判空逻辑（复用 `imageDirScan` 的 `listImageFiles`），不逐个文件试加载。宿主侧实现见 `modules/imagegen/prompt/tagService.ts` 与 `modules/imagegen/promptImageService.ts`，另有命令 `zhai.prompt.openImageDir` 供空态按钮打开图片目录。目录本身由 `common/promptRoot` 从 `zhai.prompt.rootPath` 派生，可能是用户配置的任意位置。
 
-`resources/prompt/tags/` 是词库迁移后的完整结果（16 个分类、5040 条），开发调试时把 `zhai.prompt.rootPath` 指到 `resources/prompt` 即可当正式词库读写，同时它也是格式样例与内容基准；`resources/prompt/**` 已在 `.vscodeignore` 中排除，不随扩展打包。迁移用的临时脚本与源 JSON 已删除，需要重建时按上方格式规范从该目录反向复制即可。
+`resources/prompt/tags/` 是词库迁移后的完整结果（16 个分类、5040 条），目录名仍是旧口径；开发调试时把 `zhai.prompt.rootPath` 指到 `resources/prompt`、并把该目录复制或改名为 `imagegen` 即可当正式词库读写，同时它也是格式样例与内容基准。`resources/prompt/**` 已在 `.vscodeignore` 中排除，不随扩展打包。迁移用的临时脚本与源 JSON 已删除，需要重建时按上方格式规范从该目录反向复制即可。
 
 出图规则是用户手写的 md 约束（如「只用青蓝与灰白」「避免出现文字」），全局共享、与作品无关：前端只持有文件名主干，正文一律由宿主在出图时读盘，规则改文无需重新进页面。文件已被删除的规则静默跳过并记日志，不阻断出图；单次请求最多并入 5 条、合计 3000 字，超出部分丢弃，避免规则挤占画面描述。用户也可以直接往目录里放 md 文件，重新打开命令菜单即可见。
 
@@ -180,10 +181,10 @@ lifeguard
 | `imageLibraryService.ts` | 统一目录列举、删除（带回退值计算，侧车同步清理）、设封面、详情读侧车 |
 | `imageGenerateService.ts` | 统一出图：参数校验、词条标识回查 md、配额、单任务锁、落盘、侧车、用量记账 |
 | `imageDirScan.ts` | 图片目录扫描唯一入口：目录缺失视为空、只收普通文件、扩展名口径（png/jpe?g/webp/gif） |
-| `common/promptRoot.ts` | 提示词资源根：把 `tags` / `images` / `rules` 挂到 `zhai.prompt.rootPath` 之下，留空回落 `{存储根}/prompt`；读写共用同一口径 |
+| `common/promptRoot.ts` | 提示词资源根：把 `imagegen` / `press` / `images` / `rules` 挂到 `zhai.prompt.rootPath` 之下，留空回落 `{存储根}/prompt`；读写共用同一口径 |
 | `promptImageService.ts` | 提示词预览图库：提示词 `images` 目录判空并转 webview 基址，另提供打开该目录的命令实现 |
 | `prompt/ruleService.ts` | 出图规则：提示词 `rules` 目录列举、新建（不覆盖同名）、打开目录，并提供出图时的正文读取（条数与总长取 `prompt/limits.ts`） |
-| `prompt/tagService.ts` | 词库：提示词 `tags` 目录按分类分 md 列举、创建、改写、删除与出图取文；预览图按目录镜像与哈希兜底两路解析 |
+| `prompt/tagService.ts` | 词库：按 `segment` 取 `imagegen` 或 `press` 目录，按分类分 md 列举、创建、改写、删除与取文；仅生图词库解析预览图（目录镜像 + 哈希兜底），写作词库不挂图 |
 | `prompt/tagMarkdown.ts` | 词库 md 的纯函数解析与序列化，标识 `分类::分组::名称` 的拼装与拆分 |
 | `referenceImageService.ts` | 参考图：系统文件选择框、扩展名 / 体积 / 文件头校验、路径登记表；出图时只读登记过的路径，读成 `{ bytes, mimeType }` 交给通道 |
 | `imageNaming.ts` | 图片命名唯一入口：三类标识格式、同秒冲突按秒顺延、永不覆盖 |
@@ -208,7 +209,7 @@ lifeguard
 \n\n STYLE_HINTS[style]（始终在最后）
 ```
 
-空串一律跳过；词条由 `imageGenerateService` 按标识从 `prompt/tags` 的 md 取回原文，再用 `@shared/utils/promptTag` 的 `normalizePromptTag` 归一化并前置，合并动作统一走 `finalPrompt.ts` 的 `mergePromptTags`（出图与提示词增强共用这一份实现），归一化口径与前端同源，因此面板上展示的原文与最终提示词逐字一致；上下文段来自请求的 `contexts`（前端 `composeSettingContext` 展开），规则正文由 `prompt/ruleService` 的 `readForPrompt` 按标识读盘后传给 `composePrompt`，空串、空规则与缺失文件都不占位。宿主侧拼装集中在 `src/modules/ai/finalPrompt` 的 `composePrompt`（对象入参，顺序固定，出图与对话共用），由 `__tests__/imagegenPrompt.test.ts` 覆盖顺序与空串行为，上下文、规则读盘与出图合并在 `__tests__/imageGenerateService.test.ts` 覆盖。前端只负责正文、角色段与上下文段（`workflow/imagegen/prompt/promptSections.ts`），画风与负向约束仍由宿主追加。改提示词时先看 `src/modules/imagegen/prompt/index.ts` 头部的导航表，它会点名前端与共享侧仍需同步的文件。
+空串一律跳过；词条由 `imageGenerateService` 按标识从 `prompt/imagegen` 的 md 取回原文，再用 `@shared/utils/promptTag` 的 `normalizePromptTag` 归一化并前置，合并动作统一走 `finalPrompt.ts` 的 `mergePromptTags`（出图与提示词增强共用这一份实现），归一化口径与前端同源，因此面板上展示的原文与最终提示词逐字一致；上下文段来自请求的 `contexts`（前端 `composeSettingContext` 展开），规则正文由 `prompt/ruleService` 的 `readForPrompt` 按标识读盘后传给 `composePrompt`，空串、空规则与缺失文件都不占位。宿主侧拼装集中在 `src/modules/ai/finalPrompt` 的 `composePrompt`（对象入参，顺序固定，出图与对话共用），由 `__tests__/imagegenPrompt.test.ts` 覆盖顺序与空串行为，上下文、规则读盘与出图合并在 `__tests__/imageGenerateService.test.ts` 覆盖。前端只负责正文、角色段与上下文段（`workflow/media/utils/prompt/sections.ts`），画风与负向约束仍由宿主追加。改提示词时先看 `src/modules/imagegen/prompt/index.ts` 头部的导航表，它会点名前端与共享侧仍需同步的文件。
 
 参考图不参与文本拼装：`imageGenerateService` 把 `referenceImages` 交给 `referenceImageService.readForPrompt` 读成字节与真实 MIME，再由 `codebuddyImageProvider` 把「指令文本 + image 内容块」作为一条用户消息经 `session.send(UserMessage)` 提交。无参考图时仍走原字符串提示词路径，二者行为一致；单张参考图失效（被删除、被替换、超限）只跳过该张并记日志，不阻断出图。
 
@@ -221,15 +222,14 @@ lifeguard
 | 文件 | 职责 |
 | --- | --- |
 | `ImageGenPage.tsx` | 页面骨架与编排：筛选、计数、分批渲染、详情面板与出图回调；多选、删除与封面指针同步交给 hooks |
-| `layout/imageList/ImageList.tsx` | 统一图片列表：加载/空/错误态优先级、按月分组或平铺、在途占位、按钮与哨兵两种续载；媒体、图库与上传页共用 |
-| `layout/imageList/ImageCard.tsx` | 统一卡片：3:4 或 4:3 缩略图、角标与说明、悬停动作、多选勾选、键盘可达；领域对象经 `source` 回传 |
-| `layout/imageList/imageListAdapters.ts` | 四类领域条目映射成统一条目；出处、类型与体积文案在此收口 |
-| `ImageComposer.tsx` | 输入卡片：添加上下文菜单（作品设定开关、规则）、参考图与角色选择、词条芯片、底部比例与画面风格、增强提示词、发送 / 取消生成 |
-| `ImageCommandMenus.tsx` | 添加上下文菜单：作品设定开关 + 规则子菜单（列出 `prompt/rules` 的 md、勾选即挂芯片、新建规则弹窗、打开规则目录），菜单内各项都作为上下文提交 |
-| `ImageReferencePicker.tsx` | 参考图：工具栏图标按钮，点击由宿主弹文件选择框；选中后挂「缩略图 + 文件名」芯片，悬停文件名预览大图，可挂多枚 |
-| `ImageCharacterPicker.tsx` | 角色选择：工具栏图标按钮下拉，列出作品全部人物卡，选中即挂「图标 + 姓名」徽标，可切回「不使用角色」 |
-| `ImagePromptPicker.tsx` | 提示词面板：工具栏图标按钮弹出，一级分类 / 二级分类 / 词条三级联动，顶部关键词跨分组搜索与「新建词条」按钮；词条悬停显示编辑/删除，点词条切换芯片并回显选中态，不写正文 |
-| `ImagePromptTagDialogs.tsx` | 词条弹窗：新建/编辑表单（分类、分组、名称、原文，已有值快捷填充）与删除确认，挂在浮层之外渲染 |
+| `block/ImageList.tsx` | 统一图片列表：加载/空/错误态优先级、按月分组或平铺、在途占位、按钮与哨兵两种续载；媒体、图库与上传页共用 |
+| `block/ImageCard.tsx` | 统一卡片：3:4 或 4:3 缩略图、角标与说明、悬停动作、多选勾选、键盘可达；领域对象经 `source` 回传 |
+| `block/imageListAdapters.ts` | 四类领域条目映射成统一条目；出处、类型与体积文案在此收口 |
+| `ImageComposer.tsx` | 输入卡片：上下文 / 参考图 / 参考资料 / 提示词四个工具栏入口（与对话共用组件）、上下文引用与参考图芯片、底部比例与画面风格、增强提示词、发送 / 取消生成 |
+| `aichat/layout/AiChatImageReferencePicker.tsx` | 参考图选择：工具栏图标按钮，点击由宿主弹文件选择框；选中后挂「缩略图 + 文件名」芯片，悬停文件名预览大图，可挂多枚；生图与 AI 对话共用同一个组件与同一份宿主登记表 |
+| `aichat/layout/AiChatPromptPicker.tsx` | 通用提示词面板：`scope="imagegen"` 时一级分类 / 二级分类 / 词条三级联动、词条悬停显示编辑/删除、点词条切换芯片并回显选中态，不写正文；`scope="press"` 时同一面板改读对话写作词库、不挂预览图、点选把原文插入输入框。顶部关键词跨分组搜索与「新建词条」按钮两侧共用 |
+| `aichat/layout/AiChatPromptTagDialogs.tsx` | 通用词条弹窗：新建/编辑表单（分类、分组、名称、原文，已有值快捷填充）与删除确认，文案按 scope 切换（芯片同步 / 插入正文），挂在浮层之外渲染 |
+| `aichat/layout/AiChatComposerToolbar.tsx` | 通用输入卡片工具栏：两模式入口一致（添加上下文 / 参考图 / 参考资料 / 提示词），只有提示词面板按 scope 换词库；上下文按 `scope` 写入对话会话或生图面板各自的待发送清单 |
 | `useImageLibrary.ts` | 列举（含不切加载态的静默刷新）、单张删除、批量删除（含最新列表回传） |
 | `useCharacterIndex.ts` | 角色索引：一次遍历派生 `byId` 与 `names` 两张表，封面修正与卡片角标共用；`ImageGenCharacter` 类型定义在此 |
 | `useImageSelection.ts` | 多选状态：选中集合与筛选签名绑定（换筛选即派生空集）、全选只覆盖已渲染图片、进入/退出都清空 |
@@ -241,9 +241,9 @@ lifeguard
 | `usePromptChips.ts` | 芯片集合：设定与角色按 kind 唯一，词条按标识去重、规则按标识去重、参考图按磁盘路径去重且都可多枚；角色直接设置、词条与规则开关、改名同步已挂芯片、删除摘芯片、参考图只增删、清空与草稿回填；图标映射留在 layout |
 | `usePromptLibrary.ts` | 词库数据：列举分类树与扁平词条、新建、改写、删除、打开目录；写操作以宿主回传的整表为准，不在本地拼接 |
 | `usePromptRules.ts` | 规则清单：列举、新建与打开目录，新建成功后自动挂芯片；正文不进前端，规则改文无需刷新 |
-| `imageStyle.ts` | 画风取值与中文标签，composer 的画面风格面板与详情面板共用 |
-| `prompt/promptSections.ts` | 前端提示词分段：正文与角色段合成为 `prompt`，作品设定由 `composeSettingContext` 单独展开为上下文段 |
-| `prompt/ratioIntent.ts` | 正文比例意图探测：数字写法与中英文比例词合流，取最后出现者 |
+| `parameters/style.ts` | 画风取值与中文标签，composer 的画面风格面板与详情面板共用 |
+| `prompt/sections.ts` | 前端提示词分段：正文与角色段合成为 `prompt`，作品设定由 `composeSettingContext` 单独展开为上下文段 |
+| `parameters/ratio.ts` | 正文比例意图探测：数字写法与中英文比例词合流，取最后出现者 |
 | `@webview/components/RichChipInput.tsx` | 通用芯片输入区：芯片内联进正文流，带 `preview` 的芯片悬停文件名弹出大图，Enter 发送、组词期间不拦截，命令式 `insertText` |
 | `@webview/components/richText.ts` | 可编辑区 DOM 工具：读写纯文本、光标定位、芯片识别与插入，与 aichat 共用 |
 | `usePromptImages.ts` | 取提示词预览图基址（面板打开时请求一次），失败按「没有图」处理，不弹错误 |
@@ -266,10 +266,8 @@ lifeguard
 - 生成中发送按钮切换为「取消生成」，取消后立即复位界面，不等宿主回包；迟到的回包不写回界面（不认领封面、不清空输入），但会静默刷新列表，把宿主已经落盘的图补上——用户不必切页才发现新图。
 - 出图占位：`isGenerating` 由 composer 经 `onGeneratingChange` 上报，页面把 `pendingCount` 交给统一图片列表，列表在首组首位挂一张与卡片同比例（3:4）的占位卡；库里还没有分组时占位卡单独成组，不会再落到空态。成功后用静默刷新（`reload({ silent: true })`）拉回列表，占位由 `isRefreshingResult` 一直挂到新图入列，视线里只发生「骨架 → 新图」一次替换，中间不闪整块加载态。失败、取消、超时都会回收占位，composer 卸载时补发一次 `false`，不会卡在「生成中」。
 - 点「停止」是同步复位：`setIsGenerating(false)` 先于取消请求发出，占位当帧收起，不等宿主回包；随后宿主侧中断请求，已取消的产物不会再落盘（见 3.2）。
-- 角色选择：工具栏角色按钮展开作品全部人物卡，选中即挂「图标 + 姓名」徽标，发送时并入角色段（姓名、性别年龄、身份、外貌），随请求的 `kind` 变为 `portrait`、`characterId` 取该角色；选「不使用角色」或移除徽标即回落普通图；顶栏筛选的角色只作初值，之后以选择器为准，两者不联动。
+- 上下文与角色芯片：设定、规则与角色芯片仍随请求提交——设定由快照展开为 `contexts`、规则只传文件名主干（正文由宿主读盘）、角色并入角色段（姓名、性别年龄、身份、外貌）并使请求的 `kind` 为 `portrait`、`characterId` 取该角色；输入卡片当前不提供添加这些芯片的工具栏入口，只在草稿回填时恢复既有芯片；顶栏筛选的角色只作初值。
 - 增强提示词：提交的是「正文 + 角色段 + 词条原文」，让改写结果带上角色长相、身份与词条描述；词条只传标识，由宿主经 `mergePromptTags` 与正文合并，与出图同一口径；设定段与规则不进增强请求（避免复述作品信息）；改写成功后摘掉词条芯片（描述已并入正文），还原时正文与词条芯片一起回到增强前状态。改写走与对话共用的 `PromptEnhanceService`（`modules/ai/promptEnhance.ts`），仅口径与记账模块不同。
-- 添加上下文：工具栏左一按钮（气泡「添加上下文」）里的项都按上下文提交——「作品设定」由快照展开为 `contexts` 文本段，规则只传文件名主干、正文由宿主读盘，两者都不写进 `prompt` 正文；只挂上下文也能出图，生成中仍可切换（只影响下一次请求）。
-- 出图规则：「添加上下文」菜单的「规则」子菜单列出 `{存储根}/prompt/rules` 下的 md，勾选即挂「图标 + 规则名」芯片，可多枚；芯片只带文件名主干，正文由宿主读盘并入，发送后随正文一起清空、失败时随草稿回填。每次打开菜单都重读目录，用户直接往目录里放文件也能看到；「新建规则」弹窗保存成功后自动挂上该芯片，重名由宿主拒绝，本层不做预判。
 - 发送即清空：点击发送的同时清掉输入框与全部芯片（画风不在芯片里，只作请求参数，发送时由宿主并入提示词），增强态一并复位（按钮回到增强图标，请求仍带发送前的 `enhancedFrom`），生成期间输入框不会停着上一轮的提示词；草稿存在 `lastDraftRef`（含增强前原文），请求失败或用户取消时再回填，且仅在用户没有重新输入的情况下回填，正文与增强态同进同退，不覆盖等待期间写下的新内容。
 - 提示词面板：一级分类与二级分类都是必选单选，重复点击当前项被忽略；切换一级分类后二级分类按「当前值不在新分组内即回落到首项」派生，不额外维护状态；关键词非空时词条区跨分组平铺命中项，最多渲染 120 条并提示细化。搜索框右侧 `+` 新建词条，词条悬停浮现编辑与删除（未悬停时 pointer-events 关闭，点词条不会误触）。点词条只在输入区挂一枚芯片（已挂则取消），按钮以 `aria-pressed` 与 secondary 变体回显选中态；词条文本不写进正文，发送时按标识交给宿主回查，连续选多条即多枚芯片，顺序即并入顺序。
 - 词条芯片：标识取 `分类::分组::名称`，同一条只允许一枚；正文为空但有词条时同样可发送，发送后芯片随正文一起清空，失败或取消时与草稿一并回填；词条改名或换组时已挂芯片同步，删除时芯片同步摘除。

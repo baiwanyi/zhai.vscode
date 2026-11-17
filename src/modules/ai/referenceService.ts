@@ -10,7 +10,7 @@ import { randomUUID } from 'node:crypto'
 import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
-import type { AiContextRef, AiReferenceEntry } from '@shared/types/aiChat'
+import type { AiContextRef, AiContextScope, AiReferenceEntry } from '@shared/types/aiChat'
 import type { AiChatService } from './chatService'
 import type { HostContextRef } from './contextRefs'
 
@@ -149,6 +149,7 @@ export class ReferenceService {
     public async add(
         file: string,
         startLine: number,
+        scope: AiContextScope = 'chat',
     ): Promise<{ added: AiContextRef[]; duplicated: number; isFull: boolean }> {
         if (!file.startsWith(`${REFERENCE_DIR}/`) || !file.toLowerCase().endsWith('.md')) {
             throw new Error('参考资料路径不合法')
@@ -173,7 +174,7 @@ export class ReferenceService {
             isTruncated: false,
             uri,
         }
-        const result = this.chat.addContexts([ref])
+        const result = this.chat.addContexts([ref], scope)
         return { added: result.added, duplicated: result.duplicated, isFull: result.isFull }
     }
 

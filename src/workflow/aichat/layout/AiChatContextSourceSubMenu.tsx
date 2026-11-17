@@ -14,13 +14,13 @@ import {
     DropdownMenuSubContent,
     DropdownMenuSubTrigger,
 } from '@components/ui/dropdown-menu'
-import type { AiChatContextSubMenuCallbacks, AiContextPickerView } from '../constants'
+import type { AiChatContextSubMenuCallbacks, AiContextPickerView } from '../utils/context/types'
 import type { JSX } from 'react'
 import { AiChatContextItemView } from '../block/AiChatContextItemView'
 import { AiChatContextSourceView } from '../block/AiChatContextSourceView'
-import { CONTEXT_SUB_PANEL_CLASS, CONTEXT_SUB_TRIGGER_CLASS } from '../block/menuStyles'
 import { useAddContextItems } from '../hooks/useAddContextItems'
 import { useAiChatContextQuery, useAiChatContextSources, useContextQueryTarget } from '../hooks/useAiChatContextSource'
+import { CONTEXT_SUB_PANEL_CLASS, CONTEXT_SUB_TRIGGER_CLASS } from '../utils/context/styles'
 
 /** 子菜单内容的入参：外壳只需视图与回调 */
 export interface AiChatContextSourceSubMenuBodyProps extends AiChatContextSubMenuCallbacks {
@@ -35,6 +35,7 @@ export interface AiChatContextSourceSubMenuBodyProps extends AiChatContextSubMen
  */
 export function AiChatContextSourceSubMenuBody({
     view,
+    scope,
     onClose,
     onAdded,
     onError,
@@ -44,7 +45,7 @@ export function AiChatContextSourceSubMenuBody({
     const query = useAiChatContextQuery(onError)
     const sourceScope = view.mode === 'source' ? view.scope : null
     const sourcesState = useAiChatContextSources(sourceScope, onError)
-    const { isSubmitting, submitItems } = useAddContextItems(onAdded, onClose, onError)
+    const { isSubmitting, submitItems } = useAddContextItems(onAdded, onClose, onError, scope)
     // 目标切换：view 稳定则 target 引用稳定，切分类 / 换作品只发一批新查询
     useContextQueryTarget(query, view.mode === 'items' ? view.target : null)
 
@@ -87,6 +88,7 @@ export function AiChatContextSourceSubMenuEntry({
     label,
     icon,
     view,
+    scope,
     onClose,
     onAdded,
     onError,
@@ -102,6 +104,7 @@ export function AiChatContextSourceSubMenuEntry({
                 <DropdownMenuSubContent className={CONTEXT_SUB_PANEL_CLASS}>
                     <AiChatContextSourceSubMenuBody
                         view={view}
+                        scope={scope}
                         onClose={onClose}
                         onAdded={onAdded}
                         onError={onError}

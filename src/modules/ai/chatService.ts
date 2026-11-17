@@ -21,6 +21,7 @@ import type {
     AiApprovalMode,
     AiChatDraft,
     AiContextRef,
+    AiContextScope,
     AiContextUsage,
     AiConversation,
     AiConversationSummary,
@@ -82,6 +83,7 @@ import type { ConversationRow, MessageRow } from './db/chatRepository'
 import type { NotebookPackService } from './notebookPackService'
 import type {
     AiChatMessage as ChatMessage,
+    AiImageInput,
     AiProvider,
     AiToolPolicy,
     AiUsage as ChatUsage,
@@ -160,6 +162,11 @@ export class AiChatService implements vscode.Disposable {
     } | null = null
     /** 待发送上下文：按会话隔离，发送成功后清空（内存态，不随窗口重启保留） */
     private readonly pendingContexts = new Map<string, HostContextRef[]>()
+    /**
+     * 生图面板的待发送上下文：全局面板只有一份，与对话会话的清单互不干扰。
+     * 关键约束：只在出图请求受理时读取并清空，避免引用串进对话输入区。
+     */
+    private pendingImageContexts: HostContextRef[] = []
     /** 未发送的输入草稿：按会话隔离，视图重建（侧边栏切换）后由会话快照带回 */
     private readonly inputDrafts = new Map<string, AiChatDraft>()
     /** 当前活跃会话 id，供上下文协议定位待发送列表 */
@@ -199,6 +206,11 @@ export class AiChatService implements vscode.Disposable {
         private readonly notebookPack?: NotebookPackService,
         /** 规则正文读取：由装配层注入出图侧的规则服务，ai 模块不反向依赖它 */
         private readonly readPromptRule?: (name: string) => Promise<string | null>,
+        /**
+         * 参考图读取：由装配层注入出图侧的参考图服务，按登记表校验后读出字节。
+         * 约定：未登记路径由注入方拒绝，单张失效时跳过；未注入即不支持参考图。
+         */
+        private readonly readReferenceImages?: (paths: readonly string[]) => Promise<AiImageInput[]>,
     ) {
         this.promptEnhance = new PromptEnhanceService(provider, usageRecorder)
     }
@@ -376,25 +388,57 @@ export class AiChatService implements vscode.Disposable {
         return true
     }
 
+    /** 待发送上下文的当前清单：对话按活跃会话取，生图取全局那一份 */
+    private readContextBucket(scope: AiContextScope): HostContextRef[] {
+        if (scope === 'image') {
+            return this.pendingImageContexts
+        }
+        const conversationId = this.activeConversationId
+        return conversationId === null ? [] : (this.pendingContexts.get(conversationId) ?? [])
+    }
+
+    /** 写回待发送上下文：任一份变更都广播，前端据此刷新芯片 */
+    private writeContextBucket(scope: AiContextScope, refs: HostContextRef[]): void {
+        if (scope === 'image') {
+            this.pendingImageContexts = refs
+        } else {
+            const conversationId = this.ensureActiveConversationId()
+            if (refs.length === 0) {
+                this.pendingContexts.delete(conversationId)
+            } else {
+                this.pendingContexts.set(conversationId, refs)
+            }
+        }
+        this.contextEmitter.fire()
+    }
+
     /**
-     * 添加待发送上下文（编辑器右键「添加到宅对话」）：无会话时自动建会话，超出条数上限的部分不接收。
-     * 上下文按会话隔离，新建会话后为空，不随窗口重启保留。
+     * 添加待发送上下文（编辑器右键、上下文菜单、生图页选内容共用）。
+     * 关键约束：对话作用域按会话隔离，无会话时自动建会话；生图作用域全局一份、不建会话；
+     * 超出条数上限的部分不接收，去重口径统一由 mergeContextRefs 负责。
      */
-    public addContexts(refs: HostContextRef[]): { added: AiContextRef[]; duplicated: number; isFull: boolean } {
-        const conversationId = this.ensureActiveConversationId()
-        const existing = this.pendingContexts.get(conversationId) ?? []
+    public addContexts(
+        refs: HostContextRef[],
+        scope: AiContextScope = 'chat',
+    ): { added: AiContextRef[]; duplicated: number; isFull: boolean } {
+        const existing = this.readContextBucket(scope)
         const { added, duplicated } = mergeContextRefs(existing, refs)
         const room = Math.max(MAX_CONTEXT_COUNT - existing.length, 0)
         const accepted = added.slice(0, room)
         if (accepted.length > 0) {
-            this.pendingContexts.set(conversationId, [...existing, ...accepted])
-            this.contextEmitter.fire()
+            this.writeContextBucket(scope, [...existing, ...accepted])
         }
         return { added: accepted.map(toPublicContextRef), duplicated, isFull: accepted.length < added.length }
     }
 
-    /** 当前会话的待发送上下文（下发前剥离绝对路径） */
-    public getContexts(conversationId: string | null = this.activeConversationId): AiContextRef[] {
+    /** 指定作用域的待发送上下文（下发前剥离绝对路径） */
+    public getContexts(
+        conversationId: string | null = this.activeConversationId,
+        scope: AiContextScope = 'chat',
+    ): AiContextRef[] {
+        if (scope === 'image') {
+            return this.pendingImageContexts.map(toPublicContextRef)
+        }
         if (!conversationId) {
             return []
         }
@@ -402,12 +446,8 @@ export class AiChatService implements vscode.Disposable {
     }
 
     /** 按 id 移除一条引用：只接受宿主生成的 id，不接受路径入参（防 Webview 越权读取任意文件） */
-    public removeContext(id: string): AiContextRef[] {
-        const conversationId = this.activeConversationId
-        if (!conversationId) {
-            return []
-        }
-        const existing = this.pendingContexts.get(conversationId) ?? []
+    public removeContext(id: string, scope: AiContextScope = 'chat'): AiContextRef[] {
+        const existing = this.readContextBucket(scope)
         const target = existing.find((ref) => ref.id === id)
         const remaining = existing.filter((ref) => ref.id !== id)
         if (remaining.length !== existing.length) {
@@ -415,22 +455,37 @@ export class AiChatService implements vscode.Disposable {
             if (target !== undefined && target.kind === 'notebook') {
                 this.notebookPack?.forget(target.displayPath)
             }
-            this.pendingContexts.set(conversationId, remaining)
-            this.contextEmitter.fire()
+            this.writeContextBucket(scope, remaining)
         }
         return remaining.map(toPublicContextRef)
     }
 
-    /** 清空当前会话的待发送上下文，返回被清除的条数 */
-    public clearContexts(): number {
-        const conversationId = this.activeConversationId
-        const count = conversationId ? (this.pendingContexts.get(conversationId)?.length ?? 0) : 0
-        if (conversationId && count > 0) {
-            this.pendingContexts.delete(conversationId)
-            this.notebookPack?.clear()
-            this.contextEmitter.fire()
+    /** 清空指定作用域的待发送上下文，返回被清除的条数 */
+    public clearContexts(scope: AiContextScope = 'chat'): number {
+        const existing = this.readContextBucket(scope)
+        if (existing.length > 0) {
+            this.writeContextBucket(scope, [])
+            // 打包缓存按笔记本维度共享：只有对话清空时一并回收，避免影响生图侧的引用
+            if (scope === 'chat') {
+                this.notebookPack?.clear()
+            }
         }
-        return count
+        return existing.length
+    }
+
+    /**
+     * 取生图作用域的上下文文本段：按清单逐条解析，读取失败的条目跳过，不阻断出图。
+     * 关键约束：读取后立即清空 —— 引用已随本次请求提交，与对话「发送即清空」同一口径。
+     */
+    public async takeImageContextTexts(): Promise<string[]> {
+        const refs = this.pendingImageContexts
+        if (refs.length === 0) {
+            return []
+        }
+        this.pendingImageContexts = []
+        this.contextEmitter.fire()
+        const resolved = await resolveContextRefs(refs, (ref) => this.readNotebookText(ref))
+        return resolved.map((item) => item.text).filter((text) => text.length > 0)
     }
 
     /**
@@ -492,6 +547,8 @@ export class AiChatService implements vscode.Disposable {
         titleHint: string | null = null,
         /** 本轮挂载的规则名：按顺序读取正文并入提示词，不进上下文配额 */
         ruleNames: readonly string[] = [],
+        /** 本轮挂载的参考图路径：只接受选择流程登记过的值，读取后以图片块提交 */
+        referenceImages: readonly string[] = [],
     ): Promise<AiSendResult> {
         if (this.activeRequest) {
             throw new Error('已有生成中的回复，请先停止后再发送')
@@ -544,6 +601,12 @@ export class AiChatService implements vscode.Disposable {
             .join('\n\n')
         // 正文里的 @zhai\... 在发送瞬间展开成存储根下的绝对路径，落库与气泡回显仍是用户原文
         const modelInput = await expandZhaiRefs(input)
+        // 参考图按登记表校验后读成多模态输入；全部失效时报错而不是静默丢图，用户才知道要重新添加
+        const readImages = this.readReferenceImages
+        const images = readImages === undefined ? [] : await readImages(referenceImages)
+        if (referenceImages.length > 0 && images.length === 0) {
+            throw new Error('参考图读取失败，请重新添加后再发送')
+        }
 
         const now = new Date().toISOString()
         const userMessage: MessageRow = {
@@ -610,6 +673,7 @@ export class AiChatService implements vscode.Disposable {
             cfg,
             writeTarget,
             toolPolicy,
+            images,
         )
 
         return {
@@ -680,6 +744,8 @@ export class AiChatService implements vscode.Disposable {
         cfg: ZhaiConfig,
         writeTarget: HostWriteTarget | null,
         toolPolicy: AiToolPolicy,
+        /** 本轮参考图：随用户消息以图片块提交，缺省即纯文本生成 */
+        images: readonly AiImageInput[] = [],
     ): Promise<void> {
         const controller = new AbortController()
         this.activeRequest = { reqId, controller }
@@ -792,6 +858,7 @@ export class AiChatService implements vscode.Disposable {
                 toolPolicy,
                 permission,
                 normalizeWrite: this.documentNormalizer,
+                images,
             })
             for await (const chunk of stream) {
                 // 任意事件都视为通道存活：工具往返期间正文可能长时间没有增量

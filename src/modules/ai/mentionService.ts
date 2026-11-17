@@ -10,7 +10,7 @@ import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { listIndexedPaths, searchFiles } from '@modules/common/db/indexRepository'
-import type { AiContextRef, AiMentionCandidate, AiMentionKind } from '@shared/types/aiChat'
+import type { AiContextRef, AiContextScope, AiMentionCandidate, AiMentionKind } from '@shared/types/aiChat'
 import { MAX_CONTEXT_CHARS } from './contextRefs'
 import type { AiChatService } from './chatService'
 import type { HostContextRef } from './contextRefs'
@@ -61,6 +61,7 @@ export class MentionService {
         relativePath: string,
         startLine: number | null = null,
         endLine: number | null = null,
+        scope: AiContextScope = 'chat',
     ): Promise<{ added: AiContextRef[]; duplicated: number; isFull: boolean }> {
         if (!listIndexedPaths(this.db).has(relativePath)) {
             throw new Error('该条目不在索引中，请先重建索引后再试')
@@ -78,7 +79,7 @@ export class MentionService {
                 isTruncated: false,
                 uri: uri.fsPath,
             }
-            return this.chat.addContexts([fileRef])
+            return this.chat.addContexts([fileRef], scope)
         }
         const lines = new TextDecoder().decode(await vscode.workspace.fs.readFile(uri)).split(/\r?\n/u)
         const end = endLine ?? startLine
@@ -100,6 +101,6 @@ export class MentionService {
             isTruncated: content.length > MAX_CONTEXT_CHARS,
             uri: uri.fsPath,
         }
-        return this.chat.addContexts([rangeRef])
+        return this.chat.addContexts([rangeRef], scope)
     }
 }

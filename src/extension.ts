@@ -16,7 +16,7 @@ import { AiChatViewProvider } from './modules/ai/aiChatProvider'
 import { addQuoteToChat } from './modules/ai/commands'
 import { WorkflowRouter } from './modules/ai/workflowRouter'
 import { registerCommands } from './modules/common/commands'
-import { resolveCacheRoot, resolveStorageRoot } from './modules/common/config'
+import { resolveCacheRoot, resolvePromptRoot, resolveStorageRoot } from './modules/common/config'
 import { DashboardViewProvider } from './modules/common/dashboardProvider'
 import { openIndexDatabase } from './modules/common/db/connection'
 import { ensureSchema } from './modules/common/db/schema'
@@ -36,7 +36,7 @@ import { PressCoverService } from './modules/imagegen/coverService'
 import { ImageGenerateService } from './modules/imagegen/imageGenerateService'
 import { ImageSettingsService } from './modules/imagegen/imageSettingsService'
 import { PortraitService } from './modules/imagegen/portraitService'
-import { PromptRuleService, PromptTagService } from './modules/imagegen/prompt'
+import { migrateLegacyTagDir, PromptRuleService, PromptTagService } from './modules/imagegen/prompt'
 import { ReferenceImageService } from './modules/imagegen/referenceImageService'
 import { zhaiImagePathPlugin, type MarkdownItLike } from './modules/markdown/zhaiImagePreview'
 import { closeMediaDatabases, openMediaDatabase } from './modules/media/db/connection'
@@ -72,6 +72,7 @@ import { UploadRoutes } from './modules/upload/uploadRoutes'
 import { UploadService } from './modules/upload/uploadService'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 import type { MarkdownEditorProvider } from './modules/editor/editorProvider'
+import type { ImageReferenceInput } from './modules/imagegen/ai/imageProvider'
 import type Database from 'better-sqlite3'
 
 /** 扩展对外导出：Markdown 预览扩展在激活后读取 extendMarkdownIt 挂载自定义插件 */
@@ -188,6 +189,9 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     // 出图规则：全局共享，落 {存储根}/prompt/rules 的 md 文件，与作品无关；
     // AI 对话与出图读同一批 md，实例在此提前创建供两层共用
     const promptRuleService = new PromptRuleService()
+    // 参考图：只放行选择流程登记过的本地图片，路径不经前端拼装；
+    // 生图与 AI 对话共用同一份登记表，实例在此提前创建供两层共用
+    const referenceImageService = new ReferenceImageService()
     // AI 与取名：ai.db 承载会话、消息与用量（首屏数据，激活期打开），naming.db 按需打开；
     // 通道、记账与写回留底在各入口间共用，AI 命令注册也在层内完成
     const ai = await assembleAiLayer({
@@ -208,6 +212,9 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
                 return null
             }
         },
+        // 参考图同样由出图侧服务读取：登记表校验与字节读取都在那一侧，ai 模块只拿回调
+        readReferenceImages: (paths: readonly string[]): Promise<ImageReferenceInput[]> =>
+            referenceImageService.readForPrompt(paths),
     })
 
     // 写作管理：press.db 只承载 AI 配额等轻量状态，作品文档与人物卡仍以 Markdown 为准；
@@ -262,10 +269,16 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     // 图片参数：按作品覆盖，落 press/{作品名}/.zhai/image.json，配额与超时不在此管辖
     const imageSettingsService = new ImageSettingsService()
     // 出图规则服务实例在上方提前创建，此处直接复用，避免两个实例各读一份目录
-    // 提示词词库：全局共享，按分类落 {存储根}/prompt/tags 的 md，由用户自行维护
-    const promptTagService = new PromptTagService()
-    // 参考图：只放行选择流程登记过的本地图片，路径不经前端拼装
-    const referenceImageService = new ReferenceImageService()
+    // 提示词词库：生图落 {提示词目录}/imagegen，AI 对话的写作提示词落 {提示词目录}/press，
+    // 两套词库各自按分类存 md，由用户自行维护；旧的 tags 目录先整体改名，避免已有词条看不到。
+    // 扩展安装目录下的样例词库不参与迁移：那是仓库内的调试资源，改名会变成对源码树的意外改动
+    const promptRootPath = resolvePromptRoot().fsPath.replace(/\\/gu, '/').toLowerCase()
+    const extensionPath = context.extensionUri.fsPath.replace(/\\/gu, '/').toLowerCase()
+    if (!promptRootPath.startsWith(`${extensionPath}/`)) {
+        await migrateLegacyTagDir()
+    }
+    const promptTagService = new PromptTagService('imagegen')
+    const chatPromptTagService = new PromptTagService('press')
     // 统一出图入口：新图落 Images 目录，出图前叠加规则、作品级补充与负向约束，与旧入口共用同一通道与每日额度
     const imageGenerateService = new ImageGenerateService(
         pressDb.get,
@@ -278,6 +291,8 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         referenceImageService,
         // 落盘后写媒体索引：出图模块不直接依赖 media.db，由装配处注入写入器
         createMediaRecorder(mediaDbProvider),
+        // 生图上下文取对话服务里的 image 作用域清单：读取即清空，与对话发送同口径
+        (): Promise<string[]> => ai.chat.takeImageContextTexts(),
     )
     // 工作台读取作品列表走索引库，文档原文直接读 press/ 下的 Markdown；打开作品时同步路由事实
     // 语义归纳依赖 AI 通道，晚于仪表盘创建；人物卡、大纲与设定的按需提取共用同一实例，
@@ -295,6 +310,7 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         imageSettings: imageSettingsService,
         promptRules: promptRuleService,
         promptTags: promptTagService,
+        chatPromptTags: chatPromptTagService,
         referenceImages: referenceImageService,
     })
 

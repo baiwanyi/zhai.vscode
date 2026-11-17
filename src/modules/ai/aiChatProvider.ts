@@ -36,6 +36,7 @@ import type {
     AiContextAddRequest,
     AiContextItemKind,
     AiContextQueryRequest,
+    AiContextScope,
     AiContextSourceScope,
     AiModelChoices,
     AiPermissionDecision,
@@ -333,14 +334,14 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             }
             case 'ai/reference/add': {
                 const target = readReferencePayload(payload)
-                return this.reference.add(target.file, target.startLine)
+                return this.reference.add(target.file, target.startLine, readContextScope(payload))
             }
             case 'ai/reference/openDir': {
                 return this.reference.openDir()
             }
             case 'ai/mention/add': {
                 const target = readMentionPathPayload(payload)
-                return this.mention.add(target.path, target.startLine, target.endLine)
+                return this.mention.add(target.path, target.startLine, target.endLine, readContextScope(payload))
             }
             case 'ai/models': {
                 return this.listModels()
@@ -371,8 +372,8 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 return { resolved: this.service.resolvePermission(id, decision) }
             }
             case 'ai/send': {
-                const { conversationId, content, titleHint, ruleNames } = readSendPayload(payload)
-                return this.service.send(reqId, conversationId, content, titleHint, ruleNames)
+                const { conversationId, content, titleHint, ruleNames, referenceImages } = readSendPayload(payload)
+                return this.service.send(reqId, conversationId, content, titleHint, ruleNames, referenceImages)
             }
             case 'ai/draft': {
                 const { conversationId, input, ruleNames } = readDraftPayload(payload)
@@ -397,16 +398,16 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 return { sections: await readDocSections(dirPath, doc) }
             }
             case 'ai/context/add': {
-                return this.contextSources.addContexts(readContextAddPayload(payload).items)
+                return this.contextSources.addContexts(readContextAddPayload(payload).items, readContextScope(payload))
             }
             case 'ai/context': {
-                return this.service.getContexts()
+                return this.service.getContexts(undefined, readContextScope(payload))
             }
             case 'ai/context/remove': {
-                return this.service.removeContext(readContextIdPayload(payload))
+                return this.service.removeContext(readContextIdPayload(payload), readContextScope(payload))
             }
             case 'ai/context/clear': {
-                this.service.clearContexts()
+                this.service.clearContexts(readContextScope(payload))
                 return []
             }
             case 'ai/abort': {
@@ -698,6 +699,21 @@ function readConversationIdPayload(payload: unknown, method: string): string {
     return value.conversationId
 }
 
+/**
+ * 收窄待发送上下文的作用域：缺省按对话处理，非法值直接拒绝。
+ * 关键约束：生图面板与对话各持一份清单，前端必须显式声明 scope 才不会互相污染。
+ */
+function readContextScope(payload: unknown): AiContextScope {
+    const raw = typeof payload === 'object' && payload !== null ? (payload as { scope?: unknown }).scope : undefined
+    if (raw === undefined) {
+        return 'chat'
+    }
+    if (raw !== 'chat' && raw !== 'image') {
+        throw new Error('上下文作用域非法：scope 须为 chat 或 image')
+    }
+    return raw
+}
+
 /** 校验 ai/context/remove 入参：只接受宿主生成的引用 id，不接受路径（防越权读取任意文件） */
 function readContextIdPayload(payload: unknown): string {
     if (typeof payload !== 'object' || payload === null) {
@@ -720,6 +736,7 @@ function readSendPayload(payload: unknown): {
     content: string
     titleHint: string | null
     ruleNames: string[]
+    referenceImages: string[]
 } {
     if (typeof payload !== 'object' || payload === null) {
         throw new Error('ai/send 缺少参数')
@@ -729,6 +746,7 @@ function readSendPayload(payload: unknown): {
         content?: unknown
         titleHint?: unknown
         ruleNames?: unknown
+        referenceImages?: unknown
     }
     if (typeof value.conversationId !== 'string' || typeof value.content !== 'string') {
         throw new Error('ai/send 参数类型不正确')
@@ -739,7 +757,28 @@ function readSendPayload(payload: unknown): {
         content: value.content,
         titleHint: titleHint.length > 0 && titleHint.length <= MAX_TITLE_HINT_LENGTH ? titleHint : null,
         ruleNames: readRuleNames(value.ruleNames),
+        referenceImages: readReferenceImages(value.referenceImages),
     }
+}
+
+/** 参考图张数与路径长度上限：与出图侧口径一致，超出直接丢弃 */
+const MAX_REFERENCE_IMAGES = 3
+const MAX_REFERENCE_PATH_LENGTH = 320
+
+/**
+ * 收窄参考图路径清单：只接受字符串数组，去空去重后按上限截断。
+ * 关键约束：这里只做格式收窄，路径是否可读由宿主的参考图服务按登记表判定，
+ * 前端不得凭此绕过选择流程。
+ */
+function readReferenceImages(value: unknown): string[] {
+    if (!Array.isArray(value)) {
+        return []
+    }
+    const paths = value
+        .filter((item): item is string => typeof item === 'string')
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0 && item.length <= MAX_REFERENCE_PATH_LENGTH)
+    return [...new Set(paths)].slice(0, MAX_REFERENCE_IMAGES)
 }
 
 /** 规则名上限：一次挂载的规则数量有限，超量或超长的名称一律丢弃 */

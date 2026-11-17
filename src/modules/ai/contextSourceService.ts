@@ -25,6 +25,7 @@ import type {
     AiContextItemKind,
     AiContextQueryRequest,
     AiContextQueryResult,
+    AiContextScope,
     AiContextSource,
     AiContextSourceScope,
 } from '@shared/types/aiChat'
@@ -98,7 +99,10 @@ export class ContextSourceService {
      * 批量添加：逐项构造引用，单条失败只记入 failed 而不中断整批。
      * 关键约束：整篇引用不改字数（发送时统计），带行范围时读一次原文校验行号并算字数。
      */
-    public async addContexts(items: readonly AiContextAddItem[]): Promise<AiContextAddResult> {
+    public async addContexts(
+        items: readonly AiContextAddItem[],
+        scope: AiContextScope = 'chat',
+    ): Promise<AiContextAddResult> {
         const refs: HostContextRef[] = []
         const failed: { path: string; reason: string }[] = []
         for (const item of items) {
@@ -111,7 +115,7 @@ export class ContextSourceService {
         if (refs.length === 0) {
             return { added: 0, duplicated: 0, failed, isFull: false }
         }
-        const result = this.chat.addContexts(refs)
+        const result = this.chat.addContexts(refs, scope)
         return { added: result.added.length, duplicated: result.duplicated, failed, isFull: result.isFull }
     }
 

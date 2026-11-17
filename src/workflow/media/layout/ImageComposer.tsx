@@ -1,8 +1,12 @@
 /**
  * 生图输入卡片：上下文、参考图、角色、词条与规则以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
  * 复用约定：外壳取 @webview/components/AppComposer 骨架（双层底色、生成态光晕与分层留白由骨架承担），
- * 输入区取 RichChipInput，工具栏与底部操作行取本目录 ImageComposerToolbar / ImageComposerActions；
- * 提示词拼装与比例探测取 ../prompt 下的纯函数，芯片集合与会话状态由 ../hooks 的 usePromptChips / useImageComposer 持有。
+ * 输入区取 RichChipInput，工具栏取 @webview/workflow/aichat/layout 的通用 AiChatComposerToolbar（mode="image"），
+ * 底部操作行取本目录 ImageComposerActions；
+ * 提示词拼装与比例探测取 ../utils/prompt/sections 与 ../utils/parameters/ratio 的纯函数，
+ * 芯片集合与会话状态由 ../hooks 的 usePromptChips / useImageComposer 持有；
+ * 上下文引用走宿主的生图作用域清单（scope=image），检索与提及弹窗、上下文菜单与对话共用 aichat 的组件。
+ * 关键约束：生图上下文与对话的待发送清单互不干扰，出图受理时宿主读取即清空，本层在生成结束时重拉一次。
  * 关键约束：角色芯片是角色选择的唯一数据源——选中即挂「图标 + 姓名」徽标，移除即回到不使用角色，
  * 生成目标与增强时的角色段都由它派生，顶栏筛选的角色只作初值；
  * 参考图芯片挂「缩略图 + 文件名」徽标并悬停预览，词条 / 规则芯片只承载「选了哪些」，
@@ -12,27 +16,37 @@
  * 本次会话的选择、不写回作品配置；参数未读完只渲染同高占位，读完才挂载正文，确保正文内 state 以真实参数初始化。
  */
 import { BookText, ContactRound, PencilRuler, WandSparkles } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Skeleton } from '@components/ui/skeleton'
+import type { AiMentionCandidate, AiReferenceEntry } from '@shared/types/aiChat'
 import type { ImageGenerateKind, ImageGenerateResult } from '@shared/types/imageGenerate'
 import type { ImageRatio } from '@shared/types/imageRatio'
 import type { PortraitStyle } from '@shared/types/press'
+import { toastError } from '@shared/utils/error'
 import { AppComposer, AppComposerContent, AppComposerFooter, AppComposerHeader } from '@webview/components/AppComposer'
 import { Image } from '@webview/components/Image'
 import { RichChipInput, type RichChip } from '@webview/components/RichChipInput'
+import { buildContextChip } from '@webview/workflow/aichat/block/composerChips'
+import { useAiChatContexts } from '@webview/workflow/aichat/hooks/useAiChatContexts'
+import { useAiChatMention } from '@webview/workflow/aichat/hooks/useAiChatMention'
+import { useAiChatPicker } from '@webview/workflow/aichat/hooks/useAiChatPicker'
+import { useAiChatReference } from '@webview/workflow/aichat/hooks/useAiChatReference'
+import { AiChatComposerToolbar } from '@webview/workflow/aichat/layout/AiChatComposerToolbar'
+import { AiChatMentionDialog } from '@webview/workflow/aichat/layout/AiChatMentionDialog'
+import { AiChatReferenceDialog } from '@webview/workflow/aichat/layout/AiChatReferenceDialog'
+import type { AiReferenceAction } from '@webview/workflow/aichat/utils/context/types'
 import { ImageComposerActions } from './ImageComposerActions'
-import { ImageComposerToolbar } from './ImageComposerToolbar'
 import type { LucideIcon } from 'lucide-react'
 import type { JSX } from 'react'
 import { useImageComposer } from '../hooks/useImageComposer'
 import { usePromptChips, type PromptChip, type PromptChipKind } from '../hooks/usePromptChips'
+import { detectImageRatio } from '../utils/parameters/ratio'
 import {
     composePromptSections,
     composeSettingContext,
     type PromptCharacterSnapshot,
     type PromptSettingSnapshot,
-} from '../prompt/promptSections'
-import { detectImageRatio } from '../prompt/ratioIntent'
+} from '../utils/prompt/sections'
 
 export type { PromptCharacterSnapshot, PromptSettingSnapshot }
 
@@ -148,13 +162,10 @@ function ComposerBody({
 
     const {
         chips,
-        settingChip,
         characterChip,
         promptChips,
         ruleChips,
         referenceChips,
-        toggleSetting,
-        setCharacter,
         togglePrompt,
         renamePrompt,
         removePrompt,
@@ -166,6 +177,54 @@ function ComposerBody({
         clearChips,
         restoreChips,
     } = usePromptChips({ initialCharacter })
+
+    /**
+     * 生图作用域的上下文引用：宿主持有（scope=image），与对话的待发送清单互不干扰。
+     * 关键约束：本层只负责展示与移除，添加走上下文菜单与两个检索弹窗；
+     * 出图受理时宿主把清单读走并清空，本层在生成结束时重拉一次让芯片归零。
+     */
+    const { contexts, loadContexts, removeContext } = useAiChatContexts({ onError: toastError, scope: 'image' })
+    const mention = useAiChatMention({
+        onError: toastError,
+        onAdded: () => {
+            void loadContexts()
+        },
+        scope: 'image',
+    })
+    const reference = useAiChatReference({
+        onError: toastError,
+        onAdded: () => {
+            void loadContexts()
+        },
+        scope: 'image',
+    })
+    const mentionPicker = useAiChatPicker<AiMentionCandidate>({
+        items: mention.candidates,
+        isSearching: mention.isSearching,
+        search: mention.search,
+        add: mention.add,
+        reset: mention.reset,
+    })
+    const referencePicker = useAiChatPicker<AiReferenceEntry>({
+        items: reference.entries,
+        isSearching: reference.isSearching,
+        search: reference.search,
+        add: reference.add,
+        reset: reference.reset,
+    })
+    /** 挂载即对账一次：视图重建后待发送清单仍以宿主为准 */
+    useEffect(() => {
+        void loadContexts()
+    }, [loadContexts])
+
+    /** 参考资料菜单：检索语料打开弹窗，或打开语料目录 */
+    const handleReference = (action: AiReferenceAction): void => {
+        if (action === 'search') {
+            referencePicker.open()
+            return
+        }
+        void reference.openDir()
+    }
 
     /** 当前角色：由角色芯片派生，芯片被移除即视为不使用角色，不另落一份 state */
     const activeCharacter = useMemo(
@@ -266,7 +325,13 @@ function ComposerBody({
             onRestoreChips: restoreChips,
             onGenerated,
             onLateGenerated,
-            onGeneratingChange,
+            onGeneratingChange: (generating: boolean): void => {
+                // 出图受理时宿主已读走并清空生图上下文，结束后重拉一次让芯片归零
+                if (!generating) {
+                    void loadContexts()
+                }
+                onGeneratingChange?.(generating)
+            },
         })
 
     /** 能否发送：正文或角色段有内容，或挂了上下文 / 参考图 / 词条 / 规则芯片，输入框与发送按钮共用同一判定 */
@@ -324,60 +389,90 @@ function ComposerBody({
             icon: <Icon className="size-3 shrink-0 text-muted-foreground" />,
         }
     })
+    /** 输入区芯片：上下文引用排在内置芯片之后，与对话侧共用同一套展示口径 */
+    const inputChips: RichChip[] = [...richChips, ...contexts.map(buildContextChip)]
+
+    /** 移除芯片：上下文引用按宿主 id 摘除，其余走芯片集合 */
+    const handleRemoveChip = (id: string): void => {
+        if (contexts.some((context) => context.id === id)) {
+            void removeContext(id)
+            return
+        }
+        removeChip(id)
+    }
 
     return (
-        <AppComposer isGenerating={isGenerating}>
-            <AppComposerHeader>
-                <ImageComposerToolbar
-                    isSettingActive={settingChip !== null}
-                    isReferenceFull={referenceChips.length >= MAX_REFERENCE_IMAGES}
-                    characters={characters}
-                    activeCharacterId={activeCharacter?.id ?? null}
-                    selectedPrompts={promptChips.map((chip) => chip.value)}
-                    selectedRules={ruleChips.map((chip) => chip.value)}
-                    onToggleSetting={toggleSetting}
-                    onSelectCharacter={setCharacter}
-                    onTogglePrompt={togglePrompt}
-                    onRenamePrompt={renamePrompt}
-                    onRemovePrompt={removePrompt}
-                    onToggleRule={toggleRule}
-                    onRenameRule={renameRule}
-                    onRemoveRule={removeRule}
-                    onPickReference={addReference}
-                />
-            </AppComposerHeader>
-
-            <AppComposerContent>
-                <RichChipInput
-                    value={text}
-                    chips={richChips}
-                    placeholder="描述画面：人物、动作、场景、光线与氛围…"
-                    canSend={canSend}
-                    onChange={handleTextChange}
-                    onSend={onSend}
-                    onRemoveChip={removeChip}
-                />
-
-                <AppComposerFooter>
-                    <ImageComposerActions
-                        className="flex-1"
-                        ratio={ratio}
-                        style={style}
-                        isGenerating={isGenerating}
-                        stage={stage}
-                        isEnhancing={isEnhancing}
-                        isEnhanced={enhancedFrom !== null}
-                        canEnhance={!isEnhancing && !isGenerating && text.trim().length > 0}
-                        canSend={canSend}
-                        onRatioChange={handleRatioChange}
-                        onStyleChange={pickStyle}
-                        onEnhance={onEnhance}
-                        onRestore={onRestore}
-                        onSend={onSend}
-                        onAbort={onAbort}
+        <>
+            <AppComposer isGenerating={isGenerating}>
+                <AppComposerHeader>
+                    <AiChatComposerToolbar
+                        mode="image"
+                        disabled={isGenerating}
+                        isReferenceFull={referenceChips.length >= MAX_REFERENCE_IMAGES}
+                        onPickReference={addReference}
+                        onReference={handleReference}
+                        onMention={mentionPicker.open}
+                        onContextAdded={() => void loadContexts()}
+                        onContextError={toastError}
+                        ruleNames={ruleChips.map((chip) => chip.value)}
+                        onToggleRule={toggleRule}
+                        onRenameRule={renameRule}
+                        onRemoveRule={removeRule}
+                        selectedPrompts={promptChips.map((chip) => chip.value)}
+                        onTogglePrompt={togglePrompt}
+                        onRenamePrompt={renamePrompt}
+                        onRemovePrompt={removePrompt}
                     />
-                </AppComposerFooter>
-            </AppComposerContent>
-        </AppComposer>
+                </AppComposerHeader>
+
+                <AppComposerContent>
+                    <RichChipInput
+                        value={text}
+                        chips={inputChips}
+                        placeholder="描述画面：人物、动作、场景、光线与氛围…"
+                        canSend={canSend}
+                        onChange={handleTextChange}
+                        onSend={onSend}
+                        onRemoveChip={handleRemoveChip}
+                    />
+
+                    <AppComposerFooter>
+                        <ImageComposerActions
+                            className="flex-1"
+                            ratio={ratio}
+                            style={style}
+                            isGenerating={isGenerating}
+                            stage={stage}
+                            isEnhancing={isEnhancing}
+                            isEnhanced={enhancedFrom !== null}
+                            canEnhance={!isEnhancing && !isGenerating && text.trim().length > 0}
+                            canSend={canSend}
+                            onRatioChange={handleRatioChange}
+                            onStyleChange={pickStyle}
+                            onEnhance={onEnhance}
+                            onRestore={onRestore}
+                            onSend={onSend}
+                            onAbort={onAbort}
+                        />
+                    </AppComposerFooter>
+                </AppComposerContent>
+            </AppComposer>
+            <AiChatMentionDialog
+                open={mentionPicker.isOpen}
+                candidates={mentionPicker.items}
+                isSearching={mentionPicker.isSearching}
+                onSearch={(keyword) => void mentionPicker.search(keyword)}
+                onPick={(candidate) => void mentionPicker.pick(candidate)}
+                onClose={mentionPicker.close}
+            />
+            <AiChatReferenceDialog
+                open={referencePicker.isOpen}
+                entries={referencePicker.items}
+                isSearching={referencePicker.isSearching}
+                onSearch={(keyword) => void referencePicker.search(keyword)}
+                onPick={(entry) => void referencePicker.pick(entry)}
+                onClose={referencePicker.close}
+            />
+        </>
     )
 }
