@@ -79,8 +79,6 @@ import type { WorkflowRouter } from './workflowRouter'
 const MAX_TITLE_HINT_LENGTH = 32
 /** ai/draft 草稿长度上限：输入框正文远小于此值，超出截断避免异常载荷占用内存 */
 const MAX_DRAFT_LENGTH = 20_000
-/** ai/draft 命令 id 长度上限：只存短标识，恢复时由前端按命令表再校验 */
-const MAX_COMMAND_ID_LENGTH = 32
 /** 模型 id 长度上限：CLI 模型 id 远短于此值，超出视为异常载荷 */
 const MAX_MODEL_ID_LENGTH = 64
 /** 上下文档位上限：模型窗口最大为百万级，超出视为异常载荷 */
@@ -376,8 +374,8 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 return this.service.send(reqId, conversationId, content, isAutoApprove, titleHint, ruleNames)
             }
             case 'ai/draft': {
-                const { conversationId, input, commandId, ruleNames } = readDraftPayload(payload)
-                this.service.setDraft(conversationId, { input, commandId, ruleNames })
+                const { conversationId, input, ruleNames } = readDraftPayload(payload)
+                this.service.setDraft(conversationId, { input, ruleNames })
                 return {}
             }
             case 'ai/enhancePrompt': {
@@ -761,11 +759,10 @@ function readRuleNames(value: unknown): string[] {
     return [...new Set(names)].slice(0, MAX_RULE_NAMES)
 }
 
-/** 校验 ai/draft 入参：只接受未发送正文与命令 id，超长截断，避免异常载荷占用内存 */
+/** 校验 ai/draft 入参：只接受未发送正文与规则名，超长截断，避免异常载荷占用内存 */
 function readDraftPayload(payload: unknown): {
     conversationId: string
     input: string
-    commandId: string | null
     ruleNames: string[]
 } {
     if (typeof payload !== 'object' || payload === null) {
@@ -774,22 +771,14 @@ function readDraftPayload(payload: unknown): {
     const value = payload as {
         conversationId?: unknown
         input?: unknown
-        commandId?: unknown
         ruleNames?: unknown
     }
     if (typeof value.conversationId !== 'string' || typeof value.input !== 'string') {
         throw new Error('ai/draft 参数类型不正确')
     }
-    const commandId =
-        typeof value.commandId === 'string' &&
-        value.commandId.length > 0 &&
-        value.commandId.length <= MAX_COMMAND_ID_LENGTH
-            ? value.commandId
-            : null
     return {
         conversationId: value.conversationId,
         input: value.input.length > MAX_DRAFT_LENGTH ? value.input.slice(0, MAX_DRAFT_LENGTH) : value.input,
-        commandId,
         ruleNames: readRuleNames(value.ruleNames),
     }
 }
@@ -1095,11 +1084,14 @@ function readContextAddPayload(payload: unknown): AiContextAddRequest {
         if (typeof item !== 'object' || item === null) {
             throw new Error('ai/context/add 参数非法：条目须为对象')
         }
-        const { path: target, startLine, endLine, compress } = item as {
+        const {
+            path: target,
+            startLine,
+            endLine,
+        } = item as {
             path?: unknown
             startLine?: unknown
             endLine?: unknown
-            compress?: unknown
         }
         if (typeof target !== 'string' || target.length === 0 || target.length > MAX_MENTION_PATH) {
             throw new Error('ai/context/add 参数非法：path 须为相对路径')
@@ -1109,8 +1101,7 @@ function readContextAddPayload(payload: unknown): AiContextAddRequest {
         if (start !== null && end !== null && end < start) {
             throw new Error('ai/context/add 参数非法：行号区间倒序')
         }
-        const base = start === null ? { path: target } : { path: target, startLine: start, endLine: end ?? start }
-        return compress === true ? { ...base, compress: true } : base
+        return start === null ? { path: target } : { path: target, startLine: start, endLine: end ?? start }
     })
     return { items: targets }
 }

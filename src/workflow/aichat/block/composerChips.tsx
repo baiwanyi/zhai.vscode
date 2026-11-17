@@ -1,46 +1,24 @@
 /**
- * AI 输入卡片的芯片映射：把已选命令与上下文引用折算成 RichChip，供输入区首行内联展示。
- * 复用约定：图标取 ./commandIcons 与 lucide-react，文件名 / 行号 / 字数摘要取 ../utils，
+ * AI 输入卡片的芯片映射：把已挂规则与上下文引用折算成 RichChip，供输入区首行内联展示。
+ * 复用约定：图标取 lucide-react，文件名 / 行号 / 字数摘要取 ../utils，
  * 悬停路径取 @shared/utils/zhaiPath 的存储根折算；展示字段只在这一层维护。
- * 关键约束：命令芯片恒排在上下文之前，与输入区展示顺序一致；
- * 命令芯片自带 onRemove（语义是取消命令），上下文芯片缺省回落 onRemoveChip(id)；
- * 命令芯片 id 是保留值，只用于 key 与退格查找，不得与上下文引用 id 复用。
+ * 关键约束：规则芯片恒排在上下文之前，与输入区展示顺序一致；
+ * 规则芯片 id 以 `ai-rule-` 前缀加名称，不得与上下文引用 id 复用。
  */
 import { FileText, Library, PencilRuler, TextSelect } from 'lucide-react'
 import type { AiContextRef } from '@shared/types/aiChat'
 import { toZhaiDisplayPath } from '@shared/utils/zhaiPath'
 import type { RichChip } from '@webview/components/RichChipInput'
-import { COMMAND_ICONS } from './commandIcons'
-import type { AiCommand } from '../constants'
 import type { JSX } from 'react'
 import { describeContext, toContextFileName, toContextLineRange } from '../utils'
 
-/** 命令芯片的保留 id：只用于 React key 与退格查找，移除语义由 onRemove 承担 */
-const COMMAND_CHIP_ID = 'ai-command'
-
-/** 芯片集合入参：命令可为空，规则按挂载顺序，上下文按添加顺序 */
+/** 芯片集合入参：规则按挂载顺序，上下文按添加顺序 */
 export interface BuildComposerChipsInput {
-    command: AiCommand | null
     /** 已挂规则名：作为提示词约束，与上下文分属两套预算 */
     ruleNames: readonly string[]
     contexts: AiContextRef[]
-    /** 取消命令：命令芯片的移除语义由它承担，不走统一的移除引用回调 */
-    onClearCommand: () => void
     /** 摘除规则：规则芯片的移除回调 */
     onRemoveRule: (ruleName: string) => void
-}
-
-/** 命令芯片：图标取命令表，移除按钮即「取消命令」 */
-export function buildCommandChip(command: AiCommand, onClearCommand: () => void): RichChip {
-    const Icon = COMMAND_ICONS[command.id]
-    return {
-        id: COMMAND_CHIP_ID,
-        label: command.title,
-        icon: <Icon className="size-3 shrink-0 text-muted-foreground" />,
-        badgeClassName: 'max-w-40',
-        removeLabel: '取消命令',
-        onRemove: onClearCommand,
-    }
 }
 
 /** 上下文芯片图标：笔记本用书库图标，行范围引用用选区图标，其余为文档图标 */
@@ -79,16 +57,9 @@ export function buildRuleChip(ruleName: string, onRemove: () => void): RichChip 
     }
 }
 
-/** 芯片集合：命令、规则、上下文依次排列，与输入区的展示顺序一致 */
-export function buildComposerChips({
-    command,
-    ruleNames,
-    contexts,
-    onClearCommand,
-    onRemoveRule,
-}: BuildComposerChipsInput): RichChip[] {
+/** 芯片集合：规则、上下文依次排列，与输入区的展示顺序一致 */
+export function buildComposerChips({ ruleNames, contexts, onRemoveRule }: BuildComposerChipsInput): RichChip[] {
     return [
-        ...(command === null ? [] : [buildCommandChip(command, onClearCommand)]),
         ...ruleNames.map((ruleName) => buildRuleChip(ruleName, () => onRemoveRule(ruleName))),
         ...contexts.map(buildContextChip),
     ]

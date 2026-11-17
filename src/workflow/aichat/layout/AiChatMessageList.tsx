@@ -24,10 +24,10 @@ import { AiChatConfirmCard } from './AiChatConfirmCard'
 import { AiChatEmptyState } from './AiChatEmptyState'
 import { AiChatMessageView } from './AiChatMessageView'
 import { AiChatQuestionnaire } from './AiChatQuestionnaire'
-import { AiChatRuleCatalogProvider } from './ruleCatalogProvider'
 import type { AiChatTransientNotice } from '../hooks/useAiChatSession'
 import type { Phase } from '../utils'
 import type { JSX } from 'react'
+import { AiChatRuleCatalogProvider } from '../block/ruleCatalogProvider'
 
 interface AiChatMessageListProps {
     messages: AiMessage[]

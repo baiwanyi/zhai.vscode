@@ -255,12 +255,12 @@ export class AiChatService implements vscode.Disposable {
 
     /** 读取会话草稿：无草稿时返回空内容 */
     public getDraft(conversationId: string): AiChatDraft {
-        return this.inputDrafts.get(conversationId) ?? { input: '', commandId: null }
+        return this.inputDrafts.get(conversationId) ?? { input: '' }
     }
 
-    /** 保存会话草稿：仅内存，避免每次按键写库；正文与命令都为空时清除 */
+    /** 保存会话草稿：仅内存，避免每次按键写库；正文为空时清除 */
     public setDraft(conversationId: string, draft: AiChatDraft): void {
-        if (draft.input.length === 0 && draft.commandId === null) {
+        if (draft.input.length === 0) {
             this.inputDrafts.delete(conversationId)
             return
         }
@@ -329,7 +329,7 @@ export class AiChatService implements vscode.Disposable {
             conversation: toConversation(row),
             messages: [],
             contexts: [],
-            draft: { input: '', commandId: null },
+            draft: { input: '' },
             // 新会话尚未发起请求，没有可展示的上下文占用
             contextUsage: null,
         }

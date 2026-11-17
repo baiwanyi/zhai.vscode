@@ -97,7 +97,10 @@ export function splitDocSections(text: string): AiDocSection[] {
                 break
             }
         }
-        const body = lines.slice(heading.line - 1, endLine).join('\n').trimEnd()
+        const body = lines
+            .slice(heading.line - 1, endLine)
+            .join('\n')
+            .trimEnd()
         return {
             title: heading.title,
             level: heading.level as AiDocSection['level'],
@@ -119,16 +122,86 @@ async function readTextFile(uri: vscode.Uri): Promise<string> {
 }
 
 /**
- * 读取某作品的文档分节：路径先经片段校验并限定为 press/ 下两段，再拼绝对 Uri。
+ * 文档原文：路径先经片段校验并限定为 press/ 下两段，再拼绝对 Uri。
  * 安全约束：doc 只能取 PressDocKey 白名单，文件名映射留在本文件，前端无法伪造文件名。
  */
-export async function readDocSections(dirPath: string, doc: PressDocKey): Promise<AiDocSection[]> {
+async function readDocText(dirPath: string, doc: PressDocKey): Promise<string> {
     const segments = toSafeSegments(dirPath, '作品')
     if (segments.length !== PROJECT_DIR_DEPTH || segments[0] !== PRESS_MODULE_DIR) {
         throw new Error(`作品目录非法：${dirPath}`)
     }
     const name = segments[1] ?? ''
     const uri = buildStorageUri(resolveStorageRoot(), [PRESS_MODULE_DIR, name, PRESS_DOC_FILE_NAMES[doc]])
-    const text = await readTextFile(uri)
+    return readTextFile(uri)
+}
+
+/** 读取某作品的文档分节：只切行区间，不解析块内字段 */
+export async function readDocSections(dirPath: string, doc: PressDocKey): Promise<AiDocSection[]> {
+    const text = await readDocText(dirPath, doc)
     return text.length === 0 ? [] : splitDocSections(text)
+}
+
+/** 人物卡的两项展示字段：从分节的四（三）级标题里读出 */
+export interface CharacterSectionFacts {
+    /** 分节起始行：与 readDocSections 的 startLine 对得上 */
+    startLine: number
+    /** 性别标签（男 / 女）：旧文档没写时为空串 */
+    genderLabel: string
+    /** 角色分类标签（主角 / 配角 / 反派 / 中立 / 龙套）：旧文档没写时为空串 */
+    roleLabel: string
+}
+
+/** 字段标题：与 serialize 的角色卡字段同名，只认「分类」与「性别」两项 */
+const CHARACTER_ROLE_TITLE = '分类'
+const CHARACTER_GENDER_TITLE = '性别'
+
+/**
+ * 读某个字段的值：标题优先、键值兜底，与人物卡的解析口径一致。
+ * 标题式是 serialize 的写法（`#### 分类` 后隔一行空行才写值），
+ * 手写成 `- 分类：主角` 的旧格式走键值兜底。
+ */
+function readFieldValue(lines: readonly string[], title: string): string {
+    const headingPattern = new RegExp(`^#{2,6}\\s*${title}\\s*$`, 'u')
+    const index = lines.findIndex((line) => headingPattern.test(line))
+    if (index >= 0) {
+        // 遇到下一个标题说明该字段没写值
+        const value = lines
+            .slice(index + 1)
+            .map((line) => line.trim())
+            .find((line) => line.length > 0)
+        if (value !== undefined && !value.startsWith('#')) {
+            return value
+        }
+    }
+    const keyValuePattern = new RegExp(`^\\s*[-*]\\s*${title}\\s*[：:]\\s*(.+)$`, 'u')
+    for (const line of lines) {
+        const matched = keyValuePattern.exec(line)
+        if (matched !== null) {
+            return (matched[1] ?? '').trim()
+        }
+    }
+    return ''
+}
+
+/**
+ * 读取人物卡各分节的性别与角色分类：候选列表据此渲染性别图标与角色徽标。
+ * 复用约定：分节边界与 readDocSections 同源，字段名与 serialize 的角色卡一致；
+ * 关键约束：只读这两个字段、不解析整卡，枚举归一留在 Webview——回传的是文档里的中文标签原文。
+ */
+export async function readCharacterSectionFacts(dirPath: string): Promise<readonly CharacterSectionFacts[]> {
+    const text = await readDocText(dirPath, 'characters')
+    if (text.length === 0) {
+        return []
+    }
+    const lines = text.split(/\r?\n/u)
+    return splitDocSections(text)
+        .filter((section) => section.level === 2)
+        .map((section) => {
+            const body = lines.slice(section.startLine - 1, section.endLine)
+            return {
+                startLine: section.startLine,
+                genderLabel: readFieldValue(body, CHARACTER_GENDER_TITLE),
+                roleLabel: readFieldValue(body, CHARACTER_ROLE_TITLE),
+            }
+        })
 }

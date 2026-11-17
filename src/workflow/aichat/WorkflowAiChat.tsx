@@ -46,7 +46,7 @@ import { AiChatHistoryMenu } from './layout/AiChatHistoryMenu'
 import { AiChatMentionDialog } from './layout/AiChatMentionDialog'
 import { AiChatMessageList } from './layout/AiChatMessageList'
 import { AiChatReferenceDialog } from './layout/AiChatReferenceDialog'
-import { composeCommandContent, resolveAiChatView } from './utils'
+import { resolveAiChatView } from './utils'
 import type { AiReferenceAction } from './constants'
 import type { JSX } from 'react'
 
@@ -90,17 +90,8 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
         refreshSessions: loadSessions,
         projectDir,
     })
-    // 草稿按会话保存：未发送正文、命令与规则防抖写入宿主，快照回填由本 hook 判定是否套用
-    const {
-        command,
-        ruleNames,
-        clearCommand,
-        toggleRule,
-        renameRule,
-        removeRule,
-        applySnapshot,
-        restoreFromMessage,
-    } = useAiChatDraft({
+    // 草稿按会话保存：未发送正文与规则防抖写入宿主，快照回填由本 hook 判定是否套用
+    const { ruleNames, toggleRule, renameRule, removeRule, applySnapshot, restoreFromMessage } = useAiChatDraft({
         conversationId: session?.conversation.id ?? null,
         input,
         setInput,
@@ -164,13 +155,12 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
         submit: submitMessage,
         confirm: confirmAutoApprove,
         dismiss: dismissAutoApprove,
-    } = useAiChatAutoApprove({ send, onSent: clearCommand })
-    // 会话动作的调用顺序（先清命令再套快照、失败保留命令）封装在 hook 内，页面不再持有这段时序知识
+    } = useAiChatAutoApprove({ send })
+    // 会话动作的调用顺序（切换成功才套快照）封装在 hook 内，页面不再持有这段时序知识
     const conversation = useAiChatConversationActions({
         startNewSession,
         switchSession,
         deleteSession,
-        clearCommand,
         applySnapshot,
         refreshWriteState: loadWriteState,
     })
@@ -220,11 +210,10 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
         [reloadRuleCatalog, removeRule],
     )
 
-    /** 发送：指令模板与用户补充在此拼装，输入区与消息气泡始终只呈现命令名；规则随请求下发 */
+    /** 发送：正文原样下发，规则随请求携带 */
     const handleSend = useCallback((): void => {
-        const content = command === null ? input : composeCommandContent(command, input)
-        void submitMessage(content, { writeGrant, titleHint: command?.title, ruleNames })
-    }, [command, input, ruleNames, submitMessage, writeGrant])
+        void submitMessage(input, { writeGrant, ruleNames })
+    }, [input, ruleNames, submitMessage, writeGrant])
 
     return (
         <AppPage>
@@ -279,7 +268,6 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                     contextWindowTokens={runtime?.contextWindowTokens ?? 0}
                     hasWritableScope={hasWritableScope}
                     isAwaitingApproval={pendingAutoApprove !== null}
-                    command={command}
                     ruleNames={ruleNames}
                     onToggleRule={handleToggleRule}
                     onRenameRule={handleRenameRule}
@@ -288,7 +276,6 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                     onSend={handleSend}
                     onStop={() => void stop()}
                     onRemoveContext={(id) => void removeContext(id)}
-                    onClearCommand={clearCommand}
                     onReference={handleReference}
                     onMention={mentionPicker.open}
                     onContextAdded={handleContextAdded}

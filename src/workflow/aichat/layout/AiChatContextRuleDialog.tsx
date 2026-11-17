@@ -1,5 +1,5 @@
 /**
- * 通用规则配套弹窗：表单承担新建与编辑，确认框承担删除，生图与 AI 对话共用。
+ * 规则配套弹窗：表单承担新建与编辑，确认框承担删除，对话与生图的上下文菜单共用。
  * 复用约定：表单取 @webview/components/FormDialog，删除确认取 @webview/components/ConfirmDialog，
  * 字段取 @components/ui 的 field/input/textarea，文本状态取 @webview/hooks/useTrimmedInput；
  * 表单状态类型取 @webview/hooks/useRuleMenu 的 RuleFormState，规则类型取 @shared/types/promptLibrary。
@@ -16,7 +16,7 @@ import type { RuleFormState } from '@webview/hooks/useRuleMenu'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { JSX } from 'react'
 
-interface RuleDialogsProps {
+interface AiChatContextRuleDialogProps {
     form: RuleFormState | null
     /** 待删除的规则：null 表示删除确认关闭 */
     pendingDelete: PromptRule | null
@@ -87,9 +87,9 @@ function RuleFormDialog({ form, dirPath, isSaving, onOpenChange, onSubmit }: Rul
             onSubmit={handleSubmit}
         >
             <Field>
-                <FieldLabel htmlFor="image-rule-name">名称</FieldLabel>
+                <FieldLabel htmlFor="rule-name">名称</FieldLabel>
                 <Input
-                    id="image-rule-name"
+                    id="rule-name"
                     value={name.value}
                     placeholder="如：冷色调画面、避免文字水印"
                     className="h-8 px-3 py-1 leading-5"
@@ -97,9 +97,9 @@ function RuleFormDialog({ form, dirPath, isSaving, onOpenChange, onSubmit }: Rul
                 />
             </Field>
             <Field>
-                <FieldLabel htmlFor="image-rule-content">规则内容</FieldLabel>
+                <FieldLabel htmlFor="rule-content">规则内容</FieldLabel>
                 <Textarea
-                    id="image-rule-content"
+                    id="rule-content"
                     value={content.value}
                     placeholder="用一段话写清画面必须遵守的约束，发送时整段并入提示词"
                     className="min-h-32 text-sm leading-5"
@@ -111,7 +111,7 @@ function RuleFormDialog({ form, dirPath, isSaving, onOpenChange, onSubmit }: Rul
 }
 
 /** 规则表单与删除确认：由调用方放在下拉菜单之外，避免菜单收起时被一起卸载 */
-export function RuleDialogs({
+export function AiChatContextRuleDialog({
     form,
     pendingDelete,
     dirPath,
@@ -120,7 +120,7 @@ export function RuleDialogs({
     onFormSubmit,
     onDeleteClose,
     onConfirmDelete,
-}: RuleDialogsProps): JSX.Element {
+}: AiChatContextRuleDialogProps): JSX.Element {
     return (
         <>
             {/* 每次打开换 key 重挂载，字段自然回到新建空值或该条正文，不必在子组件里手写重置 */}

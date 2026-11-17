@@ -17,7 +17,7 @@ import {
 import { logger } from '@modules/common/logger'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { toSafeSegments } from '@modules/common/storagePath'
-import { PRESS_DOC_FILE_NAMES, readDocSections } from '@modules/press/docSections'
+import { PRESS_DOC_FILE_NAMES, readCharacterSectionFacts, readDocSections } from '@modules/press/docSections'
 import type {
     AiContextAddItem,
     AiContextAddResult,
@@ -67,10 +67,7 @@ export class ContextSourceService {
     ) {}
 
     /** 列举来源：笔记本、公众号与作品，作为菜单的筛选维度而非引用单位 */
-    public listSources(
-        scope: AiContextSourceScope,
-        accounts: readonly ContextSourceAccount[] = [],
-    ): AiContextSource[] {
+    public listSources(scope: AiContextSourceScope, accounts: readonly ContextSourceAccount[] = []): AiContextSource[] {
         switch (scope) {
             case 'notebook':
                 return this.listNotebookSources()
@@ -160,15 +157,25 @@ export class ContextSourceService {
             return isVisible && isHit
         })
         const docPath = `${dirPath}/${PRESS_DOC_FILE_NAMES[doc]}`
-        const items: AiContextItem[] = matched.slice(offset, offset + limit).map((section) => ({
-            path: docPath,
-            title: section.title,
-            kind,
-            subtitle: dirPath.slice(PRESS_MODULE_DIR.length + 1),
-            startLine: section.startLine,
-            endLine: section.endLine,
-            charCount: section.charCount,
-        }))
+        // 人物卡额外带性别与角色分类：候选面板据此渲染性别图标与角色徽标
+        const facts = kind === 'character' ? await readCharacterSectionFacts(dirPath) : []
+        const factsByStartLine = new Map(facts.map((fact) => [fact.startLine, fact]))
+        const items: AiContextItem[] = matched.slice(offset, offset + limit).map((section) => {
+            const item: AiContextItem = {
+                path: docPath,
+                title: section.title,
+                kind,
+                subtitle: dirPath.slice(PRESS_MODULE_DIR.length + 1),
+                startLine: section.startLine,
+                endLine: section.endLine,
+                charCount: section.charCount,
+            }
+            const fact = factsByStartLine.get(section.startLine)
+            if (fact === undefined) {
+                return item
+            }
+            return { ...item, genderLabel: fact.genderLabel, roleLabel: fact.roleLabel }
+        })
         return { items, hasMore: matched.length > offset + limit }
     }
 
@@ -236,13 +243,10 @@ export class ContextSourceService {
                     WHERE substr(path, 1, ?) = ? AND instr(substr(path, ?), '/') > 0
                 ) GROUP BY name ORDER BY count DESC`,
             )
-            .all(
-                prefix.length + 1,
-                prefix.length + 1,
-                prefix.length,
-                prefix,
-                prefix.length + 1,
-            ) as Array<{ name: string; count: number }>
+            .all(prefix.length + 1, prefix.length + 1, prefix.length, prefix, prefix.length + 1) as Array<{
+            name: string
+            count: number
+        }>
         return rows
             .filter((row) => row.name.length > 0)
             .map((row) => ({ id: `${prefix}${row.name}`, name: row.name, count: row.count }))
@@ -305,17 +309,22 @@ export class ContextSourceService {
         const isNotebook =
             segments.length === 2 && segments[0] === NOTE_PATH_PREFIX.slice(0, -1) && !item.path.endsWith('.md')
         if (isNotebook) {
-            if (item.compress === true) {
-                try {
-                    await this.chat.compressNotebook(relativePath)
-                } catch (cause) {
-                    // 压缩失败回退打包原文：一次模型调用失败不该挡住添加
-                    logger.warn(`笔记本压缩失败，回退打包原文：${toErrorText(cause)}`)
-                }
-            }
-            const packed = await this.notebookPack.pack(relativePath)
+            // 整本放不进全文档位（节选 / 目录）即视为超限：先自动压缩，再取压缩后的打包结果
+            let packed = await this.notebookPack.pack(relativePath)
             if (packed === null) {
                 throw new Error('该笔记本暂无笔记')
+            }
+            if (packed.packMode !== 'full' && packed.packMode !== 'compressed') {
+                try {
+                    await this.chat.compressNotebook(relativePath)
+                    const compressed = await this.notebookPack.pack(relativePath)
+                    if (compressed !== null) {
+                        packed = compressed
+                    }
+                } catch (cause) {
+                    // 压缩失败保留当前档位（节选 / 目录）：一次模型调用失败不该挡住添加
+                    logger.warn(`笔记本自动压缩失败，回退打包原文：${toErrorText(cause)}`)
+                }
             }
             return {
                 id: randomUUID(),

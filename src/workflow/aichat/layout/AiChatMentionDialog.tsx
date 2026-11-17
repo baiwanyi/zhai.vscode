@@ -2,7 +2,7 @@
  * 提及检索弹窗：输入关键词查全文索引，选中即加入对话上下文。
  * 复用约定：外壳取 @components/ui/dialog，检索输入行取同目录 AiChatSearchField，
  * 候选按钮取 @webview/components/Button。
- * 关键约束：回车才发检索请求（不随每次按键打索引库）；空关键词与空结果都给明确提示，不静默；
+ * 关键约束：检索行自带 200ms 防抖，随输入停顿自动检索、回车立即检索，本组件只转交关键词；空关键词与空结果都给明确提示，不静默；
  * 选中成功后由调用方关闭弹窗并刷新上下文清单，本组件不持有引用状态。
  */
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@components/ui/dialog'

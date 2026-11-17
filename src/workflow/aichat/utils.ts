@@ -1,10 +1,9 @@
 /**
  * AI 对话展示层纯函数与视图类型：引用体积的紧凑折算、路径末段提取、会话快照的不可变消息替换、
- * 写作命令模板的发送拼装与回放拆分、工具名的动作文案，以及用量文案、可发送条件与页面视图汇总等派生计算。
+ * 工具名的动作文案，以及用量文案、可发送条件与页面视图汇总等派生计算。
  * 零依赖、无副作用，可被页面主组件与各子组件自由复用；token 折算与错误文案统一取 @shared/utils 的 format 与 error。
  * 视图阶段 Phase 一并定义在此，供会话 hook 与输入卡片共用，避免展示层反向依赖状态机模块。
- * 关键约束：命令模板只在发送瞬间拼接、在展示时按最长前缀剥离，输入框与消息气泡均不出现 instruction 全文；
- * 复制文本带上命令名与 `@zhai\` 写法的引用，剪贴板内容与气泡里看到的一致且可直接粘回输入框；
+ * 关键约束：复制文本带上 `@zhai\` 写法的引用，剪贴板内容与气泡里看到的一致且可直接粘回输入框；
  * 工具名表只做展示映射，未知工具原样透出，不得据此推断权限。
  */
 import type {
@@ -19,8 +18,6 @@ import type {
 } from '@shared/types/aiChat'
 import { formatTokens } from '@shared/utils/format'
 import { readStorageRootPath, replaceStorageRootPaths, toZhaiDisplayPath } from '@shared/utils/zhaiPath'
-import { AI_COMMAND_PREFIXES } from './constants'
-import type { AiCommand } from './constants'
 
 /** 视图阶段：idle 空闲、sending 已提交待首字、streaming 正在逐字生成 */
 export type Phase = 'idle' | 'sending' | 'streaming'
@@ -170,12 +167,10 @@ export function resolveWritableScope(projectDir: string | null, writeState: AiWr
     return hasWriteTarget || (projectDir !== null && projectDir.length > 0)
 }
 
-/** 可发送判定入参：密钥、阶段、命令与正文、写入范围与授权挂起共同决定能否发送 */
+/** 可发送判定入参：密钥、阶段、正文、写入范围与授权挂起共同决定能否发送 */
 export interface SendGateInput {
     hasApiKey: boolean
     phase: Phase
-    /** 已选命令：有命令时正文由指令模板提供，空输入也可发送 */
-    command: AiCommand | null
     input: string
     hasWritableScope: boolean
     /** 连续生成授权等待确认：正文已挂在确认框里，此时再发会覆盖挂起项 */
@@ -186,22 +181,20 @@ export interface SendGateInput {
 export function resolveSendGate({
     hasApiKey,
     phase,
-    command,
     input,
     hasWritableScope,
     isAwaitingApproval,
 }: SendGateInput): boolean {
-    const hasContent = command !== null || input.trim().length > 0
+    const hasContent = input.trim().length > 0
     return hasApiKey && phase === 'idle' && hasContent && hasWritableScope && !isAwaitingApproval
 }
 
-/** 输入卡片门禁入参：阶段与授权挂起决定锁定态，其余四项参与可发送 / 可增强判定 */
+/** 输入卡片门禁入参：阶段与授权挂起决定锁定态，其余三项参与可发送 / 可增强判定 */
 export interface ComposerGateInput {
     phase: Phase
     isAwaitingApproval: boolean
     hasApiKey: boolean
     hasWritableScope: boolean
-    command: AiCommand | null
     input: string
 }
 
@@ -225,42 +218,16 @@ export function resolveComposerGate({
     isAwaitingApproval,
     hasApiKey,
     hasWritableScope,
-    command,
     input,
 }: ComposerGateInput): ComposerGate {
     const isGenerating = phase !== 'idle'
     return {
         isGenerating,
         isLocked: isGenerating || isAwaitingApproval,
-        canSend: resolveSendGate({ hasApiKey, phase, command, input, hasWritableScope, isAwaitingApproval }),
+        canSend: resolveSendGate({ hasApiKey, phase, input, hasWritableScope, isAwaitingApproval }),
         canEnhance: input.trim().length > 0,
-        placeholder:
-            command === null ? '提问或输入指令…' : `可补充「${command.title}」的要求，留空直接发送`,
+        placeholder: '提问或输入指令…',
     }
-}
-
-/**
- * 命令发送拼装：指令模板在前、用户补充在后，二者以空行分隔；无补充时只发指令。
- * 拼装发生在发送瞬间，输入框始终只保存用户可见文本，避免提示词全文占据编辑区。
- */
-export function composeCommandContent(command: AiCommand, body: string): string {
-    const extra = body.trim()
-    return extra.length > 0 ? `${command.instruction}\n\n${extra}` : command.instruction
-}
-
-/**
- * 消息回显拆分：按最长指令模板做前缀匹配，命中时返回命令与补充文本。
- * 历史消息重载后仍能以徽章回显；未命中时原样返回，不改变既有渲染结果。
- */
-export function splitCommandContent(content: string): { command: AiCommand | null; body: string } {
-    const normalized = content.trim()
-    for (const command of AI_COMMAND_PREFIXES) {
-        if (!normalized.startsWith(command.instruction)) {
-            continue
-        }
-        return { command, body: normalized.slice(command.instruction.length).trim() }
-    }
-    return { command: null, body: content }
 }
 
 /** 剪贴板里的引用写法：`@zhai\...` 加行范围，与输入框可识别的令牌同构，粘回去即可还原成芯片 */
@@ -275,14 +242,13 @@ function toClipboardRef(ref: AiContextRef): string {
 }
 
 /**
- * 消息的复制文本：命令名 + `@zhai\` 写法的引用 + 正文，正文里存储根下的绝对路径同样折算。
- * 关键约束：只复制用户可见的信息，指令模板全文不进剪贴板；没有徽章时等同于正文；
+ * 消息的复制文本：`@zhai\` 写法的引用 + 正文，正文里存储根下的绝对路径同样折算。
+ * 关键约束：只复制用户可见的信息；没有引用时等同于正文；
  * 路径统一成 `@zhai` 形式，粘贴回输入框时由宿主还原为引用芯片。
  */
 export function toMessageCopyText(message: AiMessage): string {
-    const { command, body } = splitCommandContent(message.content)
-    const badges = [...(command === null ? [] : [command.title]), ...message.refs.map(toClipboardRef)]
-    const text = replaceStorageRootPaths(body, readStorageRootPath())
+    const badges = message.refs.map(toClipboardRef)
+    const text = replaceStorageRootPaths(message.content, readStorageRootPath())
     return [badges.join(' '), text].filter((part) => part.length > 0).join('\n')
 }
 

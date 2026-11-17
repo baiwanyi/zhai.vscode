@@ -1,6 +1,7 @@
 /**
- * 上下文候选的来源与分页：按一级菜单选定的查询目标拉取最近内容，支持即时搜索与滚动加载。
+ * 上下文候选的来源、分页与目标切换：按一级菜单选定的目标拉取最近内容，支持即时搜索与滚动加载。
  * 复用约定：请求走 @shared/utils/bridge 的 ai/context/sources 与 ai/context/query，错误经注入的 onError 上报；
+ * 目标切换的接线（select / reset 经 ref 接力）也收在这里，调用方只传目标，不必自备 ref；
  * 与提及检索同源，只按标题与路径匹配，不做正文检索。
  * 关键约束：每次查询自增序号，过期回包一律丢弃；切换目标或关键词时重置偏移与结果；
  * 关键词为空即回到「最近内容」，与首页列表口径一致。
@@ -135,7 +136,8 @@ export function useAiChatContextSources(
     onError: (error: string) => void,
 ): AiChatContextSourcesState {
     const [sources, setSources] = useState<readonly AiContextSource[]>([])
-    const [isLoading, setIsLoading] = useState(false)
+    // 初始按 scope 判定：请求在 effect 里发起，初始为 false 会让调用方先闪一帧空状态
+    const [isLoading, setIsLoading] = useState(scope !== null)
 
     useEffect((): (() => void) => {
         if (scope === null) {
@@ -168,4 +170,31 @@ export function useAiChatContextSources(
     }, [scope, onError])
 
     return { sources, isLoading }
+}
+
+/**
+ * 查询目标切换：目标变化即选新目标并发起首批查询，传 null 清空查询与结果。
+ * 复用约定：select / reset 先落到 ref 再进依赖，避免它们每次渲染换引用就重发同一批查询；
+ * 与 useAiChatContextQuery 同域，故不单独建文件。
+ * 关键约束：target 的引用稳定性由调用方保证——每次渲染新建的字面量会让本效果重发查询。
+ */
+export function useContextQueryTarget(
+    query: Pick<AiChatContextQueryState, 'reset' | 'select'>,
+    target: AiContextTarget | null,
+): void {
+    const selectRef = useRef(query.select)
+    const resetRef = useRef(query.reset)
+
+    useEffect((): void => {
+        selectRef.current = query.select
+        resetRef.current = query.reset
+    }, [query.reset, query.select])
+
+    useEffect((): void => {
+        if (target === null) {
+            resetRef.current()
+            return
+        }
+        selectRef.current(target)
+    }, [target])
 }

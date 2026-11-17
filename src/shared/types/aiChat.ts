@@ -239,11 +239,9 @@ export interface AiMessage {
     createdAt: string
 }
 
-/** 输入草稿：未发送的正文、已选命令与已挂规则，视图重建后由宿主带回 */
+/** 输入草稿：未发送的正文与已挂规则，视图重建后由宿主带回 */
 export interface AiChatDraft {
     input: string
-    /** 已选写作命令 id；恢复时由前端按命令表收窄 */
-    commandId: string | null
     /** 已挂规则名；恢复时由前端按规则目录收窄，缺失即视为未挂载 */
     ruleNames?: string[]
 }
@@ -356,6 +354,10 @@ export interface AiContextItem {
     charCount?: number
     /** 最近更新时间（ISO 8601） */
     updatedAt?: string
+    /** 人物卡性别标签（男 / 女）：仅 character 有，旧文档没写时为空串 */
+    genderLabel?: string
+    /** 人物卡角色分类标签（主角 / 配角 / 反派 / 中立 / 龙套）：仅 character 有 */
+    roleLabel?: string
 }
 
 /** 上下文查询结果：hasMore 决定是否继续加载下一批 */
@@ -382,13 +384,15 @@ export interface AiDocSectionsResult {
     sections: AiDocSection[]
 }
 
-/** 单条待添加引用：行范围可选，整篇引用不带行号 */
+/**
+ * 单条待添加引用：行范围可选，整篇引用不带行号。
+ * 约束：路径指向笔记本目录时，是否压缩由宿主按整本体量自动决定（放不进全文档位就压缩，
+ * 失败回退节选 / 目录），前端不再上送开关。
+ */
 export interface AiContextAddItem {
     path: string
     startLine?: number
     endLine?: number
-    /** 仅笔记本生效：先由模型压缩再添加，压缩失败时回退为打包原文 */
-    compress?: boolean
 }
 
 /** 批量添加上下文：一项即一条引用，可带行范围 */

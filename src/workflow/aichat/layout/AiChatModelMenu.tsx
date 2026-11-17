@@ -1,7 +1,7 @@
 /**
  * AI 对话模型菜单：底部操作行展示当前模型，展开时才拉取账号可用清单。
  * 复用 @components/ui 的 DropdownMenu，把「Auto」「内置模型」「自定义模型」合并为同一菜单；
- * 每项左侧图标由 ./ModelIcon 按模型 id 前缀提供（品牌 SVG，缺失时回退品牌色首字母胶囊）。
+ * 每项左侧图标由 ../block/ModelIcon 按模型 id 前缀提供（品牌 SVG，缺失时回退品牌色首字母胶囊）。
  * 关键约束：清单拉取需拉起 CLI（数秒），展开期间的重复请求复用同一次进行中的拉取；Auto 与「空模型 id」一一对应，
  * 选中即交给平台自动选择模型；本层不提供手动输入，模型 id 只来自清单。
  * 清单项右侧展示平台下发的额度倍率（每个模型的成本消耗速率），勾选位于倍率之前，倍率未知时不渲染；
@@ -23,8 +23,8 @@ import { Spinner } from '@components/ui/spinner'
 import type { AiModelChoices, AiModelOption, AiReasoningEffort } from '@shared/types/aiChat'
 import { AI_REASONING_EFFORTS, AI_REASONING_EFFORT_LABELS } from '@shared/types/aiChat'
 import { Button } from '@webview/components/Button'
-import { ModelIcon } from './ModelIcon'
 import type { JSX } from 'react'
+import { ModelIcon } from '../block/ModelIcon'
 
 /** 空模型 id 表示交给平台自动选择模型 */
 const AUTO_MODEL_ID = ''

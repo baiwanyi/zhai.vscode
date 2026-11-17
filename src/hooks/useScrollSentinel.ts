@@ -7,10 +7,8 @@
  * onLoadMore 必须是稳定引用（useCallback），否则每次渲染都会重建观察器。
  */
 import { useEffect, useRef } from 'react'
+import { SCROLL_VIEWPORT_SELECTOR } from '@webview/components/scrollAreaSlots'
 import type { RefObject } from 'react'
-
-/** 滚动容器标记：由 components/ui/scroll-area 的视口节点提供 */
-const SCROLL_VIEWPORT_SELECTOR = '[data-slot="scroll-area-viewport"]'
 
 /** 默认提前量：距底部 160px 即预载下一页，减少滚动中的空窗 */
 const DEFAULT_ROOT_MARGIN = '160px'

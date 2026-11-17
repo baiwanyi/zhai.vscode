@@ -2,7 +2,7 @@
  * 参考资料检索弹窗：输入关键词查 {存储根}/reference 语料，选中即按条目行范围注入上下文。
  * 复用约定：外壳取 @components/ui/dialog，检索输入行取同目录 AiChatSearchField，
  * 结果项取 @webview/components/Button。
- * 关键约束：回车才发检索请求；空关键词与空结果都给明确提示；语料为空时提示去「打开语料目录」放文件。
+ * 关键约束：检索行自带 200ms 防抖，随输入停顿自动检索、回车立即检索，本组件只转交关键词；空关键词与空结果都给明确提示；语料为空时提示去「打开语料目录」放文件。
  */
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@components/ui/dialog'
 import type { AiReferenceEntry } from '@shared/types/aiChat'

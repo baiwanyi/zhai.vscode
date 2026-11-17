@@ -20,6 +20,9 @@ export interface PromptImageBase {
 /**
  * 出图规则：{存储根}/prompt/rules 下的 md 文件，全局共享、与作品无关。
  * 前端只持有标识，正文由宿主读盘并入。
+ * 关键约束：id 与 name 同源（均为文件名主干），因此「按 id 比对」与「按 name 比对」等价——
+ * 规则菜单的勾选态用 id、AI 对话草稿的 ruleNames 用 name，正是靠这条等价；任一侧要改成独立键，
+ * 必须同步规则菜单、草稿存储与出图芯片三处，否则勾选态会静默失效。
  */
 export interface PromptRule {
     /** 规则标识：文件名去掉 .md，芯片与出图请求都用它回查 */

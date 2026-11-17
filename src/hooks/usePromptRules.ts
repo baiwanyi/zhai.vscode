@@ -6,9 +6,10 @@
  * 关键约束：宿主只回报标识与显示名，正文仅在编辑时按需读取——规则改文无需前端刷新；
  * 新建只允许新增、改写允许换名，重名一律由宿主拒绝，本 hook 不做预判；
  * 列表按中文名排序，与宿主列举口径一致；改写换名后必须先剔除旧标识，否则列表会残留一条指向已不存在文件的条目；
- * 本 hook 不自动加载，由调用方在菜单打开时调 reload，用户手写 md 后重新开菜单即可见。
+ * 本 hook 不自动加载，由调用方在菜单打开时调 reload，用户手写 md 后重新开菜单即可见；
+ * reload 在途时重复调用复用同一个请求，快速开合菜单不会叠发，也不会出现旧回包覆盖新结果。
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type {
     PromptRule,
     PromptRuleDetail,
@@ -58,15 +59,27 @@ export function usePromptRules(): UsePromptRulesResult {
         setDirPath(result.dirPath)
     }, [])
 
-    const reload = useCallback(async (): Promise<void> => {
-        setIsLoading(true)
-        try {
-            applyResult(await request<PromptRuleListResult>('pressAi/listPromptRules'))
-        } catch (cause) {
-            toastError(cause)
-        } finally {
-            setIsLoading(false)
+    /** 在途的列举请求：菜单快速开合时复用同一批请求，回包也只会有一个，不会旧覆盖新 */
+    const listInFlightRef = useRef<Promise<void> | null>(null)
+
+    const reload = useCallback((): Promise<void> => {
+        const current = listInFlightRef.current
+        if (current !== null) {
+            return current
         }
+        const task = (async (): Promise<void> => {
+            setIsLoading(true)
+            try {
+                applyResult(await request<PromptRuleListResult>('pressAi/listPromptRules'))
+            } catch (cause) {
+                toastError(cause)
+            } finally {
+                setIsLoading(false)
+                listInFlightRef.current = null
+            }
+        })()
+        listInFlightRef.current = task
+        return task
     }, [applyResult])
 
     const read = useCallback(async (name: string): Promise<PromptRuleDetail | null> => {
