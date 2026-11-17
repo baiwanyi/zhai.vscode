@@ -6,9 +6,9 @@
  * 本层只做装配与渲染：展示值汇总取 utils 的 resolveAiChatView，模型控制取 useAiChatModelControl，
  * 会话动作时序取 useAiChatConversationActions，检索弹窗的开关与选中收尾取 useAiChatPicker；
  * 会话 / 上下文 / 运行时 / 历史 / 写入状态拆在 hooks/，草稿与命令选择在 useAiChatDraft，
- * 宿主广播与首屏同步在 useAiChatPageSync，连续生成授权在 useAiChatAutoApprove，页面区块与消息渲染在 layout/。
- * 会话固定为写作模式：模型直接读写作品目录与当前文档，查询资料走只读工具；
- * 写入边界由宿主的工具守卫逐次裁决，前端只负责展示与发送。
+ * 宿主广播与首屏同步在 useAiChatPageSync，页面区块与消息渲染在 layout/。
+ * 会话固定为写作模式：模型只写当前文档，读资料与检索走只读工具（存储根范围内）；
+ * 写入边界由宿主的工具守卫逐次裁决，前端只负责展示与发送，不提供写入范围切换。
  * 设计源：docs/modules/ai-chat.md 第 4 节会话状态机与第 10.3 节底部输入卡片。
  * 关键约束：入口组件由 workflow 分区路由直接引用，文件名即组件名 WorkflowAiChat，目录不再提供 index 出口；
  * 会话按 projectDir 作用域隔离，作品页传入当前作品目录即换用该作品的对话记录，缺省为通用对话；
@@ -22,7 +22,6 @@ import type { PromptRule } from '@shared/types/promptLibrary'
 import { AppAction, AppContent, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
-import { useAiChatAutoApprove } from './hooks/useAiChatAutoApprove'
 import { useAiChatCommands } from './hooks/useAiChatCommands'
 import { useAiChatContexts } from './hooks/useAiChatContexts'
 import { useAiChatConversationActions } from './hooks/useAiChatConversationActions'
@@ -40,7 +39,6 @@ import { useAiChatRuntime } from './hooks/useAiChatRuntime'
 import { useAiChatSession } from './hooks/useAiChatSession'
 import { useAiChatStatus } from './hooks/useAiChatStatus'
 import { useAiChatWriteState } from './hooks/useAiChatWriteState'
-import { AiChatAutoApproveDialog } from './layout/AiChatAutoApproveDialog'
 import { AiChatComposer } from './layout/AiChatComposer'
 import { AiChatHistoryMenu } from './layout/AiChatHistoryMenu'
 import { AiChatMentionDialog } from './layout/AiChatMentionDialog'
@@ -82,7 +80,6 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
         stop,
         startNewSession,
         switchSession,
-        switchWriteGrant,
         deleteSession,
     } = useAiChatSession({
         onError: setError,
@@ -149,13 +146,6 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
     })
     /** 参考检索入口单取一份：作为依赖时不必把整个 picker 对象拖进回调 */
     const openReferenceSearch = referencePicker.open
-    // 连续生成授权：发送成功后的命令清空在此统一收尾
-    const {
-        pending: pendingAutoApprove,
-        submit: submitMessage,
-        confirm: confirmAutoApprove,
-        dismiss: dismissAutoApprove,
-    } = useAiChatAutoApprove({ send })
     // 会话动作的调用顺序（切换成功才套快照）封装在 hook 内，页面不再持有这段时序知识
     const conversation = useAiChatConversationActions({
         startNewSession,
@@ -165,9 +155,13 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
         refreshWriteState: loadWriteState,
     })
 
-    // 展示值一次算齐：消息与滚动锚点、密钥、写入范围、标题与用量文案均由纯函数派生
-    const { messages, lastMessageId, hasApiKey, writeGrant, hasWritableScope, title, projectLabel, usageText } =
-        resolveAiChatView({ session, runtime, writeState, projectDir, projectTitle })
+    // 展示值一次算齐：消息与滚动锚点、密钥、可写目标、标题与用量文案均由纯函数派生
+    const { messages, lastMessageId, hasApiKey, hasWritableScope, title, projectLabel, usageText } = resolveAiChatView({
+        session,
+        runtime,
+        writeState,
+        projectTitle,
+    })
 
     /** 参考菜单：检索语料，或打开语料目录（目录不存在时由宿主创建） */
     const handleReference = useCallback(
@@ -210,10 +204,10 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
         [reloadRuleCatalog, removeRule],
     )
 
-    /** 发送：正文原样下发，规则随请求携带 */
+    /** 发送：正文原样下发，规则随请求携带；写入范围固定为当前文档，不再有发送前的范围授权 */
     const handleSend = useCallback((): void => {
-        void submitMessage(input, { writeGrant, ruleNames })
-    }, [input, ruleNames, submitMessage, writeGrant])
+        void send(input, { ruleNames })
+    }, [input, ruleNames, send])
 
     return (
         <AppPage>
@@ -261,13 +255,10 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                     setInput={setInput}
                     hasApiKey={hasApiKey}
                     phase={phase}
-                    writeGrant={writeGrant}
-                    onWriteGrantChange={(grant) => void switchWriteGrant(grant)}
                     activeTool={activeTool}
                     contextUsage={contextUsage}
                     contextWindowTokens={runtime?.contextWindowTokens ?? 0}
                     hasWritableScope={hasWritableScope}
-                    isAwaitingApproval={pendingAutoApprove !== null}
                     ruleNames={ruleNames}
                     onToggleRule={handleToggleRule}
                     onRenameRule={handleRenameRule}
@@ -284,12 +275,6 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                     onAddZhaiRef={addMentionPath}
                 />
             </AppFooter>
-            {/* 自动批准对话 */}
-            <AiChatAutoApproveDialog
-                pending={pendingAutoApprove}
-                onConfirm={confirmAutoApprove}
-                onDismiss={dismissAutoApprove}
-            />
             {/* 提及检索 */}
             <AiChatMentionDialog
                 open={mentionPicker.isOpen}

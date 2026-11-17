@@ -190,7 +190,6 @@ export type HostMethodName =
     | 'ai/sessions'
     | 'ai/streaming'
     | 'ai/permissionDecision'
-    | 'ai/setWriteGrant'
     | 'ai/switchSession'
     | 'ai/usage'
     | 'ai/usage/prompt'

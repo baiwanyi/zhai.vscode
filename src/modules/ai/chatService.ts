@@ -2,7 +2,7 @@
  * AI 对话服务：会话编排、流式生成、取消、用量记录与工具权限裁决。
  * 设计源：docs/modules/ai-chat.md 第 4.2 节状态机；落地 A6 对话、A8 消息历史、A9 流式、A11 取消。
  * 约束：上下文按字符数粗估截断（AC-4 降级），预算护栏达上限时拒绝发送（A17）；
- * 会话固定写作模式：工具白名单按写入范围裁决，写入边界由通道侧审批回调逐次校验，
+ * 会话固定写作模式：写入范围固定为当前文档，写入边界由通道侧审批回调逐次校验，
  * 模型直接改文件、宿主不做整段写回；会话按作用域隔离——每个文档一份（无活跃文档时按作品目录 / 模块键），
  * 跨作用域不共用记录；
  * 本轮 token 以通道回传的单轮用量为准（续接时 SDK 的 result.usage 是会话累计，由通道剔除），
@@ -31,7 +31,6 @@ import type {
     AiSendResult,
     AiSessionSnapshot,
     AiStep,
-    AiWriteGrant,
     AiWriteState,
     AiWriteTarget,
 } from '@shared/types/aiChat'
@@ -59,7 +58,6 @@ import {
     updateConversationContextUsage,
     updateConversationSession,
     updateConversationTitle,
-    updateConversationWriteGrant,
     updateMessage,
 } from './db/chatRepository'
 import { readCharsPerToken } from './db/usageRepository'
@@ -313,8 +311,6 @@ export class AiChatService implements vscode.Disposable {
             model: getSelectedCodebuddyModel(),
             provider: this.provider.id,
             sdkSessionId: null,
-            // 新会话默认只授权当前文档：作品级写入必须由用户手动切换，不在默认态放开整库
-            writeGrant: 'document',
             // 新会话尚未发起请求，占用与窗口都从 0 起；窗口由前端按运行时档位补分母
             contextUsedTokens: 0,
             contextWindowTokens: 0,
@@ -445,15 +441,6 @@ export class AiChatService implements vscode.Disposable {
         return { target: this.describeWriteTarget() }
     }
 
-    /** 切换写入授权范围：写库持久化，只影响后续发送时下发的写入白名单 */
-    public setWriteGrant(grant: AiWriteGrant): AiWriteGrant {
-        const conversationId = this.ensureActiveConversationId()
-        updateConversationWriteGrant(this.db, conversationId, grant)
-        logger.info(`AI 写入范围已切换为 ${grant}：${conversationId}`)
-        this.writeStateEmitter.fire()
-        return grant
-    }
-
     /** 结算一次审批：只在有待确认的工具调用时命中，未命中说明已超时或已取消 */
     public resolvePermission(id: string, decision: AiPermissionDecision): boolean {
         return this.activePermission?.resolve(id, decision) ?? false
@@ -496,12 +483,12 @@ export class AiChatService implements vscode.Disposable {
      * 落库用户消息与占位的助手消息后立即返回，正文经 onStream 增量推送。
      * 发送时重新捕获编辑器目标（选区优先），供本轮提示词注入与写入白名单使用。
      * titleHint 为命令名称等展示用短标题，仅用于会话命名，不参与发往模型的内容。
+     * 关键约束：写入范围固定为当前文档，不接受来自前端的范围或审批档位入参。
      */
     public async send(
         reqId: string,
         conversationId: string,
         content: string,
-        autoApprove: boolean,
         titleHint: string | null = null,
         /** 本轮挂载的规则名：按顺序读取正文并入提示词，不进上下文配额 */
         ruleNames: readonly string[] = [],
@@ -531,13 +518,12 @@ export class AiChatService implements vscode.Disposable {
 
         // 发送时重新捕获目标，避免用户发送前改动选区导致写回范围错位
         const writeTarget = this.captureWriteTarget()
-        const grant: AiWriteGrant = conversation.writeGrant === 'document' ? 'document' : 'project'
         if (writeTarget !== null) {
             await this.prepareWriteTarget(writeTarget)
         }
-        // 本轮审批：默认逐次确认；前端在连续生成场景取得一次授权后传 true，仅本轮生效
-        const approval: AiApprovalMode = autoApprove ? 'auto' : 'ask'
-        const toolPolicy = this.buildToolPolicy(conversation.projectDir, grant, approval, writeTarget)
+        // 写入范围固定为当前文档：审批档位恒为逐次确认，不存在一次放开的整目录授权
+        const approval: AiApprovalMode = 'ask'
+        const toolPolicy = this.buildToolPolicy(conversation.projectDir, approval, writeTarget)
         if (toolPolicy.writeRoots.length === 0) {
             // 既没有作品也没有目标文档时按只读处理：仍要保证纯问答可用
             logger.warn('AI 缺少可写范围（无作品且无目标文档），本轮按只读处理')
@@ -1175,13 +1161,12 @@ export class AiChatService implements vscode.Disposable {
     }
 
     /**
-     * 构造本轮工具策略：会话固定 craft 语义（读 + 按范围写），审批档位只决定写类工具是否逐次确认。
-     * 关键约束：读取根固定为存储根，作品与资料都在其下；写入根按授权在作品目录与目标文档之间切换，
-     * 作品目录存在时优先整体授权（支持连续生成章节），否则只授权当前目标文档，绝不放开存储根以外。
+     * 构造本轮工具策略：会话固定 craft 语义（读 + 写当前文档），审批档位只决定写类工具是否逐次确认。
+     * 关键约束：读取根固定为存储根，作品与资料都在其下；写入根只授权当前目标文档，
+     * 不再按会话范围放开整个作品目录，绝不放开存储根以外。
      */
     private buildToolPolicy(
         projectDir: string | null,
-        grant: AiWriteGrant,
         approval: AiApprovalMode,
         target: HostWriteTarget | null,
     ): AiToolPolicy {
@@ -1192,21 +1177,12 @@ export class AiChatService implements vscode.Disposable {
             projectDir !== null && projectDir.length > 0 ? join(storageRoot, ...projectDir.split('/')) : null
         // 作用域可能是单个文件（每篇笔记一份对话）：工具侧只认目录，授权与 cwd 都落到文件所在目录
         const projectPath = scopePath !== null && scopePath.endsWith('.md') ? dirname(scopePath) : scopePath
-        // 当前打开的文档是基线可写范围：用户指着它要求改写，与授权范围无关
+        // 当前打开的文档是唯一可写范围：没有目标文档时本轮按只读处理
         if (target !== null) {
             writeRoots.push(toComparablePath(target.uri.fsPath))
         }
-        // 作品授权在此之上放开整个作品目录，供连续生成章节使用
-        if (grant === 'project' && projectPath !== null) {
-            writeRoots.push(toComparablePath(projectPath))
-        }
-        // cwd 必须落在目录上：作品授权取作品目录，文档授权取文档所在目录
-        const cwdCandidate =
-            grant === 'project' && projectPath !== null
-                ? projectPath
-                : target !== null
-                  ? dirname(target.uri.fsPath)
-                  : (projectPath ?? storageRoot)
+        // cwd 必须落在目录上：优先取当前文档所在目录，没有文档时退回会话作用域目录
+        const cwdCandidate = target !== null ? dirname(target.uri.fsPath) : (projectPath ?? storageRoot)
         return {
             tools: [...READ_ONLY_TOOLS, ...WRITE_TOOLS, ...INTERACTIVE_TOOLS],
             readRoots,
@@ -1387,7 +1363,6 @@ function toConversation(row: ConversationRow): AiConversation {
     return {
         id: row.id,
         title: row.title,
-        writeGrant: row.writeGrant === 'document' ? 'document' : 'project',
         model: row.model,
         createdAt: row.createdAt,
         updatedAt: row.updatedAt,

@@ -5,15 +5,15 @@
  * 芯片映射取 ../block/composerChips，粘贴引用取 ../hooks/useZhaiPasteRefs，增强态取 @webview/hooks/usePromptEnhance，
  * 门禁（生成 / 锁定 / 可发送 / 可增强 / 占位）取 ../utils 的 resolveComposerGate。
  * 本层只做装配：提示文案与禁用态由门禁派生，增强与粘贴两条异步流程各自收敛在独立 hook 内。
- * 关键约束：输入卡片不读会话状态，上下文、写入范围、用量与模型控制均由此层透传；
- * sending 与等待连续生成授权都按锁定态处理（前者给停止入口，后者不给），避免等待期的改动在确认发送后被清空；
+ * 关键约束：输入卡片不读会话状态，上下文、用量与模型控制均由此层透传；
+ * sending 按锁定态处理并给停止入口，避免等待期的改动被清空；写入范围固定为当前文档，本层不提供范围切换；
  * 增强结果只在正文仍是发起时那一份时才套用（归属校验在 usePromptEnhance 内）；
  * 粘贴的 `@zhai\` 路径改由宿主添加为引用，剩余正文优先回光标、输入区锁定时回落受控值，不丢内容；
  * 操作行是 AppComposerFooter 的唯一子项，撑满与左右贴边由 AiChatComposerActions 自带的 flex-1 承担。
  */
 import { Loader2 } from 'lucide-react'
 import { useEffect, useRef } from 'react'
-import type { AiContextRef, AiContextUsage, AiWriteGrant } from '@shared/types/aiChat'
+import type { AiContextRef, AiContextUsage } from '@shared/types/aiChat'
 import type { PromptRule } from '@shared/types/promptLibrary'
 import { AppComposer, AppComposerContent, AppComposerFooter, AppComposerHeader } from '@webview/components/AppComposer'
 import { RichChipInput, type RichChipInputHandle } from '@webview/components/RichChipInput'
@@ -36,19 +36,14 @@ interface AiChatComposerProps {
     hasApiKey: boolean
     /** 视图阶段：sending 待首字、streaming 逐字生成，两者都禁止再次发送 */
     phase: Phase
-    /** 写入授权范围 */
-    writeGrant: AiWriteGrant
-    onWriteGrantChange: (grant: AiWriteGrant) => void
     /** 正在调用的工具名：null 表示当前没有工具执行 */
     activeTool: string | null
     /** 当前会话上下文占用：null 表示本轮还没有产出数据 */
     contextUsage: AiContextUsage | null
     /** 当前模型的上下文窗口：会话尚无占用数据时作为圆环分母 */
     contextWindowTokens: number
-    /** 是否存在可写范围：编辑器目标或已绑定作品目录（连续生成章节无需选区） */
+    /** 是否存在可写目标：只认当前编辑器文档，未打开文档即不可发送 */
     hasWritableScope: boolean
-    /** 连续生成授权等待确认：输入区与发送一并锁住，避免确认发送时清掉这期间新写的内容 */
-    isAwaitingApproval: boolean
     /** 模型控制：当前值、展示名、菜单数据与四个选择动作，由 useAiChatModelControl 统一提供 */
     modelControl: AiChatModelControl
     /** 已挂规则名：输入区以规则芯片展示，发送时随请求下发 */
@@ -78,13 +73,10 @@ export function AiChatComposer({
     setInput,
     hasApiKey,
     phase,
-    writeGrant,
-    onWriteGrantChange,
     activeTool,
     contextUsage,
     contextWindowTokens,
     hasWritableScope,
-    isAwaitingApproval,
     modelControl,
     ruleNames,
     onToggleRule,
@@ -115,7 +107,6 @@ export function AiChatComposer({
     /** 生成态、锁定态、可发送、可增强与占位文案：规则集中在 resolveComposerGate，本层只取结果 */
     const { isGenerating, isLocked, canSend, canEnhance, placeholder } = resolveComposerGate({
         phase,
-        isAwaitingApproval,
         hasApiKey,
         hasWritableScope,
         input,
@@ -180,7 +171,6 @@ export function AiChatComposer({
 
                 <AppComposerFooter>
                     <AiChatComposerActions
-                        writeGrant={writeGrant}
                         isGenerating={isGenerating}
                         isLocked={isLocked}
                         canSend={canSend}
@@ -190,7 +180,6 @@ export function AiChatComposer({
                         contextUsage={contextUsage}
                         contextWindowTokens={contextWindowTokens}
                         modelControl={modelControl}
-                        onWriteGrantChange={onWriteGrantChange}
                         onEnhance={promptEnhance.enhance}
                         onUndoEnhance={promptEnhance.restore}
                         onSend={onSend}

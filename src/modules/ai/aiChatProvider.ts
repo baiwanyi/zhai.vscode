@@ -4,8 +4,8 @@
  * press/workspace 与 press/open 作品类、press/extract/characters 人物卡提取、press/extract/outline 大纲提取）
  * 委托给各自路由。
  * 协议：请求-响应带 reqId（shared/types/messages）；流式增量经 stream 推送，reqId 与发起请求一致；
- * 上下文增删走 ai/context*；写入范围走 ai/setWriteGrant，工具审批经 ai/permissionDecision 回包
- * （本轮授权随 ai/send 的 autoApprove 下发，无常驻审批开关），写入状态走 ai/writeState，
+ * 上下文增删走 ai/context*；写入范围固定为当前文档（不再有范围切换协议），工具审批经 ai/permissionDecision 回包
+ * （无常驻审批开关），写入状态走 ai/writeState，
  * 在途生成快照走 ai/streaming（视图重建后补齐缺失增量），state 广播以 channel 区分
  * ai（runtime / context / writeTarget）与 workflow（路由事实，含当前作品目录）。
  * 关键约束：上下文移除与写回只接受宿主生成的 id（不接受路径与范围入参），所有 Webview 入参逐字段收窄后再用；
@@ -40,7 +40,6 @@ import type {
     AiModelChoices,
     AiPermissionDecision,
     AiReasoningEffort,
-    AiWriteGrant,
 } from '@shared/types/aiChat'
 import { AI_REASONING_EFFORT_LABELS, isAiReasoningEffort } from '@shared/types/aiChat'
 import type { AiUsageQuery } from '@shared/types/aiUsage'
@@ -367,16 +366,13 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             case 'ai/writeState': {
                 return this.service.getWriteState()
             }
-            case 'ai/setWriteGrant': {
-                return { writeGrant: this.service.setWriteGrant(readWriteGrantPayload(payload)) }
-            }
             case 'ai/permissionDecision': {
                 const { id, decision } = readPermissionDecisionPayload(payload)
                 return { resolved: this.service.resolvePermission(id, decision) }
             }
             case 'ai/send': {
-                const { conversationId, content, isAutoApprove, titleHint, ruleNames } = readSendPayload(payload)
-                return this.service.send(reqId, conversationId, content, isAutoApprove, titleHint, ruleNames)
+                const { conversationId, content, titleHint, ruleNames } = readSendPayload(payload)
+                return this.service.send(reqId, conversationId, content, titleHint, ruleNames)
             }
             case 'ai/draft': {
                 const { conversationId, input, ruleNames } = readDraftPayload(payload)
@@ -716,13 +712,12 @@ function readContextIdPayload(payload: unknown): string {
 
 /**
  * 校验 ai/send 入参：Webview 侧数据不可信，逐字段收窄后再落库。
- * autoApprove 为本轮写入授权：只有严格为 true 才生效，缺省按逐次确认处理。
+ * 关键约束：写作范围固定为当前文档，协议不接受范围或审批档位入参；
  * titleHint 为展示用短标题（命令名称），仅用于会话命名，超长或空值一律忽略。
  */
 function readSendPayload(payload: unknown): {
     conversationId: string
     content: string
-    isAutoApprove: boolean
     titleHint: string | null
     ruleNames: string[]
 } {
@@ -732,7 +727,6 @@ function readSendPayload(payload: unknown): {
     const value = payload as {
         conversationId?: unknown
         content?: unknown
-        autoApprove?: unknown
         titleHint?: unknown
         ruleNames?: unknown
     }
@@ -743,7 +737,6 @@ function readSendPayload(payload: unknown): {
     return {
         conversationId: value.conversationId,
         content: value.content,
-        isAutoApprove: value.autoApprove === true,
         titleHint: titleHint.length > 0 && titleHint.length <= MAX_TITLE_HINT_LENGTH ? titleHint : null,
         ruleNames: readRuleNames(value.ruleNames),
     }
@@ -799,18 +792,6 @@ function readModelSelectionPayload(payload: unknown): { modelId: string; manual:
     }
     const value = typeof modelId === 'string' ? modelId.trim().slice(0, MAX_MODEL_ID_LENGTH) : ''
     return { modelId: value, manual: manual === true }
-}
-
-/** 校验 ai/setWriteGrant 入参：只接受「仅当前文档」与「整个作品」两个范围 */
-function readWriteGrantPayload(payload: unknown): AiWriteGrant {
-    if (typeof payload !== 'object' || payload === null) {
-        throw new Error('ai/setWriteGrant 缺少参数')
-    }
-    const grant = (payload as { writeGrant?: unknown }).writeGrant
-    if (grant !== 'document' && grant !== 'project') {
-        throw new Error('ai/setWriteGrant 参数类型不正确')
-    }
-    return grant
 }
 
 /** 审批 id 上限：与 SDK 的 tool_use_id 同量级，超出视为异常载荷 */

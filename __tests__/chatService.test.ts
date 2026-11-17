@@ -1,8 +1,7 @@
 /**
  * chatService 单元测试：聚焦发送阶段的上下文注入与预算裁剪——待发送引用是否随消息注入、
  * 失效引用是否跳过、发送后是否清空、引用是否优先于历史保留，本轮用量与耗时的落库与下发，
- * 思维链按 reasoning 通道分流、落库与终态回传，压缩事件的两态处理（瞬时 / 落库系统消息），
- * 以及新建会话的默认写入范围（仅当前文档）。
+ * 思维链按 reasoning 通道分流、落库与终态回传，压缩事件的两态处理（瞬时 / 落库系统消息）。
  * 复用约定：AI 通道由记录型假实现替身注入；DB 用临时目录真实库。
  */
 import * as fs from 'node:fs'
@@ -80,7 +79,7 @@ async function sendAndWait(content: string): Promise<{ skippedContexts: string[]
         })
     })
     const timer = setTimeout(() => finish?.(), 3000)
-    const result = await service.send(`req-${Date.now()}`, conversationId, content, false)
+    const result = await service.send(`req-${Date.now()}`, conversationId, content)
     await finished
     clearTimeout(timer)
     return { ...result, done }
@@ -103,7 +102,7 @@ async function sendAndCollect(content: string): Promise<{ messages: StreamMessag
         })
     })
     const timer = setTimeout(() => finish?.(), 3000)
-    await service.send(`req-collect-${Date.now()}`, conversationId, content, false)
+    await service.send(`req-collect-${Date.now()}`, conversationId, content)
     await finished
     clearTimeout(timer)
     return { messages, done }
@@ -379,13 +378,5 @@ describe('本轮用量的采纳口径', () => {
             .at(-1)
         expect(assistantRow?.totalTokens).toBeLessThan(100)
         expect(assistantRow?.tokensEstimated).toBe(1)
-    })
-})
-
-describe('会话的默认写入范围', () => {
-    it('新建会话默认只授权当前文档', () => {
-        // 用独立作用域建新会话，避免命中 beforeAll 里那份已有会话
-        const snapshot = service.getOrCreateSession('press/默认范围')
-        expect(snapshot.conversation.writeGrant).toBe('document')
     })
 })

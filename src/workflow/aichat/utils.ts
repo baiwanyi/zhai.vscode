@@ -13,7 +13,6 @@ import type {
     AiRuntimeInfo,
     AiSessionSnapshot,
     AiStep,
-    AiWriteGrant,
     AiWriteState,
 } from '@shared/types/aiChat'
 import { formatTokens } from '@shared/utils/format'
@@ -117,30 +116,6 @@ export function toContextLineRange(ref: AiContextRef): string {
         : `:${String(ref.startLine)}-${String(ref.endLine)}`
 }
 
-/** 连续生成意图关键词：一次要写多章或整卷时，需要先取得一次「白名单内直接写入」授权 */
-const CONTINUOUS_INTENT_KEYWORDS: readonly string[] = [
-    '连续',
-    '批量',
-    '整卷',
-    '多章',
-    '全部章节',
-    '所有章节',
-    '逐章',
-    '一口气',
-    '接着写',
-    '续写',
-    '往下写',
-    '自动生成',
-]
-
-/**
- * 粗筛「连续生成」意图：命中即先弹一次授权框，避免每写一个文件都要确认。
- * 关键约束：只用于提示层，误判最多让用户多点一次确认，不放宽任何权限边界。
- */
-export function wantsContinuousGeneration(text: string): boolean {
-    return CONTINUOUS_INTENT_KEYWORDS.some((keyword) => text.includes(keyword))
-}
-
 /** 就地替换指定消息，保持其余引用不变 */
 export function patchMessage(
     session: AiSessionSnapshot | null,
@@ -161,38 +136,28 @@ export function toUsageText(runtime: AiRuntimeInfo | null): string {
     return runtime === null ? '正在读取配置…' : `今日 ${formatTokens(runtime.usedTokensToday)} tokens`
 }
 
-/** 可写范围：编辑器目标或作品目录任一存在即可发送，连续生成章节不依赖选区 */
-export function resolveWritableScope(projectDir: string | null, writeState: AiWriteState | null): boolean {
-    const hasWriteTarget = writeState?.target !== null && writeState?.target !== undefined
-    return hasWriteTarget || (projectDir !== null && projectDir.length > 0)
+/** 可写范围：只认当前编辑器文档，未打开文档即不可发送（写作范围固定为当前文档） */
+export function resolveWritableScope(writeState: AiWriteState | null): boolean {
+    return writeState?.target !== null && writeState?.target !== undefined
 }
 
-/** 可发送判定入参：密钥、阶段、正文、写入范围与授权挂起共同决定能否发送 */
+/** 可发送判定入参：密钥、阶段、正文与写入目标共同决定能否发送 */
 export interface SendGateInput {
     hasApiKey: boolean
     phase: Phase
     input: string
     hasWritableScope: boolean
-    /** 连续生成授权等待确认：正文已挂在确认框里，此时再发会覆盖挂起项 */
-    isAwaitingApproval: boolean
 }
 
-/** 可发送判定：生成中、无密钥、无内容、无写入范围或正等授权时一律禁止 */
-export function resolveSendGate({
-    hasApiKey,
-    phase,
-    input,
-    hasWritableScope,
-    isAwaitingApproval,
-}: SendGateInput): boolean {
+/** 可发送判定：生成中、无密钥、无内容或无写入目标时一律禁止 */
+export function resolveSendGate({ hasApiKey, phase, input, hasWritableScope }: SendGateInput): boolean {
     const hasContent = input.trim().length > 0
-    return hasApiKey && phase === 'idle' && hasContent && hasWritableScope && !isAwaitingApproval
+    return hasApiKey && phase === 'idle' && hasContent && hasWritableScope
 }
 
-/** 输入卡片门禁入参：阶段与授权挂起决定锁定态，其余三项参与可发送 / 可增强判定 */
+/** 输入卡片门禁入参：阶段决定锁定态，其余三项参与可发送 / 可增强判定 */
 export interface ComposerGateInput {
     phase: Phase
-    isAwaitingApproval: boolean
     hasApiKey: boolean
     hasWritableScope: boolean
     input: string
@@ -202,7 +167,7 @@ export interface ComposerGateInput {
 export interface ComposerGate {
     /** 生成中：sending 也算，否则等待期既不能发送也没有停止入口 */
     isGenerating: boolean
-    /** 输入区与外层控件统一锁定：生成中，或正等一次连续生成授权 */
+    /** 输入区与外层控件统一锁定：生成中即锁定 */
     isLocked: boolean
     canSend: boolean
     canEnhance: boolean
@@ -210,21 +175,15 @@ export interface ComposerGate {
 }
 
 /**
- * 输入卡片的五个门禁值：把「sending 也算生成中」「授权挂起即锁定」这类规则从组件注释搬进纯函数。
+ * 输入卡片的五个门禁值：把「sending 也算生成中」这类规则从组件注释搬进纯函数。
  * 关键约束：可发送判定必须复用 resolveSendGate，避免页面层与输入卡片出现两套口径。
  */
-export function resolveComposerGate({
-    phase,
-    isAwaitingApproval,
-    hasApiKey,
-    hasWritableScope,
-    input,
-}: ComposerGateInput): ComposerGate {
+export function resolveComposerGate({ phase, hasApiKey, hasWritableScope, input }: ComposerGateInput): ComposerGate {
     const isGenerating = phase !== 'idle'
     return {
         isGenerating,
-        isLocked: isGenerating || isAwaitingApproval,
-        canSend: resolveSendGate({ hasApiKey, phase, input, hasWritableScope, isAwaitingApproval }),
+        isLocked: isGenerating,
+        canSend: resolveSendGate({ hasApiKey, phase, input, hasWritableScope }),
         canEnhance: input.trim().length > 0,
         placeholder: '提问或输入指令…',
     }
@@ -266,7 +225,6 @@ export interface AiChatViewInput {
     session: AiSessionSnapshot | null
     runtime: AiRuntimeInfo | null
     writeState: AiWriteState | null
-    projectDir: string | null
     projectTitle: string | null
 }
 
@@ -276,7 +234,7 @@ export interface AiChatView {
     /** 末条消息 id：作为消息流的滚动锚点，流式增长时保持贴底 */
     lastMessageId: string | undefined
     hasApiKey: boolean
-    writeGrant: AiWriteGrant
+    /** 当前是否有可写入的文档：写作范围固定为当前文档，没有目标即不可发送 */
     hasWritableScope: boolean
     title: string
     projectLabel: string
@@ -284,24 +242,17 @@ export interface AiChatView {
 }
 
 /**
- * 汇总对话页的展示值：消息与滚动锚点、密钥就绪、写入授权与可写范围、会话标题与用量文案。
+ * 汇总对话页的展示值：消息与滚动锚点、密钥就绪、可写范围、会话标题与用量文案。
  * 关键约束：作品标题为空时才兜底为通道名，缺作品不能影响用量徽标的承载行；
  * 本函数只读快照与运行时，不发请求、不写状态，页面据此可整段替换而不触碰交互逻辑。
  */
-export function resolveAiChatView({
-    session,
-    runtime,
-    writeState,
-    projectDir,
-    projectTitle,
-}: AiChatViewInput): AiChatView {
+export function resolveAiChatView({ session, runtime, writeState, projectTitle }: AiChatViewInput): AiChatView {
     const messages = session?.messages ?? EMPTY_MESSAGES
     return {
         messages,
         lastMessageId: messages[messages.length - 1]?.id,
         hasApiKey: runtime?.hasApiKey === true,
-        writeGrant: session?.conversation.writeGrant ?? 'document',
-        hasWritableScope: resolveWritableScope(projectDir, writeState),
+        hasWritableScope: resolveWritableScope(writeState),
         title: session?.conversation.title ?? FALLBACK_TITLE,
         projectLabel: projectTitle !== null && projectTitle.length > 0 ? projectTitle : FALLBACK_CHANNEL_LABEL,
         usageText: toUsageText(runtime),

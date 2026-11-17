@@ -9,11 +9,12 @@
  * v9 起用量表记提示词字数，供按真实 token 反算字符/token 比值，历史行留 0 表示未记录；
  * v10 起删除已无读写的遗留列（conversations.file_path、ai_usage_logs.project / estimated_cost），
  * 旧库按 DROP COLUMN 就地清理，新库直接按精简结构建表；
+ * v16 起删除会话的写入授权范围列（write_grant）：写作范围固定为当前文档，不再有作品级授权；
  * 补列与删列的标识符均为本文件内的常量，不接受外部输入，避免拼接注入。
  */
 import type Database from 'better-sqlite3'
 
-const SCHEMA_VERSION = '15'
+const SCHEMA_VERSION = '16'
 
 const DDL_STATEMENTS = [
     `CREATE TABLE IF NOT EXISTS conversations (
@@ -26,7 +27,6 @@ const DDL_STATEMENTS = [
         sdk_session_id TEXT,
         context_used_tokens   INTEGER NOT NULL DEFAULT 0,
         context_window_tokens INTEGER NOT NULL DEFAULT 0,
-        write_grant TEXT NOT NULL DEFAULT 'document',
         created_at  TEXT NOT NULL,
         updated_at  TEXT NOT NULL
     )`,
@@ -156,9 +156,6 @@ export function ensureAiSchema(db: Database.Database): boolean {
         dropColumn(db, 'conversations', 'file_path')
         dropColumn(db, 'ai_usage_logs', 'project')
         dropColumn(db, 'ai_usage_logs', 'estimated_cost')
-        // v11：会话表补写入授权范围，write 模式据此决定工具白名单边界；
-        // 默认 document（只写当前文档）：扩大授权需用户显式切换，升级库与新建库保持同一口径
-        ensureColumn(db, 'conversations', 'write_grant', "write_grant TEXT NOT NULL DEFAULT 'document'")
         // v12：取消对话 / 写作模式切换，历史会话统一归为写作模式，
         // 否则旧 chat 会话会在界面上既无切换入口、又被按只读处理，用户无法解释
         if (readSchemaVersion(db) < 12) {
@@ -174,6 +171,9 @@ export function ensureAiSchema(db: Database.Database): boolean {
         // v15：消息表补已挂规则名（仅用户消息），历史回显只展示徽章，规则正文不随历史重复注入；
         // 历史消息保持空数组即「未挂规则」，不回填也不推断
         ensureColumn(db, 'messages', 'rule_names', "rule_names TEXT NOT NULL DEFAULT '[]'")
+        // v16：删除会话的写入授权范围列 —— 写作范围固定为当前文档，不再有作品级授权；
+        // 旧库就地删列（新库本就没有该列，hasColumn 直接跳过）
+        dropColumn(db, 'conversations', 'write_grant')
         db.prepare(
             'INSERT INTO meta(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value',
         ).run('schema_version', SCHEMA_VERSION)

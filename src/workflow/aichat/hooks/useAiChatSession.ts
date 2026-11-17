@@ -1,6 +1,6 @@
 /**
  * AI 对话会话状态机：持有会话快照、视图阶段（idle / sending / streaming）与输入内容，
- * 承载发送 / 停止 / 写入范围切换 / 新建 / 切换 / 删除会话等操作，并订阅宿主 stream 消息按发起时的助手消息 id 就地追加增量。
+ * 承载发送 / 停止 / 新建 / 切换 / 删除会话等操作，并订阅宿主 stream 消息按发起时的助手消息 id 就地追加增量。
  * 复用 @shared/utils/error 的错误收窄与 ../utils 的消息替换；流消息的归一与字段收窄集中在 ./aiChatStreamHandlers，
  * 上下文清单与历史列表由调用方 hook 持有、经参数注入刷新。
  * 关键约束：发送正文由调用方拼装后传入（写作命令模板不进入输入框），本 hook 只负责提交与清空输入；
@@ -9,7 +9,7 @@
  * 压缩事件分两态——开始时只置瞬时状态（不落库），完成时追加宿主已落库的系统消息，保证离线回看仍能解释占用变化；
  * 会话选择（新建 / 切换 / 删除当前）共用一个序号，先发后到的快照不得覆盖用户的最后一次选择；
  * 切换 / 删除会话前先中止生成，避免增量写回已切走的会话；新建会话不中止后台生成，
- * 但必须摘掉旧会话的流锚点并复位阶段，否则新会话会被上一轮的生成态一直锁住；切换写入范围只对后续发送生效；
+ * 但必须摘掉旧会话的流锚点并复位阶段，否则新会话会被上一轮的生成态一直锁住；
  * 生成由宿主推进、与页面生命周期无关：切分区、切文档（含跨作用域换会话）都不中断生成，重进时按快照里的
  * 在途消息接管流式锚点，并回拉 ai/streaming 的在途快照补齐离开期间缺失的正文与思维链；
  * 在途生成属于别的会话时只放出停止入口，尚未接管到锚点的流末直接回拉会话快照，
@@ -28,7 +28,6 @@ import type {
     AiSendResult,
     AiSessionSnapshot,
     AiStep,
-    AiWriteGrant,
 } from '@shared/types/aiChat'
 import { onStream, request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
@@ -52,10 +51,8 @@ export interface UseAiChatSessionOptions {
     projectDir: string | null
 }
 
-/** 发送选项：autoApprove 为本轮写入授权，titleHint 为命令名称等展示用短标题 */
+/** 发送选项：titleHint 为命令名称等展示用短标题，ruleNames 为本轮挂载的规则 */
 export interface AiSendOptions {
-    /** 本轮是否允许白名单内直接写入：仅在连续生成确认后为 true */
-    autoApprove?: boolean
     titleHint?: string
     /** 本轮挂载的规则名：由宿主读正文并入提示词，不占上下文配额 */
     ruleNames?: readonly string[]
@@ -82,8 +79,6 @@ export interface AiChatSessionState {
     startNewSession: () => Promise<boolean>
     /** 切换会话：返回快照供调用方恢复草稿中的命令（未切换、失败或被更新的选择取代时返回 null） */
     switchSession: (conversationId: string) => Promise<AiSessionSnapshot | null>
-    /** 切换写入授权范围：只影响后续发送下发的写入白名单 */
-    switchWriteGrant: (grant: AiWriteGrant) => Promise<void>
     deleteSession: (conversationId: string) => Promise<void>
 }
 
@@ -267,7 +262,6 @@ export function useAiChatSession({
                 const result = await request<AiSendResult>('ai/send', {
                     conversationId: session.conversation.id,
                     content: text,
-                    autoApprove: options.autoApprove === true,
                     titleHint: options.titleHint,
                     ruleNames: options.ruleNames ?? [],
                 })
@@ -357,29 +351,6 @@ export function useAiChatSession({
         }
     }, [onError, projectDir, setContexts])
 
-    /** 切换写入范围：不中断在途生成，新范围只对后续发送生效 */
-    const switchWriteGrant = useCallback(
-        async (grant: AiWriteGrant): Promise<void> => {
-            if (!session || session.conversation.writeGrant === grant) {
-                return
-            }
-            try {
-                const result = await request<{ writeGrant: AiWriteGrant }>('ai/setWriteGrant', {
-                    writeGrant: grant,
-                })
-                setSession((previous) =>
-                    previous
-                        ? { ...previous, conversation: { ...previous.conversation, writeGrant: result.writeGrant } }
-                        : previous,
-                )
-                onError(null)
-            } catch (cause) {
-                onError(toErrorText(cause))
-            }
-        },
-        [onError, session],
-    )
-
     /** 切换到历史会话：生成中先停止再切换，避免增量写回已切走的会话；输入框内容保持不动 */
     const switchSession = useCallback(
         async (conversationId: string): Promise<AiSessionSnapshot | null> => {
@@ -456,7 +427,6 @@ export function useAiChatSession({
         stop,
         startNewSession,
         switchSession,
-        switchWriteGrant,
         deleteSession,
     }
 }
@@ -535,5 +505,3 @@ function mergeInFlight(message: AiMessage, snapshot: AiInFlightSnapshot): AiMess
 function preferLonger(current: string, incoming: string): string {
     return current.length > incoming.length && current.startsWith(incoming) ? current : incoming
 }
-
-

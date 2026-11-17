@@ -5,23 +5,15 @@
  */
 
 /**
- * 会话形态：固定为写作执行（可读可写，由宿主按范围授权）。
+ * 会话形态：固定为写作执行（可读可写，写入范围固定为当前文档）。
  * 历史上有对话 / 写作两种模式，切换入口已移除，不再保留模式类型。
  */
-
-/**
- * 写入授权范围：document 仅当前编辑栏文档，project 为整个作品目录。
- * 新建会话默认取 document，扩大授权必须由用户显式切换。
- * 关键约束：只对 write 模式生效，chat 模式恒为只读；project 需要会话已绑定作品目录；
- * 既无活动文档又无作品目录时写入根为空，发送会被拒绝。
- */
-export type AiWriteGrant = 'document' | 'project'
 
 /**
  * 写入审批：ask 逐次确认、auto 白名单内直接写入。
  * 关键约束：只是宿主侧守卫的策略位，不映射 SDK 的 permissionMode ——
  * 后者一旦切到 acceptEdits，编辑类工具由 CLI 直接放行，路径校验会被整体绕过；
- * 模式由本轮发送时的授权决定，不提供常驻开关。
+ * 写作范围固定为当前文档，不允许通过协议改写审批档位。
  */
 export type AiApprovalMode = 'ask' | 'auto'
 
@@ -196,8 +188,6 @@ export interface AiStep {
 export interface AiConversation {
     id: string
     title: string
-    /** 写入授权范围：据此决定工具白名单边界 */
-    writeGrant: AiWriteGrant
     model: string
     createdAt: string
     updatedAt: string
