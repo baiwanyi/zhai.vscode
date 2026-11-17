@@ -57,7 +57,7 @@ function readOpenableUrl(payload: unknown): string | null {
     return typeof value === 'string' ? parseOpenableUrl(value) : null
 }
 
-/** 章节写回前留底：只用到这一个方法，按结构化接口声明便于替身注入 */
+/** 写回前留底：章节与其它 md 文档共用这一个入口，按结构化接口声明便于替身注入 */
 export interface ChapterSnapshotWriter {
     captureChapterBeforeWrite: (uri: vscode.Uri, content: string) => Promise<void>
 }
@@ -666,7 +666,7 @@ export class MarkdownEditorProvider implements vscode.CustomTextEditorProvider {
         }
         // 不再做「写入前白名单自检」：编辑态已不再因语法把整篇转只读，
         // 这里再拦一次只会让链接、划线这类正常改动被静默回滚
-        // 首次真正写入前留底：快照服务只对 Chapters 下的文档生效，其它文档内部直接返回
+        // 首次真正写入前留底：章节走按章时间线，其余 md 走单文件时间线，二者都由快照服务内部判定
         if (this.snapshot !== null && !this.capturedChapters.has(key)) {
             await this.snapshot.captureChapterBeforeWrite(document.uri, text)
             this.capturedChapters.add(key)

@@ -2,7 +2,9 @@
  * 写作管理协议路由：把 pressAi/* 消息分发到人物外貌、角色设定图列举与图片库服务，
  * 并承接工作台的作品读取、打开（含按文档键打开设定文档的 press/openDoc）与人物卡提取
  * （press/workspace、press/open、press/openDoc、press/extract/characters），
- * 以及作品快照的列举、手动留版、恢复与删除（press/snapshot/*），入参收窄由本层与 shared 类型完成。
+ * 以及作品快照的列举、手动留版、恢复与删除（press/snapshot/*），入参收窄由本层与 shared 类型完成；
+ * 单文件快照（press/snapshot/doc/*）也挂在这条通道上：笔记、公众号文章与散落 md 共用一套时间线协议，
+ * 与作品快照的区别是不要求索引库内有该作品，只校验文档路径形态与存储根片段。
  * 提示词预览图基址（pressAi/getPromptImageBase）也走这里：它不属于作品域，
  * 借同一条前缀复用 toWebviewUri 注入，避免在 Provider 里再挂一个分支；
  * 参考图选择（pressAi/pickReferenceImage）同理——文件选择与登记在宿主，前端只拿回结果。
@@ -61,6 +63,18 @@ import {
     isPressWorkspaceRequest,
 } from '@shared/types/press'
 import type { PromptRuleListResult, PromptTagListResult } from '@shared/types/promptLibrary'
+import {
+    isDocSnapshotCaptureRequest,
+    isDocSnapshotDeleteRequest,
+    isDocSnapshotListRequest,
+    isDocSnapshotRestoreRequest,
+} from '@shared/types/snapshot'
+import type {
+    DocSnapshotCaptureResult,
+    DocSnapshotDeleteResult,
+    DocSnapshotListResult,
+    DocSnapshotRestoreResult,
+} from '@shared/types/snapshot'
 import { hasProjectFiles, listPressProjects } from './projectRepository'
 import { openProjectByDir, openProjectDoc } from './projectService'
 import { readProjectWorkspace } from './projectWorkspace'
@@ -223,6 +237,14 @@ export class PressRoutes {
                 return this.restoreChapterSnapshot(payload)
             case 'press/snapshot/chapter/delete':
                 return this.deleteChapterSnapshot(payload)
+            case 'press/snapshot/doc/list':
+                return this.listDocSnapshots(payload)
+            case 'press/snapshot/doc/capture':
+                return this.captureDocSnapshot(payload)
+            case 'press/snapshot/doc/restore':
+                return this.restoreDocSnapshot(payload)
+            case 'press/snapshot/doc/delete':
+                return this.deleteDocSnapshot(payload)
             default:
                 throw new Error(`未知的写作管理协议方法：${method}`)
         }
@@ -477,6 +499,42 @@ export class PressRoutes {
         return {
             deleted: await this.snapshot.removeChapterVersion(payload.dirPath, payload.chapterPath, payload.snapshotId),
         }
+    }
+
+    /**
+     * 列出某份文档的快照时间线：笔记、公众号文章与散落 md 共用，只返回元信息。
+     * 安全约束：docPath 先过形态校验（相对、.md、无上跳与盘符），拼路径时存储层再按片段校验一次；
+     * 与作品快照不同，这里不要求索引库收录——文档可能刚创建、或位于存储根内尚未索引的目录。
+     */
+    private async listDocSnapshots(payload: unknown): Promise<DocSnapshotListResult> {
+        if (!isDocSnapshotListRequest(payload)) {
+            throw new Error('press/snapshot/doc/list 参数非法：docPath 须为存储根相对的 Markdown 路径')
+        }
+        return { versions: await this.snapshot.listDocVersions(payload.docPath) }
+    }
+
+    /** 手动给某份文档留一版：正文取磁盘当前内容，备注可选 */
+    private async captureDocSnapshot(payload: unknown): Promise<DocSnapshotCaptureResult> {
+        if (!isDocSnapshotCaptureRequest(payload)) {
+            throw new Error('press/snapshot/doc/capture 参数非法：docPath 须为存储根相对的 Markdown 路径')
+        }
+        return { snapshot: await this.snapshot.captureDoc(payload.docPath, payload.label) }
+    }
+
+    /** 恢复某份文档的某一版：编辑器内有未保存修改时由服务层拒绝，避免写盘被回写覆盖 */
+    private async restoreDocSnapshot(payload: unknown): Promise<DocSnapshotRestoreResult> {
+        if (!isDocSnapshotRestoreRequest(payload)) {
+            throw new Error('press/snapshot/doc/restore 参数非法：docPath 或快照标识不合法')
+        }
+        return { restored: await this.snapshot.restoreDoc(payload.docPath, payload.snapshotId) }
+    }
+
+    /** 删除某份文档的某一版：只删该版本文件，文档正文与其它版本不受影响 */
+    private async deleteDocSnapshot(payload: unknown): Promise<DocSnapshotDeleteResult> {
+        if (!isDocSnapshotDeleteRequest(payload)) {
+            throw new Error('press/snapshot/doc/delete 参数非法：docPath 或快照标识不合法')
+        }
+        return { deleted: await this.snapshot.removeDocVersion(payload.docPath, payload.snapshotId) }
     }
 }
 

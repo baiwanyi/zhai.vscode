@@ -13,6 +13,7 @@ import { getZhaiConfig, PROMPT_DIR, resolveStorageRoot } from '../config'
 import { parseFileMeta } from '../db/fileMeta'
 import { countFileRows, deleteFileRow, listIndexedPaths, upsertFileRows } from '../db/indexRepository'
 import { logger } from '../logger'
+import { toStorageFsPath } from '../storagePath'
 
 /** 素材目录的两种写法：新名与旧版 `_import`，旧目录在迁移完成前仍可能存在于磁盘上 */
 const MATERIAL_DIR_NAMES: readonly string[] = [PRESS_IMPORT_DIR, LEGACY_PRESS_IMPORT_DIR]
@@ -26,12 +27,7 @@ const MATERIAL_DIR_NAMES: readonly string[] = [PRESS_IMPORT_DIR, LEGACY_PRESS_IM
  * 字数统计只认 notes/ 与 press/ 前缀（statsRepository 的 COUNTED_PREFIXES），不会被批次稿污染；
  * 四者在增量监听、全量重建与激活自检三条路径上口径必须一致。
  */
-const EXCLUDED_DIR_NAMES: readonly string[] = [
-    ...MATERIAL_DIR_NAMES,
-    PRESS_SNAPSHOT_DIR,
-    PROMPT_DIR,
-    TRASH_DIR_NAME,
-]
+const EXCLUDED_DIR_NAMES: readonly string[] = [...MATERIAL_DIR_NAMES, PRESS_SNAPSHOT_DIR, PROMPT_DIR, TRASH_DIR_NAME]
 
 /**
  * 从排除 glob 中提取纯目录段：`**\/node_modules\/**` → `node_modules`。
@@ -48,11 +44,6 @@ function toExcludedDirNames(globs: readonly string[]): string[] {
         }
     }
     return names
-}
-
-/** 路径归一：统一正斜杠并去掉尾部斜杠，使 fsPath 与配置路径可在同一形态下比对 */
-function toSlashedPath(value: string): string {
-    return value.replace(/\\/gu, '/').replace(/\/+$/u, '')
 }
 
 /** 索引状态快照，供状态栏与 Webview 展示 */
@@ -277,11 +268,7 @@ export class IndexService {
      * 关键约束：比较统一小写，规避 VSCode 的 fsPath 把盘符小写、而配置保留原始大小写导致的误判。
      */
     public toRelativePath(uri: vscode.Uri): string {
-        const rootPath = toSlashedPath(resolveStorageRoot().fsPath)
-        const targetPath = toSlashedPath(uri.fsPath)
-        return targetPath.toLowerCase().startsWith(`${rootPath.toLowerCase()}/`)
-            ? targetPath.slice(rootPath.length + 1)
-            : targetPath
+        return toStorageFsPath(uri)
     }
 
     public dispose(): void {

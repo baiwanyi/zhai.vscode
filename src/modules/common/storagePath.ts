@@ -43,6 +43,24 @@ function normalizeForCompare(value: string): string {
     return value.replace(/^\/+/, '').replace(/\/+$/, '').toLowerCase()
 }
 
+/** 统一正斜杠并去掉尾部斜杠：fsPath 与配置路径的比较基准 */
+function toSlashedPath(value: string): string {
+    return value.replace(/\\/gu, '/').replace(/\/+$/u, '')
+}
+
+/**
+ * 文档的宿主路径口径：以存储根 fsPath 为基准剥离出相对路径，存储根外的文件原样返回绝对路径。
+ * 与 toStorageDocPath 的区别是走 fsPath（真实盘符与未编码的中文），索引、路由与快照的路径键都用它，
+ * 前端展示的 docPath 与宿主查表的 doc_path 因此始终同源。
+ */
+export function toStorageFsPath(uri: vscode.Uri): string {
+    const rootPath = toSlashedPath(resolveStorageRoot().fsPath)
+    const targetPath = toSlashedPath(uri.fsPath)
+    return targetPath.toLowerCase().startsWith(`${rootPath.toLowerCase()}/`)
+        ? targetPath.slice(rootPath.length + 1)
+        : targetPath
+}
+
 /**
  * 归一化为存储根口径的相对路径：索引库的历史记录可能存有绝对形式（Uri.path，如 /c:/root/notes/a.md），
  * 此时按存储根前缀剥离为相对路径；不属于存储根的绝对路径直接拒绝。

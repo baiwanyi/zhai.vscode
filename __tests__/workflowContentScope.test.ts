@@ -18,7 +18,15 @@ import {
 
 /** 构造路由事实：只写用例关心的字段 */
 function context(partial: Partial<WorkflowContextState>): WorkflowContextState {
-    return { scene: 'editorNote', module: 'root', selectedModule: null, projectDir: null, docPath: null, ...partial }
+    return {
+        scene: 'editorNote',
+        module: 'root',
+        selectedModule: null,
+        projectDir: null,
+        docPath: null,
+        isMarkdown: true,
+        ...partial,
+    }
 }
 
 describe('readContentScope', () => {

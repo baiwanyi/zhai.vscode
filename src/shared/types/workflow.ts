@@ -42,6 +42,17 @@ export interface WorkflowContextState {
      * 作品与公众号仍按目录作用域，不使用本字段。
      */
     docPath: string | null
+    /**
+     * 当前活跃文档是否为 Markdown：工作流区只服务 md 文档，非 md 文档下整个工作流区不可用。
+     * 关键约束：由宿主按活跃文档扩展名判定并下发，前端不得自行从路径推断，
+     * 否则焦点离开编辑器、文档为富文本或根外路径时两侧口径会漂移。
+     */
+    isMarkdown: boolean
+}
+
+/** Markdown 文档判定：与自定义编辑器的 *.md 选择器同口径，工作流区与编辑器共用这一个判据 */
+export function isMarkdownPath(path: string | null): boolean {
+    return path !== null && path.toLowerCase().endsWith('.md')
 }
 
 /**
@@ -83,13 +94,14 @@ export function isWorkflowContextState(payload: unknown): payload is WorkflowCon
         selectedModule?: unknown
         projectDir?: unknown
         docPath?: unknown
+        isMarkdown?: unknown
     }
     const isScene = candidate.scene === 'idle' || candidate.scene === 'editorNote'
     const isModule = typeof candidate.module === 'string' && candidate.module.length > 0
     const isSelected = candidate.selectedModule === null || typeof candidate.selectedModule === 'string'
     const isProject = candidate.projectDir === null || typeof candidate.projectDir === 'string'
     const isDoc = candidate.docPath === null || typeof candidate.docPath === 'string'
-    return isScene && isModule && isSelected && isProject && isDoc
+    return isScene && isModule && isSelected && isProject && isDoc && typeof candidate.isMarkdown === 'boolean'
 }
 
 /**

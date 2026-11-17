@@ -542,7 +542,7 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 ---
 
-## 11. 作品快照（已落地）
+## 11. 快照：作品与单文件（已落地）
 
 ### 11.1 定位
 
@@ -681,3 +681,29 @@ CREATE INDEX IF NOT EXISTS idx_session_date ON writing_sessions(project_id, date
 
 - 章重命名后旧快照目录成为孤儿，由 14 天与硬上限回收，不做自动迁移
 - 不支持跨章「回到三天前的整部作品」，各章时间线彼此独立
+
+### 11.11 单文件快照（笔记 / 公众号文章 / 散落 md）
+
+**粒度**：一份文档一条独立时间线，只存被改动的那一份，与章节通道同构。
+
+**存储**：`{storage.rootPath}/Snapshots/docs/{文档目录}/{文件名}/{id}.md` 与同名 `{id}.json`；与作品快照共用 `Snapshots` 索引排除名单与根级 `.gitignore`。
+
+**收录范围**：存储根内、以 `.md` 结尾的文档。`Snapshots` 目录自身、作品内那四份结构化文档与 `Chapters/` 章节仍走各自既有通道，不重复收录。
+
+**留版时机**：
+
+| 来源 | 触发 | 是否节流 |
+|------|------|----------|
+| 编辑器保存 | 命中作品目录之外的 `.md`（笔记、公众号批次稿、根目录散文档） | 是（`zhai.press.snapshot.chapterIntervalSeconds`，默认 300） |
+| AI / 校对写回前 | `applyEdit` 之前取编辑器全文 | 否，强制留底（`ai-write`） |
+| 公众号推送 | 群发结果为 `published` 后，按批次内每篇文章正文各留一版 | 否，强制留底（`push`） |
+| 手动 | 快照分区「立即快照」 | 否 |
+| 恢复前 | 覆盖前先存当前正文 | 否 |
+
+**清理**：近 10 版 + 每日首版保留 14 天，硬上限 20 版；`manual` / `restore` / `push` 不参与自动清理。
+
+**协议**：`press/snapshot/doc/{list|capture|restore|delete}`，四个方法均需登记 `PRESS_WORKSPACE_METHODS`；路由层只校验 `docPath` 形态（存储根相对、`.md` 结尾、无上跳与盘符），拼路径时再由存储层做片段校验，不接受绝对路径。
+
+**界面**：文档不属于作品时，工作流「快照」分区渲染单文件时间线（版本列表 + 立即快照 + 恢复 / 删除）；没有活跃文档时给引导空态。
+
+**已知取舍**：存储根之外的 md（例如临时打开的外部文件）无法留版——快照目录必须落在存储根内；文档改名后旧时间线成为孤儿，由保留策略回收，不做自动迁移。

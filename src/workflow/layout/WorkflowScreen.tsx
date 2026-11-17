@@ -6,10 +6,13 @@
  * 内容归属变化导致当前分区不可用时，渲染期回落到 AI 对话而不改写 state，切回原归属仍能回到上次分区；
  * 宿主视图请求在本层对齐，不沉到子页面；归档文档只切分区，切换文档归属由宿主事实驱动，
  * 归属切换后当前分区在新归属下仍可用则保留，不可用才落回 AI 对话；
+ * 工作流区只服务 Markdown：宿主事实 isMarkdown 为假时整块不可用，导航与内容都不渲染，
+ * 该判定只看宿主下发的字段，本层不按路径自行推断；
  * 路由事实未就绪时渲染全屏加载空态，避免先闪出空白内容区。
  * 全局提示：sonner 的 Toaster 只在本层挂载一次，页面内的操作结果统一用 toast 上报，页面不再自挂；
  * 宿主侧命令结果经 useHostToast 订阅 toast 广播，在本层同样用 sonner 呈现。
  */
+import { FileText } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { Toaster } from '@components/ui/sonner'
 import { StateEmpty } from '@webview/components/StateEmpty'
@@ -71,6 +74,21 @@ export function WorkflowScreen(): JSX.Element {
         return <StateEmpty className="h-screen" title="正在读取工作流" isLoading />
     }
 
+    // 非 Markdown 文档下工作流区整体不可用：导航与内容都不渲染，避免进入任何依赖文档的分区
+    if (!context.isMarkdown) {
+        return (
+            <div className="flex h-screen min-h-0">
+                <StateEmpty
+                    className="h-full"
+                    icon={FileText}
+                    title="工作流区仅支持 Markdown 文档"
+                    description="当前打开的文件不是 .md。切到任意 Markdown 文档后即可继续使用工作流区与宅写作编辑器。"
+                />
+                <Toaster theme={theme} />
+            </div>
+        )
+    }
+
     // 归属变化后当前分区可能不可用（如从作品切到笔记时停在「设定」）：渲染期回落，不改写 state
     const section = readAvailableSections(scope).includes(activeSection) ? activeSection : DEFAULT_SECTION
 
@@ -80,9 +98,17 @@ export function WorkflowScreen(): JSX.Element {
                 {scope === 'press' ? (
                     <WorkflowPress context={context} section={section} onSelectSection={handleSelectSection} />
                 ) : scope === 'wechat' ? (
-                    <WorkflowWechat section={section} scopeDir={readScopeDir(context, scope)} />
+                    <WorkflowWechat
+                        section={section}
+                        scopeDir={readScopeDir(context, scope)}
+                        docPath={context.docPath}
+                    />
                 ) : (
-                    <WorkflowResidentSection section={section} scopeDir={readScopeDir(context, scope)} />
+                    <WorkflowResidentSection
+                        section={section}
+                        scopeDir={readScopeDir(context, scope)}
+                        docPath={context.docPath}
+                    />
                 )}
             </div>
             <WorkflowNav activeSection={section} scope={scope} onSelect={handleSelectSection} />

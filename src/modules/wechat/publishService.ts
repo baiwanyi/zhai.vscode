@@ -7,8 +7,10 @@
  * 单张图片不可用只记警告、不中断整篇；没有可用封面时直接拒绝（平台强制要求 thumb_media_id）；
  * 草稿成功写回 media_id 并推进到 ready，失败只回写错误、状态停在 draft；
  * 群发提交成功只代表任务受理，是否发布成功以 freepublish/get 的轮询结果为准，轮询未出结果时保持 pushing；
- * 已推送的批次拒绝重新生成草稿或重复群发，避免同一内容在平台侧堆出多份。
+ * 已推送的批次拒绝重新生成草稿或重复群发，避免同一内容在平台侧堆出多份；
+ * 群发成功后按文章正文各留一版文档快照（来源 push），留底失败只记日志，不改变推送结论。
  */
+import { logger } from '@modules/common/logger'
 import {
     readWechatAccountType,
     type WechatAccountType,
@@ -34,6 +36,14 @@ import type { WechatMaterialService } from './materialService'
 import type { WechatTokenService } from './tokenService'
 import type Database from 'better-sqlite3'
 
+/**
+ * 推送留底能力：由快照服务注入。
+ * 关键约束：实现方必须自行吞掉异常——留底不能反过来影响推送结果。
+ */
+export interface PushSnapshotWriter {
+    capturePushDoc: (docPath: string, label?: string) => Promise<void>
+}
+
 /** 服务依赖：库、密钥、Token、素材服务与批次服务（复用其摘要组装） */
 export interface WechatPublishServiceDeps {
     db: Database.Database
@@ -41,6 +51,8 @@ export interface WechatPublishServiceDeps {
     tokens: WechatTokenService
     materials: WechatMaterialService
     issues: WechatIssueService
+    /** 推送留底：装配时注入快照服务，测试可不传 */
+    snapshot?: PushSnapshotWriter
 }
 
 /** 群发额度：订阅号每个自然日 1 次，服务号每个自然月 4 次（平台规则） */
@@ -400,6 +412,8 @@ export class WechatPublishService {
                     errorHint: null,
                     updatedAt: new Date().toISOString(),
                 })
+                // 推送成功即留底：按批次内每篇文章的正文各存一版，失败只记日志
+                await this.capturePushSnapshots(issue.id)
                 const detail = await this.deps.issues.detail(issue.id)
                 return {
                     issue: detail.issue,
@@ -434,6 +448,31 @@ export class WechatPublishService {
      * 回写群发失败：保留 publishId 与 msgDataId 便于到后台核对，
      * errorCode 为 0 表示没有平台错误码（如轮询判定失败但接口本身成功）。
      */
+    /**
+     * 推送留底：按批次内每篇文章的正文文件各留一版，来源标记为 push。
+     * 关键约束：正文路径取 file_path、缺失时退回 source_path；单篇写失败只记日志并继续下一篇，
+     * 任何异常都不会改变已经落库的 published 状态。
+     */
+    private async capturePushSnapshots(issueId: string): Promise<void> {
+        const snapshot = this.deps.snapshot
+        if (snapshot === undefined) {
+            return
+        }
+        const articles = listWechatArticles(this.deps.db, issueId)
+        for (const article of articles) {
+            const docPath = article.file_path ?? article.source_path
+            if (typeof docPath !== 'string' || docPath.length === 0) {
+                continue
+            }
+            try {
+                await snapshot.capturePushDoc(docPath, '群发推送')
+            } catch (error) {
+                const message = error instanceof Error ? error.message : String(error)
+                logger.warn(`推送留底失败：${docPath}（${message}）`)
+            }
+        }
+    }
+
     private markPublishFailed(
         id: string,
         publishId: string | null,

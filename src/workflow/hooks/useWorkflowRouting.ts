@@ -13,13 +13,17 @@ import { isWorkflowContextState, isWorkflowViewRequest, ROOT_MODULE_KEY } from '
 import type { WorkflowContextState, WorkflowViewRequest } from '@shared/types/workflow'
 import { onState, request } from '@shared/utils/bridge'
 
-/** 宿主未响应前的默认事实：无场景、无模块、未打开作品，页面按此先渲染骨架再补齐 */
+/**
+ * 宿主未响应前的默认事实：无场景、无模块、未打开作品，页面按此先渲染骨架再补齐。
+ * isMarkdown 默认为 true：就绪前不摆出「不可用」空态，避免面板先闪一下禁用提示。
+ */
 const INITIAL_CONTEXT: WorkflowContextState = {
     scene: 'idle',
     module: ROOT_MODULE_KEY,
     selectedModule: null,
     projectDir: null,
     docPath: null,
+    isMarkdown: true,
 }
 
 export interface WorkflowRoutingState {

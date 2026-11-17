@@ -60,7 +60,7 @@
                         "filenamePattern": "*.md"
                     }
                 ],
-                "priority": "option"
+                "priority": "default"
             }
         ],
         "commands": [
@@ -322,7 +322,7 @@
                     "zhai.press.snapshot.enabled": {
                         "type": "boolean",
                         "default": true,
-                        "description": "设定、角色、大纲内容变更时自动保存作品快照（存放在作品的 Snapshots 目录）"
+                        "description": "内容变更时自动保存快照：作品存四份文档与章节正文，笔记、公众号文章与其它 Markdown 存单文件副本（统一放在存储根的 Snapshots 目录）"
                     },
                     "zhai.press.snapshot.intervalSeconds": {
                         "type": "number",
@@ -336,7 +336,7 @@
                         "default": 300,
                         "minimum": 30,
                         "maximum": 3600,
-                        "description": "章节正文自动快照的最小间隔秒数：按章独立计数，AI 写回前的留底不受此限制"
+                        "description": "正文自动快照的最小间隔秒数：章节按章、单文件文档按文档独立计数，AI 写回与公众号推送前的留底不受此限制"
                     }
                 }
             },

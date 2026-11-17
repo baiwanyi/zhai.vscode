@@ -30,14 +30,16 @@ interface WorkflowWechatProps {
     section: WorkflowSection
     /** 对话作用域目录：公众号取模块目录，交给常驻分区复用 */
     scopeDir: string | null
+    /** 当前活跃文档的相对路径：常驻分区里的单文件快照以它为键 */
+    docPath: string | null
 }
 
-export function WorkflowWechat({ section, scopeDir }: WorkflowWechatProps): JSX.Element {
+export function WorkflowWechat({ section, scopeDir, docPath }: WorkflowWechatProps): JSX.Element {
     const { account, status, error, reload } = useWechatAccountScope()
 
     // 常驻分区与账号无关：打开批次文章时对话、媒体、校对要直接可用
     if (RESIDENT_SECTIONS.includes(section)) {
-        return <WorkflowResidentSection section={section} scopeDir={scopeDir} />
+        return <WorkflowResidentSection section={section} scopeDir={scopeDir} docPath={docPath} />
     }
 
     if (status === 'loading') {

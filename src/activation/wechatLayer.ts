@@ -21,6 +21,7 @@ import { WechatIssueService } from '@modules/wechat/issueService'
 import { WechatMaterialService } from '@modules/wechat/materialService'
 import { WechatMenuService } from '@modules/wechat/menuService'
 import { WechatPublishService } from '@modules/wechat/publishService'
+import type { PushSnapshotWriter } from '@modules/wechat/publishService'
 import { WechatStatsService } from '@modules/wechat/statsService'
 import { WechatTokenService } from '@modules/wechat/tokenService'
 import { WechatRoutes } from '@modules/wechat/wechatRoutes'
@@ -30,12 +31,14 @@ import type Database from 'better-sqlite3'
 /** 群发卡在「推送中」的回收阈值：群发轮询最长约 8 秒，留足余量给慢网，超过基本可判定为宿主中途退出 */
 const STALE_PUSHING_WINDOW_MS = 10 * 60 * 1000
 
-/** 装配依赖：公众号层只依赖扩展上下文、缓存目录与索引库 */
+/** 装配依赖：公众号层只依赖扩展上下文、缓存目录、索引库与推送留底能力 */
 export interface WechatLayerDeps {
     context: vscode.ExtensionContext
     cacheRoot: vscode.Uri
     /** 索引库：批次服务据此校验导入源路径确属已索引文件 */
     indexDb: Database.Database
+    /** 推送留底：群发成功后按文章正文各留一版文档快照，未注入时不留底 */
+    snapshot?: PushSnapshotWriter
 }
 
 /** 装配产物：路由交给面板，鉴权失效广播交给两个面板订阅 */
@@ -46,7 +49,7 @@ export interface WechatLayer {
 
 /** 装配公众号层：打开库、回收卡死批次、串起账号 / 批次 / 素材 / 发布与四个运营服务 */
 export function assembleWechatLayer(deps: WechatLayerDeps): WechatLayer {
-    const { context, cacheRoot, indexDb } = deps
+    const { context, cacheRoot, indexDb, snapshot } = deps
     const wechatDb = openWechatDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => wechatDb.close() })
     // 群发过程中退出会把批次卡在「推送中」：超过阈值的启动时回收为失败并提示去后台确认
@@ -98,6 +101,7 @@ export function assembleWechatLayer(deps: WechatLayerDeps): WechatLayer {
         tokens,
         materials,
         issues,
+        snapshot,
     })
     // 四个运营服务只依赖账号表、密钥与 Token 缓存，共用同一组依赖
     const tokenDeps = { db: wechatDb, secrets, tokens }

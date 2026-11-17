@@ -110,6 +110,11 @@ const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set([
     'press/snapshot/chapter/capture',
     'press/snapshot/chapter/restore',
     'press/snapshot/chapter/delete',
+    // 单文件快照：笔记、公众号文章与散落 md 共用，走同一条写作管理通道
+    'press/snapshot/doc/list',
+    'press/snapshot/doc/capture',
+    'press/snapshot/doc/restore',
+    'press/snapshot/doc/delete',
 ])
 
 /** 会切换活跃编辑器的作品协议：打开即切文档，需要立即同步工作流事实，菜单才不会滞后 */

@@ -1,18 +1,21 @@
 /**
  * 快照服务：承接设定、角色、大纲变更后的自动留版、手动留版、整版或单份恢复与过期清理，
- * 以及章节正文的按章时间线（保存后自动留版、AI 写回前强制留底、单章恢复）。
- * 复用约定：正文读写全部委托 snapshotStore 与 chapterSnapshotStore，作品文档按 projectWorkspace 的口径成组读取；
+ * 章节正文的按章时间线（保存后自动留版、AI 写回前强制留底、单章恢复），
+ * 以及任意存储根内 md 的单文件时间线（笔记、公众号文章与散落文档保存后留版、推送前留底）。
+ * 复用约定：正文读写全部委托 snapshotStore、chapterSnapshotStore 与 docSnapshotStore，作品文档按 projectWorkspace 的口径成组读取；
  * 恢复后由调用方注入的索引刷新器重建字数与标签，避免面板显示旧值。
- * 关键约束：自动快照按作品或按章做「间隔节流」而非防抖——定时器只在距上一版满间隔时触发一次，
+ * 关键约束：自动快照按作品、按章或按文档做「间隔节流」而非防抖——定时器只在距上一版满间隔时触发一次，
  * 后续变更只覆盖待写内容、不续期，保证连续写作时既限频又不丢最后一版；
  * 内容哈希与最新一版完全相同时直接跳过，不产生空版；恢复前一律先给当前内容留一版，防止恢复不可逆；
- * 章节恢复前必须确认该章没有未保存的编辑器修改，否则写盘会被编辑器回写覆盖。
+ * 恢复前必须确认目标文档没有未保存的编辑器修改，否则写盘会被编辑器回写覆盖；
+ * 单文件通道只认存储根内、以 .md 结尾的路径，文档相对路径与工作流路由同口径（宿主索引服务的 toRelativePath）。
  */
 import * as vscode from 'vscode'
 import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
-import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
+import { buildStorageUri, toSafeSegments, toStorageFsPath } from '@modules/common/storagePath'
+import { PRESS_SNAPSHOT_DIR } from '@shared/types/press'
 import type {
     ChapterSnapshotEntry,
     ChapterSnapshotReason,
@@ -22,6 +25,8 @@ import type {
     PressSnapshotTrigger,
     PressWorkspaceFiles,
 } from '@shared/types/press'
+import { isDocSnapshotPath } from '@shared/types/snapshot'
+import type { DocSnapshotEntry, DocSnapshotReason } from '@shared/types/snapshot'
 import {
     deleteChapterVersion,
     listChapterSummaries,
@@ -31,6 +36,14 @@ import {
     toChapterEntry,
     writeChapterSnapshot,
 } from './chapterSnapshotStore'
+import {
+    deleteDocVersion,
+    listDocVersions,
+    pruneDocVersions,
+    readDocVersion,
+    toDocEntry,
+    writeDocSnapshot,
+} from './docSnapshotStore'
 import {
     SNAPSHOT_FILE_KEYS,
     deleteSnapshotDir,
@@ -72,9 +85,12 @@ const FILE_NAME_TO_KEY: ReadonlyMap<string, PressSnapshotFileKey> = new Map(
     ]),
 )
 
-/** 索引刷新能力：只要求按文件重建索引，避免与 IndexService 形成强依赖 */
-export interface SnapshotIndexRefresher {
-    indexFile(uri: vscode.Uri): Promise<void>
+/**
+ * 宿主能力：按文件重建索引。
+ * 关键约束：恢复后要立即刷新字数与标签，但索引服务是可选依赖（测试与纯读取场景不注入）。
+ */
+export interface SnapshotHost {
+    indexFile: (uri: vscode.Uri) => Promise<void>
 }
 
 /** 单部作品的节流状态 */
@@ -100,10 +116,21 @@ interface ChapterState {
     chain: Promise<void>
 }
 
-/** 一次保存命中的快照目标：结构化文档或章节正文 */
+/** 单文件文档的节流状态：与章节同构，来源多一个 push（公众号推送留底） */
+interface DocState {
+    timer: NodeJS.Timeout | null
+    latest: { content: string; reason: DocSnapshotReason; label: string } | null
+    lastCreatedAt: number
+    lastHash: string | null
+    loaded: boolean
+    chain: Promise<void>
+}
+
+/** 一次保存命中的快照目标：结构化文档、章节正文或单文件文档 */
 type SavedScope =
     | { kind: 'workspace'; dirPath: string; trigger: PressSnapshotTrigger }
     | { kind: 'chapter'; dirPath: string; chapterPath: string }
+    | { kind: 'doc'; docPath: string }
 
 /** 比较两组哈希是否完全相同：顺序固定为四份文档，逐键比对即可 */
 function isSameHashes(
@@ -129,7 +156,10 @@ export class PressSnapshotService {
     /** 章节正文的节流状态：键为 `${dirPath}::${chapterPath}`，一章一条独立时间线 */
     private readonly chapterStates = new Map<string, ChapterState>()
 
-    public constructor(private readonly indexer?: SnapshotIndexRefresher) {}
+    /** 单文件文档的节流状态：键为文档相对路径，一份文档一条独立时间线 */
+    private readonly docStates = new Map<string, DocState>()
+
+    public constructor(private readonly host?: SnapshotHost) {}
 
     /**
      * 记录一次工作台写入：设定、角色、大纲任一份内容变化时留版。
@@ -145,7 +175,8 @@ export class PressSnapshotService {
     }
 
     /**
-     * 记录一次编辑器内保存：仅识别 press/{作品名}/ 下那四份文档，其它文件一律忽略。
+     * 记录一次编辑器内保存：作品的四份文档走整版通道、Chapters 下的正文走章节通道，
+     * 其余存储根内的 md（笔记、公众号文章、散落文档）走单文件通道。
      * 只读盘后交给统一节流入口，保证与工作台写入共用同一套去重与限频规则。
      */
     public async recordEditorSave(uri: vscode.Uri): Promise<void> {
@@ -163,6 +194,14 @@ export class PressSnapshotService {
                     return
                 }
                 await this.recordChapter(scope.dirPath, scope.chapterPath, content, 'auto')
+                return
+            }
+            if (scope.kind === 'doc') {
+                const content = await readTextFile(uri)
+                if (content === null) {
+                    return
+                }
+                await this.recordDoc(scope.docPath, content, 'auto')
                 return
             }
             const document = await readProjectWorkspace(scope.dirPath)
@@ -231,7 +270,7 @@ export class PressSnapshotService {
         }
         for (const uri of writtenUris) {
             try {
-                await this.indexer?.indexFile(uri)
+                await this.host?.indexFile(uri)
             } catch (error) {
                 logger.warn(`快照恢复后索引重建失败：${uri.fsPath}（${toCauseMessage(error)}）`)
             }
@@ -309,7 +348,7 @@ export class PressSnapshotService {
         await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(content))
         this.syncChapterState(this.chapterKey(dirPath, chapterPath), target.hash, new Date().toISOString())
         try {
-            await this.indexer?.indexFile(uri)
+            await this.host?.indexFile(uri)
         } catch (error) {
             logger.warn(`章节恢复后索引重建失败：${uri.fsPath}（${toCauseMessage(error)}）`)
         }
@@ -322,25 +361,115 @@ export class PressSnapshotService {
         return deleteChapterVersion(dirPath, chapterPath, snapshotId)
     }
 
+    /** 列出某份文档的版本时间线：按创建时间倒序，供单文件快照面板展示 */
+    public async listDocVersions(docPath: string): Promise<DocSnapshotEntry[]> {
+        const versions = await listDocVersions(docPath)
+        return versions.map(toDocEntry)
+    }
+
+    /** 手动给某份文档留一版：不受间隔限制，正文取磁盘当前内容 */
+    public async captureDoc(docPath: string, label?: string): Promise<DocSnapshotEntry> {
+        const content = await readTextFile(this.docUri(docPath))
+        if (content === null) {
+            throw new Error(`文档文件不存在：${docPath}`)
+        }
+        const version = await writeDocSnapshot({
+            docPath,
+            content,
+            reason: 'manual',
+            label: normalizeLabel(label),
+        })
+        this.syncDocState(docPath, version.hash, version.createdAt)
+        return toDocEntry(version)
+    }
+
     /**
-     * AI 写回前强制留底：不受间隔限制，只对 Chapters 下的文档生效。
+     * 推送留底：公众号群发成功后按文章正文各留一版。
+     * 关键约束：立即写、不吃间隔节流；任何异常只记日志，绝不回抛打断推送结果。
+     */
+    public async capturePushDoc(docPath: string, label?: string): Promise<void> {
+        try {
+            const content = await readTextFile(this.docUri(docPath))
+            if (content === null) {
+                return
+            }
+            await this.recordDoc(docPath, content, 'push', label, true)
+        } catch (error) {
+            logger.warn(`推送前文档留底失败：${docPath}（${toCauseMessage(error)}）`)
+        }
+    }
+
+    /**
+     * 恢复单份文档：覆盖前先给当前内容留一版，内容与所选版本一致时返回 false。
+     * 关键约束：该文档在编辑器中有未保存修改时必须拒绝——此时写盘会被编辑器回写覆盖，恢复等于无效。
+     */
+    public async restoreDoc(docPath: string, snapshotId: string): Promise<boolean> {
+        const versions = await listDocVersions(docPath)
+        const target = versions.find((item) => item.id === snapshotId)
+        if (target === undefined) {
+            throw new Error(`文档快照不存在或已清理：${snapshotId}`)
+        }
+        const uri = this.docUri(docPath)
+        const current = await readTextFile(uri)
+        if (current !== null && hashText(current) === target.hash) {
+            return false
+        }
+        const isDirty = vscode.workspace.textDocuments.some(
+            (document) => document.uri.fsPath === uri.fsPath && document.isDirty,
+        )
+        if (isDirty) {
+            throw new Error('该文档在编辑器中有未保存的修改，请先保存或撤销后再恢复')
+        }
+        if (current !== null) {
+            await writeDocSnapshot({ docPath, content: current, reason: 'restore' })
+        }
+        const content = await readDocVersion(docPath, snapshotId)
+        await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(content))
+        this.syncDocState(docPath, target.hash, new Date().toISOString())
+        try {
+            await this.host?.indexFile(uri)
+        } catch (error) {
+            logger.warn(`文档恢复后索引重建失败：${uri.fsPath}（${toCauseMessage(error)}）`)
+        }
+        logger.info(`文档快照已恢复：${docPath}/${snapshotId}`)
+        return true
+    }
+
+    /** 删除某份文档的某一版：只影响该版本 */
+    public async removeDocVersion(docPath: string, snapshotId: string): Promise<boolean> {
+        return deleteDocVersion(docPath, snapshotId)
+    }
+
+    /**
+     * 写回前强制留底：不受间隔限制，章节正文与其它 md 文档都覆盖。
      * 关键约束：内容由调用方从编辑器取写回前的全文，与撤销栈对齐；异常必须吞掉，不能阻断写回本身。
      */
     public async captureChapterBeforeWrite(uri: vscode.Uri, content: string): Promise<void> {
         const scope = this.resolveSavedScope(uri)
-        if (scope === null || scope.kind !== 'chapter') {
+        if (scope === null) {
             return
         }
         try {
-            await this.recordChapter(scope.dirPath, scope.chapterPath, content, 'ai-write')
+            if (scope.kind === 'chapter') {
+                await this.recordChapter(scope.dirPath, scope.chapterPath, content, 'ai-write')
+                return
+            }
+            if (scope.kind === 'doc') {
+                await this.recordDoc(scope.docPath, content, 'ai-write', undefined, true)
+            }
         } catch (error) {
-            logger.warn(`AI 写回前的章节留底失败：${uri.fsPath}（${toCauseMessage(error)}）`)
+            logger.warn(`写回前的正文留底失败：${uri.fsPath}（${toCauseMessage(error)}）`)
         }
     }
 
     /** 章节文件的绝对 Uri：路径逐段校验后拼接，不接受前端原样字符串 */
     private chapterUri(chapterPath: string): vscode.Uri {
         return buildStorageUri(resolveStorageRoot(), toSafeSegments(chapterPath, '章节'))
+    }
+
+    /** 单文件文档的绝对 Uri：与章节同口径，先过片段校验再拼到存储根下 */
+    private docUri(docPath: string): vscode.Uri {
+        return buildStorageUri(resolveStorageRoot(), toSafeSegments(docPath, '文档'))
     }
 
     /** 章节节流状态的键：作品目录与章节路径的组合，避免跨作品串版本 */
@@ -464,6 +593,119 @@ export class PressSnapshotService {
         }
     }
 
+    /** 取或建单文件节流状态 */
+    private docStateOf(docPath: string): DocState {
+        const existing = this.docStates.get(docPath)
+        if (existing !== undefined) {
+            return existing
+        }
+        const created: DocState = {
+            timer: null,
+            latest: null,
+            lastCreatedAt: 0,
+            lastHash: null,
+            loaded: false,
+            chain: Promise.resolve(),
+        }
+        this.docStates.set(docPath, created)
+        return created
+    }
+
+    /** 用刚写入的一版刷新单文件缓存 */
+    private syncDocState(docPath: string, hash: string, createdAt: string): void {
+        const state = this.docStateOf(docPath)
+        const timestamp = Date.parse(createdAt)
+        state.lastCreatedAt = Number.isFinite(timestamp) ? timestamp : Date.now()
+        state.lastHash = hash
+        state.loaded = true
+    }
+
+    /** 首次访问时载入该文档最新一版：没有历史时留空，让第一次变更立即产生基线 */
+    private async ensureDocLoaded(docPath: string, state: DocState): Promise<void> {
+        if (state.loaded) {
+            return
+        }
+        state.loaded = true
+        try {
+            const versions = await listDocVersions(docPath)
+            const newest = versions[0]
+            if (newest !== undefined) {
+                this.syncDocState(docPath, newest.hash, newest.createdAt)
+            }
+        } catch (error) {
+            logger.warn(`文档时间线读取失败，按无历史处理：${docPath}（${toCauseMessage(error)}）`)
+        }
+    }
+
+    /**
+     * 单文件统一记录入口：判重 → 强制来源立即写 → 其余按间隔排队。
+     * 关键约束：间隔复用章节正文的配置（同为正文写作频率）；强制来源（写回前留底、推送留底）不吃节流。
+     */
+    private async recordDoc(
+        docPath: string,
+        content: string,
+        reason: DocSnapshotReason,
+        label?: string,
+        isForced = false,
+    ): Promise<void> {
+        if (!getZhaiConfig().pressSnapshotEnabled && !isForced) {
+            return
+        }
+        const state = this.docStateOf(docPath)
+        await this.enqueue(state, async () => {
+            await this.ensureDocLoaded(docPath, state)
+            const hash = hashText(content)
+            if (state.lastHash === hash) {
+                return
+            }
+            state.latest = { content, reason, label: normalizeLabel(label) }
+            if (isForced) {
+                await this.flushDoc(docPath, state)
+                return
+            }
+            const intervalMs = getZhaiConfig().pressSnapshotChapterIntervalSeconds * 1000
+            const wait = intervalMs - (Date.now() - state.lastCreatedAt)
+            if (wait <= 0) {
+                await this.flushDoc(docPath, state)
+                return
+            }
+            if (state.timer === null) {
+                state.timer = setTimeout(() => {
+                    state.timer = null
+                    void this.enqueue(state, async () => {
+                        await this.flushDoc(docPath, state)
+                    })
+                }, wait)
+                state.timer.unref()
+            }
+        })
+    }
+
+    /** 把单文件待写内容落成一版：内容与最新一版相同时静默跳过 */
+    private async flushDoc(docPath: string, state: DocState): Promise<void> {
+        const pending = state.latest
+        if (pending === null) {
+            return
+        }
+        state.latest = null
+        const hash = hashText(pending.content)
+        if (state.lastHash === hash) {
+            return
+        }
+        try {
+            const version = await writeDocSnapshot({
+                docPath,
+                content: pending.content,
+                reason: pending.reason,
+                label: pending.label,
+            })
+            this.syncDocState(docPath, version.hash, version.createdAt)
+            await pruneDocVersions(docPath)
+        } catch (error) {
+            logger.warn(`文档快照写入失败：${docPath}（${toCauseMessage(error)}）`)
+        }
+    }
+
     /** 卸载：清掉未到期的定时器，并把待写内容立即落盘，避免关窗丢最后一版 */
     public dispose(): void {
         for (const [dirPath, state] of this.states) {
@@ -509,6 +751,26 @@ export class PressSnapshotService {
             })
         }
         this.chapterStates.clear()
+        for (const [docPath, state] of this.docStates) {
+            if (state.timer !== null) {
+                clearTimeout(state.timer)
+                state.timer = null
+            }
+            const pending = state.latest
+            if (pending === null) {
+                continue
+            }
+            state.latest = null
+            void writeDocSnapshot({
+                docPath,
+                content: pending.content,
+                reason: pending.reason,
+                label: pending.label,
+            }).catch((error: unknown) => {
+                logger.warn(`退出前的文档快照落盘失败：${docPath}（${toCauseMessage(error)}）`)
+            })
+        }
+        this.docStates.clear()
     }
 
     /** 取或建某作品的节流状态：首次访问时把最新一版的时间与哈希载入内存 */
@@ -659,8 +921,10 @@ export class PressSnapshotService {
     }
 
     /**
-     * 把一次保存的文件 Uri 换算成快照目标：结构化文档给出触发范围，Chapters 下的正文给出章节路径。
-     * 关键约束：只认存储根内的 press/ 目录，其它路径一律返回 null，避免把任意保存事件卷进快照。
+     * 把一次保存的文件 Uri 换算成快照目标：结构化文档给出触发范围，Chapters 下的正文给出章节路径，
+     * 作品之外的 md 给出单文件路径。
+     * 关键约束：只认存储根内的路径，且快照目录自身必须排除——否则副本的写入会再触发一轮留版；
+     * 作品目录内不属于四份文档与章节的文件仍返回 null，作品语义只走既有两条通道。
      */
     private resolveSavedScope(uri: vscode.Uri): SavedScope | null {
         const rootPath = resolveStorageRoot().path
@@ -669,8 +933,14 @@ export class PressSnapshotService {
         }
         const relative = uri.path.slice(rootPath.length + 1)
         const segments = relative.split('/')
-        if ((segments[0] ?? '').toLowerCase() !== PRESS_MODULE_DIR) {
+        const firstSegment = (segments[0] ?? '').toLowerCase()
+        if (firstSegment === PRESS_SNAPSHOT_DIR.toLowerCase()) {
             return null
+        }
+        if (firstSegment !== PRESS_MODULE_DIR) {
+            // 作品之外：笔记、公众号批次稿与散落 md 都按单文件备份
+            const docPath = this.toDocPath(uri)
+            return isDocSnapshotPath(docPath) ? { kind: 'doc', docPath } : null
         }
         const projectName = segments[1] ?? ''
         if (projectName.length === 0) {
@@ -693,5 +963,13 @@ export class PressSnapshotService {
         }
         const trigger: PressSnapshotTrigger = key === 'readme' || key === 'setting' ? 'setting' : key
         return { kind: 'workspace', dirPath, trigger }
+    }
+
+    /**
+     * 文档相对路径：复用 storagePath 的 fsPath 口径，与索引库 files.path、工作流路由下发的 docPath 同源。
+     * 关键约束：不能用 toStorageDocPath——那条是库表 doc_path 的编码口径，中文路径会与前端对不上。
+     */
+    private toDocPath(uri: vscode.Uri): string {
+        return toStorageFsPath(uri)
     }
 }

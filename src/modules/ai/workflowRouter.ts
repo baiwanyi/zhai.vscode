@@ -20,7 +20,7 @@ import type { IndexService } from '@modules/common/indexer/indexService'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { getActiveDocument, onDidChangeActiveDocument } from '@modules/editor/activeDocument'
 import type { WorkflowContextState, WorkflowSceneKind, WorkflowViewRequest } from '@shared/types/workflow'
-import { NOTES_MODULE_KEY, ROOT_MODULE_KEY, WECHAT_MODULE_KEY } from '@shared/types/workflow'
+import { NOTES_MODULE_KEY, ROOT_MODULE_KEY, WECHAT_MODULE_KEY, isMarkdownPath } from '@shared/types/workflow'
 import type Database from 'better-sqlite3'
 
 /** 作品文档的最小段数：press/{作品名}/{文档} */
@@ -118,6 +118,8 @@ export class WorkflowRouter implements vscode.Disposable {
             projectDir: dirPath,
             // 作品按目录作用域，文档路径在编辑器切到作品文档后由下一次 refresh 补齐
             docPath: null,
+            // 作品文档必为 Markdown：此时编辑器可能尚未切过去，先按可用处理，待编辑器事实收敛
+            isMarkdown: true,
         }
         if (this.isSameAsLast(next)) {
             return
@@ -139,6 +141,7 @@ export class WorkflowRouter implements vscode.Disposable {
             selectedModule: this.selectedModule,
             projectDir: null,
             docPath: this.lastContext?.docPath ?? null,
+            isMarkdown: this.lastContext?.isMarkdown ?? true,
         }
         if (this.isSameAsLast(next)) {
             return
@@ -177,7 +180,8 @@ export class WorkflowRouter implements vscode.Disposable {
             last.module === context.module &&
             last.selectedModule === context.selectedModule &&
             last.projectDir === context.projectDir &&
-            last.docPath === context.docPath
+            last.docPath === context.docPath &&
+            last.isMarkdown === context.isMarkdown
         )
     }
 
@@ -197,8 +201,11 @@ export class WorkflowRouter implements vscode.Disposable {
                 selectedModule,
                 projectDir: this.projectDir,
                 docPath: this.lastContext?.docPath ?? null,
+                isMarkdown: this.lastContext?.isMarkdown ?? true,
             }
         }
+        // 工作流区只服务 Markdown：非 md 文档下由前端整块禁用，事实在此处一次判定，节点不得各自推断
+        const isMarkdown = isMarkdownPath(active.uri.path)
         const relativePath = this.indexService.toRelativePath(active.uri)
         // 必须用 findIndexedFile：listFilesByPaths 只认 notes/，会把作品与公众号文档判成索引外
         const known = findIndexedFile(this.db, relativePath)
@@ -219,11 +226,19 @@ export class WorkflowRouter implements vscode.Disposable {
                 selectedModule,
                 projectDir: this.projectDir,
                 docPath: relativePath,
+                isMarkdown,
             }
         }
         const moduleKey = readModuleKey(known.path)
         const scene: WorkflowSceneKind = moduleKey === NOTES_MODULE_KEY ? 'editorNote' : 'idle'
-        return { scene, module: moduleKey, selectedModule, projectDir: this.projectDir, docPath: relativePath }
+        return {
+            scene,
+            module: moduleKey,
+            selectedModule,
+            projectDir: this.projectDir,
+            docPath: relativePath,
+            isMarkdown,
+        }
     }
 
     /**
