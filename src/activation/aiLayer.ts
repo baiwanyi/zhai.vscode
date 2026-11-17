@@ -13,7 +13,7 @@ import { openAiDatabase } from '@modules/ai/db/connection'
 import { ensureAiSchema } from '@modules/ai/db/schema'
 import { MentionService } from '@modules/ai/mentionService'
 import { NotebookPackService } from '@modules/ai/notebookPackService'
-import type { AiProvider } from '@modules/ai/provider'
+import type { AiImageInput, AiProvider } from '@modules/ai/provider'
 import { createAiProvider } from '@modules/ai/providerRegistry'
 import { initCodebuddyLogin } from '@modules/ai/providers/codebuddyLogin'
 import { hydrateSelectedModel } from '@modules/ai/providers/codebuddyModels'
@@ -46,6 +46,8 @@ export interface AiLayerDeps {
     markStage: (stage: string) => void
     /** 规则正文读取：由入口注入出图侧的规则服务，失败返回 null，ai 模块不反向依赖它 */
     readPromptRule?: (name: string) => Promise<string | null>
+    /** 参考图读取：由入口注入出图侧的参考图服务，按登记表校验后读出字节，ai 模块不反向依赖它 */
+    readReferenceImages?: (paths: readonly string[]) => Promise<AiImageInput[]>
 }
 
 /** 装配产物：通道与记账实例交给写作 / 出图 / 取名模块复用，routes 与面板服务交给面板注册 */
@@ -96,6 +98,7 @@ export async function assembleAiLayer(deps: AiLayerDeps): Promise<AiLayer> {
         normalizeWrittenDocument,
         notebookPack,
         deps.readPromptRule,
+        deps.readReferenceImages,
     )
     context.subscriptions.push(chat)
     // 提及检索：与全局搜索同源（索引库），添加时由宿主查库校验路径

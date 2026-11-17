@@ -9,7 +9,7 @@
 import { useEffect, useRef } from 'react'
 import type { AiSessionSnapshot } from '@shared/types/aiChat'
 import { onState } from '@shared/utils/bridge'
-import type { Phase } from '../utils'
+import type { Phase } from '../utils/chat/view'
 
 /** 宿主 state 广播的可识别类型：只有这三类需要刷新前端数据 */
 type AiStateKind = 'runtime' | 'context' | 'writeTarget'

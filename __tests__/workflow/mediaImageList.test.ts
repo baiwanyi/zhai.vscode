@@ -1,6 +1,6 @@
 /**
  * 统一图片列表的纯函数用例：年月格式化与选项、按月分组、四类领域条目映射与分组折算。
- * 复用约定：用例只调用 hooks/mediaMonth 与 layout/imageList/imageListAdapters 的纯函数，
+ * 复用约定：用例只调用 hooks/mediaMonth 与 block/imageListAdapters 的纯函数，
  * 领域桩按完整接口构造、不使用类型断言，不依赖 DOM 与 React 渲染。
  * 关键约束：分组键倒序但组内顺序沿用入参，组头计数取组内总数；source 原样保留领域对象，
  * 缺图与非图片文件分别落到各自的占位语义，避免两类占位混用。
@@ -16,7 +16,7 @@ import {
     toMediaItem,
     toStockPhotoItem,
     toUploadFileItem,
-} from '@webview/workflow/media/layout/imageList/imageListAdapters'
+} from '@webview/workflow/media/imagelist/imageListAdapters'
 
 function createMedia(overrides: Partial<MediaItem> = {}): MediaItem {
     return {

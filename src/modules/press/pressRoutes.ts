@@ -98,7 +98,10 @@ export interface PressRoutesDeps {
     imageGenerate: ImageGenerateService
     imageSettings: ImageSettingsService
     promptRules: PromptRuleService
+    /** 生图提示词词库：{词库目录}/imagegen */
     promptTags: PromptTagService
+    /** AI 对话的写作提示词词库：{词库目录}/press，与生图词库分目录、不挂预览图 */
+    chatPromptTags: PromptTagService
     referenceImages: ReferenceImageService
 }
 
@@ -114,6 +117,7 @@ export class PressRoutes {
     private readonly imageSettings: ImageSettingsService
     private readonly promptRules: PromptRuleService
     private readonly promptTags: PromptTagService
+    private readonly chatPromptTags: PromptTagService
     private readonly referenceImages: ReferenceImageService
 
     public constructor(deps: PressRoutesDeps) {
@@ -128,6 +132,7 @@ export class PressRoutes {
         this.imageSettings = deps.imageSettings
         this.promptRules = deps.promptRules
         this.promptTags = deps.promptTags
+        this.chatPromptTags = deps.chatPromptTags
         this.referenceImages = deps.referenceImages
     }
 
@@ -197,10 +202,20 @@ export class PressRoutes {
                 return this.promptRules.remove(payload)
             case 'pressAi/deletePromptTag':
                 return this.promptTags.remove(payload)
+            case 'pressAi/listChatPromptTags':
+                return this.chatPromptTags.list()
+            case 'pressAi/saveChatPromptTag':
+                return this.chatPromptTags.save(payload)
+            case 'pressAi/updateChatPromptTag':
+                return this.chatPromptTags.update(payload)
+            case 'pressAi/deleteChatPromptTag':
+                return this.chatPromptTags.remove(payload)
             case 'pressAi/openPromptRuleDir':
                 return this.openPromptRuleDir()
             case 'pressAi/openPromptTagDir':
                 return this.openPromptTagDir()
+            case 'pressAi/openChatPromptTagDir':
+                return this.openChatPromptTagDir()
             case 'pressAi/pickReferenceImage':
                 return this.referenceImages.pick(toWebviewUri)
             case 'pressAi/saveImageSettings':
@@ -325,12 +340,22 @@ export class PressRoutes {
     }
 
     /**
-     * 打开词库目录：目录不存在时由服务先建出来，再把最新列表回给前端。
-     * 安全约束：目录固定为存储根下的 prompt/tags，不接受前端传入路径。
+     * 打开生图词库目录：目录不存在时由服务先建出来，再把最新列表回给前端。
+     * 安全约束：目录固定为提示词目录下的 imagegen，不接受前端传入路径。
      */
     private async openPromptTagDir(): Promise<PromptTagListResult> {
         const result = await this.promptTags.openDir()
-        logger.info(`已打开词库目录：${result.dirPath}`)
+        logger.info(`已打开生图词库目录：${result.dirPath}`)
+        return result
+    }
+
+    /**
+     * 打开对话写作词库目录：同样由服务建目录并回传最新列表。
+     * 安全约束：目录固定为提示词目录下的 press，与生图词库互不影响。
+     */
+    private async openChatPromptTagDir(): Promise<PromptTagListResult> {
+        const result = await this.chatPromptTags.openDir()
+        logger.info(`已打开对话词库目录：${result.dirPath}`)
         return result
     }
 

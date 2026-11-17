@@ -1,11 +1,11 @@
 /**
  * 生图页角色索引：一次遍历同时派生「按 id 查角色」与「按 id 查姓名」两张表。
- * 复用约定：角色快照类型取 ../prompt/promptSections，只在本页范围内使用，不外溢到人物卡模块。
+ * 复用约定：角色快照类型取 ../utils/prompt/sections，只在本页范围内使用，不外溢到人物卡模块。
  * 关键约束：封面指针修正、卡片角标、出图认领都按 id 反查，一律走这两张表，
  * 不要在新代码里再对 characters 做线性 find。
  */
 import { useMemo } from 'react'
-import type { PromptCharacterSnapshot } from '../prompt/promptSections'
+import type { PromptCharacterSnapshot } from '../utils/prompt/sections'
 
 /** 生图页角色快照：提示词所需字段之外再补一份封面指针，用于删除与生成后的指针同步 */
 export interface ImageGenCharacter extends PromptCharacterSnapshot {

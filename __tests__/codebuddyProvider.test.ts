@@ -188,6 +188,8 @@ function createTextClient(
     const makeSession = (options: SessionOptions): CodebuddySession => {
         captured.options.push(options)
         return {
+            // 带图片的多模态提交要求会话号，替身给一个固定值即可
+            sessionId: 'session-test',
             connect: (): Promise<void> => Promise.resolve(),
             send: (): Promise<void> => Promise.resolve(),
             stream: async function* stream(): AsyncGenerator<Message, void> {
@@ -219,6 +221,8 @@ function createTextClient(
 /** 出图替身：新建会话直接产出预设消息，续接一律视为误用 */
 function createImageClient(messages: Message[]): CodebuddyClient {
     const makeSession = (): CodebuddySession => ({
+        // 出图通道不提交图片块，会话号只满足接口契约
+        sessionId: 'session-test',
         connect: (): Promise<void> => Promise.resolve(),
         send: (): Promise<void> => Promise.resolve(),
         stream: async function* stream(): AsyncGenerator<Message, void> {

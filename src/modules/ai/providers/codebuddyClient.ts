@@ -25,8 +25,10 @@ function loadAgentSdk(): Promise<AgentSdk> {
     return sdkHandle
 }
 
-/** V2 Session 的最小能力集：文本与图像通道共用这六项 */
+/** V2 Session 的最小能力集：文本与图像通道共用这七项 */
 export interface CodebuddySession {
+    /** 会话号：带图片的多模态提交必须随 UserMessage 下发，SDK 在建会话后即提供 */
+    readonly sessionId: string
     connect(): Promise<void>
     send(message: string | UserMessage): Promise<void>
     stream(): AsyncGenerator<Message, void>

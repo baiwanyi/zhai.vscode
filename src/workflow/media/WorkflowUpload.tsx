@@ -21,9 +21,9 @@ import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { groupByMonth } from './hooks/mediaMonth'
 import { useUploader } from './hooks/useUploader'
-import { ImageList } from './layout/imageList/ImageList'
-import { toImageListGroups, toUploadFileItem } from './layout/imageList/imageListAdapters'
-import type { ImageListAction, ImageListStates } from './layout/imageList/imageListModel'
+import { ImageList } from './imagelist/ImageList'
+import { toImageListGroups, toUploadFileItem } from './imagelist/imageListAdapters'
+import type { ImageListAction, ImageListStates } from './imagelist/imageListModel'
 import type { JSX } from 'react'
 
 /** 上传列表状态位：首屏给骨架，空库给引导文案 */

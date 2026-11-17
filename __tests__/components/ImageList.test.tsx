@@ -13,13 +13,9 @@ import { Copy, Info, TextCursorInput, Trash2 } from 'lucide-react'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { MediaItem } from '@shared/types/media'
 import { TooltipProvider } from '@webview/components/Tooltip'
-import { ImageList } from '@webview/workflow/media/layout/imageList/ImageList'
-import { toMediaItem } from '@webview/workflow/media/layout/imageList/imageListAdapters'
-import type {
-    ImageListAction,
-    ImageListPaging,
-    ImageListStates,
-} from '@webview/workflow/media/layout/imageList/imageListModel'
+import { ImageList } from '@webview/workflow/media/imagelist/ImageList'
+import { toMediaItem } from '@webview/workflow/media/imagelist/imageListAdapters'
+import type { ImageListAction, ImageListPaging, ImageListStates } from '@webview/workflow/media/imagelist/imageListModel'
 import type { RenderResult } from '@testing-library/react'
 
 /** jsdom 没有 ResizeObserver：Radix Tooltip 用它测量锚点，缺了就整棵树渲染失败 */

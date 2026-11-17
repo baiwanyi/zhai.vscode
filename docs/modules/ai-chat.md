@@ -504,7 +504,7 @@ interface AbortRequest {
 - **路径引用**：正文里可手写 `@zhai\press\123\Chapters\01-默认卷\04-未命名章节.md:42`（正反斜杠均可，`:行` 与 `:起-止` 后缀原样保留），发送瞬间由 `modules/ai/zhaiRefs` 展开成存储根下的绝对路径，模型可直接用 Read 定位；越界（`..`、盘符）或目标不存在时原样保留，不猜测意图。落库正文与气泡回显仍是用户原文；`@zhai/` 依旧只是文档侧的资源引用语法，不进入模型请求。把消息复制出的文本粘回输入区时，输入卡片在捕获阶段拦截同一令牌并交给 `ai/mention/add` 直接变成引用芯片（行范围一并带入），失败的令牌留在正文里。
 - **草稿恢复**：未发送的正文与已选命令防抖写入宿主内存草稿（`ai/draft`，按会话隔离），侧边栏切换导致 webview 重建后由会话快照的 `draft` 恢复；发送成功、新建或删除会话时清除。
 - **提示词选取**：工具行的「提示词」入口读 `{词库目录}/press` 的写作提示词库，面板按「分类 / 分组 / 词条」三级展开，支持搜索与增删改；点选把提示词原文插入输入框光标处，可继续编辑再发送。与生图词条的芯片机制不同，对话侧写入的是正文而不是标识，因此没有芯片集合、也不存在发送时的原文回查。
-- **参考图识图**：工具行的参考图入口与生图共用 `aichat/layout/AiChatImageReferencePicker`（经 `pressAi/pickReferenceImage` 弹文件选择框并登记路径）；选中后以「缩略图 + 文件名」芯片挂在输入区，悬停出大图，最多 3 张。发送时路径随 `referenceImages` 下发，宿主按登记表校验并读出字节与真实类型，通道把「图片块 + 本轮正文」作为一条用户消息提交，图片只随本轮下发、不进历史文本；发送成功后芯片清空，失败保留以便重试。全部图片失效时报错提示重新添加，不静默丢图。
+- **参考图识图**：工具行的参考图入口与生图共用 `aichat/composer/AiChatImageReferencePicker`（经 `pressAi/pickReferenceImage` 弹文件选择框并登记路径）；选中后以「缩略图 + 文件名」芯片挂在输入区，悬停出大图，最多 3 张。发送时路径随 `referenceImages` 下发，宿主按登记表校验并读出字节与真实类型，通道把「图片块 + 本轮正文」作为一条用户消息提交，图片只随本轮下发、不进历史文本；发送成功后芯片清空，失败保留以便重试。全部图片失效时报错提示重新添加，不静默丢图。
 - **上下文作用域**：待发送上下文有两份独立清单 —— 对话按会话隔离，生图面板固定一份。`ai/context*`、`ai/mention/add`、`ai/reference/add` 均接受 `scope`（缺省 chat），生图页一律传 `image`，因此两个面板添加的引用不会串到对方输入区；生图请求受理时宿主把 image 清单读成文本段并随 `contexts` 提交，读取即清空。
 - **命令徽章与指令替换**：命令只以徽章展示名称，输入框始终只保存用户可见文本；发送瞬间由 `composeCommandContent` 拼装「指令模板 + 补充文本」，存在命令时允许空输入直接发送，`applyPolicy` 按命令取值。
 - **命令回显**：用户消息渲染前由 `splitCommandContent` 按最长指令前缀拆分，命中时显示命令徽章 + 补充文本（完整提示词经悬浮可见）；落库内容仍为完整正文，历史重载后同样回放，未命中时原样输出。
@@ -565,7 +565,7 @@ interface AbortRequest {
 
 **已知限制**：后台任务的 `task_notification` 可能晚于本轮 `result`（V2 Session 在 result 处收口），此时子任务行只展示到「进行中」；`input_json_delta` 未解析，工具参数不做逐字流式展示。
 
-实现位置：`src/modules/ai/`（`providers/` SDK 封装与模型清单、`chatService.ts` 会话编排、`promptEnhance.ts` 提示词增强（写作 / 对话 / 图像三套口径集中）、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引（积分补录与单轮用量兜底）、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/workflow/`（`index.html` + `main.tsx` 入口、`aichat/index.tsx` 主组件、`aichat/layout/` 页面结构组件、`aichat/markdown.tsx` Markdown 映射、`aichat/utils/` 按域分组的纯函数与样式常量（`chat/` 会话流与展示派生、`context/` 上下文菜单、`prompt/` 提示词面板）、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
+实现位置：`src/modules/ai/`（`providers/` SDK 封装与模型清单、`chatService.ts` 会话编排、`promptEnhance.ts` 提示词增强（写作 / 对话 / 图像三套口径集中）、`contextRefs.ts` 引用生成/读取/渲染、`usageRecorder.ts` 用量记账、`usageService.ts` 用量查询、`cliUsageIndex.ts` CLI 会话记录索引（积分补录与单轮用量兜底）、`aiChatProvider.ts` 协议路由、`db/` 会话与用量仓储及 DDL）、页面 `src/workflow/`（`index.html` + `main.tsx` 入口、`aichat/WorkflowAiChat.tsx` 主组件、`aichat/` 下按功能分组的组件目录（`composer/` 输入卡片、`context/` 上下文菜单与候选、`message/` 消息流与流内卡片、`prompt/` 提示词面板、`retrieval/` 检索与参考资料、`history/` 历史、`state/` 空态）、`aichat/utils/` 按域分组的纯函数与样式常量（`chat/` 会话流与展示派生、`context/` 上下文菜单、`prompt/` 提示词面板）、`usage/index.tsx` 用量页及其 `layout/` 子组件）。
 
 用量页（工作流栏底「AI使用量」，别名 `usage`）为全局统计，不随作品作用域隔离：顶部显示筛选范围内的请求数、积分与 tokens 汇总，并向排显示「今日积分」「本月积分」两张卡片（固定区间，只跟随模块筛选、不随时间范围变化，宿主按本地 0 点与当月 1 日 0 点换算），中部表格列为「时间 / 积分消耗 / 模型 / 请求 / 模块」，请求列显示短 id、点击弹窗按需拉取该轮提示词并展示模型、tokens 与耗时；模块筛选含对话、取名、外貌、语义归纳、画面描述、出图、未归属，时间筛选为今天 / 近 7 天 / 近 30 天 / 全部，分页在宿主侧完成。明细以本机记账行为主数据源：一轮一行，模块、tokens、模型与成本取记账行；积分按请求 id 从 CodeBuddy 会话记录补录（`providerData.conversationRequestId` 聚合，同一轮的多条记录累加），CLI 记录缺失或格式变化只影响积分列、不影响明细可见性；CLI 中有而本地无记录的轮次（记账上线前的历史、其它工具发起）按「未归属」补回，出图轮次按工具结果归到「AI出图」。整轮未上报 credit 时显示破折号而不是 0。表头提供刷新按钮（`force` 强制重扫），页面可见时每 30 秒静默同步一次，标签页隐藏时不发请求。
 

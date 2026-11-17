@@ -9,7 +9,7 @@
 import { cleanup, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AiPermissionRequest } from '@shared/types/aiChat'
-import { AiChatMessageList } from '@webview/workflow/aichat/layout/AiChatMessageList'
+import { AiChatMessageList } from '@webview/workflow/aichat/message/AiChatMessageList'
 import type { JSX, ReactNode } from 'react'
 
 const { scrollToEndMock } = vi.hoisted(() => ({ scrollToEndMock: vi.fn(() => true) }))
@@ -31,7 +31,7 @@ vi.mock('@components/ui/message-scroller', () => {
 })
 
 /** 空态替身：本用例不关心首屏引导，避免引入运行时依赖 */
-vi.mock('@webview/workflow/aichat/layout/AiChatEmptyState', () => {
+vi.mock('@webview/workflow/aichat/state/AiChatEmptyState', () => {
     const renderNull = (): null => null
     return { AiChatEmptyState: renderNull }
 })

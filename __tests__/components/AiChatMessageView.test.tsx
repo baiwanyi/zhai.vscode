@@ -11,8 +11,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AiMessage } from '@shared/types/aiChat'
 import { TooltipProvider } from '@webview/components/Tooltip'
-import { AiChatRuleCatalogProvider } from '@webview/workflow/aichat/block/ruleCatalogProvider'
-import { AiChatMessageView } from '@webview/workflow/aichat/layout/AiChatMessageView'
+import { AiChatRuleCatalogProvider } from '@webview/workflow/aichat/context/ruleCatalogProvider'
+import { AiChatMessageView } from '@webview/workflow/aichat/message/AiChatMessageView'
 
 const { copyMock, toastErrorMock } = vi.hoisted(() => ({
     copyMock: vi.fn(() => Promise.resolve(true)),

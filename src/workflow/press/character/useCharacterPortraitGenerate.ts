@@ -14,8 +14,8 @@ import { DEFAULT_IMAGE_SETTINGS, type ImageSettings, type ImageSettingsResult } 
 import type { MediaItem } from '@shared/types/media'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
-import { composeSettingContext } from '@webview/workflow/media/prompt/promptSections'
-import type { PromptSettingSnapshot } from '@webview/workflow/media/prompt/promptSections'
+import { composeSettingContext } from '@webview/workflow/media/utils/prompt/sections'
+import type { PromptSettingSnapshot } from '@webview/workflow/media/utils/prompt/sections'
 import type { CharacterCard } from '../types'
 import { CHARACTER_BODY_TYPE_META, CHARACTER_GENDER_META } from '../constants'
 

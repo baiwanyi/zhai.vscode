@@ -13,8 +13,8 @@ import type { ImageGenerateResult } from '@shared/types/imageGenerate'
 import type { PortraitStyle } from '@shared/types/press'
 import type { PromptTag, PromptTagListResult } from '@shared/types/promptLibrary'
 import { TooltipProvider } from '@webview/components/Tooltip'
-import { ImageComposer } from '@webview/workflow/media/layout/ImageComposer'
-import type { PromptCharacterSnapshot } from '@webview/workflow/media/layout/ImageComposer'
+import { ImageComposer } from '@webview/workflow/media/imagegen/ImageComposer'
+import type { PromptCharacterSnapshot } from '@webview/workflow/media/imagegen/ImageComposer'
 import type { JSX } from 'react'
 
 const { requestMock, toastErrorMock, onStateMock, stateListeners } = vi.hoisted(() => {

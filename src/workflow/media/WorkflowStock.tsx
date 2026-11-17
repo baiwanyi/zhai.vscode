@@ -41,6 +41,7 @@ import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { SegmentedRailItem } from '@webview/components/SegmentedRail'
+import { MonthSelect } from './common/MonthSelect'
 import { groupByMonth, toMonthOptions } from './hooks/mediaMonth'
 import { useImageListPaging } from './hooks/useImageListPaging'
 import { useStockCopy } from './hooks/useStockCopy'
@@ -49,17 +50,16 @@ import { useStockDownloaded } from './hooks/useStockDownloaded'
 import { useStockInsert } from './hooks/useStockInsert'
 import { useStockPhotos } from './hooks/useStockPhotos'
 import { useStockStatus } from './hooks/useStockStatus'
-import { ImageList } from './layout/imageList/ImageList'
-import { toImageListGroups, toStockLocalItem, toStockPhotoItem } from './layout/imageList/imageListAdapters'
-import { MonthSelect } from './layout/MonthSelect'
-import { ScrollRail } from './layout/ScrollRail'
-import { StockDetailDialog } from './layout/StockDetailDialog'
-import { StockFilterBar } from './layout/StockFilterBar'
-import { StockKeyDialog } from './layout/StockKeyDialog'
-import { StockQuotaBadges } from './layout/StockQuotaBadges'
-import { TOPIC_TAB_ITEMS, toStockTopic, toTopicTabValue } from './layout/stockTopics'
-import type { ImageListAction, ImageListItem, ImageListStates } from './layout/imageList/imageListModel'
-import type { StockDetailPhoto } from './layout/StockDetailDialog'
+import { ImageList } from './imagelist/ImageList'
+import { toImageListGroups, toStockLocalItem, toStockPhotoItem } from './imagelist/imageListAdapters'
+import { StockDetailDialog } from './stock/StockDetailDialog'
+import { StockFilterBar } from './stock/StockFilterBar'
+import { StockKeyDialog } from './stock/StockKeyDialog'
+import { StockQuotaBadges } from './stock/StockQuotaBadges'
+import { StockScrollRail } from './stock/StockScrollRail'
+import { TOPIC_TAB_ITEMS, toStockTopic, toTopicTabValue } from './stock/stockTopics'
+import type { ImageListAction, ImageListItem, ImageListStates } from './imagelist/imageListModel'
+import type { StockDetailPhoto } from './stock/StockDetailDialog'
 import type { JSX } from 'react'
 
 /** 两个视图：搜索是首页，已下载是二级视图（进入后标题行左侧给返回） */
@@ -74,12 +74,12 @@ interface TopicTabRailProps {
 }
 
 /**
- * 话题标签行：内容胶水——滑动与两端箭头交给 ScrollRail，话题清单由调用方注入。
+ * 话题标签行：内容胶水——滑动与两端箭头交给 StockScrollRail，话题清单由调用方注入。
  * 关键约束：本组件不认识具体话题、也不做滚动测量；「推荐」与协议 null 的折算在上层完成。
  */
 function TopicTabRail({ items, value, onChange }: TopicTabRailProps): JSX.Element {
     return (
-        <ScrollRail ariaLabel="图库话题" activeValue={value}>
+        <StockScrollRail ariaLabel="图库话题" activeValue={value}>
             <SegmentedRail
                 items={items}
                 ariaLabel="图库话题"
@@ -89,7 +89,7 @@ function TopicTabRail({ items, value, onChange }: TopicTabRailProps): JSX.Elemen
                 value={value}
                 onChange={onChange}
             />
-        </ScrollRail>
+        </StockScrollRail>
     )
 }
 

@@ -244,12 +244,12 @@ describe('成功出图', () => {
     })
 })
 
-/** 词库目录的绝对路径：与宿主侧 prompt/tags 口径一致 */
+/** 词库目录的绝对路径：与宿主侧 prompt/imagegen 口径一致 */
 function tagDirPath(): string {
-    return path.join(STORAGE_ROOT, 'prompt', 'tags')
+    return path.join(STORAGE_ROOT, 'prompt', 'imagegen')
 }
 
-/** 词库 md 的绝对路径：与宿主侧 prompt/tags 口径一致 */
+/** 词库 md 的绝对路径：与宿主侧 prompt/imagegen 口径一致 */
 function tagFsPath(object: string): string {
     return path.join(tagDirPath(), `${object}.md`)
 }

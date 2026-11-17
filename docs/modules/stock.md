@@ -622,17 +622,17 @@ if (zhaiRelative !== null) {
 | `src/workflow/layout/workflowSections.ts` | 分区白名单增 `stock` |
 | `src/workflow/layout/contentScope.ts` | `RESIDENT_SECTIONS` 增 `stock` |
 | `src/workflow/layout/WorkflowNav.tsx` | `TOOL_SECTIONS` 与 `SECTION_META` 增 `stock` |
-| `src/workflow/media/layout/StockFilterBar.tsx`（新） | 页头筛选行：关键词输入（input-group）+ 方向下拉 + 排序下拉，收进 AppMenu |
-| `src/workflow/media/layout/imageList/ImageList.tsx`（新） | 搜索结果区：平铺网格 + 空态/错误态与滚动自动加载（哨兵 IntersectionObserver） |
-| `src/workflow/media/layout/ScrollRail.tsx`（新） | 单行横向滑动壳：两端箭头（24px 常驻占位）+ 渐隐遮罩 + 选中项回滚，内容由 children 注入 |
-| `src/workflow/media/layout/MonthSelect.tsx`（新） | 月份下拉：'all' ↔ null 折算、限高滚动，图库页与媒体页可共用 |
-| `src/workflow/media/layout/StockQuotaBadges.tsx`（新） | 页头统计胶囊：已下载张数与剩余配额（悬停精确口径） |
-| `src/workflow/media/layout/stockTopics.ts`（新） | 话题清单与「推荐位 ↔ 协议 null」两向折算 |
+| `src/workflow/media/stock/StockFilterBar.tsx`（新） | 页头筛选行：关键词输入（input-group）+ 方向下拉 + 排序下拉，收进 AppMenu |
+| `src/workflow/media/imagelist/ImageList.tsx`（新） | 搜索结果区：平铺网格 + 空态/错误态与滚动自动加载（哨兵 IntersectionObserver） |
+| `src/workflow/media/stock/StockScrollRail.tsx`（新） | 单行横向滑动壳：两端箭头（24px 常驻占位）+ 渐隐遮罩 + 选中项回滚，内容由 children 注入 |
+| `src/workflow/media/common/MonthSelect.tsx`（新） | 月份下拉：'all' ↔ null 折算、限高滚动，图库页与媒体页可共用 |
+| `src/workflow/media/stock/StockQuotaBadges.tsx`（新） | 页头统计胶囊：已下载张数与剩余配额（悬停精确口径） |
+| `src/workflow/media/stock/stockTopics.ts`（新） | 话题清单与「推荐位 ↔ 协议 null」两向折算 |
 | `src/workflow/media/hooks/useStockDelete.ts`（新） | 删除确认状态机：pending / isDeleting / request / cancel / confirm（ref 闸门防重入） |
-| `src/workflow/media/layout/imageList/imageListAdapters.ts`（新） | 搜索结果与已下载条目映射成统一条目：署名、已下载/已丢失角标、缺图占位 |
+| `src/workflow/media/imagelist/imageListAdapters.ts`（新） | 搜索结果与已下载条目映射成统一条目：署名、已下载/已丢失角标、缺图占位 |
 | `src/workflow/media/layout/StockSearchBar.tsx`（新） | 搜索框 + 方向分段 + 刷新 |
 | `src/workflow/media/hooks/useImageListPaging.ts`（新） | 已下载按月分组后的统一分批：每组首屏 60 张，滚动续载 |
-| `src/workflow/media/layout/StockKeyDialog.tsx`（新） | 密钥配置弹窗（只写不读回，回显尾号） |
+| `src/workflow/media/stock/StockKeyDialog.tsx`（新） | 密钥配置弹窗（只写不读回，回显尾号） |
 | `src/workflow/media/hooks/useStockPhotos.ts`（新） | 搜索、话题与关键词互斥、按页续载（上限 5 页）、竞态、首屏与追加两种 loading、当前列表首页 8 小时自动刷新与强制刷新 |
 | `src/workflow/media/hooks/useStockDownloaded.ts`（新） | 已下载列表、删除、局部插卡 |
 | `src/workflow/media/hooks/useStockInsert.ts`（新） | 插入、按 `reason` 分支提示、失败重试 |

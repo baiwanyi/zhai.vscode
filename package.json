@@ -413,7 +413,7 @@
                         "scope": "machine-overridable",
                         "pattern": "^(?:[a-zA-Z]:[\\\\/]|\\\\\\\\[^\\\\/]+[\\\\/]|/)",
                         "patternErrorMessage": "须填写本地绝对路径，如 D:\\路径、D:/路径、\\\\server\\share，或以 / 开头的 POSIX 路径",
-                        "markdownDescription": "词库目录：其下分 `tags/`（词条 md）、`images/`（预览图）、`rules/`（出图规则）。留空则使用文档保存目录下的 `prompt`。须填写本地绝对路径，盘符写法 `D:\\路径` 或 `D:/路径` 均可；改动后重新打开提示词面板即可生效"
+                        "markdownDescription": "词库目录：其下分 `imagegen/`（生图词条 md）、`press/`（对话提示词 md）、`images/`（预览图）、`rules/`（出图规则）。留空则使用文档保存目录下的 `prompt`。须填写本地绝对路径，盘符写法 `D:\\路径` 或 `D:/路径` 均可；改动后重新打开提示词面板即可生效"
                     }
                 }
             },

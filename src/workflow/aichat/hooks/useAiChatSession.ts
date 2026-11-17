@@ -1,7 +1,7 @@
 /**
  * AI 对话会话状态机：持有会话快照、视图阶段（idle / sending / streaming）与输入内容，
  * 承载发送 / 停止 / 新建 / 切换 / 删除会话等操作，并订阅宿主 stream 消息按发起时的助手消息 id 就地追加增量。
- * 复用 @shared/utils/error 的错误收窄与 ../utils 的消息替换；流消息的归一与字段收窄集中在 ./aiChatStreamHandlers，
+ * 复用 @shared/utils/error 的错误收窄与 ../utils/chat/session 的消息替换；流消息的归一与字段收窄集中在 ../utils/chat/stream，
  * 上下文清单与历史列表由调用方 hook 持有、经参数注入刷新。
  * 关键约束：发送正文由调用方拼装后传入（写作命令模板不进入输入框），本 hook 只负责提交与清空输入；
  * 增量按 channel 分流——content 追加到正文、reasoning 追加到思维链，两者不混流；流末以宿主回传的完整值校正；
@@ -31,10 +31,11 @@ import type {
 } from '@shared/types/aiChat'
 import { onStream, request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
-import { appendNoticeMessage, applyDonePatch, readContextUsage, readStreamEvent } from './aiChatStreamHandlers'
-import { patchMessage, upsertStep, type Phase } from '../utils'
+import type { Phase } from '../utils/chat/view'
+import { patchMessage, upsertStep } from '../utils/chat/session'
+import { appendNoticeMessage, applyDonePatch, readContextUsage, readStreamEvent } from '../utils/chat/stream'
 
-/** 视图阶段定义在展示层 utils，此处转出保持既有引用路径不变 */
+/** 视图阶段定义在展示层 utils/chat/view，此处转出保持既有引用路径不变 */
 export type { Phase }
 
 /** 会话级瞬时状态：只描述此刻正在发生什么，不落库，随流末清空 */
@@ -56,6 +57,8 @@ export interface AiSendOptions {
     titleHint?: string
     /** 本轮挂载的规则名：由宿主读正文并入提示词，不占上下文配额 */
     ruleNames?: readonly string[]
+    /** 本轮挂载的参考图路径：宿主按登记表校验后以图片块提交，供模型识图 */
+    referenceImages?: readonly string[]
 }
 
 /** 会话状态机对外暴露的状态与操作 */
@@ -264,6 +267,7 @@ export function useAiChatSession({
                     content: text,
                     titleHint: options.titleHint,
                     ruleNames: options.ruleNames ?? [],
+                    referenceImages: options.referenceImages ?? [],
                 })
                 setSession((previous) =>
                     previous

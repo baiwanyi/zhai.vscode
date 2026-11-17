@@ -1,6 +1,7 @@
 /**
  * 词库服务的单测：覆盖按分类分文件的列举、预览图两种命中、增删改落盘与重名拒绝。
- * 复用约定：虚拟磁盘取 __tests__/stubs/vscode，存储根经 zhai.storage.rootPath 注入，与出图服务同一口径。
+ * 复用约定：虚拟磁盘取 __tests__/stubs/vscode，存储根经 zhai.storage.rootPath 注入，与出图服务同一口径；
+ * 默认实例读 imagegen 子目录，写作提示词库另起一个 press 实例，两者目录与预览图口径互不影响。
  * 关键约束：改名或换组必须整块移动且不留空文件；同组重名一律拒绝；分类删空时 md 一并删除。
  */
 import { createHash } from 'node:crypto'
@@ -17,7 +18,8 @@ import {
 import { PromptTagService } from '../src/modules/imagegen/prompt'
 
 const STORAGE_ROOT = 'd:/vault'
-const TAG_DIR = path.join(STORAGE_ROOT, 'prompt', 'tags')
+const TAG_DIR = path.join(STORAGE_ROOT, 'prompt', 'imagegen')
+const CHAT_TAG_DIR = path.join(STORAGE_ROOT, 'prompt', 'press')
 const IMAGE_DIR = path.join(STORAGE_ROOT, 'prompt', 'images')
 
 let service: PromptTagService
@@ -263,5 +265,37 @@ describe('出图取文', () => {
         const prompts = await service.readForPrompt(['人物::基础::女性', '人物::缺失', 'bad-id', '人物::基础::男性'])
 
         expect(prompts).toEqual(['(female:1.3)', 'male'])
+    })
+})
+
+describe('写作提示词库', () => {
+    it('落到 press 子目录，且不解析预览图', async () => {
+        const chatService = new PromptTagService('press')
+        setDirectory(CHAT_TAG_DIR)
+        setDirectory(IMAGE_DIR)
+        setDirectory(path.join(IMAGE_DIR, '人物'))
+        setDirectory(path.join(IMAGE_DIR, '人物', '基础'))
+        setFileContent(path.join(CHAT_TAG_DIR, '改写.md'), '# 改写\n\n## 精简\n\n### 缩句\n把长句拆短\n')
+        setFileContent(imagePath('人物', '基础', '女性.webp'), '')
+
+        const result = await chatService.list()
+
+        expect(result.dirPath).toBe(CHAT_TAG_DIR)
+        expect(result.imageDirPath).toBe('')
+        expect(result.tags.map((tag) => tag.id)).toEqual(['改写::精简::缩句'])
+        expect(result.tags[0]?.preview).toBeNull()
+    })
+
+    it('与生图词库互不干扰', async () => {
+        const chatService = new PromptTagService('press')
+        setDirectory(TAG_DIR)
+        setFileContent(tagPath('人物'), '# 人物\n\n## 基础\n\n### 女性\nfemale\n')
+
+        await chatService.save({ object: '改写', attribute: '精简', name: '缩句', prompt: '把长句拆短' })
+
+        const imageResult = await service.list()
+        const chatResult = await chatService.list()
+        expect(imageResult.objects.map((item) => item.name)).toEqual(['人物'])
+        expect(chatResult.objects.map((item) => item.name)).toEqual(['改写'])
     })
 })

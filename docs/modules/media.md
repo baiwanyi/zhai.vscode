@@ -382,7 +382,7 @@ notes/{YYYYMM}/*.md                                  → note
 
 ### 5.7 呈现规则
 
-**网格卡片**（统一图片列表 `src/workflow/media/layout/imageList/`，条目经 `imageListAdapters.ts` 映射）：
+**网格卡片**（统一图片列表 `src/workflow/media/imagelist/`，条目经 `imageListAdapters.ts` 映射）：
 
 | 位置 | 内容 |
 | --- | --- |
@@ -428,7 +428,7 @@ notes/{YYYYMM}/*.md                                  → note
 
 ### 6.2 网格
 
-- 统一图片列表 `layout/imageList/ImageList.tsx` 承担加载/空/错误态优先级、分组或平铺、在途占位与续载；媒体、在线图库与上传页共用同一组件，条目经各自适配器映射。
+- 统一图片列表 `imagelist/ImageList.tsx` 承担加载/空/错误态优先级、分组或平铺、在途占位与续载；媒体、在线图库与上传页共用同一组件，条目经各自适配器映射。
 - 按月分组，组头 sticky：`2026年10月 · 37 张`；组按 `YYYY-MM` 倒序，分组与年月文案统一走 `hooks/mediaMonth.ts`。
 - 每组首屏 60 张（`hooks/useImageListPaging.ts` 的 `PAGE_SIZE`），媒体页用「加载更多」按钮追加，图库与已下载页用滚动哨兵追加；组头计数取组内总数。
 - 卡片取 `ImageCard` + `@webview/components/Image`：媒体页 3:4、图库与上传页 4:3，比例由参数配置；缺失图与非图片文件走图标占位。

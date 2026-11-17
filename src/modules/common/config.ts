@@ -21,7 +21,7 @@ export const PROMPT_DIR = 'prompt'
 export interface ZhaiConfig {
     /** 文档保存目录（空 = 用户主目录下的 .zhai） */
     rootPath: string
-    /** 提示词目录（空 = 文档保存目录下的 prompt）：其下分 tags / images / rules */
+    /** 提示词目录（空 = 文档保存目录下的 prompt）：其下分 imagegen / press / images / rules */
     promptRootPath: string
     indexExclude: string[]
     indexDebounceMs: number
@@ -215,7 +215,7 @@ export function resolveStorageRoot(): vscode.Uri {
 
 /**
  * 解析提示词目录 URI：优先取 prompt.rootPath，未配置时回落到存储根下的 prompt。
- * 关键约束：其下 tags / images / rules 三个子目录由调用方拼接（见 common/promptRoot），
+ * 关键约束：其下 imagegen / press / images / rules 四个子目录由调用方拼接（见 common/promptRoot），
  * 改这一处即同时改变读写位置；配置每次调用即时求值，切换目录后无需重启，重开面板即可看到新库。
  */
 export function resolvePromptRoot(): vscode.Uri {

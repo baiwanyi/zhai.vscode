@@ -13,7 +13,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AiPermissionRequest } from '@shared/types/aiChat'
-import { AiChatConfirmCard } from '@webview/workflow/aichat/layout/AiChatConfirmCard'
+import { AiChatConfirmCard } from '@webview/workflow/aichat/message/AiChatConfirmCard'
 
 const TARGET = 'd:/press/剑来/Chapters/c1.md'
 /** 目标文件名：宿主给的整句里也带它，前端不自行拆分 */

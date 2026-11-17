@@ -11,7 +11,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AiAskQuestion } from '@shared/types/aiChat'
-import { AiChatQuestionnaire } from '@webview/workflow/aichat/layout/AiChatQuestionnaire'
+import { AiChatQuestionnaire } from '@webview/workflow/aichat/message/AiChatQuestionnaire'
 
 const QUESTION = '这一章用第几人称？'
 

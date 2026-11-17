@@ -16,7 +16,7 @@ import type {
 } from '@shared/types/aiChat'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
-import type { AiContextTarget } from '../constants'
+import type { AiContextTarget } from '../utils/context/types'
 
 /** 单批条数：与「最近 20 篇 + 滚动加载」的交互一致 */
 export const CONTEXT_PAGE_SIZE = 20

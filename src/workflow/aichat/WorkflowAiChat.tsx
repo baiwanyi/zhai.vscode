@@ -22,6 +22,8 @@ import type { PromptRule } from '@shared/types/promptLibrary'
 import { AppAction, AppContent, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
+import { AiChatComposer } from './composer/AiChatComposer'
+import { AiChatHistoryMenu } from './history/AiChatHistoryMenu'
 import { useAiChatCommands } from './hooks/useAiChatCommands'
 import { useAiChatContexts } from './hooks/useAiChatContexts'
 import { useAiChatConversationActions } from './hooks/useAiChatConversationActions'
@@ -34,18 +36,17 @@ import { useAiChatPageSync } from './hooks/useAiChatPageSync'
 import { useAiChatPermission } from './hooks/useAiChatPermission'
 import { useAiChatPicker } from './hooks/useAiChatPicker'
 import { useAiChatReference } from './hooks/useAiChatReference'
+import { useAiChatReferenceImages } from './hooks/useAiChatReferenceImages'
 import { useAiChatRuleCatalog } from './hooks/useAiChatRuleCatalog'
 import { useAiChatRuntime } from './hooks/useAiChatRuntime'
 import { useAiChatSession } from './hooks/useAiChatSession'
 import { useAiChatStatus } from './hooks/useAiChatStatus'
 import { useAiChatWriteState } from './hooks/useAiChatWriteState'
-import { AiChatComposer } from './layout/AiChatComposer'
-import { AiChatHistoryMenu } from './layout/AiChatHistoryMenu'
-import { AiChatMentionDialog } from './layout/AiChatMentionDialog'
-import { AiChatMessageList } from './layout/AiChatMessageList'
-import { AiChatReferenceDialog } from './layout/AiChatReferenceDialog'
-import { resolveAiChatView } from './utils'
-import type { AiReferenceAction } from './constants'
+import { AiChatMessageList } from './message/AiChatMessageList'
+import { AiChatMentionDialog } from './retrieval/AiChatMentionDialog'
+import { AiChatReferenceDialog } from './retrieval/AiChatReferenceDialog'
+import { resolveAiChatView } from './utils/chat/view'
+import type { AiReferenceAction } from './utils/context/types'
 import type { JSX } from 'react'
 
 /** 对话页对外入参：会话作用域与作品标题，其余状态全部由页面内部 hooks 持有 */
@@ -62,6 +63,14 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
     // 增强进行态由输入卡片的 usePromptEnhance 自己维护，页面只提供请求本身
     const { enhance } = useAiChatEnhance()
     const { contexts, setContexts, loadContexts, removeContext } = useAiChatContexts({ onError: setError })
+    // 待发送参考图：选择器回传的条目暂存在页面，发送成功才清空，失败保留以便重试
+    const {
+        references,
+        isFull: isReferenceFull,
+        add: addReferenceImage,
+        remove: removeReferenceImage,
+        clear: clearReferenceImages,
+    } = useAiChatReferenceImages()
     const { sessions, loadSessions } = useAiChatHistory({ onError: setError, projectDir })
     const { runtime, loadRuntime } = useAiChatRuntime({ onError: setError })
     // 模型控制自带清单拉取与展示名派生：页面只透传一个对象，不再逐项搬 runtime / choices / 回调
@@ -204,10 +213,18 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
         [reloadRuleCatalog, removeRule],
     )
 
-    /** 发送：正文原样下发，规则随请求携带；写入范围固定为当前文档，不再有发送前的范围授权 */
+    /** 发送：正文原样下发，规则与参考图随请求携带；写入范围固定为当前文档，不再有发送前的范围授权 */
     const handleSend = useCallback((): void => {
-        void send(input, { ruleNames })
-    }, [input, ruleNames, send])
+        void send(input, {
+            ruleNames,
+            referenceImages: references.map((item) => item.path),
+        }).then((sent) => {
+            // 发送成功才清空参考图：失败或停留待重试时图片仍挂在输入区
+            if (sent) {
+                clearReferenceImages()
+            }
+        })
+    }, [clearReferenceImages, input, references, ruleNames, send])
 
     return (
         <AppPage>
@@ -263,6 +280,10 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
                     onToggleRule={handleToggleRule}
                     onRenameRule={handleRenameRule}
                     onRemoveRule={handleRemoveRule}
+                    references={references}
+                    isReferenceFull={isReferenceFull}
+                    onPickReference={addReferenceImage}
+                    onRemoveReference={removeReferenceImage}
                     modelControl={modelControl}
                     onSend={handleSend}
                     onStop={() => void stop()}

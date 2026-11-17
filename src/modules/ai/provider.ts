@@ -111,6 +111,16 @@ export interface AiPermissionChannel {
     request(request: AiPermissionRequest, timeoutMs?: number): Promise<AiPermissionDecision>
 }
 
+/**
+ * 图片多模态输入：字节与真实类型由宿主侧校验后传入，通道只负责编码与下发。
+ * 关键约束：mimeType 取自文件头嗅探，四种取值即底层通道支持的媒体类型，
+ * 不在其中的图片不得以「猜类型」的方式提交。
+ */
+export interface AiImageInput {
+    bytes: Uint8Array
+    mimeType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
+}
+
 /** 流式生成请求：长度上限按通道能力可被忽略，但调用方始终传入 */
 export interface AiStreamRequest {
     model: string
@@ -130,6 +140,11 @@ export interface AiStreamRequest {
      * 约定：只对 Write 生效，Edit 的片段替换不经过它；缺省表示不改写入参。
      */
     normalizeWrite?: (filePath: string, content: string) => string
+    /**
+     * 参考图：随本轮用户消息以图片块提交，供模型直接看图。
+     * 约定：只随本轮下发，不进入历史文本；缺省或空数组即纯文本生成。
+     */
+    images?: readonly AiImageInput[]
 }
 
 /** 通道就绪状态：未就绪时 reason 为可直接展示给用户的提示 */

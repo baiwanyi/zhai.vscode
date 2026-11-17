@@ -43,7 +43,7 @@ import type {
     AiUsageMeta,
 } from '../provider'
 import type { CodebuddyClient } from './codebuddyClient'
-import type { ContentBlock, SessionOptions } from '@tencent-ai/agent-sdk'
+import type { ContentBlock, SessionOptions, UserMessage } from '@tencent-ai/agent-sdk'
 
 /**
  * 上下文预算的配置键：SDK 未提供专用选项，只能经通用的 setConfig 下发，
@@ -276,7 +276,31 @@ export class CodeBuddyProvider implements AiProvider {
                     logger.warn(`上下文窗口设置失败（${contextWindow}），按模型默认档位继续：${String(error)}`)
                 }
             }
-            await session.send(prompt)
+            const images = request.images ?? []
+            if (images.length === 0) {
+                await session.send(prompt)
+            } else {
+                // 图片块排在正文之前：模型先看图，再读本轮指令与上下文
+                const content: ContentBlock[] = [
+                    ...images.map((image): ContentBlock => ({
+                        type: 'image',
+                        source: {
+                            type: 'base64',
+                            media_type: image.mimeType,
+                            data: Buffer.from(image.bytes).toString('base64'),
+                        },
+                    })),
+                    { type: 'text', text: prompt },
+                ]
+                // 带图片时必须走 UserMessage：字符串形态的 send 只能提交纯文本
+                const userMessage: UserMessage = {
+                    type: 'user',
+                    session_id: session.sessionId,
+                    message: { role: 'user', content },
+                    parent_tool_use_id: null,
+                }
+                await session.send(userMessage)
+            }
             for await (const message of session.stream()) {
                 requestId = message._requestId ?? requestId
                 if (message.type === 'tool_progress') {

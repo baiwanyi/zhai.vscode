@@ -11,8 +11,8 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { StockPhotoSizeKey } from '@shared/types/stock'
 import { TooltipProvider } from '@webview/components/Tooltip'
-import { StockDetailDialog } from '@webview/workflow/media/layout/StockDetailDialog'
-import type { StockDetailPhoto } from '@webview/workflow/media/layout/StockDetailDialog'
+import { StockDetailDialog } from '@webview/workflow/media/stock/StockDetailDialog'
+import type { StockDetailPhoto } from '@webview/workflow/media/stock/StockDetailDialog'
 
 /** jsdom 没有 ResizeObserver：档位按钮带 tooltip，缺了就整棵树渲染失败 */
 class ResizeObserverStub implements ResizeObserver {

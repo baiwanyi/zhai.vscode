@@ -64,7 +64,13 @@ export interface PromptRuleUpdateRequest {
 }
 
 /**
- * 提示词词条：{存储根}/prompt/tags/*.md 中的一条，全局共享、与作品无关。
+ * 词库归属：imagegen 为生图提示词库、press 为 AI 对话的写作提示词库。
+ * 关键约束：两者目录、协议与预览图口径都不同，宿主服务与前端面板都以此类型为唯一来源。
+ */
+export type PromptLibraryScope = 'imagegen' | 'press'
+
+/**
+ * 提示词词条：提示词目录下 imagegen（生图）或 press（对话写作）子目录的 md 中的一条，全局共享、与作品无关。
  * 标识由「分类::分组::名称」组成，改名即换标识；芯片只携带标识，原文由宿主按标识回查。
  */
 export interface PromptTag {

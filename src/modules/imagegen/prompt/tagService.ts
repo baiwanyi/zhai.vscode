@@ -1,23 +1,34 @@
 /**
- * 词库服务：列举、新建、改写、删除与出图取文，词条按一级分类落在提示词 tags 目录下的 md。
+ * 词库服务：列举、新建、改写、删除与取文，词条按一级分类落在提示词词库目录下的 md。
  * 复用约定：目录取 common/promptRoot（父目录来自 zhai.prompt.rootPath，留空为存储根下的 prompt），
- * 删除走 common/storagePath，预览图目录取 ../promptImageService；
+ * 生图词库用 imagegen 子目录、AI 对话的写作提示词库用 press 子目录，同一套实例按 segment 区分；
+ * 删除走 common/storagePath，预览图目录取 ../promptImageService（仅生图词库）；
  * md 的解析与序列化交给 ./tagMarkdown（格式契约见其头注释与 docs 的「词库 md 格式规范」），
  * 标识口径与前端芯片共用同一套「分类::分组::名称」。
  * 关键约束：一个分类一个 md，文件名即分类名，改分类等于换文件；同组重名一律拒绝，改名或换组按整块移动；
  * 分类清单固定把「预设」置顶，其余按中文名排序，改排序只动 listObjects 一处；
- * 出图时按标识回查原文，缺失或非法标识跳过并记日志，不阻断出图；
- * 预览图先按「分类/分组/名称」镜像查找，再按 sha1 前 10 位兜底，两处都没有则视为无图。
+ * 取文时按标识回查原文，缺失或非法标识跳过并记日志，不阻断调用方；
+ * 预览图只在生图词库下解析（先按「分类/分组/名称」镜像查找，再按 sha1 前 10 位兜底），
+ * 写作提示词库不挂图，preview 恒为 null 且不扫描图片目录。
  */
 import { createHash } from 'node:crypto'
 import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
 import { promptDirUri } from '@modules/common/promptRoot'
 import { deleteResource, isPathExisting } from '@modules/common/storagePath'
-import type { PromptTag, PromptTagAttribute, PromptTagListResult, PromptTagObject } from '@shared/types/promptLibrary'
+import type {
+    PromptLibraryScope,
+    PromptTag,
+    PromptTagAttribute,
+    PromptTagListResult,
+    PromptTagObject,
+} from '@shared/types/promptLibrary'
 import { MAX_PROMPT_TAG_LENGTH, MAX_PROMPT_TAGS, MAX_TAG_LABEL } from './limits'
 import { parseTagId, parseTagMarkdown, serializeTagMarkdown, tagIdOf, type TagMarkdownEntry } from './tagMarkdown'
 import { promptImageDirUri } from '../promptImageService'
+
+/** 词库归属：生图提示词（imagegen）与 AI 对话的写作提示词（press）各占一个子目录，取值与共享契约一致 */
+export type PromptTagSegment = PromptLibraryScope
 
 /** 分类文件扩展名：只认 md，目录里的其它文件不参与列举 */
 const TAG_EXTENSION = '.md'
@@ -45,14 +56,9 @@ function hasControlChar(value: string): boolean {
     })
 }
 
-/** 词库目录 Uri：列举、保存与打开目录共用同一口径 */
-function tagDirUri(): vscode.Uri {
-    return promptDirUri('tags')
-}
-
-/** 分类文件 Uri：分类名必须已通过 normalizeObject */
-function tagFileUri(object: string): vscode.Uri {
-    return vscode.Uri.joinPath(tagDirUri(), `${object}${TAG_EXTENSION}`)
+/** 分类文件 Uri：分类名必须已通过 normalizeObject，目录由调用方按词库归属传入 */
+function tagFileUri(dirUri: vscode.Uri, object: string): vscode.Uri {
+    return vscode.Uri.joinPath(dirUri, `${object}${TAG_EXTENSION}`)
 }
 
 /** 去掉扩展名：分类名与预览图的比对键都按无扩展名口径 */
@@ -202,9 +208,21 @@ function toTag(entry: TagMarkdownEntry, preview: string | null): PromptTag {
 }
 
 export class PromptTagService {
+    public constructor(private readonly segment: PromptTagSegment = 'imagegen') {}
+
+    /** 词库目录 Uri：列举、保存与打开目录共用同一口径 */
+    private dirUri(): vscode.Uri {
+        return promptDirUri(this.segment)
+    }
+
+    /** 是否解析预览图：只有生图词库挂图，写作提示词库不扫图片目录 */
+    private get withPreview(): boolean {
+        return this.segment === 'imagegen'
+    }
+
     /** 列举词库：目录缺失视为空库；分类按中文名排序，分组与词条保持 md 内顺序 */
     public async list(): Promise<PromptTagListResult> {
-        const imageIndex = await collectImageIndex()
+        const imageIndex = this.withPreview ? await collectImageIndex() : null
         const objects: PromptTagObject[] = []
         const tags: PromptTag[] = []
         const seen = new Set<string>()
@@ -220,7 +238,7 @@ export class PromptTagService {
                 }
                 seen.add(id)
                 counts.set(entry.attribute, (counts.get(entry.attribute) ?? 0) + 1)
-                tags.push(toTag(entry, previewOf(imageIndex, entry)))
+                tags.push(toTag(entry, imageIndex === null ? null : previewOf(imageIndex, entry)))
             }
             const attributes: PromptTagAttribute[] = [...counts].map(([name, count]) => ({ name, count }))
             objects.push({ name: object, attributes })
@@ -228,8 +246,8 @@ export class PromptTagService {
         return {
             objects,
             tags,
-            dirPath: tagDirUri().fsPath,
-            imageDirPath: promptImageDirUri().fsPath,
+            dirPath: this.dirUri().fsPath,
+            imageDirPath: this.withPreview ? promptImageDirUri().fsPath : '',
         }
     }
 
@@ -300,7 +318,7 @@ export class PromptTagService {
 
     /** 打开词库目录：不存在时先建出来，再交给系统文件管理器定位，并回传最新列表 */
     public async openDir(): Promise<PromptTagListResult> {
-        const dirUri = tagDirUri()
+        const dirUri = this.dirUri()
         await vscode.workspace.fs.createDirectory(dirUri)
         await vscode.commands.executeCommand('revealFileInOS', dirUri)
         return this.list()
@@ -327,11 +345,11 @@ export class PromptTagService {
         return prompts
     }
 
-    /** 分类清单：tags 目录下的 md 文件名主干，「预设」置顶，其余按中文排序 */
+    /** 分类清单：词库目录下的 md 文件名主干，「预设」置顶，其余按中文排序 */
     private async listObjects(): Promise<string[]> {
         let entries: [string, vscode.FileType][]
         try {
-            entries = await vscode.workspace.fs.readDirectory(tagDirUri())
+            entries = await vscode.workspace.fs.readDirectory(this.dirUri())
         } catch {
             return []
         }
@@ -355,7 +373,7 @@ export class PromptTagService {
     /** 读取一个分类文件：不存在或读取失败按空处理，分类以文件名为准 */
     private async readEntries(object: string): Promise<TagMarkdownEntry[]> {
         try {
-            const bytes = await vscode.workspace.fs.readFile(tagFileUri(object))
+            const bytes = await vscode.workspace.fs.readFile(tagFileUri(this.dirUri(), object))
             return parseTagMarkdown(Buffer.from(bytes).toString('utf8')).map((entry) => ({ ...entry, object }))
         } catch {
             return []
@@ -375,19 +393,22 @@ export class PromptTagService {
 
     /** 写回一个分类文件：条目为空时删除文件，不让空标题留在目录里 */
     private async writeEntries(object: string, entries: readonly TagMarkdownEntry[]): Promise<void> {
-        const fileUri = tagFileUri(object)
+        const fileUri = tagFileUri(this.dirUri(), object)
         if (entries.length === 0) {
             if (await isPathExisting(fileUri)) {
                 await deleteResource(fileUri, false)
             }
             return
         }
-        await vscode.workspace.fs.createDirectory(tagDirUri())
+        await vscode.workspace.fs.createDirectory(this.dirUri())
         await vscode.workspace.fs.writeFile(fileUri, new TextEncoder().encode(serializeTagMarkdown(object, entries)))
     }
 
-    /** 单条预览图：按精确路径与哈希各试一遍扩展名，保存后立即回显用 */
+    /** 单条预览图：按精确路径与哈希各试一遍扩展名，保存后立即回显用；无图词库直接返回 null */
     private async resolvePreviewOf(entry: TagMarkdownEntry): Promise<string | null> {
+        if (!this.withPreview) {
+            return null
+        }
         const dirUri = promptImageDirUri()
         for (const extension of PREVIEW_EXTENSIONS) {
             const mirrored = vscode.Uri.joinPath(dirUri, entry.object, entry.attribute, `${entry.name}.${extension}`)
@@ -403,5 +424,26 @@ export class PromptTagService {
             }
         }
         return null
+    }
+}
+
+/**
+ * 旧生图词库目录迁移：把 {词库目录}/tags 整体改名为 imagegen。
+ * 复用约定：目录名由 promptRoot 登记，迁移只动目录本身，md 内容与文件名一概不改。
+ * 关键约束：目标目录已存在时不动手（用户可能两套并存），源目录不存在时直接返回；
+ * 迁移失败只记日志，词库退化为空库，用户仍可在新目录重建，不阻断激活。
+ */
+export async function migrateLegacyTagDir(): Promise<void> {
+    const legacy = promptDirUri('tags')
+    const next = promptDirUri('imagegen')
+    if (!(await isPathExisting(legacy)) || (await isPathExisting(next))) {
+        return
+    }
+    try {
+        await vscode.workspace.fs.rename(legacy, next, { overwrite: false })
+        logger.info(`提示词词库目录已迁移：${legacy.fsPath} → ${next.fsPath}`)
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        logger.warn(`提示词词库目录迁移失败，可在新目录重建：${message}`)
     }
 }

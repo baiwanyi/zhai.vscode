@@ -226,10 +226,10 @@ lifeguard
 | `block/ImageCard.tsx` | 统一卡片：3:4 或 4:3 缩略图、角标与说明、悬停动作、多选勾选、键盘可达；领域对象经 `source` 回传 |
 | `block/imageListAdapters.ts` | 四类领域条目映射成统一条目；出处、类型与体积文案在此收口 |
 | `ImageComposer.tsx` | 输入卡片：上下文 / 参考图 / 参考资料 / 提示词四个工具栏入口（与对话共用组件）、上下文引用与参考图芯片、底部比例与画面风格、增强提示词、发送 / 取消生成 |
-| `aichat/layout/AiChatImageReferencePicker.tsx` | 参考图选择：工具栏图标按钮，点击由宿主弹文件选择框；选中后挂「缩略图 + 文件名」芯片，悬停文件名预览大图，可挂多枚；生图与 AI 对话共用同一个组件与同一份宿主登记表 |
-| `aichat/layout/AiChatPromptPicker.tsx` | 通用提示词面板：`scope="imagegen"` 时一级分类 / 二级分类 / 词条三级联动、词条悬停显示编辑/删除、点词条切换芯片并回显选中态，不写正文；`scope="press"` 时同一面板改读对话写作词库、不挂预览图、点选把原文插入输入框。顶部关键词跨分组搜索与「新建词条」按钮两侧共用 |
-| `aichat/layout/AiChatPromptTagDialogs.tsx` | 通用词条弹窗：新建/编辑表单（分类、分组、名称、原文，已有值快捷填充）与删除确认，文案按 scope 切换（芯片同步 / 插入正文），挂在浮层之外渲染 |
-| `aichat/layout/AiChatComposerToolbar.tsx` | 通用输入卡片工具栏：两模式入口一致（添加上下文 / 参考图 / 参考资料 / 提示词），只有提示词面板按 scope 换词库；上下文按 `scope` 写入对话会话或生图面板各自的待发送清单 |
+| `aichat/composer/AiChatImageReferencePicker.tsx` | 参考图选择：工具栏图标按钮，点击由宿主弹文件选择框；选中后挂「缩略图 + 文件名」芯片，悬停文件名预览大图，可挂多枚；生图与 AI 对话共用同一个组件与同一份宿主登记表 |
+| `aichat/prompt/AiChatPromptPicker.tsx` | 通用提示词面板：`scope="imagegen"` 时一级分类 / 二级分类 / 词条三级联动、词条悬停显示编辑/删除、点词条切换芯片并回显选中态，不写正文；`scope="press"` 时同一面板改读对话写作词库、不挂预览图、点选把原文插入输入框。顶部关键词跨分组搜索与「新建词条」按钮两侧共用 |
+| `aichat/prompt/AiChatPromptTagDialogs.tsx` | 通用词条弹窗：新建/编辑表单（分类、分组、名称、原文，已有值快捷填充）与删除确认，文案按 scope 切换（芯片同步 / 插入正文），挂在浮层之外渲染 |
+| `aichat/composer/AiChatComposerToolbar.tsx` | 通用输入卡片工具栏：两模式入口一致（添加上下文 / 参考图 / 参考资料 / 提示词），只有提示词面板按 scope 换词库；上下文按 `scope` 写入对话会话或生图面板各自的待发送清单 |
 | `useImageLibrary.ts` | 列举（含不切加载态的静默刷新）、单张删除、批量删除（含最新列表回传） |
 | `useCharacterIndex.ts` | 角色索引：一次遍历派生 `byId` 与 `names` 两张表，封面修正与卡片角标共用；`ImageGenCharacter` 类型定义在此 |
 | `useImageSelection.ts` | 多选状态：选中集合与筛选签名绑定（换筛选即派生空集）、全选只覆盖已渲染图片、进入/退出都清空 |

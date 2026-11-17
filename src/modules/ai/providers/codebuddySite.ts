@@ -14,7 +14,7 @@ export type { CodebuddySite }
 
 /**
  * 站点展示名：命令回执（../commands）、面板运行时（../chatService）、
- * 登录态页（workflow/aichat/layout/AiChatCodebuddyState）与错误提示（./codebuddyError）共用；
+ * 登录态页（workflow/aichat/state/AiChatCodebuddyState）与错误提示（./codebuddyError）共用；
  * 改文案会同时改变上述全部出口，新增站点时须一并补齐。
  */
 export const CODEBUDDY_SITE_LABELS: Readonly<Record<CodebuddySite, string>> = {
