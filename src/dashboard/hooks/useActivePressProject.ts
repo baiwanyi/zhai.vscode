@@ -16,14 +16,22 @@ function isSameActiveProject(previous: PressActiveState, next: PressActiveState)
     return previous.activeProjectDirPath === next.activeProjectDirPath
 }
 
+/** 作品归属事实：目录与就绪态 */
+export interface ActivePressProjectState {
+    /** 当前活动文档所属的作品目录：未命中作品文档时为 null */
+    projectDirPath: string | null
+    /** 归属是否已就绪：宿主快照或广播到达前为 false，仪表盘据此先渲染骨架而不是按「不在作品内」误判 */
+    isReady: boolean
+}
+
 /** 读取当前活动文档所属的作品目录：未命中作品文档时为 null */
-export function useActivePressProject(): string | null {
-    const state = useHostChannelState<PressActiveState>({
+export function useActivePressProject(): ActivePressProjectState {
+    const { value, isReady } = useHostChannelState<PressActiveState>({
         method: 'press/active',
         channel: 'press',
         isValid: isPressActiveState,
         initial: INITIAL_ACTIVE_PROJECT,
         isEqual: isSameActiveProject,
     })
-    return state.activeProjectDirPath
+    return { projectDirPath: value.activeProjectDirPath, isReady }
 }

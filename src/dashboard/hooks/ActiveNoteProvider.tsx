@@ -23,6 +23,7 @@ interface ActiveNoteProviderProps {
 export function ActiveNoteProvider({ children }: ActiveNoteProviderProps): JSX.Element {
     const [activeId, setActiveId] = useState<string | null>(null)
     const [hasEditor, setHasEditor] = useState(false)
+    const [isReady, setIsReady] = useState(false)
     /** 是否已收到广播：广播一定比初始快照新，收到后丢弃后到的快照，避免旧值把新选中态盖回去 */
     const hasBroadcastRef = useRef(false)
 
@@ -32,6 +33,7 @@ export function ActiveNoteProvider({ children }: ActiveNoteProviderProps): JSX.E
         const applySnapshot = (snapshot: NoteActiveState): void => {
             setActiveId(snapshot.activePath)
             setHasEditor(snapshot.hasEditor)
+            setIsReady(true)
         }
         const loadActiveNote = async (): Promise<void> => {
             try {
@@ -40,7 +42,11 @@ export function ActiveNoteProvider({ children }: ActiveNoteProviderProps): JSX.E
                     applySnapshot(snapshot)
                 }
             } catch {
-                // 面板刚挂载时宿主可能尚未就绪，失败即保留空选中态，等广播位再回填
+                // 面板刚挂载时宿主可能尚未就绪，失败即保留空选中态，等广播位再回填；
+                // 就绪态仍要置位，否则宿主不响应时仪表盘的归属骨架永远撤不掉
+                if (!isDisposed) {
+                    setIsReady(true)
+                }
             }
         }
         void loadActiveNote()
@@ -63,8 +69,8 @@ export function ActiveNoteProvider({ children }: ActiveNoteProviderProps): JSX.E
 
     /** 上下文值按字段缓存：Provider 因父级重渲染而重绘时不连带所有消费方一起更新 */
     const contextValue = useMemo<ActiveNoteState>(
-        () => ({ activeId, hasEditor, setActiveId: updateActiveId }),
-        [activeId, hasEditor, updateActiveId],
+        () => ({ activeId, hasEditor, isReady, setActiveId: updateActiveId }),
+        [activeId, hasEditor, isReady, updateActiveId],
     )
 
     return <ActiveNoteContext value={contextValue}>{children}</ActiveNoteContext>

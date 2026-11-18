@@ -10,6 +10,8 @@ export interface ActiveNoteState {
     activeId: string | null
     /** 是否存在文本编辑器：false 时表示焦点不在编辑器，归属判定应保持当前页而不是回首页 */
     hasEditor: boolean
+    /** 活跃笔记事实是否已就绪：快照或广播到达（或请求失败）后为 true，仪表盘据此先渲染骨架 */
+    isReady: boolean
     setActiveId: (path: string | null) => void
 }
 

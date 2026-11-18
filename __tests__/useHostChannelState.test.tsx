@@ -3,7 +3,8 @@
  * useHostChannelState 用例：覆盖快照回填、广播优先、畸形载荷与异通道丢弃、卸载解除订阅、重渲染不重复订阅。
  * 复用约定：bridge 以替身接管，onState 的订阅者由用例集中持有，request 的回包时机由用例显式控制。
  * 关键约束：后到的快照不得覆盖已到达的广播，这是一致性的核心规则，调整实现时必须保住；
- * 参数对象每次渲染新建，但订阅只应发生一次，靠的是依赖收敛到标量。
+ * 参数对象每次渲染新建，但订阅只应发生一次，靠的是依赖收敛到标量；
+ * 就绪态在快照成功、快照失败与广播三种情况下都要置位，否则调用方的骨架永远撤不掉。
  */
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -66,8 +67,26 @@ describe('useHostChannelState', () => {
         requestMock.mockResolvedValue({ path: 'press/剑来' })
         const { result } = renderHook(() => useHostChannelState<Snapshot>({ ...OPTIONS }))
         await waitFor(() => {
-            expect(result.current.path).toBe('press/剑来')
+            expect(result.current.value.path).toBe('press/剑来')
         })
+    })
+
+    it('快照到达后就绪态置位', async () => {
+        requestMock.mockResolvedValue({ path: 'press/剑来' })
+        const { result } = renderHook(() => useHostChannelState<Snapshot>({ ...OPTIONS }))
+        await waitFor(() => {
+            expect(result.current.isReady).toBe(true)
+        })
+    })
+
+    it('快照请求失败也置就绪，避免调用方骨架卡死', async () => {
+        requestMock.mockRejectedValue(new Error('宿主未就绪'))
+        const { result } = renderHook(() => useHostChannelState<Snapshot>({ ...OPTIONS }))
+        await waitFor(() => {
+            expect(result.current.isReady).toBe(true)
+        })
+        // 失败不改值：仍是初始值
+        expect(result.current.value).toBe(INITIAL)
     })
 
     it('广播先到后，迟到的快照不得覆盖', async () => {
@@ -81,12 +100,12 @@ describe('useHostChannelState', () => {
         act(() => {
             broadcast(stateMessage('press', { path: 'press/广播' }))
         })
-        expect(result.current.path).toBe('press/广播')
+        expect(result.current.value.path).toBe('press/广播')
         await act(async () => {
             resolveSnapshot({ path: 'press/旧快照' })
             await Promise.resolve()
         })
-        expect(result.current.path).toBe('press/广播')
+        expect(result.current.value.path).toBe('press/广播')
     })
 
     it('畸形载荷与其它通道的广播一律丢弃', () => {
@@ -96,21 +115,21 @@ describe('useHostChannelState', () => {
             broadcast(stateMessage('press', { path: 42 }))
             broadcast(stateMessage('note', { path: 'press/笔记通道' }))
         })
-        expect(result.current.path).toBe('press/初始')
+        expect(result.current.value.path).toBe('press/初始')
     })
 
     it('等价载荷复用原引用，跳过状态更新', async () => {
         requestMock.mockResolvedValue({ path: 'press/剑来' })
         const { result } = renderHook(() => useHostChannelState<Snapshot>({ ...OPTIONS, isEqual: isSamePath }))
         await waitFor(() => {
-            expect(result.current.path).toBe('press/剑来')
+            expect(result.current.value.path).toBe('press/剑来')
         })
-        const settled = result.current
+        const settledValue = result.current.value
         act(() => {
             broadcast(stateMessage('press', { path: 'press/剑来' }))
         })
         // 引用被复用说明等价判定生效；否则每次广播都会塞入一个新对象
-        expect(result.current).toBe(settled)
+        expect(result.current.value).toBe(settledValue)
     })
 
     it('重渲染不会重复订阅', () => {

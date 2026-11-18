@@ -11,12 +11,15 @@
  * 同样在离开批次文档时复位，重新打开同一篇会再跟随一次，用户手动返回列表页后不会被弹回，找不到账号的文档回概览首页；
  * 归属回落：笔记与未保存的 untitled 等索引外文档一律回概览首页；
  * 归属未变化、或焦点不在文本编辑器而没有可判定文档时保持当前页。
+ * 归属就绪门：作品归属、活跃笔记与公众号账号任一未解析完时先渲染骨架，不按初始值渲染概览 ——
+ * 否则作品/批次文档下打开仪表盘会先闪一页概览，并白拉一次概览数据；失败也置就绪，避免骨架卡死。
  * 全局提示：sonner 的 Toaster 只在本层挂载一次，页面内的操作结果统一用 toast 上报，页面不再自挂；
  * 宿主侧命令结果统一在 Workflow 面板呈现（见 AiChatViewProvider），本层不订阅 toast 广播，避免同一提示弹两次。
  * 活跃笔记：ActiveNoteProvider 只在本层挂一次，路由归属判定与概览页的列表选中态共享同一份，
  * 页面点击回填的选中项因此能立刻参与归属判定，不必等宿主广播回传。
  */
 import { Toaster } from '@components/ui/sonner'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
 import { DashboardRouteProvider } from './core/DashboardRouteProvider'
 import { useDashboardRoute } from './core/routeContext'
@@ -42,14 +45,19 @@ export function DashboardScreen(): JSX.Element {
 function DashboardScreenContent(): JSX.Element {
     const { route, navigate } = useDashboardRoute()
     const theme = useVscodeTheme()
-    const activeProjectDirPath = useActivePressProject()
-    const { activeId: activeDocumentPath, hasEditor } = useActiveNote()
+    const { projectDirPath: activeProjectDirPath, isReady: isPressReady } = useActivePressProject()
+    const { activeId: activeDocumentPath, hasEditor, isReady: isNoteReady } = useActiveNote()
 
     const scope = readDashboardScope(activeDocumentPath, activeProjectDirPath, hasEditor)
     /** 当前文档所属的公众号 AppID：只有 wechat/{appid}/post/ 下的文档能解析出来 */
     const wechatAppId = readWechatAppId(activeDocumentPath)
     /** 对应账号 id：undefined 表示还在解析，null 表示没有匹配账号 */
     const wechatAccountId = useWechatAccountByAppId(wechatAppId)
+    /**
+     * 归属判定是否已就绪：作品归属、活跃笔记与公众号账号三者都到齐才渲染页面。
+     * 否则作品/批次文档会被初始值先判成「无归属」而渲染概览，快照到达后再跳，闪一下并白拉一次概览数据。
+     */
+    const isRoutingReady = isPressReady && isNoteReady && !(scope === 'wechat' && wechatAccountId === undefined)
 
     useContentFollow({
         scope,
@@ -64,7 +72,11 @@ function DashboardScreenContent(): JSX.Element {
         <>
             {/* 页面骨架按 h-full 撑满，这里给出视口高度基准（与 WorkflowScreen 同形），避免页面高度塌陷 */}
             <div className="flex h-screen min-h-0 flex-col">
-                <DashboardRouteSwitch route={route} onNavigate={navigate} />
+                {isRoutingReady ? (
+                    <DashboardRouteSwitch route={route} onNavigate={navigate} />
+                ) : (
+                    <StateEmpty className="h-full" title="正在读取仪表盘" isLoading />
+                )}
             </div>
             <Toaster theme={theme} />
         </>

@@ -2,11 +2,12 @@
  * 宿主通道状态：挂载时拉一次快照，随后跟随指定通道的状态广播，供「宿主权威状态」的前端镜像复用。
  * 复用 @shared/utils/bridge 的 request / onState，载荷一律经调用方传入的类型守卫收窄，不信任入站数据。
  * 关键约束：广播一定比初始快照新，收到广播后丢弃后到的快照，避免旧值把新值盖回去；
- * 快照失败静默保留初始值（面板刚挂载时宿主可能尚未就绪）；卸载后不再写状态并解除订阅；
- * 只承载「单载荷」通道——同通道多载荷分流、需要就绪态或需要本地乐观覆盖的场景请各自实现，
+ * 快照失败静默保留初始值（面板刚挂载时宿主可能尚未就绪），但就绪态照旧置位 ——
+ * 否则宿主不响应时调用方的骨架永远撤不掉；卸载后不再写状态并解除订阅；
+ * 只承载「单载荷」通道——同通道多载荷分流或需要本地乐观覆盖的场景请各自实现，
  * 该差异已写在 ActiveNoteProvider / useWorkflowRouting 的文件头。
  */
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { HostMethodName, StateMessage } from '@shared/types/messages'
 import { onState, request } from '@shared/utils/bridge'
 
@@ -27,17 +28,27 @@ export interface HostChannelStateOptions<T> {
     isEqual?: (previous: T, next: T) => boolean
 }
 
-export function useHostChannelState<T>(options: HostChannelStateOptions<T>): T {
+/** 只读镜像与就绪态：调用方据 isReady 决定首屏渲染骨架还是真实内容 */
+export interface HostChannelStateResult<T> {
+    /** 宿主权威状态：快照与广播都未到达前为初始值 */
+    value: T
+    /** 是否已拿到过一次事实（快照成功、快照失败或收到广播） */
+    isReady: boolean
+}
+
+export function useHostChannelState<T>(options: HostChannelStateOptions<T>): HostChannelStateResult<T> {
     const { channel, initial, isEqual = Object.is, isValid, method } = options
     const [value, setValue] = useState<T>(initial)
+    const [isReady, setIsReady] = useState(false)
 
     useEffect(() => {
         let isDisposed = false
         /** 是否已收到广播：广播一定比初始快照新，收到后丢弃后到的快照 */
         let hasBroadcast = false
-        /** 语义等价时不改引用，让 React 跳过这一轮重渲染 */
+        /** 语义等价时不改引用，让 React 跳过这一轮重渲染；落到事实即视为就绪 */
         const commit = (next: T): void => {
             setValue((previous) => (isEqual(previous, next) ? previous : next))
+            setIsReady(true)
         }
         const loadSnapshot = async (): Promise<void> => {
             try {
@@ -46,7 +57,10 @@ export function useHostChannelState<T>(options: HostChannelStateOptions<T>): T {
                     commit(snapshot)
                 }
             } catch {
-                // 宿主未就绪时保留初始值，等广播回填；此处不打断页面
+                // 宿主未就绪时保留初始值，等广播回填；就绪态仍要置位，否则调用方的骨架永远撤不掉
+                if (!isDisposed) {
+                    setIsReady(true)
+                }
             }
         }
         void loadSnapshot()
@@ -63,5 +77,6 @@ export function useHostChannelState<T>(options: HostChannelStateOptions<T>): T {
         }
     }, [channel, isEqual, isValid, method])
 
-    return value
+    // 返回值按字段缓存：消费方把它塞进依赖数组时不会因对象重建而反复触发
+    return useMemo(() => ({ value, isReady }), [value, isReady])
 }
