@@ -6,8 +6,8 @@
  */
 import type { NamingCandidate, NamingRequest } from '@shared/types/naming'
 import { pickWeightedIndex } from './random'
-import type { RandomSource } from './random'
 import type { NamingCorePool } from '../data/cores'
+import type { RandomSource } from './random'
 import { ENTITY_RULES } from '../data/catalog'
 import { ENTITY_CORES } from '../data/cores'
 import { ENTITY_SUFFIXES } from '../data/suffixes'

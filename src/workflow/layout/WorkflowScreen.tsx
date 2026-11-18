@@ -16,11 +16,9 @@
  */
 import { useCallback, useState } from 'react'
 import { Toaster } from '@components/ui/sonner'
-import { Image } from '@webview/components/Image'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useHostToast } from '@webview/hooks/useHostToast'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
-import logoIcon from '@resources/icon.svg'
 import { readAvailableSections, readContentScope, readScopeDir } from './contentScope'
 import { WorkflowNav } from './WorkflowNav'
 import { WorkflowResidentSection } from './WorkflowResidentSection'
@@ -79,17 +77,14 @@ export function WorkflowScreen(): JSX.Element {
      * 正在显示的宿主提示不会被打断后再补发重放。
      */
     const renderContent = (): JSX.Element => {
-        // 未就绪与非 Markdown 共用同一个空态骨架：logo 与图标位常驻，只有标题位在变 ——
-        // 就绪前 StateEmpty 把标题位换成转圈、不渲染文字（此时 title 仅作转圈的可访问名），就绪后显示 slogan；
-        // 两态都传 title，避免加载态退回 Spinner 默认的英文 "Loading" 播报
+        // 未就绪与非 Markdown 共用同一个空态骨架：图标位由 StateEmpty 默认给项目 logo，只有标题位在变 ——
+        // 未就绪时标题位是「转圈 + 正在读取工作流」，就绪后非 Markdown 文档显示 slogan
         if (!isReady || !context.isMarkdown) {
             const isPending = !isReady
             return (
                 <StateEmpty
                     className="h-screen"
-                    title={isPending ? '正在读取工作流' : '宅于一隅，落笔千言'}
-                    icon={BrandLogo}
-                    iconClassName="size-32 rounded-none bg-transparent"
+                    title={isPending ? '正在读取工作流...' : '宅于一隅，落笔千言'}
                     isLoading={isPending}
                 />
             )
@@ -128,10 +123,3 @@ export function WorkflowScreen(): JSX.Element {
     )
 }
 
-/**
- * 空白页 logo：StateEmpty 的 icon 只接受组件形式，提取到模块层保持稳定身份 ——
- * 内联箭头函数每轮渲染都是新类型，会让 Image 被卸载重挂，加载态跟着重置。
- */
-function BrandLogo(): JSX.Element {
-    return <Image src={logoIcon} alt="" className="size-32 object-contain opacity-10" />
-}

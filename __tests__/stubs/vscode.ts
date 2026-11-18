@@ -29,6 +29,8 @@ const executedCommands: string[] = []
 const tabGroupList: vscode.TabGroup[] = []
 /** 活跃分组内的标签：同上，默认没有标签 */
 const activeGroupTabs: vscode.Tab[] = []
+/** 活跃标签的可写状态：vscode 类型里 activeTab 只读，桩用独立变量承载以便用例切换 */
+const activeTabState: { current: vscode.Tab | undefined } = { current: undefined }
 /** 被关闭过的标签记录：切换编辑器用例据此断言旧 tab 是否已收起 */
 const closedTabs: vscode.Tab[] = []
 /** editor.edit 的插入记录：按插入顺序保存文本，供用例断言写进正文的内容 */
@@ -51,6 +53,8 @@ export function resetWorkspaceState(): void {
     tabGroupList.length = 0
     activeGroupTabs.length = 0
     closedTabs.length = 0
+    activeTabState.current = undefined
+    activeTextEditorEmitter.dispose()
     isTrashAvailable = true
     window.activeTextEditor = undefined
     window.visibleTextEditors.length = 0
@@ -679,6 +683,9 @@ export const workspace = {
     },
 }
 
+/** 活跃文本编辑器变更事件：切换编辑器用例据此模拟「关闭旧 tab 后相邻文档变成活跃」 */
+const activeTextEditorEmitter = new EventEmitter<vscode.TextEditor | undefined>()
+
 export const window = {
     activeTextEditor: undefined as vscode.TextEditor | undefined,
     /** 可见编辑器列表：取插入目标时在活动编辑器缺失后按它回退，用例可自行登记 */
@@ -703,6 +710,8 @@ export const window = {
     showWarningMessage: (): Promise<undefined> => Promise.resolve(undefined),
     showErrorMessage: (): Promise<undefined> => Promise.resolve(undefined),
     setStatusBarMessage: (): vscode.Disposable => ({ dispose: (): void => undefined }),
+    /** 活跃编辑器变更：活跃文档事实源据此登记文本编辑器 */
+    onDidChangeActiveTextEditor: activeTextEditorEmitter.event,
     /** 编辑器标签：默认没有任何标签，切换编辑器时按「文档尚未在 tab 中打开」的路径处理 */
     tabGroups: {
         all: tabGroupList,
@@ -710,7 +719,9 @@ export const window = {
             viewColumn: 1,
             isActive: true,
             tabs: activeGroupTabs,
-            activeTab: undefined as vscode.Tab | undefined,
+            get activeTab(): vscode.Tab | undefined {
+                return activeTabState.current
+            },
         } as vscode.TabGroup,
         close(tab: vscode.Tab): Promise<boolean> {
             // 只记录关闭了哪些标签：后续打开由命令桩承接，不需要真的维护组内状态
@@ -724,4 +735,15 @@ export const window = {
             return { dispose: (): void => undefined }
         },
     },
+}
+
+/** 派发一次活跃文本编辑器变更：模拟切换 / 关闭 tab 时 VSCode 把另一份文档变成活跃文档 */
+export function fireActiveTextEditor(editor: vscode.TextEditor | undefined): void {
+    window.activeTextEditor = editor
+    activeTextEditorEmitter.fire(editor)
+}
+
+/** 指定活跃标签：切换完成后宿主按活跃 tab 校正活跃文档，用例据此给出收尾形态 */
+export function setActiveTab(tab: vscode.Tab | undefined): void {
+    activeTabState.current = tab
 }

@@ -60,6 +60,8 @@ export interface PressWorkspaceState {
     updateWorkspace: (recipe: (previous: OutlineWorkspace) => OutlineWorkspace) => void
     flush: (scopes: Set<PersistScope>, options?: FlushOptions) => Promise<void>
     scheduleFlush: (scope: PersistScope) => void
+    /** 重新读取当前作品：读取失败或空态重试时调用，会先回到 loading */
+    reload: () => void
 }
 
 interface WorkspaceLoadState {
@@ -79,6 +81,8 @@ const INITIAL_LOAD_STATE: WorkspaceLoadState = {
 
 export function usePressWorkspace(projectDir: string | null): PressWorkspaceState {
     const [loadState, setLoadState] = useState<WorkspaceLoadState>(INITIAL_LOAD_STATE)
+    /** 重读计数：读取失败或空态重试时递增，effect 据此重新走一次 press/workspace */
+    const [reloadToken, setReloadToken] = useState(0)
     /** 草稿与作品目录快照：写盘时取最新值，避免闭包里拿到旧 state */
     const workspaceRef = useRef<OutlineWorkspace | null>(null)
     const dirRef = useRef('')
@@ -135,7 +139,12 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
         return (): void => {
             isCancelled = true
         }
-    }, [projectDir])
+    }, [projectDir, reloadToken])
+
+    /** 重读当前作品：计数递增即可让上面的 effect 重跑，读取失败或空态重试时用 */
+    const reload = useCallback((): void => {
+        setReloadToken((token) => token + 1)
+    }, [])
 
     /**
      * 立即写盘：把指定范围的最新草稿序列化成段落交给宿主合并，未带上的文档保持原样。
@@ -275,5 +284,6 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
         updateWorkspace,
         flush,
         scheduleFlush,
+        reload,
     }
 }

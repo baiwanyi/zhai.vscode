@@ -5,7 +5,9 @@
  * 关键约束：模块级单例，随激活注册一次；业务代码不得再直接读 window.activeTextEditor——
  * 富文本 tab 下它为空，绕过本文件会静默失效或插到错误文档；
  * 注册时必须把「启动时已经打开的那份文档」登记进来：VSCode 恢复会话时不会为初始编辑器补发切换事件，
- * 不登记就会让工作流路由一直读到 null，非 md 文件因此按默认放行进工作流区。
+ * 不登记就会让工作流路由一直读到 null，非 md 文件因此按默认放行进工作流区；
+ * 编辑器形态切换（文本 ↔ 富文本）用 withActiveDocumentHold 包住：切换要先关旧 tab 再开新 tab，
+ * 关旧 tab 会让 VSCode 短暂激活相邻文档，中间事实一旦广播出去，工作流面板就会切走再切回、页面被重建。
  */
 import * as vscode from 'vscode'
 import type { EditorInsertContent } from '@shared/types/editor'
@@ -22,9 +24,55 @@ const emitter = new vscode.EventEmitter<ActiveDocument | null>()
 export const onDidChangeActiveDocument: vscode.Event<ActiveDocument | null> = emitter.event
 
 let current: ActiveDocument | null = null
+/** 切换事务深度：形态切换期间关闭旧 tab 会短暂把相邻文档变成活跃文档 */
+let holdDepth = 0
+/** 事务期间收到的最新事实：undefined 表示期间没有任何变化 */
+let heldDocument: ActiveDocument | null | undefined
+
+/** 两份活跃文档是否指同一形态的同一文档：用于抑制事务结束时的无意义广播 */
+function isSameDocument(left: ActiveDocument | null, right: ActiveDocument | null): boolean {
+    if (left === null || right === null) {
+        return left === right
+    }
+    return left.kind === right.kind && left.uri.toString() === right.uri.toString()
+}
 
 /** 更新事实并广播：调用方按变化与否自行去重（事件量很小，不去抖） */
 function setActiveDocument(next: ActiveDocument | null): void {
+    // 事务期间只暂存，不改变对外事实：切换编辑器时相邻 tab 的活跃事件不是用户意图
+    if (holdDepth > 0) {
+        heldDocument = next
+        return
+    }
+    current = next
+    emitter.fire(next)
+}
+
+/**
+ * 在「活跃文档不变」的前提下执行一次编辑器形态切换：事务期间的事实变化只暂存、不广播，
+ * 结束后按最终事实广播一次，与切换前一致时完全不广播。
+ * 关键约束：只用于同一份文档的形态切换——调用方须在事务内显式上报最终形态
+ * （reportRichDocument / reportTextDocument），不能依赖事件时序，否则事务结束时会把中间态当结果。
+ */
+export async function withActiveDocumentHold<T>(task: () => Promise<T>): Promise<T> {
+    holdDepth += 1
+    try {
+        return await task()
+    } finally {
+        holdDepth -= 1
+        if (holdDepth === 0) {
+            releaseHeldDocument()
+        }
+    }
+}
+
+/** 释放事务期间暂存的事实：与切换前相同则保持静默，避免订阅方白跑一轮 */
+function releaseHeldDocument(): void {
+    const next = heldDocument
+    heldDocument = undefined
+    if (next === undefined || isSameDocument(current, next)) {
+        return
+    }
     current = next
     emitter.fire(next)
 }
@@ -71,6 +119,15 @@ export function trackActiveDocument(subscriptions: vscode.Disposable[]): void {
  */
 export function reportRichDocument(uri: vscode.Uri): void {
     setActiveDocument({ uri, kind: 'rich' })
+}
+
+/**
+ * 文本编辑器上报活跃状态：切回原生文本编辑器时由打开入口显式调用。
+ * 关键约束：不依赖 onDidChangeActiveTextEditor 的派发时机——切换事务结束时事件可能还没到，
+ * 事务若以中间态收尾会把面板带到相邻文档。
+ */
+export function reportTextDocument(uri: vscode.Uri): void {
+    setActiveDocument({ uri, kind: 'text' })
 }
 
 /**

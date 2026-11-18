@@ -1,11 +1,11 @@
 /**
  * 写作页分区路由：按导航选中项渲染对应页面，所有分区共享同一份草稿与作品目录。
- * 复用约定：设定 / 人物 / 大纲 / 快照 / 取名复用本模块页面组件，校对、AI 用量、对话与媒体（含上传）
- * 分别复用 proofread、usage、aichat、media 的页面组件；
+ * 复用约定：设定 / 人物 / 大纲 / 取名复用本模块页面组件，媒体与快照分别复用 media、snapshot 的页面组件；
+ * 对话、校对、用量、在线图库与上传等常驻分区已由 WorkflowPress 在外层直接交给 WorkflowResidentSection，
+ * 本文件保留这些分支只作兜底，避免新增调用方绕过外层时渲染错页；
  * 本文件只做「分区 → 页面 + 回调」的映射，不持有任何状态。
- * 关键约束：快照按作品目录隔离（dirPath 是作用域）；对话按文档隔离（chatScope 是当前文档路径，
- * 缺失时才用作品目录）；用量是跨作品的全局统计不隔离；
- * 回调统一来自 usePressMutations，路由层不自行读写草稿。
+ * 关键约束：快照按作品目录隔离（dirPath 是作用域）；媒体在作品内要带角色与设定上下文；
+ * 用量是跨作品的全局统计不隔离；回调统一来自 usePressMutations，路由层不自行读写草稿。
  */
 import { WorkflowAiChat } from '@webview/workflow/aichat/WorkflowAiChat'
 import type { WorkflowSection } from '@webview/workflow/layout/workflowSections'
@@ -131,8 +131,8 @@ export function PressSectionRouter({
     if (section === 'usage') {
         return <WorkflowUsage />
     }
-    // 对话按文档隔离：key 跟随作用域，切文档即重建对话页，命令选择与未发送正文不会带进另一章；
-    // 没有定位到文档时回落到作品目录，保证「打开作品但未打开章节」也有可用的对话
+    // 对话由 WorkflowPress 在外层先处理（作品文档未读完也能直接进对话页），这里只作兜底：
+    // key 跟随作用域，切文档即重建对话页；没有定位到文档时回落到作品目录
     const scope = chatScope ?? dirPath
     return <WorkflowAiChat key={scope} projectDir={scope} projectTitle={workspace.setting.title} />
 }

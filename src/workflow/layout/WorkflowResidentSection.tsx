@@ -6,6 +6,7 @@
  * 快照按单文件时间线组织，篇章与公众号文章共用 press/snapshot 的单文件快照页。
  * 关键约束：对话按作用域目录隔离（笔记/公众号取模块目录，其他文档为通用对话），key 跟随作用域，
  * 切换文档归属时重建页面，命令选择与未发送正文不会串到另一个作用域；
+ * 作品归属可传 projectTitle：只影响对话摘要行的作品名，不参与 key，作品读完后补上也不会重建页面；
  * 快照以 docPath 为键，没有活跃文档时只给引导空态，不渲染半成品页面。
  */
 import { Archive } from 'lucide-react'
@@ -27,9 +28,16 @@ interface WorkflowResidentSectionProps {
     scopeDir: string | null
     /** 当前活跃文档的相对路径：单文件快照以此为唯一键，无活跃文档时为 null */
     docPath: string | null
+    /** 作品标题：仅作品归属传入，供对话摘要行展示；其余归属省略时摘要行回落通道名 */
+    projectTitle?: string | null
 }
 
-export function WorkflowResidentSection({ section, scopeDir, docPath }: WorkflowResidentSectionProps): JSX.Element {
+export function WorkflowResidentSection({
+    section,
+    scopeDir,
+    docPath,
+    projectTitle = null,
+}: WorkflowResidentSectionProps): JSX.Element {
     // 校对以编辑器中的当前文档为目标，切作用域即重建，避免上一个文档的问题列表残留
     if (section === 'proofread') {
         return <WorkflowProofread key={scopeDir ?? 'global'} />
@@ -75,6 +83,6 @@ export function WorkflowResidentSection({ section, scopeDir, docPath }: Workflow
             </div>
         )
     }
-    // 对话按作用域隔离：key 跟随作用域目录，切换归属时重建页面
-    return <WorkflowAiChat key={scopeDir ?? 'global'} projectDir={scopeDir} />
+    // 对话按作用域隔离：key 跟随作用域目录，切换归属时重建页面；作品标题只影响摘要行，不参与 key
+    return <WorkflowAiChat key={scopeDir ?? 'global'} projectDir={scopeDir} projectTitle={projectTitle} />
 }

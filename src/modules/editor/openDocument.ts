@@ -6,10 +6,12 @@
  * 不在组尾留下「新标签」；目标形态已打开时只激活它，不关闭任何 tab；
  * 旧 tab 有未保存内容时必须先落盘再关，保存失败则中止切换并提示，绝不能丢字；
  * 富文本回写只 applyEdit 不落盘，同样可能 dirty，故按 TextDocument 统一保存；
+ * 关旧 tab 会让 VSCode 短暂激活相邻文档，整段切换须包在活跃文档事务里，否则工作流面板会被中间态带偏；
  * openWith 失败必须回退到 vscode.open，不能让「编辑器注册异常」变成「文件打不开」。
  */
 import * as vscode from 'vscode'
 import { logger } from '@modules/common/logger'
+import { reportRichDocument, reportTextDocument, withActiveDocumentHold } from './activeDocument'
 
 /** 富文本自定义编辑器的 viewType：与 editorProvider 共用，改名等于既有 tab 失效 */
 export const RICH_EDITOR_VIEW_TYPE = 'zhai.markdownEditor'
@@ -144,21 +146,50 @@ export async function openDocumentWith(uri: vscode.Uri, form: EditorForm): Promi
     const closedInGroup =
         origin === undefined ? 0 : entries.filter((entry) => entry.group.viewColumn === origin.group.viewColumn).length
     const openedIndex = origin === undefined ? -1 : origin.group.tabs.length - closedInGroup
-    for (const entry of entries) {
-        // preserveFocus：关掉时不抢焦点，避免中间态把用户的输入上下文切走
-        await vscode.window.tabGroups.close(entry.tab, true)
-    }
-    logger.info(`按${form === 'rich' ? '富文本' : '文本'}形态打开：${uri.fsPath}`)
-    try {
-        await vscode.commands.executeCommand('vscode.openWith', uri, viewType, column)
-    } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error)
-        logger.warn(`指定编辑器打开失败，回退到默认打开方式：${uri.fsPath}（${reason}）`)
-        void vscode.window.showWarningMessage(`编辑器不可用，已改用默认方式打开（${reason}）`)
-        await vscode.commands.executeCommand('vscode.open', uri)
+    // 关闭旧 tab 会让 VSCode 把相邻文档变成活跃文档：整段切换放进活跃文档事务，
+    // 中间事实既不写入当前文档也不广播，工作流面板才不会先被带到别的文档再切回来
+    await withActiveDocumentHold(async () => {
+        for (const entry of entries) {
+            // preserveFocus：关掉时不抢焦点，避免中间态把用户的输入上下文切走
+            await vscode.window.tabGroups.close(entry.tab, true)
+        }
+        logger.info(`按${form === 'rich' ? '富文本' : '文本'}形态打开：${uri.fsPath}`)
+        try {
+            await vscode.commands.executeCommand('vscode.openWith', uri, viewType, column)
+        } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error)
+            logger.warn(`指定编辑器打开失败，回退到默认打开方式：${uri.fsPath}（${reason}）`)
+            void vscode.window.showWarningMessage(`编辑器不可用，已改用默认方式打开（${reason}）`)
+            await vscode.commands.executeCommand('vscode.open', uri)
+            reportActiveTabDocument()
+            return
+        }
+        await restoreTabPosition(originIndex, openedIndex)
+        // 以此刻的活跃 tab 收尾：openWith 的活跃事件可能晚于命令返回才派发，事务不能以中间态结束
+        reportActiveTabDocument()
+    })
+}
+
+/**
+ * 按切换完成后的活跃 tab 校正活跃文档：形态与 URI 都以此刻的 tab 为准，
+ * 不依赖 VSCode 是否已派发 activeTextEditor 事件（自定义编辑器根本没有这个事件）。
+ * 只认文本与宅写作编辑器，diff 等其它输入不动事实，避免把对比视图的修改侧误当活跃文档。
+ */
+function reportActiveTabDocument(): void {
+    const { activeTab } = vscode.window.tabGroups.activeTabGroup
+    if (activeTab === undefined) {
         return
     }
-    await restoreTabPosition(originIndex, openedIndex)
+    const form = readTabForm(activeTab)
+    const uri = readActiveTabUri()
+    if (form === null || uri === undefined) {
+        return
+    }
+    if (form === 'rich') {
+        reportRichDocument(uri)
+        return
+    }
+    reportTextDocument(uri)
 }
 
 /** 用富文本编辑器打开文档：插件内所有「打开笔记 / 章节 / 公众号正文」都应走这里 */
