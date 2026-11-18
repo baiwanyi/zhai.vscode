@@ -1,7 +1,7 @@
 /**
  * 资料条目列表：以单列卡片展示当前分类的条目，承担浏览、选中与删除入口。
  * 复用约定：卡片复用 ui/card，删除确认复用 components/ConfirmDialog，缩略图与缺图占位复用 components/Image，
- * 空态复用 ui/empty，文案与图标取自 constants 的 LORE_KIND_META。
+ * 空态复用 components/StateEmpty，文案与图标取自 constants 的 LORE_KIND_META。
  * 关键约束：卡片是 role=button 的可聚焦容器，删除按钮挂在外层容器，避免点删除时顺带触发选中；
  * 描述只显示首行，势力卡片额外显示关联人数，其余分类不出现该徽标；
  * 排序沿用草稿顺序（即文档顺序），不按名称重排——作者可以在 Markdown 里自己调整先后。
@@ -10,10 +10,10 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Card } from '@components/ui/card'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { Image } from '@webview/components/Image'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import type { LoreEntry, LoreKind } from '../../types'
 import type { JSX } from 'react'
 import { LORE_KIND_META } from '../../constants'
@@ -53,29 +53,23 @@ export function LoreList({
 
     if (entries.length === 0) {
         return (
-            <Empty className="border border-dashed border-border">
-                <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                        <meta.icon />
-                    </EmptyMedia>
-                    <EmptyTitle>{totalCount === 0 ? meta.emptyTitle : `没有匹配的${meta.label}`}</EmptyTitle>
-                    <EmptyDescription>
-                        {totalCount === 0 ? meta.emptyDescription : '换个关键词，或清空搜索后重新浏览'}
-                    </EmptyDescription>
-                </EmptyHeader>
-                <EmptyContent>
-                    {totalCount === 0 ? (
-                        <Button variant="outline" onClick={onCreate}>
-                            <Plus />
-                            新增{meta.label}
-                        </Button>
-                    ) : (
-                        <Button variant="ghost" disabled={!hasFilter} onClick={onClearFilter}>
-                            清空搜索
-                        </Button>
-                    )}
-                </EmptyContent>
-            </Empty>
+            <StateEmpty
+                icon={meta.icon}
+                title={totalCount === 0 ? meta.emptyTitle : `没有匹配的${meta.label}`}
+                description={totalCount === 0 ? meta.emptyDescription : '换个关键词，或清空搜索后重新浏览'}
+                className="border border-dashed border-border"
+            >
+                {totalCount === 0 ? (
+                    <Button variant="outline" onClick={onCreate}>
+                        <Plus />
+                        新增{meta.label}
+                    </Button>
+                ) : (
+                    <Button variant="ghost" disabled={!hasFilter} onClick={onClearFilter}>
+                        清空搜索
+                    </Button>
+                )}
+            </StateEmpty>
         )
     }
 

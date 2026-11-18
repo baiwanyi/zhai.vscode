@@ -7,10 +7,10 @@
  */
 import { FileText } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@components/ui/table'
 import type { AiUsageItem } from '@shared/types/aiUsage'
 import { Button } from '@webview/components/Button'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
 import { formatCredits, formatUsageTime, readModuleLabel, shortRequestId } from '../utils'
 
@@ -39,15 +39,12 @@ export function UsageTable({ items, onOpenRequest }: UsageTableProps): JSX.Eleme
                 {items.length === 0 ? (
                     <TableRow>
                         <TableCell colSpan={COLUMN_COUNT}>
-                            <Empty className="py-4">
-                                <EmptyHeader>
-                                    <EmptyMedia variant="icon">
-                                        <FileText />
-                                    </EmptyMedia>
-                                    <EmptyTitle>当前筛选范围没有用量记录</EmptyTitle>
-                                    <EmptyDescription>调整时间范围或模块筛选后重试。</EmptyDescription>
-                                </EmptyHeader>
-                            </Empty>
+                            <StateEmpty
+                                icon={FileText}
+                                title="当前筛选范围没有用量记录"
+                                description="调整时间范围或模块筛选后重试。"
+                                className="py-4"
+                            />
                         </TableCell>
                     </TableRow>
                 ) : (

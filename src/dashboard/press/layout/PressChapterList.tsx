@@ -1,16 +1,16 @@
 /**
  * 章节目录：按加载状态分派（加载骨架、失败重试、有数据渲染卷分组），并按卷分组渲染可折叠的卷区块。
  * 复用 PressVolumeSection 承载折叠、卷内分批、加章入口与卷级/章节级操作，PressStateViews 承载骨架与失败块，
- * @components/ui/empty 承载空态；状态分派与作品列表保持同一套写法。
+ * @webview/components/StateEmpty 承载空态；状态分派与作品列表保持同一套写法。
  * 关键约束：展开状态由父级以「当前展开的卷目录」单值受控，本组件不持有展开 state，故卷之间天然互斥；
  * 在某卷加章前先通过 onOpenVolume 展开该卷，保证新章节立即可见；卷与章节的操作只向上转发目录名/路径，
  * 具体交互与请求由页面层承担；「新建卷」入口位于卷头菜单，作品还没有卷时由空态按钮兜底，避免无入口可点。
  */
 import { BookPlus, FileText } from 'lucide-react'
 import { useCallback } from 'react'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import type { PressVolumeGroup } from '@shared/types/press'
 import { Button } from '@webview/components/Button'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import { PressErrorState, PressSkeletonList } from './PressStateViews'
 import { PressVolumeSection } from './PressVolumeSection'
 import type { PressStatus } from '../utils'
@@ -88,28 +88,16 @@ export function PressChapterList({
 
     if (volumes.length === 0) {
         return (
-            <Empty>
-                <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                        <FileText />
-                    </EmptyMedia>
-                    <EmptyTitle>还没有章节</EmptyTitle>
-                    <EmptyDescription>
-                        点击「新建卷」创建第一卷并写入首章，或在 Chapters/ 对应卷目录下新建文档后保存。
-                    </EmptyDescription>
-                </EmptyHeader>
-                <EmptyContent>
-                    <Button
-                        variant="outline"
-                        className="rounded-full"
-                        disabled={isCreatingVolume}
-                        onClick={onCreateVolume}
-                    >
-                        <BookPlus />
-                        新建卷
-                    </Button>
-                </EmptyContent>
-            </Empty>
+            <StateEmpty
+                icon={FileText}
+                title="还没有章节"
+                description="点击「新建卷」创建第一卷并写入首章，或在 Chapters/ 对应卷目录下新建文档后保存。"
+            >
+                <Button variant="outline" className="rounded-full" disabled={isCreatingVolume} onClick={onCreateVolume}>
+                    <BookPlus />
+                    新建卷
+                </Button>
+            </StateEmpty>
         )
     }
 

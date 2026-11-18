@@ -1,7 +1,7 @@
 /**
  * 人物卡片列表：以单列卡片展示人物卡，承担人物页的主体浏览、选择与删除入口。
  * 复用约定：卡片复用 ui/card，删除确认复用 ui/alert-dialog，角色徽标取 CHARACTER_ROLE_META 的图表色，
- * 性别以 Mars / Venus 图标区分（男蓝女红），空态复用 ui/empty。
+ * 性别以 Mars / Venus 图标区分（男蓝女红），空态复用 components/StateEmpty。
  * 关键约束：封面优先取磁盘列表（宿主一次回读的全部角色图片），按 coverPortraitId 命中，未命中用最新一张，
  * 再退回到草稿里已加载的 portraits——文档只存封面 id，图片本体在 Images 下，不读磁盘就没有封面；
  * 卡片是可聚焦按钮而非占位容器，键盘可逐项进入；排序固定按 CHARACTER_ROLE_ORDER，不随点击顺序变化；
@@ -12,11 +12,11 @@ import { Mars, Plus, Sparkles, Trash2, UserRound, Venus } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Card } from '@components/ui/card'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import type { PortraitGalleryItem } from '@shared/types/press'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { Image } from '@webview/components/Image'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import type { CharacterCard } from '../types'
 import type { JSX } from 'react'
 import { CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'
@@ -81,35 +81,29 @@ export function CharacterList({
 
     if (sortedCharacters.length === 0) {
         return (
-            <Empty className="border border-dashed border-border">
-                <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                        <UserRound />
-                    </EmptyMedia>
-                    <EmptyTitle>{totalCount === 0 ? '还没有人物' : '没有匹配的人物'}</EmptyTitle>
-                    <EmptyDescription>
-                        {totalCount === 0 ? '先建立主角与对手，大纲才能排布冲突' : '换个关键词，或切回「全部」分类'}
-                    </EmptyDescription>
-                </EmptyHeader>
-                <EmptyContent>
-                    {totalCount === 0 ? (
-                        <div className="flex flex-wrap items-center justify-center gap-2">
-                            <Button variant="outline" onClick={onCreate}>
-                                <Plus />
-                                新增人物
-                            </Button>
-                            <Button variant="outline" onClick={onExtract}>
-                                <Sparkles />
-                                提取人物
-                            </Button>
-                        </div>
-                    ) : (
-                        <Button variant="ghost" disabled={!hasFilter} onClick={onClearFilter}>
-                            清空筛选
+            <StateEmpty
+                icon={UserRound}
+                title={totalCount === 0 ? '还没有人物' : '没有匹配的人物'}
+                description={totalCount === 0 ? '先建立主角与对手，大纲才能排布冲突' : '换个关键词，或切回「全部」分类'}
+                className="border border-dashed border-border"
+            >
+                {totalCount === 0 ? (
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                        <Button variant="outline" onClick={onCreate}>
+                            <Plus />
+                            新增人物
                         </Button>
-                    )}
-                </EmptyContent>
-            </Empty>
+                        <Button variant="outline" onClick={onExtract}>
+                            <Sparkles />
+                            提取人物
+                        </Button>
+                    </div>
+                ) : (
+                    <Button variant="ghost" disabled={!hasFilter} onClick={onClearFilter}>
+                        清空筛选
+                    </Button>
+                )}
+            </StateEmpty>
         )
     }
 

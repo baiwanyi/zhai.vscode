@@ -10,7 +10,7 @@
  * 快照以 docPath 为键，没有活跃文档时只给引导空态，不渲染半成品页面。
  */
 import { Archive } from 'lucide-react'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import { WorkflowAiChat } from '@webview/workflow/aichat/WorkflowAiChat'
 import { WorkflowAnnotation } from '@webview/workflow/annotation/WorkflowAnnotation'
 import { WorkflowMedia } from '@webview/workflow/media/WorkflowMedia'
@@ -69,17 +69,11 @@ export function WorkflowResidentSection({
         }
         return (
             <div className="flex h-full flex-col justify-center p-4">
-                <Empty>
-                    <EmptyHeader>
-                        <EmptyMedia variant="icon" className="size-12 rounded-2xl">
-                            <Archive className="size-5" />
-                        </EmptyMedia>
-                        <EmptyTitle>还没有打开文档</EmptyTitle>
-                        <EmptyDescription>
-                            快照以当前 Markdown 文档为单位。打开任意 .md 文件后，保存或手动留版都会在此留下历史版本。
-                        </EmptyDescription>
-                    </EmptyHeader>
-                </Empty>
+                <StateEmpty
+                    icon={Archive}
+                    title="还没有打开文档"
+                    description="快照以当前 Markdown 文档为单位。打开任意 .md 文件后，保存或手动留版都会在此留下历史版本。"
+                />
             </div>
         )
     }

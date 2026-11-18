@@ -11,10 +11,10 @@ import { cn } from 'cn'
 import { Check, ChevronRight, FileText, ListTree, Sparkles, Wand2 } from 'lucide-react'
 import { Fragment, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Progress } from '@components/ui/progress'
 import type { PressExtractedVolume } from '@shared/types/press'
 import { Button } from '@webview/components/Button'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import { OutlineAiPanel } from './OutlineAiPanel'
 import { OutlineDetail } from './OutlineDetail'
 import { OutlineTree } from './OutlineTree'
@@ -242,15 +242,12 @@ export function PressOutlinePage({
                             onOpenWizard={() => setIsWizardOpen(true)}
                         />
                     ) : (
-                        <Empty className="h-full">
-                            <EmptyHeader>
-                                <EmptyMedia variant="icon">
-                                    <ListTree />
-                                </EmptyMedia>
-                                <EmptyTitle>选择一章查看章纲</EmptyTitle>
-                                <EmptyDescription>左侧树中点选章节，或先生成一份大纲</EmptyDescription>
-                            </EmptyHeader>
-                        </Empty>
+                        <StateEmpty
+                            icon={ListTree}
+                            title="选择一章查看章纲"
+                            description="左侧树中点选章节，或先生成一份大纲"
+                            className="h-full"
+                        />
                     )}
                 </section>
 

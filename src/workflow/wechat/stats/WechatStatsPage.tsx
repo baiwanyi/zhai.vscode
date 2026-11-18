@@ -7,7 +7,6 @@
  * 柱高按区间内最大值归一，全为 0 时统一给最小高度，避免出现「全空」的视觉误导。
  */
 import { BarChart3 } from 'lucide-react'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatStatsPoint } from '@shared/types/wechat'
 import {
@@ -21,6 +20,7 @@ import {
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
 import { useWechatStats, type WechatStatsDays } from '../hooks/useWechatStats'
 
@@ -80,30 +80,19 @@ export function WechatStatsPage({ account }: WechatStatsPageProps): JSX.Element 
         }
         if (status === 'error') {
             return (
-                <Empty>
-                    <EmptyHeader>
-                        <EmptyMedia variant="icon" className="size-12 rounded-2xl">
-                            <BarChart3 className="size-5" />
-                        </EmptyMedia>
-                        <EmptyTitle>数据读取失败</EmptyTitle>
-                        <EmptyDescription>{error ?? '请稍后重试'}</EmptyDescription>
-                        <EmptyDescription>
-                            统计接口需要认证主体；未认证账号在公众号后台也看不到这部分数据。
-                        </EmptyDescription>
-                    </EmptyHeader>
-                </Empty>
+                <StateEmpty
+                    icon={BarChart3}
+                    title="数据读取失败"
+                    description={`${error ?? '请稍后重试'} 统计接口需要认证主体；未认证账号在公众号后台也看不到这部分数据。`}
+                />
             )
         }
         if (stats === null || stats.points.length === 0) {
             return (
-                <Empty>
-                    <EmptyHeader>
-                        <EmptyTitle>区间内没有数据</EmptyTitle>
-                        <EmptyDescription>
-                            平台按自然日结算，当天的数据要次日才有；刚关注的账号前两天可能全是 0。
-                        </EmptyDescription>
-                    </EmptyHeader>
-                </Empty>
+                <StateEmpty
+                    title="区间内没有数据"
+                    description="平台按自然日结算，当天的数据要次日才有；刚关注的账号前两天可能全是 0。"
+                />
             )
         }
         return (

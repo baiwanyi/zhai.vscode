@@ -3,14 +3,13 @@
  * 复用约定：封面回读交给 useCharacterCover、图库列举交给 useCharacterPortrait，
  * 出图的 hook 由主组件持有（切标签页会卸载本区块，挂在内部会丢掉在途回执），本组件只透传按钮状态；
  * 画风选项取 workflow/media/prompt 的 STYLE_OPTIONS，与宿主 STYLE_HINTS 同源；
- * 图库网格复用 components/Image，空态取 ui/empty，删除确认取 components/ConfirmDialog。
+ * 图库网格复用 components/Image，空态取 components/StateEmpty，删除确认取 components/ConfirmDialog。
  * 关键约束：生成结果只改封面指针且随人物卡保存生效，删除不可撤销——被删的是当前封面时必须立即落盘回退值，
  * 只改草稿会在取消编辑后留下失效指针；图库只做「设为首选 / 删除」最小集，批量与复制等操作仍在生图页。
  */
 import { Images, Sparkles, Trash2 } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
-import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@components/ui/empty'
 import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } from '@components/ui/popover'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import type { MediaDeleteResult } from '@shared/types/media'
@@ -21,6 +20,7 @@ import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { CoverFigure } from '@webview/components/CoverFigure'
 import { Image } from '@webview/components/Image'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import { STYLE_OPTIONS } from '@webview/workflow/media/utils/parameters/style'
 import { useCharacterCover } from './useCharacterCover'
 import { useCharacterPortrait } from './useCharacterPortrait'
@@ -151,12 +151,11 @@ export function CharacterPortraitSection({
                                     <div className="aspect-3/4 rounded-md bg-muted/40" />
                                 </div>
                             ) : gallery.length === 0 ? (
-                                <Empty className="border py-3">
-                                    <EmptyHeader>
-                                        <EmptyTitle>还没有图片</EmptyTitle>
-                                        <EmptyDescription>生成一次后，这里保留每一版可回退</EmptyDescription>
-                                    </EmptyHeader>
-                                </Empty>
+                                <StateEmpty
+                                    title="还没有图片"
+                                    description="生成一次后，这里保留每一版可回退"
+                                    className="border py-3"
+                                />
                             ) : (
                                 <div className="grid max-h-64 grid-cols-2 gap-2 overflow-x-hidden overflow-y-auto">
                                     {gallery.map((item, index) => {

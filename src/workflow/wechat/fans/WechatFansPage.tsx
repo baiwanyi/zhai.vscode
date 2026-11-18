@@ -9,7 +9,6 @@
 import { Users } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@components/ui/badge'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatFanSummary, WechatFanTag } from '@shared/types/wechat'
@@ -26,6 +25,7 @@ import {
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
 import { useWechatFans } from '../hooks/useWechatFans'
 
@@ -59,15 +59,11 @@ export function WechatFansPage({ account }: WechatFansPageProps): JSX.Element {
     const renderFans = (): JSX.Element => {
         if (fans.length === 0) {
             return (
-                <Empty>
-                    <EmptyHeader>
-                        <EmptyMedia variant="icon" className="size-12 rounded-2xl">
-                            <Users className="size-5" />
-                        </EmptyMedia>
-                        <EmptyTitle>还没有关注者</EmptyTitle>
-                        <EmptyDescription>账号有粉丝关注后，这里会显示最近关注的 100 位。</EmptyDescription>
-                    </EmptyHeader>
-                </Empty>
+                <StateEmpty
+                    icon={Users}
+                    title="还没有关注者"
+                    description="账号有粉丝关注后，这里会显示最近关注的 100 位。"
+                />
             )
         }
         return (
@@ -116,14 +112,7 @@ export function WechatFansPage({ account }: WechatFansPageProps): JSX.Element {
             )
         }
         if (tags.length === 0) {
-            return (
-                <Empty>
-                    <EmptyHeader>
-                        <EmptyTitle>还没有标签</EmptyTitle>
-                        <EmptyDescription>标签需要在公众号后台创建，这里只读展示标签与人数。</EmptyDescription>
-                    </EmptyHeader>
-                </Empty>
-            )
+            return <StateEmpty title="还没有标签" description="标签需要在公众号后台创建，这里只读展示标签与人数。" />
         }
         return (
             <div className="flex w-full flex-col gap-2">

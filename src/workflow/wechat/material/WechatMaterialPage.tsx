@@ -8,7 +8,6 @@
  */
 import { Copy, ImagePlus, Images, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Input } from '@components/ui/input'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
@@ -26,6 +25,7 @@ import {
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { Image } from '@webview/components/Image'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
 import { useWechatMaterials } from '../hooks/useWechatMaterials'
 
@@ -72,28 +72,15 @@ export function WechatMaterialPage({ account }: WechatMaterialPageProps): JSX.El
             )
         }
         if (status === 'error') {
-            return (
-                <Empty>
-                    <EmptyHeader>
-                        <EmptyTitle>素材列表加载失败</EmptyTitle>
-                        <EmptyDescription>{error ?? '请稍后重试'}</EmptyDescription>
-                    </EmptyHeader>
-                </Empty>
-            )
+            return <StateEmpty title="素材列表加载失败" description={error ?? '请稍后重试'} />
         }
         if (materials.length === 0) {
             return (
-                <Empty>
-                    <EmptyHeader>
-                        <EmptyMedia variant="icon" className="size-12 rounded-2xl">
-                            <Images className="size-5" />
-                        </EmptyMedia>
-                        <EmptyTitle>还没有素材</EmptyTitle>
-                        <EmptyDescription>
-                            正文里的本地图片在生成草稿时会自动上传并出现在这里；也可以用下方按钮主动上传一张。
-                        </EmptyDescription>
-                    </EmptyHeader>
-                </Empty>
+                <StateEmpty
+                    icon={Images}
+                    title="还没有素材"
+                    description="正文里的本地图片在生成草稿时会自动上传并出现在这里；也可以用下方按钮主动上传一张。"
+                />
             )
         }
         if (visibleMaterials.length === 0) {

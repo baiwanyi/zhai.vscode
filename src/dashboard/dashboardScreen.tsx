@@ -75,7 +75,7 @@ function DashboardScreenContent(): JSX.Element {
                 {isRoutingReady ? (
                     <DashboardRouteSwitch route={route} onNavigate={navigate} />
                 ) : (
-                    <StateEmpty className="h-full" title="正在读取仪表盘" isLoading />
+                    <StateEmpty className="h-full" title="正在读取仪表盘..." isLoading />
                 )}
             </div>
             <Toaster theme={theme} />

@@ -10,9 +10,9 @@ import { cn } from 'cn'
 import { ChevronRight, Plus, PlusCircle, ScrollText } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Button } from '@webview/components/Button'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import type { OutlineVolume, PlanStatus } from '../types'
 import type { JSX } from 'react'
 import { PLAN_STATUS_META, STATUS_FILTERS } from '../constants'
@@ -65,21 +65,17 @@ export function OutlineTree({
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
                 {volumes.length === 0 ? (
-                    <Empty className="border border-dashed border-border py-8">
-                        <EmptyHeader>
-                            <EmptyMedia variant="icon">
-                                <ScrollText />
-                            </EmptyMedia>
-                            <EmptyTitle>还没有大纲</EmptyTitle>
-                            <EmptyDescription>生成一份卷纲，或手动新建第一卷</EmptyDescription>
-                        </EmptyHeader>
-                        <EmptyContent>
-                            <Button variant="outline" onClick={onCreateVolume}>
-                                <Plus />
-                                新建第一卷
-                            </Button>
-                        </EmptyContent>
-                    </Empty>
+                    <StateEmpty
+                        icon={ScrollText}
+                        title="还没有大纲"
+                        description="生成一份卷纲，或手动新建第一卷"
+                        className="border border-dashed border-border py-8"
+                    >
+                        <Button variant="outline" onClick={onCreateVolume}>
+                            <Plus />
+                            新建第一卷
+                        </Button>
+                    </StateEmpty>
                 ) : (
                     <div className="flex flex-col gap-1">
                         {volumes.map((volume) => {

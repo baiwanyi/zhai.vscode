@@ -1,10 +1,11 @@
 /**
  * 待办列表模块：仪表盘概览区的待办卡片，替换原「模块分布」占位槽位，不单独成页。
  * 复用约定：数据与写操作交给 ../todo/useTodoLists，清单行、条目与输入区复用 ../todo 下的组件，
- * 卡片取 @components/ui 的 card，折叠语义取 collapsible，空态取 empty，统计用 badge，弹窗走既有组件。
+ * 卡片取 @components/ui 的 card，折叠语义取 collapsible，空态取业务公共层的 StateEmpty，统计用 badge，弹窗走既有组件。
  * 关键约束：标题行整行可点，折叠后只保留「待办列表 + 未完成数」；清单的增删改都收进 TodoListBar 的下拉；
  * 删除与重命名共用一个弹窗状态（同一时刻只会打开一个），关闭即清空，避免旧清单名残留在弹窗里；
- * 列表按固定最大高度内部滚动，提交中禁用开关与发布。文件内的 Header / Empty 为私有展示组件，不对外导出。
+ * 列表按固定最大高度内部滚动，提交中禁用开关与发布；读取中用与待办行等高的骨架占位，
+ * 不用转圈，避免卡片先塌再撑。文件内的 Header 与骨架为私有展示组件，不对外导出；空态直接用 StateEmpty。
  */
 'use client'
 
@@ -14,18 +15,18 @@ import { useCallback, useRef, useState } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Card, CardContent } from '@components/ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia } from '@components/ui/empty'
 import { ScrollArea } from '@components/ui/scroll-area'
-import { Spinner } from '@components/ui/spinner'
+import { Skeleton } from '@components/ui/skeleton'
 import type { TodoListSummary } from '@shared/types/todo'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import { TodoComposer } from './TodoComposer'
 import { TodoItemRow } from './TodoItemRow'
 import { TodoListBar } from './TodoListBar'
 import { TodoListRenameDialog } from './TodoListRenameDialog'
 import { useTodoLists } from './useTodoLists'
-import type { JSX, ReactNode } from 'react'
+import type { JSX } from 'react'
 
 /** 当前打开的弹窗：删除与重命名共用一份状态，二者互斥 */
 type TodoDialog = { kind: 'delete'; list: TodoListSummary } | { kind: 'rename'; list: TodoListSummary }
@@ -112,19 +113,19 @@ export function DashboardTodo(): JSX.Element {
                                 onRename={handleRequestRename}
                                 onDelete={handleRequestDelete}
                             />
-                            {status === 'loading' ? <TodoEmpty isLoading description="正在读取待办…" /> : null}
+                            {status === 'loading' ? <TodoSkeleton /> : null}
                             {status !== 'loading' && lists.length === 0 ? (
-                                <TodoEmpty
-                                    description="还没有待办清单"
-                                    action={
-                                        <Button size="sm" variant="outline" onClick={handleCreate}>
-                                            新建清单
-                                        </Button>
-                                    }
-                                />
+                                <StateEmpty description="还没有待办清单" className="border px-3 py-4">
+                                    <Button size="sm" variant="outline" onClick={handleCreate}>
+                                        新建清单
+                                    </Button>
+                                </StateEmpty>
                             ) : null}
                             {status !== 'loading' && lists.length > 0 && items.length === 0 ? (
-                                <TodoEmpty description="这份清单还没有待办，下方输入后回车即可添加" />
+                                <StateEmpty
+                                    description="这份清单还没有待办，下方输入后回车即可添加"
+                                    className="border px-3 py-4"
+                                />
                             ) : null}
                             {items.length > 0 ? (
                                 <ScrollArea className="max-h-44">
@@ -201,27 +202,16 @@ function TodoHeader({ pendingCount }: { pendingCount: number }): JSX.Element {
     )
 }
 
-interface TodoEmptyProps {
-    description: string
-    /** 读取中：用旋转指示替代图标，文案由调用方给出 */
-    isLoading?: boolean
-    /** 空态里的补充操作，例如「新建清单」 */
-    action?: ReactNode
-}
+/** 骨架条目 key：固定三条够覆盖侧栏首屏，不用数组下标直接作 key */
+const SKELETON_KEYS = ['s0', 's1', 's2'] as const
 
-/** 空态与加载态的统一外观：三处共用同一套边框与内边距，避免样式各自漂移 */
-function TodoEmpty({ description, isLoading = false, action }: TodoEmptyProps): JSX.Element {
+/** 读取骨架：尺寸与间距对齐 TodoItemRow，等待期间卡片高度不跳动 */
+function TodoSkeleton(): JSX.Element {
     return (
-        <Empty className="border px-3 py-4">
-            <EmptyHeader>
-                {isLoading ? (
-                    <EmptyMedia variant="icon">
-                        <Spinner aria-label={description} />
-                    </EmptyMedia>
-                ) : null}
-                <EmptyDescription>{description}</EmptyDescription>
-            </EmptyHeader>
-            {action !== undefined ? <EmptyContent>{action}</EmptyContent> : null}
-        </Empty>
+        <div className="flex flex-col gap-1.5">
+            {SKELETON_KEYS.map((key) => (
+                <Skeleton key={key} className="h-11 w-full rounded-lg" />
+            ))}
+        </div>
     )
 }

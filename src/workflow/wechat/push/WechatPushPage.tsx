@@ -10,7 +10,6 @@
 import { ChevronDown, ChevronRight, Send } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@components/ui/badge'
-import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
@@ -25,6 +24,7 @@ import {
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
+import { StateEmpty } from '@webview/components/StateEmpty'
 import {
     formatArticleMeta,
     formatIssueMeta,
@@ -74,14 +74,7 @@ export function WechatPushPage({ account }: WechatPushPageProps): JSX.Element {
             return <PushSkeleton />
         }
         if (status === 'error') {
-            return (
-                <Empty>
-                    <EmptyHeader>
-                        <EmptyTitle>批次读取失败</EmptyTitle>
-                        <EmptyDescription>{error ?? '请稍后重试'}</EmptyDescription>
-                    </EmptyHeader>
-                </Empty>
-            )
+            return <StateEmpty title="批次读取失败" description={error ?? '请稍后重试'} />
         }
         if (tab === 'quota') {
             return <QuotaPanel quota={quota} quotaError={quotaError} />
@@ -89,19 +82,15 @@ export function WechatPushPage({ account }: WechatPushPageProps): JSX.Element {
         const list = tab === 'queue' ? queue : history
         if (list.length === 0) {
             return (
-                <Empty>
-                    <EmptyHeader>
-                        <EmptyMedia variant="icon" className="size-12 rounded-2xl">
-                            <Send className="size-5" />
-                        </EmptyMedia>
-                        <EmptyTitle>{tab === 'queue' ? '没有待推送的批次' : '还没有推送记录'}</EmptyTitle>
-                        <EmptyDescription>
-                            {tab === 'queue'
-                                ? '到仪表盘的批次页新建批次、添加文章，回到这里设置标题与封面后再生成草稿。'
-                                : '成功群发或失败重试过的批次会留在这里，便于回看时间与失败原因。'}
-                        </EmptyDescription>
-                    </EmptyHeader>
-                </Empty>
+                <StateEmpty
+                    icon={Send}
+                    title={tab === 'queue' ? '没有待推送的批次' : '还没有推送记录'}
+                    description={
+                        tab === 'queue'
+                            ? '到仪表盘的批次页新建批次、添加文章，回到这里设置标题与封面后再生成草稿。'
+                            : '成功群发或失败重试过的批次会留在这里，便于回看时间与失败原因。'
+                    }
+                />
             )
         }
         return (
@@ -251,14 +240,7 @@ function QuotaPanel({
     quotaError: string | null
 }): JSX.Element {
     if (quota === null) {
-        return (
-            <Empty>
-                <EmptyHeader>
-                    <EmptyTitle>额度读取失败</EmptyTitle>
-                    <EmptyDescription>{quotaError ?? '请稍后重试'}</EmptyDescription>
-                </EmptyHeader>
-            </Empty>
-        )
+        return <StateEmpty title="额度读取失败" description={quotaError ?? '请稍后重试'} />
     }
     return (
         <div className="flex w-full flex-col gap-2 rounded-xl border p-3">
