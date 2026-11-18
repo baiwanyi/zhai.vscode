@@ -74,25 +74,25 @@ export function WorkflowScreen(): JSX.Element {
     }, [])
 
     /**
-     * 内容区：按「非 Markdown → 路由未就绪 → 正常」依次回落。
+     * 内容区：未就绪与非 Markdown 共用同一套空态骨架，其余情况才进正常页面。
      * 只产出内容、不挂提示容器 —— Toaster 在下方与内容同级只挂一次，切换文档时不被卸载，
      * 正在显示的宿主提示不会被打断后再补发重放。
      */
     const renderContent = (): JSX.Element => {
-        // 非 Markdown 文档下工作流区整体不可用：只借 StateEmpty 的居中骨架挂淡化 logo 与一句 slogan，
-        // 不给说明与操作区，保持空白页观感；图标位默认是灰底小方块，这里整组覆盖成透明大图
-        if (!context.isMarkdown) {
+        // 未就绪与非 Markdown 共用同一个空态骨架：logo 与图标位常驻，只有标题位在变 ——
+        // 就绪前 StateEmpty 把标题位换成转圈、不渲染文字（此时 title 仅作转圈的可访问名），就绪后显示 slogan；
+        // 两态都传 title，避免加载态退回 Spinner 默认的英文 "Loading" 播报
+        if (!isReady || !context.isMarkdown) {
+            const isPending = !isReady
             return (
                 <StateEmpty
                     className="h-screen"
-                    title="宅于一隅，落笔千言"
+                    title={isPending ? '正在读取工作流' : '宅于一隅，落笔千言'}
                     icon={BrandLogo}
                     iconClassName="size-32 rounded-none bg-transparent"
+                    isLoading={isPending}
                 />
             )
-        }
-        if (!isReady) {
-            return <StateEmpty className="h-screen" title="正在读取工作流" isLoading />
         }
         // 归属变化后当前分区可能不可用（如从作品切到笔记时停在「设定」）：渲染期回落，不改写 state
         const section = readAvailableSections(scope).includes(activeSection) ? activeSection : DEFAULT_SECTION
