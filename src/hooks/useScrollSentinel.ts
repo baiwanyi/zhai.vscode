@@ -2,12 +2,13 @@
  * 滚动哨兵：滚动容器接近底部时上报一次续载意图，卸载或依赖变化时自动解绑观察器。
  * 复用约定：观察器 root 默认取最近的 ScrollArea 视口——webview 里滚动发生在该容器内、body 不滚动，
  * 用浏览器默认视口会一次性全触发或永不触发；提前量由调用方按列表密度给出。
+ * 视口选择器取 @shared/utils/scrollArea，与底栏遮罩联动等逻辑共用同一份，避免两套口径漂移。
  * 关键约束：hasMore 为假时不挂观察器，避免一屏没填满时反复触发空请求；
  * 条目数等外部信号经 observeKey 传入，变化时重建观察才能链式补载；
  * onLoadMore 必须是稳定引用（useCallback），否则每次渲染都会重建观察器。
  */
 import { useEffect, useRef } from 'react'
-import { SCROLL_VIEWPORT_SELECTOR } from '@webview/components/scrollAreaSlots'
+import { SCROLL_VIEWPORT_SELECTOR } from '@shared/utils/scrollArea'
 import type { RefObject } from 'react'
 
 /** 默认提前量：距底部 160px 即预载下一页，减少滚动中的空窗 */

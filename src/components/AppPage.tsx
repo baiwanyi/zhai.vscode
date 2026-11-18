@@ -5,6 +5,8 @@
  * start 为动作区夹持标题，首个动作区在左、第二个在右），AppDescription、AppMenu 等其余子元素按书写顺序整行排在下方；
  * 分区栏、筛选行与徽标行收进 AppMenu，主体滚动走 AppContent 的 isScrollable；
  * AppFooter 默认右对齐，左侧还需常驻控件时由页面分组后传 justify-between。
+ * 底栏渐变遮罩按需挂载：AppContent 量滚动容器的偏移与高度，只有「内容溢出且未到底」时才给 AppFooter 加
+ * FOOTER_MASK_CLASS —— 内容不足一屏或已滚到底时遮罩会在底栏上沿投出一条无意义的渐变。
  * 标题被单行截断时用 AppTitle 的 tooltip 补出完整文案，tooltipSide 只在需避开容器时传；
  * 提示走非受控 Tooltip，指针进入即开，不引入额外状态。
  * 双击 AppTitle 复制整条标题，剪贴板写入走 @shared/utils/clipboard，结果经 sonner 提示。
@@ -19,24 +21,50 @@
 'use client'
 
 import { cn } from 'cn'
+import { createContext, use, useEffect, useMemo, useRef, useState } from 'react'
 import { ScrollArea } from '@components/ui/scroll-area'
 import { copyWithToast } from '@shared/utils/clipboard'
 import { preventContextMenu } from '@shared/utils/dom'
+import { SCROLL_VIEWPORT_SELECTOR } from '@shared/utils/scrollArea'
 import { TOOLTIP_CLASS, Tooltip, TooltipContent, TooltipTrigger } from './Tooltip'
-import type { ComponentProps, JSX, MouseEvent } from 'react'
+import type { ComponentProps, JSX, MouseEvent, RefObject } from 'react'
 
 /** 底栏上方的渐变遮罩：滚动内容在按钮下方淡出，只在此处声明一次 */
 const FOOTER_MASK_CLASS =
     'before:pointer-events-none before:absolute before:inset-x-0 before:bottom-full before:h-10 before:bg-linear-to-t before:from-background before:to-transparent'
 
+/** 滚动容器的测量精度：亚像素布局会让「恰好填满」被判成溢出、「恰好到底」被判成未到底 */
+const SCROLL_TOLERANCE = 1
+
+/** 底栏遮罩的可见性：AppContent 测量后写入，AppFooter 读取后决定是否挂渐变 */
+interface FooterMaskState {
+    isVisible: boolean
+    setIsVisible: (visible: boolean) => void
+}
+
+/**
+ * 缺省为 null：页面未套 AppPage 时保持原行为（始终显示遮罩），不至于因漏包 Provider 而丢样式。
+ * 关键约束：一份状态对应一个 AppPage，页面内只应有一个 isScrollable 的 AppContent；
+ * 同时挂两个可滚动区时后测量者会覆盖前者（当前所有页面都是单滚动区，不构成问题）。
+ */
+const FooterMaskContext = createContext<FooterMaskState | null>(null)
+
 function AppPage({ className, onContextMenu = preventContextMenu, ...props }: ComponentProps<'div'>): JSX.Element {
+    // 默认不挂遮罩：首帧还不知道内容是否溢出，先按「不需要」渲染，避免无溢出时先闪一下渐变
+    const [isFooterMaskVisible, setIsFooterMaskVisible] = useState(false)
+    const footerMask = useMemo<FooterMaskState>(
+        () => ({ isVisible: isFooterMaskVisible, setIsVisible: setIsFooterMaskVisible }),
+        [isFooterMaskVisible],
+    )
     return (
-        <div
-            data-slot="app-page"
-            className={cn('@container flex h-full min-h-0 flex-col', className)}
-            onContextMenu={onContextMenu}
-            {...props}
-        />
+        <FooterMaskContext value={footerMask}>
+            <div
+                data-slot="app-page"
+                className={cn('@container flex h-full min-h-0 flex-col', className)}
+                onContextMenu={onContextMenu}
+                {...props}
+            />
+        </FooterMaskContext>
     )
 }
 
@@ -142,7 +170,57 @@ interface AppContentProps extends ComponentProps<'div'> {
     isScrollable?: boolean
 }
 
+/**
+ * 底栏遮罩联动：测量滚动容器「是否溢出且未到底」，把结论写回 AppPage 的共享状态。
+ * 关键约束：依赖里只放稳定的 setter —— 若把整个 Context 值放进来，遮罩每次开关都会重建监听；
+ * 滚动容器找不到时保持当前状态（退化为无遮罩），不按猜测给值。
+ */
+function useFooterMaskSync(isScrollable: boolean, scrollRef: RefObject<HTMLDivElement | null>): void {
+    const footerMask = use(FooterMaskContext)
+    const setIsFooterMaskVisible = footerMask?.setIsVisible
+
+    useEffect(() => {
+        if (setIsFooterMaskVisible === undefined) {
+            return
+        }
+        if (!isScrollable) {
+            setIsFooterMaskVisible(false)
+            return
+        }
+        // 选择器取 @shared/utils/scrollArea：与下方覆盖 display 的样式、续载哨兵共用同一份，不留两套口径
+        const viewport = scrollRef.current?.querySelector<HTMLElement>(SCROLL_VIEWPORT_SELECTOR)
+        if (viewport === null || viewport === undefined) {
+            return
+        }
+        const update = (): void => {
+            const { clientHeight, scrollHeight, scrollTop } = viewport
+            const hasOverflow = scrollHeight - clientHeight > SCROLL_TOLERANCE
+            const isAtBottom = scrollTop + clientHeight >= scrollHeight - SCROLL_TOLERANCE
+            setIsFooterMaskVisible(hasOverflow && !isAtBottom)
+        }
+        update()
+        viewport.addEventListener('scroll', update, { passive: true })
+        // 容器尺寸（窗口缩放、侧栏折叠）与内容高度（列表追加、折叠展开）变化都要重算；
+        // ResizeObserver 在部分宿主与测试环境缺失：缺就只保留滚动联动，不能在这里抛错拖垮整棵骨架
+        const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
+        if (observer !== null) {
+            observer.observe(viewport)
+            const contentShell = viewport.firstElementChild
+            if (contentShell !== null) {
+                observer.observe(contentShell)
+            }
+        }
+        return (): void => {
+            viewport.removeEventListener('scroll', update)
+            observer?.disconnect()
+        }
+    }, [isScrollable, scrollRef, setIsFooterMaskVisible])
+}
+
 function AppContent({ className, isScrollable = false, children, ...props }: AppContentProps): JSX.Element {
+    const scrollRef = useRef<HTMLDivElement>(null)
+    useFooterMaskSync(isScrollable, scrollRef)
+
     if (!isScrollable) {
         return (
             <div data-slot="app-content" className={cn('min-h-0 flex-1 px-3', className)} {...props}>
@@ -154,7 +232,10 @@ function AppContent({ className, isScrollable = false, children, ...props }: App
     return (
         // Radix 会在 viewport 内插入一层 display:table 的内容壳（内联样式，用于量横向溢出），
         // 表格宽度按内容取，长文本会把整页撑宽、再被隐藏的横向滚动条裁掉；这里用 !important 压掉内联 display。
-        <ScrollArea className={cn('min-h-0 flex-1 [&_[data-radix-scroll-area-viewport]>div]:block!', className)}>
+        <ScrollArea
+            ref={scrollRef}
+            className={cn('min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!', className)}
+        >
             <div data-slot="app-content" className="flex min-h-full w-full flex-col px-3" {...props}>
                 {children}
             </div>
@@ -163,12 +244,15 @@ function AppContent({ className, isScrollable = false, children, ...props }: App
 }
 
 function AppFooter({ className, children, ...props }: ComponentProps<'footer'>): JSX.Element {
+    const footerMask = use(FooterMaskContext)
+    // 未套 AppPage（Context 缺位）时保持旧行为：始终显示遮罩
+    const isMaskVisible = footerMask === null || footerMask.isVisible
     return (
         <footer
             data-slot="app-footer"
             className={cn(
                 'relative flex w-full items-center justify-end gap-2 px-3 pb-2',
-                FOOTER_MASK_CLASS,
+                isMaskVisible ? FOOTER_MASK_CLASS : null,
                 className,
             )}
             {...props}
