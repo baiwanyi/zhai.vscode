@@ -8,10 +8,10 @@
  */
 import { cn } from 'cn'
 import type { AiContextUsage } from '@shared/types/aiChat'
-import { EnhanceButton } from '@webview/components/EnhanceButton'
-import { SendButton } from '@webview/components/SendButton'
 import { AiChatModelMenu } from './AiChatModelMenu'
 import { AiChatTokenRing } from './AiChatTokenRing'
+import { EnhanceButton } from './EnhanceButton'
+import { SendButton } from './SendButton'
 import type { AiChatModelControl } from '../hooks/useAiChatModelControl'
 import type { ComponentProps, JSX } from 'react'
 

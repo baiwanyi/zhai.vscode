@@ -10,7 +10,7 @@ import type { AiContextRef } from '@shared/types/aiChat'
 import type { ImageReferenceItem } from '@shared/types/imageReference'
 import { toZhaiDisplayPath } from '@shared/utils/zhaiPath'
 import { Image } from '@webview/components/Image'
-import type { RichChip } from '@webview/components/RichChipInput'
+import type { RichChip } from './RichChipInput'
 import type { JSX } from 'react'
 import { describeContext, toContextFileName, toContextLineRange } from '../utils/chat/format'
 

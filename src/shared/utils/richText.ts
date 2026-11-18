@@ -1,7 +1,7 @@
 /**
  * 富文本可编辑区的 DOM 工具：读取与写入纯文本、定位光标、识别与插入芯片节点。
  * 复用约定：芯片统一用 data-chip 标记且 contentEditable=false，芯片文案不计入正文；
- * 供 @webview/components/RichChipInput 与 aichat 的富文本输入区共用，本文件不掺业务语义。
+ * 供 @webview/workflow/aichat/composer/RichChipInput 与生图输入区共用，本文件不掺业务语义。
  * 关键约束：读写正文必须跳过芯片；<br> 还原为换行；移动光标前先确认编辑器已聚焦，避免抢走其它输入框的焦点。
  */
 

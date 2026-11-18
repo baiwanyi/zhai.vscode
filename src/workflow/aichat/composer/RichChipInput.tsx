@@ -1,7 +1,7 @@
 /**
  * 带内联芯片的富文本输入区：命令、上下文、词条等「引用意图」以芯片嵌在正文流中，文本紧贴芯片且换行回到行首。
  * 复用约定：芯片取 @components/ui/badge（secondary 变体），移除入口用 @webview/components/Button 的 ghost，
- * 参考图缩略图大图取 ./Image 与 @webview/components/Tooltip；DOM 读写与光标操作统一复用 ./richText，
+ * 参考图缩略图大图取 @webview/components/Image 与 @webview/components/Tooltip；DOM 读写与光标操作统一复用 @shared/utils/richText，
  * 芯片标记同样走 data-chip；编辑区与占位的排版常量对外导出，AI 对话与生图两处底栏输入区共用同一份，
  * 保证字号、最大高度与滚动条行为不分叉。
  * 关键约束：芯片 contentEditable=false 且不计入正文，正文内容由调用方在发送瞬间拼装；
@@ -16,16 +16,6 @@ import { cn } from 'cn'
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useImperativeHandle, useRef } from 'react'
 import { Badge } from '@components/ui/badge'
-import { Button } from '@webview/components/Button'
-import { TOOLTIP_CLASS, Tooltip, TooltipContent, TooltipTrigger } from '@webview/components/Tooltip'
-import { Image } from './Image'
-import type {
-    ClipboardEvent as ReactClipboardEvent,
-    JSX,
-    KeyboardEvent as ReactKeyboardEvent,
-    ReactNode,
-    Ref,
-} from 'react'
 import {
     findAdjacentChip,
     insertPlainText,
@@ -33,7 +23,17 @@ import {
     moveCaretToEnd,
     readEditableText,
     writeEditableText,
-} from '../shared/utils/richText'
+} from '@shared/utils/richText'
+import { Button } from '@webview/components/Button'
+import { Image } from '@webview/components/Image'
+import { TOOLTIP_CLASS, Tooltip, TooltipContent, TooltipTrigger } from '@webview/components/Tooltip'
+import type {
+    ClipboardEvent as ReactClipboardEvent,
+    JSX,
+    KeyboardEvent as ReactKeyboardEvent,
+    ReactNode,
+    Ref,
+} from 'react'
 
 /** 芯片容器基础排版：默认宽度上限 max-w-56，调用方经 badgeClassName 覆盖 */
 const CHIP_CLASS = 'mr-1 h-5 max-w-56 align-top'

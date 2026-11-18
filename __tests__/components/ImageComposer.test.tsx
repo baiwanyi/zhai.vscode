@@ -40,7 +40,7 @@ interface FakeChip {
 }
 
 /** 输入区替身：只保留正文 textarea 与芯片标签/移除入口，contentEditable 的 DOM 行为不在此用例范围 */
-vi.mock('@webview/components/RichChipInput', () => {
+vi.mock('@webview/workflow/aichat/composer/RichChipInput', () => {
     interface FakeRichChipInputProps {
         value: string
         chips: FakeChip[]

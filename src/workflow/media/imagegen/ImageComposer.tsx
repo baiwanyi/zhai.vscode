@@ -1,7 +1,7 @@
 /**
  * 生图输入卡片：上下文、参考图、角色、词条与规则以芯片内联在正文流中；画风在底部操作行点选，与比例同处一行。
  * 复用约定：外壳取 @webview/components/AppComposer 骨架（双层底色、生成态光晕与分层留白由骨架承担），
- * 输入区取 RichChipInput，工具栏取 @webview/workflow/aichat/composer 的通用 AiChatComposerToolbar（mode="image"），
+ * 输入区取 @webview/workflow/aichat/composer 的 RichChipInput，工具栏取同目录的通用 AiChatComposerToolbar（mode="image"），
  * 底部操作行取本目录 ImageComposerActions；
  * 提示词拼装与比例探测取 ../utils/prompt/sections 与 ../utils/parameters/ratio 的纯函数，
  * 芯片集合与会话状态由 ../hooks 的 usePromptChips / useImageComposer 持有；
@@ -25,9 +25,9 @@ import type { PortraitStyle } from '@shared/types/press'
 import { toastError } from '@shared/utils/error'
 import { AppComposer, AppComposerContent, AppComposerFooter, AppComposerHeader } from '@webview/components/AppComposer'
 import { Image } from '@webview/components/Image'
-import { RichChipInput, type RichChip } from '@webview/components/RichChipInput'
 import { AiChatComposerToolbar } from '@webview/workflow/aichat/composer/AiChatComposerToolbar'
 import { buildContextChip } from '@webview/workflow/aichat/composer/composerChips'
+import { RichChipInput, type RichChip } from '@webview/workflow/aichat/composer/RichChipInput'
 import { useAiChatContexts } from '@webview/workflow/aichat/hooks/useAiChatContexts'
 import { useAiChatMention } from '@webview/workflow/aichat/hooks/useAiChatMention'
 import { useAiChatPicker } from '@webview/workflow/aichat/hooks/useAiChatPicker'

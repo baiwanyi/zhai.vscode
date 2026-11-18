@@ -1,7 +1,7 @@
 /**
  * 生图输入卡片的底部操作行：左侧比例与画面风格，右侧增强与发送。
  * 复用约定：比例菜单取本目录 ImageRatioSelector，画面风格取本目录 ImageStylePicker，
- * 增强与发送取 @webview/components 的 EnhanceButton / SendButton（与 aichat 共用同一组图标按钮）；
+ * 增强与发送取 @webview/workflow/aichat/composer 的 EnhanceButton / SendButton（与 aichat 共用同一组图标按钮）；
  * 根节点即 AppComposer 骨架的操作行槽位，className 由外层传入以撑满剩余宽度。
  * 关键约束：本组件不持有渲染状态，可否增强与可否发送由输入卡片按正文与生成态算好传入；
  * 发送套一层点击冷却（ref 记时间戳，不触发渲染）：首击后按钮即刻换成取消，连点的第二下若落到那一刻的
@@ -15,8 +15,8 @@ import { useRef } from 'react'
 import type { ImageGenerateStage } from '@shared/types/imageGenerate'
 import type { ImageRatio } from '@shared/types/imageRatio'
 import type { PortraitStyle } from '@shared/types/press'
-import { EnhanceButton } from '@webview/components/EnhanceButton'
-import { SendButton } from '@webview/components/SendButton'
+import { EnhanceButton } from '@webview/workflow/aichat/composer/EnhanceButton'
+import { SendButton } from '@webview/workflow/aichat/composer/SendButton'
 import { ImageRatioSelector } from './ImageRatioSelector'
 import { ImageStylePicker } from './ImageStylePicker'
 import type { JSX } from 'react'
