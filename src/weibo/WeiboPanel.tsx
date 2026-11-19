@@ -11,7 +11,7 @@
  */
 import { format } from 'date-fns'
 import { Inbox, RefreshCw, Settings2 } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent } from '@components/ui/card'
 import { Toaster } from '@components/ui/sonner'
@@ -31,8 +31,10 @@ import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useHostToast } from '@webview/hooks/useHostToast'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
+import { WeiboEmoticonPicker } from './components/WeiboEmoticonPicker'
 import { WeiboFeedList } from './components/WeiboFeedList'
 import { WeiboGroupList } from './components/WeiboGroupList'
+import { WeiboHotRankList } from './components/WeiboHotRankList'
 import { WeiboNav } from './components/WeiboNav'
 import { useWeiboFeed } from './hooks/useWeiboFeed'
 import { useWeiboGroups } from './hooks/useWeiboGroups'
@@ -205,7 +207,7 @@ export function WeiboPanel(): JSX.Element {
         const shouldShowCredential = !homeState.isLoading && (isCredentialOpen || !isConfigured)
         return (
             <>
-                <ComposerCard />
+                <ComposerCard isEnabled={isConfigured} />
                 {shouldShowCredential ? (
                     <CredentialCard
                         isConfigured={isConfigured}
@@ -430,7 +432,13 @@ export function WeiboPanel(): JSX.Element {
             </AppHeader>
 
             <AppContent isScrollable className="gap-3 pb-4">
-                <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">{renderContent()}</div>
+                <div className="mx-auto flex w-full max-w-5xl items-start justify-center gap-3">
+                    <div className="flex min-w-0 max-w-2xl flex-1 flex-col gap-3">{renderContent()}</div>
+                    {/* 右侧热搜榜：容器够宽才出现，窄面板让位给正文列表 */}
+                    <aside className="hidden w-64 shrink-0 @3xl:block">
+                        <WeiboHotRankList isEnabled={isConfigured} />
+                    </aside>
+                </div>
             </AppContent>
 
             <Toaster theme={theme} />
@@ -438,10 +446,45 @@ export function WeiboPanel(): JSX.Element {
     )
 }
 
-/** 微博发布框：受控编辑器 + 字数与发布按钮，占位阶段不落盘、不请求宿主 */
-function ComposerCard(): JSX.Element {
+interface ComposerCardProps {
+    /** 是否已配置凭证：表情配置接口同样依赖登录 Cookie */
+    isEnabled: boolean
+}
+
+/** 微博发布框：受控编辑 + 表情插入 + 字数与发布按钮，占位阶段不落盘、不请求宿主 */
+function ComposerCard({ isEnabled }: ComposerCardProps): JSX.Element {
     const [draft, setDraft] = useState('')
+    const textareaRef = useRef<HTMLTextAreaElement>(null)
+    // 插入后待恢复的光标位置：受控 textarea 的值更新后由 effect 落回选区
+    const pendingCaretRef = useRef<number | null>(null)
     const canPublish = draft.trim().length > 0
+
+    useEffect(() => {
+        const caret = pendingCaretRef.current
+        const textarea = textareaRef.current
+        if (caret === null || textarea === null) {
+            return
+        }
+        pendingCaretRef.current = null
+        textarea.focus()
+        textarea.setSelectionRange(caret, caret)
+    }, [draft])
+
+    const handleInsertEmoticon = useCallback(
+        (phrase: string): void => {
+            const textarea = textareaRef.current
+            const start = textarea?.selectionStart ?? draft.length
+            const end = textarea?.selectionEnd ?? draft.length
+            const nextDraft = draft.slice(0, start) + phrase + draft.slice(end)
+            if (nextDraft.length > POST_MAX_LENGTH) {
+                toast.info(`正文最多 ${POST_MAX_LENGTH} 字，无法再插入表情`)
+                return
+            }
+            pendingCaretRef.current = start + phrase.length
+            setDraft(nextDraft)
+        },
+        [draft],
+    )
 
     /** 发布占位：接口未接入，先给出明确反馈，避免点了没反应 */
     function handlePublish(): void {
@@ -455,6 +498,7 @@ function ComposerCard(): JSX.Element {
         <Card>
             <CardContent className="flex flex-col gap-2">
                 <textarea
+                    ref={textareaRef}
                     value={draft}
                     rows={4}
                     placeholder="分享你的新鲜事…"
@@ -466,9 +510,12 @@ function ComposerCard(): JSX.Element {
                     className="min-h-24 w-full resize-y bg-transparent text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
                 />
                 <div className="flex items-center justify-between gap-2 border-t pt-2">
-                    <span className="text-muted-foreground text-xs tabular-nums">
-                        {draft.length} / {POST_MAX_LENGTH}
-                    </span>
+                    <div className="flex items-center gap-1">
+                        <WeiboEmoticonPicker isEnabled={isEnabled} onSelect={handleInsertEmoticon} />
+                        <span className="text-muted-foreground text-xs tabular-nums">
+                            {draft.length} / {POST_MAX_LENGTH}
+                        </span>
+                    </div>
                     <Button variant="primary" disabled={!canPublish} onClick={handlePublish}>
                         发布
                     </Button>

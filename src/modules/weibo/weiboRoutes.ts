@@ -10,7 +10,9 @@ import type {
     WeiboClearCredentialResult,
     WeiboCommentsResult,
     WeiboCredentialState,
+    WeiboEmoticonsResult,
     WeiboGroupsResult,
+    WeiboHotRankResult,
     WeiboImageResult,
     WeiboLikeResult,
     WeiboLongTextResult,
@@ -31,13 +33,17 @@ import {
 import { WeiboWebError } from './webClient'
 import { fetchPostComments } from './webComments'
 import { isCookieUsable, normalizeCookieInput } from './webCredential'
+import { fetchWeiboEmoticons } from './webEmoticons'
 import { fetchWeiboFeed, fetchWeiboGroups } from './webFeed'
+import { fetchWeiboHotRank } from './webHotRank'
 import { setPostLike } from './webInteraction'
 import { fetchLongText } from './webLongText'
 import { fetchFriendTimeline } from './webTimeline'
 import type { FetchCommentsOptions } from './webComments'
 import type { WeiboCookieStore } from './webCredential'
+import type { FetchEmoticonsOptions } from './webEmoticons'
 import type { FetchFeedOptions, FetchGroupsOptions } from './webFeed'
+import type { FetchHotRankOptions } from './webHotRank'
 import type { SetLikeOptions } from './webInteraction'
 import type { FetchLongTextOptions } from './webLongText'
 import type { FetchTimelineOptions } from './webTimeline'
@@ -53,6 +59,10 @@ export interface WeiboRouteDeps {
     fetchFeed?: (options: FetchFeedOptions) => Promise<WeiboTimelineResult>
     /** 分组列表读取：默认分组与我的分组一次取回 */
     fetchGroups?: (options: FetchGroupsOptions) => Promise<WeiboGroupsResult>
+    /** 表情配置读取：发表框的表情面板使用 */
+    fetchEmoticons?: (options: FetchEmoticonsOptions) => Promise<WeiboEmoticonsResult>
+    /** 热搜榜读取：右侧边栏使用 */
+    fetchHotRank?: (options: FetchHotRankOptions) => Promise<WeiboHotRankResult>
     /** 图片代理：把远程图片下成本地文件并返回 Webview 可加载的地址 */
     resolveImageUrl?: (imageUrl: string) => Promise<string | null>
     /** 点赞写入：默认走网页版 setLike / cancelLike，单测可替换 */
@@ -91,6 +101,10 @@ export class WeiboRoutes {
                 return this.loadFeed(payload)
             case 'weibo/groups':
                 return this.loadGroups()
+            case 'weibo/emoticons':
+                return this.loadEmoticons()
+            case 'weibo/hotRank':
+                return this.loadHotRank()
             case 'weibo/comments':
                 return this.loadComments(payload)
             case 'weibo/longtext':
@@ -155,6 +169,26 @@ export class WeiboRoutes {
         }
         const fetchGroups = this.deps.fetchGroups ?? fetchWeiboGroups
         return fetchGroups({ cookie })
+    }
+
+    /** 读取表情配置：与其它接口共用登录 Cookie，缺凭证直接给出可执行的引导 */
+    private async loadEmoticons(): Promise<WeiboEmoticonsResult> {
+        const cookie = await this.deps.cookieStore.read()
+        if (!isCookieUsable(cookie)) {
+            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
+        }
+        const fetchEmoticons = this.deps.fetchEmoticons ?? fetchWeiboEmoticons
+        return fetchEmoticons({ cookie })
+    }
+
+    /** 读取热搜榜：与其它接口共用登录 Cookie，缺凭证直接给出可执行的引导 */
+    private async loadHotRank(): Promise<WeiboHotRankResult> {
+        const cookie = await this.deps.cookieStore.read()
+        if (!isCookieUsable(cookie)) {
+            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
+        }
+        const fetchHotRank = this.deps.fetchHotRank ?? fetchWeiboHotRank
+        return fetchHotRank({ cookie })
     }
 
     /** 凭证状态：只回配置标记与保存时间 */

@@ -1,10 +1,10 @@
 /**
- * 微博信息流契约：关注时间线、热门、分组信息流与分组列表的出入参模型与不可信载荷收窄。
- * 复用约定：宿主侧 modules/weibo 负责请求与归一化，Webview 只消费归一化后的帖子，
+ * 微博信息流契约：关注时间线、热门、分组信息流、分组列表与表情配置的模型与不可信载荷收窄。
+ * 复用约定：宿主侧 modules/weibo 负责请求与归一化，Webview 只消费归一化后的帖子与表情，
  * 协议方法名登记在 shared/types/messages，面板经 request/response 通道取数。
  * 关键约束：所有信息流只读，写操作不得走本契约；Cookie 明文永不出宿主、不入日志，
  * 凭证状态只回传是否已配置与保存时间；sinceId 与 maxId 互斥，二者都给出时以 maxId 为准；
- * 分组与游标必须是纯数字串，避免任意内容被拼进查询参数。
+ * 分组与游标必须是纯数字串，表情图地址必须落在图床白名单内，避免任意内容被拼进参数或渲染。
  */
 
 /** 单页默认条数：与网页端首屏一致，上游超过 50 会被截断 */
@@ -222,6 +222,43 @@ export interface WeiboGroupsResult {
     timelineListId: string | null
     /** 当前登录账号 uid：上游未给出时为 null */
     uid: string | null
+}
+
+/** 表情条目：phrase 是插入正文的文本，url 为已收窄到图床白名单的表情图直链 */
+export interface WeiboEmoticonItem {
+    phrase: string
+    url: string
+    /** 上游分类名：空串表示未分类 */
+    category: string
+}
+
+/** 表情配置结果：一次取回全部可用表情，前端按需分页渲染 */
+export interface WeiboEmoticonsResult {
+    emoticons: WeiboEmoticonItem[]
+    /** 结果生成时刻（ISO） */
+    fetchedAt: string
+}
+
+/** 热搜榜条目：只保留展示所需字段，图地址与徽标色均已在宿主侧收窄 */
+export interface WeiboHotRankItem {
+    /** 榜单序号：从 1 开始，优先取上游 realpos，缺失时用 rank + 1 或数组下标 */
+    rank: number
+    title: string
+    /** 榜单标记文案（如「热」「新」）：有则用 badge 展示 */
+    description: string | null
+    /** 排行图标直链：有则直接显示图片 */
+    iconUrl: string | null
+    /** 图标徽标文案：与 iconDescColor 一起决定 badge 外观 */
+    iconDesc: string | null
+    /** 徽标底色：仅接受 #rgb / #rrggbb / rgb()，其余归一为 null */
+    iconDescColor: string | null
+}
+
+/** 热搜榜结果：items 按榜单顺序排列 */
+export interface WeiboHotRankResult {
+    items: WeiboHotRankItem[]
+    /** 结果生成时刻（ISO） */
+    fetchedAt: string
 }
 
 /** 凭证状态：只描述是否可用，不回传任何 Cookie 片段 */

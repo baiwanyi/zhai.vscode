@@ -1133,15 +1133,17 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/modules/weibo/webClient.ts` | 通用 JSON 请求：URL 构造、请求头、错误分类、节流与退避重试 |
 | `src/modules/weibo/webTimeline.ts` | 分页/增量循环、去重、字段归一化、时间与正文清洗 |
 | `src/modules/weibo/webFeed.ts` | 时间线 / 热门 / 分组端点适配、分组归一化与卡片流提取 |
+| `src/modules/weibo/webEmoticons.ts` | 表情配置：`statuses/config` 取数与表情条目归一化 |
+| `src/modules/weibo/webHotRank.ts` | 侧栏热搜榜：`bandUnified` 取数与 realtime 条目归一化 |
 | `src/modules/weibo/webCredential.ts` | Cookie 清洗、SecretStorage 存取、凭证状态 |
 | `src/modules/weibo/mediaProxy.ts` | 图片代理：带 Referer 取图、本地缓存、并发去重与容量清理 |
 | `src/modules/weibo/webInteraction.ts` | 写操作：`setLike` / `cancelLike`，补 Origin 与 X-XSRF-TOKEN |
 | `src/modules/weibo/webComments.ts` | 评论读取：`buildComments` 参数构造、分页游标与评论归一化 |
 | `src/modules/weibo/webLongText.ts` | 长文读取：`longtext` 取全文、正文优先级与失败兜底 |
-| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/groups`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/image`、`weibo/like`、`weibo/openPost` 分发 |
+| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/groups`、`weibo/hotRank`、`weibo/emoticons`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/image`、`weibo/like`、`weibo/openPost` 分发 |
 | `src/modules/weibo/panel.ts` | 面板消息通道、凭证注入、图片代理装配与本地资源白名单 |
 | `src/modules/common/webviewHtml.ts` | CSP 生成：默认不放行远程图，需要时可按调用方传入的 `imgSources` 放行 |
-| `src/weibo/` | Webview 入口：顶部固定菜单、Cookie 配置区、信息流列表与卡片（头像 / 九宫格 / 表情） |
+| `src/weibo/` | Webview 入口：顶部固定菜单、右侧热搜榜、Cookie 配置区、信息流列表、卡片（头像 / 九宫格 / 表情）与发表框表情选择器 |
 
 ### 14.11 多入口信息流（首页 / 时间线 / 热门 / 分组）
 
@@ -1161,3 +1163,29 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 - 热门流的响应结构可能是 `data.cards[].mblog`（卡片流），时间线与分组通常是 `statuses[]`；宿主统一提取，`max_id` / `since_id` 为 `"0"` 时视为没有更多，避免「加载更多」被永久点亮。
 - 个人主页按 `weibo/groups` 给出的账号 uid 拼 `https://weibo.com/u/{uid}`，经 `weibo/openPost` 的白名单校验后交给宿主打开；uid 缺失时按钮禁用而不是拼空地址。
 - 设置页承载 Cookie 配置（保存 / 清除）与各入口取数口径说明；未配置时任何信息流都不发请求，只给「去设置」的引导。
+
+### 14.12 表情配置（发表框）
+
+```
+GET https://weibo.com/ajax/statuses/config
+```
+
+- 只读 `data.emoticon.ZH_CN.<分类>[{ phrase, url }]`：10 个分类、340 条，分类名直接写入 `category` 供前端分组。
+- `data.emoticonRender`（phrase/别名 → 图片的渲染映射，7000+ 条，含多语言与拼音别名）不参与解析，避免别名造成大量重复项。
+- 单条必须同时具备 `phrase` 与合法图地址（过 14.4 的图床白名单）；类内重复 `phrase` 以首见为准，跨类重复保留，保证每个分类的条目数与上游一致。
+- 拿不到任何条目时，错误信息会带上实际返回的字段名，接口改版时据此定位。
+- 发表框 Popover 顶部是分类切换条（横向滚动，默认选中第一个分类），下方按当前分类分页：首屏 40 个，滚动到底点「加载更多表情」再追加 40 个；切换分类会重置分页计数。
+- 表情图仍经 `weibo/image` 代理换 data URI，本地缓存命中即零网络；点击表情插入到 textarea 光标处（无选区时追加到末尾），插入后恢复光标；超出 2000 字上限时拒绝并提示。
+- 表情配置在前端模块级缓存（会话内只取一次）；未配置 Cookie 时按钮禁用，面板内提示先去设置。
+
+### 14.13 侧栏热搜榜
+
+```
+GET https://weibo.com/ajax/side/bandUnified?type=mine&last_tab=mine&last_tab_time={秒级时间戳}
+```
+
+- `last_tab_time` 取当前秒级时间戳，与网页端一致；`type` 与 `last_tab` 固定 `mine`。
+- 榜单条目在 `data.realtime`；也可能嵌在 `data.band_list[*].realtime` 里，此时取第一个含 realtime 的分区。
+- 单条映射：标题取 `word_scheme`（与网页端一致，话题词自带 `#`）→ `note` → `word` → `title`；名次取 `realpos`（网页端真实排名），缺失时用 `rank + 1`（上游 `rank` 是 0 起序号），再缺失才回落到数组下标；`description` 与 `icon_desc`（缺失用 `label_name` 兜底）各自渲染为 badge；图标取 `icon_url` → `icon`，过图床白名单后直接显示；`icon_desc_color` 作为 `icon_desc` 徽标的底色，只接受 `#rgb` / `#rrggbb` / `rgb()`，其余丢弃。
+- 广告位（`is_ad: 1` / `ad_state: 1`）与缺标题的条目不进榜，且不影响其余条目的名次；榜 1–3 的序号用 `#f26d5f` 加粗，其余弱化。
+- 侧栏在容器宽度 ≥ 768px（`@3xl`）时出现在列表右侧，窄面板自动隐藏；面板内点刷新可重新取数，未配置 Cookie 时只给引导。
