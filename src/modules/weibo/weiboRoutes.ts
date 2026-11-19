@@ -1,7 +1,7 @@
 /**
- * 微博协议路由：把 weibo/timeline、weibo/credential/* 与 weibo/openPost 分发到取数、凭证与宿主能力。
+ * 微博协议路由：把信息流、凭证、评论、点赞与外链分发到取数、凭证与宿主能力。
  * 复用约定：入参收窄统一走 shared/types/weibo 的类型守卫，本层只做方法名到实现的映射；
- * Cookie 存取交给 WeiboCookieStore，取数交给 webTimeline，宿主能力（打开外链）以回调注入便于单测。
+ * Cookie 存取交给 WeiboCookieStore，取数交给 webTimeline / webFeed，宿主能力以回调注入便于单测。
  * 关键约束：方法名与 shared/types/messages 的 HostMethodName 一一对应，新增方法须两侧同时维护；
  * 未登记方法一律抛错；时间线与凭证错误统一带分类码，前端按码分发提示而不是解析文案；
  * 外链只放行 weibo.com 及其子域，防止被当作任意地址跳转的通道。
@@ -10,6 +10,7 @@ import type {
     WeiboClearCredentialResult,
     WeiboCommentsResult,
     WeiboCredentialState,
+    WeiboGroupsResult,
     WeiboImageResult,
     WeiboLikeResult,
     WeiboLongTextResult,
@@ -19,6 +20,7 @@ import type {
 } from '@shared/types/weibo'
 import {
     isWeiboCommentsRequest,
+    isWeiboFeedRequest,
     isWeiboImageRequest,
     isWeiboLikeRequest,
     isWeiboLongTextRequest,
@@ -29,11 +31,13 @@ import {
 import { WeiboWebError } from './webClient'
 import { fetchPostComments } from './webComments'
 import { isCookieUsable, normalizeCookieInput } from './webCredential'
+import { fetchWeiboFeed, fetchWeiboGroups } from './webFeed'
 import { setPostLike } from './webInteraction'
 import { fetchLongText } from './webLongText'
 import { fetchFriendTimeline } from './webTimeline'
 import type { FetchCommentsOptions } from './webComments'
 import type { WeiboCookieStore } from './webCredential'
+import type { FetchFeedOptions, FetchGroupsOptions } from './webFeed'
 import type { SetLikeOptions } from './webInteraction'
 import type { FetchLongTextOptions } from './webLongText'
 import type { FetchTimelineOptions } from './webTimeline'
@@ -45,6 +49,10 @@ const ALLOWED_EXTERNAL_HOSTS = ['weibo.com', 'www.weibo.com', 'm.weibo.cn']
 export interface WeiboRouteDeps {
     cookieStore: WeiboCookieStore
     fetchTimeline?: (options: FetchTimelineOptions) => Promise<WeiboTimelineResult>
+    /** 信息流读取：时间线 / 热门 / 分组共用，单测可替换 */
+    fetchFeed?: (options: FetchFeedOptions) => Promise<WeiboTimelineResult>
+    /** 分组列表读取：默认分组与我的分组一次取回 */
+    fetchGroups?: (options: FetchGroupsOptions) => Promise<WeiboGroupsResult>
     /** 图片代理：把远程图片下成本地文件并返回 Webview 可加载的地址 */
     resolveImageUrl?: (imageUrl: string) => Promise<string | null>
     /** 点赞写入：默认走网页版 setLike / cancelLike，单测可替换 */
@@ -79,6 +87,10 @@ export class WeiboRoutes {
         switch (method) {
             case 'weibo/timeline':
                 return this.loadTimeline(payload)
+            case 'weibo/feed':
+                return this.loadFeed(payload)
+            case 'weibo/groups':
+                return this.loadGroups()
             case 'weibo/comments':
                 return this.loadComments(payload)
             case 'weibo/longtext':
@@ -116,6 +128,33 @@ export class WeiboRoutes {
         const request: WeiboTimelineRequest = raw
         const fetchTimeline = this.deps.fetchTimeline ?? fetchFriendTimeline
         return fetchTimeline({ ...request, cookie })
+    }
+
+    /** 读取信息流：时间线 / 热门 / 分组共用一条通道，无凭证直接给出可执行的引导 */
+    private async loadFeed(payload: unknown): Promise<WeiboTimelineResult> {
+        const raw = payload ?? {}
+        if (!isWeiboFeedRequest(raw)) {
+            throw new WeiboWebError(
+                'invalid-payload',
+                'weibo/feed 参数非法：source 须为 timeline/hot/group，分组须带合法 listId',
+            )
+        }
+        const cookie = await this.deps.cookieStore.read()
+        if (!isCookieUsable(cookie)) {
+            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
+        }
+        const fetchFeed = this.deps.fetchFeed ?? fetchWeiboFeed
+        return fetchFeed({ ...raw, cookie })
+    }
+
+    /** 读取分组：默认分组供时间线取 list_id，我的分组供分组页展示 */
+    private async loadGroups(): Promise<WeiboGroupsResult> {
+        const cookie = await this.deps.cookieStore.read()
+        if (!isCookieUsable(cookie)) {
+            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
+        }
+        const fetchGroups = this.deps.fetchGroups ?? fetchWeiboGroups
+        return fetchGroups({ cookie })
     }
 
     /** 凭证状态：只回配置标记与保存时间 */

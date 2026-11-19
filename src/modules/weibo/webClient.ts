@@ -1,9 +1,11 @@
 /**
- * 微博网页版 ajax 请求层：只负责把一页关注时间线取回来，不做字段归一化。
+ * 微博网页版 ajax 请求层：把一页关注时间线与任意网页端 JSON 取回来，不做字段归一化。
  * 复用约定：鉴权走登录态 Cookie（SUB/SUBP），与官网同源，无需开放平台的 access_token 或移动端签名；
- * 归一化在 webTimeline，凭证存取在 webCredential，本文件只暴露 requestTimelinePage 与错误类型。
+ * 归一化在 webTimeline / webFeed，凭证存取在 webCredential，本文件只暴露 requestWeiboJson、
+ * requestTimelinePage、地址构造与错误类型。
  * 关键约束：since_id 与 max_id 互斥（翻页时上游不接受 since_id），max_id 只能来自上一页响应；
- * 请求间保持最小间隔，401/403/418 不重试；任何错误文案与日志都不得包含 Cookie。
+ * 请求间保持最小间隔，401/403/418 不重试；任何错误文案与日志都不得包含 Cookie；
+ * ok:0 与 HTML 登录页都要转成带分类码的错误，调用方只按码分发。
  */
 import type { WeiboTimelineErrorCode } from '@shared/types/weibo'
 import {
@@ -67,7 +69,7 @@ export interface TimelinePage {
 let lastRequestAt = 0
 
 /** 把数字 id 还原成完整十进制串：超过安全整数时 toLocaleString 不会退化成科学计数法 */
-function toIdString(value: unknown): string | null {
+export function toIdString(value: unknown): string | null {
     if (typeof value === 'string') {
         return value.length > 0 ? value : null
     }
@@ -147,8 +149,23 @@ async function waitForTurn(minIntervalMs: number): Promise<void> {
     lastRequestAt = Date.now()
 }
 
-/** 解析响应体：HTML 登录页与 JSON 错误走不同分支 */
-function parseTimelinePayload(text: string, status: number): TimelinePage {
+/** 通用 JSON 请求入参：url 由调用方按端点构造，本层只负责鉴权头、节流与错误分类 */
+export interface WeiboJsonQuery {
+    url: string
+    cookie: string
+    timeoutMs?: number
+    /** 0 表示不做节流：仅供单测与内部批量场景 */
+    minIntervalMs?: number
+}
+
+/** 通用 JSON 响应：record 供调用方收窄，status 仅用于错误排障 */
+export interface WeiboJsonResponse {
+    record: Record<string, unknown>
+    status: number
+}
+
+/** 解析响应体：HTML 登录页与 ok:0 都转成带分类码的错误，其余原样交给调用方收窄 */
+function parseWeiboJsonPayload(text: string, status: number): Record<string, unknown> {
     const trimmed = text.trim()
     if (trimmed.startsWith('<')) {
         // 未登录时微博会 302 到登录页，fetch 跟随重定向后拿到的就是 HTML
@@ -170,6 +187,11 @@ function parseTimelinePayload(text: string, status: number): TimelinePage {
         const code = classifyUpstreamMessage(message)
         throw new WeiboWebError(code, `微博接口返回失败：${message}`, status)
     }
+    return record
+}
+
+/** 读取分页结果：statuses 缺失即视为结构异常，游标缺失归一为 null */
+function readTimelinePage(record: Record<string, unknown>, status: number): TimelinePage {
     const statuses = record.statuses
     if (!Array.isArray(statuses)) {
         throw new WeiboWebError('invalid-payload', '微博返回结构异常：statuses 不是数组', status)
@@ -187,19 +209,18 @@ function isRetryable(error: WeiboWebError): boolean {
 }
 
 /**
- * 请求一页关注时间线。
- * 返回原始 statuses 与两个游标；分页循环、去重与字段归一化由 webTimeline 完成。
+ * 请求一个网页端 JSON 端点。
+ * 复用同一套请求头、最小间隔与退避策略；错误分类由本层完成，调用方只处理结构收窄。
  */
-export async function requestTimelinePage(query: TimelinePageQuery): Promise<TimelinePage> {
+export async function requestWeiboJson(query: WeiboJsonQuery): Promise<WeiboJsonResponse> {
     const timeoutMs = query.timeoutMs ?? DEFAULT_TIMEOUT_MS
     const minIntervalMs = query.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS
-    const url = buildTimelineUrl(query)
     let lastError: WeiboWebError = new WeiboWebError('upstream', '微博请求未执行')
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         await waitForTurn(minIntervalMs)
         try {
-            const response = await fetch(url, {
+            const response = await fetch(query.url, {
                 method: 'GET',
                 headers: {
                     // 网页端 ajax 完全依赖会话 Cookie，不校验 x-xsrf-token
@@ -221,7 +242,7 @@ export async function requestTimelinePage(query: TimelinePageQuery): Promise<Tim
                     response.status,
                 )
             }
-            return parseTimelinePayload(text, response.status)
+            return { record: parseWeiboJsonPayload(text, response.status), status: response.status }
         } catch (error) {
             lastError =
                 error instanceof WeiboWebError
@@ -237,4 +258,18 @@ export async function requestTimelinePage(query: TimelinePageQuery): Promise<Tim
         }
     }
     throw lastError
+}
+
+/**
+ * 请求一页关注时间线。
+ * 返回原始 statuses 与两个游标；分页循环、去重与字段归一化由 webTimeline 完成。
+ */
+export async function requestTimelinePage(query: TimelinePageQuery): Promise<TimelinePage> {
+    const response = await requestWeiboJson({
+        url: buildTimelineUrl(query),
+        cookie: query.cookie,
+        timeoutMs: query.timeoutMs,
+        minIntervalMs: query.minIntervalMs,
+    })
+    return readTimelinePage(response.record, response.status)
 }

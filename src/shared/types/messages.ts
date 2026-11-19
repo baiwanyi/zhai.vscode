@@ -409,6 +409,8 @@ export type HostMethodName =
     | 'weibo/credential/clear'
     | 'weibo/credential/save'
     | 'weibo/credential/status'
+    | 'weibo/feed'
+    | 'weibo/groups'
     | 'weibo/image'
     | 'weibo/like'
     | 'weibo/longtext'

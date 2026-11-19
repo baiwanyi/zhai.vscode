@@ -1,9 +1,10 @@
 /**
- * 微博关注时间线契约：网页版 ajax 接口的出入参模型与不可信载荷收窄。
+ * 微博信息流契约：关注时间线、热门、分组信息流与分组列表的出入参模型与不可信载荷收窄。
  * 复用约定：宿主侧 modules/weibo 负责请求与归一化，Webview 只消费归一化后的帖子，
  * 协议方法名登记在 shared/types/messages，面板经 request/response 通道取数。
- * 关键约束：时间线只读，任何写操作都不得走本契约；Cookie 明文永不出宿主、不入日志，
- * 凭证状态只回传是否已配置与保存时间；sinceId 与 maxId 互斥，二者都给出时以 maxId 为准。
+ * 关键约束：所有信息流只读，写操作不得走本契约；Cookie 明文永不出宿主、不入日志，
+ * 凭证状态只回传是否已配置与保存时间；sinceId 与 maxId 互斥，二者都给出时以 maxId 为准；
+ * 分组与游标必须是纯数字串，避免任意内容被拼进查询参数。
  */
 
 /** 单页默认条数：与网页端首屏一致，上游超过 50 会被截断 */
@@ -181,6 +182,48 @@ export interface WeiboTimelineResult {
     droppedDuplicates: number
 }
 
+/** 信息流单页默认条数：与网页端首屏一致 */
+export const WEIBO_FEED_DEFAULT_COUNT = 25
+
+/** 信息流来源：时间线（默认分组）、热门（频道推荐）与自定义分组 */
+export type WeiboFeedSource = 'timeline' | 'hot' | 'group'
+
+/**
+ * 信息流入参：游标语义与 weibo/timeline 一致，端点由 source 决定。
+ * 关键约束：group 必须给定 listId；timeline 缺省时宿主自行从默认分组取「最新微博」gid；hot 不使用 listId。
+ */
+export interface WeiboFeedRequest {
+    source: WeiboFeedSource
+    /** 列表 id：timeline 为默认分组 gid，group 为分组 gid，hot 忽略 */
+    listId?: string | null
+    sinceId?: string | null
+    maxId?: string | null
+    /** 单页条数：缺省 25，超出 [1, 50] 由宿主夹取 */
+    count?: number
+    /** 本次最多翻几页：缺省 1，夹取到 [1, 10] */
+    maxPages?: number
+}
+
+/** 分组条目：只保留选择与展示所需字段 */
+export interface WeiboGroupItem {
+    gid: string
+    title: string
+    /** 归属账号 uid：拼个人主页地址时使用 */
+    uid: string
+    /** 是否为用户自建分组（上游 sysgroup=0） */
+    isCustom: boolean
+}
+
+/** 分组结果：默认分组供时间线取 list_id，我的分组供分组页展示 */
+export interface WeiboGroupsResult {
+    defaultGroups: WeiboGroupItem[]
+    myGroups: WeiboGroupItem[]
+    /** 关注时间线使用的 list_id：宿主按「最新微博」条目选定，缺失为 null */
+    timelineListId: string | null
+    /** 当前登录账号 uid：上游未给出时为 null */
+    uid: string | null
+}
+
 /** 凭证状态：只描述是否可用，不回传任何 Cookie 片段 */
 export interface WeiboCredentialState {
     isConfigured: boolean
@@ -263,6 +306,38 @@ export function isWeiboTimelineRequest(value: unknown): value is WeiboTimelineRe
         isOptionalTimelineId(uid) &&
         isOptionalNumber(count) &&
         isOptionalNumber(refresh) &&
+        isOptionalNumber(maxPages)
+    )
+}
+
+/** 收窄信息流来源：只允许三种已登记端点，防止 source 被当作路径片段拼接 */
+export function isWeiboFeedSource(value: unknown): value is WeiboFeedSource {
+    return value === 'timeline' || value === 'hot' || value === 'group'
+}
+
+/**
+ * 收窄信息流入参：source 必须已登记，group 必须带合法的分组 id。
+ * 非法载荷由路由直接拒绝，不做尽力而为的修正。
+ */
+export function isWeiboFeedRequest(value: unknown): value is WeiboFeedRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { source, listId, sinceId, maxId, count, maxPages } = value as Record<string, unknown>
+    if (!isWeiboFeedSource(source)) {
+        return false
+    }
+    if (source === 'group') {
+        if (!isWeiboTimelineId(listId)) {
+            return false
+        }
+    } else if (!isOptionalTimelineId(listId)) {
+        return false
+    }
+    return (
+        isOptionalTimelineId(sinceId) &&
+        isOptionalTimelineId(maxId) &&
+        isOptionalNumber(count) &&
         isOptionalNumber(maxPages)
     )
 }

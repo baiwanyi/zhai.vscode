@@ -1129,15 +1129,35 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 
 | 文件 | 职责 |
 |------|------|
-| `src/shared/types/weibo.ts` | 时间线、凭证与协议载荷契约，含参数收窄 |
-| `src/modules/weibo/webClient.ts` | 单页请求：URL 构造、请求头、错误分类、节流与退避重试 |
+| `src/shared/types/weibo.ts` | 时间线、信息流、分组、凭证与协议载荷契约，含参数收窄 |
+| `src/modules/weibo/webClient.ts` | 通用 JSON 请求：URL 构造、请求头、错误分类、节流与退避重试 |
 | `src/modules/weibo/webTimeline.ts` | 分页/增量循环、去重、字段归一化、时间与正文清洗 |
+| `src/modules/weibo/webFeed.ts` | 时间线 / 热门 / 分组端点适配、分组归一化与卡片流提取 |
 | `src/modules/weibo/webCredential.ts` | Cookie 清洗、SecretStorage 存取、凭证状态 |
 | `src/modules/weibo/mediaProxy.ts` | 图片代理：带 Referer 取图、本地缓存、并发去重与容量清理 |
 | `src/modules/weibo/webInteraction.ts` | 写操作：`setLike` / `cancelLike`，补 Origin 与 X-XSRF-TOKEN |
 | `src/modules/weibo/webComments.ts` | 评论读取：`buildComments` 参数构造、分页游标与评论归一化 |
 | `src/modules/weibo/webLongText.ts` | 长文读取：`longtext` 取全文、正文优先级与失败兜底 |
-| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/image`、`weibo/like`、`weibo/openPost` 分发 |
+| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/groups`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/image`、`weibo/like`、`weibo/openPost` 分发 |
 | `src/modules/weibo/panel.ts` | 面板消息通道、凭证注入、图片代理装配与本地资源白名单 |
 | `src/modules/common/webviewHtml.ts` | CSP 生成：默认不放行远程图，需要时可按调用方传入的 `imgSources` 放行 |
-| `src/weibo/` | Webview 入口：工具条、Cookie 配置区、时间线卡片（头像 / 九宫格 / 表情）与加载更多 |
+| `src/weibo/` | Webview 入口：顶部固定菜单、Cookie 配置区、信息流列表与卡片（头像 / 九宫格 / 表情） |
+
+### 14.11 多入口信息流（首页 / 时间线 / 热门 / 分组）
+
+面板顶部固定菜单：左侧「首页 / 时间线 / 热门 / 分组」，右侧「个人主页 / 设置」。菜单挂在 `AppHeader` 内，随标题区固定，不参与内容区滚动。
+
+| 入口 | 接口 | 关键参数 |
+|------|------|----------|
+| 首页 | `ajax/feed/unreadfriendstimeline` | 见 14.1；增量刷新只取上次之后的新微博 |
+| 时间线 | `ajax/feed/friendstimeline` | `list_id` 取默认分组「最新微博」的 gid，`fid` 同值，`refresh=4`，首屏 `since_id=0`，`count=25` |
+| 热门 | `ajax/feed/hottimeline` | `group_id=102803`、`containerid=102803`、`extparam=discover|new_feed`、`refresh=0`，首屏 `count=10` |
+| 分组列表 | `ajax/feed/allGroups` | 取 `groups[]` 中「默认分组」与「我的分组」两个分区 |
+| 分组信息流 | `ajax/feed/groupstimeline` | `list_id={所选分组 gid}`、`refresh=4`、`fast_refresh=1`、`count=25` |
+
+- 分组结构：`groups[0]` 为「默认分组」、`groups[1]` 为「我的分组」；宿主按标题精确匹配，标题缺失才回落下标，避免分区顺序微调后取错。
+- 时间线的 `list_id` 由宿主在 `weibo/groups` 结果里算好（`timelineListId`，取「最新微博」条目），前端不自行挑条目；缺省时宿主还会再取一次 allGroups 兜底。
+- 三种信息流共用同一条 `weibo/feed` 协议与同一套分页/增量状态机：`source` 只决定端点与固定参数，游标语义与 14.3 完全一致。
+- 热门流的响应结构可能是 `data.cards[].mblog`（卡片流），时间线与分组通常是 `statuses[]`；宿主统一提取，`max_id` / `since_id` 为 `"0"` 时视为没有更多，避免「加载更多」被永久点亮。
+- 个人主页按 `weibo/groups` 给出的账号 uid 拼 `https://weibo.com/u/{uid}`，经 `weibo/openPost` 的白名单校验后交给宿主打开；uid 缺失时按钮禁用而不是拼空地址。
+- 设置页承载 Cookie 配置（保存 / 清除）与各入口取数口径说明；未配置时任何信息流都不发请求，只给「去设置」的引导。
