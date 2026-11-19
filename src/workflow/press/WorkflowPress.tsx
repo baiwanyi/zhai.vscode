@@ -22,15 +22,6 @@ import { PressWorkspaceStart } from './layout/PressWorkspaceStart'
 import type { WorkflowSection } from '../layout/workflowSections'
 import type { JSX } from 'react'
 
-/** 流程步骤到分区的映射：第 1 步与第 5 步都落到章节写作，正文由 AI 对话承接 */
-const STEP_SECTIONS: Readonly<Record<number, WorkflowSection>> = {
-    1: 'chapter',
-    2: 'setting',
-    3: 'character',
-    4: 'outline',
-    5: 'chapter',
-}
-
 /** 写作管理页入参：路由事实与当前分区都由外壳托管，页面不自行取路由或维护分区 */
 interface WorkflowPressProps {
     context: WorkflowContextState
@@ -40,13 +31,6 @@ interface WorkflowPressProps {
 
 export function WorkflowPress({ context, section, onSelectSection }: WorkflowPressProps): JSX.Element {
     const { status, workspace, projects, dirPath, mutations } = usePressWorkspaceScope(context.projectDir)
-
-    const handleSelectStep = useCallback(
-        (step: number): void => {
-            onSelectSection(STEP_SECTIONS[step] ?? 'chapter')
-        },
-        [onSelectSection],
-    )
 
     const handleOpenChat = useCallback((): void => {
         onSelectSection('chat')
@@ -88,7 +72,6 @@ export function WorkflowPress({ context, section, onSelectSection }: WorkflowPre
             dirPath={dirPath ?? ''}
             chatScope={scopeDir}
             mutations={mutations}
-            onSelectStep={handleSelectStep}
             onOpenChat={handleOpenChat}
         />
     )

@@ -11,11 +11,11 @@ import { Input } from '@components/ui/input'
 import { Item, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
-import type { CharacterCard, ProjectSetting } from '../types'
-import type { OutlineDraftOptions } from '../utils'
+import type { CharacterCard, ProjectSetting } from '../../types'
+import type { OutlineDraftOptions } from '../../utils'
 import type { JSX } from 'react'
-import { PACING_OPTIONS, STRUCTURE_OPTIONS } from '../constants'
-import { formatWordCount } from '../utils'
+import { PACING_OPTIONS, STRUCTURE_OPTIONS } from '../../constants'
+import { formatWordCount } from '../../utils'
 
 interface OutlineWizardInputProps {
     setting: ProjectSetting

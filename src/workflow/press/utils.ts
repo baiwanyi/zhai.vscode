@@ -33,6 +33,7 @@ import type {
     LoreSeed,
     OutlineBeat,
     OutlineChapter,
+    OutlineTreeEntry,
     OutlineVolume,
     PlanStatus,
     ProjectSetting,
@@ -438,6 +439,99 @@ export function createOutlineFromDraft(
             }
         }),
     }))
+}
+
+/**
+ * 按指定章刷新大纲树：把草案按「卷顺序 + 卷内数组顺序」摊平，与现有草稿同序对齐后只覆盖所选章。
+ * 关键约束：结构（卷、章数量、章 id、状态、目标字数、地点）一律沿用现有草稿，草案章数不足时跳过越界序号，
+ * 因此「指定章节提取」不会增删章节、也不会改动卷纲字段；全篇提取仍走 createOutlineFromDraft。
+ */
+export function refreshOutlineChapters(
+    current: readonly OutlineVolume[],
+    drafts: readonly PressExtractedVolume[],
+    orders: readonly number[],
+    chapterWordGoal: number,
+    characters: readonly CharacterCard[] = [],
+): { volumes: OutlineVolume[]; refreshed: number } {
+    const templates = createOutlineFromDraft([...drafts], chapterWordGoal, characters).flatMap(
+        (volume) => volume.chapters,
+    )
+    const targets = new Set(orders)
+    let cursor = 0
+    let refreshed = 0
+    const volumes = current.map((volume) => ({
+        ...volume,
+        chapters: volume.chapters.map((chapter) => {
+            cursor += 1
+            const template = targets.has(cursor) ? templates[cursor - 1] : undefined
+            if (template === undefined) {
+                return chapter
+            }
+            refreshed += 1
+            return {
+                ...chapter,
+                title: template.title,
+                summary: template.summary,
+                beats: template.beats,
+                characterIds: template.characterIds,
+                wordCount: template.wordCount,
+                hook: template.hook,
+                tension: template.tension,
+            }
+        }),
+    }))
+    return { volumes, refreshed }
+}
+
+/** 提取范围列表里的章节选项：1 基全局章序与两种展示文案 */
+export interface ExtractChapterOption {
+    /** 1 基全局章序：宿主按同一口径对齐素材草案 */
+    order: number
+    volumeId: string
+    /** 卷名 · 章标题：下拉与可访问名用 */
+    label: string
+    /** 纯章标题：勾选列表显示用 */
+    title: string
+}
+
+/**
+ * 章节选项：按传入顺序摊平成全局章序，绝不对章节重新排序。
+ * 关键约束：全局序号是前端与宿主对齐草案的唯一口径，重排会让范围提取错位。
+ */
+export function createChapterOptions(entries: readonly OutlineTreeEntry[]): ExtractChapterOption[] {
+    return entries.map((entry, index) => ({
+        order: index + 1,
+        volumeId: entry.volume.id,
+        label: `${entry.volume.name} · ${chapterTitleLabel(entry.chapter)}`,
+        title: chapterTitleLabel(entry.chapter),
+    }))
+}
+
+/** 卷筛选选项：按顺序去重，取值一律用卷 id——卷名允许重名 */
+export function createVolumeOptions(entries: readonly OutlineTreeEntry[]): { value: string; label: string }[] {
+    const seen = new Map<string, string>()
+    for (const entry of entries) {
+        if (!seen.has(entry.volume.id)) {
+            seen.set(entry.volume.id, entry.volume.name)
+        }
+    }
+    return [...seen].map(([value, label]) => ({ value, label }))
+}
+
+/** 章序取值：留空或非数字回落 fallback，越界夹到 [1, 全书章数]，避免手输残值在提交时越界 */
+export function clampChapterOrder(value: string, fallback: number, totalCount: number): number {
+    const parsed = Number(value)
+    if (value.trim().length === 0 || !Number.isInteger(parsed)) {
+        return fallback
+    }
+    return Math.min(Math.max(parsed, 1), Math.max(totalCount, 1))
+}
+
+/** 由起止章序展开 1 基连续章序：倒序输入自动归一为同一段区间 */
+export function createOrderRange(start: number, end: number): number[] {
+    const lower = Math.min(start, end)
+    const upper = Math.max(start, end)
+    return Array.from({ length: upper - lower + 1 }, (_, index) => lower + index)
 }
 
 /** 新建一卷空卷纲，卷名默认按序号命名 */

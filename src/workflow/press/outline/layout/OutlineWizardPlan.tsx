@@ -9,10 +9,10 @@
 import { Badge } from '@components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { Checkbox } from '@components/ui/checkbox'
-import type { OutlineVolume } from '../types'
+import type { OutlineVolume } from '../../types'
 import type { JSX } from 'react'
-import { HOOK_OPTIONS } from '../constants'
-import { formatWordCount, summarizeVolume } from '../utils'
+import { HOOK_OPTIONS } from '../../constants'
+import { formatWordCount, summarizeVolume } from '../../utils'
 
 interface OutlineWizardPlanProps {
     step: 'volume' | 'chapter'

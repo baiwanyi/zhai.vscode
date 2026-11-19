@@ -13,10 +13,10 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components
 import { Button } from '@webview/components/Button'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import { StateEmpty } from '@webview/components/StateEmpty'
-import type { OutlineVolume, PlanStatus } from '../types'
+import type { OutlineVolume, PlanStatus } from '../../types'
 import type { JSX } from 'react'
-import { PLAN_STATUS_META, STATUS_FILTERS } from '../constants'
-import { chapterTitleLabel, filterChapters, formatWordCount, summarizeVolume } from '../utils'
+import { PLAN_STATUS_META, STATUS_FILTERS } from '../../constants'
+import { chapterTitleLabel, filterChapters, formatWordCount, summarizeVolume } from '../../utils'
 
 interface OutlineTreeProps {
     volumes: OutlineVolume[]

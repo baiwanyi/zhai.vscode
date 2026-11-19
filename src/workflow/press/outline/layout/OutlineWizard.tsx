@@ -22,10 +22,10 @@ import {
 import { Button } from '@webview/components/Button'
 import { OutlineWizardInput } from './OutlineWizardInput'
 import { OutlineWizardPlan } from './OutlineWizardPlan'
-import type { CharacterCard, OutlineVolume, ProjectSetting, WizardStep } from '../types'
-import type { OutlineDraftOptions } from '../utils'
+import type { CharacterCard, OutlineVolume, ProjectSetting, WizardStep } from '../../types'
+import type { OutlineDraftOptions } from '../../utils'
 import type { JSX } from 'react'
-import { buildOutlineDraft } from '../utils'
+import { buildOutlineDraft } from '../../utils'
 
 /** 步骤顺序：与向导顶部的指示器一致 */
 const WIZARD_STEPS: readonly { id: WizardStep; label: string }[] = [

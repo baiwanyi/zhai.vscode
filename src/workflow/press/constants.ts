@@ -242,6 +242,21 @@ export const REQUIRED_SETTING_KEYS: readonly (keyof ProjectSetting)[] = [
 /** 新建卷、新建章时的默认单章目标字数，与网文常规更新量一致 */
 export const DEFAULT_CHAPTER_WORD_GOAL = 2500
 
+/** 提取范围模式：全篇整树覆盖、连续区间、逐章勾选 */
+export type ExtractScope = 'all' | 'range' | 'chapters'
+
+/** 提取范围选项：说明文案直接写清覆盖范围，避免用户误触全篇 */
+export const EXTRACT_SCOPE_OPTIONS: readonly { value: ExtractScope; label: string; description: string }[] = [
+    { value: 'all', label: '全篇', description: '按素材重建整棵大纲树，会覆盖当前草稿' },
+    { value: 'range', label: '章节范围', description: '只刷新区间内的章纲，卷章结构不变' },
+    { value: 'chapters', label: '指定章节', description: '勾选要刷新的章节，未勾选的保持原样' },
+]
+
+/** 模式取值收窄：单选组回传的是 string，不能直接当联合类型用 */
+export function isExtractScope(value: string): value is ExtractScope {
+    return value === 'all' || value === 'range' || value === 'chapters'
+}
+
 /**
  * 设定页写入文本时的字数上限：输入框 maxLength 与 AI 生成结果的截断共用同一份口径。
  * 取值比提示词里的篇幅要求宽一档，留给作者自己发挥；作品名只用于截断生成结果，输入框不设限。

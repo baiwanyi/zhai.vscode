@@ -83,6 +83,18 @@ export interface OutlineVolume {
     chapters: OutlineChapter[]
 }
 
+/**
+ * 大纲树里的一个条目：卷与其章节的组合。
+ * 数组顺序即 1 基全局章序，是前端与宿主对齐素材草案的唯一口径，任何派生都不得重排。
+ */
+export interface OutlineTreeEntry {
+    volume: OutlineVolume
+    chapter: OutlineChapter
+}
+
+/** 提取写入范围：全篇整树覆盖，或只刷新指定的 1 基全局章序 */
+export type OutlineExtractTarget = { mode: 'all' } | { mode: 'orders'; orders: readonly number[] }
+
 /** 人物卡：与 角色设定.md 中一个人物区块对应 */
 export interface CharacterCard {
     id: string

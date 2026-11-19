@@ -9,7 +9,7 @@ import { cn } from 'cn'
 import { CheckSquare, MoveUp, Plus, Square, Trash2 } from 'lucide-react'
 import { Input } from '@components/ui/input'
 import { Button } from '@webview/components/Button'
-import type { OutlineBeat } from '../types'
+import type { OutlineBeat } from '../../types'
 import type { JSX } from 'react'
 
 interface OutlineBeatListProps {

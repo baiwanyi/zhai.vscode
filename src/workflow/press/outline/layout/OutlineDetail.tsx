@@ -23,10 +23,10 @@ import { Slider } from '@components/ui/slider'
 import { Textarea } from '@components/ui/textarea'
 import { Button } from '@webview/components/Button'
 import { OutlineBeatList } from './OutlineBeatList'
-import type { CharacterCard, OutlineChapter, OutlineVolume, PlanStatus } from '../types'
+import type { CharacterCard, OutlineChapter, OutlineVolume, PlanStatus } from '../../types'
 import type { JSX } from 'react'
-import { HOOK_OPTIONS, PLAN_STATUS_META, TENSION_LABELS } from '../constants'
-import { createBeat, formatWordCount } from '../utils'
+import { HOOK_OPTIONS, PLAN_STATUS_META, TENSION_LABELS } from '../../constants'
+import { createBeat, formatWordCount } from '../../utils'
 
 /** 可切换的四种状态，顺序与徽标元数据一致 */
 const STATUS_OPTIONS: readonly PlanStatus[] = ['planned', 'drafting', 'done', 'stale']

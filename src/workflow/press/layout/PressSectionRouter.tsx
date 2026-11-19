@@ -32,8 +32,6 @@ interface PressSectionRouterProps {
     /** 对话作用域：当前文档相对路径，未定位到文档时为 null（回落到作品目录） */
     chatScope: string | null
     mutations: PressMutations
-    /** 大纲页的步骤跳转：按步骤映射回分区 */
-    onSelectStep: (step: number) => void
     /** 大纲页的「去写正文」：切到对话分区 */
     onOpenChat: () => void
 }
@@ -44,7 +42,6 @@ export function PressSectionRouter({
     dirPath,
     chatScope,
     mutations,
-    onSelectStep,
     onOpenChat,
 }: PressSectionRouterProps): JSX.Element {
     if (section === 'setting') {
@@ -83,7 +80,6 @@ export function PressSectionRouter({
                 workspace={workspace}
                 dirPath={dirPath}
                 defaultChapterWordGoal={DEFAULT_CHAPTER_WORD_GOAL}
-                onSelectStep={onSelectStep}
                 onUpdateChapter={mutations.updateChapter}
                 onCreateVolume={mutations.addVolume}
                 onCreateChapter={mutations.addChapter}

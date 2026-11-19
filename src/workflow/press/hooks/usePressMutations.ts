@@ -21,6 +21,7 @@ import type {
     LoreEntry,
     LoreSeed,
     OutlineChapter,
+    OutlineExtractTarget,
     OutlineVolume,
     OutlineWorkspace,
     ProjectSetting,
@@ -35,6 +36,7 @@ import {
     createOutlineFromDraft,
     createVolume,
     mergeCharacterDrafts,
+    refreshOutlineChapters,
 } from '../utils'
 
 /** 卷名归一：追加生成结果时去掉原有的「第N卷」前缀，避免与既有卷序号冲突 */
@@ -62,7 +64,8 @@ export interface PressMutations {
     /** 新增章：按该卷现有最大序号追加一章并立即写盘 */
     addChapter: (volumeId: string) => void
     applyOutline: (volumes: OutlineVolume[]) => void
-    extractOutline: (drafts: PressExtractedVolume[]) => number
+    /** 用素材重建大纲：mode 为 all 时整树覆盖，orders 时只按全局章序刷新所选章，返回实际处理的章数 */
+    extractOutline: (drafts: PressExtractedVolume[], target: OutlineExtractTarget) => number
     extractSetting: (draft: PressExtractedSetting) => number
 }
 
@@ -305,11 +308,28 @@ export function usePressMutations({
         [flush, updateWorkspace],
     )
 
-    /** 用素材重建大纲树：整体覆盖既有草稿，返回重建的章节数供页面提示 */
+    /** 用素材重建大纲树：整树覆盖或按章刷新，返回实际处理的章数供页面提示 */
     const extractOutline = useCallback(
-        (drafts: PressExtractedVolume[]): number => {
+        (drafts: PressExtractedVolume[], target: OutlineExtractTarget): number => {
             // 出场人物靠名称匹配人物卡：先拿到当前草稿的人物，重建后的章纲才能直接带出 characterIds
             const characters = getWorkspace()?.characters ?? []
+            if (target.mode === 'orders') {
+                // 范围提取：结构沿用现有草稿，只把所选章的章纲字段换成素材口径
+                const current = getWorkspace()
+                if (current === null) {
+                    return 0
+                }
+                const { volumes, refreshed } = refreshOutlineChapters(
+                    current.volumes,
+                    drafts,
+                    target.orders,
+                    DEFAULT_CHAPTER_WORD_GOAL,
+                    characters,
+                )
+                updateWorkspace((previous) => ({ ...previous, volumes }))
+                void flush(new Set<PersistScope>(['outline']))
+                return refreshed
+            }
             const volumes = createOutlineFromDraft(drafts, DEFAULT_CHAPTER_WORD_GOAL, characters)
             const chapterCount = volumes.reduce((total, volume) => total + volume.chapters.length, 0)
             updateWorkspace((previous) => ({ ...previous, volumes }))
