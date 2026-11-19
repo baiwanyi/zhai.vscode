@@ -378,6 +378,9 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         vscode.window.registerWebviewViewProvider(AiChatViewProvider.viewId, aiChatProvider),
     )
     context.subscriptions.push(wechatLayer.onAuthFailure((event): void => aiChatProvider.broadcastWechatState(event)))
+    // 仪表盘增删改卷章后通知工作流面板重读：两个面板各持一份作品草稿，
+    // 结构变更不走 press 通道（那里只下发「当前文档属于哪个作品」），需要独立通知才能跟上
+    dashboardProvider.attachPressWorkspaceListener((dirPath) => aiChatProvider.broadcastPressWorkspaceChanged(dirPath))
     markStage('面板注册完成')
 
     // 编辑器：富文本自定义编辑器与切换命令；打开动作由 modules/editor/openDocument 统一决定；

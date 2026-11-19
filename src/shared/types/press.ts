@@ -1479,3 +1479,21 @@ export function isPressActiveState(payload: unknown): payload is PressActiveStat
     const candidate = payload as { activeProjectDirPath?: unknown }
     return candidate.activeProjectDirPath === null || typeof candidate.activeProjectDirPath === 'string'
 }
+
+/**
+ * press-workspace 通道载荷：仪表盘对作品的卷章结构做了写操作后，通知工作流面板重读。
+ * 工作区只在与当前打开的作品目录一致时重读，避免别处的新增触发无谓读盘。
+ */
+export interface PressWorkspaceChangedState {
+    /** 结构发生变更的作品目录，形如 press/{作品名} */
+    dirPath: string
+}
+
+/** 判断是否为合法的作品结构变更通知（类型收窄辅助） */
+export function isPressWorkspaceChangedState(payload: unknown): payload is PressWorkspaceChangedState {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { dirPath?: unknown }
+    return typeof candidate.dirPath === 'string' && candidate.dirPath.length > 0
+}

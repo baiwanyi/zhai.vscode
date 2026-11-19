@@ -14,6 +14,7 @@ import {
     RESIDENT_SECTIONS,
     SCOPE_SECTIONS,
     WECHAT_MODULE_KEY,
+    WEIBO_MODULE_KEY,
 } from '../src/workflow/layout/contentScope'
 
 /** 构造路由事实：只写用例关心的字段 */
@@ -52,6 +53,18 @@ describe('readContentScope', () => {
 
     it('两类事实都为空时不归属任何模块', () => {
         expect(readContentScope(context({}))).toBeNull()
+    })
+
+    it('宿主下发微博模块时判为微博归属（面板标签在前台）', () => {
+        expect(readContentScope(context({ module: WEIBO_MODULE_KEY }))).toBe('weibo')
+    })
+
+    it('微博归属优先于背后保留的笔记文档事实', () => {
+        expect(readContentScope(context({ module: WEIBO_MODULE_KEY, docPath: 'notes/甲.md' }))).toBe('weibo')
+    })
+
+    it('切回编辑器后模块回到文档归属，微博不再命中', () => {
+        expect(readContentScope(context({ module: 'notes', docPath: 'notes/甲.md' }))).toBe('note')
     })
 })
 
@@ -100,6 +113,11 @@ describe('readScopeDir', () => {
     it('无归属时没有作用域目录', () => {
         expect(readScopeDir(context({}), null)).toBeNull()
     })
+
+    it('微博作用域固定为模块键，不绑到背后保留的文档', () => {
+        const state = context({ module: WEIBO_MODULE_KEY, docPath: 'notes/甲.md' })
+        expect(readScopeDir(state, 'weibo')).toBe(WEIBO_MODULE_KEY)
+    })
 })
 
 describe('分区清单', () => {
@@ -116,5 +134,10 @@ describe('分区清单', () => {
 
     it('无归属时只有常驻分区', () => {
         expect(readAvailableSections(null)).toEqual(RESIDENT_SECTIONS)
+    })
+
+    it('微博没有专属分区，可用分区即常驻分区', () => {
+        expect(SCOPE_SECTIONS.weibo).toEqual([])
+        expect(readAvailableSections('weibo')).toEqual(RESIDENT_SECTIONS)
     })
 })

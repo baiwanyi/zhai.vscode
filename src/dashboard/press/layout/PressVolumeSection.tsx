@@ -182,8 +182,8 @@ export function PressVolumeSection({
                                     </ItemTitle>
                                 </ItemContent>
                                 <ItemActions className="shrink-0">
-                                    <span className="text-xs text-muted-foreground">
-                                        {formatWordCount(chapter.wordCount)} 字
+                                    <span className="text-xs text-muted-foreground tabular-nums">
+                                        {`${formatWordCount(chapter.wordCount)} 字`}
                                     </span>
                                 </ItemActions>
                             </Item>

@@ -1,0 +1,9 @@
+/**
+ * Webview 入口（微博）：把微博面板挂载到根节点，供宿主在编辑区打开独立页面。
+ * 主题同步与挂载逻辑统一由 bootstrap 处理；页面自身的状态与协议接线只在 WeiboPanel 内演进。
+ */
+import { WeiboPanel } from './WeiboPanel'
+import { bootstrap } from '../bootstrap'
+import '../globals.css'
+
+bootstrap(<WeiboPanel />)

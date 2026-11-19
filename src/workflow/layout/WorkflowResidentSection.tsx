@@ -10,6 +10,7 @@
  * 快照以 docPath 为键，没有活跃文档时只给引导空态，不渲染半成品页面。
  */
 import { Archive } from 'lucide-react'
+import { WEIBO_MODULE_KEY } from '@shared/types/workflow'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { WorkflowAiChat } from '@webview/workflow/aichat/WorkflowAiChat'
 import { WorkflowAnnotation } from '@webview/workflow/annotation/WorkflowAnnotation'
@@ -77,6 +78,14 @@ export function WorkflowResidentSection({
             </div>
         )
     }
-    // 对话按作用域隔离：key 跟随作用域目录，切换归属时重建页面；作品标题只影响摘要行，不参与 key
-    return <WorkflowAiChat key={scopeDir ?? 'global'} projectDir={scopeDir} projectTitle={projectTitle} />
+    // 对话按作用域隔离：key 跟随作用域目录，切换归属时重建页面；作品标题只影响摘要行，不参与 key；
+    // 微博语境没有活动文档，开放输入门禁（对话只生成内容、不写回文件）
+    return (
+        <WorkflowAiChat
+            key={scopeDir ?? 'global'}
+            projectDir={scopeDir}
+            projectTitle={projectTitle}
+            hasWritableScopeOverride={scopeDir === WEIBO_MODULE_KEY ? true : undefined}
+        />
+    )
 }

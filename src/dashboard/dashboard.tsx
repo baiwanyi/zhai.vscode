@@ -128,6 +128,7 @@ export function Dashboard({ onNavigate }: DashboardProps): JSX.Element {
                 <DashboardHeaderEntries
                     onOpenWriting={() => onNavigate(createPressRoute())}
                     onOpenPress={() => onNavigate(createWechatRoute())}
+                    onOpenWeibo={() => void actions.openWeibo()}
                 />
             </AppHeader>
 

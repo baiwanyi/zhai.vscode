@@ -107,6 +107,8 @@ export function WorkflowScreen(): JSX.Element {
                             section={section}
                             scopeDir={readScopeDir(context, scope)}
                             docPath={context.docPath}
+                            // 微博没有作品标题可读：摘要行固定显示模块名，避免回落成通道名
+                            projectTitle={scope === 'weibo' ? '微博' : null}
                         />
                     )}
                 </div>
@@ -122,4 +124,3 @@ export function WorkflowScreen(): JSX.Element {
         </>
     )
 }
-

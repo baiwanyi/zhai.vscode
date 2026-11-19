@@ -2,7 +2,7 @@
  * 仪表盘 Webview 面板（宿主侧）：加载 React 构建产物，路由 Webview 请求到统计聚合、笔记创建/打开/删除、置顶设置、
  * 工作流页跳转、待办清单读写、写作管理（作品列表、作品详情、新建作品与章节、卷的重命名与删除、
  * 章节的删除与跨卷移动、整部作品删除）聚合与创建、公众号账号的列表与增删改鉴权、
- * 媒体库、在线图库与上传清单的列举（公众号封面选图），以及宿主命令。
+ * 媒体库、在线图库与上传清单的列举（公众号封面选图）、微博编辑区面板的打开，以及宿主命令。
  * 协议：仅接受带 reqId 的 request 消息（shared/types/messages），响应按 reqId 匹配回传；
  * 另经 state 消息主动广播：note 通道给活跃笔记（列表回填选中态），index 通道给索引状态（列表随编辑收敛），
  * todo 通道给待办清单的外部改动（卡片收到即重读）；
@@ -21,7 +21,13 @@ import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { getActiveDocument, onDidChangeActiveDocument } from '@modules/editor/activeDocument'
 import type { MediaRoutes } from '@modules/media/mediaRoutes'
 import type { PressCoverStore } from '@modules/media/pressCoverStore'
-import { createNotebook, deleteNotebook, listNotebooks, renameNotebook, sortNotebooks } from '@modules/note/notebookService'
+import {
+    createNotebook,
+    deleteNotebook,
+    listNotebooks,
+    renameNotebook,
+    sortNotebooks,
+} from '@modules/note/notebookService'
 import type { NotebookStore } from '@modules/note/notebookStore'
 import {
     assertNoteSaved,
@@ -35,6 +41,8 @@ import type { TrashStore } from '@modules/note/trashStore'
 import { mergeChapterSummaries } from '@modules/press/chapterSummaryMerge'
 import { analyzeProject } from '@modules/press/importAnalysis'
 import { ImportError, PressImportService } from '@modules/press/importService'
+import { appendChapterToOutline } from '@modules/press/outlineSync'
+import { readOrderPrefix, toDisplayName } from '@modules/press/projectFactory'
 import {
     hasProjectFile,
     hasProjectFiles,
@@ -60,6 +68,7 @@ import type { TodoRoutes } from '@modules/todo/todoRoutes'
 import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 import type { WechatRoutes } from '@modules/wechat/wechatRoutes'
 import { WECHAT_DOCUMENT_METHODS } from '@modules/wechat/wechatRoutes'
+import { openWeiboPanel } from '@modules/weibo/panel'
 import type { DashboardStats } from '@shared/types/dashboard'
 import type { HostToWebviewMessage } from '@shared/types/messages'
 import { isRequestMessage } from '@shared/types/messages'
@@ -181,6 +190,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private mediaRoutes: MediaRoutes | null = null
     /** 在线图库路由：后置注入，公众号封面据此列举已下载的在线图片；未注入时 stock/* 直接报未就绪 */
     private stockRoutes: StockRoutes | null = null
+    /** 作品结构变更监听：后置注入，仪表盘增删改卷章后用它通知工作流面板重读 */
+    private pressWorkspaceListener: ((dirPath: string) => void) | null = null
     /** 上传路由：后置注入，公众号封面据此列举上传页的已上传图片；未注入时 upload/* 直接报未就绪 */
     private uploadRoutes: UploadRoutes | null = null
     /** 当前面板实例：仅在挂载期间有效，用于请求之外的主动广播 */
@@ -229,6 +240,19 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     /** 注入上传路由：封面弹窗要从上传页的已上传图片里挑图，故转发 upload/* 请求 */
     public attachUploadRoutes(routes: UploadRoutes): void {
         this.uploadRoutes = routes
+    }
+
+    /**
+     * 注入作品结构变更监听：由扩展入口在 AI 对话面板装配后调用，
+     * 仪表盘增删改卷章后经它通知工作流面板重读当前作品，避免两个面板各看一份旧数据。
+     */
+    public attachPressWorkspaceListener(listener: (dirPath: string) => void): void {
+        this.pressWorkspaceListener = listener
+    }
+
+    /** 通知作品结构已变更：监听方未注入时静默跳过，工作区下次进入仍会整份重读 */
+    private notifyPressWorkspaceChanged(dirPath: string): void {
+        this.pressWorkspaceListener?.(dirPath)
     }
 
     public resolveWebviewView(webviewView: vscode.WebviewView): void {
@@ -374,6 +398,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             }
             case 'press/active': {
                 return Promise.resolve(this.buildActivePressProject())
+            }
+            case 'weibo/open': {
+                return this.openWeibo()
             }
             case 'workflow/open': {
                 return this.openWorkflow(payload)
@@ -605,7 +632,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
         if (trashedPaths.length > 0) {
             await this.pins.setPinned(trashedPaths, false)
             void this.closeTabsForPaths(trashedPaths)
-            logger.info(`笔记移入回收站完成：成功 ${String(trashedPaths.length)} 项，失败 ${String(failures.length)} 项`)
+            logger.info(
+                `笔记移入回收站完成：成功 ${String(trashedPaths.length)} 项，失败 ${String(failures.length)} 项`,
+            )
         }
         return { trashedPaths, failures }
     }
@@ -744,7 +773,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             throw new Error('trash/restore 参数非法：ids 须为回收站条目 id 数组')
         }
         const result = await this.trashStore.restore(payload.ids)
-        logger.info(`回收站恢复完成：成功 ${String(result.restored.length)} 项，失败 ${String(result.failures.length)} 项`)
+        logger.info(
+            `回收站恢复完成：成功 ${String(result.restored.length)} 项，失败 ${String(result.failures.length)} 项`,
+        )
         return result
     }
 
@@ -768,9 +799,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private async closeTabsForPaths(indexPaths: string[]): Promise<void> {
         const root = resolveStorageRoot()
         const targets = new Set(
-            indexPaths.map((indexPath) =>
-                buildStorageUri(root, indexPath.split('/')).fsPath.toLowerCase(),
-            ),
+            indexPaths.map((indexPath) => buildStorageUri(root, indexPath.split('/')).fsPath.toLowerCase()),
         )
         const tabs = vscode.window.tabGroups.all.flatMap((group) => group.tabs)
         const matched = tabs.filter((tab) => {
@@ -808,6 +837,15 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             throw new Error('workflow/open 参数非法：module 须为非空模块键')
         }
         await vscode.commands.executeCommand('zhai.openAiChat', { module: payload.module })
+        return { opened: true }
+    }
+
+    /**
+     * 打开微博面板：在编辑区创建独立 webview 页，已打开则聚焦同一页。
+     * 关键约束：与 workflow/open 不同，这里不切换侧栏模块、不改写仪表盘路由，只是新开一个编辑区页。
+     */
+    private async openWeibo(): Promise<{ opened: boolean }> {
+        await openWeiboPanel(this.extensionUri)
         return { opened: true }
     }
 
@@ -918,7 +956,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
 
     /**
      * 新建章节：章节落点与序号由 press 服务按索引库口径推导，创建后立即打开供用户续写。
-     * 关键约束：先回查作品存在，避免向不存在的作品目录写入文件；返回落点卷名供前端提示。
+     * 关键约束：先回查作品存在，避免向不存在的作品目录写入文件；返回落点卷名供前端提示；
+     * 章节落盘后同步补写到大纲，使大纲列表不需要再靠人工对照作品列表。
      */
     private async createPressChapter(payload: unknown): Promise<CreatedPressChapter> {
         if (!isCreatePressChapterRequest(payload)) {
@@ -932,7 +971,9 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             chapterPaths: listProjectChapterPaths(this.db, payload.dirPath),
             volumeDir: payload.volumeDir,
         })
+        await this.syncChapterToOutline(payload.dirPath, created.path)
         await openChapterByPath(created.path)
+        this.notifyPressWorkspaceChanged(payload.dirPath)
         logger.info(`章节创建完成并打开：${created.path}`)
         return { path: created.path, title: created.title, volume: created.volume }
     }
@@ -940,7 +981,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     /**
      * 新建卷：卷序号与首章由 press 服务生成，创建后打开首章供用户续写。
      * 关键约束：建卷必然带首章——索引库只记录文档，空卷不会出现在详情页；
-     * 返回卷目录与首章信息，供前端展开该卷并提示落点。
+     * 返回卷目录与首章信息，供前端展开该卷并提示落点；首章同样以整卷块的形式补进大纲。
      */
     private async createPressVolume(payload: unknown): Promise<CreatedPressVolume> {
         if (!isPressDirPath(payload)) {
@@ -953,13 +994,37 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             dirPath: payload.dirPath,
             chapterPaths: listProjectChapterPaths(this.db, payload.dirPath),
         })
+        await this.syncChapterToOutline(payload.dirPath, created.chapterPath)
         await openChapterByPath(created.chapterPath)
+        this.notifyPressWorkspaceChanged(payload.dirPath)
         logger.info(`卷创建完成并打开首章：${created.chapterPath}`)
         return {
             volumeDir: created.volumeDir,
             volumeName: created.volumeName,
             chapterPath: created.chapterPath,
             chapterTitle: created.chapterTitle,
+        }
+    }
+
+    /**
+     * 把刚落盘的章节补写进大纲：卷目录取章节路径里的卷段，章序取文件名序号。
+     * 关键约束：单向同步，只补新增、不删不改；同步失败只记日志，
+     * 章节文件已经写盘并会进索引，不能因为大纲补写失败让创建操作整体失败。
+     */
+    private async syncChapterToOutline(dirPath: string, chapterPath: string): Promise<void> {
+        const segments = chapterPath.split('/')
+        const fileName = segments[segments.length - 1] ?? ''
+        // 分卷章节形如 press/{作品}/Chapters/{卷}/{章}.md，四段路径是没有卷的历史散章
+        const volumeDir = segments.length > 4 ? (segments[3] ?? '') : ''
+        try {
+            await appendChapterToOutline(dirPath, {
+                volumeDir,
+                order: readOrderPrefix(fileName) ?? 1,
+                title: toDisplayName(fileName),
+            })
+        } catch (cause) {
+            const detail = cause instanceof Error ? cause.message : String(cause)
+            logger.warn(`大纲同步失败（章节已创建）：${dirPath}（${detail}）`)
         }
     }
 
@@ -981,6 +1046,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             name: payload.name,
             volumeFilePaths: listVolumeFilePaths(this.db, payload.dirPath, payload.volumeDir),
         })
+        this.notifyPressWorkspaceChanged(payload.dirPath)
         logger.info(`卷重命名完成：${payload.volumeDir} → ${renamed.volumeDir}`)
         return renamed
     }
@@ -998,6 +1064,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             throw new Error(`作品不在索引中，无法删除卷：${payload.dirPath}`)
         }
         await deleteVolume(this.indexService, { dirPath: payload.dirPath, volumeDir: payload.volumeDir })
+        this.notifyPressWorkspaceChanged(payload.dirPath)
         logger.info(`卷删除完成：${payload.dirPath}/${payload.volumeDir}`)
         return { deleted: true }
     }
@@ -1015,6 +1082,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             throw new Error(`章节不在索引中，无法删除：${payload.path}`)
         }
         await deleteChapter(this.indexService, { dirPath: payload.dirPath, path: payload.path })
+        this.notifyPressWorkspaceChanged(payload.dirPath)
         logger.info(`章节删除完成：${payload.path}`)
         return { deleted: true }
     }
@@ -1036,6 +1104,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             targetVolumeDir: payload.targetVolumeDir,
             chapterPaths: listProjectChapterPaths(this.db, payload.dirPath),
         })
+        this.notifyPressWorkspaceChanged(payload.dirPath)
         logger.info(`章节移动完成：${payload.path} → ${moved.path}`)
         return { path: moved.path, title: moved.title, volume: moved.volume }
     }

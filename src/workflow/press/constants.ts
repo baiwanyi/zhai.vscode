@@ -56,7 +56,7 @@ export const PLAN_STATUS_META: Readonly<Record<PlanStatus, { label: string; tone
     stale: { label: '需复核', tone: 'destructive', dot: 'bg-destructive' },
 }
 
-/** 状态筛选：全部与四种状态，供大纲树顶部切换 */
+/** 状态筛选：全部与四种状态，供大纲页顶部下拉切换，大纲树只按取值过滤 */
 export const STATUS_FILTERS: readonly OptionMeta<PlanStatus | 'all'>[] = [
     { value: 'all', label: '全部' },
     { value: 'planned', label: '待写' },
@@ -248,8 +248,8 @@ export type ExtractScope = 'all' | 'range' | 'chapters'
 /** 提取范围选项：说明文案直接写清覆盖范围，避免用户误触全篇 */
 export const EXTRACT_SCOPE_OPTIONS: readonly { value: ExtractScope; label: string; description: string }[] = [
     { value: 'all', label: '全篇', description: '按素材重建整棵大纲树，会覆盖当前草稿' },
-    { value: 'range', label: '章节范围', description: '只刷新区间内的章纲，卷章结构不变' },
-    { value: 'chapters', label: '指定章节', description: '勾选要刷新的章节，未勾选的保持原样' },
+    { value: 'range', label: '章节范围', description: '只刷新作品对应区间内的章纲，卷章结构不变' },
+    { value: 'chapters', label: '指定章节', description: '勾选作品章节，刷新大纲里同卷同位置的章纲' },
 ]
 
 /** 模式取值收窄：单选组回传的是 string，不能直接当联合类型用 */

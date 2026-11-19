@@ -85,15 +85,26 @@ export interface OutlineVolume {
 
 /**
  * 大纲树里的一个条目：卷与其章节的组合。
- * 数组顺序即 1 基全局章序，是前端与宿主对齐素材草案的唯一口径，任何派生都不得重排。
+ * 数组顺序即列表展示顺序，任何派生都不得重排；提取对齐素材改用「卷序 + 卷内位置」，不再依赖全局章序。
  */
 export interface OutlineTreeEntry {
     volume: OutlineVolume
     chapter: OutlineChapter
 }
 
-/** 提取写入范围：全篇整树覆盖，或只刷新指定的 1 基全局章序 */
-export type OutlineExtractTarget = { mode: 'all' } | { mode: 'orders'; orders: readonly number[] }
+/**
+ * 提取定位键：作品列表里的「卷序 + 卷内位置」，与素材草案的卷章顺序一一对应。
+ * 关键约束：不用全局章序定位——大纲允许比作品多章，全局序会随任一卷的增删整体错位。
+ */
+export interface OutlineExtractKey {
+    /** 卷序：作品卷目录的序号前缀，对应大纲卷名里的「第N卷」 */
+    volumeOrder: number
+    /** 卷内位置（1 基）：与作品该卷章节的数组顺序一致 */
+    chapterIndex: number
+}
+
+/** 提取写入范围：全篇整树覆盖，或只刷新指定卷章位置的章纲 */
+export type OutlineExtractTarget = { mode: 'all' } | { mode: 'chapters'; keys: readonly OutlineExtractKey[] }
 
 /** 人物卡：与 角色设定.md 中一个人物区块对应 */
 export interface CharacterCard {

@@ -11,6 +11,7 @@ import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
 import type {
     PressExtractedCharacter,
     PressExtractedVolume,
+    PressVolumeGroup,
     SettingFieldKey,
     SettingSnapshot,
 } from '@shared/types/press'
@@ -33,6 +34,7 @@ import type {
     LoreSeed,
     OutlineBeat,
     OutlineChapter,
+    OutlineExtractKey,
     OutlineTreeEntry,
     OutlineVolume,
     PlanStatus,
@@ -441,51 +443,83 @@ export function createOutlineFromDraft(
     }))
 }
 
+/** 序号前缀：与宿主 projectFactory 同口径（01-卷名 / 01-章名.md），读不到返回 null */
+const ORDER_PREFIX_PATTERN = /^(\d+)(?:[-_.、\s]|$)/u
+
+/** 读取名称的序号前缀：卷目录名与章节文件名共用，缺失前缀返回 null */
+export function readOrderPrefix(value: string): number | null {
+    const matched = ORDER_PREFIX_PATTERN.exec(value)
+    if (matched?.[1] === undefined) {
+        return null
+    }
+    const parsed = Number.parseInt(matched[1], 10)
+    return Number.isNaN(parsed) ? null : parsed
+}
+
+/** 大纲卷名里的卷序：新卷统一写成「第N卷」，旧数据可能只有目录口径的序号前缀 */
+const VOLUME_TITLE_PATTERN = /第\s*(\d+)\s*卷/u
+
+/** 大纲卷序：先认「第N卷」，再认序号前缀，都没有时按数组位置兜底 */
+function readOutlineVolumeOrder(name: string, index: number): number {
+    const byTitle = VOLUME_TITLE_PATTERN.exec(name)?.[1]
+    if (byTitle !== undefined) {
+        return Number.parseInt(byTitle, 10)
+    }
+    return readOrderPrefix(name) ?? index + 1
+}
+
 /**
- * 按指定章刷新大纲树：把草案按「卷顺序 + 卷内数组顺序」摊平，与现有草稿同序对齐后只覆盖所选章。
- * 关键约束：结构（卷、章数量、章 id、状态、目标字数、地点）一律沿用现有草稿，草案章数不足时跳过越界序号，
- * 因此「指定章节提取」不会增删章节、也不会改动卷纲字段；全篇提取仍走 createOutlineFromDraft。
+ * 按所选卷章位置刷新大纲树：素材草案与作品列表同构，按「卷序 + 卷内位置」逐卷对齐后只覆盖选中章。
+ * 关键约束：结构（卷、章数量、章 id、状态、目标字数、地点）一律沿用现有草稿，
+ * 大纲可以比作品多章，因此只按位置逐卷匹配、不按全局章序；草案章数不足时跳过越界位置，
+ * 「指定章节提取」不会增删章节、也不会改动卷纲字段；全篇提取仍走 createOutlineFromDraft。
  */
 export function refreshOutlineChapters(
     current: readonly OutlineVolume[],
     drafts: readonly PressExtractedVolume[],
-    orders: readonly number[],
+    keys: readonly OutlineExtractKey[],
     chapterWordGoal: number,
     characters: readonly CharacterCard[] = [],
 ): { volumes: OutlineVolume[]; refreshed: number } {
-    const templates = createOutlineFromDraft([...drafts], chapterWordGoal, characters).flatMap(
-        (volume) => volume.chapters,
-    )
-    const targets = new Set(orders)
-    let cursor = 0
+    const templates = createOutlineFromDraft([...drafts], chapterWordGoal, characters)
+    // 草案卷序取卷目录名的序号前缀：宿主按章节清单产出，卷名可能是「01-默认卷」这种目录口径
+    const templateByVolume = new Map<number, OutlineChapter[]>()
+    templates.forEach((volume, index) => {
+        templateByVolume.set(readOrderPrefix(volume.name) ?? index + 1, volume.chapters)
+    })
+    const targets = new Set(keys.map((key) => `${String(key.volumeOrder)}-${String(key.chapterIndex)}`))
     let refreshed = 0
-    const volumes = current.map((volume) => ({
-        ...volume,
-        chapters: volume.chapters.map((chapter) => {
-            cursor += 1
-            const template = targets.has(cursor) ? templates[cursor - 1] : undefined
-            if (template === undefined) {
-                return chapter
-            }
-            refreshed += 1
-            return {
-                ...chapter,
-                title: template.title,
-                summary: template.summary,
-                beats: template.beats,
-                characterIds: template.characterIds,
-                wordCount: template.wordCount,
-                hook: template.hook,
-                tension: template.tension,
-            }
-        }),
-    }))
+    const volumes = current.map((volume, index) => {
+        const volumeOrder = readOutlineVolumeOrder(volume.name, index)
+        const volumeTemplates = templateByVolume.get(volumeOrder) ?? []
+        return {
+            ...volume,
+            chapters: volume.chapters.map((chapter, position) => {
+                const key = `${String(volumeOrder)}-${String(position + 1)}`
+                const template = targets.has(key) ? volumeTemplates[position] : undefined
+                if (template === undefined) {
+                    return chapter
+                }
+                refreshed += 1
+                return {
+                    ...chapter,
+                    title: template.title,
+                    summary: template.summary,
+                    beats: template.beats,
+                    characterIds: template.characterIds,
+                    wordCount: template.wordCount,
+                    hook: template.hook,
+                    tension: template.tension,
+                }
+            }),
+        }
+    })
     return { volumes, refreshed }
 }
 
-/** 提取范围列表里的章节选项：1 基全局章序与两种展示文案 */
+/** 提取范围列表里的章节选项：展示字段，全局序只用于列表与区间输入 */
 export interface ExtractChapterOption {
-    /** 1 基全局章序：宿主按同一口径对齐素材草案 */
+    /** 1 基全局序：按作品卷章摊平，只用于列表展示与区间输入 */
     order: number
     volumeId: string
     /** 卷名 · 章标题：下拉与可访问名用 */
@@ -495,16 +529,44 @@ export interface ExtractChapterOption {
 }
 
 /**
- * 章节选项：按传入顺序摊平成全局章序，绝不对章节重新排序。
- * 关键约束：全局序号是前端与宿主对齐草案的唯一口径，重排会让范围提取错位。
+ * 作品章节选项：在展示字段之外带上定位用的卷序与卷内位置，供大纲按位置刷新。
+ * 关键约束：只读取仪表盘的作品列表——素材草案由章节清单产出，选大纲章会导致错位。
  */
-export function createChapterOptions(entries: readonly OutlineTreeEntry[]): ExtractChapterOption[] {
-    return entries.map((entry, index) => ({
-        order: index + 1,
-        volumeId: entry.volume.id,
-        label: `${entry.volume.name} · ${chapterTitleLabel(entry.chapter)}`,
-        title: chapterTitleLabel(entry.chapter),
-    }))
+export interface ProjectChapterOption extends ExtractChapterOption {
+    /** 卷序：与大纲卷名里的「第N卷」对应 */
+    volumeOrder: number
+    /** 卷内位置（1 基）：与该卷章节数组顺序一致 */
+    chapterIndex: number
+    /** 卷展示名：卷筛选标签，未分卷为「未分卷」 */
+    volumeLabel: string
+}
+
+/** 未分卷章节的卷筛选取值：Radix Select 不接受空串作为条目值 */
+const UNASSIGNED_VOLUME_ID = 'unassigned'
+
+/**
+ * 由作品详情构建提取选项：按卷分组顺序摊平，卷序取目录的序号前缀，卷内位置取数组下标 + 1。
+ * 关键约束：分组顺序与宿主产出素材草案的顺序一致，重排会让范围提取错位。
+ */
+export function createProjectChapterOptions(volumes: readonly PressVolumeGroup[]): ProjectChapterOption[] {
+    const options: ProjectChapterOption[] = []
+    volumes.forEach((volume, index) => {
+        const volumeOrder = readOrderPrefix(volume.dirName) ?? index + 1
+        const volumeLabel = volume.name.length > 0 ? volume.name : '未分卷'
+        const volumeId = volume.dirName.length > 0 ? volume.dirName : UNASSIGNED_VOLUME_ID
+        volume.chapters.forEach((chapter, position) => {
+            options.push({
+                order: options.length + 1,
+                volumeOrder,
+                chapterIndex: position + 1,
+                volumeId,
+                volumeLabel,
+                label: `${volumeLabel} · ${chapter.title}`,
+                title: chapter.title,
+            })
+        })
+    })
+    return options
 }
 
 /** 卷筛选选项：按顺序去重，取值一律用卷 id——卷名允许重名 */

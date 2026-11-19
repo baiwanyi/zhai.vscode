@@ -1,186 +1,94 @@
 /**
- * 大纲树：左侧的卷-章两级导航，承担章节选择、状态筛选与卷内新增章节。
- * 复用约定：折叠沿用 ui/collapsible，筛选复用 ui/toggle-group，卷标题与章节行复用 ui/button 的 ghost 变体，
- * 状态点取 PLAN_STATUS_META 的语义底色，待复核计数复用 ui/badge 的 destructive 变体；
- * 统计口径来自 utils 的 summarizeVolume。
- * 关键约束：章节行只显示「序号 + 标题 + 已写字数」，不展示梗概，避免窄栏里出现多行文本撑高列表；
- * 状态不能只靠圆点表达，行上必须以 aria-label 带上状态文案。
+ * 大纲章节列表：把全部章节摊平成一列，卷归属由页头下拉筛选，不再按卷分组。
+ * 复用约定：章节行复用 components/Button 的 ghost 变体，状态点取 PLAN_STATUS_META 的语义底色，
+ * 空态复用 components/StateEmpty，标题与字数取自 utils 的 chapterTitleLabel / formatWordCount。
+ * 关键约束：本组件只读——新增卷与章节的入口在页头动作区的「新增」菜单，这里不重复提供；
+ * 行内只放「状态点 + 章节序号 + 标题（左对齐）+ 已写字数」，不显示卷名、不展示梗概；
+ * 卷筛选在页面完成，本组件只按 statusFilter 过滤；状态与卷名仍进 aria-label，
+ * 序号跨卷会重复，读屏需要卷名才能区分。
  */
 import { cn } from 'cn'
-import { ChevronRight, Plus, PlusCircle, ScrollText } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
+import { ScrollText } from 'lucide-react'
 import { Button } from '@webview/components/Button'
-import { SegmentedRail } from '@webview/components/SegmentedRail'
 import { StateEmpty } from '@webview/components/StateEmpty'
-import type { OutlineVolume, PlanStatus } from '../../types'
+import type { OutlineTreeEntry, PlanStatus } from '../../types'
 import type { JSX } from 'react'
-import { PLAN_STATUS_META, STATUS_FILTERS } from '../../constants'
-import { chapterTitleLabel, filterChapters, formatWordCount, summarizeVolume } from '../../utils'
+import { PLAN_STATUS_META } from '../../constants'
+import { chapterTitleLabel, formatWordCount } from '../../utils'
 
 interface OutlineTreeProps {
-    volumes: OutlineVolume[]
+    /** 已按卷筛选的扁平章节，数组顺序即全局章序 */
+    entries: readonly OutlineTreeEntry[]
     selectedChapterId: string | null
-    expandedVolumeIds: string[]
+    /** 状态筛选值：由页面顶部下拉控制，本组件只负责过滤 */
     statusFilter: PlanStatus | 'all'
-    onToggleVolume: (volumeId: string) => void
+    /** 全量是否有章节：区分「作品还没有大纲」与「筛选后为空」 */
+    hasAnyChapter: boolean
+    /** 列表是否叠加了卷筛选或标题搜索：筛空时文案要说「没有符合筛选」 */
+    isListFiltered: boolean
     onSelectChapter: (chapterId: string) => void
-    onFilterChange: (status: PlanStatus | 'all') => void
-    onCreateVolume: () => void
-    onCreateChapter: (volumeId: string) => void
 }
 
 export function OutlineTree({
-    volumes,
+    entries,
     selectedChapterId,
-    expandedVolumeIds,
     statusFilter,
-    onToggleVolume,
+    hasAnyChapter,
+    isListFiltered,
     onSelectChapter,
-    onFilterChange,
-    onCreateVolume,
-    onCreateChapter,
 }: OutlineTreeProps): JSX.Element {
-    const handleFilterChange = (value: string): void => {
-        if (value.length === 0) {
-            return
-        }
-        const next = STATUS_FILTERS.find((option) => option.value === value)
-        if (next) {
-            onFilterChange(next.value)
-        }
-    }
+    const visibleEntries = entries.filter((entry) => statusFilter === 'all' || entry.chapter.status === statusFilter)
+    // 只有作品本身没有章节才是「还没有大纲」；筛选或搜索筛空不能冒充空作品
+    const isEmptyText = isListFiltered || statusFilter !== 'all' ? '没有符合筛选的章节' : '还没有章节'
 
     return (
-        <div className="flex h-full min-h-0 flex-col gap-2">
-            <div className="shrink-0 overflow-x-auto">
-                <SegmentedRail
-                    items={STATUS_FILTERS}
-                    value={statusFilter}
-                    onChange={handleFilterChange}
-                    ariaLabel="状态筛选"
-                    variant="chip"
-                    isWrapped={false}
-                />
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-                {volumes.length === 0 ? (
-                    <StateEmpty
-                        icon={ScrollText}
-                        title="还没有大纲"
-                        description="生成一份卷纲，或手动新建第一卷"
-                        className="border border-dashed border-border py-8"
-                    >
-                        <Button variant="outline" onClick={onCreateVolume}>
-                            <Plus />
-                            新建第一卷
-                        </Button>
-                    </StateEmpty>
-                ) : (
-                    <div className="flex flex-col gap-1">
-                        {volumes.map((volume) => {
-                            const summary = summarizeVolume(volume)
-                            const isOpen = expandedVolumeIds.includes(volume.id)
-                            const visibleChapters = filterChapters(volume.chapters, statusFilter)
-
+        <>
+            {hasAnyChapter ? (
+                <div className="flex flex-col gap-0.5">
+                    {visibleEntries.length === 0 ? (
+                        <p className="px-2 py-1 text-muted-foreground">{isEmptyText}</p>
+                    ) : (
+                        visibleEntries.map((entry) => {
+                            const meta = PLAN_STATUS_META[entry.chapter.status]
+                            const isSelected = entry.chapter.id === selectedChapterId
                             return (
-                                <Collapsible
-                                    key={volume.id}
-                                    open={isOpen}
-                                    onOpenChange={() => onToggleVolume(volume.id)}
-                                    className="flex flex-col gap-0.5"
+                                <Button
+                                    key={entry.chapter.id}
+                                    variant="ghost"
+                                    aria-current={isSelected ? 'true' : undefined}
+                                    aria-label={`${entry.volume.name} · ${chapterTitleLabel(entry.chapter)}，${meta.label}`}
+                                    className={cn(
+                                        'h-auto w-full justify-start gap-1.5 rounded-lg px-2 py-1 font-normal',
+                                        isSelected && 'bg-accent text-accent-foreground',
+                                    )}
+                                    onClick={() => onSelectChapter(entry.chapter.id)}
                                 >
-                                    <div className="flex items-center gap-0.5">
-                                        <CollapsibleTrigger asChild>
-                                            <Button
-                                                variant="ghost"
-                                                className="h-auto min-w-0 flex-1 justify-start gap-1 px-1 py-1 text-left"
-                                                aria-expanded={isOpen}
-                                            >
-                                                <ChevronRight
-                                                    className={cn(
-                                                        'size-3.5 shrink-0 text-muted-foreground transition-transform',
-                                                        isOpen && 'rotate-90',
-                                                    )}
-                                                    aria-hidden="true"
-                                                />
-                                                <span className="min-w-0 flex-1 truncate">{volume.name}</span>
-                                                {summary.stale > 0 ? (
-                                                    <Badge
-                                                        variant="destructive"
-                                                        className="shrink-0 tabular-nums"
-                                                        title={`${summary.stale} 章需复核`}
-                                                    >
-                                                        {summary.stale} 待复核
-                                                    </Badge>
-                                                ) : null}
-                                                <span className="shrink-0 text-muted-foreground tabular-nums">
-                                                    {summary.done}/{summary.total}
-                                                </span>
-                                            </Button>
-                                        </CollapsibleTrigger>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="shrink-0 rounded-full"
-                                            aria-label={`在${volume.name}中添加章节`}
-                                            tooltip="添加章节"
-                                            onClick={() => onCreateChapter(volume.id)}
-                                        >
-                                            <Plus />
-                                        </Button>
-                                    </div>
-                                    <CollapsibleContent className="flex flex-col gap-0.5 pl-3">
-                                        {visibleChapters.length === 0 ? (
-                                            <p className="px-2 py-1 text-muted-foreground">
-                                                {volume.chapters.length === 0 ? '本卷还没有章节' : '没有符合筛选的章节'}
-                                            </p>
-                                        ) : (
-                                            visibleChapters.map((chapter) => {
-                                                const meta = PLAN_STATUS_META[chapter.status]
-                                                const isSelected = chapter.id === selectedChapterId
-                                                return (
-                                                    <Button
-                                                        key={chapter.id}
-                                                        variant="ghost"
-                                                        aria-current={isSelected ? 'true' : undefined}
-                                                        aria-label={`${chapterTitleLabel(chapter)}，${meta.label}`}
-                                                        className={cn(
-                                                            'h-auto w-full justify-start gap-1.5 rounded-lg px-2 py-1 font-normal',
-                                                            isSelected && 'bg-accent text-accent-foreground',
-                                                        )}
-                                                        onClick={() => onSelectChapter(chapter.id)}
-                                                    >
-                                                        <span
-                                                            className={cn('size-1.5 shrink-0 rounded-full', meta.dot)}
-                                                            aria-hidden="true"
-                                                        />
-                                                        <span className="shrink-0 text-muted-foreground tabular-nums">
-                                                            {chapter.order}
-                                                        </span>
-                                                        <span className="min-w-0 flex-1 truncate">
-                                                            {chapterTitleLabel(chapter)}
-                                                        </span>
-                                                        <span className="shrink-0 text-muted-foreground tabular-nums">
-                                                            {chapter.wordCount > 0
-                                                                ? formatWordCount(chapter.wordCount)
-                                                                : '—'}
-                                                        </span>
-                                                    </Button>
-                                                )
-                                            })
-                                        )}
-                                    </CollapsibleContent>
-                                </Collapsible>
+                                    <span
+                                        className={cn('size-1.5 shrink-0 rounded-full', meta.dot)}
+                                        aria-hidden="true"
+                                    />
+                                    <span className="shrink-0 text-muted-foreground tabular-nums">
+                                        第 {entry.chapter.order} 章
+                                    </span>
+                                    <span className="min-w-0 flex-1 truncate text-left">
+                                        {chapterTitleLabel(entry.chapter)}
+                                    </span>
+                                    <span className="shrink-0 text-muted-foreground tabular-nums">
+                                        {`${formatWordCount(entry.chapter.wordCount)} 字`}
+                                    </span>
+                                </Button>
                             )
-                        })}
-                        <Button variant="ghost" className="mt-1 rounded-full" onClick={onCreateVolume}>
-                            <PlusCircle />
-                            新建卷
-                        </Button>
-                    </div>
-                )}
-            </div>
-        </div>
+                        })
+                    )}
+                </div>
+            ) : (
+                <StateEmpty
+                    icon={ScrollText}
+                    title="还没有章节"
+                    description="点页头「新增」开始起草卷与章节，作品列表新增的卷章也会同步进来"
+                    className="border border-dashed border-border py-8"
+                />
+            )}
+        </>
     )
 }

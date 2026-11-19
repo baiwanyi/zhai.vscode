@@ -17,7 +17,8 @@ import type {
     PressWorkspaceRequest,
     PressWorkspaceResult,
 } from '@shared/types/press'
-import { request } from '@shared/utils/bridge'
+import { isPressWorkspaceChangedState } from '@shared/types/press'
+import { onState, request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import type { LoreKind, OutlineWorkspace } from '../types'
 import { parseProjectWorkspace } from '../document'
@@ -241,6 +242,35 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
         },
         [flush],
     )
+
+    /**
+     * 跟随仪表盘的结构变更：新增卷章、删除、移动与重命名都在仪表盘完成，
+     * 这里只在「当前打开的作品」命中时重读，别处的变更与本面板无关。
+     * 关键约束：重读会整份覆盖草稿，故先把未到期的防抖写盘冲出去，用户刚输入的内容不会因此丢失；
+     * 但大纲范围要排除——宿主在新增卷章时已把该章补写进 大纲.md，旧草稿写盘会把它整段覆盖掉；
+     * 面板未挂载时宿主不下发这条广播，下次进入作品会整份重读，不会漏状态。
+     */
+    useEffect(() => {
+        return onState((message) => {
+            if (message.channel !== 'press-workspace' || !isPressWorkspaceChangedState(message.payload)) {
+                return
+            }
+            if (projectDir === null || message.payload.dirPath !== projectDir) {
+                return
+            }
+            if (debounceRef.current !== null) {
+                window.clearTimeout(debounceRef.current)
+                debounceRef.current = null
+            }
+            const scopes = pendingScopesRef.current
+            pendingScopesRef.current = new Set()
+            scopes.delete('outline')
+            const pending = scopes.size > 0 ? flush(scopes) : Promise.resolve()
+            void pending.finally(() => {
+                setReloadToken((token) => token + 1)
+            })
+        })
+    }, [flush, projectDir])
 
     /** 防抖写盘：字段级输入只在停顿后写一次，连续输入不会产生大量请求 */
     const scheduleFlush = useCallback(

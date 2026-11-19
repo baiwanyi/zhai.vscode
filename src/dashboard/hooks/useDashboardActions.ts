@@ -1,11 +1,11 @@
 /**
- * 仪表盘宿主动作：按领域组合笔记、笔记本与回收站动作，统一在途态并承载工作流跳转。
+ * 仪表盘宿主动作：按领域组合笔记、笔记本与回收站动作，统一在途态并承载工作流跳转与微博面板打开。
  * 复用 useNoteActions / useNotebookActions / useTrashActions 承载各领域请求，usePendingAction 统一计数，
  * 请求与提示基础设施见 ../core/actionRunner；结果提示在数据层即时发出，页面不再渲染提示行。
  * 关键约束：pendingAction 只表示最后开始的动作，仅用于整体忙碌态；判断具体动作是否在途必须走 isPending，
  * 否则并发（如删除进行中又置顶）会让弹窗的提交态提前失效；
  * 三个子 Hook 共享同一 tracker，不能各自持有在途状态，否则忙碌态会提前解锁；
- * 打开笔记与工作流跳转不占用在途态，避免顶栏操作区被整体禁用。
+ * 打开笔记、工作流跳转与微博面板打开不占用在途态，避免顶栏操作区被整体禁用。
  */
 import { useCallback } from 'react'
 import type { OpenWorkflowRequest } from '@shared/types/workflow'
@@ -27,6 +27,8 @@ export interface DashboardActionsState extends NoteActionsState, NotebookActions
     /** 指定动作是否在途：并发场景下的准确判定 */
     isPending: (action: PendingAction) => boolean
     openWorkflow: (module: string) => Promise<void>
+    /** 打开微博面板：在编辑区新开独立页，失败仅提示 */
+    openWeibo: () => Promise<void>
 }
 
 export function useDashboardActions(onCompleted: () => Promise<void>): DashboardActionsState {
@@ -44,6 +46,14 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         await callHostRequest('workflow/open', payload)
     }, [])
 
+    /**
+     * 打开微博面板：宿主在编辑区创建独立 webview 页，面板激活后会自行上报「当前活跃面板」，
+     * 工作流区因此跟随标签切到微博语境——这里不再额外发 selectModule，避免留下持久选定。
+     */
+    const openWeibo = useCallback(async (): Promise<void> => {
+        await callHostRequest('weibo/open')
+    }, [])
+
     return {
         pendingAction: tracker.pendingAction,
         isPending: tracker.isPending,
@@ -51,5 +61,6 @@ export function useDashboardActions(onCompleted: () => Promise<void>): Dashboard
         ...notebookActions,
         ...trashActions,
         openWorkflow,
+        openWeibo,
     }
 }

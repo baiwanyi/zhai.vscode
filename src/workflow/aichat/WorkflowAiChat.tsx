@@ -11,6 +11,7 @@
  * 写入边界由宿主的工具守卫逐次裁决，前端只负责展示与发送，不提供写入范围切换。
  * 设计源：docs/modules/ai-chat.md 第 4 节会话状态机与第 10.3 节底部输入卡片。
  * 关键约束：入口组件由 workflow 分区路由直接引用，文件名即组件名 WorkflowAiChat，目录不再提供 index 出口；
+ * hasWritableScopeOverride 只给没有活动文档的语境（微博）用，其它页面不传，避免绕过写入门禁；
  * 会话按 projectDir 作用域隔离，作品页传入当前作品目录即换用该作品的对话记录，缺省为通用对话；
  * 页面高度由 AppPage 的 h-full 承接骨架链条，不再自建 h-screen，避免嵌在分区容器里时撑出视口；
  * 异步动作交给组件时一律包一层 `() => void`，项目启用了 no-misused-promises，直传 Promise 返回值会报错。
@@ -55,9 +56,18 @@ export interface WorkflowAiChatProps {
     projectDir?: string | null
     /** 当前作品标题：由调用方从作品设定中取，缺省时摘要行回落为通道名 */
     projectTitle?: string | null
+    /**
+     * 可写范围覆盖：微博等没有活动文档的语境下，对话只用于生成内容、不写回文件，
+     * 由调用方显式放开输入门禁；省略时沿用编辑器写入状态。
+     */
+    hasWritableScopeOverride?: boolean
 }
 
-export function WorkflowAiChat({ projectDir = null, projectTitle = null }: WorkflowAiChatProps): JSX.Element {
+export function WorkflowAiChat({
+    projectDir = null,
+    projectTitle = null,
+    hasWritableScopeOverride,
+}: WorkflowAiChatProps): JSX.Element {
     const { setError } = useAiChatStatus()
     const { runLoginCodebuddy } = useAiChatCommands({ onError: setError })
     // 增强进行态由输入卡片的 usePromptEnhance 自己维护，页面只提供请求本身
@@ -165,12 +175,10 @@ export function WorkflowAiChat({ projectDir = null, projectTitle = null }: Workf
     })
 
     // 展示值一次算齐：消息与滚动锚点、密钥、可写目标、标题与用量文案均由纯函数派生
-    const { messages, lastMessageId, hasApiKey, hasWritableScope, title, projectLabel, usageText } = resolveAiChatView({
-        session,
-        runtime,
-        writeState,
-        projectTitle,
-    })
+    const view = resolveAiChatView({ session, runtime, writeState, projectTitle })
+    const { messages, lastMessageId, hasApiKey, title, projectLabel, usageText } = view
+    // 微博语境没有活动文档，写入状态恒为不可写：由调用方覆盖，否则输入框永久禁用
+    const hasWritableScope = hasWritableScopeOverride ?? view.hasWritableScope
 
     /** 参考菜单：检索语料，或打开语料目录（目录不存在时由宿主创建） */
     const handleReference = useCallback(

@@ -23,6 +23,18 @@ export const NOTES_MODULE_KEY = 'notes'
  */
 export const WECHAT_MODULE_KEY = 'wechat'
 
+/**
+ * 微博模块键：微博页在编辑区独立面板里打开，不存在 weibo/ 文档目录，
+ * 侧栏只能靠「用户选定模块」这条状态切到微博语境（AI 对话），常量放 shared 供两端共用。
+ */
+export const WEIBO_MODULE_KEY = 'weibo'
+
+/**
+ * 微博编辑区面板的 viewType：宿主创建面板与工作流路由识别「当前活跃标签是微博」共用同一份值。
+ * 关键约束：该标识只用于面板归属，不是文档目录名，不得参与路径拼接。
+ */
+export const WEIBO_PANEL_VIEW_TYPE = 'zhai.weibo'
+
 /** 路由事实快照：宿主权威下发，前端不自造 */
 export interface WorkflowContextState {
     scene: WorkflowSceneKind

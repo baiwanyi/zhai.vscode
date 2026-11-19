@@ -113,6 +113,8 @@ export interface ToastPayload {
  * 宿主 → Webview：状态广播（索引就绪、配置变更、窗口聚焦、活跃笔记切换、工作流场景切换、
  * 作品导入进度、语义归纳进度、操作反馈）。
  * press 通道承载当前文档所属的作品目录，载荷形如 PressActiveState；
+ * press-workspace 通道承载作品卷章结构的变更通知，载荷形如 PressWorkspaceChangedState，
+ * 工作流面板据此重读当前作品（仪表盘的新增卷章不会走 press 通道）；
  * press-import 通道承载导入任务的进度与终态，载荷形如 PressImportProgress；
  * press-semantic 通道承载 AI 语义归纳的进度与终态，载荷形如 PressSemanticProgress；
  * imagegen 通道承载出图阶段（准备 / 已调用工具），载荷形如 ImageGenerateProgress；
@@ -130,6 +132,7 @@ export interface StateMessage {
         | 'note'
         | 'press'
         | 'workflow'
+        | 'press-workspace'
         | 'press-import'
         | 'press-semantic'
         | 'imagegen'
@@ -402,6 +405,7 @@ export type HostMethodName =
     | 'wechat/publishQuota'
     | 'wechat/stats/overview'
     | 'wechat/tasks'
+    | 'weibo/open'
     | 'workflow/open'
     | 'workflow/reset'
     | 'workflow/selectModule'

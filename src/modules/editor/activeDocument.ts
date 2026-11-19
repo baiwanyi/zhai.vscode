@@ -8,6 +8,8 @@
  * 不登记就会让工作流路由一直读到 null，非 md 文件因此按默认放行进工作流区；
  * 编辑器形态切换（文本 ↔ 富文本）用 withActiveDocumentHold 包住：切换要先关旧 tab 再开新 tab，
  * 关旧 tab 会让 VSCode 短暂激活相邻文档，中间事实一旦广播出去，工作流面板就会切走再切回、页面被重建。
+ * 面板事实：编辑区里的 WebviewPanel（如微博）激活时上报 viewType，编辑器重新激活时静默让位；
+ * 工作流区跟随标签只需读「面板 + 文档」两份事实，新增面板模块不必各自写同步逻辑。
  */
 import * as vscode from 'vscode'
 import type { EditorInsertContent } from '@shared/types/editor'
@@ -22,6 +24,17 @@ const emitter = new vscode.EventEmitter<ActiveDocument | null>()
 
 /** 活跃文档变更事件：文本与富文本切换统一从这里广播 */
 export const onDidChangeActiveDocument: vscode.Event<ActiveDocument | null> = emitter.event
+
+/**
+ * 活跃面板：编辑区里以 WebviewPanel 承载的页面（如微博），与编辑器标签互斥记录。
+ * 用途：工作流区跟随「当前编辑器标签」，面板激活时由面板自己上报 viewType，
+ * 编辑器重新激活时自动让位，路由据此在文档归属与面板归属之间切换，无需为每个模块再写判定。
+ */
+let activePanel: string | null = null
+const panelEmitter = new vscode.EventEmitter<string | null>()
+
+/** 活跃面板变更事件：面板激活或编辑器重新夺回焦点时广播 */
+export const onDidChangeActivePanel: vscode.Event<string | null> = panelEmitter.event
 
 let current: ActiveDocument | null = null
 /** 切换事务深度：形态切换期间关闭旧 tab 会短暂把相邻文档变成活跃文档 */
@@ -44,8 +57,27 @@ function setActiveDocument(next: ActiveDocument | null): void {
         heldDocument = next
         return
     }
+    // 编辑器重新成为活跃文档：面板语境静默让位，由本次文档事件统一触发一次刷新，
+    // 不单独发面板事件，避免路由连刷两次、中间态把侧栏切走再切回
+    if (next !== null) {
+        activePanel = null
+    }
     current = next
     emitter.fire(next)
+}
+
+/** 面板激活上报：WebviewPanel 获得焦点时由面板调用，viewType 为空表示离开面板 */
+export function reportActivePanel(viewType: string | null): void {
+    if (activePanel === viewType) {
+        return
+    }
+    activePanel = viewType
+    panelEmitter.fire(viewType)
+}
+
+/** 读取当前活跃面板的 viewType：无面板为 null */
+export function getActivePanel(): string | null {
+    return activePanel
 }
 
 /**
@@ -103,6 +135,7 @@ export function trackActiveDocument(subscriptions: vscode.Disposable[]): void {
     }
     subscriptions.push(
         emitter,
+        panelEmitter,
         vscode.window.onDidChangeActiveTextEditor((editor) => {
             if (editor === undefined) {
                 // 焦点离开编辑器不清空：与工作流路由同一口径

@@ -1,7 +1,7 @@
 /**
  * 写作管理协议路由：把 pressAi/* 消息分发到人物外貌、角色设定图列举与图片库服务，
- * 并承接工作台的作品读取、打开（含按文档键打开设定文档的 press/openDoc）与人物卡提取
- * （press/workspace、press/open、press/openDoc、press/extract/characters），
+ * 并承接工作台的作品读取、作品卷章清单、打开（含按文档键打开设定文档的 press/openDoc）与人物卡提取
+ * （press/workspace、press/detail、press/open、press/openDoc、press/extract/characters），
  * 以及作品快照的列举、手动留版、恢复与删除（press/snapshot/*），入参收窄由本层与 shared 类型完成；
  * 单文件快照（press/snapshot/doc/*）也挂在这条通道上：笔记、公众号文章与散落 md 共用一套时间线协议，
  * 与作品快照的区别是不要求索引库内有该作品，只校验文档路径形态与存储根片段。
@@ -37,6 +37,7 @@ import type {
     PressExtractCharactersResult,
     PressExtractOutlineResult,
     PressExtractSettingResult,
+    PressProjectDetail,
     PressSemanticProgress,
     PressSnapshotCreateResult,
     PressSnapshotDeleteResult,
@@ -75,7 +76,7 @@ import type {
     DocSnapshotListResult,
     DocSnapshotRestoreResult,
 } from '@shared/types/snapshot'
-import { hasProjectFiles, listPressProjects } from './projectRepository'
+import { hasProjectFiles, listPressProjects, readProjectDetail } from './projectRepository'
 import { openProjectByDir, openProjectDoc } from './projectService'
 import { readProjectWorkspace } from './projectWorkspace'
 import { applyProjectWorkspace } from './workspaceWriter'
@@ -222,6 +223,8 @@ export class PressRoutes {
                 return this.imageSettings.save(payload)
             case 'press/workspace':
                 return this.readWorkspace(payload)
+            case 'press/detail':
+                return this.readDetail(payload)
             case 'press/open':
                 return this.openProject(payload)
             case 'press/openDoc':
@@ -377,6 +380,24 @@ export class PressRoutes {
         const isEmpty = readme === '' && setting === '' && characters === '' && outline === ''
         // 目录已被删除或从未写过文档：按「未打开作品」处理，前端回到初始页而不是展示空表单
         return { project: isEmpty ? null : project, projects }
+    }
+
+    /**
+     * 读取作品详情：卷分组章节供提取范围按仪表盘的作品列表选范围，与仪表盘 press/detail 同一份聚合口径。
+     * 安全约束：目录形态由 readProjectDetail 校验，作品未登记时明确报错而不是返回空详情。
+     */
+    private readDetail(payload: unknown): PressProjectDetail {
+        if (!isPressDirPath(payload)) {
+            throw new Error('press/detail 参数非法：dirPath 须为非空字符串')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法读取卷章：${payload.dirPath}`)
+        }
+        const detail = readProjectDetail(this.db, payload.dirPath)
+        if (detail === null) {
+            throw new Error(`作品不在索引中，无法读取卷章：${payload.dirPath}`)
+        }
+        return detail
     }
 
     /**

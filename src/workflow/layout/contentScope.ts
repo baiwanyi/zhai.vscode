@@ -6,24 +6,26 @@
  * 作品归属以 projectDir 存在为准——press 一级目录下的散文档不算作品文档，只显示常驻分区；
  * 公众号既可能来自「打开了 wechat/ 目录下的文档」，也可能来自「用户在仪表盘选了公众号」，
  * 后者用 selectedModule 判定：选模块是显式意图，不依赖当前打开哪个文件；
+ * 微博没有文档目录：宿主在微博面板获得焦点时直接下发 module=weibo，切回编辑器即恢复文档归属；
  * 该意图只对「选定当时的那份文档」有效——宿主在活跃文档变化时清空它（见 WorkflowRouter），
  * 因此菜单始终跟随当前文档，不会被残留的模块选定压住。
  */
-import { NOTES_MODULE_KEY, WECHAT_MODULE_KEY } from '@shared/types/workflow'
+import { NOTES_MODULE_KEY, WECHAT_MODULE_KEY, WEIBO_MODULE_KEY } from '@shared/types/workflow'
 import type { WorkflowContextState } from '@shared/types/workflow'
 import type { WorkflowSection } from './workflowSections'
 
-/** 公众号模块键：定义在 shared，这里转出以保持既有引用不变 */
-export { WECHAT_MODULE_KEY }
+/** 公众号与微博模块键：定义在 shared，这里转出以保持既有引用不变 */
+export { WECHAT_MODULE_KEY, WEIBO_MODULE_KEY }
 
 /** 内容归属：null 表示文档不属于任何已接入模块 */
-export type ContentScope = 'press' | 'note' | 'wechat'
+export type ContentScope = 'press' | 'note' | 'wechat' | 'weibo'
 
-/** 归属 → 专属分区：公众号的六项运营分区与写作管理的四项并列 */
+/** 归属 → 专属分区：公众号的六项运营分区与写作管理的四项并列；微博只有常驻分区 */
 export const SCOPE_SECTIONS: Readonly<Record<ContentScope, readonly WorkflowSection[]>> = {
     press: ['setting', 'character', 'outline', 'naming'],
     note: [],
     wechat: ['menu', 'material', 'stats', 'comment', 'fans', 'push'],
+    weibo: [],
 }
 
 /** 常驻分区：与内容归属无关，任何文档下都可用；上传与媒体、在线图库并列，都是素材入口 */
@@ -45,6 +47,11 @@ export const RESIDENT_SECTIONS: readonly WorkflowSection[] = [
  * 公众号在「选了模块但没打开该模块文档」时也要成立，故 module 之后再看 selectedModule。
  */
 export function readContentScope(context: WorkflowContextState): ContentScope | null {
+    // 微博没有文档目录，宿主以「当前活跃标签是微博面板」直接给出 module=weibo，
+    // 该事实已包含「标签是否在前台」，故排在最前；切回任何编辑器标签时宿主会改回文档归属
+    if (context.module === WEIBO_MODULE_KEY) {
+        return 'weibo'
+    }
     if (context.module === NOTES_MODULE_KEY) {
         return 'note'
     }
@@ -69,6 +76,10 @@ function isDocumentInScope(context: WorkflowContextState, scope: ContentScope): 
     if (scope === 'press') {
         return context.projectDir !== null && path.startsWith(`${context.projectDir}/`)
     }
+    // 微博没有文档目录：任何文档都不属于微博归属，对话固定落在模块键上
+    if (scope === 'weibo') {
+        return false
+    }
     return path.startsWith(`${scope === 'note' ? NOTES_MODULE_KEY : WECHAT_MODULE_KEY}/`)
 }
 
@@ -91,6 +102,10 @@ export function readScopeDir(context: WorkflowContextState, scope: ContentScope 
     }
     if (scope === 'wechat') {
         return context.module === WECHAT_MODULE_KEY ? context.module : WECHAT_MODULE_KEY
+    }
+    // 微博没有文档目录，作用域固定为模块键，与侧栏对话的 projectDir 同源
+    if (scope === 'weibo') {
+        return WEIBO_MODULE_KEY
     }
     return context.module
 }

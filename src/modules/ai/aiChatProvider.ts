@@ -48,7 +48,7 @@ import { isAiUsageModule, isAiUsageRange } from '@shared/types/aiUsage'
 import type { HostToWebviewMessage, StreamMessage, ToastPayload } from '@shared/types/messages'
 import { isRequestMessage } from '@shared/types/messages'
 import { PRESS_DOC_KEYS } from '@shared/types/press'
-import type { PressDocKey } from '@shared/types/press'
+import type { PressDocKey, PressWorkspaceChangedState } from '@shared/types/press'
 import type { WechatAccountAuthFailureEvent } from '@shared/types/wechat'
 import type {
     OpenWorkflowResult,
@@ -87,7 +87,7 @@ const MAX_CONTEXT_WINDOW_TOKENS = 10_000_000
 const MAX_SCOPE_LENGTH = 160
 
 /**
- * 写作管理工作台可用的作品协议：读取、打开、人物卡与大纲提取、文档回写与作品快照，
+ * 写作管理工作台可用的作品协议：读取、作品卷章清单、打开、人物卡与大纲提取、文档回写与作品快照，
  * 与仪表盘的作品写操作（press/create、press/delete* 等）分开登记。
  * 两种提取都只读已落盘的 Materials 素材（缺失时先补跑本地抽取），不修改正文、人物文档与大纲文档；
  * 四个快照方法只在 Snapshots 目录下读写，恢复时按四份文档整版或指定覆盖。
@@ -95,6 +95,7 @@ const MAX_SCOPE_LENGTH = 160
  */
 const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set([
     'press/workspace',
+    'press/detail',
     'press/open',
     'press/openDoc',
     'press/extract/characters',
@@ -671,6 +672,18 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     public broadcastWechatState(payload: WechatAccountAuthFailureEvent): void {
         for (const view of this.views) {
             this.post(view, { type: 'state', channel: 'wechat', payload })
+        }
+    }
+
+    /**
+     * 广播作品结构变更：仪表盘在增删改卷章后调用，工作流面板据此重读当前作品。
+     * 关键约束：载荷只带作品目录，工作区自行判断是否与自己打开的目录一致；
+     * 未挂载时不排队——工作区下次进入会整份重读，不会漏掉这次变更。
+     */
+    public broadcastPressWorkspaceChanged(dirPath: string): void {
+        const payload: PressWorkspaceChangedState = { dirPath }
+        for (const view of this.views) {
+            this.post(view, { type: 'state', channel: 'press-workspace', payload })
         }
     }
 }

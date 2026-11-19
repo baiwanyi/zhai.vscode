@@ -1,28 +1,29 @@
 /**
  * 提取范围选择：把模式、章节范围、卷筛选与勾选状态收成一个 Hook，并负责把选择换算成写入目标。
- * 复用约定：章节选项、卷选项、章序夹取与区间展开都来自 ../utils，模式枚举与选项表来自 ../constants，
- * 写入目标与大纲条目取自 ../types；组件只承担渲染与弹层开合，提交口径统一由 resolveTarget 给出。
- * 关键约束：章序是「卷顺序 + 卷内数组顺序」摊平的 1 基全局序号，派生时不得重排；
+ * 复用约定：章节选项由调用方按仪表盘的作品列表构建（utils.createProjectChapterOptions），
+ * 章序夹取与区间展开取 ../utils，模式枚举与选项表取 ../constants，目标类型取 ../types。
+ * 关键约束：选项只来自作品列表，素材草案由章节清单产出，按大纲章选择会与素材错位；
+ * 全局序只服务列表展示与区间输入，写入目标一律换算成「卷序 + 卷内位置」的定位键；
  * 章节增删后可能残留越界勾选，摘要、禁用判断与提交一律走 validSelectedOrders；
  * 「全选」只并入当前筛选下的章，便于按卷逐次累加。
  */
 import { useMemo, useState } from 'react'
 import type { ExtractScope } from '../../constants'
-import type { OutlineExtractTarget, OutlineTreeEntry } from '../../types'
-import type { ExtractChapterOption } from '../../utils'
+import type { OutlineExtractKey, OutlineExtractTarget } from '../../types'
+import type { ProjectChapterOption } from '../../utils'
 import { isExtractScope } from '../../constants'
-import { clampChapterOrder, createChapterOptions, createOrderRange, createVolumeOptions } from '../../utils'
+import { clampChapterOrder, createOrderRange } from '../../utils'
 
 export interface ExtractSelection {
     scope: ExtractScope
     rangeStart: string
     rangeEnd: string
     volumeFilter: string
-    /** 全书章数，供摘要与输入框上限使用 */
+    /** 作品章节总数，供摘要与输入框上限使用 */
     totalCount: number
-    chapterOptions: readonly ExtractChapterOption[]
+    chapterOptions: readonly ProjectChapterOption[]
     volumeOptions: readonly { value: string; label: string }[]
-    visibleOptions: readonly ExtractChapterOption[]
+    visibleOptions: readonly ProjectChapterOption[]
     validSelectedOrders: readonly number[]
     summaryText: string
     isSubmitDisabled: boolean
@@ -33,29 +34,40 @@ export interface ExtractSelection {
     toggleChapter: (order: number) => void
     selectAllVisible: () => void
     clearSelection: () => void
-    /** 写入目标：全篇整树覆盖，或去重排序后的 1 基全局章序 */
+    /** 写入目标：全篇整树覆盖，或按「卷序 + 卷内位置」定位的一组章 */
     resolveTarget: () => OutlineExtractTarget
 }
 
-export function useExtractSelection(entries: readonly OutlineTreeEntry[], isExtracting: boolean): ExtractSelection {
+/** 由全局序换算定位键：区间与勾选都先归一成全局序，再按选项表映射 */
+function toExtractKeys(options: readonly ProjectChapterOption[], orders: ReadonlySet<number>): OutlineExtractKey[] {
+    return options
+        .filter((option) => orders.has(option.order))
+        .map((option) => ({ volumeOrder: option.volumeOrder, chapterIndex: option.chapterIndex }))
+}
+
+export function useExtractSelection(options: readonly ProjectChapterOption[], isExtracting: boolean): ExtractSelection {
     const [scope, setScope] = useState<ExtractScope>('all')
     const [rangeStart, setRangeStart] = useState('1')
-    /** 结束章留空表示到全书末章：初值不写死章数，否则挂载后才生成大纲时会停在旧值 */
+    /** 结束章留空表示到末章：初值不写死章数，作品章节变化后默认值不会过期 */
     const [rangeEnd, setRangeEnd] = useState('')
-    /** 勾选的全局章序：用序号而非章节 id，宿主侧按同一口径对齐素材草案 */
+    /** 勾选的全局章序：只作列表内标识，提交时换算成卷序 + 卷内位置 */
     const [selectedOrders, setSelectedOrders] = useState<number[]>([])
-    /** 指定章节列表的卷筛选：'all' 为全部卷，否则为卷 id */
+    /** 指定章节列表的卷筛选：'all' 为全部卷，否则为卷目录名 */
     const [volumeFilter, setVolumeFilter] = useState('all')
 
-    const totalCount = entries.length
-    const chapterOptions = useMemo(() => createChapterOptions(entries), [entries])
-    const volumeOptions = useMemo(() => createVolumeOptions(entries), [entries])
+    const totalCount = options.length
+    const volumeOptions = useMemo(() => {
+        const seen = new Map<string, string>()
+        for (const option of options) {
+            if (!seen.has(option.volumeId)) {
+                seen.set(option.volumeId, option.volumeLabel)
+            }
+        }
+        return [...seen].map(([value, label]) => ({ value, label }))
+    }, [options])
     const visibleOptions = useMemo(
-        () =>
-            volumeFilter === 'all'
-                ? chapterOptions
-                : chapterOptions.filter((option) => option.volumeId === volumeFilter),
-        [chapterOptions, volumeFilter],
+        () => (volumeFilter === 'all' ? options : options.filter((option) => option.volumeId === volumeFilter)),
+        [options, volumeFilter],
     )
 
     /** 有效勾选：章节增删后可能残留越界序号，摘要、禁用判断与提交统一按它计算，不留给人手清理 */
@@ -93,10 +105,8 @@ export function useExtractSelection(entries: readonly OutlineTreeEntry[], isExtr
         if (scope === 'all') {
             return { mode: 'all' }
         }
-        if (scope === 'range') {
-            return { mode: 'orders', orders: createOrderRange(startOrder, endOrder) }
-        }
-        return { mode: 'orders', orders: [...validSelectedOrders].sort((left, right) => left - right) }
+        const orders = new Set(scope === 'range' ? createOrderRange(startOrder, endOrder) : [...validSelectedOrders])
+        return { mode: 'chapters', keys: toExtractKeys(options, orders) }
     }
 
     const isSubmitDisabled =
@@ -107,7 +117,7 @@ export function useExtractSelection(entries: readonly OutlineTreeEntry[], isExtr
     const summaryText =
         scope === 'chapters'
             ? `已选 ${String(validSelectedOrders.length)} / ${String(totalCount)} 章${scopeSummary}`
-            : `全书共 ${String(totalCount)} 章`
+            : `作品共 ${String(totalCount)} 章`
 
     return {
         scope,
@@ -115,7 +125,7 @@ export function useExtractSelection(entries: readonly OutlineTreeEntry[], isExtr
         rangeEnd,
         volumeFilter,
         totalCount,
-        chapterOptions,
+        chapterOptions: options,
         volumeOptions,
         visibleOptions,
         validSelectedOrders,

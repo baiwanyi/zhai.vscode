@@ -1,9 +1,11 @@
 /**
  * 作品草稿的全部结构性变更：设定 / 人物 / 大纲的字段更新、增删、提取合并与打开作品。
  * 复用约定：草稿读取与写盘由 usePressWorkspace 提供（updateWorkspace 改草稿、flush 立即写、scheduleFlush 防抖写），
- * 新建卷章与合并草案复用 ../utils 的工厂函数，作品打开走 @shared/utils/bridge 的 press/open。
+ * 合并草案、重建大纲树、新建卷与章复用 ../utils 的纯函数，作品打开走 @shared/utils/bridge 的 press/open。
  * 关键约束：所有读取「当前草稿」的地方一律走 getWorkspace()，不能用渲染期快照——提取类操作可能在
- * 异步返回后执行，闭包里的旧数组会把用户刚编辑的内容覆盖掉；结构性操作立即写盘，字段级输入才走防抖。
+ * 异步返回后执行，闭包里的旧数组会把用户刚编辑的内容覆盖掉；结构性操作立即写盘，字段级输入才走防抖；
+ * 卷章有两个来源：仪表盘的作品详情负责内容输出（章节目录），这里的新增只长大纲草稿，
+ * 因此大纲可以比作品列表多出若干章，作品列表新增的卷章由宿主另行补写，两个方向都不做数量对齐。
  */
 import { useCallback } from 'react'
 import type {
@@ -42,6 +44,17 @@ import {
 /** 卷名归一：追加生成结果时去掉原有的「第N卷」前缀，避免与既有卷序号冲突 */
 const VOLUME_PREFIX_PATTERN = /^第\d+卷\s*/
 
+/** 新增卷 / 章后的落点：卷 id 与章 id 供页面直接选中，章 id 在空卷时为 null */
+export interface CreatedOutlineNode {
+    volumeId: string
+    chapterId: string | null
+}
+
+/** 章纲目标字数：作品设定没填时回落默认值，避免新章的目标字数为 0 */
+function readChapterWordGoal(setting: ProjectSetting): number {
+    return setting.chapterWordGoal > 0 ? setting.chapterWordGoal : DEFAULT_CHAPTER_WORD_GOAL
+}
+
 export interface PressMutations {
     openProject: (dirPath: string) => void
     updateSetting: (patch: Partial<ProjectSetting>) => void
@@ -59,12 +72,12 @@ export interface PressMutations {
     /** 删除条目：同步清理它的设定图，所属文档里的条目块一并移除 */
     deleteLore: (loreId: string) => void
     updateChapter: (chapterId: string, patch: Partial<OutlineChapter>) => void
-    /** 新增卷：命名与默认目标字数由工厂函数决定后立即写盘 */
-    addVolume: () => void
-    /** 新增章：按该卷现有最大序号追加一章并立即写盘 */
-    addChapter: (volumeId: string) => void
+    /** 新增一卷（含一条空章纲）：只长大纲草稿，不建章节文件，返回落点供页面选中 */
+    createOutlineVolume: () => CreatedOutlineNode | null
+    /** 新增一章：落到指定卷（缺省为最后一卷），返回落点供页面选中 */
+    createOutlineChapter: (volumeId?: string) => CreatedOutlineNode | null
     applyOutline: (volumes: OutlineVolume[]) => void
-    /** 用素材重建大纲：mode 为 all 时整树覆盖，orders 时只按全局章序刷新所选章，返回实际处理的章数 */
+    /** 用素材重建大纲：mode 为 all 时整树覆盖，chapters 时按「卷序 + 卷内位置」刷新所选章，返回实际处理的章数 */
     extractOutline: (drafts: PressExtractedVolume[], target: OutlineExtractTarget) => number
     extractSetting: (draft: PressExtractedSetting) => number
 }
@@ -265,32 +278,54 @@ export function usePressMutations({
         [scheduleFlush, updateWorkspace],
     )
 
-    const addVolume = useCallback((): void => {
-        updateWorkspace((previous) => ({
-            ...previous,
-            volumes: [...previous.volumes, createVolume(previous.volumes.length + 1, DEFAULT_CHAPTER_WORD_GOAL)],
-        }))
-        void flush(new Set<PersistScope>(['outline']))
-    }, [flush, updateWorkspace])
+    /**
+     * 追加一卷（含首条空章纲）并立即写盘：卷序号按现有卷数续排，卷名沿用 utils 的占位规则。
+     * 关键约束：只改大纲草稿，不创建章节文件——大纲是草稿，作品列表才是内容输出。
+     */
+    const createOutlineVolume = useCallback((): CreatedOutlineNode | null => {
+        const current = getWorkspace()
+        if (current === null) {
+            return null
+        }
+        const volume = createVolume(current.volumes.length + 1, readChapterWordGoal(current.setting))
+        updateWorkspace((previous) => ({ ...previous, volumes: [...previous.volumes, volume] }))
+        void flush(new Set<PersistScope>(['outline']), { successMessage: `已新增「${volume.name}」` })
+        const firstChapter = volume.chapters[0] ?? null
+        return { volumeId: volume.id, chapterId: firstChapter?.id ?? null }
+    }, [flush, getWorkspace, updateWorkspace])
 
-    const addChapter = useCallback(
-        (volumeId: string): void => {
+    /**
+     * 追加一章并立即写盘：落到指定卷，未指定时落到最后一卷；大纲还没有卷时先补一卷。
+     * 关键约束：章序取该卷现有最大章序 + 1，不按数组长度推导——卷内章序允许被作者手工改过。
+     */
+    const createOutlineChapter = useCallback(
+        (volumeId?: string): CreatedOutlineNode | null => {
+            const current = getWorkspace()
+            if (current === null) {
+                return null
+            }
+            const lastVolume = current.volumes[current.volumes.length - 1]
+            if (lastVolume === undefined) {
+                // 没有卷就没有章纲的归属：先建一卷，首章即本次新增的章
+                return createOutlineVolume()
+            }
+            const target =
+                (volumeId === undefined ? undefined : current.volumes.find((volume) => volume.id === volumeId)) ??
+                lastVolume
+            const order = target.chapters.reduce((max, chapter) => Math.max(max, chapter.order), 0) + 1
+            const chapter = createChapter(order, readChapterWordGoal(current.setting))
             updateWorkspace((previous) => ({
                 ...previous,
-                volumes: previous.volumes.map((volume) => {
-                    if (volume.id !== volumeId) {
-                        return volume
-                    }
-                    const nextOrder = volume.chapters.reduce((max, chapter) => Math.max(max, chapter.order), 0) + 1
-                    return {
-                        ...volume,
-                        chapters: [...volume.chapters, createChapter(nextOrder, DEFAULT_CHAPTER_WORD_GOAL)],
-                    }
-                }),
+                volumes: previous.volumes.map((volume) =>
+                    volume.id === target.id ? { ...volume, chapters: [...volume.chapters, chapter] } : volume,
+                ),
             }))
-            void flush(new Set<PersistScope>(['outline']))
+            void flush(new Set<PersistScope>(['outline']), {
+                successMessage: `已在「${target.name}」新增一章`,
+            })
+            return { volumeId: target.id, chapterId: chapter.id }
         },
-        [flush, updateWorkspace],
+        [createOutlineVolume, flush, getWorkspace, updateWorkspace],
     )
 
     const applyOutline = useCallback(
@@ -313,8 +348,8 @@ export function usePressMutations({
         (drafts: PressExtractedVolume[], target: OutlineExtractTarget): number => {
             // 出场人物靠名称匹配人物卡：先拿到当前草稿的人物，重建后的章纲才能直接带出 characterIds
             const characters = getWorkspace()?.characters ?? []
-            if (target.mode === 'orders') {
-                // 范围提取：结构沿用现有草稿，只把所选章的章纲字段换成素材口径
+            if (target.mode === 'chapters') {
+                // 范围提取：结构沿用现有草稿，只把所选卷章位置的章纲字段换成素材口径
                 const current = getWorkspace()
                 if (current === null) {
                     return 0
@@ -322,7 +357,7 @@ export function usePressMutations({
                 const { volumes, refreshed } = refreshOutlineChapters(
                     current.volumes,
                     drafts,
-                    target.orders,
+                    target.keys,
                     DEFAULT_CHAPTER_WORD_GOAL,
                     characters,
                 )
@@ -421,8 +456,8 @@ export function usePressMutations({
         updateLore,
         deleteLore,
         updateChapter,
-        addVolume,
-        addChapter,
+        createOutlineVolume,
+        createOutlineChapter,
         applyOutline,
         extractOutline,
         extractSetting,

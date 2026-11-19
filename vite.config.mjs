@@ -3,7 +3,7 @@
  * 产物输出 dist/webview/，宿主侧负责注入 CSP 与资源 URI 重写。
  * 采用 .mjs 扩展名以匹配 Vite 8 默认 native ESM config loader，避免 CJS 加载警告。
  * 关键约束：文件名须保持 vite.config.*——shadcn CLI 以该命名 glob 判定框架，改名将导致其命令不可用；
- * root 为 src，宿主与前端源码同处一层，打包范围只由三个 HTML 入口的依赖图决定，宿主 .ts 不参与；
+ * root 为 src，宿主与前端源码同处一层，打包范围只由四个 HTML 入口的依赖图决定，宿主 .ts 不参与；
  * Vite 8 底层为 Rolldown，rollupOptions 已废弃且没有 manualChunks，分包只能走 output.codeSplitting.groups。
  */
 import { defineConfig } from 'vite'
@@ -32,7 +32,7 @@ export default defineConfig({
         target: 'es2022',
         // 分包后单块远离上限，阈值保持 600 KB 仅作兜底提示；webview 走本地加载，成本在解析而非下载
         chunkSizeWarningLimit: 600,
-        // 多入口 + 依赖分组：三个 HTML 入口各自独立成 chunk，node_modules 再按包族拆开，
+        // 多入口 + 依赖分组：四个 HTML 入口各自独立成 chunk，node_modules 再按包族拆开，
         // 使只被少数入口引用的库（如 Tiptap）不进入其它入口的加载链。
         // 关键约束：test 正则必须用 [\\/] 匹配路径分隔符，写 / 在 Windows 上不命中；
         // priority 决定重叠时的归属（react 必须先于 vendor 命中）；
@@ -44,6 +44,7 @@ export default defineConfig({
                 index: resolve(import.meta.dirname, 'src/dashboard/index.html'),
                 workflow: resolve(import.meta.dirname, 'src/workflow/index.html'),
                 editor: resolve(import.meta.dirname, 'src/editor/index.html'),
+                weibo: resolve(import.meta.dirname, 'src/weibo/index.html'),
             },
             output: {
                 codeSplitting: {

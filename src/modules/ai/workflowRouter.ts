@@ -13,18 +13,41 @@
  * 焦点离开文本编辑器（打开设置、切到其它视图）不改变场景事实，沿用上一次的 scene / module / projectDir；
  * 当前文档相对路径 docPath 一并下发并参与事实比对——笔记对话按文档隔离，同一模块内切换笔记也必须广播，
  * 否则面板会停在上一篇笔记的会话上。
+ * 编辑器标签跟随：编辑区里的 WebviewPanel（如微博）在激活时经 activeDocument 上报 viewType，
+ * 路由以 PANEL_MODULES 映射为模块并优先广播；编辑器重新激活时面板事实自动让位。
+ * 因此「侧栏是否跟随标签」只由这一处兑换，新增面板模块只需上报 viewType 并在此登记一行。
  */
 import * as vscode from 'vscode'
 import { findIndexedFile } from '@modules/common/db/indexRepository'
 import type { IndexService } from '@modules/common/indexer/indexService'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
-import { getActiveDocument, onDidChangeActiveDocument } from '@modules/editor/activeDocument'
+import {
+    getActiveDocument,
+    getActivePanel,
+    onDidChangeActiveDocument,
+    onDidChangeActivePanel,
+} from '@modules/editor/activeDocument'
 import type { WorkflowContextState, WorkflowSceneKind, WorkflowViewRequest } from '@shared/types/workflow'
-import { NOTES_MODULE_KEY, ROOT_MODULE_KEY, WECHAT_MODULE_KEY, isMarkdownPath } from '@shared/types/workflow'
+import {
+    NOTES_MODULE_KEY,
+    ROOT_MODULE_KEY,
+    WECHAT_MODULE_KEY,
+    WEIBO_MODULE_KEY,
+    WEIBO_PANEL_VIEW_TYPE,
+    isMarkdownPath,
+} from '@shared/types/workflow'
 import type Database from 'better-sqlite3'
 
 /** 作品文档的最小段数：press/{作品名}/{文档} */
 const PRESS_PROJECT_DEPTH = 3
+
+/**
+ * 编辑区面板 → 工作流模块：面板获得焦点时，侧栏按此切到对应语境。
+ * 新增面板模块时只加一行，不改 buildContext 的分支结构。
+ */
+const PANEL_MODULES: Readonly<Record<string, string>> = {
+    [WEIBO_PANEL_VIEW_TYPE]: WEIBO_MODULE_KEY,
+}
 
 export class WorkflowRouter implements vscode.Disposable {
     private readonly emitter = new vscode.EventEmitter<WorkflowContextState>()
@@ -61,6 +84,8 @@ export class WorkflowRouter implements vscode.Disposable {
             this,
             // 文本与富文本切换统一走活跃文档事实源：事实没变时 refresh 内部会抑制，不需要去抖
             onDidChangeActiveDocument(() => this.refresh()),
+            // 面板激活/让位同样立即广播：侧栏跟随编辑器标签靠这一条，不依赖各模块自行同步
+            onDidChangeActivePanel(() => this.refresh()),
         )
     }
 
@@ -187,6 +212,20 @@ export class WorkflowRouter implements vscode.Disposable {
 
     /** 组装路由事实：仅认可索引库内的文档，索引外文件视为无场景；作品目录以编辑器为准，缺位时沿用选定值 */
     private buildContext(): WorkflowContextState {
+        // 编辑区面板持有焦点时，当前标签就是面板：按映射直接给模块，背后保留的文档事实不再参与
+        const panel = getActivePanel()
+        const panelModule = panel === null ? null : (PANEL_MODULES[panel] ?? null)
+        if (panelModule !== null) {
+            return {
+                scene: 'idle',
+                module: panelModule,
+                selectedModule: this.selectedModule,
+                projectDir: null,
+                docPath: null,
+                // 面板页不是 md 文档，但工作流区要正常可用，按可用处理
+                isMarkdown: true,
+            }
+        }
         const active = getActiveDocument()
         // 模块选定只对「选定当时的那份文档」有效：用户切到别的文档就回到文档驱动，
         // 否则从公众号页打开作品或笔记时，菜单会被残留的选定压住、不跟随当前文档
