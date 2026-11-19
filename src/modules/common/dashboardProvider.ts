@@ -194,6 +194,10 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private pressWorkspaceListener: ((dirPath: string) => void) | null = null
     /** 上传路由：后置注入，公众号封面据此列举上传页的已上传图片；未注入时 upload/* 直接报未就绪 */
     private uploadRoutes: UploadRoutes | null = null
+    /** 微博面板凭证：后置注入，未注入时面板仍可打开但 Cookie 读写不可用 */
+    private weiboSecrets: vscode.SecretStorage | null = null
+    /** 微博图片缓存根：图床按 Referer 放行，图片需先落本地再签发 URI */
+    private weiboCacheRoot: vscode.Uri | null = null
     /** 当前面板实例：仅在挂载期间有效，用于请求之外的主动广播 */
     private view: vscode.WebviewView | null = null
     /** 待办目录变更监听：面板存活期间把外部改动转给 Webview，销毁时释放 */
@@ -215,6 +219,12 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     /** 注入封面选择仓储：由扩展入口在 press.db 打开后调用，作品列表据此显示封面 */
     public attachPressCoverStore(store: PressCoverStore): void {
         this.coverStore = store
+    }
+
+    /** 注入 SecretStorage 与缓存根：微博 Cookie 存密钥库，图片缓存落 globalStorage */
+    public attachWeiboSecrets(secrets: vscode.SecretStorage, cacheRoot: vscode.Uri): void {
+        this.weiboSecrets = secrets
+        this.weiboCacheRoot = cacheRoot
     }
 
     /** 注入待办路由：由扩展入口在待办服务装配后调用，待办卡片据此读写 todo/ 下的清单 */
@@ -845,7 +855,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
      * 关键约束：与 workflow/open 不同，这里不切换侧栏模块、不改写仪表盘路由，只是新开一个编辑区页。
      */
     private async openWeibo(): Promise<{ opened: boolean }> {
-        await openWeiboPanel(this.extensionUri)
+        await openWeiboPanel(this.extensionUri, this.weiboSecrets ?? undefined, this.weiboCacheRoot ?? undefined)
         return { opened: true }
     }
 

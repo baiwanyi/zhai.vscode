@@ -173,6 +173,9 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         workflowRouter,
     )
 
+    // 微博面板：Cookie 存 SecretStorage（与公众号密钥同为系统级加密），图片缓存落 globalStorage
+    dashboardProvider.attachWeiboSecrets(context.secrets, context.globalStorageUri)
+
     // 笔记重命名：保存时让文件名跟随一级标题，避免列表标题与磁盘文件名各说一套；
     // 改的正是正在编辑的那篇时重播活跃笔记，否则列表高亮会停在已消失的旧路径上
     const noteRenameService = new NoteRenameService(indexService, pinStore, (nextPath) => {

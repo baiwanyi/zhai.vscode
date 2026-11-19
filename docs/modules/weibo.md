@@ -932,3 +932,212 @@ export async function saveWeiboToNote(
 - **数据模型扩展**：新增 `weibo_cache` / `weibo_groups` / `weibo_comments` / `media_downloads`
 - **不变**：发布可靠性（幂等/重试/超时/限流）、SecretStorage 存储、Markdown 转换管线
 - **新增能力**：保存为笔记（B22）——复用笔记模块「网页剪藏」统一 Markdown 模板，微博转笔记后可双链/检索/版本管理；数据模型新增 `weibo_saved_notes` 去重与「已保存」角标
+
+---
+
+## 14. 关注时间线（网页版 ajax 接口）
+
+> 定位：`ajax/feed/unreadfriendstimeline` 是 **weibo.com 网页端同源内部 ajax 接口**，只读、Cookie 鉴权、无移动端 `x-xs-*` 签名参数，与本模块媒体下载所用的 `ajax/statuses/show` 属同一类依赖，不是开放平台 REST 契约，也不涉及逆向私有协议。开放平台的 `statuses/home_timeline` 仍为主干方案，本节接口用于在插件内直接浏览关注流。
+
+### 14.1 请求构造
+
+```
+GET https://weibo.com/ajax/feed/unreadfriendstimeline
+    ?list_id=10001{uid}
+    &refresh=4
+    &since_id=0            // 或 max_id={上一页顶层 max_id}
+    &count=20
+```
+
+| 参数 | 取值 | 说明 |
+|------|------|------|
+| `list_id` | `10001{uid}` | 关注流列表 ID；实测省略也能取到同一列表，故仅在已知 uid 时携带 |
+| `refresh` | 固定 `4` | 网页端刷新标志位；翻页请求同样带 4 |
+| `since_id` | `0` 或上次结果最新 id | 增量游标；与 `max_id` 互斥，同时给出时上游忽略 `since_id` |
+| `max_id` | 上一页响应顶层 `max_id` | 向后翻页游标，**不规律长整型**，不能自增构造 |
+| `count` | 1–50 | 单页条数，上游在 50 条附近封顶 |
+
+请求头（缺一不可）：
+
+| 头 | 值 | 作用 |
+|----|----|------|
+| `Cookie` | 登录态整串（含 `SUB`） | 唯一鉴权依据 |
+| `Referer` | `https://weibo.com/` | 缺失易被判为非浏览器来源 |
+| `User-Agent` | 桌面 Chrome UA | 与官网请求上下文保持一致 |
+| `Accept` | `application/json, text/plain, */*` | 期望 JSON |
+| `X-Requested-With` | `XMLHttpRequest` | 声明为 ajax 请求 |
+
+### 14.2 鉴权处理
+
+- 凭证即浏览器登录态 Cookie，**至少包含 `SUB`**；`SUBP`、`XSRF-TOKEN` 等一并保留，宿主不做裁剪。
+- 存储：`vscode.SecretStorage`（`zhai.weibo.webCookie` + 保存时刻键），明文不出宿主、不进日志、不回传前端；前端只看到「是否已配置 + 保存时间」。
+- 失效判定：HTTP 401/403 → 登录态失效；302 到登录页被 fetch 跟随后会拿到 HTML（以 `<` 开头）→ 同样判失效；JSON `{ok:0,msg}` 中含「登录/账号」→ 失效。
+- 频控判定：HTTP 418/429，或 `msg` 含「频繁/过快/太多」→ 限流；这两类错误**不重试**，重试只会加重风控。
+
+### 14.3 分页与增量
+
+```
+首屏：refresh=4 & since_id=0
+  └─ 解析 statuses[] 与顶层 max_id
+      └─ 下一页：refresh=4 & max_id={上页 max_id}（不带 since_id）
+          └─ statuses 为空 / max_id 缺失 / max_id 与本页相同 → 到底
+
+增量：refresh=4 & since_id={上次结果最新一条 id}
+  └─ 只请求一页：再往后翻就变成补历史，与「看新内容」语义相反
+```
+
+- 去重以数字 `id` 为准：翻页与增量都会出现重叠条目，合并时前插刷新、追加翻页，重复一律丢弃。
+- 增量起点优先取本次结果首条的 `id`，缺省回退上游 `since_id`；`sinceId=0` 表示不启用增量。
+- 单次调用最多翻 10 页（实现上限），避免一次点击打出长请求链。
+
+### 14.4 字段映射
+
+| 归一化字段 | 上游取值 | 处理 |
+|------------|----------|------|
+| `id` | `idstr` → `id` → `mid` | 字符串化，去重与游标的唯一依据 |
+| `text` | `text_raw` → `text` | 剥标签、解实体、去零宽字符、保留换行（纯文本口径，不含表情图） |
+| `segments` | `text`（含 `<img>` 表情标签） | 按「文本 + 表情」交错切段，表情保留图床直链与名称 |
+| `createdAt` | `created_at` | `Wed Nov 19 10:00:00 +0800 2026` 按时区折算为 ISO；解析失败留空 |
+| `source` | `source` | 剥 `<a>` 外壳，只留客户端名 |
+| `author` | `user.id / screen_name / verified / avatar_large` | 认证标记取 `verified === true`，头像只保留图床地址 |
+| `metrics` | `reposts_count / comments_count / attitudes_count` | 缺失按 0 |
+| `media.images` | `pic_infos[*].largest → original → large.url`、`mix_media_info.items[*]`（图项直链或 pids）、`pic_ids` | 原图直链，逐项取首个可用；缺直链时用 pid 拼 `wx1.sinaimg.cn/large/{pid}.jpg` |
+| `media.thumbnails` | `pic_infos[*].bmiddle.url`（新版为 `/wap360/`），缺失时把 `/large/` 等尺寸目录换成 `/bmiddle/` | 列表展示用的中等尺寸，与 images 同序 |
+| `media.sizes` | `pic_infos[*].largest.width/height`，缺失回退 `original` / `large` | 最大尺寸，与 images 同序；预览角标与竖横判断只认它，与实际加载的档位无关 |
+| `media.videoUrl` | `page_info.media_info.playback_list[0]` 或 `mix_media_info` 中的视频项 | 无视频为 `null`（当前只标记不播放） |
+| `retweeted` | `retweeted_status` | 只保留作者名、正文摘要与原文地址，不递归展开 |
+| 广告位 | `ad_state=1` / `is_ad` / `promotion` | 直接丢弃，不进入去重计数 |
+
+**图片与表情渲染**：
+
+- 图床按 `Referer: https://weibo.com/` 放行，Webview 直连（源为 `vscode-webview://`）一定被拒，因此图片**不走前端直连**，一律由宿主代理：`weibo/image` → 宿主带 Referer 取回 → 落本地缓存 → 读成 `data:` URI 回传 → 前端 `<img>` 直接渲染。
+- 为什么回传 `data:` 而不是本地文件地址：Webview 加载本地文件要求 `localResourceRoots` 与 `cspSource` 双放行，缓存目录不在扩展目录下、远程开发（SSH/WSL）等场景极易 `ERR_ACCESS_DENIED`（见 Stack Overflow「ERR_ACCESS_DENIED vscode-webview」与 CSDN 上的同类案例）；`data:` 本来就在 CSP 白名单内，不依赖任何路径授权。单张超过 4MB 不内联，前端显示破图占位。
+- 代理请求头按浏览器抓包口径补全（缺一项都可能 403）：
+
+| 头 | 值 |
+|----|----|
+| `Referer` | `https://weibo.com/` |
+| `User-Agent` | 桌面 Chrome UA（与时间线接口同一串） |
+| `Accept` | `image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8` |
+| `Accept-Language` | `zh-CN,zh;q=0.9,en;q=0.8` |
+| `Sec-Fetch-Dest` | `image` |
+| `Sec-Fetch-Mode` | `no-cors` |
+| `Sec-Fetch-Site` | `cross-site` |
+| `Priority` | `u=1, i` |
+
+- 首次请求不带 Cookie；返回 401/403 时带当前登录 Cookie 重试一次，仍失败才放弃并写日志（只记 host 与路径前缀，不记查询串签名）。
+- 网络失败的降级链：**代理（若配置）→ 内置 `fetch`（undici 连接池复用）→ 切 `ipv4first` 后再 `fetch` → 直连 `node:https`（keep-alive agent + `family: 4`，连接超时 6s，失败重试一次）**。逐级尝试，日志分别以 `proxy` / `fetch` / `fetch(ipv4)` / `direct` 标记并带 `cause` 错误码（如 `UND_ERR_CONNECT_TIMEOUT`、`ENOTFOUND`、`CERT_HAS_EXPIRED`）。
+- 顺序依据实测：undici 的连接复用比每张图新建 TLS 更稳，直连只作最后兜底；直连 agent 在面板关闭时 `destroy()` 释放连接。
+- 并发与体积：宿主侧同时下载数限制为 4（排队而非丢弃），避免一页几十张图同时建连接把本地 NAT 与图床限流一起打满；单张上限 24MB，超限自动把 `/large/` 换成 `/bmiddle/` 再取一次，仍超限才放弃。
+- 前端懒加载：配图、头像与表情都用 `IntersectionObserver`（`rootMargin: 240px`）控制，滚到附近才发起 `weibo/image`，首屏不再一次性请求整页图片。
+- 代理来源：VS Code 的 `http.proxy` 优先，其次进程环境变量 `HTTPS_PROXY` / `HTTP_PROXY`；只接受 `http:` / `https:`，走 `CONNECT` 隧道（支持 `Basic` 代理认证）。证书校验跟随 `http.proxyStrictSSL`，企业抓包代理可关闭。
+- 关键说明：扩展宿主（Node）**不继承浏览器的系统代理**。浏览器能看图而宿主连接超时，通常是这个原因——在 VS Code 设置里填好 `http.proxy` 即可走代理通道。
+- 内容类型缺失或为 `application/octet-stream` 时按文件头魔数识别（JPEG/PNG/GIF/WEBP/BMP），避免把正常图片误判成不支持；HTML 错误页与 SVG 一律拒绝。
+- 图片地址统一走 `normalizeWeiboImageUrl` 归一化，白名单为 `*.sinaimg.cn`、`*.sinajs.cn`、`weibo.com`、`weibo.cn`（含子域）。只接受 https，非白名单地址在归一化阶段丢弃，代理层不会代任意地址取数。
+- 协议相对写法（`//wx1.sinaimg.cn/...`）补全为 `https:`；`weibo.com/ajax/common/download?pid=xxx` 需要登录 Cookie，Webview 直连会 401，宿主改写为 `https://wx1.sinaimg.cn/large/{pid}.jpg`；`pic_infos` 缺失时直接用 `pic_ids` 按同一规则拼直链。
+- CSP 维持默认（`img-src ${webview.cspSource} data:`），不放行任何远程域，`localResourceRoots` 只保留扩展产物目录。
+- 代理只接受 `image/jpeg|png|gif|webp|bmp` 且单张 ≤12MB，SVG 等可携带脚本的类型直接拒绝；同一地址并发请求共享一次下载，缓存按 URL 哈希命名，命中零网络。
+- 卡片按微博客户端习惯渲染：头像圆形（失败回落首字）、配图九宫格（1 张按 16:9，2 张两列，3 张以上三列，最多 9 张）、表情内联为 16px 小图；图片就绪前用同尺寸占位，避免列表抖动，失败显示破图占位。
+- 列表**只用中等尺寸**（`media.thumbnails`，`/bmiddle/`），不加载原图；点击某张才在浮层里请求原图（`media.images`）。原图超过 4MB 内联上限或下载失败时，浮层自动回退到中图并提示「已显示中等尺寸」；Esc 或点击遮罩关闭。
+- 浮层布局：关闭按钮固定在屏幕右上角、尺寸角标固定在左上角；角标显示 `最大 W × H`，尺寸取自上游 `largest` 档（`media.sizes`），**与实际加载的是原图还是中图无关**，只有上游缺该档时才回退到 `img.naturalWidth/Height` 并标注「实际/中图」。竖横判断同样用该尺寸：竖图 `max-h-full w-auto` 按高度铺满，横图 `max-w-full h-auto` 按宽度铺满，尺寸未知时 `object-contain` 兜底。
+
+### 14.5 稳定性与使用限制
+
+| 项 | 现状 | 影响 |
+|----|------|------|
+| 契约性质 | 网页端内部接口，无版本承诺 | 前端改版即可能改字段/参数，需按接口集中封装单点适配 |
+| 单页上限 | 约 50 条 | 首页一次最多拿 50 条，更多需翻页 |
+| 历史可达深度 | 约 20 页见底 | 更早内容取不到，不适合做全量归档（全量走开放平台或归档工具） |
+| 游标 | `max_id` 不规律、不可构造 | 只能串行翻页，无法并行请求多页 |
+| 广告混入 | `ad`/推广位存在 | 必须按标记过滤，否则污染增量游标 |
+| Cookie 有效期 | 天级到周级，随登录环境变化 | 失效后需重新登录并覆盖保存 |
+| 频率限制 | 短时高频触发 418 / 空列表 | 相邻请求至少间隔 1.2s，失败退避而非重试 |
+| 境外/代理访问 | 可能直接跳登录或返回空 | 需要与登录时一致的网络出口 |
+| 图片直链 | 图床按 Referer 放行，直连必被拒 | 宿主代理带 Referer 取回，失败自行隐藏；大图走原文 |
+| 图片缓存 | 落 globalStorage 的 `weibo-media`，上限 800 个文件 | 超出按修改时间删旧；缓存损坏可整目录删除重建 |
+| 表情直链 | 表情 CDN 偶发 403 | 降级为 `[表情名]` 文本或浏览器 alt 文案，不阻断正文 |
+
+### 14.6 点赞（写操作）
+
+网页版点赞走一对写接口，参数都只有微博数字 id：
+
+| 动作 | 接口 | 请求体 |
+|------|------|--------|
+| 点赞 | `POST https://weibo.com/ajax/statuses/setLike` | `{"id":"<微博数字 id>"}` |
+| 取消 | `POST https://weibo.com/ajax/statuses/cancelLike` | 同上 |
+
+请求头在时间线基础上额外补：
+
+| 头 | 值 | 说明 |
+|----|----|------|
+| `Origin` | `https://weibo.com` | 写接口会校验来源 |
+| `Content-Type` | `application/json;charset=UTF-8` | 一方页面用 JSON 提交 |
+| `X-XSRF-TOKEN` | 从 Cookie 的 `XSRF-TOKEN` 解码 | Cookie 里没有该键时不带 |
+
+- 成功判定：响应 JSON 根层 `ok > 0`；HTTP 200 但 `ok = 0` 属业务失败。响应可能带 `data.attitudes_count`，有则回传最新点赞数。
+- 初始点赞态：时间线每条微博的 `attitudes_status`（对象 `{liked:true}` 或数字 `1`），缺失按未赞处理。
+- 前端交互：乐观更新点赞态与计数，失败回滚并提示；同一微博请求进行中直接丢弃后续点击（`ref` 判定），避免连点放大成多次写。
+- 限制：写操作**不重试**（401/403/418 直接回错误），避免把账号打进风控；点赞结果不回写时间线数据源，刷新后以服务端为准。
+
+### 14.7 评论读取
+
+```
+GET https://weibo.com/ajax/statuses/buildComments
+    ?is_reload=1&id={微博数字 id}&is_show_bulletin=3&is_mix=0
+    &count=10&uid={当前登录 uid}&fetch_level=0&locale=zh-CN
+```
+
+| 参数 | 取值 | 说明 |
+|------|------|------|
+| `id` | 微博数字 id | 必填 |
+| `is_reload` | `1` | 只首页带；翻页时不带 |
+| `is_show_bulletin` / `is_mix` / `fetch_level` | `3` / `0` / `0` | 网页端固定值 |
+| `count` | 1–30 | 单页条数，实现默认 10 |
+| `uid` | 当前登录用户 uid | 可选，缺省由服务端按 Cookie 识别 |
+| `locale` | `zh-CN` | 文案语言 |
+| `max_id` | 上一页响应顶层 `max_id` | 翻页游标，不能自造 |
+
+- 响应结构：`{ ok, data: [...], total_number, max_id }`；`data` 每项含 `id/idstr`、`text`（HTML + 表情标签）、`created_at`、`user`、`like_counts`。
+- 归一化：正文复用主贴的 `parsePostSegments`（文本 + 表情分段），纯文本口径把表情还原成 `[名称]`；时间走同一套 `parseWeiboCreatedAt`；头像过图床白名单。
+- 前端：评论按钮点击才展开（未展开不请求），默认 10 条/页，「加载更多评论」按 `max_id` 串行翻页；失败内联提示并给重试，不弹 toast。
+
+### 14.8 长文展开
+
+```
+GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
+```
+
+- `id` 用 mblogid（如 `Rs4KtdzoV`），数字 id 也能取到；只接受字母数字，避免拼进查询串的任意内容。
+- 响应 `{ ok, data: { longTextContent, longTextContent_raw, topic_struct, url_struct } }`；正文优先 `longTextContent`，为空回退 `longTextContent_raw`，两者皆空按失败处理，**不拿空串覆盖卡片摘要**。
+- 时间线里长文摘要末尾带展开提示，形式可能是 `<a>展开</a>`、`<a>...展开</a>`、`<a>展开全文</a>`，也可能是纯文本 `……展开`。归一化阶段统一剥掉：先删带 `<a>` 外壳的链接，再删末尾残留的 `……`/`...` 截断省略号，卡片只保留一个「展开全文」按钮。
+- 该清理**只对 `isLongText` 为真**的微博执行，普通正文里出现的「展开」与省略号保持原样。
+- `isLongText` 判定：上游 `isLongText === true` 或存在 `longText` 对象。
+
+### 14.9 常见反爬与合规边界
+
+合规且有效的做法（本模块已实现）：
+
+- 请求头保持真实浏览器上下文（`Referer` / `UA` / `X-Requested-With`），不做伪装客户端。
+- 相邻请求最小间隔 1.2s，同一进程共享节奏，避免多面板并发打满。
+- 只对网络错误与 5xx 做指数退避重试（≤2 次），401/403/418 一律不重试。
+- 失败按分类码提示（未配置 / 登录失效 / 限流 / 上游异常 / 网络），引导用户自行处理，不静默重试。
+- 只读单账号自身关注流，不做批量采集、不落公共库。
+
+明确不采用：UA 轮换与代理池、验证码/滑块绕过、设备指纹伪造、Cookie 池共享、并发拆页抓取。这些手段既违反平台协议，也会直接触发账号风控，代价远高于收益。
+
+### 14.10 实现位置
+
+| 文件 | 职责 |
+|------|------|
+| `src/shared/types/weibo.ts` | 时间线、凭证与协议载荷契约，含参数收窄 |
+| `src/modules/weibo/webClient.ts` | 单页请求：URL 构造、请求头、错误分类、节流与退避重试 |
+| `src/modules/weibo/webTimeline.ts` | 分页/增量循环、去重、字段归一化、时间与正文清洗 |
+| `src/modules/weibo/webCredential.ts` | Cookie 清洗、SecretStorage 存取、凭证状态 |
+| `src/modules/weibo/mediaProxy.ts` | 图片代理：带 Referer 取图、本地缓存、并发去重与容量清理 |
+| `src/modules/weibo/webInteraction.ts` | 写操作：`setLike` / `cancelLike`，补 Origin 与 X-XSRF-TOKEN |
+| `src/modules/weibo/webComments.ts` | 评论读取：`buildComments` 参数构造、分页游标与评论归一化 |
+| `src/modules/weibo/webLongText.ts` | 长文读取：`longtext` 取全文、正文优先级与失败兜底 |
+| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/image`、`weibo/like`、`weibo/openPost` 分发 |
+| `src/modules/weibo/panel.ts` | 面板消息通道、凭证注入、图片代理装配与本地资源白名单 |
+| `src/modules/common/webviewHtml.ts` | CSP 生成：默认不放行远程图，需要时可按调用方传入的 `imgSources` 放行 |
+| `src/weibo/` | Webview 入口：工具条、Cookie 配置区、时间线卡片（头像 / 九宫格 / 表情）与加载更多 |

@@ -1,85 +1,159 @@
 /**
- * 微博面板：编辑区独立页，主体是微博发布框（编辑器）与时间线占位。
- * 复用约定：页面骨架取 @webview/components/AppPage，发布框与卡片取 @components/ui/card，
- * 主按钮取 @webview/components/Button，操作反馈用 sonner（Toaster 主题取 useVscodeTheme）。
- * 关键约束：AI 对话不在此页另开一份，统一使用侧栏工作流面板的 AI 对话；
- * 发布框为受控输入并限制长度，当前不落盘、不发请求，内容只停留在页面状态里；
- * 时间线为本地示例，接入真实接口前不得让占位数据被误读为真实内容。
+ * 微博面板：编辑区独立页，上方微博发布框（占位），下方关注时间线（网页版 ajax 接口）。
+ * 复用约定：页面骨架取 @webview/components/AppPage，卡片取 @components/ui/card，
+ * 取数状态全部来自 hooks/useWeiboTimeline，单条渲染交给 components/WeiboPostCard，
+ * 空态与加载态复用 StateEmpty，操作反馈用 sonner（Toaster 主题取 useVscodeTheme）。
+ * 关键约束：未配置 Cookie 时不发任何网络请求，只给可执行的获取步骤；
+ * Cookie 输入框不回显已保存值，保存成功后清空并收起，明文只存在于输入瞬间；
+ * 时间线为只读，发布框仍是占位（写接口不在本次范围）；到底后不再渲染「加载更多」，
+ * 防止反复点击打出空请求。
  */
-import { Heart, MessageCircle, Repeat2 } from 'lucide-react'
-import { useState } from 'react'
+import { format } from 'date-fns'
+import { Inbox, RefreshCw, Settings2 } from 'lucide-react'
+import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent } from '@components/ui/card'
 import { Toaster } from '@components/ui/sonner'
-import { AppContent, AppDescription, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
+import { AppAction, AppContent, AppDescription, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
+import { StateEmpty } from '@webview/components/StateEmpty'
+import { useHostToast } from '@webview/hooks/useHostToast'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
+import { WeiboPostCard } from './components/WeiboPostCard'
+import { useWeiboTimeline } from './hooks/useWeiboTimeline'
 import type { JSX } from 'react'
 
-/** 发布框字数上限：按微博普通正文限制收口，接入接口前先在前端挡住超长输入 */
+/** 发布框字数上限：按微博普通正文限制收口，接口接入前先在前端挡住超长输入 */
 const POST_MAX_LENGTH = 2000
 
-/** 占位微博：字段对应后续真实时间线卡片的信息层级，接入接口后按同一形状替换数据源 */
-interface PlaceholderPost {
-    author: string
-    time: string
-    text: string
-    /** 有无媒体区：占位阶段只区分「带图」与「纯文字」两种形态 */
-    hasMedia: boolean
-    comments: number
-    reposts: number
-    likes: number
+/** 保存时间展示：仅用于确认「填的是哪一次」，不含 Cookie 任何片段 */
+function formatSavedAt(savedAt: string | null): string {
+    if (savedAt === null) {
+        return '已配置登录 Cookie'
+    }
+    const date = new Date(savedAt)
+    if (Number.isNaN(date.getTime())) {
+        return '已配置登录 Cookie'
+    }
+    return `已配置登录 Cookie · ${format(date, 'yyyy-MM-dd HH:mm')}`
 }
-
-/** 示例内容：仅用于占位展示，不代表任何真实账号或时间线 */
-const PLACEHOLDER_POSTS: readonly PlaceholderPost[] = [
-    {
-        author: '宅写作',
-        time: '刚刚',
-        text: '微博面板已经接到编辑区：上方是发布框，下方是时间线。当前为占位页面，展示的内容均为本地示例。',
-        hasMedia: false,
-        comments: 12,
-        reposts: 3,
-        likes: 28,
-    },
-    {
-        author: '写作素材',
-        time: '10 分钟前',
-        text: '带图微博的卡片形态：正文在上，媒体区在下，互动数收在底部一行。',
-        hasMedia: true,
-        comments: 4,
-        reposts: 1,
-        likes: 9,
-    },
-    {
-        author: '灵感收集',
-        time: '1 小时前',
-        text: '时间线与发布接口接入后，这里的示例会被真实数据替换；届时图片与视频按原始比例呈现，长文自动折行。',
-        hasMedia: false,
-        comments: 0,
-        reposts: 0,
-        likes: 2,
-    },
-]
 
 export function WeiboPanel(): JSX.Element {
     const theme = useVscodeTheme()
+    const { state, refresh, loadMore, saveCredential, clearCredential } = useWeiboTimeline()
+    const [isCredentialOpen, setIsCredentialOpen] = useState(false)
+    useHostToast()
+
+    const isConfigured = state.credential?.isConfigured ?? false
+    const shouldShowCredential = !state.isLoading && (isCredentialOpen || !isConfigured)
+
+    const toggleCredential = useCallback((): void => {
+        setIsCredentialOpen((previous) => !previous)
+    }, [])
+
+    const collapseCredential = useCallback((): void => {
+        setIsCredentialOpen(false)
+    }, [])
+
+    const handleRefresh = useCallback((): void => {
+        void refresh()
+    }, [refresh])
+
+    const handleLoadMore = useCallback((): void => {
+        void loadMore()
+    }, [loadMore])
+
+    /** 时间线主体：加载态 / 未配置 / 空列表 / 列表 + 加载更多 */
+    function renderTimeline(): JSX.Element {
+        if (state.isLoading) {
+            return <StateEmpty className="py-8" title="正在读取关注时间线..." isLoading />
+        }
+        if (!isConfigured) {
+            return (
+                <StateEmpty
+                    className="py-8"
+                    icon={Inbox}
+                    title="还没有配置微博 Cookie"
+                    description="按上方步骤复制登录后的 Cookie 并保存，即可读取关注时间线。"
+                />
+            )
+        }
+        if (state.posts.length === 0) {
+            return (
+                <StateEmpty
+                    className="py-8"
+                    icon={Inbox}
+                    title="时间线没有内容"
+                    description={
+                        state.errorMessage ?? '可能是关注列表近期没有更新，也可能是接口返回了空页：稍后刷新一次再试。'
+                    }
+                >
+                    <Button size="sm" variant="outline" onClick={handleRefresh}>
+                        刷新
+                    </Button>
+                </StateEmpty>
+            )
+        }
+        return (
+            <>
+                {state.posts.map((post) => (
+                    <WeiboPostCard key={post.id} post={post} />
+                ))}
+                <div className="flex justify-center py-2">
+                    {state.hasMore ? (
+                        <Button size="sm" variant="outline" onClick={handleLoadMore} isLoading={state.isLoadingMore}>
+                            加载更多
+                        </Button>
+                    ) : (
+                        <span className="text-muted-foreground text-xs">已经到底了</span>
+                    )}
+                </div>
+            </>
+        )
+    }
 
     return (
         <AppPage>
             <AppHeader>
                 <AppTitle>微博</AppTitle>
+                <AppAction>
+                    <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleRefresh}
+                        isLoading={state.isRefreshing}
+                        disabled={!isConfigured}
+                        tooltip="增量刷新：只取上次之后的新微博"
+                    >
+                        <RefreshCw className="size-3.5" aria-hidden="true" />
+                        刷新
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={toggleCredential} tooltip="更新或清除登录 Cookie">
+                        <Settings2 className="size-3.5" aria-hidden="true" />
+                        Cookie
+                    </Button>
+                </AppAction>
                 <AppDescription>
-                    发布框可先编辑草稿，发布与时间线接口尚未接入；需要 AI 帮忙润色时，请使用侧栏「工作流」的 AI 对话。
+                    {isConfigured
+                        ? `${formatSavedAt(state.credential?.savedAt ?? null)}：关注时间线只读浏览，图片与视频请打开原文查看。`
+                        : '关注时间线依赖网页版登录 Cookie：先登录 weibo.com，再从任意 ajax 请求的请求头复制完整 Cookie。'}
                 </AppDescription>
             </AppHeader>
 
             <AppContent isScrollable className="gap-3 pb-4">
                 <div className="mx-auto flex w-full max-w-2xl flex-col gap-3">
                     <ComposerCard />
-                    {PLACEHOLDER_POSTS.map((post) => (
-                        <PostCard key={`${post.author}-${post.time}`} post={post} />
-                    ))}
+                    {shouldShowCredential ? (
+                        <CredentialCard
+                            isConfigured={isConfigured}
+                            isSaving={state.isSavingCredential}
+                            onSave={saveCredential}
+                            onClear={clearCredential}
+                            onCollapse={collapseCredential}
+                            canCollapse={isConfigured}
+                        />
+                    ) : null}
+                    {renderTimeline()}
                 </div>
             </AppContent>
 
@@ -128,59 +202,86 @@ function ComposerCard(): JSX.Element {
     )
 }
 
-interface PostCardProps {
-    post: PlaceholderPost
+interface CredentialCardProps {
+    isConfigured: boolean
+    isSaving: boolean
+    /** 返回是否保存成功：失败时保留输入，避免用户重贴一遍 */
+    onSave: (cookie: string) => Promise<boolean>
+    onClear: () => Promise<boolean>
+    onCollapse: () => void
+    canCollapse: boolean
 }
 
-/** 单条微博卡片：作者与时间同行，正文折行，媒体与互动数依次在下 */
-function PostCard({ post }: PostCardProps): JSX.Element {
+/**
+ * Cookie 配置卡：说明获取路径与存储方式，提供保存与清除。
+ * 关键约束：输入为普通文本框但不回填历史值，保存成功后由调用方收起。
+ */
+function CredentialCard({
+    isConfigured,
+    isSaving,
+    onSave,
+    onClear,
+    onCollapse,
+    canCollapse,
+}: CredentialCardProps): JSX.Element {
+    const [cookieInput, setCookieInput] = useState('')
+
+    const handleSave = useCallback((): void => {
+        void onSave(cookieInput).then((isSaved) => {
+            if (!isSaved) {
+                return
+            }
+            setCookieInput('')
+            onCollapse()
+        })
+    }, [cookieInput, onCollapse, onSave])
+
+    const handleClear = useCallback((): void => {
+        void onClear()
+    }, [onClear])
+
     return (
         <Card>
-            <CardContent className="flex flex-col gap-3">
-                <div className="flex items-start gap-3">
-                    <span
-                        aria-hidden
-                        className="flex size-10 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground text-sm"
+            <CardContent className="flex flex-col gap-2">
+                <h2 className="font-medium">微博登录 Cookie</h2>
+                <ol className="list-decimal space-y-1 pl-5 text-muted-foreground text-xs">
+                    <li>在浏览器登录 weibo.com，打开开发者工具的「网络」面板。</li>
+                    <li>刷新页面，任选一条 weibo.com/ajax 开头的请求，复制请求头里的完整 Cookie。</li>
+                    <li>粘贴到下方并保存：Cookie 只写入本机 SecretStorage（系统加密），不进日志、不进设置文件。</li>
+                </ol>
+                <textarea
+                    className="h-20 w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 font-mono text-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring"
+                    placeholder="SUB=...; SUBP=...; 其它 Cookie 一并保留"
+                    value={cookieInput}
+                    spellCheck={false}
+                    onChange={(event) => {
+                        setCookieInput(event.target.value)
+                    }}
+                />
+                <div className="flex items-center gap-2">
+                    <Button
+                        size="sm"
+                        onClick={handleSave}
+                        isLoading={isSaving}
+                        disabled={cookieInput.trim().length === 0}
                     >
-                        {post.author.slice(0, 1)}
-                    </span>
-                    <div className="min-w-0 flex-1">
-                        <div className="flex items-baseline gap-2">
-                            <span className="truncate font-medium">{post.author}</span>
-                            <span className="shrink-0 text-muted-foreground text-xs">{post.time}</span>
-                        </div>
-                        <p className="mt-1 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed">{post.text}</p>
-                    </div>
+                        保存
+                    </Button>
+                    {isConfigured ? (
+                        <Button size="sm" variant="ghost" onClick={handleClear} disabled={isSaving}>
+                            清除
+                        </Button>
+                    ) : null}
+                    {canCollapse ? (
+                        <Button size="sm" variant="ghost" className="ml-auto" onClick={onCollapse}>
+                            收起
+                        </Button>
+                    ) : null}
                 </div>
-
-                {post.hasMedia ? (
-                    <div className="flex aspect-video items-center justify-center rounded-lg bg-muted text-muted-foreground text-xs ring-1 ring-foreground/5">
-                        图片占位
-                    </div>
-                ) : null}
-
-                <div className="flex items-center gap-4 text-muted-foreground text-xs">
-                    <Metric icon={<Repeat2 className="size-3.5" />} label="转发" value={post.reposts} />
-                    <Metric icon={<MessageCircle className="size-3.5" />} label="评论" value={post.comments} />
-                    <Metric icon={<Heart className="size-3.5" />} label="赞" value={post.likes} />
-                </div>
+                <p className="text-muted-foreground text-xs">
+                    提示：Cookie 等同于账号登录态，请勿分享；该接口是网页端内部 ajax，改版后可能失效。
+                </p>
             </CardContent>
         </Card>
-    )
-}
-
-interface MetricProps {
-    icon: JSX.Element
-    label: string
-    value: number
-}
-
-/** 互动数：图标只作装饰，可读名由 aria-label 给出，避免读屏念出图标名 */
-function Metric({ icon, label, value }: MetricProps): JSX.Element {
-    return (
-        <span className="flex items-center gap-1" aria-label={`${label} ${String(value)}`}>
-            <span aria-hidden>{icon}</span>
-            {value}
-        </span>
     )
 }

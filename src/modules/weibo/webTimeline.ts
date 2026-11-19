@@ -1,0 +1,666 @@
+/**
+ * 关注时间线取数与归一化：把网页版 ajax 的 snake_case 原始结构收敛成 WeiboTimelinePost。
+ * 复用约定：单页请求交给 webClient，游标只信任上游返回的 since_id / max_id；
+ * 正文清洗与实体解码在这里统一完成，前端按纯文本渲染，不再二次解析 HTML。
+ * 关键约束：max_id 是不规律长整型游标，不能自增构造；增量模式（sinceId 非 0）只取一页，
+ * 否则会把历史内容一并拉上来；广告位与缺少 id 的条目直接丢弃，不进入去重计数。
+ */
+import type {
+    WeiboTimelineImageSize,
+    WeiboTimelineMedia,
+    WeiboTimelineMetrics,
+    WeiboTimelinePost,
+    WeiboTimelineRequest,
+    WeiboTimelineResult,
+    WeiboTimelineRetweet,
+    WeiboTimelineSegment,
+} from '@shared/types/weibo'
+import { WEIBO_TIMELINE_MAX_PAGES } from '@shared/types/weibo'
+import { requestTimelinePage } from './webClient'
+import type { TimelinePage, TimelinePageQuery } from './webClient'
+
+/** 微博网页地址基址：原微博跳转只允许该域名 */
+const WEIBO_WEB_BASE = 'https://weibo.com'
+
+/** 英文月份 → 0 起月份：微博 created_at 固定输出英文缩写 */
+const MONTH_INDEX: Readonly<Record<string, number>> = {
+    Jan: 0,
+    Feb: 1,
+    Mar: 2,
+    Apr: 3,
+    May: 4,
+    Jun: 5,
+    Jul: 6,
+    Aug: 7,
+    Sep: 8,
+    Oct: 9,
+    Nov: 10,
+    Dec: 11,
+}
+
+/** 取数入参：在协议入参之上补齐凭证与可注入的请求实现 */
+export interface FetchTimelineOptions extends WeiboTimelineRequest {
+    cookie: string
+    timeoutMs?: number
+    minIntervalMs?: number
+    /** 请求实现替身：单测不触网 */
+    requestPage?: (query: TimelinePageQuery) => Promise<TimelinePage>
+    /** 时刻来源替身：保证 fetchedAt 可断言 */
+    now?: () => Date
+}
+
+/** 是否为普通对象：数组与 null 都排除在外 */
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/** 仅接受字符串与数字并转文本，其余类型返回空串，避免对象被隐式转成 [object Object] */
+function toText(value: unknown): string {
+    return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+}
+
+/** 计数取值：非负整数以外一律按 0 */
+function toCount(value: unknown): number {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.trunc(value) : 0
+}
+
+/** 解码微博正文里的实体：先剥标签再解码，避免解码出的尖括号被二次当作标签 */
+function decodeEntities(text: string): string {
+    return text
+        .replace(/&nbsp;/giu, ' ')
+        .replace(/&lt;/giu, '<')
+        .replace(/&gt;/giu, '>')
+        .replace(/&quot;/giu, '"')
+        .replace(/&#39;|&apos;/giu, "'")
+        .replace(/&amp;/giu, '&')
+        .replace(/&#(\d{1,6});/gu, (_, code: string) => String.fromCodePoint(Number(code)))
+}
+
+/**
+ * 正文清洗：保留换行语义，剥掉全部标签，解实体，去零宽字符。
+ * 微博正文里的图片、话题与 @ 都会以 <a> 形式出现，去标签后仍是可读文本。
+ */
+export function stripWeiboHtml(html: string): string {
+    const withBreaks = html.replace(/<br\s*\/?>/giu, '\n')
+    const withoutTags = withBreaks.replace(/<[^>]+>/gu, '')
+    return decodeEntities(withoutTags)
+        .replace(/[\u200B-\u200F\uFEFF]/gu, '')
+        .replace(/\n{3,}/gu, '\n\n')
+        .trim()
+}
+
+/**
+ * 图片主机白名单：新浪图床与表情 CDN 承载绝大多数图片；
+ * 微博主站与移动站的图片端点也会直接出现在头像和正文里，一并放行。
+ */
+const WEIBO_IMAGE_HOSTS = ['sinaimg.cn', 'sinajs.cn', 'weibo.com', 'weibo.cn'] as const
+
+/** 图片 pid 形态：只允许字母数字，直接拼进地址而不做二次转义 */
+const IMAGE_PID_PATTERN = /^[A-Za-z0-9]{6,64}$/u
+
+/** 主机是否在白名单后缀下：要求精确相等或点分后缀，避免 sub.host.evil.com 绕过 */
+function isWeiboImageHost(hostname: string): boolean {
+    const host = hostname.toLowerCase()
+    return WEIBO_IMAGE_HOSTS.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))
+}
+
+/** 用图片 pid 拼图床直链：微博自家的下载端点要登录 Cookie，Webview 直连会 401 */
+function buildSinaImageUrl(pid: string): string | null {
+    return IMAGE_PID_PATTERN.test(pid) ? `https://wx1.sinaimg.cn/large/${pid}.jpg` : null
+}
+
+/**
+ * 归一化图片地址：兼容协议相对写法，并把需要登录态的微博下载端点改写成图床直链。
+ * 只接受 https 且主机在白名单内，其余一律返回 null——前端不接触任意外链。
+ */
+export function normalizeWeiboImageUrl(value: unknown): string | null {
+    if (typeof value !== 'string') {
+        return null
+    }
+    const trimmed = value.trim()
+    if (trimmed.length === 0 || trimmed.length > 1024) {
+        return null
+    }
+    const withProtocol = trimmed.startsWith('//') ? `https:${trimmed}` : trimmed
+    let parsed: URL
+    try {
+        parsed = new URL(withProtocol)
+    } catch {
+        return null
+    }
+    if (parsed.protocol !== 'https:' || !isWeiboImageHost(parsed.hostname)) {
+        return null
+    }
+    // ajax/common/download?pid=xxx 需要登录 Cookie：改写成同一对象的图床直链
+    if (parsed.pathname.endsWith('/ajax/common/download')) {
+        return buildSinaImageUrl(parsed.searchParams.get('pid') ?? '')
+    }
+    return parsed.toString()
+}
+
+/** 是否为可用图片地址：归一化成功即可用 */
+export function isWeiboImageUrl(value: unknown): value is string {
+    return normalizeWeiboImageUrl(value) !== null
+}
+
+/** 图床的尺寸目录：这些目录可换成 bmiddle；thumbnail 已足够小，不参与替换 */
+const IMAGE_SIZE_DIRS = new Set(['large', 'original', 'orj1080', 'mw2000', 'mw1024', 'mw690', 'thumb300'])
+
+/**
+ * 取中等尺寸地址：把 `/large/`、`/mw2000/` 等尺寸目录换成 `/bmiddle/`（约 440px）。
+ * 头像裁切路径与表情 CDN 没有尺寸目录，原样返回；无法解析的地址也原样返回。
+ */
+export function buildMiddleImageUrl(imageUrl: string): string {
+    try {
+        const url = new URL(imageUrl)
+        const segments = url.pathname.split('/')
+        const sizeDir = segments[1] ?? ''
+        if (!IMAGE_SIZE_DIRS.has(sizeDir)) {
+            return imageUrl
+        }
+        segments[1] = 'bmiddle'
+        url.pathname = segments.join('/')
+        return url.toString()
+    } catch {
+        return imageUrl
+    }
+}
+
+/** 读取标签属性：单双引号都支持，返回值做实体解码；属性名由调用方给常量，不参与正则转义 */
+function readAttribute(tag: string, name: string): string {
+    const pattern = new RegExp(`${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'iu')
+    const match = pattern.exec(tag)
+    if (match === null) {
+        return ''
+    }
+    return decodeEntities(match[1] ?? match[2] ?? '').trim()
+}
+
+/** 追加纯文本片段：与上一段同为文本时直接拼接，避免产生大量碎片 */
+function pushPlainText(segments: WeiboTimelineSegment[], text: string): void {
+    if (text.length === 0) {
+        return
+    }
+    const last = segments[segments.length - 1]
+    if (last !== undefined && last.type === 'text') {
+        segments[segments.length - 1] = { type: 'text', text: last.text + text }
+        return
+    }
+    segments.push({ type: 'text', text })
+}
+
+/** 追加 HTML 片段：先清洗再落成文本段 */
+function pushHtmlText(segments: WeiboTimelineSegment[], html: string): void {
+    pushPlainText(segments, stripWeiboHtml(html))
+}
+
+/**
+ * 长文摘要末尾的展开提示：可能是 `<a>展开</a>`、`<a>...展开</a>`、`<a>展开全文</a>`。
+ * 卡片上另有展开按钮，正文里不需要再留一份，先在 HTML 层剥掉带链接的那一种。
+ */
+const EXPAND_LINK_PATTERN = /<a\b[^>]*>\s*(?:\.{2,}|…+|。{2,})?\s*展开(?:全文)?\s*<\/a>/giu
+
+/** 摘要末尾的纯文本展开提示：省略号 + 「展开」/「展开全文」，允许尾巴再跟标点 */
+const TRAILING_EXPAND_PATTERN = /(?:\s*(?:\.{2,}|…+|。{2,})\s*)+展开(?:全文)?[.。…]*\s*$/u
+
+/** 摘要末尾的截断省略号：链接被剥掉后会单独剩下 `……`，需要一并清掉 */
+const TRAILING_ELLIPSIS_PATTERN = /(?:\s*(?:\.{2,}|…+|。{2,}))+\s*$/u
+
+/** 去掉「展开」链接：只处理带 <a> 外壳的那一处，正文里的普通用词不受影响 */
+function removeExpandLink(html: string): string {
+    return html.replace(EXPAND_LINK_PATTERN, '')
+}
+
+/**
+ * 去掉末尾的截断痕迹：先删「……展开」，再删可能剩下的省略号。
+ * 只对长文摘要调用，避免误伤普通正文里同样的写法。
+ */
+function stripTrailingTruncation(text: string): string {
+    return text.replace(TRAILING_EXPAND_PATTERN, '').replace(TRAILING_ELLIPSIS_PATTERN, '').trimEnd()
+}
+
+/** 清理最后一个文本段末尾的截断痕迹：清空后整段移除，避免留下空段落 */
+function removeTrailingExpandHint(segments: WeiboTimelineSegment[]): void {
+    const last = segments[segments.length - 1]
+    if (last === undefined || last.type !== 'text') {
+        return
+    }
+    const cleaned = stripTrailingTruncation(last.text)
+    if (cleaned.length === 0) {
+        segments.pop()
+        return
+    }
+    segments[segments.length - 1] = { type: 'text', text: cleaned }
+}
+
+/** 没有 HTML 正文时的单段文本：空正文返回空数组，调用方据此显示「无正文」 */
+function buildTextSegments(text: string): WeiboTimelineSegment[] {
+    return text.length > 0 ? [{ type: 'text', text }] : []
+}
+
+/**
+ * 把表情 img 还原成 `[名称]` 文本。
+ * 纯文本口径（转发摘要、text 字段）不需要图片，但直接剥标签会把表情名一起丢掉。
+ */
+function replaceEmojiWithText(html: string): string {
+    return html.replace(/<img\b[^>]*>/giu, (tag) => {
+        const name = readAttribute(tag, 'title') || readAttribute(tag, 'alt')
+        return name.length > 0 ? `[${name}]` : ''
+    })
+}
+
+/** 表情 img 标签：只按标签切分，属性在标签内解析 */
+const IMAGE_TAG_PATTERN = /<img\b[^>]*>/giu
+
+/**
+ * 把正文 HTML 切成「文本 + 表情」片段。
+ * 表情图只接受微博图床地址；非白名单域名或缺少直链时降级成 `[表情名]` 文本，不丢信息。
+ */
+export function parsePostSegments(html: string): WeiboTimelineSegment[] {
+    const segments: WeiboTimelineSegment[] = []
+    if (html.length === 0) {
+        return segments
+    }
+    let lastIndex = 0
+    for (const match of html.matchAll(IMAGE_TAG_PATTERN)) {
+        const index = match.index ?? 0
+        pushHtmlText(segments, html.slice(lastIndex, index))
+        const tag = match[0]
+        const url = normalizeWeiboImageUrl(readAttribute(tag, 'src'))
+        const name = readAttribute(tag, 'title') || readAttribute(tag, 'alt')
+        if (url !== null) {
+            segments.push({ type: 'emoji', name, url })
+        } else {
+            pushPlainText(segments, name.length > 0 ? `[${name}]` : '')
+        }
+        lastIndex = index + tag.length
+    }
+    pushHtmlText(segments, html.slice(lastIndex))
+    return segments
+}
+
+/**
+ * 解析微博时间：主格式形如 `Wed Nov 19 10:00:00 +0800 2026`，带时区偏移。
+ * 解析失败返回空串而不是抛错——单条时间异常不该阻断整页。
+ */
+export function parseWeiboCreatedAt(raw: string): string {
+    const trimmed = raw.trim()
+    if (trimmed.length === 0) {
+        return ''
+    }
+    const match = /^[A-Za-z]{3} ([A-Za-z]{3}) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) ([+-])(\d{2})(\d{2}) (\d{4})$/u.exec(
+        trimmed,
+    )
+    if (match !== null) {
+        const [, monthName, day, hour, minute, second, sign, tzHour, tzMinute, year] = match
+        const month = monthName === undefined ? undefined : MONTH_INDEX[monthName]
+        if (
+            month !== undefined &&
+            day !== undefined &&
+            hour !== undefined &&
+            minute !== undefined &&
+            second !== undefined &&
+            sign !== undefined &&
+            tzHour !== undefined &&
+            tzMinute !== undefined &&
+            year !== undefined
+        ) {
+            const offsetMinutes = (sign === '+' ? 1 : -1) * (Number(tzHour) * 60 + Number(tzMinute))
+            const utcMs =
+                Date.UTC(Number(year), month, Number(day), Number(hour), Number(minute), Number(second)) -
+                offsetMinutes * 60_000
+            return new Date(utcMs).toISOString()
+        }
+    }
+    const fallback = new Date(trimmed)
+    return Number.isNaN(fallback.getTime()) ? '' : fallback.toISOString()
+}
+
+/** 单张图片的候选信息：原图、中图与上游给出的原图尺寸 */
+interface MediaCandidate {
+    /** 原图直链：灯箱使用，优先 largest（画质最好） */
+    url: string
+    /** 中图直链：九宫格使用，优先上游 bmiddle 档 */
+    middleUrl: string | null
+    /** 原图尺寸：优先 largest 档（最大可用尺寸），缺失回退 original / large */
+    size: WeiboTimelineImageSize | null
+}
+
+/** 读取档位宽高：宽高都为正数才算有效 */
+function readVariantSize(variant: unknown): WeiboTimelineImageSize | null {
+    if (!isRecord(variant)) {
+        return null
+    }
+    const width = toCount(variant.width)
+    const height = toCount(variant.height)
+    return width > 0 && height > 0 ? { width, height } : null
+}
+
+/** 读取档位直链：非白名单域名视为不可用 */
+function readVariantUrl(variant: unknown): string | null {
+    if (!isRecord(variant)) {
+        return null
+    }
+    return normalizeWeiboImageUrl(toText(variant.url))
+}
+
+/**
+ * 从一个媒体对象里取候选信息。
+ * 尺寸取 largest 档（上游给出的最大尺寸），预览角标与竖横判断都用它；
+ * 直链同样优先 largest 保证画质；中图优先用上游 bmiddle 档（新版为 wap360），拿不到再按尺寸目录推导。
+ */
+function pickMediaCandidate(value: unknown): MediaCandidate | null {
+    if (!isRecord(value)) {
+        return null
+    }
+    const size = readVariantSize(value.largest) ?? readVariantSize(value.original) ?? readVariantSize(value.large)
+    const url =
+        readVariantUrl(value.largest) ??
+        readVariantUrl(value.original) ??
+        readVariantUrl(value.large) ??
+        readVariantUrl(value.bmiddle) ??
+        normalizeWeiboImageUrl(toText(value.url))
+    if (url === null) {
+        return null
+    }
+    const middleUrl = readVariantUrl(value.bmiddle) ?? readVariantUrl(value.large) ?? buildMiddleImageUrl(url)
+    return { url, middleUrl, size }
+}
+
+/** 从 playback_list 结构里取第一个可播放地址 */
+function pickPlaybackUrl(mediaInfo: unknown): string | null {
+    if (!isRecord(mediaInfo)) {
+        return null
+    }
+    const playbackList = mediaInfo.playback_list
+    if (Array.isArray(playbackList)) {
+        for (const item of playbackList) {
+            if (isRecord(item) && isRecord(item.play_info)) {
+                const url = toText(item.play_info.url)
+                if (url.length > 0) {
+                    return url
+                }
+            }
+        }
+    }
+    for (const key of ['mp4_720p_mp4', 'mp4_hd_url', 'stream_url']) {
+        const url = toText(mediaInfo[key])
+        if (url.length > 0) {
+            return url
+        }
+    }
+    return null
+}
+
+/** 提取媒体摘要：图片直链优先取 pic_infos，缺直链时用 pic_ids 拼图床地址 */
+function extractMedia(record: Record<string, unknown>): WeiboTimelineMedia {
+    const images: string[] = []
+    const thumbnails: string[] = []
+    const sizes: Array<WeiboTimelineImageSize | null> = []
+
+    /** 追加图片：按原图地址去重，三个数组保持同序，前端按索引配对 */
+    const pushImage = (candidate: MediaCandidate | null): void => {
+        if (candidate === null || images.includes(candidate.url)) {
+            return
+        }
+        images.push(candidate.url)
+        thumbnails.push(candidate.middleUrl ?? buildMiddleImageUrl(candidate.url))
+        sizes.push(candidate.size)
+    }
+
+    const picInfos = record.pic_infos
+    if (isRecord(picInfos)) {
+        for (const info of Object.values(picInfos)) {
+            pushImage(pickMediaCandidate(info))
+        }
+    }
+
+    // 新版信息流把图片与视频统一放在 mix_media_info：图片项可能只有 pid，也可能带直链
+    let videoUrl: string | null = null
+    const mixMedia = record.mix_media_info
+    if (isRecord(mixMedia) && Array.isArray(mixMedia.items)) {
+        for (const item of mixMedia.items) {
+            if (!isRecord(item)) {
+                continue
+            }
+            if (item.type === 'video') {
+                if (videoUrl === null && isRecord(item.data)) {
+                    videoUrl = pickPlaybackUrl(item.data.media_info)
+                }
+                continue
+            }
+            const candidate = pickMediaCandidate(item.data) ?? pickMediaCandidate(item)
+            if (candidate !== null) {
+                pushImage(candidate)
+                continue
+            }
+            const built = buildSinaImageUrl(toText(item.id) || toText(item.pid))
+            if (built !== null) {
+                pushImage({ url: built, middleUrl: buildMiddleImageUrl(built), size: null })
+            }
+        }
+    }
+
+    // 兜底：部分返回只有 pic_ids（无 pic_infos），用 pid 直接拼图床直链，否则图片区是空的
+    if (images.length === 0 && Array.isArray(record.pic_ids)) {
+        for (const rawPid of record.pic_ids) {
+            const built = buildSinaImageUrl(toText(rawPid))
+            if (built !== null) {
+                pushImage({ url: built, middleUrl: buildMiddleImageUrl(built), size: null })
+            }
+        }
+    }
+    for (const key of ['original_pic', 'bmiddle_pic', 'thumbnail_pic']) {
+        const url = normalizeWeiboImageUrl(toText(record[key]))
+        if (url !== null) {
+            pushImage({ url, middleUrl: buildMiddleImageUrl(url), size: null })
+        }
+    }
+
+    const pageInfo = record.page_info
+    if (videoUrl === null && isRecord(pageInfo)) {
+        videoUrl = pickPlaybackUrl(pageInfo.media_info)
+    }
+
+    const declared = toCount(record.pic_num)
+    const picIds = Array.isArray(record.pic_ids) ? record.pic_ids.length : 0
+    return {
+        images,
+        thumbnails,
+        sizes,
+        videoUrl,
+        imageCount: Math.max(declared, picIds, images.length),
+    }
+}
+
+/** 读当前账号是否已赞：上游有对象与数字两种形态，缺失按未赞处理 */
+function readIsLiked(record: Record<string, unknown>): boolean {
+    const status = record.attitudes_status
+    if (isRecord(status)) {
+        return status.liked === true || status.liked === 1
+    }
+    return status === 1 || record.liked === true
+}
+
+/** 互动数据：字段名按微博原样映射，缺失按 0 */
+function extractMetrics(record: Record<string, unknown>): WeiboTimelineMetrics {
+    return {
+        reposts: toCount(record.reposts_count),
+        comments: toCount(record.comments_count),
+        likes: toCount(record.attitudes_count),
+    }
+}
+
+/** 拼原文地址：有 mblogid 时用 /{uid}/{mblogid}，否则退回 /detail/{id} */
+function buildPostUrl(uid: string, mblogid: string, id: string): string {
+    if (mblogid.length === 0) {
+        return `${WEIBO_WEB_BASE}/detail/${id}`
+    }
+    return uid.length > 0 ? `${WEIBO_WEB_BASE}/${uid}/${mblogid}` : `${WEIBO_WEB_BASE}/detail/${id}`
+}
+
+/** 归一化转发体：只保留摘要，不再递归展开 */
+function normalizeRetweeted(value: unknown): WeiboTimelineRetweet | null {
+    if (!isRecord(value)) {
+        return null
+    }
+    const id = toText(value.idstr) || toText(value.id) || toText(value.mid)
+    if (id.length === 0) {
+        return null
+    }
+    const author = isRecord(value.user) ? toText(value.user.screen_name) : ''
+    const textRaw = toText(value.text_raw)
+    const text = textRaw.length > 0 ? stripWeiboHtml(textRaw) : stripWeiboHtml(replaceEmojiWithText(toText(value.text)))
+    return {
+        id,
+        authorName: author,
+        text,
+        url: buildPostUrl(isRecord(value.user) ? toText(value.user.id) : '', toText(value.mblogid), id),
+    }
+}
+
+/** 是否为广告或推广位：这类条目没有稳定 id，混进时间线会污染增量游标 */
+function isPromoted(record: Record<string, unknown>): boolean {
+    if (record.ad_state === 1 || record.is_ad === true) {
+        return true
+    }
+    return isRecord(record.promotion)
+}
+
+/**
+ * 归一化单条微博。
+ * 缺少数字 id 或属于广告位时返回 null，调用方据此跳过且不计数。
+ */
+export function normalizeTimelinePost(raw: unknown): WeiboTimelinePost | null {
+    if (!isRecord(raw) || isPromoted(raw)) {
+        return null
+    }
+    const id = toText(raw.idstr) || toText(raw.id) || toText(raw.mid)
+    if (id.length === 0) {
+        return null
+    }
+    const mblogid = toText(raw.mblogid)
+    const user = isRecord(raw.user) ? raw.user : {}
+    const uid = toText(user.id)
+    const avatar = toText(user.avatar_large) || toText(user.profile_image_url)
+    const textRaw = toText(raw.text_raw)
+    const html = removeExpandLink(toText(raw.text))
+    const longText = raw.longText
+    const isLongText = raw.isLongText === true || isRecord(longText)
+    const plainText = textRaw.length > 0 ? stripWeiboHtml(textRaw) : stripWeiboHtml(replaceEmojiWithText(html))
+    // 长文摘要末尾常带「……展开」：卡片已有展开按钮，正文里再留一份会造成重复提示
+    const text = isLongText ? stripTrailingTruncation(plainText) : plainText
+    // 表情只存在于带标签的 text 里：text_raw 会把表情压成 [名称] 纯文本，无法还原成图片
+    const segments = html.length > 0 ? parsePostSegments(html) : buildTextSegments(text)
+    if (isLongText) {
+        removeTrailingExpandHint(segments)
+    }
+    const createdAtRaw = toText(raw.created_at)
+
+    return {
+        id,
+        mblogid,
+        url: buildPostUrl(uid, mblogid, id),
+        text,
+        segments,
+        createdAt: parseWeiboCreatedAt(createdAtRaw),
+        createdAtRaw,
+        source: stripWeiboHtml(toText(raw.source)),
+        author: {
+            id: uid,
+            name: toText(user.screen_name),
+            avatarUrl: normalizeWeiboImageUrl(avatar) ?? '',
+            isVerified: user.verified === true,
+        },
+        metrics: extractMetrics(raw),
+        media: extractMedia(raw),
+        retweeted: normalizeRetweeted(raw.retweeted_status),
+        isLiked: readIsLiked(raw),
+        isLongText,
+    }
+}
+
+/** 夹取翻页数：非法值取 1，超出上限按上限 */
+function clampMaxPages(value: number | undefined): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return 1
+    }
+    return Math.min(Math.max(Math.trunc(value), 1), WEIBO_TIMELINE_MAX_PAGES)
+}
+
+/** 游标清洗：空串与非数字一律视为未指定 */
+function normalizeCursor(value: string | null | undefined): string | null {
+    const trimmed = value?.trim() ?? ''
+    return trimmed.length > 0 ? trimmed : null
+}
+
+/**
+ * 拉取关注时间线。
+ * 首屏与翻页走同一入口：带 maxId 即向后翻页，带 sinceId 即增量（只取一页）。
+ */
+export async function fetchFriendTimeline(options: FetchTimelineOptions): Promise<WeiboTimelineResult> {
+    const requestPage = options.requestPage ?? requestTimelinePage
+    const now = options.now ?? ((): Date => new Date())
+    const maxPages = clampMaxPages(options.maxPages)
+    const sinceCursor = normalizeCursor(options.sinceId)
+    const isIncremental = sinceCursor !== null && sinceCursor !== '0'
+    let cursor = normalizeCursor(options.maxId)
+    let nextCursor: string | null = cursor
+    let lastPage: TimelinePage | null = null
+    let pages = 0
+    let droppedDuplicates = 0
+    const seen = new Set<string>()
+    const posts: WeiboTimelinePost[] = []
+
+    while (pages < maxPages) {
+        const page = await requestPage({
+            cookie: options.cookie,
+            uid: options.uid,
+            sinceId: isIncremental ? sinceCursor : '0',
+            maxId: cursor,
+            count: options.count,
+            refresh: options.refresh,
+            timeoutMs: options.timeoutMs,
+            minIntervalMs: options.minIntervalMs,
+        })
+        pages += 1
+        lastPage = page
+        for (const raw of page.statuses) {
+            const post = normalizeTimelinePost(raw)
+            if (post === null) {
+                continue
+            }
+            if (seen.has(post.id)) {
+                droppedDuplicates += 1
+                continue
+            }
+            seen.add(post.id)
+            posts.push(post)
+        }
+
+        const pageNext = normalizeCursor(page.maxId)
+        // 增量只取第一页：再往后翻就变成补历史，与「看新内容」的语义相反
+        if (isIncremental) {
+            nextCursor = null
+            break
+        }
+        if (page.statuses.length === 0 || pageNext === null || pageNext === cursor) {
+            nextCursor = null
+            break
+        }
+        nextCursor = pageNext
+        cursor = pageNext
+    }
+
+    const latest = posts[0]
+    const sinceId = latest !== undefined ? latest.id : (lastPage?.sinceId ?? null)
+    return {
+        posts,
+        sinceId,
+        maxId: nextCursor,
+        hasMore: nextCursor !== null && posts.length > 0,
+        pages,
+        fetchedAt: now().toISOString(),
+        droppedDuplicates,
+    }
+}
