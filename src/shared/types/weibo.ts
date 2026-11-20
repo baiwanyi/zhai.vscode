@@ -219,12 +219,52 @@ export const WEIBO_FEED_DEFAULT_COUNT = 25
 export type WeiboFeedSource = 'timeline' | 'hot' | 'group'
 
 /**
+ * 热门频道：gid 与 containerid 来自 allGroups 的「我的频道 / 频道推荐」分区，
+ * 宿主按 gid 查到 containerid 后拼请求；菜单只显示默认预设与手动添加的那些。
+ */
+export interface WeiboHotChannel {
+    /** 频道 gid：前端用它当 listId 选频道 */
+    gid: string
+    title: string
+    /** 上游 containerid：不能用 gid 推导（有的带 _ctg1_… 形式） */
+    containerId: string
+}
+
+/** 热门菜单最多显示的频道数：默认预设已占去大半，只留少量补充位 */
+export const WEIBO_HOT_CHANNEL_LIMIT = 10
+
+/**
+ * 固定保留的热门频道：始终在菜单里，不允许移除 —— 它们是最常用的四个入口。
+ */
+export const WEIBO_PINNED_HOT_CHANNELS: readonly WeiboHotChannel[] = [
+    { gid: '102803', title: '推荐', containerId: '102803' },
+    { gid: '102803600343', title: '实时', containerId: '102803_ctg1_600343_-_ctg1_600343' },
+    { gid: '1028032222', title: '同城', containerId: '102803_2222' },
+    { gid: '102803600169', title: '榜单', containerId: '102803_ctg1_600169_-_ctg1_600169' },
+]
+
+/**
+ * 默认显示的热门频道：顺序即菜单顺序，参数取自网页端发现页各频道的实际请求地址。
+ * 关键约束：小时榜、周榜、昨日、前日并不出现在 allGroups 的频道分区里，只能本地预设；
+ * 它们默认上菜单，但允许像补充频道一样移除 —— 移除后仍存在候选池里，可以再加回来。
+ * 其余频道由「＋」从 allGroups 的频道池补充，整体受 WEIBO_HOT_CHANNEL_LIMIT 约束。
+ */
+export const WEIBO_DEFAULT_HOT_CHANNELS: readonly WeiboHotChannel[] = [
+    ...WEIBO_PINNED_HOT_CHANNELS,
+    { gid: '1028039999', title: '小时榜', containerId: '102803_ctg1_9999_-_ctg1_9999_home' },
+    { gid: '1028038698', title: '周榜', containerId: '102803_ctg1_8698_-_ctg1_8698' },
+    { gid: '1028038899', title: '昨日', containerId: '102803_ctg1_8899_-_ctg1_8899' },
+    { gid: '1028038799', title: '前日', containerId: '102803_ctg1_8799_-_ctg1_8799' },
+]
+
+/**
  * 信息流入参：游标语义与 weibo/timeline 一致，端点由 source 决定。
- * 关键约束：group 必须给定 listId；timeline 缺省时宿主自行从默认分组取「最新微博」gid；hot 不使用 listId。
+ * 关键约束：group 必须给定 listId；timeline 缺省时宿主自行从默认分组取「最新微博」gid；
+ * hot 的 listId 是频道 gid（来自 allGroups），缺省时回落到频道表首项。
  */
 export interface WeiboFeedRequest {
     source: WeiboFeedSource
-    /** 列表 id：timeline 为默认分组 gid，group 为分组 gid，hot 忽略 */
+    /** 列表 id：timeline 为默认分组 gid，group 为分组 gid，hot 为热门频道 gid */
     listId?: string | null
     sinceId?: string | null
     maxId?: string | null
@@ -244,10 +284,12 @@ export interface WeiboGroupItem {
     isCustom: boolean
 }
 
-/** 分组结果：默认分组供时间线取 list_id，我的分组供分组页展示 */
+/** 分组结果：默认分组供时间线取 list_id，我的分组与热门频道供菜单展示 */
 export interface WeiboGroupsResult {
     defaultGroups: WeiboGroupItem[]
     myGroups: WeiboGroupItem[]
+    /** 热门频道：取自「我的频道」与「频道推荐」两个分区，顺序即 menu 顺序 */
+    hotChannels: WeiboHotChannel[]
     /** 关注时间线使用的 list_id：宿主按「最新微博」条目选定，缺失为 null */
     timelineListId: string | null
     /** 当前登录账号 uid：上游未给出时为 null */

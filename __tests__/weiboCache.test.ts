@@ -16,11 +16,12 @@ const COOKIE = 'SUB=abc123; SUBP=def456'
 const ACCOUNT = toAccountKey(COOKIE)
 const OTHER_ACCOUNT = toAccountKey('SUB=other')
 
-/** 一份可缓存的分组结果：gid 为数字串、标题非空 */
+/** 一份可缓存的分组结果：gid 为数字串、标题非空，热门频道与 containerid 由上游给出 */
 function groupsResult(): WeiboGroupsResult {
     return {
         defaultGroups: [{ gid: '10001', title: '最新微博', uid: '9001', isCustom: false }],
         myGroups: [{ gid: '20002', title: '自定义分组', uid: '', isCustom: true }],
+        hotChannels: [{ gid: '102803', title: '热门', containerId: '102803' }],
         timelineListId: '10001',
         uid: '9001',
     }

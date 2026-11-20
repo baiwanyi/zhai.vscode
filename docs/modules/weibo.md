@@ -1153,15 +1153,37 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 
 ### 14.11 多入口信息流（首页 / 时间线 / 热门 / 分组）
 
-面板顶部固定菜单只留「首页 / 时间线 / 热门 / 分组」四个信息流入口；顶栏动作区放「刷新」与账号菜单（头像 + 昵称），下拉里收回「个人主页」「设置」「删除 Cookie」。菜单挂在 `AppHeader` 内，随标题区固定，不参与内容区滚动。
+顶部菜单在一行内排完：一级分组（首页 / 热门 / 热搜，带图标）→ 一条竖线 → 当前分组的二级频道，首页组的自建分组直接续在「推荐 / 时间线」后面同属二级，即「🏠 首页 🔥 热门 📈 热搜 │ 推荐 时间线 颜值 时尚 动漫 …」（`@components/ui/navigation-menu` 的 List / Item / Link 槽位 + `ui/separator`，不用下拉浮层）；点一级直接落到该组首项，不需要再点一次二级。顶栏动作区放「刷新」与账号菜单（头像 + 昵称），菜单里收回「个人主页」「设置」「删除 Cookie」。菜单挂在 `AppHeader` 内，随标题区固定，不参与内容区滚动。
+
+| 分组 | 子频道 | 接入状态 |
+|------|--------|----------|
+| 首页 | 推荐 / 时间线，其后追加账号自建分组 | 已接入 |
+| 热门 | 推荐 / 实时 / 同城 / 榜单 / 小时榜 / 周榜 / 昨日 / 前日 | 已接入（各频道参数见下） |
+| 热搜 | 我的 / 实时 / 同城 / ACG / 文娱 / 社会 / 科技 / 生活 / 体育 | 规划占位 |
+
+- 视图标识：固定频道用 `分组.子项`，自建分组用 `group.<gid>`（`toCustomGroupView` / `readCustomGroupId` 是一对出口）；未接入的频道显示「暂未接入」空态并禁用刷新，不落回首页内容。
+- 自建分组是运行时数据，由页面把 `myGroups` 传进菜单；停在 `group.*` 上一级仍回落到「首页」，否则二级会整段消失、无法切回。
 
 | 入口 | 接口 | 关键参数 |
 |------|------|----------|
 | 首页 | `ajax/feed/unreadfriendstimeline` | 见 14.1；增量刷新只取上次之后的新微博 |
 | 时间线 | `ajax/feed/friendstimeline` | `list_id` 取默认分组「最新微博」的 gid，`fid` 同值，`refresh=4`，首屏 `since_id=0`，`count=25` |
-| 热门 | `ajax/feed/hottimeline` | `group_id=102803`、`containerid=102803`、`extparam=discover|new_feed`、`refresh=0`，首屏 `count=10` |
-| 分组列表 | `ajax/feed/allGroups` | 取 `groups[]` 中「默认分组」与「我的分组」两个分区 |
+| 热门 | `ajax/feed/hottimeline` | 按频道取 `group_id` / `containerid` / `refresh`（见下表），`extparam=discover|new_feed` 固定，首屏 `count=10` |
+| 分组列表 | `ajax/feed/allGroups` | 取 `groups[]` 中「默认分组」与「我的分组」两个分区，`myGroups` 直接进菜单 |
 | 分组信息流 | `ajax/feed/groupstimeline` | `list_id={所选分组 gid}`、`refresh=4`、`fast_refresh=1`、`count=25` |
+
+- 分组不再有选择页：分组名直接作为首页的二级菜单项，点哪个就按该分组的 `list_id` 取信息流，翻页只在该分组内生效。
+
+热门频道分两层：菜单上只显示「默认预设 + 手动添加」，可选池来自 `allGroups` 的「我的频道」与「频道推荐」两个分区（`group_type: 1`，合并去重，每条含 `gid` / `title` / `containerid`）。
+
+- 默认显示的 8 个频道是 `WEIBO_DEFAULT_HOT_CHANNELS`：推荐 / 实时 / 同城 / 榜单 / 小时榜 / 周榜 / 昨日 / 前日。前四个由 `WEIBO_PINNED_HOT_CHANNELS` 固定（不可移除）；小时榜、周榜、昨日、前日不在 `allGroups` 的频道分区里，靠本地预设下发，但**与补充频道一样可移除**，删掉后回到候选池还能再加回来。
+- 菜单行末尾的「＋」是频道管理入口，本身用 `Button size="icon-xs" variant="ghost"`（禁用态、focus ring 与悬停提示统一由 Button 提供，尺寸收到 `size-5` 与二级频道行高对齐）：上半区列可移除的频道（整枚 chip 点击即移除，`Button size="xs" variant="secondary"` + `hover:bg-destructive/15` 提示危险性），下半区列池里尚未上菜单的频道（`Button size="xs" variant="ghost"`，固定 `w-16` 让 2~4 字的候选名等宽成格、每行三枚，超长名字由内部 `truncate` 截断，点击加入并切过去）；数量受 `WEIBO_HOT_CHANNEL_LIMIT`（10）约束，默认 8 个占位，实际可补 2 个；名额满时下半区改提示「名额已满，先移除一个再添加」。
+- 「＋」的置灰条件只看「既没候选又没可移除项」——名额用满时更需要的是移除，若按「能否添加」置灰就再也删不掉了；只有推荐 / 实时 / 同城 / 榜单 不出现移除入口。
+- 选择状态存会话内（初始即默认 8 个 gid），重开面板回到默认；移除时若正停在该频道上，视图回落到推荐频道，避免内容区停在一个菜单里已不存在的频道。
+- 前端菜单登记 `hot.<gid>` 作为视图标识，只拿 `gid` 当 `listId`；`containerid` 一律由宿主按 gid 从频道表查出，不由 gid 推导（有的频道形如 `102803_ctg1_600343_-_ctg1_600343`）。
+- 频道表进两层缓存：`fetchWeiboGroups` 回源后写内存缓存（键为凭证，换号不串），路由层命中磁盘缓存时也补一次 `rememberHotChannels`，避免热门取数再回源一次 `allGroups`。
+- 磁盘缓存缺少 `hotChannels` 字段（旧版本）按无效处理，强制回源一次，否则「+」弹层会一直为空。
+- 热门请求的 `refresh` 统一按首屏语义取 `0`；指定 gid 查不到时回落频道表首项，表为空才用 gid 与 containerid 同值的兜底（推荐频道就是这种形态）。
 
 - 分组结构：`groups[0]` 为「默认分组」、`groups[1]` 为「我的分组」；宿主按标题精确匹配，标题缺失才回落下标，避免分区顺序微调后取错。
 - 时间线的 `list_id` 由宿主在 `weibo/groups` 结果里算好（`timelineListId`，取「最新微博」条目），前端不自行挑条目；缺省时宿主还会再取一次 allGroups 兜底。
@@ -1199,7 +1221,7 @@ GET https://weibo.com/ajax/side/bandUnified?type=mine&last_tab=mine&last_tab_tim
 - 标题下的说明行显示「更新于 本地时分」，时刻取宿主回包的 `fetchedAt`（ISO），与榜单内容同一次请求同源，而不是前端计时；首次取数前或回包时刻非法时该行留空，标题区不跳动。
 - 卡片的四种状态都由 `StateEmpty` 承载：未配置 Cookie（`Cookie` 图标 + 取数前提说明）、首次加载（`Spinner` + 正在读取）、失败与空榜单（`Flame` + 重试按钮作底部操作区，有错误信息时标题为「热搜读取失败」、说明用上游错误文案，否则是「暂时没有热搜内容」+ 刷新建议）；侧栏内统一用紧凑间距（`gap-3 p-3`），未配置态不在卡片内重复放按钮，入口在顶栏账号菜单的「设置」。
 - 榜单用 `ItemGroup`（自带 `role="list"`）+ `Item`（补 `role="listitem"`）承载，不再用 `ol/li`：序号走 `ItemMedia variant="icon"`（`w-4 justify-end`，两位数不推歪标题）、标题走 `ItemTitle`（`line-clamp-1` 单行截断）、`description` 作标题下的副行走 `ItemDescription`、`icon_desc` 作为行尾 `Badge` 收进 `ItemActions`；条目只展示文字，上游 `icon_url` 仍随回包下发但前端不再渲染成图片。
-- 条目整行点击打开 `https://s.weibo.com/weibo?q={encodeURIComponent(title)}`（`s.weibo.com` 属 `weibo.com` 子域，`weibo/openPost` 白名单放行；注意该协议对 url 有 512 字符上限）；悬停整行（触发器是 `Item` 本身，不是标题链接）用 `Tooltip` 显示完整标题，气泡沿用 `TOOLTIP_CLASS` 的暗底亮字并放左侧；悬停时整行铺 `hover:bg-muted`，标题、序号与描述同时提亮（`Item` 自带 `group/item`）；标题本身是 `a`，只为键盘可达与右键复制地址，点击 `preventDefault` 后冒泡回整行处理器，避免打开两次或让 webview 自行导航。
+- 条目整行点击打开 `https://s.weibo.com/weibo?q={encodeURIComponent(title)}`（`s.weibo.com` 属 `weibo.com` 子域，`weibo/openPost` 白名单放行；注意该协议对 url 有 512 字符上限）；悬停整行（触发器是 `Item` 本身，不是标题链接）用 `Tooltip` 显示完整标题，气泡沿用 `TOOLTIP_CLASS` 的暗底亮字并放左侧，调用处再叠 `ring-1 ring-border shadow-lg`——气泡底色固定 `#1E1E1E`，暗色主题下与侧栏底色几乎同值，没有轮廓就分不出边界；悬停时整行铺 `hover:bg-muted`，标题、序号与描述同时提亮（`Item` 自带 `group/item`）；标题本身是 `a`，只为键盘可达与右键复制地址，点击 `preventDefault` 后冒泡回整行处理器，避免打开两次或让 webview 自行导航。
 
 ### 14.14 元数据缓存（分组 / 热搜 / 表情）
 

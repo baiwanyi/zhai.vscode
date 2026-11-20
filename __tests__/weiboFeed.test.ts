@@ -68,6 +68,30 @@ describe('buildFeedUrl', () => {
         expect(url.searchParams.get('count')).toBe('10')
     })
 
+    it('热门按频道传参：containerid 取 allGroups 给出的值，refresh 统一按首屏取 0', () => {
+        const realtime = new URL(
+            buildFeedUrl({
+                source: 'hot',
+                listId: '102803600343',
+                sinceId: null,
+                maxId: null,
+                count: 10,
+                hotChannel: { gid: '102803600343', title: '实时', containerId: '102803_ctg1_600343_-_ctg1_600343' },
+            }),
+        )
+        expect(realtime.searchParams.get('group_id')).toBe('102803600343')
+        expect(realtime.searchParams.get('containerid')).toBe('102803_ctg1_600343_-_ctg1_600343')
+        expect(realtime.searchParams.get('refresh')).toBe('0')
+    })
+
+    it('热门缺频道参数时按 gid 兜底 containerid', () => {
+        const url = new URL(
+            buildFeedUrl({ source: 'hot', listId: '1028039999', sinceId: null, maxId: null, count: 10 }),
+        )
+        expect(url.searchParams.get('group_id')).toBe('1028039999')
+        expect(url.searchParams.get('containerid')).toBe('1028039999')
+    })
+
     it('分组带 fast_refresh=1，条数夹取到 [1, 50]', () => {
         const url = new URL(
             buildFeedUrl({ source: 'group', listId: '5225046125581012', sinceId: null, maxId: null, count: 999 }),
@@ -103,6 +127,48 @@ describe('fetchWeiboGroups', () => {
             }),
         ).rejects.toThrow('groups 不是数组')
     })
+
+    it('热门频道从「我的频道 / 频道推荐」合并去重，containerid 缺失时按 gid 兜底', async () => {
+        const result = await fetchWeiboGroups({
+            cookie: 'SUB=x',
+            requestJson: (): Promise<{ record: Record<string, unknown>; status: number }> =>
+                Promise.resolve({
+                    record: {
+                        ok: 1,
+                        groups: [
+                            { title: '默认分组', group: [{ gid: '110006305885570', title: '最新微博' }] },
+                            { title: '我的分组', group: [] },
+                            {
+                                title: '我的频道',
+                                group: [
+                                    { gid: '102803', title: '热门', containerid: '102803' },
+                                    { gid: '1028032222', title: '同城', containerid: '102803_2222' },
+                                    // 与频道推荐重复：按 gid 去重后只保留先出现的一条
+                                    { gid: '1028033288', title: '电影', containerid: '102803_ctg1_3288' },
+                                ],
+                            },
+                            {
+                                title: '频道推荐',
+                                group: [
+                                    { gid: '1028033288', title: '电影', containerid: '102803_ctg1_3288' },
+                                    // 没有 containerid：按 gid 兜底，且不能因缺字段被丢弃
+                                    { gid: '1028039999', title: '小时榜' },
+                                ],
+                            },
+                        ],
+                    },
+                    status: 200,
+                }),
+        })
+        expect(result.hotChannels.map((channel) => channel.gid)).toEqual([
+            '102803',
+            '1028032222',
+            '1028033288',
+            '1028039999',
+        ])
+        expect(result.hotChannels[1]?.containerId).toBe('102803_2222')
+        expect(result.hotChannels[3]?.containerId).toBe('1028039999')
+    })
 })
 
 describe('fetchWeiboFeed', () => {
@@ -110,8 +176,11 @@ describe('fetchWeiboFeed', () => {
         const urls: string[] = []
         const result = await fetchWeiboFeed({
             source: 'hot',
+            listId: '102803600343',
             count: 10,
             cookie: 'SUB=x',
+            // 频道表由路由层传入：省掉一次 allGroups，用例也不必造分组响应
+            hotChannels: [{ gid: '102803600343', title: '实时', containerId: '102803_ctg1_600343_-_ctg1_600343' }],
             now: (): Date => new Date('2026-11-20T00:00:00.000Z'),
             requestJson: (query: WeiboJsonQuery): Promise<{ record: Record<string, unknown>; status: number }> => {
                 urls.push(query.url)
@@ -122,7 +191,11 @@ describe('fetchWeiboFeed', () => {
             },
         })
         expect(urls).toHaveLength(1)
-        expect(new URL(urls[0] ?? '').pathname).toBe('/ajax/feed/hottimeline')
+        const requested = new URL(urls[0] ?? '')
+        expect(requested.pathname).toBe('/ajax/feed/hottimeline')
+        // containerid 用频道表给的形态，而不是 gid
+        expect(requested.searchParams.get('group_id')).toBe('102803600343')
+        expect(requested.searchParams.get('containerid')).toBe('102803_ctg1_600343_-_ctg1_600343')
         expect(result.posts).toHaveLength(1)
         expect(result.posts[0]?.id).toBe('1')
         expect(result.hasMore).toBe(false)

@@ -83,6 +83,7 @@ function preventNavigation(event: MouseEvent<HTMLAnchorElement>): void {
  * 为配合父级的 list 角色在 Item 上补 role="listitem"；
  * 整行既是点击目标也是 Tooltip 的悬停目标：标题被 line-clamp-1 截断时才用得上完整文案，
  * 触发器就是 Item 本身（不是标题链接），鼠标扫到行内任意位置都会弹气泡；
+ * 气泡固定暗底，暗色主题下与侧栏底色接近，调用处再叠 ring + shadow 勾出边界；
  * 悬停整行时行底铺 hover:bg-muted，标题、序号与描述一并提亮，靠 Item 自带的 group/item 驱动；
  * 点击走宿主 weibo/openPost（webview 内直接跳转会顶掉面板），
  * 标题链接只负责语义与键盘可达，导航一律阻止并冒泡回整行处理器，避免打开两次。
@@ -154,8 +155,10 @@ function HotRankRow({ item }: HotRankRowProps): JSX.Element {
                     </ItemActions>
                 </Item>
             </TooltipTrigger>
-            {/* 气泡放左侧：侧栏贴右边，向顶部弹会压住上一行；暗底亮字由 TOOLTIP_CLASS 统一给定 */}
-            <TooltipContent side="left" align="start" className={TOOLTIP_CLASS}>
+            {/* 气泡放左侧：侧栏贴右边，向顶部弹会压住上一行；暗底亮字由 TOOLTIP_CLASS 统一给定。
+                气泡底色是固定的 #1E1E1E，暗色主题下与侧栏底色几乎同值，只靠底色分不出边界，
+                故在调用处追加 ring + shadow 勾出轮廓（遵循 Tooltip 出口「只追加不改造」的约定） */}
+            <TooltipContent side="left" align="start" className={cn(TOOLTIP_CLASS, 'ring-1 ring-border shadow-lg')}>
                 {item.title}
             </TooltipContent>
         </Tooltip>

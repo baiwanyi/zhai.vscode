@@ -40,7 +40,7 @@ function profileFixture(overrides: Partial<WeiboProfile> = {}): WeiboProfile {
 /** 分组结果：uid 为 null 时模拟上游没给账号 id */
 function groupsFixture(uid: string | null): WeiboGroupsResult {
     const item: WeiboGroupItem = { gid: '10001', title: '最新微博', uid: uid ?? '', isCustom: false }
-    return { defaultGroups: [item], myGroups: [], timelineListId: '10001', uid }
+    return { defaultGroups: [item], myGroups: [], hotChannels: [], timelineListId: '10001', uid }
 }
 
 /** 缓存替身：记录写入的键与清除次数，其余读一律未命中 */

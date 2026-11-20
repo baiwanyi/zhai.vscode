@@ -13,7 +13,7 @@
  */
 import { format } from 'date-fns'
 import { Inbox, RefreshCw } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
     AlertDialog,
@@ -28,7 +28,8 @@ import {
 import { Card, CardContent } from '@components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@components/ui/dialog'
 import { Toaster } from '@components/ui/sonner'
-import type { WeiboGroupItem } from '@shared/types/weibo'
+import { WEIBO_DEFAULT_HOT_CHANNELS, WEIBO_HOT_CHANNEL_LIMIT, WEIBO_PINNED_HOT_CHANNELS } from '@shared/types/weibo'
+import type { WeiboHotChannel } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import {
@@ -51,18 +52,15 @@ import { useWeiboTimeline } from './hooks/useWeiboTimeline'
 import { WeiboAccountMenu } from './layout/WeiboAccountMenu'
 import { WeiboEmoticonPicker } from './layout/WeiboEmoticonPicker'
 import { WeiboFeedList } from './layout/WeiboFeedList'
-import { WeiboGroupList } from './layout/WeiboGroupList'
 import { WeiboHotRankList } from './layout/WeiboHotRankList'
 import { WeiboNav } from './layout/WeiboNav'
+import { readCustomGroupId, readHotChannelGid, readWeiboViewLabel, toHotChannelView } from './layout/weiboNavGroups'
 import type { WeiboFeedController } from './hooks/useWeiboFeed'
-import type { WeiboView } from './layout/WeiboNav'
+import type { WeiboView } from './layout/weiboNavGroups'
 import type { JSX } from 'react'
 
 /** 发布框字数上限：按微博普通正文限制收口，接口接入前先在前端挡住超长输入 */
 const POST_MAX_LENGTH = 2000
-
-/** 热门频道 id：网页端「推荐」频道固定用它作分组与容器标识 */
-const HOT_FEED_LIST_ID = '102803'
 
 /** 保存时间展示：仅用于确认「填的是哪一次」，不含 Cookie 任何片段 */
 function formatSavedAt(savedAt: string | null): string {
@@ -85,9 +83,8 @@ export function WeiboPanel(): JSX.Element {
         saveCredential,
         clearCredential,
     } = useWeiboTimeline()
-    const [view, setView] = useState<WeiboView>('home')
+    const [view, setView] = useState<WeiboView>('home.recommend')
     const [isCredentialOpen, setIsCredentialOpen] = useState(false)
-    const [selectedGroup, setSelectedGroup] = useState<WeiboGroupItem | null>(null)
     // 设置改为弹窗：不再占用导航视图
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
     // 删除 Cookie 是破坏性操作：先确认，再交宿主清除
@@ -101,25 +98,103 @@ export function WeiboPanel(): JSX.Element {
     const timelineFeed = useWeiboFeed({
         source: 'timeline',
         listId: timelineListId,
-        enabled: isConfigured && view === 'timeline',
+        enabled: isConfigured && view === 'home.timeline',
     })
+    /** 我的分组：自建分组直接进菜单，用 useMemo 稳定引用，避免每轮渲染都重算依赖 */
+    const myGroups = useMemo(() => groupsState.groups?.myGroups ?? [], [groupsState.groups])
+    /** 频道池：allGroups 的「我的频道 / 频道推荐」，只作候选来源，不直接全量上菜单 */
+    const hotChannelPool = useMemo(() => groupsState.groups?.hotChannels ?? [], [groupsState.groups])
+    /**
+     * 已知频道全集：本地预设在前、上游池补充在后（同 gid 以预设为准，
+     * 否则「推荐」会被上游的「热门」标题顶掉）。
+     */
+    const knownHotChannels = useMemo(() => {
+        const extra = hotChannelPool.filter(
+            (channel) => !WEIBO_DEFAULT_HOT_CHANNELS.some((preset) => preset.gid === channel.gid),
+        )
+        return [...WEIBO_DEFAULT_HOT_CHANNELS, ...extra]
+    }, [hotChannelPool])
+    /**
+     * 菜单上的热门频道 gid：会话内状态，初始即默认那 8 个。
+     * 关键约束：不能只记「手动补充的」，小时榜等默认可移除项删掉后再加回来也要有位置。
+     */
+    const [hotChannelGids, setHotChannelGids] = useState<readonly string[]>(() =>
+        WEIBO_DEFAULT_HOT_CHANNELS.map((channel) => channel.gid),
+    )
+    /** 按 gid 顺序还原频道对象：删掉的 gid 不在已知集合里时直接跳过，不会渲染空按钮 */
+    const hotChannels = useMemo(
+        () =>
+            hotChannelGids
+                .map((gid) => knownHotChannels.find((channel) => channel.gid === gid))
+                .filter((channel): channel is WeiboHotChannel => channel !== undefined),
+        [hotChannelGids, knownHotChannels],
+    )
+    /** 「＋」弹层的候选：已知集合里尚未上菜单的频道（含被移除的默认项） */
+    const hotChannelCandidates = useMemo(
+        () => knownHotChannels.filter((channel) => !hotChannelGids.includes(channel.gid)),
+        [knownHotChannels, hotChannelGids],
+    )
+    /** 当前热门频道的 gid：视图标识 `hot.<gid>` 还原而来，非热门频道为 null */
+    const hotListId = readHotChannelGid(view)
     const hotFeed = useWeiboFeed({
         source: 'hot',
-        listId: HOT_FEED_LIST_ID,
-        enabled: isConfigured && view === 'hot',
+        listId: hotListId,
+        enabled: isConfigured && hotListId !== null,
     })
+    /** 当前停留的自建分组：从视图标识还原 gid，再回分组集合取标题等信息 */
+    const activeGroupId = readCustomGroupId(view)
+    const activeGroup = activeGroupId === null ? null : (myGroups.find((group) => group.gid === activeGroupId) ?? null)
     const groupFeed = useWeiboFeed({
         source: 'group',
-        listId: selectedGroup?.gid ?? null,
-        enabled: isConfigured && view === 'groups' && selectedGroup !== null,
+        listId: activeGroupId,
+        enabled: isConfigured && activeGroupId !== null,
     })
 
     const activeFeed: WeiboFeedController | null =
-        view === 'timeline' ? timelineFeed : view === 'hot' ? hotFeed : view === 'groups' ? groupFeed : null
+        view === 'home.timeline'
+            ? timelineFeed
+            : hotListId !== null
+              ? hotFeed
+              : activeGroupId === null
+                ? null
+                : groupFeed
     const isRefreshing = activeFeed === null ? homeState.isRefreshing : activeFeed.state.isRefreshing
-    const isRefreshDisabled = !isConfigured || (view === 'groups' && selectedGroup === null)
+    /** 刷新不可用：未配置，以及停在没有信息流的频道（规划中的频道没有可刷新的数据） */
+    const isRefreshDisabled = !isConfigured || (activeFeed === null && view !== 'home.recommend')
     /** 个人主页用的 uid：账号信息优先，分组结果兜底 */
     const profileUid = profileState.profile?.id ?? groupsState.groups?.uid ?? null
+
+    /** 添加热门频道：重复或超限一律忽略，加入后直接切到该频道 */
+    const handleAddHotChannel = useCallback((gid: string): void => {
+        setHotChannelGids((previous) => {
+            if (previous.includes(gid)) {
+                return previous
+            }
+            // 上限按菜单总数算
+            if (previous.length >= WEIBO_HOT_CHANNEL_LIMIT) {
+                return previous
+            }
+            return [...previous, gid]
+        })
+        setView(toHotChannelView(gid))
+    }, [])
+
+    /**
+     * 移除热门频道：固定频道（推荐/实时/同城/榜单）不允许移除 —— 菜单侧已过滤掉入口，这里再兜一次。
+     * 关键约束：正停在被移除的频道上时必须切回推荐频道，否则内容区会停在一个已不存在的频道，
+     * 菜单里也没有它的入口，用户会以为面板坏了；被移除的默认项会回到候选池，可以再加回来。
+     */
+    const handleRemoveHotChannel = useCallback((gid: string): void => {
+        if (WEIBO_PINNED_HOT_CHANNELS.some((channel) => channel.gid === gid)) {
+            return
+        }
+        setHotChannelGids((previous) => previous.filter((item) => item !== gid))
+        const fallback = WEIBO_PINNED_HOT_CHANNELS[0]
+        if (fallback === undefined) {
+            return
+        }
+        setView((previous) => (previous === toHotChannelView(gid) ? toHotChannelView(fallback.gid) : previous))
+    }, [])
 
     const handleOpenSettings = useCallback((): void => {
         setIsSettingsOpen(true)
@@ -139,7 +214,7 @@ export function WeiboPanel(): JSX.Element {
             if (!isCleared) {
                 return
             }
-            setView('home')
+            setView('home.recommend')
             setIsCredentialOpen(true)
         })
     }, [clearCredential])
@@ -172,17 +247,10 @@ export function WeiboPanel(): JSX.Element {
         void groupFeed.loadMore()
     }, [groupFeed])
 
+    /** 重读分组：菜单里的自建分组随之更新，新增或删除分组都会立刻反映 */
     const handleReloadGroups = useCallback((): void => {
         void reloadGroups()
     }, [reloadGroups])
-
-    const handleSelectGroup = useCallback((group: WeiboGroupItem): void => {
-        setSelectedGroup(group)
-    }, [])
-
-    const handleBackToGroups = useCallback((): void => {
-        setSelectedGroup(null)
-    }, [])
 
     const openProfile = useCallback(async (uid: string): Promise<void> => {
         try {
@@ -200,21 +268,22 @@ export function WeiboPanel(): JSX.Element {
         void openProfile(profileUid)
     }, [openProfile, profileUid])
 
-    /** 各视图的说明文案：首页沿用凭证提示，其余只描述当前流的口径 */
+    /** 各视图的说明文案：已接入的频道描述取数口径，自建分组说明所在分组，规划中的频道只说明状态 */
     function describeView(): string {
         switch (view) {
-            case 'home':
+            case 'home.recommend':
                 return isConfigured
                     ? `${formatSavedAt(homeState.credential?.savedAt ?? null)}：关注时间线只读浏览，图片与视频请打开原文查看。`
                     : '关注时间线依赖网页版登录 Cookie：先登录 weibo.com，再从任意 ajax 请求的请求头复制完整 Cookie。'
-            case 'timeline':
+            case 'home.timeline':
                 return '时间线：默认分组「最新微博」的 list_id，按增量刷新与游标翻页读取。'
-            case 'hot':
-                return '热门：网页端推荐频道（102803），首屏 10 条，翻页沿用上游 max_id。'
-            case 'groups':
-                return selectedGroup === null
-                    ? '分组：从「我的分组」中选择一个分组查看。'
-                    : `分组：${selectedGroup.title} 的信息流。`
+            default:
+                if (hotListId !== null) {
+                    return `热门：${readWeiboViewLabel(view, myGroups, hotChannels)}，首屏 10 条，翻页沿用上游 max_id。`
+                }
+                return activeGroupId === null
+                    ? `${readWeiboViewLabel(view, myGroups, hotChannels)}：频道已在菜单规划中，数据接口尚未接入。`
+                    : `分组：${activeGroup?.title ?? '该分组'} 的信息流，翻页只在该分组内生效。`
         }
     }
 
@@ -344,53 +413,57 @@ export function WeiboPanel(): JSX.Element {
         )
     }
 
-    /** 分组：先列「我的分组」，选中后按该分组 list_id 取信息流 */
-    function renderGroups(): JSX.Element {
+    /**
+     * 自建分组：菜单里直接点分组名进来，按该分组的 list_id 取信息流，翻页只在该分组内生效。
+     * 关键约束：分组结果还没到（例如刚从其他设备新建）时先给加载态，避免误报「没有内容」。
+     */
+    function renderGroupFeed(): JSX.Element {
         if (!isConfigured) {
             return renderNeedCredential()
         }
-        if (selectedGroup === null) {
-            return (
-                <WeiboGroupList
-                    groups={groupsState.groups?.myGroups ?? []}
-                    isLoading={groupsState.isLoading}
-                    errorMessage={groupsState.errorMessage}
-                    onSelect={handleSelectGroup}
-                    onReload={handleReloadGroups}
-                />
-            )
+        if (groupsState.isLoading && activeGroup === null) {
+            return <StateEmpty className="py-8" title="正在读取分组..." isLoading />
         }
         return (
-            <>
-                <div className="flex items-center gap-2">
-                    <Button size="sm" variant="ghost" onClick={handleBackToGroups}>
-                        返回分组
-                    </Button>
-                    <span className="truncate text-muted-foreground text-xs">{selectedGroup.title}</span>
-                </div>
-                <WeiboFeedList
-                    posts={groupFeed.state.posts}
-                    isLoading={groupFeed.state.isLoading || !groupFeed.state.hasLoaded}
-                    isLoadingMore={groupFeed.state.isLoadingMore}
-                    hasMore={groupFeed.state.hasMore}
-                    emptyTitle="这个分组没有内容"
-                    emptyDescription={groupFeed.state.errorMessage ?? '分组近期没有更新，稍后刷新一次再试。'}
-                    onLoadMore={handleGroupLoadMore}
-                />
-            </>
+            <WeiboFeedList
+                posts={groupFeed.state.posts}
+                isLoading={groupFeed.state.isLoading || !groupFeed.state.hasLoaded}
+                isLoadingMore={groupFeed.state.isLoadingMore}
+                hasMore={groupFeed.state.hasMore}
+                emptyTitle={`「${activeGroup?.title ?? '该分组'}」没有内容`}
+                emptyDescription={groupFeed.state.errorMessage ?? '分组近期没有更新，稍后刷新一次再试。'}
+                onLoadMore={handleGroupLoadMore}
+            />
+        )
+    }
+
+    /**
+     * 规划已就位但接口未接入的频道：只给说明，不发请求。
+     * 关键约束：这类频道不能落回首页内容，否则用户以为切换没生效。
+     */
+    function renderPlannedView(): JSX.Element {
+        return (
+            <StateEmpty
+                className="py-8"
+                icon={Inbox}
+                title={`${readWeiboViewLabel(view, myGroups, hotChannels)} 暂未接入`}
+                description="菜单结构已按规划就位，这个频道的数据接口还没接上：接入后这里会显示对应的信息流。"
+            />
         )
     }
 
     function renderContent(): JSX.Element {
         switch (view) {
-            case 'home':
+            case 'home.recommend':
                 return renderHome()
-            case 'timeline':
+            case 'home.timeline':
                 return renderTimelineFeed()
-            case 'hot':
-                return renderHotFeed()
-            case 'groups':
-                return renderGroups()
+            default:
+                // 热门各频道共用一套渲染（只是 group_id 不同），自建分组与规划中的频道才继续分流
+                if (hotListId !== null) {
+                    return renderHotFeed()
+                }
+                return activeGroupId === null ? renderPlannedView() : renderGroupFeed()
         }
     }
 
@@ -426,7 +499,15 @@ export function WeiboPanel(): JSX.Element {
                         </AppAction>
                         <AppDescription>{describeView()}</AppDescription>
                         <AppMenu>
-                            <WeiboNav active={view} onSelect={setView} />
+                            <WeiboNav
+                                active={view}
+                                onSelect={setView}
+                                customGroups={myGroups}
+                                hotChannels={hotChannels}
+                                hotChannelCandidates={hotChannelCandidates}
+                                onAddHotChannel={handleAddHotChannel}
+                                onRemoveHotChannel={handleRemoveHotChannel}
+                            />
                         </AppMenu>
                     </AppHeader>
 

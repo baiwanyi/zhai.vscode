@@ -40,7 +40,7 @@ import { WeiboWebError } from './webClient'
 import { fetchPostComments } from './webComments'
 import { isCookieUsable, normalizeCookieInput } from './webCredential'
 import { fetchWeiboEmoticons } from './webEmoticons'
-import { fetchWeiboFeed, fetchWeiboGroups } from './webFeed'
+import { fetchWeiboFeed, fetchWeiboGroups, rememberHotChannels } from './webFeed'
 import { fetchWeiboHotRank } from './webHotRank'
 import { setPostLike } from './webInteraction'
 import { fetchLongText } from './webLongText'
@@ -258,6 +258,9 @@ export class WeiboRoutes {
         const accountKey = toAccountKey(cookie)
         const cached = await this.readCachedGroups(accountKey)
         if (cached !== null) {
+            // 磁盘缓存命中时取数层没被调用，这里补一次频道表登记，
+            // 否则热门频道每次取数都会因为内存缓存为空而回源一次 allGroups
+            rememberHotChannels(cookie, cached.hotChannels)
             return cached
         }
         const fetchGroups = this.deps.fetchGroups ?? fetchWeiboGroups

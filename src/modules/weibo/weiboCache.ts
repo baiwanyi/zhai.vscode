@@ -14,6 +14,7 @@ import type {
     WeiboEmoticonsResult,
     WeiboGroupItem,
     WeiboGroupsResult,
+    WeiboHotChannel,
     WeiboHotRankItem,
     WeiboHotRankResult,
     WeiboProfile,
@@ -164,6 +165,27 @@ function parseGroupList(value: unknown): WeiboGroupItem[] | null {
     return items
 }
 
+/** 热门频道还原：gid 与标题必须非空，containerid 缺失时按 gid 兜底（推荐频道就是同值） */
+function parseHotChannelList(value: unknown): WeiboHotChannel[] | null {
+    if (!Array.isArray(value)) {
+        return null
+    }
+    const channels: WeiboHotChannel[] = []
+    for (const entry of value) {
+        if (!isRecord(entry)) {
+            continue
+        }
+        const gid = toText(entry.gid).trim()
+        const title = toText(entry.title).trim()
+        if (gid.length === 0 || title.length === 0) {
+            continue
+        }
+        const containerId = toText(entry.containerId).trim()
+        channels.push({ gid, title, containerId: containerId.length > 0 ? containerId : gid })
+    }
+    return channels
+}
+
 /** 分组结果还原：两组都为空视为无效缓存——上游异常时的空结果不该被固化 */
 function parseGroupsResult(value: unknown): WeiboGroupsResult | null {
     if (!isRecord(value)) {
@@ -171,7 +193,12 @@ function parseGroupsResult(value: unknown): WeiboGroupsResult | null {
     }
     const defaultGroups = parseGroupList(value.defaultGroups)
     const myGroups = parseGroupList(value.myGroups)
+    const hotChannels = parseHotChannelList(value.hotChannels)
     if (defaultGroups === null || myGroups === null || defaultGroups.length + myGroups.length === 0) {
+        return null
+    }
+    // 旧版缓存没有热门频道字段：按无效处理，强制回源一次，避免热门菜单长期为空
+    if (hotChannels === null) {
         return null
     }
     const listId = toText(value.timelineListId)
@@ -179,6 +206,7 @@ function parseGroupsResult(value: unknown): WeiboGroupsResult | null {
     return {
         defaultGroups,
         myGroups,
+        hotChannels,
         timelineListId: isWeiboTimelineId(listId) ? listId : null,
         uid: isWeiboTimelineId(uid) ? uid : null,
     }

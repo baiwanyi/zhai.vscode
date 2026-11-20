@@ -13,12 +13,7 @@ import {
     WEIBO_TIMELINE_DEFAULT_REFRESH,
     WEIBO_TIMELINE_MAX_COUNT,
 } from '@shared/types/weibo'
-
-/** 接口基址：网页端内部 ajax 路径，非开放平台 REST */
-export const WEIBO_WEB_ORIGIN = 'https://weibo.com'
-
-/** 关注时间线路径 */
-export const WEIBO_TIMELINE_PATH = '/ajax/feed/unreadfriendstimeline'
+import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN, WEIBO_WEB_REFERER } from './weiboEndpoints'
 
 /** 相邻两次请求的最小间隔：微博对高频访问会返回 418 或空列表，1.2s 与项目内其它外部接口口径一致 */
 const DEFAULT_MIN_INTERVAL_MS = 1200
@@ -96,7 +91,7 @@ export function clampTimelineCount(value: number | undefined): number {
  * list_id 形如 10001{uid}：实测省略也能取到同一列表，故仅在知道 uid 时携带。
  */
 export function buildTimelineUrl(query: TimelinePageQuery): string {
-    const url = new URL(WEIBO_TIMELINE_PATH, WEIBO_WEB_ORIGIN)
+    const url = new URL(WEIBO_AJAX_PATHS.unreadTimeline, WEIBO_WEB_ORIGIN)
     const uid = query.uid?.trim() ?? ''
     if (uid.length > 0) {
         url.searchParams.set('list_id', `10001${uid}`)
@@ -225,7 +220,7 @@ export async function requestWeiboJson(query: WeiboJsonQuery): Promise<WeiboJson
                 headers: {
                     // 网页端 ajax 完全依赖会话 Cookie，不校验 x-xsrf-token
                     Cookie: query.cookie,
-                    Referer: `${WEIBO_WEB_ORIGIN}/`,
+                    Referer: WEIBO_WEB_REFERER,
                     'User-Agent': WEIBO_WEB_USER_AGENT,
                     Accept: 'application/json, text/plain, */*',
                     'X-Requested-With': 'XMLHttpRequest',
