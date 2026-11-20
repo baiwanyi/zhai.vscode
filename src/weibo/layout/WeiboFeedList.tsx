@@ -22,6 +22,8 @@ interface WeiboFeedListProps {
     emptyDescription?: string
     /** 空态覆盖：优先级高于 emptyTitle / emptyDescription */
     emptyState?: ReactNode
+    /** 空态的重试入口：给出时在默认空态下渲染「刷新」按钮 */
+    onRefresh?: () => void
     onLoadMore: () => void
 }
 
@@ -33,6 +35,7 @@ export function WeiboFeedList({
     emptyTitle,
     emptyDescription,
     emptyState,
+    onRefresh,
     onLoadMore,
 }: WeiboFeedListProps): JSX.Element {
     if (isLoading) {
@@ -43,7 +46,13 @@ export function WeiboFeedList({
             return <>{emptyState}</>
         }
         return (
-            <StateEmpty className="py-8" icon={Inbox} title={emptyTitle ?? '没有内容'} description={emptyDescription} />
+            <StateEmpty className="py-8" icon={Inbox} title={emptyTitle ?? '没有内容'} description={emptyDescription}>
+                {onRefresh === undefined ? null : (
+                    <Button size="sm" variant="outline" onClick={onRefresh}>
+                        刷新
+                    </Button>
+                )}
+            </StateEmpty>
         )
     }
     return (

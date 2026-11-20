@@ -69,6 +69,8 @@ export interface ZhaiConfig {
     stockMaxBytes: number
     /** 是否在 alt 中追加摄影者署名 */
     stockAppendCredit: boolean
+    /** 同城热搜的城市代码：四位行政区划代码，空串表示未配置（由使用方回落默认） */
+    weiboCityCode: string
     telemetryEnabled: boolean
 }
 
@@ -179,6 +181,7 @@ export function getZhaiConfig(): ZhaiConfig {
         stockImageWidth: readBoundedInt(cfg.get<number>('stock.imageWidth', 1600), 1600, 800, 3840),
         stockMaxBytes: readBoundedInt(cfg.get<number>('stock.maxBytes', 15), 15, 1, 50),
         stockAppendCredit: cfg.get<boolean>('stock.appendCredit', true),
+        weiboCityCode: cfg.get<string>('weibo.cityCode', ''),
         telemetryEnabled: cfg.get<boolean>('telemetry.enabled', false),
     }
 }

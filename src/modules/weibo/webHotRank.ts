@@ -1,16 +1,32 @@
 /**
- * 微博热搜榜：把侧栏 bandUnified 的 realtime 列表收敛成可展示的榜单项。
+ * 微博热搜榜：把侧栏默认榜与热搜页各标签的榜单列表收敛成可展示的榜单项。
  * 复用约定：请求走 webClient 的通用 JSON 通道（同一套请求头、节流与错误分类），
+ * 标签差异只体现在端点与固定参数（band 带侧栏时间戳、city 带 citycode），其余参数由地址表决定；
  * 图标地址统一过 webTimeline 的 normalizeWeiboImageUrl 收窄，徽标底色只接受合法颜色字面量。
- * 关键约束：上游可能把 realtime 放在 data 顶层，也可能嵌在 data.band_list[*] 里，两种都要兼容；
+ * 关键约束：上游可能把 realtime 放在 data 顶层，也可能嵌在 data.bands / data.band_list 的分区里；
  * 名次优先取 realpos（网页端的真实排名），广告位、标注「商」「上新」的推广位与缺标题的条目直接丢弃但不打乱已有序号；
  * 图标字段在不同版本里叫 icon 或 icon_url，标记文案以 icon_desc 为主、label_name 兜底。
  */
-import type { WeiboHotRankItem, WeiboHotRankResult } from '@shared/types/weibo'
+import type { WeiboHotRankItem, WeiboHotRankResult, WeiboHotRankTab } from '@shared/types/weibo'
+import { WEIBO_DEFAULT_CITY_CODE, toWeiboCityCode } from '@shared/types/weibo'
 import { WeiboWebError, requestWeiboJson } from './webClient'
 import { normalizeWeiboImageUrl } from './webTimeline'
 import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN } from './weiboEndpoints'
 import type { WeiboJsonQuery, WeiboJsonResponse } from './webClient'
+
+/** 各榜单端点：标签差异只体现在地址上，参数按端点固定 */
+const HOT_RANK_TAB_PATHS: Readonly<Record<WeiboHotRankTab, string>> = {
+    band: WEIBO_AJAX_PATHS.hotRank,
+    mine: WEIBO_AJAX_PATHS.mineBand,
+    hotSearch: WEIBO_AJAX_PATHS.hotSearch,
+    entertainment: WEIBO_AJAX_PATHS.entertainment,
+    social: WEIBO_AJAX_PATHS.social,
+    technology: WEIBO_AJAX_PATHS.technology,
+    life: WEIBO_AJAX_PATHS.life,
+    sport: WEIBO_AJAX_PATHS.sport,
+    acg: WEIBO_AJAX_PATHS.acg,
+    city: WEIBO_AJAX_PATHS.city,
+}
 
 /** 颜色字面量：只放行 hex 与 rgb()/rgba()，避免任意字符串被当作样式值 */
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/iu
@@ -41,25 +57,66 @@ export function normalizeHotRankColor(value: unknown): string | null {
     return HEX_COLOR_PATTERN.test(text) || RGB_COLOR_PATTERN.test(text) ? text : null
 }
 
-/** 构造榜单地址：last_tab_time 取当前秒级时间戳，与网页端一致 */
-export function buildHotRankUrl(now: Date): string {
-    const url = new URL(WEIBO_AJAX_PATHS.hotRank, WEIBO_WEB_ORIGIN)
-    url.searchParams.set('type', 'mine')
-    url.searchParams.set('last_tab', 'mine')
-    url.searchParams.set('last_tab_time', String(Math.floor(now.getTime() / 1000)))
+/** 榜单地址入参：band 需要侧栏时间戳，city 需要 citycode，其余标签不带参数 */
+export interface HotRankUrlOptions {
+    tab: WeiboHotRankTab
+    now: Date
+    /** 同城榜单的四位行政区划代码：其余标签忽略 */
+    cityCode?: string
+}
+
+/** 构造榜单地址：只给当前标签真正需要的参数，避免把无关参数带给其它端点 */
+export function buildHotRankUrl(options: HotRankUrlOptions): string {
+    const url = new URL(HOT_RANK_TAB_PATHS[options.tab], WEIBO_WEB_ORIGIN)
+    if (options.tab === 'band') {
+        // 侧栏默认榜：last_tab_time 取当前秒级时间戳，与网页端一致
+        url.searchParams.set('type', 'mine')
+        url.searchParams.set('last_tab', 'mine')
+        url.searchParams.set('last_tab_time', String(Math.floor(options.now.getTime() / 1000)))
+    } else if (options.tab === 'city') {
+        url.searchParams.set('citycode', toWeiboCityCode(options.cityCode ?? WEIBO_DEFAULT_CITY_CODE))
+    }
     return url.toString()
 }
 
-/** 读取 realtime 数组：顶层优先，缺失时在 band_list 里找第一个含 realtime 的分区 */
-function readRealtimeList(record: Record<string, unknown>): unknown[] {
-    const container = isRecord(record.data) ? record.data : record
+/**
+ * 从一层容器里取榜单条目：realtime 直给优先，其次 items；
+ * bands / band_list 分区再向内找一层，覆盖「榜单列表嵌在分区里」的形态。
+ */
+function pickEntryList(container: Record<string, unknown>): unknown[] | null {
     if (Array.isArray(container.realtime)) {
-        return container.realtime
+        return container.realtime as unknown[]
     }
-    const bands = Array.isArray(container.band_list) ? container.band_list : []
-    for (const band of bands) {
-        if (isRecord(band) && Array.isArray(band.realtime)) {
-            return band.realtime
+    if (Array.isArray(container.items)) {
+        return container.items as unknown[]
+    }
+    for (const key of ['bands', 'band_list'] as const) {
+        const sections = container[key]
+        if (!Array.isArray(sections)) {
+            continue
+        }
+        for (const section of sections) {
+            if (!isRecord(section)) {
+                continue
+            }
+            if (Array.isArray(section.realtime)) {
+                return section.realtime as unknown[]
+            }
+            if (Array.isArray(section.items)) {
+                return section.items as unknown[]
+            }
+        }
+    }
+    return null
+}
+
+/** 读取榜单数组：data 内层优先，缺失时回落到顶层，两种层级都兼容 */
+function readRealtimeList(record: Record<string, unknown>): unknown[] {
+    const containers = isRecord(record.data) ? [record.data, record] : [record]
+    for (const container of containers) {
+        const list = pickEntryList(container)
+        if (list !== null) {
+            return list
         }
     }
     return []
@@ -142,18 +199,24 @@ export function extractWeiboHotRank(record: Record<string, unknown>): WeiboHotRa
 /** 热搜榜取数入参：requestJson 由单测注入，生产走真实请求 */
 export interface FetchHotRankOptions {
     cookie: string
+    /** 榜单来源：缺省为 band（侧栏默认榜） */
+    tab?: WeiboHotRankTab
+    /** 同城榜单的四位行政区划代码：仅 tab 为 city 时生效 */
+    cityCode?: string
     timeoutMs?: number
     minIntervalMs?: number
     requestJson?: (query: WeiboJsonQuery) => Promise<WeiboJsonResponse>
     now?: () => Date
 }
 
-/** 读取热搜榜：结构异常（没有可用条目）按失败处理，避免侧栏展示空榜 */
+/** 读取热搜榜：结构异常（没有可用条目）按失败处理，避免页面展示空榜 */
 export async function fetchWeiboHotRank(options: FetchHotRankOptions): Promise<WeiboHotRankResult> {
     const requestJson = options.requestJson ?? requestWeiboJson
     const now = options.now ?? ((): Date => new Date())
+    // 地址与 fetchedAt 取同一时刻：band 的 last_tab_time 与回包时间必须对得上
+    const at = now()
     const { record } = await requestJson({
-        url: buildHotRankUrl(now()),
+        url: buildHotRankUrl({ tab: options.tab ?? 'band', now: at, cityCode: options.cityCode }),
         cookie: options.cookie,
         timeoutMs: options.timeoutMs,
         minIntervalMs: options.minIntervalMs,
@@ -162,5 +225,5 @@ export async function fetchWeiboHotRank(options: FetchHotRankOptions): Promise<W
     if (items.length === 0) {
         throw new WeiboWebError('invalid-payload', '微博返回结构异常：没有可用的热搜条目')
     }
-    return { items, fetchedAt: now().toISOString() }
+    return { items, fetchedAt: at.toISOString() }
 }

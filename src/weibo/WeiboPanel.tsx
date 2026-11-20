@@ -1,16 +1,20 @@
 /**
- * 微博面板：编辑区独立页，顶部菜单切换首页 / 时间线 / 热门 / 分组，
+ * 微博面板：编辑区独立页，顶部菜单切换首页 / 时间线 / 热门 / 热搜与账号自建分组，
  * 顶栏动作区只剩「刷新」与账号菜单（头像 + 个人主页 / 设置弹窗 / 删除 Cookie）。
  * 复用约定：页面骨架取 @webview/components/AppPage，卡片取 @components/ui/card，
- * 取数状态分别来自 hooks 下的关注时间线、信息流与分组控制器，
- * 列表渲染统一交给 layout/WeiboFeedList，单条仍是 layout/WeiboPostCard，
+ * 取数状态分别来自 hooks 下的关注时间线、信息流、分组、热搜与城市控制器，
+ * 热搜各标签整页交给 WeiboHotSearch，其余列表渲染统一交给 layout/WeiboFeedList，单条仍是 layout/WeiboPostCard，
  * 空态复用 StateEmpty，操作反馈用 sonner（Toaster 主题取 useVscodeTheme）。
  * 关键约束：未配置 Cookie 时任何信息流都不发请求，只给可执行的获取步骤；
+ * 顶栏「刷新」按当前视图分发：信息流刷自己的游标，热搜刷当前标签的榜单；
+ * 热搜专页不再渲染右侧热搜卡，避免同一份榜单出现两次；
  * Cookie 输入框不回显已保存值，保存成功后清空并收起，明文只存在于输入瞬间；
- * 时间线、热门与分组都是只读浏览，发布框仍是占位（写接口不在本次范围）；
+ * 同城热搜城市在设置弹窗里选择，落 zhai.weibo.cityCode，与 Cookie 无关；
+ * 时间线、热门、热搜与分组都是只读浏览，发布框仍是占位（写接口不在本次范围）；
  * 个人主页按账号 uid 拼 weibo.com 地址交给宿主打开，入口收在顶栏账号菜单里；
  * 账号信息与头像由 weibo/profile 提供（头像已是 data URI），取不到 uid 时只提示而不拼空地址。
  */
+import { cn } from 'cn'
 import { format } from 'date-fns'
 import { Inbox, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -27,12 +31,16 @@ import {
 } from '@components/ui/alert-dialog'
 import { Card, CardContent } from '@components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Toaster } from '@components/ui/sonner'
 import {
+    WEIBO_CITY_OPTIONS,
+    WEIBO_DEFAULT_CITY_CODE,
     WEIBO_DEFAULT_HOT_CHANNELS,
     WEIBO_FEED_DEFAULT_COUNT,
     WEIBO_HOT_CHANNEL_LIMIT,
     WEIBO_PINNED_HOT_CHANNELS,
+    readWeiboCityName,
 } from '@shared/types/weibo'
 import type { WeiboHotChannel } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
@@ -50,8 +58,10 @@ import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useHostToast } from '@webview/hooks/useHostToast'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
+import { useWeiboCity } from './hooks/useWeiboCity'
 import { useWeiboFeed } from './hooks/useWeiboFeed'
 import { useWeiboGroups } from './hooks/useWeiboGroups'
+import { useWeiboHotRank } from './hooks/useWeiboHotRank'
 import { useWeiboProfile } from './hooks/useWeiboProfile'
 import { useWeiboTimeline } from './hooks/useWeiboTimeline'
 import { WeiboAccountMenu } from './layout/WeiboAccountMenu'
@@ -59,7 +69,14 @@ import { WeiboEmoticonPicker } from './layout/WeiboEmoticonPicker'
 import { WeiboFeedList } from './layout/WeiboFeedList'
 import { WeiboHotRankList } from './layout/WeiboHotRankList'
 import { WeiboNav } from './layout/WeiboNav'
-import { readCustomGroupId, readHotChannelGid, readWeiboViewLabel, toHotChannelView } from './layout/weiboNavGroups'
+import {
+    readCustomGroupId,
+    readHotChannelGid,
+    readHotRankTab,
+    readWeiboViewLabel,
+    toHotChannelView,
+} from './layout/weiboNavGroups'
+import { WeiboHotSearch } from './WeiboHotSearch'
 import type { WeiboFeedController } from './hooks/useWeiboFeed'
 import type { WeiboView } from './layout/weiboNavGroups'
 import type { JSX } from 'react'
@@ -99,6 +116,8 @@ export function WeiboPanel(): JSX.Element {
     const isConfigured = homeState.credential?.isConfigured ?? false
     const { state: profileState } = useWeiboProfile(isConfigured)
     const { state: groupsState, reload: reloadGroups } = useWeiboGroups({ enabled: isConfigured })
+    // 同城城市与 Cookie 无关：面板打开就读取，供热搜页「同城」榜与设置弹窗共用
+    const city = useWeiboCity()
     const timelineListId = groupsState.groups?.timelineListId ?? null
     const timelineFeed = useWeiboFeed({
         source: 'timeline',
@@ -154,6 +173,13 @@ export function WeiboPanel(): JSX.Element {
         listId: activeGroupId,
         enabled: isConfigured && activeGroupId !== null,
     })
+    /** 热搜榜单：只在热搜页取数，顶栏「刷新」与专页内按钮共用这一份状态 */
+    const hotRankTab = readHotRankTab(view)
+    const hotRank = useWeiboHotRank({
+        isEnabled: isConfigured && hotRankTab !== null,
+        tab: hotRankTab ?? 'hotSearch',
+        cityCode: city.state.cityCode,
+    })
 
     const activeFeed: WeiboFeedController | null =
         view === 'home.timeline'
@@ -163,9 +189,22 @@ export function WeiboPanel(): JSX.Element {
               : activeGroupId === null
                 ? null
                 : groupFeed
-    const isRefreshing = activeFeed === null ? homeState.isRefreshing : activeFeed.state.isRefreshing
-    /** 刷新不可用：未配置，以及停在没有信息流的频道（规划中的频道没有可刷新的数据） */
-    const isRefreshDisabled = !isConfigured || (activeFeed === null && view !== 'home.recommend')
+    const isRefreshing =
+        activeFeed !== null
+            ? activeFeed.state.isRefreshing
+            : hotRankTab !== null
+              ? hotRank.state.isLoading
+              : homeState.isRefreshing
+    /** 刷新不可用：未配置，以及停在没有信息流也没有榜单的频道（规划中的频道没有可刷新的数据） */
+    const isRefreshDisabled =
+        !isConfigured || (activeFeed === null && hotRankTab === null && view !== 'home.recommend')
+    /** 当前视图的内容条数：为 0 时不显示顶栏刷新，入口改由各视图的空态承担 */
+    const activeContentCount =
+        activeFeed !== null
+            ? activeFeed.state.posts.length
+            : hotRankTab !== null
+              ? hotRank.state.items.length
+              : homeState.posts.length
     /** 个人主页用的 uid：账号信息优先，分组结果兜底 */
     const profileUid = profileState.profile?.id ?? groupsState.groups?.uid ?? null
 
@@ -229,12 +268,17 @@ export function WeiboPanel(): JSX.Element {
     }, [])
 
     const handleRefresh = useCallback((): void => {
-        if (activeFeed === null) {
-            void refreshHome()
+        if (activeFeed !== null) {
+            void activeFeed.refresh()
             return
         }
-        void activeFeed.refresh()
-    }, [activeFeed, refreshHome])
+        // 热搜页：顶栏刷新与页面内按钮是同一个动作，直接刷当前标签的榜单
+        if (hotRankTab !== null) {
+            void hotRank.refresh()
+            return
+        }
+        void refreshHome()
+    }, [activeFeed, hotRank, hotRankTab, refreshHome])
 
     const handleHomeLoadMore = useCallback((): void => {
         void loadMoreHome()
@@ -283,6 +327,9 @@ export function WeiboPanel(): JSX.Element {
             case 'home.timeline':
                 return '时间线：默认分组「最新微博」的 list_id，按增量刷新与游标翻页读取。'
             default:
+                if (readHotRankTab(view) !== null) {
+                    return `热搜：${readWeiboViewLabel(view, myGroups, hotChannels)}，整页展示该榜单的全部条目。`
+                }
                 if (hotListId !== null) {
                     return `热门：${readWeiboViewLabel(
                         view,
@@ -399,6 +446,7 @@ export function WeiboPanel(): JSX.Element {
                 hasMore={timelineFeed.state.hasMore}
                 emptyTitle="时间线没有内容"
                 emptyDescription={timelineFeed.state.errorMessage ?? '默认分组近期没有更新，稍后刷新一次再试。'}
+                onRefresh={handleRefresh}
                 onLoadMore={handleTimelineLoadMore}
             />
         )
@@ -417,6 +465,7 @@ export function WeiboPanel(): JSX.Element {
                 hasMore={hotFeed.state.hasMore}
                 emptyTitle="热门没有内容"
                 emptyDescription={hotFeed.state.errorMessage ?? '推荐频道暂时返回空页，稍后刷新一次再试。'}
+                onRefresh={handleRefresh}
                 onLoadMore={handleHotLoadMore}
             />
         )
@@ -441,6 +490,7 @@ export function WeiboPanel(): JSX.Element {
                 hasMore={groupFeed.state.hasMore}
                 emptyTitle={`「${activeGroup?.title ?? '该分组'}」没有内容`}
                 emptyDescription={groupFeed.state.errorMessage ?? '分组近期没有更新，稍后刷新一次再试。'}
+                onRefresh={handleRefresh}
                 onLoadMore={handleGroupLoadMore}
             />
         )
@@ -468,6 +518,19 @@ export function WeiboPanel(): JSX.Element {
             case 'home.timeline':
                 return renderTimelineFeed()
             default:
+                // 热搜页各标签共用一套渲染（只是端点不同），城市由设置弹窗统一提供
+                if (readHotRankTab(view) !== null) {
+                    return (
+                        <WeiboHotSearch
+                            isEnabled={isConfigured}
+                            view={view}
+                            cityCode={city.state.cityCode}
+                            state={hotRank.state}
+                            onRefresh={handleRefresh}
+                            onOpenSettings={handleOpenSettings}
+                        />
+                    )
+                }
                 // 热门各频道共用一套渲染（只是 group_id 不同），自建分组与规划中的频道才继续分流
                 if (hotListId !== null) {
                     return renderHotFeed()
@@ -485,17 +548,20 @@ export function WeiboPanel(): JSX.Element {
                     <AppHeader>
                         <AppTitle>微博</AppTitle>
                         <AppAction>
-                            <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={handleRefresh}
-                                isLoading={isRefreshing}
-                                disabled={isRefreshDisabled}
-                                tooltip="增量刷新：只取上次之后的新内容"
-                            >
-                                <RefreshCw className="size-3.5" aria-hidden="true" />
-                                刷新
-                            </Button>
+                            {/* 空微博不显示刷新：没有内容可刷，入口交给各视图的空态 */}
+                            {activeContentCount === 0 ? null : (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleRefresh}
+                                    isLoading={isRefreshing}
+                                    disabled={isRefreshDisabled}
+                                    tooltip="增量刷新：只取上次之后的新内容"
+                                >
+                                    <RefreshCw className="size-3.5" aria-hidden="true" />
+                                    刷新
+                                </Button>
+                            )}
                             <WeiboAccountMenu
                                 isConfigured={isConfigured}
                                 profile={profileState.profile}
@@ -522,14 +588,24 @@ export function WeiboPanel(): JSX.Element {
 
                     <AppContent isScrollable className="gap-3 p-3">
                         <div className="mx-auto flex w-full max-w-5xl items-start justify-center gap-3 py-1">
-                            <div className="flex min-w-0 max-w-2xl flex-1 flex-col gap-3">{renderContent()}</div>
-                            {/* 右侧热搜榜：容器够宽才出现，窄面板让位给正文列表。
+                            {/* 热搜页没有侧栏，内容区放宽一档，长标题不必挤在 672px 里 */}
+                            <div
+                                className={cn(
+                                    'flex min-w-0 flex-1 flex-col gap-3',
+                                    hotRankTab === null ? 'max-w-2xl' : 'max-w-3xl',
+                                )}
+                            >
+                                {renderContent()}
+                            </div>
+                            {/* 右侧热搜榜：热搜专页自带整页榜单，故该页不渲染侧栏卡片，避免同一份内容出现两次。
                                 三件事缺一不可：@3xl:block 让 hidden 在该档恢复显示、
                                 self-start 避免被拉伸到内容高度（拉满后 sticky 没有可粘的行程）、
                                 sticky + top 让它在 AppContent 的滚动区里钉住不随列表滚走 */}
-                            <aside className="hidden w-80 shrink-0 @3xl:sticky @3xl:top-0 @3xl:block @3xl:self-start">
-                                <WeiboHotRankList isEnabled={isConfigured} />
-                            </aside>
+                            {hotRankTab === null ? (
+                                <aside className="hidden w-80 shrink-0 @3xl:sticky @3xl:top-0 @3xl:block @3xl:self-start">
+                                    <WeiboHotRankList isEnabled={isConfigured} />
+                                </aside>
+                            ) : null}
                         </div>
                     </AppContent>
                 </AppPage>
@@ -542,6 +618,10 @@ export function WeiboPanel(): JSX.Element {
                 onSave={saveCredential}
                 onClear={clearCredential}
                 onCollapse={collapseCredential}
+                cityCode={city.state.cityCode}
+                isCityLoading={city.state.isLoading}
+                isCitySaving={city.state.isSaving}
+                onSaveCity={city.save}
             />
             <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
                 <AlertDialogContent>
@@ -574,12 +654,20 @@ interface SettingsDialogProps {
     onClear: () => Promise<boolean>
     /** 保存成功后收起首页的凭证卡：设置弹窗里的卡片本身不可收起 */
     onCollapse: () => void
+    /** 当前同城城市（四位代码）：空串表示尚未读取完成 */
+    cityCode: string
+    isCityLoading: boolean
+    isCitySaving: boolean
+    /** 保存同城城市：失败时下拉保留原选中值 */
+    onSaveCity: (cityCode: string) => Promise<boolean>
 }
 
 /**
- * 设置弹窗：凭证卡常驻 + 各入口取数口径。
- * 复用约定：外壳取 @components/ui/dialog（Title / Description 必填），凭证卡复用同文件的 CredentialCard。
- * 关键约束：内容超出视口时在弹窗内滚动，不撑高页面；保存成功由 CredentialCard 回调收起首页的凭证卡。
+ * 设置弹窗：凭证卡常驻 + 同城城市 + 各入口取数口径。
+ * 复用约定：外壳取 @components/ui/dialog（Title / Description 必填），城市下拉取 @components/ui/select，
+ * 凭证卡复用同文件的 CredentialCard。
+ * 关键约束：内容超出视口时在弹窗内滚动，不撑高页面；保存成功由 CredentialCard 回调收起首页的凭证卡；
+ * 城市代码不在预设清单里时补一项，避免手填配置后下拉显示空白。
  */
 function SettingsDialog({
     isOpen,
@@ -589,7 +677,21 @@ function SettingsDialog({
     onSave,
     onClear,
     onCollapse,
+    cityCode,
+    isCityLoading,
+    isCitySaving,
+    onSaveCity,
 }: SettingsDialogProps): JSX.Element {
+    const effectiveCityCode = cityCode.length > 0 ? cityCode : WEIBO_DEFAULT_CITY_CODE
+    const cityOptions = WEIBO_CITY_OPTIONS.some((option) => option.code === effectiveCityCode)
+        ? WEIBO_CITY_OPTIONS
+        : [...WEIBO_CITY_OPTIONS, { code: effectiveCityCode, name: readWeiboCityName(effectiveCityCode) }]
+
+    /** 选择城市：保存成功后由上层状态回填，失败时下拉保持旧值 */
+    function handleCityChange(next: string): void {
+        void onSaveCity(next)
+    }
+
     return (
         <Dialog open={isOpen} onOpenChange={onOpenChange}>
             <DialogContent className="flex max-h-[calc(100vh-4rem)] flex-col gap-3 sm:max-w-lg">
@@ -608,12 +710,40 @@ function SettingsDialog({
                     />
                     <Card>
                         <CardContent className="flex flex-col gap-2">
+                            <h2 className="font-medium">同城热搜城市</h2>
+                            <p className="text-muted-foreground text-xs">
+                                「热搜 · 同城」按所选城市取榜：citycode 由固定前缀 80086 与四位行政区划代码拼接。
+                            </p>
+                            <Select
+                                value={effectiveCityCode}
+                                onValueChange={handleCityChange}
+                                disabled={isCityLoading || isCitySaving}
+                            >
+                                <SelectTrigger size="sm" className="w-40">
+                                    <SelectValue placeholder={isCityLoading ? '读取中...' : '选择城市'} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {cityOptions.map((option) => (
+                                        <SelectItem key={option.code} value={option.code}>
+                                            {option.name}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-muted-foreground text-xs">
+                                城市集中在面板内调整，也可在设置里手填其它城市的四位代码。
+                            </p>
+                        </CardContent>
+                    </Card>
+                    <Card>
+                        <CardContent className="flex flex-col gap-2">
                             <h2 className="font-medium">各入口的取数口径</h2>
                             <ul className="list-disc space-y-1 pl-5 text-muted-foreground text-xs">
                                 <li>首页：unreadfriendstimeline，增量刷新只取上次之后的新微博。</li>
                                 <li>时间线：friendstimeline，list_id 取默认分组里「最新微博」的 gid。</li>
                                 <li>{`热门：hottimeline，固定频道 102803，首屏 ${WEIBO_FEED_DEFAULT_COUNT} 条。`}</li>
                                 <li>分组：allGroups 取「我的分组」，选中后走 groupstimeline 拉该分组。</li>
+                                <li>热搜：我的 / 热搜 / 文娱 / 社会 / 科技 / 生活 / 体育 / ACG / 同城 各一张榜。</li>
                             </ul>
                             <p className="text-muted-foreground text-xs">
                                 所有接口都是网页端内部 ajax：改版或风控升级后可能失效，届时重新粘贴 Cookie

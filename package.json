@@ -461,6 +461,19 @@
                         "description": "遥测开关（预留，默认关闭）：当前版本不采集也不上报任何遥测数据"
                     }
                 }
+            },
+            {
+                "title": "宅写作：微博",
+                "order": 9,
+                "properties": {
+                    "zhai.weibo.cityCode": {
+                        "type": "string",
+                        "default": "4501",
+                        "pattern": "^\\d{4}$",
+                        "patternErrorMessage": "须为四位数字行政区划代码，如北京 1100、上海 3100、广州 4401",
+                        "markdownDescription": "同城热搜的城市代码：请求 `ajax/statuses/city` 时与固定前缀 `80086` 拼成 `citycode`。面板「设置」里按城市名选择，也可在此手填四位代码"
+                    }
+                }
             }
         ]
     },

@@ -1,12 +1,13 @@
 /**
  * 微博顶部菜单的分组数据与视图枚举：菜单组件与页面共用这一份，避免中文名两处维护。
  * 复用约定：固定频道用 `分组.子项`，账号自建分组用 `group.<gid>`，热门频道用 `hot.<gid>`；
- * readWeiboViewLabel 是唯一的「标识 → 中文名」出口，菜单渲染与页面说明都走它。
+ * readWeiboViewLabel 是唯一的「标识 → 中文名」出口，菜单渲染与页面说明都走它；
+ * readHotRankTab 把热搜页视图映射成宿主榜单来源，页面据此决定请求哪个端点。
  * 关键约束：本文件只放数据与纯函数，不导出组件 —— 组件与常量混在同一文件会破坏 Fast Refresh；
  * 自建分组与热门频道都是运行时数据（分组结果给出），不进静态清单，由菜单在对应标记处追加。
  */
 import { Flame, House, TrendingUp } from 'lucide-react'
-import type { WeiboGroupItem, WeiboHotChannel } from '@shared/types/weibo'
+import type { WeiboGroupItem, WeiboHotChannel, WeiboHotRankTab } from '@shared/types/weibo'
 import type { LucideIcon } from 'lucide-react'
 
 /** 账号自建分组的标识前缀：后面直接拼 gid */
@@ -20,14 +21,14 @@ export type WeiboView =
     | 'home.recommend'
     | 'home.timeline'
     | 'search.mine'
-    | 'search.realtime'
-    | 'search.local'
-    | 'search.acg'
+    | 'search.hot'
     | 'search.ent'
     | 'search.social'
     | 'search.tech'
     | 'search.life'
     | 'search.sports'
+    | 'search.acg'
+    | 'search.local'
     | `group.${string}`
     | `hot.${string}`
 
@@ -75,14 +76,14 @@ export const WEIBO_NAV_GROUPS: readonly WeiboNavGroup[] = [
         icon: TrendingUp,
         items: [
             { view: 'search.mine', label: '我的' },
-            { view: 'search.realtime', label: '实时' },
-            { view: 'search.local', label: '同城' },
-            { view: 'search.acg', label: 'ACG' },
+            { view: 'search.hot', label: '热搜' },
             { view: 'search.ent', label: '文娱' },
             { view: 'search.social', label: '社会' },
             { view: 'search.tech', label: '科技' },
             { view: 'search.life', label: '生活' },
             { view: 'search.sports', label: '体育' },
+            { view: 'search.acg', label: 'ACG' },
+            { view: 'search.local', label: '同城' },
         ],
     },
 ]
@@ -105,6 +106,41 @@ export function toHotChannelView(gid: string): WeiboView {
 /** 从视图标识里取回热门频道 gid：不是热门频道时返回 null */
 export function readHotChannelGid(view: WeiboView): string | null {
     return view.startsWith(HOT_CHANNEL_VIEW_PREFIX) ? view.slice(HOT_CHANNEL_VIEW_PREFIX.length) : null
+}
+
+/**
+ * 热搜视图 → 宿主榜单来源：热搜页每个二级频道对应一个 ajax 端点。
+ * 关键约束：只收热搜页的视图，首页、热门频道与自建分组一律不在此表内。
+ */
+const HOT_RANK_TAB_BY_VIEW: Partial<Readonly<Record<WeiboView, WeiboHotRankTab>>> = {
+    'search.mine': 'mine',
+    'search.hot': 'hotSearch',
+    'search.ent': 'entertainment',
+    'search.social': 'social',
+    'search.tech': 'technology',
+    'search.life': 'life',
+    'search.sports': 'sport',
+    'search.acg': 'acg',
+    'search.local': 'city',
+}
+
+/** 取热搜榜单来源：不是热搜频道时返回 null，调用方据此决定是否渲染热搜页 */
+export function readHotRankTab(view: WeiboView): WeiboHotRankTab | null {
+    return HOT_RANK_TAB_BY_VIEW[view] ?? null
+}
+
+/**
+ * 取子项标签名（不含分组前缀）：页面标题只要「我的」「文娱」这样的短名。
+ * 关键约束：只查静态菜单，自建分组与热门频道属于运行时数据，标题由各自的数据源给出。
+ */
+export function readWeiboViewItemLabel(view: WeiboView): string {
+    for (const group of WEIBO_NAV_GROUPS) {
+        const item = group.items.find((candidate) => candidate.view === view)
+        if (item !== undefined) {
+            return item.label
+        }
+    }
+    return ''
 }
 
 /**

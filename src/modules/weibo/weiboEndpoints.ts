@@ -32,6 +32,24 @@ export const WEIBO_AJAX_PATHS = {
     groups: '/ajax/feed/allGroups',
     /** 侧栏热搜榜 */
     hotRank: '/ajax/side/bandUnified',
+    /** 热搜页「我的」榜 */
+    mineBand: '/ajax/statuses/mineBand',
+    /** 热搜页「热搜」榜 */
+    hotSearch: '/ajax/side/hotSearch',
+    /** 热搜页「文娱」榜 */
+    entertainment: '/ajax/statuses/entertainment',
+    /** 热搜页「社会」榜 */
+    social: '/ajax/statuses/social',
+    /** 热搜页「科技」榜 */
+    technology: '/ajax/statuses/technology',
+    /** 热搜页「生活」榜 */
+    life: '/ajax/statuses/life',
+    /** 热搜页「体育」榜 */
+    sport: '/ajax/statuses/sport',
+    /** 热搜页「ACG」榜 */
+    acg: '/ajax/statuses/acg',
+    /** 热搜页「同城」榜：额外带 citycode */
+    city: '/ajax/statuses/city',
     /** 发表框表情配置 */
     emoticons: '/ajax/statuses/config',
     /** 需登录态的图片下载端点：响应里的地址命中时改写成图床直链 */

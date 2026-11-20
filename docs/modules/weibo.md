@@ -1150,7 +1150,14 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/image`、`weibo/like`、`weibo/openPost` 分发 |
 | `src/modules/weibo/panel.ts` | 面板消息通道、凭证与缓存注入、图片代理装配与本地资源白名单 |
 | `src/modules/common/webviewHtml.ts` | CSP 生成：默认不放行远程图，需要时可按调用方传入的 `imgSources` 放行 |
-| `src/weibo/` | Webview 入口：顶部固定菜单、账号菜单与设置弹窗、右侧热搜榜、信息流列表、卡片（头像 / 图文混排 / 表情）与发表框表情选择器 |
+| `src/weibo/` | Webview 入口：顶部固定菜单、账号菜单与设置弹窗（含同城城市）、右侧热搜榜、热搜专页 `WeiboHotSearch`、信息流列表、卡片（头像 / 图文混排 / 表情）与发表框表情选择器 |
+| `src/weibo/layout/WeiboHotRankRow.tsx` | 侧栏热搜行样式：序号 / 标题 / 副行 / 整行点击与 Tooltip（专页有自己的行组件，不共用） |
+| `src/weibo/layout/WeiboHotRankBadge.tsx` | 热搜徽标：icon_desc + 底色，`sm` / `md` 两档，侧栏与专页共用 |
+| `src/weibo/layout/WeiboHotRankPosition.tsx` | 热搜名次：前三名判定与两档字号/颜色，侧栏与专页共用 |
+| `src/weibo/layout/WeiboHotRankFallback.tsx` | 热搜三态占位：未配置 / 加载 / 失败或空榜，`sidebar` / `page` 两套尺寸与文案 |
+| `src/weibo/hooks/useWeiboSearchOpen.ts` | 搜索页地址 + 300ms 连点保护的打开动作 |
+| `src/weibo/utils/weiboHotLinks.ts` | 搜索页地址构造与标题链接处理器（纯函数） |
+| `src/shared/utils/color.ts` | 按底色亮度选可读前景色，供徽标等浅深底自适应 |
 
 ### 14.11 多入口信息流（首页 / 时间线 / 热门 / 分组）
 
@@ -1217,12 +1224,36 @@ GET https://weibo.com/ajax/side/bandUnified?type=mine&last_tab=mine&last_tab_tim
 - `last_tab_time` 取当前秒级时间戳，与网页端一致；`type` 与 `last_tab` 固定 `mine`。
 - 榜单条目在 `data.realtime`；也可能嵌在 `data.band_list[*].realtime` 里，此时取第一个含 realtime 的分区。
 - 单条映射：标题取 `word_scheme`（与网页端一致，话题词自带 `#`）→ `note` → `word` → `title`；名次取 `realpos`（网页端真实排名），缺失时用 `rank + 1`（上游 `rank` 是 0 起序号），再缺失才回落到数组下标；`description` 与 `icon_desc`（缺失用 `label_name` 兜底）各自渲染为 badge；图标取 `icon_url` → `icon`，过图床白名单后直接显示；`icon_desc_color` 作为 `icon_desc` 徽标的底色，只接受 `#rgb` / `#rrggbb` / `rgb()`，其余丢弃。
-- 广告位（`is_ad: 1` / `ad_state: 1`）、标注「商」或「上新」的推广位（`icon_desc` 或兜底的 `label_name` 含这两个关键字，这类位往往不带 `is_ad`）与缺标题的条目不进榜，且不影响其余条目的名次；榜 1–3 的序号用 `#f26d5f` 加粗，其余弱化。
-- 侧栏在容器宽度 ≥ 768px（`@3xl`）时出现在列表右侧，窄面板自动隐藏；宽档下用 `sticky top-3 self-start` 钉在内容区滚动视口内，不随左侧信息流滚走（缺 `@3xl:block` 会一直 `display:none`，缺 `self-start` 会被拉伸到父容器高度而没有粘住行程）；面板内点刷新可重新取数，未配置 Cookie 时只给引导。
+- 广告位（`is_ad: 1` / `ad_state: 1`）、标注「商」或「上新」的推广位（`icon_desc` 或兜底的 `label_name` 含这两个关键字，这类位往往不带 `is_ad`）与缺标题的条目不进榜，且不影响其余条目的名次；榜 1–3 的序号用 `text-red-500` 加粗，其余弱化。
+- 侧栏在容器宽度 ≥ 768px（`@3xl`）时出现在列表右侧，窄面板自动隐藏；宽档下用 `sticky top-3 self-start` 钉在内容区滚动视口内，不随左侧信息流滚走（缺 `@3xl:block` 会一直 `display:none`，缺 `self-start` 会被拉伸到父容器高度而没有粘住行程）；面板内点刷新可重新取数，未配置 Cookie 时只给引导；空榜单（含未配置、加载、失败）不显示右上角刷新按钮，重试入口只在空态里。
+- 热搜页（`search.*`）不渲染这张卡：榜单已在专页整页展示，侧栏只服务信息流的边看边刷。
 - 标题下的说明行显示「更新于 本地时分」，时刻取宿主回包的 `fetchedAt`（ISO），与榜单内容同一次请求同源，而不是前端计时；首次取数前或回包时刻非法时该行留空，标题区不跳动。
 - 卡片的四种状态都由 `StateEmpty` 承载：未配置 Cookie（`Cookie` 图标 + 取数前提说明）、首次加载（`Spinner` + 正在读取）、失败与空榜单（`Flame` + 重试按钮作底部操作区，有错误信息时标题为「热搜读取失败」、说明用上游错误文案，否则是「暂时没有热搜内容」+ 刷新建议）；侧栏内统一用紧凑间距（`gap-3 p-3`），未配置态不在卡片内重复放按钮，入口在顶栏账号菜单的「设置」。
 - 榜单用 `ItemGroup`（自带 `role="list"`）+ `Item`（补 `role="listitem"`）承载，不再用 `ol/li`：序号走 `ItemMedia variant="icon"`（`w-4 justify-end`，两位数不推歪标题）、标题走 `ItemTitle`（`line-clamp-1` 单行截断）、`description` 作标题下的副行走 `ItemDescription`、`icon_desc` 作为行尾 `Badge` 收进 `ItemActions`；条目只展示文字，上游 `icon_url` 仍随回包下发但前端不再渲染成图片。
 - 条目整行点击打开 `https://s.weibo.com/weibo?q={encodeURIComponent(title)}`（`s.weibo.com` 属 `weibo.com` 子域，`weibo/openPost` 白名单放行；注意该协议对 url 有 512 字符上限）；悬停整行（触发器是 `Item` 本身，不是标题链接）用 `Tooltip` 显示完整标题，气泡沿用 `TOOLTIP_CLASS` 的暗底亮字并放左侧，调用处再叠 `ring-1 ring-border shadow-lg`——气泡底色固定 `#1E1E1E`，暗色主题下与侧栏底色几乎同值，没有轮廓就分不出边界；悬停时整行铺 `hover:bg-muted`，标题、序号与描述同时提亮（`Item` 自带 `group/item`）；标题本身是 `a`，只为键盘可达与右键复制地址，点击 `preventDefault` 后冒泡回整行处理器，避免打开两次或让 webview 自行导航。
+
+#### 热搜专页（多标签）
+
+```
+我的    GET https://weibo.com/ajax/statuses/mineBand
+热搜    GET https://weibo.com/ajax/side/hotSearch
+文娱    GET https://weibo.com/ajax/statuses/entertainment
+社会    GET https://weibo.com/ajax/statuses/social
+科技    GET https://weibo.com/ajax/statuses/technology
+生活    GET https://weibo.com/ajax/statuses/life
+体育    GET https://weibo.com/ajax/statuses/sport
+ACG     GET https://weibo.com/ajax/statuses/acg
+同城    GET https://weibo.com/ajax/statuses/city?citycode=80086{四位行政区划代码}
+```
+
+- 页面 `src/weibo/WeiboHotSearch.tsx` 承载顶栏「热搜」一级菜单的 9 个二级项：一个标签一个端点，切换由菜单驱动，页面内不再重复一排标签。
+- 端点差异只落在地址上（`weiboEndpoints` 的 `WEIBO_AJAX_PATHS`），标签到地址的映射在 `webHotRank.ts` 的 `HOT_RANK_TAB_PATHS`；`weibo/hotRank` 的 `tab` 取值受 `isWeiboHotRankTab` 收窄，防止被当作路径片段拼接。
+- 同城 citycode 规则：固定前缀 `80086` + 四位行政区划代码（如南宁 `4501` → `800864501`）。城市在面板「设置」弹窗里按城市名选择，落 `zhai.weibo.cityCode`（也可在工作区设置里手填其它城市的四位代码）；未配置或非法值回落南宁。
+- 只有 `band`（侧栏 `bandUnified`）参与 `weibo.json` 缓存；其余标签与同城的榜单内容各不相同，一律实时回源，避免不同标签串数据。
+- 专页使用自己的行组件 `WeiboHotSearchRow`（本文件内）：宽页不挂 Tooltip、标题单行截断、徽标略大一档，整行点击打开搜索页；不复用侧栏那一份行样式，侧栏仍用 `layout/WeiboHotRankRow.tsx` 且只取前 10 条。
+- 两份行组件共用四类能力，避免同类逻辑各写一份：名次与前三名高亮 `layout/WeiboHotRankPosition`（`sm` / `md`）、徽标 `layout/WeiboHotRankBadge`（`sm` / `md`）、搜索地址与连点保护 `hooks/useWeiboSearchOpen`（地址规则在 `utils/weiboHotLinks`）、三态占位 `layout/WeiboHotRankFallback`（`sidebar` / `page`）。
+- 热搜页不渲染右侧热搜卡，避免同一份榜单出现两次；该页内容区放宽到 `max-w-3xl`。
+- 顶栏「刷新」在热搜页刷当前标签的榜单（专页内不再有重复的刷新按钮，只有空态里的「重试」），在信息流页仍按原有游标语义刷新；当前视图内容为 0 时顶栏不渲染刷新按钮，信息流空态自带「刷新」入口（首页空态原本就有）。
 
 ### 14.14 元数据缓存（分组 / 热搜 / 表情）
 
@@ -1230,7 +1261,7 @@ GET https://weibo.com/ajax/side/bandUnified?type=mine&last_tab=mine&last_tab_tim
 {存储根}/weibo.json
 ```
 
-- 三项只在**扩展激活时预热一次**：`warmup.ts` 依次取 `allGroups` / `bandUnified` / `statuses/config` 并写入缓存；之后面板打开、切页、顶栏刷新都不再回源。热搜卡右上角是唯一能强制回源 `weibo/hotRank` 的入口（入参 `refresh: true`）。
+- 三项只在**扩展激活时预热一次**：`warmup.ts` 依次取 `allGroups` / `bandUnified` / `statuses/config` 并写入缓存；之后面板打开、切页、顶栏刷新都不再回源。侧栏热搜卡与热搜专页的刷新按钮可强制回源 `weibo/hotRank`（入参 `refresh: true`，只对 `band` 生效；其它标签本就实时回源）。
 - 预热必须串行：`webClient` 的最小间隔依赖模块级 `lastRequestAt`，并发调用会同时读到旧值而集体放行，只有串行等待才能让 1.2s 节流真正生效。
 - 同一账号 15 分钟内不重复预热（文件里的 `warmedAt`），避免开发时反复 Reload Window 反复打接口；凭证缺失直接返回，三项里任一失败只记 `warn`，既不弹窗也不影响扩展激活。
 - 文件结构：`version` / `accountKey` / `warmedAt` + 三个条目（`data` + `fetchedAt`）。`accountKey` 是 Cookie 的 SHA-256 前 16 位，**换号即失效**，Cookie 明文绝不落盘；`weibo/credential/clear` 会连带删除整个文件。

@@ -405,6 +405,8 @@ export type HostMethodName =
     | 'wechat/publishQuota'
     | 'wechat/stats/overview'
     | 'wechat/tasks'
+    | 'weibo/city/save'
+    | 'weibo/city/status'
     | 'weibo/comments'
     | 'weibo/credential/clear'
     | 'weibo/credential/save'

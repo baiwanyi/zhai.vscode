@@ -9,7 +9,7 @@
  * 面板激活、失焦与销毁都要经 activeDocument 上报/让位，关闭时同时清理事实与句柄。
  */
 import * as vscode from 'vscode'
-import { resolveStorageRoot } from '@modules/common/config'
+import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import { buildWebviewHtml } from '@modules/common/webviewHtml'
 import { getActivePanel, reportActivePanel } from '@modules/editor/activeDocument'
@@ -126,6 +126,13 @@ export async function openWeiboPanel(
     const storageRoot = resolveStorageRoot()
     const routes = new WeiboRoutesImpl({
         cookieStore,
+        // 同城城市落 VS Code 配置：跨窗口与重启都保留，也可在工作区设置里覆盖
+        readCityCode: (): string => getZhaiConfig().weiboCityCode,
+        writeCityCode: async (cityCode: string): Promise<void> => {
+            await vscode.workspace
+                .getConfiguration('zhai')
+                .update('weibo.cityCode', cityCode, vscode.ConfigurationTarget.Global)
+        },
         cache: createWeiboCache(storageRoot),
         // 头像经同一份图片代理取回后另存为 {存储根}/weibo_avatar.jpg
         avatar: createWeiboAvatarGateway({

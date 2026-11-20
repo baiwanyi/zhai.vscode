@@ -1,7 +1,7 @@
 /**
- * 微博协议路由：把信息流、凭证、评论、点赞与外链分发到取数、凭证与宿主能力。
+ * 微博协议路由：把信息流、热搜标签、同城城市、凭证、评论、点赞与外链分发到取数、配置与宿主能力。
  * 复用约定：入参收窄统一走 shared/types/weibo 的类型守卫，本层只做方法名到实现的映射；
- * 分组、热搜与表情先读 weibo.json 缓存，未命中再回源，缓存异常只记日志、绝不影响回包；
+ * 分组、表情与侧栏默认榜（band）先读 weibo.json 缓存，其余热搜标签实时回源，缓存异常只记日志、绝不影响回包；
  * Cookie 存取交给 WeiboCookieStore，取数交给 webTimeline / webFeed，宿主能力以回调注入便于单测。
  * 关键约束：方法名与 shared/types/messages 的 HostMethodName 一一对应，新增方法须两侧同时维护；
  * 未登记方法一律抛错；时间线与凭证错误统一带分类码，前端按码分发提示而不是解析文案；
@@ -9,6 +9,7 @@
  */
 import { logger } from '@modules/common/logger'
 import type {
+    WeiboCityState,
     WeiboClearCredentialResult,
     WeiboCommentsResult,
     WeiboCredentialState,
@@ -25,6 +26,8 @@ import type {
     WeiboTimelineResult,
 } from '@shared/types/weibo'
 import {
+    WEIBO_DEFAULT_CITY_CODE,
+    isWeiboCityCode,
     isWeiboCommentsRequest,
     isWeiboFeedRequest,
     isWeiboHotRankRequest,
@@ -33,8 +36,10 @@ import {
     isWeiboLongTextRequest,
     isWeiboOpenPostRequest,
     isWeiboProfileRequest,
+    isWeiboSaveCityRequest,
     isWeiboSaveCredentialRequest,
     isWeiboTimelineRequest,
+    readWeiboCityName,
 } from '@shared/types/weibo'
 import { WeiboWebError } from './webClient'
 import { fetchPostComments } from './webComments'
@@ -65,6 +70,10 @@ const ALLOWED_EXTERNAL_HOSTS = ['weibo.com', 'www.weibo.com', 'm.weibo.cn']
 /** 路由依赖：取数、图片代理与打开外链都可替换，生产由面板注入真实实现 */
 export interface WeiboRouteDeps {
     cookieStore: WeiboCookieStore
+    /** 读取同城城市代码：缺省回落默认城市，非法值同样回落 */
+    readCityCode?: () => string
+    /** 写入同城城市代码：由面板落到 zhai.weibo.cityCode 配置 */
+    writeCityCode?: (cityCode: string) => Promise<void>
     /** 元数据缓存：分组 / 热搜 / 表情的复用入口，未注入时退化为每次都回源 */
     cache?: WeiboCache
     fetchTimeline?: (options: FetchTimelineOptions) => Promise<WeiboTimelineResult>
@@ -141,6 +150,10 @@ export class WeiboRoutes {
                 return this.loadHotRank(payload)
             case 'weibo/profile':
                 return this.loadProfile(payload)
+            case 'weibo/city/status':
+                return this.readCityState()
+            case 'weibo/city/save':
+                return this.saveCity(payload)
             case 'weibo/comments':
                 return this.loadComments(payload)
             case 'weibo/longtext':
@@ -285,26 +298,50 @@ export class WeiboRoutes {
     }
 
     /**
-     * 读取热搜榜：默认命中缓存，只有热搜卡的刷新按钮（refresh 为真）才强制回源。
-     * 关键约束：顶栏刷新不触碰这里——热搜更新必须由用户显式触发。
+     * 读取热搜榜：band（侧栏）默认命中缓存，其余标签按请求实时回源。
+     * 关键约束：只有 band 参与磁盘缓存——各标签的榜单内容互不相同，共用一条缓存会串数据；
+     * 热搜页的刷新按钮传 refresh 为真，此时 band 也跳过缓存。
      */
     private async loadHotRank(payload: unknown): Promise<WeiboHotRankResult> {
         const raw = payload ?? {}
         if (!isWeiboHotRankRequest(raw)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/hotRank 参数非法：refresh 须为布尔')
+            throw new WeiboWebError(
+                'invalid-payload',
+                'weibo/hotRank 参数非法：refresh 须为布尔，tab 须为已登记来源，cityCode 须为四位数字',
+            )
         }
         const cookie = await this.readCookie()
         const accountKey = toAccountKey(cookie)
-        if (raw.refresh !== true) {
+        const tab = raw.tab ?? 'band'
+        const isCacheable = tab === 'band'
+        if (isCacheable && raw.refresh !== true) {
             const cached = await this.readCachedHotRank(accountKey)
             if (cached !== null) {
                 return cached
             }
         }
         const fetchHotRank = this.deps.fetchHotRank ?? fetchWeiboHotRank
-        const result = await fetchHotRank({ cookie })
-        this.saveCache('hotRank', accountKey, result, result.fetchedAt)
+        const result = await fetchHotRank({ cookie, tab, cityCode: raw.cityCode })
+        if (isCacheable) {
+            this.saveCache('hotRank', accountKey, result, result.fetchedAt)
+        }
         return result
+    }
+
+    /** 同城城市：配置非法或未注入读写时回落默认城市，保证下拉总有可选值 */
+    private readCityState(): WeiboCityState {
+        const configured = this.deps.readCityCode?.() ?? ''
+        const cityCode = isWeiboCityCode(configured) ? configured : WEIBO_DEFAULT_CITY_CODE
+        return { cityCode, cityName: readWeiboCityName(cityCode) }
+    }
+
+    /** 保存同城城市：写入配置后回同一结构，前端直接替换本地状态 */
+    private async saveCity(payload: unknown): Promise<WeiboCityState> {
+        if (!isWeiboSaveCityRequest(payload)) {
+            throw new WeiboWebError('invalid-payload', 'weibo/city/save 参数非法：cityCode 须为四位数字')
+        }
+        await this.deps.writeCityCode?.(payload.cityCode)
+        return { cityCode: payload.cityCode, cityName: readWeiboCityName(payload.cityCode) }
     }
 
     /**

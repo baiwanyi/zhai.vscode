@@ -1,10 +1,11 @@
 /**
- * 微博信息流契约：关注时间线、热门、分组信息流、分组列表与表情配置的模型与不可信载荷收窄。
- * 复用约定：宿主侧 modules/weibo 负责请求与归一化，Webview 只消费归一化后的帖子与表情，
+ * 微博信息流契约：关注时间线、热门、分组信息流、热搜标签、分组列表与表情配置的模型与不可信载荷收窄。
+ * 复用约定：宿主侧 modules/weibo 负责请求与归一化，Webview 只消费归一化后的帖子、榜单与表情，
  * 协议方法名登记在 shared/types/messages，面板经 request/response 通道取数。
- * 关键约束：所有信息流只读，写操作不得走本契约；Cookie 明文永不出宿主、不入日志，
+ * 关键约束：所有信息流与榜单只读，写操作不得走本契约；Cookie 明文永不出宿主、不入日志，
  * 凭证状态只回传是否已配置与保存时间；sinceId 与 maxId 互斥，二者都给出时以 maxId 为准；
- * 分组与游标必须是纯数字串，表情图地址必须落在图床白名单内，避免任意内容被拼进参数或渲染。
+ * 分组与游标必须是纯数字串，热搜 tab 与同城 cityCode 只接受登记过的取值，
+ * 表情图地址必须落在图床白名单内，避免任意内容被拼进参数或渲染。
  */
 
 /** 单页默认条数：与网页端首屏一致，上游超过 50 会被截断 */
@@ -334,11 +335,137 @@ export interface WeiboHotRankResult {
 }
 
 /**
+ * 热搜榜单来源：band 为侧栏默认榜（bandUnified），其余为热搜页各标签。
+ * 关键约束：每个取值对应一个固定的网页端 ajax 端点，新增标签须在宿主地址总表里登记。
+ */
+export type WeiboHotRankTab =
+    | 'band'
+    | 'mine'
+    | 'hotSearch'
+    | 'entertainment'
+    | 'social'
+    | 'technology'
+    | 'life'
+    | 'sport'
+    | 'acg'
+    | 'city'
+
+/** 热搜页标签清单：顺序即页面与菜单顺序（band 只用于侧栏，不进标签条） */
+export const WEIBO_HOT_RANK_TABS: readonly WeiboHotRankTab[] = [
+    'mine',
+    'hotSearch',
+    'entertainment',
+    'social',
+    'technology',
+    'life',
+    'sport',
+    'acg',
+    'city',
+]
+
+/** 同城榜单 citycode 前缀：后四位接行政区划代码 */
+export const WEIBO_CITY_CODE_PREFIX = '80086'
+
+/** 默认同城城市：南宁（行政区划代码 4501） */
+export const WEIBO_DEFAULT_CITY_CODE = '4501'
+
+/** 城市选项：code 为四位行政区划代码，name 为展示名 */
+export interface WeiboCityOption {
+    code: string
+    name: string
+}
+
+/**
+ * 全国主要城市：code 取行政区划代码前四位，与 80086 前缀拼成同城 citycode。
+ * 关键约束：只收直辖市、省会与计划单列市及少量热门地级市，避免下拉过长；
+ * 用户改用其它城市时可在设置里手填四位代码。
+ */
+export const WEIBO_CITY_OPTIONS: readonly WeiboCityOption[] = [
+    { code: '1100', name: '北京' },
+    { code: '1200', name: '天津' },
+    { code: '3100', name: '上海' },
+    { code: '5000', name: '重庆' },
+    { code: '4401', name: '广州' },
+    { code: '4403', name: '深圳' },
+    { code: '3301', name: '杭州' },
+    { code: '3201', name: '南京' },
+    { code: '3205', name: '苏州' },
+    { code: '3202', name: '无锡' },
+    { code: '3302', name: '宁波' },
+    { code: '3303', name: '温州' },
+    { code: '4201', name: '武汉' },
+    { code: '4301', name: '长沙' },
+    { code: '4101', name: '郑州' },
+    { code: '3701', name: '济南' },
+    { code: '3702', name: '青岛' },
+    { code: '5101', name: '成都' },
+    { code: '6101', name: '西安' },
+    { code: '2101', name: '沈阳' },
+    { code: '2102', name: '大连' },
+    { code: '2201', name: '长春' },
+    { code: '2301', name: '哈尔滨' },
+    { code: '3401', name: '合肥' },
+    { code: '3501', name: '福州' },
+    { code: '3502', name: '厦门' },
+    { code: '3601', name: '南昌' },
+    { code: '4501', name: '南宁' },
+    { code: '4406', name: '佛山' },
+    { code: '4419', name: '东莞' },
+    { code: '5301', name: '昆明' },
+    { code: '5201', name: '贵阳' },
+    { code: '4601', name: '海口' },
+    { code: '1301', name: '石家庄' },
+    { code: '1401', name: '太原' },
+    { code: '1501', name: '呼和浩特' },
+    { code: '6201', name: '兰州' },
+    { code: '6301', name: '西宁' },
+    { code: '6401', name: '银川' },
+    { code: '6501', name: '乌鲁木齐' },
+    { code: '5401', name: '拉萨' },
+]
+
+/** 城市代码形态：四位数字行政区划代码 */
+const WEIBO_CITY_CODE_PATTERN = /^\d{4}$/u
+
+/** 是否为合法的四位城市代码 */
+export function isWeiboCityCode(value: unknown): value is string {
+    return typeof value === 'string' && WEIBO_CITY_CODE_PATTERN.test(value)
+}
+
+/** 拼同城榜单 citycode：前缀固定，后四位为城市代码 */
+export function toWeiboCityCode(cityCode: string): string {
+    return `${WEIBO_CITY_CODE_PREFIX}${cityCode}`
+}
+
+/** 城市名称：未收录的四位代码直接回显代码本身，避免设置里出现空白 */
+export function readWeiboCityName(cityCode: string): string {
+    return WEIBO_CITY_OPTIONS.find((option) => option.code === cityCode)?.name ?? cityCode
+}
+
+/**
  * 热搜入参：refresh 为真时跳过缓存直接回源。
- * 关键约束：热搜榜只在激活预热与这个按钮上回源，普通刷新不触碰；缺省等价于 false。
+ * 关键约束：tab 缺省等价于 band（侧栏），这也是唯一参与磁盘缓存的来源；
+ * 其余标签与同城都按当前请求实时回源，避免不同标签共用一条缓存串数据。
  */
 export interface WeiboHotRankRequest {
     refresh?: boolean
+    /** 榜单来源：缺省为 band */
+    tab?: WeiboHotRankTab
+    /** 同城榜单的四位行政区划代码：仅 tab 为 city 时使用，缺省取默认城市 */
+    cityCode?: string
+}
+
+/** 同城城市状态：前端设置弹窗读取当前生效的城市 */
+export interface WeiboCityState {
+    /** 四位行政区划代码 */
+    cityCode: string
+    /** 展示名：未收录代码时等于代码本身 */
+    cityName: string
+}
+
+/** 保存同城城市入参 */
+export interface WeiboSaveCityRequest {
+    cityCode: string
 }
 
 /** 当前登录账号的公开信息：只用于顶栏账号菜单，不参与任何写操作 */
@@ -459,13 +586,33 @@ export function isWeiboTimelineRequest(value: unknown): value is WeiboTimelineRe
     )
 }
 
-/** 收窄热搜入参：refresh 缺省合法，给了就必须是布尔 */
+/** 收窄热搜来源：只允许已登记端点，防止 tab 被当作路径片段拼接 */
+export function isWeiboHotRankTab(value: unknown): value is WeiboHotRankTab {
+    return typeof value === 'string' && (['band', ...WEIBO_HOT_RANK_TABS] as readonly string[]).includes(value)
+}
+
+/** 收窄热搜入参：refresh / tab / cityCode 都缺省合法，给了就必须符合各自形态 */
 export function isWeiboHotRankRequest(value: unknown): value is WeiboHotRankRequest {
     if (typeof value !== 'object' || value === null) {
         return false
     }
-    const { refresh } = value as Record<string, unknown>
-    return refresh === undefined || typeof refresh === 'boolean'
+    const { refresh, tab, cityCode } = value as Record<string, unknown>
+    if (refresh !== undefined && typeof refresh !== 'boolean') {
+        return false
+    }
+    if (tab !== undefined && !isWeiboHotRankTab(tab)) {
+        return false
+    }
+    return cityCode === undefined || isWeiboCityCode(cityCode)
+}
+
+/** 收窄保存城市入参：只接受四位行政区划代码 */
+export function isWeiboSaveCityRequest(value: unknown): value is WeiboSaveCityRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { cityCode } = value as Record<string, unknown>
+    return isWeiboCityCode(cityCode)
 }
 
 /** 收窄账号信息入参：refresh 缺省合法，给了就必须是布尔 */
