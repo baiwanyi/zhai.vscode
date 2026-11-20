@@ -1,10 +1,7 @@
 /**
  * 微博模块共享类型与常量。
- * 设计源：docs/modules/weibo.md
+ * 设计源：docs/modules/weibo.md；地址类常量统一在 weiboEndpoints。
  */
-
-export const WEIBO_API_V2 = 'https://api.weibo.com/2'
-export const WEIBO_REFERER = 'https://weibo.com'
 
 export type MediaType = 'image' | 'video'
 

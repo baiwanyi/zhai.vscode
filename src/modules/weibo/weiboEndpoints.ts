@@ -34,6 +34,8 @@ export const WEIBO_AJAX_PATHS = {
     hotRank: '/ajax/side/bandUnified',
     /** 发表框表情配置 */
     emoticons: '/ajax/statuses/config',
+    /** 需登录态的图片下载端点：响应里的地址命中时改写成图床直链 */
+    imageDownload: '/ajax/common/download',
     /** 当前登录账号信息 */
     profile: '/ajax/profile/info',
     /** 微博评论列表 */

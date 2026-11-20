@@ -6,11 +6,9 @@
  * uid 可选（缺省由服务端按 Cookie 识别）；文本与计数缺失一律按空串 / 0 兜底，不阻断整页。
  */
 import type { WeiboCommentItem, WeiboCommentsResult, WeiboTimelineSegment } from '@shared/types/weibo'
-import { WEIBO_WEB_ORIGIN, WEIBO_WEB_USER_AGENT, WeiboWebError } from './webClient'
+import { WEIBO_WEB_USER_AGENT, WeiboWebError } from './webClient'
 import { normalizeWeiboImageUrl, parsePostSegments, parseWeiboCreatedAt } from './webTimeline'
-
-/** 评论接口路径 */
-export const WEIBO_COMMENTS_PATH = '/ajax/statuses/buildComments'
+import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN, WEIBO_WEB_REFERER } from './weiboEndpoints'
 
 /** 单页默认条数：与网页端一致的 10 条 */
 export const WEIBO_COMMENTS_DEFAULT_COUNT = 10
@@ -20,9 +18,6 @@ const MAX_COMMENT_COUNT = 30
 
 /** 请求超时 */
 const REQUEST_TIMEOUT_MS = 15_000
-
-/** 官网 Referer */
-const WEIBO_REFERER = 'https://weibo.com/'
 
 /** 评论请求参数 */
 export interface FetchCommentsOptions {
@@ -62,7 +57,7 @@ export function clampCommentCount(value: number | undefined): number {
 
 /** 构造评论请求地址：首页带 is_reload=1，翻页改带 max_id */
 export function buildCommentsUrl(options: FetchCommentsOptions): string {
-    const url = new URL(WEIBO_COMMENTS_PATH, WEIBO_WEB_ORIGIN)
+    const url = new URL(WEIBO_AJAX_PATHS.comments, WEIBO_WEB_ORIGIN)
     const maxId = options.maxId?.trim() ?? ''
     if (maxId.length === 0) {
         url.searchParams.set('is_reload', '1')
@@ -141,7 +136,7 @@ export async function fetchPostComments(options: FetchCommentsOptions): Promise<
             method: 'GET',
             headers: {
                 Cookie: options.cookie,
-                Referer: WEIBO_REFERER,
+                Referer: WEIBO_WEB_REFERER,
                 'User-Agent': WEIBO_WEB_USER_AGENT,
                 Accept: 'application/json, text/plain, */*',
                 'X-Requested-With': 'XMLHttpRequest',

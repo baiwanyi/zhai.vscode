@@ -4,6 +4,7 @@
  */
 
 import { extractMedia, resolveTarget } from './media'
+import { WEIBO_WEB_ORIGIN } from './weiboEndpoints'
 import type { WeiboDetail } from './types'
 
 /** 笔记落盘入口——由集成层传入笔记模块 API 实现 */
@@ -17,7 +18,7 @@ export function buildWeiboNoteMarkdown(detail: WeiboDetail, opts: { includeMedia
     const author = target.user?.screen_name ?? '未知作者'
     const uid = target.user?.id ?? 'unknown'
     const mid = target.mblogid ?? target.id ?? 'unknown'
-    const permalink = `https://weibo.com/${uid}/${mid}`
+    const permalink = `${WEIBO_WEB_ORIGIN}/${uid}/${mid}`
     const createdAt = target.created_at ?? new Date().toISOString()
     const text = (target.text ?? '').replace(/<[^>]+>/g, '').trim() // 去 HTML 标签
     const title = `${author} 的微博`

@@ -7,12 +7,10 @@
  * 拿不到任何条目时把实际返回字段名带进错误，便于接口改版时定位。
  */
 import type { WeiboEmoticonItem, WeiboEmoticonsResult } from '@shared/types/weibo'
-import { WEIBO_WEB_ORIGIN, WeiboWebError, requestWeiboJson } from './webClient'
+import { WeiboWebError, requestWeiboJson } from './webClient'
 import { normalizeWeiboImageUrl } from './webTimeline'
+import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN } from './weiboEndpoints'
 import type { WeiboJsonQuery, WeiboJsonResponse } from './webClient'
-
-/** 表情配置端点：网页端发表框的表情面板同源接口 */
-const EMOTICONS_PATH = '/ajax/statuses/config'
 
 /** 中文表情表的位置：data.emoticon.ZH_CN.<分类>[{ phrase, url }] */
 const EMOTICON_LOCALE_KEY = 'ZH_CN'
@@ -83,7 +81,7 @@ export interface FetchEmoticonsOptions {
 export async function fetchWeiboEmoticons(options: FetchEmoticonsOptions): Promise<WeiboEmoticonsResult> {
     const requestJson = options.requestJson ?? requestWeiboJson
     const now = options.now ?? ((): Date => new Date())
-    const url = new URL(EMOTICONS_PATH, WEIBO_WEB_ORIGIN).toString()
+    const url = new URL(WEIBO_AJAX_PATHS.emoticons, WEIBO_WEB_ORIGIN).toString()
     const { record } = await requestJson({
         url,
         cookie: options.cookie,

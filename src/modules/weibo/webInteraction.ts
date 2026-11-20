@@ -7,13 +7,8 @@
  * 成功判定以上游 `ok > 0` 为准，HTTP 200 但 ok=0 属业务失败；401/403 不重试，避免打进风控。
  */
 import type { WeiboLikeResult } from '@shared/types/weibo'
-import { WEIBO_WEB_ORIGIN, WEIBO_WEB_USER_AGENT, WeiboWebError } from './webClient'
-
-/** 点赞接口：POST 后即赞 */
-export const WEIBO_SET_LIKE_PATH = '/ajax/statuses/setLike'
-
-/** 取消点赞接口：POST 后取消，参数与点赞一致 */
-export const WEIBO_CANCEL_LIKE_PATH = '/ajax/statuses/cancelLike'
+import { WEIBO_WEB_USER_AGENT, WeiboWebError } from './webClient'
+import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN, WEIBO_WEB_REFERER } from './weiboEndpoints'
 
 /** 写操作超时：比读接口更短，失败让用户立刻重试 */
 const REQUEST_TIMEOUT_MS = 15_000
@@ -72,10 +67,10 @@ function parseLikePayload(text: string, status: number, liked: boolean): WeiboLi
 
 /** 点赞 / 取消点赞：调用方负责串行化同一微博的连续点击 */
 export async function setPostLike(options: SetLikeOptions): Promise<WeiboLikeResult> {
-    const path = options.liked ? WEIBO_SET_LIKE_PATH : WEIBO_CANCEL_LIKE_PATH
+    const path = options.liked ? WEIBO_AJAX_PATHS.setLike : WEIBO_AJAX_PATHS.cancelLike
     const headers: Record<string, string> = {
         Cookie: options.cookie,
-        Referer: `${WEIBO_WEB_ORIGIN}/`,
+        Referer: WEIBO_WEB_REFERER,
         Origin: WEIBO_WEB_ORIGIN,
         'User-Agent': WEIBO_WEB_USER_AGENT,
         Accept: 'application/json, text/plain, */*',

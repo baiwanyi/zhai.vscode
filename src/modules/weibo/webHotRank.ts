@@ -7,12 +7,10 @@
  * 图标字段在不同版本里叫 icon 或 icon_url，标记文案以 icon_desc 为主、label_name 兜底。
  */
 import type { WeiboHotRankItem, WeiboHotRankResult } from '@shared/types/weibo'
-import { WEIBO_WEB_ORIGIN, WeiboWebError, requestWeiboJson } from './webClient'
+import { WeiboWebError, requestWeiboJson } from './webClient'
 import { normalizeWeiboImageUrl } from './webTimeline'
+import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN } from './weiboEndpoints'
 import type { WeiboJsonQuery, WeiboJsonResponse } from './webClient'
-
-/** 侧栏榜单端点：mine 表示当前账号的默认侧栏配置 */
-const HOT_RANK_PATH = '/ajax/side/bandUnified'
 
 /** 颜色字面量：只放行 hex 与 rgb()/rgba()，避免任意字符串被当作样式值 */
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/iu
@@ -45,7 +43,7 @@ export function normalizeHotRankColor(value: unknown): string | null {
 
 /** 构造榜单地址：last_tab_time 取当前秒级时间戳，与网页端一致 */
 export function buildHotRankUrl(now: Date): string {
-    const url = new URL(HOT_RANK_PATH, WEIBO_WEB_ORIGIN)
+    const url = new URL(WEIBO_AJAX_PATHS.hotRank, WEIBO_WEB_ORIGIN)
     url.searchParams.set('type', 'mine')
     url.searchParams.set('last_tab', 'mine')
     url.searchParams.set('last_tab_time', String(Math.floor(now.getTime() / 1000)))

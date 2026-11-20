@@ -6,16 +6,11 @@
  * 全文是纯文本（换行原样保留），不再按表情分段——长文接口不返回 HTML。
  */
 import type { WeiboLongTextResult } from '@shared/types/weibo'
-import { WEIBO_WEB_ORIGIN, WEIBO_WEB_USER_AGENT, WeiboWebError } from './webClient'
-
-/** 长文接口路径 */
-export const WEIBO_LONGTEXT_PATH = '/ajax/statuses/longtext'
+import { WEIBO_WEB_USER_AGENT, WeiboWebError } from './webClient'
+import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN, WEIBO_WEB_REFERER } from './weiboEndpoints'
 
 /** 请求超时 */
 const REQUEST_TIMEOUT_MS = 15_000
-
-/** 官网 Referer */
-const WEIBO_REFERER = 'https://weibo.com/'
 
 /** 长文请求参数 */
 export interface FetchLongTextOptions {
@@ -32,7 +27,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 /** 构造长文请求地址 */
 export function buildLongTextUrl(id: string): string {
-    const url = new URL(WEIBO_LONGTEXT_PATH, WEIBO_WEB_ORIGIN)
+    const url = new URL(WEIBO_AJAX_PATHS.longText, WEIBO_WEB_ORIGIN)
     url.searchParams.set('id', id)
     return url.toString()
 }
@@ -75,7 +70,7 @@ export async function fetchLongText(options: FetchLongTextOptions): Promise<Weib
             method: 'GET',
             headers: {
                 Cookie: options.cookie,
-                Referer: WEIBO_REFERER,
+                Referer: WEIBO_WEB_REFERER,
                 'User-Agent': WEIBO_WEB_USER_AGENT,
                 Accept: 'application/json, text/plain, */*',
                 'X-Requested-With': 'XMLHttpRequest',

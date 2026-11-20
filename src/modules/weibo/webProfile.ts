@@ -7,12 +7,10 @@
  */
 import { isWeiboTimelineId } from '@shared/types/weibo'
 import type { WeiboProfile } from '@shared/types/weibo'
-import { WEIBO_WEB_ORIGIN, WeiboWebError, requestWeiboJson, toIdString } from './webClient'
+import { WeiboWebError, requestWeiboJson, toIdString } from './webClient'
 import { normalizeWeiboImageUrl, stripWeiboHtml } from './webTimeline'
+import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN } from './weiboEndpoints'
 import type { WeiboJsonQuery, WeiboJsonResponse } from './webClient'
-
-/** 账号信息端点：网页端个人主页同源接口，uid 为当前登录账号 */
-const PROFILE_PATH = '/ajax/profile/info'
 
 /** 是否为普通对象：数组与 null 都排除在外 */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -31,7 +29,7 @@ function toCount(value: unknown): number {
 
 /** 构造账号信息地址：uid 与 scene 都按网页端口径给定 */
 export function buildProfileUrl(uid: string): string {
-    const url = new URL(PROFILE_PATH, WEIBO_WEB_ORIGIN)
+    const url = new URL(WEIBO_AJAX_PATHS.profile, WEIBO_WEB_ORIGIN)
     url.searchParams.set('uid', uid)
     url.searchParams.set('scene', 'profile')
     return url.toString()

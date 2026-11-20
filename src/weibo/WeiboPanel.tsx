@@ -28,7 +28,12 @@ import {
 import { Card, CardContent } from '@components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@components/ui/dialog'
 import { Toaster } from '@components/ui/sonner'
-import { WEIBO_DEFAULT_HOT_CHANNELS, WEIBO_HOT_CHANNEL_LIMIT, WEIBO_PINNED_HOT_CHANNELS } from '@shared/types/weibo'
+import {
+    WEIBO_DEFAULT_HOT_CHANNELS,
+    WEIBO_FEED_DEFAULT_COUNT,
+    WEIBO_HOT_CHANNEL_LIMIT,
+    WEIBO_PINNED_HOT_CHANNELS,
+} from '@shared/types/weibo'
 import type { WeiboHotChannel } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
@@ -279,7 +284,11 @@ export function WeiboPanel(): JSX.Element {
                 return '时间线：默认分组「最新微博」的 list_id，按增量刷新与游标翻页读取。'
             default:
                 if (hotListId !== null) {
-                    return `热门：${readWeiboViewLabel(view, myGroups, hotChannels)}，首屏 10 条，翻页沿用上游 max_id。`
+                    return `热门：${readWeiboViewLabel(
+                        view,
+                        myGroups,
+                        hotChannels,
+                    )}，首屏 ${WEIBO_FEED_DEFAULT_COUNT} 条，翻页沿用上游 max_id。`
                 }
                 return activeGroupId === null
                     ? `${readWeiboViewLabel(view, myGroups, hotChannels)}：频道已在菜单规划中，数据接口尚未接入。`
@@ -395,7 +404,7 @@ export function WeiboPanel(): JSX.Element {
         )
     }
 
-    /** 热门：固定推荐频道，首屏 10 条 */
+    /** 热门：固定推荐频道，首屏与时间线同为 20 条 */
     function renderHotFeed(): JSX.Element {
         if (!isConfigured) {
             return renderNeedCredential()
@@ -603,7 +612,7 @@ function SettingsDialog({
                             <ul className="list-disc space-y-1 pl-5 text-muted-foreground text-xs">
                                 <li>首页：unreadfriendstimeline，增量刷新只取上次之后的新微博。</li>
                                 <li>时间线：friendstimeline，list_id 取默认分组里「最新微博」的 gid。</li>
-                                <li>热门：hottimeline，固定频道 102803，首屏 10 条。</li>
+                                <li>{`热门：hottimeline，固定频道 102803，首屏 ${WEIBO_FEED_DEFAULT_COUNT} 条。`}</li>
                                 <li>分组：allGroups 取「我的分组」，选中后走 groupstimeline 拉该分组。</li>
                             </ul>
                             <p className="text-muted-foreground text-xs">

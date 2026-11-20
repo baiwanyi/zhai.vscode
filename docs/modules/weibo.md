@@ -1131,7 +1131,8 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 
 | 文件 | 职责 |
 |------|------|
-| `src/shared/types/weibo.ts` | 时间线、信息流、分组、凭证与协议载荷契约，含参数收窄 |
+| `src/shared/types/weibo.ts` | 时间线、信息流、分组、凭证与协议载荷契约，含参数收窄与单页默认条数 |
+| `src/modules/weibo/weiboEndpoints.ts` | 地址总表：网页端 ajax 端点、开放平台基址、图床与站内基址集中在此 |
 | `src/modules/weibo/webClient.ts` | 通用 JSON 请求：URL 构造、请求头、错误分类、节流与退避重试 |
 | `src/modules/weibo/webTimeline.ts` | 分页/增量循环、去重、字段归一化、时间与正文清洗 |
 | `src/modules/weibo/webFeed.ts` | 时间线 / 热门 / 分组端点适配、分组归一化与卡片流提取 |
@@ -1167,10 +1168,10 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | 入口 | 接口 | 关键参数 |
 |------|------|----------|
 | 首页 | `ajax/feed/unreadfriendstimeline` | 见 14.1；增量刷新只取上次之后的新微博 |
-| 时间线 | `ajax/feed/friendstimeline` | `list_id` 取默认分组「最新微博」的 gid，`fid` 同值，`refresh=4`，首屏 `since_id=0`，`count=25` |
-| 热门 | `ajax/feed/hottimeline` | 按频道取 `group_id` / `containerid` / `refresh`（见下表），`extparam=discover|new_feed` 固定，首屏 `count=10` |
+| 时间线 | `ajax/feed/friendstimeline` | `list_id` 取默认分组「最新微博」的 gid，`fid` 同值，`refresh=4`，首屏 `since_id=0`，`count=20` |
+| 热门 | `ajax/feed/hottimeline` | 按频道取 `group_id` / `containerid` / `refresh`（见下表），`extparam=discover|new_feed` 固定，首屏 `count=20` |
 | 分组列表 | `ajax/feed/allGroups` | 取 `groups[]` 中「默认分组」与「我的分组」两个分区，`myGroups` 直接进菜单 |
-| 分组信息流 | `ajax/feed/groupstimeline` | `list_id={所选分组 gid}`、`refresh=4`、`fast_refresh=1`、`count=25` |
+| 分组信息流 | `ajax/feed/groupstimeline` | `list_id={所选分组 gid}`、`refresh=4`、`fast_refresh=1`、`count=20` |
 
 - 分组不再有选择页：分组名直接作为首页的二级菜单项，点哪个就按该分组的 `list_id` 取信息流，翻页只在该分组内生效。
 

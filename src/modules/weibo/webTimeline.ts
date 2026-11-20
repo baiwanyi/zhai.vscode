@@ -18,10 +18,8 @@ import type {
 } from '@shared/types/weibo'
 import { WEIBO_TIMELINE_MAX_PAGES } from '@shared/types/weibo'
 import { requestTimelinePage } from './webClient'
+import { WEIBO_AJAX_PATHS, WEIBO_IMAGE_ORIGIN, WEIBO_WEB_ORIGIN } from './weiboEndpoints'
 import type { TimelinePage, TimelinePageQuery } from './webClient'
-
-/** 微博网页地址基址：原微博跳转只允许该域名 */
-const WEIBO_WEB_BASE = 'https://weibo.com'
 
 /** 英文月份 → 0 起月份：微博 created_at 固定输出英文缩写 */
 const MONTH_INDEX: Readonly<Record<string, number>> = {
@@ -107,7 +105,7 @@ function isWeiboImageHost(hostname: string): boolean {
 
 /** 用图片 pid 拼图床直链：微博自家的下载端点要登录 Cookie，Webview 直连会 401 */
 function buildSinaImageUrl(pid: string): string | null {
-    return IMAGE_PID_PATTERN.test(pid) ? `https://wx1.sinaimg.cn/large/${pid}.jpg` : null
+    return IMAGE_PID_PATTERN.test(pid) ? `${WEIBO_IMAGE_ORIGIN}/large/${pid}.jpg` : null
 }
 
 /**
@@ -133,7 +131,7 @@ export function normalizeWeiboImageUrl(value: unknown): string | null {
         return null
     }
     // ajax/common/download?pid=xxx 需要登录 Cookie：改写成同一对象的图床直链
-    if (parsed.pathname.endsWith('/ajax/common/download')) {
+    if (parsed.pathname.endsWith(WEIBO_AJAX_PATHS.imageDownload)) {
         return buildSinaImageUrl(parsed.searchParams.get('pid') ?? '')
     }
     return parsed.toString()
@@ -588,9 +586,9 @@ function extractMetrics(record: Record<string, unknown>): WeiboTimelineMetrics {
 /** 拼原文地址：有 mblogid 时用 /{uid}/{mblogid}，否则退回 /detail/{id} */
 function buildPostUrl(uid: string, mblogid: string, id: string): string {
     if (mblogid.length === 0) {
-        return `${WEIBO_WEB_BASE}/detail/${id}`
+        return `${WEIBO_WEB_ORIGIN}/detail/${id}`
     }
-    return uid.length > 0 ? `${WEIBO_WEB_BASE}/${uid}/${mblogid}` : `${WEIBO_WEB_BASE}/detail/${id}`
+    return uid.length > 0 ? `${WEIBO_WEB_ORIGIN}/${uid}/${mblogid}` : `${WEIBO_WEB_ORIGIN}/detail/${id}`
 }
 
 /** 归一化转发体：只保留摘要，不再递归展开 */

@@ -8,15 +8,9 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
 import type { WeiboFeedSource, WeiboTimelinePost, WeiboTimelineResult } from '@shared/types/weibo'
+import { WEIBO_FEED_DEFAULT_COUNT } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
-
-/** 各来源的单页条数：与用户侧网页端首屏一致 */
-const PAGE_SIZE: Readonly<Record<WeiboFeedSource, number>> = {
-    timeline: 25,
-    hot: 10,
-    group: 25,
-}
 
 /** 翻页一次最多补两页：既有「加载更多」的即时反馈，又不至于一次点击打出长请求链 */
 const MORE_MAX_PAGES = 2
@@ -169,7 +163,7 @@ export function useWeiboFeed({ source, listId, enabled }: UseWeiboFeedOptions): 
                 const result = await request<WeiboTimelineResult>('weibo/feed', {
                     source,
                     listId,
-                    count: PAGE_SIZE[source],
+                    count: WEIBO_FEED_DEFAULT_COUNT,
                     maxPages: mode === 'more' ? MORE_MAX_PAGES : 1,
                     ...(sinceId === null ? {} : { sinceId }),
                     ...(maxId === null ? {} : { maxId }),

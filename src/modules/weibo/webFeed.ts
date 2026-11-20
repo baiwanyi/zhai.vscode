@@ -16,19 +16,17 @@ import type {
     WeiboTimelineResult,
 } from '@shared/types/weibo'
 import { WEIBO_FEED_DEFAULT_COUNT, isWeiboTimelineId } from '@shared/types/weibo'
-import { WEIBO_WEB_ORIGIN, WeiboWebError, clampTimelineCount, requestWeiboJson, toIdString } from './webClient'
+import { WeiboWebError, clampTimelineCount, requestWeiboJson, toIdString } from './webClient'
 import { fetchFriendTimeline } from './webTimeline'
+import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN } from './weiboEndpoints'
 import type { TimelinePage, TimelinePageQuery, WeiboJsonQuery, WeiboJsonResponse } from './webClient'
 
-/** 各信息流端点：端点差异由此表集中，新增来源只需补一行 */
+/** 各信息流端点：只做来源到地址总表的映射，新增来源补一行即可 */
 const FEED_PATHS: Readonly<Record<WeiboFeedSource, string>> = {
-    timeline: '/ajax/feed/friendstimeline',
-    hot: '/ajax/feed/hottimeline',
-    group: '/ajax/feed/groupstimeline',
+    timeline: WEIBO_AJAX_PATHS.timeline,
+    hot: WEIBO_AJAX_PATHS.hot,
+    group: WEIBO_AJAX_PATHS.group,
 }
-
-/** 分组列表端点：一次取回全部分组，前端按「默认分组 / 我的分组」分别消费 */
-const GROUPS_PATH = '/ajax/feed/allGroups'
 
 /** 热门频道的来源标记：上游据此区分发现页的新鲜流 */
 const HOT_EXTPARAM = 'discover|new_feed'
@@ -287,7 +285,7 @@ export interface FetchGroupsOptions {
 /** 读取全部分组：默认分组供时间线取 list_id，我的分组供分组页展示 */
 export async function fetchWeiboGroups(options: FetchGroupsOptions): Promise<WeiboGroupsResult> {
     const requestJson = options.requestJson ?? requestWeiboJson
-    const url = new URL(GROUPS_PATH, WEIBO_WEB_ORIGIN).toString()
+    const url = new URL(WEIBO_AJAX_PATHS.groups, WEIBO_WEB_ORIGIN).toString()
     const { record } = await requestJson({
         url,
         cookie: options.cookie,

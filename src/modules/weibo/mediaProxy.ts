@@ -17,9 +17,7 @@ import * as tls from 'node:tls'
 import { logger } from '@modules/common/logger'
 import { WEIBO_WEB_USER_AGENT } from './webClient'
 import { buildMiddleImageUrl, normalizeWeiboImageUrl } from './webTimeline'
-
-/** 图片请求必须带官网 Referer：图床据此判断来源 */
-const WEIBO_REFERER = 'https://weibo.com/'
+import { WEIBO_WEB_REFERER } from './weiboEndpoints'
 
 /** 单张上限：超长竖图可能很大，超过该体积改取 bmiddle 缩略图 */
 const MAX_IMAGE_BYTES = 24 * 1024 * 1024
@@ -45,7 +43,7 @@ const PRUNE_INTERVAL_WRITES = 40
 
 /** 与浏览器抓包一致的请求头：图床与 CDN 会按来源与抓取上下文判断 */
 const BASE_HEADERS: Readonly<Record<string, string>> = {
-    Referer: WEIBO_REFERER,
+    Referer: WEIBO_WEB_REFERER,
     'User-Agent': WEIBO_WEB_USER_AGENT,
     Accept: 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
     'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',

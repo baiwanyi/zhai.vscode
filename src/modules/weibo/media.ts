@@ -4,7 +4,7 @@
  *   weibo-{uid}-{timestamp}-{postId}[-{author}]-{seq:02d}.{ext}
  */
 
-import { WEIBO_REFERER } from './types'
+import { WEIBO_IMAGE_ORIGIN, WEIBO_WEB_REFERER } from './weiboEndpoints'
 import type { DownloadTask, WeiboDetail, WeiboMediaItem } from './types'
 
 /** 取目标微博（优先转发原博） */
@@ -26,7 +26,7 @@ export function extractMedia(detail: WeiboDetail): WeiboMediaItem[] {
         }
     } else if (target.pic_ids?.length) {
         for (const id of target.pic_ids) {
-            items.push({ type: 'image', url: `https://wx1.sinaimg.cn/large/${id}.jpg`, seq: seq++ })
+            items.push({ type: 'image', url: `${WEIBO_IMAGE_ORIGIN}/large/${id}.jpg`, seq: seq++ })
         }
     }
 
@@ -81,7 +81,7 @@ export function buildDownloadTasks(detail: WeiboDetail, isReadable = false): Dow
             author: target.user?.screen_name,
             isReadable,
         }),
-        referer: WEIBO_REFERER,
+        referer: WEIBO_WEB_REFERER,
         timeoutMs: 30_000,
     }))
 }

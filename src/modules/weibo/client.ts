@@ -5,7 +5,7 @@
  * - 指数退避重试
  */
 
-import { WEIBO_API_V2 } from './types'
+import { WEIBO_OPEN_API_ORIGIN } from './weiboEndpoints'
 
 export interface ApiOptions {
     method?: 'GET' | 'POST'
@@ -19,7 +19,7 @@ export interface ApiOptions {
 export async function weiboFetch<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
     const { method = 'GET', accessToken, query, body, timeoutMs = 30_000, retries = 2 } = opts
 
-    const url = new URL(`${WEIBO_API_V2}/${path}`)
+    const url = new URL(`${WEIBO_OPEN_API_ORIGIN}/${path}`)
     if (accessToken) url.searchParams.set('access_token', accessToken)
     if (query) {
         for (const [k, v] of Object.entries(query)) url.searchParams.set(k, v)

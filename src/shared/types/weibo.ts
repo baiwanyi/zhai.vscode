@@ -212,8 +212,8 @@ export interface WeiboTimelineResult {
     droppedDuplicates: number
 }
 
-/** 信息流单页默认条数：与网页端首屏一致 */
-export const WEIBO_FEED_DEFAULT_COUNT = 25
+/** 信息流单页默认条数：时间线、热门与分组统一按 20 条首屏加载 */
+export const WEIBO_FEED_DEFAULT_COUNT = 20
 
 /** 信息流来源：时间线（默认分组）、热门（频道推荐）与自定义分组 */
 export type WeiboFeedSource = 'timeline' | 'hot' | 'group'
@@ -268,7 +268,7 @@ export interface WeiboFeedRequest {
     listId?: string | null
     sinceId?: string | null
     maxId?: string | null
-    /** 单页条数：缺省 25，超出 [1, 50] 由宿主夹取 */
+    /** 单页条数：缺省 20，超出 [1, 50] 由宿主夹取 */
     count?: number
     /** 本次最多翻几页：缺省 1，夹取到 [1, 10] */
     maxPages?: number
