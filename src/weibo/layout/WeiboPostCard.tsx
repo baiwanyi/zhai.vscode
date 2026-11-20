@@ -1,5 +1,7 @@
 /**
- * 时间线卡片：作者头像、正文（含表情）、转发摘要与引用媒体、图文混排媒体区、互动数据与评论区。
+ * 时间线卡片：按标准 Card 分区——CardHeader 放作者头像、博主与时间来源（CardTitle / CardDescription），
+ * CardContent 放正文（含表情）、图文混排媒体区、转发块与按需展开的评论区，CardFooter 只放互动数据；
+ * 原文与两个卡片动作收在 CardAction 的「更多」菜单里，卡片底部不再堆一排按钮。
  * 复用约定：数据是归一化后的 WeiboTimelinePost，图片地址已在宿主按白名单收窄；
  * 头像与富文本分别交给 WeiboAvatar / WeiboRichText，配图、视频封面与灯箱在本文件内，
  * 主贴与转发体的媒体共用 PostMediaGrid，避免两套九宫格各写一份；
@@ -8,6 +10,9 @@
  * 图片按「进入视口附近」才发起下载；视频统一交给 layout/WeiboVideoPlayer（自绘控件栏、空格控制），
  * 地址经宿主回环中转补 Referer，不落缓存；拿不到整段地址时才回退打开原文（转发区回退被转发原文）；
  * 评论区按需展开，未展开不请求；
+ * 长文默认展开：主贴正文与转发体各自进入视口即自动取全文替换摘要（转发体只有数字 id，接口同样支持），
+ * 只在失败或尚未进入视口时保留手动入口；每处各自限一条在飞，避免连点或重复挂载把同一篇抽两次；
+ * 已取到的转发全文还会随「保存到笔记」「添加到 AI 对话」一起交给宿主，省掉一次重复请求；
  * 「保存到笔记」「添加到 AI 对话」只把卡片展示字段交给宿主，落盘与会话归属都在宿主侧决定，
  * 前端不做任何路径拼接，两个动作互斥以防并发写盘或并发改上下文。
  */
@@ -22,13 +27,22 @@ import {
     ImageOff,
     MessageCircle,
     MessageSquareQuote,
+    MoreHorizontal,
     Play,
     Repeat2,
     Save,
     Video,
 } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Card, CardContent } from '@components/ui/card'
+import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@components/ui/card'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuGroup,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+} from '@components/ui/dropdown-menu'
+import { Spinner } from '@components/ui/spinner'
 import type {
     WeiboLikeResult,
     WeiboLongTextResult,
@@ -52,20 +66,22 @@ import { useHasEnteredViewport } from '../hooks/useHasEnteredViewport'
 import { useWeiboImage } from '../hooks/useWeiboImage'
 import { useWeiboPostActions } from '../hooks/useWeiboPostActions'
 
-/** 九宫格上限：与微博前端一致，超出部分只在原文可见 */
-const MAX_GRID_IMAGES = 9
-
-/** 发布时间：同一年省掉年份，解析失败回退上游原串 */
-function formatPostTime(post: WeiboTimelinePost): string {
-    if (post.createdAt.length === 0) {
-        return post.createdAtRaw
+/** 发布时间：同一年省掉年份，解析失败回退上游原串；主贴与转发体共用 */
+function formatTime(createdAt: string, createdAtRaw: string): string {
+    if (createdAt.length === 0) {
+        return createdAtRaw
     }
-    const date = new Date(post.createdAt)
+    const date = new Date(createdAt)
     if (Number.isNaN(date.getTime())) {
-        return post.createdAtRaw
+        return createdAtRaw
     }
     const isSameYear = date.getFullYear() === new Date().getFullYear()
     return format(date, isSameYear ? 'MM-dd HH:mm' : 'yyyy-MM-dd HH:mm')
+}
+
+/** 主贴发布时间 */
+function formatPostTime(post: WeiboTimelinePost): string {
+    return formatTime(post.createdAt, post.createdAtRaw)
 }
 
 /** 视频时长：不足一小时给 m:ss，超过给 h:mm:ss */
@@ -185,13 +201,14 @@ function InlineVideoPlayer({ playUrl, posterUrl, resolution, onOpenPost }: Inlin
 /**
  * 媒体区：有视频时按混排原序渲染，纯图片走九宫格。
  * 主贴与转发体共用这一份——转发里的图片与视频同样要能看，不能只显示文字摘要。
- * 关键约束：视频点击后在原格子里换成 <video> 播放；CDN 校验 Referer 而 Webview 改不了请求头，
+ * 关键约束：配图全量展示，不按 9 张截断（上游给多少张就排多少格，懒加载负责按需取图）；
+ * 视频点击后在原格子里换成 <video> 播放；CDN 校验 Referer 而 Webview 改不了请求头，
  * 故 src 用宿主回环中转地址（流式转发，不落缓存）；拿不到地址时回退「打开原文」，避免点了没反应。
  */
 function PostMediaGrid({ media, onOpenPost, onPreview }: PostMediaGridProps): JSX.Element | null {
-    const images = media.images.slice(0, MAX_GRID_IMAGES)
+    const images = media.images
     const thumbnails = media.thumbnails
-    const mixedItems = media.videoCount > 0 ? media.items.slice(0, MAX_GRID_IMAGES) : []
+    const mixedItems = media.videoCount > 0 ? media.items : []
     const gridClassName =
         images.length === 1 ? 'max-w-64 grid-cols-1' : images.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
     /** 播放状态：remoteUrl 是上游地址，localUrl 是宿主回环中转地址；同一媒体区只播一个视频 */
@@ -357,6 +374,26 @@ function PostMediaGrid({ media, onOpenPost, onPreview }: PostMediaGridProps): JS
     )
 }
 
+interface LongTextStatusProps {
+    /** 全文请求进行中：只给文字提示，不铺按钮 */
+    isLoading: boolean
+    /** 上一轮取全文失败：按钮文案换成重试 */
+    hasFailed: boolean
+    onRetry: () => void
+}
+
+/** 长文展开态：主贴与转发体共用同一套外观，加载中给文字，失败或未进视口时给可点按钮 */
+function LongTextStatus({ isLoading, hasFailed, onRetry }: LongTextStatusProps): JSX.Element {
+    if (isLoading) {
+        return <Spinner />
+    }
+    return (
+        <Button variant="ghost" onClick={onRetry}>
+            {hasFailed ? '重新加载全文' : '展开全文'}
+        </Button>
+    )
+}
+
 interface LikeButtonProps {
     /** 微博数字 id：点赞接口的入参 */
     postId: string
@@ -440,9 +477,21 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
     /** 原图预览：点击九宫格时才取原图，列表始终用中等尺寸；尺寸随预览一起带上 */
     const [preview, setPreview] = useState<PreviewState | null>(null)
     const [isCommentsOpen, setIsCommentsOpen] = useState(false)
-    /** 长文全文：展开后替换摘要，卡片保持展开态直到列表重建 */
+    /** 长文全文：取到后替换摘要，卡片保持展开态直到列表重建 */
     const [fullText, setFullText] = useState<string | null>(null)
     const [isExpanding, setIsExpanding] = useState(false)
+    /** 全文取失败：保留摘要并放出可点的「展开全文」，不再自动重试避免刷接口 */
+    const [hasExpandFailed, setHasExpandFailed] = useState(false)
+    /** 长文请求占位：ref 判定，避开闭包读到旧 state 与严格模式下的双次 effect */
+    const isExpandingRef = useRef(false)
+    /** 正文进入视口才取全文：一屏几十条长文同时打接口会被上游限流 */
+    const { ref: bodyRef, hasEntered: isBodyVisible } = useHasEnteredViewport<HTMLParagraphElement>()
+    /** 转发体全文：与主贴各自独立，引用块进入视口才取，不拖累主贴的展开节奏 */
+    const [retweetedFullText, setRetweetedFullText] = useState<string | null>(null)
+    const [isRetweetedExpanding, setIsRetweetedExpanding] = useState(false)
+    const [hasRetweetedExpandFailed, setHasRetweetedExpandFailed] = useState(false)
+    const isRetweetedExpandingRef = useRef(false)
+    const { ref: retweetedBodyRef, hasEntered: isRetweetedVisible } = useHasEnteredViewport<HTMLQuoteElement>()
 
     const handlePreviewClose = useCallback((): void => {
         setPreview(null)
@@ -452,98 +501,234 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
         setIsCommentsOpen((previous) => !previous)
     }, [])
 
-    /** 展开全文：mblogid 优先（长文接口按它取），缺失才用数字 id */
-    const handleExpand = useCallback((): void => {
-        if (isExpanding) {
+    /**
+     * 取长文全文：mblogid 优先（长文接口按它取），缺失才用数字 id。
+     * 关键约束：自动展开属于后台补全，失败只落重试入口不弹提示，免得静默失败连弹多条 toast；
+     * 只有用户主动点按钮时才提示错误。
+     */
+    const requestFullText = useCallback(
+        (isManual = false): void => {
+            if (isExpandingRef.current) {
+                return
+            }
+            isExpandingRef.current = true
+            setIsExpanding(true)
+            const targetId = post.mblogid.length > 0 ? post.mblogid : post.id
+            void request<WeiboLongTextResult>('weibo/longtext', { id: targetId }, 20_000)
+                .then((result) => {
+                    setFullText(result.text)
+                })
+                .catch((cause: unknown) => {
+                    setHasExpandFailed(true)
+                    if (isManual) {
+                        toastError(cause)
+                    }
+                })
+                .finally(() => {
+                    isExpandingRef.current = false
+                    setIsExpanding(false)
+                })
+        },
+        [post.id, post.mblogid],
+    )
+
+    /** 默认显示全文：长文正文一进视口就自动取，不再等用户点「展开全文」 */
+    useEffect(() => {
+        if (!post.isLongText || fullText !== null || hasExpandFailed || !isBodyVisible) {
             return
         }
-        setIsExpanding(true)
-        const targetId = post.mblogid.length > 0 ? post.mblogid : post.id
-        void request<WeiboLongTextResult>('weibo/longtext', { id: targetId }, 20_000)
-            .then((result) => {
-                setFullText(result.text)
-            })
-            .catch(toastError)
-            .finally(() => {
-                setIsExpanding(false)
-            })
-    }, [isExpanding, post.id, post.mblogid])
+        requestFullText()
+    }, [fullText, hasExpandFailed, isBodyVisible, post.isLongText, requestFullText])
 
-    /** 卡片动作：保存到笔记与添加到 AI 对话，展开过全文时把全文一并带出 */
-    const postActions = useWeiboPostActions(post, fullText)
+    /**
+     * 取转发体全文：转发体没有 mblogid，一律用它自己的数字 id（长文接口同样支持）。
+     * 失败处置与主贴一致——自动展开不提示，只留重试入口。
+     */
+    const requestRetweetedFullText = useCallback(
+        (isManual = false): void => {
+            const retweeted = post.retweeted
+            if (retweeted === null || isRetweetedExpandingRef.current) {
+                return
+            }
+            isRetweetedExpandingRef.current = true
+            setIsRetweetedExpanding(true)
+            void request<WeiboLongTextResult>('weibo/longtext', { id: retweeted.id }, 20_000)
+                .then((result) => {
+                    setRetweetedFullText(result.text)
+                })
+                .catch((cause: unknown) => {
+                    setHasRetweetedExpandFailed(true)
+                    if (isManual) {
+                        toastError(cause)
+                    }
+                })
+                .finally(() => {
+                    isRetweetedExpandingRef.current = false
+                    setIsRetweetedExpanding(false)
+                })
+        },
+        [post.retweeted],
+    )
+
+    /** 转发体同样是长文时，引用块进入视口即自动展开，与主贴互不影响 */
+    useEffect(() => {
+        const retweeted = post.retweeted
+        if (retweeted === null || !retweeted.isLongText) {
+            return
+        }
+        if (retweetedFullText !== null || hasRetweetedExpandFailed || !isRetweetedVisible) {
+            return
+        }
+        requestRetweetedFullText()
+    }, [hasRetweetedExpandFailed, isRetweetedVisible, post.retweeted, requestRetweetedFullText, retweetedFullText])
+
+    /** 卡片动作：保存到笔记与添加到 AI 对话，主贴与转发已展开的全文都一并带出 */
+    const postActions = useWeiboPostActions(post, fullText, retweetedFullText)
 
     /** 正文分段：展开全文后整段替换为接口返回的纯文本 */
     const bodySegments: WeiboTimelineSegment[] = fullText === null ? post.segments : [{ type: 'text', text: fullText }]
 
-    /** 主贴图片数：为 0 但上游声明有图时单独给提示，媒体区自身不再重复 */
-    const images = post.media.images.slice(0, MAX_GRID_IMAGES)
+    /** 转发体：取到全文用全文，否则用归一化后的摘要 */
+    const retweeted = post.retweeted
+    const retweetedText = retweeted === null ? '' : (retweetedFullText ?? retweeted.text)
+
+    /** 直链一张都没解析出来但上游声明有图：单独给提示，媒体区自身不再重复 */
+    const isImageMissing = post.media.images.length === 0 && post.media.imageCount > 0
 
     return (
         <Card>
-            <CardContent className="flex flex-col gap-3">
+            <CardHeader>
                 <div className="flex items-start gap-3">
                     <WeiboAvatar
                         name={post.author.name.length > 0 ? post.author.name : '未'}
                         avatarUrl={post.author.avatarUrl}
                     />
                     <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                            <span className="truncate font-medium">
+                        <CardTitle className="flex flex-wrap items-center gap-1 text-sm">
+                            <span className="truncate">
                                 {post.author.name.length > 0 ? post.author.name : '未知作者'}
                             </span>
                             {post.author.isVerified ? (
                                 <BadgeCheck className="size-3.5 shrink-0 text-primary" aria-label="已认证" />
                             ) : null}
-                            <span className="shrink-0 text-muted-foreground text-xs">{formatPostTime(post)}</span>
-                            {post.source.length > 0 ? (
-                                <span className="shrink-0 text-muted-foreground text-xs">来自 {post.source}</span>
+                            {post.author.id.length > 0 ? (
+                                <span className="ml-1 shrink-0 text-muted-foreground">@{post.author.id}</span>
                             ) : null}
-                        </div>
-                        <p className="mt-1 whitespace-pre-wrap wrap-break-word text-sm leading-relaxed">
-                            <WeiboRichText segments={bodySegments} />
-                        </p>
-                        {post.isLongText && fullText === null ? (
-                            <Button
-                                size="xs"
-                                variant="ghost"
-                                className="mt-1 h-auto px-0 text-muted-foreground text-xs hover:bg-transparent hover:text-foreground"
-                                isLoading={isExpanding}
-                                onClick={handleExpand}
-                            >
-                                展开全文
-                            </Button>
-                        ) : null}
+                        </CardTitle>
+                        <CardDescription className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                            <span className="shrink-0">{formatPostTime(post)}</span>
+                            {post.source.length > 0 ? <span className="shrink-0">来自 {post.source}</span> : null}
+                        </CardDescription>
                     </div>
                 </div>
+                {/* 原文与两个卡片动作收进「更多」菜单：底部只留互动数据，卡片头部不再堆按钮 */}
+                <CardAction>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" tooltip="更多操作" aria-label="更多操作">
+                                <MoreHorizontal className="size-4" />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="w-44">
+                            <DropdownMenuGroup>
+                                <DropdownMenuItem onSelect={handleOpen}>
+                                    <ExternalLink />
+                                    在浏览器打开原文
+                                </DropdownMenuItem>
+                                {/* 两个动作互斥：任一请求进行中两者都禁用，避免并发写盘与并发改上下文 */}
+                                <DropdownMenuItem
+                                    disabled={postActions.isAddingToChat}
+                                    onSelect={postActions.saveToNote}
+                                >
+                                    {postActions.isSavedNote ? <Check /> : <Save />}
+                                    {postActions.isSavedNote
+                                        ? '已保存到笔记'
+                                        : postActions.isSavingNote
+                                          ? '正在保存…'
+                                          : '保存到笔记'}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem disabled={postActions.isSavingNote} onSelect={postActions.addToChat}>
+                                    <MessageSquareQuote />
+                                    {postActions.isAddingToChat ? '正在添加到对话…' : '添加到 AI 对话'}
+                                </DropdownMenuItem>
+                            </DropdownMenuGroup>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
+                </CardAction>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+                <p ref={bodyRef} className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed">
+                    <WeiboRichText segments={bodySegments} />
+                </p>
+                {post.isLongText && fullText === null ? (
+                    <LongTextStatus
+                        isLoading={isExpanding}
+                        hasFailed={hasExpandFailed}
+                        onRetry={() => {
+                            requestFullText(true)
+                        }}
+                    />
+                ) : null}
 
                 <PostMediaGrid media={post.media} onOpenPost={handleOpen} onPreview={setPreview} />
 
-                {images.length === 0 && post.media.imageCount > 0 ? (
+                {isImageMissing ? (
                     <p className="text-muted-foreground text-xs">
                         本条含 {post.media.imageCount} 张配图，直链未能解析，请打开原文查看。
                     </p>
                 ) : null}
 
-                {post.retweeted !== null ? (
-                    <blockquote className="flex flex-col gap-2 rounded-lg bg-muted px-3 py-2 text-muted-foreground text-xs ring-1 ring-foreground/5">
-                        <div>
-                            <p className="font-medium">
-                                @{post.retweeted.authorName.length > 0 ? post.retweeted.authorName : '原作者'}
-                            </p>
-                            <p className="mt-1 whitespace-pre-wrap wrap-break-word">
-                                {post.retweeted.text.length > 0 ? post.retweeted.text : '（原微博不可见）'}
-                            </p>
+                {retweeted !== null ? (
+                    <blockquote
+                        ref={retweetedBodyRef}
+                        className="flex flex-col gap-2 rounded-lg bg-muted px-3 py-2 text-muted-foreground ring-1 ring-foreground/5"
+                    >
+                        {/* 作者行与主贴同构：作者名 + 认证角标 + @UID，下一行单独放发布时间 */}
+                        <div className="flex flex-wrap items-center gap-1">
+                            <span className="font-medium text-foreground">
+                                {retweeted.authorName.length > 0 ? retweeted.authorName : '原作者'}
+                            </span>
+                            {retweeted.authorIsVerified ? (
+                                <BadgeCheck className="size-3.5 shrink-0 text-primary" aria-label="已认证" />
+                            ) : null}
+                            {retweeted.authorId.length > 0 ? (
+                                <>
+                                    <span className="ml-1 shrink-0 text-muted-foreground">@{retweeted.authorId}</span>
+                                    <span className="shrink-0 text-muted-foreground">·</span>
+                                </>
+                            ) : null}
+                            <span className="shrink-0 text-muted-foreground">
+                                {formatTime(retweeted.createdAt, retweeted.createdAtRaw)}
+                            </span>
                         </div>
+
+                        <p className="whitespace-pre-wrap wrap-break-word">
+                            {retweetedText.length > 0 ? retweetedText : '（原微博不可见）'}
+                        </p>
+                        {retweeted.isLongText && retweetedFullText === null ? (
+                            <LongTextStatus
+                                isLoading={isRetweetedExpanding}
+                                hasFailed={hasRetweetedExpandFailed}
+                                onRetry={() => {
+                                    requestRetweetedFullText(true)
+                                }}
+                            />
+                        ) : null}
+
                         {/* 引用微博的图片与视频同样要展示：媒体结构与主贴一致，图片开灯箱，视频回被转发的原文 */}
                         <PostMediaGrid
-                            media={post.retweeted.media}
+                            media={retweeted.media}
                             onOpenPost={handleOpenRetweeted}
                             onPreview={setPreview}
                         />
                     </blockquote>
                 ) : null}
 
-                <div className="flex flex-wrap items-center gap-4 text-muted-foreground text-xs">
+                {isCommentsOpen ? <WeiboCommentList postId={post.id} totalCount={post.metrics.comments} /> : null}
+            </CardContent>
+
+            <CardFooter className="border-0 bg-transparent text-muted-foreground">
+                <div className="flex flex-1 items-center">
                     <Metric icon={<Repeat2 className="size-3.5" />} label="转发" value={post.metrics.reposts} />
                     <button
                         type="button"
@@ -558,53 +743,20 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
                         {post.metrics.comments}
                     </button>
                     <LikeButton postId={post.id} initialLiked={post.isLiked} initialCount={post.metrics.likes} />
-                    {post.media.imageCount > 0 ? (
-                        <Metric icon={<ImageIcon className="size-3.5" />} label="图片" value={post.media.imageCount} />
-                    ) : null}
-                    {post.media.videoCount > 0 ? (
-                        <Metric icon={<Video className="size-3.5" />} label="视频" value={post.media.videoCount} />
-                    ) : post.media.videoUrl === null ? null : (
-                        <span className="flex items-center gap-1">
-                            <Video className="size-3.5" aria-hidden="true" />
-                            含视频
-                        </span>
-                    )}
-
-                    <div className="ml-auto flex items-center gap-1">
-                        <Button variant="ghost" onClick={handleOpen}>
-                            <ExternalLink className="size-3.5" aria-hidden="true" />
-                            原文
-                        </Button>
-                        {/* 两个动作互斥：任一请求进行中两者都禁用，避免并发写盘与并发改上下文 */}
-                        <Button
-                            size="icon"
-                            variant="ghost"
-                            tooltip={postActions.isSavedNote ? '已保存' : '保存到笔记'}
-                            isLoading={postActions.isSavingNote}
-                            disabled={postActions.isAddingToChat}
-                            onClick={postActions.saveToNote}
-                        >
-                            {postActions.isSavedNote ? (
-                                <Check className="size-3.5" aria-hidden="true" />
-                            ) : (
-                                <Save className="size-3.5" aria-hidden="true" />
-                            )}
-                        </Button>
-                        <Button
-                            size="icon"
-                            variant="ghost"
-                            tooltip="添加到 AI 对话"
-                            isLoading={postActions.isAddingToChat}
-                            disabled={postActions.isSavingNote}
-                            onClick={postActions.addToChat}
-                        >
-                            <MessageSquareQuote className="size-3.5" aria-hidden="true" />
-                        </Button>
-                    </div>
                 </div>
 
-                {isCommentsOpen ? <WeiboCommentList postId={post.id} totalCount={post.metrics.comments} /> : null}
-            </CardContent>
+                {post.media.imageCount > 0 ? (
+                    <Metric icon={<ImageIcon className="size-3.5" />} label="图片" value={post.media.imageCount} />
+                ) : null}
+                {post.media.videoCount > 0 ? (
+                    <Metric icon={<Video className="size-3.5" />} label="视频" value={post.media.videoCount} />
+                ) : post.media.videoUrl === null ? null : (
+                    <span className="flex items-center gap-1">
+                        <Video className="size-3.5" aria-hidden="true" />
+                        含视频
+                    </span>
+                )}
+            </CardFooter>
             {preview === null ? null : (
                 <WeiboLightbox
                     originUrl={preview.origin}

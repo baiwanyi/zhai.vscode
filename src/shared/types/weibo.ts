@@ -181,9 +181,17 @@ export interface WeiboTimelineMedia {
  */
 export interface WeiboTimelineRetweet {
     id: string
+    /** 原作者 uid：卡片作者行展示 `@UID` 用，上游未给时为空串 */
+    authorId: string
     authorName: string
+    /** 原作者认证标记：卡片在作者名后挂认证角标 */
+    authorIsVerified: boolean
     text: string
     url: string
+    /** ISO 8601 时间：解析失败为空串，展示回退 createdAtRaw */
+    createdAt: string
+    /** 上游原样时间串：排障与兜底展示用 */
+    createdAtRaw: string
     /** 原文媒体：图片九宫格与视频封面，结构与主贴一致 */
     media: WeiboTimelineMedia
     /** 长文标记：text 只是摘要，保存笔记前需要先取全文 */

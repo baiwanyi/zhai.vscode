@@ -110,6 +110,7 @@ export function createWeiboPostActions(deps: WeiboPostActionDeps): WeiboPostActi
                 startLine: null,
                 endLine: null,
                 charCount: text.length,
+                // 长文已在协议层补全：这里的标记只表示「补全也失败，正文仍是上游摘要」
                 isTruncated: post.isTruncated,
                 // uri 只作去重键与标识：微博永久链接唯一，同一帖子不会被重复加入
                 uri: post.url,

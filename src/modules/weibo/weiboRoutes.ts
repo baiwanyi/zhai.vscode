@@ -6,7 +6,7 @@
  * 关键约束：方法名与 shared/types/messages 的 HostMethodName 一一对应，新增方法须两侧同时维护；
  * 未登记方法一律抛错；时间线与凭证错误统一带分类码，前端按码分发提示而不是解析文案；
  * 外链只放行 weibo.com 及其子域，防止被当作任意地址跳转的通道；
- * 保存笔记前对主贴与转发体的长文做全文补全，取不到全文时保留摘要并在笔记里标注截断。
+ * 保存笔记与添加到 AI 对话前都对主贴与转发体的长文做全文补全，取不到全文时保留摘要并标注截断。
  */
 import { logger } from '@modules/common/logger'
 import type {
@@ -630,8 +630,9 @@ export class WeiboRoutes {
     }
 
     /**
-     * 添加到 AI 对话：载荷收窄后交由 AI 层构造内联引用。
-     * 关键约束：微博没有文档目录，会话作用域由 AI 层固定为 weibo 模块，路由不感知会话细节。
+     * 添加到 AI 对话：载荷收窄 → 长文补全 → 交由 AI 层构造内联引用。
+     * 关键约束：微博没有文档目录，会话作用域由 AI 层固定为 weibo 模块，路由不感知会话细节；
+     * 与保存笔记同口径，主贴或转发体被截断时先取全文，失败只保留摘要，不阻断添加。
      */
     private async addToChat(payload: unknown): Promise<WeiboChatContextResult> {
         const post = readWeiboPagePost(payload)
@@ -642,6 +643,6 @@ export class WeiboRoutes {
         if (addToChat === undefined) {
             throw new WeiboWebError('upstream', '当前宿主尚未装配 AI 对话，无法添加为上下文')
         }
-        return addToChat(post)
+        return addToChat(await this.expandLongText(post))
     }
 }

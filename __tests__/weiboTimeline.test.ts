@@ -545,6 +545,37 @@ describe('长文接口与归一化', () => {
         expect(post?.retweeted?.media.items[1]).toMatchObject({ coverUrl: 'https://wx4.sinaimg.cn/orj480/cover.jpg' })
     })
 
+    it('转发体带出原作者 uid、认证标记与发布时间', () => {
+        const post = normalizeTimelinePost(
+            rawStatus(121, {
+                retweeted_status: {
+                    id: 902,
+                    idstr: '902',
+                    mblogid: 'RT902',
+                    text_raw: '原文',
+                    created_at: 'Wed Nov 19 10:00:00 +0800 2026',
+                    user: { id: 9002, screen_name: '认证作者', verified: true },
+                },
+            }),
+        )
+        expect(post?.retweeted?.authorId).toBe('9002')
+        expect(post?.retweeted?.authorIsVerified).toBe(true)
+        expect(post?.retweeted?.createdAtRaw).toBe('Wed Nov 19 10:00:00 +0800 2026')
+        expect(post?.retweeted?.createdAt).not.toBe('')
+    })
+
+    it('转发体缺认证与时间时不误标，作者 uid 回退空串', () => {
+        const post = normalizeTimelinePost(
+            rawStatus(122, {
+                retweeted_status: { id: 903, idstr: '903', text_raw: '原文' },
+            }),
+        )
+        expect(post?.retweeted?.authorId).toBe('')
+        expect(post?.retweeted?.authorIsVerified).toBe(false)
+        expect(post?.retweeted?.createdAt).toBe('')
+        expect(post?.retweeted?.createdAtRaw).toBe('')
+    })
+
     it('isLongText 只在有「全文」入口或展开痕迹时成立，带视频卡片的普通微博不误标', () => {
         const cardOnly = normalizeTimelinePost(
             rawStatus(118, {

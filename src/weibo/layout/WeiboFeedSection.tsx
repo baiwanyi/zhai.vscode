@@ -57,6 +57,7 @@ export function WeiboFeedSection({
             emptyTitle={emptyTitle}
             emptyDescription={feed.state.errorMessage ?? emptyDescription}
             emptyState={emptyState}
+            errorMessage={feed.state.errorMessage}
             onRefresh={onRefresh}
             onLoadMore={() => {
                 void feed.loadMore()

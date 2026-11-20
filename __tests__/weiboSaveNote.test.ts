@@ -1,10 +1,15 @@
 /**
- * 微博保存笔记的长文补全：主贴与转发体被上游截断时先取全文，取不到则保留摘要。
- * 全部为纯逻辑用例：Cookie、长文接口与落盘回调都由用例注入替身，不触网、不写盘。
- * 断言只看落盘回调收到的载荷（正文是否为全文、截断标记是否复位）与长文接口实际请求的 id。
+ * 微博卡片动作的长文补全：保存笔记与添加到 AI 对话都在主贴或转发体被截断时先取全文，
+ * 取不到则保留摘要。全部为纯逻辑用例：Cookie、长文接口与下游回调都由用例注入替身，不触网、不写盘。
+ * 断言只看下游回调收到的载荷（正文是否为全文、截断标记是否复位）与长文接口实际请求的 id。
  */
 import { describe, expect, it } from 'vitest'
-import type { WeiboLongTextResult, WeiboNoteSaveResult, WeiboPagePostPayload } from '@shared/types/weibo'
+import type {
+    WeiboChatContextResult,
+    WeiboLongTextResult,
+    WeiboNoteSaveResult,
+    WeiboPagePostPayload,
+} from '@shared/types/weibo'
 import { WeiboRoutes } from '../src/modules/weibo/weiboRoutes'
 
 /** 最小可用的 Cookie 存取器：只保证读到非空值，其余方法返回已完成的 Promise */
@@ -70,6 +75,63 @@ async function runSave(
     }
     return { saved, requested }
 }
+
+/**
+ * 跑一次添加到对话：返回 AI 层回调收到的载荷与长文接口请求过的 id。
+ * 与 runSave 同构，只把下游回调换成 addToChat，便于两条路径共用同一批断言口径。
+ */
+async function runAddToChat(
+    payload: WeiboPagePostPayload,
+    longText: LongTextLoader,
+): Promise<{ added: WeiboPagePostPayload; requested: string[] }> {
+    const requested: string[] = []
+    const captured: { post: WeiboPagePostPayload | null } = { post: null }
+    const routes = new WeiboRoutes({
+        cookieStore,
+        fetchLongText: ({ id }): Promise<WeiboLongTextResult> => {
+            requested.push(id)
+            return longText(id)
+        },
+        addToChat: (post): Promise<WeiboChatContextResult> => {
+            captured.post = post
+            return Promise.resolve({ added: true })
+        },
+    })
+    await routes.handle('weibo/addToChat', payload)
+    const added = captured.post
+    if (added === null) {
+        throw new Error('addToChat 未执行')
+    }
+    return { added, requested }
+}
+
+describe('weibo/addToChat 长文补全', () => {
+    it('主贴被截断时按 mblogid 取全文再加入对话', async () => {
+        const { added, requested } = await runAddToChat(createPayload({ isTruncated: true }), (id) =>
+            Promise.resolve({ text: `全文:${id}` }),
+        )
+        expect(requested).toEqual(['Rsj8O8SqU'])
+        expect(added.text).toBe('全文:Rsj8O8SqU')
+        expect(added.isTruncated).toBe(false)
+    })
+
+    it('非长文不请求全文接口', async () => {
+        const { added, requested } = await runAddToChat(createPayload(), (id) =>
+            Promise.resolve({ text: `全文:${id}` }),
+        )
+        expect(requested).toEqual([])
+        expect(added.text).toBe('这是一条测试微博')
+    })
+
+    it('取全文失败时保留摘要并维持截断标记，不阻断添加', async () => {
+        const { added, requested } = await runAddToChat(createPayload({ isTruncated: true }), () =>
+            Promise.reject(new Error('网络不可用')),
+        )
+        expect(requested).toEqual(['Rsj8O8SqU'])
+        expect(added.text).toBe('这是一条测试微博')
+        expect(added.isTruncated).toBe(true)
+    })
+})
 
 describe('weibo/saveToNote 长文补全', () => {
     it('非长文不请求全文接口', async () => {

@@ -718,7 +718,7 @@ function isLongTextRecord(record: Record<string, unknown>): boolean {
     )
 }
 
-/** 归一化转发体：保留摘要与媒体，不再递归展开（转发里再转发只按文字处理） */
+/** 归一化转发体：保留摘要、作者与媒体，不再递归展开（转发里再转发只按文字处理） */
 function normalizeRetweeted(value: unknown): WeiboTimelineRetweet | null {
     if (!isRecord(value)) {
         return null
@@ -727,17 +727,25 @@ function normalizeRetweeted(value: unknown): WeiboTimelineRetweet | null {
     if (id.length === 0) {
         return null
     }
-    const author = isRecord(value.user) ? toText(value.user.screen_name) : ''
+    const user = isRecord(value.user) ? value.user : {}
+    const authorId = toText(user.id)
+    const author = toText(user.screen_name)
     const textRaw = toText(value.text_raw)
     const plainText =
         textRaw.length > 0 ? stripWeiboHtml(textRaw) : stripWeiboHtml(replaceEmojiWithText(toText(value.text)))
     // 转发体同样可能是长文：卡片只展示摘要，保存笔记时宿主据此补取全文
     const isLongText = isLongTextRecord(value)
+    const createdAtRaw = toText(value.created_at)
     return {
         id,
+        authorId,
         authorName: author,
+        // 与主贴作者同口径：认 verified 布尔，缺失按未认证处理
+        authorIsVerified: user.verified === true,
         text: isLongText ? stripTrailingTruncation(plainText) : plainText,
-        url: buildPostUrl(isRecord(value.user) ? toText(value.user.id) : '', toText(value.mblogid), id),
+        url: buildPostUrl(authorId, toText(value.mblogid), id),
+        createdAt: parseWeiboCreatedAt(createdAtRaw),
+        createdAtRaw,
         media: extractMedia(value),
         isLongText,
     }

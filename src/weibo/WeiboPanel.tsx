@@ -251,6 +251,7 @@ export function WeiboPanel(): JSX.Element {
                     isLoading={homeState.isLoading}
                     isLoadingMore={homeState.isLoadingMore}
                     hasMore={homeState.hasMore}
+                    errorMessage={homeState.errorMessage}
                     emptyState={
                         isConfigured ? (
                             <StateEmpty
