@@ -117,6 +117,12 @@ export interface WeiboTimelineImageSize {
  * 关键约束：视频项只给封面与时长，不给播放直链——播放地址带签名且校验 Referer，
  * 既会在缓存里迅速失效，也无法由 Webview 直连；观看一律回到原文。
  */
+/** 视频分辨率：宽度与高度（像素），取上游各清晰度里最大的一档 */
+export interface WeiboTimelineVideoResolution {
+    width: number
+    height: number
+}
+
 export type WeiboTimelineMediaItem =
     | {
           kind: 'image'
@@ -135,6 +141,14 @@ export type WeiboTimelineMediaItem =
           coverMiddleUrl: string | null
           /** 时长（秒）：上游未给时为 null */
           durationSeconds: number | null
+          /**
+           * 可直接播放的整段 mp4 地址：取 media_info 的 progressive 字段。
+           * 关键约束：playback_list 里是 DASH 分片，`<video>` 不能直接播，不作为播放源；
+           * 缺失时前端回退「打开原文」。
+           */
+          playUrl: string | null
+          /** 视频最大分辨率：用于左上角清晰度角标，缺失时为 null 不显示 */
+          resolution: WeiboTimelineVideoResolution | null
       }
 
 /** 媒体摘要：只给直链与数量，不做下载 */
@@ -155,12 +169,18 @@ export interface WeiboTimelineMedia {
     videoCount: number
 }
 
-/** 转发体：只保留原文摘要，避免递归展开 */
+/**
+ * 转发体：只保留原文摘要与媒体，避免递归展开。
+ * 关键约束：媒体与主贴同形（图片 + 视频封面），由同一份 extractMedia 归一化，
+ * 卡片上直接展示，不再递归解析转发里再转发的层级。
+ */
 export interface WeiboTimelineRetweet {
     id: string
     authorName: string
     text: string
     url: string
+    /** 原文媒体：图片九宫格与视频封面，结构与主贴一致 */
+    media: WeiboTimelineMedia
 }
 
 /**
@@ -273,6 +293,30 @@ export interface WeiboFeedRequest {
     count?: number
     /** 本次最多翻几页：缺省 1，夹取到 [1, 10] */
     maxPages?: number
+}
+
+/**
+ * 我的赞入参：点赞列表只按页码翻页，不吃 sinceId / maxId 游标。
+ * 关键约束：uid 由宿主从分组缓存解析，前端不传，避免拼错或伪造他人 uid。
+ */
+export interface WeiboLikesRequest {
+    /** 页码：从 1 开始，缺省 1 */
+    page?: number
+}
+
+/** 我的赞结果：帖子与信息流同形，分页信息按页码表达 */
+export interface WeiboLikesResult {
+    posts: WeiboTimelinePost[]
+    /** 本次请求的页码：从 1 开始 */
+    page: number
+    /** 是否还有下一页：上游给出总数时按总数判断，缺失时以本页是否满页为准 */
+    hasMore: boolean
+    /** 上游声明的点赞总数（with_total=true）：缺失为 null */
+    totalNumber: number | null
+    /** 结果生成时刻（ISO） */
+    fetchedAt: string
+    /** 分页重叠或重复下发被丢弃的条数 */
+    droppedDuplicates: number
 }
 
 /** 分组条目：只保留选择与展示所需字段 */
@@ -549,6 +593,21 @@ export interface WeiboImageResult {
     url: string | null
 }
 
+/**
+ * 视频播放地址入参：只接受微博视频 CDN 的整段 mp4 地址。
+ * 关键约束：宿主不下载视频，只把地址换成本地中转地址（本地服务补 Referer 后流式转发）。
+ */
+export interface WeiboVideoRequest {
+    url: string
+}
+
+/** 视频播放地址结果：url 为本地中转地址，null 表示地址不合法或中转服务不可用 */
+export interface WeiboVideoResult {
+    url: string | null
+}
+
+
+
 /** 微博数字 id 形态：增量与翻页游标只允许纯数字，防止任意内容拼进查询串 */
 const WEIBO_ID_PATTERN = /^\d{1,25}$/u
 
@@ -656,6 +715,24 @@ export function isWeiboFeedRequest(value: unknown): value is WeiboFeedRequest {
     )
 }
 
+/** 收窄我的赞入参：page 缺省合法，给了就必须是有限数字 */
+export function isWeiboLikesRequest(value: unknown): value is WeiboLikesRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { page } = value as Record<string, unknown>
+    return page === undefined || (typeof page === 'number' && Number.isFinite(page))
+}
+
+/** 收窄视频地址入参：长度上限与图片一致，域名白名单由宿主再次校验 */
+export function isWeiboVideoRequest(value: unknown): value is WeiboVideoRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { url } = value as Record<string, unknown>
+    return typeof url === 'string' && url.length > 0 && url.length <= 1024
+}
+
 /** 收窄保存 Cookie 入参：只校验形状，内容合法性由宿主清洗函数负责 */
 export function isWeiboSaveCredentialRequest(value: unknown): value is WeiboSaveCredentialRequest {
     if (typeof value !== 'object' || value === null) {
@@ -712,3 +789,5 @@ export function isWeiboImageRequest(value: unknown): value is WeiboImageRequest 
     const { url } = value as Record<string, unknown>
     return typeof url === 'string' && url.length > 0 && url.length <= 1024
 }
+
+

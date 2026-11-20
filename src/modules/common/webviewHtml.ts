@@ -5,7 +5,8 @@
  * 存储根基址以 meta 形式注入而不是内联脚本——CSP 的 script-src 不允许 inline script；
  * 同时注入存储根的文件系统路径，供引用徽章等展示层把绝对路径裁回 `@zhai\` 形式；
  * 远程图片默认一律不放行，只有调用方显式传入 imgSources 的面板才获得对应图床白名单，
- * 且白名单只接受 `https://主机` 形态，避免把额外 CSP 指令拼进响应头。
+ * 且白名单只接受 `https://主机` 形态，避免把额外 CSP 指令拼进响应头；
+ * `media-src` 放行 cspSource / blob: / data: 与微博视频 CDN：视频直接由 <video> 播远程整段 mp4，不落缓存。
  */
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
@@ -15,6 +16,23 @@ import { resolveStorageRoot } from './config'
 
 /** 额外图片源形态：只允许 https 主机（可带通配），不得含空白、分号或路径，防止注入其它 CSP 指令 */
 const IMAGE_SOURCE_PATTERN = /^https:\/\/[A-Za-z0-9.*-]{1,64}$/u
+
+/**
+ * 视频源白名单：微博视频 CDN 的整段 mp4 直接由 <video> 播放，不落宿主缓存。
+ * 关键约束：只放行这三个域及其子域——媒体资源不能执行脚本，但仍不能放开任意远程地址。
+ */
+const MEDIA_SOURCES = [
+    // 视频由宿主本地中转服务补 Referer 后流式转发，播放器只认回环地址
+    'http://127.0.0.1:*',
+    'http://localhost:*',
+    // 兜底：直连 CDN 时（未启用中转）也不至于被 CSP 拦掉
+    'https://weibocdn.com',
+    'https://*.weibocdn.com',
+    'https://weibo.com',
+    'https://*.weibo.com',
+    'https://weibo.cn',
+    'https://*.weibo.cn',
+].join(' ')
 
 /** HTML 属性值转义：URL 中的 & 与引号必须转义，否则会截断属性 */
 function escapeAttribute(value: string): string {
@@ -53,6 +71,6 @@ export async function buildWebviewHtml(
         .replace(/(src|href)="(?:\.\.?\/)*assets\//g, `$1="${assetBase}/`)
         .replace(
             '</head>',
-            `<meta name="${STORAGE_BASE_META}" content="${storageBase}"><meta name="${STORAGE_ROOT_META}" content="${storageRootPath}"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${imgSource}; font-src ${webview.cspSource};"></head>`,
+            `<meta name="${STORAGE_BASE_META}" content="${storageBase}"><meta name="${STORAGE_ROOT_META}" content="${storageRootPath}"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${webview.cspSource}; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${imgSource}; media-src ${webview.cspSource} blob: data: ${MEDIA_SOURCES}; font-src ${webview.cspSource};"></head>`,
         )
 }

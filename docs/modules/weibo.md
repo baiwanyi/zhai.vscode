@@ -987,7 +987,8 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 ```
 
 - 去重以数字 `id` 为准：翻页与增量都会出现重叠条目，合并时前插刷新、追加翻页，重复一律丢弃。
-- 增量起点优先取本次结果首条的 `id`，缺省回退上游 `since_id`；`sinceId=0` 表示不启用增量。
+- 增量起点**优先取上游回包的 `since_id`**，缺失时才回退本次结果首条的 `id`；`sinceId=0` 表示不启用增量。
+- 两种口径实测不同：分组 / 时间线（`groupstimeline` / `friendstimeline`）的 `since_id` 恰好等于首条微博 id，两者等价；**首页 `unreadfriendstimeline` 的 `since_id` 是读进度游标**（实测 `1795177409209985`，与 16 位微博 id 不同量级），若用首条微博 id 覆盖会让下次增量传错游标。
 - 单次调用最多翻 10 页（实现上限），避免一次点击打出长请求链。
 
 ### 14.4 字段映射
@@ -998,17 +999,164 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 | `text` | `text_raw` → `text` | 剥标签、解实体、去零宽字符、保留换行（纯文本口径，不含表情图） |
 | `segments` | `text`（含 `<img>` 表情标签） | 按「文本 + 表情」交错切段，表情保留图床直链与名称 |
 | `createdAt` | `created_at` | `Wed Nov 19 10:00:00 +0800 2026` 按时区折算为 ISO；解析失败留空 |
-| `source` | `source` | 剥 `<a>` 外壳，只留客户端名 |
+| `source` | `source` | 实测是纯文本客户端名（如 `iPhone 17 Pro Max`、`微博视频号`）；旧版返回 `<a>` 外壳时剥标签只留文字 |
 | `author` | `user.id / screen_name / verified / avatar_large` | 认证标记取 `verified === true`，头像只保留图床地址 |
 | `metrics` | `reposts_count / comments_count / attitudes_count` | 缺失按 0 |
-| `media.items` | `mix_media_info.items[*]` 原序；`pic_infos` / `pic_ids` / 单图字段只补混排里没出现的图 | 混排唯一顺序源：`image` 项给原图 / 中图 / 尺寸，`video` 项只给封面与时长，不给播放直链 |
+| `media.items` | 有 `mix_media_info.items` 时按它原序；**关注流实测没有该字段**，图片来自 `pic_infos` / `pic_ids`，视频来自 `page_info`（`object_type: video`） | `image` 项给原图 / 中图 / 尺寸，`video` 项只给封面与时长，不给播放直链；视频 `page_pic` 作封面、`media_info.duration` 作时长、`playback_list` 只留兜底诊断 |
 | `media.images` | 由 `media.items` 派生（`kind === 'image'`） | 原图直链，按 pid 与直链双重去重；缺直链时用 pid 拼 `wx1.sinaimg.cn/large/{pid}.jpg` |
 | `media.thumbnails` | `pic_infos[*].bmiddle.url`（新版为 `/wap360/`），缺失时把 `/large/` 等尺寸目录换成 `/bmiddle/` | 列表展示用的中等尺寸，与 images 同序 |
 | `media.sizes` | `pic_infos[*].largest.width/height`，缺失回退 `original` / `large` | 最大尺寸，与 images 同序；预览角标与竖横判断只认它，与实际加载的档位无关 |
 | `media.videoUrl` | `page_info.media_info.playback_list[0]` 等 | 首个可播放地址，仅作兜底诊断；卡片不播放，观看一律回原文 |
 | `media.imageCount` / `videoCount` | `pic_num`、实际解析出的图片数、混排里的视频条数 | 图片与视频分开计数，不再互相冒充 |
-| `retweeted` | `retweeted_status` | 只保留作者名、正文摘要与原文地址，不递归展开 |
-| 广告位 | `ad_state=1` / `is_ad` / `promotion` | 直接丢弃，不进入去重计数 |
+| `retweeted` | `retweeted_status` | 保留作者名、正文摘要、原文地址与**媒体**（图片九宫格 + 视频封面，与主贴同一份归一化）；转发里再转发的层级只按文字处理，不递归展开 |
+| 广告位 | `ad_state=1` / `is_ad` / 驼峰 `isAd` / `mark` 含 `WeiboADNatural` / `promotion` | 直接丢弃，不进入去重计数；关注流每条都带 `isAd`（样例全为 `false`），点赞列表的推广位是 `isAd: true` |
+
+#### 响应结构（2026-11-20 实测，供后续查字段）
+
+两份样例分别来自分组信息流与首页推荐流：列表都在顶层 `statuses`，差异只在游标与总量字段。
+
+**分组信息流（`groupstimeline`，样例 25 条）**
+
+```json
+{
+    "ok": 1,
+    "statuses": [{ "id": 5367422888183241, "idstr": "5367422888183241", "mblogid": "RshYAykPL" }],
+    "total_number": 2000,
+    "since_id": 5367422888183241,
+    "since_id_str": "5367422888183241",
+    "max_id": 5367389823964732,
+    "max_id_str": "5367389823964732"
+}
+```
+
+**首页推荐流（`unreadfriendstimeline`，样例 15 条）**
+
+```json
+{
+    "ok": 1,
+    "statuses": [{ "id": 5367414670758678, "idstr": "5367414670758678", "mblogid": "RshXYzAbc" }],
+    "since_id": 1795177409209985,
+    "since_id_str": "1795177409209985",
+    "max_id": 1795177409209985,
+    "max_id_str": "1795177409209985"
+}
+```
+
+- 两份都是顶层 `statuses`，**没有 `data` 包裹**；`since_id` / `max_id` 是数字（同值的 `*_str` 可兜底）。
+- `total_number` 只在分组样例出现（关注流总量），首页样例没有；两份都不拿它做翻页判断。
+- 增量口径不同：分组的 `since_id` 等于首条微博 id；首页的 `since_id` 是**读进度游标**（`1795…`，与 16 位微博 id 不同量级，且与 `max_id` 同值）。实现按「上游 `since_id` 优先、缺失回退首条 id」处理（见 14.3）。
+- 首页 `max_id` 与 `since_id` 同值，更像读进度而非列表游标；翻页行为未单独验证，出现「加载更多」重复内容时优先怀疑这一点。
+- 分组、首页、热门共用同一套端点实现（`fetchWeiboFeed` → `fetchFriendTimeline`），都按顶层 `statuses` + 同名游标解析；`allGroups` 才是 `groups[]` 分区结构（见 14.11）。
+- 单条微博字段（右列为出现次数，「分组 25 条 / 首页 15 条」）：
+
+| 字段 | 出现 | 说明 / 本项目处理 |
+|------|------|------------------|
+| `id` / `idstr` / `mid` | 25/25 · 15/15 | 数字 id，去重与游标的唯一依据 |
+| `mblogid` | 25/25 · 15/15 | 拼原文地址 |
+| `created_at` | 25/25 · 15/15 | 英文时间串（`Fri Nov 20 20:13:21 +0800 2026`） |
+| `user` | 25/25 · 15/15 | 取 `id` / `screen_name` / `avatar_large` / `verified` |
+| `text` / `text_raw` | 25/25 · 15/15 | 带标签正文 / 纯文本；表情只在 `text` 的 `<img>` 里 |
+| `isLongText` | 25/25 · 15/15 | 分组样例全 `false`；首页 7 条为 `true`，其中只有 4 条带 `continue_tag` 是真长文，另 3 条是「带视频卡片链接」被误标 |
+| `continue_tag` | 0 · 4/15 | 长文「全文」入口（`title` / `pic` / `scheme`），本项目用作长文证据 |
+| `textLength` | 22/25 · 13/15 | 未使用 |
+| `annotations` | 23/25 · 13/15 | 客户端参数（含定位 `place`），未使用 |
+| `source` | 25/25 · 15/15 | 客户端名；首页样例中带 `<a>` 外壳的会剥成纯文本 |
+| `cardid` | 7/25 · 14/15 | 卡片位标记（`star_*` / `vip_*` / `topic_*`），不是广告，正文仍按 `text` 渲染 |
+| `pic_ids` / `pic_num` | 25/25 · 15/15 | `pic_num > 0` 才有 `pic_infos`（分组 15 条、首页 3 条带图） |
+| `pic_infos` | 15/25 · 3/15 | 逐 pid 给各档位地址；`type` 为 `pic` 或 `livephoto`（带 `video` / `fid`，只取静态图） |
+| `pic_focus_point` | 15/25 · 3/15 | 焦点裁切信息，未使用 |
+| `page_info` | 8/25 · 10/15 | 视频与卡片：`object_type` 实测 `video`（7 + 9 条）、`group`（分组 1 条）、`hudongvote`（首页 1 条，type 23 投票卡，无 `media_info`）；封面取 `page_pic`，时长取 `media_info.duration`，播放源取 `media_info` 的整段 mp4（见下方视频字段表） |
+| `retweeted_status` | 3/25 · 2/15 | 转发体结构与主贴同形（可自带 `page_info` 与 `pic_infos`），摘要、地址与媒体一并保留 |
+| `isAd` | 25/25 · 15/15 | 两份样例全为 `false`；点赞列表的推广位为 `true`（见 14.16） |
+| `region_name` | 25/25 · 10/15 | 「发布于 北京」，目前不展示 |
+| `title` | 0 · 3/15 | 推荐流的「XX 关注了」推荐理由（含 `structs`），未展示 |
+| `buttons` / `mblog_menus_new` / `hide_from_prefix` / `is_second_attention` / `followBtnCode` / `ai_tag_info` | 0 · 3/15 | 推荐流的关注按钮、菜单与 AI 标签，未使用 |
+| `visible` / `mblogtype` / `content_auth` / `comment_manage_info` / `rcList` / `showFeedRepost` 等 | 25/25 · 15/15 | 权限与交互配置，未使用 |
+| `title_source` / `tag_struct` / `url_struct` / `topic_struct` / `common_struct` | 1~11/25 · 1~10/15 | 超话、标签与短链卡片的结构化信息；正文已含同名文字，不单独渲染 |
+
+#### 图片字段（`pic_infos` / `pic_ids`）
+
+条目顶层：`pic_ids`（pid 顺序）、`pic_num`（声明总数）、`pic_infos`（pid → 各档位）、`pic_focus_point`（焦点裁切数组，未使用）。`pic_num > 0` 才会有 `pic_infos`（分组 15/25 条、首页 3/15 条带图）。
+
+| `pic_infos[pid]` 字段 | 实测取值 | 说明 |
+|------|----------|------|
+| `thumbnail` / `bmiddle` / `large` / `original` / `largest` / `mw2000` / `largecover` | 各含 `{ url, width, height, cut_type, type }` | 档位对象；七档齐全，样例的 `cut_type` 均为 1（等比裁切） |
+| `type` | `pic` / `livephoto` | 实况图另带 `video` / `video_hd`（mov 地址）与 `fid`；本项目只取静态图 |
+| `pic_status` | `1` / `0` | 图片状态位（含义未公开），本项目不据此过滤 |
+| `focus_point` | `{ left, top, width, height }` | 相对比例（0~1），条目的 `pic_focus_point` 是同一批数据的数组版 |
+| `object_id` | `1042018:xxxx` | 对象 id，未使用 |
+| `pic_id` | 与 pid 同值 | 回查用 |
+| `photo_tag` | `0` / `1` | 是否带图片标签，未使用 |
+| `actionlog` | 数组 | 埋点（含 `mid` / `oid` / `act_type` / `source` / `code`），未使用 |
+
+图床档位与目录（实测同一张图的七档）：
+
+| 档位键 | URL 目录 | 实测尺寸样例 | 本项目用途 |
+|--------|----------|--------------|-----------|
+| `thumbnail` | `wap180` | 95×180 | 未使用 |
+| `bmiddle` | `wap360` | 190×360 | `media.thumbnails`（九宫格） |
+| `large` | `orj960` | 960×1817 | 未使用（长边缩到 960） |
+| `original` | `orj1080` | 1014×1920 | 未使用 |
+| `largest` | `large` | 1014×1920 | `media.images` 原图 + `media.sizes` 尺寸 |
+| `mw2000` | `mw2000` | 1014×1920 | 未使用（样例与原图同尺寸，宽 >2000 时才缩） |
+| `largecover` | `cmw960` | 960×1817 | 未使用（封面裁切版） |
+
+- 实测 `largest` 与 `original` 尺寸相同（原图不超过 2048 时），`large` 是长边 960 的等比缩略；只有 pid 没有档位对象时，用 `wx1.sinaimg.cn/large/{pid}.jpg` 兜底（见 14.4 的图片渲染说明）。
+- 视频封面另有一套更小的档位：`orj480`（`page_info.page_pic` / `pic_info`）与 `or180`（`big_pic_info.pic_small`）。
+
+#### 视频字段（`page_info` / `media_info`）
+
+`page_info` 只在视频、群组卡片等条目出现（分组 8/25、首页 10/15）。视频的 `object_type` 为 `video`、`type` 为 `11`；群组卡片是 `object_type: group` / `type: 0`，投票卡片是 `object_type: hudongvote` / `type: 23`，两者**都没有 `media_info`**。
+
+| `page_info` 字段 | 实测 | 说明 |
+|------|------|------|
+| `type` | `11` / `0` | 卡片类型：11 视频卡片，0 普通卡片 |
+| `object_type` | `video` / `group` | 视频 / 群组（群组另有 `tips` / `page_desc` / `pic_style`） |
+| `object_id` | `1022:100808…` | 对象 id |
+| `page_pic` | `https://wx4.sinaimg.cn/orj480/….jpg` | 视频封面（480 档），卡片封面来源之一 |
+| `pic_info` | `{ pic_big, pic_small, pic_middle }` | 封面档位，**宽高是字符串**（与 `pic_infos` 的数字不同） |
+| `page_title` / `page_desc` / `page_url` | 标题 / 描述 / 原页面地址 | 本项目只在封面处用到图，标题区不展示卡片文案 |
+| `media_info` | 对象 | 视频详情，见下表 |
+| `oid` / `author_id` / `authorid` | 数字 | 归属 id，未使用 |
+| `short_url` / `type_icon` / `warn` / `actionlog` | — | 短链、角标、风控与埋点，未使用 |
+
+`media_info` 常用字段（实测 49 个键，以下只列会影响解析的）：
+
+| `media_info` 字段 | 实测 | 说明 |
+|------|------|------|
+| `duration` | `58`（秒，整数） | **视频时长**，本项目写入 `media.items[].durationSeconds` |
+| `name` | 标题文案 | 未使用 |
+| `format` / `media_type` | `video/mp4` / `video` | 固定值 |
+| `stream_url` / `stream_url_hd` | 直链 | 旧版整段地址，作为播放源的最后兜底 |
+| `mp4_sd_url` / `mp4_hd_url` / `mp4_720p_mp4` / `h265_mp4_hd` / `h265_mp4_ld` / `hevc_mp4_720p` / `inch_4_mp4_hd` / `inch_5_mp4_hd` / `inch_5_5_mp4_hd` | 带签名的整段 mp4 地址 | 按机型/清晰度分档；本项目按 `mp4_720p_mp4` → `mp4_hd_url` → `mp4_sd_url` → `stream_url_hd` → `stream_url` 取播放源 |
+| `h5_url` | `https://m.weibo.cn/…` | h5 播放页，未使用 |
+| `playback_list` | 4~6 项 | DASH 分片列表（带 `init_range` / `index_range`），`<video>` 不能直接播，**不作为播放源** |
+| `mpdInfo` | DASH manifest | 未使用 |
+| `big_pic_info` | `{ pic_big, pic_small, pic_middle }` | 封面档位（`orj1080` / `or180`） |
+| `video_orientation` / `origin_total_bitrate` / `ttl` / `storage_type` | 数字 | 方向、码率、有效期与存储类型，未使用 |
+| `show_progress_bar` / `show_mute_button` / `play_loop_type` / `play_completion_actions` | 布尔 / 描述 | 播放器交互配置，未使用 |
+| `author_name` / `author_mid` / `online_users_number` / `video_publish_time` / `is_short_video` / `belong_collection` / `next_title` / `kol_title` / `ext_info` / `extra_info` / `jump_to` / `forward_strategy` / `video_download_strategy` / `prefetch_*` | — | 作者、热度、发布时刻与策略字段，未使用 |
+
+`playback_list[]` 每项是 `{ meta, play_info }`：
+
+| 结构 | 关键字段 | 实测取值 |
+|------|----------|----------|
+| `meta` | `label` / `quality_index` / `quality_desc` / `quality_label` / `quality_class` / `type` / `quality_group` / `is_hidden` | `dash_720p`、`quality_index: 720`、`高清`、`720p`、`HD` |
+| `play_info` | `label` / `protocol` / `mime` / `url` / `bitrate` / `width` / `height` / `size` / `duration` / `fps` / `video_codecs` / `audio_sample_rate` / `audio_channels` / `init_range` / `index_range` / `first_segment_range` / `prefetch_range` / `video_decoder` / `prefetch_enabled` | `dash`、`video/mp4`、`720×960`、`avc1.64001f`、`fps: 24`、`duration: 58.083` |
+
+- 实测出现的 `label`：`dash_720p` / `dash_1080p` / `dash_hd` / `dash_1440p60` / `hevc_dash_720p` / `hevc_dash_1080p`（`protocol: dash`，`mime: video/mp4`）、`dash_audio`（`audio/mp4`）、`scrubber_hd`（`image/jpeg`，预览雪碧图）。
+- 播放源取 `media_info` 的**整段 mp4**，按 `mp4_720p_mp4` → `mp4_hd_url` → `mp4_sd_url` → `stream_url_hd` → `stream_url` 顺序取第一个通过白名单的地址；`playback_list` 是 DASH 分片（带 init / index range），`<video>` 不能直接播，**不作为播放源**。
+- **协议细节**：网页端回包的整段 mp4 是 `http://f.video.weibocdn.com/...`，归一化时统一升级为 https（否则会被混合内容拦掉）；宿主取回时 https 失败还会用同主机的 http 地址重试一次。主机白名单为 `weibocdn.com` / `weibo.com` / `weibo.cn` 子域。
+- 播放链路：点击封面 → `weibo/video { url }` → 宿主把地址换成回环中转地址 `http://127.0.0.1:{port}/video?url=…` → 卡片内 `<video>` 播放。CDN 校验 Referer 而 Webview 改不了请求头，故由 `videoServer` 起一个只绑 `127.0.0.1` 的本地 HTTP 服务：带 `Referer` 请求 CDN 后把字节流边下边发（**不落盘、不整段缓冲**），`Range` / `Content-Range` 原样透传，播放器可边下边播与拖动；面板关闭即关服务。
+- CSP 的 `media-src` 放行 `http://127.0.0.1:*` / `http://localhost:*` 与微博视频 CDN；其余远程媒体域一律不放。
+- **为什么必须转码音轨**：VS Code 的 Webview 跑在 Electron 自带 Chromium 上，那份构建**不含 AAC 解码器**（[microsoft/vscode#167685](https://github.com/microsoft/vscode/issues/167685)，官方只保证 Wav / Mp3 / Ogg / Flac），而微博视频音轨实测全是 **HE-AAC**。表现就是「画面正常、完全没有声音」，媒体控件里的音量键还是灰的。因此中转服务在能用 ffmpeg 时执行 `-c:v copy -c:a libmp3lame -b:a 128k -movflags frag_keyframe+empty_moov -f mp4`：视频原样拷贝、音轨转 MP3，边转边发（不落盘），`Content-Type: video/mp4`、`Accept-Ranges: none`（转码流不可按字节定位，进度条不可拖动）。
+- ffmpeg 不在 PATH 或转码失败时回退为**原样转发**：画面能看、能拖动，但可能无声；日志会记一条「回退原样转发」。实测转码产物 1.81MB，音轨 `mp3` + 视频 `h264`。
+- 实测：本地中转整段返回 `200`（`video/mp4`，1.8MB），`Range: bytes=0-1023` 返回 `206`（`Content-Range: bytes 0-1023/1826650`），字节头为 `ftyp`。
+- **纯视频微博**（`imageCount === 0` 且只有一个视频项）直接铺播放器：poster 是封面经图片代理换来的 data URI，进视口即可见，点播放才开始走中转取流，不会提前偷流量；地址换不到时该位置变成「视频暂不可播放，点击在浏览器打开原文」。
+- 播放器统一走 `layout/WeiboVideoPlayer.tsx`（自绘控件栏，不用原生 `controls`）：中央播放键只在暂停时出现，播放中淡出且不挡画面；**空格切换播放/暂停**（容器可聚焦，`preventDefault` 同时挡掉页面滚动）；**控件栏只在播放中出现**——播放中鼠标静止 2.5 秒后淡出、鼠标一动立刻回来，暂停与未播放时整条控件栏不显示，只留中央播放键；底部含进度条（可拖动）、`mm:ss` 时间、静音与全屏，全屏在 Webview 中被拒时静默忽略。
+- 控件一律用现成组件：按钮取 `@webview/components/Button`（图标键 `size="icon-xs"`、中央键 `icon-lg` 配圆形容器、静音与全屏带 `tooltip`），进度条取 `@components/ui/slider`（拖动只更新本地进度，`onValueCommit` 才 seek），清晰度角标取 `@components/ui/badge`。播放器叠在视频上固定是暗底，控件配色写死白色、只覆盖配色类，不改组件本体。
+- **清晰度角标**：视频项自带 `resolution`，取 `playback_list` 里面积最大的一档宽高（`dash_audio` 宽高为 0 自动跳过，`scrubber_hd` 预览图面积最小选不中），没有播放列表时回退解析地址上的 `template=720x960.24.0`。前端按**短边**归类成 `320P` / `480P` / `720P` / `1080P` / `2K` / `4K` / `8K`（1440 / 2160 / 4320 分别对应 2K / 4K / 8K），在播放器左上角用白色半透明角标展示，**播放中收起、未播放与暂停时显示**；分辨率缺失时不显示角标。
+- 图文混排 / 多视频仍是点击封面后原位换成播放器（`col-span-3` 占满一行）的交互，不弹 Dialog；没有整段地址或中转不可用时回退「在浏览器打开原文」，转发区回退的是被转发的原文。
 
 **图片与表情渲染**：
 
@@ -1037,9 +1185,12 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 - 内容类型缺失或为 `application/octet-stream` 时按文件头魔数识别（JPEG/PNG/GIF/WEBP/BMP），避免把正常图片误判成不支持；HTML 错误页与 SVG 一律拒绝。
 - 图片地址统一走 `normalizeWeiboImageUrl` 归一化，白名单为 `*.sinaimg.cn`、`*.sinajs.cn`、`weibo.com`、`weibo.cn`（含子域）。只接受 https，非白名单地址在归一化阶段丢弃，代理层不会代任意地址取数。
 - 协议相对写法（`//wx1.sinaimg.cn/...`）补全为 `https:`；`weibo.com/ajax/common/download?pid=xxx` 需要登录 Cookie，Webview 直连会 401，宿主改写为 `https://wx1.sinaimg.cn/large/{pid}.jpg`；`pic_infos` 缺失时直接用 `pic_ids` 按同一规则拼直链。
-- CSP 维持默认（`img-src ${webview.cspSource} data:`），不放行任何远程域，`localResourceRoots` 只保留扩展产物目录。
+- CSP 的 `img-src` 维持 `${webview.cspSource} data:`，不放行任何远程图片域；`media-src` 放行 `${webview.cspSource} blob: data:`、回环中转地址与微博视频 CDN（`weibocdn.com` / `weibo.com` / `weibo.cn` 及其子域）。`localResourceRoots` 只保留扩展产物目录：图片走 data URI、视频经回环中转流式播放，均不需要授权缓存目录。
 - 代理只接受 `image/jpeg|png|gif|webp|bmp` 且单张 ≤12MB，SVG 等可携带脚本的类型直接拒绝；同一地址并发请求共享一次下载，缓存按 URL 哈希命名，命中零网络。
 - 卡片按微博客户端习惯渲染：头像圆形（失败回落首字）、配图九宫格（1 张按 16:9，2 张两列，3 张以上三列，最多 9 张）、表情内联为 16px 小图；图片就绪前用同尺寸占位，避免列表抖动，失败显示破图占位。
+- 正文里的 `<img>` 只有带表情名（`title` / `alt`，非空且不是短链）才按表情渲染；视频卡片等装饰图（`h5.sinaimg.cn/upload/…` 小图标，`alt` 常是 `http://t.cn/…`）直接跳过，既不出图标也不留 `[]` 占位。
+- 引用（转发）微博的媒体与主贴共用同一套 `PostMediaGrid`：图片走九宫格并可开灯箱，视频点封面即在卡片内播放；没有整段地址或中转不可用时才回退打开原文，转发区回退的是**被转发的原文**。视频项判定按 `page_info.object_type === 'video'` 或 `type === 11`，旧版只靠有没有整段播放地址；群组 / 投票卡片同样带 `page_pic`，不当作视频。
+- **不重复展示**：被转发内容带视频时，外层（转发这条）的视频项由归一化直接剔除，只保留图片——视频只留在引用区，避免同一条卡片里出现两个播放器。
 - 列表**只用中等尺寸**（`media.thumbnails`，`/bmiddle/`），不加载原图；点击某张才在浮层里请求原图（`media.images`）。原图超过 4MB 内联上限或下载失败时，浮层自动回退到中图并提示「已显示中等尺寸」；Esc 或点击遮罩关闭。
 - 浮层布局：关闭按钮固定在屏幕右上角、尺寸角标固定在左上角；角标显示 `最大 W × H`，尺寸取自上游 `largest` 档（`media.sizes`），**与实际加载的是原图还是中图无关**，只有上游缺该档时才回退到 `img.naturalWidth/Height` 并标注「实际/中图」。竖横判断同样用该尺寸：竖图 `max-h-full w-auto` 按高度铺满，横图 `max-w-full h-auto` 按宽度铺满，尺寸未知时 `object-contain` 兜底。
 
@@ -1147,10 +1298,14 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/modules/weibo/webInteraction.ts` | 写操作：`setLike` / `cancelLike`，补 Origin 与 X-XSRF-TOKEN |
 | `src/modules/weibo/webComments.ts` | 评论读取：`buildComments` 参数构造、分页游标与评论归一化 |
 | `src/modules/weibo/webLongText.ts` | 长文读取：`longtext` 取全文、正文优先级与失败兜底 |
-| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/image`、`weibo/like`、`weibo/openPost` 分发 |
+| `src/modules/weibo/webLikes.ts` | 我的赞：`statuses/likelist` 页码取数、总数与是否还有下一页判断 |
+| `src/modules/weibo/videoServer.ts` | 视频中转：回环 HTTP 服务补 Referer，能用 ffmpeg 就把 AAC 音轨转成 MP3（Webview 无 AAC 解码器）边转边发，否则原样流式转发 |
+| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/likes`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/image`、`weibo/video`、`weibo/like`、`weibo/openPost` 分发 |
 | `src/modules/weibo/panel.ts` | 面板消息通道、凭证与缓存注入、图片代理装配与本地资源白名单 |
 | `src/modules/common/webviewHtml.ts` | CSP 生成：默认不放行远程图，需要时可按调用方传入的 `imgSources` 放行 |
-| `src/weibo/` | Webview 入口：顶部固定菜单、账号菜单与设置弹窗（含同城城市）、右侧热搜榜、热搜专页 `WeiboHotSearch`、信息流列表、卡片（头像 / 图文混排 / 表情）与发表框表情选择器 |
+| `src/weibo/` | Webview 入口：顶部固定菜单、账号菜单与设置弹窗（含同城城市）、右侧热搜榜、信息流列表、卡片（头像 / 图文混排 / 表情）与发表框表情选择器 |
+| `src/weibo/layout/WeiboVideoPlayer.tsx` | 视频播放器：自绘控件栏、中央播放键、空格播放/暂停、控件自动隐藏、清晰度角标、静音与全屏 |
+| `src/weibo/layout/PageHotSearch.tsx` | 热搜专页：一个标签一张榜，整页榜单渲染、专页行样式与同城城市切换入口 |
 | `src/weibo/layout/WeiboHotRankRow.tsx` | 侧栏热搜行样式：序号 / 标题 / 副行 / 整行点击与 Tooltip（专页有自己的行组件，不共用） |
 | `src/weibo/layout/WeiboHotRankBadge.tsx` | 热搜徽标：icon_desc + 底色，`sm` / `md` 两档，侧栏与专页共用 |
 | `src/weibo/layout/WeiboHotRankPosition.tsx` | 热搜名次：前三名判定与两档字号/颜色，侧栏与专页共用 |
@@ -1161,7 +1316,7 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 
 ### 14.11 多入口信息流（首页 / 时间线 / 热门 / 分组）
 
-顶部菜单在一行内排完：一级分组（首页 / 热门 / 热搜，带图标）→ 一条竖线 → 当前分组的二级频道，首页组的自建分组直接续在「推荐 / 时间线」后面同属二级，即「🏠 首页 🔥 热门 📈 热搜 │ 推荐 时间线 颜值 时尚 动漫 …」（`@components/ui/navigation-menu` 的 List / Item / Link 槽位 + `ui/separator`，不用下拉浮层）；点一级直接落到该组首项，不需要再点一次二级。顶栏动作区放「刷新」与账号菜单（头像 + 昵称），菜单里收回「个人主页」「设置」「删除 Cookie」。菜单挂在 `AppHeader` 内，随标题区固定，不参与内容区滚动。
+顶部菜单在一行内排完：一级分组（首页 / 热门 / 热搜，带图标）→ 一条竖线 → 当前分组的二级频道，首页组的自建分组直接续在「推荐 / 时间线」后面同属二级，即「🏠 首页 🔥 热门 📈 热搜 │ 推荐 时间线 颜值 时尚 动漫 …」（`@components/ui/navigation-menu` 的 List / Item / Link 槽位 + `ui/separator`，不用下拉浮层）；点一级直接落到该组首项，不需要再点一次二级。顶栏动作区放「刷新」与账号菜单（头像 + 昵称），菜单里收回「个人主页」「我的赞」「设置」「删除 Cookie」。菜单挂在 `AppHeader` 内，随标题区固定，不参与内容区滚动。
 
 | 分组 | 子频道 | 接入状态 |
 |------|--------|----------|
@@ -1199,7 +1354,7 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 - 热门流的响应结构可能是 `data.cards[].mblog`（卡片流），时间线与分组通常是 `statuses[]`；宿主统一提取，`max_id` / `since_id` 为 `"0"` 时视为没有更多，避免「加载更多」被永久点亮。
 - 个人主页按 `weibo/groups` 给出的账号 uid 拼 `https://weibo.com/u/{uid}`，经 `weibo/openPost` 的白名单校验后交给宿主打开；uid 缺失时只提示不跳转，不拼空地址。
 - 设置是弹窗而不是视图：凭证卡常驻，附各入口取数口径；未配置时任何信息流都不发请求，只给「去设置」的引导。
-- 账号菜单三项：「个人主页」按 uid 打开 `weibo.com/u/{uid}`；「设置」打开弹窗；「删除 Cookie」先弹确认框，确认后清除凭证、元数据缓存与本地头像，并回首页展开凭证卡（用户下一步多半是重新登录），未配置时该项禁用。
+- 账号菜单四项：「个人主页」按 uid 打开 `weibo.com/u/{uid}`；「我的赞」切到 `mine.likes` 视图读取点赞列表（见 14.16）；「设置」打开弹窗；「删除 Cookie」先弹确认框，确认后清除凭证、元数据缓存与本地头像，并回首页展开凭证卡（用户下一步多半是重新登录），未配置时该项禁用。
 
 ### 14.12 表情配置（发表框）
 
@@ -1246,11 +1401,11 @@ ACG     GET https://weibo.com/ajax/statuses/acg
 同城    GET https://weibo.com/ajax/statuses/city?citycode=80086{四位行政区划代码}
 ```
 
-- 页面 `src/weibo/WeiboHotSearch.tsx` 承载顶栏「热搜」一级菜单的 9 个二级项：一个标签一个端点，切换由菜单驱动，页面内不再重复一排标签。
+- 页面 `src/weibo/layout/PageHotSearch.tsx` 承载顶栏「热搜」一级菜单的 9 个二级项：一个标签一个端点，切换由菜单驱动，页面内不再重复一排标签。
 - 端点差异只落在地址上（`weiboEndpoints` 的 `WEIBO_AJAX_PATHS`），标签到地址的映射在 `webHotRank.ts` 的 `HOT_RANK_TAB_PATHS`；`weibo/hotRank` 的 `tab` 取值受 `isWeiboHotRankTab` 收窄，防止被当作路径片段拼接。
 - 同城 citycode 规则：固定前缀 `80086` + 四位行政区划代码（如南宁 `4501` → `800864501`）。城市在面板「设置」弹窗里按城市名选择，落 `zhai.weibo.cityCode`（也可在工作区设置里手填其它城市的四位代码）；未配置或非法值回落南宁。
 - 只有 `band`（侧栏 `bandUnified`）参与 `weibo.json` 缓存；其余标签与同城的榜单内容各不相同，一律实时回源，避免不同标签串数据。
-- 专页使用自己的行组件 `WeiboHotSearchRow`（本文件内）：宽页不挂 Tooltip、标题单行截断、徽标略大一档，整行点击打开搜索页；不复用侧栏那一份行样式，侧栏仍用 `layout/WeiboHotRankRow.tsx` 且只取前 10 条。
+- 专页使用自己的行组件 `PageHotSearchRow`（本文件内）：宽页不挂 Tooltip、标题单行截断、徽标略大一档，整行点击打开搜索页；不复用侧栏那一份行样式，侧栏仍用 `layout/WeiboHotRankRow.tsx` 且只取前 10 条。
 - 两份行组件共用四类能力，避免同类逻辑各写一份：名次与前三名高亮 `layout/WeiboHotRankPosition`（`sm` / `md`）、徽标 `layout/WeiboHotRankBadge`（`sm` / `md`）、搜索地址与连点保护 `hooks/useWeiboSearchOpen`（地址规则在 `utils/weiboHotLinks`）、三态占位 `layout/WeiboHotRankFallback`（`sidebar` / `page`）。
 - 热搜页不渲染右侧热搜卡，避免同一份榜单出现两次；该页内容区放宽到 `max-w-3xl`。
 - 顶栏「刷新」在热搜页刷当前标签的榜单（专页内不再有重复的刷新按钮，只有空态里的「重试」），在信息流页仍按原有游标语义刷新；当前视图内容为 0 时顶栏不渲染刷新按钮，信息流空态自带「刷新」入口（首页空态原本就有）。
@@ -1283,4 +1438,102 @@ GET https://weibo.com/ajax/profile/info?uid={uid}&scene=profile
 - `weibo/profile` 命中「资料 + 本地头像」时零网络；只有头像文件缺失时才用缓存里的 URL 补一次下载；`refresh: true` 才重新取数。
 - 头像经与卡片图片同一份 `mediaProxy` 下载（代理 → fetch → ipv4 → 直连），落盘后由宿主读成 data URI 回传，Webview 不直连图床。
 - `credential/clear` 同时删除 `weibo.json` 与 `weibo_avatar.jpg`，避免换号后顶栏露出上一个账号的头像。
-- 顶栏动作区合并为一个账号菜单（`WeiboAccountMenu`）：触发器是 `Avatar` + 昵称，菜单内是账号信息（粉丝 / 微博数）、个人主页、设置弹窗、删除 Cookie；账号未取到时个人主页禁用、未配置时删除项禁用，头像回落为昵称首字。
+- 顶栏动作区合并为一个账号菜单（`WeiboAccountMenu`）：触发器是 `Avatar` + 昵称，菜单内是账号信息（粉丝 / 微博数）、个人主页、我的赞、设置弹窗、删除 Cookie；账号未取到时个人主页禁用、未配置时「我的赞」与删除项禁用，头像回落为昵称首字。
+
+### 14.16 我的赞（账号菜单入口）
+
+```
+GET https://weibo.com/ajax/statuses/likelist?uid={uid}&page={页码}&with_total=true
+```
+
+- 入口只在顶栏账号菜单（「个人主页」下一项），选中后视图切到 `mine.likes`；该标识不进 `WEIBO_NAV_GROUPS`，顶部菜单不受影响。
+- `uid` 由宿主按 `weibo/groups` 的 uid 自行解析，前端只传页码；解析不到 uid 时报错而不是拼空地址。
+- 点赞列表只有页码分页（没有 `max_id` 游标）：`weibo/likes` 的 `page` 从 1 起，前端刷新即重取第一页并整体替换，翻页按 `page + 1` 追加去重，到底后不再递增页码。
+- 列表条目本身就是微博对象（`data.list[]` 直接给 `id` / `user` / `text` 等字段，**没有 `mblog` 包裹**）；实现同时兼容 `list[].mblog` 与 `data.statuses` 两种层级，单条归一化复用 `normalizeTimelinePost`，渲染仍是 `WeiboFeedList` / `WeiboPostCard`，与首页信息流完全同形。
+- `hasMore` 判断：上游给出 `total_number` 时按「页码 × 20 < 总数」估算，缺失时以本页是否取满 20 条为准；`total_number` 随回包下发，仅用于说明覆盖范围。
+- 未配置 Cookie 时菜单项禁用，视图内只给「去设置」的引导，不发任何请求。
+
+#### 响应结构（2026-11-19 实测，供后续查字段）
+
+```json
+{
+    "ok": 1,
+    "data": {
+        "list": [
+            {
+                "id": 5367086958510760,
+                "idstr": "5367086958510760",
+                "mid": "5367086958510760",
+                "mblogid": "Rs9eLzI2k",
+                "created_at": "Thu Nov 19 21:58:28 +0800 2026",
+                "user": {
+                    "id": 2323836621,
+                    "idstr": "2323836621",
+                    "screen_name": "击剑孙一文",
+                    "profile_image_url": "https://tvax3.sinaimg.cn/…jpg?KID=…",
+                    "avatar_large": "https://tvax3.sinaimg.cn/…jpg?KID=…",
+                    "avatar_hd": "https://tvax3.sinaimg.cn/…jpg?KID=…",
+                    "verified": true,
+                    "verified_type": 0,
+                    "mbrank": 7,
+                    "mbtype": 12,
+                    "following": true
+                },
+                "text": "很高兴在<a href=\"…\">#微博竞燃之夜#</a> …很庆  ...<span class=\"expand\">展开</span>",
+                "text_raw": "很高兴在#微博竞燃之夜# …很庆 ",
+                "isLongText": true,
+                "source": "iPhone 17 Pro Max",
+                "region_name": "发布于 北京",
+                "reposts_count": 724,
+                "comments_count": 217,
+                "attitudes_count": 1158,
+                "attitudes_status": 1,
+                "pic_ids": ["8a82eecdly1ij7uifz7pjj22gw1naqv5"],
+                "pic_num": 11,
+                "pic_infos": {
+                    "8a82eecdly1ij7uifz7pjj22gw1naqv5": {
+                        "thumbnail": { "url": "https://wx3.sinaimg.cn/wap180/…jpg", "width": 180, "height": 120 },
+                        "bmiddle": { "url": "https://wx3.sinaimg.cn/wap360/…jpg", "width": 360, "height": 240 },
+                        "large": { "url": "https://wx3.sinaimg.cn/orj960/…jpg", "width": 1440, "height": 960 },
+                        "original": { "url": "https://wx3.sinaimg.cn/orj1080/…jpg", "width": 1620, "height": 1080 },
+                        "largest": { "url": "https://wx3.sinaimg.cn/large/…jpg", "width": 2048, "height": 1365 },
+                        "mw2000": { "url": "https://wx3.sinaimg.cn/mw2000/…jpg", "width": 2000, "height": 1333 },
+                        "largecover": { "url": "https://wx3.sinaimg.cn/cmw960/…jpg", "width": 1440, "height": 960 },
+                        "focus_point": { "left": 0.21, "top": 0.01, "width": 0.66, "height": 0.99 },
+                        "pic_id": "8a82eecdly1ij7uifz7pjj22gw1naqv5",
+                        "type": "pic",
+                        "pic_status": 1
+                    }
+                },
+                "retweeted_status": {},
+                "isAd": true,
+                "mark": "999_reallog_mark_ad:999|WeiboADNatural",
+                "cardid": "star_1545",
+                "title_source": { "name": "微博竞燃之夜超话", "url": "sinaweibo://…", "image": "http://wx4.sinaimg.cn/…" },
+                "url_struct": [],
+                "topic_struct": [],
+                "common_struct": []
+            }
+        ],
+        "total_number": 123
+    }
+}
+```
+
+| 字段 | 本项目用途 |
+|------|-----------|
+| `id` / `idstr` / `mid` | 数字 id，去重与游标的唯一依据（归一化按 `idstr` → `id` → `mid` 取） |
+| `mblogid` | 拼原文地址 `https://weibo.com/{authorUid}/{mblogid}` |
+| `user.id` / `user.screen_name` / `user.avatar_large` | 作者 id、昵称与头像（头像地址须过图床白名单） |
+| `user.verified` | 认证角标 |
+| `created_at` | 英文时间串（`Thu Nov 19 21:58:28 +0800 2026`），与时间线共用解析器 |
+| `text` / `text_raw` | 带标签正文 / 纯文本；表情只在 `text` 的 `<img>` 里，长文截断以 `<span class="expand">展开</span>` 收尾，由归一化剥掉 |
+| `isLongText` | 长文标记，配合清「…展开」 |
+| `pic_ids` / `pic_infos` / `pic_num` | 图片列表；`pic_infos` 逐 pid 给各档位地址，归一化取 `largest` 与原图 |
+| `pic_infos[].type` | `pic` 普通图、`livephoto` 实况图（另带 `video` / `fid`），本项目只取静态图 |
+| `reposts_count` / `comments_count` / `attitudes_count` | 互动数 |
+| `attitudes_status` | `1` 表示当前账号已赞 |
+| `retweeted_status` | 转发体，只取摘要 |
+| `isAd` / `mark` / `cardid` | 广告与推广位标记（`isAd: true`，或 `mark` 含 `WeiboADNatural`），归一化直接丢弃 |
+| `region_name` | 发布地，目前不展示 |
+| `total_number` | 点赞总数，`with_total=true` 时才出现 |

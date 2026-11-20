@@ -1,5 +1,5 @@
 /**
- * 微博协议路由：把信息流、热搜标签、同城城市、凭证、评论、点赞与外链分发到取数、配置与宿主能力。
+ * 微博协议路由：把信息流、我的赞、热搜标签、同城城市、凭证、评论、点赞与外链分发到取数、配置与宿主能力。
  * 复用约定：入参收窄统一走 shared/types/weibo 的类型守卫，本层只做方法名到实现的映射；
  * 分组、表情与侧栏默认榜（band）先读 weibo.json 缓存，其余热搜标签实时回源，缓存异常只记日志、绝不影响回包；
  * Cookie 存取交给 WeiboCookieStore，取数交给 webTimeline / webFeed，宿主能力以回调注入便于单测。
@@ -18,12 +18,14 @@ import type {
     WeiboHotRankResult,
     WeiboImageResult,
     WeiboLikeResult,
+    WeiboLikesResult,
     WeiboLongTextResult,
     WeiboProfile,
     WeiboProfileResult,
     WeiboSaveCredentialResult,
     WeiboTimelineRequest,
     WeiboTimelineResult,
+    WeiboVideoResult,
 } from '@shared/types/weibo'
 import {
     WEIBO_DEFAULT_CITY_CODE,
@@ -33,12 +35,14 @@ import {
     isWeiboHotRankRequest,
     isWeiboImageRequest,
     isWeiboLikeRequest,
+    isWeiboLikesRequest,
     isWeiboLongTextRequest,
     isWeiboOpenPostRequest,
     isWeiboProfileRequest,
     isWeiboSaveCityRequest,
     isWeiboSaveCredentialRequest,
     isWeiboTimelineRequest,
+    isWeiboVideoRequest,
     readWeiboCityName,
 } from '@shared/types/weibo'
 import { WeiboWebError } from './webClient'
@@ -48,6 +52,7 @@ import { fetchWeiboEmoticons } from './webEmoticons'
 import { fetchWeiboFeed, fetchWeiboGroups, rememberHotChannels } from './webFeed'
 import { fetchWeiboHotRank } from './webHotRank'
 import { setPostLike } from './webInteraction'
+import { fetchWeiboLikes } from './webLikes'
 import { fetchLongText } from './webLongText'
 import { fetchWeiboProfile } from './webProfile'
 import { fetchFriendTimeline } from './webTimeline'
@@ -58,6 +63,7 @@ import type { FetchEmoticonsOptions } from './webEmoticons'
 import type { FetchFeedOptions, FetchGroupsOptions } from './webFeed'
 import type { FetchHotRankOptions } from './webHotRank'
 import type { SetLikeOptions } from './webInteraction'
+import type { FetchLikesOptions } from './webLikes'
 import type { FetchLongTextOptions } from './webLongText'
 import type { FetchProfileOptions } from './webProfile'
 import type { FetchTimelineOptions } from './webTimeline'
@@ -91,8 +97,12 @@ export interface WeiboRouteDeps {
     avatar?: WeiboAvatarGateway
     /** 图片代理：把远程图片下成本地文件并返回 Webview 可加载的地址 */
     resolveImageUrl?: (imageUrl: string) => Promise<string | null>
+    /** 视频中转：把 CDN 整段 mp4 地址换成本地可播地址（本地服务补 Referer 流式转发，不落盘） */
+    resolveVideoUrl?: (videoUrl: string) => Promise<string | null>
     /** 点赞写入：默认走网页版 setLike / cancelLike，单测可替换 */
     setLike?: (options: SetLikeOptions) => Promise<WeiboLikeResult>
+    /** 我的赞读取：默认走网页版 likelist，单测可替换 */
+    fetchLikes?: (options: FetchLikesOptions) => Promise<WeiboLikesResult>
     /** 评论读取：默认走网页版 buildComments，单测可替换 */
     fetchComments?: (options: FetchCommentsOptions) => Promise<WeiboCommentsResult>
     /** 长文读取：默认走网页版 longtext，单测可替换 */
@@ -142,6 +152,8 @@ export class WeiboRoutes {
                 return this.loadTimeline(payload)
             case 'weibo/feed':
                 return this.loadFeed(payload)
+            case 'weibo/likes':
+                return this.loadLikes(payload)
             case 'weibo/groups':
                 return this.loadGroups()
             case 'weibo/emoticons':
@@ -168,6 +180,8 @@ export class WeiboRoutes {
                 return this.loadImage(payload)
             case 'weibo/like':
                 return this.likePost(payload)
+            case 'weibo/video':
+                return this.loadVideo(payload)
             case 'weibo/openPost':
                 return this.openPost(payload)
             default:
@@ -260,6 +274,25 @@ export class WeiboRoutes {
         const cookie = await this.readCookie()
         const fetchFeed = this.deps.fetchFeed ?? fetchWeiboFeed
         return fetchFeed({ ...raw, cookie })
+    }
+
+    /**
+     * 读取我的赞：uid 由宿主自行解析，前端只给页码。
+     * 关键约束：点赞列表只有页码分页、没有 max_id 游标，翻页由前端递增 page；
+     * 解析不到 uid 时明确报错，而不是拼一个空 uid 的地址去撞上游。
+     */
+    private async loadLikes(payload: unknown): Promise<WeiboLikesResult> {
+        const raw = payload ?? {}
+        if (!isWeiboLikesRequest(raw)) {
+            throw new WeiboWebError('invalid-payload', 'weibo/likes 参数非法：page 须为有限数字')
+        }
+        const cookie = await this.readCookie()
+        const uid = await this.resolveProfileUid(cookie)
+        if (uid === null) {
+            throw new WeiboWebError('upstream', '无法确定当前账号：分组信息里没有 uid，请重新登录微博后重试')
+        }
+        const fetchLikes = this.deps.fetchLikes ?? fetchWeiboLikes
+        return fetchLikes({ cookie, uid, page: raw.page })
     }
 
     /**
@@ -460,6 +493,22 @@ export class WeiboRoutes {
             return { url: null }
         }
         return { url: await resolveImageUrl(payload.url) }
+    }
+
+    /**
+     * 视频播放地址：把 CDN 地址换成本地中转地址（本地服务补 Referer 流式转发，不落盘）。
+     * 关键约束：未注入中转服务时返回 null 而不是抛错——面板在禁用网络能力时也应能打开；
+     * 前端拿到 null 会回退「打开原文」，不把一次播放失败升级成错误弹窗。
+     */
+    private async loadVideo(payload: unknown): Promise<WeiboVideoResult> {
+        if (!isWeiboVideoRequest(payload)) {
+            throw new WeiboWebError('invalid-payload', 'weibo/video 参数非法：url 必须为长度不超过 1024 的字符串')
+        }
+        const resolveVideoUrl = this.deps.resolveVideoUrl
+        if (resolveVideoUrl === undefined) {
+            return { url: null }
+        }
+        return { url: await resolveVideoUrl(payload.url) }
     }
 
     /** 读取评论：与时间线共用登录 Cookie，缺凭证直接给出可执行的引导 */

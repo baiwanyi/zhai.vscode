@@ -1,13 +1,14 @@
 /**
- * 微博顶栏账号菜单：触发器是账号头像，下拉里收账号信息、个人主页、设置与删除 Cookie。
+ * 微博顶栏账号菜单：触发器是账号头像，下拉里收账号信息、个人主页、我的赞、设置与删除 Cookie。
  * 复用约定：菜单壳取 @components/ui/dropdown-menu（Label / Separator / Group），头像取
  * @components/ui/avatar（Image + Fallback），触发器取 @webview/components/Button；
  * 头像 data URI 由宿主从 {存储根}/weibo_avatar.jpg 生成，前端不直连图床。
- * 关键约束：账号未取到时「个人主页」禁用并给出原因；头像缺失一律回落昵称首字，不留空白圆；
+ * 关键约束：账号未取到时「个人主页」禁用并给出原因；「我的赞」只依赖登录 Cookie（uid 由宿主解析），
+ * 未配置时禁用；头像缺失一律回落昵称首字，不留空白圆；
  * 删除 Cookie 只是发信号，二次确认与宿主调用由页面负责，本组件不持有任何业务状态；
  * 菜单宽度显式给定，否则 Radix 按触发按钮宽度撑开，长文案会被挤成多行。
  */
-import { ExternalLink, Settings2, Trash2 } from 'lucide-react'
+import { ExternalLink, Heart, Settings2, Trash2 } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@components/ui/avatar'
 import {
     DropdownMenu,
@@ -31,6 +32,8 @@ interface WeiboAccountMenuProps {
     isProfileLoading: boolean
     /** 打开个人主页：uid 缺失时由页面提示，不拼空地址 */
     onOpenProfile: () => void
+    /** 打开「我的赞」：列表取数由页面负责，本组件只发起切换 */
+    onOpenLikes: () => void
     /** 打开设置弹窗：设置不再是独立视图 */
     onOpenSettings: () => void
     /** 请求删除登录 Cookie：二次确认与宿主调用由页面负责 */
@@ -79,6 +82,7 @@ export function WeiboAccountMenu({
     avatarDataUrl,
     isProfileLoading,
     onOpenProfile,
+    onOpenLikes,
     onOpenSettings,
     onDeleteCredential,
 }: WeiboAccountMenuProps): JSX.Element {
@@ -112,6 +116,10 @@ export function WeiboAccountMenu({
                     <DropdownMenuItem disabled={!canOpenProfile} onSelect={onOpenProfile}>
                         <ExternalLink />
                         个人主页
+                    </DropdownMenuItem>
+                    <DropdownMenuItem disabled={!isConfigured} onSelect={onOpenLikes}>
+                        <Heart />
+                        我的赞
                     </DropdownMenuItem>
                     <DropdownMenuItem onSelect={onOpenSettings}>
                         <Settings2 />

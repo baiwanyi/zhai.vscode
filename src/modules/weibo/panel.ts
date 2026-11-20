@@ -4,8 +4,8 @@
  * 消息协议复用 shared/types/messages 的 request/response 形状，方法名受 HostMethodName 约束；
  * 面板标识取 shared/types/workflow，工作流路由用它把「活跃标签是微博」映射为微博语境。
  * 关键约束：Cookie 存在 SecretStorage，本层只把 WeiboCookieStore 交给路由，明文不出宿主；
- * 图床按 Referer 放行，图片一律经 mediaProxy 落本地后再签发 URI，故不必放开远程图片 CSP，
- * 缓存目录必须加入 localResourceRoots，否则 asWebviewUri 签发的地址会被 Webview 拒绝加载；
+ * 图床按 Referer 放行，图片经 mediaProxy 落本地后内联成 data URI，故不必放开远程图片 CSP；
+ * 视频不落缓存：CSP 的 media-src 放行微博视频 CDN，由 Webview 直接播整段 mp4，面板无需授权任何缓存目录；
  * 面板激活、失焦与销毁都要经 activeDocument 上报/让位，关闭时同时清理事实与句柄。
  */
 import * as vscode from 'vscode'
@@ -16,6 +16,7 @@ import { getActivePanel, reportActivePanel } from '@modules/editor/activeDocumen
 import { isRequestMessage } from '@shared/types/messages'
 import { WEIBO_PANEL_VIEW_TYPE } from '@shared/types/workflow'
 import { createWeiboMediaProxy, readImageAsDataUrl } from './mediaProxy'
+import { createWeiboVideoServer } from './videoServer'
 import { WeiboWebError } from './webClient'
 import { EMPTY_COOKIE_STORE, createWeiboCookieStore } from './webCredential'
 import { createWeiboAvatarGateway } from './weiboAvatar'
@@ -109,7 +110,7 @@ export async function openWeiboPanel(
         enableScripts: true,
         // 切到其它 tab 再回来不重建页面：时间线滚动位置与已加载内容活在前端状态里，重建会直接丢掉
         retainContextWhenHidden: true,
-        // 图片走 data URI 回传，不再授权缓存目录：避免远程开发等场景下本地资源被拒
+        // 图片走 data URI、视频由 Webview 直接播 CDN 整段 mp4，两者都不经本地文件，故不授权缓存目录
         localResourceRoots: [webviewDist],
     })
     current = panel
@@ -122,6 +123,12 @@ export async function openWeiboPanel(
         mediaCacheRoot === undefined
             ? null
             : createWeiboMediaResolver(mediaCacheRoot, async (): Promise<string | undefined> => cookieStore.read())
+    // 视频中转：CDN 校验 Referer 而 Webview 改不了请求头，故起一个只绑回环的本地服务流式转发（不落盘）；
+    // 起不来（端口受限等）就退化为前端「打开原文」，不影响面板其余功能
+    const videoServer = await createWeiboVideoServer().catch((error: unknown) => {
+        logger.warn(`微博视频中转服务启动失败：${error instanceof Error ? error.message : String(error)}`)
+        return null
+    })
     // 元数据与头像都落文档存储根：每次打开面板求值，切换文档目录后重开即生效
     const storageRoot = resolveStorageRoot()
     const routes = new WeiboRoutesImpl({
@@ -154,6 +161,11 @@ export async function openWeiboPanel(
                       const filePath = await proxy.resolve(imageUrl)
                       return filePath === null ? null : readImageAsDataUrl(filePath)
                   },
+        // 视频：只把 CDN 地址换成回环地址，字节流由本地服务带 Referer 转发，不落缓存
+        resolveVideoUrl:
+            videoServer === null
+                ? undefined
+                : (videoUrl: string): Promise<string | null> => Promise.resolve(videoServer.toLocalUrl(videoUrl)),
     })
 
     // 监听在面板销毁时显式释放：重开面板会重建一份，不释放就叠加处理链
@@ -176,6 +188,7 @@ export async function openWeiboPanel(
     panel.onDidDispose(() => {
         messageListener.dispose()
         proxy?.dispose()
+        videoServer?.dispose()
         if (getActivePanel() === WEIBO_PANEL_VIEW_TYPE) {
             reportActivePanel(null)
         }

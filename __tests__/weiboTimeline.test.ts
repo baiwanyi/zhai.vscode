@@ -18,6 +18,7 @@ import {
     isWeiboImageUrl,
     normalizeTimelinePost,
     normalizeWeiboImageUrl,
+    normalizeWeiboVideoUrl,
     parsePostSegments,
     parseWeiboCreatedAt,
     stripWeiboHtml,
@@ -104,6 +105,11 @@ describe('normalizeTimelinePost', () => {
         expect(normalizeTimelinePost({ text_raw: '没有 id' })).toBeNull()
     })
 
+    it('点赞列表的驼峰 isAd 与 mark 推广标记同样按广告丢弃', () => {
+        expect(normalizeTimelinePost(rawStatus(104, { isAd: true }))).toBeNull()
+        expect(normalizeTimelinePost(rawStatus(105, { mark: '999_reallog_mark_ad:999|WeiboADNatural' }))).toBeNull()
+    })
+
     it('优先使用 text_raw，缺失时从 text 剥标签', () => {
         const post = normalizeTimelinePost(rawStatus(103, { text_raw: undefined, text: '<a>纯文本</a>' }))
         expect(post?.text).toBe('纯文本')
@@ -159,6 +165,21 @@ describe('fetchFriendTimeline', () => {
         expect(result.hasMore).toBe(false)
         expect(result.sinceId).toBe('501')
     })
+
+    it('增量起点优先用上游 since_id：首页进度游标与微博 id 不同量级', async () => {
+        const result = await fetchFriendTimeline({
+            cookie: 'SUB=x',
+            minIntervalMs: 0,
+            requestPage: () =>
+                Promise.resolve({
+                    statuses: [rawStatus(601)],
+                    sinceId: '1795177409209985',
+                    maxId: '1795177409209985',
+                }),
+        })
+        expect(result.sinceId).toBe('1795177409209985')
+        expect(result.hasMore).toBe(true)
+    })
 })
 
 describe('图片与表情', () => {
@@ -212,7 +233,9 @@ describe('图片与表情', () => {
                             type: 'video',
                             data: {
                                 media_info: {
-                                    playback_list: [{ play_info: { url: 'https://f.video.weibocdn.com/x.mp4' } }],
+                                    // DASH 分片不能直接播，整段 mp4 才是播放源
+                                    playback_list: [{ play_info: { url: 'https://f.video.weibocdn.com/dash.mp4' } }],
+                                    mp4_hd_url: 'https://f.video.weibocdn.com/x.mp4',
                                 },
                             },
                         },
@@ -242,6 +265,13 @@ describe('图片与表情', () => {
         expect(parsePostSegments('前<img src="https://evil.example.com/a.png" title="doge">后')).toEqual([
             { type: 'text', text: '前[doge]后' },
         ])
+    })
+
+    it('没有表情名的卡片图标直接跳过，既不当表情也不留占位', () => {
+        const segments = parsePostSegments(
+            '视频来了<a href="https://video.weibo.com/x"><img src="https://h5.sinaimg.cn/upload/2015/09/25/3/timeline_card_small_video_default.png" alt="http://t.cn/AXTV2Qdr">某某的微博视频</a>',
+        )
+        expect(segments).toEqual([{ type: 'text', text: '视频来了某某的微博视频' }])
     })
 
     it('头像与配图只保留图床地址', () => {
@@ -479,6 +509,57 @@ describe('长文接口与归一化', () => {
         const post = normalizeTimelinePost(rawStatus(115, { text_raw: '这段讲展开与收缩的区别' }))
         expect(post?.text).toBe('这段讲展开与收缩的区别')
     })
+
+    it('转发体保留原文媒体：图片与视频封面都能渲染', () => {
+        const post = normalizeTimelinePost(
+            rawStatus(120, {
+                retweeted_status: {
+                    id: 900,
+                    idstr: '900',
+                    mblogid: 'RT900',
+                    text_raw: '原文',
+                    user: { id: 9001, screen_name: '原作者' },
+                    pic_ids: ['rp1'],
+                    pic_num: 1,
+                    pic_infos: {
+                        rp1: {
+                            largest: { url: 'https://wx1.sinaimg.cn/large/rp1.jpg', width: 800, height: 600 },
+                            bmiddle: { url: 'https://wx1.sinaimg.cn/wap360/rp1.jpg', width: 360, height: 270 },
+                        },
+                    },
+                    page_info: {
+                        type: 11,
+                        object_type: 'video',
+                        page_pic: 'https://wx4.sinaimg.cn/orj480/cover.jpg',
+                        media_info: { duration: 33 },
+                    },
+                },
+            }),
+        )
+        expect(post?.retweeted?.media.images).toEqual(['https://wx1.sinaimg.cn/large/rp1.jpg'])
+        expect(post?.retweeted?.media.videoCount).toBe(1)
+        expect(post?.retweeted?.media.items).toEqual([
+            expect.objectContaining({ kind: 'image' }),
+            expect.objectContaining({ kind: 'video', durationSeconds: 33 }),
+        ])
+        expect(post?.retweeted?.media.items[1]).toMatchObject({ coverUrl: 'https://wx4.sinaimg.cn/orj480/cover.jpg' })
+    })
+
+    it('isLongText 只在有「全文」入口或展开痕迹时成立，带视频卡片的普通微博不误标', () => {
+        const cardOnly = normalizeTimelinePost(
+            rawStatus(118, {
+                isLongText: true,
+                text_raw: '视频来了 http://t.cn/AXTV2Qdr',
+                text: '视频来了<a href="https://video.weibo.com/x"><img src="https://h5.sinaimg.cn/x.png"/>某某的微博视频</a>',
+            }),
+        )
+        expect(cardOnly?.isLongText).toBe(false)
+
+        const withContinueTag = normalizeTimelinePost(
+            rawStatus(119, { isLongText: true, text_raw: '正文', continue_tag: { title: '全文' } }),
+        )
+        expect(withContinueTag?.isLongText).toBe(true)
+    })
 })
 
 describe('微博协议路由：长文', () => {
@@ -653,6 +734,8 @@ describe('mix_media_info 图文混排', () => {
             coverUrl: 'https://wx1.sinaimg.cn/large/cover.jpg',
             coverMiddleUrl: 'https://wx1.sinaimg.cn/bmiddle/cover.jpg',
             durationSeconds: 93,
+            playUrl: null,
+            resolution: null,
         })
     })
 
@@ -721,8 +804,119 @@ describe('mix_media_info 图文混排', () => {
                 coverUrl: 'https://wx1.sinaimg.cn/large/cover.jpg',
                 coverMiddleUrl: 'https://wx1.sinaimg.cn/bmiddle/cover.jpg',
                 durationSeconds: 12,
+                playUrl: 'https://f.video.weibocdn.com/x.mp4',
+                resolution: null,
             },
         ])
         expect(post?.media.videoUrl).toBe('https://f.video.weibocdn.com/x.mp4')
+    })
+
+    it('清晰度角标取 playback_list 里最大的一档，缺失时用 template 兜底', () => {
+        const withPlayback = normalizeTimelinePost(
+            rawStatus(208, {
+                page_info: {
+                    type: 11,
+                    object_type: 'video',
+                    page_pic: 'https://wx1.sinaimg.cn/large/cover.jpg',
+                    media_info: {
+                        duration: 30,
+                        mp4_hd_url: 'http://f.video.weibocdn.com/x.mp4',
+                        playback_list: [
+                            { play_info: { width: 480, height: 854 } },
+                            { play_info: { width: 720, height: 1280 } },
+                            { play_info: { width: 360, height: 640 } },
+                        ],
+                    },
+                },
+            }),
+        )
+        expect(withPlayback?.media.items[0]).toMatchObject({
+            kind: 'video',
+            resolution: { width: 720, height: 1280 },
+        })
+
+        const withTemplate = normalizeTimelinePost(
+            rawStatus(209, {
+                page_info: {
+                    type: 11,
+                    object_type: 'video',
+                    media_info: {
+                        duration: 12,
+                        mp4_sd_url: 'http://f.video.weibocdn.com/y.mp4?template=1080x1920.30.0',
+                    },
+                },
+            }),
+        )
+        expect(withTemplate?.media.items[0]).toMatchObject({
+            kind: 'video',
+            resolution: { width: 1080, height: 1920 },
+        })
+    })
+
+    it('转发体带视频时外层不再重复显示视频，只保留图片', () => {
+        const post = normalizeTimelinePost(
+            rawStatus(207, {
+                pic_ids: ['0064ZtQNabc888'],
+                pic_num: 1,
+                pic_infos: {
+                    '0064ZtQNabc888': { largest: { url: 'https://wx1.sinaimg.cn/large/outer.jpg' } },
+                },
+                page_info: {
+                    type: 11,
+                    object_type: 'video',
+                    page_pic: 'https://wx1.sinaimg.cn/large/outer-cover.jpg',
+                    media_info: { duration: 10, mp4_sd_url: 'http://f.video.weibocdn.com/outer.mp4' },
+                },
+                retweeted_status: {
+                    id: 901,
+                    idstr: '901',
+                    mblogid: 'RT901',
+                    text_raw: '原文',
+                    user: { id: 9001, screen_name: '原作者' },
+                    page_info: {
+                        type: 11,
+                        object_type: 'video',
+                        page_pic: 'https://wx1.sinaimg.cn/large/inner-cover.jpg',
+                        media_info: { duration: 20, mp4_sd_url: 'http://f.video.weibocdn.com/inner.mp4' },
+                    },
+                },
+            }),
+        )
+        expect(post?.media.videoCount).toBe(0)
+        expect(post?.media.videoUrl).toBeNull()
+        expect(post?.media.items.map((item) => item.kind)).toEqual(['image'])
+        expect(post?.media.images).toEqual(['https://wx1.sinaimg.cn/large/outer.jpg'])
+        expect(post?.retweeted?.media.videoCount).toBe(1)
+        expect(post?.retweeted?.media.items[0]).toMatchObject({
+            kind: 'video',
+            playUrl: 'https://f.video.weibocdn.com/inner.mp4',
+        })
+    })
+
+    it('http 视频直链升级为 https，非白名单主机一律丢弃', () => {
+        expect(normalizeWeiboVideoUrl('http://f.video.weibocdn.com/x.mp4?a=1')).toBe(
+            'https://f.video.weibocdn.com/x.mp4?a=1',
+        )
+        expect(normalizeWeiboVideoUrl('//f.video.weibocdn.com/x.mp4')).toBe('https://f.video.weibocdn.com/x.mp4')
+        expect(normalizeWeiboVideoUrl('https://evil.example.com/x.mp4')).toBeNull()
+    })
+
+    it('播放地址只取整段 mp4：只有 DASH 分片时不给播放源', () => {
+        const post = normalizeTimelinePost(
+            rawStatus(206, {
+                page_info: {
+                    type: 11,
+                    object_type: 'video',
+                    page_pic: 'https://wx1.sinaimg.cn/large/cover.jpg',
+                    media_info: {
+                        duration: 20,
+                        playback_list: [{ play_info: { url: 'https://f.video.weibocdn.com/dash.mp4' } }],
+                    },
+                },
+            }),
+        )
+        expect(post?.media.items).toHaveLength(1)
+        expect(post?.media.items[0]).toMatchObject({ kind: 'video', playUrl: null, durationSeconds: 20 })
+        expect(post?.media.videoUrl).toBeNull()
     })
 })

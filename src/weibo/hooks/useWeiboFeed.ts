@@ -18,7 +18,7 @@ const MORE_MAX_PAGES = 2
 /** 取数模式：刷新走增量，翻页走 max_id */
 type LoadMode = 'refresh' | 'more'
 
-interface FeedState {
+export interface FeedState {
     posts: WeiboTimelinePost[]
     isLoading: boolean
     isLoadingMore: boolean

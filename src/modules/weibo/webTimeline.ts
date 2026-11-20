@@ -13,6 +13,7 @@ import type {
     WeiboTimelinePost,
     WeiboTimelineRequest,
     WeiboTimelineResult,
+    WeiboTimelineVideoResolution,
     WeiboTimelineRetweet,
     WeiboTimelineSegment,
 } from '@shared/types/weibo'
@@ -142,6 +143,41 @@ export function isWeiboImageUrl(value: unknown): value is string {
     return normalizeWeiboImageUrl(value) !== null
 }
 
+/** 视频主机白名单：整段 mp4 落在 f.video.weibocdn.com，部分旧资源在 video.weibo.com */
+const WEIBO_VIDEO_HOSTS = ['weibocdn.com', 'weibo.com', 'weibo.cn'] as const
+
+/**
+ * 归一化视频地址：主机必须落在视频 CDN 白名单内。
+ * 关键约束：网页端回包的整段 mp4 是 **http** 直链（实测 `http://f.video.weibocdn.com/...`），
+ * 这里统一升级成 https 再交给宿主取回——否则 Webview 侧会被混合内容拦掉，宿主端也更安全；
+ * 地址带 Expires / ssig 签名，只在本次会话内有效，既不能分享也不宜长期缓存，
+ * 宿主按 URL 哈希落盘，签名变化会产生新缓存，由缓存清理兜底。
+ */
+export function normalizeWeiboVideoUrl(value: unknown): string | null {
+    if (typeof value !== 'string') {
+        return null
+    }
+    const trimmed = value.trim()
+    if (trimmed.length === 0 || trimmed.length > 1024) {
+        return null
+    }
+    let parsed: URL
+    try {
+        parsed = new URL(trimmed.startsWith('//') ? `https:${trimmed}` : trimmed)
+    } catch {
+        return null
+    }
+    if (parsed.protocol === 'http:') {
+        parsed.protocol = 'https:'
+    }
+    if (parsed.protocol !== 'https:') {
+        return null
+    }
+    const host = parsed.hostname.toLowerCase()
+    const isAllowed = WEIBO_VIDEO_HOSTS.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))
+    return isAllowed ? parsed.toString() : null
+}
+
 /** 图床的尺寸目录：这些目录可换成 bmiddle；thumbnail 已足够小，不参与替换 */
 const IMAGE_SIZE_DIRS = new Set(['large', 'original', 'orj1080', 'mw2000', 'mw1024', 'mw690', 'thumb300'])
 
@@ -205,6 +241,9 @@ const TRAILING_EXPAND_PATTERN = /(?:\s*(?:\.{2,}|…+|。{2,})\s*)+展开(?:全�
 /** 摘要末尾的截断省略号：链接被剥掉后会单独剩下 `……`，需要一并清掉 */
 const TRAILING_ELLIPSIS_PATTERN = /(?:\s*(?:\.{2,}|…+|。{2,}))+\s*$/u
 
+/** 长文痕迹：正文末尾的「展开 / 展开全文」，可能裹在标签里（`<a>展开全文</a>`、`<span class="expand">展开</span>`） */
+const LONG_TEXT_MARKER_PATTERN = /(?:展开全文|展开)(?:<[^>]*>)*\s*$/u
+
 /** 去掉「展开」链接：只处理带 <a> 外壳的那一处，正文里的普通用词不受影响 */
 function removeExpandLink(html: string): string {
     return html.replace(EXPAND_LINK_PATTERN, '')
@@ -252,8 +291,18 @@ function replaceEmojiWithText(html: string): string {
 const IMAGE_TAG_PATTERN = /<img\b[^>]*>/giu
 
 /**
+ * 表情名形态：非空、长度有限且不是地址。
+ * 卡片装饰图（如视频卡片的默认小图）的 alt 常是一串短链，不能被当成表情名渲染。
+ */
+function isEmoticonLabel(name: string): boolean {
+    const trimmed = name.trim()
+    return trimmed.length > 0 && trimmed.length <= 16 && !/^https?:/iu.test(trimmed)
+}
+
+/**
  * 把正文 HTML 切成「文本 + 表情」片段。
  * 表情图只接受微博图床地址；非白名单域名或缺少直链时降级成 `[表情名]` 文本，不丢信息。
+ * 没有表情名的 img 属卡片装饰图，直接跳过：既不作表情，也不留 `[]` 占位。
  */
 export function parsePostSegments(html: string): WeiboTimelineSegment[] {
     const segments: WeiboTimelineSegment[] = []
@@ -265,14 +314,18 @@ export function parsePostSegments(html: string): WeiboTimelineSegment[] {
         const index = match.index ?? 0
         pushHtmlText(segments, html.slice(lastIndex, index))
         const tag = match[0]
-        const url = normalizeWeiboImageUrl(readAttribute(tag, 'src'))
+        // 先推进游标：装饰图在下面的分支里直接跳过，不再重复更新
+        lastIndex = index + tag.length
         const name = readAttribute(tag, 'title') || readAttribute(tag, 'alt')
+        if (!isEmoticonLabel(name)) {
+            continue
+        }
+        const url = normalizeWeiboImageUrl(readAttribute(tag, 'src'))
         if (url !== null) {
             segments.push({ type: 'emoji', name, url })
         } else {
-            pushPlainText(segments, name.length > 0 ? `[${name}]` : '')
+            pushPlainText(segments, `[${name}]`)
         }
-        lastIndex = index + tag.length
     }
     pushHtmlText(segments, html.slice(lastIndex))
     return segments
@@ -366,25 +419,20 @@ function pickMediaCandidate(value: unknown): MediaCandidate | null {
     return { url, middleUrl, size }
 }
 
-/** 从 playback_list 结构里取第一个可播放地址 */
-function pickPlaybackUrl(mediaInfo: unknown): string | null {
+/**
+ * 渐进式整段 mp4 字段：`<video>` 能直接播放的只有这些，按清晰度优先取第一个可用地址。
+ * 关键约束：`playback_list` 里是 DASH 分片（带 init / index range），不能直接播放，一律不取。
+ */
+const PROGRESSIVE_VIDEO_KEYS = ['mp4_720p_mp4', 'mp4_hd_url', 'mp4_sd_url', 'stream_url_hd', 'stream_url'] as const
+
+/** 取可直接播放的整段 mp4 地址：没有则返回 null，前端回退「打开原文」 */
+function pickProgressiveUrl(mediaInfo: unknown): string | null {
     if (!isRecord(mediaInfo)) {
         return null
     }
-    const playbackList = mediaInfo.playback_list
-    if (Array.isArray(playbackList)) {
-        for (const item of playbackList) {
-            if (isRecord(item) && isRecord(item.play_info)) {
-                const url = toText(item.play_info.url)
-                if (url.length > 0) {
-                    return url
-                }
-            }
-        }
-    }
-    for (const key of ['mp4_720p_mp4', 'mp4_hd_url', 'stream_url']) {
-        const url = toText(mediaInfo[key])
-        if (url.length > 0) {
+    for (const key of PROGRESSIVE_VIDEO_KEYS) {
+        const url = normalizeWeiboVideoUrl(toText(mediaInfo[key]))
+        if (url !== null) {
             return url
         }
     }
@@ -406,11 +454,55 @@ function isVideoItem(item: Record<string, unknown>): boolean {
     return isRecord(data) && (data.object_type === 'video' || data.type === 'video')
 }
 
-/** 视频摘要：只给封面与时长，不给播放直链（播放地址带签名且校验 Referer，观看一律回原文） */
+/** 视频摘要：封面、时长、可播放的整段地址与最大分辨率；播放地址带签名且校验 Referer，由宿主取回后再播 */
 interface VideoCandidate {
     coverUrl: string | null
     coverMiddleUrl: string | null
     durationSeconds: number | null
+    playUrl: string | null
+    resolution: WeiboTimelineVideoResolution | null
+}
+
+/**
+ * 取视频最大分辨率：优先 playback_list 里面积最大的一档（每档都带 width / height），
+ * 没有播放列表时退回解析 progressive 地址上的 `template=720x960.24.0`。
+ * 关键约束：角标只标「最大尺寸」，不能拿封面尺寸充数——封面档位与视频分辨率无关。
+ */
+function pickMaxResolution(mediaInfo: unknown): WeiboTimelineVideoResolution | null {
+    if (!isRecord(mediaInfo)) {
+        return null
+    }
+    let best: WeiboTimelineVideoResolution | null = null
+    const playbackList = mediaInfo.playback_list
+    if (Array.isArray(playbackList)) {
+        for (const entry of playbackList) {
+            if (!isRecord(entry) || !isRecord(entry.play_info)) {
+                continue
+            }
+            const width = toCount(entry.play_info.width)
+            const height = toCount(entry.play_info.height)
+            if (width <= 0 || height <= 0) {
+                continue
+            }
+            if (best === null || width * height > best.width * best.height) {
+                best = { width, height }
+            }
+        }
+    }
+    if (best !== null) {
+        return best
+    }
+    for (const key of PROGRESSIVE_VIDEO_KEYS) {
+        const match = /[?&]template=(\d{2,5})x(\d{2,5})/u.exec(toText(mediaInfo[key]))
+        if (match !== null) {
+            const width = Number(match[1])
+            const height = Number(match[2])
+            if (width > 0 && height > 0) {
+                return { width, height }
+            }
+        }
+    }
+    return null
 }
 
 /**
@@ -436,6 +528,8 @@ function pickVideoCandidate(data: Record<string, unknown>): VideoCandidate {
         coverUrl,
         coverMiddleUrl: fromPic?.middleUrl ?? (coverUrl === null ? null : buildMiddleImageUrl(coverUrl)),
         durationSeconds: duration > 0 ? duration : null,
+        playUrl: pickProgressiveUrl(mediaInfo),
+        resolution: pickMaxResolution(mediaInfo),
     }
 }
 
@@ -493,12 +587,12 @@ function extractMedia(record: Record<string, unknown>): WeiboTimelineMedia {
                     coverUrl: candidate.coverUrl,
                     coverMiddleUrl: candidate.coverMiddleUrl,
                     durationSeconds: candidate.durationSeconds,
+                    playUrl: candidate.playUrl,
+                    resolution: candidate.resolution,
                 })
                 videoCount += 1
                 if (videoUrl === null) {
-                    videoUrl =
-                        pickPlaybackUrl(data.media_info) ??
-                        pickPlaybackUrl(isRecord(data.page_info) ? data.page_info.media_info : null)
+                    videoUrl = candidate.playUrl
                 }
                 continue
             }
@@ -534,21 +628,32 @@ function extractMedia(record: Record<string, unknown>): WeiboTimelineMedia {
         }
     }
 
-    // 顶层 page_info 只给视频、没有 mix_media_info 的旧版帖子：补一个视频项，卡片才有封面可展示
+    /**
+     * 顶层 page_info 的视频卡片：补一个视频项，卡片才有封面与播放入口。
+     * 视频标识有三种：新版给 `object_type: video` / `type: 11`，旧版没有类型标识、只有整段播放地址；
+     * 群组与投票卡片同样带 page_pic 却没有播放地址，不能只凭封面就当成视频。
+     */
     const pageInfo = record.page_info
     if (isRecord(pageInfo)) {
-        if (videoUrl === null) {
-            videoUrl = pickPlaybackUrl(pageInfo.media_info)
-        }
-        if (videoCount === 0 && videoUrl !== null) {
+        const hasVideoType = pageInfo.object_type === 'video' || pageInfo.type === 11
+        const isLegacyVideo =
+            pageInfo.object_type === undefined && pageInfo.type === undefined
+                ? pickProgressiveUrl(pageInfo.media_info) !== null
+                : false
+        if (videoCount === 0 && (hasVideoType || isLegacyVideo)) {
             const candidate = pickVideoCandidate(pageInfo)
             items.push({
                 kind: 'video',
                 coverUrl: candidate.coverUrl,
                 coverMiddleUrl: candidate.coverMiddleUrl,
                 durationSeconds: candidate.durationSeconds,
+                playUrl: candidate.playUrl,
+                resolution: candidate.resolution,
             })
             videoCount = 1
+            if (videoUrl === null) {
+                videoUrl = candidate.playUrl
+            }
         }
     }
 
@@ -591,7 +696,7 @@ function buildPostUrl(uid: string, mblogid: string, id: string): string {
     return uid.length > 0 ? `${WEIBO_WEB_ORIGIN}/${uid}/${mblogid}` : `${WEIBO_WEB_ORIGIN}/detail/${id}`
 }
 
-/** 归一化转发体：只保留摘要，不再递归展开 */
+/** 归一化转发体：保留摘要与媒体，不再递归展开（转发里再转发只按文字处理） */
 function normalizeRetweeted(value: unknown): WeiboTimelineRetweet | null {
     if (!isRecord(value)) {
         return null
@@ -608,15 +713,39 @@ function normalizeRetweeted(value: unknown): WeiboTimelineRetweet | null {
         authorName: author,
         text,
         url: buildPostUrl(isRecord(value.user) ? toText(value.user.id) : '', toText(value.mblogid), id),
+        media: extractMedia(value),
     }
 }
 
-/** 是否为广告或推广位：这类条目没有稳定 id，混进时间线会污染增量游标 */
+/**
+ * 是否为广告或推广位：这类条目没有稳定 id，混进时间线会污染增量游标。
+ * 标记有三种形态：时间线的 ad_state、部分端点的 is_ad、点赞列表的驼峰 isAd，
+ * 以及只打 mark 的推广位（mark 里带 WeiboADNatural）；全部按广告丢弃。
+ */
 function isPromoted(record: Record<string, unknown>): boolean {
-    if (record.ad_state === 1 || record.is_ad === true) {
+    if (record.ad_state === 1 || record.is_ad === true || record.isAd === true) {
+        return true
+    }
+    if (toText(record.mark).includes('WeiboADNatural')) {
         return true
     }
     return isRecord(record.promotion)
+}
+
+/**
+ * 去掉媒体里的视频项：转发微博的外层与引用区会各渲染一次同一个视频，
+ * 被转发内容已有视频时外层只保留图片，视频只留在引用区播。
+ */
+function withoutVideos(media: WeiboTimelineMedia): WeiboTimelineMedia {
+    if (media.videoCount === 0) {
+        return media
+    }
+    return {
+        ...media,
+        items: media.items.filter((item) => item.kind !== 'video'),
+        videoCount: 0,
+        videoUrl: null,
+    }
 }
 
 /**
@@ -636,9 +765,17 @@ export function normalizeTimelinePost(raw: unknown): WeiboTimelinePost | null {
     const uid = toText(user.id)
     const avatar = toText(user.avatar_large) || toText(user.profile_image_url)
     const textRaw = toText(raw.text_raw)
-    const html = removeExpandLink(toText(raw.text))
+    const rawHtml = toText(raw.text)
+    const html = removeExpandLink(rawHtml)
     const longText = raw.longText
-    const isLongText = raw.isLongText === true || isRecord(longText)
+    /**
+     * 长文判定：上游 isLongText 会把「带视频卡片链接」的普通微博也标成 true，
+     * 只有附带 continue_tag（「全文」入口）或正文末尾的展开痕迹才算真正被截断的长文；
+     * longText 对象是旧版长文字段，命中即为长文。
+     */
+    const hasLongTextMarker =
+        isRecord(raw.continue_tag) || LONG_TEXT_MARKER_PATTERN.test(rawHtml) || LONG_TEXT_MARKER_PATTERN.test(textRaw)
+    const isLongText = isRecord(longText) || (raw.isLongText === true && hasLongTextMarker)
     const plainText = textRaw.length > 0 ? stripWeiboHtml(textRaw) : stripWeiboHtml(replaceEmojiWithText(html))
     // 长文摘要末尾常带「……展开」：卡片已有展开按钮，正文里再留一份会造成重复提示
     const text = isLongText ? stripTrailingTruncation(plainText) : plainText
@@ -648,6 +785,10 @@ export function normalizeTimelinePost(raw: unknown): WeiboTimelinePost | null {
         removeTrailingExpandHint(segments)
     }
     const createdAtRaw = toText(raw.created_at)
+    const retweeted = normalizeRetweeted(raw.retweeted_status)
+    const media = extractMedia(raw)
+    // 转发微博外层不重复展示视频：被转发内容已带视频时，视频只留在引用区
+    const visibleMedia = retweeted !== null && retweeted.media.videoCount > 0 ? withoutVideos(media) : media
 
     return {
         id,
@@ -665,8 +806,8 @@ export function normalizeTimelinePost(raw: unknown): WeiboTimelinePost | null {
             isVerified: user.verified === true,
         },
         metrics: extractMetrics(raw),
-        media: extractMedia(raw),
-        retweeted: normalizeRetweeted(raw.retweeted_status),
+        media: visibleMedia,
+        retweeted,
         isLiked: readIsLiked(raw),
         isLongText,
     }
@@ -744,8 +885,9 @@ export async function fetchFriendTimeline(options: FetchTimelineOptions): Promis
         cursor = pageNext
     }
 
-    const latest = posts[0]
-    const sinceId = latest !== undefined ? latest.id : (lastPage?.sinceId ?? null)
+    // 增量起点优先取上游 since_id：首页 unreadfriendstimeline 返回的是读进度游标（与微博 id 不同量级），
+    // 用首条微博 id 覆盖会让下次增量传错游标；分组 / 时间线的 since_id 恰好等于首条 id，两种口径等价。
+    const sinceId = lastPage?.sinceId ?? posts[0]?.id ?? null
     return {
         posts,
         sinceId,

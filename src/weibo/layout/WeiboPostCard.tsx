@@ -1,22 +1,28 @@
 /**
- * 时间线卡片：作者头像、正文（含表情）、转发摘要、图文混排媒体区、互动数据与评论区。
+ * 时间线卡片：作者头像、正文（含表情）、转发摘要与引用媒体、图文混排媒体区、互动数据与评论区。
  * 复用约定：数据是归一化后的 WeiboTimelinePost，图片地址已在宿主按白名单收窄；
- * 头像与富文本分别交给 WeiboAvatar / WeiboRichText，配图与灯箱在本文件内；
+ * 头像与富文本分别交给 WeiboAvatar / WeiboRichText，配图、视频封面与灯箱在本文件内，
+ * 主贴与转发体的媒体共用 PostMediaGrid，避免两套九宫格各写一份；
  * 所有图片都经 useWeiboImage 换成本地地址——图床按 Referer 放行，Webview 直连会被拒。
  * 关键约束：hooks 只能在组件内调用，故表情、配图、点赞各自抽成子组件，不能在 map 里直接调；
- * 图片按「进入视口附近」才发起下载；评论区按需展开，未展开不请求。
+ * 图片按「进入视口附近」才发起下载；视频统一交给 layout/WeiboVideoPlayer（自绘控件栏、空格控制），
+ * 地址经宿主回环中转补 Referer，不落缓存；拿不到整段地址时才回退打开原文（转发区回退被转发原文）；
+ * 评论区按需展开，未展开不请求。
  */
 import { cn } from 'cn'
 import { format } from 'date-fns'
 import { BadgeCheck, ExternalLink, Heart, ImageIcon, ImageOff, MessageCircle, Play, Repeat2, Video } from 'lucide-react'
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Card, CardContent } from '@components/ui/card'
 import type {
     WeiboLikeResult,
     WeiboLongTextResult,
     WeiboTimelineImageSize,
+    WeiboTimelineMedia,
     WeiboTimelinePost,
     WeiboTimelineSegment,
+    WeiboTimelineVideoResolution,
+    WeiboVideoResult,
 } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
@@ -25,6 +31,7 @@ import { WeiboAvatar } from './WeiboAvatar'
 import { WeiboCommentList } from './WeiboCommentList'
 import { WeiboLightbox } from './WeiboLightbox'
 import { WeiboRichText } from './WeiboRichText'
+import { WeiboVideoPlayer } from './WeiboVideoPlayer'
 import type { JSX } from 'react'
 import { useHasEnteredViewport } from '../hooks/useHasEnteredViewport'
 import { useWeiboImage } from '../hooks/useWeiboImage'
@@ -84,6 +91,254 @@ function WeiboImage({ remoteUrl, alt, className }: WeiboImageProps): JSX.Element
         return <span ref={ref} aria-hidden className={cn('block animate-pulse bg-muted', className)} />
     }
     return <img src={localUrl} alt={alt} className={className} loading="lazy" onError={handleError} />
+}
+
+/** 原图预览状态：列表用中图，点击后才在原图浮层里取原图 */
+interface PreviewState {
+    origin: string
+    thumb: string
+    size: WeiboTimelineImageSize | null
+}
+
+interface PostMediaGridProps {
+    media: WeiboTimelineMedia
+    /** 点击视频封面：观看一律回原文 */
+    onOpenPost: () => void
+    /** 点击图片：打开灯箱 */
+    onPreview: (preview: PreviewState) => void
+}
+
+interface InlineVideoPlayerProps {
+    playUrl: string | null
+    /** 封面远程地址：经图片代理换成 data URI 后作 poster */
+    posterUrl: string | null
+    /** 视频最大分辨率：播放器左上角清晰度角标 */
+    resolution: WeiboTimelineVideoResolution | null
+    onOpenPost: () => void
+}
+
+/**
+ * 纯视频微博的播放器外壳：先把 CDN 地址换成宿主回环中转地址，再交给 WeiboVideoPlayer 铺开，
+ * poster 由播放器自己把封面图换成本地地址；地址换不到时退回「在浏览器打开原文」。
+ */
+function InlineVideoPlayer({ playUrl, posterUrl, resolution, onOpenPost }: InlineVideoPlayerProps): JSX.Element {
+    const [state, setState] = useState<{ localUrl: string | null; isFailed: boolean }>({
+        localUrl: null,
+        isFailed: false,
+    })
+
+    useEffect(() => {
+        if (playUrl === null) {
+            return
+        }
+        let isCancelled = false
+        request<WeiboVideoResult>('weibo/video', { url: playUrl }, 20_000)
+            .then((result) => {
+                if (isCancelled) {
+                    return
+                }
+                setState({ localUrl: result.url, isFailed: result.url === null })
+            })
+            .catch((cause: unknown) => {
+                if (isCancelled) {
+                    return
+                }
+                setState({ localUrl: null, isFailed: true })
+                toastError(cause)
+            })
+        return (): void => {
+            isCancelled = true
+        }
+    }, [playUrl])
+
+    // 没有整段地址或换地址失败：直接给原文入口，不铺一个点不动的播放器
+    if (playUrl === null || state.isFailed) {
+        return (
+            <button
+                type="button"
+                onClick={onOpenPost}
+                className="flex aspect-video w-full items-center justify-center rounded-lg bg-muted px-3 text-center text-muted-foreground text-xs"
+            >
+                视频暂不可播放，点击在浏览器打开原文
+            </button>
+        )
+    }
+    return <WeiboVideoPlayer src={state.localUrl} posterUrl={posterUrl} resolution={resolution} />
+}
+
+/**
+ * 媒体区：有视频时按混排原序渲染，纯图片走九宫格。
+ * 主贴与转发体共用这一份——转发里的图片与视频同样要能看，不能只显示文字摘要。
+ * 关键约束：视频点击后在原格子里换成 <video> 播放；CDN 校验 Referer 而 Webview 改不了请求头，
+ * 故 src 用宿主回环中转地址（流式转发，不落缓存）；拿不到地址时回退「打开原文」，避免点了没反应。
+ */
+function PostMediaGrid({ media, onOpenPost, onPreview }: PostMediaGridProps): JSX.Element | null {
+    const images = media.images.slice(0, MAX_GRID_IMAGES)
+    const thumbnails = media.thumbnails
+    const mixedItems = media.videoCount > 0 ? media.items.slice(0, MAX_GRID_IMAGES) : []
+    const gridClassName =
+        images.length === 1 ? 'max-w-64 grid-cols-1' : images.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
+    /** 播放状态：remoteUrl 是上游地址，localUrl 是宿主回环中转地址；同一媒体区只播一个视频 */
+    const [player, setPlayer] = useState<{ remoteUrl: string; localUrl: string | null; isFailed: boolean } | null>(null)
+
+    const handlePlay = useCallback(
+        (playUrl: string | null): void => {
+            if (playUrl === null) {
+                onOpenPost()
+                return
+            }
+            setPlayer({ remoteUrl: playUrl, localUrl: null, isFailed: false })
+            void request<WeiboVideoResult>('weibo/video', { url: playUrl }, 20_000)
+                .then((result) => {
+                    setPlayer((previous) =>
+                        previous === null || previous.remoteUrl !== playUrl
+                            ? previous
+                            : { ...previous, localUrl: result.url, isFailed: result.url === null },
+                    )
+                })
+                .catch((cause: unknown) => {
+                    setPlayer((previous) =>
+                        previous === null || previous.remoteUrl !== playUrl
+                            ? previous
+                            : { ...previous, isFailed: true },
+                    )
+                    toastError(cause)
+                })
+        },
+        [onOpenPost],
+    )
+
+    /** 纯视频（没有配图）：直接铺播放器，先显示 poster，点播放才取流 */
+    const onlyVideo = mixedItems.length === 1 ? mixedItems[0] : undefined
+    if (onlyVideo !== undefined && onlyVideo.kind === 'video' && media.imageCount === 0) {
+        return (
+            <InlineVideoPlayer
+                playUrl={onlyVideo.playUrl}
+                posterUrl={onlyVideo.coverMiddleUrl ?? onlyVideo.coverUrl}
+                resolution={onlyVideo.resolution}
+                onOpenPost={onOpenPost}
+            />
+        )
+    }
+
+    if (mixedItems.length > 0) {
+        return (
+            <>
+                <div className="grid w-full grid-cols-3 gap-1">
+                    {mixedItems.map((item, index) => {
+                        if (item.kind === 'image') {
+                            return (
+                                <button
+                                    key={`image-${item.url}`}
+                                    type="button"
+                                    onClick={() => {
+                                        onPreview({ origin: item.url, thumb: item.middleUrl, size: item.size })
+                                    }}
+                                    aria-label="查看原图"
+                                    className="aspect-square overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/5"
+                                >
+                                    <WeiboImage
+                                        remoteUrl={item.middleUrl}
+                                        alt="微博配图"
+                                        className="size-full object-cover"
+                                    />
+                                </button>
+                            )
+                        }
+                        // 视频：点击后在原位换成播放器；地址要先经宿主换成本地中转地址
+                        if (player !== null && player.remoteUrl === item.playUrl) {
+                            return (
+                                <div
+                                    key={`video-${String(index)}`}
+                                    className="col-span-3 aspect-video w-full overflow-hidden rounded-lg bg-black"
+                                >
+                                    {player.localUrl === null ? (
+                                        <button
+                                            type="button"
+                                            onClick={onOpenPost}
+                                            className="flex size-full items-center justify-center px-3 text-center text-muted-foreground text-xs"
+                                        >
+                                            {player.isFailed ? '视频加载失败，点击在浏览器打开原文' : '正在加载视频…'}
+                                        </button>
+                                    ) : (
+                                        <WeiboVideoPlayer
+                                            src={player.localUrl}
+                                            posterUrl={item.coverMiddleUrl ?? item.coverUrl}
+                                            resolution={item.resolution}
+                                            autoPlay
+                                            className="size-full"
+                                        />
+                                    )}
+                                </div>
+                            )
+                        }
+                        return (
+                            <button
+                                key={`video-${String(index)}`}
+                                type="button"
+                                onClick={() => {
+                                    handlePlay(item.playUrl)
+                                }}
+                                aria-label="播放视频"
+                                className="relative aspect-square overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/5"
+                            >
+                                {item.coverMiddleUrl === null ? (
+                                    <span className="flex size-full items-center justify-center text-muted-foreground">
+                                        <Video className="size-5" aria-hidden="true" />
+                                    </span>
+                                ) : (
+                                    <>
+                                        <WeiboImage
+                                            remoteUrl={item.coverMiddleUrl}
+                                            alt="视频封面"
+                                            className="size-full object-cover"
+                                        />
+                                        <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-white">
+                                            <Play className="size-6" aria-hidden="true" fill="currentColor" />
+                                        </span>
+                                    </>
+                                )}
+                                {item.durationSeconds === null ? null : (
+                                    <span className="absolute right-1 bottom-1 rounded bg-black/60 px-1 font-mono text-[0.6rem] leading-tight text-white">
+                                        {formatDuration(item.durationSeconds)}
+                                    </span>
+                                )}
+                            </button>
+                        )
+                    })}
+                </div>
+            </>
+        )
+    }
+
+    if (images.length === 0) {
+        return null
+    }
+    return (
+        <>
+            <div className={cn('grid w-full gap-1', gridClassName)}>
+                {images.map((originUrl, index) => {
+                    const thumbUrl = thumbnails[index] ?? originUrl
+                    return (
+                        <button
+                            key={originUrl}
+                            type="button"
+                            onClick={() => {
+                                onPreview({ origin: originUrl, thumb: thumbUrl, size: media.sizes[index] ?? null })
+                            }}
+                            aria-label="查看原图"
+                            className={cn(
+                                'overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/5',
+                                images.length === 1 ? 'aspect-video' : 'aspect-square',
+                            )}
+                        >
+                            <WeiboImage remoteUrl={thumbUrl} alt="微博配图" className="size-full object-cover" />
+                        </button>
+                    )
+                })}
+            </div>
+        </>
+    )
 }
 
 interface LikeButtonProps {
@@ -158,12 +413,16 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
         void request('weibo/openPost', { url: post.url }).catch(toastError)
     }, [post.url])
 
+    /** 引用微博的视频封面：打开被转发的原文，而不是当前这条转发 */
+    const handleOpenRetweeted = useCallback((): void => {
+        if (post.retweeted === null) {
+            return
+        }
+        void request('weibo/openPost', { url: post.retweeted.url }).catch(toastError)
+    }, [post.retweeted])
+
     /** 原图预览：点击九宫格时才取原图，列表始终用中等尺寸；尺寸随预览一起带上 */
-    const [preview, setPreview] = useState<{
-        origin: string
-        thumb: string
-        size: WeiboTimelineImageSize | null
-    } | null>(null)
+    const [preview, setPreview] = useState<PreviewState | null>(null)
     const [isCommentsOpen, setIsCommentsOpen] = useState(false)
     /** 长文全文：展开后替换摘要，卡片保持展开态直到列表重建 */
     const [fullText, setFullText] = useState<string | null>(null)
@@ -197,12 +456,8 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
     /** 正文分段：展开全文后整段替换为接口返回的纯文本 */
     const bodySegments: WeiboTimelineSegment[] = fullText === null ? post.segments : [{ type: 'text', text: fullText }]
 
+    /** 主贴图片数：为 0 但上游声明有图时单独给提示，媒体区自身不再重复 */
     const images = post.media.images.slice(0, MAX_GRID_IMAGES)
-    const thumbnails = post.media.thumbnails
-    /** 混排项：含视频时按上游原序渲染，纯图片仍走原来的九宫格分支 */
-    const mixedItems = post.media.videoCount > 0 ? post.media.items.slice(0, MAX_GRID_IMAGES) : []
-    const gridClassName =
-        images.length === 1 ? 'max-w-64 grid-cols-1' : images.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
 
     return (
         <Card>
@@ -242,93 +497,7 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
                     </div>
                 </div>
 
-                {mixedItems.length > 0 ? (
-                    <div className="grid w-full grid-cols-3 gap-1">
-                        {mixedItems.map((item, index) => {
-                            if (item.kind === 'image') {
-                                return (
-                                    <button
-                                        key={`image-${item.url}`}
-                                        type="button"
-                                        onClick={() => {
-                                            setPreview({ origin: item.url, thumb: item.middleUrl, size: item.size })
-                                        }}
-                                        aria-label="查看原图"
-                                        className="aspect-square overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/5"
-                                    >
-                                        <WeiboImage
-                                            remoteUrl={item.middleUrl}
-                                            alt="微博配图"
-                                            className="size-full object-cover"
-                                        />
-                                    </button>
-                                )
-                            }
-                            // 视频只展示封面与时长：播放地址带签名且校验 Referer，观看统一回原文
-                            return (
-                                <button
-                                    key={`video-${String(index)}`}
-                                    type="button"
-                                    onClick={handleOpen}
-                                    aria-label="打开原文观看视频"
-                                    className="relative aspect-square overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/5"
-                                >
-                                    {item.coverMiddleUrl === null ? (
-                                        <span className="flex size-full items-center justify-center text-muted-foreground">
-                                            <Video className="size-5" aria-hidden="true" />
-                                        </span>
-                                    ) : (
-                                        <>
-                                            <WeiboImage
-                                                remoteUrl={item.coverMiddleUrl}
-                                                alt="视频封面"
-                                                className="size-full object-cover"
-                                            />
-                                            <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-white">
-                                                <Play className="size-6" aria-hidden="true" fill="currentColor" />
-                                            </span>
-                                        </>
-                                    )}
-                                    {item.durationSeconds === null ? null : (
-                                        <span className="absolute right-1 bottom-1 rounded bg-black/60 px-1 font-mono text-[0.6rem] leading-tight text-white">
-                                            {formatDuration(item.durationSeconds)}
-                                        </span>
-                                    )}
-                                </button>
-                            )
-                        })}
-                    </div>
-                ) : images.length > 0 ? (
-                    <div className={cn('grid w-full gap-1', gridClassName)}>
-                        {images.map((originUrl, index) => {
-                            const thumbUrl = thumbnails[index] ?? originUrl
-                            return (
-                                <button
-                                    key={originUrl}
-                                    type="button"
-                                    onClick={() => {
-                                        setPreview({
-                                            origin: originUrl,
-                                            thumb: thumbUrl,
-                                            size: post.media.sizes[index] ?? null,
-                                        })
-                                    }}
-                                    aria-label="查看原图"
-                                    className={cn(
-                                        'overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/5',
-                                        images.length === 1 ? 'aspect-video' : 'aspect-square',
-                                    )}
-                                >
-                                    <WeiboImage
-                                        remoteUrl={thumbUrl}
-                                        alt="微博配图"
-                                        className="size-full object-cover"
-                                    />
-                                </button>
-                            )
-                        })}
-                    </div>
-                ) : null}
+                <PostMediaGrid media={post.media} onOpenPost={handleOpen} onPreview={setPreview} />
 
                 {images.length === 0 && post.media.imageCount > 0 ? (
                     <p className="text-muted-foreground text-xs">
@@ -337,13 +506,21 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
                 ) : null}
 
                 {post.retweeted !== null ? (
-                    <blockquote className="rounded-lg bg-muted px-3 py-2 text-muted-foreground text-xs ring-1 ring-foreground/5">
-                        <p className="font-medium">
-                            @{post.retweeted.authorName.length > 0 ? post.retweeted.authorName : '原作者'}
-                        </p>
-                        <p className="mt-1 whitespace-pre-wrap wrap-break-word">
-                            {post.retweeted.text.length > 0 ? post.retweeted.text : '（原微博不可见）'}
-                        </p>
+                    <blockquote className="flex flex-col gap-2 rounded-lg bg-muted px-3 py-2 text-muted-foreground text-xs ring-1 ring-foreground/5">
+                        <div>
+                            <p className="font-medium">
+                                @{post.retweeted.authorName.length > 0 ? post.retweeted.authorName : '原作者'}
+                            </p>
+                            <p className="mt-1 whitespace-pre-wrap wrap-break-word">
+                                {post.retweeted.text.length > 0 ? post.retweeted.text : '（原微博不可见）'}
+                            </p>
+                        </div>
+                        {/* 引用微博的图片与视频同样要展示：媒体结构与主贴一致，图片开灯箱，视频回被转发的原文 */}
+                        <PostMediaGrid
+                            media={post.retweeted.media}
+                            onOpenPost={handleOpenRetweeted}
+                            onPreview={setPreview}
+                        />
                     </blockquote>
                 ) : null}
 

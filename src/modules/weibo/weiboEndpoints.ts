@@ -64,4 +64,6 @@ export const WEIBO_AJAX_PATHS = {
     setLike: '/ajax/statuses/setLike',
     /** 取消点赞 */
     cancelLike: '/ajax/statuses/cancelLike',
+    /** 我的赞：按 uid 与页码读取点赞过的微博 */
+    likelist: '/ajax/statuses/likelist',
 } as const

@@ -1,17 +1,19 @@
 /**
  * 微博面板：编辑区独立页，顶部菜单切换首页 / 时间线 / 热门 / 热搜与账号自建分组，
- * 顶栏动作区只剩「刷新」与账号菜单（头像 + 个人主页 / 设置弹窗 / 删除 Cookie）。
+ * 顶栏动作区只剩「刷新」与账号菜单（头像 + 个人主页 / 我的赞 / 设置弹窗 / 删除 Cookie）。
  * 复用约定：页面骨架取 @webview/components/AppPage，卡片取 @components/ui/card，
  * 取数状态分别来自 hooks 下的关注时间线、信息流、分组、热搜与城市控制器，
- * 热搜各标签整页交给 WeiboHotSearch，其余列表渲染统一交给 layout/WeiboFeedList，单条仍是 layout/WeiboPostCard，
+ * 热搜各标签整页交给 layout/PageHotSearch，其余列表渲染统一交给 layout/WeiboFeedList，单条仍是 layout/WeiboPostCard，
  * 空态复用 StateEmpty，操作反馈用 sonner（Toaster 主题取 useVscodeTheme）。
  * 关键约束：未配置 Cookie 时任何信息流都不发请求，只给可执行的获取步骤；
+ * 凭证探测未结束或失败时不得断言「没有配置」：分别给加载态与失败态，避免把网络错误说成没登录；
  * 顶栏「刷新」按当前视图分发：信息流刷自己的游标，热搜刷当前标签的榜单；
  * 热搜专页不再渲染右侧热搜卡，避免同一份榜单出现两次；
  * Cookie 输入框不回显已保存值，保存成功后清空并收起，明文只存在于输入瞬间；
  * 同城热搜城市在设置弹窗里选择，落 zhai.weibo.cityCode，与 Cookie 无关；
  * 时间线、热门、热搜与分组都是只读浏览，发布框仍是占位（写接口不在本次范围）；
  * 个人主页按账号 uid 拼 weibo.com 地址交给宿主打开，入口收在顶栏账号菜单里；
+ * 我的赞同样收在账号菜单里，视图为 mine.likes，只有页码分页，uid 由宿主解析；
  * 账号信息与头像由 weibo/profile 提供（头像已是 data URI），取不到 uid 时只提示而不拼空地址。
  */
 import { cn } from 'cn'
@@ -62,8 +64,10 @@ import { useWeiboCity } from './hooks/useWeiboCity'
 import { useWeiboFeed } from './hooks/useWeiboFeed'
 import { useWeiboGroups } from './hooks/useWeiboGroups'
 import { useWeiboHotRank } from './hooks/useWeiboHotRank'
+import { useWeiboLikes } from './hooks/useWeiboLikes'
 import { useWeiboProfile } from './hooks/useWeiboProfile'
 import { useWeiboTimeline } from './hooks/useWeiboTimeline'
+import { PageHotSearch } from './layout/PageHotSearch'
 import { WeiboAccountMenu } from './layout/WeiboAccountMenu'
 import { WeiboEmoticonPicker } from './layout/WeiboEmoticonPicker'
 import { WeiboFeedList } from './layout/WeiboFeedList'
@@ -76,7 +80,6 @@ import {
     readWeiboViewLabel,
     toHotChannelView,
 } from './layout/weiboNavGroups'
-import { WeiboHotSearch } from './WeiboHotSearch'
 import type { WeiboFeedController } from './hooks/useWeiboFeed'
 import type { WeiboView } from './layout/weiboNavGroups'
 import type { JSX } from 'react'
@@ -173,6 +176,8 @@ export function WeiboPanel(): JSX.Element {
         listId: activeGroupId,
         enabled: isConfigured && activeGroupId !== null,
     })
+    /** 我的赞：账号菜单进入的独立视图，只有页码分页，未配置 Cookie 时不发请求 */
+    const likesFeed = useWeiboLikes(isConfigured && view === 'mine.likes')
     /** 热搜榜单：只在热搜页取数，顶栏「刷新」与专页内按钮共用这一份状态 */
     const hotRankTab = readHotRankTab(view)
     const hotRank = useWeiboHotRank({
@@ -184,11 +189,13 @@ export function WeiboPanel(): JSX.Element {
     const activeFeed: WeiboFeedController | null =
         view === 'home.timeline'
             ? timelineFeed
-            : hotListId !== null
-              ? hotFeed
-              : activeGroupId === null
-                ? null
-                : groupFeed
+            : view === 'mine.likes'
+              ? likesFeed
+              : hotListId !== null
+                ? hotFeed
+                : activeGroupId === null
+                  ? null
+                  : groupFeed
     const isRefreshing =
         activeFeed !== null
             ? activeFeed.state.isRefreshing
@@ -196,8 +203,7 @@ export function WeiboPanel(): JSX.Element {
               ? hotRank.state.isLoading
               : homeState.isRefreshing
     /** 刷新不可用：未配置，以及停在没有信息流也没有榜单的频道（规划中的频道没有可刷新的数据） */
-    const isRefreshDisabled =
-        !isConfigured || (activeFeed === null && hotRankTab === null && view !== 'home.recommend')
+    const isRefreshDisabled = !isConfigured || (activeFeed === null && hotRankTab === null && view !== 'home.recommend')
     /** 当前视图的内容条数：为 0 时不显示顶栏刷新，入口改由各视图的空态承担 */
     const activeContentCount =
         activeFeed !== null
@@ -209,19 +215,17 @@ export function WeiboPanel(): JSX.Element {
     const profileUid = profileState.profile?.id ?? groupsState.groups?.uid ?? null
 
     /** 添加热门频道：重复或超限一律忽略，加入后直接切到该频道 */
-    const handleAddHotChannel = useCallback((gid: string): void => {
-        setHotChannelGids((previous) => {
-            if (previous.includes(gid)) {
-                return previous
+    const handleAddHotChannel = useCallback(
+        (gid: string): void => {
+            // 先判定能不能加：加不进菜单就不切视图，否则内容区会停在一个菜单里没有入口的频道上
+            if (hotChannelGids.includes(gid) || hotChannelGids.length >= WEIBO_HOT_CHANNEL_LIMIT) {
+                return
             }
-            // 上限按菜单总数算
-            if (previous.length >= WEIBO_HOT_CHANNEL_LIMIT) {
-                return previous
-            }
-            return [...previous, gid]
-        })
-        setView(toHotChannelView(gid))
-    }, [])
+            setHotChannelGids((previous) => [...previous, gid])
+            setView(toHotChannelView(gid))
+        },
+        [hotChannelGids],
+    )
 
     /**
      * 移除热门频道：固定频道（推荐/实时/同城/榜单）不允许移除 —— 菜单侧已过滤掉入口，这里再兜一次。
@@ -296,6 +300,15 @@ export function WeiboPanel(): JSX.Element {
         void groupFeed.loadMore()
     }, [groupFeed])
 
+    const handleLikesLoadMore = useCallback((): void => {
+        void likesFeed.loadMore()
+    }, [likesFeed])
+
+    /** 打开我的赞：入口在账号菜单，切换视图后由 likesFeed 负责首屏取数 */
+    const handleOpenLikes = useCallback((): void => {
+        setView('mine.likes')
+    }, [])
+
     /** 重读分组：菜单里的自建分组随之更新，新增或删除分组都会立刻反映 */
     const handleReloadGroups = useCallback((): void => {
         void reloadGroups()
@@ -303,7 +316,8 @@ export function WeiboPanel(): JSX.Element {
 
     const openProfile = useCallback(async (uid: string): Promise<void> => {
         try {
-            await request('weibo/openPost', { url: `https://weibo.com/u/${uid}` })
+            // uid 来自上游 JSON：转义后再拼路径，避免 # ? / 之类的字符改变 URL 结构
+            await request('weibo/openPost', { url: `https://weibo.com/u/${encodeURIComponent(uid)}` })
         } catch (cause) {
             toastError(cause)
         }
@@ -326,8 +340,10 @@ export function WeiboPanel(): JSX.Element {
                     : '关注时间线依赖网页版登录 Cookie：先登录 weibo.com，再从任意 ajax 请求的请求头复制完整 Cookie。'
             case 'home.timeline':
                 return '时间线：默认分组「最新微博」的 list_id，按增量刷新与游标翻页读取。'
+            case 'mine.likes':
+                return '我的赞：按点赞时间倒序读取，只有页码分页，翻页不会重排已加载的条目。'
             default:
-                if (readHotRankTab(view) !== null) {
+                if (hotRankTab !== null) {
                     return `热搜：${readWeiboViewLabel(view, myGroups, hotChannels)}，整页展示该榜单的全部条目。`
                 }
                 if (hotListId !== null) {
@@ -345,6 +361,24 @@ export function WeiboPanel(): JSX.Element {
 
     /** 未配置凭证时的统一引导：所有信息流共用同一份说明 */
     function renderNeedCredential(): JSX.Element {
+        // credential 为 null 表示还没探测出结果：此时不能断言「没有配置」，
+        // 否则首次进入时间线/分组会把「正在读取」或「读取失败」说成用户没登录
+        if (homeState.credential === null) {
+            return homeState.errorCode === null ? (
+                <StateEmpty className="py-8" title="正在读取登录状态..." isLoading />
+            ) : (
+                <StateEmpty
+                    className="py-8"
+                    icon={Inbox}
+                    title="登录状态读取失败"
+                    description={homeState.errorMessage ?? '读取本机保存的 Cookie 时出错：稍后重试，或重新保存一次 Cookie。'}
+                >
+                    <Button size="sm" variant="outline" onClick={handleOpenSettings}>
+                        去设置
+                    </Button>
+                </StateEmpty>
+            )
+        }
         return (
             <StateEmpty
                 className="py-8"
@@ -496,6 +530,25 @@ export function WeiboPanel(): JSX.Element {
         )
     }
 
+    /** 我的赞：点赞过的微博按点赞时间倒序，只有页码分页，翻页只追加 */
+    function renderLikesFeed(): JSX.Element {
+        if (!isConfigured) {
+            return renderNeedCredential()
+        }
+        return (
+            <WeiboFeedList
+                posts={likesFeed.state.posts}
+                isLoading={likesFeed.state.isLoading || !likesFeed.state.hasLoaded}
+                isLoadingMore={likesFeed.state.isLoadingMore}
+                hasMore={likesFeed.state.hasMore}
+                emptyTitle="还没有点赞"
+                emptyDescription={likesFeed.state.errorMessage ?? '在微博里点过赞的内容会按时间倒序出现在这里。'}
+                onRefresh={handleRefresh}
+                onLoadMore={handleLikesLoadMore}
+            />
+        )
+    }
+
     /**
      * 规划已就位但接口未接入的频道：只给说明，不发请求。
      * 关键约束：这类频道不能落回首页内容，否则用户以为切换没生效。
@@ -517,11 +570,13 @@ export function WeiboPanel(): JSX.Element {
                 return renderHome()
             case 'home.timeline':
                 return renderTimelineFeed()
+            case 'mine.likes':
+                return renderLikesFeed()
             default:
                 // 热搜页各标签共用一套渲染（只是端点不同），城市由设置弹窗统一提供
-                if (readHotRankTab(view) !== null) {
+                if (hotRankTab !== null) {
                     return (
-                        <WeiboHotSearch
+                        <PageHotSearch
                             isEnabled={isConfigured}
                             view={view}
                             cityCode={city.state.cityCode}
@@ -568,6 +623,7 @@ export function WeiboPanel(): JSX.Element {
                                 avatarDataUrl={profileState.avatarDataUrl}
                                 isProfileLoading={profileState.isLoading}
                                 onOpenProfile={handleOpenProfile}
+                                onOpenLikes={handleOpenLikes}
                                 onOpenSettings={handleOpenSettings}
                                 onDeleteCredential={handleRequestDelete}
                             />
@@ -602,7 +658,7 @@ export function WeiboPanel(): JSX.Element {
                                 self-start 避免被拉伸到内容高度（拉满后 sticky 没有可粘的行程）、
                                 sticky + top 让它在 AppContent 的滚动区里钉住不随列表滚走 */}
                             {hotRankTab === null ? (
-                                <aside className="hidden w-80 shrink-0 @3xl:sticky @3xl:top-0 @3xl:block @3xl:self-start">
+                                <aside className="hidden w-80 shrink-0 @3xl:sticky @3xl:top-1 @3xl:block @3xl:self-start">
                                     <WeiboHotRankList isEnabled={isConfigured} />
                                 </aside>
                             ) : null}
@@ -743,6 +799,7 @@ function SettingsDialog({
                                 <li>时间线：friendstimeline，list_id 取默认分组里「最新微博」的 gid。</li>
                                 <li>{`热门：hottimeline，固定频道 102803，首屏 ${WEIBO_FEED_DEFAULT_COUNT} 条。`}</li>
                                 <li>分组：allGroups 取「我的分组」，选中后走 groupstimeline 拉该分组。</li>
+                                <li>我的赞：likelist，uid 由宿主解析，只有页码分页，首屏 20 条。</li>
                                 <li>热搜：我的 / 热搜 / 文娱 / 社会 / 科技 / 生活 / 体育 / ACG / 同城 各一张榜。</li>
                             </ul>
                             <p className="text-muted-foreground text-xs">

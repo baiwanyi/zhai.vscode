@@ -1,9 +1,9 @@
 /**
  * 热搜专页：右侧菜单（我的 / 热搜 / 文娱 / 社会 / 科技 / 生活 / 体育 / ACG / 同城）的内容区，
  * 一个标签对应网页端一张榜单端点，整页展示该榜单的全部条目。
- * 复用约定：卡片取 @components/ui/card，列表容器取 ItemGroup、单条由本文件的 WeiboHotSearchRow 承载
- * （专页有自己的行样式，不复用侧栏卡片那一份），徽标取 layout/WeiboHotRankBadge、
- * 搜索地址与打开动作取 hooks/useWeiboSearchOpen，三态占位取 layout/WeiboHotRankFallback。
+ * 复用约定：卡片取 @components/ui/card，列表容器取 ItemGroup、单条由本文件的 PageHotSearchRow 承载
+ * （专页有自己的行样式，不复用侧栏卡片那一份），徽标与名次取同目录 WeiboHotRankBadge / WeiboHotRankPosition，
+ * 搜索地址与打开动作取 hooks/useWeiboSearchOpen，三态占位取同目录 WeiboHotRankFallback。
  * 关键约束：取数由面板层统一持有，刷新统一走顶栏「刷新」，页面内不再重复刷新按钮；
  * 热搜只在专页出现，右侧不再渲染侧栏热搜卡；未配置 Cookie 时不发请求，只给配置引导；
  * 榜单行之间用 ItemSeparator 分隔，最后一条不加；同城榜的 citycode 来自设置弹窗，
@@ -17,17 +17,17 @@ import type { WeiboHotRankItem } from '@shared/types/weibo'
 import { WEIBO_DEFAULT_CITY_CODE, readWeiboCityName } from '@shared/types/weibo'
 import { formatDateTime } from '@shared/utils/format'
 import { Button } from '@webview/components/Button'
-import { useWeiboSearchOpen } from './hooks/useWeiboSearchOpen'
-import { WeiboHotRankBadge } from './layout/WeiboHotRankBadge'
-import { WeiboHotRankFallback } from './layout/WeiboHotRankFallback'
-import { WeiboHotRankPosition } from './layout/WeiboHotRankPosition'
-import { readHotRankTab, readWeiboViewItemLabel } from './layout/weiboNavGroups'
-import { preventLinkNavigation } from './utils/weiboHotLinks'
-import type { WeiboHotRankState } from './hooks/useWeiboHotRank'
-import type { WeiboView } from './layout/weiboNavGroups'
+import { WeiboHotRankBadge } from './WeiboHotRankBadge'
+import { WeiboHotRankFallback } from './WeiboHotRankFallback'
+import { WeiboHotRankPosition } from './WeiboHotRankPosition'
+import { readHotRankTab, readWeiboViewItemLabel } from './weiboNavGroups'
+import type { WeiboHotRankState } from '../hooks/useWeiboHotRank'
+import type { WeiboView } from './weiboNavGroups'
 import type { JSX } from 'react'
+import { useWeiboSearchOpen } from '../hooks/useWeiboSearchOpen'
+import { preventLinkNavigation } from '../utils/weiboHotLinks'
 
-interface WeiboHotSearchRowProps {
+interface PageHotSearchRowProps {
     item: WeiboHotRankItem
 }
 
@@ -36,7 +36,7 @@ interface WeiboHotSearchRowProps {
  * 关键约束：页面宽度足够，行内不挂 Tooltip，标题单行截断即可看全大意；
  * 标题链接只负责语义与键盘可达，导航一律阻止并冒泡回整行处理器，避免打开两次。
  */
-function WeiboHotSearchRow({ item }: WeiboHotSearchRowProps): JSX.Element {
+function PageHotSearchRow({ item }: PageHotSearchRowProps): JSX.Element {
     const { searchUrl, openSearch } = useWeiboSearchOpen(item.title)
 
     return (
@@ -60,7 +60,7 @@ function WeiboHotSearchRow({ item }: WeiboHotSearchRowProps): JSX.Element {
     )
 }
 
-interface WeiboHotSearchProps {
+interface PageHotSearchProps {
     /** 是否已配置 Cookie：未配置只给引导，不发请求 */
     isEnabled: boolean
     /** 当前热搜频道：由顶栏菜单选中 */
@@ -75,14 +75,14 @@ interface WeiboHotSearchProps {
     onOpenSettings: () => void
 }
 
-export function WeiboHotSearch({
+export function PageHotSearch({
     isEnabled,
     view,
     cityCode,
     state,
     onRefresh,
     onOpenSettings,
-}: WeiboHotSearchProps): JSX.Element {
+}: PageHotSearchProps): JSX.Element {
     // 视图一定在热搜组内：映射不到时按「热搜」榜兜底，避免把 band 侧栏榜混进来
     const tab = readHotRankTab(view) ?? 'hotSearch'
     const isCity = tab === 'city'
@@ -128,7 +128,7 @@ export function WeiboHotSearch({
                     <ItemGroup className="gap-1">
                         {state.items.map((item, index) => (
                             <Fragment key={`${String(item.rank)}-${item.title}`}>
-                                <WeiboHotSearchRow item={item} />
+                                <PageHotSearchRow item={item} />
                                 {index < state.items.length - 1 ? <ItemSeparator className="bg-muted my-0" /> : null}
                             </Fragment>
                         ))}
