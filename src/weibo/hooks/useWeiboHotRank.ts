@@ -5,7 +5,7 @@
  * 关键约束：未配置 Cookie 时不发请求，直接回空状态；同一 key 已取过则切回不重复打接口；
  * 每次取数按请求序号与 key 双重校验，切标签或重复点击时旧回包直接丢弃。
  */
-import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import type { WeiboHotRankItem, WeiboHotRankRequest, WeiboHotRankResult, WeiboHotRankTab } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
@@ -83,7 +83,11 @@ function buildPayload(tab: WeiboHotRankTab, cityCode: string, force: boolean): W
 }
 
 /** 热搜控制器：来源或城市变化即重置并重取，已被其它标签占用的旧回包直接丢弃 */
-export function useWeiboHotRank({ isEnabled, tab = 'band', cityCode = '' }: UseWeiboHotRankOptions): WeiboHotRankController {
+export function useWeiboHotRank({
+    isEnabled,
+    tab = 'band',
+    cityCode = '',
+}: UseWeiboHotRankOptions): WeiboHotRankController {
     const [state, dispatch] = useReducer(reducer, INITIAL_STATE)
     // 请求序号与当前 key：切标签或重复点击时，旧回包一律丢弃
     const seqRef = useRef(0)
@@ -100,10 +104,7 @@ export function useWeiboHotRank({ isEnabled, tab = 'band', cityCode = '' }: UseW
             seqRef.current = seq
             dispatch({ type: 'start' })
             try {
-                const result = await request<WeiboHotRankResult>(
-                    'weibo/hotRank',
-                    buildPayload(tab, cityCode, force),
-                )
+                const result = await request<WeiboHotRankResult>('weibo/hotRank', buildPayload(tab, cityCode, force))
                 if (seqRef.current !== seq || keyRef.current !== requestKey) {
                     return
                 }
@@ -146,5 +147,6 @@ export function useWeiboHotRank({ isEnabled, tab = 'band', cityCode = '' }: UseW
         void load(requestKey, false)
     }, [cityCode, isEnabled, load, tab])
 
-    return { state, refresh }
+    // 控制器对象按状态与动作 memo 化：页面把它放进 useCallback 依赖时才拿得到稳定引用
+    return useMemo(() => ({ state, refresh }), [state, refresh])
 }

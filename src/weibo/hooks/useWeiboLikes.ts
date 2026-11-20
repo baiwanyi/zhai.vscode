@@ -6,7 +6,7 @@
  * 到底后不再递增页码，避免「加载更多」被反复点亮；未启用时不发请求也不转圈，
  * 切走再切回沿用已取内容，不重复打同一页。
  */
-import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
 import type { WeiboLikesResult, WeiboTimelinePost } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
@@ -168,5 +168,6 @@ export function useWeiboLikes(isEnabled: boolean): WeiboFeedController {
         void load('refresh', 1)
     }, [isEnabled, load])
 
-    return { state, refresh, loadMore }
+    // 控制器对象按状态与动作 memo 化：页面把它放进 useCallback 依赖时才拿得到稳定引用
+    return useMemo(() => ({ state, refresh, loadMore }), [state, refresh, loadMore])
 }

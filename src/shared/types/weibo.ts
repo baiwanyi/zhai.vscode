@@ -383,16 +383,7 @@ export interface WeiboHotRankResult {
  * 关键约束：每个取值对应一个固定的网页端 ajax 端点，新增标签须在宿主地址总表里登记。
  */
 export type WeiboHotRankTab =
-    | 'band'
-    | 'mine'
-    | 'hotSearch'
-    | 'entertainment'
-    | 'social'
-    | 'technology'
-    | 'life'
-    | 'sport'
-    | 'acg'
-    | 'city'
+    'band' | 'mine' | 'hotSearch' | 'entertainment' | 'social' | 'technology' | 'life' | 'sport' | 'acg' | 'city'
 
 /** 热搜页标签清单：顺序即页面与菜单顺序（band 只用于侧栏，不进标签条） */
 export const WEIBO_HOT_RANK_TABS: readonly WeiboHotRankTab[] = [
@@ -484,6 +475,29 @@ export function toWeiboCityCode(cityCode: string): string {
 /** 城市名称：未收录的四位代码直接回显代码本身，避免设置里出现空白 */
 export function readWeiboCityName(cityCode: string): string {
     return WEIBO_CITY_OPTIONS.find((option) => option.code === cityCode)?.name ?? cityCode
+}
+
+/** 城市下拉的当前值与选项：空串回落默认城市，手填代码不在预设清单时补一项 */
+export interface WeiboCitySelectOptions {
+    /** 生效城市代码：空串时取默认城市 */
+    effectiveCode: string
+    options: readonly WeiboCityOption[]
+}
+
+/**
+ * 构造城市下拉：未读取完成（空串）时按默认城市展示，
+ * 手填的四位代码不在预设清单里则补一项，否则下拉会因找不到匹配项显示空白。
+ */
+export function buildWeiboCityOptions(cityCode: string): WeiboCitySelectOptions {
+    const effectiveCode = cityCode.length > 0 ? cityCode : WEIBO_DEFAULT_CITY_CODE
+    const isKnown = WEIBO_CITY_OPTIONS.some((option) => option.code === effectiveCode)
+    if (isKnown) {
+        return { effectiveCode, options: WEIBO_CITY_OPTIONS }
+    }
+    return {
+        effectiveCode,
+        options: [...WEIBO_CITY_OPTIONS, { code: effectiveCode, name: readWeiboCityName(effectiveCode) }],
+    }
 }
 
 /**
@@ -605,8 +619,6 @@ export interface WeiboVideoRequest {
 export interface WeiboVideoResult {
     url: string | null
 }
-
-
 
 /** 微博数字 id 形态：增量与翻页游标只允许纯数字，防止任意内容拼进查询串 */
 const WEIBO_ID_PATTERN = /^\d{1,25}$/u
@@ -789,5 +801,3 @@ export function isWeiboImageRequest(value: unknown): value is WeiboImageRequest 
     const { url } = value as Record<string, unknown>
     return typeof url === 'string' && url.length > 0 && url.length <= 1024
 }
-
-

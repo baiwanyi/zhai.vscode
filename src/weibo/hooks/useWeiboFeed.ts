@@ -5,7 +5,7 @@
  * 关键约束：source 或 listId 变化即整条流重置，旧回包按请求序号与 key 双重校验后丢弃；
  * 翻页到底必须清空 maxId，否则「加载更多」会被反复点亮；未启用时不发请求也不转圈。
  */
-import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
 import type { WeiboFeedSource, WeiboTimelinePost, WeiboTimelineResult } from '@shared/types/weibo'
 import { WEIBO_FEED_DEFAULT_COUNT } from '@shared/types/weibo'
@@ -218,5 +218,6 @@ export function useWeiboFeed({ source, listId, enabled }: UseWeiboFeedOptions): 
         void load('refresh', requestKey, null, null)
     }, [enabled, listId, load, source])
 
-    return { state, refresh, loadMore }
+    // 控制器对象按状态与动作 memo 化：页面把它放进 useCallback 依赖时才拿得到稳定引用
+    return useMemo(() => ({ state, refresh, loadMore }), [state, refresh, loadMore])
 }
