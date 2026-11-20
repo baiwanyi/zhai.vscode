@@ -1147,7 +1147,7 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 
 ### 14.11 多入口信息流（首页 / 时间线 / 热门 / 分组）
 
-面板顶部固定菜单：左侧「首页 / 时间线 / 热门 / 分组」，右侧「个人主页 / 设置」。菜单挂在 `AppHeader` 内，随标题区固定，不参与内容区滚动。
+面板顶部固定菜单只留「首页 / 时间线 / 热门 / 分组」四个信息流入口；顶栏动作区放「刷新」「个人主页」与「更多」下拉，「更多」里收回「设置」与「登录 Cookie」。菜单挂在 `AppHeader` 内，随标题区固定，不参与内容区滚动。
 
 | 入口 | 接口 | 关键参数 |
 |------|------|----------|
@@ -1161,8 +1161,9 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 - 时间线的 `list_id` 由宿主在 `weibo/groups` 结果里算好（`timelineListId`，取「最新微博」条目），前端不自行挑条目；缺省时宿主还会再取一次 allGroups 兜底。
 - 三种信息流共用同一条 `weibo/feed` 协议与同一套分页/增量状态机：`source` 只决定端点与固定参数，游标语义与 14.3 完全一致。
 - 热门流的响应结构可能是 `data.cards[].mblog`（卡片流），时间线与分组通常是 `statuses[]`；宿主统一提取，`max_id` / `since_id` 为 `"0"` 时视为没有更多，避免「加载更多」被永久点亮。
-- 个人主页按 `weibo/groups` 给出的账号 uid 拼 `https://weibo.com/u/{uid}`，经 `weibo/openPost` 的白名单校验后交给宿主打开；uid 缺失时按钮禁用而不是拼空地址。
+- 个人主页按 `weibo/groups` 给出的账号 uid 拼 `https://weibo.com/u/{uid}`，经 `weibo/openPost` 的白名单校验后交给宿主打开；uid 缺失时只提示不跳转，不拼空地址。
 - 设置页承载 Cookie 配置（保存 / 清除）与各入口取数口径说明；未配置时任何信息流都不发请求，只给「去设置」的引导。
+- 「更多」下拉的两项：「设置」切到设置页并以勾选标记当前所在页；「登录 Cookie」由页面回首页并展开凭证卡（凭证卡只存在于首页按需区与设置页常驻区），因此菜单在所有视图都常驻，不随视图隐藏。
 
 ### 14.12 表情配置（发表框）
 
@@ -1187,5 +1188,9 @@ GET https://weibo.com/ajax/side/bandUnified?type=mine&last_tab=mine&last_tab_tim
 - `last_tab_time` 取当前秒级时间戳，与网页端一致；`type` 与 `last_tab` 固定 `mine`。
 - 榜单条目在 `data.realtime`；也可能嵌在 `data.band_list[*].realtime` 里，此时取第一个含 realtime 的分区。
 - 单条映射：标题取 `word_scheme`（与网页端一致，话题词自带 `#`）→ `note` → `word` → `title`；名次取 `realpos`（网页端真实排名），缺失时用 `rank + 1`（上游 `rank` 是 0 起序号），再缺失才回落到数组下标；`description` 与 `icon_desc`（缺失用 `label_name` 兜底）各自渲染为 badge；图标取 `icon_url` → `icon`，过图床白名单后直接显示；`icon_desc_color` 作为 `icon_desc` 徽标的底色，只接受 `#rgb` / `#rrggbb` / `rgb()`，其余丢弃。
-- 广告位（`is_ad: 1` / `ad_state: 1`）与缺标题的条目不进榜，且不影响其余条目的名次；榜 1–3 的序号用 `#f26d5f` 加粗，其余弱化。
-- 侧栏在容器宽度 ≥ 768px（`@3xl`）时出现在列表右侧，窄面板自动隐藏；面板内点刷新可重新取数，未配置 Cookie 时只给引导。
+- 广告位（`is_ad: 1` / `ad_state: 1`）、标注「商」或「上新」的推广位（`icon_desc` 或兜底的 `label_name` 含这两个关键字，这类位往往不带 `is_ad`）与缺标题的条目不进榜，且不影响其余条目的名次；榜 1–3 的序号用 `#f26d5f` 加粗，其余弱化。
+- 侧栏在容器宽度 ≥ 768px（`@3xl`）时出现在列表右侧，窄面板自动隐藏；宽档下用 `sticky top-3 self-start` 钉在内容区滚动视口内，不随左侧信息流滚走（缺 `@3xl:block` 会一直 `display:none`，缺 `self-start` 会被拉伸到父容器高度而没有粘住行程）；面板内点刷新可重新取数，未配置 Cookie 时只给引导。
+- 标题下的说明行显示「更新于 本地时分」，时刻取宿主回包的 `fetchedAt`（ISO），与榜单内容同一次请求同源，而不是前端计时；首次取数前或回包时刻非法时该行留空，标题区不跳动。
+- 卡片的四种状态都由 `StateEmpty` 承载：未配置 Cookie（`Cookie` 图标 + 取数前提说明）、首次加载（`Spinner` + 正在读取）、失败与空榜单（`Flame` + 重试按钮作底部操作区，有错误信息时标题为「热搜读取失败」、说明用上游错误文案，否则是「暂时没有热搜内容」+ 刷新建议）；侧栏内统一用紧凑间距（`gap-3 p-3`），未配置态不在卡片内重复放按钮，入口在顶栏「更多」。
+- 榜单用 `ItemGroup`（自带 `role="list"`）+ `Item`（补 `role="listitem"`）承载，不再用 `ol/li`：序号走 `ItemMedia variant="icon"`（`w-4 justify-end`，两位数不推歪标题）、标题走 `ItemTitle`（`line-clamp-1` 单行截断）、`description` 作标题下的副行走 `ItemDescription`、`icon_desc` 作为行尾 `Badge` 收进 `ItemActions`；条目只展示文字，上游 `icon_url` 仍随回包下发但前端不再渲染成图片。
+- 条目整行点击打开 `https://s.weibo.com/weibo?q={encodeURIComponent(title)}`（`s.weibo.com` 属 `weibo.com` 子域，`weibo/openPost` 白名单放行；注意该协议对 url 有 512 字符上限）；悬停整行（触发器是 `Item` 本身，不是标题链接）用 `Tooltip` 显示完整标题，气泡沿用 `TOOLTIP_CLASS` 的暗底亮字并放左侧；悬停时整行铺 `hover:bg-muted`，标题、序号与描述同时提亮（`Item` 自带 `group/item`）；标题本身是 `a`，只为键盘可达与右键复制地址，点击 `preventDefault` 后冒泡回整行处理器，避免打开两次或让 webview 自行导航。

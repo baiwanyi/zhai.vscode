@@ -54,7 +54,7 @@ describe('extractWeiboHotRank', () => {
         expect(items.map((item) => item.rank)).toEqual([1, 2])
     })
 
-    it('按 realpos 取名次、过滤广告，icon 字段作为图标地址并回落 label_name', () => {
+    it('按 realpos 取名次、过滤广告与「商」「上新」推广位，icon 字段作为图标地址并回落 label_name', () => {
         const items = extractWeiboHotRank({
             ok: 1,
             data: {
@@ -76,10 +76,15 @@ describe('extractWeiboHotRank', () => {
                         icon: 'https://simg.s.weibo.com/imgtool/x.png',
                     },
                     { note: '第二条', realpos: 2, rank: 1, label_name: '新', icon_desc_color: '#ff3852' },
+                    // 商业推广位不带 is_ad，只靠 icon_desc 标记；不能进榜也不能占名次
+                    { note: '商业推广位', realpos: 3, rank: 2, icon_desc: '商' },
+                    // 品牌活动位同样只打标记，label_name 兜底也要识别
+                    { note: '上新活动位', realpos: 4, rank: 3, label_name: '上新' },
                 ],
             },
         })
         expect(items.map((item) => item.rank)).toEqual([1, 2])
+        expect(items.map((item) => item.title)).toEqual(['#第一条#', '第二条'])
         // 标题按网页端口径取 word_scheme（带话题符号）
         expect(items[0]?.title).toBe('#第一条#')
         expect(items[0]?.iconUrl).toBe('https://simg.s.weibo.com/moter/flags/2_0.png')

@@ -3,7 +3,7 @@
  * 复用约定：请求走 webClient 的通用 JSON 通道（同一套请求头、节流与错误分类），
  * 图标地址统一过 webTimeline 的 normalizeWeiboImageUrl 收窄，徽标底色只接受合法颜色字面量。
  * 关键约束：上游可能把 realtime 放在 data 顶层，也可能嵌在 data.band_list[*] 里，两种都要兼容；
- * 名次优先取 realpos（网页端的真实排名），广告位与缺标题的条目直接丢弃但不打乱已有序号；
+ * 名次优先取 realpos（网页端的真实排名），广告位、标注「商」「上新」的推广位与缺标题的条目直接丢弃但不打乱已有序号；
  * 图标字段在不同版本里叫 icon 或 icon_url，标记文案以 icon_desc 为主、label_name 兜底。
  */
 import type { WeiboHotRankItem, WeiboHotRankResult } from '@shared/types/weibo'
@@ -77,9 +77,17 @@ function toNonNegativeInt(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? Math.trunc(value) : null
 }
 
+/** 推广标记关键字：上游给投放 / 活动话题打的 icon_desc，命中即不进榜（「商」= 商业投放，「上新」= 品牌活动位） */
+const PROMOTED_ICON_DESC_KEYWORDS: readonly string[] = ['商', '上新']
+
 /** 广告与推广条目不进热搜榜：它们没有稳定名次，混进去会挤掉真实排名 */
 function isPromoted(value: Record<string, unknown>): boolean {
-    return value.is_ad === 1 || value.is_ad === true || value.ad_state === 1
+    if (value.is_ad === 1 || value.is_ad === true || value.ad_state === 1) {
+        return true
+    }
+    // 部分投放位不带 is_ad，只把 icon_desc 标成「商」「上新」；label_name 与 icon_desc 互为兜底，口径与 normalizeHotRankItem 一致
+    const iconDesc = toOptionalText(value.icon_desc) ?? toOptionalText(value.label_name)
+    return iconDesc !== null && PROMOTED_ICON_DESC_KEYWORDS.some((keyword) => iconDesc.includes(keyword))
 }
 
 /**

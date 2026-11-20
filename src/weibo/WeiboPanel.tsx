@@ -1,16 +1,18 @@
 /**
- * 微博面板：编辑区独立页，顶部固定菜单切换首页 / 时间线 / 热门 / 分组与设置。
+ * 微博面板：编辑区独立页，顶部菜单切换首页 / 时间线 / 热门 / 分组，
+ * 设置页与登录 Cookie 收进顶栏「更多」下拉，动作区另留刷新与个人主页。
  * 复用约定：页面骨架取 @webview/components/AppPage，卡片取 @components/ui/card，
  * 取数状态分别来自 hooks 下的关注时间线、信息流与分组控制器，
- * 列表渲染统一交给 components/WeiboFeedList，单条仍是 components/WeiboPostCard，
+ * 列表渲染统一交给 layout/WeiboFeedList，单条仍是 layout/WeiboPostCard，
  * 空态复用 StateEmpty，操作反馈用 sonner（Toaster 主题取 useVscodeTheme）。
  * 关键约束：未配置 Cookie 时任何信息流都不发请求，只给可执行的获取步骤；
  * Cookie 输入框不回显已保存值，保存成功后清空并收起，明文只存在于输入瞬间；
  * 时间线、热门与分组都是只读浏览，发布框仍是占位（写接口不在本次范围）；
- * 个人主页按账号 uid 拼 weibo.com 地址交给宿主打开，取不到 uid 时禁用而不是拼空地址。
+ * 个人主页按账号 uid 拼 weibo.com 地址交给宿主打开，入口在顶栏 AppAction（与刷新、Cookie 同区），
+ * 取不到 uid 时只提示而不拼空地址。
  */
 import { format } from 'date-fns'
-import { Inbox, RefreshCw, Settings2 } from 'lucide-react'
+import { ExternalLink, Inbox, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent } from '@components/ui/card'
@@ -31,16 +33,17 @@ import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useHostToast } from '@webview/hooks/useHostToast'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
-import { WeiboEmoticonPicker } from './components/WeiboEmoticonPicker'
-import { WeiboFeedList } from './components/WeiboFeedList'
-import { WeiboGroupList } from './components/WeiboGroupList'
-import { WeiboHotRankList } from './components/WeiboHotRankList'
-import { WeiboNav } from './components/WeiboNav'
 import { useWeiboFeed } from './hooks/useWeiboFeed'
 import { useWeiboGroups } from './hooks/useWeiboGroups'
 import { useWeiboTimeline } from './hooks/useWeiboTimeline'
-import type { WeiboView } from './components/WeiboNav'
+import { WeiboEmoticonPicker } from './layout/WeiboEmoticonPicker'
+import { WeiboFeedList } from './layout/WeiboFeedList'
+import { WeiboGroupList } from './layout/WeiboGroupList'
+import { WeiboHotRankList } from './layout/WeiboHotRankList'
+import { WeiboMoreMenu } from './layout/WeiboMoreMenu'
+import { WeiboNav } from './layout/WeiboNav'
 import type { WeiboFeedController } from './hooks/useWeiboFeed'
+import type { WeiboView } from './layout/WeiboNav'
 import type { JSX } from 'react'
 
 /** 发布框字数上限：按微博普通正文限制收口，接口接入前先在前端挡住超长输入 */
@@ -100,8 +103,17 @@ export function WeiboPanel(): JSX.Element {
     const isRefreshDisabled = !isConfigured || (view === 'groups' && selectedGroup === null)
     const profileUid = groupsState.groups?.uid ?? null
 
-    const toggleCredential = useCallback((): void => {
-        setIsCredentialOpen((previous) => !previous)
+    const handleOpenSettings = useCallback((): void => {
+        setView('settings')
+    }, [])
+
+    /**
+     * 登录 Cookie：凭证卡只挂在首页（按需）与设置页（常驻），
+     * 从信息流视图点进来先回首页再展开，否则菜单点了没有落点。
+     */
+    const handleOpenCredential = useCallback((): void => {
+        setView('home')
+        setIsCredentialOpen(true)
     }, [])
 
     const collapseCredential = useCallback((): void => {
@@ -189,13 +201,7 @@ export function WeiboPanel(): JSX.Element {
                 title="还没有配置微博 Cookie"
                 description="在「设置」里保存登录后的 Cookie 即可读取信息流：先登录 weibo.com，再复制任意 ajax 请求头里的完整 Cookie。"
             >
-                <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                        setView('settings')
-                    }}
-                >
+                <Button size="sm" variant="outline" onClick={handleOpenSettings}>
                     去设置
                 </Button>
             </StateEmpty>
@@ -396,53 +402,66 @@ export function WeiboPanel(): JSX.Element {
     }
 
     return (
-        <AppPage>
-            <AppHeader>
-                <AppTitle>微博</AppTitle>
-                <AppAction>
-                    {view === 'settings' ? null : (
-                        <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={handleRefresh}
-                            isLoading={isRefreshing}
-                            disabled={isRefreshDisabled}
-                            tooltip="增量刷新：只取上次之后的新内容"
-                        >
-                            <RefreshCw className="size-3.5" aria-hidden="true" />
-                            刷新
-                        </Button>
-                    )}
-                    {view === 'home' ? (
-                        <Button size="sm" variant="ghost" onClick={toggleCredential} tooltip="更新或清除登录 Cookie">
-                            <Settings2 className="size-3.5" aria-hidden="true" />
-                            Cookie
-                        </Button>
-                    ) : null}
-                </AppAction>
-                <AppDescription>{describeView()}</AppDescription>
-                <AppMenu>
-                    <WeiboNav
-                        active={view}
-                        onSelect={setView}
-                        onOpenProfile={handleOpenProfile}
-                        isProfileDisabled={profileUid === null}
-                    />
-                </AppMenu>
-            </AppHeader>
+        <>
+            {/* AppPage 按 h-full 撑满，webview 的 #root 没有高度基准，不给视口高度顶栏会随 body 一起滚走
+                （与 WorkflowScreen / dashboardScreen 同形） */}
+            <div className="flex h-screen min-h-0 flex-col">
+                <AppPage>
+                    <AppHeader>
+                        <AppTitle>微博</AppTitle>
+                        <AppAction>
+                            {view === 'settings' ? null : (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleRefresh}
+                                    isLoading={isRefreshing}
+                                    disabled={isRefreshDisabled}
+                                    tooltip="增量刷新：只取上次之后的新内容"
+                                >
+                                    <RefreshCw className="size-3.5" aria-hidden="true" />
+                                    刷新
+                                </Button>
+                            )}
+                            <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={handleOpenProfile}
+                                tooltip={
+                                    profileUid === null ? '读取到账号后才能打开个人主页' : '在浏览器打开你的微博主页'
+                                }
+                            >
+                                <ExternalLink className="size-3.5" aria-hidden="true" />
+                                个人主页
+                            </Button>
+                            <WeiboMoreMenu
+                                isSettingsActive={view === 'settings'}
+                                onOpenSettings={handleOpenSettings}
+                                onOpenCredential={handleOpenCredential}
+                            />
+                        </AppAction>
+                        <AppDescription>{describeView()}</AppDescription>
+                        <AppMenu>
+                            <WeiboNav active={view} onSelect={setView} />
+                        </AppMenu>
+                    </AppHeader>
 
-            <AppContent isScrollable className="gap-3 pb-4">
-                <div className="mx-auto flex w-full max-w-5xl items-start justify-center gap-3">
-                    <div className="flex min-w-0 max-w-2xl flex-1 flex-col gap-3">{renderContent()}</div>
-                    {/* 右侧热搜榜：容器够宽才出现，窄面板让位给正文列表 */}
-                    <aside className="hidden w-64 shrink-0 @3xl:block">
-                        <WeiboHotRankList isEnabled={isConfigured} />
-                    </aside>
-                </div>
-            </AppContent>
-
+                    <AppContent isScrollable className="gap-3 p-3">
+                        <div className="mx-auto flex w-full max-w-5xl items-start justify-center gap-3 pt-1">
+                            <div className="flex min-w-0 max-w-2xl flex-1 flex-col gap-3">{renderContent()}</div>
+                            {/* 右侧热搜榜：容器够宽才出现，窄面板让位给正文列表。
+                                三件事缺一不可：@3xl:block 让 hidden 在该档恢复显示、
+                                self-start 避免被拉伸到内容高度（拉满后 sticky 没有可粘的行程）、
+                                sticky + top 让它在 AppContent 的滚动区里钉住不随列表滚走 */}
+                            <aside className="hidden w-80 shrink-0 @3xl:sticky @3xl:top-0 @3xl:block @3xl:self-start">
+                                <WeiboHotRankList isEnabled={isConfigured} />
+                            </aside>
+                        </div>
+                    </AppContent>
+                </AppPage>
+            </div>
             <Toaster theme={theme} />
-        </AppPage>
+        </>
     )
 }
 
