@@ -187,6 +187,8 @@ export interface WeiboTimelineRetweet {
     /** 原作者认证标记：卡片在作者名后挂认证角标 */
     authorIsVerified: boolean
     text: string
+    /** 正文分段：与主贴同口径，正文里的 @账号、话题与链接可点 */
+    segments: WeiboTimelineSegment[]
     url: string
     /** ISO 8601 时间：解析失败为空串，展示回退 createdAtRaw */
     createdAt: string
@@ -199,10 +201,20 @@ export interface WeiboTimelineRetweet {
 }
 
 /**
- * 正文片段：文本与表情按上游原顺序交错。
- * 表情只保留图床直链与名称，前端按内联图片渲染；文本片段已剥标签解实体。
+ * 正文链接分类：前端按类着色，不承担跳转语义（跳转一律由宿主 openExternal 完成）。
+ * mention 为 @账号，topic 为 #话题#，supertopic 为 #超话#，link 为短链与其余站内页面。
  */
-export type WeiboTimelineSegment = { type: 'text'; text: string } | { type: 'emoji'; name: string; url: string }
+export type WeiboTimelineLinkKind = 'mention' | 'topic' | 'supertopic' | 'link'
+
+/**
+ * 正文片段：文本、表情与链接按上游原顺序交错。
+ * 表情只保留图床直链与名称，前端按内联图片渲染；文本片段已剥标签解实体。
+ * 关键约束：链接段的 url 已在宿主侧收窄到微博域名白名单（含 t.cn），前端不再二次校验。
+ */
+export type WeiboTimelineSegment =
+    | { type: 'text'; text: string }
+    | { type: 'emoji'; name: string; url: string }
+    | { type: 'link'; text: string; url: string; kind: WeiboTimelineLinkKind }
 
 /** 归一化后的单条微博 */
 export interface WeiboTimelinePost {

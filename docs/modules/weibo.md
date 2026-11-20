@@ -1012,7 +1012,7 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 |------------|----------|------|
 | `id` | `idstr` → `id` → `mid` | 字符串化，去重与游标的唯一依据 |
 | `text` | `text_raw` → `text` | 剥标签、解实体、去零宽字符、保留换行（纯文本口径，不含表情图） |
-| `segments` | `text`（含 `<img>` 表情标签） | 按「文本 + 表情」交错切段，表情保留图床直链与名称 |
+| `segments` | `text`（含 `<img>` 表情标签与 `<a>` 锚点） | 按「文本 + 表情 + 链接」交错切段，表情保留图床直链与名称；锚点只在 `weibo.com`（含子域）、`weibo.cn`、`t.cn` 白名单内落成 `type: 'link'`（`mention` / `topic` / `supertopic` / `link`），越界地址展平为纯文本 |
 | `createdAt` | `created_at` | `Wed Nov 19 10:00:00 +0800 2026` 按时区折算为 ISO；解析失败留空 |
 | `source` | `source` | 实测是纯文本客户端名（如 `iPhone 17 Pro Max`、`微博视频号`）；旧版返回 `<a>` 外壳时剥标签只留文字 |
 | `author` | `user.id / screen_name / verified / avatar_large` | 认证标记取 `verified === true`，头像只保留图床地址 |
@@ -1023,7 +1023,7 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 | `media.sizes` | `pic_infos[*].largest.width/height`，缺失回退 `original` / `large` | 最大尺寸，与 images 同序；展开预览按它算占位比例，与实际加载的档位无关 |
 | `media.videoUrl` | `page_info.media_info.playback_list[0]` 等 | 首个可播放地址，仅作兜底诊断；卡片不播放，观看一律回原文 |
 | `media.imageCount` / `videoCount` | `pic_num`、实际解析出的图片数、混排里的视频条数 | 图片与视频分开计数，不再互相冒充 |
-| `retweeted` | `retweeted_status` | 保留作者名、正文摘要、原文地址与**媒体**（图片九宫格 + 视频封面，与主贴同一份归一化）；转发里再转发的层级只按文字处理，不递归展开 |
+| `retweeted` | `retweeted_status` | 保留作者名、正文摘要、**正文分段**（与主贴同口径：表情按内联图渲染，@账号与话题可点）、原文地址与**媒体**（图片九宫格 + 视频封面，与主贴同一份归一化）；转发里再转发的层级只按文字处理，不递归展开 |
 | 广告位 | `ad_state=1` / `is_ad` / 驼峰 `isAd` / `mark` 含 `WeiboADNatural` / `promotion` | 直接丢弃，不进入去重计数；关注流每条都带 `isAd`（样例全为 `false`），点赞列表的推广位是 `isAd: true` |
 
 #### 响应结构（2026-11-20 实测，供后续查字段）
@@ -1206,6 +1206,10 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 - 代理只接受 `image/jpeg|png|gif|webp|bmp` 且单张 ≤12MB，SVG 等可携带脚本的类型直接拒绝；同一地址并发请求共享一次下载，缓存按 URL 哈希命名，命中零网络。
 - 卡片按微博客户端习惯渲染：头像圆形（失败回落首字）、配图九宫格（1 张按原图比例整张显示、不裁剪，2 张两列，3 张以上三列按方格裁切，**不设 9 张上限，上游给多少张就排多少格**，懒加载按视口取图）、表情内联为 16px 小图；图片就绪前用同尺寸占位，避免列表抖动，失败显示破图占位。
 - 正文里的 `<img>` 只有带表情名（`title` / `alt`，非空且不是短链）才按表情渲染；视频卡片等装饰图（`h5.sinaimg.cn/upload/…` 小图标，`alt` 常是 `http://t.cn/…`）直接跳过，既不出图标也不留 `[]` 占位。
+- 正文里的 `<a>` 在归一化阶段转成**链接段**（`segments` 的 `type: 'link'`）：`@账号`、`#话题#`、`#超话#` 与短链共用一套渲染，`kind` 区分 `mention` / `topic` / `supertopic` / `link`。地址按 `weibo.com`（含子域）、`weibo.cn`、`t.cn` 白名单收窄，协议相对写法补成 `https:`，越界地址降级为纯文本；内层带 `<img>` 的锚点是视频 / 文章卡片，只消费开标签，内层图片与文字继续按原有逻辑切分。
+- `@账号` 的地址有多级回退：`href` 优先；`href` 为 `javascript:void(0)`、缺失或属性无引号时，先取 `usercard="id=…"` 里的 uid 拼 `/u/{uid}`，再退到按锚点文本 `@昵称` 拼 `/n/{昵称}`。属性解析支持无引号值，且不会把 `data-href` 误当成 `href`；话题不参与文本回退，避免普通 `#标题#` 被误判。
+- 链接点击一律阻止 Webview 自身导航，统一走 `weibo/openPost` 交宿主 `openExternal` 打开（宿主再次校验域名与 https）；长文全文只有纯文本，用 `@shared/utils/weiboText` 的 `splitPlainTextLinks` 从 `@昵称`、`#话题#`、`https://…` 补出同样可点的分段，转发体则直接使用归一化时切好的 `segments`。该切分是宿主与 Webview 共用的纯函数：宿主在正文缺 HTML 锚点（`text_raw` 兜底）时同样用它，`@` 前紧邻邮箱字符（`a@b.com`）不当作账号。
+- 链接外观统一为橙色（`text-orange-600 dark:text-orange-400`）并加悬停下划线，不设 `title`：悬停浮出整串地址既冗余又会遮住正文，可点性靠颜色表达。
 - 引用（转发）微博的媒体与主贴共用同一套 `PostMediaGrid`：图片走九宫格、点击即在卡片内展开预览；视频与图片同处宫格，点封面才在原地换成整行播放器，图片随之落到下方；没有整段地址或中转不可用时才回退打开原文，转发区回退的是**被转发的原文**。视频项判定按 `page_info.object_type === 'video'` 或 `type === 11`，旧版只靠有没有整段播放地址；群组 / 投票卡片同样带 `page_pic`，不当作视频。
 - **不重复展示**：被转发内容带视频时，外层（转发这条）的视频项由归一化直接剔除，只保留图片——视频只留在引用区，避免同一条卡片里出现两个播放器。
 - 列表与展开预览**都用同一张展示图**（`media.thumbnails`，上游 `large` 档、长边 960）：宫格铺满 1/3 宽不吃亏，展开到卡片宽度也不发虚；`bmiddle`（长边 360）太糊，只在缺 `large` 档时兜底。卡片不加载 `media.images` 原图，也不为预览单独请求原图——展开即命中宫格已缓存的同一地址。
@@ -1271,7 +1275,7 @@ GET https://weibo.com/ajax/statuses/buildComments
 | `max_id` | 上一页响应顶层 `max_id` | 翻页游标，不能自造 |
 
 - 响应结构：`{ ok, data: [...], total_number, max_id }`；`data` 每项含 `id/idstr`、`text`（HTML + 表情标签）、`created_at`、`user`、`like_counts`。
-- 归一化：正文复用主贴的 `parsePostSegments`（文本 + 表情分段），纯文本口径把表情还原成 `[名称]`；时间走同一套 `parseWeiboCreatedAt`；头像过图床白名单。
+- 归一化：正文复用主贴的 `parsePostSegments`（文本 + 表情 + 链接分段），纯文本口径把表情还原成 `[名称]`、链接只留文字；时间走同一套 `parseWeiboCreatedAt`；头像过图床白名单。
 - 前端：评论按钮点击才展开（未展开不请求），默认 10 条/页，「加载更多评论」按 `max_id` 串行翻页；失败内联提示并给重试，不弹 toast。
 
 ### 14.8 长文展开
@@ -1325,6 +1329,7 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/likes`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/image`、`weibo/video`、`weibo/like`、`weibo/openPost` 分发 |
 | `src/modules/weibo/panel.ts` | 面板消息通道、凭证与缓存注入、图片代理装配与本地资源白名单 |
 | `src/modules/common/webviewHtml.ts` | CSP 生成：默认不放行远程图，需要时可按调用方传入的 `imgSources` 放行 |
+| `src/shared/utils/weiboText.ts` | 正文纯文本切分：`@账号` / `#话题#` / 微博域名链接，宿主与 Webview 共用（零前端依赖） |
 | `src/weibo/` | Webview 入口：顶部固定菜单、账号菜单与设置弹窗（含同城城市）、右侧热搜榜、信息流列表、卡片（头像 / 图文混排 / 表情）与发表框表情选择器 |
 | `src/weibo/layout/WeiboVideoPlayer.tsx` | 视频播放器：自绘控件栏、中央播放键、空格播放/暂停、控件自动隐藏、清晰度角标、静音与全屏 |
 | `src/weibo/layout/PageHotSearch.tsx` | 热搜专页：一个标签一张榜，整页榜单渲染、专页行样式与同城城市切换入口 |

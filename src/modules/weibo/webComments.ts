@@ -6,6 +6,7 @@
  * uid 可选（缺省由服务端按 Cookie 识别）；文本与计数缺失一律按空串 / 0 兜底，不阻断整页。
  */
 import type { WeiboCommentItem, WeiboCommentsResult, WeiboTimelineSegment } from '@shared/types/weibo'
+import { splitPlainTextLinks } from '@shared/utils/weiboText'
 import { WEIBO_WEB_USER_AGENT, WeiboWebError } from './webClient'
 import { normalizeWeiboImageUrl, parsePostSegments, parseWeiboCreatedAt } from './webTimeline'
 import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN, WEIBO_WEB_REFERER } from './weiboEndpoints'
@@ -78,9 +79,9 @@ export function buildCommentsUrl(options: FetchCommentsOptions): string {
     return url.toString()
 }
 
-/** 无 HTML 时的单段文本 */
+/** 无 HTML 锚点时的纯文本分段：@账号与话题同样可点 */
 function buildPlainSegments(text: string): WeiboTimelineSegment[] {
-    return text.length > 0 ? [{ type: 'text', text }] : []
+    return splitPlainTextLinks(text)
 }
 
 /**
@@ -98,9 +99,14 @@ export function normalizeWebComment(raw: unknown): WeiboCommentItem | null {
     const user = isRecord(raw.user) ? raw.user : {}
     const html = toText(raw.text)
     const segments = html.length > 0 ? parsePostSegments(html) : buildPlainSegments(toText(raw.text_raw))
-    // 纯文本口径：表情以 [名称] 保留，便于复制与检索
+    // 纯文本口径：链接只留文字、表情还原成 [名称]，便于复制与检索
     const text = segments
-        .map((segment) => (segment.type === 'text' ? segment.text : segment.name.length > 0 ? `[${segment.name}]` : ''))
+        .map((segment) => {
+            if (segment.type === 'text' || segment.type === 'link') {
+                return segment.text
+            }
+            return segment.name.length > 0 ? `[${segment.name}]` : ''
+        })
         .join('')
     const createdAtRaw = toText(raw.created_at)
     const avatar = toText(user.avatar_large) || toText(user.profile_image_url)

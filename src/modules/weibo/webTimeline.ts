@@ -1,12 +1,15 @@
 /**
  * 关注时间线取数与归一化：把网页版 ajax 的 snake_case 原始结构收敛成 WeiboTimelinePost。
  * 复用约定：单页请求交给 webClient，游标只信任上游返回的 since_id / max_id；
- * 正文清洗与实体解码在这里统一完成，前端按纯文本渲染，不再二次解析 HTML。
+ * 正文清洗、实体解码与正文链接（@账号 / 话题 / 超话 / 短链）都在这里一次性完成，
+ * 前端按纯文本与分段渲染，不再二次解析 HTML。
  * 关键约束：max_id 是不规律长整型游标，不能自增构造；增量模式（sinceId 非 0）只取一页，
- * 否则会把历史内容一并拉上来；广告位与缺少 id 的条目直接丢弃，不进入去重计数。
+ * 否则会把历史内容一并拉上来；广告位与缺少 id 的条目直接丢弃，不进入去重计数；
+ * 链接只认微博域名白名单，越界地址降级为纯文本，避免把任意地址带进 Webview。
  */
 import type {
     WeiboTimelineImageSize,
+    WeiboTimelineLinkKind,
     WeiboTimelineMedia,
     WeiboTimelineMediaItem,
     WeiboTimelineMetrics,
@@ -18,6 +21,7 @@ import type {
     WeiboTimelineSegment,
 } from '@shared/types/weibo'
 import { WEIBO_IMAGE_PID_PATTERN, WEIBO_TIMELINE_MAX_PAGES } from '@shared/types/weibo'
+import { splitPlainTextLinks } from '@shared/utils/weiboText'
 import { requestTimelinePage } from './webClient'
 import { WEIBO_AJAX_PATHS, WEIBO_IMAGE_ORIGIN, WEIBO_WEB_ORIGIN } from './weiboEndpoints'
 import type { TimelinePage, TimelinePageQuery } from './webClient'
@@ -199,14 +203,20 @@ export function buildMiddleImageUrl(imageUrl: string): string {
     }
 }
 
-/** 读取标签属性：单双引号都支持，返回值做实体解码；属性名由调用方给常量，不参与正则转义 */
+/**
+ * 读取标签属性：单双引号与无引号值都支持，返回值做实体解码。
+ * 属性名要求前有边界，避免 `data-href` 之类被当成 `href`；无引号值去掉自闭合标签的尾斜杠。
+ * 属性名由调用方给常量，不参与正则转义。
+ */
 function readAttribute(tag: string, name: string): string {
-    const pattern = new RegExp(`${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)')`, 'iu')
+    const pattern = new RegExp(`(?:^|[\\s"'])${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'iu')
     const match = pattern.exec(tag)
     if (match === null) {
         return ''
     }
-    return decodeEntities(match[1] ?? match[2] ?? '').trim()
+    const quoted = match[1] ?? match[2]
+    const value = quoted ?? (match[3] ?? '').replace(/\/$/u, '')
+    return decodeEntities(value).trim()
 }
 
 /** 追加纯文本片段：与上一段同为文本时直接拼接，避免产生大量碎片 */
@@ -269,9 +279,12 @@ function removeTrailingExpandHint(segments: WeiboTimelineSegment[]): void {
     segments[segments.length - 1] = { type: 'text', text: cleaned }
 }
 
-/** 没有 HTML 正文时的单段文本：空正文返回空数组，调用方据此显示「无正文」 */
+/**
+ * 没有 HTML 锚点时的纯文本分段：@账号、话题与微博域名链接同样切出来可点，
+ * 空正文返回空数组，调用方据此显示「无正文」。
+ */
 function buildTextSegments(text: string): WeiboTimelineSegment[] {
-    return text.length > 0 ? [{ type: 'text', text }] : []
+    return splitPlainTextLinks(text)
 }
 
 /**
@@ -285,8 +298,117 @@ function replaceEmojiWithText(html: string): string {
     })
 }
 
-/** 表情 img 标签：只按标签切分，属性在标签内解析 */
-const IMAGE_TAG_PATTERN = /<img\b[^>]*>/giu
+/**
+ * 正文链接的主机白名单：微博主站与其子域承载 @账号、话题、超话页，
+ * t.cn 是新浪自家短链服务（正文里的外链一律先经它跳转）。
+ * 关键约束：不在名单内的地址不生成链接段，降级为纯文本——Webview 只负责展示，不承担导航。
+ */
+const WEIBO_LINK_HOSTS = ['weibo.com', 'weibo.cn', 't.cn'] as const
+
+/** 主机是否在链接白名单后缀下：精确相等或点分后缀，避免 sub.host.evil.com 绕过 */
+function isWeiboLinkHost(hostname: string): boolean {
+    const host = hostname.toLowerCase()
+    return WEIBO_LINK_HOSTS.some((suffix) => host === suffix || host.endsWith(`.${suffix}`))
+}
+
+/**
+ * 归一化正文链接：兼容协议相对写法（`//weibo.com/u/123`），统一升级为 https。
+ * 只接受 https 且主机在白名单内，其余返回 null 由调用方降级成纯文本。
+ */
+export function normalizeWeiboLinkUrl(value: unknown): string | null {
+    if (typeof value !== 'string') {
+        return null
+    }
+    const trimmed = value.trim()
+    if (trimmed.length === 0 || trimmed.length > 1024) {
+        return null
+    }
+    let parsed: URL
+    try {
+        parsed = new URL(trimmed.startsWith('//') ? `https:${trimmed}` : trimmed)
+    } catch {
+        return null
+    }
+    if (parsed.protocol === 'http:') {
+        parsed.protocol = 'https:'
+    }
+    if (parsed.protocol !== 'https:' || !isWeiboLinkHost(parsed.hostname)) {
+        return null
+    }
+    return parsed.toString()
+}
+
+/**
+ * 判定链接分类：超话页在 `/p/` 下，话题页带搜索参数 q，个人主页在 `/u/`、`/n/`、`/profile/`
+ * 或纯 uid 路径下，其余（短链、文章页、其它微博详情）归为普通链接。
+ * 文本以 @ 开头时优判为 @账号，兼容 href 不可解析的 usercard 写法。
+ */
+function classifyLinkKind(url: URL, text: string): WeiboTimelineLinkKind {
+    const path = url.pathname
+    if (/^\/p\/[0-9A-Za-z]+/u.test(path)) {
+        return 'supertopic'
+    }
+    if (url.searchParams.has('q')) {
+        return 'topic'
+    }
+    if (/^\/(?:u|n|profile)\/[^/]+$/u.test(path) || /^\/\d{4,}\/?$/u.test(path) || text.startsWith('@')) {
+        return 'mention'
+    }
+    return 'link'
+}
+
+/** 正文里的锚点与表情图：一次扫描保留两者在上游 HTML 里的原始先后 */
+const CONTENT_TAG_PATTERN = /<a\b[^>]*>[\s\S]*?<\/a>|<img\b[^>]*>/giu
+
+/** 锚点内部拆出外层标签与内层内容：非贪婪匹配到最近的闭标签 */
+const ANCHOR_PARTS_PATTERN = /^<a\b[^>]*>([\s\S]*?)<\/a>$/iu
+
+/** 是否为锚点开标签 */
+const ANCHOR_OPEN_PATTERN = /^<a\b/iu
+
+/** usercard 属性里的账号 id：形如 `id=1234567890`，可与其它键值以 ; 分隔 */
+const USERCARD_ID_PATTERN = /(?:^|[;\s])id=(\d{1,25})(?:$|[;\s])/u
+
+/** 锚点内部文本的 @账号形态：昵称整体在锚点内，允许含空格与符号 */
+const ANCHOR_MENTION_PATTERN = /^@(\S.{0,38})$/u
+
+/**
+ * 解析锚点地址：href 优先；href 不可用（`javascript:void(0)`、缺失、属性无引号被截断）时，
+ * 依次回退 usercard 里的 uid 与内部文本（@昵称走 /n/ 主页）。
+ * 关键约束：回退只认可确定归属的文本形态——@ 前缀才能确认是账号，其余锚点仍按纯文本展平，
+ * 避免把 `#标题#` 这类普通文字误判成话题。
+ */
+function resolveAnchorUrl(tag: string, text: string): string | null {
+    const direct = normalizeWeiboLinkUrl(readAttribute(tag, 'href'))
+    if (direct !== null) {
+        return direct
+    }
+    const uid = USERCARD_ID_PATTERN.exec(readAttribute(tag, 'usercard'))?.[1]
+    if (uid !== undefined) {
+        return `${WEIBO_WEB_ORIGIN}/u/${uid}`
+    }
+    const mention = ANCHOR_MENTION_PATTERN.exec(text)?.[1]
+    if (mention !== undefined) {
+        return `${WEIBO_WEB_ORIGIN}/n/${encodeURIComponent(mention)}`
+    }
+    return null
+}
+
+/**
+ * 追加一个锚点：@账号、#话题#、#超话# 与短链落成链接段，其余情况退回纯文本。
+ * 关键约束：内层带图片的锚点是视频 / 文章卡片，不当作正文文本链接——
+ * 这里只消费开标签，让内层 img 与文字继续走原有的表情与文本逻辑，图片不会被整块吞掉。
+ */
+function pushAnchorSegment(segments: WeiboTimelineSegment[], tag: string): void {
+    const inner = ANCHOR_PARTS_PATTERN.exec(tag)?.[1] ?? ''
+    const text = stripWeiboHtml(inner)
+    const url = text.length === 0 ? null : resolveAnchorUrl(tag, text)
+    if (url === null) {
+        pushPlainText(segments, text)
+        return
+    }
+    segments.push({ type: 'link', text, url, kind: classifyLinkKind(new URL(url), text) })
+}
 
 /**
  * 表情名形态：非空、长度有限且不是地址。
@@ -298,9 +420,10 @@ function isEmoticonLabel(name: string): boolean {
 }
 
 /**
- * 把正文 HTML 切成「文本 + 表情」片段。
+ * 把正文 HTML 切成「文本 + 表情 + 链接」片段，三者保持上游原顺序。
  * 表情图只接受微博图床地址；非白名单域名或缺少直链时降级成 `[表情名]` 文本，不丢信息。
  * 没有表情名的 img 属卡片装饰图，直接跳过：既不作表情，也不留 `[]` 占位。
+ * 锚点只在 href 落在微博域名白名单内时落成链接段，其余按纯文本展平，不把越界地址带进前端。
  */
 export function parsePostSegments(html: string): WeiboTimelineSegment[] {
     const segments: WeiboTimelineSegment[] = []
@@ -308,12 +431,22 @@ export function parsePostSegments(html: string): WeiboTimelineSegment[] {
         return segments
     }
     let lastIndex = 0
-    for (const match of html.matchAll(IMAGE_TAG_PATTERN)) {
+    for (const match of html.matchAll(CONTENT_TAG_PATTERN)) {
         const index = match.index ?? 0
         pushHtmlText(segments, html.slice(lastIndex, index))
         const tag = match[0]
+        const isAnchor = ANCHOR_OPEN_PATTERN.test(tag)
+        // 含图片的锚点是卡片链接：只消费开标签，内层 img 与文字继续按原有逻辑切分
+        if (isAnchor && !/<img\b/iu.test(tag)) {
+            lastIndex = index + tag.length
+            pushAnchorSegment(segments, tag)
+            continue
+        }
         // 先推进游标：装饰图在下面的分支里直接跳过，不再重复更新
-        lastIndex = index + tag.length
+        lastIndex = index + (isAnchor ? tag.indexOf('>') + 1 : tag.length)
+        if (isAnchor) {
+            continue
+        }
         const name = readAttribute(tag, 'title') || readAttribute(tag, 'alt')
         if (!isEmoticonLabel(name)) {
             continue
@@ -724,7 +857,10 @@ function isLongTextRecord(record: Record<string, unknown>): boolean {
     )
 }
 
-/** 归一化转发体：保留摘要、作者与媒体，不再递归展开（转发里再转发只按文字处理） */
+/**
+ * 归一化转发体：保留摘要、作者、媒体与分段，不再递归展开（转发里再转发只按文字处理）。
+ * 分段与主贴同源：用带标签的 text 切，正文里的 @账号、话题与链接同样可点。
+ */
 function normalizeRetweeted(value: unknown): WeiboTimelineRetweet | null {
     if (!isRecord(value)) {
         return null
@@ -741,6 +877,12 @@ function normalizeRetweeted(value: unknown): WeiboTimelineRetweet | null {
         textRaw.length > 0 ? stripWeiboHtml(textRaw) : stripWeiboHtml(replaceEmojiWithText(toText(value.text)))
     // 转发体同样可能是长文：卡片只展示摘要，保存笔记时宿主据此补取全文
     const isLongText = isLongTextRecord(value)
+    const text = isLongText ? stripTrailingTruncation(plainText) : plainText
+    const html = removeExpandLink(toText(value.text))
+    const segments = html.length > 0 ? parsePostSegments(html) : buildTextSegments(text)
+    if (isLongText) {
+        removeTrailingExpandHint(segments)
+    }
     const createdAtRaw = toText(value.created_at)
     return {
         id,
@@ -748,7 +890,8 @@ function normalizeRetweeted(value: unknown): WeiboTimelineRetweet | null {
         authorName: author,
         // 与主贴作者同口径：认 verified 布尔，缺失按未认证处理
         authorIsVerified: user.verified === true,
-        text: isLongText ? stripTrailingTruncation(plainText) : plainText,
+        text,
+        segments,
         url: buildPostUrl(authorId, toText(value.mblogid), id),
         createdAt: parseWeiboCreatedAt(createdAtRaw),
         createdAtRaw,

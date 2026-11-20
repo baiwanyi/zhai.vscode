@@ -1,14 +1,18 @@
 /**
- * 富文本正文：按分段渲染文本与表情，表情进入视口后才经宿主代理取图。
- * 复用约定：数据来自 WeiboTimelineSegment[]，文本段已在宿主剥标签解实体；
- * 表情地址已按图床白名单收窄，本组件只负责懒加载与失败回退。
- * 关键约束：hooks 只能在组件内调用，故表情单独抽成子组件，不能在 map 里直接调；
- * 取图失败退回 `[名称]` 文本，保证正文可读且不破坏行内排版。
+ * 富文本正文：按分段渲染文本、表情与正文链接，表情进入视口后才经宿主代理取图。
+ * 复用约定：数据来自 WeiboTimelineSegment[]，文本段已在宿主剥标签解实体，
+ * 链接段的地址也已收窄到微博域名白名单；打开动作统一走 hooks/useWeiboOpenUrl。
+ * 关键约束：hooks 只能在组件内调用，故表情与链接各自抽成子组件，不能在 map 里直接调；
+ * 取图失败退回 `[名称]` 文本，保证正文可读且不破坏行内排版；
+ * 链接点击一律阻止 webview 自身导航，否则会把整块面板顶掉；
+ * 链接统一用橙色标识可点，且不设 title——悬停浮出整串地址既冗余又挡住正文。
  */
+import { useCallback } from 'react'
 import type { WeiboTimelineSegment } from '@shared/types/weibo'
-import type { JSX } from 'react'
+import type { JSX, MouseEvent } from 'react'
 import { useHasEnteredViewport } from '../hooks/useHasEnteredViewport'
 import { useWeiboImage } from '../hooks/useWeiboImage'
+import { useWeiboOpenUrl } from '../hooks/useWeiboOpenUrl'
 
 interface WeiboEmojiProps {
     name: string
@@ -39,6 +43,38 @@ function WeiboEmoji({ name, remoteUrl }: WeiboEmojiProps): JSX.Element {
     )
 }
 
+interface WeiboLinkProps {
+    text: string
+    url: string
+}
+
+/**
+ * 正文链接：@账号、#话题#、#超话# 与短链共用一套外观，点击交给宿主在浏览器打开。
+ * 关键约束：保留 `<a href>` 只为键盘可达与状态栏预览，导航必须被阻止——
+ * webview 内直接跳转会把面板顶掉，真正的打开动作由 useWeiboOpenUrl 完成。
+ */
+function WeiboLink({ text, url }: WeiboLinkProps): JSX.Element {
+    const openUrl = useWeiboOpenUrl()
+
+    const handleClick = useCallback(
+        (event: MouseEvent<HTMLAnchorElement>): void => {
+            event.preventDefault()
+            openUrl(url)
+        },
+        [openUrl, url],
+    )
+
+    return (
+        <a
+            href={url}
+            onClick={handleClick}
+            className="cursor-pointer wrap-break-word text-blue-400 hover:underline dark:text-blue-400"
+        >
+            {text}
+        </a>
+    )
+}
+
 interface WeiboRichTextProps {
     segments: WeiboTimelineSegment[]
     /** 没有正文时的兜底文案 */
@@ -51,13 +87,15 @@ export function WeiboRichText({ segments, placeholder = '（无正文）' }: Wei
     }
     return (
         <>
-            {segments.map((segment, index) =>
-                segment.type === 'text' ? (
-                    <span key={`text-${String(index)}`}>{segment.text}</span>
-                ) : (
-                    <WeiboEmoji key={`emoji-${String(index)}`} name={segment.name} remoteUrl={segment.url} />
-                ),
-            )}
+            {segments.map((segment, index) => {
+                if (segment.type === 'text') {
+                    return <span key={`text-${String(index)}`}>{segment.text}</span>
+                }
+                if (segment.type === 'link') {
+                    return <WeiboLink key={`link-${String(index)}`} text={segment.text} url={segment.url} />
+                }
+                return <WeiboEmoji key={`emoji-${String(index)}`} name={segment.name} remoteUrl={segment.url} />
+            })}
         </>
     )
 }

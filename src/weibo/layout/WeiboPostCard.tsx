@@ -3,8 +3,9 @@
  * CardContent 放正文（含表情）、图文混排媒体区、转发块与按需展开的评论区，CardFooter 只放互动数据；
  * 原文与两个卡片动作收在 CardAction 的「更多」菜单里，卡片底部不再堆一排按钮。
  * 复用约定：数据是归一化后的 WeiboTimelinePost，图片地址已在宿主按白名单收窄；
- * 头像与富文本分别交给 WeiboAvatar / WeiboRichText，配图宫格与视频播放器在本文件内，
- * 点击配图后的卡片内展开交给 WeiboMediaPreview；
+ * 头像与富文本分别交给 WeiboAvatar / WeiboRichText，正文与转发体里的 @账号、话题与短链
+ * 都由富文本渲染成可点链接，长文全文则用 splitPlainTextLinks 从纯文本里补出同样的链接；
+ * 配图宫格与视频播放器在本文件内，点击配图后的卡片内展开交给 WeiboMediaPreview；
  * 主贴与转发体的媒体共用 PostMediaGrid，避免两套九宫格各写一份；
  * 所有图片都经 useWeiboImage 换成本地地址——图床按 Referer 放行，Webview 直连会被拒。
  * 关键约束：hooks 只能在组件内调用，故表情、配图、点赞各自抽成子组件，不能在 map 里直接调；
@@ -56,6 +57,7 @@ import type {
 } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { splitPlainTextLinks } from '@shared/utils/weiboText'
 import { Button } from '@webview/components/Button'
 import { WeiboAvatar } from './WeiboAvatar'
 import { WeiboCommentList } from './WeiboCommentList'
@@ -612,12 +614,20 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
     /** 卡片动作：保存到笔记与添加到 AI 对话，主贴与转发已展开的全文都一并带出 */
     const postActions = useWeiboPostActions(post, fullText, retweetedFullText)
 
-    /** 正文分段：展开全文后整段替换为接口返回的纯文本 */
-    const bodySegments: WeiboTimelineSegment[] = fullText === null ? post.segments : [{ type: 'text', text: fullText }]
+    /** 正文分段：展开全文后整段替换为接口返回的纯文本，@账号与话题由本地切分出可点链接 */
+    const bodySegments: WeiboTimelineSegment[] = fullText === null ? post.segments : splitPlainTextLinks(fullText)
 
-    /** 转发体：取到全文用全文，否则用归一化后的摘要 */
+    /** 转发体：取到全文用全文，否则用归一化后的摘要；两者都带正文链接 */
     const retweeted = post.retweeted
     const retweetedText = retweeted === null ? '' : (retweetedFullText ?? retweeted.text)
+    const retweetedSegments: WeiboTimelineSegment[] =
+        retweeted === null
+            ? []
+            : retweetedFullText !== null
+              ? splitPlainTextLinks(retweetedFullText)
+              : retweeted.segments.length > 0
+                ? retweeted.segments
+                : splitPlainTextLinks(retweeted.text)
 
     /** 直链一张都没解析出来但上游声明有图：单独给提示，媒体区自身不再重复 */
     const isImageMissing = post.media.images.length === 0 && post.media.imageCount > 0
@@ -730,7 +740,11 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
                         </div>
 
                         <p className="whitespace-pre-wrap wrap-break-word">
-                            {retweetedText.length > 0 ? retweetedText : '（原微博不可见）'}
+                            {retweetedText.length > 0 ? (
+                                <WeiboRichText segments={retweetedSegments} />
+                            ) : (
+                                '（原微博不可见）'
+                            )}
                         </p>
                         {retweeted.isLongText && retweetedFullText === null ? (
                             <LongTextStatus

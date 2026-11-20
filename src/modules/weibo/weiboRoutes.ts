@@ -75,8 +75,12 @@ import type { FetchTimelineOptions } from './webTimeline'
 import type { WeiboAvatarGateway } from './weiboAvatar'
 import type { WeiboCache, WeiboCacheKey } from './weiboCache'
 
-/** 允许打开的外链主机：仅微博主站与其子域 */
-const ALLOWED_EXTERNAL_HOSTS = ['weibo.com', 'www.weibo.com', 'm.weibo.cn']
+/**
+ * 允许打开的外链主机：微博主站与其子域，外加新浪短链服务 t.cn。
+ * 关键约束：正文链接按此名单收窄，t.cn 是微博外链的固定中转域（https），
+ * 不在名单内的地址前端不会渲染成可点链接，这里也不放行。
+ */
+const ALLOWED_EXTERNAL_HOSTS = ['weibo.com', 'www.weibo.com', 'm.weibo.cn', 't.cn']
 
 /** 路由依赖：取数、图片代理与打开外链都可替换，生产由面板注入真实实现 */
 export interface WeiboRouteDeps {

@@ -74,6 +74,7 @@ function createRetweet(overrides: Partial<WeiboTimelineRetweet> = {}): WeiboTime
         authorName: '原作者',
         authorIsVerified: false,
         text: '转发摘要',
+        segments: [{ type: 'text', text: '转发摘要' }],
         url: 'https://weibo.com/detail/5200000000000001',
         createdAt: '2026-11-20T22:00:00.000Z',
         createdAtRaw: '11-20 22:00',

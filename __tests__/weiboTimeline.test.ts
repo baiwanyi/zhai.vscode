@@ -275,6 +275,58 @@ describe('图片与表情', () => {
         expect(segments).toEqual([{ type: 'text', text: '视频来了某某的微博视频' }])
     })
 
+    it('@账号、话题、超话与短链落成链接段，协议相对地址升级为 https', () => {
+        const segments = parsePostSegments(
+            '谢谢<a href="//weibo.com/u/12345" usercard="id=12345">@小明</a>，' +
+                '看<a href="//s.weibo.com/weibo?q=%23%E7%83%AD%E9%97%A8%23">#热门#</a>，' +
+                '超话<a href="https://weibo.com/p/100808abc123">#读书#</a>，' +
+                '原文<a href="http://t.cn/A6xyz">网页链接</a>',
+        )
+        expect(segments).toEqual([
+            { type: 'text', text: '谢谢' },
+            { type: 'link', text: '@小明', url: 'https://weibo.com/u/12345', kind: 'mention' },
+            { type: 'text', text: '，看' },
+            {
+                type: 'link',
+                text: '#热门#',
+                url: 'https://s.weibo.com/weibo?q=%23%E7%83%AD%E9%97%A8%23',
+                kind: 'topic',
+            },
+            { type: 'text', text: '，超话' },
+            { type: 'link', text: '#读书#', url: 'https://weibo.com/p/100808abc123', kind: 'supertopic' },
+            { type: 'text', text: '，原文' },
+            { type: 'link', text: '网页链接', url: 'https://t.cn/A6xyz', kind: 'link' },
+        ])
+    })
+
+    it('非白名单域名的锚点降级为纯文本，不把任意地址带进正文', () => {
+        expect(parsePostSegments('前<a href="https://evil.example.com/x">后</a>')).toEqual([
+            { type: 'text', text: '前后' },
+        ])
+    })
+
+    it('href 是 javascript:void(0) 时用 usercard 里的 uid 兜底', () => {
+        expect(parsePostSegments('<a href="javascript:void(0);" usercard="id=12345">@小明</a>')).toEqual([
+            { type: 'link', text: '@小明', url: 'https://weibo.com/u/12345', kind: 'mention' },
+        ])
+    })
+
+    it('完全没有 href 的 @ 账号按昵称主页兜底', () => {
+        expect(parsePostSegments('前<a>@小红</a>')).toEqual([
+            { type: 'text', text: '前' },
+            { type: 'link', text: '@小红', url: 'https://weibo.com/n/%E5%B0%8F%E7%BA%A2', kind: 'mention' },
+        ])
+    })
+
+    it('属性值没有引号也能解析，data-href 不冒充 href', () => {
+        expect(parsePostSegments('<a href=//weibo.com/u/12345>@小明</a>')).toEqual([
+            { type: 'link', text: '@小明', url: 'https://weibo.com/u/12345', kind: 'mention' },
+        ])
+        expect(parsePostSegments('<a data-href="https://weibo.com/u/999" usercard="id=12345">@小明</a>')).toEqual([
+            { type: 'link', text: '@小明', url: 'https://weibo.com/u/12345', kind: 'mention' },
+        ])
+    })
+
     it('头像与配图只保留图床地址', () => {
         const post = normalizeTimelinePost(
             rawStatus(104, {
@@ -564,6 +616,43 @@ describe('长文接口与归一化', () => {
         expect(post?.retweeted?.authorIsVerified).toBe(true)
         expect(post?.retweeted?.createdAtRaw).toBe('Wed Nov 19 10:00:00 +0800 2026')
         expect(post?.retweeted?.createdAt).not.toBe('')
+    })
+
+    it('转发体正文同样切出可点链接', () => {
+        const post = normalizeTimelinePost(
+            rawStatus(123, {
+                retweeted_status: {
+                    id: 904,
+                    idstr: '904',
+                    mblogid: 'RT904',
+                    text: '转发<a href="//weibo.com/n/%E5%B0%8F%E7%BA%A2">@小红</a>',
+                },
+            }),
+        )
+        expect(post?.retweeted?.segments).toEqual([
+            { type: 'text', text: '转发' },
+            { type: 'link', text: '@小红', url: 'https://weibo.com/n/%E5%B0%8F%E7%BA%A2', kind: 'mention' },
+        ])
+    })
+
+    it('转发体正文的表情与主贴同口径切成内联表情段', () => {
+        const post = normalizeTimelinePost(
+            rawStatus(124, {
+                retweeted_status: {
+                    id: 905,
+                    idstr: '905',
+                    mblogid: 'RT905',
+                    text: '原文<img src="https://face.t.sinajs.cn/a.png" title="微笑">结尾',
+                },
+            }),
+        )
+        expect(post?.retweeted?.segments).toEqual([
+            { type: 'text', text: '原文' },
+            { type: 'emoji', name: '微笑', url: 'https://face.t.sinajs.cn/a.png' },
+            { type: 'text', text: '结尾' },
+        ])
+        // 纯文本口径仍把表情还原成 [名称]，两套口径互不影响
+        expect(post?.retweeted?.text).toBe('原文[微笑]结尾')
     })
 
     it('转发体缺认证与时间时不误标，作者 uid 回退空串', () => {
