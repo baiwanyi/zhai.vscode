@@ -8,7 +8,8 @@
  * AppComposerToolbar 紧随其后撑满剩余宽度。
  * 关键约束：外壳是两层自定义底色——外层 AppComposer 为 bg-composer，内层 AppComposerContent 为
  * bg-composer-input；ui/card 不支持双层底色与内容区提亮，故沿用骨架写法而不套 Card；
- * 光晕必须挂在卡片外侧的兄弟层、根容器自带 isolate，否则会被不透明卡片盖住或沉到页面背景之后；
+ * 光晕与同色底衬成对出现：负 z 子层只画在父背景之上、内容之下，故根容器自带 isolate 把层级关在卡片内，
+ * 再由底衬压住卡内背光，只留卡片边缘的溢出可见，否则背光会糊在卡片正面；
  * 底部操作分左右两组：Actions 撑满剩余宽度、Buttons 按内容收缩并贴着右边缘，
  * 因此 Actions / Toolbar 必须带 flex-1、Commands / Buttons 必须带 shrink-0；
  * 两组之间留 gap-2（组内 gap-0.5 只作用于按钮之间），撑满一组、收缩一组，间距才稳定；
@@ -24,8 +25,9 @@ const GROUP_ROW_CLASS = 'flex min-w-0 flex-wrap items-center gap-0.5'
  * 输入卡片生成态光晕：conic 旋转描边 + 模糊背光的纯装饰层，样式定义在 globals.css 的 composer-glow 段。
  * 复用约定：与骨架同为槽位写法——ComponentProps 透传、cn 合并类名、data-slot 标记部件；
  * 对话、生图两处输入卡片与 AiTextareaField 共用，调用方只给 isGenerating，不再各自维护两层装饰节点。
- * 关键约束：必须挂在卡片外侧的兄弟层上——卡片底色不透明，移进卡片内部就会被盖住；
- * 父级需自带 isolate，把 -z-10 限制在卡片层叠边界内，否则会沉到页面背景之后；
+ * 关键约束：负 z-index 子层只画在父级背景之上、内容之下，卡内背光必须由调用方补一层同色底衬遮挡
+ * （AppComposer 与 AiTextareaField 各自提供），本组件只负责装饰层自身；
+ * 父级需自带 isolate，把负 z 限制在卡片层叠边界内，否则会沉到页面背景之后；
  * 仅切换透明度与 data-glow 控制动画启停，不参与布局与交互，也不得承载任何状态。
  */
 interface ComposerGlowProps extends ComponentProps<'div'> {
@@ -40,7 +42,8 @@ function ComposerGlow({ isGenerating, className, ...props }: ComposerGlowProps):
             data-slot="composer-glow"
             data-glow={isGenerating ? 'on' : 'off'}
             className={cn(
-                'pointer-events-none absolute inset-0 -z-10 transition-opacity duration-500',
+                // 光晕取 -z-20，给调用方的同色底衬（-z-10）留出压盖层级
+                'pointer-events-none absolute inset-0 -z-20 transition-opacity duration-500',
                 isGenerating ? 'opacity-100' : 'opacity-0',
                 className,
             )}
@@ -61,7 +64,7 @@ interface AppComposerProps extends ComponentProps<'div'> {
 
 function AppComposer({ className, isGenerating = false, children, ...props }: AppComposerProps): JSX.Element {
     return (
-        // isolate 给光晕划定层叠边界：-z-10 只落在卡片之下，不会沉到页面背景后面
+        // isolate 给光晕划定层叠边界：负 z 只落在卡片层叠上下文内，不会沉到页面背景后面
         <div
             data-slot="app-composer"
             className={cn(
@@ -71,6 +74,9 @@ function AppComposer({ className, isGenerating = false, children, ...props }: Ap
             {...props}
         >
             <ComposerGlow isGenerating={isGenerating} />
+            {/* 同色底衬压在光晕之上、内容之下：负 z 子层会画在父背景之上，
+                少了这层卡内就会透出彩色背光，光晕只剩卡片边缘的溢出可见 */}
+            <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 rounded-2xl bg-composer" />
             {children}
         </div>
     )
