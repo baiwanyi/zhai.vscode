@@ -1,11 +1,13 @@
 /**
  * 微博协议路由：把信息流、凭证、评论、点赞与外链分发到取数、凭证与宿主能力。
  * 复用约定：入参收窄统一走 shared/types/weibo 的类型守卫，本层只做方法名到实现的映射；
+ * 分组、热搜与表情先读 weibo.json 缓存，未命中再回源，缓存异常只记日志、绝不影响回包；
  * Cookie 存取交给 WeiboCookieStore，取数交给 webTimeline / webFeed，宿主能力以回调注入便于单测。
  * 关键约束：方法名与 shared/types/messages 的 HostMethodName 一一对应，新增方法须两侧同时维护；
  * 未登记方法一律抛错；时间线与凭证错误统一带分类码，前端按码分发提示而不是解析文案；
  * 外链只放行 weibo.com 及其子域，防止被当作任意地址跳转的通道。
  */
+import { logger } from '@modules/common/logger'
 import type {
     WeiboClearCredentialResult,
     WeiboCommentsResult,
@@ -16,6 +18,8 @@ import type {
     WeiboImageResult,
     WeiboLikeResult,
     WeiboLongTextResult,
+    WeiboProfile,
+    WeiboProfileResult,
     WeiboSaveCredentialResult,
     WeiboTimelineRequest,
     WeiboTimelineResult,
@@ -23,10 +27,12 @@ import type {
 import {
     isWeiboCommentsRequest,
     isWeiboFeedRequest,
+    isWeiboHotRankRequest,
     isWeiboImageRequest,
     isWeiboLikeRequest,
     isWeiboLongTextRequest,
     isWeiboOpenPostRequest,
+    isWeiboProfileRequest,
     isWeiboSaveCredentialRequest,
     isWeiboTimelineRequest,
 } from '@shared/types/weibo'
@@ -38,7 +44,9 @@ import { fetchWeiboFeed, fetchWeiboGroups } from './webFeed'
 import { fetchWeiboHotRank } from './webHotRank'
 import { setPostLike } from './webInteraction'
 import { fetchLongText } from './webLongText'
+import { fetchWeiboProfile } from './webProfile'
 import { fetchFriendTimeline } from './webTimeline'
+import { toAccountKey } from './weiboCache'
 import type { FetchCommentsOptions } from './webComments'
 import type { WeiboCookieStore } from './webCredential'
 import type { FetchEmoticonsOptions } from './webEmoticons'
@@ -46,7 +54,10 @@ import type { FetchFeedOptions, FetchGroupsOptions } from './webFeed'
 import type { FetchHotRankOptions } from './webHotRank'
 import type { SetLikeOptions } from './webInteraction'
 import type { FetchLongTextOptions } from './webLongText'
+import type { FetchProfileOptions } from './webProfile'
 import type { FetchTimelineOptions } from './webTimeline'
+import type { WeiboAvatarGateway } from './weiboAvatar'
+import type { WeiboCache, WeiboCacheKey } from './weiboCache'
 
 /** 允许打开的外链主机：仅微博主站与其子域 */
 const ALLOWED_EXTERNAL_HOSTS = ['weibo.com', 'www.weibo.com', 'm.weibo.cn']
@@ -54,6 +65,8 @@ const ALLOWED_EXTERNAL_HOSTS = ['weibo.com', 'www.weibo.com', 'm.weibo.cn']
 /** 路由依赖：取数、图片代理与打开外链都可替换，生产由面板注入真实实现 */
 export interface WeiboRouteDeps {
     cookieStore: WeiboCookieStore
+    /** 元数据缓存：分组 / 热搜 / 表情的复用入口，未注入时退化为每次都回源 */
+    cache?: WeiboCache
     fetchTimeline?: (options: FetchTimelineOptions) => Promise<WeiboTimelineResult>
     /** 信息流读取：时间线 / 热门 / 分组共用，单测可替换 */
     fetchFeed?: (options: FetchFeedOptions) => Promise<WeiboTimelineResult>
@@ -63,6 +76,10 @@ export interface WeiboRouteDeps {
     fetchEmoticons?: (options: FetchEmoticonsOptions) => Promise<WeiboEmoticonsResult>
     /** 热搜榜读取：右侧边栏使用 */
     fetchHotRank?: (options: FetchHotRankOptions) => Promise<WeiboHotRankResult>
+    /** 账号信息读取：顶栏账号菜单使用，默认走网页版 profile/info */
+    fetchProfile?: (options: FetchProfileOptions) => Promise<WeiboProfile>
+    /** 头像网关：读本地 weibo_avatar.jpg / 下载落盘 / 清除；未注入时账号菜单没有头像 */
+    avatar?: WeiboAvatarGateway
     /** 图片代理：把远程图片下成本地文件并返回 Webview 可加载的地址 */
     resolveImageUrl?: (imageUrl: string) => Promise<string | null>
     /** 点赞写入：默认走网页版 setLike / cancelLike，单测可替换 */
@@ -88,6 +105,23 @@ function isAllowedExternalUrl(url: string): boolean {
     }
 }
 
+/** 缓存读取：未注入或读取异常一律按未命中处理——缓存不可用不应连带取数失败 */
+async function readQuietly<T>(label: string, load: () => Promise<T | null>): Promise<T | null> {
+    try {
+        return await load()
+    } catch (error) {
+        logger.warn(`微博缓存读取失败：${label}（${error instanceof Error ? error.message : String(error)}）`)
+        return null
+    }
+}
+
+/** 缓存写入：失败只影响下次是否命中，不改变本次回包，也不打扰用户 */
+function writeQuietly(label: string, task: Promise<void>): void {
+    void task.catch((error: unknown) => {
+        logger.warn(`微博缓存写入失败：${label}（${error instanceof Error ? error.message : String(error)}）`)
+    })
+}
+
 /** 微博协议路由：每个方法返回可直接回包的纯数据 */
 export class WeiboRoutes {
     public constructor(private readonly deps: WeiboRouteDeps) {}
@@ -104,7 +138,9 @@ export class WeiboRoutes {
             case 'weibo/emoticons':
                 return this.loadEmoticons()
             case 'weibo/hotRank':
-                return this.loadHotRank()
+                return this.loadHotRank(payload)
+            case 'weibo/profile':
+                return this.loadProfile(payload)
             case 'weibo/comments':
                 return this.loadComments(payload)
             case 'weibo/longtext':
@@ -126,7 +162,65 @@ export class WeiboRoutes {
         }
     }
 
-    /** 读取时间线：无凭证直接给出可执行的引导，不发起请求 */
+    /** 读取登录 Cookie：缺失时抛带分类码的错误，避免每个方法各写一遍同样的判断 */
+    private async readCookie(): Promise<string> {
+        const cookie = await this.deps.cookieStore.read()
+        if (!isCookieUsable(cookie)) {
+            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
+        }
+        return cookie
+    }
+
+    /** 读分组缓存：命中即返回归一化后的回包，未命中返回 null 由调用方回源 */
+    private async readCachedGroups(accountKey: string): Promise<WeiboGroupsResult | null> {
+        const cache = this.deps.cache
+        if (cache === undefined) {
+            return null
+        }
+        const entry = await readQuietly('groups', async () => cache.readGroups(accountKey))
+        return entry === null ? null : entry.data
+    }
+
+    /** 读热搜缓存：账号不符或过期都按未命中处理 */
+    private async readCachedHotRank(accountKey: string): Promise<WeiboHotRankResult | null> {
+        const cache = this.deps.cache
+        if (cache === undefined) {
+            return null
+        }
+        const entry = await readQuietly('hotRank', async () => cache.readHotRank(accountKey))
+        return entry === null ? null : entry.data
+    }
+
+    /** 读表情缓存：账号不符或过期都按未命中处理 */
+    private async readCachedEmoticons(accountKey: string): Promise<WeiboEmoticonsResult | null> {
+        const cache = this.deps.cache
+        if (cache === undefined) {
+            return null
+        }
+        const entry = await readQuietly('emoticons', async () => cache.readEmoticons(accountKey))
+        return entry === null ? null : entry.data
+    }
+
+    /** 读账号信息缓存：账号不符或过期都按未命中处理 */
+    private async readCachedProfile(accountKey: string): Promise<WeiboProfile | null> {
+        const cache = this.deps.cache
+        if (cache === undefined) {
+            return null
+        }
+        const entry = await readQuietly('profile', async () => cache.readProfile(accountKey))
+        return entry === null ? null : entry.data
+    }
+
+    /** 写缓存：不等待落盘，失败只记日志——缓存问题不应影响本次回包 */
+    private saveCache(key: WeiboCacheKey, accountKey: string, data: unknown, fetchedAt: string): void {
+        const cache = this.deps.cache
+        if (cache === undefined) {
+            return
+        }
+        writeQuietly(key, cache.write(key, accountKey, data, fetchedAt))
+    }
+
+    /** 读取时间线：无凭证直接给出可执行的引导，不发起请求；时间线不参与缓存 */
     private async loadTimeline(payload: unknown): Promise<WeiboTimelineResult> {
         const raw = payload ?? {}
         if (!isWeiboTimelineRequest(raw)) {
@@ -135,10 +229,7 @@ export class WeiboRoutes {
                 'weibo/timeline 参数非法：游标须为数字串，条数与页数须为有限数字',
             )
         }
-        const cookie = await this.deps.cookieStore.read()
-        if (!isCookieUsable(cookie)) {
-            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
-        }
+        const cookie = await this.readCookie()
         const request: WeiboTimelineRequest = raw
         const fetchTimeline = this.deps.fetchTimeline ?? fetchFriendTimeline
         return fetchTimeline({ ...request, cookie })
@@ -153,42 +244,133 @@ export class WeiboRoutes {
                 'weibo/feed 参数非法：source 须为 timeline/hot/group，分组须带合法 listId',
             )
         }
-        const cookie = await this.deps.cookieStore.read()
-        if (!isCookieUsable(cookie)) {
-            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
-        }
+        const cookie = await this.readCookie()
         const fetchFeed = this.deps.fetchFeed ?? fetchWeiboFeed
         return fetchFeed({ ...raw, cookie })
     }
 
-    /** 读取分组：默认分组供时间线取 list_id，我的分组供分组页展示 */
+    /**
+     * 读取分组：默认分组供时间线取 list_id，我的分组供分组页展示。
+     * 关键约束：命中缓存不再回源——分组只在激活预热与换号后重建。
+     */
     private async loadGroups(): Promise<WeiboGroupsResult> {
-        const cookie = await this.deps.cookieStore.read()
-        if (!isCookieUsable(cookie)) {
-            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
+        const cookie = await this.readCookie()
+        const accountKey = toAccountKey(cookie)
+        const cached = await this.readCachedGroups(accountKey)
+        if (cached !== null) {
+            return cached
         }
         const fetchGroups = this.deps.fetchGroups ?? fetchWeiboGroups
-        return fetchGroups({ cookie })
+        const result = await fetchGroups({ cookie })
+        const now = this.deps.now ?? ((): Date => new Date())
+        this.saveCache('groups', accountKey, result, now().toISOString())
+        return result
     }
 
-    /** 读取表情配置：与其它接口共用登录 Cookie，缺凭证直接给出可执行的引导 */
+    /** 读取表情配置：激活预热后常驻缓存，打开表情面板零网络 */
     private async loadEmoticons(): Promise<WeiboEmoticonsResult> {
-        const cookie = await this.deps.cookieStore.read()
-        if (!isCookieUsable(cookie)) {
-            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
+        const cookie = await this.readCookie()
+        const accountKey = toAccountKey(cookie)
+        const cached = await this.readCachedEmoticons(accountKey)
+        if (cached !== null) {
+            return cached
         }
         const fetchEmoticons = this.deps.fetchEmoticons ?? fetchWeiboEmoticons
-        return fetchEmoticons({ cookie })
+        const result = await fetchEmoticons({ cookie })
+        this.saveCache('emoticons', accountKey, result, result.fetchedAt)
+        return result
     }
 
-    /** 读取热搜榜：与其它接口共用登录 Cookie，缺凭证直接给出可执行的引导 */
-    private async loadHotRank(): Promise<WeiboHotRankResult> {
-        const cookie = await this.deps.cookieStore.read()
-        if (!isCookieUsable(cookie)) {
-            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
+    /**
+     * 读取热搜榜：默认命中缓存，只有热搜卡的刷新按钮（refresh 为真）才强制回源。
+     * 关键约束：顶栏刷新不触碰这里——热搜更新必须由用户显式触发。
+     */
+    private async loadHotRank(payload: unknown): Promise<WeiboHotRankResult> {
+        const raw = payload ?? {}
+        if (!isWeiboHotRankRequest(raw)) {
+            throw new WeiboWebError('invalid-payload', 'weibo/hotRank 参数非法：refresh 须为布尔')
+        }
+        const cookie = await this.readCookie()
+        const accountKey = toAccountKey(cookie)
+        if (raw.refresh !== true) {
+            const cached = await this.readCachedHotRank(accountKey)
+            if (cached !== null) {
+                return cached
+            }
         }
         const fetchHotRank = this.deps.fetchHotRank ?? fetchWeiboHotRank
-        return fetchHotRank({ cookie })
+        const result = await fetchHotRank({ cookie })
+        this.saveCache('hotRank', accountKey, result, result.fetchedAt)
+        return result
+    }
+
+    /**
+     * 读取账号信息与头像：用户信息落 weibo.json，头像落 {存储根}/weibo_avatar.jpg。
+     * 关键约束：用户信息命中且本地头像可用时零网络；头像文件缺失但资料在时只重下头像、不重取资料；
+     * uid 来自 weibo/groups（分组条目的 uid 即登录账号），取不到时明确报错而不是拼一个空地址。
+     */
+    private async loadProfile(payload: unknown): Promise<WeiboProfileResult> {
+        const raw = payload ?? {}
+        if (!isWeiboProfileRequest(raw)) {
+            throw new WeiboWebError('invalid-payload', 'weibo/profile 参数非法：refresh 须为布尔')
+        }
+        const cookie = await this.readCookie()
+        const accountKey = toAccountKey(cookie)
+        if (raw.refresh !== true) {
+            const cached = await this.readCachedProfile(accountKey)
+            if (cached !== null) {
+                const localAvatar = await this.readAvatar()
+                // 本地文件在就完全零网络；不在则用缓存里的远程地址补一次下载
+                return { profile: cached, avatarDataUrl: localAvatar ?? (await this.downloadAvatar(cached.avatarUrl)) }
+            }
+        }
+        const uid = await this.resolveProfileUid(cookie)
+        if (uid === null) {
+            throw new WeiboWebError('upstream', '无法确定当前账号：分组信息里没有 uid，请重新登录微博后重试')
+        }
+        const fetchProfile = this.deps.fetchProfile ?? fetchWeiboProfile
+        const profile = await fetchProfile({ cookie, uid })
+        const now = this.deps.now ?? ((): Date => new Date())
+        this.saveCache('profile', accountKey, profile, now().toISOString())
+        return { profile, avatarDataUrl: await this.downloadAvatar(profile.avatarUrl) }
+    }
+
+    /** 取当前账号 uid：优先分组缓存，缺失时回源一次分组（loadGroups 内部会写缓存） */
+    private async resolveProfileUid(cookie: string): Promise<string | null> {
+        const cached = await this.readCachedGroups(toAccountKey(cookie))
+        if (cached !== null && cached.uid !== null) {
+            return cached.uid
+        }
+        const groups = await this.loadGroups()
+        return groups.uid
+    }
+
+    /** 读本地头像：未注入网关时返回 null，账号菜单回落为昵称首字 */
+    private async readAvatar(): Promise<string | null> {
+        const avatar = this.deps.avatar
+        if (avatar === undefined) {
+            return null
+        }
+        try {
+            return await avatar.read()
+        } catch (error) {
+            logger.warn(`微博头像读取失败：${error instanceof Error ? error.message : String(error)}`)
+            return null
+        }
+    }
+
+    /** 下载头像并落盘：失败只记日志，不阻断账号信息的回包 */
+    private async downloadAvatar(avatarUrl: string): Promise<string | null> {
+        const avatar = this.deps.avatar
+        if (avatar === undefined) {
+            return null
+        }
+        try {
+            return await avatar.download(avatarUrl)
+        } catch (error) {
+            logger.warn(`微博头像下载失败：${error instanceof Error ? error.message : String(error)}`)
+            return null
+        }
     }
 
     /** 凭证状态：只回配置标记与保存时间 */
@@ -214,10 +396,14 @@ export class WeiboRoutes {
         return { isConfigured: true, savedAt }
     }
 
-    /** 清除凭证：Cookie 与保存时刻一起删除 */
+    /** 清除凭证：Cookie、保存时刻、元数据缓存与本地头像一起删除 */
     private async clearCredential(): Promise<WeiboClearCredentialResult> {
         await this.deps.cookieStore.remove()
         await this.deps.cookieStore.removeSavedAt()
+        // 缓存里留着旧账号的分组与榜单：一并删除，避免下次换号后命中不属于当前账号的数据
+        await this.deps.cache?.clear()
+        // 头像文件也要删：否则换号后顶栏会露出上一个账号的照片
+        await this.deps.avatar?.clear()
         return { isConfigured: false }
     }
 
@@ -245,10 +431,7 @@ export class WeiboRoutes {
                 'weibo/comments 参数非法：id 须为数字微博 id，maxId 与 count 可选',
             )
         }
-        const cookie = await this.deps.cookieStore.read()
-        if (!isCookieUsable(cookie)) {
-            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
-        }
+        const cookie = await this.readCookie()
         const fetchComments = this.deps.fetchComments ?? fetchPostComments
         return fetchComments({ ...raw, cookie })
     }
@@ -258,10 +441,7 @@ export class WeiboRoutes {
         if (!isWeiboLongTextRequest(payload)) {
             throw new WeiboWebError('invalid-payload', 'weibo/longtext 参数非法：id 须为 mblogid 或数字 id')
         }
-        const cookie = await this.deps.cookieStore.read()
-        if (!isCookieUsable(cookie)) {
-            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
-        }
+        const cookie = await this.readCookie()
         const load = this.deps.fetchLongText ?? fetchLongText
         return load({ cookie, id: payload.id })
     }
@@ -274,10 +454,7 @@ export class WeiboRoutes {
         if (!isWeiboLikeRequest(payload)) {
             throw new WeiboWebError('invalid-payload', 'weibo/like 参数非法：id 须为数字微博 id，liked 须为布尔')
         }
-        const cookie = await this.deps.cookieStore.read()
-        if (!isCookieUsable(cookie)) {
-            throw new WeiboWebError('no-credential', '尚未配置微博 Cookie：请先登录 weibo.com 并粘贴请求头中的 Cookie')
-        }
+        const cookie = await this.readCookie()
         const setLike = this.deps.setLike ?? setPostLike
         return setLike({ cookie, id: payload.id, liked: payload.liked })
     }

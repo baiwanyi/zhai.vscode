@@ -9,6 +9,7 @@
  * 面板激活、失焦与销毁都要经 activeDocument 上报/让位，关闭时同时清理事实与句柄。
  */
 import * as vscode from 'vscode'
+import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import { buildWebviewHtml } from '@modules/common/webviewHtml'
 import { getActivePanel, reportActivePanel } from '@modules/editor/activeDocument'
@@ -17,7 +18,10 @@ import { WEIBO_PANEL_VIEW_TYPE } from '@shared/types/workflow'
 import { createWeiboMediaProxy, readImageAsDataUrl } from './mediaProxy'
 import { WeiboWebError } from './webClient'
 import { EMPTY_COOKIE_STORE, createWeiboCookieStore } from './webCredential'
+import { createWeiboAvatarGateway } from './weiboAvatar'
+import { createWeiboCache } from './weiboCache'
 import { WeiboRoutes as WeiboRoutesImpl } from './weiboRoutes'
+import type { WeiboMediaProxy } from './mediaProxy'
 import type { WeiboRoutes } from './weiboRoutes'
 
 /** 图片缓存子目录：与其它模块的缓存共处 globalStorage 根下 */
@@ -46,6 +50,22 @@ function readProxyUrl(): URL | null {
 /** 代理与直连是否校验证书：VS Code 关闭严格校验时放开（企业抓包代理的常见配置） */
 function readStrictSsl(): boolean {
     return vscode.workspace.getConfiguration('http').get<boolean>('proxyStrictSSL') ?? true
+}
+
+/**
+ * 创建图片代理：缓存落 globalStorage 下的 weibo-media，代理与证书策略跟随 VS Code 配置。
+ * 复用约定：面板取图与激活预热共用这一份构造，避免两处各写一遍 cacheDir 与代理读取。
+ */
+export function createWeiboMediaResolver(
+    cacheRoot: vscode.Uri,
+    readCookie: () => Promise<string | undefined>,
+): WeiboMediaProxy {
+    return createWeiboMediaProxy({
+        cacheDir: vscode.Uri.joinPath(cacheRoot, MEDIA_CACHE_DIR_NAME).fsPath,
+        readCookie,
+        proxyUrl: readProxyUrl(),
+        isStrictSsl: readStrictSsl(),
+    })
 }
 
 /** 当前面板：关闭后置空，重复打开时聚焦而不是再开一页 */
@@ -84,7 +104,6 @@ export async function openWeiboPanel(
         current.reveal()
         return
     }
-    const cacheDir = mediaCacheRoot === undefined ? null : vscode.Uri.joinPath(mediaCacheRoot, MEDIA_CACHE_DIR_NAME)
     const webviewDist = vscode.Uri.joinPath(extensionUri, 'dist', 'webview')
     const panel = vscode.window.createWebviewPanel(WEIBO_PANEL_VIEW_TYPE, '微博', vscode.ViewColumn.Active, {
         enableScripts: true,
@@ -100,16 +119,24 @@ export async function openWeiboPanel(
     const cookieStore = secrets === undefined ? EMPTY_COOKIE_STORE : createWeiboCookieStore(secrets)
     // 图床偶发要求登录态：代理在 401/403 时带 Cookie 重试一次；网络按代理 → 直连 → fetch 降级
     const proxy =
-        cacheDir === null
+        mediaCacheRoot === undefined
             ? null
-            : createWeiboMediaProxy({
-                  cacheDir: cacheDir.fsPath,
-                  readCookie: async (): Promise<string | undefined> => cookieStore.read(),
-                  proxyUrl: readProxyUrl(),
-                  isStrictSsl: readStrictSsl(),
-              })
+            : createWeiboMediaResolver(mediaCacheRoot, async (): Promise<string | undefined> => cookieStore.read())
+    // 元数据与头像都落文档存储根：每次打开面板求值，切换文档目录后重开即生效
+    const storageRoot = resolveStorageRoot()
     const routes = new WeiboRoutesImpl({
         cookieStore,
+        cache: createWeiboCache(storageRoot),
+        // 头像经同一份图片代理取回后另存为 {存储根}/weibo_avatar.jpg
+        avatar: createWeiboAvatarGateway({
+            root: storageRoot,
+            resolveImage: async (imageUrl: string): Promise<string | null> => {
+                if (proxy === null) {
+                    return null
+                }
+                return proxy.resolve(imageUrl)
+            },
+        }),
         openExternal: async (url: string): Promise<void> => {
             await vscode.env.openExternal(vscode.Uri.parse(url))
         },

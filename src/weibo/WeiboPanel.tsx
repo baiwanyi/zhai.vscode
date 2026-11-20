@@ -1,6 +1,6 @@
 /**
  * 微博面板：编辑区独立页，顶部菜单切换首页 / 时间线 / 热门 / 分组，
- * 设置页与登录 Cookie 收进顶栏「更多」下拉，动作区另留刷新与个人主页。
+ * 顶栏动作区只剩「刷新」与账号菜单（头像 + 个人主页 / 设置弹窗 / 删除 Cookie）。
  * 复用约定：页面骨架取 @webview/components/AppPage，卡片取 @components/ui/card，
  * 取数状态分别来自 hooks 下的关注时间线、信息流与分组控制器，
  * 列表渲染统一交给 layout/WeiboFeedList，单条仍是 layout/WeiboPostCard，
@@ -8,14 +8,25 @@
  * 关键约束：未配置 Cookie 时任何信息流都不发请求，只给可执行的获取步骤；
  * Cookie 输入框不回显已保存值，保存成功后清空并收起，明文只存在于输入瞬间；
  * 时间线、热门与分组都是只读浏览，发布框仍是占位（写接口不在本次范围）；
- * 个人主页按账号 uid 拼 weibo.com 地址交给宿主打开，入口在顶栏 AppAction（与刷新、Cookie 同区），
- * 取不到 uid 时只提示而不拼空地址。
+ * 个人主页按账号 uid 拼 weibo.com 地址交给宿主打开，入口收在顶栏账号菜单里；
+ * 账号信息与头像由 weibo/profile 提供（头像已是 data URI），取不到 uid 时只提示而不拼空地址。
  */
 import { format } from 'date-fns'
-import { ExternalLink, Inbox, RefreshCw } from 'lucide-react'
+import { Inbox, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@components/ui/alert-dialog'
 import { Card, CardContent } from '@components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@components/ui/dialog'
 import { Toaster } from '@components/ui/sonner'
 import type { WeiboGroupItem } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
@@ -35,12 +46,13 @@ import { useHostToast } from '@webview/hooks/useHostToast'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
 import { useWeiboFeed } from './hooks/useWeiboFeed'
 import { useWeiboGroups } from './hooks/useWeiboGroups'
+import { useWeiboProfile } from './hooks/useWeiboProfile'
 import { useWeiboTimeline } from './hooks/useWeiboTimeline'
+import { WeiboAccountMenu } from './layout/WeiboAccountMenu'
 import { WeiboEmoticonPicker } from './layout/WeiboEmoticonPicker'
 import { WeiboFeedList } from './layout/WeiboFeedList'
 import { WeiboGroupList } from './layout/WeiboGroupList'
 import { WeiboHotRankList } from './layout/WeiboHotRankList'
-import { WeiboMoreMenu } from './layout/WeiboMoreMenu'
 import { WeiboNav } from './layout/WeiboNav'
 import type { WeiboFeedController } from './hooks/useWeiboFeed'
 import type { WeiboView } from './layout/WeiboNav'
@@ -76,9 +88,14 @@ export function WeiboPanel(): JSX.Element {
     const [view, setView] = useState<WeiboView>('home')
     const [isCredentialOpen, setIsCredentialOpen] = useState(false)
     const [selectedGroup, setSelectedGroup] = useState<WeiboGroupItem | null>(null)
+    // 设置改为弹窗：不再占用导航视图
+    const [isSettingsOpen, setIsSettingsOpen] = useState(false)
+    // 删除 Cookie 是破坏性操作：先确认，再交宿主清除
+    const [isDeleteOpen, setIsDeleteOpen] = useState(false)
     useHostToast()
 
     const isConfigured = homeState.credential?.isConfigured ?? false
+    const { state: profileState } = useWeiboProfile(isConfigured)
     const { state: groupsState, reload: reloadGroups } = useWeiboGroups({ enabled: isConfigured })
     const timelineListId = groupsState.groups?.timelineListId ?? null
     const timelineFeed = useWeiboFeed({
@@ -101,20 +118,31 @@ export function WeiboPanel(): JSX.Element {
         view === 'timeline' ? timelineFeed : view === 'hot' ? hotFeed : view === 'groups' ? groupFeed : null
     const isRefreshing = activeFeed === null ? homeState.isRefreshing : activeFeed.state.isRefreshing
     const isRefreshDisabled = !isConfigured || (view === 'groups' && selectedGroup === null)
-    const profileUid = groupsState.groups?.uid ?? null
+    /** 个人主页用的 uid：账号信息优先，分组结果兜底 */
+    const profileUid = profileState.profile?.id ?? groupsState.groups?.uid ?? null
 
     const handleOpenSettings = useCallback((): void => {
-        setView('settings')
+        setIsSettingsOpen(true)
+    }, [])
+
+    /** 删除 Cookie：先打开确认框，真正清除在 handleConfirmDelete */
+    const handleRequestDelete = useCallback((): void => {
+        setIsDeleteOpen(true)
     }, [])
 
     /**
-     * 登录 Cookie：凭证卡只挂在首页（按需）与设置页（常驻），
-     * 从信息流视图点进来先回首页再展开，否则菜单点了没有落点。
+     * 确认删除：清除后回首页并展开凭证卡。
+     * 关键约束：用户下一步多半是重新登录粘贴新 Cookie，留在原视图会看不到配置入口。
      */
-    const handleOpenCredential = useCallback((): void => {
-        setView('home')
-        setIsCredentialOpen(true)
-    }, [])
+    const handleConfirmDelete = useCallback((): void => {
+        void clearCredential().then((isCleared) => {
+            if (!isCleared) {
+                return
+            }
+            setView('home')
+            setIsCredentialOpen(true)
+        })
+    }, [clearCredential])
 
     const collapseCredential = useCallback((): void => {
         setIsCredentialOpen(false)
@@ -187,8 +215,6 @@ export function WeiboPanel(): JSX.Element {
                 return selectedGroup === null
                     ? '分组：从「我的分组」中选择一个分组查看。'
                     : `分组：${selectedGroup.title} 的信息流。`
-            case 'settings':
-                return '设置：登录 Cookie 只写入本机 SecretStorage（系统加密），不进日志、不进设置文件。'
         }
     }
 
@@ -355,37 +381,6 @@ export function WeiboPanel(): JSX.Element {
         )
     }
 
-    /** 设置：凭证卡常驻，附读取口径与失效处置说明 */
-    function renderSettings(): JSX.Element {
-        return (
-            <>
-                <CredentialCard
-                    isConfigured={isConfigured}
-                    isSaving={homeState.isSavingCredential}
-                    onSave={saveCredential}
-                    onClear={clearCredential}
-                    onCollapse={collapseCredential}
-                    canCollapse={false}
-                />
-                <Card>
-                    <CardContent className="flex flex-col gap-2">
-                        <h2 className="font-medium">各入口的取数口径</h2>
-                        <ul className="list-disc space-y-1 pl-5 text-muted-foreground text-xs">
-                            <li>首页：unreadfriendstimeline，增量刷新只取上次之后的新微博。</li>
-                            <li>时间线：friendstimeline，list_id 取默认分组里「最新微博」的 gid。</li>
-                            <li>热门：hottimeline，固定频道 102803，首屏 10 条。</li>
-                            <li>分组：allGroups 取「我的分组」，选中后走 groupstimeline 拉该分组。</li>
-                        </ul>
-                        <p className="text-muted-foreground text-xs">
-                            所有接口都是网页端内部 ajax：改版或风控升级后可能失效，届时重新粘贴 Cookie
-                            或降低刷新频率再试。
-                        </p>
-                    </CardContent>
-                </Card>
-            </>
-        )
-    }
-
     function renderContent(): JSX.Element {
         switch (view) {
             case 'home':
@@ -396,8 +391,6 @@ export function WeiboPanel(): JSX.Element {
                 return renderHotFeed()
             case 'groups':
                 return renderGroups()
-            case 'settings':
-                return renderSettings()
         }
     }
 
@@ -410,34 +403,25 @@ export function WeiboPanel(): JSX.Element {
                     <AppHeader>
                         <AppTitle>微博</AppTitle>
                         <AppAction>
-                            {view === 'settings' ? null : (
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={handleRefresh}
-                                    isLoading={isRefreshing}
-                                    disabled={isRefreshDisabled}
-                                    tooltip="增量刷新：只取上次之后的新内容"
-                                >
-                                    <RefreshCw className="size-3.5" aria-hidden="true" />
-                                    刷新
-                                </Button>
-                            )}
                             <Button
                                 size="sm"
-                                variant="ghost"
-                                onClick={handleOpenProfile}
-                                tooltip={
-                                    profileUid === null ? '读取到账号后才能打开个人主页' : '在浏览器打开你的微博主页'
-                                }
+                                variant="outline"
+                                onClick={handleRefresh}
+                                isLoading={isRefreshing}
+                                disabled={isRefreshDisabled}
+                                tooltip="增量刷新：只取上次之后的新内容"
                             >
-                                <ExternalLink className="size-3.5" aria-hidden="true" />
-                                个人主页
+                                <RefreshCw className="size-3.5" aria-hidden="true" />
+                                刷新
                             </Button>
-                            <WeiboMoreMenu
-                                isSettingsActive={view === 'settings'}
+                            <WeiboAccountMenu
+                                isConfigured={isConfigured}
+                                profile={profileState.profile}
+                                avatarDataUrl={profileState.avatarDataUrl}
+                                isProfileLoading={profileState.isLoading}
+                                onOpenProfile={handleOpenProfile}
                                 onOpenSettings={handleOpenSettings}
-                                onOpenCredential={handleOpenCredential}
+                                onDeleteCredential={handleRequestDelete}
                             />
                         </AppAction>
                         <AppDescription>{describeView()}</AppDescription>
@@ -447,7 +431,7 @@ export function WeiboPanel(): JSX.Element {
                     </AppHeader>
 
                     <AppContent isScrollable className="gap-3 p-3">
-                        <div className="mx-auto flex w-full max-w-5xl items-start justify-center gap-3 pt-1">
+                        <div className="mx-auto flex w-full max-w-5xl items-start justify-center gap-3 py-1">
                             <div className="flex min-w-0 max-w-2xl flex-1 flex-col gap-3">{renderContent()}</div>
                             {/* 右侧热搜榜：容器够宽才出现，窄面板让位给正文列表。
                                 三件事缺一不可：@3xl:block 让 hidden 在该档恢复显示、
@@ -460,8 +444,96 @@ export function WeiboPanel(): JSX.Element {
                     </AppContent>
                 </AppPage>
             </div>
+            <SettingsDialog
+                isOpen={isSettingsOpen}
+                onOpenChange={setIsSettingsOpen}
+                isConfigured={isConfigured}
+                isSaving={homeState.isSavingCredential}
+                onSave={saveCredential}
+                onClear={clearCredential}
+                onCollapse={collapseCredential}
+            />
+            <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>删除登录 Cookie？</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            删除后信息流、热搜与表情都会停止读取，需要重新登录 weibo.com 复制 Cookie 才能恢复。
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>取消</AlertDialogCancel>
+                        <AlertDialogAction variant="destructive" onClick={handleConfirmDelete}>
+                            删除
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
             <Toaster theme={theme} />
         </>
+    )
+}
+
+interface SettingsDialogProps {
+    isOpen: boolean
+    onOpenChange: (isOpen: boolean) => void
+    isConfigured: boolean
+    isSaving: boolean
+    /** 返回是否保存成功：失败时凭证卡保留输入，避免用户重贴一遍 */
+    onSave: (cookie: string) => Promise<boolean>
+    onClear: () => Promise<boolean>
+    /** 保存成功后收起首页的凭证卡：设置弹窗里的卡片本身不可收起 */
+    onCollapse: () => void
+}
+
+/**
+ * 设置弹窗：凭证卡常驻 + 各入口取数口径。
+ * 复用约定：外壳取 @components/ui/dialog（Title / Description 必填），凭证卡复用同文件的 CredentialCard。
+ * 关键约束：内容超出视口时在弹窗内滚动，不撑高页面；保存成功由 CredentialCard 回调收起首页的凭证卡。
+ */
+function SettingsDialog({
+    isOpen,
+    onOpenChange,
+    isConfigured,
+    isSaving,
+    onSave,
+    onClear,
+    onCollapse,
+}: SettingsDialogProps): JSX.Element {
+    return (
+        <Dialog open={isOpen} onOpenChange={onOpenChange}>
+            <DialogContent className="flex max-h-[calc(100vh-4rem)] flex-col gap-3 sm:max-w-lg">
+                <DialogHeader>
+                    <DialogTitle className="text-lg">设置</DialogTitle>
+                    <DialogDescription>登录 Cookie 只写入本机密钥库，不进日志、不进设置文件。</DialogDescription>
+                </DialogHeader>
+                <div className="flex min-h-0 flex-col gap-3 overflow-y-auto">
+                    <CredentialCard
+                        isConfigured={isConfigured}
+                        isSaving={isSaving}
+                        onSave={onSave}
+                        onClear={onClear}
+                        onCollapse={onCollapse}
+                        canCollapse={false}
+                    />
+                    <Card>
+                        <CardContent className="flex flex-col gap-2">
+                            <h2 className="font-medium">各入口的取数口径</h2>
+                            <ul className="list-disc space-y-1 pl-5 text-muted-foreground text-xs">
+                                <li>首页：unreadfriendstimeline，增量刷新只取上次之后的新微博。</li>
+                                <li>时间线：friendstimeline，list_id 取默认分组里「最新微博」的 gid。</li>
+                                <li>热门：hottimeline，固定频道 102803，首屏 10 条。</li>
+                                <li>分组：allGroups 取「我的分组」，选中后走 groupstimeline 拉该分组。</li>
+                            </ul>
+                            <p className="text-muted-foreground text-xs">
+                                所有接口都是网页端内部 ajax：改版或风控升级后可能失效，届时重新粘贴 Cookie
+                                或降低刷新频率再试。
+                            </p>
+                        </CardContent>
+                    </Card>
+                </div>
+            </DialogContent>
+        </Dialog>
     )
 }
 

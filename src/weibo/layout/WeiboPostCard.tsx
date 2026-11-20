@@ -1,5 +1,5 @@
 /**
- * 时间线卡片：作者头像、正文（含表情）、转发摘要、配图九宫格、互动数据与评论区。
+ * 时间线卡片：作者头像、正文（含表情）、转发摘要、图文混排媒体区、互动数据与评论区。
  * 复用约定：数据是归一化后的 WeiboTimelinePost，图片地址已在宿主按白名单收窄；
  * 头像与富文本分别交给 WeiboAvatar / WeiboRichText，配图与灯箱在本文件内；
  * 所有图片都经 useWeiboImage 换成本地地址——图床按 Referer 放行，Webview 直连会被拒。
@@ -8,7 +8,7 @@
  */
 import { cn } from 'cn'
 import { format } from 'date-fns'
-import { BadgeCheck, ExternalLink, Heart, ImageIcon, ImageOff, MessageCircle, Repeat2, Video } from 'lucide-react'
+import { BadgeCheck, ExternalLink, Heart, ImageIcon, ImageOff, MessageCircle, Play, Repeat2, Video } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
 import { Card, CardContent } from '@components/ui/card'
 import type {
@@ -43,6 +43,17 @@ function formatPostTime(post: WeiboTimelinePost): string {
     }
     const isSameYear = date.getFullYear() === new Date().getFullYear()
     return format(date, isSameYear ? 'MM-dd HH:mm' : 'yyyy-MM-dd HH:mm')
+}
+
+/** 视频时长：不足一小时给 m:ss，超过给 h:mm:ss */
+function formatDuration(seconds: number): string {
+    const total = Math.max(0, Math.trunc(seconds))
+    const minutes = Math.floor(total / 60)
+    const rest = total % 60
+    if (minutes < 60) {
+        return `${String(minutes)}:${String(rest).padStart(2, '0')}`
+    }
+    return `${String(Math.floor(minutes / 60))}:${String(minutes % 60).padStart(2, '0')}:${String(rest).padStart(2, '0')}`
 }
 
 interface WeiboImageProps {
@@ -188,6 +199,8 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
 
     const images = post.media.images.slice(0, MAX_GRID_IMAGES)
     const thumbnails = post.media.thumbnails
+    /** 混排项：含视频时按上游原序渲染，纯图片仍走原来的九宫格分支 */
+    const mixedItems = post.media.videoCount > 0 ? post.media.items.slice(0, MAX_GRID_IMAGES) : []
     const gridClassName =
         images.length === 1 ? 'max-w-64 grid-cols-1' : images.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
 
@@ -229,7 +242,63 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
                     </div>
                 </div>
 
-                {images.length > 0 ? (
+                {mixedItems.length > 0 ? (
+                    <div className="grid w-full grid-cols-3 gap-1">
+                        {mixedItems.map((item, index) => {
+                            if (item.kind === 'image') {
+                                return (
+                                    <button
+                                        key={`image-${item.url}`}
+                                        type="button"
+                                        onClick={() => {
+                                            setPreview({ origin: item.url, thumb: item.middleUrl, size: item.size })
+                                        }}
+                                        aria-label="查看原图"
+                                        className="aspect-square overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/5"
+                                    >
+                                        <WeiboImage
+                                            remoteUrl={item.middleUrl}
+                                            alt="微博配图"
+                                            className="size-full object-cover"
+                                        />
+                                    </button>
+                                )
+                            }
+                            // 视频只展示封面与时长：播放地址带签名且校验 Referer，观看统一回原文
+                            return (
+                                <button
+                                    key={`video-${String(index)}`}
+                                    type="button"
+                                    onClick={handleOpen}
+                                    aria-label="打开原文观看视频"
+                                    className="relative aspect-square overflow-hidden rounded-lg bg-muted ring-1 ring-foreground/5"
+                                >
+                                    {item.coverMiddleUrl === null ? (
+                                        <span className="flex size-full items-center justify-center text-muted-foreground">
+                                            <Video className="size-5" aria-hidden="true" />
+                                        </span>
+                                    ) : (
+                                        <>
+                                            <WeiboImage
+                                                remoteUrl={item.coverMiddleUrl}
+                                                alt="视频封面"
+                                                className="size-full object-cover"
+                                            />
+                                            <span className="absolute inset-0 flex items-center justify-center bg-black/25 text-white">
+                                                <Play className="size-6" aria-hidden="true" fill="currentColor" />
+                                            </span>
+                                        </>
+                                    )}
+                                    {item.durationSeconds === null ? null : (
+                                        <span className="absolute right-1 bottom-1 rounded bg-black/60 px-1 font-mono text-[0.6rem] leading-tight text-white">
+                                            {formatDuration(item.durationSeconds)}
+                                        </span>
+                                    )}
+                                </button>
+                            )
+                        })}
+                    </div>
+                ) : images.length > 0 ? (
                     <div className={cn('grid w-full gap-1', gridClassName)}>
                         {images.map((originUrl, index) => {
                             const thumbUrl = thumbnails[index] ?? originUrl
@@ -296,7 +365,9 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
                     {post.media.imageCount > 0 ? (
                         <Metric icon={<ImageIcon className="size-3.5" />} label="图片" value={post.media.imageCount} />
                     ) : null}
-                    {post.media.videoUrl === null ? null : (
+                    {post.media.videoCount > 0 ? (
+                        <Metric icon={<Video className="size-3.5" />} label="视频" value={post.media.videoCount} />
+                    ) : post.media.videoUrl === null ? null : (
                         <span className="flex items-center gap-1">
                             <Video className="size-3.5" aria-hidden="true" />
                             含视频

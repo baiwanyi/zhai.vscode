@@ -111,17 +111,47 @@ export interface WeiboTimelineImageSize {
     height: number
 }
 
+/**
+ * 混排媒体项：保留上游 mix_media_info 的原始顺序，图文与视频的相对位置不再丢失。
+ * 关键约束：视频项只给封面与时长，不给播放直链——播放地址带签名且校验 Referer，
+ * 既会在缓存里迅速失效，也无法由 Webview 直连；观看一律回到原文。
+ */
+export type WeiboTimelineMediaItem =
+    | {
+          kind: 'image'
+          /** 原图直链：点击放大时使用 */
+          url: string
+          /** 中等尺寸直链：九宫格展示用 */
+          middleUrl: string
+          /** 上游 largest 档尺寸：缺失为 null，前端回退到解码后的自然尺寸 */
+          size: WeiboTimelineImageSize | null
+      }
+    | {
+          kind: 'video'
+          /** 封面原图直链：上游未给封面时为 null，卡片回落为纯播放占位 */
+          coverUrl: string | null
+          /** 封面中图直链：与 coverUrl 同源，缺失为 null */
+          coverMiddleUrl: string | null
+          /** 时长（秒）：上游未给时为 null */
+          durationSeconds: number | null
+      }
+
 /** 媒体摘要：只给直链与数量，不做下载 */
 export interface WeiboTimelineMedia {
+    /** 混排顺序：图文与视频按上游原序排列；下方三个图片数组均由它派生 */
+    items: WeiboTimelineMediaItem[]
     /** 原图直链：点击放大时使用，与 thumbnails 一一对应 */
     images: string[]
     /** 中等尺寸直链：列表与九宫格展示用，减少首屏流量 */
     thumbnails: string[]
     /** 最大尺寸：与 images 同序（取上游 largest 档）；上游未给时为 null，前端回退到解码后的自然尺寸 */
     sizes: Array<WeiboTimelineImageSize | null>
+    /** 首个可播放地址：保留字段，供「打开原文」之外的兜底诊断 */
     videoUrl: string | null
-    /** 上游声明的图片总数：直链缺失时前端据此提示「另有 N 张」 */
+    /** 上游声明的图片总数（不含视频）：直链缺失时前端据此提示「另有 N 张」 */
     imageCount: number
+    /** 视频条数：混排里视频不占图片格，单独计数 */
+    videoCount: number
 }
 
 /** 转发体：只保留原文摘要，避免递归展开 */
@@ -261,6 +291,46 @@ export interface WeiboHotRankResult {
     fetchedAt: string
 }
 
+/**
+ * 热搜入参：refresh 为真时跳过缓存直接回源。
+ * 关键约束：热搜榜只在激活预热与这个按钮上回源，普通刷新不触碰；缺省等价于 false。
+ */
+export interface WeiboHotRankRequest {
+    refresh?: boolean
+}
+
+/** 当前登录账号的公开信息：只用于顶栏账号菜单，不参与任何写操作 */
+export interface WeiboProfile {
+    /** 账号数字 id（字符串形式） */
+    id: string
+    /** 昵称：缺失或为空时该条信息视为不可用 */
+    name: string
+    /**
+     * 头像远程直链：已过图床白名单。
+     * 关键约束：上游头像地址带签名参数会过期，仅作「本地文件缺失时重试」的来源，不作为展示源。
+     */
+    avatarUrl: string
+    isVerified: boolean
+    /** 个人简介：已剥标签解实体，上游为空时为空串 */
+    description: string
+    followersCount: number
+    friendsCount: number
+    statusesCount: number
+}
+
+/** 账号信息结果：头像以 data URI 回传，前端不必再走一次 weibo/image */
+export interface WeiboProfileResult {
+    /** 未配置凭证或上游没有账号信息时为 null */
+    profile: WeiboProfile | null
+    /** 头像 data URI：由本机 {存储根}/weibo_avatar.jpg 生成，文件缺失时为 null */
+    avatarDataUrl: string | null
+}
+
+/** 账号信息入参：refresh 为真时跳过缓存重新取数并重下头像 */
+export interface WeiboProfileRequest {
+    refresh?: boolean
+}
+
 /** 凭证状态：只描述是否可用，不回传任何 Cookie 片段 */
 export interface WeiboCredentialState {
     isConfigured: boolean
@@ -345,6 +415,24 @@ export function isWeiboTimelineRequest(value: unknown): value is WeiboTimelineRe
         isOptionalNumber(refresh) &&
         isOptionalNumber(maxPages)
     )
+}
+
+/** 收窄热搜入参：refresh 缺省合法，给了就必须是布尔 */
+export function isWeiboHotRankRequest(value: unknown): value is WeiboHotRankRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { refresh } = value as Record<string, unknown>
+    return refresh === undefined || typeof refresh === 'boolean'
+}
+
+/** 收窄账号信息入参：refresh 缺省合法，给了就必须是布尔 */
+export function isWeiboProfileRequest(value: unknown): value is WeiboProfileRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { refresh } = value as Record<string, unknown>
+    return refresh === undefined || typeof refresh === 'boolean'
 }
 
 /** 收窄信息流来源：只允许三种已登记端点，防止 source 被当作路径片段拼接 */

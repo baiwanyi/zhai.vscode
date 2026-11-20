@@ -8,6 +8,7 @@
 import type {
     WeiboTimelineImageSize,
     WeiboTimelineMedia,
+    WeiboTimelineMediaItem,
     WeiboTimelineMetrics,
     WeiboTimelinePost,
     WeiboTimelineRequest,
@@ -392,62 +393,140 @@ function pickPlaybackUrl(mediaInfo: unknown): string | null {
     return null
 }
 
-/** 提取媒体摘要：图片直链优先取 pic_infos，缺直链时用 pic_ids 拼图床地址 */
+/** 仅有 pid 时拼图床直链：部分返回只给 id 不给直链 */
+function candidateFromPid(pid: string): MediaCandidate | null {
+    const url = buildSinaImageUrl(pid)
+    return url === null ? null : { url, middleUrl: buildMiddleImageUrl(url), size: null }
+}
+
+/** 混排项是否为视频：type 为主，data 里的 object_type / type 兜底（新版把类型下沉到 data） */
+function isVideoItem(item: Record<string, unknown>): boolean {
+    if (item.type === 'video') {
+        return true
+    }
+    const data = item.data
+    return isRecord(data) && (data.object_type === 'video' || data.type === 'video')
+}
+
+/** 视频摘要：只给封面与时长，不给播放直链（播放地址带签名且校验 Referer，观看一律回原文） */
+interface VideoCandidate {
+    coverUrl: string | null
+    coverMiddleUrl: string | null
+    durationSeconds: number | null
+}
+
+/**
+ * 读取视频封面与时长：封面优先 pic_info 的档位地址，其次 page_pic 单直链；
+ * 时长兼容三处写法（data.duration、media_info.duration、duration_time）。
+ */
+function pickVideoCandidate(data: Record<string, unknown>): VideoCandidate {
+    const fromPic = pickMediaCandidate(data.pic_info) ?? pickMediaCandidate(data.page_info)
+    const pageInfo = isRecord(data.page_info) ? data.page_info : {}
+    // 封面有三处写法：pic_info 的档位对象、data.page_pic、data.page_info.page_pic
+    const direct =
+        fromPic === null
+            ? (normalizeWeiboImageUrl(toText(data.page_pic)) ?? normalizeWeiboImageUrl(toText(pageInfo.page_pic)))
+            : null
+    const coverUrl = fromPic === null ? direct : fromPic.url
+    const mediaInfo = isRecord(data.media_info)
+        ? data.media_info
+        : isRecord(pageInfo.media_info)
+          ? pageInfo.media_info
+          : {}
+    const duration = toCount(data.duration) || toCount(mediaInfo.duration) || toCount(data.duration_time)
+    return {
+        coverUrl,
+        coverMiddleUrl: fromPic?.middleUrl ?? (coverUrl === null ? null : buildMiddleImageUrl(coverUrl)),
+        durationSeconds: duration > 0 ? duration : null,
+    }
+}
+
+/**
+ * 提取媒体摘要：图文与视频按 mix_media_info.items 原序落 items，三个图片数组由它派生。
+ * 关键约束：混排项是唯一顺序来源——先按 items 走一遍，pic_infos 只补混排里没出现的图，
+ * 避免「先全部图片再视频」把图文交错的顺序压平；视频只取封面与时长，播放地址仅留在 videoUrl 供兜底诊断。
+ */
 function extractMedia(record: Record<string, unknown>): WeiboTimelineMedia {
+    const items: WeiboTimelineMediaItem[] = []
     const images: string[] = []
     const thumbnails: string[] = []
     const sizes: Array<WeiboTimelineImageSize | null> = []
+    /** 已收录的 pid 与原图地址：pic_infos 与 mix_media_info 是同一批图的两种视图 */
+    const seenPids = new Set<string>()
+    const seenUrls = new Set<string>()
 
-    /** 追加图片：按原图地址去重，三个数组保持同序，前端按索引配对 */
-    const pushImage = (candidate: MediaCandidate | null): void => {
-        if (candidate === null || images.includes(candidate.url)) {
+    /** 追加一张图：pid 与直链双重去重，三个数组保持同序，前端按索引配对 */
+    const pushImage = (candidate: MediaCandidate | null, pid?: string): void => {
+        if (candidate === null) {
             return
         }
-        images.push(candidate.url)
-        thumbnails.push(candidate.middleUrl ?? buildMiddleImageUrl(candidate.url))
-        sizes.push(candidate.size)
-    }
-
-    const picInfos = record.pic_infos
-    if (isRecord(picInfos)) {
-        for (const info of Object.values(picInfos)) {
-            pushImage(pickMediaCandidate(info))
+        if (pid !== undefined && seenPids.has(pid)) {
+            return
         }
+        if (seenUrls.has(candidate.url)) {
+            return
+        }
+        if (pid !== undefined) {
+            seenPids.add(pid)
+        }
+        seenUrls.add(candidate.url)
+        const middleUrl = candidate.middleUrl ?? buildMiddleImageUrl(candidate.url)
+        images.push(candidate.url)
+        thumbnails.push(middleUrl)
+        sizes.push(candidate.size)
+        items.push({ kind: 'image', url: candidate.url, middleUrl, size: candidate.size })
     }
 
-    // 新版信息流把图片与视频统一放在 mix_media_info：图片项可能只有 pid，也可能带直链
     let videoUrl: string | null = null
+    let videoCount = 0
+
+    // 混排项：图片与视频按上游原序落 items，视频不占图片格
     const mixMedia = record.mix_media_info
     if (isRecord(mixMedia) && Array.isArray(mixMedia.items)) {
-        for (const item of mixMedia.items) {
-            if (!isRecord(item)) {
+        for (const raw of mixMedia.items) {
+            if (!isRecord(raw)) {
                 continue
             }
-            if (item.type === 'video') {
-                if (videoUrl === null && isRecord(item.data)) {
-                    videoUrl = pickPlaybackUrl(item.data.media_info)
+            if (isVideoItem(raw)) {
+                const data = isRecord(raw.data) ? raw.data : raw
+                const candidate = pickVideoCandidate(data)
+                items.push({
+                    kind: 'video',
+                    coverUrl: candidate.coverUrl,
+                    coverMiddleUrl: candidate.coverMiddleUrl,
+                    durationSeconds: candidate.durationSeconds,
+                })
+                videoCount += 1
+                if (videoUrl === null) {
+                    videoUrl =
+                        pickPlaybackUrl(data.media_info) ??
+                        pickPlaybackUrl(isRecord(data.page_info) ? data.page_info.media_info : null)
                 }
                 continue
             }
-            const candidate = pickMediaCandidate(item.data) ?? pickMediaCandidate(item)
-            if (candidate !== null) {
-                pushImage(candidate)
-                continue
-            }
-            const built = buildSinaImageUrl(toText(item.id) || toText(item.pid))
-            if (built !== null) {
-                pushImage({ url: built, middleUrl: buildMiddleImageUrl(built), size: null })
-            }
+            const rawPid = toText(raw.id) || toText(raw.pid) || toText(isRecord(raw.data) ? raw.data.id : '')
+            const pid = rawPid.length > 0 ? rawPid : undefined
+            const candidate =
+                pickMediaCandidate(raw.data) ??
+                pickMediaCandidate(raw) ??
+                (pid === undefined ? null : candidateFromPid(pid))
+            pushImage(candidate, pid)
         }
     }
 
-    // 兜底：部分返回只有 pic_ids（无 pic_infos），用 pid 直接拼图床直链，否则图片区是空的
-    if (images.length === 0 && Array.isArray(record.pic_ids)) {
+    // 部分版本只在 pic_infos 给图、mix_media_info 只给视频：混排没收录的图按 pid 顺序补在尾部
+    const picInfos = record.pic_infos
+    if (isRecord(picInfos)) {
+        for (const [pid, info] of Object.entries(picInfos)) {
+            pushImage(pickMediaCandidate(info) ?? candidateFromPid(pid), pid)
+        }
+    }
+
+    // 兜底：只有 pic_ids 没有直链时用 pid 拼图床地址，否则图片区是空的
+    if (Array.isArray(record.pic_ids)) {
         for (const rawPid of record.pic_ids) {
-            const built = buildSinaImageUrl(toText(rawPid))
-            if (built !== null) {
-                pushImage({ url: built, middleUrl: buildMiddleImageUrl(built), size: null })
-            }
+            const pid = toText(rawPid)
+            pushImage(pid.length === 0 ? null : candidateFromPid(pid), pid.length === 0 ? undefined : pid)
         }
     }
     for (const key of ['original_pic', 'bmiddle_pic', 'thumbnail_pic']) {
@@ -457,19 +536,34 @@ function extractMedia(record: Record<string, unknown>): WeiboTimelineMedia {
         }
     }
 
+    // 顶层 page_info 只给视频、没有 mix_media_info 的旧版帖子：补一个视频项，卡片才有封面可展示
     const pageInfo = record.page_info
-    if (videoUrl === null && isRecord(pageInfo)) {
-        videoUrl = pickPlaybackUrl(pageInfo.media_info)
+    if (isRecord(pageInfo)) {
+        if (videoUrl === null) {
+            videoUrl = pickPlaybackUrl(pageInfo.media_info)
+        }
+        if (videoCount === 0 && videoUrl !== null) {
+            const candidate = pickVideoCandidate(pageInfo)
+            items.push({
+                kind: 'video',
+                coverUrl: candidate.coverUrl,
+                coverMiddleUrl: candidate.coverMiddleUrl,
+                durationSeconds: candidate.durationSeconds,
+            })
+            videoCount = 1
+        }
     }
 
     const declared = toCount(record.pic_num)
-    const picIds = Array.isArray(record.pic_ids) ? record.pic_ids.length : 0
     return {
+        items,
         images,
         thumbnails,
         sizes,
         videoUrl,
-        imageCount: Math.max(declared, picIds, images.length),
+        // 只数图片：视频不占图片格，混排时也不再拿上游声明数冒充实际渲染数
+        imageCount: Math.max(declared, images.length),
+        videoCount,
     }
 }
 

@@ -418,6 +418,7 @@ export type HostMethodName =
     | 'weibo/longtext'
     | 'weibo/open'
     | 'weibo/openPost'
+    | 'weibo/profile'
     | 'weibo/timeline'
     | 'workflow/open'
     | 'workflow/reset'

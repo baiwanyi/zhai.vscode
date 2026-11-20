@@ -2,14 +2,14 @@
  * 微博顶部固定菜单：只承载四个信息流入口的切换。
  * 复用约定：按钮取 @webview/components/Button，激活态用 secondary 变体与 aria-current 标记；
  * 视图枚举在本文件导出，页面据此切换内容，菜单自身不持有任何状态。
- * 关键约束：设置页与登录 Cookie 收进顶栏的「更多」下拉（WeiboMoreMenu），个人主页是外链动作、
- * 入口同在顶栏动作区，三者都不并入本菜单；菜单随 AppHeader 固定在顶部，不参与内容区滚动。
+ * 关键约束：设置（弹窗）、删除 Cookie 与个人主页都收进顶栏账号菜单（WeiboAccountMenu），
+ * 三者都不并入本菜单；菜单随 AppHeader 固定在顶部，不参与内容区滚动。
  */
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 
-/** 页面视图：四个信息流入口 + 设置；个人主页是外链动作，不进入视图枚举 */
-export type WeiboView = 'home' | 'timeline' | 'hot' | 'groups' | 'settings'
+/** 页面视图：只有四个信息流入口；设置是弹窗、个人主页是外链动作，都不进入视图枚举 */
+export type WeiboView = 'home' | 'timeline' | 'hot' | 'groups'
 
 interface NavItem {
     view: WeiboView

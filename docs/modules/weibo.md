@@ -1001,10 +1001,12 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 | `source` | `source` | 剥 `<a>` 外壳，只留客户端名 |
 | `author` | `user.id / screen_name / verified / avatar_large` | 认证标记取 `verified === true`，头像只保留图床地址 |
 | `metrics` | `reposts_count / comments_count / attitudes_count` | 缺失按 0 |
-| `media.images` | `pic_infos[*].largest → original → large.url`、`mix_media_info.items[*]`（图项直链或 pids）、`pic_ids` | 原图直链，逐项取首个可用；缺直链时用 pid 拼 `wx1.sinaimg.cn/large/{pid}.jpg` |
+| `media.items` | `mix_media_info.items[*]` 原序；`pic_infos` / `pic_ids` / 单图字段只补混排里没出现的图 | 混排唯一顺序源：`image` 项给原图 / 中图 / 尺寸，`video` 项只给封面与时长，不给播放直链 |
+| `media.images` | 由 `media.items` 派生（`kind === 'image'`） | 原图直链，按 pid 与直链双重去重；缺直链时用 pid 拼 `wx1.sinaimg.cn/large/{pid}.jpg` |
 | `media.thumbnails` | `pic_infos[*].bmiddle.url`（新版为 `/wap360/`），缺失时把 `/large/` 等尺寸目录换成 `/bmiddle/` | 列表展示用的中等尺寸，与 images 同序 |
 | `media.sizes` | `pic_infos[*].largest.width/height`，缺失回退 `original` / `large` | 最大尺寸，与 images 同序；预览角标与竖横判断只认它，与实际加载的档位无关 |
-| `media.videoUrl` | `page_info.media_info.playback_list[0]` 或 `mix_media_info` 中的视频项 | 无视频为 `null`（当前只标记不播放） |
+| `media.videoUrl` | `page_info.media_info.playback_list[0]` 等 | 首个可播放地址，仅作兜底诊断；卡片不播放，观看一律回原文 |
+| `media.imageCount` / `videoCount` | `pic_num`、实际解析出的图片数、混排里的视频条数 | 图片与视频分开计数，不再互相冒充 |
 | `retweeted` | `retweeted_status` | 只保留作者名、正文摘要与原文地址，不递归展开 |
 | 广告位 | `ad_state=1` / `is_ad` / `promotion` | 直接丢弃，不进入去重计数 |
 
@@ -1135,19 +1137,23 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/modules/weibo/webFeed.ts` | 时间线 / 热门 / 分组端点适配、分组归一化与卡片流提取 |
 | `src/modules/weibo/webEmoticons.ts` | 表情配置：`statuses/config` 取数与表情条目归一化 |
 | `src/modules/weibo/webHotRank.ts` | 侧栏热搜榜：`bandUnified` 取数与 realtime 条目归一化 |
+| `src/modules/weibo/webProfile.ts` | 账号信息：`profile/info` 取数与 user 字段归一化 |
 | `src/modules/weibo/webCredential.ts` | Cookie 清洗、SecretStorage 存取、凭证状态 |
+| `src/modules/weibo/weiboCache.ts` | 元数据缓存：`{存储根}/weibo.json` 读写、账号指纹、逐字段校验与原子落盘 |
+| `src/modules/weibo/weiboAvatar.ts` | 头像缓存：下载落盘 `{存储根}/weibo_avatar.jpg`、读回 data URI、清除 |
+| `src/modules/weibo/warmup.ts` | 激活预热：分组 / 账号信息 / 热搜 / 表情串行取一次并写缓存，失败静默 |
 | `src/modules/weibo/mediaProxy.ts` | 图片代理：带 Referer 取图、本地缓存、并发去重与容量清理 |
 | `src/modules/weibo/webInteraction.ts` | 写操作：`setLike` / `cancelLike`，补 Origin 与 X-XSRF-TOKEN |
 | `src/modules/weibo/webComments.ts` | 评论读取：`buildComments` 参数构造、分页游标与评论归一化 |
 | `src/modules/weibo/webLongText.ts` | 长文读取：`longtext` 取全文、正文优先级与失败兜底 |
-| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/groups`、`weibo/hotRank`、`weibo/emoticons`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/image`、`weibo/like`、`weibo/openPost` 分发 |
-| `src/modules/weibo/panel.ts` | 面板消息通道、凭证注入、图片代理装配与本地资源白名单 |
+| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/image`、`weibo/like`、`weibo/openPost` 分发 |
+| `src/modules/weibo/panel.ts` | 面板消息通道、凭证与缓存注入、图片代理装配与本地资源白名单 |
 | `src/modules/common/webviewHtml.ts` | CSP 生成：默认不放行远程图，需要时可按调用方传入的 `imgSources` 放行 |
-| `src/weibo/` | Webview 入口：顶部固定菜单、右侧热搜榜、Cookie 配置区、信息流列表、卡片（头像 / 九宫格 / 表情）与发表框表情选择器 |
+| `src/weibo/` | Webview 入口：顶部固定菜单、账号菜单与设置弹窗、右侧热搜榜、信息流列表、卡片（头像 / 图文混排 / 表情）与发表框表情选择器 |
 
 ### 14.11 多入口信息流（首页 / 时间线 / 热门 / 分组）
 
-面板顶部固定菜单只留「首页 / 时间线 / 热门 / 分组」四个信息流入口；顶栏动作区放「刷新」「个人主页」与「更多」下拉，「更多」里收回「设置」与「登录 Cookie」。菜单挂在 `AppHeader` 内，随标题区固定，不参与内容区滚动。
+面板顶部固定菜单只留「首页 / 时间线 / 热门 / 分组」四个信息流入口；顶栏动作区放「刷新」与账号菜单（头像 + 昵称），下拉里收回「个人主页」「设置」「删除 Cookie」。菜单挂在 `AppHeader` 内，随标题区固定，不参与内容区滚动。
 
 | 入口 | 接口 | 关键参数 |
 |------|------|----------|
@@ -1162,8 +1168,8 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 - 三种信息流共用同一条 `weibo/feed` 协议与同一套分页/增量状态机：`source` 只决定端点与固定参数，游标语义与 14.3 完全一致。
 - 热门流的响应结构可能是 `data.cards[].mblog`（卡片流），时间线与分组通常是 `statuses[]`；宿主统一提取，`max_id` / `since_id` 为 `"0"` 时视为没有更多，避免「加载更多」被永久点亮。
 - 个人主页按 `weibo/groups` 给出的账号 uid 拼 `https://weibo.com/u/{uid}`，经 `weibo/openPost` 的白名单校验后交给宿主打开；uid 缺失时只提示不跳转，不拼空地址。
-- 设置页承载 Cookie 配置（保存 / 清除）与各入口取数口径说明；未配置时任何信息流都不发请求，只给「去设置」的引导。
-- 「更多」下拉的两项：「设置」切到设置页并以勾选标记当前所在页；「登录 Cookie」由页面回首页并展开凭证卡（凭证卡只存在于首页按需区与设置页常驻区），因此菜单在所有视图都常驻，不随视图隐藏。
+- 设置是弹窗而不是视图：凭证卡常驻，附各入口取数口径；未配置时任何信息流都不发请求，只给「去设置」的引导。
+- 账号菜单三项：「个人主页」按 uid 打开 `weibo.com/u/{uid}`；「设置」打开弹窗；「删除 Cookie」先弹确认框，确认后清除凭证、元数据缓存与本地头像，并回首页展开凭证卡（用户下一步多半是重新登录），未配置时该项禁用。
 
 ### 14.12 表情配置（发表框）
 
@@ -1191,6 +1197,36 @@ GET https://weibo.com/ajax/side/bandUnified?type=mine&last_tab=mine&last_tab_tim
 - 广告位（`is_ad: 1` / `ad_state: 1`）、标注「商」或「上新」的推广位（`icon_desc` 或兜底的 `label_name` 含这两个关键字，这类位往往不带 `is_ad`）与缺标题的条目不进榜，且不影响其余条目的名次；榜 1–3 的序号用 `#f26d5f` 加粗，其余弱化。
 - 侧栏在容器宽度 ≥ 768px（`@3xl`）时出现在列表右侧，窄面板自动隐藏；宽档下用 `sticky top-3 self-start` 钉在内容区滚动视口内，不随左侧信息流滚走（缺 `@3xl:block` 会一直 `display:none`，缺 `self-start` 会被拉伸到父容器高度而没有粘住行程）；面板内点刷新可重新取数，未配置 Cookie 时只给引导。
 - 标题下的说明行显示「更新于 本地时分」，时刻取宿主回包的 `fetchedAt`（ISO），与榜单内容同一次请求同源，而不是前端计时；首次取数前或回包时刻非法时该行留空，标题区不跳动。
-- 卡片的四种状态都由 `StateEmpty` 承载：未配置 Cookie（`Cookie` 图标 + 取数前提说明）、首次加载（`Spinner` + 正在读取）、失败与空榜单（`Flame` + 重试按钮作底部操作区，有错误信息时标题为「热搜读取失败」、说明用上游错误文案，否则是「暂时没有热搜内容」+ 刷新建议）；侧栏内统一用紧凑间距（`gap-3 p-3`），未配置态不在卡片内重复放按钮，入口在顶栏「更多」。
+- 卡片的四种状态都由 `StateEmpty` 承载：未配置 Cookie（`Cookie` 图标 + 取数前提说明）、首次加载（`Spinner` + 正在读取）、失败与空榜单（`Flame` + 重试按钮作底部操作区，有错误信息时标题为「热搜读取失败」、说明用上游错误文案，否则是「暂时没有热搜内容」+ 刷新建议）；侧栏内统一用紧凑间距（`gap-3 p-3`），未配置态不在卡片内重复放按钮，入口在顶栏账号菜单的「设置」。
 - 榜单用 `ItemGroup`（自带 `role="list"`）+ `Item`（补 `role="listitem"`）承载，不再用 `ol/li`：序号走 `ItemMedia variant="icon"`（`w-4 justify-end`，两位数不推歪标题）、标题走 `ItemTitle`（`line-clamp-1` 单行截断）、`description` 作标题下的副行走 `ItemDescription`、`icon_desc` 作为行尾 `Badge` 收进 `ItemActions`；条目只展示文字，上游 `icon_url` 仍随回包下发但前端不再渲染成图片。
 - 条目整行点击打开 `https://s.weibo.com/weibo?q={encodeURIComponent(title)}`（`s.weibo.com` 属 `weibo.com` 子域，`weibo/openPost` 白名单放行；注意该协议对 url 有 512 字符上限）；悬停整行（触发器是 `Item` 本身，不是标题链接）用 `Tooltip` 显示完整标题，气泡沿用 `TOOLTIP_CLASS` 的暗底亮字并放左侧；悬停时整行铺 `hover:bg-muted`，标题、序号与描述同时提亮（`Item` 自带 `group/item`）；标题本身是 `a`，只为键盘可达与右键复制地址，点击 `preventDefault` 后冒泡回整行处理器，避免打开两次或让 webview 自行导航。
+
+### 14.14 元数据缓存（分组 / 热搜 / 表情）
+
+```
+{存储根}/weibo.json
+```
+
+- 三项只在**扩展激活时预热一次**：`warmup.ts` 依次取 `allGroups` / `bandUnified` / `statuses/config` 并写入缓存；之后面板打开、切页、顶栏刷新都不再回源。热搜卡右上角是唯一能强制回源 `weibo/hotRank` 的入口（入参 `refresh: true`）。
+- 预热必须串行：`webClient` 的最小间隔依赖模块级 `lastRequestAt`，并发调用会同时读到旧值而集体放行，只有串行等待才能让 1.2s 节流真正生效。
+- 同一账号 15 分钟内不重复预热（文件里的 `warmedAt`），避免开发时反复 Reload Window 反复打接口；凭证缺失直接返回，三项里任一失败只记 `warn`，既不弹窗也不影响扩展激活。
+- 文件结构：`version` / `accountKey` / `warmedAt` + 三个条目（`data` + `fetchedAt`）。`accountKey` 是 Cookie 的 SHA-256 前 16 位，**换号即失效**，Cookie 明文绝不落盘；`weibo/credential/clear` 会连带删除整个文件。
+- 读取按不可信输入处理：版本不符、账号不符、时间不可解析、条目结构非法一律按未命中；榜单 / 表情 / 分组解析时重新过图床白名单与颜色白名单，非法条目直接丢弃，全部非法视为未命中而不是缓存一个空列表。
+- 写入先落 `.part` 再 `rename`，同一进程内的读改写走串行队列，三个来源并发回源不会互相覆盖；跨窗口最后写入者胜出，缓存可重建所以可接受。
+- 时间线、信息流与图片都不进缓存：前者变化快且需要游标语义，后者由图片代理的本地缓存 + `data:` 回传承担；混进来还会把带签名的直链写进 `weibo.json`，很快失效且体积不可控。
+- 有效期常量 `CACHE_TTL_MS` 默认全为无穷（严格「激活一次」），改成有限值即开启「读取时过期回源」；热搜变化最快，若希望长时间开着窗口也保持新鲜，可单独给它 30 分钟。
+
+### 14.15 账号信息与头像（profile/info）
+
+```
+GET https://weibo.com/ajax/profile/info?uid={uid}&scene=profile
+```
+
+- `uid` 来自 `weibo/groups` 的 `uid`（分组条目的 uid 即登录账号）；取不到 uid 时预热与手动刷新都直接跳过并报错，不拼空地址。
+- 字段映射：`data.user` → `id`（`id` / `idstr` 字符串化）、`screen_name`、`avatar_hd` → `avatar_large` → `profile_image_url`、`verified`、`description`（剥标签解实体）、`followers_count` / `friends_count` / `statuses_count`；缺 id 或缺昵称整体判为不可用。
+- 头像地址只作「重新下载」的来源：微博头像 URL 带签名参数会过期，展示一律读本地文件，不读远程地址。
+- 用户信息落 `{存储根}/weibo.json` 的 `profile` 字段（与分组 / 热搜 / 表情同一份缓存，同样按 `accountKey` 归属）；头像单独落 `{存储根}/weibo_avatar.jpg`，先写 `.part` 再 rename，读回时按魔数嗅探格式再拼 data URI。
+- `weibo/profile` 命中「资料 + 本地头像」时零网络；只有头像文件缺失时才用缓存里的 URL 补一次下载；`refresh: true` 才重新取数。
+- 头像经与卡片图片同一份 `mediaProxy` 下载（代理 → fetch → ipv4 → 直连），落盘后由宿主读成 data URI 回传，Webview 不直连图床。
+- `credential/clear` 同时删除 `weibo.json` 与 `weibo_avatar.jpg`，避免换号后顶栏露出上一个账号的头像。
+- 顶栏动作区合并为一个账号菜单（`WeiboAccountMenu`）：触发器是 `Avatar` + 昵称，菜单内是账号信息（粉丝 / 微博数）、个人主页、设置弹窗、删除 Cookie；账号未取到时个人主页禁用、未配置时删除项禁用，头像回落为昵称首字。

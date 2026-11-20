@@ -623,3 +623,106 @@ describe('normalizeCookieInput', () => {
         expect(() => normalizeCookieInput('   ')).toThrowError(/为空/u)
     })
 })
+
+describe('mix_media_info 图文混排', () => {
+    it('按上游原序保留图文交错顺序，视频项带封面与时长', () => {
+        const post = normalizeTimelinePost(
+            rawStatus(201, {
+                mix_media_info: {
+                    items: [
+                        { type: 'pic', data: { largest: { url: 'https://wx1.sinaimg.cn/large/a.jpg' } } },
+                        {
+                            type: 'video',
+                            data: {
+                                page_info: {
+                                    page_pic: 'https://wx1.sinaimg.cn/large/cover.jpg',
+                                    media_info: { duration: 93 },
+                                },
+                            },
+                        },
+                        { type: 'pic', data: { largest: { url: 'https://wx1.sinaimg.cn/large/b.jpg' } } },
+                    ],
+                },
+            }),
+        )
+        expect(post?.media.items.map((item) => item.kind)).toEqual(['image', 'video', 'image'])
+        expect(post?.media.images).toEqual(['https://wx1.sinaimg.cn/large/a.jpg', 'https://wx1.sinaimg.cn/large/b.jpg'])
+        expect(post?.media.videoCount).toBe(1)
+        expect(post?.media.items[1]).toEqual({
+            kind: 'video',
+            coverUrl: 'https://wx1.sinaimg.cn/large/cover.jpg',
+            coverMiddleUrl: 'https://wx1.sinaimg.cn/bmiddle/cover.jpg',
+            durationSeconds: 93,
+        })
+    })
+
+    it('imageCount 只数图片，视频单独计数', () => {
+        const post = normalizeTimelinePost(
+            rawStatus(202, {
+                pic_num: 1,
+                mix_media_info: {
+                    items: [
+                        { type: 'pic', data: { largest: { url: 'https://wx1.sinaimg.cn/large/a.jpg' } } },
+                        { type: 'video', data: { page_pic: 'https://wx1.sinaimg.cn/large/cover.jpg' } },
+                    ],
+                },
+            }),
+        )
+        expect(post?.media.imageCount).toBe(1)
+        expect(post?.media.videoCount).toBe(1)
+    })
+
+    it('pic_infos 与 mix_media_info 指向同一张图时只保留一份', () => {
+        const post = normalizeTimelinePost(
+            rawStatus(203, {
+                pic_infos: {
+                    '0064ZtQNabc123': { largest: { url: 'https://wx1.sinaimg.cn/large/same.jpg' } },
+                },
+                mix_media_info: {
+                    items: [
+                        {
+                            type: 'pic',
+                            id: '0064ZtQNabc123',
+                            data: { largest: { url: 'https://wx1.sinaimg.cn/large/same.jpg' } },
+                        },
+                    ],
+                },
+            }),
+        )
+        expect(post?.media.images).toEqual(['https://wx1.sinaimg.cn/large/same.jpg'])
+        expect(post?.media.items).toHaveLength(1)
+    })
+
+    it('mix 只给视频时，pic_infos 的图片补在尾部', () => {
+        const post = normalizeTimelinePost(
+            rawStatus(204, {
+                pic_infos: { '0064ZtQNabc777': { largest: { url: 'https://wx1.sinaimg.cn/large/p.jpg' } } },
+                mix_media_info: {
+                    items: [{ type: 'video', data: { page_pic: 'https://wx1.sinaimg.cn/large/cover.jpg' } }],
+                },
+            }),
+        )
+        expect(post?.media.items.map((item) => item.kind)).toEqual(['video', 'image'])
+    })
+
+    it('只有 page_info 的旧版视频补一个视频项', () => {
+        const post = normalizeTimelinePost(
+            rawStatus(205, {
+                page_info: {
+                    page_pic: 'https://wx1.sinaimg.cn/large/cover.jpg',
+                    media_info: { duration: 12, stream_url: 'https://f.video.weibocdn.com/x.mp4' },
+                },
+            }),
+        )
+        expect(post?.media.videoCount).toBe(1)
+        expect(post?.media.items).toEqual([
+            {
+                kind: 'video',
+                coverUrl: 'https://wx1.sinaimg.cn/large/cover.jpg',
+                coverMiddleUrl: 'https://wx1.sinaimg.cn/bmiddle/cover.jpg',
+                durationSeconds: 12,
+            },
+        ])
+        expect(post?.media.videoUrl).toBe('https://f.video.weibocdn.com/x.mp4')
+    })
+})

@@ -70,6 +70,11 @@ import { TodoService } from './modules/todo/todoService'
 import { TodoWatcher } from './modules/todo/todoWatcher'
 import { UploadRoutes } from './modules/upload/uploadRoutes'
 import { UploadService } from './modules/upload/uploadService'
+import { createWeiboMediaResolver } from './modules/weibo/panel'
+import { warmWeiboMetadata } from './modules/weibo/warmup'
+import { createWeiboCookieStore } from './modules/weibo/webCredential'
+import { createWeiboAvatarGateway } from './modules/weibo/weiboAvatar'
+import { createWeiboCache } from './modules/weibo/weiboCache'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 import type { MarkdownEditorProvider } from './modules/editor/editorProvider'
 import type { ImageReferenceInput } from './modules/imagegen/ai/imageProvider'
@@ -175,6 +180,26 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
 
     // 微博面板：Cookie 存 SecretStorage（与公众号密钥同为系统级加密），图片缓存落 globalStorage
     dashboardProvider.attachWeiboSecrets(context.secrets, context.globalStorageUri)
+
+    // 微博元数据预热：分组 / 账号信息 / 热搜 / 表情在激活后各取一次，落 {存储根}/weibo.json 与 weibo_avatar.jpg。
+    // 不等待完成——预热自身串行执行，webClient 的 1.2s 节流依赖模块级时间戳，并发派发会让节流失效；
+    // 头像走与面板同一份图片代理，预热结束后释放其连接池
+    const weiboStorageRoot = resolveStorageRoot()
+    const weiboCookieStore = createWeiboCookieStore(context.secrets)
+    const weiboProxy = createWeiboMediaResolver(context.globalStorageUri, async (): Promise<string | undefined> =>
+        weiboCookieStore.read(),
+    )
+    void warmWeiboMetadata({
+        cookieStore: weiboCookieStore,
+        cache: createWeiboCache(weiboStorageRoot),
+        avatar: createWeiboAvatarGateway({
+            root: weiboStorageRoot,
+            resolveImage: async (imageUrl: string): Promise<string | null> => weiboProxy.resolve(imageUrl),
+        }),
+    }).finally((): void => {
+        weiboProxy.dispose()
+    })
+    markStage('微博元数据预热已派发')
 
     // 笔记重命名：保存时让文件名跟随一级标题，避免列表标题与磁盘文件名各说一套；
     // 改的正是正在编辑的那篇时重播活跃笔记，否则列表高亮会停在已消失的旧路径上
