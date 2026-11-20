@@ -467,7 +467,7 @@ interface AbortRequest {
 | 多光标多选区 | 每条选区一条引用 | 各行范围，重复项自动去重 |
 
 - **惰性引用**：添加时只记路径与行范围，发送时才读取原文（`workspace.textDocuments` 内存态优先，回退磁盘），未保存修改同样生效（第 9 节「引用内容不过期」的落地）。
-- **可见清单**：待发送引用以不可编辑芯片形式内联在输入区首行（文件 / 选区图标 + 标签 + 字数，单条移除；悬停文件名用 tooltip 给出 `@zhai\` 开头的存储根路径，如 `@zhai\press\123\Chapters\01-默认卷\04-未命名章节.md`）；已发送的引用作为**消息内容的一部分**随该条用户消息显示（`messages.refs`），不单独置于消息头部或会话头部，悬浮同一口径走 `ui/tooltip`（不再用原生 `title`）。两条悬浮提示的路径都由 `@shared/utils/zhaiPath` 的 `toZhaiDisplayPath` 折算：宿主注入 `<meta name="zhai-storage-root">`（存储根文件系统路径），前端把 `displayPath` 的绝对前缀裁掉后补 `@zhai\`，不在存储根下或存储根未注入时原样保留；提示气泡固定暗底白字（复用 `TOOLTIP_CLASS` 覆盖前景变量，箭头同色），不随明暗主题翻转。
+- **可见清单**：待发送引用以不可编辑芯片形式内联在输入区首行（文件 / 选区图标 + 标签 + 字数，单条移除；悬停文件名用 tooltip 给出 `@zhai\` 开头的存储根路径，如 `@zhai\press\123\Chapters\01-默认卷\04-未命名章节.md`）；已发送的引用作为**消息内容的一部分**随该条用户消息显示（`messages.refs`），不单独置于消息头部或会话头部，悬浮同一口径走 `ui/tooltip`（不再用原生 `title`）。两条悬浮提示的路径都由 `@shared/utils/zhaiPath` 的 `toZhaiDisplayPath` 折算：宿主注入 `<meta name="zhai-storage-root">`（存储根文件系统路径），前端把 `displayPath` 的绝对前缀裁掉后补 `@zhai\`，不在存储根下或存储根未注入时原样保留；提示气泡固定暗底白字（复用 `TOOLTIP_CLASS` 覆盖前景变量，箭头同色），不随明暗主题翻转。微博剪藏引用的 `kind` 为 `weibo`：没有文件路径，`displayPath` 与 `label` 同为「微博·作者」，悬浮提示改为说明来源而不拼 `@zhai\` 路径；复制消息时该引用写作 `[微博] 微博·作者`，避免产出粘回输入框后无法解析的路径令牌。
 - **消息样式**：参考 Copilot / CodeBuddy——不带头像与角色标签；用户消息为右对齐气泡（引用条目在气泡内正文之上），助手回复走 `Bubble variant="ghost"` 通栏纯文本（无气泡）。
 - **去向**：添加成功后无条件跳到 AI 对话页——宿主先选定 `press` 模块，再经 `workflow` 通道下发页内视图请求（`{ kind: 'view', view: 'chat', seq }`）让面板切到对话分区，最后聚焦 Workflow 面板；成功不弹提示，输入区的引用芯片即回执。
 - **提示**：失败路径（无编辑器、超限、重复、文件失效）仍经 sonner 弹出，且**集中在 Workflow 面板**（宿主侧 `ToastService` → `state` 的 `toast` 通道，仅 Workflow 视图订阅；没有任何视图打开时回退 VS Code 原生提示，仪表盘不重复弹出）。

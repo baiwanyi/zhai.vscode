@@ -4,7 +4,8 @@
  * 渲染为 <context> 结构化片段交由 chatService 注入，前端只消费剥离绝对路径后的展示字段；
  * 行范围来源有两套——选区按文本搜索定位，块按编辑器快照的字符偏移换算，字段与去重键完全一致。
  * 关键约束：引用原文属不可信文本，须转义 </context> 防结构逃逸；整篇超限直接拒绝（避免模型基于
- * 残缺全文作答），单条选区超限按行截断并标注；前端删除引用只回传 id，不接受任何路径入参。
+ * 残缺全文作答），单条选区超限按行截断并标注；前端删除引用只回传 id，不接受任何路径入参；
+ * 微博这类无文件来源的引用由 inlineText 携带正文，发送时不再读盘，uri 仅作去重键。
  */
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
@@ -18,8 +19,10 @@ export const MAX_CONTEXT_COUNT = 10
 
 /** 宿主侧引用：在展示字段之外持有绝对路径与行范围，仅宿主内部使用 */
 export interface HostContextRef extends AiContextRef {
-    /** 文档绝对路径，用于发送时读取最新内容；笔记本引用为目录路径 */
+    /** 文档绝对路径，用于发送时读取最新内容；笔记本引用为目录路径；微博引用为原文永久链接（仅作去重键） */
     uri: string
+    /** 内联正文：无文件来源的引用（如微博）直接携带文本，发送时不再读盘 */
+    inlineText?: string
 }
 
 /** 引用生成结果：refs 为可用引用，rejected 为被拒绝的说明文案 */
@@ -253,6 +256,10 @@ function readLineRangeFromText(text: string, startLine: number, endLine: number)
 }
 
 async function readReferenceText(ref: HostContextRef): Promise<string | null> {
+    // 无文件来源的引用直接取内联正文：uri 是微博永久链接，不能也不会按文件读盘
+    if (ref.kind === 'weibo') {
+        return ref.inlineText ?? null
+    }
     const hasRange = ref.kind === 'selection' && ref.startLine !== null && ref.endLine !== null
     const opened = vscode.workspace.textDocuments.find((document) => document.uri.fsPath === ref.uri)
     if (opened) {
@@ -317,7 +324,7 @@ function isHostContextRef(value: unknown): value is HostContextRef {
     const ref = value as Record<string, unknown>
     return (
         typeof ref.id === 'string' &&
-        (ref.kind === 'file' || ref.kind === 'selection' || ref.kind === 'notebook') &&
+        (ref.kind === 'file' || ref.kind === 'selection' || ref.kind === 'notebook' || ref.kind === 'weibo') &&
         typeof ref.label === 'string' &&
         typeof ref.displayPath === 'string' &&
         (ref.startLine === null || typeof ref.startLine === 'number') &&

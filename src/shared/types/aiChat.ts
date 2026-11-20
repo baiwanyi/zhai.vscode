@@ -92,8 +92,11 @@ export interface AiPermissionDecision {
 /** 消息角色 */
 export type AiMessageRole = 'user' | 'assistant' | 'system'
 
-/** 对话上下文引用类型：file 为整篇文档，selection 为行范围，notebook 为整本笔记本打包 */
-export type AiContextRefKind = 'file' | 'selection' | 'notebook'
+/**
+ * 对话上下文引用类型：file 为整篇文档，selection 为行范围，notebook 为整本笔记本打包，
+ * weibo 为微博剪藏的内联正文（无文件来源，无行范围，正文随引用一起下发）。
+ */
+export type AiContextRefKind = 'file' | 'selection' | 'notebook' | 'weibo'
 
 /** 笔记本引用的打包档位：全文 / 节选 / 仅目录 / 模型压缩 */
 export type AiNotebookPackMode = 'full' | 'excerpt' | 'outline' | 'compressed'
@@ -101,17 +104,18 @@ export type AiNotebookPackMode = 'full' | 'excerpt' | 'outline' | 'compressed'
 /**
  * 对话上下文引用的展示契约：宿主生成，Webview 只消费。
  * 约束：不含绝对路径（宿主内部保留），前端删除引用时只回传 id，不得据 label 访问文件；
- * notebook 引用由宿主打包后回传字数与篇数，前端只展示，不得据 displayPath 自行读盘。
+ * notebook 引用由宿主打包后回传字数与篇数，weibo 引用无文件路径与行范围，
+ * 前端只展示标签与字数，不得据 displayPath 自行读盘。
  */
 export interface AiContextRef {
     /** 宿主生成的引用 id */
     id: string
     kind: AiContextRefKind
-    /** 展示标签：notes/ch01.md:11-19（整篇为 notes/ch01.md），笔记本为笔记目录 */
+    /** 展示标签：notes/ch01.md:11-19（整篇为 notes/ch01.md），笔记本为笔记目录，微博为「微博·作者」 */
     label: string
-    /** 展示路径：工作区相对路径；未命名文档为文件名 */
+    /** 展示路径：工作区相对路径；未命名文档为文件名；微博等无文件来源的引用与 label 同值 */
     displayPath: string
-    /** 行范围（1-based，含首尾）；整篇引用与笔记本引用为 null */
+    /** 行范围（1-based，含首尾）；整篇引用、笔记本引用与微博引用为 null */
     startLine: number | null
     endLine: number | null
     /** 注入前预估字符数：笔记本为打包后的实际字数 */

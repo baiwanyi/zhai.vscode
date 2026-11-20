@@ -7,11 +7,26 @@
  * 关键约束：hooks 只能在组件内调用，故表情、配图、点赞各自抽成子组件，不能在 map 里直接调；
  * 图片按「进入视口附近」才发起下载；视频统一交给 layout/WeiboVideoPlayer（自绘控件栏、空格控制），
  * 地址经宿主回环中转补 Referer，不落缓存；拿不到整段地址时才回退打开原文（转发区回退被转发原文）；
- * 评论区按需展开，未展开不请求。
+ * 评论区按需展开，未展开不请求；
+ * 「保存到笔记」「添加到 AI 对话」只把卡片展示字段交给宿主，落盘与会话归属都在宿主侧决定，
+ * 前端不做任何路径拼接，两个动作互斥以防并发写盘或并发改上下文。
  */
 import { cn } from 'cn'
 import { format } from 'date-fns'
-import { BadgeCheck, ExternalLink, Heart, ImageIcon, ImageOff, MessageCircle, Play, Repeat2, Video } from 'lucide-react'
+import {
+    BadgeCheck,
+    Check,
+    ExternalLink,
+    Heart,
+    ImageIcon,
+    ImageOff,
+    MessageCircle,
+    MessageSquareQuote,
+    Play,
+    Repeat2,
+    Save,
+    Video,
+} from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Card, CardContent } from '@components/ui/card'
 import type {
@@ -35,6 +50,7 @@ import { WeiboVideoPlayer } from './WeiboVideoPlayer'
 import type { JSX } from 'react'
 import { useHasEnteredViewport } from '../hooks/useHasEnteredViewport'
 import { useWeiboImage } from '../hooks/useWeiboImage'
+import { useWeiboPostActions } from '../hooks/useWeiboPostActions'
 
 /** 九宫格上限：与微博前端一致，超出部分只在原文可见 */
 const MAX_GRID_IMAGES = 9
@@ -453,6 +469,9 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
             })
     }, [isExpanding, post.id, post.mblogid])
 
+    /** 卡片动作：保存到笔记与添加到 AI 对话，展开过全文时把全文一并带出 */
+    const postActions = useWeiboPostActions(post, fullText)
+
     /** 正文分段：展开全文后整段替换为接口返回的纯文本 */
     const bodySegments: WeiboTimelineSegment[] = fullText === null ? post.segments : [{ type: 'text', text: fullText }]
 
@@ -550,10 +569,38 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
                             含视频
                         </span>
                     )}
-                    <Button size="xs" variant="ghost" className="ml-auto" onClick={handleOpen}>
-                        <ExternalLink className="size-3.5" aria-hidden="true" />
-                        原文
-                    </Button>
+
+                    <div className="ml-auto flex items-center gap-1">
+                        <Button variant="ghost" onClick={handleOpen}>
+                            <ExternalLink className="size-3.5" aria-hidden="true" />
+                            原文
+                        </Button>
+                        {/* 两个动作互斥：任一请求进行中两者都禁用，避免并发写盘与并发改上下文 */}
+                        <Button
+                            size="icon"
+                            variant="ghost"
+                            tooltip={postActions.isSavedNote ? '已保存' : '保存到笔记'}
+                            isLoading={postActions.isSavingNote}
+                            disabled={postActions.isAddingToChat}
+                            onClick={postActions.saveToNote}
+                        >
+                            {postActions.isSavedNote ? (
+                                <Check className="size-3.5" aria-hidden="true" />
+                            ) : (
+                                <Save className="size-3.5" aria-hidden="true" />
+                            )}
+                        </Button>
+                        <Button
+                            size="icon"
+                            variant="ghost"
+                            tooltip="添加到 AI 对话"
+                            isLoading={postActions.isAddingToChat}
+                            disabled={postActions.isSavingNote}
+                            onClick={postActions.addToChat}
+                        >
+                            <MessageSquareQuote className="size-3.5" aria-hidden="true" />
+                        </Button>
+                    </div>
                 </div>
 
                 {isCommentsOpen ? <WeiboCommentList postId={post.id} totalCount={post.metrics.comments} /> : null}

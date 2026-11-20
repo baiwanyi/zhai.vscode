@@ -17,7 +17,7 @@ import type {
     WeiboTimelineRetweet,
     WeiboTimelineSegment,
 } from '@shared/types/weibo'
-import { WEIBO_TIMELINE_MAX_PAGES } from '@shared/types/weibo'
+import { WEIBO_IMAGE_PID_PATTERN, WEIBO_TIMELINE_MAX_PAGES } from '@shared/types/weibo'
 import { requestTimelinePage } from './webClient'
 import { WEIBO_AJAX_PATHS, WEIBO_IMAGE_ORIGIN, WEIBO_WEB_ORIGIN } from './weiboEndpoints'
 import type { TimelinePage, TimelinePageQuery } from './webClient'
@@ -95,9 +95,6 @@ export function stripWeiboHtml(html: string): string {
  */
 const WEIBO_IMAGE_HOSTS = ['sinaimg.cn', 'sinajs.cn', 'weibo.com', 'weibo.cn'] as const
 
-/** 图片 pid 形态：只允许字母数字，直接拼进地址而不做二次转义 */
-const IMAGE_PID_PATTERN = /^[A-Za-z0-9]{6,64}$/u
-
 /** 主机是否在白名单后缀下：要求精确相等或点分后缀，避免 sub.host.evil.com 绕过 */
 function isWeiboImageHost(hostname: string): boolean {
     const host = hostname.toLowerCase()
@@ -106,7 +103,7 @@ function isWeiboImageHost(hostname: string): boolean {
 
 /** 用图片 pid 拼图床直链：微博自家的下载端点要登录 Cookie，Webview 直连会 401 */
 function buildSinaImageUrl(pid: string): string | null {
-    return IMAGE_PID_PATTERN.test(pid) ? `${WEIBO_IMAGE_ORIGIN}/large/${pid}.jpg` : null
+    return WEIBO_IMAGE_PID_PATTERN.test(pid) ? `${WEIBO_IMAGE_ORIGIN}/large/${pid}.jpg` : null
 }
 
 /**
@@ -541,6 +538,7 @@ function pickVideoCandidate(data: Record<string, unknown>): VideoCandidate {
 function extractMedia(record: Record<string, unknown>): WeiboTimelineMedia {
     const items: WeiboTimelineMediaItem[] = []
     const images: string[] = []
+    const imageIds: string[] = []
     const thumbnails: string[] = []
     const sizes: Array<WeiboTimelineImageSize | null> = []
     /** 已收录的 pid 与原图地址：pic_infos 与 mix_media_info 是同一批图的两种视图 */
@@ -564,6 +562,8 @@ function extractMedia(record: Record<string, unknown>): WeiboTimelineMedia {
         seenUrls.add(candidate.url)
         const middleUrl = candidate.middleUrl ?? buildMiddleImageUrl(candidate.url)
         images.push(candidate.url)
+        // pid 与图片同序：缺失时为空的占位串，调用方据此回退直链下载
+        imageIds.push(pid ?? '')
         thumbnails.push(middleUrl)
         sizes.push(candidate.size)
         items.push({ kind: 'image', url: candidate.url, middleUrl, size: candidate.size })
@@ -661,6 +661,7 @@ function extractMedia(record: Record<string, unknown>): WeiboTimelineMedia {
     return {
         items,
         images,
+        imageIds,
         thumbnails,
         sizes,
         videoUrl,
@@ -696,6 +697,27 @@ function buildPostUrl(uid: string, mblogid: string, id: string): string {
     return uid.length > 0 ? `${WEIBO_WEB_ORIGIN}/${uid}/${mblogid}` : `${WEIBO_WEB_ORIGIN}/detail/${id}`
 }
 
+/**
+ * 长文判定：上游 isLongText 会把「带视频卡片链接」的普通微博也标成 true，
+ * 只有附带 continue_tag（「全文」入口）或正文末尾的展开痕迹才算真正被截断的长文；
+ * longText 对象是旧版长文字段，命中即为长文。主贴与转发体共用同一份判定。
+ */
+function isLongTextRecord(record: Record<string, unknown>): boolean {
+    if (isRecord(record.longText)) {
+        return true
+    }
+    if (record.isLongText !== true) {
+        return false
+    }
+    const rawHtml = toText(record.text)
+    const textRaw = toText(record.text_raw)
+    return (
+        isRecord(record.continue_tag) ||
+        LONG_TEXT_MARKER_PATTERN.test(rawHtml) ||
+        LONG_TEXT_MARKER_PATTERN.test(textRaw)
+    )
+}
+
 /** 归一化转发体：保留摘要与媒体，不再递归展开（转发里再转发只按文字处理） */
 function normalizeRetweeted(value: unknown): WeiboTimelineRetweet | null {
     if (!isRecord(value)) {
@@ -707,13 +729,17 @@ function normalizeRetweeted(value: unknown): WeiboTimelineRetweet | null {
     }
     const author = isRecord(value.user) ? toText(value.user.screen_name) : ''
     const textRaw = toText(value.text_raw)
-    const text = textRaw.length > 0 ? stripWeiboHtml(textRaw) : stripWeiboHtml(replaceEmojiWithText(toText(value.text)))
+    const plainText =
+        textRaw.length > 0 ? stripWeiboHtml(textRaw) : stripWeiboHtml(replaceEmojiWithText(toText(value.text)))
+    // 转发体同样可能是长文：卡片只展示摘要，保存笔记时宿主据此补取全文
+    const isLongText = isLongTextRecord(value)
     return {
         id,
         authorName: author,
-        text,
+        text: isLongText ? stripTrailingTruncation(plainText) : plainText,
         url: buildPostUrl(isRecord(value.user) ? toText(value.user.id) : '', toText(value.mblogid), id),
         media: extractMedia(value),
+        isLongText,
     }
 }
 
@@ -767,15 +793,7 @@ export function normalizeTimelinePost(raw: unknown): WeiboTimelinePost | null {
     const textRaw = toText(raw.text_raw)
     const rawHtml = toText(raw.text)
     const html = removeExpandLink(rawHtml)
-    const longText = raw.longText
-    /**
-     * 长文判定：上游 isLongText 会把「带视频卡片链接」的普通微博也标成 true，
-     * 只有附带 continue_tag（「全文」入口）或正文末尾的展开痕迹才算真正被截断的长文；
-     * longText 对象是旧版长文字段，命中即为长文。
-     */
-    const hasLongTextMarker =
-        isRecord(raw.continue_tag) || LONG_TEXT_MARKER_PATTERN.test(rawHtml) || LONG_TEXT_MARKER_PATTERN.test(textRaw)
-    const isLongText = isRecord(longText) || (raw.isLongText === true && hasLongTextMarker)
+    const isLongText = isLongTextRecord(raw)
     const plainText = textRaw.length > 0 ? stripWeiboHtml(textRaw) : stripWeiboHtml(replaceEmojiWithText(html))
     // 长文摘要末尾常带「……展开」：卡片已有展开按钮，正文里再留一份会造成重复提示
     const text = isLongText ? stripTrailingTruncation(plainText) : plainText

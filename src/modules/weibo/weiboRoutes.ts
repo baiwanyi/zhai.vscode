@@ -5,10 +5,12 @@
  * Cookie 存取交给 WeiboCookieStore，取数交给 webTimeline / webFeed，宿主能力以回调注入便于单测。
  * 关键约束：方法名与 shared/types/messages 的 HostMethodName 一一对应，新增方法须两侧同时维护；
  * 未登记方法一律抛错；时间线与凭证错误统一带分类码，前端按码分发提示而不是解析文案；
- * 外链只放行 weibo.com 及其子域，防止被当作任意地址跳转的通道。
+ * 外链只放行 weibo.com 及其子域，防止被当作任意地址跳转的通道；
+ * 保存笔记前对主贴与转发体的长文做全文补全，取不到全文时保留摘要并在笔记里标注截断。
  */
 import { logger } from '@modules/common/logger'
 import type {
+    WeiboChatContextResult,
     WeiboCityState,
     WeiboClearCredentialResult,
     WeiboCommentsResult,
@@ -20,6 +22,8 @@ import type {
     WeiboLikeResult,
     WeiboLikesResult,
     WeiboLongTextResult,
+    WeiboNoteSaveResult,
+    WeiboPagePostPayload,
     WeiboProfile,
     WeiboProfileResult,
     WeiboSaveCredentialResult,
@@ -44,6 +48,7 @@ import {
     isWeiboTimelineRequest,
     isWeiboVideoRequest,
     readWeiboCityName,
+    readWeiboPagePost,
 } from '@shared/types/weibo'
 import { WeiboWebError } from './webClient'
 import { fetchPostComments } from './webComments'
@@ -107,6 +112,10 @@ export interface WeiboRouteDeps {
     fetchComments?: (options: FetchCommentsOptions) => Promise<WeiboCommentsResult>
     /** 长文读取：默认走网页版 longtext，单测可替换 */
     fetchLongText?: (options: FetchLongTextOptions) => Promise<WeiboLongTextResult>
+    /** 卡片动作·保存为笔记：由面板注入笔记落盘能力，未注入时该方法报未就绪 */
+    saveToNote?: (post: WeiboPagePostPayload) => Promise<WeiboNoteSaveResult>
+    /** 卡片动作·添加到 AI 对话：由面板注入会话能力，未注入时该方法报未就绪 */
+    addToChat?: (post: WeiboPagePostPayload) => Promise<WeiboChatContextResult>
     openExternal?: (url: string) => Promise<void>
     now?: () => Date
 }
@@ -180,6 +189,10 @@ export class WeiboRoutes {
                 return this.loadImage(payload)
             case 'weibo/like':
                 return this.likePost(payload)
+            case 'weibo/addToChat':
+                return this.addToChat(payload)
+            case 'weibo/saveToNote':
+                return this.saveToNote(payload)
             case 'weibo/video':
                 return this.loadVideo(payload)
             case 'weibo/openPost':
@@ -562,5 +575,73 @@ export class WeiboRoutes {
         }
         await openExternal(payload.url)
         return { opened: true }
+    }
+
+    /**
+     * 保存为笔记：载荷收窄 → 长文补全 → 交给笔记模块落盘并索引。
+     * 关键约束：正文与链接都由 readWeiboPagePost 收窄，本层不拼路径也不改写内容；
+     * 主贴或转发体被上游截断（长文）时先取全文，取不到才保留摘要。
+     */
+    private async saveToNote(payload: unknown): Promise<WeiboNoteSaveResult> {
+        const post = readWeiboPagePost(payload)
+        if (post === null) {
+            throw new WeiboWebError('invalid-payload', 'weibo/saveToNote 参数非法：缺少合法正文、作者或微博链接')
+        }
+        const saveToNote = this.deps.saveToNote
+        if (saveToNote === undefined) {
+            throw new WeiboWebError('upstream', '当前宿主尚未装配笔记模块，无法保存为笔记')
+        }
+        return saveToNote(await this.expandLongText(post))
+    }
+
+    /**
+     * 长文补全：主贴与转发体被截断时先取全文再存档。
+     * 关键约束：非长文不发任何请求；取全文失败只记日志并保留摘要，不阻断保存（笔记里已有截断说明）。
+     */
+    private async expandLongText(post: WeiboPagePostPayload): Promise<WeiboPagePostPayload> {
+        let next = post
+        if (next.isTruncated) {
+            const text = await this.readFullText(next.mblogid.length > 0 ? next.mblogid : next.id)
+            if (text !== null) {
+                next = { ...next, text, isTruncated: false }
+            }
+        }
+        const retweeted = next.retweeted
+        if (retweeted !== null && retweeted.isTruncated && retweeted.id.length > 0) {
+            const text = await this.readFullText(retweeted.id)
+            if (text !== null) {
+                next = { ...next, retweeted: { ...retweeted, text, isTruncated: false } }
+            }
+        }
+        return next
+    }
+
+    /** 取全文：复用长文接口的入参守卫与 Cookie，失败返回 null 由调用方保留摘要 */
+    private async readFullText(id: string): Promise<string | null> {
+        try {
+            const result = await this.loadLongText({ id })
+            return result.text.length > 0 ? result.text : null
+        } catch (error) {
+            logger.warn(
+                `保存笔记前取全文失败，保留摘要：${id}（${error instanceof Error ? error.message : String(error)}）`,
+            )
+            return null
+        }
+    }
+
+    /**
+     * 添加到 AI 对话：载荷收窄后交由 AI 层构造内联引用。
+     * 关键约束：微博没有文档目录，会话作用域由 AI 层固定为 weibo 模块，路由不感知会话细节。
+     */
+    private async addToChat(payload: unknown): Promise<WeiboChatContextResult> {
+        const post = readWeiboPagePost(payload)
+        if (post === null) {
+            throw new WeiboWebError('invalid-payload', 'weibo/addToChat 参数非法：缺少合法正文、作者或微博链接')
+        }
+        const addToChat = this.deps.addToChat
+        if (addToChat === undefined) {
+            throw new WeiboWebError('upstream', '当前宿主尚未装配 AI 对话，无法添加为上下文')
+        }
+        return addToChat(post)
     }
 }

@@ -69,6 +69,7 @@ import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 import type { WechatRoutes } from '@modules/wechat/wechatRoutes'
 import { WECHAT_DOCUMENT_METHODS } from '@modules/wechat/wechatRoutes'
 import { openWeiboPanel } from '@modules/weibo/panel'
+import type { WeiboPostActions } from '@modules/weibo/postActions'
 import type { DashboardStats } from '@shared/types/dashboard'
 import type { HostToWebviewMessage } from '@shared/types/messages'
 import { isRequestMessage } from '@shared/types/messages'
@@ -198,6 +199,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private weiboSecrets: vscode.SecretStorage | null = null
     /** 微博图片缓存根：图床按 Referer 放行，图片需先落本地再签发 URI */
     private weiboCacheRoot: vscode.Uri | null = null
+    /** 微博卡片动作：后置注入，未注入时「保存到笔记」「添加到 AI 对话」按未就绪回包 */
+    private weiboPostActions: WeiboPostActions | null = null
     /** 当前面板实例：仅在挂载期间有效，用于请求之外的主动广播 */
     private view: vscode.WebviewView | null = null
     /** 待办目录变更监听：面板存活期间把外部改动转给 Webview，销毁时释放 */
@@ -225,6 +228,14 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     public attachWeiboSecrets(secrets: vscode.SecretStorage, cacheRoot: vscode.Uri): void {
         this.weiboSecrets = secrets
         this.weiboCacheRoot = cacheRoot
+    }
+
+    /**
+     * 注入微博卡片动作：保存到笔记依赖索引能力、加入对话依赖 AI 会话与工作流路由，
+     * 两者都在 AI 层装配完成后才齐备，故由扩展入口后置注入；未注入时对应协议方法报未就绪。
+     */
+    public attachWeiboPostActions(actions: WeiboPostActions): void {
+        this.weiboPostActions = actions
     }
 
     /** 注入待办路由：由扩展入口在待办服务装配后调用，待办卡片据此读写 todo/ 下的清单 */
@@ -855,7 +866,12 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
      * 关键约束：与 workflow/open 不同，这里不切换侧栏模块、不改写仪表盘路由，只是新开一个编辑区页。
      */
     private async openWeibo(): Promise<{ opened: boolean }> {
-        await openWeiboPanel(this.extensionUri, this.weiboSecrets ?? undefined, this.weiboCacheRoot ?? undefined)
+        await openWeiboPanel(
+            this.extensionUri,
+            this.weiboSecrets ?? undefined,
+            this.weiboCacheRoot ?? undefined,
+            this.weiboPostActions ?? undefined,
+        )
         return { opened: true }
     }
 

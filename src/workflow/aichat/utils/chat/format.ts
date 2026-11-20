@@ -4,7 +4,8 @@
  * 复用约定：引用与步骤类型取 @shared/types/aiChat，存储根路径口径取 @shared/utils/zhaiPath；
  * 页面主组件与各子组件共用本层，避免同一套展示口径各写一份。
  * 关键约束：复制文本带上 `@zhai\` 写法的引用，剪贴板内容与气泡里看到的一致且可直接粘回输入框；
- * 工具名表只做展示映射，未知工具原样透出，不得据此推断权限。
+ * 微博这类无文件来源的引用改用纯文本标注，不产出无法解析的假令牌；工具名表只做展示映射，
+ * 未知工具原样透出，不得据此推断权限。
  */
 import type { AiContextRef, AiMessage, AiNotebookPackMode, AiStep } from '@shared/types/aiChat'
 import { readStorageRootPath, replaceStorageRootPaths, toZhaiDisplayPath } from '@shared/utils/zhaiPath'
@@ -90,8 +91,14 @@ export function toContextLineRange(ref: AiContextRef): string {
         : `:${String(ref.startLine)}-${String(ref.endLine)}`
 }
 
-/** 剪贴板里的引用写法：`@zhai\...` 加行范围，与输入框可识别的令牌同构，粘回去即可还原成芯片 */
+/**
+ * 剪贴板里的引用写法：`@zhai\...` 加行范围，与输入框可识别的令牌同构，粘回去即可还原成芯片。
+ * 微博引用没有存储根路径，改写成纯文本标注，避免生成粘回输入框后无法解析的假令牌。
+ */
 function toClipboardRef(ref: AiContextRef): string {
+    if (ref.kind === 'weibo') {
+        return `[微博] ${ref.label}`
+    }
     const display = toZhaiDisplayPath(ref.displayPath)
     if (ref.startLine === null || /:\d+(?:-\d+)?$/u.test(display)) {
         return display

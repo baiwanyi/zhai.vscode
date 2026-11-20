@@ -15,9 +15,10 @@ import * as https from 'node:https'
 import * as path from 'node:path'
 import * as tls from 'node:tls'
 import { logger } from '@modules/common/logger'
+import { WEIBO_IMAGE_PID_PATTERN } from '@shared/types/weibo'
 import { WEIBO_WEB_USER_AGENT } from './webClient'
 import { buildMiddleImageUrl, normalizeWeiboImageUrl } from './webTimeline'
-import { WEIBO_WEB_REFERER } from './weiboEndpoints'
+import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN, WEIBO_WEB_REFERER } from './weiboEndpoints'
 
 /** 单张上限：超长竖图可能很大，超过该体积改取 bmiddle 缩略图 */
 const MAX_IMAGE_BYTES = 24 * 1024 * 1024
@@ -115,8 +116,30 @@ export type WeiboCookieReader = () => Promise<string | undefined>
 export interface WeiboMediaProxy {
     /** 解析图片为本地缓存路径；失败返回 null，调用方据此回退占位 */
     resolve(imageUrl: string): Promise<string | null>
+    /**
+     * 按图片 pid 走官方下载端点取最大尺寸：该端点 302 到图床原图，需登录 Cookie。
+     * 关键约束：pid 形态非法直接返回 null，调用方回退到直链下载。
+     */
+    resolveOriginal(pid: string): Promise<string | null>
     /** 释放直连 agent 的 keep-alive 连接 */
     dispose(): void
+}
+
+/** 官方原图下载端点允许跟随的最大跳数：正常只有一跳，防上游循环重定向 */
+const MAX_REDIRECTS = 3
+
+/**
+ * 拼官方原图下载地址：`ajax/common/download?pid={pid}` 返回最大尺寸原图。
+ * 复用约定：端点取自 weiboEndpoints 的 ajax 总表，按文件约定用 new URL 拼基址，不在此写路径字面量；
+ * 关键约束：pid 只接受字母数字，非法值直接返回 null，由调用方回退直链。
+ */
+export function buildOriginalDownloadUrl(pid: string): string | null {
+    if (!WEIBO_IMAGE_PID_PATTERN.test(pid)) {
+        return null
+    }
+    const url = new URL(WEIBO_AJAX_PATHS.imageDownload, WEIBO_WEB_ORIGIN)
+    url.searchParams.set('pid', pid)
+    return url.toString()
 }
 
 /** 代理构造参数：代理地址来自 VS Code 的 http.proxy 或环境变量 */
@@ -129,10 +152,12 @@ export interface WeiboMediaProxyOptions {
     isStrictSsl?: boolean
 }
 
-/** 一次取图结果：状态码、内容类型与响应体统一形态，供三条通道产出 */
+/** 一次取图结果：状态码、内容类型、重定向目标与响应体统一形态，供三条通道产出 */
 interface LoadedImage {
     status: number
     contentType: string | null
+    /** 3xx 响应的 Location：官方下载端点会 302 到图床，直连通道不会自动跟随 */
+    location: string | null
     body: Buffer
     /** 累计体积超限：body 已截断，调用方据此降级到缩略图 */
     isOverLimit: boolean
@@ -242,6 +267,7 @@ function collectResponse(response: http.IncomingMessage, request: http.ClientReq
             resolve({
                 status: response.statusCode ?? 0,
                 contentType: readHeaderValue(response.headers['content-type']),
+                location: readHeaderValue(response.headers.location),
                 body: Buffer.concat(chunks),
                 isOverLimit,
             })
@@ -350,6 +376,8 @@ async function loadWithFetch(imageUrl: string, cookie: string | undefined): Prom
     return {
         status: response.status,
         contentType: response.headers.get('content-type'),
+        // fetch 默认跟随重定向：能走到这里说明已拿到最终响应
+        location: response.headers.get('location'),
         body,
         isOverLimit: body.byteLength > MAX_IMAGE_BYTES,
     }
@@ -516,17 +544,47 @@ export function createWeiboMediaProxy(options: WeiboMediaProxyOptions): WeiboMed
         return response
     }
 
+    /**
+     * 取图并跟随上游重定向：官方下载端点 302 到图床，代理与直连通道不会自动跟随。
+     * 关键约束：每一跳都必须落在图片白名单内，避免被上游带去任意主机；跳数超限直接放弃。
+     */
+    async function loadFollowingRedirects(imageUrl: string): Promise<LoadedImage | null> {
+        let current = imageUrl
+        for (let hop = 0; hop <= MAX_REDIRECTS; hop += 1) {
+            const loaded = await loadOnce(current)
+            if (loaded === null) {
+                return null
+            }
+            if (loaded.status < 300 || loaded.status >= 400 || loaded.location === null) {
+                return loaded
+            }
+            let next: string | null
+            try {
+                next = normalizeWeiboImageUrl(new URL(loaded.location, current).toString())
+            } catch {
+                next = null
+            }
+            if (next === null) {
+                logger.warn(`微博图片重定向到白名单外地址，已放弃：${describeImageUrl(current)}`)
+                return null
+            }
+            current = next
+        }
+        logger.warn(`微博图片重定向次数超限，已放弃：${describeImageUrl(imageUrl)}`)
+        return null
+    }
+
     /** 下载并落盘：任何异常都收敛成 null，并记录可诊断的原因 */
     async function download(imageUrl: string, stem: string): Promise<string | null> {
         await acquireSlot()
         try {
-            let loaded = await loadOnce(imageUrl)
+            let loaded = await loadFollowingRedirects(imageUrl)
             // 超长图改取 bmiddle 小尺寸版本：同一对象，体积通常只有几十分之一
             if (loaded !== null && loaded.isOverLimit) {
                 const fallbackUrl = buildFallbackImageUrl(imageUrl)
                 if (fallbackUrl !== null) {
                     logger.warn(`微博图片超过体积上限，改取中等尺寸：${describeImageUrl(imageUrl)}`)
-                    loaded = await loadOnce(fallbackUrl)
+                    loaded = await loadFollowingRedirects(fallbackUrl)
                 }
             }
             if (loaded === null) {
@@ -576,6 +634,27 @@ export function createWeiboMediaProxy(options: WeiboMediaProxyOptions): WeiboMed
             const url = normalizeWeiboImageUrl(imageUrl)
             if (url === null) {
                 logger.warn(`微博图片地址不在白名单：${describeImageUrl(imageUrl)}`)
+                return null
+            }
+            const stem = crypto.createHash('sha256').update(url).digest('hex').slice(0, 32)
+            const cached = await findCached(stem)
+            if (cached !== null) {
+                return cached
+            }
+            const existing = inflight.get(url)
+            if (existing !== undefined) {
+                return existing
+            }
+            const task = download(url, stem).finally(() => {
+                inflight.delete(url)
+            })
+            inflight.set(url, task)
+            return task
+        },
+        resolveOriginal: async (pid: string): Promise<string | null> => {
+            const url = buildOriginalDownloadUrl(pid)
+            if (url === null) {
+                logger.warn(`微博图片 pid 非法，跳过原图下载：${pid.slice(0, 32)}`)
                 return null
             }
             const stem = crypto.createHash('sha256').update(url).digest('hex').slice(0, 32)

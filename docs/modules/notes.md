@@ -115,6 +115,8 @@ FileSystemWatcher 触发索引（见 common.md 4.1）
               写入 notes/ 或用户指定笔记本 → 打开编辑
 ```
 
+**外部内容落盘入口**：微博剪藏等外部来源统一走 `createNoteFromContent(input)`（`src/modules/note/noteService.ts`），入参为标题、Markdown 正文与可选笔记本目录；标题经 `toNoteFileName` 收窄后直接作为文件名，重名追加序号顺延而不覆盖，正文超过 10 万字拒绝写入，落盘后立即纳入索引。外部配图先由调用方按上传格式落 `uploads/{YYYYMM}/`，正文以 `@zhai/uploads/...` 引用，不使用外链直链作为长期存储。
+
 ### 4.3 双向链接解析
 
 ```

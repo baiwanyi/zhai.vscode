@@ -350,6 +350,18 @@ body.vscode-high-contrast-light {
 }
 
 /*
+ * 按钮加载态 Spinner 的旋转中心：Tailwind 的 animate-spin 只给关键帧，轴心按 transform-box 默认
+ * （view-box）解析；按钮里的 svg 一旦落在半像素或带内边距，轴心就与图形内容中心错开，绕偏心点画圈。
+ * 这里与上面 sonner loader 同一修法：svg 设为块级并把轴心锁进内容包围盒；
+ * 位置居中由 Button 组件里的覆盖层负责，本段只管旋转轴心。
+ */
+[data-slot='button'] [data-slot='spinner'] {
+    display: block;
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+/*
  * 生图输入卡片的生成态光晕：conic 旋转描边 + 模糊背光呼吸。
  * @property 把首角注册成可插值的角度变量，conic-gradient 才可能逐帧推进，光边才会绕卡流动；
  * 描边层用 padding 决定线宽，再用两层 mask 的 content-box 反选把中间挖空，只留边框那一圈——

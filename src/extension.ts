@@ -71,6 +71,7 @@ import { TodoWatcher } from './modules/todo/todoWatcher'
 import { UploadRoutes } from './modules/upload/uploadRoutes'
 import { UploadService } from './modules/upload/uploadService'
 import { createWeiboMediaResolver } from './modules/weibo/panel'
+import { createWeiboPostActions } from './modules/weibo/postActions'
 import { warmWeiboMetadata } from './modules/weibo/warmup'
 import { createWeiboCookieStore } from './modules/weibo/webCredential'
 import { createWeiboAvatarGateway } from './modules/weibo/weiboAvatar'
@@ -244,6 +245,12 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         readReferenceImages: (paths: readonly string[]): Promise<ImageReferenceInput[]> =>
             referenceImageService.readForPrompt(paths),
     })
+
+    // 微博卡片动作：保存笔记要索引能力、加入对话要 AI 会话与工作流路由，
+    // 三者都在本行之前／本行之内齐备，故在 AI 层装配完成后回填给仪表盘（面板按需取值）
+    dashboardProvider.attachWeiboPostActions(
+        createWeiboPostActions({ indexer: indexService, chat: ai.chat, router: workflowRouter }),
+    )
 
     // 写作管理：press.db 只承载 AI 配额等轻量状态，作品文档与人物卡仍以 Markdown 为准；
     // 库按需打开——配额与封面都要等面板请求才读，激活期不付打开与建表的磁盘开销

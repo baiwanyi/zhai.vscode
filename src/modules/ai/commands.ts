@@ -231,8 +231,9 @@ export async function addQuoteToChat(
  * 添加成功后的去向：无论当前停在哪个页面，都切到写作管理模块的对话分区并聚焦面板。
  * 关键约束：模块选定与页内视图是两件事——前者决定显示哪个工作流页，后者决定页内停在哪个分区；
  * 已在该模块时模块选定不会产生新事实，必须靠视图请求才能从设定、大纲等分区切回对话。
+ * 微博卡片的「添加到 AI 对话」复用本函数，保证两条入口的去向与提示口径一致。
  */
-async function focusChatSection(router: WorkflowRouter): Promise<void> {
+export async function focusChatSection(router: WorkflowRouter): Promise<void> {
     router.selectModule(PRESS_MODULE_DIR)
     router.requestView('chat')
     await vscode.commands.executeCommand('zhai.workflow.focus')

@@ -80,7 +80,7 @@
 | B19 | 幂等保护 | 内容 hash + 账号去重，防重复发博/评论 | 本地 | P0 | 待实现 |
 | B20 | 配额与限流 | 令牌桶限流（读/写/下载分桶），遵守 `account/rate_limit_status` | 本地 | P1 | 待实现 |
 | B21 | 多账号 | 多账号切换，浏览/发布时选择目标账号 | `oauth2` | P2 | 待实现 |
-| B22 | 保存为笔记 | 微博内容按笔记模块「网页剪藏」统一 Markdown 模板转为笔记并保存，可双链/检索/版本管理 | 本地 + 笔记模块 | P1 | 待实现 |
+| B22 | 保存为笔记 | 微博内容按笔记模块「网页剪藏」统一 Markdown 模板转为笔记并保存，可双链/检索/版本管理 | 本地 + 笔记模块 | P1 | 已实现 |
 
 ---
 
@@ -183,19 +183,17 @@
 
 ### 4.6 保存为笔记（接入笔记模块）
 
-> 复用笔记模块（`notes.md`）「网页剪藏」统一 Markdown 模板：Frontmatter 含 `title/created/tags/source`，正文含作者、正文、配图与原文链接。保存后它即为笔记模块的一条普通笔记，可被双链、全文检索、版本管理（与 N10 同构）。
+> 复用笔记模块（`notes.md`）「网页剪藏」的正文版式，但**不写 Frontmatter**：作者、原文链接、发表时间、采集方式全部落在正文引用块里。保存后它即为笔记模块的一条普通 Markdown 笔记，可被双链、全文检索、版本管理（与 N10 同构）。
 
 ```
 用户触发「保存为笔记」（卡片菜单 / 命令）
    │
    ▼ 取当前微博详情（resolveTarget 取目标体，去 HTML 标签）
    │
-   ▼ buildWeiboNoteMarkdown：组装 Frontmatter + 正文
-   │   title:   "{作者} 的微博"
-   │   created: 微博发布时间
-   │   tags:    ["微博", "weibo"]
-   │   source:  https://weibo.com/{uid}/{mblogid}
-   │   正文：作者引用 + 原文链接 + 采集方式 + 正文 + 配图链接
+   ▼ buildWeiboNoteMarkdown：组装正文（无 Frontmatter）
+   │   # 微博-{正文前 18 字}（超出 18 字才补 ...）→ 元信息引用块（作者 / 原文 / 发表时间 / 采集方式）
+   │         → ## 微博正文 → [## 转发内容 + ### 转发配图] → [## 微博配图]
+   │         （视频忽略，不写入笔记）
    │
    ▼ 调用笔记模块 createFromContent（统一入口，见 notes.md 4.2）
    │   → 写入 notebook（默认 notes/ 或用户指定）
@@ -204,6 +202,19 @@
    ▼ 写 weibo_saved_notes(mid, note_path)（去重 + 标记「已保存」角标）
    ▼ 提示完成并可一键打开笔记
 ```
+
+**当前实现（与上图设计的差异）**
+
+- 入口在卡片互动数据行：「原文」之后依次是「保存到笔记」「添加到 AI 对话」，两个动作互斥。
+- 载荷由卡片直接给出（`WeiboPagePostPayload`），宿主不回源取详情；正文与媒体链接在 `readWeiboPagePost` 里收窄（https、微博主站域名、正文 2 万字、配图 9 张）。
+- 落盘走笔记模块新增的 `createNoteFromContent`，默认落 `notes/未分类`；文件名为 `微博-{用户昵称}-{正文前 18 字}.md`（摘要折成单行、不带省略号），同名追加序号顺延，不覆盖既有笔记。
+- **不写 Frontmatter**：元信息一律落在正文引用块，笔记文件是纯 Markdown 正文（首行即一级标题）。
+- **正文版式**：`# 微博-{正文前 18 字}`（正文折成单行后取前 18 个字符，**只有被截断时才补 `...`**；正文为空时用「微博内容」兜底）→ 元信息引用块（作者 / 原文链接 / 发表时间 `年-月-日 时:分:秒` / 采集方式）→ `---` → `## 微博正文`（完整正文）→ （有转发时）`## 转发内容` +（转发带图时）`### 转发配图` → （主贴有配图时）`---` + `## 微博配图`；转发段不另起分隔线，视频一律忽略（主贴与转发体都不写入）。发表时间取上游 `created_at`，缺失或非法时写「未知时间」而不是当前时间；作者名中的换行折成空格，避免把引用块截断。UID / PID 不再写入笔记正文。
+- **文件名与一级标题**：写入时文件名为 `微博-{用户昵称}-{正文前 18 字}`，一级标题为 `# 微博-{正文前 18 字}`（超出才补 `...`），两者摘要一致；笔记模块「保存时按一级标题重命名」不会改变文件名主体。
+- **长文先补全文**：主贴或转发体被上游截断（卡片上的「展开全文」、转发摘要）时，保存前由宿主复用长文接口（`weibo/longtext`）先取全文再落盘 —— 主贴用 `mblogid`（缺失回退数字 id）、转发体用其数字 id；取全文失败只记日志并保留摘要，笔记里沿用「正文可能被上游截断」的说明，不阻断保存。非长文不发任何请求。
+- **配图按上传格式落地，取最大尺寸**：保存时优先按图片 pid 走官方下载端点 `https://weibo.com/ajax/common/download?pid={pid}`（宿主侧带 Cookie 与 Referer，302 由代理跟随），拿到原图后再交给上传模块的 `saveUploadFile` 写入 `uploads/{YYYYMM}/{时间戳+随机段}.{按魔数嗅探的扩展名}`，与上传页同一套命名与目录规则；pid 缺失或下载失败时回退图床直链。**主贴与转发的配图都会搬运**（各最多 9 张，一次批量处理），笔记正文用 `@zhai/uploads/...` 图片语法引用；单张失败（取图失败、超过上传单件上限 10MB）只回退该张的远程直链，不影响整篇保存，回执里报成功本地化的总张数。
+- **不写 `weibo_saved_notes`**：当前没有该表，「已保存」只是本次挂载的按钮回执；重复保存会新建另一篇笔记（文件名顺延）。持久去重留作后续增强。
+- 成功只给 toast，不强制打开笔记，避免打断浏览。
 
 **说明**：若媒体已通过 B14/B15 下载到本地，正文配图链接替换为相对路径（`assets/...`），保证笔记可整体迁移（与 notes.md N9 一致）。
 
@@ -399,9 +410,9 @@ CREATE INDEX IF NOT EXISTS idx_saved_note_mid ON weibo_saved_notes(mid);
 | `zhai.weibo.downloadMedia` | 下载媒体 | 批量下载图片/视频并按规范命名 |
 | `zhai.weibo.history` | 发布历史 | 查看记录与回执 |
 | `zhai.weibo.retry` | 重试失败任务 | 对失败发布/评论重试 |
-| `zhai.weibo.saveToNote` | 保存为笔记 | 将当前微博转为 Markdown 笔记存入笔记模块 |
+| `zhai.weibo.saveToNote` | 保存为笔记 | 将当前微博转为 Markdown 笔记存入笔记模块（卡片按钮，无需命令注册） |
 
-**Webview 方法**：`weibo/login`、`weibo/timeline`、`weibo/comments`、`weibo/comment`、`weibo/publish`（流式进度）、`weibo/downloadMedia`、`weibo/stickers`、`weibo/groups`、`weibo/saveToNote`。
+**Webview 方法**：`weibo/login`、`weibo/timeline`、`weibo/comments`、`weibo/comment`、`weibo/publish`（流式进度）、`weibo/downloadMedia`、`weibo/stickers`、`weibo/groups`、`weibo/saveToNote`（保存为笔记）、`weibo/addToChat`（把当前微博作为内联上下文加入 AI 对话）。
 
 ```typescript
 /** 媒体下载请求 */
@@ -447,7 +458,8 @@ interface WeiboDownloadItemResult {
 | AC-12 | 视频下载 | 按清晰度下载；统一命名；断点续传 |
 | AC-13 | 失败不丢数据 | 任何失败保留草稿/记录，可编辑后重发 |
 | AC-14 | 限流 | 遵守 `rate_limit_status`；令牌桶分桶限流 |
-| AC-15 | 保存为笔记 | 微博正确转为带 Frontmatter 的 Markdown 笔记；重复保存被 `weibo_saved_notes` 去重；笔记可被检索/双链 |
+| AC-15 | 保存为笔记 | 微博正确转为**不含 Frontmatter** 的 Markdown 笔记，文件名为 `微博-{用户昵称}-{正文前 18 字}.md`；正文版式为 `# 微博-{正文前 18 字}`（超出 18 字才补 `...`）+ 元信息（作者/原文/发表时间/采集方式）+ 「## 微博正文」+ 可选「## 转发内容」（带图时含「### 转发配图」）+ 可选「## 微博配图」，视频一律忽略；主贴与转发配图均按上传格式落 `uploads/{YYYYMM}/` 并以 `@zhai/uploads/...` 引用，取图失败才回退远程直链；文件名重名顺延，不覆盖既有笔记；连续点击只发一次请求；主贴或转发体为长文时先取全文再落盘，取全文失败才保留摘要并标注「可能被截断」 |
+| AC-16 | 添加到 AI 对话 | 卡片正文作为内联引用加入微博作用域会话；重复添加同一条给出「已在对话上下文中」；成功后面板切到对话分区并聚焦 |
 
 ---
 
@@ -847,7 +859,9 @@ async function callLLM(_req: { model: string; system: string; prompt: string }):
 
 ### 12.3 保存为笔记（Markdown 转换）
 
-> 复用笔记模块「网页剪藏」模板（Frontmatter：`title/created/tags/source`）。本模块只产出 Markdown 内容，落盘由笔记模块 `createFromContent` 完成，保持解耦。
+> 复用笔记模块「网页剪藏」的正文版式，但**不写 Frontmatter**：作者 / 原文 / 发表时间 / 采集方式全部落在正文引用块（UID / PID 不再写入）。本模块只产出 Markdown 内容，落盘由笔记模块 `createNoteFromContent` 完成，保持解耦。
+
+> 实现说明：`src/modules/weibo/note.ts` 实际以卡片载荷 `WeiboPagePostPayload` 为输入（不再依赖 `WeiboDetail`），导出 `buildWeiboNoteTitle` / `buildWeiboNoteMarkdown` / `buildWeiboChatText` 三个纯函数；`buildWeiboNoteMarkdown` 的第二参 `localImages` 与配图一一对应，给出时写 `@zhai/uploads/...`、为 null 时回退远程直链。正文已固化为「`# 微博-{正文前 18 字}`（超出才补 `...`）→ 元信息引用块 → `## 微博正文` → `## 转发内容`（含 `### 转发配图`）→ `## 微博配图`」，不写 Frontmatter，视频不写入；文件名改为 `微博-{用户昵称}-{正文前 18 字}`。主贴与转发体是长文时，路由层在落盘前先调长文接口取全文（`expandLongText`），失败才保留摘要。原设计中由集成层实现的 `NoteInserter` / `saveWeiboToNote` 已移除，宿主装配在 `src/modules/weibo/postActions.ts`，配图搬运由面板注入。下方片段保留为设计稿。
 
 ```typescript
 import { extractMedia, resolveTarget } from './media'
@@ -919,7 +933,8 @@ export async function saveWeiboToNote(
 }
 ```
 
-> 调用顺序（保存为笔记）：`resolveTarget` → `buildWeiboNoteMarkdown` → 笔记模块 `createFromContent` → 写 `weibo_saved_notes` → 打开笔记。
+> 调用顺序（保存为笔记）：卡片载荷 → `readWeiboPagePost` 收窄 → `buildWeiboNoteMarkdown` → 笔记模块 `createNoteFromContent`（落 `notes/未分类` + 索引）→ toast 回执；
+> 调用顺序（添加到 AI 对话）：卡片载荷 → `buildWeiboChatText` → 构造 `kind: 'weibo'` 的内联引用（不带文件路径，`uri` 为原文链接作去重键）→ 对齐 `weibo` 作用域会话 → `addContexts` → 切到对话分区。
 
 ---
 
@@ -1185,6 +1200,7 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 - 内容类型缺失或为 `application/octet-stream` 时按文件头魔数识别（JPEG/PNG/GIF/WEBP/BMP），避免把正常图片误判成不支持；HTML 错误页与 SVG 一律拒绝。
 - 图片地址统一走 `normalizeWeiboImageUrl` 归一化，白名单为 `*.sinaimg.cn`、`*.sinajs.cn`、`weibo.com`、`weibo.cn`（含子域）。只接受 https，非白名单地址在归一化阶段丢弃，代理层不会代任意地址取数。
 - 协议相对写法（`//wx1.sinaimg.cn/...`）补全为 `https:`；`weibo.com/ajax/common/download?pid=xxx` 需要登录 Cookie，Webview 直连会 401，宿主改写为 `https://wx1.sinaimg.cn/large/{pid}.jpg`；`pic_infos` 缺失时直接用 `pic_ids` 按同一规则拼直链。
+- 保存笔记时反过来需要**最大尺寸原图**：宿主按 pid 直接请求 `ajax/common/download?pid=xxx`（带 Cookie 与 Referer），302 由代理跟随（最多 3 跳，每一跳都校验落点仍在图片白名单内）；该通道失败才回退图床直链。
 - CSP 的 `img-src` 维持 `${webview.cspSource} data:`，不放行任何远程图片域；`media-src` 放行 `${webview.cspSource} blob: data:`、回环中转地址与微博视频 CDN（`weibocdn.com` / `weibo.com` / `weibo.cn` 及其子域）。`localResourceRoots` 只保留扩展产物目录：图片走 data URI、视频经回环中转流式播放，均不需要授权缓存目录。
 - 代理只接受 `image/jpeg|png|gif|webp|bmp` 且单张 ≤12MB，SVG 等可携带脚本的类型直接拒绝；同一地址并发请求共享一次下载，缓存按 URL 哈希命名，命中零网络。
 - 卡片按微博客户端习惯渲染：头像圆形（失败回落首字）、配图九宫格（1 张按 16:9，2 张两列，3 张以上三列，最多 9 张）、表情内联为 16px 小图；图片就绪前用同尺寸占位，避免列表抖动，失败显示破图占位。

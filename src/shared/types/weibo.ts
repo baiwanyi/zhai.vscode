@@ -157,6 +157,11 @@ export interface WeiboTimelineMedia {
     items: WeiboTimelineMediaItem[]
     /** 原图直链：点击放大时使用，与 thumbnails 一一对应 */
     images: string[]
+    /**
+     * 图片 pid：与 images 同序，供宿主按官方下载端点取最大尺寸。
+     * 关键约束：上游只给直链未给 pid 的图对应空串，调用方据此回退直链下载。
+     */
+    imageIds: string[]
     /** 中等尺寸直链：列表与九宫格展示用，减少首屏流量 */
     thumbnails: string[]
     /** 最大尺寸：与 images 同序（取上游 largest 档）；上游未给时为 null，前端回退到解码后的自然尺寸 */
@@ -181,6 +186,8 @@ export interface WeiboTimelineRetweet {
     url: string
     /** 原文媒体：图片九宫格与视频封面，结构与主贴一致 */
     media: WeiboTimelineMedia
+    /** 长文标记：text 只是摘要，保存笔记前需要先取全文 */
+    isLongText: boolean
 }
 
 /**
@@ -231,6 +238,62 @@ export interface WeiboTimelineResult {
     fetchedAt: string
     /** 分页重叠或重复下发被丢弃的条数 */
     droppedDuplicates: number
+}
+
+/**
+ * 卡片动作载荷：微博卡片「保存到笔记」「添加到 AI 对话」提交的展示字段。
+ * 关键约束：只承载卡片上已归一化的内容，宿主不据此回源取详情；
+ * 所有字段按不可信输入收窄（正文与转发体有长度上限、配图有数量上限），
+ * url 必须是 https 且属微博主站域名，越界载荷由宿主整批拒绝。
+ */
+export interface WeiboPagePostPayload {
+    /** 数字微博 id */
+    id: string
+    /** 短 id：上游缺失时为空串（此时原文地址已回退 /detail/{id}） */
+    mblogid: string
+    /** 原文地址：笔记 source 与对话引用去重键 */
+    url: string
+    /** 纯文本正文：已展开全文时是完整内容，未展开的长文为摘要 */
+    text: string
+    /** 微博发布时间（ISO 8601）：解析失败为空串 */
+    createdAt: string
+    author: { id: string; name: string }
+    /** 配图原图直链：最多 9 张，仅 https */
+    images: string[]
+    /** 配图 pid：与 images 同序，宿主据此按官方下载端点取最大尺寸；上游未给时为空串 */
+    imageIds: string[]
+    /** 视频直链：无视频或不可播时为 null；笔记与 AI 上下文都不使用（视频一律忽略） */
+    videoUrl: string | null
+    /** 转发体：文本与配图；无转发为 null。转发体的视频同样不带 */
+    retweeted: {
+        /** 数字微博 id：长文补全时用它调全文接口；旧载荷可能为空串 */
+        id: string
+        authorName: string
+        text: string
+        /** 转发配图原图直链：最多 9 张，仅 https */
+        images: string[]
+        /** 转发配图 pid：与 images 同序 */
+        imageIds: string[]
+        /** 转发正文是否被上游截断：为 true 时保存前先取全文 */
+        isTruncated: boolean
+    } | null
+    /** 正文是否被上游截断（长文未展开） */
+    isTruncated: boolean
+}
+
+/** 保存到笔记的结果：path 为存储根相对路径，前端只展示不拼装 */
+export interface WeiboNoteSaveResult {
+    path: string
+    title: string
+    /** 已搬进 uploads/ 的配图张数：未搬运（下载失败或无需搬运）的配图仍保留远程直链 */
+    imageCount: number
+}
+
+/** 添加到 AI 对话的结果：added 为 false 时 reason 说明原因（重复或已达上限） */
+export interface WeiboChatContextResult {
+    added: boolean
+    reason?: string
+    label?: string
 }
 
 /** 信息流单页默认条数：时间线、热门与分组统一按 20 条首屏加载 */
@@ -626,6 +689,12 @@ const WEIBO_ID_PATTERN = /^\d{1,25}$/u
 /** mblogid 形态：字母数字混排（如 `Rs4KtdzoV`），长文接口按它取全文 */
 const WEIBO_MBLOGID_PATTERN = /^[A-Za-z0-9]{4,32}$/u
 
+/**
+ * 图片 pid 形态：字母数字混排，直接拼进图床直链与官方下载地址。
+ * 关键约束：取数与媒体代理共用同一份判定，避免两处正则漂移出可注入的地址。
+ */
+export const WEIBO_IMAGE_PID_PATTERN = /^[A-Za-z0-9]{6,64}$/u
+
 /** 是否为可用的微博 id：空串与非法值统一返回 false */
 export function isWeiboTimelineId(value: unknown): value is string {
     return typeof value === 'string' && WEIBO_ID_PATTERN.test(value)
@@ -800,4 +869,145 @@ export function isWeiboImageRequest(value: unknown): value is WeiboImageRequest 
     }
     const { url } = value as Record<string, unknown>
     return typeof url === 'string' && url.length > 0 && url.length <= 1024
+}
+
+/** 卡片动作载荷的字段上限：正文按单条引用上限对齐，转发体更短 */
+const MAX_PAGE_POST_TEXT = 20_000
+const MAX_PAGE_POST_RETWEET_TEXT = 2_000
+const MAX_PAGE_POST_URL = 1_024
+const MAX_PAGE_POST_NAME = 64
+const MAX_PAGE_POST_IMAGES = 9
+
+/** 微博主站域名白名单：只接受 weibo.com 与其子域，且必须是 https */
+function isWeiboPageUrl(value: string): boolean {
+    try {
+        const parsed = new URL(value)
+        if (parsed.protocol !== 'https:') {
+            return false
+        }
+        return parsed.hostname === 'weibo.com' || parsed.hostname.endsWith('.weibo.com')
+    } catch {
+        return false
+    }
+}
+
+/** 微博 UID 形态：数字串（user.id），非数字一律清空 */
+const PAGE_UID_PATTERN = /^\d{1,25}$/u
+
+/** 媒体直链：只校验 https 与长度，不设域名白名单（图床域名随上游调整） */
+function isMediaDirectUrl(value: unknown): value is string {
+    return (
+        typeof value === 'string' &&
+        value.length > 0 &&
+        value.length <= MAX_PAGE_POST_URL &&
+        value.startsWith('https://')
+    )
+}
+
+/**
+ * 收窄作者：展示名限长，UID 只接受数字串。
+ * 关键约束：UID 不写入笔记，仅作后续去重与溯源用的规范字段；非数字一律清空而不是透传自由文本。
+ */
+function readPagePostAuthor(value: unknown): { id: string; name: string } | null {
+    if (typeof value !== 'object' || value === null) {
+        return null
+    }
+    const { id, name } = value as Record<string, unknown>
+    if (typeof id !== 'string' || id.length > MAX_PAGE_POST_NAME || typeof name !== 'string') {
+        return null
+    }
+    return { id: PAGE_UID_PATTERN.test(id) ? id : '', name: name.slice(0, MAX_PAGE_POST_NAME) }
+}
+
+/**
+ * 收窄一组配图：直链与 pid 同序配对，只保留 https 直链且最多 9 张。
+ * 关键约束：直链被过滤时对应 pid 一并丢弃，避免图片与 pid 错位导致取错原图。
+ */
+function readPageImages(rawImages: unknown, rawImageIds: unknown): { images: string[]; imageIds: string[] } {
+    const imageList: unknown[] = Array.isArray(rawImages) ? rawImages : []
+    const idList: unknown[] = Array.isArray(rawImageIds) ? rawImageIds : []
+    const images: string[] = []
+    const imageIds: string[] = []
+    for (let index = 0; index < imageList.length && images.length < MAX_PAGE_POST_IMAGES; index += 1) {
+        const imageUrl = imageList[index]
+        if (!isMediaDirectUrl(imageUrl)) {
+            continue
+        }
+        images.push(imageUrl)
+        const pid = idList[index]
+        imageIds.push(typeof pid === 'string' && WEIBO_IMAGE_PID_PATTERN.test(pid) ? pid : '')
+    }
+    return { images, imageIds }
+}
+
+/** 收窄转发体：缺字段按无转发处理，正文超长截断而不是拒绝整条载荷；转发配图同样收窄 */
+function readPageRetweet(value: unknown): WeiboPagePostPayload['retweeted'] {
+    if (value === null || value === undefined) {
+        return null
+    }
+    if (typeof value !== 'object') {
+        return null
+    }
+    const record = value as Record<string, unknown>
+    const { authorName, text } = record
+    if (typeof authorName !== 'string' || typeof text !== 'string') {
+        return null
+    }
+    const media = readPageImages(record.images, record.imageIds)
+    const rawId = record.id
+    return {
+        // 数字 id 用于长文补全：非数字一律清空，宿主据此判断能否取全文
+        id: typeof rawId === 'string' && WEIBO_ID_PATTERN.test(rawId) ? rawId : '',
+        authorName: authorName.slice(0, MAX_PAGE_POST_NAME),
+        text: text.slice(0, MAX_PAGE_POST_RETWEET_TEXT),
+        images: media.images,
+        imageIds: media.imageIds,
+        isTruncated: record.isTruncated === true,
+    }
+}
+
+/**
+ * 收窄卡片动作载荷：结构性非法返回 null（由路由抛错），超长文本按上限截断并置 isTruncated。
+ * 关键约束：正文与转发体都按不可信文本处理，不做 HTML 解析；配图只收 https 直链且最多 9 张；
+ * url 必须是微博主站的 https 永久链接，避免笔记 source 与引用去重键被写成任意外链。
+ */
+export function readWeiboPagePost(value: unknown): WeiboPagePostPayload | null {
+    if (typeof value !== 'object' || value === null) {
+        return null
+    }
+    const record = value as Record<string, unknown>
+    const { id, mblogid, url, text, createdAt, author, images, videoUrl } = record
+    if (typeof id !== 'string' || !WEIBO_ID_PATTERN.test(id)) {
+        return null
+    }
+    // mblogid 允许为空串：上游部分帖子不带短 id，归一化层已把原文地址回退成 /detail/{id}
+    if (typeof mblogid !== 'string' || (mblogid.length > 0 && !WEIBO_MBLOGID_PATTERN.test(mblogid))) {
+        return null
+    }
+    if (typeof url !== 'string' || url.length > MAX_PAGE_POST_URL || !isWeiboPageUrl(url)) {
+        return null
+    }
+    if (typeof text !== 'string' || typeof createdAt !== 'string' || createdAt.length > 64) {
+        return null
+    }
+    const normalizedAuthor = readPagePostAuthor(author)
+    if (normalizedAuthor === null) {
+        return null
+    }
+    const isTextTruncated = text.length > MAX_PAGE_POST_TEXT
+    const media = readPageImages(images, record.imageIds)
+    const normalizedVideo = isMediaDirectUrl(videoUrl) ? videoUrl : null
+    return {
+        id,
+        mblogid,
+        url,
+        text: isTextTruncated ? text.slice(0, MAX_PAGE_POST_TEXT) : text,
+        createdAt,
+        author: normalizedAuthor,
+        images: media.images,
+        imageIds: media.imageIds,
+        videoUrl: normalizedVideo,
+        retweeted: readPageRetweet(record.retweeted),
+        isTruncated: isTextTruncated || record.isTruncated === true,
+    }
 }

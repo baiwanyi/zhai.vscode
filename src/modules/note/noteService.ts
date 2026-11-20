@@ -1,31 +1,37 @@
 /**
- * 笔记服务：把空笔记草稿落到指定笔记本并立即纳入索引，按索引路径打开已有笔记，或把笔记移入回收站。
+ * 笔记服务：把空笔记草稿或外部内容落到指定笔记本并立即纳入索引，按索引路径打开已有笔记，或把笔记移入回收站。
  * 复用 common/storagePath 的路径构造、片段校验与统一删除入口、common/config 的存储根解析、IndexService 的单文件索引能力。
- * 命令面板与 Webview 入口共用同一实现。
+ * 命令面板、Webview 入口与微博剪藏共用同一实现。
  * 关键约束：新笔记标题为「未命名笔记 N」，N 从 1 起在目标笔记本内顺延，写入前先判定存在性，同名顺延而非覆盖；
  * 落点目录须先经 toNoteDirectory 收窄为 notes/<单段>，拒绝会越出存储根的拼装结果；
  * 移除笔记只接受 notes/ 目录下的 Markdown 文档，其它归属的路径即便在索引内也一律拒绝；
  * 有未保存修改的文档拒绝移除，避免移走后编辑器再保存把文件写回原处；
+ * 外部内容（微博剪藏等）按调用方给到的标题与正文落盘，正文长度设上限、标题同样走合法化收窄；
  * 交给 workspace.fs 的一律是带 file 协议的绝对路径。
  */
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
-import {
-    buildStorageUri,
-    isPathExisting,
-    toSafeSegments,
-    toStorageRelativePath,
-} from '@modules/common/storagePath'
+import { buildStorageUri, isPathExisting, toSafeSegments, toStorageRelativePath } from '@modules/common/storagePath'
 import { openStorageDocument } from '@modules/editor/openDocument'
 import type { CreatedNote } from '@shared/types/note'
-import { DEFAULT_NOTE_DIRECTORY, NOTE_DIR, buildDefaultNoteTitle, createNoteDraft, toNoteDirectory } from './noteFactory'
+import {
+    DEFAULT_NOTE_DIRECTORY,
+    NOTE_DIR,
+    buildDefaultNoteTitle,
+    createNoteDraft,
+    toNoteDirectory,
+    toNoteFileName,
+} from './noteFactory'
 
 /** 默认标题的序号上限：同月已有 N 篇未命名笔记时顺延到 N+1，取一个足够大的上限兜住异常目录 */
 const MAX_CREATE_ATTEMPTS = 200
 
 /** 笔记文件的扩展名：删除时据此确认目标是笔记文档而非目录或其它类型的文件 */
 const NOTE_EXTENSION = '.md'
+
+/** 外部内容写入正文的上限：超出直接拒绝，避免不可信来源把整段超长文本写进存储根 */
+const MAX_NOTE_CONTENT_LENGTH = 100_000
 
 /** 笔记写盘所需的最小索引能力：仅声明用到的方法，便于解耦与替身注入 */
 export interface NoteIndexer {
@@ -73,6 +79,55 @@ export async function createNote(
         return { path: draft.path, title: draft.title, uri: target }
     }
     throw new Error(`创建笔记失败：连续 ${MAX_CREATE_ATTEMPTS} 个序号均已存在`)
+}
+
+/** 带正文的笔记创建入参：标题决定文件名，正文按 Markdown 原文写入 */
+export interface NoteContentInput {
+    /** 笔记标题：经 toNoteFileName 收窄后作为文件名，重名时追加序号 */
+    title: string
+    /** 笔记正文（已是 Markdown 原文）：转义与结构由调用方负责，本层不改写内容 */
+    markdown: string
+    /** 目标笔记本（notes/<单段>），缺省落未分类 */
+    directory?: string
+}
+
+/**
+ * 按给定正文创建笔记并立即索引：外部内容落地笔记的统一入口（微博剪藏等）。
+ * 关键约束：标题经 toNoteFileName 收窄后作为文件名，重名时追加序号顺延，绝不覆盖既有笔记；
+ * 正文长度设上限，外部来源超限直接拒绝；目录仍走 toNoteDirectory 收窄，保证不会越出存储根。
+ */
+export async function createNoteFromContent(indexer: NoteIndexer, input: NoteContentInput): Promise<CreatedNoteHandle> {
+    const markdown = input.markdown.trim()
+    if (markdown.length === 0) {
+        throw new Error('笔记正文为空，未写入')
+    }
+    if (markdown.length > MAX_NOTE_CONTENT_LENGTH) {
+        throw new Error(`笔记正文过长（${String(markdown.length)} 字），超过 ${String(MAX_NOTE_CONTENT_LENGTH)} 字上限`)
+    }
+    const title = input.title.trim()
+    if (title.length === 0) {
+        throw new Error('笔记标题为空，未写入')
+    }
+    const root = resolveStorageRoot()
+    const targetDirectory = toNoteDirectory(input.directory ?? DEFAULT_NOTE_DIRECTORY)
+    const directorySegments = targetDirectory.split('/')
+    const directoryUri = buildStorageUri(root, directorySegments)
+    for (let index = 1; index <= MAX_CREATE_ATTEMPTS; index += 1) {
+        const candidateTitle = index === 1 ? title : `${title} ${String(index)}`
+        const fileName = toNoteFileName(candidateTitle)
+        const target = buildStorageUri(root, [...directorySegments, fileName])
+        if (await isPathExisting(target)) {
+            logger.debug(`笔记文件已存在，序号顺延：${targetDirectory}/${fileName}`)
+            continue
+        }
+        await vscode.workspace.fs.createDirectory(directoryUri)
+        // 末尾补换行：Markdown 文件以空行收尾，与编辑器保存后的形态一致
+        await vscode.workspace.fs.writeFile(target, new TextEncoder().encode(`${markdown}\n`))
+        await indexer.indexFile(target)
+        logger.info(`已创建笔记：${targetDirectory}/${fileName}`)
+        return { path: `${targetDirectory}/${fileName}`, title: candidateTitle, uri: target }
+    }
+    throw new Error(`创建笔记失败：连续 ${String(MAX_CREATE_ATTEMPTS)} 个序号均已存在`)
 }
 
 /** 打开新建的笔记：交给统一入口；空笔记没有定位需求，不再强设光标 */

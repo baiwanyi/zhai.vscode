@@ -37,7 +37,12 @@ export function AiChatMessageRefs({ refs }: AiChatMessageRefsProps): JSX.Element
                         </Badge>
                     </TooltipTrigger>
                     <TooltipContent side="top" className={cn(TOOLTIP_CLASS, 'max-w-72 text-white')}>
-                        <span className="break-all">{toZhaiDisplayPath(ref.displayPath)}</span>
+                        {ref.kind === 'weibo' ? (
+                            // 微博引用没有文件路径：提示说明来源，而不是拼一个不存在的 @zhai 路径
+                            <span>来自微博，无条件文件路径</span>
+                        ) : (
+                            <span className="break-all">{toZhaiDisplayPath(ref.displayPath)}</span>
+                        )}
                     </TooltipContent>
                 </Tooltip>
             ))}

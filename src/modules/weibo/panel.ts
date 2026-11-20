@@ -8,12 +8,16 @@
  * 视频不落缓存：CSP 的 media-src 放行微博视频 CDN，由 Webview 直接播整段 mp4，面板无需授权任何缓存目录；
  * 面板激活、失焦与销毁都要经 activeDocument 上报/让位，关闭时同时清理事实与句柄。
  */
+import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import { buildWebviewHtml } from '@modules/common/webviewHtml'
 import { getActivePanel, reportActivePanel } from '@modules/editor/activeDocument'
+import { MAX_UPLOAD_BYTES } from '@modules/upload/uploadPayload'
+import { saveUploadFile } from '@modules/upload/uploadStorage'
 import { isRequestMessage } from '@shared/types/messages'
+import type { WeiboNoteSaveResult, WeiboPagePostPayload } from '@shared/types/weibo'
 import { WEIBO_PANEL_VIEW_TYPE } from '@shared/types/workflow'
 import { createWeiboMediaProxy, readImageAsDataUrl } from './mediaProxy'
 import { createWeiboVideoServer } from './videoServer'
@@ -23,6 +27,7 @@ import { createWeiboAvatarGateway } from './weiboAvatar'
 import { createWeiboCache } from './weiboCache'
 import { WeiboRoutes as WeiboRoutesImpl } from './weiboRoutes'
 import type { WeiboMediaProxy } from './mediaProxy'
+import type { WeiboImageSaver, WeiboPostActions } from './postActions'
 import type { WeiboRoutes } from './weiboRoutes'
 
 /** 图片缓存子目录：与其它模块的缓存共处 globalStorage 根下 */
@@ -69,6 +74,56 @@ export function createWeiboMediaResolver(
     })
 }
 
+/** 日志用的图片标识：只留主机与路径前段，查询串里可能带签名 */
+function describeImageUrl(url: string): string {
+    try {
+        const parsed = new URL(url)
+        return `${parsed.host}${parsed.pathname.slice(0, 60)}`
+    } catch {
+        return '非法地址'
+    }
+}
+
+/**
+ * 创建配图搬运器：把微博图床的远程图搬进 uploads/{YYYYMM}/，与上传页共用同一套命名与落盘规则。
+ * 复用约定：取图交给面板的图片代理（补 Referer、401/403 带 Cookie 重试、302 跟随），落盘交给 upload/saveUploadFile；
+ * 关键约束：优先按 pid 走官方下载端点取最大尺寸原图，pid 缺失或失败才回退图床直链；
+ * 逐张处理，单张失败只回退远程直链，不影响整篇笔记；超过上传单件上限的图同样跳过；
+ * 返回值为存储根相对路径（不带 @zhai 前缀），引用写法由 note 组装层决定。
+ */
+function createWeiboImageSaver(proxy: WeiboMediaProxy): WeiboImageSaver {
+    return async (images) => {
+        const root = resolveStorageRoot()
+        const saved: Array<string | null> = []
+        for (const image of images) {
+            try {
+                const original = image.pid.length > 0 ? await proxy.resolveOriginal(image.pid) : null
+                const localPath = original ?? (await proxy.resolve(image.url))
+                if (localPath === null) {
+                    saved.push(null)
+                    continue
+                }
+                const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(localPath))
+                if (bytes.byteLength === 0 || bytes.byteLength > MAX_UPLOAD_BYTES) {
+                    logger.warn(
+                        `微博配图跳过上传目录：体积 ${String(bytes.byteLength)} 字节（${describeImageUrl(image.url)}）`,
+                    )
+                    saved.push(null)
+                    continue
+                }
+                const file = await saveUploadFile(root, { name: path.basename(localPath), bytes })
+                saved.push(file.path)
+            } catch (error) {
+                logger.warn(
+                    `微博配图保存失败：${describeImageUrl(image.url)}（${error instanceof Error ? error.message : String(error)}）`,
+                )
+                saved.push(null)
+            }
+        }
+        return saved
+    }
+}
+
 /** 当前面板：关闭后置空，重复打开时聚焦而不是再开一页 */
 let current: vscode.WebviewPanel | null = null
 
@@ -94,12 +149,14 @@ async function handlePanelMessage(panel: vscode.WebviewPanel, routes: WeiboRoute
 
 /**
  * 打开微博面板：已存在则聚焦，否则在编辑区新开一页。
- * secrets 缺省时凭证读写退化为空实现；mediaCacheRoot 缺省时不代理图片（卡片显示占位）。
+ * secrets 缺省时凭证读写退化为空实现；mediaCacheRoot 缺省时不代理图片（卡片显示占位）；
+ * postActions 缺省时卡片的「保存到笔记」「添加到 AI 对话」按未就绪回包，其余功能不受影响。
  */
 export async function openWeiboPanel(
     extensionUri: vscode.Uri,
     secrets?: vscode.SecretStorage,
     mediaCacheRoot?: vscode.Uri,
+    postActions?: WeiboPostActions,
 ): Promise<void> {
     if (current !== null) {
         current.reveal()
@@ -151,6 +208,13 @@ export async function openWeiboPanel(
                 return proxy.resolve(imageUrl)
             },
         }),
+        // 卡片动作：笔记落盘与 AI 会话都在宿主其它层，面板只补上取图通道（配图搬进 uploads/）
+        saveToNote:
+            postActions === undefined
+                ? undefined
+                : (post: WeiboPagePostPayload): Promise<WeiboNoteSaveResult> =>
+                      postActions.saveToNote(post, proxy === null ? undefined : createWeiboImageSaver(proxy)),
+        addToChat: postActions?.addToChat,
         openExternal: async (url: string): Promise<void> => {
             await vscode.env.openExternal(vscode.Uri.parse(url))
         },
