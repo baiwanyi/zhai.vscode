@@ -19,7 +19,7 @@
  */
 import { cn } from 'cn'
 import { Inbox, RefreshCw } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
     AlertDialog,
@@ -32,6 +32,7 @@ import {
     AlertDialogTitle,
 } from '@components/ui/alert-dialog'
 import { Toaster } from '@components/ui/sonner'
+import { scrollAreaToTop } from '@shared/utils/scrollArea'
 import {
     AppAction,
     AppContent,
@@ -81,6 +82,8 @@ export function WeiboPanel(): JSX.Element {
         clearCredential,
     } = useWeiboTimeline()
     const [view, setView] = useState<WeiboView>('home.recommend')
+    /** 页面根节点：滚动宿主藏在 AppContent 的 ScrollArea 里，刷新与切页都从它往下找 */
+    const pageRef = useRef<HTMLDivElement>(null)
     const [isCredentialOpen, setIsCredentialOpen] = useState(false)
     // 设置改为弹窗：不再占用导航视图
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
@@ -192,7 +195,14 @@ export function WeiboPanel(): JSX.Element {
         setIsCredentialOpen(false)
     }, [])
 
+    /** 切页后回到顶部：上一页可能滚到很深，留着会看不到新页开头 */
+    useEffect(() => {
+        scrollAreaToTop(pageRef.current)
+    }, [view])
+
     const handleRefresh = useCallback((): void => {
+        // 刷新等于重开一屏：先把滚动条拉回顶部，新内容从第一条看起
+        scrollAreaToTop(pageRef.current)
         if (activeFeed !== null) {
             void activeFeed.refresh()
             return
@@ -425,7 +435,7 @@ export function WeiboPanel(): JSX.Element {
         <>
             {/* AppPage 按 h-full 撑满，webview 的 #root 没有高度基准，不给视口高度顶栏会随 body 一起滚走
                 （与 WorkflowScreen / dashboardScreen 同形） */}
-            <div className="flex h-screen min-h-0 flex-col">
+            <div ref={pageRef} className="flex h-screen min-h-0 flex-col">
                 <AppPage>
                     <AppHeader>
                         <AppTitle>微博</AppTitle>

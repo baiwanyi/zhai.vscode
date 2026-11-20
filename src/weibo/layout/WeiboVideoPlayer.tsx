@@ -2,7 +2,9 @@
  * 微博视频播放器：自绘控件栏，避免原生 controls 在 Webview 里样式与自动隐藏都不可控。
  * 复用约定：主贴与转发体共用；src 是宿主回环中转地址（见 14.4），poster 是封面图 data URI；
  * 按钮取 @webview/components/Button，进度条取 @components/ui/slider，清晰度角标取 @components/ui/badge。
- * 关键约束：控件栏只在播放中显示，鼠标静止 2.5s 后淡出；暂停 / 未播放时整条控件栏不出现，
+ * 关键约束：容器默认 16:9，传入 aspectRatio（视频分辨率算出的宽高比）时按该比例铺开，竖屏不再留黑边；
+ * 高度一律限到 720px，竖屏比例超过这条线时由 video 的 object-contain 居中、左右留黑底，不撑长卡片；
+ * 控件栏只在播放中显示，鼠标静止 2.5s 后淡出；暂停 / 未播放时整条控件栏不出现，
  * 只留中央播放键，避免挡住画面；空格切换播放/暂停（容器可聚焦）；
  * 中央播放键只在暂停时出现，播放时不挡画面；全屏在 Webview 里可能被拒，失败静默忽略；
  * 播放器叠在视频上固定是暗底，文字与控件必须写死白色——语义色在暗色主题下会翻成浅底看不清，
@@ -79,6 +81,11 @@ interface WeiboVideoPlayerProps {
     resolution: WeiboTimelineVideoResolution | null
     /** 进来就自动播：默认关闭，播放一律由用户点中央按钮或空格触发 */
     autoPlay?: boolean
+    /**
+     * 容器宽高比（宽 / 高）：传视频分辨率算出的比例，竖屏视频就按竖框铺开，
+     * 不再塞进 16:9 的框里、左右留一大片黑边；缺失时回落到 16:9。
+     */
+    aspectRatio?: number | null
     /** 额外类名：九宫格里需要 col-span-3 撑满一行 */
     className?: string
 }
@@ -88,6 +95,7 @@ export function WeiboVideoPlayer({
     posterUrl,
     resolution,
     autoPlay = false,
+    aspectRatio = null,
     className,
 }: WeiboVideoPlayerProps): JSX.Element {
     const poster = useWeiboImage(posterUrl ?? '')
@@ -101,6 +109,8 @@ export function WeiboVideoPlayer({
     /** 播放中的控件栏是否被鼠标唤醒：暂停 / 未播放时控件栏一律不显示，只留中央播放键 */
     const [isControlsRevealed, setIsControlsRevealed] = useState(true)
     const isControlsVisible = isPlaying && isControlsRevealed
+    /** 有效比例：非有限值或非正数一律视为缺失，容器留在 16:9 */
+    const resolvedRatio = aspectRatio !== null && Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : null
 
     const clearHideTimer = useCallback((): void => {
         if (hideTimerRef.current !== null) {
@@ -197,9 +207,11 @@ export function WeiboVideoPlayer({
                 setIsControlsRevealed(false)
             }}
             className={cn(
-                'group relative aspect-video w-full overflow-hidden rounded-lg bg-black outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                // 限高 720px：竖屏视频按比例铺开会很占版面，超过就由 object-contain 居中留黑边
+                'group relative aspect-video max-h-[720px] w-full overflow-hidden rounded-lg bg-black outline-none focus-visible:ring-2 focus-visible:ring-ring',
                 className,
             )}
+            style={resolvedRatio === null ? undefined : { aspectRatio: String(resolvedRatio) }}
         >
             <video
                 ref={videoRef}

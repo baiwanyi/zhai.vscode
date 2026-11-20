@@ -176,10 +176,11 @@ export function normalizeWeiboVideoUrl(value: unknown): string | null {
 }
 
 /** 图床的尺寸目录：这些目录可换成 bmiddle；thumbnail 已足够小，不参与替换 */
-const IMAGE_SIZE_DIRS = new Set(['large', 'original', 'orj1080', 'mw2000', 'mw1024', 'mw690', 'thumb300'])
+const IMAGE_SIZE_DIRS = new Set(['large', 'original', 'orj1080', 'orj960', 'mw2000', 'mw1024', 'mw690', 'thumb300'])
 
 /**
- * 取中等尺寸地址：把 `/large/`、`/mw2000/` 等尺寸目录换成 `/bmiddle/`（约 440px）。
+ * 取中等尺寸地址：把 `/large/`、`/orj960/`、`/mw2000/` 等尺寸目录换成 `/bmiddle/`（长边 360）。
+ * 展示图档位缺失与宿主「超大图降级」都靠它兜底。
  * 头像裁切路径与表情 CDN 没有尺寸目录，原样返回；无法解析的地址也原样返回。
  */
 export function buildMiddleImageUrl(imageUrl: string): string {
@@ -365,11 +366,11 @@ export function parseWeiboCreatedAt(raw: string): string {
     return Number.isNaN(fallback.getTime()) ? '' : fallback.toISOString()
 }
 
-/** 单张图片的候选信息：原图、中图与上游给出的原图尺寸 */
+/** 单张图片的候选信息：原图、展示图与上游给出的原图尺寸 */
 interface MediaCandidate {
-    /** 原图直链：灯箱使用，优先 largest（画质最好） */
+    /** 原图直链：保存到笔记等需要最大尺寸的场合使用，优先 largest（画质最好） */
     url: string
-    /** 中图直链：九宫格使用，优先上游 bmiddle 档 */
+    /** 展示图直链：九宫格与卡片内预览使用，优先上游 large 档（长边 960） */
     middleUrl: string | null
     /** 原图尺寸：优先 largest 档（最大可用尺寸），缺失回退 original / large */
     size: WeiboTimelineImageSize | null
@@ -398,6 +399,11 @@ function readVariantUrl(variant: unknown): string | null {
  * 尺寸取 largest 档（上游给出的最大尺寸），预览角标与竖横判断都用它；
  * 直链同样优先 largest 保证画质；中图优先用上游 bmiddle 档（新版为 wap360），拿不到再按尺寸目录推导。
  */
+/**
+ * 读取单张图片的候选信息：原图直链、展示图直链与上游给出的最大尺寸。
+ * 关键约束：展示图优先取上游 `large` 档（长边 960）——九宫格与卡片内预览都用它，
+ * bmiddle 档长边只有 360，铺到卡片宽度会明显发虚；两档都没有时才把原图目录换成 bmiddle 兜底。
+ */
 function pickMediaCandidate(value: unknown): MediaCandidate | null {
     if (!isRecord(value)) {
         return null
@@ -412,7 +418,7 @@ function pickMediaCandidate(value: unknown): MediaCandidate | null {
     if (url === null) {
         return null
     }
-    const middleUrl = readVariantUrl(value.bmiddle) ?? readVariantUrl(value.large) ?? buildMiddleImageUrl(url)
+    const middleUrl = readVariantUrl(value.large) ?? readVariantUrl(value.bmiddle) ?? buildMiddleImageUrl(url)
     return { url, middleUrl, size }
 }
 

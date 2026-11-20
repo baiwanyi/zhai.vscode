@@ -1017,10 +1017,10 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 | `source` | `source` | 实测是纯文本客户端名（如 `iPhone 17 Pro Max`、`微博视频号`）；旧版返回 `<a>` 外壳时剥标签只留文字 |
 | `author` | `user.id / screen_name / verified / avatar_large` | 认证标记取 `verified === true`，头像只保留图床地址 |
 | `metrics` | `reposts_count / comments_count / attitudes_count` | 缺失按 0 |
-| `media.items` | 有 `mix_media_info.items` 时按它原序；**关注流实测没有该字段**，图片来自 `pic_infos` / `pic_ids`，视频来自 `page_info`（`object_type: video`） | `image` 项给原图 / 中图 / 尺寸，`video` 项只给封面与时长，不给播放直链；视频 `page_pic` 作封面、`media_info.duration` 作时长、`playback_list` 只留兜底诊断 |
+| `media.items` | 有 `mix_media_info.items` 时按它原序；**关注流实测没有该字段**，图片来自 `pic_infos` / `pic_ids`，视频来自 `page_info`（`object_type: video`） | `image` 项给原图 / 展示图 / 尺寸，`video` 项只给封面与时长，不给播放直链；视频 `page_pic` 作封面、`media_info.duration` 作时长、`playback_list` 只留兜底诊断 |
 | `media.images` | 由 `media.items` 派生（`kind === 'image'`） | 原图直链，按 pid 与直链双重去重；缺直链时用 pid 拼 `wx1.sinaimg.cn/large/{pid}.jpg` |
-| `media.thumbnails` | `pic_infos[*].bmiddle.url`（新版为 `/wap360/`），缺失时把 `/large/` 等尺寸目录换成 `/bmiddle/` | 列表展示用的中等尺寸，与 images 同序 |
-| `media.sizes` | `pic_infos[*].largest.width/height`，缺失回退 `original` / `large` | 最大尺寸，与 images 同序；预览角标与竖横判断只认它，与实际加载的档位无关 |
+| `media.thumbnails` | `pic_infos[*].large.url`（`/orj960/`，长边 960），缺失才回退 `bmiddle`（`/wap360/`），都没有时把原图目录换成 `/bmiddle/` | 展示图：九宫格与卡片内预览共用，与 images 同序；不再为预览另取原图 |
+| `media.sizes` | `pic_infos[*].largest.width/height`，缺失回退 `original` / `large` | 最大尺寸，与 images 同序；展开预览按它算占位比例，与实际加载的档位无关 |
 | `media.videoUrl` | `page_info.media_info.playback_list[0]` 等 | 首个可播放地址，仅作兜底诊断；卡片不播放，观看一律回原文 |
 | `media.imageCount` / `videoCount` | `pic_num`、实际解析出的图片数、混排里的视频条数 | 图片与视频分开计数，不再互相冒充 |
 | `retweeted` | `retweeted_status` | 保留作者名、正文摘要、原文地址与**媒体**（图片九宫格 + 视频封面，与主贴同一份归一化）；转发里再转发的层级只按文字处理，不递归展开 |
@@ -1109,8 +1109,8 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 | 档位键 | URL 目录 | 实测尺寸样例 | 本项目用途 |
 |--------|----------|--------------|-----------|
 | `thumbnail` | `wap180` | 95×180 | 未使用 |
-| `bmiddle` | `wap360` | 190×360 | `media.thumbnails`（九宫格） |
-| `large` | `orj960` | 960×1817 | 未使用（长边缩到 960） |
+| `bmiddle` | `wap360` | 190×360 | 兜底展示图（缺 `large` 档、超大图降级时用） |
+| `large` | `orj960` | 960×1817 | `media.thumbnails`（九宫格 + 卡片内展开预览） |
 | `original` | `orj1080` | 1014×1920 | 未使用 |
 | `largest` | `large` | 1014×1920 | `media.images` 原图 + `media.sizes` 尺寸 |
 | `mw2000` | `mw2000` | 1014×1920 | 未使用（样例与原图同尺寸，宽 >2000 时才缩） |
@@ -1168,10 +1168,11 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 - ffmpeg 不在 PATH 或转码失败时回退为**原样转发**：画面能看、能拖动，但可能无声；日志会记一条「回退原样转发」。实测转码产物 1.81MB，音轨 `mp3` + 视频 `h264`。
 - 实测：本地中转整段返回 `200`（`video/mp4`，1.8MB），`Range: bytes=0-1023` 返回 `206`（`Content-Range: bytes 0-1023/1826650`），字节头为 `ftyp`。
 - **纯视频微博**（`imageCount === 0` 且只有一个视频项）直接铺播放器：poster 是封面经图片代理换来的 data URI，进视口即可见，点播放才开始走中转取流，不会提前偷流量；地址换不到时该位置变成「视频暂不可播放，点击在浏览器打开原文」。
+- **容器比例跟随视频分辨率**（`media.items[].resolution`）：`WeiboVideoPlayer` 收一个 `aspectRatio`，竖屏视频按竖框铺开，不再塞进 16:9 里左右留大片黑边；分辨率缺失或非法值时才回落 16:9。容器高度统一限到 **720px**：竖屏比例超过这条线时由 `video` 的 `object-contain` 居中、左右留黑底，不把卡片撑长。
 - 播放器统一走 `layout/WeiboVideoPlayer.tsx`（自绘控件栏，不用原生 `controls`）：中央播放键只在暂停时出现，播放中淡出且不挡画面；**空格切换播放/暂停**（容器可聚焦，`preventDefault` 同时挡掉页面滚动）；**控件栏只在播放中出现**——播放中鼠标静止 2.5 秒后淡出、鼠标一动立刻回来，暂停与未播放时整条控件栏不显示，只留中央播放键；底部含进度条（可拖动）、`mm:ss` 时间、静音与全屏，全屏在 Webview 中被拒时静默忽略。
 - 控件一律用现成组件：按钮取 `@webview/components/Button`（图标键 `size="icon-xs"`、中央键 `icon-lg` 配圆形容器、静音与全屏带 `tooltip`），进度条取 `@components/ui/slider`（拖动只更新本地进度，`onValueCommit` 才 seek），清晰度角标取 `@components/ui/badge`。播放器叠在视频上固定是暗底，控件配色写死白色、只覆盖配色类，不改组件本体。
 - **清晰度角标**：视频项自带 `resolution`，取 `playback_list` 里面积最大的一档宽高（`dash_audio` 宽高为 0 自动跳过，`scrubber_hd` 预览图面积最小选不中），没有播放列表时回退解析地址上的 `template=720x960.24.0`。前端按**短边**归类成 `320P` / `480P` / `720P` / `1080P` / `2K` / `4K` / `8K`（1440 / 2160 / 4320 分别对应 2K / 4K / 8K），在播放器左上角用白色半透明角标展示，**播放中收起、未播放与暂停时显示**；分辨率缺失时不显示角标。
-- 图文混排 / 多视频仍是点击封面后原位换成播放器（`col-span-3` 占满一行）的交互，不弹 Dialog；没有整段地址或中转不可用时回退「在浏览器打开原文」，转发区回退的是被转发的原文。
+- 图文混排 / 多视频：视频项先占一个宫格（封面 + 播放角标 + 时长），与图片一起按原序排三列；点封面才原地换成**整行**播放器（`col-span-3`，按视频分辨率比例铺开），图片被挤到播放器下方，播放器右上角有「返回宫格」按钮可收起；同一媒体区同时只播一条，换一条即收起旧的；没有整段地址或中转不可用时该位置回退「在浏览器打开原文」，转发区回退的是被转发的原文。
 
 **图片与表情渲染**：
 
@@ -1203,12 +1204,15 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 - 保存笔记时反过来需要**最大尺寸原图**：宿主按 pid 直接请求 `ajax/common/download?pid=xxx`（带 Cookie 与 Referer），302 由代理跟随（最多 3 跳，每一跳都校验落点仍在图片白名单内）；该通道失败才回退图床直链。
 - CSP 的 `img-src` 维持 `${webview.cspSource} data:`，不放行任何远程图片域；`media-src` 放行 `${webview.cspSource} blob: data:`、回环中转地址与微博视频 CDN（`weibocdn.com` / `weibo.com` / `weibo.cn` 及其子域）。`localResourceRoots` 只保留扩展产物目录：图片走 data URI、视频经回环中转流式播放，均不需要授权缓存目录。
 - 代理只接受 `image/jpeg|png|gif|webp|bmp` 且单张 ≤12MB，SVG 等可携带脚本的类型直接拒绝；同一地址并发请求共享一次下载，缓存按 URL 哈希命名，命中零网络。
-- 卡片按微博客户端习惯渲染：头像圆形（失败回落首字）、配图九宫格（1 张按 16:9，2 张两列，3 张以上三列，**不设 9 张上限，上游给多少张就排多少格**，懒加载按视口取图）、表情内联为 16px 小图；图片就绪前用同尺寸占位，避免列表抖动，失败显示破图占位。
+- 卡片按微博客户端习惯渲染：头像圆形（失败回落首字）、配图九宫格（1 张按原图比例整张显示、不裁剪，2 张两列，3 张以上三列按方格裁切，**不设 9 张上限，上游给多少张就排多少格**，懒加载按视口取图）、表情内联为 16px 小图；图片就绪前用同尺寸占位，避免列表抖动，失败显示破图占位。
 - 正文里的 `<img>` 只有带表情名（`title` / `alt`，非空且不是短链）才按表情渲染；视频卡片等装饰图（`h5.sinaimg.cn/upload/…` 小图标，`alt` 常是 `http://t.cn/…`）直接跳过，既不出图标也不留 `[]` 占位。
-- 引用（转发）微博的媒体与主贴共用同一套 `PostMediaGrid`：图片走九宫格并可开灯箱，视频点封面即在卡片内播放；没有整段地址或中转不可用时才回退打开原文，转发区回退的是**被转发的原文**。视频项判定按 `page_info.object_type === 'video'` 或 `type === 11`，旧版只靠有没有整段播放地址；群组 / 投票卡片同样带 `page_pic`，不当作视频。
+- 引用（转发）微博的媒体与主贴共用同一套 `PostMediaGrid`：图片走九宫格、点击即在卡片内展开预览；视频与图片同处宫格，点封面才在原地换成整行播放器，图片随之落到下方；没有整段地址或中转不可用时才回退打开原文，转发区回退的是**被转发的原文**。视频项判定按 `page_info.object_type === 'video'` 或 `type === 11`，旧版只靠有没有整段播放地址；群组 / 投票卡片同样带 `page_pic`，不当作视频。
 - **不重复展示**：被转发内容带视频时，外层（转发这条）的视频项由归一化直接剔除，只保留图片——视频只留在引用区，避免同一条卡片里出现两个播放器。
-- 列表**只用中等尺寸**（`media.thumbnails`，`/bmiddle/`），不加载原图；点击某张才在浮层里请求原图（`media.images`）。原图超过 4MB 内联上限或下载失败时，浮层自动回退到中图并提示「已显示中等尺寸」；Esc 或点击遮罩关闭。
-- 浮层布局：关闭按钮固定在屏幕右上角、尺寸角标固定在左上角；角标显示 `最大 W × H`，尺寸取自上游 `largest` 档（`media.sizes`），**与实际加载的是原图还是中图无关**，只有上游缺该档时才回退到 `img.naturalWidth/Height` 并标注「实际/中图」。竖横判断同样用该尺寸：竖图 `max-h-full w-auto` 按高度铺满，横图 `max-w-full h-auto` 按宽度铺满，尺寸未知时 `object-contain` 兜底。
+- 列表与展开预览**都用同一张展示图**（`media.thumbnails`，上游 `large` 档、长边 960）：宫格铺满 1/3 宽不吃亏，展开到卡片宽度也不发虚；`bmiddle`（长边 360）太糊，只在缺 `large` 档时兜底。卡片不加载 `media.images` 原图，也不为预览单独请求原图——展开即命中宫格已缓存的同一地址。
+- 展开布局：宽度与卡片内容区一致，每张按自己的比例撑开高度（竖图长、横图短，切换时视窗高度随之回弹），图片 `object-contain` 居中不裁剪；上游缺尺寸时不设框，按图片自然高度落位。多图用 `@components/ui/carousel`（embla）轮播，点第几张就从第几张开始。
+- **为什么高度要钉在根节点上**：embla 的幻灯片是同一行 flex，行高由组内最高的那张决定——只改每张幻灯片自身高度，组里只要有一张长竖图，切到横图时下方仍会留一大片空白。因此轮播根节点按**当前项**的宽高比设 `aspect-ratio` 并 `overflow-hidden` 裁掉溢出，`CarouselContent` 加 `items-start` 防止各项被拉齐到最高。
+- 切换交互不占画面：左右各留四分之一热区，点击热区切换上/下一张，鼠标移到热区上才浮出圆形箭头，到端点不响应也不浮出；中间一半区域点击收起预览回到宫格（Esc 同样收起），右下角标出「当前 / 总数」。加载前按 `media.sizes` 的 largest 档比例占位，单张展开与加载完成前后不跳高度。
+- 宿主侧的超大图降级（超过 24MB 换 `bmiddle`）对展示图同样生效：`/orj960/` 也纳入可替换的尺寸目录。
 
 ### 14.5 稳定性与使用限制
 
@@ -1371,6 +1375,7 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 - 三种信息流共用同一条 `weibo/feed` 协议与同一套分页/增量状态机：`source` 只决定端点与固定参数，游标语义与 14.3 完全一致。
 - 热门流的响应结构可能是 `data.cards[].mblog`（卡片流），时间线与分组通常是 `statuses[]`；宿主统一提取，`max_id` / `since_id` 为 `"0"` 时视为没有更多，避免「加载更多」被永久点亮。
 - 列表滚动到底自动翻页：底部哨兵距视口一屏（`rootMargin: 240px`）即预取下一页，同一轮加载只有一条在飞；连续自动加载满 10 次、或上一次取数失败时，底部改出「加载更多」按钮交还用户手动点，刷新替换列表后自动额度重置。到底显示「已经到底了」，不再给按钮。
+- **刷新与切页都把滚动条拉回顶部**：滚动宿主是 `AppContent` 里 ScrollArea 的 viewport，统一走 `@shared/utils/scrollArea` 的 `scrollAreaToTop(root)`（按 `SCROLL_VIEWPORT_SELECTOR` 找，找不到就静默跳过）。顶栏「刷新」在发起请求前先回顶，刷新等于重开一屏；切换导航视图由 `useEffect([view])` 在提交后回顶，不会停在上一页滚到很深的位置。
 - 个人主页按 `weibo/groups` 给出的账号 uid 拼 `https://weibo.com/u/{uid}`，经 `weibo/openPost` 的白名单校验后交给宿主打开；uid 缺失时只提示不跳转，不拼空地址。
 - 设置是弹窗而不是视图：凭证卡常驻，附各入口取数口径；未配置时任何信息流都不发请求，只给「去设置」的引导。
 - 账号菜单四项：「个人主页」按 uid 打开 `weibo.com/u/{uid}`；「我的赞」切到 `mine.likes` 视图读取点赞列表（见 14.16）；「设置」打开弹窗；「删除 Cookie」先弹确认框，确认后清除凭证、元数据缓存与本地头像，并回首页展开凭证卡（用户下一步多半是重新登录），未配置时该项禁用。

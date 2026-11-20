@@ -126,9 +126,9 @@ export interface WeiboTimelineVideoResolution {
 export type WeiboTimelineMediaItem =
     | {
           kind: 'image'
-          /** 原图直链：点击放大时使用 */
+          /** 原图直链：保存到笔记等需要最大尺寸的场合使用，卡片不再加载 */
           url: string
-          /** 中等尺寸直链：九宫格展示用 */
+          /** 展示图直链（长边 960）：九宫格与卡片内预览共用 */
           middleUrl: string
           /** 上游 largest 档尺寸：缺失为 null，前端回退到解码后的自然尺寸 */
           size: WeiboTimelineImageSize | null
@@ -155,14 +155,14 @@ export type WeiboTimelineMediaItem =
 export interface WeiboTimelineMedia {
     /** 混排顺序：图文与视频按上游原序排列；下方三个图片数组均由它派生 */
     items: WeiboTimelineMediaItem[]
-    /** 原图直链：点击放大时使用，与 thumbnails 一一对应 */
+    /** 原图直链：保存到笔记等需要最大尺寸的场合使用，与 thumbnails 一一对应 */
     images: string[]
     /**
      * 图片 pid：与 images 同序，供宿主按官方下载端点取最大尺寸。
      * 关键约束：上游只给直链未给 pid 的图对应空串，调用方据此回退直链下载。
      */
     imageIds: string[]
-    /** 中等尺寸直链：列表与九宫格展示用，减少首屏流量 */
+    /** 展示图直链（长边 960，缺失才回退长边 360）：九宫格与卡片内预览共用，不再为预览另取原图 */
     thumbnails: string[]
     /** 最大尺寸：与 images 同序（取上游 largest 档）；上游未给时为 null，前端回退到解码后的自然尺寸 */
     sizes: Array<WeiboTimelineImageSize | null>

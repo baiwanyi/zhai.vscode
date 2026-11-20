@@ -6,3 +6,11 @@
  * resources/shadcn 是托管源码，不在其中新增导出，否则下次同步会被覆盖。
  */
 export const SCROLL_VIEWPORT_SELECTOR = '[data-slot="scroll-area-viewport"]'
+
+/**
+ * 把页面滚动宿主拉回顶部：刷新与切换页面后都要从第一屏重新看起。
+ * 关键约束：宿主可能不存在（页面未套 AppContent、首帧还没挂载），一律静默跳过，不抛错也不兜底到 body。
+ */
+export function scrollAreaToTop(root: HTMLElement | null): void {
+    root?.querySelector<HTMLElement>(SCROLL_VIEWPORT_SELECTOR)?.scrollTo({ top: 0 })
+}

@@ -200,6 +200,7 @@ describe('图片与表情', () => {
 
     it('列表展示用 bmiddle 中图，原图地址保留', () => {
         expect(buildMiddleImageUrl('https://wx1.sinaimg.cn/large/a.jpg')).toBe('https://wx1.sinaimg.cn/bmiddle/a.jpg')
+        expect(buildMiddleImageUrl('https://wx1.sinaimg.cn/orj960/a.jpg')).toBe('https://wx1.sinaimg.cn/bmiddle/a.jpg')
         expect(buildMiddleImageUrl('https://wx1.sinaimg.cn/mw2000/a.jpg')).toBe('https://wx1.sinaimg.cn/bmiddle/a.jpg')
         expect(buildMiddleImageUrl('https://wx1.sinaimg.cn/bmiddle/a.jpg')).toBe('https://wx1.sinaimg.cn/bmiddle/a.jpg')
         expect(buildMiddleImageUrl('https://face.t.sinajs.cn/expression/a.png')).toBe(
@@ -301,7 +302,7 @@ describe('图片与表情', () => {
         ])
     })
 
-    it('尺寸取 largest 档，中图取 bmiddle 档，原图取 largest 档', () => {
+    it('尺寸取 largest 档，展示图取 large 档，原图取 largest 档', () => {
         const post = normalizeTimelinePost(
             rawStatus(108, {
                 pic_infos: {
@@ -316,7 +317,8 @@ describe('图片与表情', () => {
             }),
         )
         expect(post?.media.images).toEqual(['https://wx1.sinaimg.cn/large/a.jpg'])
-        expect(post?.media.thumbnails).toEqual(['https://wx1.sinaimg.cn/wap360/a.jpg'])
+        // 九宫格与卡片内预览都用长边 960 的 large 档：bmiddle 只有 360，铺到卡片宽度会发虚
+        expect(post?.media.thumbnails).toEqual(['https://wx1.sinaimg.cn/orj960/a.jpg'])
         expect(post?.media.sizes).toEqual([{ width: 1320, height: 1760 }])
     })
 
