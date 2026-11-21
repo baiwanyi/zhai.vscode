@@ -30,7 +30,6 @@
  * 「屏蔽该博主」只把作者名交给面板写入屏蔽名单，卡片本身不做隐藏或改写，列表由取数 hook 重新过滤。
  */
 import { cn } from 'cn'
-import { format } from 'date-fns'
 import {
     BadgeCheck,
     Ban,
@@ -73,34 +72,22 @@ import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import { splitPlainTextLinks } from '@shared/utils/weiboText'
 import { Button } from '@webview/components/Button'
-import { WeiboAvatar } from './WeiboAvatar'
+import { formatWeiboTime } from '@webview/weibo/utils/weiboTime'
 import { WeiboCommentList } from './WeiboCommentList'
-import { WeiboMediaPreview } from './WeiboMediaPreview'
 import { WeiboRepostList } from './WeiboRepostList'
-import { WeiboRichText } from './WeiboRichText'
-import { WeiboVideoPlayer } from './WeiboVideoPlayer'
-import type { WeiboMediaPreviewItem } from './WeiboMediaPreview'
+import type { WeiboMediaPreviewItem } from '../block/WeiboMediaPreview'
 import type { JSX, Ref } from 'react'
+import { WeiboAvatar } from '../block/WeiboAvatar'
+import { WeiboMediaPreview } from '../block/WeiboMediaPreview'
+import { WeiboRichText } from '../block/WeiboRichText'
+import { WeiboVideoPlayer } from '../block/WeiboVideoPlayer'
 import { useHasEnteredViewport } from '../hooks/useHasEnteredViewport'
 import { useWeiboImage } from '../hooks/useWeiboImage'
 import { useWeiboPostActions } from '../hooks/useWeiboPostActions'
 
-/** 发布时间：同一年省掉年份，解析失败回退上游原串；主贴与转发体共用 */
-function formatTime(createdAt: string, createdAtRaw: string): string {
-    if (createdAt.length === 0) {
-        return createdAtRaw
-    }
-    const date = new Date(createdAt)
-    if (Number.isNaN(date.getTime())) {
-        return createdAtRaw
-    }
-    const isSameYear = date.getFullYear() === new Date().getFullYear()
-    return format(date, isSameYear ? 'MM-dd HH:mm' : 'yyyy-MM-dd HH:mm')
-}
-
-/** 主贴发布时间 */
+/** 主贴发布时间：与转发体、评论共用 @webview/utils 的同一套口径 */
 function formatPostTime(post: WeiboTimelinePost): string {
-    return formatTime(post.createdAt, post.createdAtRaw)
+    return formatWeiboTime(post.createdAt, post.createdAtRaw)
 }
 
 /** 视频时长角标：不足一小时给 m:ss，超过给 h:mm:ss */
@@ -880,7 +867,7 @@ export function WeiboPostCard({ post, onBlockAuthor, viewerUid = null }: WeiboPo
                                 </>
                             ) : null}
                             <span className="shrink-0 text-muted-foreground">
-                                {formatTime(retweeted.createdAt, retweeted.createdAtRaw)}
+                                {formatWeiboTime(retweeted.createdAt, retweeted.createdAtRaw)}
                             </span>
                         </div>
 

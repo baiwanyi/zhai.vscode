@@ -2,8 +2,8 @@
  * 热搜专页：右侧菜单（我的 / 热搜 / 文娱 / 社会 / 科技 / 生活 / 体育 / ACG / 同城）的内容区，
  * 一个标签对应网页端一张榜单端点，整页展示该榜单的全部条目。
  * 复用约定：卡片取 @components/ui/card，列表容器取 ItemGroup、单条由本文件的 PageHotSearchRow 承载
- * （专页有自己的行样式，不复用侧栏卡片那一份），徽标与名次取同目录 WeiboHotRankBadge / WeiboHotRankPosition，
- * 搜索地址与打开动作取 hooks/useWeiboSearchOpen，三态占位取同目录 WeiboHotRankFallback。
+ * （专页有自己的行样式，不复用侧栏卡片那一份），徽标与名次取 block/WeiboHotRankBadge / WeiboHotRankPosition，
+ * 搜索地址与打开动作取 hooks/useWeiboSearchOpen，三态占位取 block/WeiboHotRankFallback。
  * 关键约束：取数由面板层统一持有，刷新统一走顶栏「刷新」，页面内不再重复刷新按钮；
  * 热搜只在专页出现，右侧不再渲染侧栏热搜卡；未配置 Cookie 时不发请求，只给配置引导；
  * 榜单行之间用 ItemSeparator 分隔，最后一条不加；同城榜的 citycode 来自设置弹窗，
@@ -17,13 +17,13 @@ import type { WeiboHotRankItem } from '@shared/types/weibo'
 import { WEIBO_DEFAULT_CITY_CODE, readWeiboCityName } from '@shared/types/weibo'
 import { formatDateTime } from '@shared/utils/format'
 import { Button } from '@webview/components/Button'
-import { WeiboHotRankBadge } from './WeiboHotRankBadge'
-import { WeiboHotRankFallback } from './WeiboHotRankFallback'
-import { WeiboHotRankPosition } from './WeiboHotRankPosition'
 import { readHotRankTab, readWeiboViewItemLabel } from './weiboNavGroups'
 import type { WeiboHotRankState } from '../hooks/useWeiboHotRank'
 import type { WeiboView } from './weiboNavGroups'
 import type { JSX } from 'react'
+import { WeiboHotRankBadge } from '../block/WeiboHotRankBadge'
+import { WeiboHotRankFallback } from '../block/WeiboHotRankFallback'
+import { WeiboHotRankPosition } from '../block/WeiboHotRankPosition'
 import { useWeiboSearchOpen } from '../hooks/useWeiboSearchOpen'
 import { preventLinkNavigation } from '../utils/weiboHotLinks'
 

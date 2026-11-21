@@ -1,7 +1,7 @@
 /**
  * 热搜榜侧栏：右侧固定宽度卡片，展示实时榜单条目的序号、标题与标记。
- * 复用约定：卡片取 @components/ui/card，榜单容器取 ItemGroup，单条取同目录 WeiboHotRankRow，
- * 未配置 / 加载 / 失败三态交给同目录 WeiboHotRankFallback（专页共用同一份骨架）。
+ * 复用约定：卡片取 @components/ui/card，榜单容器取 ItemGroup，单条取 block/WeiboHotRankRow，
+ * 未配置 / 加载 / 失败三态交给 block/WeiboHotRankFallback（专页共用同一份骨架）。
  * 关键约束：侧栏只渲染榜单前 10 条，完整回包仍由宿主缓存，调整展示条数只改一处常量；
  * 标题下的说明行显示取数时刻（宿主回包 fetchedAt 的本地时分），无值时保持空行，
  * 取数前后标题区不跳动；时刻由回包给出而非前端计时，刷新后与榜单内容同源；
@@ -13,9 +13,9 @@ import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle }
 import { ItemGroup } from '@components/ui/item'
 import { formatDateTime } from '@shared/utils/format'
 import { Button } from '@webview/components/Button'
-import { WeiboHotRankFallback } from './WeiboHotRankFallback'
-import { WeiboHotRankRow } from './WeiboHotRankRow'
 import type { JSX } from 'react'
+import { WeiboHotRankFallback } from '../block/WeiboHotRankFallback'
+import { WeiboHotRankRow } from '../block/WeiboHotRankRow'
 import { useWeiboHotRank } from '../hooks/useWeiboHotRank'
 
 /** 侧栏展示条数：上游一次返回约 50 条，热搜卡只保留前 10 条，避免把侧栏拉得过长 */

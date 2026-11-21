@@ -54,7 +54,7 @@
 | 媒体 | `mediaProxy.ts`、`videoServer.ts` |
 | 常量与内容组装 | `weiboEndpoints.ts`、`note.ts` |
 
-前端 `src/weibo/` 共 52 个文件：`hooks/` 19 个控制器、`layout/` 25 个视图组件、`utils/` 5 个纯函数，`WeiboPanel.tsx` 负责控制器装配与视图分发。
+前端 `src/weibo/` 共 61 个文件：`hooks/` 23 个控制器、`layout/` 17 个装配与页面组件、`block/` 13 个卡片内展示块、`utils/` 7 个纯函数，`WeiboPanel.tsx` 负责控制器装配与视图分发。`block/` 只放接收 props 渲染的展示块（条目、发布框、媒体预览、续载栏等），自带取数的列表与卡片仍留在 `layout/`。
 
 ### 1.5 凭证与配置
 
@@ -432,6 +432,7 @@ id={微博数字 id}&comment={正文}&pic_id=&is_repost=0&comment_ori=0&is_comme
 - 回包 `{ ok, data, msg }`，成功时 `msg` 为「评论成功」、`data.id` 是新评论 id（当前不消费，列表重拉即可）。
 - 成功判定：`ok > 0`；`ok <= 0` 取 `msg` 抛业务错误（含「频繁 / 过快」归为限流码），拿到 HTML 回包按登录态失效处理；写操作不重试。
 - 前端：发布成功后清空输入并重拉第一页（新评论在最前，顺带刷新总数），失败弹 toast；输入框 `maxLength` 与协议上限同源，`Ctrl / Cmd + Enter` 直接发送。
+- 前端分层：取数（首屏 / 续载 / 子评论展开、游标与代际丢弃）在 `hooks/useWeiboCommentThread.ts`，写操作（发布 / 回复 / 同时转发 / 删除，含单飞与部分成功处理）在 `hooks/useWeiboCommentActions.ts`；视图拆为 `block/CommentComposer.tsx`（发布框）、`block/CommentItem.tsx`（条目与子评论）、`block/LoadMoreBar.tsx`（续载栏）。
 - 发布框右下角的「同时转发」开关打开时走 `weibo/repost` 的 `commentWithRepost`（评论并转发）：宿主分两步执行——先发评论、再转发（`is_repost=1` 本身不生成评论），成功后同样重拉评论第一页；回复他人评论时不提供该开关（回复不能顺带转发原博）。
 回复评论：
 
@@ -486,7 +487,8 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | 文件 | 职责 |
 |------|------|
 | `src/shared/types/weibo.ts` | 时间线、信息流、分组、凭证与协议载荷契约，含参数收窄与单页默认条数 |
-| `src/modules/weibo/weiboEndpoints.ts` | 地址总表：网页端 ajax 端点、图床与站内基址集中在此 |
+| `src/shared/types/weiboMethods.ts` | 协议方法名表 `WEIBO_METHODS`：前端取数层引用，与 `HostMethodName` 一一对应 |
+| `src/modules/weibo/weiboEndpoints.ts` | 地址总表：网页端 ajax 端点、图床与站内基址集中在此（协议方法名已迁 `@shared/types/weiboMethods`） |
 | `src/modules/weibo/webClient.ts` | 通用 JSON 请求：URL 构造、请求头、错误分类、节流与退避重试 |
 | `src/modules/weibo/webTimeline.ts` | 分页/增量循环、去重、字段归一化、时间与正文清洗 |
 | `src/modules/weibo/webFeed.ts` | 时间线 / 热门 / 分组端点适配、分组归一化与卡片流提取 |
@@ -821,10 +823,12 @@ id={微博数字 id}&comment={附言，可为空}&pic_id=&comment_ori=0&fp={设�
 | 转发并评论 | `normal_repost`：`is_repost=0&is_comment=1&visible=0&share_id=` | 转发同时在原博下生成一条评论 |
 | 评论并转发 | 先 `comments/create` 发评论，再 `normal_repost`：`is_repost=1&is_comment=0`（不带 `visible` 与 `share_id`） | 两步；第二步失败返回部分结果（`reposted: false`、`commented: true`、`failureMessage`） |
 
-- 协议 `weibo/repost`，入参 `{ id, comment, mode? }`；`mode` 取 `repost` / `repostWithComment` / `commentWithRepost`，缺省 `repost`；附言可为空（纯转发），上限 140 字（`WEIBO_REPOST_MAX_LENGTH`），提交前 `trim`。
+- 协议 `weibo/repost`，入参 `{ id, comment, mode? }`；`mode` 取 `repost` / `repostWithComment` / `commentWithRepost`，缺省 `repost`；附言可为空（纯转发），提交前 `trim`。
+- 长度上限按 `mode` 分流：纯转发（`repost`）500 字（`WEIBO_REPOST_MAX_LENGTH`）；`repostWithComment` / `commentWithRepost` 的 `comment` 都会生成一条评论，按评论上限 140 字（`WEIBO_COMMENT_MAX_LENGTH`）收窄。
 - 回包 `{ ok, data: { statuses }, msg }`，成功时 `msg` 为「转发成功」；`statuses` 当前不消费，由前端重拉第一页。
 - 部分成功：评论已发出但转发失败时 `weibo/repost` 不抛错，而是回 `{ reposted: false, commented: true, failureMessage }`；前端据此清空草稿、关掉「同时转发」开关并照常刷新评论，提示「评论已发布，但转发失败」，避免用户重试时把评论发重。
 - 前端：转发框右下角是「同时评论」开关（`@webview/components/Switch`）——打开走 `repostWithComment`（`is_comment=1`），关闭走 `repost`；留空即纯转发，按钮不按内容禁用；成功后清空附言并重拉第一页，失败弹 toast；`Ctrl / Cmd + Enter` 直接发送。
+- 前端分层：取数（页码续载、代际丢弃、总数本地增减）在 `hooks/useWeiboReposts.ts`，写操作（转发 / 删除，含单飞与计数回调）在 `hooks/useWeiboRepostActions.ts`；视图拆为 `block/RepostComposer.tsx`（转发框）、`block/RepostItem.tsx`（条目），`layout/WeiboRepostList.tsx` 只做装配。
 
 删除转发 / 微博：
 

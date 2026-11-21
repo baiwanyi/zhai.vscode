@@ -206,8 +206,12 @@ export interface WeiboRepostsResult {
     hasMore: boolean
 }
 
-/** 转发附言字数上限：与网页端转发框一致，超出由前端输入框先拦住 */
-export const WEIBO_REPOST_MAX_LENGTH = 140
+/**
+ * 转发附言字数上限：纯转发放宽到 500 字，超出由前端输入框先拦住。
+ * 关键约束：转发并评论（repostWithComment）与评论并转发（commentWithRepost）的 comment
+ * 都会在原博下生成一条评论，仍受 WEIBO_COMMENT_MAX_LENGTH 约束，校验按 mode 分流。
+ */
+export const WEIBO_REPOST_MAX_LENGTH = 500
 
 /**
  * 转发方式：与提交参数一一对应。
@@ -217,7 +221,7 @@ export const WEIBO_REPOST_MAX_LENGTH = 140
  */
 export type WeiboRepostMode = 'repost' | 'repostWithComment' | 'commentWithRepost'
 
-/** 转发请求：comment 可空（纯转发），最长 WEIBO_REPOST_MAX_LENGTH */
+/** 转发请求：comment 可空（纯转发）；上限随 mode 分流，纯转发按转发上限，生成评论的模式按评论上限 */
 export interface WeiboRepostCreateRequest {
     /** 微博数字 id */
     id: string
@@ -1147,7 +1151,7 @@ export function isWeiboRepostMode(value: unknown): value is WeiboRepostMode {
     return value === 'repost' || value === 'repostWithComment' || value === 'commentWithRepost'
 }
 
-/** 收窄转发入参：id 为数字微博 id，附言可空但不得超过上限，mode 可缺省 */
+/** 收窄转发入参：id 为数字微博 id，附言可空；纯转发按 500 字，会生成评论的模式按评论上限收窄 */
 export function isWeiboRepostCreateRequest(value: unknown): value is WeiboRepostCreateRequest {
     if (typeof value !== 'object' || value === null) {
         return false
@@ -1159,7 +1163,8 @@ export function isWeiboRepostCreateRequest(value: unknown): value is WeiboRepost
     if (mode !== undefined && !isWeiboRepostMode(mode)) {
         return false
     }
-    return comment.trim().length <= WEIBO_REPOST_MAX_LENGTH
+    const maxLength = mode === undefined || mode === 'repost' ? WEIBO_REPOST_MAX_LENGTH : WEIBO_COMMENT_MAX_LENGTH
+    return comment.trim().length <= maxLength
 }
 
 /** 收窄删除微博入参：id 必须是纯数字微博 id */

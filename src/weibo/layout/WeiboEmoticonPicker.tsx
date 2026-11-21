@@ -2,7 +2,8 @@
  * 表情选择器：发表框工具栏上的 Popover，按分类分组展示并插入表情。
  * 复用约定：Popover 取 @components/ui/popover，按钮取 @webview/components/Button，
  * 表情图统一走 useWeiboImage 换本地地址（图床按 Referer 放行，Webview 直连会被拒）。
- * 关键约束：触发器是「图标在上、文字在下」的竖排按钮，宽度比横排省一截；
+ * 关键约束：触发器默认是「图标在上、文字在下」的竖排按钮，宽度比横排省一截；
+ * 窄区域（评论框底部工具栏）用 triggerVariant="icon" 收成纯图标按钮，避免把输入组撑高；
  * hooks 只能在组件内调用，故每个表情抽成 EmoticonCell，不能在 map 里直接调；
  * 分类由宿主回填到 category，本组件只按首次出现顺序聚合，不自行排序；
  * 单个分类可能上百个表情，首屏只渲染一页并在底部按页追加，避免一次打满图片通道；
@@ -85,10 +86,16 @@ function EmoticonCell({ item, onSelect }: EmoticonCellProps): JSX.Element {
 interface WeiboEmoticonPickerProps {
     /** 是否具备取数条件：未配置 Cookie 时只给引导，不发请求 */
     isEnabled: boolean
+    /** 触发器形态：toolbar 为图标在上文字在下的竖排按钮，icon 为纯图标按钮（输入组等窄区域） */
+    triggerVariant?: 'toolbar' | 'icon'
     onSelect: (phrase: string) => void
 }
 
-export function WeiboEmoticonPicker({ isEnabled, onSelect }: WeiboEmoticonPickerProps): JSX.Element {
+export function WeiboEmoticonPicker({
+    isEnabled,
+    triggerVariant = 'toolbar',
+    onSelect,
+}: WeiboEmoticonPickerProps): JSX.Element {
     const [isOpen, setIsOpen] = useState(false)
     const [visibleCount, setVisibleCount] = useState(INITIAL_VISIBLE)
     const [selectedCategory, setSelectedCategory] = useState('')
@@ -197,12 +204,19 @@ export function WeiboEmoticonPicker({ isEnabled, onSelect }: WeiboEmoticonPicker
     return (
         <Popover open={isOpen} onOpenChange={handleOpenChange}>
             <PopoverTrigger asChild>
-                {/* 工具栏图标按钮：图标在上、文字在下，比横排更省宽度；
-                    h-auto 与 py-1 覆盖按钮默认的 h-8，否则竖排内容会被固定高度压扁 */}
-                <Button variant="ghost" title="插入表情" className="h-auto flex-col gap-0.5 px-2 py-1">
-                    <Smile className="size-4" aria-hidden="true" />
-                    <span className="text-xs">表情</span>
-                </Button>
+                {triggerVariant === 'icon' ? (
+                    /* 窄区域形态：只留图标，沿用输入组按钮的统一尺寸，不把整行撑高 */
+                    <Button size="icon-xs" variant="ghost" title="插入表情" aria-label="插入表情">
+                        <Smile className="size-4" aria-hidden="true" />
+                    </Button>
+                ) : (
+                    /* 工具栏图标按钮：图标在上、文字在下，比横排更省宽度；
+                        h-auto 与 py-1 覆盖按钮默认的 h-8，否则竖排内容会被固定高度压扁 */
+                    <Button variant="ghost" title="插入表情" className="h-auto flex-col gap-0.5 px-2 py-1">
+                        <Smile className="size-4" aria-hidden="true" />
+                        <span className="text-xs">表情</span>
+                    </Button>
+                )}
             </PopoverTrigger>
             <PopoverContent
                 align="start"

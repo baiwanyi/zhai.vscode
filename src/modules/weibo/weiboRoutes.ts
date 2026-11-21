@@ -41,7 +41,9 @@ import type {
     WeiboVideoResult,
 } from '@shared/types/weibo'
 import {
+    WEIBO_COMMENT_MAX_LENGTH,
     WEIBO_DEFAULT_CITY_CODE,
+    WEIBO_REPOST_MAX_LENGTH,
     isWeiboCityCode,
     isWeiboCommentCreateRequest,
     isWeiboCommentDestroyRequest,
@@ -723,14 +725,15 @@ export class WeiboRoutes {
     }
 
     /**
-     * 转发微博：附言可为空（纯转发），长度由协议层收窄。
-     * 关键约束：写操作不重试，失败直接回错误码，由前端提示后用户手动重发。
+     * 转发微博：附言可为空（纯转发），长度由协议层按 mode 收窄。
+     * 关键约束：纯转发附言上限 500 字；转发并评论 / 评论并转发会生成评论，按评论上限 140 字收窄；
+     * 写操作不重试，失败直接回错误码，由前端提示后用户手动重发。
      */
     private async createRepost(payload: unknown): Promise<WeiboRepostCreateResult> {
         if (!isWeiboRepostCreateRequest(payload)) {
             throw new WeiboWebError(
                 'invalid-payload',
-                'weibo/repost 参数非法：id 须为数字微博 id，附言可为空且不得超过 140 字',
+                `weibo/repost 参数非法：id 须为数字微博 id，附言可为空且纯转发不超过 ${String(WEIBO_REPOST_MAX_LENGTH)} 字，转发并评论时不超过 ${String(WEIBO_COMMENT_MAX_LENGTH)} 字`,
             )
         }
         const cookie = await this.readCookie()
