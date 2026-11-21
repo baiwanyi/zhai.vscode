@@ -378,6 +378,9 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     dashboardProvider.attachMediaRoutes(mediaRoutes)
     dashboardProvider.attachStockRoutes(stockRoutes)
     dashboardProvider.attachUploadRoutes(uploadRoutes)
+    // 微博发表框的「AI 优化」：把 AI 服务的改写能力后置注入，面板按 ai/enhancePrompt 转发；
+    // 用箭头包装而不是直接传方法引用，避免 ChatService 内部 this 丢失
+    dashboardProvider.attachWeiboEnhance((payload) => ai.chat.enhancePrompt(payload))
     // 仪表盘的封面、待办与公众号三组依赖都是后置注入的，全部就绪后才注册视图，
     // 避免依赖「VS Code 在 activate 返回前不会恢复视图」这一隐式前提
     context.subscriptions.push(

@@ -1314,6 +1314,8 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/modules/weibo/webTimeline.ts` | 分页/增量循环、去重、字段归一化、时间与正文清洗 |
 | `src/modules/weibo/webFeed.ts` | 时间线 / 热门 / 分组端点适配、分组归一化与卡片流提取 |
 | `src/modules/weibo/webEmoticons.ts` | 表情配置：`statuses/config` 取数与表情条目归一化 |
+| `src/modules/weibo/webTopics.ts` | 话题搜索：`mblog/topic` 取数与话题名归一化 |
+| `src/modules/weibo/webPublish.ts` | 发布：`pic_upload.php` 传图换 pid（裸字节、无签名）、`statuses/update` 表单提交、指纹生成与回包解析 |
 | `src/modules/weibo/webHotRank.ts` | 侧栏热搜榜：`bandUnified` 取数与 realtime 条目归一化 |
 | `src/modules/weibo/webProfile.ts` | 账号信息：`profile/info` 取数与 user 字段归一化 |
 | `src/modules/weibo/webCredential.ts` | Cookie 清洗、SecretStorage 存取、凭证状态 |
@@ -1326,12 +1328,12 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/modules/weibo/webLongText.ts` | 长文读取：`longtext` 取全文、正文优先级与失败兜底 |
 | `src/modules/weibo/webLikes.ts` | 我的赞：`statuses/likelist` 页码取数、总数与是否还有下一页判断 |
 | `src/modules/weibo/videoServer.ts` | 视频中转：回环 HTTP 服务补 Referer，能用 ffmpeg 就把 AAC 音轨转成 MP3（Webview 无 AAC 解码器）边转边发，否则原样流式转发 |
-| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/likes`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/blockList/*`、`weibo/image`、`weibo/video`、`weibo/like`、`weibo/openPost` 分发 |
+| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/likes`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/topics`、`weibo/publish`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/blockList/*`、`weibo/image`、`weibo/video`、`weibo/like`、`weibo/openPost` 分发 |
 | `src/modules/weibo/panel.ts` | 面板消息通道、凭证与缓存注入、图片代理装配与本地资源白名单 |
 | `src/modules/common/webviewHtml.ts` | CSP 生成：默认不放行远程图，需要时可按调用方传入的 `imgSources` 放行 |
 | `src/shared/utils/weiboText.ts` | 正文纯文本切分：`@账号` / `#话题#` / 微博域名链接，宿主与 Webview 共用（零前端依赖） |
 | `src/shared/utils/weiboBlock.ts` | 屏蔽名单：多行文本与名单数组互转、归一化、按作者名与关键字判定单条是否隐藏，宿主保存与 Webview 过滤共用 |
-| `src/weibo/` | Webview 入口：顶部固定菜单、账号菜单与设置弹窗（同城城市 + 屏蔽名单）、右侧热搜榜、信息流列表、卡片（头像 / 图文混排 / 表情）与发表框表情选择器 |
+| `src/weibo/` | Webview 入口：顶部固定菜单、账号菜单与设置弹窗（同城城市 + 屏蔽名单）、右侧热搜榜、信息流列表、卡片（头像 / 图文混排 / 表情）与发表框（表情 / 话题 / 图片选择器） |
 | `src/weibo/layout/WeiboVideoPlayer.tsx` | 视频播放器：自绘控件栏、中央播放键、空格播放/暂停、控件自动隐藏、清晰度角标、静音与全屏 |
 | `src/weibo/layout/PageHotSearch.tsx` | 热搜专页：一个标签一张榜，整页榜单渲染、专页行样式与同城城市切换入口 |
 | `src/weibo/layout/WeiboHotRankRow.tsx` | 侧栏热搜行样式：序号 / 标题 / 副行 / 整行点击与 Tooltip（专页有自己的行组件，不共用） |
@@ -1339,6 +1341,12 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/weibo/layout/WeiboHotRankPosition.tsx` | 热搜名次：前三名判定与两档字号/颜色，侧栏与专页共用 |
 | `src/weibo/layout/WeiboHotRankFallback.tsx` | 热搜三态占位：未配置 / 加载 / 失败或空榜，`sidebar` / `page` 两套尺寸与文案 |
 | `src/weibo/hooks/useWeiboSearchOpen.ts` | 搜索页地址 + 300ms 连点保护的打开动作 |
+| `src/weibo/layout/WeiboTopicPicker.tsx` | 发表框话题面板：搜索框 + 常用话题列表，选中插入 `#话题#` |
+| `src/weibo/layout/WeiboImagePicker.tsx` | 发表框图片面板：uploads 图片网格、勾选与直接上传 |
+| `src/weibo/hooks/useWeiboTopicSearch.ts` | 话题搜索：常用话题加载、300ms 去抖与乱序回包丢弃 |
+| `src/weibo/hooks/useWeiboComposerImages.ts` | 发表框图片库：清单读取、选择上传与粘贴上传 |
+| `src/weibo/hooks/useWeiboPublish.ts` | 发表框发布：单飞提交、成功回执与超时口径 |
+| `src/weibo/hooks/useWeiboEnhance.ts` | 发表框 AI 优化：`ai/enhancePrompt` 的微博口径请求与进行态 |
 | `src/weibo/utils/weiboHotLinks.ts` | 搜索页地址构造与标题链接处理器（纯函数） |
 | `src/shared/utils/color.ts` | 按底色亮度选可读前景色，供徽标等浅深底自适应 |
 
@@ -1573,3 +1581,39 @@ GET https://weibo.com/ajax/statuses/likelist?uid={uid}&page={页码}&with_total=
 | `isAd` / `mark` / `cardid` | 广告与推广位标记（`isAd: true`，或 `mark` 含 `WeiboADNatural`），归一化直接丢弃 |
 | `region_name` | 发布地，目前不展示 |
 | `total_number` | 点赞总数，`with_total=true` 时才出现 |
+
+### 14.17 发表框：话题搜索与图片选择
+
+```
+GET https://weibo.com/ajax/mblog/topic?q={关键字}
+```
+
+- `q` 为空（或省略）时上游回当前账号的常用话题；有关键字时按关键字搜索。实测返回 `{ ok: 1, data: [{ topic }] }`。
+- 归一化只取 `data[].topic`：剥掉首尾 `#`、去空白、同名去重；空数组是正常结果（新账号或搜不到），由前端展示空态而不是报错。
+- 协议 `weibo/topics` 复用登录 Cookie，`q` 限 50 字（超长直接判非法，不截断）；不参与磁盘缓存（热搜变化快），每次打开面板或改关键字都回源。
+- 话题面板打开即取常用话题，输入走 300ms 去抖；回包按请求序号校验，先发后到的旧结果丢弃；选中后按正文口径插入 `#话题#` 并恢复光标，超出 2000 字上限时拒绝并提示。
+- 图片面板列出 `uploads/` 下的图片（`upload/list`，只有 `url` 非空的图片条目参与），已选条目置灰禁用；选中后在发布框下方以缩略图列表展示，右上角可移除。
+- 面板内可直接点「上传图片」唤起系统选择器（`upload/pick`），上传结果自动加入已选。
+- 发布框聚焦时粘贴剪贴板里的图片（`clipboardData.files` 中的 `image/*`）走 `upload/bytes` 落 `uploads/{YYYYMM}/`，成功后加入已选；纯文本粘贴完全不拦截默认行为。
+- 已选图片与草稿同层保存在 `WeiboPanel`，切换视图卸载发布框后不丢；点「发布」进入 14.18 的两步流程，成功后清空内容，并把新微博前插到时间线首位。
+- 输入框底部右侧是「AI 优化」按钮（`Sparkles`，进行中转圈）：调 `ai/enhancePrompt` 并带 `scene: 'weibo'`，宿主按微博文案口径改写（保留 #话题#、@昵称、链接与 `[表情]`），成功后整体替换正文并把光标落到末尾；空内容只提示不改写，改写中发布按钮一并禁用，失败保留原文。
+- `ai/enhancePrompt` 由微博面板按方法名转发给 AI 服务（`openWeiboPanel` 的 `enhancePrompt` 注入，扩展入口传 `ai.chat.enhancePrompt`），微博路由不认识 `ai/*` 前缀；未注入时该按钮报「未登记」。
+- 改写期间整张卡片发光：`Card` 补 `relative isolate overflow-visible`（覆盖 `ui/card` 自带的 `overflow-hidden`，否则外扩背光会被裁掉），内放 `ComposerGlow`（类名用 `CARD_GLOW_CLASS`，圆角对齐 `rounded-xl`）与一层同色底衬 `bg-card`，光晕只从卡片边缘与外侧溢出、不染正文。
+
+### 14.18 发布微博（图床换 pid → update）
+
+```
+POST https://picupload.weibo.com/interface/pic_upload.php?s=json&ori=1&data=1&rotate=0&wm=&app=miniblog&mime=image%2Fpng
+POST https://weibo.com/ajax/statuses/update
+```
+
+- 图床走 `pic_upload.php`：元数据全在 query、body 直接放图片字节（`Content-Type: application/octet-stream`），**不需要签名参数**；成功回 `{code:'A00006', data:{pics:{pic_1:{pid}}}}`，回包可能带 JSONP 包裹，解析时按宽松 JSON 处理（首次解析失败就从首个 `{` 到末个 `}` 截取重试）。
+- 新版 `upload.php` 需要前端 JS 计算的 `cs` 签名（算法未公开、与具体图片绑定、随机值一律 `errno:-2`），故不采用；这条旧端点是多个开源实现长期在用的路径，只靠 Cookie 鉴权，实测可正常发图。
+- 成败只以「拿到 pid」判定；pid 解析兼容 `data.pics.*.pid`、`pic.pid`（可为数组）、`data.pid` 与顶层 `pid`，失败时错误里带 `code` / 回包字段名 / 原文前 200 字。
+- 图片按入参顺序逐张上传，任一失败即整条放弃，不做部分发布；上传与发布都不重试，失败交给用户手动重试，避免重复发博。
+- 发布请求是 `application/x-www-form-urlencoded`：`content` 原样提交（话题与表情都是文本，不二次转义）、`visible=0`、`share_id`/`vote`/`media` 留空、`need_transcode=1`、`pic_id` 为 `[{ type, pid }]` 的 JSON 串（无图时为空串）、`fp` 为 33 位设备指纹（首位固定 `0`）。
+- 请求头：图床只带 Cookie / Referer / Origin / UA / Accept；发布再补 `X-Requested-With` 与 `X-XSRF-TOKEN`（取自 Cookie 的 `XSRF-TOKEN`，缺失时不带）。
+- 图片路径只接受 `uploads/{YYYYMM}/{文件名}`，宿主读字节后按魔数判定 png / jpg / webp / gif，单张沿用上传页 10MB 上限。
+- 成功判定：`ok > 0` 且 `data` 带 `idstr`（或 `id`）与 `mblogid`；原文地址按 `data.user.idstr` + `mblogid` 拼，缺 uid 时回落 `/detail/{id}`。
+- 前端发布中按钮禁用并显示加载态（`ref` 单飞，连点不会重复提交）；成功后清空草稿与已选图片，并把宿主归一化的新微博前插到时间线首位（不整页刷新、不动 `sinceId`/`maxId`），失败保留内容供直接重试。
+- **已知风险**：`fp` 无法还原官网生成算法，当前按同形随机生成；若上游开始校验指纹与 Cookie 的绑定会返回 `ok: 0`，届时需要从浏览器会话取真实值。`X-XSRF-TOKEN` 缺失时发布同样可能被拒。

@@ -18,6 +18,16 @@ export const WEIBO_OPEN_API_ORIGIN = 'https://api.weibo.com/2'
 /** 图床基址：只有 pid 时用它拼原图直链 */
 export const WEIBO_IMAGE_ORIGIN = 'https://wx1.sinaimg.cn'
 
+/** 图床上传基址：发表框先把本地图片传到这里换 pid，再由发布接口引用 */
+export const WEIBO_PIC_UPLOAD_ORIGIN = 'https://picupload.weibo.com'
+
+/**
+ * 图床上传端点：不需要签名参数（新版 upload.php 要 cs，已弃用）。
+ * 关键约束：元数据全在 query、body 直接放图片字节（application/octet-stream）；
+ * 成功回包形如 {code:'A00006', data:{pics:{pic_1:{pid}}}}。
+ */
+export const WEIBO_PIC_UPLOAD_PATH = '/interface/pic_upload.php'
+
 /** 网页端内部 ajax 端点：端点增删只维护这一张表 */
 export const WEIBO_AJAX_PATHS = {
     /** 首页关注时间线（增量刷新） */
@@ -52,6 +62,8 @@ export const WEIBO_AJAX_PATHS = {
     city: '/ajax/statuses/city',
     /** 发表框表情配置 */
     emoticons: '/ajax/statuses/config',
+    /** 发表框话题搜索：q 为空时上游回当前账号的常用话题 */
+    topic: '/ajax/mblog/topic',
     /** 需登录态的图片下载端点：响应里的地址命中时改写成图床直链 */
     imageDownload: '/ajax/common/download',
     /** 当前登录账号信息 */
@@ -66,4 +78,6 @@ export const WEIBO_AJAX_PATHS = {
     cancelLike: '/ajax/statuses/cancelLike',
     /** 我的赞：按 uid 与页码读取点赞过的微博 */
     likelist: '/ajax/statuses/likelist',
+    /** 发布微博：formdata 提交正文与图片 pid */
+    publish: '/ajax/statuses/update',
 } as const

@@ -69,6 +69,7 @@ import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 import type { WechatRoutes } from '@modules/wechat/wechatRoutes'
 import { WECHAT_DOCUMENT_METHODS } from '@modules/wechat/wechatRoutes'
 import { openWeiboPanel } from '@modules/weibo/panel'
+import type { WeiboEnhancePrompt } from '@modules/weibo/panel'
 import type { WeiboPostActions } from '@modules/weibo/postActions'
 import type { DashboardStats } from '@shared/types/dashboard'
 import type { HostToWebviewMessage } from '@shared/types/messages'
@@ -193,7 +194,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private stockRoutes: StockRoutes | null = null
     /** 作品结构变更监听：后置注入，仪表盘增删改卷章后用它通知工作流面板重读 */
     private pressWorkspaceListener: ((dirPath: string) => void) | null = null
-    /** 上传路由：后置注入，公众号封面据此列举上传页的已上传图片；未注入时 upload/* 直接报未就绪 */
+    /** 上传路由：后置注入，公众号封面与微博发表框据此列举 uploads 下的已上传图片；未注入时 upload/* 直接报未就绪 */
     private uploadRoutes: UploadRoutes | null = null
     /** 微博面板凭证：后置注入，未注入时面板仍可打开但 Cookie 读写不可用 */
     private weiboSecrets: vscode.SecretStorage | null = null
@@ -201,6 +202,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private weiboCacheRoot: vscode.Uri | null = null
     /** 微博卡片动作：后置注入，未注入时「保存到笔记」「添加到 AI 对话」按未就绪回包 */
     private weiboPostActions: WeiboPostActions | null = null
+    /** 微博发表框 AI 优化：后置注入 AI 服务的改写能力，未注入时「AI 优化」按未登记回包 */
+    private weiboEnhance: WeiboEnhancePrompt | null = null
     /** 当前面板实例：仅在挂载期间有效，用于请求之外的主动广播 */
     private view: vscode.WebviewView | null = null
     /** 待办目录变更监听：面板存活期间把外部改动转给 Webview，销毁时释放 */
@@ -261,6 +264,14 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     /** 注入上传路由：封面弹窗要从上传页的已上传图片里挑图，故转发 upload/* 请求 */
     public attachUploadRoutes(routes: UploadRoutes): void {
         this.uploadRoutes = routes
+    }
+
+    /**
+     * 注入微博发表框的 AI 改写能力：由扩展入口传 AI 服务的 enhancePrompt。
+     * 关键约束：微博面板只转发 ai/enhancePrompt 一个方法，不整体接管 ai/* 前缀。
+     */
+    public attachWeiboEnhance(enhance: WeiboEnhancePrompt): void {
+        this.weiboEnhance = enhance
     }
 
     /**
@@ -871,6 +882,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             this.weiboSecrets ?? undefined,
             this.weiboCacheRoot ?? undefined,
             this.weiboPostActions ?? undefined,
+            this.uploadRoutes ?? undefined,
+            this.weiboEnhance ?? undefined,
         )
         return { opened: true }
     }

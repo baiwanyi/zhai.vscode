@@ -1,8 +1,8 @@
 /**
- * 提示词增强服务：对话与出图两侧共用同一套模型调用、超时、空结果校验与用量记账。
+ * 提示词增强服务：对话、出图与微博文案共用同一套模型调用、超时、空结果校验与用量记账。
  * 复用约定：文本通道与用量记账由调用方注入（两处传入同一 provider 与 UsageRecorder 实例），
- * 改写口径集中在 ENHANCE_SYSTEM_PROMPTS（写作 / 图像两种），token 上限、输入输出长度与
- * 归属模块按场景给出；对话侧用 createChatEnhanceRequest 取写作口径，出图侧直接传 scene: 'image'。
+ * 改写口径集中在 ENHANCE_SYSTEM_PROMPTS（写作 / 图像 / 压缩 / 微博四种），token 上限、输入输出长度与
+ * 归属模块按场景给出；对话侧用 createChatEnhanceRequest，微博侧用 createWeiboEnhanceRequest。
  * 关键约束：模型只做改写，输出直接回填输入框，不建会话、不落盘、不占图片配额；
  * 超时、空结果与超长输出都在本层收口，失败一律抛出，由前端保留原文并提示；
  * 记账是旁路，写库异常不影响改写结果；口径提示词必须要求「保持原意、只输出一段」，否则会污染输入框。
@@ -19,14 +19,16 @@ const CHAT_ENHANCE_MAX_LENGTH = 8_000
 /** 对话增强的输出 token 上限：中文约 1.6 字符/token，足够覆盖输入区常见长度 */
 const CHAT_ENHANCE_MAX_TOKENS = 1_600
 
-/** 改写场景：写作指令、图像画面描述与笔记合集压缩 */
-export type EnhancePromptScene = 'write' | 'image' | 'compress'
+/** 改写场景：写作指令、图像画面描述、笔记合集压缩与微博文案 */
+export type EnhancePromptScene = 'write' | 'image' | 'compress' | 'weibo'
 
 /** 改写口径：各场景只改口径文本，模型调用、超时与记账完全一致 */
 export const ENHANCE_SYSTEM_PROMPTS: Record<EnhancePromptScene, string> = {
     write: '你是写作指令编辑。把用户输入改写成可直接交给写作助手的指令：补足文体与视角、目标读者、篇幅或字数、结构与节奏、语言风格与禁忌；保持原意与中文表达，不要添加解释、标题或列表，只输出一段连续的指令。',
     image: '你是图像提示词编辑。把用户输入改写成更具体的画面描述：补足人物姿态、服装材质、场景层次、光线方向与镜头距离；保持原意与语言，不要添加解释、标题或列表，只输出一段连续的描述。',
-    compress: '你是资料压缩助手。把给定的笔记合集压缩成结构化要点：保留人物、设定、事件与结论等事实，去掉重复表述与举例；按笔记标题分组，用简洁的条目输出，不得编造未出现的信息，不要添加解释或前言。',
+    compress:
+        '你是资料压缩助手。把给定的笔记合集压缩成结构化要点：保留人物、设定、事件与结论等事实，去掉重复表述与举例；按笔记标题分组，用简洁的条目输出，不得编造未出现的信息，不要添加解释或前言。',
+    weibo: '你是微博文案编辑。把用户输入改写成适合微博发布的一段文字：保留原意与事实，句子更短、信息密度更高，语气自然；已有的 #话题#、@昵称、链接与 [表情] 必须原样保留，不得新增或删除；不要添加解释、标题、前缀或引号，只输出改写后的正文。',
 }
 
 /** 压缩输出 token 上限：目标是把整本笔记压到两千字以内 */
@@ -70,6 +72,23 @@ export function createChatEnhanceRequest(text: string): PromptEnhanceRequest {
         maxTokens: CHAT_ENHANCE_MAX_TOKENS,
         maxInputLength: CHAT_ENHANCE_MAX_LENGTH,
         maxOutputLength: CHAT_ENHANCE_MAX_LENGTH,
+        module: 'chat',
+    }
+}
+
+/** 微博文案的输入 / 输出字符上限：与发表框 2000 字一致 */
+const WEIBO_ENHANCE_MAX_LENGTH = 2_000
+/** 微博文案输出 token 上限：两千汉字约 1300 token，留出余量 */
+const WEIBO_ENHANCE_MAX_TOKENS = 1_600
+
+/** 微博侧请求：口径为微博文案，归属对话模块（与输入框改写同一本账） */
+export function createWeiboEnhanceRequest(text: string): PromptEnhanceRequest {
+    return {
+        text,
+        scene: 'weibo',
+        maxTokens: WEIBO_ENHANCE_MAX_TOKENS,
+        maxInputLength: WEIBO_ENHANCE_MAX_LENGTH,
+        maxOutputLength: WEIBO_ENHANCE_MAX_LENGTH,
         module: 'chat',
     }
 }

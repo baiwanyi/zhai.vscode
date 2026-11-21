@@ -2,7 +2,8 @@
  * 输入卡片骨架：整张卡片分「顶栏 / 内容区（输入与底部操作）」，与 AppPage 配套，对话与生图共用同一套两层底色。
  * 复用约定：结构照 AppPage 的槽位写法——ComponentProps 透传、cn 合并类名、data-slot 标记部件；
  * 生成态光晕由同文件的 ComposerGlow 提供，挂在根容器上覆盖整张卡片，调用方不必在各页面重复挂装饰层；
- * 光晕与骨架同文件是因为它只服务输入卡片（含 AiTextareaField 的复刻用法），单独成文件会让 components 反向依赖业务模块；
+ * 光晕与「输入组上的落法类名」都与骨架同文件：二者只服务输入类卡片（含 AiTextareaField 与微博发表框的复刻用法），
+ * 单独成文件会让 components 反向依赖业务模块；
  * 输入控件本身不由骨架提供，AppComposerInput 只作输入区槽位，底色与留白由 AppComposerContent 提供。
  * 顶栏在内容区之上、同属卡片：AppComposerCommands 放命令 / 引用等入口并按内容取宽，
  * AppComposerToolbar 紧随其后撑满剩余宽度。
@@ -20,6 +21,21 @@ import type { ComponentProps, JSX } from 'react'
 
 /** 按钮组共用排版：按内容排布、窄容器内自行换行；是否撑满剩余宽度由各部件附加 flex-1 / shrink-0 决定 */
 const GROUP_ROW_CLASS = 'flex min-w-0 flex-wrap items-center gap-0.5'
+
+/**
+ * 光晕落在输入组上的类名：子层圆角对齐 InputGroup（rounded-lg）；
+ * 背光比描边再外扩、再糊一层——默认只在边框外留 2px，看不出雾状扩散。
+ * 复用约定：AiTextareaField 与微博发表框等「输入组 + 光晕」场景统一从这里取，
+ * 避免各处各写一份类名后逐渐漂移。
+ */
+export const AI_FIELD_GLOW_CLASS = '[&>div]:rounded-lg [&>.composer-glow-halo]:-inset-2 [&>.composer-glow-halo]:blur-md'
+
+/**
+ * 光晕落在整张卡片上的类名：圆角对齐 ui/card（rounded-xl），背光同样外扩加糊。
+ * 与 AI_FIELD_GLOW_CLASS 的唯一差别是圆角：卡片 rounded-xl、输入组 rounded-lg。
+ * 使用方需给卡片补 `relative isolate overflow-visible`，否则负 z 会沉到页面背景、外扩背光会被裁掉。
+ */
+export const CARD_GLOW_CLASS = '[&>div]:rounded-xl [&>.composer-glow-halo]:-inset-0 [&>.composer-glow-halo]:blur-xs'
 
 /**
  * 输入卡片生成态光晕：conic 旋转描边 + 模糊背光的纯装饰层，样式定义在 globals.css 的 composer-glow 段。

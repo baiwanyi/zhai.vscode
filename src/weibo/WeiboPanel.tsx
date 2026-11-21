@@ -11,7 +11,8 @@
  * Cookie 输入框不回显已保存值，保存成功后清空、由登录态变化自动换出凭证卡，明文只存在于输入瞬间；
  * 删除 Cookie 只有一个确认入口（账号菜单），确认后回首页，凭证卡按未配置状态自然出现；
  * 同城热搜城市在设置弹窗里选择，落 zhai.weibo.cityCode，与 Cookie 无关；
- * 时间线、热门、热搜与分组都是只读浏览，发布框仍是占位（写接口不在本次范围）；
+ * 时间线、热门、热搜与分组都是只读浏览，发布框已接入发布（图床换 pid → update 提交），
+ * 支持表情、话题插入与本地图片选择/粘贴上传，草稿与已选图片由面板层保留，发布成功即清空并刷新首页；
  * 发布框草稿由面板层持有：切到其它视图再回首页，已写内容仍在，不随首页内容卸载丢失；
  * 个人主页按账号 uid 拼 weibo.com 地址交给宿主打开，入口收在顶栏账号菜单里；
  * 我的赞同样收在账号菜单里，视图为 mine.likes，只有页码分页，uid 由宿主解析；
@@ -33,6 +34,8 @@ import {
     AlertDialogTitle,
 } from '@components/ui/alert-dialog'
 import { Toaster } from '@components/ui/sonner'
+import type { UploadFileItem } from '@shared/types/upload'
+import type { WeiboTimelinePost } from '@shared/types/weibo'
 import { scrollAreaToTop } from '@shared/utils/scrollArea'
 import {
     AppAction,
@@ -87,6 +90,7 @@ export function WeiboPanel(): JSX.Element {
         state: homeState,
         refresh: refreshHome,
         loadMore: loadMoreHome,
+        prepend: prependHome,
         saveCredential,
         clearCredential,
     } = useWeiboTimeline(blockRules)
@@ -99,6 +103,8 @@ export function WeiboPanel(): JSX.Element {
     const [isDeleteOpen, setIsDeleteOpen] = useState(false)
     // 发布框草稿放在面板层：切到其它视图时首页内容会卸载，草稿不能跟着丢
     const [draft, setDraft] = useState('')
+    // 已选图片同样放在面板层：与草稿一并保留，重新回到首页时发布框还原成离开前的样子
+    const [composerImages, setComposerImages] = useState<UploadFileItem[]>([])
     useHostToast()
 
     const isConfigured = homeState.credential?.isConfigured ?? false
@@ -226,6 +232,17 @@ export function WeiboPanel(): JSX.Element {
         void loadMoreHome()
     }, [loadMoreHome])
 
+    /** 发布成功：把新微博直接前插到时间线首位，不刷新整页（游标保持不变） */
+    const handlePublished = useCallback(
+        (post: WeiboTimelinePost | null): void => {
+            if (post === null) {
+                return
+            }
+            prependHome(post)
+        },
+        [prependHome],
+    )
+
     /** 打开我的赞：入口在账号菜单，切换视图后由 likesFeed 负责首屏取数 */
     const handleOpenLikes = useCallback((): void => {
         setView('mine.likes')
@@ -263,7 +280,14 @@ export function WeiboPanel(): JSX.Element {
                 {shouldShowCredential ? (
                     <CredentialCard isSaving={homeState.isSavingCredential} onSave={saveCredential} />
                 ) : (
-                    <ComposerCard isEnabled={isConfigured} draft={draft} onDraftChange={setDraft} />
+                    <ComposerCard
+                        isEnabled={isConfigured}
+                        draft={draft}
+                        onDraftChange={setDraft}
+                        images={composerImages}
+                        onImagesChange={setComposerImages}
+                        onPublished={handlePublished}
+                    />
                 )}
 
                 <WeiboFeedList

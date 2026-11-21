@@ -23,8 +23,8 @@ export interface SetLikeOptions {
     timeoutMs?: number
 }
 
-/** 从 Cookie 串里取 XSRF-TOKEN：写接口需要它做 CSRF 校验 */
-function readXsrfToken(cookie: string): string | null {
+/** 从 Cookie 串里取 XSRF-TOKEN：写接口需要它做 CSRF 校验（点赞与发布共用） */
+export function readXsrfToken(cookie: string): string | null {
     for (const pair of cookie.split(';')) {
         const [name, ...rest] = pair.trim().split('=')
         if (name === 'XSRF-TOKEN') {

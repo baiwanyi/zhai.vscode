@@ -63,7 +63,12 @@ import {
 } from './db/chatRepository'
 import { readCharsPerToken } from './db/usageRepository'
 import { PermissionBroker } from './permissionBroker'
-import { createChatEnhanceRequest, createCompressRequest, PromptEnhanceService } from './promptEnhance'
+import {
+    createChatEnhanceRequest,
+    createCompressRequest,
+    createWeiboEnhanceRequest,
+    PromptEnhanceService,
+} from './promptEnhance'
 import { readCodebuddyLogin, rememberCodebuddyLogin } from './providers/codebuddyLogin'
 import {
     getCachedCodebuddyModels,
@@ -502,13 +507,15 @@ export class AiChatService implements vscode.Disposable {
     }
 
     /**
-     * 增强输入区提示词：委托共用的 PromptEnhanceService，口径固定为写作指令。
-     * 关键约束：不创建会话、不写消息，改写结果只回填输入框；失败直接抛出，由前端保留原文并提示。
+     * 增强输入区提示词：委托共用的 PromptEnhanceService。
+     * 关键约束：scene 只认 'weibo'（微博文案口径），其余一律按对话的写作指令口径处理；
+     * 不创建会话、不写消息，改写结果只回填输入框；失败直接抛出，由前端保留原文并提示。
      */
     public async enhancePrompt(payload: unknown): Promise<{ text: string }> {
-        const record = payload as { text?: unknown } | null
+        const record = payload as { text?: unknown; scene?: unknown } | null
         const text = typeof record?.text === 'string' ? record.text : ''
-        return { text: await this.promptEnhance.enhance(createChatEnhanceRequest(text)) }
+        const request = record?.scene === 'weibo' ? createWeiboEnhanceRequest(text) : createChatEnhanceRequest(text)
+        return { text: await this.promptEnhance.enhance(request) }
     }
 
     /**

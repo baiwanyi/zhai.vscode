@@ -51,6 +51,7 @@ type TimelineAction =
     | { type: 'more-start' }
     | { type: 'refresh-success'; result: WeiboTimelineResult }
     | { type: 'more-success'; result: WeiboTimelineResult }
+    | { type: 'prepend'; post: WeiboTimelinePost }
     | { type: 'failure'; code: string; message: string }
     | { type: 'saving'; value: boolean }
     | { type: 'cleared' }
@@ -125,6 +126,9 @@ function reducer(state: TimelineState, action: TimelineAction): TimelineState {
                 isLoadingMore: false,
             }
         }
+        case 'prepend':
+            // 发布成功：只把新微博插到最前，不动 sinceId / maxId，避免影响后续增量与翻页
+            return { ...state, posts: mergePosts(state.posts, [action.post], true), isLoading: false }
         case 'failure':
             return {
                 ...state,
@@ -154,6 +158,8 @@ export interface WeiboTimelineController {
     refresh: () => Promise<void>
     /** 加载更多：沿上一页的 max_id 向后翻，游标为空时不动 */
     loadMore: () => Promise<void>
+    /** 前插一条：发布成功后把新微博放到列表最前，不动游标也不回源 */
+    prepend: (post: WeiboTimelinePost) => void
     /** 保存 Cookie：返回是否成功，失败时页面保留输入，避免用户重贴 */
     saveCredential: (cookie: string) => Promise<boolean>
     clearCredential: () => Promise<boolean>
@@ -198,6 +204,10 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
         }
         await loadPage('more', null, maxId)
     }, [loadPage])
+
+    const prepend = useCallback((post: WeiboTimelinePost): void => {
+        dispatch({ type: 'prepend', post })
+    }, [])
 
     const saveCredential = useCallback(
         async (cookie: string): Promise<boolean> => {
@@ -256,7 +266,7 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
     const visibleState = visiblePosts === state.posts ? state : { ...state, posts: visiblePosts }
 
     return useMemo(
-        () => ({ state: visibleState, refresh, loadMore, saveCredential, clearCredential }),
-        [clearCredential, loadMore, refresh, saveCredential, visibleState],
+        () => ({ state: visibleState, refresh, loadMore, prepend, saveCredential, clearCredential }),
+        [clearCredential, loadMore, prepend, refresh, saveCredential, visibleState],
     )
 }

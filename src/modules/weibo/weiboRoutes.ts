@@ -1,5 +1,5 @@
 /**
- * 微博协议路由：把信息流、我的赞、热搜标签、同城城市、凭证、评论、点赞与外链分发到取数、配置与宿主能力。
+ * 微博协议路由：把信息流、我的赞、热搜标签、同城城市、凭证、评论、点赞、发表框话题、发布与外链分发到取数、配置与宿主能力。
  * 复用约定：入参收窄统一走 shared/types/weibo 的类型守卫，本层只做方法名到实现的映射；
  * 分组、表情与侧栏默认榜（band）先读 weibo.json 缓存，其余热搜标签实时回源，缓存异常只记日志、绝不影响回包；
  * Cookie 存取交给 WeiboCookieStore，取数交给 webTimeline / webFeed，宿主能力以回调注入便于单测。
@@ -27,9 +27,11 @@ import type {
     WeiboPagePostPayload,
     WeiboProfile,
     WeiboProfileResult,
+    WeiboPublishResult,
     WeiboSaveCredentialResult,
     WeiboTimelineRequest,
     WeiboTimelineResult,
+    WeiboTopicsResult,
     WeiboVideoResult,
 } from '@shared/types/weibo'
 import {
@@ -44,10 +46,12 @@ import {
     isWeiboLongTextRequest,
     isWeiboOpenPostRequest,
     isWeiboProfileRequest,
+    isWeiboPublishRequest,
     isWeiboSaveBlockListRequest,
     isWeiboSaveCityRequest,
     isWeiboSaveCredentialRequest,
     isWeiboTimelineRequest,
+    isWeiboTopicsRequest,
     isWeiboVideoRequest,
     readWeiboCityName,
     readWeiboPagePost,
@@ -63,7 +67,9 @@ import { setPostLike } from './webInteraction'
 import { fetchWeiboLikes } from './webLikes'
 import { fetchLongText } from './webLongText'
 import { fetchWeiboProfile } from './webProfile'
+import { publishWeibo } from './webPublish'
 import { fetchFriendTimeline } from './webTimeline'
+import { fetchWeiboTopics } from './webTopics'
 import { toAccountKey } from './weiboCache'
 import type { FetchCommentsOptions } from './webComments'
 import type { WeiboCookieStore } from './webCredential'
@@ -74,7 +80,9 @@ import type { SetLikeOptions } from './webInteraction'
 import type { FetchLikesOptions } from './webLikes'
 import type { FetchLongTextOptions } from './webLongText'
 import type { FetchProfileOptions } from './webProfile'
+import type { PublishWeiboOptions, WeiboUploadImage } from './webPublish'
 import type { FetchTimelineOptions } from './webTimeline'
+import type { FetchTopicsOptions } from './webTopics'
 import type { WeiboAvatarGateway } from './weiboAvatar'
 import type { WeiboCache, WeiboCacheKey } from './weiboCache'
 
@@ -107,6 +115,12 @@ export interface WeiboRouteDeps {
     fetchGroups?: (options: FetchGroupsOptions) => Promise<WeiboGroupsResult>
     /** 表情配置读取：发表框的表情面板使用 */
     fetchEmoticons?: (options: FetchEmoticonsOptions) => Promise<WeiboEmoticonsResult>
+    /** 话题搜索读取：发表框的话题面板使用 */
+    fetchTopics?: (options: FetchTopicsOptions) => Promise<WeiboTopicsResult>
+    /** 发布微博：默认走「图床换 pid → update 提交」两步，单测可替换 */
+    publishPost?: (options: PublishWeiboOptions) => Promise<WeiboPublishResult>
+    /** 读取 uploads 下的图片字节：发布前先传图床；未注入时带图发布会报未就绪 */
+    readUploadImage?: (path: string) => Promise<WeiboUploadImage>
     /** 热搜榜读取：右侧边栏使用 */
     fetchHotRank?: (options: FetchHotRankOptions) => Promise<WeiboHotRankResult>
     /** 账号信息读取：顶栏账号菜单使用，默认走网页版 profile/info */
@@ -180,6 +194,10 @@ export class WeiboRoutes {
                 return this.loadGroups()
             case 'weibo/emoticons':
                 return this.loadEmoticons()
+            case 'weibo/topics':
+                return this.loadTopics(payload)
+            case 'weibo/publish':
+                return this.loadPublish(payload)
             case 'weibo/hotRank':
                 return this.loadHotRank(payload)
             case 'weibo/profile':
@@ -358,6 +376,50 @@ export class WeiboRoutes {
         const result = await fetchEmoticons({ cookie })
         this.saveCache('emoticons', accountKey, result, result.fetchedAt)
         return result
+    }
+
+    /**
+     * 搜索话题：q 为空时取当前账号的常用话题，有关键字时按关键字搜索。
+     * 关键约束：话题随热搜变化，不参与磁盘缓存，每次打开面板或改关键字都回源。
+     */
+    private async loadTopics(payload: unknown): Promise<WeiboTopicsResult> {
+        const raw = payload ?? {}
+        if (!isWeiboTopicsRequest(raw)) {
+            throw new WeiboWebError('invalid-payload', 'weibo/topics 参数非法：q 须为不超过 50 字的字符串')
+        }
+        const cookie = await this.readCookie()
+        const fetchTopics = this.deps.fetchTopics ?? fetchWeiboTopics
+        return fetchTopics({ cookie, q: raw.q })
+    }
+
+    /**
+     * 发布微博：收窄入参 → 读 uploads 图片字节 → 传图床换 pid → 提交正文与 pid。
+     * 关键约束：正文与图片至少一项；图片逐张读取，任一缺失即整条放弃，绝不带半套图片发布；
+     * 图床不需要账号 uid 与昵称（Cookie 已带登录态）；写操作不重试，失败文案直接回给前端，避免重复发博。
+     */
+    private async loadPublish(payload: unknown): Promise<WeiboPublishResult> {
+        if (!isWeiboPublishRequest(payload)) {
+            throw new WeiboWebError(
+                'invalid-payload',
+                'weibo/publish 参数非法：正文不超过 2000 字，图片须为 uploads 下最多 9 个文件路径，且正文与图片至少一项',
+            )
+        }
+        const cookie = await this.readCookie()
+        const readImage = this.deps.readUploadImage
+        const images: WeiboUploadImage[] = []
+        for (const path of payload.images ?? []) {
+            if (readImage === undefined) {
+                throw new WeiboWebError('upstream', '当前宿主未装配上传目录，无法读取发布图片')
+            }
+            try {
+                images.push(await readImage(path))
+            } catch (error) {
+                const reason = error instanceof Error ? error.message : String(error)
+                throw new WeiboWebError('invalid-payload', `读取发布图片失败：${reason}`)
+            }
+        }
+        const publish = this.deps.publishPost ?? publishWeibo
+        return publish({ cookie, content: payload.content, images })
     }
 
     /**

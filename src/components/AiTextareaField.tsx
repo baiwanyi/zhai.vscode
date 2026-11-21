@@ -17,14 +17,8 @@ import {
     InputGroupTextarea,
 } from '@components/ui/input-group'
 import { Spinner } from '@components/ui/spinner'
-import { ComposerGlow } from './AppComposer'
+import { AI_FIELD_GLOW_CLASS, ComposerGlow } from './AppComposer'
 import type { JSX, ReactNode } from 'react'
-
-/**
- * 光晕在输入组上的落法：子层圆角对齐 InputGroup（rounded-lg）；
- * 背光比描边再外扩、再糊一层——默认只在边框外留 2px，看不出雾状扩散。
- */
-const GLOW_CLASS = '[&>div]:rounded-lg [&>.composer-glow-halo]:-inset-2 [&>.composer-glow-halo]:blur-md'
 
 interface AiTextareaFieldProps {
     /** 输入框 id：同时作为字段名的 for，同一页面内必须唯一 */
@@ -65,9 +59,10 @@ export function AiTextareaField({
         <Field className={className}>
             <FieldLabel htmlFor={id}>{label}</FieldLabel>
             <div className="relative isolate rounded-lg">
-                <ComposerGlow isGenerating={isGenerating} className={GLOW_CLASS} />
-                {/* 不透明底衬压在光晕之上：光只从输入组边缘溢出，不会把正文染成紫色 */}
-                <div aria-hidden className="pointer-events-none absolute inset-0 rounded-lg bg-background" />
+                <ComposerGlow isGenerating={isGenerating} className={AI_FIELD_GLOW_CLASS} />
+                {/* 不透明底衬压在光晕之上：光只从输入组边缘溢出，不会把正文染成紫色；
+                    必须留在负 z 层（-z-10），否则 z-auto 的定位元素会盖住未定位的标题与正文 */}
+                <div aria-hidden className="pointer-events-none absolute inset-0 -z-10 rounded-lg bg-background" />
                 <InputGroup>
                     <InputGroupTextarea
                         id={id}

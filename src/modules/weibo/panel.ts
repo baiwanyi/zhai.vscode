@@ -6,17 +6,25 @@
  * 关键约束：Cookie 存在 SecretStorage，本层只把 WeiboCookieStore 交给路由，明文不出宿主；
  * 图床按 Referer 放行，图片经 mediaProxy 落本地后内联成 data URI，故不必放开远程图片 CSP；
  * 视频不落缓存：CSP 的 media-src 放行微博视频 CDN，由 Webview 直接播整段 mp4，面板无需授权任何缓存目录；
+ * 发表框的 upload/* 转交上传路由（与工作流面板共用同一份实例），ai/enhancePrompt 转交 AI 服务，
+ * 微博路由本身不认这两个前缀；
+ * 发布前由本层读出 uploads 图片字节（限定路径、按魔数判格式），传图床与提交正文都在 webPublish 内完成；
+ * 存储根须列入 localResourceRoots，否则 uploads 缩略图的 asWebviewUri 地址会被拒绝；
  * 面板激活、失焦与销毁都要经 activeDocument 上报/让位，关闭时同时清理事实与句柄。
  */
 import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
+import { sniffImageMime } from '@modules/common/imageSniff'
 import { logger } from '@modules/common/logger'
+import { buildStorageUri } from '@modules/common/storagePath'
 import { buildWebviewHtml } from '@modules/common/webviewHtml'
 import { getActivePanel, reportActivePanel } from '@modules/editor/activeDocument'
 import { MAX_UPLOAD_BYTES } from '@modules/upload/uploadPayload'
+import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 import { saveUploadFile } from '@modules/upload/uploadStorage'
 import { isRequestMessage } from '@shared/types/messages'
+import { isUploadPath } from '@shared/types/upload'
 import type { WeiboNoteSaveResult, WeiboPagePostPayload } from '@shared/types/weibo'
 import { WEIBO_PANEL_VIEW_TYPE } from '@shared/types/workflow'
 import { createWeiboMediaProxy, readImageAsDataUrl } from './mediaProxy'
@@ -28,6 +36,7 @@ import { createWeiboCache } from './weiboCache'
 import { WeiboRoutes as WeiboRoutesImpl } from './weiboRoutes'
 import type { WeiboMediaProxy } from './mediaProxy'
 import type { WeiboImageSaver, WeiboPostActions } from './postActions'
+import type { WeiboUploadImage } from './webPublish'
 import type { WeiboRoutes } from './weiboRoutes'
 
 /** 图片缓存子目录：与其它模块的缓存共处 globalStorage 根下 */
@@ -127,17 +136,34 @@ function createWeiboImageSaver(proxy: WeiboMediaProxy): WeiboImageSaver {
 /** 当前面板：关闭后置空，重复打开时聚焦而不是再开一页 */
 let current: vscode.WebviewPanel | null = null
 
+/** AI 改写能力：由扩展入口注入 ChatService.enhancePrompt，发表框的「AI 优化」经它取结果 */
+export type WeiboEnhancePrompt = (payload: unknown) => Promise<{ text: string }>
+
 /**
  * 处理面板请求：按 reqId 回包，失败时保留错误分类码。
  * 关键约束：非协议消息直接丢弃；错误文案不含 Cookie；未登记方法由路由抛错，这里统一转成 ok:false。
  */
-async function handlePanelMessage(panel: vscode.WebviewPanel, routes: WeiboRoutes, message: unknown): Promise<void> {
+async function handlePanelMessage(
+    panel: vscode.WebviewPanel,
+    routes: WeiboRoutes,
+    upload: UploadRoutes | undefined,
+    enhancePrompt: WeiboEnhancePrompt | undefined,
+    message: unknown,
+): Promise<void> {
     if (!isRequestMessage(message)) {
         return
     }
     const { reqId, method, payload } = message
     try {
-        const result = await routes.handle(method, payload)
+        // upload/* 与工作流面板共用同一份上传路由：发表框的图片选择与粘贴上传要读 uploads 清单、写字节流；
+        // ai/enhancePrompt 同理来自 AI 服务（微博路由不认 ai/* 前缀）；
+        // 两者未注入时都落到兜底分支并回报「未登记」
+        const result =
+            method.startsWith('upload/') && upload !== undefined
+                ? await upload.handle(method, payload, (uri) => panel.webview.asWebviewUri(uri).toString())
+                : method === 'ai/enhancePrompt' && enhancePrompt !== undefined
+                  ? await enhancePrompt(payload)
+                  : await routes.handle(method, payload)
         await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: result })
     } catch (error) {
         const text = error instanceof Error ? error.message : String(error)
@@ -150,13 +176,17 @@ async function handlePanelMessage(panel: vscode.WebviewPanel, routes: WeiboRoute
 /**
  * 打开微博面板：已存在则聚焦，否则在编辑区新开一页。
  * secrets 缺省时凭证读写退化为空实现；mediaCacheRoot 缺省时不代理图片（卡片显示占位）；
- * postActions 缺省时卡片的「保存到笔记」「添加到 AI 对话」按未就绪回包，其余功能不受影响。
+ * postActions 缺省时卡片的「保存到笔记」「添加到 AI 对话」按未就绪回包，其余功能不受影响；
+ * upload 缺省时发表框的图片选择与粘贴上传报未就绪，其余功能照常；
+ * enhancePrompt 缺省时发表框的「AI 优化」报未登记，其余功能照常。
  */
 export async function openWeiboPanel(
     extensionUri: vscode.Uri,
     secrets?: vscode.SecretStorage,
     mediaCacheRoot?: vscode.Uri,
     postActions?: WeiboPostActions,
+    upload?: UploadRoutes,
+    enhancePrompt?: WeiboEnhancePrompt,
 ): Promise<void> {
     if (current !== null) {
         current.reveal()
@@ -167,8 +197,9 @@ export async function openWeiboPanel(
         enableScripts: true,
         // 切到其它 tab 再回来不重建页面：时间线滚动位置与已加载内容活在前端状态里，重建会直接丢掉
         retainContextWhenHidden: true,
-        // 图片走 data URI、视频由 Webview 直接播 CDN 整段 mp4，两者都不经本地文件，故不授权缓存目录
-        localResourceRoots: [webviewDist],
+        // 存储根加入白名单：发表框的图片选择与粘贴上传要经 asWebviewUri 渲染 uploads 下的缩略图；
+        // 微博正文图片仍走 data URI、视频直接播 CDN 整段 mp4，都不依赖该目录
+        localResourceRoots: [webviewDist, resolveStorageRoot()],
     })
     current = panel
     // 标签图标用固定品牌红：SVG 里写死颜色，不跟随主题分两套
@@ -223,6 +254,22 @@ export async function openWeiboPanel(
                 : (post: WeiboPagePostPayload): Promise<WeiboNoteSaveResult> =>
                       postActions.saveToNote(post, proxy === null ? undefined : createWeiboImageSaver(proxy)),
         addToChat: postActions?.addToChat,
+        // 发布前把本地图片传图床：路径限定在 uploads 下，格式按魔数判定，体积沿用上传页的单件上限
+        readUploadImage: async (relativePath: string): Promise<WeiboUploadImage> => {
+            if (!isUploadPath(relativePath)) {
+                throw new Error('图片路径不在 uploads 目录下')
+            }
+            const uri = buildStorageUri(resolveStorageRoot(), relativePath.split('/'))
+            const bytes = await vscode.workspace.fs.readFile(uri)
+            const mimeType = sniffImageMime(bytes)
+            if (mimeType === null) {
+                throw new Error('只支持 png / jpg / webp / gif 图片')
+            }
+            if (bytes.byteLength > MAX_UPLOAD_BYTES) {
+                throw new Error(`单张图片不能超过 ${String(MAX_UPLOAD_BYTES / 1024 / 1024)} MB`)
+            }
+            return { bytes, mimeType }
+        },
         openExternal: async (url: string): Promise<void> => {
             await vscode.env.openExternal(vscode.Uri.parse(url))
         },
@@ -242,7 +289,7 @@ export async function openWeiboPanel(
 
     // 监听在面板销毁时显式释放：重开面板会重建一份，不释放就叠加处理链
     const messageListener = panel.webview.onDidReceiveMessage((message: unknown) => {
-        void handlePanelMessage(panel, routes, message)
+        void handlePanelMessage(panel, routes, upload, enhancePrompt, message)
     })
     // 面板拿到焦点即上报：工作流区据此切到微博语境；切走时让位，编辑器重新激活由活跃文档侧统一清空
     if (panel.active) {

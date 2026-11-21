@@ -1,12 +1,14 @@
 /**
- * 微博信息流契约：关注时间线、热门、分组信息流、热搜标签、分组列表与表情配置的模型与不可信载荷收窄。
+ * 微博信息流契约：关注时间线、热门、分组信息流、热搜标签、分组列表、表情配置、发表框话题与发布的模型与不可信载荷收窄。
  * 复用约定：宿主侧 modules/weibo 负责请求与归一化，Webview 只消费归一化后的帖子、榜单与表情，
  * 协议方法名登记在 shared/types/messages，面板经 request/response 通道取数。
- * 关键约束：所有信息流与榜单只读，写操作不得走本契约；Cookie 明文永不出宿主、不入日志，
+ * 关键约束：信息流与榜单只读，写操作只保留点赞与发布两条；Cookie 明文永不出宿主、不入日志，
  * 凭证状态只回传是否已配置与保存时间；sinceId 与 maxId 互斥，二者都给出时以 maxId 为准；
  * 分组与游标必须是纯数字串，热搜 tab 与同城 cityCode 只接受登记过的取值，
- * 表情图地址必须落在图床白名单内，避免任意内容被拼进参数或渲染。
+ * 表情图地址必须落在图床白名单内，发布图片路径必须落在 uploads 目录内，
+ * 避免任意内容被拼进参数或渲染。
  */
+import { isUploadPath } from './upload'
 
 /** 单页默认条数：与网页端首屏一致，上游超过 50 会被截断 */
 export const WEIBO_TIMELINE_DEFAULT_COUNT = 20
@@ -437,6 +439,36 @@ export interface WeiboEmoticonsResult {
     emoticons: WeiboEmoticonItem[]
     /** 结果生成时刻（ISO） */
     fetchedAt: string
+}
+
+/** 话题搜索入参：q 为空或缺失时表示取常用话题 */
+export interface WeiboTopicsRequest {
+    q?: string
+}
+
+/** 话题搜索结果：topics 为已去空白、去重的纯文本话题名，不含 # 号 */
+export interface WeiboTopicsResult {
+    topics: string[]
+}
+
+/** 发布微博入参：正文与已选图片（uploads 相对路径，宿主读字节并先传图床换 pid） */
+export interface WeiboPublishRequest {
+    /** 正文：可含 #话题# 与 [表情] 文本，原样提交，不做二次转义 */
+    content: string
+    /** 图片：最多 9 张，每项须为 uploads/{YYYYMM}/{文件名} */
+    images?: string[]
+}
+
+/** 发布结果：成功时带回新微博的标识与原文地址 */
+export interface WeiboPublishResult {
+    /** 数字 id */
+    id: string
+    /** mblogid：原文地址用它拼接 */
+    mblogid: string
+    /** 原文地址：优先按账号 uid + mblogid 拼站内地址 */
+    url: string
+    /** 归一化后的完整微博：前端据此本地前插到时间线，避免发布后整页刷新 */
+    post: WeiboTimelinePost | null
 }
 
 /** 热搜榜条目：只保留展示所需字段，图地址与徽标色均已在宿主侧收窄 */
@@ -929,6 +961,46 @@ export function isWeiboLikeRequest(value: unknown): value is WeiboLikeRequest {
     }
     const { id, liked } = value as Record<string, unknown>
     return typeof id === 'string' && WEIBO_ID_PATTERN.test(id) && typeof liked === 'boolean'
+}
+
+/** 话题关键字长度上限：与上游输入框口径一致，超长直接判非法而不截断 */
+const MAX_TOPIC_QUERY_LENGTH = 50
+
+/** 收窄话题搜索入参：q 可缺省（取常用话题），给了就必须是不超长的字符串 */
+export function isWeiboTopicsRequest(value: unknown): value is WeiboTopicsRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { q } = value as Record<string, unknown>
+    return q === undefined || (typeof q === 'string' && q.length <= MAX_TOPIC_QUERY_LENGTH)
+}
+
+/** 发布正文长度上限：与输入框一致，宿主再做一次兜底 */
+const MAX_PUBLISH_CONTENT_LENGTH = 2000
+
+/** 单条微博图片上限：普通账号 9 张 */
+const MAX_PUBLISH_IMAGE_COUNT = 9
+
+/**
+ * 收窄发布入参：正文与图片至少一项，图片须为 uploads 下的合法路径且不超过 9 张。
+ * 关键约束：路径在这里收窄，宿主读到文件后再按魔数判图片格式，避免任意路径被读进发布流程。
+ */
+export function isWeiboPublishRequest(value: unknown): value is WeiboPublishRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { content, images } = value as Record<string, unknown>
+    if (typeof content !== 'string' || content.length > MAX_PUBLISH_CONTENT_LENGTH) {
+        return false
+    }
+    if (images !== undefined && !Array.isArray(images)) {
+        return false
+    }
+    const list: unknown[] = Array.isArray(images) ? images : []
+    if (list.length > MAX_PUBLISH_IMAGE_COUNT || !list.every((item) => isUploadPath(item))) {
+        return false
+    }
+    return content.trim().length > 0 || list.length > 0
 }
 
 /** 收窄图片代理入参：长度上限与归一化层一致，具体域名由宿主再次校验 */
