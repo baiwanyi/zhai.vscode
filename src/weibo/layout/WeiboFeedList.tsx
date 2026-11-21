@@ -15,6 +15,7 @@ import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { WeiboPostCard } from './WeiboPostCard'
 import type { JSX, ReactNode } from 'react'
+import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /** 自动翻页上限：连续自动加载到该次数后不再自动，交还用户手动点 */
 const MAX_AUTO_LOADS = 10
@@ -110,17 +111,22 @@ export function WeiboFeedList({
     }, [canAutoLoad, isLoadingMore, posts.length])
 
     if (isLoading) {
-        return <StateEmpty className="py-8" title="正在读取微博..." isLoading />
+        return <StateEmpty className="py-8" title={WEIBO_UI_TEXT.loading.feed} isLoading />
     }
     if (posts.length === 0) {
         if (emptyState !== undefined) {
             return <>{emptyState}</>
         }
         return (
-            <StateEmpty className="py-8" icon={Inbox} title={emptyTitle ?? '没有内容'} description={emptyDescription}>
+            <StateEmpty
+                className="py-8"
+                icon={Inbox}
+                title={emptyTitle ?? WEIBO_UI_TEXT.empty.feed}
+                description={emptyDescription}
+            >
                 {onRefresh === undefined ? null : (
                     <Button size="sm" variant="outline" onClick={onRefresh}>
-                        刷新
+                        {WEIBO_UI_TEXT.action.refresh}
                     </Button>
                 )}
             </StateEmpty>
@@ -135,7 +141,7 @@ export function WeiboFeedList({
             ))}
             <div ref={sentinelRef} className="flex justify-center py-2">
                 {!hasMore ? (
-                    <span className="text-muted-foreground text-xs">已经到底了</span>
+                    <span className="text-muted-foreground text-xs">{WEIBO_UI_TEXT.empty.end}</span>
                 ) : shouldWaitForManualLoad ? (
                     <Button
                         variant="outline"
@@ -144,10 +150,10 @@ export function WeiboFeedList({
                             onLoadMore()
                         }}
                     >
-                        加载更多
+                        {WEIBO_UI_TEXT.action.loadMore}
                     </Button>
                 ) : isLoadingMore ? (
-                    <span className="text-muted-foreground text-xs">正在加载更多...</span>
+                    <span className="text-muted-foreground text-xs">{WEIBO_UI_TEXT.loading.moreFeed}</span>
                 ) : null}
             </div>
         </>

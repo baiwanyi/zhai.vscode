@@ -10,6 +10,7 @@ import type { WeiboCredentialState } from '@shared/types/weibo'
 import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
+import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 interface CredentialGateProps {
     /** 凭证状态：null 表示探测尚未返回 */
@@ -32,17 +33,17 @@ export function CredentialGate({
 }: CredentialGateProps): JSX.Element | null {
     if (credential === null) {
         if (errorCode === null) {
-            return <StateEmpty className="py-8" title="正在读取登录状态..." isLoading />
+            return <StateEmpty className="py-8" title={WEIBO_UI_TEXT.loading.credential} isLoading />
         }
         return (
             <StateEmpty
                 className="py-8"
                 icon={Inbox}
-                title="登录状态读取失败"
+                title={WEIBO_UI_TEXT.error.credential}
                 description={errorMessage ?? '读取本机保存的 Cookie 时出错：稍后重试，或重新保存一次 Cookie。'}
             >
                 <Button size="sm" variant="outline" onClick={onOpenSettings}>
-                    去设置
+                    {WEIBO_UI_TEXT.action.openSettings}
                 </Button>
             </StateEmpty>
         )
@@ -55,7 +56,7 @@ export function CredentialGate({
             <StateEmpty
                 className="py-8"
                 icon={Inbox}
-                title="还没有配置微博 Cookie"
+                title={WEIBO_UI_TEXT.empty.credential}
                 description="按上方步骤复制登录后的 Cookie 并保存，即可读取关注时间线。"
             />
         )
@@ -64,11 +65,11 @@ export function CredentialGate({
         <StateEmpty
             className="py-8"
             icon={Inbox}
-            title="还没有配置微博 Cookie"
+            title={WEIBO_UI_TEXT.empty.credential}
             description="在「设置」里保存登录后的 Cookie 即可读取信息流：先登录 weibo.com，再复制任意 ajax 请求头里的完整 Cookie。"
         >
             <Button size="sm" variant="outline" onClick={onOpenSettings}>
-                去设置
+                {WEIBO_UI_TEXT.action.openSettings}
             </Button>
         </StateEmpty>
     )

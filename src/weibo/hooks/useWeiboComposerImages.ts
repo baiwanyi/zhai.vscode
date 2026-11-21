@@ -12,6 +12,7 @@ import { toast } from 'sonner'
 import type { UploadFileItem, UploadListResult, UploadResult } from '@shared/types/upload'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /** 选择文件要给用户留出浏览磁盘的时间：默认 10 秒会让对话框还没关就判超时 */
 const PICK_TIMEOUT_MS = 300_000
@@ -147,7 +148,7 @@ export function useWeiboComposerImages(): WeiboComposerImagesController {
                     }
                 }
                 if (uploadItems.length === 0) {
-                    toast.error('图片读取失败，请重试')
+                    toast.error(WEIBO_UI_TEXT.error.imageRead)
                     return []
                 }
                 const result = await request<UploadResult>('upload/bytes', { items: uploadItems }, UPLOAD_TIMEOUT_MS)

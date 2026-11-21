@@ -8,7 +8,7 @@
 import type { WeiboHotRankTab } from '@shared/types/weibo'
 import type { WeiboFeedController } from '../hooks/useWeiboFeed'
 import type { WeiboView } from '../layout/weiboNavGroups'
-import { readCustomGroupId, readHotChannelGid } from '../layout/weiboNavGroups'
+import { HOME_RECOMMEND_VIEW, readCustomGroupId, readHotChannelGid } from '../layout/weiboNavGroups'
 
 export interface WeiboFeedSources {
     timeline: WeiboFeedController
@@ -78,7 +78,37 @@ export function readRefreshSummary({
     }
     return {
         isRefreshing: homeState.isRefreshing,
-        isRefreshDisabled: !isConfigured || view !== 'home.recommend',
+        isRefreshDisabled: !isConfigured || view !== HOME_RECOMMEND_VIEW,
         contentCount: homeState.posts.length,
     }
+}
+
+/** 当前视图应渲染的内容种类：首页 / 时间线 / 我的赞 / 热搜 / 热门频道 / 自建分组 */
+export type WeiboContentKind = 'home' | 'timeline' | 'likes' | 'hotRank' | 'hotFeed' | 'groupFeed'
+
+/**
+ * 内容分派：热搜优先于热门频道（专页自带整页榜单），其余按视图标识回落。
+ * 关键约束：分组结果未到时 activeGroup 为 null，本函数仍归 groupFeed，由视图自己给加载态。
+ */
+export function resolveContentKind(
+    view: WeiboView,
+    hotRankTab: WeiboHotRankTab | null,
+    hotListId: string | null,
+): WeiboContentKind {
+    if (view === HOME_RECOMMEND_VIEW) {
+        return 'home'
+    }
+    if (view === 'home.timeline') {
+        return 'timeline'
+    }
+    if (view === 'mine.likes') {
+        return 'likes'
+    }
+    if (hotRankTab !== null) {
+        return 'hotRank'
+    }
+    if (hotListId !== null) {
+        return 'hotFeed'
+    }
+    return 'groupFeed'
 }

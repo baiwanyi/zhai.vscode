@@ -20,6 +20,7 @@ import type {
 import { HostRequestError, request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
+import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /** 取数模式：刷新走增量，翻页走 max_id */
 type LoadMode = 'refresh' | 'more'
@@ -183,7 +184,7 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
                 const result = await request<WeiboTimelineResult>('weibo/timeline', payload)
                 dispatch({ type: mode === 'refresh' ? 'refresh-success' : 'more-success', result })
                 if (mode === 'refresh' && result.posts.length === 0 && stateRef.current.posts.length > 0) {
-                    toast('暂无新微博')
+                    toast(WEIBO_UI_TEXT.toast.noNewPosts)
                 }
             } catch (cause) {
                 dispatch({ type: 'failure', code: readErrorCode(cause), message: toErrorText(cause) })
@@ -215,7 +216,7 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
             try {
                 const result = await request<WeiboSaveCredentialResult>('weibo/credential/save', { cookie })
                 dispatch({ type: 'credential', payload: result })
-                toast.success('微博 Cookie 已保存')
+                toast.success(WEIBO_UI_TEXT.toast.credentialSaved)
                 await loadPage('refresh', null, null)
                 return true
             } catch (cause) {
@@ -233,7 +234,7 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
         try {
             await request('weibo/credential/clear')
             dispatch({ type: 'cleared' })
-            toast.success('已清除微博 Cookie')
+            toast.success(WEIBO_UI_TEXT.toast.credentialCleared)
             return true
         } catch (cause) {
             toastError(cause)

@@ -18,9 +18,8 @@
  * 活跃笔记：ActiveNoteProvider 只在本层挂一次，路由归属判定与概览页的列表选中态共享同一份，
  * 页面点击回填的选中项因此能立刻参与归属判定，不必等宿主广播回传。
  */
-import { Toaster } from '@components/ui/sonner'
+import { AppToaster } from '@webview/components/AppToaster'
 import { StateEmpty } from '@webview/components/StateEmpty'
-import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
 import { DashboardRouteProvider } from './core/DashboardRouteProvider'
 import { useDashboardRoute } from './core/routeContext'
 import { readDashboardScope, readWechatAppId } from './core/routing'
@@ -44,7 +43,6 @@ export function DashboardScreen(): JSX.Element {
 
 function DashboardScreenContent(): JSX.Element {
     const { route, navigate } = useDashboardRoute()
-    const theme = useVscodeTheme()
     const { projectDirPath: activeProjectDirPath, isReady: isPressReady } = useActivePressProject()
     const { activeId: activeDocumentPath, hasEditor, isReady: isNoteReady } = useActiveNote()
 
@@ -78,7 +76,7 @@ function DashboardScreenContent(): JSX.Element {
                     <StateEmpty className="h-full" title="正在读取仪表盘..." isLoading />
                 )}
             </div>
-            <Toaster theme={theme} />
+            <AppToaster />
         </>
     )
 }

@@ -12,6 +12,7 @@ import type { UploadFileItem } from '@shared/types/upload'
 import type { WeiboPublishResult } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /** 发布超时：多图逐张传图床，单张按 30s 计 */
 const PUBLISH_TIMEOUT_MS = 60_000
@@ -51,7 +52,7 @@ export function useWeiboPublish(): WeiboPublishController {
                     PUBLISH_TIMEOUT_MS,
                 )
                 if (isMountedRef.current) {
-                    toast.success('已发布到微博', { description: result.url })
+                    toast.success(WEIBO_UI_TEXT.toast.published, { description: result.url })
                 }
                 return result
             } catch (cause) {

@@ -7,6 +7,7 @@
  */
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
+import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 export interface LoadMoreBarProps {
     /** 是否允许续载：由「还有下一页」与「首屏无错误」共同决定 */
@@ -36,12 +37,12 @@ export function LoadMoreBar({
         <div className="flex items-center gap-2">
             {canLoadMore ? (
                 <Button size="xs" variant="ghost" onClick={onLoadMore} isLoading={isLoadingMore}>
-                    {hasLoadMoreError ? '重试继续加载' : loadMoreLabel}
+                    {hasLoadMoreError ? WEIBO_UI_TEXT.action.retryLoadMore : loadMoreLabel}
                 </Button>
             ) : null}
             {error !== null && !isLoading ? (
                 <Button size="xs" variant="outline" onClick={onReload}>
-                    重试
+                    {WEIBO_UI_TEXT.action.retry}
                 </Button>
             ) : null}
         </div>

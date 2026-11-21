@@ -22,6 +22,7 @@ import { CommentItem } from '../block/CommentItem'
 import { LoadMoreBar } from '../block/LoadMoreBar'
 import { useWeiboCommentActions } from '../hooks/useWeiboCommentActions'
 import { useWeiboCommentThread } from '../hooks/useWeiboCommentThread'
+import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 interface WeiboCommentListProps {
     /** 微博数字 id */
@@ -88,11 +89,17 @@ export function WeiboCommentList({ postId, totalCount, viewerUid = null }: Weibo
                     )
                 })}
                 {!thread.isLoading && thread.comments.length === 0 && thread.error === null ? (
-                    <StateEmpty className="border px-3 py-5" icon={MessageSquare} title="还没有评论" />
+                    <StateEmpty
+                        className="border px-3 py-5"
+                        icon={MessageSquare}
+                        title={WEIBO_UI_TEXT.empty.comments}
+                    />
                 ) : null}
-                {thread.error === null ? null : <ListErrorAlert title="评论读取失败" error={thread.error} />}
+                {thread.error === null ? null : (
+                    <ListErrorAlert title={WEIBO_UI_TEXT.error.comments} error={thread.error} />
+                )}
                 {thread.loadMoreError === null ? null : (
-                    <ListErrorAlert title="更多评论加载失败" error={thread.loadMoreError} />
+                    <ListErrorAlert title={WEIBO_UI_TEXT.error.moreComments} error={thread.loadMoreError} />
                 )}
                 {/* 哨兵放在列表末尾：滚到底部自动续载，转圈占位不让已有内容跳动 */}
                 {thread.canLoadMore ? (

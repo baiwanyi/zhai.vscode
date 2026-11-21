@@ -54,7 +54,7 @@
 | 媒体 | `mediaProxy.ts`、`videoServer.ts` |
 | 常量与内容组装 | `weiboEndpoints.ts`、`note.ts` |
 
-前端 `src/weibo/` 共 61 个文件：`hooks/` 23 个控制器、`layout/` 17 个装配与页面组件、`block/` 13 个卡片内展示块、`utils/` 7 个纯函数，`WeiboPanel.tsx` 负责控制器装配与视图分发。`block/` 只放接收 props 渲染的展示块（条目、发布框、媒体预览、续载栏等），自带取数的列表与卡片仍留在 `layout/`。
+前端 `src/weibo/` 共 68 个文件：`hooks/` 26 个控制器、`layout/` 20 个装配与页面组件、`block/` 13 个卡片内展示块、`utils/` 8 个纯函数，`WeiboScreen.tsx` 只做装配与视图分发（取数走 `useWeiboPageFeeds`，凭证删除走 `useCredentialRemoval`，草稿走 `useWeiboComposerDraft`，内容视图交给 `WeiboHomeView` / `WeiboFeedViews` / `PageHotSearch`）。固定短文案集中在 `utils/weiboUiText.ts`（`WEIBO_UI_TEXT`），顶栏视图说明在 `utils/weiboViewDescription.ts`（`describeWeiboView`）。`block/` 只放接收 props 渲染的展示块（条目、发布框、媒体预览、续载栏等），自带取数的列表与卡片仍留在 `layout/`。
 
 ### 1.5 凭证与配置
 
@@ -775,7 +775,7 @@ GET https://weibo.com/ajax/mblog/topic?q={关键字}
 - 图片面板列出 `uploads/` 下的图片（`upload/list`，只有 `url` 非空的图片条目参与），已选条目置灰禁用；选中后在发布框下方以缩略图列表展示，右上角可移除。
 - 面板内可直接点「上传图片」唤起系统选择器（`upload/pick`），上传结果自动加入已选。
 - 发布框聚焦时粘贴剪贴板里的图片（`clipboardData.files` 中的 `image/*`）走 `upload/bytes` 落 `uploads/{YYYYMM}/`，成功后加入已选；纯文本粘贴完全不拦截默认行为。
-- 已选图片与草稿同层保存在 `WeiboPanel`，切换视图卸载发布框后不丢；点「发布」进入 2.18 的两步流程，成功后清空内容，并把新微博前插到时间线首位。
+- 已选图片与草稿同层保存在 `WeiboScreen`，切换视图卸载发布框后不丢；点「发布」进入 2.18 的两步流程，成功后清空内容，并把新微博前插到时间线首位。
 - 输入框底部右侧是「AI 优化」按钮（`Sparkles`，进行中转圈）：调 `ai/enhancePrompt` 并带 `scene: 'weibo'`，宿主按微博文案口径改写（保留 #话题#、@昵称、链接与 `[表情]`），成功后整体替换正文并把光标落到末尾；空内容只提示不改写，改写中发布按钮一并禁用，失败保留原文。
 - `ai/enhancePrompt` 由微博面板按方法名转发给 AI 服务（`openWeiboPanel` 的 `enhancePrompt` 注入，扩展入口传 `ai.chat.enhancePrompt`），微博路由不认识 `ai/*` 前缀；未注入时该按钮报「未登记」。
 - 改写期间整张卡片发光：`Card` 补 `relative isolate overflow-visible`（覆盖 `ui/card` 自带的 `overflow-hidden`，否则外扩背光会被裁掉），内放 `ComposerGlow`（类名用 `CARD_GLOW_CLASS`，圆角对齐 `rounded-xl`）与一层同色底衬 `bg-card`，光晕只从卡片边缘与外侧溢出、不染正文。

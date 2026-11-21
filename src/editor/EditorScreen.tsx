@@ -13,9 +13,8 @@
 import { EditorContent, useEditor } from '@tiptap/react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Toaster } from '@components/ui/sonner'
 import { preventContextMenu } from '@shared/utils/dom'
-import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
+import { AppToaster } from '@webview/components/AppToaster'
 import { BlockHandle } from './blocks/BlockHandle'
 import { TableTools } from './blocks/TableTools'
 import { EDITOR_CONTENT_CLASS, EDITOR_PAGE_CLASS, EDITOR_ROOT_CLASS, EDITOR_SCROLL_CLASS } from './core/domContracts'
@@ -104,8 +103,6 @@ export function EditorScreen(): JSX.Element {
     const { handlePageMouseDown } = useTrailingParagraph(editor, pageRef)
     // 右侧标题导航的数据源：只认顶层 heading
     const outline = useHeadingOutline(editor)
-    // 主题：sonner 的 Toaster 需要显式 light/dark，全屏只挂一次；后续新增提示直接复用
-    const theme = useVscodeTheme()
 
     // 切到文本编辑器或其它标签页前先落盘：回写防抖窗口里的输入不能随 webview 一起被挂起
     useEffect(() => {
@@ -236,7 +233,7 @@ export function EditorScreen(): JSX.Element {
                 }}
                 query={query}
             />
-            <Toaster theme={theme} />
+            <AppToaster />
         </div>
     )
 }

@@ -19,6 +19,7 @@ import { RepostComposer } from '../block/RepostComposer'
 import { RepostItem } from '../block/RepostItem'
 import { useWeiboRepostActions } from '../hooks/useWeiboRepostActions'
 import { useWeiboReposts } from '../hooks/useWeiboReposts'
+import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 interface WeiboRepostListProps {
     /** 微博数字 id */
@@ -67,11 +68,13 @@ export function WeiboRepostList({ postId, totalCount, viewerUid = null }: WeiboR
                     />
                 ))}
                 {!thread.isLoading && thread.reposts.length === 0 && thread.error === null ? (
-                    <StateEmpty className="border px-3 py-5" icon={Repeat2} title="还没有转发" />
+                    <StateEmpty className="border px-3 py-5" icon={Repeat2} title={WEIBO_UI_TEXT.empty.reposts} />
                 ) : null}
-                {thread.error === null ? null : <ListErrorAlert title="转发读取失败" error={thread.error} />}
+                {thread.error === null ? null : (
+                    <ListErrorAlert title={WEIBO_UI_TEXT.error.reposts} error={thread.error} />
+                )}
                 {thread.loadMoreError === null ? null : (
-                    <ListErrorAlert title="更多转发加载失败" error={thread.loadMoreError} />
+                    <ListErrorAlert title={WEIBO_UI_TEXT.error.moreReposts} error={thread.loadMoreError} />
                 )}
                 {/* 哨兵放在列表末尾：滚到底部自动续载，转圈占位不让已有内容跳动 */}
                 {thread.canLoadMore ? (

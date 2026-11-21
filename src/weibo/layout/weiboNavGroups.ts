@@ -16,12 +16,15 @@ const CUSTOM_GROUP_VIEW_PREFIX = 'group.'
 /** 热门频道的标识前缀：后面直接拼频道 gid，外部只经 toHotChannelView 拼装 */
 const HOT_CHANNEL_VIEW_PREFIX = 'hot.'
 
+/** 首页默认视图：初值与「删除 Cookie 后回退」共用同一标识，避免字面量散落 */
+export const HOME_RECOMMEND_VIEW = 'home.recommend' as const
+
 /**
  * 频道标识：`分组.子项` 为固定频道，`group.<gid>` / `hot.<gid>` 为运行时数据。
  * `mine.likes` 是账号菜单里的「我的赞」：不进顶部菜单，故不在 WEIBO_NAV_GROUPS 里。
  */
 export type WeiboView =
-    | 'home.recommend'
+    | typeof HOME_RECOMMEND_VIEW
     | 'home.timeline'
     | 'mine.likes'
     | 'search.mine'

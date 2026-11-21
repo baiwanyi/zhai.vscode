@@ -18,6 +18,7 @@ import type {
 } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /**
  * 加入对话的超时：宿主可能先补取长文全文（主贴 + 转发体各一次，受 1.2s 节流与退避约束），
@@ -155,7 +156,7 @@ export function useWeiboPostActions(
             .then((result) => {
                 if (result.added) {
                     // 成功不额外打断：面板里的上下文芯片就是回执，这里只给一次轻提示
-                    toast.success('已添加到 AI 对话')
+                    toast.success(WEIBO_UI_TEXT.toast.addedToChat)
                     return
                 }
                 toast.info(result.reason ?? '未能添加到 AI 对话')

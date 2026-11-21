@@ -15,10 +15,9 @@
  * 宿主侧命令结果经 useHostToast 订阅 toast 广播，在本层同样用 sonner 呈现。
  */
 import { useCallback, useState } from 'react'
-import { Toaster } from '@components/ui/sonner'
+import { AppToaster } from '@webview/components/AppToaster'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useHostToast } from '@webview/hooks/useHostToast'
-import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
 import { readAvailableSections, readContentScope, readScopeDir } from './contentScope'
 import { WorkflowNav } from './WorkflowNav'
 import { WorkflowResidentSection } from './WorkflowResidentSection'
@@ -34,7 +33,6 @@ const DEFAULT_SECTION: WorkflowSection = 'chat'
 
 export function WorkflowScreen(): JSX.Element {
     const { context, viewRequest, isReady } = useWorkflowRouting()
-    const theme = useVscodeTheme()
     const [activeSection, setActiveSection] = useState<WorkflowSection>(DEFAULT_SECTION)
     const [appliedViewSeq, setAppliedViewSeq] = useState<number | null>(null)
     const scope = readContentScope(context)
@@ -120,7 +118,7 @@ export function WorkflowScreen(): JSX.Element {
     return (
         <>
             {renderContent()}
-            <Toaster theme={theme} />
+            <AppToaster />
         </>
     )
 }

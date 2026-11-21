@@ -13,6 +13,7 @@ import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import type { KeyboardEvent } from 'react'
+import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /** 请求超时：展开列表与提交转发都是主动等待的场景，与评论同口径 */
 const REQUEST_TIMEOUT_MS = 20_000
@@ -80,7 +81,7 @@ export function useWeiboRepostActions({
             )
             setDraft('')
             onCommitted(1)
-            toast.success(shouldComment ? '已转发并评论' : '已转发')
+            toast.success(shouldComment ? WEIBO_UI_TEXT.toast.repostedWithComment : WEIBO_UI_TEXT.toast.reposted)
             await reload()
         } catch (cause) {
             toastError(cause)
@@ -100,7 +101,7 @@ export function useWeiboRepostActions({
         setIsDestroying(true)
         try {
             await request<WeiboDestroyStatusResult>(WEIBO_METHODS.destroyStatus, { id: target.id }, REQUEST_TIMEOUT_MS)
-            toast.success('转发已删除')
+            toast.success(WEIBO_UI_TEXT.toast.repostDeleted)
             setPendingDelete(null)
             onCommitted(-1)
             await reload()

@@ -19,6 +19,7 @@ import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import type { KeyboardEvent } from 'react'
+import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /** 评论写操作超时：发布、回复与删除都用同一口径，失败要尽快让用户重试 */
 const MUTATE_TIMEOUT_MS = 20_000
@@ -88,7 +89,7 @@ export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentAction
                 setShouldRepost(false)
                 toast.warning(`评论已发布，但转发失败：${result.failureMessage ?? '未知原因'}`)
             } else {
-                toast.success('已评论并转发')
+                toast.success(WEIBO_UI_TEXT.toast.commentedWithRepost)
             }
             await reload()
         },
@@ -105,7 +106,7 @@ export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentAction
             )
             setDraft('')
             setReplyTarget(null)
-            toast.success(target === null ? '评论已发布' : `已回复 @${target.authorName}`)
+            toast.success(target === null ? WEIBO_UI_TEXT.toast.commentPosted : `已回复 @${target.authorName}`)
             await reload()
         },
         [postId, reload],
@@ -148,7 +149,7 @@ export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentAction
                 { cid: target.id },
                 MUTATE_TIMEOUT_MS,
             )
-            toast.success('评论已删除')
+            toast.success(WEIBO_UI_TEXT.toast.commentDeleted)
             setPendingDelete(null)
             // 回复目标正好被删掉时一并清空，避免继续对不存在的评论提交回复
             if (replyTarget?.id === target.id) {
