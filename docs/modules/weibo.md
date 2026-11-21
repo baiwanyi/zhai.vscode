@@ -54,7 +54,7 @@
 | 媒体 | `mediaProxy.ts`、`videoServer.ts` |
 | 常量与内容组装 | `weiboEndpoints.ts`、`note.ts` |
 
-前端 `src/weibo/` 共 68 个文件：`hooks/` 26 个控制器、`layout/` 20 个装配与页面组件、`block/` 13 个卡片内展示块、`utils/` 8 个纯函数，`WeiboScreen.tsx` 只做装配与视图分发（取数走 `useWeiboPageFeeds`，凭证删除走 `useCredentialRemoval`，草稿走 `useWeiboComposerDraft`，内容视图交给 `WeiboHomeView` / `WeiboFeedViews` / `PageHotSearch`）。固定短文案集中在 `utils/weiboUiText.ts`（`WEIBO_UI_TEXT`），顶栏视图说明在 `utils/weiboViewDescription.ts`（`describeWeiboView`）。`block/` 只放接收 props 渲染的展示块（条目、发布框、媒体预览、续载栏等），自带取数的列表与卡片仍留在 `layout/`。
+前端 `src/weibo/` 共 67 个文件：`hooks/` 26 个控制器、`layout/` 20 个装配与页面组件、`block/` 12 个卡片内展示块、`utils/` 8 个纯函数，`WeiboScreen.tsx` 只做装配与视图分发（取数走 `useWeiboPageFeeds`，凭证删除走 `useCredentialRemoval`，草稿走 `useWeiboComposerDraft`，内容视图交给 `WeiboHomeView` / `WeiboFeedViews` / `PageHotSearch`）。固定短文案集中在 `utils/weiboUiText.ts`（`WEIBO_UI_TEXT`），顶栏视图说明在 `utils/weiboViewDescription.ts`（`describeWeiboView`）。`block/` 只放接收 props 渲染的展示块（条目、发布框、媒体预览等），自带取数的列表与卡片仍留在 `layout/`；列表续载与失败重试统一由公共 `LoadMoreSentinel` 承担。
 
 ### 1.5 凭证与配置
 
@@ -432,7 +432,7 @@ id={微博数字 id}&comment={正文}&pic_id=&is_repost=0&comment_ori=0&is_comme
 - 回包 `{ ok, data, msg }`，成功时 `msg` 为「评论成功」、`data.id` 是新评论 id（当前不消费，列表重拉即可）。
 - 成功判定：`ok > 0`；`ok <= 0` 取 `msg` 抛业务错误（含「频繁 / 过快」归为限流码），拿到 HTML 回包按登录态失效处理；写操作不重试。
 - 前端：发布成功后清空输入并重拉第一页（新评论在最前，顺带刷新总数），失败弹 toast；输入框 `maxLength` 与协议上限同源，`Ctrl / Cmd + Enter` 直接发送。
-- 前端分层：取数（首屏 / 续载 / 子评论展开、游标与代际丢弃）在 `hooks/useWeiboCommentThread.ts`，写操作（发布 / 回复 / 同时转发 / 删除，含单飞与部分成功处理）在 `hooks/useWeiboCommentActions.ts`；视图拆为 `block/CommentComposer.tsx`（发布框）、`block/CommentItem.tsx`（条目与子评论）、`block/LoadMoreBar.tsx`（续载栏）。
+- 前端分层：取数（首屏 / 续载 / 子评论展开、游标与代际丢弃）在 `hooks/useWeiboCommentThread.ts`，写操作（发布 / 回复 / 同时转发 / 删除，含单飞与部分成功处理）在 `hooks/useWeiboCommentActions.ts`；视图拆为 `block/CommentComposer.tsx`（发布框）、`block/CommentItem.tsx`（条目与子评论）；滚到底续载与失败原地重试由公共 `LoadMoreSentinel` 承担。
 - 发布框右下角的「同时转发」开关打开时走 `weibo/repost` 的 `commentWithRepost`（评论并转发）：宿主分两步执行——先发评论、再转发（`is_repost=1` 本身不生成评论），成功后同样重拉评论第一页；回复他人评论时不提供该开关（回复不能顺带转发原博）。
 回复评论：
 

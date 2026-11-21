@@ -1,7 +1,8 @@
 /**
  * 评论区：展开时先拉第一页评论，支持继续加载，并在列表上方提供发布 / 回复框。
  * 复用约定：取数（首屏 / 续载 / 子评论展开）走 useWeiboCommentThread，写操作（发布 / 回复 / 删除）
- * 走 useWeiboCommentActions；发布框、评论条目与续载栏分别是 CommentComposer / CommentItem / LoadMoreBar，
+ * 走 useWeiboCommentActions；发布框与评论条目分别是 CommentComposer / CommentItem，
+ * 续载与失败重试交给 LoadMoreSentinel（滚到底自动拉，失败原地重试）；
  * 头像与正文取 WeiboAvatar / WeiboRichText，空态取 StateEmpty、读取失败条取 ListErrorAlert，
  * 删除确认复用公共 ConfirmDialog。
  * 关键约束：父级条件渲染保证每次展开都是新实例，进入即拉第一页；
@@ -11,6 +12,7 @@
  */
 import { MessageSquare } from 'lucide-react'
 import { Spinner } from '@components/ui/spinner'
+import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { ListErrorAlert } from '@webview/components/ListErrorAlert'
 import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
@@ -19,7 +21,6 @@ import { readWeiboAuthorName } from '@webview/weibo/utils/weiboAuthor'
 import type { JSX } from 'react'
 import { CommentComposer } from '../block/CommentComposer'
 import { CommentItem } from '../block/CommentItem'
-import { LoadMoreBar } from '../block/LoadMoreBar'
 import { useWeiboCommentActions } from '../hooks/useWeiboCommentActions'
 import { useWeiboCommentThread } from '../hooks/useWeiboCommentThread'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
@@ -96,31 +97,35 @@ export function WeiboCommentList({ postId, totalCount, viewerUid = null }: Weibo
                     />
                 ) : null}
                 {thread.error === null ? null : (
-                    <ListErrorAlert title={WEIBO_UI_TEXT.error.comments} error={thread.error} />
+                    <ListErrorAlert
+                        title={WEIBO_UI_TEXT.error.comments}
+                        error={thread.error}
+                        action={
+                            <Button
+                                size="xs"
+                                variant="outline"
+                                onClick={() => {
+                                    void thread.reload()
+                                }}
+                            >
+                                {WEIBO_UI_TEXT.action.retry}
+                            </Button>
+                        }
+                    />
                 )}
-                {thread.loadMoreError === null ? null : (
-                    <ListErrorAlert title={WEIBO_UI_TEXT.error.moreComments} error={thread.loadMoreError} />
-                )}
-                {/* 哨兵放在列表末尾：滚到底部自动续载，转圈占位不让已有内容跳动 */}
+                {/* 哨兵：滚到底部自动续载；续载失败时原地变为「加载失败 + 重试」，游标不动 */}
                 {thread.canLoadMore ? (
-                    <LoadMoreSentinel sentinelRef={thread.sentinelRef} isLoading={thread.isLoadingMore} />
+                    <LoadMoreSentinel
+                        sentinelRef={thread.sentinelRef}
+                        isLoading={thread.isLoadingMore}
+                        hasError={thread.loadMoreError !== null}
+                        errorLabel={WEIBO_UI_TEXT.error.moreComments}
+                        onRetry={() => {
+                            void thread.loadMore()
+                        }}
+                    />
                 ) : null}
             </div>
-
-            <LoadMoreBar
-                canLoadMore={thread.canLoadMore}
-                isLoadingMore={thread.isLoadingMore}
-                hasLoadMoreError={thread.loadMoreError !== null}
-                error={thread.error}
-                isLoading={thread.isLoading}
-                loadMoreLabel="加载更多评论"
-                onLoadMore={() => {
-                    void thread.loadMore()
-                }}
-                onReload={() => {
-                    void thread.reload()
-                }}
-            />
 
             {/* 删除确认只有这一个实例：由 pendingDelete 控制，避免每条评论各挂一个弹层 */}
             <ConfirmDialog

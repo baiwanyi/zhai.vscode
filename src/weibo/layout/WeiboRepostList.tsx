@@ -1,7 +1,8 @@
 /**
  * 转发面板：读取谁转发了这条微博（页码分页），并在列表上方提供转发框。
  * 复用约定：取数（首屏 / 续载 / 总数）走 useWeiboReposts，写操作（转发 / 删除）走
- * useWeiboRepostActions；转发框与条目分别是 RepostComposer / RepostItem，续载栏取 LoadMoreBar，
+ * useWeiboRepostActions；转发框与条目分别是 RepostComposer / RepostItem，
+ * 续载与失败重试交给 LoadMoreSentinel（滚到底自动拉，失败原地重试）；
  * 空态取 StateEmpty、读取失败条取 ListErrorAlert，删除确认复用公共 ConfirmDialog。
  * 关键约束：父级条件渲染保证每次展开都是新实例，进入即拉第一页；
  * 页码串行、代际丢弃、写操作单飞都在两个 Hook 内，本组件只做装配与文案；
@@ -9,12 +10,12 @@
  */
 import { Repeat2 } from 'lucide-react'
 import { Spinner } from '@components/ui/spinner'
+import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { ListErrorAlert } from '@webview/components/ListErrorAlert'
 import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
-import { LoadMoreBar } from '../block/LoadMoreBar'
 import { RepostComposer } from '../block/RepostComposer'
 import { RepostItem } from '../block/RepostItem'
 import { useWeiboRepostActions } from '../hooks/useWeiboRepostActions'
@@ -71,31 +72,35 @@ export function WeiboRepostList({ postId, totalCount, viewerUid = null }: WeiboR
                     <StateEmpty className="border px-3 py-5" icon={Repeat2} title={WEIBO_UI_TEXT.empty.reposts} />
                 ) : null}
                 {thread.error === null ? null : (
-                    <ListErrorAlert title={WEIBO_UI_TEXT.error.reposts} error={thread.error} />
+                    <ListErrorAlert
+                        title={WEIBO_UI_TEXT.error.reposts}
+                        error={thread.error}
+                        action={
+                            <Button
+                                size="xs"
+                                variant="outline"
+                                onClick={() => {
+                                    void thread.reload()
+                                }}
+                            >
+                                {WEIBO_UI_TEXT.action.retry}
+                            </Button>
+                        }
+                    />
                 )}
-                {thread.loadMoreError === null ? null : (
-                    <ListErrorAlert title={WEIBO_UI_TEXT.error.moreReposts} error={thread.loadMoreError} />
-                )}
-                {/* 哨兵放在列表末尾：滚到底部自动续载，转圈占位不让已有内容跳动 */}
+                {/* 哨兵：滚到底部自动续载；续载失败时原地变为「加载失败 + 重试」，页码不动 */}
                 {thread.canLoadMore ? (
-                    <LoadMoreSentinel sentinelRef={thread.sentinelRef} isLoading={thread.isLoadingMore} />
+                    <LoadMoreSentinel
+                        sentinelRef={thread.sentinelRef}
+                        isLoading={thread.isLoadingMore}
+                        hasError={thread.loadMoreError !== null}
+                        errorLabel={WEIBO_UI_TEXT.error.moreReposts}
+                        onRetry={() => {
+                            void thread.loadMore()
+                        }}
+                    />
                 ) : null}
             </div>
-
-            <LoadMoreBar
-                canLoadMore={thread.canLoadMore}
-                isLoadingMore={thread.isLoadingMore}
-                hasLoadMoreError={thread.loadMoreError !== null}
-                error={thread.error}
-                isLoading={thread.isLoading}
-                loadMoreLabel="加载更多转发"
-                onLoadMore={() => {
-                    void thread.loadMore()
-                }}
-                onReload={() => {
-                    void thread.reload()
-                }}
-            />
 
             {/* 删除确认只有这一个实例：由 pendingDelete 控制，避免每条转发各挂一个弹层 */}
             <ConfirmDialog

@@ -11,7 +11,6 @@ export const WEIBO_UI_TEXT = {
         refresh: '刷新',
         loadMore: '加载更多',
         retry: '重试',
-        retryLoadMore: '重试继续加载',
         openSettings: '去设置',
         reloadGroups: '重新读取分组',
     },
