@@ -1,5 +1,5 @@
 /**
- * 微博地址总表：网页端内部 ajax 端点、开放平台基址、图床与站内页面基址集中在此。
+ * 微博地址总表：网页端内部 ajax 端点（含评论读取与发布）、开放平台基址、图床与站内页面基址集中在此。
  * 复用约定：上层只引用本文件的常量拼地址，不再在各自模块里写字面量路径；
  * 基址不带尾斜杠，路径统一以 / 开头，拼接一律走 new URL(path, origin)。
  * 关键约束：这些是网页端内部 ajax，改版即失效，端点或基址变动只改这一处；
@@ -70,6 +70,18 @@ export const WEIBO_AJAX_PATHS = {
     profile: '/ajax/profile/info',
     /** 微博评论列表 */
     comments: '/ajax/statuses/buildComments',
+    /** 转发列表：谁转发了这条微博，按页码分页 */
+    repostTimeline: '/ajax/statuses/repostTimeline',
+    /** 转发：formdata 提交微博 id 与转发附言（附言可空） */
+    normalRepost: '/ajax/statuses/normal_repost',
+    /** 删除微博（含转发）：formdata 只提交微博 id */
+    destroyStatus: '/ajax/statuses/destroy',
+    /** 发布评论：formdata 提交微博 id 与正文 */
+    createComment: '/ajax/comments/create',
+    /** 回复评论：与发布同参，额外带被回复评论 cid */
+    replyComment: '/ajax/comments/reply',
+    /** 删除评论：只提交评论 cid */
+    destroyComment: '/ajax/statuses/destroyComment',
     /** 长文全文 */
     longText: '/ajax/statuses/longtext',
     /** 点赞 */

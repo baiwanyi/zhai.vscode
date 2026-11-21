@@ -1,7 +1,14 @@
 /**
  * 时间线卡片：按标准 Card 分区——CardHeader 放作者头像、博主与时间来源（CardTitle / CardDescription），
- * CardContent 放正文（含表情）、图文混排媒体区、转发块与按需展开的评论区，CardFooter 只放互动数据；
- * 原文、两个卡片动作与「屏蔽该博主」收在 CardAction 的「更多」菜单里，卡片底部不再堆一排按钮。
+ * CardContent 放正文（含表情）、图文混排媒体区与转发块；按需展开的评论区收在 CardFooter 之后，
+ * 用普通 div 补左右与底部内边距——CardContent 是底栏之前主内容的槽位，放这里语义不对且只给左右内边距；
+ * 评论区自带发布 / 回复 / 删除入口：viewerUid 由列表层层透传，与评论作者 id 相同才显示删除；
+ * 转发列表只读（谁转发了这条），按页码分页，与评论区共用底栏之后的位置且互斥展开；
+ * CardFooter 只放互动数据：转发 / 评论 / 点赞三项等分且各自左对齐，常态是灰字无底的「图标 + 数字」，
+ * 悬停才上色并浮出圆形色块（转发墨绿、评论天蓝、点赞品红；展开与已赞状态常驻色块），
+ * 转发与评论都是按钮，分别展开转发列表与评论区，两者互斥；图片与视频数量不再在底栏重复展示；
+ * 原文与「屏蔽该博主」收在 CardAction 的「更多」菜单里；「保存到笔记」「添加到 AI 对话」
+ * 改为底栏右侧的图标按钮（tooltip 承担进行态与「已保存」回执，底栏左侧仍留互动三项）。
  * 复用约定：数据是归一化后的 WeiboTimelinePost，图片地址已在宿主按白名单收窄；
  * 头像与富文本分别交给 WeiboAvatar / WeiboRichText，正文与转发体里的 @账号、话题与短链
  * 都由富文本渲染成可点链接，长文全文则用 splitPlainTextLinks 从纯文本里补出同样的链接；
@@ -11,9 +18,12 @@
  * 关键约束：hooks 只能在组件内调用，故表情、配图、点赞各自抽成子组件，不能在 map 里直接调；
  * 图片按「进入视口附近」才发起下载；视频统一交给 layout/WeiboVideoPlayer（自绘控件栏、空格控制），
  * 地址经宿主回环中转补 Referer，不落缓存；拿不到整段地址时才回退打开原文（转发区回退被转发原文）；
- * 评论区按需展开，未展开不请求；
+ * 正文折叠：可见纯文本超过 200 字即收成固定高度、底部渐隐并压一个下箭头，点「展开全文」在本机铺开；
+ * 折叠只切本地展开态、不发请求，主贴与转发体各自独立，渐隐底色跟着所在区域（卡片底 / muted 底）走；
  * 长文默认展开：主贴正文与转发体各自进入视口即自动取全文替换摘要（转发体只有数字 id，接口同样支持），
- * 只在失败或尚未进入视口时保留手动入口；每处各自限一条在飞，避免连点或重复挂载把同一篇抽两次；
+ * 全文到货后按全文重新判定是否折叠，摘要够短就一直铺开；
+ * 只在失败或尚未进入视口时保留手动入口（按钮文案为「加载全文」，与折叠按钮区分）；
+ * 每处各自限一条在飞，避免连点或重复挂载把同一篇抽两次；
  * 已取到的转发全文还会随「保存到笔记」「添加到 AI 对话」一起交给宿主，省掉一次重复请求；
  * 「保存到笔记」「添加到 AI 对话」只把卡片展示字段交给宿主，落盘与会话归属都在宿主侧决定，
  * 前端不做任何路径拼接，两个动作互斥以防并发写盘或并发改上下文；
@@ -25,16 +35,17 @@ import {
     BadgeCheck,
     Ban,
     Check,
+    ChevronsDown,
+    ChevronsUp,
     ExternalLink,
     Heart,
-    ImageIcon,
     ImageOff,
     MessageCircle,
-    MessageSquareQuote,
+    MessageSquareShare,
     MoreHorizontal,
     Play,
     Repeat2,
-    Save,
+    NotebookDot,
     Video,
     X,
 } from 'lucide-react'
@@ -65,10 +76,11 @@ import { Button } from '@webview/components/Button'
 import { WeiboAvatar } from './WeiboAvatar'
 import { WeiboCommentList } from './WeiboCommentList'
 import { WeiboMediaPreview } from './WeiboMediaPreview'
+import { WeiboRepostList } from './WeiboRepostList'
 import { WeiboRichText } from './WeiboRichText'
 import { WeiboVideoPlayer } from './WeiboVideoPlayer'
 import type { WeiboMediaPreviewItem } from './WeiboMediaPreview'
-import type { JSX } from 'react'
+import type { JSX, Ref } from 'react'
 import { useHasEnteredViewport } from '../hooks/useHasEnteredViewport'
 import { useWeiboImage } from '../hooks/useWeiboImage'
 import { useWeiboPostActions } from '../hooks/useWeiboPostActions'
@@ -412,6 +424,97 @@ function PostMediaGrid({ media, onOpenPost }: PostMediaGridProps): JSX.Element |
     )
 }
 
+/** 折叠阈值：正文超过该字数即收成固定高度，避免一条长文把整条时间线撑长 */
+const BODY_COLLAPSE_THRESHOLD = 200
+
+/** 折叠后的高度上限：约 6 行（text-sm + leading-relaxed），超出部分裁掉，底部压渐隐与下箭头 */
+const COLLAPSED_BODY_CLASS = 'max-h-36 overflow-hidden'
+
+interface CollapsibleBodyProps {
+    /** 当前展示的纯文本：只用来数字数，长文全文到货后按全文重新判定 */
+    text: string
+    /** 正文分段：文字、表情与链接按上游顺序内联渲染 */
+    segments: WeiboTimelineSegment[]
+    /** 折叠容器的挂载点：主贴正文用它判断是否进入视口，引用块由外层 blockquote 判断故不传 */
+    contentRef?: Ref<HTMLParagraphElement>
+    /** 正文排版：主贴自带字号行高，引用块沿用外层块级排版 */
+    paragraphClassName?: string
+    /** 渐隐底色：跟随所在区域，主贴取卡片底，引用块取 muted 底 */
+    fadeClassName?: string
+    /** 没有正文时的兜底文案：转发体用「原微博不可见」，主贴沿用富文本默认文案 */
+    placeholder?: string
+}
+
+/**
+ * 长正文折叠：超过阈值先收成固定高度，底部渐隐并露一个下箭头提示可展开，点按钮看全、点「收起」再折回。
+ * 关键约束：是否折叠由当前文本长度直接算出而不落 state——长文摘要阶段够短就铺开，
+ * 全文到货后变长再自动收起来；折叠只裁可视高度，DOM 照常渲染，表情与链接不因此丢失。
+ */
+function CollapsibleBody({
+    text,
+    segments,
+    contentRef,
+    paragraphClassName,
+    fadeClassName,
+    placeholder,
+}: CollapsibleBodyProps): JSX.Element {
+    const [isExpanded, setIsExpanded] = useState(false)
+    const isCollapsible = text.length > BODY_COLLAPSE_THRESHOLD
+    const isCollapsed = isCollapsible && !isExpanded
+
+    const toggleExpanded = useCallback((): void => {
+        setIsExpanded((previous) => !previous)
+    }, [])
+
+    return (
+        <div className="flex flex-col gap-1">
+            <div className="relative">
+                <p
+                    ref={contentRef}
+                    className={cn(
+                        'whitespace-pre-wrap wrap-break-word',
+                        paragraphClassName,
+                        isCollapsed && COLLAPSED_BODY_CLASS,
+                    )}
+                >
+                    <WeiboRichText segments={segments} placeholder={placeholder} />
+                </p>
+                {/* 渐隐层只做视觉提示：不拦指针，避免盖住最后一行里的正文链接 */}
+                {isCollapsed ? (
+                    <div
+                        aria-hidden="true"
+                        className={cn(
+                            'pointer-events-none absolute inset-x-0 bottom-0 flex h-14 items-end justify-center bg-linear-to-t to-transparent',
+                            fadeClassName,
+                        )}
+                    ></div>
+                ) : null}
+            </div>
+            {isCollapsible ? (
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="self-start text-muted-foreground"
+                    aria-expanded={isExpanded}
+                    onClick={toggleExpanded}
+                >
+                    {isExpanded ? (
+                        <>
+                            收起
+                            <ChevronsUp className="size-3.5" aria-hidden="true" />
+                        </>
+                    ) : (
+                        <>
+                            展开全文
+                            <ChevronsDown className="size-3.5" aria-hidden="true" />
+                        </>
+                    )}
+                </Button>
+            ) : null}
+        </div>
+    )
+}
+
 interface LongTextStatusProps {
     /** 全文请求进行中：只给文字提示，不铺按钮 */
     isLoading: boolean
@@ -427,7 +530,7 @@ function LongTextStatus({ isLoading, hasFailed, onRetry }: LongTextStatusProps):
     }
     return (
         <Button variant="ghost" onClick={onRetry}>
-            {hasFailed ? '重新加载全文' : '展开全文'}
+            {hasFailed ? '重新加载全文' : '加载全文'}
         </Button>
     )
 }
@@ -437,13 +540,16 @@ interface LikeButtonProps {
     postId: string
     initialLiked: boolean
     initialCount: number
+    /** 排布微调：底栏三等分时由调用方补 flex-1 与居中 */
+    className?: string
 }
 
 /**
- * 点赞按钮：乐观更新点赞态与计数，失败回滚并提示。
+ * 点赞按钮：乐观更新点赞态与计数，失败回滚并提示；外观与底栏另两项一致——
+ * 常态灰字无底，悬停才浮出品红圆形色块，已赞时心形填充且底块常驻。
  * 关键约束：写操作不能被连点放大——请求进行中直接丢弃点击（ref 判定，避免闭包读到旧 state）。
  */
-function LikeButton({ postId, initialLiked, initialCount }: LikeButtonProps): JSX.Element {
+function LikeButton({ postId, initialLiked, initialCount, className }: LikeButtonProps): JSX.Element {
     const [isLiked, setIsLiked] = useState(initialLiked)
     const [count, setCount] = useState(initialCount)
     const [isPending, setIsPending] = useState(false)
@@ -485,11 +591,20 @@ function LikeButton({ postId, initialLiked, initialCount }: LikeButtonProps): JS
             aria-pressed={isLiked}
             aria-label={isLiked ? '取消赞' : '赞'}
             className={cn(
-                'flex items-center gap-1 transition-colors hover:text-foreground disabled:opacity-60',
-                isLiked && 'text-primary',
+                'group flex items-center gap-1.5 text-muted-foreground transition-colors hover:text-pink-500 disabled:opacity-60',
+                isLiked && 'text-pink-500',
+                className,
             )}
         >
-            <Heart className="size-3.5" fill={isLiked ? 'currentColor' : 'none'} aria-hidden="true" />
+            {/* 常态无底色，悬停才浮出浅粉圆底；已赞时圆底常驻并把心形填实 */}
+            <span
+                className={cn(
+                    'flex size-8 shrink-0 items-center justify-center rounded-full transition-colors group-hover:bg-pink-500/15',
+                    isLiked && 'bg-pink-500/15',
+                )}
+            >
+                <Heart className="size-4" fill={isLiked ? 'currentColor' : 'none'} aria-hidden="true" />
+            </span>
             {count}
         </button>
     )
@@ -499,9 +614,11 @@ interface WeiboPostCardProps {
     post: WeiboTimelinePost
     /** 屏蔽该博主：名字交给面板写入屏蔽名单，当前列表随之过滤掉该条 */
     onBlockAuthor?: (authorName: string) => void
+    /** 当前登录账号 uid：评论区据此只给自己的评论显示删除入口 */
+    viewerUid?: string | null
 }
 
-export function WeiboPostCard({ post, onBlockAuthor }: WeiboPostCardProps): JSX.Element {
+export function WeiboPostCard({ post, onBlockAuthor, viewerUid = null }: WeiboPostCardProps): JSX.Element {
     const handleOpen = useCallback((): void => {
         void request('weibo/openPost', { url: post.url }).catch(toastError)
     }, [post.url])
@@ -515,10 +632,12 @@ export function WeiboPostCard({ post, onBlockAuthor }: WeiboPostCardProps): JSX.
     }, [post.retweeted])
 
     const [isCommentsOpen, setIsCommentsOpen] = useState(false)
+    /** 转发列表：与评论区共用底栏之后的面板位置，两者互斥展开 */
+    const [isRepostsOpen, setIsRepostsOpen] = useState(false)
     /** 长文全文：取到后替换摘要，卡片保持展开态直到列表重建 */
     const [fullText, setFullText] = useState<string | null>(null)
     const [isExpanding, setIsExpanding] = useState(false)
-    /** 全文取失败：保留摘要并放出可点的「展开全文」，不再自动重试避免刷接口 */
+    /** 全文取失败：保留摘要并放出可点的「重新加载全文」，不再自动重试避免刷接口 */
     const [hasExpandFailed, setHasExpandFailed] = useState(false)
     /** 长文请求占位：ref 判定，避开闭包读到旧 state 与严格模式下的双次 effect */
     const isExpandingRef = useRef(false)
@@ -531,8 +650,15 @@ export function WeiboPostCard({ post, onBlockAuthor }: WeiboPostCardProps): JSX.
     const isRetweetedExpandingRef = useRef(false)
     const { ref: retweetedBodyRef, hasEntered: isRetweetedVisible } = useHasEnteredViewport<HTMLQuoteElement>()
 
+    /** 评论与转发共用 footer 之后的位置：打开一个就收起另一个，避免两张长面板同时展开 */
     const toggleComments = useCallback((): void => {
         setIsCommentsOpen((previous) => !previous)
+        setIsRepostsOpen(false)
+    }, [])
+
+    const toggleReposts = useCallback((): void => {
+        setIsRepostsOpen((previous) => !previous)
+        setIsCommentsOpen(false)
     }, [])
 
     /**
@@ -566,7 +692,7 @@ export function WeiboPostCard({ post, onBlockAuthor }: WeiboPostCardProps): JSX.
         [post.id, post.mblogid],
     )
 
-    /** 默认显示全文：长文正文一进视口就自动取，不再等用户点「展开全文」 */
+    /** 默认显示全文：长文正文一进视口就自动取，不再等用户点「加载全文」 */
     useEffect(() => {
         if (!post.isLongText || fullText !== null || hasExpandFailed || !isBodyVisible) {
             return
@@ -619,8 +745,18 @@ export function WeiboPostCard({ post, onBlockAuthor }: WeiboPostCardProps): JSX.
     /** 卡片动作：保存到笔记与添加到 AI 对话，主贴与转发已展开的全文都一并带出 */
     const postActions = useWeiboPostActions(post, fullText, retweetedFullText)
 
-    /** 正文分段：展开全文后整段替换为接口返回的纯文本，@账号与话题由本地切分出可点链接 */
+    /** 底栏两个动作只有图标：进行态与「已保存」回执靠 tooltip 与图标变化表达 */
+    const saveNoteHint = postActions.isSavedNote
+        ? '已保存到笔记'
+        : postActions.isSavingNote
+          ? '正在保存…'
+          : '保存到笔记'
+    const addToChatHint = postActions.isAddingToChat ? '正在添加到对话…' : '添加到 AI 对话'
+
+    /** 正文分段：取到全文后整段替换为接口返回的纯文本，@账号与话题由本地切分出可点链接 */
     const bodySegments: WeiboTimelineSegment[] = fullText === null ? post.segments : splitPlainTextLinks(fullText)
+    /** 正文纯文本：只用于判定折叠——全文到货后按全文重判，摘要够短就一直铺开 */
+    const bodyText = fullText ?? post.text
 
     /** 转发体：取到全文用全文，否则用归一化后的摘要；两者都带正文链接 */
     const retweeted = post.retweeted
@@ -663,7 +799,7 @@ export function WeiboPostCard({ post, onBlockAuthor }: WeiboPostCardProps): JSX.
                         </CardDescription>
                     </div>
                 </div>
-                {/* 原文与两个卡片动作收进「更多」菜单：底部只留互动数据，卡片头部不再堆按钮 */}
+                {/* 只把原文与「屏蔽该博主」收进「更多」菜单：两个卡片动作已移到底栏，卡片头部不再堆按钮 */}
                 <CardAction>
                     <DropdownMenu>
                         <DropdownMenuTrigger asChild>
@@ -676,22 +812,6 @@ export function WeiboPostCard({ post, onBlockAuthor }: WeiboPostCardProps): JSX.
                                 <DropdownMenuItem onSelect={handleOpen}>
                                     <ExternalLink />
                                     在浏览器打开原文
-                                </DropdownMenuItem>
-                                {/* 两个动作互斥：任一请求进行中两者都禁用，避免并发写盘与并发改上下文 */}
-                                <DropdownMenuItem
-                                    disabled={postActions.isAddingToChat}
-                                    onSelect={postActions.saveToNote}
-                                >
-                                    {postActions.isSavedNote ? <Check /> : <Save />}
-                                    {postActions.isSavedNote
-                                        ? '已保存到笔记'
-                                        : postActions.isSavingNote
-                                          ? '正在保存…'
-                                          : '保存到笔记'}
-                                </DropdownMenuItem>
-                                <DropdownMenuItem disabled={postActions.isSavingNote} onSelect={postActions.addToChat}>
-                                    <MessageSquareQuote />
-                                    {postActions.isAddingToChat ? '正在添加到对话…' : '添加到 AI 对话'}
                                 </DropdownMenuItem>
                                 {/* 屏蔽是破坏性动作：单独分隔，作者名缺失时没有可加入名单的值，直接禁用 */}
                                 {onBlockAuthor === undefined ? null : (
@@ -715,9 +835,13 @@ export function WeiboPostCard({ post, onBlockAuthor }: WeiboPostCardProps): JSX.
                 </CardAction>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-                <p ref={bodyRef} className="whitespace-pre-wrap wrap-break-word text-sm leading-relaxed">
-                    <WeiboRichText segments={bodySegments} />
-                </p>
+                <CollapsibleBody
+                    text={bodyText}
+                    segments={bodySegments}
+                    contentRef={bodyRef}
+                    paragraphClassName="text-sm leading-relaxed"
+                    fadeClassName="from-card"
+                />
                 {post.isLongText && fullText === null ? (
                     <LongTextStatus
                         isLoading={isExpanding}
@@ -760,13 +884,12 @@ export function WeiboPostCard({ post, onBlockAuthor }: WeiboPostCardProps): JSX.
                             </span>
                         </div>
 
-                        <p className="whitespace-pre-wrap wrap-break-word">
-                            {retweetedText.length > 0 ? (
-                                <WeiboRichText segments={retweetedSegments} />
-                            ) : (
-                                '（原微博不可见）'
-                            )}
-                        </p>
+                        <CollapsibleBody
+                            text={retweetedText}
+                            segments={retweetedSegments}
+                            placeholder="（原微博不可见）"
+                            fadeClassName="from-muted"
+                        />
                         {retweeted.isLongText && retweetedFullText === null ? (
                             <LongTextStatus
                                 isLoading={isRetweetedExpanding}
@@ -781,56 +904,101 @@ export function WeiboPostCard({ post, onBlockAuthor }: WeiboPostCardProps): JSX.
                         <PostMediaGrid media={retweeted.media} onOpenPost={handleOpenRetweeted} />
                     </blockquote>
                 ) : null}
-
-                {isCommentsOpen ? <WeiboCommentList postId={post.id} totalCount={post.metrics.comments} /> : null}
             </CardContent>
 
-            <CardFooter className="border-0 bg-transparent text-muted-foreground">
+            <CardFooter className="rounded-none border-0 bg-transparent py-2 text-muted-foreground">
+                {/* 转发 / 评论 / 点赞各占三分之一、内容左对齐：常态灰字无底，悬停或激活才上色并浮出圆形色块 */}
                 <div className="flex flex-1 items-center">
-                    <Metric icon={<Repeat2 className="size-3.5" />} label="转发" value={post.metrics.reposts} />
+                    <button
+                        type="button"
+                        onClick={toggleReposts}
+                        aria-expanded={isRepostsOpen}
+                        aria-label={`转发 ${String(post.metrics.reposts)}`}
+                        className={cn(
+                            'group flex flex-1 items-center justify-start gap-1.5 text-muted-foreground transition-colors hover:text-emerald-500',
+                            isRepostsOpen && 'text-emerald-500',
+                        )}
+                    >
+                        <span
+                            className={cn(
+                                'flex size-8 shrink-0 items-center justify-center rounded-full transition-colors group-hover:bg-emerald-500/15',
+                                isRepostsOpen && 'bg-emerald-500/15',
+                            )}
+                        >
+                            <Repeat2 className="size-4" aria-hidden="true" />
+                        </span>
+                        {post.metrics.reposts}
+                    </button>
                     <button
                         type="button"
                         onClick={toggleComments}
                         aria-expanded={isCommentsOpen}
+                        aria-label={`评论 ${String(post.metrics.comments)}`}
                         className={cn(
-                            'flex items-center gap-1 transition-colors hover:text-foreground',
-                            isCommentsOpen && 'text-primary',
+                            'group flex flex-1 items-center justify-start gap-1.5 text-muted-foreground transition-colors hover:text-sky-500',
+                            isCommentsOpen && 'text-sky-500',
                         )}
                     >
-                        <MessageCircle className="size-3.5" aria-hidden="true" />
+                        <span
+                            className={cn(
+                                'flex size-8 shrink-0 items-center justify-center rounded-full transition-colors group-hover:bg-sky-500/15',
+                                isCommentsOpen && 'bg-sky-500/15',
+                            )}
+                        >
+                            <MessageCircle className="size-4" aria-hidden="true" />
+                        </span>
                         {post.metrics.comments}
                     </button>
-                    <LikeButton postId={post.id} initialLiked={post.isLiked} initialCount={post.metrics.likes} />
+                    <LikeButton
+                        postId={post.id}
+                        initialLiked={post.isLiked}
+                        initialCount={post.metrics.likes}
+                        className="flex-1 justify-start"
+                    />
                 </div>
 
-                {post.media.imageCount > 0 ? (
-                    <Metric icon={<ImageIcon className="size-3.5" />} label="图片" value={post.media.imageCount} />
-                ) : null}
-                {post.media.videoCount > 0 ? (
-                    <Metric icon={<Video className="size-3.5" />} label="视频" value={post.media.videoCount} />
-                ) : post.media.videoUrl === null ? null : (
-                    <span className="flex items-center gap-1">
-                        <Video className="size-3.5" aria-hidden="true" />
-                        含视频
-                    </span>
-                )}
+                {/* 两个卡片动作落在底栏右侧：只有图标，进行态与「已保存」回执靠 tooltip 与图标变化表达；
+                    互斥禁用——任一请求进行中两者都不可点，避免并发写盘与并发改上下文 */}
+                <div className="flex shrink-0 items-center gap-1 pl-1">
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        tooltip={saveNoteHint}
+                        aria-label={saveNoteHint}
+                        disabled={postActions.isAddingToChat}
+                        onClick={postActions.saveToNote}
+                    >
+                        {postActions.isSavedNote ? <Check /> : <NotebookDot />}
+                    </Button>
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        tooltip={addToChatHint}
+                        aria-label={addToChatHint}
+                        disabled={postActions.isSavingNote}
+                        onClick={postActions.addToChat}
+                    >
+                        <MessageSquareShare />
+                    </Button>
+                </div>
             </CardFooter>
+
+            {/* 评论区收在底栏之后：这里刻意用普通 div 而不是 CardContent——
+                CardContent 是底栏之前主内容的槽位，语义不对且只给左右内边距；
+                卡片因存在 card-footer 会去掉自身下内边距，故由本层补 pb-(--card-spacing)，
+                底部圆角交给 Card 的 overflow-hidden，CardFooter 同时去掉 rounded-b-xl，避免中间露出圆角缺口 */}
+            {isCommentsOpen ? (
+                <div className="px-(--card-spacing) pb-(--card-spacing)">
+                    <WeiboCommentList postId={post.id} totalCount={post.metrics.comments} viewerUid={viewerUid} />
+                </div>
+            ) : null}
+
+            {/* 转发列表与评论区互斥：同一位置只展开一个，收起时整块卸载、下次展开重新取第一页 */}
+            {isRepostsOpen ? (
+                <div className="px-(--card-spacing) pb-(--card-spacing)">
+                    <WeiboRepostList postId={post.id} totalCount={post.metrics.reposts} viewerUid={viewerUid} />
+                </div>
+            ) : null}
         </Card>
-    )
-}
-
-interface MetricProps {
-    icon: JSX.Element
-    label: string
-    value: number
-}
-
-/** 互动数：图标只作装饰，可读名由 aria-label 给出，避免读屏念出图标名 */
-function Metric({ icon, label, value }: MetricProps): JSX.Element {
-    return (
-        <span className="flex items-center gap-1" aria-label={`${label} ${String(value)}`}>
-            <span aria-hidden>{icon}</span>
-            {value}
-        </span>
     )
 }

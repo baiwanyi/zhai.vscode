@@ -37,6 +37,8 @@ interface WeiboFeedListProps {
     errorMessage?: string | null
     /** 屏蔽该博主：交给面板写入屏蔽名单，卡片「更多」菜单据此渲染入口 */
     onBlockAuthor?: (authorName: string) => void
+    /** 当前登录账号 uid：透传给卡片，评论区据此只给自己的评论显示删除 */
+    viewerUid?: string | null
     onLoadMore: () => void
 }
 
@@ -51,6 +53,7 @@ export function WeiboFeedList({
     onRefresh,
     errorMessage = null,
     onBlockAuthor,
+    viewerUid = null,
     onLoadMore,
 }: WeiboFeedListProps): JSX.Element {
     const sentinelRef = useRef<HTMLDivElement | null>(null)
@@ -128,7 +131,7 @@ export function WeiboFeedList({
     return (
         <>
             {posts.map((post) => (
-                <WeiboPostCard key={post.id} post={post} onBlockAuthor={onBlockAuthor} />
+                <WeiboPostCard key={post.id} post={post} onBlockAuthor={onBlockAuthor} viewerUid={viewerUid} />
             ))}
             <div ref={sentinelRef} className="flex justify-center py-2">
                 {!hasMore ? (

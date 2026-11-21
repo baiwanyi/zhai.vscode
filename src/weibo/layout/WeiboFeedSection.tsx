@@ -24,6 +24,8 @@ interface WeiboFeedSectionProps {
     emptyState?: ReactNode
     /** 屏蔽该博主：原样透传给列表里的卡片「更多」菜单 */
     onBlockAuthor?: (authorName: string) => void
+    /** 当前登录账号 uid：原样透传，评论区据此只给自己的评论显示删除 */
+    viewerUid?: string | null
     onRefresh: () => void
     onOpenSettings: () => void
 }
@@ -38,6 +40,7 @@ export function WeiboFeedSection({
     emptyDescription,
     emptyState,
     onBlockAuthor,
+    viewerUid = null,
     onRefresh,
     onOpenSettings,
 }: WeiboFeedSectionProps): JSX.Element {
@@ -62,6 +65,7 @@ export function WeiboFeedSection({
             emptyState={emptyState}
             errorMessage={feed.state.errorMessage}
             onBlockAuthor={onBlockAuthor}
+            viewerUid={viewerUid}
             onRefresh={onRefresh}
             onLoadMore={() => {
                 void feed.loadMore()

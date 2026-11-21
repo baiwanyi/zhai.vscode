@@ -1256,7 +1256,7 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 - 前端交互：乐观更新点赞态与计数，失败回滚并提示；同一微博请求进行中直接丢弃后续点击（`ref` 判定），避免连点放大成多次写。
 - 限制：写操作**不重试**（401/403/418 直接回错误），避免把账号打进风控；点赞结果不回写时间线数据源，刷新后以服务端为准。
 
-### 14.7 评论读取
+### 14.7 评论读取与发布
 
 ```
 GET https://weibo.com/ajax/statuses/buildComments
@@ -1276,7 +1276,56 @@ GET https://weibo.com/ajax/statuses/buildComments
 
 - 响应结构：`{ ok, data: [...], total_number, max_id }`；`data` 每项含 `id/idstr`、`text`（HTML + 表情标签）、`created_at`、`user`、`like_counts`。
 - 归一化：正文复用主贴的 `parsePostSegments`（文本 + 表情 + 链接分段），纯文本口径把表情还原成 `[名称]`、链接只留文字；时间走同一套 `parseWeiboCreatedAt`；头像过图床白名单。
-- 前端：评论按钮点击才展开（未展开不请求），默认 10 条/页，「加载更多评论」按 `max_id` 串行翻页；失败内联提示并给重试，不弹 toast。
+- 子评论：一级评论项上的 `comments` / `reply_comments`（两种字段名都兼容）按同一套正文口径归一化，最多保留 3 条预览；子评论总数取 `total_number`（回退 `comments_count`），被回复者昵称取 `reply_comment.user.screen_name`，前端渲染成缩进块 + 「回复 @某人」。
+
+展开更多回复：
+
+```
+GET https://weibo.com/ajax/statuses/buildComments
+    ?is_reload=1&id={一级评论 id}&is_show_bulletin=2&is_mix=1&fetch_level=1
+    &max_id=0&count=20&uid={当前登录 uid}&locale=zh-CN
+```
+
+- 与一级评论同一端点：`is_mix=1` + `fetch_level=1` 切到回复列表，`id` 换成一级评论的数字 id。
+- 两页都带 `is_reload=1`：首页 `max_id=0`；翻页额外带 `flow=1`，`max_id` 换成上一页游标（实测第二页为 `flow=1&is_reload=1&id={评论 id}&...&max_id=5367761946544614&count=20`）。
+- 协议 `weibo/comment/replies`，入参 `{ id, maxId?, count? }`，结果只回 `replies` 与 `maxId`（总数仍以一级评论上的 `replyCount` 为准）；前端按 `maxId` 续翻，与预览按 id 去重拼接。
+- 前端：评论按钮点击才展开（未展开不请求），默认 10 条/页，「加载更多评论」按 `max_id` 串行翻页；失败内联提示并给重试，不弹 toast。评论列表限高滚动（`max-h-80`），发布框与「加载更多」固定在滚动区之外。
+
+发布评论：
+
+```
+POST https://weibo.com/ajax/comments/create
+Content-Type: application/x-www-form-urlencoded;charset=UTF-8
+Cookie / Referer / Origin / X-XSRF-TOKEN（取自 Cookie 的 XSRF-TOKEN）
+id={微博数字 id}&comment={正文}&pic_id=&is_repost=0&comment_ori=0&is_comment=0&fp={33 位设备指纹}
+```
+
+- 参数取自网页评论框实测：不带 `forward` / `reply`，纯文本评论的 `pic_id` 传空串，`fp` 用 `buildWeiboFingerprint` 生成（33 位、首位 0，与网页同形）。
+- 协议：`weibo/comment/create`，入参 `{ id, text }`；宿主侧按 1–140 字收窄（`WEIBO_COMMENT_MAX_LENGTH`），提交前再 `trim` 一次。
+- 回包 `{ ok, data, msg }`，成功时 `msg` 为「评论成功」、`data.id` 是新评论 id（当前不消费，列表重拉即可）。
+- 成功判定：`ok > 0`；`ok <= 0` 取 `msg` 抛业务错误（含「频繁 / 过快」归为限流码），拿到 HTML 回包按登录态失效处理；写操作不重试。
+- 前端：发布成功后清空输入并重拉第一页（新评论在最前，顺带刷新总数），失败弹 toast；输入框 `maxLength` 与协议上限同源，`Ctrl / Cmd + Enter` 直接发送。
+- 发布框右下角的「同时转发」开关打开时走 `weibo/repost` 的 `commentWithRepost`（评论并转发）：宿主分两步执行——先发评论、再转发（`is_repost=1` 本身不生成评论），成功后同样重拉评论第一页；回复他人评论时不提供该开关（回复不能顺带转发原博）。
+回复评论：
+
+```
+POST https://weibo.com/ajax/comments/reply
+Content-Type / Cookie / Referer / Origin / X-XSRF-TOKEN 同发布
+id={微博数字 id}&cid={被回复评论 id}&comment={正文}&pic_id=&is_repost=0&comment_ori=0&is_comment=0&fp={设备指纹}
+```
+
+- 协议复用 `weibo/comment/create`，入参多一个可选的 `replyToId`（即 `cid`），给出即走回复端点；回包 `msg` 为「回复成功」、`data.reply_comment` 带被回复评论。
+
+删除评论：
+
+```
+POST https://weibo.com/ajax/statuses/destroyComment
+Content-Type / Cookie / Referer / Origin / X-XSRF-TOKEN 同发布
+cid={评论 id}
+```
+
+- 协议 `weibo/comment/destroy`，入参 `{ cid }`；回包同为 `{ ok, data, msg }`，成功时 `msg` 为「删除成功」。
+- 前端：每条评论都有「回复」，只有当前登录账号自己的评论才显示「删除」（`viewerUid` 与 `comment.author.id` 比对，uid 由 `weibo/profile` 或分组结果给出、经列表逐层透传）；删除走单个确认弹窗，成功后重拉第一页；回复复用底部发布框，只在框上方回显「回复 @某人」并可取消，提交时带 `replyToId`。
 
 ### 14.8 长文展开
 
@@ -1287,7 +1336,8 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 - `id` 用 mblogid（如 `Rs4KtdzoV`），数字 id 也能取到；只接受字母数字，避免拼进查询串的任意内容。
 - 响应 `{ ok, data: { longTextContent, longTextContent_raw, topic_struct, url_struct } }`；正文优先 `longTextContent`，为空回退 `longTextContent_raw`，两者皆空按失败处理，**不拿空串覆盖卡片摘要**。
 - 时间线里长文摘要末尾带展开提示，形式可能是 `<a>展开</a>`、`<a>...展开</a>`、`<a>展开全文</a>`，也可能是纯文本 `……展开`。归一化阶段统一剥掉：先删带 `<a>` 外壳的链接，再删末尾残留的 `……`/`...` 截断省略号。
-- 卡片默认显示全文：长文卡片正文首次进入视口（提前 240px）即自动请求本接口，拿到全文后整段替换摘要，不需要用户点「展开全文」；同一张卡片同一时刻只允许一条在飞，取全文失败保留摘要并放出「重新加载全文」按钮，不再自动重试。分页加入的卡片各自按视口触发，避免一次性把整页长文全部请求出去。
+- 卡片默认显示全文：长文卡片正文首次进入视口（提前 240px）即自动请求本接口，拿到全文后整段替换摘要，不需要用户点「加载全文」；同一张卡片同一时刻只允许一条在飞，取全文失败保留摘要并放出「重新加载全文」按钮，不再自动重试。分页加入的卡片各自按视口触发，避免一次性把整页长文全部请求出去。
+- 正文折叠：卡片可见纯文本超过 200 字先收成约 6 行（`max-h-36`），底部渐隐并压一个下箭头，按钮「展开全文 / 收起」只切换本地展开态、不发请求；长文全文到货后按全文重新判定，摘要够短就保持铺开。主贴与转发体各自独立，渐隐底色分别取卡片底与 `muted` 底。
 - 转发体同样自动展开：引用块进入视口即用它自己的数字 id 请求本接口（转发体没有 mblogid），成功替换引用块正文，失败保留摘要并留重试入口；主贴与转发体各自独立计数与限流，互不阻塞。卡片上已取到的转发全文会随「保存到笔记」「添加到 AI 对话」的载荷带出，宿主不再重复请求。
 - 该清理**只对 `isLongText` 为真**的微博执行，普通正文里出现的「展开」与省略号保持原样。
 - `isLongText` 判定：上游 `isLongText === true` 或存在 `longText` 对象。
@@ -1324,11 +1374,12 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/modules/weibo/warmup.ts` | 激活预热：分组 / 账号信息 / 热搜 / 表情串行取一次并写缓存，失败静默 |
 | `src/modules/weibo/mediaProxy.ts` | 图片代理：带 Referer 取图、本地缓存、并发去重与容量清理 |
 | `src/modules/weibo/webInteraction.ts` | 写操作：`setLike` / `cancelLike`，补 Origin 与 X-XSRF-TOKEN |
-| `src/modules/weibo/webComments.ts` | 评论读取：`buildComments` 参数构造、分页游标与评论归一化 |
+| `src/modules/weibo/webComments.ts` | 评论读取与写操作：`buildComments` 参数构造、分页游标、评论归一化，`comments/create` / `comments/reply` / `destroyComment` 表单提交与错误分类 |
 | `src/modules/weibo/webLongText.ts` | 长文读取：`longtext` 取全文、正文优先级与失败兜底 |
 | `src/modules/weibo/webLikes.ts` | 我的赞：`statuses/likelist` 页码取数、总数与是否还有下一页判断 |
+| `src/modules/weibo/webReposts.ts` | 转发列表：`repostTimeline` 页码取数、转发项归一化与分页判断 |
 | `src/modules/weibo/videoServer.ts` | 视频中转：回环 HTTP 服务补 Referer，能用 ffmpeg 就把 AAC 音轨转成 MP3（Webview 无 AAC 解码器）边转边发，否则原样流式转发 |
-| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/likes`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/topics`、`weibo/publish`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/blockList/*`、`weibo/image`、`weibo/video`、`weibo/like`、`weibo/openPost` 分发 |
+| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/likes`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/topics`、`weibo/publish`、`weibo/comments`、`weibo/comment/create`、`weibo/comment/destroy`、`weibo/comment/replies`、`weibo/reposts`、`weibo/repost`、`weibo/destroy`、`weibo/longtext`、`weibo/credential/*`、`weibo/blockList/*`、`weibo/image`、`weibo/video`、`weibo/like`、`weibo/openPost` 分发 |
 | `src/modules/weibo/panel.ts` | 面板消息通道、凭证与缓存注入、图片代理装配与本地资源白名单 |
 | `src/modules/common/webviewHtml.ts` | CSP 生成：默认不放行远程图，需要时可按调用方传入的 `imgSources` 放行 |
 | `src/shared/utils/weiboText.ts` | 正文纯文本切分：`@账号` / `#话题#` / 微博域名链接，宿主与 Webview 共用（零前端依赖） |
@@ -1617,3 +1668,45 @@ POST https://weibo.com/ajax/statuses/update
 - 成功判定：`ok > 0` 且 `data` 带 `idstr`（或 `id`）与 `mblogid`；原文地址按 `data.user.idstr` + `mblogid` 拼，缺 uid 时回落 `/detail/{id}`。
 - 前端发布中按钮禁用并显示加载态（`ref` 单飞，连点不会重复提交）；成功后清空草稿与已选图片，并把宿主归一化的新微博前插到时间线首位（不整页刷新、不动 `sinceId`/`maxId`），失败保留内容供直接重试。
 - **已知风险**：`fp` 无法还原官网生成算法，当前按同形随机生成；若上游开始校验指纹与 Cookie 的绑定会返回 `ok: 0`，届时需要从浏览器会话取真实值。`X-XSRF-TOKEN` 缺失时发布同样可能被拒。
+
+### 14.19 转发列表（谁转发了这条）
+
+```
+GET https://weibo.com/ajax/statuses/repostTimeline?id={微博数字 id}&page=1&moduleID=feed&count=10
+```
+
+- 回包 `{ ok, data: [...], msg }`；`data` 每项是一条转发，结构同时间线微博项（自带 `retweeted_status`），本层只取转发附言（`text` / `text_raw`）、`created_at` 与 `user`，不展开被转发的原文。
+- 分页只有 `page`（从 1 开始），没有游标；本页条数拉满即认为可能还有下一页，由前端翻到空页为止。
+- 协议 `weibo/reposts`，入参 `{ id, page?, count? }`，结果 `{ reposts, page, hasMore }`；正文口径与评论一致（`parsePostSegments` + 纯文本还原表情）。
+- 前端：底栏「转发」是按钮，点击在底栏之后展开转发列表（与评论区互斥、共用同一位置），限高 `max-h-80` 滚动；纯转发没有附言，不渲染空段落。
+
+发布转发：只转发与转发并评论共用 `normal_repost` 一个请求；评论并转发是**两步**（先评论、再转发），单靠 `is_repost=1` 不会生成评论。
+
+```
+POST https://weibo.com/ajax/statuses/normal_repost
+Content-Type / Cookie / Referer / Origin / X-XSRF-TOKEN 同发布
+id={微博数字 id}&comment={附言，可为空}&pic_id=&comment_ori=0&fp={设备指纹}&{方式开关}
+```
+
+| 方式 | 请求 | 说明 |
+|------|------|------|
+| 只转发 | `normal_repost`：`is_repost=0&is_comment=0&visible=0&share_id=` | 默认 |
+| 转发并评论 | `normal_repost`：`is_repost=0&is_comment=1&visible=0&share_id=` | 转发同时在原博下生成一条评论 |
+| 评论并转发 | 先 `comments/create` 发评论，再 `normal_repost`：`is_repost=1&is_comment=0`（不带 `visible` 与 `share_id`） | 两步；第二步失败返回部分结果（`reposted: false`、`commented: true`、`failureMessage`） |
+
+- 协议 `weibo/repost`，入参 `{ id, comment, mode? }`；`mode` 取 `repost` / `repostWithComment` / `commentWithRepost`，缺省 `repost`；附言可为空（纯转发），上限 140 字（`WEIBO_REPOST_MAX_LENGTH`），提交前 `trim`。
+- 回包 `{ ok, data: { statuses }, msg }`，成功时 `msg` 为「转发成功」；`statuses` 当前不消费，由前端重拉第一页。
+- 部分成功：评论已发出但转发失败时 `weibo/repost` 不抛错，而是回 `{ reposted: false, commented: true, failureMessage }`；前端据此清空草稿、关掉「同时转发」开关并照常刷新评论，提示「评论已发布，但转发失败」，避免用户重试时把评论发重。
+- 前端：转发框右下角是「同时评论」开关（`@webview/components/Switch`）——打开走 `repostWithComment`（`is_comment=1`），关闭走 `repost`；留空即纯转发，按钮不按内容禁用；成功后清空附言并重拉第一页，失败弹 toast；`Ctrl / Cmd + Enter` 直接发送。
+
+删除转发 / 微博：
+
+```
+POST https://weibo.com/ajax/statuses/destroy
+Content-Type / Cookie / Referer / Origin / X-XSRF-TOKEN 同发布
+id={微博数字 id}
+```
+
+- 协议 `weibo/destroy`，入参 `{ id }`；转发与自己发的微博都按 status id 删。
+- 回包不是 `{ ok, data }` 包装，而是被删除的微博对象本身、末尾才带 `ok`：只有 `ok` 明确 `<= 0` 才算失败，`ok` 缺失但回包带 `id` 时视为成功。
+- 前端：转发列表里只有自己的转发（`viewerUid === repost.author.id`）显示「删除」，点击走单个 AlertDialog 确认，成功后重拉第一页；归属最终仍由上游判定。

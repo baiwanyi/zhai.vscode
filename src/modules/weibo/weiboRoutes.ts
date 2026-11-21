@@ -1,5 +1,5 @@
 /**
- * 微博协议路由：把信息流、我的赞、热搜标签、同城城市、凭证、评论、点赞、发表框话题、发布与外链分发到取数、配置与宿主能力。
+ * 微博协议路由：把信息流、我的赞、热搜标签、同城城市、凭证、评论读取与发布 / 回复 / 删除、转发读取与提交 / 删除、点赞、发表框话题、发布与外链分发到取数、配置与宿主能力。
  * 复用约定：入参收窄统一走 shared/types/weibo 的类型守卫，本层只做方法名到实现的映射；
  * 分组、表情与侧栏默认榜（band）先读 weibo.json 缓存，其余热搜标签实时回源，缓存异常只记日志、绝不影响回包；
  * Cookie 存取交给 WeiboCookieStore，取数交给 webTimeline / webFeed，宿主能力以回调注入便于单测。
@@ -14,8 +14,12 @@ import type {
     WeiboChatContextResult,
     WeiboCityState,
     WeiboClearCredentialResult,
+    WeiboCommentCreateResult,
+    WeiboCommentDestroyResult,
+    WeiboCommentRepliesResult,
     WeiboCommentsResult,
     WeiboCredentialState,
+    WeiboDestroyStatusResult,
     WeiboEmoticonsResult,
     WeiboGroupsResult,
     WeiboHotRankResult,
@@ -28,6 +32,8 @@ import type {
     WeiboProfile,
     WeiboProfileResult,
     WeiboPublishResult,
+    WeiboRepostCreateResult,
+    WeiboRepostsResult,
     WeiboSaveCredentialResult,
     WeiboTimelineRequest,
     WeiboTimelineResult,
@@ -37,7 +43,11 @@ import type {
 import {
     WEIBO_DEFAULT_CITY_CODE,
     isWeiboCityCode,
+    isWeiboCommentCreateRequest,
+    isWeiboCommentDestroyRequest,
+    isWeiboCommentRepliesRequest,
     isWeiboCommentsRequest,
+    isWeiboDestroyStatusRequest,
     isWeiboFeedRequest,
     isWeiboHotRankRequest,
     isWeiboImageRequest,
@@ -47,6 +57,8 @@ import {
     isWeiboOpenPostRequest,
     isWeiboProfileRequest,
     isWeiboPublishRequest,
+    isWeiboRepostCreateRequest,
+    isWeiboRepostsRequest,
     isWeiboSaveBlockListRequest,
     isWeiboSaveCityRequest,
     isWeiboSaveCredentialRequest,
@@ -58,7 +70,7 @@ import {
 } from '@shared/types/weibo'
 import { normalizeWeiboBlockList } from '@shared/utils/weiboBlock'
 import { WeiboWebError } from './webClient'
-import { fetchPostComments } from './webComments'
+import { createPostComment, destroyPostComment, fetchCommentReplies, fetchPostComments } from './webComments'
 import { isCookieUsable, normalizeCookieInput } from './webCredential'
 import { fetchWeiboEmoticons } from './webEmoticons'
 import { fetchWeiboFeed, fetchWeiboGroups, rememberHotChannels } from './webFeed'
@@ -68,10 +80,16 @@ import { fetchWeiboLikes } from './webLikes'
 import { fetchLongText } from './webLongText'
 import { fetchWeiboProfile } from './webProfile'
 import { publishWeibo } from './webPublish'
+import { createPostRepost, destroyPostStatus, fetchPostReposts } from './webReposts'
 import { fetchFriendTimeline } from './webTimeline'
 import { fetchWeiboTopics } from './webTopics'
 import { toAccountKey } from './weiboCache'
-import type { FetchCommentsOptions } from './webComments'
+import type {
+    CreateCommentOptions,
+    DestroyCommentOptions,
+    FetchCommentsOptions,
+    FetchRepliesOptions,
+} from './webComments'
 import type { WeiboCookieStore } from './webCredential'
 import type { FetchEmoticonsOptions } from './webEmoticons'
 import type { FetchFeedOptions, FetchGroupsOptions } from './webFeed'
@@ -81,6 +99,7 @@ import type { FetchLikesOptions } from './webLikes'
 import type { FetchLongTextOptions } from './webLongText'
 import type { FetchProfileOptions } from './webProfile'
 import type { PublishWeiboOptions, WeiboUploadImage } from './webPublish'
+import type { CreateRepostOptions, DestroyStatusOptions, FetchRepostsOptions } from './webReposts'
 import type { FetchTimelineOptions } from './webTimeline'
 import type { FetchTopicsOptions } from './webTopics'
 import type { WeiboAvatarGateway } from './weiboAvatar'
@@ -137,6 +156,18 @@ export interface WeiboRouteDeps {
     fetchLikes?: (options: FetchLikesOptions) => Promise<WeiboLikesResult>
     /** 评论读取：默认走网页版 buildComments，单测可替换 */
     fetchComments?: (options: FetchCommentsOptions) => Promise<WeiboCommentsResult>
+    /** 评论发布与回复：默认走网页版 comments/create 与 comments/reply，单测可替换 */
+    createComment?: (options: CreateCommentOptions) => Promise<WeiboCommentCreateResult>
+    /** 评论删除：默认走网页版 statuses/destroyComment，单测可替换 */
+    destroyComment?: (options: DestroyCommentOptions) => Promise<WeiboCommentDestroyResult>
+    /** 子评论读取：默认走网页版 buildComments（is_mix=1 / fetch_level=1），单测可替换 */
+    fetchCommentReplies?: (options: FetchRepliesOptions) => Promise<WeiboCommentRepliesResult>
+    /** 转发列表读取：默认走网页版 repostTimeline，单测可替换 */
+    fetchReposts?: (options: FetchRepostsOptions) => Promise<WeiboRepostsResult>
+    /** 转发提交：默认走网页版 normal_repost，单测可替换 */
+    createRepost?: (options: CreateRepostOptions) => Promise<WeiboRepostCreateResult>
+    /** 删除微博 / 转发：默认走网页版 statuses/destroy，单测可替换 */
+    destroyStatus?: (options: DestroyStatusOptions) => Promise<WeiboDestroyStatusResult>
     /** 长文读取：默认走网页版 longtext，单测可替换 */
     fetchLongText?: (options: FetchLongTextOptions) => Promise<WeiboLongTextResult>
     /** 卡片动作·保存为笔记：由面板注入笔记落盘能力，未注入时该方法报未就绪 */
@@ -212,6 +243,18 @@ export class WeiboRoutes {
                 return this.saveBlockList(payload)
             case 'weibo/comments':
                 return this.loadComments(payload)
+            case 'weibo/comment/create':
+                return this.createComment(payload)
+            case 'weibo/comment/destroy':
+                return this.destroyComment(payload)
+            case 'weibo/comment/replies':
+                return this.loadCommentReplies(payload)
+            case 'weibo/reposts':
+                return this.loadReposts(payload)
+            case 'weibo/repost':
+                return this.createRepost(payload)
+            case 'weibo/destroy':
+                return this.destroyStatus(payload)
             case 'weibo/longtext':
                 return this.loadLongText(payload)
             case 'weibo/credential/status':
@@ -646,6 +689,100 @@ export class WeiboRoutes {
         const cookie = await this.readCookie()
         const fetchComments = this.deps.fetchComments ?? fetchPostComments
         return fetchComments({ ...raw, cookie })
+    }
+
+    /**
+     * 展开更多回复：id 是一级评论 id，与评论列表共用一个端点，靠 is_mix / fetch_level 切到回复。
+     * 关键约束：只读，缺凭证直接给出可执行的引导。
+     */
+    private async loadCommentReplies(payload: unknown): Promise<WeiboCommentRepliesResult> {
+        const raw = payload ?? {}
+        if (!isWeiboCommentRepliesRequest(raw)) {
+            throw new WeiboWebError(
+                'invalid-payload',
+                'weibo/comment/replies 参数非法：id 须为数字评论 id，maxId 与 count 可选',
+            )
+        }
+        const cookie = await this.readCookie()
+        const loadReplies = this.deps.fetchCommentReplies ?? fetchCommentReplies
+        return loadReplies({ ...raw, cookie })
+    }
+
+    /**
+     * 转发列表：谁转发了这条微博，只有页码分页。
+     * 关键约束：只读，缺凭证直接给出可执行的引导；翻页到底由「本页条数不足一页」判定。
+     */
+    private async loadReposts(payload: unknown): Promise<WeiboRepostsResult> {
+        const raw = payload ?? {}
+        if (!isWeiboRepostsRequest(raw)) {
+            throw new WeiboWebError('invalid-payload', 'weibo/reposts 参数非法：id 须为数字微博 id，page 与 count 可选')
+        }
+        const cookie = await this.readCookie()
+        const loadReposts = this.deps.fetchReposts ?? fetchPostReposts
+        return loadReposts({ ...raw, cookie })
+    }
+
+    /**
+     * 转发微博：附言可为空（纯转发），长度由协议层收窄。
+     * 关键约束：写操作不重试，失败直接回错误码，由前端提示后用户手动重发。
+     */
+    private async createRepost(payload: unknown): Promise<WeiboRepostCreateResult> {
+        if (!isWeiboRepostCreateRequest(payload)) {
+            throw new WeiboWebError(
+                'invalid-payload',
+                'weibo/repost 参数非法：id 须为数字微博 id，附言可为空且不得超过 140 字',
+            )
+        }
+        const cookie = await this.readCookie()
+        const repost = this.deps.createRepost ?? createPostRepost
+        return repost({ cookie, id: payload.id, comment: payload.comment.trim(), mode: payload.mode })
+    }
+
+    /**
+     * 删除微博 / 转发：只把 status id 交给上游，归属由上游判定（前端只给自己的内容放入口）。
+     * 关键约束：写操作不重试，失败直接回错误码。
+     */
+    private async destroyStatus(payload: unknown): Promise<WeiboDestroyStatusResult> {
+        if (!isWeiboDestroyStatusRequest(payload)) {
+            throw new WeiboWebError('invalid-payload', 'weibo/destroy 参数非法：id 须为数字微博 id')
+        }
+        const cookie = await this.readCookie()
+        const destroy = this.deps.destroyStatus ?? destroyPostStatus
+        return destroy({ cookie, id: payload.id })
+    }
+
+    /**
+     * 发布评论 / 回复评论：与时间线共用登录 Cookie，正文在协议层已去空白并校验长度。
+     * 关键约束：带 replyToId 即走回复端点；写操作不重试，失败直接回错误码，由前端提示后用户手动重发。
+     */
+    private async createComment(payload: unknown): Promise<WeiboCommentCreateResult> {
+        if (!isWeiboCommentCreateRequest(payload)) {
+            throw new WeiboWebError(
+                'invalid-payload',
+                'weibo/comment/create 参数非法：id 须为数字微博 id，正文须为 1-140 字，replyToId 可选',
+            )
+        }
+        const cookie = await this.readCookie()
+        const publishComment = this.deps.createComment ?? createPostComment
+        return publishComment({
+            cookie,
+            id: payload.id,
+            text: payload.text.trim(),
+            ...(payload.replyToId === undefined ? {} : { replyToId: payload.replyToId }),
+        })
+    }
+
+    /**
+     * 删除评论：只把 cid 交给上游，归属由上游判定（前端只给自己的评论放入口）。
+     * 关键约束：写操作不重试，失败直接回错误码。
+     */
+    private async destroyComment(payload: unknown): Promise<WeiboCommentDestroyResult> {
+        if (!isWeiboCommentDestroyRequest(payload)) {
+            throw new WeiboWebError('invalid-payload', 'weibo/comment/destroy 参数非法：cid 须为数字评论 id')
+        }
+        const cookie = await this.readCookie()
+        const removeComment = this.deps.destroyComment ?? destroyPostComment
+        return removeComment({ cookie, cid: payload.cid })
     }
 
     /** 读取长文全文：id 用 mblogid（数字 id 也兼容），缺凭证直接给出可执行的引导 */

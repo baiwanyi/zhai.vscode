@@ -65,6 +65,22 @@ export interface WeiboCommentAuthor {
     avatarUrl: string
 }
 
+/**
+ * 子评论：随一级评论一起下发的回复预览。
+ * 正文口径与一级评论一致（分段保留表情），另记被回复者昵称，用于展示「回复 @某人」。
+ */
+export interface WeiboCommentReply {
+    id: string
+    text: string
+    segments: WeiboTimelineSegment[]
+    /** ISO 时间：解析失败为空串 */
+    createdAt: string
+    createdAtRaw: string
+    author: WeiboCommentAuthor
+    /** 被回复者昵称：来自上游 reply_comment，不是回复关系时为空串 */
+    replyToName: string
+}
+
 /** 单条评论：正文与主贴同口径（分段保留表情） */
 export interface WeiboCommentItem {
     id: string
@@ -77,6 +93,10 @@ export interface WeiboCommentItem {
     createdAtRaw: string
     author: WeiboCommentAuthor
     likes: number
+    /** 子评论预览：上游随一级评论下发的若干条回复，可能为空 */
+    replies: WeiboCommentReply[]
+    /** 子评论总数：大于 replies.length 说明上游还有没下发的回复 */
+    replyCount: number
 }
 
 /** 长文请求：id 可为 mblogid（如 Rs4KtdzoV）或数字 id */
@@ -89,6 +109,35 @@ export interface WeiboLongTextResult {
     text: string
 }
 
+/** 评论正文字数上限：与网页端评论框一致，超出由前端输入框先拦住 */
+export const WEIBO_COMMENT_MAX_LENGTH = 140
+
+/** 评论发布请求：id 为数字微博 id，text 为纯文本正文 */
+export interface WeiboCommentCreateRequest {
+    /** 微博数字 id */
+    id: string
+    /** 纯文本正文：提交前由宿主再 trim 一次 */
+    text: string
+    /** 被回复评论的数字 id：给出即走回复端点，缺省是发新评论 */
+    replyToId?: string
+}
+
+/** 评论发布结果：成功即 created 为真，失败走错误码 */
+export interface WeiboCommentCreateResult {
+    created: boolean
+}
+
+/** 评论删除请求：只能删自己的评论，归属由宿主与前端各自把关 */
+export interface WeiboCommentDestroyRequest {
+    /** 被删除评论的数字 id */
+    cid: string
+}
+
+/** 评论删除结果：成功即 deleted 为真，失败走错误码 */
+export interface WeiboCommentDestroyResult {
+    deleted: boolean
+}
+
 /** 评论请求：maxId 缺省拉第一页 */
 export interface WeiboCommentsRequest {
     /** 微博数字 id */
@@ -96,6 +145,23 @@ export interface WeiboCommentsRequest {
     /** 下一页游标：上一次结果里的 maxId */
     maxId?: string | null
     count?: number
+}
+
+/** 子评论请求：id 是一级评论的数字 id，不是微博 id */
+export interface WeiboCommentRepliesRequest {
+    /** 一级评论的数字 id */
+    id: string
+    /** 下一页游标：上一次结果里的 maxId */
+    maxId?: string | null
+    count?: number
+}
+
+/** 子评论结果：只回传回复本身与游标，总数仍以一级评论上的 replyCount 为准 */
+export interface WeiboCommentRepliesResult {
+    replies: WeiboCommentReply[]
+    /** 下一页游标：null 表示没有更多 */
+    maxId: string | null
+    hasMore: boolean
 }
 
 /** 评论分页结果 */
@@ -106,6 +172,79 @@ export interface WeiboCommentsResult {
     /** 下一页游标：null 表示没有更多 */
     maxId: string | null
     hasMore: boolean
+}
+
+/** 转发项：谁转发了这条微博，正文是转发时附带的评论（纯转发为空） */
+export interface WeiboRepostItem {
+    id: string
+    mblogid: string
+    /** 纯文本正文：转发附言，纯转发为空串 */
+    text: string
+    segments: WeiboTimelineSegment[]
+    /** ISO 时间：解析失败为空串 */
+    createdAt: string
+    createdAtRaw: string
+    author: WeiboTimelineAuthor
+    /** 来源客户端：已剥掉「来自」外壳 */
+    source: string
+}
+
+/** 转发列表请求：只有页码分页，没有游标 */
+export interface WeiboRepostsRequest {
+    /** 微博数字 id */
+    id: string
+    /** 页码：从 1 开始 */
+    page?: number
+    count?: number
+}
+
+/** 转发列表结果 */
+export interface WeiboRepostsResult {
+    reposts: WeiboRepostItem[]
+    /** 本次请求的页码：前端据此递增 */
+    page: number
+    hasMore: boolean
+}
+
+/** 转发附言字数上限：与网页端转发框一致，超出由前端输入框先拦住 */
+export const WEIBO_REPOST_MAX_LENGTH = 140
+
+/**
+ * 转发方式：与提交参数一一对应。
+ * repost = 只转发（is_repost=0 / is_comment=0）；
+ * repostWithComment = 转发并评论（is_comment=1，仍带 visible 与 share_id）；
+ * commentWithRepost = 评论并转发（is_repost=1，不带 visible 与 share_id）。
+ */
+export type WeiboRepostMode = 'repost' | 'repostWithComment' | 'commentWithRepost'
+
+/** 转发请求：comment 可空（纯转发），最长 WEIBO_REPOST_MAX_LENGTH */
+export interface WeiboRepostCreateRequest {
+    /** 微博数字 id */
+    id: string
+    /** 转发附言：纯转发传空串 */
+    comment: string
+    /** 转发方式：缺省只转发 */
+    mode?: WeiboRepostMode
+}
+
+/** 转发结果：转发与附带评论各自标记，评论并转发是两步、可能只成一半 */
+export interface WeiboRepostCreateResult {
+    reposted: boolean
+    /** 是否同时生成了评论（转发并评论 / 评论并转发） */
+    commented: boolean
+    /** 部分成功时的上游原因：评论已发出但转发失败时给出，前端据此提示并避免重发评论 */
+    failureMessage?: string
+}
+
+/** 删除微博请求：转发与自己发的微博都按 status id 删 */
+export interface WeiboDestroyStatusRequest {
+    /** 微博数字 id */
+    id: string
+}
+
+/** 删除微博结果：成功即 deleted 为真，失败走错误码 */
+export interface WeiboDestroyStatusResult {
+    deleted: boolean
 }
 
 /** 图片像素尺寸：取自上游 `largest` 档位（最大可用尺寸），预览角标与竖横判断都用它 */
@@ -952,6 +1091,84 @@ export function isWeiboCommentsRequest(value: unknown): value is WeiboCommentsRe
         return false
     }
     return isOptionalTimelineId(maxId) && isOptionalNumber(count)
+}
+
+/** 收窄评论发布入参：id 为数字串，正文去空白后非空且不超上限，replyToId 可缺省 */
+export function isWeiboCommentCreateRequest(value: unknown): value is WeiboCommentCreateRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { id, text, replyToId } = value as Record<string, unknown>
+    if (typeof id !== 'string' || !WEIBO_ID_PATTERN.test(id) || typeof text !== 'string') {
+        return false
+    }
+    if (replyToId !== undefined && (typeof replyToId !== 'string' || !WEIBO_ID_PATTERN.test(replyToId))) {
+        return false
+    }
+    const trimmed = text.trim()
+    return trimmed.length > 0 && trimmed.length <= WEIBO_COMMENT_MAX_LENGTH
+}
+
+/** 收窄评论删除入参：cid 必须是纯数字评论 id */
+export function isWeiboCommentDestroyRequest(value: unknown): value is WeiboCommentDestroyRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { cid } = value as Record<string, unknown>
+    return typeof cid === 'string' && WEIBO_ID_PATTERN.test(cid)
+}
+
+/** 收窄子评论入参：id 为数字评论 id，maxId 与 count 可缺省 */
+export function isWeiboCommentRepliesRequest(value: unknown): value is WeiboCommentRepliesRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { id, maxId, count } = value as Record<string, unknown>
+    if (typeof id !== 'string' || !WEIBO_ID_PATTERN.test(id)) {
+        return false
+    }
+    return isOptionalTimelineId(maxId) && isOptionalNumber(count)
+}
+
+/** 收窄转发列表入参：id 为数字微博 id，page 与 count 可缺省 */
+export function isWeiboRepostsRequest(value: unknown): value is WeiboRepostsRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { id, page, count } = value as Record<string, unknown>
+    if (typeof id !== 'string' || !WEIBO_ID_PATTERN.test(id)) {
+        return false
+    }
+    return isOptionalNumber(page) && isOptionalNumber(count)
+}
+
+/** 收窄转发方式：三种取值以外的都算非法 */
+export function isWeiboRepostMode(value: unknown): value is WeiboRepostMode {
+    return value === 'repost' || value === 'repostWithComment' || value === 'commentWithRepost'
+}
+
+/** 收窄转发入参：id 为数字微博 id，附言可空但不得超过上限，mode 可缺省 */
+export function isWeiboRepostCreateRequest(value: unknown): value is WeiboRepostCreateRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { id, comment, mode } = value as Record<string, unknown>
+    if (typeof id !== 'string' || !WEIBO_ID_PATTERN.test(id) || typeof comment !== 'string') {
+        return false
+    }
+    if (mode !== undefined && !isWeiboRepostMode(mode)) {
+        return false
+    }
+    return comment.trim().length <= WEIBO_REPOST_MAX_LENGTH
+}
+
+/** 收窄删除微博入参：id 必须是纯数字微博 id */
+export function isWeiboDestroyStatusRequest(value: unknown): value is WeiboDestroyStatusRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { id } = value as Record<string, unknown>
+    return typeof id === 'string' && WEIBO_ID_PATTERN.test(id)
 }
 
 /** 收窄点赞入参：id 必须是纯数字微博 id，liked 必须是布尔 */

@@ -11,8 +11,9 @@
  * Cookie 输入框不回显已保存值，保存成功后清空、由登录态变化自动换出凭证卡，明文只存在于输入瞬间；
  * 删除 Cookie 只有一个确认入口（账号菜单），确认后回首页，凭证卡按未配置状态自然出现；
  * 同城热搜城市在设置弹窗里选择，落 zhai.weibo.cityCode，与 Cookie 无关；
- * 时间线、热门、热搜与分组都是只读浏览，发布框已接入发布（图床换 pid → update 提交），
+ * 时间线、热门、热搜与分组本身只读（卡片评论区可写），发布框已接入发布（图床换 pid → update 提交），
  * 支持表情、话题插入与本地图片选择/粘贴上传，草稿与已选图片由面板层保留，发布成功即清空并刷新首页；
+ * 评论区支持发布 / 回复 / 删除自己的评论，账号 uid 取自账号信息（缺省用分组结果）并逐层透传给卡片；
  * 发布框草稿由面板层持有：切到其它视图再回首页，已写内容仍在，不随首页内容卸载丢失；
  * 个人主页按账号 uid 拼 weibo.com 地址交给宿主打开，入口收在顶栏账号菜单里；
  * 我的赞同样收在账号菜单里，视图为 mine.likes，只有页码分页，uid 由宿主解析；
@@ -328,6 +329,7 @@ export function WeiboPanel(): JSX.Element {
                         )
                     }
                     onBlockAuthor={handleBlockAuthor}
+                    viewerUid={profileUid}
                     onLoadMore={handleHomeLoadMore}
                 />
             </>
@@ -362,6 +364,7 @@ export function WeiboPanel(): JSX.Element {
                 emptyTitle="时间线没有内容"
                 emptyDescription="默认分组近期没有更新，稍后刷新一次再试。"
                 onBlockAuthor={handleBlockAuthor}
+                viewerUid={profileUid}
                 onRefresh={handleRefresh}
                 onOpenSettings={handleOpenSettings}
             />
@@ -379,6 +382,7 @@ export function WeiboPanel(): JSX.Element {
                 emptyTitle="热门没有内容"
                 emptyDescription="推荐频道暂时返回空页，稍后刷新一次再试。"
                 onBlockAuthor={handleBlockAuthor}
+                viewerUid={profileUid}
                 onRefresh={handleRefresh}
                 onOpenSettings={handleOpenSettings}
             />
@@ -402,6 +406,7 @@ export function WeiboPanel(): JSX.Element {
                 emptyTitle={`「${activeGroup?.title ?? '该分组'}」没有内容`}
                 emptyDescription="分组近期没有更新，稍后刷新一次再试。"
                 onBlockAuthor={handleBlockAuthor}
+                viewerUid={profileUid}
                 onRefresh={handleRefresh}
                 onOpenSettings={handleOpenSettings}
             />
@@ -419,6 +424,7 @@ export function WeiboPanel(): JSX.Element {
                 emptyTitle="还没有点赞"
                 emptyDescription="在微博里点过赞的内容会按时间倒序出现在这里。"
                 onBlockAuthor={handleBlockAuthor}
+                viewerUid={profileUid}
                 onRefresh={handleRefresh}
                 onOpenSettings={handleOpenSettings}
             />
