@@ -1,5 +1,5 @@
 /**
- * 微博地址总表：网页端内部 ajax 端点（含评论读取与发布）、开放平台基址、图床与站内页面基址集中在此。
+ * 微博地址总表：网页端内部 ajax 端点（含评论读取与发布）、图床与站内页面基址集中在此。
  * 复用约定：上层只引用本文件的常量拼地址，不再在各自模块里写字面量路径；
  * 基址不带尾斜杠，路径统一以 / 开头，拼接一律走 new URL(path, origin)。
  * 关键约束：这些是网页端内部 ajax，改版即失效，端点或基址变动只改这一处；
@@ -12,9 +12,6 @@ export const WEIBO_WEB_ORIGIN = 'https://weibo.com'
 /** 官网 Referer：ajax 与图床都按它判断来源 */
 export const WEIBO_WEB_REFERER = 'https://weibo.com/'
 
-/** 开放平台 REST 基址：官方 Open API 的公共前缀 */
-export const WEIBO_OPEN_API_ORIGIN = 'https://api.weibo.com/2'
-
 /** 图床基址：只有 pid 时用它拼原图直链 */
 export const WEIBO_IMAGE_ORIGIN = 'https://wx1.sinaimg.cn'
 
@@ -22,7 +19,7 @@ export const WEIBO_IMAGE_ORIGIN = 'https://wx1.sinaimg.cn'
 export const WEIBO_PIC_UPLOAD_ORIGIN = 'https://picupload.weibo.com'
 
 /**
- * 图床上传端点：不需要签名参数（新版 upload.php 要 cs，已弃用）。
+ * 图床上传端点：不需要签名参数。
  * 关键约束：元数据全在 query、body 直接放图片字节（application/octet-stream）；
  * 成功回包形如 {code:'A00006', data:{pics:{pic_1:{pid}}}}。
  */

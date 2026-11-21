@@ -69,7 +69,7 @@ function pickEntryPost(entry: unknown): Record<string, unknown> | null {
  * 提取原始微博数组：兼容 statuses 与 list 两种层级。
  * 结构异常一律返回空数组，由「已到底」表达，不把整页打成错误。
  */
-export function pickLikesPosts(record: Record<string, unknown>): unknown[] {
+function pickLikesPosts(record: Record<string, unknown>): unknown[] {
     const container = isRecord(record.data) ? record.data : record
     if (Array.isArray(container.statuses)) {
         return container.statuses

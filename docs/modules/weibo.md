@@ -1,14 +1,8 @@
 # 微博浏览器 (Weibo Browser) — 模块设计文档
 
-**版本**：2.0
-**日期**：2026-09-04
-**状态**：待验证（接口能力以微博开放平台官方文档 2025-05-09 版为准，见第 5 节能力对照）
-**宿主**：VSCode 插件 Zhai（宅桌面）
-**前身**：v1.0「同步微博」——仅承担「写作 → 分发」的发布单向链路
-
-> ⚠️ **架构前置说明（以官方能力为准）**：本模块**授权、浏览、评论、表情以微博开放平台官方 API（`open.weibo.com`，OAuth2）为主干**，合规可控；**媒体详情与直链取用微博官网网页 ajax 接口**（`weibo.com/ajax/statuses/show` 等，与官网同源、已验证可用，非 `open.weibo.com` REST，亦非逆向私有协议），用于解析图片/视频地址并下载。
-> 经核对官方文档（2025-05-09），官方 API 已直接覆盖**首页时间线浏览、评论读写、官方表情包**等核心能力；但**点赞、转发写入、普通图文发布（仅 `statuses/share` 链接分享）、分组、图片/视频上传**等接口官方未开放（或个人权限不可得）。
-> 因此本文档对官方可覆盖的能力直接落地实现；对官方缺口采取**降级/受限标注**策略（见第 5 节能力对照），媒体下载走官网 ajax 接口（见第 10 节），**不引入逆向私有协议**，确保合规可控。
+**版本**：3.0
+**日期**：2026-11-21
+**状态**：与实现同步（取数为微博网页端同源 ajax + Cookie 鉴权）
 
 ---
 
@@ -16,945 +10,78 @@
 
 ### 1.1 定位
 
-把 VSCode 侧边栏变成一个**轻量微博浏览与发布台**：基于官方 API 在 VSCode 内浏览首页时间线、评论互动、渲染官方表情包，并能把工作区笔记经 AI 编辑后发布为微博；同时支持图片/视频按统一规则命名下载归档。
+在 VSCode 编辑区提供一个独立的微博面板：浏览关注时间线、热门频道、自建分组与热搜榜；读取评论并回复、点赞、转发、删除自己的内容；发布图文微博；把单条微博保存为笔记或添加为 AI 对话上下文。
 
-与「微信公众号」的差异：微博强调**短内容 + 互动 + 富媒体**，本模块聚焦**浏览与评论闭环 + AI 辅助发布**（见 `wechat.md`）。
+面板不占用侧栏，与仪表盘、工作流区通过「当前活跃面板」上报协作：面板获得焦点即切到微博语境，让位后由活跃文档侧统一清空。
 
-### 1.2 目标
+### 1.2 能力范围
 
-- **浏览**：在 VSCode 内查看首页时间线（`home_timeline`），瀑布流（masonry）流式布局呈现
-- **评论互动**：读取并查看评论、发表评论与回复（官方 `comments/*` 完整覆盖）
-- **表情渲染**：通过官方 `emotions` 接口获取并正确渲染微博表情包
-- **AI 辅助发布**：笔记/章节一键转为微博，发布前可由 AI 润色编辑；受官方发布能力限制，默认走 `statuses/share` 链接分享，具备高级权限时升级为图文发布
-- **媒体归档**：图片与视频支持下载并按统一命名规范落盘（直链来自官方读取接口返回，非私有上传/下载端点）
-- **可靠**：所有写操作具备重试、幂等、限流与超时控制
+| 能力 | 入口 | 实现 |
+|---|---|---|
+| 首页推荐流（增量刷新） | 顶部菜单「首页 · 推荐」 | `ajax/feed/unreadfriendstimeline` |
+| 首页时间线（默认分组） | 「首页 · 时间线」 | `ajax/feed/friendstimeline` |
+| 热门频道 | 「热门 · <频道>」 | `ajax/feed/hottimeline` |
+| 自建分组 | 「首页 · <分组名>」 | `ajax/feed/groupstimeline` |
+| 热搜九榜 | 「热搜 · 我的 / 热搜 / 文娱 / 社会 / 科技 / 生活 / 体育 / ACG / 同城」 | `ajax/side/bandUnified`、`ajax/statuses/*` |
+| 我的赞 | 账号菜单 | `ajax/statuses/likelist` |
+| 评论 | 卡片评论区 | `buildComments`、`comments/create`、`comments/reply`、`destroyComment` |
+| 点赞 | 卡片动作 | `setLike`、`cancelLike` |
+| 转发 | 卡片动作与转发列表 | `repostTimeline`、`normal_repost` |
+| 删除微博或转发 | 卡片动作 | `statuses/destroy` |
+| 发布微博 | 首页发表框 | `pic_upload.php` 换 pid → `statuses/update` |
+| 长文展开 | 卡片「展开」 | `statuses/longtext` |
+| 保存为笔记 | 卡片动作 | 本模块组装 Markdown，落盘交给笔记模块 |
+| 添加到 AI 对话 | 卡片动作 | 本模块组装上下文文本，交给 AI 层 |
+| 图片显示 | 全部卡片 | 宿主图片代理取回后转 data URI |
+| 视频播放 | 卡片内嵌播放器 | 回环 HTTP 中转，Range 原样透传 |
 
-### 1.3 受限目标（官方 API 当前不可得，明确降级）
+### 1.3 明确不做
 
-- **点赞**：官方 Open API 无 like/favorite 接口 → 本模块**不提供点赞操作**，仅展示点赞数
-- **转发**：官方 Open API 无 repost 写入接口（仅有 `repost_timeline` 读转发列表）→ 本模块**不提供转发操作**
-- **分组内容**：官方 Open API 无分组接口 → 改为**本地分组**（基于已缓存时间线做标签/收藏归类，见第 4.2 节）
-- **图文/视频发布**：官方仅 `statuses/share`（链接分享，且需第三方分享权限）→ 普通图文发布需高级权限，未获前降级为分享链接或本地草稿
+- 不做批量采集、不落公共库：只读当前账号自己的关注流。
+- 不做 UA 轮换、代理池、验证码绕过、设备指纹伪造。
+- 不提供「按命名规范批量下载媒体归档」：图片经代理内联显示，保存笔记所需的配图直接搬进 `uploads/`。
+- 不做多账号并存：同一时刻只保存一份登录 Cookie。
 
----
+### 1.4 文件结构
 
-## 2. 用户场景
+后端 `src/modules/weibo/` 共 24 个文件，按职责分五层：
 
-| 编号 | 场景 | 用户旅程 |
-|------|------|----------|
-| US-1 | 刷首页 | 打开微博浏览器面板 → 加载首页时间线 → 瀑布流滚动浏览 |
-| US-2 | 本地分组 | 把感兴趣微博打标签归入本地分组（如「素材」「灵感」）→ 按分组筛选查看 |
-| US-3 | 表情渲染 | 含官方表情的微博 → 通过 `emotions` 映射正确显示为表情图片 |
-| US-4 | 看评论/评论 | 展开某条微博评论 → 发表评论或回复 |
-| US-5 | AI 辅助发博 | 写完笔记 → 命令「发布到微博」→ AI 润色编辑 → 预览 → 经 `share` 发布链接 |
-| US-6 | 下载图片 | 看到九宫格 → 一键下载全部 → 按统一命名落盘 |
-| US-7 | 下载视频 | 含视频的微博 → 下载原视频 → 按统一命名落盘 |
-| US-8 | 重复发布防护 | 误点两次发布 → 第二次被本地记录拦截 |
-| US-9 | 保存为笔记 | 看到有价值的微博 → 命令「保存为笔记」→ 转 Markdown（作者/正文/配图/原文链接）→ 写入笔记模块 → 可一键打开 |
+| 层 | 文件 |
+|---|---|
+| 协议与装配 | `weiboRoutes.ts`、`panel.ts`、`postActions.ts`、`warmup.ts` |
+| 取数 | `webClient.ts`、`webTimeline.ts`、`webFeed.ts`、`webHotRank.ts`、`webLikes.ts`、`webComments.ts`、`webReposts.ts`、`webLongText.ts`、`webEmoticons.ts`、`webTopics.ts`、`webProfile.ts`、`webPublish.ts`、`webInteraction.ts` |
+| 状态与存储 | `webCredential.ts`、`weiboCache.ts`、`weiboAvatar.ts` |
+| 媒体 | `mediaProxy.ts`、`videoServer.ts` |
+| 常量与内容组装 | `weiboEndpoints.ts`、`note.ts` |
 
----
+前端 `src/weibo/` 共 52 个文件：`hooks/` 19 个控制器、`layout/` 25 个视图组件、`utils/` 5 个纯函数，`WeiboPanel.tsx` 负责控制器装配与视图分发。
 
-## 3. 功能清单
+### 1.5 凭证与配置
 
-| 编号 | 功能点 | 描述 | 官方 API | 优先级 | 状态 |
-|------|--------|------|----------|--------|------|
-| B0 | OAuth2 授权 | 标准 OAuth2 登录，Token 存 `SecretStorage`，支持多账号切换与过期刷新 | `oauth2/*` | P0 | 待验证 |
-| B1 | 首页时间线 | `home_timeline` 拉取并渲染，分页与加载更多 | `statuses/home_timeline` | P0 | 待实现 |
-| B2 | 本地分组 | 基于缓存时间线做标签/收藏归类与筛选（官方无分组接口，降级为本地） | 本地 | P1 | 待实现 |
-| B3 | 瀑布流布局 | 卡片式 masonry 流式布局，自适应列数，媒体懒加载 | 前端 | P0 | 待实现 |
-| B4 | ⚠️ 点赞 | **官方无接口，不实现**；仅展示点赞数 | — | — | 受限 |
-| B5 | ⚠️ 转发 | **官方无写入接口，不实现**；仅可看转发列表 | `statuses/repost_timeline`(读) | — | 受限 |
-| B6 | 评论 | 评论列表读取、发表评论、回复评论 | `comments/*` | P0 | 待实现 |
-| B7 | 表情包渲染 | 官方 `emotions` 获取表情映射，渲染 `:[name]:` | `emotions` | P1 | 待实现 |
-| B8 | AI 编辑发布 | 发布前 AI 润色，diff 对比采纳 | 本地 + `statuses/share` | P0 | 待实现 |
-| B9 | 内容转换 | Markdown → 纯文本：`#话题#`、`@` 提及保留、链接转「网页链接」 | 本地 | P0 | 待实现 |
-| B10 | 字数/分享限制 | `share` 仅分享链接；超限提示手动分段 | 本地 | P1 | 待实现 |
-| B11 | ⚠️ 图片上传 | **官方无 upload 接口**；图文发布需高级权限 | — | — | 受限 |
-| B12 | 发布预览 | 预览最终文本与表情，确认后发布 | 本地 | P0 | 待实现 |
-| B13 | 发布与回执 | `share` 发布成功写入回执；高级权限下支持图文 | `statuses/share` | P0 | 待实现 |
-| B14 | 图片下载 | 由 `show`/`home_timeline` 返回直链下载，统一命名 | 直链(CDN) | P1 | 待实现 |
-| B15 | 视频下载 | 由接口返回视频直链下载，统一命名 | 直链(CDN) | P1 | 待实现 |
-| B16 | 草稿箱 | 未发布内容存为草稿，可反复编辑 | 本地 | P1 | 待实现 |
-| B17 | 发布历史 | 查看历史发布记录与状态 | 本地 | P1 | 待实现 |
-| B18 | 失败重试 | 指数退避 + 抖动，上限 3 次 | 本地 | P1 | 待实现 |
-| B19 | 幂等保护 | 内容 hash + 账号去重，防重复发博/评论 | 本地 | P0 | 待实现 |
-| B20 | 配额与限流 | 令牌桶限流（读/写/下载分桶），遵守 `account/rate_limit_status` | 本地 | P1 | 待实现 |
-| B21 | 多账号 | 多账号切换，浏览/发布时选择目标账号 | `oauth2` | P2 | 待实现 |
-| B22 | 保存为笔记 | 微博内容按笔记模块「网页剪藏」统一 Markdown 模板转为笔记并保存，可双链/检索/版本管理 | 本地 + 笔记模块 | P1 | 已实现 |
+| 项 | 位置 | 说明 |
+|---|---|---|
+| 登录 Cookie | SecretStorage `zhai.weibo.webCookie` | 必须含 `SUB`；只写不回显，错误文案与日志不含任何片段 |
+| 保存时刻 | SecretStorage `zhai.weibo.webCookieSavedAt` | 仅用于面板展示与排障，不参与鉴权 |
+| 同城城市 | `zhai.weibo.cityCode` | 四位行政区划代码，默认 `4501` |
+| 屏蔽用户名 | `zhai.weibo.blockedUsers` | 命中作者名的整条微博隐藏 |
+| 屏蔽关键字 | `zhai.weibo.blockedKeywords` | 命中正文（含转发正文）的整条微博隐藏 |
 
----
+### 1.6 落盘位置
 
-## 4. 交互与流程
-
-### 4.1 授权流程（标准 OAuth2）
-
-```
-命令：Zhai: 微博授权
-   │
-   ▼ 引导用户在设置填写 AppKey / AppSecret（存 SecretStorage）
-   │
-   ▼ 打开 OAuth2 授权页（oauth2/authorize，回调地址需在开放平台配置）
-   │
-   ▼ 用户确认 → 回调带 code → oauth2/access_token 换取 token（含有效期）
-   │
-   ▼ 存入 SecretStorage（key: zhai.weibo.<uid>.token）
-   │
-   ▼ 过期前自动刷新（提前 10 分钟）或提示重新授权；oauth2/revokeoauth2 支持登出撤销
-```
-
-### 4.2 浏览流程（时间线 + 本地分组）
-
-```
-面板加载
-   │
-   ▼ 读取本地缓存索引（globalStorage/social.db 的 weibo_cache）
-   ├─ 未过期 → 秒开渲染
-   └─ 过期/首次 → 调 statuses/home_timeline（连接 10s / 总体 30s 超时）
-   │
-   ▼ 瀑布流渲染（masonry，虚拟滚动 + 媒体懒加载）
-   │
-   ▼ 滚到底 → 分页加载（since_id / max_id 游标）
-   │
-   ▼ 本地分组：用户对卡片打标签/收藏 → 写入 weibo_groups / weibo_cache.group_tags
-   ▼ 切换本地分组 → 按标签从缓存筛选渲染（无需额外接口）
-```
-
-### 4.3 评论流程
-
-```
-用户展开评论 / 发表
-   │
-   ▼ 读：comments/show 拉取评论列表（分页）
-   │
-   ▼ 写：幂等校验 actionHash = sha256(账号 + mid + 'comment' + 文本)
-   ├─ 已存在成功记录 → 拦截重复
-   └─ 不存在 → comments/create（新评论）/ comments/reply（回复）
-   │
-   ▼ 成功 → 确认 UI + 写 interaction_records；失败 → 回滚 + 退避重试（≤3）
-```
-
-> 点赞/转发：官方无写入接口，本模块**不提供**对应操作，仅展示计数（`statuses/count` 可批量取数）。
-
-### 4.4 发布流程（含 AI 编辑，受限）
-
-```
-当前文件 / 选中内容
-   │
-   ▼ 内容转换（markdown-one 管线）→ 纯文本 + 话题 + @提及
-   │
-   ▼ AI 编辑（可选）：润色/缩写/扩写 → 与原文 diff 对比 → 采纳/拒绝
-   │
-   ▼ 预览确认（可插入官方表情面板、可编辑）
-   │
-   ▼ 幂等校验：contentHash = sha256(账号 + 文本)
-   │
-   ▼ 调用发布接口
-   ├─ 默认路径：statuses/share（链接分享，需第三方分享权限）
-   │     └─ 成功 → 写 publish_records(status=success，回执)
-   ├─ 高级权限路径（获 statuses/update 等）：图文/视频发布
-   └─ 失败 → 退避重试 → 仍失败记录原因 + 保留草稿
-```
-
-### 4.5 媒体下载流程
-
-> 媒体地址解析参考已验证可用的微博网页 ajax 接口（详见第 10 节）。浏览阶段已拿到微博 `id`，下载时先取详情 JSON 再解析媒体直链。
-
-```
-用户触发下载（单条 / 批量）
-   │
-   ▼ 取详情 JSON：GET https://weibo.com/ajax/statuses/show?id={postId}
-   │   （携带 Referer: https://weibo.com；连接 10s / 总体 30s 超时）
-   │   目标体 = data.retweeted_status || data
-   │
-   ▼ 解析媒体地址（关键字段，见第 10 节映射表）
-   ├─ 混合媒体 mix_media_info.items[]：video → playback_list[0].play_info.url；image → ajax/common/download?pid={id}
-   ├─ 单视频 page_info.media_info.playback_list[0].play_info.url
-   └─ 图片 pic_ids[] → https://weibo.com/ajax/common/download?pid={pid}
-   │
-   ▼ 依据命名规范生成文件名（见第 10 节）
-   │
-   ▼ 令牌桶限流 + 并发下载（默认 ≤3 并发，重试 2 次，断点续传）
-   │   请求须带 Referer: https://weibo.com，否则 CDN 返回 403
-   │
-   ▼ 落盘到配置下载目录，写 media_downloads 记录（按 postId+url 去重）
-   │
-   ▼ 完成提示（成功/失败/跳过重复）
-```
-
-### 4.6 保存为笔记（接入笔记模块）
-
-> 复用笔记模块（`notes.md`）「网页剪藏」的正文版式，但**不写 Frontmatter**：作者、原文链接、发表时间、采集方式全部落在正文引用块里。保存后它即为笔记模块的一条普通 Markdown 笔记，可被双链、全文检索、版本管理（与 N10 同构）。
-
-```
-用户触发「保存为笔记」（卡片菜单 / 命令）
-   │
-   ▼ 取当前微博详情（resolveTarget 取目标体，去 HTML 标签）
-   │
-   ▼ buildWeiboNoteMarkdown：组装正文（无 Frontmatter）
-   │   # 微博-{正文前 18 字}（超出 18 字才补 ...）→ 元信息引用块（作者 / 原文 / 发表时间 / 采集方式）
-   │         → ## 微博正文 → [## 转发内容 + ### 转发配图] → [## 微博配图]
-   │         （视频忽略，不写入笔记）
-   │
-   ▼ 调用笔记模块 createFromContent（统一入口，见 notes.md 4.2）
-   │   → 写入 notebook（默认 notes/ 或用户指定）
-   │   → 触发 FileSystemWatcher 索引
-   │
-   ▼ 写 weibo_saved_notes(mid, note_path)（去重 + 标记「已保存」角标）
-   ▼ 提示完成并可一键打开笔记
-```
-
-**当前实现（与上图设计的差异）**
-
-- 入口在卡片互动数据行：「原文」之后依次是「保存到笔记」「添加到 AI 对话」，两个动作互斥。
-- 载荷由卡片直接给出（`WeiboPagePostPayload`），宿主不回源取详情；正文与媒体链接在 `readWeiboPagePost` 里收窄（https、微博主站域名、正文 2 万字、配图 9 张）。
-- 落盘走笔记模块新增的 `createNoteFromContent`，默认落 `notes/未分类`；文件名为 `微博-{用户昵称}-{正文前 18 字}.md`（摘要折成单行、不带省略号），同名追加序号顺延，不覆盖既有笔记。
-- **不写 Frontmatter**：元信息一律落在正文引用块，笔记文件是纯 Markdown 正文（首行即一级标题）。
-- **正文版式**：`# 微博-{正文前 18 字}`（正文折成单行后取前 18 个字符，**只有被截断时才补 `...`**；正文为空时用「微博内容」兜底）→ 元信息引用块（作者 / 原文链接 / 发表时间 `年-月-日 时:分:秒` / 采集方式）→ `---` → `## 微博正文`（完整正文）→ （有转发时）`## 转发内容` +（转发带图时）`### 转发配图` → （主贴有配图时）`---` + `## 微博配图`；转发段不另起分隔线，视频一律忽略（主贴与转发体都不写入）。发表时间取上游 `created_at`，缺失或非法时写「未知时间」而不是当前时间；作者名中的换行折成空格，避免把引用块截断。UID / PID 不再写入笔记正文。
-- **文件名与一级标题**：写入时文件名为 `微博-{用户昵称}-{正文前 18 字}`，一级标题为 `# 微博-{正文前 18 字}`（超出才补 `...`），两者摘要一致；笔记模块「保存时按一级标题重命名」不会改变文件名主体。
-- **长文先补全文**：主贴或转发体被上游截断（卡片上的「展开全文」、转发摘要）时，保存前由宿主复用长文接口（`weibo/longtext`）先取全文再落盘 —— 主贴用 `mblogid`（缺失回退数字 id）、转发体用其数字 id；取全文失败只记日志并保留摘要，笔记里沿用「正文可能被上游截断」的说明，不阻断保存。非长文不发任何请求。**「添加到 AI 对话」走同一套补全**（同一 `expandLongText`），失败同样保留摘要；因可能先取主贴 + 转发两篇全文，前端该动作的超时按此放宽。
-- **配图按上传格式落地，取最大尺寸**：保存时优先按图片 pid 走官方下载端点 `https://weibo.com/ajax/common/download?pid={pid}`（宿主侧带 Cookie 与 Referer，302 由代理跟随），拿到原图后再交给上传模块的 `saveUploadFile` 写入 `uploads/{YYYYMM}/{时间戳+随机段}.{按魔数嗅探的扩展名}`，与上传页同一套命名与目录规则；pid 缺失或下载失败时回退图床直链。**主贴与转发的配图都会搬运**（各最多 9 张，一次批量处理），笔记正文用 `@zhai/uploads/...` 图片语法引用；单张失败（取图失败、超过上传单件上限 10MB）只回退该张的远程直链，不影响整篇保存，回执里报成功本地化的总张数。
-- **不写 `weibo_saved_notes`**：当前没有该表，「已保存」只是本次挂载的按钮回执；重复保存会新建另一篇笔记（文件名顺延）。持久去重留作后续增强。
-- 成功只给 toast，不强制打开笔记，避免打断浏览。
-
-**说明**：若媒体已通过 B14/B15 下载到本地，正文配图链接替换为相对路径（`assets/...`），保证笔记可整体迁移（与 notes.md N9 一致）。
+| 内容 | 位置 | 约束 |
+|---|---|---|
+| 元数据缓存 | `{存储根}/weibo.json` | 分组 / 热搜 / 表情 / 账号信息，按账号指纹分片；版本不符整份作废；`.part` + rename 原子写 |
+| 头像 | `{存储根}/weibo_avatar.jpg` | 清除凭证时一并删除，避免换号后露出上一个账号 |
+| 图片缓存 | `{globalStorage}/weibo-media/` | 上限 800 个文件，超出按修改时间清理到 600 |
+| 视频 | 不落盘 | 回环服务流式转发，面板销毁即停 |
 
 ---
 
-## 5. 官方 API 能力对照与缺口
+## 2. 实现细节
 
-基于微博开放平台官方文档（2025-05-09）整理。
+> 定位：`ajax/feed/unreadfriendstimeline` 是 weibo.com 网页端同源内部 ajax 接口，只读、Cookie 鉴权、无移动端 `x-xs-*` 签名参数。本模块全部取数都建立在这一类接口上，通行做法与合规边界见第 2.9 节。
 
-| 能力 | 官方接口 | 可用性 | 本模块处理 |
-|------|----------|--------|------------|
-| OAuth2 授权 | `oauth2/authorize` `oauth2/access_token` `get_token_info` `revokeoauth2` | ✅ | 直接实现 |
-| 获取 UID / 限流状态 | `account/get_uid` `account/rate_limit_status` | ✅ | 直接实现 |
-| 用户信息 | `users/show` `users/domain_show` | ✅ | 直接实现 |
-| 首页时间线 | `statuses/home_timeline` | ✅ | 直接实现（B1） |
-| 用户/提及/单条微博 | `statuses/user_timeline` `mentions` `show` `count` | ✅ | 直接实现 |
-| 转发列表（读） | `statuses/repost_timeline` | ✅ | 仅展示（B5 读） |
-| 官方表情 | `emotions` | ✅ | 表情渲染（B7） |
-| 评论读/写 | `comments/show` `mentions` `create` `reply` | ✅ | 直接实现（B6） |
-| 链接分享发布 | `statuses/share` | ⚠️ 需第三方分享权限 | 默认发布路径（B13） |
-| **点赞** | — | ❌ 无接口 | **不实现**，仅展示数（B4） |
-| **转发写入** | — | ❌ 无接口 | **不实现**（B5 写） |
-| **图文/视频发布** | `statuses/update`（未开放给普通应用） | ❌ 缺 | 高级权限后支持（B11/B13） |
-| **分组** | — | ❌ 无接口 | 降级为本地分组（B2） |
-| **图片/视频上传** | — | ❌ 无接口 | 图文发布依赖高级权限；**下载**经网页 ajax 接口 `ajax/statuses/show` 解析 JSON 取直链（B14/B15，见第 10 节） |
-
-> **结论**：官方 Open API 足以支撑「浏览 + 评论 + 表情 + AI 分享发布」主线；媒体下载经官网 ajax 接口取直链（见第 10 节，已验证可用）；点赞、转发、图文发布、分组四项需降级或高级权限，已在第 3 节明确标注，**不引入逆向私有协议**。
-
----
-
-## 6. 关键技术选型
-
-| 关注点 | 候选方案 | 结论 | 理由 |
-|--------|----------|------|------|
-| **接口主干** | 官方 Open API / 私有 API | **官方 Open API（OAuth2）** | 合规、文档公开；缺口以降级处理，不碰私有 API |
-| 认证 | OAuth2 | **OAuth2** | 官方标准，Token 存 SecretStorage |
-| 会话存储 | `SecretStorage` | **SecretStorage** | 与 `common.md` 一致，系统级加密 |
-| 瀑布流 | CSS columns / `react-masonry-css` / 自研虚拟瀑布流 | **虚拟瀑布流（自研轻量）** | 与虚拟滚动结合，千条不卡顿 |
-| 媒体懒加载 | IntersectionObserver | **IntersectionObserver** | Webview 内可控、可取消 |
-| 表情包 | 官方 `emotions` 接口 | **官方接口动态拉取 + 本地缓存** | 与平台表情同步，离线可用 |
-| 长图渲染 | `satori` + `@resvg/resvg-js` | **satori + resvg** | 无浏览器依赖、体积小（仅分享预览/高级发布用） |
-| 媒体下载 | 官方直链 `fetch`（stream） | **内置 `fetch`** | 直链来自官方读取接口；支持进度与断点续传 |
-| 重试策略 | 指数退避 + 抖动 | **指数退避 + 抖动** | 避免重试洪峰 |
-| 超时 | 分级超时 | **连接 10s、总体 30s** | 防请求挂起 |
-| 幂等 | 本地记录 + hash | **本地记录去重** | 平台无幂等键，本地兜底 |
-| 限流 | 令牌桶（分桶） | **本地令牌桶（读/写/下载分桶）** | 守配额，防风控与账单刷爆 |
-
-> **弃用规避**：不使用微博旧版 `statuses/upload`（已下线）；不使用 `request` 等已废弃 HTTP 库（改用内置 `fetch`）。
-
----
-
-## 7. 数据模型
-
-存于 `globalStorage/social.db`（与 v1.0 同源，扩展以支撑浏览/评论/分组/媒体）。
-
-```sql
--- 平台账号（微博/公众号共用，platform 区分）
-CREATE TABLE IF NOT EXISTS social_accounts (
-    id          TEXT PRIMARY KEY,
-    platform    TEXT NOT NULL,          -- 'weibo' | 'wechat'
-    account_id  TEXT NOT NULL,
-    nickname    TEXT,
-    token_key   TEXT NOT NULL,          -- SecretStorage 中的键名，不存明文
-    expires_at  TEXT,
-    is_default  INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL,
-    UNIQUE(platform, account_id)
-);
-
--- 微博缓存（仅索引与展示字段，不存正文全文到 Git）
-CREATE TABLE IF NOT EXISTS weibo_cache (
-    mid           TEXT PRIMARY KEY,
-    uid           TEXT NOT NULL,
-    author_id     TEXT NOT NULL,
-    author_name   TEXT,
-    text          TEXT,                 -- 展示文本（含表情占位）
-    created_at    TEXT NOT NULL,
-    source        TEXT,                 -- 'timeline' | 'user' | 'mention'
-    pics          TEXT NOT NULL DEFAULT '[]',  -- 图片直链 JSON
-    video         TEXT,                 -- 视频直链（多清晰度 JSON）
-    like_count    INTEGER NOT NULL DEFAULT 0,
-    repost_count  INTEGER NOT NULL DEFAULT 0,
-    comment_count INTEGER NOT NULL DEFAULT 0,
-    group_tags    TEXT NOT NULL DEFAULT '[]',  -- 本地分组标签 JSON
-    raw           TEXT,                 -- 原始 JSON（脱敏后）
-    fetched_at    TEXT NOT NULL,
-    expired_at    TEXT
-);
-
-CREATE INDEX IF NOT EXISTS idx_weibo_src ON weibo_cache(uid, source, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_weibo_tag ON weibo_cache(uid, group_tags);
-
--- 本地分组
-CREATE TABLE IF NOT EXISTS weibo_groups (
-    id        TEXT PRIMARY KEY,
-    uid       TEXT NOT NULL,
-    name      TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-
--- 评论缓存
-CREATE TABLE IF NOT EXISTS weibo_comments (
-    id        TEXT PRIMARY KEY,
-    mid       TEXT NOT NULL,
-    uid       TEXT NOT NULL,
-    author    TEXT,
-    text      TEXT,
-    created_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_comment_mid ON weibo_comments(mid);
-
--- 互动/写操作记录（评论、发布；点赞/转发不落此表）
-CREATE TABLE IF NOT EXISTS interaction_records (
-    id          TEXT PRIMARY KEY,
-    uid         TEXT NOT NULL,
-    mid         TEXT,
-    action      TEXT NOT NULL,          -- 'comment' | 'publish'
-    action_hash TEXT NOT NULL,
-    status      TEXT NOT NULL,          -- pending|success|failed
-    error       TEXT,
-    attempt_count INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL,
-    UNIQUE(uid, action_hash) WHERE status = 'success'
-);
-
--- 发布记录（幂等与历史）
-CREATE TABLE IF NOT EXISTS publish_records (
-    id            TEXT PRIMARY KEY,
-    platform      TEXT NOT NULL,
-    account_id    TEXT NOT NULL,
-    file_path     TEXT NOT NULL,
-    content_hash  TEXT NOT NULL,
-    content_text  TEXT,
-    payload       TEXT NOT NULL DEFAULT '{}',
-    method        TEXT NOT NULL DEFAULT 'share',  -- 'share' | 'update'
-    status        TEXT NOT NULL,
-    platform_url  TEXT,
-    error         TEXT,
-    attempt_count INTEGER NOT NULL DEFAULT 0,
-    created_at    TEXT NOT NULL,
-    updated_at    TEXT NOT NULL
-);
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_publish_idem
-    ON publish_records(platform, account_id, content_hash) WHERE status = 'success';
-
--- 草稿
-CREATE TABLE IF NOT EXISTS publish_drafts (
-    id         TEXT PRIMARY KEY,
-    platform   TEXT NOT NULL,
-    file_path  TEXT NOT NULL,
-    text       TEXT NOT NULL,
-    images     TEXT NOT NULL DEFAULT '[]',
-    updated_at TEXT NOT NULL
-);
-
--- 媒体下载记录（去重 + 命名溯源）
-CREATE TABLE IF NOT EXISTS media_downloads (
-    id          TEXT PRIMARY KEY,
-    uid         TEXT NOT NULL,
-    mid         TEXT NOT NULL,
-    media_type  TEXT NOT NULL,          -- 'image' | 'video'
-    url         TEXT NOT NULL,
-    saved_path  TEXT NOT NULL,
-    created_at  TEXT NOT NULL,
-    UNIQUE(uid, url)
-);
-
--- 已保存为笔记的记录（去重 + UI「已保存」角标）
-CREATE TABLE IF NOT EXISTS weibo_saved_notes (
-    mid         TEXT NOT NULL,
-    uid         TEXT NOT NULL,
-    note_path   TEXT NOT NULL,
-    created_at  TEXT NOT NULL,
-    PRIMARY KEY (mid, note_path)
-);
-
-CREATE INDEX IF NOT EXISTS idx_saved_note_mid ON weibo_saved_notes(mid);
-```
-
----
-
-## 8. 接口与命令
-
-| Command ID | 标题 | 说明 |
-|------------|------|------|
-| `zhai.weibo.login` | 微博授权 | OAuth2 授权登录 |
-| `zhai.weibo.logout` | 退出账号 | 撤销授权（revokeoauth2） |
-| `zhai.weibo.openBrowser` | 打开微博浏览器 | 加载首页时间线 |
-| `zhai.weibo.switchGroup` | 切换本地分组 | 按标签筛选缓存 |
-| `zhai.weibo.comment` | 评论/回复 | comments/create、comments/reply |
-| `zhai.weibo.publish` | 发布到微博 | AI 编辑 → 预览 → share 发布 |
-| `zhai.weibo.downloadMedia` | 下载媒体 | 批量下载图片/视频并按规范命名 |
-| `zhai.weibo.history` | 发布历史 | 查看记录与回执 |
-| `zhai.weibo.retry` | 重试失败任务 | 对失败发布/评论重试 |
-| `zhai.weibo.saveToNote` | 保存为笔记 | 将当前微博转为 Markdown 笔记存入笔记模块（卡片按钮，无需命令注册） |
-
-**Webview 方法**：`weibo/login`、`weibo/timeline`、`weibo/comments`、`weibo/comment`、`weibo/publish`（流式进度）、`weibo/downloadMedia`、`weibo/stickers`、`weibo/groups`、`weibo/saveToNote`（保存为笔记）、`weibo/addToChat`（把当前微博作为内联上下文加入 AI 对话）。
-
-```typescript
-/** 媒体下载请求 */
-interface WeiboDownloadRequest {
-    method: 'weibo/downloadMedia'
-    payload: {
-        accountId: string
-        items: Array<{
-            mid: string
-            mediaType: 'image' | 'video'
-            url: string
-            quality?: string
-        }>
-        destDir?: string
-    }
-}
-
-interface WeiboDownloadItemResult {
-    url: string
-    status: 'success' | 'failed' | 'skipped'
-    savedPath?: string
-    error?: { code: string; message: string }
-}
-```
-
----
-
-## 9. 验收标准
-
-| 编号 | 场景 | 指标 |
-|------|------|------|
-| AC-1 | 授权持久化 | 授权后重启窗口仍有效；Token 无明文落盘；可撤销 |
-| AC-2 | 时间线 | `home_timeline` 加载 < 2s（有缓存秒开）；分页正常 |
-| AC-3 | 本地分组 | 标签/筛选正常，切换无串数据 |
-| AC-4 | 瀑布流 | 千条卡片不卡顿；图片懒加载；列数自适应 |
-| AC-5 | 表情渲染 | 官方 `emotions` 映射正确，无未映射文本残留 |
-| AC-6 | 评论 | 列表加载、发表、回复正常；重复提交被幂等拦截 |
-| AC-7 | AI 编辑 | 润色可 diff 对比采纳/拒绝；未采纳不污染原文 |
-| AC-8 | 内容转换 | `#话题#` 与 `@` 保留；链接转「网页链接」 |
-| AC-9 | 发布幂等 | 同一内容重复发布被拦截 |
-| AC-10 | 重试/超时 | 1s/2s/4s（含抖动）≤3 次；连接 10s / 总体 30s 超时 |
-| AC-11 | 图片下载 | 并发可控；统一命名；重复 URL 跳过 |
-| AC-12 | 视频下载 | 按清晰度下载；统一命名；断点续传 |
-| AC-13 | 失败不丢数据 | 任何失败保留草稿/记录，可编辑后重发 |
-| AC-14 | 限流 | 遵守 `rate_limit_status`；令牌桶分桶限流 |
-| AC-15 | 保存为笔记 | 微博正确转为**不含 Frontmatter** 的 Markdown 笔记，文件名为 `微博-{用户昵称}-{正文前 18 字}.md`；正文版式为 `# 微博-{正文前 18 字}`（超出 18 字才补 `...`）+ 元信息（作者/原文/发表时间/采集方式）+ 「## 微博正文」+ 可选「## 转发内容」（带图时含「### 转发配图」）+ 可选「## 微博配图」，视频一律忽略；主贴与转发配图均按上传格式落 `uploads/{YYYYMM}/` 并以 `@zhai/uploads/...` 引用，取图失败才回退远程直链；文件名重名顺延，不覆盖既有笔记；连续点击只发一次请求；主贴或转发体为长文时先取全文再落盘，取全文失败才保留摘要并标注「可能被截断」 |
-| AC-16 | 添加到 AI 对话 | 卡片正文作为内联引用加入微博作用域会话；长文（主贴或转发体被截断）先取全文再加入，取全文失败才保留摘要；重复添加同一条给出「已在对话上下文中」；成功后面板切到对话分区并聚焦 |
-
----
-
-## 10. 媒体下载命名规范与地址解析
-
-### 10.1 地址解析（来自详情 JSON）
-
-取详情：`GET https://weibo.com/ajax/statuses/show?id={postId}`（与官网同源的网页 ajax 接口，非 `open.weibo.com` REST）。
-
-| JSON 字段（位于 `data.retweeted_status || data`） | 含义 | 下载地址构造 |
-|------|------|------|
-| `pic_ids[]` | 图片 pid 列表 | `https://weibo.com/ajax/common/download?pid={pid}` |
-| `page_info.media_info.playback_list[0].play_info.url` | 单视频直链 | 直链直接使用 |
-| `mix_media_info.items[]` | 混合媒体（图+视频） | `type==='video'` → `item.data.media_info.playback_list[0].play_info.url`；否则 → `ajax/common/download?pid={item.id}` |
-| `mblogid` | 微博 id（用于命名） | — |
-| `user.id` | 作者 uid（用于命名） | — |
-| `created_at` | 发布时间（用于命名） | 格式化为 `YYYYMMDDHHmm` |
-
-> 关键约束：所有媒体下载请求**必须携带 `Referer: https://weibo.com`**，否则 CDN 返回 403。
-
-### 10.2 命名规范
-
-统一命名保证可读、可排序、可溯源，且兼容 Windows 文件名规则（去除 `\ / : * ? " < > |` 等）。命名采用已验证可用的脚本格式（参考 Tampermonkey `weibo-image-downloader`）。
-
-**下载根目录**：`配置下载目录 / <账号昵称或uid> /`
-- 图片：`images/`
-- 视频：`videos/`
-
-**命名模板（规范格式）**：
-
-| 媒体 | 模板 | 示例 |
-|------|------|------|
-| 图片 | `weibo-{uid}-{YYYYMMDDHHmm}-{postId}-{seq:02d}.{ext}` | `weibo-123456-202609041230-AbC123-01.jpg` |
-| 视频 | `weibo-{uid}-{YYYYMMDDHHmm}-{postId}-{seq:02d}.mp4` | `weibo-123456-202609041230-AbC123-01.mp4` |
-
-**字段来源**：
-- `uid`：`user.id`
-- `YYYYMMDDHHmm`：`created_at` 格式化为 12 位（年/月/日/时/分各补零）
-- `postId`：`mblogid`
-- `seq`：同条微博内媒体序号，从 `01` 起（保持九宫格/混合媒体顺序）
-
-**可读性变体（可选）**：在 `postId` 后追加清洗后的作者昵称，便于人工浏览：
-`weibo-{uid}-{YYYYMMDDHHmm}-{postId}-{author}-{seq:02d}.{ext}`（author 做非法字符清洗 + 截断 ≤16 字符，空则省略）。
-
-**规则细节**：
-- `ext`：图片从 `Content-Type`/直链推导（jpg/png/gif），视频为 `mp4`；未知回退 `bin`
-- 冲突处理：同名已存在则追加 `_<n>`（`_1`/`_2`），不静默覆盖
-- 去重：以 `postId`（历史记录）与 `url` 维度去重，已下载则跳过并提示；历史上限 50000 条
-
-### 10.3 下载控制参数（对齐参考脚本）
-
-| 参数 | 值 | 说明 |
-|------|------|------|
-| 最大并发 | 3 | 令牌桶限流，避免触发风控 |
-| 重试次数 | 2 | 失败按 `1000ms × (n+1)` 退避 |
-| 超时 | 30000ms | 单请求超时 |
-| Referer | `https://weibo.com` | 必带，否则 403 |
-
-### 10.4 地址解析实现（TypeScript 提取函数）
-
-> 输入为 `ajax/statuses/show` 返回的解析后对象。建议先经 zod 或类型守卫收窄 `unknown` 为下方 `WeiboDetail`，避免 `any`。
-
-```typescript
-/** 单条可下载媒体 */
-interface WeiboMediaItem {
-    type: 'image' | 'video'
-    /** 最终下载直链 */
-    url: string
-    /** 图片 pid（去重/溯源用），视频可空 */
-    pid?: string
-    /** 同条微博内序号，从 1 起，保持九宫格/混合媒体顺序 */
-    seq: number
-}
-
-/** 详情 JSON 中媒体相关的窄化结构（其余字段按需扩展） */
-interface WeiboDetail {
-    mblogid: string
-    created_at: string
-    user: { id: string; screen_name?: string }
-    pic_ids?: string[]
-    page_info?: {
-        media_info?: { playback_list?: Array<{ play_info: { url: string } }> }
-    }
-    mix_media_info?: {
-        items?: Array<{
-            type: string
-            id?: string
-            data?: { media_info?: { playback_list?: Array<{ play_info: { url: string } }> } }
-        }>
-    }
-    retweeted_status?: WeiboDetail
-}
-
-const WEIBO_AJAX = 'https://weibo.com/ajax'
-const WEIBO_REFERER = 'https://weibo.com'
-
-/** 取目标体：转发优先取原微博 */
-function resolveTarget(raw: WeiboDetail): WeiboDetail {
-    return raw.retweeted_status ?? raw
-}
-
-/** 从详情提取全部媒体项（图片 + 视频，保持顺序） */
-function extractMedia(detail: WeiboDetail): WeiboMediaItem[] {
-    const target = resolveTarget(detail)
-    const items: WeiboMediaItem[] = []
-    let seq = 0
-
-    // 1) 混合媒体（图 + 视频交错）
-    const mix = target.mix_media_info?.items ?? []
-    if (mix.length > 0) {
-        for (const it of mix) {
-            seq += 1
-            if (it.type === 'video') {
-                const url = it.data?.media_info?.playback_list?.[0]?.play_info?.url
-                if (url) items.push({ type: 'video', url, seq })
-                continue
-            }
-            if (it.id) {
-                items.push({ type: 'image', url: `${WEIBO_AJAX}/common/download?pid=${it.id}`, pid: it.id, seq })
-            }
-        }
-        return items
-    }
-
-    // 2) 单视频
-    const videoUrl = target.page_info?.media_info?.playback_list?.[0]?.play_info?.url
-    if (videoUrl) {
-        seq += 1
-        items.push({ type: 'video', url: videoUrl, seq })
-    }
-
-    // 3) 图片列表
-    for (const pid of target.pic_ids ?? []) {
-        seq += 1
-        items.push({ type: 'image', url: `${WEIBO_AJAX}/common/download?pid=${pid}`, pid, seq })
-    }
-
-    return items
-}
-
-/** created_at → YYYYMMDDHHmm（12 位） */
-function formatWeiboTimestamp(createdAt: string): string {
-    const d = new Date(createdAt)
-    const pad = (n: number): string => n.toString().padStart(2, '0')
-    return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}`
-}
-
-/** 清洗作者昵称，兼容 Windows 文件名（去除 \ / : * ? " < > |，截断 ≤16） */
-function sanitizeAuthor(name?: string): string {
-    if (!name) return ''
-    return name.replace(/[\\/:*?"<>|]/g, '_').slice(0, 16)
-}
-
-/** 生成统一文件名（规范格式；readable=true 追加作者） */
-function generateMediaFilename(params: {
-    uid: string
-    timestamp: string
-    postId: string
-    seq: number
-    ext: string
-    author?: string
-    readable?: boolean
-}): string {
-    const { uid, timestamp, postId, seq, ext, author, readable } = params
-    const base = `weibo-${uid}-${timestamp}-${postId}`
-    const core = readable && author ? `${base}-${sanitizeAuthor(author)}` : base
-    return `${core}-${seq.toString().padStart(2, '0')}.${ext}`
-}
-
-/** 组装下载任务（含 Referer 头与超时） */
-interface DownloadTask {
-    url: string
-    filename: string
-    referer: string
-    timeoutMs: number
-}
-
-async function buildDownloadTasks(detail: WeiboDetail, readable = false): Promise<DownloadTask[]> {
-    const target = resolveTarget(detail)
-    const timestamp = formatWeiboTimestamp(target.created_at)
-    return extractMedia(detail).map((m) => ({
-        url: m.url,
-        filename: generateMediaFilename({
-            uid: target.user.id,
-            timestamp,
-            postId: target.mblogid,
-            seq: m.seq,
-            ext: m.type === 'video' ? 'mp4' : 'jpg',
-            author: target.user.screen_name,
-            readable,
-        }),
-        referer: WEIBO_REFERER,
-        timeoutMs: 30_000,
-    }))
-}
-```
-
-> 调用顺序：`fetch(ajax/statuses/show) → JSON.parse → zod 收窄为 WeiboDetail → buildDownloadTasks → 并发下载（≤3，带 Referer，重试 2 次）`。
-
----
-
-## 11. 风险与开放问题
-
-| 风险 | 影响 | 缓解措施 |
-|------|------|----------|
-| **功能缺口（最高）** | 点赞/转发/图文发布/分组/上传官方不可得 | 已明确降级/受限标注（第 3、5 节）；不引入私有 API，保持合规 |
-| 分享权限未获批 | 默认发布路径不可用 | 先实现不依赖权限的浏览/评论/下载；share 权限获批后再接发布 |
-| 接口变更 | 官方改版致功能失效 | 接口调用集中封装，单点适配 |
-| Token 过期 | 浏览/发布中断 | 提前 10 分钟刷新；失败提示重新授权 |
-| 限流/风控 | 请求被拦 | 令牌桶分桶限流 + 退避重试；下载限速 |
-| 媒体版权 | 下载内容再分发侵权 | 仅个人归档；下载时提示用途边界 |
-| 媒体接口依赖 | 下载依赖官网 ajax 接口 `ajax/statuses/show`，非开放平台契约 | 接口调用集中封装；兼容 `pic_ids`/`mix_media_info`/`page_info` 多形态；失败降级提示 |
-| Referer 约束 | 缺少 `Referer: https://weibo.com` 时 CDN 返回 403 | 下载请求统一注入 Referer 头（第 10 节） |
-| 直链稳定性 | 图片/视频直链失效 | 下载前以 `ajax/statuses/show` 重新取最新直链 |
-
-**开放问题（需确认）**
-
-1. 分享权限（`statuses/share` 第三方分享）是否已申请/可获批？决定默认发布路径是否可用。
-2. 是否申请高级接口（图文/视频发布、上传）？决定 B11/B13 高级路径是否落地。
-3. 媒体下载默认目录与是否默认开启（避免误触大量下载）？
-4. AI 编辑所用模型（复用 CodeBuddy 通道，模型 id 走 AI 面板模型菜单的选择）与默认开关？
-5. 本地分组的标签体系是否需要与笔记标签打通？
-6. 多账号浏览是否需要（影响缓存按 uid 隔离复杂度）？
-
----
-
-## 12. 关键交互逻辑实现（TypeScript）
-
-### 12.1 评论读取 / 发表
-
-> 官方 Open API：`comments/show`（读）、`comments/create`（新评论）、`comments/reply`（回复）。OAuth2 token 存 SecretStorage。写操作需本地幂等去重（见第 4.3 节、数据模型 `interaction_records`）。
-
-```typescript
-const WEIBO_API_V2 = 'https://api.weibo.com/2'
-
-/** 单条评论 */
-interface WeiboComment {
-    id: string
-    authorId: string
-    authorName: string
-    text: string
-    createdAt: string
-}
-
-/** 评论列表分页结果 */
-interface CommentListResult {
-    comments: WeiboComment[]
-    hasMore: boolean
-    nextCursor: string | null
-}
-
-/** 读取某条微博评论（官方 comments/show） */
-async function fetchComments(params: {
-    accessToken: string
-    mid: string
-    cursor?: string
-    pageSize?: number
-}): Promise<CommentListResult> {
-    const qs = new URLSearchParams({
-        access_token: params.accessToken,
-        id: params.mid,
-        count: String(params.pageSize ?? 20),
-        ...(params.cursor ? { page: params.cursor } : {}),
-    })
-    const res = await fetch(`${WEIBO_API_V2}/comments/show.json?${qs}`, { signal: AbortSignal.timeout(30_000) })
-    if (!res.ok) throw new Error(`comments/show 失败: ${res.status}`)
-    const data = (await res.json()) as { comments?: Array<Record<string, unknown>> }
-    const comments = (data.comments ?? []).map(normalizeComment)
-    return {
-        comments,
-        hasMore: comments.length >= (params.pageSize ?? 20),
-        nextCursor: comments.length ? String(Number(params.cursor ?? '1') + 1) : null,
-    }
-}
-
-/** 发表 / 回复评论（官方 comments/create、comments/reply） */
-async function postComment(params: {
-    accessToken: string
-    mid: string
-    content: string
-    replyCommentId?: string
-    existsHash: (hash: string) => boolean   // 幂等校验：sha256(账号+mid+动作+文本)
-    saveHash: (hash: string) => void
-}): Promise<{ ok: boolean; comment?: WeiboComment; error?: string }> {
-    const hash = await sha256(`${params.accessToken}:${params.mid}:${params.replyCommentId ?? 'comment'}:${params.content}`)
-    if (params.existsHash(hash)) {
-        return { ok: false, error: '幂等拦截：该评论已提交' }
-    }
-    const endpoint = params.replyCommentId ? 'comments/reply' : 'comments/create'
-    const body = new URLSearchParams({
-        access_token: params.accessToken,
-        id: params.mid,
-        comment: params.content,
-        ...(params.replyCommentId ? { cid: params.replyCommentId } : {}),
-    })
-    const res = await fetch(`${WEIBO_API_V2}/${endpoint}.json`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body,
-        signal: AbortSignal.timeout(30_000),
-    })
-    if (!res.ok) {
-        return { ok: false, error: `发布失败: ${res.status}` }
-    }
-    params.saveHash(hash)
-    const data = (await res.json()) as Record<string, unknown>
-    return { ok: true, comment: normalizeComment(data) }
-}
-
-/** 归一化评论字段（防御性取值） */
-function normalizeComment(raw: Record<string, unknown>): WeiboComment {
-    const user = (raw.user ?? {}) as Record<string, unknown>
-    return {
-        id: String(raw.id ?? ''),
-        authorId: String(user.id ?? ''),
-        authorName: String(user.screen_name ?? ''),
-        text: String(raw.text ?? ''),
-        createdAt: String(raw.created_at ?? ''),
-    }
-}
-
-async function sha256(input: string): Promise<string> {
-    const data = new TextEncoder().encode(input)
-    const buf = await crypto.subtle.digest('SHA-256', data)
-    return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('')
-}
-```
-
-### 12.2 AI 编辑与 diff 采纳
-
-> 发布前由 AI 润色（复用 CodeBuddy 通道，见开放问题 4）；编辑结果与原文以统一 diff 呈现，用户逐段采纳/拒绝后再发布。
-
-```typescript
-/** AI 润色请求 */
-interface AIEditRequest {
-    text: string
-    instruction: string          // 如「缩写到 140 字」「改写为轻松口语风」
-    model: string  // 由调用方按 CodeBuddy 通道配置传入
-}
-
-interface AIEditResult {
-    original: string
-    edited: string
-}
-
-/** 调用 LLM 完成润色（依赖项目 LLM 客户端，此处为抽象签名） */
-async function requestAIEdit(req: AIEditRequest): Promise<AIEditResult> {
-    const edited = await callLLM({
-        model: req.model,
-        system: '你是微博文案助手，仅返回改写后文本，不要解释',
-        prompt: `${req.instruction}\n\n${req.text}`,
-    })
-    return { original: req.text, edited }
-}
-
-/** 统一 diff 片段 */
-interface DiffHunk {
-    type: 'context' | 'add' | 'remove'
-    content: string
-    lineNo?: number
-}
-
-/** 计算逐行统一 diff（行级比对，生产可换成熟 diff 库） */
-function computeUnifiedDiff(original: string, edited: string): DiffHunk[] {
-    const a = original.split('\n')
-    const b = edited.split('\n')
-    const hunks: DiffHunk[] = []
-    const max = Math.max(a.length, b.length)
-    for (let i = 0; i < max; i++) {
-        const o = a[i]
-        const e = b[i]
-        if (o === e) hunks.push({ type: 'context', content: o, lineNo: i + 1 })
-        else {
-            if (o !== undefined) hunks.push({ type: 'remove', content: o })
-            if (e !== undefined) hunks.push({ type: 'add', content: e })
-        }
-    }
-    return hunks
-}
-
-/** 用户决策：采纳 edited / 拒绝保留 original */
-type DiffDecision = 'accept' | 'reject'
-
-function applyDiffDecision(result: AIEditResult, decision: DiffDecision): string {
-    return decision === 'accept' ? result.edited : result.original
-}
-
-async function callLLM(_req: { model: string; system: string; prompt: string }): Promise<string> {
-    // 接入项目 CodeBuddy 通道
-    return ''
-}
-```
-
-> 调用顺序（发布）：`markdown→纯文本` → `requestAIEdit`（可选）→ `computeUnifiedDiff` 渲染对比 → 用户 `applyDiffDecision` → `postComment` / `share` 发布。
-
----
-
-### 12.3 保存为笔记（Markdown 转换）
-
-> 复用笔记模块「网页剪藏」的正文版式，但**不写 Frontmatter**：作者 / 原文 / 发表时间 / 采集方式全部落在正文引用块（UID / PID 不再写入）。本模块只产出 Markdown 内容，落盘由笔记模块 `createNoteFromContent` 完成，保持解耦。
-
-> 实现说明：`src/modules/weibo/note.ts` 实际以卡片载荷 `WeiboPagePostPayload` 为输入（不再依赖 `WeiboDetail`），导出 `buildWeiboNoteTitle` / `buildWeiboNoteMarkdown` / `buildWeiboChatText` 三个纯函数；`buildWeiboNoteMarkdown` 的第二参 `localImages` 与配图一一对应，给出时写 `@zhai/uploads/...`、为 null 时回退远程直链。正文已固化为「`# 微博-{正文前 18 字}`（超出才补 `...`）→ 元信息引用块 → `## 微博正文` → `## 转发内容`（含 `### 转发配图`）→ `## 微博配图`」，不写 Frontmatter，视频不写入；文件名改为 `微博-{用户昵称}-{正文前 18 字}`。主贴与转发体是长文时，路由层在落盘前先调长文接口取全文（`expandLongText`），失败才保留摘要。原设计中由集成层实现的 `NoteInserter` / `saveWeiboToNote` 已移除，宿主装配在 `src/modules/weibo/postActions.ts`，配图搬运由面板注入。下方片段保留为设计稿。
-
-```typescript
-import { extractMedia, resolveTarget } from './media'
-import type { WeiboDetail } from './types'
-
-/** 笔记落盘入口——由集成层传入笔记模块 API 实现 */
-export interface NoteInserter {
-    createFromContent(input: {
-        markdown: string
-        notebook?: string
-        tags?: string[]
-    }): Promise<{ path: string }>
-}
-
-/** 组装微博笔记的 Frontmatter + 正文（与 notes.md 剪藏模板一致） */
-export function buildWeiboNoteMarkdown(
-    detail: WeiboDetail,
-    opts: { includeMedia?: boolean } = {},
-): string {
-    const target = resolveTarget(detail)
-    const author = target.user?.screen_name ?? '未知作者'
-    const uid = target.user?.id ?? 'unknown'
-    const mid = target.mblogid ?? target.id ?? 'unknown'
-    const permalink = `https://weibo.com/${uid}/${mid}`
-    const createdAt = target.created_at ?? new Date().toISOString()
-    const text = (target.text ?? '').replace(/<[^>]+>/g, '').trim()  // 去 HTML 标签
-    const title = `${author} 的微博`
-    const tags = ['微博', 'weibo']
-
-    const frontmatter = [
-        '---',
-        `title: ${JSON.stringify(title)}`,
-        `created: ${createdAt}`,
-        `tags: [${tags.map((t) => JSON.stringify(t)).join(', ')}]`,
-        `source: ${permalink}`,
-        '---',
-        '',
-    ].join('\n')
-
-    const body: string[] = []
-    body.push(`> 作者：${author}`)
-    body.push(`> 原文：[微博链接](${permalink})`)
-    body.push('> 采集方式：微博浏览器 · 保存为笔记')
-    body.push('')
-    body.push(text || '(无正文)')
-    body.push('')
-
-    if (opts.includeMedia !== false) {
-        const media = extractMedia(detail)
-        if (media.length) {
-            body.push('### 媒体')
-            for (const m of media) {
-                if (m.type === 'image') body.push(`![${author} 的配图](${m.url})`)
-                else body.push(`[▶ 视频](${m.url})`)
-            }
-            body.push('')
-        }
-    }
-    return frontmatter + body.join('\n')
-}
-
-/** 保存微博为笔记：转 Markdown → 调笔记模块 → 返回笔记路径 */
-export async function saveWeiboToNote(
-    detail: WeiboDetail,
-    notes: NoteInserter,
-): Promise<{ path: string }> {
-    const markdown = buildWeiboNoteMarkdown(detail)
-    return notes.createFromContent({ markdown, tags: ['微博', 'weibo'] })
-}
-```
-
-> 调用顺序（保存为笔记）：卡片载荷 → `readWeiboPagePost` 收窄 → `buildWeiboNoteMarkdown` → 笔记模块 `createNoteFromContent`（落 `notes/未分类` + 索引）→ toast 回执；
-> 调用顺序（添加到 AI 对话）：卡片载荷 → `readWeiboPagePost` 收窄 → 长文补全（与保存笔记同一 `expandLongText`，取不到保留摘要）→ `buildWeiboChatText` → 构造 `kind: 'weibo'` 的内联引用（不带文件路径，`uri` 为原文链接作去重键）→ 对齐 `weibo` 作用域会话 → `addContexts` → 切到对话分区。
-
----
-
-## 13. 与 v1.0 的差异摘要
-
-- **范围扩大**：从「发布单向」扩展为「浏览（时间线）+ 评论 + AI 分享发布 + 媒体管理」
-- **合规重构**：从 v1.0 假设的「官方 Open API 受限、私有 API 为主干」，校正为**全程基于官方 Open API（OAuth2）**，缺口明确降级，不引入私有 API
-- **新增能力**：瀑布流布局、官方表情渲染、评论读写、媒体下载与命名规范、本地分组
-- **能力边界明确**：点赞/转发/图文发布/分组/上传 官方当前不可得，已标注受限
-- **数据模型扩展**：新增 `weibo_cache` / `weibo_groups` / `weibo_comments` / `media_downloads`
-- **不变**：发布可靠性（幂等/重试/超时/限流）、SecretStorage 存储、Markdown 转换管线
-- **新增能力**：保存为笔记（B22）——复用笔记模块「网页剪藏」统一 Markdown 模板，微博转笔记后可双链/检索/版本管理；数据模型新增 `weibo_saved_notes` 去重与「已保存」角标
-
----
-
-## 14. 关注时间线（网页版 ajax 接口）
-
-> 定位：`ajax/feed/unreadfriendstimeline` 是 **weibo.com 网页端同源内部 ajax 接口**，只读、Cookie 鉴权、无移动端 `x-xs-*` 签名参数，与本模块媒体下载所用的 `ajax/statuses/show` 属同一类依赖，不是开放平台 REST 契约，也不涉及逆向私有协议。开放平台的 `statuses/home_timeline` 仍为主干方案，本节接口用于在插件内直接浏览关注流。
-
-### 14.1 请求构造
+### 2.1 请求构造
 
 ```
 GET https://weibo.com/ajax/feed/unreadfriendstimeline
@@ -982,14 +109,14 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 | `Accept` | `application/json, text/plain, */*` | 期望 JSON |
 | `X-Requested-With` | `XMLHttpRequest` | 声明为 ajax 请求 |
 
-### 14.2 鉴权处理
+### 2.2 鉴权处理
 
 - 凭证即浏览器登录态 Cookie，**至少包含 `SUB`**；`SUBP`、`XSRF-TOKEN` 等一并保留，宿主不做裁剪。
 - 存储：`vscode.SecretStorage`（`zhai.weibo.webCookie` + 保存时刻键），明文不出宿主、不进日志、不回传前端；前端只看到「是否已配置 + 保存时间」。
 - 失效判定：HTTP 401/403 → 登录态失效；302 到登录页被 fetch 跟随后会拿到 HTML（以 `<` 开头）→ 同样判失效；JSON `{ok:0,msg}` 中含「登录/账号」→ 失效。
 - 频控判定：HTTP 418/429，或 `msg` 含「频繁/过快/太多」→ 限流；这两类错误**不重试**，重试只会加重风控。
 
-### 14.3 分页与增量
+### 2.3 分页与增量
 
 ```
 首屏：refresh=4 & since_id=0
@@ -1006,7 +133,7 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 - 两种口径实测不同：分组 / 时间线（`groupstimeline` / `friendstimeline`）的 `since_id` 恰好等于首条微博 id，两者等价；**首页 `unreadfriendstimeline` 的 `since_id` 是读进度游标**（实测 `1795177409209985`，与 16 位微博 id 不同量级），若用首条微博 id 覆盖会让下次增量传错游标。
 - 单次调用最多翻 10 页（实现上限），避免一次点击打出长请求链。
 
-### 14.4 字段映射
+### 2.4 字段映射
 
 | 归一化字段 | 上游取值 | 处理 |
 |------------|----------|------|
@@ -1059,9 +186,9 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 
 - 两份都是顶层 `statuses`，**没有 `data` 包裹**；`since_id` / `max_id` 是数字（同值的 `*_str` 可兜底）。
 - `total_number` 只在分组样例出现（关注流总量），首页样例没有；两份都不拿它做翻页判断。
-- 增量口径不同：分组的 `since_id` 等于首条微博 id；首页的 `since_id` 是**读进度游标**（`1795…`，与 16 位微博 id 不同量级，且与 `max_id` 同值）。实现按「上游 `since_id` 优先、缺失回退首条 id」处理（见 14.3）。
+- 增量口径不同：分组的 `since_id` 等于首条微博 id；首页的 `since_id` 是**读进度游标**（`1795…`，与 16 位微博 id 不同量级，且与 `max_id` 同值）。实现按「上游 `since_id` 优先、缺失回退首条 id」处理（见 2.3）。
 - 首页 `max_id` 与 `since_id` 同值，更像读进度而非列表游标；翻页行为未单独验证，出现「加载更多」重复内容时优先怀疑这一点。
-- 分组、首页、热门共用同一套端点实现（`fetchWeiboFeed` → `fetchFriendTimeline`），都按顶层 `statuses` + 同名游标解析；`allGroups` 才是 `groups[]` 分区结构（见 14.11）。
+- 分组、首页、热门共用同一套端点实现（`fetchWeiboFeed` → `fetchFriendTimeline`），都按顶层 `statuses` + 同名游标解析；`allGroups` 才是 `groups[]` 分区结构（见 2.11）。
 - 单条微博字段（右列为出现次数，「分组 25 条 / 首页 15 条」）：
 
 | 字段 | 出现 | 说明 / 本项目处理 |
@@ -1082,7 +209,7 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 | `pic_focus_point` | 15/25 · 3/15 | 焦点裁切信息，未使用 |
 | `page_info` | 8/25 · 10/15 | 视频与卡片：`object_type` 实测 `video`（7 + 9 条）、`group`（分组 1 条）、`hudongvote`（首页 1 条，type 23 投票卡，无 `media_info`）；封面取 `page_pic`，时长取 `media_info.duration`，播放源取 `media_info` 的整段 mp4（见下方视频字段表） |
 | `retweeted_status` | 3/25 · 2/15 | 转发体结构与主贴同形（可自带 `page_info` 与 `pic_infos`），摘要、地址与媒体一并保留；另取 `user.id`（卡片 `@UID`）、`user.verified`（认证角标）与 `created_at`（发布时间），卡片转发块的作者行与主贴同构 |
-| `isAd` | 25/25 · 15/15 | 两份样例全为 `false`；点赞列表的推广位为 `true`（见 14.16） |
+| `isAd` | 25/25 · 15/15 | 两份样例全为 `false`；点赞列表的推广位为 `true`（见 2.16） |
 | `region_name` | 25/25 · 10/15 | 「发布于 北京」，目前不展示 |
 | `title` | 0 · 3/15 | 推荐流的「XX 关注了」推荐理由（含 `structs`），未展示 |
 | `buttons` / `mblog_menus_new` / `hide_from_prefix` / `is_second_attention` / `followBtnCode` / `ai_tag_info` | 0 · 3/15 | 推荐流的关注按钮、菜单与 AI 标签，未使用 |
@@ -1116,7 +243,7 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 | `mw2000` | `mw2000` | 1014×1920 | 未使用（样例与原图同尺寸，宽 >2000 时才缩） |
 | `largecover` | `cmw960` | 960×1817 | 未使用（封面裁切版） |
 
-- 实测 `largest` 与 `original` 尺寸相同（原图不超过 2048 时），`large` 是长边 960 的等比缩略；只有 pid 没有档位对象时，用 `wx1.sinaimg.cn/large/{pid}.jpg` 兜底（见 14.4 的图片渲染说明）。
+- 实测 `largest` 与 `original` 尺寸相同（原图不超过 2048 时），`large` 是长边 960 的等比缩略；只有 pid 没有档位对象时，用 `wx1.sinaimg.cn/large/{pid}.jpg` 兜底（见 2.4 的图片渲染说明）。
 - 视频封面另有一套更小的档位：`orj480`（`page_info.page_pic` / `pic_info`）与 `or180`（`big_pic_info.pic_small`）。
 
 #### 视频字段（`page_info` / `media_info`）
@@ -1218,13 +345,13 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 - 切换交互不占画面：左右各留四分之一热区，点击热区切换上/下一张，鼠标移到热区上才浮出圆形箭头，到端点不响应也不浮出；中间一半区域点击收起预览回到宫格（Esc 同样收起），右下角标出「当前 / 总数」。加载前按 `media.sizes` 的 largest 档比例占位，单张展开与加载完成前后不跳高度。
 - 宿主侧的超大图降级（超过 24MB 换 `bmiddle`）对展示图同样生效：`/orj960/` 也纳入可替换的尺寸目录。
 
-### 14.5 稳定性与使用限制
+### 2.5 稳定性与使用限制
 
 | 项 | 现状 | 影响 |
 |----|------|------|
 | 契约性质 | 网页端内部接口，无版本承诺 | 前端改版即可能改字段/参数，需按接口集中封装单点适配 |
 | 单页上限 | 约 50 条 | 首页一次最多拿 50 条，更多需翻页 |
-| 历史可达深度 | 约 20 页见底 | 更早内容取不到，不适合做全量归档（全量走开放平台或归档工具） |
+| 历史可达深度 | 约 20 页见底 | 更早内容取不到，不适合做全量归档（本模块不做全量归档） |
 | 游标 | `max_id` 不规律、不可构造 | 只能串行翻页，无法并行请求多页 |
 | 广告混入 | `ad`/推广位存在 | 必须按标记过滤，否则污染增量游标 |
 | Cookie 有效期 | 天级到周级，随登录环境变化 | 失效后需重新登录并覆盖保存 |
@@ -1234,7 +361,7 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 | 图片缓存 | 落 globalStorage 的 `weibo-media`，上限 800 个文件 | 超出按修改时间删旧；缓存损坏可整目录删除重建 |
 | 表情直链 | 表情 CDN 偶发 403 | 降级为 `[表情名]` 文本或浏览器 alt 文案，不阻断正文 |
 
-### 14.6 点赞（写操作）
+### 2.6 点赞（写操作）
 
 网页版点赞走一对写接口，参数都只有微博数字 id：
 
@@ -1256,7 +383,7 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 - 前端交互：乐观更新点赞态与计数，失败回滚并提示；同一微博请求进行中直接丢弃后续点击（`ref` 判定），避免连点放大成多次写。
 - 限制：写操作**不重试**（401/403/418 直接回错误），避免把账号打进风控；点赞结果不回写时间线数据源，刷新后以服务端为准。
 
-### 14.7 评论读取与发布
+### 2.7 评论读取与发布
 
 ```
 GET https://weibo.com/ajax/statuses/buildComments
@@ -1327,7 +454,7 @@ cid={评论 id}
 - 协议 `weibo/comment/destroy`，入参 `{ cid }`；回包同为 `{ ok, data, msg }`，成功时 `msg` 为「删除成功」。
 - 前端：每条评论都有「回复」，只有当前登录账号自己的评论才显示「删除」（`viewerUid` 与 `comment.author.id` 比对，uid 由 `weibo/profile` 或分组结果给出、经列表逐层透传）；删除走单个确认弹窗，成功后重拉第一页；回复复用底部发布框，只在框上方回显「回复 @某人」并可取消，提交时带 `replyToId`。
 
-### 14.8 长文展开
+### 2.8 长文展开
 
 ```
 GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
@@ -1342,7 +469,7 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 - 该清理**只对 `isLongText` 为真**的微博执行，普通正文里出现的「展开」与省略号保持原样。
 - `isLongText` 判定：上游 `isLongText === true` 或存在 `longText` 对象。
 
-### 14.9 常见反爬与合规边界
+### 2.9 常见反爬与合规边界
 
 合规且有效的做法（本模块已实现）：
 
@@ -1354,12 +481,12 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 
 明确不采用：UA 轮换与代理池、验证码/滑块绕过、设备指纹伪造、Cookie 池共享、并发拆页抓取。这些手段既违反平台协议，也会直接触发账号风控，代价远高于收益。
 
-### 14.10 实现位置
+### 2.10 实现位置
 
 | 文件 | 职责 |
 |------|------|
 | `src/shared/types/weibo.ts` | 时间线、信息流、分组、凭证与协议载荷契约，含参数收窄与单页默认条数 |
-| `src/modules/weibo/weiboEndpoints.ts` | 地址总表：网页端 ajax 端点、开放平台基址、图床与站内基址集中在此 |
+| `src/modules/weibo/weiboEndpoints.ts` | 地址总表：网页端 ajax 端点、图床与站内基址集中在此 |
 | `src/modules/weibo/webClient.ts` | 通用 JSON 请求：URL 构造、请求头、错误分类、节流与退避重试 |
 | `src/modules/weibo/webTimeline.ts` | 分页/增量循环、去重、字段归一化、时间与正文清洗 |
 | `src/modules/weibo/webFeed.ts` | 时间线 / 热门 / 分组端点适配、分组归一化与卡片流提取 |
@@ -1401,7 +528,7 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/weibo/utils/weiboHotLinks.ts` | 搜索页地址构造与标题链接处理器（纯函数） |
 | `src/shared/utils/color.ts` | 按底色亮度选可读前景色，供徽标等浅深底自适应 |
 
-### 14.11 多入口信息流（首页 / 时间线 / 热门 / 分组）
+### 2.11 多入口信息流（首页 / 时间线 / 热门 / 分组）
 
 顶部菜单在一行内排完：一级分组（首页 / 热门 / 热搜，带图标）→ 一条竖线 → 当前分组的二级频道，首页组的自建分组直接续在「推荐 / 时间线」后面同属二级，即「🏠 首页 🔥 热门 📈 热搜 │ 推荐 时间线 颜值 时尚 动漫 …」（`@components/ui/navigation-menu` 的 List / Item / Link 槽位 + `ui/separator`，不用下拉浮层）；点一级直接落到该组首项，不需要再点一次二级。顶栏动作区放「刷新」与账号菜单（头像 + 昵称），菜单里收回「个人主页」「我的赞」「设置」「删除 Cookie」。菜单挂在 `AppHeader` 内，随标题区固定，不参与内容区滚动。
 
@@ -1416,7 +543,7 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 
 | 入口 | 接口 | 关键参数 |
 |------|------|----------|
-| 首页 | `ajax/feed/unreadfriendstimeline` | 见 14.1；增量刷新只取上次之后的新微博 |
+| 首页 | `ajax/feed/unreadfriendstimeline` | 见 2.1；增量刷新只取上次之后的新微博 |
 | 时间线 | `ajax/feed/friendstimeline` | `list_id` 取默认分组「最新微博」的 gid，`fid` 同值，`refresh=4`，首屏 `since_id=0`，`count=20` |
 | 热门 | `ajax/feed/hottimeline` | 按频道取 `group_id` / `containerid` / `refresh`（见下表），`extparam=discover|new_feed` 固定，首屏 `count=20` |
 | 分组列表 | `ajax/feed/allGroups` | 取 `groups[]` 中「默认分组」与「我的分组」两个分区，`myGroups` 直接进菜单 |
@@ -1437,7 +564,7 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 
 - 分组结构：`groups[0]` 为「默认分组」、`groups[1]` 为「我的分组」；宿主按标题精确匹配，标题缺失才回落下标，避免分区顺序微调后取错。
 - 时间线的 `list_id` 由宿主在 `weibo/groups` 结果里算好（`timelineListId`，取「最新微博」条目），前端不自行挑条目；缺省时宿主还会再取一次 allGroups 兜底。
-- 三种信息流共用同一条 `weibo/feed` 协议与同一套分页/增量状态机：`source` 只决定端点与固定参数，游标语义与 14.3 完全一致。
+- 三种信息流共用同一条 `weibo/feed` 协议与同一套分页/增量状态机：`source` 只决定端点与固定参数，游标语义与 2.3 完全一致。
 - 热门流的响应结构可能是 `data.cards[].mblog`（卡片流），时间线与分组通常是 `statuses[]`；宿主统一提取，`max_id` / `since_id` 为 `"0"` 时视为没有更多，避免「加载更多」被永久点亮。
 - 列表滚动到底自动翻页：底部哨兵距视口一屏（`rootMargin: 240px`）即预取下一页，同一轮加载只有一条在飞；连续自动加载满 10 次、或上一次取数失败时，底部改出「加载更多」按钮交还用户手动点，刷新替换列表后自动额度重置。到底显示「已经到底了」，不再给按钮。
 - **刷新与切页都把滚动条拉回顶部**：滚动宿主是 `AppContent` 里 ScrollArea 的 viewport，统一走 `@shared/utils/scrollArea` 的 `scrollAreaToTop(root)`（按 `SCROLL_VIEWPORT_SELECTOR` 找，找不到就静默跳过）。顶栏「刷新」在发起请求前先回顶，刷新等于重开一屏；切换导航视图由 `useEffect([view])` 在提交后回顶，不会停在上一页滚到很深的位置。
@@ -1448,9 +575,9 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 - **屏蔽在取数 hook 返回前过滤**：`useWeiboTimeline` / `useWeiboFeed` / `useWeiboLikes` 接收 `blockRules`，用 `filterWeiboPosts` 派生可见列表，状态里仍保留原始列表——名单变化（含卡片「屏蔽该博主」）时无需回源即可即时重算，分页游标、页码与 `hasMore` 也不受影响。
 - 名单落 VS Code 配置 `zhai.weibo.blockedUsers` / `zhai.weibo.blockedKeywords`（面板「设置」按行编辑，也可在设置文件里改数组）；路由为 `weibo/blockList/status` 与 `weibo/blockList/save`，宿主只存取与归一化，过滤一律在 Webview。
 - 卡片「更多」菜单末项是「屏蔽该博主」：只把作者名追加进用户名名单（已存在则提示而不重复写盘），写入成功后由过滤即时隐藏当前列表里的该博主内容，并用 Toaster 反馈结果。
-- 账号菜单四项：「个人主页」按 uid 打开 `weibo.com/u/{uid}`；「我的赞」切到 `mine.likes` 视图读取点赞列表（见 14.16）；「设置」打开弹窗；「删除 Cookie」先弹确认框，确认后清除凭证、元数据缓存与本地头像，并回首页（凭证卡按未配置状态自动出现，用户下一步多半是重新登录），未配置时该项禁用。
+- 账号菜单四项：「个人主页」按 uid 打开 `weibo.com/u/{uid}`；「我的赞」切到 `mine.likes` 视图读取点赞列表（见 2.16）；「设置」打开弹窗；「删除 Cookie」先弹确认框，确认后清除凭证、元数据缓存与本地头像，并回首页（凭证卡按未配置状态自动出现，用户下一步多半是重新登录），未配置时该项禁用。
 
-### 14.12 表情配置（发表框）
+### 2.12 表情配置（发表框）
 
 ```
 GET https://weibo.com/ajax/statuses/config
@@ -1458,13 +585,13 @@ GET https://weibo.com/ajax/statuses/config
 
 - 只读 `data.emoticon.ZH_CN.<分类>[{ phrase, url }]`：10 个分类、340 条，分类名直接写入 `category` 供前端分组。
 - `data.emoticonRender`（phrase/别名 → 图片的渲染映射，7000+ 条，含多语言与拼音别名）不参与解析，避免别名造成大量重复项。
-- 单条必须同时具备 `phrase` 与合法图地址（过 14.4 的图床白名单）；类内重复 `phrase` 以首见为准，跨类重复保留，保证每个分类的条目数与上游一致。
+- 单条必须同时具备 `phrase` 与合法图地址（过 2.4 的图床白名单）；类内重复 `phrase` 以首见为准，跨类重复保留，保证每个分类的条目数与上游一致。
 - 拿不到任何条目时，错误信息会带上实际返回的字段名，接口改版时据此定位。
 - 发表框 Popover 顶部是分类切换条（横向滚动，默认选中第一个分类），下方按当前分类分页：首屏 40 个，滚动到底点「加载更多表情」再追加 40 个；切换分类会重置分页计数。
 - 表情图仍经 `weibo/image` 代理换 data URI，本地缓存命中即零网络；点击表情插入到 textarea 光标处（无选区时追加到末尾），插入后恢复光标；超出 2000 字上限时拒绝并提示。
 - 表情配置在前端模块级缓存（会话内只取一次）；未配置 Cookie 时按钮禁用，面板内提示先去设置。
 
-### 14.13 侧栏热搜榜
+### 2.13 侧栏热搜榜
 
 ```
 GET https://weibo.com/ajax/side/bandUnified?type=mine&last_tab=mine&last_tab_time={秒级时间戳}
@@ -1504,7 +631,7 @@ ACG     GET https://weibo.com/ajax/statuses/acg
 - 热搜页不渲染右侧热搜卡，避免同一份榜单出现两次；该页内容区放宽到 `max-w-3xl`。
 - 顶栏「刷新」在热搜页刷当前标签的榜单（专页内不再有重复的刷新按钮，只有空态里的「重试」），在信息流页仍按原有游标语义刷新；当前视图内容为 0 时顶栏不渲染刷新按钮，信息流空态自带「刷新」入口（首页空态原本就有）。
 
-### 14.14 元数据缓存（分组 / 热搜 / 表情）
+### 2.14 元数据缓存（分组 / 热搜 / 表情）
 
 ```
 {存储根}/weibo.json
@@ -1519,7 +646,7 @@ ACG     GET https://weibo.com/ajax/statuses/acg
 - 时间线、信息流与图片都不进缓存：前者变化快且需要游标语义，后者由图片代理的本地缓存 + `data:` 回传承担；混进来还会把带签名的直链写进 `weibo.json`，很快失效且体积不可控。
 - 有效期常量 `CACHE_TTL_MS` 默认全为无穷（严格「激活一次」），改成有限值即开启「读取时过期回源」；热搜变化最快，若希望长时间开着窗口也保持新鲜，可单独给它 30 分钟。
 
-### 14.15 账号信息与头像（profile/info）
+### 2.15 账号信息与头像（profile/info）
 
 ```
 GET https://weibo.com/ajax/profile/info?uid={uid}&scene=profile
@@ -1534,7 +661,7 @@ GET https://weibo.com/ajax/profile/info?uid={uid}&scene=profile
 - `credential/clear` 同时删除 `weibo.json` 与 `weibo_avatar.jpg`，避免换号后顶栏露出上一个账号的头像。
 - 顶栏动作区合并为一个账号菜单（`WeiboAccountMenu`）：触发器是 `Avatar` + 昵称，菜单内是账号信息（粉丝 / 微博数）、个人主页、我的赞、设置弹窗、删除 Cookie；账号未取到时个人主页禁用、未配置时「我的赞」与删除项禁用，头像缺失回落为昵称首字；未登录时触发器不渲染头像并改用 `outline` 变体，用描边按钮提示「这里还没登录」。
 
-### 14.16 我的赞（账号菜单入口）
+### 2.16 我的赞（账号菜单入口）
 
 ```
 GET https://weibo.com/ajax/statuses/likelist?uid={uid}&page={页码}&with_total=true
@@ -1633,7 +760,7 @@ GET https://weibo.com/ajax/statuses/likelist?uid={uid}&page={页码}&with_total=
 | `region_name` | 发布地，目前不展示 |
 | `total_number` | 点赞总数，`with_total=true` 时才出现 |
 
-### 14.17 发表框：话题搜索与图片选择
+### 2.17 发表框：话题搜索与图片选择
 
 ```
 GET https://weibo.com/ajax/mblog/topic?q={关键字}
@@ -1646,12 +773,12 @@ GET https://weibo.com/ajax/mblog/topic?q={关键字}
 - 图片面板列出 `uploads/` 下的图片（`upload/list`，只有 `url` 非空的图片条目参与），已选条目置灰禁用；选中后在发布框下方以缩略图列表展示，右上角可移除。
 - 面板内可直接点「上传图片」唤起系统选择器（`upload/pick`），上传结果自动加入已选。
 - 发布框聚焦时粘贴剪贴板里的图片（`clipboardData.files` 中的 `image/*`）走 `upload/bytes` 落 `uploads/{YYYYMM}/`，成功后加入已选；纯文本粘贴完全不拦截默认行为。
-- 已选图片与草稿同层保存在 `WeiboPanel`，切换视图卸载发布框后不丢；点「发布」进入 14.18 的两步流程，成功后清空内容，并把新微博前插到时间线首位。
+- 已选图片与草稿同层保存在 `WeiboPanel`，切换视图卸载发布框后不丢；点「发布」进入 2.18 的两步流程，成功后清空内容，并把新微博前插到时间线首位。
 - 输入框底部右侧是「AI 优化」按钮（`Sparkles`，进行中转圈）：调 `ai/enhancePrompt` 并带 `scene: 'weibo'`，宿主按微博文案口径改写（保留 #话题#、@昵称、链接与 `[表情]`），成功后整体替换正文并把光标落到末尾；空内容只提示不改写，改写中发布按钮一并禁用，失败保留原文。
 - `ai/enhancePrompt` 由微博面板按方法名转发给 AI 服务（`openWeiboPanel` 的 `enhancePrompt` 注入，扩展入口传 `ai.chat.enhancePrompt`），微博路由不认识 `ai/*` 前缀；未注入时该按钮报「未登记」。
 - 改写期间整张卡片发光：`Card` 补 `relative isolate overflow-visible`（覆盖 `ui/card` 自带的 `overflow-hidden`，否则外扩背光会被裁掉），内放 `ComposerGlow`（类名用 `CARD_GLOW_CLASS`，圆角对齐 `rounded-xl`）与一层同色底衬 `bg-card`，光晕只从卡片边缘与外侧溢出、不染正文。
 
-### 14.18 发布微博（图床换 pid → update）
+### 2.18 发布微博（图床换 pid → update）
 
 ```
 POST https://picupload.weibo.com/interface/pic_upload.php?s=json&ori=1&data=1&rotate=0&wm=&app=miniblog&mime=image%2Fpng
@@ -1669,7 +796,7 @@ POST https://weibo.com/ajax/statuses/update
 - 前端发布中按钮禁用并显示加载态（`ref` 单飞，连点不会重复提交）；成功后清空草稿与已选图片，并把宿主归一化的新微博前插到时间线首位（不整页刷新、不动 `sinceId`/`maxId`），失败保留内容供直接重试。
 - **已知风险**：`fp` 无法还原官网生成算法，当前按同形随机生成；若上游开始校验指纹与 Cookie 的绑定会返回 `ok: 0`，届时需要从浏览器会话取真实值。`X-XSRF-TOKEN` 缺失时发布同样可能被拒。
 
-### 14.19 转发列表（谁转发了这条）
+### 2.19 转发列表（谁转发了这条）
 
 ```
 GET https://weibo.com/ajax/statuses/repostTimeline?id={微博数字 id}&page=1&moduleID=feed&count=10
@@ -1710,3 +837,4 @@ id={微博数字 id}
 - 协议 `weibo/destroy`，入参 `{ id }`；转发与自己发的微博都按 status id 删。
 - 回包不是 `{ ok, data }` 包装，而是被删除的微博对象本身、末尾才带 `ok`：只有 `ok` 明确 `<= 0` 才算失败，`ok` 缺失但回包带 `id` 时视为成功。
 - 前端：转发列表里只有自己的转发（`viewerUid === repost.author.id`）显示「删除」，点击走单个 AlertDialog 确认，成功后重拉第一页；归属最终仍由上游判定。
+

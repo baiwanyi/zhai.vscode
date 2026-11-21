@@ -71,7 +71,7 @@ import { WeiboFeedList } from './layout/WeiboFeedList'
 import { WeiboFeedSection } from './layout/WeiboFeedSection'
 import { WeiboHotRankList } from './layout/WeiboHotRankList'
 import { WeiboNav } from './layout/WeiboNav'
-import { readCustomGroupId, readHotChannelGid, readHotRankTab, readWeiboViewLabel } from './layout/weiboNavGroups'
+import { readCustomGroupId, readHotChannelGid, readHotRankTab } from './layout/weiboNavGroups'
 import { pickActiveFeed, readRefreshSummary } from './utils/weiboFeedRouting'
 import { buildProfileUrl } from './utils/weiboLinks'
 import { describeWeiboView } from './utils/weiboViewCopy'
@@ -431,21 +431,6 @@ export function WeiboPanel(): JSX.Element {
         )
     }
 
-    /**
-     * 规划已就位但接口未接入的频道：只给说明，不发请求。
-     * 关键约束：这类频道不能落回首页内容，否则用户以为切换没生效。
-     */
-    function renderPlannedView(): JSX.Element {
-        return (
-            <StateEmpty
-                className="py-8"
-                icon={Inbox}
-                title={`${readWeiboViewLabel(view, myGroups, hotChannels)} 暂未接入`}
-                description="菜单结构已按规划就位，这个频道的数据接口还没接上：接入后这里会显示对应的信息流。"
-            />
-        )
-    }
-
     function renderContent(): JSX.Element {
         if (view === 'home.recommend') {
             return renderHome()
@@ -469,11 +454,11 @@ export function WeiboPanel(): JSX.Element {
                 />
             )
         }
-        // 热门各频道共用一套渲染（只是 group_id 不同），自建分组与规划中的频道才继续分流
+        // 热门各频道共用一套渲染（只是 group_id 不同），自建分组继续分流
         if (hotListId !== null) {
             return renderHotFeed()
         }
-        return activeGroupId === null ? renderPlannedView() : renderGroupFeed()
+        return renderGroupFeed()
     }
 
     return (

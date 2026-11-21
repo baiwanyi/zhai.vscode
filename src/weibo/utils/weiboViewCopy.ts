@@ -49,9 +49,6 @@ export function describeWeiboView({ view, isConfigured, savedAt, groups, hotChan
         return `热门：${readWeiboViewLabel(view, groups, hotChannels)}，首屏 ${WEIBO_FEED_DEFAULT_COUNT} 条，翻页沿用上游 max_id。`
     }
     const activeGroupId = readCustomGroupId(view)
-    if (activeGroupId === null) {
-        return `${readWeiboViewLabel(view, groups, hotChannels)}：频道已在菜单规划中，数据接口尚未接入。`
-    }
     const activeGroup = groups.find((group) => group.gid === activeGroupId)
     return `分组：${activeGroup?.title ?? '该分组'} 的信息流，翻页只在该分组内生效。`
 }

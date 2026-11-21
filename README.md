@@ -29,7 +29,7 @@
 | [docs/modules/reader.md](docs/modules/reader.md) | 阅读：TXT 导入去重、编码检测、虚拟滚动、书签与全文搜索 |
 | [docs/modules/knowledge-base.md](docs/modules/knowledge-base.md) | 知识库：分块索引、混合检索、RAG 问答与溯源、术语表 |
 | [docs/modules/markdown-one.md](docs/modules/markdown-one.md) | Markdown ONE：统一解析管线、格式化、图片本地化与导出 |
-| [docs/modules/weibo.md](docs/modules/weibo.md) | 微博浏览器：基于官方 Open API 的时间线浏览、评论、表情包、AI 编辑分享发布与媒体下载 |
+| [docs/modules/weibo.md](docs/modules/weibo.md) | 微博浏览器：网页端同源 ajax 的时间线 / 热门 / 热搜浏览，评论 / 点赞 / 转发 / 发布与保存为笔记 |
 | [docs/modules/wechat.md](docs/modules/wechat.md) | 微信公众号：Markdown 写作/排版、草稿箱、素材管理、群发发布与基础运营 |
 
 **历史参考文档（宅桌面时期）**

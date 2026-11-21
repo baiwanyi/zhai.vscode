@@ -10,11 +10,11 @@ import { Flame, House, TrendingUp } from 'lucide-react'
 import type { WeiboGroupItem, WeiboHotChannel, WeiboHotRankTab } from '@shared/types/weibo'
 import type { LucideIcon } from 'lucide-react'
 
-/** 账号自建分组的标识前缀：后面直接拼 gid */
-export const CUSTOM_GROUP_VIEW_PREFIX = 'group.'
+/** 账号自建分组的标识前缀：后面直接拼 gid，外部只经 toCustomGroupView 拼装 */
+const CUSTOM_GROUP_VIEW_PREFIX = 'group.'
 
-/** 热门频道的标识前缀：后面直接拼频道 gid */
-export const HOT_CHANNEL_VIEW_PREFIX = 'hot.'
+/** 热门频道的标识前缀：后面直接拼频道 gid，外部只经 toHotChannelView 拼装 */
+const HOT_CHANNEL_VIEW_PREFIX = 'hot.'
 
 /**
  * 频道标识：`分组.子项` 为固定频道，`group.<gid>` / `hot.<gid>` 为运行时数据。

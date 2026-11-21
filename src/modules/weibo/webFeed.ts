@@ -266,7 +266,7 @@ function pickUid(items: WeiboGroupItem[]): string | null {
 }
 
 /** 选择时间线的 list_id：优先默认分组里的「最新微博」，回退分区首项 */
-export function pickDefaultTimelineListId(defaultGroups: WeiboGroupItem[]): string | null {
+function pickDefaultTimelineListId(defaultGroups: WeiboGroupItem[]): string | null {
     const preferred = defaultGroups.find((item) => item.title === DEFAULT_TIMELINE_GROUP_TITLE)
     if (preferred !== undefined) {
         return preferred.gid
