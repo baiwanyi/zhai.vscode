@@ -4,13 +4,14 @@
  * 错误文案走 @shared/utils/error，页面只消费状态与动作。
  * 关键约束：点赞列表只有页码分页，刷新重取第一页并整体替换，翻页按 page + 1 追加去重；
  * 到底后不再递增页码，避免「加载更多」被反复点亮；未启用时不发请求也不转圈，
- * 切走再切回沿用已取内容，不重复打同一页。
+ * 切走再切回沿用已取内容，不重复打同一页；屏蔽规则在返回前过滤，页码与总数仍按上游口径保留。
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
-import type { WeiboLikesResult, WeiboTimelinePost } from '@shared/types/weibo'
+import type { WeiboBlockRules, WeiboLikesResult, WeiboTimelinePost } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
+import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
 import type { FeedState, WeiboFeedController } from './useWeiboFeed'
 
 /** 取数模式：刷新重取第一页，翻页按下一页页码追加 */
@@ -110,8 +111,11 @@ function reducer(state: LikesState, action: LikesAction): LikesState {
     }
 }
 
-/** 我的赞控制器：只在点赞视图激活时启用，启用后自动取第一页 */
-export function useWeiboLikes(isEnabled: boolean): WeiboFeedController {
+/** 我的赞控制器：只在点赞视图激活时启用，启用后自动取第一页，返回前按屏蔽规则过滤 */
+export function useWeiboLikes(
+    isEnabled: boolean,
+    blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK_RULES,
+): WeiboFeedController {
     const [state, dispatch] = useReducer(reducer, INITIAL_STATE)
     // 翻页要读最新页码，但不该因页码变化重建回调：用 ref 承载一份同步副本
     const stateRef = useRef(state)
@@ -168,6 +172,14 @@ export function useWeiboLikes(isEnabled: boolean): WeiboFeedController {
         void load('refresh', 1)
     }, [isEnabled, load])
 
+    // 屏蔽只在返回前做：状态里保留原始列表，页码与总数仍按上游口径保留
+    const { blockedUsers, blockedKeywords } = blockRules
+    const visiblePosts = useMemo(
+        () => filterWeiboPosts(state.posts, { blockedUsers, blockedKeywords }),
+        [blockedUsers, blockedKeywords, state.posts],
+    )
+    const visibleState = visiblePosts === state.posts ? state : { ...state, posts: visiblePosts }
+
     // 控制器对象按状态与动作 memo 化：页面把它放进 useCallback 依赖时才拿得到稳定引用
-    return useMemo(() => ({ state, refresh, loadMore }), [state, refresh, loadMore])
+    return useMemo(() => ({ state: visibleState, refresh, loadMore }), [visibleState, refresh, loadMore])
 }

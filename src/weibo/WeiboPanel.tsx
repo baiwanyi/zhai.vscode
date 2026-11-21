@@ -8,13 +8,14 @@
  * 凭证探测未结束或失败时不得断言「没有配置」，由 layout/CredentialGate 统一给加载态与失败态；
  * 顶栏「刷新」按当前视图分发：信息流刷自己的游标，热搜刷当前标签的榜单；
  * 热搜专页不再渲染右侧热搜卡，避免同一份榜单出现两次；
- * Cookie 输入框不回显已保存值，保存成功后清空并收起，明文只存在于输入瞬间；
- * 删除 Cookie 只有一个确认入口：账号菜单与设置弹窗共用同一个确认框，确认后回首页并展开凭证卡；
+ * Cookie 输入框不回显已保存值，保存成功后清空、由登录态变化自动换出凭证卡，明文只存在于输入瞬间；
+ * 删除 Cookie 只有一个确认入口（账号菜单），确认后回首页，凭证卡按未配置状态自然出现；
  * 同城热搜城市在设置弹窗里选择，落 zhai.weibo.cityCode，与 Cookie 无关；
  * 时间线、热门、热搜与分组都是只读浏览，发布框仍是占位（写接口不在本次范围）；
  * 发布框草稿由面板层持有：切到其它视图再回首页，已写内容仍在，不随首页内容卸载丢失；
  * 个人主页按账号 uid 拼 weibo.com 地址交给宿主打开，入口收在顶栏账号菜单里；
  * 我的赞同样收在账号菜单里，视图为 mine.likes，只有页码分页，uid 由宿主解析；
+ * 屏蔽名单（用户名 / 关键字）由设置弹窗维护，取数 hook 返回前统一过滤，卡片「屏蔽该博主」只追加名单；
  * 账号信息与头像由 weibo/profile 提供（头像已是 data URI），取不到 uid 时只提示而不拼空地址。
  */
 import { cn } from 'cn'
@@ -46,6 +47,7 @@ import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useHostToast } from '@webview/hooks/useHostToast'
 import { useVscodeTheme } from '@webview/hooks/useVscodeTheme'
+import { useWeiboBlockList } from './hooks/useWeiboBlockList'
 import { useWeiboCity } from './hooks/useWeiboCity'
 import { useWeiboFeed } from './hooks/useWeiboFeed'
 import { useWeiboGroups } from './hooks/useWeiboGroups'
@@ -74,17 +76,23 @@ import type { JSX } from 'react'
 
 export function WeiboPanel(): JSX.Element {
     const theme = useVscodeTheme()
+    // 屏蔽名单与 Cookie 无关：面板打开就读取，被所有信息流共用
+    const blockList = useWeiboBlockList()
+    /** 过滤规则：只取两个名单，引用稳定，避免每轮渲染重算整条列表 */
+    const blockRules = useMemo(
+        () => ({ blockedUsers: blockList.state.blockedUsers, blockedKeywords: blockList.state.blockedKeywords }),
+        [blockList.state.blockedKeywords, blockList.state.blockedUsers],
+    )
     const {
         state: homeState,
         refresh: refreshHome,
         loadMore: loadMoreHome,
         saveCredential,
         clearCredential,
-    } = useWeiboTimeline()
+    } = useWeiboTimeline(blockRules)
     const [view, setView] = useState<WeiboView>('home.recommend')
     /** 页面根节点：滚动宿主藏在 AppContent 的 ScrollArea 里，刷新与切页都从它往下找 */
     const pageRef = useRef<HTMLDivElement>(null)
-    const [isCredentialOpen, setIsCredentialOpen] = useState(false)
     // 设置改为弹窗：不再占用导航视图
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
     // 删除 Cookie 是破坏性操作：先确认，再交宿主清除
@@ -119,6 +127,7 @@ export function WeiboPanel(): JSX.Element {
         source: 'timeline',
         listId: timelineListId,
         enabled: isConfigured && view === 'home.timeline',
+        blockRules,
     })
     /** 当前热门频道的 gid：视图标识 `hot.<gid>` 还原而来，非热门频道为 null */
     const hotListId = readHotChannelGid(view)
@@ -126,6 +135,7 @@ export function WeiboPanel(): JSX.Element {
         source: 'hot',
         listId: hotListId,
         enabled: isConfigured && hotListId !== null,
+        blockRules,
     })
     /** 当前停留的自建分组：从视图标识还原 gid，再回分组集合取标题等信息 */
     const activeGroupId = readCustomGroupId(view)
@@ -134,9 +144,10 @@ export function WeiboPanel(): JSX.Element {
         source: 'group',
         listId: activeGroupId,
         enabled: isConfigured && activeGroupId !== null,
+        blockRules,
     })
     /** 我的赞：账号菜单进入的独立视图，只有页码分页，未配置 Cookie 时不发请求 */
-    const likesFeed = useWeiboLikes(isConfigured && view === 'mine.likes')
+    const likesFeed = useWeiboLikes(isConfigured && view === 'mine.likes', blockRules)
     /** 热搜榜单：只在热搜页取数，顶栏「刷新」与专页内按钮共用这一份状态 */
     const hotRankTab = readHotRankTab(view)
     const hotRank = useWeiboHotRank({
@@ -170,7 +181,7 @@ export function WeiboPanel(): JSX.Element {
 
     /**
      * 删除 Cookie：先打开确认框，真正清除在 handleConfirmDelete。
-     * 关键约束：账号菜单与设置弹窗共用这一个入口；设置弹窗先收起，避免两个 Radix 弹层叠加。
+     * 关键约束：首页凭证卡与账号菜单共用这一个入口；先收起设置弹窗，避免两个 Radix 弹层叠加。
      */
     const handleRequestDelete = useCallback((): void => {
         setIsSettingsOpen(false)
@@ -178,8 +189,9 @@ export function WeiboPanel(): JSX.Element {
     }, [])
 
     /**
-     * 确认删除：清除后回首页并展开凭证卡。
-     * 关键约束：用户下一步多半是重新登录粘贴新 Cookie，留在原视图会看不到配置入口。
+     * 确认删除：清除后回首页。
+     * 关键约束：清除后登录态为空，首页按未配置状态自动换出凭证卡，
+     * 用户下一步多半是重新登录粘贴新 Cookie，留在原视图会看不到配置入口。
      */
     const handleConfirmDelete = useCallback((): void => {
         void clearCredential().then((isCleared) => {
@@ -187,13 +199,8 @@ export function WeiboPanel(): JSX.Element {
                 return
             }
             setView('home.recommend')
-            setIsCredentialOpen(true)
         })
     }, [clearCredential])
-
-    const collapseCredential = useCallback((): void => {
-        setIsCredentialOpen(false)
-    }, [])
 
     /** 切页后回到顶部：上一页可能滚到很深，留着会看不到新页开头 */
     useEffect(() => {
@@ -224,6 +231,14 @@ export function WeiboPanel(): JSX.Element {
         setView('mine.likes')
     }, [])
 
+    /** 屏蔽该博主：写入名单后由 blockRules 驱动的过滤即时生效，提示文案由控制器统一给出 */
+    const handleBlockAuthor = useCallback(
+        (authorName: string): void => {
+            void blockList.blockUser(authorName)
+        },
+        [blockList],
+    )
+
     /** 重读分组：菜单里的自建分组随之更新，新增或删除分组都会立刻反映 */
     const handleReloadGroups = useCallback((): void => {
         void reloadGroups()
@@ -240,22 +255,17 @@ export function WeiboPanel(): JSX.Element {
         openUrl(buildProfileUrl(profileUid))
     }, [openUrl, profileUid])
 
-    /** 首页：发布框（占位）+ 凭证卡（按需）+ 关注时间线 */
+    /** 首页：发布框（占位）+ 凭证卡（未登录时）+ 关注时间线 */
     function renderHome(): JSX.Element {
-        const shouldShowCredential = !homeState.isLoading && (isCredentialOpen || !isConfigured)
+        const shouldShowCredential = !homeState.isLoading && !isConfigured
         return (
             <>
-                <ComposerCard isEnabled={isConfigured} draft={draft} onDraftChange={setDraft} />
                 {shouldShowCredential ? (
-                    <CredentialCard
-                        isConfigured={isConfigured}
-                        isSaving={homeState.isSavingCredential}
-                        onSave={saveCredential}
-                        onRequestClear={handleRequestDelete}
-                        onCollapse={collapseCredential}
-                        canCollapse={isConfigured}
-                    />
-                ) : null}
+                    <CredentialCard isSaving={homeState.isSavingCredential} onSave={saveCredential} />
+                ) : (
+                    <ComposerCard isEnabled={isConfigured} draft={draft} onDraftChange={setDraft} />
+                )}
+
                 <WeiboFeedList
                     posts={homeState.posts}
                     isLoading={homeState.isLoading}
@@ -293,6 +303,7 @@ export function WeiboPanel(): JSX.Element {
                             />
                         )
                     }
+                    onBlockAuthor={handleBlockAuthor}
                     onLoadMore={handleHomeLoadMore}
                 />
             </>
@@ -326,6 +337,7 @@ export function WeiboPanel(): JSX.Element {
                 credentialErrorMessage={homeState.errorMessage}
                 emptyTitle="时间线没有内容"
                 emptyDescription="默认分组近期没有更新，稍后刷新一次再试。"
+                onBlockAuthor={handleBlockAuthor}
                 onRefresh={handleRefresh}
                 onOpenSettings={handleOpenSettings}
             />
@@ -342,6 +354,7 @@ export function WeiboPanel(): JSX.Element {
                 credentialErrorMessage={homeState.errorMessage}
                 emptyTitle="热门没有内容"
                 emptyDescription="推荐频道暂时返回空页，稍后刷新一次再试。"
+                onBlockAuthor={handleBlockAuthor}
                 onRefresh={handleRefresh}
                 onOpenSettings={handleOpenSettings}
             />
@@ -364,6 +377,7 @@ export function WeiboPanel(): JSX.Element {
                 credentialErrorMessage={homeState.errorMessage}
                 emptyTitle={`「${activeGroup?.title ?? '该分组'}」没有内容`}
                 emptyDescription="分组近期没有更新，稍后刷新一次再试。"
+                onBlockAuthor={handleBlockAuthor}
                 onRefresh={handleRefresh}
                 onOpenSettings={handleOpenSettings}
             />
@@ -380,6 +394,7 @@ export function WeiboPanel(): JSX.Element {
                 credentialErrorMessage={homeState.errorMessage}
                 emptyTitle="还没有点赞"
                 emptyDescription="在微博里点过赞的内容会按时间倒序出现在这里。"
+                onBlockAuthor={handleBlockAuthor}
                 onRefresh={handleRefresh}
                 onOpenSettings={handleOpenSettings}
             />
@@ -443,15 +458,14 @@ export function WeiboPanel(): JSX.Element {
                             {/* 空微博不显示刷新：没有内容可刷，入口交给各视图的空态 */}
                             {refreshSummary.contentCount === 0 ? null : (
                                 <Button
-                                    size="sm"
-                                    variant="outline"
+                                    size="icon"
+                                    variant="ghost"
                                     onClick={handleRefresh}
                                     isLoading={refreshSummary.isRefreshing}
                                     disabled={refreshSummary.isRefreshDisabled}
                                     tooltip="增量刷新：只取上次之后的新内容"
                                 >
                                     <RefreshCw className="size-3.5" aria-hidden="true" />
-                                    刷新
                                 </Button>
                             )}
                             <WeiboAccountMenu
@@ -514,16 +528,12 @@ export function WeiboPanel(): JSX.Element {
             <SettingsDialog
                 isOpen={isSettingsOpen}
                 onOpenChange={setIsSettingsOpen}
-                isConfigured={isConfigured}
-                isSaving={homeState.isSavingCredential}
-                onSave={saveCredential}
-                onRequestClear={handleRequestDelete}
-                onCollapse={collapseCredential}
                 cityCode={city.state.cityCode}
                 cityError={city.state.errorMessage}
                 isCityLoading={city.state.isLoading}
                 isCitySaving={city.state.isSaving}
                 onSaveCity={city.save}
+                blockList={blockList}
             />
             <AlertDialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
                 <AlertDialogContent>

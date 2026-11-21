@@ -3,14 +3,16 @@
  * 复用约定：协议走 weibo/feed，归一化后的帖子与首页同形，渲染统一交给 WeiboPostCard；
  * 错误文案走 @shared/utils/error，页面只消费状态与动作。
  * 关键约束：source 或 listId 变化即整条流重置，旧回包按请求序号与 key 双重校验后丢弃；
- * 翻页到底必须清空 maxId，否则「加载更多」会被反复点亮；未启用时不发请求也不转圈。
+ * 翻页到底必须清空 maxId，否则「加载更多」会被反复点亮；未启用时不发请求也不转圈；
+ * 屏蔽规则在返回前过滤，原始列表仍留在状态里，规则变化时无需回源即可即时重算。
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
-import type { WeiboFeedSource, WeiboTimelinePost, WeiboTimelineResult } from '@shared/types/weibo'
+import type { WeiboBlockRules, WeiboFeedSource, WeiboTimelinePost, WeiboTimelineResult } from '@shared/types/weibo'
 import { WEIBO_FEED_DEFAULT_COUNT } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
+import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
 
 /** 翻页一次最多补两页：既有「加载更多」的即时反馈，又不至于一次点击打出长请求链 */
 const MORE_MAX_PAGES = 2
@@ -137,10 +139,17 @@ interface UseWeiboFeedOptions {
     listId: string | null
     /** 是否具备取数条件：未配置 Cookie 或未选定分组时为假 */
     enabled: boolean
+    /** 屏蔽规则：命中用户名或关键字的条目只在返回值里隐藏，状态中仍保留原始列表 */
+    blockRules?: WeiboBlockRules
 }
 
 /** 信息流控制器：key（来源 + 列表）变化即重置并重载首屏 */
-export function useWeiboFeed({ source, listId, enabled }: UseWeiboFeedOptions): WeiboFeedController {
+export function useWeiboFeed({
+    source,
+    listId,
+    enabled,
+    blockRules = EMPTY_WEIBO_BLOCK_RULES,
+}: UseWeiboFeedOptions): WeiboFeedController {
     const [state, dispatch] = useReducer(reducer, INITIAL_STATE)
     // 动作回调需要读最新游标，但不该因游标变化重建：用 ref 承载一份同步副本
     const stateRef = useRef(state)
@@ -218,6 +227,14 @@ export function useWeiboFeed({ source, listId, enabled }: UseWeiboFeedOptions): 
         void load('refresh', requestKey, null, null)
     }, [enabled, listId, load, source])
 
+    // 屏蔽只在返回前做：状态里保留原始列表，规则变化（如「屏蔽该博主」）时无需回源即可重算
+    const { blockedUsers, blockedKeywords } = blockRules
+    const visiblePosts = useMemo(
+        () => filterWeiboPosts(state.posts, { blockedUsers, blockedKeywords }),
+        [blockedUsers, blockedKeywords, state.posts],
+    )
+    const visibleState = visiblePosts === state.posts ? state : { ...state, posts: visiblePosts }
+
     // 控制器对象按状态与动作 memo 化：页面把它放进 useCallback 依赖时才拿得到稳定引用
-    return useMemo(() => ({ state, refresh, loadMore }), [state, refresh, loadMore])
+    return useMemo(() => ({ state: visibleState, refresh, loadMore }), [visibleState, refresh, loadMore])
 }

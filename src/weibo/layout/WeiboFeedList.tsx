@@ -35,6 +35,8 @@ interface WeiboFeedListProps {
     onRefresh?: () => void
     /** 取数错误：非空时暂停自动翻页，避免失败后反复重试打同一接口 */
     errorMessage?: string | null
+    /** 屏蔽该博主：交给面板写入屏蔽名单，卡片「更多」菜单据此渲染入口 */
+    onBlockAuthor?: (authorName: string) => void
     onLoadMore: () => void
 }
 
@@ -48,6 +50,7 @@ export function WeiboFeedList({
     emptyState,
     onRefresh,
     errorMessage = null,
+    onBlockAuthor,
     onLoadMore,
 }: WeiboFeedListProps): JSX.Element {
     const sentinelRef = useRef<HTMLDivElement | null>(null)
@@ -125,7 +128,7 @@ export function WeiboFeedList({
     return (
         <>
             {posts.map((post) => (
-                <WeiboPostCard key={post.id} post={post} />
+                <WeiboPostCard key={post.id} post={post} onBlockAuthor={onBlockAuthor} />
             ))}
             <div ref={sentinelRef} className="flex justify-center py-2">
                 {!hasMore ? (

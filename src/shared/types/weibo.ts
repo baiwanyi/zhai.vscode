@@ -496,50 +496,51 @@ export interface WeiboCityOption {
 /**
  * 全国主要城市：code 取行政区划代码前四位，与 80086 前缀拼成同城 citycode。
  * 关键约束：只收直辖市、省会与计划单列市及少量热门地级市，避免下拉过长；
+ * 顺序按城市名拼音升序排列，下拉里近似「字典序」，改城市要按拼音插回原位；
  * 用户改用其它城市时可在设置里手填四位代码。
  */
 export const WEIBO_CITY_OPTIONS: readonly WeiboCityOption[] = [
     { code: '1100', name: '北京' },
-    { code: '1200', name: '天津' },
-    { code: '3100', name: '上海' },
+    { code: '2201', name: '长春' },
+    { code: '4301', name: '长沙' },
+    { code: '5101', name: '成都' },
     { code: '5000', name: '重庆' },
+    { code: '2102', name: '大连' },
+    { code: '4419', name: '东莞' },
+    { code: '4406', name: '佛山' },
+    { code: '3501', name: '福州' },
     { code: '4401', name: '广州' },
-    { code: '4403', name: '深圳' },
+    { code: '5201', name: '贵阳' },
+    { code: '2301', name: '哈尔滨' },
+    { code: '4601', name: '海口' },
     { code: '3301', name: '杭州' },
+    { code: '3401', name: '合肥' },
+    { code: '1501', name: '呼和浩特' },
+    { code: '3701', name: '济南' },
+    { code: '5301', name: '昆明' },
+    { code: '6201', name: '兰州' },
+    { code: '5401', name: '拉萨' },
+    { code: '3601', name: '南昌' },
     { code: '3201', name: '南京' },
-    { code: '3205', name: '苏州' },
-    { code: '3202', name: '无锡' },
+    { code: '4501', name: '南宁' },
     { code: '3302', name: '宁波' },
+    { code: '3702', name: '青岛' },
+    { code: '3100', name: '上海' },
+    { code: '2101', name: '沈阳' },
+    { code: '4403', name: '深圳' },
+    { code: '1301', name: '石家庄' },
+    { code: '3205', name: '苏州' },
+    { code: '1401', name: '太原' },
+    { code: '1200', name: '天津' },
     { code: '3303', name: '温州' },
     { code: '4201', name: '武汉' },
-    { code: '4301', name: '长沙' },
-    { code: '4101', name: '郑州' },
-    { code: '3701', name: '济南' },
-    { code: '3702', name: '青岛' },
-    { code: '5101', name: '成都' },
-    { code: '6101', name: '西安' },
-    { code: '2101', name: '沈阳' },
-    { code: '2102', name: '大连' },
-    { code: '2201', name: '长春' },
-    { code: '2301', name: '哈尔滨' },
-    { code: '3401', name: '合肥' },
-    { code: '3501', name: '福州' },
+    { code: '6501', name: '乌鲁木齐' },
+    { code: '3202', name: '无锡' },
     { code: '3502', name: '厦门' },
-    { code: '3601', name: '南昌' },
-    { code: '4501', name: '南宁' },
-    { code: '4406', name: '佛山' },
-    { code: '4419', name: '东莞' },
-    { code: '5301', name: '昆明' },
-    { code: '5201', name: '贵阳' },
-    { code: '4601', name: '海口' },
-    { code: '1301', name: '石家庄' },
-    { code: '1401', name: '太原' },
-    { code: '1501', name: '呼和浩特' },
-    { code: '6201', name: '兰州' },
+    { code: '6101', name: '西安' },
     { code: '6301', name: '西宁' },
     { code: '6401', name: '银川' },
-    { code: '6501', name: '乌鲁木齐' },
-    { code: '5401', name: '拉萨' },
+    { code: '4101', name: '郑州' },
 ]
 
 /** 城市代码形态：四位数字行政区划代码 */
@@ -608,6 +609,32 @@ export interface WeiboCityState {
 export interface WeiboSaveCityRequest {
     cityCode: string
 }
+
+/**
+ * 屏蔽名单条数上限：每条微博都要逐项比对，超大名单会让一次滚动做上百次匹配，
+ * 这里给一个够用又可控的上限，超出部分在归一化时丢弃。
+ */
+export const WEIBO_BLOCK_LIST_MAX_ITEMS = 200
+
+/** 单条名单长度上限：用户名与关键字都远短于此，超长项在归一化时截断 */
+export const WEIBO_BLOCK_LIST_ITEM_MAX_LENGTH = 200
+
+/**
+ * 屏蔽规则：两个名单都在设置弹窗里按「每行一项」维护。
+ * 关键约束：匹配忽略首尾空白与英文大小写；用户名按整串精确匹配，关键字按正文包含匹配。
+ */
+export interface WeiboBlockRules {
+    /** 屏蔽用户名：命中微博作者名即隐藏该条 */
+    blockedUsers: string[]
+    /** 屏蔽关键字：正文（含转发正文）包含任一关键字即隐藏该条 */
+    blockedKeywords: string[]
+}
+
+/** 屏蔽名单状态：设置弹窗读取当前生效的名单 */
+export type WeiboBlockListState = WeiboBlockRules
+
+/** 保存屏蔽名单入参：两个名单都整份替换，不做增量合并 */
+export type WeiboSaveBlockListRequest = WeiboBlockRules
 
 /** 当前登录账号的公开信息：只用于顶栏账号菜单，不参与任何写操作 */
 export interface WeiboProfile {
@@ -773,6 +800,28 @@ export function isWeiboSaveCityRequest(value: unknown): value is WeiboSaveCityRe
     }
     const { cityCode } = value as Record<string, unknown>
     return isWeiboCityCode(cityCode)
+}
+
+/** 收窄名单数组：每项都必须是长度受限的非空字符串，条数不超过上限 */
+function isWeiboBlockListItems(value: unknown): value is string[] {
+    if (!Array.isArray(value) || value.length > WEIBO_BLOCK_LIST_MAX_ITEMS) {
+        return false
+    }
+    return value.every(
+        (item) =>
+            typeof item === 'string' &&
+            item.trim().length > 0 &&
+            item.trim().length <= WEIBO_BLOCK_LIST_ITEM_MAX_LENGTH,
+    )
+}
+
+/** 收窄保存屏蔽名单入参：两个名单都必须给出，非法载荷整份拒绝而不是局部保留 */
+export function isWeiboSaveBlockListRequest(value: unknown): value is WeiboSaveBlockListRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { blockedUsers, blockedKeywords } = value as Record<string, unknown>
+    return isWeiboBlockListItems(blockedUsers) && isWeiboBlockListItems(blockedKeywords)
 }
 
 /** 收窄账号信息入参：refresh 缺省合法，给了就必须是布尔 */

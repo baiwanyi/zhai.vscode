@@ -472,6 +472,22 @@
                         "pattern": "^\\d{4}$",
                         "patternErrorMessage": "须为四位数字行政区划代码，如北京 1100、上海 3100、广州 4401",
                         "markdownDescription": "同城热搜的城市代码：请求 `ajax/statuses/city` 时与固定前缀 `80086` 拼成 `citycode`。面板「设置」里按城市名选择，也可在此手填四位代码"
+                    },
+                    "zhai.weibo.blockedUsers": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "default": [],
+                        "markdownDescription": "信息流屏蔽用户名：命中微博作者名的整条微博不再显示（忽略首尾空白与英文大小写）。面板「设置」里按行编辑，每行一个用户名"
+                    },
+                    "zhai.weibo.blockedKeywords": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        },
+                        "default": [],
+                        "markdownDescription": "信息流屏蔽关键字：正文（含转发正文）包含任一关键字的整条微博不再显示（忽略英文大小写）。面板「设置」里按行编辑，每行一个关键字"
                     }
                 }
             }

@@ -3,10 +3,10 @@
  * 复用约定：协议走 weibo/city/status 与 weibo/city/save，错误文案走 @shared/utils/error，
  * 页面只消费状态与动作，城市清单与展示名由 @shared/types/weibo 给出。
  * 关键约束：与 Cookie 无关——未配置凭证也能查看与修改，城市只影响同城榜单；
- * 挂载即读取一次，保存成功后直接用回包替换本地状态，不必再回源。
+ * 挂载即读取一次，保存成功后直接用回包替换本地状态，不必再回源；
+ * 成功提示由调用方统一给出（设置弹窗一次保存多项，避免连弹多条）。
  */
 import { useCallback, useEffect, useReducer } from 'react'
-import { toast } from 'sonner'
 import type { WeiboCityState, WeiboSaveCityRequest } from '@shared/types/weibo'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
@@ -84,7 +84,6 @@ export function useWeiboCity(): WeiboCityController {
             const payload: WeiboSaveCityRequest = { cityCode }
             const result = await request<WeiboCityState>('weibo/city/save', payload)
             dispatch({ type: 'success', payload: result })
-            toast.success(`同城榜单已切换到 ${result.cityName}`)
             return true
         } catch (cause) {
             dispatch({ type: 'failure', message: toErrorText(cause) })

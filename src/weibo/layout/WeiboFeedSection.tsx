@@ -22,6 +22,8 @@ interface WeiboFeedSectionProps {
     emptyDescription: string
     /** 空态覆盖：需要自定义空态（如带刷新按钮）时传入 */
     emptyState?: ReactNode
+    /** 屏蔽该博主：原样透传给列表里的卡片「更多」菜单 */
+    onBlockAuthor?: (authorName: string) => void
     onRefresh: () => void
     onOpenSettings: () => void
 }
@@ -35,6 +37,7 @@ export function WeiboFeedSection({
     emptyTitle,
     emptyDescription,
     emptyState,
+    onBlockAuthor,
     onRefresh,
     onOpenSettings,
 }: WeiboFeedSectionProps): JSX.Element {
@@ -58,6 +61,7 @@ export function WeiboFeedSection({
             emptyDescription={feed.state.errorMessage ?? emptyDescription}
             emptyState={emptyState}
             errorMessage={feed.state.errorMessage}
+            onBlockAuthor={onBlockAuthor}
             onRefresh={onRefresh}
             onLoadMore={() => {
                 void feed.loadMore()

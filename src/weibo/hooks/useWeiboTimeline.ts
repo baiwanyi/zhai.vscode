@@ -4,19 +4,22 @@
  * 错误文案统一走 @shared/utils/error，页面只消费状态与动作，不自行拼请求参数。
  * 关键约束：刷新带上次结果的 sinceId 即增量，只有真正的新条目才前插并去重；
  * 首次进入先探测凭证，未配置不发请求，直接给配置引导；翻页到底必须清空 maxId，
- * 否则加载更多会被反复点亮；宿主返回的分类码原样保留，页面据此切到配置卡或提示稍后重试。
+ * 否则加载更多会被反复点亮；宿主返回的分类码原样保留，页面据此切到配置卡或提示稍后重试；
+ * 屏蔽规则在返回前过滤，原始列表仍留在状态里，规则变化时无需回源即可即时重算。
  */
-import { useCallback, useEffect, useReducer, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
 import type {
+    WeiboBlockRules,
+    WeiboCredentialState,
     WeiboSaveCredentialResult,
     WeiboTimelinePost,
     WeiboTimelineRequest,
     WeiboTimelineResult,
-    WeiboCredentialState,
 } from '@shared/types/weibo'
 import { HostRequestError, request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
+import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
 
 /** 取数模式：刷新走增量，翻页走 max_id */
 type LoadMode = 'refresh' | 'more'
@@ -156,8 +159,8 @@ export interface WeiboTimelineController {
     clearCredential: () => Promise<boolean>
 }
 
-/** 关注时间线控制器：页面挂载后自动探测凭证并加载首屏 */
-export function useWeiboTimeline(): WeiboTimelineController {
+/** 关注时间线控制器：页面挂载后自动探测凭证并加载首屏，返回前按屏蔽规则过滤 */
+export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK_RULES): WeiboTimelineController {
     const [state, dispatch] = useReducer(reducer, INITIAL_STATE)
     // 动作回调需要读最新游标，但不该因游标变化重建：用 ref 承载一份同步副本
     const stateRef = useRef(state)
@@ -244,5 +247,16 @@ export function useWeiboTimeline(): WeiboTimelineController {
         void bootstrap()
     }, [loadPage])
 
-    return { state, refresh, loadMore, saveCredential, clearCredential }
+    // 屏蔽只在返回前做：状态里保留原始列表，规则变化（如「屏蔽该博主」）时无需回源即可重算
+    const { blockedUsers, blockedKeywords } = blockRules
+    const visiblePosts = useMemo(
+        () => filterWeiboPosts(state.posts, { blockedUsers, blockedKeywords }),
+        [blockedUsers, blockedKeywords, state.posts],
+    )
+    const visibleState = visiblePosts === state.posts ? state : { ...state, posts: visiblePosts }
+
+    return useMemo(
+        () => ({ state: visibleState, refresh, loadMore, saveCredential, clearCredential }),
+        [clearCredential, loadMore, refresh, saveCredential, visibleState],
+    )
 }

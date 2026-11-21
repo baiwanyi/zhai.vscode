@@ -197,6 +197,14 @@ export async function openWeiboPanel(
                 .getConfiguration('zhai')
                 .update('weibo.cityCode', cityCode, vscode.ConfigurationTarget.Global)
         },
+        // 屏蔽名单同样落 VS Code 配置：两个名单一次写入，避免关窗时只落了一半
+        readBlockedUsers: (): string[] => getZhaiConfig().weiboBlockedUsers,
+        readBlockedKeywords: (): string[] => getZhaiConfig().weiboBlockedKeywords,
+        writeBlockList: async (list): Promise<void> => {
+            const config = vscode.workspace.getConfiguration('zhai')
+            await config.update('weibo.blockedUsers', list.blockedUsers, vscode.ConfigurationTarget.Global)
+            await config.update('weibo.blockedKeywords', list.blockedKeywords, vscode.ConfigurationTarget.Global)
+        },
         cache: createWeiboCache(storageRoot),
         // 头像经同一份图片代理取回后另存为 {存储根}/weibo_avatar.jpg
         avatar: createWeiboAvatarGateway({

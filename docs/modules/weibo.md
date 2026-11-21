@@ -1326,11 +1326,12 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/modules/weibo/webLongText.ts` | 长文读取：`longtext` 取全文、正文优先级与失败兜底 |
 | `src/modules/weibo/webLikes.ts` | 我的赞：`statuses/likelist` 页码取数、总数与是否还有下一页判断 |
 | `src/modules/weibo/videoServer.ts` | 视频中转：回环 HTTP 服务补 Referer，能用 ffmpeg 就把 AAC 音轨转成 MP3（Webview 无 AAC 解码器）边转边发，否则原样流式转发 |
-| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/likes`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/image`、`weibo/video`、`weibo/like`、`weibo/openPost` 分发 |
+| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/likes`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/comments`、`weibo/longtext`、`weibo/credential/*`、`weibo/blockList/*`、`weibo/image`、`weibo/video`、`weibo/like`、`weibo/openPost` 分发 |
 | `src/modules/weibo/panel.ts` | 面板消息通道、凭证与缓存注入、图片代理装配与本地资源白名单 |
 | `src/modules/common/webviewHtml.ts` | CSP 生成：默认不放行远程图，需要时可按调用方传入的 `imgSources` 放行 |
 | `src/shared/utils/weiboText.ts` | 正文纯文本切分：`@账号` / `#话题#` / 微博域名链接，宿主与 Webview 共用（零前端依赖） |
-| `src/weibo/` | Webview 入口：顶部固定菜单、账号菜单与设置弹窗（含同城城市）、右侧热搜榜、信息流列表、卡片（头像 / 图文混排 / 表情）与发表框表情选择器 |
+| `src/shared/utils/weiboBlock.ts` | 屏蔽名单：多行文本与名单数组互转、归一化、按作者名与关键字判定单条是否隐藏，宿主保存与 Webview 过滤共用 |
+| `src/weibo/` | Webview 入口：顶部固定菜单、账号菜单与设置弹窗（同城城市 + 屏蔽名单）、右侧热搜榜、信息流列表、卡片（头像 / 图文混排 / 表情）与发表框表情选择器 |
 | `src/weibo/layout/WeiboVideoPlayer.tsx` | 视频播放器：自绘控件栏、中央播放键、空格播放/暂停、控件自动隐藏、清晰度角标、静音与全屏 |
 | `src/weibo/layout/PageHotSearch.tsx` | 热搜专页：一个标签一张榜，整页榜单渲染、专页行样式与同城城市切换入口 |
 | `src/weibo/layout/WeiboHotRankRow.tsx` | 侧栏热搜行样式：序号 / 标题 / 副行 / 整行点击与 Tooltip（专页有自己的行组件，不共用） |
@@ -1382,8 +1383,13 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 - 列表滚动到底自动翻页：底部哨兵距视口一屏（`rootMargin: 240px`）即预取下一页，同一轮加载只有一条在飞；连续自动加载满 10 次、或上一次取数失败时，底部改出「加载更多」按钮交还用户手动点，刷新替换列表后自动额度重置。到底显示「已经到底了」，不再给按钮。
 - **刷新与切页都把滚动条拉回顶部**：滚动宿主是 `AppContent` 里 ScrollArea 的 viewport，统一走 `@shared/utils/scrollArea` 的 `scrollAreaToTop(root)`（按 `SCROLL_VIEWPORT_SELECTOR` 找，找不到就静默跳过）。顶栏「刷新」在发起请求前先回顶，刷新等于重开一屏；切换导航视图由 `useEffect([view])` 在提交后回顶，不会停在上一页滚到很深的位置。
 - 个人主页按 `weibo/groups` 给出的账号 uid 拼 `https://weibo.com/u/{uid}`，经 `weibo/openPost` 的白名单校验后交给宿主打开；uid 缺失时只提示不跳转，不拼空地址。
-- 设置是弹窗而不是视图：凭证卡常驻，附各入口取数口径；未配置时任何信息流都不发请求，只给「去设置」的引导。
-- 账号菜单四项：「个人主页」按 uid 打开 `weibo.com/u/{uid}`；「我的赞」切到 `mine.likes` 视图读取点赞列表（见 14.16）；「设置」打开弹窗；「删除 Cookie」先弹确认框，确认后清除凭证、元数据缓存与本地头像，并回首页展开凭证卡（用户下一步多半是重新登录），未配置时该项禁用。
+- 设置是弹窗而不是视图：放同城热搜城市与两个屏蔽名单（用户名 / 关键字），Cookie 的保存与清除不在这里（首页凭证卡 + 账号菜单）；未配置时任何信息流都不发请求，只给「去设置」的引导。
+- 设置弹窗走通用骨架 `FormDialog`（标题 / 说明 / 取消与保存）：改动先落在本地草稿，点「保存」才提交，无改动时保存禁用；关闭或取消丢弃草稿，下次打开回到已保存值；城市下拉用 `position="popper"` + `max-h-64` 限高后内部滚动，几百个城市不会把弹窗撑满。
+- 两个名单都是多行文本、每行一项，保存时经 `parseWeiboBlockListText` 归一化（去空白、忽略大小写去重、超长截断）；城市与名单共用一个提交按钮，都改动时先存城市、成功后再存名单，任一失败保留草稿供重试。
+- **屏蔽在取数 hook 返回前过滤**：`useWeiboTimeline` / `useWeiboFeed` / `useWeiboLikes` 接收 `blockRules`，用 `filterWeiboPosts` 派生可见列表，状态里仍保留原始列表——名单变化（含卡片「屏蔽该博主」）时无需回源即可即时重算，分页游标、页码与 `hasMore` 也不受影响。
+- 名单落 VS Code 配置 `zhai.weibo.blockedUsers` / `zhai.weibo.blockedKeywords`（面板「设置」按行编辑，也可在设置文件里改数组）；路由为 `weibo/blockList/status` 与 `weibo/blockList/save`，宿主只存取与归一化，过滤一律在 Webview。
+- 卡片「更多」菜单末项是「屏蔽该博主」：只把作者名追加进用户名名单（已存在则提示而不重复写盘），写入成功后由过滤即时隐藏当前列表里的该博主内容，并用 Toaster 反馈结果。
+- 账号菜单四项：「个人主页」按 uid 打开 `weibo.com/u/{uid}`；「我的赞」切到 `mine.likes` 视图读取点赞列表（见 14.16）；「设置」打开弹窗；「删除 Cookie」先弹确认框，确认后清除凭证、元数据缓存与本地头像，并回首页（凭证卡按未配置状态自动出现，用户下一步多半是重新登录），未配置时该项禁用。
 
 ### 14.12 表情配置（发表框）
 
@@ -1432,7 +1438,7 @@ ACG     GET https://weibo.com/ajax/statuses/acg
 
 - 页面 `src/weibo/layout/PageHotSearch.tsx` 承载顶栏「热搜」一级菜单的 9 个二级项：一个标签一个端点，切换由菜单驱动，页面内不再重复一排标签。
 - 端点差异只落在地址上（`weiboEndpoints` 的 `WEIBO_AJAX_PATHS`），标签到地址的映射在 `webHotRank.ts` 的 `HOT_RANK_TAB_PATHS`；`weibo/hotRank` 的 `tab` 取值受 `isWeiboHotRankTab` 收窄，防止被当作路径片段拼接。
-- 同城 citycode 规则：固定前缀 `80086` + 四位行政区划代码（如南宁 `4501` → `800864501`）。城市在面板「设置」弹窗里按城市名选择，落 `zhai.weibo.cityCode`（也可在工作区设置里手填其它城市的四位代码）；未配置或非法值回落南宁。
+- 同城 citycode 规则：固定前缀 `80086` + 四位行政区划代码（如南宁 `4501` → `800864501`）。城市在面板「设置」弹窗里按城市名选择，落 `zhai.weibo.cityCode`（也可在工作区设置里手填其它城市的四位代码）；未配置或非法值回落南宁。预置城市清单按城市名拼音升序排列，下拉里近似字典序。
 - 只有 `band`（侧栏 `bandUnified`）参与 `weibo.json` 缓存；其余标签与同城的榜单内容各不相同，一律实时回源，避免不同标签串数据。
 - 专页使用自己的行组件 `PageHotSearchRow`（本文件内）：宽页不挂 Tooltip、标题单行截断、徽标略大一档，整行点击打开搜索页；不复用侧栏那一份行样式，侧栏仍用 `layout/WeiboHotRankRow.tsx` 且只取前 10 条。
 - 两份行组件共用四类能力，避免同类逻辑各写一份：名次与前三名高亮 `layout/WeiboHotRankPosition`（`sm` / `md`）、徽标 `layout/WeiboHotRankBadge`（`sm` / `md`）、搜索地址与连点保护 `hooks/useWeiboSearchOpen`（地址规则在 `utils/weiboHotLinks`）、三态占位 `layout/WeiboHotRankFallback`（`sidebar` / `page`）。
@@ -1467,7 +1473,7 @@ GET https://weibo.com/ajax/profile/info?uid={uid}&scene=profile
 - `weibo/profile` 命中「资料 + 本地头像」时零网络；只有头像文件缺失时才用缓存里的 URL 补一次下载；`refresh: true` 才重新取数。
 - 头像经与卡片图片同一份 `mediaProxy` 下载（代理 → fetch → ipv4 → 直连），落盘后由宿主读成 data URI 回传，Webview 不直连图床。
 - `credential/clear` 同时删除 `weibo.json` 与 `weibo_avatar.jpg`，避免换号后顶栏露出上一个账号的头像。
-- 顶栏动作区合并为一个账号菜单（`WeiboAccountMenu`）：触发器是 `Avatar` + 昵称，菜单内是账号信息（粉丝 / 微博数）、个人主页、我的赞、设置弹窗、删除 Cookie；账号未取到时个人主页禁用、未配置时「我的赞」与删除项禁用，头像回落为昵称首字。
+- 顶栏动作区合并为一个账号菜单（`WeiboAccountMenu`）：触发器是 `Avatar` + 昵称，菜单内是账号信息（粉丝 / 微博数）、个人主页、我的赞、设置弹窗、删除 Cookie；账号未取到时个人主页禁用、未配置时「我的赞」与删除项禁用，头像缺失回落为昵称首字；未登录时触发器不渲染头像并改用 `outline` 变体，用描边按钮提示「这里还没登录」。
 
 ### 14.16 我的赞（账号菜单入口）
 
@@ -1480,6 +1486,7 @@ GET https://weibo.com/ajax/statuses/likelist?uid={uid}&page={页码}&with_total=
 - 点赞列表只有页码分页（没有 `max_id` 游标）：`weibo/likes` 的 `page` 从 1 起，前端刷新即重取第一页并整体替换，翻页按 `page + 1` 追加去重，到底后不再递增页码。
 - 列表条目本身就是微博对象（`data.list[]` 直接给 `id` / `user` / `text` 等字段，**没有 `mblog` 包裹**）；实现同时兼容 `list[].mblog` 与 `data.statuses` 两种层级，单条归一化复用 `normalizeTimelinePost`，渲染仍是 `WeiboFeedList` / `WeiboPostCard`，与首页信息流完全同形。
 - `hasMore` 判断：上游给出 `total_number` 时按「页码 × 20 < 总数」估算，缺失时以本页是否取满 20 条为准；`total_number` 随回包下发，仅用于说明覆盖范围。
+- 我的赞同受屏蔽名单约束：`useWeiboLikes` 同样接收 `blockRules` 并在返回前过滤，`page` 与 `totalNumber` 仍按上游口径保留（只影响可见条数）。
 - 未配置 Cookie 时菜单项禁用，视图内只给「去设置」的引导，不发任何请求。
 
 #### 响应结构（2026-11-19 实测，供后续查字段）

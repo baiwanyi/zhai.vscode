@@ -71,6 +71,10 @@ export interface ZhaiConfig {
     stockAppendCredit: boolean
     /** 同城热搜的城市代码：四位行政区划代码，空串表示未配置（由使用方回落默认） */
     weiboCityCode: string
+    /** 信息流屏蔽用户名：命中作者名的微博不再显示，空数组表示不过滤 */
+    weiboBlockedUsers: string[]
+    /** 信息流屏蔽关键字：正文命中任一关键字的微博不再显示，空数组表示不过滤 */
+    weiboBlockedKeywords: string[]
     telemetryEnabled: boolean
 }
 
@@ -182,6 +186,8 @@ export function getZhaiConfig(): ZhaiConfig {
         stockMaxBytes: readBoundedInt(cfg.get<number>('stock.maxBytes', 15), 15, 1, 50),
         stockAppendCredit: cfg.get<boolean>('stock.appendCredit', true),
         weiboCityCode: cfg.get<string>('weibo.cityCode', ''),
+        weiboBlockedUsers: cfg.get<string[]>('weibo.blockedUsers', []),
+        weiboBlockedKeywords: cfg.get<string[]>('weibo.blockedKeywords', []),
         telemetryEnabled: cfg.get<boolean>('telemetry.enabled', false),
     }
 }

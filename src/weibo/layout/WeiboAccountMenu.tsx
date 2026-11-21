@@ -4,7 +4,8 @@
  * @components/ui/avatar（Image + Fallback），触发器取 @webview/components/Button；
  * 头像 data URI 由宿主从 {存储根}/weibo_avatar.jpg 生成，前端不直连图床。
  * 关键约束：账号未取到时「个人主页」禁用并给出原因；「我的赞」只依赖登录 Cookie（uid 由宿主解析），
- * 未配置时禁用；头像缺失一律回落昵称首字，不留空白圆；
+ * 未配置时禁用；头像缺失一律回落昵称首字，不留空白圆；未登录时触发器不渲染头像、改用 outline 变体，
+ * 用描边按钮提示「这里还没登录」；
  * 删除 Cookie 只是发信号，二次确认与宿主调用由页面负责，本组件不持有任何业务状态；
  * 菜单宽度显式给定，否则 Radix 按触发按钮宽度撑开，长文案会被挤成多行。
  */
@@ -93,11 +94,10 @@ export function WeiboAccountMenu({
         <DropdownMenu>
             <DropdownMenuTrigger asChild>
                 <Button
-                    size="sm"
-                    variant="ghost"
+                    variant={isConfigured ? 'ghost' : 'outline'}
                     tooltip={canOpenProfile ? '账号与设置' : '账号与设置（尚未读取到账号）'}
                 >
-                    <AccountAvatar size="sm" avatarDataUrl={avatarDataUrl} name={displayName} />
+                    {isConfigured ? <AccountAvatar size="sm" avatarDataUrl={avatarDataUrl} name={displayName} /> : null}
                     <span className="max-w-24 truncate">{displayName}</span>
                 </Button>
             </DropdownMenuTrigger>

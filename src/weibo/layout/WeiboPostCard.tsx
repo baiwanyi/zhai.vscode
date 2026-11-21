@@ -1,7 +1,7 @@
 /**
  * 时间线卡片：按标准 Card 分区——CardHeader 放作者头像、博主与时间来源（CardTitle / CardDescription），
  * CardContent 放正文（含表情）、图文混排媒体区、转发块与按需展开的评论区，CardFooter 只放互动数据；
- * 原文与两个卡片动作收在 CardAction 的「更多」菜单里，卡片底部不再堆一排按钮。
+ * 原文、两个卡片动作与「屏蔽该博主」收在 CardAction 的「更多」菜单里，卡片底部不再堆一排按钮。
  * 复用约定：数据是归一化后的 WeiboTimelinePost，图片地址已在宿主按白名单收窄；
  * 头像与富文本分别交给 WeiboAvatar / WeiboRichText，正文与转发体里的 @账号、话题与短链
  * 都由富文本渲染成可点链接，长文全文则用 splitPlainTextLinks 从纯文本里补出同样的链接；
@@ -16,12 +16,14 @@
  * 只在失败或尚未进入视口时保留手动入口；每处各自限一条在飞，避免连点或重复挂载把同一篇抽两次；
  * 已取到的转发全文还会随「保存到笔记」「添加到 AI 对话」一起交给宿主，省掉一次重复请求；
  * 「保存到笔记」「添加到 AI 对话」只把卡片展示字段交给宿主，落盘与会话归属都在宿主侧决定，
- * 前端不做任何路径拼接，两个动作互斥以防并发写盘或并发改上下文。
+ * 前端不做任何路径拼接，两个动作互斥以防并发写盘或并发改上下文；
+ * 「屏蔽该博主」只把作者名交给面板写入屏蔽名单，卡片本身不做隐藏或改写，列表由取数 hook 重新过滤。
  */
 import { cn } from 'cn'
 import { format } from 'date-fns'
 import {
     BadgeCheck,
+    Ban,
     Check,
     ExternalLink,
     Heart,
@@ -43,6 +45,7 @@ import {
     DropdownMenuContent,
     DropdownMenuGroup,
     DropdownMenuItem,
+    DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
 import { Spinner } from '@components/ui/spinner'
@@ -494,9 +497,11 @@ function LikeButton({ postId, initialLiked, initialCount }: LikeButtonProps): JS
 
 interface WeiboPostCardProps {
     post: WeiboTimelinePost
+    /** 屏蔽该博主：名字交给面板写入屏蔽名单，当前列表随之过滤掉该条 */
+    onBlockAuthor?: (authorName: string) => void
 }
 
-export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
+export function WeiboPostCard({ post, onBlockAuthor }: WeiboPostCardProps): JSX.Element {
     const handleOpen = useCallback((): void => {
         void request('weibo/openPost', { url: post.url }).catch(toastError)
     }, [post.url])
@@ -688,6 +693,22 @@ export function WeiboPostCard({ post }: WeiboPostCardProps): JSX.Element {
                                     <MessageSquareQuote />
                                     {postActions.isAddingToChat ? '正在添加到对话…' : '添加到 AI 对话'}
                                 </DropdownMenuItem>
+                                {/* 屏蔽是破坏性动作：单独分隔，作者名缺失时没有可加入名单的值，直接禁用 */}
+                                {onBlockAuthor === undefined ? null : (
+                                    <>
+                                        <DropdownMenuSeparator />
+                                        <DropdownMenuItem
+                                            variant="destructive"
+                                            disabled={post.author.name.trim().length === 0}
+                                            onSelect={() => {
+                                                onBlockAuthor(post.author.name)
+                                            }}
+                                        >
+                                            <Ban />
+                                            屏蔽该博主
+                                        </DropdownMenuItem>
+                                    </>
+                                )}
                             </DropdownMenuGroup>
                         </DropdownMenuContent>
                     </DropdownMenu>

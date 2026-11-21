@@ -10,6 +10,7 @@
  */
 import { logger } from '@modules/common/logger'
 import type {
+    WeiboBlockListState,
     WeiboChatContextResult,
     WeiboCityState,
     WeiboClearCredentialResult,
@@ -43,6 +44,7 @@ import {
     isWeiboLongTextRequest,
     isWeiboOpenPostRequest,
     isWeiboProfileRequest,
+    isWeiboSaveBlockListRequest,
     isWeiboSaveCityRequest,
     isWeiboSaveCredentialRequest,
     isWeiboTimelineRequest,
@@ -50,6 +52,7 @@ import {
     readWeiboCityName,
     readWeiboPagePost,
 } from '@shared/types/weibo'
+import { normalizeWeiboBlockList } from '@shared/utils/weiboBlock'
 import { WeiboWebError } from './webClient'
 import { fetchPostComments } from './webComments'
 import { isCookieUsable, normalizeCookieInput } from './webCredential'
@@ -89,6 +92,12 @@ export interface WeiboRouteDeps {
     readCityCode?: () => string
     /** 写入同城城市代码：由面板落到 zhai.weibo.cityCode 配置 */
     writeCityCode?: (cityCode: string) => Promise<void>
+    /** 读取屏蔽用户名名单：由面板落到 zhai.weibo.blockedUsers 配置 */
+    readBlockedUsers?: () => string[]
+    /** 读取屏蔽关键字名单：由面板落到 zhai.weibo.blockedKeywords 配置 */
+    readBlockedKeywords?: () => string[]
+    /** 写入屏蔽名单：两个名单一次落盘，避免半份名单生效 */
+    writeBlockList?: (list: WeiboBlockListState) => Promise<void>
     /** 元数据缓存：分组 / 热搜 / 表情的复用入口，未注入时退化为每次都回源 */
     cache?: WeiboCache
     fetchTimeline?: (options: FetchTimelineOptions) => Promise<WeiboTimelineResult>
@@ -179,6 +188,10 @@ export class WeiboRoutes {
                 return this.readCityState()
             case 'weibo/city/save':
                 return this.saveCity(payload)
+            case 'weibo/blockList/status':
+                return this.readBlockListState()
+            case 'weibo/blockList/save':
+                return this.saveBlockList(payload)
             case 'weibo/comments':
                 return this.loadComments(payload)
             case 'weibo/longtext':
@@ -392,6 +405,37 @@ export class WeiboRoutes {
         }
         await this.deps.writeCityCode?.(payload.cityCode)
         return { cityCode: payload.cityCode, cityName: readWeiboCityName(payload.cityCode) }
+    }
+
+    /**
+     * 读取屏蔽名单：配置缺省或未注入读取时回空名单，过滤是前端的事，宿主只负责存取。
+     * 关键约束：读出的名单一律归一化（去空白、去重、截断超长项），
+     * 让设置弹窗里的文本与真实生效的规则始终一致。
+     */
+    private readBlockListState(): WeiboBlockListState {
+        return {
+            blockedUsers: this.readBlockListItems(this.deps.readBlockedUsers),
+            blockedKeywords: this.readBlockListItems(this.deps.readBlockedKeywords),
+        }
+    }
+
+    /** 读取单个名单：设置文件被手改成非数组时按空名单处理，不让坏配置连带整个面板报错 */
+    private readBlockListItems(read: (() => string[]) | undefined): string[] {
+        const items = read?.()
+        return normalizeWeiboBlockList(Array.isArray(items) ? items : [])
+    }
+
+    /** 保存屏蔽名单：两个名单整份替换，回包与状态同形，前端直接替换本地状态 */
+    private async saveBlockList(payload: unknown): Promise<WeiboBlockListState> {
+        if (!isWeiboSaveBlockListRequest(payload)) {
+            throw new WeiboWebError('invalid-payload', 'weibo/blockList/save 参数非法：两个名单都须为字符串数组')
+        }
+        const list: WeiboBlockListState = {
+            blockedUsers: normalizeWeiboBlockList(payload.blockedUsers),
+            blockedKeywords: normalizeWeiboBlockList(payload.blockedKeywords),
+        }
+        await this.deps.writeBlockList?.(list)
+        return list
     }
 
     /**

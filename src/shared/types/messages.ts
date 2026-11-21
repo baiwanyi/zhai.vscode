@@ -406,6 +406,8 @@ export type HostMethodName =
     | 'wechat/stats/overview'
     | 'wechat/tasks'
     | 'weibo/addToChat'
+    | 'weibo/blockList/save'
+    | 'weibo/blockList/status'
     | 'weibo/city/save'
     | 'weibo/city/status'
     | 'weibo/comments'
