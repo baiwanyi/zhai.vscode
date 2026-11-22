@@ -14,6 +14,16 @@ export const WEIBO_METHODS = {
     feed: 'weibo/feed',
     /** 我的赞 */
     likes: 'weibo/likes',
+    /** 他人主页：资料 + 该用户的微博列表 */
+    userBlog: 'weibo/userBlog',
+    /** 关注分组：目标用户所在分组 + 账号下全部分组 */
+    userGroups: 'weibo/user/groups',
+    /** 关注分组：新建 */
+    userGroupCreate: 'weibo/user/groupCreate',
+    /** 关注分组：把用户移入指定分组 */
+    userGroupSave: 'weibo/user/groupSave',
+    /** 备注名：设置或清除 */
+    userRemark: 'weibo/user/remark',
     /** 分组与热门频道表 */
     groups: 'weibo/groups',
     /** 侧栏热搜榜 */

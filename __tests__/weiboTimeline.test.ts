@@ -731,6 +731,20 @@ describe('点赞状态归一化', () => {
     })
 })
 
+describe('阅读数归一化', () => {
+    it('reads_count 数字与数字字符串都收下，0 视为真实零阅读', () => {
+        expect(normalizeTimelinePost(rawStatus(130, { reads_count: 12_345 }))?.readsCount).toBe(12_345)
+        expect(normalizeTimelinePost(rawStatus(131, { reads_count: '678' }))?.readsCount).toBe(678)
+        expect(normalizeTimelinePost(rawStatus(132, { reads_count: 0 }))?.readsCount).toBe(0)
+    })
+
+    it('缺失或非数字一律为 null，不能把「没下发」当成 0', () => {
+        expect(normalizeTimelinePost(rawStatus(133))?.readsCount).toBeNull()
+        expect(normalizeTimelinePost(rawStatus(134, { reads_count: '未知' }))?.readsCount).toBeNull()
+        expect(normalizeTimelinePost(rawStatus(135, { reads_count: -5 }))?.readsCount).toBeNull()
+    })
+})
+
 describe('微博协议路由：点赞', () => {
     const configuredCookieStore: WeiboCookieStore = {
         read: () => Promise.resolve('SUB=x'),

@@ -9,7 +9,7 @@
  * 删除 Cookie 只是发信号，二次确认与宿主调用由页面负责，本组件不持有任何业务状态；
  * 菜单宽度显式给定，否则 Radix 按触发按钮宽度撑开，长文案会被挤成多行。
  */
-import { ExternalLink, Heart, Settings2, Trash2 } from 'lucide-react'
+import { Heart, Settings2, Trash2, UserRound } from 'lucide-react'
 import { Avatar, AvatarFallback, AvatarImage } from '@components/ui/avatar'
 import {
     DropdownMenu,
@@ -114,7 +114,7 @@ export function WeiboAccountMenu({
                 <DropdownMenuSeparator />
                 <DropdownMenuGroup>
                     <DropdownMenuItem disabled={!canOpenProfile} onSelect={onOpenProfile}>
-                        <ExternalLink />
+                        <UserRound />
                         个人主页
                     </DropdownMenuItem>
                     <DropdownMenuItem disabled={!isConfigured} onSelect={onOpenLikes}>

@@ -1,10 +1,10 @@
 /**
- * 微博信息流契约：关注时间线、热门、分组信息流、热搜标签、分组列表、表情配置、发表框话题与发布的模型与不可信载荷收窄。
+ * 微博信息流契约：关注时间线、热门、分组信息流、热搜标签、分组列表、用户主页、表情配置、发表框话题与发布的模型与不可信载荷收窄。
  * 复用约定：宿主侧 modules/weibo 负责请求与归一化，Webview 只消费归一化后的帖子、榜单与表情，
  * 协议方法名登记在 shared/types/messages，面板经 request/response 通道取数。
  * 关键约束：信息流与榜单只读，写操作只保留点赞与发布两条；Cookie 明文永不出宿主、不入日志，
  * 凭证状态只回传是否已配置与保存时间；sinceId 与 maxId 互斥，二者都给出时以 maxId 为准；
- * 分组与游标必须是纯数字串，热搜 tab 与同城 cityCode 只接受登记过的取值，
+ * 分组与游标必须是纯数字串，用户主页的 uid 与昵称二选一，热搜 tab 与同城 cityCode 只接受登记过的取值，
  * 表情图地址必须落在图床白名单内，发布图片路径必须落在 uploads 目录内，
  * 避免任意内容被拼进参数或渲染。
  */
@@ -452,6 +452,8 @@ export interface WeiboTimelinePost {
     isLiked: boolean
     /** 长文标记：正文被截断时提示用户去原文查看 */
     isLongText: boolean
+    /** 阅读数：上游只对自己发布的微博下发，缺失或非本人微博为 null */
+    readsCount: number | null
 }
 
 /** 一页或一次增量的结果 */
@@ -908,6 +910,123 @@ export interface WeiboProfileRequest {
     refresh?: boolean
 }
 
+/**
+ * 他人主页的公开资料：只承载个人主页页头要展示的字段，与登录账号信息分开。
+ * 关键约束：avatarUrl / coverUrl 已过图床白名单，前端仍须经 weibo/image 代理加载；
+ * 缺 id 或昵称的用户视为不可用，由取数层整条报错而不是渲染半个主页。
+ */
+export interface WeiboUserInfo {
+    /** 用户数字 id（字符串形式） */
+    id: string
+    /** 昵称 */
+    name: string
+    /** 头像远程直链：已过图床白名单 */
+    avatarUrl: string
+    /** 主页封面远程直链：上游未给时为空串 */
+    coverUrl: string
+    isVerified: boolean
+    /** 简介：已剥标签解实体 */
+    description: string
+    /** 所在地：上游未给时为空串 */
+    location: string
+    /** 性别：上游 m / f 之外一律 unknown */
+    gender: 'm' | 'f' | 'unknown'
+    followersCount: number
+    friendsCount: number
+    statusesCount: number
+    /** 当前账号是否已关注该用户：关注按钮据此决定「关注」还是悬停菜单 */
+    isFollowing: boolean
+    /** 备注名：未设备注为空串 */
+    remark: string
+}
+
+/**
+ * 用户主页入参：uid 与昵称二选一，uid 优先（改名后仍可定位）。
+ * 关键约束：uid 必须是数字串，昵称长度受限且不含控制字符；两者都缺时路由直接拒绝。
+ */
+export interface WeiboUserBlogRequest {
+    /** `/u/{uid}` 链接里的数字 id */
+    uid?: string
+    /** `/n/{screen_name}` 链接里的昵称，由上游换算成 uid */
+    screenName?: string
+    /** 页码：从 1 开始，缺省 1 */
+    page?: number
+}
+
+/** 用户主页结果：资料与帖子一次取回，帖子与信息流同形 */
+export interface WeiboUserBlogResult {
+    user: WeiboUserInfo
+    posts: WeiboTimelinePost[]
+    /** 本次请求的页码：从 1 开始 */
+    page: number
+    /** 是否还有下一页：上游给出总数时按总数判断，缺失时以本页是否满页为准 */
+    hasMore: boolean
+    /** 上游声明的微博总数：缺失为 null */
+    total: number | null
+    /** 结果生成时刻（ISO） */
+    fetchedAt: string
+    /** 分页重叠或重复下发被丢弃的条数 */
+    droppedDuplicates: number
+}
+
+/** 关注分组：id 是数字串，name 为 1-8 字，成员数只在「全部分组」里给出 */
+export interface WeiboUserGroup {
+    id: string
+    name: string
+    /** 分组内的关注人数：当前用户所在分组查询不带该字段，缺失为 0 */
+    memberCount: number
+    /** 是否公开分组 */
+    isPublic: boolean
+}
+
+/** 关注分组读取结果：目标用户所在分组 + 账号下全部分组，一次取回供弹窗直接渲染 */
+export interface WeiboUserGroupsResult {
+    /** 目标用户当前所在的分组 id：空数组表示未分组 */
+    groupIds: string[]
+    groups: WeiboUserGroup[]
+}
+
+/** 关注分组读取入参：只认数字 uid */
+export interface WeiboUserGroupsRequest {
+    uid: string
+}
+
+/** 新建分组入参：名称 1-8 字，isPublic 为是否公开 */
+export interface WeiboGroupCreateRequest {
+    name: string
+    isPublic: boolean
+}
+
+/** 新建分组结果 */
+export interface WeiboGroupCreateResult {
+    group: WeiboUserGroup
+}
+
+/** 保存分组入参：把用户放进 listIds 这批分组，originListIds 为请求前的分组 */
+export interface WeiboGroupSaveRequest {
+    uid: string
+    /** 目标分组 id：空数组表示移出全部分组（回到默认分组 0） */
+    listIds: string[]
+    /** 请求前的分组 id：上游据此计算增删 */
+    originListIds: string[]
+}
+
+/** 保存分组结果 */
+export interface WeiboGroupSaveResult {
+    saved: boolean
+}
+
+/** 设置备注入参：备注 0-15 字，空串表示清除 */
+export interface WeiboUserRemarkRequest {
+    uid: string
+    remark: string
+}
+
+/** 设置备注结果：以上游回包为准，清除后为空串 */
+export interface WeiboUserRemarkResult {
+    remark: string
+}
+
 /** 凭证状态：只描述是否可用，不回传任何 Cookie 片段 */
 export interface WeiboCredentialState {
     isConfigured: boolean
@@ -1124,6 +1243,96 @@ export function isWeiboLikesRequest(value: unknown): value is WeiboLikesRequest 
     }
     const { page } = value as Record<string, unknown>
     return page === undefined || (typeof page === 'number' && Number.isFinite(page))
+}
+
+/** 用户主页昵称上限：微博昵称本身不超过 30 字，留一倍余量 */
+const WEIBO_USER_SCREEN_NAME_MAX = 64
+
+/**
+ * 昵称形态：去空白后非空、长度受限，且不含路径与查询分隔符及控制字符。
+ * 关键约束：昵称会被拼进 profile/info 的查询串，需在收窄阶段就挡掉畸形取值。
+ */
+function isWeiboScreenName(value: unknown): value is string {
+    if (typeof value !== 'string') {
+        return false
+    }
+    const trimmed = value.trim()
+    return trimmed.length > 0 && trimmed.length <= WEIBO_USER_SCREEN_NAME_MAX && !/[/?#\p{Cc}]/u.test(trimmed)
+}
+
+/** 收窄用户主页入参：uid 与昵称至少给一个；给了就必须合法，page 缺省合法 */
+export function isWeiboUserBlogRequest(value: unknown): value is WeiboUserBlogRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { uid, screenName, page } = value as Record<string, unknown>
+    if (!isOptionalTimelineId(uid) || !(screenName === undefined || isWeiboScreenName(screenName))) {
+        return false
+    }
+    if (!isOptionalNumber(page)) {
+        return false
+    }
+    return isWeiboTimelineId(uid) || isWeiboScreenName(screenName)
+}
+
+/** 分组名长度上限：与网页端口径一致（1-8 字） */
+const WEIBO_GROUP_NAME_MAX = 8
+
+/** 备注长度上限：网页端 1-15 字，这里允许空串表示清除 */
+const WEIBO_REMARK_MAX = 15
+
+/** 一次提交的分组数量上限：账号下分组远少于此，超出即视为非法载荷 */
+const WEIBO_GROUP_LIST_MAX = 50
+
+/** 收窄 id 列表：元素必须是数字串，数量受限，避免把畸形载荷拼进 form */
+function isWeiboIdList(value: unknown): value is string[] {
+    if (!Array.isArray(value) || value.length > WEIBO_GROUP_LIST_MAX) {
+        return false
+    }
+    return value.every((item) => isWeiboTimelineId(item))
+}
+
+/** 收窄分组读取入参：uid 必填且为数字串 */
+export function isWeiboUserGroupsRequest(value: unknown): value is WeiboUserGroupsRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { uid } = value as Record<string, unknown>
+    return isWeiboTimelineId(uid)
+}
+
+/** 收窄新建分组入参：名称去空白后 1-8 字，isPublic 必须是布尔 */
+export function isWeiboGroupCreateRequest(value: unknown): value is WeiboGroupCreateRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { name, isPublic } = value as Record<string, unknown>
+    if (typeof name !== 'string' || typeof isPublic !== 'boolean') {
+        return false
+    }
+    const trimmed = name.trim()
+    return trimmed.length > 0 && trimmed.length <= WEIBO_GROUP_NAME_MAX
+}
+
+/** 收窄保存分组入参：uid 与两组 id 列表都必须合法 */
+export function isWeiboGroupSaveRequest(value: unknown): value is WeiboGroupSaveRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { uid, listIds, originListIds } = value as Record<string, unknown>
+    return isWeiboTimelineId(uid) && isWeiboIdList(listIds) && isWeiboIdList(originListIds)
+}
+
+/** 收窄设置备注入参：备注按字计不超过 15，允许空串清除 */
+export function isWeiboUserRemarkRequest(value: unknown): value is WeiboUserRemarkRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { uid, remark } = value as Record<string, unknown>
+    if (!isWeiboTimelineId(uid) || typeof remark !== 'string') {
+        return false
+    }
+    return [...remark.trim()].length <= WEIBO_REMARK_MAX
 }
 
 /** 收窄视频地址入参：长度上限与图片一致，域名白名单由宿主再次校验 */

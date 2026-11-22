@@ -26,6 +26,8 @@ interface WeiboFeedSectionProps {
     onBlockAuthor?: (authorName: string) => void
     /** 当前登录账号 uid：原样透传，评论区据此只给自己的评论显示删除 */
     viewerUid?: string | null
+    /** 隐藏卡片头部的关注入口：个人主页由页头统一提供 */
+    hideFollow?: boolean
     onRefresh: () => void
     onOpenSettings: () => void
 }
@@ -41,6 +43,7 @@ export function WeiboFeedSection({
     emptyState,
     onBlockAuthor,
     viewerUid = null,
+    hideFollow = false,
     onRefresh,
     onOpenSettings,
 }: WeiboFeedSectionProps): JSX.Element {
@@ -66,6 +69,7 @@ export function WeiboFeedSection({
             errorMessage={feed.state.errorMessage}
             onBlockAuthor={onBlockAuthor}
             viewerUid={viewerUid}
+            hideFollow={hideFollow}
             onRefresh={onRefresh}
             onLoadMore={() => {
                 void feed.loadMore()

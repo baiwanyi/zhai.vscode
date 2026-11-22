@@ -63,6 +63,7 @@ function makePost(options: { author?: string; text?: string; retweetedText?: str
                   },
         isLiked: false,
         isLongText: false,
+        readsCount: null,
     }
 }
 

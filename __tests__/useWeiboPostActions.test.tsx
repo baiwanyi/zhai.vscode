@@ -63,6 +63,7 @@ function createPost(overrides: Partial<WeiboTimelinePost> = {}): WeiboTimelinePo
         retweeted: null,
         isLiked: false,
         isLongText: true,
+        readsCount: null,
         ...overrides,
     }
 }

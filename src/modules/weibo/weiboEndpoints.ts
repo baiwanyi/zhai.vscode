@@ -101,6 +101,18 @@ export const WEIBO_AJAX_PATHS = {
     unfollowAuthor: '/ajax/friendships/destory',
     /** 我的赞：按 uid 与页码读取点赞过的微博 */
     likelist: '/ajax/statuses/likelist',
+    /** 关注分组：目标用户当前所在的分组 */
+    userGroupOf: '/ajax/profile/getGroupList',
+    /** 关注分组：账号下的全部分组 */
+    userGroupList: '/ajax/profile/getGroups',
+    /** 关注分组：新建（formdata 提交 name，公开时另有 isOpen） */
+    userGroupCreate: '/ajax/profile/createGroup',
+    /** 关注分组：把用户移入指定分组 */
+    userGroupSet: '/ajax/profile/setGroup',
+    /** 备注名：设置或清除 */
+    userRemark: '/ajax/friendships/remarkUpdate',
+    /** 他人主页的微博列表：按 uid 与页码读取该用户发布的微博 */
+    userBlog: '/ajax/statuses/mymblog',
     /** 发布微博：formdata 提交正文与图片 pid */
     publish: '/ajax/statuses/update',
 } as const

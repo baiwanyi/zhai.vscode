@@ -25,7 +25,6 @@ import { WeiboHotRankBadge } from '../block/WeiboHotRankBadge'
 import { WeiboHotRankFallback } from '../block/WeiboHotRankFallback'
 import { WeiboHotRankPosition } from '../block/WeiboHotRankPosition'
 import { useWeiboSearchOpen } from '../hooks/useWeiboSearchOpen'
-import { preventLinkNavigation } from '../utils/weiboLinks'
 
 interface PageHotSearchRowProps {
     item: WeiboHotRankItem
@@ -34,21 +33,19 @@ interface PageHotSearchRowProps {
 /**
  * 专页榜单行：序号 + 标题 + 行尾描述与标记，整行点击打开搜索页。
  * 关键约束：页面宽度足够，行内不挂 Tooltip，标题单行截断即可看全大意；
- * 标题链接只负责语义与键盘可达，导航一律阻止并冒泡回整行处理器，避免打开两次。
+ * 标题只作文本、整行才是点击目标——行内不写带 href 的 a，否则 webview 会交给系统浏览器。
  */
 function PageHotSearchRow({ item }: PageHotSearchRowProps): JSX.Element {
-    const { searchUrl, openSearch } = useWeiboSearchOpen(item.title)
+    const { openSearch } = useWeiboSearchOpen(item.title)
 
     return (
         <Item size="sm" role="listitem" className="cursor-pointer gap-3 hover:bg-muted" onClick={openSearch}>
             {/* 序号与前三名高亮交给 WeiboHotRankPosition：媒体宽度、字号与颜色一并在那一份里 */}
             <WeiboHotRankPosition rank={item.rank} size="md" />
             <ItemContent className="min-w-0 gap-0.5">
-                <ItemTitle className="line-clamp-1 w-full text-lg font-normal text-foreground">
-                    <a href={searchUrl} className="text-inherit no-underline" onClick={preventLinkNavigation}>
-                        {item.title}
-                    </a>
-                </ItemTitle>
+                {/* 标题只作文本：整行才是点击目标。这里不能写带 href 的 a，
+                    webview 会把 href 交给系统浏览器，行内点击就会顶掉面板 */}
+                <ItemTitle className="line-clamp-1 w-full text-lg font-normal text-foreground">{item.title}</ItemTitle>
             </ItemContent>
             <ItemActions className="shrink-0 gap-2">
                 {item.description === null ? null : (

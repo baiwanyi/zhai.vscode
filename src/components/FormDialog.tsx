@@ -20,8 +20,8 @@ import type { JSX, ReactNode } from 'react'
 export interface FormDialogProps {
     open: boolean
     title: string
-    /** 说明文案：省略时不渲染描述节点，避免为凑结构补一句废话 */
-    description?: string
+    /** 说明文案：省略时不渲染描述节点，避免为凑结构补一句废话；需要内联图标时传节点 */
+    description?: ReactNode
     /** 提交按钮文案：动词要具体（创建 / 保存 / 开始导入），不用笼统的「确定」 */
     submitLabel: string
     cancelLabel?: string
@@ -55,11 +55,12 @@ export function FormDialog({
             <DialogContent className={contentClassName}>
                 <DialogHeader>
                     <DialogTitle className="text-lg">{title}</DialogTitle>
-                    {/* 省略说明时只保留读屏用的描述节点，既不加视觉文案，也不让 Radix 提示缺少描述 */}
-                    {description ? (
-                        <DialogDescription>{description}</DialogDescription>
-                    ) : (
+                    {/* 省略说明时只保留读屏用的描述节点，既不加视觉文案，也不让 Radix 提示缺少描述；
+                        空字符串与 undefined 同等处理，避免渲染一段看不见颜色的空段落 */}
+                    {description === undefined || description === '' ? (
                         <DialogDescription className="sr-only">{title}</DialogDescription>
+                    ) : (
+                        <DialogDescription>{description}</DialogDescription>
                     )}
                 </DialogHeader>
                 <FieldGroup>{children}</FieldGroup>

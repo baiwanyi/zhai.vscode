@@ -2,18 +2,22 @@
  * 微博页：编辑区独立页，顶部菜单切换首页 / 时间线 / 热门 / 热搜与账号自建分组，
  * 顶栏动作区只剩「刷新」与账号菜单（头像 + 个人主页 / 我的赞 / 设置弹窗 / 删除 Cookie）。
  * 复用约定：页面骨架取 @webview/components/AppPage，取数装配走 useWeiboPageFeeds，
- * 凭证删除走 useCredentialRemoval，草稿与已选图片走 useWeiboComposerDraft；
- * 视图组件交给 layout（WeiboHomeView / WeiboFeedViews / PageHotSearch / HotRankAside / WeiboNav），
+ * 凭证删除走 useCredentialRemoval，草稿与已选图片走 useWeiboComposerDraft，
+ * 页内个人主页的目标与取数走 WeiboUserPageProvider + useWeiboUserBlog；
+ * 视图组件交给 layout（WeiboHomeView / WeiboFeedViews / PageHotSearch / PageUserBlog / HotRankAside / WeiboNav），
  * 视图判定与文案交给 utils（weiboFeedRouting / weiboViewDescription），本文件只做装配与分发。
  * 关键约束：未配置 Cookie 时任何信息流都不发请求，只给可执行的获取步骤；
  * 凭证探测未结束或失败时不得断言「没有配置」，由 CredentialGate / CredentialCard 给加载与失败态；
- * 顶栏「刷新」按当前视图分发：信息流刷自己的游标，热搜刷当前标签的榜单；
+ * 顶栏「刷新」按当前视图分发：信息流刷自己的游标，热搜刷当前标签的榜单，个人主页刷该用户的列表；
+ * 个人主页优先于视图内容：/u/ 与 /n/ 链接经 WeiboUserPageProvider 交回本页打开，切页与删 Cookie 都清空该目标；
+ * 信息流滚动超过一小段后，视口右下角（fixed，向左让出 320px 贴住内容列右缘）出现「回到顶部」按钮，
+ * 点击与切页 / 刷新共用同一个 scrollAreaToTop 归零；
  * 热搜专页不再渲染右侧热搜卡，避免同一份榜单出现两次；
  * Cookie 明文只存在于输入瞬间，删除只有一个确认入口且提交中禁用；
  * 发布草稿与已选图片由页面层持有，切到其它视图再回首页仍在。
  */
 import { cn } from 'cn'
-import { RefreshCw } from 'lucide-react'
+import { ArrowUp, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { scrollAreaToTop } from '@shared/utils/scrollArea'
@@ -30,18 +34,21 @@ import { AppToaster } from '@webview/components/AppToaster'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { useHostToast } from '@webview/hooks/useHostToast'
+import { WeiboUserPageProvider } from './context/WeiboUserPageProvider'
 import { useCredentialRemoval } from './hooks/useCredentialRemoval'
+import { useScrollTopVisibility } from './hooks/useScrollTopVisibility'
 import { useWeiboBlockList } from './hooks/useWeiboBlockList'
 import { useWeiboCity } from './hooks/useWeiboCity'
 import { useWeiboComposerDraft } from './hooks/useWeiboComposerDraft'
 import { useWeiboGroups } from './hooks/useWeiboGroups'
 import { useWeiboHotChannelMenu } from './hooks/useWeiboHotChannelMenu'
-import { useWeiboOpenUrl } from './hooks/useWeiboOpenUrl'
 import { useWeiboPageFeeds } from './hooks/useWeiboPageFeeds'
 import { useWeiboProfile } from './hooks/useWeiboProfile'
 import { useWeiboTimeline } from './hooks/useWeiboTimeline'
+import { useWeiboUserBlog } from './hooks/useWeiboUserBlog'
 import { HotRankAside } from './layout/HotRankAside'
 import { PageHotSearch } from './layout/PageHotSearch'
+import { PageUserBlog } from './layout/PageUserBlog'
 import { SettingsDialog } from './layout/SettingsDialog'
 import { WeiboAccountMenu } from './layout/WeiboAccountMenu'
 import { WeiboFeedViews } from './layout/WeiboFeedViews'
@@ -49,9 +56,9 @@ import { WeiboHomeView } from './layout/WeiboHomeView'
 import { WeiboNav } from './layout/WeiboNav'
 import { HOME_RECOMMEND_VIEW } from './layout/weiboNavGroups'
 import { readRefreshSummary, resolveContentKind } from './utils/weiboFeedRouting'
-import { buildProfileUrl } from './utils/weiboLinks'
 import { describeWeiboView } from './utils/weiboViewDescription'
 import type { WeiboView } from './layout/weiboNavGroups'
+import type { WeiboUserTarget } from './utils/weiboLinks'
 import type { JSX } from 'react'
 
 export function WeiboScreen(): JSX.Element {
@@ -71,8 +78,17 @@ export function WeiboScreen(): JSX.Element {
         clearCredential,
     } = useWeiboTimeline(blockRules)
     const [view, setView] = useState<WeiboView>(HOME_RECOMMEND_VIEW)
+    /** 页内个人主页：非空时内容区整块换成该用户的主页，返回即清空 */
+    const [userTarget, setUserTarget] = useState<WeiboUserTarget | null>(null)
+    /** 切页统一清空主页目标：顶部菜单与热门频道都走这里，避免停在别人的主页上继续看别的流 */
+    const handleSelectView = useCallback((next: WeiboView): void => {
+        setUserTarget(null)
+        setView(next)
+    }, [])
     /** 页面根节点：滚动宿主藏在 AppContent 的 ScrollArea 里，刷新与切页都从它往下找 */
     const pageRef = useRef<HTMLDivElement>(null)
+    /** 回到顶部按钮：滚动超过一小段就出现，与切页 / 刷新的归零动作共用同一个滚动宿主 */
+    const { isVisible: isScrollTopVisible, scrollToTop } = useScrollTopVisibility(pageRef, 120)
     // 设置改为弹窗：不再占用导航视图
     const [isSettingsOpen, setIsSettingsOpen] = useState(false)
     /** 发布框草稿与已选图片放在页面层：切到其它视图时首页内容会卸载，二者不能跟着丢 */
@@ -97,7 +113,7 @@ export function WeiboScreen(): JSX.Element {
     } = useWeiboHotChannelMenu({
         pool: hotChannelPool,
         view,
-        onSelectView: setView,
+        onSelectView: handleSelectView,
     })
 
     const timelineListId = groupsState.groups?.timelineListId ?? null
@@ -111,15 +127,25 @@ export function WeiboScreen(): JSX.Element {
         cityCode: city.state.cityCode,
     })
     const { activeFeed, hotRankTab, hotListId, refreshHotRank } = feeds
-    /** 顶栏刷新摘要：加载态、可用性与内容条数由 utils 统一判定 */
-    const refreshSummary = readRefreshSummary({
-        view,
-        activeFeed,
-        hotRankTab,
-        hotRankState: feeds.hotRank.state,
-        homeState,
-        isConfigured,
-    })
+    /** 页内个人主页取数：目标为空时不发请求，进入主页才取该用户的资料与微博 */
+    const userBlog = useWeiboUserBlog(userTarget, isConfigured && userTarget !== null, blockRules)
+    const { refresh: refreshUserBlog } = userBlog
+    /** 顶栏刷新摘要：主页优先（刷新的是该用户的列表），其余由 utils 统一判定 */
+    const refreshSummary =
+        userTarget === null
+            ? readRefreshSummary({
+                  view,
+                  activeFeed,
+                  hotRankTab,
+                  hotRankState: feeds.hotRank.state,
+                  homeState,
+                  isConfigured,
+              })
+            : {
+                  isRefreshing: userBlog.state.isRefreshing,
+                  isRefreshDisabled: !isConfigured,
+                  contentCount: userBlog.state.posts.length,
+              }
     /** 个人主页用的 uid：账号信息优先，分组结果兜底；空串按「没有 uid」处理，避免拼出空地址 */
     const rawProfileUid = profileState.profile?.id ?? groupsState.groups?.uid ?? null
     const profileUid = rawProfileUid !== null && rawProfileUid.length > 0 ? rawProfileUid : null
@@ -131,8 +157,8 @@ export function WeiboScreen(): JSX.Element {
     }, [])
 
     const handleCredentialCleared = useCallback((): void => {
-        setView(HOME_RECOMMEND_VIEW)
-    }, [])
+        handleSelectView(HOME_RECOMMEND_VIEW)
+    }, [handleSelectView])
 
     const removal = useCredentialRemoval({ clearCredential, onCleared: handleCredentialCleared })
     const { requestDelete } = removal
@@ -146,14 +172,19 @@ export function WeiboScreen(): JSX.Element {
         requestDelete()
     }, [requestDelete])
 
-    /** 切页后回到顶部：上一页可能滚到很深，留着会看不到新页开头 */
+    /** 切页或进出个人主页后回到顶部：上一屏可能滚到很深，留着会看不到新屏开头 */
     useEffect(() => {
         scrollAreaToTop(pageRef.current)
-    }, [view])
+    }, [userTarget, view])
 
     const handleRefresh = useCallback((): void => {
         // 刷新等于重开一屏：先把滚动条拉回顶部，新内容从第一条看起
         scrollAreaToTop(pageRef.current)
+        // 个人主页：刷新的是该用户的列表，与顶栏按钮共用同一份状态
+        if (userTarget !== null) {
+            void refreshUserBlog()
+            return
+        }
         if (activeFeed !== null) {
             void activeFeed.refresh()
             return
@@ -164,7 +195,7 @@ export function WeiboScreen(): JSX.Element {
             return
         }
         void refreshHome()
-    }, [activeFeed, hotRankTab, refreshHome, refreshHotRank])
+    }, [activeFeed, hotRankTab, refreshHome, refreshHotRank, refreshUserBlog, userTarget])
 
     const handleHomeLoadMore = useCallback((): void => {
         void loadMoreHome()
@@ -172,8 +203,8 @@ export function WeiboScreen(): JSX.Element {
 
     /** 打开我的赞：入口在账号菜单，切换视图后由 likesFeed 负责首屏取数 */
     const handleOpenLikes = useCallback((): void => {
-        setView('mine.likes')
-    }, [])
+        handleSelectView('mine.likes')
+    }, [handleSelectView])
 
     /** 屏蔽该博主：写入名单后由 blockRules 驱动的过滤即时生效，提示文案由控制器统一给出 */
     const { blockUser } = blockList
@@ -189,18 +220,44 @@ export function WeiboScreen(): JSX.Element {
         void reloadGroups()
     }, [reloadGroups])
 
-    const openUrl = useWeiboOpenUrl()
+    /** 页内打开个人主页：正文与标题行链接命中 /u/ 或 /n/ 时由 useWeiboOpenUrl 交给这里 */
+    const openUser = useCallback((target: WeiboUserTarget): void => {
+        setUserTarget(target)
+    }, [])
 
-    /** 个人主页：uid 缺失时只提示，不拼空地址；地址构造交给 utils/weiboLinks */
+    /** 关闭个人主页：只清空目标，原视图与已加载内容原地保留 */
+    const closeUser = useCallback((): void => {
+        setUserTarget(null)
+    }, [])
+
+    /** 个人主页：uid 缺失时只提示，不拼空地址；有 uid 时页内打开，不再跳浏览器 */
     const handleOpenProfile = useCallback((): void => {
         if (profileUid === null) {
             toast.info('还没有识别到账号：保存 Cookie 后会自动读取')
             return
         }
-        openUrl(buildProfileUrl(profileUid))
-    }, [openUrl, profileUid])
+        openUser({ kind: 'uid', value: profileUid })
+    }, [openUser, profileUid])
 
     function renderContent(): JSX.Element {
+        // 个人主页优先：整块替换内容区，返回后原视图与滚动位置由页面状态自然恢复
+        if (userTarget !== null) {
+            return (
+                <PageUserBlog
+                    // 按目标键重挂载：关注态、备注与分组草稿都是主页本地状态，换人时必须整块重置
+                    key={`${userTarget.kind}:${userTarget.value}`}
+                    feed={userBlog}
+                    credential={homeState.credential}
+                    credentialErrorCode={homeState.errorCode}
+                    credentialErrorMessage={homeState.errorMessage}
+                    viewerUid={profileUid}
+                    onBack={closeUser}
+                    onBlockAuthor={handleBlockAuthor}
+                    onRefresh={handleRefresh}
+                    onOpenSettings={handleOpenSettings}
+                />
+            )
+        }
         if (contentKind === 'home') {
             return (
                 <WeiboHomeView
@@ -260,7 +317,7 @@ export function WeiboScreen(): JSX.Element {
     }
 
     return (
-        <>
+        <WeiboUserPageProvider openUser={openUser}>
             {/* AppPage 按 h-full 撑满，webview 的 #root 没有高度基准，不给视口高度顶栏会随 body 一起滚走
                 （与 WorkflowScreen / dashboardScreen 同形） */}
             <div ref={pageRef} className="flex h-screen min-h-0 flex-col">
@@ -276,7 +333,11 @@ export function WeiboScreen(): JSX.Element {
                                     onClick={handleRefresh}
                                     isLoading={refreshSummary.isRefreshing}
                                     disabled={refreshSummary.isRefreshDisabled}
-                                    tooltip="增量刷新：只取上次之后的新内容"
+                                    tooltip={
+                                        userTarget === null
+                                            ? '增量刷新：只取上次之后的新内容'
+                                            : '重新读取该用户的最新微博'
+                                    }
                                 >
                                     <RefreshCw className="size-3.5" aria-hidden="true" />
                                 </Button>
@@ -293,18 +354,20 @@ export function WeiboScreen(): JSX.Element {
                             />
                         </AppAction>
                         <AppDescription>
-                            {describeWeiboView({
-                                view,
-                                isConfigured,
-                                savedAt: homeState.credential?.savedAt ?? null,
-                                groups: myGroups,
-                                hotChannels,
-                            })}
+                            {userTarget === null
+                                ? describeWeiboView({
+                                      view,
+                                      isConfigured,
+                                      savedAt: homeState.credential?.savedAt ?? null,
+                                      groups: myGroups,
+                                      hotChannels,
+                                  })
+                                : `个人主页 · ${userBlog.state.user?.name ?? '正在读取…'}`}
                         </AppDescription>
                         <AppMenu>
                             <WeiboNav
                                 active={view}
-                                onSelect={setView}
+                                onSelect={handleSelectView}
                                 customGroups={myGroups}
                                 hotChannels={hotChannels}
                                 hotChannelCandidates={hotChannelCandidates}
@@ -327,6 +390,22 @@ export function WeiboScreen(): JSX.Element {
                             </div>
                             {/* 热搜专页自带整页榜单，故该页不渲染侧栏卡片，避免同一份内容出现两次 */}
                             {hotRankTab === null ? <HotRankAside isEnabled={isConfigured} /> : null}
+                            {/* 回到顶部：必须 fixed 才能钉在视口右下角（sticky 会被内容列高度牵走、滚到底才停住）；
+                                w-80 从右缘向左让出 320px，让按钮落在内容列右缘附近而不是压住右侧热搜卡 */}
+                            {isScrollTopVisible ? (
+                                <div className="fixed right-4 bottom-4 z-10 flex w-80">
+                                    <Button
+                                        size="icon"
+                                        variant="outline"
+                                        className="size-12"
+                                        tooltip="回到顶部"
+                                        aria-label="回到顶部"
+                                        onClick={scrollToTop}
+                                    >
+                                        <ArrowUp className="size-6" aria-hidden="true" />
+                                    </Button>
+                                </div>
+                            ) : null}
                         </div>
                     </AppContent>
                 </AppPage>
@@ -354,6 +433,6 @@ export function WeiboScreen(): JSX.Element {
                 }}
             />
             <AppToaster />
-        </>
+        </WeiboUserPageProvider>
     )
 }

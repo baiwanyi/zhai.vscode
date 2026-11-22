@@ -814,6 +814,21 @@ export function readIsLiked(record: Record<string, unknown>): boolean {
     return status === 1 || record.liked === true
 }
 
+/**
+ * 读阅读数：只有自己发布的微博上游才会下发 reads_count，数字与数字字符串都收下。
+ * 关键约束：缺失或非数字一律为 null——0 与「没下发」必须区分，否则界面上会给别人的微博标一个 0 阅读。
+ */
+function readReadsCount(record: Record<string, unknown>): number | null {
+    const value = record.reads_count
+    if (typeof value === 'number' && Number.isFinite(value) && value >= 0) {
+        return Math.trunc(value)
+    }
+    if (typeof value === 'string' && /^[0-9]+$/u.test(value.trim())) {
+        return Number(value.trim())
+    }
+    return null
+}
+
 /** 互动数据：字段名按微博原样映射，缺失按 0 */
 function extractMetrics(record: Record<string, unknown>): WeiboTimelineMetrics {
     return {
@@ -982,6 +997,7 @@ export function normalizeTimelinePost(raw: unknown): WeiboTimelinePost | null {
         retweeted,
         isLiked: readIsLiked(raw),
         isLongText,
+        readsCount: readReadsCount(raw),
     }
 }
 

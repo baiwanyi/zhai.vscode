@@ -1,5 +1,5 @@
 /**
- * 微博协议路由：把信息流、我的赞、热搜标签、同城城市、凭证、评论读取与发布 / 回复 / 删除、转发读取与提交 / 删除、点赞、博主关注 / 取消关注、发表框话题、发布与外链分发到取数、配置与宿主能力。
+ * 微博协议路由：把信息流、我的赞、他人主页、热搜标签、同城城市、凭证、评论读取与发布 / 回复 / 删除、转发读取与提交 / 删除、点赞、博主关注 / 取消关注与关注分组 / 备注、发表框话题、发布与外链分发到取数、配置与宿主能力。
  * 复用约定：入参收窄统一走 shared/types/weibo 的类型守卫，本层只做方法名到实现的映射；
  * 分组、表情与侧栏默认榜（band）先读 weibo.json 缓存，其余热搜标签实时回源，缓存异常只记日志、绝不影响回包；
  * Cookie 存取交给 WeiboCookieStore，取数交给 webTimeline / webFeed，宿主能力以回调注入便于单测。
@@ -26,6 +26,8 @@ import type {
     WeiboDestroyStatusResult,
     WeiboEmoticonsResult,
     WeiboFollowResult,
+    WeiboGroupCreateResult,
+    WeiboGroupSaveResult,
     WeiboGroupsResult,
     WeiboHotRankResult,
     WeiboImageResult,
@@ -44,6 +46,9 @@ import type {
     WeiboTimelineRequest,
     WeiboTimelineResult,
     WeiboTopicsResult,
+    WeiboUserBlogResult,
+    WeiboUserGroupsResult,
+    WeiboUserRemarkResult,
     WeiboVideoResult,
 } from '@shared/types/weibo'
 import {
@@ -59,6 +64,8 @@ import {
     isWeiboDestroyStatusRequest,
     isWeiboFeedRequest,
     isWeiboFollowRequest,
+    isWeiboGroupCreateRequest,
+    isWeiboGroupSaveRequest,
     isWeiboHotRankRequest,
     isWeiboImageRequest,
     isWeiboLikeRequest,
@@ -74,6 +81,9 @@ import {
     isWeiboSaveCredentialRequest,
     isWeiboTimelineRequest,
     isWeiboTopicsRequest,
+    isWeiboUserBlogRequest,
+    isWeiboUserGroupsRequest,
+    isWeiboUserRemarkRequest,
     isWeiboVideoRequest,
     readWeiboCityName,
     readWeiboCommentChatPayload,
@@ -87,6 +97,7 @@ import { createPostComment, destroyPostComment, fetchCommentReplies, fetchPostCo
 import { isCookieUsable, normalizeCookieInput } from './webCredential'
 import { fetchWeiboEmoticons } from './webEmoticons'
 import { fetchWeiboFeed, fetchWeiboGroups, rememberHotChannels } from './webFeed'
+import { createUserGroup, fetchUserGroups, saveUserGroups, setUserRemark } from './webFriends'
 import { fetchWeiboHotRank } from './webHotRank'
 import { setAuthorFollow, setCommentLike, setPostLike, setRepostLike } from './webInteraction'
 import { fetchWeiboLikes } from './webLikes'
@@ -96,6 +107,7 @@ import { publishWeibo } from './webPublish'
 import { createPostRepost, destroyPostStatus, fetchPostReposts } from './webReposts'
 import { fetchFriendTimeline } from './webTimeline'
 import { fetchWeiboTopics } from './webTopics'
+import { fetchWeiboUserBlog } from './webUserBlog'
 import { toAccountKey } from './weiboCache'
 import { WEIBO_ALLOWED_EXTERNAL_HOSTS } from './weiboEndpoints'
 import type {
@@ -107,6 +119,12 @@ import type {
 import type { WeiboCookieStore } from './webCredential'
 import type { FetchEmoticonsOptions } from './webEmoticons'
 import type { FetchFeedOptions, FetchGroupsOptions } from './webFeed'
+import type {
+    CreateUserGroupOptions,
+    FetchUserGroupsOptions,
+    SaveUserGroupsOptions,
+    SetUserRemarkOptions,
+} from './webFriends'
 import type { FetchHotRankOptions } from './webHotRank'
 import type { SetCommentLikeOptions, SetFollowOptions, SetLikeOptions, SetRepostLikeOptions } from './webInteraction'
 import type { FetchLikesOptions } from './webLikes'
@@ -116,6 +134,7 @@ import type { PublishWeiboOptions, WeiboUploadImage } from './webPublish'
 import type { CreateRepostOptions, DestroyStatusOptions, FetchRepostsOptions } from './webReposts'
 import type { FetchTimelineOptions } from './webTimeline'
 import type { FetchTopicsOptions } from './webTopics'
+import type { FetchUserBlogOptions } from './webUserBlog'
 import type { WeiboAvatarGateway } from './weiboAvatar'
 import type { WeiboCache, WeiboCacheKey } from './weiboCache'
 
@@ -167,8 +186,18 @@ export interface WeiboRouteDeps {
     setRepostLike?: (options: SetRepostLikeOptions) => Promise<WeiboLikeResult>
     /** 关注写入：默认走网页版 friendships/create 与 friendships/destory，单测可替换 */
     setFollow?: (options: SetFollowOptions) => Promise<WeiboFollowResult>
+    /** 关注分组读取：默认走 profile/getGroupList + getGroups，单测可替换 */
+    fetchUserGroups?: (options: FetchUserGroupsOptions) => Promise<WeiboUserGroupsResult>
+    /** 关注分组新建：默认走 profile/createGroup，单测可替换 */
+    createUserGroup?: (options: CreateUserGroupOptions) => Promise<WeiboGroupCreateResult>
+    /** 关注分组保存：默认走 profile/setGroup，单测可替换 */
+    saveUserGroups?: (options: SaveUserGroupsOptions) => Promise<WeiboGroupSaveResult>
+    /** 备注名设置：默认走 friendships/remarkUpdate，单测可替换 */
+    setUserRemark?: (options: SetUserRemarkOptions) => Promise<WeiboUserRemarkResult>
     /** 我的赞读取：默认走网页版 likelist，单测可替换 */
     fetchLikes?: (options: FetchLikesOptions) => Promise<WeiboLikesResult>
+    /** 他人主页读取：默认走 profile/info + mymblog，单测可替换 */
+    fetchUserBlog?: (options: FetchUserBlogOptions) => Promise<WeiboUserBlogResult>
     /** 评论读取：默认走网页版 buildComments，单测可替换 */
     fetchComments?: (options: FetchCommentsOptions) => Promise<WeiboCommentsResult>
     /** 评论发布与回复：默认走网页版 comments/create 与 comments/reply，单测可替换 */
@@ -242,6 +271,8 @@ export class WeiboRoutes {
                 return this.loadFeed(payload)
             case WEIBO_METHODS.likes:
                 return this.loadLikes(payload)
+            case WEIBO_METHODS.userBlog:
+                return this.loadUserBlog(payload)
             case WEIBO_METHODS.groups:
                 return this.loadGroups()
             case WEIBO_METHODS.emoticons:
@@ -298,6 +329,14 @@ export class WeiboRoutes {
                 return this.likePost(payload)
             case WEIBO_METHODS.authorFollow:
                 return this.followAuthor(payload)
+            case WEIBO_METHODS.userGroups:
+                return this.loadUserGroups(payload)
+            case WEIBO_METHODS.userGroupCreate:
+                return this.createUserGroup(payload)
+            case WEIBO_METHODS.userGroupSave:
+                return this.saveUserGroups(payload)
+            case WEIBO_METHODS.userRemark:
+                return this.setUserRemark(payload)
             case WEIBO_METHODS.addToChat:
                 return this.addToChat(payload)
             case WEIBO_METHODS.saveToNote:
@@ -415,6 +454,24 @@ export class WeiboRoutes {
         }
         const fetchLikes = this.deps.fetchLikes ?? fetchWeiboLikes
         return fetchLikes({ cookie, uid, page: raw.page })
+    }
+
+    /**
+     * 读取他人主页：uid 或昵称定位用户，再按页码取该用户的微博列表。
+     * 关键约束：只读，缺凭证直接给出可执行的引导；昵称由取数层经资料回包换成 uid，
+     * 本层不做地址拼装，也不允许前端指定任意地址。
+     */
+    private async loadUserBlog(payload: unknown): Promise<WeiboUserBlogResult> {
+        const raw = payload ?? {}
+        if (!isWeiboUserBlogRequest(raw)) {
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.userBlog} 参数非法：uid 须为数字串，或给出长度不超过 64 的昵称，page 可选`,
+            )
+        }
+        const cookie = await this.readCookie()
+        const fetchUserBlog = this.deps.fetchUserBlog ?? fetchWeiboUserBlog
+        return fetchUserBlog({ cookie, uid: raw.uid, screenName: raw.screenName, page: raw.page })
     }
 
     /**
@@ -872,6 +929,72 @@ export class WeiboRoutes {
         const cookie = await this.readCookie()
         const setFollow = this.deps.setFollow ?? setAuthorFollow
         return setFollow({ cookie, uid: payload.uid, following: payload.following })
+    }
+
+    /**
+     * 读取关注分组：目标用户所在分组 + 账号下全部分组，供设置分组弹窗一次渲染。
+     * 关键约束：只读，缺凭证给出可执行引导；uid 只接受数字串。
+     */
+    private async loadUserGroups(payload: unknown): Promise<WeiboUserGroupsResult> {
+        if (!isWeiboUserGroupsRequest(payload)) {
+            throw new WeiboWebError('invalid-payload', `${WEIBO_METHODS.userGroups} 参数非法：uid 须为数字用户 id`)
+        }
+        const cookie = await this.readCookie()
+        const readGroups = this.deps.fetchUserGroups ?? fetchUserGroups
+        return readGroups({ cookie, uid: payload.uid })
+    }
+
+    /**
+     * 新建关注分组：名称 1-8 字由协议层收窄，回包只回新分组本身。
+     * 关键约束：写操作不重试，重复提交会在账号下生成同名分组。
+     */
+    private async createUserGroup(payload: unknown): Promise<WeiboGroupCreateResult> {
+        if (!isWeiboGroupCreateRequest(payload)) {
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.userGroupCreate} 参数非法：name 须为 1-8 字，isPublic 须为布尔`,
+            )
+        }
+        const cookie = await this.readCookie()
+        const create = this.deps.createUserGroup ?? createUserGroup
+        return create({ cookie, name: payload.name.trim(), isPublic: payload.isPublic })
+    }
+
+    /**
+     * 保存关注分组：把用户移入 listIds，originListIds 为请求前的分组。
+     * 关键约束：空 listIds 表示移出自定义分组；写操作不重试。
+     */
+    private async saveUserGroups(payload: unknown): Promise<WeiboGroupSaveResult> {
+        if (!isWeiboGroupSaveRequest(payload)) {
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.userGroupSave} 参数非法：uid 与两组分组 id 都须为数字串数组`,
+            )
+        }
+        const cookie = await this.readCookie()
+        const save = this.deps.saveUserGroups ?? saveUserGroups
+        return save({
+            cookie,
+            uid: payload.uid,
+            listIds: payload.listIds,
+            originListIds: payload.originListIds,
+        })
+    }
+
+    /**
+     * 设置关注备注：空串即清除，回包以上游返回的 remark 为准。
+     * 关键约束：备注按字计不超过 15，写操作不重试。
+     */
+    private async setUserRemark(payload: unknown): Promise<WeiboUserRemarkResult> {
+        if (!isWeiboUserRemarkRequest(payload)) {
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.userRemark} 参数非法：uid 须为数字 id，remark 不超过 15 字`,
+            )
+        }
+        const cookie = await this.readCookie()
+        const saveRemark = this.deps.setUserRemark ?? setUserRemark
+        return saveRemark({ cookie, uid: payload.uid, remark: payload.remark })
     }
 
     /**

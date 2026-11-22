@@ -45,6 +45,7 @@ const POST: WeiboTimelinePost = {
     retweeted: null,
     isLiked: false,
     isLongText: false,
+    readsCount: null,
 }
 
 /** 可手动触发的 IntersectionObserver 替身：记录最近一次实例，供用例模拟进入视口 */

@@ -72,7 +72,7 @@ function parseLikePayload(text: string, status: number, liked: boolean): WeiboLi
 }
 
 /** 写接口公共头：Cookie、来源与 XSRF-TOKEN（Cookie 里没有该键时不带），内容类型由调用方补 */
-function buildWriteHeaders(cookie: string): Record<string, string> {
+export function buildWriteHeaders(cookie: string): Record<string, string> {
     const headers: Record<string, string> = {
         Cookie: cookie,
         Referer: WEIBO_WEB_REFERER,

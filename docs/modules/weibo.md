@@ -24,6 +24,7 @@
 | 自建分组 | 「首页 · <分组名>」 | `ajax/feed/groupstimeline` |
 | 热搜九榜 | 「热搜 · 我的 / 热搜 / 文娱 / 社会 / 科技 / 生活 / 体育 / ACG / 同城」 | `ajax/side/bandUnified`、`ajax/statuses/*` |
 | 我的赞 | 账号菜单 | `ajax/statuses/likelist` |
+| 他人主页 | 正文 / 标题行 / 账号菜单的主页链接（`/u/{uid}`、`/n/{昵称}`） | 页内打开：`profile/info` + `ajax/statuses/mymblog` |
 | 评论 | 卡片评论区 | `buildComments`、`comments/create`、`comments/reply`、`destroyComment` |
 | 评论点赞 | 评论与子评论操作行 | `updateLike`、`destroyLike`（`object_type=comment`） |
 | 点赞 | 卡片动作 | `setLike`、`cancelLike` |
@@ -47,17 +48,17 @@
 
 ### 1.4 文件结构
 
-后端 `src/modules/weibo/` 共 24 个文件，按职责分五层：
+后端 `src/modules/weibo/` 共 26 个文件，按职责分五层：
 
 | 层 | 文件 |
 |---|---|
 | 协议与装配 | `weiboRoutes.ts`、`panel.ts`、`postActions.ts`、`warmup.ts` |
-| 取数 | `webClient.ts`、`webTimeline.ts`、`webFeed.ts`、`webHotRank.ts`、`webLikes.ts`、`webComments.ts`、`webReposts.ts`、`webLongText.ts`、`webEmoticons.ts`、`webTopics.ts`、`webProfile.ts`、`webPublish.ts`、`webInteraction.ts` |
+| 取数 | `webClient.ts`、`webTimeline.ts`、`webFeed.ts`、`webHotRank.ts`、`webLikes.ts`、`webUserBlog.ts`、`webFriends.ts`、`webComments.ts`、`webReposts.ts`、`webLongText.ts`、`webEmoticons.ts`、`webTopics.ts`、`webProfile.ts`、`webPublish.ts`、`webInteraction.ts` |
 | 状态与存储 | `webCredential.ts`、`weiboCache.ts`、`weiboAvatar.ts` |
 | 媒体 | `mediaProxy.ts`、`videoServer.ts` |
 | 常量与内容组装 | `weiboEndpoints.ts`、`note.ts` |
 
-前端 `src/weibo/` 共 67 个文件：`hooks/` 26 个控制器、`layout/` 20 个装配与页面组件、`block/` 12 个卡片内展示块、`utils/` 8 个纯函数，`WeiboScreen.tsx` 只做装配与视图分发（取数走 `useWeiboPageFeeds`，凭证删除走 `useCredentialRemoval`，草稿走 `useWeiboComposerDraft`，内容视图交给 `WeiboHomeView` / `WeiboFeedViews` / `PageHotSearch`）。固定短文案集中在 `utils/weiboUiText.ts`（`WEIBO_UI_TEXT`），顶栏视图说明在 `utils/weiboViewDescription.ts`（`describeWeiboView`）。`block/` 只放接收 props 渲染的展示块（条目、发布框、媒体预览等），自带取数的列表与卡片仍留在 `layout/`；列表续载与失败重试统一由公共 `LoadMoreSentinel` 承担。
+前端 `src/weibo/` 按职责分五类：`hooks/` 控制器、`layout/` 装配与页面组件、`block/` 卡片内展示块、`utils/` 纯函数、`context/` 页内导航上下文，`WeiboScreen.tsx` 只做装配与视图分发（取数走 `useWeiboPageFeeds`，凭证删除走 `useCredentialRemoval`，草稿走 `useWeiboComposerDraft`，内容视图交给 `WeiboHomeView` / `WeiboFeedViews` / `PageHotSearch` / `PageUserBlog`，主页导航走 `WeiboUserPageProvider`）。固定短文案集中在 `utils/weiboUiText.ts`（`WEIBO_UI_TEXT`），顶栏视图说明在 `utils/weiboViewDescription.ts`（`describeWeiboView`）。`block/` 只放接收 props 渲染的展示块（条目、发布框、媒体预览等），自带取数的列表与卡片仍留在 `layout/`；列表续载与失败重试统一由公共 `LoadMoreSentinel` 承担。
 
 ### 1.5 凭证与配置
 
@@ -147,6 +148,7 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 | `source` | `source` | 实测是纯文本客户端名（如 `iPhone 17 Pro Max`、`微博视频号`）；旧版返回 `<a>` 外壳时剥标签只留文字 |
 | `author` | `user.id / screen_name / verified / avatar_large` | 认证标记取 `verified === true`，头像只保留图床地址 |
 | `metrics` | `reposts_count / comments_count / attitudes_count` | 缺失按 0 |
+| `readsCount` | `reads_count` | 只有本人发布的微博才由上游下发；数字与数字字符串都收下，缺失或负数归一化为 `null`（与「真实 0 阅读」区分），卡片头部仅在作者 uid 等于当前账号时以 `Badge` 徽标展示在动作区 |
 | `media.items` | 有 `mix_media_info.items` 时按它原序；**关注流实测没有该字段**，图片来自 `pic_infos` / `pic_ids`，视频来自 `page_info`（`object_type: video`） | `image` 项给原图 / 展示图 / 尺寸，`video` 项只给封面与时长，不给播放直链；视频 `page_pic` 作封面、`media_info.duration` 作时长、`playback_list` 只留兜底诊断 |
 | `media.images` | 由 `media.items` 派生（`kind === 'image'`） | 原图直链，按 pid 与直链双重去重；缺直链时用 pid 拼 `wx1.sinaimg.cn/large/{pid}.jpg` |
 | `media.thumbnails` | `pic_infos[*].large.url`（`/orj960/`，长边 960），缺失才回退 `bmiddle`（`/wap360/`），都没有时把原图目录换成 `/bmiddle/` | 展示图：九宫格与卡片内预览共用，与 images 同序；不再为预览另取原图 |
@@ -524,9 +526,11 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/modules/weibo/webComments.ts` | 评论读取与写操作：`buildComments` 参数构造、分页游标、评论归一化，`comments/create` / `comments/reply` / `destroyComment` 表单提交与错误分类 |
 | `src/modules/weibo/webLongText.ts` | 长文读取：`longtext` 取全文、正文优先级与失败兜底 |
 | `src/modules/weibo/webLikes.ts` | 我的赞：`statuses/likelist` 页码取数、总数与是否还有下一页判断 |
+| `src/modules/weibo/webUserBlog.ts` | 他人主页：`profile/info` 定位用户（uid 或昵称）+ `statuses/mymblog` 页码取数、总数与是否还有下一页判断 |
+| `src/modules/weibo/webFriends.ts` | 关注分组与备注：`getGroupList` + `getGroups` 读取、`createGroup` 新建、`setGroup` 归组、`remarkUpdate` 设置备注（均按 form 提交） |
 | `src/modules/weibo/webReposts.ts` | 转发列表：`repostTimeline` 页码取数、转发项归一化（含点赞计数与点赞态）与分页判断 |
 | `src/modules/weibo/videoServer.ts` | 视频中转：回环 HTTP 服务补 Referer，能用 ffmpeg 就把 AAC 音轨转成 MP3（Webview 无 AAC 解码器）边转边发，否则原样流式转发 |
-| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/likes`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/topics`、`weibo/publish`、`weibo/comments`、`weibo/comment/create`、`weibo/comment/destroy`、`weibo/comment/replies`、`weibo/comment/addToChat`、`weibo/comment/like`、`weibo/reposts`、`weibo/repost`、`weibo/repost/like`、`weibo/repost/addToChat`、`weibo/destroy`、`weibo/longtext`、`weibo/credential/*`、`weibo/blockList/*`、`weibo/image`、`weibo/video`、`weibo/like`、`weibo/openPost` 分发 |
+| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/likes`、`weibo/userBlog`、`weibo/user/groups`、`weibo/user/groupCreate`、`weibo/user/groupSave`、`weibo/user/remark`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/topics`、`weibo/publish`、`weibo/comments`、`weibo/comment/create`、`weibo/comment/destroy`、`weibo/comment/replies`、`weibo/comment/addToChat`、`weibo/comment/like`、`weibo/reposts`、`weibo/repost`、`weibo/repost/like`、`weibo/repost/addToChat`、`weibo/destroy`、`weibo/longtext`、`weibo/credential/*`、`weibo/blockList/*`、`weibo/image`、`weibo/video`、`weibo/like`、`weibo/openPost` 分发 |
 | `src/modules/weibo/panel.ts` | 面板消息通道、凭证与缓存注入、图片代理装配与本地资源白名单 |
 | `src/modules/common/webviewHtml.ts` | CSP 生成：默认不放行远程图，需要时可按调用方传入的 `imgSources` 放行 |
 | `src/shared/utils/weiboText.ts` | 正文纯文本切分：`@账号` / `#话题#` / 微博域名链接，宿主与 Webview 共用（零前端依赖） |
@@ -546,7 +550,14 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/weibo/hooks/useWeiboComposerImages.ts` | 发表框图片库：清单读取、选择上传与粘贴上传 |
 | `src/weibo/hooks/useWeiboPublish.ts` | 发表框发布：单飞提交、成功回执与超时口径 |
 | `src/weibo/hooks/useWeiboEnhance.ts` | 发表框 AI 优化：`ai/enhancePrompt` 的微博口径请求与进行态 |
-| `src/weibo/utils/weiboLinks.ts` | 站内链接构造：个人主页（`/u/{uid}`、`/n/{昵称}`）、热搜搜索页地址与标题链接处理器（纯函数） |
+| `src/weibo/utils/weiboLinks.ts` | 站内链接构造与识别：个人主页（`/u/{uid}`、`/{uid}`、`/n/{昵称}`）地址与 `readProfileTarget`、热搜搜索页地址（纯函数） |
+| `src/weibo/hooks/useWeiboUserBlog.ts` | 他人主页取数：目标变化即重取首屏、页码翻页、同用户资料不替换与屏蔽过滤 |
+| `src/weibo/layout/PageUserBlog.tsx` | 他人主页页面：资料页头（封面 / 头像 / 简介 / 计数 / 返回）与微博列表（复用 `WeiboFeedSection`） |
+| `src/weibo/context/weiboUserPageContext.ts`、`WeiboUserPageProvider.tsx` | 页内主页导航：context 与读取 Hook 单独成文件，Provider 只导出组件 |
+| `src/weibo/layout/UserFollowAction.tsx` | 主页关注动作：未关注直接关注，已关注悬停展开「设置分组 / 设置备注 / 取消关注」 |
+| `src/weibo/layout/UserGroupDialog.tsx`、`UserRemarkDialog.tsx` | 设置分组（勾选 + 新建）与设置备注（1-15 字，留空清除）两个弹窗 |
+| `src/weibo/hooks/useWeiboUserGroups.ts`、`useWeiboUserRemark.ts` | 分组读取 / 新建 / 归组与备注保存的控制器（写操作单飞） |
+| `src/weibo/hooks/useScrollTopVisibility.ts` | 回到顶部按钮：监听 ScrollArea viewport 的滚动位置，超过阈值显示按钮，点击复用 `scrollAreaToTop` 归零 |
 | `src/shared/utils/color.ts` | 按底色亮度选可读前景色，供徽标等浅深底自适应 |
 
 ### 2.11 多入口信息流（首页 / 时间线 / 热门 / 分组）
@@ -776,6 +787,7 @@ GET https://weibo.com/ajax/statuses/likelist?uid={uid}&page={页码}&with_total=
 | `pic_ids` / `pic_infos` / `pic_num` | 图片列表；`pic_infos` 逐 pid 给各档位地址，归一化取 `largest` 与原图 |
 | `pic_infos[].type` | `pic` 普通图、`livephoto` 实况图（另带 `video` / `fid`），本项目只取静态图 |
 | `reposts_count` / `comments_count` / `attitudes_count` | 互动数 |
+| `reads_count` | 阅读数：只对自己发布的微博下发，别人的条目里没有该字段 |
 | `attitudes_status` | `1` 表示当前账号已赞 |
 | `retweeted_status` | 转发体，只取摘要 |
 | `isAd` / `mark` / `cardid` | 广告与推广位标记（`isAd: true`，或 `mark` 含 `WeiboADNatural`），归一化直接丢弃 |
@@ -867,4 +879,44 @@ id={微博数字 id}
 - 协议 `weibo/destroy`，入参 `{ id }`；转发与自己发的微博都按 status id 删。
 - 回包不是 `{ ok, data }` 包装，而是被删除的微博对象本身、末尾才带 `ok`：只有 `ok` 明确 `<= 0` 才算失败，`ok` 缺失但回包带 `id` 时视为成功。
 - 前端：转发列表里只有自己的转发（`viewerUid === repost.author.id`）显示「删除」，点击走单个 AlertDialog 确认，成功后重拉第一页；归属最终仍由上游判定。
+
+### 2.20 他人主页（页内打开）
+
+```
+GET https://weibo.com/ajax/profile/info?uid={uid}&scene=profile
+GET https://weibo.com/ajax/profile/info?screen_name={昵称}&scene=profile
+GET https://weibo.com/ajax/statuses/mymblog?uid={uid}&page={页码}&feature=0
+```
+
+- 入口：正文与标题行里的 `/u/{uid}`、`/n/{昵称}`、`/profile/{uid}` 链接，以及顶栏账号菜单的「个人主页」。识别由 `utils/weiboLinks.readProfileTarget` 完成——只认 https 与 `weibo.com` 及其子域，数字末段判为 uid，其余按昵称交给宿主换算，话题页、详情页与短链一律返回 `null`。主页短形式 `/{uid}` 与 `/u/{uid}` 同义（只认单段纯数字，两段路径的详情页不算）。
+- 链接不带 `href`：VS Code webview 会把带 `href` 的 `<a>` 点击交给系统浏览器，`preventDefault` 拦不住，页内打开会被同一跳转抢走。`WeiboLink` 因此渲染成 `role="link"` + `tabIndex` 的内联元素，Enter / 空格与点击等价；热搜行的标题同理只作文本，整行才是点击目标。
+- 页内导航：`context/WeiboUserPageProvider` 把「打开主页」回调注入整棵树，`hooks/useWeiboOpenUrl` 命中主页链接时改走页内，未命中或未挂 Provider（单测、预览）时仍走 `weibo/openPost`。页面把目标落成 `userTarget` 状态，内容区整块换成 `PageUserBlog`；切页与删 Cookie 都清空该目标。
+- 取数：协议 `weibo/userBlog`，入参 `{ uid?, screenName?, page? }`（uid 与昵称至少给一个，昵称长度 ≤ 64 且不含控制字符）。宿主串行发两次请求：先用 `uid` 或 `screen_name` 查资料，再用回包里的 `id` 取列表；资料结构不可用时整条报错，不回退「只给列表」的半成品页面。
+- 字段映射：`data.user` → `WeiboUserInfo`（`avatar_hd` → `avatar_large` → `profile_image_url`、`cover_image_phone` 取分号前的首张、`gender` 只认 `m` / `f`、简介与所在地剥标签解实体）；列表条目就是微博对象（`data.list[]` 直接给 `id` / `user` / `text`，没有 `mblog` 包裹，实现同时兼容 `list[].mblog`），单条复用 `normalizeTimelinePost`，渲染仍是 `WeiboFeedSection` / `WeiboPostCard`。
+- 分页：`mymblog` 只有 `page`（从 1 开始），没有游标；`hasMore` 在 `data.total` 可知时按「页码 × 20 < 总数」估算，缺失时以本页是否取满 20 条为准。前端 `hooks/useWeiboUserBlog` 刷新即重取第一页并整体替换，翻页按 `page + 1` 追加去重。
+- 同一用户翻页不替换资料：上游头像地址带签名，换一次就会多下载一次；只有切到另一个用户时资料才整份替换。
+- 页面：`layout/PageUserBlog` 的页头给封面、头像、昵称与认证角标、所在地与性别图标、简介与「关注 / 粉丝 / 微博」计数，右上角是返回按钮与关注按钮；顶栏「刷新」在主页状态下刷该用户的列表（不是增量游标），列表为空时同样显示空态与刷新入口。
+- 页头细节：资料与首屏微博同一次请求返回，资料未到货（含未加载完、读取失败）时整块页头不渲染，只在列表区给加载态或错误，不再用占位文案撑一张空卡片；封面容器固定 96px（`h-24`）并垫渐变色底，图片绝对定位填充，加载中与失败都占同一块高度，卡片不会因大图到货而跳动；所在地用 `MapPin`、性别用 `Mars` / `Venus` 图标（男蓝女粉，未知不渲染），不再拼「男 / 女」文字。
+- 关注入口只留在页头：列表卡片经 `hideFollow` 收起头部的关注按钮与「更多」菜单里的取消关注，避免同一屏出现两套关注事实源（页头按钮命中 `user.isFollowing`，卡片各自的控制器不会同步）。主页 uid 与当前登录账号 uid 相同时（本人主页）整块关注入口不渲染，当前账号 uid 未取到时不猜、仍照常显示。
+- 资料里的 `following` 归一化为 `WeiboUserInfo.isFollowing`，`remark` 归一化为备注名；两者都只认布尔 / 字符串，缺失即「未关注 / 无备注」。
+- 备注联动：保存备注后页面重拉一页该用户的列表，并把列表里该用户作为作者的名字换成备注名——主贴按 `author.id`、转发体按 `authorId` 匹配，只改展示层派生的帖子数组，`feed` 内部状态与上游数据不动；备注清空后自动回到上游昵称。
+
+### 2.21 关注分组与备注
+
+```
+GET  https://weibo.com/ajax/profile/getGroupList?uid={目标 uid}
+GET  https://weibo.com/ajax/profile/getGroups?target_uid={目标 uid}&filterType=system&hasRecom=true
+POST https://weibo.com/ajax/profile/createGroup       name={1-8 字}&isOpen=true（仅公开分组）
+POST https://weibo.com/ajax/profile/setGroup          uids={uid}&list_ids={选中}&origin_list_ids={原始 + 0 + 原始}
+POST https://weibo.com/ajax/friendships/remarkUpdate   uid={uid}&remark={1-15 字}
+```
+
+- 入口：主页页头的关注按钮。未关注时是普通「关注」；已关注时按钮文案变成备注名（无备注显示「已关注」），悬停展开「设置分组 / 设置备注 / 取消关注」三项。
+- 协议：`weibo/user/groups`（`{ uid }` → `{ groupIds, groups }`，两个 GET 并行发出）、`weibo/user/groupCreate`（`{ name, isPublic }` → `{ group }`）、`weibo/user/groupSave`（`{ uid, listIds, originListIds }` → `{ saved }`）、`weibo/user/remark`（`{ uid, remark }` → `{ remark }`）。
+- 归一化：`getGroupList` 的 `data` 直接是数组（只有 id / name），`getGroups` 的 `data.lists` 带 `member_count` 与 `mode`（`public` 即公开分组）；缺 id 或名称为空的条目丢弃。
+- 保存参数：`list_ids` 为空数组时提交 `0`（移出自定义分组）；`origin_list_ids` 按网页端实测形态复刻为「原始分组 + 0 + 原始分组」（0 表示默认分组），不要按集合去重改写。
+- 新建分组：名称 1-8 字，公开时 form 带 `isOpen=true`，不公开不带该字段；回包 `data` 就是新分组，前端插入列表并自动勾选，点「保存分组」才真正归组。
+- 备注：`remarkUpdate` 的回包是被改动的 user 对象（**没有 `ok` 包装**），只有 `ok` 明确 `<= 0` 才算失败，备注以回包 `remark` 为准；留空保存即清除。
+- 前端分层：`hooks/useWeiboUserGroups` 管分组读取 / 新建 / 归组（写操作 ref 单飞，保存用打开时的 groupIds 作为 origin 快照），`hooks/useWeiboUserRemark` 管备注；弹窗 `layout/UserGroupDialog`、`layout/UserRemarkDialog` 复用 `FormDialog` 与 field / checkbox / switch / input 槽位。
+- 关注与取关仍走既有 `weibo/author/follow`（`friendships/create` / `friendships/destory`），本次没有改动这条写链路。
 

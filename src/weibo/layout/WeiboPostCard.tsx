@@ -37,9 +37,16 @@ export interface WeiboPostCardProps {
     onBlockAuthor?: (authorName: string) => void
     /** 当前登录账号 uid：评论区据此只给自己的评论显示删除入口 */
     viewerUid?: string | null
+    /** 隐藏关注入口：个人主页由页头统一提供关注动作，列表卡片不再重复 */
+    hideFollow?: boolean
 }
 
-export function WeiboPostCard({ post, onBlockAuthor, viewerUid = null }: WeiboPostCardProps): JSX.Element {
+export function WeiboPostCard({
+    post,
+    onBlockAuthor,
+    viewerUid = null,
+    hideFollow = false,
+}: WeiboPostCardProps): JSX.Element {
     const [isCommentsOpen, setIsCommentsOpen] = useState(false)
     /** 转发列表：与评论区共用底栏之后的位置，两者互斥展开 */
     const [isRepostsOpen, setIsRepostsOpen] = useState(false)
@@ -120,7 +127,14 @@ export function WeiboPostCard({ post, onBlockAuthor, viewerUid = null }: WeiboPo
 
     return (
         <Card>
-            <WeiboPostCardHeader post={post} follow={follow} onOpen={handleOpen} onBlockAuthor={onBlockAuthor} />
+            <WeiboPostCardHeader
+                post={post}
+                follow={follow}
+                hideFollow={hideFollow}
+                viewerUid={viewerUid}
+                onOpen={handleOpen}
+                onBlockAuthor={onBlockAuthor}
+            />
             <CardContent className="flex flex-col gap-3">
                 <WeiboCollapsibleBody
                     text={bodyText}

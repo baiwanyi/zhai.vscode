@@ -40,6 +40,8 @@ interface WeiboFeedListProps {
     onBlockAuthor?: (authorName: string) => void
     /** 当前登录账号 uid：透传给卡片，评论区据此只给自己的评论显示删除 */
     viewerUid?: string | null
+    /** 隐藏卡片头部的关注入口：个人主页由页头统一提供 */
+    hideFollow?: boolean
     onLoadMore: () => void
 }
 
@@ -55,6 +57,7 @@ export function WeiboFeedList({
     errorMessage = null,
     onBlockAuthor,
     viewerUid = null,
+    hideFollow = false,
     onLoadMore,
 }: WeiboFeedListProps): JSX.Element {
     const sentinelRef = useRef<HTMLDivElement | null>(null)
@@ -143,6 +146,7 @@ export function WeiboFeedList({
                     post={post}
                     onBlockAuthor={onBlockAuthor}
                     viewerUid={viewerUid}
+                    hideFollow={hideFollow}
                 />
             ))}
             <div ref={sentinelRef} className="flex justify-center py-2">
