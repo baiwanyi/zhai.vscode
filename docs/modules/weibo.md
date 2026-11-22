@@ -58,7 +58,7 @@
 | 媒体 | `mediaProxy.ts`、`videoServer.ts` |
 | 常量与内容组装 | `weiboEndpoints.ts`、`note.ts` |
 
-前端 `src/weibo/` 按职责分五类：`hooks/` 控制器、`layout/` 装配与页面组件、`block/` 卡片内展示块、`utils/` 纯函数、`context/` 页内导航上下文，`WeiboScreen.tsx` 只做装配与视图分发（取数走 `useWeiboPageFeeds`，凭证删除走 `useCredentialRemoval`，草稿走 `useWeiboComposerDraft`，内容视图交给 `WeiboHomeView` / `WeiboFeedViews` / `PageHotSearch` / `PageUserBlog`，主页导航走 `WeiboUserPageProvider`）。固定短文案集中在 `utils/weiboUiText.ts`（`WEIBO_UI_TEXT`），顶栏视图说明在 `utils/weiboViewDescription.ts`（`describeWeiboView`）。`block/` 只放接收 props 渲染的展示块（条目、发布框、媒体预览等），自带取数的列表与卡片仍留在 `layout/`；列表续载与失败重试统一由公共 `LoadMoreSentinel` 承担。
+前端 `src/weibo/` 按职责分五类：`hooks/` 控制器、`layout/` 装配与页面组件、`block/` 卡片内展示块、`utils/` 纯函数、`context/` 页内导航上下文，`WeiboScreen.tsx` 只做装配，内容分发由同文件的 `WeiboContentView` 承担（取数走 `useWeiboPageFeeds`，视图导航 / 顶栏刷新 / 分组衍生值分别走 `useWeiboPageNav` / `useWeiboRefresh` / `useWeiboGroupsView`，凭证删除走 `useCredentialRemoval`，草稿走 `useWeiboComposerDraft`，内容视图交给 `WeiboHomeView` / `WeiboFeedViews` / `HotSearchView` / `UserBlogView`，主页导航走 `WeiboUserPageProvider`）。固定短文案集中在 `utils/weiboUiText.ts`（`WEIBO_UI_TEXT`），顶栏视图说明在 `utils/weiboViewDescription.ts`（`describeWeiboView`）。`block/` 只放接收 props 渲染的展示块（条目、发布框、媒体预览等），自带取数的列表与卡片仍留在 `layout/`；列表续载与失败重试统一由公共 `LoadMoreSentinel` 承担。
 
 ### 1.5 凭证与配置
 
@@ -536,13 +536,13 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/shared/utils/weiboText.ts` | 正文纯文本切分：`@账号` / `#话题#` / 微博域名链接，宿主与 Webview 共用（零前端依赖） |
 | `src/shared/utils/weiboBlock.ts` | 屏蔽名单：多行文本与名单数组互转、归一化、按作者名与关键字判定单条是否隐藏，宿主保存与 Webview 过滤共用 |
 | `src/weibo/` | Webview 入口：顶部固定菜单、账号菜单与设置弹窗（同城城市 + 屏蔽名单）、右侧热搜榜、信息流列表、卡片（头像 / 图文混排 / 表情）与发表框（表情 / 话题 / 图片选择器） |
-| `src/weibo/layout/WeiboVideoPlayer.tsx` | 视频播放器：自绘控件栏、中央播放键、空格播放/暂停、控件自动隐藏、清晰度角标、静音与全屏 |
+| `src/weibo/block/WeiboVideoPlayer.tsx` | 视频播放器：自绘控件栏、中央播放键、空格播放/暂停、控件自动隐藏、清晰度角标、静音与全屏 |
 | `src/weibo/utils/weiboCount.ts` | 互动数展示：万级折算成 `x.x万`（十万级以上取整），非法输入回 `0` |
-| `src/weibo/layout/PageHotSearch.tsx` | 热搜专页：一个标签一张榜，整页榜单渲染、专页行样式与同城城市切换入口 |
-| `src/weibo/layout/WeiboHotRankRow.tsx` | 侧栏热搜行样式：序号 / 标题 / 副行 / 整行点击与 Tooltip（专页有自己的行组件，不共用） |
-| `src/weibo/layout/WeiboHotRankBadge.tsx` | 热搜徽标：icon_desc + 底色，`sm` / `md` 两档，侧栏与专页共用 |
-| `src/weibo/layout/WeiboHotRankPosition.tsx` | 热搜名次：前三名判定与两档字号/颜色，侧栏与专页共用 |
-| `src/weibo/layout/WeiboHotRankFallback.tsx` | 热搜三态占位：未配置 / 加载 / 失败或空榜，`sidebar` / `page` 两套尺寸与文案 |
+| `src/weibo/layout/HotSearchView.tsx` | 热搜专页：一个标签一张榜，整页榜单渲染、专页行样式与同城城市切换入口 |
+| `src/weibo/block/WeiboHotRankRow.tsx` | 侧栏热搜行样式：序号 / 标题 / 副行 / 整行点击与 Tooltip（专页有自己的行组件，不共用） |
+| `src/weibo/block/WeiboHotRankBadge.tsx` | 热搜徽标：icon_desc + 底色，`sm` / `md` 两档，侧栏与专页共用 |
+| `src/weibo/block/WeiboHotRankPosition.tsx` | 热搜名次：前三名判定（`rank >= 1`）与两档字号/颜色，侧栏与专页共用 |
+| `src/weibo/block/WeiboHotRankFallback.tsx` | 热搜三态占位：未配置 / 加载 / 失败或空榜，`sidebar` / `page` 两套尺寸与文案 |
 | `src/weibo/hooks/useWeiboSearchOpen.ts` | 搜索页地址 + 300ms 连点保护的打开动作 |
 | `src/weibo/layout/WeiboTopicPicker.tsx` | 发表框话题面板：搜索框 + 常用话题列表，选中插入 `#话题#` |
 | `src/weibo/layout/WeiboImagePicker.tsx` | 发表框图片面板：uploads 图片网格、勾选与直接上传 |
@@ -552,12 +552,17 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/weibo/hooks/useWeiboEnhance.ts` | 发表框 AI 优化：`ai/enhancePrompt` 的微博口径请求与进行态 |
 | `src/weibo/utils/weiboLinks.ts` | 站内链接构造与识别：个人主页（`/u/{uid}`、`/{uid}`、`/n/{昵称}`）地址与 `readProfileTarget`、热搜搜索页地址（纯函数） |
 | `src/weibo/hooks/useWeiboUserBlog.ts` | 他人主页取数：目标变化即重取首屏、页码翻页、同用户资料不替换与屏蔽过滤 |
-| `src/weibo/layout/PageUserBlog.tsx` | 他人主页页面：资料页头（封面 / 头像 / 简介 / 计数 / 返回）与微博列表（复用 `WeiboFeedSection`） |
+| `src/weibo/layout/UserBlogView.tsx` | 他人主页页面：资料页头（封面 / 头像 / 简介 / 计数 / 返回）与微博列表（复用 `WeiboFeedSection`） |
 | `src/weibo/context/weiboUserPageContext.ts`、`WeiboUserPageProvider.tsx` | 页内主页导航：context 与读取 Hook 单独成文件，Provider 只导出组件 |
 | `src/weibo/layout/UserFollowAction.tsx` | 主页关注动作：未关注直接关注，已关注悬停展开「设置分组 / 设置备注 / 取消关注」 |
 | `src/weibo/layout/UserGroupDialog.tsx`、`UserRemarkDialog.tsx` | 设置分组（勾选 + 新建）与设置备注（1-15 字，留空清除）两个弹窗 |
 | `src/weibo/hooks/useWeiboUserGroups.ts`、`useWeiboUserRemark.ts` | 分组读取 / 新建 / 归组与备注保存的控制器（写操作单飞） |
-| `src/weibo/hooks/useScrollTopVisibility.ts` | 回到顶部按钮：监听 ScrollArea viewport 的滚动位置，超过阈值显示按钮，点击复用 `scrollAreaToTop` 归零 |
+| `src/weibo/block/WeiboItemActionBar.tsx` | 条目操作行骨架：时间 + 删除 / 附加动作 / 加入 AI 对话 / 点赞，评论行与转发行共用，差异由 `extra` / `timeSuffix` / `deleteLabel` 注入 |
+| `src/weibo/hooks/useWeiboPageNav.ts` | 视图导航：当前视图 + 页内主页目标与切换动作；切页必清主页目标，uid 未识别时只提示不拼空地址 |
+| `src/weibo/hooks/useWeiboRefresh.ts` | 顶栏刷新：分发到主页 / 信息流 / 热搜 / 首页，并给出对应的刷新摘要，刷新前先把滚动归零 |
+| `src/weibo/hooks/useWeiboGroupsView.ts` | 分组衍生值：我的分组、频道池与时间线 `list_id`，三项各自 `useMemo` 保持引用稳定 |
+| `src/hooks/useIsMounted.ts` | 跨模块通用：异步回包后判断组件是否仍挂载，决定要不要写状态与弹提示 |
+| `src/hooks/useScrollTopVisibility.ts` | 回到顶部按钮：监听 ScrollArea viewport 的滚动位置，超过阈值显示按钮，点击复用 `scrollAreaToTop` 归零 |
 | `src/shared/utils/color.ts` | 按底色亮度选可读前景色，供徽标等浅深底自适应 |
 
 ### 2.11 多入口信息流（首页 / 时间线 / 热门 / 分组）
@@ -655,11 +660,11 @@ ACG     GET https://weibo.com/ajax/statuses/acg
 同城    GET https://weibo.com/ajax/statuses/city?citycode=80086{四位行政区划代码}
 ```
 
-- 页面 `src/weibo/layout/PageHotSearch.tsx` 承载顶栏「热搜」一级菜单的 9 个二级项：一个标签一个端点，切换由菜单驱动，页面内不再重复一排标签。
+- 页面 `src/weibo/layout/HotSearchView.tsx` 承载顶栏「热搜」一级菜单的 9 个二级项：一个标签一个端点，切换由菜单驱动，页面内不再重复一排标签。
 - 端点差异只落在地址上（`weiboEndpoints` 的 `WEIBO_AJAX_PATHS`），标签到地址的映射在 `webHotRank.ts` 的 `HOT_RANK_TAB_PATHS`；`weibo/hotRank` 的 `tab` 取值受 `isWeiboHotRankTab` 收窄，防止被当作路径片段拼接。
 - 同城 citycode 规则：固定前缀 `80086` + 四位行政区划代码（如南宁 `4501` → `800864501`）。城市在面板「设置」弹窗里按城市名选择，落 `zhai.weibo.cityCode`（也可在工作区设置里手填其它城市的四位代码）；未配置或非法值回落南宁。预置城市清单按城市名拼音升序排列，下拉里近似字典序。
 - 只有 `band`（侧栏 `bandUnified`）参与 `weibo.json` 缓存；其余标签与同城的榜单内容各不相同，一律实时回源，避免不同标签串数据。
-- 专页使用自己的行组件 `PageHotSearchRow`（本文件内）：宽页不挂 Tooltip、标题单行截断、徽标略大一档，整行点击打开搜索页；不复用侧栏那一份行样式，侧栏仍用 `layout/WeiboHotRankRow.tsx` 且只取前 10 条。
+- 专页使用自己的行组件 `HotSearchRow`（本文件内）：宽页不挂 Tooltip、标题单行截断、徽标略大一档，整行点击打开搜索页；不复用侧栏那一份行样式，侧栏仍用 `layout/WeiboHotRankRow.tsx` 且只取前 10 条。
 - 两份行组件共用四类能力，避免同类逻辑各写一份：名次与前三名高亮 `layout/WeiboHotRankPosition`（`sm` / `md`）、徽标 `layout/WeiboHotRankBadge`（`sm` / `md`）、搜索地址与连点保护 `hooks/useWeiboSearchOpen`（地址规则在 `utils/weiboLinks`）、三态占位 `layout/WeiboHotRankFallback`（`sidebar` / `page`）。
 - 热搜页不渲染右侧热搜卡，避免同一份榜单出现两次；该页内容区放宽到 `max-w-3xl`。
 - 顶栏「刷新」在热搜页刷当前标签的榜单（专页内不再有重复的刷新按钮，只有空态里的「重试」），在信息流页仍按原有游标语义刷新；当前视图内容为 0 时顶栏不渲染刷新按钮，信息流空态自带「刷新」入口（首页空态原本就有）。
@@ -890,13 +895,13 @@ GET https://weibo.com/ajax/statuses/mymblog?uid={uid}&page={页码}&feature=0
 
 - 入口：正文与标题行里的 `/u/{uid}`、`/n/{昵称}`、`/profile/{uid}` 链接，以及顶栏账号菜单的「个人主页」。识别由 `utils/weiboLinks.readProfileTarget` 完成——只认 https 与 `weibo.com` 及其子域，数字末段判为 uid，其余按昵称交给宿主换算，话题页、详情页与短链一律返回 `null`。主页短形式 `/{uid}` 与 `/u/{uid}` 同义（只认单段纯数字，两段路径的详情页不算）。
 - 链接不带 `href`：VS Code webview 会把带 `href` 的 `<a>` 点击交给系统浏览器，`preventDefault` 拦不住，页内打开会被同一跳转抢走。`WeiboLink` 因此渲染成 `role="link"` + `tabIndex` 的内联元素，Enter / 空格与点击等价；热搜行的标题同理只作文本，整行才是点击目标。
-- 页内导航：`context/WeiboUserPageProvider` 把「打开主页」回调注入整棵树，`hooks/useWeiboOpenUrl` 命中主页链接时改走页内，未命中或未挂 Provider（单测、预览）时仍走 `weibo/openPost`。页面把目标落成 `userTarget` 状态，内容区整块换成 `PageUserBlog`；切页与删 Cookie 都清空该目标。
+- 页内导航：`context/WeiboUserPageProvider` 把「打开主页」回调注入整棵树，`hooks/useWeiboOpenUrl` 命中主页链接时改走页内，未命中或未挂 Provider（单测、预览）时仍走 `weibo/openPost`。页面把目标落成 `userTarget` 状态，内容区整块换成 `UserBlogView`；切页与删 Cookie 都清空该目标。
 - 取数：协议 `weibo/userBlog`，入参 `{ uid?, screenName?, page? }`（uid 与昵称至少给一个，昵称长度 ≤ 64 且不含控制字符）。宿主串行发两次请求：先用 `uid` 或 `screen_name` 查资料，再用回包里的 `id` 取列表；资料结构不可用时整条报错，不回退「只给列表」的半成品页面。
 - 字段映射：`data.user` → `WeiboUserInfo`（`avatar_hd` → `avatar_large` → `profile_image_url`、`cover_image_phone` 取分号前的首张、`gender` 只认 `m` / `f`、简介与所在地剥标签解实体）；列表条目就是微博对象（`data.list[]` 直接给 `id` / `user` / `text`，没有 `mblog` 包裹，实现同时兼容 `list[].mblog`），单条复用 `normalizeTimelinePost`，渲染仍是 `WeiboFeedSection` / `WeiboPostCard`。
 - 分页：`mymblog` 只有 `page`（从 1 开始），没有游标；`hasMore` 在 `data.total` 可知时按「页码 × 20 < 总数」估算，缺失时以本页是否取满 20 条为准。前端 `hooks/useWeiboUserBlog` 刷新即重取第一页并整体替换，翻页按 `page + 1` 追加去重。
 - 同一用户翻页不替换资料：上游头像地址带签名，换一次就会多下载一次；只有切到另一个用户时资料才整份替换。
-- 页面：`layout/PageUserBlog` 的页头给封面、头像、昵称与认证角标、所在地与性别图标、简介与「关注 / 粉丝 / 微博」计数，右上角是返回按钮与关注按钮；顶栏「刷新」在主页状态下刷该用户的列表（不是增量游标），列表为空时同样显示空态与刷新入口。
-- 页头细节：资料与首屏微博同一次请求返回，资料未到货（含未加载完、读取失败）时整块页头不渲染，只在列表区给加载态或错误，不再用占位文案撑一张空卡片；封面容器固定 96px（`h-24`）并垫渐变色底，图片绝对定位填充，加载中与失败都占同一块高度，卡片不会因大图到货而跳动；所在地用 `MapPin`、性别用 `Mars` / `Venus` 图标（男蓝女粉，未知不渲染），不再拼「男 / 女」文字。
+- 页面：`layout/UserBlogView` 的页头给封面、头像、昵称与认证角标、所在地与性别图标、简介与「关注 / 粉丝 / 微博」计数，右上角是返回按钮与关注按钮；顶栏「刷新」在主页状态下刷该用户的列表（不是增量游标），列表为空时同样显示空态与刷新入口。
+- 页头细节：资料与首屏微博同一次请求返回，资料未到货（含未加载完、读取失败）时整块页头不渲染，只在列表区给加载态或错误，不再用占位文案撑一张空卡片；封面容器固定 256px（`h-64`）并垫渐变色底，图片绝对定位填充，加载中与失败都占同一块高度，卡片不会因大图到货而跳动；所在地用 `MapPin`、性别用 `Mars` / `Venus` 图标（男蓝女粉，未知不渲染），不再拼「男 / 女」文字。
 - 关注入口只留在页头：列表卡片经 `hideFollow` 收起头部的关注按钮与「更多」菜单里的取消关注，避免同一屏出现两套关注事实源（页头按钮命中 `user.isFollowing`，卡片各自的控制器不会同步）。主页 uid 与当前登录账号 uid 相同时（本人主页）整块关注入口不渲染，当前账号 uid 未取到时不猜、仍照常显示。
 - 资料里的 `following` 归一化为 `WeiboUserInfo.isFollowing`，`remark` 归一化为备注名；两者都只认布尔 / 字符串，缺失即「未关注 / 无备注」。
 - 备注联动：保存备注后页面重拉一页该用户的列表，并把列表里该用户作为作者的名字换成备注名——主贴按 `author.id`、转发体按 `authorId` 匹配，只改展示层派生的帖子数组，`feed` 内部状态与上游数据不动；备注清空后自动回到上游昵称。
