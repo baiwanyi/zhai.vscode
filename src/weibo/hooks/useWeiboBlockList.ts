@@ -107,12 +107,14 @@ export function useWeiboBlockList(): WeiboBlockListController {
     const blockUser = useCallback(
         async (name: string): Promise<boolean> => {
             const current = stateRef.current
-            const next = addWeiboBlockedUser(
-                { blockedUsers: current.blockedUsers, blockedKeywords: current.blockedKeywords },
-                name,
-            )
-            // 已在名单里：无需写盘，但仍给出反馈，避免用户以为点击没生效
-            if (next === current) {
+            const rules: WeiboBlockRules = {
+                blockedUsers: current.blockedUsers,
+                blockedKeywords: current.blockedKeywords,
+            }
+            const next = addWeiboBlockedUser(rules, name)
+            // 已在名单里：addWeiboBlockedUser 未变化时原样返回入参，按引用比较才能命中这条短路。
+            // 此前比的是 next === stateRef.current，两者永远不是同一对象，该分支从未生效过。
+            if (next === rules) {
                 toast(`该博主已在屏蔽名单里：${name}`)
                 return true
             }

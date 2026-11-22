@@ -10,7 +10,7 @@
  * 城市未读取完成时按默认城市展示。
  */
 import { MapPin } from 'lucide-react'
-import { Fragment } from 'react'
+import { Fragment, useCallback } from 'react'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { Item, ItemActions, ItemContent, ItemGroup, ItemSeparator, ItemTitle } from '@components/ui/item'
 import type { WeiboHotRankItem } from '@shared/types/weibo'
@@ -20,7 +20,7 @@ import { Button } from '@webview/components/Button'
 import { readHotRankTab, readWeiboViewItemLabel } from './weiboNavGroups'
 import type { WeiboHotRankState } from '../hooks/useWeiboHotRank'
 import type { WeiboView } from './weiboNavGroups'
-import type { JSX } from 'react'
+import type { JSX, KeyboardEvent } from 'react'
 import { WeiboHotRankBadge } from '../block/WeiboHotRankBadge'
 import { WeiboHotRankFallback } from '../block/WeiboHotRankFallback'
 import { WeiboHotRankPosition } from '../block/WeiboHotRankPosition'
@@ -38,8 +38,27 @@ interface HotSearchRowProps {
 function HotSearchRow({ item }: HotSearchRowProps): JSX.Element {
     const { openSearch } = useWeiboSearchOpen(item.title)
 
+    /** 整行是唯一入口：与侧栏行同一套键盘支持（listitem + tabIndex + Enter/空格） */
+    const handleKeyDown = useCallback(
+        (event: KeyboardEvent<HTMLDivElement>): void => {
+            if (event.key !== 'Enter' && event.key !== ' ') {
+                return
+            }
+            event.preventDefault()
+            openSearch()
+        },
+        [openSearch],
+    )
+
     return (
-        <Item size="sm" role="listitem" className="cursor-pointer gap-3 hover:bg-muted" onClick={openSearch}>
+        <Item
+            size="sm"
+            role="listitem"
+            tabIndex={0}
+            className="cursor-pointer gap-3 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+            onClick={openSearch}
+            onKeyDown={handleKeyDown}
+        >
             {/* 序号与前三名高亮交给 WeiboHotRankPosition：媒体宽度、字号与颜色一并在那一份里 */}
             <WeiboHotRankPosition rank={item.rank} size="md" />
             <ItemContent className="min-w-0 gap-0.5">

@@ -8,12 +8,13 @@
  * 上游 icon_url 不再渲染成图片；连点由 hook 的节流窗口兜住，行内不再各写一份。
  */
 import { ChevronRightIcon } from 'lucide-react'
+import { useCallback } from 'react'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import type { WeiboHotRankItem } from '@shared/types/weibo'
 import { TOOLTIP_CLASS, Tooltip, TooltipContent, TooltipTrigger } from '@webview/components/Tooltip'
 import { WeiboHotRankBadge } from './WeiboHotRankBadge'
 import { WeiboHotRankPosition } from './WeiboHotRankPosition'
-import type { JSX } from 'react'
+import type { JSX, KeyboardEvent } from 'react'
 import { useWeiboSearchOpen } from '../hooks/useWeiboSearchOpen'
 
 export interface WeiboHotRankRowProps {
@@ -28,10 +29,32 @@ export interface WeiboHotRankRowProps {
 export function WeiboHotRankRow({ item }: WeiboHotRankRowProps): JSX.Element {
     const { openSearch } = useWeiboSearchOpen(item.title)
 
+    /**
+     * 整行是唯一入口，键盘也得能用：listitem 上补 tabIndex，Enter / 空格与点击等价，
+     * 空格要先 preventDefault，否则会同时滚动页面。
+     */
+    const handleKeyDown = useCallback(
+        (event: KeyboardEvent<HTMLDivElement>): void => {
+            if (event.key !== 'Enter' && event.key !== ' ') {
+                return
+            }
+            event.preventDefault()
+            openSearch()
+        },
+        [openSearch],
+    )
+
     return (
         <Tooltip>
             <TooltipTrigger asChild>
-                <Item size="xs" role="listitem" className="cursor-pointer p-1 hover:bg-muted" onClick={openSearch}>
+                <Item
+                    size="xs"
+                    role="listitem"
+                    tabIndex={0}
+                    className="cursor-pointer p-1 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                    onClick={openSearch}
+                    onKeyDown={handleKeyDown}
+                >
                     {/* 序号与前三名高亮交给 WeiboHotRankPosition：媒体宽度、字号与颜色一并在那一份里 */}
                     <WeiboHotRankPosition rank={item.rank} size="sm" />
                     <ItemContent className="min-w-0 gap-0.5">

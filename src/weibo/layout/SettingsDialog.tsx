@@ -12,7 +12,7 @@
  * 城市读取失败时把 Field 与下拉标记为 invalid，并在下拉下方给出 FieldError，
  * 下拉仍按默认城市展示，口径与热搜同城页保持一致；名单保存后由取数 hook 即时过滤。
  */
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
@@ -72,6 +72,11 @@ export function SettingsDialog({
             formatWeiboBlockListText(blockList.state.blockedKeywords)
     const isChanged = isCityChanged || isBlockListChanged
     const isBusy = isCityLoading || isCitySaving || blockList.state.isLoading || blockList.state.isSaving
+    /**
+     * 提交单飞：`isSubmitting` 来自两个控制器的 state，同一帧内还没刷新，
+     * 连点「保存更改」会让城市与名单各提交两遍（`useWeiboCity.save` 自身没有单飞）。
+     */
+    const isSubmittingRef = useRef(false)
 
     /** 关闭弹窗：未提交的改动一并丢弃，下次打开回到已保存值；保存成功也走这里，清理只有一处 */
     const handleOpenChange = useCallback(
@@ -88,9 +93,10 @@ export function SettingsDialog({
 
     /** 保存：先城市后名单，全部成功才关闭；任一失败都保留草稿让用户直接重试 */
     const handleSubmit = useCallback((): void => {
-        if (!isChanged) {
+        if (!isChanged || isSubmittingRef.current) {
             return
         }
+        isSubmittingRef.current = true
         const nextRules: WeiboBlockRules = {
             blockedUsers: parseWeiboBlockListText(blockedUsersText),
             blockedKeywords: parseWeiboBlockListText(blockedKeywordsText),
@@ -104,15 +110,20 @@ export function SettingsDialog({
             }
             return true
         }
-        void submit().then((isSaved) => {
-            if (!isSaved) {
-                return
-            }
-            // 走统一关闭路径：草稿清理与下次打开的初始值只有一处
-            handleOpenChange(false)
-            // 一次提交可能同时改了城市与名单：统一给一条回执，不按子项各弹一条
-            toast.success('设置已保存')
-        })
+        void submit()
+            .then((isSaved) => {
+                if (!isSaved) {
+                    return
+                }
+                // 走统一关闭路径：草稿清理与下次打开的初始值只有一处
+                handleOpenChange(false)
+                // 一次提交可能同时改了城市与名单：统一给一条回执，不按子项各弹一条
+                toast.success('设置已保存')
+            })
+            .finally(() => {
+                // 失败也要放开：草稿已保留，用户可以直接改完再保存
+                isSubmittingRef.current = false
+            })
     }, [
         blockList,
         blockedKeywordsText,

@@ -7,7 +7,7 @@
  */
 import { cn } from 'cn'
 import { ChevronsDown, ChevronsUp } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useId, useState } from 'react'
 import type { WeiboTimelineSegment } from '@shared/types/weibo'
 import { Button } from '@webview/components/Button'
 import { WeiboRichText } from './WeiboRichText'
@@ -43,6 +43,8 @@ export function WeiboCollapsibleBody({
     placeholder,
 }: WeiboCollapsibleBodyProps): JSX.Element {
     const [isExpanded, setIsExpanded] = useState(false)
+    /** 正文 id：展开按钮用 aria-controls 指向它，读屏才知道这一下控制的是哪块正文 */
+    const bodyId = useId()
     const isCollapsible = text.length > BODY_COLLAPSE_THRESHOLD
     const isCollapsed = isCollapsible && !isExpanded
 
@@ -54,6 +56,7 @@ export function WeiboCollapsibleBody({
         <div className="flex flex-col gap-1">
             <div className="relative">
                 <p
+                    id={bodyId}
                     ref={contentRef}
                     className={cn(
                         'whitespace-pre-wrap wrap-break-word',
@@ -80,6 +83,7 @@ export function WeiboCollapsibleBody({
                     size="sm"
                     className="self-start text-muted-foreground"
                     aria-expanded={isExpanded}
+                    aria-controls={bodyId}
                     onClick={toggleExpanded}
                 >
                     {isExpanded ? (

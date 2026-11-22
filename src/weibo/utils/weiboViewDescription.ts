@@ -29,7 +29,11 @@ function formatSavedAt(savedAt: string | null): string {
     return savedAtText === '' ? '已登录' : `已登录 · ${savedAtText}`
 }
 
-/** 顶栏说明：一句话讲清当前视图看什么，自建分组带上分组名 */
+/**
+ * 顶栏说明：一句话讲清当前视图看什么，自建分组带上分组名。
+ * 关键约束：未配置时一律只给登录引导——其余分支描述的都是「配置后才会出现的内容」，
+ * 单独判一次比每个分支各判一次更不容易漏（此前只有首页推荐那一支判了 isConfigured）。
+ */
 export function describeWeiboView({
     view,
     isConfigured,
@@ -37,10 +41,11 @@ export function describeWeiboView({
     groups,
     hotChannels,
 }: WeiboViewDescriptionInput): string {
+    if (!isConfigured) {
+        return '登录 weibo.com 后，粘贴任意 ajax 请求的完整 Cookie。'
+    }
     if (view === 'home.recommend') {
-        return isConfigured
-            ? `${formatSavedAt(savedAt)} · 关注时间线`
-            : '登录 weibo.com 后，粘贴任意 ajax 请求的完整 Cookie。'
+        return `${formatSavedAt(savedAt)} · 关注时间线`
     }
     if (view === 'home.timeline') {
         return '默认分组的最新微博'

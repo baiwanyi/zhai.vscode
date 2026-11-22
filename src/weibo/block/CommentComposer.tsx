@@ -116,12 +116,14 @@ export function CommentComposer({
                 <div className="flex items-center gap-2">
                     {/* 评论链路本身依赖登录 Cookie，能渲染到这里即可直接取表情配置，取数失败由面板给重试 */}
                     <WeiboEmoticonPicker isEnabled triggerVariant="icon" onSelect={handleInsertEmoticon} />
+                    {/* 提交中一并禁用：与 RepostComposer 同口径，避免用户以为本次提交带上了新选择 */}
                     {replyTarget === null ? (
                         <Switch
                             size="sm"
                             checked={shouldRepost}
                             onCheckedChange={onShouldRepostChange}
                             label="同时转发"
+                            disabled={isSubmitting}
                         />
                     ) : null}
                     <InputGroupButton

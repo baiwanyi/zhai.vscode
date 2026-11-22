@@ -156,17 +156,34 @@ export function WeiboMediaPreview({ items, startIndex, onClose }: WeiboMediaPrev
         }
     }, [api])
 
+    /**
+     * 键盘：Esc 收起、左右方向键翻页。
+     * 关键约束：方向键是左右热区的键盘等价物——只靠点击的话，键盘用户打开预览后无法换图。
+     */
     useEffect(() => {
+        if (api === undefined) {
+            return
+        }
         const handleKeyDown = (event: KeyboardEvent): void => {
             if (event.key === 'Escape') {
                 onClose()
+                return
+            }
+            if (event.key === 'ArrowLeft') {
+                event.preventDefault()
+                api.scrollPrev()
+                return
+            }
+            if (event.key === 'ArrowRight') {
+                event.preventDefault()
+                api.scrollNext()
             }
         }
         window.addEventListener('keydown', handleKeyDown)
         return (): void => {
             window.removeEventListener('keydown', handleKeyDown)
         }
-    }, [onClose])
+    }, [api, onClose])
 
     const hasMultiple = items.length > 1
 

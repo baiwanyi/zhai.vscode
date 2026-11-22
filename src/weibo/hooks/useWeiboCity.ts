@@ -6,7 +6,7 @@
  * 挂载即读取一次，保存成功后直接用回包替换本地状态，不必再回源；
  * 成功提示由调用方统一给出（设置弹窗一次保存多项，避免连弹多条）。
  */
-import { useCallback, useEffect, useReducer } from 'react'
+import { useCallback, useEffect, useReducer, useRef } from 'react'
 import type { WeiboCityState, WeiboSaveCityRequest } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
@@ -65,6 +65,8 @@ export interface WeiboCityController {
 /** 城市控制器：挂载读取一次，保存后以回包为准更新展示名 */
 export function useWeiboCity(): WeiboCityController {
     const [state, dispatch] = useReducer(reducer, INITIAL_STATE)
+    /** 保存单飞：连点时第二次直接返回失败，避免同一份城市重复写入（与屏蔽名单同一道守卫） */
+    const isSavingRef = useRef(false)
 
     useEffect(() => {
         const load = async (): Promise<void> => {
@@ -80,6 +82,10 @@ export function useWeiboCity(): WeiboCityController {
     }, [])
 
     const save = useCallback(async (cityCode: string): Promise<boolean> => {
+        if (isSavingRef.current) {
+            return false
+        }
+        isSavingRef.current = true
         dispatch({ type: 'saving', value: true })
         try {
             const payload: WeiboSaveCityRequest = { cityCode }
@@ -90,6 +96,8 @@ export function useWeiboCity(): WeiboCityController {
             dispatch({ type: 'failure', message: toErrorText(cause) })
             toastError(cause)
             return false
+        } finally {
+            isSavingRef.current = false
         }
     }, [])
 

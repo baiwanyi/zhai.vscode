@@ -146,8 +146,11 @@ export function useWeiboPostActions(
                 }
             })
             .finally(() => {
+                // 互斥标记无条件复位，state 只在还挂着时更新（与点赞/评论两处的收尾方式一致）
                 pendingRef.current = false
-                setIsSavingNote(false)
+                if (isMountedRef.current) {
+                    setIsSavingNote(false)
+                }
             })
     }, [fullText, isMountedRef, post, retweetedFullText])
 
@@ -180,7 +183,9 @@ export function useWeiboPostActions(
             })
             .finally(() => {
                 pendingRef.current = false
-                setIsAddingToChat(false)
+                if (isMountedRef.current) {
+                    setIsAddingToChat(false)
+                }
             })
     }, [fullText, isMountedRef, post, retweetedFullText])
 

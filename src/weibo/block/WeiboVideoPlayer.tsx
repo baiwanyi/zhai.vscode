@@ -236,6 +236,12 @@ export function WeiboVideoPlayer({
                 onEnded={() => {
                     setIsPlaying(false)
                     setIsControlsRevealed(true)
+                    // 播完回到片头：否则再点播放会从末尾起播、立刻又 ended，看起来像按钮失灵
+                    const video = videoRef.current
+                    if (video !== null) {
+                        video.currentTime = 0
+                    }
+                    setCurrentTime(0)
                 }}
                 onTimeUpdate={(event) => {
                     setCurrentTime(event.currentTarget.currentTime)

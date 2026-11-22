@@ -184,13 +184,20 @@ export function ComposerCard({
                 return
             }
             event.preventDefault()
-            void uploadFiles(files).then((uploaded) => {
+            // 只把还能放下的张数交给上传：一次粘贴十几张时不必把整批读成 base64 再上传，
+            // 截断后的收尾提示由 appendImages 统一给，这里不重复弹
+            const remaining = MAX_PUBLISH_IMAGE_COUNT - images.length
+            if (remaining <= 0) {
+                toast.info(`最多 ${String(MAX_PUBLISH_IMAGE_COUNT)} 张图片`)
+                return
+            }
+            void uploadFiles(files.slice(0, remaining)).then((uploaded) => {
                 if (uploaded.length > 0) {
                     appendImages(uploaded)
                 }
             })
         },
-        [appendImages, uploadFiles],
+        [appendImages, images.length, uploadFiles],
     )
 
     /**

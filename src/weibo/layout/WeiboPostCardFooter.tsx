@@ -57,7 +57,10 @@ export function WeiboPostCardFooter({
                     ariaExpanded={isCommentsOpen}
                     onClick={onToggleComments}
                 />
+                {/* key 跟随上游点赞态：上游数据变化时只重建按钮、把 initialLiked 重新喂进去，
+                    卡片本身（展开的评论区、已取的长文）不再跟着重挂载 */}
                 <WeiboPostLikeButton
+                    key={post.isLiked ? 'liked' : 'unliked'}
                     postId={post.id}
                     initialLiked={post.isLiked}
                     initialCount={post.metrics.likes}

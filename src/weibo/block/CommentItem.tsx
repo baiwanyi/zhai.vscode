@@ -10,6 +10,7 @@
  */
 import { ChevronsDown } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
+import { isWeiboTimelineId } from '@shared/types/weibo'
 import type { WeiboCommentItem, WeiboCommentReply } from '@shared/types/weibo'
 import { Button } from '@webview/components/Button'
 import { readWeiboAuthorName } from '@webview/weibo/utils/weiboAuthor'
@@ -67,9 +68,10 @@ function CommentReplyItem({ reply, isAddingToChat, onReply, onAddToChat }: Comme
                         <span className="text-muted-foreground">回复</span>
                         <WeiboLink
                             text={`@${reply.replyToName}`}
-                            // 有 uid 用 uid 版（改名后仍能定位），缺 uid 时退回昵称版
+                            // 有合法数字 uid 用 uid 版（改名后仍能定位），否则退回昵称版；
+                            // 与主贴头部、引用块同一守卫，避免拼出 /u/非数字 的空地址
                             url={
-                                reply.replyToUid.length > 0
+                                isWeiboTimelineId(reply.replyToUid)
                                     ? buildProfileUrl(reply.replyToUid)
                                     : buildProfileNameUrl(reply.replyToName)
                             }
@@ -201,7 +203,8 @@ export function CommentItem({
                                     }
                                 }}
                             >
-                                {`共 ${remainingReplies} 条回复`}
+                                {/* 括量是「尚未铺开」的条数，不是总数：写「共 N 条」会让用户以为总共只有 N 条 */}
+                                {`展开剩余 ${String(remainingReplies)} 条回复`}
                                 <ChevronsDown />
                             </Button>
                         ) : null}

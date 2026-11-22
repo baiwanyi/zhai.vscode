@@ -230,7 +230,8 @@ export function WeiboNav({
                                     {hotChannelCandidates.length === 0 ? (
                                         <p className="text-muted-foreground text-xs">当前账号没有更多可添加的频道。</p>
                                     ) : canAddHotChannel ? (
-                                        <ul className="flex flex-wrap gap-1">
+                                        // 候选池可能有几十个频道：限高滚动，避免弹层超出视口把「上传」等入口顶出屏幕
+                                        <ul className="flex max-h-40 flex-wrap gap-1 overflow-y-auto">
                                             {hotChannelCandidates.map((channel) => (
                                                 <li key={channel.gid}>
                                                     {/* 候选用 ghost：没有底色，与「已添加」的 secondary 形成「未选 / 已选」对比 */}

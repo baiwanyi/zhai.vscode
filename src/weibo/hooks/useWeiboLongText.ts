@@ -51,9 +51,17 @@ export function useWeiboLongText(id: string, isLongText: boolean, isVisible: boo
             setIsLoading(true)
             void request<WeiboLongTextResult>(WEIBO_METHODS.longText, { id }, LONG_TEXT_TIMEOUT_MS)
                 .then((result) => {
-                    if (isMountedRef.current && result.text.length > 0) {
-                        setFullText(result.text)
+                    if (!isMountedRef.current) {
+                        return
                     }
+                    // 空文本等同失败：直接采用会把摘要清成「（无正文）」，标成失败才能把按钮换成「重新加载」
+                    if (result.text.length === 0) {
+                        setHasFailed(true)
+                        return
+                    }
+                    setFullText(result.text)
+                    // 手动重试成功后清掉失败标记，避免状态与内容不一致
+                    setHasFailed(false)
                 })
                 .catch((cause: unknown) => {
                     if (!isMountedRef.current) {

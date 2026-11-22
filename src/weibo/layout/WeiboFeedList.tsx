@@ -141,9 +141,10 @@ export function WeiboFeedList({
     return (
         <>
             {posts.map((post) => (
-                // key 带上关注态与点赞态：刷新复用同一张卡片时，写操作后的状态要跟随上游重建，避免沿用旧 state
+                // key 只带关注态：点赞不再重建整张卡片——否则已展开的评论区会被收起、长文退回摘要并重新请求；
+                // 点赞态跟随上游改由底栏 WeiboPostLikeButton 自身的 key 承担，重挂载范围收窄到按钮
                 <WeiboPostCard
-                    key={`${post.id}:${String(post.author.isFollowing)}:${String(post.isLiked)}`}
+                    key={`${post.id}:${String(post.author.isFollowing)}`}
                     post={post}
                     onBlockAuthor={onBlockAuthor}
                     viewerUid={viewerUid}
