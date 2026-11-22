@@ -78,8 +78,8 @@
 |---|---|---|
 | 元数据缓存 | `{存储根}/weibo.json` | 分组 / 热搜 / 表情 / 账号信息，按账号指纹分片；版本不符整份作废；`.part` + rename 原子写 |
 | 头像 | `{存储根}/weibo_avatar.jpg` | 清除凭证时一并删除，避免换号后露出上一个账号 |
-| 图片缓存 | `{globalStorage}/weibo-media/` | 上限 800 个文件，超出按修改时间清理到 600 |
-| 视频 | 不落盘 | 回环服务流式转发，面板销毁即停 |
+| 图片缓存 | `{globalStorage}/weibo-media/` | 上限 800 个文件，超出按修改时间清理到 600；清除凭证时整目录删除；默认读成 data URI 回传，切 URI 通道时直接按路径加载 |
+| 视频 | 不落盘 | 回环服务流式转发（地址带随机访问令牌），面板销毁即停 |
 
 ---
 
@@ -114,6 +114,12 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 | `User-Agent` | 桌面 Chrome UA | 与官网请求上下文保持一致 |
 | `Accept` | `application/json, text/plain, */*` | 期望 JSON |
 | `X-Requested-With` | `XMLHttpRequest` | 声明为 ajax 请求 |
+
+请求节奏与失败策略：
+
+- 相邻两次 JSON 请求至少间隔 1.2s；等待采用「先占位再等待」，并发调用各自排队，不会同时放行（同时放行是 418 的主要来源）。
+- 只有网络错误与 5xx 重试 2 次（退避 600ms / 1200ms）；401/403/418/429 与**超时都不重试**——超时已经等满一个完整超时，再试只会把失败时间拉长到三倍。
+- 写操作（发布、评论、转发、点赞、关注、分组、备注）一律不重试，另有一层「同方法 + 同载荷在飞行中只放行一次」的互斥闸门，挡双击与网络重发。
 
 ### 2.2 鉴权处理
 
@@ -367,6 +373,17 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 | 图片直链 | 图床按 Referer 放行，直连必被拒 | 宿主代理带 Referer 取回，失败自行隐藏；大图走原文 |
 | 图片缓存 | 落 globalStorage 的 `weibo-media`，上限 800 个文件 | 超出按修改时间删旧；缓存损坏可整目录删除重建 |
 | 表情直链 | 表情 CDN 偶发 403 | 降级为 `[表情名]` 文本或浏览器 alt 文案，不阻断正文 |
+| 请求节奏 | 1.2s 全局节流、预约式排队 | 并发调用不会同时放行，减少 418 |
+| 请求超时 | 单次 15s，超时不重试 | 最坏等待约 15s；网络错误仍重试 2 次 |
+| Cookie 发送域 | 只发往 `weibo.com` 及其子域 | 图床 CDN 与 403 重试不再接收会话凭证 |
+| 重定向 | fetch 一律 `redirect: 'manual'`，逐跳过白名单 | 上游无法用 302 把请求带去内网 |
+| 视频中转 | 只绑 `127.0.0.1`，地址带随机令牌 | 本机其它进程无法复用这条带 Referer 的通道 |
+| 视频首字节 | 60s 首字节超时，拿到响应头即解除 | 长视频不会在 5 分钟处被掐断 |
+| 视频转码并发 | 最多同时 2 个 ffmpeg | 超出上限时回退原样转发（可能无声） |
+| 视频进度 | 转码输出不支持 Range | 宿主下发 `seekable: false`，进度条只显示、不可拖 |
+| 视频时长 | 以上游 `media_info.duration` 兜底 | 分片 mp4 的 metadata 时长可能偏小或为 Infinity，直接展示会出现「总时长小于已播放秒数」 |
+| 图片通道 | 默认内联 data URI；`IMAGE_TRANSPORT` 可切 `asWebviewUri` | 内联已验证稳定；URI 通道零 IPC 传输，但要求缓存目录已存在且被 `localResourceRoots` 放行，否则全部图片会被拒 |
+| 图片内联 | 单张上限 1.5MB，超限改取 bmiddle | base64 约膨胀三分之一，重复挂载命中内存缓存 |
 
 ### 2.6 点赞（写操作）
 
@@ -679,12 +696,12 @@ ACG     GET https://weibo.com/ajax/statuses/acg
 
 - 三项只在**扩展激活时预热一次**：`warmup.ts` 依次取 `allGroups` / `bandUnified` / `statuses/config` 并写入缓存；之后面板打开、切页、顶栏刷新都不再回源。侧栏热搜卡与热搜专页的刷新按钮可强制回源 `weibo/hotRank`（入参 `refresh: true`，只对 `band` 生效；其它标签本就实时回源）。
 - 预热必须串行：`webClient` 的最小间隔依赖模块级 `lastRequestAt`，并发调用会同时读到旧值而集体放行，只有串行等待才能让 1.2s 节流真正生效。
-- 同一账号 15 分钟内不重复预热（文件里的 `warmedAt`），避免开发时反复 Reload Window 反复打接口；凭证缺失直接返回，三项里任一失败只记 `warn`，既不弹窗也不影响扩展激活。
+- 同一账号 15 分钟内不重复预热（文件里的 `warmedAt`），避免开发时反复 Reload Window 反复打接口；该时刻只在**至少一项真正取到数据**后写入，全部失败不留冷却，下次激活可自愈；凭证缺失直接返回，任一项失败只记 `warn`，既不弹窗也不影响扩展激活。
 - 文件结构：`version` / `accountKey` / `warmedAt` + 三个条目（`data` + `fetchedAt`）。`accountKey` 是 Cookie 的 SHA-256 前 16 位，**换号即失效**，Cookie 明文绝不落盘；`weibo/credential/clear` 会连带删除整个文件。
 - 读取按不可信输入处理：版本不符、账号不符、时间不可解析、条目结构非法一律按未命中；榜单 / 表情 / 分组解析时重新过图床白名单与颜色白名单，非法条目直接丢弃，全部非法视为未命中而不是缓存一个空列表。
 - 写入先落 `.part` 再 `rename`，同一进程内的读改写走串行队列，三个来源并发回源不会互相覆盖；跨窗口最后写入者胜出，缓存可重建所以可接受。
 - 时间线、信息流与图片都不进缓存：前者变化快且需要游标语义，后者由图片代理的本地缓存 + `data:` 回传承担；混进来还会把带签名的直链写进 `weibo.json`，很快失效且体积不可控。
-- 有效期常量 `CACHE_TTL_MS` 默认全为无穷（严格「激活一次」），改成有限值即开启「读取时过期回源」；热搜变化最快，若希望长时间开着窗口也保持新鲜，可单独给它 30 分钟。
+- 有效期常量 `CACHE_TTL_MS`：分组 / 热搜 / 表情为无穷（严格「激活一次」，三者都有主动刷新入口：写后失效、刷新按钮、表情几乎不变），账号信息为 **7 天**——昵称、认证与头像没有手动刷新入口，长期不更新会一直显示旧值；热搜若希望长窗口也保持新鲜，可单独给它 30 分钟。
 
 ### 2.15 账号信息与头像（profile/info）
 
@@ -835,7 +852,7 @@ POST https://weibo.com/ajax/statuses/update
 - 图片路径只接受 `uploads/{YYYYMM}/{文件名}`，宿主读字节后按魔数判定 png / jpg / webp / gif，单张沿用上传页 10MB 上限。
 - 成功判定：`ok > 0` 且 `data` 带 `idstr`（或 `id`）与 `mblogid`；原文地址按 `data.user.idstr` + `mblogid` 拼，缺 uid 时回落 `/detail/{id}`。
 - 前端发布中按钮禁用并显示加载态（`ref` 单飞，连点不会重复提交）；成功后清空草稿与已选图片，并把宿主归一化的新微博前插到时间线首位（不整页刷新、不动 `sinceId`/`maxId`），失败保留内容供直接重试。
-- **已知风险**：`fp` 无法还原官网生成算法，当前按同形随机生成；若上游开始校验指纹与 Cookie 的绑定会返回 `ok: 0`，届时需要从浏览器会话取真实值。`X-XSRF-TOKEN` 缺失时发布同样可能被拒。
+- **已知风险**：`fp` 无法还原官网生成算法，当前按 Cookie 的 SHA-256 派生 33 位**稳定伪值**（同一账号不再逐请求跳变，更像真人会话）；若上游开始校验指纹与真实设备参数的一致性会返回 `ok: 0`，届时需要从浏览器会话取真实值。`X-XSRF-TOKEN` 缺失时发布同样可能被拒。
 
 ### 2.19 转发列表（谁转发了这条）
 
@@ -854,7 +871,7 @@ GET https://weibo.com/ajax/statuses/repostTimeline?id={微博数字 id}&page=1&m
 - 引用：把 `//@作者：附言` 追加到转发框草稿（纯转发只写 `//@作者`，同一条已引用过不重复追加），字数与超限判定沿用 Composer 的 `draft.length/draftLimit`，提交时与手输内容一起作为 `comment` 发出。
 - 添加到 AI 对话：协议 `weibo/repost/addToChat`（入参 `{ repostId, authorName, text, createdAt }`），宿主组装「微博转发 @作者（时间）+ 附言」并落到 weibo 作用域会话，去重键用 `weibo-repost:{转发 id}`。
 
-发布转发：只转发与转发并评论共用 `normal_repost` 一个请求；评论并转发是**两步**（先评论、再转发），单靠 `is_repost=1` 不会生成评论。
+发布转发：只转发与转发并评论共用 `normal_repost` 一个请求；评论并转发走 `comments/create` 并带 `is_repost=1`，**一次请求**由上游同时生成评论与转发（实测回包 `data.repostId` 为转发 id、`msg` 为「评论成功」）。
 
 ```
 POST https://weibo.com/ajax/statuses/normal_repost
@@ -865,14 +882,14 @@ id={微博数字 id}&comment={附言，可为空}&pic_id=&comment_ori=0&fp={设�
 | 方式 | 请求 | 说明 |
 |------|------|------|
 | 只转发 | `normal_repost`：`is_repost=0&is_comment=0&visible=0&share_id=` | 默认 |
-| 转发并评论 | `normal_repost`：`is_repost=0&is_comment=1&visible=0&share_id=` | 转发同时在原博下生成一条评论 |
-| 评论并转发 | 先 `comments/create` 发评论，再 `normal_repost`：`is_repost=1&is_comment=0`（不带 `visible` 与 `share_id`） | 两步；第二步失败返回部分结果（`reposted: false`、`commented: true`、`failureMessage`） |
+| 转发并评论 | `normal_repost`：`is_repost=0&is_comment=1&visible=0&share_id=` | 一次请求同时生成转发与评论（实测原博评论区确实出现该评论）；回包只给 `data.statuses`，**不含评论凭据**，客户端无法核实，只能按传参声明 |
+| 评论并转发 | `comments/create`：`is_repost=1&is_comment=0`（不带 `visible` 与 `share_id`） | 一次请求同时生成评论与转发；回包 `data.repostId` 即转发 id，缺该字段按部分成功处理 |
 
 - 协议 `weibo/repost`，入参 `{ id, comment, mode? }`；`mode` 取 `repost` / `repostWithComment` / `commentWithRepost`，缺省 `repost`；附言可为空（纯转发），提交前 `trim`。
 - 长度上限按 `mode` 分流：纯转发（`repost`）500 字（`WEIBO_REPOST_MAX_LENGTH`）；`repostWithComment` / `commentWithRepost` 的 `comment` 都会生成一条评论，按评论上限 140 字（`WEIBO_COMMENT_MAX_LENGTH`）收窄。
-- 回包 `{ ok, data: { statuses }, msg }`，成功时 `msg` 为「转发成功」；`statuses` 当前不消费，由前端重拉第一页。
-- 部分成功：评论已发出但转发失败时 `weibo/repost` 不抛错，而是回 `{ reposted: false, commented: true, failureMessage }`；前端据此清空草稿、关掉「同时转发」开关并照常刷新评论，提示「评论已发布，但转发失败」，避免用户重试时把评论发重。
-- 前端：转发框右下角是「同时评论」开关（`@webview/components/Switch`）——打开走 `repostWithComment`（`is_comment=1`），关闭走 `repost`；留空即纯转发，按钮不按内容禁用；成功后清空附言并重拉第一页，失败弹 toast；`Ctrl / Cmd + Enter` 直接发送。
+- 回包 `{ ok, data: { statuses }, msg }`，成功时 `msg` 为「转发成功」；`statuses` 是新建的转发本身（实测 `repost_type: 3`、`analysis_extra` 带 `mblog_parent_id`），当前不消费，由前端重拉第一页。回包里没有任何评论对象；实测该模式的评论确实会生成（原博评论区可见），但客户端拿不到凭据，协议层的 `commented` 只能按传参声明，不要据回包宣称"已校验"。
+- 部分成功：单请求里回包没有 `repostId`（转发未生成）时 `weibo/repost` 不抛错，而是回 `{ reposted: false, commented: true, failureMessage }`；前端据此清空草稿、关掉「同时转发」开关并照常刷新评论，提示「评论已发布，可点「转发」补发」，避免用户重试时把评论发重。
+- 前端：转发框右下角是表情入口、「同时评论」开关（`@webview/components/Switch`）与发送——表情与评论框共用同一面板，按 `[名称]` 文本落到光标处，上限随当前模式（500 / 140）收窄；开关打开走 `repostWithComment`（`is_comment=1`），关闭走 `repost`；留空即纯转发，按钮不按内容禁用；成功后清空附言并重拉第一页，失败弹 toast；`Ctrl / Cmd + Enter` 直接发送。
 - 前端分层：取数（页码续载、代际丢弃、总数本地增减）在 `hooks/useWeiboReposts.ts`，写操作（转发 / 删除，含单飞与计数回调）在 `hooks/useWeiboRepostActions.ts`；视图拆为 `block/RepostComposer.tsx`（转发框）、`block/RepostItem.tsx`（条目：头像 + 「作者名：附言」同行，时间与删除操作复用 `block/CommentActionBar.tsx`，与评论条目同一套排版口径）、`layout/WeiboRepostList.tsx` 只做装配。
 
 删除转发 / 微博：
@@ -885,7 +902,7 @@ id={微博数字 id}
 
 - 协议 `weibo/destroy`，入参 `{ id }`；转发与自己发的微博都按 status id 删。
 - 回包不是 `{ ok, data }` 包装，而是被删除的微博对象本身、末尾才带 `ok`：只有 `ok` 明确 `<= 0` 才算失败，`ok` 缺失但回包带 `id` 时视为成功。
-- 前端：转发列表里只有自己的转发（`viewerUid === repost.author.id`）显示「删除」，点击走单个 AlertDialog 确认，成功后重拉第一页；归属最终仍由上游判定。
+- 前端：转发列表里只有自己的转发（`viewerUid === repost.author.id`）显示「删除」，点击走单个 AlertDialog 确认；删除成功后**先本地摘除该条再重拉第一页**——上游列表接口有缓存延迟，只靠重拉可能仍返回刚删掉的条目，表现为「提示已删除、条目还在」；归属最终仍由上游判定。
 
 ### 2.20 他人主页（页内打开）
 
@@ -926,4 +943,22 @@ POST https://weibo.com/ajax/friendships/remarkUpdate   uid={uid}&remark={1-15 �
 - 备注：`remarkUpdate` 的回包是被改动的 user 对象（**没有 `ok` 包装**），只有 `ok` 明确 `<= 0` 才算失败，备注以回包 `remark` 为准；留空保存即清除。
 - 前端分层：`hooks/useWeiboUserGroups` 管分组读取 / 新建 / 归组（写操作 ref 单飞，保存用打开时的 groupIds 作为 origin 快照），`hooks/useWeiboUserRemark` 管备注；弹窗 `layout/UserGroupDialog`、`layout/UserRemarkDialog` 复用 `FormDialog` 与 field / checkbox / switch / input 槽位。
 - 关注与取关仍走既有 `weibo/author/follow`（`friendships/create` / `friendships/destory`），本次没有改动这条写链路。
+
+### 2.22 宿主侧安全边界
+
+模块的信任边界是「Webview 载荷不可信、上游响应半可信」。以下约束由宿主侧强制，改动前先读审计记录 `docs/modules/weibo-audit.md`。
+
+| 边界 | 做法 | 代码位置 |
+|---|---|---|
+| 入参 | 全部协议方法走 `shared/types/weibo` 守卫，失败即 `invalid-payload` | `weiboRoutes.ts` |
+| 凭证 | Cookie 只写 `SecretStorage`；磁盘只存 SHA-256 前 16 位账号指纹；日志与错误文案不含 Cookie | `webCredential.ts`、`weiboCache.ts` |
+| Cookie 发送域 | 图片代理仅在目标为 `weibo.com` 及其子域时附 Cookie | `mediaProxy.ts` |
+| 外链 | `weibo/openPost` 只放行 `weibo.com` 子域与 `t.cn`，且必须是 https | `weiboRoutes.ts` |
+| 图片 / 视频主机 | 地址先过白名单（精确或点分后缀），重定向逐跳复检 | `webTimeline.ts`、`mediaProxy.ts`、`videoServer.ts` |
+| 回环服务 | 只绑 `127.0.0.1`、随机端口、随机令牌、仅 GET/HEAD、非媒体类型拒绝 | `videoServer.ts` |
+| 文件写入 | 图片只在 `weibo-media` 按 URL 哈希落盘；笔记配图只从 `uploads/` 读 | `mediaProxy.ts`、`panel.ts` |
+| Webview 能力 | `upload/*` 只放行 `pick` / `bytes` / `list`；图片默认内联（限 1.5MB），URI 通道需显式开启；错误文案剥标签并截断 200 字 | `panel.ts` |
+| CSP | `default-src 'none'`；图片走 data URI；`media-src` 只放行回环与微博视频 CDN | `common/webviewHtml.ts` |
+
+已记录但未修的边界：图片以 base64 内联回传（带宽与内存开销，需改通道）、「评论并转发」两步非原子（失败只回部分结果）、`ffmpeg` 由用户环境提供（只记路径与版本，不做来源校验）。
 
