@@ -17,6 +17,7 @@ import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError, toErrorText } from '@shared/utils/error'
 import { mergeById } from '@shared/utils/mergeById'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
 import type { RefObject } from 'react'
 
@@ -76,6 +77,8 @@ export function useWeiboCommentThread(postId: string): WeiboCommentThread {
     /** 列表代际：每次重拉递增，回包序号过期的一律丢弃，避免在途续载覆盖或污染新列表 */
     const listVersionRef = useRef(0)
     const expandingIdsRef = useRef<Set<string>>(new Set())
+    /** 卸载标记：收起评论面板即整块卸载，回包与失败提示不该落在别的卡片上 */
+    const isMountedRef = useIsMounted()
 
     const loadFirstPage = useCallback(async (): Promise<void> => {
         const version = listVersionRef.current + 1
@@ -192,7 +195,7 @@ export function useWeiboCommentThread(postId: string): WeiboCommentThread {
                     },
                 }))
             } catch (cause) {
-                if (version !== listVersionRef.current) {
+                if (version !== listVersionRef.current || !isMountedRef.current) {
                     return
                 }
                 toastError(cause)
@@ -201,7 +204,7 @@ export function useWeiboCommentThread(postId: string): WeiboCommentThread {
                 setExpandingIds((previous) => previous.filter((id) => id !== comment.id))
             }
         },
-        [],
+        [isMountedRef],
     )
 
     return {

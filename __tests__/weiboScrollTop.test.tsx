@@ -7,7 +7,7 @@
  */
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { useScrollTopVisibility } from '@webview/weibo/hooks/useScrollTopVisibility'
+import { useScrollTopVisibility } from '@webview/hooks/useScrollTopVisibility'
 import type { RefObject } from 'react'
 
 afterEach(() => {

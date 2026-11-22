@@ -72,7 +72,7 @@ export function WeiboImagePicker({
             )
         }
         if (images.length === 0) {
-            return <PopoverDescription>uploads 里还没有图片，点下方「上传图片」从磁盘选一张。</PopoverDescription>
+            return <PopoverDescription>还没有上传过图片，点下方「上传图片」从磁盘选一张。</PopoverDescription>
         }
         return (
             <div className="grid max-h-64 grid-cols-3 gap-1.5 overflow-y-auto">

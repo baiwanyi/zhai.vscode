@@ -13,7 +13,7 @@ import type { WeiboTimelinePost, WeiboTimelineMedia, WeiboUserInfo } from '@shar
 import { TooltipProvider } from '@webview/components/Tooltip'
 import type { WeiboAuthorFollowController } from '@webview/weibo/hooks/useWeiboAuthorFollow'
 import type { WeiboUserBlogController } from '@webview/weibo/hooks/useWeiboUserBlog'
-import { PageUserBlog } from '@webview/weibo/layout/PageUserBlog'
+import { UserBlogView } from '@webview/weibo/layout/UserBlogView'
 import { UserFollowAction } from '@webview/weibo/layout/UserFollowAction'
 import { WeiboPostCardHeader } from '@webview/weibo/layout/WeiboPostCardHeader'
 
@@ -204,7 +204,7 @@ function createUserBlogFeed(user: WeiboUserInfo | null): WeiboUserBlogController
 function renderUserPage(user: WeiboUserInfo | null, viewerUid: string | null): void {
     render(
         <TooltipProvider>
-            <PageUserBlog
+            <UserBlogView
                 feed={createUserBlogFeed(user)}
                 credential={{ isConfigured: true, savedAt: null }}
                 credentialErrorCode={null}

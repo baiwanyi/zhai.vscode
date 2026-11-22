@@ -17,17 +17,16 @@ import type {
     WeiboTimelineRequest,
     WeiboTimelineResult,
 } from '@shared/types/weibo'
+import { WEIBO_FEED_DEFAULT_COUNT } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { HostRequestError, request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
+import { mergeById } from '@shared/utils/mergeById'
 import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /** 取数模式：刷新走增量，翻页走 max_id */
 type LoadMode = 'refresh' | 'more'
-
-/** 单页条数：与网页端首屏一致 */
-const PAGE_SIZE = 20
 
 /** 翻页一次最多补两页：既有「加载更多」的即时反馈，又不至于一次点击打出长请求链 */
 const MORE_MAX_PAGES = 2
@@ -72,25 +71,6 @@ const INITIAL_STATE: TimelineState = {
     isSavingCredential: false,
 }
 
-/** 按 id 合并：前插用于增量刷新，追加用于翻页；重复条目一律以首见为准 */
-function mergePosts(
-    current: WeiboTimelinePost[],
-    incoming: WeiboTimelinePost[],
-    isPrepend: boolean,
-): WeiboTimelinePost[] {
-    const ordered = isPrepend ? [...incoming, ...current] : [...current, ...incoming]
-    const seen = new Set<string>()
-    const merged: WeiboTimelinePost[] = []
-    for (const post of ordered) {
-        if (seen.has(post.id)) {
-            continue
-        }
-        seen.add(post.id)
-        merged.push(post)
-    }
-    return merged
-}
-
 function reducer(state: TimelineState, action: TimelineAction): TimelineState {
     switch (action.type) {
         case 'credential':
@@ -106,7 +86,7 @@ function reducer(state: TimelineState, action: TimelineAction): TimelineState {
         case 'more-start':
             return { ...state, isLoadingMore: true, errorCode: null, errorMessage: null }
         case 'refresh-success': {
-            const posts = mergePosts(state.posts, action.result.posts, true)
+            const posts = mergeById(action.result.posts, state.posts)
             const maxId = action.result.maxId ?? state.maxId
             return {
                 ...state,
@@ -119,7 +99,7 @@ function reducer(state: TimelineState, action: TimelineAction): TimelineState {
             }
         }
         case 'more-success': {
-            const posts = mergePosts(state.posts, action.result.posts, false)
+            const posts = mergeById(state.posts, action.result.posts)
             return {
                 ...state,
                 posts,
@@ -130,7 +110,7 @@ function reducer(state: TimelineState, action: TimelineAction): TimelineState {
         }
         case 'prepend':
             // 发布成功：只把新微博插到最前，不动 sinceId / maxId，避免影响后续增量与翻页
-            return { ...state, posts: mergePosts(state.posts, [action.post], true), isLoading: false }
+            return { ...state, posts: mergeById([action.post], state.posts), isLoading: false }
         case 'failure':
             return {
                 ...state,
@@ -179,8 +159,12 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
             dispatch({ type: mode === 'refresh' ? 'refresh-start' : 'more-start' })
             const payload: WeiboTimelineRequest =
                 mode === 'refresh'
-                    ? { count: PAGE_SIZE, maxPages: 1, ...(sinceId === null ? {} : { sinceId }) }
-                    : { count: PAGE_SIZE, maxPages: MORE_MAX_PAGES, ...(maxId === null ? {} : { maxId }) }
+                    ? { count: WEIBO_FEED_DEFAULT_COUNT, maxPages: 1, ...(sinceId === null ? {} : { sinceId }) }
+                    : {
+                          count: WEIBO_FEED_DEFAULT_COUNT,
+                          maxPages: MORE_MAX_PAGES,
+                          ...(maxId === null ? {} : { maxId }),
+                      }
             try {
                 const result = await request<WeiboTimelineResult>(WEIBO_METHODS.timeline, payload)
                 dispatch({ type: mode === 'refresh' ? 'refresh-success' : 'more-success', result })

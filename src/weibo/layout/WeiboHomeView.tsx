@@ -82,7 +82,12 @@ export function WeiboHomeView({
                         <StateEmpty
                             className="py-8"
                             icon={Inbox}
-                            title={WEIBO_UI_TEXT.empty.timeline}
+                            // 自定义空态绕过了 WeiboFeedList 的错误标题判断，这里自己补：有取数错误就不能说「没有内容」
+                            title={
+                                homeState.errorMessage === null
+                                    ? WEIBO_UI_TEXT.empty.timeline
+                                    : WEIBO_UI_TEXT.error.feed
+                            }
                             description={
                                 homeState.errorMessage ??
                                 '可能是关注列表近期没有更新，也可能是接口返回了空页：稍后刷新一次再试。'

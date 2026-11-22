@@ -12,7 +12,7 @@
  * 城市读取失败时把 Field 与下拉标记为 invalid，并在下拉下方给出 FieldError，
  * 下拉仍按默认城市展示，口径与热搜同城页保持一致；名单保存后由取数 hook 即时过滤。
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
@@ -48,7 +48,11 @@ export function SettingsDialog({
     onSaveCity,
     blockList,
 }: SettingsDialogProps): JSX.Element {
-    const { effectiveCode: effectiveCityCode, options: cityOptions } = buildWeiboCityOptions(cityCode)
+    /** 城市选项要排序几百项：只在城市码变化时重建，避免名单输入框每敲一个字都重排一遍 */
+    const { effectiveCode: effectiveCityCode, options: cityOptions } = useMemo(
+        () => buildWeiboCityOptions(cityCode),
+        [cityCode],
+    )
     /** 未提交的选择：null 表示跟随已保存值，避免配置读取完成后的回填与草稿互相覆盖 */
     const [draftCityCode, setDraftCityCode] = useState<string | null>(null)
     /** 名单草稿：同样用 null 表示跟随已保存名单，异步读取完成后不必再写一遍 state */
@@ -69,15 +73,18 @@ export function SettingsDialog({
     const isChanged = isCityChanged || isBlockListChanged
     const isBusy = isCityLoading || isCitySaving || blockList.state.isLoading || blockList.state.isSaving
 
-    /** 关闭弹窗：未提交的改动一并丢弃，下次打开回到已保存值 */
-    function handleOpenChange(next: boolean): void {
-        if (!next) {
-            setDraftCityCode(null)
-            setDraftBlockedUsers(null)
-            setDraftBlockedKeywords(null)
-        }
-        onOpenChange(next)
-    }
+    /** 关闭弹窗：未提交的改动一并丢弃，下次打开回到已保存值；保存成功也走这里，清理只有一处 */
+    const handleOpenChange = useCallback(
+        (next: boolean): void => {
+            if (!next) {
+                setDraftCityCode(null)
+                setDraftBlockedUsers(null)
+                setDraftBlockedKeywords(null)
+            }
+            onOpenChange(next)
+        },
+        [onOpenChange],
+    )
 
     /** 保存：先城市后名单，全部成功才关闭；任一失败都保留草稿让用户直接重试 */
     const handleSubmit = useCallback((): void => {
@@ -101,10 +108,8 @@ export function SettingsDialog({
             if (!isSaved) {
                 return
             }
-            setDraftCityCode(null)
-            setDraftBlockedUsers(null)
-            setDraftBlockedKeywords(null)
-            onOpenChange(false)
+            // 走统一关闭路径：草稿清理与下次打开的初始值只有一处
+            handleOpenChange(false)
             // 一次提交可能同时改了城市与名单：统一给一条回执，不按子项各弹一条
             toast.success('设置已保存')
         })
@@ -112,10 +117,10 @@ export function SettingsDialog({
         blockList,
         blockedKeywordsText,
         blockedUsersText,
+        handleOpenChange,
         isBlockListChanged,
         isChanged,
         isCityChanged,
-        onOpenChange,
         onSaveCity,
         selectedCityCode,
     ])

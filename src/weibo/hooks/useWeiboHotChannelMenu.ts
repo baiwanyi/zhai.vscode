@@ -70,7 +70,9 @@ export function useWeiboHotChannelMenu({
             if (hotChannelGids.includes(gid) || hotChannelGids.length >= WEIBO_HOT_CHANNEL_LIMIT) {
                 return
             }
-            setHotChannelGids((previous) => [...previous, gid])
+            // updater 里再去重一次：同一帧连点两次时闭包里的 hotChannelGids 都还是旧值，
+            // 只靠上面的判断会追加两个相同 gid，菜单渲染出重复 key
+            setHotChannelGids((previous) => (previous.includes(gid) ? previous : [...previous, gid]))
             onSelectView(toHotChannelView(gid))
         },
         [hotChannelGids, onSelectView],

@@ -105,12 +105,16 @@ export function useWeiboUserGroups(uid: string, isEnabled: boolean): WeiboUserGr
     stateRef.current = state
     const uidRef = useRef(uid)
     uidRef.current = uid
+    /** 打开态：供稳定引用的 load 读取，避免把它写进依赖导致 effect 反复重建 */
+    const isEnabledRef = useRef(isEnabled)
+    isEnabledRef.current = isEnabled
     /** 写操作单飞：新建与保存共用，避免连点重复提交 */
     const isWritingRef = useRef(false)
 
     const load = useCallback(async (): Promise<void> => {
         const currentUid = uidRef.current
-        if (currentUid.length === 0) {
+        // 关闭态不取数：reload 对外暴露给重试按钮，弹窗收起后不该再打请求（与 useWeiboGroups 同一道守卫）
+        if (currentUid.length === 0 || !isEnabledRef.current) {
             return
         }
         dispatch({ type: 'load-start' })

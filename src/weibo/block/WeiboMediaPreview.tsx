@@ -135,8 +135,10 @@ function PreviewSlide({ item, hasSiblings, onClose }: PreviewSlideProps): JSX.El
 }
 
 export function WeiboMediaPreview({ items, startIndex, onClose }: WeiboMediaPreviewProps): JSX.Element {
+    /** 起点钳制在合法范围：越界的 startIndex 会让 embla 落到空白页，且不抛错、很难发现 */
+    const safeStartIndex = Math.min(Math.max(startIndex, 0), Math.max(items.length - 1, 0))
     const [api, setApi] = useState<CarouselApi>(undefined)
-    const [currentIndex, setCurrentIndex] = useState(startIndex)
+    const [currentIndex, setCurrentIndex] = useState(safeStartIndex)
 
     /** 跟随 embla 的选中项：右下角的「当前 / 总数」随之更新 */
     useEffect(() => {
@@ -182,7 +184,7 @@ export function WeiboMediaPreview({ items, startIndex, onClose }: WeiboMediaPrev
 
     return (
         <Carousel
-            opts={{ startIndex, containScroll: 'trimSnaps' }}
+            opts={{ startIndex: safeStartIndex, containScroll: 'trimSnaps' }}
             setApi={setApi}
             className="w-full overflow-hidden"
             style={frameStyle}

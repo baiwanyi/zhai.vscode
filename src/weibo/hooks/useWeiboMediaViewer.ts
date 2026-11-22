@@ -62,9 +62,16 @@ export function useWeiboMediaViewer(media: WeiboTimelineMedia, onOpenPost: () =>
         [mixedItems],
     )
 
-    const openPreview = useCallback((index: number): void => {
-        setExpandedIndex(index)
-    }, [])
+    /** 打开预览：下标钳制在图片序号范围内，混排下标折算漏一项时不会把轮播落到空白页 */
+    const openPreview = useCallback(
+        (index: number): void => {
+            if (index < 0 || index >= previewItems.length) {
+                return
+            }
+            setExpandedIndex(index)
+        },
+        [previewItems.length],
+    )
 
     const closePreview = useCallback((): void => {
         setExpandedIndex(null)

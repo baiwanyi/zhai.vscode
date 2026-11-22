@@ -7,11 +7,12 @@
  * 单条读取失败只跳过该条，整批失败时回空数组由调用方决定是否提示；
  * 组件卸载后不再 setState。
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { UploadFileItem, UploadListResult, UploadResult } from '@shared/types/upload'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /** 选择文件要给用户留出浏览磁盘的时间：默认 10 秒会让对话框还没关就判超时 */
@@ -72,15 +73,9 @@ export function useWeiboComposerImages(): WeiboComposerImagesController {
     const [images, setImages] = useState<UploadFileItem[]>([])
     const [isLoading, setIsLoading] = useState(false)
     const [isUploading, setIsUploading] = useState(false)
-    const isMountedRef = useRef(true)
-
-    useEffect(() => {
-        // StrictMode 会先卸载再挂载：每次进入都重置标记，否则回包会被误判为已卸载
-        isMountedRef.current = true
-        return (): void => {
-            isMountedRef.current = false
-        }
-    }, [])
+    /** 上传在途标记：state 更新是异步的，连点「上传图片」与连续粘贴会并发打两批上传 */
+    const isUploadingRef = useRef(false)
+    const isMountedRef = useIsMounted()
 
     const reload = useCallback(async (): Promise<void> => {
         setIsLoading(true)
@@ -115,18 +110,29 @@ export function useWeiboComposerImages(): WeiboComposerImagesController {
     }, [])
 
     const pickFiles = useCallback(async (): Promise<UploadFileItem[]> => {
+        if (isUploadingRef.current) {
+            return []
+        }
+        isUploadingRef.current = true
         setIsUploading(true)
         try {
             const result = await request<UploadResult>('upload/pick', undefined, PICK_TIMEOUT_MS)
+            // 发布框可能已卸载（切页/收起）：回执与清单刷新都不该落在别的页面上
+            if (!isMountedRef.current) {
+                return []
+            }
             reportResult(result)
             if (result.uploaded.length > 0) {
                 await reload()
             }
             return pickImages(result.uploaded)
         } catch (cause) {
-            toastError(cause)
+            if (isMountedRef.current) {
+                toastError(cause)
+            }
             return []
         } finally {
+            isUploadingRef.current = false
             if (isMountedRef.current) {
                 setIsUploading(false)
             }
@@ -138,6 +144,10 @@ export function useWeiboComposerImages(): WeiboComposerImagesController {
             if (files.length === 0) {
                 return []
             }
+            if (isUploadingRef.current) {
+                return []
+            }
+            isUploadingRef.current = true
             setIsUploading(true)
             try {
                 const settled = await Promise.allSettled(files.map(toUploadItem))
@@ -147,20 +157,30 @@ export function useWeiboComposerImages(): WeiboComposerImagesController {
                         uploadItems.push(entry.value)
                     }
                 }
+                // 发布框可能已卸载（切页/收起）：回执与清单刷新都不该落在别的页面上
+                if (!isMountedRef.current) {
+                    return []
+                }
                 if (uploadItems.length === 0) {
                     toast.error(WEIBO_UI_TEXT.error.imageRead)
                     return []
                 }
                 const result = await request<UploadResult>('upload/bytes', { items: uploadItems }, UPLOAD_TIMEOUT_MS)
+                if (!isMountedRef.current) {
+                    return []
+                }
                 reportResult(result)
                 if (result.uploaded.length > 0) {
                     await reload()
                 }
                 return pickImages(result.uploaded)
             } catch (cause) {
-                toastError(cause)
+                if (isMountedRef.current) {
+                    toastError(cause)
+                }
                 return []
             } finally {
+                isUploadingRef.current = false
                 if (isMountedRef.current) {
                     setIsUploading(false)
                 }

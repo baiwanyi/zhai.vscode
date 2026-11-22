@@ -11,6 +11,7 @@ import type { WeiboTopicsResult } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 
 /** 输入去抖：够用户连打一个词，又不至于让每次按键都打一次接口 */
 const SEARCH_DEBOUNCE_MS = 300
@@ -43,13 +44,11 @@ export function useWeiboTopicSearch(isEnabled: boolean): WeiboTopicSearchControl
     const [state, setState] = useState<WeiboTopicSearchState>(INITIAL_STATE)
     const seqRef = useRef(0)
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-    const isMountedRef = useRef(true)
+    const isMountedRef = useIsMounted()
 
+    // 卸载时清掉防抖定时器：标记由 useIsMounted 负责，这里只管还没触发的请求
     useEffect(() => {
-        // StrictMode 会先卸载再挂载：每次进入都重置标记，否则回包会被误判为已卸载
-        isMountedRef.current = true
         return (): void => {
-            isMountedRef.current = false
             if (timerRef.current !== null) {
                 clearTimeout(timerRef.current)
                 timerRef.current = null

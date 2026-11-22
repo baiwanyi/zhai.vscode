@@ -5,11 +5,12 @@
  * 关键约束：未启用（未配置 Cookie）时不发请求、不置加载中，只保持空列表；
  * 组件卸载后丢弃回包，不对已卸载组件 setState。
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useState } from 'react'
 import type { WeiboEmoticonItem, WeiboEmoticonsResult } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 
 /** 模块级缓存：表情配置在会话内基本不变，取到后不再请求 */
 let cachedEmoticons: WeiboEmoticonItem[] | null = null
@@ -36,15 +37,7 @@ export function useWeiboEmoticons(isEnabled: boolean): WeiboEmoticonsController 
             ? { emoticons: [], isLoading: false, errorMessage: null }
             : { emoticons: cachedEmoticons, isLoading: false, errorMessage: null },
     )
-    const isMountedRef = useRef(true)
-
-    useEffect(() => {
-        // StrictMode 会先卸载再挂载：每次进入都重置标记，否则回包会被误判为已卸载
-        isMountedRef.current = true
-        return (): void => {
-            isMountedRef.current = false
-        }
-    }, [])
+    const isMountedRef = useIsMounted()
 
     const load = useCallback(async (): Promise<void> => {
         if (cachedEmoticons !== null) {

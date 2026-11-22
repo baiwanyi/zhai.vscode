@@ -4,7 +4,9 @@
  * 主页识别交给 utils/weiboLinks.readProfileTarget，页内导航交给 context/WeiboUserPageContext。
  * 关键约束：webview 内不得直接跳转（会顶掉面板），一律交宿主打开；
  * 只有链接形态确实是 /u/ 或 /n/ 主页时才改走页内，话题、短链与详情页不受影响；
- * 未挂 Provider（单测、预览）时退回浏览器打开，不因缺少上下文而丢动作。
+ * 未挂 Provider（单测、预览）时退回浏览器打开，不因缺少上下文而丢动作；
+ * 这里不重复校验地址：调用方保证是 http(s) 绝对地址（构造自 weiboLinks 或上游域名白名单），
+ * 真正的二次校验在宿主 weibo/openPost。
  */
 import { useCallback } from 'react'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'

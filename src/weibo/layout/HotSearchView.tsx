@@ -1,7 +1,7 @@
 /**
  * 热搜专页：右侧菜单（我的 / 热搜 / 文娱 / 社会 / 科技 / 生活 / 体育 / ACG / 同城）的内容区，
  * 一个标签对应网页端一张榜单端点，整页展示该榜单的全部条目。
- * 复用约定：卡片取 @components/ui/card，列表容器取 ItemGroup、单条由本文件的 PageHotSearchRow 承载
+ * 复用约定：卡片取 @components/ui/card，列表容器取 ItemGroup、单条由本文件的 HotSearchRow 承载
  * （专页有自己的行样式，不复用侧栏卡片那一份），徽标与名次取 block/WeiboHotRankBadge / WeiboHotRankPosition，
  * 搜索地址与打开动作取 hooks/useWeiboSearchOpen，三态占位取 block/WeiboHotRankFallback。
  * 关键约束：取数由面板层统一持有，刷新统一走顶栏「刷新」，页面内不再重复刷新按钮；
@@ -26,7 +26,7 @@ import { WeiboHotRankFallback } from '../block/WeiboHotRankFallback'
 import { WeiboHotRankPosition } from '../block/WeiboHotRankPosition'
 import { useWeiboSearchOpen } from '../hooks/useWeiboSearchOpen'
 
-interface PageHotSearchRowProps {
+interface HotSearchRowProps {
     item: WeiboHotRankItem
 }
 
@@ -35,7 +35,7 @@ interface PageHotSearchRowProps {
  * 关键约束：页面宽度足够，行内不挂 Tooltip，标题单行截断即可看全大意；
  * 标题只作文本、整行才是点击目标——行内不写带 href 的 a，否则 webview 会交给系统浏览器。
  */
-function PageHotSearchRow({ item }: PageHotSearchRowProps): JSX.Element {
+function HotSearchRow({ item }: HotSearchRowProps): JSX.Element {
     const { openSearch } = useWeiboSearchOpen(item.title)
 
     return (
@@ -57,7 +57,7 @@ function PageHotSearchRow({ item }: PageHotSearchRowProps): JSX.Element {
     )
 }
 
-interface PageHotSearchProps {
+interface HotSearchViewProps {
     /** 是否已配置 Cookie：未配置只给引导，不发请求 */
     isEnabled: boolean
     /** 当前热搜频道：由顶栏菜单选中 */
@@ -72,14 +72,14 @@ interface PageHotSearchProps {
     onOpenSettings: () => void
 }
 
-export function PageHotSearch({
+export function HotSearchView({
     isEnabled,
     view,
     cityCode,
     state,
     onRefresh,
     onOpenSettings,
-}: PageHotSearchProps): JSX.Element {
+}: HotSearchViewProps): JSX.Element {
     // 视图一定在热搜组内：映射不到时按「热搜」榜兜底，避免把 band 侧栏榜混进来
     const tab = readHotRankTab(view) ?? 'hotSearch'
     const isCity = tab === 'city'
@@ -125,7 +125,7 @@ export function PageHotSearch({
                     <ItemGroup className="gap-1">
                         {state.items.map((item, index) => (
                             <Fragment key={`${String(item.rank)}-${item.title}`}>
-                                <PageHotSearchRow item={item} />
+                                <HotSearchRow item={item} />
                                 {index < state.items.length - 1 ? <ItemSeparator className="bg-muted my-0" /> : null}
                             </Fragment>
                         ))}

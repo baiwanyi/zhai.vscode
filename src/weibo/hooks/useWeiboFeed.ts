@@ -13,6 +13,7 @@ import { WEIBO_FEED_DEFAULT_COUNT } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
+import { mergeById } from '@shared/utils/mergeById'
 import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
 
 /** 翻页一次最多补两页：既有「加载更多」的即时反馈，又不至于一次点击打出长请求链 */
@@ -54,25 +55,6 @@ const INITIAL_STATE: FeedState = {
     hasMore: false,
 }
 
-/** 按 id 合并：前插用于增量刷新，追加用于翻页；重复条目一律以首见为准 */
-function mergePosts(
-    current: WeiboTimelinePost[],
-    incoming: WeiboTimelinePost[],
-    isPrepend: boolean,
-): WeiboTimelinePost[] {
-    const ordered = isPrepend ? [...incoming, ...current] : [...current, ...incoming]
-    const seen = new Set<string>()
-    const merged: WeiboTimelinePost[] = []
-    for (const post of ordered) {
-        if (seen.has(post.id)) {
-            continue
-        }
-        seen.add(post.id)
-        merged.push(post)
-    }
-    return merged
-}
-
 function reducer(state: FeedState, action: FeedAction): FeedState {
     switch (action.type) {
         case 'reset':
@@ -87,7 +69,8 @@ function reducer(state: FeedState, action: FeedAction): FeedState {
         case 'more-start':
             return { ...state, isLoadingMore: true, errorMessage: null }
         case 'refresh-success': {
-            const posts = mergePosts(state.posts, action.result.posts, true)
+            // 增量刷新前插：新到的一批排在前面，重复 id 同样以首见为准
+            const posts = mergeById(action.result.posts, state.posts)
             // 增量只取一页，上游不返回 max_id：沿用上一次的游标，避免把翻页入口关掉
             const maxId = action.result.maxId ?? state.maxId
             return {
@@ -102,7 +85,7 @@ function reducer(state: FeedState, action: FeedAction): FeedState {
             }
         }
         case 'more-success': {
-            const posts = mergePosts(state.posts, action.result.posts, false)
+            const posts = mergeById(state.posts, action.result.posts)
             return {
                 ...state,
                 posts,

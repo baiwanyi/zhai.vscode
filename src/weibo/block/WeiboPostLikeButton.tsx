@@ -5,11 +5,12 @@
  * 卸载后不再回写状态、不再弹提示；上游未回传计数时保留本地乐观值。
  */
 import { Heart } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { WeiboLikeResult } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 import { WeiboMetricButton } from './WeiboMetricButton'
 import type { JSX } from 'react'
 
@@ -36,15 +37,7 @@ export function WeiboPostLikeButton({
     const [isPending, setIsPending] = useState(false)
     const isPendingRef = useRef(false)
     /** 卸载标记：列表刷新会整块替换卡片，回包到货时组件可能已卸载，不再写状态、不再弹提示 */
-    const isMountedRef = useRef(true)
-
-    useEffect(() => {
-        // StrictMode 会先卸载再挂载：每次进入都重置标记，否则回包会被误判为已卸载
-        isMountedRef.current = true
-        return (): void => {
-            isMountedRef.current = false
-        }
-    }, [])
+    const isMountedRef = useIsMounted()
 
     const handleClick = useCallback((): void => {
         if (isPendingRef.current) {
@@ -80,7 +73,7 @@ export function WeiboPostLikeButton({
                     setIsPending(false)
                 }
             })
-    }, [isLiked, postId])
+    }, [isLiked, isMountedRef, postId])
 
     return (
         <WeiboMetricButton

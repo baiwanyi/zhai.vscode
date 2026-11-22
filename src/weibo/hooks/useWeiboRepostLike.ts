@@ -10,6 +10,7 @@ import type { WeiboLikeResult, WeiboRepostItem } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 
 /** 转发点赞超时：写操作不宜拖太久，失败让用户立刻重试 */
 const LIKE_TIMEOUT_MS = 20_000
@@ -27,6 +28,8 @@ export function useWeiboRepostLike(repost: WeiboRepostItem): WeiboRepostLikeCont
     const [count, setCount] = useState<number | null>(repost.likes)
     const [isPending, setIsPending] = useState(false)
     const isPendingRef = useRef(false)
+    /** 卸载标记：转发条目随列表刷新重建，回包与失败提示不该落在已经换人的行上 */
+    const isMountedRef = useIsMounted()
 
     const toggle = useCallback((): void => {
         if (isPendingRef.current) {
@@ -40,6 +43,9 @@ export function useWeiboRepostLike(repost: WeiboRepostItem): WeiboRepostLikeCont
         setCount((previous) => Math.max(0, (previous ?? 0) + (willLike ? 1 : -1)))
         void request<WeiboLikeResult>(WEIBO_METHODS.repostLike, { id: repost.id, liked: willLike }, LIKE_TIMEOUT_MS)
             .then((result) => {
+                if (!isMountedRef.current) {
+                    return
+                }
                 setIsLiked(result.liked)
                 if (result.attitudesCount !== null) {
                     // 点赞取服务端与乐观值的较大者：回包偶尔是旧快照，直接回落会把刚出现的 1 抹掉；
@@ -50,16 +56,22 @@ export function useWeiboRepostLike(repost: WeiboRepostItem): WeiboRepostLikeCont
                 }
             })
             .catch((cause: unknown) => {
-                // 回滚到点击前的状态，避免界面与服务端不一致
+                if (!isMountedRef.current) {
+                    return
+                }
+                // 回滚到点击前的状态：原样回到 repost.likes。
+                // 上游未下发计数（null）时保持「不显示数字」，不会因为乐观更新过就退化成 0
                 setIsLiked(!willLike)
-                setCount((previous) => (previous === null ? null : Math.max(0, previous + (willLike ? -1 : 1))))
+                setCount(repost.likes)
                 toastError(cause)
             })
             .finally(() => {
                 isPendingRef.current = false
-                setIsPending(false)
+                if (isMountedRef.current) {
+                    setIsPending(false)
+                }
             })
-    }, [repost.id, isLiked])
+    }, [isMountedRef, repost.id, repost.likes, isLiked])
 
     return { isLiked, count, isPending, toggle }
 }

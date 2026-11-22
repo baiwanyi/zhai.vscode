@@ -10,6 +10,7 @@ import type { WeiboLongTextResult } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 
 /** 取全文超时：与宿主侧 20s 口径一致 */
 const LONG_TEXT_TIMEOUT_MS = 20_000
@@ -39,15 +40,7 @@ export function useWeiboLongText(id: string, isLongText: boolean, isVisible: boo
     /** 在飞占位：ref 判定，避开闭包读到旧 state 与严格模式下的双次 effect */
     const inFlightRef = useRef(false)
     /** 卸载标记：列表刷新会整块替换卡片，回包到货时组件可能已卸载，不再写状态 */
-    const isMountedRef = useRef(true)
-
-    useEffect(() => {
-        // StrictMode 会先卸载再挂载：每次进入都重置标记，否则回包会被误判为已卸载
-        isMountedRef.current = true
-        return (): void => {
-            isMountedRef.current = false
-        }
-    }, [])
+    const isMountedRef = useIsMounted()
 
     const requestFullText = useCallback(
         (isManual = false): void => {

@@ -16,6 +16,33 @@ const IMAGE_REQUEST_TIMEOUT_MS = 25_000
 /** 模块级缓存：null 表示已确认失败 */
 const imageUrlCache = new Map<string, string | null>()
 
+/**
+ * 模块级在途请求：同一张图并发出现时共用一次请求。
+ * 只有结果缓存做不到这点——首屏多张相同图片（头像、重复表情）会同时未命中缓存，
+ * 各自发一遍 weibo/image。
+ */
+const inFlightImageRequests = new Map<string, Promise<string | null>>()
+
+/** 取图：缓存优先、在途复用，失败统一回 null 由调用方标失败并写缓存 */
+function requestImage(remoteUrl: string): Promise<string | null> {
+    const cached = imageUrlCache.get(remoteUrl)
+    if (cached !== undefined) {
+        return Promise.resolve(cached)
+    }
+    const inFlight = inFlightImageRequests.get(remoteUrl)
+    if (inFlight !== undefined) {
+        return inFlight
+    }
+    const task = request<WeiboImageResult>(WEIBO_METHODS.image, { url: remoteUrl }, IMAGE_REQUEST_TIMEOUT_MS)
+        .then((result) => result.url)
+        .catch(() => null)
+        .finally(() => {
+            inFlightImageRequests.delete(remoteUrl)
+        })
+    inFlightImageRequests.set(remoteUrl, task)
+    return task
+}
+
 /** 图片解析状态：localUrl 非空即可渲染，isFailed 为真时调用方回退占位 */
 export interface WeiboImageState {
     localUrl: string | null
@@ -47,25 +74,13 @@ export function useWeiboImage(remoteUrl: string): WeiboImageState {
             return
         }
         let isCancelled = false
-        request<WeiboImageResult>(WEIBO_METHODS.image, { url: remoteUrl }, IMAGE_REQUEST_TIMEOUT_MS)
-            .then((result) => {
-                if (isCancelled) {
-                    return
-                }
-                imageUrlCache.set(remoteUrl, result.url)
-                setState(
-                    result.url === null
-                        ? { localUrl: null, isFailed: true }
-                        : { localUrl: result.url, isFailed: false },
-                )
-            })
-            .catch(() => {
-                if (isCancelled) {
-                    return
-                }
-                imageUrlCache.set(remoteUrl, null)
-                setState({ localUrl: null, isFailed: true })
-            })
+        void requestImage(remoteUrl).then((localUrl) => {
+            if (isCancelled) {
+                return
+            }
+            imageUrlCache.set(remoteUrl, localUrl)
+            setState(localUrl === null ? { localUrl: null, isFailed: true } : { localUrl, isFailed: false })
+        })
         return (): void => {
             isCancelled = true
         }

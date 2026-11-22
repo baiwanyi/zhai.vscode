@@ -68,12 +68,14 @@ export function WeiboPostCardFooter({
             {/* 两个卡片动作落在底栏右侧：只有图标，进行态与「已保存」回执靠 tooltip 与图标变化表达；
                 互斥禁用——任一请求进行中两者都不可点，避免并发写盘与并发改上下文 */}
             <div className="flex shrink-0 items-center gap-1 pl-1">
+                {/* 进行中的那一个也要禁用：控制器虽有 ref 串行化，连点只会被静默丢弃，且图标不变看不出在跑 */}
                 <Button
                     variant="ghost"
                     size="icon"
                     tooltip={saveNoteHint}
                     aria-label={saveNoteHint}
-                    disabled={actions.isAddingToChat}
+                    isLoading={actions.isSavingNote}
+                    disabled={actions.isSavingNote || actions.isAddingToChat}
                     onClick={actions.saveToNote}
                 >
                     {actions.isSavedNote ? <Check /> : <NotebookDot />}
@@ -83,7 +85,8 @@ export function WeiboPostCardFooter({
                     size="icon"
                     tooltip={addToChatHint}
                     aria-label={addToChatHint}
-                    disabled={actions.isSavingNote}
+                    isLoading={actions.isAddingToChat}
+                    disabled={actions.isSavingNote || actions.isAddingToChat}
                     onClick={actions.addToChat}
                 >
                     <MessageSquareShare />

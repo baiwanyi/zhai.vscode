@@ -17,6 +17,7 @@ import type {
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 import { readWeiboAuthorName } from '@webview/weibo/utils/weiboAuthor'
 import type { KeyboardEvent } from 'react'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
@@ -78,6 +79,8 @@ export function useWeiboRepostActions({
     const isDestroyingRef = useRef(false)
     /** 加入对话占位：按转发 id 单飞，同一帧连点不会发出两次 */
     const addingChatRef = useRef<Set<string>>(new Set())
+    /** 卸载标记：收起转发面板即整块卸载，回包与失败提示不该落在别的卡片上 */
+    const isMountedRef = useIsMounted()
 
     const trimmedDraft = draft.trim()
     const draftLimit = shouldComment ? WEIBO_COMMENT_MAX_LENGTH : WEIBO_REPOST_MAX_LENGTH
@@ -101,12 +104,14 @@ export function useWeiboRepostActions({
             toast.success(shouldComment ? WEIBO_UI_TEXT.toast.repostedWithComment : WEIBO_UI_TEXT.toast.reposted)
             await reload()
         } catch (cause) {
-            toastError(cause)
+            if (isMountedRef.current) {
+                toastError(cause)
+            }
         } finally {
             isSubmittingRef.current = false
             setIsSubmitting(false)
         }
-    }, [isDraftOverLimit, onCommitted, postId, reload, shouldComment, trimmedDraft])
+    }, [isDraftOverLimit, isMountedRef, onCommitted, postId, reload, shouldComment, trimmedDraft])
 
     /** 删除自己的转发：只在确认框里触发，成功后重拉第一页并收起确认框 */
     const confirmDelete = useCallback(async (): Promise<void> => {
@@ -123,12 +128,14 @@ export function useWeiboRepostActions({
             onCommitted(-1)
             await reload()
         } catch (cause) {
-            toastError(cause)
+            if (isMountedRef.current) {
+                toastError(cause)
+            }
         } finally {
             isDestroyingRef.current = false
             setIsDestroying(false)
         }
-    }, [onCommitted, pendingDelete, reload])
+    }, [isMountedRef, onCommitted, pendingDelete, reload])
 
     const requestDelete = useCallback((repost: WeiboRepostItem): void => {
         setPendingDelete(repost)
@@ -138,35 +145,45 @@ export function useWeiboRepostActions({
      * 转发加入 AI 对话：按转发 id 单飞，成功后只给一条轻提示，重复与超上限由宿主说明原因。
      * 关键约束：纯转发的附言为空也允许加入（作者与时间本身有信息量），载荷只带展示字段。
      */
-    const addRepostToChat = useCallback((repost: WeiboRepostItem): void => {
-        if (addingChatRef.current.has(repost.id)) {
-            return
-        }
-        addingChatRef.current.add(repost.id)
-        setAddingChatIds((previous) => [...previous, repost.id])
-        void request<WeiboChatContextResult>(
-            WEIBO_METHODS.repostAddToChat,
-            {
-                repostId: repost.id,
-                authorName: readWeiboAuthorName(repost.author.name),
-                text: repost.text,
-                createdAt: repost.createdAt,
-            },
-            CHAT_TIMEOUT_MS,
-        )
-            .then((result) => {
-                if (result.added) {
-                    toast.success(WEIBO_UI_TEXT.toast.addedToChat)
-                    return
-                }
-                toast.info(result.reason ?? WEIBO_UI_TEXT.toast.chatRejected)
-            })
-            .catch(toastError)
-            .finally(() => {
-                addingChatRef.current.delete(repost.id)
-                setAddingChatIds((previous) => previous.filter((id) => id !== repost.id))
-            })
-    }, [])
+    const addRepostToChat = useCallback(
+        (repost: WeiboRepostItem): void => {
+            if (addingChatRef.current.has(repost.id)) {
+                return
+            }
+            addingChatRef.current.add(repost.id)
+            setAddingChatIds((previous) => [...previous, repost.id])
+            void request<WeiboChatContextResult>(
+                WEIBO_METHODS.repostAddToChat,
+                {
+                    repostId: repost.id,
+                    authorName: readWeiboAuthorName(repost.author.name),
+                    text: repost.text,
+                    createdAt: repost.createdAt,
+                },
+                CHAT_TIMEOUT_MS,
+            )
+                .then((result) => {
+                    if (!isMountedRef.current) {
+                        return
+                    }
+                    if (result.added) {
+                        toast.success(WEIBO_UI_TEXT.toast.addedToChat)
+                        return
+                    }
+                    toast.info(result.reason ?? WEIBO_UI_TEXT.toast.chatRejected)
+                })
+                .catch((cause: unknown) => {
+                    if (isMountedRef.current) {
+                        toastError(cause)
+                    }
+                })
+                .finally(() => {
+                    addingChatRef.current.delete(repost.id)
+                    setAddingChatIds((previous) => previous.filter((id) => id !== repost.id))
+                })
+        },
+        [isMountedRef],
+    )
 
     /**
      * 引用这条转发：把「//@作者：附言」追加到转发框草稿，字数与提交仍由 Composer 统一口径。

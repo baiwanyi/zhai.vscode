@@ -16,9 +16,11 @@ import type {
     WeiboTimelinePost,
     WeiboTimelineRetweet,
 } from '@shared/types/weibo'
+import { MAX_PUBLISH_IMAGE_COUNT } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /**
@@ -32,9 +34,6 @@ const SAVE_NOTE_TIMEOUT_MS = 120_000
 
 /** 「已保存」回执停留时长：够看清提示，又不让按钮长期停在非动作文案上 */
 const SAVED_HINT_MS = 2_000
-
-/** 卡片动作载荷的单条配图上限：协议与宿主收窄都按 9 张算，卡片展示本身不受此限 */
-const MAX_PAYLOAD_IMAGES = 9
 
 export interface WeiboPostActionController {
     /** 保存请求进行中：按钮转圈并禁用 */
@@ -60,8 +59,8 @@ function toRetweetPayload(
         authorName: retweeted.authorName,
         text: fullText ?? retweeted.text,
         // 转发配图同样保存：pid 与图片同序，宿主按官方下载端点取原图
-        images: retweeted.media.images.slice(0, MAX_PAYLOAD_IMAGES),
-        imageIds: retweeted.media.imageIds.slice(0, MAX_PAYLOAD_IMAGES),
+        images: retweeted.media.images.slice(0, MAX_PUBLISH_IMAGE_COUNT),
+        imageIds: retweeted.media.imageIds.slice(0, MAX_PUBLISH_IMAGE_COUNT),
         // 卡片上没取到转发全文时，宿主保存前会再补一次
         isTruncated: retweeted.isLongText && fullText === null,
     }
@@ -80,9 +79,9 @@ function toPagePostPayload(
         text: fullText ?? post.text,
         createdAt: post.createdAt,
         author: { id: post.author.id, name: post.author.name },
-        images: post.media.images.slice(0, MAX_PAYLOAD_IMAGES),
+        images: post.media.images.slice(0, MAX_PUBLISH_IMAGE_COUNT),
         // pid 与图片同序：宿主据此走官方下载端点取最大尺寸原图
-        imageIds: post.media.imageIds.slice(0, MAX_PAYLOAD_IMAGES),
+        imageIds: post.media.imageIds.slice(0, MAX_PUBLISH_IMAGE_COUNT),
         videoUrl: post.media.videoUrl,
         retweeted: toRetweetPayload(post.retweeted, retweetedFullText),
         isTruncated: post.isLongText && fullText === null,
@@ -103,6 +102,8 @@ export function useWeiboPostActions(
     const [isAddingToChat, setIsAddingToChat] = useState(false)
     const pendingRef = useRef(false)
     const savedTimerRef = useRef<number | null>(null)
+    /** 卸载标记：列表刷新会整块替换卡片，回执与失败提示不该落在别的卡片上 */
+    const isMountedRef = useIsMounted()
 
     useEffect(() => {
         return (): void => {
@@ -124,6 +125,9 @@ export function useWeiboPostActions(
             SAVE_NOTE_TIMEOUT_MS,
         )
             .then((result) => {
+                if (!isMountedRef.current) {
+                    return
+                }
                 // 配图搬进 uploads/ 的张数一并回执：下载失败的配图在笔记里仍保留远程直链
                 const suffix = result.imageCount > 0 ? `，含 ${String(result.imageCount)} 张图片` : ''
                 toast.success(`已保存为笔记：${result.title}${suffix}`)
@@ -136,12 +140,16 @@ export function useWeiboPostActions(
                     setIsSavedNote(false)
                 }, SAVED_HINT_MS)
             })
-            .catch(toastError)
+            .catch((cause: unknown) => {
+                if (isMountedRef.current) {
+                    toastError(cause)
+                }
+            })
             .finally(() => {
                 pendingRef.current = false
                 setIsSavingNote(false)
             })
-    }, [post, fullText, retweetedFullText])
+    }, [fullText, isMountedRef, post, retweetedFullText])
 
     const addToChat = useCallback((): void => {
         if (pendingRef.current) {
@@ -155,6 +163,9 @@ export function useWeiboPostActions(
             CHAT_TIMEOUT_MS,
         )
             .then((result) => {
+                if (!isMountedRef.current) {
+                    return
+                }
                 if (result.added) {
                     // 成功不额外打断：面板里的上下文芯片就是回执，这里只给一次轻提示
                     toast.success(WEIBO_UI_TEXT.toast.addedToChat)
@@ -162,12 +173,16 @@ export function useWeiboPostActions(
                 }
                 toast.info(result.reason ?? WEIBO_UI_TEXT.toast.chatRejected)
             })
-            .catch(toastError)
+            .catch((cause: unknown) => {
+                if (isMountedRef.current) {
+                    toastError(cause)
+                }
+            })
             .finally(() => {
                 pendingRef.current = false
                 setIsAddingToChat(false)
             })
-    }, [post, fullText, retweetedFullText])
+    }, [fullText, isMountedRef, post, retweetedFullText])
 
     return { isSavingNote, isSavedNote, isAddingToChat, saveToNote, addToChat }
 }

@@ -6,6 +6,7 @@
  * 到货后按全文重新判定是否折叠；转发体没有 mblogid，全文请求用它的数字 id。
  */
 import { useMemo } from 'react'
+import { isWeiboTimelineId } from '@shared/types/weibo'
 import type { WeiboTimelineRetweet, WeiboTimelineSegment } from '@shared/types/weibo'
 import { splitPlainTextLinks } from '@shared/utils/weiboText'
 import type { WeiboLongTextController } from '@webview/weibo/hooks/useWeiboLongText'
@@ -52,6 +53,8 @@ export function WeiboRetweetBlock({
         () => resolveRetweetSegments(retweeted, longText.fullText),
         [longText.fullText, retweeted],
     )
+    /** 时间文案：解析失败或上游缺失时为空串，空串不再渲染占位（与主贴头部一致） */
+    const timeText = formatWeiboTime(retweeted.createdAt, retweeted.createdAtRaw)
 
     return (
         <blockquote
@@ -66,15 +69,14 @@ export function WeiboRetweetBlock({
                     isVerified={retweeted.authorIsVerified}
                     fallback="原作者"
                 />
-                {retweeted.authorId.length > 0 ? (
+                {/* 与主贴头部同一口径：只有合法数字 uid 才展示 @UID */}
+                {isWeiboTimelineId(retweeted.authorId) ? (
                     <>
-                        <span className="ml-1 shrink-0 text-muted-foreground">@{retweeted.authorId}</span>
+                        <span className="shrink-0 text-muted-foreground">@{retweeted.authorId}</span>
                         <span className="shrink-0 text-muted-foreground">·</span>
                     </>
                 ) : null}
-                <span className="shrink-0 text-muted-foreground">
-                    {formatWeiboTime(retweeted.createdAt, retweeted.createdAtRaw)}
-                </span>
+                {timeText.length > 0 ? <span className="shrink-0 text-muted-foreground">{timeText}</span> : null}
             </div>
 
             <WeiboCollapsibleBody

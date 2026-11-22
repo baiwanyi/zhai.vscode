@@ -9,10 +9,11 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
-import type { WeiboBlockRules, WeiboUserBlogResult, WeiboUserInfo, WeiboTimelinePost } from '@shared/types/weibo'
+import type { WeiboBlockRules, WeiboUserBlogResult, WeiboUserInfo } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
+import { mergeById } from '@shared/utils/mergeById'
 import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
 import type { WeiboUserTarget } from '../utils/weiboLinks'
 import type { FeedState, WeiboFeedController } from './useWeiboFeed'
@@ -53,20 +54,6 @@ const INITIAL_STATE: UserBlogState = {
     total: null,
 }
 
-/** 追加去重：翻页重叠加了同一批条目时以首见为准 */
-function appendPosts(current: WeiboTimelinePost[], incoming: WeiboTimelinePost[]): WeiboTimelinePost[] {
-    const seen = new Set(current.map((post) => post.id))
-    const merged = [...current]
-    for (const post of incoming) {
-        if (seen.has(post.id)) {
-            continue
-        }
-        seen.add(post.id)
-        merged.push(post)
-    }
-    return merged
-}
-
 /**
  * 资料合并：同一用户沿用已有资料，避免签名头像地址每次刷新都变。
  * 换用户（id 不同）或首次到货时才整份替换。
@@ -101,7 +88,7 @@ function reducer(state: UserBlogState, action: UserBlogAction): UserBlogState {
                 hasLoaded: true,
             }
         case 'more-success': {
-            const posts = appendPosts(state.posts, action.result.posts)
+            const posts = mergeById(state.posts, action.result.posts)
             return {
                 ...state,
                 user: mergeUser(state.user, action.result.user),

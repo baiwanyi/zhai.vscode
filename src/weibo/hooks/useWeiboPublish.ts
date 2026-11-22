@@ -6,13 +6,14 @@
  * 成功回发布结果（含归一化后的微博，供前端前插），失败回 null；
  * 草稿与已选图片的清空由调用方负责；多图逐张上传会叠加耗时，超时放宽到 60s；卸载后不再 setState。
  */
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { UploadFileItem } from '@shared/types/upload'
 import type { WeiboPublishResult } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /** 发布超时：多图逐张传图床，单张按 30s 计 */
@@ -29,15 +30,7 @@ export interface WeiboPublishController {
 export function useWeiboPublish(): WeiboPublishController {
     const [isPublishing, setIsPublishing] = useState(false)
     const inFlightRef = useRef(false)
-    const isMountedRef = useRef(true)
-
-    useEffect(() => {
-        // StrictMode 会先卸载再挂载：每次进入都重置标记，否则回包会被误判为已卸载
-        isMountedRef.current = true
-        return (): void => {
-            isMountedRef.current = false
-        }
-    }, [])
+    const isMountedRef = useIsMounted()
 
     const publish = useCallback(
         async (content: string, images: readonly UploadFileItem[]): Promise<WeiboPublishResult | null> => {

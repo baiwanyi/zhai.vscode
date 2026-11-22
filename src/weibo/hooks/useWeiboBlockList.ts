@@ -69,6 +69,8 @@ export function useWeiboBlockList(): WeiboBlockListController {
     // 追加动作要读最新名单，但不该因名单变化重建回调：用 ref 承载一份同步副本
     const stateRef = useRef(state)
     stateRef.current = state
+    /** 写盘单飞：连点「屏蔽该博主」时第二次直接丢弃，避免同一份名单重复提交与两条回执 */
+    const isWritingRef = useRef(false)
 
     useEffect(() => {
         const load = async (): Promise<void> => {
@@ -84,6 +86,10 @@ export function useWeiboBlockList(): WeiboBlockListController {
     }, [])
 
     const persist = useCallback(async (next: WeiboBlockRules): Promise<boolean> => {
+        if (isWritingRef.current) {
+            return false
+        }
+        isWritingRef.current = true
         dispatch({ type: 'saving', value: true })
         try {
             const result = await request<WeiboBlockListState>(WEIBO_METHODS.blockListSave, next)
@@ -93,6 +99,8 @@ export function useWeiboBlockList(): WeiboBlockListController {
             dispatch({ type: 'failure', message: toErrorText(cause) })
             toastError(cause)
             return false
+        } finally {
+            isWritingRef.current = false
         }
     }, [])
 

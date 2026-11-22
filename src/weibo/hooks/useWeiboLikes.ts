@@ -8,10 +8,11 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
-import type { WeiboBlockRules, WeiboLikesResult, WeiboTimelinePost } from '@shared/types/weibo'
+import type { WeiboBlockRules, WeiboLikesResult } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
+import { mergeById } from '@shared/utils/mergeById'
 import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
 import type { FeedState, WeiboFeedController } from './useWeiboFeed'
 
@@ -48,20 +49,6 @@ const INITIAL_STATE: LikesState = {
     totalNumber: null,
 }
 
-/** 追加去重：翻页重叠加了同一批条目时以首见为准 */
-function appendPosts(current: WeiboTimelinePost[], incoming: WeiboTimelinePost[]): WeiboTimelinePost[] {
-    const seen = new Set(current.map((post) => post.id))
-    const merged = [...current]
-    for (const post of incoming) {
-        if (seen.has(post.id)) {
-            continue
-        }
-        seen.add(post.id)
-        merged.push(post)
-    }
-    return merged
-}
-
 function reducer(state: LikesState, action: LikesAction): LikesState {
     switch (action.type) {
         case 'reset':
@@ -87,7 +74,7 @@ function reducer(state: LikesState, action: LikesAction): LikesState {
                 hasLoaded: true,
             }
         case 'more-success': {
-            const posts = appendPosts(state.posts, action.result.posts)
+            const posts = mergeById(state.posts, action.result.posts)
             return {
                 ...state,
                 posts,

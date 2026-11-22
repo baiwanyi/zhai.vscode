@@ -4,8 +4,8 @@
  * 图片地址已在宿主按图床白名单收窄，前端不接触任意外链。
  * 关键约束：占位与图片两侧都要保持同一尺寸，避免列表随加载抖动。
  */
+import { useHasEnteredViewport } from '@webview/hooks/useHasEnteredViewport'
 import type { JSX } from 'react'
-import { useHasEnteredViewport } from '../hooks/useHasEnteredViewport'
 import { useWeiboImage } from '../hooks/useWeiboImage'
 
 interface WeiboAvatarProps {

@@ -41,7 +41,8 @@ export interface WeiboHotRankPositionProps {
 
 export function WeiboHotRankPosition({ rank, size }: WeiboHotRankPositionProps): JSX.Element {
     const style = POSITION_STYLE[size]
-    const isTopRank = rank <= TOP_RANK_LIMIT
+    // 上游 rank 缺失时会给 0：只判上限会把「0」也染成前三名的红色，必须从 1 起算
+    const isTopRank = rank >= 1 && rank <= TOP_RANK_LIMIT
     return (
         <ItemMedia variant="icon" className={style.media}>
             <span

@@ -10,13 +10,15 @@
  * 用普通 div 补左右与底部内边距，底部圆角交给 Card 的 overflow-hidden；
  * CardFooter 同时去掉 rounded-b-xl，避免中间露出圆角缺口。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import { Card, CardContent } from '@components/ui/card'
 import type { WeiboTimelinePost, WeiboTimelineSegment } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import { splitPlainTextLinks } from '@shared/utils/weiboText'
+import { useHasEnteredViewport } from '@webview/hooks/useHasEnteredViewport'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 import { WeiboCommentList } from './WeiboCommentList'
 import { WeiboPostCardFooter } from './WeiboPostCardFooter'
 import { WeiboPostCardHeader } from './WeiboPostCardHeader'
@@ -26,7 +28,6 @@ import type { JSX } from 'react'
 import { WeiboCollapsibleBody } from '../block/WeiboCollapsibleBody'
 import { WeiboLongTextStatus } from '../block/WeiboLongTextStatus'
 import { WeiboPostMediaGrid } from '../block/WeiboPostMediaGrid'
-import { useHasEnteredViewport } from '../hooks/useHasEnteredViewport'
 import { useWeiboAuthorFollow } from '../hooks/useWeiboAuthorFollow'
 import { useWeiboLongText } from '../hooks/useWeiboLongText'
 import { useWeiboPostActions } from '../hooks/useWeiboPostActions'
@@ -41,7 +42,12 @@ export interface WeiboPostCardProps {
     hideFollow?: boolean
 }
 
-export function WeiboPostCard({
+/**
+ * 卡片用 memo 包一层：草稿 state 在页面层，输入框每敲一个字都会让整棵内容树重渲染，
+ * 而本组件的四个 prop 引用都稳定（post 取自列表数组、其余来自 useCallback 或字面量），
+ * 不 memo 的话首页每次按键都要重渲染 20–40 张卡片。
+ */
+export const WeiboPostCard = memo(function WeiboPostCard({
     post,
     onBlockAuthor,
     viewerUid = null,
@@ -63,21 +69,17 @@ export function WeiboPostCard({
     }, [])
 
     /** 卸载标记：列表刷新会整块替换卡片，打开原文的回包到货时组件可能已卸载，不再弹提示 */
-    const isMountedRef = useRef(true)
-    useEffect(() => {
-        // StrictMode 会先卸载再挂载：每次进入都重置标记，否则回包会被误判为已卸载
-        isMountedRef.current = true
-        return (): void => {
-            isMountedRef.current = false
-        }
-    }, [])
+    const isMountedRef = useIsMounted()
 
     /** 统一的失败提示：卸载后静默丢弃，避免卡片已被替换还冒出一条提示 */
-    const reportError = useCallback((cause: unknown): void => {
-        if (isMountedRef.current) {
-            toastError(cause)
-        }
-    }, [])
+    const reportError = useCallback(
+        (cause: unknown): void => {
+            if (isMountedRef.current) {
+                toastError(cause)
+            }
+        },
+        [isMountedRef],
+    )
 
     const handleOpen = useCallback((): void => {
         void request(WEIBO_METHODS.openPost, { url: post.url }).catch(reportError)
@@ -193,4 +195,4 @@ export function WeiboPostCard({
             ) : null}
         </Card>
     )
-}
+})

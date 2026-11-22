@@ -13,7 +13,7 @@
  * 全部取消选择等于移出自定义分组（提交 0），文案里要说清。
  */
 import { Check, CornerDownLeft } from 'lucide-react'
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Field, FieldError, FieldGroup, FieldLabel } from '@components/ui/field'
 import {
@@ -26,22 +26,21 @@ import {
 import { Label } from '@components/ui/label'
 import { Spinner } from '@components/ui/spinner'
 import { Switch } from '@components/ui/switch'
+import { WEIBO_GROUP_NAME_MAX } from '@shared/types/weibo'
 import { Button } from '@webview/components/Button'
 import { FormDialog } from '@webview/components/FormDialog'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { JSX } from 'react'
 import { useWeiboUserGroups } from '../hooks/useWeiboUserGroups'
 
-/** 分组名长度上限：与网页端一致 */
-const GROUP_NAME_MAX = 8
-
-/** 集合比较：勾选顺序没有意义，按集合判等 */
+/** 集合比较：勾选顺序没有意义，按集合判等；比的是去重后的元素，草稿里混进重复 id 也不会误判成「未改动」 */
 function isSameGroupSet(current: string[], saved: string[]): boolean {
-    if (current.length !== saved.length) {
+    const currentSet = new Set(current)
+    const savedSet = new Set(saved)
+    if (currentSet.size !== savedSet.size) {
         return false
     }
-    const savedSet = new Set(saved)
-    return current.every((id) => savedSet.has(id))
+    return [...currentSet].every((id) => savedSet.has(id))
 }
 
 export interface UserGroupDialogProps {
@@ -61,15 +60,20 @@ export function UserGroupDialog({ uid, userName, isOpen, onOpenChange, onSaved }
     const [draftIds, setDraftIds] = useState<string[] | null>(null)
     const [isPublic, setIsPublic] = useState(false)
     const { value: nameValue, trimmedValue, isBlank, setValue: setNameValue, reset: resetName } = useTrimmedInput()
+    /** 弹窗会话标记：每次关闭自增，在途的新建回包发现标记变了就丢弃，不把草稿写回已关闭的弹窗 */
+    const sessionRef = useRef(0)
 
     const selectedIds = draftIds ?? state.groupIds
     const isChanged = draftIds !== null && !isSameGroupSet(draftIds, state.groupIds)
     const isBusy = state.isLoading || state.isSaving || state.isCreating
+    /** 读取失败时连新建一起禁用：拿不到原有分组，新建后保存会把 origin 空壳提交上去，可能把用户移出原有分组 */
+    const isCreateDisabled = isBusy || state.errorMessage !== null
 
     /** 关闭：丢弃未提交的勾选与新建草稿 */
     const handleOpenChange = useCallback(
         (next: boolean): void => {
             if (!next) {
+                sessionRef.current += 1
                 setDraftIds(null)
                 resetName()
                 setIsPublic(false)
@@ -89,12 +93,14 @@ export function UserGroupDialog({ uid, userName, isOpen, onOpenChange, onSaved }
 
     /** 新建：成功后自动选中，用户可以继续选别的分组再一起保存 */
     const handleCreate = useCallback((): void => {
-        if (isBlank || state.isCreating) {
+        if (isBlank || state.isCreating || state.errorMessage !== null) {
             return
         }
         const base = draftIds ?? state.groupIds
+        const session = sessionRef.current
         void create(trimmedValue, isPublic).then((group) => {
-            if (group === null) {
+            // 弹窗已关闭：草稿与输入框都随关闭清空了，回包不再写回，也不再弹提示
+            if (group === null || sessionRef.current !== session) {
                 return
             }
             resetName()
@@ -102,24 +108,34 @@ export function UserGroupDialog({ uid, userName, isOpen, onOpenChange, onSaved }
             setDraftIds([...base, group.id])
             toast.success(`已新建分组「${group.name}」，保存后生效`)
         })
-    }, [create, draftIds, isBlank, isPublic, resetName, state.groupIds, state.isCreating, trimmedValue])
+    }, [
+        create,
+        draftIds,
+        isBlank,
+        isPublic,
+        resetName,
+        state.errorMessage,
+        state.groupIds,
+        state.isCreating,
+        trimmedValue,
+    ])
 
     const handleSubmit = useCallback((): void => {
         void save(selectedIds).then((isSaved) => {
             if (!isSaved) {
                 return
             }
-            setDraftIds(null)
-            onOpenChange(false)
+            // 走统一的关闭路径：草稿、名称与「公开」开关一起清掉，否则下次打开会残留上一次的输入
+            handleOpenChange(false)
             onSaved?.()
             toast.success('分组已更新')
         })
-    }, [onOpenChange, onSaved, save, selectedIds])
+    }, [handleOpenChange, onSaved, save, selectedIds])
 
     return (
         <FormDialog
             open={isOpen}
-            title={`设置分组 · ${userName}`}
+            title={userName.trim().length > 0 ? `设置分组 · ${userName}` : '设置分组'}
             description={
                 state.isLoading ? (
                     <span className="inline-flex items-center gap-1.5">
@@ -134,7 +150,7 @@ export function UserGroupDialog({ uid, userName, isOpen, onOpenChange, onSaved }
             }
             submitLabel="保存分组"
             isSubmitting={state.isSaving}
-            isSubmitDisabled={!isChanged || state.isLoading || state.errorMessage !== null}
+            isSubmitDisabled={!isChanged || state.isLoading || state.isCreating || state.errorMessage !== null}
             contentClassName="sm:max-w-md"
             onOpenChange={handleOpenChange}
             onSubmit={handleSubmit}
@@ -181,16 +197,16 @@ export function UserGroupDialog({ uid, userName, isOpen, onOpenChange, onSaved }
                         </>
                     )}
                 </Field>
-                <Field data-disabled={isBusy}>
+                <Field data-disabled={isCreateDisabled}>
                     <FieldLabel htmlFor="weibo-new-group-name">新建分组</FieldLabel>
                     {/* 名称、公开开关与提交按钮收在同一条输入框里：弹窗窄，拆成两行会把分组列表挤下去 */}
                     <InputGroup>
                         <InputGroupInput
                             id="weibo-new-group-name"
                             value={nameValue}
-                            maxLength={GROUP_NAME_MAX}
-                            placeholder="分组名称（1-8 字）"
-                            disabled={isBusy}
+                            maxLength={WEIBO_GROUP_NAME_MAX}
+                            placeholder={`分组名称（1-${String(WEIBO_GROUP_NAME_MAX)} 字）`}
+                            disabled={isCreateDisabled}
                             onChange={(event) => {
                                 setNameValue(event.target.value)
                             }}
@@ -200,7 +216,7 @@ export function UserGroupDialog({ uid, userName, isOpen, onOpenChange, onSaved }
                                 <Switch
                                     id="weibo-new-group-public"
                                     checked={isPublic}
-                                    disabled={isBusy}
+                                    disabled={isCreateDisabled}
                                     onCheckedChange={setIsPublic}
                                 />
                                 <Label htmlFor="weibo-new-group-public" className="font-normal text-xs">
@@ -209,7 +225,8 @@ export function UserGroupDialog({ uid, userName, isOpen, onOpenChange, onSaved }
                             </InputGroupText>
                             <InputGroupButton
                                 variant="default"
-                                disabled={isBlank || isBusy}
+                                aria-label="新建分组"
+                                disabled={isBlank || isCreateDisabled}
                                 isLoading={state.isCreating}
                                 onClick={handleCreate}
                             >

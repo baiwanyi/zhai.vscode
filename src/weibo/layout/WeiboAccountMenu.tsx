@@ -87,7 +87,10 @@ export function WeiboAccountMenu({
     onOpenSettings,
     onDeleteCredential,
 }: WeiboAccountMenuProps): JSX.Element {
-    const displayName = profile?.name ?? (isConfigured ? '我的微博' : '未登录')
+    const fallbackName = isConfigured ? '我的微博' : '未登录'
+    const rawName = profile?.name ?? ''
+    /** 昵称只判空、不改写：空串或纯空白时回落到「我的微博 / 未登录」，避免触发器与菜单标题一片空白 */
+    const displayName = rawName.trim().length > 0 ? rawName : fallbackName
     const canOpenProfile = profile !== null
 
     return (

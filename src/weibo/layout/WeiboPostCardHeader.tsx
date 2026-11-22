@@ -3,7 +3,7 @@
  * 复用约定：作者名交给 WeiboAuthorName、头像交给 WeiboAvatar、@UID 与正文链接共用 WeiboLink；
  * 关注态与写操作全部由 useWeiboAuthorFollow 的控制器注入，本组件不直接发请求。
  * 关键约束：未关注时关注按钮可点，关注成功后变「已关注」并禁用；取关只在「更多」菜单里，
- * 两者互斥；作者 uid 或名字缺失时对应入口一并收起，不拼空地址、不写空名单；
+ * 两者互斥；作者 uid 缺失或非数字时对应入口一并收起，不拼空地址、不写空名单；
  * 个人主页用 hideFollow 收起整组关注入口（含菜单里的取消关注），关注只由页头按钮负责；
  * 阅读数只在「作者 uid 等于当前账号」且上游确实下发时展示，别人的微博不显示、缺失也不补 0。
  */
@@ -17,6 +17,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
+import { isWeiboTimelineId } from '@shared/types/weibo'
 import type { WeiboTimelinePost } from '@shared/types/weibo'
 import { Button } from '@webview/components/Button'
 import { StatBadge } from '@webview/components/StatBadge'
@@ -29,8 +30,14 @@ import { WeiboAuthorName } from '../block/WeiboAuthorName'
 import { WeiboAvatar } from '../block/WeiboAvatar'
 import { WeiboLink } from '../block/WeiboRichText'
 
+/** 头部实际消费的字段：只取用到的部分，避免把整条微博模型绑进组件契约 */
+type WeiboPostCardHeaderPost = Pick<
+    WeiboTimelinePost,
+    'author' | 'createdAt' | 'createdAtRaw' | 'source' | 'readsCount'
+>
+
 export interface WeiboPostCardHeaderProps {
-    post: WeiboTimelinePost
+    post: WeiboPostCardHeaderPost
     /** 关注控制器：状态、进行态与写操作都由它给出 */
     follow: WeiboAuthorFollowController
     /** 在浏览器打开本条原文 */
@@ -51,9 +58,16 @@ export function WeiboPostCardHeader({
     hideFollow = false,
     viewerUid = null,
 }: WeiboPostCardHeaderProps): JSX.Element {
-    // 阅读数只对自己可见：上游也只在本人微博上带 reads_count，这里再按 uid 兜一层
-    const isAuthorSelf = viewerUid !== null && viewerUid === post.author.id
+    // 阅读数只对自己可见：上游也只在本人微博上带 reads_count，这里再按 uid 兜一层。
+    // uid 可能以空串形态进来：空串与空串相等，会把「作者 uid 缺失」误判成本人，必须先排空
+    const isAuthorSelf = viewerUid !== null && viewerUid.length > 0 && viewerUid === post.author.id
     const readsCount = isAuthorSelf ? post.readsCount : null
+    /** 折算值只算一次：胶囊文案与悬停口径同源，避免同一数值算出两种写法 */
+    const readsText = readsCount === null ? null : formatWeiboCount(readsCount)
+    /** 关注入口是否可见：头部按钮与菜单里的取消关注共用同一判定，避免两处条件漂移 */
+    const canShowFollow = follow.canFollow && !hideFollow
+    /** 时间文案：解析失败或上游缺失时为空串，空串不再渲染占位 */
+    const timeText = formatWeiboTime(post.createdAt, post.createdAtRaw)
     return (
         <CardHeader>
             <div className="flex items-start gap-3">
@@ -68,16 +82,17 @@ export function WeiboPostCardHeader({
                             isVerified={post.author.isVerified}
                             fallback="未知作者"
                         />
-                        {post.author.id.length > 0 ? (
+                        {/* 只有合法数字 uid 才拼主页：非数字串既不生成地址，也不占标题行 */}
+                        {isWeiboTimelineId(post.author.id) ? (
                             <WeiboLink
-                                className="ml-1 shrink-0 text-muted-foreground hover:text-link dark:text-muted-foreground"
+                                className="shrink-0 text-muted-foreground hover:text-link dark:text-muted-foreground"
                                 text={`@${post.author.id}`}
                                 url={buildProfileUrl(post.author.id)}
                             />
                         ) : null}
                     </CardTitle>
                     <CardDescription className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-                        <span className="shrink-0">{formatWeiboTime(post.createdAt, post.createdAtRaw)}</span>
+                        {timeText.length > 0 ? <span className="shrink-0">{timeText}</span> : null}
                         {post.source.length > 0 ? <span className="shrink-0">来自 {post.source}</span> : null}
                     </CardDescription>
                 </div>
@@ -85,7 +100,7 @@ export function WeiboPostCardHeader({
             {/* 关注按钮常驻：未关注可点，关注成功后变「已关注」并禁用；取关收进「更多」菜单，
                 原文与「屏蔽该博主」同样在菜单里，两个卡片动作已移到底栏，头部不再堆按钮 */}
             <CardAction className="flex items-center gap-1">
-                {follow.canFollow && !hideFollow ? (
+                {canShowFollow ? (
                     <Button
                         variant="outline"
                         size="sm"
@@ -102,56 +117,90 @@ export function WeiboPostCardHeader({
                     </Button>
                 ) : null}
                 {/* 阅读数只有本人微博才有：统计胶囊（眼睛 + 折算值），精确口径走悬停提示 */}
-                {readsCount === null ? null : (
-                    <StatBadge className="shrink-0" tooltip={`阅读 ${formatWeiboCount(readsCount)}`}>
+                {readsText === null ? null : (
+                    <StatBadge className="shrink-0" tooltip={`阅读 ${readsText}`}>
                         <Eye className="size-4" aria-hidden="true" />
-                        {formatWeiboCount(readsCount)}
+                        {readsText}
                     </StatBadge>
                 )}
-                <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon" tooltip="更多操作" aria-label="更多操作">
-                            <MoreHorizontal className="size-4" />
-                        </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-44">
-                        <DropdownMenuGroup>
-                            <DropdownMenuItem onSelect={onOpen}>
-                                <ExternalLink />
-                                在浏览器打开原文
-                            </DropdownMenuItem>
-                            {/* 取消关注只在已关注时出现：头部按钮此时是禁用的「已关注」，取关只能走这里；
-                                个人主页里关注入口整体收进页头，菜单项同样不再重复 */}
-                            {follow.canFollow && follow.isFollowing && !hideFollow ? (
-                                <DropdownMenuItem
-                                    onSelect={() => {
-                                        follow.toggleFollow(false)
-                                    }}
-                                >
-                                    <UserMinus />
-                                    取消关注
-                                </DropdownMenuItem>
-                            ) : null}
-                            {/* 屏蔽是破坏性动作：单独分隔，作者名缺失时没有可加入名单的值，直接禁用 */}
-                            {onBlockAuthor === undefined ? null : (
-                                <>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem
-                                        variant="destructive"
-                                        disabled={post.author.name.trim().length === 0}
-                                        onSelect={() => {
-                                            onBlockAuthor(post.author.name)
-                                        }}
-                                    >
-                                        <Ban />
-                                        屏蔽该博主
-                                    </DropdownMenuItem>
-                                </>
-                            )}
-                        </DropdownMenuGroup>
-                    </DropdownMenuContent>
-                </DropdownMenu>
+                <WeiboPostCardHeaderMoreMenu
+                    follow={follow}
+                    authorName={post.author.name}
+                    canShowFollow={canShowFollow}
+                    onOpen={onOpen}
+                    onBlockAuthor={onBlockAuthor}
+                />
             </CardAction>
         </CardHeader>
+    )
+}
+
+interface WeiboPostCardHeaderMoreMenuProps {
+    /** 关注控制器：菜单只消费取关动作与进行态 */
+    follow: WeiboAuthorFollowController
+    /** 作者名：屏蔽名单写入值与空名判断都用它 */
+    authorName: string
+    /** 关注入口是否可见：个人主页里关注整体收进页头，菜单项不再重复 */
+    canShowFollow: boolean
+    onOpen: () => void
+    onBlockAuthor?: (authorName: string) => void
+}
+
+/** 「更多」菜单：原文、取消关注与屏蔽都收在这里，头部只留一个图标按钮 */
+function WeiboPostCardHeaderMoreMenu({
+    follow,
+    authorName,
+    canShowFollow,
+    onOpen,
+    onBlockAuthor,
+}: WeiboPostCardHeaderMoreMenuProps): JSX.Element {
+    const trimmedName = authorName.trim()
+    return (
+        <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" tooltip="更多操作" aria-label="更多操作">
+                    <MoreHorizontal className="size-4" />
+                </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-44">
+                <DropdownMenuGroup>
+                    <DropdownMenuItem onSelect={onOpen}>
+                        <ExternalLink />
+                        在浏览器打开原文
+                    </DropdownMenuItem>
+                    {/* 取消关注只在已关注时出现：头部按钮此时是禁用的「已关注」，取关只能走这里 */}
+                    {canShowFollow && follow.isFollowing ? (
+                        <DropdownMenuItem
+                            // 请求进行中禁止再次派发：控制器内部虽有 ref 串行化，菜单项仍该同步禁用，
+                            // 否则连点只会在无反馈的情况下被静默丢弃
+                            disabled={follow.isFollowPending}
+                            onSelect={() => {
+                                follow.toggleFollow(false)
+                            }}
+                        >
+                            <UserMinus />
+                            取消关注
+                        </DropdownMenuItem>
+                    ) : null}
+                    {/* 屏蔽是破坏性动作：单独分隔，作者名缺失时没有可加入名单的值，直接禁用 */}
+                    {onBlockAuthor === undefined ? null : (
+                        <>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                                variant="destructive"
+                                disabled={trimmedName.length === 0}
+                                onSelect={() => {
+                                    // 名单匹配在宿主侧按 trim 后比对：这里传 trim 值，提示文案才不带首尾空白
+                                    onBlockAuthor?.(trimmedName)
+                                }}
+                            >
+                                <Ban />
+                                屏蔽该博主
+                            </DropdownMenuItem>
+                        </>
+                    )}
+                </DropdownMenuGroup>
+            </DropdownMenuContent>
+        </DropdownMenu>
     )
 }

@@ -30,25 +30,35 @@ const COVER_HEIGHT_CLASS = 'h-64'
 /** 封面图片铺满固定容器 */
 const COVER_IMAGE_CLASS = 'absolute inset-0 size-full object-cover'
 
+interface UserCoverProps {
+    /** 封面远程直链：空串表示上游未给，只渲染渐变色占位 */
+    url: string
+}
+
 /**
- * 封面：容器始终占住 96px，加载中与失败都保持同一块底。
+ * 封面：容器始终占住 COVER_HEIGHT_CLASS（h-64，即 256px），加载中与失败都保持同一块底。
  * 关键约束：图片绝对定位填充，不参与高度计算——否则大图解码前后会把卡片顶开再收回。
  */
-function UserCover({ url }: { url: string }): JSX.Element {
+function UserCover({ url }: UserCoverProps): JSX.Element {
     const { localUrl, isFailed } = useWeiboImage(url)
     const hasImage = url.length > 0 && !isFailed && localUrl !== null
     return (
         <div
             className={`relative w-full overflow-hidden bg-linear-to-r from-muted to-accent ${COVER_HEIGHT_CLASS}`}
-            aria-hidden={hasImage ? undefined : 'true'}
+            aria-hidden={hasImage ? undefined : true}
         >
             {hasImage ? <img src={localUrl} alt="" className={COVER_IMAGE_CLASS} loading="lazy" /> : null}
         </div>
     )
 }
 
+interface GenderIconProps {
+    /** 规范化后的性别：未知时不渲染任何图标 */
+    gender: WeiboUserInfo['gender']
+}
+
 /** 性别图标：男用蓝色、女用粉色区分，未知不渲染（不写文字缩写，保持资料行干净） */
-function GenderIcon({ gender }: { gender: WeiboUserInfo['gender'] }): JSX.Element | null {
+function GenderIcon({ gender }: GenderIconProps): JSX.Element | null {
     if (gender === 'm') {
         return <Mars className="size-3 shrink-0 text-sky-500" role="img" aria-label="男" />
     }
@@ -78,7 +88,8 @@ interface UserProfileCardProps {
 /** 资料页头：封面 + 头像 + 昵称 + 简介 + 计数，返回与关注固定在右上 */
 function UserProfileCard({ user, remark, isSelf, onBack, onRemarkSaved }: UserProfileCardProps): JSX.Element {
     const locationText = user.location
-    const hasLocation = locationText.length > 0
+    // 只判空、不改写：空白地址不值得占一行图标，昵称原样展示的口径保持不变
+    const hasLocation = locationText.trim().length > 0
     const hasGender = user.gender !== 'unknown'
 
     return (
@@ -115,21 +126,23 @@ function UserProfileCard({ user, remark, isSelf, onBack, onRemarkSaved }: UserPr
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
                 <p className="text-muted-foreground text-xs">{describeCounts(user)}</p>
+                {/* 简介截断到四行：超长简介会把页头撑到一屏之外、把微博列表挤下去；
+                    只截断视觉、文本仍在 DOM 里，可复制与查找 */}
                 {user.description.length === 0 ? null : (
-                    <p className="whitespace-pre-wrap text-sm leading-relaxed">{user.description}</p>
+                    <p className="line-clamp-4 whitespace-pre-wrap text-sm leading-relaxed">{user.description}</p>
                 )}
             </CardContent>
         </Card>
     )
 }
 
-export interface PageUserBlogProps {
+export interface UserBlogViewProps {
     /** 主页控制器：资料、帖子与翻页动作都由页面层持有 */
     feed: WeiboUserBlogController
     credential: WeiboCredentialState | null
     credentialErrorCode: string | null
     credentialErrorMessage: string | null
-    /** 当前登录账号 uid：原样透传，评论区据此只给自己的评论显示删除 */
+    /** 当前登录账号 uid：原样透传，评论区据此只给自己的评论显示删除；空串按未登录处理 */
     viewerUid: string | null
     /** 返回上一屏：清空主页目标，回到原视图 */
     onBack: () => void
@@ -138,7 +151,7 @@ export interface PageUserBlogProps {
     onOpenSettings: () => void
 }
 
-export function PageUserBlog({
+export function UserBlogView({
     feed,
     credential,
     credentialErrorCode,
@@ -148,23 +161,19 @@ export function PageUserBlog({
     onBlockAuthor,
     onRefresh,
     onOpenSettings,
-}: PageUserBlogProps): JSX.Element {
+}: UserBlogViewProps): JSX.Element {
     const user = feed.state.user
-    const { refresh: refreshFeed } = feed
     /** 备注草稿：null 表示跟随资料里的备注，保存后写入，列表与页头按钮共用这一份 */
     const [remarkDraft, setRemarkDraft] = useState<string | null>(null)
     const remark = remarkDraft ?? user?.remark ?? ''
     /** 展示名：有备注用备注，否则用上游昵称 */
     const displayName = remark.length > 0 ? remark : (user?.name ?? '')
 
-    const handleRemarkSaved = useCallback(
-        (next: string): void => {
-            setRemarkDraft(next)
-            // 备注改了就重拉一页：列表里的作者名虽然由本层替换，但评论与计数仍要用最新数据
-            void refreshFeed()
-        },
-        [refreshFeed],
-    )
+    const handleRemarkSaved = useCallback((next: string): void => {
+        // 备注只影响展示：作者名由下面的 displayFeed 就地替换，重拉列表会丢掉已加载的分页，
+        // 而 mergeUser 对同一 uid 保留旧资料，刷新也拿不到上游的新备注
+        setRemarkDraft(next)
+    }, [])
 
     /**
      * 展示用控制器：把该用户作为作者的名字换成备注名。
@@ -193,8 +202,8 @@ export function PageUserBlog({
         return { ...feed, state: { ...feed.state, posts } }
     }, [feed, remark, user])
 
-    /** 是否本人主页：当前账号 uid 与资料 uid 相同即视为本人，uid 未取到时不猜 */
-    const isSelf = user !== null && viewerUid !== null && viewerUid === user.id
+    /** 是否本人主页：当前账号 uid 与资料 uid 相同即视为本人，uid 未取到（含空串）时不猜 */
+    const isSelf = user !== null && viewerUid !== null && viewerUid.length > 0 && viewerUid === user.id
 
     const emptyTitle =
         user === null ? '这个主页还没有微博' : `「${displayName.length > 0 ? displayName : '该用户'}」还没有微博`

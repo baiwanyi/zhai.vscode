@@ -124,7 +124,8 @@ export function WeiboFeedList({
             <StateEmpty
                 className="py-8"
                 icon={Inbox}
-                title={emptyTitle ?? WEIBO_UI_TEXT.empty.feed}
+                // 有取数错误时标题改成「读取失败」：空列表只是结果，说「没有内容」会把失败讲成正常空态
+                title={emptyTitle ?? (errorMessage === null ? WEIBO_UI_TEXT.empty.feed : WEIBO_UI_TEXT.error.feed)}
                 description={emptyDescription}
             >
                 {onRefresh === undefined ? null : (

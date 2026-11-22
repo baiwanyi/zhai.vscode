@@ -86,7 +86,14 @@ export function WeiboHotRankFallback({
         )
     }
     if (!state.hasLoaded || (state.isLoading && state.items.length === 0)) {
-        return <StateEmpty className={copy.emptyClass} icon={Spinner} iconClassName={copy.iconClass} title={copy.loadingTitle} />
+        return (
+            <StateEmpty
+                className={copy.emptyClass}
+                icon={Spinner}
+                iconClassName={copy.iconClass}
+                title={copy.loadingTitle}
+            />
+        )
     }
     if (state.items.length === 0) {
         const isFailed = state.errorMessage !== null

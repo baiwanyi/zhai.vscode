@@ -26,6 +26,7 @@ import {
 } from '@components/ui/input-group'
 import { Spinner } from '@components/ui/spinner'
 import type { UploadFileItem } from '@shared/types/upload'
+import { MAX_PUBLISH_CONTENT_LENGTH, MAX_PUBLISH_IMAGE_COUNT } from '@shared/types/weibo'
 import type { WeiboTimelinePost } from '@shared/types/weibo'
 import { CARD_GLOW_CLASS, ComposerGlow } from '@webview/components/AppComposer'
 import { Button } from '@webview/components/Button'
@@ -37,9 +38,6 @@ import { useWeiboComposerImages } from '../hooks/useWeiboComposerImages'
 import { useWeiboEnhance } from '../hooks/useWeiboEnhance'
 import { useWeiboPublish } from '../hooks/useWeiboPublish'
 import { insertAtSelection } from '../utils/weiboComposer'
-
-/** 发布框字数上限：按微博普通正文限制收口，接口接入前先在前端挡住超长输入 */
-const POST_MAX_LENGTH = 2000
 
 interface ComposerCardProps {
     /** 是否已配置凭证：表情与话题接口同样依赖登录 Cookie */
@@ -104,10 +102,10 @@ export function ComposerCard({
                 start: textarea.selectionStart,
                 end: textarea.selectionEnd,
                 insert,
-                maxLength: POST_MAX_LENGTH,
+                maxLength: MAX_PUBLISH_CONTENT_LENGTH,
             })
             if (result === null) {
-                toast.info(`正文最多 ${POST_MAX_LENGTH} 字，无法再插入${subject}`)
+                toast.info(`正文最多 ${MAX_PUBLISH_CONTENT_LENGTH} 字，无法再插入${subject}`)
                 return
             }
             pendingCaretRef.current = result.caret
@@ -131,11 +129,30 @@ export function ComposerCard({
         [handleInsert],
     )
 
-    const handleSelectImage = useCallback(
-        (item: UploadFileItem): void => {
-            onImagesChange([...images, item])
+    /** 追加图片：按单条微博上限截断，超出的忽略并提示，避免攒到发布时被宿主整条拒绝 */
+    const appendImages = useCallback(
+        (incoming: readonly UploadFileItem[]): void => {
+            const remaining = MAX_PUBLISH_IMAGE_COUNT - images.length
+            if (remaining <= 0) {
+                toast.info(`最多 ${String(MAX_PUBLISH_IMAGE_COUNT)} 张图片`)
+                return
+            }
+            const accepted = incoming.slice(0, remaining)
+            if (accepted.length > 0) {
+                onImagesChange([...images, ...accepted])
+            }
+            if (accepted.length < incoming.length) {
+                toast.info(`最多 ${String(MAX_PUBLISH_IMAGE_COUNT)} 张图片，多余的已忽略`)
+            }
         },
         [images, onImagesChange],
+    )
+
+    const handleSelectImage = useCallback(
+        (item: UploadFileItem): void => {
+            appendImages([item])
+        },
+        [appendImages],
     )
 
     const handleRemoveImage = useCallback(
@@ -154,10 +171,10 @@ export function ComposerCard({
     const handlePickFiles = useCallback((): void => {
         void pickFiles().then((uploaded) => {
             if (uploaded.length > 0) {
-                onImagesChange([...images, ...uploaded])
+                appendImages(uploaded)
             }
         })
-    }, [images, onImagesChange, pickFiles])
+    }, [appendImages, pickFiles])
 
     /** 粘贴上传：只拦剪贴板里的图片文件，文本粘贴完全不干预默认行为 */
     const handlePaste = useCallback(
@@ -169,11 +186,11 @@ export function ComposerCard({
             event.preventDefault()
             void uploadFiles(files).then((uploaded) => {
                 if (uploaded.length > 0) {
-                    onImagesChange([...images, ...uploaded])
+                    appendImages(uploaded)
                 }
             })
         },
-        [images, onImagesChange, uploadFiles],
+        [appendImages, uploadFiles],
     )
 
     /**
@@ -182,6 +199,10 @@ export function ComposerCard({
      * 成功后光标落到末尾，失败保留原文（错误已由 hook toast）。
      */
     function handleEnhance(): void {
+        // 发布在途时改写结果会污染已清空的草稿：按钮虽已禁用，这里再守一道
+        if (isPublishing) {
+            return
+        }
         const textarea = textareaRef.current
         const source = textarea?.value ?? draft
         if (source.trim().length === 0) {
@@ -226,13 +247,15 @@ export function ComposerCard({
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
                 <InputGroup>
+                    {/* 发布在途时禁编辑：成功回调会清空草稿，此时新输入的内容会被一并抹掉 */}
                     <InputGroupTextarea
                         ref={textareaRef}
                         value={draft}
                         rows={4}
                         placeholder="随便说些什么"
                         aria-label="微博正文"
-                        maxLength={POST_MAX_LENGTH}
+                        maxLength={MAX_PUBLISH_CONTENT_LENGTH}
+                        disabled={isPublishing}
                         className="min-h-24 leading-relaxed"
                         onChange={(event) => {
                             onDraftChange(event.target.value)
@@ -241,11 +264,12 @@ export function ComposerCard({
                     />
                     <InputGroupAddon align="block-end" className="justify-between">
                         <InputGroupText className="text-xs tabular-nums">
-                            {draft.length} / {POST_MAX_LENGTH}
+                            {draft.length} / {MAX_PUBLISH_CONTENT_LENGTH}
                         </InputGroupText>
-                        {/* AI 优化：改写期间转圈并连带禁用发布，避免把半成品发出去 */}
+                        {/* AI 优化：改写期间转圈并连带禁用发布，避免把半成品发出去；
+                            发布在途时也禁用——否则改写回包会在草稿清空后把旧内容写回来 */}
                         <InputGroupButton
-                            disabled={isEnhancing || draft.trim().length === 0}
+                            disabled={isEnhancing || isPublishing || draft.trim().length === 0}
                             aria-label="AI 优化正文"
                             tooltip="AI 优化正文"
                             onClick={handleEnhance}

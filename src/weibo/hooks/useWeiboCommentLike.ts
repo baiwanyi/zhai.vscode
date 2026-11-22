@@ -10,6 +10,7 @@ import type { WeiboCommentLikeResult } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 
 /** 评论点赞超时：写操作不宜拖太久，失败让用户立刻重试 */
 const LIKE_TIMEOUT_MS = 20_000
@@ -33,6 +34,8 @@ export function useWeiboCommentLike(comment: WeiboCommentLikeSource): WeiboComme
     const [count, setCount] = useState(comment.likes)
     const [isPending, setIsPending] = useState(false)
     const isPendingRef = useRef(false)
+    /** 卸载标记：评论行随列表刷新重建，回包与失败提示不该落在已经换人的行上 */
+    const isMountedRef = useIsMounted()
 
     const toggle = useCallback((): void => {
         if (isPendingRef.current) {
@@ -49,12 +52,18 @@ export function useWeiboCommentLike(comment: WeiboCommentLikeSource): WeiboComme
             LIKE_TIMEOUT_MS,
         )
             .then((result) => {
+                if (!isMountedRef.current) {
+                    return
+                }
                 setIsLiked(result.liked)
                 if (result.likeCount !== null) {
                     setCount(result.likeCount)
                 }
             })
             .catch((cause: unknown) => {
+                if (!isMountedRef.current) {
+                    return
+                }
                 // 回滚到点击前的状态，避免界面与服务端不一致
                 setIsLiked(!willLike)
                 setCount((previous) => Math.max(0, previous + (willLike ? -1 : 1)))
@@ -62,9 +71,11 @@ export function useWeiboCommentLike(comment: WeiboCommentLikeSource): WeiboComme
             })
             .finally(() => {
                 isPendingRef.current = false
-                setIsPending(false)
+                if (isMountedRef.current) {
+                    setIsPending(false)
+                }
             })
-    }, [comment.id, isLiked])
+    }, [comment.id, isLiked, isMountedRef])
 
     return { isLiked, count, isPending, toggle }
 }

@@ -13,8 +13,8 @@
 import { cn } from 'cn'
 import { useCallback } from 'react'
 import type { WeiboTimelineSegment } from '@shared/types/weibo'
+import { useHasEnteredViewport } from '@webview/hooks/useHasEnteredViewport'
 import type { JSX, KeyboardEvent } from 'react'
-import { useHasEnteredViewport } from '../hooks/useHasEnteredViewport'
 import { useWeiboImage } from '../hooks/useWeiboImage'
 import { useWeiboOpenUrl } from '../hooks/useWeiboOpenUrl'
 

@@ -62,6 +62,10 @@ export function useWeiboGroups({ enabled }: UseWeiboGroupsOptions): WeiboGroupsC
     const requestSeq = useRef(0)
 
     const reload = useCallback(async (): Promise<void> => {
+        // 未配置时不发请求：与 useWeiboProfile 同一道守卫，避免误调用打出必然失败的请求
+        if (!enabled) {
+            return
+        }
         const seq = requestSeq.current + 1
         requestSeq.current = seq
         dispatch({ type: 'start' })
@@ -78,7 +82,7 @@ export function useWeiboGroups({ enabled }: UseWeiboGroupsOptions): WeiboGroupsC
             dispatch({ type: 'failure', message: toErrorText(cause) })
             toastError(cause)
         }
-    }, [])
+    }, [enabled])
 
     useEffect(() => {
         if (!enabled) {

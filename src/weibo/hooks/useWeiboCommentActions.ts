@@ -24,6 +24,7 @@ import type {
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { useIsMounted } from '@webview/hooks/useIsMounted'
 import { readWeiboAuthorName } from '@webview/weibo/utils/weiboAuthor'
 import type { KeyboardEvent } from 'react'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
@@ -88,6 +89,8 @@ export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentAction
     const isDestroyingRef = useRef(false)
     /** 加入对话占位：按评论 id 单飞，同一帧连点不会发出两次 */
     const addingChatRef = useRef<Set<string>>(new Set())
+    /** 卸载标记：收起评论面板即整块卸载，回包与失败提示不该落在别的卡片上 */
+    const isMountedRef = useIsMounted()
 
     const trimmedDraft = draft.trim()
     const isDraftValid = trimmedDraft.length > 0 && trimmedDraft.length <= WEIBO_COMMENT_MAX_LENGTH
@@ -146,12 +149,14 @@ export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentAction
             }
             await submitPlainComment(text, target)
         } catch (cause) {
-            toastError(cause)
+            if (isMountedRef.current) {
+                toastError(cause)
+            }
         } finally {
             isSubmittingRef.current = false
             setIsSubmitting(false)
         }
-    }, [isDraftValid, replyTarget, shouldRepost, submitPlainComment, submitWithRepost, trimmedDraft])
+    }, [isDraftValid, isMountedRef, replyTarget, shouldRepost, submitPlainComment, submitWithRepost, trimmedDraft])
 
     /** 删除自己的评论：确认框里触发，成功后重拉第一页并清掉对应的回复目标 */
     const confirmDelete = useCallback(async (): Promise<void> => {
@@ -175,12 +180,14 @@ export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentAction
             }
             await reload()
         } catch (cause) {
-            toastError(cause)
+            if (isMountedRef.current) {
+                toastError(cause)
+            }
         } finally {
             isDestroyingRef.current = false
             setIsDestroying(false)
         }
-    }, [pendingDelete, reload, replyTarget])
+    }, [isMountedRef, pendingDelete, reload, replyTarget])
 
     const beginReply = useCallback((target: CommentReplyTarget): void => {
         setReplyTarget(target)
@@ -195,27 +202,37 @@ export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentAction
     }, [])
 
     /** 加入对话：按评论 id 单飞，成功后只给一条轻提示，重复与超上限由宿主说明原因 */
-    const pushChatContext = useCallback((payload: WeiboCommentChatPayload): void => {
-        const { commentId } = payload
-        if (addingChatRef.current.has(commentId)) {
-            return
-        }
-        addingChatRef.current.add(commentId)
-        setAddingChatIds((prev) => [...prev, commentId])
-        void request<WeiboChatContextResult>(WEIBO_METHODS.commentAddToChat, payload, CHAT_TIMEOUT_MS)
-            .then((result) => {
-                if (result.added) {
-                    toast.success(WEIBO_UI_TEXT.toast.addedToChat)
-                    return
-                }
-                toast.info(result.reason ?? WEIBO_UI_TEXT.toast.chatRejected)
-            })
-            .catch(toastError)
-            .finally(() => {
-                addingChatRef.current.delete(commentId)
-                setAddingChatIds((prev) => prev.filter((id) => id !== commentId))
-            })
-    }, [])
+    const pushChatContext = useCallback(
+        (payload: WeiboCommentChatPayload): void => {
+            const { commentId } = payload
+            if (addingChatRef.current.has(commentId)) {
+                return
+            }
+            addingChatRef.current.add(commentId)
+            setAddingChatIds((prev) => [...prev, commentId])
+            void request<WeiboChatContextResult>(WEIBO_METHODS.commentAddToChat, payload, CHAT_TIMEOUT_MS)
+                .then((result) => {
+                    if (!isMountedRef.current) {
+                        return
+                    }
+                    if (result.added) {
+                        toast.success(WEIBO_UI_TEXT.toast.addedToChat)
+                        return
+                    }
+                    toast.info(result.reason ?? WEIBO_UI_TEXT.toast.chatRejected)
+                })
+                .catch((cause: unknown) => {
+                    if (isMountedRef.current) {
+                        toastError(cause)
+                    }
+                })
+                .finally(() => {
+                    addingChatRef.current.delete(commentId)
+                    setAddingChatIds((prev) => prev.filter((id) => id !== commentId))
+                })
+        },
+        [isMountedRef],
+    )
 
     /** 一级评论入上下文：被回复者留空，正文用纯文本（表情保留为 `[名称]`） */
     const addCommentToChat = useCallback(

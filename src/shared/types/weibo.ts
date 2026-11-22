@@ -1275,11 +1275,11 @@ export function isWeiboUserBlogRequest(value: unknown): value is WeiboUserBlogRe
     return isWeiboTimelineId(uid) || isWeiboScreenName(screenName)
 }
 
-/** 分组名长度上限：与网页端口径一致（1-8 字） */
-const WEIBO_GROUP_NAME_MAX = 8
+/** 分组名长度上限：与网页端口径一致（1-8 字）；前端输入框的 maxLength 直接复用本值 */
+export const WEIBO_GROUP_NAME_MAX = 8
 
-/** 备注长度上限：网页端 1-15 字，这里允许空串表示清除 */
-const WEIBO_REMARK_MAX = 15
+/** 备注长度上限：网页端 1-15 字，这里允许空串表示清除；前端字数提示与协议同一口径 */
+export const WEIBO_REMARK_MAX = 15
 
 /** 一次提交的分组数量上限：账号下分组远少于此，超出即视为非法载荷 */
 const WEIBO_GROUP_LIST_MAX = 50
@@ -1568,11 +1568,11 @@ export function isWeiboTopicsRequest(value: unknown): value is WeiboTopicsReques
     return q === undefined || (typeof q === 'string' && q.length <= MAX_TOPIC_QUERY_LENGTH)
 }
 
-/** 发布正文长度上限：与输入框一致，宿主再做一次兜底 */
-const MAX_PUBLISH_CONTENT_LENGTH = 2000
+/** 发布正文长度上限：与输入框一致，宿主再做一次兜底；前端计数与提示直接复用本值 */
+export const MAX_PUBLISH_CONTENT_LENGTH = 2000
 
-/** 单条微博图片上限：普通账号 9 张 */
-const MAX_PUBLISH_IMAGE_COUNT = 9
+/** 单条微博图片上限：普通账号 9 张；前端选图时按它截断，避免发布被宿主整条拒绝 */
+export const MAX_PUBLISH_IMAGE_COUNT = 9
 
 /**
  * 收窄发布入参：正文与图片至少一项，图片须为 uploads 下的合法路径且不超过 9 张。

@@ -170,10 +170,14 @@ export function WeiboVideoPlayer({
         void container.requestFullscreen().catch(() => undefined)
     }, [])
 
-    /** 空格切换播放/暂停：preventDefault 同时挡掉页面滚动与 video 原生空格行为 */
+    /**
+     * 空格切换播放/暂停：preventDefault 同时挡掉页面滚动与 video 原生空格行为。
+     * 关键约束：只处理容器自身聚焦时的空格——焦点在内部按钮上时，空格已经由按钮自己触发一次，
+     * 再冒泡到这里会立刻反向切回去，表现为「按空格没反应」。
+     */
     const handleKeyDown = useCallback(
         (event: KeyboardEvent<HTMLDivElement>): void => {
-            if (event.key !== ' ') {
+            if (event.target !== event.currentTarget || event.key !== ' ') {
                 return
             }
             event.preventDefault()

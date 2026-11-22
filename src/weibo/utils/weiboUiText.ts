@@ -36,6 +36,7 @@ export const WEIBO_UI_TEXT = {
     },
     /** 失败提示：整块失败条的标题，细节由 @shared/utils/error 给出 */
     error: {
+        feed: '读取失败',
         group: '没有读到默认分组',
         credential: '登录状态读取失败',
         comments: '评论读取失败',

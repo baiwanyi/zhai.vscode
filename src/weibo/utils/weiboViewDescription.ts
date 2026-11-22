@@ -61,13 +61,14 @@ export function describeWeiboView({
 
 /**
  * 凭证读取失败的展示文案：没有错误码时返回 undefined，卡片据此决定是否显示提示。
- * 关键约束：errorMessage 来自宿主、可能为空串；缺失时给固定兜底，避免卡片上出现空白提示。
+ * 关键约束：errorMessage 来自宿主、可能为空串或纯空白；这两种都按缺失处理给固定兜底，
+ * 避免卡片上出现一块空白提示（展示值本身不改写）。
  */
 export function readCredentialNotice(errorCode: string | null, errorMessage: string | null): string | undefined {
     if (errorCode === null) {
         return undefined
     }
-    return errorMessage === null || errorMessage.length === 0
+    return errorMessage === null || errorMessage.trim().length === 0
         ? 'Cookie 可能已失效，请重新登录后粘贴新的 Cookie。'
         : errorMessage
 }
