@@ -36,6 +36,8 @@ export interface WeiboReposts {
     shownTotal: number
     /** 写操作成功后的总数变化：发布 +1、删除 -1 */
     adjustCount: (delta: 1 | -1) => void
+    /** 删除成功后的本地移除：上游转发列表有缓存延迟，只靠重拉未必立刻消失 */
+    removeLocal: (id: string) => void
     sentinelRef: RefObject<HTMLDivElement | null>
     reload: () => Promise<void>
     loadMore: () => Promise<void>
@@ -157,6 +159,15 @@ export function useWeiboReposts(postId: string, totalCount: number): WeiboRepost
         [totalCount],
     )
 
+    /**
+     * 本地移除一条：删除成功后先摘掉，重拉只作为后续校准。
+     * 关键约束：上游列表接口有缓存延迟，删完立刻重拉可能仍返回该条，
+     * 只靠重拉会让用户看到「提示已删除、条目还在」。
+     */
+    const removeLocal = useCallback((id: string): void => {
+        setReposts((previous) => previous.filter((repost) => repost.id !== id))
+    }, [])
+
     return {
         reposts,
         hasMore,
@@ -167,6 +178,7 @@ export function useWeiboReposts(postId: string, totalCount: number): WeiboRepost
         loadMoreError,
         shownTotal,
         adjustCount,
+        removeLocal,
         sentinelRef,
         reload: loadFirstPage,
         loadMore,

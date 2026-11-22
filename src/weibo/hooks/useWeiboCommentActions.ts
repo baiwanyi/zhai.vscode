@@ -106,9 +106,10 @@ export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentAction
             setDraft('')
             setReplyTarget(null)
             if (result.commented && !result.reposted) {
-                // 评论已发出、转发失败：关掉开关，避免再次两步提交把评论发重
+                // 评论已发出、转发失败：关掉开关（避免再次两步提交把评论发重），
+                // 文案直接指向「转发」按钮——补发只需要一次单步转发，不必重写评论
                 setShouldRepost(false)
-                toast.warning(`评论已发布，但转发失败：${result.failureMessage ?? '未知原因'}`)
+                toast.warning(`评论已发布，可点「转发」补发：${result.failureMessage ?? '未知原因'}`)
             } else {
                 toast.success(WEIBO_UI_TEXT.toast.commentedWithRepost)
             }

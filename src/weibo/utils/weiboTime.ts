@@ -1,6 +1,6 @@
 /**
  * 微博时间展示：同一年省掉年份，解析失败回退上游原串，主贴 / 转发 / 评论共用一套口径；
- * 另提供视频时长角标（m:ss / h:mm:ss），卡片与播放器共用。
+ * 另提供视频时长角标（m:ss / h:mm:ss）与播放器显示时长的兜底计算，卡片与播放器共用。
  * 复用约定：调用方直接传归一化后的 ISO 串与上游原串，不再各自实现同年判断。
  * 关键约束：不把「当前年份」缓存在模块级——列表长期驻留跨年时会算错年份省略；
  * 时长入参单位为秒，与 @shared/utils/format 的毫秒口径不同，勿混用。
@@ -18,6 +18,23 @@ export function formatWeiboTime(createdAt: string, createdAtRaw: string): string
     }
     const isSameYear = date.getFullYear() === new Date().getFullYear()
     return format(date, isSameYear ? 'MM-dd HH:mm' : 'yyyy-MM-dd HH:mm')
+}
+
+/**
+ * 显示用总时长：取「metadata 时长 / 上游声明时长 / 当前播放位置」三者较大值。
+ * 关键约束：宿主转码输出的是分片 mp4，浏览器从 metadata 读到的 duration 可能偏小甚至为 Infinity，
+ * 直接展示会出现「总时长比已播放秒数还短」；上游声明值是真实时长，前两者都不可信时仍由它兜底。
+ */
+export function resolveVideoDisplayDuration(
+    videoDuration: number,
+    declaredDuration: number | null,
+    currentTime: number,
+): number {
+    const fromVideo = Number.isFinite(videoDuration) && videoDuration > 0 ? videoDuration : 0
+    const declared =
+        declaredDuration !== null && Number.isFinite(declaredDuration) && declaredDuration > 0 ? declaredDuration : 0
+    const played = Number.isFinite(currentTime) && currentTime > 0 ? currentTime : 0
+    return Math.max(fromVideo, declared, played)
 }
 
 /** 视频时长角标：不足一小时给 m:ss，超过给 h:mm:ss；非有限数返回空串，由调用方跳过角标 */

@@ -67,6 +67,8 @@ interface InlineVideoPlayerProps {
     posterUrl: string | null
     /** 视频最大分辨率：播放器左上角清晰度角标 */
     resolution: WeiboTimelineVideoResolution | null
+    /** 上游声明的时长（秒）：分片 mp4 的 metadata 时长可能偏小，播放器据此兜底 */
+    declaredDuration: number | null
     onOpenPost: () => void
     /** 从宫格封面点进来时直接起播；纯视频微博保持等用户点中央播放键 */
     autoPlay?: boolean
@@ -80,11 +82,13 @@ function InlineVideoPlayer({
     playUrl,
     posterUrl,
     resolution,
+    declaredDuration,
     onOpenPost,
     autoPlay = false,
 }: InlineVideoPlayerProps): JSX.Element {
-    const [state, setState] = useState<{ localUrl: string | null; isFailed: boolean }>({
+    const [state, setState] = useState<{ localUrl: string | null; seekable: boolean; isFailed: boolean }>({
         localUrl: null,
+        seekable: false,
         isFailed: false,
     })
 
@@ -98,13 +102,13 @@ function InlineVideoPlayer({
                 if (isCancelled) {
                     return
                 }
-                setState({ localUrl: result.url, isFailed: result.url === null })
+                setState({ localUrl: result.url, seekable: result.seekable, isFailed: result.url === null })
             })
             .catch((cause: unknown) => {
                 if (isCancelled) {
                     return
                 }
-                setState({ localUrl: null, isFailed: true })
+                setState({ localUrl: null, seekable: false, isFailed: true })
                 toastError(cause)
             })
         return (): void => {
@@ -133,6 +137,8 @@ function InlineVideoPlayer({
             resolution={resolution}
             autoPlay={autoPlay}
             aspectRatio={aspectRatio}
+            canSeek={state.seekable}
+            declaredDuration={declaredDuration}
         />
     )
 }
@@ -183,6 +189,7 @@ function WeiboMediaVideoCell({
                     playUrl={item.playUrl}
                     posterUrl={item.coverMiddleUrl ?? item.coverUrl}
                     resolution={item.resolution}
+                    declaredDuration={item.durationSeconds}
                     onOpenPost={onOpenPost}
                     autoPlay
                 />
@@ -340,6 +347,7 @@ export function WeiboPostMediaGrid({ media, onOpenPost }: WeiboPostMediaGridProp
                 playUrl={onlyVideo.playUrl}
                 posterUrl={onlyVideo.coverMiddleUrl ?? onlyVideo.coverUrl}
                 resolution={onlyVideo.resolution}
+                declaredDuration={onlyVideo.durationSeconds}
                 onOpenPost={onOpenPost}
             />
         )

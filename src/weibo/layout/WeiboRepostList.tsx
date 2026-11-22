@@ -34,7 +34,12 @@ interface WeiboRepostListProps {
 
 export function WeiboRepostList({ postId, totalCount, viewerUid = null }: WeiboRepostListProps): JSX.Element {
     const thread = useWeiboReposts(postId, totalCount)
-    const actions = useWeiboRepostActions({ postId, reload: thread.reload, onCommitted: thread.adjustCount })
+    const actions = useWeiboRepostActions({
+        postId,
+        reload: thread.reload,
+        onCommitted: thread.adjustCount,
+        onDeleted: thread.removeLocal,
+    })
     /** 引用信号：每引用一次 +1，转发框据此聚焦并把光标放到引用内容之后 */
     const [quoteSignal, setQuoteSignal] = useState(0)
 

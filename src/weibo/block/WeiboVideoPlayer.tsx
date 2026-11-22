@@ -6,6 +6,7 @@
  * 高度一律限到 720px，竖屏比例超过这条线时由 video 的 object-contain 居中、左右留黑底，不撑长卡片；
  * 控件栏只在播放中显示，鼠标静止 2.5s 后淡出；暂停 / 未播放时整条控件栏不出现，
  * 只留中央播放键，避免挡住画面；空格切换播放/暂停（容器可聚焦）；
+ * 进度条能否拖动由宿主下发（转码输出不支持 Range，此时只显示进度不响应拖动）；
  * 中央播放键只在暂停时出现，播放时不挡画面；全屏在 Webview 里可能被拒，失败静默忽略；
  * 播放器叠在视频上固定是暗底，文字与控件必须写死白色——语义色在暗色主题下会翻成浅底看不清，
  * 因此这里只覆盖按钮/滑块的配色，不改组件本体。
@@ -19,6 +20,7 @@ import type { WeiboTimelineVideoResolution } from '@shared/types/weibo'
 import { Button } from '@webview/components/Button'
 import type { JSX, KeyboardEvent } from 'react'
 import { useWeiboImage } from '../hooks/useWeiboImage'
+import { resolveVideoDisplayDuration } from '../utils/weiboTime'
 
 /** 控件栏自动隐藏延迟：与常见播放器一致，鼠标静止 2.5 秒后淡出 */
 const CONTROLS_HIDE_DELAY_MS = 2500
@@ -86,6 +88,16 @@ interface WeiboVideoPlayerProps {
      * 不再塞进 16:9 的框里、左右留一大片黑边；缺失时回落到 16:9。
      */
     aspectRatio?: number | null
+    /**
+     * 进度条是否可拖动：宿主转码时输出分片 mp4、不支持 Range，拖动只会从头重播，
+     * 因此此时禁用拖动只显示进度，避免「拖了没反应」。
+     */
+    canSeek?: boolean
+    /**
+     * 上游声明的时长（秒）：分片 mp4 的 metadata 里 duration 可能偏小甚至为 Infinity，
+     * 此时用上游值兜底，避免出现「总时长比已播放秒数还短」。
+     */
+    declaredDuration?: number | null
     /** 额外类名：九宫格里需要 col-span-3 撑满一行 */
     className?: string
 }
@@ -96,6 +108,8 @@ export function WeiboVideoPlayer({
     resolution,
     autoPlay = false,
     aspectRatio = null,
+    canSeek = true,
+    declaredDuration = null,
     className,
 }: WeiboVideoPlayerProps): JSX.Element {
     const poster = useWeiboImage(posterUrl ?? '')
@@ -111,6 +125,12 @@ export function WeiboVideoPlayer({
     const isControlsVisible = isPlaying && isControlsRevealed
     /** 有效比例：非有限值或非正数一律视为缺失，容器留在 16:9 */
     const resolvedRatio = aspectRatio !== null && Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : null
+
+    /**
+     * 显示用总时长：metadata 时长不可信（分片 mp4 常为 Infinity 或偏小）时由上游声明值兜底，
+     * 并始终不小于当前播放位置，避免出现「总时长小于已播放秒数」。
+     */
+    const displayDuration = resolveVideoDisplayDuration(duration, declaredDuration, currentTime)
 
     const clearHideTimer = useCallback((): void => {
         if (hideTimerRef.current !== null) {
@@ -305,14 +325,14 @@ export function WeiboVideoPlayer({
                     {isPlaying ? <Pause fill="currentColor" /> : <Play fill="currentColor" />}
                 </Button>
                 <span className="text-xs text-white/80 tabular-nums font-light">
-                    {formatClock(currentTime)} / {formatClock(duration)}
+                    {formatClock(currentTime)} / {formatClock(displayDuration)}
                 </span>
                 <Slider
                     value={[currentTime]}
                     min={0}
-                    max={duration > 0 ? duration : 1}
+                    max={displayDuration > 0 ? displayDuration : 1}
                     step={0.1}
-                    disabled={duration <= 0}
+                    disabled={displayDuration <= 0 || !canSeek}
                     onValueChange={(value) => {
                         const next = value[0]
                         if (next !== undefined) {

@@ -35,6 +35,8 @@ export interface UseWeiboRepostActionsOptions {
     reload: () => Promise<void>
     /** 写成功后的总数变化：由取数 Hook 的 adjustCount 提供（发布 +1、删除 -1） */
     onCommitted: (delta: 1 | -1) => void
+    /** 删除成功后的本地移除：由取数 Hook 的 removeLocal 提供，避免上游列表缓存延迟让条目看起来没删掉 */
+    onDeleted?: (id: string) => void
 }
 
 export interface WeiboRepostActions {
@@ -63,6 +65,7 @@ export function useWeiboRepostActions({
     postId,
     reload,
     onCommitted,
+    onDeleted,
 }: UseWeiboRepostActionsOptions): WeiboRepostActions {
     /** 同时评论：关闭即只转发（is_comment=0），打开即转发并评论（is_comment=1） */
     const [shouldComment, setShouldComment] = useState(false)
@@ -126,6 +129,8 @@ export function useWeiboRepostActions({
             toast.success(WEIBO_UI_TEXT.toast.repostDeleted)
             setPendingDelete(null)
             onCommitted(-1)
+            // 先本地摘掉再重拉：上游列表接口有缓存延迟，重拉可能仍返回刚删掉的条目
+            onDeleted?.(target.id)
             await reload()
         } catch (cause) {
             if (isMountedRef.current) {
@@ -135,7 +140,7 @@ export function useWeiboRepostActions({
             isDestroyingRef.current = false
             setIsDestroying(false)
         }
-    }, [isMountedRef, onCommitted, pendingDelete, reload])
+    }, [isMountedRef, onCommitted, onDeleted, pendingDelete, reload])
 
     const requestDelete = useCallback((repost: WeiboRepostItem): void => {
         setPendingDelete(repost)
