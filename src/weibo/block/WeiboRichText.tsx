@@ -5,8 +5,10 @@
  * 关键约束：hooks 只能在组件内调用，故表情与链接各自抽成子组件，不能在 map 里直接调；
  * 取图失败退回 `[名称]` 文本，保证正文可读且不破坏行内排版；
  * 链接点击一律阻止 webview 自身导航，否则会把整块面板顶掉；
- * 链接统一用橙色标识可点，且不设 title——悬停浮出整串地址既冗余又挡住正文。
+ * 链接统一用橙色标识可点，且不设 title——悬停浮出整串地址既冗余又挡住正文；
+ * 标题行等非正文场景可经 className 覆盖外观（如沿用 muted 灰、悬停才变链接色）。
  */
+import { cn } from 'cn'
 import { useCallback } from 'react'
 import type { WeiboTimelineSegment } from '@shared/types/weibo'
 import type { JSX, MouseEvent } from 'react'
@@ -46,6 +48,8 @@ function WeiboEmoji({ name, remoteUrl }: WeiboEmojiProps): JSX.Element {
 interface WeiboLinkProps {
     text: string
     url: string
+    /** 外观覆盖：默认沿用正文链接样式，标题行等场景可自选颜色与字号 */
+    className?: string
 }
 
 /**
@@ -53,7 +57,7 @@ interface WeiboLinkProps {
  * 关键约束：保留 `<a href>` 只为键盘可达与状态栏预览，导航必须被阻止——
  * webview 内直接跳转会把面板顶掉，真正的打开动作由 useWeiboOpenUrl 完成。
  */
-export function WeiboLink({ text, url }: WeiboLinkProps): JSX.Element {
+export function WeiboLink({ text, url, className }: WeiboLinkProps): JSX.Element {
     const openUrl = useWeiboOpenUrl()
 
     const handleClick = useCallback(
@@ -68,7 +72,7 @@ export function WeiboLink({ text, url }: WeiboLinkProps): JSX.Element {
         <a
             href={url}
             onClick={handleClick}
-            className="cursor-pointer wrap-break-word text-link hover:underline dark:text-link pr-0.5"
+            className={cn('cursor-pointer wrap-break-word text-link hover:underline dark:text-link pr-0.5', className)}
         >
             {text}
         </a>

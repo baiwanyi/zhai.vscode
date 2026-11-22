@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import type { WeiboHotRankItem, WeiboHotRankRequest, WeiboHotRankResult, WeiboHotRankTab } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 
@@ -104,7 +105,10 @@ export function useWeiboHotRank({
             seqRef.current = seq
             dispatch({ type: 'start' })
             try {
-                const result = await request<WeiboHotRankResult>('weibo/hotRank', buildPayload(tab, cityCode, force))
+                const result = await request<WeiboHotRankResult>(
+                    WEIBO_METHODS.hotRank,
+                    buildPayload(tab, cityCode, force),
+                )
                 if (seqRef.current !== seq || keyRef.current !== requestKey) {
                     return
                 }

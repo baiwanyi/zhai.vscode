@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
 import type { WeiboBlockRules, WeiboFeedSource, WeiboTimelinePost, WeiboTimelineResult } from '@shared/types/weibo'
 import { WEIBO_FEED_DEFAULT_COUNT } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
@@ -169,7 +170,7 @@ export function useWeiboFeed({
             seqRef.current = seq
             dispatch({ type: mode === 'refresh' ? 'refresh-start' : 'more-start' })
             try {
-                const result = await request<WeiboTimelineResult>('weibo/feed', {
+                const result = await request<WeiboTimelineResult>(WEIBO_METHODS.feed, {
                     source,
                     listId,
                     count: WEIBO_FEED_DEFAULT_COUNT,

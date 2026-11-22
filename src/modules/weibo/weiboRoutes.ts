@@ -1,9 +1,10 @@
 /**
- * 微博协议路由：把信息流、我的赞、热搜标签、同城城市、凭证、评论读取与发布 / 回复 / 删除、转发读取与提交 / 删除、点赞、发表框话题、发布与外链分发到取数、配置与宿主能力。
+ * 微博协议路由：把信息流、我的赞、热搜标签、同城城市、凭证、评论读取与发布 / 回复 / 删除、转发读取与提交 / 删除、点赞、博主关注 / 取消关注、发表框话题、发布与外链分发到取数、配置与宿主能力。
  * 复用约定：入参收窄统一走 shared/types/weibo 的类型守卫，本层只做方法名到实现的映射；
  * 分组、表情与侧栏默认榜（band）先读 weibo.json 缓存，其余热搜标签实时回源，缓存异常只记日志、绝不影响回包；
  * Cookie 存取交给 WeiboCookieStore，取数交给 webTimeline / webFeed，宿主能力以回调注入便于单测。
- * 关键约束：方法名与 shared/types/messages 的 HostMethodName 一一对应，新增方法须两侧同时维护；
+ * 关键约束：方法名统一取 @shared/types/weiboMethods 的 WEIBO_METHODS（值只在该表出现一次），
+ * 新增方法须在本文件 switch 与常量表同时登记，漏了会在运行时抛「未登记的微博协议方法」；
  * 未登记方法一律抛错；时间线与凭证错误统一带分类码，前端按码分发提示而不是解析文案；
  * 外链只放行 weibo.com 及其子域，防止被当作任意地址跳转的通道；
  * 保存笔记与添加到 AI 对话前都对主贴与转发体的长文做全文补全，取不到全文时保留摘要并标注截断；
@@ -24,6 +25,7 @@ import type {
     WeiboCredentialState,
     WeiboDestroyStatusResult,
     WeiboEmoticonsResult,
+    WeiboFollowResult,
     WeiboGroupsResult,
     WeiboHotRankResult,
     WeiboImageResult,
@@ -56,6 +58,7 @@ import {
     isWeiboCommentsRequest,
     isWeiboDestroyStatusRequest,
     isWeiboFeedRequest,
+    isWeiboFollowRequest,
     isWeiboHotRankRequest,
     isWeiboImageRequest,
     isWeiboLikeRequest,
@@ -77,6 +80,7 @@ import {
     readWeiboPagePost,
     readWeiboRepostChatPayload,
 } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { normalizeWeiboBlockList } from '@shared/utils/weiboBlock'
 import { WeiboWebError } from './webClient'
 import { createPostComment, destroyPostComment, fetchCommentReplies, fetchPostComments } from './webComments'
@@ -84,7 +88,7 @@ import { isCookieUsable, normalizeCookieInput } from './webCredential'
 import { fetchWeiboEmoticons } from './webEmoticons'
 import { fetchWeiboFeed, fetchWeiboGroups, rememberHotChannels } from './webFeed'
 import { fetchWeiboHotRank } from './webHotRank'
-import { setCommentLike, setPostLike, setRepostLike } from './webInteraction'
+import { setAuthorFollow, setCommentLike, setPostLike, setRepostLike } from './webInteraction'
 import { fetchWeiboLikes } from './webLikes'
 import { fetchLongText } from './webLongText'
 import { fetchWeiboProfile } from './webProfile'
@@ -93,6 +97,7 @@ import { createPostRepost, destroyPostStatus, fetchPostReposts } from './webRepo
 import { fetchFriendTimeline } from './webTimeline'
 import { fetchWeiboTopics } from './webTopics'
 import { toAccountKey } from './weiboCache'
+import { WEIBO_ALLOWED_EXTERNAL_HOSTS } from './weiboEndpoints'
 import type {
     CreateCommentOptions,
     DestroyCommentOptions,
@@ -103,7 +108,7 @@ import type { WeiboCookieStore } from './webCredential'
 import type { FetchEmoticonsOptions } from './webEmoticons'
 import type { FetchFeedOptions, FetchGroupsOptions } from './webFeed'
 import type { FetchHotRankOptions } from './webHotRank'
-import type { SetCommentLikeOptions, SetLikeOptions, SetRepostLikeOptions } from './webInteraction'
+import type { SetCommentLikeOptions, SetFollowOptions, SetLikeOptions, SetRepostLikeOptions } from './webInteraction'
 import type { FetchLikesOptions } from './webLikes'
 import type { FetchLongTextOptions } from './webLongText'
 import type { FetchProfileOptions } from './webProfile'
@@ -114,12 +119,7 @@ import type { FetchTopicsOptions } from './webTopics'
 import type { WeiboAvatarGateway } from './weiboAvatar'
 import type { WeiboCache, WeiboCacheKey } from './weiboCache'
 
-/**
- * 允许打开的外链主机：微博主站与其子域，外加新浪短链服务 t.cn。
- * 关键约束：正文链接按此名单收窄，t.cn 是微博外链的固定中转域（https），
- * 不在名单内的地址前端不会渲染成可点链接，这里也不放行。
- */
-const ALLOWED_EXTERNAL_HOSTS = ['weibo.com', 'www.weibo.com', 'm.weibo.cn', 't.cn']
+/** 外链主机白名单与 ajax 地址同源：地址总表在 weiboEndpoints，路由只做校验 */
 
 /** 路由依赖：取数、图片代理与打开外链都可替换，生产由面板注入真实实现 */
 export interface WeiboRouteDeps {
@@ -165,6 +165,8 @@ export interface WeiboRouteDeps {
     setCommentLike?: (options: SetCommentLikeOptions) => Promise<WeiboCommentLikeResult>
     /** 转发点赞写入：默认走网页版 setLike / cancelLike（form + fp），单测可替换 */
     setRepostLike?: (options: SetRepostLikeOptions) => Promise<WeiboLikeResult>
+    /** 关注写入：默认走网页版 friendships/create 与 friendships/destory，单测可替换 */
+    setFollow?: (options: SetFollowOptions) => Promise<WeiboFollowResult>
     /** 我的赞读取：默认走网页版 likelist，单测可替换 */
     fetchLikes?: (options: FetchLikesOptions) => Promise<WeiboLikesResult>
     /** 评论读取：默认走网页版 buildComments，单测可替换 */
@@ -202,7 +204,9 @@ function isAllowedExternalUrl(url: string): boolean {
         if (parsed.protocol !== 'https:') {
             return false
         }
-        return ALLOWED_EXTERNAL_HOSTS.some((host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`))
+        return WEIBO_ALLOWED_EXTERNAL_HOSTS.some(
+            (host) => parsed.hostname === host || parsed.hostname.endsWith(`.${host}`),
+        )
     } catch {
         return false
     }
@@ -232,73 +236,75 @@ export class WeiboRoutes {
     /** 处理微博协议方法；未登记的方法抛错而不是静默返回空值 */
     public async handle(method: string, payload: unknown): Promise<unknown> {
         switch (method) {
-            case 'weibo/timeline':
+            case WEIBO_METHODS.timeline:
                 return this.loadTimeline(payload)
-            case 'weibo/feed':
+            case WEIBO_METHODS.feed:
                 return this.loadFeed(payload)
-            case 'weibo/likes':
+            case WEIBO_METHODS.likes:
                 return this.loadLikes(payload)
-            case 'weibo/groups':
+            case WEIBO_METHODS.groups:
                 return this.loadGroups()
-            case 'weibo/emoticons':
+            case WEIBO_METHODS.emoticons:
                 return this.loadEmoticons()
-            case 'weibo/topics':
+            case WEIBO_METHODS.topics:
                 return this.loadTopics(payload)
-            case 'weibo/publish':
+            case WEIBO_METHODS.publish:
                 return this.loadPublish(payload)
-            case 'weibo/hotRank':
+            case WEIBO_METHODS.hotRank:
                 return this.loadHotRank(payload)
-            case 'weibo/profile':
+            case WEIBO_METHODS.profile:
                 return this.loadProfile(payload)
-            case 'weibo/city/status':
+            case WEIBO_METHODS.cityStatus:
                 return this.readCityState()
-            case 'weibo/city/save':
+            case WEIBO_METHODS.citySave:
                 return this.saveCity(payload)
-            case 'weibo/blockList/status':
+            case WEIBO_METHODS.blockListStatus:
                 return this.readBlockListState()
-            case 'weibo/blockList/save':
+            case WEIBO_METHODS.blockListSave:
                 return this.saveBlockList(payload)
-            case 'weibo/comments':
+            case WEIBO_METHODS.comments:
                 return this.loadComments(payload)
-            case 'weibo/comment/addToChat':
+            case WEIBO_METHODS.commentAddToChat:
                 return this.commentAddToChat(payload)
-            case 'weibo/comment/create':
+            case WEIBO_METHODS.commentCreate:
                 return this.createComment(payload)
-            case 'weibo/comment/destroy':
+            case WEIBO_METHODS.commentDestroy:
                 return this.destroyComment(payload)
-            case 'weibo/comment/like':
+            case WEIBO_METHODS.commentLike:
                 return this.likeComment(payload)
-            case 'weibo/comment/replies':
+            case WEIBO_METHODS.commentReplies:
                 return this.loadCommentReplies(payload)
-            case 'weibo/reposts':
+            case WEIBO_METHODS.reposts:
                 return this.loadReposts(payload)
-            case 'weibo/repost':
+            case WEIBO_METHODS.repost:
                 return this.createRepost(payload)
-            case 'weibo/repost/addToChat':
+            case WEIBO_METHODS.repostAddToChat:
                 return this.repostAddToChat(payload)
-            case 'weibo/repost/like':
+            case WEIBO_METHODS.repostLike:
                 return this.likeRepost(payload)
-            case 'weibo/destroy':
+            case WEIBO_METHODS.destroyStatus:
                 return this.destroyStatus(payload)
-            case 'weibo/longtext':
+            case WEIBO_METHODS.longText:
                 return this.loadLongText(payload)
-            case 'weibo/credential/status':
+            case WEIBO_METHODS.credentialStatus:
                 return this.readCredentialState()
-            case 'weibo/credential/save':
+            case WEIBO_METHODS.credentialSave:
                 return this.saveCredential(payload)
-            case 'weibo/credential/clear':
+            case WEIBO_METHODS.credentialClear:
                 return this.clearCredential()
-            case 'weibo/image':
+            case WEIBO_METHODS.image:
                 return this.loadImage(payload)
-            case 'weibo/like':
+            case WEIBO_METHODS.like:
                 return this.likePost(payload)
-            case 'weibo/addToChat':
+            case WEIBO_METHODS.authorFollow:
+                return this.followAuthor(payload)
+            case WEIBO_METHODS.addToChat:
                 return this.addToChat(payload)
-            case 'weibo/saveToNote':
+            case WEIBO_METHODS.saveToNote:
                 return this.saveToNote(payload)
-            case 'weibo/video':
+            case WEIBO_METHODS.video:
                 return this.loadVideo(payload)
-            case 'weibo/openPost':
+            case WEIBO_METHODS.openPost:
                 return this.openPost(payload)
             default:
                 throw new Error(`未登记的微博协议方法：${method}`)
@@ -369,7 +375,7 @@ export class WeiboRoutes {
         if (!isWeiboTimelineRequest(raw)) {
             throw new WeiboWebError(
                 'invalid-payload',
-                'weibo/timeline 参数非法：游标须为数字串，条数与页数须为有限数字',
+                `${WEIBO_METHODS.timeline} 参数非法：游标须为数字串，条数与页数须为有限数字`,
             )
         }
         const cookie = await this.readCookie()
@@ -384,7 +390,7 @@ export class WeiboRoutes {
         if (!isWeiboFeedRequest(raw)) {
             throw new WeiboWebError(
                 'invalid-payload',
-                'weibo/feed 参数非法：source 须为 timeline/hot/group，分组须带合法 listId',
+                `${WEIBO_METHODS.feed} 参数非法：source 须为 timeline/hot/group，分组须带合法 listId`,
             )
         }
         const cookie = await this.readCookie()
@@ -400,7 +406,7 @@ export class WeiboRoutes {
     private async loadLikes(payload: unknown): Promise<WeiboLikesResult> {
         const raw = payload ?? {}
         if (!isWeiboLikesRequest(raw)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/likes 参数非法：page 须为有限数字')
+            throw new WeiboWebError('invalid-payload', `${WEIBO_METHODS.likes} 参数非法：page 须为有限数字`)
         }
         const cookie = await this.readCookie()
         const uid = await this.resolveProfileUid(cookie)
@@ -453,7 +459,7 @@ export class WeiboRoutes {
     private async loadTopics(payload: unknown): Promise<WeiboTopicsResult> {
         const raw = payload ?? {}
         if (!isWeiboTopicsRequest(raw)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/topics 参数非法：q 须为不超过 50 字的字符串')
+            throw new WeiboWebError('invalid-payload', `${WEIBO_METHODS.topics} 参数非法：q 须为不超过 50 字的字符串`)
         }
         const cookie = await this.readCookie()
         const fetchTopics = this.deps.fetchTopics ?? fetchWeiboTopics
@@ -469,7 +475,7 @@ export class WeiboRoutes {
         if (!isWeiboPublishRequest(payload)) {
             throw new WeiboWebError(
                 'invalid-payload',
-                'weibo/publish 参数非法：正文不超过 2000 字，图片须为 uploads 下最多 9 个文件路径，且正文与图片至少一项',
+                `${WEIBO_METHODS.publish} 参数非法：正文不超过 2000 字，图片须为 uploads 下最多 9 个文件路径，且正文与图片至少一项`,
             )
         }
         const cookie = await this.readCookie()
@@ -500,7 +506,7 @@ export class WeiboRoutes {
         if (!isWeiboHotRankRequest(raw)) {
             throw new WeiboWebError(
                 'invalid-payload',
-                'weibo/hotRank 参数非法：refresh 须为布尔，tab 须为已登记来源，cityCode 须为四位数字',
+                `${WEIBO_METHODS.hotRank} 参数非法：refresh 须为布尔，tab 须为已登记来源，cityCode 须为四位数字`,
             )
         }
         const cookie = await this.readCookie()
@@ -531,7 +537,7 @@ export class WeiboRoutes {
     /** 保存同城城市：写入配置后回同一结构，前端直接替换本地状态 */
     private async saveCity(payload: unknown): Promise<WeiboCityState> {
         if (!isWeiboSaveCityRequest(payload)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/city/save 参数非法：cityCode 须为四位数字')
+            throw new WeiboWebError('invalid-payload', `${WEIBO_METHODS.citySave} 参数非法：cityCode 须为四位数字`)
         }
         await this.deps.writeCityCode?.(payload.cityCode)
         return { cityCode: payload.cityCode, cityName: readWeiboCityName(payload.cityCode) }
@@ -558,7 +564,10 @@ export class WeiboRoutes {
     /** 保存屏蔽名单：两个名单整份替换，回包与状态同形，前端直接替换本地状态 */
     private async saveBlockList(payload: unknown): Promise<WeiboBlockListState> {
         if (!isWeiboSaveBlockListRequest(payload)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/blockList/save 参数非法：两个名单都须为字符串数组')
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.blockListSave} 参数非法：两个名单都须为字符串数组`,
+            )
         }
         const list: WeiboBlockListState = {
             blockedUsers: normalizeWeiboBlockList(payload.blockedUsers),
@@ -576,7 +585,7 @@ export class WeiboRoutes {
     private async loadProfile(payload: unknown): Promise<WeiboProfileResult> {
         const raw = payload ?? {}
         if (!isWeiboProfileRequest(raw)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/profile 参数非法：refresh 须为布尔')
+            throw new WeiboWebError('invalid-payload', `${WEIBO_METHODS.profile} 参数非法：refresh 须为布尔`)
         }
         const cookie = await this.readCookie()
         const accountKey = toAccountKey(cookie)
@@ -650,7 +659,10 @@ export class WeiboRoutes {
     /** 保存 Cookie：清洗后写入 SecretStorage，并记录保存时刻 */
     private async saveCredential(payload: unknown): Promise<WeiboSaveCredentialResult> {
         if (!isWeiboSaveCredentialRequest(payload)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/credential/save 参数非法：cookie 必须为非空字符串')
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.credentialSave} 参数非法：cookie 必须为非空字符串`,
+            )
         }
         const cookie = normalizeCookieInput(payload.cookie)
         await this.deps.cookieStore.write(cookie)
@@ -677,7 +689,10 @@ export class WeiboRoutes {
      */
     private async loadImage(payload: unknown): Promise<WeiboImageResult> {
         if (!isWeiboImageRequest(payload)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/image 参数非法：url 必须为长度不超过 1024 的字符串')
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.image} 参数非法：url 必须为长度不超过 1024 的字符串`,
+            )
         }
         const resolveImageUrl = this.deps.resolveImageUrl
         if (resolveImageUrl === undefined) {
@@ -693,7 +708,10 @@ export class WeiboRoutes {
      */
     private async loadVideo(payload: unknown): Promise<WeiboVideoResult> {
         if (!isWeiboVideoRequest(payload)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/video 参数非法：url 必须为长度不超过 1024 的字符串')
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.video} 参数非法：url 必须为长度不超过 1024 的字符串`,
+            )
         }
         const resolveVideoUrl = this.deps.resolveVideoUrl
         if (resolveVideoUrl === undefined) {
@@ -708,7 +726,7 @@ export class WeiboRoutes {
         if (!isWeiboCommentsRequest(raw)) {
             throw new WeiboWebError(
                 'invalid-payload',
-                'weibo/comments 参数非法：id 须为数字微博 id，maxId 与 count 可选',
+                `${WEIBO_METHODS.comments} 参数非法：id 须为数字微博 id，maxId 与 count 可选`,
             )
         }
         const cookie = await this.readCookie()
@@ -725,7 +743,7 @@ export class WeiboRoutes {
         if (!isWeiboCommentRepliesRequest(raw)) {
             throw new WeiboWebError(
                 'invalid-payload',
-                'weibo/comment/replies 参数非法：id 须为数字评论 id，maxId 与 count 可选',
+                `${WEIBO_METHODS.commentReplies} 参数非法：id 须为数字评论 id，maxId 与 count 可选`,
             )
         }
         const cookie = await this.readCookie()
@@ -740,7 +758,10 @@ export class WeiboRoutes {
     private async loadReposts(payload: unknown): Promise<WeiboRepostsResult> {
         const raw = payload ?? {}
         if (!isWeiboRepostsRequest(raw)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/reposts 参数非法：id 须为数字微博 id，page 与 count 可选')
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.reposts} 参数非法：id 须为数字微博 id，page 与 count 可选`,
+            )
         }
         const cookie = await this.readCookie()
         const loadReposts = this.deps.fetchReposts ?? fetchPostReposts
@@ -770,7 +791,7 @@ export class WeiboRoutes {
      */
     private async destroyStatus(payload: unknown): Promise<WeiboDestroyStatusResult> {
         if (!isWeiboDestroyStatusRequest(payload)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/destroy 参数非法：id 须为数字微博 id')
+            throw new WeiboWebError('invalid-payload', `${WEIBO_METHODS.destroyStatus} 参数非法：id 须为数字微博 id`)
         }
         const cookie = await this.readCookie()
         const destroy = this.deps.destroyStatus ?? destroyPostStatus
@@ -785,7 +806,7 @@ export class WeiboRoutes {
         if (!isWeiboCommentCreateRequest(payload)) {
             throw new WeiboWebError(
                 'invalid-payload',
-                'weibo/comment/create 参数非法：id 须为数字微博 id，正文须为 1-140 字，replyToId 可选',
+                `${WEIBO_METHODS.commentCreate} 参数非法：id 须为数字微博 id，正文须为 1-140 字，replyToId 可选`,
             )
         }
         const cookie = await this.readCookie()
@@ -804,7 +825,7 @@ export class WeiboRoutes {
      */
     private async destroyComment(payload: unknown): Promise<WeiboCommentDestroyResult> {
         if (!isWeiboCommentDestroyRequest(payload)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/comment/destroy 参数非法：cid 须为数字评论 id')
+            throw new WeiboWebError('invalid-payload', `${WEIBO_METHODS.commentDestroy} 参数非法：cid 须为数字评论 id`)
         }
         const cookie = await this.readCookie()
         const removeComment = this.deps.destroyComment ?? destroyPostComment
@@ -814,7 +835,7 @@ export class WeiboRoutes {
     /** 读取长文全文：id 用 mblogid（数字 id 也兼容），缺凭证直接给出可执行的引导 */
     private async loadLongText(payload: unknown): Promise<WeiboLongTextResult> {
         if (!isWeiboLongTextRequest(payload)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/longtext 参数非法：id 须为 mblogid 或数字 id')
+            throw new WeiboWebError('invalid-payload', `${WEIBO_METHODS.longText} 参数非法：id 须为 mblogid 或数字 id`)
         }
         const cookie = await this.readCookie()
         const load = this.deps.fetchLongText ?? fetchLongText
@@ -827,11 +848,30 @@ export class WeiboRoutes {
      */
     private async likePost(payload: unknown): Promise<WeiboLikeResult> {
         if (!isWeiboLikeRequest(payload)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/like 参数非法：id 须为数字微博 id，liked 须为布尔')
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.like} 参数非法：id 须为数字微博 id，liked 须为布尔`,
+            )
         }
         const cookie = await this.readCookie()
         const setLike = this.deps.setLike ?? setPostLike
         return setLike({ cookie, id: payload.id, liked: payload.liked })
+    }
+
+    /**
+     * 关注 / 取消关注博主：与时间线共用登录 Cookie，缺凭证直接给出可执行的引导。
+     * 关键约束：写操作不重试——失败即回包错误，由前端回滚乐观状态；uid 只接受数字串。
+     */
+    private async followAuthor(payload: unknown): Promise<WeiboFollowResult> {
+        if (!isWeiboFollowRequest(payload)) {
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.authorFollow} 参数非法：uid 须为数字博主 id，following 须为布尔`,
+            )
+        }
+        const cookie = await this.readCookie()
+        const setFollow = this.deps.setFollow ?? setAuthorFollow
+        return setFollow({ cookie, uid: payload.uid, following: payload.following })
     }
 
     /**
@@ -842,7 +882,7 @@ export class WeiboRoutes {
         if (!isWeiboCommentLikeRequest(payload)) {
             throw new WeiboWebError(
                 'invalid-payload',
-                'weibo/comment/like 参数非法：cid 须为数字评论 id，liked 须为布尔',
+                `${WEIBO_METHODS.commentLike} 参数非法：cid 须为数字评论 id，liked 须为布尔`,
             )
         }
         const cookie = await this.readCookie()
@@ -856,7 +896,10 @@ export class WeiboRoutes {
      */
     private async likeRepost(payload: unknown): Promise<WeiboLikeResult> {
         if (!isWeiboLikeRequest(payload)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/repost/like 参数非法：id 须为数字微博 id，liked 须为布尔')
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.repostLike} 参数非法：id 须为数字微博 id，liked 须为布尔`,
+            )
         }
         const cookie = await this.readCookie()
         const setLike = this.deps.setRepostLike ?? setRepostLike
@@ -866,10 +909,13 @@ export class WeiboRoutes {
     /** 打开原微博：域名白名单校验通过才交给宿主 openExternal */
     private async openPost(payload: unknown): Promise<{ opened: boolean }> {
         if (!isWeiboOpenPostRequest(payload)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/openPost 参数非法：url 必须为长度不超过 512 的字符串')
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.openPost} 参数非法：url 必须为长度不超过 512 的字符串`,
+            )
         }
         if (!isAllowedExternalUrl(payload.url)) {
-            throw new WeiboWebError('invalid-payload', 'weibo/openPost 只允许打开 weibo.com 域名下的地址')
+            throw new WeiboWebError('invalid-payload', `${WEIBO_METHODS.openPost} 只允许打开 weibo.com 域名下的地址`)
         }
         const openExternal = this.deps.openExternal
         if (openExternal === undefined) {
@@ -887,7 +933,10 @@ export class WeiboRoutes {
     private async saveToNote(payload: unknown): Promise<WeiboNoteSaveResult> {
         const post = readWeiboPagePost(payload)
         if (post === null) {
-            throw new WeiboWebError('invalid-payload', 'weibo/saveToNote 参数非法：缺少合法正文、作者或微博链接')
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.saveToNote} 参数非法：缺少合法正文、作者或微博链接`,
+            )
         }
         const saveToNote = this.deps.saveToNote
         if (saveToNote === undefined) {
@@ -939,7 +988,10 @@ export class WeiboRoutes {
     private async addToChat(payload: unknown): Promise<WeiboChatContextResult> {
         const post = readWeiboPagePost(payload)
         if (post === null) {
-            throw new WeiboWebError('invalid-payload', 'weibo/addToChat 参数非法：缺少合法正文、作者或微博链接')
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.addToChat} 参数非法：缺少合法正文、作者或微博链接`,
+            )
         }
         const addToChat = this.deps.addToChat
         if (addToChat === undefined) {
@@ -956,7 +1008,10 @@ export class WeiboRoutes {
     private async commentAddToChat(payload: unknown): Promise<WeiboChatContextResult> {
         const comment = readWeiboCommentChatPayload(payload)
         if (comment === null) {
-            throw new WeiboWebError('invalid-payload', 'weibo/comment/addToChat 参数非法：缺少合法评论 id、作者或正文')
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.commentAddToChat} 参数非法：缺少合法评论 id、作者或正文`,
+            )
         }
         const commentAddToChat = this.deps.commentAddToChat
         if (commentAddToChat === undefined) {
@@ -973,7 +1028,10 @@ export class WeiboRoutes {
     private async repostAddToChat(payload: unknown): Promise<WeiboChatContextResult> {
         const repost = readWeiboRepostChatPayload(payload)
         if (repost === null) {
-            throw new WeiboWebError('invalid-payload', 'weibo/repost/addToChat 参数非法：缺少合法转发 id、作者或附言')
+            throw new WeiboWebError(
+                'invalid-payload',
+                `${WEIBO_METHODS.repostAddToChat} 参数非法：缺少合法转发 id、作者或附言`,
+            )
         }
         const repostAddToChat = this.deps.repostAddToChat
         if (repostAddToChat === undefined) {

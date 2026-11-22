@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
 import type { WeiboBlockListState, WeiboBlockRules } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 import { addWeiboBlockedUser } from '@shared/utils/weiboBlock'
@@ -73,7 +74,7 @@ export function useWeiboBlockList(): WeiboBlockListController {
         const load = async (): Promise<void> => {
             dispatch({ type: 'start' })
             try {
-                const result = await request<WeiboBlockListState>('weibo/blockList/status')
+                const result = await request<WeiboBlockListState>(WEIBO_METHODS.blockListStatus)
                 dispatch({ type: 'success', payload: result })
             } catch (cause) {
                 dispatch({ type: 'failure', message: toErrorText(cause) })
@@ -85,7 +86,7 @@ export function useWeiboBlockList(): WeiboBlockListController {
     const persist = useCallback(async (next: WeiboBlockRules): Promise<boolean> => {
         dispatch({ type: 'saving', value: true })
         try {
-            const result = await request<WeiboBlockListState>('weibo/blockList/save', next)
+            const result = await request<WeiboBlockListState>(WEIBO_METHODS.blockListSave, next)
             dispatch({ type: 'success', payload: result })
             return true
         } catch (cause) {

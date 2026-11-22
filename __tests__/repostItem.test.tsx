@@ -21,7 +21,7 @@ const repost: WeiboRepostItem = {
     segments: [{ type: 'text', text: '转发附言' }],
     createdAt: '2026-01-02T03:04:05.000Z',
     createdAtRaw: 'Fri Jan 02 11:04:05 +0800 2026',
-    author: { id: '6305885570', name: '测试作者', avatarUrl: '', isVerified: true },
+    author: { id: '6305885570', name: '测试作者', avatarUrl: '', isVerified: true, isFollowing: false },
     likes: 3,
     isLiked: false,
     originalLikes: 82_833,
@@ -60,7 +60,7 @@ describe('RepostItem', () => {
     })
 
     it('点赞后计数从 0 变成 1，并在取消后回到不显示', async () => {
-        vi.mocked(request).mockResolvedValue({ liked: true, attitudesCount: 1 } as never)
+        vi.mocked(request).mockResolvedValue({ liked: true, attitudesCount: 1 })
         render(
             <TooltipProvider>
                 <RepostItem

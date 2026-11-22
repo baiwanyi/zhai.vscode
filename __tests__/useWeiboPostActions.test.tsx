@@ -56,6 +56,7 @@ function createPost(overrides: Partial<WeiboTimelinePost> = {}): WeiboTimelinePo
             name: '墨嵐_Maura',
             avatarUrl: 'https://tvax1.sinaimg.cn/a.jpg',
             isVerified: false,
+            isFollowing: false,
         },
         metrics: { reposts: 0, comments: 0, likes: 0 },
         media: EMPTY_MEDIA,

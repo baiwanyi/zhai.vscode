@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import { toast } from 'sonner'
 import type { WeiboBlockRules, WeiboLikesResult, WeiboTimelinePost } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
@@ -130,7 +131,7 @@ export function useWeiboLikes(
         seqRef.current = seq
         dispatch({ type: mode === 'refresh' ? 'refresh-start' : 'more-start' })
         try {
-            const result = await request<WeiboLikesResult>('weibo/likes', { page })
+            const result = await request<WeiboLikesResult>(WEIBO_METHODS.likes, { page })
             if (seqRef.current !== seq) {
                 return
             }

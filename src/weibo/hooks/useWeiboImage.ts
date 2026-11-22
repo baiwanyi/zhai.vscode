@@ -7,6 +7,7 @@
  */
 import { useEffect, useState } from 'react'
 import type { WeiboImageResult } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 
 /** 图片下载超时：比接口请求宽松，宿主侧单张上限 20s */
@@ -46,7 +47,7 @@ export function useWeiboImage(remoteUrl: string): WeiboImageState {
             return
         }
         let isCancelled = false
-        request<WeiboImageResult>('weibo/image', { url: remoteUrl }, IMAGE_REQUEST_TIMEOUT_MS)
+        request<WeiboImageResult>(WEIBO_METHODS.image, { url: remoteUrl }, IMAGE_REQUEST_TIMEOUT_MS)
             .then((result) => {
                 if (isCancelled) {
                     return

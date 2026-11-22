@@ -6,12 +6,13 @@
  * 失败只提示、不改调用方状态，打开动作与内容区状态互不影响。
  */
 import { useCallback } from 'react'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 
 /** 打开地址的稳定回调：同一面板内多次使用不会因引用变化触发子组件更新 */
 export function useWeiboOpenUrl(): (url: string) => void {
     return useCallback((url: string): void => {
-        void request('weibo/openPost', { url }).catch(toastError)
+        void request(WEIBO_METHODS.openPost, { url }).catch(toastError)
     }, [])
 }

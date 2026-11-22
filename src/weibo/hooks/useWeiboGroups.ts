@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import type { WeiboGroupsResult } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 
@@ -65,7 +66,7 @@ export function useWeiboGroups({ enabled }: UseWeiboGroupsOptions): WeiboGroupsC
         requestSeq.current = seq
         dispatch({ type: 'start' })
         try {
-            const groups = await request<WeiboGroupsResult>('weibo/groups')
+            const groups = await request<WeiboGroupsResult>(WEIBO_METHODS.groups)
             if (requestSeq.current !== seq) {
                 return
             }

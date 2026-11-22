@@ -39,7 +39,7 @@ const POST: WeiboTimelinePost = {
     createdAt: '2026-11-20T23:07:10.000Z',
     createdAtRaw: '11-20 23:07',
     source: '',
-    author: { id: '3793264344', name: '墨嵐_Maura', avatarUrl: '', isVerified: false },
+    author: { id: '3793264344', name: '墨嵐_Maura', avatarUrl: '', isVerified: false, isFollowing: false },
     metrics: { reposts: 0, comments: 0, likes: 0 },
     media: EMPTY_MEDIA,
     retweeted: null,

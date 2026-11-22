@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 import type { WeiboProfile, WeiboProfileResult } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
 
@@ -69,7 +70,7 @@ export function useWeiboProfile(isEnabled: boolean): WeiboProfileController {
         seqRef.current = seq
         dispatch({ type: 'start' })
         try {
-            const result = await request<WeiboProfileResult>('weibo/profile')
+            const result = await request<WeiboProfileResult>(WEIBO_METHODS.profile)
             if (seqRef.current !== seq) {
                 return
             }

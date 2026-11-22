@@ -12,6 +12,12 @@ export const WEIBO_WEB_ORIGIN = 'https://weibo.com'
 /** 官网 Referer：ajax 与图床都按它判断来源 */
 export const WEIBO_WEB_REFERER = 'https://weibo.com/'
 
+/**
+ * 允许打开的外链主机：微博主站与其子域，外加新浪短链服务 t.cn。
+ * 关键约束：末尾精确匹配，避免 sub.weibo.com.evil.com 绕过；weibo/openPost 的校验只认这一份。
+ */
+export const WEIBO_ALLOWED_EXTERNAL_HOSTS = ['weibo.com', 'www.weibo.com', 'm.weibo.cn', 't.cn'] as const
+
 /** 图床基址：只有 pid 时用它拼原图直链 */
 export const WEIBO_IMAGE_ORIGIN = 'https://wx1.sinaimg.cn'
 
@@ -89,6 +95,10 @@ export const WEIBO_AJAX_PATHS = {
     setLike: '/ajax/statuses/setLike',
     /** 取消点赞 */
     cancelLike: '/ajax/statuses/cancelLike',
+    /** 关注博主：formdata 提交 friend_uid 与卡片来源参数 */
+    followAuthor: '/ajax/friendships/create',
+    /** 取消关注博主：formdata 只提交 uid */
+    unfollowAuthor: '/ajax/friendships/destory',
     /** 我的赞：按 uid 与页码读取点赞过的微博 */
     likelist: '/ajax/statuses/likelist',
     /** 发布微博：formdata 提交正文与图片 pid */

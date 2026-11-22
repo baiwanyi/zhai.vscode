@@ -49,6 +49,11 @@ export interface WeiboTimelineAuthor {
     /** 头像直链：Webview 的 CSP 不放行远程图片，仅作数据保留 */
     avatarUrl: string
     isVerified: boolean
+    /**
+     * 当前账号是否已关注该作者：来自上游 user.following，缺失按未关注处理。
+     * 关键约束：只有时间线口径带这个字段，转发列表里的作者恒为 false，不据此暴露关注入口。
+     */
+    isFollowing: boolean
 }
 
 /** 互动数据：字段名与上游一一对应，缺失按 0 处理 */
@@ -942,6 +947,18 @@ export interface WeiboLikeResult {
     attitudesCount: number | null
 }
 
+/** 关注入参：following 为目标状态，true 关注、false 取消关注 */
+export interface WeiboFollowRequest {
+    /** 博主 uid：只接受数字串 */
+    uid: string
+    following: boolean
+}
+
+/** 关注结果：回传服务端确认的最终关注态 */
+export interface WeiboFollowResult {
+    following: boolean
+}
+
 /** 图片代理入参：图片地址必须落在微博图床或微博域名下 */
 export interface WeiboImageRequest {
     url: string
@@ -1319,6 +1336,15 @@ export function isWeiboLikeRequest(value: unknown): value is WeiboLikeRequest {
     }
     const { id, liked } = value as Record<string, unknown>
     return typeof id === 'string' && WEIBO_ID_PATTERN.test(id) && typeof liked === 'boolean'
+}
+
+/** 收窄关注入参：uid 必须为数字串，following 必须显式为布尔 */
+export function isWeiboFollowRequest(value: unknown): value is WeiboFollowRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { uid, following } = value as Record<string, unknown>
+    return typeof uid === 'string' && WEIBO_ID_PATTERN.test(uid) && typeof following === 'boolean'
 }
 
 /** 话题关键字长度上限：与上游输入框口径一致，超长直接判非法而不截断 */

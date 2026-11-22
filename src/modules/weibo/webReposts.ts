@@ -169,6 +169,8 @@ export function normalizeWebRepost(raw: unknown): WeiboRepostItem | null {
             name: toText(user.screen_name),
             avatarUrl: normalizeWeiboImageUrl(avatar) ?? '',
             isVerified: user.verified === true,
+            // 转发列表不提供关注入口：这里恒为未关注，避免前端据此显示关注按钮
+            isFollowing: false,
         },
         // 点赞口径与主贴一致：计数取 attitudes_count，点赞态取 attitudes_status
         likes: readLikeCount(raw),

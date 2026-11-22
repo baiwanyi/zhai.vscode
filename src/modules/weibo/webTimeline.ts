@@ -974,6 +974,8 @@ export function normalizeTimelinePost(raw: unknown): WeiboTimelinePost | null {
             name: toText(user.screen_name),
             avatarUrl: normalizeWeiboImageUrl(avatar) ?? '',
             isVerified: user.verified === true,
+            // 关注态只认上游 following 布尔：缺失按未关注处理，卡片据此给出关注入口
+            isFollowing: user.following === true,
         },
         metrics: extractMetrics(raw),
         media: visibleMedia,

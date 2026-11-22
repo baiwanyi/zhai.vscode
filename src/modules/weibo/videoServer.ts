@@ -18,6 +18,9 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 /** 视频中转路径：只有这一个入口，其余路径一律 404 */
 const VIDEO_ROUTE = '/video'
 
+/** 只绑回环地址：中转服务不对外暴露，端口由系统分配 */
+const LOOPBACK_HOST = '127.0.0.1'
+
 /** 上游超时：只覆盖建连与首字节，长视频持续传输不受影响（AbortSignal 作用于整个响应，故给足） */
 const UPSTREAM_TIMEOUT_MS = 300_000
 
@@ -189,7 +192,7 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse,
         response.writeHead(405).end()
         return
     }
-    const url = new URL(request.url ?? '/', `http://127.0.0.1:${String(port)}`)
+    const url = new URL(request.url ?? '/', `http://${LOOPBACK_HOST}:${String(port)}`)
     if (url.pathname !== VIDEO_ROUTE) {
         response.writeHead(404).end()
         return
@@ -242,7 +245,7 @@ export async function createWeiboVideoServer(): Promise<WeiboVideoServer> {
     })
     await new Promise<void>((resolve, reject) => {
         server.once('error', reject)
-        server.listen(0, '127.0.0.1', () => {
+        server.listen(0, LOOPBACK_HOST, () => {
             resolve()
         })
     })
@@ -255,7 +258,7 @@ export async function createWeiboVideoServer(): Promise<WeiboVideoServer> {
             if (target === null || port === 0) {
                 return null
             }
-            return `http://127.0.0.1:${String(port)}${VIDEO_ROUTE}?url=${encodeURIComponent(target)}`
+            return `http://${LOOPBACK_HOST}:${String(port)}${VIDEO_ROUTE}?url=${encodeURIComponent(target)}`
         },
         dispose: (): void => {
             server.close()

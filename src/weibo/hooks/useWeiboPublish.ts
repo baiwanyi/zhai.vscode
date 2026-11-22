@@ -10,6 +10,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { UploadFileItem } from '@shared/types/upload'
 import type { WeiboPublishResult } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
@@ -47,7 +48,7 @@ export function useWeiboPublish(): WeiboPublishController {
             setIsPublishing(true)
             try {
                 const result = await request<WeiboPublishResult>(
-                    'weibo/publish',
+                    WEIBO_METHODS.publish,
                     { content, images: images.map((image) => image.path) },
                     PUBLISH_TIMEOUT_MS,
                 )

@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WeiboTopicsResult } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
 
@@ -66,7 +67,7 @@ export function useWeiboTopicSearch(isEnabled: boolean): WeiboTopicSearchControl
             setState((previous) => ({ ...previous, isLoading: true, errorMessage: null }))
             try {
                 const payload = query.length > 0 ? { q: query } : {}
-                const result = await request<WeiboTopicsResult>('weibo/topics', payload, TOPIC_REQUEST_TIMEOUT_MS)
+                const result = await request<WeiboTopicsResult>(WEIBO_METHODS.topics, payload, TOPIC_REQUEST_TIMEOUT_MS)
                 if (seqRef.current !== seq || !isMountedRef.current) {
                     return
                 }

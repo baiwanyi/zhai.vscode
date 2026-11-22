@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useReducer } from 'react'
 import type { WeiboCityState, WeiboSaveCityRequest } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 
@@ -69,7 +70,7 @@ export function useWeiboCity(): WeiboCityController {
         const load = async (): Promise<void> => {
             dispatch({ type: 'start' })
             try {
-                const result = await request<WeiboCityState>('weibo/city/status')
+                const result = await request<WeiboCityState>(WEIBO_METHODS.cityStatus)
                 dispatch({ type: 'success', payload: result })
             } catch (cause) {
                 dispatch({ type: 'failure', message: toErrorText(cause) })
@@ -82,7 +83,7 @@ export function useWeiboCity(): WeiboCityController {
         dispatch({ type: 'saving', value: true })
         try {
             const payload: WeiboSaveCityRequest = { cityCode }
-            const result = await request<WeiboCityState>('weibo/city/save', payload)
+            const result = await request<WeiboCityState>(WEIBO_METHODS.citySave, payload)
             dispatch({ type: 'success', payload: result })
             return true
         } catch (cause) {

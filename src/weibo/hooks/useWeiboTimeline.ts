@@ -17,6 +17,7 @@ import type {
     WeiboTimelineRequest,
     WeiboTimelineResult,
 } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { HostRequestError, request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
@@ -181,7 +182,7 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
                     ? { count: PAGE_SIZE, maxPages: 1, ...(sinceId === null ? {} : { sinceId }) }
                     : { count: PAGE_SIZE, maxPages: MORE_MAX_PAGES, ...(maxId === null ? {} : { maxId }) }
             try {
-                const result = await request<WeiboTimelineResult>('weibo/timeline', payload)
+                const result = await request<WeiboTimelineResult>(WEIBO_METHODS.timeline, payload)
                 dispatch({ type: mode === 'refresh' ? 'refresh-success' : 'more-success', result })
                 if (mode === 'refresh' && result.posts.length === 0 && stateRef.current.posts.length > 0) {
                     toast(WEIBO_UI_TEXT.toast.noNewPosts)
@@ -214,7 +215,7 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
         async (cookie: string): Promise<boolean> => {
             dispatch({ type: 'saving', value: true })
             try {
-                const result = await request<WeiboSaveCredentialResult>('weibo/credential/save', { cookie })
+                const result = await request<WeiboSaveCredentialResult>(WEIBO_METHODS.credentialSave, { cookie })
                 dispatch({ type: 'credential', payload: result })
                 toast.success(WEIBO_UI_TEXT.toast.credentialSaved)
                 await loadPage('refresh', null, null)
@@ -232,7 +233,7 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
 
     const clearCredential = useCallback(async (): Promise<boolean> => {
         try {
-            await request('weibo/credential/clear')
+            await request(WEIBO_METHODS.credentialClear)
             dispatch({ type: 'cleared' })
             toast.success(WEIBO_UI_TEXT.toast.credentialCleared)
             return true
@@ -245,7 +246,7 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
     useEffect(() => {
         const bootstrap = async (): Promise<void> => {
             try {
-                const credential = await request<WeiboCredentialState>('weibo/credential/status')
+                const credential = await request<WeiboCredentialState>(WEIBO_METHODS.credentialStatus)
                 dispatch({ type: 'credential', payload: credential })
                 if (credential.isConfigured) {
                     await loadPage('refresh', null, null)

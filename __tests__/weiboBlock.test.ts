@@ -42,7 +42,7 @@ function makePost(options: { author?: string; text?: string; retweetedText?: str
         createdAt: '',
         createdAtRaw: '',
         source: '',
-        author: { id: '1', name: options.author ?? '', avatarUrl: '', isVerified: false },
+        author: { id: '1', name: options.author ?? '', avatarUrl: '', isVerified: false, isFollowing: false },
         metrics: { reposts: 0, comments: 0, likes: 0 },
         media: EMPTY_MEDIA,
         retweeted:

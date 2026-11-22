@@ -16,6 +16,7 @@ import type {
     WeiboTimelinePost,
     WeiboTimelineRetweet,
 } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
@@ -118,7 +119,7 @@ export function useWeiboPostActions(
         pendingRef.current = true
         setIsSavingNote(true)
         void request<WeiboNoteSaveResult>(
-            'weibo/saveToNote',
+            WEIBO_METHODS.saveToNote,
             toPagePostPayload(post, fullText, retweetedFullText),
             SAVE_NOTE_TIMEOUT_MS,
         )
@@ -149,7 +150,7 @@ export function useWeiboPostActions(
         pendingRef.current = true
         setIsAddingToChat(true)
         void request<WeiboChatContextResult>(
-            'weibo/addToChat',
+            WEIBO_METHODS.addToChat,
             toPagePostPayload(post, fullText, retweetedFullText),
             CHAT_TIMEOUT_MS,
         )

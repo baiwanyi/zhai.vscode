@@ -505,8 +505,8 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | 文件 | 职责 |
 |------|------|
 | `src/shared/types/weibo.ts` | 时间线、信息流、分组、凭证与协议载荷契约，含参数收窄与单页默认条数 |
-| `src/shared/types/weiboMethods.ts` | 协议方法名表 `WEIBO_METHODS`：前端取数层引用，与 `HostMethodName` 一一对应 |
-| `src/modules/weibo/weiboEndpoints.ts` | 地址总表：网页端 ajax 端点、图床与站内基址集中在此（协议方法名已迁 `@shared/types/weiboMethods`） |
+| `src/shared/types/weiboMethods.ts` | 协议方法名表 `WEIBO_METHODS`：前端取数层、宿主 `weiboRoutes` 的 switch 与 `HostMethodName` 共用一份，方法名只在表中出现 |
+| `src/modules/weibo/weiboEndpoints.ts` | 地址总表：网页端 ajax 端点、图床 / 站内基址与外链主机白名单集中在此（协议方法名见 `@shared/types/weiboMethods`） |
 | `src/modules/weibo/webClient.ts` | 通用 JSON 请求：URL 构造、请求头、错误分类、节流与退避重试 |
 | `src/modules/weibo/webTimeline.ts` | 分页/增量循环、去重、字段归一化、时间与正文清洗 |
 | `src/modules/weibo/webFeed.ts` | 时间线 / 热门 / 分组端点适配、分组归一化与卡片流提取 |
@@ -596,6 +596,7 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 - **屏蔽在取数 hook 返回前过滤**：`useWeiboTimeline` / `useWeiboFeed` / `useWeiboLikes` 接收 `blockRules`，用 `filterWeiboPosts` 派生可见列表，状态里仍保留原始列表——名单变化（含卡片「屏蔽该博主」）时无需回源即可即时重算，分页游标、页码与 `hasMore` 也不受影响。
 - 名单落 VS Code 配置 `zhai.weibo.blockedUsers` / `zhai.weibo.blockedKeywords`（面板「设置」按行编辑，也可在设置文件里改数组）；路由为 `weibo/blockList/status` 与 `weibo/blockList/save`，宿主只存取与归一化，过滤一律在 Webview。
 - 卡片「更多」菜单末项是「屏蔽该博主」：只把作者名追加进用户名名单（已存在则提示而不重复写盘），写入成功后由过滤即时隐藏当前列表里的该博主内容，并用 Toaster 反馈结果。
+- 关注入口按作者 `isFollowing` 分流：未关注的在卡片头部给「关注」按钮，关注成功后按钮变「已关注」并禁用，取关放进「更多」菜单。协议 `weibo/author/follow`（`{ uid, following }`）：关注走 `ajax/friendships/create`，form 提交 `friend_uid` 与固定来源参数 `uicode=20000405` / `fid=232184` / `page=hotWeiboTab`；取关走 `ajax/friendships/destory`，只提交 `uid`。上游要求的 `followcardid` 与 `rid` 是每次渲染卡片时生成的动态 id，本项目没有该上下文，故不提交。**回包的 `following` 不可信**：实测关注成功后回包仍带 `following: false`，故结果一律按请求的目标状态回传，避免出现已关注却提示「已取消关注」。
 - 账号菜单四项：「个人主页」按 uid 打开 `weibo.com/u/{uid}`；「我的赞」切到 `mine.likes` 视图读取点赞列表（见 2.16）；「设置」打开弹窗；「删除 Cookie」先弹确认框，确认后清除凭证、元数据缓存与本地头像，并回首页（凭证卡按未配置状态自动出现，用户下一步多半是重新登录），未配置时该项禁用。
 
 ### 2.12 表情配置（发表框）

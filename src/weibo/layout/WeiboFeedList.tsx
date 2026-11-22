@@ -137,7 +137,13 @@ export function WeiboFeedList({
     return (
         <>
             {posts.map((post) => (
-                <WeiboPostCard key={post.id} post={post} onBlockAuthor={onBlockAuthor} viewerUid={viewerUid} />
+                // key 带上关注态与点赞态：刷新复用同一张卡片时，写操作后的状态要跟随上游重建，避免沿用旧 state
+                <WeiboPostCard
+                    key={`${post.id}:${String(post.author.isFollowing)}:${String(post.isLiked)}`}
+                    post={post}
+                    onBlockAuthor={onBlockAuthor}
+                    viewerUid={viewerUid}
+                />
             ))}
             <div ref={sentinelRef} className="flex justify-center py-2">
                 {!hasMore ? (

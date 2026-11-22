@@ -6,6 +6,7 @@
  * 请求失败只提示、不改行状态（榜单内容与打开动作互不影响）。
  */
 import { useCallback, useRef } from 'react'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import { buildHotSearchUrl } from '../utils/weiboLinks'
@@ -31,7 +32,7 @@ export function useWeiboSearchOpen(title: string): WeiboSearchOpenController {
             return
         }
         lastOpenAtRef.current = now
-        void request('weibo/openPost', { url: searchUrl }).catch(toastError)
+        void request(WEIBO_METHODS.openPost, { url: searchUrl }).catch(toastError)
     }, [searchUrl])
 
     return { searchUrl, openSearch }

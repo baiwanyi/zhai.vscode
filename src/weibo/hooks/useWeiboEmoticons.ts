@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { WeiboEmoticonItem, WeiboEmoticonsResult } from '@shared/types/weibo'
+import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 
@@ -54,7 +55,7 @@ export function useWeiboEmoticons(isEnabled: boolean): WeiboEmoticonsController 
             return
         }
         setState((previous) => ({ ...previous, isLoading: true, errorMessage: null }))
-        inFlight = inFlight ?? request<WeiboEmoticonsResult>('weibo/emoticons').then((result) => result.emoticons)
+        inFlight = inFlight ?? request<WeiboEmoticonsResult>(WEIBO_METHODS.emoticons).then((result) => result.emoticons)
         try {
             const emoticons = await inFlight
             cachedEmoticons = emoticons
