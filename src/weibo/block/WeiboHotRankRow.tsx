@@ -2,7 +2,7 @@
  * 热搜榜单条：序号 + 标题（可选描述与标记），只给侧栏热搜卡使用（专页有自己的行组件）。
  * 复用约定：槽位取 @components/ui/item（ItemTitle / ItemDescription / ItemActions），
  * 徽标交给同目录 WeiboHotRankBadge，搜索地址与打开动作来自 hooks/useWeiboSearchOpen，
- * 链接处理器取 utils/weiboHotLinks，悬停提示取 @webview/components/Tooltip 的 TOOLTIP_CLASS。
+ * 链接处理器取 utils/weiboLinks，悬停提示取 @webview/components/Tooltip 的 TOOLTIP_CLASS。
  * 关键约束：容器必须是 ItemGroup（自带 role="list"），条目在 Item 上补 role="listitem"；
  * 上游 icon_url 不再渲染成图片；连点由 hook 的节流窗口兜住，行内不再各写一份。
  */
@@ -14,7 +14,7 @@ import { WeiboHotRankBadge } from './WeiboHotRankBadge'
 import { WeiboHotRankPosition } from './WeiboHotRankPosition'
 import type { JSX } from 'react'
 import { useWeiboSearchOpen } from '../hooks/useWeiboSearchOpen'
-import { preventLinkNavigation } from '../utils/weiboHotLinks'
+import { preventLinkNavigation } from '../utils/weiboLinks'
 
 export interface WeiboHotRankRowProps {
     item: WeiboHotRankItem

@@ -1,8 +1,11 @@
 /**
- * 评论写操作：草稿校验、发布 / 回复 / 同时转发、删除确认与提交，全部收在这里。
+ * 评论写操作与加入 AI 对话：草稿校验、发布 / 回复 / 同时转发、删除确认与提交，
+ * 以及把一级评论或子评论连同正文加入对话上下文。
  * 复用约定：协议方法名取 @shared/types/weiboMethods，字数上限取 @shared/types/weibo，
- * 错误提示取 @shared/utils/error；提交成功后统一走调用方注入的 reload 重拉第一页。
- * 关键约束：写操作用 ref 单飞，避开同一帧连点读到旧 state；
+ * 错误提示取 @shared/utils/error，作者名兜底取 @webview/weibo/utils/weiboAuthor；
+ * 提交成功后统一走调用方注入的 reload 重拉第一页，加入对话的提示文案统一取 weiboUiText。
+ * 关键约束：写操作用 ref 单飞，避开同一帧连点读到旧 state；加入对话按评论 id 单飞，
+ * 同一条评论在途时不再重复发起，该 id 用于按钮禁用与文案切换；
  * 「同时转发」是评论 + 转发两步，评论已发而转发失败按部分成功处理——清空草稿并关掉开关，
  * 避免用户再点一次把同一条评论发重；回复只走评论回复端点，不带转发。
  */
@@ -10,19 +13,26 @@ import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { WEIBO_COMMENT_MAX_LENGTH } from '@shared/types/weibo'
 import type {
+    WeiboChatContextResult,
+    WeiboCommentChatPayload,
     WeiboCommentCreateResult,
     WeiboCommentDestroyResult,
     WeiboCommentItem,
+    WeiboCommentReply,
     WeiboRepostCreateResult,
 } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { readWeiboAuthorName } from '@webview/weibo/utils/weiboAuthor'
 import type { KeyboardEvent } from 'react'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /** 评论写操作超时：发布、回复与删除都用同一口径，失败要尽快让用户重试 */
 const MUTATE_TIMEOUT_MS = 20_000
+
+/** 加入对话的超时：宿主可能要写会话库并切换分区，比纯内存操作放宽 */
+const CHAT_TIMEOUT_MS = 60_000
 
 /** 回复目标：只用评论 id 与作者名，正文由同一个发布框提交 */
 export interface CommentReplyTarget {
@@ -45,6 +55,8 @@ export interface WeiboCommentActions {
     isSubmitting: boolean
     pendingDelete: WeiboCommentItem | null
     isDestroying: boolean
+    /** 正在加入对话的评论 id：按钮据此禁用并切换文案 */
+    addingChatIds: readonly string[]
     setDraft: (value: string) => void
     setShouldRepost: (value: boolean) => void
     beginReply: (target: CommentReplyTarget) => void
@@ -54,6 +66,8 @@ export interface WeiboCommentActions {
     requestDelete: (comment: WeiboCommentItem) => void
     cancelDelete: () => void
     confirmDelete: () => Promise<void>
+    addCommentToChat: (comment: WeiboCommentItem) => void
+    addReplyToChat: (reply: WeiboCommentReply) => void
 }
 
 export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentActionsOptions): WeiboCommentActions {
@@ -67,9 +81,13 @@ export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentAction
     /** 待删除评论：非空即打开确认框，同一时刻只处理一条 */
     const [pendingDelete, setPendingDelete] = useState<WeiboCommentItem | null>(null)
     const [isDestroying, setIsDestroying] = useState(false)
+    /** 正在加入对话的评论 id：列表里的按钮据此禁用并换文案 */
+    const [addingChatIds, setAddingChatIds] = useState<readonly string[]>([])
     /** 写操作占位：ref 判定，避开同一帧连点读到旧 state */
     const isSubmittingRef = useRef(false)
     const isDestroyingRef = useRef(false)
+    /** 加入对话占位：按评论 id 单飞，同一帧连点不会发出两次 */
+    const addingChatRef = useRef<Set<string>>(new Set())
 
     const trimmedDraft = draft.trim()
     const isDraftValid = trimmedDraft.length > 0 && trimmedDraft.length <= WEIBO_COMMENT_MAX_LENGTH
@@ -176,6 +194,57 @@ export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentAction
         setPendingDelete(comment)
     }, [])
 
+    /** 加入对话：按评论 id 单飞，成功后只给一条轻提示，重复与超上限由宿主说明原因 */
+    const pushChatContext = useCallback((payload: WeiboCommentChatPayload): void => {
+        const { commentId } = payload
+        if (addingChatRef.current.has(commentId)) {
+            return
+        }
+        addingChatRef.current.add(commentId)
+        setAddingChatIds((prev) => [...prev, commentId])
+        void request<WeiboChatContextResult>(WEIBO_METHODS.commentAddToChat, payload, CHAT_TIMEOUT_MS)
+            .then((result) => {
+                if (result.added) {
+                    toast.success(WEIBO_UI_TEXT.toast.addedToChat)
+                    return
+                }
+                toast.info(result.reason ?? WEIBO_UI_TEXT.toast.chatRejected)
+            })
+            .catch(toastError)
+            .finally(() => {
+                addingChatRef.current.delete(commentId)
+                setAddingChatIds((prev) => prev.filter((id) => id !== commentId))
+            })
+    }, [])
+
+    /** 一级评论入上下文：被回复者留空，正文用纯文本（表情保留为 `[名称]`） */
+    const addCommentToChat = useCallback(
+        (comment: WeiboCommentItem): void => {
+            pushChatContext({
+                commentId: comment.id,
+                authorName: readWeiboAuthorName(comment.author.name),
+                text: comment.text,
+                createdAt: comment.createdAt,
+                replyToName: '',
+            })
+        },
+        [pushChatContext],
+    )
+
+    /** 子评论入上下文：带上被回复者，宿主据此在引用正文里标出回复关系 */
+    const addReplyToChat = useCallback(
+        (reply: WeiboCommentReply): void => {
+            pushChatContext({
+                commentId: reply.id,
+                authorName: readWeiboAuthorName(reply.author.name),
+                text: reply.text,
+                createdAt: reply.createdAt,
+                replyToName: reply.replyToName,
+            })
+        },
+        [pushChatContext],
+    )
+
     const cancelDelete = useCallback((): void => {
         setPendingDelete(null)
     }, [])
@@ -199,6 +268,7 @@ export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentAction
         isSubmitting,
         pendingDelete,
         isDestroying,
+        addingChatIds,
         setDraft,
         setShouldRepost,
         beginReply,
@@ -208,5 +278,7 @@ export function useWeiboCommentActions({ postId, reload }: UseWeiboCommentAction
         requestDelete,
         cancelDelete,
         confirmDelete,
+        addCommentToChat,
+        addReplyToChat,
     }
 }

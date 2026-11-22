@@ -25,7 +25,7 @@ import { WeiboHotRankBadge } from '../block/WeiboHotRankBadge'
 import { WeiboHotRankFallback } from '../block/WeiboHotRankFallback'
 import { WeiboHotRankPosition } from '../block/WeiboHotRankPosition'
 import { useWeiboSearchOpen } from '../hooks/useWeiboSearchOpen'
-import { preventLinkNavigation } from '../utils/weiboHotLinks'
+import { preventLinkNavigation } from '../utils/weiboLinks'
 
 interface PageHotSearchRowProps {
     item: WeiboHotRankItem

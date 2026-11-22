@@ -8,15 +8,24 @@
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { WEIBO_COMMENT_MAX_LENGTH, WEIBO_REPOST_MAX_LENGTH } from '@shared/types/weibo'
-import type { WeiboDestroyStatusResult, WeiboRepostCreateResult, WeiboRepostItem } from '@shared/types/weibo'
+import type {
+    WeiboChatContextResult,
+    WeiboDestroyStatusResult,
+    WeiboRepostCreateResult,
+    WeiboRepostItem,
+} from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { readWeiboAuthorName } from '@webview/weibo/utils/weiboAuthor'
 import type { KeyboardEvent } from 'react'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 
 /** 请求超时：展开列表与提交转发都是主动等待的场景，与评论同口径 */
 const REQUEST_TIMEOUT_MS = 20_000
+
+/** 加入对话的超时：宿主可能要写会话库并切换分区，比纯内存操作放宽 */
+const CHAT_TIMEOUT_MS = 60_000
 
 export interface UseWeiboRepostActionsOptions {
     /** 微博数字 id */
@@ -36,6 +45,8 @@ export interface WeiboRepostActions {
     isSubmitting: boolean
     pendingDelete: WeiboRepostItem | null
     isDestroying: boolean
+    /** 正在加入对话的转发 id：按钮据此转圈并禁用 */
+    addingChatIds: readonly string[]
     setDraft: (value: string) => void
     setShouldComment: (value: boolean) => void
     submit: () => Promise<void>
@@ -43,6 +54,8 @@ export interface WeiboRepostActions {
     requestDelete: (repost: WeiboRepostItem) => void
     cancelDelete: () => void
     confirmDelete: () => Promise<void>
+    addRepostToChat: (repost: WeiboRepostItem) => void
+    quoteRepost: (repost: WeiboRepostItem) => void
 }
 
 export function useWeiboRepostActions({
@@ -58,9 +71,13 @@ export function useWeiboRepostActions({
     /** 待删除转发：非空即打开确认框，同一时刻只处理一条 */
     const [pendingDelete, setPendingDelete] = useState<WeiboRepostItem | null>(null)
     const [isDestroying, setIsDestroying] = useState(false)
+    /** 正在加入对话的转发 id：列表里的按钮据此转圈 */
+    const [addingChatIds, setAddingChatIds] = useState<readonly string[]>([])
     /** 写操作占位：ref 判定，避开同一帧连点读到旧 state */
     const isSubmittingRef = useRef(false)
     const isDestroyingRef = useRef(false)
+    /** 加入对话占位：按转发 id 单飞，同一帧连点不会发出两次 */
+    const addingChatRef = useRef<Set<string>>(new Set())
 
     const trimmedDraft = draft.trim()
     const draftLimit = shouldComment ? WEIBO_COMMENT_MAX_LENGTH : WEIBO_REPOST_MAX_LENGTH
@@ -117,6 +134,57 @@ export function useWeiboRepostActions({
         setPendingDelete(repost)
     }, [])
 
+    /**
+     * 转发加入 AI 对话：按转发 id 单飞，成功后只给一条轻提示，重复与超上限由宿主说明原因。
+     * 关键约束：纯转发的附言为空也允许加入（作者与时间本身有信息量），载荷只带展示字段。
+     */
+    const addRepostToChat = useCallback((repost: WeiboRepostItem): void => {
+        if (addingChatRef.current.has(repost.id)) {
+            return
+        }
+        addingChatRef.current.add(repost.id)
+        setAddingChatIds((previous) => [...previous, repost.id])
+        void request<WeiboChatContextResult>(
+            WEIBO_METHODS.repostAddToChat,
+            {
+                repostId: repost.id,
+                authorName: readWeiboAuthorName(repost.author.name),
+                text: repost.text,
+                createdAt: repost.createdAt,
+            },
+            CHAT_TIMEOUT_MS,
+        )
+            .then((result) => {
+                if (result.added) {
+                    toast.success(WEIBO_UI_TEXT.toast.addedToChat)
+                    return
+                }
+                toast.info(result.reason ?? WEIBO_UI_TEXT.toast.chatRejected)
+            })
+            .catch(toastError)
+            .finally(() => {
+                addingChatRef.current.delete(repost.id)
+                setAddingChatIds((previous) => previous.filter((id) => id !== repost.id))
+            })
+    }, [])
+
+    /**
+     * 引用这条转发：把「//@作者：附言」追加到转发框草稿，字数与提交仍由 Composer 统一口径。
+     * 关键约束：同一条转发已引用过就不重复追加；草稿非空时以空格分隔，纯转发只引用作者。
+     */
+    const quoteRepost = useCallback((repost: WeiboRepostItem): void => {
+        const author = readWeiboAuthorName(repost.author.name)
+        const quoted = repost.text.trim()
+        const segment = quoted.length > 0 ? `//@${author}：${quoted}` : `//@${author}`
+        setDraft((previous) => {
+            const base = previous.trimEnd()
+            if (base.includes(segment)) {
+                return previous
+            }
+            return base.length === 0 ? segment : `${base} ${segment}`
+        })
+    }, [])
+
     const cancelDelete = useCallback((): void => {
         setPendingDelete(null)
     }, [])
@@ -140,6 +208,7 @@ export function useWeiboRepostActions({
         isSubmitting,
         pendingDelete,
         isDestroying,
+        addingChatIds,
         setDraft,
         setShouldComment,
         submit,
@@ -147,5 +216,7 @@ export function useWeiboRepostActions({
         requestDelete,
         cancelDelete,
         confirmDelete,
+        addRepostToChat,
+        quoteRepost,
     }
 }

@@ -198,6 +198,8 @@ function parseCommentBody(raw: Record<string, unknown>): CommentBody {
             id: toText(user.id),
             name: toText(user.screen_name),
             avatarUrl: normalizeWeiboImageUrl(avatar) ?? '',
+            // 与主贴作者同口径：只认 verified 布尔，缺失按未认证处理
+            isVerified: user.verified === true,
         },
     }
 }
@@ -205,7 +207,13 @@ function parseCommentBody(raw: Record<string, unknown>): CommentBody {
 /** 子评论预览上限：上游一般只下发 2-3 条，多留无益且会把一级评论撑高 */
 const MAX_REPLY_PREVIEW = 3
 
-/** 归一化单条子评论：id 缺失直接丢弃，被回复者昵称取自 reply_comment */
+/** 评论点赞态：上游用布尔或 1/0 表示，缺失按未赞处理 */
+function readCommentLiked(raw: Record<string, unknown>): boolean {
+    const liked = raw.liked
+    return liked === true || liked === 1 || liked === '1'
+}
+
+/** 归一化单条子评论：id 缺失直接丢弃，被回复者昵称取自 reply_comment，点赞数与点赞态同口径 */
 function normalizeReply(raw: unknown): WeiboCommentReply | null {
     if (!isRecord(raw)) {
         return null
@@ -220,6 +228,9 @@ function normalizeReply(raw: unknown): WeiboCommentReply | null {
         id,
         ...parseCommentBody(raw),
         replyToName: replyUser === null ? '' : toText(replyUser.screen_name),
+        replyToUid: replyUser === null ? '' : toText(replyUser.idstr) || toText(replyUser.id),
+        likes: toCount(raw.like_counts),
+        isLiked: readCommentLiked(raw),
     }
 }
 
@@ -266,6 +277,7 @@ export function normalizeWebComment(raw: unknown): WeiboCommentItem | null {
         id,
         ...parseCommentBody(raw),
         likes: toCount(raw.like_counts),
+        isLiked: readCommentLiked(raw),
         replies,
         replyCount: readReplyCount(raw, replies),
     }

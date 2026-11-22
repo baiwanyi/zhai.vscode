@@ -1,6 +1,6 @@
 /**
  * 热搜打开动作：拼搜索页地址，并以 300ms 窗口拦住连点，避免一次双击打开两个浏览器标签。
- * 复用约定：地址构造来自 weibo/utils/weiboHotLinks，打开动作统一走宿主 weibo/openPost，
+ * 复用约定：地址构造来自 weibo/utils/weiboLinks，打开动作统一走宿主 weibo/openPost，
  * 失败文案交 @shared/utils/error；调用方只消费 searchUrl 与 openSearch。
  * 关键约束：节流时刻放 ref，同一行的连续点击只放行第一次；
  * 请求失败只提示、不改行状态（榜单内容与打开动作互不影响）。
@@ -8,7 +8,7 @@
 import { useCallback, useRef } from 'react'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
-import { buildHotSearchUrl } from '../utils/weiboHotLinks'
+import { buildHotSearchUrl } from '../utils/weiboLinks'
 
 /** 连点保护窗口：窗口内的重复点击直接忽略 */
 const OPEN_THROTTLE_MS = 300

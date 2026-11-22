@@ -31,7 +31,6 @@
  */
 import { cn } from 'cn'
 import {
-    BadgeCheck,
     Ban,
     Check,
     ChevronsDown,
@@ -77,6 +76,7 @@ import { WeiboCommentList } from './WeiboCommentList'
 import { WeiboRepostList } from './WeiboRepostList'
 import type { WeiboMediaPreviewItem } from '../block/WeiboMediaPreview'
 import type { JSX, Ref } from 'react'
+import { WeiboAuthorName } from '../block/WeiboAuthorName'
 import { WeiboAvatar } from '../block/WeiboAvatar'
 import { WeiboMediaPreview } from '../block/WeiboMediaPreview'
 import { WeiboRichText } from '../block/WeiboRichText'
@@ -770,12 +770,11 @@ export function WeiboPostCard({ post, onBlockAuthor, viewerUid = null }: WeiboPo
                     />
                     <div className="min-w-0 flex-1">
                         <CardTitle className="flex flex-wrap items-center gap-1 text-sm">
-                            <span className="truncate">
-                                {post.author.name.length > 0 ? post.author.name : '未知作者'}
-                            </span>
-                            {post.author.isVerified ? (
-                                <BadgeCheck className="size-3.5 shrink-0 text-primary" aria-label="已认证" />
-                            ) : null}
+                            <WeiboAuthorName
+                                name={post.author.name}
+                                isVerified={post.author.isVerified}
+                                fallback="未知作者"
+                            />
                             {post.author.id.length > 0 ? (
                                 <span className="ml-1 shrink-0 text-muted-foreground">@{post.author.id}</span>
                             ) : null}
@@ -854,12 +853,12 @@ export function WeiboPostCard({ post, onBlockAuthor, viewerUid = null }: WeiboPo
                     >
                         {/* 作者行与主贴同构：作者名 + 认证角标 + @UID，下一行单独放发布时间 */}
                         <div className="flex flex-wrap items-center gap-1">
-                            <span className="font-medium text-foreground">
-                                {retweeted.authorName.length > 0 ? retweeted.authorName : '原作者'}
-                            </span>
-                            {retweeted.authorIsVerified ? (
-                                <BadgeCheck className="size-3.5 shrink-0 text-primary" aria-label="已认证" />
-                            ) : null}
+                            <WeiboAuthorName
+                                className="font-medium text-foreground"
+                                name={retweeted.authorName}
+                                isVerified={retweeted.authorIsVerified}
+                                fallback="原作者"
+                            />
                             {retweeted.authorId.length > 0 ? (
                                 <>
                                     <span className="ml-1 shrink-0 text-muted-foreground">@{retweeted.authorId}</span>

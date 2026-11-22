@@ -254,6 +254,8 @@ export async function openWeiboPanel(
                 : (post: WeiboPagePostPayload): Promise<WeiboNoteSaveResult> =>
                       postActions.saveToNote(post, proxy === null ? undefined : createWeiboImageSaver(proxy)),
         addToChat: postActions?.addToChat,
+        commentAddToChat: postActions?.commentAddToChat,
+        repostAddToChat: postActions?.repostAddToChat,
         // 发布前把本地图片传图床：路径限定在 uploads 下，格式按魔数判定，体积沿用上传页的单件上限
         readUploadImage: async (relativePath: string): Promise<WeiboUploadImage> => {
             if (!isUploadPath(relativePath)) {

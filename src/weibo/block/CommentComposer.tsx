@@ -7,6 +7,7 @@
  * 表情按 [名称] 文本落到光标处，超限只提示不截断；插入后由 effect 把光标落回插入位置；
  * 回复态不提供「同时转发」——回复只能在原评论下生成子评论，不能顺带转发原博。
  */
+import { CornerDownLeft } from 'lucide-react'
 import { useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import {
@@ -124,12 +125,13 @@ export function CommentComposer({
                         />
                     ) : null}
                     <InputGroupButton
-                        variant="outline"
+                        variant="primary"
+                        tooltip={replyTarget === null ? '发布' : '回复'}
                         disabled={!isDraftValid}
                         isLoading={isSubmitting}
                         onClick={onSubmit}
                     >
-                        {replyTarget === null ? '发布' : '回复'}
+                        <CornerDownLeft />
                     </InputGroupButton>
                 </div>
             </InputGroupAddon>

@@ -20,7 +20,7 @@ import { WEIBO_WEB_USER_AGENT, WeiboWebError } from './webClient'
 import { createPostComment } from './webComments'
 import { readXsrfToken } from './webInteraction'
 import { buildWeiboFingerprint } from './webPublish'
-import { normalizeWeiboImageUrl, parsePostSegments, parseWeiboCreatedAt } from './webTimeline'
+import { normalizeWeiboImageUrl, parsePostSegments, parseWeiboCreatedAt, readIsLiked } from './webTimeline'
 import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN, WEIBO_WEB_REFERER } from './weiboEndpoints'
 
 /** 单页默认条数：与网页端一致 */
@@ -83,6 +83,27 @@ function stripTags(value: string): string {
     return value.replace(/<[^>]*>/g, '').trim()
 }
 
+/** 计数：数字与数字字符串都接受，缺失或非数值按 0，负数按 0（与时间线、评论同一口径） */
+function toCount(value: unknown): number {
+    const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN
+    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0
+}
+
+/**
+ * 点赞数：转发项与主贴同形，按字段优先级取第一个存在的值；一个都没有时回 null。
+ * 关键约束：只认第一个命中的字段——0 是合法计数，不能因为它为假值就继续往后找；
+ * null 与 0 必须区分：前者表示上游没下发，界面不显示数字，后者是真实的零赞。
+ */
+function readLikeCount(raw: Record<string, unknown>): number | null {
+    for (const key of ['attitudes_count', 'attitude_count', 'like_counts']) {
+        const value = raw[key]
+        if (typeof value === 'number' || typeof value === 'string') {
+            return toCount(value)
+        }
+    }
+    return null
+}
+
 /** 夹取页码：非法值回落第一页 */
 function clampPage(value: number | undefined): number {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
@@ -135,6 +156,7 @@ export function normalizeWebRepost(raw: unknown): WeiboRepostItem | null {
         .join('')
     const createdAtRaw = toText(raw.created_at)
     const avatar = toText(user.avatar_large) || toText(user.profile_image_url)
+    const retweeted = isRecord(raw.retweeted_status) ? raw.retweeted_status : null
     return {
         id,
         mblogid: toText(raw.mblogid),
@@ -148,6 +170,11 @@ export function normalizeWebRepost(raw: unknown): WeiboRepostItem | null {
             avatarUrl: normalizeWeiboImageUrl(avatar) ?? '',
             isVerified: user.verified === true,
         },
+        // 点赞口径与主贴一致：计数取 attitudes_count，点赞态取 attitudes_status
+        likes: readLikeCount(raw),
+        isLiked: readIsLiked(raw),
+        // 原微博的赞数是另一份数据：转发列表里条目自身几乎都是 0，展示它才有参考价值
+        originalLikes: retweeted === null ? null : readLikeCount(retweeted),
         source: stripTags(toText(raw.source)),
     }
 }

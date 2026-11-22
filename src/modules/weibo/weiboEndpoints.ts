@@ -79,6 +79,10 @@ export const WEIBO_AJAX_PATHS = {
     replyComment: '/ajax/comments/reply',
     /** 删除评论：只提交评论 cid */
     destroyComment: '/ajax/statuses/destroyComment',
+    /** 评论点赞：formdata 提交 object_id 与 object_type=comment，另带设备指纹 */
+    likeComment: '/ajax/statuses/updateLike',
+    /** 取消评论点赞：与点赞同参，不带指纹 */
+    cancelLikeComment: '/ajax/statuses/destroyLike',
     /** 长文全文 */
     longText: '/ajax/statuses/longtext',
     /** 点赞 */

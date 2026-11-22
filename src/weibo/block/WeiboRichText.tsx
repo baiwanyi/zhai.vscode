@@ -53,7 +53,7 @@ interface WeiboLinkProps {
  * 关键约束：保留 `<a href>` 只为键盘可达与状态栏预览，导航必须被阻止——
  * webview 内直接跳转会把面板顶掉，真正的打开动作由 useWeiboOpenUrl 完成。
  */
-function WeiboLink({ text, url }: WeiboLinkProps): JSX.Element {
+export function WeiboLink({ text, url }: WeiboLinkProps): JSX.Element {
     const openUrl = useWeiboOpenUrl()
 
     const handleClick = useCallback(
@@ -68,7 +68,7 @@ function WeiboLink({ text, url }: WeiboLinkProps): JSX.Element {
         <a
             href={url}
             onClick={handleClick}
-            className="cursor-pointer wrap-break-word text-blue-400 hover:underline dark:text-blue-400"
+            className="cursor-pointer wrap-break-word text-link hover:underline dark:text-link pr-0.5"
         >
             {text}
         </a>

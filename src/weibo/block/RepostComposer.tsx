@@ -4,8 +4,11 @@
  * 开关取 @webview/components/Switch；字数上限与超限判定由调用方算好传入
  * （纯转发 500 字、勾选同时评论后按评论上限 140 字收窄）。
  * 关键约束：附言可以为空（纯转发），按钮只在越过当前上限时禁用，其余交给 maxLength 兜住；
- * 提交中开关与输入框一起禁用，避免用户误以为本次提交带上了新选择。
+ * 提交中开关与输入框一起禁用，避免用户误以为本次提交带上了新选择；
+ * 引用由父级追加到草稿，父级每追加一次就把 focusEndSignal 自增，这里等渲染落地后聚焦并置光标到末尾。
  */
+import { CornerDownLeft } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import {
     InputGroup,
     InputGroupAddon,
@@ -23,6 +26,8 @@ export interface RepostComposerProps {
     draftLimit: number
     isDraftOverLimit: boolean
     isSubmitting: boolean
+    /** 光标定位信号：父级每追加一次引用就自增，组件据此聚焦并把光标放到草稿末尾 */
+    focusEndSignal?: number
     onDraftChange: (value: string) => void
     onShouldCommentChange: (value: boolean) => void
     onKeyDown: (event: KeyboardEvent<HTMLTextAreaElement>) => void
@@ -35,14 +40,32 @@ export function RepostComposer({
     draftLimit,
     isDraftOverLimit,
     isSubmitting,
+    focusEndSignal,
     onDraftChange,
     onShouldCommentChange,
     onKeyDown,
     onSubmit,
 }: RepostComposerProps): JSX.Element {
+    const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+
+    // 引用内容已在这次渲染里写进 value：此时再聚焦并置光标，落点才是新增内容的末尾
+    useEffect(() => {
+        if (focusEndSignal === undefined || focusEndSignal === 0) {
+            return
+        }
+        const textarea = textareaRef.current
+        if (textarea === null) {
+            return
+        }
+        textarea.focus()
+        const end = textarea.value.length
+        textarea.setSelectionRange(end, end)
+    }, [focusEndSignal])
+
     return (
         <InputGroup>
             <InputGroupTextarea
+                ref={textareaRef}
                 value={draft}
                 onChange={(event) => {
                     onDraftChange(event.target.value)
@@ -71,12 +94,13 @@ export function RepostComposer({
                         disabled={isSubmitting}
                     />
                     <InputGroupButton
-                        variant="outline"
+                        variant="primary"
+                        tooltip="发布"
                         disabled={isDraftOverLimit}
                         isLoading={isSubmitting}
                         onClick={onSubmit}
                     >
-                        发送
+                        <CornerDownLeft />
                     </InputGroupButton>
                 </div>
             </InputGroupAddon>

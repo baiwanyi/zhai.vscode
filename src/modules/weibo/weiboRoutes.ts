@@ -6,7 +6,8 @@
  * 关键约束：方法名与 shared/types/messages 的 HostMethodName 一一对应，新增方法须两侧同时维护；
  * 未登记方法一律抛错；时间线与凭证错误统一带分类码，前端按码分发提示而不是解析文案；
  * 外链只放行 weibo.com 及其子域，防止被当作任意地址跳转的通道；
- * 保存笔记与添加到 AI 对话前都对主贴与转发体的长文做全文补全，取不到全文时保留摘要并标注截断。
+ * 保存笔记与添加到 AI 对话前都对主贴与转发体的长文做全文补全，取不到全文时保留摘要并标注截断；
+ * 评论添加到 AI 对话不再取数：正文由前端载荷带出，路由只做收窄。
  */
 import { logger } from '@modules/common/logger'
 import type {
@@ -14,8 +15,10 @@ import type {
     WeiboChatContextResult,
     WeiboCityState,
     WeiboClearCredentialResult,
+    WeiboCommentChatPayload,
     WeiboCommentCreateResult,
     WeiboCommentDestroyResult,
+    WeiboCommentLikeResult,
     WeiboCommentRepliesResult,
     WeiboCommentsResult,
     WeiboCredentialState,
@@ -32,6 +35,7 @@ import type {
     WeiboProfile,
     WeiboProfileResult,
     WeiboPublishResult,
+    WeiboRepostChatPayload,
     WeiboRepostCreateResult,
     WeiboRepostsResult,
     WeiboSaveCredentialResult,
@@ -47,6 +51,7 @@ import {
     isWeiboCityCode,
     isWeiboCommentCreateRequest,
     isWeiboCommentDestroyRequest,
+    isWeiboCommentLikeRequest,
     isWeiboCommentRepliesRequest,
     isWeiboCommentsRequest,
     isWeiboDestroyStatusRequest,
@@ -68,7 +73,9 @@ import {
     isWeiboTopicsRequest,
     isWeiboVideoRequest,
     readWeiboCityName,
+    readWeiboCommentChatPayload,
     readWeiboPagePost,
+    readWeiboRepostChatPayload,
 } from '@shared/types/weibo'
 import { normalizeWeiboBlockList } from '@shared/utils/weiboBlock'
 import { WeiboWebError } from './webClient'
@@ -77,7 +84,7 @@ import { isCookieUsable, normalizeCookieInput } from './webCredential'
 import { fetchWeiboEmoticons } from './webEmoticons'
 import { fetchWeiboFeed, fetchWeiboGroups, rememberHotChannels } from './webFeed'
 import { fetchWeiboHotRank } from './webHotRank'
-import { setPostLike } from './webInteraction'
+import { setCommentLike, setPostLike, setRepostLike } from './webInteraction'
 import { fetchWeiboLikes } from './webLikes'
 import { fetchLongText } from './webLongText'
 import { fetchWeiboProfile } from './webProfile'
@@ -96,7 +103,7 @@ import type { WeiboCookieStore } from './webCredential'
 import type { FetchEmoticonsOptions } from './webEmoticons'
 import type { FetchFeedOptions, FetchGroupsOptions } from './webFeed'
 import type { FetchHotRankOptions } from './webHotRank'
-import type { SetLikeOptions } from './webInteraction'
+import type { SetCommentLikeOptions, SetLikeOptions, SetRepostLikeOptions } from './webInteraction'
 import type { FetchLikesOptions } from './webLikes'
 import type { FetchLongTextOptions } from './webLongText'
 import type { FetchProfileOptions } from './webProfile'
@@ -154,6 +161,10 @@ export interface WeiboRouteDeps {
     resolveVideoUrl?: (videoUrl: string) => Promise<string | null>
     /** 点赞写入：默认走网页版 setLike / cancelLike，单测可替换 */
     setLike?: (options: SetLikeOptions) => Promise<WeiboLikeResult>
+    /** 评论点赞写入：默认走网页版 updateLike / destroyLike，单测可替换 */
+    setCommentLike?: (options: SetCommentLikeOptions) => Promise<WeiboCommentLikeResult>
+    /** 转发点赞写入：默认走网页版 setLike / cancelLike（form + fp），单测可替换 */
+    setRepostLike?: (options: SetRepostLikeOptions) => Promise<WeiboLikeResult>
     /** 我的赞读取：默认走网页版 likelist，单测可替换 */
     fetchLikes?: (options: FetchLikesOptions) => Promise<WeiboLikesResult>
     /** 评论读取：默认走网页版 buildComments，单测可替换 */
@@ -176,6 +187,10 @@ export interface WeiboRouteDeps {
     saveToNote?: (post: WeiboPagePostPayload) => Promise<WeiboNoteSaveResult>
     /** 卡片动作·添加到 AI 对话：由面板注入会话能力，未注入时该方法报未就绪 */
     addToChat?: (post: WeiboPagePostPayload) => Promise<WeiboChatContextResult>
+    /** 评论动作·添加到 AI 对话：评论正文由载荷带出，与卡片共用同一会话能力 */
+    commentAddToChat?: (payload: WeiboCommentChatPayload) => Promise<WeiboChatContextResult>
+    /** 转发动作·添加到 AI 对话：附言由载荷带出，与卡片共用同一会话能力 */
+    repostAddToChat?: (payload: WeiboRepostChatPayload) => Promise<WeiboChatContextResult>
     openExternal?: (url: string) => Promise<void>
     now?: () => Date
 }
@@ -245,16 +260,24 @@ export class WeiboRoutes {
                 return this.saveBlockList(payload)
             case 'weibo/comments':
                 return this.loadComments(payload)
+            case 'weibo/comment/addToChat':
+                return this.commentAddToChat(payload)
             case 'weibo/comment/create':
                 return this.createComment(payload)
             case 'weibo/comment/destroy':
                 return this.destroyComment(payload)
+            case 'weibo/comment/like':
+                return this.likeComment(payload)
             case 'weibo/comment/replies':
                 return this.loadCommentReplies(payload)
             case 'weibo/reposts':
                 return this.loadReposts(payload)
             case 'weibo/repost':
                 return this.createRepost(payload)
+            case 'weibo/repost/addToChat':
+                return this.repostAddToChat(payload)
+            case 'weibo/repost/like':
+                return this.likeRepost(payload)
             case 'weibo/destroy':
                 return this.destroyStatus(payload)
             case 'weibo/longtext':
@@ -811,6 +834,35 @@ export class WeiboRoutes {
         return setLike({ cookie, id: payload.id, liked: payload.liked })
     }
 
+    /**
+     * 评论点赞 / 取消点赞：与评论列表共用登录 Cookie，缺凭证直接给出可执行引导。
+     * 关键约束：写操作不重试——失败即回包错误，由前端回滚乐观状态；评论 id 只接受数字串。
+     */
+    private async likeComment(payload: unknown): Promise<WeiboCommentLikeResult> {
+        if (!isWeiboCommentLikeRequest(payload)) {
+            throw new WeiboWebError(
+                'invalid-payload',
+                'weibo/comment/like 参数非法：cid 须为数字评论 id，liked 须为布尔',
+            )
+        }
+        const cookie = await this.readCookie()
+        const setLike = this.deps.setCommentLike ?? setCommentLike
+        return setLike({ cookie, cid: payload.cid, liked: payload.liked })
+    }
+
+    /**
+     * 转发点赞 / 取消点赞：与主贴点赞共用端点，参数由 webInteraction 按转发口径（form + fp）提交。
+     * 关键约束：写操作不重试——失败即回包错误，由前端回滚乐观状态；id 只接受数字串。
+     */
+    private async likeRepost(payload: unknown): Promise<WeiboLikeResult> {
+        if (!isWeiboLikeRequest(payload)) {
+            throw new WeiboWebError('invalid-payload', 'weibo/repost/like 参数非法：id 须为数字微博 id，liked 须为布尔')
+        }
+        const cookie = await this.readCookie()
+        const setLike = this.deps.setRepostLike ?? setRepostLike
+        return setLike({ cookie, id: payload.id, liked: payload.liked })
+    }
+
     /** 打开原微博：域名白名单校验通过才交给宿主 openExternal */
     private async openPost(payload: unknown): Promise<{ opened: boolean }> {
         if (!isWeiboOpenPostRequest(payload)) {
@@ -894,5 +946,39 @@ export class WeiboRoutes {
             throw new WeiboWebError('upstream', '当前宿主尚未装配 AI 对话，无法添加为上下文')
         }
         return addToChat(await this.expandLongText(post))
+    }
+
+    /**
+     * 评论添加到 AI 对话：载荷收窄 → 交由 AI 层构造内联引用。
+     * 关键约束：评论正文已在协议层收窄，本层不取数、不补全长文，也不接受任何评论链接；
+     * 会话作用域同样由 AI 层固定为 weibo 模块，与主贴添加共用同一份上下文。
+     */
+    private async commentAddToChat(payload: unknown): Promise<WeiboChatContextResult> {
+        const comment = readWeiboCommentChatPayload(payload)
+        if (comment === null) {
+            throw new WeiboWebError('invalid-payload', 'weibo/comment/addToChat 参数非法：缺少合法评论 id、作者或正文')
+        }
+        const commentAddToChat = this.deps.commentAddToChat
+        if (commentAddToChat === undefined) {
+            throw new WeiboWebError('upstream', '当前宿主尚未装配 AI 对话，无法添加为上下文')
+        }
+        return commentAddToChat(comment)
+    }
+
+    /**
+     * 转发添加到 AI 对话：载荷收窄 → 交由 AI 层构造内联引用。
+     * 关键约束：附言已在协议层收窄，本层不取数、不接受任何转发链接；
+     * 会话作用域由 AI 层固定为 weibo 模块，与主贴、评论的添加共用同一份上下文。
+     */
+    private async repostAddToChat(payload: unknown): Promise<WeiboChatContextResult> {
+        const repost = readWeiboRepostChatPayload(payload)
+        if (repost === null) {
+            throw new WeiboWebError('invalid-payload', 'weibo/repost/addToChat 参数非法：缺少合法转发 id、作者或附言')
+        }
+        const repostAddToChat = this.deps.repostAddToChat
+        if (repostAddToChat === undefined) {
+            throw new WeiboWebError('upstream', '当前宿主尚未装配 AI 对话，无法添加为上下文')
+        }
+        return repostAddToChat(repost)
     }
 }

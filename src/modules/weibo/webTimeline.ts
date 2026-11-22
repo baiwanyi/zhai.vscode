@@ -806,7 +806,7 @@ function extractMedia(record: Record<string, unknown>): WeiboTimelineMedia {
 }
 
 /** 读当前账号是否已赞：上游有对象与数字两种形态，缺失按未赞处理 */
-function readIsLiked(record: Record<string, unknown>): boolean {
+export function readIsLiked(record: Record<string, unknown>): boolean {
     const status = record.attitudes_status
     if (isRecord(status)) {
         return status.liked === true || status.liked === 1

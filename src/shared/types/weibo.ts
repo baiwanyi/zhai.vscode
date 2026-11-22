@@ -63,6 +63,8 @@ export interface WeiboCommentAuthor {
     id: string
     name: string
     avatarUrl: string
+    /** 是否认证：与主贴作者同口径，只认上游 verified 布尔，缺失按未认证处理 */
+    isVerified: boolean
 }
 
 /**
@@ -79,6 +81,12 @@ export interface WeiboCommentReply {
     author: WeiboCommentAuthor
     /** 被回复者昵称：来自上游 reply_comment，不是回复关系时为空串 */
     replyToName: string
+    /** 被回复者 uid：前端据此拼个人主页链接，上游未给时为空串 */
+    replyToUid: string
+    /** 点赞数：上游未给时为 0 */
+    likes: number
+    /** 当前账号是否已赞这条子评论：上游未给该字段时按未赞处理 */
+    isLiked: boolean
 }
 
 /** 单条评论：正文与主贴同口径（分段保留表情） */
@@ -93,6 +101,8 @@ export interface WeiboCommentItem {
     createdAtRaw: string
     author: WeiboCommentAuthor
     likes: number
+    /** 当前账号是否已赞这条评论：上游未给该字段时按未赞处理 */
+    isLiked: boolean
     /** 子评论预览：上游随一级评论下发的若干条回复，可能为空 */
     replies: WeiboCommentReply[]
     /** 子评论总数：大于 replies.length 说明上游还有没下发的回复 */
@@ -138,6 +148,18 @@ export interface WeiboCommentDestroyResult {
     deleted: boolean
 }
 
+/** 评论点赞请求：cid 为评论数字 id，liked 为点击后的目标状态 */
+export interface WeiboCommentLikeRequest {
+    cid: string
+    liked: boolean
+}
+
+/** 评论点赞结果：上游不回计数时 likeCount 为 null，由前端按本地增减继续显示 */
+export interface WeiboCommentLikeResult {
+    liked: boolean
+    likeCount: number | null
+}
+
 /** 评论请求：maxId 缺省拉第一页 */
 export interface WeiboCommentsRequest {
     /** 微博数字 id */
@@ -174,6 +196,23 @@ export interface WeiboCommentsResult {
     hasMore: boolean
 }
 
+/**
+ * 评论加入 AI 对话的载荷：评论没有独立永久链接，正文与作者由前端带出，宿主不发起网络请求。
+ * 一级评论与子评论共用同一形状，子评论用 replyToName 标明被回复者。
+ */
+export interface WeiboCommentChatPayload {
+    /** 评论数字 id：只作引用去重键，不拼进任何请求 */
+    commentId: string
+    /** 评论作者昵称：空串时由宿主回退为占位 */
+    authorName: string
+    /** 评论正文纯文本：表情以 `[名称]` 形式保留 */
+    text: string
+    /** 评论时间（ISO 8601）：解析失败为空串 */
+    createdAt: string
+    /** 被回复者昵称：一级评论为空串 */
+    replyToName: string
+}
+
 /** 转发项：谁转发了这条微博，正文是转发时附带的评论（纯转发为空） */
 export interface WeiboRepostItem {
     id: string
@@ -185,8 +224,29 @@ export interface WeiboRepostItem {
     createdAt: string
     createdAtRaw: string
     author: WeiboTimelineAuthor
+    /** 点赞数：上游未下发该字段时为 null（与真实的 0 区分，界面据此决定是否显示数字） */
+    likes: number | null
+    /** 当前账号是否已赞这条转发：上游未给时按未赞处理 */
+    isLiked: boolean
+    /** 被转发原微博的点赞数：与转发自身的点赞是两份数据，未下发时为 null */
+    originalLikes: number | null
     /** 来源客户端：已剥掉「来自」外壳 */
     source: string
+}
+
+/**
+ * 转发加入 AI 对话的载荷：转发没有独立永久链接，正文与作者由前端带出，宿主不发起网络请求。
+ * 纯转发的附言为空串，宿主按「无正文」渲染，仍然可以入上下文（作者与时间本身有信息量）。
+ */
+export interface WeiboRepostChatPayload {
+    /** 转发数字 id：只作引用去重键，不拼进任何请求 */
+    repostId: string
+    /** 转发作者昵称：空串时由宿主回退为占位 */
+    authorName: string
+    /** 转发附言纯文本：表情以 `[名称]` 形式保留，纯转发为空串 */
+    text: string
+    /** 转发时间（ISO 8601）：解析失败为空串 */
+    createdAt: string
 }
 
 /** 转发列表请求：只有页码分页，没有游标 */
@@ -1122,6 +1182,15 @@ export function isWeiboCommentDestroyRequest(value: unknown): value is WeiboComm
     return typeof cid === 'string' && WEIBO_ID_PATTERN.test(cid)
 }
 
+/** 收窄评论点赞入参：cid 必须是纯数字评论 id，liked 必须是布尔 */
+export function isWeiboCommentLikeRequest(value: unknown): value is WeiboCommentLikeRequest {
+    if (typeof value !== 'object' || value === null) {
+        return false
+    }
+    const { cid, liked } = value as Record<string, unknown>
+    return typeof cid === 'string' && WEIBO_ID_PATTERN.test(cid) && typeof liked === 'boolean'
+}
+
 /** 收窄子评论入参：id 为数字评论 id，maxId 与 count 可缺省 */
 export function isWeiboCommentRepliesRequest(value: unknown): value is WeiboCommentRepliesRequest {
     if (typeof value !== 'object' || value === null) {
@@ -1132,6 +1201,42 @@ export function isWeiboCommentRepliesRequest(value: unknown): value is WeiboComm
         return false
     }
     return isOptionalTimelineId(maxId) && isOptionalNumber(count)
+}
+
+/** 评论加入对话的字数与昵称上限：正文按上游评论上限留余量，昵称与卡片同口径 */
+const MAX_COMMENT_CHAT_TEXT = 4_000
+const MAX_COMMENT_CHAT_NAME = 64
+const MAX_COMMENT_CHAT_TIME = 64
+
+/**
+ * 收窄评论加入对话的载荷：结构性非法返回 null（由路由抛错），正文超长按上限截断。
+ * 关键约束：正文按不可信文本处理，不做 HTML 解析；评论 id 必须是数字串，昵称超长直接判非法；
+ * 时间只作展示，不参与任何请求构造。
+ */
+export function readWeiboCommentChatPayload(value: unknown): WeiboCommentChatPayload | null {
+    if (typeof value !== 'object' || value === null) {
+        return null
+    }
+    const { commentId, authorName, text, createdAt, replyToName } = value as Record<string, unknown>
+    if (typeof commentId !== 'string' || !WEIBO_ID_PATTERN.test(commentId)) {
+        return null
+    }
+    if (typeof authorName !== 'string' || authorName.length > MAX_COMMENT_CHAT_NAME) {
+        return null
+    }
+    if (typeof text !== 'string' || typeof createdAt !== 'string' || createdAt.length > MAX_COMMENT_CHAT_TIME) {
+        return null
+    }
+    if (typeof replyToName !== 'string' || replyToName.length > MAX_COMMENT_CHAT_NAME) {
+        return null
+    }
+    return {
+        commentId,
+        authorName,
+        text: text.slice(0, MAX_COMMENT_CHAT_TEXT),
+        createdAt,
+        replyToName,
+    }
 }
 
 /** 收窄转发列表入参：id 为数字微博 id，page 与 count 可缺省 */
@@ -1165,6 +1270,37 @@ export function isWeiboRepostCreateRequest(value: unknown): value is WeiboRepost
     }
     const maxLength = mode === undefined || mode === 'repost' ? WEIBO_REPOST_MAX_LENGTH : WEIBO_COMMENT_MAX_LENGTH
     return comment.trim().length <= maxLength
+}
+
+/** 转发加入对话的字数与昵称上限：正文按单次引用上限对齐，昵称与卡片同口径 */
+const MAX_REPOST_CHAT_TEXT = 4_000
+const MAX_REPOST_CHAT_NAME = 64
+const MAX_REPOST_CHAT_TIME = 64
+
+/**
+ * 收窄转发加入对话的载荷：结构性非法返回 null（由路由抛错），正文超长按上限截断。
+ * 关键约束：正文按不可信文本处理，不做 HTML 解析；转发 id 必须是数字串，昵称超长直接判非法。
+ */
+export function readWeiboRepostChatPayload(value: unknown): WeiboRepostChatPayload | null {
+    if (typeof value !== 'object' || value === null) {
+        return null
+    }
+    const { repostId, authorName, text, createdAt } = value as Record<string, unknown>
+    if (typeof repostId !== 'string' || !WEIBO_ID_PATTERN.test(repostId)) {
+        return null
+    }
+    if (typeof authorName !== 'string' || authorName.length > MAX_REPOST_CHAT_NAME) {
+        return null
+    }
+    if (typeof text !== 'string' || typeof createdAt !== 'string' || createdAt.length > MAX_REPOST_CHAT_TIME) {
+        return null
+    }
+    return {
+        repostId,
+        authorName,
+        text: text.slice(0, MAX_REPOST_CHAT_TEXT),
+        createdAt,
+    }
 }
 
 /** 收窄删除微博入参：id 必须是纯数字微博 id */

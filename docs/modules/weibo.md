@@ -25,13 +25,16 @@
 | 热搜九榜 | 「热搜 · 我的 / 热搜 / 文娱 / 社会 / 科技 / 生活 / 体育 / ACG / 同城」 | `ajax/side/bandUnified`、`ajax/statuses/*` |
 | 我的赞 | 账号菜单 | `ajax/statuses/likelist` |
 | 评论 | 卡片评论区 | `buildComments`、`comments/create`、`comments/reply`、`destroyComment` |
+| 评论点赞 | 评论与子评论操作行 | `updateLike`、`destroyLike`（`object_type=comment`） |
 | 点赞 | 卡片动作 | `setLike`、`cancelLike` |
 | 转发 | 卡片动作与转发列表 | `repostTimeline`、`normal_repost` |
+| 转发点赞 | 转发列表操作行 | `setLike`、`cancelLike`（form 参数 + 指纹） |
 | 删除微博或转发 | 卡片动作 | `statuses/destroy` |
 | 发布微博 | 首页发表框 | `pic_upload.php` 换 pid → `statuses/update` |
 | 长文展开 | 卡片「展开」 | `statuses/longtext` |
 | 保存为笔记 | 卡片动作 | 本模块组装 Markdown，落盘交给笔记模块 |
-| 添加到 AI 对话 | 卡片动作 | 本模块组装上下文文本，交给 AI 层 |
+| 添加到 AI 对话 | 卡片动作 / 评论条 / 转发条 | 本模块组装上下文文本，交给 AI 层（主贴用原文链接、评论与转发用各自 id 去重） |
+| 引用转发 | 转发列表操作行 | 把「//@作者：附言」追加到转发框草稿，与手输内容一并发出去 |
 | 图片显示 | 全部卡片 | 宿主图片代理取回后转 data URI |
 | 视频播放 | 卡片内嵌播放器 | 回环 HTTP 中转，Range 原样透传 |
 
@@ -383,6 +386,20 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 - 前端交互：乐观更新点赞态与计数，失败回滚并提示；同一微博请求进行中直接丢弃后续点击（`ref` 判定），避免连点放大成多次写。
 - 限制：写操作**不重试**（401/403/418 直接回错误），避免把账号打进风控；点赞结果不回写时间线数据源，刷新后以服务端为准。
 
+评论点赞（与主贴点赞走不同端点）：
+
+```
+POST https://weibo.com/ajax/statuses/updateLike
+Content-Type: application/x-www-form-urlencoded;charset=UTF-8
+Cookie / Referer / Origin / X-XSRF-TOKEN 同主贴点赞
+object_id={评论数字 id}&object_type=comment&fp={33 位设备指纹}
+```
+
+- 取消：`POST https://weibo.com/ajax/statuses/destroyLike`，参数只留 `object_id` 与 `object_type`，不带 `fp`。
+- 协议 `weibo/comment/like`，入参 `{ cid, liked }`，`cid` 必须是评论数字 id；回包以 `ok > 0` 或 `result: true` 判定成功，`like_counts` 缺失时前端沿用本地增减。
+- 前端：入口在评论与子评论的操作行（图标 + 计数，排在操作组最后），乐观更新点赞态与计数、失败回滚并提示，同一评论请求进行中丢弃后续点击（`hooks/useWeiboCommentLike.ts`）；初始点赞态取评论项上的 `liked`，缺失按未赞处理。
+- 子评论同样带 `like_counts` / `liked`，归一化时与一级评论同口径，`useWeiboCommentLike` 只依赖 `{ id, likes, isLiked }` 三个字段，两种评论共用同一份实现。
+
 ### 2.7 评论读取与发布
 
 ```
@@ -402,8 +419,8 @@ GET https://weibo.com/ajax/statuses/buildComments
 | `max_id` | 上一页响应顶层 `max_id` | 翻页游标，不能自造 |
 
 - 响应结构：`{ ok, data: [...], total_number, max_id }`；`data` 每项含 `id/idstr`、`text`（HTML + 表情标签）、`created_at`、`user`、`like_counts`。
-- 归一化：正文复用主贴的 `parsePostSegments`（文本 + 表情 + 链接分段），纯文本口径把表情还原成 `[名称]`、链接只留文字；时间走同一套 `parseWeiboCreatedAt`；头像过图床白名单。
-- 子评论：一级评论项上的 `comments` / `reply_comments`（两种字段名都兼容）按同一套正文口径归一化，最多保留 3 条预览；子评论总数取 `total_number`（回退 `comments_count`），被回复者昵称取 `reply_comment.user.screen_name`，前端渲染成缩进块 + 「回复 @某人」。
+- 归一化：正文复用主贴的 `parsePostSegments`（文本 + 表情 + 链接分段），纯文本口径把表情还原成 `[名称]`、链接只留文字；时间走同一套 `parseWeiboCreatedAt`；头像过图床白名单；作者认证与主贴同口径取 `user.verified`（缺失按未认证），前端在作者名后渲染认证角标。
+- 子评论：一级评论项上的 `comments` / `reply_comments`（两种字段名都兼容）按同一套正文口径归一化，最多保留 3 条预览；子评论总数取 `total_number`（回退 `comments_count`），被回复者昵称取 `reply_comment.user.screen_name`、uid 取 `reply_comment.user.id/idstr`，前端渲染成缩进块 + 「回复 @某人」，其中 @昵称渲染为超链接：有 uid 用 `https://weibo.com/u/{uid}`，缺 uid 时退到 `https://weibo.com/n/{昵称}`，两者都整段转义，点击仍交宿主打开。
 
 展开更多回复：
 
@@ -453,6 +470,7 @@ cid={评论 id}
 ```
 
 - 协议 `weibo/comment/destroy`，入参 `{ cid }`；回包同为 `{ ok, data, msg }`，成功时 `msg` 为「删除成功」。
+- 加入 AI 对话：协议 `weibo/comment/addToChat`，入参 `{ commentId, authorName, text, createdAt, replyToName }`；评论没有永久链接，宿主用 `weibo-comment:{评论 id}` 作去重键，一级评论与子评论共用同一方法（子评论带 `replyToName` 标明被回复者），前端按评论 id 单飞并显示「添加中…」。
 - 前端：每条评论都有「回复」，只有当前登录账号自己的评论才显示「删除」（`viewerUid` 与 `comment.author.id` 比对，uid 由 `weibo/profile` 或分组结果给出、经列表逐层透传）；删除走单个确认弹窗，成功后重拉第一页；回复复用底部发布框，只在框上方回显「回复 @某人」并可取消，提交时带 `replyToId`。
 
 ### 2.8 长文展开
@@ -502,19 +520,20 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/modules/weibo/weiboAvatar.ts` | 头像缓存：下载落盘 `{存储根}/weibo_avatar.jpg`、读回 data URI、清除 |
 | `src/modules/weibo/warmup.ts` | 激活预热：分组 / 账号信息 / 热搜 / 表情串行取一次并写缓存，失败静默 |
 | `src/modules/weibo/mediaProxy.ts` | 图片代理：带 Referer 取图、本地缓存、并发去重与容量清理 |
-| `src/modules/weibo/webInteraction.ts` | 写操作：`setLike` / `cancelLike`，补 Origin 与 X-XSRF-TOKEN |
+| `src/modules/weibo/webInteraction.ts` | 写操作：主贴 `setLike` / `cancelLike`、转发 `setLike` / `cancelLike`（form + fp）与评论 `updateLike` / `destroyLike`（带 fp），补 Origin 与 X-XSRF-TOKEN |
 | `src/modules/weibo/webComments.ts` | 评论读取与写操作：`buildComments` 参数构造、分页游标、评论归一化，`comments/create` / `comments/reply` / `destroyComment` 表单提交与错误分类 |
 | `src/modules/weibo/webLongText.ts` | 长文读取：`longtext` 取全文、正文优先级与失败兜底 |
 | `src/modules/weibo/webLikes.ts` | 我的赞：`statuses/likelist` 页码取数、总数与是否还有下一页判断 |
-| `src/modules/weibo/webReposts.ts` | 转发列表：`repostTimeline` 页码取数、转发项归一化与分页判断 |
+| `src/modules/weibo/webReposts.ts` | 转发列表：`repostTimeline` 页码取数、转发项归一化（含点赞计数与点赞态）与分页判断 |
 | `src/modules/weibo/videoServer.ts` | 视频中转：回环 HTTP 服务补 Referer，能用 ffmpeg 就把 AAC 音轨转成 MP3（Webview 无 AAC 解码器）边转边发，否则原样流式转发 |
-| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/likes`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/topics`、`weibo/publish`、`weibo/comments`、`weibo/comment/create`、`weibo/comment/destroy`、`weibo/comment/replies`、`weibo/reposts`、`weibo/repost`、`weibo/destroy`、`weibo/longtext`、`weibo/credential/*`、`weibo/blockList/*`、`weibo/image`、`weibo/video`、`weibo/like`、`weibo/openPost` 分发 |
+| `src/modules/weibo/weiboRoutes.ts` | `weibo/timeline`、`weibo/feed`、`weibo/likes`、`weibo/groups`、`weibo/hotRank`、`weibo/profile`、`weibo/emoticons`、`weibo/topics`、`weibo/publish`、`weibo/comments`、`weibo/comment/create`、`weibo/comment/destroy`、`weibo/comment/replies`、`weibo/comment/addToChat`、`weibo/comment/like`、`weibo/reposts`、`weibo/repost`、`weibo/repost/like`、`weibo/repost/addToChat`、`weibo/destroy`、`weibo/longtext`、`weibo/credential/*`、`weibo/blockList/*`、`weibo/image`、`weibo/video`、`weibo/like`、`weibo/openPost` 分发 |
 | `src/modules/weibo/panel.ts` | 面板消息通道、凭证与缓存注入、图片代理装配与本地资源白名单 |
 | `src/modules/common/webviewHtml.ts` | CSP 生成：默认不放行远程图，需要时可按调用方传入的 `imgSources` 放行 |
 | `src/shared/utils/weiboText.ts` | 正文纯文本切分：`@账号` / `#话题#` / 微博域名链接，宿主与 Webview 共用（零前端依赖） |
 | `src/shared/utils/weiboBlock.ts` | 屏蔽名单：多行文本与名单数组互转、归一化、按作者名与关键字判定单条是否隐藏，宿主保存与 Webview 过滤共用 |
 | `src/weibo/` | Webview 入口：顶部固定菜单、账号菜单与设置弹窗（同城城市 + 屏蔽名单）、右侧热搜榜、信息流列表、卡片（头像 / 图文混排 / 表情）与发表框（表情 / 话题 / 图片选择器） |
 | `src/weibo/layout/WeiboVideoPlayer.tsx` | 视频播放器：自绘控件栏、中央播放键、空格播放/暂停、控件自动隐藏、清晰度角标、静音与全屏 |
+| `src/weibo/utils/weiboCount.ts` | 互动数展示：万级折算成 `x.x万`（十万级以上取整），非法输入回 `0` |
 | `src/weibo/layout/PageHotSearch.tsx` | 热搜专页：一个标签一张榜，整页榜单渲染、专页行样式与同城城市切换入口 |
 | `src/weibo/layout/WeiboHotRankRow.tsx` | 侧栏热搜行样式：序号 / 标题 / 副行 / 整行点击与 Tooltip（专页有自己的行组件，不共用） |
 | `src/weibo/layout/WeiboHotRankBadge.tsx` | 热搜徽标：icon_desc + 底色，`sm` / `md` 两档，侧栏与专页共用 |
@@ -527,7 +546,7 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/weibo/hooks/useWeiboComposerImages.ts` | 发表框图片库：清单读取、选择上传与粘贴上传 |
 | `src/weibo/hooks/useWeiboPublish.ts` | 发表框发布：单飞提交、成功回执与超时口径 |
 | `src/weibo/hooks/useWeiboEnhance.ts` | 发表框 AI 优化：`ai/enhancePrompt` 的微博口径请求与进行态 |
-| `src/weibo/utils/weiboHotLinks.ts` | 搜索页地址构造与标题链接处理器（纯函数） |
+| `src/weibo/utils/weiboLinks.ts` | 站内链接构造：个人主页（`/u/{uid}`、`/n/{昵称}`）、热搜搜索页地址与标题链接处理器（纯函数） |
 | `src/shared/utils/color.ts` | 按底色亮度选可读前景色，供徽标等浅深底自适应 |
 
 ### 2.11 多入口信息流（首页 / 时间线 / 热门 / 分组）
@@ -629,7 +648,7 @@ ACG     GET https://weibo.com/ajax/statuses/acg
 - 同城 citycode 规则：固定前缀 `80086` + 四位行政区划代码（如南宁 `4501` → `800864501`）。城市在面板「设置」弹窗里按城市名选择，落 `zhai.weibo.cityCode`（也可在工作区设置里手填其它城市的四位代码）；未配置或非法值回落南宁。预置城市清单按城市名拼音升序排列，下拉里近似字典序。
 - 只有 `band`（侧栏 `bandUnified`）参与 `weibo.json` 缓存；其余标签与同城的榜单内容各不相同，一律实时回源，避免不同标签串数据。
 - 专页使用自己的行组件 `PageHotSearchRow`（本文件内）：宽页不挂 Tooltip、标题单行截断、徽标略大一档，整行点击打开搜索页；不复用侧栏那一份行样式，侧栏仍用 `layout/WeiboHotRankRow.tsx` 且只取前 10 条。
-- 两份行组件共用四类能力，避免同类逻辑各写一份：名次与前三名高亮 `layout/WeiboHotRankPosition`（`sm` / `md`）、徽标 `layout/WeiboHotRankBadge`（`sm` / `md`）、搜索地址与连点保护 `hooks/useWeiboSearchOpen`（地址规则在 `utils/weiboHotLinks`）、三态占位 `layout/WeiboHotRankFallback`（`sidebar` / `page`）。
+- 两份行组件共用四类能力，避免同类逻辑各写一份：名次与前三名高亮 `layout/WeiboHotRankPosition`（`sm` / `md`）、徽标 `layout/WeiboHotRankBadge`（`sm` / `md`）、搜索地址与连点保护 `hooks/useWeiboSearchOpen`（地址规则在 `utils/weiboLinks`）、三态占位 `layout/WeiboHotRankFallback`（`sidebar` / `page`）。
 - 热搜页不渲染右侧热搜卡，避免同一份榜单出现两次；该页内容区放宽到 `max-w-3xl`。
 - 顶栏「刷新」在热搜页刷当前标签的榜单（专页内不再有重复的刷新按钮，只有空态里的「重试」），在信息流页仍按原有游标语义刷新；当前视图内容为 0 时顶栏不渲染刷新按钮，信息流空态自带「刷新」入口（首页空态原本就有）。
 
@@ -808,6 +827,12 @@ GET https://weibo.com/ajax/statuses/repostTimeline?id={微博数字 id}&page=1&m
 - 分页只有 `page`（从 1 开始），没有游标；本页条数拉满即认为可能还有下一页，由前端翻到空页为止。
 - 协议 `weibo/reposts`，入参 `{ id, page?, count? }`，结果 `{ reposts, page, hasMore }`；正文口径与评论一致（`parsePostSegments` + 纯文本还原表情）。
 - 前端：底栏「转发」是按钮，点击在底栏之后展开转发列表（与评论区互斥、共用同一位置），限高 `max-h-80` 滚动；纯转发没有附言，不渲染空段落。
+- 转发项自带 `attitudes_count` / `attitudes_status`（与主贴同形），归一化后作为点赞初始值；计数按 `attitudes_count → attitude_count → like_counts` 的优先级取第一个存在的字段（`0` 是合法值，不回退），三个字段都没有时归一化为 `null`，界面不显示数字——以此区分「上游没下发」与「真实零赞」。
+- 原博赞数是另一份数据：取 `retweeted_status.attitudes_count` 归一化为 `originalLikes`，在时间后面标注「· 原博 x 赞」（万级折算成 `8.3万`，见 `utils/weiboCount`）；转发自身的赞数为 `0` 时不显示数字，因为转发普遍无人点赞，显示出来只会干扰阅读。
+- 实测回包里转发项 `attitudes_count` 恒为 `0`、`attitudes_status` 为 `0`，原博的赞数在 `retweeted_status.attitudes_count`（如 82833）。
+- 转发操作行（`block/RepostActionBar.tsx`）：左侧时间、右侧引用 / 添加到 AI 对话 / 点赞 / 删除。点赞计数常显，`0` 也展示，避免被误读为未取到数据。点赞协议 `weibo/repost/like`（入参 `{ id, liked }`）——与主贴同一端点，但参数走 form：点赞提交 `id` + `fp`，取消只提交 `id`，回包从根层 `status.attitudes_count` 取最新计数（缺失时前端沿用本地增减）；删除复用 `weibo/destroy`（`statuses/destroy`，参数 `id`）。
+- 引用：把 `//@作者：附言` 追加到转发框草稿（纯转发只写 `//@作者`，同一条已引用过不重复追加），字数与超限判定沿用 Composer 的 `draft.length/draftLimit`，提交时与手输内容一起作为 `comment` 发出。
+- 添加到 AI 对话：协议 `weibo/repost/addToChat`（入参 `{ repostId, authorName, text, createdAt }`），宿主组装「微博转发 @作者（时间）+ 附言」并落到 weibo 作用域会话，去重键用 `weibo-repost:{转发 id}`。
 
 发布转发：只转发与转发并评论共用 `normal_repost` 一个请求；评论并转发是**两步**（先评论、再转发），单靠 `is_repost=1` 不会生成评论。
 
@@ -828,7 +853,7 @@ id={微博数字 id}&comment={附言，可为空}&pic_id=&comment_ori=0&fp={设�
 - 回包 `{ ok, data: { statuses }, msg }`，成功时 `msg` 为「转发成功」；`statuses` 当前不消费，由前端重拉第一页。
 - 部分成功：评论已发出但转发失败时 `weibo/repost` 不抛错，而是回 `{ reposted: false, commented: true, failureMessage }`；前端据此清空草稿、关掉「同时转发」开关并照常刷新评论，提示「评论已发布，但转发失败」，避免用户重试时把评论发重。
 - 前端：转发框右下角是「同时评论」开关（`@webview/components/Switch`）——打开走 `repostWithComment`（`is_comment=1`），关闭走 `repost`；留空即纯转发，按钮不按内容禁用；成功后清空附言并重拉第一页，失败弹 toast；`Ctrl / Cmd + Enter` 直接发送。
-- 前端分层：取数（页码续载、代际丢弃、总数本地增减）在 `hooks/useWeiboReposts.ts`，写操作（转发 / 删除，含单飞与计数回调）在 `hooks/useWeiboRepostActions.ts`；视图拆为 `block/RepostComposer.tsx`（转发框）、`block/RepostItem.tsx`（条目），`layout/WeiboRepostList.tsx` 只做装配。
+- 前端分层：取数（页码续载、代际丢弃、总数本地增减）在 `hooks/useWeiboReposts.ts`，写操作（转发 / 删除，含单飞与计数回调）在 `hooks/useWeiboRepostActions.ts`；视图拆为 `block/RepostComposer.tsx`（转发框）、`block/RepostItem.tsx`（条目：头像 + 「作者名：附言」同行，时间与删除操作复用 `block/CommentActionBar.tsx`，与评论条目同一套排版口径）、`layout/WeiboRepostList.tsx` 只做装配。
 
 删除转发 / 微博：
 

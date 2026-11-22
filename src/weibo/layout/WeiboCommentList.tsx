@@ -1,7 +1,8 @@
 /**
  * 评论区：展开时先拉第一页评论，支持继续加载，并在列表上方提供发布 / 回复框。
- * 复用约定：取数（首屏 / 续载 / 子评论展开）走 useWeiboCommentThread，写操作（发布 / 回复 / 删除）
- * 走 useWeiboCommentActions；发布框与评论条目分别是 CommentComposer / CommentItem，
+ * 复用约定：取数（首屏 / 续载 / 子评论展开）走 useWeiboCommentThread，
+ * 写操作与加入 AI 对话（发布 / 回复 / 删除 / 添加为上下文）走 useWeiboCommentActions；
+ * 发布框与评论条目分别是 CommentComposer / CommentItem，
  * 续载与失败重试交给 LoadMoreSentinel（滚到底自动拉，失败原地重试）；
  * 头像与正文取 WeiboAvatar / WeiboRichText，空态取 StateEmpty、读取失败条取 ListErrorAlert，
  * 删除确认复用公共 ConfirmDialog。
@@ -17,7 +18,6 @@ import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { ListErrorAlert } from '@webview/components/ListErrorAlert'
 import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
 import { StateEmpty } from '@webview/components/StateEmpty'
-import { readWeiboAuthorName } from '@webview/weibo/utils/weiboAuthor'
 import type { JSX } from 'react'
 import { CommentComposer } from '../block/CommentComposer'
 import { CommentItem } from '../block/CommentItem'
@@ -74,18 +74,16 @@ export function WeiboCommentList({ postId, totalCount, viewerUid = null }: Weibo
                             loadedReplies={thread.expandedReplies[comment.id]}
                             isLoadingReplies={thread.expandingIds.includes(comment.id)}
                             canDelete={canDelete}
-                            onReply={() => {
-                                actions.beginReply({
-                                    id: comment.id,
-                                    authorName: readWeiboAuthorName(comment.author.name),
-                                })
-                            }}
+                            addingChatIds={actions.addingChatIds}
+                            onReply={actions.beginReply}
                             onDelete={() => {
                                 actions.requestDelete(comment)
                             }}
                             onLoadReplies={() => {
                                 void thread.loadReplies(comment, thread.expandedReplies[comment.id])
                             }}
+                            onAddCommentToChat={actions.addCommentToChat}
+                            onAddReplyToChat={actions.addReplyToChat}
                         />
                     )
                 })}

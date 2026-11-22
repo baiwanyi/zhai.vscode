@@ -159,7 +159,7 @@ export function useWeiboPostActions(
                     toast.success(WEIBO_UI_TEXT.toast.addedToChat)
                     return
                 }
-                toast.info(result.reason ?? '未能添加到 AI 对话')
+                toast.info(result.reason ?? WEIBO_UI_TEXT.toast.chatRejected)
             })
             .catch(toastError)
             .finally(() => {
