@@ -6,6 +6,7 @@
  * 成功判定是拿到 pid（回包 code=A00006，pid 在 data.pics.*.pid）；图片按入参顺序逐张上传，
  * 任一失败即整条放弃（不做部分发布）；写操作一律不重试；错误文案不得包含 Cookie。
  */
+import { createHash } from 'node:crypto'
 import type { WeiboPublishResult } from '@shared/types/weibo'
 import { WEIBO_WEB_USER_AGENT, WeiboWebError } from './webClient'
 import { readXsrfToken } from './webInteraction'
@@ -78,6 +79,23 @@ export function buildWeiboFingerprint(random: () => number): string {
     while (fingerprint.length < FINGERPRINT_LENGTH) {
         const index = Math.floor(random() * FINGERPRINT_ALPHABET.length)
         fingerprint += FINGERPRINT_ALPHABET[index] ?? '0'
+    }
+    return fingerprint
+}
+
+/**
+ * 稳定伪指纹：按账号派生，同一账号的 fp 不再逐请求跳变。
+ * 关键约束：只用 Cookie 的不可逆摘要做种，不引入任何真实设备信息；
+ * 与上面随机版相比，同账号稳定更像真人会话，逐请求随机更容易被判成脚本流量。
+ */
+export function buildStableFingerprint(cookie: string): string {
+    const digest = createHash('sha256').update(cookie, 'utf8').digest()
+    let fingerprint = '0'
+    let cursor = 0
+    while (fingerprint.length < FINGERPRINT_LENGTH) {
+        const byte = digest[cursor % digest.length] ?? 0
+        fingerprint += FINGERPRINT_ALPHABET[byte % FINGERPRINT_ALPHABET.length] ?? '0'
+        cursor += 1
     }
     return fingerprint
 }
@@ -346,7 +364,6 @@ async function uploadPicture(context: UploadContext, image: WeiboUploadImage): P
 /** 发布微博：先传全部图片换 pid，再提交正文与 pid */
 export async function publishWeibo(options: PublishWeiboOptions): Promise<WeiboPublishResult> {
     const fetcher = options.fetcher ?? fetch
-    const random = options.random ?? Math.random
     const timeoutMs = options.timeoutMs ?? UPLOAD_TIMEOUT_MS
     const pics: PublishPic[] = []
     for (const image of options.images) {
@@ -358,7 +375,8 @@ export async function publishWeibo(options: PublishWeiboOptions): Promise<WeiboP
     const form = buildPublishForm({
         content: options.content,
         pics,
-        fingerprint: buildWeiboFingerprint(random),
+        // 同账号稳定：逐请求随机更像脚本，且同一会话内指纹跳变没有收益
+        fingerprint: buildStableFingerprint(options.cookie),
     })
     let response: Response
     try {

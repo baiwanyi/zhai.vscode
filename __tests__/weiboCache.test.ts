@@ -217,6 +217,8 @@ describe('微博元数据缓存', () => {
 
     it('账号信息写入后可读回，换号或昵称缺失都按未命中处理', async () => {
         const cache = createWeiboCache(createUri(STORAGE_ROOT))
+        // 账号信息缓存有 7 天有效期：写入时刻取「一天前」，避免用例随运行日期漂移而失效
+        const fetchedAt = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
         const profile: WeiboProfile = {
             id: '6305885570',
             name: '测试账号',
@@ -227,7 +229,7 @@ describe('微博元数据缓存', () => {
             friendsCount: 32,
             statusesCount: 9,
         }
-        await cache.write('profile', ACCOUNT, profile, '2026-11-20T12:00:00.000Z')
+        await cache.write('profile', ACCOUNT, profile, fetchedAt)
 
         expect((await cache.readProfile(ACCOUNT))?.data).toEqual(profile)
         expect(await cache.readProfile(OTHER_ACCOUNT)).toBeNull()
@@ -236,10 +238,31 @@ describe('微博元数据缓存', () => {
             CACHE_PATH,
             rawFile({
                 profile: {
-                    fetchedAt: '2026-11-20T12:00:00.000Z',
+                    fetchedAt,
                     data: { id: '6305885570', name: '  ', avatarUrl: '' },
                 },
             }),
+        )
+        expect(await cache.readProfile(ACCOUNT)).toBeNull()
+    })
+
+    it('账号信息超过 7 天按未命中处理', async () => {
+        const cache = createWeiboCache(createUri(STORAGE_ROOT))
+        const staleAt = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString()
+        await cache.write(
+            'profile',
+            ACCOUNT,
+            {
+                id: '6305885570',
+                name: '旧昵称',
+                avatarUrl: '',
+                isVerified: false,
+                description: '',
+                followersCount: 0,
+                friendsCount: 0,
+                statusesCount: 0,
+            },
+            staleAt,
         )
         expect(await cache.readProfile(ACCOUNT)).toBeNull()
     })

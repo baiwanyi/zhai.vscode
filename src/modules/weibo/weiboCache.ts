@@ -32,14 +32,15 @@ const CACHE_VERSION = 1
 export type WeiboCacheKey = 'groups' | 'hotRank' | 'emoticons' | 'profile'
 
 /**
- * 各来源的有效期：默认不过期——四项只在激活预热与凭证变更时重建，
- * 面板刷新与热搜按钮之外不应再回源。改成有限值即开启「读取时过期回源」。
+ * 各来源的有效期：分组 / 热搜 / 表情不过期——三者都有主动刷新入口（写后失效、刷新按钮、
+ * 表情几乎不变），过期回源只会白白增加请求；账号信息没有手动刷新入口，给 7 天，
+ * 避免昵称、认证与头像长期停留在旧值。
  */
 const CACHE_TTL_MS: Readonly<Record<WeiboCacheKey, number>> = {
     groups: Number.POSITIVE_INFINITY,
     hotRank: Number.POSITIVE_INFINITY,
     emoticons: Number.POSITIVE_INFINITY,
-    profile: Number.POSITIVE_INFINITY,
+    profile: 7 * 24 * 60 * 60 * 1000,
 }
 
 /** 缓存条目：data 为归一化后的回包，fetchedAt 是该结果的取数时刻（ISO） */
@@ -59,6 +60,11 @@ export interface WeiboCache {
     /** 上次预热时刻：账号不符返回 null，预热据此跳过 */
     readWarmedAt(accountKey: string): Promise<string | null>
     markWarmed(accountKey: string): Promise<void>
+    /**
+     * 失效分组缓存：关注分组 / 备注写完调用，避免写后读拿到旧快照。
+     * 可选方法——未实现时调用方按「无缓存可失效」处理，不影响其它取数。
+     */
+    invalidateGroups?(accountKey: string): Promise<void>
     /** 整体删除：清除凭证后旧账号数据不应继续留在磁盘上 */
     clear(): Promise<void>
 }
@@ -441,6 +447,9 @@ export function createWeiboCache(root: vscode.Uri, now: () => Date = (): Date =>
         },
         markWarmed: async (accountKey: string): Promise<void> => {
             await updateFile(root, accountKey, (file) => ({ ...file, warmedAt: now().toISOString() }))
+        },
+        invalidateGroups: async (accountKey: string): Promise<void> => {
+            await updateFile(root, accountKey, (file) => ({ ...file, groups: null }))
         },
         clear: async (): Promise<void> => {
             const task = writeQueue.then(async (): Promise<void> => {

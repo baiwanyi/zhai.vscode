@@ -18,6 +18,7 @@ import type {
 import { WEIBO_FEED_DEFAULT_COUNT, isWeiboTimelineId } from '@shared/types/weibo'
 import { WeiboWebError, clampTimelineCount, requestWeiboJson, toIdString } from './webClient'
 import { fetchFriendTimeline } from './webTimeline'
+import { toAccountKey } from './weiboCache'
 import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN } from './weiboEndpoints'
 import type { TimelinePage, TimelinePageQuery, WeiboJsonQuery, WeiboJsonResponse } from './webClient'
 
@@ -59,22 +60,25 @@ function clampFeedCount(value: number | undefined): number {
 }
 
 /**
- * 频道表缓存：键为凭证 —— 换账号后频道集合不同，旧缓存不能串给新账号。
- * 关键约束：只在内存里比较凭证，不落盘、不进日志；为空时由 fetchWeiboGroups 回填。
+ * 频道表缓存：键为账号指纹（Cookie 的不可逆摘要）—— 换账号后频道集合不同，旧缓存不能串给新账号。
+ * 关键约束：进程内不留会话凭证明文，指纹比较足够区分账号；为空时由 fetchWeiboGroups 回填。
  */
-let hotChannelCache: { cookie: string; channels: readonly WeiboHotChannel[] } | null = null
+let hotChannelCache: { accountKey: string; channels: readonly WeiboHotChannel[] } | null = null
 
 /**
  * 写入频道表缓存：allGroups 每次取回都刷新一次，频道增删随之生效。
  * 路由层从磁盘缓存命中分组结果时也要调一次，否则热门取数会再回源一次 allGroups。
  */
 export function rememberHotChannels(cookie: string, channels: readonly WeiboHotChannel[]): void {
-    hotChannelCache = { cookie, channels }
+    hotChannelCache = { accountKey: toAccountKey(cookie), channels }
 }
 
-/** 读取频道表缓存：凭证不一致一律视为没有缓存 */
+/** 读取频道表缓存：账号指纹不一致一律视为没有缓存 */
 function readCachedHotChannels(cookie: string): readonly WeiboHotChannel[] | null {
-    return hotChannelCache !== null && hotChannelCache.cookie === cookie ? hotChannelCache.channels : null
+    if (hotChannelCache === null) {
+        return null
+    }
+    return hotChannelCache.accountKey === toAccountKey(cookie) ? hotChannelCache.channels : null
 }
 
 /** 构造信息流地址：list_id、刷新标志与游标都按来源固定，游标为空时回落到 since_id=0 */

@@ -5,6 +5,8 @@
  * 前端按纯文本与分段渲染，不再二次解析 HTML。
  * 关键约束：max_id 是不规律长整型游标，不能自增构造；增量模式（sinceId 非 0）只取一页，
  * 否则会把历史内容一并拉上来；广告位与缺少 id 的条目直接丢弃，不进入去重计数；
+ * 去重先于归一化（跨页重复条目不必再做一遍 HTML 解析与媒体收窄）；
+ * 正文 HTML 超过上限或锚点不成对时不走标签解析（惰性匹配正则会退化成平方级扫描），只保留纯文本；
  * 链接只认微博域名白名单，越界地址降级为纯文本，避免把任意地址带进 Webview。
  */
 import type {
@@ -203,13 +205,20 @@ export function buildMiddleImageUrl(imageUrl: string): string {
     }
 }
 
+/** 属性正则缓存：属性名由调用方给常量，同一条微博里要读 2-3 次，重复编译纯属浪费 */
+const ATTRIBUTE_PATTERN_CACHE = new Map<string, RegExp>()
+
 /**
  * 读取标签属性：单双引号与无引号值都支持，返回值做实体解码。
  * 属性名要求前有边界，避免 `data-href` 之类被当成 `href`；无引号值去掉自闭合标签的尾斜杠。
- * 属性名由调用方给常量，不参与正则转义。
+ * 属性名由调用方给常量，不参与正则转义；编译结果按属性名缓存。
  */
 function readAttribute(tag: string, name: string): string {
-    const pattern = new RegExp(`(?:^|[\\s"'])${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'iu')
+    let pattern = ATTRIBUTE_PATTERN_CACHE.get(name)
+    if (pattern === undefined) {
+        pattern = new RegExp(`(?:^|[\\s"'])${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, 'iu')
+        ATTRIBUTE_PATTERN_CACHE.set(name, pattern)
+    }
     const match = pattern.exec(tag)
     if (match === null) {
         return ''
@@ -262,7 +271,13 @@ function removeExpandLink(html: string): string {
  * 只对长文摘要调用，避免误伤普通正文里同样的写法。
  */
 function stripTrailingTruncation(text: string): string {
-    return text.replace(TRAILING_EXPAND_PATTERN, '').replace(TRAILING_ELLIPSIS_PATTERN, '').trimEnd()
+    if (text.length === 0) {
+        return text
+    }
+    // 痕迹只可能在末尾：只让尾部参与替换，长串省略号不会把整段正文拖进回溯
+    const cut = Math.max(0, text.length - LONG_TEXT_TAIL_LENGTH)
+    const tail = text.slice(cut).replace(TRAILING_EXPAND_PATTERN, '').replace(TRAILING_ELLIPSIS_PATTERN, '')
+    return `${text.slice(0, cut)}${tail}`.trimEnd()
 }
 
 /** 清理最后一个文本段末尾的截断痕迹：清空后整段移除，避免留下空段落 */
@@ -359,6 +374,49 @@ function classifyLinkKind(url: URL, text: string): WeiboTimelineLinkKind {
 
 /** 正文里的锚点与表情图：一次扫描保留两者在上游 HTML 里的原始先后 */
 const CONTENT_TAG_PATTERN = /<a\b[^>]*>[\s\S]*?<\/a>|<img\b[^>]*>/giu
+
+/** 正文 HTML 上限：超过后不再做标签解析，直接退化成纯文本（普通微博正文远小于此值） */
+const MAX_POST_HTML_LENGTH = 12_000
+
+/** 长文痕迹只可能在正文末尾：正则只看尾部这么多字符，顺带消除嵌套量词的回溯面 */
+const LONG_TEXT_TAIL_LENGTH = 200
+
+/** `<a` 之后的合法字符：空白、`>` 才算开标签，排除 `<article>`、`<aside>` 等 */
+const ANCHOR_OPEN_FOLLOW_CHARS = new Set([0x20, 0x09, 0x0a, 0x0d, 0x3e])
+
+/**
+ * 锚点是否成对：未闭合的 `<a` 会让 CONTENT_TAG_PATTERN 的惰性匹配退化到平方级扫描。
+ * 关键约束：这里只做计数近似——上游正文正常闭合时恒为 false，异常时宁可退回纯文本。
+ */
+function hasUnbalancedAnchors(html: string): boolean {
+    let open = 0
+    let close = 0
+    let index = html.indexOf('<a')
+    while (index !== -1) {
+        const follow = html.charCodeAt(index + 2)
+        if (ANCHOR_OPEN_FOLLOW_CHARS.has(follow)) {
+            open += 1
+        }
+        index = html.indexOf('<a', index + 2)
+    }
+    index = html.indexOf('</a>')
+    while (index !== -1) {
+        close += 1
+        index = html.indexOf('</a>', index + 4)
+    }
+    return open > close
+}
+
+/**
+ * 解析前的正文收窄：超长或锚点不成对时返回 null，调用方改用纯文本分段。
+ * 关键约束：必须在任何标签正则之前调用，否则异常正文的扫描开销无法收敛。
+ */
+function readPostHtml(rawHtml: string): string | null {
+    if (rawHtml.length === 0 || rawHtml.length > MAX_POST_HTML_LENGTH) {
+        return null
+    }
+    return hasUnbalancedAnchors(rawHtml) ? null : rawHtml
+}
 
 /** 锚点内部拆出外层标签与内层内容：非贪婪匹配到最近的闭标签 */
 const ANCHOR_PARTS_PATTERN = /^<a\b[^>]*>([\s\S]*?)<\/a>$/iu
@@ -858,8 +916,9 @@ function isLongTextRecord(record: Record<string, unknown>): boolean {
     if (record.isLongText !== true) {
         return false
     }
-    const rawHtml = toText(record.text)
-    const textRaw = toText(record.text_raw)
+    // 痕迹只可能在末尾：取尾部再匹配，既省扫描也避免嵌套量词在长正文上回溯
+    const rawHtml = toText(record.text).slice(-LONG_TEXT_TAIL_LENGTH)
+    const textRaw = toText(record.text_raw).slice(-LONG_TEXT_TAIL_LENGTH)
     return (
         isRecord(record.continue_tag) ||
         LONG_TEXT_MARKER_PATTERN.test(rawHtml) ||
@@ -888,7 +947,7 @@ function normalizeRetweeted(value: unknown): WeiboTimelineRetweet | null {
     // 转发体同样可能是长文：卡片只展示摘要，保存笔记时宿主据此补取全文
     const isLongText = isLongTextRecord(value)
     const text = isLongText ? stripTrailingTruncation(plainText) : plainText
-    const html = removeExpandLink(toText(value.text))
+    const html = removeExpandLink(readPostHtml(toText(value.text)) ?? '')
     const segments = html.length > 0 ? parsePostSegments(html) : buildTextSegments(text)
     if (isLongText) {
         removeTrailingExpandHint(segments)
@@ -958,8 +1017,8 @@ export function normalizeTimelinePost(raw: unknown): WeiboTimelinePost | null {
     const uid = toText(user.id)
     const avatar = toText(user.avatar_large) || toText(user.profile_image_url)
     const textRaw = toText(raw.text_raw)
-    const rawHtml = toText(raw.text)
-    const html = removeExpandLink(rawHtml)
+    // 超长或锚点不成对的正文不进入标签解析：removeExpandLink 本身也是正则，必须一并挡在前面
+    const html = removeExpandLink(readPostHtml(toText(raw.text)) ?? '')
     const isLongText = isLongTextRecord(raw)
     const plainText = textRaw.length > 0 ? stripWeiboHtml(textRaw) : stripWeiboHtml(replaceEmojiWithText(html))
     // 长文摘要末尾常带「……展开」：卡片已有展开按钮，正文里再留一份会造成重复提示
@@ -999,6 +1058,18 @@ export function normalizeTimelinePost(raw: unknown): WeiboTimelinePost | null {
         isLongText,
         readsCount: readReadsCount(raw),
     }
+}
+
+/**
+ * 轻量提取去重键：与 normalizeTimelinePost 的口径一致——广告位与缺 id 条目返回 null。
+ * 关键约束：只做几次属性读取，绝不能触发正文清洗与媒体归一化，否则去重前移就失去意义。
+ */
+function readStatusKey(raw: unknown): string | null {
+    if (!isRecord(raw) || isPromoted(raw)) {
+        return null
+    }
+    const id = toText(raw.idstr) || toText(raw.id) || toText(raw.mid)
+    return id.length > 0 ? id : null
 }
 
 /** 夹取翻页数：非法值取 1，超出上限按上限 */
@@ -1047,15 +1118,20 @@ export async function fetchFriendTimeline(options: FetchTimelineOptions): Promis
         pages += 1
         lastPage = page
         for (const raw of page.statuses) {
+            const id = readStatusKey(raw)
+            if (id === null) {
+                continue
+            }
+            // 去重先于归一化：跨页重复条目不必再做一遍正文解析与媒体收窄
+            if (seen.has(id)) {
+                droppedDuplicates += 1
+                continue
+            }
             const post = normalizeTimelinePost(raw)
             if (post === null) {
                 continue
             }
-            if (seen.has(post.id)) {
-                droppedDuplicates += 1
-                continue
-            }
-            seen.add(post.id)
+            seen.add(id)
             posts.push(post)
         }
 

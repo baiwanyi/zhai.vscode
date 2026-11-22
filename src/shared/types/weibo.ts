@@ -137,9 +137,14 @@ export interface WeiboCommentCreateRequest {
     replyToId?: string
 }
 
-/** 评论发布结果：成功即 created 为真，失败走错误码 */
+/**
+ * 评论发布结果：成功即 created 为真，失败走错误码。
+ * 「评论并转发」走同一端点（`is_repost=1`），一次请求同时生成转发，
+ * reposted 表示回包里是否拿到了转发 id；普通评论不返回该字段。
+ */
 export interface WeiboCommentCreateResult {
     created: boolean
+    reposted?: boolean
 }
 
 /** 评论删除请求：只能删自己的评论，归属由宿主与前端各自把关 */
@@ -280,9 +285,10 @@ export const WEIBO_REPOST_MAX_LENGTH = 500
 
 /**
  * 转发方式：与提交参数一一对应。
- * repost = 只转发（is_repost=0 / is_comment=0）；
- * repostWithComment = 转发并评论（is_comment=1，仍带 visible 与 share_id）；
- * commentWithRepost = 评论并转发（is_repost=1，不带 visible 与 share_id）。
+ * repost = 只转发（normal_repost：is_repost=0 / is_comment=0）；
+ * repostWithComment = 转发并评论（normal_repost：is_comment=1，仍带 visible 与 share_id）；
+ * commentWithRepost = 评论并转发（comments/create：is_repost=1 / is_comment=0，一次请求同时生成转发，
+ * 回包 data.repostId 即转发 id，不再需要额外的 normal_repost 请求）。
  */
 export type WeiboRepostMode = 'repost' | 'repostWithComment' | 'commentWithRepost'
 
@@ -299,7 +305,12 @@ export interface WeiboRepostCreateRequest {
 /** 转发结果：转发与附带评论各自标记，评论并转发是两步、可能只成一半 */
 export interface WeiboRepostCreateResult {
     reposted: boolean
-    /** 是否同时生成了评论（转发并评论 / 评论并转发） */
+    /**
+     * 是否生成了评论。两种模式的可靠性不同：
+     * - 评论并转发（comments/create + is_repost=1）：回包 `data.repostId` 可校验转发是否生成，评论由本次请求直接创建；
+     * - 转发并评论（normal_repost + is_comment=1）：回包只给 `data.statuses`，**不含任何评论凭据**
+     *   （实测无 comment id / comment 对象），这里只能按传参声明为 true，客户端无法核实。
+     */
     commented: boolean
     /** 部分成功时的上游原因：评论已发出但转发失败时给出，前端据此提示并避免重发评论 */
     failureMessage?: string
@@ -1096,9 +1107,13 @@ export interface WeiboVideoRequest {
     url: string
 }
 
-/** 视频播放地址结果：url 为本地中转地址，null 表示地址不合法或中转服务不可用 */
+/**
+ * 视频播放地址结果：url 为本地中转地址，null 表示地址不合法或中转服务不可用。
+ * seekable 表示播放器能否拖动进度：宿主转码时输出为分片 mp4、不支持 Range，只能从头播。
+ */
 export interface WeiboVideoResult {
     url: string | null
+    seekable: boolean
 }
 
 /** 微博数字 id 形态：增量与翻页游标只允许纯数字，防止任意内容拼进查询串 */

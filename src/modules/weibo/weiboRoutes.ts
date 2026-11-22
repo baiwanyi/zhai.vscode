@@ -6,6 +6,8 @@
  * 关键约束：方法名统一取 @shared/types/weiboMethods 的 WEIBO_METHODS（值只在该表出现一次），
  * 新增方法须在本文件 switch 与常量表同时登记，漏了会在运行时抛「未登记的微博协议方法」；
  * 未登记方法一律抛错；时间线与凭证错误统一带分类码，前端按码分发提示而不是解析文案；
+ * 写操作先进互斥闸门（同方法 + 同载荷在飞行中只放行一次），防止双击与网络重发造成重复发博；
+ * 清除凭证时连带清理元数据缓存、本地头像与图片缓存，避免换号后命中上一账号的数据；
  * 外链只放行 weibo.com 及其子域，防止被当作任意地址跳转的通道；
  * 保存笔记与添加到 AI 对话前都对主贴与转发体的长文做全文补全，取不到全文时保留摘要并标注截断；
  * 评论添加到 AI 对话不再取数：正文由前端载荷带出，路由只做收窄。
@@ -155,6 +157,8 @@ export interface WeiboRouteDeps {
     writeBlockList?: (list: WeiboBlockListState) => Promise<void>
     /** 元数据缓存：分组 / 热搜 / 表情的复用入口，未注入时退化为每次都回源 */
     cache?: WeiboCache
+    /** 图片缓存清理：清除凭证时一并删除已落盘的图，避免换号后旧账号图片残留在磁盘 */
+    clearMediaCache?: () => Promise<void>
     fetchTimeline?: (options: FetchTimelineOptions) => Promise<WeiboTimelineResult>
     /** 信息流读取：时间线 / 热门 / 分组共用，单测可替换 */
     fetchFeed?: (options: FetchFeedOptions) => Promise<WeiboTimelineResult>
@@ -176,8 +180,8 @@ export interface WeiboRouteDeps {
     avatar?: WeiboAvatarGateway
     /** 图片代理：把远程图片下成本地文件并返回 Webview 可加载的地址 */
     resolveImageUrl?: (imageUrl: string) => Promise<string | null>
-    /** 视频中转：把 CDN 整段 mp4 地址换成本地可播地址（本地服务补 Referer 流式转发，不落盘） */
-    resolveVideoUrl?: (videoUrl: string) => Promise<string | null>
+    /** 视频中转：把 CDN 整段 mp4 地址换成本地可播地址与可否拖动标记（本地服务补 Referer 流式转发） */
+    resolveVideoUrl?: (videoUrl: string) => Promise<{ url: string; seekable: boolean } | null>
     /** 点赞写入：默认走网页版 setLike / cancelLike，单测可替换 */
     setLike?: (options: SetLikeOptions) => Promise<WeiboLikeResult>
     /** 评论点赞写入：默认走网页版 updateLike / destroyLike，单测可替换 */
@@ -258,12 +262,64 @@ function writeQuietly(label: string, task: Promise<void>): void {
     })
 }
 
+/**
+ * 写操作方法集合：并发重复提交会直接产生重复发博、重复评论等不可逆副作用。
+ * 关键约束：新增写方法必须同步登记，漏登记会让该方法绕过互斥闸门。
+ */
+const WEIBO_WRITE_METHODS: ReadonlySet<string> = new Set([
+    WEIBO_METHODS.publish,
+    WEIBO_METHODS.commentCreate,
+    WEIBO_METHODS.commentDestroy,
+    WEIBO_METHODS.commentLike,
+    WEIBO_METHODS.repost,
+    WEIBO_METHODS.repostLike,
+    WEIBO_METHODS.destroyStatus,
+    WEIBO_METHODS.like,
+    WEIBO_METHODS.authorFollow,
+    WEIBO_METHODS.userGroupCreate,
+    WEIBO_METHODS.userGroupSave,
+    WEIBO_METHODS.userRemark,
+    WEIBO_METHODS.citySave,
+    WEIBO_METHODS.blockListSave,
+    WEIBO_METHODS.credentialSave,
+    WEIBO_METHODS.credentialClear,
+])
+
 /** 微博协议路由：每个方法返回可直接回包的纯数据 */
 export class WeiboRoutes {
+    /** 写操作飞行中闸门：键为「方法 + 载荷」，只表示该动作当前正在处理 */
+    private readonly inflightWrites = new Set<string>()
+
     public constructor(private readonly deps: WeiboRouteDeps) {}
 
-    /** 处理微博协议方法；未登记的方法抛错而不是静默返回空值 */
+    /** 处理微博协议方法；写操作先进互斥闸门，未登记的方法抛错而不是静默返回空值 */
     public async handle(method: string, payload: unknown): Promise<unknown> {
+        if (!WEIBO_WRITE_METHODS.has(method)) {
+            return this.dispatch(method, payload)
+        }
+        return this.runWriteOnce(method, payload, () => this.dispatch(method, payload))
+    }
+
+    /**
+     * 写操作互斥：同一动作的相同载荷在飞行中只放行一次。
+     * 关键约束：只做「飞行中去重」而不是时间窗去重——一次操作完成后用户的重复点击应当放行，
+     * 真正要挡的是双击与网络重发；闸门在 finally 释放，异常路径也不会把后续请求永久锁死。
+     */
+    private async runWriteOnce<T>(method: string, payload: unknown, action: () => Promise<T>): Promise<T> {
+        const key = `${method}:${JSON.stringify(payload ?? null)}`
+        if (this.inflightWrites.has(key)) {
+            throw new WeiboWebError('rate-limited', '相同的操作正在处理中，请稍候再试')
+        }
+        this.inflightWrites.add(key)
+        try {
+            return await action()
+        } finally {
+            this.inflightWrites.delete(key)
+        }
+    }
+
+    /** 方法分发：只做方法名到实现的映射 */
+    private async dispatch(method: string, payload: unknown): Promise<unknown> {
         switch (method) {
             case WEIBO_METHODS.timeline:
                 return this.loadTimeline(payload)
@@ -406,6 +462,22 @@ export class WeiboRoutes {
             return
         }
         writeQuietly(key, cache.write(key, accountKey, data, fetchedAt))
+    }
+
+    /**
+     * 失效分组缓存：分组 / 备注写完后调用，避免写后读拿到旧快照（用户会以为没保存成功）。
+     * 关键约束：失效失败只记日志——缓存问题不该把一次已成功的写入变成失败回包。
+     */
+    private async invalidateGroups(cookie: string): Promise<void> {
+        const cache = this.deps.cache
+        if (cache?.invalidateGroups === undefined) {
+            return
+        }
+        try {
+            await cache.invalidateGroups(toAccountKey(cookie))
+        } catch (error) {
+            logger.warn(`微博分组缓存失效失败：${error instanceof Error ? error.message : String(error)}`)
+        }
     }
 
     /** 读取时间线：无凭证直接给出可执行的引导，不发起请求；时间线不参与缓存 */
@@ -735,6 +807,8 @@ export class WeiboRoutes {
         await this.deps.cookieStore.removeSavedAt()
         // 缓存里留着旧账号的分组与榜单：一并删除，避免下次换号后命中不属于当前账号的数据
         await this.deps.cache?.clear()
+        // 图片缓存同样带账号色彩（正文图与头像原图）：不删则换号后旧内容仍留在磁盘
+        await this.deps.clearMediaCache?.()
         // 头像文件也要删：否则换号后顶栏会露出上一个账号的照片
         await this.deps.avatar?.clear()
         return { isConfigured: false }
@@ -772,9 +846,10 @@ export class WeiboRoutes {
         }
         const resolveVideoUrl = this.deps.resolveVideoUrl
         if (resolveVideoUrl === undefined) {
-            return { url: null }
+            return { url: null, seekable: false }
         }
-        return { url: await resolveVideoUrl(payload.url) }
+        const resolved = await resolveVideoUrl(payload.url)
+        return resolved === null ? { url: null, seekable: false } : { url: resolved.url, seekable: resolved.seekable }
     }
 
     /** 读取评论：与时间线共用登录 Cookie，缺凭证直接给出可执行的引导 */
@@ -957,7 +1032,9 @@ export class WeiboRoutes {
         }
         const cookie = await this.readCookie()
         const create = this.deps.createUserGroup ?? createUserGroup
-        return create({ cookie, name: payload.name.trim(), isPublic: payload.isPublic })
+        const result = await create({ cookie, name: payload.name.trim(), isPublic: payload.isPublic })
+        await this.invalidateGroups(cookie)
+        return result
     }
 
     /**
@@ -973,12 +1050,14 @@ export class WeiboRoutes {
         }
         const cookie = await this.readCookie()
         const save = this.deps.saveUserGroups ?? saveUserGroups
-        return save({
+        const result = await save({
             cookie,
             uid: payload.uid,
             listIds: payload.listIds,
             originListIds: payload.originListIds,
         })
+        await this.invalidateGroups(cookie)
+        return result
     }
 
     /**
@@ -994,7 +1073,9 @@ export class WeiboRoutes {
         }
         const cookie = await this.readCookie()
         const saveRemark = this.deps.setUserRemark ?? setUserRemark
-        return saveRemark({ cookie, uid: payload.uid, remark: payload.remark })
+        const result = await saveRemark({ cookie, uid: payload.uid, remark: payload.remark })
+        await this.invalidateGroups(cookie)
+        return result
     }
 
     /**

@@ -6,9 +6,10 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { setRepostLike } from '../src/modules/weibo/webInteraction'
+import { buildStableFingerprint } from '../src/modules/weibo/webPublish'
 
 /** random 恒为 0 时的指纹：字符集首位是 '0'，长度为网页端的 33 位 */
-const ZERO_FINGERPRINT = '0'.repeat(33)
+const COOKIE = 'SUB=token; XSRF-TOKEN=abc'
 
 interface FetchOutcome {
     urls: string[]
@@ -47,18 +48,20 @@ describe('setRepostLike', () => {
         vi.unstubAllGlobals()
     })
 
-    it('点赞：走 setLike，form 带 id 与 33 位指纹', async () => {
+    it('点赞：走 setLike，form 带 id 与稳定指纹', async () => {
         const outcome = installFetchMock({ ok: 1, status: { attitudes_count: 8 } })
         const result = await setRepostLike({
-            cookie: 'SUB=token; XSRF-TOKEN=abc',
+            cookie: COOKIE,
             id: '5368144232191355',
             liked: true,
-            random: () => 0,
         })
         expect(outcome.urls).toEqual(['https://weibo.com/ajax/statuses/setLike'])
         const form = outcome.forms[0] ?? new URLSearchParams()
         expect(form.get('id')).toBe('5368144232191355')
-        expect(form.get('fp')).toBe(ZERO_FINGERPRINT)
+        // 指纹由 Cookie 派生：33 位、首位 0，同账号两次请求完全一致
+        const fingerprint = form.get('fp') ?? ''
+        expect(fingerprint).toMatch(/^0[A-Za-z0-9]{32}$/u)
+        expect(fingerprint).toBe(buildStableFingerprint(COOKIE))
         expect(outcome.headers[0]).toMatchObject({ 'X-XSRF-TOKEN': 'abc' })
         expect(result.liked).toBe(true)
         expect(result.attitudesCount).toBe(8)

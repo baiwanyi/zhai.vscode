@@ -22,7 +22,7 @@ import type {
 import { splitPlainTextLinks } from '@shared/utils/weiboText'
 import { WEIBO_WEB_USER_AGENT, WeiboWebError } from './webClient'
 import { readXsrfToken } from './webInteraction'
-import { buildWeiboFingerprint } from './webPublish'
+import { buildStableFingerprint } from './webPublish'
 import { normalizeWeiboImageUrl, parsePostSegments, parseWeiboCreatedAt } from './webTimeline'
 import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN, WEIBO_WEB_REFERER } from './weiboEndpoints'
 
@@ -73,8 +73,10 @@ export interface CreateCommentOptions {
     text: string
     /** 被回复评论的数字 id：缺省发新评论 */
     replyToId?: string
+    /** 同时转发：对应网页「评论并转发」，is_repost=1，一次请求同时生成转发 */
+    repost?: boolean
     timeoutMs?: number
-    /** 指纹随机源：单测注入固定序列，生产用 Math.random */
+    /** 指纹随机源：保留字段兼容旧调用方，指纹已改为按 Cookie 稳定派生，不再使用 */
     random?: () => number
 }
 
@@ -474,6 +476,19 @@ function assertCommentAccepted(subject: string, result: { record: Record<string,
     throw new WeiboWebError(code, `${subject}失败：${message}`, result.status)
 }
 
+/** 读回包里的转发 id：评论并转发成功时 `data.repostId` 存在，普通评论没有该字段 */
+function readRepostId(record: Record<string, unknown>): string | null {
+    const data = record.data
+    if (!isRecord(data)) {
+        return null
+    }
+    const value = data.repostId
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return String(value)
+    }
+    return typeof value === 'string' && value.length > 0 ? value : null
+}
+
 /**
  * 发布评论：replyToId 给出时改走回复端点（多带 cid），正文与开关与网页评论框一致。
  * 复用约定：错误分类沿用 WeiboWebError，前端按码提示；正文按纯文本提交，不做表情与话题解析。
@@ -486,10 +501,11 @@ export async function createPostComment(options: CreateCommentOptions): Promise<
         id: options.id,
         comment: options.text,
         pic_id: '',
-        is_repost: '0',
+        // 评论并转发：同一次请求里带 is_repost=1 由上游生成转发，回包 data.repostId 即转发 id
+        is_repost: options.repost === true ? '1' : '0',
         comment_ori: '0',
         is_comment: '0',
-        fp: buildWeiboFingerprint(options.random ?? Math.random),
+        fp: buildStableFingerprint(options.cookie),
     })
     if (isReply) {
         form.set('cid', options.replyToId ?? '')
@@ -502,6 +518,9 @@ export async function createPostComment(options: CreateCommentOptions): Promise<
         options.timeoutMs ?? CREATE_TIMEOUT_MS,
     )
     assertCommentAccepted(isReply ? '回复评论' : '评论发布', result)
+    if (options.repost === true) {
+        return { created: true, reposted: readRepostId(result.record) !== null }
+    }
     return { created: true }
 }
 

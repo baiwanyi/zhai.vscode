@@ -4,10 +4,13 @@
  * 消息协议复用 shared/types/messages 的 request/response 形状，方法名受 HostMethodName 约束；
  * 面板标识取 shared/types/workflow，工作流路由用它把「活跃标签是微博」映射为微博语境。
  * 关键约束：Cookie 存在 SecretStorage，本层只把 WeiboCookieStore 交给路由，明文不出宿主；
- * 图床按 Referer 放行，图片经 mediaProxy 落本地后内联成 data URI，故不必放开远程图片 CSP；
+ * 图床按 Referer 放行，图片经 mediaProxy 落本地后签发 asWebviewUri 交给 Webview（零 IPC 传输、按需加载），
+ * 回退通道（IMAGE_TRANSPORT）才内联 data URI，超过 1.5MB 时改取 bmiddle 缩略图；
+ * 图片缓存目录须列入 localResourceRoots，否则 asWebviewUri 地址会被拒绝；
  * 视频不落缓存：CSP 的 media-src 放行微博视频 CDN，由 Webview 直接播整段 mp4，面板无需授权任何缓存目录；
- * 发表框的 upload/* 转交上传路由（与工作流面板共用同一份实例），ai/enhancePrompt 转交 AI 服务，
- * 微博路由本身不认这两个前缀；
+ * 发表框只放行 upload/pick|bytes|list 三个方法（与工作流面板共用同一份实例），ai/enhancePrompt 转交 AI 服务，
+ * insert/remove/reveal 不对微博页面开放；错误文案回传前剥成单行纯文本并截断，
+ * 微博路由本身不认这些前缀；
  * 发布前由本层读出 uploads 图片字节（限定路径、按魔数判格式），传图床与提交正文都在 webPublish 内完成；
  * 存储根须列入 localResourceRoots，否则 uploads 缩略图的 asWebviewUri 地址会被拒绝；
  * 面板激活、失焦与销毁都要经 activeDocument 上报/让位，关闭时同时清理事实与句柄。
@@ -31,6 +34,7 @@ import { createWeiboMediaProxy, readImageAsDataUrl } from './mediaProxy'
 import { createWeiboVideoServer } from './videoServer'
 import { WeiboWebError } from './webClient'
 import { EMPTY_COOKIE_STORE, createWeiboCookieStore } from './webCredential'
+import { buildMiddleImageUrl, stripWeiboHtml } from './webTimeline'
 import { createWeiboAvatarGateway } from './weiboAvatar'
 import { createWeiboCache } from './weiboCache'
 import { WeiboRoutes as WeiboRoutesImpl } from './weiboRoutes'
@@ -41,6 +45,52 @@ import type { WeiboRoutes } from './weiboRoutes'
 
 /** 图片缓存子目录：与其它模块的缓存共处 globalStorage 根下 */
 const MEDIA_CACHE_DIR_NAME = 'weibo-media'
+
+/**
+ * 微博面板允许转交的上传方法：发表框只需要选图、上传字节与列表三类。
+ * 关键约束：insert / remove / reveal 属编辑器语境，微博页面用不到；不开比开更安全，
+ * 否则一个被注入的 Webview 脚本就能借面板删掉 uploads 下的任意文件。
+ */
+const WEIBO_UPLOAD_METHODS: ReadonlySet<string> = new Set(['upload/pick', 'upload/bytes', 'upload/list'])
+
+/** 错误文案上限：上游 msg 可能很长，回传前截断避免把整段响应带进提示 */
+const MAX_ERROR_MESSAGE_LENGTH = 200
+
+/**
+ * 错误文案清洗：上游 msg 与底层异常都可能夹带 HTML，回传 Webview 前剥成单行纯文本。
+ * 关键约束：不改动错误分类码，只处理文案——前端按 code 分发，按 message 展示。
+ */
+function toSafeErrorMessage(error: unknown): string {
+    const raw = error instanceof Error ? error.message : String(error)
+    const text = stripWeiboHtml(raw).replace(/\s+/gu, ' ').trim()
+    return text.length > MAX_ERROR_MESSAGE_LENGTH ? `${text.slice(0, MAX_ERROR_MESSAGE_LENGTH)}…` : text
+}
+
+/**
+ * 图片传输方式：
+ * - data-url：内联 base64（默认）。不依赖任何路径授权，是唯一验证过的稳定通道；
+ * - webview-uri：宿主签发 asWebviewUri，浏览器按需取图（零 IPC 传输、不占双份内存）。
+ *   依赖 localResourceRoots 且要求该目录在面板创建时已存在，否则签发地址会被拒（表现为全部图片不显示）。
+ * 关键约束：切换后需重开面板；两条通道都只回传本地缓存文件，不暴露远程地址。
+ */
+const IMAGE_TRANSPORT: 'webview-uri' | 'data-url' = 'data-url'
+
+/**
+ * 回退通道：把缓存文件读成 data URI；超过内联上限时改取 bmiddle 缩略图。
+ * 关键约束：缩略图地址与原始地址相同时不再请求，直接返回 null 由前端显示占位。
+ */
+async function readInlineImage(proxy: WeiboMediaProxy, imageUrl: string, filePath: string): Promise<string | null> {
+    const dataUrl = await readImageAsDataUrl(filePath)
+    if (dataUrl !== null) {
+        return dataUrl
+    }
+    const middleUrl = buildMiddleImageUrl(imageUrl)
+    if (middleUrl === imageUrl) {
+        return null
+    }
+    const middlePath = await proxy.resolve(middleUrl)
+    return middlePath === null ? null : readImageAsDataUrl(middlePath)
+}
 
 /**
  * 读取代理地址：VS Code 的 http.proxy 优先，其次进程环境变量。
@@ -159,16 +209,20 @@ async function handlePanelMessage(
         // ai/enhancePrompt 同理来自 AI 服务（微博路由不认 ai/* 前缀）；
         // 两者未注入时都落到兜底分支并回报「未登记」
         const result =
-            method.startsWith('upload/') && upload !== undefined
+            WEIBO_UPLOAD_METHODS.has(method) && upload !== undefined
                 ? await upload.handle(method, payload, (uri) => panel.webview.asWebviewUri(uri).toString())
                 : method === 'ai/enhancePrompt' && enhancePrompt !== undefined
                   ? await enhancePrompt(payload)
                   : await routes.handle(method, payload)
         await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: result })
     } catch (error) {
-        const text = error instanceof Error ? error.message : String(error)
+        const text = toSafeErrorMessage(error)
         const code = error instanceof WeiboWebError ? error.code : method
-        logger.error(`微博面板请求处理失败：${method}`, error)
+        // 只记文案与堆栈：错误对象上可能挂着请求载荷，整体打进日志等于把用户内容抄一份到输出通道
+        logger.error(
+            `微博面板请求处理失败：${method}`,
+            error instanceof Error ? (error.stack ?? error.message) : String(error),
+        )
         await panel.webview.postMessage({ type: 'response', reqId, ok: false, error: { code, message: text } })
     }
 }
@@ -193,13 +247,28 @@ export async function openWeiboPanel(
         return
     }
     const webviewDist = vscode.Uri.joinPath(extensionUri, 'dist', 'webview')
+    // 资源白名单：构建产物 + 存储根（发表框缩略图）+ 图片缓存目录（卡片图走 asWebviewUri）
+    const mediaCacheDir =
+        mediaCacheRoot === undefined ? null : vscode.Uri.joinPath(mediaCacheRoot, MEDIA_CACHE_DIR_NAME)
+    if (mediaCacheDir !== null) {
+        // 目录必须先存在：localResourceRoots 指向一个尚不存在的目录时，asWebviewUri 签发的地址会全部被拒。
+        // 首次打开面板时缓存目录还没被创建（它由第一次下载图片时按需 mkdir），这里先建出来。
+        try {
+            await vscode.workspace.fs.createDirectory(mediaCacheDir)
+        } catch (error) {
+            // 建不出来也不能让面板打不开：内联通道不依赖该目录
+            logger.warn(`微博图片缓存目录创建失败：${error instanceof Error ? error.message : String(error)}`)
+        }
+    }
+    const resourceRoots = [webviewDist, resolveStorageRoot()]
+    if (mediaCacheDir !== null) {
+        resourceRoots.push(mediaCacheDir)
+    }
     const panel = vscode.window.createWebviewPanel(WEIBO_PANEL_VIEW_TYPE, '微博', vscode.ViewColumn.Active, {
         enableScripts: true,
         // 切到其它 tab 再回来不重建页面：时间线滚动位置与已加载内容活在前端状态里，重建会直接丢掉
         retainContextWhenHidden: true,
-        // 存储根加入白名单：发表框的图片选择与粘贴上传要经 asWebviewUri 渲染 uploads 下的缩略图；
-        // 微博正文图片仍走 data URI、视频直接播 CDN 整段 mp4，都不依赖该目录
-        localResourceRoots: [webviewDist, resolveStorageRoot()],
+        localResourceRoots: resourceRoots,
     })
     current = panel
     // 标签图标用固定品牌红：SVG 里写死颜色，不跟随主题分两套
@@ -237,6 +306,13 @@ export async function openWeiboPanel(
             await config.update('weibo.blockedKeywords', list.blockedKeywords, vscode.ConfigurationTarget.Global)
         },
         cache: createWeiboCache(storageRoot),
+        // 清除凭证时连带清图片缓存：换号后旧账号的正文图与头像原图不应留在磁盘上
+        clearMediaCache:
+            proxy === null
+                ? undefined
+                : async (): Promise<void> => {
+                      await proxy.clearCache()
+                  },
         // 头像经同一份图片代理取回后另存为 {存储根}/weibo_avatar.jpg
         avatar: createWeiboAvatarGateway({
             root: storageRoot,
@@ -280,13 +356,21 @@ export async function openWeiboPanel(
                 ? undefined
                 : async (imageUrl: string): Promise<string | null> => {
                       const filePath = await proxy.resolve(imageUrl)
-                      return filePath === null ? null : readImageAsDataUrl(filePath)
+                      if (filePath === null) {
+                          return null
+                      }
+                      if (IMAGE_TRANSPORT === 'webview-uri') {
+                          // 只签发本地缓存文件的地址：文件被清理后由前端 onError 落到占位
+                          return panel.webview.asWebviewUri(vscode.Uri.file(filePath)).toString()
+                      }
+                      return readInlineImage(proxy, imageUrl, filePath)
                   },
         // 视频：只把 CDN 地址换成回环地址，字节流由本地服务带 Referer 转发，不落缓存
         resolveVideoUrl:
             videoServer === null
                 ? undefined
-                : (videoUrl: string): Promise<string | null> => Promise.resolve(videoServer.toLocalUrl(videoUrl)),
+                : (videoUrl: string): Promise<{ url: string; seekable: boolean } | null> =>
+                      Promise.resolve(videoServer.toLocalUrl(videoUrl)),
     })
 
     // 监听在面板销毁时显式释放：重开面板会重建一份，不释放就叠加处理链

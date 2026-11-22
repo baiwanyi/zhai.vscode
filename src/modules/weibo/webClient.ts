@@ -4,8 +4,8 @@
  * 归一化在 webTimeline / webFeed，凭证存取在 webCredential，本文件只暴露 requestWeiboJson、
  * requestTimelinePage、地址构造与错误类型。
  * 关键约束：since_id 与 max_id 互斥（翻页时上游不接受 since_id），max_id 只能来自上一页响应；
- * 请求间保持最小间隔，401/403/418 不重试；任何错误文案与日志都不得包含 Cookie；
- * ok:0 与 HTML 登录页都要转成带分类码的错误，调用方只按码分发。
+ * 请求间保持最小间隔且先占位再等待（并发调用各自排队，不能同时放行），401/403/418 与超时不重试；
+ * 任何错误文案与日志都不得包含 Cookie；ok:0 与 HTML 登录页都要转成带分类码的错误，调用方只按码分发。
  */
 import type { WeiboTimelineErrorCode } from '@shared/types/weibo'
 import {
@@ -130,18 +130,28 @@ function classifyUpstreamMessage(message: string): WeiboTimelineErrorCode {
     return 'upstream'
 }
 
-/** 请求间最小间隔：不足则等待，保证同一进程内的请求节奏稳定 */
-async function waitForTurn(minIntervalMs: number): Promise<void> {
+/**
+ * 请求间最小间隔：不足则等待，保证同一进程内的请求节奏稳定。
+ * 关键约束：先把本次的时间片写进 lastRequestAt 再等待——若在 await 之后才写，
+ * 并发调用会同时读到旧值并一起放行，节流形同虚设（是 418 的主要来源之一）。
+ */
+async function reserveTurn(minIntervalMs: number): Promise<void> {
     if (minIntervalMs <= 0) {
         return
     }
-    const waitMs = lastRequestAt + minIntervalMs - Date.now()
+    const slot = Math.max(lastRequestAt + minIntervalMs, Date.now())
+    lastRequestAt = slot
+    const waitMs = slot - Date.now()
     if (waitMs > 0) {
         await new Promise<void>((resolve) => {
             setTimeout(resolve, waitMs)
         })
     }
-    lastRequestAt = Date.now()
+}
+
+/** 是否为超时类错误：AbortSignal.timeout 抛 TimeoutError，AbortController 抛 AbortError */
+function isTimeoutError(error: unknown): boolean {
+    return error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')
 }
 
 /** 通用 JSON 请求入参：url 由调用方按端点构造，本层只负责鉴权头、节流与错误分类 */
@@ -213,7 +223,7 @@ export async function requestWeiboJson(query: WeiboJsonQuery): Promise<WeiboJson
     let lastError: WeiboWebError = new WeiboWebError('upstream', '微博请求未执行')
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-        await waitForTurn(minIntervalMs)
+        await reserveTurn(minIntervalMs)
         try {
             const response = await fetch(query.url, {
                 method: 'GET',
@@ -239,11 +249,16 @@ export async function requestWeiboJson(query: WeiboJsonQuery): Promise<WeiboJson
             }
             return { record: parseWeiboJsonPayload(text, response.status), status: response.status }
         } catch (error) {
+            const isTimeout = isTimeoutError(error)
             lastError =
                 error instanceof WeiboWebError
                     ? error
-                    : new WeiboWebError('network', '无法连接微博：请检查网络或代理设置')
-            if (!isRetryable(lastError) || attempt === MAX_RETRIES) {
+                    : new WeiboWebError(
+                          'network',
+                          isTimeout ? '微博请求超时：请检查网络或代理后重试' : '无法连接微博：请检查网络或代理设置',
+                      )
+            // 超时不重试：已经等满一个完整超时，再重试只会把失败时间拉长到三倍
+            if (isTimeout || !isRetryable(lastError) || attempt === MAX_RETRIES) {
                 throw lastError
             }
             // 指数退避：600ms、1200ms，叠加在最小间隔之上

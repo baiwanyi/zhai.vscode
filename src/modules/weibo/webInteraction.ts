@@ -13,7 +13,7 @@
  */
 import type { WeiboCommentLikeResult, WeiboFollowResult, WeiboLikeResult } from '@shared/types/weibo'
 import { WEIBO_WEB_USER_AGENT, WeiboWebError } from './webClient'
-import { buildWeiboFingerprint } from './webPublish'
+import { buildStableFingerprint } from './webPublish'
 import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN, WEIBO_WEB_REFERER } from './weiboEndpoints'
 
 /** 写操作超时：比读接口更短，失败让用户立刻重试 */
@@ -173,7 +173,7 @@ export async function setCommentLike(options: SetCommentLikeOptions): Promise<We
     headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8'
     const form = new URLSearchParams({ object_id: options.cid, object_type: 'comment' })
     if (options.liked) {
-        form.set('fp', buildWeiboFingerprint(options.random ?? Math.random))
+        form.set('fp', buildStableFingerprint(options.cookie))
     }
 
     let response: Response
@@ -258,7 +258,7 @@ export async function setRepostLike(options: SetRepostLikeOptions): Promise<Weib
     headers['Content-Type'] = 'application/x-www-form-urlencoded;charset=UTF-8'
     const form = new URLSearchParams({ id: options.id })
     if (options.liked) {
-        form.set('fp', buildWeiboFingerprint(options.random ?? Math.random))
+        form.set('fp', buildStableFingerprint(options.cookie))
     }
 
     let response: Response

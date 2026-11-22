@@ -1,6 +1,7 @@
 /**
  * 微博转发：repostTimeline 读取谁转发了这条微博（按页码分页），normal_repost 提交转发（附言可空），
- * statuses/destroy 删除自己发的微博或转发；「评论并转发」是评论 + 转发两步，评论走 webComments 的发布接口。
+ * statuses/destroy 删除自己发的微博或转发；「评论并转发」走 webComments 的评论接口并带 is_repost=1，
+ * 一次请求由上游同时生成评论与转发。
  * 复用约定：与时间线共用登录 Cookie 与错误分类；正文切段复用 webTimeline 的 parsePostSegments，
  * 时间与头像走同一套 parseWeiboCreatedAt / normalizeWeiboImageUrl，前端仍经 weibo/image 代理加载；
  * 写操作复用 webInteraction 的 XSRF 读取与 webPublish 的 fp 指纹生成。
@@ -19,7 +20,7 @@ import type {
 import { WEIBO_WEB_USER_AGENT, WeiboWebError } from './webClient'
 import { createPostComment } from './webComments'
 import { readXsrfToken } from './webInteraction'
-import { buildWeiboFingerprint } from './webPublish'
+import { buildStableFingerprint } from './webPublish'
 import { normalizeWeiboImageUrl, parsePostSegments, parseWeiboCreatedAt, readIsLiked } from './webTimeline'
 import { WEIBO_AJAX_PATHS, WEIBO_WEB_ORIGIN, WEIBO_WEB_REFERER } from './weiboEndpoints'
 
@@ -312,42 +313,33 @@ async function submitRepostForm(
  * 转发微博：网页版 normal_repost 表单提交，与评论发布一样走登录 Cookie 与 X-XSRF-TOKEN。
  * 复用约定：错误分类沿用 WeiboWebError；附言直接按文本提交，表情以 `[名称]` 交给上游转图片。
  * 关键约束：附言可为空（纯转发）；三种方式按实测参数分支——
- * 只转发与转发并评论都带 visible / share_id（is_comment 分别为 0 / 1）；
- * 评论并转发是**两步**：先 comments/create 发评论，再用 is_repost=1 转发
- * （normal_repost 的 is_repost=1 只负责转发，并不会顺带生成评论）；
- * 第二步失败时不抛错，改为返回 { reposted: false, commented: true, failureMessage }，
- * 让前端清空草稿并关掉开关，避免用户重试时把同一条评论发重；写操作不重试。
+ * 只转发与转发并评论都走 normal_repost，带 visible / share_id（is_comment 分别为 0 / 1）；
+ * 评论并转发走 comments/create 的 is_repost=1，一次请求同时生成评论与转发
+ * （回包 data.repostId 即转发 id，不需要第二次请求）；
+ * 回包缺 repostId 时按部分成功返回 { reposted: false, commented: true, failureMessage }，
+ * 避免用户重试把同一条评论发重；写操作不重试。
  */
 export async function createPostRepost(options: CreateRepostOptions): Promise<WeiboRepostCreateResult> {
     const mode = options.mode ?? 'repost'
-    const fingerprint = buildWeiboFingerprint(options.random ?? Math.random)
+    const fingerprint = buildStableFingerprint(options.cookie)
     const common = { id: options.id, comment: options.comment, pic_id: '' }
     const timeoutMs = options.timeoutMs ?? MUTATE_TIMEOUT_MS
 
     if (mode === 'commentWithRepost') {
-        // 第一步：评论（评论框的「同时转发」也走这里，空评论会被上游拒，前端已拦）
-        await createPostComment({
+        // 实测：comments/create 带 is_repost=1 会一次生成「评论 + 转发」，回包 data.repostId 即转发 id，
+        // 不再需要第二次 normal_repost（原先两步的失败补偿随之取消）
+        const result = await createPostComment({
             cookie: options.cookie,
             id: options.id,
             text: options.comment,
             timeoutMs: options.timeoutMs,
+            repost: true,
         })
-        // 第二步：转发，字段照实测（不带 visible 与 share_id）
-        const form = new URLSearchParams({
-            ...common,
-            is_repost: '1',
-            comment_ori: '0',
-            is_comment: '0',
-            fp: fingerprint,
-        })
-        try {
-            await submitRepostForm('转发', options.cookie, form, timeoutMs)
-        } catch (cause) {
-            // 评论已经发出，不能整体报错让用户重试（会重复评论）：把部分结果交给前端处理
-            const reason = cause instanceof Error ? cause.message : String(cause)
-            return { reposted: false, commented: true, failureMessage: reason }
+        if (result.reposted === true) {
+            return { reposted: true, commented: true }
         }
-        return { reposted: true, commented: true }
+        // 评论已发出但回包没带转发 id：按部分成功交给前端，避免用户重试把评论发重
+        return { reposted: false, commented: true, failureMessage: '评论已发布，但转发未生成' }
     }
 
     const isComment = mode === 'repostWithComment'
@@ -362,6 +354,8 @@ export async function createPostRepost(options: CreateRepostOptions): Promise<We
         fp: fingerprint,
     })
     await submitRepostForm(isComment ? '转发并评论' : '转发', options.cookie, form, timeoutMs)
+    // 转发并评论虽是一条过，但回包只给 data.statuses（新建转发），不含评论 id，
+    // 因此 commented 只能按传参声明；客户端无法核实评论是否真的落地，不要把它当事实。
     return { reposted: true, commented: isComment }
 }
 
