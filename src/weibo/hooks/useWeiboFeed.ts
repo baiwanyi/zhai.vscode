@@ -12,7 +12,7 @@ import type { WeiboBlockRules, WeiboFeedSource, WeiboTimelinePost, WeiboTimeline
 import { WEIBO_FEED_DEFAULT_COUNT } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
-import { toErrorText, toastError } from '@shared/utils/error'
+import { toErrorText } from '@shared/utils/error'
 import { mergeById } from '@shared/utils/mergeById'
 import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
 
@@ -172,8 +172,9 @@ export function useWeiboFeed({
                 if (seqRef.current !== seq || keyRef.current !== requestKey) {
                     return
                 }
+                // 只落错误态：列表据此把空态标题改成「读取失败」、暂停自动翻页并把底部换成「加载更多」按钮，
+                // 再弹一条 toast 是重复提示（写操作才需要 toast）
                 dispatch({ type: 'failure', message: toErrorText(cause) })
-                toastError(cause)
             }
         },
         [listId, source],

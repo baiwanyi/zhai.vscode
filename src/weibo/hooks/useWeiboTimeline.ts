@@ -172,8 +172,9 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
                     toast(WEIBO_UI_TEXT.toast.noNewPosts)
                 }
             } catch (cause) {
+                // 只落错误态：列表会显示「读取失败」与重试入口，不再重复弹 toast
+                // （凭证保存 / 清除与初始化失败仍保留 toast，那是用户主动操作或整页不可用）
                 dispatch({ type: 'failure', code: readErrorCode(cause), message: toErrorText(cause) })
-                toastError(cause)
             }
         },
         [],

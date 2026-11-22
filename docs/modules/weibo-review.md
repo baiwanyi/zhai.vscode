@@ -118,13 +118,12 @@
 
 ## 5. 遗留项与建议
 
-### 5.1 待决策（需要产品 / 口径确认）
+### 5.1 已落地
 
-| 事项 | 现状 | 建议 |
-|---|---|---|
-| 取数错误回执策略 | 首屏失败落 error + 错误条；续载失败评论/转发静默、其他列表 toast | 统一为「首屏与续载都不弹、只靠错误条与重试」，写操作才 toast |
-| `WeiboFeedList` 的 key 仍含 `author.isFollowing` | 关注后卡片仍会重挂载 | 与点赞同理下沉到关注按钮，影响面小，可一并做 |
-| `useWeiboRepostLike` 回滚后的 `0` | 已修（回到点击前快照） | 已在 `7cf5865c` 中落地，此处仅记录 |
+| 事项 | 结果 |
+|---|---|
+| 取数错误回执策略 | 统一为「取数失败只落错误态，不弹 toast」：`useWeiboFeed` / `useWeiboLikes` / `useWeiboUserBlog` / `useWeiboTimeline`（`loadPage` 分支）/ `useWeiboHotRank` 五处删掉 `toastError`。可见反馈已由各列表自带（空态标题改「读取失败」、自动翻页暂停、底部换「加载更多」、榜单占位给重试）；凭证保存 / 清除 / 初始化三处保留 toast（用户主动操作或整页不可用） |
+| `useWeiboRepostLike` 回滚后的 `0` | 已改为回到点击前快照（`7cf5865c`） |
 
 ### 5.2 排期做
 
@@ -138,6 +137,7 @@
 
 | 事项 | 理由 |
 |---|---|
+| `WeiboFeedList` 的 key 去掉 `author.isFollowing` | 关注态由 `useWeiboAuthorFollow` 持有（controller 在 `WeiboPostCard` 里创建、经 props 下传），key 下沉到按钮无法重置 controller 的 state；要让按钮跟随上游，只能让 hook 用 effect 同步 `initialFollowing`，而这会与本地写操作结果打架——`UserFollowAction` 审查时已否决同一方案 |
 | 分页控制器统一（6 个 hook） | 状态机细节多（代际号、游标形态、`hasLoaded` 与 `isLoading` 合并判断），hook 级测试基线薄；等真的出现第三次同类修复再动 |
 | 超时常量集中（19 个） | 数值分六档但同档内语义不同构（关注写 15s 与话题搜索读 15s 无共同语义），按数值归并会发明错误概念 |
 | HoverCard 焦点竞态 | 需新增 `@radix-ui/react-focus-scope`，双层回焦无法在无 UI 环境验证；已在 `UserFollowAction` 头注释记录限制与修法 |

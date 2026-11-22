@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
 import type { WeiboHotRankItem, WeiboHotRankRequest, WeiboHotRankResult, WeiboHotRankTab } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
-import { toErrorText, toastError } from '@shared/utils/error'
+import { toErrorText } from '@shared/utils/error'
 
 /** 榜单状态：取数提升到面板层后，热搜页与顶栏刷新共用这一份 */
 export interface WeiboHotRankState {
@@ -118,8 +118,8 @@ export function useWeiboHotRank({
                 if (seqRef.current !== seq || keyRef.current !== requestKey) {
                     return
                 }
+                // 只落错误态：榜单占位会显示「读取失败」与重试按钮，不再重复弹 toast
                 dispatch({ type: 'failure', message: toErrorText(cause) })
-                toastError(cause)
             }
         },
         [cityCode, isEnabled, tab],

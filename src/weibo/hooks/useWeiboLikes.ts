@@ -11,7 +11,7 @@ import { toast } from 'sonner'
 import type { WeiboBlockRules, WeiboLikesResult } from '@shared/types/weibo'
 import { WEIBO_METHODS } from '@shared/types/weiboMethods'
 import { request } from '@shared/utils/bridge'
-import { toErrorText, toastError } from '@shared/utils/error'
+import { toErrorText } from '@shared/utils/error'
 import { mergeById } from '@shared/utils/mergeById'
 import { EMPTY_WEIBO_BLOCK_RULES, filterWeiboPosts } from '@shared/utils/weiboBlock'
 import type { FeedState, WeiboFeedController } from './useWeiboFeed'
@@ -130,8 +130,8 @@ export function useWeiboLikes(
             if (seqRef.current !== seq) {
                 return
             }
+            // 只落错误态：列表会显示「读取失败」与刷新入口，不再重复弹 toast
             dispatch({ type: 'failure', message: toErrorText(cause) })
-            toastError(cause)
         }
     }, [])
 
