@@ -3,8 +3,8 @@
  * 全部不触网：requestJson 由用例注入假响应，fetch 不参与断言。
  */
 import { describe, expect, it } from 'vitest'
-import type { WeiboJsonQuery } from '../src/modules/weibo/webClient'
-import { extractWeiboEmoticons, fetchWeiboEmoticons } from '../src/modules/weibo/webEmoticons'
+import type { WeiboJsonQuery } from '../src/modules/weibo/transport/httpClient'
+import { extractWeiboEmoticons, fetchWeiboEmoticons } from '../src/modules/weibo/api/emoticons'
 
 /** 表情图床直链前缀：与上游返回同形 */
 const FACE_BASE = 'https://face.t.sinajs.cn/t4/appstyle/expression/ext/normal'

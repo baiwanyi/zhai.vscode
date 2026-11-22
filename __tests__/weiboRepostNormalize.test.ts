@@ -5,7 +5,7 @@
  * 全部为纯逻辑用例：直接调归一化函数，不触网。
  */
 import { describe, expect, it } from 'vitest'
-import { normalizeWebRepost } from '../src/modules/weibo/webReposts'
+import { normalizeWebRepost } from '../src/modules/weibo/reposts/read'
 
 /** 构造一条最小可用的转发项：其余字段走归一化的默认值 */
 function buildRaw(overrides: Record<string, unknown>): Record<string, unknown> {

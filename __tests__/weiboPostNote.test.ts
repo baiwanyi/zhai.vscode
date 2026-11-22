@@ -6,7 +6,7 @@
 import { describe, expect, it } from 'vitest'
 import type { WeiboPagePostPayload } from '@shared/types/weibo'
 import { readWeiboPagePost } from '@shared/types/weibo'
-import { buildWeiboChatText, buildWeiboNoteMarkdown, buildWeiboNoteTitle } from '../src/modules/weibo/note'
+import { buildWeiboChatText, buildWeiboNoteMarkdown, buildWeiboNoteTitle } from '../src/modules/weibo/app/note'
 
 /** 构造一条最小可用的卡片载荷，用例按需覆盖字段 */
 function createPost(overrides: Partial<WeiboPagePostPayload> = {}): WeiboPagePostPayload {

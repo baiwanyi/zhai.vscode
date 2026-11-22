@@ -8,7 +8,7 @@ import * as path from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { WeiboEmoticonsResult, WeiboGroupsResult, WeiboHotRankResult, WeiboProfile } from '@shared/types/weibo'
 import { createUri, readDeletedPaths, readFileContent, resetWorkspaceState, setFileContent } from './stubs/vscode'
-import { createWeiboCache, toAccountKey } from '../src/modules/weibo/weiboCache'
+import { createWeiboCache, toAccountKey } from '../src/modules/weibo/store/metadataCache'
 
 const STORAGE_ROOT = 'd:/vault'
 const CACHE_PATH = path.join(STORAGE_ROOT, 'weibo.json')

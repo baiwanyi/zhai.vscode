@@ -4,10 +4,10 @@
  * 断言只针对可观察结果（URL 查询参数、归一化后的用户资料、帖子与分页标记）。
  */
 import { describe, expect, it } from 'vitest'
-import type { WeiboJsonQuery } from '../src/modules/weibo/webClient'
-import { WeiboWebError } from '../src/modules/weibo/webClient'
-import { buildUserInfoUrl } from '../src/modules/weibo/webProfile'
-import { buildUserBlogUrl, fetchWeiboUserBlog } from '../src/modules/weibo/webUserBlog'
+import type { WeiboJsonQuery } from '../src/modules/weibo/transport/httpClient'
+import { buildUserInfoUrl } from '../src/modules/weibo/api/profile'
+import { buildUserBlogUrl, fetchWeiboUserBlog } from '../src/modules/weibo/api/userBlog'
+import { WeiboWebError } from '../src/modules/weibo/transport/httpClient'
 
 /** 构造一份最小可用的上游用户资料 */
 function rawUser(overrides: Record<string, unknown> = {}): Record<string, unknown> {

@@ -10,7 +10,7 @@ import type {
     WeiboNoteSaveResult,
     WeiboPagePostPayload,
 } from '@shared/types/weibo'
-import { WeiboRoutes } from '../src/modules/weibo/weiboRoutes'
+import { WeiboRoutes } from '../src/modules/weibo/protocol/routes'
 
 /** 最小可用的 Cookie 存取器：只保证读到非空值，其余方法返回已完成的 Promise */
 const cookieStore = {

@@ -6,8 +6,8 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { WeiboCommentLikeResult } from '@shared/types/weibo'
-import { setCommentLike } from '../src/modules/weibo/webInteraction'
-import { buildStableFingerprint } from '../src/modules/weibo/webPublish'
+import { setCommentLike } from '../src/modules/weibo/api/write/interaction'
+import { buildStableFingerprint } from '../src/modules/weibo/api/write/publish'
 
 /** random 恒为 0 时的指纹：字符集首位是 '0'，长度与网页端一致的 33 位 */
 const COOKIE = 'SUB=token; XSRF-TOKEN=abc'

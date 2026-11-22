@@ -4,8 +4,8 @@
  * 断言只针对可观察结果（URL 查询参数、归一化后的帖子与游标），不绑定上游其余字段。
  */
 import { describe, expect, it } from 'vitest'
-import type { WeiboJsonQuery } from '../src/modules/weibo/webClient'
-import { buildFeedUrl, fetchWeiboFeed, fetchWeiboGroups } from '../src/modules/weibo/webFeed'
+import type { WeiboJsonQuery } from '../src/modules/weibo/transport/httpClient'
+import { buildFeedUrl, fetchWeiboFeed, fetchWeiboGroups } from '../src/modules/weibo/api/feed'
 
 /** 构造一条最小可用的上游微博 */
 function rawStatus(id: number): Record<string, unknown> {

@@ -6,17 +6,15 @@
  * 备注更新回包没有 ok 包装，不能因为缺 ok 就判失败。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { WeiboJsonQuery } from '../src/modules/weibo/webClient'
+import type { WeiboJsonQuery } from '../src/modules/weibo/transport/httpClient'
+import { buildUserGroupListUrl, buildUserGroupOfUrl, fetchUserGroups } from '../src/modules/weibo/groups/read'
 import {
     buildGroupListIds,
     buildGroupOriginIds,
-    buildUserGroupListUrl,
-    buildUserGroupOfUrl,
     createUserGroup,
-    fetchUserGroups,
     saveUserGroups,
     setUserRemark,
-} from '../src/modules/weibo/webFriends'
+} from '../src/modules/weibo/groups/write'
 
 afterEach(() => {
     vi.unstubAllGlobals()

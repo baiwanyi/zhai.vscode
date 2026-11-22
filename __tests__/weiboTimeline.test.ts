@@ -4,26 +4,24 @@
  * 时区相关断言以 UTC 为准，构造时间串自带 +0800 偏移，避免依赖运行机器时区。
  */
 import { describe, expect, it } from 'vitest'
-import type { TimelinePage } from '../src/modules/weibo/webClient'
-import type { WeiboCookieStore } from '../src/modules/weibo/webCredential'
+import type { WeiboCookieStore } from '../src/modules/weibo/store/credential'
+import type { TimelinePage } from '../src/modules/weibo/transport/httpClient'
 import type { WeiboCommentsResult, WeiboLikeResult, WeiboLongTextResult } from '../src/shared/types/weibo'
-import { buildImageDataUrl, sniffImageExtension } from '../src/modules/weibo/mediaProxy'
-import { buildTimelineUrl, clampTimelineCount } from '../src/modules/weibo/webClient'
-import { buildCommentsUrl, clampCommentCount, normalizeWebComment } from '../src/modules/weibo/webComments'
-import { normalizeCookieInput } from '../src/modules/weibo/webCredential'
-import { buildLongTextUrl, parseLongTextPayload } from '../src/modules/weibo/webLongText'
+import { buildLongTextUrl, parseLongTextPayload } from '../src/modules/weibo/api/longText'
+import { buildCommentsUrl, clampCommentCount, normalizeWebComment } from '../src/modules/weibo/comments/read'
+import { buildImageDataUrl, sniffImageExtension } from '../src/modules/weibo/media/imageData'
+import { WeiboRoutes } from '../src/modules/weibo/protocol/routes'
+import { normalizeCookieInput } from '../src/modules/weibo/store/credential'
 import {
     buildMiddleImageUrl,
-    fetchFriendTimeline,
     isWeiboImageUrl,
-    normalizeTimelinePost,
     normalizeWeiboImageUrl,
     normalizeWeiboVideoUrl,
-    parsePostSegments,
-    parseWeiboCreatedAt,
-    stripWeiboHtml,
-} from '../src/modules/weibo/webTimeline'
-import { WeiboRoutes } from '../src/modules/weibo/weiboRoutes'
+} from '../src/modules/weibo/timeline/media'
+import { fetchFriendTimeline, normalizeTimelinePost } from '../src/modules/weibo/timeline/query'
+import { parsePostSegments, stripWeiboHtml } from '../src/modules/weibo/timeline/text'
+import { parseWeiboCreatedAt } from '../src/modules/weibo/timeline/time'
+import { buildTimelineUrl, clampTimelineCount } from '../src/modules/weibo/transport/httpClient'
 
 /** 构造一条最小可用的上游微博 */
 function rawStatus(id: number, overrides: Record<string, unknown> = {}): Record<string, unknown> {

@@ -4,11 +4,11 @@
  */
 import { describe, expect, it } from 'vitest'
 import type { WeiboGroupItem, WeiboGroupsResult, WeiboProfile } from '@shared/types/weibo'
-import type { WeiboCookieStore } from '../src/modules/weibo/webCredential'
-import type { WeiboAvatarGateway } from '../src/modules/weibo/weiboAvatar'
-import type { WeiboCache, WeiboCacheEntry } from '../src/modules/weibo/weiboCache'
-import { buildProfileUrl, normalizeWeiboProfile } from '../src/modules/weibo/webProfile'
-import { WeiboRoutes } from '../src/modules/weibo/weiboRoutes'
+import type { WeiboAvatarGateway } from '../src/modules/weibo/media/avatar'
+import type { WeiboCookieStore } from '../src/modules/weibo/store/credential'
+import type { WeiboCache, WeiboCacheEntry } from '../src/modules/weibo/store/metadataCache'
+import { buildProfileUrl, normalizeWeiboProfile } from '../src/modules/weibo/api/profile'
+import { WeiboRoutes } from '../src/modules/weibo/protocol/routes'
 
 const ACCOUNT_COOKIE = 'SUB=abc123; SUBP=def456'
 

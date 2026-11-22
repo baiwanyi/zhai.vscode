@@ -6,7 +6,7 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { WeiboRepostCreateResult, WeiboRepostMode } from '@shared/types/weibo'
-import { createPostRepost } from '../src/modules/weibo/webReposts'
+import { createPostRepost } from '../src/modules/weibo/reposts/write'
 
 /** 拦下 fetch：记录每次请求的地址与表单，按传入的回包返回 */
 function installFetchMock(payload: Record<string, unknown> = { ok: 1, msg: '转发成功' }): {

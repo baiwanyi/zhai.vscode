@@ -70,12 +70,14 @@ import { TodoService } from './modules/todo/todoService'
 import { TodoWatcher } from './modules/todo/todoWatcher'
 import { UploadRoutes } from './modules/upload/uploadRoutes'
 import { UploadService } from './modules/upload/uploadService'
-import { createWeiboMediaResolver } from './modules/weibo/panel'
-import { createWeiboPostActions } from './modules/weibo/postActions'
-import { warmWeiboMetadata } from './modules/weibo/warmup'
-import { createWeiboCookieStore } from './modules/weibo/webCredential'
-import { createWeiboAvatarGateway } from './modules/weibo/weiboAvatar'
-import { createWeiboCache } from './modules/weibo/weiboCache'
+import {
+    createWeiboAvatarGateway,
+    createWeiboCache,
+    createWeiboCookieStore,
+    createWeiboMediaResolver,
+    createWeiboPostActions,
+    warmWeiboMetadata,
+} from './modules/weibo'
 import type { IndexStatus } from './modules/common/indexer/indexService'
 import type { MarkdownEditorProvider } from './modules/editor/editorProvider'
 import type { ImageReferenceInput } from './modules/imagegen/ai/imageProvider'

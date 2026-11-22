@@ -5,8 +5,8 @@
  * 全部为纯逻辑用例：fetch 由替身接住，不触网、不依赖 Cookie 真实值。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setRepostLike } from '../src/modules/weibo/webInteraction'
-import { buildStableFingerprint } from '../src/modules/weibo/webPublish'
+import { setRepostLike } from '../src/modules/weibo/api/write/interaction'
+import { buildStableFingerprint } from '../src/modules/weibo/api/write/publish'
 
 /** random 恒为 0 时的指纹：字符集首位是 '0'，长度为网页端的 33 位 */
 const COOKIE = 'SUB=token; XSRF-TOKEN=abc'

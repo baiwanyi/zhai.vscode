@@ -6,7 +6,7 @@
  * 全部为纯逻辑用例：fetch 由替身接住，不触网、不依赖 Cookie 真实值。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { setAuthorFollow } from '../src/modules/weibo/webInteraction'
+import { setAuthorFollow } from '../src/modules/weibo/api/write/interaction'
 
 interface FetchOutcome {
     urls: string[]

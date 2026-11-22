@@ -4,8 +4,8 @@
  * 断言只针对可观察结果（URL 查询参数、归一化后的帖子与分页标记）。
  */
 import { describe, expect, it } from 'vitest'
-import type { WeiboJsonQuery } from '../src/modules/weibo/webClient'
-import { buildLikesUrl, fetchWeiboLikes } from '../src/modules/weibo/webLikes'
+import type { WeiboJsonQuery } from '../src/modules/weibo/transport/httpClient'
+import { buildLikesUrl, fetchWeiboLikes } from '../src/modules/weibo/api/likes'
 
 /** 构造一条最小可用的上游微博 */
 function rawStatus(id: number): Record<string, unknown> {

@@ -4,7 +4,6 @@
  * 关键约束：图床走 pic_upload.php（无签名参数），参数与字段名改动即视为接口变更，需同步 docs/modules/weibo.md。
  */
 import { describe, expect, it } from 'vitest'
-import { WeiboWebError } from '@modules/weibo/webClient'
 import {
     buildPublishForm,
     buildUploadUrl,
@@ -12,7 +11,8 @@ import {
     publishWeibo,
     readPidFromUpload,
     readPublishResult,
-} from '@modules/weibo/webPublish'
+} from '@modules/weibo/api/write/publish'
+import { WeiboWebError } from '@modules/weibo/transport/httpClient'
 
 describe('buildUploadUrl', () => {
     it('指向 pic_upload.php，参数固定且不带 cs', () => {

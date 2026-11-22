@@ -3,19 +3,17 @@
  * 全部不触网：requestJson 由用例注入假响应，fetch 不参与断言。
  */
 import { describe, expect, it } from 'vitest'
-import type { WeiboJsonQuery } from '../src/modules/weibo/webClient'
+import type { WeiboJsonQuery } from '../src/modules/weibo/transport/httpClient'
 import {
     buildHotRankUrl,
     extractWeiboHotRank,
     fetchWeiboHotRank,
     normalizeHotRankColor,
-} from '../src/modules/weibo/webHotRank'
+} from '../src/modules/weibo/api/hotRank'
 
 describe('buildHotRankUrl', () => {
     it('使用 mine 侧栏参数，last_tab_time 取秒级时间戳', () => {
-        const url = new URL(
-            buildHotRankUrl({ tab: 'band', now: new Date('2026-11-20T00:00:00.000Z') }),
-        )
+        const url = new URL(buildHotRankUrl({ tab: 'band', now: new Date('2026-11-20T00:00:00.000Z') }))
         expect(url.pathname).toBe('/ajax/side/bandUnified')
         expect(url.searchParams.get('type')).toBe('mine')
         expect(url.searchParams.get('last_tab')).toBe('mine')
@@ -26,9 +24,7 @@ describe('buildHotRankUrl', () => {
         const now = new Date('2026-11-20T00:00:00.000Z')
         expect(new URL(buildHotRankUrl({ tab: 'mine', now })).pathname).toBe('/ajax/statuses/mineBand')
         expect(new URL(buildHotRankUrl({ tab: 'hotSearch', now })).pathname).toBe('/ajax/side/hotSearch')
-        expect(new URL(buildHotRankUrl({ tab: 'entertainment', now })).pathname).toBe(
-            '/ajax/statuses/entertainment',
-        )
+        expect(new URL(buildHotRankUrl({ tab: 'entertainment', now })).pathname).toBe('/ajax/statuses/entertainment')
         expect(new URL(buildHotRankUrl({ tab: 'social', now })).pathname).toBe('/ajax/statuses/social')
         expect(new URL(buildHotRankUrl({ tab: 'technology', now })).pathname).toBe('/ajax/statuses/technology')
         expect(new URL(buildHotRankUrl({ tab: 'life', now })).pathname).toBe('/ajax/statuses/life')
