@@ -1,5 +1,5 @@
 /**
- * 大纲追加同步：作品列表新增卷章后，把该章补写进 大纲.md 的「分卷规划」段落。
+ * 大纲追加同步：作品列表新增卷章后，把该章补写进 大纲.md 对应卷的「章节内容」小节。
  * 复用约定：写入直接调生产代码 appendChapterToOutline，读回用工作台的 parseProjectWorkspace，
  * 断言只覆盖用户可见字段，不复制格式字符串。
  * 关键约束：补写必须幂等（同卷同章序不重复插入），且只增不删——大纲是草稿，
@@ -28,7 +28,7 @@ function parseOutline(outline: string): OutlineVolume[] {
 beforeEach(() => {
     resetWorkspaceState()
     setConfigValue('storage.rootPath', STORAGE_ROOT)
-    setFileContent(OUTLINE_PATH, '# 大纲\n\n## 主线\n\n真人真事改编。\n\n## 分卷规划\n')
+    setFileContent(OUTLINE_PATH, '# 大纲\n\n## 主线\n\n真人真事改编。\n')
 })
 
 describe('appendChapterToOutline', () => {
@@ -41,7 +41,8 @@ describe('appendChapterToOutline', () => {
 
         expect(isWritten).toBe(true)
         const text = readFileContent(OUTLINE_PATH) ?? ''
-        expect(text).toContain('### 第1卷 默认卷')
+        expect(text).toContain('## 第1卷 默认卷')
+        expect(text).toContain('### 章节内容')
         expect(text).toContain('#### 第1章 未命名章节')
         expect(text).toContain('## 主线\n\n真人真事改编。')
         const volumes = parseOutline(text)
@@ -85,9 +86,9 @@ describe('appendChapterToOutline', () => {
             [
                 '# 大纲',
                 '',
-                '## 分卷规划',
+                '## 第1卷 天都篇',
                 '',
-                '### 第1卷 天都篇',
+                '### 章节内容',
                 '',
                 '#### 第1章 开局',
                 '',
@@ -110,7 +111,7 @@ describe('appendChapterToOutline', () => {
         expect(volumes[0]?.chapters.map((chapter) => chapter.title)).toEqual(['开局', '追兵', '收束'])
     })
 
-    it('缺少分卷规划段落时补建该段落', async () => {
+    it('缺少卷段落时补建整卷与章节小节', async () => {
         setFileContent(OUTLINE_PATH, '# 大纲\n\n## 主线\n')
         const isWritten = await appendChapterToOutline(DIR_PATH, {
             volumeDir: '02-雪原',
@@ -120,8 +121,8 @@ describe('appendChapterToOutline', () => {
 
         expect(isWritten).toBe(true)
         const text = readFileContent(OUTLINE_PATH) ?? ''
-        expect(text).toContain('## 分卷规划')
-        expect(text).toContain('### 第2卷 雪原')
+        expect(text).toContain('## 第2卷 雪原')
+        expect(text).toContain('### 章节内容')
         expect(parseOutline(text)[0]?.chapters[0]?.order).toBe(1)
     })
 })

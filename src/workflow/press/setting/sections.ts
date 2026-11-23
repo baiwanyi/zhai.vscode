@@ -46,6 +46,8 @@ export const SETTING_SECTIONS: Readonly<Record<SettingSectionKey, SettingSection
             'genres',
             'logline',
             'conflict',
+            'theme',
+            'arc',
             'ending',
             'perspective',
             'tone',

@@ -64,15 +64,6 @@ export const PLAN_STATUS_META: Readonly<Record<PlanStatus, { label: string; tone
     discarded: { label: '废弃', tone: 'destructive', dot: 'bg-destructive' },
 }
 
-/** 状态筛选：全部与四种状态，供大纲页顶部下拉切换，大纲树只按取值过滤 */
-export const STATUS_FILTERS: readonly OptionMeta<PlanStatus | 'all'>[] = [
-    { value: 'all', label: '全部' },
-    { value: 'planned', label: '待写' },
-    { value: 'written', label: '已写' },
-    { value: 'revise', label: '待改' },
-    { value: 'discarded', label: '废弃' },
-]
-
 /** 颗粒度文案与顺序：粗纲管方向、中纲管事件链、细纲管当天落笔 */
 export const GRANULARITY_META: Readonly<Record<OutlineGranularity, { label: string; description: string }>> = {
     coarse: { label: '粗纲', description: '故事核、人物弧、三幕大转折' },
@@ -115,18 +106,15 @@ export const CLUE_STATUS_ORDER: readonly ClueStatus[] = ['planted', 'paid-off', 
 export const CLUE_STATUS_OPTIONS = toOptions(CLUE_STATUS_ORDER, CLUE_STATUS_META)
 
 /**
- * 功能模块元数据：导航栏顺序即写作时的使用顺序（先粗后细、写前查纲、写后回填）。
- * 关键约束：value 必须与 OutlineModuleKey 完全一致，新增模块须同时补导航文案与段落落点。
+ * 功能模块元数据：导航栏顺序为「卷纲 → 章纲 → 结构 → 伏笔」，日常写作从卷纲进入。
+ * 关键约束：value 必须与 OutlineModuleKey 完全一致，新增模块须同时补导航文案与页面分支；
+ * 设定归作品设定、节奏类型进章纲、时间线不再作模块，故这里只有四个页面。
  */
 export const OUTLINE_MODULE_META: readonly OptionMeta<OutlineModuleKey>[] = [
-    { value: 'book', label: '全书纲' },
+    { value: 'volume', label: '卷纲' },
+    { value: 'chapter', label: '章纲' },
     { value: 'structure', label: '结构' },
-    { value: 'characters', label: '人物' },
-    { value: 'setting', label: '设定' },
-    { value: 'pacing', label: '节奏情绪' },
-    { value: 'clue', label: '伏笔线索' },
-    { value: 'timeline', label: '时间线' },
-    { value: 'volume', label: '卷章场景' },
+    { value: 'clue', label: '伏笔' },
 ]
 
 /** 章末钩子：生成与编辑时用于标注本卷节奏 */
@@ -331,6 +319,8 @@ export const SETTING_FIELD_MAX_LENGTH: Readonly<Record<SettingFieldKey, number>>
     logline: 120,
     opening: 240,
     conflict: 160,
+    theme: 120,
+    arc: 160,
     worldview: 600,
     geography: 300,
     era: 120,

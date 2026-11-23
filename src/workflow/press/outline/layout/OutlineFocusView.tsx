@@ -193,7 +193,7 @@ export function OutlineFocusView({
                                     : `${chapterTitleLabel(nextChapter)}：${nextChapter.goal || nextChapter.summary || '下一章未填目标'}`
                             }
                         />
-                        <FocusRow label="本卷目标" value={volume.goal} />
+                        <FocusRow label="本卷核心事件" value={volume.coreEvent} />
                         <FocusRow label="卷末结果" value={volume.result} />
                     </CardContent>
                 </Card>

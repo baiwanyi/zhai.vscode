@@ -461,7 +461,7 @@ export interface CharacterAppearanceResult {
 }
 
 /**
- * 设定页可交给 AI 生成的字段：作品名、故事内核四项，以及世界观与金手指里可展开的描述类字段。
+ * 设定页可交给 AI 生成的字段：作品名、故事内核各项，以及世界观与金手指里可展开的描述类字段。
  * 金手指类型不在其中——它是短词枚举，也是其余字段生成的输入约束，不交给模型改写。
  */
 export type SettingFieldKey =
@@ -470,6 +470,8 @@ export type SettingFieldKey =
     | 'logline'
     | 'opening'
     | 'conflict'
+    | 'theme'
+    | 'arc'
     | 'worldview'
     | 'geography'
     | 'era'
@@ -489,6 +491,8 @@ export const SETTING_FIELD_KEYS: readonly SettingFieldKey[] = [
     'logline',
     'opening',
     'conflict',
+    'theme',
+    'arc',
     'worldview',
     'geography',
     'era',
@@ -524,6 +528,10 @@ export interface SettingSnapshot {
     logline: string
     opening: string
     conflict: string
+    /** 主题：故事要探讨的核心命题 */
+    theme: string
+    /** 主角弧光：从什么到什么 */
+    arc: string
     worldview: string
     geography: string
     factions: string
@@ -570,6 +578,49 @@ export interface LoreDescriptionGenerateRequest extends SettingSnapshot {
 /** 条目描述生成结果：单段纯文本，可直接写入条目描述 */
 export interface LoreDescriptionGenerateResult {
     content: string
+}
+
+/**
+ * 按卷生成章纲的请求：卷纲（核心事件 / 主要情节 / 转折 / 卷末结果）+ 作品设定快照 + 卷内现状。
+ * 关键约束：产出「阶段 / 标题 / 计划梗概 / 节拍」，节拍即章节细纲，POV 与出场人物仍留给作者细化。
+ */
+export interface VolumeChaptersGenerateRequest {
+    /** 本卷卷名，含「第N卷」前缀 */
+    volumeName: string
+    /** 核心事件：本卷主线，作者写在卷纲卡里的一段描述 */
+    coreEvent: string
+    /** 主要情节：作者按发生顺序写的条目 */
+    mainPlot: string[]
+    turningPoints: string[]
+    /** 卷末结果 */
+    result: string
+    /** 起始章序：生成结果从这里连续编号 */
+    startOrder: number
+    /** 期望章数：0 表示按卷纲自行推断 */
+    chapterCount: number
+    /** 卷内已有章数：用于避免与既有章重复 */
+    existingCount: number
+    /** 作品设定快照 */
+    setting: SettingSnapshot
+    /** 可出场人物名：用于把剧情落到具体角色上 */
+    characters: string[]
+}
+
+/** 生成的单章草案：阶段、标题、计划梗概与章节细纲 */
+export interface VolumeChapterDraft {
+    /** 阶段名：如「第一阶段：坠楼与觉醒」，空串表示未分组 */
+    stage: string
+    /** 章标题：不含「第N章」前缀 */
+    title: string
+    /** 章节介绍：写入计划梗概 */
+    summary: string
+    /** 章节细纲：3~6 条节拍，生成后直接写入节拍列表 */
+    beats: string[]
+}
+
+/** 按卷生成章纲的结果：chapters 为空表示模型没给出可用条目，由前端提示补卷纲或重试 */
+export interface VolumeChaptersGenerateResult {
+    chapters: VolumeChapterDraft[]
 }
 
 /**
@@ -1045,22 +1096,13 @@ export interface PressApplyBlock {
 
 /**
  * 大纲段落键：与前端 OutlineSectionKey 一一对应，也是宿主 writer 的落点表索引。
- * 关键约束：键名一变，回写就会落到不存在的段落上，前端序列化与宿主落点表必须同步修改。
+ * 关键约束：键名一变，回写就会落到不存在的段落上，前端序列化与宿主落点表必须同步修改；
+ * 「设定纲」「节奏情绪」「时间线」不再回写——设定归作品设定、节奏类型进章纲、时间线段落原地保留。
  */
-export type PressOutlineSectionKey =
-    'book' | 'structure' | 'characters' | 'setting' | 'pacing' | 'clues' | 'timeline' | 'volumes'
+export type PressOutlineSectionKey = 'structure' | 'clues' | 'volumes'
 
 /** 大纲段落白名单：校验与遍历共用同一份，不接受任意字符串 */
-export const PRESS_OUTLINE_SECTION_KEYS: readonly PressOutlineSectionKey[] = [
-    'book',
-    'structure',
-    'characters',
-    'setting',
-    'pacing',
-    'clues',
-    'timeline',
-    'volumes',
-]
+export const PRESS_OUTLINE_SECTION_KEYS: readonly PressOutlineSectionKey[] = ['structure', 'clues', 'volumes']
 
 /**
  * press/apply 请求：把工作台草稿对应的段落回写进作品文档。
@@ -1089,7 +1131,7 @@ export interface PressApplyRequest {
     characters?: PressApplyBlock[]
     /** 大纲.md 中「分卷规划」段落的正文（与 outlineSections.volumes 等价，保留给旧调用方） */
     outline?: string
-    /** 大纲.md 的七个功能模块段落：键为白名单，值为该段正文，未带的段落保持原样 */
+    /** 大纲.md 的功能模块段落：键为白名单，值为该段正文，未带的段落保持原样 */
     outlineSections?: Partial<Record<PressOutlineSectionKey, string>>
     /** 需从 角色设定.md 移除的角色块：按块标题名匹配（一级/二级都认），与 characters 同时生效 */
     deletedCharacterNames?: string[]

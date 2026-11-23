@@ -81,6 +81,8 @@ export function PressSectionRouter({
                 dirPath={dirPath}
                 defaultChapterWordGoal={DEFAULT_CHAPTER_WORD_GOAL}
                 onUpdateChapter={mutations.updateChapter}
+                onUpdateVolume={mutations.updateVolume}
+                onApplyVolumeChapters={mutations.applyVolumeChapters}
                 onUpdatePlan={mutations.updateOutlinePlan}
                 onApplyOutlineChange={mutations.applyOutlineChange}
                 onCreateVolume={mutations.createOutlineVolume}

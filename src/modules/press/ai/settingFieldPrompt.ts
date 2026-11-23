@@ -1,5 +1,5 @@
 /**
- * 设定字段生成提示词：按作品名、故事内核四项与世界观 / 金手指的描述类字段，
+ * 设定字段生成提示词：按作品名、故事内核各项与世界观 / 金手指的描述类字段，
  * 把作品已填的定位、世界观与故事信息折算成一次性生成的对话消息。
  * 复用约定：消息结构复用 ../../ai/provider 的 AiChatMessage，字段名与白名单取自 shared/types/press；
  * 事实行由本文件的 buildSettingFactLines 统一产出，条目描述提示词（./lorePrompt）复用同一份；
@@ -23,6 +23,8 @@ const FIELD_LABELS: Readonly<Record<SettingFieldKey, string>> = {
     logline: '一句话梗概',
     opening: '开篇灵感',
     conflict: '核心冲突',
+    theme: '主题',
+    arc: '主角弧光',
     worldview: '世界观总述',
     geography: '地理格局',
     era: '时代舞台',
@@ -67,6 +69,17 @@ const FIELD_SPECS: Readonly<Record<SettingFieldKey, FieldSpec>> = {
     conflict: {
         length: '60~120 字',
         rules: ['写清主角要什么、谁在阻拦、失败会失去什么', '对抗方要具体到人或势力，不写「命运」这类抽象阻力'],
+    },
+    theme: {
+        length: '20~60 字',
+        rules: ['说清故事要探讨的核心命题：通过什么事件，追问什么问题', '写成一句可以落到情节里的主张，不写主题词清单'],
+    },
+    arc: {
+        length: '60~120 字',
+        rules: [
+            '写清主角从什么状态到什么状态，中间必须付出或失去什么',
+            '落到具体的选择与代价，不写「获得了成长」这类结论',
+        ],
     },
     worldview: {
         length: '200~400 字',
@@ -190,6 +203,8 @@ const FACT_FIELDS: readonly (readonly [string, keyof SettingSnapshot])[] = [
     ['一句话梗概', 'logline'],
     ['开篇灵感', 'opening'],
     ['核心冲突', 'conflict'],
+    ['主题', 'theme'],
+    ['主角弧光', 'arc'],
     ['结局倾向', 'ending'],
     ['叙事视角', 'perspective'],
     ['叙事结构', 'narrative'],

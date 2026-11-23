@@ -296,6 +296,8 @@ export type HostMethodName =
     | 'pressAi/aiSettingField/abort'
     | 'pressAi/aiLoreDescription'
     | 'pressAi/aiLoreDescription/abort'
+    | 'pressAi/aiVolumeChapters'
+    | 'pressAi/aiVolumeChapters/abort'
     | 'pressAi/deleteChatPromptTag'
     | 'pressAi/deletePromptRule'
     | 'pressAi/deletePromptTag'

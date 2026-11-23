@@ -1,8 +1,11 @@
 /**
- * 大纲分层导航的读写往返：八个功能模块各自成段，顺序与段落标题必须与宿主 writer 的落点表一致。
+ * 大纲分层导航的读写往返：结构纲、伏笔线索与分卷规划三个段落，顺序与段落标题必须与宿主 writer 的落点表一致。
  * 复用约定：序列化与解析直接调生产代码，测试只拼文档外壳（一级标题与二级段落标题）；
- * 断言覆盖全书纲、结构纲、人物纲、设定纲、节奏、线索、时间线与分卷规划八个段落。
- * 关键约束：段落漏测等于回写静默丢字段——每个段落都必须有往返断言；
+ * 断言覆盖结构纲、线索、卷章与章纲的节奏字段。
+ * 关键约束：段落漏测等于回写静默丢字段——每个回写段落都必须有往返断言；
+ * 故事核（梗概、冲突、主题、主角弧光）只由作品设定的「作品设定」段解析，旧大纲的全书纲段不再读取；
+ * 人物信息只在角色设定（人物卡）里维护，旧大纲的人物纲段同样不再解析；
+ * 设定纲、节奏情绪与时间线也不再解析——节奏类型改由章块的「节奏」键承载，旧段落原样留在文件中；
  * 章纲与场景有同名键（结果 / 情绪），必须证明剥离场景块后两者互不污染。
  */
 import { describe, expect, it } from 'vitest'
@@ -13,7 +16,7 @@ import { serializeOutlineSections } from '../src/workflow/press/serialize'
 /** 设定分组文档留空：本用例只关心大纲段落 */
 const EMPTY_SETTING_SECTIONS = { world: '', power: '', faction: '', place: '', item: '' }
 
-/** 角色文档的最小写法：大纲里的人物纲与触发者按姓名回填 id，必须有姓名索引 */
+/** 角色文档的最小写法：章纲出场人物与线索触发者都按姓名回填 id，必须有姓名索引 */
 const CHARACTER_DOC = `# 角色设定
 
 ## 林岚
@@ -51,43 +54,10 @@ const CHARACTERS: CharacterCard[] = [
 ]
 
 const PLAN: OutlinePlan = {
-    book: {
-        logline: '修表匠为了查清妹妹失踪，必须拆开整座旧城，但真相会毁掉他仅剩的亲人。',
-        conflict: '底层手艺人 vs 地产集团',
-        theme: '记忆与代价',
-        ending: '开放',
-        arc: '从独行到结盟',
-    },
     acts: [
         { id: 'act-1', name: '开端', position: '打破平衡', event: '旧表送来，编号与妹妹一致' },
         { id: 'act-2', name: '中点', position: '真相翻面', event: '顾青的档案是伪造的' },
         { id: 'act-3', name: '高潮', position: '迫使选择', event: '揭发集团即失去妹妹线索' },
-    ],
-    characters: [
-        {
-            id: 'cline-1',
-            characterId: '12345678',
-            name: '林岚',
-            desire: '查清妹妹失踪',
-            fear: '再一次失去家人',
-            flaw: '不信人',
-            secret: '他听过妹妹的求救声',
-            relation: '顾青：情报盟友',
-            arc: '从独行到结盟',
-        },
-    ],
-    setting: [
-        {
-            id: 'snote-1',
-            name: '听声异能',
-            rule: '触碰机械可听见残留声响',
-            cost: '每次读取失聪数分钟',
-            note: '第一卷用于锁定旧表',
-        },
-    ],
-    pacing: [
-        { id: 'pacing-1', chapterOrder: 1, kind: 'tension', tension: 4 },
-        { id: 'pacing-2', chapterOrder: 2, kind: 'breath', tension: 2 },
     ],
     clues: [
         {
@@ -109,27 +79,15 @@ const PLAN: OutlinePlan = {
             note: '',
         },
     ],
-    timeline: [
-        {
-            id: 'tline-1',
-            when: '事发当夜',
-            title: '妹妹失踪',
-            refs: [
-                { volumeOrder: 1, chapterOrder: 1 },
-                { volumeOrder: 1, chapterOrder: 2 },
-            ],
-            characterIds: ['12345678'],
-        },
-    ],
 }
 
 const VOLUMES: OutlineVolume[] = [
     {
         id: 'vol-1',
         name: '第1卷 断线之始',
-        goal: '从被动谋生转向主动追查',
-        conflict: '底层手艺人 vs 地产集团',
-        plotline: '客人送来旧表，编号指向失踪的妹妹。',
+        expectedChapters: 6,
+        coreEvent: '从被动谋生转向主动追查；底层手艺人 vs 地产集团',
+        mainPlot: ['客人送来旧表，编号指向失踪的妹妹', '档案被抽走，线索断在旧城医院'],
         turningPoints: ['编号确认', '档案被抽走'],
         result: '线索断在旧城医院',
         granularity: 'medium',
@@ -138,6 +96,7 @@ const VOLUMES: OutlineVolume[] = [
                 id: 'ch-1-1',
                 order: 1,
                 title: '修表铺的客人',
+                stage: '第一阶段：坠落与旧表',
                 summary: '客人送来一块停摆的旧表。',
                 actualSummary: '林岚拆开后盖，看见妹妹的编号。',
                 status: 'written',
@@ -165,6 +124,7 @@ const VOLUMES: OutlineVolume[] = [
                 wordGoal: 2500,
                 wordCount: 2680,
                 hook: 'suspense',
+                pacing: 'tension',
                 tension: 4,
                 granularity: 'fine',
             },
@@ -172,114 +132,65 @@ const VOLUMES: OutlineVolume[] = [
     },
 ]
 
-/** 拼出八段落的大纲文档：段落标题必须与 writer 落点表一致 */
+/** 拼出大纲文档：固定段落标题与 writer 落点表一致，卷段落自带二级标题 */
 function buildOutlineDocument(): string {
     const sections = serializeOutlineSections(PLAN, VOLUMES, CHARACTERS)
     return [
         '# 大纲',
         '',
-        '## 全书纲',
-        '',
-        sections.book,
-        '',
         '## 结构纲',
         '',
         sections.structure,
-        '',
-        '## 人物纲',
-        '',
-        sections.characters,
-        '',
-        '## 设定纲',
-        '',
-        sections.setting,
-        '',
-        '## 节奏情绪',
-        '',
-        sections.pacing,
         '',
         '## 伏笔线索',
         '',
         sections.clues,
         '',
-        '## 时间线',
-        '',
-        sections.timeline,
-        '',
         '## 主线',
         '',
         '林岚追查妹妹失踪的真相。',
-        '',
-        '## 分卷规划',
         '',
         sections.volumes,
         '',
     ].join('\n')
 }
 
-/** 只留卷章的旧文档：用于验证四态迁移 */
-function buildLegacyOutline(status: string): string {
+/** 只留一卷一章的文档：用于验证四态迁移 */
+function buildStatusOutline(status: string): string {
     return `# 大纲
 
-## 分卷规划
+## 第1卷 旧卷
 
-### 第1卷 旧卷
-
-- 卷目标：旧目标
+### 章节内容
 
 #### 第1章 旧章
 
 - 状态：${status}
-- 梗概：旧梗概
+
+##### 计划梗概
+
+旧梗概
 `
 }
 
-describe('大纲八段落往返', () => {
-    it('全书纲、结构纲、人物纲与设定纲可原样解析', () => {
+describe('大纲三段往返', () => {
+    it('结构纲可原样解析', () => {
         const parsed = parseProjectWorkspace(
             { readme: '', setting: '', characters: CHARACTER_DOC, outline: buildOutlineDocument() },
             EMPTY_SETTING_SECTIONS,
             '未命名',
         )
 
-        expect(parsed.plan.book).toMatchObject({
-            logline: PLAN.book.logline,
-            conflict: PLAN.book.conflict,
-            theme: PLAN.book.theme,
-            ending: PLAN.book.ending,
-            arc: PLAN.book.arc,
-        })
         expect(parsed.plan.acts.map((act) => act.name)).toEqual(['开端', '中点', '高潮'])
         expect(parsed.plan.acts[1]).toMatchObject({ position: '真相翻面', event: '顾青的档案是伪造的' })
-        expect(parsed.plan.characters).toHaveLength(1)
-        expect(parsed.plan.characters[0]).toMatchObject({
-            characterId: '12345678',
-            name: '林岚',
-            desire: '查清妹妹失踪',
-            fear: '再一次失去家人',
-            flaw: '不信人',
-            secret: '他听过妹妹的求救声',
-            relation: '顾青：情报盟友',
-            arc: '从独行到结盟',
-        })
-        expect(parsed.plan.setting[0]).toMatchObject({
-            name: '听声异能',
-            rule: '触碰机械可听见残留声响',
-            cost: '每次读取失聪数分钟',
-            note: '第一卷用于锁定旧表',
-        })
     })
 
-    it('节奏、线索与时间线按章节引用往返，触发者与人物按姓名回填', () => {
+    it('线索按章节引用往返，触发者按姓名回填', () => {
         const parsed = parseProjectWorkspace(
             { readme: '', setting: '', characters: CHARACTER_DOC, outline: buildOutlineDocument() },
             EMPTY_SETTING_SECTIONS,
             '未命名',
         )
-
-        expect(parsed.plan.pacing).toHaveLength(2)
-        expect(parsed.plan.pacing[0]).toMatchObject({ chapterOrder: 1, kind: 'tension', tension: 4 })
-        expect(parsed.plan.pacing[1]).toMatchObject({ chapterOrder: 2, kind: 'breath', tension: 2 })
 
         expect(parsed.plan.clues).toHaveLength(2)
         expect(parsed.plan.clues[0]).toMatchObject({
@@ -291,20 +202,9 @@ describe('大纲八段落往返', () => {
             note: '编号与妹妹一致',
         })
         expect(parsed.plan.clues[1]).toMatchObject({ name: '顾青的名片', payoff: null, status: 'paid-off' })
-
-        expect(parsed.plan.timeline).toHaveLength(1)
-        expect(parsed.plan.timeline[0]).toMatchObject({
-            when: '事发当夜',
-            title: '妹妹失踪',
-            refs: [
-                { volumeOrder: 1, chapterOrder: 1 },
-                { volumeOrder: 1, chapterOrder: 2 },
-            ],
-            characterIds: ['12345678'],
-        })
     })
 
-    it('卷章的章纲卡与场景纲往返，场景字段不污染章纲', () => {
+    it('卷章的章纲卡与场景纲往返，节奏写进章块且场景字段不污染章纲', () => {
         const parsed = parseProjectWorkspace(
             { readme: '', setting: '', characters: CHARACTER_DOC, outline: buildOutlineDocument() },
             EMPTY_SETTING_SECTIONS,
@@ -315,14 +215,18 @@ describe('大纲八段落往返', () => {
         const volume = parsed.volumes[0]
         expect(volume).toMatchObject({
             name: '第1卷 断线之始',
-            goal: '从被动谋生转向主动追查',
+            expectedChapters: 6,
+            coreEvent: '从被动谋生转向主动追查；底层手艺人 vs 地产集团',
             result: '线索断在旧城医院',
             granularity: 'medium',
         })
+        expect(volume?.mainPlot).toEqual(['客人送来旧表，编号指向失踪的妹妹', '档案被抽走，线索断在旧城医院'])
+        expect(volume?.turningPoints).toEqual(['编号确认', '档案被抽走'])
         const chapter = volume?.chapters[0]
         expect(chapter).toMatchObject({
             order: 1,
             title: '修表铺的客人',
+            stage: '第一阶段：坠落与旧表',
             summary: '客人送来一块停摆的旧表。',
             actualSummary: '林岚拆开后盖，看见妹妹的编号。',
             status: 'written',
@@ -333,6 +237,7 @@ describe('大纲八段落往返', () => {
             result: '确认是妹妹的表',
             emotion: '紧张',
             hook: 'suspense',
+            pacing: 'tension',
             tension: 4,
             granularity: 'fine',
             wordCount: 2680,
@@ -348,15 +253,79 @@ describe('大纲八段落往返', () => {
         })
     })
 
-    it('八个段落各自成文：任一段落的内容不会出现在其它段落里', () => {
+    it('三个段落各自成文：任一段落的内容不会出现在其它段落里', () => {
         const sections = serializeOutlineSections(PLAN, VOLUMES, CHARACTERS)
-        expect(Object.keys(sections)).toHaveLength(8)
+        expect(Object.keys(sections)).toHaveLength(3)
         expect(sections.clues).toContain('旧表编号')
         expect(sections.clues).not.toContain('修表铺的客人')
         expect(sections.volumes).toContain('修表铺的客人')
         expect(sections.volumes).not.toContain('旧表编号')
-        expect(sections.book).toContain('修表匠为了查清妹妹失踪')
-        expect(sections.timeline).toContain('妹妹失踪')
+        expect(sections.structure).toContain('中点')
+    })
+
+    it('旧大纲的设定纲 / 节奏情绪 / 时间线段落不参与解析也不影响其它字段', () => {
+        const outline = buildOutlineDocument().replace(
+            '## 伏笔线索',
+            [
+                '## 设定纲',
+                '',
+                '### 听声异能',
+                '',
+                '- 规则：触碰机械可听见残留声响',
+                '',
+                '## 节奏情绪',
+                '',
+                '### 第1章',
+                '',
+                '- 类型：紧张',
+                '',
+                '## 时间线',
+                '',
+                '### 妹妹失踪',
+                '',
+                '- 时间：事发当夜',
+                '',
+                '## 伏笔线索',
+            ].join('\n'),
+        )
+        const parsed = parseProjectWorkspace(
+            { readme: '', setting: '', characters: CHARACTER_DOC, outline },
+            EMPTY_SETTING_SECTIONS,
+            '未命名',
+        )
+
+        // 三段旧内容不再进 plan，其余字段照常解析
+        expect(parsed.plan.acts).toHaveLength(3)
+        expect(parsed.plan.clues).toHaveLength(2)
+        expect(parsed.volumes[0]?.chapters[0]?.pacing).toBe('tension')
+    })
+
+    it('故事核只从作品设定解析：旧大纲的全书纲段落不再参与', () => {
+        const readme = `# 作品
+
+## 作品设定
+
+### 主题
+
+记忆与代价
+
+### 主角弧光
+
+从独行到结盟
+`
+        // 旧作品的大纲里还留着全书纲段：解析必须忽略它，只认 README 的作品设定
+        const outline = buildOutlineDocument().replace(
+            '## 结构纲',
+            '## 全书纲\n\n### 主题\n\n旧大纲里的主题\n\n## 结构纲',
+        )
+        const parsed = parseProjectWorkspace(
+            { readme, setting: '', characters: CHARACTER_DOC, outline },
+            EMPTY_SETTING_SECTIONS,
+            '未命名',
+        )
+
+        expect(parsed.setting.theme).toBe('记忆与代价')
+        expect(parsed.setting.arc).toBe('从独行到结盟')
     })
 })
 
@@ -364,7 +333,7 @@ describe('大纲状态迁移', () => {
     it('旧状态归一到四态：published 与 draft 进「已写」，stale 进「待改」，废弃单独保留', () => {
         const parseStatus = (status: string): string => {
             const parsed = parseProjectWorkspace(
-                { readme: '', setting: '', characters: '', outline: buildLegacyOutline(status) },
+                { readme: '', setting: '', characters: '', outline: buildStatusOutline(status) },
                 EMPTY_SETTING_SECTIONS,
                 '未命名',
             )

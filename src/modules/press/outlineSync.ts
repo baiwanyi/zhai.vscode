@@ -1,9 +1,10 @@
 /**
- * 大纲追加同步：仪表盘在作品列表新增卷 / 章节后，把对应章纲补写进「大纲.md」的「分卷规划」段落。
+ * 大纲追加同步：仪表盘在作品列表新增卷 / 章节后，把对应章纲补写进「大纲.md」对应卷的「章节内容」。
  * 复用约定：路径校验与 Uri 构造取 common/storagePath 与 common/config，
  * 卷序号、卷名与章标题归一取 projectFactory 的 readOrderPrefix / toDisplayName。
  * 关键约束：单向同步——只补写作品列表新增的卷章，删除卷章不回改大纲，大纲的章节数允许多于作品列表；
- * 判重口径是「卷序号 + 卷内章序」，重复调用不会重复插入；段落、卷块缺失时按工作台序列化口径补建，
+ * 判重口径是「卷序号 + 卷内章序」，重复调用不会重复插入；
+ * 卷是二级段落、章是四级标题（挂在 `### 章节内容` 下），卷块缺失时按工作台序列化口径补建，
  * 因此补写后的文档能被工作台的解析端原样读回；写入失败只记日志，已落盘的章节文件不受影响。
  */
 import * as vscode from 'vscode'
@@ -13,11 +14,11 @@ import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
 import { readOrderPrefix, toDisplayName } from './projectFactory'
 
-/** 大纲文档名与段落标题：与 workspaceWriter 的落点保持一致 */
+/** 大纲文档名与章节小节标题：与 workspaceWriter / Webview 序列化口径保持一致 */
 const OUTLINE_FILE_NAME = '大纲.md'
-const PLAN_SECTION_TITLE = '分卷规划'
+const CHAPTERS_SECTION_TITLE = '章节内容'
 
-/** 文档为空时的最小骨架：一级标题留给文件抬头，段落统一挂在二级 */
+/** 文档为空时的最小骨架 */
 const OUTLINE_HEADER = '# 大纲'
 
 /** 作品目录段数：press/{作品名} */
@@ -29,15 +30,14 @@ const FALLBACK_CHAPTER_WORD_GOAL = 2500
 const FALLBACK_TENSION = 3
 const FALLBACK_GRANULARITY = '中纲'
 
-/** 标题层级：大纲段落二级、卷三级、章四级 */
+/** 标题层级：卷二级、章四级，卷块终点为下一个一 / 二级标题 */
 const LEVEL_TWO_OR_UP_PATTERN = /^#{1,2}\s+/u
-const LEVEL_THREE_OR_UP_PATTERN = /^#{1,3}\s+/u
-const PLAN_SECTION_PATTERN = /^##\s+分卷规划\s*$/u
-const VOLUME_HEADING_PATTERN = /^###\s+(.+)$/u
+const VOLUME_HEADING_PATTERN = /^##\s+(.+)$/u
+const CHAPTER_SECTION_PATTERN = /^###\s+章节内容\s*$/u
 const CHAPTER_HEADING_PATTERN = /^####\s+(.+)$/u
 
-/** 标题里的卷序与章序：工作台与宿主都按「第N卷 / 第N章」前缀识别层级 */
-const VOLUME_ORDER_PATTERN = /第\s*(\d+)\s*卷/u
+/** 标题里的卷序与章序：工作台与宿主都按「第N卷 / 第N章」前缀识别层级，卷序兼容中文数字 */
+const VOLUME_ORDER_PATTERN = /第\s*([0-9]+|[一二三四五六七八九十百]+)\s*卷/u
 const CHAPTER_ORDER_PATTERN = /第\s*(\d+)\s*章/u
 
 /** 待补写的章：卷目录名带序号前缀，章标题沿用作品列表口径（可带两位序号前缀） */
@@ -79,13 +79,12 @@ function stripChapterPrefix(title: string): string {
     return toDisplayName(title).replace(CHAPTER_ORDER_PATTERN, '').trim()
 }
 
-/** 单章块：键顺序与 serialize 的 buildChapterBlock 一致，空值行解析端会忽略 */
+/** 单章块：只写解析端会保留的键值行，计划梗概与节拍留空由作者补写 */
 function buildChapterBlock(order: number, title: string): string {
     return [
         `#### 第${String(order)}章 ${title}`,
         '- 状态：待写',
         `- 颗粒度：${FALLBACK_GRANULARITY}`,
-        '- 梗概：',
         '- 钩子：无',
         `- 张力：${String(FALLBACK_TENSION)}`,
         `- 字数：0/${String(FALLBACK_CHAPTER_WORD_GOAL)}`,
@@ -93,22 +92,14 @@ function buildChapterBlock(order: number, title: string): string {
     ].join('\n')
 }
 
-/** 整卷块：卷纲各项留空由作者补写，章块紧随其后 */
+/** 整卷块：卷纲小节留空由作者补写，章节统一收在「### 章节内容」下 */
 function buildVolumeBlock(volumeOrder: number, volumeName: string, chapterBlock: string): string {
-    return [
-        `### 第${String(volumeOrder)}卷 ${volumeName}`,
-        '- 卷目标：',
-        '- 卷冲突：',
-        '- 情节脉络：',
-        '- 关键转折：',
-        '- 卷末结果：',
-        `- 颗粒度：${FALLBACK_GRANULARITY}`,
-        '',
-        chapterBlock,
-    ].join('\n')
+    return [`## 第${String(volumeOrder)}卷 ${volumeName}`, '', `### ${CHAPTERS_SECTION_TITLE}`, '', chapterBlock].join(
+        '\n',
+    )
 }
 
-/** 定位段落 / 卷块的终点行：遇到同级或更高级标题即结束，找不到则落到文件末尾 */
+/** 定位卷块的终点行：遇到一 / 二级标题即结束，找不到则落到文件末尾 */
 function findBlockEnd(lines: readonly string[], headingIndex: number, pattern: RegExp): number {
     for (let cursor = headingIndex + 1; cursor < lines.length; cursor += 1) {
         if (pattern.test(lines[cursor] ?? '')) {
@@ -127,15 +118,63 @@ function findInsertIndex(lines: readonly string[], end: number, floor: number): 
     return insertAt
 }
 
-/** 段落内按卷序找卷标题行：认「第N卷」前缀，读不到卷序的卷不参与匹配 */
+/** 中文数字转整数：只用于卷序，读不懂返回 null */
+function parseChineseNumber(value: string): number | null {
+    const digits: Readonly<Record<string, number>> = {
+        一: 1,
+        二: 2,
+        三: 3,
+        四: 4,
+        五: 5,
+        六: 6,
+        七: 7,
+        八: 8,
+        九: 9,
+    }
+    const text = value.trim()
+    if (text.length === 0) {
+        return null
+    }
+    const single = digits[text]
+    if (single !== undefined) {
+        return single
+    }
+    if (text === '十') {
+        return 10
+    }
+    const tenIndex = text.indexOf('十')
+    if (tenIndex === -1) {
+        return null
+    }
+    const tens = tenIndex === 0 ? 1 : digits[text.slice(0, tenIndex)]
+    const ones = tenIndex === text.length - 1 ? 0 : digits[text.slice(tenIndex + 1)]
+    return tens === undefined || ones === undefined ? null : tens * 10 + ones
+}
+
+/** 按卷序找二级卷标题行：认「第N卷」与「第N卷」的中文写法，读不到卷序的标题不参与匹配 */
 function findVolumeHeading(lines: readonly string[], start: number, end: number, volumeOrder: number): number {
     for (let cursor = start; cursor < end; cursor += 1) {
         const matched = VOLUME_HEADING_PATTERN.exec((lines[cursor] ?? '').trim())
         if (matched?.[1] === undefined) {
             continue
         }
-        const order = VOLUME_ORDER_PATTERN.exec(matched[1])?.[1]
-        if (order !== undefined && Number.parseInt(order, 10) === volumeOrder) {
+        const raw = VOLUME_ORDER_PATTERN.exec(matched[1])?.[1]
+        if (raw === undefined) {
+            continue
+        }
+        const arabic = Number.parseInt(raw, 10)
+        const order = Number.isNaN(arabic) ? parseChineseNumber(raw) : arabic
+        if (order === volumeOrder) {
+            return cursor
+        }
+    }
+    return -1
+}
+
+/** 卷块内是否已有「### 章节内容」小节：没有时插入章块要先补小节标题 */
+function findChapterSection(lines: readonly string[], start: number, end: number): number {
+    for (let cursor = start; cursor < end; cursor += 1) {
+        if (CHAPTER_SECTION_PATTERN.test((lines[cursor] ?? '').trim())) {
             return cursor
         }
     }
@@ -163,7 +202,7 @@ function normalizeOutline(text: string): string {
 }
 
 /**
- * 把一章合并进大纲原文：段落缺失补段落、卷块缺失补卷块、章已存在则不动。
+ * 把一章合并进大纲原文：卷块缺失时补建整卷、卷内缺「章节内容」小节时补小节、章已存在则不动。
  * 返回 null 表示无需写盘（该卷内已有同章序的章纲），调用方据此跳过写文件。
  */
 function mergeChapterIntoOutline(current: string, seed: OutlineChapterSeed): string | null {
@@ -174,33 +213,20 @@ function mergeChapterIntoOutline(current: string, seed: OutlineChapterSeed): str
 
     const text = current.trim().length > 0 ? current : OUTLINE_HEADER
     const lines = text.split(/\r?\n/u)
-    const sectionHeading = lines.findIndex((line) => PLAN_SECTION_PATTERN.test(line.trim()))
-    if (sectionHeading === -1) {
-        const next = [
-            ...lines,
-            '',
-            `## ${PLAN_SECTION_TITLE}`,
-            '',
-            buildVolumeBlock(volumeOrder, volumeName, chapterBlock),
-        ]
-        return normalizeOutline(next.join('\n'))
-    }
-
-    const sectionEnd = findBlockEnd(lines, sectionHeading, LEVEL_TWO_OR_UP_PATTERN)
-    const volumeHeading = findVolumeHeading(lines, sectionHeading + 1, sectionEnd, volumeOrder)
+    const volumeHeading = findVolumeHeading(lines, 0, lines.length, volumeOrder)
     if (volumeHeading === -1) {
-        const insertAt = findInsertIndex(lines, sectionEnd, sectionHeading + 1)
-        const volumeBlock = buildVolumeBlock(volumeOrder, volumeName, chapterBlock)
-        const next = [...lines.slice(0, insertAt), '', volumeBlock, '', ...lines.slice(insertAt)]
+        const next = [...lines, '', buildVolumeBlock(volumeOrder, volumeName, chapterBlock)]
         return normalizeOutline(next.join('\n'))
     }
 
-    const volumeEnd = findBlockEnd(lines, volumeHeading, LEVEL_THREE_OR_UP_PATTERN)
+    const volumeEnd = findBlockEnd(lines, volumeHeading, LEVEL_TWO_OR_UP_PATTERN)
     if (hasChapterOrder(lines, volumeHeading + 1, volumeEnd, seed.order)) {
         return null
     }
     const insertAt = findInsertIndex(lines, volumeEnd, volumeHeading + 1)
-    const next = [...lines.slice(0, insertAt), '', chapterBlock, '', ...lines.slice(insertAt)]
+    const hasSection = findChapterSection(lines, volumeHeading + 1, volumeEnd) !== -1
+    const addition = hasSection ? ['', chapterBlock, ''] : ['', `### ${CHAPTERS_SECTION_TITLE}`, '', chapterBlock, '']
+    const next = [...lines.slice(0, insertAt), ...addition, ...lines.slice(insertAt)]
     return normalizeOutline(next.join('\n'))
 }
 

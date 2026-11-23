@@ -48,8 +48,10 @@ export function OutlineWizardPlan({
                                 </CardAction>
                             </CardHeader>
                             <CardContent className="flex flex-col gap-1">
-                                <CardDescription className="line-clamp-2">阶段目标：{volume.goal}</CardDescription>
-                                <CardDescription className="line-clamp-1">核心冲突：{volume.conflict}</CardDescription>
+                                <CardDescription className="line-clamp-2">核心事件：{volume.coreEvent}</CardDescription>
+                                <CardDescription className="line-clamp-1">
+                                    主要情节：{volume.mainPlot.join('；')}
+                                </CardDescription>
                             </CardContent>
                         </Card>
                     )

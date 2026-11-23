@@ -1,13 +1,16 @@
 /**
  * 大纲工作台：写作流程的第四步，按「功能模块 + 层级 + 颗粒度」组织，而不是一条事件链列表。
  * 复用约定：外壳取 components/AppPage（标题与动作走 AppHeader、作品名与统计走 AppSummary、
- * 模块与筛选走 OutlineFilters、三栏主体交给 AppContent）；卷章详情由 OutlineDetail 承担，
- * 七个功能模块由 OutlinePlanPanels / OutlineTrackPanels 承担，写前查纲与写后回填分别由
- * OutlineFocusView 与 OutlineBackfillDialog 承担；页头动作菜单由 OutlineActionMenu 承担。
+ * 模块与筛选走 OutlineFilters、三栏主体交给 AppContent）；章纲详情由 OutlineDetail 承担，
+ * 卷纲详情由 OutlineVolumeDetail 承担，按卷生成章纲的预览与写入由 OutlineVolumeChaptersDialog 承担；
+ * 结构与线索两个功能模块由 OutlinePlanPanels / OutlineTrackPanels 承担，
+ * 写前查纲与写后回填分别由 OutlineFocusView 与 OutlineBackfillDialog 承担；
+ * 页头动作菜单由 OutlineActionMenu 承担；故事核（梗概、冲突、主题、弧光）不在本页维护，统一由作品设定承载。
  * 关键约束：模块与颗粒度只切视图、不写盘；每个面板的编辑只落盘自己那一段（onUpdatePlan 的 section 参数）；
  * 回填与模板会同时改多段，必须走 onApplyOutlineChange 立即写盘；
+ * 页头的「卷」下拉兼作导航：选中某卷即进入卷纲视图并清空章节选中，选「全部卷」回到章节列表；
  * 宽容器用容器查询展开三栏，窄容器（VSCode 侧栏常态）在卷章模块退化为「树 → 详情」下钻，
- * 选中章节后隐藏树而不是压缩两栏；新增卷章只长大纲草稿，不建章节文件。
+ * 选中章节或进入卷纲视图后隐藏树而不是压缩两栏；新增卷章只长大纲草稿，不建章节文件。
  */
 import { cn } from 'cn'
 import { FileText, ListTree } from 'lucide-react'
@@ -26,15 +29,11 @@ import { OutlineBackfillDialog } from './layout/OutlineBackfillDialog'
 import { OutlineDetail } from './layout/OutlineDetail'
 import { OutlineFilters } from './layout/OutlineFilters'
 import { OutlineFocusView } from './layout/OutlineFocusView'
-import {
-    BookOutlinePanel,
-    CharacterOutlinePanel,
-    PacingPanel,
-    SettingOutlinePanel,
-    StructurePanel,
-} from './layout/OutlinePlanPanels'
-import { CluePanel, TimelinePanel } from './layout/OutlineTrackPanels'
+import { StructurePanel } from './layout/OutlinePlanPanels'
+import { CluePanel } from './layout/OutlineTrackPanels'
 import { OutlineTree } from './layout/OutlineTree'
+import { OutlineVolumeCards } from './layout/OutlineVolumeCards'
+import { OutlineVolumeChaptersDialog } from './layout/OutlineVolumeChaptersDialog'
 import { OutlineWizard } from './layout/OutlineWizard'
 import type { CreatedOutlineNode } from '../hooks/usePressMutations'
 import type {
@@ -47,15 +46,17 @@ import type {
     OutlineTreeEntry,
     OutlineVolume,
     OutlineWorkspace,
-    PlanStatus,
 } from '../types'
+import type { ChapterSeed, VolumeChapterWriteMode } from '../utils'
 import type { JSX } from 'react'
 import { useOpenProjectDoc } from '../hooks/useOpenProjectDoc'
 import {
     buildMinimalTemplate,
     chapterTitleLabel,
+    createAct,
     createChapterRefEntries,
     createChapterRefOptions,
+    createClue,
     createVolumeOptions,
     findClueWarnings,
     mergeTemplatePlan,
@@ -68,7 +69,11 @@ interface PressOutlinePageProps {
     dirPath: string
     defaultChapterWordGoal: number
     onUpdateChapter: (chapterId: string, patch: Partial<OutlineChapter>) => void
-    /** 更新七个功能模块中的一段：只写该段对应的段落 */
+    /** 更新卷纲字段：卷名、核心事件、情节脉络与转折在卷纲视图里编辑 */
+    onUpdateVolume: (volumeId: string, patch: Partial<OutlineVolume>) => void
+    /** 按卷写入章纲草案：追加到卷末或替换空章，返回实际写入章数 */
+    onApplyVolumeChapters: (volumeId: string, seeds: readonly ChapterSeed[], mode: VolumeChapterWriteMode) => number
+    /** 更新功能模块中的一段：只写该段对应的段落 */
     onUpdatePlan: (section: OutlineSectionKey, patch: Partial<OutlinePlan>) => void
     /** 大纲整批更新并立即写盘：回填与模板使用 */
     onApplyOutlineChange: (next: { volumes?: OutlineVolume[]; plan?: OutlinePlan }) => void
@@ -87,6 +92,8 @@ export function PressOutlinePage({
     dirPath,
     defaultChapterWordGoal,
     onUpdateChapter,
+    onUpdateVolume,
+    onApplyVolumeChapters,
     onUpdatePlan,
     onApplyOutlineChange,
     onCreateVolume,
@@ -97,15 +104,18 @@ export function PressOutlinePage({
 }: PressOutlinePageProps): JSX.Element {
     const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null)
     const [module, setModule] = useState<OutlineModuleKey>('volume')
-    const [granularity, setGranularity] = useState<OutlineGranularity>('medium')
-    const [statusFilter, setStatusFilter] = useState<PlanStatus | 'all'>('all')
-    /** 卷筛选：'all' 为全部卷，否则为卷 id，只影响左侧章节列表 */
+    /** 颗粒度视图已取消筛选入口，固定为中纲：仅作为渲染粒度传给章纲详情与 AI 面板条件 */
+    const granularity: OutlineGranularity = 'medium'
+    /** 当前卷：'all' 为全部卷，否则为卷 id；兼作卷纲视图的开关，同时收窄左侧章节列表 */
     const [volumeFilter, setVolumeFilter] = useState('all')
     /** 标题搜索词：与卷筛选叠加，只收窄左侧列表 */
     const [query, setQuery] = useState('')
     const [isWizardOpen, setIsWizardOpen] = useState(false)
     const [isFocusOpen, setIsFocusOpen] = useState(false)
     const [isBackfillOpen, setIsBackfillOpen] = useState(false)
+    const [isGenerateOpen, setIsGenerateOpen] = useState(false)
+    /** 正在生成章纲的卷：由卷纲卡片的「生成章纲」指定，与页头卷筛选相互独立 */
+    const [generatingVolumeId, setGeneratingVolumeId] = useState<string | null>(null)
     const { isExtracting, extract } = useOutlineExtract(dirPath)
     const { openDoc } = useOpenProjectDoc(dirPath)
 
@@ -120,23 +130,13 @@ export function PressOutlinePage({
     // 下钻状态只看用户是否主动点选过：窄容器下初始停在树，宽容器由 @2xl 断点强制并排
     const hasActiveSelection = selectedChapterId !== null
     /** 卷筛选选项：取值用卷 id，卷名允许重名 */
-    const volumeOptions = useMemo(() => createVolumeOptions(entries), [entries])
+    const volumeOptions = useMemo(() => createVolumeOptions(workspace.volumes), [workspace.volumes])
     /** 线索预警：按最后一个「已写」章位置判断逾期与临期 */
     const clueWarnings = useMemo(() => findClueWarnings(plan, workspace.volumes), [plan, workspace.volumes])
     /** 章节引用选项与条目：线索下拉与聚焦视图共用 */
     const refOptions = useMemo(() => createChapterRefOptions(workspace.volumes), [workspace.volumes])
     const refEntries = useMemo(() => createChapterRefEntries(workspace.volumes), [workspace.volumes])
     const selectedRef = refEntries.find((entry) => entry.chapter.id === selectedEntry?.chapter.id)?.ref ?? null
-    /** 节奏面板按全书章序展示：跨卷后章序不重复，同步与排序才不会串卷 */
-    const allChapters = useMemo<OutlineChapter[]>(() => {
-        let globalOrder = 0
-        return workspace.volumes.flatMap((volume) =>
-            volume.chapters.map((chapter) => {
-                globalOrder += 1
-                return { ...chapter, order: globalOrder }
-            }),
-        )
-    }, [workspace.volumes])
     /** 树里展示的章节：卷筛选与标题搜索只收窄左侧列表，右侧详情与选中项仍按全量 entries 解析 */
     const treeEntries = useMemo(() => {
         const keyword = query.trim().toLowerCase()
@@ -151,23 +151,53 @@ export function PressOutlinePage({
         })
     }, [entries, query, volumeFilter])
 
+    /** 正在生成章纲的卷：对话框打开时定位目标卷 */
+    const generatingVolume =
+        generatingVolumeId === null
+            ? null
+            : (workspace.volumes.find((volume) => volume.id === generatingVolumeId) ?? null)
+
     const handleSelectChapter = (chapterId: string): void => {
         setSelectedChapterId(chapterId)
         setIsFocusOpen(false)
     }
 
     /**
-     * 新增落点：先清掉筛选再选中新节点——刚建的一律是「待写」，状态筛选会把它挡在列表外；
-     * 卷筛选同理，新卷不在旧选项里。清筛选后新章必然在树中可见。
+     * 页头切卷：卷筛选只作用于章纲页，因此切卷同时进入章纲页并清掉章节选中与聚焦视图，
+     * 避免停留在上一卷的章上；选「全部卷」只清筛选，仍停在章纲页。
+     */
+    const handleVolumeChange = (next: string): void => {
+        setVolumeFilter(next)
+        setSelectedChapterId(null)
+        setIsFocusOpen(false)
+        setModule('chapter')
+    }
+
+    /** 卷纲卡片点击：进入章纲页并按该卷筛选，同时选中该卷首章便于直接编辑 */
+    const handleOpenVolumeChapters = (volume: OutlineVolume): void => {
+        setModule('chapter')
+        setVolumeFilter(volume.id)
+        setSelectedChapterId(volume.chapters[0]?.id ?? null)
+        setIsFocusOpen(false)
+    }
+
+    /** 卷纲卡片上的「生成章纲」：只负责打开对话框，目标卷与页头筛选互不影响 */
+    const handleGenerateVolumeChapters = (volume: OutlineVolume): void => {
+        setGeneratingVolumeId(volume.id)
+        setIsGenerateOpen(true)
+    }
+
+    /**
+     * 新增落点：先清掉筛选再选中新节点——卷筛选下新卷不在旧选项里，搜索词也会把新章挡在列表外。
+     * 清筛选后新章必然在树中可见。
      */
     const applyCreatedNode = (created: CreatedOutlineNode | null): void => {
         if (created === null) {
             return
         }
-        setStatusFilter('all')
         setVolumeFilter('all')
         setQuery('')
-        setModule('volume')
+        setModule('chapter')
         if (created.chapterId !== null) {
             setSelectedChapterId(created.chapterId)
         }
@@ -190,13 +220,30 @@ export function PressOutlinePage({
         applyCreatedNode(onCreateChapter(selectedChapterId === null ? undefined : selectedEntry?.volume.id))
     }
 
+    /** 页头第二行的新增入口：按当前模块分派到对应数据操作，模块页面内不再各放一个按钮 */
+    const handleAddByModule = (): void => {
+        if (module === 'volume') {
+            handleCreateVolume()
+            return
+        }
+        if (module === 'chapter') {
+            handleCreateChapter()
+            return
+        }
+        if (module === 'structure') {
+            onUpdatePlan('structure', { acts: [...plan.acts, createAct()] })
+            return
+        }
+        onUpdatePlan('clues', { clues: [...plan.clues, createClue()] })
+    }
+
     /** 套用最小模板：只填空字段，不覆盖已写内容；作品还没有卷时一并铺第一卷与首章 */
     const handleApplyTemplate = (): void => {
         const draft = buildMinimalTemplate(workspace.setting, workspace.characters, defaultChapterWordGoal)
         const nextPlan = mergeTemplatePlan(plan, draft.plan)
         const nextVolumes = workspace.volumes.length === 0 ? [draft.volume] : workspace.volumes
         onApplyOutlineChange({ volumes: nextVolumes, plan: nextPlan })
-        setModule('book')
+        setModule('structure')
         toast.success('已套用最小模板：填空题可直接改写')
     }
 
@@ -229,44 +276,10 @@ export function PressOutlinePage({
         void run()
     }
 
-    /** 七个功能模块的内容区：每个面板只拿到自己那一段与对应的更新回调 */
+    /** 功能模块的内容区：每个面板只拿到自己那一段与对应的更新回调 */
     const renderModule = (): JSX.Element => {
-        if (module === 'book') {
-            return (
-                <BookOutlinePanel
-                    book={plan.book}
-                    onChange={(patch) => onUpdatePlan('book', { book: { ...plan.book, ...patch } })}
-                />
-            )
-        }
         if (module === 'structure') {
             return <StructurePanel acts={plan.acts} onChange={(acts) => onUpdatePlan('structure', { acts })} />
-        }
-        if (module === 'characters') {
-            return (
-                <CharacterOutlinePanel
-                    lines={plan.characters}
-                    characters={workspace.characters}
-                    onChange={(lines) => onUpdatePlan('characters', { characters: lines })}
-                />
-            )
-        }
-        if (module === 'setting') {
-            return (
-                <SettingOutlinePanel
-                    notes={plan.setting}
-                    onChange={(notes) => onUpdatePlan('setting', { setting: notes })}
-                />
-            )
-        }
-        if (module === 'pacing') {
-            return (
-                <PacingPanel
-                    entries={plan.pacing}
-                    chapters={allChapters}
-                    onChange={(pacing) => onUpdatePlan('pacing', { pacing })}
-                />
-            )
         }
         if (module === 'clue') {
             return (
@@ -276,15 +289,6 @@ export function PressOutlinePage({
                     refOptions={refOptions}
                     warnings={clueWarnings}
                     onChange={(clues) => onUpdatePlan('clues', { clues })}
-                />
-            )
-        }
-        if (module === 'timeline') {
-            return (
-                <TimelinePanel
-                    events={plan.timeline}
-                    characters={workspace.characters}
-                    onChange={(timeline) => onUpdatePlan('timeline', { timeline })}
                 />
             )
         }
@@ -345,9 +349,9 @@ export function PressOutlinePage({
         )
     }
 
-    const isVolumeModule = module === 'volume'
-    /** 窄容器下钻：卷章模块一旦主动选中就隐藏左树，写前查纲也属于下钻状态 */
-    const isDrilldown = isVolumeModule && hasActiveSelection
+    const isChapterModule = module === 'chapter'
+    /** 窄容器下钻：章纲页主动选中章节即隐藏左树，写前查纲同样属于下钻状态 */
+    const isDrilldown = isChapterModule && hasActiveSelection
 
     return (
         <>
@@ -367,8 +371,6 @@ export function PressOutlinePage({
                             dirPath={dirPath}
                             isExtracting={isExtracting}
                             onExtract={handleExtract}
-                            onCreateVolume={handleCreateVolume}
-                            onCreateChapter={handleCreateChapter}
                             onOpenWizard={() => setIsWizardOpen(true)}
                             onApplyTemplate={handleApplyTemplate}
                         />
@@ -389,8 +391,6 @@ export function PressOutlinePage({
                     </AppSummary>
                     <OutlineFilters
                         module={module}
-                        granularity={granularity}
-                        statusFilter={statusFilter}
                         volumeFilter={volumeFilter}
                         volumeOptions={volumeOptions}
                         query={query}
@@ -398,53 +398,62 @@ export function PressOutlinePage({
                             setModule(next)
                             setIsFocusOpen(false)
                         }}
-                        onGranularityChange={setGranularity}
-                        onStatusChange={setStatusFilter}
-                        onVolumeChange={setVolumeFilter}
+                        onVolumeChange={handleVolumeChange}
                         onQueryChange={setQuery}
+                        onAdd={handleAddByModule}
                     />
                 </AppHeader>
 
                 <AppContent className="flex px-0">
-                    {isVolumeModule ? (
-                        <aside
-                            className={cn(
-                                'min-h-0 w-full overflow-y-auto px-2 py-2 @2xl:w-64 @2xl:shrink-0 @2xl:border-r @2xl:border-border',
-                                isDrilldown && 'hidden @2xl:block',
-                            )}
-                        >
-                            <OutlineTree
-                                entries={treeEntries}
-                                selectedChapterId={selectedChapterId}
-                                statusFilter={statusFilter}
-                                hasAnyChapter={entries.length > 0}
-                                isListFiltered={volumeFilter !== 'all' || query.trim().length > 0}
-                                onSelectChapter={handleSelectChapter}
-                            />
-                        </aside>
-                    ) : null}
+                    {module === 'volume' ? (
+                        <OutlineVolumeCards
+                            volumes={workspace.volumes}
+                            onUpdate={onUpdateVolume}
+                            onOpenChapters={handleOpenVolumeChapters}
+                            onGenerateChapters={handleGenerateVolumeChapters}
+                        />
+                    ) : (
+                        <>
+                            {isChapterModule ? (
+                                <aside
+                                    className={cn(
+                                        'min-h-0 w-full overflow-y-auto px-2 py-2 @2xl:w-64 @2xl:shrink-0 @2xl:border-r @2xl:border-border',
+                                        isDrilldown && 'hidden @2xl:block',
+                                    )}
+                                >
+                                    <OutlineTree
+                                        entries={treeEntries}
+                                        selectedChapterId={selectedChapterId}
+                                        hasAnyChapter={entries.length > 0}
+                                        isListFiltered={volumeFilter !== 'all' || query.trim().length > 0}
+                                        onSelectChapter={handleSelectChapter}
+                                    />
+                                </aside>
+                            ) : null}
 
-                    <section
-                        className={cn(
-                            'min-h-0 w-full flex-1 overflow-hidden',
-                            isVolumeModule && !isDrilldown && 'hidden @2xl:block',
-                        )}
-                    >
-                        {renderModule()}
-                    </section>
+                            <section
+                                className={cn(
+                                    'min-h-0 w-full flex-1 overflow-hidden',
+                                    isChapterModule && !isDrilldown && 'hidden @2xl:block',
+                                )}
+                            >
+                                {renderModule()}
+                            </section>
 
-                    {isVolumeModule && selectedEntry !== null && !isFocusOpen && granularity !== 'coarse' ? (
-                        <aside className="hidden min-h-0 w-72 shrink-0 @4xl:flex">
-                            <OutlineAiPanel
-                                setting={workspace.setting}
-                                volume={selectedEntry.volume}
-                                chapter={selectedEntry.chapter}
-                                characters={workspace.characters}
-                                onOpenChat={onOpenChat}
-                                onOpenWizard={() => setIsWizardOpen(true)}
-                            />
-                        </aside>
-                    ) : null}
+                            {isChapterModule && selectedEntry !== null && !isFocusOpen ? (
+                                <aside className="hidden min-h-0 w-72 shrink-0 @4xl:flex">
+                                    <OutlineAiPanel
+                                        setting={workspace.setting}
+                                        volume={selectedEntry.volume}
+                                        chapter={selectedEntry.chapter}
+                                        characters={workspace.characters}
+                                        onOpenChat={onOpenChat}
+                                        onOpenWizard={() => setIsWizardOpen(true)}
+                                    />
+                                </aside>
+                            ) : null}
+                        </>
+                    )}
                 </AppContent>
             </AppPage>
 
@@ -468,6 +477,31 @@ export function PressOutlinePage({
                 plan={plan}
                 characters={workspace.characters}
                 onApply={onApplyOutlineChange}
+            />
+
+            {/* key 绑定打开状态：每次重新打开都重建对话框，草案、勾选与章数不会从上一次带过来 */}
+            <OutlineVolumeChaptersDialog
+                key={isGenerateOpen ? 'generate-open' : 'generate-closed'}
+                isOpen={isGenerateOpen && generatingVolume !== null}
+                onOpenChange={setIsGenerateOpen}
+                volume={generatingVolume}
+                setting={workspace.setting}
+                characters={workspace.characters}
+                onApply={(drafts, mode) => {
+                    if (generatingVolume === null) {
+                        return 0
+                    }
+                    return onApplyVolumeChapters(
+                        generatingVolume.id,
+                        drafts.map((draft) => ({
+                            stage: draft.stage,
+                            title: draft.title,
+                            summary: draft.summary,
+                            beats: draft.beats,
+                        })),
+                        mode,
+                    )
+                }}
             />
         </>
     )

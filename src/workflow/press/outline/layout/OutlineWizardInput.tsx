@@ -91,7 +91,9 @@ export function OutlineWizardInput({
                 </div>
                 {setting.logline.trim().length === 0 ? (
                     <Alert>
-                        <AlertDescription>梗概为空时，各章推进描述会趋于雷同，建议先补一句话梗概。</AlertDescription>
+                        <AlertDescription>
+                            梗概为空时，各章推进描述会趋于雷同，建议先到「作品设定」补一句话梗概。
+                        </AlertDescription>
                     </Alert>
                 ) : null}
             </div>

@@ -166,6 +166,10 @@ export class PressRoutes {
                 return this.service.generateLoreDescription(payload)
             case 'pressAi/aiLoreDescription/abort':
                 return this.service.abortGeneration()
+            case 'pressAi/aiVolumeChapters':
+                return this.service.generateVolumeChapters(payload)
+            case 'pressAi/aiVolumeChapters/abort':
+                return this.service.abortGeneration()
             case 'pressAi/listPortraits':
                 return this.portraits.list(payload, toWebviewUri)
             case 'pressAi/listPortraitGallery':

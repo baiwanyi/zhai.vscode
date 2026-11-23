@@ -24,19 +24,19 @@ export type HookKind = 'suspense' | 'twist' | 'emotion' | 'none'
 export type OutlineGranularity = 'coarse' | 'medium' | 'fine'
 
 /**
- * 功能模块：与 大纲.md 的二级段落一一对应，导航栏按此顺序渲染。
- * 卷章模块承载四层级里的卷 / 章 / 场景，其余七个模块各占一个段落。
+ * 功能模块：结构纲、伏笔线索、卷纲与章纲四个页面。
+ * 卷纲按卡片列出每一卷（预计章节数 / 核心事件 / 主要情节），章纲把全部章节平铺并按卷筛选；
+ * 设定纲、节奏情绪、时间线都不再作为模块：设定归作品设定（世界观 / 金手指 / 势力 / 地点 / 物品），
+ * 节奏类型作为章纲字段维护，时间线数据只留在文档里供作者参考。
  */
-export type OutlineModuleKey =
-    'book' | 'structure' | 'characters' | 'setting' | 'pacing' | 'clue' | 'timeline' | 'volume'
+export type OutlineModuleKey = 'structure' | 'clue' | 'volume' | 'chapter'
 
 /** 大纲段落键：与宿主 writer 的段落落点表、PressApplyRequest.outlineSections 共用 */
-export type OutlineSectionKey =
-    'book' | 'structure' | 'characters' | 'setting' | 'pacing' | 'clues' | 'timeline' | 'volumes'
+export type OutlineSectionKey = 'structure' | 'clues' | 'volumes'
 
 /**
  * 章节引用：卷序 + 卷内章序。
- * 关键约束：线索、时间线、节奏表都跨章引用，一律用这个组合定位；
+ * 关键约束：线索按章引用，一律用这个组合定位；
  * 章 id 由解析器按位置现算，卷章重排后即失效，不能写进文档。
  */
 export interface OutlineChapterRef {
@@ -57,55 +57,8 @@ export interface OutlineAct {
     event: string
 }
 
-/** 全书纲：一页纸故事核，防止写偏 */
-export interface OutlineBook {
-    /** 一句话梗概 */
-    logline: string
-    /** 核心冲突 */
-    conflict: string
-    /** 主题 */
-    theme: string
-    /** 结局方向 */
-    ending: string
-    /** 主角弧光：从什么到什么 */
-    arc: string
-}
-
-/** 人物纲：每个主要人物一条，事件必须能逼他做选择 */
-export interface OutlineCharacterLine {
-    id: string
-    /** 关联人物卡 id：按姓名匹配成功后回填，未匹配为空串 */
-    characterId: string
-    name: string
-    desire: string
-    fear: string
-    flaw: string
-    secret: string
-    relation: string
-    /** 弧光终点 */
-    arc: string
-}
-
-/** 设定纲条目：只写会推动情节的规则与代价 */
-export interface OutlineSettingNote {
-    id: string
-    name: string
-    rule: string
-    cost: string
-    note: string
-}
-
 /** 节奏类型：紧张、铺垫、爽点、虐点、喘息 */
 export type PacingKind = 'tension' | 'setup' | 'payoff' | 'sorrow' | 'breath'
-
-/** 节奏/情绪行：一章一档，避免连续同类章节 */
-export interface OutlinePacingEntry {
-    id: string
-    chapterOrder: number
-    kind: PacingKind
-    /** 张力 1-5 */
-    tension: number
-}
 
 /** 伏笔状态：已埋未收、已回收、已废弃 */
 export type ClueStatus = 'planted' | 'paid-off' | 'dropped'
@@ -122,17 +75,6 @@ export interface OutlineClue {
     triggerId: string
     status: ClueStatus
     note: string
-}
-
-/** 时间线事件：多线、群像与悬疑叙事的顺序依据 */
-export interface OutlineTimelineEvent {
-    id: string
-    /** 故事内时间：自由文本（第三年冬 / 事发当夜） */
-    when: string
-    title: string
-    /** 涉及章节：按卷序 + 章序引用 */
-    refs: OutlineChapterRef[]
-    characterIds: string[]
 }
 
 /**
@@ -155,21 +97,12 @@ export interface OutlineScene {
     emotion: string
 }
 
-/** 大纲的功能模块集合：除卷章外的七个段落一次装配进工作区 */
+/** 大纲的功能模块集合：除卷章外的两个段落一次装配进工作区（人物信息取人物卡，不在此维护） */
 export interface OutlinePlan {
-    book: OutlineBook
     /** 结构纲：阶段与节拍 */
     acts: OutlineAct[]
-    /** 人物纲 */
-    characters: OutlineCharacterLine[]
-    /** 设定纲 */
-    setting: OutlineSettingNote[]
-    /** 节奏 / 情绪 */
-    pacing: OutlinePacingEntry[]
     /** 伏笔线索表 */
     clues: OutlineClue[]
-    /** 时间线 */
-    timeline: OutlineTimelineEvent[]
 }
 
 /** 角色分类：主角、配角、反派、中立、龙套 */
@@ -215,6 +148,11 @@ export interface OutlineChapter {
     /** 卷内序号，从 1 开始，展示与导出均以此排序 */
     order: number
     title: string
+    /**
+     * 阶段名：本卷内的一段剧情（如「第一阶段：坠楼与觉醒」），空串表示未分组。
+     * 关键约束：阶段只是卷内分组标签，章序仍是唯一顺序依据；改名须同时改该阶段各章。
+     */
+    stage: string
     /** 计划梗概：打算写什么，与章节文件里的实际摘要分离 */
     summary: string
     /** 正文事实摘要：写后回填写入，只读展示，不回写章节文件 */
@@ -242,20 +180,24 @@ export interface OutlineChapter {
     /** 已写正文字数，用于进度对比 */
     wordCount: number
     hook: HookKind
+    /** 节奏类型：紧张、铺垫、爽点、虐点、喘息，用于避免连续同类章节 */
+    pacing: PacingKind
     /** 张力 1-5，用于节奏曲线 */
     tension: number
     /** 颗粒度标记：这一章被细化到哪一档，写盘后可在视图里按档筛选 */
     granularity: OutlineGranularity
 }
 
-/** 卷/幕纲：一部作品下的一卷（也可当作一幕），含目标、冲突、转折与卷末结果 */
+/** 卷/幕纲：一部作品下的一卷（也可当作一幕），含核心事件、主要情节、转折与卷末结果 */
 export interface OutlineVolume {
     id: string
     name: string
-    goal: string
-    conflict: string
-    /** 情节脉络：本卷主线如何推进，从开卷到收束的连贯描述 */
-    plotline: string
+    /** 预计章节数：0 表示未填，按卷生成章纲时作为目标章数 */
+    expectedChapters: number
+    /** 核心事件：本卷真正发生的主线事件，涵盖卷目标与冲突 */
+    coreEvent: string
+    /** 主要情节：按发生顺序排列的情节条目 */
+    mainPlot: string[]
     /** 关键转折：本卷剧情走向真正改变的地方，逐条记录 */
     turningPoints: string[]
     /** 卷末结果：本卷收束后留下什么新问题 */
@@ -346,6 +288,10 @@ export interface ProjectSetting {
     /** 补充信息：未归入其它字段的备注 */
     extra: string
     conflict: string
+    /** 主题：故事要探讨的核心命题 */
+    theme: string
+    /** 主角弧光：从什么到什么，中间必须付出什么代价 */
+    arc: string
     ending: EndingKind
     /** 叙事结构：单线顺叙 / 双线交替等，写入设定.md 的「叙事结构」键 */
     narrative: string
@@ -402,7 +348,7 @@ export type LoreSeed = Partial<Omit<LoreEntry, 'id'>>
 
 /**
  * 工作台数据：各步骤共享的同一份作品草稿。
- * volumes 是四层级里的「卷—章—场景」，plan 是其余七个功能模块的集合；
+ * volumes 是四层级里的「卷—章—场景」，plan 是结构纲与线索两个模块的集合；
  * 两者都来自同一份 大纲.md，写入时各段落独立落盘，互不覆盖。
  */
 export interface OutlineWorkspace {

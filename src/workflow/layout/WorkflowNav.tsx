@@ -81,7 +81,7 @@ const SECTION_META: Readonly<Record<WorkflowSection, SectionMeta>> = {
  *  活动栏前景色取自 VSCode 主题变量，Tailwind 无法为其合成带透明度的色值，会静默丢弃修饰符；
  *  线宽与 shrink 由 ui/separator 提供，这里只覆盖颜色与间距 */
 function NavSeparator(): JSX.Element {
-    return <Separator className="mx-2 my-1 bg-activity-bar-inactive-foreground opacity-25" />
+    return <Separator className="data-horizontal:w-auto m-1 bg-activity-bar-inactive-foreground/20" />
 }
 
 interface WorkflowNavProps {
@@ -108,7 +108,7 @@ export function WorkflowNav({ activeSection, scope, onSelect }: WorkflowNavProps
     }
 
     return (
-        <nav className="flex w-12 shrink-0 flex-col bg-activity-bar py-1 mr-1 rounded-md" aria-label="工作流导航">
+        <nav className="flex w-12 shrink-0 flex-col bg-activity-bar py-1 mt-1 mr-1 rounded-md" aria-label="工作流导航">
             <TooltipProvider>
                 {LEADING_SECTIONS.map(renderItem)}
                 {/* 中段：专属分区与工具入口一起滚动，短面板下也能滚到最末一项 */}

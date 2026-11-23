@@ -30,17 +30,21 @@ import type {
     OutlineWorkspace,
     ProjectSetting,
 } from '../types'
+import type { ChapterSeed, VolumeChapterWriteMode } from '../utils'
 import type { FlushOptions, PersistScope } from './usePressWorkspace'
 import { DEFAULT_CHAPTER_WORD_GOAL } from '../constants'
 import { SETTING_SECTIONS } from '../setting/sections'
 import {
     createChapter,
+    createChaptersFromSeeds,
     createCharacterCard,
     createLoreEntry,
     createOutlineFromDraft,
     createVolume,
+    isEmptyOutlineChapter,
     mergeCharacterDrafts,
     refreshOutlineChapters,
+    renumberChapters,
 } from '../utils'
 
 /** 卷名归一：追加生成结果时去掉原有的「第N卷」前缀，避免与既有卷序号冲突 */
@@ -56,6 +60,9 @@ export interface CreatedOutlineNode {
 function readChapterWordGoal(setting: ProjectSetting): number {
     return setting.chapterWordGoal > 0 ? setting.chapterWordGoal : DEFAULT_CHAPTER_WORD_GOAL
 }
+
+/** 空章判定：与 utils 的 isEmptyOutlineChapter 同一口径，替换模式只清掉这类章节 */
+const isEmptyChapter = isEmptyOutlineChapter
 
 export interface PressMutations {
     openProject: (dirPath: string) => void
@@ -74,7 +81,14 @@ export interface PressMutations {
     /** 删除条目：同步清理它的设定图，所属文档里的条目块一并移除 */
     deleteLore: (loreId: string) => void
     updateChapter: (chapterId: string, patch: Partial<OutlineChapter>) => void
-    /** 更新七个功能模块中的一段：只写该段对应的段落，其余段落保持原样 */
+    /** 更新卷纲字段：卷名、核心事件、情节脉络等在卷纲视图里编辑，走防抖写盘 */
+    updateVolume: (volumeId: string, patch: Partial<OutlineVolume>) => void
+    /**
+     * 按卷写入 AI 生成的章纲：append 追加到卷末，replace-empty 先清掉未动过的空章再续排。
+     * 写入后整卷章序规整为 1..N，返回实际写入的章数。
+     */
+    applyVolumeChapters: (volumeId: string, seeds: readonly ChapterSeed[], mode: VolumeChapterWriteMode) => number
+    /** 更新六个功能模块中的一段：只写该段对应的段落，其余段落保持原样 */
     updateOutlinePlan: (section: OutlineSectionKey, patch: Partial<OutlinePlan>) => void
     /** 立即写盘的大纲整批更新：回填与模板一次改多段（卷章 + 线索等）时使用 */
     applyOutlineChange: (next: { volumes?: OutlineVolume[]; plan?: OutlinePlan }) => void
@@ -179,22 +193,11 @@ export function usePressMutations({
                             : chapter,
                     ),
                 })),
-                // 人物纲与线索的触发者都引用人物 id：删除人物时一并清空，避免留下悬空引用
+                // 线索的触发者引用人物 id：删除人物时一并清空，避免留下悬空引用
                 plan: {
                     ...previous.plan,
-                    characters: previous.plan.characters.map((line) =>
-                        line.characterId === characterId ? { ...line, characterId: '' } : line,
-                    ),
                     clues: previous.plan.clues.map((clue) =>
                         clue.triggerId === characterId ? { ...clue, triggerId: '' } : clue,
-                    ),
-                    timeline: previous.plan.timeline.map((event) =>
-                        event.characterIds.includes(characterId)
-                            ? {
-                                  ...event,
-                                  characterIds: event.characterIds.filter((id) => id !== characterId),
-                              }
-                            : event,
                     ),
                 },
             }))
@@ -301,6 +304,63 @@ export function usePressMutations({
             scheduleFlush('outline', ['volumes'])
         },
         [scheduleFlush, updateWorkspace],
+    )
+
+    /** 卷纲字段改动：卷名、核心事件、冲突与情节脉络都在卷纲视图编辑，只写「分卷规划」段落 */
+    const updateVolume = useCallback(
+        (volumeId: string, patch: Partial<OutlineVolume>): void => {
+            updateWorkspace((previous) => ({
+                ...previous,
+                volumes: previous.volumes.map((volume) => (volume.id === volumeId ? { ...volume, ...patch } : volume)),
+            }))
+            scheduleFlush('outline', ['volumes'])
+        },
+        [scheduleFlush, updateWorkspace],
+    )
+
+    /**
+     * 按卷写入生成的章纲：只动这一卷。
+     * 关键约束：replace-empty 只清理「待写 + 无字数 + 无梗概 + 节拍全空」的空章，
+     * 已写或已动过的章一律保留；删掉中间空章会留下章序空洞，因此该模式写入后整卷规整为 1..N
+     * （带「第N章」前缀的标题同步改写，线索与时间线的章序引用会随之前移）；
+     * 追加模式只在卷末续排，不重排既有章序，避免打乱作者手改过的编号。
+     */
+    const applyVolumeChapters = useCallback(
+        (volumeId: string, seeds: readonly ChapterSeed[], mode: VolumeChapterWriteMode): number => {
+            const current = getWorkspace()
+            if (current === null || seeds.length === 0) {
+                return 0
+            }
+            const wordGoal = readChapterWordGoal(current.setting)
+            updateWorkspace((previous) => ({
+                ...previous,
+                volumes: previous.volumes.map((volume) => {
+                    if (volume.id !== volumeId) {
+                        return volume
+                    }
+                    const kept =
+                        mode === 'replace-empty'
+                            ? volume.chapters.filter((chapter) => !isEmptyChapter(chapter))
+                            : volume.chapters
+                    // 替换模式随后会整卷重排，起始章序取「保留章数 + 1」；追加模式接在最大章序之后
+                    const startOrder =
+                        mode === 'replace-empty'
+                            ? kept.length + 1
+                            : kept.reduce((max, chapter) => Math.max(max, chapter.order), 0) + 1
+                    const created = createChaptersFromSeeds(seeds, startOrder, wordGoal)
+                    const chapters = [...kept, ...created]
+                    return {
+                        ...volume,
+                        chapters: mode === 'replace-empty' ? renumberChapters(chapters) : chapters,
+                    }
+                }),
+            }))
+            void flush(new Set<PersistScope>(['outline']), {
+                successMessage: `已写入 ${String(seeds.length)} 章章纲`,
+            })
+            return seeds.length
+        },
+        [flush, getWorkspace, updateWorkspace],
     )
 
     /** 功能模块改动：只落盘该模块对应的段落，避免编辑线索时把卷章整段重写 */
@@ -506,6 +566,8 @@ export function usePressMutations({
         updateLore,
         deleteLore,
         updateChapter,
+        updateVolume,
+        applyVolumeChapters,
         updateOutlinePlan,
         applyOutlineChange,
         createOutlineVolume,

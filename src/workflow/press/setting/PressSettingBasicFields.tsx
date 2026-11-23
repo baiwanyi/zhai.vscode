@@ -1,16 +1,16 @@
 /**
  * 作品设定字段组：按作品信息（封面、作品名、笔名、篇幅、章节字数、目标读者）、
  * 题材定位（时间、地点、标签、结局倾向）、写作风格（叙事视角、叙事结构、语言风格、参考作品、规避内容）
- * 与故事内核（简介、一句话梗概、开篇灵感、核心冲突、补充信息）四段排列。
+ * 与故事内核（简介、一句话梗概、开篇灵感、核心冲突、主题、主角弧光、补充信息）四段排列。
  * 复用约定：段容器取 @components/ui 的 field 之 FieldSet + FieldLegend，字段网格取 FieldGroup，
  * 单字段控件取 input / textarea / select；标签与规避内容都取 TagPicker（分组弹层 + 自定义输入），
  * 其余单选走 SegmentedRail（选项带悬停说明）；封面交给 ./SettingCoverSection（生成 + 候选图库），
  * 选项与标签库统一来自 ./settingOptions；带 AI 生成的五个字段统一取 @webview/components/AiTextareaField
- * （输入组 + 生成按钮 + 生成态光晕），故事内核四项由 STORY_FIELDS 数据驱动渲染；
+ * （输入组 + 生成按钮 + 生成态光晕），故事内核各项由 STORY_FIELDS 数据驱动渲染；
  * 时间 / 地点与写作风格三组选择，分别收在同文件的 PlainSelectField 与 ChipChoiceField 里。
  * 关键约束：作品名与目录名一一对应；多行字段写入文档时统一折成单行；篇幅 0 表示不限；
  * 封面的生成状态与刷新信号由页面持有（切分组会卸载本组件），这里只透传；
- * 故事内核四个字段的字数上限取 SETTING_FIELD_MAX_LENGTH，输入与 AI 生成结果共用同一份口径；
+ * 故事内核各字段的字数上限取 SETTING_FIELD_MAX_LENGTH，输入与 AI 生成结果共用同一份口径；
  * 标签按目标读者取库，切换受众只换候选；题材标签与规避内容各自独立计上限，互不占用额度；
  * 忙碌字段由页面持有，本组件只按字段渲染按钮状态。
  */
@@ -66,8 +66,8 @@ interface SettingBasicFieldsProps extends SettingFieldsProps {
     coverControl: SettingCoverControl
 }
 
-/** 故事内核里带 AI 生成的四个字段：key 同时是设定字段名与宿主生成字段键 */
-type StoryFieldKey = Extract<SettingFieldKey, 'summary' | 'logline' | 'opening' | 'conflict'>
+/** 故事内核里带 AI 生成的字段：key 同时是设定字段名与宿主生成字段键 */
+type StoryFieldKey = Extract<SettingFieldKey, 'summary' | 'logline' | 'opening' | 'conflict' | 'theme' | 'arc'>
 
 interface StoryFieldMeta {
     key: StoryFieldKey
@@ -81,6 +81,8 @@ const STORY_FIELDS: readonly StoryFieldMeta[] = [
     { key: 'logline', label: '一句话梗概', placeholder: '谁，在什么处境下，要做什么，代价是什么' },
     { key: 'opening', label: '开篇灵感', placeholder: '第一章从哪个画面或事件切入，最好带一个钩子' },
     { key: 'conflict', label: '核心冲突', placeholder: '主角要什么、谁在阻拦、失败会失去什么' },
+    { key: 'theme', label: '主题', placeholder: '通过____事件，探讨____' },
+    { key: 'arc', label: '主角弧光', placeholder: '从____到____，中间必须付出什么代价' },
 ]
 
 /** 写作风格三组选择的标题：比普通字段名更轻，避免与段标题抢层级 */

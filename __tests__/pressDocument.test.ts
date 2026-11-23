@@ -89,30 +89,61 @@ const OUTLINE = `# 大纲
 
 林岚追查妹妹失踪的真相。
 
-## 分卷规划
+## 第1卷 断线之始（第1-6章）
 
-| 卷 | 章区间 |
-| --- | --- |
+### 预计章节数
 
-### 第1卷 断线之始（第1-6章）
+6
 
-- 卷目标：从被动谋生转向主动追查
-- 卷冲突：底层手艺人 vs 地产集团
+### 核心事件
+
+从被动谋生转向主动追查；底层手艺人 vs 地产集团
+
+### 主要情节
+
+- 客人送来旧表，编号指向失踪的妹妹
+- 档案被抽走，线索断在旧城医院
+
+### 关键转折
+
+- 编号确认
+
+### 卷末结果
+
+线索断在旧城医院
+
+- 颗粒度：中纲
+
+### 章节内容
 
 #### 第1章 修表铺的客人
 
 - id：ch-1
 - 状态：published｜字数：2680 / 2500｜钩子：suspense｜张力：2
-- 梗概：客人送来一块停摆的旧表。
-- 节拍：① [x] 客人放下表就走 ② [x] 林岚拆开后盖 ③ [ ] 编号与妹妹一致
 - 人物：林岚、老周｜地点：城南修表铺
+
+##### 计划梗概
+
+客人送来一块停摆的旧表。
+
+##### 节拍
+
+- [x] 客人放下表就走
+- [x] 林岚拆开后盖
+- [ ] 编号与妹妹一致
 
 #### 第2章 失踪的第七天
 
 - 状态：planned
-- 梗概：档案被抽走。
-- 节拍：① [ ] 老周劝他别再查
 - 人物：顾青｜地点：旧城医院
+
+##### 计划梗概
+
+档案被抽走。
+
+##### 节拍
+
+- [ ] 老周劝他别再查
 `
 
 describe('parseProjectWorkspace', () => {
@@ -194,8 +225,11 @@ describe('parseProjectWorkspace', () => {
         expect(parsed.volumes).toHaveLength(1)
         const volume = parsed.volumes[0]
         expect(volume?.name).toBe('第1卷 断线之始（第1-6章）')
-        expect(volume?.goal).toBe('从被动谋生转向主动追查')
-        expect(volume?.conflict).toBe('底层手艺人 vs 地产集团')
+        expect(volume?.expectedChapters).toBe(6)
+        expect(volume?.coreEvent).toBe('从被动谋生转向主动追查；底层手艺人 vs 地产集团')
+        expect(volume?.mainPlot).toEqual(['客人送来旧表，编号指向失踪的妹妹', '档案被抽走，线索断在旧城医院'])
+        expect(volume?.turningPoints).toEqual(['编号确认'])
+        expect(volume?.result).toBe('线索断在旧城医院')
         expect(volume?.chapters).toHaveLength(2)
 
         const [first, second] = volume?.chapters ?? []
@@ -214,7 +248,7 @@ describe('parseProjectWorkspace', () => {
         expect(second?.characterIds).toEqual(['11248916'])
     })
 
-    it('无卷标题时把章节收进默认卷，空文档不抛错', () => {
+    it('旧格式「分卷规划」不再解析，空文档不抛错', () => {
         const outline = '## 分卷规划\n\n#### 第1章 甲\n- 状态：draft\n\n#### 第2章 乙\n'
         const parsed = parseProjectWorkspace(
             { readme: '', setting: '', characters: '', outline },
@@ -224,10 +258,8 @@ describe('parseProjectWorkspace', () => {
         expect(parsed.setting.title).toBe('空作品')
         expect(parsed.setting.genres).toEqual([])
         expect(parsed.characters).toEqual([])
-        expect(parsed.volumes[0]?.name).toBe('第1卷')
-        expect(parsed.volumes[0]?.chapters.map((chapter) => chapter.order)).toEqual([1, 2])
-        // 旧值 draft 归一到新四态的「已写」：正文已在写，不再单独保留第五种状态
-        expect(parsed.volumes[0]?.chapters[0]?.status).toBe('written')
+        // 新结构每卷一个二级段落：旧的分卷规划段落不解析，卷章为空
+        expect(parsed.volumes).toEqual([])
     })
 
     it('标题承载的新格式：设定字段、角色分组与条目字段都能还原', () => {

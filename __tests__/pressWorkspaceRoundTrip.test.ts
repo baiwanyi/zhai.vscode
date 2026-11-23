@@ -30,6 +30,8 @@ const SETTING: ProjectSetting = {
     opening: '雪夜破庙，薛牧睁眼发现自己成了被追杀的异端。',
     extra: '每卷结尾留一个悬念钩子。',
     conflict: '娱乐工业与修真秩序的正面冲突。',
+    theme: '娱乐消解权威，也消解自我。',
+    arc: '从被当作异端的求生者，到愿意为作品付出代价的立派者。',
     ending: '开放',
     period: '古代',
     place: '架空世界',
@@ -83,9 +85,9 @@ const VOLUMES: OutlineVolume[] = [
     {
         id: 'vol-1',
         name: '第1卷 天都篇',
-        goal: '在星月宗站稳脚跟',
-        conflict: '被当成异端',
-        plotline: '薛牧借现代娱乐业入宗，先被排挤，再以话本立名，最后卷入宗门内斗。',
+        expectedChapters: 3,
+        coreEvent: '薛牧借现代娱乐业入宗：先在星月宗站稳脚跟，再被当成异端针对',
+        mainPlot: ['文抄成名', '内斗站队', '被逐出宗门'],
         turningPoints: ['文抄成名', '内斗站队', '被逐出宗门'],
         result: '被逐出宗门，自立门户',
         granularity: 'medium',
@@ -94,6 +96,7 @@ const VOLUMES: OutlineVolume[] = [
                 id: 'ch-1',
                 order: 1,
                 title: '开局',
+                stage: '第一阶段：落鼎',
                 summary: '穿越落鼎，初识修真界。',
                 actualSummary: '薛牧在破庙醒来，被当做异端追捕。',
                 status: 'written',
@@ -124,6 +127,7 @@ const VOLUMES: OutlineVolume[] = [
                 wordGoal: 2500,
                 wordCount: 0,
                 hook: 'suspense',
+                pacing: 'tension',
                 tension: 3,
                 granularity: 'fine',
             },
@@ -189,7 +193,7 @@ describe('草稿回写往返', () => {
                 characters: `# 角色设定\n\n> 提示\n\n${serializeCharacterBlocks(CHARACTERS)
                     .map((block) => block.text)
                     .join('\n\n')}\n`,
-                outline: `# 大纲\n\n## 主线\n\n## 分卷规划\n\n${serializeOutlineSection(VOLUMES, CHARACTERS)}\n`,
+                outline: `# 大纲\n\n## 主线\n\n${serializeOutlineSection(VOLUMES, CHARACTERS)}\n`,
             },
             {
                 world: `# 世界观\n\n## 提取设定\n\n${serializeWorldSection(SETTING)}\n`,
@@ -215,6 +219,8 @@ describe('草稿回写往返', () => {
             opening: SETTING.opening,
             extra: SETTING.extra,
             conflict: SETTING.conflict,
+            theme: SETTING.theme,
+            arc: SETTING.arc,
             period: SETTING.period,
             place: SETTING.place,
             worldview: SETTING.worldview,
@@ -275,15 +281,17 @@ describe('草稿回写往返', () => {
         expect(parsed.volumes).toHaveLength(1)
         expect(parsed.volumes[0]).toMatchObject({
             name: '第1卷 天都篇',
-            goal: '在星月宗站稳脚跟',
-            conflict: '被当成异端',
-            plotline: '薛牧借现代娱乐业入宗，先被排挤，再以话本立名，最后卷入宗门内斗。',
+            expectedChapters: 3,
+            coreEvent: '薛牧借现代娱乐业入宗：先在星月宗站稳脚跟，再被当成异端针对',
+            mainPlot: ['文抄成名', '内斗站队', '被逐出宗门'],
             turningPoints: ['文抄成名', '内斗站队', '被逐出宗门'],
+            result: '被逐出宗门，自立门户',
         })
         expect(parsed.volumes[0]?.chapters).toHaveLength(1)
         expect(parsed.volumes[0]?.chapters[0]).toMatchObject({
             order: 1,
             title: '开局',
+            stage: '第一阶段：落鼎',
             summary: '穿越落鼎，初识修真界。',
             actualSummary: '薛牧在破庙醒来，被当做异端追捕。',
             status: 'written',

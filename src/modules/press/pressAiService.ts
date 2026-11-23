@@ -1,12 +1,13 @@
 /**
- * 写作管理 AI 服务：校验密钥与每日配额后执行一次性生成，承载人物外貌、设定字段与条目描述。
+ * 写作管理 AI 服务：校验密钥与每日配额后执行一次性生成，承载人物外貌、设定字段、条目描述与按卷章纲。
  * 复用约定：模型通道经注入的 AI 通道（../ai/provider）驱动 ./ai/aiTextGenerator，
- * 提示词分别来自 ./ai/appearancePrompt、./ai/settingFieldPrompt 与 ./ai/lorePrompt，输出统一经 ./ai/plainText 清洗；
- * 配额经 ../common/db/quotaRepository 落在 press.db 的 meta 表，三类生成共用同一份每日额度（统计模块各自独立）；
+ * 提示词分别来自 ./ai/appearancePrompt、./ai/settingFieldPrompt、./ai/lorePrompt 与 ./ai/volumeChaptersPrompt，
+ * 纯文本输出统一经 ./ai/plainText 清洗；按卷章纲是多字段结构，走单独的 JSON 解析与逐项截断；
+ * 配额经 ../common/db/quotaRepository 落在 press.db 的 meta 表，四类生成共用同一份每日额度（统计模块各自独立）；
  * 入参收窄复用 ../common/readInput，不在此重复实现截断与去重。
  * 关键约束：入参一律先经 normalize*Request 收窄（长度、条数、类型、字段白名单），异常载荷不进入模型调用；
- * 同一时刻只允许一个生成请求，取消由三类生成各自的 abort 方法触发；
- * 限额小于等于 0 视为不限制。
+ * 同一时刻只允许一个生成请求，取消由各类生成各自的 abort 方法触发；
+ * 限额小于等于 0 视为不限制；模型输出一律视为不可信，JSON 解析失败按空结果返回而不抛出解析细节。
  */
 import type { AiChatMessage, AiProvider } from '@modules/ai/provider'
 import { getSelectedCodebuddyModel } from '@modules/ai/providers/codebuddyModels'
@@ -25,12 +26,16 @@ import type {
     SettingFieldGenerateRequest,
     SettingFieldGenerateResult,
     SettingSnapshot,
+    VolumeChapterDraft,
+    VolumeChaptersGenerateRequest,
+    VolumeChaptersGenerateResult,
 } from '@shared/types/press'
 import { generateTextWithAi } from './ai/aiTextGenerator'
 import { buildAppearanceMessages } from './ai/appearancePrompt'
 import { buildLoreDescriptionMessages } from './ai/lorePrompt'
 import { sanitizePlainText } from './ai/plainText'
 import { buildSettingFieldMessages } from './ai/settingFieldPrompt'
+import { buildVolumeChaptersMessages } from './ai/volumeChaptersPrompt'
 import type { AiTextGenerateResult } from './ai/aiTextGenerator'
 import type Database from 'better-sqlite3'
 
@@ -67,11 +72,22 @@ const LORE_DESCRIPTION_TIMEOUT_MS = 45_000
 const LORE_DESCRIPTION_MAX_TOKENS = 700
 /** 条目请求里的参照名单条数上限：同类条目名与关联人物名各自收口 */
 const MAX_LORE_REFERENCE_COUNT = 50
+/** 按卷生成章纲：卷纲入参上限、产出条数上限与单章文本上限 */
+const MAX_VOLUME_TEXT = 400
+const MAX_VOLUME_PLOTLINE = 4_000
+const MAX_VOLUME_CHAPTERS = 120
+const MAX_VOLUME_CHAPTER_TITLE = 40
+const MAX_VOLUME_CHAPTER_SUMMARY = 300
+const MAX_VOLUME_CAST_COUNT = 30
+/** 按卷生成章纲的输出上限、超时与 token：整卷几十章，需要比单字段生成大得多的余量 */
+const MAX_VOLUME_CHAPTERS_OUTPUT = 60_000
+const VOLUME_CHAPTERS_TIMEOUT_MS = 180_000
+const VOLUME_CHAPTERS_MAX_TOKENS = 8_000
 
-/** 一次文本生成的运行参数：三类生成只差提示词、篇幅、模块与提示文案 */
+/** 一次文本生成的运行参数：各类生成只差提示词、篇幅、模块与提示文案 */
 interface GenerationOptions {
-    /** 用量模块：三类生成各自记账，配额仍共用 press_ai */
-    module: 'appearance' | 'setting' | 'lore'
+    /** 用量模块：各类生成分别记账，配额仍共用 press_ai */
+    module: 'appearance' | 'setting' | 'lore' | 'outline'
     messages: AiChatMessage[]
     maxTokens: number
     timeoutMs: number
@@ -145,7 +161,27 @@ export class PressAiService {
         return { content }
     }
 
-    /** 执行一次文本生成：占请求位 → 请求模型 → 清洗 → 计次记账，三类生成共用同一套流程 */
+    /**
+     * 按卷生成章纲：以作者写好的卷纲为骨架，产出「阶段 / 标题 / 介绍」三元组数组。
+     * 关键约束：输出是多条结构，统一走 JSON 解析与逐项截断；解析不出结果时返回空数组，
+     * 由前端提示「检查卷纲或重试」，不把模型原文直接抛给页面。
+     * @throws 未配置密钥、配额用尽、请求超时 / 取消、输出为空时抛出可读错误
+     */
+    public async generateVolumeChapters(payload: unknown): Promise<VolumeChaptersGenerateResult> {
+        const request = normalizeVolumeChaptersRequest(payload)
+        const content = await this.runGeneration({
+            module: 'outline',
+            messages: buildVolumeChaptersMessages(request),
+            maxTokens: VOLUME_CHAPTERS_MAX_TOKENS,
+            timeoutMs: VOLUME_CHAPTERS_TIMEOUT_MS,
+            maxLength: MAX_VOLUME_CHAPTERS_OUTPUT,
+            emptyMessage: 'AI 未返回可用的章纲，请重试或先补充卷纲',
+            abortMessage: 'AI 章纲生成已取消或超时，请重试',
+        })
+        return { chapters: parseVolumeChapterDrafts(content) }
+    }
+
+    /** 执行一次文本生成：占请求位 → 请求模型 → 清洗 → 计次记账，各类生成共用同一套流程 */
     private async runGeneration(options: GenerationOptions): Promise<string> {
         const controller = await this.startRequest()
         try {
@@ -301,6 +337,8 @@ function normalizeSettingSnapshot(value: Record<string, unknown>): SettingSnapsh
         logline: readText(value.logline, MAX_LONG_TEXT),
         opening: readText(value.opening, MAX_SETTING_LONG_TEXT),
         conflict: readText(value.conflict, MAX_LONG_TEXT),
+        theme: readText(value.theme, MAX_LONG_TEXT),
+        arc: readText(value.arc, MAX_LONG_TEXT),
         worldview: readText(value.worldview, MAX_SETTING_LONG_TEXT),
         geography: readText(value.geography, MAX_SETTING_LONG_TEXT),
         factions: readText(value.factions, MAX_SETTING_LONG_TEXT),
@@ -339,4 +377,81 @@ function normalizeLoreDescriptionRequest(payload: unknown): LoreDescriptionGener
         siblings: readTextList(value.siblings, MAX_LORE_REFERENCE_COUNT, MAX_SHORT_TEXT),
         members: readTextList(value.members, MAX_LORE_REFERENCE_COUNT, MAX_SHORT_TEXT),
     }
+}
+
+/** 计数入参：非数字或负数回落 fallback，超出上限按上限截断 */
+function readCount(value: unknown, fallback: number, max: number): number {
+    const parsed = typeof value === 'number' ? value : Number.NaN
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        return fallback
+    }
+    return Math.min(Math.floor(parsed), max)
+}
+
+/** 入参收窄：卷名必填，卷纲各字段按上限截断，设定快照复用同一份收窄逻辑 */
+function normalizeVolumeChaptersRequest(payload: unknown): VolumeChaptersGenerateRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('pressAi/aiVolumeChapters 缺少参数')
+    }
+    const value = payload as Record<string, unknown>
+    const volumeName = readText(value.volumeName, MAX_SHORT_TEXT)
+    if (volumeName.length === 0) {
+        throw new Error('缺少卷名，无法生成章纲')
+    }
+    const setting =
+        typeof value.setting === 'object' && value.setting !== null
+            ? normalizeSettingSnapshot(value.setting as Record<string, unknown>)
+            : normalizeSettingSnapshot({})
+    return {
+        volumeName,
+        coreEvent: readText(value.coreEvent, MAX_VOLUME_PLOTLINE),
+        mainPlot: readTextList(value.mainPlot, 40, MAX_VOLUME_TEXT),
+        turningPoints: readTextList(value.turningPoints, 12, MAX_VOLUME_TEXT),
+        result: readText(value.result, MAX_VOLUME_TEXT),
+        startOrder: readCount(value.startOrder, 1, MAX_VOLUME_CHAPTERS * 10),
+        chapterCount: readCount(value.chapterCount, 0, MAX_VOLUME_CHAPTERS),
+        existingCount: readCount(value.existingCount, 0, MAX_VOLUME_CHAPTERS * 10),
+        setting,
+        characters: readTextList(value.characters, MAX_VOLUME_CAST_COUNT, MAX_SHORT_TEXT),
+    }
+}
+
+/**
+ * 解析模型输出的章纲数组：容忍代码围栏与前后说明文字，只截取第一个 [ 到最后一个 ]。
+ * 关键约束：单条结构不完整时丢弃该条，不猜测字段；标题去掉「第N章」前缀，避免与章序重复；
+ * 解析失败返回空数组，由前端按「没有可用章纲」提示，不把模型原文抛给页面。
+ */
+function parseVolumeChapterDrafts(content: string): VolumeChapterDraft[] {
+    const start = content.indexOf('[')
+    const end = content.lastIndexOf(']')
+    if (start < 0 || end <= start) {
+        return []
+    }
+    let parsed: unknown
+    try {
+        parsed = JSON.parse(content.slice(start, end + 1))
+    } catch {
+        return []
+    }
+    if (!Array.isArray(parsed)) {
+        return []
+    }
+    const drafts: VolumeChapterDraft[] = []
+    for (const item of parsed.slice(0, MAX_VOLUME_CHAPTERS)) {
+        if (typeof item !== 'object' || item === null) {
+            continue
+        }
+        const record = item as { stage?: unknown; title?: unknown; summary?: unknown; beats?: unknown }
+        const title = readText(record.title, MAX_VOLUME_CHAPTER_TITLE).replace(/^第\s*\d+\s*章\s*/u, '')
+        if (title.length === 0) {
+            continue
+        }
+        drafts.push({
+            stage: readText(record.stage, MAX_VOLUME_CHAPTER_TITLE),
+            title,
+            summary: readText(record.summary, MAX_VOLUME_CHAPTER_SUMMARY),
+            beats: readTextList(record.beats, 8, MAX_VOLUME_CHAPTER_SUMMARY),
+        })
+    }
+    return drafts
 }

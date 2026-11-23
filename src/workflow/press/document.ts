@@ -4,11 +4,13 @@
  * 复用约定：字段语义与 types.ts 一致；基本信息取自 README 的 Frontmatter 与「作品设定」段，
  * 世界观与金手指各取自己的文档（旧的 设定.md 仅在这两份缺失时兜底），
  * 角色按「## 角色名」切块（旧文件为「# 角色名」），资料条目按「## 名称」切块。
- * 大纲按功能模块分段落解析：全书纲 / 结构纲 / 人物纲 / 设定纲 / 节奏情绪 / 伏笔线索 / 时间线 / 分卷规划，
+ * 大纲按功能模块分段落解析：结构纲 / 伏笔线索 / 分卷规划，
  * 分卷规划内再按「卷 → 章 → 场景」切块；字段读取统一走「标题优先、键值兜底」，旧格式的 `- 键：值` 行仍认。
+ * 故事核、人物纲、设定纲、节奏情绪与时间线都不属于大纲模块：旧文档里的这些段落原样留在文件中，不再解析也不再回写。
  * 关键约束：解析必须容错——文件缺失、区块改名、字段写法变化都只让对应字段为空，绝不抛错；
- * 卷章解析只认「分卷规划」段落，避免新增段落里出现「卷」字被误判为卷标题；
- * 章块解析前先剥离 `#####` 场景块，否则场景字段会被读进章纲；
+ * 卷章只认新结构：每卷一个二级段落（`## 第N卷 …`），卷内「### 章节内容」下才是章块，
+ * 旧的「## 分卷规划」段落不再解析；
+ * 章块解析只读章标题到第一个五级标题之间的键值行，计划梗概 / 节拍 / 场景分别在五级与六级标题下；
  * 章纲的 summary 表示计划、actualSummary 与 wordCount 表示已写事实，三者不互相推导；
  * 未识别的名称不进入 characterIds，避免正文引用到不存在的人物卡。
  */
@@ -29,17 +31,12 @@ import type {
     LoreKind,
     OutlineAct,
     OutlineBeat,
-    OutlineBook,
     OutlineChapter,
     OutlineChapterRef,
-    OutlineCharacterLine,
     OutlineClue,
     OutlineGranularity,
-    OutlinePacingEntry,
     OutlinePlan,
     OutlineScene,
-    OutlineSettingNote,
-    OutlineTimelineEvent,
     OutlineVolume,
     PacingKind,
     PlanStatus,
@@ -68,6 +65,7 @@ const HEADING_PATTERNS: Readonly<Record<number, RegExp>> = {
     3: /^###\s+(.+)$/,
     4: /^####\s+(.+)$/,
     5: /^#####\s+(.+)$/,
+    6: /^######\s+(.+)$/,
 }
 
 /** 角色分类标签到枚举：中英文写法都接受，未识别按配角处理 */
@@ -229,8 +227,8 @@ function toNumber(value: string | undefined): number | null {
     return Number.isNaN(parsed) ? null : parsed
 }
 
-/** 按标题层级切块：同名标题按出现顺序保留，不合并 */
-function splitSections(text: string, level: 1 | 2 | 3 | 4 | 5): DocumentSection[] {
+/** 按标题层级切块：同名标题按出现顺序保留，不合并；六级用于章块下的场景纲 */
+function splitSections(text: string, level: 1 | 2 | 3 | 4 | 5 | 6): DocumentSection[] {
     const pattern = HEADING_PATTERNS[level]
     if (pattern === undefined) {
         return []
@@ -565,6 +563,9 @@ function parseSetting(
         opening: readBasicValue(['开篇灵感', '开场灵感']) ?? '',
         extra: readBasicValue(['补充信息', '补充说明']) ?? '',
         conflict: readBasicValue(['核心冲突', '冲突']) ?? (basicValues === null ? (synopsisParagraphs[1] ?? '') : ''),
+        // 主题与主角弧光只由作品设定承载，旧大纲的「全书纲」段落不再读取
+        theme: readBasicValue(['主题']) ?? '',
+        arc: readBasicValue(['主角弧光', '弧光']) ?? '',
         ending: ENDING_LABELS.find((item) => endingText.includes(item)) ?? '开放',
         period: PERIOD_OPTIONS.find((item) => periodText.includes(item)) ?? '现代',
         place: PLACE_OPTIONS.find((item) => placeText.includes(item)) ?? '中国',
@@ -736,31 +737,19 @@ function toGranularity(value: string | undefined): OutlineGranularity {
 }
 
 /**
- * 剥离五级场景块：章纲字段只来自章块自己的键值行，
- * 场景块的 `- 结果：` 等同名键若参与读取会被当成章纲字段，因此先整块移除。
+ * 读取章块头部（键值行部分）：章标题之后到第一个五级标题之前。
+ * 关键约束：计划梗概、节拍与场景都写在五级 / 六级标题下，若让它们的键值行参与读取，
+ * 场景的「结果」会被当成章纲字段，因此只读头部。
  */
-function stripSceneBlocks(content: string): string {
-    const kept: string[] = []
-    let isInScene = false
-    for (const line of content.split(/\r?\n/u)) {
-        const trimmed = line.trim()
-        if (/^#{5,}\s+/u.test(trimmed)) {
-            isInScene = true
-            continue
-        }
-        if (/^#{1,4}\s+/u.test(trimmed)) {
-            isInScene = false
-        }
-        if (!isInScene) {
-            kept.push(line)
-        }
-    }
-    return kept.join('\n')
+function readChapterHead(content: string): string {
+    const lines = content.split(/\r?\n/u)
+    const firstSubIndex = lines.findIndex((line) => /^#{5,}\s+/u.test(line.trim()))
+    return (firstSubIndex === -1 ? lines : lines.slice(0, firstSubIndex)).join('\n')
 }
 
-/** 解析场景块：标题里的「场景N」决定顺序，键值行承载欲望 / 阻碍 / 选择 / 结果 / 情绪变化 */
+/** 解析场景块：六级标题，「场景N」决定顺序，键值行承载欲望 / 阻碍 / 选择 / 结果 / 情绪变化 */
 function parseScenes(content: string, chapterKey: string): OutlineScene[] {
-    return splitSections(content, 5)
+    return splitSections(content, 6)
         .filter((section) => section.title.trim().length > 0)
         .map((section, index) => {
             const values = readKeyValues(section.content)
@@ -779,9 +768,48 @@ function parseScenes(content: string, chapterKey: string): OutlineScene[] {
         })
 }
 
+/** 截断到第一个指定层级标题之前：把五级小节的内容与紧随其后的六级场景块分开 */
+function cutBeforeHeading(text: string, level: number): string {
+    const pattern = new RegExp(`^#{${String(level)}}\\s+`, 'u')
+    const lines = text.split(/\r?\n/u)
+    const index = lines.findIndex((line) => pattern.test(line.trim()))
+    return (index === -1 ? lines : lines.slice(0, index)).join('\n')
+}
+
+/** 读取小节正文：段落拼接，列表写法按行兜底 */
+function readSectionBody(text: string): string {
+    const paragraphs = readParagraphs(text)
+    return paragraphs.length > 0 ? paragraphs.join('\n\n') : readPlainLines(text)
+}
+
+/** 读取列表小节的条目：去掉 `- ` 前缀，空项不保留 */
+function readListItems(text: string): string[] {
+    return text
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => /^[-*]\s+/u.test(line))
+        .map((line) => line.replace(/^[-*]\s+/u, '').trim())
+        .filter((line) => line.length > 0)
+}
+
+/** 解析节拍小节：`- [x] 文本` 表示已完成，`- [ ] 文本` 表示未完成 */
+function parseBeatList(text: string, chapterKey: string): OutlineBeat[] {
+    return readListItems(text)
+        .map((item, index) => {
+            const matched = /^\[([\s xX]?)\]\s*(.*)$/u.exec(item)
+            return {
+                id: `beat-${chapterKey}-${String(index + 1)}`,
+                text: (matched?.[2] ?? item).trim(),
+                isDone: matched?.[1]?.toLowerCase() === 'x',
+            }
+        })
+        .filter((beat) => beat.text.length > 0)
+}
+
 /**
- * 解析单章：标题、键值行、节拍与场景共同决定章纲字段，缺失项按默认值补齐。
- * 关键约束：场景块先剥离再读键值；summary 只认计划类键，正文摘要单独放进 actualSummary。
+ * 解析单章：键值行、计划梗概小节、节拍小节与场景块共同决定章纲字段，缺失项按默认值补齐。
+ * 关键约束：只有头部（五级标题之前）的键值行参与字段读取；
+ * summary 只认计划梗概，正文摘要单独由 `- 实际：` 放进 actualSummary。
  */
 function parseChapter(
     title: string,
@@ -790,7 +818,14 @@ function parseChapter(
     fallbackOrder: number,
     characterIds: Map<string, string>,
 ): OutlineChapter {
-    const values = readKeyValues(stripSceneBlocks(content))
+    const head = readChapterHead(content)
+    const values = readKeyValues(head)
+    const subsections = splitSections(content, 5)
+    // 五级小节的内容里会带着它后面的六级场景块，读取只取到六级标题之前
+    const readSubsection = (keyword: string): string => {
+        const section = subsections.find((item) => item.title.includes(keyword))
+        return section === undefined ? '' : cutBeforeHeading(section.content, 6)
+    }
     const headingOrder = toNumber(/第\s*(\d+)\s*章/u.exec(title)?.[1])
     const order = headingOrder ?? toNumber(values.get('序号')) ?? fallbackOrder
     const chapterKey = `${String(volumeOrder)}-${String(order)}`
@@ -798,16 +833,25 @@ function parseChapter(
     const statusLabel = readLabel(values.get('状态'), 'planned')
     const hookLabel = readLabel(values.get('钩子'), 'none')
     const characterNames = toList(values.get('人物') ?? values.get('出场人物'))
+    const pacing = PACING_KIND_LABELS[readLabel(values.get('节奏'), 'setup')] ?? 'setup'
     const tension = toNumber(values.get('张力')) ?? MIN_TENSION
     const id = values.get('id') ?? `ch-${chapterKey}`
     return {
         id,
         order,
         title: title.replace(/^第\s*\d+\s*章\s*/u, '').trim() || title,
-        summary: values.get('梗概') ?? values.get('本章介绍') ?? readFirstParagraph(content),
+        stage: values.get('阶段') ?? '',
+        summary:
+            readSectionBody(readSubsection('计划梗概')) ||
+            values.get('梗概') ||
+            values.get('本章介绍') ||
+            readFirstParagraph(head),
         actualSummary: values.get('实际') ?? values.get('正文摘要') ?? '',
         status: STATUS_LABELS[statusLabel] ?? 'planned',
-        beats: parseBeats(values.get('节拍'), chapterKey),
+        beats:
+            readSubsection('节拍').trim().length > 0
+                ? parseBeatList(readSubsection('节拍'), chapterKey)
+                : parseBeats(values.get('节拍'), chapterKey),
         scenes: parseScenes(content, chapterKey),
         pov: values.get('POV') ?? values.get('视角') ?? '',
         goal: values.get('目标') ?? '',
@@ -822,6 +866,7 @@ function parseChapter(
         wordGoal: goal ?? toNumber(values.get('目标字数')) ?? DEFAULT_CHAPTER_WORD_GOAL,
         wordCount: written ?? toNumber(values.get('已写')) ?? 0,
         hook: HOOK_LABELS[hookLabel] ?? 'none',
+        pacing,
         tension: Math.min(MAX_TENSION, Math.max(MIN_TENSION, tension)),
         granularity: toGranularity(values.get('颗粒度')),
     }
@@ -834,22 +879,80 @@ function isVolumeTitle(title: string): boolean {
     )
 }
 
-/**
- * 读取「分卷规划」段落正文：卷章只在这一段里解析。
- * 关键约束：新增的全书纲、结构纲等段落同样用二三级标题，若在全文里按标题扫卷，
- * 「第N卷」之外的写法会互相误判；段落缺失时回退全文，兼容只写了卷块的历史文档。
- */
-function readVolumeSection(text: string): string {
-    const section = splitSections(text, 2).find((item) => item.title.includes('分卷规划'))
-    return section === undefined ? text : section.content
+/** 中文数字（一 ~ 九十九、百位）转整数：只用于卷序，读不懂返回 null */
+function parseChineseNumber(value: string): number | null {
+    const digits: Readonly<Record<string, number>> = {
+        一: 1,
+        二: 2,
+        三: 3,
+        四: 4,
+        五: 5,
+        六: 6,
+        七: 7,
+        八: 8,
+        九: 9,
+    }
+    const text = value.trim()
+    if (text.length === 0) {
+        return null
+    }
+    const single = digits[text]
+    if (single !== undefined) {
+        return single
+    }
+    if (text === '十') {
+        return 10
+    }
+    const tenIndex = text.indexOf('十')
+    if (tenIndex === -1) {
+        return null
+    }
+    const tens = tenIndex === 0 ? 1 : digits[text.slice(0, tenIndex)]
+    const ones = tenIndex === text.length - 1 ? 0 : digits[text.slice(tenIndex + 1)]
+    if (tens === undefined || ones === undefined) {
+        return null
+    }
+    return tens * 10 + ones
 }
 
-/** 解析卷内章节：优先认四级标题，其次三级标题，保证自由书写的层级也能读到 */
+/** 卷序：先认阿拉伯数字「第N卷」，再认中文数字「第一卷」，都没有时按数组位置兜底 */
+function readVolumeOrder(title: string, index: number): number {
+    const raw = /第\s*([0-9]+|[一二三四五六七八九十百]+)\s*卷/u.exec(title)?.[1]
+    if (raw === undefined) {
+        return index + 1
+    }
+    const arabic = Number.parseInt(raw, 10)
+    if (!Number.isNaN(arabic)) {
+        return arabic
+    }
+    return parseChineseNumber(raw) ?? index + 1
+}
+
+/** 卷内固定小节标题：与 serialize 的 buildVolumeBlock 同源，改动须两边同步 */
+const VOLUME_SECTION_EXPECTED = '预计章节数'
+const VOLUME_SECTION_CORE = '核心事件'
+const VOLUME_SECTION_PLOT = '主要情节'
+const VOLUME_SECTION_TURNING = '关键转折'
+const VOLUME_SECTION_RESULT = '卷末结果'
+const VOLUME_SECTION_CHAPTERS = '章节内容'
+
+/** 判断二级段落是否为卷：标题带「第N卷」，或段落内已出现「### 章节内容」小节 */
+function isVolumeSection(section: DocumentSection): boolean {
+    if (isVolumeTitle(section.title)) {
+        return true
+    }
+    return splitSections(section.content, 3).some((item) => item.title.includes(VOLUME_SECTION_CHAPTERS))
+}
+
+/** 解析卷内章节：章节内容小节内优先认四级标题，其次三级标题，保证自由书写的层级也能读到 */
 function parseVolumeChapters(
     content: string,
     volumeOrder: number,
     characterIds: Map<string, string>,
 ): OutlineChapter[] {
+    if (content.trim().length === 0) {
+        return []
+    }
     const levelFour = splitSections(content, 4)
     const sections = levelFour.length > 0 ? levelFour : splitSections(content, 3)
     return sections
@@ -857,42 +960,35 @@ function parseVolumeChapters(
         .map((section, index) => parseChapter(section.title, section.content, volumeOrder, index + 1, characterIds))
 }
 
-/** 解析大纲：卷标题缺失时把全部章节收进单卷，章标题缺失时返回空卷列表 */
+/**
+ * 解析大纲的卷章：每个卷是一个二级段落，卷内小节承载预计章节数 / 核心事件 / 主要情节 /
+ * 关键转折 / 卷末结果，章节统一在「### 章节内容」下。
+ * 关键约束：只认新结构，旧的「## 分卷规划 → ### 第N卷」段落不再解析；
+ * 卷级键值行只从「章节内容」之前的小节读，避免读成章块的颗粒度。
+ */
 function parseVolumes(text: string, characterIds: Map<string, string>): OutlineVolume[] {
-    const sectionText = readVolumeSection(text)
-    const candidates = [...splitSections(sectionText, 3), ...splitSections(sectionText, 2)]
-    const volumeSections = candidates.filter((section) => isVolumeTitle(section.title))
-    if (volumeSections.length === 0) {
-        const chapters = parseVolumeChapters(sectionText, 1, characterIds)
-        return chapters.length === 0
-            ? []
-            : [
-                  {
-                      id: 'vol-1',
-                      name: '第1卷',
-                      goal: '',
-                      conflict: '',
-                      plotline: '',
-                      turningPoints: [],
-                      result: '',
-                      granularity: 'medium',
-                      chapters,
-                  },
-              ]
-    }
+    const volumeSections = splitSections(text, 2).filter(isVolumeSection)
     return volumeSections.map((section, index) => {
-        const order = toNumber(/第\s*(\d+)\s*卷/u.exec(section.title)?.[1]) ?? index + 1
-        const values = readKeyValues(section.content)
+        const order = readVolumeOrder(section.title, index)
+        const subsections = splitSections(section.content, 3)
+        const readSubsection = (keyword: string): string =>
+            subsections.find((item) => item.title.includes(keyword))?.content ?? ''
+        const headContent = subsections
+            .filter((item) => !item.title.includes(VOLUME_SECTION_CHAPTERS))
+            .map((item) => item.content)
+            .join('\n')
+        const values = readKeyValues(headContent)
+        const expected = toNumber(readParagraphs(readSubsection(VOLUME_SECTION_EXPECTED))[0] ?? '')
         return {
             id: `vol-${String(order)}`,
             name: section.title.trim(),
-            goal: values.get('卷目标') ?? values.get('目标') ?? '',
-            conflict: values.get('卷冲突') ?? values.get('冲突') ?? '',
-            plotline: values.get('情节脉络') ?? values.get('情节线') ?? '',
-            turningPoints: toList(values.get('关键转折') ?? values.get('转折')),
-            result: values.get('卷末结果') ?? values.get('结果') ?? '',
+            expectedChapters: expected ?? 0,
+            coreEvent: readSectionBody(readSubsection(VOLUME_SECTION_CORE)),
+            mainPlot: readListItems(readSubsection(VOLUME_SECTION_PLOT)),
+            turningPoints: readListItems(readSubsection(VOLUME_SECTION_TURNING)),
+            result: readSectionBody(readSubsection(VOLUME_SECTION_RESULT)),
             granularity: toGranularity(values.get('颗粒度')),
-            chapters: parseVolumeChapters(section.content, order, characterIds),
+            chapters: parseVolumeChapters(readSubsection(VOLUME_SECTION_CHAPTERS), order, characterIds),
         }
     })
 }
@@ -917,18 +1013,6 @@ function toChapterRef(value: string | undefined): OutlineChapterRef | null {
     return { volumeOrder: Number.parseInt(volume, 10), chapterOrder: Number.parseInt(chapter, 10) }
 }
 
-/** 解析全书纲：一句话梗概、核心冲突、主题、结局方向与主角弧光 */
-function parseBookOutline(content: string): OutlineBook {
-    const fields = readHeadingFields(content)
-    return {
-        logline: fields.get('一句话梗概') ?? fields.get('一句话') ?? '',
-        conflict: fields.get('核心冲突') ?? '',
-        theme: fields.get('主题') ?? '',
-        ending: fields.get('结局方向') ?? fields.get('结局') ?? '',
-        arc: fields.get('主角弧光') ?? fields.get('弧光') ?? '',
-    }
-}
-
 /** 解析结构纲：每个三级标题是一个阶段，位置与关键事件写在键值行 */
 function parseStructureActs(content: string): OutlineAct[] {
     return splitSections(content, 3)
@@ -940,62 +1024,6 @@ function parseStructureActs(content: string): OutlineAct[] {
                 name: section.title.trim(),
                 position: values.get('位置') ?? '',
                 event: values.get('事件') ?? '',
-            }
-        })
-}
-
-/** 解析人物纲：每人一块，「关联」写人物卡姓名，按姓名回填成 id */
-function parseCharacterLines(content: string, characterIndex: Map<string, string>): OutlineCharacterLine[] {
-    return splitSections(content, 3)
-        .filter((section) => section.title.trim().length > 0)
-        .map((section, index) => {
-            const values = readKeyValues(section.content)
-            const name = section.title.trim()
-            const linked = values.get('关联') ?? values.get('关联人物') ?? name
-            return {
-                id: values.get('id') ?? `cline-${String(index + 1)}`,
-                characterId: characterIndex.get(linked) ?? '',
-                name,
-                desire: values.get('欲望') ?? '',
-                fear: values.get('恐惧') ?? '',
-                flaw: values.get('缺陷') ?? '',
-                secret: values.get('秘密') ?? '',
-                relation: values.get('关系') ?? '',
-                arc: values.get('弧光') ?? '',
-            }
-        })
-}
-
-/** 解析设定纲：只收规则、代价与说明，世界观的完整设定仍留在 世界观.md */
-function parseSettingNotes(content: string): OutlineSettingNote[] {
-    return splitSections(content, 3)
-        .filter((section) => section.title.trim().length > 0)
-        .map((section, index) => {
-            const values = readKeyValues(section.content)
-            return {
-                id: values.get('id') ?? `snote-${String(index + 1)}`,
-                name: section.title.trim(),
-                rule: values.get('规则') ?? '',
-                cost: values.get('代价') ?? '',
-                note: values.get('说明') ?? '',
-            }
-        })
-}
-
-/** 解析节奏情绪：一章一档，章序取标题里的「第N章」 */
-function parsePacingEntries(content: string): OutlinePacingEntry[] {
-    return splitSections(content, 3)
-        .filter((section) => section.title.trim().length > 0)
-        .map((section, index) => {
-            const values = readKeyValues(section.content)
-            const chapterOrder = toNumber(/第\s*(\d+)\s*章/u.exec(section.title)?.[1]) ?? index + 1
-            const kind = PACING_KIND_LABELS[readLabel(values.get('类型'), 'setup')] ?? 'setup'
-            const tension = toNumber(values.get('张力')) ?? MIN_TENSION
-            return {
-                id: `pacing-${String(chapterOrder)}`,
-                chapterOrder,
-                kind,
-                tension: Math.min(MAX_TENSION, Math.max(MIN_TENSION, tension)),
             }
         })
 }
@@ -1019,43 +1047,18 @@ function parseClues(content: string, characterIndex: Map<string, string>): Outli
         })
 }
 
-/** 解析时间线：涉及章可写多个引用，涉及人物按姓名回填成 id */
-function parseTimelineEvents(content: string, characterIndex: Map<string, string>): OutlineTimelineEvent[] {
-    return splitSections(content, 3)
-        .filter((section) => section.title.trim().length > 0)
-        .map((section, index) => {
-            const values = readKeyValues(section.content)
-            const refs = toList(values.get('涉及章'))
-                .map((item) => toChapterRef(item))
-                .filter((ref): ref is OutlineChapterRef => ref !== null)
-            const characterIds = toList(values.get('涉及人物'))
-                .map((name) => characterIndex.get(name))
-                .filter((id): id is string => id !== undefined)
-            return {
-                id: values.get('id') ?? `tline-${String(index + 1)}`,
-                when: values.get('时间') ?? '',
-                title: section.title.trim(),
-                refs,
-                characterIds,
-            }
-        })
-}
-
 /**
- * 解析大纲的功能模块：七个二级段落各读一块，缺段落即空值。
- * 关键约束：段落名用完整关键词匹配（人物纲 / 设定纲），避免与「人物」「设定」等正文用词混淆。
+ * 解析大纲的功能模块：结构纲与伏笔线索两个二级段落各读一块，缺段落即空值。
+ * 关键约束：段落名用完整关键词匹配，避免与「设定」「节奏」等正文用词混淆；
+ * 旧的「全书纲」「人物纲」「设定纲」「节奏情绪」「时间线」段落都不再读取，
+ * 它们原样留在文件里：故事核取作品设定，人物取人物卡，节奏类型在章纲里维护。
  */
 function parseOutlinePlan(text: string, characterIndex: Map<string, string>): OutlinePlan {
     const sections = splitSections(text, 2)
     const read = (keyword: string): string => sections.find((section) => section.title.includes(keyword))?.content ?? ''
     return {
-        book: parseBookOutline(read('全书纲')),
         acts: parseStructureActs(read('结构纲')),
-        characters: parseCharacterLines(read('人物纲'), characterIndex),
-        setting: parseSettingNotes(read('设定纲')),
-        pacing: parsePacingEntries(read('节奏情绪')),
         clues: parseClues(read('伏笔线索'), characterIndex),
-        timeline: parseTimelineEvents(read('时间线'), characterIndex),
     }
 }
 
