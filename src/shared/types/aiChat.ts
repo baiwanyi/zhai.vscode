@@ -197,12 +197,24 @@ export interface AiConversation {
     updatedAt: string
 }
 
+/** 会话来源类型：与工作流的内容归属同口径，null 表示不属于任何归属（通用对话） */
+export type AiConversationScopeKind = 'press' | 'note' | 'wechat' | 'weibo' | null
+
 /** 历史对话列表项：只含会话元信息，不含消息正文（面板历史浮层用） */
 export interface AiConversationSummary {
     id: string
     title: string
     /** 最后活跃时间（ISO），前端展示为相对时间 */
     updatedAt: string
+    /** 会话来源类型：历史浮层「全部」态据此区分作品 / 笔记 / 公众号 / 微博 */
+    scopeKind: AiConversationScopeKind
+    /** 来源展示名（作品名 / 笔记名 / appid / 微博 / 通用对话），由宿主按路径派生，不会为空 */
+    scopeLabel: string
+    /**
+     * 会话当前的作用域键（原始值）：前端据此判断「是否已属于当前对象」，
+     * 决定选中时直接切换还是先迁移；迁移请求本身仍由宿主按路径规则重新收窄。
+     */
+    scopeKey: string | null
 }
 
 /** 消息 */

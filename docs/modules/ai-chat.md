@@ -293,7 +293,9 @@ CREATE INDEX IF NOT EXISTS idx_prompt_date ON ai_prompts(created_at);
 
 **迁移**：按版本由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行（v2 补 `provider` / `sdk_session_id`，v3 补 `project_dir`，v4 补用量表的 `module` / `request_id` / `sdk_message_id` / `cost_usd` / `credits` / 缓存 tokens / `status` 并新建 `ai_prompts`，v5 清空按倍率估算的 `credits` 并改由 CLI 记录回填，v6 补消息表的 `total_tokens` / `duration_ms` / `tokens_estimated` 且历史消息不回填，v7 补消息表的 `credits` / `request_id` 并建请求 id 索引，v8 补会话表的 `context_used_tokens` / `context_window_tokens` 且历史会话保持 0 即未记录）。`provider` 默认 `codebuddy`，`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话；`project_dir` 为 NULL 表示该会话不属于任何作品（历史会话不做回填）；`module` 默认 `chat`，旧值 `ai-chat` 等在读取时归一为 `chat`，不做回填。依赖新列的索引必须写在补列之后，否则旧库建索引会因缺列失败。
 
-**会话作用域**：`project_dir` 存会话作用域键，取最近会话、新建会话、历史列表都按它过滤（比较用 `IS ?` 以覆盖 NULL），粒度按内容来源区分：微博整个模块一份（键 `weibo`）、笔记每篇文档一份（键为文档相对路径）、作品整个作品一份（键 `press/{作品名}`，作品内换章不切会话）、公众号每账号一份（键 `wechat/{appid}`，该账号下所有推送批次与文章共用）。公众号的非账号目录文档与「选了模块但没打开该账号文档」的场景回落到模块键 `wechat`，与运营面板共用一份会话；不在任何归属内的文档不带作用域，即取 `project_dir IS NULL` 的通用对话。前端统一由 `contentScope.readScopeDir` 推导、宿主命令侧 `readDocumentScope` 同口径，切换粒度即切换对话上下文，互不串历史。
+**会话作用域**：`project_dir` 存会话作用域键，取最近会话、新建会话、历史列表都按它过滤（比较用 `IS ?` 以覆盖 NULL），粒度按内容来源区分：微博整个模块一份（键 `weibo`）、笔记每篇文档一份（键为文档相对路径）、作品整个作品一份（键 `press/{作品名}`，作品内换章不切会话）、公众号每账号一份（键 `wechat/{appid}`，该账号下所有推送批次与文章共用）。公众号的非账号目录文档与「选了模块但没打开该账号文档」的场景回落到模块键 `wechat`，与运营面板共用一份会话；不在任何归属内的文档不带作用域，即取 `project_dir IS NULL` 的通用对话。前端统一由 `contentScope.readScopeDir` 推导、宿主命令侧 `readDocumentScope` 同口径，切换粒度即切换对话上下文，互不串历史。升级时由装配层按 `globalState` 版本键跑一次旧粒度归并（`mergeLegacyScopes`）：把 `press/{作品}/...` 改到 `press/{作品}`、`wechat/{appid}/...` 改到 `wechat/{appid}`，只改 `project_dir`（不动消息、活跃时间与通道会话号），同一目标并列保留。
+
+**软作用域**：默认行为仍是「进入对象即恢复该对象的会话」，但历史页可切到「全部」查看全区最近 50 条，并在选中其它对象的会话时把它迁移到当前作用域后继续使用（一份会话只保留一个归属，不做复制）。删除作品 / 公众号账号后，该作用域及其子路径下的历史会话归入通用对话（`project_dir = NULL`）而不是删除，删除提示里回传归入条数。来源标签（`scopeKind` / `scopeLabel`）由 `modules/ai/scopeLabel.ts` 按路径段派生，不查库、不跨模块依赖。
 
 **续接规则**：只有「会话 `provider` 与当前通道一致」且 `sdk_session_id` 非空时才走 `resume`，此时仅提交本轮输入，历史由通道维护；引用原文仍每轮注入（指向的文件可能已改动）。条件任一不满足即回退到完整历史拼接，切换通道不复活旧会话号。
 
@@ -421,7 +423,7 @@ interface AbortRequest {
 | A9 流式输出 | CodeBuddy SDK 的 `includePartialMessages` 增量；宿主按 60ms 窗口合并后经 `stream` 消息推送 |
 | A11 请求取消 | `AbortController`，`ai/abort` 立即断开连接并把消息落为 `cancelled` |
 | A17 预算护栏 | 按当日 `ai_usage_logs` 累计 token，达 `zhai.ai.dailyTokenBudget` 时拒绝发送并提示 |
-| A7 会话管理 | 已实现新建、切换、删除与首条消息自动命名（历史浮层见 10.2）；重命名 / 关联文件待实现 |
+| A7 会话管理 | 已实现新建、切换、删除与首条消息自动命名（历史页见 10.2）；重命名 / 关联文件待实现 |
 | A10 思考链 | 已随流式回传并写入 `messages.reasoning`；面板折叠展示待实现 |
 | A12 `@` 上下文 | 编辑器右键「添加到宅对话」已落地（见 10.1）；`@` 输入框提及待实现（依赖 Notes / KB 检索） |
 | A1/A2/A5 写作模式 | 已落地模式切换、四项命令与整段写回（见 10.3）；A3 diff 逐段接受与 A4 内联续写待实现 |
@@ -432,7 +434,8 @@ interface AbortRequest {
 |------|------|------|
 | `ai/session` | Webview → 宿主 | 取指定作用域最近会话与消息；不存在时新建。`projectDir` 可选，缺省即通用对话 |
 | `ai/newSession` | Webview → 宿主 | 在指定作用域下新建会话（`projectDir` 可选） |
-| `ai/sessions` | Webview → 宿主 | 指定作用域的历史会话列表（`AiConversationSummary[]`，按最后活跃倒序；`projectDir` 可选） |
+| `ai/sessions` | Webview → 宿主 | 历史会话列表（`AiConversationSummary[]`，按最后活跃倒序，上限 50；`projectDir` 可选，缺省为通用对话）。`all` 为 true 时忽略作用域、返回全区最近会话；每条带 `scopeKind` / `scopeLabel` / `scopeKey` 供「全部」范围展示来源 |
+| `ai/session/move` | Webview → 宿主 | 把会话迁到指定作用域（`projectDir` 为 `null` 时归入通用对话），返回 `{ moved }`；成功时同时刷新 `updated_at`，保证迁移后的会话成为该作用域最近一条 |
 | `ai/switchSession` | Webview → 宿主 | 切换到指定会话，返回含 `contexts` 的会话快照 |
 | `ai/deleteSession` | Webview → 宿主 | 删除会话及其消息（外键级联），返回 `{ deleted: boolean }` |
 | `ai/runtime` | Webview → 宿主 | 密钥状态（含脱敏 Key）、模型参数与当日用量；`model` 为当前模型 id，`modelName` 为按面板打开时预热清单解析出的展示名（未命中为空串，清单到位后由运行时广播补齐），供面板初始化即显示模型名而不必等待 `ai/models` |
@@ -476,14 +479,17 @@ interface AbortRequest {
 
 ### 10.2 历史对话（已落地）
 
-顶部工具条右侧为「历史对话」（`History` 图标）与「新建会话」；点历史打开浮层（对齐 Copilot）：
+顶部工具条右侧为「历史对话」（`History` 图标）与「新建会话」；点历史进入**整页列表**（不再用浮层），页头左侧返回按钮回到对话主体：
 
 | 行为 | 说明 |
 |------|------|
-| 列表 | 按 `updated_at` 倒序取最近 50 条；条目为「会话标题 + 相对时间」（7 天内用原生 `Intl.RelativeTimeFormat`，更早回退本地日期），当前会话以字重区分 |
-| 切换 | 点击条目切到该会话（消息与待发送上下文一并恢复）；生成中先中止再切换；输入框已输入内容保留 |
-| 删除 | 条目 hover 时用删除按钮顶替时间位置（行宽不跳动），点击直接删除、无二次确认；删除当前会话时中止生成并自动切到最近会话（无则新建） |
-| 刷新 | 每次打开浮层重新拉取列表，避免展示过期数据 |
+| 筛选 | 页头分段：当前 / 全部 / 笔记 / 作品 / 公众号 / 微博 / 通用对话。「当前」按会话作用域过滤；其余都取全区最近 50 条在前端切分——「全部」按时间倒序列全区会话，单一来源标签只列该来源；每行显示具体来源（如「作品 · 剑来」）。范围内互切不重复请求 |
+| 过滤 | 两态均可按标题子串本地过滤已拉取的 50 条，不发请求 |
+| 排版 | 条目为 `Item`：标题 + 来源与相对时间（7 天内用原生 `Intl.RelativeTimeFormat`，更早回退本地日期），当前会话以主色边框区分；整行键盘可达（Enter / 空格） |
+| 切换 | 点击条目切回对话主体并恢复该会话（消息与待发送上下文一并恢复）；生成中先中止再切换；输入框已输入内容保留 |
+| 跨对象取用 | 选中「全部」里其它对象的会话时先弹确认，确认后经 `ai/session/move` 迁移到当前作用域再切换；一份会话只保留一个归属 |
+| 删除 | 行尾删除按钮（不触发选中），点击直接删除、无二次确认；删除当前会话时中止生成并自动切到最近会话（无则新建）；列表随即重拉 |
+| 刷新 | 进入历史页时重新拉取列表，避免展示过期数据 |
 
 `messages` 随 `conversations` 由外键级联删除（`PRAGMA foreign_keys = ON`），删除会话即清理其消息。
 
@@ -579,4 +585,4 @@ interface AbortRequest {
 - `@` 提及已落地为参考菜单入口（不改共享输入组件、不增工具行按钮）：`ai/mention/search` 走全文索引，`ai/mention/add` 先查库确认路径存在再加为引用；待发送上下文与写回状态均为内存态，重启窗口后仅已发送的引用随 `messages.refs` 保留
 - 写作模式已改为 diff 逐段接受（A3）：`ai/writeDiff` 只算不写，`ai/applyHunks` 按勾选段拼装，未接受的段保留原文；整篇改写上限 12000 字符，超出只能选中片段
 - 参考资料由 `{存储根}/reference/*.md` 驱动（一级标题分类、二级标题分条），`ai/reference/search` 检索、`ai/reference/add` 按行范围注入条目正文、`ai/reference/openDir` 打开目录；语料增删改由用户直接操作文件，插件只读；命令的 `applyPolicy` 由前端按命令 id 推断，宿主只做字符串收窄
-- 会话作用域已收敛为「微博 / 笔记文档 / 作品 / 公众号账号」四类粒度，但仍是硬过滤：历史浮层只列当前作用域、删除作品或账号后其会话成为不可达孤儿、也没有跨作用域迁移入口；收敛方案（软作用域 P0/P1/P2）与「全局 AI 助手」评估见 `docs/plan/AI对话作用域收敛方案与全局助手评估.md`（未实施）
+- 会话作用域为「微博 / 笔记文档 / 作品 / 公众号账号」四类粒度，已按软作用域落地：历史页可切「全部」并在选中时迁移、删除作品 / 账号后会话归入通用对话；仍未做的只有「来源失效标注」（外部删除目录后来源行不额外标记），设计与评估见 `docs/plan/AI对话作用域收敛方案与全局助手评估.md`

@@ -371,10 +371,20 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
     context.subscriptions.push(todoService, new TodoWatcher(todoService, todoRepository))
     // 待办卡片落在仪表盘概览区，协议请求由仪表盘面板承接，故后置注入到仪表盘
     dashboardProvider.attachTodoRoutes(new TodoRoutes(todoService))
+    // 删除作品时把该作品的会话归入通用对话：AI 层晚于仪表盘创建，故后置注入；
+    // 用箭头包装而不是直接传方法引用，避免 ChatService 内部 this 丢失
+    dashboardProvider.attachAiScopeJanitor({ adoptScope: (scope) => ai.chat.adoptScope(scope) })
 
     // 公众号：独立 wechat.db 承载账号与推送批次，AppSecret 按账号存 SecretStorage（不入库），
-    // 鉴权失效经 EventEmitter 广播给两个面板；账号协议同样由仪表盘面板承接
-    const wechatLayer = assembleWechatLayer({ context, cacheRoot, indexDb: db, snapshot: snapshotService })
+    // 鉴权失效经 EventEmitter 广播给两个面板；账号协议同样由仪表盘面板承接；
+    // 账号删除后其会话归入通用对话，回调同样在 AI 层装配后才能提供
+    const wechatLayer = assembleWechatLayer({
+        context,
+        cacheRoot,
+        indexDb: db,
+        snapshot: snapshotService,
+        onAccountRemoved: (appId) => ai.chat.adoptScope(`wechat/${appId}`),
+    })
     dashboardProvider.attachWechatRoutes(wechatLayer.routes)
     // 封面弹窗要从生图结果、已下载的在线图片与上传清单里挑图：三套路由同样后置注入仪表盘
     dashboardProvider.attachMediaRoutes(mediaRoutes)

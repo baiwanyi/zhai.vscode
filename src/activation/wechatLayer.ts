@@ -39,6 +39,8 @@ export interface WechatLayerDeps {
     indexDb: Database.Database
     /** 推送留底：群发成功后按文章正文各留一版文档快照，未注入时不留底 */
     snapshot?: PushSnapshotWriter
+    /** 账号删除后的会话清理：由扩展入口注入，把该账号的会话归入通用对话并返回条数 */
+    onAccountRemoved?: (appId: string) => number
 }
 
 /** 装配产物：路由交给面板，鉴权失效广播交给两个面板订阅 */
@@ -49,7 +51,7 @@ export interface WechatLayer {
 
 /** 装配公众号层：打开库、回收卡死批次、串起账号 / 批次 / 素材 / 发布与四个运营服务 */
 export function assembleWechatLayer(deps: WechatLayerDeps): WechatLayer {
-    const { context, cacheRoot, indexDb, snapshot } = deps
+    const { context, cacheRoot, indexDb, snapshot, onAccountRemoved } = deps
     const wechatDb = openWechatDatabase(cacheRoot)
     context.subscriptions.push({ dispose: () => wechatDb.close() })
     // 群发过程中退出会把批次卡在「推送中」：超过阈值的启动时回收为失败并提示去后台确认
@@ -77,6 +79,7 @@ export function assembleWechatLayer(deps: WechatLayerDeps): WechatLayer {
         secrets,
         tokens,
         state: context.globalState,
+        onAccountRemoved,
     })
     // 批次服务复用索引库做导入源校验：路径先回查 files 表，再读盘，前端无法指定任意文件
     const issues = new WechatIssueService({ db: wechatDb, indexDb })

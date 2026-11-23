@@ -59,6 +59,11 @@ export interface WechatAccountServiceDeps {
     secrets: WechatSecretStore
     tokens: WechatTokenService
     state: vscode.Memento
+    /**
+     * 账号删除后的清理回调：把该账号（wechat/{appid}）的历史会话归入通用对话，返回归入条数。
+     * 未注入时按 0 处理——账号删除本身不能因为会话清理不可用而失败。
+     */
+    onAccountRemoved?: (appId: string) => number
 }
 
 /** 收窄库内状态：脏数据一律按未鉴权处理，避免前端拿到未知状态 */
@@ -189,16 +194,20 @@ export class WechatAccountService {
     public async remove(id: string): Promise<RemoveWechatAccountResult> {
         const existing = findWechatAccount(this.deps.db, id)
         if (existing === null) {
-            return { removed: false }
+            return { removed: false, adoptedConversations: 0 }
         }
         deleteWechatAccount(this.deps.db, id)
         await this.removeAccountDirectory(existing.app_id)
+        // 账号目录已删：其历史会话（含旧版按批次建立的）归入通用对话，避免留下打不开的孤儿会话。
+        // 未配置 AppID 的账号以空串落库，此时不能拿它拼作用域——那会把整个公众号模块的会话一起归入。
+        const adoptedConversations =
+            existing.app_id.length === 0 ? 0 : (this.deps.onAccountRemoved?.(existing.app_id) ?? 0)
         await this.deps.secrets.remove(id)
         this.deps.tokens.invalidate(id)
         if (this.selectedId() === id) {
             await this.select(null)
         }
-        return { removed: true }
+        return { removed: true, adoptedConversations }
     }
 
     /** 重新鉴权：供列表页的「刷新状态」与创建后的首次校验共用 */

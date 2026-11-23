@@ -177,6 +177,8 @@ export interface RemoveWechatAccountRequest {
 /** wechat/account/remove 响应 */
 export interface RemoveWechatAccountResult {
     removed: boolean
+    /** 由该账号归入通用对话的历史会话条数：前端在删除提示里追加一句，0 表示没有可归入的会话 */
+    adoptedConversations: number
 }
 
 /** wechat/account/test 请求：重新鉴权并回写状态 */

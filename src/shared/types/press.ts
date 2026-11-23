@@ -290,6 +290,8 @@ export interface DeletePressProjectRequest {
 export interface DeletePressProjectResult {
     deleted: boolean
     permanent: boolean
+    /** 由该作品归入通用对话的历史会话条数：前端在删除提示里追加一句，0 表示没有可归入的会话 */
+    adoptedConversations: number
 }
 
 /** 判断是否为删除作品的请求（类型收窄辅助）：dirPath 须为非空字符串，形态由服务侧再校验 */

@@ -191,6 +191,7 @@ export type HostMethodName =
     | 'ai/selectModel'
     | 'ai/send'
     | 'ai/session'
+    | 'ai/session/move'
     | 'ai/sessions'
     | 'ai/streaming'
     | 'ai/permissionDecision'

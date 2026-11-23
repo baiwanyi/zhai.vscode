@@ -12,6 +12,7 @@ import type {
     CreateWechatAccountRequest,
     CreateWechatAccountResult,
     RemoveWechatAccountRequest,
+    RemoveWechatAccountResult,
     SaveWechatAccountCredentialsRequest,
     SaveWechatAccountCredentialsResult,
     SelectWechatAccountRequest,
@@ -187,9 +188,14 @@ export function useWechatAccounts(): WechatAccountsState {
             setIsMutating(true)
             const payload: RemoveWechatAccountRequest = { id }
             try {
-                await request('wechat/account/remove', payload)
+                const removed = await request<RemoveWechatAccountResult>('wechat/account/remove', payload)
                 await reload()
-                toast.success('已删除公众号账号')
+                // 账号目录删除后其历史会话归入通用对话，条数在这里告知用户，避免「对话哪去了」的疑问
+                toast.success(
+                    removed.adoptedConversations > 0
+                        ? `已删除公众号账号；另有 ${String(removed.adoptedConversations)} 条历史对话已归入通用对话`
+                        : '已删除公众号账号',
+                )
                 return true
             } catch (cause) {
                 toastError(cause)

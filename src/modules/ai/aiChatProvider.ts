@@ -328,7 +328,12 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
                 return this.service.createSession(readScopePayload(payload, 'ai/newSession'))
             }
             case 'ai/sessions': {
-                return this.service.listSessions(readScopePayload(payload, 'ai/sessions'))
+                const { projectDir, isAll } = readSessionsPayload(payload)
+                return this.service.listSessions(projectDir, isAll)
+            }
+            case 'ai/session/move': {
+                const request = readMoveSessionPayload(payload, 'ai/session/move')
+                return { moved: this.service.moveSession(request.conversationId, request.projectDir) }
             }
             case 'ai/switchSession': {
                 return this.service.switchSession(readConversationIdPayload(payload, 'ai/switchSession'))
@@ -716,6 +721,30 @@ function readScopePayload(payload: unknown, method: string): string | null {
         throw new Error(`${method} 作用域过长`)
     }
     return toSafeSegments(value, '对话作用域').join('/')
+}
+
+/**
+ * 校验历史列表入参：projectDir 可选（缺省即通用对话），all 只认布尔 true。
+ * 关键约束：all 为 true 时忽略作用域，但仍先走一遍作用域校验 —— 非法值不能因为「反正不用」而放行。
+ */
+function readSessionsPayload(payload: unknown): { projectDir: string | null; isAll: boolean } {
+    const projectDir = readScopePayload(payload, 'ai/sessions')
+    const isAll = typeof payload === 'object' && payload !== null && (payload as { all?: unknown }).all === true
+    return { projectDir, isAll }
+}
+
+/**
+ * 校验会话改归属入参：会话 id 必填，projectDir 允许 null（归入通用对话）。
+ * 关键约束：两个字段都走与查询同一套收窄，避免迁移接口成为绕过路径校验的入口。
+ */
+function readMoveSessionPayload(
+    payload: unknown,
+    method: string,
+): { conversationId: string; projectDir: string | null } {
+    return {
+        conversationId: readConversationIdPayload(payload, method),
+        projectDir: readScopePayload(payload, method),
+    }
 }
 
 /** 校验会话 id 入参：Webview 侧数据不可信，仅接受非空字符串 */

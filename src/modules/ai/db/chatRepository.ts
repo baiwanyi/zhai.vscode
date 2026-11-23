@@ -2,11 +2,14 @@
  * AI 会话仓储：conversations / messages 两表的参数化读写，以及用量表的预算汇总。
  * 安全约束：全部 SQL 使用预编译参数绑定，禁止字符串拼接；批量写入统一走事务。
  * 作用域约定：会话按 project_dir 隔离，取最近会话与历史列表都必须带作用域，避免跨作品串历史；
- * 作用域比较统一用 `IS ?`（NULL 安全），作品对话与非作品通用对话各成一份。
+ * 作用域比较统一用 `IS ?`（NULL 安全），作品对话与非作品通用对话各成一份；
+ * 删除作品 / 公众号账号后其会话归入通用对话（不删除），由 adoptConversationScope 统一处理。
  * 关键约束：用量写入与分页查询在 usageRepository，本文件只保留预算护栏需要的累计 token 统计；
  * 上下文占用写库时不得顺带刷新 updated_at，否则每次生成都会把会话顶到历史列表最前；
  * steps 是 JSON 文本列，读写都按不可信输入处理 —— 解析失败一律当空数组，不能让脏数据挡住整条消息。
  */
+import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import { readWechatAccountDir } from '@shared/types/wechat'
 import type Database from 'better-sqlite3'
 
 /** conversations 表一行 */
@@ -130,8 +133,89 @@ export function listConversations(db: Database.Database, limit: number, projectD
         .all(projectDir, limit) as ConversationRow[]
 }
 
+/** 列出全区最近会话（不按作用域过滤）：历史浮层「全部」态用，条数由调用方限制 */
+export function listRecentConversations(db: Database.Database, limit: number): ConversationRow[] {
+    return db
+        .prepare(`SELECT ${CONVERSATION_COLUMNS} FROM conversations ORDER BY updated_at DESC LIMIT ?`)
+        .all(limit) as ConversationRow[]
+}
+
+/**
+ * 改会话归属：跨作用域取用时把会话移到当前对象。
+ * 关键约束：不刷新 updated_at —— 是否顶到列表最前由服务层决定（迁移需要顶到最前，见 moveSession）。
+ */
+export function updateConversationScope(db: Database.Database, id: string, projectDir: string | null): void {
+    db.prepare('UPDATE conversations SET project_dir = ? WHERE id = ?').run(projectDir, id)
+}
+
 export function updateConversationTitle(db: Database.Database, id: string, title: string): void {
     db.prepare('UPDATE conversations SET title = ? WHERE id = ?').run(title, id)
+}
+
+/**
+ * LIKE 通配符转义：把反斜杠、百分号与下划线转成字面量，配合 SQL 的 `ESCAPE '\'` 使用。
+ * 关键约束：必须先转义反斜杠本身，否则补进去的转义符会被后续替换二次处理。
+ */
+export function escapeLike(value: string): string {
+    return value.replace(/[\\%_]/gu, (char) => `\\${char}`)
+}
+
+/**
+ * 把某作用域及其子路径下的会话归入通用对话，返回改动行数。
+ * 关键约束：必须同时匹配精确值与前缀 —— 存量里存在按章（press/作品/第一章.md）与按篇
+ * （wechat/{appid}/post/{时间戳}/x.md）建立的旧会话，只匹配精确值会漏；
+ * 前缀走转义后的 LIKE，避免路径里的 % 与 _ 放大命中范围；只改 project_dir，不刷新 updated_at。
+ */
+export function adoptConversationScope(db: Database.Database, scope: string): number {
+    const result = db
+        .prepare(
+            `UPDATE conversations
+                SET project_dir = NULL
+              WHERE project_dir = @scope
+                 OR project_dir LIKE @prefix ESCAPE '\\'`,
+        )
+        .run({ scope, prefix: `${escapeLike(scope)}/%` })
+    return result.changes
+}
+
+/** 旧作用域的目标：press/{作品}/... → press/{作品}；wechat/{appid}/... → wechat/{appid}；其余返回 null */
+function readLegacyScopeTarget(scope: string): string | null {
+    if (scope.startsWith(`${PRESS_MODULE_DIR}/`)) {
+        const segments = scope.split('/')
+        return segments.length > 2 ? `${segments[0]}/${segments[1]}` : null
+    }
+    return readWechatAccountDir(scope)
+}
+
+/**
+ * 归并旧粒度的会话作用域，返回改动条数。
+ * 背景：作用域口径从「作品按章 / 公众号按批次」收敛为「作品按作品 / 公众号按账号」，
+ * 旧作用域键在精确匹配的查询下永不命中，会话成为不可达的存量；
+ * 关键约束：只改 project_dir —— 不动 updated_at（迁移不改变活跃时间）与 sdk_session_id（不影响通道续接）；
+ * 同一目标作用域已有会话时并列保留、不合并消息，历史列表可切换，零丢失；非账号形态的旧路径跳过不猜。
+ */
+export function mergeLegacyScopes(db: Database.Database): number {
+    const rows = db
+        .prepare(
+            `SELECT id, project_dir FROM conversations
+              WHERE project_dir LIKE 'press/%/%' ESCAPE '\\'
+                 OR project_dir LIKE 'wechat/%/%' ESCAPE '\\'`,
+        )
+        .all() as { id: string; project_dir: string }[]
+    const update = db.prepare('UPDATE conversations SET project_dir = ? WHERE id = ?')
+    let merged = 0
+    const apply = db.transaction((entries: { id: string; project_dir: string }[]) => {
+        for (const entry of entries) {
+            const target = readLegacyScopeTarget(entry.project_dir)
+            if (target === null || target === entry.project_dir) {
+                continue
+            }
+            update.run(target, entry.id)
+            merged += 1
+        }
+    })
+    apply(rows)
+    return merged
 }
 
 /**

@@ -193,6 +193,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     private stockRoutes: StockRoutes | null = null
     /** 作品结构变更监听：后置注入，仪表盘增删改卷章后用它通知工作流面板重读 */
     private pressWorkspaceListener: ((dirPath: string) => void) | null = null
+    /** AI 会话作用域清理：后置注入，删除作品时把该作品的会话归入通用对话；未注入时按 0 处理 */
+    private aiScopeJanitor: { adoptScope(scope: string): number } | null = null
     /** 上传路由：后置注入，公众号封面与微博发表框据此列举 uploads 下的已上传图片；未注入时 upload/* 直接报未就绪 */
     private uploadRoutes: UploadRoutes | null = null
     /** 微博面板凭证：后置注入，未注入时面板仍可打开但 Cookie 读写不可用 */
@@ -243,6 +245,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     /** 注入待办路由：由扩展入口在待办服务装配后调用，待办卡片据此读写 todo/ 下的清单 */
     public attachTodoRoutes(routes: TodoRoutes): void {
         this.todoRoutes = routes
+    }
+
+    /** 注入会话作用域清理：由扩展入口在 AI 层装配后调用，删除作品时把其会话归入通用对话 */
+    public attachAiScopeJanitor(janitor: { adoptScope(scope: string): number }): void {
+        this.aiScopeJanitor = janitor
     }
 
     /** 注入公众号路由：由扩展入口在 wechat.db 打开后调用，公众号列表页据此读写账号 */
@@ -1301,9 +1308,11 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             throw new Error(`作品不在索引中，无法删除：${payload.dirPath}`)
         }
         const outcome = await deleteProject(this.indexService, { dirPath: payload.dirPath })
+        // 作品目录已删：把该作品（含旧版按章建立的）会话归入通用对话，避免留下打不开的孤儿会话
+        const adoptedConversations = this.aiScopeJanitor?.adoptScope(payload.dirPath) ?? 0
         this.workflowRouter.clearProject()
         logger.info(`作品删除完成：${payload.dirPath}`)
-        return { deleted: true, permanent: outcome === 'permanent' }
+        return { deleted: true, permanent: outcome === 'permanent', adoptedConversations }
     }
 
     /**

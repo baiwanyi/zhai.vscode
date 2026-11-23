@@ -3,8 +3,9 @@
  * 设计源：docs/modules/ai-chat.md 第 4.2 节状态机；落地 A6 对话、A8 消息历史、A9 流式、A11 取消。
  * 约束：上下文按字符数粗估截断（AC-4 降级），预算护栏达上限时拒绝发送（A17）；
  * 会话固定写作模式：写入范围固定为当前文档，写入边界由通道侧审批回调逐次校验，
- * 模型直接改文件、宿主不做整段写回；会话按作用域隔离——每个文档一份（无活跃文档时按作品目录 / 模块键），
- * 跨作用域不共用记录；
+ * 模型直接改文件、宿主不做整段写回；会话按作用域隔离——微博一个模块、笔记每篇文档、作品整部、公众号每个账号
+ * 各一份（粒度由 contentScope.readScopeDir 推导），跨作用域不共用记录；删除对象后其会话归入通用对话；
+
  * 本轮 token 以通道回传的单轮用量为准（续接时 SDK 的 result.usage 是会话累计，由通道剔除），
  * CLI 会话记录仅用于补齐积分与兜底 tokens，两者都取不到才按回复字数估算并打标。
  */
@@ -16,6 +17,7 @@ import * as vscode from 'vscode'
 import type { ZhaiConfig } from '@modules/common/config'
 import { getZhaiConfig, resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
+import { toSafeSegments } from '@modules/common/storagePath'
 import { getActiveDocument, readRichSelection } from '@modules/editor/activeDocument'
 import type {
     AiApprovalMode,
@@ -47,6 +49,7 @@ import {
     toPublicContextRef,
 } from './contextRefs'
 import {
+    adoptConversationScope,
     deleteConversation,
     getConversation,
     getLatestConversation,
@@ -54,9 +57,12 @@ import {
     insertMessage,
     listConversations,
     listMessages,
+    listRecentConversations,
+    mergeLegacyScopes,
     sumTokensSince,
     touchConversation,
     updateConversationContextUsage,
+    updateConversationScope,
     updateConversationSession,
     updateConversationTitle,
     updateMessage,
@@ -79,6 +85,7 @@ import {
 import { INTERACTIVE_TOOLS, READ_ONLY_TOOLS, WRITE_TOOLS } from './providers/codebuddyPermission'
 import { CODEBUDDY_SITE_LABELS } from './providers/codebuddySite'
 import { buildRuleBlock, describeRules, parseStoredRuleNames } from './ruleContext'
+import { readScopeLabel } from './scopeLabel'
 import { summarizeMessages } from './usageRecorder'
 import { decideWriteOffsets } from './writeRangeOffsets'
 import { expandZhaiRefs } from './zhaiRefs'
@@ -348,13 +355,25 @@ export class AiChatService implements vscode.Disposable {
         }
     }
 
-    /** 指定作用域的历史会话列表（按最后活跃时间倒序），作用域为文档路径时只列这一篇的记录 */
-    public listSessions(projectDir: string | null = null): AiConversationSummary[] {
-        return listConversations(this.db, SESSION_LIST_LIMIT, projectDir).map((row) => ({
-            id: row.id,
-            title: row.title,
-            updatedAt: row.updatedAt,
-        }))
+    /**
+     * 历史会话列表：默认只列当前作用域，all 为 true 时列全区最近会话（历史浮层「全部」态）。
+     * 关键约束：每条都带来源标签，前端不按路径自行推断；标签只做展示，不参与任何过滤。
+     */
+    public listSessions(projectDir: string | null = null, all = false): AiConversationSummary[] {
+        const rows = all
+            ? listRecentConversations(this.db, SESSION_LIST_LIMIT)
+            : listConversations(this.db, SESSION_LIST_LIMIT, projectDir)
+        return rows.map((row) => {
+            const scope = readScopeLabel(row.projectDir)
+            return {
+                id: row.id,
+                title: row.title,
+                updatedAt: row.updatedAt,
+                scopeKind: scope.kind,
+                scopeLabel: scope.label,
+                scopeKey: row.projectDir,
+            }
+        })
     }
 
     /** 切换到指定会话并返回其快照（含待发送上下文）；会话不存在时抛错 */
@@ -371,6 +390,24 @@ export class AiChatService implements vscode.Disposable {
             draft: this.getDraft(conversation.id),
             contextUsage: toContextUsage(conversation),
         }
+    }
+
+    /**
+     * 把会话移到指定作用域（null 表示归入通用对话），返回是否移动成功。
+     * 关键约束：必须同时刷新 updated_at —— 否则新作用域的「最近会话」仍是原来那条，
+     * 迁移后切过去会打开别的会话；活跃会话迁移时同步面板作用域，避免后续引用写回旧作用域。
+     */
+    public moveSession(conversationId: string, projectDir: string | null): boolean {
+        if (!getConversation(this.db, conversationId)) {
+            return false
+        }
+        updateConversationScope(this.db, conversationId, projectDir)
+        touchConversation(this.db, conversationId, new Date().toISOString())
+        if (this.activeConversationId === conversationId) {
+            this.activeProjectDir = projectDir
+        }
+        logger.info(`AI 会话已改归属：${conversationId} → ${projectDir ?? '通用对话'}`)
+        return true
     }
 
     /**
@@ -391,6 +428,45 @@ export class AiChatService implements vscode.Disposable {
         }
         logger.info(`AI 会话已删除：${conversationId}`)
         return true
+    }
+
+    /**
+     * 把某作用域及其子路径下的会话归入通用对话，返回归入条数。
+     * 关键约束：删除作品 / 公众号账号后调用——目录已被删掉，会话留着只会成为打不开的孤儿；
+     * 归入而不是删除，避免不可逆地丢掉用户历史；活跃会话在其中时把当前作用域一并为 null，
+     * 防止后续「添加到宅对话」再把引用写进已不存在的作用域。
+     */
+    public adoptScope(scope: string): number {
+        const segments = toSafeSegments(scope, '对话作用域')
+        // 单段作用域（如 weibo）不属于任何可删除的对象：拒绝归入，避免一次调用清空整个模块的历史
+        if (segments.length < 2) {
+            logger.warn(`AI 会话作用域过短，已跳过归入：${scope}`)
+            return 0
+        }
+        const normalized = segments.join('/')
+        const adopted = adoptConversationScope(this.db, normalized)
+        const active = this.activeProjectDir
+        if (active !== null && (active === normalized || active.startsWith(`${normalized}/`))) {
+            this.activeProjectDir = null
+        }
+        if (adopted > 0) {
+            logger.info(`AI 会话已归入通用对话：${normalized}（${String(adopted)} 条）`)
+        }
+        return adopted
+    }
+
+    /**
+     * 归并旧粒度的会话作用域，返回改动条数。
+     * 背景：作用域从「作品按章 / 公众号按批次」收敛为「作品按作品 / 公众号按账号」，旧键在精确匹配下
+     * 永不命中；归并到父目录后同一作用域可能有多条会话，历史列表可见可切换，零丢失。
+     * 由装配层在升级后调用一次（globalState 记版本），失败不阻断激活、下次重试。
+     */
+    public mergeLegacyScopes(): number {
+        const merged = mergeLegacyScopes(this.db)
+        if (merged > 0) {
+            logger.info(`AI 会话旧作用域已归并：${String(merged)} 条`)
+        }
+        return merged
     }
 
     /** 待发送上下文的当前清单：对话按活跃会话取，生图取全局那一份 */

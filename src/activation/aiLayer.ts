@@ -22,6 +22,7 @@ import { UsageRecorder } from '@modules/ai/usageRecorder'
 import { AiUsageService } from '@modules/ai/usageService'
 import type { WorkflowRouter } from '@modules/ai/workflowRouter'
 import { lazyDatabase } from '@modules/common/lazyDatabase'
+import { logger } from '@modules/common/logger'
 import type { SecretsService } from '@modules/common/secrets'
 import type { ToastService } from '@modules/common/toastService'
 import { openNamingDatabase } from '@modules/naming/db/connection'
@@ -101,6 +102,18 @@ export async function assembleAiLayer(deps: AiLayerDeps): Promise<AiLayer> {
         deps.readReferenceImages,
     )
     context.subscriptions.push(chat)
+    // 旧粒度会话归并：作用域从「作品按章 / 公众号按批次」收敛为「作品按作品 / 公众号按账号」后，
+    // 旧键在新口径下永不命中；升级后一次性把归属改到父目录，只改 project_dir，不动消息与通道会话号。
+    // 用 globalState 记版本，幂等且只跑一次；归并失败不阻断激活（不写标记，下次激活重试）
+    const legacyScopeMergeKey = 'ai.sessionScope.merged.v1'
+    if (context.globalState.get<boolean>(legacyScopeMergeKey) !== true) {
+        try {
+            chat.mergeLegacyScopes()
+            void context.globalState.update(legacyScopeMergeKey, true)
+        } catch (error) {
+            logger.warn(`AI 会话旧作用域归并失败：${String(error)}`)
+        }
+    }
     // 提及检索：与全局搜索同源（索引库），添加时由宿主查库校验路径
     const mention = new MentionService(indexDb, chat)
     // 参考资料：语料由 {存储根}/reference/*.md 驱动，只读不写，条目按行范围注入

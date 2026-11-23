@@ -4,6 +4,7 @@
 > 缺陷编号沿用设计文档：D1 历史无法跨作用域查看、D2 删除对象后会话孤儿、D3 无迁移入口
 > 完成定义（每个任务均适用）：代码 + 单测 + `tsc --noEmit` + ESLint + Prettier + 对应人工验证项
 > 行号仅作定位参考，实施时以实际代码为准
+> 实施状态（2026-11-23）：阶段一、阶段二、收尾已完成；阶段三（来源失效标注）按触发条件暂不实施；下方与实现不一致处已在文内标注
 
 ---
 
@@ -131,6 +132,16 @@ const adoptedConversations = this.aiScopeJanitor?.adoptScope(payload.dirPath) ??
 
 **DoD**：新用例通过，既有 `chatRepository` 用例不回归。
 
+### T1.8 旧粒度会话一次性归并（实施时新增）
+
+**文件**：`src/modules/ai/db/chatRepository.ts`、`src/modules/ai/chatService.ts`、`src/activation/aiLayer.ts`
+
+- `mergeLegacyScopes(db)`：把 `press/{作品}/...` 归到 `press/{作品}`、`wechat/{appid}/...` 归到 `wechat/{appid}`；只改 `project_dir`，不动 `updated_at` 与 `sdk_session_id`；同一目标已有会话时并列保留、不合并消息；非账号形态的旧路径跳过。
+- `AiChatService.mergeLegacyScopes()` 转发并记日志；`assembleAiLayer` 在 `ensureAiSchema` 之后按 `globalState` 版本键（`ai.sessionScope.merged.v1`）跑一次，失败不写标记、下次激活重试。
+- 单测：章节归并 / 批次归并 / 新口径不动 / 不刷新活跃时间 / 非账号形态跳过。
+
+**DoD**：归并前后消息数与通道会话号不变；同一作用域多条会话可在历史页切换。
+
 ---
 
 ## 2. 阶段二：历史双态 + 跨域迁移（D1、D3）
@@ -142,8 +153,9 @@ const adoptedConversations = this.aiScopeJanitor?.adoptScope(payload.dirPath) ??
 - `AiConversationSummary` 增加：
 
 ```ts
-scopeKind: 'press' | 'note' | 'wechat' | 'weibo' | null
-scopeLabel: string | null
+scopeKind: AiConversationScopeKind   // 'press' | 'note' | 'wechat' | 'weibo' | null
+scopeLabel: string                   // 宿主按路径派生，恒有值（兜底「通用对话」）
+scopeKey: string | null              // 原始作用域键：前端据此判断是否需要迁移
 ```
 
 - `HostMethodName` 按字母序在 `'ai/session'` 与 `'ai/sessions'` 之间插入 `'ai/session/move'`。
@@ -157,7 +169,7 @@ scopeLabel: string | null
 ```ts
 export function readScopeLabel(scope: string | null): {
     kind: 'press' | 'note' | 'wechat' | 'weibo' | null
-    label: string | null
+    label: string   // 恒有值：解析不了的一律回落「通用对话」
 }
 ```
 
@@ -180,7 +192,7 @@ export function readScopeLabel(scope: string | null): {
 
 **文件**：`src/modules/ai/db/chatRepository.ts`
 
-- `listConversations` 更名为 `listScopedConversations`（同步改唯一调用方）。
+- 保留 `listConversations` 原名（语义已由注释说明，避免无收益的重命名与测试波及）。
 - 新增 `listRecentConversations(db, limit)`：无 `WHERE`，按 `updated_at DESC`。
 - 新增 `updateConversationScope(db, id, projectDir)`：只改 `project_dir`，不动 `updated_at`（时间由服务层决定）。
 
@@ -212,7 +224,7 @@ public moveSession(conversationId: string, projectDir: string | null): boolean
 function readSessionsPayload(payload: unknown): { projectDir: string | null; all: boolean }
 ```
 
-  `projectDir` 复用 `readScopePayload` 的规则；`all` 非布尔或缺省按 false。
+  `projectDir` 复用 `readScopePayload` 的规则；`all` 非布尔或缺省按 false，返回值字段命名为 `isAll`（布尔变量命名规范）。
 - 新增 `case 'ai/session/move'`：
 
 ```ts
@@ -233,16 +245,19 @@ function readMoveSessionPayload(payload: unknown): { conversationId: string; pro
 
 **DoD**：切 mode 后打开历史浮层能拿到对应列表；`loadSessions` 引用稳定（依赖数组不含每次新建对象）。
 
-### T2.7 前端：历史浮层 UI
+### T2.7 前端：历史页 UI
 
-**文件**：`src/workflow/aichat/history/AiChatHistoryMenu.tsx`、`AiChatHistoryItem.tsx`
+**文件**：`src/workflow/aichat/history/AiChatHistoryPage.tsx`（实施时由浮层改为整页，原来的 `AiChatHistoryMenu` / `AiChatHistoryItem` 已删除）
 
-- 顶部两段切换用 `@webview/components/SegmentedRail`（项目内已广泛使用）。
-- 全部态追加过滤输入框（`@components/ui/input`），按标题子串过滤当前 50 条，纯前端。
-- `AiChatHistoryItem` 增加 `showScope?: boolean`：为 true 时标题列改上下两行（标题 / 来源），来源取自 `scopeLabel`；hover 删除仍叠在时间位置，不改变行宽。
-- 当前对象态不显示来源行，保持与现状一致。
+- 页面外壳取 `@webview/components/AppPage`：`align="start"` 的标题行左侧放返回按钮，下方 `AppMenu` 放范围切换，`AppContent isScrollable` 承载过滤框与列表。
+- 范围切换用 `@webview/components/SegmentedRail`（项目内已广泛使用）。
+- 过滤输入框（`@components/ui/input`）按标题子串过滤当前 50 条，纯前端；两态都显示。
+- 筛选标签为「当前 / 全部 / 笔记 / 作品 / 公众号 / 微博 / 通用对话」：除「当前」外都由全区列表在前端切分，单一来源标签只列对应来源（`general` 对应无归属的通用对话）；从「全部」切到单一来源不重复请求，只有跨越「当前 ↔ 全区」才拉一次。
+- 列表不分组：所有筛选结果都是一列，按宿主返回的时间倒序；来源只体现在每行的「作品 · 剑来」这类文字上，不渲染组标题。
+- 列表行用 `@components/ui/item`：标题 + `来源 · 相对时间`；当前会话以主色边框区分；整行键盘可达（Enter / 空格），删除按钮 `stopPropagation`。
+- 空态用 `StateEmpty`：无记录与「没有匹配」两种文案。
 
-**DoD**：两态切换无闪烁；全部态条目行高稳定；删除按钮行为不变。
+**DoD**：两态切换无闪烁；行高稳定；删除按钮不触发选中；键盘可完成选择。
 
 ### T2.8 前端：迁移编排
 
@@ -255,16 +270,17 @@ handleSelectFromAll(item: AiConversationSummary): void
 流程：
 
 ```
-若 item 属于当前作用域 → 直接 switchSession(item.id)
-否则 → ConfirmDialog（该对话将移动到当前作品）
+若 item 属于当前作用域 → 直接 switchSession(item.id) → 回到对话页
+否则 → ConfirmDialog（该对话将移动到当前对象）
      → request('ai/session/move', { conversationId, projectDir: 当前作用域 })
      → request('ai/switchSession', { conversationId })
-     → loadSessions() 刷新当前态列表
+     → 回到对话页 → loadSessions() 刷新当前态列表
 ```
 
 - 用 `@webview/components/ConfirmDialog`（项目内已广泛使用）。
 - 迁移失败只提示，不切会话；切换失败同样只提示。
 - 不合并成一个复合协议：两步失败要能分别提示。
+- 历史页删除行时由页面直接调 `deleteSession` 并重拉列表，不走切换逻辑。
 
 **DoD**：迁移后当前对象处于该会话选中态；取消确认不产生任何请求。
 

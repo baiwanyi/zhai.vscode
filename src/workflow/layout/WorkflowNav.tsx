@@ -1,6 +1,6 @@
 /**
  * 工作流侧边导航：全局常驻的纵向图标列，入口分「常驻分区」与「当前内容的专属分区」两类。
- * 分组自上而下为「AI 对话 → 中段（专属分区 + 媒体、在线图库与校对，可滚动）→ 快照与 AI 使用量」，
+ * 分组自上而下为「AI 对话 → 中段（专属分区 + 媒体、上传、在线图库、校对、标注，可滚动）→ 快照与 AI 使用量」，
  * 专属分区由内容归属决定：作品显示设定/角色/大纲/取名，公众号显示菜单/素材/统计/留言/用户/推送，
  * 其余文档只显示常驻分区，专属组与它的分隔线都不渲染。
  * 复用约定：受控组件，激活分区、内容归属与选中动作由外壳传入；文案与图标集中在 SECTION_META，
@@ -30,6 +30,7 @@ import {
     Users,
     WandSparkles,
 } from 'lucide-react'
+import { Separator } from '@components/ui/separator'
 import { TooltipProvider } from '@webview/components/Tooltip'
 import { SCOPE_SECTIONS } from './contentScope'
 import { UnsplashIcon } from './UnsplashIcon'
@@ -42,6 +43,9 @@ import type { JSX, ReactNode } from 'react'
 const LEADING_SECTIONS: readonly WorkflowSection[] = ['chat']
 const TOOL_SECTIONS: readonly WorkflowSection[] = ['media', 'upload', 'stock', 'proofread', 'annotation']
 const FOOTER_SECTIONS: readonly WorkflowSection[] = ['snapshot', 'usage']
+
+/** 无内容归属时的专属分区：常量空数组，避免每次渲染新建字面量 */
+const NO_SCOPE_SECTIONS: readonly WorkflowSection[] = []
 
 interface SectionMeta {
     label: string
@@ -73,10 +77,11 @@ const SECTION_META: Readonly<Record<WorkflowSection, SectionMeta>> = {
     chapter: { label: '章节写作', icon: <BookOpen className="size-6" /> },
 }
 
-/** 分组分隔线：栏宽只有 48px，左右各留 8px；透明度用 opacity 而非颜色修饰符——
- *  活动栏前景色取自 VSCode 主题变量，Tailwind 无法为其合成带透明度的色值，会静默丢弃修饰符 */
+/** 分组分隔线：栏宽只有 48px，左右各留 2 单位；透明度用 opacity 而非颜色修饰符——
+ *  活动栏前景色取自 VSCode 主题变量，Tailwind 无法为其合成带透明度的色值，会静默丢弃修饰符；
+ *  线宽与 shrink 由 ui/separator 提供，这里只覆盖颜色与间距 */
 function NavSeparator(): JSX.Element {
-    return <div className="mx-2 my-1 h-px shrink-0 bg-activity-bar-inactive-foreground opacity-25" />
+    return <Separator className="mx-2 my-1 bg-activity-bar-inactive-foreground opacity-25" />
 }
 
 interface WorkflowNavProps {
@@ -88,7 +93,7 @@ interface WorkflowNavProps {
 }
 
 export function WorkflowNav({ activeSection, scope, onSelect }: WorkflowNavProps): JSX.Element {
-    const scopeSections = scope === null ? [] : SCOPE_SECTIONS[scope]
+    const scopeSections = scope === null ? NO_SCOPE_SECTIONS : SCOPE_SECTIONS[scope]
     const renderItem = (section: WorkflowSection): JSX.Element => {
         const meta = SECTION_META[section]
         return (
@@ -107,7 +112,7 @@ export function WorkflowNav({ activeSection, scope, onSelect }: WorkflowNavProps
             <TooltipProvider>
                 {LEADING_SECTIONS.map(renderItem)}
                 {/* 中段：专属分区与工具入口一起滚动，短面板下也能滚到最末一项 */}
-                <div className="flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
+                <div className="no-scrollbar flex min-h-0 flex-1 flex-col overflow-y-auto overscroll-contain">
                     {scopeSections.length > 0 && (
                         <>
                             <NavSeparator />

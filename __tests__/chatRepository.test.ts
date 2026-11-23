@@ -10,15 +10,20 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createUri } from './stubs/vscode'
 import type { ConversationRow, MessageRow } from '../src/modules/ai/db/chatRepository'
 import {
+    adoptConversationScope,
     deleteConversation,
+    escapeLike,
     getConversation,
     getLatestConversation,
     insertConversation,
     insertMessage,
     listConversations,
     listMessages,
+    listRecentConversations,
+    mergeLegacyScopes,
     sumTokensSince,
     updateConversationContextUsage,
+    updateConversationScope,
     updateMessage,
 } from '../src/modules/ai/db/chatRepository'
 import { openAiDatabase } from '../src/modules/ai/db/connection'
@@ -218,6 +223,114 @@ describe('conversations', () => {
         expect(indexes).not.toContain('idx_conv_file')
         expect(indexes).toContain('idx_conv_project')
         legacy.close()
+    })
+})
+
+describe('scope adoption', () => {
+    it('LIKE 通配符转义：反斜杠、百分号与下划线都当字面量', () => {
+        expect(escapeLike('press/a%b_c\\d')).toBe('press/a\\%b\\_c\\\\d')
+    })
+
+    it('精确匹配把自己的会话归入通用，不误伤同前缀作品', () => {
+        insertConversation(db, makeConversation({ id: 'conv-adopt-a', projectDir: 'press/adopt-case' }))
+        insertConversation(db, makeConversation({ id: 'conv-adopt-a2', projectDir: 'press/adopt-case-2' }))
+        expect(adoptConversationScope(db, 'press/adopt-case')).toBe(1)
+        expect(getConversation(db, 'conv-adopt-a')?.projectDir).toBeNull()
+        expect(getConversation(db, 'conv-adopt-a2')?.projectDir).toBe('press/adopt-case-2')
+    })
+
+    it('前缀匹配覆盖旧版按章建立的会话', () => {
+        insertConversation(db, makeConversation({ id: 'conv-adopt-ch1', projectDir: 'press/adopt-chapter/第一章.md' }))
+        expect(adoptConversationScope(db, 'press/adopt-chapter')).toBe(1)
+        expect(getConversation(db, 'conv-adopt-ch1')?.projectDir).toBeNull()
+    })
+
+    it('没有匹配时返回 0', () => {
+        expect(adoptConversationScope(db, 'press/adopt-missing')).toBe(0)
+    })
+
+    it('全部列表不带作用域过滤，按时间倒序', () => {
+        insertConversation(
+            db,
+            makeConversation({
+                id: 'conv-recent-a',
+                projectDir: 'press/recent-a',
+                updatedAt: '2026-09-05T00:00:00.000Z',
+            }),
+        )
+        insertConversation(
+            db,
+            makeConversation({ id: 'conv-recent-b', projectDir: null, updatedAt: '2026-09-06T00:00:00.000Z' }),
+        )
+        const ids = listRecentConversations(db, 50).map((row) => row.id)
+        expect(ids).toContain('conv-recent-a')
+        expect(ids).toContain('conv-recent-b')
+        expect(ids.indexOf('conv-recent-b')).toBeLessThan(ids.indexOf('conv-recent-a'))
+    })
+
+    it('改归属只动 project_dir，不刷新更新时间', () => {
+        insertConversation(
+            db,
+            makeConversation({
+                id: 'conv-scope-move',
+                projectDir: 'press/from',
+                updatedAt: '2026-09-07T00:00:00.000Z',
+            }),
+        )
+        updateConversationScope(db, 'conv-scope-move', 'press/to')
+        const row = getConversation(db, 'conv-scope-move')
+        expect(row?.projectDir).toBe('press/to')
+        expect(row?.updatedAt).toBe('2026-09-07T00:00:00.000Z')
+    })
+})
+
+describe('legacy scope merge', () => {
+    it('按章节的旧会话归到作品目录，按批次的归到账号目录', () => {
+        insertConversation(db, makeConversation({ id: 'conv-legacy-ch1', projectDir: 'press/legacy-book/第一章.md' }))
+        insertConversation(db, makeConversation({ id: 'conv-legacy-ch2', projectDir: 'press/legacy-book/第二章.md' }))
+        insertConversation(
+            db,
+            makeConversation({ id: 'conv-legacy-post', projectDir: 'wechat/wx1234567890/post/202611021530/a.md' }),
+        )
+        expect(mergeLegacyScopes(db)).toBe(3)
+        expect(getConversation(db, 'conv-legacy-ch1')?.projectDir).toBe('press/legacy-book')
+        expect(getConversation(db, 'conv-legacy-ch2')?.projectDir).toBe('press/legacy-book')
+        expect(getConversation(db, 'conv-legacy-post')?.projectDir).toBe('wechat/wx1234567890')
+    })
+
+    it('已是新口径的会话不动', () => {
+        insertConversation(db, makeConversation({ id: 'conv-fresh-press', projectDir: 'press/fresh-book' }))
+        insertConversation(db, makeConversation({ id: 'conv-fresh-wechat', projectDir: 'wechat/wx1234567890' }))
+        insertConversation(db, makeConversation({ id: 'conv-fresh-note', projectDir: 'notes/随手记.md' }))
+        insertConversation(db, makeConversation({ id: 'conv-fresh-weibo', projectDir: 'weibo' }))
+        insertConversation(db, makeConversation({ id: 'conv-fresh-global', projectDir: null }))
+        expect(mergeLegacyScopes(db)).toBe(0)
+        expect(getConversation(db, 'conv-fresh-press')?.projectDir).toBe('press/fresh-book')
+        expect(getConversation(db, 'conv-fresh-wechat')?.projectDir).toBe('wechat/wx1234567890')
+        expect(getConversation(db, 'conv-fresh-note')?.projectDir).toBe('notes/随手记.md')
+        expect(getConversation(db, 'conv-fresh-weibo')?.projectDir).toBe('weibo')
+        expect(getConversation(db, 'conv-fresh-global')?.projectDir).toBeNull()
+    })
+
+    it('归并不刷新活跃时间', () => {
+        insertConversation(
+            db,
+            makeConversation({
+                id: 'conv-legacy-time',
+                projectDir: 'press/time-book/第一章.md',
+                updatedAt: '2026-09-01T00:00:00.000Z',
+            }),
+        )
+        expect(mergeLegacyScopes(db)).toBe(1)
+        const row = getConversation(db, 'conv-legacy-time')
+        expect(row?.projectDir).toBe('press/time-book')
+        expect(row?.updatedAt).toBe('2026-09-01T00:00:00.000Z')
+    })
+
+    it('非账号形态的旧路径不猜，保持原样', () => {
+        insertConversation(db, makeConversation({ id: 'conv-legacy-odd', projectDir: 'wechat/临时/x.md' }))
+        expect(mergeLegacyScopes(db)).toBe(0)
+        expect(getConversation(db, 'conv-legacy-odd')?.projectDir).toBe('wechat/临时/x.md')
     })
 })
 

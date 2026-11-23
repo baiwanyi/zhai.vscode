@@ -2,6 +2,7 @@
  * AI 对话页：以 app-page 骨架承载「标题与用量区 + 消息流 + 底部输入区」。
  * 复用约定：外壳取 @webview/components/AppPage（会话标题走 AppTitle，作品标题与用量走 AppSummary、
  * 历史与新建会话并进标题行 AppAction，消息流走 AppContent，输入区落 AppFooter）；
+ * 历史对话是页内视图（pageView）而不是浮层：进入后整页替换对话主体，选中会话或返回即回到对话页；
  * 消息流由 MessageScroller 托管，Message + Bubble 呈现消息，空态用 Empty，输入区为三段式输入卡片。
  * 本层只做装配与渲染：展示值汇总取 utils 的 resolveAiChatView，模型控制取 useAiChatModelControl，
  * 会话动作时序取 useAiChatConversationActions，检索弹窗的开关与选中收尾取 useAiChatPicker；
@@ -12,19 +13,23 @@
  * 设计源：docs/modules/ai-chat.md 第 4 节会话状态机与第 10.3 节底部输入卡片。
  * 关键约束：入口组件由 workflow 分区路由直接引用，文件名即组件名 WorkflowAiChat，目录不再提供 index 出口；
  * hasWritableScopeOverride 只给没有活动文档的语境（微博）用，其它页面不传，避免绕过写入门禁；
- * 会话按 projectDir 作用域隔离，作用域粒度由 contentScope.readScopeDir 决定（微博 / 笔记文档 / 作品 / 公众号批次），缺省为通用对话；
+ * 会话按 projectDir 作用域隔离，作用域粒度由 contentScope.readScopeDir 决定（微博 / 笔记文档 / 作品 / 公众号账号），缺省为通用对话；
+ * 历史浮层「全部」范围里选中其它对象的会话时，先迁到当前作用域再切换（迁移失败不切会话）；
  * 页面高度由 AppPage 的 h-full 承接骨架链条，不再自建 h-screen，避免嵌在分区容器里时撑出视口；
  * 异步动作交给组件时一律包一层 `() => void`，项目启用了 no-misused-promises，直传 Promise 返回值会报错。
  */
-import { SquarePen } from 'lucide-react'
-import { useCallback } from 'react'
-import type { AiMentionCandidate, AiReferenceEntry } from '@shared/types/aiChat'
+import { History, SquarePen } from 'lucide-react'
+import { useCallback, useState } from 'react'
+import type { AiConversationSummary, AiMentionCandidate, AiReferenceEntry } from '@shared/types/aiChat'
 import type { PromptRule } from '@shared/types/promptLibrary'
+import { request } from '@shared/utils/bridge'
+import { toErrorText } from '@shared/utils/error'
 import { AppAction, AppContent, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
+import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { AiChatComposer } from './composer/AiChatComposer'
-import { AiChatHistoryMenu } from './history/AiChatHistoryMenu'
+import { AiChatHistoryPage } from './history/AiChatHistoryPage'
 import { useAiChatCommands } from './hooks/useAiChatCommands'
 import { useAiChatContexts } from './hooks/useAiChatContexts'
 import { useAiChatConversationActions } from './hooks/useAiChatConversationActions'
@@ -52,7 +57,7 @@ import type { JSX } from 'react'
 
 /** 对话页对外入参：会话作用域与作品标题，其余状态全部由页面内部 hooks 持有 */
 export interface WorkflowAiChatProps {
-    /** 会话作用域（模块键 / 文档路径 / 作品目录 / 公众号批次目录）：同一作用域共用一份对话记录，缺省或 null 表示通用对话 */
+    /** 会话作用域（模块键 / 文档路径 / 作品目录 / 公众号账号目录）：同一作用域共用一份对话记录，缺省或 null 表示通用对话 */
     projectDir?: string | null
     /** 当前作品标题：由调用方从作品设定中取，缺省时摘要行回落为通道名 */
     projectTitle?: string | null
@@ -81,7 +86,15 @@ export function WorkflowAiChat({
         remove: removeReferenceImage,
         clear: clearReferenceImages,
     } = useAiChatReferenceImages()
-    const { sessions, loadSessions } = useAiChatHistory({ onError: setError, projectDir })
+    const {
+        sessions,
+        mode: historyMode,
+        setMode: setHistoryMode,
+        loadSessions,
+    } = useAiChatHistory({
+        onError: setError,
+        projectDir,
+    })
     const { runtime, loadRuntime } = useAiChatRuntime({ onError: setError })
     // 模型控制自带清单拉取与展示名派生：页面只透传一个对象，不再逐项搬 runtime / choices / 回调
     const modelControl = useAiChatModelControl({ runtime, onError: setError })
@@ -174,6 +187,63 @@ export function WorkflowAiChat({
         refreshWriteState: loadWriteState,
     })
 
+    /** 页内视图：history 时整页显示历史会话，chat 时是对话主体 */
+    const [pageView, setPageView] = useState<'chat' | 'history'>('chat')
+    /** 待迁移会话：非 null 即打开确认弹窗（「全部」范围选中其它对象的会话时） */
+    const [pendingMove, setPendingMove] = useState<AiConversationSummary | null>(null)
+
+    /**
+     * 选中历史条目：已在当前作用域的直接切换；来自其它对象的先迁移再切换。
+     * 关键约束：迁移失败不切会话，否则会停在一个不属于当前对象的上下文上；
+     * 切换成功即回对话页，避免用户停在列表里看不到刚才选中的会话。
+     */
+    const handleSelectSession = useCallback(
+        (conversationId: string): void => {
+            const target = sessions.find((item) => item.id === conversationId)
+            if (target === undefined || target.scopeKey === projectDir) {
+                conversation.select(conversationId)
+                setPageView('chat')
+                return
+            }
+            setPendingMove(target)
+        },
+        [conversation, projectDir, sessions],
+    )
+
+    /** 删除会话后重拉列表：停留在历史页时要把被删项立刻移走 */
+    const handleDeleteSession = useCallback(
+        (conversationId: string): void => {
+            void deleteSession(conversationId).then(() => loadSessions())
+        },
+        [deleteSession, loadSessions],
+    )
+
+    /** 确认迁移：先改归属（宿主侧同时刷新活跃时间），再切到该会话并重拉当前态列表 */
+    const handleConfirmMove = useCallback((): void => {
+        const target = pendingMove
+        setPendingMove(null)
+        if (target === null) {
+            return
+        }
+        void (async (): Promise<void> => {
+            try {
+                const result = await request<{ moved: boolean }>('ai/session/move', {
+                    conversationId: target.id,
+                    projectDir,
+                })
+                if (!result.moved) {
+                    setError('会话不存在或已被删除')
+                    return
+                }
+                conversation.select(target.id)
+                setPageView('chat')
+                await loadSessions()
+            } catch (cause) {
+                setError(toErrorText(cause))
+            }
+        })()
+    }, [conversation, loadSessions, pendingMove, projectDir, setError])
+
     // 展示值一次算齐：消息与滚动锚点、密钥、可写目标、标题与用量文案均由纯函数派生
     const view = resolveAiChatView({ session, runtime, writeState, projectTitle })
     const { messages, lastMessageId, hasApiKey, title, projectLabel, usageText } = view
@@ -234,18 +304,61 @@ export function WorkflowAiChat({
         })
     }, [clearReferenceImages, input, references, ruleNames, send])
 
+    /**
+     * 迁移确认：历史页选中其它对象的会话时弹出，两个视图共用同一份。
+     * 文案明确写「移动」而不是「使用」——一份会话只保留一个归属。
+     */
+    const moveDialog = (
+        <ConfirmDialog
+            open={pendingMove !== null}
+            title="移动会话"
+            description={pendingMove === null ? '' : `「${pendingMove.title}」将移动到当前对象，原位置的记录不再保留。`}
+            confirmLabel="移动"
+            onOpenChange={(isOpen: boolean) => {
+                if (!isOpen) {
+                    setPendingMove(null)
+                }
+            }}
+            onConfirm={handleConfirmMove}
+        />
+    )
+
+    // 历史页整页替换对话主体：不叠浮层，长列表与过滤都在独立页面里进行
+    if (pageView === 'history') {
+        return (
+            <>
+                <AiChatHistoryPage
+                    sessions={sessions}
+                    activeSessionId={session?.conversation.id}
+                    mode={historyMode}
+                    onModeChange={setHistoryMode}
+                    onSelect={handleSelectSession}
+                    onDelete={handleDeleteSession}
+                    onBack={() => setPageView('chat')}
+                />
+                {moveDialog}
+            </>
+        )
+    }
+
     return (
         <AppPage>
             <AppHeader>
                 <AppTitle>{title}</AppTitle>
                 <AppAction>
-                    <AiChatHistoryMenu
-                        sessions={sessions}
-                        activeSessionId={session?.conversation.id}
-                        onOpen={() => void loadSessions()}
-                        onSwitch={conversation.select}
-                        onDelete={conversation.remove}
-                    />
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="rounded-full"
+                        aria-label="历史对话"
+                        tooltip="历史对话"
+                        onClick={() => {
+                            void loadSessions()
+                            setPageView('history')
+                        }}
+                    >
+                        <History />
+                    </Button>
                     <Button
                         variant="secondary"
                         size="icon"
@@ -322,6 +435,7 @@ export function WorkflowAiChat({
                 onPick={(entry) => void referencePicker.pick(entry)}
                 onClose={referencePicker.close}
             />
+            {moveDialog}
         </AppPage>
     )
 }

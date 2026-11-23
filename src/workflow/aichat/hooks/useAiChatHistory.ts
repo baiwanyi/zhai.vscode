@@ -1,36 +1,65 @@
 /**
- * AI 对话历史会话列表：经宿主 ai/sessions 协议拉取最近会话摘要，供「历史对话」浮层展示。
- * 列表仅在浮层打开 / 删除会话后按需刷新，避免展示过期数据；切换会话的写入动作由会话 hook 承担。
- * 关键约束：列表按作用域过滤（通常是当前文档路径），切文档即换一份历史。
+ * 历史会话数据：按筛选条件拉取列表，并提供筛选切换。
+ * 复用约定：列表统一走 ai/sessions；「当前」按作用域取，其余筛选（全部 / 笔记 / 作品 / 公众号 / 微博 /
+ * 通用对话）都取全区最近 50 条，由页面在前端切分，避免为每种来源单开查询。
+ * 关键约束：全区筛选之间互切不重复请求（只重新切分本地列表），只有跨越「当前 ↔ 全区」时才拉一次；
+ * 对外暴露的 loadSessions 不带参数，保持调用方（会话状态机）的引用稳定。
  */
-import { useCallback, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { AiConversationSummary } from '@shared/types/aiChat'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
+import type { AiChatHistoryMode } from '../history/utils/historyFilters'
 
-/** 历史列表 hook 的对外依赖：错误由共享提示 hook 持有 */
-export interface UseAiChatHistoryOptions {
+interface UseAiChatHistoryOptions {
     onError: (error: string | null) => void
-    /** 会话作用域（模块键 / 文档路径 / 作品目录 / 公众号批次目录）：只列出该作用域下的历史对话，null 表示通用对话 */
+    /** 会话作用域：'scope' 筛选下只列出该作用域的历史对话，null 表示通用对话 */
     projectDir: string | null
 }
 
 /** 历史会话列表对外暴露的状态与操作 */
 export interface AiChatHistoryState {
     sessions: AiConversationSummary[]
+    mode: AiChatHistoryMode
+    setMode: (mode: AiChatHistoryMode) => void
     loadSessions: () => Promise<void>
 }
 
 export function useAiChatHistory({ onError, projectDir }: UseAiChatHistoryOptions): AiChatHistoryState {
     const [sessions, setSessions] = useState<AiConversationSummary[]>([])
+    const [mode, setModeState] = useState<AiChatHistoryMode>('scope')
+    /** 当前列表是否来自「全区」查询：范围内互切时只改筛选、不再请求 */
+    const isAllLoadedRef = useRef(false)
 
-    const loadSessions = useCallback(async (): Promise<void> => {
-        try {
-            setSessions(await request<AiConversationSummary[]>('ai/sessions', { projectDir }))
-        } catch (cause) {
-            onError(toErrorText(cause))
-        }
-    }, [onError, projectDir])
+    const load = useCallback(
+        async (target: AiChatHistoryMode): Promise<void> => {
+            try {
+                setSessions(
+                    await request<AiConversationSummary[]>('ai/sessions', {
+                        projectDir,
+                        all: target !== 'scope',
+                    }),
+                )
+                // 只有真正拿到列表才算「已按该范围加载」：失败时保持原标记，跨来源切换会自然重试
+                isAllLoadedRef.current = target !== 'scope'
+            } catch (cause) {
+                onError(toErrorText(cause))
+            }
+        },
+        [onError, projectDir],
+    )
 
-    return { sessions, loadSessions }
+    const loadSessions = useCallback((): Promise<void> => load(mode), [load, mode])
+
+    const setMode = useCallback(
+        (next: AiChatHistoryMode): void => {
+            setModeState(next)
+            if ((next !== 'scope') !== isAllLoadedRef.current) {
+                void load(next)
+            }
+        },
+        [load],
+    )
+
+    return { sessions, mode, setMode, loadSessions }
 }

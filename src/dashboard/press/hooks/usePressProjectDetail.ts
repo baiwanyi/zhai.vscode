@@ -220,11 +220,16 @@ export function usePressProjectDetail(dirPath: string): PressProjectDetailState 
         setIsDeletingProject(true)
         try {
             const deleted = await request<DeletePressProjectResult>('press/deleteProject', { dirPath })
+            // 作品目录删除后其历史会话归入通用对话，条数在这里告知用户，避免「对话哪去了」的疑问
+            const adoptedText =
+                deleted.adoptedConversations > 0
+                    ? `；另有 ${String(deleted.adoptedConversations)} 条历史对话已归入通用对话`
+                    : ''
             // 回收站不可用时宿主会降级为永久删除，此时不能再承诺「可从回收站恢复」
             toast.success(
                 deleted.permanent
-                    ? '作品已删除（系统回收站不可用，已永久删除，无法恢复）'
-                    : '作品已删除，可在系统回收站恢复',
+                    ? `作品已删除（系统回收站不可用，已永久删除，无法恢复）${adoptedText}`
+                    : `作品已删除，可在系统回收站恢复${adoptedText}`,
             )
             return true
         } catch (cause) {

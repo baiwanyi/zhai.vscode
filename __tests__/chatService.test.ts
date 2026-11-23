@@ -14,7 +14,7 @@ import type { AiChatMessage, AiProvider, AiStreamChunk, AiStreamRequest } from '
 import type { StreamMessage } from '../src/shared/types/messages'
 import type Database from 'better-sqlite3'
 import { AiChatService } from '../src/modules/ai/chatService'
-import { listMessages, updateConversationSession } from '../src/modules/ai/db/chatRepository'
+import { getConversation, listMessages, updateConversationSession } from '../src/modules/ai/db/chatRepository'
 import { openAiDatabase } from '../src/modules/ai/db/connection'
 import { ensureAiSchema } from '../src/modules/ai/db/schema'
 import { getPrompt, listAllUsageLogs } from '../src/modules/ai/db/usageRepository'
@@ -378,5 +378,46 @@ describe('本轮用量的采纳口径', () => {
             .at(-1)
         expect(assistantRow?.totalTokens).toBeLessThan(100)
         expect(assistantRow?.tokensEstimated).toBe(1)
+    })
+})
+
+describe('会话作用域与迁移', () => {
+    it('迁移后按新作用域取最近会话命中该会话', () => {
+        const moving = service.createSession('press/move-src', '迁移用例')
+        const older = service.createSession('press/move-dst', '目标旧会话')
+        // 目标作用域先有一条更早的会话：迁移必须把新会话顶到最前，否则会打开旧会话
+        db.prepare('UPDATE conversations SET updated_at = ? WHERE id = ?').run(
+            '2026-01-01T00:00:00.000Z',
+            older.conversation.id,
+        )
+        expect(service.moveSession(moving.conversation.id, 'press/move-dst')).toBe(true)
+        expect(getConversation(db, moving.conversation.id)?.projectDir).toBe('press/move-dst')
+        expect(service.getOrCreateSession('press/move-dst').conversation.id).toBe(moving.conversation.id)
+    })
+
+    it('会话不存在时迁移返回 false', () => {
+        expect(service.moveSession('conv-missing', 'press/nowhere')).toBe(false)
+    })
+
+    it('归入通用：精确值与子路径都命中，单段作用域被拒绝', () => {
+        const byProject = service.createSession('press/adopt-src', '按作品')
+        const byChapter = service.createSession('press/adopt-src/第一章.md', '按章')
+        const sibling = service.createSession('press/adopt-src-2', '同前缀其它作品')
+        expect(service.adoptScope('press/adopt-src')).toBe(2)
+        expect(getConversation(db, byProject.conversation.id)?.projectDir).toBeNull()
+        expect(getConversation(db, byChapter.conversation.id)?.projectDir).toBeNull()
+        expect(getConversation(db, sibling.conversation.id)?.projectDir).toBe('press/adopt-src-2')
+        // 单段作用域（如微博）不属于任何可删除对象：拒绝归入，避免清空整个模块的历史
+        expect(service.adoptScope('weibo')).toBe(0)
+    })
+
+    it('全部范围返回跨作用域条目并带来源标签', () => {
+        const note = service.createSession('notes/随手记.md', '笔记用')
+        const target = service.listSessions(null, true).find((item) => item.id === note.conversation.id)
+        expect(target?.scopeKind).toBe('note')
+        expect(target?.scopeLabel).toBe('随手记')
+        expect(target?.scopeKey).toBe('notes/随手记.md')
+        // 当前对象范围不会把它列进通用对话
+        expect(service.listSessions(null, false).map((item) => item.id)).not.toContain(note.conversation.id)
     })
 })
