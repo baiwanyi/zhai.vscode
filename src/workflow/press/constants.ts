@@ -13,8 +13,12 @@ import type {
     CharacterBodyType,
     CharacterGender,
     CharacterRole,
+    ClueStatus,
     HookKind,
     LoreKind,
+    OutlineGranularity,
+    OutlineModuleKey,
+    PacingKind,
     PlanStatus,
     ProjectSetting,
 } from './types'
@@ -48,21 +52,81 @@ function toOptions<T extends string>(order: readonly T[], meta: OptionSource<T>)
     return order.map((value) => ({ value, label: meta[value].label }))
 }
 
-/** 章纲状态元数据：文案、徽标变体、状态点底色类名 */
+/**
+ * 章纲状态元数据：文案、徽标变体、状态点底色类名。
+ * 关键约束：四态是「大纲工作文件」的状态——已写=正文已兑现，待改=正文偏离大纲需复核，
+ * 废弃=保留记录但不计入完成度，待写=尚未落笔。
+ */
 export const PLAN_STATUS_META: Readonly<Record<PlanStatus, { label: string; tone: BadgeTone; dot: string }>> = {
     planned: { label: '待写', tone: 'outline', dot: 'bg-muted-foreground/60' },
-    drafting: { label: '在写', tone: 'secondary', dot: 'bg-chart-3' },
-    done: { label: '已完成', tone: 'default', dot: 'bg-chart-2' },
-    stale: { label: '需复核', tone: 'destructive', dot: 'bg-destructive' },
+    written: { label: '已写', tone: 'default', dot: 'bg-chart-2' },
+    revise: { label: '待改', tone: 'secondary', dot: 'bg-chart-4' },
+    discarded: { label: '废弃', tone: 'destructive', dot: 'bg-destructive' },
 }
 
 /** 状态筛选：全部与四种状态，供大纲页顶部下拉切换，大纲树只按取值过滤 */
 export const STATUS_FILTERS: readonly OptionMeta<PlanStatus | 'all'>[] = [
     { value: 'all', label: '全部' },
     { value: 'planned', label: '待写' },
-    { value: 'drafting', label: '在写' },
-    { value: 'done', label: '已完成' },
-    { value: 'stale', label: '需复核' },
+    { value: 'written', label: '已写' },
+    { value: 'revise', label: '待改' },
+    { value: 'discarded', label: '废弃' },
+]
+
+/** 颗粒度文案与顺序：粗纲管方向、中纲管事件链、细纲管当天落笔 */
+export const GRANULARITY_META: Readonly<Record<OutlineGranularity, { label: string; description: string }>> = {
+    coarse: { label: '粗纲', description: '故事核、人物弧、三幕大转折' },
+    medium: { label: '中纲', description: '事件链与章纲卡' },
+    fine: { label: '细纲', description: '场景、节拍与当天落笔细节' },
+}
+
+/** 颗粒度顺序：由粗到细，视图切换与档位选择共用 */
+export const GRANULARITY_ORDER: readonly OutlineGranularity[] = ['coarse', 'medium', 'fine']
+
+/** 颗粒度选项：卷/章节点标记与顶栏视图切换共用 */
+export const GRANULARITY_OPTIONS = toOptions(GRANULARITY_ORDER, GRANULARITY_META)
+
+/** 节奏类型文案：每章一档，避免连续同类章节 */
+export const PACING_META: Readonly<Record<PacingKind, { label: string; className: string }>> = {
+    tension: { label: '紧张', className: 'bg-chart-5/15 text-chart-5' },
+    setup: { label: '铺垫', className: 'bg-chart-4/15 text-chart-4' },
+    payoff: { label: '爽点', className: 'bg-chart-2/15 text-chart-2' },
+    sorrow: { label: '虐点', className: 'bg-chart-1/15 text-chart-1' },
+    breath: { label: '喘息', className: 'bg-muted text-muted-foreground' },
+}
+
+/** 节奏选项顺序：与写作时的情绪分布一一对应 */
+export const PACING_KIND_ORDER: readonly PacingKind[] = ['tension', 'setup', 'payoff', 'sorrow', 'breath']
+
+/** 节奏选项：节奏面板的下拉与徽标共用 */
+export const PACING_KIND_OPTIONS = toOptions(PACING_KIND_ORDER, PACING_META)
+
+/** 伏笔状态文案：未回收 / 已回收 / 已废弃 */
+export const CLUE_STATUS_META: Readonly<Record<ClueStatus, { label: string; tone: BadgeTone }>> = {
+    planted: { label: '未回收', tone: 'outline' },
+    'paid-off': { label: '已回收', tone: 'default' },
+    dropped: { label: '已废弃', tone: 'secondary' },
+}
+
+/** 伏笔状态顺序：线索表筛选与统计共用 */
+export const CLUE_STATUS_ORDER: readonly ClueStatus[] = ['planted', 'paid-off', 'dropped']
+
+/** 伏笔状态选项 */
+export const CLUE_STATUS_OPTIONS = toOptions(CLUE_STATUS_ORDER, CLUE_STATUS_META)
+
+/**
+ * 功能模块元数据：导航栏顺序即写作时的使用顺序（先粗后细、写前查纲、写后回填）。
+ * 关键约束：value 必须与 OutlineModuleKey 完全一致，新增模块须同时补导航文案与段落落点。
+ */
+export const OUTLINE_MODULE_META: readonly OptionMeta<OutlineModuleKey>[] = [
+    { value: 'book', label: '全书纲' },
+    { value: 'structure', label: '结构' },
+    { value: 'characters', label: '人物' },
+    { value: 'setting', label: '设定' },
+    { value: 'pacing', label: '节奏情绪' },
+    { value: 'clue', label: '伏笔线索' },
+    { value: 'timeline', label: '时间线' },
+    { value: 'volume', label: '卷章场景' },
 ]
 
 /** 章末钩子：生成与编辑时用于标注本卷节奏 */

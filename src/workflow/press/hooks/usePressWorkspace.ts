@@ -3,7 +3,8 @@
  * 复用约定：文档解析交给 ../document 的 parseProjectWorkspace，序列化交给 ../serialize，
  * 请求统一走 @shared/utils/bridge（方法名受 HostMethodName 约束），错误经 @shared/utils/error 的 toastError 提示。
  * 设定按标签页拆分落点：基本信息写 README，世界观与金手指各写自己的文档，
- * 势力 / 地点 / 物品各写一份条目文档，章纲改动仍走防抖写盘。
+ * 势力 / 地点 / 物品各写一份条目文档；大纲按功能模块分段，编辑哪一段就只提交哪一段
+ * （scheduleFlush 携带段落键），结构性操作与回填才整体落盘；字段输入统一走防抖写盘。
  * 关键约束：草稿同时存在于 ref 与 state 两份——写盘与合并读 ref（最新值），渲染读 state；
  * 写盘串行排队，防抖窗口内同范围的多次输入合并成一次请求；切换作品要清掉未到期的防抖任务，
  * 否则上一个作品的草稿会被写进新作品；整体卸载则改为立即写盘，切模块时输入不随页面消失。
@@ -17,17 +18,17 @@ import type {
     PressWorkspaceRequest,
     PressWorkspaceResult,
 } from '@shared/types/press'
-import { isPressWorkspaceChangedState } from '@shared/types/press'
+import { PRESS_OUTLINE_SECTION_KEYS, isPressWorkspaceChangedState } from '@shared/types/press'
 import { onState, request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
-import type { LoreKind, OutlineWorkspace } from '../types'
+import type { LoreKind, OutlineSectionKey, OutlineWorkspace } from '../types'
 import { parseProjectWorkspace } from '../document'
 import {
     serializeBasicSection,
     serializeCharacterBlocks,
     serializeGoldenFingerSection,
     serializeLoreBlocks,
-    serializeOutlineSection,
+    serializeOutlineSections,
     serializeReadmeMeta,
     serializeWorldSection,
 } from '../serialize'
@@ -47,6 +48,11 @@ export interface FlushOptions {
     /** 删除资料条目：kind 决定写哪份文档的删除名单，id 用于清理设定图 */
     deletedLore?: { kind: LoreKind; name: string; id: string }
     successMessage?: string
+    /**
+     * 本次要写的大纲段落：只提交这些段落，其余段落保持原样。
+     * 未指定时写全部段落——新增卷章这类结构性操作会同时影响卷章与节奏，必须整体落盘。
+     */
+    outlineSections?: readonly OutlineSectionKey[]
 }
 
 export interface PressWorkspaceState {
@@ -89,6 +95,8 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
     const dirRef = useRef('')
     /** 防抖窗口内累积的待写范围：同一窗口的多次输入合并成一次请求 */
     const pendingScopesRef = useRef<Set<PersistScope>>(new Set())
+    /** 防抖窗口内累积的大纲段落：只写变动段落，未收集到任何段落时按整体落盘 */
+    const pendingOutlineSectionsRef = useRef<Set<OutlineSectionKey>>(new Set())
     const debounceRef = useRef<number | null>(null)
     /** 写盘串行队列：防抖写入与立即写入排队执行，避免并发覆盖同一份文档 */
     const queueRef = useRef<Promise<void>>(Promise.resolve())
@@ -100,6 +108,7 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
             debounceRef.current = null
         }
         pendingScopesRef.current = new Set()
+        pendingOutlineSectionsRef.current = new Set()
         let isCancelled = false
         const load = async (): Promise<void> => {
             setLoadState(INITIAL_LOAD_STATE)
@@ -189,7 +198,15 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
             payload.characters = serializeCharacterBlocks(current.characters)
         }
         if (scopes.has('outline')) {
-            payload.outline = serializeOutlineSection(current.volumes, current.characters)
+            // 只提交本次涉及的大纲段落：独立编辑一类模块时，其余段落的文本不被重写；
+            // 结构性操作（新增卷章 / 提取 / 模板）不指定段落，整体落盘保证卷章与节奏一致
+            const sections = serializeOutlineSections(current.plan, current.volumes, current.characters)
+            const keys = options.outlineSections ?? PRESS_OUTLINE_SECTION_KEYS
+            const picked: Partial<Record<OutlineSectionKey, string>> = {}
+            for (const key of keys) {
+                picked[key] = sections[key]
+            }
+            payload.outlineSections = picked
         }
         if (deleted !== null) {
             payload.deletedCharacterNames = [deleted.name]
@@ -236,8 +253,10 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
             }
             const scopes = pendingScopesRef.current
             pendingScopesRef.current = new Set()
+            const sections = pendingOutlineSectionsRef.current
+            pendingOutlineSectionsRef.current = new Set()
             if (scopes.size > 0) {
-                void flush(scopes)
+                void flush(scopes, { outlineSections: sections.size > 0 ? [...sections] : undefined })
             }
         },
         [flush],
@@ -264,6 +283,7 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
             }
             const scopes = pendingScopesRef.current
             pendingScopesRef.current = new Set()
+            pendingOutlineSectionsRef.current = new Set()
             scopes.delete('outline')
             const pending = scopes.size > 0 ? flush(scopes) : Promise.resolve()
             void pending.finally(() => {
@@ -272,10 +292,18 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
         })
     }, [flush, projectDir])
 
-    /** 防抖写盘：字段级输入只在停顿后写一次，连续输入不会产生大量请求 */
+    /**
+     * 防抖写盘：字段级输入只在停顿后写一次，连续输入不会产生大量请求。
+     * 大纲传入段落键时只写这些段落；不传即整体落盘（新增卷章等结构性变更）。
+     */
     const scheduleFlush = useCallback(
-        (scope: PersistScope): void => {
+        (scope: PersistScope, outlineSections?: readonly OutlineSectionKey[]): void => {
             pendingScopesRef.current.add(scope)
+            if (outlineSections !== undefined) {
+                for (const key of outlineSections) {
+                    pendingOutlineSectionsRef.current.add(key)
+                }
+            }
             if (debounceRef.current !== null) {
                 window.clearTimeout(debounceRef.current)
             }
@@ -283,7 +311,9 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
                 debounceRef.current = null
                 const scopes = pendingScopesRef.current
                 pendingScopesRef.current = new Set()
-                void flush(scopes)
+                const sections = pendingOutlineSectionsRef.current
+                pendingOutlineSectionsRef.current = new Set()
+                void flush(scopes, { outlineSections: sections.size > 0 ? [...sections] : undefined })
             }, SAVE_DEBOUNCE_MS)
         },
         [flush],

@@ -67,14 +67,23 @@ function outlineChapter(order: number, title: string): OutlineChapter {
         order,
         title,
         summary: '',
+        actualSummary: '',
         status: 'planned',
         beats: [],
+        scenes: [],
+        pov: '',
+        goal: '',
+        obstacle: '',
+        turn: '',
+        result: '',
+        emotion: '',
         characterIds: [],
         location: '',
         wordGoal: 2500,
         wordCount: 0,
         hook: 'none',
         tension: 3,
+        granularity: 'medium',
     }
 }
 
@@ -87,6 +96,8 @@ const CURRENT: OutlineVolume[] = [
         conflict: '',
         plotline: '',
         turningPoints: [],
+        result: '',
+        granularity: 'medium',
         chapters: [outlineChapter(1, '开局'), outlineChapter(2, '追兵'), outlineChapter(3, '多出的一章')],
     },
     {
@@ -96,6 +107,8 @@ const CURRENT: OutlineVolume[] = [
         conflict: '',
         plotline: '',
         turningPoints: [],
+        result: '',
+        granularity: 'medium',
         chapters: [outlineChapter(1, '雪原')],
     },
 ]

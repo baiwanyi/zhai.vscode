@@ -23,10 +23,11 @@ const OUTLINE_HEADER = '# 大纲'
 /** 作品目录段数：press/{作品名} */
 const PROJECT_DIR_DEPTH = 2
 
-/** 新章占位值：与工作台解析端的缺省口径一致（单章目标字数 2500、张力 3） */
+/** 新章占位值：与工作台解析端的缺省口径一致（单章目标字数 2500、张力 3、中纲） */
 const FALLBACK_CHAPTER_TITLE = '未命名章节'
 const FALLBACK_CHAPTER_WORD_GOAL = 2500
 const FALLBACK_TENSION = 3
+const FALLBACK_GRANULARITY = '中纲'
 
 /** 标题层级：大纲段落二级、卷三级、章四级 */
 const LEVEL_TWO_OR_UP_PATTERN = /^#{1,2}\s+/u
@@ -83,6 +84,7 @@ function buildChapterBlock(order: number, title: string): string {
     return [
         `#### 第${String(order)}章 ${title}`,
         '- 状态：待写',
+        `- 颗粒度：${FALLBACK_GRANULARITY}`,
         '- 梗概：',
         '- 钩子：无',
         `- 张力：${String(FALLBACK_TENSION)}`,
@@ -91,7 +93,7 @@ function buildChapterBlock(order: number, title: string): string {
     ].join('\n')
 }
 
-/** 整卷块：卷纲四项留空由作者补写，章块紧随其后 */
+/** 整卷块：卷纲各项留空由作者补写，章块紧随其后 */
 function buildVolumeBlock(volumeOrder: number, volumeName: string, chapterBlock: string): string {
     return [
         `### 第${String(volumeOrder)}卷 ${volumeName}`,
@@ -99,6 +101,8 @@ function buildVolumeBlock(volumeOrder: number, volumeName: string, chapterBlock:
         '- 卷冲突：',
         '- 情节脉络：',
         '- 关键转折：',
+        '- 卷末结果：',
+        `- 颗粒度：${FALLBACK_GRANULARITY}`,
         '',
         chapterBlock,
     ].join('\n')

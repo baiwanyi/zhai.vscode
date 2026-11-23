@@ -272,6 +272,7 @@ export type HostMethodName =
     | 'press/open'
     | 'press/openChapter'
     | 'press/openDoc'
+    | 'press/outline/facts'
     | 'press/projects'
     | 'press/renameVolume'
     | 'press/snapshot/chapter/capture'

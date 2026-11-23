@@ -3,7 +3,9 @@
  * 势力.md、地点.md、物品.md、角色设定.md、大纲.md。
  * 复用约定：路径解析与原文读取复用 projectWorkspace 与 common/storagePath，写盘统一走 vscode.workspace.fs。
  * 关键约束：字段分组做段落级替换——README 改 Frontmatter 的四个字段与「作品设定」段落，
- * 世界观与金手指各替换自己文档里的「提取设定」段落，大纲替换「分卷规划」段落；
+ * 世界观与金手指各替换自己文档里的「提取设定」段落；
+ * 大纲按功能模块分段替换（全书纲 / 结构纲 / 人物纲 / 设定纲 / 节奏情绪 / 伏笔线索 / 时间线 / 分卷规划），
+ * 一次请求可带多段、同一文件只写一次，未带的段落与用户手写内容原样保留；
  * 段落终点始终是下一个一/二级标题，因此段内字段只能用三级及更深标题；
  * 资料条目与角色块按标题逐块合并（角色块新格式二级、旧文件一级，改名等价于删旧写新），未涉及的块原样保留；
  * 用户手写的其它段落原样保留，单份文件写入失败不影响其余文件；设定分组文档不进快照，只有四份主文档参与留版。
@@ -13,10 +15,12 @@ import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { buildStorageUri } from '@modules/common/storagePath'
+import { PRESS_OUTLINE_SECTION_KEYS } from '@shared/types/press'
 import type {
     PressApplyBlock,
     PressApplyMeta,
     PressApplyRequest,
+    PressOutlineSectionKey,
     PressSnapshotFileKey,
     PressSnapshotTrigger,
     PressWorkspaceFiles,
@@ -34,7 +38,21 @@ import { readProjectWorkspace } from './projectWorkspace'
 /** 设定分组的段落落点：基本信息写 README，世界观与金手指各写自己的文档 */
 const BASIC_SECTION_TITLE = '作品设定'
 const SETTING_SECTION_TITLE = '提取设定'
-const OUTLINE_SECTION_TITLE = '分卷规划'
+
+/**
+ * 大纲段落落点表：键与 PressOutlineSectionKey 一一对应，值即 大纲.md 里的二级标题。
+ * 关键约束：顺序参与首次补建（段落缺失时按此顺序追加），改动标题必须同步改解析端的段落关键词。
+ */
+const OUTLINE_SECTION_TITLES: Readonly<Record<PressOutlineSectionKey, string>> = {
+    book: '全书纲',
+    structure: '结构纲',
+    characters: '人物纲',
+    setting: '设定纲',
+    pacing: '节奏情绪',
+    clues: '伏笔线索',
+    timeline: '时间线',
+    volumes: '分卷规划',
+}
 
 /** 四份文档文件名：与 projectFactory 的骨架命名保持一致 */
 const WORKSPACE_FILE_NAMES = {
@@ -352,11 +370,23 @@ export async function applyProjectWorkspace(
             content: mergeCharacterBlocks(document.files.characters, payload.characters ?? [], deletedNames),
         })
     }
-    if (payload.outline !== undefined) {
+    if (payload.outline !== undefined || payload.outlineSections !== undefined) {
+        // 一次请求里可能带多个段落：在内存里逐段替换，最后只写一次文件，避免同文档多次写盘
+        let content = document.files.outline
+        if (payload.outline !== undefined) {
+            content = replaceLevelTwoSection(content, OUTLINE_SECTION_TITLES.volumes, payload.outline, '# 大纲')
+        }
+        const sections = payload.outlineSections ?? {}
+        for (const key of PRESS_OUTLINE_SECTION_KEYS) {
+            const body = sections[key]
+            if (body !== undefined) {
+                content = replaceLevelTwoSection(content, OUTLINE_SECTION_TITLES[key], body, '# 大纲')
+            }
+        }
         nextFiles.push({
             snapshotKey: 'outline',
             fileName: WORKSPACE_FILE_NAMES.outline,
-            content: replaceLevelTwoSection(document.files.outline, OUTLINE_SECTION_TITLE, payload.outline, '# 大纲'),
+            content,
         })
     }
     const written: string[] = []

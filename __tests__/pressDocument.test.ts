@@ -201,7 +201,7 @@ describe('parseProjectWorkspace', () => {
         const [first, second] = volume?.chapters ?? []
         expect(first?.order).toBe(1)
         expect(first?.title).toBe('修表铺的客人')
-        expect(first?.status).toBe('done')
+        expect(first?.status).toBe('written')
         expect(first?.wordCount).toBe(2680)
         expect(first?.wordGoal).toBe(2500)
         expect(first?.hook).toBe('suspense')
@@ -226,7 +226,8 @@ describe('parseProjectWorkspace', () => {
         expect(parsed.characters).toEqual([])
         expect(parsed.volumes[0]?.name).toBe('第1卷')
         expect(parsed.volumes[0]?.chapters.map((chapter) => chapter.order)).toEqual([1, 2])
-        expect(parsed.volumes[0]?.chapters[0]?.status).toBe('drafting')
+        // 旧值 draft 归一到新四态的「已写」：正文已在写，不再单独保留第五种状态
+        expect(parsed.volumes[0]?.chapters[0]?.status).toBe('written')
     })
 
     it('标题承载的新格式：设定字段、角色分组与条目字段都能还原', () => {

@@ -6,7 +6,7 @@
  * 菜单项只负责打开对话框，文案与可用性不随提取状态变化——是否可提交由面板按 isExtracting 判断；
  * 新增项只长大纲草稿，不创建章节文件；提取范围由面板自行读取作品列表，本组件只转交作品目录。
  */
-import { BookUp2, Ellipsis, Plus, Wand2 } from 'lucide-react'
+import { BookUp2, Ellipsis, LayoutTemplate, Plus, Wand2 } from 'lucide-react'
 import { useState } from 'react'
 import { Dialog, DialogContent } from '@components/ui/dialog'
 import {
@@ -30,6 +30,8 @@ interface OutlineActionMenuProps {
     onCreateVolume: () => void
     onCreateChapter: () => void
     onOpenWizard: () => void
+    /** 套用最小可用模板：只填空字段，不覆盖已写内容 */
+    onApplyTemplate: () => void
 }
 
 export function OutlineActionMenu({
@@ -39,6 +41,7 @@ export function OutlineActionMenu({
     onCreateVolume,
     onCreateChapter,
     onOpenWizard,
+    onApplyTemplate,
 }: OutlineActionMenuProps): JSX.Element {
     const [isExtractOpen, setIsExtractOpen] = useState(false)
 
@@ -68,6 +71,10 @@ export function OutlineActionMenu({
                     </DropdownMenuGroup>
                     <DropdownMenuSeparator />
                     <DropdownMenuGroup>
+                        <DropdownMenuItem onSelect={onApplyTemplate}>
+                            <LayoutTemplate />
+                            套用最小模板
+                        </DropdownMenuItem>
                         <DropdownMenuItem onSelect={onOpenWizard}>
                             <Wand2 />
                             生成大纲

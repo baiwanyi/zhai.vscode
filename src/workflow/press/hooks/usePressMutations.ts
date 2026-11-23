@@ -24,6 +24,8 @@ import type {
     LoreSeed,
     OutlineChapter,
     OutlineExtractTarget,
+    OutlinePlan,
+    OutlineSectionKey,
     OutlineVolume,
     OutlineWorkspace,
     ProjectSetting,
@@ -72,6 +74,10 @@ export interface PressMutations {
     /** 删除条目：同步清理它的设定图，所属文档里的条目块一并移除 */
     deleteLore: (loreId: string) => void
     updateChapter: (chapterId: string, patch: Partial<OutlineChapter>) => void
+    /** 更新七个功能模块中的一段：只写该段对应的段落，其余段落保持原样 */
+    updateOutlinePlan: (section: OutlineSectionKey, patch: Partial<OutlinePlan>) => void
+    /** 立即写盘的大纲整批更新：回填与模板一次改多段（卷章 + 线索等）时使用 */
+    applyOutlineChange: (next: { volumes?: OutlineVolume[]; plan?: OutlinePlan }) => void
     /** 新增一卷（含一条空章纲）：只长大纲草稿，不建章节文件，返回落点供页面选中 */
     createOutlineVolume: () => CreatedOutlineNode | null
     /** 新增一章：落到指定卷（缺省为最后一卷），返回落点供页面选中 */
@@ -86,7 +92,8 @@ interface MutationsDeps {
     getWorkspace: () => OutlineWorkspace | null
     updateWorkspace: (recipe: (previous: OutlineWorkspace) => OutlineWorkspace) => void
     flush: (scopes: Set<PersistScope>, options?: FlushOptions) => Promise<void>
-    scheduleFlush: (scope: PersistScope) => void
+    /** 防抖写盘：大纲可指定只写哪些段落，不传即整体落盘 */
+    scheduleFlush: (scope: PersistScope, outlineSections?: readonly OutlineSectionKey[]) => void
 }
 
 export function usePressMutations({
@@ -172,6 +179,24 @@ export function usePressMutations({
                             : chapter,
                     ),
                 })),
+                // 人物纲与线索的触发者都引用人物 id：删除人物时一并清空，避免留下悬空引用
+                plan: {
+                    ...previous.plan,
+                    characters: previous.plan.characters.map((line) =>
+                        line.characterId === characterId ? { ...line, characterId: '' } : line,
+                    ),
+                    clues: previous.plan.clues.map((clue) =>
+                        clue.triggerId === characterId ? { ...clue, triggerId: '' } : clue,
+                    ),
+                    timeline: previous.plan.timeline.map((event) =>
+                        event.characterIds.includes(characterId)
+                            ? {
+                                  ...event,
+                                  characterIds: event.characterIds.filter((id) => id !== characterId),
+                              }
+                            : event,
+                    ),
+                },
             }))
             void flush(new Set<PersistScope>(['characters', 'outline']), {
                 deleted: target === null ? undefined : { name: target.name, id: target.id },
@@ -261,7 +286,7 @@ export function usePressMutations({
         [flush, getWorkspace, updateWorkspace],
     )
 
-    /** 章纲字段改动：含标题输入，走防抖写盘 */
+    /** 章纲字段改动：含标题输入，走防抖写盘；只写「分卷规划」段落 */
     const updateChapter = useCallback(
         (chapterId: string, patch: Partial<OutlineChapter>): void => {
             updateWorkspace((previous) => ({
@@ -273,9 +298,34 @@ export function usePressMutations({
                     ),
                 })),
             }))
-            scheduleFlush('outline')
+            scheduleFlush('outline', ['volumes'])
         },
         [scheduleFlush, updateWorkspace],
+    )
+
+    /** 功能模块改动：只落盘该模块对应的段落，避免编辑线索时把卷章整段重写 */
+    const updateOutlinePlan = useCallback(
+        (section: OutlineSectionKey, patch: Partial<OutlinePlan>): void => {
+            updateWorkspace((previous) => ({ ...previous, plan: { ...previous.plan, ...patch } }))
+            scheduleFlush('outline', [section])
+        },
+        [scheduleFlush, updateWorkspace],
+    )
+
+    /**
+     * 大纲整批更新并立即写盘：写后回填与模板会同时改卷章与线索，
+     * 这类操作不能等防抖，否则页面已经显示「已回填」而磁盘还是旧值。
+     */
+    const applyOutlineChange = useCallback(
+        (next: { volumes?: OutlineVolume[]; plan?: OutlinePlan }): void => {
+            updateWorkspace((previous) => ({
+                ...previous,
+                volumes: next.volumes ?? previous.volumes,
+                plan: next.plan ?? previous.plan,
+            }))
+            void flush(new Set<PersistScope>(['outline']), { successMessage: '大纲已更新' })
+        },
+        [flush, updateWorkspace],
     )
 
     /**
@@ -456,6 +506,8 @@ export function usePressMutations({
         updateLore,
         deleteLore,
         updateChapter,
+        updateOutlinePlan,
+        applyOutlineChange,
         createOutlineVolume,
         createOutlineChapter,
         applyOutline,

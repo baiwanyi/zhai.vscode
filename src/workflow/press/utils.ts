@@ -32,11 +32,21 @@ import type {
     HookKind,
     LoreEntry,
     LoreSeed,
+    OutlineAct,
     OutlineBeat,
     OutlineChapter,
+    OutlineChapterRef,
+    OutlineCharacterLine,
+    OutlineClue,
     OutlineExtractKey,
+    OutlinePacingEntry,
+    OutlinePlan,
+    OutlineScene,
+    OutlineSettingNote,
+    OutlineTimelineEvent,
     OutlineTreeEntry,
     OutlineVolume,
+    PacingKind,
     PlanStatus,
     ProjectSetting,
 } from './types'
@@ -145,8 +155,13 @@ function createNumericId(): string {
     return String(10_000_000 + ((buffer[0] ?? 0) % 90_000_000))
 }
 
-/** 生成节点 id：卷、章、节拍、人物与资料条目共用；人物与条目用 8 位数字，其余带前缀便于排查来源 */
-export function createId(prefix: 'vol' | 'ch' | 'beat' | 'char' | 'lore'): string {
+/**
+ * 生成节点 id：卷、章、节拍、场景、人物、资料条目与大纲各功能模块共用；
+ * 人物与条目用 8 位数字（宿主白名单要求），其余带前缀便于排查来源。
+ */
+export function createId(
+    prefix: 'vol' | 'ch' | 'beat' | 'scene' | 'char' | 'lore' | 'act' | 'cline' | 'snote' | 'clue' | 'tline',
+): string {
     if (prefix === 'char' || prefix === 'lore') {
         return createNumericId()
     }
@@ -367,6 +382,20 @@ export function createBeat(text = ''): OutlineBeat {
     return { id: createId('beat'), text, isDone: false }
 }
 
+/** 新建一个空场景，序号由调用方给出 */
+export function createScene(order: number): OutlineScene {
+    return {
+        id: createId('scene'),
+        order,
+        title: `场景${order}`,
+        desire: '',
+        obstacle: '',
+        choice: '',
+        result: '',
+        emotion: '',
+    }
+}
+
 /** 新建一章空章纲，序号与目标字数由调用方给出 */
 export function createChapter(order: number, wordGoal: number): OutlineChapter {
     return {
@@ -374,14 +403,83 @@ export function createChapter(order: number, wordGoal: number): OutlineChapter {
         order,
         title: `第${order}章 未命名`,
         summary: '',
+        actualSummary: '',
         status: 'planned',
         beats: [createBeat()],
+        scenes: [],
+        pov: '',
+        goal: '',
+        obstacle: '',
+        turn: '',
+        result: '',
+        emotion: '',
         characterIds: [],
         location: '',
         wordGoal,
         wordCount: 0,
         hook: 'suspense',
         tension: 3,
+        granularity: 'medium',
+    }
+}
+
+/** 新建一条结构阶段 */
+export function createAct(name = '新阶段', position = ''): OutlineAct {
+    return { id: createId('act'), name, position, event: '' }
+}
+
+/** 人物纲的初始值：不含 id 与姓名，调用方按人物卡或空白模板填写 */
+export type CharacterLineSeed = Partial<Omit<OutlineCharacterLine, 'id' | 'name'>>
+
+/**
+ * 新建一条人物纲：默认只带姓名，其余字段留空由作者填。
+ * seed 用于「从人物卡导入」：把欲望、缺陷、关系与弧光一次带进来，已有内容仍可继续编辑。
+ */
+export function createCharacterLine(name = '新人物', seed: CharacterLineSeed = {}): OutlineCharacterLine {
+    return {
+        characterId: '',
+        desire: '',
+        fear: '',
+        flaw: '',
+        secret: '',
+        relation: '',
+        arc: '',
+        ...seed,
+        id: createId('cline'),
+        name,
+    }
+}
+
+/** 新建一条设定纲 */
+export function createSettingNote(name = '新设定'): OutlineSettingNote {
+    return { id: createId('snote'), name, rule: '', cost: '', note: '' }
+}
+
+/** 新建一条节奏行：默认铺垫、张力 3 */
+export function createPacingEntry(chapterOrder: number, kind: PacingKind = 'setup'): OutlinePacingEntry {
+    return { id: `pacing-${String(chapterOrder)}`, chapterOrder, kind, tension: 3 }
+}
+
+/** 新建一条伏笔线索：默认未回收，触发者与章节引用留空 */
+export function createClue(name = '新线索'): OutlineClue {
+    return { id: createId('clue'), name, plant: null, payoff: null, triggerId: '', status: 'planted', note: '' }
+}
+
+/** 新建一条时间线事件 */
+export function createTimelineEvent(title = '新事件'): OutlineTimelineEvent {
+    return { id: createId('tline'), when: '', title, refs: [], characterIds: [] }
+}
+
+/** 新建空大纲计划：缺段落的作品打开时用它兜底，页面永远拿到完整结构 */
+export function createEmptyPlan(): OutlinePlan {
+    return {
+        book: { logline: '', conflict: '', theme: '', ending: '', arc: '' },
+        acts: [],
+        characters: [],
+        setting: [],
+        pacing: [],
+        clues: [],
+        timeline: [],
     }
 }
 
@@ -416,6 +514,8 @@ export function createOutlineFromDraft(
         conflict: draft.conflict,
         plotline: draft.plotline,
         turningPoints: [...draft.turningPoints],
+        result: '',
+        granularity: 'medium',
         chapters: draft.chapters.map((chapter) => {
             const base = createChapter(chapter.order, chapterWordGoal)
             const matched =
@@ -605,34 +705,48 @@ export function createVolume(order: number, chapterWordGoal: number): OutlineVol
         conflict: '',
         plotline: '',
         turningPoints: [],
+        result: '',
+        granularity: 'medium',
         chapters: [createChapter(1, chapterWordGoal)],
     }
 }
 
-/** 卷章节统计：总数、已完成数、已写字数与目标字数 */
+/**
+ * 卷章节统计：总数、已写数、待改数、废弃数、已写字数与目标字数。
+ * 关键约束：废弃章节不计入总数与字数分母，否则完成度永远到不了 100%。
+ */
 export function summarizeVolume(volume: OutlineVolume): {
     total: number
     done: number
-    stale: number
+    revise: number
+    discarded: number
     wordCount: number
     wordGoal: number
 } {
     return volume.chapters.reduce(
-        (summary, chapter) => ({
-            total: summary.total + 1,
-            done: summary.done + (chapter.status === 'done' ? 1 : 0),
-            stale: summary.stale + (chapter.status === 'stale' ? 1 : 0),
-            wordCount: summary.wordCount + chapter.wordCount,
-            wordGoal: summary.wordGoal + chapter.wordGoal,
-        }),
-        { total: 0, done: 0, stale: 0, wordCount: 0, wordGoal: 0 },
+        (summary, chapter) => {
+            if (chapter.status === 'discarded') {
+                return { ...summary, discarded: summary.discarded + 1 }
+            }
+            return {
+                total: summary.total + 1,
+                done: summary.done + (chapter.status === 'written' ? 1 : 0),
+                revise: summary.revise + (chapter.status === 'revise' ? 1 : 0),
+                discarded: summary.discarded,
+                wordCount: summary.wordCount + chapter.wordCount,
+                wordGoal: summary.wordGoal + chapter.wordGoal,
+            }
+        },
+        { total: 0, done: 0, revise: 0, discarded: 0, wordCount: 0, wordGoal: 0 },
     )
 }
 
-/** 整部作品的章节总数与完成数，用于工作台标题区进度 */
+/** 整部作品的章节总数与完成数，用于工作台标题区进度；废弃章节同样不计入分母 */
 export function summarizeWorkspace(volumes: readonly OutlineVolume[]): {
     chapters: number
     done: number
+    revise: number
+    discarded: number
     wordCount: number
     wordGoal: number
 } {
@@ -642,11 +756,13 @@ export function summarizeWorkspace(volumes: readonly OutlineVolume[]): {
             return {
                 chapters: summary.chapters + volumeSummary.total,
                 done: summary.done + volumeSummary.done,
+                revise: summary.revise + volumeSummary.revise,
+                discarded: summary.discarded + volumeSummary.discarded,
                 wordCount: summary.wordCount + volumeSummary.wordCount,
                 wordGoal: summary.wordGoal + volumeSummary.wordGoal,
             }
         },
-        { chapters: 0, done: 0, wordCount: 0, wordGoal: 0 },
+        { chapters: 0, done: 0, revise: 0, discarded: 0, wordCount: 0, wordGoal: 0 },
     )
 }
 
@@ -732,6 +848,7 @@ export function buildOutlineDraft(
                 order,
                 title: `第${order}章 ${phase}`,
                 summary: `${heroName}在「${stage}」阶段推进：${shortLogline}。本章需要给出一个明确结果，并留下一个未解决的疑问。`,
+                actualSummary: '',
                 status: 'planned',
                 beats: [
                     createBeat(`${heroName}因「${phase}」被卷入新的阻碍`),
@@ -739,6 +856,13 @@ export function buildOutlineDraft(
                         isClimax ? `阶段高潮：与${antagonist?.name ?? '对手'}正面相撞` : '推进过程中暴露一条新线索',
                     ),
                 ],
+                scenes: [],
+                pov: protagonist?.name ?? '',
+                goal: `${phase}：把本阶段目标推进一格`,
+                obstacle: `与${antagonist?.name ?? '对手'}的利益冲突`,
+                turn: isClimax ? '阶段高潮迫使主角做出选择' : '推进过程中暴露一条新线索',
+                result: '',
+                emotion: '',
                 characterIds: [protagonist?.id, isClimax ? antagonist?.id : undefined].filter(
                     (id): id is string => typeof id === 'string',
                 ),
@@ -747,6 +871,7 @@ export function buildOutlineDraft(
                 wordCount: 0,
                 hook,
                 tension,
+                granularity: 'medium',
             }
         })
 
@@ -758,7 +883,272 @@ export function buildOutlineDraft(
             // 结构推导只给可编辑的占位描述，不伪造具体情节：真正的脉络由写作者或导入归纳填入
             plotline: `本卷按「${phases.join(' → ')}」推进：${shortLogline}，在阶段高潮处收束并留下悬念。`,
             turningPoints: [`${stage}阶段高潮：与${antagonist?.name ?? '对手'}正面相撞`],
+            result: '',
+            granularity: 'medium',
             chapters,
         }
     })
+}
+
+/** 卷章索引：把「卷序 + 章序」映射到全书章序，供线索与时间线的跨章判断使用 */
+interface ChapterIndex {
+    /** 键为「卷序-章序」，值为全书 1 基章序 */
+    map: ReadonlyMap<string, number>
+    /** 全书最后一章的章序：无章时为 0 */
+    last: number
+}
+
+/** 构建卷章索引：卷序认「第N卷」，读不到时按数组位置兜底，与大纲解析同一口径 */
+function buildChapterIndex(volumes: readonly OutlineVolume[]): ChapterIndex {
+    const map = new Map<string, number>()
+    let last = 0
+    volumes.forEach((volume, index) => {
+        const volumeOrder = readOutlineVolumeOrder(volume.name, index)
+        for (const chapter of volume.chapters) {
+            last += 1
+            map.set(`${String(volumeOrder)}-${String(chapter.order)}`, last)
+        }
+    })
+    return { map, last }
+}
+
+/** 读取章节引用的全书章序：引用不到时返回 null，不猜测位置 */
+export function readRefGlobalOrder(volumes: readonly OutlineVolume[], ref: OutlineChapterRef | null): number | null {
+    if (ref === null) {
+        return null
+    }
+    return buildChapterIndex(volumes).map.get(`${String(ref.volumeOrder)}-${String(ref.chapterOrder)}`) ?? null
+}
+
+/** 章节引用选项：线索与时间线的「埋设章 / 回收章 / 涉及章」下拉共用 */
+export interface ChapterRefOption {
+    /** 取值形如「1-2」，与文档里的写法一致 */
+    value: string
+    /** 展示名：第1卷 · 第2章 章名 */
+    label: string
+    ref: OutlineChapterRef
+}
+
+/**
+ * 章节引用条目：引用键之外带上卷与章对象本身，供回填按位置匹配章节事实。
+ * 关键约束：chapterIndex 取数组位置（1 基），与作品章节清单的顺序一致；
+ * chapterOrder 取章纲自己的 order，允许作者手改，两者不互相推导。
+ */
+export interface ChapterRefEntry {
+    ref: OutlineChapterRef
+    chapterIndex: number
+    volume: OutlineVolume
+    chapter: OutlineChapter
+}
+
+/** 由卷章树生成引用条目：卷序认「第N卷」，读不到时按数组位置兜底 */
+export function createChapterRefEntries(volumes: readonly OutlineVolume[]): ChapterRefEntry[] {
+    const entries: ChapterRefEntry[] = []
+    volumes.forEach((volume, index) => {
+        const volumeOrder = readOutlineVolumeOrder(volume.name, index)
+        volume.chapters.forEach((chapter, position) => {
+            entries.push({
+                ref: { volumeOrder, chapterOrder: chapter.order },
+                chapterIndex: position + 1,
+                volume,
+                chapter,
+            })
+        })
+    })
+    return entries
+}
+
+/** 由卷章树生成章节引用选项：线索与时间线的下拉共用 */
+export function createChapterRefOptions(volumes: readonly OutlineVolume[]): ChapterRefOption[] {
+    return createChapterRefEntries(volumes).map((entry) => ({
+        value: `${String(entry.ref.volumeOrder)}-${String(entry.ref.chapterOrder)}`,
+        label: `第${String(entry.ref.volumeOrder)}卷 · ${chapterTitleLabel(entry.chapter)}`,
+        ref: entry.ref,
+    }))
+}
+
+/** 解析章节引用取值：非法写法返回 null，不猜测位置 */
+export function parseChapterRefValue(value: string): OutlineChapterRef | null {
+    const matched = /^(\d+)\s*-\s*(\d+)$/u.exec(value.trim())
+    if (matched?.[1] === undefined || matched[2] === undefined) {
+        return null
+    }
+    return { volumeOrder: Number.parseInt(matched[1], 10), chapterOrder: Number.parseInt(matched[2], 10) }
+}
+
+/** 当前写作位置：最后一个「已写」章节的全书章序，没有已写章节时为 0 */
+export function readWritingPosition(volumes: readonly OutlineVolume[]): number {
+    let position = 0
+    let globalOrder = 0
+    volumes.forEach((volume) => {
+        for (const chapter of volume.chapters) {
+            globalOrder += 1
+            if (chapter.status === 'written') {
+                position = globalOrder
+            }
+        }
+    })
+    return position
+}
+
+/** 线索预警：逾期未收、临近回收章、未定回收章三种，供线索表与章详情展示 */
+export interface ClueWarning {
+    clue: OutlineClue
+    /** warning 表示逾期，info 表示临期或未定 */
+    severity: 'warning' | 'info'
+    message: string
+}
+
+/** 临期阈值：回收章距当前写作位置不超过这么多章即提示 */
+const CLUE_DUE_SOON = 3
+
+/**
+ * 计算线索预警：只针对「未回收」的线索，按当前写作位置比较回收章。
+ * 关键约束：回收章解析不到（引用了不存在的卷章）时按「未定」提示，不误判为逾期。
+ */
+export function findClueWarnings(plan: OutlinePlan, volumes: readonly OutlineVolume[]): ClueWarning[] {
+    const position = readWritingPosition(volumes)
+    const index = buildChapterIndex(volumes)
+    const warnings: ClueWarning[] = []
+    for (const clue of plan.clues) {
+        if (clue.status !== 'planted') {
+            continue
+        }
+        if (clue.payoff === null) {
+            warnings.push({ clue, severity: 'info', message: `「${clue.name}」尚未指定回收章` })
+            continue
+        }
+        const payoffOrder = index.map.get(`${String(clue.payoff.volumeOrder)}-${String(clue.payoff.chapterOrder)}`)
+        if (payoffOrder === undefined) {
+            warnings.push({ clue, severity: 'info', message: `「${clue.name}」的回收章不在当前大纲里` })
+            continue
+        }
+        if (payoffOrder < position) {
+            warnings.push({
+                clue,
+                severity: 'warning',
+                message: `「${clue.name}」已过回收章（第${String(payoffOrder)}章）仍未回收`,
+            })
+            continue
+        }
+        if (payoffOrder - position <= CLUE_DUE_SOON) {
+            warnings.push({
+                clue,
+                severity: 'info',
+                message: `「${clue.name}」将在第${String(payoffOrder)}章回收，还剩 ${String(payoffOrder - position)} 章`,
+            })
+        }
+    }
+    return warnings
+}
+
+/** 最小可用模板的产出：七个模块的计划 + 一卷一章的骨架 */
+export interface OutlineTemplateDraft {
+    plan: OutlinePlan
+    volume: OutlineVolume
+}
+
+/**
+ * 最小可用模板：一句话、主题、主角弧光、三幕、卷纲与章纲卡各铺一条占位内容。
+ * 关键约束：模板只提供可编辑的填空题，不伪造具体情节；主角信息取自人物卡，没有主角时留空让作者填。
+ */
+export function buildMinimalTemplate(
+    setting: ProjectSetting,
+    characters: readonly CharacterCard[],
+    chapterWordGoal: number,
+): OutlineTemplateDraft {
+    const protagonist = characters.find((character) => character.role === 'protagonist')
+    const heroName = protagonist?.name ?? '主角'
+    const volume = createVolume(1, chapterWordGoal)
+    volume.name = '第1卷 开端'
+    volume.goal = '本卷目标：主角要得到什么'
+    volume.conflict = setting.conflict.length > 0 ? setting.conflict : '本卷主要冲突：谁/什么在阻碍'
+    volume.plotline = '本卷情节脉络：因为 A，所以 B，但 C 导致 D。'
+    volume.result = '卷末结果：目标达成 / 失败 / 付出的代价，以及留下的新问题'
+    volume.granularity = 'medium'
+    const firstChapter = volume.chapters[0] ?? createChapter(1, chapterWordGoal)
+    firstChapter.title = '第1章 开端'
+    firstChapter.pov = heroName
+    firstChapter.goal = '本章目标：他此刻想得到什么'
+    firstChapter.obstacle = '阻碍：谁 / 什么阻止他'
+    firstChapter.turn = '转折：意料之外但合理的变化'
+    firstChapter.result = '结果：达成 / 失败 / 代价'
+    firstChapter.emotion = '情绪：紧张 / 爽 / 疑 / 悲'
+    firstChapter.summary = '本章梗概：一句话说清这一章发生了什么'
+    firstChapter.granularity = 'fine'
+    volume.chapters = [firstChapter]
+
+    return {
+        plan: {
+            book: {
+                logline:
+                    setting.logline.length > 0 ? setting.logline : `主角为了____，必须____，但____，最终他选择____。`,
+                conflict: setting.conflict.length > 0 ? setting.conflict : '核心冲突：主角的欲望与什么正面相撞',
+                theme: '通过____事件，探讨____。',
+                ending: setting.ending,
+                arc: protagonist?.arc ?? `主角弧光：从____到____。`,
+            },
+            acts: [
+                { id: createId('act'), name: '开端', position: '打破平衡', event: '激励事件把主角推离日常' },
+                { id: createId('act'), name: '对抗', position: '升级对抗', event: '中点反转，代价加码' },
+                { id: createId('act'), name: '高潮', position: '迫使选择', event: '主角做出不可逆的选择' },
+            ],
+            characters:
+                protagonist === undefined
+                    ? [
+                          {
+                              id: createId('cline'),
+                              characterId: '',
+                              name: '主角',
+                              desire: '他想要什么',
+                              fear: '他害怕什么',
+                              flaw: '他的缺陷',
+                              secret: '他的秘密',
+                              relation: '与谁的关系最关键',
+                              arc: '从____到____',
+                          },
+                      ]
+                    : [
+                          {
+                              id: createId('cline'),
+                              characterId: protagonist.id,
+                              name: protagonist.name,
+                              desire: protagonist.desire,
+                              fear: '',
+                              flaw: protagonist.weakness,
+                              secret: '',
+                              relation: protagonist.relation,
+                              arc: protagonist.arc,
+                          },
+                      ],
+            setting: [],
+            pacing: [],
+            clues: [],
+            timeline: [],
+        },
+        volume,
+    }
+}
+
+/**
+ * 把最小模板合并进现有计划：只填空字段与空列表，绝不覆盖作者已写内容。
+ * 关键约束：设定纲、节奏、线索与时间线不在模板范围内，一律保留现稿；
+ * 连续点两次「套用模板」结果不变，满足幂等。
+ */
+export function mergeTemplatePlan(current: OutlinePlan, template: OutlinePlan): OutlinePlan {
+    return {
+        book: {
+            logline: current.book.logline.length > 0 ? current.book.logline : template.book.logline,
+            conflict: current.book.conflict.length > 0 ? current.book.conflict : template.book.conflict,
+            theme: current.book.theme.length > 0 ? current.book.theme : template.book.theme,
+            ending: current.book.ending.length > 0 ? current.book.ending : template.book.ending,
+            arc: current.book.arc.length > 0 ? current.book.arc : template.book.arc,
+        },
+        acts: current.acts.length > 0 ? current.acts : template.acts,
+        characters: current.characters.length > 0 ? current.characters : template.characters,
+        setting: current.setting,
+        pacing: current.pacing,
+        clues: current.clues,
+        timeline: current.timeline,
+    }
 }

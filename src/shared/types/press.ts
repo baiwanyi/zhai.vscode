@@ -928,6 +928,45 @@ export interface PressExtractOutlineResult {
     message: string
 }
 
+/**
+ * 章节事实：写后回填的只读输入，来自章节文档本身（Frontmatter 的本章介绍与状态 + 索引库字数）。
+ * 关键约束：只读，不回写章节文件；summary 是「已经写成的事实」，与大纲里的计划梗概分开保存。
+ */
+export interface PressChapterFact {
+    /** 相对存储根的章节路径 */
+    path: string
+    /** 卷目录名（含序号前缀），未分卷为空串 */
+    volumeDir: string
+    /** 卷序：取自卷目录的序号前缀，与大纲卷名的「第N卷」一致 */
+    volumeOrder: number
+    /** 卷内位置（1 基） */
+    chapterIndex: number
+    /** 章节标题：取索引库口径 */
+    title: string
+    /** 本章介绍（实际摘要） */
+    summary: string
+    /** 章节文档状态：draft / revising / pending / published */
+    status: string
+    wordCount: number
+    mtime: string
+}
+
+/** press/outline/facts 请求：读某作品全部章节的写后事实 */
+export interface PressOutlineFactsRequest {
+    /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
+    dirPath: string
+}
+
+/** 判断是否为合法的章节事实请求（类型收窄辅助）：入参与作品目录请求同形 */
+export function isPressOutlineFactsRequest(payload: unknown): payload is PressOutlineFactsRequest {
+    return isPressDirPath(payload)
+}
+
+/** press/outline/facts 响应：按卷章顺序返回，供写后回填逐章对比 */
+export interface PressOutlineFactsResult {
+    chapters: PressChapterFact[]
+}
+
 /** press/extract/setting 请求：从导入素材提取作品设定与金手指线索 */
 export interface PressExtractSettingRequest {
     /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
@@ -1003,10 +1042,30 @@ export interface PressApplyBlock {
 }
 
 /**
+ * 大纲段落键：与前端 OutlineSectionKey 一一对应，也是宿主 writer 的落点表索引。
+ * 关键约束：键名一变，回写就会落到不存在的段落上，前端序列化与宿主落点表必须同步修改。
+ */
+export type PressOutlineSectionKey =
+    'book' | 'structure' | 'characters' | 'setting' | 'pacing' | 'clues' | 'timeline' | 'volumes'
+
+/** 大纲段落白名单：校验与遍历共用同一份，不接受任意字符串 */
+export const PRESS_OUTLINE_SECTION_KEYS: readonly PressOutlineSectionKey[] = [
+    'book',
+    'structure',
+    'characters',
+    'setting',
+    'pacing',
+    'clues',
+    'timeline',
+    'volumes',
+]
+
+/**
  * press/apply 请求：把工作台草稿对应的段落回写进作品文档。
  * 字段是「段落片段」而不是整篇文档，落点与保留策略由宿主决定，避免覆盖用户手写内容。
  * 设定按标签页拆分：基本信息写 README，世界观与金手指各写自己的文档，资料条目各写自己的文档。
- * 除 dirPath 外全部可选：手动保存只会带上当前标签页对应的那一份，未带的文件保持原样。
+ * 大纲按功能模块拆段：每个二级段落一段，只写变动的那几段；
+ * 除 dirPath 外全部可选：手动保存只会带上当前操作对应的那一份，未带的文件保持原样。
  */
 export interface PressApplyRequest {
     /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
@@ -1026,8 +1085,10 @@ export interface PressApplyRequest {
     items?: PressApplyBlock[]
     /** 角色块：name 用作匹配键，text 是含「## 名称」标题行的完整块（块内三级分组、四级字段） */
     characters?: PressApplyBlock[]
-    /** 大纲.md 中「分卷规划」段落的正文 */
+    /** 大纲.md 中「分卷规划」段落的正文（与 outlineSections.volumes 等价，保留给旧调用方） */
     outline?: string
+    /** 大纲.md 的七个功能模块段落：键为白名单，值为该段正文，未带的段落保持原样 */
+    outlineSections?: Partial<Record<PressOutlineSectionKey, string>>
     /** 需从 角色设定.md 移除的角色块：按块标题名匹配（一级/二级都认），与 characters 同时生效 */
     deletedCharacterNames?: string[]
     /** 需从 势力.md 移除的条目块：按二级标题名匹配 */
@@ -1103,6 +1164,19 @@ function isApplySectionText(value: unknown): boolean {
     return typeof value === 'string' && value.length <= MAX_APPLY_FIELD_LENGTH
 }
 
+/** 校验大纲分段：键必须在白名单内，每个值都是未超单份文档上限的字符串 */
+function isApplyOutlineSections(value: unknown): boolean {
+    if (value === undefined) {
+        return true
+    }
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+        return false
+    }
+    return Object.entries(value as Record<string, unknown>).every(
+        ([key, text]) => PRESS_OUTLINE_SECTION_KEYS.some((item) => item === key) && isApplySectionText(text),
+    )
+}
+
 /** 校验 README 元信息：标题与读者允许为空，但类型与字数目标必须合法 */
 function isApplyMeta(value: unknown): value is PressApplyMeta {
     if (typeof value !== 'object' || value === null) {
@@ -1138,6 +1212,7 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
         items?: unknown
         characters?: unknown
         outline?: unknown
+        outlineSections?: unknown
         deletedCharacterNames?: unknown
         deletedFactionNames?: unknown
         deletedPlaceNames?: unknown
@@ -1155,6 +1230,7 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
         candidate.items !== undefined ||
         candidate.characters !== undefined ||
         candidate.outline !== undefined ||
+        candidate.outlineSections !== undefined ||
         candidate.deletedCharacterNames !== undefined ||
         candidate.deletedFactionNames !== undefined ||
         candidate.deletedPlaceNames !== undefined ||
@@ -1171,7 +1247,8 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
         !isApplySectionText(candidate.basic) ||
         !isApplySectionText(candidate.world) ||
         !isApplySectionText(candidate.power) ||
-        !isApplySectionText(candidate.outline)
+        !isApplySectionText(candidate.outline) ||
+        !isApplyOutlineSections(candidate.outlineSections)
     ) {
         return false
     }

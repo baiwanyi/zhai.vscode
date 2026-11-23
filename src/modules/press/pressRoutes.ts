@@ -37,6 +37,7 @@ import type {
     PressExtractCharactersResult,
     PressExtractOutlineResult,
     PressExtractSettingResult,
+    PressOutlineFactsResult,
     PressProjectDetail,
     PressSemanticProgress,
     PressSnapshotCreateResult,
@@ -57,6 +58,7 @@ import {
     isPressExtractOutlineRequest,
     isPressExtractSettingRequest,
     isPressOpenDocRequest,
+    isPressOutlineFactsRequest,
     isPressSnapshotCreateRequest,
     isPressSnapshotDeleteRequest,
     isPressSnapshotListRequest,
@@ -76,6 +78,7 @@ import type {
     DocSnapshotListResult,
     DocSnapshotRestoreResult,
 } from '@shared/types/snapshot'
+import { readChapterFacts } from './chapterFacts'
 import { hasProjectFiles, listPressProjects, readProjectDetail } from './projectRepository'
 import { openProjectByDir, openProjectDoc } from './projectService'
 import { readProjectWorkspace } from './projectWorkspace'
@@ -235,6 +238,8 @@ export class PressRoutes {
                 return this.extractOutline(payload)
             case 'press/extract/setting':
                 return this.extractSetting(payload)
+            case 'press/outline/facts':
+                return this.readOutlineFacts(payload)
             case 'press/apply':
                 return this.applyWorkspace(payload)
             case 'press/snapshot/list':
@@ -312,6 +317,20 @@ export class PressRoutes {
             throw new Error(`作品不在索引中，无法提取大纲：${payload.dirPath}`)
         }
         return this.semantic.extractOutline(payload.dirPath)
+    }
+
+    /**
+     * 读取章节事实：写后回填用，返回每章的实际摘要、状态与字数。
+     * 安全约束：作品目录先按索引库回查，不采信前端路径；只读，不回写章节文件。
+     */
+    private async readOutlineFacts(payload: unknown): Promise<PressOutlineFactsResult> {
+        if (!isPressOutlineFactsRequest(payload)) {
+            throw new Error('press/outline/facts 参数非法：dirPath 须为非空字符串')
+        }
+        if (!hasProjectFiles(this.db, payload.dirPath)) {
+            throw new Error(`作品不在索引中，无法读取章节事实：${payload.dirPath}`)
+        }
+        return { chapters: await readChapterFacts(this.db, payload.dirPath) }
     }
 
     /**

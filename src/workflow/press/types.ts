@@ -10,11 +10,167 @@
  */
 import type { CharacterPortrait, PortraitStyle, PressLoreKind } from '@shared/types/press'
 
-/** 章纲状态：待写、在写、已完成、大纲已变更需复核 */
-export type PlanStatus = 'planned' | 'drafting' | 'done' | 'stale'
+/**
+ * 大纲状态：待写、已写、待改、废弃。
+ * 关键约束：这是「大纲工作文件」的状态，不是章节文件状态；旧文档里的 doing / done / stale
+ * 一律在解析层归一到这四个取值，页面与统计只认这四个，不再出现第五种。
+ */
+export type PlanStatus = 'planned' | 'written' | 'revise' | 'discarded'
 
 /** 章末钩子类型：悬念、反转、情绪高点、无 */
 export type HookKind = 'suspense' | 'twist' | 'emotion' | 'none'
+
+/** 颗粒度：粗纲（故事核与结构）、中纲（事件链与章纲）、细纲（场景与节拍） */
+export type OutlineGranularity = 'coarse' | 'medium' | 'fine'
+
+/**
+ * 功能模块：与 大纲.md 的二级段落一一对应，导航栏按此顺序渲染。
+ * 卷章模块承载四层级里的卷 / 章 / 场景，其余七个模块各占一个段落。
+ */
+export type OutlineModuleKey =
+    'book' | 'structure' | 'characters' | 'setting' | 'pacing' | 'clue' | 'timeline' | 'volume'
+
+/** 大纲段落键：与宿主 writer 的段落落点表、PressApplyRequest.outlineSections 共用 */
+export type OutlineSectionKey =
+    'book' | 'structure' | 'characters' | 'setting' | 'pacing' | 'clues' | 'timeline' | 'volumes'
+
+/**
+ * 章节引用：卷序 + 卷内章序。
+ * 关键约束：线索、时间线、节奏表都跨章引用，一律用这个组合定位；
+ * 章 id 由解析器按位置现算，卷章重排后即失效，不能写进文档。
+ */
+export interface OutlineChapterRef {
+    /** 卷序：与卷名里的「第N卷」一致 */
+    volumeOrder: number
+    /** 卷内章序：与该卷章纲的 order 一致 */
+    chapterOrder: number
+}
+
+/** 结构纲的一个阶段：三幕 / 起承转合 / 英雄之旅的节拍均可落在这里 */
+export interface OutlineAct {
+    id: string
+    /** 阶段名：建置 / 对抗 / 解决 / 激励事件 / 中点… */
+    name: string
+    /** 位置说明：该阶段在全书里的作用 */
+    position: string
+    /** 关键事件：这一阶段真正发生了什么 */
+    event: string
+}
+
+/** 全书纲：一页纸故事核，防止写偏 */
+export interface OutlineBook {
+    /** 一句话梗概 */
+    logline: string
+    /** 核心冲突 */
+    conflict: string
+    /** 主题 */
+    theme: string
+    /** 结局方向 */
+    ending: string
+    /** 主角弧光：从什么到什么 */
+    arc: string
+}
+
+/** 人物纲：每个主要人物一条，事件必须能逼他做选择 */
+export interface OutlineCharacterLine {
+    id: string
+    /** 关联人物卡 id：按姓名匹配成功后回填，未匹配为空串 */
+    characterId: string
+    name: string
+    desire: string
+    fear: string
+    flaw: string
+    secret: string
+    relation: string
+    /** 弧光终点 */
+    arc: string
+}
+
+/** 设定纲条目：只写会推动情节的规则与代价 */
+export interface OutlineSettingNote {
+    id: string
+    name: string
+    rule: string
+    cost: string
+    note: string
+}
+
+/** 节奏类型：紧张、铺垫、爽点、虐点、喘息 */
+export type PacingKind = 'tension' | 'setup' | 'payoff' | 'sorrow' | 'breath'
+
+/** 节奏/情绪行：一章一档，避免连续同类章节 */
+export interface OutlinePacingEntry {
+    id: string
+    chapterOrder: number
+    kind: PacingKind
+    /** 张力 1-5 */
+    tension: number
+}
+
+/** 伏笔状态：已埋未收、已回收、已废弃 */
+export type ClueStatus = 'planted' | 'paid-off' | 'dropped'
+
+/** 伏笔线索：埋什么、第几章埋、何时回收、由谁触发 */
+export interface OutlineClue {
+    id: string
+    name: string
+    /** 埋设章：未定则 null */
+    plant: OutlineChapterRef | null
+    /** 回收章：未定则 null，逾期预警据此计算 */
+    payoff: OutlineChapterRef | null
+    /** 触发者：CharacterCard.id，落盘写姓名 */
+    triggerId: string
+    status: ClueStatus
+    note: string
+}
+
+/** 时间线事件：多线、群像与悬疑叙事的顺序依据 */
+export interface OutlineTimelineEvent {
+    id: string
+    /** 故事内时间：自由文本（第三年冬 / 事发当夜） */
+    when: string
+    title: string
+    /** 涉及章节：按卷序 + 章序引用 */
+    refs: OutlineChapterRef[]
+    characterIds: string[]
+}
+
+/**
+ * 场景纲：一场戏的最小单元，挂在章纲之下。
+ * 关键约束：没有欲望、阻碍与变化的场景通常可以删或合并，编辑器只给提示不阻断保存。
+ */
+export interface OutlineScene {
+    id: string
+    order: number
+    title: string
+    /** 谁想要什么 */
+    desire: string
+    /** 谁/什么阻止 */
+    obstacle: string
+    /** 做了什么选择 */
+    choice: string
+    /** 结果：达成 / 失败 / 代价 */
+    result: string
+    /** 情绪变化：从什么到什么 */
+    emotion: string
+}
+
+/** 大纲的功能模块集合：除卷章外的七个段落一次装配进工作区 */
+export interface OutlinePlan {
+    book: OutlineBook
+    /** 结构纲：阶段与节拍 */
+    acts: OutlineAct[]
+    /** 人物纲 */
+    characters: OutlineCharacterLine[]
+    /** 设定纲 */
+    setting: OutlineSettingNote[]
+    /** 节奏 / 情绪 */
+    pacing: OutlinePacingEntry[]
+    /** 伏笔线索表 */
+    clues: OutlineClue[]
+    /** 时间线 */
+    timeline: OutlineTimelineEvent[]
+}
 
 /** 角色分类：主角、配角、反派、中立、龙套 */
 export type CharacterRole = 'protagonist' | 'supporting' | 'antagonist' | 'neutral' | 'extra'
@@ -49,7 +205,11 @@ export interface OutlineBeat {
     isDone: boolean
 }
 
-/** 章纲：一行即一「章」，承载与该章正文相关的全部规划字段 */
+/**
+ * 章纲：承载一章的全部规划字段，是一张可直接落笔的「章纲卡」。
+ * 关键约束：summary 是计划、actualSummary 是正文事实，两者永不同步覆盖；
+ * 场景纲是该章的下一层，没有场景时章纲仍然完整可用。
+ */
 export interface OutlineChapter {
     id: string
     /** 卷内序号，从 1 开始，展示与导出均以此排序 */
@@ -57,8 +217,24 @@ export interface OutlineChapter {
     title: string
     /** 计划梗概：打算写什么，与章节文件里的实际摘要分离 */
     summary: string
+    /** 正文事实摘要：写后回填写入，只读展示，不回写章节文件 */
+    actualSummary: string
     status: PlanStatus
     beats: OutlineBeat[]
+    /** 场景纲：章之下的最小写作单元，数组顺序即落笔顺序 */
+    scenes: OutlineScene[]
+    /** 视角人物：本章由谁的眼睛看 */
+    pov: string
+    /** 场景目标：他此刻想得到什么 */
+    goal: string
+    /** 阻碍：谁/什么阻止 */
+    obstacle: string
+    /** 转折：意料之外但合理的变化 */
+    turn: string
+    /** 结果：目标达成 / 失败 / 代价 */
+    result: string
+    /** 情绪：紧张 / 爽 / 疑 / 悲 */
+    emotion: string
     /** 出场人物，值为 CharacterCard.id */
     characterIds: string[]
     location: string
@@ -68,9 +244,11 @@ export interface OutlineChapter {
     hook: HookKind
     /** 张力 1-5，用于节奏曲线 */
     tension: number
+    /** 颗粒度标记：这一章被细化到哪一档，写盘后可在视图里按档筛选 */
+    granularity: OutlineGranularity
 }
 
-/** 卷纲：一部作品下的一卷，含阶段目标、冲突、情节脉络与关键转折 */
+/** 卷/幕纲：一部作品下的一卷（也可当作一幕），含目标、冲突、转折与卷末结果 */
 export interface OutlineVolume {
     id: string
     name: string
@@ -80,6 +258,10 @@ export interface OutlineVolume {
     plotline: string
     /** 关键转折：本卷剧情走向真正改变的地方，逐条记录 */
     turningPoints: string[]
+    /** 卷末结果：本卷收束后留下什么新问题 */
+    result: string
+    /** 颗粒度标记：本卷细化到哪一档 */
+    granularity: OutlineGranularity
     chapters: OutlineChapter[]
 }
 
@@ -218,12 +400,17 @@ export interface LoreEntry {
 /** 新建条目的初始值：不含 id，id 一律由 utils.createLoreEntry 生成，避免调用方伪造主键 */
 export type LoreSeed = Partial<Omit<LoreEntry, 'id'>>
 
-/** 工作台数据：三个步骤共享的同一份作品草稿 */
+/**
+ * 工作台数据：各步骤共享的同一份作品草稿。
+ * volumes 是四层级里的「卷—章—场景」，plan 是其余七个功能模块的集合；
+ * 两者都来自同一份 大纲.md，写入时各段落独立落盘，互不覆盖。
+ */
 export interface OutlineWorkspace {
     setting: ProjectSetting
     characters: CharacterCard[]
     lore: LoreEntry[]
     volumes: OutlineVolume[]
+    plan: OutlinePlan
 }
 
 /** 向导参数：生成大纲前收窄的输入项 */

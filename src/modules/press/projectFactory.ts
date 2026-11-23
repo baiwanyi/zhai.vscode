@@ -154,6 +154,61 @@ export function buildReadmeContent(name: string, audience: PressAudience, create
 }
 
 /**
+ * 大纲骨架：八个功能模块段落一次铺开，作者从全书纲开始填，卷章从分卷规划开始拆。
+ * 关键约束：段落标题必须与 workspaceWriter 的落点表、Webview 解析端的段落关键词完全一致，
+ * 改名会让回写落到新段落、旧内容留在原地，表现为「保存后大纲消失」。
+ */
+function buildOutlineContent(): string {
+    return [
+        '# 大纲',
+        '',
+        '## 全书纲',
+        '',
+        '### 一句话梗概',
+        '',
+        '### 核心冲突',
+        '',
+        '### 主题',
+        '',
+        '### 结局方向',
+        '',
+        '### 主角弧光',
+        '',
+        '## 结构纲',
+        '',
+        '### 开端',
+        '',
+        '- 位置：打破平衡',
+        '- 事件：',
+        '',
+        '### 对抗',
+        '',
+        '- 位置：升级对抗',
+        '- 事件：',
+        '',
+        '### 高潮',
+        '',
+        '- 位置：迫使选择',
+        '- 事件：',
+        '',
+        '## 人物纲',
+        '',
+        '## 设定纲',
+        '',
+        '## 节奏情绪',
+        '',
+        '## 伏笔线索',
+        '',
+        '## 时间线',
+        '',
+        '## 主线',
+        '',
+        '## 分卷规划',
+        '',
+    ].join('\n')
+}
+
+/**
  * 生成作品级文档：README、大纲、角色设定、设定，以及设定页按标签页拆分的
  * 世界观、金手指与势力 / 地点 / 物品三份条目文档。
  * 新建作品与导入作品共用同一份内容来源，避免两处模板分叉；不含任何章节文件。
@@ -161,7 +216,7 @@ export function buildReadmeContent(name: string, audience: PressAudience, create
 export function buildProjectDocuments(name: string, audience: PressAudience, now: Date): ProjectSkeletonFile[] {
     return [
         { relativePath: PROJECT_README_NAME, content: buildReadmeContent(name, audience, toDateString(now)) },
-        { relativePath: '大纲.md', content: '# 大纲\n\n## 主线\n\n## 分卷规划\n' },
+        { relativePath: '大纲.md', content: buildOutlineContent() },
         {
             relativePath: '角色设定.md',
             content:

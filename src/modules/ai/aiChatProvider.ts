@@ -101,6 +101,7 @@ const PRESS_WORKSPACE_METHODS: ReadonlySet<string> = new Set([
     'press/extract/characters',
     'press/extract/outline',
     'press/extract/setting',
+    'press/outline/facts',
     'press/apply',
     'press/snapshot/list',
     'press/snapshot/create',

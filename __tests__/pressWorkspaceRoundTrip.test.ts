@@ -87,23 +87,45 @@ const VOLUMES: OutlineVolume[] = [
         conflict: '被当成异端',
         plotline: '薛牧借现代娱乐业入宗，先被排挤，再以话本立名，最后卷入宗门内斗。',
         turningPoints: ['文抄成名', '内斗站队', '被逐出宗门'],
+        result: '被逐出宗门，自立门户',
+        granularity: 'medium',
         chapters: [
             {
                 id: 'ch-1',
                 order: 1,
                 title: '开局',
                 summary: '穿越落鼎，初识修真界。',
-                status: 'planned',
+                actualSummary: '薛牧在破庙醒来，被当做异端追捕。',
+                status: 'written',
                 beats: [
                     { id: 'beat-1', text: '落鼎', isDone: false },
                     { id: 'beat-2', text: '遇见夏侯荻', isDone: true },
                 ],
+                scenes: [
+                    {
+                        id: 'scene-1-1',
+                        order: 1,
+                        title: '雪夜破庙',
+                        desire: '活下去',
+                        obstacle: '追兵堵住庙门',
+                        choice: '用话本故事换来一线生机',
+                        result: '暂时脱身，暴露了口音',
+                        emotion: '惊恐到镇定',
+                    },
+                ],
+                pov: '薛牧',
+                goal: '在追兵手里活下来',
+                obstacle: '异端审判队',
+                turn: '夏侯荻出手相救',
+                result: '脱身但欠下人情',
+                emotion: '紧张',
                 characterIds: ['12345678'],
                 location: '星月宗',
                 wordGoal: 2500,
                 wordCount: 0,
                 hook: 'suspense',
                 tension: 3,
+                granularity: 'fine',
             },
         ],
     },
@@ -263,15 +285,34 @@ describe('草稿回写往返', () => {
             order: 1,
             title: '开局',
             summary: '穿越落鼎，初识修真界。',
-            status: 'planned',
+            actualSummary: '薛牧在破庙醒来，被当做异端追捕。',
+            status: 'written',
             hook: 'suspense',
             tension: 3,
             wordGoal: 2500,
             wordCount: 0,
             location: '星月宗',
             characterIds: ['12345678'],
+            pov: '薛牧',
+            goal: '在追兵手里活下来',
+            obstacle: '异端审判队',
+            turn: '夏侯荻出手相救',
+            result: '脱身但欠下人情',
+            emotion: '紧张',
+            granularity: 'fine',
         })
         expect(parsed.volumes[0]?.chapters[0]?.beats.map((beat) => beat.text)).toEqual(['落鼎', '遇见夏侯荻'])
         expect(parsed.volumes[0]?.chapters[0]?.beats[1]?.isDone).toBe(true)
+        // 场景纲往返：五级标题块，五项字段各归其位
+        expect(parsed.volumes[0]?.chapters[0]?.scenes).toHaveLength(1)
+        expect(parsed.volumes[0]?.chapters[0]?.scenes[0]).toMatchObject({
+            order: 1,
+            title: '雪夜破庙',
+            desire: '活下去',
+            obstacle: '追兵堵住庙门',
+            choice: '用话本故事换来一线生机',
+            result: '暂时脱身，暴露了口音',
+            emotion: '惊恐到镇定',
+        })
     })
 })
