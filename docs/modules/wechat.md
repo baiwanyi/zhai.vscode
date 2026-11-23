@@ -524,7 +524,7 @@ interface WechatPublishResult {
 
 - 路由仍由 `core/routing.ts` 的纯函数承担，`dashboardScreen.tsx` 是唯一切换点，页面只接收导航回调。
 - `accountId` 为本地生成的短 id（`^[a-z0-9-]{1,64}$`），解析时按白名单收窄，不合法即回落首页，避免 hash 承载任意字符串。
-- `readContentScope` 已扩展：`context.selectedModule === 'wechat'` 也判为 wechat 归属（公众号管理不再是「打开 `wechat/` 目录文档」的场景），否则工作流侧栏不会出现专属分区；作用域目录同时回落到模块键，避免公众号对话与 root 共用一份会话。
+- `readContentScope` 已扩展：`context.selectedModule === 'wechat'` 也判为 wechat 归属（公众号管理不再是「打开 `wechat/` 目录文档」的场景），否则工作流侧栏不会出现专属分区；对话作用域按账号聚合（`wechat/{appid}`，该账号下所有批次与文章共用一份会话），非账号目录文档与「选了模块」场景回落到模块键，避免公众号对话与 root 共用一份会话。
 - `SCOPE_SECTIONS.wechat` 已由空数组扩为六项，`pressSections.ts` 的分区白名单同步扩充，避免「类型里有、校验里缺」导致宿主视图请求被静默丢弃。
 - 页内路由本身不会设置 `selectedModule`：`#/wechat` 与 `#/wechat/{accountId}` 挂载时会调用 `workflow/selectModule`（只设模块、不聚焦面板）补齐该状态，否则侧栏六分区在正常操作下不可达。
 

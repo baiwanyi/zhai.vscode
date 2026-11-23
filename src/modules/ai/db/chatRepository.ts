@@ -15,7 +15,7 @@ export interface ConversationRow {
     title: string
     /** 模式标签：仅归档展示，当前固定 craft */
     mode: string
-    /** 会话所属作用域（作品目录，形如 press/{作品名}）；NULL 表示不属于任何作品的通用对话 */
+    /** 会话所属作用域（作品目录 / 文档路径 / 公众号批次目录 / 模块键）；NULL 表示通用对话 */
     projectDir: string | null
     model: string
     /** 创建会话时使用的 AI 通道，切换通道后旧会话号不再复用 */

@@ -21,6 +21,29 @@ export function isWechatBatchDocPath(relativePath: string): boolean {
     return WECHAT_BATCH_DOC_PATTERN.test(relativePath)
 }
 
+/** 账号目录段数：wechat/{appid} 两段，第三段起是批次目录（post/...）或账号级文件 */
+const WECHAT_ACCOUNT_DIR_DEPTH = 2
+
+/**
+ * 读取账号目录：公众号文档路径的前两段（wechat/{appid}），不在账号目录下返回 null。
+ * 关键约束：对话作用域按账号聚合——同一账号下的所有批次与文章共用一份会话，故不取文档或批次路径；
+ * appid 复用 APP_ID_PATTERN 的形态判定，避免把 wechat/其它临时目录误当成账号目录。
+ */
+export function readWechatAccountDir(relativePath: string | null): string | null {
+    if (relativePath === null) {
+        return null
+    }
+    const segments = relativePath.split('/')
+    if (segments.length <= WECHAT_ACCOUNT_DIR_DEPTH) {
+        return null
+    }
+    const [module, appId] = segments
+    if (module !== WECHAT_MODULE_DIR || appId === undefined || !APP_ID_PATTERN.test(appId)) {
+        return null
+    }
+    return `${module}/${appId}`
+}
+
 /** 账号类型：订阅号与服务号的能力差异见 wechat.md 第 8 节 */
 export const WECHAT_ACCOUNT_TYPES = ['subscription', 'service'] as const
 

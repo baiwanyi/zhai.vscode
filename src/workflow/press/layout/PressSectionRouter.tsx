@@ -29,7 +29,7 @@ interface PressSectionRouterProps {
     workspace: OutlineWorkspace
     /** 当前作品目录：快照与人物设定图的作用域 */
     dirPath: string
-    /** 对话作用域：当前文档相对路径，未定位到文档时为 null（回落到作品目录） */
+    /** 对话作用域：作品目录（整个作品一份会话），为空时回落到 dirPath */
     chatScope: string | null
     mutations: PressMutations
     /** 大纲页的「去写正文」：切到对话分区 */
@@ -130,7 +130,7 @@ export function PressSectionRouter({
         return <WorkflowUsage />
     }
     // 对话由 WorkflowPress 在外层先处理（作品文档未读完也能直接进对话页），这里只作兜底：
-    // key 跟随作用域，切文档即重建对话页；没有定位到文档时回落到作品目录
+    // key 跟随作用域（作品目录），作品内换章不重建对话页
     const scope = chatScope ?? dirPath
     return <WorkflowAiChat key={scope} projectDir={scope} projectTitle={workspace.setting.title} />
 }

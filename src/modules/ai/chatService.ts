@@ -176,7 +176,7 @@ export class AiChatService implements vscode.Disposable {
     private readonly inputDrafts = new Map<string, AiChatDraft>()
     /** 当前活跃会话 id，供上下文协议定位待发送列表 */
     private activeConversationId: string | null = null
-    /** 当前面板作用域（文档相对路径，缺省为作品目录 / 模块键）：无作用域入参的操作沿用该值，null 为通用对话 */
+    /** 当前面板作用域（作品目录 / 文档路径 / 公众号批次目录 / 模块键）：无作用域入参的操作沿用该值，null 为通用对话 */
     private activeProjectDir: string | null = null
     /** 当前生成使用的审批桥：前端回包据此唤醒等待中的工具调用 */
     private activePermission: PermissionBroker | null = null

@@ -15,8 +15,8 @@ import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import type { ToastService } from '@modules/common/toastService'
 import { getActiveDocument, readRichSelection } from '@modules/editor/activeDocument'
 import type { EditorChatContextResult } from '@shared/types/editor'
-import { isOpenWorkflowRequest, NOTES_MODULE_KEY, WECHAT_MODULE_KEY } from '@shared/types/workflow'
-import type { WorkflowContextState } from '@shared/types/workflow'
+import { readWechatAccountDir } from '@shared/types/wechat'
+import { isOpenWorkflowRequest, NOTES_MODULE_KEY, WECHAT_MODULE_KEY, WEIBO_MODULE_KEY } from '@shared/types/workflow'
 import {
     createContextRefs,
     createDocumentContextRef,
@@ -239,33 +239,21 @@ export async function focusChatSection(router: WorkflowRouter): Promise<void> {
     await vscode.commands.executeCommand('zhai.workflow.focus')
 }
 
-/** 文档是否属于当前归属：作品看作品目录前缀，笔记 / 公众号看模块目录前缀 */
-function isDocumentInScope(context: WorkflowContextState, docPath: string): boolean {
-    if (context.module === NOTES_MODULE_KEY) {
-        return docPath.startsWith(`${NOTES_MODULE_KEY}/`)
-    }
-    if (context.module === WECHAT_MODULE_KEY) {
-        return docPath.startsWith(`${WECHAT_MODULE_KEY}/`)
-    }
-    return context.projectDir !== null && docPath.startsWith(`${context.projectDir}/`)
-}
-
 /**
  * 当前文档的会话作用域：与前端 contentScope 的 readScopeDir 同口径——
- * 每个文档各自一份对话，文档属于当前归属时取文档相对路径；
- * 否则回落到旧口径（笔记取模块目录、公众号取模块键、作品取目录）。
+ * 微博整个模块一份、笔记每篇文档一份、作品整个作品一份、公众号每个账号一份；
+ * 公众号的非账号目录文档与「选了模块」场景回落到模块键，避免与管理面板落到同一 root 作用域。
  */
 function readDocumentScope(router: WorkflowRouter): string | null {
     const context = router.getContext()
-    const docPath = context.docPath
-    if (docPath !== null && isDocumentInScope(context, docPath)) {
-        return docPath
-    }
-    if (context.module === NOTES_MODULE_KEY) {
-        return context.module
+    if (context.module === WEIBO_MODULE_KEY) {
+        return WEIBO_MODULE_KEY
     }
     if (context.module === WECHAT_MODULE_KEY || context.selectedModule === WECHAT_MODULE_KEY) {
-        return WECHAT_MODULE_KEY
+        return readWechatAccountDir(context.docPath) ?? WECHAT_MODULE_KEY
+    }
+    if (context.module === NOTES_MODULE_KEY) {
+        return context.docPath ?? NOTES_MODULE_KEY
     }
     return context.projectDir
 }

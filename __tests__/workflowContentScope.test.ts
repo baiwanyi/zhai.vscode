@@ -1,9 +1,10 @@
 /**
- * 工作流内容归属的单元测试：覆盖公众号「选模块」判定、作用域回落与专属分区清单。
+ * 工作流内容归属的单元测试：覆盖公众号「选模块」判定、对话作用域粒度与专属分区清单。
  * 纯函数测试，不依赖宿主：归属、作用域与可用分区必须由同一处推导，测试即锁定这套口径。
- * 重点防的是三条回归：公众号在「选了模块但没打开该模块文档」时丢失归属；
+ * 重点防的是四条回归：公众号在「选了模块但没打开该模块文档」时丢失归属；
  * 公众号对话作用域回落到 root，与管理面板共用同一个作用域；
- * 笔记的会话作用域退回模块目录，导致同一目录下所有笔记共用一份对话。
+ * 笔记的会话作用域退回模块目录，导致同一目录下所有笔记共用一份对话；
+ * 作品与公众号账号被按文档 / 批次拆分，导致同一作品换章、同一账号换批次就断掉上下文。
  */
 import { describe, expect, it } from 'vitest'
 import type { WorkflowContextState } from '../src/shared/types/workflow'
@@ -69,19 +70,45 @@ describe('readContentScope', () => {
 })
 
 describe('readScopeDir', () => {
-    it('作品内有活跃文档时按文档路径隔离', () => {
-        const state = context({ module: 'press', projectDir: 'press/剑来', docPath: 'press/剑来/第一章.md' })
-        expect(readScopeDir(state, 'press')).toBe('press/剑来/第一章.md')
+    it('作品内换章不切作用域：整个作品共用一份对话', () => {
+        const first = context({ module: 'press', projectDir: 'press/剑来', docPath: 'press/剑来/第一章.md' })
+        const second = context({ module: 'press', projectDir: 'press/剑来', docPath: 'press/剑来/第二章.md' })
+        expect(readScopeDir(first, 'press')).toBe('press/剑来')
+        expect(readScopeDir(second, 'press')).toBe('press/剑来')
     })
 
-    it('作品内未定位到文档时回落到作品目录', () => {
+    it('作品内未定位到文档时同样取作品目录', () => {
         const state = context({ module: 'press', projectDir: 'press/剑来' })
         expect(readScopeDir(state, 'press')).toBe('press/剑来')
     })
 
-    it('公众号文档同样按文档路径隔离', () => {
-        const state = context({ module: WECHAT_MODULE_KEY, docPath: 'wechat/账号/批次.md' })
-        expect(readScopeDir(state, 'wechat')).toBe('wechat/账号/批次.md')
+    it('公众号按账号聚合：同账号内不同批次、不同文章共用一份对话', () => {
+        const first = context({
+            module: WECHAT_MODULE_KEY,
+            docPath: 'wechat/wx1234567890/post/202611021530/第一篇.md',
+        })
+        const second = context({
+            module: WECHAT_MODULE_KEY,
+            docPath: 'wechat/wx1234567890/post/202611022030/第二篇.md',
+        })
+        expect(readScopeDir(first, 'wechat')).toBe('wechat/wx1234567890')
+        expect(readScopeDir(second, 'wechat')).toBe('wechat/wx1234567890')
+    })
+
+    it('不同账号各不相同', () => {
+        const left = context({ module: WECHAT_MODULE_KEY, docPath: 'wechat/wx1234567890/post/202611021530/篇.md' })
+        const right = context({ module: WECHAT_MODULE_KEY, docPath: 'wechat/wx0987654321/post/202611021530/篇.md' })
+        expect(readScopeDir(left, 'wechat')).not.toBe(readScopeDir(right, 'wechat'))
+    })
+
+    it('账号目录下的账号级文档同样归到该账号', () => {
+        const state = context({ module: WECHAT_MODULE_KEY, docPath: 'wechat/wx1234567890/账号说明.md' })
+        expect(readScopeDir(state, 'wechat')).toBe('wechat/wx1234567890')
+    })
+
+    it('不在账号目录下的文档回落到模块键', () => {
+        const state = context({ module: WECHAT_MODULE_KEY, docPath: 'wechat/临时笔记.md' })
+        expect(readScopeDir(state, 'wechat')).toBe(WECHAT_MODULE_KEY)
     })
 
     it('公众号在选模块场景回落到模块键，而不是沿用 root', () => {

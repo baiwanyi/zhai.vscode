@@ -6,8 +6,10 @@
  * 模块选定为持久状态（跨面板重建保留），仅在用户改选、清除，或用户切到另一份文档时变化——
  * 板块选定不能压住用户随后打开的文档，否则从公众号页打开作品/笔记时菜单会停在上一个模块；
  * 广播载荷即变更后的完整事实，订阅端不得回查编辑器重新推导，否则显式打开作品的意图会被旧编辑器状态覆盖；
- * 作品目录以编辑器所在的 press/{作品名}/... 为准；编辑器落在笔记或根目录时视为未打开作品（projectDir 清空），
+ * 作品目录以编辑器所在的 press/{作品名}/... 为准；编辑器落到笔记或公众号文档时视为离开作品（projectDir 清空），
  * 否则前端会把笔记也判成作品归属，专属分区与对话作用域都切不过去；
+ * 但编辑器落在根目录文档（或尚未切到作品文档）时保留「显式打开的作品」——打开作品即可看到作品菜单，
+ * 不必先点开某一章；该显式意图只在切到笔记 / 公众号文档时失效；
  * 仪表盘与工作台打开作品时以显式目录立即广播（该次广播不经编辑器推导），随后编辑器事实与之收敛；
  * 索引尚未收录时仍按路径识别，避免新建作品打不开工作台；
  * 焦点离开文本编辑器（打开设置、切到其它视图）不改变场景事实，沿用上一次的 scene / module / projectDir；
@@ -68,8 +70,13 @@ export class WorkflowRouter implements vscode.Disposable {
     private selectedModule: string | null = null
     /** 选定模块时活跃的文档键：与之后的活跃文档不一致，说明用户已切到别的文档，选定随之失效 */
     private selectedModuleDoc: string | null = null
-    /** 显式选定的作品目录：仪表盘与工作台打开作品时写入，编辑器不在作品内时以它为准 */
+    /** 当前作品目录：编辑器在作品内时取编辑器事实，否则取显式打开的作品；两者都没有为 null */
     private projectDir: string | null = null
+    /**
+     * 用户显式打开的作品：编辑器落在根目录文档或尚未切到作品文档时仍保留，
+     * 使「打开作品但还没点开章节」也能看到作品专属分区；切到笔记 / 公众号文档时清空。
+     */
+    private explicitProjectDir: string | null = null
     /** 上次产出的事实，用于抑制无变化的重复广播 */
     private lastContext: WorkflowContextState | null = null
 
@@ -133,6 +140,7 @@ export class WorkflowRouter implements vscode.Disposable {
      */
     public selectProject(dirPath: string): void {
         this.projectDir = dirPath
+        this.explicitProjectDir = dirPath
         // 打开作品即离开原先的模块选定（如在公众号页选过模块），否则前端会继续按选定模块判归属
         this.dropStaleSelectedModule()
         const next: WorkflowContextState = {
@@ -141,7 +149,8 @@ export class WorkflowRouter implements vscode.Disposable {
             module: PRESS_MODULE_DIR,
             selectedModule: this.selectedModule,
             projectDir: dirPath,
-            // 作品按目录作用域，文档路径在编辑器切到作品文档后由下一次 refresh 补齐
+            // 作品按目录作用域：打开瞬间还没落到具体文档，编辑器随后切到作品文档时由 refresh 补齐；
+            // 编辑器停在别处时保持 null，不把别处文档绑到作品上（快照等按作品级处理）
             docPath: null,
             // 作品文档必为 Markdown：此时编辑器可能尚未切过去，先按可用处理，待编辑器事实收敛
             isMarkdown: true,
@@ -155,10 +164,11 @@ export class WorkflowRouter implements vscode.Disposable {
 
     /** 清除作品选定并立即广播：作品被删除后调用，工作台据此回到初始页 */
     public clearProject(): void {
-        if (this.projectDir === null) {
+        if (this.projectDir === null && this.explicitProjectDir === null) {
             return
         }
         this.projectDir = null
+        this.explicitProjectDir = null
         this.dropStaleSelectedModule()
         const next: WorkflowContextState = {
             scene: this.lastContext?.scene ?? 'idle',
@@ -248,34 +258,46 @@ export class WorkflowRouter implements vscode.Disposable {
         const relativePath = this.indexService.toRelativePath(active.uri)
         // 必须用 findIndexedFile：listFilesByPaths 只认 notes/，会把作品与公众号文档判成索引外
         const known = findIndexedFile(this.db, relativePath)
-        // 作品目录完全以当前编辑器为准：落在作品内取该作品，落在笔记/根目录则清空。
-        // 沿用上一次选定的作品会让前端把笔记也判成作品归属，专属分区与对话作用域都切不过去
-        const editorProject = readProjectDir(known?.path ?? relativePath)
-        this.projectDir = editorProject
+        const docPath = known?.path ?? relativePath
+        const moduleKey = readModuleKey(docPath)
+        const editorProject = readProjectDir(docPath)
+        // 编辑器切到笔记 / 公众号文档：用户已离开作品语境，显式打开的作品随之失效，
+        // 否则从作品切到笔记时菜单会停在作品上（笔记与公众号的归属判定排在作品之前）
+        if (moduleKey === NOTES_MODULE_KEY || moduleKey === WECHAT_MODULE_KEY) {
+            this.explicitProjectDir = null
+        }
+        // 作品目录：编辑器落在作品内以它为准；落在根目录文档（或尚未切到作品文档）时保留显式打开的作品，
+        // 这样「打开作品但还没点开章节」也能看到作品专属分区，而不是只剩常驻分区
+        this.projectDir = editorProject ?? this.explicitProjectDir
+        // 显式作品与当前文档不一致时，文档路径不参与作品页的单文件绑定（快照等按作品级处理）
+        const isDocInProject = this.projectDir !== null && docPath.startsWith(`${this.projectDir}/`)
+        const contextDocPath = this.projectDir === null || isDocInProject ? docPath : null
         if (known === null) {
             // 索引尚未收录（如刚创建的笔记、刚解除排除的公众号批次稿）：仍按一级目录识别模块，
             // 否则面板要等下一次索引广播才切到对应归属；作品目录继续以编辑器路径为准
-            const moduleKey = readModuleKey(relativePath)
             const isModuleDir =
                 moduleKey === NOTES_MODULE_KEY || moduleKey === WECHAT_MODULE_KEY || moduleKey === PRESS_MODULE_DIR
-            const fallbackModule = isModuleDir ? moduleKey : editorProject === null ? ROOT_MODULE_KEY : PRESS_MODULE_DIR
+            const fallbackModule = isModuleDir
+                ? moduleKey
+                : this.projectDir === null
+                  ? ROOT_MODULE_KEY
+                  : PRESS_MODULE_DIR
             return {
                 scene: fallbackModule === NOTES_MODULE_KEY ? 'editorNote' : 'idle',
                 module: fallbackModule,
                 selectedModule,
                 projectDir: this.projectDir,
-                docPath: relativePath,
+                docPath: contextDocPath,
                 isMarkdown,
             }
         }
-        const moduleKey = readModuleKey(known.path)
         const scene: WorkflowSceneKind = moduleKey === NOTES_MODULE_KEY ? 'editorNote' : 'idle'
         return {
             scene,
             module: moduleKey,
             selectedModule,
             projectDir: this.projectDir,
-            docPath: relativePath,
+            docPath: contextDocPath,
             isMarkdown,
         }
     }

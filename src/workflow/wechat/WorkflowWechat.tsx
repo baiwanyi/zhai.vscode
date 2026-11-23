@@ -27,7 +27,7 @@ import { WorkflowResidentSection } from '../layout/WorkflowResidentSection'
 interface WorkflowWechatProps {
     /** 当前分区：由 WorkflowScreen 托管，与侧边导航同源 */
     section: WorkflowSection
-    /** 对话作用域目录：公众号取模块目录，交给常驻分区复用 */
+    /** 对话作用域目录：公众号按账号（wechat/{appid}），同一账号下所有批次共用一份对话；非账号目录回落模块键 */
     scopeDir: string | null
     /** 当前活跃文档的相对路径：常驻分区里的单文件快照以它为键 */
     docPath: string | null

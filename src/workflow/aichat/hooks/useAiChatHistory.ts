@@ -11,7 +11,7 @@ import { toErrorText } from '@shared/utils/error'
 /** 历史列表 hook 的对外依赖：错误由共享提示 hook 持有 */
 export interface UseAiChatHistoryOptions {
     onError: (error: string | null) => void
-    /** 会话作用域（作品目录）：只列出该作品下的历史对话，null 表示不属于任何作品的通用对话 */
+    /** 会话作用域（模块键 / 文档路径 / 作品目录 / 公众号批次目录）：只列出该作用域下的历史对话，null 表示通用对话 */
     projectDir: string | null
 }
 

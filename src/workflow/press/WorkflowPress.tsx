@@ -36,7 +36,7 @@ export function WorkflowPress({ context, section, onSelectSection }: WorkflowPre
         onSelectSection('chat')
     }, [onSelectSection])
 
-    // 对话作用域：当前文档在作品内取文档路径，否则回落作品目录
+    // 对话作用域：整个作品一份对话，作品内换章不切会话
     const scopeDir = readScopeDir(context, 'press')
 
     /**

@@ -1,15 +1,18 @@
 /**
  * 内容归属：把宿主下发的当前文档事实归到「作品 / 笔记 / 公众号」三类之一，决定专属分区组与对话作用域。
  * 复用约定：笔记模块键取 shared/types/workflow 的 NOTES_MODULE_KEY，作品目录以 projectDir 为准
- * （宿主只从 press/{作品名}/... 推导），前端不自行拼接路径；归属为 null 表示文档不属于任何已接入模块。
+ * （宿主只从 press/{作品名}/... 推导），公众号账号目录取 shared/types/wechat 的 readWechatAccountDir，
+ * 前端不自行拼接路径；归属为 null 表示文档不属于任何已接入模块。
  * 关键约束：归属、专属分区、作用域目录都由本文件推导，导航、内容区与对话页不得各自判断，避免口径漂移；
  * 作品归属以 projectDir 存在为准——press 一级目录下的散文档不算作品文档，只显示常驻分区；
+ * 对话粒度与归属一一对应：微博整个模块一份、笔记每篇文档一份、作品整个作品一份、公众号每个账号一份；
  * 公众号既可能来自「打开了 wechat/ 目录下的文档」，也可能来自「用户在仪表盘选了公众号」，
  * 后者用 selectedModule 判定：选模块是显式意图，不依赖当前打开哪个文件；
  * 微博没有文档目录：宿主在微博面板获得焦点时直接下发 module=weibo，切回编辑器即恢复文档归属；
  * 该意图只对「选定当时的那份文档」有效——宿主在活跃文档变化时清空它（见 WorkflowRouter），
  * 因此菜单始终跟随当前文档，不会被残留的模块选定压住。
  */
+import { readWechatAccountDir } from '@shared/types/wechat'
 import { NOTES_MODULE_KEY, WECHAT_MODULE_KEY, WEIBO_MODULE_KEY } from '@shared/types/workflow'
 import type { WorkflowContextState } from '@shared/types/workflow'
 import type { WorkflowSection } from './workflowSections'
@@ -65,49 +68,28 @@ export function readContentScope(context: WorkflowContextState): ContentScope | 
 }
 
 /**
- * 文档是否属于该归属：只有归属内的文档才按文档级作用域隔离。
- * 选了公众号模块却停在根目录文档时，那份文档并不属于公众号，不能把对话绑到它身上。
- */
-function isDocumentInScope(context: WorkflowContextState, scope: ContentScope): boolean {
-    const path = context.docPath
-    if (path === null) {
-        return false
-    }
-    if (scope === 'press') {
-        return context.projectDir !== null && path.startsWith(`${context.projectDir}/`)
-    }
-    // 微博没有文档目录：任何文档都不属于微博归属，对话固定落在模块键上
-    if (scope === 'weibo') {
-        return false
-    }
-    return path.startsWith(`${scope === 'note' ? NOTES_MODULE_KEY : WECHAT_MODULE_KEY}/`)
-}
-
-/**
- * 当前内容的数据与对话作用域键：每个文档各自一份对话，文档属于当前归属时取文档相对路径。
- * 没有活跃文档（显式打开作品、仪表盘选了模块）时回落到旧口径：作品取 projectDir、公众号取模块键。
- * 关键约束：公众号在「选模块」场景下 module 可能仍是 root，作用域要回落到模块键本身，
- * 否则公众号对话会与管理面板落到同一个 root 作用域；笔记没有活跃文档时回落到模块目录。
+ * 当前内容的对话作用域键：微博整个模块一份、笔记每篇文档一份、作品整个作品一份、公众号每个账号一份。
+ * 关键约束：
+ * - 作品按作品目录聚合——作品内换章不切会话，否则同一场对话会被拆散到每章、上下文无法延续；
+ * - 公众号按账号目录聚合（wechat/{appid}），同一账号下所有批次与文章共用一份对话；
+ *   不在账号目录下的公众号文档与运营面板一起回落到模块键，不落到 root；
+ * - 笔记按文档路径隔离，同一目录下的不同笔记各用一份对话，没有活跃文档时回落模块目录；
+ * - 微博没有文档目录，作用域固定为模块键，不绑到背后保留的文档。
  */
 export function readScopeDir(context: WorkflowContextState, scope: ContentScope | null): string | null {
     if (scope === null) {
         return null
     }
-    // 文档级隔离优先：作品内的每章、公众号的每篇批次稿都各自一份对话
-    if (isDocumentInScope(context, scope)) {
-        return context.docPath
-    }
     if (scope === 'press') {
         return context.projectDir
     }
     if (scope === 'wechat') {
-        return context.module === WECHAT_MODULE_KEY ? context.module : WECHAT_MODULE_KEY
+        return readWechatAccountDir(context.docPath) ?? WECHAT_MODULE_KEY
     }
-    // 微博没有文档目录，作用域固定为模块键，与侧栏对话的 projectDir 同源
     if (scope === 'weibo') {
         return WEIBO_MODULE_KEY
     }
-    return context.module
+    return context.docPath ?? NOTES_MODULE_KEY
 }
 
 /** 当前归属下可用的分区：常驻分区 + 该归属的专属分区 */

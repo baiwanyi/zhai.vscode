@@ -15,7 +15,7 @@
  * 在途生成属于别的会话时只放出停止入口，尚未接管到锚点的流末直接回拉会话快照，
  * 避免回到页面后停在占位态、丢失停止入口；
  * 会话作用域由调用方以 projectDir 注入，快照加载 / 新建 / 删除后重载都必须带同一作用域——
- * 每个文档各一份对话，跨文档不共用。
+ * 作用域粒度由 contentScope.readScopeDir 决定（微博 / 笔记文档 / 作品 / 公众号批次），跨作用域不共用。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -48,7 +48,7 @@ export interface UseAiChatSessionOptions {
     setContexts: (contexts: AiContextRef[]) => void
     /** 删除会话后刷新历史列表 */
     refreshSessions: () => Promise<void>
-    /** 会话作用域（通常是当前文档路径）：每个文档一份记录，null 为通用对话 */
+    /** 会话作用域（模块键 / 文档路径 / 作品目录 / 公众号批次目录）：同一作用域共用一份记录，null 为通用对话 */
     projectDir: string | null
 }
 

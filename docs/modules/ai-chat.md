@@ -222,7 +222,7 @@ CREATE TABLE IF NOT EXISTS conversations (
     id             TEXT PRIMARY KEY,  -- UUID
     title          TEXT NOT NULL,
     mode           TEXT NOT NULL,     -- 'write' | 'chat'
-    project_dir    TEXT,              -- 会话作用域（作品目录，如 press/某作品）；NULL 表示通用对话
+    project_dir    TEXT,              -- 会话作用域键（作品目录 / 文档路径 / 批次目录 / 模块键）；NULL 表示通用对话
     model          TEXT NOT NULL,
     provider       TEXT NOT NULL DEFAULT 'codebuddy', -- 创建时使用的 AI 通道
     sdk_session_id TEXT,              -- 通道侧会话号，CodeBuddy 通道续接用
@@ -293,7 +293,7 @@ CREATE INDEX IF NOT EXISTS idx_prompt_date ON ai_prompts(created_at);
 
 **迁移**：按版本由 `ensureColumn` 以 `PRAGMA table_info` 判断后执行 `ALTER TABLE ... ADD COLUMN` 补列，对已有库可重复执行（v2 补 `provider` / `sdk_session_id`，v3 补 `project_dir`，v4 补用量表的 `module` / `request_id` / `sdk_message_id` / `cost_usd` / `credits` / 缓存 tokens / `status` 并新建 `ai_prompts`，v5 清空按倍率估算的 `credits` 并改由 CLI 记录回填，v6 补消息表的 `total_tokens` / `duration_ms` / `tokens_estimated` 且历史消息不回填，v7 补消息表的 `credits` / `request_id` 并建请求 id 索引，v8 补会话表的 `context_used_tokens` / `context_window_tokens` 且历史会话保持 0 即未记录）。`provider` 默认 `codebuddy`，`sdk_session_id` 为 NULL 表示该会话尚未建立通道侧会话；`project_dir` 为 NULL 表示该会话不属于任何作品（历史会话不做回填）；`module` 默认 `chat`，旧值 `ai-chat` 等在读取时归一为 `chat`，不做回填。依赖新列的索引必须写在补列之后，否则旧库建索引会因缺列失败。
 
-**会话作用域**：每个作品（`press/{作品名}`）各有一份对话记录——取最近会话、新建会话、历史列表都按 `project_dir` 过滤（比较用 `IS ?` 以覆盖 NULL），因此切换作品即切换对话上下文，互不串历史。作品页（`WorkflowPress`）把当前作品目录作为作用域下传给 `AiChat`，通用场景不带作用域即取 `project_dir IS NULL` 的那份对话。
+**会话作用域**：`project_dir` 存会话作用域键，取最近会话、新建会话、历史列表都按它过滤（比较用 `IS ?` 以覆盖 NULL），粒度按内容来源区分：微博整个模块一份（键 `weibo`）、笔记每篇文档一份（键为文档相对路径）、作品整个作品一份（键 `press/{作品名}`，作品内换章不切会话）、公众号每账号一份（键 `wechat/{appid}`，该账号下所有推送批次与文章共用）。公众号的非账号目录文档与「选了模块但没打开该账号文档」的场景回落到模块键 `wechat`，与运营面板共用一份会话；不在任何归属内的文档不带作用域，即取 `project_dir IS NULL` 的通用对话。前端统一由 `contentScope.readScopeDir` 推导、宿主命令侧 `readDocumentScope` 同口径，切换粒度即切换对话上下文，互不串历史。
 
 **续接规则**：只有「会话 `provider` 与当前通道一致」且 `sdk_session_id` 非空时才走 `resume`，此时仅提交本轮输入，历史由通道维护；引用原文仍每轮注入（指向的文件可能已改动）。条件任一不满足即回退到完整历史拼接，切换通道不复活旧会话号。
 
@@ -579,3 +579,4 @@ interface AbortRequest {
 - `@` 提及已落地为参考菜单入口（不改共享输入组件、不增工具行按钮）：`ai/mention/search` 走全文索引，`ai/mention/add` 先查库确认路径存在再加为引用；待发送上下文与写回状态均为内存态，重启窗口后仅已发送的引用随 `messages.refs` 保留
 - 写作模式已改为 diff 逐段接受（A3）：`ai/writeDiff` 只算不写，`ai/applyHunks` 按勾选段拼装，未接受的段保留原文；整篇改写上限 12000 字符，超出只能选中片段
 - 参考资料由 `{存储根}/reference/*.md` 驱动（一级标题分类、二级标题分条），`ai/reference/search` 检索、`ai/reference/add` 按行范围注入条目正文、`ai/reference/openDir` 打开目录；语料增删改由用户直接操作文件，插件只读；命令的 `applyPolicy` 由前端按命令 id 推断，宿主只做字符串收窄
+- 会话作用域已收敛为「微博 / 笔记文档 / 作品 / 公众号账号」四类粒度，但仍是硬过滤：历史浮层只列当前作用域、删除作品或账号后其会话成为不可达孤儿、也没有跨作用域迁移入口；收敛方案（软作用域 P0/P1/P2）与「全局 AI 助手」评估见 `docs/plan/AI对话作用域收敛方案与全局助手评估.md`（未实施）

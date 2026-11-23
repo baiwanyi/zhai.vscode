@@ -12,7 +12,7 @@
  * 设计源：docs/modules/ai-chat.md 第 4 节会话状态机与第 10.3 节底部输入卡片。
  * 关键约束：入口组件由 workflow 分区路由直接引用，文件名即组件名 WorkflowAiChat，目录不再提供 index 出口；
  * hasWritableScopeOverride 只给没有活动文档的语境（微博）用，其它页面不传，避免绕过写入门禁；
- * 会话按 projectDir 作用域隔离，作品页传入当前作品目录即换用该作品的对话记录，缺省为通用对话；
+ * 会话按 projectDir 作用域隔离，作用域粒度由 contentScope.readScopeDir 决定（微博 / 笔记文档 / 作品 / 公众号批次），缺省为通用对话；
  * 页面高度由 AppPage 的 h-full 承接骨架链条，不再自建 h-screen，避免嵌在分区容器里时撑出视口；
  * 异步动作交给组件时一律包一层 `() => void`，项目启用了 no-misused-promises，直传 Promise 返回值会报错。
  */
@@ -52,7 +52,7 @@ import type { JSX } from 'react'
 
 /** 对话页对外入参：会话作用域与作品标题，其余状态全部由页面内部 hooks 持有 */
 export interface WorkflowAiChatProps {
-    /** 会话作用域（作品目录）：同一作品共用一份对话记录，缺省或 null 表示不属于任何作品的通用对话 */
+    /** 会话作用域（模块键 / 文档路径 / 作品目录 / 公众号批次目录）：同一作用域共用一份对话记录，缺省或 null 表示通用对话 */
     projectDir?: string | null
     /** 当前作品标题：由调用方从作品设定中取，缺省时摘要行回落为通道名 */
     projectTitle?: string | null
