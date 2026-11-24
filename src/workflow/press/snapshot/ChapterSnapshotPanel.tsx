@@ -2,15 +2,15 @@
  * 章节正文快照面板：两级卡片视图——先列章节，点某一章进入该章的快照列表，可返回章节列表。
  * 复用约定：取数与动作由 useChapterSnapshots 承担，章节清单由 ChapterList 承担，版本列表由 ChapterVersionList 承担；
  * 两级空态都由业务公共层的 StateEmpty 承担（与「设定与大纲」面板同一组件，仅换文案与图标），容器与标题条取 card；
- * 恢复与删除确认取业务公共层的 ConfirmDialog，创建备注框由 SnapshotCreateDialog 承担。
+ * 恢复与删除确认取业务公共层的 AlertDialog，创建备注框由 SnapshotCreateDialog 承担。
  * 关键约束：恢复只覆盖当前章，文案须写明覆盖时间点与 dirty 前置条件；该章有未保存修改时由宿主拒绝，此处只如实提示错误。
  */
 import { BookOpen, Camera, ChevronLeft } from 'lucide-react'
 import { useState } from 'react'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import type { ChapterSnapshotEntry } from '@shared/types/press'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { ChapterList } from './ChapterList'
 import { ChapterVersionList } from './ChapterVersionList'
@@ -104,7 +104,7 @@ export function ChapterSnapshotPanel({ dirPath }: ChapterSnapshotPanelProps): JS
                 </Card>
             )}
 
-            <ConfirmDialog
+            <AlertDialog
                 open={pendingRestore !== null}
                 title="恢复到这一版？"
                 description={restoreDescription}
@@ -124,7 +124,7 @@ export function ChapterSnapshotPanel({ dirPath }: ChapterSnapshotPanelProps): JS
                 }}
             />
 
-            <ConfirmDialog
+            <AlertDialog
                 open={pendingDelete !== null}
                 title="删除这一版章节快照？"
                 description="只删除所选版本，不影响章节正文与其它快照；删除后不可找回。"

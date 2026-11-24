@@ -18,8 +18,8 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Skeleton } from '@components/ui/skeleton'
 import type { TodoListSummary } from '@shared/types/todo'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { TodoComposer } from './TodoComposer'
 import { TodoItemRow } from './TodoItemRow'
@@ -150,7 +150,7 @@ export function DashboardTodo(): JSX.Element {
                     </CollapsibleContent>
                 </Collapsible>
             </Card>
-            <ConfirmDialog
+            <AlertDialog
                 open={dialog?.kind === 'delete'}
                 title={`删除「${dialog?.kind === 'delete' ? dialog.list.name : ''}」？`}
                 description="清单文件将移入系统回收站，其中的待办不再显示。"

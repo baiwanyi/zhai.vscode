@@ -23,6 +23,7 @@ import { ArrowUp, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { WeiboUserInfo } from '@shared/types/weibo'
 import { scrollAreaToTop } from '@shared/utils/scrollArea'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import {
     AppAction,
     AppContent,
@@ -34,7 +35,6 @@ import {
 } from '@webview/components/AppPage'
 import { AppToaster } from '@webview/components/AppToaster'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { useHostToast } from '@webview/hooks/useHostToast'
 import { useScrollTopVisibility } from '@webview/hooks/useScrollTopVisibility'
 import { WeiboUserPageProvider } from './context/WeiboUserPageProvider'
@@ -510,7 +510,7 @@ export function WeiboScreen(): JSX.Element {
                 onSaveCity={city.save}
                 blockList={blockList}
             />
-            <ConfirmDialog
+            <AlertDialog
                 open={removal.isDeleteOpen}
                 title="删除登录 Cookie？"
                 description="删除后信息流、热搜与表情都会停止读取，需要重新登录 weibo.com 复制 Cookie 才能恢复。"

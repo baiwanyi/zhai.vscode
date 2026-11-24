@@ -1,12 +1,12 @@
 /**
  * 删除笔记确认弹窗：单条删除点明标题，批量删除给出条数，二次确认后才发起删除。
- * 复用约定：确认结构取业务公共层的 ConfirmDialog，破坏性动作以 destructive 变体呈现，
+ * 复用约定：确认结构取业务公共层的 AlertDialog，破坏性动作以 destructive 变体呈现，
  * 与章节删除、作品删除保持一致的交互节奏。
  * 关键约束：删除请求由页面发起，本组件只负责确认与提交中禁用；取消或关闭不触达宿主；
  * 笔记只移入应用内回收站，文案必须点明可在回收站恢复，彻底清除才在回收站页完成；
  * 文案按条数分支，避免批量删除时把某一篇标题当成整体对象。
  */
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import type { JSX } from 'react'
 
 interface NotesDeleteDialogProps {
@@ -36,7 +36,7 @@ export function NotesDeleteDialog({
     const title = singleTitle !== null ? `删除「${singleTitle}」？` : `删除选中的 ${String(count)} 篇笔记？`
 
     return (
-        <ConfirmDialog
+        <AlertDialog
             open={open}
             title={title}
             description="笔记将被移入回收站，可在回收站恢复或彻底删除。"

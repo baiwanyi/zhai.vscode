@@ -271,13 +271,13 @@ handleSelectFromAll(item: AiConversationSummary): void
 
 ```
 若 item 属于当前作用域 → 直接 switchSession(item.id) → 回到对话页
-否则 → ConfirmDialog（该对话将移动到当前对象）
+否则 → AlertDialog（该对话将移动到当前对象）
      → request('ai/session/move', { conversationId, projectDir: 当前作用域 })
      → request('ai/switchSession', { conversationId })
      → 回到对话页 → loadSessions() 刷新当前态列表
 ```
 
-- 用 `@webview/components/ConfirmDialog`（项目内已广泛使用）。
+- 用 `@webview/components/AlertDialog`（项目内已广泛使用）。
 - 迁移失败只提示，不切会话；切换失败同样只提示。
 - 不合并成一个复合协议：两步失败要能分别提示。
 - 历史页删除行时由页面直接调 `deleteSession` 并重拉列表，不走切换逻辑。

@@ -1,7 +1,7 @@
 /**
  * 公众号账号列表页（#/wechat）：页头返回入口 + 账号列表 + 底部添加入口 + 账号弹窗与删除确认。
  * 复用约定：外壳取 components/AppPage（页头走 AppHeader、列表走 AppContent 滚动、写操作走 AppFooter），
- * 数据与动作经 hooks/useWechatAccounts 下发，展示口径取 wechat/utils，删除确认走公共 ConfirmDialog。
+ * 数据与动作经 hooks/useWechatAccounts 下发，展示口径取 wechat/utils，删除确认走公共 AlertDialog。
  * 关键约束：点击账号先写宿主当前账号再跳转，账号页与工作流面板因此共享同一作用域；
  * 新增与编辑共用同一个弹窗实例，以 key 重挂载把表单重置为目标账号的值；
  * 写操作进行中禁用底部入口，删除确认期间两个按钮同时禁用，避免重复提交。
@@ -9,9 +9,9 @@
 import { Plus } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import type { WechatAccountSummary } from '@shared/types/wechat'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { AppContent, AppDescription, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { useWechatAccounts } from './hooks/useWechatAccounts'
 import { useWechatModuleSync } from './hooks/useWechatModuleSync'
 import { WechatAccountDialog } from './layout/WechatAccountDialog'
@@ -190,7 +190,7 @@ export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.El
                 />
             )}
 
-            <ConfirmDialog
+            <AlertDialog
                 open={pendingRemove !== null}
                 title="删除公众号账号"
                 description={

@@ -646,7 +646,7 @@ Decoration.widget(pos, () => {
 |---|---|
 | 新建 | 浮动菜单「批注」→ Dialog（引用片段 + textarea）→ `editor/annotation/add` → 宿主单行 `INSERT` → 回 `{ item }` → 前端插入 decoration |
 | 编辑 | 气泡内「编辑」→ 同一 Dialog 复用 → `editor/annotation/update` |
-| 删除 | 气泡内删除 → 确认（`ConfirmDialog`）→ `editor/annotation/remove` |
+| 删除 | 气泡内删除 → 确认（`AlertDialog`）→ `editor/annotation/remove` |
 | 失效 | `orphaned = 1` 的项在工作流「标注」总览页列出，可重新定位或删除 |
 
 ### 9.5 与划线的组合
@@ -688,7 +688,7 @@ AppPage
 │   └─ 每项 card
 │       ├─ 首行：颜色圆点 + 划线文本（关键词命中片段高亮）+ 相对时间
 │       ├─ 次行：doc_title · 段落后 40 字（block_text 截断）
-│       └─ 尾部：跳转按钮 / 删除按钮（ConfirmDialog）
+│       └─ 尾部：跳转按钮 / 删除按钮（AlertDialog）
 ├─ 加载更多按钮（keyset 分页，不用无限滚动）
 └─ 空态 / 首次加载态：empty + spinner
 ```
@@ -726,7 +726,7 @@ request('annotation/remove', { id })
 - 搜索关键词高亮用 `block_text` / `quote` 的命中片段切片，前端只做拼接，不引入高亮库。
 - 跳转前先校验文件存在（存储根内相对路径 + 文件系统检查）；文件已删则提示「原文已删除」，不打开空白编辑器。
 - `orphaned` 项点击跳转给一次性提示「原文已修改，无法精确定位」，仍打开文档但不选中。
-- 删除需二次确认（复用 `ConfirmDialog`），删除后本地移除该项并重算 `total`，不整页刷新。
+- 删除需二次确认（复用 `AlertDialog`），删除后本地移除该项并重算 `total`，不整页刷新。
 - 列表只渲染当前页数据，不预加载全文；`replies` 等大字段不进列表载荷。
 
 ---

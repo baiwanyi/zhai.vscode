@@ -24,10 +24,10 @@ import type { AiConversationSummary, AiMentionCandidate, AiReferenceEntry } from
 import type { PromptRule } from '@shared/types/promptLibrary'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { AppAction, AppContent, AppFooter, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { AiChatComposer } from './composer/AiChatComposer'
 import { AiChatHistoryPage } from './history/AiChatHistoryPage'
 import { useAiChatCommands } from './hooks/useAiChatCommands'
@@ -309,7 +309,7 @@ export function WorkflowAiChat({
      * 文案明确写「移动」而不是「使用」——一份会话只保留一个归属。
      */
     const moveDialog = (
-        <ConfirmDialog
+        <AlertDialog
             open={pendingMove !== null}
             title="移动会话"
             description={pendingMove === null ? '' : `「${pendingMove.title}」将移动到当前对象，原位置的记录不再保留。`}

@@ -26,10 +26,10 @@ import type { AiContextAddInlineResult } from '@shared/types/aiChat'
 import type { PressExtractedVolume, VolumeOutlineDraft } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { AppAction, AppContent, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useOutlineExtract } from './hooks/useOutlineExtract'
 import { OutlineActionMenu } from './layout/OutlineActionMenu'
@@ -577,7 +577,7 @@ export function PressOutlinePage({
                 )}
             </AppPage>
 
-            <ConfirmDialog
+            <AlertDialog
                 open={deletingVolume !== null}
                 title="删除这一卷？"
                 description={`「${volumeTitleLabel(deletingVolume?.name ?? '', deletingVolumeIndex < 0 ? 0 : deletingVolumeIndex)}」的卷纲与章节会从大纲中删除；Chapters 目录里的章节文件不会被删除。`}
@@ -591,7 +591,7 @@ export function PressOutlinePage({
                 onConfirm={handleConfirmDeleteVolume}
             />
 
-            <ConfirmDialog
+            <AlertDialog
                 open={clearingVolume !== null}
                 title="清空这一卷的章纲？"
                 description={`「${volumeTitleLabel(clearingVolume?.name ?? '', clearingVolumeIndex < 0 ? 0 : clearingVolumeIndex)}」下的 ${String(clearingVolume?.chapters.length ?? 0)} 章会从大纲中移除，仅保留这一卷的卷纲；Chapters 目录里的章节文件不会被删除。`}
@@ -605,7 +605,7 @@ export function PressOutlinePage({
                 onConfirm={handleConfirmClearChapters}
             />
 
-            <ConfirmDialog
+            <AlertDialog
                 open={isOutlinesConfirmOpen}
                 title="覆盖现有卷纲？"
                 description={`将按作品设定重新生成卷纲，现有 ${String(workspace.volumes.length)} 卷的卷纲会被覆盖；卷内章节、节拍与场景不受影响。`}

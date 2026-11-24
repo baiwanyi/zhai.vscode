@@ -1,15 +1,15 @@
 /**
  * 回收站页：列出已删除笔记，支持逐条恢复与彻底删除，以及一键清空。
- * 复用 AppPage 骨架、TrashContent 的内容分派、ConfirmDialog 与 useConfirmAction 的确认时序。
+ * 复用 AppPage 骨架、TrashContent 的内容分派、AlertDialog 与 useConfirmAction 的确认时序。
  * 关键约束：彻底删除与清空必须先经二次确认，确认后才触达宿主；
  * 恢复与清除完成后重新拉取回收站快照，列表与条数立即收敛；
  * 有操作在途时禁用全部入口，避免并发清除同一批条目。
  */
 import { Trash2 } from 'lucide-react'
 import { useState, type JSX } from 'react'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { AppAction, AppContent, AppDescription, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { TRASH_RETENTION_HINT } from './constants'
 import { TrashContent } from './TrashContent'
 import { useTrash } from './useTrash'
@@ -73,7 +73,7 @@ export function DashboardTrash(): JSX.Element {
             </AppContent>
 
             {purgeIds.length > 0 ? (
-                <ConfirmDialog
+                <AlertDialog
                     open
                     title={`彻底删除 ${String(purgeIds.length)} 项？`}
                     description="彻底删除后无法恢复，原笔记文件将从磁盘移除。"
@@ -86,7 +86,7 @@ export function DashboardTrash(): JSX.Element {
             ) : null}
 
             {isClearOpen ? (
-                <ConfirmDialog
+                <AlertDialog
                     open
                     title="清空回收站？"
                     description={`将彻底删除全部 ${String(items.length)} 项，操作不可恢复。`}

@@ -1,7 +1,7 @@
 /**
  * 留言管理页：按「已推送批次 → 文章」筛选留言，支持回复、加精与删除。
  * 复用约定：数据取 hooks/useWechatComments，外壳取 AppPage，批次与文章用两个 Select，
- * 留言条目用 ui/item + badge，删除走公共 ConfirmDialog（不可撤销必须二次确认）。
+ * 留言条目用 ui/item + badge，删除走公共 AlertDialog（不可撤销必须二次确认）。
  * 关键约束：只有已推送的批次可选——草稿态没有群发消息标识，选它只会拿到宿主的拒绝提示；
  * 留言内容按原文展示（保留换行），不做 Markdown 渲染，避免读者输入被当作文档解释；
  * 删除前弹确认，回复在行内展开，不跳页面也不弹窗。
@@ -16,6 +16,7 @@ import { Textarea } from '@components/ui/textarea'
 import type { WechatAccountSummary, WechatCommentSummary } from '@shared/types/wechat'
 import { WECHAT_COMMENT_CONTENT_MAX } from '@shared/types/wechat'
 import { formatRelativeTime } from '@shared/utils/format'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import {
     AppContent,
     AppDescription,
@@ -26,7 +27,6 @@ import {
     AppTitle,
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
@@ -254,7 +254,7 @@ export function WechatCommentPage({ account }: WechatCommentPageProps): JSX.Elem
                 </AppFooter>
             </AppPage>
 
-            <ConfirmDialog
+            <AlertDialog
                 open={pendingRemove !== null}
                 title="删除留言"
                 description={

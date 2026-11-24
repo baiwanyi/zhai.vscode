@@ -13,6 +13,7 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle }
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatMaterialSummary } from '@shared/types/wechat'
 import { copyWithToast } from '@shared/utils/clipboard'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import {
     AppContent,
     AppDescription,
@@ -23,7 +24,6 @@ import {
     AppTitle,
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { Image } from '@webview/components/Image'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
@@ -156,7 +156,7 @@ export function WechatMaterialPage({ account }: WechatMaterialPageProps): JSX.El
                 </AppFooter>
             </AppPage>
 
-            <ConfirmDialog
+            <AlertDialog
                 open={pendingRemove !== null}
                 title="删除素材"
                 description={

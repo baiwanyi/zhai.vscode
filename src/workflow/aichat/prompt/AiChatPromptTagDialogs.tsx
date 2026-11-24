@@ -1,6 +1,6 @@
 /**
  * 提示词词条弹窗：新建/编辑表单与删除确认，挂在面板浮层之外，避免浮层收起时被连带卸载。
- * 复用约定：表单取 @webview/components/Dialog，确认取 @webview/components/ConfirmDialog，
+ * 复用约定：表单取 @webview/components/Dialog，确认取 @webview/components/AlertDialog，
  * 文本状态取 @webview/hooks/useTrimmedInput，已有分类与分组从 props 传入做快捷填充。
  * 生图词条与写作提示词共用本组件，文案按 scope 切换（芯片同步 / 插入正文），字段与校验完全一致。
  * 关键约束：分类名会成为 md 文件名，因此不接受空值与路径分隔符，真正的校验与拒绝由宿主兜底；
@@ -10,8 +10,8 @@ import { Field, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
 import type { PromptLibraryScope, PromptTag, PromptTagObject, PromptTagSaveRequest } from '@shared/types/promptLibrary'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { Dialog } from '@webview/components/Dialog'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { TagFormState } from '@webview/workflow/aichat/hooks/usePromptLibrary'
@@ -224,7 +224,7 @@ export function AiChatPromptTagDialogs({
                 onOpenChange={whenClosed(onFormClose)}
                 onSubmit={onFormSubmit}
             />
-            <ConfirmDialog
+            <AlertDialog
                 open={pendingDelete !== null}
                 title={pendingDelete === null ? `删除${words.title}` : `删除${words.title}「${pendingDelete.name}」？`}
                 description={`对应内容会从 md 中移除；分类删空时该 md 一并删除，${

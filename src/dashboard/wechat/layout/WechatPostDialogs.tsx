@@ -6,7 +6,7 @@
  * 关闭适配必须走 closeWhenHidden——直接把 open 布尔接到 setter 上会让打开动作清掉目标。
  */
 import type { WechatAccountSummary, WechatArticleSummary } from '@shared/types/wechat'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { WechatAccountDialog } from './WechatAccountDialog'
 import { WechatAccountSecretDialog } from './WechatAccountSecretDialog'
 import { WechatArticleMetaDialog } from './WechatArticleMetaDialog'
@@ -87,7 +87,7 @@ export function WechatPostDialogs({
                 onSubmit={accountDialogs.credentials.submit}
             />
 
-            <ConfirmDialog
+            <AlertDialog
                 open={issueRemove.target !== null}
                 title="删除推送批次"
                 description={
@@ -102,7 +102,7 @@ export function WechatPostDialogs({
                 onConfirm={issueRemove.confirm}
             />
 
-            <ConfirmDialog
+            <AlertDialog
                 open={articleRemove.target !== null}
                 title="删除文章"
                 description={
@@ -117,7 +117,7 @@ export function WechatPostDialogs({
                 onConfirm={articleRemove.confirm}
             />
 
-            <ConfirmDialog
+            <AlertDialog
                 open={publish.target !== null}
                 title="确认群发"
                 description={publish.description}
@@ -127,7 +127,7 @@ export function WechatPostDialogs({
                 onConfirm={publish.confirm}
             />
 
-            <ConfirmDialog
+            <AlertDialog
                 open={accountDialogs.remove.isOpen}
                 title="删除公众号账号"
                 description={`将删除「${account.name}」的本地配置、已保存密钥与其下的推送批次，公众号后台的内容不受影响。`}

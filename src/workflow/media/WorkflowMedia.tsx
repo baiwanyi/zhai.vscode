@@ -17,10 +17,10 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import type { ImageGenerateResult } from '@shared/types/imageGenerate'
 import type { MediaDetailResult, MediaItem } from '@shared/types/media'
 import { request } from '@shared/utils/bridge'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { AppAction, AppContent, AppFooter, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { toMonthOptions } from './hooks/mediaMonth'
 import { useCharacterCoverSync } from './hooks/useCharacterCoverSync'
 import { useCharacterIndex, type ImageGenCharacter } from './hooks/useCharacterIndex'
@@ -355,7 +355,7 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
                 onDelete={deleteImage}
             />
 
-            <ConfirmDialog
+            <AlertDialog
                 open={isConfirmingBatch}
                 title={`删除选中的 ${String(selectedIds.size)} 张图片？`}
                 description="文件会移入系统回收站；被作品封面、章节或笔记引用的图片，正文章节中的图片链接将失效。"

@@ -2,7 +2,7 @@
  * 作品封面区块：封面三态、生成入口与该作品的封面候选图库，装在设定页基本信息左列。
  * 复用约定：封面回读交给 useSettingCover（带外部刷新信号），图库列举走 pressAi/listCover，
  * 设封面走 media/setCover、删除走 media/delete，与生图页共用同一份封面指针与媒体索引；
- * 图库网格复用 components/Image，空态取 components/StateEmpty，删除确认取 components/ConfirmDialog。
+ * 图库网格复用 components/Image，空态取 components/StateEmpty，删除确认取 components/AlertDialog。
  * 关键约束：生成的在途状态与回执由页面持有（切分组会卸载本区块），本组件只透传按钮状态；
  * 封面指针在宿主侧，设封面与删除后一律重读而不能只改本地状态；
  * 删除的回退由宿主在删除时写回指针，这里不做二次写入，避免与媒体页口径分叉。
@@ -15,8 +15,8 @@ import type { MediaDeleteResult, MediaSetCoverResult } from '@shared/types/media
 import type { CoverListResult, PressCover } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { CoverFigure } from '@webview/components/CoverFigure'
 import { Image } from '@webview/components/Image'
 import { StateEmpty } from '@webview/components/StateEmpty'
@@ -220,7 +220,7 @@ export function SettingCoverSection({
                     </Popover>
                 </div>
             </div>
-            <ConfirmDialog
+            <AlertDialog
                 open={pendingDelete !== null}
                 title="删除这张封面候选？"
                 description="删除后不可恢复。若它是当前封面，会自动回退到剩余最新的一张。"

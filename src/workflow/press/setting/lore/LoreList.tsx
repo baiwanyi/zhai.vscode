@@ -1,6 +1,6 @@
 /**
  * 资料条目列表：以单列卡片展示当前分类的条目，承担浏览、选中与删除入口。
- * 复用约定：卡片复用 ui/card，删除确认复用 components/ConfirmDialog，缩略图与缺图占位复用 components/Image，
+ * 复用约定：卡片复用 ui/card，删除确认复用 components/AlertDialog，缩略图与缺图占位复用 components/Image，
  * 空态复用 components/StateEmpty，文案与图标取自 constants 的 LORE_KIND_META。
  * 关键约束：卡片是 role=button 的可聚焦容器，删除按钮挂在外层容器，避免点删除时顺带触发选中；
  * 描述只显示首行，势力卡片额外显示关联人数，其余分类不出现该徽标；
@@ -10,8 +10,8 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Card } from '@components/ui/card'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { Image } from '@webview/components/Image'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import type { LoreEntry, LoreKind } from '../../types'
@@ -135,7 +135,7 @@ export function LoreList({
                 })}
             </div>
 
-            <ConfirmDialog
+            <AlertDialog
                 open={deleting !== null}
                 title={`删除「${deleting?.name ?? ''}」？`}
                 description={`${meta.label}会立即从 ${meta.label}.md 中移除，已生成的设定图移入回收站。`}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * ConfirmDialog 交互用例：覆盖确认 / 取消两条回调路径与提交中、破坏性两档状态。
+ * AlertDialog 交互用例：覆盖确认 / 取消两条回调路径与提交中、破坏性两档状态。
  * 复用约定：渲染与查询走 @testing-library/react，点击用 user-event 以贴近真实指针序列；
  * jsdom 环境由本文件首行指令声明，不影响其余 Node 环境用例。
  * 关键约束：组件刻意不自行关闭弹窗（关闭时机由调用方在 onConfirm 内决定），
@@ -9,7 +9,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
+import { AlertDialog } from '@webview/components/AlertDialog'
 
 afterEach(cleanup)
 
@@ -22,9 +22,9 @@ const BASE_PROPS = {
     onConfirm: vi.fn(),
 }
 
-describe('ConfirmDialog', () => {
+describe('AlertDialog', () => {
     it('open 为真时渲染标题、说明与两个按钮', () => {
-        render(<ConfirmDialog {...BASE_PROPS} />)
+        render(<AlertDialog {...BASE_PROPS} />)
 
         expect(screen.getByRole('alertdialog')).toBeDefined()
         expect(screen.getByText('删除作品')).toBeDefined()
@@ -34,7 +34,7 @@ describe('ConfirmDialog', () => {
     })
 
     it('open 为假时不渲染对话框', () => {
-        render(<ConfirmDialog {...BASE_PROPS} open={false} />)
+        render(<AlertDialog {...BASE_PROPS} open={false} />)
 
         expect(screen.queryByRole('alertdialog')).toBeNull()
     })
@@ -43,7 +43,7 @@ describe('ConfirmDialog', () => {
         const user = userEvent.setup()
         const onConfirm = vi.fn()
         const onOpenChange = vi.fn()
-        render(<ConfirmDialog {...BASE_PROPS} onConfirm={onConfirm} onOpenChange={onOpenChange} />)
+        render(<AlertDialog {...BASE_PROPS} onConfirm={onConfirm} onOpenChange={onOpenChange} />)
 
         await user.click(screen.getByRole('button', { name: '删除' }))
 
@@ -55,7 +55,7 @@ describe('ConfirmDialog', () => {
         const user = userEvent.setup()
         const onConfirm = vi.fn()
         const onOpenChange = vi.fn()
-        render(<ConfirmDialog {...BASE_PROPS} onConfirm={onConfirm} onOpenChange={onOpenChange} />)
+        render(<AlertDialog {...BASE_PROPS} onConfirm={onConfirm} onOpenChange={onOpenChange} />)
 
         await user.click(screen.getByRole('button', { name: '取消' }))
 
@@ -64,22 +64,61 @@ describe('ConfirmDialog', () => {
     })
 
     it('cancelLabel 覆盖默认取消文案', () => {
-        render(<ConfirmDialog {...BASE_PROPS} cancelLabel="返回" />)
+        render(<AlertDialog {...BASE_PROPS} cancelLabel="返回" />)
 
         expect(screen.getByRole('button', { name: '返回' })).toBeDefined()
         expect(screen.queryByRole('button', { name: '取消' })).toBeNull()
     })
 
     it('提交中两个按钮同时禁用', () => {
-        render(<ConfirmDialog {...BASE_PROPS} isSubmitting />)
+        render(<AlertDialog {...BASE_PROPS} isSubmitting />)
 
         expect(screen.getByRole('button', { name: '删除' }).hasAttribute('disabled')).toBe(true)
         expect(screen.getByRole('button', { name: '取消' }).hasAttribute('disabled')).toBe(true)
     })
 
     it('破坏性操作给确认按钮加 destructive 变体类名', () => {
-        render(<ConfirmDialog {...BASE_PROPS} isDestructive />)
+        render(<AlertDialog {...BASE_PROPS} isDestructive />)
 
-        expect(screen.getByRole('button', { name: '删除' }).className).toContain('destructive')
+        expect(screen.getByRole('button', { name: '删除' }).className).toContain('bg-destructive')
+    })
+
+    it('confirmStatus 覆盖确认按钮默认变体', () => {
+        render(<AlertDialog {...BASE_PROPS} isDestructive confirmStatus="secondary" />)
+
+        expect(screen.getByRole('button', { name: '删除' }).className).not.toContain('bg-destructive')
+    })
+
+    it('icon 渲染图标容器', () => {
+        render(<AlertDialog {...BASE_PROPS} icon={<svg aria-label="警告图标" />} />)
+
+        expect(screen.getByLabelText('警告图标')).toBeDefined()
+    })
+
+    it('children 作为触发器渲染', () => {
+        render(<AlertDialog {...BASE_PROPS} open={false}><button>打开确认</button></AlertDialog>)
+
+        expect(screen.getByRole('button', { name: '打开确认' })).toBeDefined()
+    })
+
+    it('onConfirm 返回 Promise 时在途禁用两按钮且拦截关闭请求', async () => {
+        const user = userEvent.setup()
+        const pending: { resolve: (() => void) | null } = { resolve: null }
+        const onConfirm = vi.fn(() => new Promise<void>((resolve) => { pending.resolve = resolve }))
+        const onOpenChange = vi.fn()
+        render(<AlertDialog {...BASE_PROPS} onConfirm={onConfirm} onOpenChange={onOpenChange} />)
+
+        await user.click(screen.getByRole('button', { name: '删除' }))
+        expect(screen.getByRole('button', { name: '删除' }).hasAttribute('disabled')).toBe(true)
+        expect(screen.getByRole('button', { name: '取消' }).hasAttribute('disabled')).toBe(true)
+
+        await user.keyboard('{Escape}')
+        expect(onOpenChange).not.toHaveBeenCalled()
+
+        pending.resolve?.()
+        await vi.waitFor(() => {
+            expect(screen.getByRole('button', { name: '删除' }).hasAttribute('disabled')).toBe(false)
+        })
+        expect(onOpenChange).not.toHaveBeenCalled()
     })
 })

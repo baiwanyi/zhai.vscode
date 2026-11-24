@@ -13,8 +13,8 @@ import { useMemo, useState } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Card } from '@components/ui/card'
 import type { PortraitGalleryItem } from '@shared/types/press'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { Image } from '@webview/components/Image'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import type { CharacterCard } from '../types'
@@ -180,7 +180,7 @@ export function CharacterList({
                 })}
             </div>
 
-            <ConfirmDialog
+            <AlertDialog
                 open={deleting !== null}
                 title={`删除「${deleting?.name ?? ''}」？`}
                 description="人物卡会立即从角色设定.md 中移除，章纲里的出场引用一并清理，已生成的角色设定图移入回收站。"

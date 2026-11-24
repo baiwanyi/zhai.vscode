@@ -2,7 +2,7 @@
  * 单文件快照页：对当前打开的 Markdown 文档展示一条正文时间线，笔记、公众号文章与散落 md 共用。
  * 复用约定：外壳取 @webview/components/AppPage，取数与动作由 hooks/useDocSnapshots 承担，
  * 版本列表复用 ChapterVersionList（两类条目同为「时间 + 来源 + 备注 + 体积」），
- * 备注框与恢复/删除确认分别复用 SnapshotCreateDialog 与 ConfirmDialog。
+ * 备注框与恢复/删除确认分别复用 SnapshotCreateDialog 与 AlertDialog。
  * 关键约束：docPath 为空时不渲染本页，由调用方给引导空态；恢复前由宿主拒绝「编辑器里还有未保存修改」的情形，
  * 此处只如实提示宿主返回的错误，不自行判断脏状态。
  */
@@ -10,10 +10,10 @@ import { Archive, Camera } from 'lucide-react'
 import { useState } from 'react'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import type { DocSnapshotEntry } from '@shared/types/snapshot'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { AppContent, AppDescription, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { ChapterVersionList } from './ChapterVersionList'
 import { useDocSnapshots } from './hooks/useDocSnapshots'
@@ -87,7 +87,7 @@ export function SingleDocSnapshotPage({ docPath }: SingleDocSnapshotPageProps): 
                     </CardContent>
                 </Card>
 
-                <ConfirmDialog
+                <AlertDialog
                     open={pendingRestore !== null}
                     title="恢复到这一版？"
                     description={restoreDescription}
@@ -107,7 +107,7 @@ export function SingleDocSnapshotPage({ docPath }: SingleDocSnapshotPageProps): 
                     }}
                 />
 
-                <ConfirmDialog
+                <AlertDialog
                     open={pendingDelete !== null}
                     title="删除这一版快照？"
                     description="只删除所选版本，不影响文档正文与其它快照；删除后不可找回。"

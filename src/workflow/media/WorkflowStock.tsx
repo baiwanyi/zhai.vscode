@@ -28,6 +28,7 @@ import {
 import { useMemo, useState } from 'react'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@components/ui/dropdown-menu'
 import type { StockLocalPhoto, StockPhoto, StockPhotoSizeKey } from '@shared/types/stock'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import {
     AppAction,
     AppContent,
@@ -38,7 +39,6 @@ import {
     AppTitle,
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { SegmentedRailItem } from '@webview/components/SegmentedRail'
 import { MonthSelect } from './common/MonthSelect'
@@ -459,7 +459,7 @@ export function WorkflowStock(): JSX.Element {
                 onCopy={copy}
             />
 
-            <ConfirmDialog
+            <AlertDialog
                 open={deletion.pending !== null}
                 title="删除这张图片？"
                 description="文件会移入系统回收站，正文里引用它的位置将显示破图。"

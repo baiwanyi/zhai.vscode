@@ -3,7 +3,7 @@
  * 复用约定：取数（首屏 / 续载 / 总数）走 useWeiboReposts，写操作（转发 / 删除 / 引用 / 加入对话）
  * 走 useWeiboRepostActions；转发框与条目分别是 RepostComposer / RepostItem，
  * 续载与失败重试交给 LoadMoreSentinel（滚到底自动拉，失败原地重试）；
- * 空态取 StateEmpty、读取失败条取 ListErrorAlert，删除确认复用公共 ConfirmDialog。
+ * 空态取 StateEmpty、读取失败条取 ListErrorAlert，删除确认复用公共 AlertDialog。
  * 关键约束：父级条件渲染保证每次展开都是新实例，进入即拉第一页；
  * 页码串行、代际丢弃、写操作单飞都在两个 Hook 内，本组件只做装配与文案；
  * 列表限高滚动；删除入口只给自己的转发：viewerUid 与转发作者 id 相同才渲染，最终归属仍由上游判定。
@@ -11,8 +11,8 @@
 import { Repeat2 } from 'lucide-react'
 import { useState } from 'react'
 import { Spinner } from '@components/ui/spinner'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { ListErrorAlert } from '@webview/components/ListErrorAlert'
 import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
 import { StateEmpty } from '@webview/components/StateEmpty'
@@ -120,7 +120,7 @@ export function WeiboRepostList({ postId, totalCount, viewerUid = null }: WeiboR
             </div>
 
             {/* 删除确认只有这一个实例：由 pendingDelete 控制，避免每条转发各挂一个弹层 */}
-            <ConfirmDialog
+            <AlertDialog
                 open={actions.pendingDelete !== null}
                 title="删除这条转发？"
                 description="删除后不可恢复，原微博下自己的这条转发会一并消失。"

@@ -16,9 +16,9 @@ import { useCallback, useMemo, useState } from 'react'
 import type { UploadFileItem } from '@shared/types/upload'
 import { copyWithToast } from '@shared/utils/clipboard'
 import { ZHAI_PATH_PREFIX } from '@shared/utils/zhaiPath'
+import { AlertDialog } from '@webview/components/AlertDialog'
 import { AppAction, AppContent, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
-import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { groupByMonth } from './hooks/mediaMonth'
 import { useUploader } from './hooks/useUploader'
 import { ImageList } from './imagelist/ImageList'
@@ -171,7 +171,7 @@ export function WorkflowUpload(): JSX.Element {
                 </AppContent>
             </AppPage>
 
-            <ConfirmDialog
+            <AlertDialog
                 open={pendingRemove !== null}
                 title="删除这个文件？"
                 description="文件会移入系统回收站；正文里引用它的位置将显示破图。"
