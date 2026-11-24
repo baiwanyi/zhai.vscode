@@ -1,6 +1,7 @@
 /**
  * 通用对话框：承载「标题 + 可选说明 + 自定义内容 + 可选页脚」的统一骨架，内容由调用方以 children 传入。
- * 复用约定：结构取 @components/ui 的 dialog 与 field-group，按钮取 @webview/components/Button；
+ * 复用约定：结构取 @components/ui 的 dialog，按钮取 @webview/components/Button；内容区是普通 div，不承担表单语义，
+ * 需要 FieldGroup 排版的调用方自行在 children 里包裹；
  * 可选 trigger 以 DialogTrigger asChild 承载外部触发器；size 提供宽高预设，className 在最后覆盖外观；
  * 关键约束：组件不持有内容状态、也不决定提交成功后是否关闭，调用方在 onConfirm 里提交并自行关闭；
  * 高度自带上限：标题与页脚固定、内容区吃掉剩余高度并独立滚动，显式裁横向溢出以免光晕撑出滚动条；
@@ -16,7 +17,6 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@components/ui/dialog'
-import { FieldGroup } from '@components/ui/field'
 import { ButtonLoadingContent } from '@webview/blocks/ButtonLoadingContent'
 import { Button } from '@webview/components/Button'
 import type { ButtonProps } from '@webview/components/Button'
@@ -88,12 +88,14 @@ export function Dialog({
             {trigger === undefined ? null : <DialogTrigger asChild>{trigger}</DialogTrigger>}
             <DialogContent
                 showCloseButton={showCloseButton}
-                className={cn(
-                    'grid grid-rows-[auto_minmax(0,1fr)_auto] gap-4',
-                    SIZE_CLASSES[size],
-                    className,
-                )}
-                onOpenAutoFocus={autoFocus ? undefined : (event): void => { event.preventDefault() }}
+                className={cn('grid grid-rows-[auto_minmax(0,1fr)_auto] gap-4', SIZE_CLASSES[size], className)}
+                onOpenAutoFocus={
+                    autoFocus
+                        ? undefined
+                        : (event): void => {
+                              event.preventDefault()
+                          }
+                }
             >
                 <DialogHeader className="gap-1">
                     {title === undefined || title === null || title === '' ? null : (
@@ -105,8 +107,8 @@ export function Dialog({
                         <DialogDescription>{description}</DialogDescription>
                     )}
                 </DialogHeader>
-                {/* 纵向滚动区内不做横向滚动：光晕的 -inset 外扩仍计入溢出，横向 auto 会凭空冒出滚动条 */}
-                <FieldGroup className="min-h-0 overflow-x-hidden overflow-y-auto">{children}</FieldGroup>
+                {/* 纵向滚动区内不做横向滚动：-inset 外扩仍计入溢出，横向 auto 会凭空冒出滚动条 */}
+                <div className="px-1 min-h-0 overflow-x-hidden overflow-y-auto">{children}</div>
                 {showFooter ? (
                     <DialogFooter>
                         {showCloseButton ? (

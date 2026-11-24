@@ -8,7 +8,7 @@
  * 前端只做 trim 与空值判定，完整名称白名单由宿主校验。
  */
 import { useState } from 'react'
-import { Field, FieldLabel } from '@components/ui/field'
+import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Textarea } from '@components/ui/textarea'
 import type { PressAudience } from '@shared/types/press'
 import { DEFAULT_PRESS_AUDIENCE, PRESS_AUDIENCES, readPressAudience } from '@shared/types/press'
@@ -53,37 +53,39 @@ export function PressProjectDialog({
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >
-            <Field>
-                <FieldLabel htmlFor="press-project-name">作品名</FieldLabel>
-                <Textarea
-                    id="press-project-name"
-                    value={name.value}
-                    rows={2}
-                    maxLength={60}
-                    placeholder="例如：凡人修仙传"
-                    disabled={isSubmitting}
-                    onChange={(event) => name.setValue(event.target.value)}
-                    onKeyDown={(event) => {
-                        // Enter 提交由弹窗接管，避免换行混入作品名；输入法组合中的 Enter 交给输入法处理
-                        if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
-                            event.preventDefault()
-                            handleSubmit()
-                        }
-                    }}
-                />
-            </Field>
-            <Field>
-                <FieldLabel>目标读者</FieldLabel>
-                <SegmentedRail
-                    items={PRESS_AUDIENCES.map((item) => ({ value: item, label: item }))}
-                    value={audience}
-                    onChange={(value) => setAudience(readPressAudience(value))}
-                    ariaLabel="目标读者"
-                    variant="outline"
-                    size="lg"
-                    isDisabled={isSubmitting}
-                />
-            </Field>
+            <FieldGroup>
+                <Field>
+                    <FieldLabel htmlFor="press-project-name">作品名</FieldLabel>
+                    <Textarea
+                        id="press-project-name"
+                        value={name.value}
+                        rows={2}
+                        maxLength={60}
+                        placeholder="例如：凡人修仙传"
+                        disabled={isSubmitting}
+                        onChange={(event) => name.setValue(event.target.value)}
+                        onKeyDown={(event) => {
+                            // Enter 提交由弹窗接管，避免换行混入作品名；输入法组合中的 Enter 交给输入法处理
+                            if (event.key === 'Enter' && !event.nativeEvent.isComposing) {
+                                event.preventDefault()
+                                handleSubmit()
+                            }
+                        }}
+                    />
+                </Field>
+                <Field>
+                    <FieldLabel>目标读者</FieldLabel>
+                    <SegmentedRail
+                        items={PRESS_AUDIENCES.map((item) => ({ value: item, label: item }))}
+                        value={audience}
+                        onChange={(value) => setAudience(readPressAudience(value))}
+                        ariaLabel="目标读者"
+                        variant="outline"
+                        size="lg"
+                        isDisabled={isSubmitting}
+                    />
+                </Field>
+            </FieldGroup>
         </Dialog>
     )
 }

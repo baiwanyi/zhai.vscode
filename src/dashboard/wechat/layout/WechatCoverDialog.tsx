@@ -1,7 +1,7 @@
 /**
  * 封面弹窗：先按来源打开选图对话框（生图结果 / 在线图片 / 已上传图片），挑中一张后按公众号首图比例（2.35:1）
  * 裁剪，再保存到当前批次目录的 images/ 下。
- * 复用约定：骨架取 Dialog，选图表单取 @components/ui 的 dialog，来源入口与缩略图取 components/Button 与
+ * 复用约定：主弹层与选图弹层统一取 @webview/components/Dialog，来源入口与缩略图取 components/Button 与
  * components/Image，空态与加载态取 blocks/StateEmpty，缩放缓动取 @components/ui 的 slider；
  * 候选列表来自 useWechatCoverSources（生图走 media/list、在线图片走 stock/downloaded、已上传走 upload/list），
  * 读原图走 wechat/cover/source，保存走 wechat/article/cover。
@@ -15,8 +15,7 @@ import { cn } from 'cn'
 import { Check, LibraryBig, Sparkles, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Dialog as UiDialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@components/ui/dialog'
-import { Field, FieldLabel } from '@components/ui/field'
+import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Slider } from '@components/ui/slider'
 import type { WechatArticleSummary } from '@shared/types/wechat'
 import { StateEmpty } from '@webview/blocks/StateEmpty'
@@ -120,64 +119,65 @@ function CoverSourcePickerDialog({
     const visibleItems = items.slice(0, limit)
 
     return (
-        <UiDialog open onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-lg">
-                <DialogHeader>
-                    <DialogTitle className="text-lg">{meta.dialogTitle}</DialogTitle>
-                </DialogHeader>
-                {isLoading ? (
-                    <StateEmpty isLoading title="正在读取图片" className="gap-2 py-10" />
-                ) : items.length === 0 ? (
-                    <StateEmpty title={meta.emptyTitle} className="gap-2 py-10" />
-                ) : (
-                    <div className="flex flex-col gap-2">
-                        <div className="grid max-h-[50vh] grid-cols-3 gap-2 overflow-y-auto">
-                            {visibleItems.map((item) => {
-                                const isSelected = item.path === selectedPath
-                                return (
-                                    <Button
-                                        key={item.id}
-                                        variant="ghost"
-                                        aria-label={item.alt}
-                                        aria-pressed={isSelected}
-                                        disabled={isReading}
-                                        className={cn(
-                                            'group h-auto w-full rounded-md p-0',
-                                            isSelected && 'ring-2 ring-primary',
-                                        )}
-                                        onClick={() => onSelect(item)}
+        <Dialog
+            open
+            title={meta.dialogTitle}
+            className="sm:max-w-lg"
+            showFooter={false}
+            onOpenChange={onOpenChange}
+        >
+            {isLoading ? (
+                <StateEmpty isLoading title="正在读取图片" className="gap-2 py-10" />
+            ) : items.length === 0 ? (
+                <StateEmpty title={meta.emptyTitle} className="gap-2 py-10" />
+            ) : (
+                <div className="flex flex-col gap-2">
+                    <div className="grid max-h-[50vh] grid-cols-3 gap-2 overflow-y-auto">
+                        {visibleItems.map((item) => {
+                            const isSelected = item.path === selectedPath
+                            return (
+                                <Button
+                                    key={item.id}
+                                    variant="ghost"
+                                    aria-label={item.alt}
+                                    aria-pressed={isSelected}
+                                    disabled={isReading}
+                                    className={cn(
+                                        'group h-auto w-full rounded-md p-0',
+                                        isSelected && 'ring-2 ring-primary',
+                                    )}
+                                    onClick={() => onSelect(item)}
+                                >
+                                    <Image src={item.url} size="sm" className="w-full bg-muted" />
+                                    {/* 悬停与键盘聚焦时压一层 20% 黑遮罩并亮出选择图标，点哪张一目了然 */}
+                                    <span
+                                        aria-hidden
+                                        className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-sm bg-black/20 opacity-0 transition-opacity group-focus-visible:opacity-100 group-hover:opacity-100"
                                     >
-                                        <Image src={item.url} size="sm" className="w-full bg-muted" />
-                                        {/* 悬停与键盘聚焦时压一层 20% 黑遮罩并亮出选择图标，点哪张一目了然 */}
-                                        <span
-                                            aria-hidden
-                                            className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-sm bg-black/20 opacity-0 transition-opacity group-focus-visible:opacity-100 group-hover:opacity-100"
-                                        >
-                                            <span className="flex size-8 items-center justify-center rounded-full bg-primary/70 text-primary-foreground">
-                                                <Check className="size-4" />
-                                            </span>
+                                        <span className="flex size-8 items-center justify-center rounded-full bg-primary/70 text-primary-foreground">
+                                            <Check className="size-4" />
                                         </span>
-                                    </Button>
-                                )
-                            })}
-                        </div>
-                        <div className="flex items-center justify-between gap-2">
-                            <span className="text-xs text-muted-foreground">{`共 ${String(items.length)} 张`}</span>
-                            {hasMore ? (
-                                <Button variant="outline" size="sm" disabled={isReading} onClick={loadMore}>
-                                    {`加载更多（还有 ${String(remaining)} 张）`}
+                                    </span>
                                 </Button>
-                            ) : null}
-                        </div>
+                            )
+                        })}
                     </div>
-                )}
-                <DialogFooter>
-                    <Button variant="outline" onClick={() => onOpenChange(false)}>
-                        取消
-                    </Button>
-                </DialogFooter>
-            </DialogContent>
-        </UiDialog>
+                    <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-muted-foreground">{`共 ${String(items.length)} 张`}</span>
+                        {hasMore ? (
+                            <Button variant="outline" size="sm" disabled={isReading} onClick={loadMore}>
+                                {`加载更多（还有 ${String(remaining)} 张）`}
+                            </Button>
+                        ) : null}
+                    </div>
+                </div>
+            )}
+            <div className="flex justify-end pt-2">
+                <Button variant="outline" onClick={() => onOpenChange(false)}>
+                    取消
+                </Button>
+            </div>
+        </Dialog>
     )
 }
 
@@ -339,82 +339,84 @@ export function WechatCoverDialog({
                 onOpenChange={onOpenChange}
                 onConfirm={handleSubmit}
             >
-                <Field>
-                    <FieldLabel>封面预览</FieldLabel>
-                    {sourceUrl === null ? (
-                        coverUri === undefined ? (
-                            <StateEmpty
-                                title="尚未选择封面"
-                                className="aspect-[2.35/1] gap-1 rounded-lg border border-dashed p-3"
-                            />
-                        ) : (
-                            <Image
-                                src={coverUri}
-                                alt={article.title}
-                                aspect="2.35/1"
-                                className="w-full rounded-lg bg-muted/40"
-                                loading="eager"
-                            />
-                        )
-                    ) : (
-                        <div className="flex flex-col gap-2">
-                            <div
-                                ref={frameRef}
-                                className="relative aspect-[2.35/1] w-full cursor-grab touch-none overflow-hidden rounded-lg bg-muted/40 active:cursor-grabbing"
-                                onPointerDown={handlePointerDown}
-                                onPointerMove={handlePointerMove}
-                                onPointerUp={handlePointerUp}
-                                onPointerCancel={handlePointerUp}
-                            >
-                                <img
-                                    ref={imageRef}
-                                    src={sourceUrl}
+                <FieldGroup>
+                    <Field>
+                        <FieldLabel>封面预览</FieldLabel>
+                        {sourceUrl === null ? (
+                            coverUri === undefined ? (
+                                <StateEmpty
+                                    title="尚未选择封面"
+                                    className="aspect-[2.35/1] gap-1 rounded-lg border border-dashed p-3"
+                                />
+                            ) : (
+                                <Image
+                                    src={coverUri}
                                     alt={article.title}
-                                    draggable={false}
-                                    className="absolute inset-0 size-full select-none object-cover"
-                                    style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }}
+                                    aspect="2.35/1"
+                                    className="w-full rounded-lg bg-muted/40"
+                                    loading="eager"
                                 />
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <span className="shrink-0 text-xs text-muted-foreground">缩放</span>
-                                <Slider
-                                    value={[zoom]}
-                                    min={ZOOM_MIN}
-                                    max={ZOOM_MAX}
-                                    step={0.01}
-                                    disabled={isSubmitting}
-                                    onValueChange={(value) => applyZoom(value[0] ?? ZOOM_MIN)}
-                                />
-                            </div>
-                        </div>
-                    )}
-                </Field>
-                <Field>
-                    <FieldLabel>图片来源</FieldLabel>
-                    <div className="grid grid-cols-3 gap-2">
-                        {SOURCE_ORDER.map((value) => {
-                            const meta = SOURCE_META[value]
-                            const Icon = meta.icon
-                            const isActive = selected?.kind === value
-                            return (
-                                <Button
-                                    key={value}
-                                    variant="outline"
-                                    aria-label={`从${meta.label}中选择封面`}
-                                    disabled={isSubmitting || isReading}
-                                    className={cn(
-                                        'h-auto flex-col gap-1 py-2.5',
-                                        isActive && 'border-primary text-primary',
-                                    )}
-                                    onClick={() => setPickerKind(value)}
-                                >
-                                    <Icon className="size-4" />
-                                    <span className="text-xs font-medium">{meta.label}</span>
-                                </Button>
                             )
-                        })}
-                    </div>
-                </Field>
+                        ) : (
+                            <div className="flex flex-col gap-2">
+                                <div
+                                    ref={frameRef}
+                                    className="relative aspect-[2.35/1] w-full cursor-grab touch-none overflow-hidden rounded-lg bg-muted/40 active:cursor-grabbing"
+                                    onPointerDown={handlePointerDown}
+                                    onPointerMove={handlePointerMove}
+                                    onPointerUp={handlePointerUp}
+                                    onPointerCancel={handlePointerUp}
+                                >
+                                    <img
+                                        ref={imageRef}
+                                        src={sourceUrl}
+                                        alt={article.title}
+                                        draggable={false}
+                                        className="absolute inset-0 size-full select-none object-cover"
+                                        style={{ transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})` }}
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="shrink-0 text-xs text-muted-foreground">缩放</span>
+                                    <Slider
+                                        value={[zoom]}
+                                        min={ZOOM_MIN}
+                                        max={ZOOM_MAX}
+                                        step={0.01}
+                                        disabled={isSubmitting}
+                                        onValueChange={(value) => applyZoom(value[0] ?? ZOOM_MIN)}
+                                    />
+                                </div>
+                            </div>
+                        )}
+                    </Field>
+                    <Field>
+                        <FieldLabel>图片来源</FieldLabel>
+                        <div className="grid grid-cols-3 gap-2">
+                            {SOURCE_ORDER.map((value) => {
+                                const meta = SOURCE_META[value]
+                                const Icon = meta.icon
+                                const isActive = selected?.kind === value
+                                return (
+                                    <Button
+                                        key={value}
+                                        variant="outline"
+                                        aria-label={`从${meta.label}中选择封面`}
+                                        disabled={isSubmitting || isReading}
+                                        className={cn(
+                                            'h-auto flex-col gap-1 py-2.5',
+                                            isActive && 'border-primary text-primary',
+                                        )}
+                                        onClick={() => setPickerKind(value)}
+                                    >
+                                        <Icon className="size-4" />
+                                        <span className="text-xs font-medium">{meta.label}</span>
+                                    </Button>
+                                )
+                            })}
+                        </div>
+                    </Field>
+                </FieldGroup>
             </Dialog>
             {pickerKind === null ? null : (
                 <CoverSourcePickerDialog

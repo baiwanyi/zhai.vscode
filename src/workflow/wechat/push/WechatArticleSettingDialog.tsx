@@ -8,7 +8,7 @@
  */
 import { useState } from 'react'
 import { Checkbox } from '@components/ui/checkbox'
-import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
 import {
@@ -90,79 +90,81 @@ export function WechatArticleSettingDialog({
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >
-            <Field>
-                <FieldLabel htmlFor="wechat-article-meta-title">标题</FieldLabel>
-                <Input
-                    id="wechat-article-meta-title"
-                    value={title.value}
-                    maxLength={WECHAT_ARTICLE_TITLE_MAX}
-                    placeholder="推送后显示的标题"
-                    disabled={isSaving}
-                    onChange={(event) => title.setValue(event.target.value)}
-                />
-                <FieldDescription>
-                    {`最多 ${String(WECHAT_ARTICLE_TITLE_MAX)} 字；改标题会同步重命名正文文件，与笔记规则一致。`}
-                </FieldDescription>
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="wechat-article-meta-author">作者</FieldLabel>
-                <Input
-                    id="wechat-article-meta-author"
-                    value={author.value}
-                    maxLength={WECHAT_ARTICLE_AUTHOR_MAX}
-                    placeholder="可留空"
-                    disabled={isSaving}
-                    onChange={(event) => author.setValue(event.target.value)}
-                />
-                <FieldDescription>
-                    {`最多 ${String(WECHAT_ARTICLE_AUTHOR_MAX)} 字；留空表示不填作者，初值取账号设置里的默认作者。`}
-                </FieldDescription>
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="wechat-article-meta-digest">摘要</FieldLabel>
-                <Textarea
-                    id="wechat-article-meta-digest"
-                    value={digest.value}
-                    rows={2}
-                    maxLength={WECHAT_ARTICLE_DIGEST_MAX}
-                    placeholder="留空时取正文前若干字"
-                    disabled={isSaving}
-                    onChange={(event) => digest.setValue(event.target.value)}
-                />
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="wechat-article-meta-cover">封面图</FieldLabel>
-                <div className="flex items-center gap-2">
+            <FieldGroup>
+                <Field>
+                    <FieldLabel htmlFor="wechat-article-meta-title">标题</FieldLabel>
                     <Input
-                        id="wechat-article-meta-cover"
-                        value={coverPath}
-                        readOnly
-                        placeholder="未指定：推送时取正文首图"
+                        id="wechat-article-meta-title"
+                        value={title.value}
+                        maxLength={WECHAT_ARTICLE_TITLE_MAX}
+                        placeholder="推送后显示的标题"
                         disabled={isSaving}
+                        onChange={(event) => title.setValue(event.target.value)}
                     />
-                    <Button variant="outline" disabled={isSaving} onClick={handlePickCover}>
-                        选择
-                    </Button>
-                    {coverPath.length > 0 && (
-                        <Button variant="ghost" disabled={isSaving} onClick={() => setCoverPath('')}>
-                            清除
+                    <FieldDescription>
+                        {`最多 ${String(WECHAT_ARTICLE_TITLE_MAX)} 字；改标题会同步重命名正文文件，与笔记规则一致。`}
+                    </FieldDescription>
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="wechat-article-meta-author">作者</FieldLabel>
+                    <Input
+                        id="wechat-article-meta-author"
+                        value={author.value}
+                        maxLength={WECHAT_ARTICLE_AUTHOR_MAX}
+                        placeholder="可留空"
+                        disabled={isSaving}
+                        onChange={(event) => author.setValue(event.target.value)}
+                    />
+                    <FieldDescription>
+                        {`最多 ${String(WECHAT_ARTICLE_AUTHOR_MAX)} 字；留空表示不填作者，初值取账号设置里的默认作者。`}
+                    </FieldDescription>
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="wechat-article-meta-digest">摘要</FieldLabel>
+                    <Textarea
+                        id="wechat-article-meta-digest"
+                        value={digest.value}
+                        rows={2}
+                        maxLength={WECHAT_ARTICLE_DIGEST_MAX}
+                        placeholder="留空时取正文前若干字"
+                        disabled={isSaving}
+                        onChange={(event) => digest.setValue(event.target.value)}
+                    />
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="wechat-article-meta-cover">封面图</FieldLabel>
+                    <div className="flex items-center gap-2">
+                        <Input
+                            id="wechat-article-meta-cover"
+                            value={coverPath}
+                            readOnly
+                            placeholder="未指定：推送时取正文首图"
+                            disabled={isSaving}
+                        />
+                        <Button variant="outline" disabled={isSaving} onClick={handlePickCover}>
+                            选择
                         </Button>
-                    )}
-                </div>
-                <FieldDescription>只支持 jpg / png；留空时取正文第一张本地图片作封面。</FieldDescription>
-            </Field>
-            <Field>
-                <div className="flex items-center gap-2">
-                    <Checkbox
-                        id="wechat-article-meta-comment"
-                        checked={isCommentAllowed}
-                        disabled={isSaving}
-                        onCheckedChange={(value) => setIsCommentAllowed(value === true)}
-                    />
-                    <FieldLabel htmlFor="wechat-article-meta-comment">允许读者留言</FieldLabel>
-                </div>
-                <FieldDescription>需账号已开通留言功能；未开通时平台侧不会生效。</FieldDescription>
-            </Field>
+                        {coverPath.length > 0 && (
+                            <Button variant="ghost" disabled={isSaving} onClick={() => setCoverPath('')}>
+                                清除
+                            </Button>
+                        )}
+                    </div>
+                    <FieldDescription>只支持 jpg / png；留空时取正文第一张本地图片作封面。</FieldDescription>
+                </Field>
+                <Field>
+                    <div className="flex items-center gap-2">
+                        <Checkbox
+                            id="wechat-article-meta-comment"
+                            checked={isCommentAllowed}
+                            disabled={isSaving}
+                            onCheckedChange={(value) => setIsCommentAllowed(value === true)}
+                        />
+                        <FieldLabel htmlFor="wechat-article-meta-comment">允许读者留言</FieldLabel>
+                    </div>
+                    <FieldDescription>需账号已开通留言功能；未开通时平台侧不会生效。</FieldDescription>
+                </Field>
+            </FieldGroup>
         </Dialog>
     )
 }

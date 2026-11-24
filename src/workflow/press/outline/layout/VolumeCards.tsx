@@ -1,7 +1,7 @@
 /**
  * 卷纲页：每卷一张卡片，卡片只读展示核心事件，点击整卡打开对话框编辑这一卷的卷纲。
  * 复用约定：卡片取 ui/card，空态取 blocks/StateEmpty，更多操作取 ui/dropdown-menu，
- * 编辑弹层由同目录 OutlineVolumeEditDialog 承担（卷标题 / 章节数 / 核心事件 / 主要情节 / 关键转折 / 卷末结果）。
+ * 编辑弹层由同目录 VolumeEditDialog 承担（卷标题 / 章节数 / 核心事件 / 主要情节 / 关键转折 / 卷末结果）。
  * 关键约束：卡片不直接改数据，编辑与保存都在弹层里完成，本组件只持有「正在编辑哪一卷」；
  * 整卡点击只打开编辑弹层，更多菜单的触发器与菜单内容都要阻止冒泡，否则会连带触发弹层；
  * 菜单只上报动作（编辑 / 上移 / 下移 / 生成章纲 / 清空章纲 / 添加到 AI 对话 / 删除），顺序调整与清空由页面落盘；
@@ -29,12 +29,12 @@ import {
 } from '@components/ui/dropdown-menu'
 import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Button } from '@webview/components/Button'
-import { OutlineVolumeEditDialog } from './OutlineVolumeEditDialog'
+import { VolumeEditDialog } from './VolumeEditDialog'
 import type { CharacterCard, OutlineVolume, ProjectSetting } from '../../types'
 import type { JSX } from 'react'
 import { volumeTitleLabel } from '../../utils'
 
-interface OutlineVolumeCardsProps {
+interface VolumeCardsProps {
     volumes: OutlineVolume[]
     /** 作品设定：编辑弹层里 AI 生成核心事件 / 卷末结果时作为事实输入 */
     setting: ProjectSetting
@@ -56,7 +56,7 @@ interface OutlineVolumeCardsProps {
     onDelete: (volume: OutlineVolume) => void
 }
 
-export function OutlineVolumeCards({
+export function VolumeCards({
     volumes,
     setting,
     characters,
@@ -67,7 +67,7 @@ export function OutlineVolumeCards({
     onClearChapters,
     onAddToChat,
     onDelete,
-}: OutlineVolumeCardsProps): JSX.Element {
+}: VolumeCardsProps): JSX.Element {
     const [editingVolumeId, setEditingVolumeId] = useState<string | null>(null)
     const editingVolume = volumes.find((volume) => volume.id === editingVolumeId) ?? null
 
@@ -198,7 +198,7 @@ export function OutlineVolumeCards({
             )}
 
             {/* key 绑定「卷 id + 打开状态」：每次打开都重建弹层，草稿不会串到上一卷或上一次编辑 */}
-            <OutlineVolumeEditDialog
+            <VolumeEditDialog
                 key={`${editingVolumeId ?? 'none'}-${editingVolume === null ? 'closed' : 'open'}`}
                 isOpen={editingVolume !== null}
                 onOpenChange={handleEditOpenChange}

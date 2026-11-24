@@ -9,7 +9,7 @@
 import { Plus, X } from 'lucide-react'
 import { useState } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
-import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Item, ItemActions, ItemContent } from '@components/ui/item'
 import { ScrollArea } from '@components/ui/scroll-area'
@@ -248,77 +248,79 @@ export function ProofreadLexiconDialog({
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >
-            {error !== null && (
-                <Alert variant="destructive">
-                    <AlertDescription>{error}</AlertDescription>
-                </Alert>
-            )}
-            <Field>
-                <FieldLabel>词条</FieldLabel>
-                <FieldDescription>{ENTRY_FIELD_HINT}</FieldDescription>
-                {entries.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">还没有词条，添加后按错误写法匹配。</p>
-                ) : (
-                    <ScrollArea className="max-h-64">
-                        <div className="flex flex-col gap-1.5 pr-3">
-                            {entries.map((entry) => (
-                                <EntryRow
-                                    key={entry.id}
-                                    entry={entry}
-                                    onChange={(patch) => updateEntry(entry.id, patch)}
-                                    onRemove={() => removeEntry(entry.id)}
-                                />
+            <FieldGroup>
+                {error !== null && (
+                    <Alert variant="destructive">
+                        <AlertDescription>{error}</AlertDescription>
+                    </Alert>
+                )}
+                <Field>
+                    <FieldLabel>词条</FieldLabel>
+                    <FieldDescription>{ENTRY_FIELD_HINT}</FieldDescription>
+                    {entries.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">还没有词条，添加后按错误写法匹配。</p>
+                    ) : (
+                        <ScrollArea className="max-h-64">
+                            <div className="flex flex-col gap-1.5 pr-3">
+                                {entries.map((entry) => (
+                                    <EntryRow
+                                        key={entry.id}
+                                        entry={entry}
+                                        onChange={(patch) => updateEntry(entry.id, patch)}
+                                        onRemove={() => removeEntry(entry.id)}
+                                    />
+                                ))}
+                            </div>
+                        </ScrollArea>
+                    )}
+                    <Button size="xs" variant="outline" className="self-start" onClick={addEntry}>
+                        <Plus />
+                        添加词条
+                    </Button>
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="proofread-ignore-draft">忽略词</FieldLabel>
+                    <FieldDescription>{IGNORE_FIELD_HINT}</FieldDescription>
+                    <div className="flex items-center gap-1.5">
+                        <Input
+                            id="proofread-ignore-draft"
+                            placeholder="角色名或专有名词"
+                            maxLength={MAX_WORD_LENGTH}
+                            value={ignoreDraft}
+                            onChange={(event) => setIgnoreDraft(event.target.value)}
+                            onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                    event.preventDefault()
+                                    addIgnore()
+                                }
+                            }}
+                        />
+                        <Button size="xs" variant="outline" onClick={addIgnore}>
+                            <Plus />
+                            添加
+                        </Button>
+                    </div>
+                    {ignores.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                            {ignores.map((word) => (
+                                <Button
+                                    key={word}
+                                    size="xs"
+                                    variant="secondary"
+                                    tooltip="移除此忽略词"
+                                    onClick={() => removeIgnore(word)}
+                                >
+                                    {word}
+                                    <X />
+                                </Button>
                             ))}
                         </div>
-                    </ScrollArea>
-                )}
-                <Button size="xs" variant="outline" className="self-start" onClick={addEntry}>
-                    <Plus />
-                    添加词条
+                    )}
+                </Field>
+                <Button size="xs" variant="ghost" className="self-start" onClick={onOpenFile}>
+                    在编辑器中打开 JSON
                 </Button>
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="proofread-ignore-draft">忽略词</FieldLabel>
-                <FieldDescription>{IGNORE_FIELD_HINT}</FieldDescription>
-                <div className="flex items-center gap-1.5">
-                    <Input
-                        id="proofread-ignore-draft"
-                        placeholder="角色名或专有名词"
-                        maxLength={MAX_WORD_LENGTH}
-                        value={ignoreDraft}
-                        onChange={(event) => setIgnoreDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                                event.preventDefault()
-                                addIgnore()
-                            }
-                        }}
-                    />
-                    <Button size="xs" variant="outline" onClick={addIgnore}>
-                        <Plus />
-                        添加
-                    </Button>
-                </div>
-                {ignores.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                        {ignores.map((word) => (
-                            <Button
-                                key={word}
-                                size="xs"
-                                variant="secondary"
-                                tooltip="移除此忽略词"
-                                onClick={() => removeIgnore(word)}
-                            >
-                                {word}
-                                <X />
-                            </Button>
-                        ))}
-                    </div>
-                )}
-            </Field>
-            <Button size="xs" variant="ghost" className="self-start" onClick={onOpenFile}>
-                在编辑器中打开 JSON
-            </Button>
+            </FieldGroup>
         </Dialog>
     )
 }

@@ -6,7 +6,7 @@
  * 姓名必填且仅空白字符不可提交；表单重置由页面在每次打开时更换组件 key 完成（重挂载即回到初始值）。
  */
 import { useState } from 'react'
-import { Field, FieldLabel } from '@components/ui/field'
+import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
 import { Dialog } from '@webview/components/Dialog'
@@ -63,57 +63,59 @@ export function CharacterCreateDialog({ open, onOpenChange, onCreate }: Characte
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >
-            <Field>
-                <FieldLabel htmlFor="character-create-name">姓名</FieldLabel>
-                <Input
-                    id="character-create-name"
-                    value={name.value}
-                    placeholder="必填，建卡后可继续修改"
-                    className="h-8 px-3 py-1 leading-5"
-                    onChange={(event) => name.setValue(event.target.value)}
-                    onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                            handleSubmit()
-                        }
-                    }}
-                />
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="character-create-role">角色</FieldLabel>
-                <SegmentedRail
-                    items={CHARACTER_ROLE_ORDER.map((item) => ({
-                        value: item,
-                        label: CHARACTER_ROLE_META[item].label,
-                    }))}
-                    value={role}
-                    onChange={handleRoleChange}
-                    ariaLabel="角色"
-                    variant="chip"
-                />
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="character-create-gender">性别</FieldLabel>
-                <SegmentedRail
-                    items={CHARACTER_GENDER_ORDER.map((item) => ({
-                        value: item,
-                        label: CHARACTER_GENDER_META[item].label,
-                    }))}
-                    value={gender}
-                    onChange={handleGenderChange}
-                    ariaLabel="性别"
-                    variant="chip"
-                />
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="character-create-identity">身份</FieldLabel>
-                <Textarea
-                    id="character-create-identity"
-                    value={identity.value}
-                    placeholder="如：落魄剑客、商会掌柜"
-                    className="h-8 px-3 py-1 leading-5"
-                    onChange={(event) => identity.setValue(event.target.value)}
-                />
-            </Field>
+            <FieldGroup>
+                <Field>
+                    <FieldLabel htmlFor="character-create-name">姓名</FieldLabel>
+                    <Input
+                        id="character-create-name"
+                        value={name.value}
+                        placeholder="必填，建卡后可继续修改"
+                        className="h-8 px-3 py-1 leading-5"
+                        onChange={(event) => name.setValue(event.target.value)}
+                        onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                                handleSubmit()
+                            }
+                        }}
+                    />
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="character-create-role">角色</FieldLabel>
+                    <SegmentedRail
+                        items={CHARACTER_ROLE_ORDER.map((item) => ({
+                            value: item,
+                            label: CHARACTER_ROLE_META[item].label,
+                        }))}
+                        value={role}
+                        onChange={handleRoleChange}
+                        ariaLabel="角色"
+                        variant="chip"
+                    />
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="character-create-gender">性别</FieldLabel>
+                    <SegmentedRail
+                        items={CHARACTER_GENDER_ORDER.map((item) => ({
+                            value: item,
+                            label: CHARACTER_GENDER_META[item].label,
+                        }))}
+                        value={gender}
+                        onChange={handleGenderChange}
+                        ariaLabel="性别"
+                        variant="chip"
+                    />
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="character-create-identity">身份</FieldLabel>
+                    <Textarea
+                        id="character-create-identity"
+                        value={identity.value}
+                        placeholder="如：落魄剑客、商会掌柜"
+                        className="h-8 px-3 py-1 leading-5"
+                        onChange={(event) => identity.setValue(event.target.value)}
+                    />
+                </Field>
+            </FieldGroup>
         </Dialog>
     )
 }

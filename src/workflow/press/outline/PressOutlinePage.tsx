@@ -2,7 +2,7 @@
  * 大纲工作台：写作流程的第四步，按「功能模块 + 层级 + 颗粒度」组织，而不是一条事件链列表。
  * 复用约定：外壳取 components/AppPage（标题与动作走 AppHeader、作品名与统计走 AppSummary、
  * 模块与筛选走 OutlineFilters、三栏主体交给 AppContent）；章纲详情由 OutlineDetail 承担，
- * 卷纲详情由 OutlineVolumeDetail 承担，按卷生成章纲的预览与写入由 OutlineVolumeChaptersDialog 承担；
+ * 卷纲详情由 OutlineVolumeDetail 承担，按卷生成章纲的预览与写入由 VolumeGenerateChaptersDialog 承担；
  * 结构与线索两个功能模块由 OutlinePlanPanels / OutlineTrackPanels 承担，
  * 写前查纲与写后回填分别由 OutlineFocusView 与 OutlineBackfillDialog 承担；
  * 页头 AppAction 里是「打开文档」与唯一的新增按钮（动作随当前模块标签变化），
@@ -41,9 +41,9 @@ import { OutlineFocusView } from './layout/OutlineFocusView'
 import { StructurePanel } from './layout/OutlinePlanPanels'
 import { CluePanel } from './layout/OutlineTrackPanels'
 import { OutlineTree } from './layout/OutlineTree'
-import { OutlineVolumeCards } from './layout/OutlineVolumeCards'
-import { OutlineVolumeChaptersDialog } from './layout/OutlineVolumeChaptersDialog'
-import { OutlineVolumeOutlinesDialog } from './layout/OutlineVolumeOutlinesDialog'
+import { VolumeCards } from './layout/VolumeCards'
+import { VolumeGenerateChaptersDialog } from './layout/VolumeGenerateChaptersDialog'
+import { VolumeGenerateOutlinesDialog } from './layout/VolumeGenerateOutlinesDialog'
 import type { CreatedOutlineNode } from '../hooks/usePressMutations'
 import type {
     OutlineChapter,
@@ -558,7 +558,7 @@ export function PressOutlinePage({
                 ) : (
                     <AppContent isScrollable>
                         {module === 'volume' ? (
-                            <OutlineVolumeCards
+                            <VolumeCards
                                 volumes={workspace.volumes}
                                 setting={workspace.setting}
                                 characters={workspace.characters}
@@ -619,7 +619,7 @@ export function PressOutlinePage({
             />
 
             {/* key 绑定打开状态：每次重新打开都重建对话框，草案与勾选不会从上一次带过来 */}
-            <OutlineVolumeOutlinesDialog
+            <VolumeGenerateOutlinesDialog
                 key={isOutlinesOpen ? 'outlines-open' : 'outlines-closed'}
                 isOpen={isOutlinesOpen}
                 onOpenChange={setIsOutlinesOpen}
@@ -640,7 +640,7 @@ export function PressOutlinePage({
             />
 
             {/* key 绑定打开状态：每次重新打开都重建对话框，草案、勾选与章数不会从上一次带过来 */}
-            <OutlineVolumeChaptersDialog
+            <VolumeGenerateChaptersDialog
                 key={isGenerateOpen ? 'generate-open' : 'generate-closed'}
                 isOpen={isGenerateOpen && generatingVolume !== null}
                 onOpenChange={setIsGenerateOpen}

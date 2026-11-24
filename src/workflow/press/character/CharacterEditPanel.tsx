@@ -10,9 +10,10 @@
  * 关键约束：所有控件只通过补丁回传给调用方（编辑弹窗的草稿），本组件不持有角色数据副本，生成结果写回后仍需用户保存；
  * 例外是删除角色形象后的封面回退——删除不可撤销，必须经 onPersist 立即落盘；
  * 外貌生成的 hook 必须留在主组件：切换标签页会卸载面板内容，挂在面板内会连带取消在途请求；
- * 基础信息固定两列排版，左列是角色形象区块、右列为字段；形象区块可一键生成并设首选，复杂图库仍在生图页；
+ * 基础信息固定两列排版：外层 FieldGroup 兼作网格，形象区块与字段各占一列、其余块跨满两行；形象可生成并设首选；
  * 单行输入统一 32px 高、上下各 6px 内边距；结果与失败原因统一经 sonner 提示，页面内不渲染内联错误文本。
  */
+import { cn } from 'cn'
 import { toast } from 'sonner'
 import { Field, FieldDescription, FieldGroup, FieldLabel, FieldTitle } from '@components/ui/field'
 import { Input } from '@components/ui/input'
@@ -203,54 +204,52 @@ function CharacterBasicTab({
     }
 
     return (
-        <FieldGroup className={FIELD_GROUP_CLASS}>
-            <div className="grid grid-cols-2 gap-3">
-                <CharacterPortraitSection
-                    character={character}
-                    dirPath={dirPath}
-                    isGenerating={isGeneratingPortrait}
-                    onGenerate={onGeneratePortrait}
-                    onChange={onChange}
-                    onPersist={onPersist}
+        <FieldGroup className={cn(FIELD_GROUP_CLASS, 'grid grid-cols-2 [&>*:nth-child(n+3)]:col-span-2')}>
+            <CharacterPortraitSection
+                character={character}
+                dirPath={dirPath}
+                isGenerating={isGeneratingPortrait}
+                onGenerate={onGeneratePortrait}
+                onChange={onChange}
+                onPersist={onPersist}
+            />
+            <FieldGroup className={FIELD_GROUP_CLASS}>
+                <CharacterInputField
+                    id="character-name"
+                    label="姓名"
+                    value={character.name}
+                    onChange={(name) => onChange({ name })}
                 />
-                <FieldGroup className={FIELD_GROUP_CLASS}>
-                    <CharacterInputField
-                        id="character-name"
-                        label="姓名"
-                        value={character.name}
-                        onChange={(name) => onChange({ name })}
+                <CharacterInputField
+                    id="character-alias"
+                    label="昵称"
+                    value={character.alias}
+                    onChange={(alias) => onChange({ alias })}
+                />
+                <CharacterInputField
+                    id="character-age"
+                    label="年龄"
+                    value={character.age}
+                    onChange={(age) => onChange({ age })}
+                />
+                <CharacterInputField
+                    id="character-height"
+                    label="身高"
+                    value={character.height}
+                    placeholder="如：一米七八"
+                    onChange={(height) => onChange({ height })}
+                />
+                <Field>
+                    <FieldLabel htmlFor="character-gender">性别</FieldLabel>
+                    <SegmentedRail
+                        items={CHARACTER_GENDER_OPTIONS}
+                        value={character.gender}
+                        onChange={handleGenderChange}
+                        ariaLabel="性别"
+                        variant="chip"
                     />
-                    <CharacterInputField
-                        id="character-alias"
-                        label="昵称"
-                        value={character.alias}
-                        onChange={(alias) => onChange({ alias })}
-                    />
-                    <CharacterInputField
-                        id="character-age"
-                        label="年龄"
-                        value={character.age}
-                        onChange={(age) => onChange({ age })}
-                    />
-                    <CharacterInputField
-                        id="character-height"
-                        label="身高"
-                        value={character.height}
-                        placeholder="如：一米七八"
-                        onChange={(height) => onChange({ height })}
-                    />
-                    <Field>
-                        <FieldLabel htmlFor="character-gender">性别</FieldLabel>
-                        <SegmentedRail
-                            items={CHARACTER_GENDER_OPTIONS}
-                            value={character.gender}
-                            onChange={handleGenderChange}
-                            ariaLabel="性别"
-                            variant="chip"
-                        />
-                    </Field>
-                </FieldGroup>
-            </div>
+                </Field>
+            </FieldGroup>
 
             <CharacterTextareaField
                 id="character-identity"

@@ -6,7 +6,7 @@
  * 关键约束：分类名会成为 md 文件名，因此不接受空值与路径分隔符，真正的校验与拒绝由宿主兜底；
  * 编辑时改名等于换标识，生图侧的说明必须讲清已挂芯片的影响；每次打开换 key 重挂载，字段自然回到初值。
  */
-import { Field, FieldLabel } from '@components/ui/field'
+import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
 import type { PromptLibraryScope, PromptTag, PromptTagObject, PromptTagSaveRequest } from '@shared/types/promptLibrary'
@@ -104,80 +104,82 @@ function PromptTagFormDialog({
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >
-            <Field>
-                <FieldLabel htmlFor="prompt-tag-object">分类</FieldLabel>
-                <Input
-                    id="prompt-tag-object"
-                    value={object.value}
-                    placeholder="如：人物，会作为 md 文件名"
-                    onChange={(event) => object.setValue(event.target.value)}
-                />
-                {objects.length > 0 ? (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                        {objects.map((item) => (
-                            <Button
-                                key={item.name}
-                                size="sm"
-                                variant={object.trimmedValue === item.name ? 'secondary' : 'ghost'}
-                                className="h-6 px-2 text-xs"
-                                onClick={() => object.setValue(item.name)}
-                            >
-                                {item.name}
-                            </Button>
-                        ))}
-                    </div>
-                ) : null}
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="prompt-tag-attribute">分组</FieldLabel>
-                <Input
-                    id="prompt-tag-attribute"
-                    value={attribute.value}
-                    placeholder="如：基础"
-                    onChange={(event) => attribute.setValue(event.target.value)}
-                />
-                {knownAttributes.length > 0 ? (
-                    <div className="flex flex-wrap gap-1 pt-1">
-                        {knownAttributes.map((item) => (
-                            <Button
-                                key={item.name}
-                                size="sm"
-                                variant={attribute.trimmedValue === item.name ? 'secondary' : 'ghost'}
-                                className="h-6 px-2 text-xs"
-                                onClick={() => attribute.setValue(item.name)}
-                            >
-                                {item.name}
-                            </Button>
-                        ))}
-                    </div>
-                ) : null}
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="prompt-tag-name">词条名</FieldLabel>
-                <Input
-                    id="prompt-tag-name"
-                    value={name.value}
-                    placeholder="如：小女孩，面板上显示这个名字"
-                    onChange={(event) => name.setValue(event.target.value)}
-                />
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="prompt-tag-prompt">提示词原文</FieldLabel>
-                <Textarea
-                    id="prompt-tag-prompt"
-                    value={prompt.value}
-                    placeholder={
-                        scope === 'imagegen'
-                            ? '如：little_girl，发送时按芯片顺序并入提示词'
-                            : '点选后整段插入输入框，可继续编辑再发送'
-                    }
-                    className="min-h-24 text-sm leading-5"
-                    onChange={(event) => prompt.setValue(event.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">
-                    点选后写入{words.subject}：{scope === 'imagegen' ? '随出图请求提交' : '由正文提交'}
-                </p>
-            </Field>
+            <FieldGroup>
+                <Field>
+                    <FieldLabel htmlFor="prompt-tag-object">分类</FieldLabel>
+                    <Input
+                        id="prompt-tag-object"
+                        value={object.value}
+                        placeholder="如：人物，会作为 md 文件名"
+                        onChange={(event) => object.setValue(event.target.value)}
+                    />
+                    {objects.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                            {objects.map((item) => (
+                                <Button
+                                    key={item.name}
+                                    size="sm"
+                                    variant={object.trimmedValue === item.name ? 'secondary' : 'ghost'}
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => object.setValue(item.name)}
+                                >
+                                    {item.name}
+                                </Button>
+                            ))}
+                        </div>
+                    ) : null}
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="prompt-tag-attribute">分组</FieldLabel>
+                    <Input
+                        id="prompt-tag-attribute"
+                        value={attribute.value}
+                        placeholder="如：基础"
+                        onChange={(event) => attribute.setValue(event.target.value)}
+                    />
+                    {knownAttributes.length > 0 ? (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                            {knownAttributes.map((item) => (
+                                <Button
+                                    key={item.name}
+                                    size="sm"
+                                    variant={attribute.trimmedValue === item.name ? 'secondary' : 'ghost'}
+                                    className="h-6 px-2 text-xs"
+                                    onClick={() => attribute.setValue(item.name)}
+                                >
+                                    {item.name}
+                                </Button>
+                            ))}
+                        </div>
+                    ) : null}
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="prompt-tag-name">词条名</FieldLabel>
+                    <Input
+                        id="prompt-tag-name"
+                        value={name.value}
+                        placeholder="如：小女孩，面板上显示这个名字"
+                        onChange={(event) => name.setValue(event.target.value)}
+                    />
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="prompt-tag-prompt">提示词原文</FieldLabel>
+                    <Textarea
+                        id="prompt-tag-prompt"
+                        value={prompt.value}
+                        placeholder={
+                            scope === 'imagegen'
+                                ? '如：little_girl，发送时按芯片顺序并入提示词'
+                                : '点选后整段插入输入框，可继续编辑再发送'
+                        }
+                        className="min-h-24 text-sm leading-5"
+                        onChange={(event) => prompt.setValue(event.target.value)}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                        点选后写入{words.subject}：{scope === 'imagegen' ? '随出图请求提交' : '由正文提交'}
+                    </p>
+                </Field>
+            </FieldGroup>
         </Dialog>
     )
 }

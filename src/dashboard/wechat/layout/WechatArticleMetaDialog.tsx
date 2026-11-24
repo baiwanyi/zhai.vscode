@@ -7,7 +7,7 @@
  * 草稿只存在于本次打开期间，调用方须以文章 id 作为 key 重建组件。
  */
 import { useState } from 'react'
-import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
 import { WECHAT_ARTICLE_AUTHOR_MAX, WECHAT_ARTICLE_DIGEST_MAX, type WechatArticleSummary } from '@shared/types/wechat'
@@ -61,46 +61,48 @@ export function WechatArticleMetaDialog({
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >
-            <Field>
-                <FieldLabel htmlFor="wechat-article-meta-author">作者</FieldLabel>
-                <Input
-                    id="wechat-article-meta-author"
-                    value={author.value}
-                    maxLength={WECHAT_ARTICLE_AUTHOR_MAX}
-                    placeholder="可留空"
-                    disabled={isSubmitting}
-                    onChange={(event) => author.setValue(event.target.value)}
-                />
-                <FieldDescription>{`最多 ${String(WECHAT_ARTICLE_AUTHOR_MAX)} 字；留空时用最近设置过的作者`}</FieldDescription>
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="wechat-article-meta-digest">摘要</FieldLabel>
-                <Textarea
-                    id="wechat-article-meta-digest"
-                    value={digest.value}
-                    rows={3}
-                    maxLength={WECHAT_ARTICLE_DIGEST_MAX}
-                    placeholder="留空时取正文前若干字"
-                    disabled={isSubmitting}
-                    onChange={(event) => digest.setValue(event.target.value)}
-                />
-                <FieldDescription>{`最多 ${String(WECHAT_ARTICLE_DIGEST_MAX)} 字`}</FieldDescription>
-            </Field>
-            <Field>
-                <FieldLabel>读者留言</FieldLabel>
-                <div className="flex items-center">
-                    <Switch
-                        id="wechat-article-meta-comment"
-                        checked={isCommentAllowed}
+            <FieldGroup>
+                <Field>
+                    <FieldLabel htmlFor="wechat-article-meta-author">作者</FieldLabel>
+                    <Input
+                        id="wechat-article-meta-author"
+                        value={author.value}
+                        maxLength={WECHAT_ARTICLE_AUTHOR_MAX}
+                        placeholder="可留空"
                         disabled={isSubmitting}
-                        label="允许读者留言"
-                        onCheckedChange={(checked) => setIsCommentAllowed(checked === true)}
+                        onChange={(event) => author.setValue(event.target.value)}
                     />
-                </div>
-                <FieldDescription>
-                    需账号已开通留言功能；未开通时平台侧不会生效，草稿仍会写入开启标记。
-                </FieldDescription>
-            </Field>
+                    <FieldDescription>{`最多 ${String(WECHAT_ARTICLE_AUTHOR_MAX)} 字；留空时用最近设置过的作者`}</FieldDescription>
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="wechat-article-meta-digest">摘要</FieldLabel>
+                    <Textarea
+                        id="wechat-article-meta-digest"
+                        value={digest.value}
+                        rows={3}
+                        maxLength={WECHAT_ARTICLE_DIGEST_MAX}
+                        placeholder="留空时取正文前若干字"
+                        disabled={isSubmitting}
+                        onChange={(event) => digest.setValue(event.target.value)}
+                    />
+                    <FieldDescription>{`最多 ${String(WECHAT_ARTICLE_DIGEST_MAX)} 字`}</FieldDescription>
+                </Field>
+                <Field>
+                    <FieldLabel>读者留言</FieldLabel>
+                    <div className="flex items-center">
+                        <Switch
+                            id="wechat-article-meta-comment"
+                            checked={isCommentAllowed}
+                            disabled={isSubmitting}
+                            label="允许读者留言"
+                            onCheckedChange={(checked) => setIsCommentAllowed(checked === true)}
+                        />
+                    </div>
+                    <FieldDescription>
+                        需账号已开通留言功能；未开通时平台侧不会生效，草稿仍会写入开启标记。
+                    </FieldDescription>
+                </Field>
+            </FieldGroup>
         </Dialog>
     )
 }

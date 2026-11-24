@@ -7,7 +7,7 @@
  * 表单重置由页面在每次打开时更换组件 key 完成（重挂载即回到当前账号的值），本组件不在 effect 中写状态。
  */
 import { useState } from 'react'
-import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import {
     readWechatAccountType,
@@ -74,48 +74,50 @@ export function WechatAccountDialog({
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >
-            <Field>
-                <FieldLabel htmlFor="wechat-account-name">账号名称</FieldLabel>
-                <Input
-                    id="wechat-account-name"
-                    value={name.value}
-                    maxLength={WECHAT_ACCOUNT_NAME_MAX}
-                    placeholder="例如：宅写作笔记"
-                    disabled={isSubmitting}
-                    onChange={(event) => name.setValue(event.target.value)}
-                />
-                <FieldDescription>只在本机展示，微信没有公开接口可以拉取公众号名称。</FieldDescription>
-            </Field>
-            <Field>
-                <FieldLabel>账号类型</FieldLabel>
-                <SegmentedRail
-                    items={WECHAT_ACCOUNT_TYPES.map((item) => ({
-                        value: item,
-                        label: WECHAT_ACCOUNT_TYPE_LABELS[item],
-                    }))}
-                    value={accountType}
-                    onChange={(value) => setAccountType(readWechatAccountType(value))}
-                    ariaLabel="账号类型"
-                    variant="outline"
-                    size="lg"
-                    isDisabled={isSubmitting}
-                />
-                <FieldDescription>类型决定群发频率：订阅号一天一次，服务号一月四次。</FieldDescription>
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="wechat-account-author">默认作者</FieldLabel>
-                <Input
-                    id="wechat-account-author"
-                    value={defaultAuthor.value}
-                    maxLength={WECHAT_ARTICLE_AUTHOR_MAX}
-                    placeholder="可留空，等同于文章作者留空"
-                    disabled={isSubmitting}
-                    onChange={(event) => defaultAuthor.setValue(event.target.value)}
-                />
-                <FieldDescription>
-                    {`最多 ${String(WECHAT_ARTICLE_AUTHOR_MAX)} 字；新建文章设置时会带出这个作者，可按篇改写。`}
-                </FieldDescription>
-            </Field>
+            <FieldGroup>
+                <Field>
+                    <FieldLabel htmlFor="wechat-account-name">账号名称</FieldLabel>
+                    <Input
+                        id="wechat-account-name"
+                        value={name.value}
+                        maxLength={WECHAT_ACCOUNT_NAME_MAX}
+                        placeholder="例如：宅写作笔记"
+                        disabled={isSubmitting}
+                        onChange={(event) => name.setValue(event.target.value)}
+                    />
+                    <FieldDescription>只在本机展示，微信没有公开接口可以拉取公众号名称。</FieldDescription>
+                </Field>
+                <Field>
+                    <FieldLabel>账号类型</FieldLabel>
+                    <SegmentedRail
+                        items={WECHAT_ACCOUNT_TYPES.map((item) => ({
+                            value: item,
+                            label: WECHAT_ACCOUNT_TYPE_LABELS[item],
+                        }))}
+                        value={accountType}
+                        onChange={(value) => setAccountType(readWechatAccountType(value))}
+                        ariaLabel="账号类型"
+                        variant="outline"
+                        size="lg"
+                        isDisabled={isSubmitting}
+                    />
+                    <FieldDescription>类型决定群发频率：订阅号一天一次，服务号一月四次。</FieldDescription>
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="wechat-account-author">默认作者</FieldLabel>
+                    <Input
+                        id="wechat-account-author"
+                        value={defaultAuthor.value}
+                        maxLength={WECHAT_ARTICLE_AUTHOR_MAX}
+                        placeholder="可留空，等同于文章作者留空"
+                        disabled={isSubmitting}
+                        onChange={(event) => defaultAuthor.setValue(event.target.value)}
+                    />
+                    <FieldDescription>
+                        {`最多 ${String(WECHAT_ARTICLE_AUTHOR_MAX)} 字；新建文章设置时会带出这个作者，可按篇改写。`}
+                    </FieldDescription>
+                </Field>
+            </FieldGroup>
         </Dialog>
     )
 }

@@ -8,7 +8,7 @@
  * 密钥只写入系统级加密存储，列表与日志只显示尾号；
  * 表单重置由页面在每次打开时更换组件 key 完成，本组件不在 effect 中写状态。
  */
-import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
 import type { WechatAccountSummary } from '@shared/types/wechat'
@@ -56,41 +56,45 @@ export function WechatAccountSecretDialog({
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >
-            <Field>
-                <FieldLabel htmlFor="wechat-account-appid">AppID</FieldLabel>
-                <Input
-                    id="wechat-account-appid"
-                    value={appId.value}
-                    placeholder="wx 开头的开发者 ID"
-                    autoComplete="off"
-                    spellCheck={false}
-                    disabled={isSubmitting}
-                    onChange={(event) => appId.setValue(event.target.value)}
-                />
-                <FieldDescription>非敏感信息，会显示在账号列表里；改它会让旧 Token 失效并重新鉴权。</FieldDescription>
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="wechat-account-secret">AppSecret</FieldLabel>
-                <Textarea
-                    id="wechat-account-secret"
-                    value={appSecret.value}
-                    rows={3}
-                    placeholder={
-                        account.hasSecret
-                            ? `留空沿用已存密钥 ${account.secretHint ?? ''}`.trim()
-                            : '公众号后台的开发者密码'
-                    }
-                    autoComplete="off"
-                    spellCheck={false}
-                    className="font-mono text-xs"
-                    disabled={isSubmitting}
-                    onChange={(event) => appSecret.setValue(event.target.value)}
-                />
-                <FieldDescription>
-                    多行输入便于核对与整段粘贴，输入期间是明文，保存后只写入系统级加密存储；列表与日志只显示尾号，
-                    不会写入数据库。密钥本身不含空格与换行，粘贴后请确认没有多余换行。未配置 AppID 时无法新建批次。
-                </FieldDescription>
-            </Field>
+            <FieldGroup>
+                <Field>
+                    <FieldLabel htmlFor="wechat-account-appid">AppID</FieldLabel>
+                    <Input
+                        id="wechat-account-appid"
+                        value={appId.value}
+                        placeholder="wx 开头的开发者 ID"
+                        autoComplete="off"
+                        spellCheck={false}
+                        disabled={isSubmitting}
+                        onChange={(event) => appId.setValue(event.target.value)}
+                    />
+                    <FieldDescription>
+                        非敏感信息，会显示在账号列表里；改它会让旧 Token 失效并重新鉴权。
+                    </FieldDescription>
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="wechat-account-secret">AppSecret</FieldLabel>
+                    <Textarea
+                        id="wechat-account-secret"
+                        value={appSecret.value}
+                        rows={3}
+                        placeholder={
+                            account.hasSecret
+                                ? `留空沿用已存密钥 ${account.secretHint ?? ''}`.trim()
+                                : '公众号后台的开发者密码'
+                        }
+                        autoComplete="off"
+                        spellCheck={false}
+                        className="font-mono text-xs"
+                        disabled={isSubmitting}
+                        onChange={(event) => appSecret.setValue(event.target.value)}
+                    />
+                    <FieldDescription>
+                        多行输入便于核对与整段粘贴，输入期间是明文，保存后只写入系统级加密存储；列表与日志只显示尾号，
+                        不会写入数据库。密钥本身不含空格与换行，粘贴后请确认没有多余换行。未配置 AppID 时无法新建批次。
+                    </FieldDescription>
+                </Field>
+            </FieldGroup>
         </Dialog>
     )
 }

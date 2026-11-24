@@ -6,7 +6,7 @@
  * 关键约束：弹窗必须渲染在下拉菜单之外——菜单收起会卸载整棵子树；
  * 表单按原条目区分新建与编辑，换 key 重挂载回到初值，关闭时由调用方清空待处理项。
  */
-import { Field, FieldLabel } from '@components/ui/field'
+import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
 import type { PromptRule } from '@shared/types/promptLibrary'
@@ -86,26 +86,28 @@ function RuleFormDialog({ form, dirPath, isSaving, onOpenChange, onSubmit }: Rul
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >
-            <Field>
-                <FieldLabel htmlFor="rule-name">名称</FieldLabel>
-                <Input
-                    id="rule-name"
-                    value={name.value}
-                    placeholder="如：冷色调画面、避免文字水印"
-                    className="h-8 px-3 py-1 leading-5"
-                    onChange={(event) => name.setValue(event.target.value)}
-                />
-            </Field>
-            <Field>
-                <FieldLabel htmlFor="rule-content">规则内容</FieldLabel>
-                <Textarea
-                    id="rule-content"
-                    value={content.value}
-                    placeholder="用一段话写清画面必须遵守的约束，发送时整段并入提示词"
-                    className="min-h-32 text-sm leading-5"
-                    onChange={(event) => content.setValue(event.target.value)}
-                />
-            </Field>
+            <FieldGroup>
+                <Field>
+                    <FieldLabel htmlFor="rule-name">名称</FieldLabel>
+                    <Input
+                        id="rule-name"
+                        value={name.value}
+                        placeholder="如：冷色调画面、避免文字水印"
+                        className="h-8 px-3 py-1 leading-5"
+                        onChange={(event) => name.setValue(event.target.value)}
+                    />
+                </Field>
+                <Field>
+                    <FieldLabel htmlFor="rule-content">规则内容</FieldLabel>
+                    <Textarea
+                        id="rule-content"
+                        value={content.value}
+                        placeholder="用一段话写清画面必须遵守的约束，发送时整段并入提示词"
+                        className="min-h-32 text-sm leading-5"
+                        onChange={(event) => content.setValue(event.target.value)}
+                    />
+                </Field>
+            </FieldGroup>
         </Dialog>
     )
 }
