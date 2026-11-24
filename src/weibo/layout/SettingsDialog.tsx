@@ -1,6 +1,6 @@
 /**
  * 设置弹窗：同城热搜城市 + 信息流屏蔽名单（用户名 / 关键字）。
- * 复用约定：骨架取 @webview/components/FormDialog（标题 / 说明 / 取消与保存），字段区显式用
+ * 复用约定：骨架取 @webview/components/Dialog（标题 / 说明 / 取消与保存），字段区显式用
  * @components/ui/field 的 FieldGroup 分组、组内用 Field / FieldLabel / FieldDescription / FieldError；
  * 城市下拉取 @components/ui/select，名单输入取 @components/ui/textarea，
  * 文案解析与还原走 @shared/utils/weiboBlock，城市选项由 @shared/types/weibo 的 buildWeiboCityOptions 构造。
@@ -19,7 +19,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from '@components/ui/textarea'
 import { buildWeiboCityOptions, type WeiboBlockRules } from '@shared/types/weibo'
 import { formatWeiboBlockListText, parseWeiboBlockListText } from '@shared/utils/weiboBlock'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import type { WeiboBlockListController } from '../hooks/useWeiboBlockList'
 import type { JSX } from 'react'
 
@@ -137,15 +137,15 @@ export function SettingsDialog({
     ])
 
     return (
-        <FormDialog
+        <Dialog
             open={isOpen}
             title="设置"
             description="同城热搜城市与信息流屏蔽名单都在这里调整。"
-            submitLabel="保存更改"
-            isSubmitting={isCitySaving || blockList.state.isSaving}
-            isSubmitDisabled={!isChanged || isCityLoading || blockList.state.isLoading}
+            confirmLabel="保存更改"
+            isLoading={isCitySaving || blockList.state.isSaving}
+            isDisabled={!isChanged || isCityLoading || blockList.state.isLoading}
             onOpenChange={handleOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             <FieldGroup>
                 <Field data-invalid={cityError !== null} data-disabled={isBusy}>
@@ -226,6 +226,6 @@ export function SettingsDialog({
                     <FieldError className="text-xs">{`屏蔽名单读取或保存失败：${blockList.state.errorMessage}`}</FieldError>
                 )}
             </FieldGroup>
-        </FormDialog>
+        </Dialog>
     )
 }

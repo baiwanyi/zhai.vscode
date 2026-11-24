@@ -1,6 +1,6 @@
 /**
  * 笔记本名称弹窗：新建与重命名共用一套输入、校验与提交逻辑，仅文案与禁用条件按模式切换。
- * 复用约定：骨架取业务公共层的 FormDialog，文本状态与 trim 判定取 useTrimmedInput。
+ * 复用约定：骨架取业务公共层的 Dialog，文本状态与 trim 判定取 useTrimmedInput。
  * 关键约束：空名一律不允许提交；重命名模式额外拦下「名字没改」——宿主对同名会静默返回原名、不做任何改名，
  * 提前拦下省掉一次无意义请求；仅大小写不同时宿主按同名处理（列表不会变），前端按精确值比较后放行，不做额外拦截；
  * 初始名由父级以组件 key 切换实现重置，本组件不在 effect 中同步写状态；
@@ -8,7 +8,7 @@
  */
 import { Field, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { JSX } from 'react'
 
@@ -38,10 +38,10 @@ export function NotebookNameDialog({
     const name = useTrimmedInput(initialName ?? '')
     /** 名字没变：宿主按重名拒绝，这里提前算好，供按钮禁用与 Enter 提交共用同一判定 */
     const isUnchanged = isRename && name.trimmedValue === (initialName ?? '').trim()
-    const isSubmitDisabled = name.isBlank || isUnchanged
+    const isDisabled = name.isBlank || isUnchanged
 
     const handleSubmit = async (): Promise<void> => {
-        if (isSubmitDisabled || isSubmitting) {
+        if (isDisabled || isSubmitting) {
             return
         }
         const isSucceeded = await onSubmit(name.trimmedValue)
@@ -51,7 +51,7 @@ export function NotebookNameDialog({
     }
 
     return (
-        <FormDialog
+        <Dialog
             open={open}
             title={isRename ? '重命名笔记本' : '新建笔记本'}
             description={
@@ -59,11 +59,11 @@ export function NotebookNameDialog({
                     ? '仅修改目录名，笔记本内的笔记与置顶状态保持不变。'
                     : '笔记本对应 notes/ 下的一个目录，名称可随时修改。'
             }
-            submitLabel={isRename ? '保存' : '创建'}
-            isSubmitting={isSubmitting}
-            isSubmitDisabled={isSubmitDisabled}
+            confirmLabel={isRename ? '保存' : '创建'}
+            isLoading={isSubmitting}
+            isDisabled={isDisabled}
             onOpenChange={onOpenChange}
-            onSubmit={() => void handleSubmit()}
+            onConfirm={() => void handleSubmit()}
         >
             <Field>
                 <FieldLabel htmlFor="notebook-name">笔记本名</FieldLabel>
@@ -82,6 +82,6 @@ export function NotebookNameDialog({
                     }}
                 />
             </Field>
-        </FormDialog>
+        </Dialog>
     )
 }

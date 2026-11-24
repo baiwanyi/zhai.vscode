@@ -1,7 +1,7 @@
 /**
  * 封面弹窗：先按来源打开选图对话框（生图结果 / 在线图片 / 已上传图片），挑中一张后按公众号首图比例（2.35:1）
  * 裁剪，再保存到当前批次目录的 images/ 下。
- * 复用约定：骨架取 FormDialog，选图表单取 @components/ui 的 dialog，来源入口与缩略图取 components/Button 与
+ * 复用约定：骨架取 Dialog，选图表单取 @components/ui 的 dialog，来源入口与缩略图取 components/Button 与
  * components/Image，空态与加载态取 components/StateEmpty，缩放缓动取 @components/ui 的 slider；
  * 候选列表来自 useWechatCoverSources（生图走 media/list、在线图片走 stock/downloaded、已上传走 upload/list），
  * 读原图走 wechat/cover/source，保存走 wechat/article/cover。
@@ -15,12 +15,12 @@ import { cn } from 'cn'
 import { Check, LibraryBig, Sparkles, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@components/ui/dialog'
+import { Dialog as UiDialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@components/ui/dialog'
 import { Field, FieldLabel } from '@components/ui/field'
 import { Slider } from '@components/ui/slider'
 import type { WechatArticleSummary } from '@shared/types/wechat'
 import { Button } from '@webview/components/Button'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import { Image } from '@webview/components/Image'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useRenderLimit } from '@webview/hooks/useRenderLimit'
@@ -120,7 +120,7 @@ function CoverSourcePickerDialog({
     const visibleItems = items.slice(0, limit)
 
     return (
-        <Dialog open onOpenChange={onOpenChange}>
+        <UiDialog open onOpenChange={onOpenChange}>
             <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
                     <DialogTitle className="text-lg">{meta.dialogTitle}</DialogTitle>
@@ -177,7 +177,7 @@ function CoverSourcePickerDialog({
                     </Button>
                 </DialogFooter>
             </DialogContent>
-        </Dialog>
+        </UiDialog>
     )
 }
 
@@ -329,15 +329,15 @@ export function WechatCoverDialog({
 
     return (
         <>
-            <FormDialog
+            <Dialog
                 open
                 title="封面"
-                submitLabel="保存封面"
-                isSubmitting={isSubmitting}
-                isSubmitDisabled={sourceUrl === null || isReading}
-                contentClassName="sm:max-w-lg"
+                confirmLabel="保存封面"
+                isLoading={isSubmitting}
+                isDisabled={sourceUrl === null || isReading}
+                className="sm:max-w-lg"
                 onOpenChange={onOpenChange}
-                onSubmit={handleSubmit}
+                onConfirm={handleSubmit}
             >
                 <Field>
                     <FieldLabel>封面预览</FieldLabel>
@@ -415,7 +415,7 @@ export function WechatCoverDialog({
                         })}
                     </div>
                 </Field>
-            </FormDialog>
+            </Dialog>
             {pickerKind === null ? null : (
                 <CoverSourcePickerDialog
                     key={pickerKind}

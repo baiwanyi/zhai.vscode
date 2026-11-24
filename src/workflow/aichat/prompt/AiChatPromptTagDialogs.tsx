@@ -1,6 +1,6 @@
 /**
  * 提示词词条弹窗：新建/编辑表单与删除确认，挂在面板浮层之外，避免浮层收起时被连带卸载。
- * 复用约定：表单取 @webview/components/FormDialog，确认取 @webview/components/ConfirmDialog，
+ * 复用约定：表单取 @webview/components/Dialog，确认取 @webview/components/ConfirmDialog，
  * 文本状态取 @webview/hooks/useTrimmedInput，已有分类与分组从 props 传入做快捷填充。
  * 生图词条与写作提示词共用本组件，文案按 scope 切换（芯片同步 / 插入正文），字段与校验完全一致。
  * 关键约束：分类名会成为 md 文件名，因此不接受空值与路径分隔符，真正的校验与拒绝由宿主兜底；
@@ -12,7 +12,7 @@ import { Textarea } from '@components/ui/textarea'
 import type { PromptLibraryScope, PromptTag, PromptTagObject, PromptTagSaveRequest } from '@shared/types/promptLibrary'
 import { Button } from '@webview/components/Button'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { TagFormState } from '@webview/workflow/aichat/hooks/usePromptLibrary'
 import { attributesOf } from '@webview/workflow/aichat/utils/prompt/library'
@@ -78,10 +78,10 @@ function PromptTagFormDialog({
     const name = useTrimmedInput(original?.name ?? '')
     const prompt = useTrimmedInput(original?.prompt ?? '')
     const knownAttributes = attributesOf(objects, object.trimmedValue)
-    const isSubmitDisabled = object.isBlank || attribute.isBlank || name.isBlank || prompt.isBlank
+    const isDisabled = object.isBlank || attribute.isBlank || name.isBlank || prompt.isBlank
 
     const handleSubmit = (): void => {
-        if (isSubmitDisabled) {
+        if (isDisabled) {
             return
         }
         onSubmit({
@@ -93,16 +93,16 @@ function PromptTagFormDialog({
     }
 
     return (
-        <FormDialog
+        <Dialog
             open={form !== null}
             title={isEditing ? `编辑${words.title}` : `新建${words.title}`}
             description={tagFormDescription(scope, isEditing, dirPath)}
-            submitLabel="保存"
-            isSubmitting={isSaving}
-            isSubmitDisabled={isSubmitDisabled}
-            contentClassName="sm:max-w-md"
+            confirmLabel="保存"
+            isLoading={isSaving}
+            isDisabled={isDisabled}
+            className="sm:max-w-md"
             onOpenChange={onOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             <Field>
                 <FieldLabel htmlFor="prompt-tag-object">分类</FieldLabel>
@@ -178,7 +178,7 @@ function PromptTagFormDialog({
                     点选后写入{words.subject}：{scope === 'imagegen' ? '随出图请求提交' : '由正文提交'}
                 </p>
             </Field>
-        </FormDialog>
+        </Dialog>
     )
 }
 

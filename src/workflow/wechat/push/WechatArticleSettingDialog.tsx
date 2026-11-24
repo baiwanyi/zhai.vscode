@@ -1,6 +1,6 @@
 /**
  * 文章设置弹窗：只改发布元信息（标题、作者、摘要、封面与留言开关），正文在批次 md 文件里维护。
- * 复用约定：骨架取 components/FormDialog，字段取 @components/ui 的 field / input / textarea / checkbox，
+ * 复用约定：骨架取 components/Dialog，字段取 @components/ui 的 field / input / textarea / checkbox，
  * 长度上限取 shared/types/wechat 与仪表盘同一口径，封面选择由调用方提供宿主协议。
  * 关键约束：草稿只存在于本次打开期间，调用方须以文章 id 作为 key 重建组件；
  * 改标题不重命名文件（路径稳定），正文不在此编辑也不随保存回写；
@@ -18,7 +18,7 @@ import {
     type WechatArticleSummary,
 } from '@shared/types/wechat'
 import { Button } from '@webview/components/Button'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { WechatArticleMetaInput } from '../hooks/useWechatPushOverview'
 import type { JSX } from 'react'
@@ -79,16 +79,16 @@ export function WechatArticleSettingDialog({
     }
 
     return (
-        <FormDialog
+        <Dialog
             open
             title="文章设置"
             description="正文在批次目录的 Markdown 文件里维护，这里只改发布用的元信息。"
-            submitLabel="保存"
-            isSubmitting={isSaving}
-            isSubmitDisabled={title.isBlank}
-            contentClassName="sm:max-w-lg"
+            confirmLabel="保存"
+            isLoading={isSaving}
+            isDisabled={title.isBlank}
+            className="sm:max-w-lg"
             onOpenChange={onOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             <Field>
                 <FieldLabel htmlFor="wechat-article-meta-title">标题</FieldLabel>
@@ -163,6 +163,6 @@ export function WechatArticleSettingDialog({
                 </div>
                 <FieldDescription>需账号已开通留言功能；未开通时平台侧不会生效。</FieldDescription>
             </Field>
-        </FormDialog>
+        </Dialog>
     )
 }

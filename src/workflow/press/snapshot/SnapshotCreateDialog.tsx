@@ -1,13 +1,13 @@
 /**
  * 快照创建对话框：备注输入 + 保存，结构化文档与章节正文共用。
- * 复用约定：骨架取业务公共层的 FormDialog，备注状态与 trim 取 useTrimmedInput；
+ * 复用约定：骨架取业务公共层的 Dialog，备注状态与 trim 取 useTrimmedInput；
  * 提交时回传去除首尾空白后的值，空串按「不填备注」处理。
  * 关键约束：调用方必须传不同的 idPrefix，避免两个面板同时挂载时 label 的 htmlFor 撞车；
  * 关闭对话框即清空备注，防止上次残留的文本被误当成新备注提交。
  */
 import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { JSX } from 'react'
 
@@ -49,13 +49,13 @@ export function SnapshotCreateDialog({
     }
 
     return (
-        <FormDialog
+        <Dialog
             open={open}
             title={title}
             description={description}
-            submitLabel="保存快照"
+            confirmLabel="保存快照"
             onOpenChange={handleOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             <Field>
                 <FieldLabel htmlFor={inputId}>备注（可选）</FieldLabel>
@@ -68,6 +68,6 @@ export function SnapshotCreateDialog({
                 />
                 <FieldDescription>留空表示只记时间，不影响快照内容。</FieldDescription>
             </Field>
-        </FormDialog>
+        </Dialog>
     )
 }

@@ -1,6 +1,6 @@
 /**
  * 词库编辑弹窗：维护自定义纠错词条（错误写法 → 建议写法、替换或仅提示）与忽略词。
- * 复用约定：骨架取 @webview/components/FormDialog，字段与控件取 @components/ui 的 field / input / select / item；
+ * 复用约定：骨架取 @webview/components/Dialog，字段与控件取 @components/ui 的 field / input / select / item；
  * 词条行收敛为同文件组件 EntryRow，保存请求由 hooks/useProofreadLexicon 承担，本组件只负责编辑与本地校验。
  * 关键约束：任一词条或忽略词不合法即整体不提交，口径与后端逐条收窄保持一致；
  * 草稿状态只在挂载时初始化，调用方必须用 Hook 的 sessionKey 作 key 重挂载，才能拿到最新词库；
@@ -16,7 +16,7 @@ import { ScrollArea } from '@components/ui/scroll-area'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import type { ProofreadLexicon, ProofreadLexiconEntry } from '@shared/types/proofread'
 import { Button } from '@webview/components/Button'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import type { ProofreadLexiconInput } from '../hooks/useProofreadLexicon'
 import type { JSX } from 'react'
 
@@ -238,15 +238,15 @@ export function ProofreadLexiconDialog({
     }
 
     return (
-        <FormDialog
+        <Dialog
             open={open}
             title="自定义词库"
             description={DIALOG_DESCRIPTION}
-            submitLabel="保存词库"
-            isSubmitting={isSaving}
-            contentClassName="sm:max-w-2xl"
+            confirmLabel="保存词库"
+            isLoading={isSaving}
+            className="sm:max-w-2xl"
             onOpenChange={onOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             {error !== null && (
                 <Alert variant="destructive">
@@ -319,6 +319,6 @@ export function ProofreadLexiconDialog({
             <Button size="xs" variant="ghost" className="self-start" onClick={onOpenFile}>
                 在编辑器中打开 JSON
             </Button>
-        </FormDialog>
+        </Dialog>
     )
 }

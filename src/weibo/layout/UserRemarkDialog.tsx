@@ -1,6 +1,6 @@
 /**
  * 设置备注弹窗：给关注的人起一个只在本机看到的备注名。
- * 复用约定：骨架取 @webview/components/FormDialog，输入取 @components/ui/input 与 field 槽位，
+ * 复用约定：骨架取 @webview/components/Dialog，输入取 @components/ui/input 与 field 槽位，
  * trim 走 hooks/useTrimmedInput，保存走 hooks/useWeiboUserRemark（协议 weibo/user/remark）。
  * 关键约束：备注 1-15 字，留空保存等于清除备注；保存中禁用提交；
  * 初值来自主页资料，保存成功后以宿主回包的 remark 回写，不在关闭时丢弃；
@@ -11,7 +11,7 @@ import { toast } from 'sonner'
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { WEIBO_REMARK_MAX, isWeiboTimelineId } from '@shared/types/weibo'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { JSX } from 'react'
 import { useWeiboUserRemark } from '../hooks/useWeiboUserRemark'
@@ -93,16 +93,16 @@ export function UserRemarkDialog({
     }, [onOpenChange, onSaved, save, setValue, trimmedValue])
 
     return (
-        <FormDialog
+        <Dialog
             open={isOpen}
             title={userName.trim().length > 0 ? `设置备注 · ${userName}` : '设置备注'}
             description="备注只影响本机显示，不会改变对方的昵称。"
-            submitLabel="保存备注"
-            isSubmitting={isSaving}
-            isSubmitDisabled={isTooLong || !isWeiboTimelineId(uid)}
-            contentClassName="sm:max-w-md"
+            confirmLabel="保存备注"
+            isLoading={isSaving}
+            isDisabled={isTooLong || !isWeiboTimelineId(uid)}
+            className="sm:max-w-md"
             onOpenChange={handleOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             <FieldGroup>
                 <Field data-invalid={isTooLong}>
@@ -131,6 +131,6 @@ export function UserRemarkDialog({
                     ) : null}
                 </Field>
             </FieldGroup>
-        </FormDialog>
+        </Dialog>
     )
 }

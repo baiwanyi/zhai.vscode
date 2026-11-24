@@ -1,6 +1,6 @@
 /**
  * 新增人物卡对话框：只收姓名、身份、角色、性别四个字段，细节留给人物卡的后续编辑。
- * 复用约定：骨架取业务公共层的 FormDialog，角色 / 性别切换取 SegmentedRail（chip 形态），
+ * 复用约定：骨架取业务公共层的 Dialog，角色 / 性别切换取 SegmentedRail（chip 形态），
  * 文本状态与 trim 取 useTrimmedInput；枚举文案与顺序统一从 ../constants 读取，不再各处手写数组。
  * 关键约束：性别只有男女两项且必选，SegmentedRail 判空后回调，取消选择不会写回空值；
  * 姓名必填且仅空白字符不可提交；表单重置由页面在每次打开时更换组件 key 完成（重挂载即回到初始值）。
@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { Field, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { CharacterGender, CharacterRole, CharacterSeed } from '../types'
@@ -53,15 +53,15 @@ export function CharacterCreateDialog({ open, onOpenChange, onCreate }: Characte
     }
 
     return (
-        <FormDialog
+        <Dialog
             open={open}
             title="新增人物"
             description="先建卡再细化，欲望、弱点与关系在人物卡里继续补充"
-            submitLabel="创建"
-            isSubmitDisabled={name.isBlank}
-            contentClassName="sm:max-w-md"
+            confirmLabel="创建"
+            isDisabled={name.isBlank}
+            className="sm:max-w-md"
             onOpenChange={onOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             <Field>
                 <FieldLabel htmlFor="character-create-name">姓名</FieldLabel>
@@ -114,6 +114,6 @@ export function CharacterCreateDialog({ open, onOpenChange, onCreate }: Characte
                     onChange={(event) => identity.setValue(event.target.value)}
                 />
             </Field>
-        </FormDialog>
+        </Dialog>
     )
 }

@@ -1,6 +1,6 @@
 /**
  * 设置分组弹窗：选择该关注用户所属的分组，并可就地新建分组。
- * 复用约定：骨架取 @webview/components/FormDialog（标题 / 说明 / 取消与保存），
+ * 复用约定：骨架取 @webview/components/Dialog（标题 / 说明 / 取消与保存），
  * 分组选择与「公开」开关都用 @components/ui 的 button 与 switch；
  * 新建分组一行取 @components/ui/input-group（InputGroupInput + inline-end 附加区，
  * 开关与提交按钮都收在输入框右侧，不另占一行）；
@@ -28,7 +28,7 @@ import { Spinner } from '@components/ui/spinner'
 import { Switch } from '@components/ui/switch'
 import { WEIBO_GROUP_NAME_MAX } from '@shared/types/weibo'
 import { Button } from '@webview/components/Button'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { JSX } from 'react'
 import { useWeiboUserGroups } from '../hooks/useWeiboUserGroups'
@@ -133,7 +133,7 @@ export function UserGroupDialog({ uid, userName, isOpen, onOpenChange, onSaved }
     }, [handleOpenChange, onSaved, save, selectedIds])
 
     return (
-        <FormDialog
+        <Dialog
             open={isOpen}
             title={userName.trim().length > 0 ? `设置分组 · ${userName}` : '设置分组'}
             description={
@@ -148,12 +148,12 @@ export function UserGroupDialog({ uid, userName, isOpen, onOpenChange, onSaved }
                     '选择该用户所属的分组；全部取消选择即移出自定义分组。'
                 )
             }
-            submitLabel="保存分组"
-            isSubmitting={state.isSaving}
-            isSubmitDisabled={!isChanged || state.isLoading || state.isCreating || state.errorMessage !== null}
-            contentClassName="sm:max-w-md"
+            confirmLabel="保存分组"
+            isLoading={state.isSaving}
+            isDisabled={!isChanged || state.isLoading || state.isCreating || state.errorMessage !== null}
+            className="sm:max-w-md"
             onOpenChange={handleOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             <FieldGroup>
                 <Field data-invalid={state.errorMessage !== null} data-disabled={state.isLoading}>
@@ -236,6 +236,6 @@ export function UserGroupDialog({ uid, userName, isOpen, onOpenChange, onSaved }
                     </InputGroup>
                 </Field>
             </FieldGroup>
-        </FormDialog>
+        </Dialog>
     )
 }

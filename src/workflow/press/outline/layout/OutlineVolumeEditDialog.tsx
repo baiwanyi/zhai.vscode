@@ -1,6 +1,6 @@
 /**
  * 卷纲编辑对话框：编辑一卷的卷标题、预计章节数、核心事件、主要情节、关键转折与卷末结果。
- * 复用约定：骨架取业务公共层的 FormDialog；草稿状态、AI 生成保护与补丁归一取 useVolumeEditDraft；
+ * 复用约定：骨架取业务公共层的 Dialog；草稿状态、AI 生成保护与补丁归一取 useVolumeEditDraft；
  * 情节列表取 block/VolumePlotItemList（内部用 VolumePlotItemRow），AI 字段取 block/VolumeEditAiField，其余字段取 ui/field 与 ui/input。
  * 关键约束：编辑期只在本地草稿里改，点「保存」才回传一次补丁，中途取消不写盘；
  * 生成期间禁用提交，结果只在字段未被手动改动时写回，避免长请求吞掉输入或让结果白等；
@@ -9,7 +9,7 @@
 import { toast } from 'sonner'
 import { Field, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import type { CharacterCard, OutlineVolume, ProjectSetting } from '../../types'
 import type { JSX } from 'react'
 import { VolumeEditAiField } from '../block/VolumeEditAiField'
@@ -74,13 +74,13 @@ export function OutlineVolumeEditDialog({
     }
 
     return (
-        <FormDialog
+        <Dialog
             open={isOpen}
             title="编辑卷纲"
-            submitLabel="保存更改"
-            isSubmitDisabled={volume === null || isGenerating}
+            confirmLabel="保存更改"
+            isDisabled={volume === null || isGenerating}
             onOpenChange={onOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-[minmax(0,1fr)_8rem]">
                 <Field>
@@ -148,6 +148,6 @@ export function OutlineVolumeEditDialog({
                     void generate(field)
                 }}
             />
-        </FormDialog>
+        </Dialog>
     )
 }

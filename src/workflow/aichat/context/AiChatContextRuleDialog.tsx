@@ -1,6 +1,6 @@
 /**
  * 规则配套弹窗：表单承担新建与编辑，确认框承担删除，对话与生图的上下文菜单共用。
- * 复用约定：表单取 @webview/components/FormDialog，删除确认取 @webview/components/ConfirmDialog，
+ * 复用约定：表单取 @webview/components/Dialog，删除确认取 @webview/components/ConfirmDialog，
  * 字段取 @components/ui 的 field/input/textarea，文本状态取 @webview/hooks/useTrimmedInput；
  * 表单状态类型取 @webview/hooks/useRuleMenu 的 RuleFormState，规则类型取 @shared/types/promptLibrary。
  * 关键约束：弹窗必须渲染在下拉菜单之外——菜单收起会卸载整棵子树；
@@ -11,7 +11,7 @@ import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
 import type { PromptRule } from '@shared/types/promptLibrary'
 import { ConfirmDialog } from '@webview/components/ConfirmDialog'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import type { RuleFormState } from '@webview/hooks/useRuleMenu'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { JSX } from 'react'
@@ -65,26 +65,26 @@ function RuleFormDialog({ form, dirPath, isSaving, onOpenChange, onSubmit }: Rul
     const isEditing = original !== null
     const name = useTrimmedInput(original?.name ?? '')
     const content = useTrimmedInput(original?.content ?? '')
-    const isSubmitDisabled = name.isBlank || content.isBlank
+    const isDisabled = name.isBlank || content.isBlank
 
     const handleSubmit = (): void => {
-        if (isSubmitDisabled) {
+        if (isDisabled) {
             return
         }
         onSubmit(name.trimmedValue, content.trimmedValue)
     }
 
     return (
-        <FormDialog
+        <Dialog
             open={form !== null}
             title={isEditing ? '编辑规则' : '新建规则'}
             description={ruleFormDescription(isEditing, dirPath)}
-            submitLabel="保存"
-            isSubmitting={isSaving}
-            isSubmitDisabled={isSubmitDisabled}
-            contentClassName="sm:max-w-md"
+            confirmLabel="保存"
+            isLoading={isSaving}
+            isDisabled={isDisabled}
+            className="sm:max-w-md"
             onOpenChange={onOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             <Field>
                 <FieldLabel htmlFor="rule-name">名称</FieldLabel>
@@ -106,7 +106,7 @@ function RuleFormDialog({ form, dirPath, isSaving, onOpenChange, onSubmit }: Rul
                     onChange={(event) => content.setValue(event.target.value)}
                 />
             </Field>
-        </FormDialog>
+        </Dialog>
     )
 }
 

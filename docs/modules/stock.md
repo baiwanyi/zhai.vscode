@@ -350,7 +350,7 @@ WorkflowStock
 | 按钮 | `@webview/components/Button`（不写 `type="button"`） |
 | 分段切换 | `@webview/components/SegmentedRail` |
 | 图片与占位 | `@webview/components/Image`（`aspect="4/3"`，失败自动退占位） |
-| 弹窗 | `@webview/components/FormDialog` / `ConfirmDialog` |
+| 弹窗 | `@webview/components/Dialog` / `ConfirmDialog` |
 | 年月分组与懒挂载 | 参照 `workflow/imagegen/hooks/useImageFilters` 的 `visibleGroups` / `hasMore` / `loadMore` 口径 |
 | 请求 | `@shared/utils/bridge` 的 `request`，错误 `@shared/utils/error` 的 `toastError` |
 

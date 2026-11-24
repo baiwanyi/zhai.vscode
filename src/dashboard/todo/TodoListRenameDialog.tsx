@@ -1,6 +1,6 @@
 /**
  * 重命名清单弹窗：只收集清单的可读名，文件名与文件内一级标题由宿主一并改写。
- * 复用约定：骨架取业务公共层的 FormDialog，文本状态与 trim 判定取 useTrimmedInput；
+ * 复用约定：骨架取业务公共层的 Dialog，文本状态与 trim 判定取 useTrimmedInput；
  * 提交失败时保持打开便于就地修改（由 onSubmit 的布尔结果决定）。
  * 关键约束：初始名由父级以组件 key 切换实现重置，本组件不在 effect 中同步写状态；
  * 空名与「名字没改」一律不允许提交——宿主把同名当成重名直接拒绝，提前拦下可免掉一次无意义的失败提示；
@@ -9,7 +9,7 @@
  */
 import { Field, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { JSX } from 'react'
 
@@ -35,10 +35,10 @@ export function TodoListRenameDialog({
     const name = useTrimmedInput(initialName)
     /** 名字没变：宿主按重名拒绝，这里提前算好，供按钮禁用与 Enter 提交共用同一判定 */
     const isUnchanged = name.trimmedValue === initialName.trim()
-    const isSubmitDisabled = name.isBlank || isUnchanged
+    const isDisabled = name.isBlank || isUnchanged
 
     const handleSubmit = async (): Promise<void> => {
-        if (isSubmitDisabled || isSubmitting) {
+        if (isDisabled || isSubmitting) {
             return
         }
         const isSucceeded = await onSubmit(name.trimmedValue)
@@ -48,15 +48,15 @@ export function TodoListRenameDialog({
     }
 
     return (
-        <FormDialog
+        <Dialog
             open={open}
             title="重命名清单"
             description="仅修改清单名称，文件位置与其中的待办保持不变。"
-            submitLabel="保存"
-            isSubmitting={isSubmitting}
-            isSubmitDisabled={isSubmitDisabled}
+            confirmLabel="保存"
+            isLoading={isSubmitting}
+            isDisabled={isDisabled}
             onOpenChange={onOpenChange}
-            onSubmit={() => void handleSubmit()}
+            onConfirm={() => void handleSubmit()}
         >
             <Field>
                 <FieldLabel htmlFor="todo-list-name">清单名</FieldLabel>
@@ -75,6 +75,6 @@ export function TodoListRenameDialog({
                     }}
                 />
             </Field>
-        </FormDialog>
+        </Dialog>
     )
 }

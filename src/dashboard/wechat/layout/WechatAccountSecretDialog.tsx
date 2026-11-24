@@ -1,6 +1,6 @@
 /**
  * 密钥设置弹窗：只维护 AppID 与 AppSecret，账号资料在独立的账号设置弹窗里。
- * 复用约定：骨架取 FormDialog，单行字段取 @components/ui/input，密钥取 @components/ui/textarea，
+ * 复用约定：骨架取 Dialog，单行字段取 @components/ui/input，密钥取 @components/ui/textarea，
  * 状态取 useTrimmedInput；提交后由宿主立即鉴权，结果通过列表状态与 toast 回显。
  * 关键约束：编辑态 AppSecret 留空表示沿用已存密钥，占位文案给出尾号提示；
  * 首次配置（还没有任何密钥）时 AppSecret 必填，否则宿主拒绝保存半个凭据；
@@ -12,7 +12,7 @@ import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
 import type { WechatAccountSummary } from '@shared/types/wechat'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { WechatAccountCredentialsInput } from '../hooks/useWechatAccounts'
 import type { JSX } from 'react'
@@ -36,25 +36,25 @@ export function WechatAccountSecretDialog({
     const appSecret = useTrimmedInput()
     // 已配置过密钥时允许留空沿用；首次配置必须同时给出 AppSecret
     const isSecretRequired = !account.hasSecret
-    const isSubmitDisabled = appId.isBlank || (isSecretRequired && appSecret.isBlank)
+    const isDisabled = appId.isBlank || (isSecretRequired && appSecret.isBlank)
 
     const handleSubmit = (): void => {
-        if (isSubmitDisabled) {
+        if (isDisabled) {
             return
         }
         void onSubmit({ appId: appId.value, appSecret: appSecret.value })
     }
 
     return (
-        <FormDialog
+        <Dialog
             open={open}
             title="密钥设置"
             description="填写公众号后台「设置与开发 → 基本配置」里的 AppID 与 AppSecret，保存后立即验证连接。"
-            submitLabel="保存并验证"
-            isSubmitting={isSubmitting}
-            isSubmitDisabled={isSubmitDisabled}
+            confirmLabel="保存并验证"
+            isLoading={isSubmitting}
+            isDisabled={isDisabled}
             onOpenChange={onOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             <Field>
                 <FieldLabel htmlFor="wechat-account-appid">AppID</FieldLabel>
@@ -91,6 +91,6 @@ export function WechatAccountSecretDialog({
                     不会写入数据库。密钥本身不含空格与换行，粘贴后请确认没有多余换行。未配置 AppID 时无法新建批次。
                 </FieldDescription>
             </Field>
-        </FormDialog>
+        </Dialog>
     )
 }

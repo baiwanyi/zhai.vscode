@@ -1,6 +1,6 @@
 /**
  * 文章设置弹窗：只改发布元信息（作者、摘要、允许留言），正文与标题不在此处。
- * 复用约定：骨架取 FormDialog，字段取 @components/ui 的 field / input / textarea，开关取 components/Switch，
+ * 复用约定：骨架取 Dialog，字段取 @components/ui 的 field / input / textarea，开关取 components/Switch，
  * 长度上限取 shared/types/wechat，与工作流面板的同一份口径。
  * 关键约束：作者留空表示不填，摘要留空时推送阶段回退正文前若干字；
  * 标题与封面原样回传（契约要求标题必填），避免本入口改动正文文件；
@@ -11,7 +11,7 @@ import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Textarea } from '@components/ui/textarea'
 import { WECHAT_ARTICLE_AUTHOR_MAX, WECHAT_ARTICLE_DIGEST_MAX, type WechatArticleSummary } from '@shared/types/wechat'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import { Switch } from '@webview/components/Switch'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { JSX } from 'react'
@@ -51,15 +51,15 @@ export function WechatArticleMetaDialog({
     }
 
     return (
-        <FormDialog
+        <Dialog
             open
             title="文章设置"
             description="只影响推送时写入公众号的元信息，正文在批次目录的 Markdown 文件里维护。"
-            submitLabel="保存"
-            isSubmitting={isSubmitting}
-            contentClassName="sm:max-w-md"
+            confirmLabel="保存"
+            isLoading={isSubmitting}
+            className="sm:max-w-md"
             onOpenChange={onOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             <Field>
                 <FieldLabel htmlFor="wechat-article-meta-author">作者</FieldLabel>
@@ -101,6 +101,6 @@ export function WechatArticleMetaDialog({
                     需账号已开通留言功能；未开通时平台侧不会生效，草稿仍会写入开启标记。
                 </FieldDescription>
             </Field>
-        </FormDialog>
+        </Dialog>
     )
 }

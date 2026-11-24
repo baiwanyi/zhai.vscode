@@ -1,6 +1,6 @@
 /**
  * 添加作品弹窗：收集作品名与目标读者（男频/女频），提交后由页面层调用宿主创建作品。
- * 复用约定：骨架取业务公共层的 FormDialog（标题/说明/字段区/取消与提交），分段选择取 SegmentedRail，
+ * 复用约定：骨架取业务公共层的 Dialog（标题/说明/字段区/取消与提交），分段选择取 SegmentedRail，
  * 作品名取 @components/ui/textarea，文本状态与 trim 判定取 useTrimmedInput；
  * 选项与取值取自 shared/types/press，不重复定义。
  * 关键约束：目标读者为必选项，SegmentedRail 判空后回调，空串不会写回；表单重置由页面在每次打开时
@@ -12,7 +12,7 @@ import { Field, FieldLabel } from '@components/ui/field'
 import { Textarea } from '@components/ui/textarea'
 import type { PressAudience } from '@shared/types/press'
 import { DEFAULT_PRESS_AUDIENCE, PRESS_AUDIENCES, readPressAudience } from '@shared/types/press'
-import { FormDialog } from '@webview/components/FormDialog'
+import { Dialog } from '@webview/components/Dialog'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import { useTrimmedInput } from '@webview/hooks/useTrimmedInput'
 import type { JSX } from 'react'
@@ -43,15 +43,15 @@ export function PressProjectDialog({
     }
 
     return (
-        <FormDialog
+        <Dialog
             open={open}
             title="添加作品"
             description="生成作品目录，并附带背景、大纲、角色设定与设定文档。"
-            submitLabel="创建"
-            isSubmitting={isSubmitting}
-            isSubmitDisabled={name.isBlank}
+            confirmLabel="创建"
+            isLoading={isSubmitting}
+            isDisabled={name.isBlank}
             onOpenChange={onOpenChange}
-            onSubmit={handleSubmit}
+            onConfirm={handleSubmit}
         >
             <Field>
                 <FieldLabel htmlFor="press-project-name">作品名</FieldLabel>
@@ -84,6 +84,6 @@ export function PressProjectDialog({
                     isDisabled={isSubmitting}
                 />
             </Field>
-        </FormDialog>
+        </Dialog>
     )
 }
