@@ -1,11 +1,11 @@
 /**
  * 图片列表状态位：按加载、错误、库空与筛选无结果的优先级渲染统一空态。
- * 复用约定：结构取 @webview/components/StateEmpty，加载态与空态互斥由 StateEmpty 自身保证；
+ * 复用约定：结构取 @webview/blocks/StateEmpty，加载态与空态互斥由 StateEmpty 自身保证；
  * 文案、图标与底部操作区由调用方经 states 注入，本组件不写任何业务措辞。
  * 关键约束：加载态优先于空态，避免先闪一下「还没有图片」；本组件不产生包裹节点，
  * 空态仍是 AppContent 的直接弹性子元素，居中布局不被破坏。
  */
-import { StateEmpty } from '@webview/components/StateEmpty'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import type { ImageListStates } from './imageListModel'
 import type { JSX } from 'react'
 

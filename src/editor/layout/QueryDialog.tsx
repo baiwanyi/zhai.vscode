@@ -1,6 +1,6 @@
 /**
  * AI 解释弹窗：引用选中的片段或整块文本，展示含义解释与相关背景资料。
- * 复用约定：shadcn Dialog + ScrollArea，结果复用 @webview/components/Markdown 渲染，
+ * 复用约定：shadcn Dialog + ScrollArea，结果复用 @webview/blocks/Markdown 渲染，
  * 查询状态由 useDocumentQuery 统一管理（含 clientId 匹配、缓存与中断）。
  * 关键约束：弹窗没有输入框、没有重试也没有停止——打开即用固定问题发起一次查询，
  * 生成期间只给 Marker 等待态，等宿主返回完整结果后才渲染正文，不展示流式增量；
@@ -14,8 +14,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Marker, MarkerContent, MarkerIcon } from '@components/ui/marker'
 import { ScrollArea } from '@components/ui/scroll-area'
 import { toErrorDetail } from '@shared/utils/error'
+import { Markdown } from '@webview/blocks/Markdown'
 import { Alert } from '@webview/components/Alert'
-import { Markdown } from '@webview/components/Markdown'
 import type { UseDocumentQueryResult } from '../hooks/useDocumentQuery'
 import type { JSX } from 'react'
 

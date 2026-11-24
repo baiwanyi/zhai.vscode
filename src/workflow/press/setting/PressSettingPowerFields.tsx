@@ -2,7 +2,7 @@
  * 金手指字段组：类型、能力描述、代价、限制与升级体系。
  * 复用约定：字段组容器取 @components/ui 的 field 之 FieldGroup，单列排布、每个字段独占一行；
  * 类型取 ui/select 的两级联动（先选大类、再选具体类型），候选集中在 constants 的 GOLDEN_FINGER_TYPE_GROUPS；
- * 其余四项是多句描述，取 @webview/components/AiTextareaField（多行输入 + 字段级 AI 生成）。
+ * 其余四项是多句描述，取 @webview/blocks/AiTextareaField（多行输入 + 字段级 AI 生成）。
  * 关键约束：大类只用于筛候选、不落库，落库的始终是具体类型；选大类即落到该组第一个类型，
  * 类型与大类因此永远互相自洽，界面不保留「选了组、二级却空着」的中间态（由同文件 GoldenTypePicker 承载）；
  * 历史作品存着旧版自由输入的自定义类型，不在任何分组内时以「当前取值」单独成组，避免下拉显示空白；
@@ -21,7 +21,7 @@ import {
     SelectValue,
 } from '@components/ui/select'
 import type { SettingFieldKey } from '@shared/types/press'
-import { AiTextareaField } from '@webview/components/AiTextareaField'
+import { AiTextareaField } from '@webview/blocks/AiTextareaField'
 import type { SettingFieldAi, SettingFieldsProps } from './sections'
 import type { JSX } from 'react'
 import { GOLDEN_FINGER_TYPE_GROUPS, SETTING_FIELD_MAX_LENGTH } from '../constants'

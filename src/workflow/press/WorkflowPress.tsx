@@ -13,7 +13,7 @@
  */
 import { useCallback } from 'react'
 import type { WorkflowContextState } from '@shared/types/workflow'
-import { StateEmpty } from '@webview/components/StateEmpty'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { RESIDENT_SECTIONS, readScopeDir } from '@webview/workflow/layout/contentScope'
 import { WorkflowResidentSection } from '@webview/workflow/layout/WorkflowResidentSection'
 import { usePressWorkspaceScope } from './hooks/usePressWorkspaceScope'

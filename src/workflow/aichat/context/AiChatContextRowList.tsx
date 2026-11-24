@@ -1,7 +1,7 @@
 /**
  * 上下文列表：ScrollArea 内三态（空态 / 首屏加载 / 行列表），滚到底由续载哨兵上报下一批意图。
  * 复用约定：行取同目录 AiChatContextRow，滚动观察与解绑交给 @webview/hooks/useScrollSentinel，
- * 底部占位取 @webview/components/LoadMoreSentinel，行模型仍对调用方泛型。
+ * 底部占位取 @webview/blocks/LoadMoreSentinel，行模型仍对调用方泛型。
  * 关键约束：限高与内容盒必须落在 Viewport——Radix 在 Viewport 里套了一层
  * `min-width:100%; display:table` 的测量层，长标题会把它撑成横向溢出并让行内 truncate 失效，
  * 该层是内联样式，只能用 ! 改回 block；
@@ -9,7 +9,7 @@
  */
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Spinner } from '@components/ui/spinner'
-import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
+import { LoadMoreSentinel } from '@webview/blocks/LoadMoreSentinel'
 import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
 import { AiChatContextRow } from './AiChatContextRow'
 import type { JSX } from 'react'

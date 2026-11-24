@@ -19,6 +19,7 @@ import { Spinner } from '@components/ui/spinner'
 import type { AiUsageItem, AiUsageModule, AiUsagePeriods, AiUsageRange } from '@shared/types/aiUsage'
 import { request } from '@shared/utils/bridge'
 import { toastError, toErrorDetail } from '@shared/utils/error'
+import { ButtonLoadingContent } from '@webview/blocks/ButtonLoadingContent'
 import { Alert } from '@webview/components/Alert'
 import {
     AppAction,
@@ -91,11 +92,11 @@ export function WorkflowUsage(): JSX.Element {
                             disabled={isLoading}
                             onClick={refresh}
                         >
-                            {isLoading ? (
-                                <Spinner className="size-4" aria-label="正在刷新用量" />
-                            ) : (
-                                <RefreshCw className="size-4" />
-                            )}
+                            <ButtonLoadingContent
+                                label={<RefreshCw className="size-4" />}
+                                isLoading={isLoading}
+                                icon={<Spinner className="size-4" aria-label="正在刷新用量" />}
+                            />
                         </Button>
                     </AppAction>
                     {result !== null && (

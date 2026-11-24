@@ -11,7 +11,7 @@
  */
 import { Archive } from 'lucide-react'
 import { WEIBO_MODULE_KEY } from '@shared/types/workflow'
-import { StateEmpty } from '@webview/components/StateEmpty'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { WorkflowAiChat } from '@webview/workflow/aichat/WorkflowAiChat'
 import { WorkflowAnnotation } from '@webview/workflow/annotation/WorkflowAnnotation'
 import { WorkflowMedia } from '@webview/workflow/media/WorkflowMedia'

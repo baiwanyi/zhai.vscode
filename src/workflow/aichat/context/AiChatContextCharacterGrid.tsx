@@ -2,7 +2,7 @@
  * 人物候选网格：一位人物一个按钮——性别图标 + 人名 + 角色徽标，点击即加入，可连续点多位。
  * 复用约定：性别与角色标签由宿主从人物卡的「分类 / 性别」字段读出（AiContextItem.genderLabel / roleLabel），
  * 图标取 lucide-react 的 Mars / Venus（与人物列表同源，男蓝女红），徽标取 @components/ui/badge；
- * 续载哨兵取 @webview/hooks/useScrollSentinel + @webview/components/LoadMoreSentinel，与候选列表同一套。
+ * 续载哨兵取 @webview/hooks/useScrollSentinel + @webview/blocks/LoadMoreSentinel，与候选列表同一套。
  * 关键约束：性别标签缺失（旧文档没写）时用中性人形图标兜底，角色标签缺失则不渲染徽标；
  * 根节点自带滚动、高度由父级 flex 决定（作品面板固定 h-80），不要在内部再套限高。
  */
@@ -10,7 +10,7 @@ import { Mars, UserRound, Venus } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
 import { Spinner } from '@components/ui/spinner'
 import type { AiContextItem } from '@shared/types/aiChat'
-import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
+import { LoadMoreSentinel } from '@webview/blocks/LoadMoreSentinel'
 import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
 import type { JSX } from 'react'
 import { CONTEXT_PICK_BUTTON_CLASS } from '../utils/context/styles'

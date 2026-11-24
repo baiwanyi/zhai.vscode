@@ -1,7 +1,7 @@
 /**
  * 资料条目列表：以单列卡片展示当前分类的条目，承担浏览、选中与删除入口。
  * 复用约定：卡片复用 ui/card，删除确认复用 components/AlertDialog，缩略图与缺图占位复用 components/Image，
- * 空态复用 components/StateEmpty，文案与图标取自 constants 的 LORE_KIND_META。
+ * 空态复用 blocks/StateEmpty，文案与图标取自 constants 的 LORE_KIND_META。
  * 关键约束：卡片是 role=button 的可聚焦容器，删除按钮挂在外层容器，避免点删除时顺带触发选中；
  * 描述只显示首行，势力卡片额外显示关联人数，其余分类不出现该徽标；
  * 排序沿用草稿顺序（即文档顺序），不按名称重排——作者可以在 Markdown 里自己调整先后。
@@ -10,10 +10,10 @@ import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Card } from '@components/ui/card'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import type { LoreEntry, LoreKind } from '../../types'
 import type { JSX } from 'react'
 import { LORE_KIND_META } from '../../constants'

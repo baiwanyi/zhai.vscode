@@ -17,6 +17,7 @@ import {
     DialogTrigger,
 } from '@components/ui/dialog'
 import { FieldGroup } from '@components/ui/field'
+import { ButtonLoadingContent } from '@webview/blocks/ButtonLoadingContent'
 import { Button } from '@webview/components/Button'
 import type { ButtonProps } from '@webview/components/Button'
 import type { JSX, ReactNode } from 'react'
@@ -119,15 +120,11 @@ export function Dialog({
                             disabled={isDisabled || isLoading}
                             isLoading={isLoading && confirmIcon === undefined}
                         >
-                            {isLoading && confirmIcon !== undefined ? (
-                                <>
-                                    {/* 保留文案占位，自定义图标替换内置 Spinner 时按钮尺寸不抖 */}
-                                    <span className="contents invisible">{confirmLabel}</span>
-                                    {confirmIcon}
-                                </>
-                            ) : (
-                                confirmLabel
-                            )}
+                            <ButtonLoadingContent
+                                label={confirmLabel}
+                                isLoading={isLoading && confirmIcon !== undefined}
+                                icon={confirmIcon}
+                            />
                         </Button>
                     </DialogFooter>
                 ) : null}

@@ -1,14 +1,14 @@
 /**
  * 凭证门：未配置 Cookie 时的统一占位，覆盖「探测中 / 探测失败 / 未配置」三态。
- * 复用约定：骨架取 @webview/components/StateEmpty，操作按钮取 @webview/components/Button；
+ * 复用约定：骨架取 @webview/blocks/StateEmpty，操作按钮取 @webview/components/Button；
  * 文案只在本文件维护，信息流区域与首页列表空态共用同一份，避免多套措辞。
  * 关键约束：credential 为 null 时不得断言「没有配置」，须按 errorCode 区分探测中与探测失败；
  * 已配置时返回 null，调用方只在需要占位时使用，本组件不承担权限判断。
  */
 import { Inbox } from 'lucide-react'
 import type { WeiboCredentialState } from '@shared/types/weibo'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Button } from '@webview/components/Button'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
 

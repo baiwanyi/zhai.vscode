@@ -2,7 +2,7 @@
  * AI 助手消息工具栏：提供回复复制入口，并展示本轮积分、tokens 与耗时。
  * 复用约定：复制成功态与失败提示由 ../hooks/useCopyFeedback 统一承担（内部走 @shared/utils/clipboard），
  * 积分 / tokens / 耗时统一用 @shared/utils/format 折算，图标按钮取 @webview/components/Button，
- * 统计胶囊与悬停气泡统一由 @webview/components/StatBadge 收口（图标与数值经 children 组合），
+ * 统计胶囊与悬停气泡统一由 @webview/blocks/StatBadge 收口（图标与数值经 children 组合），
  * 图标尺寸与笔触统一走 ACTION_ICON_CLASS，同一工具栏内视觉一致。
  * 关键约束：只由助手消息渲染，用户消息不出现工具栏；tokens 或耗时为 0 一律视为未知、不渲染对应胶囊；
  * 积分只认 CLI 对账值，null 不渲染胶囊（未知不等同于 0.00）；估算出的 tokens 必须在提示气泡里标注；
@@ -11,8 +11,8 @@
 import { Check, Clock, Copy, Database, Tickets } from 'lucide-react'
 import type { AiMessage } from '@shared/types/aiChat'
 import { formatCredits, formatDuration, formatTokens } from '@shared/utils/format'
+import { StatBadge } from '@webview/blocks/StatBadge'
 import { Button } from '@webview/components/Button'
-import { StatBadge } from '@webview/components/StatBadge'
 import type { JSX } from 'react'
 import { useCopyFeedback } from '../hooks/useCopyFeedback'
 

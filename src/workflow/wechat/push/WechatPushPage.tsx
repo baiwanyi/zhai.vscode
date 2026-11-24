@@ -13,6 +13,7 @@ import { Badge } from '@components/ui/badge'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import {
     AppContent,
     AppDescription,
@@ -24,7 +25,6 @@ import {
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import {
     formatArticleMeta,
     formatIssueMeta,

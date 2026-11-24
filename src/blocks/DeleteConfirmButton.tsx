@@ -1,6 +1,6 @@
 /**
  * 删除操作按钮：图标按钮 + 二次确认弹窗的固定搭配，确认后才执行回调。
- * 复用约定：按钮取 ./Button，弹窗取 ./AlertDialog，图标取 lucide 的 Trash2；
+ * 复用约定：按钮取 @webview/components/Button，弹窗取 @webview/components/AlertDialog，图标取 lucide 的 Trash2；
  * 条目内的删除入口都走这里，文案由调用方给，不再各自拼一套按钮与弹窗。
  * 关键约束：确认时先关弹窗再执行——弹窗滞留旧数据会让用户以为没删掉；
  * 条目本身可点击时必须传 isStopPropagation，否则点删除会连带触发父级的打开动作；
@@ -10,8 +10,8 @@
 
 import { Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { AlertDialog } from './AlertDialog'
-import { Button } from './Button'
+import { AlertDialog } from '@webview/components/AlertDialog'
+import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 
 export interface DeleteConfirmButtonProps {

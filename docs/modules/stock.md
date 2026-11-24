@@ -346,7 +346,7 @@ WorkflowStock
 | --- | --- |
 | 页面外壳三段式 | `@webview/components/AppPage`（`AppHeader` / `AppContent` / `AppTitle` / `AppDescription` / `AppMenu`） |
 | 下拉菜单 | `@components/ui/dropdown-menu`（`DropdownMenuTrigger asChild` + `align="end"`） |
-| 空态 | `@webview/components/StateEmpty` |
+| 空态 | `@webview/blocks/StateEmpty` |
 | 按钮 | `@webview/components/Button`（不写 `type="button"`） |
 | 分段切换 | `@webview/components/SegmentedRail` |
 | 图片与占位 | `@webview/components/Image`（`aspect="4/3"`，失败自动退占位） |

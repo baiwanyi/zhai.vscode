@@ -1,7 +1,7 @@
 /**
  * AI 解释条目：一条「查询文本 + 解释结果」的摘要，点击整条打开弹窗看详情。
  * 复用约定：骨架取 @components/ui/item 的槽位，详情弹窗取同目录 QueryRecordDetailDialog，
- * 删除入口取 @webview/components/DeleteConfirmButton，时间走 shared/utils/format。
+ * 删除入口取 @webview/blocks/DeleteConfirmButton，时间走 shared/utils/format。
  * 关键约束：骨架与 AnnotationListItem 同构（媒体 / 内容 / 操作 / 页脚），两处列表的行高与文字起点一致；
  * 只关心文本与结果，不展示来源文档、也不提供跳转——解释的是文本本身，与在哪篇里查无关；
  * 删除走确认弹窗而不是行内二次点击：行内确认有超时，用户稍一犹豫就会重来，表现为「删不掉」；
@@ -14,7 +14,7 @@ import { useState } from 'react'
 import { Item, ItemActions, ItemContent, ItemFooter, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { EditorQueryRecord } from '@shared/types/editor'
 import { formatDateTime } from '@shared/utils/format'
-import { DeleteConfirmButton } from '@webview/components/DeleteConfirmButton'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { QueryRecordDetailDialog } from './QueryRecordDetailDialog'
 import type { JSX, KeyboardEvent } from 'react'
 

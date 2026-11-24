@@ -14,6 +14,7 @@ import { Alert, AlertDescription } from '@components/ui/alert'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
 import type { NamingCatalog, NamingCategory, NamingRequest, NamingSurnameKind } from '@shared/types/naming'
+import { ButtonLoadingContent } from '@webview/blocks/ButtonLoadingContent'
 import {
     AppContent,
     AppDescription,
@@ -200,7 +201,7 @@ function NamingWorkspace({ catalog }: NamingWorkspaceProps): JSX.Element {
                                 {VIEW_RESULT_LABEL}
                             </Button>
                             <Button variant={isGenerating ? 'outline' : 'default'} onClick={handlePrimaryAction}>
-                                {isGenerating ? <Spinner /> : <Dices />}
+                                <ButtonLoadingContent label={<Dices />} isLoading={isGenerating} icon={<Spinner />} />
                                 {primaryLabel}
                             </Button>
                         </div>

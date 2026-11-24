@@ -12,19 +12,16 @@
  * 关键约束：disabled 与指针处理器必须在解构中取出后显式声明，否则会被 {...rest} 覆盖，
  * 造成加载态失效或 tooltip 卡在打开态；asChild 依赖唯一子元素，加载态只置
  * aria-busy 而不替换 children，避免 Slot 契约被破坏；禁用中的按钮不派发指针事件，tooltip 不会弹出；
- * 加载态必须保留原 children 的占位并用绝对定位覆盖 Spinner：直接替换 children 会让按钮随文本消失而塌缩，
- * 两侧对齐的工具栏（如页脚）跟着重排，转圈也会偏离按钮盒中心；占位层用 contents + invisible，
- * 既不参与布局也不可见；Spinner 放在 `absolute inset-0` + flex 居中的覆盖层里，
- * 不依赖 auto margin 与父级内容盒排布；Spinner 自身补 block 消除 inline 基线的半行偏移，
- * 并以 `transform-box: fill-box` + `origin-center` 把旋转轴锁在 svg 内容包围盒中心
- * （与 globals.css 里 sonner loader 的修法同源，否则轴心按外层盒解析会绕偏心点转）。
+ * 加载态复用 blocks/ButtonLoadingContent 保留原 children 占位并绝对覆盖 Spinner，
+ * 直接替换 children 会让按钮随文本消失而塌缩、两侧对齐的工具栏跟着重排；
+ * 占位层用 contents + invisible 既不参与布局也不可见，Spinner 的轴心与基线修法由该组件统一维护。
  */
 'use client'
 
 import { cn } from 'cn'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Button as ShadcnButton, type buttonVariants } from '@components/ui/button'
-import { Spinner } from '@components/ui/spinner'
+import { ButtonLoadingContent } from '@webview/blocks/ButtonLoadingContent'
 import { TOOLTIP_CLASS, Tooltip, TooltipContent, TooltipTrigger } from './Tooltip'
 import type { VariantProps } from 'class-variance-authority'
 import type { ComponentProps, FocusEvent, JSX, MouseEvent, PointerEvent, ReactNode } from 'react'
@@ -149,20 +146,11 @@ function Button({
         [clearHideTimer, isLoading, onClick],
     )
 
-    // 加载态：原 children 以 contents 保留占位（不可见、不额外占布局位），
-    // Spinner 放进铺满按钮的 flex 容器里居中 —— 不靠 auto margin，也不参与按钮自身的内容布局；
-    // 直接替换 children 会让按钮尺寸随文案消失而抖动，转圈也会偏离按钮盒中心。
-    // asChild 由 Slot 渲染唯一子元素，替换 children 会破坏该契约，故只在普通按钮下这么渲染
+    // 加载态复用 blocks/ButtonLoadingContent：原 children 以 contents invisible 占位、Spinner 绝对居中覆盖，
+    // 避免按钮随文案消失而塌缩；asChild 由 Slot 渲染唯一子元素，替换 children 会破坏该契约，故只在普通按钮下启用
     const content =
         isLoading && !asChild ? (
-            <>
-                <span className="contents invisible">{children}</span>
-                <span className="absolute inset-0 flex items-center justify-center">
-                    {/* transform-box: fill-box 把旋转轴锁在 svg 内容包围盒中心（同 sonner loader 的修法），
-                        block 去掉 inline 基线的半行偏移；两者缺一都会绕偏心点转 */}
-                    <Spinner className="block origin-center transform-fill" aria-hidden />
-                </span>
-            </>
+            <ButtonLoadingContent label={children} isLoading placeholderClassName="contents invisible" />
         ) : (
             children
         )

@@ -5,7 +5,7 @@
  * 性格标签与外貌标签都复用设定页的 TagPicker：候选分别来自 ./characterTraits 的人性设定库
  * 与 ./characterAppearanceTags 的七类外貌标签库，外貌标签是主设定、外貌描写只作补充；
  * 各标签页收在同文件的私有组件里，主组件只做编排与外貌生成状态；
- * 外貌描写取 @webview/components/AiTextareaField（输入组 + 生成按钮 + 生成态光晕，
+ * 外貌描写取 @webview/blocks/AiTextareaField（输入组 + 生成按钮 + 生成态光晕，
  * 与设定页五个字段共用），本组件只把生成状态与回调传下去。
  * 关键约束：所有控件只通过补丁回传给调用方（编辑弹窗的草稿），本组件不持有角色数据副本，生成结果写回后仍需用户保存；
  * 例外是删除角色形象后的封面回退——删除不可撤销，必须经 onPersist 立即落盘；
@@ -19,7 +19,7 @@ import { Input } from '@components/ui/input'
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@components/ui/tabs'
 import { Textarea } from '@components/ui/textarea'
-import { AiTextareaField } from '@webview/components/AiTextareaField'
+import { AiTextareaField } from '@webview/blocks/AiTextareaField'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { PromptSettingSnapshot } from '@webview/workflow/media/utils/prompt/sections'
 import { APPEARANCE_TAG_GROUPS, APPEARANCE_TAG_MAX_COUNT } from './characterAppearanceTags'

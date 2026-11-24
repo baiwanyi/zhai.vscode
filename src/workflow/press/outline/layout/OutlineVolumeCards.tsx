@@ -1,6 +1,6 @@
 /**
  * 卷纲页：每卷一张卡片，卡片只读展示核心事件，点击整卡打开对话框编辑这一卷的卷纲。
- * 复用约定：卡片取 ui/card，空态取 components/StateEmpty，更多操作取 ui/dropdown-menu，
+ * 复用约定：卡片取 ui/card，空态取 blocks/StateEmpty，更多操作取 ui/dropdown-menu，
  * 编辑弹层由同目录 OutlineVolumeEditDialog 承担（卷标题 / 章节数 / 核心事件 / 主要情节 / 关键转折 / 卷末结果）。
  * 关键约束：卡片不直接改数据，编辑与保存都在弹层里完成，本组件只持有「正在编辑哪一卷」；
  * 整卡点击只打开编辑弹层，更多菜单的触发器与菜单内容都要阻止冒泡，否则会连带触发弹层；
@@ -27,8 +27,8 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@components/ui/dropdown-menu'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Button } from '@webview/components/Button'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import { OutlineVolumeEditDialog } from './OutlineVolumeEditDialog'
 import type { CharacterCard, OutlineVolume, ProjectSetting } from '../../types'
 import type { JSX } from 'react'

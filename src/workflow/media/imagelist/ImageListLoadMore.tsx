@@ -5,8 +5,8 @@
  * 关键约束：按钮分母取筛选结果总数、分子取已渲染数，两者相等时不渲染入口；
  * 哨兵在没有更多条目时不渲染也不观察，避免一屏没填满时反复触发空请求。
  */
+import { LoadMoreSentinel } from '@webview/blocks/LoadMoreSentinel'
 import { Button } from '@webview/components/Button'
-import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
 import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
 import type { ImageListPaging } from './imageListModel'
 import type { JSX } from 'react'

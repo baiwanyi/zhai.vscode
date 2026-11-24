@@ -1,6 +1,6 @@
 /**
  * 仪表盘内的单个返回动作：`home` 恒定回概览首页，`back` 按当前路由回上一级（作品详情→作品列表、作品列表→概览）。
- * 复用约定：外观与可达性交给 @webview/components/BackAction（图标按钮 + AppAction 槽位），本文件只决定去向；
+ * 复用约定：外观与可达性交给 @webview/blocks/BackAction（图标按钮 + AppAction 槽位），本文件只决定去向；
  * 导航经 core/routeContext 取路由与 navigate，调用方只给 kind，不必逐处传 onClick，
  * 多个实例由 AppHeader 的 start 网格依次分列（首个在左、第二个在右）。
  * 关键约束：本组件必须处于 DashboardRouteProvider 之内，缺位时 hook 直接抛错而不是静默回退；
@@ -8,7 +8,7 @@
  */
 import { ChevronLeft, House } from 'lucide-react'
 import { useCallback } from 'react'
-import { BackAction } from '@webview/components/BackAction'
+import { BackAction } from '@webview/blocks/BackAction'
 import type { LucideIcon } from 'lucide-react'
 import type { JSX } from 'react'
 import { useDashboardRoute } from '../core/routeContext'

@@ -1,7 +1,7 @@
 /**
  * 世界观字段组：世界观总述、地理、时代、势力、力量体系、核心概念与禁忌设定。
  * 复用约定：字段组容器取 @components/ui 的 field 之 FieldGroup，单列排布、每个字段独占一行；
- * 七个字段都是多句描述，统一取 @webview/components/AiTextareaField（多行输入 + 字段级 AI 生成）；
+ * 七个字段都是多句描述，统一取 @webview/blocks/AiTextareaField（多行输入 + 字段级 AI 生成）；
  * 字数上限与 AI 生成结果截断共用 constants 的 SETTING_FIELD_MAX_LENGTH。
  * 关键约束：同一时刻只允许一项生成，忙碌态由页面持有、本组件只按字段渲染按钮状态；
  * 多数值由 textarea 输入，写盘时折成单行写在字段标题下（见 serialize.ts），因此换行不会落到文档里；
@@ -9,7 +9,7 @@
  */
 import { FieldGroup } from '@components/ui/field'
 import type { SettingFieldKey } from '@shared/types/press'
-import { AiTextareaField } from '@webview/components/AiTextareaField'
+import { AiTextareaField } from '@webview/blocks/AiTextareaField'
 import type { SettingFieldAi, SettingFieldsProps } from './sections'
 import type { JSX } from 'react'
 import { SETTING_FIELD_MAX_LENGTH } from '../constants'

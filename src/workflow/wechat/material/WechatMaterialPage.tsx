@@ -13,6 +13,7 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle }
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatMaterialSummary } from '@shared/types/wechat'
 import { copyWithToast } from '@shared/utils/clipboard'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { AlertDialog } from '@webview/components/AlertDialog'
 import {
     AppContent,
@@ -25,7 +26,6 @@ import {
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
 import { useWechatMaterials } from '../hooks/useWechatMaterials'
 

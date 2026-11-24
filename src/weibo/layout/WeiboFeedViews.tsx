@@ -6,8 +6,8 @@
  */
 import { Inbox } from 'lucide-react'
 import type { WeiboCredentialState, WeiboGroupItem } from '@shared/types/weibo'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Button } from '@webview/components/Button'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import { WeiboFeedSection } from './WeiboFeedSection'
 import type { WeiboFeedController } from '../hooks/useWeiboFeed'
 import type { WeiboContentKind, WeiboFeedSources } from '../utils/weiboFeedRouting'

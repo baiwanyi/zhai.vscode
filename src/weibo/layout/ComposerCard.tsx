@@ -28,6 +28,7 @@ import { Spinner } from '@components/ui/spinner'
 import type { UploadFileItem } from '@shared/types/upload'
 import { MAX_PUBLISH_CONTENT_LENGTH, MAX_PUBLISH_IMAGE_COUNT } from '@shared/types/weibo'
 import type { WeiboTimelinePost } from '@shared/types/weibo'
+import { ButtonLoadingContent } from '@webview/blocks/ButtonLoadingContent'
 import { CARD_GLOW_CLASS, ComposerGlow } from '@webview/components/AppComposer'
 import { Button } from '@webview/components/Button'
 import { WeiboEmoticonPicker } from './WeiboEmoticonPicker'
@@ -281,7 +282,7 @@ export function ComposerCard({
                             tooltip="AI 优化正文"
                             onClick={handleEnhance}
                         >
-                            {isEnhancing ? <Spinner /> : <Sparkles />}
+                            <ButtonLoadingContent label={<Sparkles />} isLoading={isEnhancing} icon={<Spinner />} />
                         </InputGroupButton>
                     </InputGroupAddon>
                 </InputGroup>

@@ -14,8 +14,8 @@ import {
     AlertDescription,
     AlertTitle,
 } from '@components/ui/alert'
-import { Spinner } from '@components/ui/spinner'
 import { toErrorDetail, toErrorText } from '@shared/utils/error'
+import { ButtonLoadingContent } from '@webview/blocks/ButtonLoadingContent'
 import { Button } from '@webview/components/Button'
 import type { ComponentProps, JSX, ReactElement } from 'react'
 
@@ -71,7 +71,7 @@ export function Alert({
                         disabled={isLoading}
                         onClick={(): void => { void handleAction() }}
                     >
-                        {isLoading ? <Spinner className="size-3.5 shrink-0" aria-hidden /> : actionText}
+                        <ButtonLoadingContent label={actionText} isLoading={isLoading} />
                     </Button>
                 </AlertAction>
             )}

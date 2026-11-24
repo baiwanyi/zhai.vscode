@@ -1,15 +1,15 @@
 /**
  * 章纲章节列表：把全部章节平铺成一列，卷筛选与标题搜索在页头完成，这里只负责展示与选中。
  * 复用约定：章节行复用 components/Button 的 ghost 变体，状态点取 PLAN_STATUS_META 的语义底色，
- * 空态复用 components/StateEmpty，标题与字数取自 utils 的 chapterTitleLabel / formatWordCount。
+ * 空态复用 blocks/StateEmpty，标题与字数取自 utils 的 chapterTitleLabel / formatWordCount。
  * 关键约束：本组件只读——新增卷与章节的入口在页头动作区，这里不重复提供；
  * 列表不分卷也不分阶段，卷筛选由调用方先过滤 entries，行顺序始终是全书章序；
  * 行内只放「状态点 + 章节序号 + 标题（左对齐）+ 已写字数」，卷名只进 aria-label。
  */
 import { cn } from 'cn'
 import { ScrollText } from 'lucide-react'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Button } from '@webview/components/Button'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import type { OutlineTreeEntry } from '../../types'
 import type { JSX } from 'react'
 import { PLAN_STATUS_META } from '../../constants'

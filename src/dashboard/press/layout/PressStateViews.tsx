@@ -5,8 +5,8 @@
  */
 import { cn } from 'cn'
 import { Skeleton } from '@components/ui/skeleton'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Button } from '@webview/components/Button'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
 
 /** 骨架占位 key：最多取前六条，够覆盖列表与章节目录的首屏占位 */

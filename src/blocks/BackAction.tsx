@@ -6,8 +6,8 @@
  * AppAction 槽位必须保留 —— AppHeader 的 start 三列网格靠它把按钮定位到左右两列。
  */
 import { ChevronLeft } from 'lucide-react'
-import { AppAction } from './AppPage'
-import { Button } from './Button'
+import { AppAction } from '@webview/components/AppPage'
+import { Button } from '@webview/components/Button'
 import type { LucideIcon } from 'lucide-react'
 import type { JSX } from 'react'
 

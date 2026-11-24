@@ -1,6 +1,6 @@
 /**
  * AI 解释详情弹窗：引用原文 + 完整解释正文，正文按 Markdown 渲染并在弹窗内限高滚动。
- * 复用约定：外壳取 @components/ui 的 dialog 与 scroll-area，正文取 @webview/components/Markdown，
+ * 复用约定：外壳取 @components/ui 的 dialog 与 scroll-area，正文取 @webview/blocks/Markdown，
  * 元信息行复用 shared/utils/format 的时间口径。
  * 关键约束：开合状态由调用方持有——条目自己控制打开，弹窗只呈现并回传关闭；
  * 答案可能很长，滚动限制在弹窗内，不撑高页面；不展示来源文档，解释的是文本本身。
@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { ScrollArea } from '@components/ui/scroll-area'
 import type { EditorQueryRecord } from '@shared/types/editor'
 import { formatDateTime } from '@shared/utils/format'
-import { Markdown } from '@webview/components/Markdown'
+import { Markdown } from '@webview/blocks/Markdown'
 import type { JSX } from 'react'
 
 export interface QueryRecordDetailDialogProps {

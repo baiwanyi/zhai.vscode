@@ -1,13 +1,13 @@
 /**
  * 待接入分区的占位：说明该分区将提供什么、依赖哪类接口权限，而不是渲染空白页或假数据。
  * 复用约定：文案集中在 PENDING_META，按分区 id 查表；外壳取 components/AppPage，
- * 空态取 @webview/components/StateEmpty，与其余分区页的视觉保持一致。
+ * 空态取 @webview/blocks/StateEmpty，与其余分区页的视觉保持一致。
  * 关键约束：必须写清「需要认证主体」这类前置条件——否则用户会以为是功能坏了；
  * 未登记的分区（理论上不会出现）给通用文案兜底，不抛错也不渲染空 div。
  */
 import { BarChart3, Construction, MessageSquare, Menu, UserRound } from 'lucide-react'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { AppContent, AppDescription, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import type { WorkflowSection } from '../../layout/workflowSections'
 import type { JSX } from 'react'
 

@@ -1,7 +1,7 @@
 /**
  * 流内是/否确认卡片：承载「允许 / 拒绝」二选一的确认（写入类工具附内容预览），不再让用户填任何内容。
  * 复用 @components/ui 的 Card 槽位、badge 倒计时、trace 折叠行与 code-block 差异行、
- * @webview/components/Button，预览正文沿用 @webview/components/Markdown 的主题映射。
+ * @webview/components/Button，预览正文沿用 @webview/blocks/Markdown 的主题映射。
  * 关键约束：用户必须在决定前读到将要写入的内容 —— 只报路径与动作等于让用户盲签，预览默认展开；
  * 说明文案整句由宿主下发、原样渲染，前端不拼半句，否则任一方改文案都会拼出病句；
  * 倒计时归零即按拒绝结算且只结算一次：超时、关闭、切会话都是拒绝，本组件也不把「允许」设为默认焦点；
@@ -23,8 +23,8 @@ import {
     TraceTitle,
 } from '@components/ui/trace'
 import type { AiPermissionDecision, AiPermissionRequest, AiWritePreview } from '@shared/types/aiChat'
+import { Markdown } from '@webview/blocks/Markdown'
 import { Button } from '@webview/components/Button'
-import { Markdown } from '@webview/components/Markdown'
 import type { JSX } from 'react'
 import { describeTool } from '../utils/chat/format'
 

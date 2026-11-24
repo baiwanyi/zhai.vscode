@@ -1,7 +1,7 @@
 /**
  * 标注列表项：一条划线或批注的摘要，含颜色点、文本、时间、文档与段落片段。
  * 复用约定：骨架取 @components/ui/item 的槽位（媒体 / 内容 / 操作 / 页脚），外层由 AnnotationListSection
- * 统一用 ItemGroup 包裹，本组件不再自带列表容器；删除确认取 @webview/components/DeleteConfirmButton，
+ * 统一用 ItemGroup 包裹，本组件不再自带列表容器；删除确认取 @webview/blocks/DeleteConfirmButton，
  * 按钮取 Button，时间格式化复用 shared/utils/format。
  * 关键约束：骨架与 QueryRecordItem 同构，颜色点包在与图标同宽的容器里，两个列表的文字起点才对得上；
  * 删除走确认弹窗而不是行内二次点击：行内确认有超时，用户稍一犹豫就会重来，表现为「删不掉」；
@@ -16,8 +16,8 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemFooter, ItemMedia,
 import { Popover, PopoverContent, PopoverTrigger } from '@components/ui/popover'
 import type { AnnotationRecord, HighlightColor } from '@shared/types/editor'
 import { formatDateTime } from '@shared/utils/format'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Button } from '@webview/components/Button'
-import { DeleteConfirmButton } from '@webview/components/DeleteConfirmButton'
 import type { JSX } from 'react'
 import { ANNOTATION_COLORS, readColorCss } from '../colors'
 

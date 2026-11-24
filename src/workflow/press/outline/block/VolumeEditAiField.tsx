@@ -1,11 +1,11 @@
 /**
  * 卷纲 AI 字段：把核心事件与卷末结果两个字段的元数据和生成态推导收在一处。
- * 复用约定：底层取 components/AiTextareaField，字段元数据按 VolumeFieldKey 索引；
+ * 复用约定：底层取 blocks/AiTextareaField，字段元数据按 VolumeFieldKey 索引；
  * 调用方只传值、生成状态与回调，isGenerating / isDisabled / 按钮文案由 field 推导。
  * 关键约束：field 决定输入框 id 与文案，两个字段的 id 不能重复；maxLength 只对核心事件生效。
  */
 import type { VolumeFieldKey } from '@shared/types/press'
-import { AiTextareaField } from '@webview/components/AiTextareaField'
+import { AiTextareaField } from '@webview/blocks/AiTextareaField'
 import type { JSX, ReactNode } from 'react'
 
 interface VolumeEditAiFieldProps {

@@ -16,6 +16,8 @@ import { Textarea } from '@components/ui/textarea'
 import type { WechatAccountSummary, WechatCommentSummary } from '@shared/types/wechat'
 import { WECHAT_COMMENT_CONTENT_MAX } from '@shared/types/wechat'
 import { formatRelativeTime } from '@shared/utils/format'
+import { LoadMoreSentinel } from '@webview/blocks/LoadMoreSentinel'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { AlertDialog } from '@webview/components/AlertDialog'
 import {
     AppContent,
@@ -27,8 +29,6 @@ import {
     AppTitle,
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
-import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
 import type { JSX } from 'react'
 import { useWechatComments } from '../hooks/useWechatComments'

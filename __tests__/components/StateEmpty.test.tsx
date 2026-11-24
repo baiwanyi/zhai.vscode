@@ -8,7 +8,7 @@
  */
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { StateEmpty } from '@webview/components/StateEmpty'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import type { ReactNode } from 'react'
 
 afterEach(cleanup)

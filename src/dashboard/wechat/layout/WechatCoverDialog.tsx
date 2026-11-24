@@ -2,7 +2,7 @@
  * 封面弹窗：先按来源打开选图对话框（生图结果 / 在线图片 / 已上传图片），挑中一张后按公众号首图比例（2.35:1）
  * 裁剪，再保存到当前批次目录的 images/ 下。
  * 复用约定：骨架取 Dialog，选图表单取 @components/ui 的 dialog，来源入口与缩略图取 components/Button 与
- * components/Image，空态与加载态取 components/StateEmpty，缩放缓动取 @components/ui 的 slider；
+ * components/Image，空态与加载态取 blocks/StateEmpty，缩放缓动取 @components/ui 的 slider；
  * 候选列表来自 useWechatCoverSources（生图走 media/list、在线图片走 stock/downloaded、已上传走 upload/list），
  * 读原图走 wechat/cover/source，保存走 wechat/article/cover。
  * 关键约束：封面本身不再直接调起文件对话框——本地上传只经由「已上传图片」来源，与上传页共用同一份清单；
@@ -19,10 +19,10 @@ import { Dialog as UiDialog, DialogContent, DialogFooter, DialogHeader, DialogTi
 import { Field, FieldLabel } from '@components/ui/field'
 import { Slider } from '@components/ui/slider'
 import type { WechatArticleSummary } from '@shared/types/wechat'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Button } from '@webview/components/Button'
 import { Dialog } from '@webview/components/Dialog'
 import { Image } from '@webview/components/Image'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import { useRenderLimit } from '@webview/hooks/useRenderLimit'
 import type { JSX, PointerEvent, ReactNode } from 'react'
 import { useWechatCoverSources, type CoverSourceImage, type CoverSourceKind } from '../hooks/useWechatCoverSources'

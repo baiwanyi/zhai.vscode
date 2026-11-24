@@ -19,8 +19,8 @@ import {
     AlertDialogTitle,
     AlertDialogTrigger,
 } from '@components/ui/alert-dialog'
-import { Spinner } from '@components/ui/spinner'
 import { toastError } from '@shared/utils/error'
+import { ButtonLoadingContent } from '@webview/blocks/ButtonLoadingContent'
 import type { ComponentProps, JSX, ReactNode } from 'react'
 
 /** 按钮变体口径：直接取底座接受的类型（shadcn 原生档位，不含项目 Button 的 primary） */
@@ -123,17 +123,7 @@ export function AlertDialog({
                         className={isBusy ? 'relative' : undefined}
                         onClick={handleConfirm}
                     >
-                        {isBusy ? (
-                            <>
-                                {/* 文案占位保住按钮宽度，Spinner 绝对居中覆盖；sr-only 让读屏仍读到按钮名 */}
-                                <span className="invisible">{confirmLabel}</span>
-                                <span className="absolute inset-0 flex items-center justify-center">
-                                    <Spinner className="block origin-center transform-fill" aria-hidden />
-                                </span>
-                            </>
-                        ) : (
-                            confirmLabel
-                        )}
+                        <ButtonLoadingContent label={confirmLabel} isLoading={isBusy} />
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>

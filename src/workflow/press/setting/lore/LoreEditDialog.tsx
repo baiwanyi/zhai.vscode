@@ -1,7 +1,7 @@
 /**
  * 条目编辑弹窗：把名称、描述、设定图封面与关联人物收在一个弹窗里，编辑过程只改本地草稿。
- * 复用约定：弹层复用 ui/dialog，字段控件取 ui/field 与 input，描述字段取 components/AiTextareaField，
- * 封面三态取 components/CoverFigure，关联人物选择取 ui/popover，分类徽标取 constants 的 CHARACTER_ROLE_META。
+ * 复用约定：弹层复用 ui/dialog，字段控件取 ui/field 与 input，描述字段取 blocks/AiTextareaField，
+ * 封面三态取 blocks/CoverFigure，关联人物选择取 ui/popover，分类徽标取 constants 的 CHARACTER_ROLE_META。
  * 关键约束：草稿只在本次打开期间存在，调用方须以条目 id 或「新建」作为 key 重建组件，否则会带上上一条的输入；
  * 关闭或取消一律丢弃草稿；名称必填与同分类去重由调用方校验，本组件只负责把草稿抛出去；
  * 切分组 / 切模块会直接卸载弹窗，此时未提交且有改动的草稿经 onAutoSave 写回（保存与取消已标记，不会重复写盘）；
@@ -24,9 +24,9 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
 import { Popover, PopoverAnchor, PopoverContent, PopoverHeader, PopoverTitle } from '@components/ui/popover'
-import { AiTextareaField } from '@webview/components/AiTextareaField'
+import { AiTextareaField } from '@webview/blocks/AiTextareaField'
+import { CoverFigure } from '@webview/blocks/CoverFigure'
 import { Button } from '@webview/components/Button'
-import { CoverFigure } from '@webview/components/CoverFigure'
 import { useLoreDescriptionGenerate } from './useLoreDescriptionGenerate'
 import type { CharacterCard, LoreEntry, LoreKind, ProjectSetting } from '../../types'
 import type { JSX } from 'react'

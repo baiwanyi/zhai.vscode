@@ -3,7 +3,7 @@
  * 复用约定：封面回读交给 useCharacterCover、图库列举交给 useCharacterPortrait，
  * 出图的 hook 由主组件持有（切标签页会卸载本区块，挂在内部会丢掉在途回执），本组件只透传按钮状态；
  * 画风选项取 workflow/media/prompt 的 STYLE_OPTIONS，与宿主 STYLE_HINTS 同源；
- * 图库网格复用 components/Image，空态取 components/StateEmpty，删除确认取 components/AlertDialog。
+ * 图库网格复用 components/Image，空态取 blocks/StateEmpty，删除确认取 components/AlertDialog。
  * 关键约束：生成结果只改封面指针且随人物卡保存生效，删除不可撤销——被删的是当前封面时必须立即落盘回退值，
  * 只改草稿会在取消编辑后留下失效指针；图库只做「设为首选 / 删除」最小集，批量与复制等操作仍在生图页。
  */
@@ -16,11 +16,11 @@ import type { MediaDeleteResult } from '@shared/types/media'
 import type { CharacterPortrait } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
+import { CoverFigure } from '@webview/blocks/CoverFigure'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
-import { CoverFigure } from '@webview/components/CoverFigure'
 import { Image } from '@webview/components/Image'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import { STYLE_OPTIONS } from '@webview/workflow/media/utils/parameters/style'
 import { useCharacterCover } from './useCharacterCover'
 import { useCharacterPortrait } from './useCharacterPortrait'

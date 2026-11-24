@@ -13,6 +13,7 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle }
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatFanSummary, WechatFanTag } from '@shared/types/wechat'
 import { formatRelativeTime } from '@shared/utils/format'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import {
     AppContent,
     AppDescription,
@@ -25,7 +26,6 @@ import {
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
 import { useWechatFans } from '../hooks/useWechatFans'
 

@@ -1,12 +1,12 @@
 /**
  * 在线图库页头统计胶囊：已下载张数与本小时剩余配额，悬停给精确口径。
- * 复用约定：胶囊取 @webview/components/StatBadge（图标 + 折算值 + 必填 tooltip），图标取 lucide；
+ * 复用约定：胶囊取 @webview/blocks/StatBadge（图标 + 折算值 + 必填 tooltip），图标取 lucide；
  * 纯展示，数据由页面注入，组件不自己发 stock/status。
  * 关键约束：remaining 为 null 时不渲染配额胶囊（不限流配置下宿主给不出数字）；
  * 图标须带 aria-hidden 与尺寸类，否则 lucide 默认尺寸会撑高胶囊。
  */
 import { Gauge, ImageDown } from 'lucide-react'
-import { StatBadge } from '@webview/components/StatBadge'
+import { StatBadge } from '@webview/blocks/StatBadge'
 import type { JSX } from 'react'
 
 interface StockQuotaBadgesProps {

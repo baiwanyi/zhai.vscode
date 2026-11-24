@@ -1,14 +1,14 @@
 /**
  * 热搜状态占位：未配置 / 首次取数 / 失败与空榜三种情况共用一份骨架，侧栏与专页只差尺寸与文案。
- * 复用约定：占位取 @webview/components/StateEmpty，重试与去设置入口取 @webview/components/Button；
+ * 复用约定：占位取 @webview/blocks/StateEmpty，重试与去设置入口取 @webview/components/Button；
  * variant 决定内边距、图标尺寸与是否给「去设置」，榜单有内容时返回 null 由调用方渲染列表。
  * 关键约束：hasLoaded 为假同样算加载态，否则空态会先闪一下再被结果替换；
  * 本组件不感知榜单来源，同城等场景的补充说明由调用方通过 emptyHint 传入。
  */
 import { Cookie, Flame } from 'lucide-react'
 import { Spinner } from '@components/ui/spinner'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Button } from '@webview/components/Button'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import type { WeiboHotRankState } from '../hooks/useWeiboHotRank'
 import type { JSX } from 'react'
 

@@ -1,7 +1,7 @@
 /**
  * 人物卡片列表：以单列卡片展示人物卡，承担人物页的主体浏览、选择与删除入口。
  * 复用约定：卡片复用 ui/card，删除确认复用 ui/alert-dialog，角色徽标取 CHARACTER_ROLE_META 的图表色，
- * 性别以 Mars / Venus 图标区分（男蓝女红），空态复用 components/StateEmpty。
+ * 性别以 Mars / Venus 图标区分（男蓝女红），空态复用 blocks/StateEmpty。
  * 关键约束：封面优先取磁盘列表（宿主一次回读的全部角色图片），按 coverPortraitId 命中，未命中用最新一张，
  * 再退回到草稿里已加载的 portraits——文档只存封面 id，图片本体在 Images 下，不读磁盘就没有封面；
  * 卡片是可聚焦按钮而非占位容器，键盘可逐项进入；排序固定按 CHARACTER_ROLE_ORDER，不随点击顺序变化；
@@ -13,10 +13,10 @@ import { useMemo, useState } from 'react'
 import { Badge } from '@components/ui/badge'
 import { Card } from '@components/ui/card'
 import type { PortraitGalleryItem } from '@shared/types/press'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import type { CharacterCard } from '../types'
 import type { JSX } from 'react'
 import { CHARACTER_ROLE_META, CHARACTER_ROLE_ORDER } from '../constants'

@@ -3,7 +3,7 @@
  * 复用约定：外壳取 components/AppPage（作品名与人数走 AppSummary 徽标行、筛选行进 AppMenu、列表走 AppContent 滚动），
  * 列表由 CharacterList 承担、编辑由 CharacterEditDialog 与 CharacterEditPanel 承担、
  * 新增由 CharacterCreateDialog 承担、提取由 useCharacterExtract 发起、角色设定图由 useCharacterPortrait 读取；
- * 搜索框复用 ui/input-group（前置图标交给 InputGroupAddon），提取中的等待态复用 components/StateEmpty；
+ * 搜索框复用 ui/input-group（前置图标交给 InputGroupAddon），提取中的等待态复用 blocks/StateEmpty；
  * 本文件只做筛选、搜索、提取、封面回读与弹窗编排，以及作品氛围、设定快照与作品目录的下传；
  * 右上角「打开文档」按文档键打开角色设定.md（文件名映射在宿主侧，前端不拼路径）。
  * 关键约束：新增后直接打开编辑弹窗，因此 onCreateCharacter 必须回传新卡 id；
@@ -16,10 +16,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@components/ui/input-group'
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import type { PortraitGalleryItem, PressExtractedCharacter } from '@shared/types/press'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { AppAction, AppContent, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import { CharacterCreateDialog } from './CharacterCreateDialog'
 import { CharacterEditDialog } from './CharacterEditDialog'
 import { CharacterList } from './CharacterList'

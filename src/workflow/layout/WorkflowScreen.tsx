@@ -15,8 +15,8 @@
  * 宿主侧命令结果经 useHostToast 订阅 toast 广播，在本层同样用 sonner 呈现。
  */
 import { useCallback, useState } from 'react'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { AppToaster } from '@webview/components/AppToaster'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import { useHostToast } from '@webview/hooks/useHostToast'
 import { readAvailableSections, readContentScope, readScopeDir } from './contentScope'
 import { WorkflowNav } from './WorkflowNav'

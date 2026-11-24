@@ -9,8 +9,8 @@
  * 读取失败给重试，不静默显示空列表；分区页按账号 id 作 key，切换账号即重挂载，不沿用上一个账号的快照。
  */
 import { Send } from 'lucide-react'
+import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Button } from '@webview/components/Button'
-import { StateEmpty } from '@webview/components/StateEmpty'
 import { WechatCommentPage } from './comment/WechatCommentPage'
 import { WechatFansPage } from './fans/WechatFansPage'
 import { useWechatAccountScope } from './hooks/useWechatAccountScope'

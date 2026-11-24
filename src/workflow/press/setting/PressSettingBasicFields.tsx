@@ -5,7 +5,7 @@
  * 复用约定：段容器取 @components/ui 的 field 之 FieldSet + FieldLegend，字段网格取 FieldGroup，
  * 单字段控件取 input / textarea / select；标签与规避内容都取 TagPicker（分组弹层 + 自定义输入），
  * 其余单选走 SegmentedRail（选项带悬停说明）；封面交给 ./SettingCoverSection（生成 + 候选图库），
- * 选项与标签库统一来自 ./settingOptions；带 AI 生成的五个字段统一取 @webview/components/AiTextareaField
+ * 选项与标签库统一来自 ./settingOptions；带 AI 生成的五个字段统一取 @webview/blocks/AiTextareaField
  * （输入组 + 生成按钮 + 生成态光晕），故事内核各项由 STORY_FIELDS 数据驱动渲染；
  * 时间 / 地点与写作风格三组选择，分别收在同文件的 PlainSelectField 与 ChipChoiceField 里。
  * 关键约束：作品名与目录名一一对应；多行字段写入文档时统一折成单行；篇幅 0 表示不限；
@@ -29,7 +29,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from '@components/ui/textarea'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import type { SettingFieldKey } from '@shared/types/press'
-import { AiTextareaField } from '@webview/components/AiTextareaField'
+import { AiTextareaField } from '@webview/blocks/AiTextareaField'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { SegmentedRailItem } from '@webview/components/SegmentedRail'
 import { SettingCoverSection } from './SettingCoverSection'
