@@ -4,7 +4,7 @@
  * 写操作与加入 AI 对话（发布 / 回复 / 删除 / 添加为上下文）走 useWeiboCommentActions；
  * 发布框与评论条目分别是 CommentComposer / CommentItem，
  * 续载与失败重试交给 LoadMoreSentinel（滚到底自动拉，失败原地重试）；
- * 头像与正文取 WeiboAvatar / WeiboRichText，空态取 StateEmpty、读取失败条取 ListErrorAlert，
+ * 头像与正文取 WeiboAvatar / WeiboRichText，空态取 StateEmpty、读取失败条取 Alert，
  * 删除确认复用公共 AlertDialog。
  * 关键约束：父级条件渲染保证每次展开都是新实例，进入即拉第一页；
  * 游标串行、代际丢弃与写操作单飞都在两个 Hook 内，本组件只做装配与文案；
@@ -13,9 +13,9 @@
  */
 import { MessageSquare } from 'lucide-react'
 import { Spinner } from '@components/ui/spinner'
+import { toErrorDetail } from '@shared/utils/error'
+import { Alert } from '@webview/components/Alert'
 import { AlertDialog } from '@webview/components/AlertDialog'
-import { Button } from '@webview/components/Button'
-import { ListErrorAlert } from '@webview/components/ListErrorAlert'
 import { LoadMoreSentinel } from '@webview/components/LoadMoreSentinel'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import type { JSX } from 'react'
@@ -95,20 +95,13 @@ export function WeiboCommentList({ postId, totalCount, viewerUid = null }: Weibo
                     />
                 ) : null}
                 {thread.error === null ? null : (
-                    <ListErrorAlert
+                    <Alert
                         title={WEIBO_UI_TEXT.error.comments}
-                        error={thread.error}
-                        action={
-                            <Button
-                                size="xs"
-                                variant="outline"
-                                onClick={() => {
-                                    void thread.reload()
-                                }}
-                            >
-                                {WEIBO_UI_TEXT.action.retry}
-                            </Button>
-                        }
+                        description={toErrorDetail(thread.error)}
+                        variant="destructive"
+                        callback={(): void => { void thread.reload() }}
+                        actionText={WEIBO_UI_TEXT.action.retry}
+                        actionStatus="outline"
                     />
                 )}
                 {/* 哨兵：滚到底部自动续载；续载失败时原地变为「加载失败 + 重试」，游标不动 */}

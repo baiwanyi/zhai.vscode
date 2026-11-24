@@ -9,11 +9,12 @@
  */
 import { InfoIcon, Loader2Icon } from 'lucide-react'
 import { useEffect, useRef } from 'react'
-import { Alert, AlertDescription } from '@components/ui/alert'
+import { Alert as UiAlert, AlertDescription } from '@components/ui/alert'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@components/ui/dialog'
 import { Marker, MarkerContent, MarkerIcon } from '@components/ui/marker'
 import { ScrollArea } from '@components/ui/scroll-area'
-import { ListErrorAlert } from '@webview/components/ListErrorAlert'
+import { toErrorDetail } from '@shared/utils/error'
+import { Alert } from '@webview/components/Alert'
 import { Markdown } from '@webview/components/Markdown'
 import type { UseDocumentQueryResult } from '../hooks/useDocumentQuery'
 import type { JSX } from 'react'
@@ -97,10 +98,10 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
                     </Marker>
                 ) : null}
                 {notice === null ? null : (
-                    <Alert>
+                    <UiAlert>
                         <InfoIcon />
                         <AlertDescription>{notice}</AlertDescription>
-                    </Alert>
+                    </UiAlert>
                 )}
                 {/* 限高必须落在 Viewport 上：Root 只有 max-height 时其百分比高度无法解析，正文会溢出弹窗 */}
                 {!isPending && query.content.length > 0 ? (
@@ -110,7 +111,7 @@ export function QueryDialog({ isOpen, quote, onOpenChange, query }: QueryDialogP
                         </div>
                     </ScrollArea>
                 ) : null}
-                {query.error === null || isPending ? null : <ListErrorAlert title="查询失败" error={query.error} />}
+                {query.error === null || isPending ? null : <Alert title="查询失败" description={toErrorDetail(query.error)} variant="destructive" />}
             </DialogContent>
         </Dialog>
     )

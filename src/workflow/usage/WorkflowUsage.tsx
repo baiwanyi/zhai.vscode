@@ -18,7 +18,8 @@ import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
 import type { AiUsageItem, AiUsageModule, AiUsagePeriods, AiUsageRange } from '@shared/types/aiUsage'
 import { request } from '@shared/utils/bridge'
-import { toastError } from '@shared/utils/error'
+import { toastError, toErrorDetail } from '@shared/utils/error'
+import { Alert } from '@webview/components/Alert'
 import {
     AppAction,
     AppContent,
@@ -30,7 +31,6 @@ import {
     AppTitle,
 } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
-import { ListErrorAlert } from '@webview/components/ListErrorAlert'
 import { DEFAULT_PAGE_SIZE, DEFAULT_RANGE } from './constants'
 import { useAiUsage } from './hooks/useAiUsage'
 import { useUsagePrompt } from './hooks/useUsagePrompt'
@@ -118,7 +118,7 @@ export function WorkflowUsage(): JSX.Element {
                             </div>
                         )}
                     </AppMenu>
-                    {error !== null && <ListErrorAlert title="用量读取失败" error={error} />}
+                    {error !== null && <Alert title="用量读取失败" description={toErrorDetail(error)} variant="destructive" />}
                 </AppHeader>
 
                 <AppContent isScrollable>
