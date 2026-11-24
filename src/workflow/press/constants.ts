@@ -10,9 +10,11 @@
 import { MapPin, Package, Swords } from 'lucide-react'
 import type { SettingFieldKey } from '@shared/types/press'
 import type {
+    ActKind,
     CharacterBodyType,
     CharacterGender,
     CharacterRole,
+    ClueKind,
     ClueStatus,
     HookKind,
     LoreKind,
@@ -91,6 +93,29 @@ export const PACING_KIND_ORDER: readonly PacingKind[] = ['tension', 'setup', 'pa
 /** 节奏选项：节奏面板的下拉与徽标共用 */
 export const PACING_KIND_OPTIONS = toOptions(PACING_KIND_ORDER, PACING_META)
 
+/** 全书转折类型文案：未指定 + 五种全书级大转折 */
+export const ACT_KIND_META: Readonly<Record<ActKind, { label: string }>> = {
+    none: { label: '未指定' },
+    inciting: { label: '激励事件' },
+    midpoint: { label: '中点' },
+    'low-point': { label: '低谷' },
+    climax: { label: '高潮' },
+    resolution: { label: '结局' },
+}
+
+/** 转折类型顺序：下拉与解析共用，未指定排首位 */
+export const ACT_KIND_ORDER: readonly ActKind[] = [
+    'none',
+    'inciting',
+    'midpoint',
+    'low-point',
+    'climax',
+    'resolution',
+]
+
+/** 转折类型选项：结构纲下拉使用 */
+export const ACT_KIND_OPTIONS = toOptions(ACT_KIND_ORDER, ACT_KIND_META)
+
 /** 伏笔状态文案：未回收 / 已回收 / 已废弃 */
 export const CLUE_STATUS_META: Readonly<Record<ClueStatus, { label: string; tone: BadgeTone }>> = {
     planted: { label: '未回收', tone: 'outline' },
@@ -103,6 +128,21 @@ export const CLUE_STATUS_ORDER: readonly ClueStatus[] = ['planted', 'paid-off', 
 
 /** 伏笔状态选项 */
 export const CLUE_STATUS_OPTIONS = toOptions(CLUE_STATUS_ORDER, CLUE_STATUS_META)
+
+/** 伏笔类型文案：未指定兼容旧数据，其余对应人物 / 情节 / 道具 / 设定 */
+export const CLUE_KIND_META: Readonly<Record<ClueKind, { label: string; tone: BadgeTone }>> = {
+    none: { label: '未指定', tone: 'ghost' },
+    character: { label: '人物', tone: 'secondary' },
+    plot: { label: '情节', tone: 'default' },
+    item: { label: '道具', tone: 'outline' },
+    setting: { label: '设定', tone: 'secondary' },
+}
+
+/** 伏笔类型顺序：选项与条目徽标共用 */
+export const CLUE_KIND_ORDER: readonly ClueKind[] = ['none', 'character', 'plot', 'item', 'setting']
+
+/** 伏笔类型选项 */
+export const CLUE_KIND_OPTIONS = toOptions(CLUE_KIND_ORDER, CLUE_KIND_META)
 
 /**
  * 功能模块元数据：导航栏顺序为「卷纲 → 章纲 → 结构 → 伏笔」，日常写作从卷纲进入。

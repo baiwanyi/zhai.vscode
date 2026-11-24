@@ -1,14 +1,8 @@
 /**
- * 写作管理 AI 服务：校验密钥与每日配额后执行一次性生成，承载人物外貌、设定字段、条目描述、
- * 按卷生成章纲、按作品设定生成卷纲与卷纲单字段（核心事件 / 卷末结果）。
- * 复用约定：模型通道经注入的 AI 通道（../ai/provider）驱动 ./ai/aiTextGenerator，
- * 提示词分别来自 ./ai/appearancePrompt、./ai/settingFieldPrompt、./ai/lorePrompt 与 ./ai/volumeChaptersPrompt，
- * 纯文本输出统一经 ./ai/plainText 清洗；按卷章纲是多字段结构，走单独的 JSON 解析与逐项截断；
- * 配额经 ../common/db/quotaRepository 落在 press.db 的 meta 表，四类生成共用同一份每日额度（统计模块各自独立）；
- * 入参收窄复用 ../common/readInput，不在此重复实现截断与去重。
- * 关键约束：入参一律先经 normalize*Request 收窄（长度、条数、类型、字段白名单），异常载荷不进入模型调用；
- * 同一时刻只允许一个生成请求，取消由各类生成各自的 abort 方法触发；
- * 限额小于等于 0 视为不限制；模型输出一律视为不可信，JSON 解析失败按空结果返回而不抛出解析细节。
+ * 写作管理 AI 服务：配额校验后执行一次性生成，承载外貌、设定、条目、卷纲、章纲与卷纲单字段。
+ * 复用约定：模型通道取 ../ai/provider，提示词取 ./ai/*Prompt，文本清洗取 ./ai/plainText，入案收窄取 ../common/readInput。
+ * 关键约束：入参先经 normalize*Request 收窄（长度、条数、类型、线索 id 白名单）；同一时刻仅一个在途请求；
+ * 模型输出不可信，JSON 解析失败按空结果返回，线索关联只接受请求清单内的 id 与合法动作。
  */
 import type { AiChatMessage, AiProvider } from '@modules/ai/provider'
 import { getSelectedCodebuddyModel } from '@modules/ai/providers/codebuddyModels'
@@ -22,11 +16,16 @@ import { PRESS_LORE_KINDS, SETTING_FIELD_KEYS } from '@shared/types/press'
 import type {
     CharacterAppearanceRequest,
     CharacterAppearanceResult,
+    ClueRefsAnalyzeInput,
+    ClueRefsAnalyzeResult,
     LoreDescriptionGenerateRequest,
     LoreDescriptionGenerateResult,
+    OutlineActContext,
+    OutlineClueContext,
     SettingFieldGenerateRequest,
     SettingFieldGenerateResult,
     SettingSnapshot,
+    VolumeChapterClueRef,
     VolumeChapterDraft,
     VolumeChaptersGenerateRequest,
     VolumeChaptersGenerateResult,
@@ -39,6 +38,7 @@ import type {
 } from '@shared/types/press'
 import { generateTextWithAi } from './ai/aiTextGenerator'
 import { buildAppearanceMessages } from './ai/appearancePrompt'
+import { buildClueRefsAnalyzeMessages, parseClueRefSuggestions } from './ai/clueRefsPrompt'
 import { buildLoreDescriptionMessages } from './ai/lorePrompt'
 import { sanitizePlainText } from './ai/plainText'
 import { buildSettingFieldMessages } from './ai/settingFieldPrompt'
@@ -88,6 +88,15 @@ const MAX_VOLUME_CHAPTERS = 120
 const MAX_VOLUME_CHAPTER_TITLE = 40
 const MAX_VOLUME_CHAPTER_SUMMARY = 300
 const MAX_VOLUME_CAST_COUNT = 30
+/** 结构阶段与本卷线索的入参上限：只把必要文案送进提示词，线索 id 另作回指白名单 */
+const MAX_OUTLINE_ACTS = 20
+const MAX_ACT_TEXT = 400
+/** 转折类型白名单：与 constants 的 ACT_KIND_META 中文标签一致，不信任前端传值 */
+const ACT_KIND_LABELS = ['未指定', '激励事件', '中点', '低谷', '高潮', '结局'] as const
+const MAX_VOLUME_CLUES = 40
+const MAX_CLUE_ID = 64
+const MAX_CLUE_NOTE = 300
+const MAX_CHAPTER_CLUE_REFS = 8
 /** 按卷生成章纲的输出上限、超时与 token：整卷几十章，需要比单字段生成大得多的余量 */
 const MAX_VOLUME_CHAPTERS_OUTPUT = 60_000
 const VOLUME_CHAPTERS_TIMEOUT_MS = 180_000
@@ -107,6 +116,10 @@ const MAX_VOLUME_FIELD_CORE_EVENT = 200
 const MAX_VOLUME_FIELD_RESULT = 300
 const VOLUME_FIELD_TIMEOUT_MS = 45_000
 const VOLUME_FIELD_MAX_TOKENS = 700
+/** 伏笔位置识别：摘录按章给模型，只收 JSON 建议，篇幅与超时按短任务取 */
+const CLUE_REFS_MAX_TOKENS = 2_000
+const CLUE_REFS_TIMEOUT_MS = 90_000
+const CLUE_REFS_MAX_OUTPUT = 20_000
 
 /** 一次文本生成的运行参数：各类生成只差提示词、篇幅、模块与提示文案 */
 interface GenerationOptions {
@@ -202,7 +215,7 @@ export class PressAiService {
             emptyMessage: 'AI 未返回可用的章纲，请重试或先补充卷纲',
             abortMessage: 'AI 章纲生成已取消或超时，请重试',
         })
-        return { chapters: parseVolumeChapterDrafts(content) }
+        return { chapters: parseVolumeChapterDrafts(content, new Set(request.clues.map((clue) => clue.id))) }
     }
 
     /**
@@ -241,6 +254,28 @@ export class PressAiService {
             abortMessage: 'AI 生成已取消或超时，请重试',
         })
         return { content }
+    }
+
+    /**
+     * 伏笔位置识别：给出每条伏笔埋设/回收的候选坐标，供用户勾选后写入。
+     * 关键约束：id 与章节坐标双重白名单校验，解析不出结果时返回空数组；不写盘、不改伏笔状态。
+     * @throws 未配置密钥、配额用尽、请求超时 / 取消时抛出可读错误
+     */
+    public async analyzeClueRefs(input: ClueRefsAnalyzeInput): Promise<ClueRefsAnalyzeResult> {
+        const content = await this.runGeneration({
+            module: 'outline',
+            messages: buildClueRefsAnalyzeMessages(input),
+            maxTokens: CLUE_REFS_MAX_TOKENS,
+            timeoutMs: CLUE_REFS_TIMEOUT_MS,
+            maxLength: CLUE_REFS_MAX_OUTPUT,
+            emptyMessage: 'AI 未返回可用的伏笔位置，请重试',
+            abortMessage: 'AI 伏笔识别已取消或超时，请重试',
+        })
+        const clueIds = new Set(input.clues.map((clue) => clue.id))
+        const chapterKeys = new Set(
+            input.chapters.map((chapter) => `${String(chapter.volumeOrder)}-${String(chapter.chapterOrder)}`),
+        )
+        return { refs: parseClueRefSuggestions(content, clueIds, chapterKeys) }
     }
 
     /** 执行一次文本生成：占请求位 → 请求模型 → 清洗 → 计次记账，各类生成共用同一套流程 */
@@ -450,6 +485,101 @@ function readCount(value: unknown, fallback: number, max: number): number {
     return Math.min(Math.floor(parsed), max)
 }
 
+/** 转折类型的卷位收窄：非正整数按未定处理，上限与卷数一致 */
+function readActVolumeOrder(value: unknown): number | null {
+    if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+        return null
+    }
+    return Math.min(value, MAX_OUTLINE_VOLUME_COUNT)
+}
+
+/** 结构阶段入参收窄：类型取白名单、卷位取正整数，其余文案按上限截断 */
+function readActContexts(value: unknown): OutlineActContext[] {
+    if (!Array.isArray(value)) {
+        return []
+    }
+    const acts: OutlineActContext[] = []
+    for (const item of value.slice(0, MAX_OUTLINE_ACTS)) {
+        if (typeof item !== 'object' || item === null) {
+            continue
+        }
+        const record = item as Record<string, unknown>
+        const name = readText(record.name, MAX_SHORT_TEXT)
+        if (name.length === 0) {
+            continue
+        }
+        const kind = readText(record.kind, MAX_SHORT_TEXT)
+        acts.push({
+            name,
+            kind: ACT_KIND_LABELS.find((label) => label === kind) ?? '未指定',
+            volumeOrder: readActVolumeOrder(record.volumeOrder),
+            narrativeRole: readText(record.narrativeRole, MAX_ACT_TEXT),
+            event: readText(record.event, MAX_ACT_TEXT),
+            protagonistChange: readText(record.protagonistChange, MAX_ACT_TEXT),
+        })
+    }
+    return acts
+}
+
+/** 章节引用收窄：只接受「卷序-章序」，非法值按未定处理 */
+function readChapterRef(value: unknown): string {
+    const text = readText(value, 32)
+    return /^\d+\s*-\s*\d+$/u.test(text) ? text : ''
+}
+
+/** 线索入参收窄：id 非空且唯一，章节引用按写法校验后再进入提示词 */
+function readClueContexts(value: unknown): OutlineClueContext[] {
+    if (!Array.isArray(value)) {
+        return []
+    }
+    const clues: OutlineClueContext[] = []
+    const seen = new Set<string>()
+    for (const item of value.slice(0, MAX_VOLUME_CLUES)) {
+        if (typeof item !== 'object' || item === null) {
+            continue
+        }
+        const record = item as Record<string, unknown>
+        const id = readText(record.id, MAX_CLUE_ID)
+        const name = readText(record.name, MAX_SHORT_TEXT)
+        if (id.length === 0 || name.length === 0 || seen.has(id)) {
+            continue
+        }
+        seen.add(id)
+        clues.push({
+            id,
+            name,
+            plant: readChapterRef(record.plant),
+            payoff: readChapterRef(record.payoff),
+            note: readText(record.note, MAX_CLUE_NOTE),
+        })
+    }
+    return clues
+}
+
+/** 线索关联收窄：只保留白名单内的 id 与合法动作，同一 id + 动作去重 */
+function parseClueRefs(value: unknown, clueIds: ReadonlySet<string>): VolumeChapterClueRef[] {
+    if (!Array.isArray(value)) {
+        return []
+    }
+    const refs: VolumeChapterClueRef[] = []
+    const seen = new Set<string>()
+    for (const item of value.slice(0, MAX_CHAPTER_CLUE_REFS)) {
+        if (typeof item !== 'object' || item === null) {
+            continue
+        }
+        const record = item as Record<string, unknown>
+        const id = readText(record.id, MAX_CLUE_ID)
+        const action = record.action === 'plant' || record.action === 'payoff' ? record.action : null
+        const key = `${id}:${action ?? ''}`
+        if (action === null || !clueIds.has(id) || seen.has(key)) {
+            continue
+        }
+        seen.add(key)
+        refs.push({ id, action })
+    }
+    return refs
+}
+
 /** 入参收窄：卷名必填，卷纲各字段按上限截断，设定快照复用同一份收窄逻辑 */
 function normalizeVolumeChaptersRequest(payload: unknown): VolumeChaptersGenerateRequest {
     if (typeof payload !== 'object' || payload === null) {
@@ -470,6 +600,8 @@ function normalizeVolumeChaptersRequest(payload: unknown): VolumeChaptersGenerat
         mainPlot: readTextList(value.mainPlot, 40, MAX_VOLUME_TEXT),
         turningPoints: readTextList(value.turningPoints, 12, MAX_VOLUME_TEXT),
         result: readText(value.result, MAX_VOLUME_TEXT),
+        acts: readActContexts(value.acts),
+        clues: readClueContexts(value.clues),
         startOrder: readCount(value.startOrder, 1, MAX_VOLUME_CHAPTERS * 10),
         chapterCount: readCount(value.chapterCount, 0, MAX_VOLUME_CHAPTERS),
         existingCount: readCount(value.existingCount, 0, MAX_VOLUME_CHAPTERS * 10),
@@ -491,6 +623,7 @@ function normalizeVolumeOutlinesRequest(payload: unknown): VolumeOutlinesGenerat
     return {
         volumeCount: readCount(value.volumeCount, 0, MAX_OUTLINE_VOLUME_COUNT),
         existingNames: readTextList(value.existingNames, MAX_OUTLINE_VOLUME_COUNT, MAX_OUTLINE_VOLUME_NAME),
+        acts: readActContexts(value.acts),
         setting,
         characters: readTextList(value.characters, MAX_VOLUME_CAST_COUNT, MAX_SHORT_TEXT),
     }
@@ -569,10 +702,10 @@ function parseVolumeOutlineDrafts(content: string): VolumeOutlineDraft[] {
 
 /**
  * 解析模型输出的章纲数组：容忍代码围栏与前后说明文字，只截取第一个 [ 到最后一个 ]。
- * 关键约束：单条结构不完整时丢弃该条，不猜测字段；标题去掉「第N章」前缀，避免与章序重复；
+ * 关键约束：单条结构不完整时丢弃该条；标题去掉「第N章」前缀；clueRefs 只接受白名单 id 与合法动作，
  * 解析失败返回空数组，由前端按「没有可用章纲」提示，不把模型原文抛给页面。
  */
-function parseVolumeChapterDrafts(content: string): VolumeChapterDraft[] {
+function parseVolumeChapterDrafts(content: string, clueIds: ReadonlySet<string>): VolumeChapterDraft[] {
     const start = content.indexOf('[')
     const end = content.lastIndexOf(']')
     if (start < 0 || end <= start) {
@@ -592,7 +725,7 @@ function parseVolumeChapterDrafts(content: string): VolumeChapterDraft[] {
         if (typeof item !== 'object' || item === null) {
             continue
         }
-        const record = item as { stage?: unknown; title?: unknown; summary?: unknown; beats?: unknown }
+        const record = item as { stage?: unknown; title?: unknown; summary?: unknown; beats?: unknown; clueRefs?: unknown }
         const title = readText(record.title, MAX_VOLUME_CHAPTER_TITLE).replace(/^第\s*\d+\s*章\s*/u, '')
         if (title.length === 0) {
             continue
@@ -602,6 +735,7 @@ function parseVolumeChapterDrafts(content: string): VolumeChapterDraft[] {
             title,
             summary: readText(record.summary, MAX_VOLUME_CHAPTER_SUMMARY),
             beats: readTextList(record.beats, 8, MAX_VOLUME_CHAPTER_SUMMARY),
+            clueRefs: parseClueRefs(record.clueRefs, clueIds),
         })
     }
     return drafts

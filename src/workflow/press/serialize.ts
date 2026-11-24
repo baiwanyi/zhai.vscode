@@ -1,26 +1,16 @@
 /**
- * 作品文档序列化：把工作台草稿转成可回写的段落片段，格式与 document.ts 的解析口径严格对齐。
- * 复用约定：状态、钩子、分类等中文标签取自 constants 的元数据表，不另写一套映射；
- * 设定按标签页拆分：基本信息写 README 的「作品设定」段，世界观与金手指各写自己的文档，
- * 势力 / 地点 / 物品按分类各产出自己的条目块。
- * 大纲按功能模块拆成结构纲、卷纲、章节内容与伏笔线索四个固定段落，
- * 卷纲内按「### 卷名 → #### 预计章节数 / 核心事件 / 主要情节 / 关键转折 / 卷末结果」分级，
- * 章节内容内按「### 卷名 → #### 章名 → ##### 计划梗概 / 节拍 → ###### 场景」分级；
- * 全书纲不再是独立段落——故事核（一句话梗概、核心冲突、主题、主角弧光）只在作品设定里维护；
- * 人物纲同样不再产出——人物信息只在角色设定（人物卡）里维护；
- * 设定纲、节奏情绪、时间线也不再产出——设定归作品设定、节奏类型写进章块、时间线段落保持原样。
- * 关键约束：设定字段与角色字段以标题承载（三级标题，角色卡再分三级分组 + 四级字段），不再用 `- 键：值` 列表；
- * 段落与块内部只能出现三、四级标题——宿主按「下一个一/二级标题」判断段落终点，写成二级会把文档截断；
- * 只产出「段落片段」而非整篇文档，落点与保留策略由宿主 writer 决定；
- * 卷名与章名只写纯名称，不拼「第N卷 / 第N章」——卷序与章序由块的位置决定，编号只在界面上补；
- * 条目必须保留「## 名称」二级标题，否则解析端认不出层级；
- * 键名一旦改动就必须同步改 document.ts 的读取键，否则回写后页面内容会凭空丢失。
+ * 工作台草稿转可回写段落片段，格式与 document.ts 的解析口径严格对齐。
+ * 复用约定：中文标签取 constants 元数据表；大纲分结构纲 / 卷纲 / 章节内容 / 伏笔线索四段。
+ * 关键约束：只产出段落片段、落点由宿主 writer 决定；段内只能用三级及更深标题；
+ * 键名改动须同步 document.ts 读取键，否则回写后内容凭空丢失。
  */
 import type { PressApplyBlock, PressApplyMeta } from '@shared/types/press'
 import {
+    ACT_KIND_META,
     CHARACTER_BODY_TYPE_META,
     CHARACTER_GENDER_META,
     CHARACTER_ROLE_META,
+    CLUE_KIND_META,
     CLUE_STATUS_META,
     GRANULARITY_META,
     HOOK_OPTIONS,
@@ -381,7 +371,7 @@ function formatChapterRef(ref: OutlineChapterRef | null): string {
     return ref === null ? '' : `${String(ref.volumeOrder)}-${String(ref.chapterOrder)}`
 }
 
-/** 结构纲段落：每个阶段一个三级块，位置与事件写键值行 */
+/** 结构纲段落：每个阶段一个三级块，转折类型、卷位、叙事作用与主角变化写键值行 */
 export function serializeStructureSection(plan: OutlinePlan): string {
     return plan.acts
         .map((act) =>
@@ -389,20 +379,24 @@ export function serializeStructureSection(plan: OutlinePlan): string {
                 `### ${act.name}`,
                 ...buildKeyLines([
                     ['id', act.id],
-                    ['位置', act.position],
+                    ['类型', act.kind === 'none' ? '' : ACT_KIND_META[act.kind].label],
+                    ['卷位', act.volumeOrder === null ? '' : `第${String(act.volumeOrder)}卷`],
+                    ['叙事作用', act.narrativeRole],
                     ['事件', act.event],
+                    ['主角变化', act.protagonistChange],
                 ]),
             ].join('\n'),
         )
         .join('\n\n')
 }
 
-/** 单条线索块：埋设章与回收章写「卷序-章序」，触发者写姓名 */
+/** 单条伏笔块：类型与状态写文案，埋设章与回收章写「卷序-章序」，触发者写姓名 */
 function buildClueBlock(clue: OutlineClue, nameById: ReadonlyMap<string, string>): string {
     return [
         `### ${clue.name}`,
         ...buildKeyLines([
             ['id', clue.id],
+            ['类型', CLUE_KIND_META[clue.kind].label],
             ['埋设章', formatChapterRef(clue.plant)],
             ['回收章', formatChapterRef(clue.payoff)],
             ['触发者', nameById.get(clue.triggerId) ?? ''],

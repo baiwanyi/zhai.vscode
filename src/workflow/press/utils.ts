@@ -1,22 +1,23 @@
 /**
- * 大纲与人物卡纯函数：字段缺失判断与设定文本补丁、设定快照、章节统计、节点构造、字数格式化，
- * 以及提取草案的建卡与字段补全。
- * 复用约定：字数口径复用仪表盘的 formatWordCount，不另写一套；节点 id 统一由 createId 生成，
- * 保证新增卷、章、节拍在树中可直接作为 key 与选中标识；草案的中文标签按 constants 的元数据表归一。
- * 关键约束：缺失判断只区分「是否填写」，缺失不视为错误、仅用于提示；
- * 章节统计以章纲上的目标字数为分母，不使用正文实际字数反推计划；
- * 补全已有角色只填空白字段、不覆盖作者已写内容，没有实际变化时必须返回原对象，避免无谓写盘。
+ * 大纲与人物卡纯函数：字段判断、设定快照、章节统计、节点构造、提取草案合并与生成上下文转换。
+ * 复用约定：字数口径取仪表盘 formatWordCount，节点 id 取 createId，中文标签取 constants 元数据表。
+ * 关键约束：缺失只作提示而非错误；统计以目标字数为分母；补全只填空字段；
+ * 生成上下文只传文案与本卷线索，线索按「卷序 + 章序」引用，卷章重排后需重新校正。
  */
 import { DEFAULT_PORTRAIT_STYLE } from '@shared/types/press'
 import type {
+    OutlineActContext,
+    OutlineClueContext,
     PressExtractedCharacter,
     PressExtractedVolume,
     PressVolumeGroup,
     SettingFieldKey,
     SettingSnapshot,
+    VolumeChapterClueRef,
 } from '@shared/types/press'
 import { formatWordCount } from '@webview/dashboard/utils'
 import {
+    ACT_KIND_META,
     CHARACTER_BODY_TYPE_META,
     CHARACTER_BODY_TYPE_ORDER,
     CHARACTER_GENDER_META,
@@ -425,14 +426,31 @@ export function createChapter(order: number, wordGoal: number): OutlineChapter {
     }
 }
 
-/** 新建一条结构阶段 */
-export function createAct(name = '新阶段', position = ''): OutlineAct {
-    return { id: createId('act'), name, position, event: '' }
+/** 新建一条结构阶段：类型与卷位留空，由作者显式指定 */
+export function createAct(name = '新阶段', narrativeRole = ''): OutlineAct {
+    return {
+        id: createId('act'),
+        name,
+        kind: 'none',
+        volumeOrder: null,
+        narrativeRole,
+        event: '',
+        protagonistChange: '',
+    }
 }
 
-/** 新建一条伏笔线索：默认未回收，触发者与章节引用留空 */
+/** 新建一条伏笔线索：默认未指定类型与未回收，触发者与章节引用留空 */
 export function createClue(name = '新线索'): OutlineClue {
-    return { id: createId('clue'), name, plant: null, payoff: null, triggerId: '', status: 'planted', note: '' }
+    return {
+        id: createId('clue'),
+        name,
+        kind: 'none',
+        plant: null,
+        payoff: null,
+        triggerId: '',
+        status: 'planted',
+        note: '',
+    }
 }
 
 /** 新建空大纲计划：缺段落的作品打开时用它兜底，页面永远拿到完整结构 */
@@ -520,8 +538,8 @@ export function readOrderPrefix(value: string): number | null {
 /** 大纲卷名里的卷序：新卷统一写成「第N卷」，旧数据可能只有目录口径的序号前缀 */
 const VOLUME_TITLE_PATTERN = /第\s*(\d+)\s*卷/u
 
-/** 大纲卷序：先认「第N卷」，再认序号前缀，都没有时按数组位置兜底 */
-function readOutlineVolumeOrder(name: string, index: number): number {
+/** 大纲卷序：先认「第N卷」，再认序号前缀，都没有时按数组位置兜底；线索引用写回也用此口径 */
+export function readOutlineVolumeOrder(name: string, index: number): number {
     const byTitle = VOLUME_TITLE_PATTERN.exec(name)?.[1]
     if (byTitle !== undefined) {
         return Number.parseInt(byTitle, 10)
@@ -816,7 +834,7 @@ export function isEmptyOutlineChapter(chapter: OutlineChapter): boolean {
     )
 }
 
-/** 按卷生成章纲时的单章草案：阶段、标题、计划梗概与节拍来自 AI，其余字段写入时取默认值 */
+/** 按卷生成章纲时的单章草案：阶段、标题、梗概、节拍与线索动作，其余字段写入时取默认值 */
 export interface ChapterSeed {
     /** 阶段名：如「第一阶段：坠楼与觉醒」，空串表示未分组 */
     stage: string
@@ -825,6 +843,8 @@ export interface ChapterSeed {
     summary: string
     /** 章节细纲：逐条写入节拍，空数组时留一条空节拍 */
     beats: readonly string[]
+    /** 本章承担的线索动作：写入后按实际章序回写线索表，不写进章块 */
+    clueRefs: readonly VolumeChapterClueRef[]
 }
 
 /**
@@ -852,6 +872,31 @@ export function createChaptersFromSeeds(
             beats: beats.length > 0 ? beats : chapter.beats,
         }
     })
+}
+
+/**
+ * 线索引用补丁：按草案的 clueRefs 与写入后的实际章序生成，同一线索多次出现以最后一章为准。
+ * 关键约束：只改 plant / payoff 引用，回收状态由作者在回填时确认；卷序取大纲卷名解析结果。
+ */
+export function buildClueRefPatches(
+    seeds: readonly ChapterSeed[],
+    startOrder: number,
+    volumeOrder: number,
+): Map<string, { plant?: OutlineChapterRef; payoff?: OutlineChapterRef }> {
+    const patches = new Map<string, { plant?: OutlineChapterRef; payoff?: OutlineChapterRef }>()
+    seeds.forEach((seed, index) => {
+        const ref: OutlineChapterRef = { volumeOrder, chapterOrder: startOrder + index }
+        for (const clueRef of seed.clueRefs) {
+            const patch = patches.get(clueRef.id) ?? {}
+            if (clueRef.action === 'plant') {
+                patch.plant = ref
+            } else {
+                patch.payoff = ref
+            }
+            patches.set(clueRef.id, patch)
+        }
+    })
+    return patches
 }
 
 /** 阶段分组结果：stage 为空串表示「未分组」 */
@@ -984,6 +1029,46 @@ export function parseChapterRefValue(value: string): OutlineChapterRef | null {
         return null
     }
     return { volumeOrder: Number.parseInt(matched[1], 10), chapterOrder: Number.parseInt(matched[2], 10) }
+}
+
+/** 结构阶段转生成上下文：传转折类型、卷位、叙事作用、事件与主角变化，id 不进提示词 */
+export function toOutlineActContexts(acts: readonly OutlineAct[]): OutlineActContext[] {
+    return acts.map((act) => ({
+        name: act.name,
+        kind: ACT_KIND_META[act.kind].label,
+        volumeOrder: act.volumeOrder,
+        narrativeRole: act.narrativeRole,
+        event: act.event,
+        protagonistChange: act.protagonistChange,
+    }))
+}
+
+/** 本卷线索转生成上下文：埋设章或回收章落在本卷才传，章节引用写「卷序-章序」 */
+export function toVolumeClueContexts(
+    clues: readonly OutlineClue[],
+    volumes: readonly OutlineVolume[],
+    volumeId: string,
+): OutlineClueContext[] {
+    const index = volumes.findIndex((volume) => volume.id === volumeId)
+    if (index < 0) {
+        return []
+    }
+    const volumeOrder = readOutlineVolumeOrder(volumes[index]?.name ?? '', index)
+    const formatRef = (ref: OutlineChapterRef | null): string =>
+        ref === null ? '' : `${String(ref.volumeOrder)}-${String(ref.chapterOrder)}`
+    return clues
+        .filter(
+            (clue) =>
+                (clue.plant !== null && clue.plant.volumeOrder === volumeOrder) ||
+                (clue.payoff !== null && clue.payoff.volumeOrder === volumeOrder),
+        )
+        .map((clue) => ({
+            id: clue.id,
+            name: clue.name,
+            plant: formatRef(clue.plant),
+            payoff: formatRef(clue.payoff),
+            note: clue.note,
+        }))
 }
 
 /** 当前写作位置：最后一个「已写」章节的全书章序，没有已写章节时为 0 */

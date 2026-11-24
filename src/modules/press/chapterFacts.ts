@@ -9,7 +9,7 @@ import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
-import type { PressChapterFact } from '@shared/types/press'
+import type { ClueRefsAnalyzeChapter, ClueRefsAnalyzeRequest, PressChapterFact } from '@shared/types/press'
 import { readOrderPrefix } from './projectFactory'
 import { readProjectDetail } from './projectRepository'
 import type Database from 'better-sqlite3'
@@ -88,4 +88,87 @@ export async function readChapterFacts(db: Database.Database, dirPath: string): 
         }
     }
     return facts
+}
+
+/** 单段摘录长度：首/中/尾各取这么多字，避免整章正文进入提示词 */
+const CLUE_EXCERPT_LENGTH = 400
+/** 识别入参上限：伏笔条数与各字段长度，防止提示词膨胀 */
+const MAX_ANALYZE_CLUES = 40
+const MAX_ANALYZE_CLUE_ID = 64
+const MAX_ANALYZE_CLUE_NAME = 64
+const MAX_ANALYZE_CLUE_NOTE = 300
+
+/** 正文摘录：去掉 Frontmatter 后取首/中/尾三段，长章不整篇送入模型 */
+function buildChapterExcerpt(text: string): string {
+    const end = text.startsWith('---') ? text.indexOf('\n---', 3) : -1
+    const body = (end >= 0 ? text.slice(end + 4) : text).trim()
+    if (body.length <= CLUE_EXCERPT_LENGTH * 3) {
+        return body
+    }
+    const middleStart = Math.floor((body.length - CLUE_EXCERPT_LENGTH) / 2)
+    return [
+        body.slice(0, CLUE_EXCERPT_LENGTH),
+        body.slice(middleStart, middleStart + CLUE_EXCERPT_LENGTH),
+        body.slice(body.length - CLUE_EXCERPT_LENGTH),
+    ].join('\n…\n')
+}
+
+/** 伏笔位置识别入参收窄：目录必填，伏笔按条数与字段长度截断，id 非空才保留 */
+export function normalizeClueRefsAnalyzeRequest(payload: unknown): ClueRefsAnalyzeRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('pressAi/aiAnalyzeClueRefs 缺少参数')
+    }
+    const value = payload as Record<string, unknown>
+    if (typeof value.dirPath !== 'string' || value.dirPath.length === 0) {
+        throw new Error('pressAi/aiAnalyzeClueRefs 参数非法：dirPath 须为非空字符串')
+    }
+    const rawClues = Array.isArray(value.clues) ? value.clues.slice(0, MAX_ANALYZE_CLUES) : []
+    const clues = rawClues.flatMap((item) => {
+        if (typeof item !== 'object' || item === null) {
+            return []
+        }
+        const record = item as Record<string, unknown>
+        const id = typeof record.id === 'string' ? record.id.slice(0, MAX_ANALYZE_CLUE_ID) : ''
+        if (id.length === 0) {
+            return []
+        }
+        return [
+            {
+                id,
+                name: typeof record.name === 'string' ? record.name.slice(0, MAX_ANALYZE_CLUE_NAME) : '',
+                note: typeof record.note === 'string' ? record.note.slice(0, MAX_ANALYZE_CLUE_NOTE) : '',
+            },
+        ]
+    })
+    return { dirPath: value.dirPath, clues }
+}
+
+/**
+ * 读取章节正文摘录：供 AI 识别伏笔的埋设与回收位置，只在用户主动识别时调用。
+ * 安全约束：目录先按片段校验，坐标用章纲 order 与伏笔引用同口径；单章读取失败只留空摘录。
+ */
+export async function readChapterExcerpts(db: Database.Database, dirPath: string): Promise<ClueRefsAnalyzeChapter[]> {
+    const segments = toSafeSegments(dirPath, '作品')
+    if (segments.length !== PROJECT_DIR_DEPTH || segments[0] !== PRESS_MODULE_DIR) {
+        throw new Error(`作品目录非法：${dirPath}`)
+    }
+    const detail = readProjectDetail(db, dirPath)
+    if (detail === null) {
+        return []
+    }
+    const root = resolveStorageRoot()
+    const chapters: ClueRefsAnalyzeChapter[] = []
+    for (const [volumeIndex, volume] of detail.volumes.entries()) {
+        const volumeOrder = readOrderPrefix(volume.dirName) ?? volumeIndex + 1
+        for (const [index, chapter] of volume.chapters.entries()) {
+            const text = await readChapterText(root, chapter.path)
+            chapters.push({
+                volumeOrder,
+                chapterOrder: 'order' in chapter && typeof chapter.order === 'number' ? chapter.order : index + 1,
+                title: chapter.title,
+                excerpt: buildChapterExcerpt(text),
+            })
+        }
+    }
+    return chapters
 }

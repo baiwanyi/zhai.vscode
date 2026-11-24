@@ -1,11 +1,7 @@
 /**
- * 作品草稿的全部结构性变更：设定 / 人物 / 大纲的字段更新、增删、提取合并与打开作品。
- * 复用约定：草稿读取与写盘由 usePressWorkspace 提供（updateWorkspace 改草稿、flush 立即写、scheduleFlush 防抖写），
- * 合并草案、重建大纲树、新建卷与章复用 ../utils 的纯函数，作品打开走 @shared/utils/bridge 的 press/open。
- * 关键约束：所有读取「当前草稿」的地方一律走 getWorkspace()，不能用渲染期快照——提取类操作可能在
- * 异步返回后执行，闭包里的旧数组会把用户刚编辑的内容覆盖掉；结构性操作立即写盘，字段级输入才走防抖；
- * 卷章有两个来源：仪表盘的作品详情负责内容输出（章节目录），这里的新增只长大纲草稿，
- * 因此大纲可以比作品列表多出若干章，作品列表新增的卷章由宿主另行补写，两个方向都不做数量对齐。
+ * 作品草稿的结构性变更：设定 / 人物 / 大纲的更新、增删、提取合并与打开作品。
+ * 复用约定：草稿与写盘取 ./usePressWorkspace，纯函数取 ../utils，作品打开取 @shared/utils/bridge。
+ * 关键约束：当前草稿一律经 getWorkspace() 读取；结构性操作立即写盘；章纲写入按实际章序回写线索引用。
  */
 import { useCallback } from 'react'
 import type {
@@ -36,6 +32,7 @@ import type { FlushOptions, PersistScope } from './usePressWorkspace'
 import { DEFAULT_CHAPTER_WORD_GOAL } from '../constants'
 import { SETTING_SECTIONS } from '../setting/sections'
 import {
+    buildClueRefPatches,
     createChapter,
     createChaptersFromSeeds,
     createCharacterCard,
@@ -44,6 +41,7 @@ import {
     createVolume,
     isEmptyOutlineChapter,
     mergeCharacterDrafts,
+    readOutlineVolumeOrder,
     refreshOutlineChapters,
     renumberChapters,
 } from '../utils'
@@ -58,6 +56,7 @@ export interface CreatedOutlineNode {
 function readChapterWordGoal(setting: ProjectSetting): number {
     return setting.chapterWordGoal > 0 ? setting.chapterWordGoal : DEFAULT_CHAPTER_WORD_GOAL
 }
+
 
 /** 空章判定：与 utils 的 isEmptyOutlineChapter 同一口径，替换模式只清掉这类章节 */
 const isEmptyChapter = isEmptyOutlineChapter
@@ -326,11 +325,9 @@ export function usePressMutations({
     )
 
     /**
-     * 按卷写入生成的章纲：只动这一卷。
-     * 关键约束：replace-empty 只清理「待写 + 无字数 + 无梗概 + 节拍全空」的空章，
-     * 已写或已动过的章一律保留；删掉中间空章会留下章序空洞，因此该模式写入后整卷规整为 1..N
-     * （带「第N章」前缀的标题同步改写，线索与时间线的章序引用会随之前移）；
-     * 追加模式只在卷末续排，不重排既有章序，避免打乱作者手改过的编号。
+     * 按卷写入生成的章纲，并按草案的 clueRefs 回写线索的埋设/回收章；只动这一卷。
+     * 关键约束：replace-empty 只清空章、写完整卷规整为 1..N；追加模式接在卷末不重排；
+     * 线索引用按写入后的实际章序生成，同一线索多次出现以最后一章为准；回收状态仍由作者确认。
      */
     const applyVolumeChapters = useCallback(
         (volumeId: string, seeds: readonly ChapterSeed[], mode: VolumeChapterWriteMode): number => {
@@ -338,32 +335,66 @@ export function usePressMutations({
             if (current === null || seeds.length === 0) {
                 return 0
             }
+            const volumeIndex = current.volumes.findIndex((volume) => volume.id === volumeId)
+            const target = current.volumes[volumeIndex]
+            if (target === undefined) {
+                return 0
+            }
             const wordGoal = readChapterWordGoal(current.setting)
+            const volumeOrder = readOutlineVolumeOrder(target.name, volumeIndex)
+            const kept =
+                mode === 'replace-empty'
+                    ? target.chapters.filter((chapter) => !isEmptyChapter(chapter))
+                    : target.chapters
+            // 替换模式随后会整卷重排，起始章序取「保留章数 + 1」；追加模式接在最大章序之后
+            const startOrder =
+                mode === 'replace-empty'
+                    ? kept.length + 1
+                    : kept.reduce((max, chapter) => Math.max(max, chapter.order), 0) + 1
+            const cluePatches = buildClueRefPatches(seeds, startOrder, volumeOrder)
+            const touchedClues = current.plan.clues.filter((clue) => cluePatches.has(clue.id)).length
             updateWorkspace((previous) => ({
                 ...previous,
                 volumes: previous.volumes.map((volume) => {
                     if (volume.id !== volumeId) {
                         return volume
                     }
-                    const kept =
+                    const currentKept =
                         mode === 'replace-empty'
                             ? volume.chapters.filter((chapter) => !isEmptyChapter(chapter))
                             : volume.chapters
-                    // 替换模式随后会整卷重排，起始章序取「保留章数 + 1」；追加模式接在最大章序之后
-                    const startOrder =
+                    const currentStart =
                         mode === 'replace-empty'
-                            ? kept.length + 1
-                            : kept.reduce((max, chapter) => Math.max(max, chapter.order), 0) + 1
-                    const created = createChaptersFromSeeds(seeds, startOrder, wordGoal)
-                    const chapters = [...kept, ...created]
+                            ? currentKept.length + 1
+                            : currentKept.reduce((max, chapter) => Math.max(max, chapter.order), 0) + 1
+                    const created = createChaptersFromSeeds(seeds, currentStart, wordGoal)
+                    const chapters = [...currentKept, ...created]
                     return {
                         ...volume,
                         chapters: mode === 'replace-empty' ? renumberChapters(chapters) : chapters,
                     }
                 }),
+                plan: {
+                    ...previous.plan,
+                    clues: previous.plan.clues.map((clue) => {
+                        const patch = cluePatches.get(clue.id)
+                        if (patch === undefined) {
+                            return clue
+                        }
+                        return {
+                            ...clue,
+                            plant: patch.plant ?? clue.plant,
+                            payoff: patch.payoff ?? clue.payoff,
+                        }
+                    }),
+                },
             }))
             void flush(new Set<PersistScope>(['outline']), {
-                successMessage: `已写入 ${String(seeds.length)} 章章纲`,
+                outlineSections: ['chapters', 'clues'],
+                successMessage:
+                    touchedClues > 0
+                        ? `已写入 ${String(seeds.length)} 章章纲，${String(touchedClues)} 条线索引用已更新`
+                        : `已写入 ${String(seeds.length)} 章章纲`,
             })
             return seeds.length
         },

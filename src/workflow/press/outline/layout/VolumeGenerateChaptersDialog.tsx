@@ -1,12 +1,7 @@
 /**
- * 按卷生成章纲的预览对话框：先按卷纲生成「阶段 / 标题 / 介绍」，勾选后再写入本卷。
- * 复用约定：骨架取业务公共层的 Dialog（取消 / 写入按钮、高度与滚动由它统一提供）；
- * 写入方式、生成按钮、已选数量与草案预览统一收进 ui/card：CardHeader 标题行放模式选择与生成按钮、
- * CardAction 放已选数量 Badge，CardContent 放 block/VolumeChapterDrafts；
- * 模式由嵌在 ui/input-group 里的 ui/select 切换，生成状态由 hooks/useVolumeChaptersGenerate 持有。
- * 关键约束：草案不落库，关掉即丢弃；写入方式决定起始章序（追加接卷末、替换空章跳过空章），切换即清空草案待重生成；
- * 只有勾选的章会被写入，写入后关闭对话框并由页面提示结果；
- * 调用方须把 key 绑定到打开状态以重建组件，草案与勾选才不会从上一次带过来。
+ * 按卷生成章纲预览对话框：卷纲 + 结构 + 伏笔产出草案，勾选后写入本卷。
+ * 复用约定：骨架取 @webview/components/Dialog，草稿列表取 ../block/VolumeChapterDrafts，生成状态取 ../hooks。
+ * 关键约束：草案不落库；写入方式决定章序范围，切换即清空草案；调用方须用 key 重建组件。
  */
 import { Loader2, Wand2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -15,7 +10,7 @@ import { Badge } from '@components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupText } from '@components/ui/input-group'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
-import type { VolumeChapterDraft } from '@shared/types/press'
+import type { OutlineActContext, OutlineClueContext, VolumeChapterDraft } from '@shared/types/press'
 import { Dialog } from '@webview/components/Dialog'
 import type { CharacterCard, OutlineVolume, ProjectSetting } from '../../types'
 import type { VolumeChapterWriteMode } from '../../utils'
@@ -49,6 +44,9 @@ interface VolumeGenerateChaptersDialogProps {
     volume: OutlineVolume | null
     setting: ProjectSetting
     characters: CharacterCard[]
+    /** 全书结构与本卷伏笔：作为生成约束，按当前卷装配 */
+    acts: readonly OutlineActContext[]
+    clues: readonly OutlineClueContext[]
     /** 写入本卷：返回实际写入的章数（追加与替换空章由 mode 决定） */
     onApply: (drafts: readonly VolumeChapterDraft[], mode: VolumeChapterWriteMode) => number
 }
@@ -59,6 +57,8 @@ export function VolumeGenerateChaptersDialog({
     volume,
     setting,
     characters,
+    acts,
+    clues,
     onApply,
 }: VolumeGenerateChaptersDialogProps): JSX.Element {
     const { isGenerating, generate } = useVolumeChaptersGenerate()
@@ -119,6 +119,8 @@ export function VolumeGenerateChaptersDialog({
                 startOrder: writeRange.startOrder,
                 chapterCount: estimateChapterCount(volume),
                 existingCount: writeRange.existingCount,
+                acts,
+                clues,
             })
             if (!isMountedRef.current || result === null || generationId !== generationIdRef.current) {
                 return
@@ -127,7 +129,7 @@ export function VolumeGenerateChaptersDialog({
             setSelectedIndexes(result.map((_, index) => index))
         }
         void run()
-    }, [characters, generate, isGenerating, setting, volume, writeRange])
+    }, [acts, characters, clues, generate, isGenerating, setting, volume, writeRange])
 
     const handleToggle = (index: number): void => {
         setSelectedIndexes((previous) =>
@@ -228,7 +230,7 @@ export function VolumeGenerateChaptersDialog({
                         ) : null}
                     </CardAction>
                     <CardDescription className="col-span-2">
-                        从第 {writeRange.startOrder} 章起写入，卷内现有 {writeRange.existingCount} 章；替换空章会重排章序与线索引用。
+                        从第 {writeRange.startOrder} 章起写入，卷内现有 {writeRange.existingCount} 章；替换空章会重排章序与伏笔引用。
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex min-h-0 flex-1 flex-col px-0">

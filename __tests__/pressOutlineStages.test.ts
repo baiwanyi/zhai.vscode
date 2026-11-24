@@ -1,16 +1,19 @@
 /**
- * 卷纲与章纲联动的纯函数：阶段分组的章序规则、草案落成章纲、章序规整。
- * 复用约定：直接调用生产代码的 utils，不自造夹具；断言只覆盖用户可见字段（章序、标题、阶段、梗概）。
- * 关键约束：章序是线索与时间线的引用依据——「追加不重排、替换才规整」这两条规则一旦反向，
- * 已写章节的章序会漂移；无前缀标题不得被强行加上「第N章」。
+ * 章纲草案与线索引用的纯函数测试：阶段分组、章序规整、生成上下文与线索引用回写。
+ * 复用约定：直接调用生产代码的 utils，不自造夹具。
+ * 关键约束：章序是线索引用依据，追加不重排、替换才规整；线索引用按写入后章序生成且不污染章块。
  */
 import { describe, expect, it } from 'vitest'
 import type { OutlineChapter } from '../src/workflow/press/types'
 import {
-    createChaptersFromSeeds,
+    buildClueRefPatches,
     createChapter,
+    createChaptersFromSeeds,
+    createClue,
+    createVolume,
     groupChaptersByStage,
     renumberChapters,
+    toVolumeClueContexts,
 } from '../src/workflow/press/utils'
 
 /** 构造一章：只关心章序、标题与阶段，其余字段取默认值 */
@@ -27,12 +30,14 @@ describe('按卷生成章纲的草案落成', () => {
                     title: '坠楼之后',
                     summary: '宋雪坠楼，宋钟被诬入狱。',
                     beats: ['宋雪坠楼', '宋钟被带走'],
+                    clueRefs: [],
                 },
                 {
                     stage: '第一阶段：坠楼与觉醒',
                     title: '第2章 哑巴不死',
                     summary: '濒死觉醒系统。',
                     beats: [],
+                    clueRefs: [],
                 },
             ],
             3,
@@ -46,7 +51,11 @@ describe('按卷生成章纲的草案落成', () => {
     })
 
     it('草案只写阶段、标题、梗概与节拍，其余字段取默认值', () => {
-        const [chapter0] = createChaptersFromSeeds([{ stage: '', title: '开局', summary: '开场', beats: [] }], 1, 3000)
+        const [chapter0] = createChaptersFromSeeds(
+            [{ stage: '', title: '开局', summary: '开场', beats: [], clueRefs: [] }],
+            1,
+            3000,
+        )
 
         expect(chapter0).toMatchObject({ pov: '', goal: '', characterIds: [], wordCount: 0, status: 'planned' })
         expect(chapter0?.wordGoal).toBe(3000)
@@ -56,13 +65,82 @@ describe('按卷生成章纲的草案落成', () => {
 
     it('生成结果里的节拍按顺序写进章纲', () => {
         const [chapter0] = createChaptersFromSeeds(
-            [{ stage: '', title: '开局', summary: '开场', beats: ['坠楼', '被诬入狱', ''] }],
+            [{ stage: '', title: '开局', summary: '开场', beats: ['坠楼', '被诬入狱', ''], clueRefs: [] }],
             1,
             3000,
         )
 
         expect(chapter0?.beats.map((beat) => beat.text)).toEqual(['坠楼', '被诬入狱'])
         expect(chapter0?.beats.every((beat) => !beat.isDone)).toBe(true)
+    })
+
+    it('线索关联只用于回写线索表，不落进章块', () => {
+        const [chapter0] = createChaptersFromSeeds(
+            [
+                {
+                    stage: '',
+                    title: '开局',
+                    summary: '开场',
+                    beats: [],
+                    clueRefs: [{ id: 'clue-1', action: 'plant' }],
+                },
+            ],
+            1,
+            3000,
+        )
+
+        expect(chapter0).not.toHaveProperty('clueRefs')
+    })
+})
+
+describe('结构与伏笔参与章纲生成', () => {
+    it('线索引用按写入后的章序生成，同一线索以最后一章为准', () => {
+        const patches = buildClueRefPatches(
+            [
+                {
+                    stage: '',
+                    title: '埋设',
+                    summary: '',
+                    beats: [],
+                    clueRefs: [{ id: 'clue-1', action: 'plant' }],
+                },
+                {
+                    stage: '',
+                    title: '回收',
+                    summary: '',
+                    beats: [],
+                    clueRefs: [{ id: 'clue-1', action: 'payoff' }],
+                },
+            ],
+            3,
+            2,
+        )
+
+        expect(patches.get('clue-1')).toEqual({
+            plant: { volumeOrder: 2, chapterOrder: 3 },
+            payoff: { volumeOrder: 2, chapterOrder: 4 },
+        })
+    })
+
+    it('本卷线索只取埋设章或回收章落在本卷的条目，章节引用写「卷序-章序」', () => {
+        const first = { ...createVolume(2500), id: 'v1', name: '第1卷 觉醒' }
+        const second = { ...createVolume(2500), id: 'v2', name: '第2卷 清算' }
+        const inFirst = {
+            ...createClue('玉牌裂纹'),
+            id: 'clue-1',
+            plant: { volumeOrder: 1, chapterOrder: 2 },
+            payoff: { volumeOrder: 2, chapterOrder: 3 },
+        }
+        const elsewhere = {
+            ...createClue('无名信'),
+            id: 'clue-2',
+            plant: { volumeOrder: 3, chapterOrder: 1 },
+            payoff: null,
+        }
+
+        expect(toVolumeClueContexts([inFirst, elsewhere], [first, second], 'v1')).toEqual([
+            { id: 'clue-1', name: '玉牌裂纹', plant: '1-2', payoff: '2-3', note: '' },
+        ])
     })
 })
 

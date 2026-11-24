@@ -83,7 +83,6 @@ export function WechatArticleSettingDialog({
             open
             title="文章设置"
             description="正文在批次目录的 Markdown 文件里维护，这里只改发布用的元信息。"
-            confirmLabel="保存"
             isLoading={isSaving}
             isDisabled={title.isBlank}
             className="sm:max-w-lg"

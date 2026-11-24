@@ -18,13 +18,16 @@
 import { isMediaId } from '@shared/types/mediaPath'
 import { DEFAULT_PORTRAIT_STYLE, PORTRAIT_STYLES, isPressCharacterId, isPressLoreId } from '@shared/types/press'
 import type { PortraitStyle, PressSettingSectionFiles, PressWorkspaceFiles } from '@shared/types/press'
+import { ACT_KIND_META, ACT_KIND_ORDER } from './constants'
 import { PERIOD_OPTIONS, PLACE_OPTIONS } from './setting/settingOptions'
 import type {
+    ActKind,
     Audience,
     CharacterBodyType,
     CharacterCard,
     CharacterGender,
     CharacterRole,
+    ClueKind,
     ClueStatus,
     EndingKind,
     HookKind,
@@ -151,6 +154,20 @@ const CLUE_STATUS_LABELS: Readonly<Record<string, ClueStatus>> = {
     dropped: 'dropped',
     已废弃: 'dropped',
     discarded: 'dropped',
+}
+
+/** 伏笔类型映射：兼容英文枚举与中文标签，旧文档缺项按未指定处理 */
+const CLUE_KIND_LABELS: Readonly<Record<string, ClueKind>> = {
+    none: 'none',
+    未指定: 'none',
+    character: 'character',
+    人物: 'character',
+    plot: 'plot',
+    情节: 'plot',
+    item: 'item',
+    道具: 'item',
+    setting: 'setting',
+    设定: 'setting',
 }
 
 /** 章末钩子映射：兼容英文枚举与中文标签 */
@@ -1057,7 +1074,24 @@ function toChapterRef(value: string | undefined): OutlineChapterRef | null {
     return { volumeOrder: Number.parseInt(volume, 10), chapterOrder: Number.parseInt(chapter, 10) }
 }
 
-/** 解析结构纲：每个三级标题是一个阶段，位置与关键事件写在键值行 */
+/** 转折类型解析：只认元数据表里的中文标签，未知值回落未指定 */
+function readActKind(value: string | undefined): ActKind {
+    const label = value?.trim() ?? ''
+    return ACT_KIND_ORDER.find((kind) => ACT_KIND_META[kind].label === label) ?? 'none'
+}
+
+/** 卷位解析：认「第N卷」与纯数字两种写法，非法值按未定处理 */
+function readActVolumeOrder(value: string | undefined): number | null {
+    const text = value?.trim() ?? ''
+    const matched = /^(?:第\s*)?(\d+)\s*(?:卷)?$/u.exec(text)
+    if (matched?.[1] === undefined) {
+        return null
+    }
+    const order = Number.parseInt(matched[1], 10)
+    return order > 0 ? order : null
+}
+
+/** 解析结构纲：每个三级标题是一个阶段，转折类型、卷位、叙事作用与主角变化写在键值行 */
 function parseStructureActs(content: string): OutlineAct[] {
     return splitSections(content, 3)
         .filter((section) => section.title.trim().length > 0)
@@ -1066,8 +1100,11 @@ function parseStructureActs(content: string): OutlineAct[] {
             return {
                 id: values.get('id') ?? `act-${String(index + 1)}`,
                 name: section.title.trim(),
-                position: values.get('位置') ?? '',
+                kind: readActKind(values.get('类型')),
+                volumeOrder: readActVolumeOrder(values.get('卷位')),
+                narrativeRole: values.get('叙事作用') ?? '',
                 event: values.get('事件') ?? '',
+                protagonistChange: values.get('主角变化') ?? '',
             }
         })
 }
@@ -1079,9 +1116,11 @@ function parseClues(content: string, characterIndex: Map<string, string>): Outli
         .map((section, index) => {
             const values = readKeyValues(section.content)
             const status = CLUE_STATUS_LABELS[readLabel(values.get('状态'), 'planted')] ?? 'planted'
+            const kind = CLUE_KIND_LABELS[readLabel(values.get('类型'), 'none')] ?? 'none'
             return {
                 id: values.get('id') ?? `clue-${String(index + 1)}`,
                 name: section.title.trim(),
+                kind,
                 plant: toChapterRef(values.get('埋设章')),
                 payoff: toChapterRef(values.get('回收章')),
                 triggerId: characterIndex.get(values.get('触发者') ?? '') ?? '',

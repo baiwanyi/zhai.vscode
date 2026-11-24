@@ -14,7 +14,7 @@ import type { CharacterCard, OutlineChapter, OutlineVolume, ProjectSetting } fro
 import type { JSX } from 'react'
 import { chapterTitleLabel } from '../../utils'
 
-interface OutlineAiPanelProps {
+interface ChapterAiPanelProps {
     setting: ProjectSetting
     volume: OutlineVolume
     chapter: OutlineChapter
@@ -22,7 +22,7 @@ interface OutlineAiPanelProps {
     onOpenChat: () => void
 }
 
-export function OutlineAiPanel({ setting, volume, chapter, characters, onOpenChat }: OutlineAiPanelProps): JSX.Element {
+export function ChapterAiPanel({ setting, volume, chapter, characters, onOpenChat }: ChapterAiPanelProps): JSX.Element {
     const selectedCharacters = characters.filter((character) => chapter.characterIds.includes(character.id))
     const characterLabel =
         selectedCharacters.length > 0

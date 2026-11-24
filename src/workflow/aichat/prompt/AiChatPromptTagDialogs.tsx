@@ -97,7 +97,6 @@ function PromptTagFormDialog({
             open={form !== null}
             title={isEditing ? `编辑${words.title}` : `新建${words.title}`}
             description={tagFormDescription(scope, isEditing, dirPath)}
-            confirmLabel="保存"
             isLoading={isSaving}
             isDisabled={isDisabled}
             className="sm:max-w-md"

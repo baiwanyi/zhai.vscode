@@ -31,6 +31,7 @@ import type {
     ChapterSnapshotListResult,
     ChapterSnapshotRestoreResult,
     ChapterSnapshotVersionsResult,
+    ClueRefsAnalyzeResult,
     OpenPressProjectResult,
     PressApplyResult,
     PressOpenDocResult,
@@ -78,7 +79,7 @@ import type {
     DocSnapshotListResult,
     DocSnapshotRestoreResult,
 } from '@shared/types/snapshot'
-import { readChapterFacts } from './chapterFacts'
+import { normalizeClueRefsAnalyzeRequest, readChapterExcerpts, readChapterFacts } from './chapterFacts'
 import { hasProjectFiles, listPressProjects, readProjectDetail } from './projectRepository'
 import { openProjectByDir, openProjectDoc } from './projectService'
 import { readProjectWorkspace } from './projectWorkspace'
@@ -154,6 +155,10 @@ export class PressRoutes {
         postImageProgress?: (progress: ImageGenerateProgress) => void,
     ): Promise<unknown> {
         switch (method) {
+            case 'pressAi/aiAnalyzeClueRefs':
+                return this.analyzeClueRefs(payload)
+            case 'pressAi/aiAnalyzeClueRefs/abort':
+                return this.service.abortGeneration()
             case 'pressAi/aiAppearance':
                 return this.service.generateAppearance(payload)
             case 'pressAi/aiAppearance/abort':
@@ -343,6 +348,19 @@ export class PressRoutes {
             throw new Error(`作品不在索引中，无法读取章节事实：${payload.dirPath}`)
         }
         return { chapters: await readChapterFacts(this.db, payload.dirPath) }
+    }
+
+    /**
+     * 伏笔位置识别：宿主按目录读取正文摘录后交给 AI，前端不传章节全文。
+     * 安全约束：目录先按索引库回查，不采信前端路径；只读，不回写章节文件。
+     */
+    private async analyzeClueRefs(payload: unknown): Promise<ClueRefsAnalyzeResult> {
+        const request = normalizeClueRefsAnalyzeRequest(payload)
+        if (!hasProjectFiles(this.db, request.dirPath)) {
+            throw new Error(`作品不在索引中，无法识别伏笔位置：${request.dirPath}`)
+        }
+        const chapters = await readChapterExcerpts(this.db, request.dirPath)
+        return this.service.analyzeClueRefs({ clues: request.clues, chapters })
     }
 
     /**

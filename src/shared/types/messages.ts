@@ -291,6 +291,8 @@ export type HostMethodName =
     | 'press/snapshot/list'
     | 'press/snapshot/restore'
     | 'press/workspace'
+    | 'pressAi/aiAnalyzeClueRefs'
+    | 'pressAi/aiAnalyzeClueRefs/abort'
     | 'pressAi/aiAppearance'
     | 'pressAi/aiAppearance/abort'
     | 'pressAi/aiSettingField'

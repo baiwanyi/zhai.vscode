@@ -1,14 +1,10 @@
 /**
- * 提取范围对话框内容：选择全篇 / 章节范围 / 指定章节，再按所选范围刷新章纲。
- * 复用约定：章节候选读仪表盘的作品列表（useProjectChapterOptions），选择状态与提交口径由
- * useExtractSelection 承担，三块内容分别交给 ExtractScopeOptions、ExtractRangeFields、ExtractChapterList；
- * 对话框外壳与开合由调用方提供。
- * 关键约束：候选只取作品章节而非大纲草稿——素材草案由章节清单产出，选大纲章会错位；
- * 提交后经 onClose 请外层关闭；全篇会整树覆盖，选项文案必须写明；章序只用于列表与区间，
- * 提交时换成「卷序 + 卷内位置」，大纲比作品多出的章保持原样。
+ * 提取范围对话框：选择全篇 / 章节范围 / 指定章节，再按所选范围刷新章纲。
+ * 复用约定：骨架取 @webview/components/Dialog，章节候选读 useProjectChapterOptions，
+ * 选择状态与提交口径由 useExtractSelection 承担，三块内容交给 ExtractScopeOptions / ExtractRangeFields / ExtractChapterList。
+ * 关键约束：候选只取作品章节而非大纲草稿；全篇会整树覆盖；章序只用于列表与区间，提交时换成卷序 + 卷内位置。
  */
-import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@components/ui/dialog'
-import { Button } from '@webview/components/Button'
+import { Dialog } from '@webview/components/Dialog'
 import type { OutlineExtractTarget } from '../../types'
 import type { JSX } from 'react'
 import { ExtractChapterList } from '../block/ExtractChapterList'
@@ -17,42 +13,48 @@ import { ExtractScopeOptions } from '../block/ExtractScopeOptions'
 import { useExtractSelection } from '../hooks/useExtractSelection'
 import { useProjectChapterOptions } from '../hooks/useProjectChapterOptions'
 
-interface OutlineExtractPanelProps {
+interface OutlineExtractDialogProps {
+    isOpen: boolean
+    onOpenChange: (isOpen: boolean) => void
     /** 当前作品目录：提取范围读取该作品在仪表盘里的卷章列表 */
     dirPath: string
     isExtracting: boolean
     /** 提交提取：mode 为 all 时整树覆盖，chapters 时只刷新这些卷章位置的章纲 */
     onExtract: (target: OutlineExtractTarget) => void
-    /** 提交或取消后关闭对话框：开合状态在调用方，面板不自行关闭 */
-    onClose: () => void
 }
 
-export function OutlineExtractPanel({
+export function OutlineExtractDialog({
+    isOpen,
+    onOpenChange,
     dirPath,
     isExtracting,
     onExtract,
-    onClose,
-}: OutlineExtractPanelProps): JSX.Element {
+}: OutlineExtractDialogProps): JSX.Element {
     const { status, options } = useProjectChapterOptions(dirPath)
     const selection = useExtractSelection(options, isExtracting)
 
-    const handleSubmit = (): void => {
+    const handleConfirm = (): void => {
         const target = selection.resolveTarget()
         // 指定章节一个都没选时不提交；全篇不带定位键，范围分支恒有至少一章
         if (target.mode === 'chapters' && target.keys.length === 0) {
             return
         }
-        onClose()
+        onOpenChange(false)
         onExtract(target)
     }
 
     return (
-        <>
-            <DialogHeader>
-                <DialogTitle className="text-lg">提取范围</DialogTitle>
-                <DialogDescription className="tabular-nums">{selection.summaryText}</DialogDescription>
-            </DialogHeader>
-
+        <Dialog
+            open={isOpen}
+            title="提取范围"
+            description={<span className="tabular-nums">{selection.summaryText}</span>}
+            confirmLabel={isExtracting ? '提取中' : '开始提取'}
+            isLoading={isExtracting}
+            isDisabled={selection.isSubmitDisabled}
+            className="sm:max-w-md"
+            onOpenChange={onOpenChange}
+            onConfirm={handleConfirm}
+        >
             {status === 'loading' ? <p className="text-muted-foreground text-xs leading-4">正在读取作品章节…</p> : null}
             {status === 'failed' ? (
                 <p className="text-muted-foreground text-xs leading-4">
@@ -96,15 +98,6 @@ export function OutlineExtractPanel({
                     按作品章节定位：只刷新大纲里同卷同位置的章纲，大纲比作品多出的章保持原样。
                 </p>
             )}
-
-            <DialogFooter>
-                <Button variant="outline" onClick={onClose}>
-                    取消
-                </Button>
-                <Button variant="primary" disabled={selection.isSubmitDisabled} onClick={handleSubmit}>
-                    {isExtracting ? '提取中' : '开始提取'}
-                </Button>
-            </DialogFooter>
-        </>
+        </Dialog>
     )
 }

@@ -44,7 +44,6 @@ export function PressVolumeRenameDialog({
             open={open}
             title="重命名卷"
             description="仅修改卷名，卷的序号前缀与其中章节保持不变。"
-            confirmLabel="保存"
             isLoading={isSubmitting}
             isDisabled={name.isBlank}
             onOpenChange={onOpenChange}

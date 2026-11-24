@@ -1,18 +1,8 @@
 /**
- * 作品契约：仪表盘 /press 页的作品摘要、创建、打开、卷重命名/删除与章节删除/移动的请求结构，
- * TXT 作品导入的候选、启动与进度结构，语义归纳与按工作台入口分别提取设定 / 大纲 / 人物卡的结构，
- * 导入素材抽取（press/analyze）的统计结构，目标读者枚举，
- * 以及人物外貌生成（pressAi/aiAppearance）与角色设定图列举（pressAi/listPortraits、listPortraitGallery）的契约。
- * 提取类草案统一按「世界构建 / 情节脉络 / 人物全貌」三个维度铺字段：设定含世界观、地理、势力、规则体系与核心概念；
- * 大纲含卷目标、情节脉络、关键转折与逐章节拍、出场人物；人物卡含别名、年龄、外貌、背景与关系明细。
- * 使用方：仪表盘 Webview 的作品列表与宿主侧 DashboardViewProvider、modules/press 服务；
- * 外貌与角色卡契约同时被写作管理页的人物弹窗、宿主 PressAiService 与 PortraitService 使用。
- * 复用约定：dirPath 取相对存储根口径（press/{作品名}），与索引库 files.path 同源；作品名即目录名。
- * 关键约束：前端传入的作品名与目录路径均不可信，宿主须先经名称白名单校验或索引库回查后才可触达文件系统；
- * 导入的源文件路径由宿主签发 token 保存，前端只回传 token，杜绝 Webview 伪造路径读取任意文件；
- * 目标读者枚举只此一份，前端选项与落盘 Frontmatter 共用，避免两处口径分叉；
- * 草案字段只承载模型输出，枚举归一与「只填空字段」的合并策略由 Webview 决定，宿主不感知界面枚举；
- * 外貌生成入参同样不可信，宿主须重新裁剪长度后才会进入提示词。
+ * 作品契约：作品摘要、导入、设定 / 大纲 / 人物提取、AI 生成与角色卡列举的请求 / 结果结构。
+ * 复用约定：dirPath 取相对存储根口径（press/{作品名}），与索引库 files.path 同源；提取草案按维度铺字段。
+ * 关键约束：作品名与路径不可信，宿主须白名单校验或索引回查；导入源文件只回传宿主签发的 token；
+ * 模型输出只作草案，宿主须收窄长度与白名单（含线索 id），由 Webview 决定合并策略后再落盘。
  */
 
 /** 目标读者：写入 README Frontmatter 的 audience，同时作为添加作品时的唯一选项来源 */
@@ -580,9 +570,33 @@ export interface LoreDescriptionGenerateResult {
     content: string
 }
 
+/** 生成请求里的结构阶段：全书转折约束，只传文案不传 id，模型不回写结构纲 */
+export interface OutlineActContext {
+    name: string
+    /** 转折类型中文标签（未指定 / 激励事件 / 中点 / 低谷 / 高潮 / 结局） */
+    kind: string
+    /** 卷位：null 表示未定，非 null 时作为分卷锚点 */
+    volumeOrder: number | null
+    /** 叙事作用：该转折在全书叙事里承担的功能 */
+    narrativeRole: string
+    event: string
+    /** 这一转折让主角走到弧光的哪一步 */
+    protagonistChange: string
+}
+
+/** 生成请求里的线索摘要：id 用于草案回指，章节引用写「卷序-章序」，未定为空串 */
+export interface OutlineClueContext {
+    id: string
+    name: string
+    plant: string
+    payoff: string
+    note: string
+}
+
 /**
- * 按卷生成章纲的请求：卷纲（核心事件 / 主要情节 / 转折 / 卷末结果）+ 作品设定快照 + 卷内现状。
- * 关键约束：产出「阶段 / 标题 / 计划梗概 / 节拍」，节拍即章节细纲，POV 与出场人物仍留给作者细化。
+ * 按卷生成章纲的请求：卷纲 + 结构纲 + 本卷相关伏笔 + 作品设定快照 + 卷内现状。
+ * 关键约束：产出「阶段 / 标题 / 计划梗概 / 节拍 / 线索关联」，线索 id 必须来自 clues 白名单；
+ * POV 与出场人物仍留给作者细化，结构阶段只作转折约束、不自动写回阶段划分。
  */
 export interface VolumeChaptersGenerateRequest {
     /** 本卷卷名，含「第N卷」前缀 */
@@ -594,6 +608,10 @@ export interface VolumeChaptersGenerateRequest {
     turningPoints: string[]
     /** 卷末结果 */
     result: string
+    /** 全书结构阶段：约束转折走向 */
+    acts: OutlineActContext[]
+    /** 本卷相关线索：埋设章或回收章落在本卷才传入 */
+    clues: OutlineClueContext[]
     /** 起始章序：生成结果从这里连续编号 */
     startOrder: number
     /** 期望章数：0 表示按卷纲自行推断 */
@@ -607,8 +625,8 @@ export interface VolumeChaptersGenerateRequest {
 }
 
 /**
- * 按作品设定生成卷纲的请求：作品设定快照 + 人物名单 + 现有卷名。
- * 关键约束：volumeCount 为 0 时由模型按故事规模自行建议卷数；
+ * 按作品设定生成卷纲的请求：结构纲 + 设定快照 + 人物名单 + 现有卷名。
+ * 关键约束：volumeCount 为 0 时由模型按故事规模自行建议卷数，结构阶段只约束转折归属；
  * 生成结果只覆盖卷纲字段，不触碰任何已写章节。
  */
 export interface VolumeOutlinesGenerateRequest {
@@ -616,6 +634,8 @@ export interface VolumeOutlinesGenerateRequest {
     volumeCount: number
     /** 已有卷名：避免生成重复的卷 */
     existingNames: string[]
+    /** 全书结构阶段：约束分卷边界与卷末转折 */
+    acts: OutlineActContext[]
     setting: SettingSnapshot
     characters: string[]
 }
@@ -660,7 +680,13 @@ export interface VolumeFieldGenerateResult {
     content: string
 }
 
-/** 生成的单章草案：阶段、标题、计划梗概与章节细纲 */
+/** 草案里的线索关联：id 来自请求的 clues，action 指定本章埋设或回收 */
+export interface VolumeChapterClueRef {
+    id: string
+    action: 'plant' | 'payoff'
+}
+
+/** 生成的单章草案：阶段、标题、计划梗概、章节细纲与线索关联 */
 export interface VolumeChapterDraft {
     /** 阶段名：如「第一阶段：坠楼与觉醒」，空串表示未分组 */
     stage: string
@@ -670,11 +696,51 @@ export interface VolumeChapterDraft {
     summary: string
     /** 章节细纲：3~6 条节拍，生成后直接写入节拍列表 */
     beats: string[]
+    /** 本章承担的线索动作：写入时按实际章序更新线索表，不写进章纲字段 */
+    clueRefs: VolumeChapterClueRef[]
 }
 
 /** 按卷生成章纲的结果：chapters 为空表示模型没给出可用条目，由前端提示补卷纲或重试 */
 export interface VolumeChaptersGenerateResult {
     chapters: VolumeChapterDraft[]
+}
+
+/**
+ * 伏笔位置识别请求：只传作品目录与伏笔白名单，正文摘录由宿主从章节文件读取。
+ * 关键约束：伏笔 id 必须来自当前大纲，宿主按白名单校验模型输出；不传正文全文以免前端与提示词冗余。
+ */
+export interface ClueRefsAnalyzeRequest {
+    /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
+    dirPath: string
+    /** 待识别伏笔：只给 id、名称与备注，不传已有埋设/回收引用 */
+    clues: { id: string; name: string; note: string }[]
+}
+
+/** 识别用章节摘录：坐标用章纲 order，与伏笔引用的「卷序-章序」一致 */
+export interface ClueRefsAnalyzeChapter {
+    volumeOrder: number
+    chapterOrder: number
+    title: string
+    excerpt: string
+}
+
+/** 宿主交给 AI 的识别输入：伏笔白名单 + 章节摘录 */
+export interface ClueRefsAnalyzeInput {
+    clues: ClueRefsAnalyzeRequest['clues']
+    chapters: ClueRefsAnalyzeChapter[]
+}
+
+/** 识别出的伏笔位置建议：id 来自白名单，坐标来自请求内的章节清单 */
+export interface ClueRefSuggestion {
+    id: string
+    action: 'plant' | 'payoff'
+    volumeOrder: number
+    chapterOrder: number
+}
+
+/** 伏笔位置识别结果：refs 为空表示没找到可信位置，前端按空结果提示 */
+export interface ClueRefsAnalyzeResult {
+    refs: ClueRefSuggestion[]
 }
 
 /**

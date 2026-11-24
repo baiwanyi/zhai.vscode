@@ -1,9 +1,7 @@
 /**
- * 按作品设定生成卷纲提示词：把故事核、世界观与人物折算成一次分卷请求。
- * 复用约定：消息结构复用 ../../ai/provider 的 AiChatMessage；已填设定的事实行由 ./settingFieldPrompt 的
- * buildSettingFactLines 统一产出，避免与设定生成两处各写一份口径。
- * 关键约束：只要求输出卷级字段（卷名 / 预计章节数 / 核心事件 / 主要情节 / 关键转折 / 卷末结果），
- * 不生成任何章纲；卷名必须带「第N卷」前缀；输出为纯 JSON 数组，解析与截断在 pressAiService 侧完成。
+ * 按作品设定与全书结构生成卷纲提示词：设定、人物与结构阶段折算成一次分卷请求。
+ * 复用约定：消息结构取 @modules/ai/provider，设定事实行复用 ./settingFieldPrompt，文本折行复用 ./plainText。
+ * 关键约束：结构阶段只约束转折归属、不改写卷数；只输出卷级字段与纯 JSON 数组，解析截断在宿主侧完成。
  */
 import type { AiChatMessage } from '@modules/ai/provider'
 import type { VolumeOutlinesGenerateRequest } from '@shared/types/press'
@@ -38,13 +36,48 @@ function readExistingHint(request: VolumeOutlinesGenerateRequest): string {
     return `现有卷：${names}（本次生成会按卷序覆盖它们的卷纲，卷名可沿用或改写；章节内容不受影响）`
 }
 
-/** 用户提示：作品设定 → 人物 → 分卷要求 → 写作要求 */
+/** 全书结构事实行：阶段名、位置与作用逐项折行，供分卷时对齐转折归属 */
+function buildActLines(request: VolumeOutlinesGenerateRequest): string[] {
+    return request.acts.flatMap((act, index) => {
+        const name = toSingleLine(act.name)
+        if (name.length === 0) {
+            return []
+        }
+        const lines = [`阶段${String(index + 1)}：${name}`]
+        const kind = toSingleLine(act.kind)
+        if (kind.length > 0 && kind !== '未指定') {
+            lines.push(`转折类型：${kind}`)
+        }
+        if (act.volumeOrder !== null) {
+            lines.push(`卷位：第${String(act.volumeOrder)}卷`)
+        }
+        const role = toSingleLine(act.narrativeRole)
+        if (role.length > 0) {
+            lines.push(`叙事作用：${role}`)
+        }
+        const event = toSingleLine(act.event)
+        if (event.length > 0) {
+            lines.push(`关键事件：${event}`)
+        }
+        const change = toSingleLine(act.protagonistChange)
+        if (change.length > 0) {
+            lines.push(`主角变化：${change}`)
+        }
+        return lines
+    })
+}
+
+/** 用户提示：作品设定 → 结构纲 → 人物 → 分卷要求 → 写作要求 */
 function buildUserPrompt(request: VolumeOutlinesGenerateRequest): string {
     const settingFacts = buildSettingFactLines(request.setting)
+    const actLines = buildActLines(request)
     const cast = request.characters.length > 0 ? request.characters.join('、') : '尚未创建人物卡'
     return [
         '【作品设定】',
         ...(settingFacts.length > 0 ? settingFacts : ['设定尚未填写，按常见题材自行取舍']),
+        '',
+        '【全书结构】',
+        ...(actLines.length > 0 ? actLines : ['结构纲尚未填写，按作品设定自行安排转折']),
         '',
         '【人物】',
         `可出场人物：${cast}`,
@@ -54,6 +87,7 @@ function buildUserPrompt(request: VolumeOutlinesGenerateRequest): string {
         readExistingHint(request),
         '',
         '【写作要求】',
+        '- 【全书结构】只列全书级大转折，卷级转折由各卷「关键转折」承载；标注卷位的阶段要让该转折落在对应卷，未标卷位的也尽量落在大转折附近，不得新增与之冲突的转折',
         `- coreEvent 取 ${CORE_EVENT_HINT}：这一卷谁因为什么必须去做什么，代价是什么`,
         '- mainPlot 是这一卷的情节条目，按发生顺序写 3~8 条，一条一件事，不写章号',
         '- turningPoints 写 1~3 条真正改变走向的转折',

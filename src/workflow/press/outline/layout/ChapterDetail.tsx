@@ -176,7 +176,7 @@ function SceneEditor({ scene, index, onChange, onRemove }: SceneEditorProps): JS
     )
 }
 
-interface OutlineDetailProps {
+interface ChapterDetailProps {
     volume: OutlineVolume
     chapter: OutlineChapter
     characters: CharacterCard[]
@@ -198,7 +198,7 @@ interface OutlineDetailProps {
     viewGranularity: OutlineGranularity
 }
 
-export function OutlineDetail({
+export function ChapterDetail({
     volume,
     chapter,
     characters,
@@ -210,7 +210,7 @@ export function OutlineDetail({
     onOpenFocus,
     onOpenBackfill,
     viewGranularity,
-}: OutlineDetailProps): JSX.Element {
+}: ChapterDetailProps): JSX.Element {
     const progress = chapter.wordGoal > 0 ? Math.min(100, Math.round((chapter.wordCount / chapter.wordGoal) * 100)) : 0
     const selectedCharacters = characters.filter((character) => chapter.characterIds.includes(character.id))
     const tensionLabel = TENSION_LABELS[chapter.tension - 1] ?? ''
@@ -669,7 +669,7 @@ export function OutlineDetail({
                     <ClipboardCheck />
                     写前查纲
                 </Button>
-                <Button variant="outline" tooltip="正文写完后，把实际结果回填到章纲与线索表" onClick={onOpenBackfill}>
+                <Button variant="outline" tooltip="正文写完后，把实际结果回填到章纲与伏笔表" onClick={onOpenBackfill}>
                     <RefreshCw />
                     写后回填
                 </Button>

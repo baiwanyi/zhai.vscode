@@ -1,14 +1,13 @@
 /**
- * 按卷生成章纲：把卷纲、作品设定与卷内现状拼成请求交给宿主 pressAi/aiVolumeChapters，
- * 取回「阶段 / 标题 / 介绍」草案供预览对话框勾选。
- * 复用约定：请求经 @shared/utils/bridge，前端超时略大于宿主侧 180s，保证宿主先给出超时错误；
- * 设定快照复用 utils 的 toSettingSnapshot，与设定字段生成同一份口径。
- * 关键约束：同一时刻只允许一次生成，连点由 ref 拦住；对话框关闭（卸载）时走 abort 接口尽力收口；
- * 草案不落库，是否写入由调用方决定；失败原因统一经 sonner 提示，不把错误态留给组件渲染。
+ * 按卷生成章纲：卷纲、全书结构、本卷伏笔与设定快照交给宿主，取回含伏笔关联的章纲草案。
+ * 复用约定：请求取 @shared/utils/bridge，设定快照取 ../../utils 的 toSettingSnapshot。
+ * 关键约束：前端超时略大于宿主侧；同一时刻仅一次生成，卸载走 abort；草案不落库，失败经 sonner 提示。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type {
+    OutlineActContext,
+    OutlineClueContext,
     VolumeChapterDraft,
     VolumeChaptersGenerateRequest,
     VolumeChaptersGenerateResult,
@@ -33,11 +32,13 @@ export interface VolumeChaptersGenerateState {
     abort: () => Promise<void>
 }
 
-/** 生成参数：起始章序、期望章数与卷内已有章数由调用方按当前写入方式算出 */
+/** 生成参数：章序范围由写入方式算出，结构阶段与本卷伏笔由页面装配 */
 export interface VolumeChaptersGenerateOptions {
     startOrder: number
     chapterCount: number
     existingCount: number
+    acts: readonly OutlineActContext[]
+    clues: readonly OutlineClueContext[]
 }
 
 export function useVolumeChaptersGenerate(): VolumeChaptersGenerateState {
@@ -97,7 +98,7 @@ export function useVolumeChaptersGenerate(): VolumeChaptersGenerateState {
     return { isGenerating, generate, abort }
 }
 
-/** 请求载荷：卷纲原文 + 设定快照 + 人物名 + 章序范围 */
+/** 请求载荷：卷纲原文 + 结构 + 本卷伏笔 + 设定快照 + 人物名 + 章序范围 */
 function buildPayload(
     volume: OutlineVolume,
     setting: ProjectSetting,
@@ -110,6 +111,8 @@ function buildPayload(
         mainPlot: volume.mainPlot.filter((item) => item.trim().length > 0),
         turningPoints: volume.turningPoints.filter((item) => item.trim().length > 0),
         result: volume.result,
+        acts: [...options.acts],
+        clues: [...options.clues],
         startOrder: options.startOrder,
         chapterCount: options.chapterCount,
         existingCount: options.existingCount,

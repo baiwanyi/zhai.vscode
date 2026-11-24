@@ -1,10 +1,10 @@
 /**
  * 写前查纲：只盯当前这一章与其前后章关系，避免边写边想全局。
  * 复用约定：卡壳时该查的三件事（动机、冲突、结尾新问题）固定成三块只读区；
- * 出场人物取 CharacterCard 的欲望与弱点，相关伏笔取线索表里埋设章或回收章指向本章的条目；
+ * 出场人物取 CharacterCard 的欲望与弱点，相关伏笔取伏笔表里埋设章或回收章指向本章的条目；
  * 动作按钮沿用 components/Button，返回与回填交回页面处理。
  * 关键约束：本视图只读，不提供任何直接编辑入口——要改章纲回「卷章场景」模块；
- * 只展示与本章相关的线索，不把整张线索表倒进来，否则「聚焦」就失效了。
+ * 只展示与本章相关的伏笔，不把整张伏笔表倒进来，否则「聚焦」就失效了。
  */
 import { ArrowLeft, ClipboardCheck, RefreshCw } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
@@ -15,10 +15,10 @@ import type { JSX } from 'react'
 import { CLUE_STATUS_META, HOOK_OPTIONS, PLAN_STATUS_META, TENSION_LABELS } from '../../constants'
 import { chapterTitleLabel } from '../../utils'
 
-interface OutlineFocusViewProps {
+interface ChapterFocusViewProps {
     volume: OutlineVolume
     chapter: OutlineChapter
-    /** 当前章的「卷序 + 章序」：用于匹配线索表 */
+    /** 当前章的「卷序 + 章序」：用于匹配伏笔表 */
     chapterRef: OutlineChapterRef
     characters: CharacterCard[]
     plan: OutlinePlan
@@ -38,7 +38,7 @@ function FocusRow({ label, value }: { label: string; value: string }): JSX.Eleme
     )
 }
 
-export function OutlineFocusView({
+export function ChapterFocusView({
     volume,
     chapter,
     chapterRef,
@@ -48,7 +48,7 @@ export function OutlineFocusView({
     nextChapter,
     onBack,
     onOpenBackfill,
-}: OutlineFocusViewProps): JSX.Element {
+}: ChapterFocusViewProps): JSX.Element {
     const cast = characters.filter((character) => chapter.characterIds.includes(character.id))
     const hookLabel = HOOK_OPTIONS.find((option) => option.value === chapter.hook)?.label ?? '无'
     const relatedClues = plan.clues.filter(
@@ -154,7 +154,7 @@ export function OutlineFocusView({
                     <CardContent className="flex flex-col gap-1.5">
                         <span className="font-medium">本章伏笔</span>
                         {relatedClues.length === 0 ? (
-                            <span className="text-muted-foreground">本章没有埋设或回收的线索。</span>
+                            <span className="text-muted-foreground">本章没有埋设或回收的伏笔。</span>
                         ) : (
                             relatedClues.map((clue) => {
                                 const isPlant =

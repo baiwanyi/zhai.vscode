@@ -52,7 +52,6 @@ export function TodoListRenameDialog({
             open={open}
             title="重命名清单"
             description="仅修改清单名称，文件位置与其中的待办保持不变。"
-            confirmLabel="保存"
             isLoading={isSubmitting}
             isDisabled={isDisabled}
             onOpenChange={onOpenChange}

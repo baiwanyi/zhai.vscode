@@ -15,7 +15,7 @@ import type { JSX } from 'react'
 import { PLAN_STATUS_META } from '../../constants'
 import { chapterTitleLabel, formatWordCount } from '../../utils'
 
-interface OutlineTreeProps {
+interface ChapterTreeProps {
     /** 已按卷筛选的扁平章节，数组顺序即全书章序 */
     entries: readonly OutlineTreeEntry[]
     selectedChapterId: string | null
@@ -26,13 +26,13 @@ interface OutlineTreeProps {
     onSelectChapter: (chapterId: string) => void
 }
 
-export function OutlineTree({
+export function ChapterTree({
     entries,
     selectedChapterId,
     hasAnyChapter,
     isListFiltered,
     onSelectChapter,
-}: OutlineTreeProps): JSX.Element {
+}: ChapterTreeProps): JSX.Element {
     // 只有作品本身没有章节才是「还没有大纲」；卷筛选或搜索筛空不能冒充空作品
     const isEmptyText = isListFiltered ? '没有符合筛选的章节' : '还没有章节'
 

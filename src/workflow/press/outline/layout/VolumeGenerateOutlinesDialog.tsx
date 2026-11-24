@@ -1,11 +1,7 @@
 /**
- * 按作品设定生成卷纲的预览对话框：先生成卷名、预计章节数与卷纲五项，勾选后再覆盖写入。
- * 复用约定：骨架取业务公共层的 Dialog（取消 / 写入按钮、高度与滚动由它统一提供）；
- * 期望卷数与生成按钮收进 ui/input-group，已选数量与覆盖范围收进 ui/card；
- * 草案列表、加载与空态收进 block/VolumeOutlineDrafts，生成状态由 hooks/useVolumeOutlinesGenerate 持有。
- * 关键约束：草案不落库，关掉即丢弃；写入只覆盖卷纲字段，章节内容一律不动；
- * 按卷序对齐现有卷，多出的草案追加为新卷，现有卷多于草案的保持原样；
- * 期望卷数改动即清空草案待重生成，异步结果经卸载与代次守卫作废；调用方须把 key 绑定到打开状态以重建组件。
+ * 生成卷纲预览对话框：按设定与全书结构产出卷纲草案，勾选后覆盖写入。
+ * 复用约定：骨架取 @webview/components/Dialog，草稿列表取 ../block/VolumeOutlineDrafts，生成状态取 ../hooks。
+ * 关键约束：草案不落库；写入只覆盖卷纲字段；期望卷数变更即清空草案；调用方须用 key 重建组件。
  */
 import { Hash, Loader2, Wand2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -13,7 +9,7 @@ import { toast } from 'sonner'
 import { Badge } from '@components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@components/ui/input-group'
-import type { VolumeOutlineDraft } from '@shared/types/press'
+import type { OutlineActContext, VolumeOutlineDraft } from '@shared/types/press'
 import { Dialog } from '@webview/components/Dialog'
 import type { CharacterCard, ProjectSetting } from '../../types'
 import type { JSX } from 'react'
@@ -30,6 +26,8 @@ interface VolumeGenerateOutlinesDialogProps {
     characters: CharacterCard[]
     /** 现有卷名：交给模型避免重名，同时在标题里说明覆盖语义 */
     existingNames: readonly string[]
+    /** 全书结构阶段：作为分卷转折约束 */
+    acts: readonly OutlineActContext[]
     /** 覆盖写入：按卷序覆盖现有卷纲，多出的追加为新卷（章节保留），返回写入卷数 */
     onApply: (drafts: readonly VolumeOutlineDraft[]) => number
 }
@@ -40,6 +38,7 @@ export function VolumeGenerateOutlinesDialog({
     setting,
     characters,
     existingNames,
+    acts,
     onApply,
 }: VolumeGenerateOutlinesDialogProps): JSX.Element {
     const { isGenerating, generate } = useVolumeOutlinesGenerate()
@@ -86,6 +85,7 @@ export function VolumeGenerateOutlinesDialog({
                 setting,
                 characters,
                 existingNames,
+                acts,
             })
             if (!isMountedRef.current || result === null || generationId !== generationIdRef.current) {
                 return
@@ -94,7 +94,7 @@ export function VolumeGenerateOutlinesDialog({
             setSelectedIndexes(result.map((_, index) => index))
         }
         void run()
-    }, [characters, existingNames, generate, isGenerating, setting, volumeCount])
+    }, [acts, characters, existingNames, generate, isGenerating, setting, volumeCount])
 
     const handleToggle = (index: number): void => {
         setSelectedIndexes((previous) =>

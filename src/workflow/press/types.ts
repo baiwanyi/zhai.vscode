@@ -46,27 +46,44 @@ export interface OutlineChapterRef {
     chapterOrder: number
 }
 
-/** 结构纲的一个阶段：三幕 / 起承转合 / 英雄之旅的节拍均可落在这里 */
+/** 全书级转折类型：未指定 / 激励事件 / 中点 / 低谷 / 高潮 / 结局 */
+export type ActKind = 'none' | 'inciting' | 'midpoint' | 'low-point' | 'climax' | 'resolution'
+
+/**
+ * 结构纲的一个阶段：只记全书级大转折，卷级转折由卷纲的「关键转折」承载。
+ * 关键约束：卷位用卷序定位、不用卷 id（id 按位置现算），空值表示尚未定卷。
+ */
 export interface OutlineAct {
     id: string
-    /** 阶段名：建置 / 对抗 / 解决 / 激励事件 / 中点… */
+    /** 阶段名：激励事件 / 中点 / 低谷 / 高潮… */
     name: string
-    /** 位置说明：该阶段在全书里的作用 */
-    position: string
+    /** 转折类型：供生成时识别转折性质，未指定为 none */
+    kind: ActKind
+    /** 卷位：该转折落在第几卷，null 表示未定 */
+    volumeOrder: number | null
+    /** 叙事作用：该转折在全书叙事里承担的功能（打破平衡 / 赌注升级 / 迫使选择） */
+    narrativeRole: string
     /** 关键事件：这一阶段真正发生了什么 */
     event: string
+    /** 主角变化：这一转折让主角的弧光走到哪一步 */
+    protagonistChange: string
 }
 
 /** 节奏类型：紧张、铺垫、爽点、虐点、喘息 */
 export type PacingKind = 'tension' | 'setup' | 'payoff' | 'sorrow' | 'breath'
 
+/** 伏笔类型：未指定 / 人物 / 情节 / 道具 / 设定 */
+export type ClueKind = 'none' | 'character' | 'plot' | 'item' | 'setting'
+
 /** 伏笔状态：已埋未收、已回收、已废弃 */
 export type ClueStatus = 'planted' | 'paid-off' | 'dropped'
 
-/** 伏笔线索：埋什么、第几章埋、何时回收、由谁触发 */
+/** 伏笔线索：埋什么、是什么线、第几章埋、何时回收、由谁触发 */
 export interface OutlineClue {
     id: string
     name: string
+    /** 类型：未指定用于兼容未写类型的存量伏笔 */
+    kind: ClueKind
     /** 埋设章：未定则 null */
     plant: OutlineChapterRef | null
     /** 回收章：未定则 null，逾期预警据此计算 */

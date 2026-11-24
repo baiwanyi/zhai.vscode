@@ -56,14 +56,39 @@ const CHARACTERS: CharacterCard[] = [
 
 const PLAN: OutlinePlan = {
     acts: [
-        { id: 'act-1', name: '开端', position: '打破平衡', event: '旧表送来，编号与妹妹一致' },
-        { id: 'act-2', name: '中点', position: '真相翻面', event: '顾青的档案是伪造的' },
-        { id: 'act-3', name: '高潮', position: '迫使选择', event: '揭发集团即失去妹妹线索' },
+        {
+            id: 'act-1',
+            name: '激励事件',
+            kind: 'inciting',
+            volumeOrder: 1,
+            narrativeRole: '打破平衡',
+            event: '旧表送来，编号与妹妹一致',
+            protagonistChange: '从独行到不得不求助',
+        },
+        {
+            id: 'act-2',
+            name: '中点',
+            kind: 'midpoint',
+            volumeOrder: 2,
+            narrativeRole: '真相翻面',
+            event: '顾青的档案是伪造的',
+            protagonistChange: '开始主动追查',
+        },
+        {
+            id: 'act-3',
+            name: '高潮',
+            kind: 'climax',
+            volumeOrder: null,
+            narrativeRole: '迫使选择',
+            event: '揭发集团即失去妹妹线索',
+            protagonistChange: '',
+        },
     ],
     clues: [
         {
             id: 'clue-1',
             name: '旧表编号',
+            kind: 'none',
             plant: { volumeOrder: 1, chapterOrder: 1 },
             payoff: { volumeOrder: 1, chapterOrder: 2 },
             triggerId: '12345678',
@@ -73,6 +98,7 @@ const PLAN: OutlinePlan = {
         {
             id: 'clue-2',
             name: '顾青的名片',
+            kind: 'none',
             plant: { volumeOrder: 1, chapterOrder: 1 },
             payoff: null,
             triggerId: '',
@@ -192,8 +218,15 @@ describe('大纲四段落往返', () => {
             '未命名',
         )
 
-        expect(parsed.plan.acts.map((act) => act.name)).toEqual(['开端', '中点', '高潮'])
-        expect(parsed.plan.acts[1]).toMatchObject({ position: '真相翻面', event: '顾青的档案是伪造的' })
+        expect(parsed.plan.acts.map((act) => act.name)).toEqual(['激励事件', '中点', '高潮'])
+        expect(parsed.plan.acts[1]).toMatchObject({
+            kind: 'midpoint',
+            volumeOrder: 2,
+            narrativeRole: '真相翻面',
+            event: '顾青的档案是伪造的',
+            protagonistChange: '开始主动追查',
+        })
+        expect(parsed.plan.acts[2]?.volumeOrder).toBeNull()
     })
 
     it('线索按章节引用往返，触发者按姓名回填', () => {

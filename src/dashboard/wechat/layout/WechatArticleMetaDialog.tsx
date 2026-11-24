@@ -55,7 +55,6 @@ export function WechatArticleMetaDialog({
             open
             title="文章设置"
             description="只影响推送时写入公众号的元信息，正文在批次目录的 Markdown 文件里维护。"
-            confirmLabel="保存"
             isLoading={isSubmitting}
             className="sm:max-w-md"
             onOpenChange={onOpenChange}

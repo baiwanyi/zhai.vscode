@@ -1,14 +1,12 @@
 /**
- * 生成卷纲：把作品设定快照、人物名单与期望卷数交给宿主 pressAi/aiVolumeOutlines，
- * 取回「卷名 / 预计章节数 / 核心事件 / 主要情节 / 关键转折 / 卷末结果」草案供预览。
- * 复用约定：请求经 @shared/utils/bridge，前端超时略大于宿主侧 120s，保证宿主先给出超时错误；
- * 设定快照复用 utils 的 toSettingSnapshot，与设定字段生成同一份口径。
- * 关键约束：同一时刻只允许一次生成，连点由 ref 拦住；对话框关闭（卸载）时走 abort 接口尽力收口；
- * 草案不落库，是否覆盖卷纲由调用方决定；失败原因统一经 sonner 提示。
+ * 生成卷纲：设定快照、人物、已有卷名与全书结构阶段交给宿主，取回卷纲草案供预览。
+ * 复用约定：请求取 @shared/utils/bridge，设定快照取 ../../utils 的 toSettingSnapshot。
+ * 关键约束：前端超时略大于宿主侧；同一时刻仅一次生成，卸载走 abort；草案不落库，失败经 sonner 提示。
  */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type {
+    OutlineActContext,
     VolumeOutlineDraft,
     VolumeOutlinesGenerateRequest,
     VolumeOutlinesGenerateResult,
@@ -21,13 +19,15 @@ import { toSettingSnapshot } from '../../utils'
 /** AI 通道前端超时：略大于宿主 120s，避免前端先于宿主超时 */
 const AI_REQUEST_TIMEOUT_MS = 140_000
 
-/** 生成参数：期望卷数（0 表示由模型自定）、作品设定与人物名单 */
+/** 生成参数：期望卷数、作品设定、人物名单与全书结构阶段 */
 export interface VolumeOutlinesGenerateOptions {
     volumeCount: number
     setting: ProjectSetting
     characters: readonly CharacterCard[]
     /** 已有卷名：交给模型避免重复，同时提示覆盖语义 */
     existingNames: readonly string[]
+    /** 结构阶段：作为分卷转折约束，不改写期望卷数 */
+    acts: readonly OutlineActContext[]
 }
 
 export interface VolumeOutlinesGenerateState {
@@ -89,11 +89,12 @@ export function useVolumeOutlinesGenerate(): VolumeOutlinesGenerateState {
     return { isGenerating, generate, abort }
 }
 
-/** 请求载荷：期望卷数 + 设定快照 + 人物名 + 现有卷名 */
+/** 请求载荷：期望卷数 + 设定快照 + 人物名 + 现有卷名 + 结构阶段 */
 function buildPayload(options: VolumeOutlinesGenerateOptions): VolumeOutlinesGenerateRequest {
     return {
         volumeCount: options.volumeCount,
         existingNames: options.existingNames.filter((name) => name.trim().length > 0),
+        acts: [...options.acts],
         setting: toSettingSnapshot(options.setting),
         characters: options.characters.map((character) => character.name),
     }
