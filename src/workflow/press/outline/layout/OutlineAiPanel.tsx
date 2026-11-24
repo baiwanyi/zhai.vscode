@@ -3,14 +3,16 @@
  * 复用约定：引用行复用 ui/item 与 lucide 图标，动作按钮复用 ui/button 的三个层级（默认 / outline / ghost），
  * 与 AI 对话页的操作区保持同一视觉权重；配色只取语义令牌，不引入独立面板底色。
  * 关键约束：引用清单必须反映真实选中项（卷、章、出场角色、作品设定），不得写成固定文案；
- * 本组件不直接发起生成，只把动作交回页面，保证 AI 调用入口仍集中在会话层。
+ * 本组件不直接发起生成，只把动作交回页面，保证 AI 调用入口仍集中在会话层；
+ * 原「重写本章纲」依赖已下线的生成大纲向导，随之移除，避免留下点了没反应的入口。
  */
-import { BookMarked, Globe, PenLine, ScrollText, Users, Wand2 } from 'lucide-react'
+import { BookMarked, Globe, PenLine, ScrollText, Users } from 'lucide-react'
 import { Badge } from '@components/ui/badge'
 import { Item, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import { Button } from '@webview/components/Button'
 import type { CharacterCard, OutlineChapter, OutlineVolume, ProjectSetting } from '../../types'
 import type { JSX } from 'react'
+import { chapterTitleLabel } from '../../utils'
 
 interface OutlineAiPanelProps {
     setting: ProjectSetting
@@ -18,17 +20,9 @@ interface OutlineAiPanelProps {
     chapter: OutlineChapter
     characters: CharacterCard[]
     onOpenChat: () => void
-    onOpenWizard: () => void
 }
 
-export function OutlineAiPanel({
-    setting,
-    volume,
-    chapter,
-    characters,
-    onOpenChat,
-    onOpenWizard,
-}: OutlineAiPanelProps): JSX.Element {
+export function OutlineAiPanel({ setting, volume, chapter, characters, onOpenChat }: OutlineAiPanelProps): JSX.Element {
     const selectedCharacters = characters.filter((character) => chapter.characterIds.includes(character.id))
     const characterLabel =
         selectedCharacters.length > 0
@@ -57,7 +51,7 @@ export function OutlineAiPanel({
                         <ItemContent className="min-w-0">
                             <ItemTitle>章纲</ItemTitle>
                             <ItemDescription className="truncate">
-                                {chapter.title} · {chapter.beats.length} 条节拍
+                                {chapterTitleLabel(chapter)} · {chapter.beats.length} 条节拍
                             </ItemDescription>
                         </ItemContent>
                     </Item>
@@ -88,10 +82,6 @@ export function OutlineAiPanel({
                     <Button variant="outline" className="justify-start" onClick={onOpenChat}>
                         <ScrollText />
                         按大纲续写
-                    </Button>
-                    <Button variant="ghost" className="justify-start" onClick={onOpenWizard}>
-                        <Wand2 />
-                        重写本章纲
                     </Button>
                 </div>
             </div>

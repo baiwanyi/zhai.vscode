@@ -5,7 +5,7 @@
  * 行范围来源有两套——选区按文本搜索定位，块按编辑器快照的字符偏移换算，字段与去重键完全一致。
  * 关键约束：引用原文属不可信文本，须转义 </context> 防结构逃逸；整篇超限直接拒绝（避免模型基于
  * 残缺全文作答），单条选区超限按行截断并标注；前端删除引用只回传 id，不接受任何路径入参；
- * 微博这类无文件来源的引用由 inlineText 携带正文，发送时不再读盘，uri 仅作去重键。
+ * 微博、卷纲这类无文件来源的引用由 inlineText 携带正文，发送时不再读盘，uri 仅作去重键。
  */
 import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
@@ -21,7 +21,7 @@ export const MAX_CONTEXT_COUNT = 10
 export interface HostContextRef extends AiContextRef {
     /** 文档绝对路径，用于发送时读取最新内容；笔记本引用为目录路径；微博引用为原文永久链接（仅作去重键） */
     uri: string
-    /** 内联正文：无文件来源的引用（如微博）直接携带文本，发送时不再读盘 */
+    /** 内联正文：无文件来源的引用（微博、卷纲快照）直接携带文本，发送时不再读盘 */
     inlineText?: string
 }
 
@@ -256,8 +256,8 @@ function readLineRangeFromText(text: string, startLine: number, endLine: number)
 }
 
 async function readReferenceText(ref: HostContextRef): Promise<string | null> {
-    // 无文件来源的引用直接取内联正文：uri 是微博永久链接，不能也不会按文件读盘
-    if (ref.kind === 'weibo') {
+    // 无文件来源的引用直接取内联正文：uri 是微博永久链接或卷纲去重键，不能也不会按文件读盘
+    if (ref.kind === 'weibo' || ref.kind === 'volumeOutline') {
         return ref.inlineText ?? null
     }
     const hasRange = ref.kind === 'selection' && ref.startLine !== null && ref.endLine !== null
@@ -324,7 +324,11 @@ function isHostContextRef(value: unknown): value is HostContextRef {
     const ref = value as Record<string, unknown>
     return (
         typeof ref.id === 'string' &&
-        (ref.kind === 'file' || ref.kind === 'selection' || ref.kind === 'notebook' || ref.kind === 'weibo') &&
+        (ref.kind === 'file' ||
+            ref.kind === 'selection' ||
+            ref.kind === 'notebook' ||
+            ref.kind === 'weibo' ||
+            ref.kind === 'volumeOutline') &&
         typeof ref.label === 'string' &&
         typeof ref.displayPath === 'string' &&
         (ref.startLine === null || typeof ref.startLine === 'number') &&

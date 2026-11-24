@@ -13,6 +13,7 @@ import type {
     PressExtractedCharacter,
     PressExtractedSetting,
     PressExtractedVolume,
+    VolumeOutlineDraft,
 } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
@@ -46,9 +47,6 @@ import {
     refreshOutlineChapters,
     renumberChapters,
 } from '../utils'
-
-/** 卷名归一：追加生成结果时去掉原有的「第N卷」前缀，避免与既有卷序号冲突 */
-const VOLUME_PREFIX_PATTERN = /^第\d+卷\s*/
 
 /** 新增卷 / 章后的落点：卷 id 与章 id 供页面直接选中，章 id 在空卷时为 null */
 export interface CreatedOutlineNode {
@@ -88,15 +86,19 @@ export interface PressMutations {
      * 写入后整卷章序规整为 1..N，返回实际写入的章数。
      */
     applyVolumeChapters: (volumeId: string, seeds: readonly ChapterSeed[], mode: VolumeChapterWriteMode) => number
-    /** 更新六个功能模块中的一段：只写该段对应的段落，其余段落保持原样 */
+    /** 更新某个功能模块段落：只写该段对应的段落，其余段落保持原样 */
     updateOutlinePlan: (section: OutlineSectionKey, patch: Partial<OutlinePlan>) => void
-    /** 立即写盘的大纲整批更新：回填与模板一次改多段（卷章 + 线索等）时使用 */
+    /** 立即写盘的大纲整批更新：回填一次改多段（卷章 + 线索等）时使用 */
     applyOutlineChange: (next: { volumes?: OutlineVolume[]; plan?: OutlinePlan }) => void
     /** 新增一卷（含一条空章纲）：只长大纲草稿，不建章节文件，返回落点供页面选中 */
     createOutlineVolume: () => CreatedOutlineNode | null
     /** 新增一章：落到指定卷（缺省为最后一卷），返回落点供页面选中 */
     createOutlineChapter: (volumeId?: string) => CreatedOutlineNode | null
-    applyOutline: (volumes: OutlineVolume[]) => void
+    /**
+     * 写入 AI 生成的卷纲：按卷序覆盖现有卷纲字段（章节保留），多出的草案追加为新卷。
+     * 返回实际写入的卷数。
+     */
+    applyVolumeOutlines: (drafts: readonly VolumeOutlineDraft[]) => number
     /** 用素材重建大纲：mode 为 all 时整树覆盖，chapters 时按「卷序 + 卷内位置」刷新所选章，返回实际处理的章数 */
     extractOutline: (drafts: PressExtractedVolume[], target: OutlineExtractTarget) => number
     extractSetting: (draft: PressExtractedSetting) => number
@@ -289,7 +291,7 @@ export function usePressMutations({
         [flush, getWorkspace, updateWorkspace],
     )
 
-    /** 章纲字段改动：含标题输入，走防抖写盘；只写「分卷规划」段落 */
+    /** 章纲字段改动：含标题输入，走防抖写盘；只写「章节内容」段落 */
     const updateChapter = useCallback(
         (chapterId: string, patch: Partial<OutlineChapter>): void => {
             updateWorkspace((previous) => ({
@@ -301,19 +303,24 @@ export function usePressMutations({
                     ),
                 })),
             }))
-            scheduleFlush('outline', ['volumes'])
+            scheduleFlush('outline', ['chapters'])
         },
         [scheduleFlush, updateWorkspace],
     )
 
-    /** 卷纲字段改动：卷名、核心事件、冲突与情节脉络都在卷纲视图编辑，只写「分卷规划」段落 */
+    /**
+     * 卷纲字段改动：只写「卷纲」段落。
+     * 关键约束：卷名同时出现在卷纲与章节内容的三级标题里，改名两段都要重写，否则两段卷序对不上。
+     */
     const updateVolume = useCallback(
         (volumeId: string, patch: Partial<OutlineVolume>): void => {
             updateWorkspace((previous) => ({
                 ...previous,
                 volumes: previous.volumes.map((volume) => (volume.id === volumeId ? { ...volume, ...patch } : volume)),
             }))
-            scheduleFlush('outline', ['volumes'])
+            const sections: OutlineSectionKey[] =
+                patch.name === undefined ? ['volumeOutlines'] : ['volumeOutlines', 'chapters']
+            scheduleFlush('outline', sections)
         },
         [scheduleFlush, updateWorkspace],
     )
@@ -373,7 +380,7 @@ export function usePressMutations({
     )
 
     /**
-     * 大纲整批更新并立即写盘：写后回填与模板会同时改卷章与线索，
+     * 大纲整批更新并立即写盘：写后回填会同时改卷章与线索，
      * 这类操作不能等防抖，否则页面已经显示「已回填」而磁盘还是旧值。
      */
     const applyOutlineChange = useCallback(
@@ -397,7 +404,7 @@ export function usePressMutations({
         if (current === null) {
             return null
         }
-        const volume = createVolume(current.volumes.length + 1, readChapterWordGoal(current.setting))
+        const volume = createVolume(readChapterWordGoal(current.setting))
         updateWorkspace((previous) => ({ ...previous, volumes: [...previous.volumes, volume] }))
         void flush(new Set<PersistScope>(['outline']), { successMessage: `已新增「${volume.name}」` })
         const firstChapter = volume.chapters[0] ?? null
@@ -438,19 +445,44 @@ export function usePressMutations({
         [createOutlineVolume, flush, getWorkspace, updateWorkspace],
     )
 
-    const applyOutline = useCallback(
-        (volumes: OutlineVolume[]): void => {
+    /**
+     * 写入 AI 生成的卷纲：按卷序覆盖现有卷的卷纲字段，多出的草案追加为新卷。
+     * 关键约束：只改卷名与卷纲五项，章节、节拍与场景一律保留；
+     * 卷名会同时影响卷纲与章节内容两段，因此整体落盘（不指定段落）。
+     */
+    const applyVolumeOutlines = useCallback(
+        (drafts: readonly VolumeOutlineDraft[]): number => {
+            if (drafts.length === 0) {
+                return 0
+            }
+            const current = getWorkspace()
+            if (current === null) {
+                return 0
+            }
+            const wordGoal = readChapterWordGoal(current.setting)
             updateWorkspace((previous) => {
-                const offset = previous.volumes.length
-                const appended = volumes.map((volume, index) => ({
-                    ...volume,
-                    name: `第${offset + index + 1}卷 ${volume.name.replace(VOLUME_PREFIX_PATTERN, '') || '新卷'}`,
-                }))
-                return { ...previous, volumes: [...previous.volumes, ...appended] }
+                const covered = drafts.map((draft, index) => {
+                    const existing = previous.volumes[index]
+                    const base = existing ?? createVolume(wordGoal)
+                    return {
+                        ...base,
+                        name: draft.name,
+                        expectedChapters: draft.expectedChapters,
+                        coreEvent: draft.coreEvent,
+                        mainPlot: [...draft.mainPlot],
+                        turningPoints: [...draft.turningPoints],
+                        result: draft.result,
+                    }
+                })
+                // 草案之外的旧卷原样保留，避免覆盖时连带丢掉已写章节
+                return { ...previous, volumes: [...covered, ...previous.volumes.slice(drafts.length)] }
             })
-            void flush(new Set<PersistScope>(['outline']))
+            void flush(new Set<PersistScope>(['outline']), {
+                successMessage: `已写入 ${String(drafts.length)} 卷卷纲`,
+            })
+            return drafts.length
         },
-        [flush, updateWorkspace],
+        [flush, getWorkspace, updateWorkspace],
     )
 
     /** 用素材重建大纲树：整树覆盖或按章刷新，返回实际处理的章数供页面提示 */
@@ -572,7 +604,7 @@ export function usePressMutations({
         applyOutlineChange,
         createOutlineVolume,
         createOutlineChapter,
-        applyOutline,
+        applyVolumeOutlines,
         extractOutline,
         extractSetting,
     }

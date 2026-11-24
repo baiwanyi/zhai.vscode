@@ -18,7 +18,6 @@ import type { PressMutations } from '../hooks/usePressMutations'
 import type { OutlineWorkspace } from '../types'
 import type { JSX } from 'react'
 import { PressCharacterPage } from '../character/PressCharacterPage'
-import { DEFAULT_CHAPTER_WORD_GOAL } from '../constants'
 import { PressNamingPage } from '../naming/PressNamingPage'
 import { PressOutlinePage } from '../outline/PressOutlinePage'
 import { PressSettingPage } from '../setting/PressSettingPage'
@@ -79,7 +78,6 @@ export function PressSectionRouter({
             <PressOutlinePage
                 workspace={workspace}
                 dirPath={dirPath}
-                defaultChapterWordGoal={DEFAULT_CHAPTER_WORD_GOAL}
                 onUpdateChapter={mutations.updateChapter}
                 onUpdateVolume={mutations.updateVolume}
                 onApplyVolumeChapters={mutations.applyVolumeChapters}
@@ -87,7 +85,7 @@ export function PressSectionRouter({
                 onApplyOutlineChange={mutations.applyOutlineChange}
                 onCreateVolume={mutations.createOutlineVolume}
                 onCreateChapter={mutations.createOutlineChapter}
-                onApplyOutline={mutations.applyOutline}
+                onApplyVolumeOutlines={mutations.applyVolumeOutlines}
                 onExtractOutline={mutations.extractOutline}
                 onOpenChat={onOpenChat}
             />

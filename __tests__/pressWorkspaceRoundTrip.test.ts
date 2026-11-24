@@ -12,9 +12,10 @@ import {
     serializeBasicSection,
     serializeCharacterBlocks,
     serializeGoldenFingerSection,
+    serializeChapterSection,
     serializeLoreBlocks,
-    serializeOutlineSection,
     serializeReadmeMeta,
+    serializeVolumeOutlinesSection,
     serializeWorldSection,
 } from '../src/workflow/press/serialize'
 
@@ -193,7 +194,20 @@ describe('草稿回写往返', () => {
                 characters: `# 角色设定\n\n> 提示\n\n${serializeCharacterBlocks(CHARACTERS)
                     .map((block) => block.text)
                     .join('\n\n')}\n`,
-                outline: `# 大纲\n\n## 主线\n\n${serializeOutlineSection(VOLUMES, CHARACTERS)}\n`,
+                outline: [
+                    '# 大纲',
+                    '',
+                    '## 卷纲',
+                    '',
+                    serializeVolumeOutlinesSection(VOLUMES),
+                    '',
+                    '## 章节内容',
+                    '',
+                    serializeChapterSection(VOLUMES, CHARACTERS),
+                    '',
+                    '## 主线',
+                    '',
+                ].join('\n'),
             },
             {
                 world: `# 世界观\n\n## 提取设定\n\n${serializeWorldSection(SETTING)}\n`,
@@ -280,7 +294,7 @@ describe('草稿回写往返', () => {
 
         expect(parsed.volumes).toHaveLength(1)
         expect(parsed.volumes[0]).toMatchObject({
-            name: '第1卷 天都篇',
+            name: '天都篇',
             expectedChapters: 3,
             coreEvent: '薛牧借现代娱乐业入宗：先在星月宗站稳脚跟，再被当成异端针对',
             mainPlot: ['文抄成名', '内斗站队', '被逐出宗门'],

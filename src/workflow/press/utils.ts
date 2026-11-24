@@ -29,7 +29,6 @@ import type {
     CharacterBodyType,
     CharacterCard,
     CharacterSeed,
-    HookKind,
     LoreEntry,
     LoreSeed,
     OutlineAct,
@@ -41,7 +40,6 @@ import type {
     OutlinePlan,
     OutlineScene,
     OutlineVolume,
-    PacingKind,
     PlanStatus,
     ProjectSetting,
 } from './types'
@@ -59,7 +57,7 @@ function isFilled(value: ProjectSetting[keyof ProjectSetting]): boolean {
     return value.trim().length > 0
 }
 
-/** 判断指定字段是否缺失，供分组切换的缺项提示与向导输入确认使用 */
+/** 判断指定字段是否缺失，供设定分组切换的缺项提示使用 */
 export function isSettingFieldMissing(setting: ProjectSetting, key: keyof ProjectSetting): boolean {
     return !isFilled(setting[key])
 }
@@ -161,7 +159,7 @@ function createNumericId(): string {
  * 人物与条目用 8 位数字（宿主白名单要求），其余带前缀便于排查来源。
  */
 export function createId(
-    prefix: 'vol' | 'ch' | 'beat' | 'scene' | 'char' | 'lore' | 'act' | 'snote' | 'clue' | 'tline',
+    prefix: 'vol' | 'ch' | 'beat' | 'plot' | 'scene' | 'char' | 'lore' | 'act' | 'snote' | 'clue' | 'tline',
 ): string {
     if (prefix === 'char' || prefix === 'lore') {
         return createNumericId()
@@ -402,7 +400,8 @@ export function createChapter(order: number, wordGoal: number): OutlineChapter {
     return {
         id: createId('ch'),
         order,
-        title: `第${order}章 未命名`,
+        // 章号不进标题：文档与数据只存纯名称，展示时由 chapterTitleLabel 补「第N章」
+        title: '未命名',
         stage: '',
         summary: '',
         actualSummary: '',
@@ -468,17 +467,13 @@ export function createOutlineFromDraft(
     characters: readonly CharacterCard[] = [],
 ): OutlineVolume[] {
     const characterIndex = buildCharacterIndex(characters)
-    return drafts.map((draft, volumeIndex) => ({
+    return drafts.map((draft) => ({
         id: createId('vol'),
-        name: draft.name.length > 0 ? draft.name : `第${volumeIndex + 1}卷`,
+        // 卷名只存纯名称：素材侧可能给「01-天都篇」或「第1卷 天都篇」，统一剥掉卷号与序号前缀
+        name: stripVolumeOrderPrefix(draft.name).replace(/^\d+\s*[-_.、]\s*/u, '') || `未命名`,
         expectedChapters: draft.chapters.length,
-        // 素材侧把卷目标与冲突分开写，大纲只存一个「核心事件」，这里合并成一段
-        coreEvent: [draft.goal.trim(), draft.conflict.trim()].filter((item) => item.length > 0).join('；'),
-        // 情节脉络是整段描述，主要情节按分号与换行拆成条目
-        mainPlot: draft.plotline
-            .split(/[；;\n]+/u)
-            .map((item) => item.trim())
-            .filter((item) => item.length > 0),
+        coreEvent: draft.coreEvent.trim(),
+        mainPlot: draft.mainPlot.map((item) => item.trim()).filter((item) => item.length > 0),
         turningPoints: [...draft.turningPoints],
         result: '',
         granularity: 'medium',
@@ -532,6 +527,50 @@ function readOutlineVolumeOrder(name: string, index: number): number {
         return Number.parseInt(byTitle, 10)
     }
     return readOrderPrefix(name) ?? index + 1
+}
+
+/** 卷名开头是否已带卷号：兼容「第1卷」与「第一卷」，只认开头，避免正文里的「第3卷」误判 */
+const VOLUME_PREFIX_PATTERN = /^第\s*[0-9一二三四五六七八九十百]+\s*卷/u
+
+/**
+ * 卷名展示：名称已带卷号时原样返回，否则按数组位置补上「第N卷」。
+ * 关键约束：这只影响展示，不改写文档里的卷名——卡片与下拉都用它，
+ * 因此素材导入的「01-天都篇」这类目录口径名称也会带上卷号，避免看不出顺序。
+ */
+export function volumeTitleLabel(name: string, index: number): string {
+    const trimmed = name.trim()
+    const order = index + 1
+    if (trimmed.length === 0) {
+        return `第${String(order)}卷`
+    }
+    return VOLUME_PREFIX_PATTERN.test(trimmed) ? trimmed : `第${String(order)}卷 ${trimmed}`
+}
+
+/**
+ * 卷纲的纯文本快照：供「添加到 AI 对话」复制成可粘贴的上下文。
+ * 关键约束：卷名用展示名（带卷号），不写章节内容——对话里只需要卷级上下文；
+ * 空字段整行省略，避免把「核心事件：」这类空壳粘进对话。
+ */
+export function formatVolumeOutlineText(volume: OutlineVolume, index: number): string {
+    const lines: string[] = [`【${volumeTitleLabel(volume.name, index)}】`]
+    if (volume.expectedChapters > 0) {
+        lines.push(`预计章节数：${String(volume.expectedChapters)}`)
+    }
+    if (volume.coreEvent.trim().length > 0) {
+        lines.push(`核心事件：${volume.coreEvent.trim()}`)
+    }
+    const mainPlot = volume.mainPlot.map((item) => item.trim()).filter((item) => item.length > 0)
+    if (mainPlot.length > 0) {
+        lines.push('主要情节：', ...mainPlot.map((item) => `- ${item}`))
+    }
+    const turningPoints = volume.turningPoints.map((item) => item.trim()).filter((item) => item.length > 0)
+    if (turningPoints.length > 0) {
+        lines.push('关键转折：', ...turningPoints.map((item) => `- ${item}`))
+    }
+    if (volume.result.trim().length > 0) {
+        lines.push(`卷末结果：${volume.result.trim()}`)
+    }
+    return lines.join('\n')
 }
 
 /**
@@ -637,17 +676,23 @@ export function createProjectChapterOptions(volumes: readonly PressVolumeGroup[]
 
 /** 卷筛选选项：按顺序去重，取值一律用卷 id——卷名允许重名 */
 export function createVolumeOptions(volumes: readonly OutlineVolume[]): { value: string; label: string }[] {
-    // 直接取作品卷表：空卷（还没有章）也要能选，否则进不了它的卷纲视图
-    return volumes.map((volume) => ({ value: volume.id, label: volume.name }))
+    // 直接取作品卷表：空卷（还没有章）也要能选，否则进不了它的卷纲视图；
+    // 标签用展示名（带卷号），卷名本身只存纯名称，下拉里才看得出顺序
+    return volumes.map((volume, index) => ({ value: volume.id, label: volumeTitleLabel(volume.name, index) }))
 }
 
-/** 章序取值：留空或非数字回落 fallback，越界夹到 [1, 全书章数]，避免手输残值在提交时越界 */
-export function clampChapterOrder(value: string, fallback: number, totalCount: number): number {
+/** 整数输入归一：留空或非整数回落 fallback，越界夹到 [min, max]（max 小于 min 时按 min 处理） */
+export function clampIntegerInput(value: string, fallback: number, min: number, max: number): number {
     const parsed = Number(value)
     if (value.trim().length === 0 || !Number.isInteger(parsed)) {
         return fallback
     }
-    return Math.min(Math.max(parsed, 1), Math.max(totalCount, 1))
+    return Math.min(Math.max(parsed, min), Math.max(max, min))
+}
+
+/** 章序取值：留空或非数字回落 fallback，越界夹到 [1, 全书章数]，避免手输残值在提交时越界 */
+export function clampChapterOrder(value: string, fallback: number, totalCount: number): number {
+    return clampIntegerInput(value, fallback, 1, Math.max(totalCount, 1))
 }
 
 /** 由起止章序展开 1 基连续章序：倒序输入自动归一为同一段区间 */
@@ -657,11 +702,14 @@ export function createOrderRange(start: number, end: number): number[] {
     return Array.from({ length: upper - lower + 1 }, (_, index) => lower + index)
 }
 
-/** 新建一卷空卷纲，卷名默认按序号命名 */
-export function createVolume(order: number, chapterWordGoal: number): OutlineVolume {
+/**
+ * 新建一卷空卷纲：卷名只存纯名称，卷号由位置决定、展示时由 volumeTitleLabel 补上。
+ * 关键约束：默认带一条空章纲，保证新卷可直接进入章纲编辑。
+ */
+export function createVolume(chapterWordGoal: number): OutlineVolume {
     return {
         id: createId('vol'),
-        name: `第${order}卷 未命名`,
+        name: '未命名',
         expectedChapters: 0,
         coreEvent: '',
         mainPlot: [],
@@ -733,19 +781,23 @@ export function filterChapters(chapters: readonly OutlineChapter[], status: Plan
 }
 
 /** 章节展示名：序号与标题拆开渲染，标题留空时回退为序号 */
+/**
+ * 章标题展示：数据与文档只存纯名称，章号由位置决定，展示时补「第N章」。
+ * 关键约束：名称里可能残留「第N章」前缀（存量数据），先剥掉再拼，避免「第1章 第3章 开局」。
+ */
 export function chapterTitleLabel(chapter: OutlineChapter): string {
-    return chapter.title.trim().length > 0 ? chapter.title : `第${chapter.order}章`
+    const name = stripChapterOrderPrefix(chapter.title)
+    return name.length > 0 ? `第${chapter.order}章 ${name}` : `第${chapter.order}章`
 }
 
-/** 去掉标题里的「第N章」前缀：AI 草案与手写标题都可能自带序号 */
+/** 去掉标题里的「第N章」前缀：AI 草案、手写标题与存量数据都可能自带序号 */
 export function stripChapterOrderPrefix(title: string): string {
-    return title.replace(/^第\s*\d+\s*章\s*/u, '').trim()
+    return title.replace(/^第\s*[0-9]+\s*章\s*/u, '').trim()
 }
 
-/** 章标题的落盘写法：统一成「第N章 标题」，标题为空时只留「第N章」 */
-export function formatChapterTitle(order: number, title: string): string {
-    const name = stripChapterOrderPrefix(title)
-    return name.length > 0 ? `第${order}章 ${name}` : `第${order}章`
+/** 去掉卷名里的「第N卷」前缀（含中文数字）：文档与数据只存纯卷名 */
+export function stripVolumeOrderPrefix(name: string): string {
+    return name.replace(/^第\s*[0-9一二三四五六七八九十百]+\s*卷\s*/u, '').trim()
 }
 
 /** 章纲写入方式：追加到卷末，或先清掉未动过的空章再续排 */
@@ -793,7 +845,8 @@ export function createChaptersFromSeeds(
             .map((text) => createBeat(text))
         return {
             ...chapter,
-            title: formatChapterTitle(order, seed.title),
+            // 章号由 order 决定，标题只留纯名称：AI 偶尔带「第N章」前缀，这里剥掉
+            title: stripChapterOrderPrefix(seed.title) || chapter.title,
             stage: seed.stage.trim(),
             summary: seed.summary.trim(),
             beats: beats.length > 0 ? beats : chapter.beats,
@@ -809,16 +862,15 @@ export interface ChapterStageGroup {
 
 /**
  * 卷内章序规整：按数组顺序重排为 1..N。
- * 关键约束：只重写原本带「第N章」前缀的标题，作者自写的无前缀标题保持原样，避免凭空加前缀。
+ * 关键约束：章号只改 order，标题不拼编号；标题里若残留「第N章」前缀（存量数据）一并剥掉，
+ * 剥完为空时回落到「未命名」，避免展示成单独一个「第N章」。
  */
 export function renumberChapters(chapters: readonly OutlineChapter[]): OutlineChapter[] {
-    return chapters.map((chapter, index) => {
-        const order = index + 1
-        const trimmed = chapter.title.trim()
-        const withoutPrefix = stripChapterOrderPrefix(trimmed)
-        const hasPrefix = withoutPrefix !== trimmed
-        return { ...chapter, order, title: hasPrefix ? formatChapterTitle(order, withoutPrefix) : chapter.title }
-    })
+    return chapters.map((chapter, index) => ({
+        ...chapter,
+        order: index + 1,
+        title: stripChapterOrderPrefix(chapter.title) || '未命名',
+    }))
 }
 
 /**
@@ -846,134 +898,6 @@ export function groupChaptersByStage(chapters: readonly OutlineChapter[]): Chapt
         result.push({ stage: '', chapters: ungrouped })
     }
     return result
-}
-
-/** 向导参数：卷数、每卷章数、单章目标字数与节奏偏好 */
-export interface OutlineDraftOptions {
-    volumeCount: number
-    chaptersPerVolume: number
-    chapterWordGoal: number
-    pacing: 'fast' | 'steady' | 'slow'
-    /** 结构模板名，决定各卷的阶段命名 */
-    structure: string
-}
-
-/** 结构模板到卷阶段名的映射：模板只影响命名，不改变卷数与章数的换算 */
-const STAGE_NAMES: Readonly<Record<string, readonly string[]>> = {
-    三幕式: ['建置', '对抗', '解决', '尾声'],
-    起承转合: ['起', '承', '转', '合'],
-    黄金三章: ['开局', '升级', '决战', '余波'],
-    不使用模板: ['一', '二', '三', '四'],
-}
-
-/** 节奏到章内阶段的映射：四段循环，保证每一章都有明确落点 */
-const PACING_PHASES: Readonly<Record<OutlineDraftOptions['pacing'], readonly string[]>> = {
-    fast: ['开局钩子', '冲突升级', '强敌压境', '阶段高潮'],
-    steady: ['日常切入', '线索浮现', '正面交锋', '阶段收束'],
-    slow: ['群像登场', '暗线铺开', '关系裂变', '阶段回望'],
-}
-
-/** 节奏到章末钩子与张力的默认分布：快节奏多反转、慢热多情绪 */
-const PACING_HOOKS: Readonly<Record<OutlineDraftOptions['pacing'], readonly HookKind[]>> = {
-    fast: ['suspense', 'twist', 'twist', 'emotion'],
-    steady: ['suspense', 'suspense', 'twist', 'emotion'],
-    slow: ['emotion', 'suspense', 'twist', 'emotion'],
-}
-
-/** 节奏到基础张力：位于 1-5 档的起始值 */
-const PACING_TENSION: Readonly<Record<OutlineDraftOptions['pacing'], number>> = {
-    fast: 3,
-    steady: 2,
-    slow: 2,
-}
-
-/** 节奏到章级节奏类型：四段循环，快节奏多在紧张与爽点之间切换，慢热多铺垫与喘息 */
-const PACING_KINDS: Readonly<Record<OutlineDraftOptions['pacing'], readonly PacingKind[]>> = {
-    fast: ['tension', 'payoff', 'tension', 'payoff'],
-    steady: ['setup', 'tension', 'payoff', 'breath'],
-    slow: ['setup', 'breath', 'setup', 'sorrow'],
-}
-
-/**
- * 按结构模板展开一份卷纲草案：只做结构推导，不生成具体情节文本。
- * 卷的阶段名、每卷目标与章内阶段由模板与节奏决定，梗概保留为可编辑的占位描述，
- * 因此草案可以直接写入大纲.md，也可以交给 AI 继续细化。
- */
-export function buildOutlineDraft(
-    setting: ProjectSetting,
-    characters: readonly CharacterCard[],
-    options: OutlineDraftOptions,
-): OutlineVolume[] {
-    const stages = STAGE_NAMES[options.structure] ?? STAGE_NAMES['起承转合'] ?? ['一', '二', '三', '四']
-    const phases = PACING_PHASES[options.pacing]
-    const hooks = PACING_HOOKS[options.pacing]
-    const pacingKinds = PACING_KINDS[options.pacing]
-    const baseTension = PACING_TENSION[options.pacing]
-    const protagonist = characters.find((character) => character.role === 'protagonist')
-    const antagonist = characters.find((character) => character.role === 'antagonist')
-    const heroName = protagonist?.name ?? '主角'
-    const shortLogline = setting.logline.length > 0 ? setting.logline.slice(0, 24) : '围绕核心冲突推进'
-
-    return Array.from({ length: options.volumeCount }, (_, volumeIndex) => {
-        const stage = stages[volumeIndex] ?? `第${volumeIndex + 1}阶段`
-        const chapters: OutlineChapter[] = Array.from({ length: options.chaptersPerVolume }, (_, chapterIndex) => {
-            const order = chapterIndex + 1
-            const phase = phases[chapterIndex % phases.length] ?? '推进'
-            const hook = hooks[chapterIndex % hooks.length] ?? 'suspense'
-            const pacing = pacingKinds[chapterIndex % pacingKinds.length] ?? 'setup'
-            const tension = Math.min(5, baseTension + (chapterIndex % 4 === 3 ? 1 : 0))
-            const isClimax = chapterIndex % 4 === 3
-
-            return {
-                id: createId('ch'),
-                order,
-                title: `第${order}章 ${phase}`,
-                // 模板只给出章序与占位梗概，阶段留给作者或按卷生成时补
-                stage: '',
-                summary: `${heroName}在「${stage}」阶段推进：${shortLogline}。本章需要给出一个明确结果，并留下一个未解决的疑问。`,
-                actualSummary: '',
-                status: 'planned',
-                beats: [
-                    createBeat(`${heroName}因「${phase}」被卷入新的阻碍`),
-                    createBeat(
-                        isClimax ? `阶段高潮：与${antagonist?.name ?? '对手'}正面相撞` : '推进过程中暴露一条新线索',
-                    ),
-                ],
-                scenes: [],
-                pov: protagonist?.name ?? '',
-                goal: `${phase}：把本阶段目标推进一格`,
-                obstacle: `与${antagonist?.name ?? '对手'}的利益冲突`,
-                turn: isClimax ? '阶段高潮迫使主角做出选择' : '推进过程中暴露一条新线索',
-                result: '',
-                emotion: '',
-                characterIds: [protagonist?.id, isClimax ? antagonist?.id : undefined].filter(
-                    (id): id is string => typeof id === 'string',
-                ),
-                location: '',
-                wordGoal: options.chapterWordGoal,
-                wordCount: 0,
-                hook,
-                pacing,
-                tension,
-                granularity: 'medium',
-            }
-        })
-
-        return {
-            id: createId('vol'),
-            name: `第${volumeIndex + 1}卷 ${stage}`,
-            expectedChapters: chapters.length,
-            // 结构推导只给可编辑的占位描述，不伪造具体情节：真正的核心事件由写作者或导入归纳填入
-            coreEvent: `${stage}阶段：${shortLogline}；${
-                setting.conflict.length > 0 ? setting.conflict : '围绕核心冲突升级对抗'
-            }`,
-            mainPlot: phases.map((phase) => `${phase}：${shortLogline}`),
-            turningPoints: [`${stage}阶段高潮：与${antagonist?.name ?? '对手'}正面相撞`],
-            result: '',
-            granularity: 'medium',
-            chapters,
-        }
-    })
 }
 
 /** 卷章索引：把「卷序 + 章序」映射到全书章序，供线索的跨章判断使用 */
@@ -1126,70 +1050,4 @@ export function findClueWarnings(plan: OutlinePlan, volumes: readonly OutlineVol
         }
     }
     return warnings
-}
-
-/** 最小可用模板的产出：大纲各模块的计划 + 一卷一章的骨架 */
-export interface OutlineTemplateDraft {
-    plan: OutlinePlan
-    volume: OutlineVolume
-}
-
-/**
- * 最小可用模板：三幕、卷纲与章纲卡各铺一条占位内容。
- * 关键约束：模板只提供可编辑的填空题，不伪造具体情节；POV 取自人物卡的主角，没有主角时用占位称呼；
- * 故事核（一句话梗概、主题、主角弧光等）只由作品设定维护，人物信息只由人物卡维护，模板都不往里写。
- */
-export function buildMinimalTemplate(
-    setting: ProjectSetting,
-    characters: readonly CharacterCard[],
-    chapterWordGoal: number,
-): OutlineTemplateDraft {
-    const protagonist = characters.find((character) => character.role === 'protagonist')
-    const heroName = protagonist?.name ?? '主角'
-    const volume = createVolume(1, chapterWordGoal)
-    volume.name = '第1卷 开端'
-    volume.expectedChapters = 1
-    volume.coreEvent =
-        setting.conflict.length > 0
-            ? `本卷核心事件：主角要得到什么，与「${setting.conflict}」正面相撞`
-            : '本卷核心事件：主角要得到什么，谁 / 什么在阻碍，代价是什么'
-    volume.mainPlot = ['因为 A，所以 B，但 C 导致 D。']
-    volume.turningPoints = ['关键转折：意料之外但合理的变化']
-    volume.result = '卷末结果：目标达成 / 失败 / 付出的代价，以及留下的新问题'
-    volume.granularity = 'medium'
-    const firstChapter = volume.chapters[0] ?? createChapter(1, chapterWordGoal)
-    firstChapter.title = '第1章 开端'
-    firstChapter.pov = heroName
-    firstChapter.goal = '本章目标：他此刻想得到什么'
-    firstChapter.obstacle = '阻碍：谁 / 什么阻止他'
-    firstChapter.turn = '转折：意料之外但合理的变化'
-    firstChapter.result = '结果：达成 / 失败 / 代价'
-    firstChapter.emotion = '情绪：紧张 / 爽 / 疑 / 悲'
-    firstChapter.summary = '本章梗概：一句话说清这一章发生了什么'
-    firstChapter.granularity = 'fine'
-    volume.chapters = [firstChapter]
-
-    return {
-        plan: {
-            acts: [
-                { id: createId('act'), name: '开端', position: '打破平衡', event: '激励事件把主角推离日常' },
-                { id: createId('act'), name: '对抗', position: '升级对抗', event: '中点反转，代价加码' },
-                { id: createId('act'), name: '高潮', position: '迫使选择', event: '主角做出不可逆的选择' },
-            ],
-            clues: [],
-        },
-        volume,
-    }
-}
-
-/**
- * 把最小模板合并进现有计划：只填空字段与空列表，绝不覆盖作者已写内容。
- * 关键约束：线索不在模板范围内，一律保留现稿；
- * 连续点两次「套用模板」结果不变，满足幂等。
- */
-export function mergeTemplatePlan(current: OutlinePlan, template: OutlinePlan): OutlinePlan {
-    return {
-        acts: current.acts.length > 0 ? current.acts : template.acts,
-        clues: current.clues,
-    }
 }

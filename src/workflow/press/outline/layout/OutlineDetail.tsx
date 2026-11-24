@@ -11,7 +11,7 @@
  * 场景没有目标、阻碍与变化时只提示不阻断——是否删掉这场戏由作者判断。
  */
 import { cn } from 'cn'
-import { ArrowLeft, ChevronDown, ClipboardCheck, PenLine, Plus, RefreshCw, Trash2, Wand2 } from 'lucide-react'
+import { ArrowLeft, ChevronDown, ClipboardCheck, PenLine, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Alert, AlertDescription } from '@components/ui/alert'
 import { Card, CardContent } from '@components/ui/card'
 import {
@@ -28,8 +28,6 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Slider } from '@components/ui/slider'
 import { Textarea } from '@components/ui/textarea'
 import { Button } from '@webview/components/Button'
-import { OutlineBeatList } from './OutlineBeatList'
-import { OutlineSection } from './OutlineSection'
 import type {
     CharacterCard,
     OutlineChapter,
@@ -49,6 +47,8 @@ import {
     TENSION_LABELS,
 } from '../../constants'
 import { createBeat, createScene, formatWordCount } from '../../utils'
+import { OutlineBeatList } from '../block/OutlineBeatList'
+import { OutlineSection } from '../block/OutlineSection'
 
 /** 可切换的四种状态，顺序与徽标元数据一致 */
 const STATUS_OPTIONS: readonly PlanStatus[] = ['planned', 'written', 'revise', 'discarded']
@@ -187,7 +187,6 @@ interface OutlineDetailProps {
     onChange: (patch: Partial<OutlineChapter>) => void
     onBack: () => void
     onOpenChat: () => void
-    onOpenWizard: () => void
     /** 打开单章聚焦的「写前查纲」 */
     onOpenFocus: () => void
     /** 打开「写后回填」差异对比 */
@@ -208,7 +207,6 @@ export function OutlineDetail({
     onChange,
     onBack,
     onOpenChat,
-    onOpenWizard,
     onOpenFocus,
     onOpenBackfill,
     viewGranularity,
@@ -374,7 +372,7 @@ export function OutlineDetail({
                         <Input
                             id="outline-chapter-title"
                             value={chapter.title}
-                            placeholder="第N章 章名"
+                            placeholder="章名"
                             className="h-8 border-transparent bg-transparent px-0 font-heading font-semibold shadow-none focus-visible:border-input focus-visible:px-2"
                             onChange={(event) => onChange({ title: event.target.value })}
                         />
@@ -674,10 +672,6 @@ export function OutlineDetail({
                 <Button variant="outline" tooltip="正文写完后，把实际结果回填到章纲与线索表" onClick={onOpenBackfill}>
                     <RefreshCw />
                     写后回填
-                </Button>
-                <Button variant="ghost" onClick={onOpenWizard}>
-                    <Wand2 />
-                    重写本章纲
                 </Button>
                 <span className="flex-1" />
                 <Button onClick={onOpenChat}>

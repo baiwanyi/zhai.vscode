@@ -5,7 +5,7 @@
  * 关键约束：顺序恒为规则、参考图、上下文，与输入区展示顺序一致；
  * 规则芯片 id 以 `ai-rule-` 前缀加名称、参考图以 `ai-ref-` 前缀加路径，不得与上下文引用 id 复用。
  */
-import { FileText, Library, MessageSquare, PencilRuler, TextSelect } from 'lucide-react'
+import { FileText, Layers, Library, MessageSquare, PencilRuler, TextSelect } from 'lucide-react'
 import type { AiContextRef } from '@shared/types/aiChat'
 import type { ImageReferenceItem } from '@shared/types/imageReference'
 import { toZhaiDisplayPath } from '@shared/utils/zhaiPath'
@@ -27,7 +27,7 @@ export interface BuildComposerChipsInput {
     onRemoveReference: (path: string) => void
 }
 
-/** 上下文芯片图标：笔记本用书库图标，行范围引用用选区图标，微博用对话图标，其余为文档图标 */
+/** 上下文芯片图标：笔记本用书库、行范围用选区、微信用对话、卷纲用层叠图标，其余为文档图标 */
 function buildContextIcon(kind: AiContextRef['kind']): JSX.Element {
     if (kind === 'notebook') {
         return <Library className="size-3 shrink-0 text-muted-foreground" />
@@ -38,6 +38,10 @@ function buildContextIcon(kind: AiContextRef['kind']): JSX.Element {
     if (kind === 'weibo') {
         // 微博引用没有文件路径：图标区分来源，避免被误认成某篇笔记
         return <MessageSquare className="size-3 shrink-0 text-muted-foreground" />
+    }
+    if (kind === 'volumeOutline') {
+        // 卷纲快照同样没有文件路径：用层叠图标区分来源，不伪装成某篇文档
+        return <Layers className="size-3 shrink-0 text-muted-foreground" />
     }
     return <FileText className="size-3 shrink-0 text-muted-foreground" />
 }

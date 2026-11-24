@@ -606,6 +606,60 @@ export interface VolumeChaptersGenerateRequest {
     characters: string[]
 }
 
+/**
+ * 按作品设定生成卷纲的请求：作品设定快照 + 人物名单 + 现有卷名。
+ * 关键约束：volumeCount 为 0 时由模型按故事规模自行建议卷数；
+ * 生成结果只覆盖卷纲字段，不触碰任何已写章节。
+ */
+export interface VolumeOutlinesGenerateRequest {
+    /** 期望卷数：0 表示由模型自行建议 */
+    volumeCount: number
+    /** 已有卷名：避免生成重复的卷 */
+    existingNames: string[]
+    setting: SettingSnapshot
+    characters: string[]
+}
+
+/** 生成的单卷卷纲草案：卷名、预计章节数与卷纲五项 */
+export interface VolumeOutlineDraft {
+    /** 卷名：含「第N卷」前缀 */
+    name: string
+    /** 预计章节数：0 表示未定 */
+    expectedChapters: number
+    coreEvent: string
+    mainPlot: string[]
+    turningPoints: string[]
+    result: string
+}
+
+/** 生成卷纲的结果：volumes 为空表示模型没给出可用条目，由前端提示重试 */
+export interface VolumeOutlinesGenerateResult {
+    volumes: VolumeOutlineDraft[]
+}
+
+/** 卷纲单字段：只有这两项由 AI 单独补写，其余字段（名、章数、情节、转折）由作者自己定 */
+export type VolumeFieldKey = 'coreEvent' | 'result'
+
+/**
+ * 卷纲单字段生成请求：把这一卷的现状整段交给模型，只产出请求的那一项。
+ * 关键约束：字段只能是 coreEvent / result；其余字段作为上下文，模型不得改写。
+ */
+export interface VolumeFieldGenerateRequest {
+    field: VolumeFieldKey
+    volumeName: string
+    coreEvent: string
+    mainPlot: string[]
+    turningPoints: string[]
+    result: string
+    setting: SettingSnapshot
+    characters: string[]
+}
+
+/** 卷纲单字段生成结果：纯文本，直接写回输入框 */
+export interface VolumeFieldGenerateResult {
+    content: string
+}
+
 /** 生成的单章草案：阶段、标题、计划梗概与章节细纲 */
 export interface VolumeChapterDraft {
     /** 阶段名：如「第一阶段：坠楼与觉醒」，空串表示未分组 */
@@ -963,13 +1017,13 @@ export interface PressExtractedChapter {
     characters: string[]
 }
 
-/** 提取出的卷纲草案：chapters 为空数组表示该卷在素材里没有章节 */
+/** 提取出的卷纲草案：字段与大纲卷纲一一对应，chapters 为空数组表示该卷在素材里没有章节 */
 export interface PressExtractedVolume {
     name: string
-    goal: string
-    conflict: string
-    /** 情节脉络：本卷主线推进的连贯描述，素材未生成卷纲时为空串 */
-    plotline: string
+    /** 核心事件：素材里的卷目标与卷冲突合并成一段 */
+    coreEvent: string
+    /** 主要情节：素材里的情节脉络按分号拆成条目 */
+    mainPlot: string[]
     /** 关键转折：本卷的转折点，逐条列出 */
     turningPoints: string[]
     chapters: PressExtractedChapter[]
@@ -1097,12 +1151,18 @@ export interface PressApplyBlock {
 /**
  * 大纲段落键：与前端 OutlineSectionKey 一一对应，也是宿主 writer 的落点表索引。
  * 关键约束：键名一变，回写就会落到不存在的段落上，前端序列化与宿主落点表必须同步修改；
+ * 卷纲与章节内容分开成两段——卷纲改一次只重写卷纲，章节改一次只重写章节；
  * 「设定纲」「节奏情绪」「时间线」不再回写——设定归作品设定、节奏类型进章纲、时间线段落原地保留。
  */
-export type PressOutlineSectionKey = 'structure' | 'clues' | 'volumes'
+export type PressOutlineSectionKey = 'structure' | 'volumeOutlines' | 'chapters' | 'clues'
 
 /** 大纲段落白名单：校验与遍历共用同一份，不接受任意字符串 */
-export const PRESS_OUTLINE_SECTION_KEYS: readonly PressOutlineSectionKey[] = ['structure', 'clues', 'volumes']
+export const PRESS_OUTLINE_SECTION_KEYS: readonly PressOutlineSectionKey[] = [
+    'structure',
+    'volumeOutlines',
+    'chapters',
+    'clues',
+]
 
 /**
  * press/apply 请求：把工作台草稿对应的段落回写进作品文档。
@@ -1129,8 +1189,6 @@ export interface PressApplyRequest {
     items?: PressApplyBlock[]
     /** 角色块：name 用作匹配键，text 是含「## 名称」标题行的完整块（块内三级分组、四级字段） */
     characters?: PressApplyBlock[]
-    /** 大纲.md 中「分卷规划」段落的正文（与 outlineSections.volumes 等价，保留给旧调用方） */
-    outline?: string
     /** 大纲.md 的功能模块段落：键为白名单，值为该段正文，未带的段落保持原样 */
     outlineSections?: Partial<Record<PressOutlineSectionKey, string>>
     /** 需从 角色设定.md 移除的角色块：按块标题名匹配（一级/二级都认），与 characters 同时生效 */
@@ -1255,7 +1313,6 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
         places?: unknown
         items?: unknown
         characters?: unknown
-        outline?: unknown
         outlineSections?: unknown
         deletedCharacterNames?: unknown
         deletedFactionNames?: unknown
@@ -1273,7 +1330,6 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
         candidate.places !== undefined ||
         candidate.items !== undefined ||
         candidate.characters !== undefined ||
-        candidate.outline !== undefined ||
         candidate.outlineSections !== undefined ||
         candidate.deletedCharacterNames !== undefined ||
         candidate.deletedFactionNames !== undefined ||
@@ -1291,7 +1347,6 @@ export function isPressApplyRequest(payload: unknown): payload is PressApplyRequ
         !isApplySectionText(candidate.basic) ||
         !isApplySectionText(candidate.world) ||
         !isApplySectionText(candidate.power) ||
-        !isApplySectionText(candidate.outline) ||
         !isApplyOutlineSections(candidate.outlineSections)
     ) {
         return false

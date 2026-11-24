@@ -5,22 +5,31 @@
  * 卷纲详情由 OutlineVolumeDetail 承担，按卷生成章纲的预览与写入由 OutlineVolumeChaptersDialog 承担；
  * 结构与线索两个功能模块由 OutlinePlanPanels / OutlineTrackPanels 承担，
  * 写前查纲与写后回填分别由 OutlineFocusView 与 OutlineBackfillDialog 承担；
- * 页头动作菜单由 OutlineActionMenu 承担；故事核（梗概、冲突、主题、弧光）不在本页维护，统一由作品设定承载。
+ * 页头 AppAction 里是「打开文档」与唯一的新增按钮（动作随当前模块标签变化），
+ * 生成卷纲与素材提取由 OutlineActionMenu 的「更多」下拉承担；
+ * 故事核（梗概、冲突、主题、弧光）不在本页维护，统一由作品设定承载。
  * 关键约束：模块与颗粒度只切视图、不写盘；每个面板的编辑只落盘自己那一段（onUpdatePlan 的 section 参数）；
- * 回填与模板会同时改多段，必须走 onApplyOutlineChange 立即写盘；
+ * 卷纲添加到 AI 对话走宿主内联上下文（ai/context/addInline），Badge 由宿主维护，前端不拼装；
+ * 回填会同时改多段，必须走 onApplyOutlineChange 立即写盘；清空章纲须先确认，
+ * 且只移除该卷的章节条目、保留卷纲，不碰 Chapters 目录里的章节文件；
  * 页头的「卷」下拉兼作导航：选中某卷即进入卷纲视图并清空章节选中，选「全部卷」回到章节列表；
  * 宽容器用容器查询展开三栏，窄容器（VSCode 侧栏常态）在卷章模块退化为「树 → 详情」下钻，
- * 选中章节或进入卷纲视图后隐藏树而不是压缩两栏；新增卷章只长大纲草稿，不建章节文件。
+ * 选中章节或进入卷纲视图后隐藏树而不是压缩两栏；新增卷章只长大纲草稿，不建章节文件——
+ * 新增卷落在卷纲页的新卡片上（不跳到章纲），新增章节才切到章纲并选中该章。
  */
 import { cn } from 'cn'
-import { FileText, ListTree } from 'lucide-react'
+import { FilePlus, FileText, Layers, Lightbulb, ListPlus, ListTree } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Progress } from '@components/ui/progress'
-import type { PressExtractedVolume } from '@shared/types/press'
+import type { AiContextAddInlineResult } from '@shared/types/aiChat'
+import type { PressExtractedVolume, VolumeOutlineDraft } from '@shared/types/press'
+import { request } from '@shared/utils/bridge'
+import { toastError } from '@shared/utils/error'
 import { AppAction, AppContent, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
+import { ConfirmDialog } from '@webview/components/ConfirmDialog'
 import { StateEmpty } from '@webview/components/StateEmpty'
 import { useOutlineExtract } from './hooks/useOutlineExtract'
 import { OutlineActionMenu } from './layout/OutlineActionMenu'
@@ -34,7 +43,7 @@ import { CluePanel } from './layout/OutlineTrackPanels'
 import { OutlineTree } from './layout/OutlineTree'
 import { OutlineVolumeCards } from './layout/OutlineVolumeCards'
 import { OutlineVolumeChaptersDialog } from './layout/OutlineVolumeChaptersDialog'
-import { OutlineWizard } from './layout/OutlineWizard'
+import { OutlineVolumeOutlinesDialog } from './layout/OutlineVolumeOutlinesDialog'
 import type { CreatedOutlineNode } from '../hooks/usePressMutations'
 import type {
     OutlineChapter,
@@ -48,10 +57,9 @@ import type {
     OutlineWorkspace,
 } from '../types'
 import type { ChapterSeed, VolumeChapterWriteMode } from '../utils'
-import type { JSX } from 'react'
+import type { JSX, ReactNode } from 'react'
 import { useOpenProjectDoc } from '../hooks/useOpenProjectDoc'
 import {
-    buildMinimalTemplate,
     chapterTitleLabel,
     createAct,
     createChapterRefEntries,
@@ -59,15 +67,15 @@ import {
     createClue,
     createVolumeOptions,
     findClueWarnings,
-    mergeTemplatePlan,
+    formatVolumeOutlineText,
     summarizeWorkspace,
+    volumeTitleLabel,
 } from '../utils'
 
 interface PressOutlinePageProps {
     workspace: OutlineWorkspace
     /** 当前作品目录：提取大纲读取该作品的 Materials 素材，回填读取章节事实 */
     dirPath: string
-    defaultChapterWordGoal: number
     onUpdateChapter: (chapterId: string, patch: Partial<OutlineChapter>) => void
     /** 更新卷纲字段：卷名、核心事件、情节脉络与转折在卷纲视图里编辑 */
     onUpdateVolume: (volumeId: string, patch: Partial<OutlineVolume>) => void
@@ -75,13 +83,14 @@ interface PressOutlinePageProps {
     onApplyVolumeChapters: (volumeId: string, seeds: readonly ChapterSeed[], mode: VolumeChapterWriteMode) => number
     /** 更新功能模块中的一段：只写该段对应的段落 */
     onUpdatePlan: (section: OutlineSectionKey, patch: Partial<OutlinePlan>) => void
-    /** 大纲整批更新并立即写盘：回填与模板使用 */
+    /** 大纲整批更新并立即写盘：写后回填一次改卷章与线索时使用 */
     onApplyOutlineChange: (next: { volumes?: OutlineVolume[]; plan?: OutlinePlan }) => void
-    /** 新增卷：只增大纲草稿，返回落点供页面选中 */
+    /** 新增卷：只增大纲草稿，返回落点；页面只用它判断是否成功，落点是卷纲卡片而非章纲 */
     onCreateVolume: () => CreatedOutlineNode | null
     /** 新增章节：落到指定卷（缺省最后一卷），返回落点供页面选中 */
     onCreateChapter: (volumeId?: string) => CreatedOutlineNode | null
-    onApplyOutline: (volumes: OutlineVolume[]) => void
+    /** 写入 AI 生成的卷纲：按卷序覆盖卷纲字段，章节保留，返回写入卷数 */
+    onApplyVolumeOutlines: (drafts: readonly VolumeOutlineDraft[]) => number
     /** 用素材重建大纲：mode 为 all 时覆盖整棵树，orders 时只刷新所选章，返回实际处理的章数 */
     onExtractOutline: (drafts: PressExtractedVolume[], target: OutlineExtractTarget) => number
     onOpenChat: () => void
@@ -90,7 +99,6 @@ interface PressOutlinePageProps {
 export function PressOutlinePage({
     workspace,
     dirPath,
-    defaultChapterWordGoal,
     onUpdateChapter,
     onUpdateVolume,
     onApplyVolumeChapters,
@@ -98,7 +106,7 @@ export function PressOutlinePage({
     onApplyOutlineChange,
     onCreateVolume,
     onCreateChapter,
-    onApplyOutline,
+    onApplyVolumeOutlines,
     onExtractOutline,
     onOpenChat,
 }: PressOutlinePageProps): JSX.Element {
@@ -110,12 +118,18 @@ export function PressOutlinePage({
     const [volumeFilter, setVolumeFilter] = useState('all')
     /** 标题搜索词：与卷筛选叠加，只收窄左侧列表 */
     const [query, setQuery] = useState('')
-    const [isWizardOpen, setIsWizardOpen] = useState(false)
     const [isFocusOpen, setIsFocusOpen] = useState(false)
     const [isBackfillOpen, setIsBackfillOpen] = useState(false)
     const [isGenerateOpen, setIsGenerateOpen] = useState(false)
+    /** 生成卷纲的预览对话框与覆盖确认框：两者互斥，确认后才打开预览 */
+    const [isOutlinesOpen, setIsOutlinesOpen] = useState(false)
+    const [isOutlinesConfirmOpen, setIsOutlinesConfirmOpen] = useState(false)
     /** 正在生成章纲的卷：由卷纲卡片的「生成章纲」指定，与页头卷筛选相互独立 */
     const [generatingVolumeId, setGeneratingVolumeId] = useState<string | null>(null)
+    /** 待删除的卷：非空时弹出确认框，确认后才整体落盘 */
+    const [deletingVolumeId, setDeletingVolumeId] = useState<string | null>(null)
+    /** 待清空章纲的卷：非空时弹出确认框，确认后移除该卷全部章节并落盘 */
+    const [clearingVolumeId, setClearingVolumeId] = useState<string | null>(null)
     const { isExtracting, extract } = useOutlineExtract(dirPath)
     const { openDoc } = useOpenProjectDoc(dirPath)
 
@@ -173,14 +187,6 @@ export function PressOutlinePage({
         setModule('chapter')
     }
 
-    /** 卷纲卡片点击：进入章纲页并按该卷筛选，同时选中该卷首章便于直接编辑 */
-    const handleOpenVolumeChapters = (volume: OutlineVolume): void => {
-        setModule('chapter')
-        setVolumeFilter(volume.id)
-        setSelectedChapterId(volume.chapters[0]?.id ?? null)
-        setIsFocusOpen(false)
-    }
-
     /** 卷纲卡片上的「生成章纲」：只负责打开对话框，目标卷与页头筛选互不影响 */
     const handleGenerateVolumeChapters = (volume: OutlineVolume): void => {
         setGeneratingVolumeId(volume.id)
@@ -203,9 +209,16 @@ export function PressOutlinePage({
         }
     }
 
-    /** 新增卷：卷与首条空章纲由数据层生成，选中其首章 */
+    /**
+     * 新增卷：落点是卷纲页的新卡片，不跟随首章跳到章纲；切到卷纲模块并清掉搜索词
+     * （搜索只作用于章纲树），新卡在当前滚动区末尾即可见，选中项保持不动以便回到章纲时续在原章。
+     */
     const handleCreateVolume = (): void => {
-        applyCreatedNode(onCreateVolume())
+        if (onCreateVolume() === null) {
+            return
+        }
+        setModule('volume')
+        setQuery('')
     }
 
     /**
@@ -220,31 +233,127 @@ export function PressOutlinePage({
         applyCreatedNode(onCreateChapter(selectedChapterId === null ? undefined : selectedEntry?.volume.id))
     }
 
-    /** 页头第二行的新增入口：按当前模块分派到对应数据操作，模块页面内不再各放一个按钮 */
-    const handleAddByModule = (): void => {
-        if (module === 'volume') {
-            handleCreateVolume()
-            return
-        }
-        if (module === 'chapter') {
-            handleCreateChapter()
-            return
-        }
-        if (module === 'structure') {
-            onUpdatePlan('structure', { acts: [...plan.acts, createAct()] })
-            return
-        }
+    /** 页头新增按钮的「添加阶段」：只在结构段末尾追加一条空阶段 */
+    const handleCreateAct = (): void => {
+        onUpdatePlan('structure', { acts: [...plan.acts, createAct()] })
+    }
+
+    /** 页头新增按钮的「添加线索」：只在线索段末尾追加一条空线索 */
+    const handleCreateClue = (): void => {
         onUpdatePlan('clues', { clues: [...plan.clues, createClue()] })
     }
 
-    /** 套用最小模板：只填空字段，不覆盖已写内容；作品还没有卷时一并铺第一卷与首章 */
-    const handleApplyTemplate = (): void => {
-        const draft = buildMinimalTemplate(workspace.setting, workspace.characters, defaultChapterWordGoal)
-        const nextPlan = mergeTemplatePlan(plan, draft.plan)
-        const nextVolumes = workspace.volumes.length === 0 ? [draft.volume] : workspace.volumes
-        onApplyOutlineChange({ volumes: nextVolumes, plan: nextPlan })
-        setModule('structure')
-        toast.success('已套用最小模板：填空题可直接改写')
+    /**
+     * 页头唯一的新增入口：动作、文案与图标都跟随当前模块标签——卷纲加卷、章纲加章、
+     * 结构加阶段、伏笔加线索。四项原先散在动作菜单里，合并成一个按钮后不必先开菜单再选类型。
+     */
+    const addActions: Record<OutlineModuleKey, { label: string; icon: ReactNode; onClick: () => void }> = {
+        volume: { label: '新增卷', icon: <Layers />, onClick: handleCreateVolume },
+        chapter: { label: '添加章节', icon: <FilePlus />, onClick: handleCreateChapter },
+        structure: { label: '添加阶段', icon: <ListPlus />, onClick: handleCreateAct },
+        clue: { label: '添加线索', icon: <Lightbulb />, onClick: handleCreateClue },
+    }
+    const addAction = addActions[module]
+
+    /** 卷纲是否已有内容：任一卷填了核心事件 / 主要情节 / 转折 / 卷末结果，就视为需要确认覆盖 */
+    const hasVolumeOutline = workspace.volumes.some(
+        (volume) =>
+            volume.coreEvent.trim().length > 0 ||
+            volume.mainPlot.length > 0 ||
+            volume.turningPoints.length > 0 ||
+            volume.result.trim().length > 0,
+    )
+
+    /** 生成卷纲入口：已有卷纲先确认覆盖，避免一键抹掉手写内容；章节不受影响 */
+    const handleGenerateVolumeOutlines = (): void => {
+        if (hasVolumeOutline) {
+            setIsOutlinesConfirmOpen(true)
+            return
+        }
+        setIsOutlinesOpen(true)
+    }
+
+    /** 卷纲卡片的删除：只打开确认框，确认后才整体落盘 */
+    const handleDeleteVolume = (volume: OutlineVolume): void => {
+        setDeletingVolumeId(volume.id)
+    }
+
+    /** 卷纲卡片的清空章纲：只打开确认框，确认后移除该卷全部章节条目 */
+    const handleClearVolumeChapters = (volume: OutlineVolume): void => {
+        setClearingVolumeId(volume.id)
+    }
+
+    /** 上移 / 下移：只调整卷顺序——卷号由位置推导，顺序变了卷号随之变化 */
+    const handleMoveVolume = (volumeId: string, direction: -1 | 1): void => {
+        const index = workspace.volumes.findIndex((volume) => volume.id === volumeId)
+        const target = index + direction
+        if (index < 0 || target < 0 || target >= workspace.volumes.length) {
+            return
+        }
+        const next = [...workspace.volumes]
+        const [moved] = next.splice(index, 1)
+        if (moved === undefined) {
+            return
+        }
+        next.splice(target, 0, moved)
+        onApplyOutlineChange({ volumes: next })
+    }
+
+    /**
+     * 添加到 AI 对话：把卷纲快照作为内联上下文交给宿主，宿主生成 Badge 引用并切到对话分区。
+     * 关键约束：上下文芯片由宿主维护，前端不本地拼装；uri 用作品目录 + 卷 id 作稳定去重键。
+     */
+    const handleAddVolumeToChat = (volume: OutlineVolume, index: number): void => {
+        const run = async (): Promise<void> => {
+            try {
+                await request<AiContextAddInlineResult>('ai/context/addInline', {
+                    label: `${workspace.setting.title.trim() || '未命名作品'}·卷纲·${volumeTitleLabel(volume.name, index)}`,
+                    text: formatVolumeOutlineText(volume, index),
+                    uri: `press-outline:${dirPath}:${volume.id}`,
+                    scope: dirPath,
+                })
+            } catch (cause) {
+                toastError(cause)
+            }
+        }
+        void run()
+    }
+
+    /** 删除确认框的目标卷与卷序：卷序用于展示「第N卷」而不是原始卷名 */
+    const deletingVolume = workspace.volumes.find((volume) => volume.id === deletingVolumeId) ?? null
+    const deletingVolumeIndex = workspace.volumes.findIndex((volume) => volume.id === deletingVolumeId)
+
+    /** 清空确认框的目标卷与卷序：文案里带上章数，确认前看清要丢掉多少章纲 */
+    const clearingVolume = workspace.volumes.find((volume) => volume.id === clearingVolumeId) ?? null
+    const clearingVolumeIndex = workspace.volumes.findIndex((volume) => volume.id === clearingVolumeId)
+
+    const handleConfirmDeleteVolume = (): void => {
+        if (deletingVolume === null) {
+            return
+        }
+        onApplyOutlineChange({
+            volumes: workspace.volumes.filter((volume) => volume.id !== deletingVolume.id),
+        })
+        setDeletingVolumeId(null)
+        // 删掉的卷里可能包含当前选中的章，清空选中让页面回落到首章
+        setSelectedChapterId(null)
+    }
+
+    /**
+     * 清空章纲：把该卷的章节条目全部移除，只保留卷纲；立即写盘，
+     * 并清掉章节选中，避免选中项指向已被移除的章。
+     */
+    const handleConfirmClearChapters = (): void => {
+        if (clearingVolume === null) {
+            return
+        }
+        onApplyOutlineChange({
+            volumes: workspace.volumes.map((volume) =>
+                volume.id === clearingVolume.id ? { ...volume, chapters: [] } : volume,
+            ),
+        })
+        setClearingVolumeId(null)
+        setSelectedChapterId(null)
     }
 
     /** 提取：target 决定整树覆盖还是刷新指定章；素材都是全量解析，范围只影响写入 */
@@ -341,7 +450,6 @@ export function PressOutlinePage({
                 onChange={(patch) => onUpdateChapter(selectedEntry.chapter.id, patch)}
                 onBack={() => setSelectedChapterId(null)}
                 onOpenChat={onOpenChat}
-                onOpenWizard={() => setIsWizardOpen(true)}
                 onOpenFocus={() => setIsFocusOpen(true)}
                 onOpenBackfill={() => setIsBackfillOpen(true)}
                 viewGranularity={granularity}
@@ -367,12 +475,16 @@ export function PressOutlinePage({
                             <FileText />
                             打开文档
                         </Button>
+                        {/* 页头只留一个新增入口：加什么由当前模块标签决定，不再开菜单选类型 */}
+                        <Button onClick={addAction.onClick}>
+                            {addAction.icon}
+                            {addAction.label}
+                        </Button>
                         <OutlineActionMenu
                             dirPath={dirPath}
                             isExtracting={isExtracting}
                             onExtract={handleExtract}
-                            onOpenWizard={() => setIsWizardOpen(true)}
-                            onApplyTemplate={handleApplyTemplate}
+                            onGenerateVolumeOutlines={handleGenerateVolumeOutlines}
                         />
                     </AppAction>
                     <AppSummary
@@ -400,73 +512,121 @@ export function PressOutlinePage({
                         }}
                         onVolumeChange={handleVolumeChange}
                         onQueryChange={setQuery}
-                        onAdd={handleAddByModule}
                     />
                 </AppHeader>
 
-                <AppContent className="flex px-0">
-                    {module === 'volume' ? (
-                        <OutlineVolumeCards
-                            volumes={workspace.volumes}
-                            onUpdate={onUpdateVolume}
-                            onOpenChapters={handleOpenVolumeChapters}
-                            onGenerateChapters={handleGenerateVolumeChapters}
-                        />
-                    ) : (
-                        <>
-                            {isChapterModule ? (
-                                <aside
-                                    className={cn(
-                                        'min-h-0 w-full overflow-y-auto px-2 py-2 @2xl:w-64 @2xl:shrink-0 @2xl:border-r @2xl:border-border',
-                                        isDrilldown && 'hidden @2xl:block',
-                                    )}
-                                >
-                                    <OutlineTree
-                                        entries={treeEntries}
-                                        selectedChapterId={selectedChapterId}
-                                        hasAnyChapter={entries.length > 0}
-                                        isListFiltered={volumeFilter !== 'all' || query.trim().length > 0}
-                                        onSelectChapter={handleSelectChapter}
-                                    />
-                                </aside>
-                            ) : null}
+                {/*
+                 * 章纲页是三栏并列，必须由 AppContent 自身当 flex 容器（不能用 isScrollable：
+                 * 它的内容壳是 flex-col，会把三栏竖排）；其余三页是单块内容，交给 isScrollable 的
+                 * ScrollArea 统一滚动，避免各面板再各自挂 overflow 形成嵌套滚动。
+                 */}
+                {isChapterModule ? (
+                    <AppContent className="flex">
+                        <aside
+                            className={cn(
+                                'min-h-0 w-full overflow-y-auto px-2 py-2 @2xl:w-64 @2xl:shrink-0 @2xl:border-r @2xl:border-border',
+                                isDrilldown && 'hidden @2xl:block',
+                            )}
+                        >
+                            <OutlineTree
+                                entries={treeEntries}
+                                selectedChapterId={selectedChapterId}
+                                hasAnyChapter={entries.length > 0}
+                                isListFiltered={volumeFilter !== 'all' || query.trim().length > 0}
+                                onSelectChapter={handleSelectChapter}
+                            />
+                        </aside>
 
-                            <section
-                                className={cn(
-                                    'min-h-0 w-full flex-1 overflow-hidden',
-                                    isChapterModule && !isDrilldown && 'hidden @2xl:block',
-                                )}
-                            >
-                                {renderModule()}
-                            </section>
+                        <section
+                            className={cn('min-h-0 w-full flex-1 overflow-hidden', !isDrilldown && 'hidden @2xl:block')}
+                        >
+                            {renderModule()}
+                        </section>
 
-                            {isChapterModule && selectedEntry !== null && !isFocusOpen ? (
-                                <aside className="hidden min-h-0 w-72 shrink-0 @4xl:flex">
-                                    <OutlineAiPanel
-                                        setting={workspace.setting}
-                                        volume={selectedEntry.volume}
-                                        chapter={selectedEntry.chapter}
-                                        characters={workspace.characters}
-                                        onOpenChat={onOpenChat}
-                                        onOpenWizard={() => setIsWizardOpen(true)}
-                                    />
-                                </aside>
-                            ) : null}
-                        </>
-                    )}
-                </AppContent>
+                        {selectedEntry !== null && !isFocusOpen ? (
+                            <aside className="hidden min-h-0 w-72 shrink-0 @4xl:flex">
+                                <OutlineAiPanel
+                                    setting={workspace.setting}
+                                    volume={selectedEntry.volume}
+                                    chapter={selectedEntry.chapter}
+                                    characters={workspace.characters}
+                                    onOpenChat={onOpenChat}
+                                />
+                            </aside>
+                        ) : null}
+                    </AppContent>
+                ) : (
+                    <AppContent isScrollable>
+                        {module === 'volume' ? (
+                            <OutlineVolumeCards
+                                volumes={workspace.volumes}
+                                setting={workspace.setting}
+                                characters={workspace.characters}
+                                onUpdate={onUpdateVolume}
+                                onMoveUp={(volume) => handleMoveVolume(volume.id, -1)}
+                                onMoveDown={(volume) => handleMoveVolume(volume.id, 1)}
+                                onGenerateChapters={handleGenerateVolumeChapters}
+                                onClearChapters={handleClearVolumeChapters}
+                                onAddToChat={handleAddVolumeToChat}
+                                onDelete={handleDeleteVolume}
+                            />
+                        ) : (
+                            renderModule()
+                        )}
+                    </AppContent>
+                )}
             </AppPage>
 
-            {/* key 绑定打开状态：每次重新打开都重建向导，草案与步骤不会从上一次带过来 */}
-            <OutlineWizard
-                key={isWizardOpen ? 'wizard-open' : 'wizard-closed'}
-                isOpen={isWizardOpen}
-                onOpenChange={setIsWizardOpen}
+            <ConfirmDialog
+                open={deletingVolume !== null}
+                title="删除这一卷？"
+                description={`「${volumeTitleLabel(deletingVolume?.name ?? '', deletingVolumeIndex < 0 ? 0 : deletingVolumeIndex)}」的卷纲与章节会从大纲中删除；Chapters 目录里的章节文件不会被删除。`}
+                confirmLabel="删除"
+                isDestructive
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) {
+                        setDeletingVolumeId(null)
+                    }
+                }}
+                onConfirm={handleConfirmDeleteVolume}
+            />
+
+            <ConfirmDialog
+                open={clearingVolume !== null}
+                title="清空这一卷的章纲？"
+                description={`「${volumeTitleLabel(clearingVolume?.name ?? '', clearingVolumeIndex < 0 ? 0 : clearingVolumeIndex)}」下的 ${String(clearingVolume?.chapters.length ?? 0)} 章会从大纲中移除，仅保留这一卷的卷纲；Chapters 目录里的章节文件不会被删除。`}
+                confirmLabel="清空"
+                isDestructive
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) {
+                        setClearingVolumeId(null)
+                    }
+                }}
+                onConfirm={handleConfirmClearChapters}
+            />
+
+            <ConfirmDialog
+                open={isOutlinesConfirmOpen}
+                title="覆盖现有卷纲？"
+                description={`将按作品设定重新生成卷纲，现有 ${String(workspace.volumes.length)} 卷的卷纲会被覆盖；卷内章节、节拍与场景不受影响。`}
+                confirmLabel="继续生成"
+                isDestructive
+                onOpenChange={setIsOutlinesConfirmOpen}
+                onConfirm={() => {
+                    setIsOutlinesConfirmOpen(false)
+                    setIsOutlinesOpen(true)
+                }}
+            />
+
+            {/* key 绑定打开状态：每次重新打开都重建对话框，草案与勾选不会从上一次带过来 */}
+            <OutlineVolumeOutlinesDialog
+                key={isOutlinesOpen ? 'outlines-open' : 'outlines-closed'}
+                isOpen={isOutlinesOpen}
+                onOpenChange={setIsOutlinesOpen}
                 setting={workspace.setting}
                 characters={workspace.characters}
-                existingChapterCount={summary.chapters}
-                defaultChapterWordGoal={defaultChapterWordGoal}
-                onApply={onApplyOutline}
+                existingNames={workspace.volumes.map((volume) => volume.name)}
+                onApply={onApplyVolumeOutlines}
             />
 
             <OutlineBackfillDialog

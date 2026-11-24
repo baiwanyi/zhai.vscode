@@ -41,13 +41,14 @@ describe('appendChapterToOutline', () => {
 
         expect(isWritten).toBe(true)
         const text = readFileContent(OUTLINE_PATH) ?? ''
-        expect(text).toContain('## 第1卷 默认卷')
-        expect(text).toContain('### 章节内容')
-        expect(text).toContain('#### 第1章 未命名章节')
+        expect(text).toContain('## 卷纲')
+        expect(text).toContain('## 章节内容')
+        expect(text).toContain('### 默认卷')
+        expect(text).toContain('#### 未命名章节')
         expect(text).toContain('## 主线\n\n真人真事改编。')
         const volumes = parseOutline(text)
         expect(volumes).toHaveLength(1)
-        expect(volumes[0]?.name).toBe('第1卷 默认卷')
+        expect(volumes[0]?.name).toBe('默认卷')
         expect(volumes[0]?.chapters[0]).toMatchObject({
             order: 1,
             title: '未命名章节',
@@ -69,7 +70,7 @@ describe('appendChapterToOutline', () => {
         expect(isWritten).toBe(true)
         const text = readFileContent(OUTLINE_PATH) ?? ''
         expect(parseOutline(text)[0]?.chapters.map((chapter) => chapter.order)).toEqual([1, 2])
-        expect(parseOutline(text)[0]?.name).toBe('第1卷 默认卷')
+        expect(parseOutline(text)[0]?.name).toBe('默认卷')
 
         const isRepeated = await appendChapterToOutline(DIR_PATH, {
             volumeDir: '01-默认卷',
@@ -86,15 +87,19 @@ describe('appendChapterToOutline', () => {
             [
                 '# 大纲',
                 '',
-                '## 第1卷 天都篇',
+                '## 卷纲',
                 '',
-                '### 章节内容',
+                '### 天都篇',
                 '',
-                '#### 第1章 开局',
+                '## 章节内容',
                 '',
-                '#### 第2章 追兵',
+                '### 天都篇',
                 '',
-                '#### 第3章 收束',
+                '#### 开局',
+                '',
+                '#### 追兵',
+                '',
+                '#### 收束',
                 '',
             ].join('\n'),
         )
@@ -121,8 +126,9 @@ describe('appendChapterToOutline', () => {
 
         expect(isWritten).toBe(true)
         const text = readFileContent(OUTLINE_PATH) ?? ''
-        expect(text).toContain('## 第2卷 雪原')
-        expect(text).toContain('### 章节内容')
+        expect(text).toContain('## 卷纲')
+        expect(text).toContain('## 章节内容')
+        expect(text).toContain('### 雪原')
         expect(parseOutline(text)[0]?.chapters[0]?.order).toBe(1)
     })
 })

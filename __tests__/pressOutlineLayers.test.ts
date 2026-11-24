@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest'
 import type { CharacterCard, OutlinePlan, OutlineVolume } from '../src/workflow/press/types'
 import { parseProjectWorkspace } from '../src/workflow/press/document'
 import { serializeOutlineSections } from '../src/workflow/press/serialize'
+import { formatVolumeOutlineText, volumeTitleLabel } from '../src/workflow/press/utils'
 
 /** 设定分组文档留空：本用例只关心大纲段落 */
 const EMPTY_SETTING_SECTIONS = { world: '', power: '', faction: '', place: '', item: '' }
@@ -84,7 +85,7 @@ const PLAN: OutlinePlan = {
 const VOLUMES: OutlineVolume[] = [
     {
         id: 'vol-1',
-        name: '第1卷 断线之始',
+        name: '断线之始',
         expectedChapters: 6,
         coreEvent: '从被动谋生转向主动追查；底层手艺人 vs 地产集团',
         mainPlot: ['客人送来旧表，编号指向失踪的妹妹', '档案被抽走，线索断在旧城医院'],
@@ -142,6 +143,14 @@ function buildOutlineDocument(): string {
         '',
         sections.structure,
         '',
+        '## 卷纲',
+        '',
+        sections.volumeOutlines,
+        '',
+        '## 章节内容',
+        '',
+        sections.chapters,
+        '',
         '## 伏笔线索',
         '',
         sections.clues,
@@ -150,8 +159,6 @@ function buildOutlineDocument(): string {
         '',
         '林岚追查妹妹失踪的真相。',
         '',
-        sections.volumes,
-        '',
     ].join('\n')
 }
 
@@ -159,9 +166,13 @@ function buildOutlineDocument(): string {
 function buildStatusOutline(status: string): string {
     return `# 大纲
 
-## 第1卷 旧卷
+## 卷纲
 
-### 章节内容
+### 第1卷 旧卷
+
+## 章节内容
+
+### 第1卷 旧卷
 
 #### 第1章 旧章
 
@@ -173,7 +184,7 @@ function buildStatusOutline(status: string): string {
 `
 }
 
-describe('大纲三段往返', () => {
+describe('大纲四段落往返', () => {
     it('结构纲可原样解析', () => {
         const parsed = parseProjectWorkspace(
             { readme: '', setting: '', characters: CHARACTER_DOC, outline: buildOutlineDocument() },
@@ -214,7 +225,7 @@ describe('大纲三段往返', () => {
         expect(parsed.volumes).toHaveLength(1)
         const volume = parsed.volumes[0]
         expect(volume).toMatchObject({
-            name: '第1卷 断线之始',
+            name: '断线之始',
             expectedChapters: 6,
             coreEvent: '从被动谋生转向主动追查；底层手艺人 vs 地产集团',
             result: '线索断在旧城医院',
@@ -253,13 +264,15 @@ describe('大纲三段往返', () => {
         })
     })
 
-    it('三个段落各自成文：任一段落的内容不会出现在其它段落里', () => {
+    it('四个段落各自成文：卷纲与章节内容互不混入', () => {
         const sections = serializeOutlineSections(PLAN, VOLUMES, CHARACTERS)
-        expect(Object.keys(sections)).toHaveLength(3)
+        expect(Object.keys(sections)).toHaveLength(4)
         expect(sections.clues).toContain('旧表编号')
         expect(sections.clues).not.toContain('修表铺的客人')
-        expect(sections.volumes).toContain('修表铺的客人')
-        expect(sections.volumes).not.toContain('旧表编号')
+        expect(sections.chapters).toContain('修表铺的客人')
+        expect(sections.chapters).not.toContain('旧表编号')
+        expect(sections.volumeOutlines).toContain('核心事件')
+        expect(sections.volumeOutlines).not.toContain('修表铺的客人')
         expect(sections.structure).toContain('中点')
     })
 
@@ -347,5 +360,35 @@ describe('大纲状态迁移', () => {
         expect(parseStatus('stale')).toBe('revise')
         expect(parseStatus('需复核')).toBe('revise')
         expect(parseStatus('废弃')).toBe('discarded')
+    })
+})
+
+describe('卷纲展示', () => {
+    it('名称没有卷号时按位置补上，已带卷号的保持原样', () => {
+        expect(volumeTitleLabel('断线之始', 0)).toBe('第1卷 断线之始')
+        expect(volumeTitleLabel('', 1)).toBe('第2卷')
+        // 已带卷号（阿拉伯与中文）都不再重复追加
+        expect(volumeTitleLabel('第3卷 雪原', 0)).toBe('第3卷 雪原')
+        expect(volumeTitleLabel('第五卷 归墟', 4)).toBe('第五卷 归墟')
+    })
+
+    it('卷纲快照只保留有内容的字段，供添加到对话使用', () => {
+        const base = VOLUMES[0]
+        if (base === undefined) {
+            throw new Error('测试数据缺少第一卷')
+        }
+
+        const text = formatVolumeOutlineText(base, 0)
+        expect(text).toContain('【第1卷 断线之始】')
+        expect(text).toContain('预计章节数：6')
+        expect(text).toContain('核心事件：从被动谋生转向主动追查；底层手艺人 vs 地产集团')
+        expect(text).toContain('- 客人送来旧表，编号指向失踪的妹妹')
+        expect(text).toContain('卷末结果：线索断在旧城医院')
+
+        const empty = formatVolumeOutlineText(
+            { ...base, expectedChapters: 0, coreEvent: '', mainPlot: [], turningPoints: [], result: '' },
+            1,
+        )
+        expect(empty).toBe('【第2卷 断线之始】')
     })
 })

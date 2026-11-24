@@ -199,7 +199,7 @@ export function usePressWorkspace(projectDir: string | null): PressWorkspaceStat
         }
         if (scopes.has('outline')) {
             // 只提交本次涉及的大纲段落：独立编辑一类模块时，其余段落的文本不被重写；
-            // 结构性操作（新增卷章 / 提取 / 模板）不指定段落，整体落盘保证卷章与节奏一致
+            // 结构性操作（新增卷章 / 提取 / 生成卷纲）不指定段落，整体落盘保证卷纲与章节一致
             const sections = serializeOutlineSections(current.plan, current.volumes, current.characters)
             const keys = options.outlineSections ?? PRESS_OUTLINE_SECTION_KEYS
             const picked: Partial<Record<OutlineSectionKey, string>> = {}

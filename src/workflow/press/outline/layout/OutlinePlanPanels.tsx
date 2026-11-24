@@ -85,6 +85,7 @@ function PanelShell({
     children: ReactNode
 }): JSX.Element {
     return (
+        // 滚动交给外层 AppContent 的 ScrollArea：这里只排布内容，不再自带 overflow，避免嵌套滚动
         <div className="flex flex-col gap-3 p-3">
             <header className="flex items-start gap-2">
                 <div className="min-w-0 flex-1">

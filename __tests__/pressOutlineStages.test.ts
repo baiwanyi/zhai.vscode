@@ -40,7 +40,7 @@ describe('按卷生成章纲的草案落成', () => {
         )
 
         expect(chapters.map((item) => item.order)).toEqual([3, 4])
-        expect(chapters.map((item) => item.title)).toEqual(['第3章 坠楼之后', '第4章 哑巴不死'])
+        expect(chapters.map((item) => item.title)).toEqual(['坠楼之后', '哑巴不死'])
         expect(chapters.map((item) => item.stage)).toEqual(['第一阶段：坠楼与觉醒', '第一阶段：坠楼与觉醒'])
         expect(chapters[0]?.summary).toBe('宋雪坠楼，宋钟被诬入狱。')
     })
@@ -74,7 +74,7 @@ describe('卷内章序规整', () => {
         ])
 
         expect(renumbered.map((item) => item.order)).toEqual([1, 2])
-        expect(renumbered.map((item) => item.title)).toEqual(['第1章 余波', '第2章 收网'])
+        expect(renumbered.map((item) => item.title)).toEqual(['余波', '收网'])
         expect(renumbered.map((item) => item.stage)).toEqual(['第二阶段：清算', '第二阶段：清算'])
     })
 

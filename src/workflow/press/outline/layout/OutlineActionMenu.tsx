@@ -1,12 +1,15 @@
 /**
- * 大纲页头动作菜单：把套用模板、生成大纲与素材提取收进同一个下拉，页头只留一个入口。
+ * 大纲页头「更多」菜单：把生成卷纲与素材提取收进同一个下拉，按钮与新增、打开文档并列在 AppAction 里。
  * 复用约定：下拉取 @components/ui/dropdown-menu，提取范围由同目录的 OutlineExtractPanel 承担，
  * 外层是受控 Dialog——菜单项只负责打开它，对话框不依赖触发器，因此不会与下拉争夺焦点。
- * 关键约束：菜单项选中即收起菜单，提取项随后打开对话框，两套浮层的开合都留在本组件内，页面只接回调；
+ * 关键约束：打开文档与新增卷 / 章 / 阶段 / 线索都不在这里——它们由页面直接渲染在 AppAction 里；
+ * 菜单项选中即收起菜单，提取项随后打开对话框，两套浮层的开合都留在本组件内，页面只接回调；
  * 菜单项只负责打开对话框，文案与可用性不随提取状态变化——是否可提交由面板按 isExtracting 判断；
- * 新增卷 / 章节的入口在筛选栏第二行，这里不再重复；提取范围由面板自行读取作品列表，本组件只转交作品目录。
+ * 「生成卷纲」只上报点击，覆盖确认与预览对话框都由页面编排；
+ * 新作品的卷纲与首章已由骨架铺好，因此这里不再提供「套用模板」；
+ * 提取范围由面板自行读取作品列表，本组件只转交作品目录。
  */
-import { BookUp2, Ellipsis, LayoutTemplate, Wand2 } from 'lucide-react'
+import { BookUp2, Ellipsis, Wand2 } from 'lucide-react'
 import { useState } from 'react'
 import { Dialog, DialogContent } from '@components/ui/dialog'
 import {
@@ -26,17 +29,15 @@ interface OutlineActionMenuProps {
     dirPath: string
     isExtracting: boolean
     onExtract: (target: OutlineExtractTarget) => void
-    onOpenWizard: () => void
-    /** 套用最小可用模板：只填空字段，不覆盖已写内容 */
-    onApplyTemplate: () => void
+    /** 按作品设定生成卷纲（已有卷纲时由页面先确认覆盖） */
+    onGenerateVolumeOutlines: () => void
 }
 
 export function OutlineActionMenu({
     dirPath,
     isExtracting,
     onExtract,
-    onOpenWizard,
-    onApplyTemplate,
+    onGenerateVolumeOutlines,
 }: OutlineActionMenuProps): JSX.Element {
     const [isExtractOpen, setIsExtractOpen] = useState(false)
 
@@ -44,24 +45,15 @@ export function OutlineActionMenu({
         <>
             <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                    <Button
-                        variant="outline"
-                        size="icon"
-                        tooltip="大纲操作：套用模板、生成大纲或按素材提取"
-                        aria-label="大纲操作"
-                    >
+                    <Button variant="ghost" size="icon" tooltip="大纲操作：生成卷纲或按素材提取" aria-label="大纲操作">
                         <Ellipsis />
                     </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-44">
                     <DropdownMenuGroup>
-                        <DropdownMenuItem onSelect={onApplyTemplate}>
-                            <LayoutTemplate />
-                            套用最小模板
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={onOpenWizard}>
+                        <DropdownMenuItem onSelect={onGenerateVolumeOutlines}>
                             <Wand2 />
-                            生成大纲
+                            生成卷纲
                         </DropdownMenuItem>
                         <DropdownMenuItem onSelect={() => setIsExtractOpen(true)}>
                             <BookUp2 />

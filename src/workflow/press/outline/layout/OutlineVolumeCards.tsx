@@ -1,202 +1,212 @@
 /**
- * 卷纲页：每卷一张卡片，卡内编辑卷标题、预计章节数、核心事件与主要情节，并按卷生成章纲。
- * 复用约定：卡片取 ui/card，主要情节条目取 ui/item，输入取 ui/input 与 ui/textarea，
- * 空态取 components/StateEmpty，按钮取 components/Button。
- * 关键约束：只回传当前卷的补丁（onUpdate 带卷 id），不复制卷状态；
- * 核心事件上限 200 字，预计章节数只接受 0~500 的整数（0 表示未填）；
- * 点卡片标题进入章纲页并按该卷筛选，生成章纲复用页面的对话框，本组件只负责发起；
- * 新增卷入口在页头第二行，这里不再重复放按钮。
+ * 卷纲页：每卷一张卡片，卡片只读展示核心事件，点击整卡打开对话框编辑这一卷的卷纲。
+ * 复用约定：卡片取 ui/card，空态取 components/StateEmpty，更多操作取 ui/dropdown-menu，
+ * 编辑弹层由同目录 OutlineVolumeEditDialog 承担（卷标题 / 章节数 / 核心事件 / 主要情节 / 关键转折 / 卷末结果）。
+ * 关键约束：卡片不直接改数据，编辑与保存都在弹层里完成，本组件只持有「正在编辑哪一卷」；
+ * 整卡点击只打开编辑弹层，更多菜单的触发器与菜单内容都要阻止冒泡，否则会连带触发弹层；
+ * 菜单只上报动作（编辑 / 上移 / 下移 / 生成章纲 / 清空章纲 / 添加到 AI 对话 / 删除），顺序调整与清空由页面落盘；
+ * 新增卷入口在页头动作菜单，进入章纲页走页头模块切换 + 卷筛选，这里不再放入口。
  */
-import { ListTree, Plus, Sparkles, Trash2 } from 'lucide-react'
+import {
+    ArrowDown,
+    ArrowUp,
+    Ellipsis,
+    Eraser,
+    ListTree,
+    MessageSquarePlus,
+    Pencil,
+    Sparkles,
+    Trash2,
+} from 'lucide-react'
+import { useState } from 'react'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
-import { Field, FieldDescription, FieldLabel } from '@components/ui/field'
-import { Input } from '@components/ui/input'
-import { Item, ItemActions, ItemContent, ItemGroup } from '@components/ui/item'
-import { Textarea } from '@components/ui/textarea'
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from '@components/ui/dropdown-menu'
 import { Button } from '@webview/components/Button'
 import { StateEmpty } from '@webview/components/StateEmpty'
-import type { OutlineVolume } from '../../types'
+import { OutlineVolumeEditDialog } from './OutlineVolumeEditDialog'
+import type { CharacterCard, OutlineVolume, ProjectSetting } from '../../types'
 import type { JSX } from 'react'
-
-/** 核心事件字数上限：与卷纲卡片的展示口径一致 */
-const CORE_EVENT_MAX_LENGTH = 200
-
-/** 预计章节数上限：正常作品远低于该值，超出视为误输 */
-const EXPECTED_CHAPTERS_MAX = 500
+import { volumeTitleLabel } from '../../utils'
 
 interface OutlineVolumeCardsProps {
     volumes: OutlineVolume[]
+    /** 作品设定：编辑弹层里 AI 生成核心事件 / 卷末结果时作为事实输入 */
+    setting: ProjectSetting
+    /** 人物卡：同上，提供可出场人物 */
+    characters: CharacterCard[]
+    /** 保存一卷的卷纲补丁：由编辑弹层一次性回传 */
     onUpdate: (volumeId: string, patch: Partial<OutlineVolume>) => void
-    /** 进入章纲页并按该卷筛选 */
-    onOpenChapters: (volume: OutlineVolume) => void
+    /** 上移一位：顺序即卷号，页面按新顺序整体落盘 */
+    onMoveUp: (volume: OutlineVolume) => void
+    /** 下移一位：同上 */
+    onMoveDown: (volume: OutlineVolume) => void
     /** 打开「按卷生成章纲」对话框 */
     onGenerateChapters: (volume: OutlineVolume) => void
-}
-
-/** 读取预计章节数：留空或非法值按 0 处理，超出上限截断 */
-function readExpectedChapters(value: string): number {
-    const parsed = Number.parseInt(value, 10)
-    if (Number.isNaN(parsed) || parsed <= 0) {
-        return 0
-    }
-    return Math.min(parsed, EXPECTED_CHAPTERS_MAX)
+    /** 清空这一卷的章纲：页面确认后移除该卷全部章节条目，只留卷纲 */
+    onClearChapters: (volume: OutlineVolume) => void
+    /** 添加到 AI 对话：把卷纲快照交给页面复制并切到对话分区 */
+    onAddToChat: (volume: OutlineVolume, index: number) => void
+    /** 删除这一卷：页面弹确认后整体落盘 */
+    onDelete: (volume: OutlineVolume) => void
 }
 
 export function OutlineVolumeCards({
     volumes,
+    setting,
+    characters,
     onUpdate,
-    onOpenChapters,
+    onMoveUp,
+    onMoveDown,
     onGenerateChapters,
+    onClearChapters,
+    onAddToChat,
+    onDelete,
 }: OutlineVolumeCardsProps): JSX.Element {
-    /** 主要情节增删：返回新数组，不改传入的卷对象 */
-    const updatePlot = (volume: OutlineVolume, index: number, value: string): void => {
-        onUpdate(volume.id, {
-            mainPlot: volume.mainPlot.map((item, itemIndex) => (itemIndex === index ? value : item)),
-        })
+    const [editingVolumeId, setEditingVolumeId] = useState<string | null>(null)
+    const editingVolume = volumes.find((volume) => volume.id === editingVolumeId) ?? null
+
+    const handleOpenEdit = (volume: OutlineVolume): void => {
+        setEditingVolumeId(volume.id)
     }
 
-    const removePlot = (volume: OutlineVolume, index: number): void => {
-        onUpdate(volume.id, { mainPlot: volume.mainPlot.filter((_, itemIndex) => itemIndex !== index) })
+    const handleEditOpenChange = (isOpen: boolean): void => {
+        if (!isOpen) {
+            setEditingVolumeId(null)
+        }
     }
 
     return (
-        <div className="flex min-h-0 w-full flex-1 flex-col gap-3 overflow-y-auto p-3">
+        // 滚动交给外层 AppContent 的 ScrollArea：这里只排布内容，不再自带 overflow，避免嵌套滚动
+        <div className="flex flex-col gap-3 py-3">
             {volumes.length === 0 ? (
                 <StateEmpty
                     icon={ListTree}
                     title="还没有卷"
-                    description="先新增一卷并写下核心事件，或到「结构」页套用最小模板"
+                    description="用页头「大纲操作」新增一卷，再写下核心事件与主要情节"
                 />
             ) : (
                 <div className="grid grid-cols-1 gap-3 @3xl:grid-cols-2">
-                    {volumes.map((volume) => (
-                        <Card key={volume.id}>
-                            <CardHeader>
-                                <CardTitle>
-                                    <button
-                                        type="button"
-                                        className="min-w-0 truncate text-left hover:text-primary"
-                                        title="进入章纲页并只看这一卷"
-                                        onClick={() => onOpenChapters(volume)}
-                                    >
-                                        {volume.name}
-                                    </button>
-                                </CardTitle>
-                                <CardDescription>
-                                    {volume.chapters.length} 章
-                                    {volume.expectedChapters > 0
-                                        ? ` · 预计 ${String(volume.expectedChapters)} 章`
-                                        : ' · 预计章数未填'}
-                                </CardDescription>
-                                <CardAction className="flex items-center gap-1.5">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        tooltip="按卷纲生成这一卷的章纲与节拍"
-                                        onClick={() => onGenerateChapters(volume)}
-                                    >
-                                        <Sparkles />
-                                        生成章纲
-                                    </Button>
-                                </CardAction>
-                            </CardHeader>
-                            <CardContent className="flex flex-col gap-3">
-                                <div className="grid grid-cols-1 gap-2.5 @md:grid-cols-[minmax(0,1fr)_8rem]">
-                                    <Field>
-                                        <FieldLabel htmlFor={`outline-volume-name-${volume.id}`}>卷标题</FieldLabel>
-                                        <Input
-                                            id={`outline-volume-name-${volume.id}`}
-                                            value={volume.name}
-                                            placeholder="第一卷 断线之始"
-                                            onChange={(event) => onUpdate(volume.id, { name: event.target.value })}
-                                        />
-                                    </Field>
-                                    <Field>
-                                        <FieldLabel htmlFor={`outline-volume-expected-${volume.id}`}>
-                                            预计章节数
-                                        </FieldLabel>
-                                        <Input
-                                            id={`outline-volume-expected-${volume.id}`}
-                                            type="number"
-                                            min={0}
-                                            max={EXPECTED_CHAPTERS_MAX}
-                                            step={1}
-                                            className="tabular-nums"
-                                            value={volume.expectedChapters > 0 ? volume.expectedChapters : ''}
-                                            placeholder="未填"
-                                            onChange={(event) =>
-                                                onUpdate(volume.id, {
-                                                    expectedChapters: readExpectedChapters(event.target.value),
-                                                })
-                                            }
-                                        />
-                                    </Field>
-                                </div>
-                                <Field>
-                                    <FieldLabel htmlFor={`outline-volume-core-${volume.id}`}>核心事件</FieldLabel>
-                                    <Textarea
-                                        id={`outline-volume-core-${volume.id}`}
-                                        value={volume.coreEvent}
-                                        maxLength={CORE_EVENT_MAX_LENGTH}
-                                        className="min-h-20"
-                                        placeholder="这一卷真正发生了什么：谁因为什么必须去做什么，代价是什么"
-                                        onChange={(event) => onUpdate(volume.id, { coreEvent: event.target.value })}
-                                    />
-                                    <FieldDescription>
-                                        {volume.coreEvent.length}/{CORE_EVENT_MAX_LENGTH} 字：写成一段能看清因果的事件，
-                                        不要在章纲里重复
-                                    </FieldDescription>
-                                </Field>
-                                <div className="flex flex-col gap-1.5">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-muted-foreground">主要情节</span>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => onUpdate(volume.id, { mainPlot: [...volume.mainPlot, ''] })}
-                                        >
-                                            <Plus />
-                                            添加情节
-                                        </Button>
-                                    </div>
-                                    {volume.mainPlot.length === 0 ? (
-                                        <p className="text-muted-foreground">
-                                            还没有情节条目。按发生顺序写：先发生什么、再发生什么。
-                                        </p>
+                    {volumes.map((volume, index) => {
+                        const title = volumeTitleLabel(volume.name, index)
+                        return (
+                            <Card
+                                key={volume.id}
+                                role="button"
+                                tabIndex={0}
+                                aria-label={`编辑卷纲：${title}`}
+                                className="cursor-pointer transition-colors hover:border-primary/40 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                                onClick={() => handleOpenEdit(volume)}
+                                onKeyDown={(event) => {
+                                    if (event.key === 'Enter' || event.key === ' ') {
+                                        event.preventDefault()
+                                        handleOpenEdit(volume)
+                                    }
+                                }}
+                            >
+                                <CardHeader>
+                                    <CardTitle className="min-w-0 truncate">{title}</CardTitle>
+                                    <CardDescription>
+                                        已写 {volume.chapters.length} 章
+                                        {volume.expectedChapters > 0
+                                            ? ` · 规划 ${String(volume.expectedChapters)} 章`
+                                            : ' · 规划章数未填'}
+                                    </CardDescription>
+                                    <CardAction className="flex items-center gap-1.5">
+                                        <DropdownMenu>
+                                            <DropdownMenuTrigger asChild>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon-sm"
+                                                    tooltip="更多操作"
+                                                    aria-label={`更多操作：${title}`}
+                                                    onClick={(event) => event.stopPropagation()}
+                                                >
+                                                    <Ellipsis />
+                                                </Button>
+                                            </DropdownMenuTrigger>
+                                            {/* 菜单渲染在 portal 里，点击仍会冒泡到整卡：这里整体拦掉，避免顺带打开编辑弹层 */}
+                                            <DropdownMenuContent
+                                                align="end"
+                                                className="w-40"
+                                                onClick={(event) => event.stopPropagation()}
+                                            >
+                                                <DropdownMenuItem onSelect={() => handleOpenEdit(volume)}>
+                                                    <Pencil />
+                                                    编辑
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem onSelect={() => onAddToChat(volume, index)}>
+                                                    <MessageSquarePlus />
+                                                    添加到 AI 对话
+                                                </DropdownMenuItem>
+                                                <DropdownMenuSeparator />
+                                                <DropdownMenuItem
+                                                    disabled={index === 0}
+                                                    onSelect={() => onMoveUp(volume)}
+                                                >
+                                                    <ArrowUp />
+                                                    上移
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    disabled={index === volumes.length - 1}
+                                                    onSelect={() => onMoveDown(volume)}
+                                                >
+                                                    <ArrowDown />
+                                                    下移
+                                                </DropdownMenuItem>
+                                                <DropdownMenuSeparator />
+                                                <DropdownMenuItem onSelect={() => onGenerateChapters(volume)}>
+                                                    <Sparkles />
+                                                    生成章纲
+                                                </DropdownMenuItem>
+                                                <DropdownMenuItem
+                                                    variant="destructive"
+                                                    disabled={volume.chapters.length === 0}
+                                                    onSelect={() => onClearChapters(volume)}
+                                                >
+                                                    <Eraser />
+                                                    清空章纲
+                                                </DropdownMenuItem>
+                                                <DropdownMenuSeparator />
+                                                <DropdownMenuItem
+                                                    variant="destructive"
+                                                    onSelect={() => onDelete(volume)}
+                                                >
+                                                    <Trash2 />
+                                                    删除
+                                                </DropdownMenuItem>
+                                            </DropdownMenuContent>
+                                        </DropdownMenu>
+                                    </CardAction>
+                                </CardHeader>
+                                <CardContent>
+                                    {volume.coreEvent.trim().length > 0 ? (
+                                        <p className="whitespace-pre-line text-muted-foreground">{volume.coreEvent}</p>
                                     ) : (
-                                        <ItemGroup>
-                                            {volume.mainPlot.map((plot, index) => (
-                                                <Item key={`${volume.id}-plot-${String(index)}`}>
-                                                    <ItemContent>
-                                                        <Input
-                                                            value={plot}
-                                                            aria-label={`第 ${index + 1} 条主要情节`}
-                                                            placeholder="情节：谁做了什么，导致什么"
-                                                            onChange={(event) =>
-                                                                updatePlot(volume, index, event.target.value)
-                                                            }
-                                                        />
-                                                    </ItemContent>
-                                                    <ItemActions>
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="icon"
-                                                            aria-label={`删除第 ${index + 1} 条主要情节`}
-                                                            onClick={() => removePlot(volume, index)}
-                                                        >
-                                                            <Trash2 />
-                                                        </Button>
-                                                    </ItemActions>
-                                                </Item>
-                                            ))}
-                                        </ItemGroup>
+                                        <p className="text-muted-foreground/70">还没有核心事件，点击卡片填写</p>
                                     )}
-                                </div>
-                            </CardContent>
-                        </Card>
-                    ))}
+                                </CardContent>
+                            </Card>
+                        )
+                    })}
                 </div>
             )}
+
+            {/* key 绑定「卷 id + 打开状态」：每次打开都重建弹层，草稿不会串到上一卷或上一次编辑 */}
+            <OutlineVolumeEditDialog
+                key={`${editingVolumeId ?? 'none'}-${editingVolume === null ? 'closed' : 'open'}`}
+                isOpen={editingVolume !== null}
+                onOpenChange={handleEditOpenChange}
+                volume={editingVolume}
+                setting={setting}
+                characters={characters}
+                onSave={onUpdate}
+            />
         </div>
     )
 }

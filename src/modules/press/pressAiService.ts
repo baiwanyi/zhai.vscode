@@ -1,5 +1,6 @@
 /**
- * 写作管理 AI 服务：校验密钥与每日配额后执行一次性生成，承载人物外貌、设定字段、条目描述与按卷章纲。
+ * 写作管理 AI 服务：校验密钥与每日配额后执行一次性生成，承载人物外貌、设定字段、条目描述、
+ * 按卷生成章纲、按作品设定生成卷纲与卷纲单字段（核心事件 / 卷末结果）。
  * 复用约定：模型通道经注入的 AI 通道（../ai/provider）驱动 ./ai/aiTextGenerator，
  * 提示词分别来自 ./ai/appearancePrompt、./ai/settingFieldPrompt、./ai/lorePrompt 与 ./ai/volumeChaptersPrompt，
  * 纯文本输出统一经 ./ai/plainText 清洗；按卷章纲是多字段结构，走单独的 JSON 解析与逐项截断；
@@ -29,6 +30,12 @@ import type {
     VolumeChapterDraft,
     VolumeChaptersGenerateRequest,
     VolumeChaptersGenerateResult,
+    VolumeFieldGenerateRequest,
+    VolumeFieldGenerateResult,
+    VolumeFieldKey,
+    VolumeOutlineDraft,
+    VolumeOutlinesGenerateRequest,
+    VolumeOutlinesGenerateResult,
 } from '@shared/types/press'
 import { generateTextWithAi } from './ai/aiTextGenerator'
 import { buildAppearanceMessages } from './ai/appearancePrompt'
@@ -36,6 +43,8 @@ import { buildLoreDescriptionMessages } from './ai/lorePrompt'
 import { sanitizePlainText } from './ai/plainText'
 import { buildSettingFieldMessages } from './ai/settingFieldPrompt'
 import { buildVolumeChaptersMessages } from './ai/volumeChaptersPrompt'
+import { buildVolumeFieldMessages } from './ai/volumeFieldPrompt'
+import { buildVolumeOutlinesMessages } from './ai/volumeOutlinesPrompt'
 import type { AiTextGenerateResult } from './ai/aiTextGenerator'
 import type Database from 'better-sqlite3'
 
@@ -83,6 +92,21 @@ const MAX_VOLUME_CAST_COUNT = 30
 const MAX_VOLUME_CHAPTERS_OUTPUT = 60_000
 const VOLUME_CHAPTERS_TIMEOUT_MS = 180_000
 const VOLUME_CHAPTERS_MAX_TOKENS = 8_000
+/** 按作品设定生成卷纲：卷数上限、各字段长度与输出上限 */
+const MAX_OUTLINE_VOLUME_COUNT = 20
+const MAX_OUTLINE_VOLUME_NAME = 40
+const MAX_OUTLINE_CORE_EVENT = 400
+const MAX_OUTLINE_MAIN_PLOT = 12
+const MAX_OUTLINE_TURNING_POINTS = 8
+const MAX_OUTLINE_RESULT = 300
+const MAX_OUTLINE_VOLUMES_OUTPUT = 20_000
+const VOLUME_OUTLINES_TIMEOUT_MS = 120_000
+const VOLUME_OUTLINES_MAX_TOKENS = 4_000
+/** 卷纲单字段：输出上限按输入框口径截断（核心事件 200 字、卷末结果 300 字） */
+const MAX_VOLUME_FIELD_CORE_EVENT = 200
+const MAX_VOLUME_FIELD_RESULT = 300
+const VOLUME_FIELD_TIMEOUT_MS = 45_000
+const VOLUME_FIELD_MAX_TOKENS = 700
 
 /** 一次文本生成的运行参数：各类生成只差提示词、篇幅、模块与提示文案 */
 interface GenerationOptions {
@@ -179,6 +203,44 @@ export class PressAiService {
             abortMessage: 'AI 章纲生成已取消或超时，请重试',
         })
         return { chapters: parseVolumeChapterDrafts(content) }
+    }
+
+    /**
+     * 按作品设定生成卷纲：产出卷名、预计章节数与卷纲五项，供前端预览后覆盖卷纲。
+     * 关键约束：只覆盖卷纲字段，不触碰章节；解析不出结果时返回空数组，由前端提示重试。
+     * @throws 未配置密钥、配额用尽、请求超时 / 取消、输出为空时抛出可读错误
+     */
+    public async generateVolumeOutlines(payload: unknown): Promise<VolumeOutlinesGenerateResult> {
+        const request = normalizeVolumeOutlinesRequest(payload)
+        const content = await this.runGeneration({
+            module: 'outline',
+            messages: buildVolumeOutlinesMessages(request),
+            maxTokens: VOLUME_OUTLINES_MAX_TOKENS,
+            timeoutMs: VOLUME_OUTLINES_TIMEOUT_MS,
+            maxLength: MAX_OUTLINE_VOLUMES_OUTPUT,
+            emptyMessage: 'AI 未返回可用的卷纲，请重试或先补全作品设定',
+            abortMessage: 'AI 卷纲生成已取消或超时，请重试',
+        })
+        return { volumes: parseVolumeOutlineDrafts(content) }
+    }
+
+    /**
+     * 卷纲单字段生成：只补「核心事件」或「卷末结果」，其余字段作为上下文。
+     * 关键约束：输出按输入框的字数口径截断，避免写回后超长；不修改调用方的其它字段。
+     * @throws 未配置密钥、配额用尽、请求超时 / 取消、输出为空时抛出可读错误
+     */
+    public async generateVolumeField(payload: unknown): Promise<VolumeFieldGenerateResult> {
+        const request = normalizeVolumeFieldRequest(payload)
+        const content = await this.runGeneration({
+            module: 'outline',
+            messages: buildVolumeFieldMessages(request),
+            maxTokens: VOLUME_FIELD_MAX_TOKENS,
+            timeoutMs: VOLUME_FIELD_TIMEOUT_MS,
+            maxLength: request.field === 'coreEvent' ? MAX_VOLUME_FIELD_CORE_EVENT : MAX_VOLUME_FIELD_RESULT,
+            emptyMessage: 'AI 未返回可用的内容，请重试',
+            abortMessage: 'AI 生成已取消或超时，请重试',
+        })
+        return { content }
     }
 
     /** 执行一次文本生成：占请求位 → 请求模型 → 清洗 → 计次记账，各类生成共用同一套流程 */
@@ -414,6 +476,95 @@ function normalizeVolumeChaptersRequest(payload: unknown): VolumeChaptersGenerat
         setting,
         characters: readTextList(value.characters, MAX_VOLUME_CAST_COUNT, MAX_SHORT_TEXT),
     }
+}
+
+/** 入参收窄：卷数为 0 表示由模型自定，已有卷名与人物名单按条数与长度截断 */
+function normalizeVolumeOutlinesRequest(payload: unknown): VolumeOutlinesGenerateRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('pressAi/aiVolumeOutlines 缺少参数')
+    }
+    const value = payload as Record<string, unknown>
+    const setting =
+        typeof value.setting === 'object' && value.setting !== null
+            ? normalizeSettingSnapshot(value.setting as Record<string, unknown>)
+            : normalizeSettingSnapshot({})
+    return {
+        volumeCount: readCount(value.volumeCount, 0, MAX_OUTLINE_VOLUME_COUNT),
+        existingNames: readTextList(value.existingNames, MAX_OUTLINE_VOLUME_COUNT, MAX_OUTLINE_VOLUME_NAME),
+        setting,
+        characters: readTextList(value.characters, MAX_VOLUME_CAST_COUNT, MAX_SHORT_TEXT),
+    }
+}
+
+/** 入参收窄：字段只认 coreEvent / result，卷现状按各自上限截断 */
+function normalizeVolumeFieldRequest(payload: unknown): VolumeFieldGenerateRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('pressAi/aiVolumeField 缺少参数')
+    }
+    const value = payload as Record<string, unknown>
+    const field: VolumeFieldKey = value.field === 'result' ? 'result' : 'coreEvent'
+    const setting =
+        typeof value.setting === 'object' && value.setting !== null
+            ? normalizeSettingSnapshot(value.setting as Record<string, unknown>)
+            : normalizeSettingSnapshot({})
+    return {
+        field,
+        volumeName: readText(value.volumeName, MAX_SHORT_TEXT),
+        coreEvent: readText(value.coreEvent, MAX_OUTLINE_CORE_EVENT),
+        mainPlot: readTextList(value.mainPlot, MAX_OUTLINE_MAIN_PLOT, MAX_VOLUME_TEXT),
+        turningPoints: readTextList(value.turningPoints, MAX_OUTLINE_TURNING_POINTS, MAX_VOLUME_TEXT),
+        result: readText(value.result, MAX_OUTLINE_RESULT),
+        setting,
+        characters: readTextList(value.characters, MAX_VOLUME_CAST_COUNT, MAX_SHORT_TEXT),
+    }
+}
+
+/**
+ * 解析模型输出的卷纲数组：容忍代码围栏与前后说明文字，只截取第一个 [ 到最后一个 ]。
+ * 关键约束：卷名为空时丢弃该条；章数与各字段按上限截断，解析失败返回空数组。
+ */
+function parseVolumeOutlineDrafts(content: string): VolumeOutlineDraft[] {
+    const start = content.indexOf('[')
+    const end = content.lastIndexOf(']')
+    if (start < 0 || end <= start) {
+        return []
+    }
+    let parsed: unknown
+    try {
+        parsed = JSON.parse(content.slice(start, end + 1))
+    } catch {
+        return []
+    }
+    if (!Array.isArray(parsed)) {
+        return []
+    }
+    const drafts: VolumeOutlineDraft[] = []
+    for (const item of parsed.slice(0, MAX_OUTLINE_VOLUME_COUNT)) {
+        if (typeof item !== 'object' || item === null) {
+            continue
+        }
+        const record = item as {
+            name?: unknown
+            expectedChapters?: unknown
+            coreEvent?: unknown
+            mainPlot?: unknown
+            turningPoints?: unknown
+            result?: unknown
+        }
+        const name = readText(record.name, MAX_OUTLINE_VOLUME_NAME)
+        if (name.length === 0) {
+            continue
+        }
+        drafts.push({
+            name,
+            expectedChapters: readCount(record.expectedChapters, 0, MAX_VOLUME_CHAPTERS),
+            coreEvent: readText(record.coreEvent, MAX_OUTLINE_CORE_EVENT),
+            mainPlot: readTextList(record.mainPlot, MAX_OUTLINE_MAIN_PLOT, MAX_VOLUME_TEXT),
+            turningPoints: readTextList(record.turningPoints, MAX_OUTLINE_TURNING_POINTS, MAX_VOLUME_TEXT),
+            result: readText(record.result, MAX_OUTLINE_RESULT),
+        })
+    }
+    return drafts
 }
 
 /**

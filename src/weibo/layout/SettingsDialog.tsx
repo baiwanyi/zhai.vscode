@@ -144,7 +144,6 @@ export function SettingsDialog({
             submitLabel="保存更改"
             isSubmitting={isCitySaving || blockList.state.isSaving}
             isSubmitDisabled={!isChanged || isCityLoading || blockList.state.isLoading}
-            contentClassName="max-h-[calc(100vh-4rem)] overflow-y-auto"
             onOpenChange={handleOpenChange}
             onSubmit={handleSubmit}
         >

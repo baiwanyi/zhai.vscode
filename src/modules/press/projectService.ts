@@ -419,7 +419,7 @@ const PROJECT_DOC_SKELETONS: Readonly<Partial<Record<PressDocKey, string>>> = {
     place: '# 地点\n',
     item: '# 物品\n',
     characters: '# 角色设定\n',
-    outline: '# 大纲\n\n## 主线\n\n## 分卷规划\n',
+    outline: '# 大纲\n\n## 主线\n',
 }
 
 /**

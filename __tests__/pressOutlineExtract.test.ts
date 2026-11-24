@@ -7,7 +7,11 @@
 import { describe, expect, it } from 'vitest'
 import type { PressExtractedChapter, PressExtractedVolume, PressVolumeGroup } from '../src/shared/types/press'
 import type { OutlineChapter, OutlineVolume } from '../src/workflow/press/types'
-import { createProjectChapterOptions, refreshOutlineChapters } from '../src/workflow/press/utils'
+import {
+    createOutlineFromDraft,
+    createProjectChapterOptions,
+    refreshOutlineChapters,
+} from '../src/workflow/press/utils'
 
 /** 作品详情里的卷分组：第一卷一整卷，第二组是历史散章（未分卷） */
 const PROJECT_VOLUMES: PressVolumeGroup[] = [
@@ -44,17 +48,15 @@ function draftChapter(order: number, title: string): PressExtractedChapter {
 const DRAFTS: PressExtractedVolume[] = [
     {
         name: '01-天都篇',
-        goal: '',
-        conflict: '',
-        plotline: '',
+        coreEvent: '',
+        mainPlot: [],
         turningPoints: [],
         chapters: [draftChapter(1, '素材开局'), draftChapter(2, '素材追兵')],
     },
     {
         name: '02-雪原',
-        goal: '',
-        conflict: '',
-        plotline: '',
+        coreEvent: '',
+        mainPlot: [],
         turningPoints: [],
         chapters: [draftChapter(3, '素材雪原')],
     },
@@ -142,6 +144,33 @@ describe('createProjectChapterOptions', () => {
     it('作品没有章节时返回空数组', () => {
         expect(createProjectChapterOptions([])).toEqual([])
         expect(createProjectChapterOptions([{ name: '空卷', dirName: '01-空卷', chapters: [] }])).toEqual([])
+    })
+})
+
+describe('createOutlineFromDraft', () => {
+    it('素材草案的核心事件与主要情节直接落进卷纲', () => {
+        const [volume] = createOutlineFromDraft(
+            [
+                {
+                    name: '01-天都篇',
+                    coreEvent: '本卷目标；与旧城改造集团正面相撞',
+                    mainPlot: ['客人送来旧表', '档案被抽走'],
+                    turningPoints: ['编号确认'],
+                    chapters: [draftChapter(1, '开局')],
+                },
+            ],
+            2500,
+        )
+
+        expect(volume).toMatchObject({
+            expectedChapters: 1,
+            coreEvent: '本卷目标；与旧城改造集团正面相撞',
+            mainPlot: ['客人送来旧表', '档案被抽走'],
+            turningPoints: ['编号确认'],
+            result: '',
+            granularity: 'medium',
+        })
+        expect(volume?.chapters[0]?.title).toBe('开局')
     })
 })
 

@@ -1,22 +1,24 @@
 /**
- * 大纲追加同步：仪表盘在作品列表新增卷 / 章节后，把对应章纲补写进「大纲.md」对应卷的「章节内容」。
+ * 大纲追加同步：仪表盘在作品列表新增卷 / 章节后，把对应章纲补写进「大纲.md」的「章节内容」段落。
  * 复用约定：路径校验与 Uri 构造取 common/storagePath 与 common/config，
- * 卷序号、卷名与章标题归一取 projectFactory 的 readOrderPrefix / toDisplayName。
+ * 卷名与章标题归一取 projectFactory 的 toDisplayName。
  * 关键约束：单向同步——只补写作品列表新增的卷章，删除卷章不回改大纲，大纲的章节数允许多于作品列表；
- * 判重口径是「卷序号 + 卷内章序」，重复调用不会重复插入；
- * 卷是二级段落、章是四级标题（挂在 `### 章节内容` 下），卷块缺失时按工作台序列化口径补建，
- * 因此补写后的文档能被工作台的解析端原样读回；写入失败只记日志，已落盘的章节文件不受影响。
+ * 卷名与章名都不带卷号 / 章号，卷按名称对齐、章序按块的位置判断，判重口径是「卷内章块数」；
+ * 章节区缺卷时补 `### 卷名`，卷纲区缺同名卷时补一个只有标题的空卷纲，保证两段卷名对齐；
+ * 兼容仍带「第N卷」前缀的存量文档（匹配时先剥前缀）；
+ * 写入失败只记日志，已落盘的章节文件不受影响。
  */
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
-import { readOrderPrefix, toDisplayName } from './projectFactory'
+import { toDisplayName } from './projectFactory'
 
-/** 大纲文档名与章节小节标题：与 workspaceWriter / Webview 序列化口径保持一致 */
+/** 大纲文档名与两个分区标题：与 workspaceWriter / Webview 序列化口径保持一致 */
 const OUTLINE_FILE_NAME = '大纲.md'
-const CHAPTERS_SECTION_TITLE = '章节内容'
+const VOLUME_OUTLINE_SECTION_TITLE = '卷纲'
+const CHAPTER_CONTENT_SECTION_TITLE = '章节内容'
 
 /** 文档为空时的最小骨架 */
 const OUTLINE_HEADER = '# 大纲'
@@ -30,15 +32,19 @@ const FALLBACK_CHAPTER_WORD_GOAL = 2500
 const FALLBACK_TENSION = 3
 const FALLBACK_GRANULARITY = '中纲'
 
-/** 标题层级：卷二级、章四级，卷块终点为下一个一 / 二级标题 */
+/** 结构纲 / 卷纲 / 章节内容都是二级段落；卷是三级标题，章是四级标题 */
 const LEVEL_TWO_OR_UP_PATTERN = /^#{1,2}\s+/u
-const VOLUME_HEADING_PATTERN = /^##\s+(.+)$/u
-const CHAPTER_SECTION_PATTERN = /^###\s+章节内容\s*$/u
+const LEVEL_THREE_OR_UP_PATTERN = /^#{1,3}\s+/u
+const VOLUME_OUTLINE_SECTION_PATTERN = /^##\s+卷纲\s*$/u
+const CHAPTER_CONTENT_SECTION_PATTERN = /^##\s+章节内容\s*$/u
+const VOLUME_HEADING_PATTERN = /^###\s+(.+)$/u
 const CHAPTER_HEADING_PATTERN = /^####\s+(.+)$/u
 
-/** 标题里的卷序与章序：工作台与宿主都按「第N卷 / 第N章」前缀识别层级，卷序兼容中文数字 */
-const VOLUME_ORDER_PATTERN = /第\s*([0-9]+|[一二三四五六七八九十百]+)\s*卷/u
+/** 标题里的章序：仅用于兼容仍带「第N章」前缀的存量文档 */
 const CHAPTER_ORDER_PATTERN = /第\s*(\d+)\s*章/u
+
+/** 存量文档的卷名前缀：「第N卷 」在新文档里不再写，匹配时先剥掉 */
+const VOLUME_ORDER_PREFIX_PATTERN = /^第\s*[0-9一二三四五六七八九十百]+\s*卷\s*/u
 
 /** 待补写的章：卷目录名带序号前缀，章标题沿用作品列表口径（可带两位序号前缀） */
 export interface OutlineChapterSeed {
@@ -79,10 +85,10 @@ function stripChapterPrefix(title: string): string {
     return toDisplayName(title).replace(CHAPTER_ORDER_PATTERN, '').trim()
 }
 
-/** 单章块：只写解析端会保留的键值行，计划梗概与节拍留空由作者补写 */
-function buildChapterBlock(order: number, title: string): string {
+/** 单章块：标题只写纯章名（章序由块的位置决定），其余键值行与解析端口径一致 */
+function buildChapterBlock(title: string): string {
     return [
-        `#### 第${String(order)}章 ${title}`,
+        `#### ${title}`,
         '- 状态：待写',
         `- 颗粒度：${FALLBACK_GRANULARITY}`,
         '- 钩子：无',
@@ -92,14 +98,7 @@ function buildChapterBlock(order: number, title: string): string {
     ].join('\n')
 }
 
-/** 整卷块：卷纲小节留空由作者补写，章节统一收在「### 章节内容」下 */
-function buildVolumeBlock(volumeOrder: number, volumeName: string, chapterBlock: string): string {
-    return [`## 第${String(volumeOrder)}卷 ${volumeName}`, '', `### ${CHAPTERS_SECTION_TITLE}`, '', chapterBlock].join(
-        '\n',
-    )
-}
-
-/** 定位卷块的终点行：遇到一 / 二级标题即结束，找不到则落到文件末尾 */
+/** 定位块终点：遇到指定层级的标题即结束，找不到则落到文件末尾 */
 function findBlockEnd(lines: readonly string[], headingIndex: number, pattern: RegExp): number {
     for (let cursor = headingIndex + 1; cursor < lines.length; cursor += 1) {
         if (pattern.test(lines[cursor] ?? '')) {
@@ -118,82 +117,40 @@ function findInsertIndex(lines: readonly string[], end: number, floor: number): 
     return insertAt
 }
 
-/** 中文数字转整数：只用于卷序，读不懂返回 null */
-function parseChineseNumber(value: string): number | null {
-    const digits: Readonly<Record<string, number>> = {
-        一: 1,
-        二: 2,
-        三: 3,
-        四: 4,
-        五: 5,
-        六: 6,
-        七: 7,
-        八: 8,
-        九: 9,
-    }
-    const text = value.trim()
-    if (text.length === 0) {
-        return null
-    }
-    const single = digits[text]
-    if (single !== undefined) {
-        return single
-    }
-    if (text === '十') {
-        return 10
-    }
-    const tenIndex = text.indexOf('十')
-    if (tenIndex === -1) {
-        return null
-    }
-    const tens = tenIndex === 0 ? 1 : digits[text.slice(0, tenIndex)]
-    const ones = tenIndex === text.length - 1 ? 0 : digits[text.slice(tenIndex + 1)]
-    return tens === undefined || ones === undefined ? null : tens * 10 + ones
+/** 找二级段落标题行：不存在返回 -1 */
+function findSectionHeading(lines: readonly string[], pattern: RegExp): number {
+    return lines.findIndex((line) => pattern.test(line.trim()))
 }
 
-/** 按卷序找二级卷标题行：认「第N卷」与「第N卷」的中文写法，读不到卷序的标题不参与匹配 */
-function findVolumeHeading(lines: readonly string[], start: number, end: number, volumeOrder: number): number {
+/** 卷名比较键：剥掉存量文档里可能残留的「第N卷」前缀，新文档只有纯卷名 */
+function volumeKey(title: string): string {
+    return title.replace(VOLUME_ORDER_PREFIX_PATTERN, '').trim()
+}
+
+/** 段落内按卷名找三级卷标题行：同名卷取第一个命中 */
+function findVolumeHeading(lines: readonly string[], start: number, end: number, volumeName: string): number {
+    const target = volumeKey(volumeName)
     for (let cursor = start; cursor < end; cursor += 1) {
         const matched = VOLUME_HEADING_PATTERN.exec((lines[cursor] ?? '').trim())
         if (matched?.[1] === undefined) {
             continue
         }
-        const raw = VOLUME_ORDER_PATTERN.exec(matched[1])?.[1]
-        if (raw === undefined) {
-            continue
-        }
-        const arabic = Number.parseInt(raw, 10)
-        const order = Number.isNaN(arabic) ? parseChineseNumber(raw) : arabic
-        if (order === volumeOrder) {
+        if (volumeKey(matched[1]) === target) {
             return cursor
         }
     }
     return -1
 }
 
-/** 卷块内是否已有「### 章节内容」小节：没有时插入章块要先补小节标题 */
-function findChapterSection(lines: readonly string[], start: number, end: number): number {
+/** 卷块内的章块数量：章号不再写进标题，章序由块的位置决定 */
+function countChapters(lines: readonly string[], start: number, end: number): number {
+    let count = 0
     for (let cursor = start; cursor < end; cursor += 1) {
-        if (CHAPTER_SECTION_PATTERN.test((lines[cursor] ?? '').trim())) {
-            return cursor
+        if (CHAPTER_HEADING_PATTERN.test((lines[cursor] ?? '').trim())) {
+            count += 1
         }
     }
-    return -1
-}
-
-/** 卷块内是否已有该章序：按四级标题里的「第N章」判重，重复调用即幂等 */
-function hasChapterOrder(lines: readonly string[], start: number, end: number, order: number): boolean {
-    for (let cursor = start; cursor < end; cursor += 1) {
-        const matched = CHAPTER_HEADING_PATTERN.exec((lines[cursor] ?? '').trim())
-        if (matched?.[1] === undefined) {
-            continue
-        }
-        const chapterOrder = CHAPTER_ORDER_PATTERN.exec(matched[1])?.[1]
-        if (chapterOrder !== undefined && Number.parseInt(chapterOrder, 10) === order) {
-            return true
-        }
-    }
-    return false
+    return count
 }
 
 /** 收尾整理：连续空行压成一个，保证文件以单个换行结束 */
@@ -202,36 +159,66 @@ function normalizeOutline(text: string): string {
 }
 
 /**
- * 把一章合并进大纲原文：卷块缺失时补建整卷、卷内缺「章节内容」小节时补小节、章已存在则不动。
- * 返回 null 表示无需写盘（该卷内已有同章序的章纲），调用方据此跳过写文件。
+ * 保证卷纲区有这一卷的三级标题：缺段落时补段落，缺卷时补一个只有标题的空卷纲。
+ * 只补标题、不写占位字段，作者在大纲页看到空卷纲即可自行填写。
  */
-function mergeChapterIntoOutline(current: string, seed: OutlineChapterSeed): string | null {
-    const volumeOrder = readOrderPrefix(seed.volumeDir) ?? 1
-    const volumeName = seed.volumeDir.length > 0 ? stripVolumePrefix(toDisplayName(seed.volumeDir)) : '默认卷'
-    const chapterTitle = stripChapterPrefix(seed.title)
-    const chapterBlock = buildChapterBlock(seed.order, chapterTitle.length > 0 ? chapterTitle : FALLBACK_CHAPTER_TITLE)
-
-    const text = current.trim().length > 0 ? current : OUTLINE_HEADER
+function ensureVolumeOutlineTitle(text: string, volumeName: string): string {
     const lines = text.split(/\r?\n/u)
-    const volumeHeading = findVolumeHeading(lines, 0, lines.length, volumeOrder)
-    if (volumeHeading === -1) {
-        const next = [...lines, '', buildVolumeBlock(volumeOrder, volumeName, chapterBlock)]
-        return normalizeOutline(next.join('\n'))
+    const sectionHeading = findSectionHeading(lines, VOLUME_OUTLINE_SECTION_PATTERN)
+    if (sectionHeading === -1) {
+        return [...lines, '', `## ${VOLUME_OUTLINE_SECTION_TITLE}`, '', `### ${volumeName}`].join('\n')
     }
-
-    const volumeEnd = findBlockEnd(lines, volumeHeading, LEVEL_TWO_OR_UP_PATTERN)
-    if (hasChapterOrder(lines, volumeHeading + 1, volumeEnd, seed.order)) {
-        return null
+    const sectionEnd = findBlockEnd(lines, sectionHeading, LEVEL_TWO_OR_UP_PATTERN)
+    if (findVolumeHeading(lines, sectionHeading + 1, sectionEnd, volumeName) !== -1) {
+        return text
     }
-    const insertAt = findInsertIndex(lines, volumeEnd, volumeHeading + 1)
-    const hasSection = findChapterSection(lines, volumeHeading + 1, volumeEnd) !== -1
-    const addition = hasSection ? ['', chapterBlock, ''] : ['', `### ${CHAPTERS_SECTION_TITLE}`, '', chapterBlock, '']
-    const next = [...lines.slice(0, insertAt), ...addition, ...lines.slice(insertAt)]
-    return normalizeOutline(next.join('\n'))
+    const insertAt = findInsertIndex(lines, sectionEnd, sectionHeading + 1)
+    return [...lines.slice(0, insertAt), '', `### ${volumeName}`, '', ...lines.slice(insertAt)].join('\n')
 }
 
 /**
- * 把作品列表新增的一章补写进大纲的「分卷规划」段落。
+ * 把一章合并进大纲原文：章节区缺段落补段落、缺卷补卷标题、卷内缺章序时插入章块；
+ * 卷纲区缺同名卷时一并补空卷纲标题，保证两段卷序对齐。
+ * 返回 null 表示无需写盘（该卷内已有同章序的章纲），调用方据此跳过写文件。
+ */
+function mergeChapterIntoOutline(current: string, seed: OutlineChapterSeed): string | null {
+    const volumeName = seed.volumeDir.length > 0 ? stripVolumePrefix(toDisplayName(seed.volumeDir)) : '默认卷'
+    const chapterTitle = stripChapterPrefix(seed.title)
+    const chapterBlock = buildChapterBlock(chapterTitle.length > 0 ? chapterTitle : FALLBACK_CHAPTER_TITLE)
+
+    const base = current.trim().length > 0 ? current : OUTLINE_HEADER
+    const withVolumeOutline = ensureVolumeOutlineTitle(base, volumeName)
+    const lines = withVolumeOutline.split(/\r?\n/u)
+    const sectionHeading = findSectionHeading(lines, CHAPTER_CONTENT_SECTION_PATTERN)
+
+    if (sectionHeading === -1) {
+        return normalizeOutline(
+            [...lines, '', `## ${CHAPTER_CONTENT_SECTION_TITLE}`, '', `### ${volumeName}`, '', chapterBlock].join('\n'),
+        )
+    }
+
+    const sectionEnd = findBlockEnd(lines, sectionHeading, LEVEL_TWO_OR_UP_PATTERN)
+    const volumeHeading = findVolumeHeading(lines, sectionHeading + 1, sectionEnd, volumeName)
+    if (volumeHeading === -1) {
+        const insertAt = findInsertIndex(lines, sectionEnd, sectionHeading + 1)
+        return normalizeOutline(
+            [...lines.slice(0, insertAt), '', `### ${volumeName}`, '', chapterBlock, '', ...lines.slice(insertAt)].join(
+                '\n',
+            ),
+        )
+    }
+
+    const volumeEnd = findBlockEnd(lines, volumeHeading, LEVEL_THREE_OR_UP_PATTERN)
+    // 章号不进标题：卷内已有章块数达到本次章序，说明这一章已在文档里，跳过以避免重复插入
+    if (countChapters(lines, volumeHeading + 1, volumeEnd) >= seed.order) {
+        return null
+    }
+    const insertAt = findInsertIndex(lines, volumeEnd, volumeHeading + 1)
+    return normalizeOutline([...lines.slice(0, insertAt), '', chapterBlock, '', ...lines.slice(insertAt)].join('\n'))
+}
+
+/**
+ * 把作品列表新增的一章补写进大纲「章节内容」里对应卷的末尾。
  * 关键约束：只补大纲、不索引（watcher 会收录），章已存在时返回 false 且不触碰文件；
  * 入参卷目录名与章标题只读，序号从章文件名推导由调用方负责。
  */

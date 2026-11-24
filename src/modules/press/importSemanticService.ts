@@ -796,7 +796,7 @@ export class ImportSemanticService {
 
     /**
      * 用已落盘的导入素材重建大纲树：卷名与章序取自章节清单，梗概、钩子、关键节点与出场人物取自章节摘要，
-     * 卷目标、冲突、情节脉络与关键转折取自 AI 卷纲产物（尚未生成时留空）。
+     * 核心事件（卷目标 + 卷冲突）、主要情节（情节脉络拆条）与关键转折取自 AI 卷纲产物（尚未生成时留空）。
      * 关键约束：素材缺失时先补跑本地抽取；本方法不调用模型，摘要或卷纲缺失只让对应字段为空，
      * 章节仍照常返回，保证未做 AI 归纳时「提取大纲」同样可用。
      */
@@ -855,11 +855,19 @@ export class ImportSemanticService {
         const volumes: PressExtractedVolume[] = []
         for (const [volumeDir, chapters] of groups) {
             const meta = volumeMeta.get(volumeDir)
+            // 素材侧按「卷目标 / 卷冲突 / 情节脉络」落盘，对外契约统一成「核心事件 + 主要情节」
+            const coreEvent = [meta?.goal ?? '', meta?.conflict ?? '']
+                .map((item) => item.trim())
+                .filter((item) => item.length > 0)
+                .join('；')
+            const mainPlot = (meta?.plotline ?? '')
+                .split(/[；;\n]+/u)
+                .map((item) => item.trim())
+                .filter((item) => item.length > 0)
             volumes.push({
                 name: volumeDir.length > 0 ? volumeDir : '未分卷',
-                goal: meta?.goal ?? '',
-                conflict: meta?.conflict ?? '',
-                plotline: meta?.plotline ?? '',
+                coreEvent,
+                mainPlot,
                 turningPoints: meta?.turningPoints ?? [],
                 chapters,
             })

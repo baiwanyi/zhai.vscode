@@ -131,7 +131,18 @@ describe('createProject', () => {
         expect(hasDirectory(path.join(directory, 'Chapters', '01-默认卷'))).toBe(true)
         expect(readFileContent(path.join(directory, 'README.md'))).toContain('title: 剑来')
         expect(readFileContent(path.join(directory, 'README.md'))).toContain('audience: 男频')
-        expect(readFileContent(path.join(directory, '大纲.md'))).toContain('# 大纲')
+        // 新建作品即铺好一卷一章：打开卷纲与章纲都有可编辑的占位内容，不再需要「套用模板」
+        const outline = readFileContent(path.join(directory, '大纲.md')) ?? ''
+        expect(outline).toContain('# 大纲')
+        expect(outline).toContain('## 卷纲')
+        // 卷名与章名只写纯名称：卷号与章号由块的位置决定，界面上再补
+        expect(outline).toContain('### 默认卷')
+        expect(outline).toContain('#### 核心事件')
+        expect(outline).toContain('## 章节内容')
+        expect(outline).toContain('#### 未命名章节')
+        expect(outline).not.toContain('第1卷')
+        expect(outline).not.toContain('第1章')
+        expect(outline).not.toContain('## 分卷规划')
         expect(readFileContent(path.join(directory, '角色设定.md'))).toContain('# 角色设定')
         expect(readFileContent(path.join(directory, '设定.md'))).toContain('# 设定')
         // 设定页分组文档：世界观、金手指与三类资料条目各一份

@@ -93,11 +93,14 @@ export function toContextLineRange(ref: AiContextRef): string {
 
 /**
  * 剪贴板里的引用写法：`@zhai\...` 加行范围，与输入框可识别的令牌同构，粘回去即可还原成芯片。
- * 微博引用没有存储根路径，改写成纯文本标注，避免生成粘回输入框后无法解析的假令牌。
+ * 微博与卷纲引用没有存储根路径，改写成纯文本标注，避免生成粘回输入框后无法解析的假令牌。
  */
 function toClipboardRef(ref: AiContextRef): string {
     if (ref.kind === 'weibo') {
         return `[微博] ${ref.label}`
+    }
+    if (ref.kind === 'volumeOutline') {
+        return `[卷纲] ${ref.label}`
     }
     const display = toZhaiDisplayPath(ref.displayPath)
     if (ref.startLine === null || /:\d+(?:-\d+)?$/u.test(display)) {

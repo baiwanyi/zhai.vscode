@@ -6,6 +6,7 @@
  * 设定分组文档留空时用于覆盖旧 设定.md 的回落口径。
  */
 import { describe, expect, it } from 'vitest'
+import { buildProjectDocuments } from '../src/modules/press/projectFactory'
 import { parseProjectWorkspace } from '../src/workflow/press/document'
 
 /** 设定分组文档留空：走旧 设定.md 回落路径；条目文档留空即没有资料条目 */
@@ -85,38 +86,38 @@ const CHARACTERS = `# 角色设定
 
 const OUTLINE = `# 大纲
 
-## 主线
+## 卷纲
 
-林岚追查妹妹失踪的真相。
+### 断线之始（第1-6章）
 
-## 第1卷 断线之始（第1-6章）
-
-### 预计章节数
+#### 预计章节数
 
 6
 
-### 核心事件
+#### 核心事件
 
 从被动谋生转向主动追查；底层手艺人 vs 地产集团
 
-### 主要情节
+#### 主要情节
 
 - 客人送来旧表，编号指向失踪的妹妹
 - 档案被抽走，线索断在旧城医院
 
-### 关键转折
+#### 关键转折
 
 - 编号确认
 
-### 卷末结果
+#### 卷末结果
 
 线索断在旧城医院
 
 - 颗粒度：中纲
 
-### 章节内容
+## 章节内容
 
-#### 第1章 修表铺的客人
+### 断线之始（第1-6章）
+
+#### 修表铺的客人
 
 - id：ch-1
 - 状态：published｜字数：2680 / 2500｜钩子：suspense｜张力：2
@@ -132,7 +133,7 @@ const OUTLINE = `# 大纲
 - [x] 林岚拆开后盖
 - [ ] 编号与妹妹一致
 
-#### 第2章 失踪的第七天
+#### 失踪的第七天
 
 - 状态：planned
 - 人物：顾青｜地点：旧城医院
@@ -144,6 +145,10 @@ const OUTLINE = `# 大纲
 ##### 节拍
 
 - [ ] 老周劝他别再查
+
+## 主线
+
+林岚追查妹妹失踪的真相。
 `
 
 describe('parseProjectWorkspace', () => {
@@ -224,7 +229,7 @@ describe('parseProjectWorkspace', () => {
         )
         expect(parsed.volumes).toHaveLength(1)
         const volume = parsed.volumes[0]
-        expect(volume?.name).toBe('第1卷 断线之始（第1-6章）')
+        expect(volume?.name).toBe('断线之始（第1-6章）')
         expect(volume?.expectedChapters).toBe(6)
         expect(volume?.coreEvent).toBe('从被动谋生转向主动追查；底层手艺人 vs 地产集团')
         expect(volume?.mainPlot).toEqual(['客人送来旧表，编号指向失踪的妹妹', '档案被抽走，线索断在旧城医院'])
@@ -458,5 +463,39 @@ tags: [仙侠]
             coverImageId: '20261001120002IjKl56',
         })
         expect(faction?.memberIds).toEqual(['12345678'])
+    })
+})
+
+describe('新建作品的大纲骨架', () => {
+    it('自带一卷一章，打开卷纲与章纲即可编辑', () => {
+        const documents = buildProjectDocuments('剑来', '男频', new Date('2026-11-23T00:00:00Z'))
+        const outline = documents.find((item) => item.relativePath === '大纲.md')?.content ?? ''
+        const parsed = parseProjectWorkspace(
+            { readme: '', setting: '', characters: '', outline },
+            EMPTY_SETTING_SECTIONS,
+            '剑来',
+        )
+
+        expect(parsed.plan.acts.map((act) => act.name)).toEqual(['开端', '对抗', '高潮'])
+        expect(parsed.volumes).toHaveLength(1)
+        const volume = parsed.volumes[0]
+        expect(volume).toMatchObject({ name: '默认卷', expectedChapters: 1, granularity: 'medium' })
+        expect(volume?.coreEvent).toContain('本卷核心事件')
+        expect(volume?.mainPlot).toHaveLength(1)
+        const chapter = volume?.chapters[0]
+        expect(chapter).toMatchObject({
+            order: 1,
+            title: '未命名章节',
+            status: 'planned',
+            hook: 'suspense',
+            pacing: 'setup',
+            tension: 3,
+            granularity: 'fine',
+        })
+        expect(chapter?.summary).toContain('本章梗概')
+        expect(chapter?.beats.map((beat) => beat.text)).toEqual([
+            '主角因「开端」被卷入新的阻碍',
+            '推进过程中暴露一条新线索',
+        ])
     })
 })

@@ -20,7 +20,6 @@ import type {
     OutlineModuleKey,
     PacingKind,
     PlanStatus,
-    ProjectSetting,
 } from './types'
 import type { LucideIcon } from 'lucide-react'
 
@@ -263,16 +262,6 @@ export const GOLDEN_FINGER_TYPE_GROUPS: readonly GoldenFingerTypeGroup[] = [
     { label: '无金手指', options: ['无'] },
 ]
 
-/** 节奏偏好：向导中决定张力默认分布 */
-export const PACING_OPTIONS = [
-    { value: 'fast', label: '快节奏爽文' },
-    { value: 'steady', label: '稳步推进' },
-    { value: 'slow', label: '慢热群像' },
-] as const
-
-/** 结构模板：向导中决定卷纲的阶段划分方式 */
-export const STRUCTURE_OPTIONS: readonly string[] = ['三幕式', '起承转合', '黄金三章', '不使用模板']
-
 /** 写作流程步骤：设定与人物两页顶部共用 */
 export const FLOW_STEPS: readonly { id: number; label: string }[] = [
     { id: 1, label: '新建作品' },
@@ -280,15 +269,6 @@ export const FLOW_STEPS: readonly { id: number; label: string }[] = [
     { id: 3, label: '人物设定' },
     { id: 4, label: '大纲' },
     { id: 5, label: '章节写作' },
-]
-
-/** 最小设定集字段：缺失时不阻断，只在向导第一步标黄提示 */
-export const REQUIRED_SETTING_KEYS: readonly (keyof ProjectSetting)[] = [
-    'genres',
-    'logline',
-    'audience',
-    'goldenFingerAbility',
-    'conflict',
 ]
 
 /** 新建卷、新建章时的默认单章目标字数，与网文常规更新量一致 */

@@ -32,7 +32,7 @@ export type OutlineGranularity = 'coarse' | 'medium' | 'fine'
 export type OutlineModuleKey = 'structure' | 'clue' | 'volume' | 'chapter'
 
 /** 大纲段落键：与宿主 writer 的段落落点表、PressApplyRequest.outlineSections 共用 */
-export type OutlineSectionKey = 'structure' | 'clues' | 'volumes'
+export type OutlineSectionKey = 'structure' | 'volumeOutlines' | 'chapters' | 'clues'
 
 /**
  * 章节引用：卷序 + 卷内章序。
@@ -278,7 +278,7 @@ export interface ProjectSetting {
     audience: Audience
     genres: string[]
     wordGoal: number
-    /** 单章目标字数：新建章与大纲向导的默认值 */
+    /** 单章目标字数：新建章纲时的默认值 */
     chapterWordGoal: number
     /** 简介：比一句话梗概更完整的内容介绍 */
     summary: string
@@ -358,18 +358,6 @@ export interface OutlineWorkspace {
     volumes: OutlineVolume[]
     plan: OutlinePlan
 }
-
-/** 向导参数：生成大纲前收窄的输入项 */
-export interface OutlineWizardOptions {
-    volumeCount: number
-    chapterWordGoal: number
-    /** 节奏偏好，决定张力与钩子的默认分布 */
-    pacing: 'fast' | 'steady' | 'slow'
-    structure: string
-}
-
-/** 向导步骤：输入确认、卷纲预览、章纲预览 */
-export type WizardStep = 'input' | 'volume' | 'chapter'
 
 /** 标签选项：value 即写入文档的标签文本，hint 为面板内的悬停说明 */
 export interface TagOption {

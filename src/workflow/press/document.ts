@@ -4,12 +4,13 @@
  * 复用约定：字段语义与 types.ts 一致；基本信息取自 README 的 Frontmatter 与「作品设定」段，
  * 世界观与金手指各取自己的文档（旧的 设定.md 仅在这两份缺失时兜底），
  * 角色按「## 角色名」切块（旧文件为「# 角色名」），资料条目按「## 名称」切块。
- * 大纲按功能模块分段落解析：结构纲 / 伏笔线索 / 分卷规划，
- * 分卷规划内再按「卷 → 章 → 场景」切块；字段读取统一走「标题优先、键值兜底」，旧格式的 `- 键：值` 行仍认。
+ * 大纲按功能模块分段落解析：结构纲 / 卷纲 / 章节内容 / 伏笔线索，
+ * 卷纲与章节内容各按「卷 → 章 → 场景」切块；字段读取统一走「标题优先、键值兜底」，旧格式的 `- 键：值` 行仍认。
  * 故事核、人物纲、设定纲、节奏情绪与时间线都不属于大纲模块：旧文档里的这些段落原样留在文件中，不再解析也不再回写。
  * 关键约束：解析必须容错——文件缺失、区块改名、字段写法变化都只让对应字段为空，绝不抛错；
- * 卷章只认新结构：每卷一个二级段落（`## 第N卷 …`），卷内「### 章节内容」下才是章块，
- * 旧的「## 分卷规划」段落不再解析；
+ * 卷章只认新结构：「## 卷纲」与「## 章节内容」两个段落各按三级标题（纯卷名）分卷，
+ * 卷序按出现顺序、章序按章块顺序推导，兼容仍带「第N卷」前缀的存量文档；
+ * 旧的「## 分卷规划」与把卷写成二级标题的写法都不再解析；
  * 章块解析只读章标题到第一个五级标题之间的键值行，计划梗概 / 节拍 / 场景分别在五级与六级标题下；
  * 章纲的 summary 表示计划、actualSummary 与 wordCount 表示已写事实，三者不互相推导；
  * 未识别的名称不进入 characterIds，避免正文引用到不存在的人物卡。
@@ -872,13 +873,6 @@ function parseChapter(
     }
 }
 
-/** 判断区块标题是否为卷：认「第N卷」「卷N」「X卷」等写法 */
-function isVolumeTitle(title: string): boolean {
-    return /(第\s*[0-9一二三四五六七八九十百]+\s*卷|^卷\s*[0-9一二三四五六七八九十]|[0-9一二三四五六七八九十]+\s*卷)/u.test(
-        title,
-    )
-}
-
 /** 中文数字（一 ~ 九十九、百位）转整数：只用于卷序，读不懂返回 null */
 function parseChineseNumber(value: string): number | null {
     const digits: Readonly<Record<string, number>> = {
@@ -928,69 +922,119 @@ function readVolumeOrder(title: string, index: number): number {
     return parseChineseNumber(raw) ?? index + 1
 }
 
-/** 卷内固定小节标题：与 serialize 的 buildVolumeBlock 同源，改动须两边同步 */
+/** 卷纲与章节内容两个二级段落标题：与 serialize 的落点表同源，改动须两边同步 */
+const VOLUME_OUTLINE_SECTION = '卷纲'
+const CHAPTER_CONTENT_SECTION = '章节内容'
+
+/** 卷内固定小节标题（四级） */
 const VOLUME_SECTION_EXPECTED = '预计章节数'
 const VOLUME_SECTION_CORE = '核心事件'
 const VOLUME_SECTION_PLOT = '主要情节'
 const VOLUME_SECTION_TURNING = '关键转折'
 const VOLUME_SECTION_RESULT = '卷末结果'
-const VOLUME_SECTION_CHAPTERS = '章节内容'
 
-/** 判断二级段落是否为卷：标题带「第N卷」，或段落内已出现「### 章节内容」小节 */
-function isVolumeSection(section: DocumentSection): boolean {
-    if (isVolumeTitle(section.title)) {
-        return true
-    }
-    return splitSections(section.content, 3).some((item) => item.title.includes(VOLUME_SECTION_CHAPTERS))
+/** 读取指定二级段落的正文：取第一个命中的段落，缺段落返回空串 */
+function readLevelTwoSection(text: string, keyword: string): string {
+    return splitSections(text, 2).find((section) => section.title.includes(keyword))?.content ?? ''
 }
 
-/** 解析卷内章节：章节内容小节内优先认四级标题，其次三级标题，保证自由书写的层级也能读到 */
+/** 解析卷内章节：章节内容下每个卷的三级块里，四级标题即章块 */
 function parseVolumeChapters(
     content: string,
     volumeOrder: number,
     characterIds: Map<string, string>,
 ): OutlineChapter[] {
-    if (content.trim().length === 0) {
-        return []
-    }
-    const levelFour = splitSections(content, 4)
-    const sections = levelFour.length > 0 ? levelFour : splitSections(content, 3)
-    return sections
+    return splitSections(content, 4)
         .filter((section) => section.title.trim().length > 0)
         .map((section, index) => parseChapter(section.title, section.content, volumeOrder, index + 1, characterIds))
 }
 
+/** 解析单卷卷纲：四级小节承载各项字段，卷级颗粒度取小节之前的键值行 */
+function parseVolumeOutline(block: DocumentSection, order: number): Omit<OutlineVolume, 'chapters'> {
+    const subsections = splitSections(block.content, 4)
+    const readSubsection = (keyword: string): string =>
+        subsections.find((item) => item.title.includes(keyword))?.content ?? ''
+    const expected = toNumber(readParagraphs(readSubsection(VOLUME_SECTION_EXPECTED))[0] ?? '')
+    const values = readKeyValues(cutBeforeHeading(block.content, 4))
+    return {
+        id: `vol-${String(order)}`,
+        name: block.title.trim(),
+        expectedChapters: expected ?? 0,
+        coreEvent: readSectionBody(readSubsection(VOLUME_SECTION_CORE)),
+        mainPlot: readListItems(readSubsection(VOLUME_SECTION_PLOT)),
+        turningPoints: readListItems(readSubsection(VOLUME_SECTION_TURNING)),
+        result: readSectionBody(readSubsection(VOLUME_SECTION_RESULT)),
+        granularity: toGranularity(values.get('颗粒度')),
+    }
+}
+
 /**
- * 解析大纲的卷章：每个卷是一个二级段落，卷内小节承载预计章节数 / 核心事件 / 主要情节 /
- * 关键转折 / 卷末结果，章节统一在「### 章节内容」下。
- * 关键约束：只认新结构，旧的「## 分卷规划 → ### 第N卷」段落不再解析；
- * 卷级键值行只从「章节内容」之前的小节读，避免读成章块的颗粒度。
+ * 解析大纲的卷章：卷纲与章节内容是两个固定二级段落，各自按三级标题分卷，
+ * 解析时按「卷名」合并两段——只有卷纲的卷章节为空，只有章节的卷卷纲为空。
+ * 关键约束：文档里的卷名与章名不带卷号 / 章号，卷序按出现顺序、章序按章块顺序推导；
+ * 兼容仍带「第N卷」前缀的存量文档（卷号优先于位置）；同名卷按出现顺序各配一次，不会串卷；
+ * 旧的「## 分卷规划」段落不再解析。
  */
 function parseVolumes(text: string, characterIds: Map<string, string>): OutlineVolume[] {
-    const volumeSections = splitSections(text, 2).filter(isVolumeSection)
-    return volumeSections.map((section, index) => {
-        const order = readVolumeOrder(section.title, index)
-        const subsections = splitSections(section.content, 3)
-        const readSubsection = (keyword: string): string =>
-            subsections.find((item) => item.title.includes(keyword))?.content ?? ''
-        const headContent = subsections
-            .filter((item) => !item.title.includes(VOLUME_SECTION_CHAPTERS))
-            .map((item) => item.content)
-            .join('\n')
-        const values = readKeyValues(headContent)
-        const expected = toNumber(readParagraphs(readSubsection(VOLUME_SECTION_EXPECTED))[0] ?? '')
-        return {
-            id: `vol-${String(order)}`,
-            name: section.title.trim(),
-            expectedChapters: expected ?? 0,
-            coreEvent: readSectionBody(readSubsection(VOLUME_SECTION_CORE)),
-            mainPlot: readListItems(readSubsection(VOLUME_SECTION_PLOT)),
-            turningPoints: readListItems(readSubsection(VOLUME_SECTION_TURNING)),
-            result: readSectionBody(readSubsection(VOLUME_SECTION_RESULT)),
-            granularity: toGranularity(values.get('颗粒度')),
-            chapters: parseVolumeChapters(readSubsection(VOLUME_SECTION_CHAPTERS), order, characterIds),
+    const outlineBlocks = splitSections(readLevelTwoSection(text, VOLUME_OUTLINE_SECTION), 3).filter(
+        (section) => section.title.trim().length > 0,
+    )
+    const chapterBlocks = splitSections(readLevelTwoSection(text, CHAPTER_CONTENT_SECTION), 3).filter(
+        (section) => section.title.trim().length > 0,
+    )
+    /** 卷纲侧解析结果：volumes 与 orders 平行，orders 用于生成章 id */
+    const volumes: OutlineVolume[] = []
+    const orders: number[] = []
+    /** 卷名 → 卷纲侧的位置列表：章节区按同名顺序逐个消费，同名卷不会共用同一份章节 */
+    const positionsByName = new Map<string, number[]>()
+    outlineBlocks.forEach((block, index) => {
+        const order = readVolumeOrder(block.title, index)
+        const name = block.title.trim()
+        const position = volumes.length
+        volumes.push({ ...parseVolumeOutline(block, order), chapters: [] })
+        orders.push(order)
+        const bucket = positionsByName.get(name)
+        if (bucket === undefined) {
+            positionsByName.set(name, [position])
+            return
         }
+        bucket.push(position)
     })
+
+    const consumed = new Set<number>()
+    chapterBlocks.forEach((block) => {
+        const name = block.title.trim()
+        const candidates = positionsByName.get(name) ?? []
+        const target = candidates.find((position) => !consumed.has(position))
+        if (target !== undefined) {
+            consumed.add(target)
+            const volume = volumes[target]
+            const order = orders[target]
+            if (volume !== undefined && order !== undefined) {
+                volumes[target] = {
+                    ...volume,
+                    chapters: parseVolumeChapters(block.content, order, characterIds),
+                }
+            }
+            return
+        }
+        // 只有章节、卷纲里没有同名卷：按出现顺序追加一卷，卷序接在已有卷之后
+        const order = readVolumeOrder(block.title, volumes.length)
+        volumes.push({
+            id: `vol-${String(order)}`,
+            name,
+            expectedChapters: 0,
+            coreEvent: '',
+            mainPlot: [],
+            turningPoints: [],
+            result: '',
+            granularity: 'medium',
+            chapters: parseVolumeChapters(block.content, order, characterIds),
+        })
+        orders.push(order)
+    })
+
+    return volumes
 }
 
 /** 章节引用写法：「1-2」或「第1卷第2章」，两种都认，便于手写 */

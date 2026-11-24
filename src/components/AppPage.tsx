@@ -234,9 +234,20 @@ function AppContent({ className, isScrollable = false, children, ...props }: App
         // 表格宽度按内容取，长文本会把整页撑宽、再被隐藏的横向滚动条裁掉；这里用 !important 压掉内联 display。
         <ScrollArea
             ref={scrollRef}
-            className={cn('min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!', className)}
+            // Root 只承担「占满父级 + 裁切」：flex-1 在 AppPage 里分高度，h-full 兜住非 flex 父级；
+            // 调用方的 className 不落在这里，避免 flex 之类的布局类破坏滚动容器本身
+            className="h-full min-h-0 w-full flex-1 overflow-hidden [&_[data-slot=scroll-area-viewport]>div]:block!"
         >
-            <div data-slot="app-content" className="flex min-h-full w-full flex-col px-3" {...props}>
+            {/*
+             * 内容壳：调用方的 className（间距 / 对齐）落在这一层。
+             * 关键约束：子项一律不收缩（shrink-0）——否则 flex 列会把超长内容压回一屏高度，
+             * 表现为「容器没有滚动条、内容被裁掉」；内容自然撑高后由 Viewport 统一滚动。
+             */}
+            <div
+                data-slot="app-content"
+                className={cn('flex min-h-full w-full flex-col px-3 *:shrink-0', className)}
+                {...props}
+            >
                 {children}
             </div>
         </ScrollArea>

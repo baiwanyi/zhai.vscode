@@ -9,11 +9,11 @@
  */
 import { DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@components/ui/dialog'
 import { Button } from '@webview/components/Button'
-import { ExtractChapterList } from './ExtractChapterList'
-import { ExtractRangeFields } from './ExtractRangeFields'
-import { ExtractScopeOptions } from './ExtractScopeOptions'
 import type { OutlineExtractTarget } from '../../types'
 import type { JSX } from 'react'
+import { ExtractChapterList } from '../block/ExtractChapterList'
+import { ExtractRangeFields } from '../block/ExtractRangeFields'
+import { ExtractScopeOptions } from '../block/ExtractScopeOptions'
 import { useExtractSelection } from '../hooks/useExtractSelection'
 import { useProjectChapterOptions } from '../hooks/useProjectChapterOptions'
 

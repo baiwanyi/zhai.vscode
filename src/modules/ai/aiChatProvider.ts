@@ -13,6 +13,7 @@
  * 场景判定统一由 WorkflowRouter 产出，取名协议只做前缀转发，本层不解析取名条件；
  * 作品协议只放行工作台需要的读取与打开，仪表盘的作品写操作不得经此入口触达。
  */
+import { randomUUID } from 'node:crypto'
 import * as vscode from 'vscode'
 import { getZhaiConfig, resolvePromptRoot, resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
@@ -33,6 +34,8 @@ import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 import type { WechatRoutes } from '@modules/wechat/wechatRoutes'
 import { WECHAT_DOCUMENT_METHODS } from '@modules/wechat/wechatRoutes'
 import type {
+    AiContextAddInlineRequest,
+    AiContextAddInlineResult,
     AiContextAddRequest,
     AiContextItemKind,
     AiContextQueryRequest,
@@ -57,6 +60,8 @@ import type {
     WorkflowViewRequest,
 } from '@shared/types/workflow'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
+import { focusChatSection } from './commands'
+import { MAX_CONTEXT_CHARS } from './contextRefs'
 import {
     getContextWindowOptions,
     getSelectedCodebuddyModel,
@@ -69,6 +74,7 @@ import {
 } from './providers/codebuddyModels'
 import { CODEBUDDY_CREDITS_URLS } from './providers/codebuddySite'
 import type { AiChatService } from './chatService'
+import type { HostContextRef } from './contextRefs'
 import type { ContextSourceAccount, ContextSourceService } from './contextSourceService'
 import type { MentionService } from './mentionService'
 import type { ReferenceService } from './referenceService'
@@ -309,6 +315,34 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         }
     }
 
+    /**
+     * 把无文件来源的卷纲快照加入对话上下文并切到对话分区。
+     * 关键约束：标签与正文逐字段收窄，scope 与 uri 只作会话键和去重键、不参与路径拼接；
+     * 重复或达上限时不切分区，由前端按错误提示就地处理。
+     */
+    private async addInlineContext(payload: unknown): Promise<AiContextAddInlineResult> {
+        const request = readInlineContextPayload(payload)
+        const ref: HostContextRef = {
+            id: randomUUID(),
+            kind: 'volumeOutline',
+            label: request.label,
+            displayPath: request.label,
+            startLine: null,
+            endLine: null,
+            charCount: request.text.length,
+            isTruncated: false,
+            uri: request.uri,
+            inlineText: request.text,
+        }
+        this.service.useScope(request.scope ?? null)
+        const result = this.service.addContexts([ref], 'chat')
+        if (result.added.length === 0) {
+            throw new Error(result.duplicated > 0 ? '该卷纲已在对话上下文中' : '上下文已达上限，请先移除部分引用')
+        }
+        await focusChatSection(this.workflowRouter)
+        return { added: true, label: ref.label }
+    }
+
     /** 读取公众号账号快照：目录段就是 AppID，展示名取账号名 */
     private async readContextAccounts(): Promise<ContextSourceAccount[]> {
         const raw = await this.wechat.handle('wechat/accounts', {})
@@ -423,6 +457,9 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
             }
             case 'ai/context/add': {
                 return this.contextSources.addContexts(readContextAddPayload(payload).items, readContextScope(payload))
+            }
+            case 'ai/context/addInline': {
+                return this.addInlineContext(payload)
             }
             case 'ai/context': {
                 return this.service.getContexts(undefined, readContextScope(payload))
@@ -1154,6 +1191,42 @@ function readDocSectionsPayload(payload: unknown): { dirPath: string; doc: Press
         throw new Error('ai/context/sections 参数非法：doc 不在文档白名单内')
     }
     return { dirPath, doc: docKey }
+}
+
+/** 内联上下文标签 / 去重键 / 作用域长度上限：仅作展示与会话键，不参与路径拼接 */
+const MAX_INLINE_LABEL_LENGTH = 120
+const MAX_INLINE_URI_LENGTH = 300
+const MAX_INLINE_SCOPE_LENGTH = 300
+
+/** 校验 ai/context/addInline 入参：逐字段收窄，正文超上限直接拒绝，不截断草稿快照 */
+function readInlineContextPayload(payload: unknown): AiContextAddInlineRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('ai/context/addInline 缺少参数')
+    }
+    const { label, text, uri, scope } = payload as {
+        label?: unknown
+        text?: unknown
+        uri?: unknown
+        scope?: unknown
+    }
+    if (typeof label !== 'string' || label.trim().length === 0 || label.trim().length > MAX_INLINE_LABEL_LENGTH) {
+        throw new Error('ai/context/addInline 标签非法')
+    }
+    if (typeof text !== 'string' || text.length === 0 || text.length > MAX_CONTEXT_CHARS) {
+        throw new Error('ai/context/addInline 正文非法或超长')
+    }
+    if (typeof uri !== 'string' || uri.trim().length === 0 || uri.trim().length > MAX_INLINE_URI_LENGTH) {
+        throw new Error('ai/context/addInline 去重键非法')
+    }
+    if (scope !== undefined && (typeof scope !== 'string' || scope.trim().length > MAX_INLINE_SCOPE_LENGTH)) {
+        throw new Error('ai/context/addInline 作用域非法')
+    }
+    return {
+        label: label.trim(),
+        text,
+        uri: uri.trim(),
+        scope: typeof scope === 'string' && scope.trim().length > 0 ? scope.trim() : undefined,
+    }
 }
 
 /** 校验 ai/context/add 入参：逐项收窄路径与行范围，任一项非法即拒绝整批 */

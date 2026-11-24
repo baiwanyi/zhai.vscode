@@ -4,7 +4,7 @@
  * 复用约定：路径解析与原文读取复用 projectWorkspace 与 common/storagePath，写盘统一走 vscode.workspace.fs。
  * 关键约束：字段分组做段落级替换——README 改 Frontmatter 的四个字段与「作品设定」段落，
  * 世界观与金手指各替换自己文档里的「提取设定」段落；
- * 大纲按功能模块分段替换（结构纲 / 设定纲 / 节奏情绪 / 伏笔线索 / 时间线 / 分卷规划），
+ * 大纲按功能模块分段替换（结构纲 / 伏笔线索为固定标题段落，卷段落按「第N卷」标题动态匹配），
  * 一次请求可带多段、同一文件只写一次，未带的段落与用户手写内容原样保留；
  * 段落终点始终是下一个一/二级标题，因此段内字段只能用三级及更深标题；
  * 资料条目与角色块按标题逐块合并（角色块新格式二级、旧文件一级，改名等价于删旧写新），未涉及的块原样保留；
@@ -40,46 +40,16 @@ const BASIC_SECTION_TITLE = '作品设定'
 const SETTING_SECTION_TITLE = '提取设定'
 
 /**
- * 大纲固定标题段落：键与 PressOutlineSectionKey 一一对应，值即 大纲.md 里的二级标题。
+ * 大纲段落落点表：键与 PressOutlineSectionKey 一一对应，值即 大纲.md 里的二级标题。
  * 关键约束：改动标题必须同步改解析端的段落关键词；
- * 卷段落不在此表——每卷一个二级段落且标题由卷名决定，走 replaceVolumeSections 动态匹配；
+ * 卷纲与章节内容各自整段替换——卷名写在两段的三级标题里，前端一次提交两段即可保证同步；
  * 设定纲 / 节奏情绪 / 时间线已不在表内，旧文档里的这些段落不解析也不回写，原样保留。
  */
-const OUTLINE_FIXED_SECTION_TITLES: Readonly<Partial<Record<PressOutlineSectionKey, string>>> = {
+const OUTLINE_SECTION_TITLES: Readonly<Record<PressOutlineSectionKey, string>> = {
     structure: '结构纲',
+    volumeOutlines: '卷纲',
+    chapters: '章节内容',
     clues: '伏笔线索',
-}
-
-/** 卷标题判定：与 Webview 解析端同一口径（第N卷 / 中文数字卷 / X卷） */
-const OUTLINE_VOLUME_TITLE_PATTERN =
-    /(第\s*[0-9一二三四五六七八九十百]+\s*卷|^卷\s*[0-9一二三四五六七八九十]|[0-9一二三四五六七八九十]+\s*卷)/u
-
-/** 二级块区间：标题行到下一个一 / 二级标题之前 */
-interface LevelTwoBlock {
-    start: number
-    end: number
-    title: string
-}
-
-/** 按行收集二级块：只认恰好两个 # 的标题行 */
-function collectLevelTwoBlocks(lines: readonly string[]): LevelTwoBlock[] {
-    const blocks: LevelTwoBlock[] = []
-    for (let index = 0; index < lines.length; index += 1) {
-        const heading = /^##\s+(.+)$/u.exec((lines[index] ?? '').trim())
-        if (heading?.[1] === undefined) {
-            continue
-        }
-        let end = lines.length
-        for (let cursor = index + 1; cursor < lines.length; cursor += 1) {
-            if (/^#{1,2}\s+/u.test(lines[cursor] ?? '')) {
-                end = cursor
-                break
-            }
-        }
-        blocks.push({ start: index, end, title: heading[1].trim() })
-        index = end - 1
-    }
-    return blocks
 }
 
 /** 四份文档文件名：与 projectFactory 的骨架命名保持一致 */
@@ -149,38 +119,6 @@ function replaceLevelTwoSection(text: string, title: string, body: string, fallb
     }
     const merged = [...lines.slice(0, headingIndex + 1), '', body, '', ...lines.slice(end)]
     return normalizeBlankLines(merged.join('\n')).trimEnd() + '\n'
-}
-
-/**
- * 大纲卷段落替换：每卷一个二级段落且标题由卷名决定，不能按固定标题落点。
- * 做法是删掉文档里全部卷段落，把新的整批卷段落插在第一个卷段落的位置；文档里没有卷段落时追加到末尾。
- * 关键约束：body 已自带各卷的 `## 标题` 行，这里不再补标题。
- */
-function replaceVolumeSections(text: string, body: string, fallbackHeading: string): string {
-    const source = text.trim().length > 0 ? text : `${fallbackHeading}\n`
-    const lines = source.split(/\r?\n/u)
-    const blocks = collectLevelTwoBlocks(lines)
-    const volumeBlocks = blocks.filter((block) => OUTLINE_VOLUME_TITLE_PATTERN.test(block.title))
-    if (volumeBlocks.length === 0) {
-        return `${normalizeBlankLines(`${lines.join('\n').trimEnd()}\n\n${body}\n`).trimEnd()}\n`
-    }
-    const pieces: string[] = []
-    let cursor = 0
-    let isInserted = false
-    for (const block of blocks) {
-        pieces.push(...lines.slice(cursor, block.start))
-        if (OUTLINE_VOLUME_TITLE_PATTERN.test(block.title)) {
-            if (!isInserted) {
-                pieces.push(...body.split(/\r?\n/u))
-                isInserted = true
-            }
-        } else {
-            pieces.push(...lines.slice(block.start, block.end))
-        }
-        cursor = block.end
-    }
-    pieces.push(...lines.slice(cursor))
-    return `${normalizeBlankLines(pieces.join('\n')).trimEnd()}\n`
 }
 
 /** 正则转义：角色名是作者输入，可能含括号与点等元字符 */
@@ -430,23 +368,16 @@ export async function applyProjectWorkspace(
             content: mergeCharacterBlocks(document.files.characters, payload.characters ?? [], deletedNames),
         })
     }
-    if (payload.outline !== undefined || payload.outlineSections !== undefined) {
+    if (payload.outlineSections !== undefined) {
         // 一次请求里可能带多个段落：在内存里逐段替换，最后只写一次文件，避免同文档多次写盘
         let content = document.files.outline
-        if (payload.outline !== undefined) {
-            content = replaceVolumeSections(content, payload.outline, '# 大纲')
-        }
-        const sections = payload.outlineSections ?? {}
+        const sections = payload.outlineSections
         for (const key of PRESS_OUTLINE_SECTION_KEYS) {
             const body = sections[key]
             if (body === undefined) {
                 continue
             }
-            const title = OUTLINE_FIXED_SECTION_TITLES[key]
-            content =
-                title === undefined
-                    ? replaceVolumeSections(content, body, '# 大纲')
-                    : replaceLevelTwoSection(content, title, body, '# 大纲')
+            content = replaceLevelTwoSection(content, OUTLINE_SECTION_TITLES[key], body, '# 大纲')
         }
         nextFiles.push({
             snapshotKey: 'outline',

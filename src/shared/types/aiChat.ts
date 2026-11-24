@@ -94,9 +94,9 @@ export type AiMessageRole = 'user' | 'assistant' | 'system'
 
 /**
  * 对话上下文引用类型：file 为整篇文档，selection 为行范围，notebook 为整本笔记本打包，
- * weibo 为微博剪藏的内联正文（无文件来源，无行范围，正文随引用一起下发）。
+ * weibo 为微博剪藏的内联正文，volumeOutline 为卷纲快照——两者都无文件来源与行范围，正文随引用一起下发。
  */
-export type AiContextRefKind = 'file' | 'selection' | 'notebook' | 'weibo'
+export type AiContextRefKind = 'file' | 'selection' | 'notebook' | 'weibo' | 'volumeOutline'
 
 /** 笔记本引用的打包档位：全文 / 节选 / 仅目录 / 模型压缩 */
 export type AiNotebookPackMode = 'full' | 'excerpt' | 'outline' | 'compressed'
@@ -104,7 +104,7 @@ export type AiNotebookPackMode = 'full' | 'excerpt' | 'outline' | 'compressed'
 /**
  * 对话上下文引用的展示契约：宿主生成，Webview 只消费。
  * 约束：不含绝对路径（宿主内部保留），前端删除引用时只回传 id，不得据 label 访问文件；
- * notebook 引用由宿主打包后回传字数与篇数，weibo 引用无文件路径与行范围，
+ * notebook 引用由宿主打包后回传字数与篇数，weibo / volumeOutline 引用无文件路径与行范围，
  * 前端只展示标签与字数，不得据 displayPath 自行读盘。
  */
 export interface AiContextRef {
@@ -420,6 +420,27 @@ export interface AiContextAddResult {
     failed: { path: string; reason: string }[]
     /** 是否已达单会话引用条数上限 */
     isFull: boolean
+}
+
+/**
+ * 内联上下文添加请求：无文件来源的正文快照（当前为卷纲），由宿主生成引用并注入会话。
+ * 关键约束：scope 是会话作用域键（作品目录），不参与任何路径拼接；uri 只作去重键。
+ */
+export interface AiContextAddInlineRequest {
+    /** 展示标签：作品名·卷纲·第X卷 卷名 */
+    label: string
+    /** 注入模型的正文快照 */
+    text: string
+    /** 去重键：作品目录 + 卷 id */
+    uri: string
+    /** 会话作用域：作品目录；缺省为通用对话 */
+    scope?: string
+}
+
+/** 内联上下文添加结果：重复或达上限时不切对话分区 */
+export interface AiContextAddInlineResult {
+    added: boolean
+    label: string
 }
 
 /** 提及候选类型：按索引路径前缀归类，仅用于展示分组 */
