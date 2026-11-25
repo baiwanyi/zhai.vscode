@@ -20,6 +20,7 @@ import type {
     LoreKind,
     OutlineGranularity,
     OutlineModuleKey,
+    OutlineScene,
     PacingKind,
     PlanStatus,
 } from './types'
@@ -353,3 +354,15 @@ export const SETTING_FIELD_MAX_LENGTH: Readonly<Record<SettingFieldKey, number>>
     goldenFingerLimit: 200,
     goldenFingerUpgrade: 300,
 }
+
+/** 场景纲可展示的文本字段：不含序号等数值字段，便于统一按字符串处理 */
+type SceneDetailKey = keyof Pick<OutlineScene, 'desire' | 'obstacle' | 'choice' | 'result' | 'emotion'>
+
+/** 场景纲五项的顺序与取值键：界面明细、文档序列化与解析读取共用同一口径 */
+export const SCENE_FIELD_META: ReadonlyArray<readonly [string, SceneDetailKey]> = [
+    ['欲望', 'desire'],
+    ['阻碍', 'obstacle'],
+    ['选择', 'choice'],
+    ['结果', 'result'],
+    ['情绪变化', 'emotion'],
+]

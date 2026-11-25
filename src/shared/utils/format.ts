@@ -1,6 +1,6 @@
 /**
- * 展示层时间与数值格式化：本地年月日时分、相对时间、token 紧凑折算、耗时与积分。
- * 复用约定：均为无副作用的纯函数，仪表盘、用量账单与对话消息工具栏共用同一展示口径；
+ * 展示层时间与数值格式化及文本空值兜底：本地年月日时分、相对时间、token 紧凑折算、耗时与积分。
+ * 复用约定：均为无副作用的纯函数，仪表盘、用量账单、对话工具栏与写作面板共用同一展示口径；
  * 相对时间基于原生 Intl，不引入日期库。
  * 关键约束：无效时间一律返回空串，由调用方决定「未知 / 从未构建」等业务文案；
  * token 折算统一保留一位小数、耗时按毫秒 / 秒 / 分秒三档展示、积分保留两位小数，避免各页精度不一致。
@@ -105,4 +105,9 @@ export function formatRelativeTime(iso: string): string {
         return RELATIVE_TIME_FORMATTER.format(days, 'day')
     }
     return formatMonthDay(new Date(iso))
+}
+
+/** 文本空值兜底：空串回退到调用方指定的业务文案，非空原样返回 */
+export function orFallback(value: string, fallback = '未填写'): string {
+    return value.length > 0 ? value : fallback
 }

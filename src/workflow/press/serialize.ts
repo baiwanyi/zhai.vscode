@@ -17,7 +17,7 @@ import {
     PACING_META,
     PLAN_STATUS_META,
 } from './constants'
-import { stripChapterOrderPrefix, stripVolumeOrderPrefix } from './utils'
+import { sceneTitleLabel, stripChapterOrderPrefix, stripVolumeOrderPrefix } from './utils'
 import type {
     CharacterCard,
     LoreEntry,
@@ -250,7 +250,7 @@ function buildSceneBlock(scene: OutlineScene): string {
         ['结果', scene.result],
         ['情绪变化', scene.emotion],
     ])
-    return [`###### 场景${String(scene.order)} ${scene.title}`, '', ...lines].join('\n')
+    return [`###### ${sceneTitleLabel(scene, '')}`, '', ...lines].join('\n')
 }
 
 /**

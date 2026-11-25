@@ -1,5 +1,5 @@
 /**
- * 大纲与人物卡纯函数：字段判断、设定快照、章节统计、节点构造、提取草案合并与生成上下文转换。
+ * 大纲与人物卡纯函数：字段判断、设定快照、章节统计、章节引用匹配、场景标题与生成上下文转换。
  * 复用约定：字数口径取仪表盘 formatWordCount，节点 id 取 createId，中文标签取 constants 元数据表。
  * 关键约束：缺失只作提示而非错误；统计以目标字数为分母；补全只填空字段；
  * 生成上下文只传文案与本卷线索，线索按「卷序 + 章序」引用，卷章重排后需重新校正。
@@ -593,11 +593,16 @@ export function formatVolumeOutlineText(volume: OutlineVolume, index: number): s
 }
 
 /**
- * 章纲的纯文本快照：供「添加到 AI 对话」作为写正文的上下文。
+ * 章纲的纯文本快照：供「添加到 AI 对话」作为写正文的上下文，可附本章出场人物与作品题材风格。
+ * 复用约定：人物与设定由调用方从工作区传入，口径与「本次引用」卡片一致。
  * 关键约束：只输出计划内容（summary），不混入 actualSummary 正文事实；
  * 空字段整行省略，节拍与场景按落笔顺序排列，字段口径与章纲编辑页保持一致。
  */
-export function formatChapterOutlineText(chapter: OutlineChapter): string {
+export function formatChapterOutlineText(
+    chapter: OutlineChapter,
+    cast: readonly CharacterCard[] = [],
+    setting?: ProjectSetting,
+): string {
     const lines: string[] = [`【${chapterTitleLabel(chapter)}】`]
     if (chapter.stage.trim().length > 0) {
         lines.push(`阶段：${chapter.stage.trim()}`)
@@ -628,10 +633,19 @@ export function formatChapterOutlineText(chapter: OutlineChapter): string {
     if (beats.length > 0) {
         lines.push('节拍：', ...beats.map((text) => `- ${text}`))
     }
+    const castNames = cast
+        .filter((character) => chapter.characterIds.includes(character.id))
+        .map((character) => character.name)
+    if (castNames.length > 0) {
+        lines.push(`出场人物：${castNames.join('、')}`)
+    }
+    if (setting !== undefined) {
+        lines.push(`题材：${setting.genres.join(' / ') || '未填题材'}`, `风格：${setting.tone.trim() || '未填风格'}`)
+    }
     if (chapter.scenes.length > 0) {
         lines.push('场景纲：')
         chapter.scenes.forEach((scene) => {
-            lines.push(`场景${String(scene.order)} ${scene.title.trim() || '未命名'}`)
+            lines.push(sceneTitleLabel(scene))
             const fields: readonly (readonly [string, string])[] = [
                 ['欲望', scene.desire],
                 ['阻碍', scene.obstacle],
@@ -1144,12 +1158,9 @@ export function toVolumeClueContexts(
     const volumeOrder = readOutlineVolumeOrder(volumes[index]?.name ?? '', index)
     const formatRef = (ref: OutlineChapterRef | null): string =>
         ref === null ? '' : `${String(ref.volumeOrder)}-${String(ref.chapterOrder)}`
+    const volumeTarget = { volumeOrder }
     return clues
-        .filter(
-            (clue) =>
-                (clue.plant !== null && clue.plant.volumeOrder === volumeOrder) ||
-                (clue.payoff !== null && clue.payoff.volumeOrder === volumeOrder),
-        )
+        .filter((clue) => isClueRefMatched(clue.plant, volumeTarget) || isClueRefMatched(clue.payoff, volumeTarget))
         .map((clue) => ({
             id: clue.id,
             name: clue.name,
@@ -1162,6 +1173,27 @@ export function toVolumeClueContexts(
 /** 章节引用的 UI 展示格式：卷X · X章（与文档序列化的 X-Y 口径区分） */
 export function formatChapterRefLabel(ref: OutlineChapterRef): string {
     return `卷${String(ref.volumeOrder)} · ${String(ref.chapterOrder)}章`
+}
+
+/** 伏笔引用匹配：目标带章序时比对卷与章，只带卷序时仅比对卷；未定引用不匹配 */
+export function isClueRefMatched(
+    ref: OutlineChapterRef | null,
+    target: { volumeOrder: number; chapterOrder?: number },
+): boolean {
+    if (ref === null || ref.volumeOrder !== target.volumeOrder) {
+        return false
+    }
+    return target.chapterOrder === undefined || ref.chapterOrder === target.chapterOrder
+}
+
+/** 按章引用筛选伏笔：埋设章或回收章任一命中即收，供聚焦面板与生成上下文共用 */
+export function findCluesByChapterRef(clues: readonly OutlineClue[], target: OutlineChapterRef): OutlineClue[] {
+    return clues.filter((clue) => isClueRefMatched(clue.plant, target) || isClueRefMatched(clue.payoff, target))
+}
+
+/** 场景标题：场景序号 + 名称，空白名称按调用方指定的文案回落 */
+export function sceneTitleLabel(scene: OutlineScene, fallback = '未命名'): string {
+    return `场景${String(scene.order)} ${scene.title.trim() || fallback}`
 }
 
 /** 当前写作位置：最后一个「已写」章节的全书章序，没有已写章节时为 0 */
