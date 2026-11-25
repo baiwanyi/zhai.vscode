@@ -40,6 +40,7 @@ import type {
     OutlineExtractKey,
     OutlinePlan,
     OutlineScene,
+    OutlineTreeEntry,
     OutlineVolume,
     PlanStatus,
     ProjectSetting,
@@ -1013,6 +1014,35 @@ export function createChapterRefEntries(volumes: readonly OutlineVolume[]): Chap
     return entries
 }
 
+/**
+ * 章节详情视图上下文：一次算出引用、前后章与后续两章，避免聚焦视图与详情页各自重复查找。
+ * 关键约束：chapterRef 优先取真实引用条目，缺失时按所在卷序与本章 order 兜底；
+ * prev/next 按 order 相邻匹配，nextChapters 取本章之后最近两章，两者口径不同不可互换。
+ */
+export function resolveChapterViewContext(
+    selectedEntry: OutlineTreeEntry,
+    volumes: readonly OutlineVolume[],
+    refEntries: readonly ChapterRefEntry[],
+): {
+    chapterRef: OutlineChapterRef
+    prevChapter: OutlineChapter | null
+    nextChapter: OutlineChapter | null
+    nextChapters: OutlineChapter[]
+} {
+    const chapters = selectedEntry.volume.chapters
+    const order = selectedEntry.chapter.order
+    const volumeIndex = volumes.findIndex((volume) => volume.id === selectedEntry.volume.id)
+    return {
+        chapterRef: refEntries.find((entry) => entry.chapter.id === selectedEntry.chapter.id)?.ref ?? {
+            volumeOrder: readOutlineVolumeOrder(selectedEntry.volume.name, volumeIndex),
+            chapterOrder: order,
+        },
+        prevChapter: chapters.find((chapter) => chapter.order === order - 1) ?? null,
+        nextChapter: chapters.find((chapter) => chapter.order === order + 1) ?? null,
+        nextChapters: chapters.filter((chapter) => chapter.order > order).slice(0, 2),
+    }
+}
+
 /** 由卷章树生成章节引用选项：线索的下拉使用 */
 export function createChapterRefOptions(volumes: readonly OutlineVolume[]): ChapterRefOption[] {
     return createChapterRefEntries(volumes).map((entry) => ({
@@ -1069,6 +1099,11 @@ export function toVolumeClueContexts(
             payoff: formatRef(clue.payoff),
             note: clue.note,
         }))
+}
+
+/** 章节引用的 UI 展示格式：卷X · X章（与文档序列化的 X-Y 口径区分） */
+export function formatChapterRefLabel(ref: OutlineChapterRef): string {
+    return `卷${String(ref.volumeOrder)} · ${String(ref.chapterOrder)}章`
 }
 
 /** 当前写作位置：最后一个「已写」章节的全书章序，没有已写章节时为 0 */

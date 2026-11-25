@@ -19,7 +19,7 @@ const PROJECT_DIR_DEPTH = 2
 
 /** Frontmatter 里的标量值：去掉首尾引号，数组写法原样保留 */
 function readFrontmatterValue(frontmatter: string, key: string): string {
-    const pattern = new RegExp(`^${key}\\s*:\\s*(.+)$`, 'mu')
+    const pattern = new RegExp(`^${key}[ \\t]*:[ \\t]*(.+)$`, 'mu')
     const raw = pattern.exec(frontmatter)?.[1]?.trim() ?? ''
     return raw.replace(/^["']|["']$/gu, '')
 }
