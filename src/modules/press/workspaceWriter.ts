@@ -2,7 +2,7 @@
  * 作品文档回写：把工作台草稿对应的段落合并进 README、世界观.md、金手指.md、
  * 势力.md、地点.md、物品.md、角色设定.md、大纲.md。
  * 复用约定：路径解析与原文读取复用 projectWorkspace 与 common/storagePath，写盘统一走 vscode.workspace.fs。
- * 关键约束：字段分组做段落级替换——README 改 Frontmatter 的四个字段与「作品设定」段落，
+ * 关键约束：字段分组做段落级替换——README 改一级标题与「作品设定」段内的元信息字段，
  * 世界观与金手指各替换自己文档里的「提取设定」段落；
  * 大纲按功能模块分段替换（结构纲 / 伏笔线索为固定标题段落，卷段落按「第N卷」标题动态匹配），
  * 一次请求可带多段、同一文件只写一次，未带的段落与用户手写内容原样保留；
@@ -70,33 +70,59 @@ function normalizeBlankLines(text: string): string {
     return text.replace(/\n{3,}/gu, '\n\n')
 }
 
-/**
- * 合并 README 的 Frontmatter：只覆盖 title/audience/tags/wordGoal，其余键与正文保持原样。
- * 关键约束：原文件没有 Frontmatter 时新建；已有键按行替换，缺失键追加，避免重复键。
- */
-function mergeReadmeFrontmatter(readme: string, meta: PressApplyMeta): string {
-    const matched = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/u.exec(readme)
-    const frontmatter = matched?.[1] ?? ''
-    const body = matched === null ? readme : readme.slice(matched[0].length)
-    const lines = frontmatter
-        .split(/\r?\n/u)
-        .map((line) => line.trimEnd())
-        .filter((line) => line.length > 0)
-    const setValue = (key: string, value: string): void => {
-        const pattern = new RegExp(`^${key}\\s*:`, 'u')
-        const index = lines.findIndex((line) => pattern.test(line))
-        if (index >= 0) {
-            lines[index] = `${key}: ${value}`
-            return
-        }
-        lines.push(`${key}: ${value}`)
+/** 在作品设定段内替换一个三级字段：值为空时整块删除，缺失时追加到段末 */
+function setHeadingField(section: string, title: string, value: string): string {
+    const lines = section.split(/\r?\n/u)
+    const heading = `### ${title}`
+    const index = lines.findIndex((line) => line.trim() === heading)
+    if (index < 0 && value.length === 0) {
+        return section
     }
-    setValue('title', meta.title)
-    setValue('audience', meta.audience)
-    setValue('tags', meta.genres.join(', '))
-    setValue('wordGoal', String(meta.wordGoal))
-    const tail = body.replace(/^\n+/u, '')
-    return `---\n${lines.join('\n')}\n---\n\n${tail}`
+    if (index < 0) {
+        return `${section.trimEnd()}\n\n${heading}\n\n${value}`
+    }
+    let end = index + 1
+    while (end < lines.length && !/^###\s+/u.test(lines[end] ?? '')) {
+        end += 1
+    }
+    if (value.length === 0) {
+        return [...lines.slice(0, index), ...lines.slice(end)].join('\n')
+    }
+    return [...lines.slice(0, index), heading, '', value, ...lines.slice(end)].join('\n')
+}
+
+/**
+ * 把 README 元信息写进正文：标题写一级标题，目标读者 / 题材 / 目标字数写进「作品设定」段。
+ * 关键约束：段落缺失时补建，字段存在时按块替换，空题材不写空壳；其余正文逐字保留。
+ */
+function mergeReadmeMeta(readme: string, meta: PressApplyMeta): string {
+    const lines = readme.split(/\r?\n/u)
+    const headingIndex = lines.findIndex((line) => /^#\s+/u.test(line))
+    if (headingIndex >= 0) {
+        lines[headingIndex] = `# ${meta.title}`
+    }
+    const text = lines.join('\n')
+    const sectionPattern = new RegExp(`^##\\s+${BASIC_SECTION_TITLE}\\s*$`, 'mu')
+    const matched = sectionPattern.exec(text)
+    if (matched === null) {
+        const fields = ([
+            ['目标读者', meta.audience],
+            ['题材', meta.genres.join('、')],
+            ['目标字数', String(meta.wordGoal)],
+        ] as const)
+            .filter(([, value]) => value.length > 0)
+            .map(([title, value]) => `### ${title}\n\n${value}`)
+        return `${text.trimEnd()}\n\n## ${BASIC_SECTION_TITLE}\n\n${fields.join('\n\n')}\n`
+    }
+    const sectionStart = matched.index + matched[0].length
+    const rest = text.slice(sectionStart)
+    const nextSection = /^##\s+/mu.exec(rest)
+    const sectionEnd = nextSection === null ? rest.length : nextSection.index
+    let section = rest.slice(0, sectionEnd)
+    section = setHeadingField(section, '目标读者', meta.audience)
+    section = setHeadingField(section, '题材', meta.genres.join('、'))
+    section = setHeadingField(section, '目标字数', String(meta.wordGoal))
+    return `${text.slice(0, sectionStart)}${section}${text.slice(sectionStart + sectionEnd)}`
 }
 
 /**
@@ -282,20 +308,18 @@ export async function applyProjectWorkspace(
     const toUri = (fileName: string): vscode.Uri => buildStorageUri(root, [PRESS_MODULE_DIR, document.name, fileName])
     const nextFiles: PendingFile[] = []
     if (payload.readme !== undefined || payload.basic !== undefined) {
-        // 基本信息与 Frontmatter 同属 README：先替换正文段落，再合并 Frontmatter，两者互不覆盖
-        const base =
-            payload.basic === undefined
-                ? document.files.readme
-                : replaceLevelTwoSection(
-                      document.files.readme,
-                      BASIC_SECTION_TITLE,
-                      payload.basic,
-                      `# ${document.name}`,
-                  )
+        // 基本信息与元信息同属 README：先替换正文段落，再把元信息写进正文，两者互不覆盖
+        let content = document.files.readme
+        if (payload.basic !== undefined) {
+            content = replaceLevelTwoSection(content, BASIC_SECTION_TITLE, payload.basic, `# ${document.name}`)
+        }
+        if (payload.readme !== undefined) {
+            content = mergeReadmeMeta(content, payload.readme)
+        }
         nextFiles.push({
             snapshotKey: 'readme',
             fileName: WORKSPACE_FILE_NAMES.readme,
-            content: payload.readme === undefined ? base : mergeReadmeFrontmatter(base, payload.readme),
+            content,
         })
     }
     if (payload.world !== undefined) {

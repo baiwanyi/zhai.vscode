@@ -93,7 +93,7 @@ export function WorkflowScreen(): JSX.Element {
             <div className="flex h-screen min-h-0">
                 <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
                     {scope === 'press' ? (
-                        <WorkflowPress context={context} section={section} onSelectSection={handleSelectSection} />
+                        <WorkflowPress context={context} section={section} />
                     ) : scope === 'wechat' ? (
                         <WorkflowWechat
                             section={section}

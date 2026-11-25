@@ -45,7 +45,6 @@ interface OutlineBodyProps {
     onUpdatePlan: (section: OutlineSectionKey, patch: Partial<OutlinePlan>) => void
     onUpdateChapter: (chapterId: string, patch: Partial<OutlineChapter>) => void
     onUpdateVolume: (volumeId: string, patch: Partial<OutlineVolume>) => void
-    onOpenChat: () => void
 }
 
 export function OutlineBody({
@@ -67,7 +66,6 @@ export function OutlineBody({
     onUpdatePlan,
     onUpdateChapter,
     onUpdateVolume,
-    onOpenChat,
 }: OutlineBodyProps): JSX.Element {
     const plan = workspace.plan
 
@@ -124,8 +122,7 @@ export function OutlineBody({
                     nextChapter={viewContext.nextChapter}
                     nextChapters={viewContext.nextChapters}
                     onChange={(patch) => onUpdateChapter(selectedEntry.chapter.id, patch)}
-                    onBack={() => setSelectedChapterId(null)}
-                    onOpenChat={onOpenChat}
+                    onAddChapterToChat={actions.handleAddChapterToChat}
                     viewGranularity={granularity}
                 />
             </>

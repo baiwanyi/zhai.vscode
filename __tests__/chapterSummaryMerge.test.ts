@@ -1,8 +1,8 @@
 /**
- * 章节摘要回填单元测试：覆盖 Frontmatter 只补空不覆盖、缺失键追加、无 Frontmatter 不碰、
- * 特殊字符序列化，以及按章节清单路径与摘要表序号配对写盘的编排（含脏文档与读写失败）。
- * 复用约定：素材文件名直接取 MATERIAL_FILE_NAMES，断言用生产代码的 splitFrontmatter 读回；
- * 虚拟磁盘、虚拟目录与可打开文档由 vscode 测试桩承接，不触达真实文件系统。
+ * 章节摘要回填单元测试：覆盖大纲「计划梗概」只补空不覆盖、缺段补建、章号对不上跳过，
+ * 以及按素材路径取章号后一次写回大纲并重建索引的编排（含脏文档）。
+ * 复用约定：素材文件名直接取 MATERIAL_FILE_NAMES，断言用生产代码的 readOutlineChapterBlocks 读回；
+ * 虚拟磁盘与可打开文档由 vscode 测试桩承接，不触达真实文件系统。
  * 关键约束：路径一律经 node:path 规范化，与实现里的 buildStorageUri 走同一套分隔符规则。
  */
 import * as path from 'node:path'
@@ -15,17 +15,18 @@ import {
     setFileContent,
 } from './stubs/vscode'
 import type { ProjectIndexer } from '../src/modules/press/projectService'
-import { splitFrontmatter } from '../src/modules/common/db/fileMeta'
-import { mergeChapterSummaries, mergeChapterSummaryFrontmatter } from '../src/modules/press/chapterSummaryMerge'
+import { mergeChapterSummaries } from '../src/modules/press/chapterSummaryMerge'
 import { MATERIAL_FILE_NAMES } from '../src/modules/press/importAnalysis'
+import { mergeChapterSummaryIntoOutline, readOutlineChapterBlocks } from '../src/modules/press/outlineSync'
 
 const STORAGE_ROOT = 'd:/vault'
 const DIR_PATH = 'press/剑来'
+const OUTLINE_PATH = 'press/剑来/大纲.md'
 const CHAPTER_A = 'press/剑来/Chapters/01-卷1/01-第一章 少年.md'
 const CHAPTER_B = 'press/剑来/Chapters/01-卷1/02-第二章 入山.md'
 const CHAPTER_C = 'press/剑来/Chapters/01-卷1/03-第三章 出山.md'
 
-/** 章节在虚拟磁盘上的绝对路径 */
+/** 大纲在虚拟磁盘上的绝对路径 */
 function toDiskPath(relativePath: string): string {
     return path.join(STORAGE_ROOT, relativePath)
 }
@@ -35,21 +36,16 @@ function toMaterialPath(relativePath: string): string {
     return path.join(STORAGE_ROOT, DIR_PATH, ...relativePath.split('/'))
 }
 
-/** 构造一份章节文档：summary 传空串表示键存在但值为空，与新建章节的模板一致 */
-function buildChapter(title: string, summary = ''): string {
-    const summaryLine = summary.length > 0 ? `summary: ${summary}` : 'summary:'
-    return [
-        '---',
-        `title: ${title}`,
-        'status: draft',
-        summaryLine,
-        'characters: []',
-        'goldenFingers: []',
-        'wordGoal: 0',
-        '---',
-        '',
-        '他走了出去。',
-    ].join('\n')
+/** 构造大纲：三个章块，梗概按传入内容填充，空串表示尚未回填 */
+function buildOutline(summaries: readonly string[] = ['', '', '']): string {
+    const lines = ['# 大纲', '', '## 章节内容', '', '### 卷1', '']
+    summaries.forEach((summary, index) => {
+        lines.push(`#### 第${String(index + 1)}章`, '', '- 状态：待写', '', '##### 计划梗概', '')
+        if (summary.length > 0) {
+            lines.push(summary, '')
+        }
+    })
+    return lines.join('\n')
 }
 
 /** 构造记录索引调用的替身 */
@@ -93,63 +89,64 @@ beforeEach(() => {
     setConfigValue('storage.rootPath', STORAGE_ROOT)
 })
 
-describe('mergeChapterSummaryFrontmatter', () => {
-    it('summary 为空时写入摘要，正文与其它键原样保留', () => {
-        const merged = mergeChapterSummaryFrontmatter(buildChapter('第一章 少年'), '少年登山，遇雨。')
+describe('mergeChapterSummaryIntoOutline', () => {
+    it('梗概为空时写入摘要，其它章块原样保留', () => {
+        const merged = mergeChapterSummaryIntoOutline(buildOutline(), 1, '少年登山，遇雨。')
         expect(merged).not.toBeNull()
-        const { frontmatter, body } = splitFrontmatter(merged ?? '')
-        expect(frontmatter).toContain('summary: 少年登山，遇雨。')
-        expect(frontmatter).toContain('title: 第一章 少年')
-        expect(frontmatter).toContain('wordGoal: 0')
-        expect(body).toContain('他走了出去。')
+        const blocks = readOutlineChapterBlocks(merged ?? '')
+        expect(blocks[0]?.summary).toBe('少年登山，遇雨。')
+        expect(blocks[1]?.summary).toBe('')
+        expect(blocks[0]?.status).toBe('待写')
     })
 
-    it('已有摘要时不做覆盖', () => {
-        expect(mergeChapterSummaryFrontmatter(buildChapter('第一章 少年', '旧摘要'), '新摘要')).toBeNull()
+    it('已有梗概时不做覆盖', () => {
+        expect(mergeChapterSummaryIntoOutline(buildOutline(['旧摘要']), 1, '新摘要')).toBeNull()
     })
 
-    it('缺少 summary 键时追加到 Frontmatter 末尾', () => {
-        const content = ['---', 'title: 第一章 少年', 'status: draft', '---', '', '正文。'].join('\n')
-        const merged = mergeChapterSummaryFrontmatter(content, '少年登山。')
-        expect(merged).not.toBeNull()
-        expect(splitFrontmatter(merged ?? '').frontmatter).toContain('summary: 少年登山。')
+    it('缺少计划梗概段时补建在章块末尾', () => {
+        const outline = ['# 大纲', '', '## 章节内容', '', '### 卷1', '', '#### 第1章', '', '- 状态：待写', ''].join('\n')
+        const merged = mergeChapterSummaryIntoOutline(outline, 1, '少年登山。')
+        expect(merged).toContain('##### 计划梗概')
+        expect(readOutlineChapterBlocks(merged ?? '')[0]?.summary).toBe('少年登山。')
     })
 
-    it('没有 Frontmatter 的文档不改写', () => {
-        expect(mergeChapterSummaryFrontmatter('只有正文。', '摘要')).toBeNull()
+    it('章号对不上时返回 null', () => {
+        expect(mergeChapterSummaryIntoOutline(buildOutline(), 9, '摘要')).toBeNull()
+        expect(mergeChapterSummaryIntoOutline('只有正文。', 1, '摘要')).toBeNull()
     })
 
     it('空摘要不写入', () => {
-        expect(mergeChapterSummaryFrontmatter(buildChapter('第一章 少年'), '   ')).toBeNull()
+        expect(mergeChapterSummaryIntoOutline(buildOutline(), 1, '   ')).toBeNull()
     })
 
-    it('含半角冒号与换行的摘要按 YAML 规则加引号并折叠空白', () => {
-        const merged = mergeChapterSummaryFrontmatter(buildChapter('第一章 少年'), '他说: 走吧\n然后离开')
-        expect(merged).toContain('summary: "他说: 走吧 然后离开"')
+    it('含半角冒号与换行的摘要折叠为单行', () => {
+        const merged = mergeChapterSummaryIntoOutline(buildOutline(), 1, '他说: 走吧\n然后离开')
+        expect(readOutlineChapterBlocks(merged ?? '')[0]?.summary).toBe('他说: 走吧 然后离开')
     })
 })
 
 describe('mergeChapterSummaries', () => {
-    it('按素材路径回填摘要：已有序章跳过，读取失败计入失败', async () => {
+    it('按素材回填大纲：已有序章跳过，路径对不上跳过，索引只触发一次', async () => {
         seedMaterials()
-        setFileContent(toDiskPath(CHAPTER_A), buildChapter('第一章 少年'))
-        setFileContent(toDiskPath(CHAPTER_B), buildChapter('第二章 入山', '旧摘要'))
+        setFileContent(toDiskPath(OUTLINE_PATH), buildOutline(['', '旧摘要', '']))
         const { indexer, indexed } = createIndexer()
         const result = await mergeChapterSummaries({
             dirPath: DIR_PATH,
             chapterPaths: [CHAPTER_A, CHAPTER_B, CHAPTER_C, 'press/剑来/Chapters/01-卷1/09-新章.md'],
             indexer,
         })
-        expect(result.updated).toBe(1)
+        expect(result.updated).toBe(2)
         expect(result.skipped).toBe(1)
-        expect(result.failed).toBe(1)
-        expect(readFileContent(toDiskPath(CHAPTER_A))).toContain('summary: 少年登山，遇雨。')
-        expect(readFileContent(toDiskPath(CHAPTER_B))).toContain('summary: 旧摘要')
-        expect(indexed).toEqual([toDiskPath(CHAPTER_A)])
+        expect(result.failed).toBe(0)
+        const blocks = readOutlineChapterBlocks(readFileContent(toDiskPath(OUTLINE_PATH)) ?? '')
+        expect(blocks[0]?.summary).toBe('少年登山，遇雨。')
+        expect(blocks[1]?.summary).toBe('旧摘要')
+        expect(blocks[2]?.summary).toBe('出山复仇。')
+        expect(indexed).toEqual([toDiskPath(OUTLINE_PATH)])
     })
 
-    it('没有摘要素材时给出提示且不改动章节', async () => {
-        setFileContent(toDiskPath(CHAPTER_A), buildChapter('第一章 少年'))
+    it('没有摘要素材时给出提示且不改动大纲', async () => {
+        setFileContent(toDiskPath(OUTLINE_PATH), buildOutline())
         const { indexer, indexed } = createIndexer()
         const result = await mergeChapterSummaries({
             dirPath: DIR_PATH,
@@ -159,11 +156,12 @@ describe('mergeChapterSummaries', () => {
         expect(result.updated).toBe(0)
         expect(result.message).toContain('尚未生成章节摘要')
         expect(indexed).toEqual([])
-        expect(readFileContent(toDiskPath(CHAPTER_A))).toContain('summary:')
+        expect(readOutlineChapterBlocks(readFileContent(toDiskPath(OUTLINE_PATH)) ?? '')[0]?.summary).toBe('')
     })
 
     it('素材路径与当前章节对不上时如实说明', async () => {
         seedMaterials()
+        setFileContent(toDiskPath(OUTLINE_PATH), buildOutline())
         const { indexer, indexed } = createIndexer()
         const result = await mergeChapterSummaries({
             dirPath: DIR_PATH,
@@ -175,10 +173,10 @@ describe('mergeChapterSummaries', () => {
         expect(indexed).toEqual([])
     })
 
-    it('编辑器里有未保存修改的章节跳过', async () => {
+    it('大纲在编辑器里有未保存修改时整批跳过', async () => {
         seedMaterials()
-        setFileContent(toDiskPath(CHAPTER_A), buildChapter('第一章 少年'))
-        registerDirtyTextDocument(toDiskPath(CHAPTER_A), ['---', 'title: 第一章 少年', '---'])
+        setFileContent(toDiskPath(OUTLINE_PATH), buildOutline())
+        registerDirtyTextDocument(toDiskPath(OUTLINE_PATH), buildOutline().split('\n'))
         const { indexer, indexed } = createIndexer()
         const result = await mergeChapterSummaries({
             dirPath: DIR_PATH,

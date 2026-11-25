@@ -31,8 +31,6 @@ interface PressSectionRouterProps {
     /** 对话作用域：作品目录（整个作品一份会话），为空时回落到 dirPath */
     chatScope: string | null
     mutations: PressMutations
-    /** 大纲页的「去写正文」：切到对话分区 */
-    onOpenChat: () => void
 }
 
 export function PressSectionRouter({
@@ -41,7 +39,6 @@ export function PressSectionRouter({
     dirPath,
     chatScope,
     mutations,
-    onOpenChat,
 }: PressSectionRouterProps): JSX.Element {
     if (section === 'setting') {
         return (
@@ -87,7 +84,6 @@ export function PressSectionRouter({
                 onCreateChapter={mutations.createOutlineChapter}
                 onApplyVolumeOutlines={mutations.applyVolumeOutlines}
                 onExtractOutline={mutations.extractOutline}
-                onOpenChat={onOpenChat}
             />
         )
     }

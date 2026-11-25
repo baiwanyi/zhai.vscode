@@ -1,7 +1,7 @@
 /**
  * 推送批次服务：批次与文章的增删改查、从笔记/作品文档导入，是公众号批次侧的唯一编排层。
- * 复用约定：落库走 db/issueRepository，正文与图片文件读写走 ./issueDocument，源文档的元数据解析复用
- * common/db/fileMeta 的 splitFrontmatter / parseTitle / countWords / contentHash，
+ * 复用约定：落库走 db/issueRepository，正文与图片文件读写走 ./issueDocument，源文档的标题与字数解析复用
+ * common/db/fileMeta 的 parseTitle / countWords / contentHash，
  * 图片地址定位复用 materialService 的 locateWechatImage，路径构造与校验复用 common/storagePath 与 config。
  * 关键约束：批次最多 8 篇、正文最多 2 万字（平台上限），超出直接拒绝并给出可执行提示；
  * 新建与导入都先把正文写进批次目录（wechat/{appid}/post/{时间戳}/）再落库，发布只读文件，库内 body 只是镜像；
@@ -15,7 +15,7 @@ import { randomUUID } from 'node:crypto'
 import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
-import { countWords, contentHash, parseTitle, splitFrontmatter } from '@modules/common/db/fileMeta'
+import { countWords, contentHash, parseTitle } from '@modules/common/db/fileMeta'
 import { findIndexedFile } from '@modules/common/db/indexRepository'
 import { logger } from '@modules/common/logger'
 import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
@@ -747,9 +747,8 @@ export class WechatIssueService {
         }
 
         const content = Buffer.from(await vscode.workspace.fs.readFile(uri)).toString('utf8')
-        const { frontmatter, body } = splitFrontmatter(content)
-        const title = readWechatArticleTitle(parseTitle(body, frontmatter)) || indexed.title
-        const normalizedBody = stripLeadingHeading(body).trim()
+        const title = readWechatArticleTitle(parseTitle(content)) || indexed.title
+        const normalizedBody = stripLeadingHeading(content).trim()
         if (normalizedBody.length === 0) {
             throw new Error('该文档正文为空，无法导入')
         }

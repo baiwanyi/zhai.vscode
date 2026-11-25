@@ -353,7 +353,7 @@ export class PressImportService {
         const segments = job.dirPath.split('/')
         await vscode.workspace.fs.createDirectory(buildStorageUri(root, segments))
         await vscode.workspace.fs.createDirectory(buildStorageUri(root, [...segments, PROJECT_CHAPTER_DIR]))
-        for (const document of buildProjectDocuments(name, audience, new Date())) {
+        for (const document of buildProjectDocuments(name, audience)) {
             const target = buildStorageUri(root, [...segments, ...document.relativePath.split('/')])
             await writeAndIndex(this.indexer, target, document.content)
         }

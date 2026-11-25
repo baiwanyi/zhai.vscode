@@ -102,6 +102,9 @@ function toClipboardRef(ref: AiContextRef): string {
     if (ref.kind === 'volumeOutline') {
         return `[卷纲] ${ref.label}`
     }
+    if (ref.kind === 'chapterOutline') {
+        return `[章纲] ${ref.label}`
+    }
     const display = toZhaiDisplayPath(ref.displayPath)
     if (ref.startLine === null || /:\d+(?:-\d+)?$/u.test(display)) {
         return display

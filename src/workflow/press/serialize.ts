@@ -105,10 +105,10 @@ export function serializeGoldenFingerSection(setting: ProjectSetting): string {
     ])
 }
 
-/** README Frontmatter 的四个字段：其余字段（状态、创建时间）由 writer 保留原值 */
+/** README 的四个元信息字段：由 writer 写进一级标题与「作品设定」段 */
 export function serializeReadmeMeta(setting: ProjectSetting): PressApplyMeta {
     return {
-        // 作品名用 textarea 编辑，Frontmatter 的 title 必须是单行
+        // 作品名用 textarea 编辑，写入一级标题时必须是单行
         title: toSingleLine(setting.title),
         audience: setting.audience,
         genres: setting.genres,

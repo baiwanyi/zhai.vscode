@@ -588,7 +588,7 @@ export interface WechatArticleOpenResult {
 
 /**
  * wechat/article/meta 请求：只改元信息，正文由用户在编辑器里维护。
- * 关键约束：coverPath 传空串表示清除、缺省表示不改动；宿主重写 frontmatter 时保留文件里的正文；
+ * 关键约束：coverPath 传空串表示清除、缺省表示不改动；宿主改标题时保留文件里的正文；
  * title 缺省表示「不改标题」——只改作者/摘要/留言的入口不得回传列表快照里的旧标题，
  * 否则并行编辑（编辑器或推送面板改过标题）后会把新标题与文件名改回旧值。
  */

@@ -2,8 +2,8 @@
  * 笔记草稿生成：按「笔记本目录 + 标题即文件名」产出空笔记的路径与内容。
  * 纯函数、零副作用，供 noteService 落盘、重命名服务与单元测试复用。
  * 关键约束：文件名直接取标题，仅做合法化收口（非法字符、保留名、长度与空标题回退），
- * 使「文件名 = 标题」成为可比较的稳定事实；新建笔记不写 Frontmatter，标题只由一级标题承载，
- * 索引器按「Frontmatter title → 首个一级标题 → 文件名」回落提取；
+ * 使「文件名 = 标题」成为可比较的稳定事实；新建笔记只有一级标题，标题也由它承载，
+ * 索引器按「首个一级标题 → 文件名」回落提取；
  * 笔记本目录名与 statsRepository 的 UNCLASSIFIED_NOTEBOOK_DIR 必须保持一致。
  */
 
@@ -73,7 +73,7 @@ export function toNoteDirectory(value: string): string {
     return segments.join('/')
 }
 
-/** 空笔记内容：仅一级标题 + 末尾换行作为光标落点，落地即可书写，不写 Frontmatter */
+/** 空笔记内容：仅一级标题 + 末尾换行作为光标落点，落地即可书写 */
 export function buildNoteContent(title: string): string {
     return `# ${title}\n`
 }

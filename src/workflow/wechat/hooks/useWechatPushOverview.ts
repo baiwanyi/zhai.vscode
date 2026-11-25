@@ -100,7 +100,7 @@ export function useWechatPushOverview(accountId: string): WechatPushOverviewStat
         void reload()
     }, [reload])
 
-    /** 保存文章元信息：全文以宿主重写的 frontmatter 为准，成功后重拉批次让卡片显示新标题 */
+    /** 保存文章元信息：全文以宿主重写的一级标题与正文为准，成功后重拉批次让卡片显示新标题 */
     const saveArticleMeta = useCallback(
         async (input: WechatArticleMetaInput): Promise<boolean> => {
             const payload: WechatArticleMetaRequest = {

@@ -59,7 +59,6 @@ interface PressOutlinePageProps {
     onApplyVolumeOutlines: (drafts: readonly VolumeOutlineDraft[]) => number
     /** 用素材重建大纲：mode 为 all 时覆盖整棵树，orders 时只刷新所选章，返回实际处理的章数 */
     onExtractOutline: (drafts: PressExtractedVolume[], target: OutlineExtractTarget) => number
-    onOpenChat: () => void
 }
 
 export function PressOutlinePage({
@@ -74,7 +73,6 @@ export function PressOutlinePage({
     onCreateChapter,
     onApplyVolumeOutlines,
     onExtractOutline,
-    onOpenChat,
 }: PressOutlinePageProps): JSX.Element {
     const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null)
     const [module, setModule] = useState<OutlineModuleKey>('volume')
@@ -193,7 +191,6 @@ export function PressOutlinePage({
                     onUpdatePlan={onUpdatePlan}
                     onUpdateChapter={onUpdateChapter}
                     onUpdateVolume={onUpdateVolume}
-                    onOpenChat={onOpenChat}
                 />
             </AppPage>
 

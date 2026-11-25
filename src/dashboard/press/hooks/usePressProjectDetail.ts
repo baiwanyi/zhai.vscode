@@ -38,7 +38,7 @@ export interface PressProjectDetailState {
     reload: () => Promise<void>
     createChapter: (volumeDir?: string) => Promise<void>
     createVolume: () => Promise<void>
-    /** 把归纳产物里的章节摘要回填到章节 Frontmatter：宿主只补空、不覆盖 */
+    /** 把归纳产物里的章节摘要回填到大纲「计划梗概」：宿主只补空、不覆盖 */
     mergeChapterSummary: () => Promise<void>
     renameVolume: (volumeDir: string, name: string) => Promise<boolean>
     deleteVolume: (volumeDir: string) => Promise<boolean>
@@ -195,7 +195,7 @@ export function usePressProjectDetail(dirPath: string): PressProjectDetailState 
     )
 
     /**
-     * 回填章节摘要：把归纳产物里的摘要写进章节 Frontmatter 的 summary。
+     * 回填章节摘要：把归纳产物里的摘要写进大纲章块的「计划梗概」。
      * 关键约束：改动统计与结论由宿主回包给出，前端只按有无改动切换提示级别，不自行推断结果。
      */
     const mergeChapterSummary = useCallback(async (): Promise<void> => {

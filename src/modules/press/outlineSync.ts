@@ -16,7 +16,7 @@ import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
 import { toDisplayName } from './projectFactory'
 
 /** 大纲文档名与两个分区标题：与 workspaceWriter / Webview 序列化口径保持一致 */
-const OUTLINE_FILE_NAME = '大纲.md'
+export const OUTLINE_FILE_NAME = '大纲.md'
 const VOLUME_OUTLINE_SECTION_TITLE = '卷纲'
 const CHAPTER_CONTENT_SECTION_TITLE = '章节内容'
 
@@ -235,4 +235,141 @@ export async function appendChapterToOutline(dirPath: string, seed: OutlineChapt
     await vscode.workspace.fs.writeFile(target, new TextEncoder().encode(next))
     logger.info(`已同步新章到大纲：${dirPath} 第${String(seed.order)}章`)
     return true
+}
+
+/** 大纲章块的只读视图：章节事实与摘要回填共用，行号用于定位写回点 */
+export interface OutlineChapterBlock {
+    /** 所属卷名（已剥序号前缀） */
+    volumeName: string
+    /** 章块标题 */
+    title: string
+    /** 卷内位置（1 基） */
+    indexInVolume: number
+    /** 计划梗概 */
+    summary: string
+    /** 状态原文，如「待写」 */
+    status: string
+    /** 章标题行号 */
+    headingLine: number
+    /** 「计划梗概」五级标题行号，缺失为 null */
+    summaryHeadingLine: number | null
+    /** 「计划梗概」段结束行号（不含） */
+    summaryEndLine: number | null
+    /** 章块结束行号（不含） */
+    blockEndLine: number
+}
+
+/**
+ * 解析大纲「章节内容」段的全部章块：按卷分组、卷内按出现顺序编号。
+ * 关键约束：只读解析；字段只取章标题下的键值行与「计划梗概」段，
+ * 节拍与场景等更深标题不参与，避免把示例文字当成摘要。
+ */
+export function readOutlineChapterBlocks(outline: string): OutlineChapterBlock[] {
+    const lines = outline.split(/\r?\n/u)
+    const sectionStart = findSectionHeading(lines, CHAPTER_CONTENT_SECTION_PATTERN)
+    if (sectionStart === -1) {
+        return []
+    }
+    const sectionEnd = findBlockEnd(lines, sectionStart, LEVEL_TWO_OR_UP_PATTERN)
+    const blocks: OutlineChapterBlock[] = []
+    let volumeName = ''
+    let chapterIndex = 0
+    let current: OutlineChapterBlock | null = null
+    let isInSummary = false
+    const flush = (): void => {
+        if (current !== null) {
+            blocks.push(current)
+            current = null
+        }
+    }
+    const closeBlock = (line: number): void => {
+        if (current !== null) {
+            current.blockEndLine = line
+            if (isInSummary) {
+                current.summaryEndLine = line
+            }
+        }
+        flush()
+        isInSummary = false
+    }
+    for (let cursor = sectionStart + 1; cursor < sectionEnd; cursor += 1) {
+        const line = (lines[cursor] ?? '').trim()
+        const volumeMatch = VOLUME_HEADING_PATTERN.exec(line)
+        if (volumeMatch !== null) {
+            closeBlock(cursor)
+            volumeName = volumeKey(volumeMatch[1] ?? '')
+            chapterIndex = 0
+            continue
+        }
+        const chapterMatch = CHAPTER_HEADING_PATTERN.exec(line)
+        if (chapterMatch !== null) {
+            closeBlock(cursor)
+            chapterIndex += 1
+            current = {
+                volumeName,
+                title: chapterMatch[1]?.trim() ?? '',
+                indexInVolume: chapterIndex,
+                summary: '',
+                status: '',
+                headingLine: cursor,
+                summaryHeadingLine: null,
+                summaryEndLine: null,
+                blockEndLine: sectionEnd,
+            }
+            continue
+        }
+        if (current === null) {
+            continue
+        }
+        if (/^#####\s+/u.test(line)) {
+            if (isInSummary) {
+                current.summaryEndLine = cursor
+            }
+            isInSummary = line.includes('计划梗概')
+            if (isInSummary) {
+                current.summaryHeadingLine = cursor
+            }
+            continue
+        }
+        if (/^#{1,4}\s+/u.test(line)) {
+            current.blockEndLine = cursor
+            if (isInSummary) {
+                current.summaryEndLine = cursor
+            }
+            isInSummary = false
+            continue
+        }
+        const statusMatch = /^-\s*状态[：:]\s*(.*)$/u.exec(line)
+        if (statusMatch !== null) {
+            current.status = (statusMatch[1] ?? '').trim()
+            continue
+        }
+        if (isInSummary && line.length > 0) {
+            current.summary = current.summary.length > 0 ? `${current.summary}\n${line}` : line
+        }
+    }
+    closeBlock(sectionEnd)
+    return blocks
+}
+
+/**
+ * 把归纳摘要写入大纲对应章块的「计划梗概」：已有内容或章号对不上时返回 null。
+ * 关键约束：只补空段，不覆盖作者已写的梗概；改写后由调用方一次落盘并重建索引。
+ */
+export function mergeChapterSummaryIntoOutline(outline: string, order: number, summary: string): string | null {
+    const normalized = summary.replace(/\s+/gu, ' ').trim()
+    if (normalized.length === 0) {
+        return null
+    }
+    const block = readOutlineChapterBlocks(outline)[order - 1]
+    if (block === undefined || block.summary.trim().length > 0) {
+        return null
+    }
+    const lines = outline.split(/\r?\n/u)
+    if (block.summaryHeadingLine !== null && block.summaryEndLine !== null) {
+        lines.splice(block.summaryHeadingLine + 1, 0, '', normalized)
+    } else {
+        lines.splice(block.blockEndLine, 0, '', '##### 计划梗概', '', normalized, '')
+    }
+    return normalizeOutline(lines.join('\n'))
 }

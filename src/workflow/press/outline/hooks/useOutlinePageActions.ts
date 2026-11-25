@@ -23,7 +23,13 @@ import type {
 } from '../../types'
 import type { OutlineExtractState } from './useOutlineExtract'
 import type { Dispatch, SetStateAction } from 'react'
-import { createAct, createClue, formatVolumeOutlineText, volumeTitleLabel } from '../../utils'
+import {
+    createAct,
+    createClue,
+    formatChapterOutlineText,
+    formatVolumeOutlineText,
+    volumeTitleLabel,
+} from '../../utils'
 
 interface UseOutlinePageActionsOptions {
     workspace: OutlineWorkspace
@@ -71,6 +77,7 @@ export interface OutlinePageActions {
     handleClearVolumeChapters: (volume: OutlineVolume) => void
     handleMoveVolume: (volumeId: string, direction: -1 | 1) => void
     handleAddVolumeToChat: (volume: OutlineVolume, index: number) => void
+    handleAddChapterToChat: () => Promise<void>
     handleConfirmDeleteVolume: () => void
     handleConfirmClearChapters: () => void
     handleExtract: (target: OutlineExtractTarget) => void
@@ -242,6 +249,30 @@ export function useOutlinePageActions({
         void run()
     }
 
+    /**
+     * 添加章纲到 AI 对话：把当前章及所属卷纲的快照交给宿主，由对话完成正文生成。
+     * 关键约束：uri 按 JSON 数组编码作品目录与章 id，与卷纲引用各自去重；只注入计划内容，不混入正文事实。
+     */
+    const handleAddChapterToChat = async (): Promise<void> => {
+        if (selectedEntry === null) {
+            return
+        }
+        const { volume, chapter } = selectedEntry
+        const volumeIndex = workspace.volumes.findIndex((item) => item.id === volume.id)
+        const safeIndex = volumeIndex < 0 ? 0 : volumeIndex
+        try {
+            await request<AiContextAddInlineResult>('ai/context/addInline', {
+                label: `${workspace.setting.title.trim() || '未命名作品'}·章纲·${volumeTitleLabel(volume.name, safeIndex)}·第${String(chapter.order)}章 ${chapter.title.trim() || '未命名'}`,
+                text: `${formatVolumeOutlineText(volume, safeIndex)}\n\n${formatChapterOutlineText(chapter)}`,
+                uri: JSON.stringify(['press-outline', dirPath, 'chapter', chapter.id]),
+                scope: dirPath,
+                kind: 'chapterOutline',
+            })
+        } catch (cause) {
+            toastError(cause)
+        }
+    }
+
     const handleConfirmDeleteVolume = (): void => {
         if (deletingVolume === null) {
             return
@@ -320,6 +351,7 @@ export function useOutlinePageActions({
         handleClearVolumeChapters,
         handleMoveVolume,
         handleAddVolumeToChat,
+        handleAddChapterToChat,
         handleConfirmDeleteVolume,
         handleConfirmClearChapters,
         handleExtract,

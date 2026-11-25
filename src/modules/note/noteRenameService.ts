@@ -1,6 +1,6 @@
 /**
  * 笔记重命名：保存时让文件名跟随笔记标题，维持「文件名 = 标题」这一事实。
- * 复用 fileMeta 的标题提取口径（Frontmatter title 优先、其次首个一级标题），与列表显示同源；
+ * 复用 fileMeta 的标题提取口径（正文首个一级标题），与列表显示同源；
  * 复用 noteFactory 的文件名合法化与 storagePath 的路径构造、IndexService 的单文件索引能力。
  * 关键约束：只处理 notes/ 下的 Markdown；文件名与标题一致（忽略大小写）即跳过，不做大小写改写；
  * 目标名被占用时顺延序号，绝不覆盖既有文件；重命名后先清旧记录再建新记录，并迁移置顶、重播活跃笔记，
@@ -9,7 +9,7 @@
  */
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
-import { parseTitle, splitFrontmatter } from '@modules/common/db/fileMeta'
+import { parseTitle } from '@modules/common/db/fileMeta'
 import { logger } from '@modules/common/logger'
 import { buildStorageUri, isPathExisting } from '@modules/common/storagePath'
 import { getActiveDocument } from '@modules/editor/activeDocument'
@@ -79,8 +79,7 @@ export class NoteRenameService {
     }
 
     private async renameToMatchTitle(document: vscode.TextDocument, relativePath: string): Promise<void> {
-        const { frontmatter, body } = splitFrontmatter(document.getText())
-        const title = parseTitle(body, frontmatter).trim()
+        const title = parseTitle(document.getText()).trim()
         // 没有标题就不猜：保留现有文件名，等用户补上一级标题后下次保存再对齐
         if (title === '') {
             return

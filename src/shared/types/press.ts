@@ -5,7 +5,7 @@
  * 模型输出只作草案，宿主须收窄长度与白名单（含线索 id），由 Webview 决定合并策略后再落盘。
  */
 
-/** 目标读者：写入 README Frontmatter 的 audience，同时作为添加作品时的唯一选项来源 */
+/** 目标读者：写入 README 正文「作品设定」段，同时作为添加作品时的唯一选项来源 */
 export const PRESS_AUDIENCES = ['男频', '女频'] as const
 
 /** 目标读者取值 */
@@ -117,7 +117,7 @@ export interface PressOpenDocResult {
 export interface PressChapterEntry {
     /** 相对存储根路径，形如 press/剑来/Chapters/01-初见.md */
     path: string
-    /** 展示标题：直接取 Frontmatter title，缺失时用去序号前缀的文件名 */
+    /** 展示标题：直接取正文一级标题，缺失时用去序号前缀的文件名 */
     title: string
     /** 文档字数，取自索引库 */
     wordCount: number
@@ -1030,7 +1030,7 @@ export interface PressAnalyzeResult {
     settingClueCount: number
 }
 
-/** press/mergeChapterSummary 请求：把素材里的章节摘要回填到章节 Frontmatter */
+/** press/mergeChapterSummary 请求：把素材里的章节摘要回填到大纲「计划梗概」 */
 export interface MergeChapterSummaryRequest {
     /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
     dirPath: string
@@ -1045,7 +1045,7 @@ export function isMergeChapterSummaryRequest(payload: unknown): payload is Merge
 export interface MergeChapterSummaryResult {
     /** 成功写入摘要的章节数 */
     updated: number
-    /** 有摘要但被跳过的章节数：已有摘要、缺少 Frontmatter 或文件正在编辑 */
+    /** 有摘要但被跳过的章节数：已有梗概、章号对不上或大纲正在编辑 */
     skipped: number
     /** 读写失败的章节数：单章失败不影响其余章节 */
     failed: number
@@ -1102,8 +1102,8 @@ export interface PressExtractOutlineResult {
 }
 
 /**
- * 章节事实：写后回填的只读输入，来自章节文档本身（Frontmatter 的本章介绍与状态 + 索引库字数）。
- * 关键约束：只读，不回写章节文件；summary 是「已经写成的事实」，与大纲里的计划梗概分开保存。
+ * 章节事实：写后回填的只读输入，来自大纲章块的计划梗概与状态，加上索引库的字数。
+ * 关键约束：只读，不回写任何文件；梗概与状态取自大纲，字数取自索引库。
  */
 export interface PressChapterFact {
     /** 相对存储根的章节路径 */
@@ -1191,7 +1191,7 @@ export interface PressExtractSettingResult {
     message: string
 }
 
-/** README Frontmatter 的可回填字段：其余字段（状态、创建时间）由宿主保留原值 */
+/** README 正文中可回填的元信息字段：由宿主写进一级标题与「作品设定」段 */
 export interface PressApplyMeta {
     title: string
     audience: string

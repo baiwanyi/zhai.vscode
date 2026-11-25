@@ -115,7 +115,7 @@ export function buildWechatArticleContent(title: string, body: string): string {
  */
 export function parseWechatArticleContent(content: string): WechatArticleDoc {
     return {
-        title: parseTitle(content, '').trim(),
+        title: parseTitle(content).trim(),
         body: stripLeadingHeading(content).trim(),
     }
 }

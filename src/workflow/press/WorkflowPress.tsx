@@ -11,7 +11,6 @@
  * 读取中交给 StateEmpty 的加载态（logo + 转圈 + 文案），等待期间不出现整片空白；
  * 作品定位只认宿主下发的 projectDir；未打开作品时渲染初始页（作品清单入口），不在页面内伪造示例数据。
  */
-import { useCallback } from 'react'
 import type { WorkflowContextState } from '@shared/types/workflow'
 import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { RESIDENT_SECTIONS, readScopeDir } from '@webview/workflow/layout/contentScope'
@@ -26,15 +25,10 @@ import type { JSX } from 'react'
 interface WorkflowPressProps {
     context: WorkflowContextState
     section: WorkflowSection
-    onSelectSection: (section: WorkflowSection) => void
 }
 
-export function WorkflowPress({ context, section, onSelectSection }: WorkflowPressProps): JSX.Element {
+export function WorkflowPress({ context, section }: WorkflowPressProps): JSX.Element {
     const { status, workspace, projects, dirPath, mutations } = usePressWorkspaceScope(context.projectDir)
-
-    const handleOpenChat = useCallback((): void => {
-        onSelectSection('chat')
-    }, [onSelectSection])
 
     // 对话作用域：整个作品一份对话，作品内换章不切会话
     const scopeDir = readScopeDir(context, 'press')
@@ -72,7 +66,6 @@ export function WorkflowPress({ context, section, onSelectSection }: WorkflowPre
             dirPath={dirPath ?? ''}
             chatScope={scopeDir}
             mutations={mutations}
-            onOpenChat={handleOpenChat}
         />
     )
 }

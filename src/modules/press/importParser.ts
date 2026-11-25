@@ -149,7 +149,7 @@ export interface ParsedChapter {
     order: number
     /** 卷目录名（含两位序号前缀）：解析结果总带卷，无卷标记时归入默认卷 */
     volumeDir: string
-    /** 章节标题：保留原文写法，用于 Frontmatter 与一级标题 */
+    /** 章节标题：保留原文写法，用于一级标题 */
     title: string
     /** 正文段落：段落之间以空行分隔 */
     body: string

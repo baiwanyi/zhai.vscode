@@ -2,7 +2,7 @@
  * 导入素材抽取：扫描已落盘的章节文档，产出供 AI 归纳使用的中间素材，平铺在作品的 Materials/ 下。
  * 素材分四类：章节清单与三段摘录（首/中/尾，供章节摘要）、人名候选与出场原文摘录（供角色卡）、
  * 金手指候选章与世界构建候选章（供设定归纳）。
- * 复用约定：Frontmatter 切分与标题读取取自 common/db/fileMeta，字数口径与索引库一致；
+ * 复用约定：标题读取与字数统计取自 common/db/fileMeta，与索引库同口径；
  * 路径构造复用 common/storagePath，素材目录名取自 shared/types/press 的 PRESS_IMPORT_DIR。
  * 关键约束：本模块只做统计与摘录，不做语义判断——角色名与设定线索都只是「候选」，是否成立由 AI 裁决；
  * 正文只在角色证据里以片段形式落盘，不整章复制，避免素材目录膨胀；
@@ -12,7 +12,7 @@
 
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
-import { countWords, parseTitle, splitFrontmatter } from '@modules/common/db/fileMeta'
+import { countWords, parseTitle } from '@modules/common/db/fileMeta'
 import { logger } from '@modules/common/logger'
 import { buildStorageUri, isPathExisting } from '@modules/common/storagePath'
 import { LEGACY_PRESS_IMPORT_DIR, PRESS_IMPORT_DIR } from '@shared/types/press'
@@ -423,7 +423,7 @@ function toTsvField(value: string): string {
 }
 
 /**
- * 从章节文档中截出正文：Frontmatter 之后即正文，正文之外的元信息不再占段落。
+ * 从章节文档中截出正文：文件全文即正文，一级标题之后不夹带元信息段落。
  * 关键约束：旧版四区块文档（`## 正文` 到下一个二级标题）仍须正确抽取，
  * 因此先探测区块标记，命中则按区块截取，未命中才视为纯正文。
  */
@@ -462,8 +462,7 @@ function buildDigests(body: string): { head: string; middle: string; tail: strin
 async function readChapter(item: PendingChapter, order: number): Promise<ChapterDigest> {
     const bytes = await vscode.workspace.fs.readFile(item.uri)
     const content = new TextDecoder('utf-8').decode(bytes)
-    const { frontmatter, body } = splitFrontmatter(content)
-    const chapterBody = extractBody(body)
+    const chapterBody = extractBody(content)
     const fileName = item.relativePath.split('/').pop() ?? ''
     const fallbackTitle = fileName
         .replace(/\.md$/iu, '')
@@ -473,7 +472,7 @@ async function readChapter(item: PendingChapter, order: number): Promise<Chapter
     return {
         order,
         volumeDir: item.volumeDir,
-        title: parseTitle(body, frontmatter) || fallbackTitle,
+        title: parseTitle(content) || fallbackTitle,
         charCount: countWords(chapterBody),
         relativePath: item.relativePath,
         head: digest.head,

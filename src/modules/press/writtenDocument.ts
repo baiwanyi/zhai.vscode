@@ -1,13 +1,13 @@
 /**
- * 模型写入文档的规范化：按文档类型补齐 Frontmatter 缺失字段，正文与已有键保持原样。
- * 复用约定：Frontmatter 拆解走 common/db/fileMeta 的 splitFrontmatter，标题取值与标量序列化沿用作品骨架。
- * 关键约束：只补缺失键、不覆盖已有值 —— 模型写好的简介与角色不能被宿主改回默认；
- * 存储根以外的路径原样返回，章节与 README 之外的文档不做任何改动。
+ * 模型写入文档的规范化：作品文档统一为纯正文，章节固定为「# 章节标题 + 章节内容」。
+ * 复用约定：章节标题取文件名，沿用 projectFactory 的 toDisplayName 口径；
+ * 存储根判定与作品路径分段复用 common/config 与 common/projectPath 的既有实现。
+ * 关键约束：落盘前剥掉模型可能输出的元数据块，保证作品文件不含 frontmatter；
+ * 模型写成二级标题时提升为一级并消除双标题，标题文本取写入值、无标题时才回退文件名；非作品路径原样返回。
  */
 import { resolveStorageRoot } from '@modules/common/config'
-import { splitFrontmatter } from '@modules/common/db/fileMeta'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
-import { formatFrontmatterScalar, PROJECT_CHAPTER_DIR, PROJECT_README_NAME, toDisplayName } from './projectFactory'
+import { PROJECT_CHAPTER_DIR, toDisplayName } from './projectFactory'
 
 /** 相对存储根的路径：不在存储根内返回 null，在根自身返回空串 */
 function toStorageRelative(filePath: string): string | null {
@@ -23,58 +23,43 @@ function toStorageRelative(filePath: string): string | null {
     return normalized.slice(root.length + 1)
 }
 
-/** 键值行：值为空时不留尾随空格，与骨架输出一致 */
-function formatLine(key: string, value: string): string {
-    return value.length > 0 ? `${key}: ${value}` : `${key}:`
-}
-
-/**
- * 合并默认 Frontmatter：已有键一律保留，只追加缺失项。
- * 关键约束：正文区间原样保留（splitFrontmatter 的 body 含前导换行），拼接时不得再补换行。
- */
-function mergeDefaults(content: string, defaults: Record<string, string>): string {
-    const { frontmatter, body } = splitFrontmatter(content)
-    const entries = Object.entries(defaults)
-    if (frontmatter.trim().length === 0) {
-        const lines = entries.map(([key, value]) => formatLine(key, value))
-        return `---\n${lines.join('\n')}\n---\n\n${body.replace(/^\r?\n/u, '')}`
-    }
-    const present = new Set(
-        frontmatter
-            .split(/\r?\n/u)
-            .map((line) => line.split(':')[0]?.trim() ?? '')
-            .filter((key) => key.length > 0),
-    )
-    const missing = entries.filter(([key]) => !present.has(key)).map(([key, value]) => formatLine(key, value))
-    if (missing.length === 0) {
+/** 剥掉开头的元数据块：模型偶尔会输出 --- 包裹的元信息，落盘前统一去掉 */
+function stripLeadingMetaBlock(content: string): string {
+    if (!content.startsWith('---')) {
         return content
     }
-    return `---\n${frontmatter}\n${missing.join('\n')}\n---${body}`
+    const end = content.indexOf('\n---', 3)
+    if (end < 0) {
+        return content
+    }
+    return content.slice(end + 4).replace(/^(?:\r?\n)+/u, '')
 }
 
-/** 章节文档的默认 Frontmatter：标题取自文件名，其余与新建章节一致 */
-function chapterDefaults(fileName: string): Record<string, string> {
-    return {
-        title: formatFrontmatterScalar(toDisplayName(fileName), false),
-        status: 'draft',
-        summary: '',
-        characters: '[]',
-        goldenFingers: '[]',
-        wordGoal: '0',
-    }
-}
+/** 开头的一级或二级标题行：章节标题无论模型写成哪一级，都按这一行取文本 */
+const LEADING_HEADING_PATTERN = /^(#{1,2})\s+([^\r\n]+)(?:\r?\n)*/u
 
-/** README 的默认 Frontmatter：audience 属于枚举，缺失时不猜，交由用户设定 */
-function readmeDefaults(projectName: string): Record<string, string> {
-    return {
-        title: formatFrontmatterScalar(projectName, false),
-        status: 'ongoing',
-        wordGoal: '0',
+/**
+ * 统一章节标题为单个一级标题：优先采用模型写入的标题文本（通常来自章纲），
+ * 最多剥掉开头两个连续标题行以消除「原 H1 + 新 H2」双标题；没有标题时回退文件名。
+ * 关键约束：正文里更靠后的二级小节标题不受影响，标题文本只做 trim 不改写内容。
+ */
+function withChapterTitle(content: string, fallbackTitle: string): string {
+    let rest = content.replace(/^\s+/u, '')
+    let title = ''
+    for (let count = 0; count < 2; count += 1) {
+        const matched = LEADING_HEADING_PATTERN.exec(rest)
+        if (matched === null) {
+            break
+        }
+        title = (matched[2] ?? '').trim()
+        rest = rest.slice(matched[0].length).replace(/^\s+/u, '')
     }
+    const heading = title.length > 0 ? title : fallbackTitle
+    return `${`# ${heading}\n${rest}`.trimEnd()}\n`
 }
 
 /**
- * 规范化模型写入的 Markdown：章节补章节字段、README 补作品字段，其余文档原样返回。
+ * 规范化模型写入的 Markdown：作品文档剥掉元数据块，章节再统一一级标题，其余文档原样返回。
  * 返回值为应落盘的内容，调用方需把它替换进工具入参的 content。
  */
 export function normalizeWrittenDocument(filePath: string, content: string): string {
@@ -95,11 +80,9 @@ export function normalizeWrittenDocument(filePath: string, content: string): str
     if (projectName.length === 0) {
         return content
     }
+    const cleaned = stripLeadingMetaBlock(content)
     if (directory === PROJECT_CHAPTER_DIR) {
-        return mergeDefaults(content, chapterDefaults(fileName))
+        return withChapterTitle(cleaned, toDisplayName(fileName))
     }
-    if (segments.length === 3 && fileName === PROJECT_README_NAME) {
-        return mergeDefaults(content, readmeDefaults(projectName))
-    }
-    return content
+    return cleaned
 }

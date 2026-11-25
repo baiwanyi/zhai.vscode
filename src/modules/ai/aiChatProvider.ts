@@ -316,7 +316,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
     }
 
     /**
-     * 把无文件来源的卷纲快照加入对话上下文并切到对话分区。
+     * 把无文件来源的大纲快照（卷纲或章纲）加入对话上下文并切到对话分区。
      * 关键约束：标签与正文逐字段收窄，scope 与 uri 只作会话键和去重键、不参与路径拼接；
      * 重复或达上限时不切分区，由前端按错误提示就地处理。
      */
@@ -324,7 +324,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         const request = readInlineContextPayload(payload)
         const ref: HostContextRef = {
             id: randomUUID(),
-            kind: 'volumeOutline',
+            kind: request.kind ?? 'volumeOutline',
             label: request.label,
             displayPath: request.label,
             startLine: null,
@@ -337,7 +337,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
         this.service.useScope(request.scope ?? null)
         const result = this.service.addContexts([ref], 'chat')
         if (result.added.length === 0) {
-            throw new Error(result.duplicated > 0 ? '该卷纲已在对话上下文中' : '上下文已达上限，请先移除部分引用')
+            throw new Error(result.duplicated > 0 ? '该大纲已在对话上下文中' : '上下文已达上限，请先移除部分引用')
         }
         await focusChatSection(this.workflowRouter)
         return { added: true, label: ref.label }
@@ -1203,11 +1203,12 @@ function readInlineContextPayload(payload: unknown): AiContextAddInlineRequest {
     if (typeof payload !== 'object' || payload === null) {
         throw new Error('ai/context/addInline 缺少参数')
     }
-    const { label, text, uri, scope } = payload as {
+    const { label, text, uri, scope, kind } = payload as {
         label?: unknown
         text?: unknown
         uri?: unknown
         scope?: unknown
+        kind?: unknown
     }
     if (typeof label !== 'string' || label.trim().length === 0 || label.trim().length > MAX_INLINE_LABEL_LENGTH) {
         throw new Error('ai/context/addInline 标签非法')
@@ -1221,11 +1222,15 @@ function readInlineContextPayload(payload: unknown): AiContextAddInlineRequest {
     if (scope !== undefined && (typeof scope !== 'string' || scope.trim().length > MAX_INLINE_SCOPE_LENGTH)) {
         throw new Error('ai/context/addInline 作用域非法')
     }
+    if (kind !== undefined && kind !== 'volumeOutline' && kind !== 'chapterOutline') {
+        throw new Error('ai/context/addInline 引用类型非法')
+    }
     return {
         label: label.trim(),
         text,
         uri: uri.trim(),
         scope: typeof scope === 'string' && scope.trim().length > 0 ? scope.trim() : undefined,
+        kind: kind === 'volumeOutline' || kind === 'chapterOutline' ? kind : undefined,
     }
 }
 

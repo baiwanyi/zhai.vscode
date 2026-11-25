@@ -12,16 +12,13 @@ import { parseProjectWorkspace } from '../src/workflow/press/document'
 /** 设定分组文档留空：走旧 设定.md 回落路径；条目文档留空即没有资料条目 */
 const EMPTY_SETTING_SECTIONS = { world: '', power: '', faction: '', place: '', item: '' }
 
-const README = `---
-title: 城南旧事
-audience: 男频
-wordGoal: 800000
-tags: [都市, 悬疑]
----
-
-# 城南旧事
+const README = `# 城南旧事
 
 ## 简介
+
+- 目标读者：男频
+- 题材：都市、悬疑
+- 目标字数：800000
 
 修表匠林岚能从机械里听见残留的声音。
 
@@ -268,16 +265,18 @@ describe('parseProjectWorkspace', () => {
     })
 
     it('标题承载的新格式：设定字段、角色分组与条目字段都能还原', () => {
-        const readme = `---
-title: 长夜行
-audience: 女频
-wordGoal: 600000
-tags: [仙侠]
----
-
-# 长夜行
+        const readme = `# 长夜行
 
 ## 作品设定
+
+### 目标读者
+女频
+
+### 题材
+仙侠
+
+### 目标字数
+600000
 
 ### 笔名
 青梧
@@ -468,7 +467,7 @@ tags: [仙侠]
 
 describe('新建作品的大纲骨架', () => {
     it('自带一卷一章，打开卷纲与章纲即可编辑', () => {
-        const documents = buildProjectDocuments('剑来', '男频', new Date('2026-11-23T00:00:00Z'))
+        const documents = buildProjectDocuments('剑来', '男频')
         const outline = documents.find((item) => item.relativePath === '大纲.md')?.content ?? ''
         const parsed = parseProjectWorkspace(
             { readme: '', setting: '', characters: '', outline },

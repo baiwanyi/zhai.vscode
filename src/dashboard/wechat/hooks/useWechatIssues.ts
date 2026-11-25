@@ -261,7 +261,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         [reload],
     )
 
-    /** 保存文章元信息：宿主重写 frontmatter 之外的库内字段，正文文件保持不动 */
+    /** 保存文章元信息：宿主只改库内字段，正文文件保持不动 */
     const updateArticleMeta = useCallback(
         async (input: WechatArticleMetaInput): Promise<boolean> => {
             setIsMutating(true)

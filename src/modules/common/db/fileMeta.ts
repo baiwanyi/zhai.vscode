@@ -1,6 +1,8 @@
 /**
- * Markdown 元数据解析：从文件内容提取标题、标签、字数与内容 hash。
- * 约束：仅解析元数据，正文绝不写入索引库；解析失败返回兜底值而不抛错，保证索引流水线不中断。
+ * Markdown 元数据解析：从正文提取标题、标签、字数与内容 hash。
+ * 复用约定：统一由本模块提供标题与标签口径，索引器和笔记标题解析共享同一实现；
+ * 标签取自作品文档正文的「题材」字段，按顿号、逗号、分号与斜杠拆项。
+ * 关键约束：不再解析元数据块，正文即全部内容；解析失败返回兜底值而不抛错，保证索引流水线不中断。
  */
 import { createHash } from 'node:crypto'
 
@@ -11,80 +13,38 @@ export interface FileMeta {
     hash: string
 }
 
-/** 从 Frontmatter 行提取 YAML 风格 tags：`tags: [a, b]` 或逐项 `- a` */
-function parseFrontmatterTags(frontmatter: string): string[] {
-    const tags: string[] = []
-    const lines = frontmatter.split(/\r?\n/)
-    let isParsingTags = false
-    for (const line of lines) {
-        if (line.startsWith('tags:')) {
-            const inline = line.slice('tags:'.length).trim()
-            if (inline.startsWith('[') && inline.endsWith(']')) {
-                tags.push(
-                    ...inline
-                        .slice(1, -1)
-                        .split(',')
-                        .map((t) => t.trim().replace(/^['"]|['"]$/g, ''))
-                        .filter((t) => t.length > 0),
-                )
-            }
-            isParsingTags = true
-            continue
-        }
-        if (isParsingTags) {
-            const match = /^\s*-\s+(.+)$/.exec(line)
-            if (match?.[1] !== undefined) {
-                tags.push(match[1].trim().replace(/^['"]|['"]$/g, ''))
-            } else {
-                isParsingTags = false
-            }
-        }
-    }
-    return tags
-}
+/** 题材字段标题：作品文档正文以三级标题承载该字段 */
+const GENRES_HEADING_PATTERN = /^###\s+题材\s*$/mu
 
-/** 解析 Frontmatter 区块，返回区块内容与是否闭合；导入素材抽取复用同一口径 */
-export function splitFrontmatter(content: string): { frontmatter: string; body: string } {
-    if (!content.startsWith('---')) {
-        return { frontmatter: '', body: content }
+/**
+ * 解析正文里的标签：取「### 题材」段首个非空行，按常见分隔符拆项。
+ * 段落终点是一级到三级标题或下一个五级字段，避免把后续字段读进来。
+ */
+function parseBodyTags(body: string): string[] {
+    const matched = GENRES_HEADING_PATTERN.exec(body)
+    if (matched === null) {
+        return []
     }
-    const end = content.indexOf('\n---', 3)
-    if (end < 0) {
-        return { frontmatter: '', body: content }
+    const rest = body.slice(matched.index + matched[0].length)
+    const section = /^#{1,3}\s+/mu.exec(rest)
+    const content = section === null ? rest : rest.slice(0, section.index)
+    const line = content.split(/\r?\n/u).find((item) => item.trim().length > 0)?.trim() ?? ''
+    if (line.length === 0 || line.startsWith('#####')) {
+        return []
     }
-    return { frontmatter: content.slice(4, end), body: content.slice(end + 4) }
-}
-
-/** 还原 Frontmatter 标量的包裹引号与转义，与章节文档序列化规则镜像 */
-function unwrapFrontmatterScalar(value: string): string {
-    if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
-        return value
-            .slice(1, -1)
-            .replace(/\\(["\\])/gu, '$1')
-            .replace(/\\n/gu, '\n')
-    }
-    if (value.length >= 2 && value.startsWith("'") && value.endsWith("'")) {
-        return value.slice(1, -1).replace(/''/gu, "'")
-    }
-    return value
+    return line
+        .split(/[、,，;；/]/u)
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
 }
 
 /**
- * 提取标题：Frontmatter title 优先，其次首个 `# ` 行，兜底文件名由调用方补。
- * 关键约束：冒号后只吃行内空白（`[ \t]`），否则空 title 会把下一行当标题；
- * 章节列表标题因此直接来自 Frontmatter title，正文不必再写一级标题。
+ * 提取标题：正文首个 `# ` 行，找不到时返回空串由调用方回退文件名。
+ * 关键约束：章节列表标题直接来自这一行，正文必须保留一级标题。
  */
-export function parseTitle(body: string, frontmatter: string): string {
-    const titleMatch = /^title:[ \t]*(.*)$/m.exec(frontmatter)
-    const declared = titleMatch?.[1] === undefined ? '' : unwrapFrontmatterScalar(titleMatch[1].trim())
-    if (declared.length > 0) {
-        return declared
-    }
-    const heading = /^#\s+(.+)$/m.exec(body)
-    if (heading?.[1] !== undefined) {
-        return heading[1].trim()
-    }
-    return ''
+export function parseTitle(body: string): string {
+    const heading = /^#\s+(.+)$/mu.exec(body)
+    return heading?.[1]?.trim() ?? ''
 }
 
 /** 统计字数：去除 Markdown 标记与空白后的字符数（中英文统一近似值） */
@@ -102,12 +62,11 @@ export function contentHash(content: string): string {
 
 /** 解析 Markdown 文件内容为索引元数据；title 为空时回退到传入的文件名 */
 export function parseFileMeta(content: string, fileName: string): FileMeta {
-    const { frontmatter, body } = splitFrontmatter(content)
-    const title = parseTitle(body, frontmatter)
+    const title = parseTitle(content)
     return {
         title: title.length > 0 ? title : fileName,
-        wordCount: countWords(body),
-        tags: parseFrontmatterTags(frontmatter),
+        wordCount: countWords(content),
+        tags: parseBodyTags(content),
         hash: contentHash(content),
     }
 }

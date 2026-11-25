@@ -14,7 +14,7 @@ import type { RecentFile } from './dashboard'
 export interface CreatedNote {
     /** 相对存储根的文件路径，形如 notes/202610/{uuid}.md */
     path: string
-    /** 笔记标题，与写入的 Frontmatter title 一致 */
+    /** 笔记标题，与正文首个一级标题一致 */
     title: string
 }
 

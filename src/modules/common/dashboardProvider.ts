@@ -1258,7 +1258,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     }
 
     /**
-     * 回填章节摘要：把 Materials/summaries.tsv 的摘要按 index.tsv 的路径写回章节 Frontmatter 的 summary。
+     * 回填章节摘要：把 Materials/summaries.tsv 的摘要按 index.tsv 的路径写回大纲「计划梗概」。
      * 关键约束：只补空不覆盖——章节已有摘要时跳过，因此不需要写入前留版；
      * 章节路径取自索引库，不采信前端；单章失败只计数不中断，仅在没有可回填摘要时以结论文案说明。
      */

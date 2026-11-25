@@ -1,23 +1,18 @@
 /**
- * 章节摘要回填：把归纳产出的章节摘要合并进章节文档的 Frontmatter，让摘要落库并进入索引。
- * 复用约定：素材位置取自 importAnalysis 的 MATERIAL_FILE_NAMES，Frontmatter 拆解走 common/db/fileMeta，
- * 标量序列化复用 projectFactory 的同一实现，保证与新建章节的写入口径一致。
- * 关键约束：只补空——章节已有 summary 时一律跳过、不覆盖，因此无需写入前留版；
- * 章节路径由调用方从索引库取，本模块不采信前端路径；单章读写失败只计数不中断整批，
- * 编辑器里存在未保存修改的章节直接跳过，避免随后的保存把回填结果盖回去。
+ * 章节摘要回填：把归纳产出的章摘要写回大纲「章节内容」的「计划梗概」，不改章节正文文件。
+ * 复用约定：素材位置取自 importAnalysis 的 MATERIAL_FILE_NAMES，大纲解析与写回复用 outlineSync；
+ * 路径构造沿用 common/storagePath，索引重建由调用方的 ProjectIndexer 提供。
+ * 关键约束：只补空——梗概已有内容时一律跳过、不覆盖；章号以素材的全局序号对齐扁平章块，
+ * 对不上就跳过，宁可漏填也不错填；大纲在编辑器里有未保存修改时整批跳过，避免覆盖用户改动。
  */
 import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
-import { splitFrontmatter } from '@modules/common/db/fileMeta'
 import { logger } from '@modules/common/logger'
-import { buildStorageUri } from '@modules/common/storagePath'
+import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
 import type { MergeChapterSummaryResult } from '@shared/types/press'
 import { MATERIAL_FILE_NAMES } from './importAnalysis'
-import { formatFrontmatterScalar } from './projectFactory'
+import { OUTLINE_FILE_NAME, mergeChapterSummaryIntoOutline, readOutlineChapterBlocks } from './outlineSync'
 import type { ProjectIndexer } from './projectService'
-
-/** 章节 Frontmatter 的摘要行：只认行首 summary，避免误改正文里的同名文字 */
-const SUMMARY_LINE_PATTERN = /^summary:[ \t]*(.*)$/u
 
 /** 素材 TSV 的列分隔符 */
 const TSV_SEPARATOR = '\t'
@@ -51,41 +46,7 @@ async function readMaterialFile(dirPath: string, relativePath: string): Promise<
     }
 }
 
-/**
- * 把摘要写入章节文档：仅在 Frontmatter 的 summary 为空（或缺失）时返回新内容。
- * 返回 null 表示无需改写——已有摘要、没有 Frontmatter 或摘要文本为空。
- * 只替换或追加 summary 一行，正文与其余键逐字保留（不做行尾整理，避免无谓 diff）。
- */
-export function mergeChapterSummaryFrontmatter(content: string, summary: string): string | null {
-    const normalized = summary.replace(/\s+/gu, ' ').trim()
-    if (normalized.length === 0) {
-        return null
-    }
-    const { frontmatter, body } = splitFrontmatter(content)
-    if (frontmatter.trim().length === 0) {
-        return null
-    }
-    let hasSummaryLine = false
-    let hasSummaryValue = false
-    const lines = frontmatter.split(/\r?\n/u).map((line) => {
-        const matched = SUMMARY_LINE_PATTERN.exec(line)
-        if (matched === null) {
-            return line
-        }
-        hasSummaryLine = true
-        hasSummaryValue = (matched[1] ?? '').trim().length > 0
-        return `summary: ${formatFrontmatterScalar(normalized, false)}`
-    })
-    if (hasSummaryValue) {
-        return null
-    }
-    if (!hasSummaryLine) {
-        lines.push(`summary: ${formatFrontmatterScalar(normalized, false)}`)
-    }
-    return `---\n${lines.join('\n')}\n---${body}`
-}
-
-/** 回填入参：章节路径必须由调用方从索引库取出 */
+/** 回填入参：作品目录与章路径由调用方从索引库取出 */
 export interface MergeChapterSummaryOptions {
     dirPath: string
     /** 作品已登记的章节相对路径 */
@@ -97,7 +58,7 @@ export interface MergeChapterSummaryOptions {
 function buildMergeMessage(updated: number, skipped: number, failed: number): string {
     const parts = [`已回填 ${String(updated)} 章摘要`]
     if (skipped > 0) {
-        parts.push(`跳过 ${String(skipped)} 章（已有摘要或文件正在编辑）`)
+        parts.push(`跳过 ${String(skipped)} 章（已有梗概或章号对不上）`)
     }
     if (failed > 0) {
         parts.push(`失败 ${String(failed)} 章`)
@@ -106,8 +67,8 @@ function buildMergeMessage(updated: number, skipped: number, failed: number): st
 }
 
 /**
- * 回填章节摘要：以素材里的路径为关联键做内连接，逐章合并并重建索引。
- * 关联键选路径而非序号——用户改名或跨卷移动后序号会漂移，路径对不上就跳过，宁可漏填也不错填。
+ * 回填章节摘要：以素材里的路径取章号，按全局序号对齐大纲里的扁平章块，逐章补写梗概。
+ * 关联键在素材侧仍是路径——用户改名或跨卷移动后路径对不上就跳过，避免错填到别的章。
  */
 export async function mergeChapterSummaries(options: MergeChapterSummaryOptions): Promise<MergeChapterSummaryResult> {
     const summaryContent = await readMaterialFile(options.dirPath, MATERIAL_FILE_NAMES.summaries)
@@ -134,46 +95,54 @@ export async function mergeChapterSummaries(options: MergeChapterSummaryOptions)
         orderByPath.set(relativePath, order)
     }
     const root = resolveStorageRoot()
+    const outlineUri = buildStorageUri(root, [...toSafeSegments(options.dirPath, '作品'), OUTLINE_FILE_NAME])
     const dirtyPaths = new Set(
         vscode.workspace.textDocuments.filter((document) => document.isDirty).map((document) => document.uri.fsPath),
     )
+    if (dirtyPaths.has(outlineUri.fsPath)) {
+        return { updated: 0, skipped: options.chapterPaths.length, failed: 0, message: '大纲正在编辑，请先保存后再回填' }
+    }
+    let outline: string
+    try {
+        outline = new TextDecoder('utf-8').decode(await vscode.workspace.fs.readFile(outlineUri))
+    } catch {
+        outline = ''
+    }
+    if (readOutlineChapterBlocks(outline).length === 0) {
+        return { updated: 0, skipped: 0, failed: 0, message: '大纲里没有可回填的章纲' }
+    }
     let updated = 0
     let skipped = 0
-    let failed = 0
     for (const chapterPath of options.chapterPaths) {
         const order = orderByPath.get(chapterPath)
         const summary = order === undefined ? undefined : summaryByOrder.get(order)
-        if (summary === undefined) {
+        if (order === undefined || summary === undefined) {
             continue
         }
-        const uri = buildStorageUri(root, chapterPath.split('/'))
-        if (dirtyPaths.has(uri.fsPath)) {
+        const next = mergeChapterSummaryIntoOutline(outline, order, summary)
+        if (next === null) {
             skipped += 1
             continue
         }
-        try {
-            const bytes = await vscode.workspace.fs.readFile(uri)
-            const merged = mergeChapterSummaryFrontmatter(new TextDecoder('utf-8').decode(bytes), summary)
-            if (merged === null) {
-                skipped += 1
-                continue
-            }
-            await vscode.workspace.fs.writeFile(uri, new TextEncoder().encode(merged))
-            await options.indexer.indexFile(uri)
-            updated += 1
-        } catch (error) {
-            failed += 1
-            const detail = error instanceof Error ? error.message : String(error)
-            logger.warn(`章节摘要回填失败：${chapterPath}（${detail}）`)
-        }
+        outline = next
+        updated += 1
     }
-    // 三计数全零说明素材与当前章节没对上（改名、移动或尚未抽取）：如实说明，避免用户以为是成功空跑
-    if (updated === 0 && skipped === 0 && failed === 0) {
+    if (updated === 0 && skipped === 0) {
         const message =
             options.chapterPaths.length === 0
                 ? '作品内没有可回填的章节'
-                : '素材里的章节与当前章节对不上（可能已改名或移动），建议先重新抽取素材'
-        return { updated, skipped, failed, message }
+                : '素材里的章节与大纲对不上（可能已改名或移动），建议先重新抽取素材'
+        return { updated, skipped, failed: 0, message }
     }
-    return { updated, skipped, failed, message: buildMergeMessage(updated, skipped, failed) }
+    if (updated > 0) {
+        try {
+            await vscode.workspace.fs.writeFile(outlineUri, new TextEncoder().encode(outline))
+            await options.indexer.indexFile(outlineUri)
+        } catch (error) {
+            const detail = error instanceof Error ? error.message : String(error)
+            logger.warn(`大纲摘要回填失败：${options.dirPath}（${detail}）`)
+            return { updated: 0, skipped, failed: updated, message: buildMergeMessage(0, skipped, updated) }
+        }
+    }
+    return { updated, skipped, failed: 0, message: buildMergeMessage(updated, skipped, 0) }
 }

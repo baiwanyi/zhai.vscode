@@ -49,6 +49,8 @@ import { NoteRenameService } from './modules/note/noteRenameService'
 import { registerNoteRenameWatcher } from './modules/note/noteRenameWatcher'
 import { PinStore } from './modules/note/pinStore'
 import { TrashStore } from './modules/note/trashStore'
+import { PressChapterRenameService } from './modules/press/chapterRenameService'
+import { registerPressChapterRenameWatcher } from './modules/press/chapterRenameWatcher'
 import { openPressDatabase } from './modules/press/db/connection'
 import { ImportSemanticService } from './modules/press/importSemanticService'
 import { PressAiService } from './modules/press/pressAiService'
@@ -210,6 +212,13 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         dashboardProvider.broadcastActiveNote(nextPath)
     })
     registerNoteRenameWatcher(noteRenameService, context.subscriptions)
+
+    // 作品章节重命名：保存时让章节文件名跟随一级标题并保留序号前缀，索引随之收敛；
+    // 改的正是正在编辑的那篇时切到新文件并重播活跃路径，避免列表与编辑器停在旧路径
+    const pressChapterRenameService = new PressChapterRenameService(indexService, (nextPath) => {
+        dashboardProvider.broadcastActiveNote(nextPath)
+    })
+    registerPressChapterRenameWatcher(pressChapterRenameService, context.subscriptions)
 
     // 作品快照：设定、角色、大纲与章节正文在内容变更时按间隔自动留版，正文落在作品的 Snapshots 目录；
     // 先于 AI 对话创建，供写回前强制留底；恢复后由索引服务重建字数，两条通道共用同一套去重与节流

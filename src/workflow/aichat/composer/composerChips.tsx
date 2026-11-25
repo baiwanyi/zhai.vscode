@@ -27,7 +27,7 @@ export interface BuildComposerChipsInput {
     onRemoveReference: (path: string) => void
 }
 
-/** 上下文芯片图标：笔记本用书库、行范围用选区、微信用对话、卷纲用层叠图标，其余为文档图标 */
+/** 上下文芯片图标：笔记本用书库、行范围用选区、微信用对话、大纲快照用层叠图标，其余为文档图标 */
 function buildContextIcon(kind: AiContextRef['kind']): JSX.Element {
     if (kind === 'notebook') {
         return <Library className="size-3 shrink-0 text-muted-foreground" />
@@ -39,8 +39,8 @@ function buildContextIcon(kind: AiContextRef['kind']): JSX.Element {
         // 微博引用没有文件路径：图标区分来源，避免被误认成某篇笔记
         return <MessageSquare className="size-3 shrink-0 text-muted-foreground" />
     }
-    if (kind === 'volumeOutline') {
-        // 卷纲快照同样没有文件路径：用层叠图标区分来源，不伪装成某篇文档
+    if (kind === 'volumeOutline' || kind === 'chapterOutline') {
+        // 大纲快照同样没有文件路径：用层叠图标区分来源，不伪装成某篇文档
         return <Layers className="size-3 shrink-0 text-muted-foreground" />
     }
     return <FileText className="size-3 shrink-0 text-muted-foreground" />

@@ -1,7 +1,7 @@
 /**
  * 作品文档解析：把 README.md、世界观.md、金手指.md、势力.md、地点.md、物品.md、
  * 设定.md、角色设定.md、大纲.md 的原文解析成工作台的 OutlineWorkspace。
- * 复用约定：字段语义与 types.ts 一致；基本信息取自 README 的 Frontmatter 与「作品设定」段，
+ * 复用约定：字段语义与 types.ts 一致；基本信息取自 README 的一级标题与「作品设定」段，
  * 世界观与金手指各取自己的文档（旧的 设定.md 仅在这两份缺失时兜底），
  * 角色按「## 角色名」切块（旧文件为「# 角色名」），资料条目按「## 名称」切块。
  * 大纲按功能模块分段落解析：结构纲 / 卷纲 / 章节内容 / 伏笔线索，
@@ -64,7 +64,7 @@ export interface ParsedWorkspace {
 
 /** 标题层级正则：精确到该层级，更深层级不会误匹配；五级留给章纲下的场景块 */
 const HEADING_PATTERNS: Readonly<Record<number, RegExp>> = {
-    1: /^#\s+(.+)$/,
+    1: /^#\s+(.+)$/m,
     2: /^##\s+(.+)$/,
     3: /^###\s+(.+)$/,
     4: /^####\s+(.+)$/,
@@ -186,7 +186,7 @@ const HOOK_LABELS: Readonly<Record<string, HookKind>> = {
 /** 结局倾向白名单：只接受类型允许的三个值 */
 const ENDING_LABELS: readonly EndingKind[] = ['HE', 'BE', '开放', '真相', '喜忧参半']
 
-/** 目标读者白名单：与 README Frontmatter 取值一致 */
+/** 目标读者白名单：与 README「作品设定」段的取值一致 */
 const AUDIENCE_LABELS: readonly Audience[] = ['男频', '女频']
 
 /** 章节默认目标字数：与新建章节时的默认值一致 */
@@ -201,24 +201,6 @@ const FALLBACK_TEXT_LIMIT = 200
 
 /** 长文本字段的长度上限：世界观总述与情节脉络本身就是多句描述，沿用概述长度会被截断成半句 */
 const LONG_TEXT_LIMIT = 600
-
-/** 分离 Frontmatter 与正文：未闭合或缺失时整体按正文处理 */
-function splitFrontmatter(text: string): { frontmatter: string; body: string } {
-    if (!text.startsWith('---')) {
-        return { frontmatter: '', body: text }
-    }
-    const end = text.indexOf('\n---', 3)
-    if (end < 0) {
-        return { frontmatter: '', body: text }
-    }
-    return { frontmatter: text.slice(3, end), body: text.slice(end + 4) }
-}
-
-/** 读取 Frontmatter 的标量字段：数组形态（[a, b]）原样返回，交由调用方拆解 */
-function readFrontmatterValue(frontmatter: string, key: string): string | undefined {
-    const pattern = new RegExp(`^${key}\\s*:\\s*(.+)$`, 'mu')
-    return pattern.exec(frontmatter)?.[1]?.trim()
-}
 
 /** 拆分数组文本：支持「[a, b]」与「a、b」两种写法 */
 function toList(value: string | undefined): string[] {
@@ -494,7 +476,7 @@ const BASIC_SECTION_TITLE = '作品设定'
 const SETTING_SECTION_TITLE = '提取设定'
 
 /**
- * 解析作品设定：基本信息取自 README（Frontmatter + 「作品设定」段），
+ * 解析作品设定：基本信息取自 README 的一级标题与「作品设定」段，
  * 世界观与金手指各取自自己的文档，旧的 设定.md 只在对应分组文档缺失时兜底。
  * 关键约束：分组文档存在时独占该分组字段——只在文档缺失时才回落旧文档，
  * 否则用户清空的字段会被旧值重新填回来。
@@ -506,7 +488,7 @@ function parseSetting(
     settingSections: PressSettingSectionFiles,
     fallbackTitle: string,
 ): ProjectSetting {
-    const { frontmatter, body: readmeBody } = splitFrontmatter(readme)
+    const readmeBody = readme
     const readmeValues = readKeyValues(readmeBody)
     const legacyValues = readKeyValues(settingDoc)
     const worldValues = readKeyValues(settingSections.world)
@@ -549,10 +531,10 @@ function parseSetting(
     const synopsisSections = readmeSections.filter((section) => section.title.includes('简介'))
     const synopsisParagraphs = synopsisSections.flatMap((section) => readParagraphs(section.content))
     const outlineMain = splitSections(outlineDoc, 2).find((section) => section.title.includes('主线'))
-    const audienceText = readFrontmatterValue(frontmatter, 'audience') ?? ''
+    const audienceText = readBasicValue(['目标读者', 'audience']) ?? ''
     const endingText = readBasicValue(['结局倾向', '结局']) ?? ''
-    const wordGoal = toNumber(readFrontmatterValue(frontmatter, 'wordGoal')) ?? 0
-    // 篇幅走 README Frontmatter，其余档位字段从「作品设定」段的标题/键值行读取
+    const wordGoal = toNumber(readBasicValue(['目标字数', 'wordGoal'])) ?? 0
+    // 篇幅与其余档位字段都从「作品设定」段的标题/键值行读取
     const chapterWordGoal = toNumber(readBasicValue(['章节字数', '单章字数'])) ?? DEFAULT_CHAPTER_WORD_GOAL
     const periodText = readBasicValue(['时间', '故事时间']) ?? ''
     const placeText = readBasicValue(['地点', '故事地点']) ?? ''
@@ -566,10 +548,10 @@ function parseSetting(
         narrative = '双线交替'
     }
     return {
-        title: readFrontmatterValue(frontmatter, 'title') ?? fallbackTitle,
+        title: HEADING_PATTERNS[1]?.exec(readmeBody)?.[1]?.trim() ?? fallbackTitle,
         penName: readBasicValue(['笔名']) ?? '',
         audience: AUDIENCE_LABELS.find((item) => item === audienceText) ?? '男频',
-        genres: toList(readFrontmatterValue(frontmatter, 'tags') ?? readBasicValue(['题材'])),
+        genres: toList(readBasicValue(['题材', 'tags'])),
         wordGoal,
         chapterWordGoal,
         // 简介单独认「作品简介」键：logline 的「简介」是旧文档别名，两者共用会互相覆盖

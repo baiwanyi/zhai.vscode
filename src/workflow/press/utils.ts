@@ -593,6 +593,64 @@ export function formatVolumeOutlineText(volume: OutlineVolume, index: number): s
 }
 
 /**
+ * 章纲的纯文本快照：供「添加到 AI 对话」作为写正文的上下文。
+ * 关键约束：只输出计划内容（summary），不混入 actualSummary 正文事实；
+ * 空字段整行省略，节拍与场景按落笔顺序排列，字段口径与章纲编辑页保持一致。
+ */
+export function formatChapterOutlineText(chapter: OutlineChapter): string {
+    const lines: string[] = [`【${chapterTitleLabel(chapter)}】`]
+    if (chapter.stage.trim().length > 0) {
+        lines.push(`阶段：${chapter.stage.trim()}`)
+    }
+    if (chapter.summary.trim().length > 0) {
+        lines.push(`计划梗概：${chapter.summary.trim()}`)
+    }
+    const card: readonly (readonly [string, string])[] = [
+        ['POV', chapter.pov],
+        ['目标', chapter.goal],
+        ['阻碍', chapter.obstacle],
+        ['转折', chapter.turn],
+        ['结果', chapter.result],
+        ['情绪', chapter.emotion],
+        ['场景地点', chapter.location],
+    ]
+    const filledCard = card
+        .map(([label, value]) => [label, value.trim()] as const)
+        .filter(([, value]) => value.length > 0)
+    if (filledCard.length > 0) {
+        lines.push('章纲卡：', ...filledCard.map(([label, value]) => `- ${label}：${value}`))
+    }
+    const hookLabel = HOOK_OPTIONS.find((option) => option.value === chapter.hook)?.label
+    if (hookLabel !== undefined && hookLabel !== '无') {
+        lines.push(`章末钩子：${hookLabel}`)
+    }
+    const beats = chapter.beats.map((beat) => beat.text.trim()).filter((text) => text.length > 0)
+    if (beats.length > 0) {
+        lines.push('节拍：', ...beats.map((text) => `- ${text}`))
+    }
+    if (chapter.scenes.length > 0) {
+        lines.push('场景纲：')
+        chapter.scenes.forEach((scene) => {
+            lines.push(`场景${String(scene.order)} ${scene.title.trim() || '未命名'}`)
+            const fields: readonly (readonly [string, string])[] = [
+                ['欲望', scene.desire],
+                ['阻碍', scene.obstacle],
+                ['选择', scene.choice],
+                ['结果', scene.result],
+                ['情绪变化', scene.emotion],
+            ]
+            fields.forEach(([label, value]) => {
+                const trimmed = value.trim()
+                if (trimmed.length > 0) {
+                    lines.push(`- ${label}：${trimmed}`)
+                }
+            })
+        })
+    }
+    return lines.join('\n')
+}
+
+/**
  * 按所选卷章位置刷新大纲树：素材草案与作品列表同构，按「卷序 + 卷内位置」逐卷对齐后只覆盖选中章。
  * 关键约束：结构（卷、章数量、章 id、状态、目标字数、地点）一律沿用现有草稿，
  * 大纲可以比作品多章，因此只按位置逐卷匹配、不按全局章序；草案章数不足时跳过越界位置，

@@ -99,7 +99,7 @@ export async function createProject(
     await vscode.workspace.fs.createDirectory(
         buildStorageUri(root, [PRESS_MODULE_DIR, name, PROJECT_CHAPTER_DIR, DEFAULT_VOLUME_DIR]),
     )
-    for (const file of buildProjectSkeleton(name, request.audience, new Date())) {
+    for (const file of buildProjectSkeleton(name, request.audience)) {
         const target = buildStorageUri(root, [PRESS_MODULE_DIR, name, ...file.relativePath.split('/')])
         await vscode.workspace.fs.writeFile(target, new TextEncoder().encode(file.content))
         await indexer.indexFile(target)
