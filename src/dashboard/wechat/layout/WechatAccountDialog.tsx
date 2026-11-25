@@ -60,7 +60,7 @@ export function WechatAccountDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={open}
             title={isEditing ? '账号设置' : '添加公众号'}
             description={

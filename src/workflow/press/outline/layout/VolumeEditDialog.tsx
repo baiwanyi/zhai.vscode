@@ -78,7 +78,7 @@ export function VolumeEditDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={isOpen}
             title="编辑卷纲"
             confirmLabel="保存更改"

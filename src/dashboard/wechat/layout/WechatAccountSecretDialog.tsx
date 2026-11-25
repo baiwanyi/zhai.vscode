@@ -46,7 +46,7 @@ export function WechatAccountSecretDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={open}
             title="密钥设置"
             description="填写公众号后台「设置与开发 → 基本配置」里的 AppID 与 AppSecret，保存后立即验证连接。"

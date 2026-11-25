@@ -53,13 +53,12 @@ export function CharacterCreateDialog({ open, onOpenChange, onCreate }: Characte
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={open}
             title="新增人物"
             description="先建卡再细化，欲望、弱点与关系在人物卡里继续补充"
             confirmLabel="创建"
             isDisabled={name.isBlank}
-            className="sm:max-w-md"
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >

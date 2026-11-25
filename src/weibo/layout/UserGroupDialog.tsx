@@ -133,7 +133,7 @@ export function UserGroupDialog({ uid, userName, isOpen, onOpenChange, onSaved }
     }, [handleOpenChange, onSaved, save, selectedIds])
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={isOpen}
             title={userName.trim().length > 0 ? `设置分组 · ${userName}` : '设置分组'}
             description={
@@ -151,7 +151,6 @@ export function UserGroupDialog({ uid, userName, isOpen, onOpenChange, onSaved }
             confirmLabel="保存分组"
             isLoading={state.isSaving}
             isDisabled={!isChanged || state.isLoading || state.isCreating || state.errorMessage !== null}
-            className="sm:max-w-md"
             onOpenChange={handleOpenChange}
             onConfirm={handleSubmit}
         >

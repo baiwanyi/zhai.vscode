@@ -51,7 +51,7 @@ export function NotebookNameDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={open}
             title={isRename ? '重命名笔记本' : '新建笔记本'}
             description={

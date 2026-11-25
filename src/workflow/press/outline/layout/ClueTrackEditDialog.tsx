@@ -279,12 +279,11 @@ export function ClueTrackEditDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={isOpen}
             contentRef={dialogContentRef}
             title="编辑伏笔"
             description="记录埋设与回收的位置，状态由作者显式切换"
-            className="sm:max-w-md"
             onOpenChange={onOpenChange}
             onConfirm={handleConfirm}
         >

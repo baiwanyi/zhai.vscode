@@ -93,13 +93,12 @@ function PromptTagFormDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={form !== null}
             title={isEditing ? `编辑${words.title}` : `新建${words.title}`}
             description={tagFormDescription(scope, isEditing, dirPath)}
             isLoading={isSaving}
             isDisabled={isDisabled}
-            className="sm:max-w-md"
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >

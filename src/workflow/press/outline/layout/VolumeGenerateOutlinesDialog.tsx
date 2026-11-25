@@ -112,7 +112,7 @@ export function VolumeGenerateOutlinesDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={isOpen}
             title="生成卷纲"
             description={
@@ -122,7 +122,6 @@ export function VolumeGenerateOutlinesDialog({
             }
             confirmLabel="写入卷纲"
             isDisabled={selectedSet.size === 0 || isGenerating}
-            className="sm:max-w-3xl"
             onOpenChange={onOpenChange}
             onConfirm={handleApply}
         >

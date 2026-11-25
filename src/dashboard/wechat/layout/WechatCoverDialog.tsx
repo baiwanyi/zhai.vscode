@@ -119,10 +119,9 @@ function CoverSourcePickerDialog({
     const visibleItems = items.slice(0, limit)
 
     return (
-        <Dialog
+        <Dialog size="full"
             open
             title={meta.dialogTitle}
-            className="sm:max-w-lg"
             showFooter={false}
             onOpenChange={onOpenChange}
         >
@@ -329,13 +328,12 @@ export function WechatCoverDialog({
 
     return (
         <>
-            <Dialog
+            <Dialog size="full"
                 open
                 title="封面"
                 confirmLabel="保存封面"
                 isLoading={isSubmitting}
                 isDisabled={sourceUrl === null || isReading}
-                className="sm:max-w-lg"
                 onOpenChange={onOpenChange}
                 onConfirm={handleSubmit}
             >

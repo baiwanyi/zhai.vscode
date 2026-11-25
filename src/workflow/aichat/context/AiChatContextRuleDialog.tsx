@@ -75,13 +75,12 @@ function RuleFormDialog({ form, dirPath, isSaving, onOpenChange, onSubmit }: Rul
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={form !== null}
             title={isEditing ? '编辑规则' : '新建规则'}
             description={ruleFormDescription(isEditing, dirPath)}
             isLoading={isSaving}
             isDisabled={isDisabled}
-            className="sm:max-w-md"
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >

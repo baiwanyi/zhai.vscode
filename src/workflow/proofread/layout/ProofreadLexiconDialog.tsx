@@ -238,13 +238,12 @@ export function ProofreadLexiconDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={open}
             title="自定义词库"
             description={DIALOG_DESCRIPTION}
             confirmLabel="保存词库"
             isLoading={isSaving}
-            className="sm:max-w-2xl"
             onOpenChange={onOpenChange}
             onConfirm={handleSubmit}
         >

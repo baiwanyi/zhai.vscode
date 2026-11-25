@@ -45,7 +45,7 @@ export function StructureActDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={isOpen}
             title="编辑结构阶段"
             description="只记全书级转折，卷级转折见卷纲"

@@ -156,7 +156,7 @@ export function VolumeGenerateChaptersDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={isOpen}
             title="按卷生成章纲"
             description={
@@ -166,7 +166,6 @@ export function VolumeGenerateChaptersDialog({
             }
             confirmLabel="写入本卷"
             isDisabled={selectedSet.size === 0 || isGenerating}
-            className="sm:max-w-3xl"
             onOpenChange={onOpenChange}
             onConfirm={handleApply}
         >

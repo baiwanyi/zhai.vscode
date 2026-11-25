@@ -49,7 +49,7 @@ export function SnapshotCreateDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={open}
             title={title}
             description={description}

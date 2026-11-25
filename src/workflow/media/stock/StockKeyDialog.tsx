@@ -43,14 +43,13 @@ export function StockKeyDialog({ open, secretHint, onOpenChange, onSubmit }: Sto
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={open}
             title="Unsplash Access Key"
             description="在 unsplash.com/oauth/applications 创建应用后复制 Access Key。保存时会立即验证一次。"
             confirmLabel="保存并验证"
             isLoading={isSubmitting}
             isDisabled={accessKey.isBlank}
-            className="sm:max-w-md"
             onOpenChange={onOpenChange}
             onConfirm={() => {
                 void handleSubmit()

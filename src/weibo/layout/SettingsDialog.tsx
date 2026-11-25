@@ -137,7 +137,7 @@ export function SettingsDialog({
     ])
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={isOpen}
             title="设置"
             description="同城热搜城市与信息流屏蔽名单都在这里调整。"

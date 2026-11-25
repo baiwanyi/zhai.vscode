@@ -43,7 +43,7 @@ export function PressProjectDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={open}
             title="添加作品"
             description="生成作品目录，并附带背景、大纲、角色设定与设定文档。"

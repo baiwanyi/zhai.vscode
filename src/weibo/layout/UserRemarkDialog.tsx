@@ -93,14 +93,13 @@ export function UserRemarkDialog({
     }, [onOpenChange, onSaved, save, setValue, trimmedValue])
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={isOpen}
             title={userName.trim().length > 0 ? `设置备注 · ${userName}` : '设置备注'}
             description="备注只影响本机显示，不会改变对方的昵称。"
             confirmLabel="保存备注"
             isLoading={isSaving}
             isDisabled={isTooLong || !isWeiboTimelineId(uid)}
-            className="sm:max-w-md"
             onOpenChange={handleOpenChange}
             onConfirm={handleSubmit}
         >

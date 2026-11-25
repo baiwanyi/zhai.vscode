@@ -40,7 +40,7 @@ export function PressVolumeRenameDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={open}
             title="重命名卷"
             description="仅修改卷名，卷的序号前缀与其中章节保持不变。"

@@ -44,14 +44,13 @@ export function OutlineExtractDialog({
     }
 
     return (
-        <Dialog
+        <Dialog size="full"
             open={isOpen}
             title="提取范围"
             description={<span className="tabular-nums">{selection.summaryText}</span>}
             confirmLabel={isExtracting ? '提取中' : '开始提取'}
             isLoading={isExtracting}
             isDisabled={selection.isSubmitDisabled}
-            className="sm:max-w-md"
             onOpenChange={onOpenChange}
             onConfirm={handleConfirm}
         >
