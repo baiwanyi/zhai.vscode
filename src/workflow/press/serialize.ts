@@ -12,10 +12,8 @@ import {
     CHARACTER_ROLE_META,
     CLUE_KIND_META,
     CLUE_STATUS_META,
-    GRANULARITY_META,
     HOOK_OPTIONS,
     PACING_META,
-    PLAN_STATUS_META,
 } from './constants'
 import { sceneTitleLabel, stripChapterOrderPrefix, stripVolumeOrderPrefix } from './utils'
 import type {
@@ -260,8 +258,6 @@ function buildSceneBlock(scene: OutlineScene): string {
  */
 function buildChapterBlock(chapter: OutlineChapter, nameById: ReadonlyMap<string, string>): string {
     const hook = HOOK_OPTIONS.find((option) => option.value === chapter.hook)?.label ?? '无'
-    const status = PLAN_STATUS_META[chapter.status].label
-    const granularity = GRANULARITY_META[chapter.granularity].label
     // 解析端按「角色名 → id」映射，这里必须写名称而不是 id
     const characterNames = chapter.characterIds
         .map((id) => nameById.get(id))
@@ -271,9 +267,7 @@ function buildChapterBlock(chapter: OutlineChapter, nameById: ReadonlyMap<string
         `#### ${stripChapterOrderPrefix(chapter.title) || '未命名'}`,
         '',
         ...buildKeyLines([
-            ['状态', status],
             ['阶段', chapter.stage],
-            ['颗粒度', granularity],
             ['POV', chapter.pov],
             ['目标', chapter.goal],
             ['阻碍', chapter.obstacle],
@@ -322,7 +316,7 @@ function buildBodySection(title: string, body: string, level = 3): string[] {
 
 /**
  * 单卷卷纲：三级标题即卷名，卷内固定小节（四级）依次为预计章节数 / 核心事件 / 主要情节 /
- * 关键转折 / 卷末结果，卷级颗粒度以键值行写在最后。
+ * 关键转折 / 卷末结果。
  */
 function buildVolumeOutlineBlock(volume: OutlineVolume): string {
     return [
@@ -334,7 +328,6 @@ function buildVolumeOutlineBlock(volume: OutlineVolume): string {
         ...buildListSection('关键转折', volume.turningPoints, 4),
         ...buildBodySection('卷末结果', volume.result, 4),
         '',
-        ...buildKeyLines([['颗粒度', GRANULARITY_META[volume.granularity].label]]),
     ].join('\n')
 }
 

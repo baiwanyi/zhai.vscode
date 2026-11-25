@@ -108,8 +108,6 @@ const OUTLINE = `# 大纲
 
 线索断在旧城医院
 
-- 颗粒度：中纲
-
 ## 章节内容
 
 ### 断线之始（第1-6章）
@@ -237,7 +235,6 @@ describe('parseProjectWorkspace', () => {
         const [first, second] = volume?.chapters ?? []
         expect(first?.order).toBe(1)
         expect(first?.title).toBe('修表铺的客人')
-        expect(first?.status).toBe('written')
         expect(first?.wordCount).toBe(2680)
         expect(first?.wordGoal).toBe(2500)
         expect(first?.hook).toBe('suspense')
@@ -246,7 +243,6 @@ describe('parseProjectWorkspace', () => {
         expect(first?.beats.map((beat) => beat.isDone)).toEqual([true, true, false])
         expect(first?.characterIds).toEqual(['10845795'])
         expect(second?.order).toBe(2)
-        expect(second?.status).toBe('planned')
         expect(second?.characterIds).toEqual(['11248916'])
     })
 
@@ -478,18 +474,16 @@ describe('新建作品的大纲骨架', () => {
         expect(parsed.plan.acts.map((act) => act.name)).toEqual(['开端', '对抗', '高潮'])
         expect(parsed.volumes).toHaveLength(1)
         const volume = parsed.volumes[0]
-        expect(volume).toMatchObject({ name: '默认卷', expectedChapters: 1, granularity: 'medium' })
+        expect(volume).toMatchObject({ name: '默认卷', expectedChapters: 1 })
         expect(volume?.coreEvent).toContain('本卷核心事件')
         expect(volume?.mainPlot).toHaveLength(1)
         const chapter = volume?.chapters[0]
         expect(chapter).toMatchObject({
             order: 1,
             title: '未命名章节',
-            status: 'planned',
             hook: 'suspense',
             pacing: 'setup',
             tension: 3,
-            granularity: 'fine',
         })
         expect(chapter?.summary).toContain('本章梗概')
         expect(chapter?.beats.map((beat) => beat.text)).toEqual([

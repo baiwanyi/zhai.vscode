@@ -26,11 +26,10 @@ const OUTLINE_HEADER = '# 大纲'
 /** 作品目录段数：press/{作品名} */
 const PROJECT_DIR_DEPTH = 2
 
-/** 新章占位值：与工作台解析端的缺省口径一致（单章目标字数 2500、张力 3、中纲） */
+/** 新章占位值：与工作台解析端的缺省口径一致（单章目标字数 2500、张力 3） */
 const FALLBACK_CHAPTER_TITLE = '未命名章节'
 const FALLBACK_CHAPTER_WORD_GOAL = 2500
 const FALLBACK_TENSION = 3
-const FALLBACK_GRANULARITY = '中纲'
 
 /** 结构纲 / 卷纲 / 章节内容都是二级段落；卷是三级标题，章是四级标题 */
 const LEVEL_TWO_OR_UP_PATTERN = /^#{1,2}\s+/u
@@ -89,8 +88,6 @@ function stripChapterPrefix(title: string): string {
 function buildChapterBlock(title: string): string {
     return [
         `#### ${title}`,
-        '- 状态：待写',
-        `- 颗粒度：${FALLBACK_GRANULARITY}`,
         '- 钩子：无',
         `- 张力：${String(FALLBACK_TENSION)}`,
         `- 字数：0/${String(FALLBACK_CHAPTER_WORD_GOAL)}`,
@@ -247,8 +244,6 @@ export interface OutlineChapterBlock {
     indexInVolume: number
     /** 计划梗概 */
     summary: string
-    /** 状态原文，如「待写」 */
-    status: string
     /** 章标题行号 */
     headingLine: number
     /** 「计划梗概」五级标题行号，缺失为 null */
@@ -310,7 +305,6 @@ export function readOutlineChapterBlocks(outline: string): OutlineChapterBlock[]
                 title: chapterMatch[1]?.trim() ?? '',
                 indexInVolume: chapterIndex,
                 summary: '',
-                status: '',
                 headingLine: cursor,
                 summaryHeadingLine: null,
                 summaryEndLine: null,
@@ -337,11 +331,6 @@ export function readOutlineChapterBlocks(outline: string): OutlineChapterBlock[]
                 current.summaryEndLine = cursor
             }
             isInSummary = false
-            continue
-        }
-        const statusMatch = /^-\s*状态[：:]\s*(.*)$/u.exec(line)
-        if (statusMatch !== null) {
-            current.status = (statusMatch[1] ?? '').trim()
             continue
         }
         if (isInSummary && line.length > 0) {

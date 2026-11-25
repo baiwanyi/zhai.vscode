@@ -117,7 +117,6 @@ const VOLUMES: OutlineVolume[] = [
         mainPlot: ['客人送来旧表，编号指向失踪的妹妹', '档案被抽走，线索断在旧城医院'],
         turningPoints: ['编号确认', '档案被抽走'],
         result: '线索断在旧城医院',
-        granularity: 'medium',
         chapters: [
             {
                 id: 'ch-1-1',
@@ -126,8 +125,7 @@ const VOLUMES: OutlineVolume[] = [
                 stage: '第一阶段：坠落与旧表',
                 summary: '客人送来一块停摆的旧表。',
                 actualSummary: '林岚拆开后盖，看见妹妹的编号。',
-                status: 'written',
-                beats: [{ id: 'beat-1', text: '拆开后盖', isDone: true }],
+                    beats: [{ id: 'beat-1', text: '拆开后盖', isDone: true }],
                 scenes: [
                     {
                         id: 'scene-1-1-1',
@@ -153,8 +151,7 @@ const VOLUMES: OutlineVolume[] = [
                 hook: 'suspense',
                 pacing: 'tension',
                 tension: 4,
-                granularity: 'fine',
-            },
+                },
         ],
     },
 ]
@@ -186,28 +183,6 @@ function buildOutlineDocument(): string {
         '林岚追查妹妹失踪的真相。',
         '',
     ].join('\n')
-}
-
-/** 只留一卷一章的文档：用于验证四态迁移 */
-function buildStatusOutline(status: string): string {
-    return `# 大纲
-
-## 卷纲
-
-### 第1卷 旧卷
-
-## 章节内容
-
-### 第1卷 旧卷
-
-#### 第1章 旧章
-
-- 状态：${status}
-
-##### 计划梗概
-
-旧梗概
-`
 }
 
 describe('大纲四段落往返', () => {
@@ -262,8 +237,7 @@ describe('大纲四段落往返', () => {
             expectedChapters: 6,
             coreEvent: '从被动谋生转向主动追查；底层手艺人 vs 地产集团',
             result: '线索断在旧城医院',
-            granularity: 'medium',
-        })
+            })
         expect(volume?.mainPlot).toEqual(['客人送来旧表，编号指向失踪的妹妹', '档案被抽走，线索断在旧城医院'])
         expect(volume?.turningPoints).toEqual(['编号确认', '档案被抽走'])
         const chapter = volume?.chapters[0]
@@ -273,7 +247,6 @@ describe('大纲四段落往返', () => {
             stage: '第一阶段：坠落与旧表',
             summary: '客人送来一块停摆的旧表。',
             actualSummary: '林岚拆开后盖，看见妹妹的编号。',
-            status: 'written',
             pov: '林岚',
             goal: '修好这块旧表',
             obstacle: '没有图纸',
@@ -283,7 +256,6 @@ describe('大纲四段落往返', () => {
             hook: 'suspense',
             pacing: 'tension',
             tension: 4,
-            granularity: 'fine',
             wordCount: 2680,
         })
         // 章纲的「结果 / 情绪」与场景的「结果 / 情绪变化」同名不同层，必须各归其位
@@ -372,27 +344,6 @@ describe('大纲四段落往返', () => {
 
         expect(parsed.setting.theme).toBe('记忆与代价')
         expect(parsed.setting.arc).toBe('从独行到结盟')
-    })
-})
-
-describe('大纲状态迁移', () => {
-    it('旧状态归一到四态：published 与 draft 进「已写」，stale 进「待改」，废弃单独保留', () => {
-        const parseStatus = (status: string): string => {
-            const parsed = parseProjectWorkspace(
-                { readme: '', setting: '', characters: '', outline: buildStatusOutline(status) },
-                EMPTY_SETTING_SECTIONS,
-                '未命名',
-            )
-            return parsed.volumes[0]?.chapters[0]?.status ?? ''
-        }
-
-        expect(parseStatus('published')).toBe('written')
-        expect(parseStatus('done')).toBe('written')
-        expect(parseStatus('draft')).toBe('written')
-        expect(parseStatus('待写')).toBe('planned')
-        expect(parseStatus('stale')).toBe('revise')
-        expect(parseStatus('需复核')).toBe('revise')
-        expect(parseStatus('废弃')).toBe('discarded')
     })
 })
 

@@ -96,7 +96,6 @@ describe('mergeChapterSummaryIntoOutline', () => {
         const blocks = readOutlineChapterBlocks(merged ?? '')
         expect(blocks[0]?.summary).toBe('少年登山，遇雨。')
         expect(blocks[1]?.summary).toBe('')
-        expect(blocks[0]?.status).toBe('待写')
     })
 
     it('已有梗概时不做覆盖', () => {

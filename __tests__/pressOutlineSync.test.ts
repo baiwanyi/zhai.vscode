@@ -52,7 +52,6 @@ describe('appendChapterToOutline', () => {
         expect(volumes[0]?.chapters[0]).toMatchObject({
             order: 1,
             title: '未命名章节',
-            status: 'planned',
             hook: 'none',
             wordGoal: 2500,
             wordCount: 0,

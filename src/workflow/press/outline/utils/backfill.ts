@@ -2,11 +2,11 @@
  * 写后回填纯计算：事实差异筛选、回填后卷章与伏笔计划推导、勾选建议的合法性校验。
  * 复用约定：章节引用键统一走「卷序-章序」口径，与伏笔 plant/payoff 及章节引用选项一致；
  * 卷章树经 press/utils 的 createChapterRefEntries 展开，展示格式走 formatChapterRefLabel。
- * 关键约束：纯函数不写盘、不读外部状态；只覆盖 actualSummary / wordCount / status 与伏笔引用，
+ * 关键约束：纯函数不写盘、不读外部状态；只覆盖 actualSummary / wordCount 与伏笔引用，
  * 计划梗概保持原样；AI 建议坐标须在现有卷章内才写入，防幻觉引用。
  */
 import type { ClueRefSuggestion } from '@shared/types/press'
-import type { OutlineChapter, OutlineClue, OutlinePlan, OutlineVolume, PlanStatus } from '../../types'
+import type { OutlineChapter, OutlineClue, OutlinePlan, OutlineVolume } from '../../types'
 import { createChapterRefEntries } from '../../utils'
 
 /** 一行回填差异：章纲计划与章节事实并排放，供作者逐项确认 */
@@ -15,7 +15,6 @@ export interface BackfillRow {
     volumeName: string
     factSummary: string
     factWordCount: number
-    factStatus: string
     hasSummaryChange: boolean
     hasWordCountChange: boolean
 }
@@ -26,7 +25,6 @@ export interface ChapterFact {
     chapterIndex: number
     summary: string
     wordCount: number
-    status: string
 }
 
 /** 回填输入：全部派生值一次传入，函数内不再读 hook 或外部状态 */
@@ -52,24 +50,16 @@ export function refKey(suggestion: { id: string; action: 'plant' | 'payoff' }): 
     return `${suggestion.id}:${suggestion.action}`
 }
 
-/** 章节状态到章纲状态：已发布或有正文即「已写」，修订中映射「待改」 */
-export function toPlanStatus(factStatus: string, wordCount: number): PlanStatus {
-    if (factStatus === 'revising') {
-        return 'revise'
-    }
-    return factStatus === 'published' || wordCount > 0 ? 'written' : 'planned'
-}
-
 /** 回收章引用键：与章节引用选项一致，未定章返回 null */
 export function payoffKey(clue: OutlineClue): string | null {
     return clue.payoff === null ? null : `${String(clue.payoff.volumeOrder)}-${String(clue.payoff.chapterOrder)}`
 }
 
-/** 已写完章节的引用键集合：作为伏笔自动回收的判定依据 */
+/** 已写章节的引用键集合：按正文字数判定，作为伏笔自动回收的判定依据 */
 export function collectWrittenRefs(volumes: readonly OutlineVolume[]): Set<string> {
     return new Set(
         createChapterRefEntries(volumes)
-            .filter((entry) => entry.chapter.status === 'written')
+            .filter((entry) => entry.chapter.wordCount > 0)
             .map((entry) => `${String(entry.ref.volumeOrder)}-${String(entry.ref.chapterOrder)}`),
     )
 }
@@ -114,7 +104,6 @@ export function buildBackfillRows(facts: readonly ChapterFact[], volumes: readon
                 volumeName: entry.volume.name,
                 factSummary: fact.summary,
                 factWordCount: fact.wordCount,
-                factStatus: fact.status,
                 hasSummaryChange,
                 hasWordCountChange,
             },
@@ -139,7 +128,6 @@ export function buildNextVolumes(
                 ...chapter,
                 actualSummary: row.factSummary.trim().length > 0 ? row.factSummary : chapter.actualSummary,
                 wordCount: row.factWordCount,
-                status: toPlanStatus(row.factStatus, row.factWordCount),
             }
         }),
     }))

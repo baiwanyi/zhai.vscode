@@ -15,7 +15,7 @@ import type { OutlineModuleKey } from '../../types'
 import type { JSX } from 'react'
 import { OUTLINE_MODULE_META } from '../../constants'
 
-interface OutlineFiltersProps {
+interface OutlineFilterMenusProps {
     module: OutlineModuleKey
     /** 卷筛选取值：'all' 为全部卷，否则为卷 id */
     volumeFilter: string
@@ -28,7 +28,7 @@ interface OutlineFiltersProps {
     onQueryChange: (value: string) => void
 }
 
-export function OutlineFilters({
+export function OutlineFilterMenus({
     module,
     volumeFilter,
     volumeOptions,
@@ -36,7 +36,7 @@ export function OutlineFilters({
     onModuleChange,
     onVolumeChange,
     onQueryChange,
-}: OutlineFiltersProps): JSX.Element {
+}: OutlineFilterMenusProps): JSX.Element {
     return (
         <AppMenu>
             <SegmentedRail
@@ -49,11 +49,7 @@ export function OutlineFilters({
             {module === 'chapter' ? (
                 <div className="flex w-full items-center gap-2">
                     <Select value={volumeFilter} onValueChange={onVolumeChange}>
-                        <SelectTrigger
-                            className="h-8 w-28 shrink-0"
-                            aria-label="当前卷"
-                            title="只看这一卷的章节；切卷会清空当前选中的章"
-                        >
+                        <SelectTrigger className="h-8 w-28 shrink-0" aria-label="当前卷">
                             <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
@@ -67,7 +63,7 @@ export function OutlineFilters({
                             </SelectGroup>
                         </SelectContent>
                     </Select>
-                    <InputGroup className="min-w-0 max-w-64 flex-1">
+                    <InputGroup className="min-w-0 flex-1">
                         <InputGroupAddon>
                             <Search />
                         </InputGroupAddon>

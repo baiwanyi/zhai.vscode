@@ -42,7 +42,6 @@ import type {
     OutlineScene,
     OutlineTreeEntry,
     OutlineVolume,
-    PlanStatus,
     ProjectSetting,
 } from './types'
 
@@ -407,7 +406,6 @@ export function createChapter(order: number, wordGoal: number): OutlineChapter {
         stage: '',
         summary: '',
         actualSummary: '',
-        status: 'planned',
         beats: [createBeat()],
         scenes: [],
         pov: '',
@@ -423,7 +421,6 @@ export function createChapter(order: number, wordGoal: number): OutlineChapter {
         hook: 'suspense',
         pacing: 'setup',
         tension: 3,
-        granularity: 'medium',
     }
 }
 
@@ -495,7 +492,6 @@ export function createOutlineFromDraft(
         mainPlot: draft.mainPlot.map((item) => item.trim()).filter((item) => item.length > 0),
         turningPoints: [...draft.turningPoints],
         result: '',
-        granularity: 'medium',
         chapters: draft.chapters.map((chapter) => {
             const base = createChapter(chapter.order, chapterWordGoal)
             const matched =
@@ -806,47 +802,35 @@ export function createVolume(chapterWordGoal: number): OutlineVolume {
         mainPlot: [],
         turningPoints: [],
         result: '',
-        granularity: 'medium',
         chapters: [createChapter(1, chapterWordGoal)],
     }
 }
 
 /**
- * 卷章节统计：总数、已写数、待改数、废弃数、已写字数与目标字数。
- * 关键约束：废弃章节不计入总数与字数分母，否则完成度永远到不了 100%。
+ * 卷章节统计：总数、已写数、已写字数与目标字数。
+ * 关键约束：已写只按正文字数大于零判定，不依赖人工状态标记。
  */
 export function summarizeVolume(volume: OutlineVolume): {
     total: number
     done: number
-    revise: number
-    discarded: number
     wordCount: number
     wordGoal: number
 } {
     return volume.chapters.reduce(
-        (summary, chapter) => {
-            if (chapter.status === 'discarded') {
-                return { ...summary, discarded: summary.discarded + 1 }
-            }
-            return {
-                total: summary.total + 1,
-                done: summary.done + (chapter.status === 'written' ? 1 : 0),
-                revise: summary.revise + (chapter.status === 'revise' ? 1 : 0),
-                discarded: summary.discarded,
-                wordCount: summary.wordCount + chapter.wordCount,
-                wordGoal: summary.wordGoal + chapter.wordGoal,
-            }
-        },
-        { total: 0, done: 0, revise: 0, discarded: 0, wordCount: 0, wordGoal: 0 },
+        (summary, chapter) => ({
+            total: summary.total + 1,
+            done: summary.done + (chapter.wordCount > 0 ? 1 : 0),
+            wordCount: summary.wordCount + chapter.wordCount,
+            wordGoal: summary.wordGoal + chapter.wordGoal,
+        }),
+        { total: 0, done: 0, wordCount: 0, wordGoal: 0 },
     )
 }
 
-/** 整部作品的章节总数与完成数，用于工作台标题区进度；废弃章节同样不计入分母 */
+/** 整部作品的章节总数与已写数，用于工作台标题区进度 */
 export function summarizeWorkspace(volumes: readonly OutlineVolume[]): {
     chapters: number
     done: number
-    revise: number
-    discarded: number
     wordCount: number
     wordGoal: number
 } {
@@ -856,19 +840,12 @@ export function summarizeWorkspace(volumes: readonly OutlineVolume[]): {
             return {
                 chapters: summary.chapters + volumeSummary.total,
                 done: summary.done + volumeSummary.done,
-                revise: summary.revise + volumeSummary.revise,
-                discarded: summary.discarded + volumeSummary.discarded,
                 wordCount: summary.wordCount + volumeSummary.wordCount,
                 wordGoal: summary.wordGoal + volumeSummary.wordGoal,
             }
         },
-        { chapters: 0, done: 0, revise: 0, discarded: 0, wordCount: 0, wordGoal: 0 },
+        { chapters: 0, done: 0, wordCount: 0, wordGoal: 0 },
     )
-}
-
-/** 按状态过滤卷内章节，'all' 不过滤 */
-export function filterChapters(chapters: readonly OutlineChapter[], status: PlanStatus | 'all'): OutlineChapter[] {
-    return status === 'all' ? [...chapters] : chapters.filter((chapter) => chapter.status === status)
 }
 
 /** 章节展示名：序号与标题拆开渲染，标题留空时回退为序号 */
@@ -895,12 +872,11 @@ export function stripVolumeOrderPrefix(name: string): string {
 export type VolumeChapterWriteMode = 'append' | 'replace-empty'
 
 /**
- * 空章判定：待写、没有字数、没有梗概，且节拍全是空白。
+ * 空章判定：没有字数、没有梗概，且节拍全是空白。
  * 「替换卷内空章」与章纲预览计算起始章序共用这一口径，两处判断必须一致。
  */
 export function isEmptyOutlineChapter(chapter: OutlineChapter): boolean {
     return (
-        chapter.status === 'planned' &&
         chapter.wordCount === 0 &&
         chapter.summary.trim().length === 0 &&
         chapter.beats.every((beat) => beat.text.trim().length === 0)
@@ -1196,14 +1172,14 @@ export function sceneTitleLabel(scene: OutlineScene, fallback = '未命名'): st
     return `场景${String(scene.order)} ${scene.title.trim() || fallback}`
 }
 
-/** 当前写作位置：最后一个「已写」章节的全书章序，没有已写章节时为 0 */
+/** 当前写作位置：最后一个有正文的章节的全书章序，没有已写章节时为 0 */
 export function readWritingPosition(volumes: readonly OutlineVolume[]): number {
     let position = 0
     let globalOrder = 0
     volumes.forEach((volume) => {
         for (const chapter of volume.chapters) {
             globalOrder += 1
-            if (chapter.status === 'written') {
+            if (chapter.wordCount > 0) {
                 position = globalOrder
             }
         }

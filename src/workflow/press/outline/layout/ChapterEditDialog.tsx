@@ -4,7 +4,7 @@
  * 编辑表单与聚焦只读区分别拆为 ChapterEditPanel / ChapterFocusPanel 组件，数据由调用方按当前章传入。
  * 关键约束：卷纲只读、章纲只回传补丁；「章纲编辑」只保存章纲，生成引用清单随聚焦面板一同展示；
  * 底部确认随页签切换：编辑页「保存更改」提示已保存后关闭，查纲页「添加到AI对话」即发注入后立即关闭、由宿主切到对话；
- * 章内「颗粒度」是档位标记、只控展示；章纲状态与正文字数由页头菜单的「写后回填」推导写入，本对话框不提供手动设定；
+ * 正文字数与事实摘要由页头菜单的「写后回填」推导写入，本对话框不提供手动设定；
  * 对话框开合由外部 open/onClose 控制，关闭即重置页签；页签栏与页脚固定，仅 TabsContent 滚动。
  */
 import { useState } from 'react'
@@ -17,7 +17,6 @@ import type {
     CharacterCard,
     OutlineChapter,
     OutlineChapterRef,
-    OutlineGranularity,
     OutlinePlan,
     OutlineVolume,
     ProjectSetting,
@@ -40,16 +39,11 @@ interface ChapterEditDialogProps {
     prevChapter: OutlineChapter | null
     /** 同卷下一章，用于聚焦视图的「接下来」提示 */
     nextChapter: OutlineChapter | null
-    /** 同卷后续两章，用于编辑页的「接下来」提示 */
+    /** 同卷后续两章，用于聚焦视图卷纲区的「接下来」提示 */
     nextChapters: OutlineChapter[]
     onChange: (patch: Partial<OutlineChapter>) => void
     /** 把当前章大纲作为上下文注入 AI 对话，由对话完成正文生成 */
     onAddChapterToChat: () => Promise<void>
-    /**
-     * 视图颗粒度：粗纲只看梗概与卷纲，中纲加章纲卡与节拍，细纲才展开场景。
-     * 关键约束：只影响展示，不改变章纲数据，切视图不产生写盘。
-     */
-    viewGranularity: OutlineGranularity
 }
 
 type ChapterTab = 'edit' | 'focus'
@@ -68,7 +62,6 @@ export function ChapterEditDialog({
     nextChapters,
     onChange,
     onAddChapterToChat,
-    viewGranularity,
 }: ChapterEditDialogProps): JSX.Element {
     const [activeTab, setActiveTab] = useState<ChapterTab>('edit')
 
@@ -98,7 +91,7 @@ export function ChapterEditDialog({
             }}
             title={`编辑「${chapterTitleLabel(chapter)}」章纲`}
             onConfirm={handleConfirm}
-            confirmLabel={activeTab === 'edit' ? '保存更改' : '添加到AI对话'}
+            confirmLabel={activeTab === 'edit' ? '保存更改' : '添加到 AI 对话'}
             isContentScrollable={false}
             size="full"
         >
@@ -117,13 +110,9 @@ export function ChapterEditDialog({
                 </TabsList>
                 <TabsContent value="edit" className="flex min-h-0 flex-1 items-stretch gap-3 overflow-y-auto">
                     <ChapterEditPanel
-                        volume={volume}
                         chapter={chapter}
                         characters={characters}
-                        prevChapter={prevChapter}
-                        nextChapters={nextChapters}
                         onChange={onChange}
-                        viewGranularity={viewGranularity}
                     />
                 </TabsContent>
                 <TabsContent value="focus" className="min-h-0 flex-1 overflow-y-auto">
@@ -136,6 +125,7 @@ export function ChapterEditDialog({
                         plan={plan}
                         prevChapter={prevChapter}
                         nextChapter={nextChapter}
+                        nextChapters={nextChapters}
                     />
                 </TabsContent>
             </Tabs>

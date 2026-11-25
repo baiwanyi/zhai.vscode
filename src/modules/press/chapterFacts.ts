@@ -1,6 +1,6 @@
 /**
- * 章节事实读取：为「写后回填」提供章节的计划梗概、状态与字数。
- * 复用约定：卷章清单与字数取自索引库（readProjectDetail），梗概与状态取自大纲「章节内容」段落，
+ * 章节事实读取：为「写后回填」提供章节的计划梗概与字数。
+ * 复用约定：卷章清单与字数取自索引库（readProjectDetail），梗概取自大纲「章节内容」段落，
  * 大纲解析复用 outlineSync 的 readOutlineChapterBlocks，路径构造走 common/storagePath。
  * 关键约束：只读——不回写章节文件、不触发索引，回填写的是大纲；大纲缺失时只让对应字段为空，
  * 不影响其余章节，避免一处文件被占用导致整次回填不可用。
@@ -17,23 +17,6 @@ import type Database from 'better-sqlite3'
 
 /** 作品目录段数：press/{作品名} */
 const PROJECT_DIR_DEPTH = 2
-
-/** 大纲状态文案到章节事实状态的映射：写后事实沿用既有英文枚举 */
-const FACT_STATUS_BY_LABEL: Readonly<Record<string, string>> = {
-    待写: 'draft',
-    planned: 'draft',
-    已写: 'published',
-    written: 'published',
-    待改: 'revising',
-    revise: 'revising',
-    废弃: 'pending',
-    discarded: 'pending',
-}
-
-/** 归一大纲状态：未识别的写法按草稿处理，避免把空状态当成已完成 */
-function toFactStatus(label: string): string {
-    return FACT_STATUS_BY_LABEL[label] ?? 'draft'
-}
 
 /** 读取单章文本：文件缺失或读取失败按空串处理 */
 async function readChapterText(root: vscode.Uri, relativePath: string): Promise<string> {
@@ -82,7 +65,6 @@ export async function readChapterFacts(db: Database.Database, dirPath: string): 
                 chapterIndex: index + 1,
                 title: chapter.title,
                 summary: block?.summary ?? '',
-                status: toFactStatus(block?.status ?? ''),
                 wordCount: chapter.wordCount,
                 mtime: chapter.mtime,
             })

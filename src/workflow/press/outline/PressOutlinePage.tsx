@@ -18,7 +18,6 @@ import type { CreatedOutlineNode } from '../hooks/usePressMutations'
 import type {
     OutlineChapter,
     OutlineExtractTarget,
-    OutlineGranularity,
     OutlineModuleKey,
     OutlinePlan,
     OutlineSectionKey,
@@ -76,8 +75,6 @@ export function PressOutlinePage({
 }: PressOutlinePageProps): JSX.Element {
     const [selectedChapterId, setSelectedChapterId] = useState<string | null>(null)
     const [module, setModule] = useState<OutlineModuleKey>('volume')
-    /** 颗粒度视图已取消筛选入口，固定为中纲：仅作为渲染粒度传给章纲详情与 AI 面板条件 */
-    const granularity: OutlineGranularity = 'medium'
     /** 当前卷：'all' 为全部卷，否则为卷 id；兼作卷纲视图的开关，同时收窄左侧章节列表 */
     const [volumeFilter, setVolumeFilter] = useState('all')
     /** 标题搜索词：与卷筛选叠加，只收窄左侧列表 */
@@ -186,7 +183,6 @@ export function PressOutlinePage({
                     actVolumeOptions={actVolumeOptions}
                     volumeFilter={volumeFilter}
                     query={query}
-                    granularity={granularity}
                     setSelectedChapterId={setSelectedChapterId}
                     onUpdatePlan={onUpdatePlan}
                     onUpdateChapter={onUpdateChapter}

@@ -38,12 +38,10 @@ import type {
     OutlineChapter,
     OutlineChapterRef,
     OutlineClue,
-    OutlineGranularity,
     OutlinePlan,
     OutlineScene,
     OutlineVolume,
     PacingKind,
-    PlanStatus,
     ProjectSetting,
 } from './types'
 
@@ -92,42 +90,6 @@ const GENDER_LABELS: Readonly<Record<string, CharacterGender>> = {
     男: 'male',
     female: 'female',
     女: 'female',
-}
-
-/**
- * 章纲状态映射：把旧三态与章节文档的中英文状态归一到四态。
- * 关键约束：「在写 / 已完成 / published」都表示正文已兑现，统一进「已写」；
- * 「需复核 / stale」进「待改」；「废弃 / discarded」单独保留，不影响完成度统计。
- */
-const STATUS_LABELS: Readonly<Record<string, PlanStatus>> = {
-    published: 'written',
-    done: 'written',
-    已完成: 'written',
-    written: 'written',
-    已写: 'written',
-    draft: 'written',
-    drafting: 'written',
-    在写: 'written',
-    pending: 'planned',
-    planned: 'planned',
-    待写: 'planned',
-    stale: 'revise',
-    需复核: 'revise',
-    revise: 'revise',
-    待改: 'revise',
-    discarded: 'discarded',
-    dropped: 'discarded',
-    废弃: 'discarded',
-}
-
-/** 颗粒度映射：兼容英文枚举与中文档位 */
-const GRANULARITY_LABELS: Readonly<Record<string, OutlineGranularity>> = {
-    coarse: 'coarse',
-    粗纲: 'coarse',
-    medium: 'medium',
-    中纲: 'medium',
-    fine: 'fine',
-    细纲: 'fine',
 }
 
 /** 节奏类型映射：中文标签写进文档，解析时归一成枚举 */
@@ -730,12 +692,6 @@ function parseLoreEntries(text: string, kind: LoreKind, characterIndex: Map<stri
     return entries
 }
 
-/** 读取颗粒度：未填写或写法未收录都回落中纲 */
-function toGranularity(value: string | undefined): OutlineGranularity {
-    const label = readLabel(value, 'medium')
-    return GRANULARITY_LABELS[label] ?? 'medium'
-}
-
 /**
  * 读取章块头部（键值行部分）：章标题之后到第一个五级标题之前。
  * 关键约束：计划梗概、节拍与场景都写在五级 / 六级标题下，若让它们的键值行参与读取，
@@ -830,7 +786,6 @@ function parseChapter(
     const order = headingOrder ?? toNumber(values.get('序号')) ?? fallbackOrder
     const chapterKey = `${String(volumeOrder)}-${String(order)}`
     const [written, goal] = readRange(values.get('字数'))
-    const statusLabel = readLabel(values.get('状态'), 'planned')
     const hookLabel = readLabel(values.get('钩子'), 'none')
     const characterNames = toList(values.get('人物') ?? values.get('出场人物'))
     const pacing = PACING_KIND_LABELS[readLabel(values.get('节奏'), 'setup')] ?? 'setup'
@@ -847,7 +802,6 @@ function parseChapter(
             values.get('本章介绍') ||
             readFirstParagraph(head),
         actualSummary: values.get('实际') ?? values.get('正文摘要') ?? '',
-        status: STATUS_LABELS[statusLabel] ?? 'planned',
         beats:
             readSubsection('节拍').trim().length > 0
                 ? parseBeatList(readSubsection('节拍'), chapterKey)
@@ -868,7 +822,6 @@ function parseChapter(
         hook: HOOK_LABELS[hookLabel] ?? 'none',
         pacing,
         tension: Math.min(MAX_TENSION, Math.max(MIN_TENSION, tension)),
-        granularity: toGranularity(values.get('颗粒度')),
     }
 }
 
@@ -948,13 +901,12 @@ function parseVolumeChapters(
         .map((section, index) => parseChapter(section.title, section.content, volumeOrder, index + 1, characterIds))
 }
 
-/** 解析单卷卷纲：四级小节承载各项字段，卷级颗粒度取小节之前的键值行 */
+/** 解析单卷卷纲：四级小节承载各项字段 */
 function parseVolumeOutline(block: DocumentSection, order: number): Omit<OutlineVolume, 'chapters'> {
     const subsections = splitSections(block.content, 4)
     const readSubsection = (keyword: string): string =>
         subsections.find((item) => item.title.includes(keyword))?.content ?? ''
     const expected = toNumber(readParagraphs(readSubsection(VOLUME_SECTION_EXPECTED))[0] ?? '')
-    const values = readKeyValues(cutBeforeHeading(block.content, 4))
     return {
         id: `vol-${String(order)}`,
         name: block.title.trim(),
@@ -963,7 +915,6 @@ function parseVolumeOutline(block: DocumentSection, order: number): Omit<Outline
         mainPlot: readListItems(readSubsection(VOLUME_SECTION_PLOT)),
         turningPoints: readListItems(readSubsection(VOLUME_SECTION_TURNING)),
         result: readSectionBody(readSubsection(VOLUME_SECTION_RESULT)),
-        granularity: toGranularity(values.get('颗粒度')),
     }
 }
 
@@ -1027,7 +978,6 @@ function parseVolumes(text: string, characterIds: Map<string, string>): OutlineV
             mainPlot: [],
             turningPoints: [],
             result: '',
-            granularity: 'medium',
             chapters: parseVolumeChapters(block.content, order, characterIds),
         })
         orders.push(order)

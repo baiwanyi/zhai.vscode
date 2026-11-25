@@ -57,7 +57,7 @@ describe('按卷生成章纲的草案落成', () => {
             3000,
         )
 
-        expect(chapter0).toMatchObject({ pov: '', goal: '', characterIds: [], wordCount: 0, status: 'planned' })
+        expect(chapter0).toMatchObject({ pov: '', goal: '', characterIds: [], wordCount: 0 })
         expect(chapter0?.wordGoal).toBe(3000)
         // 没有细纲时保留一条空节拍，作者可直接落笔
         expect(chapter0?.beats).toHaveLength(1)

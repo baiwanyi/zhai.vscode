@@ -91,7 +91,6 @@ const VOLUMES: OutlineVolume[] = [
         mainPlot: ['文抄成名', '内斗站队', '被逐出宗门'],
         turningPoints: ['文抄成名', '内斗站队', '被逐出宗门'],
         result: '被逐出宗门，自立门户',
-        granularity: 'medium',
         chapters: [
             {
                 id: 'ch-1',
@@ -100,8 +99,7 @@ const VOLUMES: OutlineVolume[] = [
                 stage: '第一阶段：落鼎',
                 summary: '穿越落鼎，初识修真界。',
                 actualSummary: '薛牧在破庙醒来，被当做异端追捕。',
-                status: 'written',
-                beats: [
+                    beats: [
                     { id: 'beat-1', text: '落鼎', isDone: false },
                     { id: 'beat-2', text: '遇见夏侯荻', isDone: true },
                 ],
@@ -130,8 +128,7 @@ const VOLUMES: OutlineVolume[] = [
                 hook: 'suspense',
                 pacing: 'tension',
                 tension: 3,
-                granularity: 'fine',
-            },
+                },
         ],
     },
 ]
@@ -311,7 +308,6 @@ describe('草稿回写往返', () => {
             stage: '第一阶段：落鼎',
             summary: '穿越落鼎，初识修真界。',
             actualSummary: '薛牧在破庙醒来，被当做异端追捕。',
-            status: 'written',
             hook: 'suspense',
             tension: 3,
             wordGoal: 2500,
@@ -324,7 +320,6 @@ describe('草稿回写往返', () => {
             turn: '夏侯荻出手相救',
             result: '脱身但欠下人情',
             emotion: '紧张',
-            granularity: 'fine',
         })
         expect(parsed.volumes[0]?.chapters[0]?.beats.map((beat) => beat.text)).toEqual(['落鼎', '遇见夏侯荻'])
         expect(parsed.volumes[0]?.chapters[0]?.beats[1]?.isDone).toBe(true)

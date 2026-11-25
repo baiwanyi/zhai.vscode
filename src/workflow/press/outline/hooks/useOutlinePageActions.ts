@@ -251,7 +251,8 @@ export function useOutlinePageActions({
 
     /**
      * 添加章纲到 AI 对话：把当前章及所属卷纲的快照交给宿主，由对话完成正文生成。
-     * 关键约束：uri 按 JSON 数组编码作品目录与章 id，与卷纲引用各自去重；只注入计划内容，不混入正文事实。
+     * 关键约束：uri 按 JSON 数组编码作品目录与章 id，与卷纲引用各自去重；只注入计划内容，不混入正文事实；
+     * 出场人物与题材风格一并注入，与面板「本次引用」清单逐项对应。
      */
     const handleAddChapterToChat = async (): Promise<void> => {
         if (selectedEntry === null) {
@@ -263,7 +264,7 @@ export function useOutlinePageActions({
         try {
             await request<AiContextAddInlineResult>('ai/context/addInline', {
                 label: `${workspace.setting.title.trim() || '未命名作品'}·章纲·${volumeTitleLabel(volume.name, safeIndex)}·第${String(chapter.order)}章 ${chapter.title.trim() || '未命名'}`,
-                text: `${formatVolumeOutlineText(volume, safeIndex)}\n\n${formatChapterOutlineText(chapter)}`,
+                text: `${formatVolumeOutlineText(volume, safeIndex)}\n\n${formatChapterOutlineText(chapter, workspace.characters, workspace.setting)}`,
                 uri: JSON.stringify(['press-outline', dirPath, 'chapter', chapter.id]),
                 scope: dirPath,
                 kind: 'chapterOutline',

@@ -18,11 +18,9 @@ import type {
     ClueStatus,
     HookKind,
     LoreKind,
-    OutlineGranularity,
     OutlineModuleKey,
     OutlineScene,
     PacingKind,
-    PlanStatus,
 } from './types'
 import type { LucideIcon } from 'lucide-react'
 
@@ -53,31 +51,6 @@ type OptionSource<T extends string> = Readonly<Record<T, { label: string }>>
 function toOptions<T extends string>(order: readonly T[], meta: OptionSource<T>): readonly OptionMeta<T>[] {
     return order.map((value) => ({ value, label: meta[value].label }))
 }
-
-/**
- * 章纲状态元数据：文案、徽标变体、状态点底色类名。
- * 关键约束：四态是「大纲工作文件」的状态——已写=正文已兑现，待改=正文偏离大纲需复核，
- * 废弃=保留记录但不计入完成度，待写=尚未落笔。
- */
-export const PLAN_STATUS_META: Readonly<Record<PlanStatus, { label: string; tone: BadgeTone; dot: string }>> = {
-    planned: { label: '待写', tone: 'outline', dot: 'bg-muted-foreground/60' },
-    written: { label: '已写', tone: 'default', dot: 'bg-chart-2' },
-    revise: { label: '待改', tone: 'secondary', dot: 'bg-chart-4' },
-    discarded: { label: '废弃', tone: 'destructive', dot: 'bg-destructive' },
-}
-
-/** 颗粒度文案与顺序：粗纲管方向、中纲管事件链、细纲管当天落笔 */
-export const GRANULARITY_META: Readonly<Record<OutlineGranularity, { label: string; description: string }>> = {
-    coarse: { label: '粗纲', description: '故事核、人物弧、三幕大转折' },
-    medium: { label: '中纲', description: '事件链与章纲卡' },
-    fine: { label: '细纲', description: '场景、节拍与当天落笔细节' },
-}
-
-/** 颗粒度顺序：由粗到细，视图切换与档位选择共用 */
-export const GRANULARITY_ORDER: readonly OutlineGranularity[] = ['coarse', 'medium', 'fine']
-
-/** 颗粒度选项：卷/章节点标记与顶栏视图切换共用 */
-export const GRANULARITY_OPTIONS = toOptions(GRANULARITY_ORDER, GRANULARITY_META)
 
 /** 节奏类型文案：每章一档，避免连续同类章节 */
 export const PACING_META: Readonly<Record<PacingKind, { label: string; className: string }>> = {

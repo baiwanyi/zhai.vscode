@@ -10,18 +10,8 @@
  */
 import type { CharacterPortrait, PortraitStyle, PressLoreKind } from '@shared/types/press'
 
-/**
- * 大纲状态：待写、已写、待改、废弃。
- * 关键约束：这是「大纲工作文件」的状态，不是章节文件状态；旧文档里的 doing / done / stale
- * 一律在解析层归一到这四个取值，页面与统计只认这四个，不再出现第五种。
- */
-export type PlanStatus = 'planned' | 'written' | 'revise' | 'discarded'
-
 /** 章末钩子类型：悬念、反转、情绪高点、无 */
 export type HookKind = 'suspense' | 'twist' | 'emotion' | 'none'
-
-/** 颗粒度：粗纲（故事核与结构）、中纲（事件链与章纲）、细纲（场景与节拍） */
-export type OutlineGranularity = 'coarse' | 'medium' | 'fine'
 
 /**
  * 功能模块：结构纲、伏笔线索、卷纲与章纲四个页面。
@@ -174,7 +164,6 @@ export interface OutlineChapter {
     summary: string
     /** 正文事实摘要：写后回填写入，只读展示，不回写章节文件 */
     actualSummary: string
-    status: PlanStatus
     beats: OutlineBeat[]
     /** 场景纲：章之下的最小写作单元，数组顺序即落笔顺序 */
     scenes: OutlineScene[]
@@ -201,8 +190,6 @@ export interface OutlineChapter {
     pacing: PacingKind
     /** 张力 1-5，用于节奏曲线 */
     tension: number
-    /** 颗粒度标记：这一章被细化到哪一档，写盘后可在视图里按档筛选 */
-    granularity: OutlineGranularity
 }
 
 /** 卷/幕纲：一部作品下的一卷（也可当作一幕），含核心事件、主要情节、转折与卷末结果 */
@@ -219,8 +206,6 @@ export interface OutlineVolume {
     turningPoints: string[]
     /** 卷末结果：本卷收束后留下什么新问题 */
     result: string
-    /** 颗粒度标记：本卷细化到哪一档 */
-    granularity: OutlineGranularity
     chapters: OutlineChapter[]
 }
 

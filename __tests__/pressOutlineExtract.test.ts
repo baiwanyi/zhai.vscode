@@ -71,7 +71,6 @@ function outlineChapter(order: number, title: string): OutlineChapter {
         stage: '',
         summary: '',
         actualSummary: '',
-        status: 'planned',
         beats: [],
         scenes: [],
         pov: '',
@@ -87,7 +86,6 @@ function outlineChapter(order: number, title: string): OutlineChapter {
         hook: 'none',
         pacing: 'setup',
         tension: 3,
-        granularity: 'medium',
     }
 }
 
@@ -101,7 +99,6 @@ const CURRENT: OutlineVolume[] = [
         mainPlot: [],
         turningPoints: [],
         result: '',
-        granularity: 'medium',
         chapters: [outlineChapter(1, '开局'), outlineChapter(2, '追兵'), outlineChapter(3, '多出的一章')],
     },
     {
@@ -112,7 +109,6 @@ const CURRENT: OutlineVolume[] = [
         mainPlot: [],
         turningPoints: [],
         result: '',
-        granularity: 'medium',
         chapters: [outlineChapter(1, '雪原')],
     },
 ]
@@ -168,8 +164,7 @@ describe('createOutlineFromDraft', () => {
             mainPlot: ['客人送来旧表', '档案被抽走'],
             turningPoints: ['编号确认'],
             result: '',
-            granularity: 'medium',
-        })
+            })
         expect(volume?.chapters[0]?.title).toBe('开局')
     })
 })
@@ -207,9 +202,8 @@ describe('refreshOutlineChapters', () => {
 
         expect(refreshed).toBe(1)
         expect(volumes[0]?.chapters.map((chapter) => chapter.title)).toEqual(['开局', '素材追兵', '多出的一章'])
-        // 章 id、状态等结构字段一律沿用现有草稿
+        // 章 id 等结构字段一律沿用现有草稿
         expect(volumes[0]?.chapters[1]?.id).toBe('ch-2-追兵')
-        expect(volumes[0]?.chapters[1]?.status).toBe('planned')
     })
 
     it('卷名与草案对不上时不刷新，返回 0', () => {

@@ -1102,8 +1102,8 @@ export interface PressExtractOutlineResult {
 }
 
 /**
- * 章节事实：写后回填的只读输入，来自大纲章块的计划梗概与状态，加上索引库的字数。
- * 关键约束：只读，不回写任何文件；梗概与状态取自大纲，字数取自索引库。
+ * 章节事实：写后回填的只读输入，来自大纲章块的计划梗概与索引库的字数。
+ * 关键约束：只读，不回写任何文件；梗概取自大纲，字数取自索引库。
  */
 export interface PressChapterFact {
     /** 相对存储根的章节路径 */
@@ -1118,8 +1118,6 @@ export interface PressChapterFact {
     title: string
     /** 本章介绍（实际摘要） */
     summary: string
-    /** 章节文档状态：draft / revising / pending / published */
-    status: string
     wordCount: number
     mtime: string
 }

@@ -11,7 +11,7 @@ import { AppAction, AppHeader, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
 import { Button } from '@webview/components/Button'
 import { OutlineActionMenu } from './OutlineActionMenu'
-import { OutlineFilters } from './OutlineFilters'
+import { OutlineFilterMenus } from './OutlineFilterMenus'
 import type { CharacterCard, OutlineExtractTarget, OutlineModuleKey, OutlinePlan, OutlineVolume } from '../../types'
 import type { summarizeWorkspace } from '../../utils'
 import type { JSX, ReactNode } from 'react'
@@ -92,7 +92,7 @@ export function OutlineHeader({
             <AppSummary
                 title={title}
                 path={dirPath}
-                meta={`${volumeCount} 卷 · ${summary.chapters} 章 · 已写 ${summary.done} 章 · 待改 ${summary.revise} 章 · 废弃 ${summary.discarded} 章`}
+                meta={`${volumeCount} 卷 · ${summary.chapters} 章 · 已写 ${summary.done} 章`}
             >
                 <div className="flex w-full items-center gap-2">
                     <Progress
@@ -103,7 +103,7 @@ export function OutlineHeader({
                     <span className="shrink-0 text-muted-foreground tabular-nums">{donePercent}%</span>
                 </div>
             </AppSummary>
-            <OutlineFilters
+            <OutlineFilterMenus
                 module={module}
                 volumeFilter={volumeFilter}
                 volumeOptions={volumeOptions}

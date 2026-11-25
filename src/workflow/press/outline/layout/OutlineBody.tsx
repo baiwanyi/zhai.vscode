@@ -13,7 +13,6 @@ import { StructurePanel } from './StructureActPanels'
 import { VolumeCards } from './VolumeCards'
 import type {
     OutlineChapter,
-    OutlineGranularity,
     OutlineModuleKey,
     OutlinePlan,
     OutlineSectionKey,
@@ -40,7 +39,6 @@ interface OutlineBodyProps {
     actVolumeOptions: { value: string; label: string }[]
     volumeFilter: string
     query: string
-    granularity: OutlineGranularity
     setSelectedChapterId: (id: string | null) => void
     onUpdatePlan: (section: OutlineSectionKey, patch: Partial<OutlinePlan>) => void
     onUpdateChapter: (chapterId: string, patch: Partial<OutlineChapter>) => void
@@ -61,7 +59,6 @@ export function OutlineBody({
     actVolumeOptions,
     volumeFilter,
     query,
-    granularity,
     setSelectedChapterId,
     onUpdatePlan,
     onUpdateChapter,
@@ -123,7 +120,6 @@ export function OutlineBody({
                     nextChapters={viewContext.nextChapters}
                     onChange={(patch) => onUpdateChapter(selectedEntry.chapter.id, patch)}
                     onAddChapterToChat={actions.handleAddChapterToChat}
-                    viewGranularity={granularity}
                 />
             </>
         )
