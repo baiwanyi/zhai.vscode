@@ -1,7 +1,7 @@
 /**
  * 封面弹窗：在 Popover 选图面板里切换生图 / 在线图库 / 上传图片，挑中一张后按公众号首图比例（2.35:1）
  * 裁剪，再保存到当前批次目录的 images/ 下。
- * 复用约定：主弹层取 @webview/components/Dialog，选图面板统一取 components/ImagePickerPopover（Popover + Tabs），
+ * 复用约定：主弹层取 @webview/components/Dialog，选图面板取 components/ImagePickerTabs（标签区直接内嵌），上传入口取 ImageUploadButton，
  * 缩略图取 components/Image，空态与加载态取 blocks/Empty，缩放缓动取 @components/ui 的 slider；
  * 候选列表来自 useImagePickerSources（生图走 media/list、在线图库走 stock/downloaded、上传走 upload/list），
  * 只在 jpg/png 中挑选；读原图走 wechat/cover/source，保存走 wechat/article/cover。
@@ -11,18 +11,15 @@
  * 缩放只改变取景比例，平移边界按「图片始终铺满取景框」收敛，避免裁出留白；
  * 没有选中新图时不能保存，未选时预览区展示文章当前封面，没有当前封面则提示先挑一张。
  */
-import { cn } from 'cn'
-import { Images } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Slider } from '@components/ui/slider'
 import type { WechatArticleSummary } from '@shared/types/wechat'
 import { Empty } from '@webview/blocks/Empty'
-import { Button } from '@webview/components/Button'
 import { Dialog } from '@webview/components/Dialog'
 import { Image } from '@webview/components/Image'
-import { ImagePickerPopover } from '@webview/components/ImagePicker'
+import { ImagePickerTabs, ImageUploadButton } from '@webview/components/ImagePicker'
 import { useImagePickerSources } from '@webview/hooks/useImagePickerSources'
 import type { ImagePickerItem, ImageSourceKind } from '@webview/hooks/useImagePickerSources'
 import type { JSX, PointerEvent } from 'react'
@@ -72,8 +69,8 @@ export function WechatCoverDialog({
     onReadImage,
     onSubmit,
 }: WechatCoverDialogProps): JSX.Element {
-    /** 选图面板开合：命中一张后立即收起 */
-    const [isPickerOpen, setIsPickerOpen] = useState(false)
+    /** 当前选图标签：上传命中新图后切到上传页 */
+    const [tab, setTab] = useState<ImageSourceKind>('upload')
     /** 待裁剪的原图：data URI，为空表示还没选新图 */
     const [sourceUrl, setSourceUrl] = useState<string | null>(null)
     /** 已选条目的来源与路径：用于选图面板回显选中项 */
@@ -133,7 +130,6 @@ export function WechatCoverDialog({
                 return
             }
             applySource(dataUrl, kind, item.path)
-            setIsPickerOpen(false)
         })
     }
 
@@ -215,7 +211,7 @@ export function WechatCoverDialog({
 
     return (
         <>
-            <Dialog size="full"
+            <Dialog
                 open
                 title="封面"
                 confirmLabel="保存封面"
@@ -276,33 +272,24 @@ export function WechatCoverDialog({
                         )}
                     </Field>
                     <Field>
-                        <FieldLabel>图片来源</FieldLabel>
-                        <ImagePickerPopover
-                            open={isPickerOpen}
-                            onOpenChange={setIsPickerOpen}
-                            trigger={
-                                <Button
-                                    variant="outline"
-                                    aria-label="选择封面图片"
-                                    disabled={isSubmitting || isReading}
-                                    className={cn(
-                                        'w-full justify-start gap-2',
-                                        selected !== null && 'border-primary text-primary',
-                                    )}
-                                >
-                                    <Images className="size-4" aria-hidden="true" />
-                                    <span className="text-xs font-medium">
-                                        {selected === null ? '从生图 / 在线图库 / 上传图片中选择' : '重新选择封面图片'}
-                                    </span>
-                                </Button>
-                            }
-                            title="选择封面图片"
-                            description="生图与在线图库挑一张，或直接上传本地图片后从上传图片里选。只接受 jpg / png。"
+                        <div className="flex items-center justify-between">
+                            <FieldLabel>图片来源</FieldLabel>
+                            <ImageUploadButton
+                                disabled={isSubmitting || isReading}
+                                isUploading={isUploading}
+                                onUpload={pickFiles}
+                                onUploaded={(): void => setTab('upload')}
+                            />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            生图与在线图库挑一张，或上传本地图片后从上传图片里选。只接受 jpg / png。
+                        </p>
+                        <ImagePickerTabs
+                            value={tab}
+                            onValueChange={setTab}
                             sources={sources}
                             selectedPaths={selected === null ? [] : [selected.path]}
-                            isUploading={isUploading}
                             disabled={isSubmitting || isReading}
-                            onUpload={pickFiles}
                             onSelect={(item, kind): void => handleSelect(kind, item)}
                         />
                     </Field>

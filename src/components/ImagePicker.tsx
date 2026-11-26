@@ -3,7 +3,7 @@
  * 复用约定：数据源与上传动作由外部经 props 注入（控制器来自 useImagePickerSources），
  * 本组件只负责面板骨架、标签切换、Attachment 缩略图列表与选中态，命中条目统一以 ImagePickerItem 回传；
  * 上传按钮位于标题右侧，上传完成由调用方把新增图片写入外部列表并按需切到上传标签。
- * 关键约束：已选路径条目置灰并标记，避免重复加入；每栏按固定步长增量渲染，图库上千张也不一次挂满 DOM；
+ * 关键约束：已选路径条目置灰并标记，避免重复加入；每栏只渲染首批固定张数，图库上千张也不一次挂满 DOM；
  * 面板 open 完全受控，选中后是否关闭由调用方决定；关闭时不抢焦点，方便继续编辑正文；
  * 上传按钮与来源标签区分别抽为可独立导出的组件，脱离面板时由调用方自行持有 tab 状态与上传落盘逻辑。
  */
@@ -16,10 +16,8 @@ import {
     Attachment,
     AttachmentAction,
     AttachmentActions,
-    AttachmentContent,
     AttachmentGroup,
     AttachmentMedia,
-    AttachmentTitle,
     AttachmentTrigger,
 } from '@components/ui/attachment'
 import {
@@ -39,8 +37,11 @@ import type { ImagePickerItem, ImagePickerSourceState, ImageSourceKind } from '@
 import { useRenderLimit } from '@webview/hooks/useRenderLimit'
 import type { JSX, ReactNode } from 'react'
 
-/** 标签页每批展示的张数：图库可能有上千张，按需增量渲染避免一次挂满 DOM */
-const PAGE_SIZE = 60
+/** 标签页每批展示的张数：配合首批批次数限制渲染总量，避免图库一次挂满 DOM */
+const PAGE_SIZE = 30
+
+/** 只渲染前 10 批：开局展开固定张数后不再加载超出部分，避免图库一次挂满 DOM */
+const AUTO_LOAD_BATCHES = 10
 
 /** 三个标签页的固定顺序与文案 */
 const SOURCE_TABS: readonly { kind: ImageSourceKind; label: string; emptyTitle: string }[] = [
@@ -71,6 +72,8 @@ export interface ImagePickerPopoverProps {
     disabled?: boolean
     align?: 'start' | 'center' | 'end'
     className?: string
+    /** 面板附加内容：渲染在说明与标签栏之间，供调用方插入自定义区块 */
+    children?: ReactNode
     /** 上传图片：调用方处理落盘并把新增条目写入外部列表，返回本次新增供面板切到上传标签 */
     onUpload: () => Promise<readonly ImagePickerItem[]>
     /** 选中一张图片：kind 标明来自哪个标签页 */
@@ -78,7 +81,7 @@ export interface ImagePickerPopoverProps {
     onCloseAutoFocus?: (event: Event) => void
 }
 
-/** 单栏缩略图附件列表：加载 / 空态 / Attachment 网格与选中态 + 加载更多 */
+/** 单栏缩略图附件列表：加载 / 空态 / Attachment 网格与选中态 */
 function ImageGrid({
     items,
     isLoading,
@@ -94,7 +97,7 @@ function ImageGrid({
     disabled: boolean
     onSelect: (item: ImagePickerItem) => void
 }): JSX.Element {
-    const { limit, hasMore, remaining, loadMore } = useRenderLimit(items.length, PAGE_SIZE)
+    const { limit } = useRenderLimit(items.length, PAGE_SIZE, '', AUTO_LOAD_BATCHES)
     const visibleItems = items.slice(0, limit)
     const selected = new Set(selectedPaths)
 
@@ -106,51 +109,39 @@ function ImageGrid({
     }
 
     return (
-        <div className="flex flex-col gap-2">
-            <AttachmentGroup className="max-h-64 flex-wrap overflow-y-auto">
-                {visibleItems.map((item) => {
-                    const isSelected = selected.has(item.path)
-                    return (
-                        <Attachment
-                            key={item.id}
-                            title={item.alt}
-                            orientation="vertical"
-                            size="sm"
-                            state={isSelected ? 'done' : 'idle'}
-                            className={cn(isSelected && 'ring-2 ring-primary')}
-                        >
-                            <AttachmentMedia variant="image">
-                                <Image src={item.url} alt={item.alt} />
-                            </AttachmentMedia>
-                            <AttachmentContent className="w-full">
-                                <AttachmentTitle>{item.alt}</AttachmentTitle>
-                            </AttachmentContent>
-                            {isSelected ? (
-                                <AttachmentActions>
-                                    <AttachmentAction variant="secondary" aria-label="已选择" disabled>
-                                        <Check data-icon />
-                                    </AttachmentAction>
-                                </AttachmentActions>
-                            ) : null}
-                            <AttachmentTrigger
-                                disabled={disabled || isSelected}
-                                aria-label={`选择图片：${item.alt}`}
-                                aria-pressed={isSelected}
-                                onClick={() => onSelect(item)}
-                            />
-                        </Attachment>
-                    )
-                })}
-            </AttachmentGroup>
-            <div className="flex items-center justify-between gap-2">
-                <span className="text-muted-foreground text-xs">{`共 ${String(items.length)} 张`}</span>
-                {hasMore ? (
-                    <Button variant="outline" size="sm" disabled={disabled} onClick={loadMore}>
-                        {`加载更多（还有 ${String(remaining)} 张）`}
-                    </Button>
-                ) : null}
-            </div>
-        </div>
+        <AttachmentGroup className="grid grid-cols-3 gap-2 max-h-64 overflow-y-auto px-0.5">
+            {visibleItems.map((item) => {
+                const isSelected = selected.has(item.path)
+                return (
+                    <Attachment
+                        key={item.id}
+                        orientation="vertical"
+                        state={isSelected ? 'done' : 'idle'}
+                        className={cn(
+                            'w-full has-data-[slot=attachment-media]:p-1',
+                            isSelected && 'ring-1 ring-primary',
+                        )}
+                    >
+                        <AttachmentMedia variant="image">
+                            <Image src={item.url} alt={item.alt} />
+                        </AttachmentMedia>
+                        {isSelected ? (
+                            <AttachmentActions className="group-data-[orientation=vertical]/attachment:top-1 group-data-[orientation=vertical]/attachment:right-1">
+                                <AttachmentAction variant="default" className="rounded-full" disabled>
+                                    <Check data-icon />
+                                </AttachmentAction>
+                            </AttachmentActions>
+                        ) : null}
+                        <AttachmentTrigger
+                            disabled={disabled || isSelected}
+                            aria-label={`选择图片：${item.alt}`}
+                            aria-pressed={isSelected}
+                            onClick={() => onSelect(item)}
+                        />
+                    </Attachment>
+                )
+            })}
+        </AttachmentGroup>
     )
 }
 
@@ -257,6 +248,7 @@ export function ImagePickerPopover({
     disabled = false,
     align = 'start',
     className,
+    children,
     onUpload,
     onSelect,
     onCloseAutoFocus,
@@ -278,12 +270,12 @@ export function ImagePickerPopover({
                 }
             >
                 <PopoverHeader className="flex-row items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <PopoverTitle>{title}</PopoverTitle>
+                    <PopoverTitle className="flex items-center gap-2">
+                        {title}
                         <Badge variant="outline" tooltip={`共 ${String(totalCount)} 张图片`}>
                             {totalCount}
                         </Badge>
-                    </div>
+                    </PopoverTitle>
                     <ImageUploadButton
                         disabled={disabled}
                         isUploading={isUploading}
@@ -292,6 +284,7 @@ export function ImagePickerPopover({
                     />
                 </PopoverHeader>
                 {description === undefined ? null : <PopoverDescription>{description}</PopoverDescription>}
+                {children}
                 <ImagePickerTabs
                     value={tab}
                     onValueChange={(next): void => setTab(next)}
