@@ -76,7 +76,11 @@ export function ChapterDetailItem({
             <ItemContent className={cn('flex-row justify-between gap-3', isStart ? 'items-start' : 'items-center')}>
                 <ItemTitle className={cn('shrink-0', isStart && 'w-24')}>{label}</ItemTitle>
                 <ItemDescription
-                    className={cn('line-clamp-none', isStart ? 'text-left' : 'text-right', emphasized && 'font-medium')}
+                    className={cn(
+                        'line-clamp-none min-w-0 flex-1 wrap-break-word',
+                        isStart ? 'text-left' : 'text-right',
+                        emphasized && 'font-medium',
+                    )}
                 >
                     {orFallback(value)}
                 </ItemDescription>

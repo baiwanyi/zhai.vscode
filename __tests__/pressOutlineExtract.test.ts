@@ -81,7 +81,6 @@ function outlineChapter(order: number, title: string): OutlineChapter {
         emotion: '',
         characterIds: [],
         location: '',
-        wordGoal: 2500,
         wordCount: 0,
         hook: 'none',
         pacing: 'setup',
@@ -155,7 +154,6 @@ describe('createOutlineFromDraft', () => {
                     chapters: [draftChapter(1, '开局')],
                 },
             ],
-            2500,
         )
 
         expect(volume).toMatchObject({
@@ -175,7 +173,6 @@ describe('refreshOutlineChapters', () => {
             CURRENT,
             DRAFTS,
             [{ volumeOrder: 2, chapterIndex: 1 }],
-            2500,
         )
 
         expect(refreshed).toBe(1)
@@ -197,7 +194,6 @@ describe('refreshOutlineChapters', () => {
                 { volumeOrder: 1, chapterIndex: 2 },
                 { volumeOrder: 1, chapterIndex: 3 },
             ],
-            2500,
         )
 
         expect(refreshed).toBe(1)
@@ -211,7 +207,6 @@ describe('refreshOutlineChapters', () => {
             CURRENT,
             DRAFTS,
             [{ volumeOrder: 9, chapterIndex: 1 }],
-            2500,
         )
 
         expect(refreshed).toBe(0)

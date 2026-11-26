@@ -43,7 +43,7 @@ export function ChapterPanels({
         )
     }
     return (
-        <ItemGroup>
+        <ItemGroup className="has-data-[size=xs]:gap-1">
             {entries.map(({ volume, chapter }) => (
                 <Item
                     key={chapter.id}

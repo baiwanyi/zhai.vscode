@@ -680,6 +680,53 @@ export interface VolumeFieldGenerateResult {
     content: string
 }
 
+/**
+ * 章纲计划梗概生成请求：本章章纲卡 + 本卷卷纲 + 全书结构 + 设定快照 + 出场人物与前后章线索。
+ * 关键约束：summary 是「打算写」而非正文事实，actualSummary 不进请求；已有梗概非空时要求在原文上完善；
+ * 阶段 / 钩子 / 节奏只作写作约束，模型不得回写这些字段。
+ */
+export interface ChapterSummaryGenerateRequest {
+    /** 本章标题：不含「第N章」前缀 */
+    chapterTitle: string
+    /** 本卷卷名：含「第N卷」前缀 */
+    volumeName: string
+    stage: string
+    pov: string
+    goal: string
+    obstacle: string
+    turn: string
+    result: string
+    emotion: string
+    /** 章末钩子的中文标签 */
+    hook: string
+    /** 本章节奏的中文标签 */
+    pacing: string
+    /** 计划梗概当前值，非空时在其基础上完善 */
+    summary: string
+    /** 节拍文本：本章细纲，按落笔顺序 */
+    beats: string[]
+    /** 场景纲一句概括：按场景顺序 */
+    scenes: string[]
+    /** 出场人物姓名：从人物卡映射，不传 id */
+    characters: string[]
+    /** 本卷核心事件 */
+    coreEvent: string
+    /** 本卷主要情节 */
+    mainPlot: string[]
+    /** 全书结构阶段：约束转折语义 */
+    acts: OutlineActContext[]
+    /** 本章相关伏笔：按埋设 / 回收章引用筛选 */
+    clues: OutlineClueContext[]
+    /** 上一章计划梗概：无上一章时为空串 */
+    prevSummary: string
+    setting: SettingSnapshot
+}
+
+/** 章纲计划梗概生成结果：单段纯文本，直接写回梗概输入框 */
+export interface ChapterSummaryGenerateResult {
+    content: string
+}
+
 /** 草案里的线索关联：id 来自请求的 clues，action 指定本章埋设或回收 */
 export interface VolumeChapterClueRef {
     id: string

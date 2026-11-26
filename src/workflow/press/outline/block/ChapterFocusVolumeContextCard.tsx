@@ -36,11 +36,21 @@ export function ChapterFocusVolumeContextCard({
                 <CollapsibleFocusRow label="核心事件" value={volume.coreEvent} />
                 <CollapsibleFocusRow
                     label="主要情节"
-                    value={volume.mainPlot.map((item) => `${item}。`).join('\n')}
+                    value={volume.mainPlot
+                        .map((item) => {
+                            const text = item.trim()
+                            return /[。！？.!?]$/u.test(text) ? text : `${text}。`
+                        })
+                        .join('\n')}
                 />
                 <CollapsibleFocusRow
                     label="关键转折"
-                    value={volume.turningPoints.map((item) => `${item}。`).join('\n')}
+                    value={volume.turningPoints
+                        .map((item) => {
+                            const text = item.trim()
+                            return /[。！？.!?]$/u.test(text) ? text : `${text}。`
+                        })
+                        .join('\n')}
                 />
                 <CollapsibleFocusRow label="卷末结果" value={volume.result} />
                 <ItemGroup className={DETAIL_GROUP_CLASS}>

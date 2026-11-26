@@ -278,7 +278,7 @@ function buildChapterBlock(chapter: OutlineChapter, nameById: ReadonlyMap<string
             ['钩子', hook],
             ['节奏', PACING_META[chapter.pacing].label],
             ['张力', String(chapter.tension)],
-            ['字数', `${String(chapter.wordCount)}/${String(chapter.wordGoal)}`],
+            ['字数', String(chapter.wordCount)],
             ['地点', chapter.location],
             ['人物', characterNames.join('、')],
         ]),

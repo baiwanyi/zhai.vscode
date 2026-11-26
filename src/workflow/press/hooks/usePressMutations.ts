@@ -29,7 +29,6 @@ import type {
 } from '../types'
 import type { ChapterSeed, VolumeChapterWriteMode } from '../utils'
 import type { FlushOptions, PersistScope } from './usePressWorkspace'
-import { DEFAULT_CHAPTER_WORD_GOAL } from '../constants'
 import { SETTING_SECTIONS } from '../setting/sections'
 import {
     buildClueRefPatches,
@@ -51,12 +50,6 @@ export interface CreatedOutlineNode {
     volumeId: string
     chapterId: string | null
 }
-
-/** 章纲目标字数：作品设定没填时回落默认值，避免新章的目标字数为 0 */
-function readChapterWordGoal(setting: ProjectSetting): number {
-    return setting.chapterWordGoal > 0 ? setting.chapterWordGoal : DEFAULT_CHAPTER_WORD_GOAL
-}
-
 
 /** 空章判定：与 utils 的 isEmptyOutlineChapter 同一口径，替换模式只清掉这类章节 */
 const isEmptyChapter = isEmptyOutlineChapter
@@ -340,7 +333,6 @@ export function usePressMutations({
             if (target === undefined) {
                 return 0
             }
-            const wordGoal = readChapterWordGoal(current.setting)
             const volumeOrder = readOutlineVolumeOrder(target.name, volumeIndex)
             const kept =
                 mode === 'replace-empty'
@@ -367,7 +359,7 @@ export function usePressMutations({
                         mode === 'replace-empty'
                             ? currentKept.length + 1
                             : currentKept.reduce((max, chapter) => Math.max(max, chapter.order), 0) + 1
-                    const created = createChaptersFromSeeds(seeds, currentStart, wordGoal)
+                    const created = createChaptersFromSeeds(seeds, currentStart)
                     const chapters = [...currentKept, ...created]
                     return {
                         ...volume,
@@ -435,7 +427,7 @@ export function usePressMutations({
         if (current === null) {
             return null
         }
-        const volume = createVolume(readChapterWordGoal(current.setting))
+        const volume = createVolume()
         updateWorkspace((previous) => ({ ...previous, volumes: [...previous.volumes, volume] }))
         void flush(new Set<PersistScope>(['outline']), { successMessage: `已新增「${volume.name}」` })
         const firstChapter = volume.chapters[0] ?? null
@@ -461,7 +453,7 @@ export function usePressMutations({
                 (volumeId === undefined ? undefined : current.volumes.find((volume) => volume.id === volumeId)) ??
                 lastVolume
             const order = target.chapters.reduce((max, chapter) => Math.max(max, chapter.order), 0) + 1
-            const chapter = createChapter(order, readChapterWordGoal(current.setting))
+            const chapter = createChapter(order)
             updateWorkspace((previous) => ({
                 ...previous,
                 volumes: previous.volumes.map((volume) =>
@@ -490,11 +482,10 @@ export function usePressMutations({
             if (current === null) {
                 return 0
             }
-            const wordGoal = readChapterWordGoal(current.setting)
             updateWorkspace((previous) => {
                 const covered = drafts.map((draft, index) => {
                     const existing = previous.volumes[index]
-                    const base = existing ?? createVolume(wordGoal)
+                    const base = existing ?? createVolume()
                     return {
                         ...base,
                         name: draft.name,
@@ -527,18 +518,12 @@ export function usePressMutations({
                 if (current === null) {
                     return 0
                 }
-                const { volumes, refreshed } = refreshOutlineChapters(
-                    current.volumes,
-                    drafts,
-                    target.keys,
-                    DEFAULT_CHAPTER_WORD_GOAL,
-                    characters,
-                )
+                const { volumes, refreshed } = refreshOutlineChapters(current.volumes, drafts, target.keys, characters)
                 updateWorkspace((previous) => ({ ...previous, volumes }))
                 void flush(new Set<PersistScope>(['outline']))
                 return refreshed
             }
-            const volumes = createOutlineFromDraft(drafts, DEFAULT_CHAPTER_WORD_GOAL, characters)
+            const volumes = createOutlineFromDraft(drafts, characters)
             const chapterCount = volumes.reduce((total, volume) => total + volume.chapters.length, 0)
             updateWorkspace((previous) => ({ ...previous, volumes }))
             void flush(new Set<PersistScope>(['outline']))

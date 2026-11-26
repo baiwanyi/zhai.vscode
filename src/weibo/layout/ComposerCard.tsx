@@ -2,10 +2,11 @@
  * 微博发布框：受控编辑 + 表情 / 话题插入 + 图片选择与粘贴上传 + AI 优化 + 字数与发布。
  * 复用约定：卡片取 @components/ui/card，正文输入取 @components/ui/input-group
  * （InputGroup / InputGroupTextarea / InputGroupAddon / InputGroupText，字数统计是框内顶部附件），
- * 表情与话题面板取同目录 WeiboEmoticonPicker / WeiboTopicPicker，图片面板取 WeiboImagePicker，
- * 选区插入的纯逻辑走 utils/weiboComposer，图片清单与上传走 hooks/useWeiboComposerImages，
- * 发布请求走 hooks/useWeiboPublish，AI 改写走 hooks/useWeiboEnhance，本组件只负责读写 DOM 与恢复光标。
+ * 表情与话题面板取同目录 WeiboEmoticonPicker / WeiboTopicPicker，图片面板取通用 ImagePicker（Popover + Tabs），
+ * 选区插入的纯逻辑走 utils/weiboComposer，发布框的上传清单与粘贴上传走 hooks/useWeiboComposerImages，
+ * 生图与在线图库两栏走 hooks/useImagePickerSources，发布请求走 hooks/useWeiboPublish，AI 改写走 hooks/useWeiboEnhance。
  * 关键约束：草稿与已选图片都由调用方持有（首页内容随视图卸载，二者不能跟着丢）；
+ * 发布只接受 uploads/ 下的路径，生图与在线图库两栏仅供浏览，选中时提示先上传；
  * 插入文本后由 effect 把光标落回插入位置，受控更新不打断连续输入；
  * 粘贴只拦剪贴板里的图片文件，落盘到 uploads/ 后直接加入已选，文本粘贴完全不动默认行为；
  * AI 优化以输入框实际内容为准、成功后整体替换并把光标落到末尾，改写中禁止发布；
@@ -13,8 +14,8 @@
  * 并用同色底衬压住卡内背光，只留边缘与外侧雾光；ui/card 自带的 overflow-hidden 会裁掉外扩背光，必须覆盖；
  * 发布成功后清空草稿与已选图片，再由 onPublished 把新微博交给面板层前插。
  */
-import { Sparkles, X } from 'lucide-react'
-import { useCallback, useEffect, useRef } from 'react'
+import { ImagePlus, Sparkles, X } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@components/ui/card'
 import {
@@ -31,14 +32,24 @@ import type { WeiboTimelinePost } from '@shared/types/weibo'
 import { ButtonLoadingContent } from '@webview/blocks/ButtonLoadingContent'
 import { CARD_GLOW_CLASS, ComposerGlow } from '@webview/components/AppComposer'
 import { Button } from '@webview/components/Button'
+import { ImagePicker } from '@webview/components/ImagePicker'
+import { useImagePickerSources } from '@webview/hooks/useImagePickerSources'
+import type { ImagePickerItem, ImageSourceKind } from '@webview/hooks/useImagePickerSources'
 import { WeiboEmoticonPicker } from './WeiboEmoticonPicker'
-import { WeiboImagePicker } from './WeiboImagePicker'
 import { WeiboTopicPicker } from './WeiboTopicPicker'
 import type { ClipboardEvent, JSX } from 'react'
 import { useWeiboComposerImages } from '../hooks/useWeiboComposerImages'
 import { useWeiboEnhance } from '../hooks/useWeiboEnhance'
 import { useWeiboPublish } from '../hooks/useWeiboPublish'
 import { insertAtSelection } from '../utils/weiboComposer'
+
+/** 微博面板只需要生图与在线图库两栏，上传清单由 useWeiboComposerImages 提供 */
+const BROWSE_KINDS: readonly ImageSourceKind[] = ['generate', 'stock']
+
+/** UploadFileItem 的 url 对图片非空，转成通用条目供 ImagePicker 渲染 */
+function toPickerItem(item: UploadFileItem): ImagePickerItem {
+    return { id: item.path, path: item.path, url: item.url ?? '', alt: item.name }
+}
 
 interface ComposerCardProps {
     /** 是否已配置凭证：表情与话题接口同样依赖登录 Cookie */
@@ -72,9 +83,18 @@ export function ComposerCard({
         pickFiles,
         uploadFiles,
     } = useWeiboComposerImages()
+    /** 生图与在线图库两栏：发布只接受 uploads 路径，这两栏只做浏览 */
+    const { sources: browseSources } = useImagePickerSources(undefined, BROWSE_KINDS)
+    const [isPickerOpen, setIsPickerOpen] = useState(false)
     const { isPublishing, publish } = useWeiboPublish()
     const { isEnhancing, enhance } = useWeiboEnhance()
     const canPublish = (draft.trim().length > 0 || images.length > 0) && !isPublishing && !isEnhancing
+
+    const pickerSources: Record<ImageSourceKind, { items: readonly ImagePickerItem[]; isLoading: boolean }> = {
+        generate: browseSources.generate,
+        stock: browseSources.stock,
+        upload: { items: libraryImages.map(toPickerItem), isLoading: isLibraryLoading },
+    }
 
     useEffect(() => {
         const caret = pendingCaretRef.current
@@ -149,11 +169,19 @@ export function ComposerCard({
         [images, onImagesChange],
     )
 
+    /** 面板选中：只有上传栏的图片有 uploads 路径可直接发布，其余两栏提示先上传 */
     const handleSelectImage = useCallback(
-        (item: UploadFileItem): void => {
-            appendImages([item])
+        (item: ImagePickerItem, kind: ImageSourceKind): void => {
+            if (kind !== 'upload') {
+                toast.info('生图与在线图库图片请先上传，再在「上传图片」里选择')
+                return
+            }
+            const original = libraryImages.find((image) => image.path === item.path)
+            if (original !== undefined) {
+                appendImages([original])
+            }
         },
-        [appendImages],
+        [appendImages, libraryImages],
     )
 
     const handleRemoveImage = useCallback(
@@ -163,18 +191,24 @@ export function ComposerCard({
         [images, onImagesChange],
     )
 
-    /** 打开图片面板时静默重拉清单：上传页与编辑器里新增的图片要能立刻选到 */
-    const handleOpenImagePanel = useCallback((): void => {
-        void reloadLibrary()
-    }, [reloadLibrary])
-
-    /** 从磁盘选图上传：回执里的新图片直接加入已选，省掉再勾一次 */
-    const handlePickFiles = useCallback((): void => {
-        void pickFiles().then((uploaded) => {
-            if (uploaded.length > 0) {
-                appendImages(uploaded)
+    /** 面板开合：打开时静默重拉上传清单，上传页与编辑器里新增的图片要能立刻选到 */
+    const handlePickerOpenChange = useCallback(
+        (open: boolean): void => {
+            setIsPickerOpen(open)
+            if (open) {
+                void reloadLibrary()
             }
-        })
+        },
+        [reloadLibrary],
+    )
+
+    /** 从磁盘选图上传：回执里的新图片直接加入已选并返回给面板切到上传栏 */
+    const handlePickFiles = useCallback(async (): Promise<ImagePickerItem[]> => {
+        const uploaded = await pickFiles()
+        if (uploaded.length > 0) {
+            appendImages(uploaded)
+        }
+        return uploaded.map(toPickerItem)
     }, [appendImages, pickFiles])
 
     /** 粘贴上传：只拦剪贴板里的图片文件，文本粘贴完全不干预默认行为 */
@@ -316,13 +350,21 @@ export function ComposerCard({
             <CardFooter className="justify-between bg-transparent py-2">
                 <div className="flex items-center gap-1">
                     <WeiboEmoticonPicker isEnabled={isEnabled} onSelect={handleInsertEmoticon} />
-                    <WeiboImagePicker
-                        images={libraryImages}
-                        isLoading={isLibraryLoading}
-                        isUploading={isUploading}
+                    <ImagePicker
+                        open={isPickerOpen}
+                        onOpenChange={handlePickerOpenChange}
+                        trigger={
+                            <Button variant="ghost" title="添加图片" className="h-auto flex-col gap-0.5 px-2 py-1">
+                                <ImagePlus className="size-4" aria-hidden="true" />
+                                <span className="text-xs">图片</span>
+                            </Button>
+                        }
+                        title="添加图片"
+                        description="上传图片勾选后显示在发布框下方；生图与在线图库请先上传。"
+                        sources={pickerSources}
                         selectedPaths={images.map((image) => image.path)}
-                        onOpen={handleOpenImagePanel}
-                        onPickFiles={handlePickFiles}
+                        isUploading={isUploading}
+                        onUpload={handlePickFiles}
                         onSelect={handleSelectImage}
                     />
                     <WeiboTopicPicker isEnabled={isEnabled} onSelect={handleInsertTopic} />

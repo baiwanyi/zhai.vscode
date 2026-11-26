@@ -182,7 +182,6 @@ export interface OutlineChapter {
     /** 出场人物，值为 CharacterCard.id */
     characterIds: string[]
     location: string
-    wordGoal: number
     /** 已写正文字数，用于进度对比 */
     wordCount: number
     hook: HookKind

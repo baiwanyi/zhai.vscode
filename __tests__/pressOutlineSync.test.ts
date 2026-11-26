@@ -53,7 +53,6 @@ describe('appendChapterToOutline', () => {
             order: 1,
             title: '未命名章节',
             hook: 'none',
-            wordGoal: 2500,
             wordCount: 0,
         })
     })

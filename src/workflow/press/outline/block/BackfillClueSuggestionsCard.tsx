@@ -75,12 +75,11 @@ export function BackfillClueSuggestionsCard({
                                             </span>
                                         </>
                                     }
-                                    actions={
-                                        <Badge variant="outline">
-                                            {suggestion.action === 'plant' ? '埋设' : '回收'}
-                                        </Badge>
-                                    }
-                                />
+                                >
+                                    <Badge variant="outline">
+                                        {suggestion.action === 'plant' ? '埋设' : '回收'}
+                                    </Badge>
+                                </ToggleCheckItem>
                             )
                         })}
                     </ItemGroup>

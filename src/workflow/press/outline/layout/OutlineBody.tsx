@@ -114,6 +114,7 @@ export function OutlineBody({
                     chapter={selectedEntry.chapter}
                     chapterRef={viewContext.chapterRef}
                     characters={workspace.characters}
+                    lore={workspace.lore}
                     plan={plan}
                     prevChapter={viewContext.prevChapter}
                     nextChapter={viewContext.nextChapter}

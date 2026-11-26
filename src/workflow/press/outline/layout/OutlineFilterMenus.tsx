@@ -1,6 +1,6 @@
 /**
  * 大纲筛选栏：第一行是模块切换，第二行是章纲的卷筛选与标题搜索（其他模块不渲染第二行）。
- * 复用约定：模块切换取 components/SegmentedRail（outline 形态、按内容宽度排布），卷下拉取 ui/select
+ * 复用约定：模块切换取 components/SegmentedRail（outline 形态、按内容宽度排布），卷下拉取 components/OptionSelect
  * （选项来自调用方派生的卷选项），搜索框取 ui/input-group。
  * 关键约束：模块只切视图，不改任何章节字段；卷筛选与标题搜索只作用于章纲页；
  * 「卷」既收窄列表也决定章纲右侧显示哪一卷的 AI 面板，切换卷的副作用（清空章节选中）由调用方处理；
@@ -8,8 +8,8 @@
  */
 import { Search } from 'lucide-react'
 import { InputGroup, InputGroupAddon, InputGroupInput } from '@components/ui/input-group'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { AppMenu } from '@webview/components/AppPage'
+import { OptionSelect } from '@webview/components/OptionSelect'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { OutlineModuleKey } from '../../types'
 import type { JSX } from 'react'
@@ -48,21 +48,13 @@ export function OutlineFilterMenus({
             />
             {module === 'chapter' ? (
                 <div className="flex w-full items-center gap-2">
-                    <Select value={volumeFilter} onValueChange={onVolumeChange}>
-                        <SelectTrigger className="h-8 w-28 shrink-0" aria-label="当前卷">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectGroup>
-                                <SelectItem value="all">全部卷</SelectItem>
-                                {volumeOptions.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                        {option.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectGroup>
-                        </SelectContent>
-                    </Select>
+                    <OptionSelect
+                        value={volumeFilter}
+                        options={[{ value: 'all', label: '全部卷' }, ...volumeOptions]}
+                        ariaLabel="当前卷"
+                        className="h-8 w-28 shrink-0"
+                        onChange={onVolumeChange}
+                    />
                     <InputGroup className="min-w-0 flex-1">
                         <InputGroupAddon>
                             <Search />

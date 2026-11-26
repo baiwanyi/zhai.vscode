@@ -785,7 +785,7 @@ function parseChapter(
     const headingOrder = toNumber(/第\s*(\d+)\s*章/u.exec(title)?.[1])
     const order = headingOrder ?? toNumber(values.get('序号')) ?? fallbackOrder
     const chapterKey = `${String(volumeOrder)}-${String(order)}`
-    const [written, goal] = readRange(values.get('字数'))
+    const [written] = readRange(values.get('字数'))
     const hookLabel = readLabel(values.get('钩子'), 'none')
     const characterNames = toList(values.get('人物') ?? values.get('出场人物'))
     const pacing = PACING_KIND_LABELS[readLabel(values.get('节奏'), 'setup')] ?? 'setup'
@@ -817,7 +817,6 @@ function parseChapter(
             .map((name) => characterIds.get(name))
             .filter((characterId): characterId is string => characterId !== undefined),
         location: values.get('地点') ?? '',
-        wordGoal: goal ?? toNumber(values.get('目标字数')) ?? DEFAULT_CHAPTER_WORD_GOAL,
         wordCount: written ?? toNumber(values.get('已写')) ?? 0,
         hook: HOOK_LABELS[hookLabel] ?? 'none',
         pacing,

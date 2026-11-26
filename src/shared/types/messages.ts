@@ -295,6 +295,8 @@ export type HostMethodName =
     | 'pressAi/aiAnalyzeClueRefs/abort'
     | 'pressAi/aiAppearance'
     | 'pressAi/aiAppearance/abort'
+    | 'pressAi/aiChapterSummary'
+    | 'pressAi/aiChapterSummary/abort'
     | 'pressAi/aiSettingField'
     | 'pressAi/aiSettingField/abort'
     | 'pressAi/aiLoreDescription'

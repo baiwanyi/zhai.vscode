@@ -56,6 +56,7 @@ export function BackfillChapterDiffCard({
                             return (
                                 <ToggleCheckItem
                                     key={row.chapter.id}
+                                    isTruncate
                                     isSelected={isSelected}
                                     ariaLabel={isSelected ? '取消回填该章' : '回填该章'}
                                     onToggle={() => onToggleChapter(row.chapter.id)}
@@ -70,10 +71,10 @@ export function BackfillChapterDiffCard({
                                             ) : null}
                                         </>
                                     }
-                                    descriptionClassName="truncate"
                                     description={row.hasSummaryChange ? row.factSummary : '实际摘要无变化'}
-                                    actions={<Badge variant="outline">{row.volumeName}</Badge>}
-                                />
+                                >
+                                    <Badge variant="outline">{row.volumeName}</Badge>
+                                </ToggleCheckItem>
                             )
                         })}
                     </ItemGroup>

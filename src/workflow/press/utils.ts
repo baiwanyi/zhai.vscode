@@ -396,8 +396,8 @@ export function createScene(order: number): OutlineScene {
     }
 }
 
-/** 新建一章空章纲，序号与目标字数由调用方给出 */
-export function createChapter(order: number, wordGoal: number): OutlineChapter {
+/** 新建一章空章纲，序号由调用方给出 */
+export function createChapter(order: number): OutlineChapter {
     return {
         id: createId('ch'),
         order,
@@ -416,7 +416,6 @@ export function createChapter(order: number, wordGoal: number): OutlineChapter {
         emotion: '',
         characterIds: [],
         location: '',
-        wordGoal,
         wordCount: 0,
         hook: 'suspense',
         pacing: 'setup',
@@ -479,7 +478,6 @@ function buildCharacterIndex(characters: readonly CharacterCard[]): Map<string, 
  */
 export function createOutlineFromDraft(
     drafts: PressExtractedVolume[],
-    chapterWordGoal: number,
     characters: readonly CharacterCard[] = [],
 ): OutlineVolume[] {
     const characterIndex = buildCharacterIndex(characters)
@@ -493,7 +491,7 @@ export function createOutlineFromDraft(
         turningPoints: [...draft.turningPoints],
         result: '',
         chapters: draft.chapters.map((chapter) => {
-            const base = createChapter(chapter.order, chapterWordGoal)
+            const base = createChapter(chapter.order)
             const matched =
                 chapter.hook.length > 0
                     ? HOOK_OPTIONS.find((option) => option.label.startsWith(chapter.hook))
@@ -662,7 +660,7 @@ export function formatChapterOutlineText(
 
 /**
  * 按所选卷章位置刷新大纲树：素材草案与作品列表同构，按「卷序 + 卷内位置」逐卷对齐后只覆盖选中章。
- * 关键约束：结构（卷、章数量、章 id、状态、目标字数、地点）一律沿用现有草稿，
+ * 关键约束：结构（卷、章数量、章 id、状态、地点）一律沿用现有草稿，
  * 大纲可以比作品多章，因此只按位置逐卷匹配、不按全局章序；草案章数不足时跳过越界位置，
  * 「指定章节提取」不会增删章节、也不会改动卷纲字段；全篇提取仍走 createOutlineFromDraft。
  */
@@ -670,10 +668,9 @@ export function refreshOutlineChapters(
     current: readonly OutlineVolume[],
     drafts: readonly PressExtractedVolume[],
     keys: readonly OutlineExtractKey[],
-    chapterWordGoal: number,
     characters: readonly CharacterCard[] = [],
 ): { volumes: OutlineVolume[]; refreshed: number } {
-    const templates = createOutlineFromDraft([...drafts], chapterWordGoal, characters)
+    const templates = createOutlineFromDraft([...drafts], characters)
     // 草案卷序取卷目录名的序号前缀：宿主按章节清单产出，卷名可能是「01-默认卷」这种目录口径
     const templateByVolume = new Map<number, OutlineChapter[]>()
     templates.forEach((volume, index) => {
@@ -793,7 +790,7 @@ export function createOrderRange(start: number, end: number): number[] {
  * 新建一卷空卷纲：卷名只存纯名称，卷号由位置决定、展示时由 volumeTitleLabel 补上。
  * 关键约束：默认带一条空章纲，保证新卷可直接进入章纲编辑。
  */
-export function createVolume(chapterWordGoal: number): OutlineVolume {
+export function createVolume(): OutlineVolume {
     return {
         id: createId('vol'),
         name: '未命名',
@@ -802,28 +799,26 @@ export function createVolume(chapterWordGoal: number): OutlineVolume {
         mainPlot: [],
         turningPoints: [],
         result: '',
-        chapters: [createChapter(1, chapterWordGoal)],
+        chapters: [createChapter(1)],
     }
 }
 
 /**
- * 卷章节统计：总数、已写数、已写字数与目标字数。
+ * 卷章节统计：总数、已写数与已写字数。
  * 关键约束：已写只按正文字数大于零判定，不依赖人工状态标记。
  */
 export function summarizeVolume(volume: OutlineVolume): {
     total: number
     done: number
     wordCount: number
-    wordGoal: number
 } {
     return volume.chapters.reduce(
         (summary, chapter) => ({
             total: summary.total + 1,
             done: summary.done + (chapter.wordCount > 0 ? 1 : 0),
             wordCount: summary.wordCount + chapter.wordCount,
-            wordGoal: summary.wordGoal + chapter.wordGoal,
         }),
-        { total: 0, done: 0, wordCount: 0, wordGoal: 0 },
+        { total: 0, done: 0, wordCount: 0 },
     )
 }
 
@@ -832,7 +827,6 @@ export function summarizeWorkspace(volumes: readonly OutlineVolume[]): {
     chapters: number
     done: number
     wordCount: number
-    wordGoal: number
 } {
     return volumes.reduce(
         (summary, volume) => {
@@ -841,10 +835,9 @@ export function summarizeWorkspace(volumes: readonly OutlineVolume[]): {
                 chapters: summary.chapters + volumeSummary.total,
                 done: summary.done + volumeSummary.done,
                 wordCount: summary.wordCount + volumeSummary.wordCount,
-                wordGoal: summary.wordGoal + volumeSummary.wordGoal,
             }
         },
-        { chapters: 0, done: 0, wordCount: 0, wordGoal: 0 },
+        { chapters: 0, done: 0, wordCount: 0 },
     )
 }
 
@@ -903,11 +896,10 @@ export interface ChapterSeed {
 export function createChaptersFromSeeds(
     seeds: readonly ChapterSeed[],
     startOrder: number,
-    wordGoal: number,
 ): OutlineChapter[] {
     return seeds.map((seed, index) => {
         const order = startOrder + index
-        const chapter = createChapter(order, wordGoal)
+        const chapter = createChapter(order)
         const beats = seed.beats
             .map((text) => text.trim())
             .filter((text) => text.length > 0)

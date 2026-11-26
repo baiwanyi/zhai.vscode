@@ -1,14 +1,14 @@
 /**
  * 结构纲阶段编辑对话框：编辑阶段名、转折类型、卷位、叙事作用、关键事件与主角变化。
- * 复用约定：骨架取 @webview/components/Dialog，字段取 @components/ui/field，输入取 ui/input / textarea / select。
+ * 复用约定：骨架取 @webview/components/Dialog，字段取 @components/ui/field，输入取 ui/input / textarea，下拉取 components/OptionSelect。
  * 关键约束：编辑期只在本地草稿改，保存才回传；调用方以阶段 id 作 key，避免草稿串到上一次编辑的阶段。
  */
 import { useState } from 'react'
 import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Input } from '@components/ui/input'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Textarea } from '@components/ui/textarea'
 import { Dialog } from '@webview/components/Dialog'
+import { OptionSelect } from '@webview/components/OptionSelect'
 import type { OutlineAct } from '../../types'
 import type { JSX } from 'react'
 import { ACT_KIND_OPTIONS } from '../../constants'
@@ -65,57 +65,29 @@ export function StructureActDialog({
                     </Field>
                     <Field>
                         <FieldLabel>转折类型</FieldLabel>
-                        <Select
+                        <OptionSelect
                             value={draft.kind}
-                            onValueChange={(value): void => {
-                                const next = ACT_KIND_OPTIONS.find((option) => option.value === value)
-                                if (next !== undefined) {
-                                    patch({ kind: next.value })
-                                }
-                            }}
-                        >
-                            <SelectTrigger aria-label="转折类型" className="w-full">
-                                <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                                <SelectGroup>
-                                    {ACT_KIND_OPTIONS.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                            {option.label}
-                                        </SelectItem>
-                                    ))}
-                                </SelectGroup>
-                            </SelectContent>
-                        </Select>
+                            options={ACT_KIND_OPTIONS}
+                            ariaLabel="转折类型"
+                            onChange={(kind): void => patch({ kind })}
+                        />
                     </Field>
                 </div>
 
                 <Field>
                     <FieldLabel>卷位</FieldLabel>
-                    <Select
+                    <OptionSelect
                         value={draft.volumeOrder === null ? NO_VOLUME : String(draft.volumeOrder)}
-                        onValueChange={(value): void => {
+                        options={[{ value: NO_VOLUME, label: '未定' }, ...volumeOptions]}
+                        ariaLabel="卷位"
+                        onChange={(value): void => {
                             const order = Number(value)
                             patch({
                                 volumeOrder:
                                     value === NO_VOLUME || !Number.isInteger(order) || order <= 0 ? null : order,
                             })
                         }}
-                    >
-                        <SelectTrigger aria-label="卷位" className="w-full">
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            <SelectGroup>
-                                <SelectItem value={NO_VOLUME}>未定</SelectItem>
-                                {volumeOptions.map((option) => (
-                                    <SelectItem key={option.value} value={option.value}>
-                                        {option.label}
-                                    </SelectItem>
-                                ))}
-                            </SelectGroup>
-                        </SelectContent>
-                    </Select>
+                    />
                 </Field>
 
                 <Field>

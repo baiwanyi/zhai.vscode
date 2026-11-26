@@ -163,6 +163,10 @@ export class PressRoutes {
                 return this.service.generateAppearance(payload)
             case 'pressAi/aiAppearance/abort':
                 return this.service.abortGeneration()
+            case 'pressAi/aiChapterSummary':
+                return this.service.generateChapterSummary(payload)
+            case 'pressAi/aiChapterSummary/abort':
+                return this.service.abortGeneration()
             case 'pressAi/aiSettingField':
                 return this.service.generateSettingField(payload)
             case 'pressAi/aiSettingField/abort':

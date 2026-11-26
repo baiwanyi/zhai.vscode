@@ -7,7 +7,7 @@
  * 正文字数与事实摘要由页头菜单的「写后回填」推导写入，本对话框不提供手动设定；
  * 对话框开合由外部 open/onClose 控制，关闭即重置页签；页签栏与页脚固定，仅 TabsContent 滚动。
  */
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@components/ui/tabs'
 import { Dialog } from '@webview/components/Dialog'
@@ -15,6 +15,7 @@ import { ChapterEditPanel } from './ChapterEditPanel'
 import { ChapterFocusPanel } from './ChapterFocusPanel'
 import type {
     CharacterCard,
+    LoreEntry,
     OutlineChapter,
     OutlineChapterRef,
     OutlinePlan,
@@ -22,7 +23,9 @@ import type {
     ProjectSetting,
 } from '../../types'
 import type { JSX } from 'react'
+import { DEFAULT_CHAPTER_WORD_GOAL } from '../../constants'
 import { chapterTitleLabel } from '../../utils'
+import { useChapterSummaryGenerate } from '../hooks/useChapterSummaryGenerate'
 
 interface ChapterEditDialogProps {
     /** 对话框开合：由外部选中状态决定 */
@@ -34,6 +37,8 @@ interface ChapterEditDialogProps {
     chapter: OutlineChapter
     chapterRef: OutlineChapterRef
     characters: CharacterCard[]
+    /** 设定页地点条目：供章纲卡的场景地点选取 */
+    lore: readonly LoreEntry[]
     plan: OutlinePlan
     /** 同卷上一章，用于「前情」提示 */
     prevChapter: OutlineChapter | null
@@ -56,6 +61,7 @@ export function ChapterEditDialog({
     chapter,
     chapterRef,
     characters,
+    lore,
     plan,
     prevChapter,
     nextChapter,
@@ -64,9 +70,46 @@ export function ChapterEditDialog({
     onAddChapterToChat,
 }: ChapterEditDialogProps): JSX.Element {
     const [activeTab, setActiveTab] = useState<ChapterTab>('edit')
+    const chapterWordGoal = setting.chapterWordGoal > 0 ? setting.chapterWordGoal : DEFAULT_CHAPTER_WORD_GOAL
+    const { isGenerating, generate } = useChapterSummaryGenerate()
+    /** 生成开始时锁定梗概快照：等待期间用户改过就不让结果覆盖，避免 AI 抢答吞掉输入 */
+    const summaryAtGenerateRef = useRef<string | null>(null)
+    const summaryRef = useRef(chapter.summary)
+    /** 关闭后吞掉在途生成结果，避免退出编辑仍回写数据 */
+    const isActiveRef = useRef(true)
+    useEffect((): void => {
+        summaryRef.current = chapter.summary
+    }, [chapter.summary])
+
+    const handleGenerateSummary = (): void => {
+        summaryAtGenerateRef.current = chapter.summary
+        summaryRef.current = chapter.summary
+        void generate({
+            chapter,
+            volume,
+            chapterRef,
+            setting,
+            characters,
+            plan,
+            prevChapter,
+        }).then((content) => {
+            if (!isActiveRef.current) {
+                return
+            }
+            if (content === null || summaryAtGenerateRef.current === null) {
+                return
+            }
+            if (summaryRef.current !== summaryAtGenerateRef.current) {
+                toast.info('AI 内容已生成，但你在等待期间修改了梗概，已保留手写内容')
+                return
+            }
+            onChange({ summary: content })
+        })
+    }
 
     /** 统一关闭：重置页签并通知外部清选中，避免残留状态带到下次打开 */
     const closeDialog = (): void => {
+        isActiveRef.current = false
         setActiveTab('edit')
         onClose()
     }
@@ -92,6 +135,7 @@ export function ChapterEditDialog({
             title={`编辑「${chapterTitleLabel(chapter)}」章纲`}
             onConfirm={handleConfirm}
             confirmLabel={activeTab === 'edit' ? '保存更改' : '添加到 AI 对话'}
+            isDisabled={isGenerating}
             isContentScrollable={false}
             size="full"
         >
@@ -108,14 +152,18 @@ export function ChapterEditDialog({
                     <TabsTrigger value="edit">章纲编辑</TabsTrigger>
                     <TabsTrigger value="focus">写前查纲</TabsTrigger>
                 </TabsList>
-                <TabsContent value="edit" className="flex min-h-0 flex-1 items-stretch gap-3 overflow-y-auto">
+                <TabsContent value="edit" className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
                     <ChapterEditPanel
                         chapter={chapter}
                         characters={characters}
+                        lore={lore}
+                        chapterWordGoal={chapterWordGoal}
+                        stageNames={plan.acts.map((act) => act.name)}
+                        summaryGeneration={{ isGenerating, onGenerate: handleGenerateSummary }}
                         onChange={onChange}
                     />
                 </TabsContent>
-                <TabsContent value="focus" className="min-h-0 flex-1 overflow-y-auto">
+                <TabsContent value="focus" className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
                     <ChapterFocusPanel
                         setting={setting}
                         volume={volume}

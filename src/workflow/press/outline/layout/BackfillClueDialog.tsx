@@ -1,17 +1,17 @@
 /**
  * 写后回填对话框：把章节文档的实际摘要与字数同步回章纲，并按回收章正文完成情况标记伏笔回收。
- * 复用约定：统一对话框取 @webview/components/Dialog，三张区块卡取同目录组件；事实读取与位置识别沿用专用 hooks，
+ * 复用约定：统一对话框取 @webview/components/Dialog，三张区块卡取 block/ 展示块；事实读取与位置识别沿用专用 hooks，
  * 勾选状态取 useBackfillState，差异筛选与写盘结果计算取 outline/utils/backfill 纯函数，确认后由页面写盘。
  * 关键约束：只改大纲、不改章节正文；回收章正文已写完的伏笔自动回收，作者勾选作为兜底，未勾选的章不动；
  * 「计划梗概」永远不被覆盖——事实写进 actualSummary；AI 建议坐标须在现有卷章内才写入。
  */
 import { useMemo } from 'react'
 import { Dialog } from '@webview/components/Dialog'
-import { BackfillChapterDiffCard } from './BackfillChapterDiffCard'
-import { BackfillClueRecoveryCard } from './BackfillClueRecoveryCard'
-import { BackfillClueSuggestionsCard } from './BackfillClueSuggestionsCard'
 import type { CharacterCard, OutlinePlan, OutlineVolume } from '../../types'
 import type { JSX } from 'react'
+import { BackfillChapterDiffCard } from '../block/BackfillChapterDiffCard'
+import { BackfillClueRecoveryCard } from '../block/BackfillClueRecoveryCard'
+import { BackfillClueSuggestionsCard } from '../block/BackfillClueSuggestionsCard'
 import { useBackfillState } from '../hooks/useBackfillState'
 import { useChapterFacts } from '../hooks/useChapterFacts'
 import { useClueRefsAnalysis } from '../hooks/useClueRefsAnalysis'

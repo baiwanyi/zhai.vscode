@@ -564,7 +564,7 @@ GET https://weibo.com/ajax/statuses/longtext?id={mblogid}
 | `src/weibo/block/WeiboHotRankFallback.tsx` | 热搜三态占位：未配置 / 加载 / 失败或空榜，`sidebar` / `page` 两套尺寸与文案 |
 | `src/weibo/hooks/useWeiboSearchOpen.ts` | 搜索页地址 + 300ms 连点保护的打开动作 |
 | `src/weibo/layout/WeiboTopicPicker.tsx` | 发表框话题面板：搜索框 + 常用话题列表，选中插入 `#话题#` |
-| `src/weibo/layout/WeiboImagePicker.tsx` | 发表框图片面板：uploads 图片网格、勾选与直接上传 |
+| `src/components/ImagePicker.tsx` | 通用图片面板：Popover + 生图 / 在线图库 / 上传图片三栏，标题右侧上传，微博与公众号封面共用 |
 | `src/weibo/hooks/useWeiboTopicSearch.ts` | 话题搜索：常用话题加载、300ms 去抖与乱序回包丢弃 |
 | `src/weibo/hooks/useWeiboComposerImages.ts` | 发表框图片库：清单读取、选择上传与粘贴上传 |
 | `src/weibo/hooks/useWeiboPublish.ts` | 发表框发布：单飞提交、成功回执与超时口径 |
@@ -828,8 +828,9 @@ GET https://weibo.com/ajax/mblog/topic?q={关键字}
 - 归一化只取 `data[].topic`：剥掉首尾 `#`、去空白、同名去重；空数组是正常结果（新账号或搜不到），由前端展示空态而不是报错。
 - 协议 `weibo/topics` 复用登录 Cookie，`q` 限 50 字（超长直接判非法，不截断）；不参与磁盘缓存（热搜变化快），每次打开面板或改关键字都回源。
 - 话题面板打开即取常用话题，输入走 300ms 去抖；回包按请求序号校验，先发后到的旧结果丢弃；选中后按正文口径插入 `#话题#` 并恢复光标，超出 2000 字上限时拒绝并提示。
-- 图片面板列出 `uploads/` 下的图片（`upload/list`，只有 `url` 非空的图片条目参与），已选条目置灰禁用；选中后在发布框下方以缩略图列表展示，右上角可移除。
-- 面板内可直接点「上传图片」唤起系统选择器（`upload/pick`），上传结果自动加入已选。
+- 图片面板取通用 `ImagePicker`（Popover + Tabs），三栏分别为生图（`media/list` 的 generate）、已下载在线图库（`stock/downloaded`）与上传图片（`upload/list`，只有 `url` 非空的条目参与）；已选条目置灰禁用，选中后在发布框下方以缩略图列表展示，右上角可移除。
+- 发布协议只接受 `uploads/` 下的路径，生图与在线图库两栏仅供浏览，选中时提示先上传；只有「上传图片」栏的条目能加入已选列表。
+- 标题右侧点「上传图片」唤起系统选择器（`upload/pick`），上传结果自动加入已选并把面板切到「上传图片」栏；微博侧上传清单仍由 `useWeiboComposerImages` 持有，与粘贴上传共用。
 - 发布框聚焦时粘贴剪贴板里的图片（`clipboardData.files` 中的 `image/*`）走 `upload/bytes` 落 `uploads/{YYYYMM}/`，成功后加入已选；纯文本粘贴完全不拦截默认行为。
 - 已选图片与草稿同层保存在 `WeiboScreen`，切换视图卸载发布框后不丢；点「发布」进入 2.18 的两步流程，成功后清空内容，并把新微博前插到时间线首位。
 - 输入框底部右侧是「AI 优化」按钮（`Sparkles`，进行中转圈）：调 `ai/enhancePrompt` 并带 `scene: 'weibo'`，宿主按微博文案口径改写（保留 #话题#、@昵称、链接与 `[表情]`），成功后整体替换正文并把光标落到末尾；空内容只提示不改写，改写中发布按钮一并禁用，失败保留原文。

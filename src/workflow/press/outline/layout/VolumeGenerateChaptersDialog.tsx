@@ -1,6 +1,6 @@
 /**
  * 按卷生成章纲预览对话框：卷纲 + 结构 + 伏笔产出草案，勾选后写入本卷。
- * 复用约定：骨架取 @webview/components/Dialog，草稿列表取 ../block/VolumeChapterDrafts，生成状态取 ../hooks。
+ * 复用约定：骨架取 @webview/components/Dialog，草稿列表取 ../block/VolumeChapterDrafts，生成状态取 ../hooks，下拉取 components/OptionSelect。
  * 关键约束：草案不落库；写入方式决定章序范围，切换即清空草案；调用方须用 key 重建组件。
  */
 import { Loader2, Wand2 } from 'lucide-react'
@@ -9,9 +9,9 @@ import { toast } from 'sonner'
 import { Badge } from '@components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupText } from '@components/ui/input-group'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import type { OutlineActContext, OutlineClueContext, VolumeChapterDraft } from '@shared/types/press'
 import { Dialog } from '@webview/components/Dialog'
+import { OptionSelect } from '@webview/components/OptionSelect'
 import type { CharacterCard, OutlineVolume, ProjectSetting } from '../../types'
 import type { VolumeChapterWriteMode } from '../../utils'
 import type { JSX } from 'react'
@@ -23,6 +23,11 @@ import { useVolumeChaptersGenerate } from '../hooks/useVolumeChaptersGenerate'
 const FALLBACK_CHAPTER_COUNT = 30
 /** 期望章数上限：与宿主侧产出上限一致 */
 const MAX_CHAPTER_COUNT = 120
+/** 写入方式选项：与 VolumeChapterWriteMode 取值一致 */
+const WRITE_MODE_OPTIONS = [
+    { value: 'append', label: '追加到卷末' },
+    { value: 'replace-empty', label: '替换卷内空章' },
+] as const
 
 /** 期望章数：优先取卷纲填的「预计章节数」，否则从核心事件与主要情节里推断最大的章号 */
 function estimateChapterCount(volume: OutlineVolume): number {
@@ -176,11 +181,14 @@ export function VolumeGenerateChaptersDialog({
                             <InputGroupAddon align="inline-start">
                                 <InputGroupText>写入方式</InputGroupText>
                             </InputGroupAddon>
-                            <Select
+                            <OptionSelect
                                 value={mode}
+                                options={WRITE_MODE_OPTIONS}
                                 disabled={volume === null}
-                                onValueChange={(value) => {
-                                    const nextMode = value === 'replace-empty' ? 'replace-empty' : 'append'
+                                ariaLabel="写入方式"
+                                className="py-1 border-0 bg-transparent dark:bg-transparent dark:hover:bg-transparent data-[size=sm]:rounded-none"
+                                triggerProps={{ size: 'sm' }}
+                                onChange={(nextMode): void => {
                                     if (nextMode === mode) {
                                         return
                                     }
@@ -192,19 +200,7 @@ export function VolumeGenerateChaptersDialog({
                                         toast.info('写入方式已变更，请重新生成章纲')
                                     }
                                 }}
-                            >
-                                <SelectTrigger
-                                    size="sm"
-                                    aria-label="写入方式"
-                                    className="py-1 border-0 bg-transparent dark:bg-transparent dark:hover:bg-transparent data-[size=sm]:rounded-none"
-                                >
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem value="append">追加到卷末</SelectItem>
-                                    <SelectItem value="replace-empty">替换卷内空章</SelectItem>
-                                </SelectContent>
-                            </Select>
+                            />
                             <InputGroupAddon align="inline-end">
                                 <InputGroupButton
                                     variant="default"

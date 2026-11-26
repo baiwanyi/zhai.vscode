@@ -1,18 +1,18 @@
 /**
- * 封面弹窗：先按来源打开选图对话框（生图结果 / 在线图片 / 已上传图片），挑中一张后按公众号首图比例（2.35:1）
+ * 封面弹窗：在 Popover 选图面板里切换生图 / 在线图库 / 上传图片，挑中一张后按公众号首图比例（2.35:1）
  * 裁剪，再保存到当前批次目录的 images/ 下。
- * 复用约定：主弹层与选图弹层统一取 @webview/components/Dialog，来源入口与缩略图取 components/Button 与
- * components/Image，空态与加载态取 blocks/StateEmpty，缩放缓动取 @components/ui 的 slider；
- * 候选列表来自 useWechatCoverSources（生图走 media/list、在线图片走 stock/downloaded、已上传走 upload/list），
- * 读原图走 wechat/cover/source，保存走 wechat/article/cover。
- * 关键约束：封面本身不再直接调起文件对话框——本地上传只经由「已上传图片」来源，与上传页共用同一份清单；
+ * 复用约定：主弹层取 @webview/components/Dialog，选图面板统一取 components/ImagePicker（Popover + Tabs），
+ * 缩略图取 components/Image，空态与加载态取 blocks/StateEmpty，缩放缓动取 @components/ui 的 slider；
+ * 候选列表来自 useImagePickerSources（生图走 media/list、在线图库走 stock/downloaded、上传走 upload/list），
+ * 只在 jpg/png 中挑选；读原图走 wechat/cover/source，保存走 wechat/article/cover。
+ * 关键约束：选图面板复用上传页同一份清单，上传入口只在面板内提供，上传结果回选区但不直接设为封面；
  * 裁剪全程在 Webview 内完成，原图必须由宿主读成 data URI 再送入（asWebviewUri 与页面不同源，
  * 直接 drawImage 会污染画布、导出时抛 SecurityError）；导出按取景框坐标换算回原图，固定输出 1175×500 的 jpeg；
  * 缩放只改变取景比例，平移边界按「图片始终铺满取景框」收敛，避免裁出留白；
  * 没有选中新图时不能保存，未选时预览区展示文章当前封面，没有当前封面则提示先挑一张。
  */
 import { cn } from 'cn'
-import { Check, LibraryBig, Sparkles, Upload } from 'lucide-react'
+import { Images } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
@@ -22,9 +22,10 @@ import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Button } from '@webview/components/Button'
 import { Dialog } from '@webview/components/Dialog'
 import { Image } from '@webview/components/Image'
-import { useRenderLimit } from '@webview/hooks/useRenderLimit'
-import type { JSX, PointerEvent, ReactNode } from 'react'
-import { useWechatCoverSources, type CoverSourceImage, type CoverSourceKind } from '../hooks/useWechatCoverSources'
+import { ImagePicker } from '@webview/components/ImagePicker'
+import { useImagePickerSources } from '@webview/hooks/useImagePickerSources'
+import type { ImagePickerItem, ImageSourceKind } from '@webview/hooks/useImagePickerSources'
+import type { JSX, PointerEvent } from 'react'
 
 /** 输出尺寸：公众号首图推荐 2.35:1，1175×500 兼顾清晰度与素材体积 */
 const OUTPUT_WIDTH = 1175
@@ -34,40 +35,8 @@ const OUTPUT_HEIGHT = 500
 const ZOOM_MIN = 1
 const ZOOM_MAX = 3
 
-/** 选图对话框每批展示的张数：图库可能有上千张，按需增量渲染避免一次挂满 DOM */
-const PICKER_PAGE_SIZE = 60
-
-/** 来源元信息：入口按钮与选图对话框标题都取自同一份定义 */
-interface CoverSourceMeta {
-    label: string
-    icon: (props: { className?: string }) => ReactNode
-    dialogTitle: string
-    emptyTitle: string
-}
-
-const SOURCE_META: Record<CoverSourceKind, CoverSourceMeta> = {
-    generate: {
-        label: '生图结果',
-        icon: Sparkles,
-        dialogTitle: '选择生图结果',
-        emptyTitle: '还没有生图结果',
-    },
-    stock: {
-        label: '在线图片',
-        icon: LibraryBig,
-        dialogTitle: '选择在线图片',
-        emptyTitle: '还没有已下载的在线图片',
-    },
-    upload: {
-        label: '已上传图片',
-        icon: Upload,
-        dialogTitle: '选择已上传图片',
-        emptyTitle: '还没有上传过图片',
-    },
-}
-
-/** 入口顺序：与来源定义分开，保证界面顺序稳定 */
-const SOURCE_ORDER: readonly CoverSourceKind[] = ['generate', 'stock', 'upload']
+/** 裁剪只接受 jpg / png（与宿主 wechat/cover/source 的口径一致），其余格式在选图面板就滤掉 */
+const COVER_EXTENSION = /\.(png|jpe?g)$/iu
 
 /** 拖动中的起点快照：指针坐标与当时的偏移，移动时按差值累加 */
 interface DragSnapshot {
@@ -95,91 +64,6 @@ function clamp(value: number, limit: number): number {
     return Math.min(Math.max(value, -limit), limit)
 }
 
-interface CoverSourcePickerDialogProps {
-    kind: CoverSourceKind
-    /** 已选中的库内路径：回到同一来源时高亮上次选中的那张 */
-    selectedPath: string | null
-    /** 正在读取原图：期间禁用点击，避免连点产生多次读盘 */
-    isReading: boolean
-    onSelect: (item: CoverSourceImage) => void
-    onOpenChange: (open: boolean) => void
-}
-
-/** 选图对话框：列出当前来源的全部图片，按「加载更多」增量渲染，点一张即回填封面 */
-function CoverSourcePickerDialog({
-    kind,
-    selectedPath,
-    isReading,
-    onSelect,
-    onOpenChange,
-}: CoverSourcePickerDialogProps): JSX.Element {
-    const meta = SOURCE_META[kind]
-    const { items, isLoading } = useWechatCoverSources(kind)
-    const { limit, hasMore, remaining, loadMore } = useRenderLimit(items.length, PICKER_PAGE_SIZE)
-    const visibleItems = items.slice(0, limit)
-
-    return (
-        <Dialog size="full"
-            open
-            title={meta.dialogTitle}
-            showFooter={false}
-            onOpenChange={onOpenChange}
-        >
-            {isLoading ? (
-                <StateEmpty isLoading title="正在读取图片" className="gap-2 py-10" />
-            ) : items.length === 0 ? (
-                <StateEmpty title={meta.emptyTitle} className="gap-2 py-10" />
-            ) : (
-                <div className="flex flex-col gap-2">
-                    <div className="grid max-h-[50vh] grid-cols-3 gap-2 overflow-y-auto">
-                        {visibleItems.map((item) => {
-                            const isSelected = item.path === selectedPath
-                            return (
-                                <Button
-                                    key={item.id}
-                                    variant="ghost"
-                                    aria-label={item.alt}
-                                    aria-pressed={isSelected}
-                                    disabled={isReading}
-                                    className={cn(
-                                        'group h-auto w-full rounded-md p-0',
-                                        isSelected && 'ring-2 ring-primary',
-                                    )}
-                                    onClick={() => onSelect(item)}
-                                >
-                                    <Image src={item.url} size="sm" className="w-full bg-muted" />
-                                    {/* 悬停与键盘聚焦时压一层 20% 黑遮罩并亮出选择图标，点哪张一目了然 */}
-                                    <span
-                                        aria-hidden
-                                        className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-sm bg-black/20 opacity-0 transition-opacity group-focus-visible:opacity-100 group-hover:opacity-100"
-                                    >
-                                        <span className="flex size-8 items-center justify-center rounded-full bg-primary/70 text-primary-foreground">
-                                            <Check className="size-4" />
-                                        </span>
-                                    </span>
-                                </Button>
-                            )
-                        })}
-                    </div>
-                    <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs text-muted-foreground">{`共 ${String(items.length)} 张`}</span>
-                        {hasMore ? (
-                            <Button variant="outline" size="sm" disabled={isReading} onClick={loadMore}>
-                                {`加载更多（还有 ${String(remaining)} 张）`}
-                            </Button>
-                        ) : null}
-                    </div>
-                </div>
-            )}
-            <div className="flex justify-end pt-2">
-                <Button variant="outline" onClick={() => onOpenChange(false)}>
-                    取消
-                </Button>
-            </div>
-        </Dialog>
-    )
-}
-
 export function WechatCoverDialog({
     article,
     coverUri,
@@ -188,12 +72,12 @@ export function WechatCoverDialog({
     onReadImage,
     onSubmit,
 }: WechatCoverDialogProps): JSX.Element {
-    /** 正在挑图的来源：非 null 即打开选图对话框 */
-    const [pickerKind, setPickerKind] = useState<CoverSourceKind | null>(null)
+    /** 选图面板开合：命中一张后立即收起 */
+    const [isPickerOpen, setIsPickerOpen] = useState(false)
     /** 待裁剪的原图：data URI，为空表示还没选新图 */
     const [sourceUrl, setSourceUrl] = useState<string | null>(null)
-    /** 已选条目的来源与路径：用于入口按钮高亮与选图对话框回显选中项 */
-    const [selected, setSelected] = useState<{ kind: CoverSourceKind; path: string } | null>(null)
+    /** 已选条目的来源与路径：用于选图面板回显选中项 */
+    const [selected, setSelected] = useState<{ kind: ImageSourceKind; path: string } | null>(null)
     const [zoom, setZoom] = useState(ZOOM_MIN)
     const [offset, setOffset] = useState({ x: 0, y: 0 })
     /** 正在读取原图：期间禁用点击与保存 */
@@ -201,6 +85,8 @@ export function WechatCoverDialog({
     const frameRef = useRef<HTMLDivElement | null>(null)
     const imageRef = useRef<HTMLImageElement | null>(null)
     const dragRef = useRef<DragSnapshot | null>(null)
+    /** 三来源候选清单与上传入口：封面只接受 jpg/png，其余格式在面板里滤掉 */
+    const { sources, pickFiles, isUploading } = useImagePickerSources(COVER_EXTENSION)
 
     /** 当前缩放下的最大平移量：取景框之外的图片部分才允许被拖进来 */
     const readOffsetLimit = (nextZoom: number): { x: number; y: number } => {
@@ -228,26 +114,27 @@ export function WechatCoverDialog({
     }
 
     /** 换上新原图：缩放与偏移回到初始，避免沿用上一张的取景 */
-    const applySource = (dataUrl: string, kind: CoverSourceKind, item: CoverSourceImage): void => {
+    const applySource = (dataUrl: string, kind: ImageSourceKind, path: string): void => {
         setSourceUrl(dataUrl)
-        setSelected({ kind, path: item.path })
+        setSelected({ kind, path })
         setZoom(ZOOM_MIN)
         setOffset({ x: 0, y: 0 })
     }
 
-    /** 选图对话框里点中一张：先读成 data URI（canvas 同源），成功后才关闭对话框 */
-    const handleSelect = async (kind: CoverSourceKind, item: CoverSourceImage): Promise<void> => {
+    /** 面板里点中一张：先读成 data URI（canvas 同源），成功后才收起面板 */
+    function handleSelect(kind: ImageSourceKind, item: ImagePickerItem): void {
         if (isReading) {
             return
         }
         setIsReading(true)
-        const dataUrl = await onReadImage(item.path)
-        setIsReading(false)
-        if (dataUrl === null) {
-            return
-        }
-        applySource(dataUrl, kind, item)
-        setPickerKind(null)
+        void onReadImage(item.path).then((dataUrl) => {
+            setIsReading(false)
+            if (dataUrl === null) {
+                return
+            }
+            applySource(dataUrl, kind, item.path)
+            setIsPickerOpen(false)
+        })
     }
 
     const handlePointerDown = (event: PointerEvent<HTMLDivElement>): void => {
@@ -390,46 +277,37 @@ export function WechatCoverDialog({
                     </Field>
                     <Field>
                         <FieldLabel>图片来源</FieldLabel>
-                        <div className="grid grid-cols-3 gap-2">
-                            {SOURCE_ORDER.map((value) => {
-                                const meta = SOURCE_META[value]
-                                const Icon = meta.icon
-                                const isActive = selected?.kind === value
-                                return (
-                                    <Button
-                                        key={value}
-                                        variant="outline"
-                                        aria-label={`从${meta.label}中选择封面`}
-                                        disabled={isSubmitting || isReading}
-                                        className={cn(
-                                            'h-auto flex-col gap-1 py-2.5',
-                                            isActive && 'border-primary text-primary',
-                                        )}
-                                        onClick={() => setPickerKind(value)}
-                                    >
-                                        <Icon className="size-4" />
-                                        <span className="text-xs font-medium">{meta.label}</span>
-                                    </Button>
-                                )
-                            })}
-                        </div>
+                        <ImagePicker
+                            open={isPickerOpen}
+                            onOpenChange={setIsPickerOpen}
+                            trigger={
+                                <Button
+                                    variant="outline"
+                                    aria-label="选择封面图片"
+                                    disabled={isSubmitting || isReading}
+                                    className={cn(
+                                        'w-full justify-start gap-2',
+                                        selected !== null && 'border-primary text-primary',
+                                    )}
+                                >
+                                    <Images className="size-4" aria-hidden="true" />
+                                    <span className="text-xs font-medium">
+                                        {selected === null ? '从生图 / 在线图库 / 上传图片中选择' : '重新选择封面图片'}
+                                    </span>
+                                </Button>
+                            }
+                            title="选择封面图片"
+                            description="生图与在线图库挑一张，或直接上传本地图片后从上传图片里选。只接受 jpg / png。"
+                            sources={sources}
+                            selectedPaths={selected === null ? [] : [selected.path]}
+                            isUploading={isUploading}
+                            disabled={isSubmitting || isReading}
+                            onUpload={pickFiles}
+                            onSelect={(item, kind): void => handleSelect(kind, item)}
+                        />
                     </Field>
                 </FieldGroup>
             </Dialog>
-            {pickerKind === null ? null : (
-                <CoverSourcePickerDialog
-                    key={pickerKind}
-                    kind={pickerKind}
-                    selectedPath={selected?.kind === pickerKind ? selected.path : null}
-                    isReading={isReading}
-                    onSelect={(item) => void handleSelect(pickerKind, item)}
-                    onOpenChange={(open) => {
-                        if (!open) {
-                            setPickerKind(null)
-                        }
-                    }}
-                />
-            )}
         </>
     )
 }

@@ -146,7 +146,6 @@ const VOLUMES: OutlineVolume[] = [
                 emotion: '紧张',
                 characterIds: ['12345678'],
                 location: '城南修表铺',
-                wordGoal: 2500,
                 wordCount: 2680,
                 hook: 'suspense',
                 pacing: 'tension',

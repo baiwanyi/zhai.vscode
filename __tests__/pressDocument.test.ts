@@ -236,7 +236,6 @@ describe('parseProjectWorkspace', () => {
         expect(first?.order).toBe(1)
         expect(first?.title).toBe('修表铺的客人')
         expect(first?.wordCount).toBe(2680)
-        expect(first?.wordGoal).toBe(2500)
         expect(first?.hook).toBe('suspense')
         expect(first?.tension).toBe(2)
         expect(first?.location).toBe('城南修表铺')

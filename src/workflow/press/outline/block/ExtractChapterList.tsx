@@ -1,6 +1,6 @@
 /**
  * 指定章节列表：卷筛选 + 全选 / 清空 + 可勾选的章列表。
- * 复用约定：卷筛选取 ui/select，列表滚动取 ui/scroll-area，行与操作按钮取 components/Button，
+ * 复用约定：卷筛选取 components/OptionSelect，列表滚动取 ui/scroll-area，行与操作按钮取 components/Button，
  * 勾选框取 ui/checkbox，章节选项类型来自 ../utils 的 ExtractChapterOption。
  * 关键约束：整行按钮是唯一切换入口，Checkbox 只作视觉指示（pointer-events-none + aria-hidden），
  * 否则控件自身的切换与行点击会叠加成「点了没反应」；ScrollArea 内必须把 Radix 的 display:table
@@ -9,8 +9,8 @@
 import { useMemo } from 'react'
 import { Checkbox } from '@components/ui/checkbox'
 import { ScrollArea } from '@components/ui/scroll-area'
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Button } from '@webview/components/Button'
+import { OptionSelect } from '@webview/components/OptionSelect'
 import type { ExtractChapterOption } from '../../utils'
 import type { JSX } from 'react'
 
@@ -42,21 +42,13 @@ export function ExtractChapterList({
     return (
         <div className="flex flex-col gap-1">
             <div className="flex items-center gap-1.5">
-                <Select value={volumeFilter} onValueChange={onVolumeFilterChange}>
-                    <SelectTrigger className="min-w-0 flex-1" aria-label="按卷筛选章节">
-                        <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectGroup>
-                            <SelectItem value="all">全部卷</SelectItem>
-                            {volumeOptions.map((option) => (
-                                <SelectItem key={option.value} value={option.value}>
-                                    {option.label}
-                                </SelectItem>
-                            ))}
-                        </SelectGroup>
-                    </SelectContent>
-                </Select>
+                <OptionSelect
+                    value={volumeFilter}
+                    options={[{ value: 'all', label: '全部卷' }, ...volumeOptions]}
+                    ariaLabel="按卷筛选章节"
+                    className="min-w-0 flex-1"
+                    onChange={onVolumeFilterChange}
+                />
                 <Button variant="outline" onClick={onSelectAll}>
                     全选
                 </Button>

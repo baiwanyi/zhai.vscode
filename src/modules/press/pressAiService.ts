@@ -14,6 +14,8 @@ import { consumeToday, readUsedToday } from '@modules/common/db/quotaRepository'
 import { readText, readTextList } from '@modules/common/readInput'
 import { PRESS_LORE_KINDS, SETTING_FIELD_KEYS } from '@shared/types/press'
 import type {
+    ChapterSummaryGenerateRequest,
+    ChapterSummaryGenerateResult,
     CharacterAppearanceRequest,
     CharacterAppearanceResult,
     ClueRefsAnalyzeInput,
@@ -38,6 +40,7 @@ import type {
 } from '@shared/types/press'
 import { generateTextWithAi } from './ai/aiTextGenerator'
 import { buildAppearanceMessages } from './ai/appearancePrompt'
+import { buildChapterSummaryMessages } from './ai/chapterSummaryPrompt'
 import { buildClueRefsAnalyzeMessages, parseClueRefSuggestions } from './ai/clueRefsPrompt'
 import { buildLoreDescriptionMessages } from './ai/lorePrompt'
 import { sanitizePlainText } from './ai/plainText'
@@ -116,6 +119,14 @@ const MAX_VOLUME_FIELD_CORE_EVENT = 200
 const MAX_VOLUME_FIELD_RESULT = 300
 const VOLUME_FIELD_TIMEOUT_MS = 45_000
 const VOLUME_FIELD_MAX_TOKENS = 700
+/** 章纲计划梗概：输出上限与输入框 200 字对齐，节拍与场景按章纲卡常见篇幅收口 */
+const MAX_CHAPTER_SUMMARY = 200
+const MAX_CHAPTER_CARD_TEXT = 200
+const MAX_CHAPTER_BEATS = 20
+const MAX_CHAPTER_SCENES = 20
+const MAX_CHAPTER_PREV_SUMMARY = 200
+const CHAPTER_SUMMARY_TIMEOUT_MS = 45_000
+const CHAPTER_SUMMARY_MAX_TOKENS = 700
 /** 伏笔位置识别：摘录按章给模型，只收 JSON 建议，篇幅与超时按短任务取 */
 const CLUE_REFS_MAX_TOKENS = 2_000
 const CLUE_REFS_TIMEOUT_MS = 90_000
@@ -252,6 +263,25 @@ export class PressAiService {
             maxLength: request.field === 'coreEvent' ? MAX_VOLUME_FIELD_CORE_EVENT : MAX_VOLUME_FIELD_RESULT,
             emptyMessage: 'AI 未返回可用的内容，请重试',
             abortMessage: 'AI 生成已取消或超时，请重试',
+        })
+        return { content }
+    }
+
+    /**
+     * 章纲计划梗概生成：按本章章纲卡与本卷上下文补写「打算写什么」的一段。
+     * 关键约束：实际摘要不进提示词；输出按输入框 200 字口径截断；不回写阶段、钩子与节奏字段。
+     * @throws 未配置密钥、配额用尽、请求超时 / 取消、输出为空时抛出可读错误
+     */
+    public async generateChapterSummary(payload: unknown): Promise<ChapterSummaryGenerateResult> {
+        const request = normalizeChapterSummaryRequest(payload)
+        const content = await this.runGeneration({
+            module: 'outline',
+            messages: buildChapterSummaryMessages(request),
+            maxTokens: CHAPTER_SUMMARY_MAX_TOKENS,
+            timeoutMs: CHAPTER_SUMMARY_TIMEOUT_MS,
+            maxLength: MAX_CHAPTER_SUMMARY,
+            emptyMessage: 'AI 未返回可用的计划梗概，请重试',
+            abortMessage: 'AI 计划梗概生成已取消或超时，请重试',
         })
         return { content }
     }
@@ -626,6 +656,41 @@ function normalizeVolumeOutlinesRequest(payload: unknown): VolumeOutlinesGenerat
         acts: readActContexts(value.acts),
         setting,
         characters: readTextList(value.characters, MAX_VOLUME_CAST_COUNT, MAX_SHORT_TEXT),
+    }
+}
+
+/** 入参收窄：章纲卡逐字段截断，结构、伏笔与设定复用各自的收窄逻辑 */
+function normalizeChapterSummaryRequest(payload: unknown): ChapterSummaryGenerateRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('pressAi/aiChapterSummary 缺少参数')
+    }
+    const value = payload as Record<string, unknown>
+    const setting =
+        typeof value.setting === 'object' && value.setting !== null
+            ? normalizeSettingSnapshot(value.setting as Record<string, unknown>)
+            : normalizeSettingSnapshot({})
+    return {
+        chapterTitle: readText(value.chapterTitle, MAX_SHORT_TEXT),
+        volumeName: readText(value.volumeName, MAX_SHORT_TEXT),
+        stage: readText(value.stage, MAX_SHORT_TEXT),
+        pov: readText(value.pov, MAX_LONG_TEXT),
+        goal: readText(value.goal, MAX_CHAPTER_CARD_TEXT),
+        obstacle: readText(value.obstacle, MAX_CHAPTER_CARD_TEXT),
+        turn: readText(value.turn, MAX_CHAPTER_CARD_TEXT),
+        result: readText(value.result, MAX_CHAPTER_CARD_TEXT),
+        emotion: readText(value.emotion, MAX_LONG_TEXT),
+        hook: readText(value.hook, MAX_SHORT_TEXT),
+        pacing: readText(value.pacing, MAX_SHORT_TEXT),
+        summary: readText(value.summary, MAX_CHAPTER_SUMMARY),
+        beats: readTextList(value.beats, MAX_CHAPTER_BEATS, MAX_CHAPTER_CARD_TEXT),
+        scenes: readTextList(value.scenes, MAX_CHAPTER_SCENES, MAX_CHAPTER_CARD_TEXT),
+        characters: readTextList(value.characters, MAX_VOLUME_CAST_COUNT, MAX_SHORT_TEXT),
+        coreEvent: readText(value.coreEvent, MAX_VOLUME_TEXT),
+        mainPlot: readTextList(value.mainPlot, MAX_OUTLINE_MAIN_PLOT, MAX_VOLUME_TEXT),
+        acts: readActContexts(value.acts),
+        clues: readClueContexts(value.clues),
+        prevSummary: readText(value.prevSummary, MAX_CHAPTER_PREV_SUMMARY),
+        setting,
     }
 }
 

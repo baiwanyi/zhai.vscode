@@ -18,7 +18,7 @@ import {
 
 /** 构造一章：只关心章序、标题与阶段，其余字段取默认值 */
 function chapter(order: number, title: string, stage = ''): OutlineChapter {
-    return { ...createChapter(order, 2500), order, title, stage }
+    return { ...createChapter(order), order, title, stage }
 }
 
 describe('按卷生成章纲的草案落成', () => {
@@ -41,7 +41,6 @@ describe('按卷生成章纲的草案落成', () => {
                 },
             ],
             3,
-            2500,
         )
 
         expect(chapters.map((item) => item.order)).toEqual([3, 4])
@@ -54,11 +53,9 @@ describe('按卷生成章纲的草案落成', () => {
         const [chapter0] = createChaptersFromSeeds(
             [{ stage: '', title: '开局', summary: '开场', beats: [], clueRefs: [] }],
             1,
-            3000,
         )
 
         expect(chapter0).toMatchObject({ pov: '', goal: '', characterIds: [], wordCount: 0 })
-        expect(chapter0?.wordGoal).toBe(3000)
         // 没有细纲时保留一条空节拍，作者可直接落笔
         expect(chapter0?.beats).toHaveLength(1)
     })
@@ -67,7 +64,6 @@ describe('按卷生成章纲的草案落成', () => {
         const [chapter0] = createChaptersFromSeeds(
             [{ stage: '', title: '开局', summary: '开场', beats: ['坠楼', '被诬入狱', ''], clueRefs: [] }],
             1,
-            3000,
         )
 
         expect(chapter0?.beats.map((beat) => beat.text)).toEqual(['坠楼', '被诬入狱'])
@@ -86,7 +82,6 @@ describe('按卷生成章纲的草案落成', () => {
                 },
             ],
             1,
-            3000,
         )
 
         expect(chapter0).not.toHaveProperty('clueRefs')
@@ -123,8 +118,8 @@ describe('结构与伏笔参与章纲生成', () => {
     })
 
     it('本卷线索只取埋设章或回收章落在本卷的条目，章节引用写「卷序-章序」', () => {
-        const first = { ...createVolume(2500), id: 'v1', name: '第1卷 觉醒' }
-        const second = { ...createVolume(2500), id: 'v2', name: '第2卷 清算' }
+        const first = { ...createVolume(), id: 'v1', name: '第1卷 觉醒' }
+        const second = { ...createVolume(), id: 'v2', name: '第2卷 清算' }
         const inFirst = {
             ...createClue('玉牌裂纹'),
             id: 'clue-1',
