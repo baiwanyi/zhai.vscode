@@ -37,6 +37,7 @@ import type {
 import { IMAGE_RATIO_SIZE } from '@shared/types/imageRatio'
 import { DEFAULT_IMAGE_SETTINGS, type ImageSettings } from '@shared/types/imageSettings'
 import type { MediaParameters } from '@shared/types/mediaParameters'
+import { MEDIA_DIR } from '@shared/types/mediaPath'
 import { PORTRAIT_STYLES, type PortraitStyle, type PressLoreKind } from '@shared/types/press'
 import { IMAGE_QUOTA_KEYS } from './constants'
 import { readOptionalProjectDirPath } from './portraitService'
@@ -221,6 +222,11 @@ export class ImageGenerateService {
         private readonly referenceImages: ReferenceImageService,
         private readonly recordMedia: MediaRecorder,
         /**
+         * 索引库里该 id 是否已被占用：落盘前补一次查重。
+         * 只靠磁盘探测不到「文件已删、索引行仍在」的 id，复用后会继承旧行的出处。
+         */
+        private readonly isMediaIdTaken?: (id: string) => boolean,
+        /**
          * 生图作用域的待发送上下文：由装配层注入对话服务的读取器，读出后清单即清空。
          * 约定：以回调注入，imagegen 不反向依赖 ai 模块的会话服务。
          */
@@ -311,7 +317,7 @@ export class ImageGenerateService {
             const root = resolveStorageRoot()
             const projectName = request.dirPath === null ? null : (request.dirPath.split('/')[1] ?? request.dirPath)
             // 目录与文件名由同一次计算产出：跨秒或跨月时不会出现「目录 202610、文件名 202611」的错位
-            const target = await nextMediaTarget(root, artifact.extension)
+            const target = await nextMediaTarget(root, artifact.extension, new Date(), MEDIA_DIR, this.isMediaIdTaken)
             await vscode.workspace.fs.createDirectory(target.dirUri)
             const mediaPath = toMediaPath(target.monthDir, target.id, artifact.extension)
             await vscode.workspace.fs.writeFile(buildStorageUri(root, mediaPath.split('/')), artifact.bytes)
@@ -324,25 +330,36 @@ export class ImageGenerateService {
                 style: request.style,
                 enhancedFrom: request.enhancedFrom,
             })
-            this.recordMedia({
-                id: target.id,
-                path: mediaPath,
-                ext,
-                byteSize: artifact.bytes.byteLength,
-                month: target.month,
-                createdAt,
-                scope: request.dirPath === null ? 'general' : 'press',
-                origin: 'generate',
-                kind: request.kind,
-                pressPath: request.dirPath,
-                pressName: projectName,
-                characterId: request.characterId,
-                characterName: request.characterName,
-                loreKind: request.loreKind,
-                loreId: request.loreId,
-                loreName: request.loreName,
-            })
-            consumeToday(this.db(), IMAGE_QUOTA_KEYS)
+            // 索引写入与配额扣减都是「图片落盘之后的事后记账」：任一失败都不该把成品打回失败态，
+            // 否则磁盘已有图、前端却提示失败，用户重发会多出一张，且这次出处的写入机会永久丢失
+            try {
+                this.recordMedia({
+                    id: target.id,
+                    path: mediaPath,
+                    ext,
+                    byteSize: artifact.bytes.byteLength,
+                    month: target.month,
+                    createdAt,
+                    scope: request.dirPath === null ? 'general' : 'press',
+                    origin: 'generate',
+                    kind: request.kind,
+                    pressPath: request.dirPath,
+                    pressName: projectName,
+                    characterId: request.characterId,
+                    characterName: request.characterName,
+                    loreKind: request.loreKind,
+                    loreId: request.loreId,
+                    loreName: request.loreName,
+                })
+            } catch (error) {
+                // 失败后只能等重扫补录，而补录固定为「通用素材、无出处」，这条日志是唯一的追查线索
+                logger.error(`媒体索引写入失败，图片已落盘但出处丢失：${mediaPath}`, error)
+            }
+            try {
+                consumeToday(this.db(), IMAGE_QUOTA_KEYS)
+            } catch (error) {
+                logger.error(`图片配额扣减失败：${mediaPath}`, error)
+            }
             logger.info(`出图完成：耗时 ${Date.now() - startedAt}ms，${artifact.bytes.byteLength} 字节`)
             const result: ImageGenerateResult = {
                 image: {

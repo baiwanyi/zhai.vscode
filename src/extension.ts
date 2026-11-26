@@ -42,6 +42,7 @@ import { zhaiImagePathPlugin, type MarkdownItLike } from './modules/markdown/zha
 import { closeMediaDatabases, openMediaDatabase } from './modules/media/db/connection'
 import { MediaLibraryService } from './modules/media/mediaLibraryService'
 import { createMediaRecorder } from './modules/media/mediaRecorder'
+import { hasMedia } from './modules/media/mediaRepository'
 import { MediaRoutes } from './modules/media/mediaRoutes'
 import { PressCoverStore } from './modules/media/pressCoverStore'
 import { NotebookStore } from './modules/note/notebookStore'
@@ -337,6 +338,8 @@ async function activateExtension(context: vscode.ExtensionContext): Promise<Zhai
         referenceImageService,
         // 落盘后写媒体索引：出图模块不直接依赖 media.db，由装配处注入写入器
         createMediaRecorder(mediaDbProvider),
+        // 落盘前的 id 查重：文件被手工删掉后索引行仍在，这类 id 也算占用，避免新图继承旧图的出处
+        (id: string): boolean => hasMedia(mediaDbProvider().db, id),
         // 生图上下文取对话服务里的 image 作用域清单：读取即清空，与对话发送同口径
         (): Promise<string[]> => ai.chat.takeImageContextTexts(),
     )

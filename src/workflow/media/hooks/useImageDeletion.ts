@@ -22,11 +22,12 @@ interface UseImageDeletionParams {
     /** 详情面板正在查看的图片：删到它时关闭面板 */
     detailImage: MediaItem | null
     onDetailRemoved: () => void
-    /** 单张删除后的封面回退：键为角色 / 条目 id，值为剩余最新一张的 id */
-    onCoverFallbacks: (
-        characters: Readonly<Record<string, string | null>>,
-        lore: Readonly<Record<string, string | null>>,
-    ) => void
+    /**
+     * 单张删除后的封面回退：键为角色 id，值为剩余最新一张的 id。
+     * 第三个参数是被删图片的 id——调用方据此判断该角色的封面是否真的被删，
+     * 宿主回执只按「图片带哪个角色」给候选，不承担封面指针的判定。
+     */
+    onCoverFallbacks: (characters: Readonly<Record<string, string | null>>, removedId: string) => void
     /** 批量删除后的封面重算：按剩余列表取最新一张 */
     syncAfterBatchDelete: (removed: ReadonlyArray<MediaItem>, remaining: ReadonlyArray<MediaItem>) => void
 }
@@ -69,7 +70,7 @@ export function useImageDeletion({
         if (result === null || !result.removed) {
             return
         }
-        onCoverFallbacks(result.characterCoverFallbacks, result.loreCoverFallbacks)
+        onCoverFallbacks(result.characterCoverFallbacks, image.id)
     }
 
     const deleteSelected = async (): Promise<void> => {

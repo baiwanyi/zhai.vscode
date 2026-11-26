@@ -174,9 +174,9 @@ export function WorkflowMedia({ context }: WorkflowMediaProps): JSX.Element {
             onDetailRemoved: () => {
                 setSelected(null)
             },
-            // 条目封面回退需要条目页的写回入口，本页只处理角色封面；条目数据原样忽略
-            onCoverFallbacks: (characterFallbacks) => {
-                applyDeleteFallbacks(characterFallbacks)
+            // 条目封面回退需要条目页的写回入口，本页只处理角色封面；回执里的条目数据不使用
+            onCoverFallbacks: (characterFallbacks, removedId) => {
+                applyDeleteFallbacks(characterFallbacks, removedId)
             },
             syncAfterBatchDelete,
         })

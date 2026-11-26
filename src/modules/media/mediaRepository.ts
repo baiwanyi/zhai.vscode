@@ -176,6 +176,15 @@ export function insertMedia(db: Database.Database, record: MediaRecord): void {
     )
 }
 
+/**
+ * 该 id 是否已被索引占用：出图落盘前查重。
+ * 只查索引、不查磁盘——文件被手工删掉后行还在（missing=1），只按磁盘探测会让新图复用旧 id，
+ * 而 insertMedia 的冲突分支保留首次出处，新图就会继承旧图的角色与作品。
+ */
+export function hasMedia(db: Database.Database, id: string): boolean {
+    return db.prepare('SELECT 1 FROM media WHERE id = ?').get(id) !== undefined
+}
+
 /** 按 id 读取单个媒体：不存在返回 null */
 export function findMedia(db: Database.Database, id: string): StoredMedia | null {
     const row = db.prepare(`${SELECT_MEDIA} WHERE m.id = ?`).get(id) as MediaRow | undefined
@@ -334,6 +343,20 @@ export function countProjectPhotos(db: Database.Database, pressPath: string): nu
         )
         .get(pressPath) as { total: number }
     return row.total
+}
+
+/**
+ * 外部文档的引用路径：既不在作品目录也不在笔记 / 公众号目录，扫描时无法枚举来源，
+ * 只能按既有记录逐条校验文件是否还在，避免文档删除后引用长期残留。
+ */
+export function listExternalRefs(db: Database.Database): { refPath: string; refScope: MediaRefScope }[] {
+    return db
+        .prepare(
+            `SELECT DISTINCT ref_path AS refPath, ref_scope AS refScope
+               FROM media_usage
+              WHERE ref_type = 'external'`,
+        )
+        .all() as { refPath: string; refScope: MediaRefScope }[]
 }
 
 /** 读取某张图的全部引用：按类型与时间倒序，供详情面板分组展示 */

@@ -104,12 +104,15 @@ function toMonth(stamp: string): { month: string; monthDir: string } {
  * @param extension 不带点的扩展名，用于探测同名文件
  * @param at 落盘时刻，缺省为当前时间；测试可注入固定值
  * @param baseDir 存储根下的基址目录，缺省为媒体库的 images，上传场景传 uploads
+ * @param isIdTaken 索引库里是否已占用该 id：手工删掉文件后索引行仍在（missing）时文件探测不到，
+ *                  只靠磁盘会让新图复用旧 id，从而继承旧行的出处，故由调用方补一次索引查重
  */
 export async function nextMediaTarget(
     root: vscode.Uri,
     extension: string,
     at: Date = new Date(),
     baseDir: string = MEDIA_DIR,
+    isIdTaken?: (id: string) => boolean,
 ): Promise<MediaTarget> {
     const normalized = extension.replace(/^\./u, '').toLowerCase()
     for (let shift = 0; shift < MAX_SECOND_SHIFT; shift += 1) {
@@ -122,6 +125,9 @@ export async function nextMediaTarget(
         const dirUri = buildStorageUri(root, [baseDir, monthDir])
         for (let retry = 0; retry < MAX_RANDOM_RETRY; retry += 1) {
             const id = `${stamp}${randomSegment()}`
+            if (isIdTaken !== undefined && isIdTaken(id)) {
+                continue
+            }
             if (!(await isFileExisting(vscode.Uri.joinPath(dirUri, `${id}.${normalized}`)))) {
                 return { id, month, monthDir, dirUri }
             }

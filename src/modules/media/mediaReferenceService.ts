@@ -1,10 +1,13 @@
 /**
  * 媒体引用服务：登记与重建「图片被谁使用」的关系，覆盖作品封面、角色/条目封面与正文引用。
- * 复用约定：路径一律相对存储根，文档遍历走作品目录、notes 目录与公众号批次目录，扩展名固定 md；
+ * 复用约定：路径一律相对存储根，文档遍历走整个作品目录（章节与自定义文档一视同仁）、notes 目录与公众号批次目录，扩展名固定 md；
  * 正文引用同时识别四种写法——@zhai/ 存储根引用、images/ 相对路径、文档同级 assets/ 副本名、存储根内绝对路径；
  * 写入复用 mediaRepository 的 insertUsage / replaceUsagesOfDocument，不另写一份 SQL。
  * 关键约束：引用按文档整篇替换（先删后插），同一文档内多次引用同一张图只留一行，避免引用数虚高；
  * 找不到对应媒体的引用记为 stale 且不落库，防止把已删除的图重新挂回来；
+ * 编辑器里未保存的文档跳过重建，避免用磁盘旧文本抹掉插入时登记的引用；
+ * 作品封面指针指向的图已不在索引时清掉旧引用，防止详情对已丢失的图继续展示封面；
+ * 存储根外的文档无法枚举，按既有引用记录逐条校验存在性，文档被删或移走时清掉其引用；
  * 公众号批次文章的引用类型为 article，与笔记一样只按正文图片解析，不涉及封面行；
  * 角色封面的 ref_id 用角色名承担区分键（角色改名后仍按块标题定位），条目封面用条目自带的 id 字段；
  * 封面与 id 优先按「三/四级标题 + 下一行值」读取，旧文档的 `- 封面：` / `- id：` 列表行一并兼容。
@@ -17,8 +20,7 @@ import type { MediaRefType } from '@shared/types/media'
 import { STOCK_DIR } from '@shared/types/stock'
 import { WECHAT_MODULE_DIR } from '@shared/types/wechat'
 import { isZhaiPath, readZhaiRelativePath } from '@shared/utils/zhaiPath'
-import { PRESS_SCANNED_FILES } from './constants'
-import { insertUsage, listMediaPaths, replaceUsagesOfDocument } from './mediaRepository'
+import { insertUsage, listExternalRefs, listMediaPaths, replaceUsagesOfDocument } from './mediaRepository'
 import type { UsageRecord } from './mediaRepository'
 import type Database from 'better-sqlite3'
 
@@ -34,6 +36,8 @@ const LORE_ID_LINE_PATTERN = /^\s*[-*]\s*id[：:]\s*(\S+)\s*$/u
 const FIELD_HEADING_PATTERN = /^(#{3,4})\s+(.+?)\s*$/u
 /** markdown 扩展名 */
 const MARKDOWN_PATTERN = /\.md$/iu
+/** 作品目录扫描深度：作品/Chapters/卷/分卷 已覆盖到分卷层，再深属异常结构，不为此拖慢整次扫描 */
+const PROJECT_MARKDOWN_DEPTH = 3
 
 /** 一次扫描的统计：stale 表示解析到但找不到对应媒体的引用数 */
 interface ReferenceScanOutcome {
@@ -261,6 +265,25 @@ function parseCoverBlocks(text: string, levels: readonly (1 | 2)[]): CoverBlock[
     return blocks.filter((block) => block.coverId !== null)
 }
 
+/**
+ * 编辑器里尚未保存的文档绝对路径集合。
+ * 重扫读的是磁盘文本：脏文档的磁盘内容还是旧的，按它整篇替换会把刚插入到编辑器里的引用抹掉。
+ */
+function collectDirtyDocuments(): ReadonlySet<string> {
+    const dirty = new Set<string>()
+    for (const document of vscode.workspace.textDocuments) {
+        if (document.isDirty && document.uri.scheme === 'file') {
+            dirty.add(document.uri.fsPath)
+        }
+    }
+    return dirty
+}
+
+/** 该文档是否正在编辑器里被修改：是则跳过本次重建，保留插入时登记的引用行 */
+function isDirtyDocument(root: vscode.Uri, relativePath: string, dirty: ReadonlySet<string>): boolean {
+    return dirty.has(buildStorageUri(root, relativePath.split('/')).fsPath)
+}
+
 /** 读取文本：文件不存在或读取失败返回 null，由调用方按空文档处理 */
 async function readDocument(root: vscode.Uri, relativePath: string): Promise<string | null> {
     try {
@@ -284,6 +307,19 @@ async function readDirectory(root: vscode.Uri, relativePath: string): Promise<[s
 async function fileExists(root: vscode.Uri, relativePath: string): Promise<boolean> {
     try {
         await vscode.workspace.fs.stat(buildStorageUri(root, relativePath.split('/')))
+        return true
+    } catch {
+        return false
+    }
+}
+
+/**
+ * 判断存储根外的文档是否还存在：这类引用记的是绝对路径，不能再按存储根拼装。
+ * 只做存在性校验，不解析内容——绝对路径的目录基准与 posix 口径不同，重解析容易算错引用。
+ */
+async function isAbsoluteFileExisting(absolutePath: string): Promise<boolean> {
+    try {
+        await vscode.workspace.fs.stat(vscode.Uri.file(absolutePath))
         return true
     } catch {
         return false
@@ -402,6 +438,8 @@ export async function rescanReferences(
 ): Promise<ReferenceScanOutcome> {
     const root = resolveStorageRoot()
     const lookup = buildLookup(listMediaPaths(db))
+    /** 脏文档按编辑器内容为准：它们的引用由插入时登记，重扫不得用磁盘旧文本覆盖 */
+    const dirty = collectDirtyDocuments()
     const outcome: ReferenceScanOutcome = { documents: 0, usages: 0, stale: 0 }
     const projectDirs =
         onlyDirPath === undefined
@@ -412,27 +450,24 @@ export async function rescanReferences(
 
     for (const dirPath of projectDirs) {
         const projectName = dirPath.split('/')[1] ?? dirPath
-        // 作品封面来自 press.db 指针，不在任何文档里：单独登记，不与文档整篇替换混在一起
+        // 作品封面来自 press.db 指针，不在任何文档里：单独登记，不与文档整篇替换混在一起。
+        // 指针指向的图已不在索引（文件被移走或手工删掉）时清掉旧引用，
+        // 否则详情会一直对一张已丢失的图显示「作品封面」，引用计数也跟着虚高
         const coverPath = readPressCover(dirPath)
-        if (coverPath !== null) {
-            const mediaId = lookup.byPath.get(coverPath)
-            if (mediaId !== undefined) {
-                setCoverUsage(
-                    db,
-                    { refType: 'press_cover', refPath: dirPath, refId: null, refTitle: projectName },
-                    mediaId,
-                )
-                outcome.usages += 1
-            }
+        const coverId = coverPath === null ? undefined : lookup.byPath.get(coverPath)
+        if (coverId === undefined) {
+            clearCoverUsage(db, 'press_cover', dirPath)
+        } else {
+            setCoverUsage(db, { refType: 'press_cover', refPath: dirPath, refId: null, refTitle: projectName }, coverId)
+            outcome.usages += 1
         }
-        const documents = await collectMarkdown(root, `${dirPath}/Chapters`)
-        for (const name of PRESS_SCANNED_FILES) {
-            const candidate = `${dirPath}/${name}`
-            if (await fileExists(root, candidate)) {
-                documents.push(candidate)
-            }
-        }
+        // 整个作品目录的 Markdown 都可能是引用方：章节、README、设定与作者自建文档一视同仁。
+        // 白名单 + 只扫 Chapters 会让别处插入的图片看起来「未被引用」，删除时也就失去了保护
+        const documents = await collectMarkdown(root, dirPath, PROJECT_MARKDOWN_DEPTH)
         for (const documentPath of documents) {
+            if (isDirtyDocument(root, documentPath, dirty)) {
+                continue
+            }
             const text = await readDocument(root, documentPath)
             if (text === null) {
                 continue
@@ -455,6 +490,9 @@ export async function rescanReferences(
                 continue
             }
             const documentPath = `notes/${monthDir}/${name}`
+            if (isDirtyDocument(root, documentPath, dirty)) {
+                continue
+            }
             const text = await readDocument(root, documentPath)
             if (text === null) {
                 continue
@@ -496,6 +534,9 @@ export async function rescanReferences(
                     continue
                 }
                 const documentPath = `${dirPath}/${name}`
+                if (isDirtyDocument(root, documentPath, dirty)) {
+                    continue
+                }
                 const text = await readDocument(root, documentPath)
                 if (text === null) {
                     continue
@@ -520,6 +561,16 @@ export async function rescanReferences(
                 outcome.documents += 1
                 outcome.usages += references.length
             }
+        }
+    }
+    // 存储根外的文档（ref_type = external）既不在作品目录也不在 notes/公众号目录，来源无法枚举，
+    // 只能按既有引用记录逐条校验：文档被删或移走时清掉它的引用，避免引用数长期虚高、删除提示误报。
+    // 文档仍在时不做重解析——绝对路径的目录基准与 posix 口径不同，按磁盘文本重算容易把引用算错
+    for (const ref of listExternalRefs(db)) {
+        const isExisting =
+            ref.refScope === 'absolute' ? await isAbsoluteFileExisting(ref.refPath) : await fileExists(root, ref.refPath)
+        if (!isExisting) {
+            replaceUsagesOfDocument(db, ref.refPath, [])
         }
     }
     return outcome

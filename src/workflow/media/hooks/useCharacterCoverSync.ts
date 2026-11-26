@@ -20,8 +20,8 @@ interface UseCharacterCoverSyncParams {
 interface UseCharacterCoverSyncResult {
     /** 出图成功：该角色尚无封面时把新图认领为封面 */
     claimOnGenerated: (image: MediaItem) => void
-    /** 单张删除：宿主给出该角色的回退候选时写回 */
-    applyDeleteFallbacks: (fallbacks: Readonly<Record<string, string | null>>) => void
+    /** 单张删除：宿主给出该角色的回退候选时写回，removedId 为被删图片 */
+    applyDeleteFallbacks: (fallbacks: Readonly<Record<string, string | null>>, removedId: string) => void
     /** 批量删除：按剩余列表重算受影响角色的封面，避开同批里即将被删的图 */
     syncAfterBatchDelete: (removed: ReadonlyArray<MediaItem>, remaining: ReadonlyArray<MediaItem>) => void
 }
@@ -44,15 +44,13 @@ export function useCharacterCoverSync({
 
     /**
      * 单张删除后的封面回退：宿主在删除回执里按角色给出「剩余最新一张」。
-     * 只在角色当前封面确实已不存在时才写回——用户手动选过的封面不能被覆盖。
+     * 关键约束：宿主只按「被删图带了哪个角色」给出候选，不看当前封面指针；
+     * 因此必须先确认该角色的封面正是被删这张才写回——删除一张非封面图不能改写用户手选的封面。
      */
-    const applyDeleteFallbacks = (fallbacks: Readonly<Record<string, string | null>>): void => {
+    const applyDeleteFallbacks = (fallbacks: Readonly<Record<string, string | null>>, removedId: string): void => {
         for (const [characterId, nextId] of Object.entries(fallbacks)) {
             const target = charactersById.get(characterId)
-            if (target === undefined) {
-                continue
-            }
-            if (nextId !== null && target.coverPortraitId === nextId) {
+            if (target === undefined || target.coverPortraitId !== removedId) {
                 continue
             }
             onChangeCharacter(characterId, { coverPortraitId: nextId })

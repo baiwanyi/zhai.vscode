@@ -61,7 +61,12 @@ export interface PressMutations {
     saveSettingSection: (section: SettingFieldSectionKey) => Promise<void>
     /** 静默保存多个字段分组：供切页自动保存使用，不发成功提示以免一次切页弹多条 */
     flushSettingSections: (sections: SettingFieldSectionKey[]) => Promise<void>
-    updateCharacter: (characterId: string, patch: Partial<CharacterCard>) => void
+    /**
+     * 人物卡改动并立即写盘。
+     * silent 为 true 时不发成功提示：媒体页认领封面属于系统行为，
+     * 弹一句「已保存人物卡」会让人误以为是自己刚保存过。
+     */
+    updateCharacter: (characterId: string, patch: Partial<CharacterCard>, options?: { silent?: boolean }) => void
     deleteCharacter: (characterId: string) => void
     createCharacter: (seed: CharacterSeed) => string
     extractCharacters: (drafts: PressExtractedCharacter[]) => { created: number; updated: number }
@@ -152,19 +157,22 @@ export function usePressMutations({
         [flush],
     )
 
-    /** 人物卡保存：编辑弹窗点保存即写盘，不再依赖手动回写 */
+    /** 人物卡保存：编辑弹窗点保存即写盘，不再依赖手动回写；silent 用于系统侧写回 */
     const updateCharacter = useCallback(
-        (characterId: string, patch: Partial<CharacterCard>): void => {
+        (characterId: string, patch: Partial<CharacterCard>, options?: { silent?: boolean }): void => {
             updateWorkspace((previous) => ({
                 ...previous,
                 characters: previous.characters.map((character) =>
                     character.id === characterId ? { ...character, ...patch } : character,
                 ),
             }))
+            const scopes = new Set<PersistScope>(['characters'])
+            if (options?.silent === true) {
+                void flush(scopes)
+                return
+            }
             const name = getWorkspace()?.characters.find((character) => character.id === characterId)?.name
-            void flush(new Set<PersistScope>(['characters']), {
-                successMessage: name === undefined ? '已保存人物卡' : `已保存「${name}」`,
-            })
+            void flush(scopes, { successMessage: name === undefined ? '已保存人物卡' : `已保存「${name}」` })
         },
         [flush, getWorkspace, updateWorkspace],
     )

@@ -54,22 +54,34 @@ export function useImageLibrary(): UseMediaLibraryResult {
     /** 当前列表快照：失败分支回退时直接复用，避免把 state 读进 useCallback 依赖造成额外重建 */
     const currentItems = library.items
 
-    const reload = useCallback(async (options?: ReloadOptions): Promise<void> => {
-        const isSilent = options?.silent === true
-        if (!isSilent) {
-            setIsLoading(true)
-        }
-        try {
-            const result = await request<MediaListResult>('media/list', {})
-            setLibrary(result)
-        } catch (cause) {
-            toastError(cause)
-        } finally {
-            if (!isSilent) {
-                setIsLoading(false)
-            }
-        }
+    /**
+     * 拉取一次全量列表并落到状态：刷新与批量删除都要用最新条目，
+     * 收在一处避免批量删除再发一次重复请求，也避免两处各写一份响应处理。
+     */
+    const fetchLibrary = useCallback(async (): Promise<MediaListResult> => {
+        const result = await request<MediaListResult>('media/list', {})
+        setLibrary(result)
+        return result
     }, [])
+
+    const reload = useCallback(
+        async (options?: ReloadOptions): Promise<void> => {
+            const isSilent = options?.silent === true
+            if (!isSilent) {
+                setIsLoading(true)
+            }
+            try {
+                await fetchLibrary()
+            } catch (cause) {
+                toastError(cause)
+            } finally {
+                if (!isSilent) {
+                    setIsLoading(false)
+                }
+            }
+        },
+        [fetchLibrary],
+    )
 
     useEffect(() => {
         void reload()
@@ -108,17 +120,19 @@ export function useImageLibrary(): UseMediaLibraryResult {
                 if (failed > 0) {
                     toastError(new Error(`${failed} 张图片删除失败，请重试`))
                 }
-                await reload({ silent: true })
+                // 回传删除后的真实条目：封面回退要据此挑剩余最新一张，
+                // 空列表会让调用方误判「该角色已无图」而清掉封面指针
+                const latest = await fetchLibrary()
                 return {
                     removals: targets.map((item) => ({ item, removed: removedIds.has(item.id) })),
-                    items: [],
+                    items: latest.items,
                 }
             } catch (cause) {
                 toastError(cause)
                 return { removals: [], items: currentItems }
             }
         },
-        [currentItems, reload],
+        [currentItems, fetchLibrary],
     )
 
     return {

@@ -7,11 +7,11 @@
 import * as path from 'node:path'
 import Database from 'better-sqlite3'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { resetWorkspaceState, setConfigValue, setDirectory, setFileContent } from './stubs/vscode'
+import { registerDirtyTextDocument, resetWorkspaceState, setConfigValue, setDirectory, setFileContent } from './stubs/vscode'
 import type { MediaRecord } from '../src/modules/media/mediaRepository'
 import { ensureMediaSchema } from '../src/modules/media/db/schema'
 import { rescanReferences } from '../src/modules/media/mediaReferenceService'
-import { insertMedia } from '../src/modules/media/mediaRepository'
+import { insertMedia, insertUsage } from '../src/modules/media/mediaRepository'
 
 const STORAGE_ROOT = 'd:/vault'
 const DIR_PATH = 'press/剑来'
@@ -106,5 +106,74 @@ describe('正文图片引用解析', () => {
         expect(outcome.usages).toBe(0)
         expect(outcome.stale).toBe(1)
         expect(db.prepare('SELECT COUNT(*) AS total FROM media_usage').get()).toMatchObject({ total: 0 })
+    })
+
+    it('编辑器里未保存的文档跳过重建，插入时登记的引用不被抹掉', async () => {
+        // 磁盘上还是插入前的旧正文，编辑器里已经引用了这张图：脏文档必须以编辑器为准
+        const chapterPath = `${DIR_PATH}/Chapters/第4章.md`
+        putChapter('第4章.md', '正文\n')
+        insertUsage(db, MEDIA_ID, {
+            refType: 'chapter',
+            refPath: chapterPath,
+            refScope: 'storage',
+            refId: null,
+            refTitle: '第4章',
+            refAnchor: null,
+        })
+        registerDirtyTextDocument(path.join(CHAPTERS_DIR, '第4章.md'), ['正文', '', `![雪夜](@zhai/${MEDIA_PATH})`])
+
+        const outcome = await rescanReferences(db, () => null, DIR_PATH)
+
+        const rows = db.prepare('SELECT * FROM media_usage WHERE media_id = ?').all(MEDIA_ID) as { ref_path: string }[]
+        expect(outcome.usages).toBe(0)
+        expect(rows).toHaveLength(1)
+        expect(rows[0]).toMatchObject({ ref_path: chapterPath })
+    })
+
+    it('作品封面指针失效时清掉旧引用，不留下指向已丢失图片的封面记录', async () => {
+        insertUsage(db, MEDIA_ID, {
+            refType: 'press_cover',
+            refPath: DIR_PATH,
+            refScope: 'storage',
+            refId: null,
+            refTitle: '剑来',
+            refAnchor: null,
+        })
+
+        // 指针还指着一张已被移走的图：查不到媒体时应当解绑，而不是静默跳过
+        await rescanReferences(db, () => `images/202610/${'0'.repeat(16)}.png`, DIR_PATH)
+
+        const rows = db.prepare("SELECT COUNT(*) AS total FROM media_usage WHERE ref_type = 'press_cover'").get()
+        expect(rows).toMatchObject({ total: 0 })
+    })
+
+    it('作品根级的自建文档同样参与引用重建', async () => {
+        // 不在任何白名单里的文档：作者在作品目录里自建的素材笔记，同样要能算出「被谁引用」
+        setFileContent(path.join(PROJECT_DIR, '素材.md'), `![雪夜](@zhai/${MEDIA_PATH})\n`)
+
+        const outcome = await rescanReferences(db, () => null, DIR_PATH)
+
+        expect(outcome.usages).toBe(1)
+        expect(db.prepare('SELECT ref_path FROM media_usage WHERE media_id = ?').get(MEDIA_ID)).toMatchObject({
+            ref_path: `${DIR_PATH}/素材.md`,
+        })
+    })
+
+    it('外部文档不在了就清掉它的引用行', async () => {
+        // 存储根外的文档只可能在插入时登记，文件被删或移走后必须由重扫解绑，否则引用数永远虚高
+        const externalPath = path.join('d:/elsewhere', '随笔.md')
+        insertUsage(db, MEDIA_ID, {
+            refType: 'external',
+            refPath: externalPath,
+            refScope: 'absolute',
+            refId: null,
+            refTitle: '随笔',
+            refAnchor: null,
+        })
+
+        await rescanReferences(db, () => null, DIR_PATH)
+
+        const rows = db.prepare("SELECT COUNT(*) AS total FROM media_usage WHERE ref_type = 'external'").get()
+        expect(rows).toMatchObject({ total: 0 })
     })
 })

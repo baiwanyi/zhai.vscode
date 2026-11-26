@@ -100,7 +100,10 @@ export function PressSectionRouter({
                     characters: workspace.characters,
                     lore: workspace.lore,
                     setting: workspace.setting,
-                    onChangeCharacter: mutations.updateCharacter,
+                    // 认领封面与删除回退都是系统侧写回：静默落盘，避免出图成功时弹「已保存人物卡」
+                    onChangeCharacter: (characterId, patch) => {
+                        mutations.updateCharacter(characterId, patch, { silent: true })
+                    },
                 }}
             />
         )
