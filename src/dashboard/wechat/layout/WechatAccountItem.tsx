@@ -33,6 +33,8 @@ interface WechatAccountItemProps {
     /** 打开密钥设置：AppID 与 AppSecret 单独维护 */
     onEditCredentials: (account: WechatAccountSummary) => void
     onTest: (id: string) => void
+    /** 打开关注二维码：弹窗由列表页持有 */
+    onShowQrcode: (account: WechatAccountSummary) => void
     onRemove: (account: WechatAccountSummary) => void
 }
 
@@ -44,6 +46,7 @@ export function WechatAccountItem({
     onEdit,
     onEditCredentials,
     onTest,
+    onShowQrcode,
     onRemove,
 }: WechatAccountItemProps): JSX.Element {
     const isAbnormal = account.status !== 'connected'
@@ -96,6 +99,7 @@ export function WechatAccountItem({
                     align="end"
                     shouldStopPropagation
                     onTest={() => onTest(account.id)}
+                    onShowQrcode={() => onShowQrcode(account)}
                     onEdit={() => onEdit(account)}
                     onEditCredentials={() => onEditCredentials(account)}
                     onRemove={() => onRemove(account)}

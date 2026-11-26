@@ -380,6 +380,7 @@ export type HostMethodName =
     | 'upload/reveal'
     | 'wechat/account/credentials'
     | 'wechat/account/create'
+    | 'wechat/account/qrcode'
     | 'wechat/account/remove'
     | 'wechat/account/select'
     | 'wechat/account/test'

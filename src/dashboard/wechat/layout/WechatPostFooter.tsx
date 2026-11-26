@@ -20,6 +20,8 @@ interface WechatPostFooterProps {
     isAccountBusy: boolean
     onOpenAccountSettings: () => void
     onOpenCredentials: () => void
+    /** 打开关注二维码：弹窗由页面持有 */
+    onShowQrcode: () => void
     onTestAccount: () => void
     onOpenAccountRemove: () => void
     onCreateIssue: () => void
@@ -31,6 +33,7 @@ export function WechatPostFooter({
     isAccountBusy,
     onOpenAccountSettings,
     onOpenCredentials,
+    onShowQrcode,
     onTestAccount,
     onOpenAccountRemove,
     onCreateIssue,
@@ -53,6 +56,7 @@ export function WechatPostFooter({
                 showLabel
                 align="start"
                 onTest={onTestAccount}
+                onShowQrcode={onShowQrcode}
                 onEdit={onOpenAccountSettings}
                 onEditCredentials={onOpenCredentials}
                 onRemove={onOpenAccountRemove}

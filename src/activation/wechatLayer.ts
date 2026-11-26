@@ -1,5 +1,5 @@
 /**
- * 公众号层装配：把 wechat.db、密钥、Token 缓存、七个业务服务与路由收成一份依赖包。
+ * 公众号层装配：把 wechat.db、密钥、Token 缓存、各业务服务与路由收成一份依赖包。
  * 复用约定：鉴权失败统一经 createWechatAuthFailureHandler 落库，再用 EventEmitter 广播给两个面板，
  * 订阅方不必在装配完成后手工登记回调；批次服务复用索引库做导入源校验。
  * 关键约束：库必须在此刻打开——「推送中」批次回收要先于任何业务读写完成，惰性打开会让回收时机
@@ -22,6 +22,7 @@ import { WechatMaterialService } from '@modules/wechat/materialService'
 import { WechatMenuService } from '@modules/wechat/menuService'
 import { WechatPublishService } from '@modules/wechat/publishService'
 import type { PushSnapshotWriter } from '@modules/wechat/publishService'
+import { WechatQrcodeService } from '@modules/wechat/qrcodeService'
 import { WechatStatsService } from '@modules/wechat/statsService'
 import { WechatTokenService } from '@modules/wechat/tokenService'
 import { WechatRoutes } from '@modules/wechat/wechatRoutes'
@@ -111,6 +112,7 @@ export function assembleWechatLayer(deps: WechatLayerDeps): WechatLayer {
     // 两个面板共用同一份公众号路由：仪表盘发起账号与批次动作，工作流面板发起运营分区请求
     const routes = new WechatRoutes({
         accounts,
+        qrcode: new WechatQrcodeService(tokenDeps),
         issues,
         publish,
         materials,

@@ -1,5 +1,5 @@
 /**
- * 账号页的弹窗组：文章设置、封面裁剪、账号设置、密钥设置、三类删除确认与群发确认。
+ * 账号页的弹窗组：文章设置、封面裁剪、账号设置、密钥设置、关注二维码、三类删除确认与群发确认。
  * 复用约定：目标状态与提交动作全部由 hooks（useWechatContentDialogs / useWechatAccountDialogs /
  * useWechatPublishConfirm）提供，本组件只做渲染与「关闭即清空目标」的适配（closeWhenHidden）。
  * 关键约束：不在此处发请求、不持有状态，弹窗开合完全受控于父层；
@@ -11,6 +11,7 @@ import { WechatAccountDialog } from './WechatAccountDialog'
 import { WechatAccountSecretDialog } from './WechatAccountSecretDialog'
 import { WechatArticleMetaDialog } from './WechatArticleMetaDialog'
 import { WechatCoverDialog } from './WechatCoverDialog'
+import { WechatQrcodeDialog } from './WechatQrcodeDialog'
 import type { WechatAccountDialogsState } from '../hooks/useWechatAccountDialogs'
 import type { WechatContentDialogsState } from '../hooks/useWechatContentDialogs'
 import type { WechatPublishConfirmState } from '../hooks/useWechatPublishConfirm'
@@ -29,6 +30,10 @@ interface WechatPostDialogsProps {
     isAccountBusy: boolean
     coverUriOf: (article: WechatArticleSummary) => string | undefined
     onReadCoverSource: (path: string) => Promise<string | null>
+    /** 关注二维码目标账号：非 null 即打开弹窗 */
+    qrcodeAccount: WechatAccountSummary | null
+    /** 关闭二维码弹窗：由父层清空目标账号 */
+    onQrcodeClose: () => void
 }
 
 export function WechatPostDialogs({
@@ -41,6 +46,8 @@ export function WechatPostDialogs({
     isAccountBusy,
     coverUriOf,
     onReadCoverSource,
+    qrcodeAccount,
+    onQrcodeClose,
 }: WechatPostDialogsProps): JSX.Element {
     const { meta, cover, articleRemove, issueRemove } = content
 
@@ -86,6 +93,10 @@ export function WechatPostDialogs({
                 onOpenChange={accountDialogs.credentials.setOpen}
                 onSubmit={accountDialogs.credentials.submit}
             />
+
+            {qrcodeAccount !== null && (
+                <WechatQrcodeDialog account={qrcodeAccount} onOpenChange={closeWhenHidden(onQrcodeClose)} />
+            )}
 
             <AlertDialog
                 open={issueRemove.target !== null}

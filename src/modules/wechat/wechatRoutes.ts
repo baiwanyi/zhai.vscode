@@ -12,6 +12,7 @@ import {
     isSelectWechatAccountRequest,
     isTestWechatAccountRequest,
     isUpdateWechatAccountRequest,
+    isWechatAccountQrcodeRequest,
     isWechatArticleCoverRequest,
     isWechatArticleCreateRequest,
     isWechatArticleImportRequest,
@@ -52,6 +53,7 @@ import type { WechatIssueService } from './issueService'
 import type { WechatMaterialService } from './materialService'
 import type { WechatMenuService } from './menuService'
 import type { WechatPublishService } from './publishService'
+import type { WechatQrcodeService } from './qrcodeService'
 import type { WechatStatsService } from './statsService'
 
 /**
@@ -67,6 +69,7 @@ export const WECHAT_DOCUMENT_METHODS: ReadonlySet<string> = new Set([
 /** 路由依赖：按域注入，新增运营分区时只加字段，不改构造签名 */
 export interface WechatRouteDeps {
     accounts: WechatAccountService
+    qrcode: WechatQrcodeService
     issues: WechatIssueService
     publish: WechatPublishService
     materials: WechatMaterialService
@@ -120,6 +123,12 @@ export class WechatRoutes {
                     throw new Error('wechat/account/test 参数非法：id 须为合法账号标识')
                 }
                 return this.deps.accounts.test(payload.id)
+            }
+            case 'wechat/account/qrcode': {
+                if (!isWechatAccountQrcodeRequest(payload)) {
+                    throw new Error('wechat/account/qrcode 参数非法：id 须为合法账号标识')
+                }
+                return this.deps.qrcode.get(payload.id)
             }
             case 'wechat/account/select': {
                 if (!isSelectWechatAccountRequest(payload)) {

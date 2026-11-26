@@ -33,6 +33,8 @@ interface WechatAccountListProps {
     /** 打开密钥设置：AppID 与 AppSecret 单独维护 */
     onEditCredentials: (account: WechatAccountSummary) => void
     onTest: (id: string) => void
+    /** 打开关注二维码：弹窗由列表页持有 */
+    onShowQrcode: (account: WechatAccountSummary) => void
     onRemove: (account: WechatAccountSummary) => void
     onRetry: () => void
 }
@@ -49,6 +51,7 @@ export function WechatAccountList({
     onEdit,
     onEditCredentials,
     onTest,
+    onShowQrcode,
     onRemove,
     onRetry,
 }: WechatAccountListProps): JSX.Element {
@@ -93,6 +96,7 @@ export function WechatAccountList({
                     onEdit={onEdit}
                     onEditCredentials={onEditCredentials}
                     onTest={onTest}
+                    onShowQrcode={onShowQrcode}
                     onRemove={onRemove}
                 />
             ))}

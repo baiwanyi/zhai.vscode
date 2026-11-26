@@ -1,9 +1,10 @@
 /**
- * 公众号运营类接口：自定义菜单、粉丝与标签、用户增长统计。
+ * 公众号运营类接口：自定义菜单、粉丝与标签、用户增长统计、留言与关注二维码。
  * 复用约定：JSON 写入类接口走 client 的 postWechatJson（统一 errcode 归一与超时），
  * 查询类接口平台只提供 GET，这里补一个同口径的 getWechatJson；错误码文案复用 client 的错误表。
  * 关键约束：本层只做「发请求 + 收窄报文」，不写库、不拼装业务提示；
- * 报文里的字段名保持平台原样，转换成本模块类型的工作交给调用方服务，便于对照官方文档排查。
+ * 报文里的字段名保持平台原样，转换成本模块类型的工作交给调用方服务，便于对照官方文档排查；
+ * 二维码图片下载后内联为 data URI，只放行平台返回的 jpeg/png 并限制体积。
  */
 import type { WechatMenuButton } from '@shared/types/wechat'
 import { describeWechatError, postWechatJson, NETWORK_ERROR_CODE } from './client'
@@ -20,6 +21,13 @@ const TAGS_GET_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/get'
 /** 数据统计接口 */
 const USERS_SUMMARY_ENDPOINT = 'https://api.weixin.qq.com/datacube/getusersummary'
 const USERS_CUMULATE_ENDPOINT = 'https://api.weixin.qq.com/datacube/getusercumulate'
+
+/** 关注二维码：创建永久字符串场景二维码，再用票据取图片 */
+const QRCODE_CREATE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/qrcode/create'
+const QRCODE_SHOW_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/showqrcode'
+
+/** 二维码图片体积上限：平台返回的是小尺寸图，超限按异常处理 */
+const QRCODE_MAX_BYTES = 2 * 1024 * 1024
 
 /** 菜单尚未配置时平台返回的错误码：按「无菜单」处理，不算失败 */
 const MENU_NOT_EXIST_CODE = 46003
@@ -473,4 +481,51 @@ export async function deleteWechatMaterialByMediaId(token: string, mediaId: stri
         return { ok: true, data: null }
     }
     return outcome
+}
+
+/**
+ * 创建永久字符串场景二维码：scene 固定时票据稳定，可用于关注入口。
+ * 关键约束：只取 ticket 字段，平台报文里可能附带其它字段，不原样透给上层。
+ */
+export async function fetchWechatQrcodeTicket(token: string, scene: string): Promise<WechatApiResult<string>> {
+    const outcome = await postWechatJson(token, QRCODE_CREATE_ENDPOINT, {
+        action_name: 'QR_LIMIT_STR_SCENE',
+        action_info: { scene: { scene_str: scene } },
+    })
+    if (!outcome.ok) {
+        return outcome
+    }
+    const ticket = outcome.payload.ticket
+    return typeof ticket === 'string' && ticket.length > 0
+        ? { ok: true, data: ticket }
+        : { ok: false, errorCode: -1, message: '微信接口返回的二维码票据格式异常' }
+}
+
+/**
+ * 取二维码图片并内联：Webview 的 CSP 不放行微信图片域名，不能直接回传远程地址。
+ * 关键约束：票据只作为查询参数，不写日志；只接受 jpeg/png 且限制体积，避免把异常响应当图片送出。
+ */
+export async function fetchWechatQrcodeImage(ticket: string): Promise<WechatApiResult<string>> {
+    const url = new URL(QRCODE_SHOW_ENDPOINT)
+    url.searchParams.set('ticket', ticket)
+
+    let response: Response
+    try {
+        response = await fetch(url, { signal: AbortSignal.timeout(GET_TIMEOUT_MS) })
+    } catch (cause) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `无法连接微信接口：${errorText(cause)}` }
+    }
+    if (!response.ok) {
+        return { ok: false, errorCode: NETWORK_ERROR_CODE, message: `微信接口返回 HTTP ${String(response.status)}` }
+    }
+    const mimeType = (response.headers.get('content-type') ?? '').split(';')[0] ?? ''
+    if (mimeType !== 'image/jpeg' && mimeType !== 'image/png') {
+        return { ok: false, errorCode: -1, message: '微信二维码图片格式异常' }
+    }
+    const bytes = new Uint8Array(await response.arrayBuffer())
+    if (bytes.byteLength === 0 || bytes.byteLength > QRCODE_MAX_BYTES) {
+        return { ok: false, errorCode: -1, message: '微信二维码图片体积异常' }
+    }
+    const base64 = Buffer.from(bytes).toString('base64')
+    return { ok: true, data: `data:${mimeType};base64,${base64}` }
 }

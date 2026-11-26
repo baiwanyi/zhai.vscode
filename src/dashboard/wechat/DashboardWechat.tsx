@@ -1,5 +1,5 @@
 /**
- * 公众号账号列表页（#/wechat）：页头返回入口 + 账号列表 + 底部添加入口 + 账号弹窗与删除确认。
+ * 公众号账号列表页（#/wechat）：页头返回入口 + 账号列表 + 底部添加入口 + 账号弹窗、二维码与删除确认。
  * 复用约定：外壳取 components/AppPage（页头走 AppHeader、列表走 AppContent 滚动、写操作走 AppFooter），
  * 数据与动作经 hooks/useWechatAccounts 下发，展示口径取 wechat/utils，删除确认走公共 AlertDialog。
  * 关键约束：点击账号先写宿主当前账号再跳转，账号页与工作流面板因此共享同一作用域；
@@ -17,6 +17,7 @@ import { useWechatModuleSync } from './hooks/useWechatModuleSync'
 import { WechatAccountDialog } from './layout/WechatAccountDialog'
 import { WechatAccountList } from './layout/WechatAccountList'
 import { WechatAccountSecretDialog } from './layout/WechatAccountSecretDialog'
+import { WechatQrcodeDialog } from './layout/WechatQrcodeDialog'
 import type { WechatAccountFormInput } from './hooks/useWechatAccounts'
 import type { JSX } from 'react'
 import { DashboardBackAction } from '../layout/DashboardBackAction'
@@ -53,6 +54,8 @@ export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.El
     /** 密钥设置弹窗的目标：非 null 即打开，AppID 与 AppSecret 在这里单独维护 */
     const [secretTarget, setSecretTarget] = useState<WechatAccountSummary | null>(null)
     const [secretKey, setSecretKey] = useState(0)
+    /** 关注二维码目标账号：非 null 即打开弹窗 */
+    const [qrcodeTarget, setQrcodeTarget] = useState<WechatAccountSummary | null>(null)
     /** 页头只在列表就绪时展示数量，加载与失败态不暴露旧快照 */
     const accountCount = status === 'ready' ? accounts.length : 0
 
@@ -148,6 +151,7 @@ export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.El
                         onEdit={openEdit}
                         onEditCredentials={openCredentials}
                         onTest={(id) => void testAccount(id)}
+                        onShowQrcode={setQrcodeTarget}
                         onRemove={setPendingRemove}
                         onRetry={handleRetry}
                     />
@@ -187,6 +191,17 @@ export function DashboardWechat({ onOpenAccount }: DashboardWechatProps): JSX.El
                         }
                     }}
                     onSubmit={handleCredentialsSubmit}
+                />
+            )}
+
+            {qrcodeTarget !== null && (
+                <WechatQrcodeDialog
+                    account={qrcodeTarget}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setQrcodeTarget(null)
+                        }
+                    }}
                 />
             )}
 

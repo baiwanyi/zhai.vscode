@@ -1,11 +1,11 @@
 /**
- * 账号操作菜单：重新验证连接、账号设置、密钥设置与删除账号，账号页页脚与账号列表行共用。
- * 复用约定：下拉取 @components/ui/dropdown-menu，触发器取 components/Button，
- * 账号名标签只在页脚展示（列表行本身已有账号名），对齐方向由调用方决定。
+ * 账号操作菜单：重新验证连接、关注二维码、账号设置、密钥设置与删除账号，页脚与账号列表行共用。
+ * 复用约定：下拉取 @components/ui/dropdown-menu，图标取 lucide，触发器取 components/Button；
+ * 账号名标签只在页脚展示（列表行本身已有账号名），对齐方向由调用方决定；二维码入口只发回调，弹窗由页面持有。
  * 关键约束：列表行内使用时必须打开 shouldStopPropagation，否则点菜单会顺带触发整行跳转；
  * 「重新验证连接」在账号未连接时禁用——未配置密钥时鉴权必然失败，先引导用户去填凭据。
  */
-import { MoreHorizontal } from 'lucide-react'
+import { KeyRound, MoreHorizontal, QrCode, RefreshCw, Settings2, Trash2 } from 'lucide-react'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -28,6 +28,8 @@ interface WechatAccountMenuProps {
     /** 列表行内菜单：阻止冒泡，避免点菜单顺带跳页 */
     shouldStopPropagation?: boolean
     onTest: () => void
+    /** 打开关注二维码：目标账号与弹窗状态由调用方持有 */
+    onShowQrcode: () => void
     onEdit: () => void
     onEditCredentials: () => void
     onRemove: () => void
@@ -40,6 +42,7 @@ export function WechatAccountMenu({
     align = 'start',
     shouldStopPropagation = false,
     onTest,
+    onShowQrcode,
     onEdit,
     onEditCredentials,
     onRemove,
@@ -70,12 +73,24 @@ export function WechatAccountMenu({
                     </>
                 ) : null}
                 <DropdownMenuItem disabled={isDisabled || account.status !== 'connected'} onSelect={onTest}>
+                    <RefreshCw />
                     重新验证连接
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={onEdit}>账号设置</DropdownMenuItem>
-                <DropdownMenuItem onSelect={onEditCredentials}>密钥设置</DropdownMenuItem>
+                <DropdownMenuItem onSelect={onShowQrcode}>
+                    <QrCode />
+                    关注二维码
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onEdit}>
+                    <Settings2 />
+                    账号设置
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onEditCredentials}>
+                    <KeyRound />
+                    密钥设置
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onSelect={onRemove}>
+                    <Trash2 />
                     删除账号
                 </DropdownMenuItem>
             </DropdownMenuContent>

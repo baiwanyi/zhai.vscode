@@ -197,6 +197,20 @@ export interface WechatAccountTestResult {
     hint?: string
 }
 
+/**
+ * wechat/account/qrcode 请求：按账号取关注二维码。
+ * 入参只收账号 id，场景值与图片格式由宿主固定，前端不参与拼装平台参数。
+ */
+export interface WechatAccountQrcodeRequest {
+    /** 目标账号 id */
+    id: string
+}
+
+/** wechat/account/qrcode 响应：二维码已内联为 data URI，Webview 可直接放进 img */
+export interface WechatAccountQrcodeResult {
+    dataUrl: string
+}
+
 /** wechat/account/select 请求：写入当前账号，供工作流面板按账号取数 */
 export interface SelectWechatAccountRequest {
     /** 目标账号 id，null 表示清除选择 */
@@ -291,6 +305,14 @@ export function isRemoveWechatAccountRequest(payload: unknown): payload is Remov
 
 /** 判断是否为测试连接请求 */
 export function isTestWechatAccountRequest(payload: unknown): payload is TestWechatAccountRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    return isWechatAccountId((payload as { id?: unknown }).id)
+}
+
+/** 判断是否为关注二维码请求 */
+export function isWechatAccountQrcodeRequest(payload: unknown): payload is WechatAccountQrcodeRequest {
     if (typeof payload !== 'object' || payload === null) {
         return false
     }

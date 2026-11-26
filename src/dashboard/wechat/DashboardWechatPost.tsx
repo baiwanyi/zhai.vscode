@@ -3,18 +3,19 @@
  * 复用约定：外壳取 components/AppPage（页头/页脚由 layout/WechatPostHeader、WechatPostFooter 承担），
  * 数据取 hooks/useWechatAccounts 与 hooks/useWechatIssues，筛选分页取 useWechatIssueQuery，
  * 弹窗编排取 useWechatContentDialogs / useWechatAccountDialogs / useWechatPublishConfirm，
- * 弹窗渲染统一交给 layout/WechatPostDialogs。
- * 关键约束：本页只做数据装配与布局，不承载筛选与弹窗状态，也不拼装展示文案（口径在 wechat/utils）；
+ * 弹窗状态由本页与 hooks 持有，渲染统一交给 layout/WechatPostDialogs。
+ * 关键约束：本页只做数据装配与布局，不承载筛选状态，也不拼装展示文案（口径在 wechat/utils）；
  * 本页按 accountId 从账号快照中定位，切换账号由路由外壳重新挂载（key 为 accountId）；
  * 新建批次、添加文章与导入都不弹表单，宿主直接建目录/文件并打开编辑器；
  * 账号不存在（被删除或 hash 手改）与账号读取失败都要给出可执行出口，不渲染空白页。
  */
 import { Send } from 'lucide-react'
-import { useCallback, useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Spinner } from '@components/ui/spinner'
-import type { WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
+import type { WechatAccountSummary, WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
 import { Empty } from '@webview/blocks/Empty'
 import { LoadMoreSentinel } from '@webview/blocks/LoadMoreSentinel'
+import { Alert } from '@webview/components/Alert'
 import { AppContent, AppPage } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
@@ -93,6 +94,11 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         removeAccount,
     })
     const publishConfirm = useWechatPublishConfirm({ accountName: account?.name ?? '', loadQuota, publish })
+    /** 关注二维码目标账号：非 null 即打开弹窗，切换账号由路由外壳重挂载本页 */
+    const [qrcodeAccount, setQrcodeAccount] = useState<WechatAccountSummary | null>(null)
+    const closeQrcode = useCallback((): void => {
+        setQrcodeAccount(null)
+    }, [])
 
     /** 作者默认值：账号设置优先，其次是列表里最近一篇填过作者的文章，取值口径在 wechat/utils */
     const defaultArticleAuthor = useMemo(() => readDefaultArticleAuthor(account, issues), [account, issues])
@@ -182,10 +188,11 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                 <AppContent isScrollable>
                     {/* 推送阶段：宿主分阶段播报，动作结束后由 hook 清空 */}
                     {publishProgress !== null && (
-                        <div className="mb-2 flex shrink-0 items-center gap-2 rounded-md bg-muted/40 px-2 py-1 text-xs text-muted-foreground">
-                            <Spinner className="size-3" />
-                            <span className="truncate">{publishProgress.message}</span>
-                        </div>
+                        <Alert
+                            title={publishProgress.message}
+                            icon={<Spinner className="size-3" aria-hidden />}
+                            className="mb-2 shrink-0"
+                        />
                     )}
                     <WechatIssueList
                         issues={query.renderIssues}
@@ -224,6 +231,7 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                     onOpenAccountSettings={accountDialogs.edit.open}
                     onOpenCredentials={accountDialogs.credentials.open}
                     onTestAccount={() => void testAccount(accountId)}
+                    onShowQrcode={() => setQrcodeAccount(account)}
                     onOpenAccountRemove={accountDialogs.remove.open}
                     onCreateIssue={handleCreateIssue}
                 />
@@ -239,6 +247,8 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                 isAccountBusy={isAccountMutating}
                 coverUriOf={coverUriOf}
                 onReadCoverSource={readCoverSource}
+                qrcodeAccount={qrcodeAccount}
+                onQrcodeClose={closeQrcode}
             />
         </>
     )
