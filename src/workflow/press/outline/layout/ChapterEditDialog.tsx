@@ -170,6 +170,7 @@ export function ChapterEditDialog({
                         chapter={chapter}
                         chapterRef={chapterRef}
                         characters={characters}
+                        lore={lore}
                         plan={plan}
                         prevChapter={prevChapter}
                         nextChapter={nextChapter}

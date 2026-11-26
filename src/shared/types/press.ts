@@ -790,6 +790,45 @@ export interface ClueRefsAnalyzeResult {
     refs: ClueRefSuggestion[]
 }
 
+/** 成长线轨道：主角自身境界 / 战力，或金手指等级 */
+export type PressGrowthTrack = 'protagonist' | 'goldenFinger'
+
+/** 当前成长表里的一条已有节点：只传轨道与值，让模型跳过已记录的变化 */
+export interface GrowthAnalyzePoint {
+    track: string
+    value: string
+}
+
+/**
+ * 成长线识别请求：只传作品目录与当前成长表，章节摘录由宿主从章节文件读取。
+ * 关键约束：轨道与值只用于去重参考，模型输出仍须按卷章坐标与轨道白名单校验。
+ */
+export interface GrowthAnalyzeRequest {
+    /** 作品目录，形如 press/{作品名}，宿主须回查作品真实性 */
+    dirPath: string
+    points: GrowthAnalyzePoint[]
+}
+
+/** 宿主交给 AI 的成长线识别输入：当前成长表 + 章节摘录 */
+export interface GrowthAnalyzeInput {
+    points: GrowthAnalyzePoint[]
+    chapters: ClueRefsAnalyzeChapter[]
+}
+
+/** 识别出的成长节点建议：坐标必须落在现有卷章内，值为自由文本 */
+export interface GrowthPointSuggestion {
+    volumeOrder: number
+    chapterOrder: number
+    track: PressGrowthTrack
+    value: string
+    note: string
+}
+
+/** 成长线识别结果：points 为空表示没识别到明确变化，前端按空结果提示 */
+export interface GrowthAnalyzeResult {
+    points: GrowthPointSuggestion[]
+}
+
 /**
  * 画面风格相关定义已下沉到 ./imageStyle：出图参数与媒体模块不再需要通过 press 契约取用，
  * 此处保留转发仅为兼容既有 @shared/types/press 引用，新增代码请直接从 ./imageStyle 取。
@@ -1263,9 +1302,10 @@ export interface PressApplyBlock {
  * 大纲段落键：与前端 OutlineSectionKey 一一对应，也是宿主 writer 的落点表索引。
  * 关键约束：键名一变，回写就会落到不存在的段落上，前端序列化与宿主落点表必须同步修改；
  * 卷纲与章节内容分开成两段——卷纲改一次只重写卷纲，章节改一次只重写章节；
- * 「设定纲」「节奏情绪」「时间线」不再回写——设定归作品设定、节奏类型进章纲、时间线段落原地保留。
+ * 「设定纲」「节奏情绪」「时间线」不再回写——设定归作品设定、节奏类型进章纲、时间线段落原地保留；
+ * 成长线是独立段落，与结构纲 / 伏笔线索互不覆盖。
  */
-export type PressOutlineSectionKey = 'structure' | 'volumeOutlines' | 'chapters' | 'clues'
+export type PressOutlineSectionKey = 'structure' | 'volumeOutlines' | 'chapters' | 'clues' | 'growth'
 
 /** 大纲段落白名单：校验与遍历共用同一份，不接受任意字符串 */
 export const PRESS_OUTLINE_SECTION_KEYS: readonly PressOutlineSectionKey[] = [
@@ -1273,6 +1313,7 @@ export const PRESS_OUTLINE_SECTION_KEYS: readonly PressOutlineSectionKey[] = [
     'volumeOutlines',
     'chapters',
     'clues',
+    'growth',
 ]
 
 /**

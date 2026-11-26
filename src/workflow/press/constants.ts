@@ -1,5 +1,5 @@
 /**
- * 大纲、人物与资料条目的选项常量：把钩子、状态、角色分类、性别、体型与条目分类的展示文案、
+ * 大纲、人物与资料条目的选项常量：把钩子、状态、章节修订标记、角色分类、性别、体型与条目分类的展示文案、
  * 图标与徽标变体集中在一处。
  * 复用约定：徽标变体只取 badge 组件的语义变体，不写原始色值；页面与卡片均从此表读取，避免各写一套映射；
  * 作品设定字段的选项（篇幅、时间、地点、结局、视角、结构、风格、规避内容与题材标签）统一在
@@ -11,11 +11,13 @@ import { MapPin, Package, Swords } from 'lucide-react'
 import type { SettingFieldKey } from '@shared/types/press'
 import type {
     ActKind,
+    ChapterRevision,
     CharacterBodyType,
     CharacterGender,
     CharacterRole,
     ClueKind,
     ClueStatus,
+    GrowthTrack,
     HookKind,
     LoreKind,
     OutlineModuleKey,
@@ -67,6 +69,30 @@ export const PACING_KIND_ORDER: readonly PacingKind[] = ['tension', 'setup', 'pa
 /** 节奏选项：节奏面板的下拉与徽标共用 */
 export const PACING_KIND_OPTIONS = toOptions(PACING_KIND_ORDER, PACING_META)
 
+/**
+ * 章节修订标记文案：只表达作者意图，与「已写 / 待写」的客观进度无关。
+ * 关键约束：正常态不显示徽标、也不落盘，旧文档缺省即按正常读取。
+ */
+export const CHAPTER_REVISION_META: Readonly<Record<ChapterRevision, { label: string; tone: BadgeTone }>> = {
+    normal: { label: '正常', tone: 'ghost' },
+    revise: { label: '待改', tone: 'outline' },
+    discard: { label: '废弃', tone: 'destructive' },
+}
+
+/** 修订标记顺序：下拉与筛选项共用，正常排首位 */
+export const CHAPTER_REVISION_ORDER: readonly ChapterRevision[] = ['normal', 'revise', 'discard']
+
+/** 修订标记选项：章纲编辑页的下拉使用 */
+export const CHAPTER_REVISION_OPTIONS = toOptions(CHAPTER_REVISION_ORDER, CHAPTER_REVISION_META)
+
+/** 修订标记筛选项：章纲列表第二行的「标记」下拉使用，默认全部 */
+export const CHAPTER_REVISION_FILTERS: readonly OptionMeta<ChapterRevision | 'all'>[] = [
+    { value: 'all', label: '全部标记' },
+    { value: 'normal', label: '正常' },
+    { value: 'revise', label: '待改' },
+    { value: 'discard', label: '废弃' },
+]
+
 /** 全书转折类型文案：未指定 + 五种全书级大转折 */
 export const ACT_KIND_META: Readonly<Record<ActKind, { label: string }>> = {
     none: { label: '未指定' },
@@ -89,6 +115,62 @@ export const ACT_KIND_ORDER: readonly ActKind[] = [
 
 /** 转折类型选项：结构纲下拉使用 */
 export const ACT_KIND_OPTIONS = toOptions(ACT_KIND_ORDER, ACT_KIND_META)
+
+/** 结构模板的一个阶段：只给阶段名、转折类型与叙事作用，其余字段留给作者补 */
+export interface StructureTemplateAct {
+    name: string
+    kind: ActKind
+    narrativeRole: string
+}
+
+/**
+ * 结构模板：套用时按顺序预填一组阶段，作者再逐项修改。
+ * 关键约束：只复用现有 ActKind，不扩展枚举；模板是脚手架而非成品，段落序列化与解析不变。
+ */
+export interface StructureTemplate {
+    id: string
+    label: string
+    description: string
+    acts: readonly StructureTemplateAct[]
+}
+
+/** 结构模板清单：三幕、起承转合与最小可用三套，覆盖主流范式 */
+export const STRUCTURE_TEMPLATES: readonly StructureTemplate[] = [
+    {
+        id: 'three-act',
+        label: '三幕',
+        description: '建置 → 对抗 → 解决，适合主线清晰的成长故事',
+        acts: [
+            { name: '激励事件', kind: 'inciting', narrativeRole: '打破日常，把主角推入主线' },
+            { name: '第一次尝试', kind: 'none', narrativeRole: '主动应对，代价初现' },
+            { name: '中点反转', kind: 'midpoint', narrativeRole: '赌注升级，目标由被动变主动' },
+            { name: '最低谷', kind: 'low-point', narrativeRole: '一切崩塌，迫使主角做出真正选择' },
+            { name: '高潮对决', kind: 'climax', narrativeRole: '正面解决核心冲突，付出代价' },
+            { name: '新的平衡', kind: 'resolution', narrativeRole: '收束余线，留下新的问题' },
+        ],
+    },
+    {
+        id: 'four-beat',
+        label: '起承转合',
+        description: '起 → 承 → 转 → 合，适合节奏舒缓、重情绪转折的故事',
+        acts: [
+            { name: '起', kind: 'none', narrativeRole: '交代世界与人物，埋下第一处不安' },
+            { name: '承', kind: 'none', narrativeRole: '冲突逐步升级，关系与立场开始松动' },
+            { name: '转', kind: 'midpoint', narrativeRole: '真相或局势翻转，原目标失效' },
+            { name: '合', kind: 'resolution', narrativeRole: '收束冲突，交代代价与余韵' },
+        ],
+    },
+    {
+        id: 'minimal',
+        label: '最小可用',
+        description: '只立三个必填转折，先写起来再补细节',
+        acts: [
+            { name: '激励事件', kind: 'inciting', narrativeRole: '主角为什么非出发不可' },
+            { name: '高潮', kind: 'climax', narrativeRole: '全书最大冲突在这里爆发' },
+            { name: '结局', kind: 'resolution', narrativeRole: '付出代价后世界变成什么样' },
+        ],
+    },
+]
 
 /** 伏笔状态文案：未回收 / 已回收 / 已废弃 */
 export const CLUE_STATUS_META: Readonly<Record<ClueStatus, { label: string; tone: BadgeTone }>> = {
@@ -119,16 +201,29 @@ export const CLUE_KIND_ORDER: readonly ClueKind[] = ['none', 'character', 'plot'
 export const CLUE_KIND_OPTIONS = toOptions(CLUE_KIND_ORDER, CLUE_KIND_META)
 
 /**
- * 功能模块元数据：导航栏顺序为「卷纲 → 章纲 → 结构 → 伏笔」，日常写作从卷纲进入。
+ * 功能模块元数据：导航栏顺序为「卷纲 → 章纲 → 结构 → 伏笔 → 成长」，日常写作从卷纲进入。
  * 关键约束：value 必须与 OutlineModuleKey 完全一致，新增模块须同时补导航文案与页面分支；
- * 设定归作品设定、节奏类型进章纲、时间线不再作模块，故这里只有四个页面。
+ * 设定归作品设定、节奏类型进章纲、时间线不再作模块，故这里只有五个页面。
  */
 export const OUTLINE_MODULE_META: readonly OptionMeta<OutlineModuleKey>[] = [
     { value: 'volume', label: '卷纲' },
     { value: 'chapter', label: '章纲' },
     { value: 'structure', label: '结构' },
     { value: 'clue', label: '伏笔' },
+    { value: 'growth', label: '成长' },
 ]
+
+/** 成长线轨道文案：主角自身成长与金手指升级分两列展示 */
+export const GROWTH_TRACK_META: Readonly<Record<GrowthTrack, { label: string; tone: BadgeTone }>> = {
+    protagonist: { label: '主角', tone: 'default' },
+    goldenFinger: { label: '金手指', tone: 'secondary' },
+}
+
+/** 成长线轨道顺序：选项与两列展示共用 */
+export const GROWTH_TRACK_ORDER: readonly GrowthTrack[] = ['protagonist', 'goldenFinger']
+
+/** 成长线轨道选项：节点编辑弹窗使用 */
+export const GROWTH_TRACK_OPTIONS = toOptions(GROWTH_TRACK_ORDER, GROWTH_TRACK_META)
 
 /** 章末钩子：生成与编辑时用于标注本卷节奏 */
 export const HOOK_OPTIONS: readonly OptionMeta<HookKind>[] = [

@@ -26,6 +26,7 @@ import type { Dispatch, SetStateAction } from 'react'
 import {
     createAct,
     createClue,
+    createGrowthPoint,
     formatChapterOutlineText,
     formatVolumeOutlineText,
     volumeTitleLabel,
@@ -66,12 +67,15 @@ export interface OutlinePageActions {
     setClearingVolumeId: Dispatch<SetStateAction<string | null>>
     clearingVolumeIndex: number
     handleSelectChapter: (chapterId: string) => void
+    /** 跨模块跳转：切页并清章节选中，带卷 id 时同时收窄章纲列表 */
+    handleOpenModule: (module: OutlineModuleKey, volumeId?: string) => void
     handleVolumeChange: (next: string) => void
     handleGenerateVolumeChapters: (volume: OutlineVolume) => void
     handleCreateVolume: () => void
     handleCreateChapter: () => void
     handleCreateAct: () => void
     handleCreateClue: () => void
+    handleCreateGrowth: () => void
     handleGenerateVolumeOutlines: () => void
     handleDeleteVolume: (volume: OutlineVolume) => void
     handleClearVolumeChapters: (volume: OutlineVolume) => void
@@ -142,6 +146,15 @@ export function useOutlinePageActions({
         setSelectedChapterId(chapterId)
     }
 
+    /** 卷末统计等只读汇总的跳转入口：只切视图与卷筛选，不改任何数据 */
+    const handleOpenModule = (next: OutlineModuleKey, volumeId?: string): void => {
+        setModule(next)
+        setSelectedChapterId(null)
+        if (volumeId !== undefined) {
+            setVolumeFilter(volumeId)
+        }
+    }
+
     /**
      * 页头切卷：卷筛选只作用于章纲页，因此切卷同时进入章纲页并清掉章节选中，
      * 避免停留在上一卷的章上；选「全部卷」只清筛选，仍停在章纲页。
@@ -189,6 +202,12 @@ export function useOutlinePageActions({
     const handleCreateClue = (): void => {
         const clues = [...workspace.plan.clues, createClue()]
         onUpdatePlan('clues', { clues })
+    }
+
+    /** 新增成长节点：只作回填之外的兜底入口，默认主角、卷级、空值，由作者在编辑弹窗里补全 */
+    const handleCreateGrowth = (): void => {
+        const growth = [...workspace.plan.growth, createGrowthPoint()]
+        onUpdatePlan('growth', { growth })
     }
 
     /** 生成卷纲入口：已有卷纲先确认覆盖，避免一键抹掉手写内容；章节不受影响 */
@@ -264,7 +283,7 @@ export function useOutlinePageActions({
         try {
             await request<AiContextAddInlineResult>('ai/context/addInline', {
                 label: `${workspace.setting.title.trim() || '未命名作品'}·章纲·${volumeTitleLabel(volume.name, safeIndex)}·第${String(chapter.order)}章 ${chapter.title.trim() || '未命名'}`,
-                text: `${formatVolumeOutlineText(volume, safeIndex)}\n\n${formatChapterOutlineText(chapter, workspace.characters, workspace.setting)}`,
+                text: `${formatVolumeOutlineText(volume, safeIndex)}\n\n${formatChapterOutlineText(chapter, workspace.characters, workspace.setting, workspace.lore)}`,
                 uri: JSON.stringify(['press-outline', dirPath, 'chapter', chapter.id]),
                 scope: dirPath,
                 kind: 'chapterOutline',
@@ -341,12 +360,14 @@ export function useOutlinePageActions({
         setClearingVolumeId,
         clearingVolumeIndex,
         handleSelectChapter,
+        handleOpenModule,
         handleVolumeChange,
         handleGenerateVolumeChapters,
         handleCreateVolume,
         handleCreateChapter,
         handleCreateAct,
         handleCreateClue,
+        handleCreateGrowth,
         handleGenerateVolumeOutlines,
         handleDeleteVolume,
         handleClearVolumeChapters,

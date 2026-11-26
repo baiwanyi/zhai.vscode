@@ -82,6 +82,7 @@ function outlineChapter(order: number, title: string): OutlineChapter {
         characterIds: [],
         location: '',
         wordCount: 0,
+        revision: 'normal',
         hook: 'none',
         pacing: 'setup',
         tension: 3,

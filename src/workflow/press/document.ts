@@ -23,6 +23,7 @@ import { PERIOD_OPTIONS, PLACE_OPTIONS } from './setting/settingOptions'
 import type {
     ActKind,
     Audience,
+    ChapterRevision,
     CharacterBodyType,
     CharacterCard,
     CharacterGender,
@@ -30,6 +31,8 @@ import type {
     ClueKind,
     ClueStatus,
     EndingKind,
+    GrowthPoint,
+    GrowthTrack,
     HookKind,
     LoreEntry,
     LoreKind,
@@ -130,6 +133,16 @@ const CLUE_KIND_LABELS: Readonly<Record<string, ClueKind>> = {
     道具: 'item',
     setting: 'setting',
     设定: 'setting',
+}
+
+/** 章节修订标记映射：兼容英文枚举与中文标签，旧文档缺项按正常处理 */
+const REVISION_LABELS: Readonly<Record<string, ChapterRevision>> = {
+    normal: 'normal',
+    正常: 'normal',
+    revise: 'revise',
+    待改: 'revise',
+    discard: 'discard',
+    废弃: 'discard',
 }
 
 /** 章末钩子映射：兼容英文枚举与中文标签 */
@@ -818,6 +831,7 @@ function parseChapter(
             .filter((characterId): characterId is string => characterId !== undefined),
         location: values.get('地点') ?? '',
         wordCount: written ?? toNumber(values.get('已写')) ?? 0,
+        revision: REVISION_LABELS[readLabel(values.get('修订'), 'normal')] ?? 'normal',
         hook: HOOK_LABELS[hookLabel] ?? 'none',
         pacing,
         tension: Math.min(MAX_TENSION, Math.max(MIN_TENSION, tension)),
@@ -1061,8 +1075,56 @@ function parseClues(content: string, characterIndex: Map<string, string>): Outli
         })
 }
 
+/** 成长线轨道映射：兼容英文枚举与中文标签，未识别整行跳过 */
+const GROWTH_TRACK_LABELS: Readonly<Record<string, GrowthTrack>> = {
+    protagonist: 'protagonist',
+    主角: 'protagonist',
+    goldenFinger: 'goldenFinger',
+    金手指: 'goldenFinger',
+}
+
 /**
- * 解析大纲的功能模块：结构纲与伏笔线索两个二级段落各读一块，缺段落即空值。
+ * 解析成长线：三级标题为卷，节点行形如 `- 主角：筑基成功｜第3章｜备注`。
+ * 关键约束：第二段是章序（可省略，省略即卷级节点），第三段是备注；
+ * 轨道写法的中文标签认不出、或值为空的行都直接跳过；卷序沿用标题里的「第N卷」，读不到按出现顺序推导。
+ */
+function parseGrowthPoints(content: string): GrowthPoint[] {
+    const points: GrowthPoint[] = []
+    splitSections(content, 3).forEach((block, blockIndex) => {
+        const volumeOrder = readVolumeOrder(block.title, blockIndex)
+        let index = 0
+        for (const line of block.content.split(/\r?\n/u)) {
+            const matched = /^[-*]\s*([^：:]{1,12})[：:]\s*(.+)$/u.exec(line.trim())
+            if (matched?.[1] === undefined || matched[2] === undefined) {
+                continue
+            }
+            const track = GROWTH_TRACK_LABELS[readLabel(matched[1], '')]
+            if (track === undefined) {
+                continue
+            }
+            const parts = matched[2].split(/[｜|]/u).map((part) => part.trim())
+            const value = parts[0] ?? ''
+            if (value.length === 0) {
+                continue
+            }
+            const chapterMatched = /^第?\s*(\d+)\s*章?$/u.exec(parts[1] ?? '')
+            index += 1
+            points.push({
+                id: `growth-${String(volumeOrder)}-${String(index)}`,
+                volumeOrder,
+                chapterOrder:
+                    chapterMatched?.[1] === undefined ? null : Number.parseInt(chapterMatched[1], 10),
+                track,
+                value,
+                note: parts[2] ?? '',
+            })
+        }
+    })
+    return points
+}
+
+/**
+ * 解析大纲的功能模块：结构纲、伏笔线索与成长线三个二级段落各读一块，缺段落即空值。
  * 关键约束：段落名用完整关键词匹配，避免与「设定」「节奏」等正文用词混淆；
  * 旧的「全书纲」「人物纲」「设定纲」「节奏情绪」「时间线」段落都不再读取，
  * 它们原样留在文件里：故事核取作品设定，人物取人物卡，节奏类型在章纲里维护。
@@ -1073,6 +1135,7 @@ function parseOutlinePlan(text: string, characterIndex: Map<string, string>): Ou
     return {
         acts: parseStructureActs(read('结构纲')),
         clues: parseClues(read('伏笔线索'), characterIndex),
+        growth: parseGrowthPoints(read('成长线')),
     }
 }
 

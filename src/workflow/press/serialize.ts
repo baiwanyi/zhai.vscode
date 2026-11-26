@@ -7,17 +7,20 @@
 import type { PressApplyBlock, PressApplyMeta } from '@shared/types/press'
 import {
     ACT_KIND_META,
+    CHAPTER_REVISION_META,
     CHARACTER_BODY_TYPE_META,
     CHARACTER_GENDER_META,
     CHARACTER_ROLE_META,
     CLUE_KIND_META,
     CLUE_STATUS_META,
+    GROWTH_TRACK_META,
     HOOK_OPTIONS,
     PACING_META,
 } from './constants'
 import { sceneTitleLabel, stripChapterOrderPrefix, stripVolumeOrderPrefix } from './utils'
 import type {
     CharacterCard,
+    GrowthPoint,
     LoreEntry,
     LoreKind,
     OutlineChapter,
@@ -279,6 +282,8 @@ function buildChapterBlock(chapter: OutlineChapter, nameById: ReadonlyMap<string
             ['节奏', PACING_META[chapter.pacing].label],
             ['张力', String(chapter.tension)],
             ['字数', String(chapter.wordCount)],
+            // 正常态不落盘：旧文档缺省即正常，避免给每章都加一行无意义标记
+            ['修订', chapter.revision === 'normal' ? '' : CHAPTER_REVISION_META[chapter.revision].label],
             ['地点', chapter.location],
             ['人物', characterNames.join('、')],
         ]),
@@ -406,6 +411,42 @@ export function serializeClueSection(plan: OutlinePlan, characters: readonly Cha
 }
 
 /**
+ * 单条成长节点：一行写完轨道、成长值、章序与备注。
+ * 关键约束：章序省略时必须留空段占位，否则备注会被解析成章序；末尾空段直接裁掉。
+ */
+function buildGrowthLine(point: GrowthPoint): string {
+    const segments = [
+        toSingleLine(point.value),
+        point.chapterOrder === null ? '' : `第${String(point.chapterOrder)}章`,
+        toSingleLine(point.note),
+    ]
+    while (segments.length > 1 && segments[segments.length - 1] === '') {
+        segments.pop()
+    }
+    return `- ${GROWTH_TRACK_META[point.track].label}：${segments.join('｜')}`
+}
+
+/** 成长线段落正文：按卷分组，三级标题写「第N卷」，卷内节点保持原有顺序 */
+export function serializeGrowthSection(plan: OutlinePlan): string {
+    const groups = new Map<number, GrowthPoint[]>()
+    for (const point of plan.growth) {
+        const list = groups.get(point.volumeOrder) ?? []
+        list.push(point)
+        groups.set(point.volumeOrder, list)
+    }
+    return [...groups.entries()]
+        .sort(([left], [right]) => left - right)
+        .map(([volumeOrder, points]) => {
+            const lines = points
+                .filter((point) => point.value.trim().length > 0)
+                .map((point) => buildGrowthLine(point))
+            return lines.length === 0 ? '' : `### 第${String(volumeOrder)}卷\n\n${lines.join('\n')}`
+        })
+        .filter((block) => block.length > 0)
+        .join('\n\n')
+}
+
+/**
  * 大纲的全部段落：一次产出四个段落文本，调用方按需只提交变动的那一段。
  * 关键约束：段落键必须与宿主 writer 的落点表、PressApplyRequest.outlineSections 完全一致，
  * 键名改动会直接导致回写落到错误段落；人物信息只在角色设定里维护，大纲不再有「人物纲」段落；
@@ -422,5 +463,6 @@ export function serializeOutlineSections(
         volumeOutlines: serializeVolumeOutlinesSection(volumes),
         chapters: serializeChapterSection(volumes, characters),
         clues: serializeClueSection(plan, characters),
+        growth: serializeGrowthSection(plan),
     }
 }

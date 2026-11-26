@@ -30,6 +30,8 @@ import type {
     CharacterBodyType,
     CharacterCard,
     CharacterSeed,
+    GrowthPoint,
+    GrowthTrack,
     LoreEntry,
     LoreSeed,
     OutlineAct,
@@ -417,6 +419,8 @@ export function createChapter(order: number): OutlineChapter {
         characterIds: [],
         location: '',
         wordCount: 0,
+        // 修订标记是作者工作标记，新建章一律正常，不影响已写判定
+        revision: 'normal',
         hook: 'suspense',
         pacing: 'setup',
         tension: 3,
@@ -450,11 +454,27 @@ export function createClue(name = '新线索'): OutlineClue {
     }
 }
 
+/**
+ * 新建一个成长节点：默认落在第1卷、只记到卷级，值为空由作者补。
+ * 关键约束：成长线以回填识别为主，手动新增只作兜底；卷序与章序由调用方按现有卷章校正。
+ */
+export function createGrowthPoint(track: GrowthTrack = 'protagonist'): GrowthPoint {
+    return {
+        id: createId('tline'),
+        volumeOrder: 1,
+        chapterOrder: null,
+        track,
+        value: '',
+        note: '',
+    }
+}
+
 /** 新建空大纲计划：缺段落的作品打开时用它兜底，页面永远拿到完整结构 */
 export function createEmptyPlan(): OutlinePlan {
     return {
         acts: [],
         clues: [],
+        growth: [],
     }
 }
 
@@ -586,16 +606,93 @@ export function formatVolumeOutlineText(volume: OutlineVolume, index: number): s
     return lines.join('\n')
 }
 
+/** 注入正文上下文的设定约束总量上限：超出按优先级截断，避免上下文膨胀 */
+const SETTING_CONSTRAINT_LIMIT = 600
+
+/** 单条地点设定的描述上限：条目正文可能很长，只取能约束写作用的部分 */
+const SETTING_CONSTRAINT_ENTRY_LIMIT = 160
+
+/** 一条设定约束：标签 + 正文，数组顺序即截断优先级 */
+export interface SettingConstraint {
+    label: string
+    text: string
+}
+
+/** 按上限截断文本：超出时补省略号，未超出原样返回 */
+function truncateText(value: string, limit: number): string {
+    const text = value.trim()
+    return text.length > limit ? `${text.slice(0, limit)}…` : text
+}
+
 /**
- * 章纲的纯文本快照：供「添加到 AI 对话」作为写正文的上下文，可附本章出场人物与作品题材风格。
- * 复用约定：人物与设定由调用方从工作区传入，口径与「本次引用」卡片一致。
+ * 本章相关的设定约束：地点条目按章纲地点匹配，金手指代价与限制、核心概念、禁忌为全书级。
+ * 关键约束：只取设定页已有字段，空项整条省略；地点优先于全书级约束，便于超长时优先保留场景依据；
+ * 势力与物品不按人物关联，暂不注入，避免把无关设定塞进正文上下文。
+ */
+export function buildSettingConstraints(
+    chapter: OutlineChapter,
+    setting: ProjectSetting,
+    lore: readonly LoreEntry[] = [],
+): SettingConstraint[] {
+    const constraints: SettingConstraint[] = []
+    const location = chapter.location.trim()
+    if (location.length > 0) {
+        const places = lore.filter(
+            (entry) =>
+                entry.kind === 'place' &&
+                entry.name.trim().length > 0 &&
+                (location.includes(entry.name.trim()) || entry.name.trim().includes(location)),
+        )
+        for (const place of places) {
+            const description = place.description.trim()
+            constraints.push({
+                label: `地点·${place.name.trim()}`,
+                text: description.length > 0 ? truncateText(description, SETTING_CONSTRAINT_ENTRY_LIMIT) : '本章场景',
+            })
+        }
+    }
+    if (setting.goldenFingerCost.trim().length > 0) {
+        constraints.push({ label: '金手指代价', text: setting.goldenFingerCost.trim() })
+    }
+    if (setting.goldenFingerLimit.trim().length > 0) {
+        constraints.push({ label: '金手指限制', text: setting.goldenFingerLimit.trim() })
+    }
+    if (setting.concepts.trim().length > 0) {
+        constraints.push({ label: '核心概念', text: setting.concepts.trim() })
+    }
+    if (setting.taboo.trim().length > 0) {
+        constraints.push({ label: '禁忌', text: setting.taboo.trim() })
+    }
+    return constraints
+}
+
+/** 约束行：按累计正文字数截断，最后一条超长时截断并补省略号，空表返回空数组 */
+function formatSettingConstraintLines(constraints: readonly SettingConstraint[]): string[] {
+    const lines: string[] = []
+    let remaining = SETTING_CONSTRAINT_LIMIT
+    for (const constraint of constraints) {
+        if (remaining <= 0) {
+            break
+        }
+        const text = constraint.text.length > remaining ? `${constraint.text.slice(0, remaining)}…` : constraint.text
+        lines.push(`- ${constraint.label}：${text}`)
+        remaining -= text.length
+    }
+    return lines
+}
+
+/**
+ * 章纲的纯文本快照：供「添加到 AI 对话」作为写正文的上下文，可附本章出场人物、作品题材风格与设定约束。
+ * 复用约定：人物、设定与地点条目由调用方从工作区传入，口径与「本次引用」卡片一致。
  * 关键约束：只输出计划内容（summary），不混入 actualSummary 正文事实；
- * 空字段整行省略，节拍与场景按落笔顺序排列，字段口径与章纲编辑页保持一致。
+ * 空字段整行省略，节拍与场景按落笔顺序排列，字段口径与章纲编辑页保持一致；
+ * 设定约束只注入计划上下文，总量有上限，超长按地点 → 代价限制 → 概念 → 禁忌的优先级截断。
  */
 export function formatChapterOutlineText(
     chapter: OutlineChapter,
     cast: readonly CharacterCard[] = [],
     setting?: ProjectSetting,
+    lore: readonly LoreEntry[] = [],
 ): string {
     const lines: string[] = [`【${chapterTitleLabel(chapter)}】`]
     if (chapter.stage.trim().length > 0) {
@@ -635,6 +732,10 @@ export function formatChapterOutlineText(
     }
     if (setting !== undefined) {
         lines.push(`题材：${setting.genres.join(' / ') || '未填题材'}`, `风格：${setting.tone.trim() || '未填风格'}`)
+        const constraintLines = formatSettingConstraintLines(buildSettingConstraints(chapter, setting, lore))
+        if (constraintLines.length > 0) {
+            lines.push('设定约束：', ...constraintLines)
+        }
     }
     if (chapter.scenes.length > 0) {
         lines.push('场景纲：')
@@ -820,6 +921,33 @@ export function summarizeVolume(volume: OutlineVolume): {
         }),
         { total: 0, done: 0, wordCount: 0 },
     )
+}
+
+/** 卷内单人出场统计：人物卡 + 本卷出现章数，零出场也保留，便于发现整卷缺席 */
+export interface VolumeCastSummary {
+    character: CharacterCard
+    chapterCount: number
+}
+
+/**
+ * 卷内出场统计：按章纲的 characterIds 聚合每人在本卷出现的章数，供卷卡片与卷末统计共用。
+ * 关键约束：只读聚合，人物卡仍是唯一数据源；主要角色即使零出场也保留，龙套只保留有出场的，
+ * 排序按出场章数从多到少，同章数保持人物卡原顺序。
+ */
+export function summarizeVolumeCast(
+    volume: OutlineVolume,
+    characters: readonly CharacterCard[],
+): VolumeCastSummary[] {
+    const counts = new Map<string, number>()
+    volume.chapters.forEach((chapter) => {
+        for (const characterId of chapter.characterIds) {
+            counts.set(characterId, (counts.get(characterId) ?? 0) + 1)
+        }
+    })
+    return characters
+        .map((character) => ({ character, chapterCount: counts.get(character.id) ?? 0 }))
+        .filter((item) => item.character.role !== 'extra' || item.chapterCount > 0)
+        .sort((left, right) => right.chapterCount - left.chapterCount)
 }
 
 /** 整部作品的章节总数与已写数，用于工作台标题区进度 */
@@ -1179,7 +1307,7 @@ export function readWritingPosition(volumes: readonly OutlineVolume[]): number {
     return position
 }
 
-/** 线索预警：逾期未收、临近回收章、未定回收章三种，供线索表与章详情展示 */
+/** 线索预警：逾期未收、临近回收章、未定回收章、未指定埋设章四种，供线索表与章详情展示 */
 export interface ClueWarning {
     clue: OutlineClue
     /** warning 表示逾期，info 表示临期或未定 */
@@ -1192,7 +1320,8 @@ const CLUE_DUE_SOON = 3
 
 /**
  * 计算线索预警：只针对「未回收」的线索，按当前写作位置比较回收章。
- * 关键约束：回收章解析不到（引用了不存在的卷章）时按「未定」提示，不误判为逾期。
+ * 关键约束：回收章解析不到（引用了不存在的卷章）时按「未定」提示，不误判为逾期；
+ * 「未指定埋设章」只在已规划回收章时提示，新建空条目不会立即告警，也不打断回收端提示。
  */
 export function findClueWarnings(plan: OutlinePlan, volumes: readonly OutlineVolume[]): ClueWarning[] {
     const position = readWritingPosition(volumes)
@@ -1205,6 +1334,9 @@ export function findClueWarnings(plan: OutlinePlan, volumes: readonly OutlineVol
         if (clue.payoff === null) {
             warnings.push({ clue, severity: 'info', message: `「${clue.name}」尚未指定回收章` })
             continue
+        }
+        if (clue.plant === null) {
+            warnings.push({ clue, severity: 'info', message: `「${clue.name}」尚未指定埋设章` })
         }
         const payoffOrder = index.map.get(`${String(clue.payoff.volumeOrder)}-${String(clue.payoff.chapterOrder)}`)
         if (payoffOrder === undefined) {

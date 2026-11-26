@@ -52,7 +52,8 @@ export function CollapsibleFocusRow({ label, value }: CollapsibleFocusRowProps):
 interface ChapterDetailItemProps {
     icon: LucideIcon
     label: string
-    value: string
+    /** 内容：纯文本按空值兜底，节点原样渲染（如带角色徽标的动机行） */
+    value: ReactNode
     emphasized?: boolean
     action?: ReactNode
     align?: 'end' | 'start'
@@ -82,7 +83,7 @@ export function ChapterDetailItem({
                         emphasized && 'font-medium',
                     )}
                 >
-                    {orFallback(value)}
+                    {typeof value === 'string' ? orFallback(value) : value}
                 </ItemDescription>
             </ItemContent>
             {action === undefined ? null : <ItemActions className="shrink-0">{action}</ItemActions>}

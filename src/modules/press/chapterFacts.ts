@@ -9,7 +9,12 @@ import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
 import { buildStorageUri, toSafeSegments } from '@modules/common/storagePath'
-import type { ClueRefsAnalyzeChapter, ClueRefsAnalyzeRequest, PressChapterFact } from '@shared/types/press'
+import type {
+    ClueRefsAnalyzeChapter,
+    ClueRefsAnalyzeRequest,
+    GrowthAnalyzeRequest,
+    PressChapterFact,
+} from '@shared/types/press'
 import { OUTLINE_FILE_NAME, readOutlineChapterBlocks } from './outlineSync'
 import { readOrderPrefix, toDisplayName } from './projectFactory'
 import { readProjectDetail } from './projectRepository'
@@ -123,6 +128,36 @@ export function normalizeClueRefsAnalyzeRequest(payload: unknown): ClueRefsAnaly
         ]
     })
     return { dirPath: value.dirPath, clues }
+}
+
+/** 成长线识别入参上限：当前成长表条数与单条值长度 */
+const MAX_GROWTH_POINTS = 60
+const MAX_GROWTH_POINT_VALUE = 80
+const MAX_GROWTH_POINT_TRACK = 32
+
+/** 成长线识别入参收窄：目录必填，成长表按条数与字段长度截断，空值条目丢弃 */
+export function normalizeGrowthAnalyzeRequest(payload: unknown): GrowthAnalyzeRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        throw new Error('pressAi/aiAnalyzeGrowth 缺少参数')
+    }
+    const value = payload as Record<string, unknown>
+    if (typeof value.dirPath !== 'string' || value.dirPath.length === 0) {
+        throw new Error('pressAi/aiAnalyzeGrowth 参数非法：dirPath 须为非空字符串')
+    }
+    const rawPoints = Array.isArray(value.points) ? value.points.slice(0, MAX_GROWTH_POINTS) : []
+    const points = rawPoints.flatMap((item) => {
+        if (typeof item !== 'object' || item === null) {
+            return []
+        }
+        const record = item as Record<string, unknown>
+        const track = typeof record.track === 'string' ? record.track.slice(0, MAX_GROWTH_POINT_TRACK) : ''
+        const pointValue = typeof record.value === 'string' ? record.value.slice(0, MAX_GROWTH_POINT_VALUE) : ''
+        if (track.length === 0 || pointValue.trim().length === 0) {
+            return []
+        }
+        return [{ track, value: pointValue }]
+    })
+    return { dirPath: value.dirPath, points }
 }
 
 /**

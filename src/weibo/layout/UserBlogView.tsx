@@ -10,10 +10,11 @@
  * 返回按钮只发起回调，视图切换由页面层决定；列表卡片不再重复关注入口（关注只在页头）；
  * 主页是当前登录账号本人时（uid 相同）不渲染关注入口，避免给自己点关注。
  */
-import { ArrowLeft, MapPin, Mars, Venus } from 'lucide-react'
+import { ArrowLeft, MapPin } from 'lucide-react'
 import { useCallback, useMemo, useState } from 'react'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import type { WeiboCredentialState, WeiboUserInfo } from '@shared/types/weibo'
+import { CharacterGenderIcon } from '@webview/blocks/CharacterGenderIcon'
 import { Button } from '@webview/components/Button'
 import { UserFollowAction } from './UserFollowAction'
 import { WeiboFeedSection } from './WeiboFeedSection'
@@ -57,13 +58,13 @@ interface GenderIconProps {
     gender: WeiboUserInfo['gender']
 }
 
-/** 性别图标：男用蓝色、女用粉色区分，未知不渲染（不写文字缩写，保持资料行干净） */
+/** 性别图标：微博值域映射到人物性别后复用统一图标，未知不渲染（不写文字缩写，保持资料行干净） */
 function GenderIcon({ gender }: GenderIconProps): JSX.Element | null {
     if (gender === 'm') {
-        return <Mars className="size-3 shrink-0 text-sky-500" role="img" aria-label="男" />
+        return <CharacterGenderIcon gender="male" className="size-3" />
     }
     if (gender === 'f') {
-        return <Venus className="size-3 shrink-0 text-pink-500" role="img" aria-label="女" />
+        return <CharacterGenderIcon gender="female" className="size-3" />
     }
     return null
 }

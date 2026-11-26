@@ -1,17 +1,19 @@
 /**
  * 写前查纲的本章章纲卡片：展示梗概与 POV、目标、阻碍、转折、结果、情绪、钩子七项明细。
- * 复用约定：明细行与分隔线取 ChapterFocusParts，张力文案取 constants 元数据表，空值经共享兜底函数收口。
- * 关键约束：只读展示，钩子徽标只作提示，张力档位越界时文案回落空串。
+ * 复用约定：明细行与分隔线取 ChapterFocusParts，张力与修订文案取 constants 元数据表，
+ * 空值经共享兜底函数收口。
+ * 关键约束：只读展示，钩子徽标只作提示，张力档位越界时文案回落空串；
+ * 修订标记非正常时在卡片右上角提示，避免写前不知道本章已标废弃。
  */
 import { Ban, Eye, FishingHook, Flag, GitBranch, Heart, Target } from 'lucide-react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
+import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { ItemGroup } from '@components/ui/item'
 import { orFallback } from '@shared/utils/format'
 import { Badge } from '@webview/blocks/Badge'
 import { ChapterDetailItem, DETAIL_GROUP_CLASS, DetailSeparator } from './ChapterFocusParts'
 import type { OutlineChapter } from '../../types'
 import type { JSX } from 'react'
-import { TENSION_LABELS } from '../../constants'
+import { CHAPTER_REVISION_META, TENSION_LABELS } from '../../constants'
 
 interface ChapterFocusBriefCardProps {
     chapter: OutlineChapter
@@ -24,6 +26,13 @@ export function ChapterFocusBriefCard({ chapter, hookLabel }: ChapterFocusBriefC
         <Card size="sm">
             <CardHeader>
                 <CardTitle>这一章要写什么</CardTitle>
+                {chapter.revision === 'normal' ? null : (
+                    <CardAction>
+                        <Badge variant={CHAPTER_REVISION_META[chapter.revision].tone}>
+                            本章标记：{CHAPTER_REVISION_META[chapter.revision].label}
+                        </Badge>
+                    </CardAction>
+                )}
                 <CardDescription>{orFallback(chapter.summary, '本章暂无梗概')}</CardDescription>
             </CardHeader>
             <CardContent>

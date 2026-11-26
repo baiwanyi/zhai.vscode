@@ -2,11 +2,11 @@
  * 写后回填纯计算：事实差异筛选、回填后卷章与伏笔计划推导、勾选建议的合法性校验。
  * 复用约定：章节引用键统一走「卷序-章序」口径，与伏笔 plant/payoff 及章节引用选项一致；
  * 卷章树经 press/utils 的 createChapterRefEntries 展开，展示格式走 formatChapterRefLabel。
- * 关键约束：纯函数不写盘、不读外部状态；只覆盖 actualSummary / wordCount 与伏笔引用，
+ * 关键约束：纯函数不写盘、不读外部状态；只覆盖 actualSummary / wordCount 与伏笔引用，成长线只追加；
  * 计划梗概保持原样；AI 建议坐标须在现有卷章内才写入，防幻觉引用。
  */
-import type { ClueRefSuggestion } from '@shared/types/press'
-import type { OutlineChapter, OutlineClue, OutlinePlan, OutlineVolume } from '../../types'
+import type { ClueRefSuggestion, GrowthPointSuggestion } from '@shared/types/press'
+import type { GrowthPoint, OutlineChapter, OutlineClue, OutlinePlan, OutlineVolume } from '../../types'
 import { createChapterRefEntries } from '../../utils'
 
 /** 一行回填差异：章纲计划与章节事实并排放，供作者逐项确认 */
@@ -36,6 +36,9 @@ export interface ApplyBackfillInput {
     clueSelection: readonly string[]
     suggestions: readonly ClueRefSuggestion[]
     acceptedRefKeys: readonly string[]
+    /** 成长节点建议：已采纳的按坐标追加到成长线 */
+    growthSuggestions: readonly GrowthPointSuggestion[]
+    acceptedGrowthKeys: readonly string[]
     knownRefKeys: ReadonlySet<string>
 }
 
@@ -48,6 +51,11 @@ export interface BackfillResult {
 /** 建议键：与宿主去重同口径（id:action） */
 export function refKey(suggestion: { id: string; action: 'plant' | 'payoff' }): string {
     return `${suggestion.id}:${suggestion.action}`
+}
+
+/** 成长建议键：同章同轨道只有一条，与宿主去重口径一致 */
+export function growthKey(suggestion: { track: string; volumeOrder: number; chapterOrder: number }): string {
+    return `${suggestion.track}:${String(suggestion.volumeOrder)}-${String(suggestion.chapterOrder)}`
 }
 
 /** 回收章引用键：与章节引用选项一致，未定章返回 null */
@@ -146,6 +154,8 @@ export function applyBackfill({
     clueSelection,
     suggestions,
     acceptedRefKeys,
+    growthSuggestions,
+    acceptedGrowthKeys,
     knownRefKeys,
 }: ApplyBackfillInput): BackfillResult {
     const nextVolumes = buildNextVolumes(volumes, rows, selectedChapterIds)
@@ -175,5 +185,37 @@ export function applyBackfill({
             return next
         }),
     }
-    return { volumes: nextVolumes, plan: nextPlan }
+    // 成长线只追加：坐标须在现有卷章内，且同章同轨道不重复；不改动其它卷已有节点
+    const acceptedGrowth = new Set(acceptedGrowthKeys)
+    const usedGrowthKeys = new Set(
+        plan.growth.map(
+            (point) => `${point.track}:${String(point.volumeOrder)}-${String(point.chapterOrder ?? '')}`,
+        ),
+    )
+    const appendedGrowth: GrowthPoint[] = []
+    for (const suggestion of growthSuggestions) {
+        if (
+            !acceptedGrowth.has(growthKey(suggestion)) ||
+            !knownRefKeys.has(`${String(suggestion.volumeOrder)}-${String(suggestion.chapterOrder)}`)
+        ) {
+            continue
+        }
+        const key = growthKey(suggestion)
+        if (usedGrowthKeys.has(key)) {
+            continue
+        }
+        usedGrowthKeys.add(key)
+        appendedGrowth.push({
+            id: `growth-${String(suggestion.volumeOrder)}-${String(suggestion.chapterOrder)}-${suggestion.track}`,
+            volumeOrder: suggestion.volumeOrder,
+            chapterOrder: suggestion.chapterOrder,
+            track: suggestion.track,
+            value: suggestion.value,
+            note: suggestion.note,
+        })
+    }
+    return {
+        volumes: nextVolumes,
+        plan: { ...nextPlan, growth: [...plan.growth, ...appendedGrowth] },
+    }
 }

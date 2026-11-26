@@ -1,7 +1,7 @@
 /**
- * 写作管理 AI 服务：配额校验后执行一次性生成，承载外貌、设定、条目、卷纲、章纲与卷纲单字段。
+ * 写作管理 AI 服务：配额校验后执行一次性生成，承载外貌、设定、条目、卷纲、章纲、成长线与伏笔位置识别。
  * 复用约定：模型通道取 ../ai/provider，提示词取 ./ai/*Prompt，文本清洗取 ./ai/plainText，入案收窄取 ../common/readInput。
- * 关键约束：入参先经 normalize*Request 收窄（长度、条数、类型、线索 id 白名单）；同一时刻仅一个在途请求；
+ * 关键约束：入参先经 normalize*Request 收窄（长度、条数、类型、线索 id 与章节坐标白名单）；同一时刻仅一个在途请求；
  * 模型输出不可信，JSON 解析失败按空结果返回，线索关联只接受请求清单内的 id 与合法动作。
  */
 import type { AiChatMessage, AiProvider } from '@modules/ai/provider'
@@ -20,6 +20,8 @@ import type {
     CharacterAppearanceResult,
     ClueRefsAnalyzeInput,
     ClueRefsAnalyzeResult,
+    GrowthAnalyzeInput,
+    GrowthAnalyzeResult,
     LoreDescriptionGenerateRequest,
     LoreDescriptionGenerateResult,
     OutlineActContext,
@@ -42,6 +44,7 @@ import { generateTextWithAi } from './ai/aiTextGenerator'
 import { buildAppearanceMessages } from './ai/appearancePrompt'
 import { buildChapterSummaryMessages } from './ai/chapterSummaryPrompt'
 import { buildClueRefsAnalyzeMessages, parseClueRefSuggestions } from './ai/clueRefsPrompt'
+import { buildGrowthAnalyzeMessages, parseGrowthSuggestions } from './ai/growthPrompt'
 import { buildLoreDescriptionMessages } from './ai/lorePrompt'
 import { sanitizePlainText } from './ai/plainText'
 import { buildSettingFieldMessages } from './ai/settingFieldPrompt'
@@ -131,6 +134,10 @@ const CHAPTER_SUMMARY_MAX_TOKENS = 700
 const CLUE_REFS_MAX_TOKENS = 2_000
 const CLUE_REFS_TIMEOUT_MS = 90_000
 const CLUE_REFS_MAX_OUTPUT = 20_000
+/** 成长线识别：与伏笔识别同一档，输出条数与单条长度都更短 */
+const GROWTH_MAX_TOKENS = 1_500
+const GROWTH_TIMEOUT_MS = 90_000
+const GROWTH_MAX_OUTPUT = 12_000
 
 /** 一次文本生成的运行参数：各类生成只差提示词、篇幅、模块与提示文案 */
 interface GenerationOptions {
@@ -306,6 +313,27 @@ export class PressAiService {
             input.chapters.map((chapter) => `${String(chapter.volumeOrder)}-${String(chapter.chapterOrder)}`),
         )
         return { refs: parseClueRefSuggestions(content, clueIds, chapterKeys) }
+    }
+
+    /**
+     * 成长线识别：识别主角境界 / 战力与金手指等级的变化，给出可勾选的成长节点候选。
+     * 关键约束：章节坐标白名单校验，解析不出结果时返回空数组；不写盘、不改现有成长记录。
+     * @throws 未配置密钥、配额用尽、请求超时 / 取消时抛出可读错误
+     */
+    public async analyzeGrowth(input: GrowthAnalyzeInput): Promise<GrowthAnalyzeResult> {
+        const content = await this.runGeneration({
+            module: 'outline',
+            messages: buildGrowthAnalyzeMessages(input),
+            maxTokens: GROWTH_MAX_TOKENS,
+            timeoutMs: GROWTH_TIMEOUT_MS,
+            maxLength: GROWTH_MAX_OUTPUT,
+            emptyMessage: 'AI 未返回可用的成长节点，请重试',
+            abortMessage: 'AI 成长线识别已取消或超时，请重试',
+        })
+        const chapterKeys = new Set(
+            input.chapters.map((chapter) => `${String(chapter.volumeOrder)}-${String(chapter.chapterOrder)}`),
+        )
+        return { points: parseGrowthSuggestions(content, chapterKeys) }
     }
 
     /** 执行一次文本生成：占请求位 → 请求模型 → 清洗 → 计次记账，各类生成共用同一套流程 */

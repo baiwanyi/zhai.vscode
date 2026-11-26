@@ -25,6 +25,8 @@ interface OutlineHeaderProps {
     volumeCount: number
     module: OutlineModuleKey
     volumeFilter: string
+    /** 章纲列表的修订标记筛选：'all' 或三态之一 */
+    revisionFilter: string
     query: string
     volumeOptions: readonly { value: string; label: string }[]
     summary: ReturnType<typeof summarizeWorkspace>
@@ -38,6 +40,7 @@ interface OutlineHeaderProps {
     onApplyBackfill: (next: { volumes: OutlineVolume[]; plan: OutlinePlan }) => void
     onModuleChange: (module: OutlineModuleKey) => void
     onVolumeChange: (value: string) => void
+    onRevisionChange: (value: string) => void
     onQueryChange: (value: string) => void
 }
 
@@ -50,6 +53,7 @@ export function OutlineHeader({
     volumeCount,
     module,
     volumeFilter,
+    revisionFilter,
     query,
     volumeOptions,
     summary,
@@ -63,6 +67,7 @@ export function OutlineHeader({
     onApplyBackfill,
     onModuleChange,
     onVolumeChange,
+    onRevisionChange,
     onQueryChange,
 }: OutlineHeaderProps): JSX.Element {
     return (
@@ -107,9 +112,11 @@ export function OutlineHeader({
                 module={module}
                 volumeFilter={volumeFilter}
                 volumeOptions={volumeOptions}
+                revisionFilter={revisionFilter}
                 query={query}
                 onModuleChange={onModuleChange}
                 onVolumeChange={onVolumeChange}
+                onRevisionChange={onRevisionChange}
                 onQueryChange={onQueryChange}
             />
         </AppHeader>

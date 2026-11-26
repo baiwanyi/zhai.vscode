@@ -1,9 +1,9 @@
 /**
- * 大纲视图派生数据：把原始工作区按选中项、卷筛选与搜索词收窄成页面与各面板可用的只读快照。
+ * 大纲视图派生数据：把原始工作区按选中项、卷筛选、修订标记与搜索词收窄成页面与各面板可用的只读快照。
  * 复用约定：卷选项、伏笔预警、章节引用、统计与生成上下文一律复用 ../utils 既有纯函数，不重复实现口径；
  * 入参只收工作区与视图条件，写盘与选中副作用仍由页面及 useOutlinePageActions 承担。
  * 关键约束：entries 为全量树，treeEntries 仅收窄列表、不影响详情解析；generatingVolume 为空时生成上下文为空数组；
- * 卷筛选取值用卷 id 而非卷名，标题搜索按 chapterTitleLabel 口径，避免与展示层脱节。
+ * 卷筛选取值用卷 id 而非卷名，标题搜索按 chapterTitleLabel 口径；三项列表筛选之间是「与」关系。
  */
 import { useMemo } from 'react'
 import type { OutlineTreeEntry, OutlineWorkspace } from '../../types'
@@ -23,6 +23,8 @@ interface UseOutlineDerivedOptions {
     workspace: OutlineWorkspace
     selectedChapterId: string | null
     volumeFilter: string
+    /** 修订标记筛选：'all' 或三态之一，只收窄章纲列表 */
+    revisionFilter: string
     query: string
 }
 
@@ -30,6 +32,7 @@ export function useOutlineDerived({
     workspace,
     selectedChapterId,
     volumeFilter,
+    revisionFilter,
     query,
 }: UseOutlineDerivedOptions): {
     entries: OutlineTreeEntry[]
@@ -69,11 +72,14 @@ export function useOutlineDerived({
             })),
         [workspace.volumes],
     )
-    /** 章节列表展示项：卷筛选与标题搜索只收窄列表，详情与选中项仍按全量 entries 解析 */
+    /** 章节列表展示项：卷筛选、修订标记与标题搜索只收窄列表，详情与选中项仍按全量 entries 解析 */
     const treeEntries = useMemo(() => {
         const keyword = query.trim().toLowerCase()
         return entries.filter((entry) => {
             if (volumeFilter !== 'all' && entry.volume.id !== volumeFilter) {
+                return false
+            }
+            if (revisionFilter !== 'all' && entry.chapter.revision !== revisionFilter) {
                 return false
             }
             if (keyword.length === 0) {
@@ -81,7 +87,7 @@ export function useOutlineDerived({
             }
             return chapterTitleLabel(entry.chapter).toLowerCase().includes(keyword)
         })
-    }, [entries, query, volumeFilter])
+    }, [entries, query, revisionFilter, volumeFilter])
     /** 卷纲是否已有内容：任一卷填了核心事件 / 主要情节 / 转折 / 卷末结果，就视为需要确认覆盖 */
     const hasVolumeOutline = useMemo(
         () =>

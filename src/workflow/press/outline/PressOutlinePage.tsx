@@ -4,7 +4,7 @@
  * 关键约束：模块切换只切视图；各面板只写自己段落；生成卷章时把结构与本卷伏笔作为约束传入，
  * 草案里的伏笔关联在写入时按实际章序回写伏笔表；清空章纲只删条目、不碰 Chapters 文件。
  */
-import { FilePlus, Layers, Lightbulb, ListPlus } from 'lucide-react'
+import { FilePlus, Layers, Lightbulb, ListPlus, TrendingUp } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import type { PressExtractedVolume, VolumeOutlineDraft } from '@shared/types/press'
 import { AppPage } from '@webview/components/AppPage'
@@ -35,6 +35,7 @@ const ADD_ACTION_META: Record<OutlineModuleKey, { label: string; icon: ReactNode
     chapter: { label: '添加章节', icon: <FilePlus /> },
     structure: { label: '添加阶段', icon: <ListPlus /> },
     clue: { label: '添加伏笔', icon: <Lightbulb /> },
+    growth: { label: '添加节点', icon: <TrendingUp /> },
 }
 
 interface PressOutlinePageProps {
@@ -77,13 +78,15 @@ export function PressOutlinePage({
     const [module, setModule] = useState<OutlineModuleKey>('volume')
     /** 当前卷：'all' 为全部卷，否则为卷 id；兼作卷纲视图的开关，同时收窄左侧章节列表 */
     const [volumeFilter, setVolumeFilter] = useState('all')
+    /** 修订标记筛选：'all' 或三态之一，与卷筛选叠加收窄列表 */
+    const [revisionFilter, setRevisionFilter] = useState('all')
     /** 标题搜索词：与卷筛选叠加，只收窄左侧列表 */
     const [query, setQuery] = useState('')
     const extractState = useOutlineExtract(dirPath)
     const { openDoc } = useOpenProjectDoc(dirPath)
 
     const plan = workspace.plan
-    const derived = useOutlineDerived({ workspace, selectedChapterId, volumeFilter, query })
+    const derived = useOutlineDerived({ workspace, selectedChapterId, volumeFilter, revisionFilter, query })
     const {
         entries,
         selectedEntry,
@@ -135,6 +138,7 @@ export function PressOutlinePage({
         chapter: actions.handleCreateChapter,
         structure: actions.handleCreateAct,
         clue: actions.handleCreateClue,
+        growth: actions.handleCreateGrowth,
     }
     const addAction = ADD_ACTION_META[module]
 
@@ -150,6 +154,7 @@ export function PressOutlinePage({
                     volumeCount={workspace.volumes.length}
                     module={module}
                     volumeFilter={volumeFilter}
+                    revisionFilter={revisionFilter}
                     query={query}
                     volumeOptions={volumeOptions}
                     summary={summary}
@@ -166,6 +171,7 @@ export function PressOutlinePage({
                         setSelectedChapterId(null)
                     }}
                     onVolumeChange={actions.handleVolumeChange}
+                    onRevisionChange={setRevisionFilter}
                     onQueryChange={setQuery}
                 />
 
@@ -182,6 +188,7 @@ export function PressOutlinePage({
                     clueWarnings={clueWarnings}
                     actVolumeOptions={actVolumeOptions}
                     volumeFilter={volumeFilter}
+                    revisionFilter={revisionFilter}
                     query={query}
                     setSelectedChapterId={setSelectedChapterId}
                     onUpdatePlan={onUpdatePlan}

@@ -1,7 +1,7 @@
 /**
- * 大纲分层导航的读写往返：结构纲、伏笔线索与分卷规划三个段落，顺序与段落标题必须与宿主 writer 的落点表一致。
+ * 大纲分层导航的读写往返：结构纲、伏笔线索、成长线与分卷规划四个段落，顺序与段落标题必须与宿主 writer 的落点表一致。
  * 复用约定：序列化与解析直接调生产代码，测试只拼文档外壳（一级标题与二级段落标题）；
- * 断言覆盖结构纲、线索、卷章与章纲的节奏字段。
+ * 断言覆盖结构纲、线索、成长线、卷章与章纲的节奏字段。
  * 关键约束：段落漏测等于回写静默丢字段——每个回写段落都必须有往返断言；
  * 故事核（梗概、冲突、主题、主角弧光）只由作品设定的「作品设定」段解析，旧大纲的全书纲段不再读取；
  * 人物信息只在角色设定（人物卡）里维护，旧大纲的人物纲段同样不再解析；
@@ -106,6 +106,7 @@ const PLAN: OutlinePlan = {
             note: '',
         },
     ],
+    growth: [],
 }
 
 const VOLUMES: OutlineVolume[] = [
@@ -147,6 +148,7 @@ const VOLUMES: OutlineVolume[] = [
                 characterIds: ['12345678'],
                 location: '城南修表铺',
                 wordCount: 2680,
+                revision: 'normal',
                 hook: 'suspense',
                 pacing: 'tension',
                 tension: 4,
@@ -268,9 +270,9 @@ describe('大纲四段落往返', () => {
         })
     })
 
-    it('四个段落各自成文：卷纲与章节内容互不混入', () => {
+    it('五个段落各自成文：卷纲与章节内容互不混入', () => {
         const sections = serializeOutlineSections(PLAN, VOLUMES, CHARACTERS)
-        expect(Object.keys(sections)).toHaveLength(4)
+        expect(Object.keys(sections)).toHaveLength(5)
         expect(sections.clues).toContain('旧表编号')
         expect(sections.clues).not.toContain('修表铺的客人')
         expect(sections.chapters).toContain('修表铺的客人')
@@ -278,6 +280,62 @@ describe('大纲四段落往返', () => {
         expect(sections.volumeOutlines).toContain('核心事件')
         expect(sections.volumeOutlines).not.toContain('修表铺的客人')
         expect(sections.structure).toContain('中点')
+        // 成长线是独立段落：没有节点时整段为空，不混入其它模块内容
+        expect(sections.growth).toBe('')
+    })
+
+    it('成长线按卷往返：章级、卷级与备注各归其位', () => {
+        const plan: OutlinePlan = {
+            ...PLAN,
+            growth: [
+                {
+                    id: 'growth-1',
+                    volumeOrder: 1,
+                    chapterOrder: 2,
+                    track: 'protagonist',
+                    value: '筑基成功',
+                    note: '首次突破',
+                },
+                {
+                    id: 'growth-2',
+                    volumeOrder: 1,
+                    chapterOrder: null,
+                    track: 'goldenFinger',
+                    value: '解锁第二层',
+                    note: '',
+                },
+                {
+                    id: 'growth-3',
+                    volumeOrder: 2,
+                    chapterOrder: null,
+                    track: 'protagonist',
+                    value: '结丹',
+                    note: '以断指为代价',
+                },
+            ],
+        }
+        const sections = serializeOutlineSections(plan, VOLUMES, CHARACTERS)
+        const outline = ['# 大纲', '', '## 成长线', '', sections.growth, ''].join('\n')
+        const parsed = parseProjectWorkspace(
+            { readme: '', setting: '', characters: CHARACTER_DOC, outline },
+            EMPTY_SETTING_SECTIONS,
+            '未命名',
+        )
+
+        expect(
+            parsed.plan.growth.map((point) => ({
+                volumeOrder: point.volumeOrder,
+                chapterOrder: point.chapterOrder,
+                track: point.track,
+                value: point.value,
+                note: point.note,
+            })),
+        ).toEqual([
+            { volumeOrder: 1, chapterOrder: 2, track: 'protagonist', value: '筑基成功', note: '首次突破' },
+            { volumeOrder: 1, chapterOrder: null, track: 'goldenFinger', value: '解锁第二层', note: '' },
+            // 章序留空时备注不能被读成章号
+            { volumeOrder: 2, chapterOrder: null, track: 'protagonist', value: '结丹', note: '以断指为代价' },
+        ])
     })
 
     it('旧大纲的设定纲 / 节奏情绪 / 时间线段落不参与解析也不影响其它字段', () => {

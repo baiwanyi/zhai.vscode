@@ -293,6 +293,8 @@ export type HostMethodName =
     | 'press/workspace'
     | 'pressAi/aiAnalyzeClueRefs'
     | 'pressAi/aiAnalyzeClueRefs/abort'
+    | 'pressAi/aiAnalyzeGrowth'
+    | 'pressAi/aiAnalyzeGrowth/abort'
     | 'pressAi/aiAppearance'
     | 'pressAi/aiAppearance/abort'
     | 'pressAi/aiChapterSummary'

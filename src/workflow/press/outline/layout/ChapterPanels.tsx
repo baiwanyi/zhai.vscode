@@ -1,15 +1,18 @@
 /**
  * 章纲章节列表：把已过滤的章节平铺成一列，点选由调用方打开编辑对话框。
- * 复用约定：列表行用 ItemGroup + Item，空态（空作品 / 筛选为空）均用 blocks/Empty；
- * 行内标题与字数取 utils 的 stripChapterOrderPrefix / formatWordCount，无障碍标签用 chapterTitleLabel。
- * 关键约束：本组件只读；列表不分卷也不分阶段，卷筛选与标题搜索由调用方先过滤 entries，行顺序始终是全书章序；
- * 空作品给出草引导、筛选为空给无匹配提示，两者文案不可混用；行内只放章节序号、标题与已写字数，卷名只进 aria-label。
+ * 复用约定：列表行用 ItemGroup + Item，空态（空作品 / 筛选为空）均用 blocks/Empty，徽标取 blocks/Badge；
+ * 行内标题与字数取 utils 的 stripChapterOrderPrefix / formatWordCount，修订文案取 constants 元数据表。
+ * 关键约束：本组件只读；列表不分卷也不分阶段，卷筛选、标题搜索与标记筛选由调用方先过滤 entries；
+ * 空作品给出草引导、筛选为空给无匹配提示，两者文案不可混用；
+ * 行内只放章节序号、标题、修订徽标与已写字数，卷名只进 aria-label；正常态不显示徽标。
  */
 import { ScrollText } from 'lucide-react'
 import { Item, ItemActions, ItemContent, ItemGroup, ItemTitle } from '@components/ui/item'
+import { Badge } from '@webview/blocks/Badge'
 import { Empty } from '@webview/blocks/Empty'
 import type { OutlineTreeEntry } from '../../types'
 import type { JSX } from 'react'
+import { CHAPTER_REVISION_META } from '../../constants'
 import { chapterTitleLabel, formatWordCount, stripChapterOrderPrefix } from '../../utils'
 
 interface ChapterPanelsProps {
@@ -57,6 +60,11 @@ export function ChapterPanels({
                         <ItemTitle className="w-auto min-w-0 flex-1">
                             {stripChapterOrderPrefix(chapter.title)}
                         </ItemTitle>
+                        {chapter.revision === 'normal' ? null : (
+                            <Badge variant={CHAPTER_REVISION_META[chapter.revision].tone} className="shrink-0">
+                                {CHAPTER_REVISION_META[chapter.revision].label}
+                            </Badge>
+                        )}
                     </ItemContent>
                     <ItemActions className="shrink-0 text-muted-foreground tabular-nums">
                         {`${formatWordCount(chapter.wordCount)} 字`}

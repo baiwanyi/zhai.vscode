@@ -32,6 +32,7 @@ import type {
     ChapterSnapshotRestoreResult,
     ChapterSnapshotVersionsResult,
     ClueRefsAnalyzeResult,
+    GrowthAnalyzeResult,
     OpenPressProjectResult,
     PressApplyResult,
     PressOpenDocResult,
@@ -79,7 +80,12 @@ import type {
     DocSnapshotListResult,
     DocSnapshotRestoreResult,
 } from '@shared/types/snapshot'
-import { normalizeClueRefsAnalyzeRequest, readChapterExcerpts, readChapterFacts } from './chapterFacts'
+import {
+    normalizeClueRefsAnalyzeRequest,
+    normalizeGrowthAnalyzeRequest,
+    readChapterExcerpts,
+    readChapterFacts,
+} from './chapterFacts'
 import { hasProjectFiles, listPressProjects, readProjectDetail } from './projectRepository'
 import { openProjectByDir, openProjectDoc } from './projectService'
 import { readProjectWorkspace } from './projectWorkspace'
@@ -158,6 +164,10 @@ export class PressRoutes {
             case 'pressAi/aiAnalyzeClueRefs':
                 return this.analyzeClueRefs(payload)
             case 'pressAi/aiAnalyzeClueRefs/abort':
+                return this.service.abortGeneration()
+            case 'pressAi/aiAnalyzeGrowth':
+                return this.analyzeGrowth(payload)
+            case 'pressAi/aiAnalyzeGrowth/abort':
                 return this.service.abortGeneration()
             case 'pressAi/aiAppearance':
                 return this.service.generateAppearance(payload)
@@ -365,6 +375,19 @@ export class PressRoutes {
         }
         const chapters = await readChapterExcerpts(this.db, request.dirPath)
         return this.service.analyzeClueRefs({ clues: request.clues, chapters })
+    }
+
+    /**
+     * 成长线识别：宿主按目录读取正文摘录后交给 AI，前端只传当前成长表。
+     * 安全约束：目录先按索引库回查，不采信前端路径；只读，不回写章节文件，也不直接写入成长线。
+     */
+    private async analyzeGrowth(payload: unknown): Promise<GrowthAnalyzeResult> {
+        const request = normalizeGrowthAnalyzeRequest(payload)
+        if (!hasProjectFiles(this.db, request.dirPath)) {
+            throw new Error(`作品不在索引中，无法识别成长节点：${request.dirPath}`)
+        }
+        const chapters = await readChapterExcerpts(this.db, request.dirPath)
+        return this.service.analyzeGrowth({ points: request.points, chapters })
     }
 
     /**

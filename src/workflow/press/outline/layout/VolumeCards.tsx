@@ -1,15 +1,18 @@
 /**
  * 卷纲页：每卷一张卡片，卡片只读展示核心事件，点击整卡打开对话框编辑这一卷的卷纲。
- * 复用约定：卡片取 ui/card，空态取 blocks/Empty，更多操作取 ui/dropdown-menu，
- * 编辑弹层由同目录 VolumeEditDialog 承担（卷标题 / 章节数 / 核心事件 / 主要情节 / 关键转折 / 卷末结果）。
- * 关键约束：卡片不直接改数据，编辑与保存都在弹层里完成，本组件只持有「正在编辑哪一卷」；
- * 整卡点击只打开编辑弹层，更多菜单的触发器与菜单内容都要阻止冒泡，否则会连带触发弹层；
- * 菜单只上报动作（编辑 / 上移 / 下移 / 生成章纲 / 清空章纲 / 添加到 AI 对话 / 删除），顺序调整与清空由页面落盘；
- * 新增卷入口在页头动作菜单，进入章纲页走页头模块切换 + 卷筛选，这里不再放入口。
+ * 复用约定：卡片取 ui/card，空态取 blocks/Empty，更多操作取 ui/dropdown-menu，出场折叠取 ui/collapsible，
+ * 出场名单取 block/VolumeCastList（与卷末统计共用），编辑弹层由同目录 VolumeEditDialog 承担，
+ * 卷末统计由 VolumeStatsDialog 承担，人物出场取 utils 的 summarizeVolumeCast。
+ * 关键约束：卡片不直接改数据，编辑与保存都在弹层里完成，本组件只持有「正在编辑哪一卷」与「正在看哪一卷统计」；
+ * 整卡点击只打开编辑弹层，更多菜单与折叠触发器都要阻止冒泡，否则会连带触发弹层；
+ * 出场统计只读聚合 characterIds，只列出有出场章节的人物：折叠触发器只显示人物总数，
+ * 展开名单由 VolumeCastList 按角色分类渲染；本卷无人出场时不再渲染折叠块，只留一行「暂无」。
  */
 import {
     ArrowDown,
     ArrowUp,
+    ChartColumn,
+    ChevronRight,
     Ellipsis,
     Eraser,
     ListTree,
@@ -20,6 +23,7 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -30,9 +34,11 @@ import {
 import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { VolumeEditDialog } from './VolumeEditDialog'
-import type { CharacterCard, OutlineVolume, ProjectSetting } from '../../types'
+import { VolumeStatsDialog } from './VolumeStatsDialog'
+import type { CharacterCard, OutlineModuleKey, OutlinePlan, OutlineVolume, ProjectSetting } from '../../types'
 import type { JSX } from 'react'
-import { volumeTitleLabel } from '../../utils'
+import { summarizeVolumeCast, volumeTitleLabel } from '../../utils'
+import { VolumeCastList } from '../block/VolumeCastList'
 
 interface VolumeCardsProps {
     volumes: OutlineVolume[]
@@ -40,6 +46,8 @@ interface VolumeCardsProps {
     setting: ProjectSetting
     /** 人物卡：同上，提供可出场人物 */
     characters: CharacterCard[]
+    /** 大纲计划：卷末统计读取伏笔与结构阶段 */
+    plan: OutlinePlan
     /** 保存一卷的卷纲补丁：由编辑弹层一次性回传 */
     onUpdate: (volumeId: string, patch: Partial<OutlineVolume>) => void
     /** 上移一位：顺序即卷号，页面按新顺序整体落盘 */
@@ -54,12 +62,15 @@ interface VolumeCardsProps {
     onAddToChat: (volume: OutlineVolume, index: number) => void
     /** 删除这一卷：页面弹确认后整体落盘 */
     onDelete: (volume: OutlineVolume) => void
+    /** 卷末统计的跳转：切到对应模块，章纲页带上卷 id */
+    onNavigate: (module: OutlineModuleKey, volumeId?: string) => void
 }
 
 export function VolumeCards({
     volumes,
     setting,
     characters,
+    plan,
     onUpdate,
     onMoveUp,
     onMoveDown,
@@ -67,9 +78,13 @@ export function VolumeCards({
     onClearChapters,
     onAddToChat,
     onDelete,
+    onNavigate,
 }: VolumeCardsProps): JSX.Element {
     const [editingVolumeId, setEditingVolumeId] = useState<string | null>(null)
+    const [statsVolumeId, setStatsVolumeId] = useState<string | null>(null)
     const editingVolume = volumes.find((volume) => volume.id === editingVolumeId) ?? null
+    const statsVolumeIndex = volumes.findIndex((volume) => volume.id === statsVolumeId)
+    const statsVolume = volumes[statsVolumeIndex] ?? null
 
     const handleOpenEdit = (volume: OutlineVolume): void => {
         setEditingVolumeId(volume.id)
@@ -94,6 +109,8 @@ export function VolumeCards({
                 <div className="grid grid-cols-1 gap-3 @3xl:grid-cols-2">
                     {volumes.map((volume, index) => {
                         const title = volumeTitleLabel(volume.name, index)
+                        const cast = summarizeVolumeCast(volume, characters)
+                        const appeared = cast.filter((item) => item.chapterCount > 0)
                         return (
                             <Card
                                 key={volume.id}
@@ -144,6 +161,10 @@ export function VolumeCards({
                                                     <MessageSquarePlus />
                                                     添加到 AI 对话
                                                 </DropdownMenuItem>
+                                                <DropdownMenuItem onSelect={() => setStatsVolumeId(volume.id)}>
+                                                    <ChartColumn />
+                                                    卷末统计
+                                                </DropdownMenuItem>
                                                 <DropdownMenuSeparator />
                                                 <DropdownMenuItem
                                                     disabled={index === 0}
@@ -184,12 +205,32 @@ export function VolumeCards({
                                         </DropdownMenu>
                                     </CardAction>
                                 </CardHeader>
-                                <CardContent>
+                                <CardContent className="flex flex-col gap-2">
                                     {volume.coreEvent.trim().length > 0 ? (
                                         <p className="whitespace-pre-line text-muted-foreground">{volume.coreEvent}</p>
                                     ) : (
                                         <p className="text-muted-foreground/70">还没有核心事件，点击卡片填写</p>
                                     )}
+                                    {appeared.length > 0 ? (
+                                        <Collapsible>
+                                            <CollapsibleTrigger asChild>
+                                                <Button
+                                                    variant="ghost"
+                                                    className="group/cast w-full justify-start"
+                                                    onClick={(event) => event.stopPropagation()}
+                                                    onKeyDown={(event) => event.stopPropagation()}
+                                                >
+                                                    本卷出场：共 {appeared.length} 人
+                                                    <ChevronRight className="ml-auto shrink-0 transition-transform group-data-[state=open]/cast:rotate-90" />
+                                                </Button>
+                                            </CollapsibleTrigger>
+                                            <CollapsibleContent className="pt-3 pl-3">
+                                                <VolumeCastList cast={cast} emptyText="本卷还没有出场人物" />
+                                            </CollapsibleContent>
+                                        </Collapsible>
+                                    ) : cast.length > 0 ? (
+                                        <p className="text-muted-foreground/70">本卷出场：暂无</p>
+                                    ) : null}
                                 </CardContent>
                             </Card>
                         )
@@ -206,6 +247,20 @@ export function VolumeCards({
                 setting={setting}
                 characters={characters}
                 onSave={onUpdate}
+            />
+            <VolumeStatsDialog
+                isOpen={statsVolume !== null}
+                onOpenChange={(isOpen): void => {
+                    if (!isOpen) {
+                        setStatsVolumeId(null)
+                    }
+                }}
+                volume={statsVolume}
+                volumeIndex={statsVolumeIndex}
+                volumes={volumes}
+                plan={plan}
+                characters={characters}
+                onNavigate={onNavigate}
             />
         </div>
     )

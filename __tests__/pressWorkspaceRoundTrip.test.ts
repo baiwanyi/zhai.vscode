@@ -124,6 +124,7 @@ const VOLUMES: OutlineVolume[] = [
                 characterIds: ['12345678'],
                 location: '星月宗',
                 wordCount: 0,
+                revision: 'normal',
                 hook: 'suspense',
                 pacing: 'tension',
                 tension: 3,

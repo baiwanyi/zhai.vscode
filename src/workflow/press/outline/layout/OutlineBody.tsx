@@ -1,14 +1,16 @@
 /**
- * 大纲主体内容区：按当前模块在卷卡片、章纲列表、结构面板与伏笔面板间分发，统一挂在单一滚动容器内。
+ * 大纲主体内容区：按当前模块在卷卡片、章纲列表、结构面板、伏笔面板与成长面板间分发，统一挂在单一滚动容器内。
  * 复用约定：各面板与 ChapterPanels 均取同目录组件，章节引用/上下章由 ../utils 的 resolveChapterViewContext 解析；
  * 章纲详情以全屏 Dialog 承载，编辑/查纲/回填三页签在对话框内切换，开合由选中章节驱动。
- * 关键约束：结构/伏笔面板只写自己段落；模块切换的选中清理由页面回调负责，本组件只决定渲染分支；
+ * 关键约束：每个模块只写自己段落，分支必须显式判断，不能用 else 兜底新模块；
+ * 模块切换的选中清理由页面回调负责，本组件只决定渲染分支；
  * 列表只负责选章，对话框关闭仅通知外部清选中；切章以章节 id 作 key 重建对话框，清空回填勾选。
  */
 import { AppContent } from '@webview/components/AppPage'
 import { ChapterEditDialog } from './ChapterEditDialog'
 import { ChapterPanels } from './ChapterPanels'
 import { ClueTrackPanels } from './ClueTrackPanels'
+import { GrowthPanels } from './GrowthPanels'
 import { StructurePanel } from './StructureActPanels'
 import { VolumeCards } from './VolumeCards'
 import type {
@@ -38,6 +40,8 @@ interface OutlineBodyProps {
     clueWarnings: ReturnType<typeof findClueWarnings>
     actVolumeOptions: { value: string; label: string }[]
     volumeFilter: string
+    /** 修订标记筛选：'all' 或三态之一 */
+    revisionFilter: string
     query: string
     setSelectedChapterId: (id: string | null) => void
     onUpdatePlan: (section: OutlineSectionKey, patch: Partial<OutlinePlan>) => void
@@ -58,6 +62,7 @@ export function OutlineBody({
     clueWarnings,
     actVolumeOptions,
     volumeFilter,
+    revisionFilter,
     query,
     setSelectedChapterId,
     onUpdatePlan,
@@ -74,6 +79,15 @@ export function OutlineBody({
                     acts={plan.acts}
                     volumeOptions={actVolumeOptions}
                     onChange={(acts) => onUpdatePlan('structure', { acts })}
+                />
+            )
+        }
+        if (module === 'growth') {
+            return (
+                <GrowthPanels
+                    points={plan.growth}
+                    volumes={workspace.volumes}
+                    onChange={(growth) => onUpdatePlan('growth', { growth })}
                 />
             )
         }
@@ -94,7 +108,9 @@ export function OutlineBody({
             <ChapterPanels
                 entries={treeEntries}
                 hasAnyChapter={entries.length > 0}
-                isListFiltered={volumeFilter !== 'all' || query.trim().length > 0}
+                isListFiltered={
+                    volumeFilter !== 'all' || revisionFilter !== 'all' || query.trim().length > 0
+                }
                 onSelectChapter={actions.handleSelectChapter}
             />
         )
@@ -135,6 +151,7 @@ export function OutlineBody({
                     volumes={workspace.volumes}
                     setting={workspace.setting}
                     characters={workspace.characters}
+                    plan={plan}
                     onUpdate={onUpdateVolume}
                     onMoveUp={(volume) => actions.handleMoveVolume(volume.id, -1)}
                     onMoveDown={(volume) => actions.handleMoveVolume(volume.id, 1)}
@@ -142,6 +159,7 @@ export function OutlineBody({
                     onClearChapters={actions.handleClearVolumeChapters}
                     onAddToChat={actions.handleAddVolumeToChat}
                     onDelete={actions.handleDeleteVolume}
+                    onNavigate={actions.handleOpenModule}
                 />
             ) : (
                 renderPanel()

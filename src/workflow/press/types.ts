@@ -14,15 +14,22 @@ import type { CharacterPortrait, PortraitStyle, PressLoreKind } from '@shared/ty
 export type HookKind = 'suspense' | 'twist' | 'emotion' | 'none'
 
 /**
- * 功能模块：结构纲、伏笔线索、卷纲与章纲四个页面。
+ * 章节修订标记：正常 / 待改 / 废弃，只表达作者的修订意图。
+ * 关键约束：与正文字数决定的进度口径正交，不参与进度统计、写作位置、伏笔自动回收等任何自动链路。
+ */
+export type ChapterRevision = 'normal' | 'revise' | 'discard'
+
+/**
+ * 功能模块：结构纲、伏笔线索、成长线、卷纲与章纲五个页面。
  * 卷纲按卡片列出每一卷（预计章节数 / 核心事件 / 主要情节），章纲把全部章节平铺并按卷筛选；
+ * 成长线按卷展示境界 / 战力 / 金手指等级的阶段实例，默认由写后回填识别、作者勾选后写入；
  * 设定纲、节奏情绪、时间线都不再作为模块：设定归作品设定（世界观 / 金手指 / 势力 / 地点 / 物品），
  * 节奏类型作为章纲字段维护，时间线数据只留在文档里供作者参考。
  */
-export type OutlineModuleKey = 'structure' | 'clue' | 'volume' | 'chapter'
+export type OutlineModuleKey = 'structure' | 'clue' | 'volume' | 'chapter' | 'growth'
 
 /** 大纲段落键：与宿主 writer 的段落落点表、PressApplyRequest.outlineSections 共用 */
-export type OutlineSectionKey = 'structure' | 'volumeOutlines' | 'chapters' | 'clues'
+export type OutlineSectionKey = 'structure' | 'volumeOutlines' | 'chapters' | 'clues' | 'growth'
 
 /**
  * 章节引用：卷序 + 卷内章序。
@@ -104,12 +111,31 @@ export interface OutlineScene {
     emotion: string
 }
 
-/** 大纲的功能模块集合：除卷章外的两个段落一次装配进工作区（人物信息取人物卡，不在此维护） */
+/** 成长线轨道：主角自身的境界 / 战力，或金手指的等级与能力 */
+export type GrowthTrack = 'protagonist' | 'goldenFinger'
+
+/**
+ * 成长节点：记录「第几卷第几章到了哪一级」的阶段实例，值为自由文本。
+ * 关键约束：与伏笔一样按「卷序 + 章序」定位，不使用章 id；
+ * chapterOrder 为 null 表示只记到卷；value 兼容「筑基成功」「战力 1000」「+100」等写法。
+ */
+export interface GrowthPoint {
+    id: string
+    volumeOrder: number
+    chapterOrder: number | null
+    track: GrowthTrack
+    value: string
+    note: string
+}
+
+/** 大纲的功能模块集合：除卷章外的三个段落一次装配进工作区（人物信息取人物卡，不在此维护） */
 export interface OutlinePlan {
     /** 结构纲：阶段与节拍 */
     acts: OutlineAct[]
     /** 伏笔线索表 */
     clues: OutlineClue[]
+    /** 成长线：按卷累积的成长节点，由回填识别或作者手动增删 */
+    growth: GrowthPoint[]
 }
 
 /** 角色分类：主角、配角、反派、中立、龙套 */
@@ -184,6 +210,8 @@ export interface OutlineChapter {
     location: string
     /** 已写正文字数，用于进度对比 */
     wordCount: number
+    /** 修订标记：默认「正常」，只作返工提示，不替代 wordCount 的客观进度口径 */
+    revision: ChapterRevision
     hook: HookKind
     /** 节奏类型：紧张、铺垫、爽点、虐点、喘息，用于避免连续同类章节 */
     pacing: PacingKind

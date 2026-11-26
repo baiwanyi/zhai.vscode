@@ -43,6 +43,7 @@ const SETTING_SECTION_TITLE = '提取设定'
  * 大纲段落落点表：键与 PressOutlineSectionKey 一一对应，值即 大纲.md 里的二级标题。
  * 关键约束：改动标题必须同步改解析端的段落关键词；
  * 卷纲与章节内容各自整段替换——卷名写在两段的三级标题里，前端一次提交两段即可保证同步；
+ * 成长线是独立段落，按卷切块，与结构纲 / 伏笔线索互不覆盖；
  * 设定纲 / 节奏情绪 / 时间线已不在表内，旧文档里的这些段落不解析也不回写，原样保留。
  */
 const OUTLINE_SECTION_TITLES: Readonly<Record<PressOutlineSectionKey, string>> = {
@@ -50,6 +51,7 @@ const OUTLINE_SECTION_TITLES: Readonly<Record<PressOutlineSectionKey, string>> =
     volumeOutlines: '卷纲',
     chapters: '章节内容',
     clues: '伏笔线索',
+    growth: '成长线',
 }
 
 /** 四份文档文件名：与 projectFactory 的骨架命名保持一致 */
