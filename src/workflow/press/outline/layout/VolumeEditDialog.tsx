@@ -1,7 +1,7 @@
 /**
  * 卷纲编辑对话框：编辑一卷的卷标题、预计章节数、核心事件、主要情节、关键转折与卷末结果。
  * 复用约定：骨架取业务公共层的 Dialog；草稿状态、AI 生成保护与补丁归一取 useVolumeEditDraft；
- * 情节列表取 block/VolumePlotItemList（内部用 VolumePlotItemRow），AI 字段取 block/VolumeEditAiField，其余字段取 ui/field 与 ui/input；
+ * 情节列表取 block/VolumePlotItemFields（内部用 VolumePlotItem），AI 字段取 block/VolumeEditAiField，其余字段取 ui/field 与 ui/input；
  * 保存结果以 sonner 反馈，AI 结果未覆盖时的提示由 onNotice 或 toast.info 承担。
  * 关键约束：编辑期只在本地草稿里改，点「保存」才回传一次补丁，中途取消不写盘；
  * 生成期间禁用提交，结果只在字段未被手动改动时写回，避免长请求吞掉输入或让结果白等；
@@ -14,7 +14,7 @@ import { Dialog } from '@webview/components/Dialog'
 import type { CharacterCard, OutlineVolume, ProjectSetting } from '../../types'
 import type { JSX } from 'react'
 import { VolumeEditAiField } from '../block/VolumeEditAiField'
-import { VolumePlotItemList } from '../block/VolumePlotItemList'
+import { VolumePlotItemFields } from '../block/VolumePlotItemFields'
 import { useVolumeEditDraft } from '../hooks/useVolumeEditDraft'
 import { CORE_EVENT_MAX_LENGTH, EXPECTED_CHAPTERS_MAX } from '../utils/volumeEditDraft'
 
@@ -125,7 +125,7 @@ export function VolumeEditDialog({
                     }}
                 />
 
-                <VolumePlotItemList
+                <VolumePlotItemFields
                     label="主要情节"
                     hint="按发生顺序写：先发生什么、再发生什么，一条一件事"
                     addLabel="添加情节"
@@ -134,7 +134,7 @@ export function VolumeEditDialog({
                     onChange={setMainPlot}
                 />
 
-                <VolumePlotItemList
+                <VolumePlotItemFields
                     label="关键转折"
                     hint="写真正改变走向的节点，一到三条即可"
                     addLabel="添加转折"
