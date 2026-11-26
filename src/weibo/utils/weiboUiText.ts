@@ -39,6 +39,7 @@ export const WEIBO_UI_TEXT = {
         feed: '读取失败',
         group: '没有读到默认分组',
         credential: '登录状态读取失败',
+        credentialInvalid: '微博 Cookie 已失效',
         comments: '评论读取失败',
         moreComments: '更多评论加载失败',
         reposts: '转发读取失败',

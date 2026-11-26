@@ -3,6 +3,7 @@
  * 复用约定：骨架取 @webview/blocks/StateEmpty，操作按钮取 @webview/components/Button；
  * 文案只在本文件维护，信息流区域与首页列表空态共用同一份，避免多套措辞。
  * 关键约束：credential 为 null 时不得断言「没有配置」，须按 errorCode 区分探测中与探测失败；
+ * 服务端拒绝登录态时单独给失效文案，不与「尚未配置」混用；
  * 已配置时返回 null，调用方只在需要占位时使用，本组件不承担权限判断。
  */
 import { Inbox } from 'lucide-react'
@@ -50,6 +51,22 @@ export function CredentialGate({
     }
     if (credential.isConfigured) {
         return null
+    }
+    if (credential.isInvalid === true) {
+        return (
+            <StateEmpty
+                className="py-8"
+                icon={Inbox}
+                title={WEIBO_UI_TEXT.error.credentialInvalid}
+                description="微博已拒绝当前登录态，请重新登录 weibo.com 并粘贴新的完整 Cookie。"
+            >
+                {variant === 'panel' ? (
+                    <Button size="sm" variant="outline" onClick={onOpenSettings}>
+                        {WEIBO_UI_TEXT.action.openSettings}
+                    </Button>
+                ) : null}
+            </StateEmpty>
+        )
     }
     if (variant === 'hint') {
         return (

@@ -3,6 +3,7 @@
  * 复用约定：凭证卡、发布框与列表分别取同目录 CredentialCard / ComposerCard / WeiboFeedList，
  * 未配置时的引导取 CredentialGate；凭证失败文案由 utils/weiboViewDescription 统一给出。
  * 关键约束：列表空态的「刷新」与顶栏刷新是同一动作；未配置时列表空态换成获取 Cookie 的引导；
+ * 凭证被服务端拒绝后同样回到凭证卡，用 isInvalid 区分「已失效」与「尚未配置」；
  * 发布草稿与已选图片由页面持有，本组件只透传，不自行请求。
  */
 import { Inbox } from 'lucide-react'
@@ -57,6 +58,7 @@ export function WeiboHomeView({
             {shouldShowCredential ? (
                 <CredentialCard
                     isSaving={homeState.isSavingCredential}
+                    isInvalid={homeState.credential?.isInvalid === true}
                     errorMessage={readCredentialNotice(homeState.errorCode, homeState.errorMessage)}
                     onSave={onSaveCredential}
                 />

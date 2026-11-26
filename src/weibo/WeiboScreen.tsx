@@ -10,6 +10,7 @@
  * 内容分发（主页优先 / 首页 / 热搜专页 / 信息流）由同文件的 WeiboContentView 承担。
  * 关键约束：未配置 Cookie 时任何信息流都不发请求，只给可执行的获取步骤；
  * 凭证探测未结束或失败时不得断言「没有配置」，由 CredentialGate / CredentialCard 给加载与失败态；
+ * 服务端拒绝登录态后标记凭证失效，顶栏说明与凭证卡同步提示重新登录；
  * 顶栏「刷新」按当前视图分发：信息流刷自己的游标，热搜刷当前标签的榜单，个人主页刷该用户的列表；
  * 个人主页优先于视图内容：/u/ 与 /n/ 链接经 WeiboUserPageProvider 交回本页打开，切页与删 Cookie 都清空该目标；
  * 信息流滚动超过一小段后，视口底部的内容列右缘外侧出现「回到顶部」按钮（ScrollTopButton，
@@ -441,6 +442,7 @@ export function WeiboScreen(): JSX.Element {
                                 ? describeWeiboView({
                                       view,
                                       isConfigured,
+                                      isInvalid: homeState.credential?.isInvalid === true,
                                       savedAt: homeState.credential?.savedAt ?? null,
                                       groups: myGroups,
                                       hotChannels,

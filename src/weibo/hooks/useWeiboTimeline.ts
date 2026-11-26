@@ -5,6 +5,7 @@
  * 关键约束：刷新带上次结果的 sinceId 即增量，只有真正的新条目才前插并去重；
  * 首次进入先探测凭证，未配置不发请求，直接给配置引导；翻页到底必须清空 maxId，
  * 否则加载更多会被反复点亮；宿主返回的分类码原样保留，页面据此切到配置卡或提示稍后重试；
+ * 服务端拒绝登录态即把凭证标为失效并停止信息流请求，不再显示「已登录」；
  * 屏蔽规则在返回前过滤，原始列表仍留在状态里，规则变化时无需回源即可即时重算。
  */
 import { useCallback, useEffect, useMemo, useReducer, useRef } from 'react'
@@ -48,6 +49,7 @@ interface TimelineState {
 
 type TimelineAction =
     | { type: 'credential'; payload: WeiboCredentialState }
+    | { type: 'credential-invalid' }
     | { type: 'refresh-start' }
     | { type: 'more-start' }
     | { type: 'refresh-success'; result: WeiboTimelineResult }
@@ -75,6 +77,20 @@ function reducer(state: TimelineState, action: TimelineAction): TimelineState {
     switch (action.type) {
         case 'credential':
             return { ...state, credential: action.payload, isLoading: false, errorCode: null, errorMessage: null }
+        case 'credential-invalid':
+            // 登录态被服务端拒绝：保留 errorCode / errorMessage 供凭证卡说明原因，
+            // 同时关掉 isConfigured，让所有依赖它的取数 hook 停止发请求。
+            return {
+                ...state,
+                credential: {
+                    isConfigured: false,
+                    savedAt: state.credential?.savedAt ?? null,
+                    isInvalid: true,
+                },
+                isLoading: false,
+                isRefreshing: false,
+                isLoadingMore: false,
+            }
         case 'refresh-start':
             return {
                 ...state,
@@ -174,7 +190,11 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
             } catch (cause) {
                 // 只落错误态：列表会显示「读取失败」与重试入口，不再重复弹 toast
                 // （凭证保存 / 清除与初始化失败仍保留 toast，那是用户主动操作或整页不可用）
-                dispatch({ type: 'failure', code: readErrorCode(cause), message: toErrorText(cause) })
+                const code = readErrorCode(cause)
+                dispatch({ type: 'failure', code, message: toErrorText(cause) })
+                if (code === 'unauthorized') {
+                    dispatch({ type: 'credential-invalid' })
+                }
             }
         },
         [],
@@ -206,7 +226,11 @@ export function useWeiboTimeline(blockRules: WeiboBlockRules = EMPTY_WEIBO_BLOCK
                 await loadPage('refresh', null, null)
                 return true
             } catch (cause) {
-                dispatch({ type: 'failure', code: readErrorCode(cause), message: toErrorText(cause) })
+                const code = readErrorCode(cause)
+                dispatch({ type: 'failure', code, message: toErrorText(cause) })
+                if (code === 'unauthorized') {
+                    dispatch({ type: 'credential-invalid' })
+                }
                 toastError(cause)
                 return false
             } finally {

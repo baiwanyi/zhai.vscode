@@ -8,9 +8,10 @@
  * 回退通道（IMAGE_TRANSPORT）才内联 data URI，超过 1.5MB 时改取 bmiddle 缩略图；
  * 图片缓存目录须列入 localResourceRoots，否则 asWebviewUri 地址会被拒绝；
  * 视频不落缓存：CSP 的 media-src 放行微博视频 CDN，由 Webview 直接播整段 mp4，面板无需授权任何缓存目录；
- * 发表框只放行 upload/pick|bytes|list 三个方法（与工作流面板共用同一份实例），ai/enhancePrompt 转交 AI 服务，
- * insert/remove/reveal 不对微博页面开放；错误文案回传前剥成单行纯文本并截断，
- * 微博路由本身不认这些前缀；
+ * 发表框按白名单转交 upload/pick|bytes|list、media/list（生图栏）与 stock/downloaded（在线图库栏），
+ * 三套路由与工作流面板共用同一份实例，ai/enhancePrompt 转交 AI 服务；
+ * 其余方法（含媒体与图库的写操作、编辑器 insert/remove/reveal）不对微博页面开放，避免注入脚本借面板改动媒体库；
+ * 错误文案回传前剥成单行纯文本并截断，微博路由本身不认这些前缀；
  * 发布前由本层读出 uploads 图片字节（限定路径、按魔数判格式），传图床与提交正文都在 webPublish 内完成；
  * 存储根须列入 localResourceRoots，否则 uploads 缩略图的 asWebviewUri 地址会被拒绝；
  * 面板激活、失焦与销毁都要经 activeDocument 上报/让位，关闭时同时清理事实与句柄。
@@ -22,6 +23,8 @@ import { logger } from '@modules/common/logger'
 import { buildStorageUri } from '@modules/common/storagePath'
 import { buildWebviewHtml } from '@modules/common/webviewHtml'
 import { getActivePanel, reportActivePanel } from '@modules/editor/activeDocument'
+import type { MediaRoutes } from '@modules/media/mediaRoutes'
+import type { StockRoutes } from '@modules/stock/stockRoutes'
 import { MAX_UPLOAD_BYTES } from '@modules/upload/uploadPayload'
 import type { UploadRoutes } from '@modules/upload/uploadRoutes'
 import { isRequestMessage } from '@shared/types/messages'
@@ -47,6 +50,14 @@ import { WeiboWebError } from '../transport/httpClient'
  * 否则一个被注入的 Webview 脚本就能借面板删掉 uploads 下的任意文件。
  */
 const WEIBO_UPLOAD_METHODS: ReadonlySet<string> = new Set(['upload/pick', 'upload/bytes', 'upload/list'])
+
+/**
+ * 发表框图片浏览栏转交的只读方法：生图栏列举媒体库，在线图库栏列举已下载图片。
+ * 关键约束：只放行这两个列举方法，媒体与图库的删除、插入、下载及密钥管理一律不向微博页面开放，
+ * 否则被注入的 Webview 脚本可借面板写权限改动用户的媒体库与图库配置。
+ */
+const WEIBO_MEDIA_METHODS: ReadonlySet<string> = new Set(['media/list'])
+const WEIBO_STOCK_METHODS: ReadonlySet<string> = new Set(['stock/downloaded'])
 
 /** 错误文案上限：上游 msg 可能很长，回传前截断避免把整段响应带进提示 */
 const MAX_ERROR_MESSAGE_LENGTH = 200
@@ -75,6 +86,8 @@ async function handlePanelMessage(
     panel: vscode.WebviewPanel,
     routes: WeiboRoutes,
     upload: UploadRoutes | undefined,
+    media: MediaRoutes | undefined,
+    stock: StockRoutes | undefined,
     enhancePrompt: WeiboEnhancePrompt | undefined,
     message: unknown,
 ): Promise<void> {
@@ -83,15 +96,22 @@ async function handlePanelMessage(
     }
     const { reqId, method, payload } = message
     try {
-        // upload/* 与工作流面板共用同一份上传路由：发表框的图片选择与粘贴上传要读 uploads 清单、写字节流；
-        // ai/enhancePrompt 同理来自 AI 服务（微博路由不认 ai/* 前缀）；
-        // 两者未注入时都落到兜底分支并回报「未登记」
-        const result =
-            WEIBO_UPLOAD_METHODS.has(method) && upload !== undefined
-                ? await upload.handle(method, payload, (uri) => panel.webview.asWebviewUri(uri).toString())
-                : method === 'ai/enhancePrompt' && enhancePrompt !== undefined
-                  ? await enhancePrompt(payload)
-                  : await routes.handle(method, payload)
+        // 三类图片来源与工作流面板共用同一份路由：发表框生图栏读媒体库、在线图库栏读已下载图片、
+        // 图片选择与粘贴上传要读 uploads 清单并写字节流；ai/enhancePrompt 则转交 AI 服务。
+        // 任一路由未注入时都落到兜底分支并回报「未登记」，不静默返回空结果。
+        const toWebviewUri = (uri: vscode.Uri): string => panel.webview.asWebviewUri(uri).toString()
+        let result: unknown
+        if (WEIBO_UPLOAD_METHODS.has(method) && upload !== undefined) {
+            result = await upload.handle(method, payload, toWebviewUri)
+        } else if (WEIBO_MEDIA_METHODS.has(method) && media !== undefined) {
+            result = await media.handle(method, payload, toWebviewUri)
+        } else if (WEIBO_STOCK_METHODS.has(method) && stock !== undefined) {
+            result = await stock.handle(method, payload, toWebviewUri)
+        } else if (method === 'ai/enhancePrompt' && enhancePrompt !== undefined) {
+            result = await enhancePrompt(payload)
+        } else {
+            result = await routes.handle(method, payload)
+        }
         await panel.webview.postMessage({ type: 'response', reqId, ok: true, payload: result })
     } catch (error) {
         const text = toSafeErrorMessage(error)
@@ -110,6 +130,7 @@ async function handlePanelMessage(
  * secrets 缺省时凭证读写退化为空实现；mediaCacheRoot 缺省时不代理图片（卡片显示占位）；
  * postActions 缺省时卡片的「保存到笔记」「添加到 AI 对话」按未就绪回包，其余功能不受影响；
  * upload 缺省时发表框的图片选择与粘贴上传报未就绪，其余功能照常；
+ * media / stock 缺省时发表框的生图与在线图库两栏为空，其余功能照常；
  * enhancePrompt 缺省时发表框的「AI 优化」报未登记，其余功能照常。
  */
 export async function openWeiboPanel(
@@ -119,6 +140,8 @@ export async function openWeiboPanel(
     postActions?: WeiboPostActions,
     upload?: UploadRoutes,
     enhancePrompt?: WeiboEnhancePrompt,
+    media?: MediaRoutes,
+    stock?: StockRoutes,
 ): Promise<void> {
     if (current !== null) {
         current.reveal()
@@ -253,7 +276,7 @@ export async function openWeiboPanel(
 
     // 监听在面板销毁时显式释放：重开面板会重建一份，不释放就叠加处理链
     const messageListener = panel.webview.onDidReceiveMessage((message: unknown) => {
-        void handlePanelMessage(panel, routes, upload, enhancePrompt, message)
+        void handlePanelMessage(panel, routes, upload, media, stock, enhancePrompt, message)
     })
     // 面板拿到焦点即上报：工作流区据此切到微博语境；切走时让位，编辑器重新激活由活跃文档侧统一清空
     if (panel.active) {

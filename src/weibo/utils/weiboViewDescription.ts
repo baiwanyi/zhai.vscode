@@ -3,7 +3,7 @@
  * 复用约定：视图判定走 layout/weiboNavGroups 的 read* 函数，时间格式复用 @shared/utils/format，
  * 页面只传原始数据，不在这里读状态。
  * 关键约束：一律一句话，不写接口字段（list_id / max_id）与分页实现；
- * 未配置时只说明怎么拿到 Cookie，不复述保存时刻；
+ * 未配置时只说明怎么拿到 Cookie，已失效时只提示更新，都不复述保存时刻；
  * 保存时刻只用于确认「填的是哪一次」，不得包含 Cookie 任何片段。
  */
 import type { WeiboGroupItem, WeiboHotChannel } from '@shared/types/weibo'
@@ -14,6 +14,8 @@ import { readCustomGroupId, readHotChannelGid, readHotRankTab, readWeiboViewLabe
 export interface WeiboViewDescriptionInput {
     view: WeiboView
     isConfigured: boolean
+    /** 凭证是否已被服务端拒绝：失效时只给更新指引 */
+    isInvalid: boolean
     /** 凭证保存时刻（ISO）：未配置时为 null */
     savedAt: string | null
     groups: readonly WeiboGroupItem[]
@@ -37,10 +39,14 @@ function formatSavedAt(savedAt: string | null): string {
 export function describeWeiboView({
     view,
     isConfigured,
+    isInvalid,
     savedAt,
     groups,
     hotChannels,
 }: WeiboViewDescriptionInput): string {
+    if (isInvalid) {
+        return '微博 Cookie 已失效，请重新登录并更新。'
+    }
     if (!isConfigured) {
         return '登录 weibo.com 后，粘贴任意 ajax 请求的完整 Cookie。'
     }

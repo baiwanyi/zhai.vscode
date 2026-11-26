@@ -890,6 +890,8 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             this.weiboPostActions ?? undefined,
             this.uploadRoutes ?? undefined,
             this.weiboEnhance ?? undefined,
+            this.mediaRoutes ?? undefined,
+            this.stockRoutes ?? undefined,
         )
         return { opened: true }
     }

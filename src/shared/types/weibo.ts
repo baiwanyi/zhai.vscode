@@ -1043,6 +1043,8 @@ export interface WeiboCredentialState {
     isConfigured: boolean
     /** 最近一次保存时刻（ISO）：迁移或排障时用于判断是否过期 */
     savedAt: string | null
+    /** 服务端已拒绝登录态：据此提示更新 Cookie，并停止继续请求信息流 */
+    isInvalid?: boolean
 }
 
 /** 保存 Cookie 入参：由前端粘贴整串 Cookie，宿主负责清洗与校验 */

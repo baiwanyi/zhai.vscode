@@ -4,7 +4,7 @@
  * （FieldGroup / Field / FieldLabel / FieldDescription），Cookie 输入取 @components/ui/textarea，
  * 按钮取 @webview/components/Button，读取失败提示取 @webview/components/Alert；
  * 本组件只做输入与保存编排，写入动作通过 props 交回面板层执行；
- * 上次读取失败的原因由调用方经 errorMessage 传入，本组件只展示、不推断原因。
+ * 上次读取失败的原因由调用方经 errorMessage 传入，isInvalid 只改提示标题为「Cookie 已失效」。
  * 关键约束：输入为普通文本框但不回填历史值，明文只存在于输入瞬间；
  * 清除不在此卡片内，只由账号菜单负责，避免出现两套入口；卡片是否显示由页面按登录态判定，
  * 保存成功后由登录态变化自然收起，本组件不提供收起按钮。
@@ -20,13 +20,20 @@ import type { JSX } from 'react'
 
 interface CredentialCardProps {
     isSaving: boolean
+    /** 服务端已拒绝登录态：把失败提示标记为「Cookie 已失效」，与「尚未配置」区分 */
+    isInvalid?: boolean
     /** 上次读取失败的原因：非空时在表单上方提示，说明为什么会退回这张卡 */
     errorMessage?: string
     /** 返回是否保存成功：失败时保留输入，避免用户重贴一遍 */
     onSave: (cookie: string) => Promise<boolean>
 }
 
-export function CredentialCard({ isSaving, errorMessage, onSave }: CredentialCardProps): JSX.Element {
+export function CredentialCard({
+    isSaving,
+    isInvalid = false,
+    errorMessage,
+    onSave,
+}: CredentialCardProps): JSX.Element {
     const [cookieInput, setCookieInput] = useState('')
 
     const handleSave = useCallback((): void => {
@@ -50,7 +57,11 @@ export function CredentialCard({ isSaving, errorMessage, onSave }: CredentialCar
             <CardContent>
                 {errorMessage === undefined || errorMessage.length === 0 ? null : (
                     <div className="mb-2">
-                        <Alert title="上次读取失败" description={toErrorDetail(errorMessage ?? null)} variant="destructive" />
+                        <Alert
+                            title={isInvalid ? 'Cookie 已失效' : '上次读取失败'}
+                            description={toErrorDetail(errorMessage ?? null)}
+                            variant="destructive"
+                        />
                     </div>
                 )}
                 <FieldGroup>
