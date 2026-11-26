@@ -103,8 +103,8 @@ FileSystemWatcher.onDidChange(uri)
                                       │ 批量出队
                                       ▼
                          ┌────────────────────────┐
-                         │  解析 Frontmatter/标题  │
-                         │  统计字数/标签/角色提及 │
+                         │  解析标题 / 标签 / 字数  │
+                         │  抽取角色提及与双向链接  │
                          └───────────┬────────────┘
                                      │ mtime 比对（未变则跳过）
                                      ▼
@@ -160,7 +160,7 @@ activate()
 -- 元数据主表：只存元数据，绝不存正文全文
 CREATE TABLE IF NOT EXISTS files (
     path        TEXT PRIMARY KEY,   -- 工作区内相对路径（跨设备稳定）
-    title       TEXT NOT NULL,      -- 首行 # 标题 或 Frontmatter title
+    title       TEXT NOT NULL,      -- 首个一级标题，缺失时回退文件名
     word_count  INTEGER NOT NULL DEFAULT 0,
     tags        TEXT    NOT NULL DEFAULT '[]',  -- JSON 数组
     characters  TEXT    NOT NULL DEFAULT '[]',  -- 抽取的角色/术语（JSON 数组）

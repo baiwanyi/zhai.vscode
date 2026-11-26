@@ -2,7 +2,7 @@
 
 **版本**：1.5
 **日期**：2026-11-12
-**状态**：方案评审（Notion-like 基座定为开源自建，附扩展清单与依赖核对项）
+**状态**：方案评审（Notion-like 基座定为开源自建，附扩展清单与依赖核对项）；文中「Frontmatter 只读信息卡片」未实现，项目不写 frontmatter
 **宿主**：VSCode 插件 Zhai（宅写作），Markdown 主存储 + SQLite 缓存索引
 
 ---
@@ -104,7 +104,7 @@
 | webview ↔ 宿主为「请求-响应 + stream + state」三通道 | `src/shared/utils/bridge.ts` | 标注读写与 AI 查询直接复用 `request()` / `onStream()` / `onState()` |
 | `HostMethodName` 为字面量联合，新增方法两侧同时维护 | `src/shared/types/messages.ts` | 需同步改 `messages.ts` 与宿主注册表，否则编译期即失败 |
 | CSP：`default-src 'none'`，`script-src` 仅 webview cspSource，禁止内联脚本 | `src/modules/common/webviewHtml.ts` | 不引入任何依赖内联脚本的编辑器；样式允许 `unsafe-inline` |
-| 文档为 Markdown 主存储，章节带 Frontmatter，正文只存小说正文 | `docs/modules/press.md` 1.3 | 编辑器必须把 Frontmatter 隔离处理，不能当成正文段落 |
+| 文档为 Markdown 主存储，章节以一级标题 + 正文组织，元信息写在大纲章块 | `docs/modules/press.md` 1.3 | 编辑器需跳过可能存在的 frontmatter 块，不能当成正文段落 |
 | 索引库为可清空缓存（`clearSchemaData` 会 DELETE） | `src/modules/common/db/schema.ts` | 标注数据**不得**落在索引库 |
 | AI 能力由单一 `AiProvider` + `UsageRecorder` 提供，一次性调用范式已存在 | `src/activation/aiLayer.ts`、`src/modules/proofread/ai/aiProofreader.ts` | 查询功能照抄该范式，不新建通道 |
 | 目前**没有任何编辑器内核依赖**（无 TipTap / ProseMirror / CodeMirror / Lexical） | `package.json` | 内核选型是纯新增，需评估体积与维护成本 |

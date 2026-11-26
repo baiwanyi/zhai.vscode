@@ -24,7 +24,7 @@
 
 - 文件名即标题：新建时标题固定为「未命名笔记 N」（N 在同月目录内从 1 起顺延）；保存时若标题变化则自动重命名文件，使二者始终一致。
 - 文件名合法化：非法字符替换为空格、连续空白折叠、结尾点剥离、超长截断到 60 字、Windows 保留设备名加后缀；空标题回退「未命名笔记」。
-- SQLite 索引（见 `common.md` ③）以 `path`（含 `notes/YYYYMM/标题.md`）+ 标题为索引维度，标题按「Frontmatter title → 首个一级标题 → 文件名」回落提取。
+- SQLite 索引（见 `common.md` ③）以 `path`（含 `notes/YYYYMM/标题.md`）+ 标题为索引维度，标题按「首个一级标题 → 文件名」回落提取。
 
 ### 1.2 目标
 
@@ -57,7 +57,7 @@
 | 编号 | 功能点 | 描述 | 优先级 | 状态 |
 |------|--------|------|--------|------|
 | N1 | 年月/UUID 笔记本 | 以 `notes/YYYYMM/` 为笔记本的树形导航，UUID 文件为笔记，支持折叠与快速跳转（设想④） | P0 | 待实现 |
-| N2 | 标签体系 | Frontmatter `tags` + 正文 `#标签` 双通道，按标签筛选 | P0 | 待实现 |
+| N2 | 标签体系 | 正文 `#标签` 单通道（不写 frontmatter），按标签筛选 | P0 | 待实现 |
 | N3 | 自动保存与修订 | 5s 防抖自动保存；本地快照保留 ≥ 30 版 | P0 | 待实现 |
 | N4 | 双向链接 | `[[笔记标题]]` 自动补全与跳转，重命名时批量同步 | P0 | 待实现 |
 | N5 | 反链与引用计数 | 侧边显示「被哪些笔记引用」，标题旁显示引用数 | P1 | 待实现 |
@@ -68,7 +68,7 @@
 | N10 | 网页剪藏 | 截图 OCR / 选中文本 / 整页采集三种方式 | P2 | 待实现 |
 | N11 | 置顶与收藏 | 笔记置顶、快速访问收藏列表 | P2 | 待实现 |
 | N12 | 看板/日历视图 | 按标签列的看板、按日期聚合的日历视图 | P2 | 待实现 |
-| N13 | AI 摘要与标签建议 | 生成摘要写入 Frontmatter；按内容推荐标签 | P2 | 待实现 |
+| N13 | AI 摘要与标签建议 | 生成摘要写入索引库 `summary`；按内容推荐标签 | P2 | 待实现 |
 | N14 | 回收站与恢复 | 删除进入回收站，默认保留 30 天 | P1 | 待实现 |
 | N15 | 日记/周记自动生成 | 按日期模板自动创建日记文件 | P2 | 待实现 |
 
@@ -141,7 +141,7 @@ FileSystemWatcher 触发索引（见 common.md 4.1）
 | 关注点 | 候选方案 | 结论 | 理由 |
 |--------|----------|------|------|
 | 编辑器 | VSCode 原生 TextEditor / Webview 自研 | **原生 TextEditor** | 复用 Git、多光标、拼写、格式化；Webview 仅做预览与关系图谱 |
-| Frontmatter | `gray-matter` / `js-yaml` 手写 | **gray-matter** | 解析与序列化一体，容错性好 |
+| 元信息承载 | md Frontmatter / 标题字段 | **标题字段** | 正文即可读，无需引入 YAML 解析依赖；项目不写 frontmatter |
 | 双链解析 | 正则扫描 / `remark-wikilink` AST | **正则扫描（增量）** | 只需提取链接与行号，正则最轻；AST 解析留给 Markdown ONE 的导出管线 |
 | 关系图谱 | `cytoscape` / `d3-force` / `sigma` | **cytoscape** | 万级节点性能与交互 API 成熟，布局算法丰富 |
 | 版本快照 | 本地 `.zhai/history`（内容寻址）/ 纯依赖 Git | **本地快照 + Git 可选** | 无 Git 仓库也能恢复；快照按内容 hash 去重节省空间 |
@@ -239,7 +239,7 @@ CREATE TABLE IF NOT EXISTS trash (
 | `zhai.note.pasteImage` | 粘贴图片 | 剪贴板图片落盘并插入 |
 | `zhai.note.clipWeb` | 剪藏网页 | 粘贴 URL → 抓取正文 → 存为笔记 |
 | `zhai.note.openTrash` | 打开回收站 | 查看与恢复已删除笔记 |
-| `zhai.note.togglePin` | 置顶/取消置顶 | 写入 Frontmatter `pinned` |
+| `zhai.note.togglePin` | 置顶/取消置顶 | 写入 `globalState` 的置顶路径列表，不改 md |
 
 **Webview 方法**：`note/create`（新建空笔记，已实现）、`note/list`、`note/tags`、`note/backlinks`、`note/revisions`、`note/restore`、`template/list`、`trash/list`、`trash/restore`
 
