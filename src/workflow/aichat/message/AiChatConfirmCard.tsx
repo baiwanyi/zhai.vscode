@@ -9,7 +9,6 @@
  */
 import { FileText } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@components/ui/card'
 import { CodeBlock, CodeBlockContent, CodeBlockHeader, CodeBlockLine, CodeBlockTitle } from '@components/ui/code-block'
 import {
@@ -23,6 +22,7 @@ import {
     TraceTitle,
 } from '@components/ui/trace'
 import type { AiPermissionDecision, AiPermissionRequest, AiWritePreview } from '@shared/types/aiChat'
+import { Badge } from '@webview/blocks/Badge'
 import { Markdown } from '@webview/blocks/Markdown'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'

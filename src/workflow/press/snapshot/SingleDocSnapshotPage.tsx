@@ -10,7 +10,7 @@ import { Archive, Camera } from 'lucide-react'
 import { useState } from 'react'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import type { DocSnapshotEntry } from '@shared/types/snapshot'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { AlertDialog } from '@webview/components/AlertDialog'
 import { AppContent, AppDescription, AppHeader, AppPage, AppTitle } from '@webview/components/AppPage'
 import { AppSummary } from '@webview/components/AppSummary'
@@ -69,7 +69,7 @@ export function SingleDocSnapshotPage({ docPath }: SingleDocSnapshotPageProps): 
                     </CardHeader>
                     <CardContent className="min-h-0 flex-1 overflow-y-auto">
                         {versions.length === 0 ? (
-                            <StateEmpty
+                            <Empty
                                 isLoading={isLoading}
                                 icon={Archive}
                                 title={isLoading ? '正在读取…' : '这份文档还没有历史版本'}

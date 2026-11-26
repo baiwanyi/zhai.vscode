@@ -1,6 +1,6 @@
 /**
  * 大纲伏笔面板：伏笔表负责「埋什么、第几章埋、何时回收、由谁触发」，独立成段、与卷章互不覆盖。
- * 复用约定：列表取 block/ClueTrackItem（ui/item），编辑取 ClueTrackEditDialog（业务 Dialog），预警取 Alert、空态取 StateEmpty；
+ * 复用约定：列表取 block/ClueTrackItem（ui/item），编辑取 ClueTrackEditDialog（业务 Dialog），预警取 Alert、空态取 Empty；
  * 章节引用选项由 utils 的 createChapterRefOptions 统一生成，取值形如「1-2」，人物下拉取 CharacterCard。
  * 关键约束：回收状态由作者显式切换（写后回填也会改这一项，但需用户确认）；逾期预警只做提示，不自动改状态、不阻止保存；
  * 添加伏笔的入口在页头第二行，这里只做展示、编排、编辑与删除的挂载。
@@ -8,7 +8,7 @@
 import { Lightbulb } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { ItemGroup } from '@components/ui/item'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Alert } from '@webview/components/Alert'
 import { ClueTrackEditDialog } from './ClueTrackEditDialog'
 import type { CharacterCard, OutlineClue } from '../../types'
@@ -62,7 +62,7 @@ export function ClueTrackPanels({
             ) : null}
 
             {clues.length === 0 ? (
-                <StateEmpty
+                <Empty
                     icon={Lightbulb}
                     title="还没有伏笔"
                     description="记下埋设点与回收章，写完正文再回填状态。"

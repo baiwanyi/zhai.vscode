@@ -1,12 +1,11 @@
 /**
  * 卷纲条目字段编辑块：主要情节与关键转折共用，默认折叠、标题后显示条目数；单条项组件同文件定义。
  * 复用约定：分组容器取 ui/card（CardHeader 放折叠触发器与添加按钮，CardContent 放说明与列表），
- * 折叠取 ui/collapsible，单条项取 ui/input-group（文本域 + block-start 序号与删除按钮），空列表取 blocks/StateEmpty；
+ * 折叠取 ui/collapsible，单条项取 ui/input-group（文本域 + block-start 序号与删除按钮），空列表取 blocks/Empty；
  * 「添加」按钮放在 CollapsibleTrigger 之外，点它不会连带折叠。
  * 关键约束：条目多时列表自身限高滚动、不撑高弹窗；增删与改字一律按 id 定位条目，不复用相邻输入框。
  */
 import { ChevronRight, ListTodo, Plus, Trash2 } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import { FieldGroup } from '@components/ui/field'
@@ -17,7 +16,8 @@ import {
     InputGroupText,
     InputGroupTextarea,
 } from '@components/ui/input-group'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Badge } from '@webview/blocks/Badge'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import type { EditablePlotItem } from '../utils/volumeEditDraft'
 import type { JSX } from 'react'
@@ -116,7 +116,7 @@ export function VolumePlotItemFields({
                 <CollapsibleContent>
                     <CardContent>
                         {items.length === 0 ? (
-                            <StateEmpty
+                            <Empty
                                 icon={ListTodo}
                                 title="还没有条目"
                                 description={`点「${addLabel}」逐条写。`}

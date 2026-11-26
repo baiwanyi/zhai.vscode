@@ -5,9 +5,9 @@
  * 关键约束：删除按钮带可访问名称且不触发条目本身的点击；恢复按钮在写操作进行中一并禁用，避免重复提交。
  */
 import { InboxIcon, RotateCcw, Trash2 } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { PressSnapshotEntry, PressSnapshotFileKey, PressSnapshotReason } from '@shared/types/press'
+import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import { formatSize, formatSnapshotTime } from './snapshotFormat'
 import type { JSX } from 'react'

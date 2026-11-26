@@ -2,7 +2,7 @@
  * 微博发布框：受控编辑 + 表情 / 话题插入 + 图片选择与粘贴上传 + AI 优化 + 字数与发布。
  * 复用约定：卡片取 @components/ui/card，正文输入取 @components/ui/input-group
  * （InputGroup / InputGroupTextarea / InputGroupAddon / InputGroupText，字数统计是框内顶部附件），
- * 表情与话题面板取同目录 WeiboEmoticonPicker / WeiboTopicPicker，图片面板取通用 ImagePicker（Popover + Tabs），
+ * 表情与话题面板取同目录 WeiboEmoticonPicker / WeiboTopicPicker，图片面板取通用 ImagePickerPopover（Popover + Tabs），
  * 选区插入的纯逻辑走 utils/weiboComposer，发布框的上传清单与粘贴上传走 hooks/useWeiboComposerImages，
  * 生图与在线图库两栏走 hooks/useImagePickerSources，发布请求走 hooks/useWeiboPublish，AI 改写走 hooks/useWeiboEnhance。
  * 关键约束：草稿与已选图片都由调用方持有（首页内容随视图卸载，二者不能跟着丢）；
@@ -32,7 +32,7 @@ import type { WeiboTimelinePost } from '@shared/types/weibo'
 import { ButtonLoadingContent } from '@webview/blocks/ButtonLoadingContent'
 import { CARD_GLOW_CLASS, ComposerGlow } from '@webview/components/AppComposer'
 import { Button } from '@webview/components/Button'
-import { ImagePicker } from '@webview/components/ImagePicker'
+import { ImagePickerPopover } from '@webview/components/ImagePicker'
 import { useImagePickerSources } from '@webview/hooks/useImagePickerSources'
 import type { ImagePickerItem, ImageSourceKind } from '@webview/hooks/useImagePickerSources'
 import { WeiboEmoticonPicker } from './WeiboEmoticonPicker'
@@ -46,7 +46,7 @@ import { insertAtSelection } from '../utils/weiboComposer'
 /** 微博面板只需要生图与在线图库两栏，上传清单由 useWeiboComposerImages 提供 */
 const BROWSE_KINDS: readonly ImageSourceKind[] = ['generate', 'stock']
 
-/** UploadFileItem 的 url 对图片非空，转成通用条目供 ImagePicker 渲染 */
+/** UploadFileItem 的 url 对图片非空，转成通用条目供 ImagePickerPopover 渲染 */
 function toPickerItem(item: UploadFileItem): ImagePickerItem {
     return { id: item.path, path: item.path, url: item.url ?? '', alt: item.name }
 }
@@ -350,7 +350,7 @@ export function ComposerCard({
             <CardFooter className="justify-between bg-transparent py-2">
                 <div className="flex items-center gap-1">
                     <WeiboEmoticonPicker isEnabled={isEnabled} onSelect={handleInsertEmoticon} />
-                    <ImagePicker
+                    <ImagePickerPopover
                         open={isPickerOpen}
                         onOpenChange={handlePickerOpenChange}
                         trigger={

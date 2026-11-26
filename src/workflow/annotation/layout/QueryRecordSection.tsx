@@ -13,8 +13,8 @@
 import { Sparkles } from 'lucide-react'
 import { ItemGroup } from '@components/ui/item'
 import { toErrorDetail } from '@shared/utils/error'
+import { Empty } from '@webview/blocks/Empty'
 import { LoadMoreSentinel } from '@webview/blocks/LoadMoreSentinel'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Alert } from '@webview/components/Alert'
 import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
 import { QueryRecordItem } from './QueryRecordItem'
@@ -43,7 +43,7 @@ export function QueryRecordSection({ keyword, onRecordsChange }: QueryRecordSect
         <div className="flex flex-col gap-2">
             {error === null ? null : <Alert title="解释记录读取失败" description={toErrorDetail(error)} variant="destructive" />}
             {items.length === 0 && error === null ? (
-                <StateEmpty
+                <Empty
                     title={emptyCopy.title}
                     description={emptyCopy.description}
                     icon={Sparkles}

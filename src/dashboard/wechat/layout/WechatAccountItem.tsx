@@ -8,9 +8,9 @@
  * 条目显式 flex-nowrap，窄侧栏遇到长名称时不把头像与动作区挤成两行。
  */
 import { ChevronRight } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { WechatAccountSummary } from '@shared/types/wechat'
+import { Badge } from '@webview/blocks/Badge'
 import { WechatAccountMenu } from './WechatAccountMenu'
 import type { JSX } from 'react'
 import {

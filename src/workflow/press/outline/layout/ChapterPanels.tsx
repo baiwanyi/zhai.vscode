@@ -1,13 +1,13 @@
 /**
  * 章纲章节列表：把已过滤的章节平铺成一列，点选由调用方打开编辑对话框。
- * 复用约定：列表行用 ItemGroup + Item，空态（空作品 / 筛选为空）均用 blocks/StateEmpty；
+ * 复用约定：列表行用 ItemGroup + Item，空态（空作品 / 筛选为空）均用 blocks/Empty；
  * 行内标题与字数取 utils 的 stripChapterOrderPrefix / formatWordCount，无障碍标签用 chapterTitleLabel。
  * 关键约束：本组件只读；列表不分卷也不分阶段，卷筛选与标题搜索由调用方先过滤 entries，行顺序始终是全书章序；
  * 空作品给出草引导、筛选为空给无匹配提示，两者文案不可混用；行内只放章节序号、标题与已写字数，卷名只进 aria-label。
  */
 import { ScrollText } from 'lucide-react'
 import { Item, ItemActions, ItemContent, ItemGroup, ItemTitle } from '@components/ui/item'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import type { OutlineTreeEntry } from '../../types'
 import type { JSX } from 'react'
 import { chapterTitleLabel, formatWordCount, stripChapterOrderPrefix } from '../../utils'
@@ -34,7 +34,7 @@ export function ChapterPanels({
 
     if (!hasAnyChapter || entries.length === 0) {
         return (
-            <StateEmpty
+            <Empty
                 icon={ScrollText}
                 title={hasAnyChapter ? isEmptyText : '还没有章节'}
                 description={hasAnyChapter ? undefined : '点页头「新增」开始起草'}

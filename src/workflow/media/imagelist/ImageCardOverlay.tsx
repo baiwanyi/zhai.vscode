@@ -1,6 +1,6 @@
 /**
  * 图片卡片叠层：三处角标、在途遮罩、失败提示与底部说明，媒体、图库与上传三类卡片共用。
- * 复用约定：角标取 @components/ui/badge，转圈取 @components/ui/spinner，关联标题取 @components/ui/hover-card 与 skeleton；
+ * 复用约定：角标取 @webview/blocks/Badge，转圈取 @components/ui/spinner，关联标题取 @components/ui/hover-card 与 skeleton；
  * 定位类只在此处声明；说明文案允许为空，超长用 truncate 收口。
  * 关键约束：带 hoverTitles 的角标在首次悬停时才按需拉取标题，列表阶段不为每张图各发一次请求；
  * 左下角只放信息角标（关联计数、上传尺寸），悬停操作条由卡片排在右下角，两者不占用同一区域；
@@ -8,10 +8,10 @@
  * 多选模式下由调用方关闭右上级角标，避免与勾选圈重叠。
  */
 import { useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import { HoverCard, HoverCardContent, HoverCardTrigger } from '@components/ui/hover-card'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
+import { Badge } from '@webview/blocks/Badge'
 import type { ImageListBadge } from './imageListModel'
 import type { JSX } from 'react'
 

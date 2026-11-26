@@ -10,12 +10,12 @@
  */
 import { cn } from 'cn'
 import { useEffect, useMemo, useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import { PopoverHeader, PopoverTitle } from '@components/ui/popover'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
 import type { AiContextAddItem, AiDocSection, AiDocSectionsResult } from '@shared/types/aiChat'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
+import { Badge } from '@webview/blocks/Badge'
 import { isLoreSection, SETTING_SECTIONS, SETTING_SECTION_ORDER } from '@webview/workflow/press/setting/sections'
 import type { SettingSectionKey } from '@webview/workflow/press/setting/sections'
 import { AiChatContextItemView } from './AiChatContextItemView'

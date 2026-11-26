@@ -8,9 +8,9 @@
  * 与命令徽章统一 align-top，依赖调用方的 20px 行高（leading-5）与徽章高度重合。
  */
 import { cn } from 'cn'
-import { Badge } from '@components/ui/badge'
 import type { AiContextRef } from '@shared/types/aiChat'
 import { toZhaiDisplayPath } from '@shared/utils/zhaiPath'
+import { Badge } from '@webview/blocks/Badge'
 import { TOOLTIP_CLASS, Tooltip, TooltipContent, TooltipTrigger } from '@webview/components/Tooltip'
 import type { JSX } from 'react'
 import { toContextFileName, toContextLineRange } from '../utils/chat/format'

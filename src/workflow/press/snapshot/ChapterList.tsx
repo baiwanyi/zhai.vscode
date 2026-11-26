@@ -7,9 +7,9 @@
  */
 import { ChevronRightIcon, FileText } from 'lucide-react'
 import { useMemo } from 'react'
-import { Badge } from '@components/ui/badge'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { ChapterSnapshotSummary } from '@shared/types/press'
+import { Badge } from '@webview/blocks/Badge'
 import { formatSnapshotTime } from './snapshotFormat'
 import type { JSX } from 'react'
 

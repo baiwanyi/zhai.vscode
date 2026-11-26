@@ -1,11 +1,11 @@
 /**
  * 作品模块共用的状态视图：加载骨架与失败重试块，供作品列表页、作品详情页复用。
- * 复用 @components/ui 的 skeleton 与业务公共层的 StateEmpty；骨架条数与单条尺寸由调用方传入，组件不内置业务数量。
+ * 复用 @components/ui 的 skeleton 与业务公共层的 Empty；骨架条数与单条尺寸由调用方传入，组件不内置业务数量。
  * 关键约束：骨架以常量下标数组生成 key，不用数组下标直接作 key；失败块的重试按钮统一 outline 形态，保证两处外观一致。
  */
 import { cn } from 'cn'
 import { Skeleton } from '@components/ui/skeleton'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 
@@ -38,10 +38,10 @@ interface PressErrorStateProps {
 
 export function PressErrorState({ title, message, onRetry }: PressErrorStateProps): JSX.Element {
     return (
-        <StateEmpty title={title} description={message ?? '请稍后重试'}>
+        <Empty title={title} description={message ?? '请稍后重试'}>
             <Button variant="outline" onClick={onRetry}>
                 重试
             </Button>
-        </StateEmpty>
+        </Empty>
     )
 }

@@ -1,6 +1,6 @@
 /**
  * 回收站内容分派：按加载状态、失败与空集合选择提示或列表，自身不取数、不持有待处理状态。
- * 复用 StateEmpty 承载加载与空态、Alert 承载失败提示、TrashItemRow 承载行；
+ * 复用 Empty 承载加载与空态、Alert 承载失败提示、TrashItemRow 承载行；
  * 空态说明取 constants 的保留规则文案，与页头描述同源。
  * 关键约束：四个分支互斥且按 loading → error → empty → list 早返回；列表 key 用条目 id；
  * 回调只上抛条目 id，行内绑定由本组件完成，调用方不必为每行创建闭包。
@@ -9,7 +9,7 @@ import { Trash2 } from 'lucide-react'
 import { ItemGroup } from '@components/ui/item'
 import type { TrashItem } from '@shared/types/trash'
 import { toErrorDetail } from '@shared/utils/error'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Alert } from '@webview/components/Alert'
 import { TRASH_RETENTION_HINT } from './constants'
 import { TrashItemRow } from './TrashItemRow'
@@ -28,14 +28,14 @@ interface TrashContentProps {
 
 export function TrashContent({ status, error, items, isBusy, onRestore, onPurge }: TrashContentProps): JSX.Element {
     if (status === 'loading') {
-        return <StateEmpty title="正在读取回收站" isLoading className="border px-3 py-4" />
+        return <Empty title="正在读取回收站" isLoading className="border px-3 py-4" />
     }
     if (status === 'error') {
         return <Alert title="回收站读取失败" description={toErrorDetail(error)} variant="destructive" />
     }
     if (items.length === 0) {
         return (
-            <StateEmpty
+            <Empty
                 title="回收站是空的"
                 description={TRASH_RETENTION_HINT}
                 icon={Trash2}

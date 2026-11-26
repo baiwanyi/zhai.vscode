@@ -1,14 +1,14 @@
 /**
  * 提示词分类栏：垂直单选列表，一级分类与二级分组共用同一套结构。
- * 复用约定：ToggleGroup 取 @components/ui/toggle-group，计数徽标取 @components/ui/badge；
+ * 复用约定：ToggleGroup 取 @components/ui/toggle-group，计数徽标取 @webview/blocks/Badge；
  * 提示词面板（AiChatPromptPicker）的两级分类共用本组件，样式差异由调用方从 ../utils/prompt/styles 取值传入。
  * 关键约束：Radix 允许再点一次已选项回传空串，这里直接丢弃，保证始终有一项生效；
  * 栏体宽高、底色与滚动都交给 className，本层不预设视觉，避免面板各处覆盖；
  * 本文件只导出组件，样式常量与分类回落函数分居 ../utils/prompt/styles 与 ../utils/prompt/library。
  */
 import { cn } from 'cn'
-import { Badge } from '@components/ui/badge'
 import { ToggleGroup, ToggleGroupItem } from '@components/ui/toggle-group'
+import { Badge } from '@webview/blocks/Badge'
 import type { PromptCategoryRailItem } from '../utils/prompt/library'
 import type { JSX } from 'react'
 

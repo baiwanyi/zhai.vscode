@@ -1,7 +1,7 @@
 /**
  * 历史会话页：以整页承载会话列表，替代原来的浮层，便于按范围与来源浏览与迁移。
  * 复用约定：外壳取 components/AppPage（标题行左侧返回、下方筛选条），列表行取 ./layout/AiChatHistoryRow，
- * 空态取 StateEmpty；筛选词表与空态文案分别在 ./utils/historyFilters 与 ./utils/emptyState，
+ * 空态取 Empty；筛选词表与空态文案分别在 ./utils/historyFilters 与 ./utils/emptyState，
  * 数据与筛选状态由调用方（useAiChatHistory）持有，本页只做装配与回调，不自行取数。
  * 关键约束：过滤只作用于已拉取的 50 条，不再发请求；筛选分两类 —— 「当前」按作用域、
  * 其余都基于全区列表在前端切分；选中后的迁移确认由调用方负责。
@@ -12,7 +12,7 @@ import { InputGroup, InputGroupAddon, InputGroupInput } from '@components/ui/inp
 import { ItemGroup } from '@components/ui/item'
 import type { AiConversationSummary } from '@shared/types/aiChat'
 import { BackAction } from '@webview/blocks/BackAction'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { AppContent, AppHeader, AppMenu, AppPage, AppTitle } from '@webview/components/AppPage'
 import { SegmentedRail } from '@webview/components/SegmentedRail'
 import type { SegmentedRailItem } from '@webview/components/SegmentedRail'
@@ -90,7 +90,7 @@ export function AiChatHistoryPage({
                 </InputGroup>
                 {matched.length === 0 ? (
                     <div className="flex flex-1 items-center justify-center py-10">
-                        <StateEmpty icon={History} title={emptyCopy.title} description={emptyCopy.description} />
+                        <Empty icon={History} title={emptyCopy.title} description={emptyCopy.description} />
                     </div>
                 ) : (
                     <ItemGroup className="gap-2 py-3">

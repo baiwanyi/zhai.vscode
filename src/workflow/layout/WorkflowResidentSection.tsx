@@ -11,7 +11,7 @@
  */
 import { Archive } from 'lucide-react'
 import { WEIBO_MODULE_KEY } from '@shared/types/workflow'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { WorkflowAiChat } from '@webview/workflow/aichat/WorkflowAiChat'
 import { WorkflowAnnotation } from '@webview/workflow/annotation/WorkflowAnnotation'
 import { WorkflowMedia } from '@webview/workflow/media/WorkflowMedia'
@@ -70,7 +70,7 @@ export function WorkflowResidentSection({
         }
         return (
             <div className="flex h-full flex-col justify-center p-4">
-                <StateEmpty
+                <Empty
                     icon={Archive}
                     title="还没有打开文档"
                     description="快照以当前 Markdown 文档为单位。打开任意 .md 文件后，保存或手动留版都会在此留下历史版本。"

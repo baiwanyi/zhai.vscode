@@ -310,7 +310,7 @@ GET https://weibo.com/ajax/feed/unreadfriendstimeline
 - **纯视频微博**（`imageCount === 0` 且只有一个视频项）直接铺播放器：poster 是封面经图片代理换来的 data URI，进视口即可见，点播放才开始走中转取流，不会提前偷流量；地址换不到时该位置变成「视频暂不可播放，点击在浏览器打开原文」。
 - **容器比例跟随视频分辨率**（`media.items[].resolution`）：`WeiboVideoPlayer` 收一个 `aspectRatio`，竖屏视频按竖框铺开，不再塞进 16:9 里左右留大片黑边；分辨率缺失或非法值时才回落 16:9。容器高度统一限到 **720px**：竖屏比例超过这条线时由 `video` 的 `object-contain` 居中、左右留黑底，不把卡片撑长。
 - 播放器统一走 `layout/WeiboVideoPlayer.tsx`（自绘控件栏，不用原生 `controls`）：中央播放键只在暂停时出现，播放中淡出且不挡画面；**空格切换播放/暂停**（容器可聚焦，`preventDefault` 同时挡掉页面滚动）；**控件栏只在播放中出现**——播放中鼠标静止 2.5 秒后淡出、鼠标一动立刻回来，暂停与未播放时整条控件栏不显示，只留中央播放键；底部含进度条（可拖动）、`mm:ss` 时间、静音与全屏，全屏在 Webview 中被拒时静默忽略。
-- 控件一律用现成组件：按钮取 `@webview/components/Button`（图标键 `size="icon-xs"`、中央键 `icon-lg` 配圆形容器、静音与全屏带 `tooltip`），进度条取 `@components/ui/slider`（拖动只更新本地进度，`onValueCommit` 才 seek），清晰度角标取 `@components/ui/badge`。播放器叠在视频上固定是暗底，控件配色写死白色、只覆盖配色类，不改组件本体。
+- 控件一律用现成组件：按钮取 `@webview/components/Button`（图标键 `size="icon-xs"`、中央键 `icon-lg` 配圆形容器、静音与全屏带 `tooltip`），进度条取 `@components/ui/slider`（拖动只更新本地进度，`onValueCommit` 才 seek），清晰度角标取 `@webview/blocks/Badge`。播放器叠在视频上固定是暗底，控件配色写死白色、只覆盖配色类，不改组件本体。
 - **清晰度角标**：视频项自带 `resolution`，取 `playback_list` 里面积最大的一档宽高（`dash_audio` 宽高为 0 自动跳过，`scrubber_hd` 预览图面积最小选不中），没有播放列表时回退解析地址上的 `template=720x960.24.0`。前端按**短边**归类成 `320P` / `480P` / `720P` / `1080P` / `2K` / `4K` / `8K`（1440 / 2160 / 4320 分别对应 2K / 4K / 8K），在播放器左上角用白色半透明角标展示，**播放中收起、未播放与暂停时显示**；分辨率缺失时不显示角标。
 - 图文混排 / 多视频：视频项先占一个宫格（封面 + 播放角标 + 时长），与图片一起按原序排三列；点封面才原地换成**整行**播放器（`col-span-3`，按视频分辨率比例铺开），图片被挤到播放器下方，播放器右上角有「返回宫格」按钮可收起；同一媒体区同时只播一条，换一条即收起旧的；没有整段地址或中转不可用时该位置回退「在浏览器打开原文」，转发区回退的是被转发的原文。
 
@@ -661,7 +661,7 @@ GET https://weibo.com/ajax/side/bandUnified?type=mine&last_tab=mine&last_tab_tim
 - 侧栏在容器宽度 ≥ 768px（`@3xl`）时出现在列表右侧，窄面板自动隐藏；宽档下用 `sticky top-3 self-start` 钉在内容区滚动视口内，不随左侧信息流滚走（缺 `@3xl:block` 会一直 `display:none`，缺 `self-start` 会被拉伸到父容器高度而没有粘住行程）；面板内点刷新可重新取数，未配置 Cookie 时只给引导；空榜单（含未配置、加载、失败）不显示右上角刷新按钮，重试入口只在空态里。
 - 热搜页（`search.*`）不渲染这张卡：榜单已在专页整页展示，侧栏只服务信息流的边看边刷。
 - 标题下的说明行显示「更新于 本地时分」，时刻取宿主回包的 `fetchedAt`（ISO），与榜单内容同一次请求同源，而不是前端计时；首次取数前或回包时刻非法时该行留空，标题区不跳动。
-- 卡片的四种状态都由 `StateEmpty` 承载：未配置 Cookie（`Cookie` 图标 + 取数前提说明）、首次加载（`Spinner` + 正在读取）、失败与空榜单（`Flame` + 重试按钮作底部操作区，有错误信息时标题为「热搜读取失败」、说明用上游错误文案，否则是「暂时没有热搜内容」+ 刷新建议）；侧栏内统一用紧凑间距（`gap-3 p-3`），未配置态不在卡片内重复放按钮，入口在顶栏账号菜单的「设置」。
+- 卡片的四种状态都由 `Empty` 承载：未配置 Cookie（`Cookie` 图标 + 取数前提说明）、首次加载（`Spinner` + 正在读取）、失败与空榜单（`Flame` + 重试按钮作底部操作区，有错误信息时标题为「热搜读取失败」、说明用上游错误文案，否则是「暂时没有热搜内容」+ 刷新建议）；侧栏内统一用紧凑间距（`gap-3 p-3`），未配置态不在卡片内重复放按钮，入口在顶栏账号菜单的「设置」。
 - 榜单用 `ItemGroup`（自带 `role="list"`）+ `Item`（补 `role="listitem"`）承载，不再用 `ol/li`：序号走 `ItemMedia variant="icon"`（`w-4 justify-end`，两位数不推歪标题）、标题走 `ItemTitle`（`line-clamp-1` 单行截断）、`description` 作标题下的副行走 `ItemDescription`、`icon_desc` 作为行尾 `Badge` 收进 `ItemActions`；条目只展示文字，上游 `icon_url` 仍随回包下发但前端不再渲染成图片。
 - 条目整行点击打开 `https://s.weibo.com/weibo?q={encodeURIComponent(title)}`（`s.weibo.com` 属 `weibo.com` 子域，`weibo/openPost` 白名单放行；注意该协议对 url 有 512 字符上限）；悬停整行（触发器是 `Item` 本身，不是标题链接）用 `Tooltip` 显示完整标题，气泡沿用 `TOOLTIP_CLASS` 的暗底亮字并放左侧，调用处再叠 `ring-1 ring-border shadow-lg`——气泡底色固定 `#1E1E1E`，暗色主题下与侧栏底色几乎同值，没有轮廓就分不出边界；悬停时整行铺 `hover:bg-muted`，标题、序号与描述同时提亮（`Item` 自带 `group/item`）；标题本身是 `a`，只为键盘可达与右键复制地址，点击 `preventDefault` 后冒泡回整行处理器，避免打开两次或让 webview 自行导航。
 
@@ -828,7 +828,7 @@ GET https://weibo.com/ajax/mblog/topic?q={关键字}
 - 归一化只取 `data[].topic`：剥掉首尾 `#`、去空白、同名去重；空数组是正常结果（新账号或搜不到），由前端展示空态而不是报错。
 - 协议 `weibo/topics` 复用登录 Cookie，`q` 限 50 字（超长直接判非法，不截断）；不参与磁盘缓存（热搜变化快），每次打开面板或改关键字都回源。
 - 话题面板打开即取常用话题，输入走 300ms 去抖；回包按请求序号校验，先发后到的旧结果丢弃；选中后按正文口径插入 `#话题#` 并恢复光标，超出 2000 字上限时拒绝并提示。
-- 图片面板取通用 `ImagePicker`（Popover + Tabs），三栏分别为生图（`media/list` 的 generate）、已下载在线图库（`stock/downloaded`）与上传图片（`upload/list`，只有 `url` 非空的条目参与）；已选条目置灰禁用，选中后在发布框下方以缩略图列表展示，右上角可移除。
+- 图片面板取通用 `ImagePickerPopover`（Popover + Tabs），三栏分别为生图（`media/list` 的 generate）、已下载在线图库（`stock/downloaded`）与上传图片（`upload/list`，只有 `url` 非空的条目参与）；已选条目置灰禁用，选中后在发布框下方以缩略图列表展示，右上角可移除。
 - 发布协议只接受 `uploads/` 下的路径，生图与在线图库两栏仅供浏览，选中时提示先上传；只有「上传图片」栏的条目能加入已选列表。
 - 标题右侧点「上传图片」唤起系统选择器（`upload/pick`），上传结果自动加入已选并把面板切到「上传图片」栏；微博侧上传清单仍由 `useWeiboComposerImages` 持有，与粘贴上传共用。
 - 发布框聚焦时粘贴剪贴板里的图片（`clipboardData.files` 中的 `image/*`）走 `upload/bytes` 落 `uploads/{YYYYMM}/`，成功后加入已选；纯文本粘贴完全不拦截默认行为。

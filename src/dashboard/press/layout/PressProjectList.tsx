@@ -1,6 +1,6 @@
 /**
  * 作品列表区块：按加载状态分派，加载中给骨架、失败给重试、无数据给引导、有数据给条目列表。
- * 复用 @components/ui 的 item、PressStateViews 的骨架与失败块、业务公共层的 StateEmpty 空态；
+ * 复用 @components/ui 的 item、PressStateViews 的骨架与失败块、业务公共层的 Empty 空态；
  * 标题与作品数量由页面页头承担，本组件只负责内容，故不再套卡片外壳。
  * 关键约束：条目组须显式声明 w-full，宽度跟随 AppContent 的可用宽度撑满，不随内容收缩；
  * 空态同时提供「添加作品」与「重建索引」，后者用于索引缓存被清空后恢复列表；
@@ -10,7 +10,7 @@
 import { BookOpen } from 'lucide-react'
 import { ItemGroup } from '@components/ui/item'
 import type { PressProjectSummary } from '@shared/types/press'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { PressProjectItem } from './PressProjectItem'
 import { PressErrorState, PressSkeletonList } from './PressStateViews'
@@ -49,7 +49,7 @@ export function PressProjectList({
 
     if (projects.length === 0) {
         return (
-            <StateEmpty
+            <Empty
                 title="还没有作品"
                 description="作品目录下以子目录组织，新建后会自动生成背景、大纲与角色设定骨架文档。"
                 icon={BookOpen}
@@ -60,7 +60,7 @@ export function PressProjectList({
                 <Button variant="outline" onClick={onRebuild}>
                     重建索引
                 </Button>
-            </StateEmpty>
+            </Empty>
         )
     }
 

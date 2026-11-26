@@ -1,6 +1,6 @@
 /**
  * 信息流列表：加载态、空态、卡片列表与「自动翻页 / 手动加载 / 到底」三段式统一在此。
- * 复用约定：单条渲染交给 WeiboPostCard，加载态与空态复用 StateEmpty，
+ * 复用约定：单条渲染交给 WeiboPostCard，加载态与空态复用 Empty，
  * 页面只给出状态与回调，不再各自拼列表骨架。
  * 关键约束：加载态与空态互斥，加载中不渲染空态措辞；
  * 滚动到底自动翻页，距底部一屏内即预取下一页，自动次数到上限（10 次）或有取数错误时
@@ -11,7 +11,7 @@
 import { Inbox } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import type { WeiboTimelinePost } from '@shared/types/weibo'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { WeiboPostCard } from './WeiboPostCard'
 import type { JSX, ReactNode } from 'react'
@@ -114,14 +114,14 @@ export function WeiboFeedList({
     }, [canAutoLoad, isLoadingMore, posts.length])
 
     if (isLoading) {
-        return <StateEmpty className="py-8" title={WEIBO_UI_TEXT.loading.feed} isLoading />
+        return <Empty className="py-8" title={WEIBO_UI_TEXT.loading.feed} isLoading />
     }
     if (posts.length === 0) {
         if (emptyState !== undefined) {
             return <>{emptyState}</>
         }
         return (
-            <StateEmpty
+            <Empty
                 className="py-8"
                 icon={Inbox}
                 // 有取数错误时标题改成「读取失败」：空列表只是结果，说「没有内容」会把失败讲成正常空态
@@ -133,7 +133,7 @@ export function WeiboFeedList({
                         {WEIBO_UI_TEXT.action.refresh}
                     </Button>
                 )}
-            </StateEmpty>
+            </Empty>
         )
     }
     /** 自动额度用完或上一次取数失败：底部改出按钮，由用户决定是否继续翻 */

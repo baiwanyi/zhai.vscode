@@ -4,8 +4,8 @@
  * 关键约束：编辑与删除回调按 id 定位；摘要只显示卷位与叙事作用，不展示事件与主角变化。
  */
 import { Pencil, Trash2 } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
+import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import type { OutlineAct } from '../../types'
 import type { JSX } from 'react'

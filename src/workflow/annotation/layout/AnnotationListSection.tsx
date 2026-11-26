@@ -16,8 +16,8 @@ import { Alert as UiAlert, AlertDescription } from '@components/ui/alert'
 import { ItemGroup } from '@components/ui/item'
 import type { AnnotationRecord, HighlightColor } from '@shared/types/editor'
 import { toErrorDetail } from '@shared/utils/error'
+import { Empty } from '@webview/blocks/Empty'
 import { LoadMoreSentinel } from '@webview/blocks/LoadMoreSentinel'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Alert } from '@webview/components/Alert'
 import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
 import { AnnotationListItem } from './AnnotationListItem'
@@ -68,7 +68,7 @@ function AnnotationListSectionBase({
             )}
             {error === null ? null : <Alert title="标注读取失败" description={toErrorDetail(error)} variant="destructive" />}
             {items.length === 0 && error === null ? (
-                <StateEmpty
+                <Empty
                     title={emptyCopy.title}
                     description={emptyCopy.description}
                     icon={Highlighter}

@@ -1,13 +1,13 @@
 /**
  * 热搜状态占位：未配置 / 首次取数 / 失败与空榜三种情况共用一份骨架，侧栏与专页只差尺寸与文案。
- * 复用约定：占位取 @webview/blocks/StateEmpty，重试与去设置入口取 @webview/components/Button；
+ * 复用约定：占位取 @webview/blocks/Empty，重试与去设置入口取 @webview/components/Button；
  * variant 决定内边距、图标尺寸与是否给「去设置」，榜单有内容时返回 null 由调用方渲染列表。
  * 关键约束：hasLoaded 为假同样算加载态，否则空态会先闪一下再被结果替换；
  * 本组件不感知榜单来源，同城等场景的补充说明由调用方通过 emptyHint 传入。
  */
 import { Cookie, Flame } from 'lucide-react'
 import { Spinner } from '@components/ui/spinner'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import type { WeiboHotRankState } from '../hooks/useWeiboHotRank'
 import type { JSX } from 'react'
@@ -70,7 +70,7 @@ export function WeiboHotRankFallback({
 
     if (!isEnabled) {
         return (
-            <StateEmpty
+            <Empty
                 className={copy.emptyClass}
                 icon={Cookie}
                 iconClassName={copy.iconClass}
@@ -82,12 +82,12 @@ export function WeiboHotRankFallback({
                         去设置
                     </Button>
                 ) : null}
-            </StateEmpty>
+            </Empty>
         )
     }
     if (!state.hasLoaded || (state.isLoading && state.items.length === 0)) {
         return (
-            <StateEmpty
+            <Empty
                 className={copy.emptyClass}
                 icon={Spinner}
                 iconClassName={copy.iconClass}
@@ -98,7 +98,7 @@ export function WeiboHotRankFallback({
     if (state.items.length === 0) {
         const isFailed = state.errorMessage !== null
         return (
-            <StateEmpty
+            <Empty
                 className={copy.emptyClass}
                 icon={Flame}
                 iconClassName={copy.iconClass}
@@ -108,7 +108,7 @@ export function WeiboHotRankFallback({
                 <Button size="sm" variant="outline" onClick={onRetry}>
                     重试
                 </Button>
-            </StateEmpty>
+            </Empty>
         )
     }
     return null

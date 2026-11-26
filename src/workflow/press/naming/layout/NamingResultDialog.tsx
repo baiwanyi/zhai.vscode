@@ -1,6 +1,6 @@
 /**
  * 取名结果弹窗：以弹层展示当前分类的一批候选，含数量摘要、复制全部与空态引导，关闭后可从页面底部「查看结果」再开。
- * 复用约定：弹层复用 ui/dialog（含无障碍标题与描述），空态复用 blocks/StateEmpty，候选卡片复用同目录 NamingResultCard，
+ * 复用约定：弹层复用 ui/dialog（含无障碍标题与描述），空态复用 blocks/Empty，候选卡片复用同目录 NamingResultCard，
  * 滚动复用 ui/scroll-area，等待态复用 ui/spinner；复制与失败提示统一走 sonner，弹窗内不渲染内联错误。
  * 关键约束：结果由父级按分类缓存，本组件不持有生成状态；关闭弹窗不影响进行中的生成，
  * 首次生成（列表为空）时显示等待态而非空态；生成过程只能在页面底部操作区中断，弹窗不提供取消入口。
@@ -18,7 +18,7 @@ import {
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Spinner } from '@components/ui/spinner'
 import type { NamingCandidate } from '@shared/types/naming'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { NamingResultCard } from './NamingResultCard'
 import type { JSX } from 'react'
@@ -73,7 +73,7 @@ export function NamingResultDialog({
                                 </p>
                             </div>
                             {items.length === 0 ? (
-                                <StateEmpty
+                                <Empty
                                     icon={Sparkles}
                                     title={EMPTY_TITLE}
                                     description={EMPTY_DESCRIPTION}

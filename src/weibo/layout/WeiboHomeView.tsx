@@ -9,7 +9,7 @@
 import { Inbox } from 'lucide-react'
 import type { UploadFileItem } from '@shared/types/upload'
 import type { WeiboTimelinePost } from '@shared/types/weibo'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { ComposerCard } from './ComposerCard'
 import { CredentialCard } from './CredentialCard'
@@ -81,7 +81,7 @@ export function WeiboHomeView({
                 errorMessage={homeState.errorMessage}
                 emptyState={
                     isConfigured ? (
-                        <StateEmpty
+                        <Empty
                             className="py-8"
                             icon={Inbox}
                             // 自定义空态绕过了 WeiboFeedList 的错误标题判断，这里自己补：有取数错误就不能说「没有内容」
@@ -98,7 +98,7 @@ export function WeiboHomeView({
                             <Button size="sm" variant="outline" onClick={onRefresh}>
                                 {WEIBO_UI_TEXT.action.refresh}
                             </Button>
-                        </StateEmpty>
+                        </Empty>
                     ) : (
                         <CredentialGate
                             variant="hint"

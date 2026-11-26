@@ -1,13 +1,13 @@
 /**
  * 热搜徽标：把上游的 icon_desc 与底色渲染成行尾标记，侧栏行与专页行共用。
- * 复用约定：徽标取 @components/ui/badge，前景色由 @shared/utils/color 的 pickReadableForeground 计算，
+ * 复用约定：徽标取 @webview/blocks/Badge，前景色由 @shared/utils/color 的 pickReadableForeground 计算，
  * 尺寸通过 size 区分侧栏（sm）与专页（md），调用方不再各写一份样式与颜色分支。
  * 关键约束：iconDesc 为空时返回 null，调用方无需判空；
  * 底色缺失或非法时退化为默认徽标样式（不带行内样式），与图床白名单无关。
  */
-import { Badge } from '@components/ui/badge'
 import type { WeiboHotRankItem } from '@shared/types/weibo'
 import { pickReadableForeground } from '@shared/utils/color'
+import { Badge } from '@webview/blocks/Badge'
 import type { JSX } from 'react'
 
 /** 徽标尺寸：侧栏窄、专页宽，各给一档 */

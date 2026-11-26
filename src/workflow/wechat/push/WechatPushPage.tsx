@@ -9,11 +9,11 @@
  */
 import { ChevronDown, ChevronRight, Send } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Badge } from '@webview/blocks/Badge'
+import { Empty } from '@webview/blocks/Empty'
 import {
     AppContent,
     AppDescription,
@@ -74,7 +74,7 @@ export function WechatPushPage({ account }: WechatPushPageProps): JSX.Element {
             return <PushSkeleton />
         }
         if (status === 'error') {
-            return <StateEmpty title="批次读取失败" description={error ?? '请稍后重试'} />
+            return <Empty title="批次读取失败" description={error ?? '请稍后重试'} />
         }
         if (tab === 'quota') {
             return <QuotaPanel quota={quota} quotaError={quotaError} />
@@ -82,7 +82,7 @@ export function WechatPushPage({ account }: WechatPushPageProps): JSX.Element {
         const list = tab === 'queue' ? queue : history
         if (list.length === 0) {
             return (
-                <StateEmpty
+                <Empty
                     icon={Send}
                     title={tab === 'queue' ? '没有待推送的批次' : '还没有推送记录'}
                     description={
@@ -240,7 +240,7 @@ function QuotaPanel({
     quotaError: string | null
 }): JSX.Element {
     if (quota === null) {
-        return <StateEmpty title="额度读取失败" description={quotaError ?? '请稍后重试'} />
+        return <Empty title="额度读取失败" description={quotaError ?? '请稍后重试'} />
     }
     return (
         <div className="flex w-full flex-col gap-2 rounded-xl border p-3">

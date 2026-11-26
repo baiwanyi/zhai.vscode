@@ -4,10 +4,10 @@
  * 关键约束：只读展示，钩子徽标只作提示，张力档位越界时文案回落空串。
  */
 import { Ban, Eye, FishingHook, Flag, GitBranch, Heart, Target } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { ItemGroup } from '@components/ui/item'
 import { orFallback } from '@shared/utils/format'
+import { Badge } from '@webview/blocks/Badge'
 import { ChapterDetailItem, DETAIL_GROUP_CLASS, DetailSeparator } from './ChapterFocusParts'
 import type { OutlineChapter } from '../../types'
 import type { JSX } from 'react'

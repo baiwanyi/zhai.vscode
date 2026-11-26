@@ -13,8 +13,8 @@ import { Send } from 'lucide-react'
 import { useCallback, useMemo } from 'react'
 import { Spinner } from '@components/ui/spinner'
 import type { WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
+import { Empty } from '@webview/blocks/Empty'
 import { LoadMoreSentinel } from '@webview/blocks/LoadMoreSentinel'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { AppContent, AppPage } from '@webview/components/AppPage'
 import { Button } from '@webview/components/Button'
 import { useScrollSentinel } from '@webview/hooks/useScrollSentinel'
@@ -137,29 +137,29 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
     )
 
     if (accountStatus === 'loading') {
-        return <StateEmpty title="正在读取账号" isLoading />
+        return <Empty title="正在读取账号" isLoading />
     }
 
     if (accountStatus === 'error') {
         return (
-            <StateEmpty title="无法读取账号" description={accountError ?? '请稍后重试'}>
+            <Empty title="无法读取账号" description={accountError ?? '请稍后重试'}>
                 <Button variant="outline" onClick={() => void reloadAccounts()}>
                     重试
                 </Button>
                 <Button variant="ghost" onClick={onRemoved}>
                     返回账号列表
                 </Button>
-            </StateEmpty>
+            </Empty>
         )
     }
 
     if (account === null) {
         return (
-            <StateEmpty title="找不到该公众号账号" description="账号可能已被删除，或链接里的标识不完整。" icon={Send}>
+            <Empty title="找不到该公众号账号" description="账号可能已被删除，或链接里的标识不完整。" icon={Send}>
                 <Button variant="outline" onClick={onRemoved}>
                     返回账号列表
                 </Button>
-            </StateEmpty>
+            </Empty>
         )
     }
 

@@ -8,11 +8,11 @@
  * 关键约束：本页只负责分区内容与三态渲染（读取中 / 未打开作品 / 就绪），不直接发请求、不直接改草稿；
  * 常驻分区先于作品工作区状态分派 —— 对话等页面只依赖文档作用域，等作品文档读完再放行会先闪一层作品骨架；
  * 例外是媒体与快照：前者要带角色与设定上下文，后者是作品级时间线，二者仍需等作品数据；
- * 读取中交给 StateEmpty 的加载态（logo + 转圈 + 文案），等待期间不出现整片空白；
+ * 读取中交给 Empty 的加载态（logo + 转圈 + 文案），等待期间不出现整片空白；
  * 作品定位只认宿主下发的 projectDir；未打开作品时渲染初始页（作品清单入口），不在页面内伪造示例数据。
  */
 import type { WorkflowContextState } from '@shared/types/workflow'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { RESIDENT_SECTIONS, readScopeDir } from '@webview/workflow/layout/contentScope'
 import { WorkflowResidentSection } from '@webview/workflow/layout/WorkflowResidentSection'
 import { usePressWorkspaceScope } from './hooks/usePressWorkspaceScope'
@@ -52,7 +52,7 @@ export function WorkflowPress({ context, section }: WorkflowPressProps): JSX.Ele
 
     // 读取中：交给统一的加载态，等待期间不出现整片空白
     if (status === 'loading') {
-        return <StateEmpty className="h-full" title="正在读取作品..." isLoading />
+        return <Empty className="h-full" title="正在读取作品..." isLoading />
     }
 
     if (workspace === null) {

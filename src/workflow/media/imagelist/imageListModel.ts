@@ -1,6 +1,6 @@
 /**
  * 统一图片列表的类型契约：条目、分组、动作、状态位与续载策略的唯一定义处。
- * 复用约定：图标沿用 StateEmpty 的函数签名以兼容 lucide 图标，领域对象经 source 原样回传，
+ * 复用约定：图标沿用 Empty 的函数签名以兼容 lucide 图标，领域对象经 source 原样回传，
  * 组件层不认识 MediaItem / StockPhoto 等具体类型；比例与栅格类名在此写全，避免 Tailwind 漏扫动态拼接。
  * 关键约束：数据以 flat / grouped 二选一的联合传入，避免两种模式同时给出产生歧义；
  * 列表为受控纯展示，加载、删除确认与任何宿主请求都由调用方持有；
@@ -8,7 +8,7 @@
  */
 import type { ReactNode } from 'react'
 
-/** 图标：与 StateEmpty 同款可调用签名，lucide 图标可直接传入 */
+/** 图标：与 Empty 同款可调用签名，lucide 图标可直接传入 */
 export type ImageListIcon = (props: { className?: string }) => ReactNode
 
 export type ImageListAspect = '3/4' | '4/3' | 'square'

@@ -1,12 +1,12 @@
 /**
  * 全书结构纲面板：只记 3~5 个全书级大转折，卷级转折归各卷卷纲。
- * 复用约定：列表取 block/StructureActItem（ui/item），编辑取 StructureActDialog，空态取 @webview/blocks/StateEmpty。
+ * 复用约定：列表取 block/StructureActItem（ui/item），编辑取 StructureActDialog，空态取 @webview/blocks/Empty。
  * 关键约束：卷位存卷序不存卷 id；编辑期只在弹窗草稿里改，确认后一次性回传整个列表。
  */
 import { Milestone } from 'lucide-react'
 import { useState } from 'react'
 import { ItemGroup } from '@components/ui/item'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { StructureActDialog } from './StructureActDialog'
 import type { OutlineAct } from '../../types'
 import type { JSX } from 'react'
@@ -44,7 +44,7 @@ export function StructurePanel({ acts, volumeOptions, onChange }: StructurePanel
     return (
         <>
             {acts.length === 0 ? (
-                <StateEmpty
+                <Empty
                     icon={Milestone}
                     title="还没有结构阶段"
                     description="点页头「添加阶段」，记录全书转折"

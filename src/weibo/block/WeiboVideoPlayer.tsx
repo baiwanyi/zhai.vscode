@@ -1,7 +1,7 @@
 /**
  * 微博视频播放器：自绘控件栏，避免原生 controls 在 Webview 里样式与自动隐藏都不可控。
  * 复用约定：主贴与转发体共用；src 是宿主回环中转地址（见 14.4），poster 是封面图 data URI；
- * 按钮取 @webview/components/Button，进度条取 @components/ui/slider，清晰度角标取 @components/ui/badge。
+ * 按钮取 @webview/components/Button，进度条取 @components/ui/slider，清晰度角标取 @webview/blocks/Badge。
  * 关键约束：容器默认 16:9，传入 aspectRatio（视频分辨率算出的宽高比）时按该比例铺开，竖屏不再留黑边；
  * 高度一律限到 720px，竖屏比例超过这条线时由 video 的 object-contain 居中、左右留黑底，不撑长卡片；
  * 控件栏只在播放中显示，鼠标静止 2.5s 后淡出；暂停 / 未播放时整条控件栏不出现，
@@ -14,9 +14,9 @@
 import { cn } from 'cn'
 import { Maximize2, Pause, Play, Volume2, VolumeX } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import { Slider } from '@components/ui/slider'
 import type { WeiboTimelineVideoResolution } from '@shared/types/weibo'
+import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import type { JSX, KeyboardEvent } from 'react'
 import { useWeiboImage } from '../hooks/useWeiboImage'

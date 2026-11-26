@@ -6,10 +6,10 @@
  * 空列表必须渲染一行提示而不是留白，避免被误认为加载失败。
  */
 import { FileText } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@components/ui/table'
 import type { AiUsageItem } from '@shared/types/aiUsage'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Badge } from '@webview/blocks/Badge'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 import { formatCredits, formatUsageTime, readModuleLabel, shortRequestId } from '../utils'
@@ -39,7 +39,7 @@ export function UsageTable({ items, onOpenRequest }: UsageTableProps): JSX.Eleme
                 {items.length === 0 ? (
                     <TableRow>
                         <TableCell colSpan={COLUMN_COUNT}>
-                            <StateEmpty
+                            <Empty
                                 icon={FileText}
                                 title="当前筛选范围没有用量记录"
                                 description="调整时间范围或模块筛选后重试。"

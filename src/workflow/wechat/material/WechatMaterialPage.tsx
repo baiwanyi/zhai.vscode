@@ -13,7 +13,7 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle }
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatMaterialSummary } from '@shared/types/wechat'
 import { copyWithToast } from '@shared/utils/clipboard'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { AlertDialog } from '@webview/components/AlertDialog'
 import {
     AppContent,
@@ -72,11 +72,11 @@ export function WechatMaterialPage({ account }: WechatMaterialPageProps): JSX.El
             )
         }
         if (status === 'error') {
-            return <StateEmpty title="素材列表加载失败" description={error ?? '请稍后重试'} />
+            return <Empty title="素材列表加载失败" description={error ?? '请稍后重试'} />
         }
         if (materials.length === 0) {
             return (
-                <StateEmpty
+                <Empty
                     icon={Images}
                     title="还没有素材"
                     description="正文里的本地图片在生成草稿时会自动上传并出现在这里；也可以用下方按钮主动上传一张。"

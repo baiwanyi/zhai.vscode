@@ -1,7 +1,7 @@
 /**
  * 设定与大纲快照面板：按时间倒序列出四份结构化文档的历次留版，支持手动留版、整版恢复与删除单版。
  * 复用约定：取数与动作由 usePressSnapshots 承担，单条渲染由 SnapshotListItem 承担，空态由业务公共层的
- * StateEmpty 承担；
+ * Empty 承担；
  * 恢复与删除的确认框取业务公共层的 AlertDialog，创建备注对话框由 SnapshotCreateDialog 承担，本组件只做编排与文案。
  * 关键约束：恢复会整版覆盖四份文档且不动章节正文，删除只影响该版本，两处文案必须写清边界；
  * 写操作进行中禁用入口，防止同一动作被连点提交两次。
@@ -11,7 +11,7 @@ import { useState } from 'react'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@components/ui/card'
 import { ItemGroup } from '@components/ui/item'
 import type { PressSnapshotEntry } from '@shared/types/press'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
 import { usePressSnapshots } from './hooks/usePressSnapshots'
@@ -44,7 +44,7 @@ export function DocSnapshotPanel({ dirPath }: DocSnapshotPanelProps): JSX.Elemen
                 </CardHeader>
                 <CardContent className="min-h-0 flex-1 overflow-y-auto">
                     {snapshots.length === 0 ? (
-                        <StateEmpty
+                        <Empty
                             isLoading={isLoading}
                             title={isLoading ? '正在读取…' : '还没有快照'}
                             description="设定、角色或大纲内容有改动时会自动留一版；也可以点上方「立即快照」手动留一版。"

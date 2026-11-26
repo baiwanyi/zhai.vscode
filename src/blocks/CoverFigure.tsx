@@ -1,13 +1,13 @@
 /**
  * 封面图展示：统一「回读骨架 → 空态 → 成品图」三态，供人物设定图与作品封面等 3/4 竖版封面复用。
- * 复用约定：骨架取 @components/ui 的 skeleton，空态复用同目录 StateEmpty，成品图复用 @webview/components/Image（3/4 比例 + lg 圆角 + 描边）。
+ * 复用约定：骨架取 @components/ui 的 skeleton，空态复用同目录 Empty，成品图复用 @webview/components/Image（3/4 比例 + lg 圆角 + 描边）。
  * 关键约束：数据来源由调用方提供，本组件不含 hook、不决定从哪个目录回读；isLoading 优先于 src 判断，
  * 避免先闪一次空态；空态文案必须由调用方给出，本组件不猜测业务语义；出图、换图与删除都在生图页完成。
  */
 import { ImagePlus } from 'lucide-react'
 import { Skeleton } from '@components/ui/skeleton'
 import { Image } from '@webview/components/Image'
-import { StateEmpty } from './StateEmpty'
+import { Empty } from './Empty'
 import type { JSX } from 'react'
 
 export interface CoverFigureProps {
@@ -28,7 +28,7 @@ export function CoverFigure({ src, isLoading, alt, emptyTitle, emptyDescription 
         return <Skeleton className="aspect-3/4 w-full rounded-lg" />
     }
     if (src === null) {
-        return <StateEmpty icon={ImagePlus} title={emptyTitle} description={emptyDescription} className="border py-4" />
+        return <Empty icon={ImagePlus} title={emptyTitle} description={emptyDescription} className="border py-4" />
     }
     return <Image src={src} alt={alt} aspect="3/4" size="lg" className="border border-border" />
 }

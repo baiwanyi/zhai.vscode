@@ -12,7 +12,6 @@
  * 文章数达到上限时，菜单里的添加与导入同时禁用，避免用户点了才被宿主拒绝。
  */
 import { MoreHorizontal } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import {
     DropdownMenu,
     DropdownMenuContent,
@@ -31,6 +30,7 @@ import {
     ItemTitle,
 } from '@components/ui/item'
 import { WECHAT_ISSUE_ARTICLE_LIMIT, type WechatArticleSummary, type WechatIssueSummary } from '@shared/types/wechat'
+import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
 import type { JSX } from 'react'

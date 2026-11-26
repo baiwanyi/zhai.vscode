@@ -6,7 +6,7 @@
  */
 import { Inbox } from 'lucide-react'
 import type { WeiboCredentialState, WeiboGroupItem } from '@shared/types/weibo'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { WeiboFeedSection } from './WeiboFeedSection'
 import type { WeiboFeedController } from '../hooks/useWeiboFeed'
@@ -74,10 +74,10 @@ export function WeiboFeedViews({
     if (kind === 'timeline') {
         if (isConfigured && timelineListId === null) {
             if (groupsLoading) {
-                return <StateEmpty className="py-8" title={WEIBO_UI_TEXT.loading.defaultGroup} isLoading />
+                return <Empty className="py-8" title={WEIBO_UI_TEXT.loading.defaultGroup} isLoading />
             }
             return (
-                <StateEmpty
+                <Empty
                     className="py-8"
                     icon={Inbox}
                     title={WEIBO_UI_TEXT.error.group}
@@ -86,7 +86,7 @@ export function WeiboFeedViews({
                     <Button size="sm" variant="outline" onClick={onReloadGroups}>
                         {WEIBO_UI_TEXT.action.reloadGroups}
                     </Button>
-                </StateEmpty>
+                </Empty>
             )
         }
         return renderSection(feeds.timeline, WEIBO_UI_TEXT.empty.timeline, '默认分组近期没有更新，稍后刷新一次再试。')
@@ -101,7 +101,7 @@ export function WeiboFeedViews({
     }
 
     if (isConfigured && groupsLoading && activeGroup === null) {
-        return <StateEmpty className="py-8" title={WEIBO_UI_TEXT.loading.groups} isLoading />
+        return <Empty className="py-8" title={WEIBO_UI_TEXT.loading.groups} isLoading />
     }
     return renderSection(
         feeds.group,

@@ -10,13 +10,13 @@
  * 边框与内边距不做预设，由 className 覆盖（虚线边框、卡片内紧凑内边距等），避免各调用点视觉漂移。
  */
 import { cn } from 'cn'
-import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
+import { Empty as UiEmpty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@components/ui/empty'
 import { Spinner } from '@components/ui/spinner'
 import { Image } from '@webview/components/Image'
 import logoIcon from '@resources/icon.svg'
 import type { ComponentType, JSX, ReactNode } from 'react'
 
-export interface StateEmptyProps {
+export interface EmptyProps {
     /** 空态标题；加载态无业务图标时也用它作加载文案。省略或空串时不渲染标题节点 */
     title?: string
     description?: string
@@ -30,7 +30,7 @@ export interface StateEmptyProps {
     children?: ReactNode
 }
 
-export function StateEmpty({
+export function Empty({
     title,
     description,
     icon: Icon,
@@ -38,7 +38,7 @@ export function StateEmpty({
     isLoading = false,
     className,
     children,
-}: StateEmptyProps): JSX.Element {
+}: EmptyProps): JSX.Element {
     // 两态共用同一套骨架，只有三处不同：
     // 1) 图标位：始终渲染，未传 icon 时用项目 logo；两种图标来源尺寸差异大，
     //    样式分开给默认值，避免 logo 被紧凑图标位的方块裁掉；
@@ -50,7 +50,7 @@ export function StateEmpty({
         Icon === undefined ? cn('size-32 rounded-none bg-transparent', iconClassName) : cn('size-12 rounded-2xl', iconClassName)
 
     return (
-        <Empty className={className}>
+        <UiEmpty className={className}>
             <EmptyHeader>
                 <EmptyMedia variant="icon" className={mediaClassName}>
                     {Icon === undefined ? <BrandLogo /> : <Icon className="size-5" />}
@@ -67,7 +67,7 @@ export function StateEmpty({
             {isLoading || children === undefined || children === null ? null : (
                 <EmptyContent>{children}</EmptyContent>
             )}
-        </Empty>
+        </UiEmpty>
     )
 }
 

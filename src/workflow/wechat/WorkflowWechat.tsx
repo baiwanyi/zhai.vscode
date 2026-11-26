@@ -4,12 +4,12 @@
  * 对话、媒体、校对等常驻分区直接交给 layout/WorkflowResidentSection；
  * 侧边导航在 WorkflowScreen 层常驻，本页不自绘导航、也不处理宿主视图请求。
  * 关键约束：常驻分区先于账号状态分派——打开一篇批次文章就能用对话、媒体与校对，不能因未选账号被挡；
- * 账号读取中与未选账号、读取失败都交给 StateEmpty（加载态 / 引导空态 / 失败重试），与工作流其他页同一外观；
+ * 账号读取中与未选账号、读取失败都交给 Empty（加载态 / 引导空态 / 失败重试），与工作流其他页同一外观；
  * 未选账号时六运营分区统一显示引导空态——运营动作都必须落在具体公众号上，渲染半成品只会让人以为坏了；
  * 读取失败给重试，不静默显示空列表；分区页按账号 id 作 key，切换账号即重挂载，不沿用上一个账号的快照。
  */
 import { Send } from 'lucide-react'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { WechatCommentPage } from './comment/WechatCommentPage'
 import { WechatFansPage } from './fans/WechatFansPage'
@@ -42,13 +42,13 @@ export function WorkflowWechat({ section, scopeDir, docPath }: WorkflowWechatPro
     }
 
     if (status === 'loading') {
-        return <StateEmpty className="h-full" title="正在读取公众号..." isLoading />
+        return <Empty className="h-full" title="正在读取公众号..." isLoading />
     }
 
     if (status === 'error' || account === null) {
         const isError = status === 'error'
         return (
-            <StateEmpty
+            <Empty
                 className="h-full"
                 icon={Send}
                 title={isError ? '公众号账号读取失败' : '还没有选择公众号'}
@@ -63,7 +63,7 @@ export function WorkflowWechat({ section, scopeDir, docPath }: WorkflowWechatPro
                         重试
                     </Button>
                 ) : null}
-            </StateEmpty>
+            </Empty>
         )
     }
 

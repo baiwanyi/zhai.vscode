@@ -1,15 +1,15 @@
 /**
  * 场景纲卡片：一张 Card 承载章节的全部场景，头部含场景数、写法说明与添加按钮，空列表给出明确文案。
- * 复用约定：外层与单场卡片均取 @components/ui/card，场景字段取 ui/field 的 FieldGroup 与 components/InputTextGroup，按钮取 @webview/components/Button，空态取 blocks/StateEmpty；
+ * 复用约定：外层与单场卡片均取 @components/ui/card，场景字段取 ui/field 的 FieldGroup 与 components/InputTextGroup，按钮取 @webview/components/Button，空态取 blocks/Empty；
  * 场景字段 id 以场景 id 前缀区分多场同屏，缺三要素的提示只在单场卡片内显示。
  * 关键约束：改动只经 onPatch / onAdd / onRemove 回传场景补丁，不直接修改传入数组；
  * 序号展示用 scene.order，可访问名称用数组位置，两者口径不同但各自稳定。
  */
 import { Clapperboard, Plus, Trash2 } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { FieldGroup } from '@components/ui/field'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Badge } from '@webview/blocks/Badge'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { InputTextGroup } from '@webview/components/InputTextGroup'
 import type { OutlineScene } from '../../types'
@@ -128,7 +128,7 @@ export function ChapterEditSceneCard({ scenes, onAdd, onPatch, onRemove }: Chapt
             </CardHeader>
             <CardContent>
                 {scenes.length === 0 ? (
-                    <StateEmpty
+                    <Empty
                         icon={Clapperboard}
                         title="还没有场景"
                         description="写细纲时按「谁想要什么 → 遇到什么 → 做了什么选择 → 结果 → 情绪变化」拆成一场场。"

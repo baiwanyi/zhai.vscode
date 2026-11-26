@@ -4,8 +4,8 @@
  * 关键约束：编辑与删除回调按伏笔 id 定位；埋收位置与触发者只在编辑弹窗里维护，本行不重复展示。
  */
 import { Pencil, Trash2 } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
+import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import type { OutlineClue } from '../../types'
 import type { JSX } from 'react'

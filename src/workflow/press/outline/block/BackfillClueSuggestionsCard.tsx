@@ -4,10 +4,10 @@
  * 关键约束：识别按钮只上报点击，AI 请求由页面 hook 发起；采纳状态由调用方持有，本组件不写盘。
  */
 import { Sparkles } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { ItemGroup } from '@components/ui/item'
 import type { ClueRefSuggestion } from '@shared/types/press'
+import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 import { formatChapterRefLabel } from '../../utils'

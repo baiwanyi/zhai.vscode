@@ -18,7 +18,7 @@
  * 活跃笔记：ActiveNoteProvider 只在本层挂一次，路由归属判定与概览页的列表选中态共享同一份，
  * 页面点击回填的选中项因此能立刻参与归属判定，不必等宿主广播回传。
  */
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { AppToaster } from '@webview/components/AppToaster'
 import { DashboardRouteProvider } from './core/DashboardRouteProvider'
 import { useDashboardRoute } from './core/routeContext'
@@ -73,7 +73,7 @@ function DashboardScreenContent(): JSX.Element {
                 {isRoutingReady ? (
                     <DashboardRouteSwitch route={route} onNavigate={navigate} />
                 ) : (
-                    <StateEmpty className="h-full" title="正在读取仪表盘..." isLoading />
+                    <Empty className="h-full" title="正在读取仪表盘..." isLoading />
                 )}
             </div>
             <AppToaster />

@@ -1,12 +1,12 @@
 /**
  * 写作管理初始页：尚未打开作品时的落点，列出索引库中的作品供选择。
- * 复用 @webview/blocks/StateEmpty 与 Button 组合、press/utils 的字数格式化；作品清单由工作流页从宿主拉取后传入。
+ * 复用 @webview/blocks/Empty 与 Button 组合、press/utils 的字数格式化；作品清单由工作流页从宿主拉取后传入。
  * 关键约束：打开动作交由宿主打开作品文档并广播新路由事实（projectDir），本组件不自行解析路由、不拼接作品路径；
  * 失败提示由调用方经 sonner 处理，本页只负责展示与回传选择。
  */
 import { BookOpen, FolderOpen } from 'lucide-react'
 import type { PressProjectSummary } from '@shared/types/press'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 import { formatWordCount } from '../utils'
@@ -21,7 +21,7 @@ interface PressWorkspaceStartProps {
 export function PressWorkspaceStart({ projects, onOpenProject }: PressWorkspaceStartProps): JSX.Element {
     return (
         <div className="flex h-full min-h-0 flex-col justify-center p-4">
-            <StateEmpty
+            <Empty
                 icon={BookOpen}
                 title="还没有打开作品"
                 description="打开一部作品后，设定、人物与大纲会分别读取作品目录下的 设定.md、角色设定.md 与 大纲.md。"
@@ -50,7 +50,7 @@ export function PressWorkspaceStart({ projects, onOpenProject }: PressWorkspaceS
                         ))}
                     </div>
                 )}
-            </StateEmpty>
+            </Empty>
         </div>
     )
 }

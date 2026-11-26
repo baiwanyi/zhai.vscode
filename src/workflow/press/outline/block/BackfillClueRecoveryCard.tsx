@@ -1,14 +1,13 @@
 /**
  * 伏笔回收卡片：列出仍埋设中的伏笔，供作者手动勾选已回收项，展示埋设/回收位置与触发者。
- * 复用约定：卡片取 ui/card，清单取 ui/item 与 ToggleCheckItem，位置徽标取 blocks/StatBadge，状态取 constants 元数据；
+ * 复用约定：卡片取 ui/card，清单取 ui/item 与 ToggleCheckItem，位置徽标取 blocks/Badge，状态取 constants 元数据；
  * 章节坐标统一走 press/utils 的 formatChapterRefLabel。
  * 关键约束：无未回收伏笔时整卡不渲染；勾选只上报切换，自动回收与写盘由页面回填逻辑负责。
  */
 import { SquareArrowRightEnter, SquareArrowRightExit, SquareExclamationPoint } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { ItemGroup } from '@components/ui/item'
-import { StatBadge } from '@webview/blocks/StatBadge'
+import { Badge } from '@webview/blocks/Badge'
 import type { CharacterCard, OutlineClue } from '../../types'
 import type { JSX } from 'react'
 import { CLUE_STATUS_META } from '../../constants'
@@ -21,22 +20,22 @@ function ClueRefBadges({ clue }: { clue: OutlineClue }): JSX.Element {
     const payoff = clue.payoff === null ? null : formatChapterRefLabel(clue.payoff)
     return (
         <>
-            <StatBadge tooltip={plant === null ? '埋设章未定' : `埋设章节 ${plant}`}>
+            <Badge tooltip={plant === null ? '埋设章未定' : `埋设章节 ${plant}`}>
                 {plant === null ? (
                     <SquareExclamationPoint aria-hidden="true" />
                 ) : (
                     <SquareArrowRightEnter aria-hidden="true" />
                 )}
                 {plant ?? '未定'}
-            </StatBadge>
-            <StatBadge tooltip={payoff === null ? '回收章未定' : `回收章节 ${payoff}`}>
+            </Badge>
+            <Badge tooltip={payoff === null ? '回收章未定' : `回收章节 ${payoff}`}>
                 {payoff === null ? (
                     <SquareExclamationPoint aria-hidden="true" />
                 ) : (
                     <SquareArrowRightExit aria-hidden="true" />
                 )}
                 {payoff ?? '未定'}
-            </StatBadge>
+            </Badge>
         </>
     )
 }

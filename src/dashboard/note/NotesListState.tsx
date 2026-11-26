@@ -9,7 +9,7 @@ import { FileText } from 'lucide-react'
 import { Item, ItemActions, ItemContent, ItemGroup } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
 import { toErrorDetail } from '@shared/utils/error'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Alert } from '@webview/components/Alert'
 import { Button } from '@webview/components/Button'
 import type { StatsStatus } from '../hooks/useDashboardStats'
@@ -60,7 +60,7 @@ export function NotesListState({ status, error, isFiltered, onResetFilters }: No
     }
 
     return (
-        <StateEmpty
+        <Empty
             title={isFiltered ? '筛选无结果' : '暂无笔记'}
             description={
                 isFiltered ? '当前筛选或搜索条件下没有笔记，清除后查看全部。' : '点击上方「添加」创建第一篇笔记。'
@@ -73,6 +73,6 @@ export function NotesListState({ status, error, isFiltered, onResetFilters }: No
                     清除条件
                 </Button>
             ) : null}
-        </StateEmpty>
+        </Empty>
     )
 }

@@ -5,7 +5,7 @@
  */
 import { ChartColumn } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@components/ui/card'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import type { JSX } from 'react'
 
 interface DashboardSlotPlaceholderProps {
@@ -20,7 +20,7 @@ export function DashboardSlotPlaceholder({ title, text }: DashboardSlotPlacehold
                 <CardTitle>{title}</CardTitle>
             </CardHeader>
             <CardContent className="flex min-h-16 items-center">
-                <StateEmpty icon={ChartColumn} description={text} className="border px-3 py-4" />
+                <Empty icon={ChartColumn} description={text} className="border px-3 py-4" />
             </CardContent>
         </Card>
     )

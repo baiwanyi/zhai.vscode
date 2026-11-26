@@ -1,6 +1,6 @@
 /**
  * 凭证门：未配置 Cookie 时的统一占位，覆盖「探测中 / 探测失败 / 未配置」三态。
- * 复用约定：骨架取 @webview/blocks/StateEmpty，操作按钮取 @webview/components/Button；
+ * 复用约定：骨架取 @webview/blocks/Empty，操作按钮取 @webview/components/Button；
  * 文案只在本文件维护，信息流区域与首页列表空态共用同一份，避免多套措辞。
  * 关键约束：credential 为 null 时不得断言「没有配置」，须按 errorCode 区分探测中与探测失败；
  * 服务端拒绝登录态时单独给失效文案，不与「尚未配置」混用；
@@ -8,7 +8,7 @@
  */
 import { Inbox } from 'lucide-react'
 import type { WeiboCredentialState } from '@shared/types/weibo'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 import { WEIBO_UI_TEXT } from '../utils/weiboUiText'
@@ -34,10 +34,10 @@ export function CredentialGate({
 }: CredentialGateProps): JSX.Element | null {
     if (credential === null) {
         if (errorCode === null) {
-            return <StateEmpty className="py-8" title={WEIBO_UI_TEXT.loading.credential} isLoading />
+            return <Empty className="py-8" title={WEIBO_UI_TEXT.loading.credential} isLoading />
         }
         return (
-            <StateEmpty
+            <Empty
                 className="py-8"
                 icon={Inbox}
                 title={WEIBO_UI_TEXT.error.credential}
@@ -46,7 +46,7 @@ export function CredentialGate({
                 <Button size="sm" variant="outline" onClick={onOpenSettings}>
                     {WEIBO_UI_TEXT.action.openSettings}
                 </Button>
-            </StateEmpty>
+            </Empty>
         )
     }
     if (credential.isConfigured) {
@@ -54,7 +54,7 @@ export function CredentialGate({
     }
     if (credential.isInvalid === true) {
         return (
-            <StateEmpty
+            <Empty
                 className="py-8"
                 icon={Inbox}
                 title={WEIBO_UI_TEXT.error.credentialInvalid}
@@ -65,12 +65,12 @@ export function CredentialGate({
                         {WEIBO_UI_TEXT.action.openSettings}
                     </Button>
                 ) : null}
-            </StateEmpty>
+            </Empty>
         )
     }
     if (variant === 'hint') {
         return (
-            <StateEmpty
+            <Empty
                 className="py-8"
                 icon={Inbox}
                 title={WEIBO_UI_TEXT.empty.credential}
@@ -79,7 +79,7 @@ export function CredentialGate({
         )
     }
     return (
-        <StateEmpty
+        <Empty
             className="py-8"
             icon={Inbox}
             title={WEIBO_UI_TEXT.empty.credential}
@@ -88,6 +88,6 @@ export function CredentialGate({
             <Button size="sm" variant="outline" onClick={onOpenSettings}>
                 {WEIBO_UI_TEXT.action.openSettings}
             </Button>
-        </StateEmpty>
+        </Empty>
     )
 }

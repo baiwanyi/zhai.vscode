@@ -1,8 +1,8 @@
 /**
  * 封面弹窗：在 Popover 选图面板里切换生图 / 在线图库 / 上传图片，挑中一张后按公众号首图比例（2.35:1）
  * 裁剪，再保存到当前批次目录的 images/ 下。
- * 复用约定：主弹层取 @webview/components/Dialog，选图面板统一取 components/ImagePicker（Popover + Tabs），
- * 缩略图取 components/Image，空态与加载态取 blocks/StateEmpty，缩放缓动取 @components/ui 的 slider；
+ * 复用约定：主弹层取 @webview/components/Dialog，选图面板统一取 components/ImagePickerPopover（Popover + Tabs），
+ * 缩略图取 components/Image，空态与加载态取 blocks/Empty，缩放缓动取 @components/ui 的 slider；
  * 候选列表来自 useImagePickerSources（生图走 media/list、在线图库走 stock/downloaded、上传走 upload/list），
  * 只在 jpg/png 中挑选；读原图走 wechat/cover/source，保存走 wechat/article/cover。
  * 关键约束：选图面板复用上传页同一份清单，上传入口只在面板内提供，上传结果回选区但不直接设为封面；
@@ -18,11 +18,11 @@ import { toast } from 'sonner'
 import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Slider } from '@components/ui/slider'
 import type { WechatArticleSummary } from '@shared/types/wechat'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { Dialog } from '@webview/components/Dialog'
 import { Image } from '@webview/components/Image'
-import { ImagePicker } from '@webview/components/ImagePicker'
+import { ImagePickerPopover } from '@webview/components/ImagePicker'
 import { useImagePickerSources } from '@webview/hooks/useImagePickerSources'
 import type { ImagePickerItem, ImageSourceKind } from '@webview/hooks/useImagePickerSources'
 import type { JSX, PointerEvent } from 'react'
@@ -229,7 +229,7 @@ export function WechatCoverDialog({
                         <FieldLabel>封面预览</FieldLabel>
                         {sourceUrl === null ? (
                             coverUri === undefined ? (
-                                <StateEmpty
+                                <Empty
                                     title="尚未选择封面"
                                     className="aspect-[2.35/1] gap-1 rounded-lg border border-dashed p-3"
                                 />
@@ -277,7 +277,7 @@ export function WechatCoverDialog({
                     </Field>
                     <Field>
                         <FieldLabel>图片来源</FieldLabel>
-                        <ImagePicker
+                        <ImagePickerPopover
                             open={isPickerOpen}
                             onOpenChange={setIsPickerOpen}
                             trigger={

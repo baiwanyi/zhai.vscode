@@ -8,8 +8,8 @@
  */
 import { cn } from 'cn'
 import { PencilRuler } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import type { AiMessage } from '@shared/types/aiChat'
+import { Badge } from '@webview/blocks/Badge'
 import { AiChatMessageRefs } from './AiChatMessageRefs'
 import type { JSX } from 'react'
 import { useAvailableRuleNames } from '../utils/context/ruleCatalog'

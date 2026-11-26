@@ -8,11 +8,11 @@
  */
 import { cn } from 'cn'
 import { useMemo } from 'react'
-import { Badge } from '@components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
 import type { ProofreadCategory, ProofreadIssue } from '@shared/types/proofread'
+import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import { ProofreadIssueItem } from './ProofreadIssueItem'
 import type { ProofreadAiStage, ProofreadProgress, ProofreadStatus } from '../hooks/useProofreadRun'

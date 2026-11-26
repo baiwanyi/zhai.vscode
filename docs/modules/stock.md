@@ -320,22 +320,22 @@ WorkflowStock
 │    左 AppAction：「返回搜索」（仅已下载视图，动作位留等宽下限，标题不跳动）
 │    AppTitle「在线图库」
 │    右 AppAction：「已下载」图标按钮 +「更多」DropdownMenu（密钥设置 / 刷新）
-│    AppDescription：统计胶囊（StatBadge）「已下载 N 张」「剩余 X 次」，悬停看精确口径，不展示插入目标与文档标题
+│    AppDescription：徽标（Badge）「已下载 N 张」「剩余 X 次」，悬停看精确口径，不展示插入目标与文档标题
 │    AppMenu：搜索视图放话题标签（推荐 + 秋日 / 壁纸 / 自然 / 3D 渲染 / 实验 / 胶片 / 街头 / 建筑 / 纹理 / 旅行 / 人物，共 12 项固定清单，顺序同 Unsplash 官网导航），已下载视图放年月下拉
 ├─ 搜索视图（默认）
 │    ├─ 话题标签：单行不换行 + 两端箭头滑动（到头即隐藏 + 边缘渐隐遮罩），首项固定「推荐」（= 不带话题的最新流），其余为前端固定常用话题（中文显示名 + 上游 slug），不回源拉取
 │    ├─ 搜索栏固定在页头 AppMenu：Input（防抖 400ms）+ 方向下拉（不限/横图/竖图，话题浏览时禁用）+ 排序下拉（默认/最新/最旧/热门，关键词搜索时禁用），不随结果区滚动；无刷新按钮（「更多」菜单已有）
-│    ├─ 未配置密钥 → StateEmpty + 打开设置
-│    ├─ 冷却中 → StateEmpty「触发限流，请 14:32 后重试」
+│    ├─ 未配置密钥 → Empty + 打开设置
+│    ├─ 冷却中 → Empty「触发限流，请 14:32 后重试」
 │    ├─ 首屏加载 → 6 张骨架卡（aspect-4/3）
-│    ├─ 无结果 → StateEmpty「没有匹配的图片，换个关键词试试」
+│    ├─ 无结果 → Empty「没有匹配的图片，换个关键词试试」
 │    ├─ 网格：2 列（侧栏约 300px），卡片右上角 Badge「已下载」
 │    └─ 首屏只取第 1 页（默认 20 条），滚动到底自动续载下一页（上限 5 页 = 约 100 条）；每页独立缓存
 ├─ 已下载视图（二级）
 │    ├─ 按月分组，组头 sticky：`2026年11月 · 37 张`
 │    ├─ 每组首屏 60 张，「加载更多」按 60 递增
 │    ├─ 卡片：Image aspect-4/3 + lazy；hover：删除；点击：插入
-│    └─ 空态：StateEmpty「还没有下载过图片」+ 引导去搜索
+│    └─ 空态：Empty「还没有下载过图片」+ 引导去搜索
 ```
 
 搜索视图是首页，已下载是二级视图：页头只放一个图标入口，300px 宽度下不挤占标题与筛选行；进入已下载后左侧出现返回按钮，回到搜索时搜索词与结果原样保留。密钥设置与刷新收进标题行的「更多」下拉菜单，不再设底部操作条。
@@ -346,7 +346,7 @@ WorkflowStock
 | --- | --- |
 | 页面外壳三段式 | `@webview/components/AppPage`（`AppHeader` / `AppContent` / `AppTitle` / `AppDescription` / `AppMenu`） |
 | 下拉菜单 | `@components/ui/dropdown-menu`（`DropdownMenuTrigger asChild` + `align="end"`） |
-| 空态 | `@webview/blocks/StateEmpty` |
+| 空态 | `@webview/blocks/Empty` |
 | 按钮 | `@webview/components/Button`（不写 `type="button"`） |
 | 分段切换 | `@webview/components/SegmentedRail` |
 | 图片与占位 | `@webview/components/Image`（`aspect="4/3"`，失败自动退占位） |

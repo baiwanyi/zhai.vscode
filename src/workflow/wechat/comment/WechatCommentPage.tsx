@@ -8,7 +8,6 @@
  */
 import { MessageSquare } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import { Item, ItemActions, ItemDescription } from '@components/ui/item'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import { Skeleton } from '@components/ui/skeleton'
@@ -16,8 +15,9 @@ import { Textarea } from '@components/ui/textarea'
 import type { WechatAccountSummary, WechatCommentSummary } from '@shared/types/wechat'
 import { WECHAT_COMMENT_CONTENT_MAX } from '@shared/types/wechat'
 import { formatRelativeTime } from '@shared/utils/format'
+import { Badge } from '@webview/blocks/Badge'
+import { Empty } from '@webview/blocks/Empty'
 import { LoadMoreSentinel } from '@webview/blocks/LoadMoreSentinel'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { AlertDialog } from '@webview/components/AlertDialog'
 import {
     AppContent,
@@ -166,7 +166,7 @@ export function WechatCommentPage({ account }: WechatCommentPageProps): JSX.Elem
         }
         if (state.issues.length === 0) {
             return (
-                <StateEmpty
+                <Empty
                     icon={MessageSquare}
                     title="没有可查看留言的文章"
                     description={
@@ -178,7 +178,7 @@ export function WechatCommentPage({ account }: WechatCommentPageProps): JSX.Elem
         }
         if (state.comments.length === 0) {
             return (
-                <StateEmpty
+                <Empty
                     title="这篇文章还没有留言"
                     description="读者留言后会出现在这里；也可能是该账号未开通留言功能。"
                 />

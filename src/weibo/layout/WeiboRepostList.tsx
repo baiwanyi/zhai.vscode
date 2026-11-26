@@ -3,7 +3,7 @@
  * 复用约定：取数（首屏 / 续载 / 总数）走 useWeiboReposts，写操作（转发 / 删除 / 引用 / 加入对话）
  * 走 useWeiboRepostActions；转发框与条目分别是 RepostComposer / RepostItem，
  * 续载与失败重试交给 LoadMoreSentinel（滚到底自动拉，失败原地重试）；
- * 空态取 StateEmpty、读取失败条取 Alert，删除确认复用公共 AlertDialog。
+ * 空态取 Empty、读取失败条取 Alert，删除确认复用公共 AlertDialog。
  * 关键约束：父级条件渲染保证每次展开都是新实例，进入即拉第一页；
  * 页码串行、代际丢弃、写操作单飞都在两个 Hook 内，本组件只做装配与文案；
  * 列表限高滚动；删除入口只给自己的转发：viewerUid 与转发作者 id 相同才渲染，最终归属仍由上游判定。
@@ -12,8 +12,8 @@ import { Repeat2 } from 'lucide-react'
 import { useState } from 'react'
 import { Spinner } from '@components/ui/spinner'
 import { toErrorDetail } from '@shared/utils/error'
+import { Empty } from '@webview/blocks/Empty'
 import { LoadMoreSentinel } from '@webview/blocks/LoadMoreSentinel'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
 import { Alert } from '@webview/components/Alert'
 import { AlertDialog } from '@webview/components/AlertDialog'
 import type { JSX } from 'react'
@@ -86,7 +86,7 @@ export function WeiboRepostList({ postId, totalCount, viewerUid = null }: WeiboR
                     />
                 ))}
                 {!thread.isLoading && thread.reposts.length === 0 && thread.error === null ? (
-                    <StateEmpty className="border px-3 py-5" icon={Repeat2} title={WEIBO_UI_TEXT.empty.reposts} />
+                    <Empty className="border px-3 py-5" icon={Repeat2} title={WEIBO_UI_TEXT.empty.reposts} />
                 ) : null}
                 {thread.error === null ? null : (
                     <Alert

@@ -8,12 +8,12 @@
  */
 import { Users } from 'lucide-react'
 import { useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatFanSummary, WechatFanTag } from '@shared/types/wechat'
 import { formatRelativeTime } from '@shared/utils/format'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Badge } from '@webview/blocks/Badge'
+import { Empty } from '@webview/blocks/Empty'
 import {
     AppContent,
     AppDescription,
@@ -59,7 +59,7 @@ export function WechatFansPage({ account }: WechatFansPageProps): JSX.Element {
     const renderFans = (): JSX.Element => {
         if (fans.length === 0) {
             return (
-                <StateEmpty
+                <Empty
                     icon={Users}
                     title="还没有关注者"
                     description="账号有粉丝关注后，这里会显示最近关注的 100 位。"
@@ -112,7 +112,7 @@ export function WechatFansPage({ account }: WechatFansPageProps): JSX.Element {
             )
         }
         if (tags.length === 0) {
-            return <StateEmpty title="还没有标签" description="标签需要在公众号后台创建，这里只读展示标签与人数。" />
+            return <Empty title="还没有标签" description="标签需要在公众号后台创建，这里只读展示标签与人数。" />
         }
         return (
             <div className="flex w-full flex-col gap-2">

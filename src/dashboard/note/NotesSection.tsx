@@ -11,7 +11,7 @@ import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@component
 import { ItemGroup } from '@components/ui/item'
 import type { NoteAction, RecentFile } from '@shared/types/dashboard'
 import type { NotebookSort, NotebookSummary } from '@shared/types/notebook'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { NotebookList } from './NotebookList'
 import { NotesHeaderActions } from './NotesHeaderActions'
@@ -105,7 +105,7 @@ export function NotesSection({
         }
         if (searchResults.length === 0) {
             return (
-                <StateEmpty
+                <Empty
                     title={isSearching ? '搜索中…' : '没有匹配的笔记'}
                     description={isSearching ? undefined : '换个关键词，或清除搜索查看全部笔记本。'}
                     icon={FileSearch}
@@ -117,7 +117,7 @@ export function NotesSection({
                             清除搜索
                         </Button>
                     )}
-                </StateEmpty>
+                </Empty>
             )
         }
         return (
@@ -147,7 +147,7 @@ export function NotesSection({
         }
         if (notebooks.length === 0) {
             return (
-                <StateEmpty
+                <Empty
                     title="还没有笔记本"
                     description="新建一个笔记本后即可在里面写笔记，未指定时笔记会落在「未分类」。"
                     icon={Notebook}
@@ -157,7 +157,7 @@ export function NotesSection({
                         <Plus className="size-4" />
                         新建笔记本
                     </Button>
-                </StateEmpty>
+                </Empty>
             )
         }
         return (

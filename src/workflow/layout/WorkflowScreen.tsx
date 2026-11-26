@@ -15,7 +15,7 @@
  * 宿主侧命令结果经 useHostToast 订阅 toast 广播，在本层同样用 sonner 呈现。
  */
 import { useCallback, useState } from 'react'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { AppToaster } from '@webview/components/AppToaster'
 import { useHostToast } from '@webview/hooks/useHostToast'
 import { readAvailableSections, readContentScope, readScopeDir } from './contentScope'
@@ -75,12 +75,12 @@ export function WorkflowScreen(): JSX.Element {
      * 正在显示的宿主提示不会被打断后再补发重放。
      */
     const renderContent = (): JSX.Element => {
-        // 未就绪与非 Markdown 共用同一个空态骨架：图标位由 StateEmpty 默认给项目 logo，只有标题位在变 ——
+        // 未就绪与非 Markdown 共用同一个空态骨架：图标位由 Empty 默认给项目 logo，只有标题位在变 ——
         // 未就绪时标题位是「转圈 + 正在读取工作流」，就绪后非 Markdown 文档显示 slogan
         if (!isReady || !context.isMarkdown) {
             const isPending = !isReady
             return (
-                <StateEmpty
+                <Empty
                     className="h-screen"
                     title={isPending ? '正在读取工作流...' : '宅于一隅，落笔千言'}
                     isLoading={isPending}

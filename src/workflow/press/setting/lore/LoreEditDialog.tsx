@@ -12,7 +12,6 @@ import { cn } from 'cn'
 import { Sparkles, X } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Badge } from '@components/ui/badge'
 import {
     Dialog,
     DialogContent,
@@ -25,6 +24,7 @@ import { Field, FieldDescription, FieldGroup, FieldLabel } from '@components/ui/
 import { Input } from '@components/ui/input'
 import { Popover, PopoverAnchor, PopoverContent, PopoverHeader, PopoverTitle } from '@components/ui/popover'
 import { AiTextareaField } from '@webview/blocks/AiTextareaField'
+import { Badge } from '@webview/blocks/Badge'
 import { CoverFigure } from '@webview/blocks/CoverFigure'
 import { Button } from '@webview/components/Button'
 import { useLoreDescriptionGenerate } from './useLoreDescriptionGenerate'

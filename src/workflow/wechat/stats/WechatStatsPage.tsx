@@ -9,7 +9,7 @@
 import { BarChart3 } from 'lucide-react'
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatStatsPoint } from '@shared/types/wechat'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import {
     AppContent,
     AppDescription,
@@ -80,7 +80,7 @@ export function WechatStatsPage({ account }: WechatStatsPageProps): JSX.Element 
         }
         if (status === 'error') {
             return (
-                <StateEmpty
+                <Empty
                     icon={BarChart3}
                     title="数据读取失败"
                     description={`${error ?? '请稍后重试'} 统计接口需要认证主体；未认证账号在公众号后台也看不到这部分数据。`}
@@ -89,7 +89,7 @@ export function WechatStatsPage({ account }: WechatStatsPageProps): JSX.Element 
         }
         if (stats === null || stats.points.length === 0) {
             return (
-                <StateEmpty
+                <Empty
                     title="区间内没有数据"
                     description="平台按自然日结算，当天的数据要次日才有；刚关注的账号前两天可能全是 0。"
                 />

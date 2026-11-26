@@ -13,12 +13,12 @@
  */
 import { ExternalLink, RefreshCw } from 'lucide-react'
 import { useCallback, useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
 import type { AiUsageItem, AiUsageModule, AiUsagePeriods, AiUsageRange } from '@shared/types/aiUsage'
 import { request } from '@shared/utils/bridge'
 import { toastError, toErrorDetail } from '@shared/utils/error'
+import { Badge } from '@webview/blocks/Badge'
 import { ButtonLoadingContent } from '@webview/blocks/ButtonLoadingContent'
 import { Alert } from '@webview/components/Alert'
 import {

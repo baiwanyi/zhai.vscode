@@ -13,8 +13,8 @@
  */
 import { cn } from 'cn'
 import { File, Notebook, SquareBookmark } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { NOTES_MODULE_KEY } from '@shared/types/workflow'
+import { Badge } from '@webview/blocks/Badge'
 import { WechatIcon } from '@webview/dashboard/layout/WechatIcon'
 import { WeiboIcon } from '@webview/dashboard/layout/WeiboIcon'
 import type { ComponentProps, JSX } from 'react'

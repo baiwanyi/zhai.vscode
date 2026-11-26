@@ -19,7 +19,7 @@ import {
 } from '@components/ui/dropdown-menu'
 import { isWeiboTimelineId } from '@shared/types/weibo'
 import type { WeiboTimelinePost } from '@shared/types/weibo'
-import { StatBadge } from '@webview/blocks/StatBadge'
+import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import type { WeiboAuthorFollowController } from '@webview/weibo/hooks/useWeiboAuthorFollow'
 import { formatWeiboCount } from '@webview/weibo/utils/weiboCount'
@@ -118,10 +118,10 @@ export function WeiboPostCardHeader({
                 ) : null}
                 {/* 阅读数只有本人微博才有：统计胶囊（眼睛 + 折算值），精确口径走悬停提示 */}
                 {readsText === null ? null : (
-                    <StatBadge className="shrink-0" tooltip={`阅读 ${readsText}`}>
+                    <Badge className="shrink-0" tooltip={`阅读 ${readsText}`}>
                         <Eye className="size-4" aria-hidden="true" />
                         {readsText}
-                    </StatBadge>
+                    </Badge>
                 )}
                 <WeiboPostCardHeaderMoreMenu
                     follow={follow}

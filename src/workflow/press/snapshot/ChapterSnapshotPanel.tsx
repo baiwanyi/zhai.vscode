@@ -1,7 +1,7 @@
 /**
  * 章节正文快照面板：两级卡片视图——先列章节，点某一章进入该章的快照列表，可返回章节列表。
  * 复用约定：取数与动作由 useChapterSnapshots 承担，章节清单由 ChapterList 承担，版本列表由 ChapterVersionList 承担；
- * 两级空态都由业务公共层的 StateEmpty 承担（与「设定与大纲」面板同一组件，仅换文案与图标），容器与标题条取 card；
+ * 两级空态都由业务公共层的 Empty 承担（与「设定与大纲」面板同一组件，仅换文案与图标），容器与标题条取 card；
  * 恢复与删除确认取业务公共层的 AlertDialog，创建备注框由 SnapshotCreateDialog 承担。
  * 关键约束：恢复只覆盖当前章，文案须写明覆盖时间点与 dirty 前置条件；该章有未保存修改时由宿主拒绝，此处只如实提示错误。
  */
@@ -9,7 +9,7 @@ import { BookOpen, Camera, ChevronLeft } from 'lucide-react'
 import { useState } from 'react'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import type { ChapterSnapshotEntry } from '@shared/types/press'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
 import { ChapterList } from './ChapterList'
@@ -51,7 +51,7 @@ export function ChapterSnapshotPanel({ dirPath }: ChapterSnapshotPanelProps): JS
                     </CardHeader>
                     <CardContent className="min-h-0 flex-1 overflow-y-auto">
                         {chapters.length === 0 ? (
-                            <StateEmpty
+                            <Empty
                                 isLoading={isLoading}
                                 icon={BookOpen}
                                 title={isLoading ? '正在读取…' : '还没有章节快照'}
@@ -86,7 +86,7 @@ export function ChapterSnapshotPanel({ dirPath }: ChapterSnapshotPanelProps): JS
                     </CardHeader>
                     <CardContent className="min-h-0 flex-1 overflow-y-auto">
                         {versions.length === 0 ? (
-                            <StateEmpty
+                            <Empty
                                 icon={BookOpen}
                                 title="这一章还没有历史版本"
                                 description="保存该章或让 AI 写回一次，就会在这里留下第一版。"

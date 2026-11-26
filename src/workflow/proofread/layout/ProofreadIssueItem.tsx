@@ -8,9 +8,9 @@
  * 原文与建议各自 min-w-0 truncate，颜色一律取主题令牌，不写死白色以免浅色主题下文字与底色同色。
  */
 import { ArrowRight, Check, LocateFixed, X } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import type { ProofreadIssue } from '@shared/types/proofread'
+import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import type { JSX } from 'react'
 

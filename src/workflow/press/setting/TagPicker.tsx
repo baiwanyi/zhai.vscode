@@ -10,10 +10,10 @@
  */
 import { CornerDownLeft, X } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@components/ui/input-group'
 import { Popover, PopoverAnchor, PopoverContent, PopoverHeader, PopoverTitle } from '@components/ui/popover'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@components/ui/tabs'
+import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import { TOOLTIP_CLASS, Tooltip, TooltipContent, TooltipTrigger } from '@webview/components/Tooltip'
 import type { TagGroup } from '../types'

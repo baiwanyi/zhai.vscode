@@ -3,9 +3,9 @@
  * 复用约定：引用匹配取 press/utils 的 isClueRefMatched，状态文案取 constants 元数据表并对非法值兜底。
  * 关键约束：只读展示，伏笔同时在本章埋设与回收时按埋设口径显示。
  */
-import { Badge } from '@components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@components/ui/card'
 import { Item, ItemActions, ItemContent, ItemGroup, ItemTitle } from '@components/ui/item'
+import { Badge } from '@webview/blocks/Badge'
 import type { OutlineChapterRef, OutlineClue } from '../../types'
 import type { JSX } from 'react'
 import { CLUE_STATUS_META } from '../../constants'

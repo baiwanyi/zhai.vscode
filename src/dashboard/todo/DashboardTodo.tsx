@@ -1,24 +1,24 @@
 /**
  * 待办列表模块：仪表盘概览区的待办卡片，替换原「模块分布」占位槽位，不单独成页。
  * 复用约定：数据与写操作交给 ../todo/useTodoLists，清单行、条目与输入区复用 ../todo 下的组件，
- * 卡片取 @components/ui 的 card，折叠语义取 collapsible，空态取业务公共层的 StateEmpty，统计用 badge，弹窗走既有组件。
+ * 卡片取 @components/ui 的 card，折叠语义取 collapsible，空态取业务公共层的 Empty，统计用 badge，弹窗走既有组件。
  * 关键约束：标题行整行可点，折叠后只保留「待办列表 + 未完成数」；清单的增删改都收进 TodoListBar 的下拉；
  * 删除与重命名共用一个弹窗状态（同一时刻只会打开一个），关闭即清空，避免旧清单名残留在弹窗里；
  * 列表按固定最大高度内部滚动，提交中禁用开关与发布；读取中用与待办行等高的骨架占位，
- * 不用转圈，避免卡片先塌再撑。文件内的 Header 与骨架为私有展示组件，不对外导出；空态直接用 StateEmpty。
+ * 不用转圈，避免卡片先塌再撑。文件内的 Header 与骨架为私有展示组件，不对外导出；空态直接用 Empty。
  */
 'use client'
 
 import { cn } from 'cn'
 import { ChevronRight } from 'lucide-react'
 import { useCallback, useRef, useState } from 'react'
-import { Badge } from '@components/ui/badge'
 import { Card, CardContent } from '@components/ui/card'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import { ScrollArea } from '@components/ui/scroll-area'
 import { Skeleton } from '@components/ui/skeleton'
 import type { TodoListSummary } from '@shared/types/todo'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Badge } from '@webview/blocks/Badge'
+import { Empty } from '@webview/blocks/Empty'
 import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
 import { TodoComposer } from './TodoComposer'
@@ -115,14 +115,14 @@ export function DashboardTodo(): JSX.Element {
                             />
                             {status === 'loading' ? <TodoSkeleton /> : null}
                             {status !== 'loading' && lists.length === 0 ? (
-                                <StateEmpty description="还没有待办清单" className="border px-3 py-4">
+                                <Empty description="还没有待办清单" className="border px-3 py-4">
                                     <Button size="sm" variant="outline" onClick={handleCreate}>
                                         新建清单
                                     </Button>
-                                </StateEmpty>
+                                </Empty>
                             ) : null}
                             {status !== 'loading' && lists.length > 0 && items.length === 0 ? (
-                                <StateEmpty
+                                <Empty
                                     description="这份清单还没有待办，下方输入后回车即可添加"
                                     className="border px-3 py-4"
                                 />

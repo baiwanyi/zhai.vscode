@@ -10,7 +10,6 @@
 import { Gauge, LocateFixed } from 'lucide-react'
 import { lazy, Suspense } from 'react'
 import { Alert, AlertDescription } from '@components/ui/alert'
-import { Badge } from '@components/ui/badge'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import {
     Dialog,
@@ -24,6 +23,7 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@com
 import { Skeleton } from '@components/ui/skeleton'
 import { Spinner } from '@components/ui/spinner'
 import type { ProofreadAiDetectResult, ProofreadAiDetectState, ProofreadDetectSegment } from '@shared/types/proofread'
+import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import type { ProofreadDetectStage } from '../hooks/useProofreadAiDetect'
 import type { JSX } from 'react'

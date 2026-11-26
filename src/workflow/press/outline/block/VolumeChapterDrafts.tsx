@@ -1,7 +1,7 @@
 /**
  * 按卷生成的章纲草案预览：按阶段分组展示草案，支持整组与单章勾选，并给出生成中与空状态提示。
  * 复用约定：阶段折叠取 ui/collapsible，触发器与单章条目分别收进本页 StageTriggerItem / ChapterDraftItem
- * （均取 ui/item，勾选框放 ItemActions / ItemMedia），空态与生成中提示复用 blocks/StateEmpty；
+ * （均取 ui/item，勾选框放 ItemActions / ItemMedia），空态与生成中提示复用 blocks/Empty；
  * 分组在块内按草案阶段计算，主组件只传草案与勾选集合；
  * 关键约束：草案索引即写入顺序，展示章号由主组件按写入方式算出的起始章序累加；空阶段归入「未分组」，组序沿用草案生成顺序；
  * 内部滚动依赖父级给出确定高度（父容器 flex-1 + min-h-0），高度未约束时只能由外层容器代滚动；
@@ -13,7 +13,7 @@ import { Checkbox } from '@components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@components/ui/collapsible'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { VolumeChapterDraft } from '@shared/types/press'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import type { ComponentProps, JSX, KeyboardEvent } from 'react'
 
 export interface VolumeChapterDraftsProps {
@@ -149,7 +149,7 @@ export function VolumeChapterDrafts({
     return (
         <div className="min-h-0 flex-1 h-full overflow-x-hidden overflow-y-auto">
             {drafts.length === 0 ? (
-                <StateEmpty
+                <Empty
                     isLoading={isGenerating}
                     icon={BookOpen}
                     title={isGenerating ? '正在按卷纲拆章…' : '还没有草案'}

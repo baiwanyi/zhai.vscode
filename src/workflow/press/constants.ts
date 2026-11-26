@@ -24,7 +24,7 @@ import type {
 } from './types'
 import type { LucideIcon } from 'lucide-react'
 
-/** 徽标语义变体：与 @components/ui/badge 的 variant 保持一致 */
+/** 徽标语义变体：与 blocks/Badge 的 variant 保持一致 */
 export type BadgeTone = 'default' | 'secondary' | 'destructive' | 'outline' | 'ghost'
 
 export interface OptionMeta<T extends string> {

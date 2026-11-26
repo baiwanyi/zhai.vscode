@@ -5,10 +5,10 @@
  * 关键约束：删除按钮带可访问名称；写操作进行中禁用入口，避免同一动作被连点提交两次。
  */
 import { Camera, RotateCcw, Trash2 } from 'lucide-react'
-import { Badge } from '@components/ui/badge'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemGroup, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { ChapterSnapshotReason } from '@shared/types/press'
 import type { DocSnapshotReason } from '@shared/types/snapshot'
+import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import { SNAPSHOT_REASON_LABELS, formatSize, formatSnapshotTime } from './snapshotFormat'
 import type { JSX } from 'react'

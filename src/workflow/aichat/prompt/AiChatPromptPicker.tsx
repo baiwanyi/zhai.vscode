@@ -18,7 +18,7 @@ import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } 
 import type { PromptLibraryScope, PromptTag, PromptTagSaveRequest } from '@shared/types/promptLibrary'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
-import { StateEmpty } from '@webview/blocks/StateEmpty'
+import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
 import { usePromptImages } from '@webview/workflow/aichat/hooks/usePromptImages'
@@ -390,9 +390,9 @@ export function AiChatPromptPicker(props: AiChatPromptPickerProps): JSX.Element 
                         </Button>
                     </div>
                     {library.isLoading ? (
-                        <StateEmpty className="h-80" isLoading title="正在加载词库…" />
+                        <Empty className="h-80" isLoading title="正在加载词库…" />
                     ) : library.tags.length === 0 ? (
-                        <StateEmpty
+                        <Empty
                             className="h-80 rounded-md bg-muted/40 p-3"
                             title="词库为空"
                             description={isImagegen ? '添加第一条提示词' : '添加第一条写作提示词'}
@@ -414,7 +414,7 @@ export function AiChatPromptPicker(props: AiChatPromptPickerProps): JSX.Element 
                                     打开词库目录
                                 </Button>
                             </div>
-                        </StateEmpty>
+                        </Empty>
                     ) : (
                         <div className="flex h-80 gap-2">
                             <PromptCategoryRail
