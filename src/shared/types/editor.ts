@@ -2,7 +2,7 @@
  * 编辑区富文本编辑器的跨进程契约：文档快照、块级变更与只读判定。
  * 复用约定：Webview 与宿主共用同一份类型，回写按全文偏移定位原文区间，而不是按块下标；
  * version 取 TextDocument.version，用于拒绝过期回写，避免与外部修改互相覆盖。
- * 关键约束：frontmatter 不属于正文块，单独原样透传；语法能否往返不作为拒绝编辑的理由——
+ * 关键约束：frontmatter 不属于正文块，块偏移已对齐全文，快照不再单独下发；语法能否往返不作为拒绝编辑的理由——
  * 宿主恒返回 editable: true，渲染不出的语法按纯文本呈现，不设源码块标识也不转只读；
  * 块下标只在同一版本内有效，插入 / 删除块会让后续下标整体位移，故回写一律带 start/end。
  */
@@ -22,7 +22,6 @@ export interface EditorBlock {
 export interface EditorDocSnapshot {
     path: string
     version: number
-    frontmatter: string
     blocks: EditorBlock[]
     /** 是否允许编辑：宿主恒返回 true，保留字段只为兼容既有协议与前端分支 */
     editable: boolean
@@ -319,17 +318,15 @@ export function isEditorDocSnapshot(input: unknown): input is EditorDocSnapshot 
     if (typeof input !== 'object' || input === null) {
         return false
     }
-    const { path, version, frontmatter, blocks, editable } = input as {
+    const { path, version, blocks, editable } = input as {
         path?: unknown
         version?: unknown
-        frontmatter?: unknown
         blocks?: unknown
         editable?: unknown
     }
     if (
         typeof path !== 'string' ||
         typeof version !== 'number' ||
-        typeof frontmatter !== 'string' ||
         typeof editable !== 'boolean' ||
         !Array.isArray(blocks)
     ) {

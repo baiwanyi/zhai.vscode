@@ -1,6 +1,6 @@
 /**
  * 校对目标读取：以活跃编辑器为准取待检查正文，支持整篇（剔除 Frontmatter）与选区两种范围。
- * 复用 common/config 的存储根与 common/storagePath 的相对路径归一化、片段校验，前端不参与路径拼装。
+ * 复用 common/config 的存储根、common/storagePath 的相对路径归一化与 shared/utils/frontmatter 的元数据块切分，前端不参与路径拼装。
  * 关键约束：只接受 file scheme 且位于存储根内的文档，越界路径直接拒绝；
  * 正文取自编辑器内存态（含未保存修改），offsetBase 记录正文在文档全文中的起点，
  * 前端据此把 issue 偏移换算为编辑器偏移，避免整篇与选区两种模式各写一套定位逻辑；
@@ -11,6 +11,7 @@ import * as vscode from 'vscode'
 import { resolveStorageRoot } from '@modules/common/config'
 import { buildStorageUri, toSafeSegments, toStorageRelativePath } from '@modules/common/storagePath'
 import type { ProofreadTarget } from '@shared/types/proofread'
+import { splitFrontmatter } from '@shared/utils/frontmatter'
 
 /** 读取目标的可选项 */
 export interface ReadTargetOptions {
@@ -18,34 +19,6 @@ export interface ReadTargetOptions {
     useSelection: boolean
     /** 正文字符上限：超出后截断，只检查前 maxChars 个字符 */
     maxChars: number
-}
-
-/** Frontmatter 起始行 */
-const FRONTMATTER_FENCE = '---'
-
-/**
- * 计算 Frontmatter 结束位置：返回正文在全文中的起始偏移。
- * 关键约束：首行必须恰好是 `---`，否则按无 Frontmatter 处理；未找到闭合行时同样视为无 Frontmatter，
- * 避免把正常正文开头的分隔线误判成元信息而整篇跳过。
- */
-function readFrontmatterEnd(text: string): number {
-    if (!text.startsWith(FRONTMATTER_FENCE)) {
-        return 0
-    }
-    const firstLineEnd = text.indexOf('\n')
-    if (firstLineEnd < 0) {
-        return 0
-    }
-    const firstLine = text.slice(0, firstLineEnd).replace(/\r$/, '')
-    if (firstLine !== FRONTMATTER_FENCE) {
-        return 0
-    }
-    const closing = text.indexOf(`\n${FRONTMATTER_FENCE}`, firstLineEnd)
-    if (closing < 0) {
-        return 0
-    }
-    const closingLineEnd = text.indexOf('\n', closing + 1)
-    return closingLineEnd < 0 ? text.length : closingLineEnd + 1
 }
 
 /** 取文档展示标题：文件名去扩展名 */
@@ -100,7 +73,7 @@ export async function readProofreadTarget(options: ReadTargetOptions): Promise<P
     const relativePath = readRelativePath(document)
     const shouldUseSelection = options.useSelection && !editor.selection.isEmpty
     const fullText = document.getText()
-    const offsetBase = shouldUseSelection ? document.offsetAt(editor.selection.start) : readFrontmatterEnd(fullText)
+    const offsetBase = shouldUseSelection ? document.offsetAt(editor.selection.start) : splitFrontmatter(fullText).offset
     const body = shouldUseSelection ? document.getText(editor.selection) : fullText.slice(offsetBase)
     const isTruncated = body.length > options.maxChars
     const text = isTruncated ? body.slice(0, options.maxChars) : body

@@ -2,11 +2,12 @@
  * 模型写入文档的规范化：作品文档统一为纯正文，章节固定为「# 章节标题 + 章节内容」。
  * 复用约定：章节标题取文件名，沿用 projectFactory 的 toDisplayName 口径；
  * 存储根判定与作品路径分段复用 common/config 与 common/projectPath 的既有实现。
- * 关键约束：落盘前剥掉模型可能输出的元数据块，保证作品文件不含 frontmatter；
+ * 关键约束：落盘前剥掉模型可能输出的元数据块（切分口径复用 shared/utils/frontmatter），保证作品文件不含 frontmatter；
  * 模型写成二级标题时提升为一级并消除双标题，标题文本取写入值、无标题时才回退文件名；非作品路径原样返回。
  */
 import { resolveStorageRoot } from '@modules/common/config'
 import { PRESS_MODULE_DIR } from '@modules/common/projectPath'
+import { splitFrontmatter } from '@shared/utils/frontmatter'
 import { PROJECT_CHAPTER_DIR, toDisplayName } from './projectFactory'
 
 /** 相对存储根的路径：不在存储根内返回 null，在根自身返回空串 */
@@ -21,18 +22,6 @@ function toStorageRelative(filePath: string): string | null {
         return null
     }
     return normalized.slice(root.length + 1)
-}
-
-/** 剥掉开头的元数据块：模型偶尔会输出 --- 包裹的元信息，落盘前统一去掉 */
-function stripLeadingMetaBlock(content: string): string {
-    if (!content.startsWith('---')) {
-        return content
-    }
-    const end = content.indexOf('\n---', 3)
-    if (end < 0) {
-        return content
-    }
-    return content.slice(end + 4).replace(/^(?:\r?\n)+/u, '')
 }
 
 /** 开头的一级或二级标题行：章节标题无论模型写成哪一级，都按这一行取文本 */
@@ -80,7 +69,8 @@ export function normalizeWrittenDocument(filePath: string, content: string): str
     if (projectName.length === 0) {
         return content
     }
-    const cleaned = stripLeadingMetaBlock(content)
+    // 模型偶尔会输出 --- 包裹的元信息：复用统一口径剥掉，正文前的空行一并清理
+    const cleaned = splitFrontmatter(content).body.replace(/^(?:\r?\n)+/u, '')
     if (directory === PROJECT_CHAPTER_DIR) {
         return withChapterTitle(cleaned, toDisplayName(fileName))
     }

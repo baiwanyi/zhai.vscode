@@ -1,13 +1,14 @@
 /**
  * 编辑器文档快照与区间回写：验证 frontmatter 分离、块偏移、只读判定、块差异定位与按偏移替换。
- * 复用约定：直接调用 editorDocService 与 blockDiff 的纯函数，不触碰 vscode API 与文件系统；
+ * 复用约定：直接调用 editorDocService、shared/utils/frontmatter 与 blockDiff 的纯函数，不触碰 vscode API 与文件系统；
  * 断言全部基于原文切片，确保偏移与 TextDocument 内容同源。
  * 关键约束：不再做整篇白名单判定——只读会让链接、划线、回车一起失效，任何文档都以可编辑状态打开；
  * 管线渲染不出的节点按纯文本段落呈现，既不设源码块标识也不能少块（少一块后面偏移全错位）；
  * 块差异必须按内容对齐而不是按下标，插入 / 删除块后下标错位会把内容写到别的段落上。
  */
 import { describe, expect, it } from 'vitest'
-import { applyBlockEdits, buildEdits, readEditorSnapshot, splitFrontmatter } from '@modules/editor/editorDocService'
+import { applyBlockEdits, buildEdits, readEditorSnapshot } from '@modules/editor/editorDocService'
+import { splitFrontmatter } from '@shared/utils/frontmatter'
 import { buildBlockChanges } from '@webview/editor/blocks/blockDiff'
 
 const SAMPLE_DOC = [
@@ -34,6 +35,21 @@ describe('splitFrontmatter', () => {
 
     it('无 frontmatter 时正文即全文', () => {
         expect(splitFrontmatter('只有正文')).toEqual({ frontmatter: '', body: '只有正文', offset: 0 })
+    })
+
+    it('空元数据块也按 frontmatter 处理', () => {
+        const result = splitFrontmatter('---\n---\n正文')
+        expect(result.frontmatter).toBe('---\n---\n')
+        expect(result.body).toBe('正文')
+        expect(result.offset).toBe(8)
+    })
+
+    it('未闭合时不吞正文', () => {
+        expect(splitFrontmatter('---\n标题\n正文')).toEqual({
+            frontmatter: '',
+            body: '---\n标题\n正文',
+            offset: 0,
+        })
     })
 })
 

@@ -9,6 +9,7 @@
  * 依赖体量大（unified 全家桶），首次使用时动态加载，激活期不承担这份开销。
  */
 import type { EditorBlock, EditorBlockChange, EditorDocSnapshot } from '@shared/types/editor'
+import { splitFrontmatter } from '@shared/utils/frontmatter'
 import type { Link, Parent, Root as MdastRoot } from 'mdast'
 import type rehypeParse from 'rehype-parse'
 import type rehypeRemark from 'rehype-remark'
@@ -18,9 +19,6 @@ import type remarkParse from 'remark-parse'
 import type remarkRehype from 'remark-rehype'
 import type remarkStringify from 'remark-stringify'
 import type { unified } from 'unified'
-
-/** Frontmatter 块：整段原样保留，不参与块编号与回写 */
-const FRONTMATTER_PATTERN = /^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/u
 
 /** 延迟加载的解析依赖：类型取自各包导出，避免手写签名 */
 interface EditorDocDeps {
@@ -87,16 +85,6 @@ function countFrontmatterLines(frontmatter: string): number {
     }
     const lines = frontmatter.split(/\r?\n/u)
     return lines[lines.length - 1] === '' ? lines.length - 1 : lines.length
-}
-
-/** 拆分 Frontmatter 与正文：正文偏移在返回值中已加上前缀长度，与全文一致 */
-export function splitFrontmatter(text: string): { frontmatter: string; body: string; offset: number } {
-    const match = FRONTMATTER_PATTERN.exec(text)
-    if (match === null) {
-        return { frontmatter: '', body: text, offset: 0 }
-    }
-    const frontmatter = match[0]
-    return { frontmatter, body: text.slice(frontmatter.length), offset: frontmatter.length }
 }
 
 /** 源片段不以 `[` 或 `<` 起头，说明这枚链接是 GFM 从裸地址自动识别出来的 */
@@ -258,8 +246,9 @@ export async function readEditorSnapshot(text: string, version: number, path: st
         const endLine = frontmatterLines + (node.position?.end.line ?? node.position?.start.line ?? 1)
         blocks.push({ html, start: offset + start, end: offset + end, startLine, endLine })
     }
-    // 不再做整篇白名单判定：编辑器始终可编辑，语法能否往返由回写后的自检兜底
-    return { path, version, frontmatter, blocks, editable: true }
+    // 不再做整篇白名单判定：编辑器始终可编辑，语法能否往返由回写后的自检兜底。
+    // frontmatter 只用于把块行号对齐全文，不随快照下发——前端不消费，回写也只按块偏移定位
+    return { path, version, blocks, editable: true }
 }
 
 /** 一个待应用的文本替换：偏移基于当前文档，多个块必须从后往前应用 */
