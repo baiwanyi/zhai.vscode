@@ -16,7 +16,16 @@ const MENU_CREATE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/menu/create'
 /** 粉丝与标签接口 */
 const USER_GET_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/user/get'
 const USER_INFO_BATCH_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/user/info/batchget'
+const USER_INFO_UPDATEREMARK_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/user/info/updateremark'
 const TAGS_GET_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/get'
+const TAGS_CREATE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/create'
+const TAGS_UPDATE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/update'
+const TAGS_DELETE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/delete'
+const TAGS_MEMBERS_TAGGING_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/members/batchtagging'
+const TAGS_MEMBERS_UNTAGGING_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/members/batchuntagging'
+const TAGS_MEMBERS_BLACKLIST_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/members/batchblacklist'
+const TAGS_MEMBERS_UNBLACKLIST_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/members/batchunblacklist'
+const TAGS_MEMBERS_GET_BLACKLIST_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/members/getblacklist'
 
 /** 数据统计接口 */
 const USERS_SUMMARY_ENDPOINT = 'https://api.weixin.qq.com/datacube/getusersummary'
@@ -207,13 +216,31 @@ export async function fetchWechatFanPage(token: string, nextOpenid?: string): Pr
 /** 粉丝资料：平台批量接口一次最多 100 个 openid */
 export interface WechatFanProfile {
     openid: string
+    unionid?: string
     nickname: string
     avatar?: string
     subscribeStatus: number
     subscribedAt?: string
+    remark?: string
+    country?: string
+    province?: string
+    city?: string
+    language?: string
+    subscribeScene?: string
+    qrScene?: string
+    tagIds: number[]
 }
 
-/** 批量读取粉丝资料（昵称、头像、关注状态与时间） */
+/** 收窄平台标签 id 数组：只保留正整数 */
+function readProfileTagIds(value: unknown): number[] {
+    if (!Array.isArray(value)) {
+        return []
+    }
+    const ids = value.filter((item): item is number => typeof item === 'number' && Number.isInteger(item) && item > 0)
+    return ids.sort((left, right) => left - right)
+}
+
+/** 批量读取粉丝资料：UnionID 仅在账号绑定开放平台时由平台返回 */
 export async function fetchWechatFanProfiles(
     token: string,
     openids: string[],
@@ -233,14 +260,41 @@ export async function fetchWechatFanProfiles(
     const profiles = list.map((item): WechatFanProfile => {
         const candidate = (typeof item === 'object' && item !== null ? item : {}) as Record<string, unknown>
         const subscribeTime = typeof candidate.subscribe_time === 'number' ? candidate.subscribe_time : 0
+        const qrScene =
+            typeof candidate.qr_scene === 'number' && candidate.qr_scene > 0
+                ? String(candidate.qr_scene)
+                : typeof candidate.qr_scene_str === 'string' && candidate.qr_scene_str.length > 0
+                  ? candidate.qr_scene_str
+                  : undefined
         return {
             openid: typeof candidate.openid === 'string' ? candidate.openid : '',
+            ...(typeof candidate.unionid === 'string' && candidate.unionid.length > 0
+                ? { unionid: candidate.unionid }
+                : {}),
             nickname: typeof candidate.nickname === 'string' ? candidate.nickname : '',
             ...(typeof candidate.headimgurl === 'string' && candidate.headimgurl.length > 0
                 ? { avatar: candidate.headimgurl }
                 : {}),
             subscribeStatus: typeof candidate.subscribe === 'number' ? candidate.subscribe : 0,
             ...(subscribeTime > 0 ? { subscribedAt: new Date(subscribeTime * 1000).toISOString() } : {}),
+            ...(typeof candidate.remark === 'string' && candidate.remark.length > 0
+                ? { remark: candidate.remark }
+                : {}),
+            ...(typeof candidate.country === 'string' && candidate.country.length > 0
+                ? { country: candidate.country }
+                : {}),
+            ...(typeof candidate.province === 'string' && candidate.province.length > 0
+                ? { province: candidate.province }
+                : {}),
+            ...(typeof candidate.city === 'string' && candidate.city.length > 0 ? { city: candidate.city } : {}),
+            ...(typeof candidate.language === 'string' && candidate.language.length > 0
+                ? { language: candidate.language }
+                : {}),
+            ...(typeof candidate.subscribe_scene === 'string' && candidate.subscribe_scene.length > 0
+                ? { subscribeScene: candidate.subscribe_scene }
+                : {}),
+            ...(qrScene === undefined ? {} : { qrScene }),
+            tagIds: readProfileTagIds(candidate.tagids),
         }
     })
     return { ok: true, data: profiles.filter((profile) => profile.openid.length > 0) }
@@ -272,6 +326,127 @@ export async function fetchWechatTags(token: string): Promise<WechatApiResult<We
         }
     })
     return { ok: true, data: rows.filter((row) => row.id > 0) }
+}
+
+/** 运营接口专属错误码：与鉴权错误分开，不透出英文 errmsg */
+const FAN_ERROR_HINTS: Readonly<Record<string, string>> = {
+    '40164': '调用方 IP 不在公众号后台的 IP 白名单内，请把当前出口 IP 加入白名单',
+    '45009': '接口调用超过当日额度，请稍后再试',
+    '48001': '该账号未获得此接口权限，请确认主体类型与后台权限',
+    '45104': '单个粉丝最多打 20 个标签，请先取消部分标签',
+    '40003': 'openid 无效，该用户可能已取关或不属于此账号',
+    '45016': '标签名不合法，须为 1~30 个字符',
+    '45017': '标签数量已达平台上限（100 个）',
+    '45018': '平台内置标签不可删除',
+}
+
+/** 用户管理错误码 → 可执行中文提示，未登记的码走兜底 */
+export function describeFanError(errorCode: number): string {
+    return FAN_ERROR_HINTS[String(errorCode)] ?? '操作失败，请稍后重试'
+}
+
+/** 平台新建标签返回的标识 */
+export interface WechatCreatedTag {
+    id: number
+    name: string
+}
+
+/** 新建标签：平台成功报文里带回标签 id */
+export async function createWechatTag(token: string, name: string): Promise<WechatApiResult<WechatCreatedTag>> {
+    const outcome = await postWechatJson(token, TAGS_CREATE_ENDPOINT, { tag: { name } })
+    if (!outcome.ok) {
+        return outcome
+    }
+    const tag = (
+        typeof outcome.payload.tag === 'object' && outcome.payload.tag !== null ? outcome.payload.tag : {}
+    ) as Record<string, unknown>
+    return {
+        ok: true,
+        data: {
+            id: typeof tag.id === 'number' ? tag.id : 0,
+            name: typeof tag.name === 'string' && tag.name.length > 0 ? tag.name : name,
+        },
+    }
+}
+
+/** 重命名标签 */
+export async function updateWechatTag(token: string, id: number, name: string): Promise<WechatApiResult<boolean>> {
+    const outcome = await postWechatJson(token, TAGS_UPDATE_ENDPOINT, { tag: { id, name } })
+    return outcome.ok ? { ok: true, data: true } : outcome
+}
+
+/** 删除标签：平台内置标签会返回专属错误码 */
+export async function deleteWechatTag(token: string, id: number): Promise<WechatApiResult<boolean>> {
+    const outcome = await postWechatJson(token, TAGS_DELETE_ENDPOINT, { tag: { id } })
+    return outcome.ok ? { ok: true, data: true } : outcome
+}
+
+/** 批量打标或取消：action 由调用方映射到对应平台接口 */
+export async function changeWechatTagMembers(
+    token: string,
+    openids: string[],
+    tagId: number,
+    action: 'add' | 'remove',
+): Promise<WechatApiResult<boolean>> {
+    const endpoint = action === 'add' ? TAGS_MEMBERS_TAGGING_ENDPOINT : TAGS_MEMBERS_UNTAGGING_ENDPOINT
+    const outcome = await postWechatJson(token, endpoint, { openid_list: openids, tagid: tagId })
+    return outcome.ok ? { ok: true, data: true } : outcome
+}
+
+/** 修改备注：空串表示清除 */
+export async function updateWechatRemark(
+    token: string,
+    openid: string,
+    remark: string,
+): Promise<WechatApiResult<boolean>> {
+    const outcome = await postWechatJson(token, USER_INFO_UPDATEREMARK_ENDPOINT, { openid, remark })
+    return outcome.ok ? { ok: true, data: true } : outcome
+}
+
+/** 拉黑或解除：action 由调用方映射到对应平台接口 */
+export async function changeWechatBlacklist(
+    token: string,
+    openids: string[],
+    action: 'block' | 'unblock',
+): Promise<WechatApiResult<boolean>> {
+    const endpoint = action === 'block' ? TAGS_MEMBERS_BLACKLIST_ENDPOINT : TAGS_MEMBERS_UNBLACKLIST_ENDPOINT
+    const outcome = await postWechatJson(token, endpoint, { openid_list: openids })
+    return outcome.ok ? { ok: true, data: true } : outcome
+}
+
+/** 黑名单分页：平台每次最多返回 1000 个 openid */
+export interface WechatBlacklistPage {
+    openids: string[]
+    nextOpenid?: string
+    total: number
+}
+
+/** 读取一页黑名单：beginOpenid 为空表示从头开始，用 nextOpenid 续拉下一页 */
+export async function fetchWechatBlacklist(
+    token: string,
+    beginOpenid?: string,
+): Promise<WechatApiResult<WechatBlacklistPage>> {
+    const body: Record<string, string> =
+        beginOpenid === undefined || beginOpenid.length === 0 ? {} : { begin_openid: beginOpenid }
+    const outcome = await postWechatJson(token, TAGS_MEMBERS_GET_BLACKLIST_ENDPOINT, body)
+    if (!outcome.ok) {
+        return outcome
+    }
+    const data = outcome.payload.data
+    const openids =
+        typeof data === 'object' && data !== null && Array.isArray((data as { openid?: unknown }).openid)
+            ? ((data as { openid: unknown[] }).openid.filter((item): item is string => typeof item === 'string') ?? [])
+            : []
+    return {
+        ok: true,
+        data: {
+            openids,
+            ...(typeof outcome.payload.next_openid === 'string' && outcome.payload.next_openid.length > 0
+                ? { nextOpenid: outcome.payload.next_openid }
+                : {}),
+            total: typeof outcome.payload.total === 'number' ? outcome.payload.total : openids.length,
+        },
+    }
 }
 
 /** 用户增长原始行：按来源分组，同一天可能多行 */

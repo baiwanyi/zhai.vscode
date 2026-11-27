@@ -1,188 +1,97 @@
 /**
- * 用户管理页：关注者列表与标签两段。
- * 复用约定：数据取 hooks/useWechatFans，外壳取 AppPage，分段切换取 SegmentedRail，头像用封装 Image；
- * 时间展示走 shared/utils/format 的相对时间，与账号列表口径一致。
- * 关键约束：平台单页最多 1 万 openid、批量资料一次 100 个，故界面只展示首屏 100 位，
- * 并用平台 total 明确告知总数——不承诺「全部加载」，避免用户误以为粉丝只有 100 个；
- * 标签段单独失败时只在该段提示，不影响粉丝列表。
+ * 用户管理页组装层：持有分段与搜索草稿，绑定同步命令，分发标签编辑命令。
+ * 复用约定：数据取 useWechatFans、同步命令取 useWechatFansSync，页头与内容区分取 layout/ 下独立组件；
+ * 页头描述取 utils/pageText，标签编辑状态由弹窗组件内部持有，页面仅通过 ref 命令触发。
+ * 关键约束：搜索防抖只在页面保留一份，子组件重挂载不打断输入结算；切换账号由页面 key 重挂载；
+ * 操作错误条挂在内容区上方，标签与用户两段共用；本文件不承载列表渲染与状态判定逻辑。
  */
-import { Users } from 'lucide-react'
-import { useState } from 'react'
-import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
-import { Skeleton } from '@components/ui/skeleton'
-import type { WechatAccountSummary, WechatFanSummary, WechatFanTag } from '@shared/types/wechat'
-import { formatRelativeTime } from '@shared/utils/format'
-import { Badge } from '@webview/blocks/Badge'
-import { Empty } from '@webview/blocks/Empty'
-import {
-    AppContent,
-    AppDescription,
-    AppFooter,
-    AppHeader,
-    AppMenu,
-    AppPage,
-    AppTitle,
-} from '@webview/components/AppPage'
-import { Button } from '@webview/components/Button'
-import { Image } from '@webview/components/Image'
-import { SegmentedRail } from '@webview/components/SegmentedRail'
+import { useRef, useState } from 'react'
+import type { WechatAccountSummary } from '@shared/types/wechat'
+import { Alert } from '@webview/components/Alert'
+import { AppContent, AppPage } from '@webview/components/AppPage'
+import { useDebouncedCallback } from '@webview/hooks/useDebouncedCallback'
+import { WechatFansContent } from './layout/WechatFansContent'
+import { WechatFansHeader } from './layout/WechatFansHeader'
+import { WechatTagEditDialog } from './layout/WechatTagEditDialog'
+import { readPageDescription } from './utils/pageText'
+import type { WechatTagEditorHandle } from './layout/WechatTagEditDialog'
+import type { FansTab } from './types'
 import type { JSX } from 'react'
 import { useWechatFans } from '../hooks/useWechatFans'
+import { useWechatFansSync } from '../hooks/useWechatFansSync'
 
-/** 两个分段：粉丝与标签 */
-type FansTab = 'fans' | 'tags'
-
-const TAB_OPTIONS: readonly { value: FansTab; label: string }[] = [
-    { value: 'fans', label: '粉丝' },
-    { value: 'tags', label: '标签' },
-]
-
-/** 收窄分段值 */
-function readTab(value: string): FansTab {
-    return value === 'tags' ? 'tags' : 'fans'
-}
-
-/** 头像缺省时的首字占位 */
-function readInitial(fan: WechatFanSummary): string {
-    const [first] = Array.from(fan.nickname.length > 0 ? fan.nickname : fan.openid)
-    return first ?? '粉'
-}
+/** 搜索输入到下发筛选的防抖间隔 */
+const SEARCH_DEBOUNCE_MS = 300
 
 interface WechatFansPageProps {
     account: WechatAccountSummary
 }
 
 export function WechatFansPage({ account }: WechatFansPageProps): JSX.Element {
-    const { fans, tags, total, status, error, tagsError, reload } = useWechatFans(account.id)
+    const state = useWechatFans(account.id)
+    const { sync, isSyncing } = useWechatFansSync(state)
     const [tab, setTab] = useState<FansTab>('fans')
+    const [searchDraft, setSearchDraft] = useState('')
+    const tagEditorRef = useRef<WechatTagEditorHandle>(null)
 
-    const renderFans = (): JSX.Element => {
-        if (fans.length === 0) {
-            return (
-                <Empty
-                    icon={Users}
-                    title="还没有关注者"
-                    description="账号有粉丝关注后，这里会显示最近关注的 100 位。"
-                />
-            )
-        }
-        return (
-            <div className="flex w-full flex-col gap-2">
-                {fans.map((fan) => (
-                    <Item key={fan.openid} variant="outline" className="flex-nowrap">
-                        <ItemMedia variant="image">
-                            {fan.avatar === undefined ? (
-                                <div className="flex size-full items-center justify-center bg-muted text-xs">
-                                    {readInitial(fan)}
-                                </div>
-                            ) : (
-                                <Image src={fan.avatar} alt={fan.nickname} />
-                            )}
-                        </ItemMedia>
-                        <ItemContent className="min-w-0">
-                            <ItemTitle className="w-full">
-                                <span className="block min-w-0 flex-1 truncate">{fan.nickname}</span>
-                            </ItemTitle>
-                            <ItemDescription className="truncate text-xs">
-                                {fan.subscribeStatus === 0
-                                    ? '已取关'
-                                    : fan.subscribedAt === undefined
-                                      ? '关注时间未知'
-                                      : `关注于 ${formatRelativeTime(fan.subscribedAt)}`}
-                            </ItemDescription>
-                        </ItemContent>
-                        {fan.subscribeStatus === 0 && (
-                            <ItemActions className="shrink-0">
-                                <Badge variant="outline">已取关</Badge>
-                            </ItemActions>
-                        )}
-                    </Item>
-                ))}
-            </div>
+    // 防抖只在父层保留一份：子组件重挂载不会打断输入结算
+    const submitKeyword = useDebouncedCallback((value: string) => state.setKeyword(value), SEARCH_DEBOUNCE_MS)
+
+    const handleSelectTag = (id: number | null): void => {
+        state.setTagId(id)
+        setTab('fans')
+    }
+
+    const handleKeywordChange = (value: string): void => {
+        setSearchDraft(value)
+        submitKeyword(value)
+    }
+
+    const description = readPageDescription(account.name, tab, state)
+    const actionErrorAlert =
+        state.actionError === null ? undefined : (
+            <Alert
+                className="mb-2"
+                title="操作失败"
+                description={state.actionError}
+                variant="destructive"
+                actionText="关闭"
+                callback={state.clearActionError}
+            />
         )
-    }
-
-    const renderTags = (): JSX.Element => {
-        if (tagsError !== null) {
-            return (
-                <div className="flex flex-col gap-2 rounded-xl border p-3">
-                    <p className="text-sm">标签读取失败</p>
-                    <p className="text-xs text-muted-foreground">{tagsError}</p>
-                </div>
-            )
-        }
-        if (tags.length === 0) {
-            return <Empty title="还没有标签" description="标签需要在公众号后台创建，这里只读展示标签与人数。" />
-        }
-        return (
-            <div className="flex w-full flex-col gap-2">
-                {tags.map((tag: WechatFanTag) => (
-                    <Item key={tag.id} variant="outline" className="flex-nowrap">
-                        <ItemContent className="min-w-0">
-                            <ItemTitle className="w-full">
-                                <span className="block min-w-0 flex-1 truncate">{tag.name}</span>
-                            </ItemTitle>
-                            <ItemDescription className="text-xs">{`标签 ID ${String(tag.id)}`}</ItemDescription>
-                        </ItemContent>
-                        <ItemActions className="shrink-0">
-                            <Badge variant="secondary">{`${String(tag.count)} 人`}</Badge>
-                        </ItemActions>
-                    </Item>
-                ))}
-            </div>
-        )
-    }
-
-    const renderBody = (): JSX.Element => {
-        if (status === 'loading') {
-            return (
-                <div className="flex w-full flex-col gap-2">
-                    <Skeleton className="h-14 w-full rounded-xl" />
-                    <Skeleton className="h-14 w-full rounded-xl" />
-                    <Skeleton className="h-14 w-full rounded-xl" />
-                </div>
-            )
-        }
-        if (status === 'error') {
-            return (
-                <div className="flex flex-col gap-2 rounded-xl border p-3">
-                    <p className="text-sm">粉丝列表读取失败</p>
-                    <p className="text-xs text-muted-foreground">{error ?? '请稍后重试'}</p>
-                    <Button variant="outline" onClick={() => void reload()}>
-                        重试
-                    </Button>
-                </div>
-            )
-        }
-        return tab === 'fans' ? renderFans() : renderTags()
-    }
 
     return (
         <AppPage>
-            <AppHeader align="start">
-                <AppTitle>用户管理</AppTitle>
-                <AppDescription>
-                    {tab === 'fans' && total > fans.length
-                        ? `${account.name} · 共 ${String(total)} 位，显示前 ${String(fans.length)} 位`
-                        : `${account.name} · ${String(total)} 位关注者`}
-                </AppDescription>
-                <AppMenu>
-                    <SegmentedRail
-                        items={TAB_OPTIONS}
-                        value={tab}
-                        onChange={(value) => setTab(readTab(value))}
-                        ariaLabel="用户管理分段"
-                        variant="outline"
-                        size="sm"
-                    />
-                </AppMenu>
-            </AppHeader>
-            <AppContent isScrollable>{renderBody()}</AppContent>
-            <AppFooter>
-                <Button variant="outline" onClick={() => void reload()}>
-                    刷新
-                </Button>
-            </AppFooter>
+            <WechatFansHeader
+                tab={tab}
+                description={description}
+                isMutating={state.isMutating}
+                isSyncing={isSyncing}
+                onReload={() => void state.reload()}
+                onCreateTag={() => tagEditorRef.current?.openForCreate()}
+                onSync={() => void sync()}
+                onTabChange={setTab}
+            />
+            <AppContent isScrollable>
+                <WechatFansContent
+                    tab={tab}
+                    state={state}
+                    searchDraft={searchDraft}
+                    actionErrorAlert={actionErrorAlert}
+                    onSelectTag={handleSelectTag}
+                    onRenameTag={(tag) => tagEditorRef.current?.openForRename(tag)}
+                    onRemoveTag={(tag) => tagEditorRef.current?.requestRemove(tag)}
+                    onKeywordChange={handleKeywordChange}
+                    onReload={() => void state.reload()}
+                />
+            </AppContent>
+            <WechatTagEditDialog
+                ref={tagEditorRef}
+                isMutating={state.isMutating}
+                onCreate={state.createTag}
+                onRename={state.renameTag}
+                onRemove={state.removeTag}
+            />
         </AppPage>
     )
 }

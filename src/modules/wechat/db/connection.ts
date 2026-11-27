@@ -95,6 +95,57 @@ const SCHEMA_STATEMENTS = [
         UNIQUE(account_id, local_hash, type)
     )`,
     `CREATE INDEX IF NOT EXISTS idx_material_hash ON wechat_materials(account_id, local_hash)`,
+    // 用户管理：平台是唯一真相，本组表只存最近一次同步快照与任务进度
+    `CREATE TABLE IF NOT EXISTS wechat_fans (
+        account_id        TEXT NOT NULL,
+        openid            TEXT NOT NULL,
+        unionid           TEXT,
+        nickname          TEXT NOT NULL DEFAULT '',
+        avatar            TEXT,
+        subscribe_status  INTEGER NOT NULL DEFAULT 0,
+        subscribed_at     TEXT,
+        remark            TEXT,
+        country           TEXT,
+        province          TEXT,
+        city              TEXT,
+        language          TEXT,
+        subscribe_scene   TEXT,
+        qr_scene          TEXT,
+        tag_ids           TEXT NOT NULL DEFAULT '[]',
+        is_blocked        INTEGER NOT NULL DEFAULT 0,
+        last_synced_at    TEXT NOT NULL,
+        created_at        TEXT NOT NULL,
+        updated_at        TEXT NOT NULL,
+        PRIMARY KEY (account_id, openid)
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_fan_unionid ON wechat_fans(account_id, unionid) WHERE unionid IS NOT NULL`,
+    `CREATE INDEX IF NOT EXISTS idx_fan_subscribed ON wechat_fans(account_id, subscribe_status, subscribed_at DESC)`,
+    `CREATE TABLE IF NOT EXISTS wechat_tags (
+        account_id  TEXT NOT NULL,
+        tag_id      INTEGER NOT NULL,
+        name        TEXT NOT NULL,
+        count       INTEGER NOT NULL DEFAULT 0,
+        updated_at  TEXT NOT NULL,
+        PRIMARY KEY (account_id, tag_id)
+    )`,
+    `CREATE TABLE IF NOT EXISTS wechat_sync_tasks (
+        id            TEXT PRIMARY KEY,
+        account_id    TEXT NOT NULL,
+        status        TEXT NOT NULL,
+        cursor        TEXT NOT NULL DEFAULT '',
+        page_count    INTEGER NOT NULL DEFAULT 0,
+        fetched       INTEGER NOT NULL DEFAULT 0,
+        created_count INTEGER NOT NULL DEFAULT 0,
+        updated_count INTEGER NOT NULL DEFAULT 0,
+        unfollowed    INTEGER NOT NULL DEFAULT 0,
+        failed_count  INTEGER NOT NULL DEFAULT 0,
+        total         INTEGER NOT NULL DEFAULT 0,
+        error_code    INTEGER,
+        error_hint    TEXT,
+        started_at    TEXT NOT NULL,
+        finished_at   TEXT
+    )`,
+    `CREATE INDEX IF NOT EXISTS idx_sync_account ON wechat_sync_tasks(account_id, started_at DESC)`,
 ] as const
 
 /**
@@ -166,6 +217,7 @@ export function openWechatDatabase(cacheDirUri: vscode.Uri): Database.Database {
     ensureColumn(db, 'wechat_articles', 'file_path', 'TEXT')
     ensureColumn(db, 'wechat_issues', 'msg_data_id', 'TEXT')
     ensureColumn(db, 'wechat_issues', 'dir_path', 'TEXT')
+    ensureColumn(db, 'wechat_fans', 'is_blocked', 'INTEGER NOT NULL DEFAULT 0')
     // 旧库补列后再迁移索引：迁移语句要读 default_author
     ensureColumn(db, 'wechat_accounts', 'default_author', 'TEXT')
     migrateAccountAppIdIndex(db)

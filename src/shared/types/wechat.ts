@@ -1317,12 +1317,24 @@ export interface WechatMenuSaveResult {
 /** 粉丝摘要：昵称与头像来自批量资料接口，未关注用户只保留 openid */
 export interface WechatFanSummary {
     openid: string
+    /** 开放平台身份：仅公众号绑定开放平台且平台返回时有值 */
+    unionid?: string
     nickname: string
     avatar?: string
     /** 0 未关注、1 已关注（平台口径） */
     subscribeStatus: number
     /** 关注时间：ISO 8601，未关注时缺省 */
     subscribedAt?: string
+    /** 平台备注：可编辑 */
+    remark?: string
+    /** 平台给出的关注来源场景值 */
+    subscribeScene?: string
+    /** 已打标签的平台 id，升序去重 */
+    tagIds: number[]
+    /** 是否在公众号黑名单中：由 getBlacklist 回读写入，实时回落时为 false */
+    isBlocked: boolean
+    /** 最近一次同步时间：实时回落时缺省 */
+    lastSyncedAt?: string
 }
 
 /** wechat/fans/list 请求：nextOpenid 为空表示从头拉取 */
@@ -1338,6 +1350,8 @@ export interface WechatFanListResult {
     nextOpenid?: string
     /** 平台给出的关注者总数，用于界面提示还有多少未加载 */
     total: number
+    /** 最近一次同步时间：未同步过时缺省 */
+    syncedAt?: string
 }
 
 /** 粉丝标签 */
@@ -1356,6 +1370,172 @@ export interface WechatFanTagsRequest {
 /** wechat/fans/tags 响应 */
 export interface WechatFanTagsResult {
     tags: WechatFanTag[]
+}
+
+/** 平台批量接口的硬上限：user/info/batchget 与打标接口一次都是 100 */
+export const WECHAT_FAN_BATCH_LIMIT = 100
+
+/** 拉黑/解除拉黑的单次上限：平台限制为 20，与打标接口的 100 不同 */
+export const WECHAT_FAN_BLACKLIST_BATCH_LIMIT = 20
+
+/** 备注上限：平台 user/info/updateremark 限制 */
+export const WECHAT_FAN_REMARK_MAX = 30
+
+/** 标签名长度上限：平台 tags/create 限制 */
+export const WECHAT_FAN_TAG_NAME_MAX = 30
+
+/** 检索关键词长度上限：与宿主守卫一致，前端输入与守卫共用同一口径 */
+export const WECHAT_FAN_KEYWORD_MAX = 64
+
+/** 用户状态筛选：blocked 走 isBlocked，其余走 subscribeStatus，两者互斥 */
+export type WechatFanStatusFilter = 'all' | 'subscribed' | 'unsubscribed' | 'blocked'
+
+/** 用户检索：空字段表示不限，limit / offset 用于本地快照分页 */
+export interface WechatFanSearchRequest {
+    accountId: string
+    keyword?: string
+    tagId?: number
+    subscribeStatus?: 0 | 1
+    /** true 只看黑名单用户；与 subscribeStatus 互斥 */
+    isBlocked?: boolean
+    limit?: number
+    offset?: number
+}
+
+/** 用户检索响应：snapshotTotal 用于「平台 N / 已同步 M」提示 */
+export interface WechatFanSearchResult {
+    fans: WechatFanSummary[]
+    /** 本次筛选命中数 */
+    total: number
+    /** 本地快照总条数 */
+    snapshotTotal: number
+    /** 最近一次成功同步时间，未同步过时缺省 */
+    syncedAt?: string
+}
+
+/** 用户详情请求 */
+export interface WechatFanDetailRequest {
+    accountId: string
+    openid: string
+}
+
+/** 同一 UnionID 在本项目其他公众号下的关注记录 */
+export interface WechatFanRelatedAccount {
+    accountName: string
+    openid: string
+    subscribedAt?: string
+}
+
+/** 用户详情响应：资料字段仅在快照里有值时给出 */
+export interface WechatFanDetailResult {
+    fan: WechatFanSummary
+    country?: string
+    province?: string
+    city?: string
+    language?: string
+    subscribeScene?: string
+    qrScene?: string
+    related: WechatFanRelatedAccount[]
+}
+
+/** 同步任务：状态与计数用于进度条与结果提示 */
+export interface WechatFanSyncTask {
+    id: string
+    status: 'running' | 'success' | 'partial' | 'failed'
+    cursor: string
+    pageCount: number
+    fetched: number
+    total: number
+    createdCount: number
+    updatedCount: number
+    unfollowed: number
+    failedCount: number
+    errorCode?: number
+    errorHint?: string
+    startedAt: string
+    finishedAt?: string
+}
+
+/** 触发或续跑同步：taskId 缺省表示新建任务 */
+export interface WechatFanSyncRequest {
+    accountId: string
+    taskId?: string
+}
+
+export interface WechatFanSyncResult {
+    task: WechatFanSyncTask
+}
+
+export interface WechatFanSyncStatusRequest {
+    accountId: string
+    taskId?: string
+}
+
+export interface WechatFanSyncStatusResult {
+    task: WechatFanSyncTask | null
+}
+
+/** 标签新建 */
+export interface WechatFanTagCreateRequest {
+    accountId: string
+    name: string
+}
+
+/** 标签重命名 */
+export interface WechatFanTagRenameRequest {
+    accountId: string
+    id: number
+    name: string
+}
+
+/** 标签删除 */
+export interface WechatFanTagRemoveRequest {
+    accountId: string
+    id: number
+}
+
+export interface WechatFanTagMutationResult {
+    tag: WechatFanTag
+}
+
+export interface WechatFanTagRemoveResult {
+    removed: boolean
+}
+
+/** 批量打标与取消：action 决定走平台哪个写接口 */
+export interface WechatFanTagMembersRequest {
+    accountId: string
+    openids: string[]
+    tagId: number
+    action: 'add' | 'remove'
+}
+
+export interface WechatFanTagMembersResult {
+    succeeded: number
+    failed: number
+}
+
+/** 备注：空串表示清除备注 */
+export interface WechatFanRemarkRequest {
+    accountId: string
+    openid: string
+    remark: string
+}
+
+export interface WechatFanRemarkResult {
+    updated: boolean
+}
+
+/** 拉黑与解除：破坏性操作，前端必须二次确认 */
+export interface WechatFanBlacklistRequest {
+    accountId: string
+    openids: string[]
+    action: 'block' | 'unblock'
+}
+
+export interface WechatFanBlacklistResult {
+    succeeded: number
+    failed: number
 }
 
 /** 用户增长的单日数据点：日期为 YYYY-MM-DD（用户所在时区） */
@@ -1418,6 +1598,191 @@ export function isWechatFanTagsRequest(payload: unknown): payload is WechatFanTa
         return false
     }
     return isWechatAccountId((payload as { accountId?: unknown }).accountId)
+}
+
+/** 收窄 openid：非空且长度在平台范围内 */
+function isWechatOpenid(value: unknown): value is string {
+    return typeof value === 'string' && value.length > 0 && value.length <= 128
+}
+
+/** 收窄 openid 数组：指定上限，默认与平台批量资料上限一致 */
+function isWechatOpenidList(value: unknown, limit = WECHAT_FAN_BATCH_LIMIT): value is string[] {
+    return (
+        Array.isArray(value) && value.length > 0 && value.length <= limit && value.every((item) => isWechatOpenid(item))
+    )
+}
+
+/** 收窄标签名：去空白后 1~30 字符 */
+function isWechatFanTagName(value: unknown): value is string {
+    return typeof value === 'string' && value.trim().length > 0 && value.trim().length <= WECHAT_FAN_TAG_NAME_MAX
+}
+
+/** 收窄备注：空串表示清除，其余须非纯空白且不超过 30 字符 */
+function isWechatFanRemark(value: unknown): value is string {
+    return (
+        typeof value === 'string' &&
+        value.length <= WECHAT_FAN_REMARK_MAX &&
+        (value.length === 0 || value.trim().length > 0)
+    )
+}
+
+/** 判断是否为粉丝检索请求 */
+export function isWechatFanSearchRequest(payload: unknown): payload is WechatFanSearchRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as {
+        accountId?: unknown
+        keyword?: unknown
+        tagId?: unknown
+        subscribeStatus?: unknown
+        isBlocked?: unknown
+        limit?: unknown
+        offset?: unknown
+    }
+    if (!isWechatAccountId(candidate.accountId)) {
+        return false
+    }
+    if (
+        candidate.keyword !== undefined &&
+        (typeof candidate.keyword !== 'string' || candidate.keyword.length > WECHAT_FAN_KEYWORD_MAX)
+    ) {
+        return false
+    }
+    if (
+        candidate.tagId !== undefined &&
+        (typeof candidate.tagId !== 'number' || !Number.isInteger(candidate.tagId) || candidate.tagId <= 0)
+    ) {
+        return false
+    }
+    if (candidate.subscribeStatus !== undefined && candidate.subscribeStatus !== 0 && candidate.subscribeStatus !== 1) {
+        return false
+    }
+    if (candidate.isBlocked !== undefined && typeof candidate.isBlocked !== 'boolean') {
+        return false
+    }
+    if (
+        candidate.limit !== undefined &&
+        (typeof candidate.limit !== 'number' ||
+            !Number.isInteger(candidate.limit) ||
+            candidate.limit < 1 ||
+            candidate.limit > 200)
+    ) {
+        return false
+    }
+    if (
+        candidate.offset !== undefined &&
+        (typeof candidate.offset !== 'number' || !Number.isInteger(candidate.offset) || candidate.offset < 0)
+    ) {
+        return false
+    }
+    return true
+}
+
+/** 判断是否为粉丝详情请求 */
+export function isWechatFanDetailRequest(payload: unknown): payload is WechatFanDetailRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; openid?: unknown }
+    return isWechatAccountId(candidate.accountId) && isWechatOpenid(candidate.openid)
+}
+
+/** 判断是否为同步触发请求：taskId 为空表示新建 */
+export function isWechatFanSyncRequest(payload: unknown): payload is WechatFanSyncRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; taskId?: unknown }
+    return (
+        isWechatAccountId(candidate.accountId) &&
+        (candidate.taskId === undefined || typeof candidate.taskId === 'string')
+    )
+}
+
+/** 判断是否为同步状态请求 */
+export function isWechatFanSyncStatusRequest(payload: unknown): payload is WechatFanSyncStatusRequest {
+    return isWechatFanSyncRequest(payload)
+}
+
+/** 判断是否为标签新建请求 */
+export function isWechatFanTagCreateRequest(payload: unknown): payload is WechatFanTagCreateRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; name?: unknown }
+    return isWechatAccountId(candidate.accountId) && isWechatFanTagName(candidate.name)
+}
+
+/** 判断是否为标签重命名请求 */
+export function isWechatFanTagRenameRequest(payload: unknown): payload is WechatFanTagRenameRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; id?: unknown; name?: unknown }
+    return (
+        isWechatAccountId(candidate.accountId) &&
+        typeof candidate.id === 'number' &&
+        Number.isInteger(candidate.id) &&
+        candidate.id > 0 &&
+        isWechatFanTagName(candidate.name)
+    )
+}
+
+/** 判断是否为标签删除请求 */
+export function isWechatFanTagRemoveRequest(payload: unknown): payload is WechatFanTagRemoveRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; id?: unknown }
+    return (
+        isWechatAccountId(candidate.accountId) &&
+        typeof candidate.id === 'number' &&
+        Number.isInteger(candidate.id) &&
+        candidate.id > 0
+    )
+}
+
+/** 判断是否为打标与取消请求：openids 一次最多 100 个 */
+export function isWechatFanTagMembersRequest(payload: unknown): payload is WechatFanTagMembersRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; openids?: unknown; tagId?: unknown; action?: unknown }
+    return (
+        isWechatAccountId(candidate.accountId) &&
+        isWechatOpenidList(candidate.openids) &&
+        typeof candidate.tagId === 'number' &&
+        Number.isInteger(candidate.tagId) &&
+        candidate.tagId > 0 &&
+        (candidate.action === 'add' || candidate.action === 'remove')
+    )
+}
+
+/** 判断是否为备注请求：空串表示清除备注 */
+export function isWechatFanRemarkRequest(payload: unknown): payload is WechatFanRemarkRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; openid?: unknown; remark?: unknown }
+    return (
+        isWechatAccountId(candidate.accountId) &&
+        isWechatOpenid(candidate.openid) &&
+        isWechatFanRemark(candidate.remark)
+    )
+}
+
+/** 判断是否为黑名单请求：openids 一次最多 20 个，action 只接受 block 或 unblock */
+export function isWechatFanBlacklistRequest(payload: unknown): payload is WechatFanBlacklistRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; openids?: unknown; action?: unknown }
+    return (
+        isWechatAccountId(candidate.accountId) &&
+        isWechatOpenidList(candidate.openids, WECHAT_FAN_BLACKLIST_BATCH_LIMIT) &&
+        (candidate.action === 'block' || candidate.action === 'unblock')
+    )
 }
 
 /** 判断是否为数据统计请求：days 只接受 7 / 15 / 30 */

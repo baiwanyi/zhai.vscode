@@ -16,6 +16,8 @@ import { createWechatSecretStore } from '@modules/wechat/credentials'
 import { openWechatDatabase } from '@modules/wechat/db/connection'
 import { recoverStalePushingIssues } from '@modules/wechat/db/issueRepository'
 import { WechatFanService } from '@modules/wechat/fanService'
+import { WechatFanSyncService } from '@modules/wechat/fanSyncService'
+import { WechatFanWriteService } from '@modules/wechat/fanWriteService'
 import { WechatIssueRenameService } from '@modules/wechat/issueRenameService'
 import { WechatIssueService } from '@modules/wechat/issueService'
 import { WechatMaterialService } from '@modules/wechat/materialService'
@@ -118,6 +120,8 @@ export function assembleWechatLayer(deps: WechatLayerDeps): WechatLayer {
         materials,
         menu: new WechatMenuService(tokenDeps),
         fans: new WechatFanService(tokenDeps),
+        fanSync: new WechatFanSyncService(tokenDeps),
+        fanWrite: new WechatFanWriteService(tokenDeps),
         stats: new WechatStatsService(tokenDeps),
         comments: new WechatCommentService(tokenDeps),
     })

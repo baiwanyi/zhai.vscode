@@ -323,14 +323,57 @@ CREATE TABLE IF NOT EXISTS wechat_auto_replies (
     updated_at  TEXT NOT NULL
 );
 
--- 粉丝标签映射（user/tag/* 同步）
-CREATE TABLE IF NOT EXISTS wechat_fan_tags (
-    account_id  TEXT NOT NULL,
-    openid      TEXT NOT NULL,
-    tag_ids     TEXT NOT NULL DEFAULT '[]',
-    remark      TEXT,
-    updated_at  TEXT NOT NULL,
+-- 用户快照：平台是唯一真相，本表只存最近一次同步结果
+CREATE TABLE IF NOT EXISTS wechat_fans (
+    account_id        TEXT NOT NULL,
+    openid            TEXT NOT NULL,
+    unionid           TEXT,                     -- 绑定开放平台时由资料接口返回
+    nickname          TEXT NOT NULL DEFAULT '',
+    avatar            TEXT,
+    subscribe_status  INTEGER NOT NULL DEFAULT 0,
+    subscribed_at     TEXT,
+    remark            TEXT,
+    country           TEXT,
+    province          TEXT,
+    city              TEXT,
+    language          TEXT,
+    subscribe_scene   TEXT,
+    qr_scene          TEXT,
+    tag_ids           TEXT NOT NULL DEFAULT '[]',
+    last_synced_at    TEXT NOT NULL,
+    created_at        TEXT NOT NULL,
+    updated_at        TEXT NOT NULL,
     PRIMARY KEY (account_id, openid)
+);
+CREATE INDEX IF NOT EXISTS idx_fan_unionid ON wechat_fans(account_id, unionid) WHERE unionid IS NOT NULL;
+
+-- 标签映射：数量为平台统计，随同步刷新
+CREATE TABLE IF NOT EXISTS wechat_tags (
+    account_id  TEXT NOT NULL,
+    tag_id      INTEGER NOT NULL,
+    name        TEXT NOT NULL,
+    count       INTEGER NOT NULL DEFAULT 0,
+    updated_at  TEXT NOT NULL,
+    PRIMARY KEY (account_id, tag_id)
+);
+
+-- 同步任务：游标支持断点续跑，计数用于进度展示
+CREATE TABLE IF NOT EXISTS wechat_sync_tasks (
+    id            TEXT PRIMARY KEY,
+    account_id    TEXT NOT NULL,
+    status        TEXT NOT NULL,          -- running|success|partial|failed
+    cursor        TEXT NOT NULL DEFAULT '',
+    page_count    INTEGER NOT NULL DEFAULT 0,
+    fetched       INTEGER NOT NULL DEFAULT 0,
+    created_count INTEGER NOT NULL DEFAULT 0,
+    updated_count INTEGER NOT NULL DEFAULT 0,
+    unfollowed    INTEGER NOT NULL DEFAULT 0,
+    failed_count  INTEGER NOT NULL DEFAULT 0,
+    total         INTEGER NOT NULL DEFAULT 0,
+    error_code    INTEGER,
+    error_hint    TEXT,
+    started_at    TEXT NOT NULL,
+    finished_at   TEXT
 );
 
 -- 数据概览缓存（datacube/*，定时刷新）
@@ -752,7 +795,7 @@ ready ──设置时间──> scheduled ──到点──> pushing
 | 素材管理 | 永久素材的列表、上传、删除、复用 | **已落地**：本地映射列表（缩略图 / 名称 / 体积 / 日期）+ 文件名搜索 + 从本地导入 + 删除（连平台素材一起删，二次确认写明「已发布文章里引用该图会失效」）；语音 / 视频类型、与本地媒体库互通、引用次数未做 | 一般可用，有配额 |
 | 数据统计 | 用户增长、图文数据、菜单点击、消息分析，只读 | 日期范围（7 / 15 / 30 天）+ 指标卡 + CSS 柱状趋势（不引图表库）；结果落 `wechat_stats_cache` | 需认证 |
 | 留言管理 | 按文章筛选留言、加精、回复、删除 | 顶部文章选择器 + 留言列表（头像、昵称、时间、内容、精选标）+ 行内回复 | 需认证且已开通留言 |
-| 用户管理 | 粉丝列表、标签 CRUD、备注、拉黑 | 分段栏（粉丝 / 标签）+ 分页列表；操作走 `tags/members/batchtagging`、`user/info/updateremark`；`user/get` 单次上限 10000 | 一般可用 |
+| 用户管理 | 用户检索筛选、详情与 UnionID 关联、标签 CRUD、打标/取消、备注、拉黑/解除、同步 | 已落地：三段（用户 / 标签 / 同步）；用户段本地搜索 + 标签/状态筛选 + 详情，详情内改备注、勾选标签、二次确认拉黑；标签段新建/重命名/删除（二次确认）；同步段按游标翻页、100 一批补资料、断点续跑，页头并列「平台 N / 已同步 M」；写操作走 `tags/*`、`tags/members/*`、`user/info/updateremark` | 一般可用，写接口需 M0 实测 |
 | 推送管理 | 队列、历史、额度，是推送状态的唯一真相；另承载文章元信息设置，发起动作仍在仪表盘批次页 | 分段栏（待推送 / 历史 / 额度）+ 批次行展开文章列表（标题、作者、封面状态）+ 「设置」弹窗（标题 / 作者 / 摘要 / 封面 / 留言，走 `wechat/article/meta`）+ 行内状态徽标与失败原因 + 顶部「进行中任务」条（挂载时查 `wechat/tasks`，并订阅阶段广播）+ 页脚刷新；定时群发按产品决定不做 | 按主体分级 |
 
 ### 13.3 导航栏容量改造（必须做）
@@ -814,7 +857,7 @@ ready ──设置时间──> scheduled ──到点──> pushing
 | 批次 | 增删改、从笔记/作品导入、封面、生成草稿、群发、批量删除、合并、分批渲染、推送阶段 | 仪表盘 `#/wechat/{accountId}` |
 | 素材 | 列表、搜索、从本地导入、删除、复制地址 | 工作流 `material` |
 | 菜单 | 读取、两级结构编辑、发布、回读确认 | 工作流 `menu` |
-| 粉丝 | 首屏 100 位 + 平台总数、标签列表 | 工作流 `fans` |
+| 粉丝 | 三段用户管理：检索筛选、详情 + UnionID 关联、标签 CRUD、打标/取消、备注、拉黑/解除、同步与断点续跑 | 工作流 `fans` |
 | 统计 | 用户增长指标 + 逐日趋势（需认证主体） | 工作流 `stats` |
 | 留言 | 按批次文章筛选、回复、精选、删除、加载更多 | 工作流 `comment` |
 | 推送管理 | 待推送 / 历史 / 额度、进行中任务条 | 工作流 `push` |
@@ -831,7 +874,6 @@ ready ──设置时间──> scheduled ──到点──> pushing
 | P1 | 点文章打开源文档 | `WechatIssueCard` 文章行，现在只弹编辑；源文档路径已有 `sourcePath` | 无 |
 | P1 | 阅读数 / 点赞数回填 | `wechat_articles.read_num` / `like_num` 两列已建但从未写入；需 `datacube/getarticlesummary` + `getarticletotal` | 认证主体 |
 | P1 | 公众号文档目录 | `wechat/` 下没有文档与新建入口，`contentScope` 已支持 `module === 'wechat'` | 产品确认是否真要在该目录写文档 |
-| P2 | 粉丝标签 CRUD / 打标 / 备注 / 拉黑 | `fanService` 目前只读；需 `tags/create|update|delete`、`tags/members/batchtagging`、`user/info/updateremark` | 无 |
 | P2 | 统计的图文与菜单数据 | `statsService` 只有用户增长；需 `getarticlesummary`、`getmenucount`（或 `getmenu` 点击） | 认证主体 |
 | P2 | 菜单拖拽排序与点击预览 | `WechatMenuPage` 现在是表单编辑（增删 + 改字段） | 无 |
 | P2 | 素材语音 / 视频、引用次数、与本地媒体库互通 | `materialService` 只处理 image；`src/modules/media` 已有本地库 | 无 |
@@ -851,7 +893,8 @@ ready ──设置时间──> scheduled ──到点──> pushing
 
 ### 15.4 已知约束（不是 bug）
 
-- **粉丝只展示首屏 100 位**：平台单页可返 1 万 openid，但批量资料接口一次只收 100 个，两者上限错位，硬翻页必然漏人；界面用平台 `total` 明确写「共 N 位，显示前 100 位」。
+- **无快照时只展示实时首屏 100 位**：平台单页可返 1 万 openid，但批量资料接口一次只收 100 个，两者上限错位，硬翻页必然漏人；有快照后列表来自本地快照，页头并列「平台 N / 已同步 M」，不声称全部加载。
+- **UnionID 可能为空**：只有公众号绑定开放平台时资料接口才返回 unionid；未绑定时详情页显示引导，跨账号关联区为空，不视为缺陷。
 - **旧批次看不了留言**：留言按 `msg_data_id` 定位，升级前群发的批次没有该字段，界面会提示「请用当前版本重新群发一次」。
 - **未认证主体**：群发、统计、留言不可用，界面展示平台返回的权限提示而不是空数据。
 - **批次内图片只在推送时上传**：素材页出现的「没主动上传却有记录」是正文图片在生成草稿时自动上传的结果。

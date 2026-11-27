@@ -42,6 +42,7 @@ import {
     updateWechatAccountProfile,
     type WechatAccountRow,
 } from './db/accountRepository'
+import { deleteAccountFanData } from './db/fanRepository'
 import { removeWechatIssueDirectory } from './issueDocument'
 import type { WechatTokenService } from './tokenService'
 import type Database from 'better-sqlite3'
@@ -197,6 +198,7 @@ export class WechatAccountService {
             return { removed: false, adoptedConversations: 0 }
         }
         deleteWechatAccount(this.deps.db, id)
+        deleteAccountFanData(this.deps.db, id)
         await this.removeAccountDirectory(existing.app_id)
         // 账号目录已删：其历史会话（含旧版按批次建立的）归入通用对话，避免留下打不开的孤儿会话。
         // 未配置 AppID 的账号以空串落库，此时不能拿它拼作用域——那会把整个公众号模块的会话一起归入。

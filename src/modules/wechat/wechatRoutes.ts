@@ -29,7 +29,17 @@ import {
     isWechatCommentRemoveRequest,
     isWechatCommentReplyRequest,
     isWechatCoverSourceRequest,
+    isWechatFanBlacklistRequest,
+    isWechatFanDetailRequest,
     isWechatFanListRequest,
+    isWechatFanRemarkRequest,
+    isWechatFanSearchRequest,
+    isWechatFanSyncRequest,
+    isWechatFanSyncStatusRequest,
+    isWechatFanTagCreateRequest,
+    isWechatFanTagMembersRequest,
+    isWechatFanTagRemoveRequest,
+    isWechatFanTagRenameRequest,
     isWechatFanTagsRequest,
     isWechatIssueRemoveRequest,
     isWechatIssuesMergeRequest,
@@ -49,6 +59,8 @@ import type { WechatPublishProgress } from '@shared/types/wechat'
 import type { WechatAccountService } from './accountService'
 import type { WechatCommentService } from './commentService'
 import type { WechatFanService } from './fanService'
+import type { WechatFanSyncService } from './fanSyncService'
+import type { WechatFanWriteService } from './fanWriteService'
 import type { WechatIssueService } from './issueService'
 import type { WechatMaterialService } from './materialService'
 import type { WechatMenuService } from './menuService'
@@ -75,6 +87,8 @@ export interface WechatRouteDeps {
     materials: WechatMaterialService
     menu: WechatMenuService
     fans: WechatFanService
+    fanSync: WechatFanSyncService
+    fanWrite: WechatFanWriteService
     stats: WechatStatsService
     comments: WechatCommentService
 }
@@ -300,6 +314,66 @@ export class WechatRoutes {
                     throw new Error('wechat/fans/tags 参数非法：accountId 须为合法账号标识')
                 }
                 return this.deps.fans.tags(payload.accountId)
+            }
+            case 'wechat/fans/search': {
+                if (!isWechatFanSearchRequest(payload)) {
+                    throw new Error('wechat/fans/search 参数非法：筛选字段与分页值须合法')
+                }
+                return this.deps.fans.search(payload)
+            }
+            case 'wechat/fans/detail': {
+                if (!isWechatFanDetailRequest(payload)) {
+                    throw new Error('wechat/fans/detail 参数非法：accountId 与 openid 须合法')
+                }
+                return this.deps.fans.detail(payload)
+            }
+            case 'wechat/fans/sync': {
+                if (!isWechatFanSyncRequest(payload)) {
+                    throw new Error('wechat/fans/sync 参数非法：accountId 须合法，taskId 为可选字符串')
+                }
+                return this.deps.fanSync.sync(payload)
+            }
+            case 'wechat/fans/sync/status': {
+                if (!isWechatFanSyncStatusRequest(payload)) {
+                    throw new Error('wechat/fans/sync/status 参数非法：accountId 须合法，taskId 为可选字符串')
+                }
+                return this.deps.fans.syncStatus(payload)
+            }
+            case 'wechat/fans/tag/create': {
+                if (!isWechatFanTagCreateRequest(payload)) {
+                    throw new Error('wechat/fans/tag/create 参数非法：accountId 须合法，标签名 1~30 字符')
+                }
+                return this.deps.fanWrite.createTag(payload)
+            }
+            case 'wechat/fans/tag/rename': {
+                if (!isWechatFanTagRenameRequest(payload)) {
+                    throw new Error('wechat/fans/tag/rename 参数非法：id 须正整数，标签名 1~30 字符')
+                }
+                return this.deps.fanWrite.renameTag(payload)
+            }
+            case 'wechat/fans/tag/remove': {
+                if (!isWechatFanTagRemoveRequest(payload)) {
+                    throw new Error('wechat/fans/tag/remove 参数非法：id 须为正整数')
+                }
+                return this.deps.fanWrite.removeTag(payload)
+            }
+            case 'wechat/fans/tag/members': {
+                if (!isWechatFanTagMembersRequest(payload)) {
+                    throw new Error('wechat/fans/tag/members 参数非法：openids 须为 1~100 个，action 只接受 add / remove')
+                }
+                return this.deps.fanWrite.tagMembers(payload)
+            }
+            case 'wechat/fans/remark': {
+                if (!isWechatFanRemarkRequest(payload)) {
+                    throw new Error('wechat/fans/remark 参数非法：openid 须合法，备注不超过 30 字符')
+                }
+                return this.deps.fanWrite.remark(payload)
+            }
+            case 'wechat/fans/blacklist': {
+                if (!isWechatFanBlacklistRequest(payload)) {
+                    throw new Error('wechat/fans/blacklist 参数非法：openids 须为 1~100 个，action 只接受 block / unblock')
+                }
+                return this.deps.fanWrite.blacklist(payload)
             }
             case 'wechat/stats/overview': {
                 if (!isWechatStatsRequest(payload)) {
