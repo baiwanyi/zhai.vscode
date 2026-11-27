@@ -1,7 +1,8 @@
 /**
  * 画面风格选择：输入卡片底部操作行的按钮弹出单选面板，用「缩略图 + 文案」的卡片展示全部画风。
- * 复用约定：Popover 取 @components/ui/popover，单选语义取 @components/ui/radio-group（卡片即 Label 包裹，
- * 点整卡即选中），画风清单与标签取 ../utils/parameters/style 的 STYLE_OPTIONS（与宿主 STYLE_HINTS 同源）。
+ * 复用约定：弹层壳复用 @webview/components/ActionPopover（tooltip 作面板标题，选中后由 close 收盘），
+ * 单选语义取 @components/ui/radio-group（卡片即 Label 包裹，点整卡即选中），
+ * 画风清单与标签取 ../utils/parameters/style 的 STYLE_OPTIONS（与宿主 STYLE_HINTS 同源）。
  * 关键约束：触发器与比例菜单同形态（图标 + 当前画风名 + 下拉箭头），可访问名带上当前取值；
  * 选中即收盘并回调，不提供「不选」——画风始终有一项生效（默认 auto）；
  * 选中的画风不进输入框徽标，只在发送时随请求并入提示词；
@@ -9,12 +10,10 @@
  */
 import { cn } from 'cn'
 import { Palette } from 'lucide-react'
-import { useState } from 'react'
 import { Label } from '@components/ui/label'
-import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } from '@components/ui/popover'
 import { RadioGroup, RadioGroupItem } from '@components/ui/radio-group'
 import type { PortraitStyle } from '@shared/types/press'
-import { Button } from '@webview/components/Button'
+import { ActionPopover } from '@webview/components/ActionPopover'
 import type { JSX } from 'react'
 import { STYLE_OPTIONS, styleLabelOf } from '../utils/parameters/style'
 
@@ -40,37 +39,39 @@ interface ImageStylePickerProps {
 }
 
 export function ImageStylePicker({ value, disabled, onChange }: ImageStylePickerProps): JSX.Element {
-    const [isOpen, setIsOpen] = useState(false)
     const label = styleLabelOf(value)
 
     /** 选中即收盘：面板只是选择的载体，选完不需要停留 */
-    const handleValueChange = (next: string): void => {
+    const handleValueChange = (next: string, close: () => void): void => {
         const option = STYLE_OPTIONS.find((item) => item.value === next)
         if (option === undefined) {
             return
         }
         onChange(option.value, option.label)
-        setIsOpen(false)
+        close()
     }
 
     return (
-        <Popover open={isOpen} onOpenChange={setIsOpen}>
-            <PopoverTrigger asChild>
-                <Button
-                    variant="ghost"
-                    className="font-medium bg-white/5 text-foreground hover:bg-white/5 dark:hover:bg-white/5"
-                    aria-label={`画面风格 ${label}，点击切换`}
-                    disabled={disabled}
+        <ActionPopover
+            tooltip="画面风格"
+            icon={<Palette />}
+            title={label}
+            size="default"
+            variant="ghost"
+            align="start"
+            width="lg"
+            disabled={disabled}
+            buttonProps={{
+                className: 'font-medium bg-white/5 text-foreground hover:bg-white/5 dark:hover:bg-white/5',
+                'aria-label': `画面风格 ${label}，点击切换`,
+            }}
+        >
+            {(close) => (
+                <RadioGroup
+                    value={value}
+                    onValueChange={(next) => handleValueChange(next, close)}
+                    className="grid grid-cols-4 gap-1.5"
                 >
-                    <Palette />
-                    {label}
-                </Button>
-            </PopoverTrigger>
-            <PopoverContent align="start">
-                <PopoverHeader>
-                    <PopoverTitle>画面风格</PopoverTitle>
-                </PopoverHeader>
-                <RadioGroup value={value} onValueChange={handleValueChange} className="grid grid-cols-4 gap-1.5">
                     {STYLE_OPTIONS.map((option) => {
                         const isActive = option.value === value
                         return (
@@ -101,7 +102,7 @@ export function ImageStylePicker({ value, disabled, onChange }: ImageStylePicker
                         )
                     })}
                 </RadioGroup>
-            </PopoverContent>
-        </Popover>
+            )}
+        </ActionPopover>
     )
 }
