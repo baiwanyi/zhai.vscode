@@ -71,7 +71,7 @@ export function GrowthEditDialog({ isOpen, onOpenChange, point, volumes, onSave 
                     <OptionSelect
                         value={draft.track}
                         options={GROWTH_TRACK_OPTIONS}
-                        ariaLabel="成长轨道"
+                        label="成长轨道"
                         onChange={(value) => {
                             const track = toOptionValue<GrowthTrack>(GROWTH_TRACK_ORDER, value)
                             if (track !== null) {
@@ -87,7 +87,7 @@ export function GrowthEditDialog({ isOpen, onOpenChange, point, volumes, onSave 
                         <OptionSelect
                             value={String(draft.volumeOrder)}
                             options={volumeChoices.map((item) => ({ value: String(item.order), label: item.label }))}
-                            ariaLabel="成长节点所在卷"
+                            label="成长节点所在卷"
                             onChange={(value) => {
                                 const order = Number.parseInt(value, 10)
                                 if (Number.isNaN(order)) {
@@ -107,7 +107,7 @@ export function GrowthEditDialog({ isOpen, onOpenChange, point, volumes, onSave 
                         <OptionSelect
                             value={draft.chapterOrder === null ? CHAPTER_NONE : String(draft.chapterOrder)}
                             options={chapterOptions}
-                            ariaLabel="成长节点所在章"
+                            label="成长节点所在章"
                             onChange={(value) => {
                                 patch({
                                     chapterOrder: value === CHAPTER_NONE ? null : Number.parseInt(value, 10),

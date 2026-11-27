@@ -161,14 +161,11 @@ export function VolumeGenerateChaptersDialog({
     }
 
     return (
-        <Dialog size="full"
+        <Dialog
+            size="full"
             open={isOpen}
             title="按卷生成章纲"
-            description={
-                volume === null
-                    ? '请先选择一卷'
-                    : `生成章节草案，勾选后写入「${volume.name}」`
-            }
+            description={volume === null ? '请先选择一卷' : `生成章节草案，勾选后写入「${volume.name}」`}
             confirmLabel="写入本卷"
             isDisabled={selectedSet.size === 0 || isGenerating}
             onOpenChange={onOpenChange}
@@ -185,9 +182,9 @@ export function VolumeGenerateChaptersDialog({
                                 value={mode}
                                 options={WRITE_MODE_OPTIONS}
                                 disabled={volume === null}
-                                ariaLabel="写入方式"
+                                label="写入方式"
                                 className="py-1 border-0 bg-transparent dark:bg-transparent dark:hover:bg-transparent data-[size=sm]:rounded-none"
-                                triggerProps={{ size: 'sm' }}
+                                size="sm"
                                 onChange={(nextMode): void => {
                                     if (nextMode === mode) {
                                         return
@@ -225,7 +222,8 @@ export function VolumeGenerateChaptersDialog({
                         ) : null}
                     </CardAction>
                     <CardDescription className="col-span-2">
-                        从第 {writeRange.startOrder} 章起写入，卷内现有 {writeRange.existingCount} 章；替换空章会重排章序与伏笔引用。
+                        从第 {writeRange.startOrder} 章起写入，卷内现有 {writeRange.existingCount}{' '}
+                        章；替换空章会重排章序与伏笔引用。
                     </CardDescription>
                 </CardHeader>
                 <CardContent className="flex min-h-0 flex-1 flex-col px-0">

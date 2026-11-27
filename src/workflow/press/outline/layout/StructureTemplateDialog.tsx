@@ -66,7 +66,7 @@ export function StructureTemplateDialog({
                     <OptionSelect
                         value={templateId}
                         options={STRUCTURE_TEMPLATES.map((item) => ({ value: item.id, label: item.label }))}
-                        ariaLabel="结构模板"
+                        label="结构模板"
                         onChange={setTemplateId}
                     />
                     <FieldDescription>{template?.description ?? ''}</FieldDescription>
@@ -77,7 +77,7 @@ export function StructureTemplateDialog({
                         items={MODE_OPTIONS}
                         value={mode}
                         onChange={setMode}
-                        ariaLabel="套用方式"
+                        label="套用方式"
                         isStretched={false}
                     />
                     <FieldDescription>

@@ -449,6 +449,42 @@ export async function fetchWechatBlacklist(
     }
 }
 
+/** 通用 datacube 行：平台字段保持下划线原名，由服务层按视图收窄 */
+export type WechatDatacubeRow = Record<string, unknown>
+
+/** 通用 datacube 结果：list 数组与平台延迟标记 */
+export interface WechatDatacubeData {
+    rows: WechatDatacubeRow[]
+    isDelayed: boolean
+}
+
+/**
+ * 通用 datacube 查询：所有统计接口都收 begin_date / end_date 并返回 list。
+ * 关键约束：本层只收窄数组形态，不解释字段含义——图文总数据等接口字段极多，
+ * 按视图读字段的工作留给服务层，便于对照官方文档逐项排查。
+ */
+export async function fetchDatacube(
+    token: string,
+    endpoint: string,
+    beginDate: string,
+    endDate: string,
+): Promise<WechatApiResult<WechatDatacubeData>> {
+    const outcome = await postWechatJson(token, endpoint, { begin_date: beginDate, end_date: endDate })
+    if (!outcome.ok) {
+        return outcome
+    }
+    const list = outcome.payload.list
+    const rows: WechatDatacubeRow[] = []
+    if (Array.isArray(list)) {
+        for (const item of list) {
+            if (typeof item === 'object' && item !== null) {
+                rows.push(item as WechatDatacubeRow)
+            }
+        }
+    }
+    return { ok: true, data: { rows, isDelayed: outcome.payload.is_delay === true } }
+}
+
 /** 用户增长原始行：按来源分组，同一天可能多行 */
 export interface WechatUserSummaryRow {
     date: string

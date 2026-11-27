@@ -83,7 +83,7 @@ export function AnnotationFilterBar({
             <div className="flex w-full items-center gap-1">
                 <SegmentedRail
                     items={KIND_TAB_OPTIONS}
-                    ariaLabel="标注类型"
+                    label="标注类型"
                     variant="outline"
                     value={activeKind}
                     onChange={onChangeKind}

@@ -245,7 +245,7 @@ function CharacterBasicTab({
                         items={CHARACTER_GENDER_OPTIONS}
                         value={character.gender}
                         onChange={handleGenderChange}
-                        ariaLabel="性别"
+                        label="性别"
                         variant="chip"
                     />
                 </Field>
@@ -265,7 +265,7 @@ function CharacterBasicTab({
                     items={CHARACTER_ROLE_OPTIONS}
                     value={character.role}
                     onChange={handleRoleChange}
-                    ariaLabel="角色"
+                    label="角色"
                     variant="chip"
                 />
                 <FieldDescription>角色分类决定大纲排布时该人物承担的功能</FieldDescription>
@@ -276,7 +276,7 @@ function CharacterBasicTab({
                     items={CHARACTER_BODY_TYPE_OPTIONS}
                     value={character.bodyType}
                     onChange={handleBodyTypeChange}
-                    ariaLabel="体型"
+                    label="体型"
                     variant="chip"
                 />
                 <FieldDescription>与身高一起约束外貌描写和角色设定图的身形比例</FieldDescription>

@@ -25,5 +25,5 @@ interface SnapshotSectionRailProps {
 }
 
 export function SnapshotSectionRail({ activeSection, onSelect }: SnapshotSectionRailProps): JSX.Element {
-    return <SegmentedRail items={SNAPSHOT_SECTIONS} value={activeSection} onChange={onSelect} ariaLabel="快照分区" />
+    return <SegmentedRail items={SNAPSHOT_SECTIONS} value={activeSection} onChange={onSelect} label="快照分区" />
 }

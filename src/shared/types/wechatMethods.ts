@@ -110,6 +110,8 @@ export const WECHAT_METHODS = {
     publishQuota: 'wechat/publishQuota',
     /** 统计概览 */
     statsOverview: 'wechat/stats/overview',
+    /** 统计分维度查询 */
+    statsQuery: 'wechat/stats/query',
     /** 任务状态 */
     tasks: 'wechat/tasks',
 } as const

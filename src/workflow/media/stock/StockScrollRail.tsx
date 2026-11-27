@@ -16,14 +16,14 @@ const STEP_RATIO = 0.8
 
 interface StockScrollRailProps {
     /** 滚动区无障碍名称：同页出现多个滑动壳时用于区分 */
-    ariaLabel: string
+    label: string
     /** 选中项键值：变化时把内容里的 [data-state="on"] 滚回可视区，省略则不处理 */
     activeValue?: string
     /** 滑动内容：必须是单行排布、自身不换行 */
     children: ReactNode
 }
 
-export function StockScrollRail({ ariaLabel, activeValue, children }: StockScrollRailProps): JSX.Element {
+export function StockScrollRail({ label, activeValue, children }: StockScrollRailProps): JSX.Element {
     /** 横向滚动容器：测量与滚动的唯一入口 */
     const scrollRef = useRef<HTMLDivElement | null>(null)
     const [canScrollLeft, setCanScrollLeft] = useState(false)
@@ -86,7 +86,7 @@ export function StockScrollRail({ ariaLabel, activeValue, children }: StockScrol
             <div className="relative min-w-0 flex-1">
                 <div
                     ref={scrollRef}
-                    aria-label={ariaLabel}
+                    aria-label={label}
                     className="overflow-x-auto scrollbar-none! [&::-webkit-scrollbar]:hidden!"
                 >
                     {children}

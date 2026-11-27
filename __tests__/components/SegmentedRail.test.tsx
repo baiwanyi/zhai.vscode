@@ -24,8 +24,8 @@ function RailIcon({ className }: { className?: string }): ReactNode {
 }
 
 describe('SegmentedRail', () => {
-    it('渲染全部分段项，并以 ariaLabel 标注整组', () => {
-        render(<SegmentedRail items={ITEMS} value="basic" onChange={vi.fn()} ariaLabel="设定分组" />)
+    it('渲染全部分段项，并以 label 标注整组', () => {
+        render(<SegmentedRail items={ITEMS} value="basic" onChange={vi.fn()} label="设定分组" />)
 
         expect(screen.getByRole('radiogroup', { name: '设定分组' })).toBeDefined()
         expect(screen.getByRole('radio', { name: '基础' })).toBeDefined()
@@ -35,7 +35,7 @@ describe('SegmentedRail', () => {
     it('点击未选中项回传该值', async () => {
         const user = userEvent.setup()
         const onChange = vi.fn()
-        render(<SegmentedRail items={ITEMS} value="basic" onChange={onChange} ariaLabel="设定分组" />)
+        render(<SegmentedRail items={ITEMS} value="basic" onChange={onChange} label="设定分组" />)
 
         await user.click(screen.getByRole('radio', { name: '剧情' }))
 
@@ -46,7 +46,7 @@ describe('SegmentedRail', () => {
     it('点击已选中项不回调，避免把选中值置空', async () => {
         const user = userEvent.setup()
         const onChange = vi.fn()
-        render(<SegmentedRail items={ITEMS} value="basic" onChange={onChange} ariaLabel="设定分组" />)
+        render(<SegmentedRail items={ITEMS} value="basic" onChange={onChange} label="设定分组" />)
 
         await user.click(screen.getByRole('radio', { name: '基础' }))
 
@@ -56,7 +56,7 @@ describe('SegmentedRail', () => {
     it('整组禁用时点击不回调，且分段项不可用', async () => {
         const user = userEvent.setup()
         const onChange = vi.fn()
-        render(<SegmentedRail items={ITEMS} value="basic" onChange={onChange} ariaLabel="设定分组" isDisabled />)
+        render(<SegmentedRail items={ITEMS} value="basic" onChange={onChange} label="设定分组" isDisabled />)
 
         const story = screen.getByRole('radio', { name: '剧情' })
         expect(story.hasAttribute('disabled')).toBe(true)
@@ -72,14 +72,14 @@ describe('SegmentedRail', () => {
                 items={[{ value: 'basic', label: '基础', icon: RailIcon }]}
                 value="basic"
                 onChange={vi.fn()}
-                ariaLabel="带图标"
+                label="带图标"
             />,
         )
 
         expect(screen.getByTestId('rail-icon')).toBeDefined()
         unmount()
 
-        render(<SegmentedRail items={ITEMS} value="basic" onChange={vi.fn()} ariaLabel="无图标" />)
+        render(<SegmentedRail items={ITEMS} value="basic" onChange={vi.fn()} label="无图标" />)
 
         expect(screen.queryByTestId('rail-icon')).toBeNull()
     })

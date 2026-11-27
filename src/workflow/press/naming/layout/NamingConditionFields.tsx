@@ -41,7 +41,7 @@ export function NamingConditionFields({
                     items={catalog.counts.map((count) => ({ value: String(count), label: `${count} 个` }))}
                     value={String(request.count)}
                     onChange={(value) => onChange({ count: Number(value) })}
-                    ariaLabel="生成数量"
+                    label="生成数量"
                     variant="outline"
                 />
             </Field>

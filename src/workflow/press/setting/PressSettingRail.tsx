@@ -24,5 +24,5 @@ const SECTION_ITEMS: readonly SegmentedRailItem<SettingSectionKey>[] = SETTING_S
 }))
 
 export function PressSettingRail({ activeSection, onSelect }: PressSettingRailProps): JSX.Element {
-    return <SegmentedRail items={SECTION_ITEMS} value={activeSection} onChange={onSelect} ariaLabel="设定分组" />
+    return <SegmentedRail items={SECTION_ITEMS} value={activeSection} onChange={onSelect} label="设定分组" />
 }

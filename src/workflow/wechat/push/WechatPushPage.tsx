@@ -118,7 +118,7 @@ export function WechatPushPage({ account }: WechatPushPageProps): JSX.Element {
                         items={TAB_OPTIONS}
                         value={tab}
                         onChange={(value) => setTab(readTab(value))}
-                        ariaLabel="推送管理分段"
+                        label="推送管理分段"
                         variant="outline"
                         size="sm"
                     />

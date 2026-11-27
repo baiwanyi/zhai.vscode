@@ -147,7 +147,7 @@ export function PressImportDialog({
                             items={PRESS_AUDIENCES.map((item) => ({ value: item, label: item }))}
                             value={audience}
                             onChange={(value) => setAudience(readPressAudience(value))}
-                            ariaLabel="目标读者"
+                            label="目标读者"
                             variant="outline"
                             size="lg"
                             isDisabled={isImporting}

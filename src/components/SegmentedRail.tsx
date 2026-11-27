@@ -38,7 +38,7 @@ export type SegmentedRailSize = 'default' | 'sm' | 'lg' | 'full'
 
 interface SegmentedRailBaseProps<T extends string> {
     items: readonly SegmentedRailItem<T>[]
-    ariaLabel: string
+    label: string
     variant?: SegmentedRailVariant
     /**
      * outline 形态下是否整行等分：true 时容器 w-full、分段项 flex-1（表单字段行），
@@ -113,7 +113,7 @@ function resolveClassNames(
 export function SegmentedRail<T extends string>(props: SegmentedRailProps<T>): JSX.Element {
     const {
         items,
-        ariaLabel,
+        label,
         variant = 'pill',
         isStretched = true,
         isWrapped = true,
@@ -172,7 +172,7 @@ export function SegmentedRail<T extends string>(props: SegmentedRailProps<T>): J
                 onValueChange={(next) => {
                     props.onChange(toValues(next))
                 }}
-                aria-label={ariaLabel}
+                aria-label={label}
                 className={classNames.container}
             >
                 {segments}
@@ -194,7 +194,7 @@ export function SegmentedRail<T extends string>(props: SegmentedRailProps<T>): J
                     props.onChange(nextItem.value)
                 }
             }}
-            aria-label={ariaLabel}
+            aria-label={label}
             className={classNames.container}
         >
             {segments}

@@ -56,14 +56,14 @@ export function WechatFanFilters({
             <OptionSelect
                 value={tagId === null ? ALL_TAGS : String(tagId)}
                 options={tagFilterOptions}
-                ariaLabel="按标签筛选"
+                label="按标签筛选"
                 className="min-w-0 w-full"
                 onChange={(value) => onTagChange(value === ALL_TAGS ? null : Number(value))}
             />
             <OptionSelect
                 value={statusFilter}
                 options={STATUS_OPTIONS}
-                ariaLabel="用户状态"
+                label="用户状态"
                 className="min-w-0 w-full"
                 onChange={onStatusFilterChange}
             />

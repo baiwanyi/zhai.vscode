@@ -57,7 +57,7 @@ export function NamingSurnameField({
                     items={SURNAME_KIND_ITEMS}
                     value={surnameKind}
                     onChange={onKindChange}
-                    ariaLabel="姓氏类型"
+                    label="姓氏类型"
                     variant="outline"
                     isStretched={false}
                 />

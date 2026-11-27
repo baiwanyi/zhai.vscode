@@ -33,9 +33,28 @@ export const TAGS_MEMBERS_BLACKLIST_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/tag
 export const TAGS_MEMBERS_UNBLACKLIST_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/tags/members/batchunblacklist`
 export const TAGS_MEMBERS_GET_BLACKLIST_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/tags/members/getblacklist`
 
-/** 数据统计端点 */
+/** 数据统计端点：按用户、图文、消息与接口四类分组 */
 export const USERS_SUMMARY_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getusersummary`
 export const USERS_CUMULATE_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getusercumulate`
+export const ARTICLE_SUMMARY_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getarticlesummary`
+export const USER_READ_HOUR_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getuserreadhour`
+export const USER_SHARE_HOUR_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getusersharehour`
+export const USER_READ_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getuserread`
+export const USER_SHARE_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getusershare`
+export const ARTICLE_TOTAL_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getarticletotal`
+export const BIZ_SUMMARY_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getbizsummary`
+export const ARTICLE_READ_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getarticleread`
+export const ARTICLE_SHARE_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getarticleshare`
+export const ARTICLE_TOTAL_DETAIL_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getarticletotaldetail`
+export const UPSTREAM_MSG_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getupstreammsg`
+export const UPSTREAM_MSG_HOUR_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getupstreammsghour`
+export const UPSTREAM_MSG_WEEK_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getupstreammsgweek`
+export const UPSTREAM_MSG_MONTH_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getupstreammsgmonth`
+export const UPSTREAM_MSG_DIST_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getupstreammsgdist`
+export const UPSTREAM_MSG_DIST_WEEK_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getupstreammsgdistweek`
+export const UPSTREAM_MSG_DIST_MONTH_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getupstreammsgdistmonth`
+export const INTERFACE_SUMMARY_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getinterfacesummary`
+export const INTERFACE_SUMMARY_HOUR_ENDPOINT = `${WECHAT_API_ORIGIN}/datacube/getinterfacesummaryhour`
 
 /** 素材端点 */
 export const MATERIAL_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/material/add_material`

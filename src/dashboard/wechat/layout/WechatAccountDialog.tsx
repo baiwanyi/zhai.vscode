@@ -96,7 +96,7 @@ export function WechatAccountDialog({
                         }))}
                         value={accountType}
                         onChange={(value) => setAccountType(readWechatAccountType(value))}
-                        ariaLabel="账号类型"
+                        label="账号类型"
                         variant="outline"
                         size="lg"
                         isDisabled={isSubmitting}

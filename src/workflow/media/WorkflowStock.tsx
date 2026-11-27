@@ -79,10 +79,10 @@ interface TopicTabRailProps {
  */
 function TopicTabRail({ items, value, onChange }: TopicTabRailProps): JSX.Element {
     return (
-        <StockScrollRail ariaLabel="图库话题" activeValue={value}>
+        <StockScrollRail label="图库话题" activeValue={value}>
             <SegmentedRail
                 items={items}
-                ariaLabel="图库话题"
+                label="图库话题"
                 variant="chip"
                 size="sm"
                 isWrapped={false}

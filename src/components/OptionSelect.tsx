@@ -2,8 +2,8 @@
  * 枚举下拉：把「值 / 标签」选项列表渲成 shadcn Select，统一触发器高度与选项分组。
  * 复用约定：控件取 @components/ui/select，选项类型由本组件自定义，不依赖任何业务模块；
  * 额外项（如未分组哨兵）由调用方作为普通选项传入，本组件不内置任何业务取值。
- * 关键约束：值必须是联合类型 T，空值由调用方用哨兵表达；id / aria-label 至少给一个以支撑读屏；
- * 选项 value 不在列表内时忽略该次变更，避免读到脏值；触发器自身属性经 triggerProps 透传，本组件只接管 id / aria-label / className。
+ * 关键约束：值必须是联合类型 T，空值由调用方用哨兵表达；id / label 至少给一个以支撑读屏；
+ * 选项 value 不在列表内时忽略该次变更；触发器尺寸由 size 指定，下拉面板固定限高。
  */
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@components/ui/select'
 import type { ComponentProps, JSX } from 'react'
@@ -21,10 +21,11 @@ export interface OptionSelectProps<T extends string> extends Omit<
     options: readonly OptionSelectOption<T>[]
     onChange: (value: T) => void
     id?: string
-    ariaLabel?: string
+    /** 读屏标签 */
+    label?: string
     className?: string
-    /** 触发器自身属性（如 size）：与 id / aria-label / className 冲突时以后者为准 */
-    triggerProps?: Omit<ComponentProps<typeof SelectTrigger>, 'id' | 'aria-label' | 'className' | 'children'>
+    /** 触发器尺寸 */
+    size?: 'sm' | 'default'
 }
 
 /** 枚举下拉：无业务状态，值校验由调用方的 onChange 或选项集合保证 */
@@ -33,9 +34,9 @@ export function OptionSelect<T extends string>({
     options,
     onChange,
     id,
-    ariaLabel,
+    label,
     className = 'w-full',
-    triggerProps,
+    size = 'default',
     ...props
 }: OptionSelectProps<T>): JSX.Element {
     return (
@@ -49,10 +50,10 @@ export function OptionSelect<T extends string>({
                 }
             }}
         >
-            <SelectTrigger {...triggerProps} id={id} aria-label={ariaLabel} className={className}>
+            <SelectTrigger size={size} id={id} aria-label={label} className={className}>
                 <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="max-h-48">
                 <SelectGroup>
                     {options.map((option) => (
                         <SelectItem key={option.value} value={option.value}>

@@ -48,7 +48,7 @@ export function NamingPersonFields({
                     items={meta.variants}
                     value={request.variant}
                     onChange={(variant) => onChange({ variant })}
-                    ariaLabel={meta.variantLabel}
+                    label={meta.variantLabel}
                     variant="outline"
                 />
             </Field>
@@ -58,7 +58,7 @@ export function NamingPersonFields({
                     items={catalog.eras}
                     value={request.era}
                     onChange={(era) => onChange({ era: era as NamingEra })}
-                    ariaLabel="时代"
+                    label="时代"
                     variant="outline"
                 />
             </Field>
@@ -88,7 +88,7 @@ export function NamingPersonFields({
                     items={catalog.genders}
                     value={request.gender}
                     onChange={(gender) => onChange({ gender: gender as NamingGender })}
-                    ariaLabel="性别"
+                    label="性别"
                     variant="outline"
                 />
             </Field>
@@ -98,7 +98,7 @@ export function NamingPersonFields({
                     items={catalog.lengths}
                     value={request.length}
                     onChange={(length) => onChange({ length: length as NamingNameLength })}
-                    ariaLabel="字数"
+                    label="字数"
                     variant="outline"
                 />
             </Field>

@@ -46,6 +46,9 @@ const ERROR_HINTS: Readonly<Record<string, WechatErrorHint>> = {
     '40125': { status: 'error', hint: 'AppSecret 无效，请重新填写密钥。' },
     '45009': { status: 'limited', hint: '接口调用超过当日额度，请稍后再试。' },
     '48001': { status: 'limited', hint: '该账号未获得此接口权限（通常需要认证主体）。' },
+    '61500': { status: 'error', hint: '日期格式有误，请按 YYYY-MM-DD 重新选择。' },
+    '61501': { status: 'error', hint: '查询跨度超过该统计接口的单次上限，请缩小时间范围。' },
+    '61503': { status: 'error', hint: '所选日期的数据尚未生成，请在次日 8 点后重试。' },
     '-1': { status: 'error', hint: '微信服务器繁忙，请稍后重试。' },
 }
 

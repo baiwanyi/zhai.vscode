@@ -58,9 +58,7 @@ export function ChapterEditCardFields({
 }: ChapterEditCardFieldsProps): JSX.Element {
     const locationGroups = useMemo<SearchableGroup[]>(() => {
         const placeNames = new Set(
-            lore
-                .filter((entry) => entry.kind === 'place' && entry.name.trim().length > 0)
-                .map((entry) => entry.name),
+            lore.filter((entry) => entry.kind === 'place' && entry.name.trim().length > 0).map((entry) => entry.name),
         )
         const places = [...placeNames].map((name) => ({ value: name, label: name }))
         return [
@@ -116,7 +114,7 @@ export function ChapterEditCardFields({
                     <Field>
                         <FieldTitle>本章节奏</FieldTitle>
                         <OptionSelect
-                            ariaLabel="本章节奏"
+                            label="本章节奏"
                             value={chapter.pacing}
                             options={PACING_KIND_OPTIONS}
                             onChange={onPacingChange}

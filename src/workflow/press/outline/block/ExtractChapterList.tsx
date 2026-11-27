@@ -45,7 +45,7 @@ export function ExtractChapterList({
                 <OptionSelect
                     value={volumeFilter}
                     options={[{ value: 'all', label: '全部卷' }, ...volumeOptions]}
-                    ariaLabel="按卷筛选章节"
+                    label="按卷筛选章节"
                     className="min-w-0 flex-1"
                     onChange={onVolumeFilterChange}
                 />

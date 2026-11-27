@@ -1563,6 +1563,231 @@ export interface WechatStatsResult {
     cumulateUsers: number
 }
 
+/** 统计维度：与官方文档四类数据分组一一对应 */
+export const WECHAT_STATS_DIMENSIONS = ['users', 'news', 'message', 'api'] as const
+
+/** 统计维度取值 */
+export type WechatStatsDimension = (typeof WECHAT_STATS_DIMENSIONS)[number]
+
+/** 维度展示名：页头切换与结果标题共用一处口径 */
+export const WECHAT_STATS_DIMENSION_LABELS: Readonly<Record<WechatStatsDimension, string>> = {
+    users: '用户增长',
+    news: '图文内容',
+    message: '消息互动',
+    api: '接口调用',
+}
+
+/**
+ * 统计视图：与官方文档四类数据统计接口一一对应（含已停止维护但仍在服务的历史接口）。
+ * 关键约束：各视图的单次跨度、时间粒度与数据起始日期差异很大，元数据集中在 WECHAT_STATS_VIEW_META，
+ * 宿主按它分段取数，前端按它生成切换项与提示，避免两处各写一套口径。
+ */
+export const WECHAT_STATS_VIEWS = [
+    'userDaily',
+    'userCumulate',
+    'newsSummary',
+    'newsReadHour',
+    'newsShareHour',
+    'newsRead',
+    'newsShare',
+    'newsTotal',
+    'newsBiz',
+    'newsArticleRead',
+    'newsArticleShare',
+    'newsArticleDetail',
+    'msgDaily',
+    'msgHour',
+    'msgWeek',
+    'msgMonth',
+    'msgDist',
+    'msgDistWeek',
+    'msgDistMonth',
+    'apiDaily',
+    'apiHour',
+] as const
+
+/** 统计视图取值 */
+export type WechatStatsView = (typeof WECHAT_STATS_VIEWS)[number]
+
+/** 统计时间范围：预设档位与自定义日期二选一，自定义跨度不超过 30 天 */
+export type WechatStatsRange =
+    { kind: 'days'; days: 7 | 15 | 30 } | { kind: 'custom'; beginDate: string; endDate: string }
+
+/** 统计数据的横轴粒度 */
+export type WechatStatsGranularity = 'day' | 'hour' | 'week' | 'month'
+
+/** 统计视图元数据：展示名、所属维度、粒度、单次跨度上限与数据起始日期 */
+export interface WechatStatsViewMeta {
+    label: string
+    dimension: WechatStatsDimension
+    granularity: WechatStatsGranularity
+    /** 平台单次查询的最大天数（含首尾） */
+    maxDays: number
+    /** 平台数据存储起始日期，早于此日期的查询无意义 */
+    since: string
+    /** 官方标注停止维护时的替代说明，前端原样展示 */
+    deprecated?: string
+}
+
+/** 各视图元数据：跨度与起始日均按官方文档填写，前端与宿主共用 */
+export const WECHAT_STATS_VIEW_META: Readonly<Record<WechatStatsView, WechatStatsViewMeta>> = {
+    userDaily: { label: '增减与来源', dimension: 'users', granularity: 'day', maxDays: 7, since: '2014-12-01' },
+    userCumulate: { label: '累计用户', dimension: 'users', granularity: 'day', maxDays: 7, since: '2014-12-01' },
+    newsSummary: {
+        label: '群发每日',
+        dimension: 'news',
+        granularity: 'day',
+        maxDays: 7,
+        since: '2014-12-01',
+        deprecated: '官方已停止维护，建议改用「内容阅读 / 内容分享 / 内容概况」',
+    },
+    newsReadHour: {
+        label: '阅读分时',
+        dimension: 'news',
+        granularity: 'hour',
+        maxDays: 1,
+        since: '2014-12-01',
+        deprecated: '官方已停止维护，新接口不提供分时数据',
+    },
+    newsShareHour: {
+        label: '转发分时',
+        dimension: 'news',
+        granularity: 'hour',
+        maxDays: 1,
+        since: '2014-12-01',
+        deprecated: '官方已停止维护，新接口不提供分时数据',
+    },
+    newsRead: {
+        label: '阅读概况',
+        dimension: 'news',
+        granularity: 'day',
+        maxDays: 7,
+        since: '2014-12-01',
+        deprecated: '官方已停止维护，建议改用「内容阅读」',
+    },
+    newsShare: {
+        label: '转发概况',
+        dimension: 'news',
+        granularity: 'day',
+        maxDays: 7,
+        since: '2014-12-01',
+        deprecated: '官方已停止维护，建议改用「内容分享」',
+    },
+    newsTotal: {
+        label: '群发总数据',
+        dimension: 'news',
+        granularity: 'day',
+        maxDays: 7,
+        since: '2014-12-01',
+        deprecated: '官方已停止维护，建议改用「发表明细」',
+    },
+    newsBiz: { label: '内容概况', dimension: 'news', granularity: 'day', maxDays: 30, since: '2025-11-01' },
+    newsArticleRead: {
+        label: '内容阅读',
+        dimension: 'news',
+        granularity: 'day',
+        maxDays: 1,
+        since: '2025-11-01',
+    },
+    newsArticleShare: {
+        label: '内容分享',
+        dimension: 'news',
+        granularity: 'day',
+        maxDays: 1,
+        since: '2025-11-01',
+    },
+    newsArticleDetail: {
+        label: '发表明细',
+        dimension: 'news',
+        granularity: 'day',
+        maxDays: 1,
+        since: '2025-11-01',
+    },
+    msgDaily: { label: '发送概况', dimension: 'message', granularity: 'day', maxDays: 6, since: '2014-12-01' },
+    msgHour: { label: '发送分时', dimension: 'message', granularity: 'hour', maxDays: 1, since: '2014-12-01' },
+    msgWeek: { label: '发送周数据', dimension: 'message', granularity: 'week', maxDays: 30, since: '2014-12-01' },
+    msgMonth: { label: '发送月数据', dimension: 'message', granularity: 'month', maxDays: 30, since: '2014-12-01' },
+    msgDist: {
+        label: '发送量分布',
+        dimension: 'message',
+        granularity: 'day',
+        maxDays: 15,
+        since: '2014-12-01',
+    },
+    msgDistWeek: {
+        label: '分布周数据',
+        dimension: 'message',
+        granularity: 'week',
+        maxDays: 15,
+        since: '2014-12-01',
+    },
+    msgDistMonth: {
+        label: '分布月数据',
+        dimension: 'message',
+        granularity: 'month',
+        maxDays: 15,
+        since: '2014-12-01',
+    },
+    apiDaily: { label: '被动回复', dimension: 'api', granularity: 'day', maxDays: 30, since: '2014-12-01' },
+    apiHour: { label: '回复分时', dimension: 'api', granularity: 'hour', maxDays: 1, since: '2014-12-01' },
+}
+
+/** wechat/stats/query 请求 */
+export interface WechatStatsQueryRequest {
+    accountId: string
+    dimension: WechatStatsDimension
+    view: WechatStatsView
+    range: WechatStatsRange
+}
+
+/** 统计指标：key 在 points[].values 中取值，label 由宿主按平台字段命名 */
+export interface WechatStatsMetric {
+    key: string
+    label: string
+    total: number
+    /** duration 表示毫秒耗时，展示时折算为毫秒/次 */
+    format: 'number' | 'duration'
+}
+
+/** 统计数据点：date 为 YYYY-MM-DD（分时视图形如 YYYY-MM-DD HH），values 以指标 key 为索引 */
+export interface WechatStatsDataPoint {
+    date: string
+    values: Record<string, number>
+}
+
+/** 分类分布项：用于来源、消息类型、发送量区间等维度拆分 */
+export interface WechatStatsBreakdown {
+    label: string
+    value: number
+}
+
+/** 逐篇明细：发表内容与群发总数据视图用它展示单篇表现 */
+export interface WechatStatsItem {
+    id: string
+    title: string
+    date: string
+    values: Record<string, number>
+    /** 平台返回的文章地址，可能缺省 */
+    url?: string
+}
+
+/** wechat/stats/query 响应 */
+export interface WechatStatsQueryResult {
+    dimension: WechatStatsDimension
+    view: WechatStatsView
+    beginDate: string
+    endDate: string
+    granularity: WechatStatsGranularity
+    metrics: WechatStatsMetric[]
+    points: WechatStatsDataPoint[]
+    /** 分类分布：按来源 / 消息类型 / 发送量区间拆分 */
+    breakdowns: WechatStatsBreakdown[]
+    /** 逐篇明细：仅内容类视图返回 */
+    items: WechatStatsItem[]
+    /** 平台返回的统计延迟标记：为 true 时提示数据可能后续修正 */
+    isDelayed: boolean
+}
+
 /** 判断是否为菜单读取请求 */
 export function isWechatMenuRequest(payload: unknown): payload is WechatMenuRequest {
     if (typeof payload !== 'object' || payload === null) {
@@ -1795,6 +2020,59 @@ export function isWechatStatsRequest(payload: unknown): payload is WechatStatsRe
         return false
     }
     return candidate.days === 7 || candidate.days === 15 || candidate.days === 30
+}
+
+/** 日期形态：只接受 YYYY-MM-DD，且必须是真实存在的日期 */
+const STATS_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+
+/** 收窄统计日期：格式与真实日期都合法时返回原串，否则返回 null */
+function readStatsDate(value: unknown): string | null {
+    if (typeof value !== 'string' || !STATS_DATE_PATTERN.test(value)) {
+        return null
+    }
+    const time = Date.parse(`${value}T00:00:00Z`)
+    if (Number.isNaN(time)) {
+        return null
+    }
+    return new Date(time).toISOString().slice(0, 10) === value ? value : null
+}
+
+/** 判断是否为分维度统计请求：日期合法、起止有序且跨度不超过 30 天 */
+export function isWechatStatsQueryRequest(payload: unknown): payload is WechatStatsQueryRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; dimension?: unknown; view?: unknown; range?: unknown }
+    if (!isWechatAccountId(candidate.accountId)) {
+        return false
+    }
+    if (!(WECHAT_STATS_DIMENSIONS as readonly unknown[]).includes(candidate.dimension)) {
+        return false
+    }
+    if (!(WECHAT_STATS_VIEWS as readonly unknown[]).includes(candidate.view)) {
+        return false
+    }
+    const meta = WECHAT_STATS_VIEW_META[candidate.view as WechatStatsView]
+    if (meta.dimension !== candidate.dimension) {
+        return false
+    }
+    if (typeof candidate.range !== 'object' || candidate.range === null) {
+        return false
+    }
+    const range = candidate.range as { kind?: unknown; days?: unknown; beginDate?: unknown; endDate?: unknown }
+    if (range.kind === 'days') {
+        return range.days === 7 || range.days === 15 || range.days === 30
+    }
+    if (range.kind !== 'custom') {
+        return false
+    }
+    const beginDate = readStatsDate(range.beginDate)
+    const endDate = readStatsDate(range.endDate)
+    if (beginDate === null || endDate === null || beginDate > endDate) {
+        return false
+    }
+    const spanDays = (Date.parse(`${endDate}T00:00:00Z`) - Date.parse(`${beginDate}T00:00:00Z`)) / 86_400_000
+    return spanDays <= 30
 }
 
 /** UTF-8 字节数：菜单名按字节限制，不能用字符数近似（一个汉字占 3 字节） */

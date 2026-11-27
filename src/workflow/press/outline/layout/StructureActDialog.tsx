@@ -45,7 +45,8 @@ export function StructureActDialog({
     }
 
     return (
-        <Dialog size="full"
+        <Dialog
+            size="full"
             open={isOpen}
             title="编辑结构阶段"
             description="只记全书级转折，卷级转折见卷纲"
@@ -68,7 +69,7 @@ export function StructureActDialog({
                         <OptionSelect
                             value={draft.kind}
                             options={ACT_KIND_OPTIONS}
-                            ariaLabel="转折类型"
+                            label="转折类型"
                             onChange={(kind): void => patch({ kind })}
                         />
                     </Field>
@@ -79,7 +80,7 @@ export function StructureActDialog({
                     <OptionSelect
                         value={draft.volumeOrder === null ? NO_VOLUME : String(draft.volumeOrder)}
                         options={[{ value: NO_VOLUME, label: '未定' }, ...volumeOptions]}
-                        ariaLabel="卷位"
+                        label="卷位"
                         onChange={(value): void => {
                             const order = Number(value)
                             patch({

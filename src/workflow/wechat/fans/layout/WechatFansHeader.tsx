@@ -73,9 +73,8 @@ export function WechatFansHeader({
                     items={TAB_OPTIONS}
                     value={tab}
                     onChange={(value) => onTabChange(readTab(value))}
-                    ariaLabel="分段切换"
+                    label="分段切换"
                     variant="outline"
-                    size="sm"
                 />
             </AppMenu>
         </AppHeader>

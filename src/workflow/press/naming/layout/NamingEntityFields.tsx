@@ -38,7 +38,7 @@ export function NamingEntityFields({
                     items={meta.variants}
                     value={request.variant}
                     onChange={(variant) => onChange({ variant })}
-                    ariaLabel={meta.variantLabel}
+                    label={meta.variantLabel}
                     variant="outline"
                 />
             </Field>

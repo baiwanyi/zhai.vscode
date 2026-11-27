@@ -253,7 +253,7 @@ export function PressSettingBasicFields({
                             items={ENDING_OPTIONS}
                             value={setting.ending}
                             onChange={(ending) => onChange({ ending })}
-                            ariaLabel="结局倾向"
+                            label="结局倾向"
                             variant="chip"
                             size="sm"
                         />
@@ -396,7 +396,7 @@ function ChipChoiceField<T extends string>({ label, items, value, onChange }: Ch
     return (
         <Field className="@md:col-span-2">
             <FieldTitle className={CHOICE_TITLE_CLASS}>{label}</FieldTitle>
-            <SegmentedRail items={items} value={value} onChange={onChange} ariaLabel={label} variant="chip" size="sm" />
+            <SegmentedRail items={items} value={value} onChange={onChange} label={label} variant="chip" size="sm" />
         </Field>
     )
 }

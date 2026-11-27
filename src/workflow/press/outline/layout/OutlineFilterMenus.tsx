@@ -48,7 +48,7 @@ export function OutlineFilterMenus({
                 items={OUTLINE_MODULE_META}
                 value={module}
                 onChange={onModuleChange}
-                ariaLabel="大纲功能模块"
+                label="大纲功能模块"
                 isStretched={false}
             />
             {module === 'chapter' ? (
@@ -56,14 +56,14 @@ export function OutlineFilterMenus({
                     <OptionSelect
                         value={volumeFilter}
                         options={[{ value: 'all', label: '全部卷' }, ...volumeOptions]}
-                        ariaLabel="当前卷"
+                        label="当前卷"
                         className="h-8 w-28 shrink-0"
                         onChange={onVolumeChange}
                     />
                     <OptionSelect
                         value={revisionFilter}
                         options={CHAPTER_REVISION_FILTERS}
-                        ariaLabel="修订标记"
+                        label="修订标记"
                         className="h-8 w-24 shrink-0"
                         onChange={onRevisionChange}
                     />

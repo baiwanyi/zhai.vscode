@@ -68,7 +68,7 @@ export function AiChatHistoryPage({
                 <AppMenu>
                     <SegmentedRail
                         items={HISTORY_MODES}
-                        ariaLabel="历史筛选"
+                        label="历史筛选"
                         size="sm"
                         value={mode}
                         onChange={onModeChange}

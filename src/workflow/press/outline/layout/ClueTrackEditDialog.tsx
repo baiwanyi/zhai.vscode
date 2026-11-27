@@ -128,7 +128,7 @@ export function ClueTrackEditDialog({
                         <OptionSelect
                             value={draft.status}
                             options={CLUE_STATUS_OPTIONS}
-                            ariaLabel="伏笔状态"
+                            label="伏笔状态"
                             onChange={(status): void => patch({ status })}
                         />
                     </Field>
@@ -137,7 +137,7 @@ export function ClueTrackEditDialog({
                         <OptionSelect
                             value={draft.kind}
                             options={CLUE_KIND_OPTIONS}
-                            ariaLabel="伏笔类型"
+                            label="伏笔类型"
                             onChange={(kind): void => patch({ kind })}
                         />
                     </Field>

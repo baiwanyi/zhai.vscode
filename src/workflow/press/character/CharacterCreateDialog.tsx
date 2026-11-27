@@ -87,7 +87,7 @@ export function CharacterCreateDialog({ open, onOpenChange, onCreate }: Characte
                         }))}
                         value={role}
                         onChange={handleRoleChange}
-                        ariaLabel="角色"
+                        label="角色"
                         variant="chip"
                     />
                 </Field>
@@ -100,7 +100,7 @@ export function CharacterCreateDialog({ open, onOpenChange, onCreate }: Characte
                         }))}
                         value={gender}
                         onChange={handleGenderChange}
-                        ariaLabel="性别"
+                        label="性别"
                         variant="chip"
                     />
                 </Field>

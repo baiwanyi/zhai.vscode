@@ -24,5 +24,5 @@ export function NamingCategoryRail({ catalog, activeCategory, onSelect }: Naming
         icon: CATEGORY_ICONS[category.value] ?? FALLBACK_ICON,
     }))
 
-    return <SegmentedRail items={items} value={activeCategory} onChange={onSelect} ariaLabel={CATEGORY_RAIL_LABEL} />
+    return <SegmentedRail items={items} value={activeCategory} onChange={onSelect} label={CATEGORY_RAIL_LABEL} />
 }

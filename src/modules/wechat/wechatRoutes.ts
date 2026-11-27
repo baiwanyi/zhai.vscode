@@ -53,6 +53,7 @@ import {
     isWechatPublishDraftRequest,
     isWechatPublishQuotaRequest,
     isWechatPublishRequest,
+    isWechatStatsQueryRequest,
     isWechatStatsRequest,
 } from '@shared/types/wechat'
 import type { WechatPublishProgress } from '@shared/types/wechat'
@@ -123,7 +124,9 @@ export class WechatRoutes {
             }
             case WECHAT_METHODS.accountCredentials: {
                 if (!isSaveWechatAccountCredentialsRequest(payload)) {
-                    throw new Error(`${WECHAT_METHODS.accountCredentials} 参数非法：id 与 AppID 必填，AppSecret 缺省表示沿用`)
+                    throw new Error(
+                        `${WECHAT_METHODS.accountCredentials} 参数非法：id 与 AppID 必填，AppSecret 缺省表示沿用`,
+                    )
                 }
                 return this.deps.accounts.saveCredentials(payload)
             }
@@ -230,7 +233,9 @@ export class WechatRoutes {
             }
             case WECHAT_METHODS.articleImport: {
                 if (!isWechatArticleImportRequest(payload)) {
-                    throw new Error(`${WECHAT_METHODS.articleImport} 参数非法：issueId 须合法，sourceKind 须为 note 或 press`)
+                    throw new Error(
+                        `${WECHAT_METHODS.articleImport} 参数非法：issueId 须合法，sourceKind 须为 note 或 press`,
+                    )
                 }
                 return this.deps.issues.importArticle(payload)
             }
@@ -262,7 +267,9 @@ export class WechatRoutes {
             }
             case WECHAT_METHODS.articleCover: {
                 if (!isWechatArticleCoverRequest(payload)) {
-                    throw new Error(`${WECHAT_METHODS.articleCover} 参数非法：id 须合法，dataUrl 须为 jpeg/png 的 base64 内联图`)
+                    throw new Error(
+                        `${WECHAT_METHODS.articleCover} 参数非法：id 须合法，dataUrl 须为 jpeg/png 的 base64 内联图`,
+                    )
                 }
                 return this.deps.issues.saveArticleCover(payload)
             }
@@ -360,7 +367,9 @@ export class WechatRoutes {
             }
             case WECHAT_METHODS.tagMembers: {
                 if (!isWechatFanTagMembersRequest(payload)) {
-                    throw new Error(`${WECHAT_METHODS.tagMembers} 参数非法：openids 须为 1~100 个，action 只接受 add / remove`)
+                    throw new Error(
+                        `${WECHAT_METHODS.tagMembers} 参数非法：openids 须为 1~100 个，action 只接受 add / remove`,
+                    )
                 }
                 return this.deps.fanWrite.tagMembers(payload)
             }
@@ -372,15 +381,27 @@ export class WechatRoutes {
             }
             case WECHAT_METHODS.fansBlacklist: {
                 if (!isWechatFanBlacklistRequest(payload)) {
-                    throw new Error(`${WECHAT_METHODS.fansBlacklist} 参数非法：openids 须为 1~100 个，action 只接受 block / unblock`)
+                    throw new Error(
+                        `${WECHAT_METHODS.fansBlacklist} 参数非法：openids 须为 1~100 个，action 只接受 block / unblock`,
+                    )
                 }
                 return this.deps.fanWrite.blacklist(payload)
             }
             case WECHAT_METHODS.statsOverview: {
                 if (!isWechatStatsRequest(payload)) {
-                    throw new Error(`${WECHAT_METHODS.statsOverview} 参数非法：accountId 须合法，days 只接受 7 / 15 / 30`)
+                    throw new Error(
+                        `${WECHAT_METHODS.statsOverview} 参数非法：accountId 须合法，days 只接受 7 / 15 / 30`,
+                    )
                 }
                 return this.deps.stats.overview(payload)
+            }
+            case WECHAT_METHODS.statsQuery: {
+                if (!isWechatStatsQueryRequest(payload)) {
+                    throw new Error(
+                        `${WECHAT_METHODS.statsQuery} 参数非法：accountId、维度与视图须匹配，日期须有序且跨度不超过 30 天`,
+                    )
+                }
+                return this.deps.stats.query(payload)
             }
             case WECHAT_METHODS.commentList: {
                 if (!isWechatCommentListRequest(payload)) {
@@ -390,7 +411,9 @@ export class WechatRoutes {
             }
             case WECHAT_METHODS.commentReply: {
                 if (!isWechatCommentReplyRequest(payload)) {
-                    throw new Error(`${WECHAT_METHODS.commentReply} 参数非法：留言 id 须合法，内容不能为空且不超过 300 字`)
+                    throw new Error(
+                        `${WECHAT_METHODS.commentReply} 参数非法：留言 id 须合法，内容不能为空且不超过 300 字`,
+                    )
                 }
                 return this.deps.comments.reply(payload)
             }
