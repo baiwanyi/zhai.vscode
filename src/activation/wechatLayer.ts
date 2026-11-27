@@ -118,7 +118,7 @@ export function assembleWechatLayer(deps: WechatLayerDeps): WechatLayer {
         issues,
         publish,
         materials,
-        menu: new WechatMenuService(tokenDeps),
+        menu: new WechatMenuService(tokenDeps, wechatDb),
         fans: new WechatFanService(tokenDeps),
         fanSync: new WechatFanSyncService(tokenDeps),
         fanWrite: new WechatFanWriteService(tokenDeps),

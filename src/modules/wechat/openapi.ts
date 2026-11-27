@@ -6,8 +6,9 @@
  * 报文里的字段名保持平台原样，转换成本模块类型的工作交给调用方服务，便于对照官方文档排查；
  * 二维码图片下载后内联为 data URI，只放行平台返回的 jpeg/png 并限制体积。
  */
+import { randomUUID } from 'node:crypto'
 import type { WechatMenuButton } from '@shared/types/wechat'
-import { describeWechatError, postWechatJson, NETWORK_ERROR_CODE } from './client'
+import { describeMenuError, describeWechatError, postWechatJson, NETWORK_ERROR_CODE } from './client'
 import {
     COMMENT_DELETE_ENDPOINT,
     COMMENT_LIST_ENDPOINT,
@@ -16,6 +17,7 @@ import {
     COMMENT_UNMARK_ENDPOINT,
     MATERIAL_DELETE_ENDPOINT,
     MENU_CREATE_ENDPOINT,
+    MENU_DELETE_ENDPOINT,
     MENU_GET_ENDPOINT,
     QRCODE_CREATE_ENDPOINT,
     QRCODE_SHOW_ENDPOINT,
@@ -60,6 +62,7 @@ async function getWechatJson(
     token: string,
     endpoint: string,
     params: Record<string, string> = {},
+    describeError: (errorCode: number) => string = (errorCode) => describeWechatError(errorCode).hint,
 ): Promise<WechatApiResult<Record<string, unknown>>> {
     const url = new URL(endpoint)
     url.searchParams.set('access_token', token)
@@ -90,28 +93,33 @@ async function getWechatJson(
     const candidate = raw as Record<string, unknown>
     const errorCode = typeof candidate.errcode === 'number' ? candidate.errcode : 0
     if (errorCode !== 0) {
-        return { ok: false, errorCode, message: describeWechatError(errorCode).hint }
+        return { ok: false, errorCode, message: describeError(errorCode) }
     }
     return { ok: true, data: candidate }
 }
 
 /** 读取菜单：未配置时返回空数组而不是错误 */
 export async function fetchWechatMenu(token: string): Promise<WechatApiResult<WechatMenuButton[]>> {
-    const outcome = await getWechatJson(token, MENU_GET_ENDPOINT)
+    const outcome = await getWechatJson(token, MENU_GET_ENDPOINT, {}, describeMenuError)
     if (!outcome.ok) {
         if (outcome.errorCode === MENU_NOT_EXIST_CODE) {
             return { ok: true, data: [] }
         }
         return outcome
     }
-    const buttons = readRemoteButtons(outcome.data.button)
+    // menu/get 的按钮位于 menu.button；兼容个别环境下顶层直接返回 button 的报文
+    const menu = outcome.data.menu
+    const rawButtons =
+        typeof menu === 'object' && menu !== null ? (menu as { button?: unknown }).button : outcome.data.button
+    const buttons = readRemoteButtons(rawButtons)
     return { ok: true, data: buttons }
 }
 
 /**
- * 收窄平台返回的菜单结构：只保留本模块支持的动作字段。
- * 关键约束：平台可能返回超出本期支持的动作（scancode_push 等），这里保留其 name 与 type，
- * 由服务层在保存前提示用户改成本期支持的动作，而不是静默丢弃导致菜单「消失」。
+ * 收窄平台返回的菜单结构：只保留本模块支持的四种无回调动作。
+ * 关键约束：平台可能返回其它动作（click、扫码等），这里按无类型菜单保留 name，
+ * 由服务层在保存前提示用户重新选择内容，而不是静默丢弃导致菜单「消失」；
+ * 平台没有 id，解析时生成随机 id，服务层回读时再按位置换成本地已落盘的稳定 id。
  */
 function readRemoteButtons(value: unknown): WechatMenuButton[] {
     if (!Array.isArray(value)) {
@@ -130,17 +138,31 @@ function readRemoteButtons(value: unknown): WechatMenuButton[] {
             const children = candidate.sub_button
                 .map(readOne)
                 .filter((child): child is WechatMenuButton => child !== null)
-            return { name, subButton: children }
+            return { id: randomUUID(), name, subButton: children }
         }
         const type = typeof candidate.type === 'string' ? candidate.type : ''
-        if (type === 'click') {
-            return { name, type: 'click', key: typeof candidate.key === 'string' ? candidate.key : '' }
-        }
         if (type === 'view') {
-            return { name, type: 'view', url: typeof candidate.url === 'string' ? candidate.url : '' }
+            return { id: randomUUID(), name, type: 'view', url: typeof candidate.url === 'string' ? candidate.url : '' }
+        }
+        if (type === 'media_id') {
+            return {
+                id: randomUUID(),
+                name,
+                type: 'media_id',
+                mediaId: typeof candidate.media_id === 'string' ? candidate.media_id : '',
+            }
+        }
+        if (type === 'article_id') {
+            return {
+                id: randomUUID(),
+                name,
+                type: 'article_id',
+                articleId: typeof candidate.article_id === 'string' ? candidate.article_id : '',
+            }
         }
         if (type === 'miniprogram') {
             return {
+                id: randomUUID(),
                 name,
                 type: 'miniprogram',
                 url: typeof candidate.url === 'string' ? candidate.url : '',
@@ -148,8 +170,8 @@ function readRemoteButtons(value: unknown): WechatMenuButton[] {
                 pagepath: typeof candidate.pagepath === 'string' ? candidate.pagepath : '',
             }
         }
-        // 其它动作：先按 click 保留名称，服务层保存前会要求用户重新选择动作
-        return { name, type: 'click', key: typeof candidate.key === 'string' ? candidate.key : '' }
+        // 其它动作：只保留名称，服务层保存前会要求用户重新选择内容
+        return { id: randomUUID(), name }
     }
     return value.map(readOne).filter((item): item is WechatMenuButton => item !== null)
 }
@@ -157,7 +179,13 @@ function readRemoteButtons(value: unknown): WechatMenuButton[] {
 /** 覆盖保存菜单：平台是整棵覆盖，没有增量更新 */
 export async function saveWechatMenu(token: string, buttons: WechatMenuButton[]): Promise<WechatApiResult<null>> {
     const payload = buttons.map((button) => toPlatformButton(button))
-    const outcome = await postWechatJson(token, MENU_CREATE_ENDPOINT, { button: payload })
+    const outcome = await postWechatJson(token, MENU_CREATE_ENDPOINT, { button: payload }, undefined, describeMenuError)
+    return outcome.ok ? { ok: true, data: null } : outcome
+}
+
+/** 删除整棵菜单：平台会同时删除默认菜单与全部个性化菜单，删除后不可恢复 */
+export async function deleteWechatMenu(token: string): Promise<WechatApiResult<null>> {
+    const outcome = await getWechatJson(token, MENU_DELETE_ENDPOINT, {}, describeMenuError)
     return outcome.ok ? { ok: true, data: null } : outcome
 }
 
@@ -166,12 +194,15 @@ function toPlatformButton(button: WechatMenuButton): Record<string, unknown> {
     if (button.subButton !== undefined) {
         return { name: button.name, sub_button: button.subButton.map((child) => toPlatformButton(child)) }
     }
-    const payload: Record<string, unknown> = { name: button.name, type: button.type ?? 'click' }
-    if (button.key !== undefined) {
-        payload.key = button.key
-    }
+    const payload: Record<string, unknown> = { name: button.name, type: button.type ?? 'media_id' }
     if (button.url !== undefined) {
         payload.url = button.url
+    }
+    if (button.mediaId !== undefined) {
+        payload.media_id = button.mediaId
+    }
+    if (button.articleId !== undefined) {
+        payload.article_id = button.articleId
     }
     if (button.appid !== undefined) {
         payload.appid = button.appid

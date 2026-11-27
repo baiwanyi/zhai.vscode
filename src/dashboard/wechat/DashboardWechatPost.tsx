@@ -14,6 +14,7 @@ import { useCallback, useMemo, useState } from 'react'
 import { Spinner } from '@components/ui/spinner'
 import type { WechatAccountSummary, WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
 import { Empty } from '@webview/blocks/Empty'
+import { LoadMoreButton } from '@webview/blocks/LoadMoreButton'
 import { LoadMoreSentinel } from '@webview/blocks/LoadMoreSentinel'
 import { Alert } from '@webview/components/Alert'
 import { AppContent, AppPage } from '@webview/components/AppPage'
@@ -219,9 +220,13 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
                     {query.hasMore ? <LoadMoreSentinel sentinelRef={issueSentinelRef} isLoading={false} /> : null}
                     {/* 哨兵负责滚动续载，按钮留作手动兜底 */}
                     {query.hasMore ? (
-                        <Button variant="ghost" className="mt-2 w-full" onClick={query.loadMore}>
-                            {`加载更多（还有 ${String(query.remaining)} 个）`}
-                        </Button>
+                        <LoadMoreButton
+                            remaining={query.remaining}
+                            onLoadMore={query.loadMore}
+                            label={`加载更多（还有 ${String(query.remaining)} 个）`}
+                            variant="ghost"
+                            className="mt-2 w-full"
+                        />
                     ) : null}
                 </AppContent>
                 <WechatPostFooter

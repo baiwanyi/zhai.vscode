@@ -917,6 +917,7 @@ export class WechatIssueService {
             updatedAt: issue.updated_at,
             ...(issue.scheduled_at === null ? {} : { scheduledAt: issue.scheduled_at }),
             ...(issue.published_at === null ? {} : { publishedAt: issue.published_at }),
+            ...(issue.article_id === null || issue.article_id.length === 0 ? {} : { articleId: issue.article_id }),
             ...(issue.error_hint === null ? {} : { errorHint: issue.error_hint }),
         }
     }

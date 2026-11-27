@@ -5,7 +5,7 @@
  * 关键约束：一张卡片最多渲染 8 篇文章的封面，宿主单次只接受 20 条，故按上限分批并发后合并；
  * 未指定封面或转换失败的文章不在结果里，卡片对该篇回落占位图而不是报错。
  */
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { WECHAT_COVER_PREVIEW_LIMIT } from '@shared/types/wechat'
 import type { WechatCoverPreviewRequest, WechatCoverPreviewResult, WechatIssueSummary } from '@shared/types/wechat'
 import { WECHAT_METHODS } from '@shared/types/wechatMethods'
@@ -36,15 +36,27 @@ export function useWechatIssueCovers(issues: WechatIssueSummary[]): Record<strin
     }, [issues])
 
     const [uris, setUris] = useState<Record<string, string>>({})
+    const cacheRef = useRef<Record<string, string>>({})
 
     useEffect(() => {
-        if (paths.length === 0) {
-            setUris({})
+        const visibleUris = (): Record<string, string> => {
+            const visible: Record<string, string> = {}
+            for (const path of paths) {
+                const uri = cacheRef.current[path]
+                if (uri !== undefined) {
+                    visible[path] = uri
+                }
+            }
+            return visible
+        }
+        const missing = paths.filter((path) => cacheRef.current[path] === undefined)
+        if (missing.length === 0) {
+            setUris(visibleUris())
             return
         }
         let isActive = true
         void Promise.all(
-            toChunks(paths).map((chunk) => {
+            toChunks(missing).map((chunk) => {
                 const payload: WechatCoverPreviewRequest = { paths: chunk }
                 return request<WechatCoverPreviewResult>(WECHAT_METHODS.coverPreview, payload)
                     .then((result) => result.uris)
@@ -55,11 +67,10 @@ export function useWechatIssueCovers(issues: WechatIssueSummary[]): Record<strin
             if (!isActive) {
                 return
             }
-            const merged: Record<string, string> = {}
             for (const result of results) {
-                Object.assign(merged, result)
+                Object.assign(cacheRef.current, result)
             }
-            setUris(merged)
+            setUris(visibleUris())
         })
         return (): void => {
             isActive = false

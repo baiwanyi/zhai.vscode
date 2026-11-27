@@ -9,7 +9,7 @@
 import { useMemo, useState } from 'react'
 import type { WechatIssueSummary } from '@shared/types/wechat'
 import { useRenderLimit } from '@webview/hooks/useRenderLimit'
-import { useWechatIssueCovers } from './useWechatIssueCovers'
+import { useWechatIssueCovers } from '@webview/hooks/useWechatIssueCovers'
 import type { IssueFilter, IssueSort } from '../constants'
 import { filterAndSortIssues } from '../utils'
 

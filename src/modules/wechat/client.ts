@@ -66,6 +66,21 @@ export function describeWechatError(errorCode: number): WechatErrorHint {
     return ERROR_HINTS[String(errorCode)] ?? FALLBACK_HINT
 }
 
+/** 菜单类错误码的专属提示：名称长度、权限等与鉴权语义不同，不能复用鉴权兜底文案 */
+const MENU_ERROR_HINTS: Readonly<Record<string, string>> = {
+    '40018': '菜单名称超出长度限制：一级不超过 16 字节（约 4 个汉字），二级不超过 60 字节（约 8 个汉字）',
+    '40001': 'AppSecret 不正确或已被重置，请重新填写密钥',
+    '40164': '调用方 IP 不在白名单：请把当前出口 IP 加入公众号后台的 IP 白名单',
+    '42001': 'access_token 已过期，请重试',
+    '45009': '接口调用超过当日额度，请稍后再试',
+    '48001': '该账号未获得菜单接口权限，通常需要认证主体',
+}
+
+/** 菜单错误码 → 可执行提示，未登记的码走菜单兜底 */
+export function describeMenuError(errorCode: number): string {
+    return MENU_ERROR_HINTS[String(errorCode)] ?? '菜单操作失败，请稍后重试'
+}
+
 /** 收窄错误文本：宿主侧不依赖前端 utils（其顶层引 sonner），此处单独归一 */
 function errorText(cause: unknown): string {
     return cause instanceof Error ? cause.message : String(cause)
@@ -141,6 +156,7 @@ export async function postWechatJson(
     endpoint: string,
     body: unknown,
     timeoutMs: number = JSON_TIMEOUT_MS,
+    describeError: (errorCode: number) => string = (errorCode) => describeWechatError(errorCode).hint,
 ): Promise<WechatJsonOutcome> {
     const url = new URL(endpoint)
     url.searchParams.set('access_token', token)
@@ -173,7 +189,7 @@ export async function postWechatJson(
     const candidate = raw as Record<string, unknown>
     const errorCode = typeof candidate.errcode === 'number' ? candidate.errcode : 0
     if (errorCode !== 0) {
-        return { ok: false, errorCode, message: describeWechatError(errorCode).hint }
+        return { ok: false, errorCode, message: describeError(errorCode) }
     }
     return { ok: true, payload: candidate }
 }
@@ -334,9 +350,9 @@ const PUBLISH_TIMEOUT_MS = 20_000
 export type WechatFreepublishOutcome =
     { ok: true; publishId: string; msgDataId?: string } | { ok: false; errorCode: number; message: string }
 
-/** 发布状态：pending 表示平台仍在处理，调用方据此决定是否继续轮询 */
+/** 发布状态：pending 表示平台仍在处理，articleId 供 article_id 类型菜单直接下发 */
 export type WechatPublishState =
-    | { ok: true; state: 'published'; articleUrl?: string }
+    | { ok: true; state: 'published'; articleUrl?: string; articleId?: string }
     | { ok: true; state: 'pending' }
     | { ok: true; state: 'failed'; message: string }
     | { ok: false; errorCode: number; message: string }
@@ -429,8 +445,9 @@ export async function submitWechatFreepublish(token: string, mediaId: string): P
 }
 
 /**
- * 查询发布状态：成功后回传首篇文章的永久链接，供界面跳转查看。
- * 关键约束：article_detail 可能缺省（发布中），此时只返回 pending，不猜测结果。
+ * 查询发布状态：成功后回传首篇文章的永久链接与顶层 article_id，供界面查看与菜单下发。
+ * 关键约束：article_detail 可能缺省（发布中），此时只返回 pending，不猜测结果；
+ * article_id 是 article_id 类型菜单的唯一依据，缺失时不构造空值。
  */
 export async function fetchWechatPublishState(token: string, publishId: string): Promise<WechatPublishState> {
     const url = new URL(FREEPUBLISH_GET_ENDPOINT)
@@ -464,6 +481,7 @@ export async function fetchWechatPublishState(token: string, publishId: string):
     const candidate = raw as {
         errcode?: unknown
         publish_status?: unknown
+        article_id?: unknown
         article_detail?: { item?: { article_url?: unknown }[] }
     }
     if (typeof candidate.errcode === 'number' && candidate.errcode !== 0) {
@@ -473,7 +491,13 @@ export async function fetchWechatPublishState(token: string, publishId: string):
     const outcome = readPublishState(statusCode)
     if (outcome.state === 'published') {
         const firstUrl = candidate.article_detail?.item?.[0]?.article_url
-        return { ok: true, state: 'published', ...(typeof firstUrl === 'string' ? { articleUrl: firstUrl } : {}) }
+        const articleId = candidate.article_id
+        return {
+            ok: true,
+            state: 'published',
+            ...(typeof firstUrl === 'string' ? { articleUrl: firstUrl } : {}),
+            ...(typeof articleId === 'string' && articleId.length > 0 ? { articleId } : {}),
+        }
     }
     if (outcome.state === 'pending') {
         return { ok: true, state: 'pending' }

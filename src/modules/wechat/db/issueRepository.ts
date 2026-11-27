@@ -21,6 +21,7 @@ export interface WechatIssueRow {
     media_id: string | null
     publish_id: string | null
     msg_data_id: string | null
+    article_id: string | null
     article_url: string | null
     error_code: number | null
     error_hint: string | null
@@ -166,13 +167,15 @@ export function updateWechatIssueDraft(db: Database.Database, patch: WechatIssue
     ).run(patch)
 }
 
-/** 群发结果回写：状态、publish_id、群发消息标识、永久链接与失败原因一并落库 */
+/** 群发结果回写：状态、publish_id、群发消息标识、图文 id、永久链接与失败原因一并落库 */
 export interface WechatIssuePublishPatch {
     id: string
     status: string
     publishId: string | null
     /** 群发消息标识：留言接口按它 + 文章序号定位，缺失时留言分区不可用 */
     msgDataId: string | null
+    /** 发布后图文 id：article_id 类型菜单据此下发，旧批次可能为空 */
+    articleId: string | null
     articleUrl: string | null
     publishedAt: string | null
     errorCode: number | null
@@ -185,7 +188,7 @@ export function updateWechatIssuePublish(db: Database.Database, patch: WechatIss
     db.prepare(
         `UPDATE wechat_issues
             SET status = @status, publish_id = @publishId, msg_data_id = @msgDataId,
-                article_url = @articleUrl, published_at = @publishedAt,
+                article_id = @articleId, article_url = @articleUrl, published_at = @publishedAt,
                 error_code = @errorCode, error_hint = @errorHint, updated_at = @updatedAt
           WHERE id = @id`,
     ).run(patch)

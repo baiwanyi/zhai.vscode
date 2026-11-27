@@ -405,6 +405,8 @@ export interface WechatIssueSummary {
     scheduledAt?: string
     /** 实际推送时间（ISO 8601），未推送缺省 */
     publishedAt?: string
+    /** 平台发布后获得的图文 id：article_id 类型菜单与旧批次可能缺省 */
+    articleId?: string
     /** 失败原因摘要：status 为 failed 时给出可执行提示 */
     errorHint?: string
 }
@@ -923,10 +925,11 @@ export interface WechatPublishRequest {
     issueId: string
 }
 
-/** wechat/issue/publish 响应：articleUrl 需等平台异步发布完成才有值，可能缺省 */
+/** wechat/issue/publish 响应：articleUrl 与 articleId 需等平台异步发布完成才有值，可能缺省 */
 export interface WechatPublishResult {
     issue: WechatIssueSummary
     articleUrl?: string
+    articleId?: string
 }
 
 /** wechat/publishQuota 请求：查询某账号当前的群发额度 */
@@ -1252,11 +1255,11 @@ export function isWechatCommentRemoveRequest(payload: unknown): payload is Wecha
 }
 
 /**
- * 菜单按钮的三种动作：发送消息、跳转网页、跳转小程序。
- * 关键约束：其它平台动作（扫码、拍照、地理位置等）依赖特定权限与客户端版本，本期不开放，
- * 保存时统一按这三种校验，避免用户配出一个保存成功但点不动的菜单。
+ * 菜单按钮的四种动作：下发图片、下发图文、跳转网页、跳转小程序。
+ * 关键约束：四种动作都由微信客户端直接响应，无需开发者服务器回调；click 等事件型动作不开放，
+ * 扫码、拍照、地理位置等依赖客户端版本与回调服务，本期同样不开放。
  */
-export const WECHAT_MENU_TYPES = ['click', 'view', 'miniprogram'] as const
+export const WECHAT_MENU_TYPES = ['media_id', 'article_id', 'view', 'miniprogram'] as const
 
 /** 菜单动作类型 */
 export type WechatMenuType = (typeof WECHAT_MENU_TYPES)[number]
@@ -1273,20 +1276,65 @@ export const WECHAT_MENU_TOP_NAME_BYTES = 16
 /** 二级菜单名称的字节上限 */
 export const WECHAT_MENU_SUB_NAME_BYTES = 60
 
-/** 菜单按钮：type 决定使用哪个内容字段；有 subButton 时自身不参与点击 */
+/** 菜单跳转地址的字节上限（平台限制） */
+export const WECHAT_MENU_URL_BYTES = 1024
+
+/**
+ * 菜单内容类型：图片与图文从素材列表选择，链接填写网页地址，小程序填写 appid 与页面路径。
+ * 关键约束：图片对应 media_id、图文对应 article_id、链接对应 view、小程序对应 miniprogram；
+ * 内容随菜单结构落本地库，回读时按位置合并，本地保留 kind 便于重新打开编辑态。
+ */
+export const WECHAT_MENU_CONTENT_KINDS = ['image', 'news', 'link', 'miniprogram'] as const
+
+/** 菜单内容类型取值 */
+export type WechatMenuContentKind = (typeof WECHAT_MENU_CONTENT_KINDS)[number]
+
+/** 菜单内容：按 kind 只读取对应字段，不允许一种类型带着另一种类型的残留 */
+export interface WechatMenuContent {
+    kind: WechatMenuContentKind
+    /** 跳转链接地址（link 类型）：仅放行 http/https，与图片素材地址 url 区分 */
+    linkUrl?: string
+    /** 图片素材：本地 id、平台 mediaId 与可访问地址 */
+    materialId?: string
+    mediaId?: string
+    url?: string
+    materialName?: string
+    /** 图文素材：推送批次 id、平台发布后获得的 articleId、标题与篇数 */
+    issueId?: string
+    articleId?: string
+    title?: string
+    articleCount?: number
+    coverUrl?: string
+    /** 小程序：appid 仅认证账号可配置且须小写，pagepath 为页面路径，url 为旧版本兜底网页 */
+    appid?: string
+    pagepath?: string
+    miniUrl?: string
+}
+
+/**
+ * 菜单按钮：type 决定使用哪个内容字段；有 subButton 时自身不参与点击。
+ * 关键约束：id 是前端与本地结构里的稳定身份，平台接口不接收也不返回；
+ * 平台下发字段与内容字段同源（mediaId / articleId / url / appid / pagepath），校验与构造必须一一对应。
+ */
 export interface WechatMenuButton {
+    /** 稳定身份：平台无此字段，由前端新建或服务端回读时生成 */
+    id: string
     name: string
     type?: WechatMenuType
-    /** click 动作的开发者自定义键 */
-    key?: string
-    /** view / miniprogram 的跳转地址 */
+    /** view 动作的跳转地址，也是 miniprogram 在旧版本客户端的兜底网页 */
     url?: string
-    /** miniprogram 的小程序 AppID */
+    /** media_id 动作的永久素材 id */
+    mediaId?: string
+    /** article_id 动作的发布后图文 id */
+    articleId?: string
+    /** miniprogram 动作的小程序 AppID（小写） */
     appid?: string
-    /** miniprogram 的页面路径 */
+    /** miniprogram 动作的小程序页面路径 */
     pagepath?: string
     /** 二级菜单：存在即视为目录节点 */
     subButton?: WechatMenuButton[]
+    /** 本地内容：图片 / 图文 / 链接 / 小程序，平台只接收对应的跳转字段 */
+    content?: WechatMenuContent
 }
 
 /** wechat/menu/get 请求 */
@@ -2076,71 +2124,229 @@ export function isWechatStatsQueryRequest(payload: unknown): payload is WechatSt
 }
 
 /** UTF-8 字节数：菜单名按字节限制，不能用字符数近似（一个汉字占 3 字节） */
-function readByteLength(value: string): number {
+export function readByteLength(value: string): number {
     return new TextEncoder().encode(value).length
+}
+
+/** 读取可选非空字符串：只收窄本类型真正用到的字段 */
+function readMenuText(value: unknown): string | undefined {
+    const text = typeof value === 'string' ? value.trim() : ''
+    return text.length > 0 ? text : undefined
+}
+
+/** 读取跳转地址：只放行 http/https，避免把 javascript: 等危险协议提交给平台 */
+function readMenuLinkUrl(value: unknown): string | undefined {
+    const text = readMenuText(value)
+    if (text === undefined || readByteLength(text) > WECHAT_MENU_URL_BYTES) {
+        return undefined
+    }
+    try {
+        const parsed = new URL(text)
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? text : undefined
+    } catch {
+        return undefined
+    }
+}
+
+/**
+ * 收窄菜单内容：按 kind 校验必填字段，非法内容返回 null 让整棵菜单被拒绝，
+ * 避免用户选好的内容在保存后静默丢失；可选字段非法时只丢弃该字段，不影响主要内容。
+ */
+export function readWechatMenuContent(value: unknown): WechatMenuContent | null {
+    if (typeof value !== 'object' || value === null) {
+        return null
+    }
+    const candidate = value as {
+        kind?: unknown
+        materialId?: unknown
+        mediaId?: unknown
+        url?: unknown
+        materialName?: unknown
+        issueId?: unknown
+        articleId?: unknown
+        title?: unknown
+        articleCount?: unknown
+        coverUrl?: unknown
+        linkUrl?: unknown
+        appid?: unknown
+        pagepath?: unknown
+        miniUrl?: unknown
+    }
+    if (candidate.kind === 'link') {
+        const linkUrl = readMenuLinkUrl(candidate.linkUrl)
+        return linkUrl === undefined ? null : { kind: 'link', linkUrl }
+    }
+    if (candidate.kind === 'image') {
+        const materialId = readMenuText(candidate.materialId)
+        const mediaId = readMenuText(candidate.mediaId)
+        const url = readMenuText(candidate.url)
+        if (materialId === undefined || mediaId === undefined || url === undefined) {
+            return null
+        }
+        const materialName = readMenuText(candidate.materialName)
+        return materialName === undefined
+            ? { kind: 'image', materialId, mediaId, url }
+            : { kind: 'image', materialId, mediaId, url, materialName }
+    }
+    if (candidate.kind === 'news') {
+        const issueId = readMenuText(candidate.issueId)
+        const articleId = readMenuText(candidate.articleId)
+        const title = readMenuText(candidate.title)
+        if (issueId === undefined || articleId === undefined || title === undefined) {
+            return null
+        }
+        const content: WechatMenuContent = { kind: 'news', issueId, articleId, title }
+        const coverUrl = readMenuText(candidate.coverUrl)
+        if (coverUrl !== undefined) {
+            content.coverUrl = coverUrl
+        }
+        if (typeof candidate.articleCount === 'number' && Number.isInteger(candidate.articleCount)) {
+            content.articleCount = Math.max(0, candidate.articleCount)
+        }
+        return content
+    }
+    if (candidate.kind === 'miniprogram') {
+        const appid = readMenuText(candidate.appid)
+        const pagepath = readMenuText(candidate.pagepath)
+        const miniUrl = readMenuLinkUrl(candidate.miniUrl)
+        // 平台要求小程序 appid 必须小写
+        if (appid === undefined || appid !== appid.toLowerCase() || pagepath === undefined || miniUrl === undefined) {
+            return null
+        }
+        return { kind: 'miniprogram', appid, pagepath, miniUrl }
+    }
+    return null
+}
+
+/** 动作类型与本地内容类型的对应关系，校验时据此拒绝内容与动作不匹配的菜单 */
+const CONTENT_KIND_BY_TYPE: Readonly<Record<WechatMenuType, WechatMenuContentKind>> = {
+    media_id: 'image',
+    article_id: 'news',
+    view: 'link',
+    miniprogram: 'miniprogram',
 }
 
 /**
  * 校验并规整菜单结构：返回 null 表示结构非法，调用方据此给出可执行提示。
  * 关键约束：一级 ≤3、二级 ≤5、名称按字节上限校验；目录节点（有 subButton）忽略自身动作字段；
- * 叶子节点必须有 name 与 type，且 click 需要 key、view 需要 url、miniprogram 需要 appid + pagepath。
+ * 叶子必须有 name 与 type：media_id 需要 mediaId、article_id 需要 articleId、view 需要 url、
+ * miniprogram 需要 appid + pagepath + url（旧版本兜底网页）；
+ * content 存在时必须合法且与动作类型匹配，避免选好的内容在保存后丢失；
+ * 目录节点的 content 若存在也校验并保留：平台同步忽略，但二级删空后据此恢复原叶子内容；
+ * id 必填且原样保留（平台无此字段，由读取链路生成），缺失直接拒绝以保证编辑坐标稳定。
  * 结构化字段只保留用得到的键，避免把前端多余字段带到平台侧。
  */
 export function readWechatMenuButtons(value: unknown): WechatMenuButton[] | null {
     if (!Array.isArray(value) || value.length === 0 || value.length > WECHAT_MENU_TOP_LIMIT) {
         return null
     }
-    const readLeaf = (item: unknown, isTop: boolean): WechatMenuButton | null => {
+    const readLeaf = (item: unknown, isTop: boolean, allowSubButton: boolean): WechatMenuButton | null => {
         if (typeof item !== 'object' || item === null) {
             return null
         }
         const candidate = item as {
+            id?: unknown
             name?: unknown
             type?: unknown
-            key?: unknown
             url?: unknown
+            mediaId?: unknown
+            articleId?: unknown
             appid?: unknown
             pagepath?: unknown
             subButton?: unknown
+            content?: unknown
         }
         const name = typeof candidate.name === 'string' ? candidate.name.trim() : ''
         if (name.length === 0) {
             return null
         }
+        const id = typeof candidate.id === 'string' ? candidate.id.trim() : ''
+        if (id.length === 0) {
+            return null
+        }
+        const identity = { id }
         const nameLimit = isTop ? WECHAT_MENU_TOP_NAME_BYTES : WECHAT_MENU_SUB_NAME_BYTES
         if (readByteLength(name) > nameLimit) {
             return null
         }
         if (candidate.subButton !== undefined) {
+            // 平台仅支持两级：二级菜单不允许再携带 subButton
+            if (!allowSubButton) {
+                return null
+            }
             if (!Array.isArray(candidate.subButton) || candidate.subButton.length === 0) {
                 return null
             }
             if (candidate.subButton.length > WECHAT_MENU_SUB_LIMIT) {
                 return null
             }
-            const children = candidate.subButton.map((child) => readLeaf(child, false))
+            const children = candidate.subButton.map((child) => readLeaf(child, false, false))
             if (children.some((child) => child === null)) {
                 return null
             }
-            return { name, subButton: children as WechatMenuButton[] }
+            const group: WechatMenuButton = { ...identity, name, subButton: children as WechatMenuButton[] }
+            if (candidate.content !== undefined) {
+                const content = readWechatMenuContent(candidate.content)
+                if (content !== null) {
+                    group.content = content
+                }
+            }
+            return group
         }
         const type = candidate.type
-        if (type !== 'click' && type !== 'view' && type !== 'miniprogram') {
+        if (type !== 'media_id' && type !== 'article_id' && type !== 'view' && type !== 'miniprogram') {
             return null
         }
-        if (type === 'click') {
-            const key = typeof candidate.key === 'string' ? candidate.key.trim() : ''
-            return key.length > 0 ? { name, type, key } : null
+        const content =
+            candidate.content === undefined ? undefined : readWechatMenuContent(candidate.content)
+        if (content === null || (content !== undefined && content.kind !== CONTENT_KIND_BY_TYPE[type])) {
+            return null
         }
         if (type === 'view') {
-            const url = typeof candidate.url === 'string' ? candidate.url.trim() : ''
-            return url.length > 0 ? { name, type, url } : null
+            const url = readMenuLinkUrl(candidate.url)
+            if (url === undefined || (content !== undefined && content.linkUrl !== url)) {
+                return null
+            }
+            return { ...identity, name, type, url, ...(content === undefined ? {} : { content }) }
         }
-        const appid = typeof candidate.appid === 'string' ? candidate.appid.trim() : ''
-        const pagepath = typeof candidate.pagepath === 'string' ? candidate.pagepath.trim() : ''
-        return appid.length > 0 && pagepath.length > 0 ? { name, type, appid, pagepath } : null
+        if (type === 'media_id') {
+            const mediaId = readMenuText(candidate.mediaId)
+            if (mediaId === undefined || (content !== undefined && content.mediaId !== mediaId)) {
+                return null
+            }
+            return { ...identity, name, type, mediaId, ...(content === undefined ? {} : { content }) }
+        }
+        if (type === 'article_id') {
+            const articleId = readMenuText(candidate.articleId)
+            if (articleId === undefined || (content !== undefined && content.articleId !== articleId)) {
+                return null
+            }
+            return { ...identity, name, type, articleId, ...(content === undefined ? {} : { content }) }
+        }
+        const appid = readMenuText(candidate.appid)
+        const pagepath = readMenuText(candidate.pagepath)
+        const url = readMenuLinkUrl(candidate.url)
+        // 平台要求小程序 appid 必须小写
+        if (appid === undefined || appid !== appid.toLowerCase() || pagepath === undefined || url === undefined) {
+            return null
+        }
+        if (
+            content !== undefined &&
+            (content.appid !== appid || content.pagepath !== pagepath || content.miniUrl !== url)
+        ) {
+            return null
+        }
+        return {
+            ...identity,
+            name,
+            type,
+            url,
+            appid,
+            pagepath,
+            ...(content === undefined ? {} : { content }),
+        }
     }
-    const buttons = value.map((item) => readLeaf(item, true))
+    const buttons = value.map((item) => readLeaf(item, true, true))
     if (buttons.some((item) => item === null)) {
         return null
     }

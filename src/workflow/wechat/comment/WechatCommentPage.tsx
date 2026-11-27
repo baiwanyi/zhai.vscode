@@ -82,9 +82,9 @@ export function WechatCommentPage({ account }: WechatCommentPageProps): JSX.Elem
                 </ItemDescription>
                 {comment.isElected && <Badge variant="secondary">精选</Badge>}
             </div>
-            <p className="whitespace-pre-wrap break-words text-sm">{comment.content}</p>
+            <p className="whitespace-pre-wrap wrap-break-word text-sm">{comment.content}</p>
             {comment.replyContent !== undefined && (
-                <p className="whitespace-pre-wrap break-words rounded-md bg-muted/40 p-2 text-xs">
+                <p className="whitespace-pre-wrap wrap-break-word rounded-md bg-muted/40 p-2 text-xs">
                     {`作者回复：${comment.replyContent}`}
                 </p>
             )}

@@ -311,6 +311,19 @@ export class WechatRoutes {
                 }
                 return this.deps.menu.save(payload)
             }
+            case WECHAT_METHODS.menuSaveDraft: {
+                if (!isWechatMenuSaveRequest(payload)) {
+                    throw new Error(`${WECHAT_METHODS.menuSaveDraft} 参数非法：accountId 须合法，buttons 须为数组`)
+                }
+                this.deps.menu.saveDraft(payload.accountId, payload.buttons)
+                return undefined
+            }
+            case WECHAT_METHODS.menuDelete: {
+                if (!isWechatMenuRequest(payload)) {
+                    throw new Error(`${WECHAT_METHODS.menuDelete} 参数非法：accountId 须为合法账号标识`)
+                }
+                return this.deps.menu.remove(payload.accountId)
+            }
             case WECHAT_METHODS.fansList: {
                 if (!isWechatFanListRequest(payload)) {
                     throw new Error(`${WECHAT_METHODS.fansList} 参数非法：accountId 须合法，nextOpenid 为可选字符串`)

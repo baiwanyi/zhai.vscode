@@ -18,6 +18,7 @@ export const TOKEN_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/token`
 /** 菜单端点 */
 export const MENU_GET_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/menu/get`
 export const MENU_CREATE_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/menu/create`
+export const MENU_DELETE_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/menu/delete`
 
 /** 粉丝与标签端点 */
 export const USER_GET_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/user/get`

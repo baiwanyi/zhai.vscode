@@ -52,6 +52,7 @@ const SCHEMA_STATEMENTS = [
         media_id       TEXT,
         publish_id     TEXT,
         msg_data_id    TEXT,                     -- 群发消息标识：留言接口按它 + 文章序号定位
+        article_id     TEXT,                     -- 发布后图文 id：article_id 类型菜单据此下发
         article_url    TEXT,
         error_code     INTEGER,
         error_hint     TEXT,
@@ -95,6 +96,12 @@ const SCHEMA_STATEMENTS = [
         UNIQUE(account_id, local_hash, type)
     )`,
     `CREATE INDEX IF NOT EXISTS idx_material_hash ON wechat_materials(account_id, local_hash)`,
+    // 菜单结构以平台为准，本表只存平台接口不接收的内容体（文本 / 图片 / 图文）
+    `CREATE TABLE IF NOT EXISTS wechat_menus (
+        account_id TEXT PRIMARY KEY,
+        menu_json  TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+    )`,
     // 用户管理：平台是唯一真相，本组表只存最近一次同步快照与任务进度
     `CREATE TABLE IF NOT EXISTS wechat_fans (
         account_id        TEXT NOT NULL,
@@ -216,6 +223,7 @@ export function openWechatDatabase(cacheDirUri: vscode.Uri): Database.Database {
     ensureColumn(db, 'wechat_articles', 'cover_path', 'TEXT')
     ensureColumn(db, 'wechat_articles', 'file_path', 'TEXT')
     ensureColumn(db, 'wechat_issues', 'msg_data_id', 'TEXT')
+    ensureColumn(db, 'wechat_issues', 'article_id', 'TEXT')
     ensureColumn(db, 'wechat_issues', 'dir_path', 'TEXT')
     ensureColumn(db, 'wechat_fans', 'is_blocked', 'INTEGER NOT NULL DEFAULT 0')
     // 旧库补列后再迁移索引：迁移语句要读 default_author

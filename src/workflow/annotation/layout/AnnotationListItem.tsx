@@ -117,7 +117,7 @@ export function AnnotationListItem({ item, onReveal, onUpdateColor, onRemove }: 
                         跳转
                     </Button>
                     <DeleteConfirmButton
-                        buttonLabel="删除标注"
+                        tooltip="删除标注"
                         title="删除这条标注？"
                         description="删除后不可恢复，原文中的划线或批注会一并移除。"
                         onConfirm={(): void => {

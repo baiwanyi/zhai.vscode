@@ -106,6 +106,10 @@ export const WECHAT_METHODS = {
     menuGet: 'wechat/menu/get',
     /** 菜单：保存 */
     menuSave: 'wechat/menu/save',
+    /** 菜单：删除整棵（含全部个性化菜单），不可恢复 */
+    menuDelete: 'wechat/menu/delete',
+    /** 菜单：仅保存本地草稿，不调用公众号平台 */
+    menuSaveDraft: 'wechat/menu/saveDraft',
     /** 发布配额 */
     publishQuota: 'wechat/publishQuota',
     /** 统计概览 */

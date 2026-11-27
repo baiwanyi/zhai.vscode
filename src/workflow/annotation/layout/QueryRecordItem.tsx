@@ -62,7 +62,7 @@ export function QueryRecordItem({ item, onRemove }: QueryRecordItemProps): JSX.E
                 </ItemContent>
                 <ItemActions>
                     <DeleteConfirmButton
-                        buttonLabel="删除 AI 解释"
+                        tooltip="删除 AI 解释"
                         title="删除这条 AI 解释？"
                         description="删除后不可恢复，同一段文本的解释缓存也会一并清掉。"
                         isStopPropagation
