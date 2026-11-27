@@ -18,6 +18,7 @@ import type {
     WechatPublishQuotaRequest,
     WechatPublishQuotaResult,
 } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { onState, request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 
@@ -70,9 +71,9 @@ export function useWechatPushOverview(accountId: string): WechatPushOverviewStat
         const issuesPayload: WechatIssuesRequest = { accountId }
         const quotaPayload: WechatPublishQuotaRequest = { accountId }
         const [issuesResult, quotaResult, tasksResult] = await Promise.allSettled([
-            request<WechatIssueSummary[]>('wechat/issues', issuesPayload),
-            request<WechatPublishQuotaResult>('wechat/publishQuota', quotaPayload),
-            request<WechatPublishProgress[]>('wechat/tasks'),
+            request<WechatIssueSummary[]>(WECHAT_METHODS.issues, issuesPayload),
+            request<WechatPublishQuotaResult>(WECHAT_METHODS.publishQuota, quotaPayload),
+            request<WechatPublishProgress[]>(WECHAT_METHODS.tasks),
         ])
 
         // 任务查询是权威口径：以它为准覆盖即时订阅累积的结果，避免已完成的任务残留
@@ -112,7 +113,7 @@ export function useWechatPushOverview(accountId: string): WechatPushOverviewStat
                 allowComment: input.allowComment,
             }
             try {
-                await request('wechat/article/meta', payload)
+                await request(WECHAT_METHODS.articleMeta, payload)
                 await reload()
                 toast.success('文章设置已保存')
                 return true
@@ -127,7 +128,7 @@ export function useWechatPushOverview(accountId: string): WechatPushOverviewStat
     /** 选择封面：用户在系统对话框里停留的时间不可控，超时放宽到 60s */
     const pickCover = useCallback(async (): Promise<string | null> => {
         try {
-            const result = await request<WechatCoverPickResult>('wechat/cover/pick', undefined, 60_000)
+            const result = await request<WechatCoverPickResult>(WECHAT_METHODS.coverPick, undefined, 60_000)
             return result.path
         } catch (cause) {
             toastError(cause)

@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { WechatAccountSummary, WechatAccountsResult } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
 
@@ -27,7 +28,7 @@ export function useWechatAccountScope(): WechatAccountScopeState {
 
     const reload = useCallback(async (): Promise<void> => {
         try {
-            const result = await request<WechatAccountsResult>('wechat/accounts')
+            const result = await request<WechatAccountsResult>(WECHAT_METHODS.accounts)
             const selected =
                 result.selectedId === null
                     ? null

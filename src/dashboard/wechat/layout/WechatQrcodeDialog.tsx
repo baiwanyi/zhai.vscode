@@ -8,6 +8,7 @@
 import { QrCode } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { WechatAccountQrcodeResult, WechatAccountSummary } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { request } from '@shared/utils/bridge'
 import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
@@ -29,7 +30,7 @@ export function WechatQrcodeDialog({ account, onOpenChange }: WechatQrcodeDialog
 
     useEffect(() => {
         let isActive = true
-        void request<WechatAccountQrcodeResult>('wechat/account/qrcode', { id: account.id }, QRCODE_REQUEST_TIMEOUT_MS)
+        void request<WechatAccountQrcodeResult>(WECHAT_METHODS.accountQrcode, { id: account.id }, QRCODE_REQUEST_TIMEOUT_MS)
             .then((result) => {
                 if (isActive) {
                     setDataUrl(result.dataUrl)

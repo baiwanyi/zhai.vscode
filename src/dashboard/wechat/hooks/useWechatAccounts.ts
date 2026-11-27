@@ -26,6 +26,7 @@ import type {
     WechatAccountsResult,
 } from '@shared/types/wechat'
 import { isWechatAccountAuthFailureEvent } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { onState, request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 import { WECHAT_STATUS_LABELS, type WechatListStatus } from '../utils'
@@ -80,7 +81,7 @@ export function useWechatAccounts(): WechatAccountsState {
 
     const reload = useCallback(async (): Promise<void> => {
         try {
-            const next = await request<WechatAccountsResult>('wechat/accounts')
+            const next = await request<WechatAccountsResult>(WECHAT_METHODS.accounts)
             setAccounts(Array.isArray(next.accounts) ? next.accounts : [])
             setSelectedId(next.selectedId)
             setStatus('ready')
@@ -120,7 +121,7 @@ export function useWechatAccounts(): WechatAccountsState {
                 defaultAuthor: input.defaultAuthor,
             }
             try {
-                const created = await request<CreateWechatAccountResult>('wechat/account/create', payload)
+                const created = await request<CreateWechatAccountResult>(WECHAT_METHODS.accountCreate, payload)
                 await reload()
                 toast.success(`已添加公众号：${created.account.name}，请继续在「密钥设置」里填写 AppID 与 AppSecret`)
                 return created.account
@@ -145,7 +146,7 @@ export function useWechatAccounts(): WechatAccountsState {
                 defaultAuthor: input.defaultAuthor,
             }
             try {
-                await request<UpdateWechatAccountResult>('wechat/account/update', payload)
+                await request<UpdateWechatAccountResult>(WECHAT_METHODS.accountUpdate, payload)
                 await reload()
                 toast.success('账号设置已保存')
                 return true
@@ -169,7 +170,7 @@ export function useWechatAccounts(): WechatAccountsState {
                 ...(input.appSecret.length > 0 ? { appSecret: input.appSecret } : {}),
             }
             try {
-                await request<SaveWechatAccountCredentialsResult>('wechat/account/credentials', payload)
+                await request<SaveWechatAccountCredentialsResult>(WECHAT_METHODS.accountCredentials, payload)
                 await reload()
                 toast.success('凭据已保存，鉴权结果已更新')
                 return true
@@ -188,7 +189,7 @@ export function useWechatAccounts(): WechatAccountsState {
             setIsMutating(true)
             const payload: RemoveWechatAccountRequest = { id }
             try {
-                const removed = await request<RemoveWechatAccountResult>('wechat/account/remove', payload)
+                const removed = await request<RemoveWechatAccountResult>(WECHAT_METHODS.accountRemove, payload)
                 await reload()
                 // 账号目录删除后其历史会话归入通用对话，条数在这里告知用户，避免「对话哪去了」的疑问
                 toast.success(
@@ -213,7 +214,7 @@ export function useWechatAccounts(): WechatAccountsState {
             setIsTestingId(id)
             const payload: TestWechatAccountRequest = { id }
             try {
-                const result = await request<WechatAccountTestResult>('wechat/account/test', payload)
+                const result = await request<WechatAccountTestResult>(WECHAT_METHODS.accountTest, payload)
                 await reload()
                 if (result.status === 'connected') {
                     toast.success('连接正常，AccessToken 已刷新')
@@ -234,7 +235,7 @@ export function useWechatAccounts(): WechatAccountsState {
         async (id: string): Promise<void> => {
             const payload: SelectWechatAccountRequest = { id }
             try {
-                await request<SelectWechatAccountResult>('wechat/account/select', payload)
+                await request<SelectWechatAccountResult>(WECHAT_METHODS.accountSelect, payload)
                 await reload()
             } catch (cause) {
                 toastError(cause)

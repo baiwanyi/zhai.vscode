@@ -53,6 +53,7 @@ import { isRequestMessage } from '@shared/types/messages'
 import { PRESS_DOC_KEYS } from '@shared/types/press'
 import type { PressDocKey, PressWorkspaceChangedState } from '@shared/types/press'
 import type { WechatAccountAuthFailureEvent } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import type {
     OpenWorkflowResult,
     ResetWorkflowResult,
@@ -345,7 +346,7 @@ export class AiChatViewProvider implements vscode.WebviewViewProvider, vscode.Di
 
     /** 读取公众号账号快照：目录段就是 AppID，展示名取账号名 */
     private async readContextAccounts(): Promise<ContextSourceAccount[]> {
-        const raw = await this.wechat.handle('wechat/accounts', {})
+        const raw = await this.wechat.handle(WECHAT_METHODS.accounts, {})
         return readAccountSnapshot(raw)
     }
 

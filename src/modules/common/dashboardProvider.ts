@@ -144,6 +144,7 @@ import type { TrashClearResult, TrashListResult, TrashPurgeResult, TrashRestoreR
 import { isTrashPurgeRequest, isTrashRestoreRequest } from '@shared/types/trash'
 import type { WechatAccountAuthFailureEvent, WechatCoverPreviewResult } from '@shared/types/wechat'
 import { isWechatBatchDocPath, isWechatCoverPreviewRequest } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import type { OpenWorkflowResult } from '@shared/types/workflow'
 import { isOpenWorkflowRequest } from '@shared/types/workflow'
 import { resolvePromptRoot, resolveStorageRoot } from './config'
@@ -165,9 +166,7 @@ import { WEBVIEW_ALLOWED_COMMANDS } from './webviewCommands'
 import { buildWebviewHtml } from './webviewHtml'
 import type { IndexService, IndexStatus } from './indexer/indexService'
 import type Database from 'better-sqlite3'
-
-/** 公众号后台地址：前端只传固定标识，URL 固定在此，不接受 Webview 传入任意地址 */
-const WECHAT_MP_URL = 'https://mp.weixin.qq.com/'
+import { WECHAT_MP_URL } from '../wechat/endpoints'
 
 /** 封面允许的扩展名：与素材上传口径一致，其它格式即便存在也不给 Webview 地址 */
 const WECHAT_COVER_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg'])
@@ -446,7 +445,7 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
             case 'workflow/selectModule': {
                 return this.selectWorkflowModule(payload)
             }
-            case 'wechat/cover/preview': {
+            case WECHAT_METHODS.coverPreview: {
                 return this.previewWechatCovers(view, payload)
             }
             case 'press/projects': {

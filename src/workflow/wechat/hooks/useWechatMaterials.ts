@@ -14,6 +14,7 @@ import type {
     WechatMaterialRemoveRequest,
     WechatMaterialSummary,
 } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 
@@ -39,7 +40,7 @@ export function useWechatMaterials(accountId: string): WechatMaterialsState {
     const reload = useCallback(async (): Promise<void> => {
         const payload: WechatMaterialListRequest = { accountId }
         try {
-            const next = await request<WechatMaterialSummary[]>('wechat/material/list', payload)
+            const next = await request<WechatMaterialSummary[]>(WECHAT_METHODS.materialList, payload)
             setMaterials(Array.isArray(next) ? next : [])
             setStatus('ready')
             setError(null)
@@ -57,7 +58,7 @@ export function useWechatMaterials(accountId: string): WechatMaterialsState {
         setIsImporting(true)
         const payload: WechatMaterialImportRequest = { accountId }
         try {
-            const result = await request<WechatMaterialImportResult>('wechat/material/import', payload, 120_000)
+            const result = await request<WechatMaterialImportResult>(WECHAT_METHODS.materialImport, payload, 120_000)
             if (!result.imported) {
                 return
             }
@@ -79,7 +80,7 @@ export function useWechatMaterials(accountId: string): WechatMaterialsState {
             setRemovingId(id)
             const payload: WechatMaterialRemoveRequest = { accountId, id }
             try {
-                await request('wechat/material/remove', payload, 60_000)
+                await request(WECHAT_METHODS.materialRemove, payload, 60_000)
                 await reload()
                 toast.success('素材已删除')
                 return true

@@ -27,6 +27,7 @@ import type {
     WechatFanTagsResult,
     WechatFanStatusFilter,
 } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
 
@@ -114,7 +115,7 @@ export function useWechatFans(accountId: string): WechatFansState {
         const reloadId = ++tagsReloadIdRef.current
         const payload: WechatFanTagsRequest = { accountId }
         try {
-            const result = await request<WechatFanTagsResult>('wechat/fans/tags', payload, 30_000)
+            const result = await request<WechatFanTagsResult>(WECHAT_METHODS.tags, payload, 30_000)
             if (reloadId !== tagsReloadIdRef.current) return
             setTags(Array.isArray(result.tags) ? result.tags : [])
             setTagsError(null)
@@ -129,7 +130,7 @@ export function useWechatFans(accountId: string): WechatFansState {
         const reloadId = ++statusReloadIdRef.current
         const payload: WechatFanSyncStatusRequest = { accountId }
         try {
-            const result = await request<WechatFanSyncStatusResult>('wechat/fans/sync/status', payload, 30_000)
+            const result = await request<WechatFanSyncStatusResult>(WECHAT_METHODS.fansSyncStatus, payload, 30_000)
             if (reloadId !== statusReloadIdRef.current) return
             setSyncTask(result.task)
             syncTaskRef.current = result.task
@@ -154,7 +155,7 @@ export function useWechatFans(accountId: string): WechatFansState {
         }
         let searchResult: WechatFanSearchResult | null = null
         try {
-            searchResult = await request<WechatFanSearchResult>('wechat/fans/search', searchPayload, 60_000)
+            searchResult = await request<WechatFanSearchResult>(WECHAT_METHODS.fansSearch, searchPayload, 60_000)
         } catch {
             // 检索失败时回落实时首屏，与既有口径一致
         }
@@ -174,7 +175,7 @@ export function useWechatFans(accountId: string): WechatFansState {
 
         const listPayload: WechatFanListRequest = { accountId }
         try {
-            const live = await request<WechatFanListResult>('wechat/fans/list', listPayload, 60_000)
+            const live = await request<WechatFanListResult>(WECHAT_METHODS.fansList, listPayload, 60_000)
             if (reloadId !== fansReloadIdRef.current) return
             setFans(Array.isArray(live.fans) ? live.fans : [])
             setTotal(live.total)
@@ -209,7 +210,7 @@ export function useWechatFans(accountId: string): WechatFansState {
                 accountId,
                 ...(taskId === undefined ? {} : { taskId }),
             }
-            const result = await request<WechatFanSyncResult>('wechat/fans/sync', payload, 120_000)
+            const result = await request<WechatFanSyncResult>(WECHAT_METHODS.fansSync, payload, 120_000)
             setSyncTask(result.task)
             syncTaskRef.current = result.task
             await Promise.all([loadTags(), reload()])
@@ -229,7 +230,7 @@ export function useWechatFans(accountId: string): WechatFansState {
             setDetailError(null)
             const payload: WechatFanDetailRequest = { accountId, openid: targetOpenid }
             try {
-                const result = await request<WechatFanDetailResult>('wechat/fans/detail', payload, 30_000)
+                const result = await request<WechatFanDetailResult>(WECHAT_METHODS.fansDetail, payload, 30_000)
                 if (pendingDetailOpenidRef.current !== targetOpenid) {
                     return
                 }
@@ -270,36 +271,36 @@ export function useWechatFans(accountId: string): WechatFansState {
     )
 
     const createTag = useCallback(
-        async (name: string): Promise<boolean> => await runAction('wechat/fans/tag/create', { accountId, name }),
+        async (name: string): Promise<boolean> => await runAction(WECHAT_METHODS.tagCreate, { accountId, name }),
         [accountId, runAction],
     )
 
     const renameTag = useCallback(
         async (id: number, name: string): Promise<boolean> =>
-            await runAction('wechat/fans/tag/rename', { accountId, id, name }),
+            await runAction(WECHAT_METHODS.tagRename, { accountId, id, name }),
         [accountId, runAction],
     )
 
     const removeTag = useCallback(
-        async (id: number): Promise<boolean> => await runAction('wechat/fans/tag/remove', { accountId, id }),
+        async (id: number): Promise<boolean> => await runAction(WECHAT_METHODS.tagRemove, { accountId, id }),
         [accountId, runAction],
     )
 
     const tagMembers = useCallback(
         async (openids: string[], tagId: number, action: 'add' | 'remove'): Promise<boolean> =>
-            await runAction('wechat/fans/tag/members', { accountId, openids, tagId, action }),
+            await runAction(WECHAT_METHODS.tagMembers, { accountId, openids, tagId, action }),
         [accountId, runAction],
     )
 
     const remark = useCallback(
         async (openid: string, text: string): Promise<boolean> =>
-            await runAction('wechat/fans/remark', { accountId, openid, remark: text }),
+            await runAction(WECHAT_METHODS.fansRemark, { accountId, openid, remark: text }),
         [accountId, runAction],
     )
 
     const blacklist = useCallback(
         async (openids: string[], action: 'block' | 'unblock'): Promise<boolean> =>
-            await runAction('wechat/fans/blacklist', { accountId, openids, action }),
+            await runAction(WECHAT_METHODS.fansBlacklist, { accountId, openids, action }),
         [accountId, runAction],
     )
 

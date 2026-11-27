@@ -8,32 +8,32 @@
  */
 import type { WechatMenuButton } from '@shared/types/wechat'
 import { describeWechatError, postWechatJson, NETWORK_ERROR_CODE } from './client'
-
-/** 菜单接口 */
-const MENU_GET_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/menu/get'
-const MENU_CREATE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/menu/create'
-
-/** 粉丝与标签接口 */
-const USER_GET_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/user/get'
-const USER_INFO_BATCH_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/user/info/batchget'
-const USER_INFO_UPDATEREMARK_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/user/info/updateremark'
-const TAGS_GET_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/get'
-const TAGS_CREATE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/create'
-const TAGS_UPDATE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/update'
-const TAGS_DELETE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/delete'
-const TAGS_MEMBERS_TAGGING_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/members/batchtagging'
-const TAGS_MEMBERS_UNTAGGING_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/members/batchuntagging'
-const TAGS_MEMBERS_BLACKLIST_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/members/batchblacklist'
-const TAGS_MEMBERS_UNBLACKLIST_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/members/batchunblacklist'
-const TAGS_MEMBERS_GET_BLACKLIST_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/tags/members/getblacklist'
-
-/** 数据统计接口 */
-const USERS_SUMMARY_ENDPOINT = 'https://api.weixin.qq.com/datacube/getusersummary'
-const USERS_CUMULATE_ENDPOINT = 'https://api.weixin.qq.com/datacube/getusercumulate'
-
-/** 关注二维码：创建永久字符串场景二维码，再用票据取图片 */
-const QRCODE_CREATE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/qrcode/create'
-const QRCODE_SHOW_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/showqrcode'
+import {
+    COMMENT_DELETE_ENDPOINT,
+    COMMENT_LIST_ENDPOINT,
+    COMMENT_MARK_ENDPOINT,
+    COMMENT_REPLY_ENDPOINT,
+    COMMENT_UNMARK_ENDPOINT,
+    MATERIAL_DELETE_ENDPOINT,
+    MENU_CREATE_ENDPOINT,
+    MENU_GET_ENDPOINT,
+    QRCODE_CREATE_ENDPOINT,
+    QRCODE_SHOW_ENDPOINT,
+    TAGS_CREATE_ENDPOINT,
+    TAGS_DELETE_ENDPOINT,
+    TAGS_GET_ENDPOINT,
+    TAGS_MEMBERS_BLACKLIST_ENDPOINT,
+    TAGS_MEMBERS_GET_BLACKLIST_ENDPOINT,
+    TAGS_MEMBERS_TAGGING_ENDPOINT,
+    TAGS_MEMBERS_UNBLACKLIST_ENDPOINT,
+    TAGS_MEMBERS_UNTAGGING_ENDPOINT,
+    TAGS_UPDATE_ENDPOINT,
+    USER_GET_ENDPOINT,
+    USER_INFO_BATCH_ENDPOINT,
+    USER_INFO_UPDATEREMARK_ENDPOINT,
+    USERS_CUMULATE_ENDPOINT,
+    USERS_SUMMARY_ENDPOINT,
+} from './endpoints'
 
 /** 二维码图片体积上限：平台返回的是小尺寸图，超限按异常处理 */
 const QRCODE_MAX_BYTES = 2 * 1024 * 1024
@@ -519,12 +519,6 @@ export async function fetchWechatUserCumulate(
 }
 
 /** 留言接口：全部按「群发消息 msg_data_id + 文章序号 index」定位 */
-const COMMENT_LIST_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/comment/list'
-const COMMENT_REPLY_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/comment/reply'
-const COMMENT_MARK_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/comment/markelect'
-const COMMENT_UNMARK_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/comment/unmarkelect'
-const COMMENT_DELETE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/comment/delete'
-
 /** 平台留言行：reply 可能是对象或数组，收窄后在服务层统一 */
 export interface WechatCommentRow {
     commentId: number
@@ -637,7 +631,6 @@ export async function deleteWechatComment(
 }
 
 /** 永久素材删除接口 */
-const MATERIAL_DELETE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/material/del_material'
 
 /** 素材不存在的错误码：本地记录本就该清理，重复删除不该报错 */
 const MATERIAL_NOT_FOUND_CODE = 40007

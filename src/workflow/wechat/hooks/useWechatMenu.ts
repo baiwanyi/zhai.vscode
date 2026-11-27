@@ -18,6 +18,7 @@ import {
     type WechatMenuSaveResult,
     type WechatMenuType,
 } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 
@@ -53,7 +54,7 @@ export function useWechatMenu(accountId: string): WechatMenuState {
     const reload = useCallback(async (): Promise<void> => {
         const payload: WechatMenuRequest = { accountId }
         try {
-            const result = await request<WechatMenuResult>('wechat/menu/get', payload, 30_000)
+            const result = await request<WechatMenuResult>(WECHAT_METHODS.menuGet, payload, 30_000)
             setButtons(Array.isArray(result.buttons) ? result.buttons : [])
             setStatus('ready')
             setError(null)
@@ -172,7 +173,7 @@ export function useWechatMenu(accountId: string): WechatMenuState {
         setIsSaving(true)
         const payload: WechatMenuSaveRequest = { accountId, buttons }
         try {
-            await request<WechatMenuSaveResult>('wechat/menu/save', payload, 60_000)
+            await request<WechatMenuSaveResult>(WECHAT_METHODS.menuSave, payload, 60_000)
             await reload()
             toast.success('菜单已发布到公众号')
             return true

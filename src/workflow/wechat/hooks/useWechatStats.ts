@@ -7,6 +7,7 @@
  */
 import { useCallback, useEffect, useState } from 'react'
 import type { WechatStatsRequest, WechatStatsResult } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText } from '@shared/utils/error'
 
@@ -32,7 +33,7 @@ export function useWechatStats(accountId: string): WechatStatsState {
         setStatus('loading')
         const payload: WechatStatsRequest = { accountId, days }
         try {
-            const result = await request<WechatStatsResult>('wechat/stats/overview', payload, 60_000)
+            const result = await request<WechatStatsResult>(WECHAT_METHODS.statsOverview, payload, 60_000)
             setStats(result)
             setStatus('ready')
             setError(null)

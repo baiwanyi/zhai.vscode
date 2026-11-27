@@ -18,6 +18,7 @@ import type {
     WechatIssueSummary,
     WechatIssuesRequest,
 } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 
@@ -86,7 +87,7 @@ export function useWechatComments(accountId: string): WechatCommentsState {
                 offset,
             }
             try {
-                const result = await request<WechatCommentListResult>('wechat/comment/list', payload, 60_000)
+                const result = await request<WechatCommentListResult>(WECHAT_METHODS.commentList, payload, 60_000)
                 setComments((previous) => (offset === 0 ? result.comments : [...previous, ...result.comments]))
                 setTotal(result.total)
                 setStatus('ready')
@@ -103,7 +104,7 @@ export function useWechatComments(accountId: string): WechatCommentsState {
     const loadIssues = useCallback(async (): Promise<void> => {
         const payload: WechatIssuesRequest = { accountId }
         try {
-            const next = await request<WechatIssueSummary[]>('wechat/issues', payload)
+            const next = await request<WechatIssueSummary[]>(WECHAT_METHODS.issues, payload)
             setAllIssues(Array.isArray(next) ? next : [])
         } catch (cause) {
             setStatus('error')
@@ -189,7 +190,7 @@ export function useWechatComments(accountId: string): WechatCommentsState {
                 commentId,
                 content,
             }
-            return runWrite(() => request('wechat/comment/reply', payload, 30_000), '回复成功')
+            return runWrite(() => request(WECHAT_METHODS.commentReply, payload, 30_000), '回复成功')
         },
         [accountId, runWrite, selectedIssueId, selectedSortIndex],
     )
@@ -207,7 +208,7 @@ export function useWechatComments(accountId: string): WechatCommentsState {
                 elected,
             }
             return runWrite(
-                () => request('wechat/comment/mark', payload, 30_000),
+                () => request(WECHAT_METHODS.commentMark, payload, 30_000),
                 elected ? '已设为精选' : '已取消精选',
             )
         },
@@ -225,7 +226,7 @@ export function useWechatComments(accountId: string): WechatCommentsState {
                 sortIndex: selectedSortIndex,
                 commentId,
             }
-            return runWrite(() => request('wechat/comment/remove', payload, 30_000), '留言已删除')
+            return runWrite(() => request(WECHAT_METHODS.commentRemove, payload, 30_000), '留言已删除')
         },
         [accountId, runWrite, selectedIssueId, selectedSortIndex],
     )

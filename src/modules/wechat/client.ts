@@ -7,9 +7,14 @@
  * 密钥不得进入日志或错误消息。
  */
 import type { WechatAccountStatus } from '@shared/types/wechat'
-
-/** Token 接口地址：公众号全局唯一入口 */
-const TOKEN_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/token'
+import {
+    DRAFT_ADD_ENDPOINT,
+    DRAFT_UPDATE_ENDPOINT,
+    FREEPUBLISH_GET_ENDPOINT,
+    FREEPUBLISH_SUBMIT_ENDPOINT,
+    MATERIAL_ENDPOINT,
+    TOKEN_ENDPOINT,
+} from './endpoints'
 
 /** 单次鉴权超时：公网抖动时宁可失败重试，也不让面板长时间转圈 */
 const REQUEST_TIMEOUT_MS = 10_000
@@ -171,7 +176,6 @@ export async function postWechatJson(
 }
 
 /** 永久图片素材接口 */
-const MATERIAL_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/material/add_material'
 
 /** 素材上传超时：图片可达数 MB，比鉴权放宽，但必须有上限 */
 const UPLOAD_TIMEOUT_MS = 60_000
@@ -216,9 +220,6 @@ function parseMaterialPayload(
 }
 
 /** 草稿箱接口：新增与更新同一份内容的不同动作 */
-const DRAFT_ADD_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/draft/add'
-const DRAFT_UPDATE_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/draft/update'
-
 /** 草稿提交超时：正文可能较大，比鉴权放宽 */
 const DRAFT_TIMEOUT_MS = 30_000
 
@@ -320,9 +321,6 @@ export async function submitWechatDraft(
 }
 
 /** 发布接口：提交异步发布任务与查询其结果 */
-const FREEPUBLISH_SUBMIT_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/freepublish/submit'
-const FREEPUBLISH_GET_ENDPOINT = 'https://api.weixin.qq.com/cgi-bin/freepublish/get'
-
 /** 发布相关超时：提交是异步任务，接口本身很快；查询同样轻量 */
 const PUBLISH_TIMEOUT_MS = 20_000
 

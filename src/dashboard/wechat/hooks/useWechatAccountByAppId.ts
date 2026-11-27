@@ -9,6 +9,7 @@
  */
 import { useEffect, useState } from 'react'
 import type { WechatAccountsResult } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { request } from '@shared/utils/bridge'
 
 export function useWechatAccountByAppId(appId: string | null): string | null | undefined {
@@ -21,7 +22,7 @@ export function useWechatAccountByAppId(appId: string | null): string | null | u
         }
         let isActive = true
         setAccountId(undefined)
-        void request<WechatAccountsResult>('wechat/accounts')
+        void request<WechatAccountsResult>(WECHAT_METHODS.accounts)
             .then((result) => {
                 if (!isActive) {
                     return

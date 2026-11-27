@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { WECHAT_COVER_PREVIEW_LIMIT } from '@shared/types/wechat'
 import type { WechatCoverPreviewRequest, WechatCoverPreviewResult, WechatIssueSummary } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { request } from '@shared/utils/bridge'
 
 /** 把待请求路径按宿主上限切成多批，避免超过 20 条被整体拒绝 */
@@ -45,7 +46,7 @@ export function useWechatIssueCovers(issues: WechatIssueSummary[]): Record<strin
         void Promise.all(
             toChunks(paths).map((chunk) => {
                 const payload: WechatCoverPreviewRequest = { paths: chunk }
-                return request<WechatCoverPreviewResult>('wechat/cover/preview', payload)
+                return request<WechatCoverPreviewResult>(WECHAT_METHODS.coverPreview, payload)
                     .then((result) => result.uris)
                     .catch((): Record<string, string> => ({}))
             }),

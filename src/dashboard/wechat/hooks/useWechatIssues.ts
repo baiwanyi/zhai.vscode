@@ -42,6 +42,7 @@ import type {
     WechatPublishResult,
 } from '@shared/types/wechat'
 import { isWechatPublishProgress } from '@shared/types/wechat'
+import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { onState, request } from '@shared/utils/bridge'
 import { toErrorText, toastError } from '@shared/utils/error'
 import type { WechatListStatus } from '../utils'
@@ -113,7 +114,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
     const reload = useCallback(async (): Promise<void> => {
         try {
             const payload: WechatIssuesRequest = { accountId }
-            const next = await request<WechatIssueSummary[]>('wechat/issues', payload)
+            const next = await request<WechatIssueSummary[]>(WECHAT_METHODS.issues, payload)
             setIssues(Array.isArray(next) ? next : [])
             setStatus('ready')
             setError(null)
@@ -134,7 +135,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             const payload: WechatIssueCreateRequest =
                 title === undefined || title.length === 0 ? { accountId } : { accountId, title }
             try {
-                const created = await request<WechatIssueCreateResult>('wechat/issue/create', payload)
+                const created = await request<WechatIssueCreateResult>(WECHAT_METHODS.issueCreate, payload)
                 await reload()
                 return created.issue
             } catch (cause) {
@@ -152,7 +153,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             setIsMutating(true)
             const payload: WechatIssueRemoveRequest = { id }
             try {
-                await request('wechat/issue/remove', payload)
+                await request(WECHAT_METHODS.issueRemove, payload)
                 await reload()
                 toast.success('已删除推送批次')
                 return true
@@ -173,7 +174,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             const payload: WechatIssuesRemoveBatchRequest = { ids }
             try {
                 const result = await request<WechatIssuesRemoveBatchResult>(
-                    'wechat/issues/removeBatch',
+                    WECHAT_METHODS.issuesRemoveBatch,
                     payload,
                     60_000,
                 )
@@ -196,7 +197,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             setIsMutating(true)
             const payload: WechatIssuesMergeRequest = { ids, targetId }
             try {
-                const result = await request<WechatIssuesMergeResult>('wechat/issues/merge', payload, 60_000)
+                const result = await request<WechatIssuesMergeResult>(WECHAT_METHODS.issuesMerge, payload, 60_000)
                 await reload()
                 toast.success(`已把 ${String(result.movedCount)} 篇文章并入目标批次`)
                 return true
@@ -216,7 +217,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             setIsMutating(true)
             const payload: WechatArticleQuickCreateRequest = { issueId }
             try {
-                const created = await request<WechatArticleCreateResult>('wechat/article/quickCreate', payload, 120_000)
+                const created = await request<WechatArticleCreateResult>(WECHAT_METHODS.articleQuickCreate, payload, 120_000)
                 await reload()
                 toast.success(`已新建：${created.article.title}`)
                 return created.article
@@ -234,7 +235,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
     const openArticle = useCallback(async (articleId: string): Promise<boolean> => {
         const payload: WechatArticleOpenRequest = { id: articleId }
         try {
-            const result = await request<WechatArticleOpenResult>('wechat/article/open', payload, 60_000)
+            const result = await request<WechatArticleOpenResult>(WECHAT_METHODS.articleOpen, payload, 60_000)
             return result.opened
         } catch (cause) {
             toastError(cause)
@@ -248,7 +249,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             setIsMutating(true)
             const payload: WechatArticleMoveRequest = { id, direction }
             try {
-                await request('wechat/article/move', payload)
+                await request(WECHAT_METHODS.articleMove, payload)
                 await reload()
                 return true
             } catch (cause) {
@@ -273,7 +274,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
                 allowComment: input.allowComment,
             }
             try {
-                await request('wechat/article/meta', payload)
+                await request(WECHAT_METHODS.articleMeta, payload)
                 await reload()
                 toast.success('文章设置已保存')
                 return true
@@ -291,7 +292,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
     const readCoverSource = useCallback(async (path: string): Promise<string | null> => {
         const payload: WechatCoverSourceRequest = { path }
         try {
-            const result = await request<WechatCoverSourceResult>('wechat/cover/source', payload, 60_000)
+            const result = await request<WechatCoverSourceResult>(WECHAT_METHODS.coverSource, payload, 60_000)
             return result.dataUrl
         } catch (cause) {
             toastError(cause)
@@ -305,7 +306,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             setIsMutating(true)
             const payload: WechatArticleCoverRequest = { id, dataUrl }
             try {
-                await request('wechat/article/cover', payload, 60_000)
+                await request(WECHAT_METHODS.articleCover, payload, 60_000)
                 await reload()
                 toast.success('封面已更新')
                 return true
@@ -324,7 +325,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             setIsMutating(true)
             const payload: WechatArticleRemoveRequest = { id }
             try {
-                await request('wechat/article/remove', payload)
+                await request(WECHAT_METHODS.articleRemove, payload)
                 await reload()
                 toast.success('已删除文章及其批次文档')
                 return true
@@ -344,7 +345,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             setIsMutating(true)
             const payload: WechatArticleImportRequest = { issueId, sourceKind }
             try {
-                const result = await request<WechatArticleImportResult>('wechat/article/import', payload, 120_000)
+                const result = await request<WechatArticleImportResult>(WECHAT_METHODS.articleImport, payload, 120_000)
                 if (!result.imported || result.article === undefined) {
                     return null
                 }
@@ -370,7 +371,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             setIsMutating(true)
             const payload: WechatPublishDraftRequest = { issueId }
             try {
-                const result = await request<WechatPublishDraftResult>('wechat/issue/publishDraft', payload, 180_000)
+                const result = await request<WechatPublishDraftResult>(WECHAT_METHODS.issuePublishDraft, payload, 180_000)
                 await reload()
                 toast.success('草稿已生成，可到公众号后台预览或群发')
                 const [first] = result.warnings
@@ -401,7 +402,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
             setIsMutating(true)
             const payload: WechatPublishRequest = { issueId }
             try {
-                const result = await request<WechatPublishResult>('wechat/issue/publish', payload, 180_000)
+                const result = await request<WechatPublishResult>(WECHAT_METHODS.issuePublish, payload, 180_000)
                 await reload()
                 if (result.issue.status === 'published') {
                     toast.success('群发已完成，可到公众号后台查看文章')
@@ -426,7 +427,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
     const loadQuota = useCallback(async (): Promise<WechatPublishQuotaResult | null> => {
         const payload: WechatPublishQuotaRequest = { accountId }
         try {
-            return await request<WechatPublishQuotaResult>('wechat/publishQuota', payload)
+            return await request<WechatPublishQuotaResult>(WECHAT_METHODS.publishQuota, payload)
         } catch (cause) {
             toastError(cause)
             return null
