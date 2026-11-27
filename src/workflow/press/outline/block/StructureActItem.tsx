@@ -1,11 +1,13 @@
 /**
  * 结构纲阶段行：展示阶段名、转折类型、卷位与叙事作用，提供编辑与删除入口。
- * 复用约定：行容器取 @components/ui/item，徽标取 badge，按钮取 @webview/components/Button。
+ * 复用约定：行容器取 @components/ui/item，徽标取 badge，按钮取 @webview/components/Button，
+ * 删除入口取 blocks/DeleteConfirmButton（图标按钮 + 二次确认）。
  * 关键约束：编辑与删除回调按 id 定位；摘要只显示卷位与叙事作用，不展示事件与主角变化。
  */
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil } from 'lucide-react'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import { Badge } from '@webview/blocks/Badge'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Button } from '@webview/components/Button'
 import type { OutlineAct } from '../../types'
 import type { JSX } from 'react'
@@ -54,15 +56,14 @@ export function StructureActItem({ act, index, volumeLabel, onEdit, onRemove }: 
                 >
                     <Pencil />
                 </Button>
-                <Button
+                <DeleteConfirmButton
+                    tooltip={`删除第 ${index + 1} 个阶段`}
+                    title="删除这个阶段？"
+                    description="删除后不可恢复，该阶段会从结构纲中移除。"
                     variant="ghost"
-                    size="icon"
-                    className="hover:text-destructive rounded-full"
-                    aria-label={`删除第 ${index + 1} 个阶段`}
-                    onClick={(): void => onRemove(act.id)}
-                >
-                    <Trash2 />
-                </Button>
+                    className="opacity-100 rounded-full hover:text-destructive"
+                    onConfirm={(): void => onRemove(act.id)}
+                />
             </ItemActions>
         </Item>
     )

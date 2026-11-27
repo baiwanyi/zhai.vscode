@@ -1,8 +1,9 @@
 /**
- * 标签编辑弹窗：新建/重命名表单与删除确认，关联状态由组件内部持有。
- * 复用约定：表单取 Dialog，破坏性确认取 AlertDialog，输入用 ui/input，名称上限复用共享常量；
- * 对外通过 ref prop 暴露 openForCreate / openForRename / requestRemove 三个命令，写操作由页面回调执行。
- * 关键约束：只有平台写成功后才关闭弹窗；名称 trimmed 后为空不提交；删除确认写明不可撤销的影响；
+ * 标签编辑弹窗：新建/重命名表单，关联状态由组件内部持有。
+ * 复用约定：表单取 Dialog，输入用 ui/input，名称上限复用共享常量；
+ * 对外通过 ref prop 暴露 openForCreate / openForRename 两个命令，写操作由页面回调执行。
+ * 关键约束：只有平台写成功后才关闭弹窗；名称 trimmed 后为空不提交；
+ * 删除确认由列表项内的 DeleteConfirmButton 承担，本弹窗不再介入删除；
  * 写操作期间全部控件禁用，避免重复提交；ref 命令用 useImperativeHandle 收敛，父层不感知内部草稿状态；
  * 异步回包先判挂载再关闭弹窗，避免切页后幽灵回写。
  */
@@ -10,7 +11,6 @@ import { useImperativeHandle, useState } from 'react'
 import { Input } from '@components/ui/input'
 import type { WechatFanTag } from '@shared/types/wechat'
 import { WECHAT_FAN_TAG_NAME_MAX } from '@shared/types/wechat'
-import { AlertDialog } from '@webview/components/AlertDialog'
 import { Dialog } from '@webview/components/Dialog'
 import { useIsMounted } from '@webview/hooks/useIsMounted'
 import type { JSX, Ref } from 'react'
@@ -19,7 +19,6 @@ import type { JSX, Ref } from 'react'
 export interface WechatTagEditorHandle {
     openForCreate: () => void
     openForRename: (tag: WechatFanTag) => void
-    requestRemove: (tag: WechatFanTag) => void
 }
 
 interface WechatTagEditDialogProps {
@@ -27,20 +26,12 @@ interface WechatTagEditDialogProps {
     isMutating: boolean
     onCreate: (name: string) => Promise<boolean>
     onRename: (id: number, name: string) => Promise<boolean>
-    onRemove: (id: number) => Promise<boolean>
 }
 
-export function WechatTagEditDialog({
-    ref,
-    isMutating,
-    onCreate,
-    onRename,
-    onRemove,
-}: WechatTagEditDialogProps): JSX.Element {
+export function WechatTagEditDialog({ ref, isMutating, onCreate, onRename }: WechatTagEditDialogProps): JSX.Element {
     const [isFormOpen, setIsFormOpen] = useState(false)
     const [renamingTag, setRenamingTag] = useState<WechatFanTag | null>(null)
     const [draft, setDraft] = useState('')
-    const [pendingRemove, setPendingRemove] = useState<WechatFanTag | null>(null)
     const isMountedRef = useIsMounted()
 
     useImperativeHandle(
@@ -56,9 +47,6 @@ export function WechatTagEditDialog({
                 setDraft(tag.name)
                 setIsFormOpen(true)
             },
-            requestRemove: (tag: WechatFanTag): void => {
-                setPendingRemove(tag)
-            },
         }),
         [],
     )
@@ -71,16 +59,6 @@ export function WechatTagEditDialog({
         const isSaved = renamingTag === null ? await onCreate(name) : await onRename(renamingTag.id, name)
         if (isSaved && isMountedRef.current) {
             setIsFormOpen(false)
-        }
-    }
-
-    const handleRemove = async (): Promise<void> => {
-        if (pendingRemove === null) {
-            return
-        }
-        const isRemoved = await onRemove(pendingRemove.id)
-        if (isRemoved && isMountedRef.current) {
-            setPendingRemove(null)
         }
     }
 
@@ -103,24 +81,6 @@ export function WechatTagEditDialog({
                     onChange={(event) => setDraft(event.target.value)}
                 />
             </Dialog>
-            <AlertDialog
-                open={pendingRemove !== null}
-                title="删除标签"
-                description={
-                    pendingRemove === null
-                        ? ''
-                        : `删除「${pendingRemove.name}」后，其用户将失去该标签，且不可撤销。`
-                }
-                confirmLabel="删除标签"
-                isDestructive
-                isSubmitting={isMutating}
-                onOpenChange={(open) => {
-                    if (!open) {
-                        setPendingRemove(null)
-                    }
-                }}
-                onConfirm={() => void handleRemove()}
-            />
         </>
     )
 }

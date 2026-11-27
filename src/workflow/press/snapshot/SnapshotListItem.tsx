@@ -1,13 +1,15 @@
 /**
  * 快照时间线单条：展示创建时间、来源、本次变动范围与体积，并提供恢复与删除两个入口。
- * 复用约定：条目容器取 @components/ui 的 item，徽标取 badge，动作用 button；
- * 来源与变动文档的中文标签集中在本文件，页面只负责编排与确认。
- * 关键约束：删除按钮带可访问名称且不触发条目本身的点击；恢复按钮在写操作进行中一并禁用，避免重复提交。
+ * 复用约定：条目容器取 @components/ui 的 item，徽标取 badge，恢复动作用 button，
+ * 删除入口兼带二次确认，取 blocks/DeleteConfirmButton；
+ * 来源与变动文档的中文标签集中在本文件，页面只负责编排与恢复确认。
+ * 关键约束：删除按钮带可访问名称且不触发条目本身的点击；恢复与删除按钮在写操作进行中一并禁用，避免重复提交。
  */
-import { InboxIcon, RotateCcw, Trash2 } from 'lucide-react'
+import { InboxIcon, RotateCcw } from 'lucide-react'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { PressSnapshotEntry, PressSnapshotFileKey, PressSnapshotReason } from '@shared/types/press'
 import { Badge } from '@webview/blocks/Badge'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Button } from '@webview/components/Button'
 import { formatSize, formatSnapshotTime } from './snapshotFormat'
 import type { JSX } from 'react'
@@ -63,15 +65,14 @@ export function SnapshotListItem({ snapshot, isBusy, onRestore, onDelete }: Snap
                 <Button size="icon" variant="outline" disabled={isBusy} onClick={() => onRestore(snapshot)}>
                     <RotateCcw />
                 </Button>
-                <Button
-                    size="icon"
-                    variant="destructive"
-                    disabled={isBusy}
-                    aria-label={`删除 ${formatSnapshotTime(snapshot.createdAt)} 的快照`}
-                    onClick={() => onDelete(snapshot)}
-                >
-                    <Trash2 />
-                </Button>
+                <DeleteConfirmButton
+                    tooltip={`删除 ${formatSnapshotTime(snapshot.createdAt)} 的快照`}
+                    title="删除这一版快照？"
+                    description="只删除所选版本，不影响作品文档与其它快照；删除后不可找回。"
+                    className="opacity-100"
+                    props={{ disabled: isBusy }}
+                    onConfirm={(): void => onDelete(snapshot)}
+                />
             </ItemActions>
         </Item>
     )

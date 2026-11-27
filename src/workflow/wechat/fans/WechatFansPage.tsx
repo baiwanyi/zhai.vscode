@@ -80,7 +80,9 @@ export function WechatFansPage({ account }: WechatFansPageProps): JSX.Element {
                     actionErrorAlert={actionErrorAlert}
                     onSelectTag={handleSelectTag}
                     onRenameTag={(tag) => tagEditorRef.current?.openForRename(tag)}
-                    onRemoveTag={(tag) => tagEditorRef.current?.requestRemove(tag)}
+                    onRemoveTag={(tag) => {
+                        void state.removeTag(tag.id)
+                    }}
                     onKeywordChange={handleKeywordChange}
                     onReload={() => void state.reload()}
                 />
@@ -90,7 +92,6 @@ export function WechatFansPage({ account }: WechatFansPageProps): JSX.Element {
                 isMutating={state.isMutating}
                 onCreate={state.createTag}
                 onRename={state.renameTag}
-                onRemove={state.removeTag}
             />
         </AppPage>
     )

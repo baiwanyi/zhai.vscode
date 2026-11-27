@@ -1,6 +1,7 @@
 /**
  * 回收站页：列出已删除笔记，支持逐条恢复与彻底删除，以及一键清空。
- * 复用 AppPage 骨架、TrashContent 的内容分派、AlertDialog 与 useConfirmAction 的确认时序。
+ * 复用 AppPage 骨架、TrashContent 的内容分派、AlertDialog 与 useConfirmAction 的确认时序；
+ * 单条彻底删除的二次确认由 TrashItemRow 内的 DeleteConfirmButton 承担，本页只保留清空确认。
  * 关键约束：彻底删除与清空必须先经二次确认，确认后才触达宿主；
  * 恢复与清除完成后重新拉取回收站快照，列表与条数立即收敛；
  * 有操作在途时禁用全部入口，避免并发清除同一批条目。
@@ -20,22 +21,11 @@ import { DashboardBackAction } from '../layout/DashboardBackAction'
 export function DashboardTrash(): JSX.Element {
     const { items, status, error, reload } = useTrash()
     const actions = useDashboardActions(reload)
-    /** 待彻底删除的条目 id 集合：空集合即确认弹窗关闭 */
-    const [purgeIds, setPurgeIds] = useState<string[]>([])
     const [isClearOpen, setIsClearOpen] = useState(false)
-    const purgeConfirm = useConfirmAction({ close: () => setPurgeIds([]) })
     const clearConfirm = useConfirmAction({ close: () => setIsClearOpen(false) })
     const isBusy = actions.pendingAction !== null
 
-    /** 彻底清除与清空都在结果落定后才关闭弹窗，整单异常（null）保留弹窗供原地重试 */
-    const handleConfirmPurge = (): void => {
-        const targets = purgeIds
-        purgeConfirm.confirm(async () => {
-            const result = await actions.purgeTrash(targets)
-            return result !== null
-        })
-    }
-
+    /** 清空在结果落定后才关闭弹窗，整单异常（null）保留弹窗供原地重试 */
     const handleConfirmClear = (): void => {
         clearConfirm.confirm(async () => {
             const result = await actions.clearTrash()
@@ -68,22 +58,9 @@ export function DashboardTrash(): JSX.Element {
                     items={items}
                     isBusy={isBusy}
                     onRestore={(id) => void actions.restoreTrash([id])}
-                    onPurge={(id) => setPurgeIds([id])}
+                    onPurge={(id) => void actions.purgeTrash([id])}
                 />
             </AppContent>
-
-            {purgeIds.length > 0 ? (
-                <AlertDialog
-                    open
-                    title={`彻底删除 ${String(purgeIds.length)} 项？`}
-                    description="彻底删除后无法恢复，原笔记文件将从磁盘移除。"
-                    confirmLabel="彻底删除"
-                    isDestructive
-                    isSubmitting={actions.isPending('trash-purge')}
-                    onOpenChange={purgeConfirm.onOpenChange}
-                    onConfirm={handleConfirmPurge}
-                />
-            ) : null}
 
             {isClearOpen ? (
                 <AlertDialog

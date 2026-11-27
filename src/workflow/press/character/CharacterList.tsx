@@ -1,6 +1,7 @@
 /**
  * 人物卡片列表：以单列卡片展示人物卡，承担人物页的主体浏览、选择与删除入口。
- * 复用约定：卡片复用 ui/card，删除确认复用 ui/alert-dialog，角色徽标取 CHARACTER_ROLE_META 的图表色，
+ * 复用约定：卡片复用 ui/card，删除入口取 blocks/DeleteConfirmButton（图标按钮 + 二次确认），
+ * 角色徽标取 CHARACTER_ROLE_META 的图表色，
  * 性别图标取 layout 的 CharacterGenderIcon（男蓝女红，与大纲出场名单共用），空态复用 blocks/Empty。
  * 关键约束：封面优先取磁盘列表（宿主一次回读的全部角色图片），按 coverPortraitId 命中，未命中用最新一张，
  * 再退回到草稿里已加载的 portraits——文档只存封面 id，图片本体在 Images 下，不读磁盘就没有封面；
@@ -8,14 +9,14 @@
  * 删除按钮放在卡片外层容器而非卡片内部，避免点击删除时触发卡片的选中事件。
  */
 import { cn } from 'cn'
-import { Plus, Sparkles, Trash2, UserRound } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Plus, Sparkles, UserRound } from 'lucide-react'
+import { useMemo } from 'react'
 import { Card } from '@components/ui/card'
 import type { PortraitGalleryItem } from '@shared/types/press'
 import { Badge } from '@webview/blocks/Badge'
 import { CharacterGenderIcon } from '@webview/blocks/CharacterGenderIcon'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Empty } from '@webview/blocks/Empty'
-import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
 import type { CharacterCard } from '../types'
@@ -69,9 +70,6 @@ export function CharacterList({
     onClearFilter,
     onDelete,
 }: CharacterListProps): JSX.Element {
-    /** 待确认删除的人物：非空时弹出二次确认，避免误触删掉整张卡 */
-    const [deletingId, setDeletingId] = useState<string | null>(null)
-    const deleting = characters.find((character) => character.id === deletingId) ?? null
     const sortedCharacters = useMemo(
         () =>
             [...characters].sort(
@@ -154,41 +152,19 @@ export function CharacterList({
                                     <p className="truncate text-muted-foreground">{summary}</p>
                                 </div>
                             </Card>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="absolute top-1 right-1 text-muted-foreground opacity-70 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
-                                aria-label={`删除人物 ${character.name}`}
+                            <DeleteConfirmButton
                                 tooltip="删除人物"
-                                onClick={() => setDeletingId(character.id)}
-                            >
-                                <Trash2 className="size-3.5" />
-                            </Button>
+                                title={`删除「${character.name}」？`}
+                                description="人物卡会立即从角色设定.md 中移除，章纲里的出场引用一并清理，已生成的角色设定图移入回收站。"
+                                confirmLabel="删除人物"
+                                variant="ghost"
+                                className="absolute top-1 right-1 text-muted-foreground opacity-70 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                                onConfirm={(): void => onDelete(character.id)}
+                            />
                         </div>
                     )
                 })}
             </div>
-
-            <AlertDialog
-                open={deleting !== null}
-                title={`删除「${deleting?.name ?? ''}」？`}
-                description="人物卡会立即从角色设定.md 中移除，章纲里的出场引用一并清理，已生成的角色设定图移入回收站。"
-                confirmLabel="删除人物"
-                isDestructive
-                size="sm"
-                onOpenChange={(isOpen) => {
-                    if (!isOpen) {
-                        setDeletingId(null)
-                    }
-                }}
-                onConfirm={() => {
-                    const target = deletingId
-                    setDeletingId(null)
-                    if (target !== null) {
-                        onDelete(target)
-                    }
-                }}
-            />
         </>
     )
 }

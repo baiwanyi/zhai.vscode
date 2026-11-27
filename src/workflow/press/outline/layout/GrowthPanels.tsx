@@ -1,14 +1,16 @@
 /**
  * 成长线页：按卷分组展示主角与金手指的成长节点，支持逐条编辑与删除兜底修正。
  * 复用约定：卡片取 ui/card，空态取 blocks/Empty，徽标取 blocks/Badge，按钮取 @webview/components/Button，
+ * 删除入口取 blocks/DeleteConfirmButton（图标按钮 + 二次确认），
  * 轨道文案与顺序取 constants 的 GROWTH_TRACK_META / GROWTH_TRACK_ORDER，卷序口径取 utils 的 readOutlineVolumeOrder。
  * 关键约束：以回填识别为主，页面不自带 AI 请求；只读聚合，增删改一律经 onChange 回传整表，
  * 卷级节点与章级节点共存，按章序升序排列，章序为空的节点排在前面。
  */
-import { Pencil, TrendingUp, Trash2 } from 'lucide-react'
+import { Pencil, TrendingUp } from 'lucide-react'
 import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { Badge } from '@webview/blocks/Badge'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { GrowthEditDialog } from './GrowthEditDialog'
@@ -113,15 +115,15 @@ export function GrowthPanels({ points, volumes, onChange }: GrowthPanelsProps): 
                                                         >
                                                             <Pencil />
                                                         </Button>
-                                                        <Button
-                                                            variant="ghost"
+                                                        <DeleteConfirmButton
+                                                            tooltip={`删除成长节点：${point.value}`}
+                                                            title="删除这条成长节点？"
+                                                            description="删除后不可恢复，该节点会从大纲的成长线中移除。"
                                                             size="icon-xs"
-                                                            className="hover:text-destructive"
-                                                            aria-label={`删除成长节点：${point.value}`}
-                                                            onClick={(): void => handleRemove(point.id)}
-                                                        >
-                                                            <Trash2 />
-                                                        </Button>
+                                                            variant="ghost"
+                                                            className="opacity-100 hover:text-destructive"
+                                                            onConfirm={(): void => handleRemove(point.id)}
+                                                        />
                                                     </div>
                                                 ))
                                             )}

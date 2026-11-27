@@ -1,20 +1,21 @@
 /**
  * 素材管理页：当前账号已上传的永久素材列表，支持从本地导入与复制图片地址。
  * 复用约定：数据取 hooks/useWechatMaterials，外壳取 components/AppPage，列表用 ui/item，
+ * 删除入口取 blocks/DeleteConfirmButton（图标按钮 + 二次确认），
  * 复制走 shared/utils/clipboard，结果用 sonner 提示。
  * 关键约束：本页只列本地映射表里的素材（即真正上传过的图片），不逐条回查平台详情——
  * 平台接口有频率限制，回查会让列表在弱网下长时间转圈；
  * 正文里的本地图片在生成草稿时已自动上传，这里因此会出现「没主动上传却有记录」的情况，空态文案要说明。
  */
-import { Copy, ImagePlus, Images, Trash2 } from 'lucide-react'
+import { Copy, ImagePlus, Images } from 'lucide-react'
 import { useState } from 'react'
 import { Input } from '@components/ui/input'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import { Skeleton } from '@components/ui/skeleton'
 import type { WechatAccountSummary, WechatMaterialSummary } from '@shared/types/wechat'
 import { copyWithToast } from '@shared/utils/clipboard'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Empty } from '@webview/blocks/Empty'
-import { AlertDialog } from '@webview/components/AlertDialog'
 import {
     AppContent,
     AppDescription,
@@ -46,8 +47,6 @@ export function WechatMaterialPage({ account }: WechatMaterialPageProps): JSX.El
     const { materials, status, error, isImporting, removingId, reload, importImage, removeMaterial } =
         useWechatMaterials(account.id)
     const [keyword, setKeyword] = useState('')
-    /** 待删除素材：非 null 即打开确认弹窗 */
-    const [pendingRemove, setPendingRemove] = useState<WechatMaterialSummary | null>(null)
 
     // 搜索在本地做：素材一次最多几百条，请求平台接口反而更慢且受频率限制
     const trimmedKeyword = keyword.trim().toLowerCase()
@@ -111,16 +110,17 @@ export function WechatMaterialPage({ account }: WechatMaterialPageProps): JSX.El
                             >
                                 <Copy />
                             </Button>
-                            <Button
-                                size="icon"
+                            <DeleteConfirmButton
+                                tooltip={`删除 ${material.name}`}
+                                title="删除素材"
+                                description={`将删除「${material.name}」。已发布文章里引用这张图的正文会失效，删除后无法恢复。`}
                                 variant="ghost"
-                                aria-label={`删除 ${material.name}`}
-                                tooltip="删除素材"
-                                disabled={removingId === material.id}
-                                onClick={() => setPendingRemove(material)}
-                            >
-                                <Trash2 />
-                            </Button>
+                                className="opacity-100"
+                                props={{ disabled: removingId === material.id }}
+                                onConfirm={(): void => {
+                                    void removeMaterial(material.id)
+                                }}
+                            />
                         </ItemActions>
                     </Item>
                 ))}
@@ -155,31 +155,6 @@ export function WechatMaterialPage({ account }: WechatMaterialPageProps): JSX.El
                     </Button>
                 </AppFooter>
             </AppPage>
-
-            <AlertDialog
-                open={pendingRemove !== null}
-                title="删除素材"
-                description={
-                    pendingRemove === null
-                        ? ''
-                        : `将删除「${pendingRemove.name}」。已发布文章里引用这张图的正文会失效，删除后无法恢复。`
-                }
-                confirmLabel="删除"
-                isDestructive
-                isSubmitting={removingId !== null}
-                onOpenChange={(open) => {
-                    if (!open) {
-                        setPendingRemove(null)
-                    }
-                }}
-                onConfirm={() => {
-                    const target = pendingRemove
-                    setPendingRemove(null)
-                    if (target !== null) {
-                        void removeMaterial(target.id)
-                    }
-                }}
-            />
         </>
     )
 }

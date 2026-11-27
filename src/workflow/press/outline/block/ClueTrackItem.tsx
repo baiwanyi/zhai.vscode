@@ -1,12 +1,14 @@
 /**
  * 伏笔行：展示伏笔名、类型、状态与备注，提供编辑与删除入口。
- * 复用约定：行容器取 @components/ui/item 的槽位，徽标取 badge，按钮取 @webview/components/Button。
+ * 复用约定：行容器取 @components/ui/item 的槽位，徽标取 badge，按钮取 @webview/components/Button，
+ * 删除入口取 blocks/DeleteConfirmButton（图标按钮 + 二次确认）。
  * 关键约束：编辑与删除回调按伏笔 id 定位；埋收位置与触发者只在编辑弹窗里维护，本行不重复展示；
  * 「计划中」的伏笔（未回收但埋设章未定）徽标显示「未指定」，与「已埋待收」区分。
  */
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil } from 'lucide-react'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle } from '@components/ui/item'
 import { Badge } from '@webview/blocks/Badge'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Button } from '@webview/components/Button'
 import type { OutlineClue } from '../../types'
 import type { JSX } from 'react'
@@ -56,15 +58,14 @@ export function ClueTrackItem({ clue, index, onEdit, onRemove }: ClueTrackItemPr
                 >
                     <Pencil />
                 </Button>
-                <Button
+                <DeleteConfirmButton
+                    tooltip={`删除第 ${index + 1} 条伏笔`}
+                    title="删除这条伏笔？"
+                    description="删除后不可恢复，该伏笔会从伏笔线中移除。"
                     variant="ghost"
-                    size="icon"
-                    className="hover:text-destructive rounded-full"
-                    aria-label={`删除第 ${index + 1} 条伏笔`}
-                    onClick={(): void => onRemove(clue.id)}
-                >
-                    <Trash2 />
-                </Button>
+                    className="opacity-100 rounded-full hover:text-destructive"
+                    onConfirm={(): void => onRemove(clue.id)}
+                />
             </ItemActions>
         </Item>
     )

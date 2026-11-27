@@ -2,7 +2,8 @@
  * 设定与大纲快照面板：按时间倒序列出四份结构化文档的历次留版，支持手动留版、整版恢复与删除单版。
  * 复用约定：取数与动作由 usePressSnapshots 承担，单条渲染由 SnapshotListItem 承担，空态由业务公共层的
  * Empty 承担；
- * 恢复与删除的确认框取业务公共层的 AlertDialog，创建备注对话框由 SnapshotCreateDialog 承担，本组件只做编排与文案。
+ * 恢复确认框取业务公共层的 AlertDialog，删除确认由 SnapshotListItem 内的 DeleteConfirmButton 承担，
+ * 创建备注对话框由 SnapshotCreateDialog 承担，本组件只做编排与文案。
  * 关键约束：恢复会整版覆盖四份文档且不动章节正文，删除只影响该版本，两处文案必须写清边界；
  * 写操作进行中禁用入口，防止同一动作被连点提交两次。
  */
@@ -27,7 +28,6 @@ interface DocSnapshotPanelProps {
 export function DocSnapshotPanel({ dirPath }: DocSnapshotPanelProps): JSX.Element {
     const { snapshots, isLoading, isBusy, createSnapshot, restoreSnapshot, deleteSnapshot } = usePressSnapshots(dirPath)
     const [pendingRestore, setPendingRestore] = useState<PressSnapshotEntry | null>(null)
-    const [pendingDelete, setPendingDelete] = useState<PressSnapshotEntry | null>(null)
     const [isCreateOpen, setIsCreateOpen] = useState(false)
 
     return (
@@ -58,7 +58,9 @@ export function DocSnapshotPanel({ dirPath }: DocSnapshotPanelProps): JSX.Elemen
                                     snapshot={snapshot}
                                     isBusy={isBusy}
                                     onRestore={setPendingRestore}
-                                    onDelete={setPendingDelete}
+                                    onDelete={(target): void => {
+                                        void deleteSnapshot(target.id)
+                                    }}
                                 />
                             ))}
                         </ItemGroup>
@@ -82,27 +84,6 @@ export function DocSnapshotPanel({ dirPath }: DocSnapshotPanelProps): JSX.Elemen
                     setPendingRestore(null)
                     if (target !== null) {
                         void restoreSnapshot(target.id)
-                    }
-                }}
-            />
-
-            <AlertDialog
-                open={pendingDelete !== null}
-                title="删除这一版快照？"
-                description="只删除所选版本，不影响作品文档与其它快照；删除后不可找回。"
-                confirmLabel="删除"
-                size="sm"
-                isDestructive
-                onOpenChange={(isOpen) => {
-                    if (!isOpen) {
-                        setPendingDelete(null)
-                    }
-                }}
-                onConfirm={() => {
-                    const target = pendingDelete
-                    setPendingDelete(null)
-                    if (target !== null) {
-                        void deleteSnapshot(target.id)
                     }
                 }}
             />

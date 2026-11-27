@@ -1,17 +1,17 @@
 /**
  * 资料条目列表：以单列卡片展示当前分类的条目，承担浏览、选中与删除入口。
- * 复用约定：卡片复用 ui/card，删除确认复用 components/AlertDialog，缩略图与缺图占位复用 components/Image，
+ * 复用约定：卡片复用 ui/card，删除入口取 blocks/DeleteConfirmButton（图标按钮 + 二次确认），
+ * 缩略图与缺图占位复用 components/Image，
  * 空态复用 blocks/Empty，文案与图标取自 constants 的 LORE_KIND_META。
  * 关键约束：卡片是 role=button 的可聚焦容器，删除按钮挂在外层容器，避免点删除时顺带触发选中；
  * 描述只显示首行，势力卡片额外显示关联人数，其余分类不出现该徽标；
  * 排序沿用草稿顺序（即文档顺序），不按名称重排——作者可以在 Markdown 里自己调整先后。
  */
-import { Plus, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { Plus } from 'lucide-react'
 import { Card } from '@components/ui/card'
 import { Badge } from '@webview/blocks/Badge'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Empty } from '@webview/blocks/Empty'
-import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
 import type { LoreEntry, LoreKind } from '../../types'
@@ -46,9 +46,6 @@ export function LoreList({
     onClearFilter,
     onDelete,
 }: LoreListProps): JSX.Element {
-    /** 待确认删除的条目：非空时弹出二次确认，避免误触删掉整条设定 */
-    const [deletingId, setDeletingId] = useState<string | null>(null)
-    const deleting = entries.find((entry) => entry.id === deletingId) ?? null
     const meta = LORE_KIND_META[kind]
 
     if (entries.length === 0) {
@@ -120,41 +117,19 @@ export function LoreList({
                                     </p>
                                 </div>
                             </Card>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="absolute top-1 right-1 text-muted-foreground opacity-70 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
-                                aria-label={`删除${meta.label} ${entry.name}`}
+                            <DeleteConfirmButton
                                 tooltip={`删除${meta.label}`}
-                                onClick={() => setDeletingId(entry.id)}
-                            >
-                                <Trash2 className="size-3.5" />
-                            </Button>
+                                title={`删除「${entry.name}」？`}
+                                description={`${meta.label}会立即从 ${meta.label}.md 中移除，已生成的设定图移入回收站。`}
+                                confirmLabel={`删除${meta.label}`}
+                                variant="ghost"
+                                className="absolute top-1 right-1 text-muted-foreground opacity-70 hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
+                                onConfirm={(): void => onDelete(entry.id)}
+                            />
                         </div>
                     )
                 })}
             </div>
-
-            <AlertDialog
-                open={deleting !== null}
-                title={`删除「${deleting?.name ?? ''}」？`}
-                description={`${meta.label}会立即从 ${meta.label}.md 中移除，已生成的设定图移入回收站。`}
-                confirmLabel={`删除${meta.label}`}
-                isDestructive
-                size="sm"
-                onOpenChange={(isOpen) => {
-                    if (!isOpen) {
-                        setDeletingId(null)
-                    }
-                }}
-                onConfirm={() => {
-                    const target = deletingId
-                    setDeletingId(null)
-                    if (target !== null) {
-                        onDelete(target)
-                    }
-                }}
-            />
         </>
     )
 }

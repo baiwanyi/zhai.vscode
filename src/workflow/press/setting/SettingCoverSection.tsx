@@ -2,12 +2,12 @@
  * 作品封面区块：封面三态、生成入口与该作品的封面候选图库，装在设定页基本信息左列。
  * 复用约定：封面回读交给 useSettingCover（带外部刷新信号），图库列举走 pressAi/listCover，
  * 设封面走 media/setCover、删除走 media/delete，与生图页共用同一份封面指针与媒体索引；
- * 图库网格复用 components/Image，空态取 blocks/Empty，删除确认取 components/AlertDialog。
+ * 图库网格复用 components/Image，空态取 blocks/Empty，删除入口取 blocks/DeleteConfirmButton（图标按钮 + 二次确认）。
  * 关键约束：生成的在途状态与回执由页面持有（切分组会卸载本区块），本组件只透传按钮状态；
  * 封面指针在宿主侧，设封面与删除后一律重读而不能只改本地状态；
  * 删除的回退由宿主在删除时写回指针，这里不做二次写入，避免与媒体页口径分叉。
  */
-import { Images, Sparkles, Trash2 } from 'lucide-react'
+import { Images, Sparkles } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } from '@components/ui/popover'
@@ -16,8 +16,8 @@ import type { CoverListResult, PressCover } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import { CoverFigure } from '@webview/blocks/CoverFigure'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Empty } from '@webview/blocks/Empty'
-import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
 import { useSettingCover } from './useSettingCover'
@@ -49,7 +49,6 @@ export function SettingCoverSection({
     const [selectedId, setSelectedId] = useState<string | null>(null)
     const [total, setTotal] = useState(0)
     const [isGalleryLoading, setIsGalleryLoading] = useState(false)
-    const [pendingDelete, setPendingDelete] = useState<PressCover | null>(null)
 
     /** 图库列举：宿主按时间降序截断，total 用于提示「只显示最新一批」 */
     const refreshGallery = useCallback(async (): Promise<void> => {
@@ -102,14 +101,6 @@ export function SettingCoverSection({
             toast.success('图片已删除')
         } catch (cause) {
             toastError(cause)
-        }
-    }
-
-    const handleConfirmDelete = (): void => {
-        const target = pendingDelete
-        setPendingDelete(null)
-        if (target !== null) {
-            void runDelete(target)
         }
     }
 
@@ -195,14 +186,17 @@ export function SettingCoverSection({
                                                         >
                                                             {isCover ? '当前封面' : '设为首选'}
                                                         </Button>
-                                                        <Button
-                                                            variant="ghost"
+                                                        <DeleteConfirmButton
+                                                            tooltip={`删除封面候选 ${String(version)}`}
+                                                            title="删除这张封面候选？"
+                                                            description="删除后不可恢复。若它是当前封面，会自动回退到剩余最新的一张。"
                                                             size="icon-xs"
-                                                            aria-label={`删除封面候选 ${String(version)}`}
-                                                            onClick={() => setPendingDelete(item)}
-                                                        >
-                                                            <Trash2 />
-                                                        </Button>
+                                                            variant="ghost"
+                                                            className="opacity-100"
+                                                            onConfirm={(): void => {
+                                                                void runDelete(item)
+                                                            }}
+                                                        />
                                                     </div>
                                                 </div>
                                             )
@@ -220,19 +214,6 @@ export function SettingCoverSection({
                     </Popover>
                 </div>
             </div>
-            <AlertDialog
-                open={pendingDelete !== null}
-                title="删除这张封面候选？"
-                description="删除后不可恢复。若它是当前封面，会自动回退到剩余最新的一张。"
-                confirmLabel="删除"
-                isDestructive
-                onOpenChange={(isOpen) => {
-                    if (!isOpen) {
-                        setPendingDelete(null)
-                    }
-                }}
-                onConfirm={handleConfirmDelete}
-            />
         </>
     )
 }

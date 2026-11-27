@@ -3,11 +3,11 @@
  * 复用约定：封面回读交给 useCharacterCover、图库列举交给 useCharacterPortrait，
  * 出图的 hook 由主组件持有（切标签页会卸载本区块，挂在内部会丢掉在途回执），本组件只透传按钮状态；
  * 画风选项取 workflow/media/prompt 的 STYLE_OPTIONS，与宿主 STYLE_HINTS 同源；
- * 图库网格复用 components/Image，空态取 blocks/Empty，删除确认取 components/AlertDialog。
+ * 图库网格复用 components/Image，空态取 blocks/Empty，删除入口取 blocks/DeleteConfirmButton（图标按钮 + 二次确认）。
  * 关键约束：生成结果只改封面指针且随人物卡保存生效，删除不可撤销——被删的是当前封面时必须立即落盘回退值，
  * 只改草稿会在取消编辑后留下失效指针；图库只做「设为首选 / 删除」最小集，批量与复制等操作仍在生图页。
  */
-import { Images, Sparkles, Trash2 } from 'lucide-react'
+import { Images, Sparkles } from 'lucide-react'
 import { useCallback, useState } from 'react'
 import { toast } from 'sonner'
 import { Popover, PopoverContent, PopoverHeader, PopoverTitle, PopoverTrigger } from '@components/ui/popover'
@@ -17,8 +17,8 @@ import type { CharacterPortrait } from '@shared/types/press'
 import { request } from '@shared/utils/bridge'
 import { toastError } from '@shared/utils/error'
 import { CoverFigure } from '@webview/blocks/CoverFigure'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Empty } from '@webview/blocks/Empty'
-import { AlertDialog } from '@webview/components/AlertDialog'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
 import { STYLE_OPTIONS } from '@webview/workflow/media/utils/parameters/style'
@@ -54,7 +54,6 @@ export function CharacterPortraitSection({
     const [isGalleryOpen, setIsGalleryOpen] = useState(false)
     const [gallery, setGallery] = useState<readonly CharacterPortrait[]>([])
     const [isGalleryLoading, setIsGalleryLoading] = useState(false)
-    const [pendingDelete, setPendingDelete] = useState<CharacterPortrait | null>(null)
 
     /** 图库列举：打开浮层与删除后各调一次，扫描结果以宿主索引为准 */
     const refreshGallery = useCallback(async (): Promise<void> => {
@@ -98,14 +97,6 @@ export function CharacterPortraitSection({
             await refreshGallery()
         } catch (cause) {
             toastError(cause)
-        }
-    }
-
-    const handleConfirmDelete = (): void => {
-        const target = pendingDelete
-        setPendingDelete(null)
-        if (target !== null) {
-            void runDelete(target)
         }
     }
 
@@ -187,14 +178,17 @@ export function CharacterPortraitSection({
                                                     >
                                                         {isCover ? '当前首选' : '设为首选'}
                                                     </Button>
-                                                    <Button
-                                                        variant="ghost"
+                                                    <DeleteConfirmButton
+                                                        tooltip={`删除第 ${String(version)} 版`}
+                                                        title="删除这张角色形象？"
+                                                        description="删除后不可恢复。若它是当前首选，人物卡会自动回退到剩余最新的一张。"
                                                         size="icon-xs"
-                                                        aria-label={`删除第 ${String(version)} 版`}
-                                                        onClick={() => setPendingDelete(item)}
-                                                    >
-                                                        <Trash2 />
-                                                    </Button>
+                                                        variant="ghost"
+                                                        className="opacity-100"
+                                                        onConfirm={(): void => {
+                                                            void runDelete(item)
+                                                        }}
+                                                    />
                                                 </div>
                                             </div>
                                         )
@@ -219,19 +213,6 @@ export function CharacterPortraitSection({
                     </SelectContent>
                 </Select>
             </div>
-            <AlertDialog
-                open={pendingDelete !== null}
-                title="删除这张角色形象？"
-                description="删除后不可恢复。若它是当前首选，人物卡会自动回退到剩余最新的一张。"
-                confirmLabel="删除"
-                isDestructive
-                onOpenChange={(isOpen) => {
-                    if (!isOpen) {
-                        setPendingDelete(null)
-                    }
-                }}
-                onConfirm={handleConfirmDelete}
-            />
         </>
     )
 }

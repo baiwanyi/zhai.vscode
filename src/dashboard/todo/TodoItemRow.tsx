@@ -1,7 +1,7 @@
 /**
  * 单条待办：胶囊卡片内的开关、正文与删除按钮，开关开启即表示已完成。
  * 复用约定：卡片与槽位取 @components/ui 的 item，开关取 @webview/components/Switch，
- * 删除入口取 @webview/components/Button（destructive + icon-sm），图标用 lucide 的 Trash2。
+ * 删除入口取 blocks/DeleteConfirmButton（图标按钮 + 二次确认，尺寸 icon-sm）。
  * 关键约束：删除按钮默认不可见，仅在悬停、行内聚焦、触屏设备与「当前激活行」时显示——
  * 键盘用户靠 focus-within 兜底（按钮自身聚焦必属行内聚焦，故不再单写 focus-visible），
  * 触屏没有 hover 故常显；正文单行截断，全文挂在原生 title 上，避免长待办被截断后看不全。
@@ -9,10 +9,9 @@
 'use client'
 
 import { cn } from 'cn'
-import { Trash2 } from 'lucide-react'
 import { Item, ItemActions, ItemContent, ItemMedia, ItemTitle } from '@components/ui/item'
 import type { TodoItem } from '@shared/types/todo'
-import { Button } from '@webview/components/Button'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Switch } from '@webview/components/Switch'
 import type { JSX } from 'react'
 
@@ -66,17 +65,15 @@ export function TodoItemRow({
                 </ItemTitle>
             </ItemContent>
             <ItemActions>
-                <Button
-                    variant="destructive"
+                <DeleteConfirmButton
+                    tooltip={`删除待办：${item.text}`}
+                    title="删除这条待办？"
+                    description="删除后不可恢复，这条待办会从当前清单中移除。"
                     size="icon-sm"
-                    tooltip="删除这条待办"
-                    aria-label={`删除待办：${item.text}`}
-                    disabled={isDisabled}
                     className={cn(DELETE_VISIBILITY_CLASS, isActive && 'opacity-100')}
-                    onClick={() => onDelete(item)}
-                >
-                    <Trash2 />
-                </Button>
+                    props={{ disabled: isDisabled }}
+                    onConfirm={(): void => onDelete(item)}
+                />
             </ItemActions>
         </Item>
     )

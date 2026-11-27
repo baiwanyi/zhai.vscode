@@ -1,18 +1,17 @@
 /**
  * 历史会话行：主体是可点击区（标题 + 来源与时间），删除按钮平级在行尾。
  * 复用约定：来源文案取 utils/historyFilters 的 formatScopeText，与筛选标签同源；外壳复用 @components/ui/item，
- * 删除按钮复用 webview 的 Button（图标态 + tooltip），时间格式化复用 shared/utils/format。
+ * 删除入口复用 blocks/DeleteConfirmButton（图标按钮 + 二次确认），时间格式化复用 shared/utils/format。
  * 关键约束：删除按钮必须是主体的兄弟节点 —— 套进主体会让键盘事件冒泡成「切换 + 删除」，
  * 读屏也会读成两个重叠按钮；主体用 div + role="button" 而不是原生 button，
  * 因为标题与描述是块级元素，button 的内容模型只允许行内元素。
  */
 import { cn } from 'cn'
-import { Trash2 } from 'lucide-react'
 import { memo } from 'react'
 import { Item, ItemActions, ItemContent, ItemDescription, ItemTitle } from '@components/ui/item'
 import type { AiConversationSummary } from '@shared/types/aiChat'
 import { formatRelativeTime } from '@shared/utils/format'
-import { Button } from '@webview/components/Button'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import type { JSX } from 'react'
 import { formatScopeText } from '../utils/historyFilters'
 
@@ -50,16 +49,14 @@ export const AiChatHistoryRow = memo(function AiChatHistoryRow({
                 </ItemContent>
             </div>
             <ItemActions className="shrink-0 pr-2">
-                <Button
-                    variant="ghost"
-                    size="icon"
+                <DeleteConfirmButton
                     tooltip="删除会话"
-                    aria-label="删除会话"
-                    className="hover:text-destructive"
-                    onClick={() => onDelete(session.id)}
-                >
-                    <Trash2 />
-                </Button>
+                    title="删除这个会话？"
+                    description="删除后不可恢复，该会话的记录文件会一并移除。"
+                    variant="ghost"
+                    className="opacity-100 hover:text-destructive"
+                    onConfirm={(): void => onDelete(session.id)}
+                />
             </ItemActions>
         </Item>
     )

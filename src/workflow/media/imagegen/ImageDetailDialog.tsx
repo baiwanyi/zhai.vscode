@@ -3,12 +3,12 @@
  * 复用约定：弹层取 ui/dialog，图片取 components/Image，参数折叠块取 ui/collapsible，空态取 ui/empty；
  * 出处与引用由 useImageDetail 按媒体 id 一次读回，引用已由宿主按类型与时间排好序，前端只分组不重排。
  * 关键约束：image 为 null 即关闭，关闭只经 onOpenChange 上报；复制、插入、删除与设封面一律交给页面，
- * 本组件不直接调宿主协议，避免副作用散落两处；
+ * 本组件不直接调宿主协议，避免副作用散落两处；删除的二次确认由 DeleteConfirmButton 自带；
  * 引用是「一对多」——同一张图可以同时是作品封面、多个章节插图与多篇笔记配图，必须逐条列出而不是合并成一句；
  * 弹窗高度取视口高上下各留 2rem，仅内容区滚动，图片按 contain 缩放不撑破窗口；
  * 打开时的初始焦点必须交给弹层容器，否则 Radix 聚焦首个按钮会连带弹出 tooltip。
  */
-import { Copy, ExternalLink, TextCursorInput, Trash2 } from 'lucide-react'
+import { Copy, ExternalLink, TextCursorInput } from 'lucide-react'
 import { useMemo, useRef } from 'react'
 import { toast } from 'sonner'
 import {
@@ -22,6 +22,7 @@ import {
 import { Skeleton } from '@components/ui/skeleton'
 import type { MediaItem, MediaOwner, MediaOwnerType, MediaRefType } from '@shared/types/media'
 import { formatDateTime } from '@shared/utils/format'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
 import type { JSX } from 'react'
@@ -273,14 +274,13 @@ export function ImageDetailDialog({
                             </div>
                         </div>
                         <DialogFooter className="flex-wrap items-center gap-2 sm:justify-between">
-                            <Button
-                                size="icon"
-                                variant="destructive"
+                            <DeleteConfirmButton
                                 tooltip="删除图片"
-                                onClick={() => onDelete(image)}
-                            >
-                                <Trash2 />
-                            </Button>
+                                title="删除这张图片？"
+                                description="文件会移入系统回收站，正文里引用它的位置将显示破图。"
+                                className="opacity-100"
+                                onConfirm={(): void => onDelete(image)}
+                            />
                             <div className="flex flex-wrap items-center justify-end gap-2">
                                 <Button variant="outline" onClick={() => onCopyImage(image)}>
                                     <Copy />

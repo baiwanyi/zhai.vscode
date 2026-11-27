@@ -2,7 +2,7 @@
  * 单文件快照页：对当前打开的 Markdown 文档展示一条正文时间线，笔记、公众号文章与散落 md 共用。
  * 复用约定：外壳取 @webview/components/AppPage，取数与动作由 hooks/useDocSnapshots 承担，
  * 版本列表复用 ChapterVersionList（两类条目同为「时间 + 来源 + 备注 + 体积」），
- * 备注框与恢复/删除确认分别复用 SnapshotCreateDialog 与 AlertDialog。
+ * 备注框与恢复确认分别复用 SnapshotCreateDialog 与 AlertDialog，删除确认由列表项内的 DeleteConfirmButton 承担。
  * 关键约束：docPath 为空时不渲染本页，由调用方给引导空态；恢复前由宿主拒绝「编辑器里还有未保存修改」的情形，
  * 此处只如实提示宿主返回的错误，不自行判断脏状态。
  */
@@ -36,7 +36,6 @@ function readDocTitle(docPath: string): string {
 export function SingleDocSnapshotPage({ docPath }: SingleDocSnapshotPageProps): JSX.Element {
     const { versions, isLoading, isBusy, capture, restore, remove } = useDocSnapshots(docPath)
     const [pendingRestore, setPendingRestore] = useState<DocSnapshotEntry | null>(null)
-    const [pendingDelete, setPendingDelete] = useState<DocSnapshotEntry | null>(null)
     const [isCreateOpen, setIsCreateOpen] = useState(false)
 
     const restoreDescription =
@@ -80,8 +79,14 @@ export function SingleDocSnapshotPage({ docPath }: SingleDocSnapshotPageProps): 
                             <ChapterVersionList
                                 versions={versions}
                                 isBusy={isBusy}
+                                deleteConfirm={{
+                                    title: '删除这一版快照？',
+                                    description: '只删除所选版本，不影响文档正文与其它快照；删除后不可找回。',
+                                }}
                                 onRestore={setPendingRestore}
-                                onDelete={setPendingDelete}
+                                onDelete={(target): void => {
+                                    void remove(target.id)
+                                }}
                             />
                         )}
                     </CardContent>
@@ -103,27 +108,6 @@ export function SingleDocSnapshotPage({ docPath }: SingleDocSnapshotPageProps): 
                         setPendingRestore(null)
                         if (target !== null) {
                             void restore(target.id)
-                        }
-                    }}
-                />
-
-                <AlertDialog
-                    open={pendingDelete !== null}
-                    title="删除这一版快照？"
-                    description="只删除所选版本，不影响文档正文与其它快照；删除后不可找回。"
-                    confirmLabel="删除"
-                    size="sm"
-                    isDestructive
-                    onOpenChange={(isOpen) => {
-                        if (!isOpen) {
-                            setPendingDelete(null)
-                        }
-                    }}
-                    onConfirm={() => {
-                        const target = pendingDelete
-                        setPendingDelete(null)
-                        if (target !== null) {
-                            void remove(target.id)
                         }
                     }}
                 />

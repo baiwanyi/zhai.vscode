@@ -1,15 +1,17 @@
 /**
  * 节拍卡片：一张 Card 承载章纲下的一组可勾选叙事单位，勾选表示正文已兑现该节拍。
  * 复用约定：卡片取 @components/ui/card，节拍行复用 outline/block 的 ToggleCheckItem 承载勾选语义，文本沿用 ui/input 的无边框写法，
- * 行尾操作取 ui/button 的 ghost 变体，空列表用 blocks/Empty 占位，新节拍用 press/utils 的 createBeat 创建。
+ * 行尾操作取 @webview/components/Button，删除入口取 blocks/DeleteConfirmButton（图标按钮 + 二次确认），
+ * 空列表用 blocks/Empty 占位，新节拍用 press/utils 的 createBeat 创建。
  * 关键约束：勾选、排序与增删都回传新的数组，不原地修改传入的 beats；
  * 每条节拍的输入框带序号化可访问名称；行操作按钮悬停或键盘聚焦时才显现。
  */
 import { cn } from 'cn'
-import { ListTodo, MoveUp, Plus, Trash2 } from 'lucide-react'
+import { ListTodo, MoveUp, Plus } from 'lucide-react'
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from '@components/ui/card'
 import { Input } from '@components/ui/input'
 import { ItemGroup } from '@components/ui/item'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import type { OutlineBeat } from '../../types'
@@ -111,15 +113,13 @@ export function ChapterEditBeatCard({ beats, onChange }: ChapterEditBeatCardProp
                                         <MoveUp />
                                     </Button>
                                 ) : null}
-                                <Button
-                                    variant="destructive"
-                                    size="icon"
+                                <DeleteConfirmButton
+                                    tooltip={`删除第 ${index + 1} 条节拍`}
+                                    title="删除这条节拍？"
+                                    description="删除后不可恢复，这一章的节拍会少一条。"
                                     className={ROW_ACTION_CLASS}
-                                    aria-label={`删除第 ${index + 1} 条节拍`}
-                                    onClick={() => handleRemove(beat.id)}
-                                >
-                                    <Trash2 />
-                                </Button>
+                                    onConfirm={(): void => handleRemove(beat.id)}
+                                />
                             </ToggleCheckItem>
                         ))}
                     </ItemGroup>

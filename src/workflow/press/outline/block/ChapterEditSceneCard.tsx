@@ -1,14 +1,16 @@
 /**
  * 场景纲卡片：一张 Card 承载章节的全部场景，头部含场景数、写法说明与添加按钮，空列表给出明确文案。
- * 复用约定：外层与单场卡片均取 @components/ui/card，场景字段取 ui/field 的 FieldGroup 与 components/InputTextGroup，按钮取 @webview/components/Button，空态取 blocks/Empty；
+ * 复用约定：外层与单场卡片均取 @components/ui/card，场景字段取 ui/field 的 FieldGroup 与 components/InputTextGroup，
+ * 按钮取 @webview/components/Button，删除入口取 blocks/DeleteConfirmButton（图标按钮 + 二次确认），空态取 blocks/Empty；
  * 场景字段 id 以场景 id 前缀区分多场同屏，缺三要素的提示只在单场卡片内显示。
  * 关键约束：改动只经 onPatch / onAdd / onRemove 回传场景补丁，不直接修改传入数组；
  * 序号展示用 scene.order，可访问名称用数组位置，两者口径不同但各自稳定。
  */
-import { Clapperboard, Plus, Trash2 } from 'lucide-react'
+import { Clapperboard, Plus } from 'lucide-react'
 import { Card, CardAction, CardContent, CardDescription, CardHeader, CardTitle } from '@components/ui/card'
 import { FieldGroup } from '@components/ui/field'
 import { Badge } from '@webview/blocks/Badge'
+import { DeleteConfirmButton } from '@webview/blocks/DeleteConfirmButton'
 import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { InputTextGroup } from '@webview/components/InputTextGroup'
@@ -47,15 +49,13 @@ function ChapterSceneItem({ scene, index, onChange, onRemove }: ChapterSceneItem
                     />
                 </CardTitle>
                 <CardAction>
-                    <Button
-                        variant="destructive"
-                        size="icon"
+                    <DeleteConfirmButton
                         tooltip={`删除第 ${index + 1} 场戏`}
-                        aria-label={`删除第 ${index + 1} 场戏`}
-                        onClick={onRemove}
-                    >
-                        <Trash2 />
-                    </Button>
+                        title="删除这场戏？"
+                        description="删除后不可恢复，这一章的场次会重新顺延。"
+                        className="opacity-100"
+                        onConfirm={onRemove}
+                    />
                 </CardAction>
                 {isSceneIncomplete(scene) ? (
                     <CardDescription className="col-span-full">
