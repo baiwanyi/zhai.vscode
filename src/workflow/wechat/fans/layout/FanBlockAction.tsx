@@ -39,7 +39,7 @@ export function FanBlockAction({ fan, isMutating, onBlacklist }: FanBlockActionP
                     size="icon-xs"
                     variant="destructive"
                     aria-label={`拉黑 ${fan.openid}`}
-                    tooltip="拉黑该用户"
+                    tooltip="拉黑"
                     disabled={isMutating}
                     onClick={() => setIsBlockPending(true)}
                 >
@@ -48,8 +48,8 @@ export function FanBlockAction({ fan, isMutating, onBlacklist }: FanBlockActionP
             )}
             <AlertDialog
                 open={isBlockPending && !fan.isBlocked}
-                title="拉黑该用户"
-                description="拉黑后该用户将无法接收群发消息；操作会写入公众号后台，请确认后再继续。"
+                title="拉黑用户"
+                description="拉黑后无法接收群发消息，且不可撤销。"
                 confirmLabel="确认拉黑"
                 isDestructive
                 isSubmitting={isMutating}

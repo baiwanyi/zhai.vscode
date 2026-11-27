@@ -89,7 +89,7 @@ export function WechatTagEditDialog({
             <Dialog
                 open={isFormOpen}
                 title={renamingTag === null ? '新建标签' : '重命名标签'}
-                description="名称 1~30 个字符，保存后立即写入公众号。"
+                description="1~30 个字符，保存后写入公众号。"
                 confirmLabel={renamingTag === null ? '创建' : '保存'}
                 isLoading={isMutating}
                 isDisabled={draft.trim().length === 0}
@@ -109,7 +109,7 @@ export function WechatTagEditDialog({
                 description={
                     pendingRemove === null
                         ? ''
-                        : `将删除标签「${pendingRemove.name}」。已打上该标签的粉丝会失去这个标签，操作不可撤销。`
+                        : `删除「${pendingRemove.name}」后，其用户将失去该标签，且不可撤销。`
                 }
                 confirmLabel="删除标签"
                 isDestructive

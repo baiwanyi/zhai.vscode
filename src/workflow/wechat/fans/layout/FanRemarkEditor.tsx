@@ -44,7 +44,7 @@ export function FanRemarkEditor({ fan, isMutating, onRemark }: FanRemarkEditorPr
                     <InputGroupInput
                         value={remarkDraft}
                         maxLength={WECHAT_FAN_REMARK_MAX}
-                        placeholder="给这位用户写备注"
+                        placeholder="输入备注"
                         aria-label="备注"
                         disabled={isMutating}
                         onChange={(event) => setRemarkDraft(event.target.value)}

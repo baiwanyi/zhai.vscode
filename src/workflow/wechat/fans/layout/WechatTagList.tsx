@@ -39,7 +39,7 @@ export function WechatTagList({
             <Empty
                 icon={Tags}
                 title="还没有标签"
-                description="标签需要在公众号后台创建；同步用户数据后会在这里展示名称与人数。"
+                description="在公众号后台创建，同步后显示。"
             />
         )
     }

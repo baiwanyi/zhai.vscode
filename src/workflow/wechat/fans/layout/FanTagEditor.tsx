@@ -30,7 +30,7 @@ export function FanTagEditor({ fan, tags, isMutating, onToggleTag }: FanTagEdito
         >
             {() =>
                 tags.length === 0 ? (
-                    <p className="text-xs text-muted-foreground">还没有可打标签。</p>
+                    <p className="text-xs text-muted-foreground">暂无标签</p>
                 ) : (
                     <div className="flex max-h-64 flex-wrap gap-1.5 overflow-y-auto">
                         {tags.map((tag) => {

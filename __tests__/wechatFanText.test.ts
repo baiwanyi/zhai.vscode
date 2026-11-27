@@ -31,10 +31,10 @@ describe('describeSyncResult', () => {
     it('成功、部分完成与运行中均按成功级且文案区分', () => {
         expect(describeSyncResult(makeTask('success'))).toEqual({
             level: 'success',
-            message: '同步完成：已拉取 120 / 250 · 新增 10 · 更新 20',
+            message: '同步完成：拉取 120/250 · 新增 10 · 更新 20',
         })
-        expect(describeSyncResult(makeTask('partial')).message).toContain('可继续同步')
-        expect(describeSyncResult(makeTask('running')).message).toContain('已拉取部分关注者')
+        expect(describeSyncResult(makeTask('partial')).message).toContain('可继续')
+        expect(describeSyncResult(makeTask('running')).message).toContain('已拉取部分')
     })
 
     it('失败级优先展示 errorHint，缺省时回落进度串', () => {
@@ -42,7 +42,7 @@ describe('describeSyncResult', () => {
             level: 'error',
             message: '同步失败：额度不足',
         })
-        expect(describeSyncResult(makeTask('failed')).message).toContain('已拉取 120 / 250')
+        expect(describeSyncResult(makeTask('failed')).message).toContain('拉取 120/250')
     })
 })
 
@@ -65,7 +65,7 @@ describe('readPageDescription', () => {
 
     it('快照态平台数取同步任务，无任务时明示未知', () => {
         const snapshot = { ...base, isSnapshot: true }
-        expect(readPageDescription('公众号', 'fans', snapshot)).toContain('平台总数未知')
+        expect(readPageDescription('公众号', 'fans', snapshot)).toContain('平台未知')
         expect(
             readPageDescription('公众号', 'fans', {
                 ...snapshot,

@@ -17,15 +17,15 @@ export interface SyncToastResult {
 
 /** 任务状态 → 提示级别与文案 */
 export function describeSyncResult(task: WechatFanSyncTask): SyncToastResult {
-    const progress = `已拉取 ${String(task.fetched)} / ${String(task.total)} · 新增 ${String(task.createdCount)} · 更新 ${String(task.updatedCount)}`
+    const progress = `拉取 ${String(task.fetched)}/${String(task.total)} · 新增 ${String(task.createdCount)} · 更新 ${String(task.updatedCount)}`
     if (task.status === 'success') {
         return { level: 'success', message: `同步完成：${progress}` }
     }
     if (task.status === 'partial') {
-        return { level: 'success', message: `本轮同步完成，可继续同步：${progress}` }
+        return { level: 'success', message: `本轮完成，可继续：${progress}` }
     }
     if (task.status === 'running') {
-        return { level: 'success', message: `已拉取部分关注者，可继续同步：${progress}` }
+        return { level: 'success', message: `已拉取部分，可继续：${progress}` }
     }
     return { level: 'error', message: `同步失败：${task.errorHint ?? progress}` }
 }

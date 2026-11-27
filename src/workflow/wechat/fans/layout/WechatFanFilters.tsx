@@ -74,8 +74,8 @@ export function WechatFanFilters({
                 <InputGroupInput
                     value={keywordDraft}
                     maxLength={WECHAT_FAN_KEYWORD_MAX}
-                    placeholder="搜索昵称、备注或 OpenID 尾号"
-                    aria-label="搜索昵称、备注或 OpenID 尾号"
+                    placeholder="搜索昵称、备注或 OpenID"
+                    aria-label="搜索用户"
                     onChange={(event) => onKeywordChange(event.target.value)}
                 />
             </InputGroup>

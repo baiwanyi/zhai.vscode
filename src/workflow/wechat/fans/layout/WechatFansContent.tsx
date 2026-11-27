@@ -56,7 +56,7 @@ export function WechatFansContent({
     }
 
     if (state.status === 'loading') {
-        return <Empty className="h-full" title="正在读取用户..." isLoading />
+        return <Empty className="h-full" title="加载中..." isLoading />
     }
 
     if (state.status === 'error') {
@@ -64,8 +64,8 @@ export function WechatFansContent({
             <Empty
                 className="h-full"
                 icon={Users}
-                title="用户列表读取失败"
-                description={state.error ?? '请稍后重试'}
+                title="读取失败"
+                description={state.error ?? '请重试'}
             >
                 <Button variant="outline" onClick={onReload}>
                     重试

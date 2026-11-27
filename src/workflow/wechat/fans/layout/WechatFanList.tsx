@@ -97,11 +97,11 @@ export function WechatFanList({
         return (
             <Empty
                 icon={Users}
-                title={hasFilter ? '没有符合条件的用户' : '还没有可展示的用户'}
+                title={hasFilter ? '无匹配用户' : '暂无用户'}
                 description={
                     hasFilter
-                        ? '换个关键词或清除筛选试试；筛选只作用于已同步的快照。'
-                        : '点「同步」拉取公众号关注者，或等待实时首屏数据加载。'
+                        ? '调整关键词或筛选条件；仅检索已同步数据。'
+                        : '点击「同步」拉取关注者，或等待实时数据。'
                 }
             />
         )

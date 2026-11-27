@@ -32,7 +32,7 @@ export function readPageDescription(
     if (state.isSnapshot) {
         const relative = state.syncedAt === null ? '' : formatRelativeTime(state.syncedAt)
         const suffix = relative.length === 0 ? '' : ` · 同步于 ${relative}`
-        const platform = state.syncTask === null ? '平台总数未知' : `平台 ${String(state.syncTask.total)}`
+        const platform = state.syncTask === null ? '平台未知' : `平台 ${String(state.syncTask.total)}`
         return `${accountName} · ${platform} / 已同步 ${String(state.snapshotTotal)}${suffix}`
     }
     return `${accountName} · 共 ${String(state.total)} 位，显示前 ${String(state.fans.length)} 位（实时）`

@@ -21,7 +21,7 @@ export function FanMetaLine({ fan, tagNameById }: FanMetaLineProps): JSX.Element
                 {formatFollowText(fan)}
                 {fan.subscribeScene === undefined || fan.subscribeScene.length === 0
                     ? null
-                    : ` · 关注来源：${fan.subscribeScene}`}
+                    : ` · 来源 ${fan.subscribeScene}`}
             </span>
             <div className="flex flex-wrap items-center gap-1">
                 {fan.isBlocked ? <Badge variant="destructive">已拉黑</Badge> : null}
