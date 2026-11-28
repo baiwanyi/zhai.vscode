@@ -11,6 +11,8 @@ export const WEIBO_UI_TEXT = {
     action: {
         refresh: '刷新',
         loadMore: '加载更多',
+        continueLoad: '继续加载',
+        viewAll: '查看全部',
         retry: '重试',
         openSettings: '去设置',
         reloadGroups: '重新读取分组',
@@ -26,6 +28,7 @@ export const WEIBO_UI_TEXT = {
     /** 空态标题：整块空态与「已经到底了」共用 */
     empty: {
         feed: '没有内容',
+        filtered: '当前筛选没有内容',
         timeline: '时间线没有内容',
         hot: '热门没有内容',
         likes: '还没有点赞',
