@@ -81,6 +81,29 @@ export function describeMenuError(errorCode: number): string {
     return MENU_ERROR_HINTS[String(errorCode)] ?? '菜单操作失败，请稍后重试'
 }
 
+/**
+ * 留言类错误码：平台为留言接口定义了 88xxx 专属码，不能落到「鉴权失败」兜底文案。
+ * 40001 / 42001 仍需回落到通用表——它们是 Token 失效，由服务层负责刷新重试；
+ * 已回复（88005）在本层保留专用提示，但服务层会拦截它并走「先删后加」流程，不会展示给用户。
+ */
+const COMMENT_ERROR_HINTS: Readonly<Record<string, string>> = {
+    '88000': '该账号未开通留言功能或未完成认证，请先在公众号后台开通并认证',
+    '88001': '该图文不存在，请用当前版本重新群发后再试',
+    '88002': '文章存在敏感信息，平台已限制评论功能',
+    '88003': '精选留言数已达上限，请先取消部分精选再试',
+    '88004': '该留言已被读者删除，无法操作',
+    '88005': '该留言已经回复过，请修改回复而不是重复回复',
+    '88007': '回复内容为空或超出长度限制（最多 300 字）',
+    '88008': '该留言不存在，可能已被删除，请刷新列表后重试',
+    '88010': '单次获取的留言条数超出平台限制，请稍后重试',
+    '87009': '平台签名校验失败，请稍后重试',
+}
+
+/** 留言错误码 → 可执行提示：未登记的码先查留言表，再回落通用表 */
+export function describeCommentError(errorCode: number): string {
+    return COMMENT_ERROR_HINTS[String(errorCode)] ?? describeWechatError(errorCode).hint
+}
+
 /** 收窄错误文本：宿主侧不依赖前端 utils（其顶层引 sonner），此处单独归一 */
 function errorText(cause: unknown): string {
     return cause instanceof Error ? cause.message : String(cause)

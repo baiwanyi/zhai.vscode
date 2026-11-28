@@ -1,15 +1,19 @@
 /**
- * 留言契约的单元测试：覆盖「账号 + 批次 + 文章序号」的目标校验与各动作的专属字段。
- * 纯函数测试：收窄函数是唯一的入口防线，越界序号与空内容必须在协议层就被挡住。
- * 关注点是边界值：sortIndex 从 1 开始、上限为批次容量；留言 id 必须为正整数。
+ * 留言契约的单元测试：覆盖目标校验、接口端点、错误码归一与分页边界。
+ * 收窄函数是协议层入口防线，越界序号与空内容必须在这里被挡住；
+ * 端点常量与官方路径绑定，避免回复接口再次漏掉 /add 后缀而整体失效。
  */
 import { describe, expect, it } from 'vitest'
+import { describeCommentError } from '../src/modules/wechat/client'
+import { COMMENT_REPLY_DELETE_ENDPOINT, COMMENT_REPLY_ENDPOINT } from '../src/modules/wechat/endpoints'
 import {
+    isWechatCommentArticleRequest,
     isWechatCommentListRequest,
     isWechatCommentMarkRequest,
     isWechatCommentRemoveRequest,
     isWechatCommentReplyRequest,
     WECHAT_COMMENT_CONTENT_MAX,
+    WECHAT_COMMENT_PAGE_SIZE,
     WECHAT_ISSUE_ARTICLE_LIMIT,
 } from '../src/shared/types/wechat'
 
@@ -84,5 +88,48 @@ describe('isWechatCommentRemoveRequest', () => {
         expect(isWechatCommentRemoveRequest(target({ commentId: 9 }))).toBe(true)
         expect(isWechatCommentRemoveRequest(target())).toBe(false)
         expect(isWechatCommentRemoveRequest(target({ commentId: '9' }))).toBe(false)
+    })
+})
+
+describe('isWechatCommentArticleRequest', () => {
+    it('只要求账号与批次合法', () => {
+        expect(isWechatCommentArticleRequest({ accountId: ACCOUNT_ID, issueId: ISSUE_ID })).toBe(true)
+        // 原文按批次定位，不关心文章序号：这里多带的字段不影响判定
+        expect(isWechatCommentArticleRequest(target())).toBe(true)
+    })
+
+    it('缺字段或 id 非法时拒绝', () => {
+        expect(isWechatCommentArticleRequest({ accountId: ACCOUNT_ID })).toBe(false)
+        expect(isWechatCommentArticleRequest({ accountId: ACCOUNT_ID, issueId: 'iss/../x' })).toBe(false)
+        expect(isWechatCommentArticleRequest({ accountId: 'ACC-1', issueId: ISSUE_ID })).toBe(false)
+        expect(isWechatCommentArticleRequest(null)).toBe(false)
+    })
+})
+
+describe('留言接口端点', () => {
+    it('回复使用官方 reply/add 路径，删除回复使用 reply/delete', () => {
+        expect(COMMENT_REPLY_ENDPOINT).toBe('https://api.weixin.qq.com/cgi-bin/comment/reply/add')
+        expect(COMMENT_REPLY_DELETE_ENDPOINT).toBe('https://api.weixin.qq.com/cgi-bin/comment/reply/delete')
+    })
+
+    it('分页条数小于平台拒绝的 50', () => {
+        expect(WECHAT_COMMENT_PAGE_SIZE).toBeGreaterThan(0)
+        expect(WECHAT_COMMENT_PAGE_SIZE).toBeLessThan(50)
+    })
+})
+
+describe('describeCommentError', () => {
+    it('留言专属码给出可执行的提示，而不是回落鉴权失败', () => {
+        expect(describeCommentError(88003)).toContain('上限')
+        expect(describeCommentError(88004)).toContain('读者删除')
+        expect(describeCommentError(88005)).toContain('已经回复')
+        expect(describeCommentError(88007)).toContain('300')
+        expect(describeCommentError(88008)).toContain('不存在')
+    })
+
+    it('未登记的码回落通用错误表', () => {
+        expect(describeCommentError(45009)).toContain('额度')
+        expect(describeCommentError(-1)).toContain('繁忙')
+        expect(describeCommentError(99999)).toContain('鉴权失败')
     })
 })

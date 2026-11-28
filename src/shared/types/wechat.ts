@@ -407,6 +407,11 @@ export interface WechatIssueSummary {
     publishedAt?: string
     /** 平台发布后获得的图文 id：article_id 类型菜单与旧批次可能缺省 */
     articleId?: string
+    /**
+     * 平台图文永久链接：群发完成后由平台回写，旧批次与未发布成功的批次缺省。
+     * 关键约束：平台只回传多图文首篇的链接，第二篇起没有自己的地址。
+     */
+    articleUrl?: string
     /** 失败原因摘要：status 为 failed 时给出可执行提示 */
     errorHint?: string
 }
@@ -1132,7 +1137,8 @@ export function isWechatArticleCoverRequest(payload: unknown): payload is Wechat
 export interface WechatCommentSummary {
     /** 平台侧的留言 id（user_comment_id），回复、加精、删除都用它 */
     id: number
-    openid: string
+    /** 平台对非微信身份评论不返回该字段，缺省表示游客留言 */
+    openid?: string
     /** 留言时间：ISO 8601 */
     createdAt: string
     content: string
@@ -1181,8 +1187,32 @@ export interface WechatCommentRemoveRequest {
     commentId: number
 }
 
-/** 每页留言条数：平台允许更大，但侧栏一屏放不下更多 */
-export const WECHAT_COMMENT_PAGE_SIZE = 20
+/**
+ * wechat/comment/article 请求：打开留言所属文章的原文。
+ * 关键约束：前端只传账号与批次，链接由宿主从库中取出并做域名校验，再在 VS Code 内置浏览器打开——
+ * Webview 不持有「打开任意 URL」的能力，避免被页面拼出不可信地址。
+ */
+export interface WechatCommentArticleRequest {
+    accountId: string
+    issueId: string
+}
+
+/** wechat/comment/article 响应 */
+export interface WechatCommentArticleResult {
+    opened: boolean
+}
+
+/** 判断是否为「打开留言所属文章」请求：只要求账号与批次合法 */
+export function isWechatCommentArticleRequest(payload: unknown): payload is WechatCommentArticleRequest {
+    if (typeof payload !== 'object' || payload === null) {
+        return false
+    }
+    const candidate = payload as { accountId?: unknown; issueId?: unknown }
+    return isWechatAccountId(candidate.accountId) && isWechatIssueId(candidate.issueId)
+}
+
+/** 每页留言条数：平台拒绝 50 及以上，取 40 在减少接口调用与侧栏渲染量之间取平衡 */
+export const WECHAT_COMMENT_PAGE_SIZE = 40
 
 /** 单条留言的最大长度：回复内容与留言本体同一上限 */
 export const WECHAT_COMMENT_CONTENT_MAX = 300
@@ -2297,8 +2327,7 @@ export function readWechatMenuButtons(value: unknown): WechatMenuButton[] | null
         if (type !== 'media_id' && type !== 'article_id' && type !== 'view' && type !== 'miniprogram') {
             return null
         }
-        const content =
-            candidate.content === undefined ? undefined : readWechatMenuContent(candidate.content)
+        const content = candidate.content === undefined ? undefined : readWechatMenuContent(candidate.content)
         if (content === null || (content !== undefined && content.kind !== CONTENT_KIND_BY_TYPE[type])) {
             return null
         }

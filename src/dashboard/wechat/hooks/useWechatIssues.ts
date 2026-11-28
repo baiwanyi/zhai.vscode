@@ -90,7 +90,7 @@ export interface WechatIssuesState {
     publish: (issueId: string) => Promise<boolean>
     /** 查询当前账号的群发额度：确认弹窗据此展示剩余次数 */
     loadQuota: () => Promise<WechatPublishQuotaResult | null>
-    /** 打开公众号后台：URL 由宿主固定，前端只传标识 */
+    /** 打开公众号后台：URL 由宿主固定并在 VS Code 内置浏览器打开，前端只传标识 */
     openBackend: () => Promise<void>
 }
 
@@ -434,7 +434,7 @@ export function useWechatIssues(accountId: string): WechatIssuesState {
         }
     }, [accountId])
 
-    /** 打开公众号后台：前端只传固定标识，地址由宿主解析 */
+    /** 打开公众号后台：前端只传固定标识，地址由宿主解析并在 VS Code 内置浏览器打开 */
     const openBackend = useCallback(async (): Promise<void> => {
         try {
             await request('host/openExternal', 'wechatMp')

@@ -14,9 +14,9 @@ import { AppAction, AppContent, AppDescription, AppHeader, AppPage, AppTitle } f
 import { Button } from '@webview/components/Button'
 import { MenuEditDialog } from './layout/MenuEditDialog'
 import { MenuPhonePreview } from './layout/MenuPhonePreview'
+import type { JSX } from 'react'
 import { useMenuEditorState } from '../hooks/useMenuEditorState'
 import { useWechatMenu } from '../hooks/useWechatMenu'
-import type { JSX } from 'react'
 
 interface WechatMenuPageProps {
     account: WechatAccountSummary

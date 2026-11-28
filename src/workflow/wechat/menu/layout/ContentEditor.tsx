@@ -29,12 +29,12 @@ import { SegmentedRail, type SegmentedRailItem } from '@webview/components/Segme
 import { useRenderLimit } from '@webview/hooks/useRenderLimit'
 import { useWechatIssueCovers } from '@webview/hooks/useWechatIssueCovers'
 import { PickerStateView } from './PickerStateView'
+import type { JSX } from 'react'
 import { useWechatMaterials } from '../../hooks/useWechatMaterials'
 import { useWechatNewsSources } from '../../hooks/useWechatNewsSources'
 import { readLinkHost, readLinkInput, readLinkProtocol } from '../utils/linkUrl'
 import { createMenuContent, toImageContent, toNewsContent, type NewsSelectItem } from '../utils/menuContent'
 import { toNewsItem } from '../utils/newsPickerModel'
-import type { JSX } from 'react'
 
 /** 内容类型选项：显式标注 SegmentedRail 契约，图标直接传组件 */
 const CONTENT_OPTIONS: readonly SegmentedRailItem<WechatMenuContentKind>[] = [

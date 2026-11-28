@@ -8,11 +8,18 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { WechatMenuButton } from '@shared/types/wechat'
-import { describeMenuError, describeWechatError, postWechatJson, NETWORK_ERROR_CODE } from './client'
+import {
+    describeCommentError,
+    describeMenuError,
+    describeWechatError,
+    postWechatJson,
+    NETWORK_ERROR_CODE,
+} from './client'
 import {
     COMMENT_DELETE_ENDPOINT,
     COMMENT_LIST_ENDPOINT,
     COMMENT_MARK_ENDPOINT,
+    COMMENT_REPLY_DELETE_ENDPOINT,
     COMMENT_REPLY_ENDPOINT,
     COMMENT_UNMARK_ENDPOINT,
     MATERIAL_DELETE_ENDPOINT,
@@ -589,7 +596,8 @@ export async function fetchWechatUserCumulate(
 /** 平台留言行：reply 可能是对象或数组，收窄后在服务层统一 */
 export interface WechatCommentRow {
     commentId: number
-    openid: string
+    /** 平台对非微信身份评论不返回该字段，缺省表示游客留言 */
+    openid?: string
     /** 平台返回的秒级时间戳 */
     createTime: number
     content: string
@@ -618,7 +626,7 @@ export async function fetchWechatComments(
         // 0 表示全部留言，避免只看到「精选」而误以为读者没说话
         type: 0,
     }
-    const outcome = await postWechatJson(token, COMMENT_LIST_ENDPOINT, body)
+    const outcome = await postWechatJson(token, COMMENT_LIST_ENDPOINT, body, undefined, describeCommentError)
     if (!outcome.ok) {
         return outcome
     }
@@ -629,9 +637,12 @@ export async function fetchWechatComments(
     }
     const comments = list.map((item): WechatCommentRow => {
         const candidate = (typeof item === 'object' && item !== null ? item : {}) as Record<string, unknown>
+        // 平台对非微信身份评论不返回 openid，这里保持缺省而不是塞空串，避免误把多条游客留言认作同一读者
+        const openid =
+            typeof candidate.openid === 'string' && candidate.openid.length > 0 ? candidate.openid : undefined
         return {
             commentId: typeof candidate.user_comment_id === 'number' ? candidate.user_comment_id : 0,
-            openid: typeof candidate.openid === 'string' ? candidate.openid : '',
+            ...(openid === undefined ? {} : { openid }),
             createTime: typeof candidate.create_time === 'number' ? candidate.create_time : 0,
             content: typeof candidate.content === 'string' ? candidate.content : '',
             isElected: candidate.comment_type === 1,
@@ -657,7 +668,7 @@ function readReplyContent(reply: unknown): { replyContent?: string } {
     return {}
 }
 
-/** 回复留言 */
+/** 回复留言：新增回复，已回复时平台返回 88005，由服务层决定先删后加 */
 export async function replyWechatComment(
     token: string,
     target: WechatCommentTarget,
@@ -670,7 +681,18 @@ export async function replyWechatComment(
         user_comment_id: commentId,
         content,
     }
-    const outcome = await postWechatJson(token, COMMENT_REPLY_ENDPOINT, body)
+    const outcome = await postWechatJson(token, COMMENT_REPLY_ENDPOINT, body, undefined, describeCommentError)
+    return outcome.ok ? { ok: true, data: null } : outcome
+}
+
+/** 删除已有回复：平台没有「修改回复」接口，更新须先删后加 */
+export async function deleteWechatCommentReply(
+    token: string,
+    target: WechatCommentTarget,
+    commentId: number,
+): Promise<WechatApiResult<null>> {
+    const body = { msg_data_id: target.msgDataId, index: target.index, user_comment_id: commentId }
+    const outcome = await postWechatJson(token, COMMENT_REPLY_DELETE_ENDPOINT, body, undefined, describeCommentError)
     return outcome.ok ? { ok: true, data: null } : outcome
 }
 
@@ -682,7 +704,13 @@ export async function markWechatComment(
     elected: boolean,
 ): Promise<WechatApiResult<null>> {
     const body = { msg_data_id: target.msgDataId, index: target.index, user_comment_id: commentId }
-    const outcome = await postWechatJson(token, elected ? COMMENT_MARK_ENDPOINT : COMMENT_UNMARK_ENDPOINT, body)
+    const outcome = await postWechatJson(
+        token,
+        elected ? COMMENT_MARK_ENDPOINT : COMMENT_UNMARK_ENDPOINT,
+        body,
+        undefined,
+        describeCommentError,
+    )
     return outcome.ok ? { ok: true, data: null } : outcome
 }
 
@@ -693,7 +721,7 @@ export async function deleteWechatComment(
     commentId: number,
 ): Promise<WechatApiResult<null>> {
     const body = { msg_data_id: target.msgDataId, index: target.index, user_comment_id: commentId }
-    const outcome = await postWechatJson(token, COMMENT_DELETE_ENDPOINT, body)
+    const outcome = await postWechatJson(token, COMMENT_DELETE_ENDPOINT, body, undefined, describeCommentError)
     return outcome.ok ? { ok: true, data: null } : outcome
 }
 

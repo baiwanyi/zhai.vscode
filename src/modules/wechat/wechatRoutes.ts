@@ -24,6 +24,7 @@ import {
     isWechatArticleUpdateRequest,
     isWechatIssueCreateRequest,
     isWechatIssueDetailRequest,
+    isWechatCommentArticleRequest,
     isWechatCommentListRequest,
     isWechatCommentMarkRequest,
     isWechatCommentRemoveRequest,
@@ -93,6 +94,8 @@ export interface WechatRouteDeps {
     fanWrite: WechatFanWriteService
     stats: WechatStatsService
     comments: WechatCommentService
+    /** 在 VS Code 内置浏览器打开链接：原文跳转由本层取库校验后调用，未注入时该能力整体不可用 */
+    openLink?: (url: string) => Promise<void>
 }
 
 export class WechatRoutes {
@@ -415,6 +418,18 @@ export class WechatRoutes {
                     )
                 }
                 return this.deps.stats.query(payload)
+            }
+            case WECHAT_METHODS.commentArticle: {
+                if (!isWechatCommentArticleRequest(payload)) {
+                    throw new Error(`${WECHAT_METHODS.commentArticle} 参数非法：accountId 与 issueId 均须合法`)
+                }
+                const articleUrl = this.deps.comments.readArticleUrl(payload)
+                const openLink = this.deps.openLink
+                if (openLink === undefined) {
+                    throw new Error('当前宿主不支持在内置浏览器打开链接')
+                }
+                await openLink(articleUrl)
+                return { opened: true }
             }
             case WECHAT_METHODS.commentList: {
                 if (!isWechatCommentListRequest(payload)) {

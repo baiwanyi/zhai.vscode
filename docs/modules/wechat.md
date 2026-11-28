@@ -578,10 +578,12 @@ interface WechatPublishResult {
 | 侧 | 方法 |
 |----|------|
 | 仪表盘 | `wechat/accounts`、`wechat/account/{create,update,credentials,remove,test,select}`、`wechat/issues`、`wechat/issues/{merge,removeBatch}`、`wechat/issue/{create,detail,remove,publishDraft,publish}`、`wechat/publishQuota`、`wechat/article/{create,update,remove,import,quickCreate,open,move}`、`wechat/cover/{pick,preview}`、`wechat/tasks`（进行中任务查询）；另复用 `host/openExternal`（标识 `wechatMp`）与 `workflow/selectModule`（只设模块不聚焦）（均已落地） |
-| 工作流 | `wechat/menu/{get,save}`、`wechat/material/{list,import,remove}`、`wechat/fans/{list,tags}`、`wechat/stats/overview`、`wechat/comment/{list,reply,mark,remove}`、`wechat/article/meta`（文章元信息），运营页复用仪表盘的 `wechat/issues`、`wechat/publishQuota` 与 `wechat/cover/pick`（两个面板共用同一份路由实例） |
+| 工作流 | `wechat/menu/{get,save}`、`wechat/material/{list,import,remove}`、`wechat/fans/{list,tags}`、`wechat/stats/overview`、`wechat/comment/{list,reply,mark,remove,article}`、`wechat/article/meta`（文章元信息），运营页复用仪表盘的 `wechat/issues`、`wechat/publishQuota` 与 `wechat/cover/pick`（两个面板共用同一份路由实例） |
 | 广播（state 通道） | `wechat` 频道承载两种载荷：`WechatPublishProgress`（阶段取 `render` / `material` / `draft` / `submit` / `poll` + 一句 `message`）与 `WechatAccountAuthFailureEvent`（鉴权失效，由 `tokenService` 统一上报并回写账号状态；网络失败不上报） |
 
 代码落点：类型 `src/shared/types/wechat.ts`（含 `is*Request` 收窄，对齐 `press.ts`）；宿主服务 `src/modules/wechat/`（`accountService`、`tokenService`、`client`、`issueService`、`materialService`、`menuService`、`statsService`、`commentService`、`fanService`、`pushService`、`repository`）；前端 `src/dashboard/wechat/`、`src/workflow/wechat/`。
+
+> 链接约定：公众号模块打开的所有页面——留言原文（`wechat/comment/article`）与公众号后台（`host/openExternal` 标识 `wechatMp`）——统一由宿主经 `simpleBrowser.show` 在 **VS Code 内置浏览器**打开，不调用 `vscode.env.openExternal`。前端不持有 URL：原文地址由宿主查库并做域名白名单校验，后台地址由宿主固定常量提供。
 
 ---
 
@@ -786,6 +788,10 @@ ready ──设置时间──> scheduled ──到点──> pushing
 > `comment` 依赖群发回执里的 `msg_data_id`（已随群发一起落库），旧批次没有该标识时会提示「请用当前版本重新群发一次」；
 > 定位口径是「群发消息 + 文章序号」，界面用 1 基序号、宿主转成平台的 0 基 index。
 > `stats` 与 `comment` 都依赖认证主体与平台开关：未认证或未开通留言时，分区展示平台返回的权限提示而不是空数据。
+> 留言写操作走 `comment/reply/add`、`comment/markelect`、`comment/unmarkelect`、`comment/delete` 与 `comment/reply/delete`；
+> 平台没有「修改回复」接口，已回复留言的更新由服务层先删后加，删除成功但新增失败时单独提示原回复已移除。
+> 留言专属错误码（88xxx）有独立文案，不会误报成鉴权失败；Token 被平台提前失效（40001/42001）时自动清缓存重取一次。
+> 信任边界是 VS Code 宿主与批次归属校验，不做用户级 RBAC；`comment/open`、`comment/close` 不暴露 UI，评论开关在群发时通过 `need_open_comment` 设置。
 
 统一骨架：`AppPage` + `AppHeader`（标题 + 分区内主操作）+ `AppMenu`（分段栏或筛选）+ `AppContent isScrollable` + `AppFooter`（写操作）。
 
@@ -794,7 +800,7 @@ ready ──设置时间──> scheduled ──到点──> pushing
 | 自定义菜单 | `menu/get` 拉取、可视化编辑、`menu/create` 覆盖、`menu/delete` | 上部手机壳预览（3 个一级栏位）；下部选中节点的内容表单（图片 / 图文 / 链接 / 小程序）；页脚「同步」。四种动作分别为 `media_id` / `article_id` / `view` / `miniprogram`，均由微信客户端直接响应，无需回调；图文仅列已发布且拿到 `article_id` 的批次，小程序需填 appid、页面路径与低版本兜底网页。限制：一级 ≤3、二级 ≤5、名称 4~8 汉字 | 一般可用 |
 | 素材管理 | 永久素材的列表、上传、删除、复用 | **已落地**：本地映射列表（缩略图 / 名称 / 体积 / 日期）+ 文件名搜索 + 从本地导入 + 删除（连平台素材一起删，二次确认写明「已发布文章里引用该图会失效」）；语音 / 视频类型、与本地媒体库互通、引用次数未做 | 一般可用，有配额 |
 | 数据统计 | 用户增长、图文数据、菜单点击、消息分析，只读 | 日期范围（7 / 15 / 30 天）+ 指标卡 + CSS 柱状趋势（不引图表库）；结果落 `wechat_stats_cache` | 需认证 |
-| 留言管理 | 按文章筛选留言、加精、回复、删除 | 顶部文章选择器 + 留言列表（头像、昵称、时间、内容、精选标）+ 行内回复 | 需认证且已开通留言 |
+| 留言管理 | 按文章筛选留言、加精、回复、删除、打开原文 | 页头批次 / 文章选择器 + 筛选栏（全部 / 精选 / 待回复，数字只覆盖已加载条目）+ 留言列表（读者尾号、时间、摘要、精选与已回复标）+ 行内快捷动作 + 详情弹窗（全文、绝对时间、所属文章、打开原文、回复、精选、删除）；写操作后按已加载范围重拉 | 需认证且已开通留言 |
 | 用户管理 | 用户检索筛选、详情与 UnionID 关联、标签 CRUD、打标/取消、备注、拉黑/解除、同步 | 已落地：三段（用户 / 标签 / 同步）；用户段本地搜索 + 标签/状态筛选 + 详情，详情内改备注、勾选标签、二次确认拉黑；标签段新建/重命名/删除（二次确认）；同步段按游标翻页、100 一批补资料、断点续跑，页头并列「平台 N / 已同步 M」；写操作走 `tags/*`、`tags/members/*`、`user/info/updateremark` | 一般可用，写接口需 M0 实测 |
 | 推送管理 | 队列、历史、额度，是推送状态的唯一真相；另承载文章元信息设置，发起动作仍在仪表盘批次页 | 分段栏（待推送 / 历史 / 额度）+ 批次行展开文章列表（标题、作者、封面状态）+ 「设置」弹窗（标题 / 作者 / 摘要 / 封面 / 留言，走 `wechat/article/meta`）+ 行内状态徽标与失败原因 + 顶部「进行中任务」条（挂载时查 `wechat/tasks`，并订阅阶段广播）+ 页脚刷新；定时群发按产品决定不做 | 按主体分级 |
 

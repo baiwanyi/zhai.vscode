@@ -9,6 +9,7 @@ import * as vscode from 'vscode'
 import { runWithLoggedFailure } from '@modules/common/asyncTask'
 import { resolveStorageRoot } from '@modules/common/config'
 import { logger } from '@modules/common/logger'
+import { openInSimpleBrowser } from '@modules/common/simpleBrowser'
 import { WechatAccountService } from '@modules/wechat/accountService'
 import { createWechatAuthFailureHandler, type WechatAuthFailureListener } from '@modules/wechat/authFailureHandler'
 import { WechatCommentService } from '@modules/wechat/commentService'
@@ -124,6 +125,12 @@ export function assembleWechatLayer(deps: WechatLayerDeps): WechatLayer {
         fanWrite: new WechatFanWriteService(tokenDeps),
         stats: new WechatStatsService(tokenDeps),
         comments: new WechatCommentService(tokenDeps),
+        // 原文跳转：地址由留言服务从库中取并过域名白名单，统一在 VS Code 内置浏览器打开，不跳出编辑器
+        openLink: async (url: string): Promise<void> => {
+            if (!(await openInSimpleBrowser(url))) {
+                throw new Error('无法在 VS Code 内置浏览器打开链接')
+            }
+        },
     })
     return {
         routes,

@@ -60,7 +60,7 @@ interface WechatIssueCardProps {
     onPublishDraft: (issue: WechatIssueSummary) => void
     /** 正式群发：需已有草稿，确认弹窗由页面承担 */
     onPublish: (issue: WechatIssueSummary) => void
-    /** 打开公众号后台：草稿生成后去后台预览或群发 */
+    /** 打开公众号后台：草稿生成后去后台预览或群发，宿主用 VS Code 内置浏览器打开 */
     onOpenBackend: () => void
 }
 

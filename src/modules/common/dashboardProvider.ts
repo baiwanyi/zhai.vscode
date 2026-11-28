@@ -161,6 +161,7 @@ import {
     toNotebookId,
 } from './db/statsRepository'
 import { logger } from './logger'
+import { openInSimpleBrowser } from './simpleBrowser'
 import { buildStorageUri } from './storagePath'
 import { WEBVIEW_ALLOWED_COMMANDS } from './webviewCommands'
 import { buildWebviewHtml } from './webviewHtml'
@@ -855,14 +856,15 @@ export class DashboardViewProvider implements vscode.WebviewViewProvider {
     }
 
     /**
-     * 打开固定外部页面：前端只传标识，URL 由宿主解析。
+     * 打开固定页面：前端只传标识，URL 由宿主解析。
+     * 公众号后台统一在 VS Code 内置浏览器（Simple Browser）打开，不跳出编辑器；不调用 env.openExternal。
      * 安全约束：不接受任意 URL，避免 Webview 借本协议打开不可信地址；新增页面须在此登记常量。
      */
     private async openExternalPage(payload: unknown): Promise<{ opened: boolean }> {
         if (payload !== 'wechatMp') {
             throw new Error('host/openExternal 参数不正确：仅支持固定页面标识')
         }
-        return { opened: await vscode.env.openExternal(vscode.Uri.parse(WECHAT_MP_URL)) }
+        return { opened: await openInSimpleBrowser(WECHAT_MP_URL) }
     }
 
     /**

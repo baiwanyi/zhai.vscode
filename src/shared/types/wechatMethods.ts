@@ -42,6 +42,8 @@ export const WECHAT_METHODS = {
     articleRemove: 'wechat/article/remove',
     /** 文章：更新 */
     articleUpdate: 'wechat/article/update',
+    /** 留言：打开所属文章原文 */
+    commentArticle: 'wechat/comment/article',
     /** 留言：列表 */
     commentList: 'wechat/comment/list',
     /** 留言：精选 */

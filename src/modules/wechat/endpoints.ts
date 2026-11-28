@@ -67,9 +67,10 @@ export const DRAFT_UPDATE_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/draft/update`
 export const FREEPUBLISH_SUBMIT_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/freepublish/submit`
 export const FREEPUBLISH_GET_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/freepublish/get`
 
-/** 留言端点 */
+/** 留言端点：回复的新增与删除是两个独立接口，修改回复须先删后加 */
 export const COMMENT_LIST_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/comment/list`
-export const COMMENT_REPLY_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/comment/reply`
+export const COMMENT_REPLY_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/comment/reply/add`
+export const COMMENT_REPLY_DELETE_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/comment/reply/delete`
 export const COMMENT_MARK_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/comment/markelect`
 export const COMMENT_UNMARK_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/comment/unmarkelect`
 export const COMMENT_DELETE_ENDPOINT = `${WECHAT_API_ORIGIN}/cgi-bin/comment/delete`
