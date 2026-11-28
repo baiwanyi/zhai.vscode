@@ -107,7 +107,7 @@ function ScrollTopButton({
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-10 px-3">
             <div className="mx-auto flex w-full max-w-5xl justify-center gap-3">
                 <div className={cn('relative min-w-0 flex-1', contentWidthClass)}>
-                    <div className="pointer-events-auto absolute -right-12 bottom-0">
+                    <div className="pointer-events-auto absolute -right-15 bottom-0">
                         <Button
                             size="icon"
                             variant="outline"

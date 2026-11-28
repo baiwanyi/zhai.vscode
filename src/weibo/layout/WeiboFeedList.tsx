@@ -139,7 +139,7 @@ export function WeiboFeedList({
     /** 自动额度用完或上一次取数失败：底部改出按钮，由用户决定是否继续翻 */
     const shouldWaitForManualLoad = autoLoadCount >= MAX_AUTO_LOADS || errorMessage !== null
     return (
-        <>
+        <div className="flex flex-col gap-2 py-1">
             {posts.map((post) => (
                 // key 只带关注态：点赞不再重建整张卡片——否则已展开的评论区会被收起、长文退回摘要并重新请求；
                 // 点赞态跟随上游改由底栏 WeiboPostLikeButton 自身的 key 承担，重挂载范围收窄到按钮
@@ -168,6 +168,6 @@ export function WeiboFeedList({
                     <span className="text-muted-foreground text-xs">{WEIBO_UI_TEXT.loading.moreFeed}</span>
                 ) : null}
             </div>
-        </>
+        </div>
     )
 }
