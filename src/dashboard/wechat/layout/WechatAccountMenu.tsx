@@ -76,20 +76,20 @@ export function WechatAccountMenu({
                     <RefreshCw />
                     重新验证连接
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={onShowQrcode}>
+                <DropdownMenuItem disabled={isDisabled} onSelect={onShowQrcode}>
                     <QrCode />
                     关注二维码
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={onEdit}>
+                <DropdownMenuItem disabled={isDisabled} onSelect={onEdit}>
                     <Settings2 />
                     账号设置
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={onEditCredentials}>
+                <DropdownMenuItem disabled={isDisabled} onSelect={onEditCredentials}>
                     <KeyRound />
                     密钥设置
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onSelect={onRemove}>
+                <DropdownMenuItem variant="destructive" disabled={isDisabled} onSelect={onRemove}>
                     <Trash2 />
                     删除账号
                 </DropdownMenuItem>

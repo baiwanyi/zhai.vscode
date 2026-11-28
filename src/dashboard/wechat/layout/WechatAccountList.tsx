@@ -23,8 +23,8 @@ interface WechatAccountListProps {
     selectedId: string | null
     status: WechatListStatus
     error: string | null
-    /** 正在重新鉴权的账号 id：透传给条目，只禁用对应行 */
-    isTestingId: string | null
+    /** 正在重新鉴权的账号 id 集合：透传给条目，只禁用对应行 */
+    testingIds: string[]
     /** 写操作进行中：空态的添加按钮置灰，避免与弹窗提交叠加 */
     isAddDisabled: boolean
     onOpen: (id: string) => void
@@ -44,7 +44,7 @@ export function WechatAccountList({
     selectedId,
     status,
     error,
-    isTestingId,
+    testingIds,
     isAddDisabled,
     onOpen,
     onAdd,
@@ -91,7 +91,7 @@ export function WechatAccountList({
                     key={account.id}
                     account={account}
                     isCurrent={account.id === selectedId}
-                    isTesting={isTestingId === account.id}
+                    isTesting={testingIds.includes(account.id)}
                     onOpen={onOpen}
                     onEdit={onEdit}
                     onEditCredentials={onEditCredentials}

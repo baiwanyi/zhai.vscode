@@ -33,11 +33,11 @@ import { WECHAT_ISSUE_ARTICLE_LIMIT, type WechatArticleSummary, type WechatIssue
 import { Badge } from '@webview/blocks/Badge'
 import { Button } from '@webview/components/Button'
 import { Image } from '@webview/components/Image'
+import { WechatIssueArticleFeature } from './WechatIssueArticleFeature'
+import { WechatIssueArticleMenu } from './WechatIssueArticleMenu'
+import type { ArticleDirection } from '../constants'
 import type { JSX } from 'react'
 import { formatArticleMeta, formatIssueMeta, WECHAT_ISSUE_STATUS_LABELS, WECHAT_ISSUE_STATUS_VARIANTS } from '../utils'
-
-/** 文章调整方向：顺序号即推送顺序 */
-type ArticleDirection = 'up' | 'down'
 
 interface WechatIssueCardProps {
     issue: WechatIssueSummary
@@ -157,7 +157,7 @@ export function WechatIssueCard({
                     批次还没有文章：添加文章会直接新建 md 文档，也可以从笔记或作品导入。
                 </p>
             ) : (
-                <ArticleFeature
+                <WechatIssueArticleFeature
                     issue={issue}
                     article={firstArticle}
                     coverUri={coverOf(firstArticle)}
@@ -201,7 +201,7 @@ export function WechatIssueCard({
                                 </ItemDescription>
                             </ItemContent>
                             <ItemActions className="shrink-0 gap-1">
-                                <ArticleMenu
+                                <WechatIssueArticleMenu
                                     issue={issue}
                                     article={article}
                                     isFirst={false}
@@ -225,129 +225,3 @@ export function WechatIssueCard({
     )
 }
 
-interface ArticleFeatureProps {
-    issue: WechatIssueSummary
-    article: WechatArticleSummary
-    coverUri?: string
-    isBusy: boolean
-    onOpenArticle: (article: WechatArticleSummary) => void
-    onOpenArticleSetting: (article: WechatArticleSummary) => void
-    onPickCover: (article: WechatArticleSummary) => void
-    onMoveArticle: (article: WechatArticleSummary, direction: ArticleDirection) => void
-    onRemoveArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
-}
-
-/** 第一篇：主图位，封面按公众号首图习惯取 2.35:1，点击封面即换图与裁剪，可下移但不能再上移 */
-function ArticleFeature({
-    issue,
-    article,
-    coverUri,
-    isBusy,
-    onOpenArticle,
-    onOpenArticleSetting,
-    onPickCover,
-    onMoveArticle,
-    onRemoveArticle,
-}: ArticleFeatureProps): JSX.Element {
-    return (
-        <Item variant="muted" className="gap-2">
-            <button
-                type="button"
-                className="block w-full cursor-pointer rounded-lg focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none disabled:cursor-not-allowed"
-                aria-label={`设置《${article.title}》的封面`}
-                title="点击更换封面"
-                disabled={isBusy}
-                onClick={() => onPickCover(article)}
-            >
-                <Image
-                    src={coverUri}
-                    alt={article.title}
-                    aspect="2.35/1"
-                    className="h-auto w-full rounded-lg bg-muted/40"
-                />
-            </button>
-            <ItemContent className="min-w-0">
-                <ItemTitle className="w-full">
-                    <button
-                        type="button"
-                        className="block min-w-0 flex-1 truncate text-left"
-                        onClick={() => onOpenArticle(article)}
-                    >
-                        {article.title}
-                    </button>
-                </ItemTitle>
-                <ItemDescription className="truncate text-xs">{formatArticleMeta(article)}</ItemDescription>
-            </ItemContent>
-            <ItemActions className="shrink-0 gap-1">
-                <ArticleMenu
-                    issue={issue}
-                    article={article}
-                    isFirst
-                    isLast={issue.articles.length === 1}
-                    isBusy={isBusy}
-                    onOpenArticle={onOpenArticle}
-                    onOpenArticleSetting={onOpenArticleSetting}
-                    onMoveArticle={onMoveArticle}
-                    onRemoveArticle={onRemoveArticle}
-                />
-            </ItemActions>
-        </Item>
-    )
-}
-
-interface ArticleMenuProps {
-    issue: WechatIssueSummary
-    article: WechatArticleSummary
-    /** 第一篇不能再上移，最后一条不能再下移 */
-    isFirst: boolean
-    isLast: boolean
-    isBusy: boolean
-    onOpenArticle: (article: WechatArticleSummary) => void
-    onOpenArticleSetting: (article: WechatArticleSummary) => void
-    onMoveArticle: (article: WechatArticleSummary, direction: ArticleDirection) => void
-    onRemoveArticle: (issue: WechatIssueSummary, article: WechatArticleSummary) => void
-}
-
-/** 文章行内菜单：打开、设置、调序与删除统一在此，越界方向直接置灰 */
-function ArticleMenu({
-    issue,
-    article,
-    isFirst,
-    isLast,
-    isBusy,
-    onOpenArticle,
-    onOpenArticleSetting,
-    onMoveArticle,
-    onRemoveArticle,
-}: ArticleMenuProps): JSX.Element {
-    return (
-        <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-                <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`${article.title} 的操作`}
-                    tooltip="文章操作"
-                    disabled={isBusy}
-                >
-                    <MoreHorizontal />
-                </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-                <DropdownMenuItem onSelect={() => onOpenArticle(article)}>打开文档</DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => onOpenArticleSetting(article)}>文章设置</DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem disabled={isBusy || isFirst} onSelect={() => onMoveArticle(article, 'up')}>
-                    上移
-                </DropdownMenuItem>
-                <DropdownMenuItem disabled={isBusy || isLast} onSelect={() => onMoveArticle(article, 'down')}>
-                    下移
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem variant="destructive" onSelect={() => onRemoveArticle(issue, article)}>
-                    删除
-                </DropdownMenuItem>
-            </DropdownMenuContent>
-        </DropdownMenu>
-    )
-}

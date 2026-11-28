@@ -5,12 +5,13 @@
  * 弹窗编排取 useWechatContentDialogs / useWechatAccountDialogs / useWechatPublishConfirm，
  * 弹窗状态由本页与 hooks 持有，渲染统一交给 layout/WechatPostDialogs。
  * 关键约束：本页只做数据装配与布局，不承载筛选状态，也不拼装展示文案（口径在 wechat/utils）；
+ * 工作流区的公众号感知只在本页成立：按路径 accountId 设置宿主当前账号，菜单项因此归属到该公众号；
  * 本页按 accountId 从账号快照中定位，切换账号由路由外壳重新挂载（key 为 accountId）；
  * 新建批次、添加文章与导入都不弹表单，宿主直接建目录/文件并打开编辑器；
  * 账号不存在（被删除或 hash 手改）与账号读取失败都要给出可执行出口，不渲染空白页。
  */
 import { Send } from 'lucide-react'
-import { useCallback, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Spinner } from '@components/ui/spinner'
 import type { WechatAccountSummary, WechatArticleSummary, WechatIssueSummary } from '@shared/types/wechat'
 import { Empty } from '@webview/blocks/Empty'
@@ -49,12 +50,28 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         status: accountStatus,
         error: accountError,
         isMutating: isAccountMutating,
+        selectedId,
         reload: reloadAccounts,
         updateAccount,
         saveCredentials,
         removeAccount,
         testAccount,
+        selectAccount,
     } = useWechatAccounts()
+
+    const account = useMemo(() => accounts.find((item) => item.id === accountId) ?? null, [accountId, accounts])
+
+    /**
+     * 按路径设置宿主当前账号：工作流六分区的作用域来自 selectedId，深链或刷新进入账号页时
+     * 它可能仍指向上一个账号或为空，必须在账号页按路径纠正；已一致则跳过，避免重复写与重拉。
+     * 账号不在快照中时（被删除或手改链接）不写宿主，避免选定态指向无效账号。
+     */
+    useEffect(() => {
+        if (accountStatus === 'ready' && account !== null && selectedId !== accountId) {
+            void selectAccount(accountId)
+        }
+    }, [account, accountId, accountStatus, selectedId, selectAccount])
+
     const {
         issues,
         status: issueStatus,
@@ -78,7 +95,6 @@ export function DashboardWechatPost({ accountId, onRemoved }: DashboardWechatPos
         openBackend,
     } = useWechatIssues(accountId)
 
-    const account = useMemo(() => accounts.find((item) => item.id === accountId) ?? null, [accountId, accounts])
     const query = useWechatIssueQuery(issues)
     // 批次是本地分批渲染、没有在途请求，哨兵只承担滚动续载，转圈恒为隐形占位
     const issueSentinelRef = useScrollSentinel({

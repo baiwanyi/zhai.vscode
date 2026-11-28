@@ -9,7 +9,9 @@
  * 编辑器形态切换（文本 ↔ 富文本）用 withActiveDocumentHold 包住：切换要先关旧 tab 再开新 tab，
  * 关旧 tab 会让 VSCode 短暂激活相邻文档，中间事实一旦广播出去，工作流面板就会切走再切回、页面被重建。
  * 面板事实：编辑区里的 WebviewPanel（如微博）激活时上报 viewType，编辑器重新激活时静默让位；
- * 工作流区跟随标签只需读「面板 + 文档」两份事实，新增面板模块不必各自写同步逻辑。
+ * 工作流区跟随标签只需读「面板 + 文档」两份事实，新增面板模块不必各自写同步逻辑；
+ * 关闭最后一个文档 tab 时清空活跃事实并广播重置，工作流区据此移除专属菜单——这与
+ * 「焦点离开编辑器沿用旧事实」不同：前者是文档真的没了，后者只是焦点移开。
  */
 import * as vscode from 'vscode'
 import type { EditorInsertContent } from '@shared/types/editor'
@@ -24,6 +26,12 @@ const emitter = new vscode.EventEmitter<ActiveDocument | null>()
 
 /** 活跃文档变更事件：文本与富文本切换统一从这里广播 */
 export const onDidChangeActiveDocument: vscode.Event<ActiveDocument | null> = emitter.event
+
+/** 最后一个文档关闭事件：编辑区不再有任何文档 tab，工作流区据此移除专属菜单 */
+const lastDocumentEmitter = new vscode.EventEmitter<void>()
+
+/** 最后一个文档关闭事件：与「焦点离开编辑器」区分，后者沿用上次事实不清菜单 */
+export const onDidCloseLastDocument: vscode.Event<void> = lastDocumentEmitter.event
 
 /**
  * 活跃面板：编辑区里以 WebviewPanel 承载的页面（如微博），与编辑器标签互斥记录。
@@ -135,6 +143,7 @@ export function trackActiveDocument(subscriptions: vscode.Disposable[]): void {
     }
     subscriptions.push(
         emitter,
+        lastDocumentEmitter,
         panelEmitter,
         vscode.window.onDidChangeActiveTextEditor((editor) => {
             if (editor === undefined) {
@@ -142,6 +151,23 @@ export function trackActiveDocument(subscriptions: vscode.Disposable[]): void {
                 return
             }
             setActiveDocument({ uri: editor.document.uri, kind: 'text' })
+        }),
+        // 关闭最后一个文档 tab：清空活跃事实并广播，让工作流区移除公众号/作品专属菜单。
+        // 只认文本与自定义编辑器 tab，设置页等非文档 tab 不算「还有文档」。
+        vscode.window.tabGroups.onDidChangeTabs((event) => {
+            if (event.closed.length === 0 || holdDepth > 0) {
+                return
+            }
+            const hasDocumentTab = vscode.window.tabGroups.all.some((group) =>
+                group.tabs.some(
+                    (tab) => tab.input instanceof vscode.TabInputText || tab.input instanceof vscode.TabInputCustom,
+                ),
+            )
+            if (hasDocumentTab) {
+                return
+            }
+            setActiveDocument(null)
+            lastDocumentEmitter.fire()
         }),
     )
 }

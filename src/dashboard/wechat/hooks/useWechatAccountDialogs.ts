@@ -6,6 +6,7 @@
  * 账号设置只改名称/类型/默认作者，凭据走单独的密钥弹窗，两条写入路径不得合并。
  */
 import { useCallback, useState } from 'react'
+import { useRemountDialog } from './useRemountDialog'
 import type {
     WechatAccountCredentialsInput,
     WechatAccountFormInput,
@@ -46,31 +47,19 @@ export interface WechatAccountDialogsState {
 
 export function useWechatAccountDialogs(deps: WechatAccountDialogsDeps): WechatAccountDialogsState {
     const { accountId, onRemoved, removeAccount, saveCredentials, updateAccount } = deps
-    const [isAccountDialogOpen, setIsAccountDialogOpen] = useState(false)
-    const [accountDialogKey, setAccountDialogKey] = useState(0)
-    const [isSecretDialogOpen, setIsSecretDialogOpen] = useState(false)
-    const [secretDialogKey, setSecretDialogKey] = useState(0)
+    const accountDialog = useRemountDialog()
+    const credentialsDialog = useRemountDialog()
     const [isAccountRemoveOpen, setIsAccountRemoveOpen] = useState(false)
-
-    const openAccountSettings = useCallback((): void => {
-        setAccountDialogKey((previous) => previous + 1)
-        setIsAccountDialogOpen(true)
-    }, [])
-
-    const openCredentialSettings = useCallback((): void => {
-        setSecretDialogKey((previous) => previous + 1)
-        setIsSecretDialogOpen(true)
-    }, [])
 
     const submitAccount = useCallback(
         async (input: WechatAccountFormInput): Promise<boolean> => {
             const isSaved = await updateAccount({ ...input, id: accountId })
             if (isSaved) {
-                setIsAccountDialogOpen(false)
+                accountDialog.setOpen(false)
             }
             return isSaved
         },
-        [accountId, updateAccount],
+        [accountDialog, accountId, updateAccount],
     )
 
     /** 保存凭据：成功后关闭弹窗；鉴权结果由列表状态与 toast 回显 */
@@ -78,11 +67,11 @@ export function useWechatAccountDialogs(deps: WechatAccountDialogsDeps): WechatA
         async (input: { appId: string; appSecret: string }): Promise<boolean> => {
             const isSaved = await saveCredentials({ id: accountId, ...input })
             if (isSaved) {
-                setIsSecretDialogOpen(false)
+                credentialsDialog.setOpen(false)
             }
             return isSaved
         },
-        [accountId, saveCredentials],
+        [accountId, credentialsDialog, saveCredentials],
     )
 
     const confirmRemove = useCallback((): void => {
@@ -94,24 +83,28 @@ export function useWechatAccountDialogs(deps: WechatAccountDialogsDeps): WechatA
         })
     }, [accountId, onRemoved, removeAccount])
 
+    const openRemove = useCallback((): void => {
+        setIsAccountRemoveOpen(true)
+    }, [])
+
     return {
         edit: {
-            isOpen: isAccountDialogOpen,
-            key: accountDialogKey,
-            open: openAccountSettings,
-            setOpen: setIsAccountDialogOpen,
+            isOpen: accountDialog.isOpen,
+            key: accountDialog.key,
+            open: accountDialog.open,
+            setOpen: accountDialog.setOpen,
             submit: submitAccount,
         },
         credentials: {
-            isOpen: isSecretDialogOpen,
-            key: secretDialogKey,
-            open: openCredentialSettings,
-            setOpen: setIsSecretDialogOpen,
+            isOpen: credentialsDialog.isOpen,
+            key: credentialsDialog.key,
+            open: credentialsDialog.open,
+            setOpen: credentialsDialog.setOpen,
             submit: submitCredentials,
         },
         remove: {
             isOpen: isAccountRemoveOpen,
-            open: () => setIsAccountRemoveOpen(true),
+            open: openRemove,
             setOpen: setIsAccountRemoveOpen,
             confirm: confirmRemove,
         },

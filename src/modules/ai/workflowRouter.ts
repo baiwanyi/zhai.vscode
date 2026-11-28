@@ -28,6 +28,7 @@ import {
     getActivePanel,
     onDidChangeActiveDocument,
     onDidChangeActivePanel,
+    onDidCloseLastDocument,
 } from '@modules/editor/activeDocument'
 import type { WorkflowContextState, WorkflowSceneKind, WorkflowViewRequest } from '@shared/types/workflow'
 import {
@@ -93,6 +94,8 @@ export class WorkflowRouter implements vscode.Disposable {
             onDidChangeActiveDocument(() => this.refresh()),
             // 面板激活/让位同样立即广播：侧栏跟随编辑器标签靠这一条，不依赖各模块自行同步
             onDidChangeActivePanel(() => this.refresh()),
+            // 最后一个文档关闭：重置到初始事实，移除公众号/作品专属菜单
+            onDidCloseLastDocument(() => this.resetOnLastDocumentClosed()),
         )
     }
 
@@ -153,6 +156,32 @@ export class WorkflowRouter implements vscode.Disposable {
             // 编辑器停在别处时保持 null，不把别处文档绑到作品上（快照等按作品级处理）
             docPath: null,
             // 作品文档必为 Markdown：此时编辑器可能尚未切过去，先按可用处理，待编辑器事实收敛
+            isMarkdown: true,
+        }
+        if (this.isSameAsLast(next)) {
+            return
+        }
+        this.lastContext = next
+        this.emitter.fire(next)
+    }
+
+    /**
+     * 最后一个文档关闭：重置到初始事实，公众号/作品专属菜单随之从侧栏移除。
+     * 关键约束：清空所有作用域状态（含模块选定与作品目录），否则下次广播会把旧归属带回来；
+     * 与 clearModule / clearProject 分开——这里是文档真的没了，不是用户改选；
+     * 事实没变时不重复广播，避免关闭非文档 tab 造成的无意义换页。
+     */
+    private resetOnLastDocumentClosed(): void {
+        this.selectedModule = null
+        this.selectedModuleDoc = null
+        this.projectDir = null
+        this.explicitProjectDir = null
+        const next: WorkflowContextState = {
+            scene: 'idle',
+            module: ROOT_MODULE_KEY,
+            selectedModule: null,
+            projectDir: null,
+            docPath: null,
             isMarkdown: true,
         }
         if (this.isSameAsLast(next)) {

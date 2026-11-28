@@ -39,11 +39,13 @@ export function useWechatPublishConfirm(deps: WechatPublishConfirmDeps): WechatP
             quotaSeqRef.current = seq
             setTarget(issue)
             setQuotaReason('')
-            void loadQuota().then((quota) => {
-                if (quota !== null && quotaSeqRef.current === seq) {
-                    setQuotaReason(quota.reason)
-                }
-            })
+            void loadQuota()
+                .then((quota) => {
+                    if (quota !== null && quotaSeqRef.current === seq) {
+                        setQuotaReason(quota.reason)
+                    }
+                })
+                .catch(() => undefined)
         },
         [loadQuota],
     )

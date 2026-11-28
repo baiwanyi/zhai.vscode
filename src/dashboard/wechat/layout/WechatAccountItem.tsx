@@ -3,7 +3,8 @@
  * 动作区给出当前标记、状态色点与账号操作菜单。
  * 复用 @components/ui 的 item 槽位与 badge 徽标，账号菜单取 layout/WechatAccountMenu（与账号页页脚共用），
  * 元信息与状态口径取 wechat/utils。
- * 关键约束：整行可点进入账号页，行内菜单与按钮必须阻止冒泡，否则点菜单会顺带跳页；
+ * 关键约束：整行可点（键盘 Enter/Space 同样进入）账号页，行内菜单与按钮必须阻止冒泡，
+ * 否则点菜单会顺带跳页；键盘事件只响应焦点在行本身时，避免误触行内按钮；
  * 名称超长时由内层 span 承载 truncate（ItemTitle 自身只裁切、不出现省略号），动作区 shrink-0 不参与压缩；
  * 条目显式 flex-nowrap，窄侧栏遇到长名称时不把头像与动作区挤成两行。
  */
@@ -12,7 +13,7 @@ import { Item, ItemActions, ItemContent, ItemDescription, ItemMedia, ItemTitle }
 import type { WechatAccountSummary } from '@shared/types/wechat'
 import { Badge } from '@webview/blocks/Badge'
 import { WechatAccountMenu } from './WechatAccountMenu'
-import type { JSX } from 'react'
+import type { JSX, KeyboardEvent } from 'react'
 import {
     formatAccountMeta,
     formatAccountStatusHint,
@@ -50,13 +51,26 @@ export function WechatAccountItem({
     onRemove,
 }: WechatAccountItemProps): JSX.Element {
     const isAbnormal = account.status !== 'connected'
+    /** 整行的键盘入口：只响应焦点落在行本身的按键，避免行内菜单的 Space/Enter 被误判为进入账号页 */
+    const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
+        if (event.target !== event.currentTarget) {
+            return
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault()
+            onOpen(account.id)
+        }
+    }
 
     return (
         <Item
             variant="outline"
+            role="button"
+            tabIndex={0}
             className="cursor-pointer flex-nowrap hover:bg-muted"
             aria-label={`进入公众号 ${account.name}`}
             onClick={() => onOpen(account.id)}
+            onKeyDown={handleKeyDown}
         >
             <ItemMedia>
                 <span

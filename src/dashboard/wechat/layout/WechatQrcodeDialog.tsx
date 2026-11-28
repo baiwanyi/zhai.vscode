@@ -10,6 +10,7 @@ import { useEffect, useState } from 'react'
 import type { WechatAccountQrcodeResult, WechatAccountSummary } from '@shared/types/wechat'
 import { WECHAT_METHODS } from '@shared/types/wechatMethods'
 import { request } from '@shared/utils/bridge'
+import { toErrorText } from '@shared/utils/error'
 import { Empty } from '@webview/blocks/Empty'
 import { Button } from '@webview/components/Button'
 import { Dialog } from '@webview/components/Dialog'
@@ -38,7 +39,7 @@ export function WechatQrcodeDialog({ account, onOpenChange }: WechatQrcodeDialog
             })
             .catch((cause: unknown) => {
                 if (isActive) {
-                    setError(cause instanceof Error ? cause.message : '二维码加载失败，请稍后重试')
+                    setError(cause instanceof Error ? toErrorText(cause) : '二维码加载失败，请稍后重试')
                 }
             })
         return (): void => {

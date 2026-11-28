@@ -11,7 +11,7 @@
  * 缩放只改变取景比例，平移边界按「图片始终铺满取景框」收敛，避免裁出留白；
  * 没有选中新图时不能保存，未选时预览区展示文章当前封面，没有当前封面则提示先挑一张。
  */
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Field, FieldGroup, FieldLabel } from '@components/ui/field'
 import { Slider } from '@components/ui/slider'
@@ -23,6 +23,7 @@ import { ImagePickerTabs, ImageUploadButton } from '@webview/components/ImagePic
 import { useImagePickerSources } from '@webview/hooks/useImagePickerSources'
 import type { ImagePickerItem, ImageSourceKind } from '@webview/hooks/useImagePickerSources'
 import type { JSX, PointerEvent } from 'react'
+import { buildCroppedDataUrl, clampOffset, readOffsetLimit, type CropRect } from '../utils/coverCrop'
 
 /** 输出尺寸：公众号首图推荐 2.35:1，1175×500 兼顾清晰度与素材体积 */
 const OUTPUT_WIDTH = 1175
@@ -56,11 +57,6 @@ interface WechatCoverDialogProps {
     onSubmit: (dataUrl: string) => Promise<boolean>
 }
 
-/** 把偏移收敛到「图片始终铺满取景框」的范围内 */
-function clamp(value: number, limit: number): number {
-    return Math.min(Math.max(value, -limit), limit)
-}
-
 export function WechatCoverDialog({
     article,
     coverUri,
@@ -82,31 +78,30 @@ export function WechatCoverDialog({
     const frameRef = useRef<HTMLDivElement | null>(null)
     const imageRef = useRef<HTMLImageElement | null>(null)
     const dragRef = useRef<DragSnapshot | null>(null)
+    /** 卸载标记：弹窗在读取原图期间关闭时，忽略在途回包，避免卸载后写状态 */
+    const isActiveRef = useRef(true)
+    useEffect(() => {
+        return (): void => {
+            isActiveRef.current = false
+        }
+    }, [])
     /** 三来源候选清单与上传入口：封面只接受 jpg/png，其余格式在面板里滤掉 */
     const { sources, pickFiles, isUploading } = useImagePickerSources(COVER_EXTENSION)
 
-    /** 当前缩放下的最大平移量：取景框之外的图片部分才允许被拖进来 */
-    const readOffsetLimit = (nextZoom: number): { x: number; y: number } => {
-        const image = imageRef.current
-        const frame = frameRef.current
-        if (image === null || frame === null || image.naturalWidth === 0) {
-            return { x: 0, y: 0 }
-        }
-        const rect = frame.getBoundingClientRect()
-        const baseScale = Math.max(rect.width / image.naturalWidth, rect.height / image.naturalHeight)
-        return {
-            x: Math.max(0, (image.naturalWidth * baseScale * nextZoom - rect.width) / 2),
-            y: Math.max(0, (image.naturalHeight * baseScale * nextZoom - rect.height) / 2),
-        }
+    /** 读取取景框尺寸：ref 未挂载时给零尺寸，由纯函数收敛为零平移 */
+    const readFrameRect = (): CropRect => {
+        const rect = frameRef.current?.getBoundingClientRect()
+        return rect === undefined ? { width: 0, height: 0 } : { width: rect.width, height: rect.height }
     }
 
     /** 缩放后立即收敛偏移：放大会露出空白，缩小时原偏移可能越界 */
     const applyZoom = (nextZoom: number): void => {
-        const limit = readOffsetLimit(nextZoom)
+        const image = imageRef.current
+        const limit = image === null ? { x: 0, y: 0 } : readOffsetLimit(image, readFrameRect(), nextZoom)
         setZoom(nextZoom)
         setOffset((previous) => ({
-            x: clamp(previous.x, limit.x),
-            y: clamp(previous.y, limit.y),
+            x: clampOffset(previous.x, limit.x),
+            y: clampOffset(previous.y, limit.y),
         }))
     }
 
@@ -125,6 +120,9 @@ export function WechatCoverDialog({
         }
         setIsReading(true)
         void onReadImage(item.path).then((dataUrl) => {
+            if (!isActiveRef.current) {
+                return
+            }
             setIsReading(false)
             if (dataUrl === null) {
                 return
@@ -151,10 +149,11 @@ export function WechatCoverDialog({
         if (drag === null) {
             return
         }
-        const limit = readOffsetLimit(zoom)
+        const image = imageRef.current
+        const limit = image === null ? { x: 0, y: 0 } : readOffsetLimit(image, readFrameRect(), zoom)
         setOffset({
-            x: clamp(drag.originX + (event.clientX - drag.startX), limit.x),
-            y: clamp(drag.originY + (event.clientY - drag.startY), limit.y),
+            x: clampOffset(drag.originX + (event.clientX - drag.startX), limit.x),
+            y: clampOffset(drag.originY + (event.clientY - drag.startY), limit.y),
         })
     }
 
@@ -165,39 +164,12 @@ export function WechatCoverDialog({
         }
     }
 
-    /**
-     * 合成裁剪结果：取景框坐标先平移到图片左上角，再按输出宽度等比缩放。
-     * 关键约束：图片未加载完时返回 null——此时 naturalWidth 为 0，画出来只会是一张空白。
-     */
-    const buildCroppedDataUrl = (): string | null => {
-        const image = imageRef.current
-        const frame = frameRef.current
-        if (image === null || frame === null || !image.complete || image.naturalWidth === 0) {
-            return null
-        }
-        const rect = frame.getBoundingClientRect()
-        if (rect.width === 0 || rect.height === 0) {
-            return null
-        }
-        const baseScale = Math.max(rect.width / image.naturalWidth, rect.height / image.naturalHeight)
-        const drawWidth = image.naturalWidth * baseScale * zoom
-        const drawHeight = image.naturalHeight * baseScale * zoom
-        const left = (rect.width - drawWidth) / 2 + offset.x
-        const top = (rect.height - drawHeight) / 2 + offset.y
-        const canvas = document.createElement('canvas')
-        canvas.width = OUTPUT_WIDTH
-        canvas.height = OUTPUT_HEIGHT
-        const context = canvas.getContext('2d')
-        if (context === null) {
-            return null
-        }
-        const ratio = OUTPUT_WIDTH / rect.width
-        context.drawImage(image, left * ratio, top * ratio, drawWidth * ratio, drawHeight * ratio)
-        return canvas.toDataURL('image/jpeg', 0.92)
-    }
-
     const handleSubmit = (): void => {
-        const dataUrl = buildCroppedDataUrl()
+        const image = imageRef.current
+        const dataUrl =
+            image === null
+                ? null
+                : buildCroppedDataUrl(image, readFrameRect(), zoom, offset, OUTPUT_WIDTH, OUTPUT_HEIGHT)
         if (dataUrl === null) {
             toast.error('图片还没准备好，请重新选择封面')
             return

@@ -11,6 +11,9 @@ export type IssueFilter = 'all' | 'draft' | 'published' | 'failed'
 /** 排序方式：最近更新或推送时间，后者把未推送的排在末尾 */
 export type IssueSort = 'updated' | 'published'
 
+/** 文章调序方向：顺序号即推送顺序 */
+export type ArticleDirection = 'up' | 'down'
+
 /** 筛选选项与文案 */
 export const FILTER_OPTIONS: readonly { value: IssueFilter; label: string }[] = [
     { value: 'all', label: '全部状态' },
