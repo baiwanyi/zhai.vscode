@@ -18,6 +18,8 @@ import type {
     WechatCommentRemoveRequest,
     WechatCommentReplyRequest,
     WechatCommentSummary,
+    WechatCommentSwitchRequest,
+    WechatCommentSwitchResult,
     WechatIssueSummary,
     WechatIssuesRequest,
 } from '@shared/types/wechat'
@@ -64,6 +66,8 @@ export interface WechatCommentsState {
     reply: (commentId: number, content: string) => Promise<boolean>
     mark: (commentId: number, elected: boolean) => Promise<boolean>
     remove: (commentId: number) => Promise<boolean>
+    /** 打开/关闭当前文章的评论：成功后同步本地文章状态，开关不需要重拉留言 */
+    switchComment: (enabled: boolean) => Promise<boolean>
     /** 打开当前文章的原文：链路由宿主从库中取并校验域名，前端不持有地址 */
     openArticle: () => Promise<boolean>
 }
@@ -101,9 +105,17 @@ export function useWechatComments(accountId: string): WechatCommentsState {
         [],
     )
 
-    // 首次拿到批次后补默认选中，避免进页面就是空列表
+    // 首次拿到批次后补默认选中；刷新后旧批次被删除时也要重选，否则会用失效 id 请求并卡在错误态
     useEffect(() => {
-        if (selectedIssueId !== null || issues.length === 0) {
+        if (issues.length === 0) {
+            return
+        }
+        if (selectedIssueId !== null) {
+            if (issues.some((issue) => issue.id === selectedIssueId)) {
+                return
+            }
+            setSelectedIssueId(null)
+            setSelectedSortIndex(1)
             return
         }
         const [first] = issues
@@ -376,6 +388,51 @@ export function useWechatComments(accountId: string): WechatCommentsState {
     )
 
     /**
+     * 打开/关闭当前文章的评论：平台无状态查询接口，成功后按返回的 enabled 更新本地文章，
+     * 开关状态即取这个字段，因此不需要重拉留言列表；失败只提示，不动本地状态。
+     */
+    const switchComment = useCallback(
+        async (enabled: boolean): Promise<boolean> => {
+            if (selectedIssueId === null) {
+                return false
+            }
+            const payload: WechatCommentSwitchRequest = {
+                accountId,
+                issueId: selectedIssueId,
+                sortIndex: selectedSortIndex,
+                enabled,
+            }
+            setIsMutating(true)
+            try {
+                const result = await request<WechatCommentSwitchResult>(WECHAT_METHODS.commentSwitch, payload, 30_000)
+                setAllIssues((previous) =>
+                    previous.map((issue) =>
+                        issue.id === selectedIssueId
+                            ? {
+                                  ...issue,
+                                  articles: issue.articles.map((article) =>
+                                      article.sortIndex === selectedSortIndex
+                                          ? { ...article, allowComment: result.enabled }
+                                          : article,
+                                  ),
+                              }
+                            : issue,
+                    ),
+                )
+                const actionText = result.enabled ? '已打开评论' : '已关闭评论'
+                toast.success(result.localSyncFailed ? `${actionText}，但本地同步失败，请刷新页面` : actionText)
+                return true
+            } catch (cause) {
+                toastError(cause)
+                return false
+            } finally {
+                setIsMutating(false)
+            }
+        },
+        [accountId, selectedIssueId, selectedSortIndex],
+    )
+
+    /**
      * 打开原文：只传账号与批次，地址由宿主取库并校验域名后在 VS Code 内置浏览器打开。
      * 关键约束：失败用 toast 提示而不是改写列表状态——打开链接失败与留言数据无关。
      */
@@ -411,6 +468,7 @@ export function useWechatComments(accountId: string): WechatCommentsState {
         reply,
         mark,
         remove,
+        switchComment,
         openArticle,
     }
 }

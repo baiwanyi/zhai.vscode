@@ -28,8 +28,8 @@ export function WechatMenuPage({ account }: WechatMenuPageProps): JSX.Element {
     const [isRemovePending, setIsRemovePending] = useState(false)
 
     const handleRemove = async (): Promise<void> => {
-        const removed = await menu.remove()
-        if (removed) {
+        const isRemoved = await menu.remove()
+        if (isRemoved) {
             setIsRemovePending(false)
             actions.close()
         }

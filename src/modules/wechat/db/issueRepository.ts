@@ -312,6 +312,21 @@ export function updateWechatArticleFilePath(db: Database.Database, id: string, f
 }
 
 /**
+ * 回写评论开关：按批次与 1 基文章序号定位，只动 allow_comment。
+ * 平台没有查询评论开关状态的接口，本地字段是界面显示的唯一来源，open/close 成功后必须同步。
+ */
+export function updateWechatArticleAllowComment(
+    db: Database.Database,
+    issueId: string,
+    sortIndex: number,
+    enabled: boolean,
+): void {
+    db.prepare(
+        'UPDATE wechat_articles SET allow_comment = @allowComment WHERE issue_id = @issueId AND sort_index = @sortIndex',
+    ).run({ issueId, sortIndex, allowComment: enabled ? 1 : 0 })
+}
+
+/**
  * 交换两篇的序号：顺序号即推送顺序，同事务内互换避免中途失败留下重复序号。
  * 关键约束：调用方保证两条属于同一批次；任一条不存在时静默返回，由服务层先行校验。
  */

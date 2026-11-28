@@ -1202,6 +1202,28 @@ export interface WechatCommentArticleResult {
     opened: boolean
 }
 
+/**
+ * wechat/comment/switch 请求：打开或关闭当前文章的评论。
+ * 关键约束：目标三元组加 enabled 必填；平台只提供 open/close 两个写接口且不回读状态，
+ * 成功后由宿主把结果写回本地文章元信息，界面据此显示开关，避免把草稿态误当平台态。
+ */
+export interface WechatCommentSwitchRequest {
+    accountId: string
+    issueId: string
+    sortIndex: number
+    enabled: boolean
+}
+
+/**
+ * wechat/comment/switch 响应。
+ * localSyncFailed 表示平台已生效但本地文章状态写库失败：调用方仍应更新界面开关，
+ * 同时提示刷新——不能把已成功的操作提示成失败，也不能让界面停留在错误的旧状态。
+ */
+export interface WechatCommentSwitchResult {
+    enabled: boolean
+    localSyncFailed: boolean
+}
+
 /** 判断是否为「打开留言所属文章」请求：只要求账号与批次合法 */
 export function isWechatCommentArticleRequest(payload: unknown): payload is WechatCommentArticleRequest {
     if (typeof payload !== 'object' || payload === null) {
@@ -1228,7 +1250,7 @@ function isWechatCommentId(value: unknown): value is number {
 }
 
 /**
- * 公共校验：四个留言动作都要求「账号 + 批次 + 文章序号」齐全。
+ * 公共校验：留言动作都要求「账号 + 批次 + 文章序号」齐全。
  * 关键约束：返回收窄后的三元组而不是布尔值，避免各处再写一次断言；非对象直接判 null。
  */
 function readCommentTarget(payload: unknown): { accountId: string; issueId: string; sortIndex: number } | null {
@@ -1252,6 +1274,14 @@ export function isWechatCommentListRequest(payload: unknown): payload is WechatC
     }
     const offset = (payload as { offset?: unknown }).offset
     return offset === undefined || (typeof offset === 'number' && offset >= 0)
+}
+
+/** 判断是否为评论开关请求：目标三元组合法且 enabled 为布尔值 */
+export function isWechatCommentSwitchRequest(payload: unknown): payload is WechatCommentSwitchRequest {
+    if (readCommentTarget(payload) === null) {
+        return false
+    }
+    return typeof (payload as { enabled?: unknown }).enabled === 'boolean'
 }
 
 /** 判断是否为留言回复请求 */

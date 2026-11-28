@@ -29,6 +29,7 @@ import {
     isWechatCommentMarkRequest,
     isWechatCommentRemoveRequest,
     isWechatCommentReplyRequest,
+    isWechatCommentSwitchRequest,
     isWechatCoverSourceRequest,
     isWechatFanBlacklistRequest,
     isWechatFanDetailRequest,
@@ -430,6 +431,12 @@ export class WechatRoutes {
                 }
                 await openLink(articleUrl)
                 return { opened: true }
+            }
+            case WECHAT_METHODS.commentSwitch: {
+                if (!isWechatCommentSwitchRequest(payload)) {
+                    throw new Error(`${WECHAT_METHODS.commentSwitch} 参数非法：目标须合法且 enabled 须为布尔值`)
+                }
+                return this.deps.comments.switchComment(payload)
             }
             case WECHAT_METHODS.commentList: {
                 if (!isWechatCommentListRequest(payload)) {

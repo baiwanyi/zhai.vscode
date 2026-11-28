@@ -5,13 +5,19 @@
  */
 import { describe, expect, it } from 'vitest'
 import { describeCommentError } from '../src/modules/wechat/client'
-import { COMMENT_REPLY_DELETE_ENDPOINT, COMMENT_REPLY_ENDPOINT } from '../src/modules/wechat/endpoints'
+import {
+    COMMENT_CLOSE_ENDPOINT,
+    COMMENT_OPEN_ENDPOINT,
+    COMMENT_REPLY_DELETE_ENDPOINT,
+    COMMENT_REPLY_ENDPOINT,
+} from '../src/modules/wechat/endpoints'
 import {
     isWechatCommentArticleRequest,
     isWechatCommentListRequest,
     isWechatCommentMarkRequest,
     isWechatCommentRemoveRequest,
     isWechatCommentReplyRequest,
+    isWechatCommentSwitchRequest,
     WECHAT_COMMENT_CONTENT_MAX,
     WECHAT_COMMENT_PAGE_SIZE,
     WECHAT_ISSUE_ARTICLE_LIMIT,
@@ -106,10 +112,35 @@ describe('isWechatCommentArticleRequest', () => {
     })
 })
 
+describe('isWechatCommentSwitchRequest', () => {
+    it('目标合法且 enabled 为布尔值时通过', () => {
+        expect(isWechatCommentSwitchRequest(target({ enabled: true }))).toBe(true)
+        expect(isWechatCommentSwitchRequest(target({ enabled: false }))).toBe(true)
+    })
+
+    it('enabled 缺失或类型不符时拒绝', () => {
+        expect(isWechatCommentSwitchRequest(target())).toBe(false)
+        expect(isWechatCommentSwitchRequest(target({ enabled: 'true' }))).toBe(false)
+        expect(isWechatCommentSwitchRequest(target({ enabled: 1 }))).toBe(false)
+    })
+
+    it('目标非法时拒绝', () => {
+        expect(
+            isWechatCommentSwitchRequest({ accountId: ACCOUNT_ID, issueId: ISSUE_ID, sortIndex: 0, enabled: true }),
+        ).toBe(false)
+        expect(isWechatCommentSwitchRequest(null)).toBe(false)
+    })
+})
+
 describe('留言接口端点', () => {
     it('回复使用官方 reply/add 路径，删除回复使用 reply/delete', () => {
         expect(COMMENT_REPLY_ENDPOINT).toBe('https://api.weixin.qq.com/cgi-bin/comment/reply/add')
         expect(COMMENT_REPLY_DELETE_ENDPOINT).toBe('https://api.weixin.qq.com/cgi-bin/comment/reply/delete')
+    })
+
+    it('评论开关使用官方 open/close 路径', () => {
+        expect(COMMENT_OPEN_ENDPOINT).toBe('https://api.weixin.qq.com/cgi-bin/comment/open')
+        expect(COMMENT_CLOSE_ENDPOINT).toBe('https://api.weixin.qq.com/cgi-bin/comment/close')
     })
 
     it('分页条数小于平台拒绝的 50', () => {

@@ -14,22 +14,25 @@ import type {
     WechatCommentRemoveRequest,
     WechatCommentReplyRequest,
     WechatCommentSummary,
+    WechatCommentSwitchRequest,
+    WechatCommentSwitchResult,
 } from '@shared/types/wechat'
 import { requireWechatToken } from './accountToken'
 import { findWechatAccount } from './db/accountRepository'
-import { findWechatIssue } from './db/issueRepository'
+import { findWechatIssue, updateWechatArticleAllowComment } from './db/issueRepository'
 import {
     deleteWechatComment,
     deleteWechatCommentReply,
     fetchWechatComments,
     markWechatComment,
     replyWechatComment,
+    switchWechatComment,
 } from './openapi'
 import type { WechatTokenAccessDeps } from './accountToken'
 import type { WechatApiResult, WechatCommentTarget } from './openapi'
 
-/** 原文域名白名单：只信任公众号图文页，避免把库中被改写的地址交给系统浏览器 */
-const WECHAT_ARTICLE_HOST = 'mp.weixin.qq.com'
+/** 原文来源白名单：只信任公众号图文页的 HTTPS 默认端口，避免明文或非常规端口被放行 */
+const WECHAT_ARTICLE_ORIGIN = 'https://mp.weixin.qq.com'
 
 /** Token 失效错误码：平台提前失效时清缓存重取一次，避免用户手动重试 */
 const TOKEN_INVALID_CODES: ReadonlySet<number> = new Set([40001, 42001])
@@ -40,7 +43,7 @@ const ALREADY_REPLIED_CODE = 88005
 /** 校验原文链接：解析失败一律视为不可信，不抛错给上层 */
 function isWechatArticleUrl(url: string): boolean {
     try {
-        return new URL(url).hostname === WECHAT_ARTICLE_HOST
+        return new URL(url).origin === WECHAT_ARTICLE_ORIGIN
     } catch {
         return false
     }
@@ -68,6 +71,29 @@ export class WechatCommentService {
             ...(row.replyContent?.trim() ? { replyContent: row.replyContent } : {}),
         }))
         return { comments, total: outcome.data.total }
+    }
+
+    /**
+     * 打开/关闭当前文章的评论。
+     * 平台只提供写接口、不回读状态，成功后再把 enabled 写回本地文章，
+     * 这样界面开关有稳定状态来源；写库失败不影响平台已生效的结果，仅提示刷新。
+     */
+    public async switchComment(request: WechatCommentSwitchRequest): Promise<WechatCommentSwitchResult> {
+        const target = this.requireTarget(request)
+        const outcome = await this.callWithTokenRetry(request.accountId, (token) =>
+            switchWechatComment(token, target, request.enabled),
+        )
+        if (!outcome.ok) {
+            throw new Error(outcome.message)
+        }
+        // 平台已生效，本地写库失败不能把整个操作报成失败，只能标记出来让界面提示刷新
+        let isLocalSyncFailed = false
+        try {
+            updateWechatArticleAllowComment(this.deps.db, request.issueId, request.sortIndex, request.enabled)
+        } catch {
+            isLocalSyncFailed = true
+        }
+        return { enabled: request.enabled, localSyncFailed: isLocalSyncFailed }
     }
 
     /**

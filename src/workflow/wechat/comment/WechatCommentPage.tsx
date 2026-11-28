@@ -41,6 +41,8 @@ export function WechatCommentPage({ account }: WechatCommentPageProps): JSX.Elem
                             counts={view.counts}
                             loaded={state.comments.length}
                             total={state.total}
+                            isCommentEnabled={view.isCommentEnabled}
+                            isMutating={state.isMutating && state.mutatingCommentId === null}
                             actions={view.actions}
                         />
                     )}

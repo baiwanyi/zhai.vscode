@@ -5,7 +5,7 @@
  * 关键约束：批次为空 / 仅草稿 / 已推送但无文章时，选中与留言 effect 都会提前返回，
  * loadIssues 必须自行把 status 收尾为 ready，否则界面永久停在骨架屏。
  */
-import { renderHook, waitFor } from '@testing-library/react'
+import { act, renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WechatIssueSummary, WechatCommentSummary } from '../src/shared/types/wechat'
 
@@ -106,5 +106,29 @@ describe('useWechatComments Loading 收尾', () => {
         })
         expect(result.current.selectedIssueId).toBe('iss-1')
         expect(result.current.selectedSortIndex).toBe(1)
+    })
+
+    it('刷新后当前批次被删除时自动选中仍存在的批次', async () => {
+        let issues = [issue({ id: 'iss-old' }), issue({ id: 'iss-new' })]
+        requestMock.mockImplementation((method: string): Promise<unknown> => {
+            if (method === 'wechat/issues') {
+                return Promise.resolve(issues)
+            }
+            return Promise.resolve({ comments: [], total: 0 })
+        })
+
+        const { result } = renderHook(() => useWechatComments('acc-1'))
+        await waitFor(() => {
+            expect(result.current.selectedIssueId).toBe('iss-old')
+        })
+
+        issues = [issue({ id: 'iss-new' })]
+        await act(async () => {
+            await result.current.reload()
+        })
+        await waitFor(() => {
+            expect(result.current.selectedIssueId).toBe('iss-new')
+        })
+        expect(result.current.status).not.toBe('error')
     })
 })

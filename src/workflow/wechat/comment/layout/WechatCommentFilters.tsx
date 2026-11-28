@@ -1,11 +1,12 @@
 /**
- * 留言筛选栏：全部 / 精选 / 待回复三段切换，右侧给出已加载口径。
- * 复用约定：分段控件取 components/SegmentedRail（outline 形态与统计页一致），条数取 utils/commentFilter；
+ * 留言筛选栏：全部 / 精选 / 待回复三段切换，右侧给出已加载口径与当前文章的评论开关。
+ * 复用约定：分段控件取 components/SegmentedRail，开关取 components/Switch，条数取 utils/commentFilter；
  * 右侧口径文案由 utils/commentText 的 readFilterCaption 生成，不在这里拼数字。
- * 关键约束：标签上的数字只覆盖已加载条目——平台列表接口没有筛选参数，界面必须让这个边界可读；
- * 组件自身不持有筛选状态，切换批次或文章时由父层重置，避免筛选值跨文章残留。
+ * 关键约束：标签数字只覆盖已加载条目，界面必须让这个边界可读；开关只在选中文章时显示，
+ * 状态来自本地文章元信息（平台无查询接口），切换中由父层禁用，避免重复提交。
  */
 import { SegmentedRail } from '@webview/components/SegmentedRail'
+import { Switch } from '@webview/components/Switch'
 import type { CommentFilter, WechatCommentActions } from '../types'
 import type { CommentFilterCounts } from '../utils/commentFilter'
 import type { JSX } from 'react'
@@ -21,6 +22,9 @@ interface WechatCommentFiltersProps {
     counts: CommentFilterCounts
     loaded: number
     total: number
+    /** 当前文章的评论开关状态：null 表示没有选中文章，不显示开关 */
+    isCommentEnabled: boolean | null
+    isMutating: boolean
     actions: WechatCommentActions
 }
 
@@ -29,6 +33,8 @@ export function WechatCommentFilters({
     counts,
     loaded,
     total,
+    isCommentEnabled,
+    isMutating,
     actions,
 }: WechatCommentFiltersProps): JSX.Element {
     const items: readonly { value: CommentFilter; label: string }[] = [
@@ -48,7 +54,18 @@ export function WechatCommentFilters({
                 size="sm"
                 isStretched={false}
             />
-            <span className="shrink-0 text-xs text-muted-foreground">{readFilterCaption(loaded, total)}</span>
+            <div className="flex shrink-0 items-center gap-3">
+                {isCommentEnabled === null ? null : (
+                    <Switch
+                        size="sm"
+                        checked={isCommentEnabled}
+                        disabled={isMutating}
+                        label="开放评论"
+                        onCheckedChange={(checked) => actions.onToggleComment(checked === true)}
+                    />
+                )}
+                <span className="text-xs text-muted-foreground">{readFilterCaption(loaded, total)}</span>
+            </div>
         </div>
     )
 }

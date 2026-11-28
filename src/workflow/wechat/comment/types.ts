@@ -34,5 +34,6 @@ export interface WechatCommentActions {
     onRequestRemove: (comment: WechatCommentSummary) => void
     onCloseRemove: () => void
     onConfirmRemove: () => void
+    onToggleComment: (enabled: boolean) => void
     onOpenArticle: () => void
 }

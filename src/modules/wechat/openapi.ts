@@ -16,9 +16,11 @@ import {
     NETWORK_ERROR_CODE,
 } from './client'
 import {
+    COMMENT_CLOSE_ENDPOINT,
     COMMENT_DELETE_ENDPOINT,
     COMMENT_LIST_ENDPOINT,
     COMMENT_MARK_ENDPOINT,
+    COMMENT_OPEN_ENDPOINT,
     COMMENT_REPLY_DELETE_ENDPOINT,
     COMMENT_REPLY_ENDPOINT,
     COMMENT_UNMARK_ENDPOINT,
@@ -666,6 +668,18 @@ function readReplyContent(reply: unknown): { replyContent?: string } {
         return typeof content === 'string' && content.length > 0 ? { replyContent: content } : {}
     }
     return {}
+}
+
+/** 打开/关闭当前文章的评论：两个接口只差地址，参数只需群发标识与文章序号 */
+export async function switchWechatComment(
+    token: string,
+    target: WechatCommentTarget,
+    enabled: boolean,
+): Promise<WechatApiResult<null>> {
+    const body = { msg_data_id: target.msgDataId, index: target.index }
+    const endpoint = enabled ? COMMENT_OPEN_ENDPOINT : COMMENT_CLOSE_ENDPOINT
+    const outcome = await postWechatJson(token, endpoint, body, undefined, describeCommentError)
+    return outcome.ok ? { ok: true, data: null } : outcome
 }
 
 /** 回复留言：新增回复，已回复时平台返回 88005，由服务层决定先删后加 */

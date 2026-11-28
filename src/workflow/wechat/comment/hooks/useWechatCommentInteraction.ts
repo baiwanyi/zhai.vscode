@@ -29,6 +29,8 @@ export interface WechatCommentInteraction {
     detailReplyDraft: string | null
     pendingRemove: WechatCommentSummary | null
     replyDraft: CommentReplyDraft | null
+    /** 当前文章的评论开关状态：null 表示没有选中文章 */
+    isCommentEnabled: boolean | null
     hasMore: boolean
     sentinelRef: RefObject<HTMLDivElement | null>
     actions: WechatCommentActions
@@ -60,6 +62,8 @@ export function useWechatCommentInteraction(accountName: string, state: WechatCo
             : readArticleLabel(selectedArticle.sortIndex, selectedArticle.title)
     /** 原文入口：平台只回传多图文首篇的链接，第二篇起与旧批次都没有自己的地址 */
     const canOpenArticle = state.selectedSortIndex === 1 && selectedIssue?.articleUrl !== undefined
+    /** 评论开关：状态取本地文章元信息，平台没有查询接口；没有选中文章时不显示开关 */
+    const isCommentEnabled = selectedArticle?.allowComment ?? null
 
     const detailComment =
         detailSnapshot === null
@@ -174,6 +178,14 @@ export function useWechatCommentInteraction(accountName: string, state: WechatCo
                 })
             }
         },
+        onToggleComment: (enabled) => {
+            if (selectedIssue === undefined) {
+                return
+            }
+            runWriteOnce(`switch:${selectedIssue.id}:${String(state.selectedSortIndex)}`, async (): Promise<void> => {
+                await state.switchComment(enabled)
+            })
+        },
         onOpenArticle: () => {
             void state.openArticle()
         },
@@ -190,6 +202,7 @@ export function useWechatCommentInteraction(accountName: string, state: WechatCo
         detailReplyDraft,
         pendingRemove,
         replyDraft: reply,
+        isCommentEnabled,
         hasMore,
         sentinelRef,
         actions,

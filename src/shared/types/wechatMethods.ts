@@ -44,6 +44,8 @@ export const WECHAT_METHODS = {
     articleUpdate: 'wechat/article/update',
     /** 留言：打开所属文章原文 */
     commentArticle: 'wechat/comment/article',
+    /** 留言：打开/关闭当前文章的评论 */
+    commentSwitch: 'wechat/comment/switch',
     /** 留言：列表 */
     commentList: 'wechat/comment/list',
     /** 留言：精选 */
